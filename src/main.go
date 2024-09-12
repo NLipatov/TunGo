@@ -11,7 +11,7 @@ const (
 )
 
 func main() {
-	name, err := net.CreateTun(ifName)
+	name, err := net.UpNewTun(ifName)
 	if err != nil {
 		log.Fatalf("failed to create interface %v: %v", ifName, err)
 	}
