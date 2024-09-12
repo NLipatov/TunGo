@@ -2,6 +2,8 @@ package net
 
 import (
 	"fmt"
+	"golang.org/x/sys/unix"
+	"os"
 	"os/exec"
 	"unsafe"
 )
@@ -40,6 +42,43 @@ func DeleteInterface(ifName string) error {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to delete interface: %v, output: %s", err, output)
+	}
+	return nil
+}
+
+func OpenTunByName(ifname string) (*os.File, error) {
+	tunFilePath := "/dev/net/tun"
+	tun, err := os.OpenFile(tunFilePath, os.O_RDWR, 0)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open %v: %v", tunFilePath, err)
+	}
+
+	var req ifreq
+	copy(req.Name[:], ifname)
+	req.Flags = IFF_TUN | IFF_NO_PI
+
+	_, _, errno := unix.Syscall(unix.SYS_IOCTL, tun.Fd(), uintptr(TUNSETIFF), uintptr(unsafe.Pointer(&req)))
+	if errno != 0 {
+		tun.Close()
+		return nil, fmt.Errorf("ioctl failed: %v", errno)
+	}
+
+	return tun, nil
+}
+
+func ReadFromTun(tun *os.File) ([]byte, error) {
+	buf := make([]byte, 1500)
+	n, err := tun.Read(buf)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read from tun: %v", err)
+	}
+	return buf[:n], nil
+}
+
+func WriteToTun(tun *os.File, data []byte) error {
+	_, err := tun.Write(data)
+	if err != nil {
+		return fmt.Errorf("failed to write to tun: %v", err)
 	}
 	return nil
 }

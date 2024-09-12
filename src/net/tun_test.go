@@ -11,8 +11,8 @@ func interfaceExists(ifName string) bool {
 	return err == nil
 }
 
-func Test(t *testing.T) {
-	ifName, err := CreateTun("testtun0")
+func Test_CreateAndDeleteInterface(t *testing.T) {
+	ifName, err := UpNewTun("testtun0")
 	if err != nil {
 		t.Fatalf("failed to create tunnel: %v", err)
 	}
@@ -30,5 +30,47 @@ func Test(t *testing.T) {
 
 	if interfaceExists(ifName) {
 		t.Errorf("tunnel %s should be deleted: %s", ifName, err)
+	}
+}
+
+func Test_WriteAndReadFromTun(t *testing.T) {
+	ifName, err := UpNewTun("rwtesttun0")
+	if err != nil {
+		t.Fatalf("failed to create interface %v: %v", ifName, err)
+	}
+	defer func() {
+		err = DeleteInterface(ifName)
+		if err != nil {
+			t.Fatalf("failed to delete interface %v: %v", ifName, err)
+		}
+	}()
+
+	tun, err := OpenTunByName(ifName)
+	if err != nil {
+		t.Fatalf("failed to open interface %v: %v", ifName, err)
+	}
+
+	packet := []byte{
+		0x45, 0x00, 0x00, 0x54, 0x00, 0x00, 0x40, 0x00, 0x40, 0x01, 0xf7, 0x63, 0xc0, 0xa8, 0x00, 0x01, // IPv4 Header
+		0xc0, 0xa8, 0x00, 0x02, // Sender and receiver addresses sample
+	}
+
+	n, err := tun.Write(packet)
+	if err != nil {
+		t.Fatalf("Error writing to TUN: %v", err)
+	}
+
+	if n < 1 {
+		t.Fatalf("Nothing was written to TUN")
+	}
+
+	data := make([]byte, 1500)
+	n, err = tun.Read(data)
+	if err != nil {
+		t.Fatalf("Error reading from TUN: %v", err)
+	}
+
+	if n < 1 {
+		t.Fatalf("Nothing was read from TUN")
 	}
 }
