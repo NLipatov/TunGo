@@ -1,4 +1,4 @@
-package v4
+package IPParsing
 
 import (
 	"net"
@@ -13,7 +13,7 @@ func TestParseIPv4Header(t *testing.T) {
 
 	header, err := ParseIPv4Header(packet)
 	if err != nil {
-		t.Fatalf("failed to parse v4 header: %v", err)
+		t.Fatalf("failed to parse IPv4 header: %v", err)
 	}
 
 	if header.Version != 4 {
@@ -81,6 +81,6 @@ func TestParseIPv4Header_NotIPv4(t *testing.T) {
 
 	_, err := ParseIPv4Header(packet)
 	if err == nil {
-		t.Errorf("expected error for non-v4 packet, but got none")
+		t.Errorf("expected error for non-IPParsing packet, but got none")
 	}
 }
