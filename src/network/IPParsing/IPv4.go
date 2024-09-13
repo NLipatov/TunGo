@@ -33,11 +33,11 @@ func ParseIPv4Header(packet []byte) (*IPv4Header, error) {
 	ihl := versionIHL & 0x0F   // Extracting the next 4 bits (IHL)
 
 	if version != 4 {
-		return nil, fmt.Errorf("not a v4 packet")
+		return nil, fmt.Errorf("not a IPv4 packet")
 	}
 
 	if len(packet) < int(ihl)*4 {
-		return nil, fmt.Errorf("invalid v4 header length")
+		return nil, fmt.Errorf("invalid IPv4 header length")
 	}
 
 	return &IPv4Header{
