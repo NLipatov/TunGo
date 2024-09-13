@@ -22,6 +22,11 @@ type ifreq struct {
 }
 
 func UpNewTun(ifName string) (string, error) {
+	err := enableIPv4Forwarding()
+	if err != nil {
+		return "", err
+	}
+
 	createTun := exec.Command("ip", "tuntap", "add", "dev", ifName, "mode", "tun")
 	createTunOutput, err := createTun.CombinedOutput()
 	if err != nil {
@@ -64,6 +69,25 @@ func OpenTunByName(ifname string) (*os.File, error) {
 	}
 
 	return tun, nil
+}
+
+func enableIPv4Forwarding() error {
+	cmd := exec.Command("sysctl", "-w", "net.ipv4.ip_forward=1")
+	_, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed enable ipv4 packet forwarding: %v", err)
+	}
+	return nil
+}
+
+func disableIPv4Forwarding() error {
+	cmd := exec.Command("sysctl", "-w", "net.ipv4.ip_forward=0")
+	_, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed disable ipv4 packet forwarding: %v", err)
+	}
+
+	return nil
 }
 
 func ReadFromTun(tun *os.File) ([]byte, error) {
