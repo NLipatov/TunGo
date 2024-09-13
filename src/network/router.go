@@ -2,19 +2,36 @@ package network
 
 import (
 	"encoding/binary"
-	v4 "etha-tunnel/network/IPParsing"
+	"etha-tunnel/network/IPParsing"
 	"fmt"
 	"log"
 	"net"
+	"os/exec"
+	"strings"
 )
 
 func Serve(ifName string) error {
+	externalIfName, err := getDefaultInterface()
+	if err != nil {
+		return err
+	}
+
+	err = enableNAT(externalIfName)
+	if err != nil {
+		return fmt.Errorf("failed enabling NAT: %v", err)
+	}
+
+	err = setupForwarding(ifName, externalIfName)
+
 	tunFile, err := OpenTunByName(ifName)
 	if err != nil {
 		return fmt.Errorf("failed to open TUN interface: %v", err)
 	}
 
 	defer tunFile.Close()
+	defer disableNAT(externalIfName)
+	defer clearForwarding(ifName, externalIfName)
+	defer DeleteInterface(ifName)
 
 	for {
 		packet, readFromTunErr := ReadFromTun(tunFile)
@@ -23,7 +40,7 @@ func Serve(ifName string) error {
 			continue
 		}
 
-		ipHeader, ipV4ParsingErr := v4.ParseIPv4Header(packet)
+		ipHeader, ipV4ParsingErr := IPParsing.ParseIPv4Header(packet)
 		if ipV4ParsingErr != nil {
 			log.Printf("failed to parse IPv4 header: %v", ipV4ParsingErr)
 			continue
@@ -81,4 +98,72 @@ func tryCloseConnection(conn net.Conn) {
 	if conn != nil {
 		conn.Close()
 	}
+}
+
+func enableNAT(iface string) error {
+	cmd := exec.Command("iptables", "-t", "nat", "-A", "POSTROUTING", "-o", iface, "-j", "MASQUERADE")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to enable NAT on %s: %v, output: %s", iface, err, output)
+	}
+	return nil
+}
+
+func disableNAT(iface string) error {
+	cmd := exec.Command("iptables", "-t", "nat", "-D", "POSTROUTING", "-o", iface, "-j", "MASQUERADE")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to disable NAT on %s: %v, output: %s", iface, err, output)
+	}
+	return nil
+}
+
+func setupForwarding(tunIface, extIface string) error {
+	cmd := exec.Command("iptables", "-A", "FORWARD", "-i", extIface, "-o", tunIface, "-m", "state", "--state",
+		"RELATED,ESTABLISHED", "-j", "ACCEPT")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to setup forwarding rule for extIface -> tunIface: %v, output: %s", err, output)
+	}
+
+	cmd = exec.Command("iptables", "-A", "FORWARD", "-i", tunIface, "-o", extIface, "-j", "ACCEPT")
+	output, err = cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to setup forwarding rule for tunIface -> extIface: %v, output: %s", err, output)
+	}
+	return nil
+}
+
+func clearForwarding(tunIface, extIface string) error {
+	cmd := exec.Command("iptables", "-D", "FORWARD", "-i", extIface, "-o", tunIface, "-m", "state", "--state",
+		"RELATED,ESTABLISHED", "-j", "ACCEPT")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to remove forwarding rule for extIface -> tunIface: %v, output: %s", err, output)
+	}
+
+	cmd = exec.Command("iptables", "-D", "FORWARD", "-i", tunIface, "-o", extIface, "-j", "ACCEPT")
+	output, err = cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to remove forwarding rule for tunIface -> extIface: %v, output: %s", err, output)
+	}
+	return nil
+}
+
+func getDefaultInterface() (string, error) {
+	out, err := exec.Command("ip", "route").Output()
+	if err != nil {
+		return "", err
+	}
+
+	lines := strings.Split(string(out), "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "default") {
+			fields := strings.Fields(line)
+			if len(fields) >= 5 {
+				return fields[4], nil
+			}
+		}
+	}
+	return "", fmt.Errorf("failed to get default interface")
 }
