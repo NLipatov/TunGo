@@ -23,5 +23,10 @@ func main() {
 		fmt.Printf("%s interface deleted\n", ifName)
 	}()
 
+	err = network.Serve(name)
+	if err != nil {
+		log.Print(err)
+	}
+
 	fmt.Printf("Created: %v", name)
 }
