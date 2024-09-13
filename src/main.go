@@ -1,7 +1,7 @@
 package main
 
 import (
-	"etha-tunnel/net"
+	"etha-tunnel/network"
 	"fmt"
 	"log"
 )
@@ -11,12 +11,12 @@ const (
 )
 
 func main() {
-	name, err := net.UpNewTun(ifName)
+	name, err := network.UpNewTun(ifName)
 	if err != nil {
 		log.Fatalf("failed to create interface %v: %v", ifName, err)
 	}
 	defer func() {
-		err = net.DeleteInterface(ifName)
+		err = network.DeleteInterface(ifName)
 		if err != nil {
 			log.Fatalf("failed to delete interface %v: %v", ifName, err)
 		}
