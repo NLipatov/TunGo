@@ -12,8 +12,8 @@ import (
 
 const (
 	clientIfName = "ethatun0"
-	clientTunIP  = "10.0.0.2/24"          //ToDo: move to client cofiguration file
-	serverAddr   = "192.168.122.194:8080" //ToDo: move to client cofiguration file
+	clientTunIP  = "10.0.0.2/24"          //ToDo: move to client configuration file
+	serverAddr   = "192.168.122.194:8080" //ToDo: move to client configuration file
 )
 
 func main() {
