@@ -17,7 +17,7 @@ const (
 )
 
 func main() {
-	clientConfigurationErr := configure()
+	clientConfigurationErr := configureClient()
 	if clientConfigurationErr != nil {
 		log.Fatalf("failed to configure client: %v", clientConfigurationErr)
 	}
@@ -81,7 +81,7 @@ func main() {
 	}
 }
 
-func configure() error {
+func configureClient() error {
 	_ = network.DeleteInterface(clientIfName)
 	name, err := network.UpNewTun(clientIfName)
 	if err != nil {
