@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"etha-tunnel/network/IPParsing"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os/exec"
@@ -33,70 +34,98 @@ func Serve(ifName string) error {
 	defer clearForwarding(ifName, externalIfName)
 	defer DeleteInterface(ifName)
 
+	listener, err := net.Listen("tcp", ":8080") // Replace with desired port
+	if err != nil {
+		return fmt.Errorf("failed to listen on port: %v", err)
+	}
+	defer listener.Close()
+
 	for {
-		packet, readFromTunErr := ReadFromTun(tunFile)
-		if readFromTunErr != nil {
-			log.Printf("failed to read from TUN interface: %v", readFromTunErr)
+		conn, err := listener.Accept()
+		if err != nil {
+			log.Printf("Failed to accept connection: %v", err)
 			continue
 		}
+		go handleClient(conn)
+	}
+}
+
+func handleClient(conn net.Conn) {
+	defer conn.Close()
+	buf := make([]byte, 1500)
+	for {
+		// Read length
+		_, err := io.ReadFull(conn, buf[:4])
+		if err != nil {
+			log.Printf("Failed to read from client: %v", err)
+			return
+		}
+		length := binary.BigEndian.Uint32(buf[:4])
+		if length > 1500 {
+			log.Printf("Packet too large: %d", length)
+			return
+		}
+		// Read packet
+		_, err = io.ReadFull(conn, buf[:length])
+		if err != nil {
+			log.Printf("Failed to read from client: %v", err)
+			return
+		}
+		packet := buf[:length]
 
 		ipHeader, ipV4ParsingErr := IPParsing.ParseIPv4Header(packet)
 		if ipV4ParsingErr != nil {
-			log.Printf("failed to parse IPv4 header: %v", ipV4ParsingErr)
+			log.Printf("Failed to parse IPv4 header: %v", ipV4ParsingErr)
 			continue
 		}
 
-		var conn net.Conn
+		var dstConn net.Conn
 		var dstPort uint16
 		payloadStart := int(ipHeader.IHL) * 4
 
 		switch ipHeader.Protocol {
 		case 6: // TCP
-			dstPort = binary.BigEndian.Uint16(packet[payloadStart : payloadStart+2])
-			conn, err = net.Dial("tcp", fmt.Sprintf("%s:%d", ipHeader.DestinationIP.String(), dstPort))
+			dstPort = binary.BigEndian.Uint16(packet[payloadStart+2 : payloadStart+4]) // Destination port
+			dstConn, err = net.Dial("tcp", fmt.Sprintf("%s:%d", ipHeader.DestinationIP.String(), dstPort))
 		case 17: // UDP
-			dstPort = binary.BigEndian.Uint16(packet[payloadStart : payloadStart+2])
-			conn, err = net.Dial("udp", fmt.Sprintf("%s:%d", ipHeader.DestinationIP.String(), dstPort))
+			dstPort = binary.BigEndian.Uint16(packet[payloadStart+2 : payloadStart+4]) // Destination port
+			dstConn, err = net.Dial("udp", fmt.Sprintf("%s:%d", ipHeader.DestinationIP.String(), dstPort))
 		default:
-			return fmt.Errorf("unsupported protocol: %d", ipHeader.Protocol)
-		}
-
-		if err != nil {
-			log.Printf("error dialing destination: %v", err)
-			tryCloseConnection(conn)
+			log.Printf("Unsupported protocol: %d", ipHeader.Protocol)
 			continue
 		}
 
-		_, err = conn.Write(packet[payloadStart:])
 		if err != nil {
-			log.Printf("error forwarding packet: %v", err)
-			tryCloseConnection(conn)
+			log.Printf("Error dialing destination: %v", err)
 			continue
 		}
 
-		if ipHeader.Protocol == 6 {
-			buf := make([]byte, 1500)
-			n, readingFromTunErr := conn.Read(buf)
-			if readingFromTunErr != nil {
-				log.Printf("error reading from external server: %v", readingFromTunErr)
-				tryCloseConnection(conn)
-				continue
-			}
-
-			_, writingToTunErr := tunFile.Write(buf[:n])
-			if writingToTunErr != nil {
-				log.Printf("error writing response to TUN: %v", writingToTunErr)
-				tryCloseConnection(conn)
-				continue
-			}
+		_, err = dstConn.Write(packet[payloadStart:])
+		if err != nil {
+			log.Printf("Error forwarding packet: %v", err)
+			dstConn.Close()
+			continue
 		}
-		tryCloseConnection(conn)
-	}
-}
 
-func tryCloseConnection(conn net.Conn) {
-	if conn != nil {
-		conn.Close()
+		go func(dstConn net.Conn) {
+			defer dstConn.Close()
+			respBuf := make([]byte, 1500)
+			for {
+				n, err := dstConn.Read(respBuf[4:])
+				if err != nil {
+					if err != io.EOF {
+						log.Printf("Error reading from destination: %v", err)
+					}
+					return
+				}
+				binary.BigEndian.PutUint32(respBuf[:4], uint32(n))
+				_, err = conn.Write(respBuf[:4+n])
+				if err != nil {
+					log.Printf("Error sending response to client: %v", err)
+					return
+				}
+			}
+		}(dstConn)
 	}
 }
 

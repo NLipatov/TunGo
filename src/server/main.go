@@ -11,6 +11,7 @@ const (
 )
 
 func main() {
+	_ = network.DeleteInterface(ifName)
 	name, err := network.UpNewTun(ifName)
 	if err != nil {
 		log.Fatalf("failed to create interface %v: %v", ifName, err)
