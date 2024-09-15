@@ -4,30 +4,44 @@ import (
 	"etha-tunnel/network"
 	"fmt"
 	"log"
+	"os/exec"
 )
 
 const (
-	ifName = "ethatun0"
+	serverIfName = "ethatun0"
+	tunIP        = "10.0.0.1/24" //ToDo: move to server configuration file
+	listenPort   = ":8080"       //ToDo: move to server configuration file
 )
 
 func main() {
-	_ = network.DeleteInterface(ifName)
-	name, err := network.UpNewTun(ifName)
+	err := configureServer()
+	tunFile, err := network.OpenTunByName(serverIfName)
 	if err != nil {
-		log.Fatalf("failed to create interface %v: %v", ifName, err)
+		log.Fatalf("Failed to open TUN interface: %v", err)
 	}
-	defer func() {
-		err = network.DeleteInterface(ifName)
-		if err != nil {
-			log.Fatalf("failed to delete interface %v: %v", ifName, err)
-		}
-		fmt.Printf("%s interface deleted\n", ifName)
-	}()
+	defer tunFile.Close()
 
-	err = network.Serve(name)
+	err = network.Serve(tunFile, listenPort)
 	if err != nil {
 		log.Print(err)
 	}
+}
 
-	fmt.Printf("Created: %v", name)
+func configureServer() error {
+	_ = network.DeleteInterface(serverIfName)
+
+	name, err := network.UpNewTun(serverIfName)
+	if err != nil {
+		log.Fatalf("Failed to create interface %v: %v", serverIfName, err)
+	}
+	fmt.Printf("Created TUN interface: %v\n", name)
+
+	assignIP := exec.Command("ip", "addr", "add", tunIP, "dev", serverIfName)
+	output, assignIPErr := assignIP.CombinedOutput()
+	if assignIPErr != nil {
+		log.Fatalf("Failed to assign IP to TUN %v: %v, output: %s", serverIfName, assignIPErr, output)
+	}
+	fmt.Printf("Assigned IP %s to interface %s\n", tunIP, serverIfName)
+
+	return nil
 }
