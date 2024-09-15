@@ -73,28 +73,18 @@ func OpenTunByName(ifname string) (*os.File, error) {
 
 func enableIPv4Forwarding() error {
 	cmd := exec.Command("sysctl", "-w", "net.ipv4.ip_forward=1")
-	_, err := cmd.CombinedOutput()
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("failed enable ipv4 packet forwarding: %v", err)
+		return fmt.Errorf("failed to enable IPv4 packet forwarding: %v, output: %s", err, output)
 	}
-	return nil
-}
-
-func disableIPv4Forwarding() error {
-	cmd := exec.Command("sysctl", "-w", "net.ipv4.ip_forward=0")
-	_, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed disable ipv4 packet forwarding: %v", err)
-	}
-
 	return nil
 }
 
 func ReadFromTun(tun *os.File) ([]byte, error) {
-	buf := make([]byte, 1500)
+	buf := make([]byte, 65535) // Max IP packet size
 	n, err := tun.Read(buf)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read from tun: %v", err)
+		return nil, fmt.Errorf("failed to read from TUN: %v", err)
 	}
 	return buf[:n], nil
 }
@@ -102,7 +92,7 @@ func ReadFromTun(tun *os.File) ([]byte, error) {
 func WriteToTun(tun *os.File, data []byte) error {
 	_, err := tun.Write(data)
 	if err != nil {
-		return fmt.Errorf("failed to write to tun: %v", err)
+		return fmt.Errorf("failed to write to TUN: %v", err)
 	}
 	return nil
 }
