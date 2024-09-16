@@ -2,7 +2,6 @@ package network
 
 import (
 	"encoding/binary"
-	"etha-tunnel/network/packages"
 	"etha-tunnel/network/utils"
 	"fmt"
 	"io"
@@ -10,6 +9,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 )
 
@@ -78,8 +78,21 @@ func Serve(tunFile *os.File, listenPort string) error {
 		}
 		log.Printf("Client connected: %s", conn.RemoteAddr())
 		clients.Store(conn.RemoteAddr(), conn)
-		go handleClient(conn, tunFile, &clients)
+		go registerClient(conn, tunFile, &clients)
 	}
+}
+
+func registerClient(conn net.Conn, tunFile *os.File, clients *sync.Map) {
+	buf := make([]byte, 120)
+	n, err := conn.Read(buf)
+	if err != nil {
+		log.Printf("Failed to read from client: %v", err)
+		return
+	}
+
+	localIP := strings.Split(string(buf[:n]), "/")[0]
+	log.Printf("Client %s has local VPN IP: %s", conn.RemoteAddr(), localIP)
+	handleClient(conn, tunFile, clients)
 }
 
 func handleClient(conn net.Conn, tunFile *os.File, clients *sync.Map) {
