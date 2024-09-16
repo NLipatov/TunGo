@@ -3,11 +3,11 @@ package main
 import (
 	"encoding/binary"
 	"etha-tunnel/network"
+	"etha-tunnel/network/utils"
 	"fmt"
 	"io"
 	"log"
 	"net"
-	"os/exec"
 )
 
 const (
@@ -82,24 +82,22 @@ func main() {
 }
 
 func configureClient() error {
-	_ = network.DeleteInterface(clientIfName)
+	_, _ = utils.DelTun(clientIfName)
 	name, err := network.UpNewTun(clientIfName)
 	if err != nil {
 		return fmt.Errorf("failed to create interface %v: %v", clientIfName, err)
 	}
 	fmt.Printf("Created TUN interface: %v\n", name)
 
-	assignIP := exec.Command("ip", "addr", "add", clientTunIP, "dev", clientIfName)
-	output, assignIPErr := assignIP.CombinedOutput()
-	if assignIPErr != nil {
-		return fmt.Errorf("failed to assign IP to TUN %v: %v, output: %s", clientIfName, assignIPErr, output)
+	_, err = utils.AssignTunIP(clientIfName, clientTunIP)
+	if err != nil {
+		return err
 	}
 	fmt.Printf("Assigned IP %s to interface %s\n", clientTunIP, clientIfName)
 
-	setAsDefaultGateway := exec.Command("ip", "route", "add", "default", "dev", clientIfName)
-	output, setAsDefaultGatewayErr := setAsDefaultGateway.CombinedOutput()
-	if setAsDefaultGatewayErr != nil {
-		return fmt.Errorf("failed to set TUN as default gateway %v: %v, output: %s", clientIfName, setAsDefaultGatewayErr, output)
+	_, err = utils.SetDefaultIf(clientIfName)
+	if err != nil {
+		return err
 	}
 	fmt.Printf("Set %s as default gateway\n", clientIfName)
 

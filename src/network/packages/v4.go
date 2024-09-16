@@ -1,4 +1,4 @@
-package IPParsing
+package packages
 
 import (
 	"encoding/binary"

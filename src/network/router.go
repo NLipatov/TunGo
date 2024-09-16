@@ -2,19 +2,19 @@ package network
 
 import (
 	"encoding/binary"
-	"etha-tunnel/network/IPParsing"
+	"etha-tunnel/network/packages"
+	"etha-tunnel/network/utils"
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"os"
 	"os/exec"
-	"strings"
 	"sync"
 )
 
 func Serve(tunFile *os.File, listenPort string) error {
-	externalIfName, err := getDefaultInterface()
+	externalIfName, err := utils.GetDefaultIf()
 	if err != nil {
 		return err
 	}
@@ -121,7 +121,7 @@ func handleClient(conn net.Conn, tunFile *os.File, clients *sync.Map) {
 	}
 }
 
-func forwardPacket(ipHeader *IPParsing.IPv4Header, packet []byte, tunFile *os.File) error {
+func forwardPacket(ipHeader *packages.IPv4Header, packet []byte, tunFile *os.File) error {
 	destAddr := ipHeader.DestinationIP.String()
 	payloadStart := int(ipHeader.IHL) * 4
 	payload := packet[payloadStart:]
@@ -174,7 +174,7 @@ func forwardPacket(ipHeader *IPParsing.IPv4Header, packet []byte, tunFile *os.Fi
 
 	// Recompute checksum
 	binary.BigEndian.PutUint16(respPacket[10:12], 0) // Reset checksum field
-	checksum := IPParsing.Checksum(respPacket[:int(ipHeader.IHL)*4])
+	checksum := packages.Checksum(respPacket[:int(ipHeader.IHL)*4])
 	binary.BigEndian.PutUint16(respPacket[10:12], checksum)
 
 	// Write response back to TUN interface
@@ -246,24 +246,6 @@ func clearForwarding(tunFile *os.File, extIface string) error {
 		return fmt.Errorf("Failed to remove forwarding rule for %s -> %s: %v, output: %s", tunName, extIface, err, output)
 	}
 	return nil
-}
-
-func getDefaultInterface() (string, error) {
-	out, err := exec.Command("ip", "route").Output()
-	if err != nil {
-		return "", err
-	}
-
-	lines := strings.Split(string(out), "\n")
-	for _, line := range lines {
-		if strings.HasPrefix(line, "default") {
-			fields := strings.Fields(line)
-			if len(fields) >= 5 {
-				return fields[4], nil
-			}
-		}
-	}
-	return "", fmt.Errorf("Failed to get default interface")
 }
 
 func getTunInterfaceName(tunFile *os.File) string {

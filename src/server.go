@@ -2,9 +2,9 @@ package main
 
 import (
 	"etha-tunnel/network"
+	"etha-tunnel/network/utils"
 	"fmt"
 	"log"
-	"os/exec"
 )
 
 const (
@@ -28,7 +28,7 @@ func main() {
 }
 
 func configureServer() error {
-	_ = network.DeleteInterface(serverIfName)
+	_, _ = utils.DelTun(serverIfName)
 
 	name, err := network.UpNewTun(serverIfName)
 	if err != nil {
@@ -36,10 +36,9 @@ func configureServer() error {
 	}
 	fmt.Printf("Created TUN interface: %v\n", name)
 
-	assignIP := exec.Command("ip", "addr", "add", tunIP, "dev", serverIfName)
-	output, assignIPErr := assignIP.CombinedOutput()
-	if assignIPErr != nil {
-		log.Fatalf("Failed to assign IP to TUN %v: %v, output: %s", serverIfName, assignIPErr, output)
+	_, err = utils.AssignTunIP(serverIfName, tunIP)
+	if err != nil {
+		return err
 	}
 	fmt.Printf("Assigned IP %s to interface %s\n", tunIP, serverIfName)
 

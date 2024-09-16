@@ -1,6 +1,7 @@
 package network
 
 import (
+	"etha-tunnel/network/utils"
 	"fmt"
 	"golang.org/x/sys/unix"
 	"os"
@@ -27,28 +28,17 @@ func UpNewTun(ifName string) (string, error) {
 		return "", err
 	}
 
-	createTun := exec.Command("ip", "tuntap", "add", "dev", ifName, "mode", "tun")
-	createTunOutput, err := createTun.CombinedOutput()
+	_, err = utils.AddTun(ifName)
 	if err != nil {
-		return "", fmt.Errorf("failed to create TUN %v: %v, output: %s", ifName, err, createTunOutput)
+		return "", err
 	}
 
-	startTun := exec.Command("ip", "link", "set", "dev", ifName, "up")
-	startTunOutput, err := startTun.CombinedOutput()
+	_, err = utils.SetTunUp(ifName)
 	if err != nil {
-		return "", fmt.Errorf("failed to start TUN %v: %v, output: %s", ifName, err, startTunOutput)
+		return "", err
 	}
 
 	return ifName, nil
-}
-
-func DeleteInterface(ifName string) error {
-	cmd := exec.Command("ip", "link", "delete", ifName)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed to delete interface: %v, output: %s", err, output)
-	}
-	return nil
 }
 
 func OpenTunByName(ifname string) (*os.File, error) {
