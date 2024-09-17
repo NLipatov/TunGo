@@ -37,16 +37,10 @@ func main() {
 	defer conn.Close()
 	log.Printf("Connected to server at %s", serverAddr)
 
-	rm, err := (&handshake.ClientHello{}).Write(4, strings.Split(clientTunIP, "/")[0])
+	err = register(conn)
 	if err != nil {
-		log.Fatalf("failed to serialize registration message")
+		log.Fatalf("registration failed: %s", err)
 	}
-
-	_, err = conn.Write(*rm)
-	if err != nil {
-		log.Fatalf("Failed to notice server on local address: %v", err)
-	}
-	log.Printf("registered at %v", clientTunIP)
 
 	go func() {
 		buf := make([]byte, 65535)
@@ -92,6 +86,29 @@ func main() {
 			return
 		}
 	}
+}
+
+func register(conn net.Conn) error {
+	rm, err := (&handshake.ClientHello{}).Write(4, strings.Split(clientTunIP, "/")[0])
+	if err != nil {
+		return fmt.Errorf("failed to serialize registration message")
+	}
+
+	_, err = conn.Write(*rm)
+	if err != nil {
+		return fmt.Errorf("failed to notice server on local address: %v", err)
+	}
+
+	//Mocked server hello
+	sHBuf := make([]byte, 1)
+	_, err = conn.Read(sHBuf)
+	if err != nil {
+		return fmt.Errorf("failed to read server-hello message")
+	}
+
+	log.Printf("registered at %v", clientTunIP)
+
+	return nil
 }
 
 func configureClient() error {
