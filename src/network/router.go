@@ -33,7 +33,6 @@ func Serve(tunFile *os.File, listenPort string) error {
 	defer clearForwarding(tunFile, externalIfName)
 
 	// Map to keep track of connected clients
-	var clients sync.Map
 	var localIpToConn sync.Map
 
 	// Start a goroutine to read from TUN interface and send to clients
@@ -81,13 +80,11 @@ func Serve(tunFile *os.File, listenPort string) error {
 			log.Printf("failed to accept connection: %v", err)
 			continue
 		}
-		log.Printf("client connected: %s", conn.RemoteAddr())
-		clients.Store(conn.RemoteAddr(), conn)
-		go registerClient(conn, tunFile, &clients, &localIpToConn)
+		go registerClient(conn, tunFile, &localIpToConn)
 	}
 }
 
-func registerClient(conn net.Conn, tunFile *os.File, clients *sync.Map, localIpToConn *sync.Map) {
+func registerClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map) {
 	buf := make([]byte, 41) // 39 + 2, where 39 is max ipv6 ip length and 2 length of headers (ip v, ip length)
 	_, err := conn.Read(buf)
 	if err != nil {
@@ -107,12 +104,12 @@ func registerClient(conn net.Conn, tunFile *os.File, clients *sync.Map, localIpT
 	localIpToConn.Store(rm.IpAddress, conn)
 
 	log.Printf("%s registered as %s", conn.RemoteAddr(), rm.IpAddress)
-	handleClient(conn, tunFile, clients)
+	handleClient(conn, tunFile, localIpToConn, rm)
 }
 
-func handleClient(conn net.Conn, tunFile *os.File, clients *sync.Map) {
+func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, hello *handshake.ClientHello) {
 	defer func() {
-		clients.Delete(conn.RemoteAddr())
+		localIpToConn.Delete(hello.IpVersion)
 		conn.Close()
 		log.Printf("client disconnected: %s", conn.RemoteAddr())
 	}()
