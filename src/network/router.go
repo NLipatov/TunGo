@@ -3,6 +3,7 @@ package network
 import (
 	"encoding/binary"
 	"etha-tunnel/handshake"
+	"etha-tunnel/network/packages"
 	"etha-tunnel/network/utils"
 	"fmt"
 	"io"
@@ -33,6 +34,7 @@ func Serve(tunFile *os.File, listenPort string) error {
 
 	// Map to keep track of connected clients
 	var clients sync.Map
+	var localIpToConn sync.Map
 
 	// Start a goroutine to read from TUN interface and send to clients
 	go func() {
@@ -44,21 +46,24 @@ func Serve(tunFile *os.File, listenPort string) error {
 				continue
 			}
 			packet := buf[:n]
-
-			// Send packet to all connected clients
-			clients.Range(func(key, value interface{}) bool {
-				conn := value.(net.Conn)
-				// Send packet length
+			header, err := packages.ParseIPv4Header(packet)
+			if err != nil {
+				log.Printf("failed to parse a IPv4 header")
+				continue
+			}
+			destinationIP := header.DestinationIP.String()
+			v, ok := localIpToConn.Load(destinationIP)
+			if ok {
+				conn := v.(net.Conn)
 				length := uint32(len(packet))
 				lengthBuf := make([]byte, 4)
 				binary.BigEndian.PutUint32(lengthBuf, length)
 				_, err := conn.Write(append(lengthBuf, packet...))
 				if err != nil {
 					log.Printf("failed to send packet to client: %v", err)
-					clients.Delete(key)
+					localIpToConn.Delete(header.DestinationIP)
 				}
-				return true
-			})
+			}
 		}
 	}()
 
@@ -78,11 +83,11 @@ func Serve(tunFile *os.File, listenPort string) error {
 		}
 		log.Printf("client connected: %s", conn.RemoteAddr())
 		clients.Store(conn.RemoteAddr(), conn)
-		go registerClient(conn, tunFile, &clients)
+		go registerClient(conn, tunFile, &clients, &localIpToConn)
 	}
 }
 
-func registerClient(conn net.Conn, tunFile *os.File, clients *sync.Map) {
+func registerClient(conn net.Conn, tunFile *os.File, clients *sync.Map, localIpToConn *sync.Map) {
 	buf := make([]byte, 41) // 39 + 2, where 39 is max ipv6 ip length and 2 length of headers (ip v, ip length)
 	_, err := conn.Read(buf)
 	if err != nil {
@@ -96,7 +101,12 @@ func registerClient(conn net.Conn, tunFile *os.File, clients *sync.Map) {
 		return
 	}
 
-	log.Printf("Client %s has local VPN IP: %s", conn.RemoteAddr(), rm.IpAddress)
+	//Mocked server hello
+	_, err = conn.Write(make([]byte, 1))
+
+	localIpToConn.Store(rm.IpAddress, conn)
+
+	log.Printf("%s registered as %s", conn.RemoteAddr(), rm.IpAddress)
 	handleClient(conn, tunFile, clients)
 }
 
