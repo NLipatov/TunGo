@@ -21,13 +21,13 @@ func Serve(tunFile *os.File, listenPort string) error {
 
 	err = enableNAT(externalIfName)
 	if err != nil {
-		return fmt.Errorf("Failed enabling NAT: %v", err)
+		return fmt.Errorf("failed enabling NAT: %v", err)
 	}
 	defer disableNAT(externalIfName)
 
 	err = setupForwarding(tunFile, externalIfName)
 	if err != nil {
-		return fmt.Errorf("Failed to set up forwarding: %v", err)
+		return fmt.Errorf("failed to set up forwarding: %v", err)
 	}
 	defer clearForwarding(tunFile, externalIfName)
 
@@ -40,7 +40,7 @@ func Serve(tunFile *os.File, listenPort string) error {
 		for {
 			n, err := tunFile.Read(buf)
 			if err != nil {
-				log.Printf("Failed to read from TUN: %v", err)
+				log.Printf("failed to read from TUN: %v", err)
 				continue
 			}
 			packet := buf[:n]
@@ -54,7 +54,7 @@ func Serve(tunFile *os.File, listenPort string) error {
 				binary.BigEndian.PutUint32(lengthBuf, length)
 				_, err := conn.Write(append(lengthBuf, packet...))
 				if err != nil {
-					log.Printf("Failed to send packet to client: %v", err)
+					log.Printf("failed to send packet to client: %v", err)
 					clients.Delete(key)
 				}
 				return true
@@ -65,18 +65,18 @@ func Serve(tunFile *os.File, listenPort string) error {
 	// Listen for incoming client connections
 	listener, err := net.Listen("tcp", listenPort)
 	if err != nil {
-		return fmt.Errorf("Failed to listen on port %s: %v", listenPort, err)
+		return fmt.Errorf("failed to listen on port %s: %v", listenPort, err)
 	}
 	defer listener.Close()
-	log.Printf("Server listening on port %s", listenPort)
+	log.Printf("server listening on port %s", listenPort)
 
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			log.Printf("Failed to accept connection: %v", err)
+			log.Printf("failed to accept connection: %v", err)
 			continue
 		}
-		log.Printf("Client connected: %s", conn.RemoteAddr())
+		log.Printf("client connected: %s", conn.RemoteAddr())
 		clients.Store(conn.RemoteAddr(), conn)
 		go registerClient(conn, tunFile, &clients)
 	}
@@ -92,7 +92,7 @@ func registerClient(conn net.Conn, tunFile *os.File, clients *sync.Map) {
 
 	rm, err := (&handshake.ClientHello{}).Read(buf)
 	if err != nil {
-		fmt.Errorf("failed to deserialize registration message")
+		_ = fmt.Errorf("failed to deserialize registration message")
 		return
 	}
 
@@ -104,7 +104,7 @@ func handleClient(conn net.Conn, tunFile *os.File, clients *sync.Map) {
 	defer func() {
 		clients.Delete(conn.RemoteAddr())
 		conn.Close()
-		log.Printf("Client disconnected: %s", conn.RemoteAddr())
+		log.Printf("client disconnected: %s", conn.RemoteAddr())
 	}()
 
 	buf := make([]byte, 65535)
