@@ -2,19 +2,20 @@ package main
 
 import (
 	"encoding/binary"
+	"etha-tunnel/handshake"
 	"etha-tunnel/network"
 	"etha-tunnel/network/utils"
 	"fmt"
 	"io"
 	"log"
 	"net"
+	"strings"
 )
 
 const (
-	clientIfName         = "ethatun0"
-	clientRegistrationIP = "10.0.0.2"             //ToDo: move to client configuration file
-	clientTunIP          = "10.0.0.2/24"          //ToDo: move to client configuration file
-	serverAddr           = "192.168.122.194:8080" //ToDo: move to client configuration file
+	clientIfName = "ethatun0"
+	clientTunIP  = "10.0.0.2/24"          //ToDo: move to client configuration file
+	serverAddr   = "192.168.122.194:8080" //ToDo: move to client configuration file
 )
 
 func main() {
@@ -36,11 +37,16 @@ func main() {
 	defer conn.Close()
 	log.Printf("Connected to server at %s", serverAddr)
 
-	_, err = conn.Write([]byte(clientRegistrationIP))
+	rm, err := (&handshake.ClientHello{}).Write(4, strings.Split(clientTunIP, "/")[0])
+	if err != nil {
+		log.Fatalf("failed to serialize registration message")
+	}
+
+	_, err = conn.Write(*rm)
 	if err != nil {
 		log.Fatalf("Failed to notice server on local address: %v", err)
 	}
-	log.Printf("registered at %v", clientRegistrationIP)
+	log.Printf("registered at %v", clientTunIP)
 
 	go func() {
 		buf := make([]byte, 65535)
