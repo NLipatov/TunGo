@@ -2,6 +2,7 @@ package network
 
 import (
 	"encoding/binary"
+	"etha-tunnel/handshake"
 	"etha-tunnel/network/utils"
 	"fmt"
 	"io"
@@ -9,7 +10,6 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"strings"
 	"sync"
 )
 
@@ -83,15 +83,20 @@ func Serve(tunFile *os.File, listenPort string) error {
 }
 
 func registerClient(conn net.Conn, tunFile *os.File, clients *sync.Map) {
-	buf := make([]byte, 120)
-	n, err := conn.Read(buf)
+	buf := make([]byte, 41) // 39 + 2, where 39 is max ipv6 ip length and 2 length of headers (ip v, ip length)
+	_, err := conn.Read(buf)
 	if err != nil {
 		log.Printf("Failed to read from client: %v", err)
 		return
 	}
 
-	localIP := strings.Split(string(buf[:n]), "/")[0]
-	log.Printf("Client %s has local VPN IP: %s", conn.RemoteAddr(), localIP)
+	rm, err := (&handshake.ClientHello{}).Read(buf)
+	if err != nil {
+		fmt.Errorf("failed to deserialize registration message")
+		return
+	}
+
+	log.Printf("Client %s has local VPN IP: %s", conn.RemoteAddr(), rm.IpAddress)
 	handleClient(conn, tunFile, clients)
 }
 
