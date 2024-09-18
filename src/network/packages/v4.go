@@ -55,17 +55,3 @@ func ParseIPv4Header(packet []byte) (*IPv4Header, error) {
 		DestinationIP:  net.IPv4(packet[16], packet[17], packet[18], packet[19]),
 	}, nil
 }
-
-func Checksum(data []byte) uint16 {
-	var sum uint32
-	for i := 0; i < len(data)-1; i += 2 {
-		sum += uint32(binary.BigEndian.Uint16(data[i : i+2]))
-	}
-	if len(data)%2 == 1 {
-		sum += uint32(data[len(data)-1]) << 8
-	}
-	for (sum >> 16) > 0 {
-		sum = (sum & 0xFFFF) + (sum >> 16)
-	}
-	return uint16(^sum)
-}
