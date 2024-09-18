@@ -10,7 +10,7 @@ import (
 
 type IPv4Header struct {
 	Version        uint8
-	IHL            uint8 // Internet Header Length in 32-bit words (1 word = 4 bytes)
+	IHL            uint8 // Internet IPHeader Length in 32-bit words (1 word = 4 bytes)
 	DSCP           uint8 // Differentiated Services Code Point (QoS field)
 	TotalLength    uint16
 	Identification uint16 // Unique identifier for the packet group (for fragmentation)
@@ -21,6 +21,10 @@ type IPv4Header struct {
 	HeaderChecksum uint16
 	SourceIP       net.IP
 	DestinationIP  net.IP
+}
+
+func (h *IPv4Header) GetDestinationIP() net.IP {
+	return h.DestinationIP
 }
 
 func ParseIPv4Header(packet []byte) (*IPv4Header, error) {
