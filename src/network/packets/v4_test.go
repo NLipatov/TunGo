@@ -1,4 +1,4 @@
-package packages
+package packets
 
 import (
 	"net"
@@ -81,6 +81,6 @@ func TestParseIPv4Header_NotIPv4(t *testing.T) {
 
 	_, err := ParseIPv4Header(packet)
 	if err == nil {
-		t.Errorf("expected error for non-packages packet, but got none")
+		t.Errorf("expected error for non-packets packet, but got none")
 	}
 }

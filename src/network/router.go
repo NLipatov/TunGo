@@ -3,7 +3,7 @@ package network
 import (
 	"encoding/binary"
 	"etha-tunnel/handshake"
-	"etha-tunnel/network/packages"
+	"etha-tunnel/network/packets"
 	"etha-tunnel/network/utils"
 	"fmt"
 	"io"
@@ -50,7 +50,7 @@ func Serve(tunFile *os.File, listenPort string) error {
 				continue
 			}
 
-			header, err := packages.Parse(packet)
+			header, err := packets.Parse(packet)
 			if err != nil {
 				log.Printf("failed to parse a IPv4 header")
 				continue
