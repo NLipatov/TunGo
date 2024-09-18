@@ -45,12 +45,17 @@ func Serve(tunFile *os.File, listenPort string) error {
 				continue
 			}
 			packet := buf[:n]
-			header, err := packages.ParseIPv4Header(packet)
+			if len(packet) < 1 {
+				log.Printf("invalid IP packet")
+				continue
+			}
+
+			header, err := packages.Parse(packet)
 			if err != nil {
 				log.Printf("failed to parse a IPv4 header")
 				continue
 			}
-			destinationIP := header.DestinationIP.String()
+			destinationIP := header.GetDestinationIP().String()
 			v, ok := localIpMap.Load(destinationIP)
 			if ok {
 				conn := v.(net.Conn)
@@ -60,7 +65,7 @@ func Serve(tunFile *os.File, listenPort string) error {
 				_, err := conn.Write(append(lengthBuf, packet...))
 				if err != nil {
 					log.Printf("failed to send packet to client: %v", err)
-					localIpMap.Delete(header.DestinationIP)
+					localIpMap.Delete(destinationIP)
 				}
 			}
 		}
