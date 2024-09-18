@@ -33,7 +33,7 @@ func Serve(tunFile *os.File, listenPort string) error {
 	defer clearForwarding(tunFile, externalIfName)
 
 	// Map to keep track of connected clients
-	var localIpToConn sync.Map
+	var localIpMap sync.Map
 
 	// Start a goroutine to read from TUN interface and send to clients
 	go func() {
@@ -51,7 +51,7 @@ func Serve(tunFile *os.File, listenPort string) error {
 				continue
 			}
 			destinationIP := header.DestinationIP.String()
-			v, ok := localIpToConn.Load(destinationIP)
+			v, ok := localIpMap.Load(destinationIP)
 			if ok {
 				conn := v.(net.Conn)
 				length := uint32(len(packet))
@@ -60,7 +60,7 @@ func Serve(tunFile *os.File, listenPort string) error {
 				_, err := conn.Write(append(lengthBuf, packet...))
 				if err != nil {
 					log.Printf("failed to send packet to client: %v", err)
-					localIpToConn.Delete(header.DestinationIP)
+					localIpMap.Delete(header.DestinationIP)
 				}
 			}
 		}
@@ -80,7 +80,7 @@ func Serve(tunFile *os.File, listenPort string) error {
 			log.Printf("failed to accept connection: %v", err)
 			continue
 		}
-		go registerClient(conn, tunFile, &localIpToConn)
+		go registerClient(conn, tunFile, &localIpMap)
 	}
 }
 
