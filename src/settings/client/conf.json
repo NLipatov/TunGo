@@ -1,0 +1,5 @@
+{
+  "IfName": "ethatun0",
+  "IfIP": "10.0.0.2/24",
+  "ServerTCPAddress": "192.168.122.194:8080"
+}

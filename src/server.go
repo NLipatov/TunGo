@@ -13,7 +13,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to read configuration: %v", err)
 	}
-	fmt.Print(conf.TCPPort)
 
 	err = configureServer(conf)
 	tunFile, err := network.OpenTunByName(conf.IfName)

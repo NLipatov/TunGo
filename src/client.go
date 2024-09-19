@@ -5,6 +5,7 @@ import (
 	"etha-tunnel/handshake"
 	"etha-tunnel/network"
 	"etha-tunnel/network/utils"
+	"etha-tunnel/settings/client"
 	"fmt"
 	"io"
 	"log"
@@ -12,32 +13,30 @@ import (
 	"strings"
 )
 
-const (
-	clientIfName = "ethatun0"
-	clientTunIP  = "10.0.0.2/24"          //ToDo: move to client configuration file
-	serverAddr   = "192.168.122.194:8080" //ToDo: move to client configuration file
-)
-
 func main() {
-	clientConfigurationErr := configureClient()
+	conf, err := (&client.Conf{}).Read()
+	if err != nil {
+		log.Fatalf("failed to read configuration: %v", err)
+	}
+	clientConfigurationErr := configureClient(conf)
 	if clientConfigurationErr != nil {
 		log.Fatalf("failed to configure client: %v", clientConfigurationErr)
 	}
 
-	tunFile, err := network.OpenTunByName(clientIfName)
+	tunFile, err := network.OpenTunByName(conf.IfName)
 	if err != nil {
 		log.Fatalf("Failed to open TUN interface: %v", err)
 	}
 	defer tunFile.Close()
 
-	conn, err := net.Dial("tcp", serverAddr)
+	conn, err := net.Dial("tcp", conf.ServerTCPAddress)
 	if err != nil {
 		log.Fatalf("Failed to connect to server: %v", err)
 	}
 	defer conn.Close()
-	log.Printf("Connected to server at %s", serverAddr)
+	log.Printf("Connected to server at %s", conf.ServerTCPAddress)
 
-	err = register(conn)
+	err = register(conn, conf)
 	if err != nil {
 		log.Fatalf("registration failed: %s", err)
 	}
@@ -88,8 +87,8 @@ func main() {
 	}
 }
 
-func register(conn net.Conn) error {
-	rm, err := (&handshake.ClientHello{}).Write(4, strings.Split(clientTunIP, "/")[0])
+func register(conn net.Conn, conf *client.Conf) error {
+	rm, err := (&handshake.ClientHello{}).Write(4, strings.Split(conf.IfIP, "/")[0])
 	if err != nil {
 		return fmt.Errorf("failed to serialize registration message")
 	}
@@ -106,30 +105,30 @@ func register(conn net.Conn) error {
 		return fmt.Errorf("failed to read server-hello message")
 	}
 
-	log.Printf("registered at %v", clientTunIP)
+	log.Printf("registered at %v", conf.IfIP)
 
 	return nil
 }
 
-func configureClient() error {
-	_, _ = utils.DelTun(clientIfName)
-	name, err := network.UpNewTun(clientIfName)
+func configureClient(conf *client.Conf) error {
+	_, _ = utils.DelTun(conf.IfName)
+	name, err := network.UpNewTun(conf.IfName)
 	if err != nil {
-		return fmt.Errorf("failed to create interface %v: %v", clientIfName, err)
+		return fmt.Errorf("failed to create interface %v: %v", conf.IfName, err)
 	}
 	fmt.Printf("Created TUN interface: %v\n", name)
 
-	_, err = utils.AssignTunIP(clientIfName, clientTunIP)
+	_, err = utils.AssignTunIP(conf.IfName, conf.IfIP)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Assigned IP %s to interface %s\n", clientTunIP, clientIfName)
+	fmt.Printf("Assigned IP %s to interface %s\n", conf.IfIP, conf.IfName)
 
-	_, err = utils.SetDefaultIf(clientIfName)
+	_, err = utils.SetDefaultIf(conf.IfName)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Set %s as default gateway\n", clientIfName)
+	fmt.Printf("Set %s as default gateway\n", conf.IfName)
 
 	return nil
 }
