@@ -107,16 +107,17 @@ func registerClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map) {
 	}
 
 	//Server hello
-	privateKey, _, err := curve25519.GenerateCurve25519KeyPair()
+	privateKey, publicKey, err := curve25519.GenerateCurve25519KeyPair()
 	if err != nil {
 		log.Fatalf("failed to generate curve25519 keypair: %s", err)
 	}
 
-	clientCC20Key, err := chacha20.GenerateKey()
+	cc20Key, err := chacha20.GenerateKey()
+	fmt.Printf("using cc20 key: %s", cc20Key)
 	if err != nil {
 		log.Fatalf("failed to generate ChaCha20 key: %s", err)
 	}
-	sH, err := (&server.ServerHello{}).Write(clientCC20Key, cH.PublicKey, privateKey)
+	sH, err := (&server.ServerHello{}).Write(cc20Key, cH.PublicKey, privateKey, publicKey)
 	if err != nil {
 		log.Fatalf("failed to generate server hello: %s", err)
 	}
