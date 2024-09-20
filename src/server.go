@@ -3,13 +3,13 @@ package main
 import (
 	"etha-tunnel/network"
 	"etha-tunnel/network/utils"
-	"etha-tunnel/settings/server"
+	"etha-tunnel/settings/serverConfiguration"
 	"fmt"
 	"log"
 )
 
 func main() {
-	conf, err := (&server.Conf{}).Read()
+	conf, err := (&serverConfiguration.Conf{}).Read()
 	if err != nil {
 		log.Fatalf("failed to read configuration: %v", err)
 	}
@@ -27,7 +27,7 @@ func main() {
 	}
 }
 
-func configureServer(conf *server.Conf) error {
+func configureServer(conf *serverConfiguration.Conf) error {
 	_, _ = utils.DelTun(conf.IfName)
 
 	name, err := network.UpNewTun(conf.IfName)

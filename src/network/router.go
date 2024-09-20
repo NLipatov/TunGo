@@ -2,7 +2,10 @@ package network
 
 import (
 	"encoding/binary"
-	"etha-tunnel/handshake"
+	"etha-tunnel/crypto/asymmetric/curve25519"
+	"etha-tunnel/crypto/symmetric/chacha20"
+	"etha-tunnel/handshake/client"
+	"etha-tunnel/handshake/server"
 	"etha-tunnel/network/packets"
 	"etha-tunnel/network/utils"
 	"fmt"
@@ -97,22 +100,35 @@ func registerClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map) {
 		return
 	}
 
-	rm, err := (&handshake.ClientHello{}).Read(buf)
+	cH, err := (&client.ClientHello{}).Read(buf)
 	if err != nil {
 		_ = fmt.Errorf("failed to deserialize registration message")
 		return
 	}
 
-	//Mocked server hello
-	_, err = conn.Write(make([]byte, 1))
+	//Server hello
+	privateKey, _, err := curve25519.GenerateCurve25519KeyPair()
+	if err != nil {
+		log.Fatalf("failed to generate curve25519 keypair: %s", err)
+	}
 
-	localIpToConn.Store(rm.IpAddress, conn)
+	clientCC20Key, err := chacha20.GenerateKey()
+	if err != nil {
+		log.Fatalf("failed to generate ChaCha20 key: %s", err)
+	}
+	sH, err := (&server.ServerHello{}).Write(clientCC20Key, cH.PublicKey, privateKey)
+	if err != nil {
+		log.Fatalf("failed to generate server hello: %s", err)
+	}
+	_, err = conn.Write(sH)
 
-	log.Printf("%s registered as %s", conn.RemoteAddr(), rm.IpAddress)
-	handleClient(conn, tunFile, localIpToConn, rm)
+	localIpToConn.Store(cH.IpAddress, conn)
+
+	log.Printf("%s registered as %s", conn.RemoteAddr(), cH.IpAddress)
+	handleClient(conn, tunFile, localIpToConn, cH)
 }
 
-func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, hello *handshake.ClientHello) {
+func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, hello *client.ClientHello) {
 	defer func() {
 		localIpToConn.Delete(hello.IpVersion)
 		conn.Close()

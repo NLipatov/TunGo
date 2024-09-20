@@ -1,4 +1,4 @@
-package handshake
+package client
 
 import (
 	"etha-tunnel/crypto/asymmetric/curve25519"

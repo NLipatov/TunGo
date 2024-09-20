@@ -2,10 +2,10 @@ package main
 
 import (
 	"encoding/binary"
-	"etha-tunnel/handshake"
+	"etha-tunnel/handshake/client"
 	"etha-tunnel/network"
 	"etha-tunnel/network/utils"
-	"etha-tunnel/settings/client"
+	"etha-tunnel/settings/clientConfiguration"
 	"fmt"
 	"io"
 	"log"
@@ -14,7 +14,7 @@ import (
 )
 
 func main() {
-	conf, err := (&client.Conf{}).Read()
+	conf, err := (&clientConfiguration.Conf{}).Read()
 	if err != nil {
 		log.Fatalf("failed to read configuration: %v", err)
 	}
@@ -87,22 +87,22 @@ func main() {
 	}
 }
 
-func register(conn net.Conn, conf *client.Conf) error {
-	rm, err := (&handshake.ClientHello{}).Write(4, strings.Split(conf.IfIP, "/")[0])
+func register(conn net.Conn, conf *clientConfiguration.Conf) error {
+	cH, err := (&client.ClientHello{}).Write(4, strings.Split(conf.IfIP, "/")[0])
 	if err != nil {
 		return fmt.Errorf("failed to serialize registration message")
 	}
 
-	_, err = conn.Write(*rm)
+	_, err = conn.Write(cH)
 	if err != nil {
 		return fmt.Errorf("failed to notice server on local address: %v", err)
 	}
 
-	//Mocked server hello
-	sHBuf := make([]byte, 1)
-	_, err = conn.Read(sHBuf)
+	//Mocked serverConfiguration hello
+	sH := make([]byte, 32)
+	_, err = conn.Read(sH)
 	if err != nil {
-		return fmt.Errorf("failed to read server-hello message")
+		return fmt.Errorf("failed to read serverConfiguration-hello message")
 	}
 
 	log.Printf("registered at %v", conf.IfIP)
@@ -110,7 +110,7 @@ func register(conn net.Conn, conf *client.Conf) error {
 	return nil
 }
 
-func configureClient(conf *client.Conf) error {
+func configureClient(conf *clientConfiguration.Conf) error {
 	_, _ = utils.DelTun(conf.IfName)
 	name, err := network.UpNewTun(conf.IfName)
 	if err != nil {
