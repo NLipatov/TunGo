@@ -111,7 +111,7 @@ func register(conn net.Conn, conf *clientConfiguration.Conf) error {
 		return fmt.Errorf("failed to read serverConfiguration-hello message")
 	}
 
-	fmt.Printf("using cc20 key: %s", cc20)
+	fmt.Printf("using cc20 key: %s\n", cc20)
 
 	log.Printf("registered at %v", conf.IfIP)
 
