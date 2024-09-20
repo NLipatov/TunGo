@@ -51,8 +51,18 @@ func main() {
 			if err != nil {
 				log.Fatalf("Failed to read from TUN: %v", err)
 			}
+
 			binary.BigEndian.PutUint32(buf[:4], uint32(n))
-			_, err = conn.Write(buf[:4+n])
+
+			encryptedPacket, nonce, err := chacha20.Encrypt(buf[4:4+n], cc20key)
+			if err != nil {
+				log.Fatalf("failed to encrypt packet: %s", err)
+			}
+
+			length := buf[:4]
+			packet := append(length, nonce...)
+			packet = append(packet, encryptedPacket...)
+			_, err = conn.Write(packet)
 			if err != nil {
 				log.Fatalf("Failed to write to server: %v", err)
 			}

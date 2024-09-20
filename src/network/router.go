@@ -160,24 +160,38 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, cc20
 			}
 			return
 		}
-		length := binary.BigEndian.Uint32(buf[:4])
+		length := binary.BigEndian.Uint32(buf[:4]) + 16 //+16bytes for chacha20 auth tag
 		if length > 65535 {
 			log.Printf("Packet too large: %d", length)
 			return
 		}
 		// Read packet
-		_, err = io.ReadFull(conn, buf[:length])
+		_, err = io.ReadFull(conn, buf[:length+12]) // +12bytes for nonce
 		if err != nil {
 			log.Printf("Failed to read from client: %v", err)
 			return
 		}
-		packet := buf[:length]
 
 		// Write packet to TUN interface
-		err = WriteToTun(tunFile, packet)
-		if err != nil {
-			log.Printf("Failed to write to TUN: %v", err)
-			return
+		nonce := buf[:12]
+		encryptedPacket := buf[12 : 12+length]
+		key, KeyExist := cc20Keys.Load(hello.IpAddress)
+		if KeyExist {
+			cc20Key := key.([]byte)
+
+			decryptedPacket, err := chacha20.Decrypt(encryptedPacket, cc20Key, nonce)
+			if err != nil {
+				log.Fatalf("failed to decrypt packet: %s", err)
+				return
+			}
+
+			err = WriteToTun(tunFile, decryptedPacket)
+			if err != nil {
+				log.Printf("Failed to write to TUN: %v", err)
+				return
+			}
+		} else {
+			log.Printf("No key found for IP: %v", hello.IpAddress)
 		}
 	}
 }
