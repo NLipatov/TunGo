@@ -90,7 +90,7 @@ func Serve(tunFile *os.File, listenPort string) error {
 }
 
 func registerClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map) {
-	buf := make([]byte, 41) // 39 + 2, where 39 is max ipv6 ip length and 2 length of headers (ip v, ip length)
+	buf := make([]byte, 73) //1 (IpVersion) + 1 (IpAddressLength) + 39 (IPv6 address) + 32 (PublicKey) = 73 bytes max
 	_, err := conn.Read(buf)
 	if err != nil {
 		log.Printf("Failed to read from client: %v", err)
