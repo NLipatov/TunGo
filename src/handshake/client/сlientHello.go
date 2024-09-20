@@ -1,9 +1,7 @@
 package client
 
 import (
-	"etha-tunnel/crypto/asymmetric/curve25519"
 	"fmt"
-	"log"
 )
 
 type ClientHello struct {
@@ -33,7 +31,7 @@ func (m *ClientHello) Read(data []byte) (*ClientHello, error) {
 	return m, nil
 }
 
-func (m *ClientHello) Write(ipVersion uint8, ip string) ([]byte, error) {
+func (m *ClientHello) Write(ipVersion uint8, ip string, pubKey [32]byte) ([]byte, error) {
 	if ipVersion != 4 && ipVersion != 6 {
 		return nil, fmt.Errorf("invalid ip version")
 	}
@@ -51,12 +49,7 @@ func (m *ClientHello) Write(ipVersion uint8, ip string) ([]byte, error) {
 	arr[1] = uint8(len(ip))
 	copy(arr[2:], ip)
 
-	_, publicKey, err := curve25519.GenerateCurve25519KeyPair()
-	if err != nil {
-		log.Fatalf("could not generate public key: %s", err)
-	}
-
-	copy(arr[2+len(ip):], publicKey[:])
+	copy(arr[2+len(ip):], pubKey[:])
 
 	return arr, nil
 }
