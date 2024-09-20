@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/binary"
+	"etha-tunnel/crypto/asymmetric/curve25519"
 	"etha-tunnel/handshake/client"
 	"etha-tunnel/network"
 	"etha-tunnel/network/utils"
@@ -88,7 +89,11 @@ func main() {
 }
 
 func register(conn net.Conn, conf *clientConfiguration.Conf) error {
-	cH, err := (&client.ClientHello{}).Write(4, strings.Split(conf.IfIP, "/")[0])
+	privateKey, publicKey, err := curve25519.GenerateCurve25519KeyPair()
+	if err != nil {
+		log.Fatalf("could not generate public key: %s", err)
+	}
+	cH, err := (&client.ClientHello{}).Write(4, strings.Split(conf.IfIP, "/")[0], publicKey)
 	if err != nil {
 		return fmt.Errorf("failed to serialize registration message")
 	}
@@ -99,11 +104,14 @@ func register(conn net.Conn, conf *clientConfiguration.Conf) error {
 	}
 
 	//Mocked serverConfiguration hello
-	sH := make([]byte, 32)
+	sH := make([]byte, 64)
 	_, err = conn.Read(sH)
+	cc20, err := curve25519.Decrypt(sH[:32], privateKey[:], sH[32:])
 	if err != nil {
 		return fmt.Errorf("failed to read serverConfiguration-hello message")
 	}
+
+	fmt.Printf("using cc20 key: %s", cc20)
 
 	log.Printf("registered at %v", conf.IfIP)
 
