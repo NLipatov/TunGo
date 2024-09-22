@@ -113,7 +113,7 @@ func registerClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map) {
 	}
 
 	cc20Key, err := chacha20.GenerateKey()
-	fmt.Printf("using cc20 key: %s\n", cc20Key)
+	fmt.Printf("using cc20 key: %s", cc20Key)
 	if err != nil {
 		log.Fatalf("failed to generate ChaCha20 key: %s", err)
 	}
