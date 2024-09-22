@@ -75,13 +75,13 @@ func Serve(tunFile *os.File, listenPort string) error {
 					continue
 				}
 				session := sessionValue.(*handshake.Session)
-				aad := session.CreateAAD(true, session.MessageNumber)
+				aad := session.CreateAAD(true, session.S2CCounter)
 				encryptedPacket, err := session.Encrypt(packet, aad)
 				if err != nil {
 					log.Printf("failder to encrypt a package")
 					continue
 				}
-				atomic.AddUint64(&session.MessageNumber, 1)
+				atomic.AddUint64(&session.S2CCounter, 1)
 				///
 				length := uint32(len(encryptedPacket))
 				lengthBuf := make([]byte, 4)
@@ -200,7 +200,7 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 
 	buf := make([]byte, 65535)
 	for {
-		// Read packet length
+		// Read the length of the encrypted packet (4 bytes)
 		_, err := io.ReadFull(conn, buf[:4])
 		if err != nil {
 			if err != io.EOF {
@@ -208,22 +208,51 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 			}
 			return
 		}
+
+		// Extract the length
 		length := binary.BigEndian.Uint32(buf[:4])
 		if length > 65535 {
 			log.Printf("Packet too large: %d", length)
 			return
 		}
-		// Read packet
+
+		// Read the encrypted packet
 		_, err = io.ReadFull(conn, buf[:length])
 		if err != nil {
-			log.Printf("Failed to read from client: %v", err)
+			log.Printf("Failed to read encrypted packet from client: %v", err)
 			return
 		}
-		packet := buf[:length]
 
-		// Write packet to TUN interface
-		err = WriteToTun(tunFile, packet)
+		// Retrieve the session for this client
+		sessionValue, sessionExists := localIpToSession.Load(hello.IpAddress)
+		if !sessionExists {
+			log.Printf("Failed to load session for IP %s", hello.IpAddress)
+			continue
+		}
+
+		session := sessionValue.(*handshake.Session)
+
+		// Create AAD for decryption using C2SCounter
+		aad := session.CreateAAD(false, session.C2SCounter)
+
+		// Decrypt the data
+		packet, err := session.Decrypt(buf[:length], aad)
 		if err != nil {
+			log.Printf("Failed to decrypt packet: %v", err)
+			return
+		}
+
+		// Increment the C2SCounter after successful decryption
+		atomic.AddUint64(&session.C2SCounter, 1)
+
+		// Validate the packet (optional but recommended)
+		if _, err := packets.Parse(packet); err != nil {
+			log.Printf("Invalid IP packet structure: %v", err)
+			continue
+		}
+
+		// Write the decrypted packet to the TUN interface
+		if err := WriteToTun(tunFile, packet); err != nil {
 			log.Printf("Failed to write to TUN: %v", err)
 			return
 		}
