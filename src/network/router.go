@@ -1,11 +1,18 @@
 package network
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/binary"
 	"etha-tunnel/handshake"
 	"etha-tunnel/network/packets"
 	"etha-tunnel/network/utils"
 	"fmt"
+	"golang.org/x/crypto/chacha20poly1305"
+	"golang.org/x/crypto/curve25519"
+	"golang.org/x/crypto/hkdf"
 	"io"
 	"log"
 	"net"
@@ -34,6 +41,7 @@ func Serve(tunFile *os.File, listenPort string) error {
 
 	// Map to keep track of connected clients
 	var localIpMap sync.Map
+	var localIpPubKeyMap sync.Map
 
 	// Start a goroutine to read from TUN interface and send to clients
 	go func() {
@@ -85,31 +93,84 @@ func Serve(tunFile *os.File, listenPort string) error {
 			log.Printf("failed to accept connection: %v", err)
 			continue
 		}
-		go registerClient(conn, tunFile, &localIpMap)
+		go registerClient(conn, tunFile, &localIpMap, &localIpPubKeyMap)
 	}
 }
 
-func registerClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map) {
-	buf := make([]byte, 41) // 39 + 2, where 39 is max ipv6 ip length and 2 length of headers (ip v, ip length)
+func registerClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, localIpHelloMap *sync.Map) {
+	/*edPublic*/ _, edPrivate := "m+tjQmYAG8tYt8xSTry29Mrl9SInd9pvoIsSywzPzdU=", "ZuQO8SI3rxY/v1sJn9DtGQ2vRgz/DiPg545iFYmSWleb62NCZgAby1i3zFJOvLb0yuX1Iid32m+gixLLDM/N1Q=="
+
+	buf := make([]byte, 39+2+32+32+32) // 39(max ip) + 2(length headers) + 32 (ed25519 pub key) + 32 (curve pub key)
 	_, err := conn.Read(buf)
 	if err != nil {
 		log.Printf("Failed to read from client: %v", err)
 		return
 	}
 
-	rm, err := (&handshake.ClientHello{}).Read(buf)
+	clientHello, err := (&handshake.ClientHello{}).Read(buf)
 	if err != nil {
 		_ = fmt.Errorf("failed to deserialize registration message")
 		return
 	}
 
-	//Mocked server hello
-	_, err = conn.Write(make([]byte, 1))
+	localIpToConn.Store(clientHello.IpAddress, conn)
+	localIpHelloMap.Store(clientHello.IpAddress, clientHello)
 
-	localIpToConn.Store(rm.IpAddress, conn)
+	// Server hello
+	var curvePrivate [32]byte
+	_, _ = io.ReadFull(rand.Reader, curvePrivate[:])
+	curvePublic, _ := curve25519.X25519(curvePrivate[:], curve25519.Basepoint)
+	fmt.Print(curvePublic)
+	serverNonce := make([]byte, 32)
+	_, _ = io.ReadFull(rand.Reader, serverNonce)
+	serverDataToSign := append(append(curvePublic, serverNonce...), clientHello.ClientNonce...)
+	privateEd, err := base64.StdEncoding.DecodeString(edPrivate)
+	if err != nil {
+		log.Fatalf("failed to decode private ed key: %s", err)
+	}
+	serverSignature := ed25519.Sign(privateEd, serverDataToSign)
+	serverHello, err := (&handshake.ServerHello{}).Write(&serverSignature, &serverNonce, &curvePublic)
+	if err != nil {
+		log.Fatalf("failed to for server hello: %s", err)
+	}
 
-	log.Printf("%s registered as %s", conn.RemoteAddr(), rm.IpAddress)
-	handleClient(conn, tunFile, localIpToConn, rm)
+	//// serverHello
+	_, err = conn.Write(*serverHello)
+	clientSignatureBuf := make([]byte, 64)
+	_, err = conn.Read(clientSignatureBuf)
+	if err != nil {
+		log.Printf("Failed to read client signature: %v", err)
+		return
+	}
+	clientSignature, err := (&handshake.ClientSignature{}).Read(clientSignatureBuf)
+	if err != nil {
+		log.Fatalf("failed to read client signature: %s", err)
+	}
+
+	if !ed25519.Verify(clientHello.EdPublicKey, append(append(clientHello.CurvePublicKey, clientHello.ClientNonce...), serverNonce...), clientSignature.ClientSignature) {
+		log.Fatal("client failed signature check")
+	}
+
+	sharedSecret, _ := curve25519.X25519(curvePrivate[:], clientHello.CurvePublicKey)
+	salt := sha256.Sum256(append(serverNonce, clientHello.ClientNonce...))
+	infoSC := []byte("server-to-client") // server-key info
+	infoCS := []byte("client-to-server") // client-key info
+	serverToClientHKDF := hkdf.New(sha256.New, sharedSecret, salt[:], infoSC)
+	clientToServerHKDF := hkdf.New(sha256.New, sharedSecret, salt[:], infoCS)
+	keySize := chacha20poly1305.KeySize
+	serverToClientKey := make([]byte, keySize)
+	_, _ = io.ReadFull(serverToClientHKDF, serverToClientKey)
+	clientToServerKey := make([]byte, keySize)
+	_, _ = io.ReadFull(clientToServerHKDF, clientToServerKey)
+
+	serverSession, err := handshake.NewSession(serverToClientKey, clientToServerKey, true)
+	if err != nil {
+		log.Fatalf("failed to create server session: %s\n", err)
+	}
+
+	serverSession.SessionId = sha256.Sum256(append(sharedSecret, salt[:]...))
+	log.Printf("%s registered as %s", conn.RemoteAddr(), clientHello.IpAddress)
+	handleClient(conn, tunFile, localIpToConn, clientHello)
 }
 
 func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, hello *handshake.ClientHello) {
