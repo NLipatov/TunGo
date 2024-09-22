@@ -7,9 +7,10 @@ import (
 )
 
 type Conf struct {
-	IfName           string `json:"IfName"`
-	IfIP             string `json:"IfIP"`
-	ServerTCPAddress string `json:"ServerTCPAddress"`
+	IfName                 string `json:"IfName"`
+	IfIP                   string `json:"IfIP"`
+	ServerTCPAddress       string `json:"ServerTCPAddress"`
+	ServerEd25519PublicKey string `json:"ServerEd25519PublicKey"`
 }
 
 func (s *Conf) Read() (*Conf, error) {
