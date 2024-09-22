@@ -41,7 +41,7 @@ func Serve(tunFile *os.File, listenPort string) error {
 
 	// Map to keep track of connected clients
 	var localIpMap sync.Map
-	var localIpPubKeyMap sync.Map
+	var localIpToSessionMap sync.Map
 
 	// Start a goroutine to read from TUN interface and send to clients
 	go func() {
@@ -93,11 +93,11 @@ func Serve(tunFile *os.File, listenPort string) error {
 			log.Printf("failed to accept connection: %v", err)
 			continue
 		}
-		go registerClient(conn, tunFile, &localIpMap, &localIpPubKeyMap)
+		go registerClient(conn, tunFile, &localIpMap, &localIpToSessionMap)
 	}
 }
 
-func registerClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, localIpHelloMap *sync.Map) {
+func registerClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, localIpToServerSessionMap *sync.Map) {
 	/*edPublic*/ _, edPrivate := "m+tjQmYAG8tYt8xSTry29Mrl9SInd9pvoIsSywzPzdU=", "ZuQO8SI3rxY/v1sJn9DtGQ2vRgz/DiPg545iFYmSWleb62NCZgAby1i3zFJOvLb0yuX1Iid32m+gixLLDM/N1Q=="
 
 	buf := make([]byte, 39+2+32+32+32) // 39(max ip) + 2(length headers) + 32 (ed25519 pub key) + 32 (curve pub key)
@@ -112,9 +112,6 @@ func registerClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, lo
 		_ = fmt.Errorf("failed to deserialize registration message")
 		return
 	}
-
-	localIpToConn.Store(clientHello.IpAddress, conn)
-	localIpHelloMap.Store(clientHello.IpAddress, clientHello)
 
 	// Server hello
 	var curvePrivate [32]byte
@@ -169,13 +166,18 @@ func registerClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, lo
 	}
 
 	serverSession.SessionId = sha256.Sum256(append(sharedSecret, salt[:]...))
+
+	localIpToConn.Store(clientHello.IpAddress, conn)
+	localIpToServerSessionMap.Store(clientHello.IpAddress, serverSession)
+
 	log.Printf("%s registered as %s", conn.RemoteAddr(), clientHello.IpAddress)
-	handleClient(conn, tunFile, localIpToConn, clientHello)
+	handleClient(conn, tunFile, localIpToConn, localIpToServerSessionMap, clientHello)
 }
 
-func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, hello *handshake.ClientHello) {
+func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, localIpToSession *sync.Map, hello *handshake.ClientHello) {
 	defer func() {
-		localIpToConn.Delete(hello.IpVersion)
+		localIpToConn.Delete(hello.IpAddress)
+		localIpToSession.Delete(hello.IpAddress)
 		conn.Close()
 		log.Printf("client disconnected: %s", conn.RemoteAddr())
 	}()
