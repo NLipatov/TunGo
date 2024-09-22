@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/binary"
 	"etha-tunnel/crypto/asymmetric/curve25519"
-	"etha-tunnel/crypto/symmetric/chacha20"
 	"etha-tunnel/handshake/client"
 	"etha-tunnel/network"
 	"etha-tunnel/network/utils"
@@ -38,8 +37,7 @@ func main() {
 	defer conn.Close()
 	log.Printf("Connected to server at %s", conf.ServerTCPAddress)
 
-	cc20key := make([]byte, 32)
-	err = register(conn, conf, &cc20key)
+	err = register(conn, conf)
 	if err != nil {
 		log.Fatalf("registration failed: %s", err)
 	}
@@ -82,21 +80,15 @@ func main() {
 			return
 		}
 		// Write packet to TUN interface
-		nonce := buf[0:12]
-		decryptedPacket, err := chacha20.Decrypt(buf[12:length], cc20key, nonce)
+		_, err = tunFile.Write(buf[:length])
 		if err != nil {
-			log.Fatalf("failed to decrypt packet: %s", err)
-			return
-		}
-		_, err = tunFile.Write(decryptedPacket)
-		if err != nil {
-			log.Fatalf("Failed to write to TUN: %s", err)
+			log.Fatalf("Failed to write to TUN: %v", err)
 			return
 		}
 	}
 }
 
-func register(conn net.Conn, conf *clientConfiguration.Conf, key *[]byte) error {
+func register(conn net.Conn, conf *clientConfiguration.Conf) error {
 	privateKey, publicKey, err := curve25519.GenerateCurve25519KeyPair()
 	if err != nil {
 		log.Fatalf("could not generate public key: %s", err)
@@ -118,8 +110,6 @@ func register(conn net.Conn, conf *clientConfiguration.Conf, key *[]byte) error 
 	if err != nil {
 		return fmt.Errorf("failed to read serverConfiguration-hello message")
 	}
-
-	copy(*key, cc20)
 
 	fmt.Printf("using cc20 key: %s\n", cc20)
 

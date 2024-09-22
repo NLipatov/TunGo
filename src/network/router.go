@@ -37,7 +37,6 @@ func Serve(tunFile *os.File, listenPort string) error {
 
 	// Map to keep track of connected clients
 	var localIpMap sync.Map
-	var cc20Keys sync.Map
 
 	// Start a goroutine to read from TUN interface and send to clients
 	go func() {
@@ -63,24 +62,13 @@ func Serve(tunFile *os.File, listenPort string) error {
 			v, ok := localIpMap.Load(destinationIP)
 			if ok {
 				conn := v.(net.Conn)
-				key, keyExists := cc20Keys.Load(destinationIP)
-				if keyExists {
-					cc20Key := key.([]byte)
-					encryptedPacket, nonce, err := chacha20.Encrypt(packet, cc20Key)
-					if err != nil {
-						log.Printf("failed to encrypt packet")
-					} else {
-						packet = append(nonce, encryptedPacket...)
-					}
-				}
 				length := uint32(len(packet))
 				lengthBuf := make([]byte, 4)
 				binary.BigEndian.PutUint32(lengthBuf, length)
-				_, err = conn.Write(append(lengthBuf, packet...))
+				_, err := conn.Write(append(lengthBuf, packet...))
 				if err != nil {
 					log.Printf("failed to send packet to client: %v", err)
 					localIpMap.Delete(destinationIP)
-					cc20Keys.Delete(destinationIP)
 				}
 			}
 		}
@@ -100,11 +88,11 @@ func Serve(tunFile *os.File, listenPort string) error {
 			log.Printf("failed to accept connection: %v", err)
 			continue
 		}
-		go registerClient(conn, tunFile, &localIpMap, &cc20Keys)
+		go registerClient(conn, tunFile, &localIpMap)
 	}
 }
 
-func registerClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, cc20Keys *sync.Map) {
+func registerClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map) {
 	buf := make([]byte, 73) //1 (IpVersion) + 1 (IpAddressLength) + 39 (IPv6 address) + 32 (PublicKey) = 73 bytes max
 	_, err := conn.Read(buf)
 	if err != nil {
@@ -135,17 +123,15 @@ func registerClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, cc
 	}
 	_, err = conn.Write(sH)
 
-	cc20Keys.Store(cH.IpAddress, cc20Key)
 	localIpToConn.Store(cH.IpAddress, conn)
 
 	log.Printf("%s registered as %s", conn.RemoteAddr(), cH.IpAddress)
-	handleClient(conn, tunFile, localIpToConn, cc20Keys, cH)
+	handleClient(conn, tunFile, localIpToConn, cH)
 }
 
-func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, cc20Keys *sync.Map, hello *client.ClientHello) {
+func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, hello *client.ClientHello) {
 	defer func() {
-		cc20Keys.Delete(hello.IpAddress)
-		localIpToConn.Delete(hello.IpAddress)
+		localIpToConn.Delete(hello.IpVersion)
 		conn.Close()
 		log.Printf("client disconnected: %s", conn.RemoteAddr())
 	}()
