@@ -1,4 +1,4 @@
-package clientConfiguration
+package client
 
 import (
 	"encoding/json"
@@ -36,6 +36,6 @@ func getServerConfPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	settingsPath := filepath.Join(filepath.Dir(execPath), "src", "settings", "clientConfiguration", "conf.json")
+	settingsPath := filepath.Join(filepath.Dir(execPath), "src", "settings", "client", "conf.json")
 	return settingsPath, nil
 }
