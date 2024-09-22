@@ -37,7 +37,7 @@ func Encrypt(plaintext []byte, recipientPublicKey, senderPrivateKey [32]byte) ([
 	return encryptedData, nil
 }
 
-func Decrypt(encryptedData []byte, recipientPrivateKey, senderPublicKey []byte) ([]byte, error) {
+func Decrypt(encryptedData []byte, recipientPrivateKey, senderPublicKey [32]byte) ([]byte, error) {
 	sharedSecret, err := curve25519.X25519(recipientPrivateKey[:], senderPublicKey[:])
 	if err != nil {
 		return nil, err
