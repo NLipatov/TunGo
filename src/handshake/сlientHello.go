@@ -10,6 +10,8 @@ type ClientHello struct {
 	IpAddressLength uint8
 	IpAddress       string
 	EdPublicKey     ed25519.PublicKey
+	CurvePublicKey  []byte
+	ClientNonce     []byte
 }
 
 func (m *ClientHello) Read(data []byte) (*ClientHello, error) {
@@ -33,10 +35,14 @@ func (m *ClientHello) Read(data []byte) (*ClientHello, error) {
 
 	m.EdPublicKey = data[2+m.IpAddressLength : 2+m.IpAddressLength+32]
 
+	m.CurvePublicKey = data[2+m.IpAddressLength+32 : 2+m.IpAddressLength+32+32]
+
+	m.ClientNonce = data[2+m.IpAddressLength+32+32 : 2+m.IpAddressLength+32+32+32]
+
 	return m, nil
 }
 
-func (m *ClientHello) Write(ipVersion uint8, ip string, EdPublicKey ed25519.PublicKey) (*[]byte, error) {
+func (m *ClientHello) Write(ipVersion uint8, ip string, EdPublicKey ed25519.PublicKey, curvePublic *[]byte, nonce *[]byte) (*[]byte, error) {
 	if ipVersion != 4 && ipVersion != 6 {
 		return nil, fmt.Errorf("invalid ip version")
 	}
@@ -49,11 +55,13 @@ func (m *ClientHello) Write(ipVersion uint8, ip string, EdPublicKey ed25519.Publ
 		return nil, fmt.Errorf("invalid ip address")
 	}
 
-	arr := make([]byte, 2+len(ip)+32)
+	arr := make([]byte, 2+len(ip)+32+32+32)
 	arr[0] = ipVersion
 	arr[1] = uint8(len(ip))
 	copy(arr[2:], ip)
 	copy(arr[2+len(ip):], EdPublicKey)
+	copy(arr[2+len(ip)+32:], *curvePublic)
+	copy(arr[2+len(ip)+32+32:], *nonce)
 
 	return &arr, nil
 }
