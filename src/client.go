@@ -18,6 +18,7 @@ import (
 	"log"
 	"net"
 	"strings"
+	"sync/atomic"
 )
 
 func main() {
@@ -47,9 +48,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("registration failed: %s", err)
 	}
-	fmt.Print(session)
 
-	go func() {
+	// TUN -> TCP
+	go func(s *handshake.Session) {
 		buf := make([]byte, 65535)
 		for {
 			n, err := tunFile.Read(buf[4:])
@@ -62,12 +63,11 @@ func main() {
 				log.Fatalf("Failed to write to server: %v", err)
 			}
 		}
-	}()
+	}(session)
 
-	// Read from server and write to TUN
+	// TCP -> TUN
 	buf := make([]byte, 65535)
 	for {
-		// Read packet length
 		_, err := io.ReadFull(conn, buf[:4])
 		if err != nil {
 			if err != io.EOF {
@@ -76,18 +76,31 @@ func main() {
 			return
 		}
 		length := binary.BigEndian.Uint32(buf[:4])
+
 		if length > 65535 {
 			log.Fatalf("Packet too large: %d", length)
 			return
 		}
-		// Read packet
+
+		// Чтение зашифрованного пакета
 		_, err = io.ReadFull(conn, buf[:length])
 		if err != nil {
-			log.Fatalf("Failed to read from server: %v", err)
+			log.Fatalf("Failed to read encrypted packet: %v", err)
 			return
 		}
-		// Write packet to TUN interface
-		_, err = tunFile.Write(buf[:length])
+
+		// Создание AAD для расшифровки
+		aad := session.CreateAAD(true, session.MessageNumber)
+		decrypted, err := session.Decrypt(buf[:length], aad)
+		if err != nil {
+			log.Fatalf("Failed to decrypt server packet: %s\n", err)
+		}
+
+		// Увеличение MessageNumber
+		atomic.AddUint64(&session.MessageNumber, 1)
+
+		// Запись расшифрованного сообщения в TUN
+		_, err = tunFile.Write(decrypted)
 		if err != nil {
 			log.Fatalf("Failed to write to TUN: %v", err)
 			return

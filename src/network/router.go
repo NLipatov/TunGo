@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"sync"
+	"sync/atomic"
 )
 
 func Serve(tunFile *os.File, listenPort string) error {
@@ -67,13 +68,29 @@ func Serve(tunFile *os.File, listenPort string) error {
 			v, ok := localIpMap.Load(destinationIP)
 			if ok {
 				conn := v.(net.Conn)
-				length := uint32(len(packet))
+				///
+				sessionValue, sessionExists := localIpToSessionMap.Load(destinationIP)
+				if !sessionExists {
+					log.Printf("failed to load session")
+					continue
+				}
+				session := sessionValue.(*handshake.Session)
+				aad := session.CreateAAD(true, session.MessageNumber)
+				encryptedPacket, err := session.Encrypt(packet, aad)
+				if err != nil {
+					log.Printf("failder to encrypt a package")
+					continue
+				}
+				atomic.AddUint64(&session.MessageNumber, 1)
+				///
+				length := uint32(len(encryptedPacket))
 				lengthBuf := make([]byte, 4)
 				binary.BigEndian.PutUint32(lengthBuf, length)
-				_, err := conn.Write(append(lengthBuf, packet...))
+				_, err = conn.Write(append(lengthBuf, encryptedPacket...))
 				if err != nil {
 					log.Printf("failed to send packet to client: %v", err)
 					localIpMap.Delete(destinationIP)
+					localIpToSessionMap.Delete(destinationIP)
 				}
 			}
 		}
@@ -117,7 +134,6 @@ func registerClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, lo
 	var curvePrivate [32]byte
 	_, _ = io.ReadFull(rand.Reader, curvePrivate[:])
 	curvePublic, _ := curve25519.X25519(curvePrivate[:], curve25519.Basepoint)
-	fmt.Print(curvePublic)
 	serverNonce := make([]byte, 32)
 	_, _ = io.ReadFull(rand.Reader, serverNonce)
 	serverDataToSign := append(append(curvePublic, serverNonce...), clientHello.ClientNonce...)
