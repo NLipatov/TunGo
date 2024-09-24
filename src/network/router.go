@@ -182,7 +182,7 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 		_, err := io.ReadFull(conn, buf[:4])
 		if err != nil {
 			if err != io.EOF {
-				log.Printf("Failed to read from client: %v", err)
+				log.Printf("failed to read from client: %v", err)
 			}
 			return
 		}
@@ -190,21 +190,21 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 		// Extract the length
 		length := binary.BigEndian.Uint32(buf[:4])
 		if length > 65535 {
-			log.Printf("Packet too large: %d", length)
+			log.Printf("packet too large: %d", length)
 			return
 		}
 
 		// Read the encrypted packet
 		_, err = io.ReadFull(conn, buf[:length])
 		if err != nil {
-			log.Printf("Failed to read encrypted packet from client: %v", err)
+			log.Printf("failed to read encrypted packet from client: %v", err)
 			return
 		}
 
 		// Retrieve the session for this client
 		sessionValue, sessionExists := localIpToSession.Load(*extIpAddr)
 		if !sessionExists {
-			log.Printf("Failed to load session for IP %s", *extIpAddr)
+			log.Printf("failed to load session for IP %s", *extIpAddr)
 			continue
 		}
 
@@ -216,7 +216,7 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 		// Decrypt the data
 		packet, err := session.Decrypt(buf[:length], aad)
 		if err != nil {
-			log.Printf("Failed to decrypt packet: %v", err)
+			log.Printf("failed to decrypt packet: %v", err)
 			return
 		}
 
@@ -225,13 +225,13 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 
 		// Validate the packet (optional but recommended)
 		if _, err := packets.Parse(packet); err != nil {
-			log.Printf("Invalid IP packet structure: %v", err)
+			log.Printf("invalid IP packet structure: %v", err)
 			continue
 		}
 
 		// Write the decrypted packet to the TUN interface
 		if err := WriteToTun(tunFile, packet); err != nil {
-			log.Printf("Failed to write to TUN: %v", err)
+			log.Printf("failed to write to TUN: %v", err)
 			return
 		}
 	}
@@ -241,7 +241,7 @@ func enableNAT(iface string) error {
 	cmd := exec.Command("iptables", "-t", "nat", "-A", "POSTROUTING", "-o", iface, "-j", "MASQUERADE")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("Failed to enable NAT on %s: %v, output: %s", iface, err, output)
+		return fmt.Errorf("failed to enable NAT on %s: %v, output: %s", iface, err, output)
 	}
 	return nil
 }
@@ -250,7 +250,7 @@ func disableNAT(iface string) error {
 	cmd := exec.Command("iptables", "-t", "nat", "-D", "POSTROUTING", "-o", iface, "-j", "MASQUERADE")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("Failed to disable NAT on %s: %v, output: %s", iface, err, output)
+		return fmt.Errorf("failed to disable NAT on %s: %v, output: %s", iface, err, output)
 	}
 	return nil
 }
@@ -262,7 +262,7 @@ func setupForwarding(tunFile *os.File, extIface string) error {
 		return fmt.Errorf("failed to determing tunnel ifName: %s\n", err)
 	}
 	if tunName == "" {
-		return fmt.Errorf("Failed to get TUN interface name")
+		return fmt.Errorf("failed to get TUN interface name")
 	}
 
 	// Set up iptables rules
@@ -270,7 +270,7 @@ func setupForwarding(tunFile *os.File, extIface string) error {
 		"RELATED,ESTABLISHED", "-j", "ACCEPT")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("Failed to set up forwarding rule for %s -> %s: %v, output: %s", extIface, tunName, err, output)
+		return fmt.Errorf("failed to set up forwarding rule for %s -> %s: %v, output: %s", extIface, tunName, err, output)
 	}
 
 	cmd = exec.Command("iptables", "-A", "FORWARD", "-i", tunName, "-o", extIface, "-j", "ACCEPT")
@@ -287,20 +287,20 @@ func clearForwarding(tunFile *os.File, extIface string) error {
 		return fmt.Errorf("failed to determing tunnel ifName: %s\n", err)
 	}
 	if tunName == "" {
-		return fmt.Errorf("Failed to get TUN interface name")
+		return fmt.Errorf("failed to get TUN interface name")
 	}
 
 	cmd := exec.Command("iptables", "-D", "FORWARD", "-i", extIface, "-o", tunName, "-m", "state", "--state",
 		"RELATED,ESTABLISHED", "-j", "ACCEPT")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("Failed to remove forwarding rule for %s -> %s: %v, output: %s", extIface, tunName, err, output)
+		return fmt.Errorf("failed to remove forwarding rule for %s -> %s: %v, output: %s", extIface, tunName, err, output)
 	}
 
 	cmd = exec.Command("iptables", "-D", "FORWARD", "-i", tunName, "-o", extIface, "-j", "ACCEPT")
 	output, err = cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("Failed to remove forwarding rule for %s -> %s: %v, output: %s", tunName, extIface, err, output)
+		return fmt.Errorf("failed to remove forwarding rule for %s -> %s: %v, output: %s", tunName, extIface, err, output)
 	}
 	return nil
 }

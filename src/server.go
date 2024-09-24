@@ -17,7 +17,7 @@ func main() {
 	err = createNewTun(conf)
 	tunFile, err := network.OpenTunByName(conf.IfName)
 	if err != nil {
-		log.Fatalf("Failed to open TUN interface: %v", err)
+		log.Fatalf("failed to open TUN interface: %v", err)
 	}
 	defer tunFile.Close()
 
@@ -32,7 +32,7 @@ func createNewTun(conf *server.Conf) error {
 
 	name, err := network.UpNewTun(conf.IfName)
 	if err != nil {
-		log.Fatalf("Failed to create interface %v: %v", conf.IfName, err)
+		log.Fatalf("failed to create interface %v: %v", conf.IfName, err)
 	}
 	fmt.Printf("Created TUN interface: %v\n", name)
 
@@ -40,7 +40,7 @@ func createNewTun(conf *server.Conf) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Assigned IP %s to interface %s\n", conf.TCPPort, conf.IfName)
+	fmt.Printf("assigned IP %s to interface %s\n", conf.TCPPort, conf.IfName)
 
 	return nil
 }

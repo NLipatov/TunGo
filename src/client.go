@@ -33,16 +33,16 @@ func main() {
 
 	tunFile, err := network.OpenTunByName(conf.IfName)
 	if err != nil {
-		log.Fatalf("Failed to open TUN interface: %v", err)
+		log.Fatalf("failed to open TUN interface: %v", err)
 	}
 	defer tunFile.Close()
 
 	conn, err := net.Dial("tcp", conf.ServerTCPAddress)
 	if err != nil {
-		log.Fatalf("Failed to connect to server: %v", err)
+		log.Fatalf("failed to connect to server: %v", err)
 	}
 	defer conn.Close()
-	log.Printf("Connected to server at %s", conf.ServerTCPAddress)
+	log.Printf("connected to server at %s", conf.ServerTCPAddress)
 
 	session, err := register(conn, conf)
 	if err != nil {
@@ -55,14 +55,14 @@ func main() {
 		for {
 			n, err := tunFile.Read(buf)
 			if err != nil {
-				log.Fatalf("Failed to read from TUN: %v", err)
+				log.Fatalf("failed to read from TUN: %v", err)
 			}
 
 			aad := session.CreateAAD(false, session.C2SCounter)
 
 			encryptedPacket, err := session.Encrypt(buf[:n], aad)
 			if err != nil {
-				log.Fatalf("Failed to encrypt packet: %v", err)
+				log.Fatalf("failed to encrypt packet: %v", err)
 			}
 
 			atomic.AddUint64(&session.C2SCounter, 1)
@@ -72,7 +72,7 @@ func main() {
 			binary.BigEndian.PutUint32(lengthBuf, length)
 			_, err = conn.Write(append(lengthBuf, encryptedPacket...))
 			if err != nil {
-				log.Fatalf("Failed to write to server: %v", err)
+				log.Fatalf("failed to write to server: %v", err)
 			}
 		}
 	}(session)
@@ -83,34 +83,34 @@ func main() {
 		_, err := io.ReadFull(conn, buf[:4])
 		if err != nil {
 			if err != io.EOF {
-				log.Fatalf("Failed to read from server: %v", err)
+				log.Fatalf("failed to read from server: %v", err)
 			}
 			return
 		}
 		length := binary.BigEndian.Uint32(buf[:4])
 
 		if length > 65535 {
-			log.Fatalf("Packet too large: %d", length)
+			log.Fatalf("packet too large: %d", length)
 			return
 		}
 
 		_, err = io.ReadFull(conn, buf[:length])
 		if err != nil {
-			log.Fatalf("Failed to read encrypted packet: %v", err)
+			log.Fatalf("failed to read encrypted packet: %v", err)
 			return
 		}
 
 		aad := session.CreateAAD(true, session.S2CCounter)
 		decrypted, err := session.Decrypt(buf[:length], aad)
 		if err != nil {
-			log.Fatalf("Failed to decrypt server packet: %s\n", err)
+			log.Fatalf("failed to decrypt server packet: %s\n", err)
 		}
 
 		atomic.AddUint64(&session.S2CCounter, 1)
 
 		_, err = tunFile.Write(decrypted)
 		if err != nil {
-			log.Fatalf("Failed to write to TUN: %v", err)
+			log.Fatalf("failed to write to TUN: %v", err)
 			return
 		}
 	}
@@ -202,19 +202,19 @@ func configureClient(conf *client.Conf) error {
 	if err != nil {
 		return fmt.Errorf("failed to create interface %v: %v", conf.IfName, err)
 	}
-	fmt.Printf("Created TUN interface: %v\n", name)
+	fmt.Printf("created TUN interface: %v\n", name)
 
 	_, err = utils.AssignTunIP(conf.IfName, conf.IfIP)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Assigned IP %s to interface %s\n", conf.IfIP, conf.IfName)
+	fmt.Printf("sssigned IP %s to interface %s\n", conf.IfIP, conf.IfName)
 
 	_, err = utils.SetDefaultIf(conf.IfName)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Set %s as default gateway\n", conf.IfName)
+	fmt.Printf("set %s as default gateway\n", conf.IfName)
 
 	return nil
 }

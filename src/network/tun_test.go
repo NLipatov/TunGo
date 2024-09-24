@@ -1,6 +1,7 @@
 package network
 
 import (
+	"etha-tunnel/network/utils"
 	"os/exec"
 	"testing"
 )
@@ -22,7 +23,7 @@ func Test_CreateAndDeleteInterface(t *testing.T) {
 		return
 	}
 
-	err = DeleteInterface(ifName)
+	_, err = utils.DelTun(ifName)
 	if err != nil {
 		t.Errorf("failed to delete %s tunnel", err)
 		return
@@ -39,7 +40,7 @@ func Test_WriteAndReadFromTun(t *testing.T) {
 		t.Fatalf("failed to create interface %v: %v", ifName, err)
 	}
 	defer func() {
-		err = DeleteInterface(ifName)
+		_, err = utils.DelTun(ifName)
 		if err != nil {
 			t.Fatalf("failed to delete interface %v: %v", ifName, err)
 		}
@@ -57,20 +58,20 @@ func Test_WriteAndReadFromTun(t *testing.T) {
 
 	n, err := tun.Write(packet)
 	if err != nil {
-		t.Fatalf("Error writing to TUN: %v", err)
+		t.Fatalf("error writing to TUN: %v", err)
 	}
 
 	if n < 1 {
-		t.Fatalf("Nothing was written to TUN")
+		t.Fatalf("nothing was written to TUN")
 	}
 
 	data := make([]byte, 1500)
 	n, err = tun.Read(data)
 	if err != nil {
-		t.Fatalf("Error reading from TUN: %v", err)
+		t.Fatalf("error reading from TUN: %v", err)
 	}
 
 	if n < 1 {
-		t.Fatalf("Nothing was read from TUN")
+		t.Fatalf("nothing was read from TUN")
 	}
 }
