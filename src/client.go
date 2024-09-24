@@ -6,7 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
-	"etha-tunnel/handshake"
+	"etha-tunnel/handshake/ChaCha20"
 	"etha-tunnel/network"
 	"etha-tunnel/network/utils"
 	"etha-tunnel/settings/client"
@@ -50,7 +50,7 @@ func main() {
 	}
 
 	// TUN -> TCP
-	go func(session *handshake.Session) {
+	go func(session *ChaCha20.Session) {
 		buf := make([]byte, 65535)
 		for {
 			n, err := tunFile.Read(buf)
@@ -116,7 +116,7 @@ func main() {
 	}
 }
 
-func register(conn net.Conn, conf *client.Conf) (*handshake.Session, error) {
+func register(conn net.Conn, conf *client.Conf) (*ChaCha20.Session, error) {
 	edPub, ed, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate ed25519 key pair: %s", err)
@@ -128,7 +128,7 @@ func register(conn net.Conn, conf *client.Conf) (*handshake.Session, error) {
 	nonce := make([]byte, 32)
 	_, _ = io.ReadFull(rand.Reader, nonce)
 
-	rm, err := (&handshake.ClientHello{}).Write(4, strings.Split(conf.IfIP, "/")[0], edPub, &curvePublic, &nonce)
+	rm, err := (&ChaCha20.ClientHello{}).Write(4, strings.Split(conf.IfIP, "/")[0], edPub, &curvePublic, &nonce)
 	if err != nil {
 		return nil, fmt.Errorf("failed to serialize registration message")
 	}
@@ -145,7 +145,7 @@ func register(conn net.Conn, conf *client.Conf) (*handshake.Session, error) {
 		return nil, fmt.Errorf("failed to read server-hello message")
 	}
 
-	serverHello, err := (&handshake.ServerHello{}).Read(sHBuf)
+	serverHello, err := (&ChaCha20.ServerHello{}).Read(sHBuf)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read server-hello message")
 	}
@@ -164,7 +164,7 @@ func register(conn net.Conn, conf *client.Conf) (*handshake.Session, error) {
 
 	clientDataToSign := append(append(curvePublic, nonce...), serverHello.ServerNonce...)
 	clientSignature := ed25519.Sign(ed, clientDataToSign)
-	cS, err := (&handshake.ClientSignature{}).Write(&clientSignature)
+	cS, err := (&ChaCha20.ClientSignature{}).Write(&clientSignature)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create client signature message: %s", err)
 	}
@@ -186,7 +186,7 @@ func register(conn net.Conn, conf *client.Conf) (*handshake.Session, error) {
 	clientToServerKey := make([]byte, keySize)
 	_, _ = io.ReadFull(clientToServerHKDF, clientToServerKey)
 
-	clientSession, err := handshake.NewSession(clientToServerKey, serverToClientKey, false)
+	clientSession, err := ChaCha20.NewSession(clientToServerKey, serverToClientKey, false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create client session: %s\n", err)
 	}

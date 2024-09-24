@@ -1,4 +1,4 @@
-package handshake
+package ChaCha20
 
 import (
 	"crypto/cipher"
