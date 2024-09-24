@@ -14,7 +14,7 @@ func main() {
 		log.Fatalf("failed to read configuration: %v", err)
 	}
 
-	err = configureServer(conf)
+	err = createNewTun(conf)
 	tunFile, err := network.OpenTunByName(conf.IfName)
 	if err != nil {
 		log.Fatalf("Failed to open TUN interface: %v", err)
@@ -27,7 +27,7 @@ func main() {
 	}
 }
 
-func configureServer(conf *server.Conf) error {
+func createNewTun(conf *server.Conf) error {
 	_, _ = utils.DelTun(conf.IfName)
 
 	name, err := network.UpNewTun(conf.IfName)
