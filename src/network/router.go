@@ -7,13 +7,16 @@ import (
 	"etha-tunnel/network/packets"
 	"etha-tunnel/network/utils"
 	"fmt"
+	"golang.org/x/sys/unix"
 	"io"
 	"log"
 	"net"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"sync/atomic"
+	"unsafe"
 )
 
 func Serve(tunFile *os.File, listenPort string) error {
@@ -66,12 +69,17 @@ func configureServer(tunFile *os.File) error {
 }
 
 func undoConfigureSever(tunFile *os.File) {
-	err := disableNAT(getTunInterfaceName(tunFile))
+	tunName, err := getIfName(tunFile)
+	if err != nil {
+		log.Printf("failed to determing tunnel ifName: %s\n", err)
+	}
+
+	err = disableNAT(tunName)
 	if err != nil {
 		log.Printf("failed to disbale NAT: %s\n", err)
 	}
 
-	err = clearForwarding(tunFile, getTunInterfaceName(tunFile))
+	err = clearForwarding(tunFile, tunName)
 	if err != nil {
 		log.Printf("failed to disbale forwarding: %s\n", err)
 	}
@@ -249,7 +257,10 @@ func disableNAT(iface string) error {
 
 func setupForwarding(tunFile *os.File, extIface string) error {
 	// Get the name of the TUN interface
-	tunName := getTunInterfaceName(tunFile)
+	tunName, err := getIfName(tunFile)
+	if err != nil {
+		return fmt.Errorf("failed to determing tunnel ifName: %s\n", err)
+	}
 	if tunName == "" {
 		return fmt.Errorf("Failed to get TUN interface name")
 	}
@@ -271,7 +282,10 @@ func setupForwarding(tunFile *os.File, extIface string) error {
 }
 
 func clearForwarding(tunFile *os.File, extIface string) error {
-	tunName := getTunInterfaceName(tunFile)
+	tunName, err := getIfName(tunFile)
+	if err != nil {
+		return fmt.Errorf("failed to determing tunnel ifName: %s\n", err)
+	}
 	if tunName == "" {
 		return fmt.Errorf("Failed to get TUN interface name")
 	}
@@ -291,8 +305,20 @@ func clearForwarding(tunFile *os.File, extIface string) error {
 	return nil
 }
 
-func getTunInterfaceName(tunFile *os.File) string {
-	// Since we know the interface name, we can return it directly.
-	// Alternatively, you could retrieve it from the file descriptor if needed.
-	return "ethatun0"
+func getIfName(tunFile *os.File) (string, error) {
+	var ifr ifreq
+
+	_, _, errno := unix.Syscall(
+		unix.SYS_IOCTL,
+		tunFile.Fd(),
+		uintptr(unix.TUNGETIFF),
+		uintptr(unsafe.Pointer(&ifr)),
+	)
+	if errno != 0 {
+		return "", errno
+	}
+
+	ifName := string(ifr.Name[:])
+	ifName = strings.Trim(string(ifr.Name[:]), "\x00")
+	return ifName, nil
 }
