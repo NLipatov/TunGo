@@ -4,8 +4,8 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
 	"etha-tunnel/handshake/ChaCha20"
+	"etha-tunnel/settings/server"
 	"fmt"
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/curve25519"
@@ -16,10 +16,13 @@ import (
 )
 
 func OnClientConnected(conn net.Conn) (*ChaCha20.Session, *string, error) {
-	/*edPublic*/ _, edPrivate := "m+tjQmYAG8tYt8xSTry29Mrl9SInd9pvoIsSywzPzdU=", "ZuQO8SI3rxY/v1sJn9DtGQ2vRgz/DiPg545iFYmSWleb62NCZgAby1i3zFJOvLb0yuX1Iid32m+gixLLDM/N1Q=="
+	conf, err := (&server.Conf{}).Read()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to read server conf: %s", err)
+	}
 
 	buf := make([]byte, 39+2+32+32+32) // 39(max ip) + 2(length headers) + 32 (ed25519 pub key) + 32 (curve pub key)
-	_, err := conn.Read(buf)
+	_, err = conn.Read(buf)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to read from client: %v\n", err)
 	}
@@ -37,10 +40,7 @@ func OnClientConnected(conn net.Conn) (*ChaCha20.Session, *string, error) {
 	serverNonce := make([]byte, 32)
 	_, _ = io.ReadFull(rand.Reader, serverNonce)
 	serverDataToSign := append(append(curvePublic, serverNonce...), clientHello.ClientNonce...)
-	privateEd, err := base64.StdEncoding.DecodeString(edPrivate)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to decode private ed key: %s\n", err)
-	}
+	privateEd := conf.Ed25519PrivateKey
 	serverSignature := ed25519.Sign(privateEd, serverDataToSign)
 	serverHello, err := (&ChaCha20.ServerHello{}).Write(&serverSignature, &serverNonce, &curvePublic)
 	if err != nil {
