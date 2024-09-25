@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"etha-tunnel/clientConfGenerator"
 	"etha-tunnel/network"
-	"etha-tunnel/network/utils"
 	"etha-tunnel/settings/server"
 	"fmt"
 	"log"
@@ -20,60 +19,50 @@ func main() {
 	}
 
 	if len(conf.Ed25519PublicKey) == 0 || len(conf.Ed25519PrivateKey) == 0 {
-		edPub, ed, keyGenerationErr := ed25519.GenerateKey(rand.Reader)
-		if keyGenerationErr != nil {
-			log.Fatalf("failed to generate ed25519 key pair: %s", err)
-		}
-		err = conf.InsertEdKeys(edPub, ed)
-		if err != nil {
-			log.Fatalf("failed to insert ed25519 keys to server conf: %s", err)
-		}
+		generateEd25519KeyPair(conf)
 	}
 
 	// Handle args
 	args := os.Args
 	if len(args[1:]) == 1 && args[1] == "gen" {
-		newConf, err := clientConfGenerator.Generate()
-		if err != nil {
-			log.Fatalf("failed to generate client conf: %s\n", err)
-		}
-
-		marshalled, err := json.MarshalIndent(newConf, "", "  ")
-		if err != nil {
-			log.Fatalf("failed to marshalize client conf: %s\n", err)
-		}
-
-		fmt.Println(string(marshalled))
+		generateClientConfiguration()
 		return
 	}
 
-	err = createNewTun(conf)
+	// Start server
 	tunFile, err := network.OpenTunByName(conf.IfName)
 	if err != nil {
 		log.Fatalf("failed to open TUN interface: %v", err)
 	}
 	defer tunFile.Close()
 
-	err = network.Serve(tunFile, conf.TCPPort)
+	err = network.ServeConnections(tunFile, conf.TCPPort)
 	if err != nil {
 		log.Print(err)
 	}
 }
 
-func createNewTun(conf *server.Conf) error {
-	_, _ = utils.DelTun(conf.IfName)
-
-	name, err := network.UpNewTun(conf.IfName)
-	if err != nil {
-		log.Fatalf("failed to create interface %v: %v", conf.IfName, err)
+func generateEd25519KeyPair(conf *server.Conf) {
+	edPub, ed, keyGenerationErr := ed25519.GenerateKey(rand.Reader)
+	if keyGenerationErr != nil {
+		log.Fatalf("failed to generate ed25519 key pair: %s", keyGenerationErr)
 	}
-	fmt.Printf("Created TUN interface: %v\n", name)
-
-	_, err = utils.AssignTunIP(conf.IfName, conf.IfIP)
-	if err != nil {
-		return err
+	insertKeysErr := conf.InsertEdKeys(edPub, ed)
+	if insertKeysErr != nil {
+		log.Fatalf("failed to insert ed25519 keys to server conf: %s", insertKeysErr)
 	}
-	fmt.Printf("assigned IP %s to interface %s\n", conf.TCPPort, conf.IfName)
+}
 
-	return nil
+func generateClientConfiguration() {
+	newConf, err := clientConfGenerator.Generate()
+	if err != nil {
+		log.Fatalf("failed to generate client conf: %s\n", err)
+	}
+
+	marshalled, err := json.MarshalIndent(newConf, "", "  ")
+	if err != nil {
+		log.Fatalf("failed to marshalize client conf: %s\n", err)
+	}
+
+	fmt.Println(string(marshalled))
 }
