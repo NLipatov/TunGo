@@ -14,30 +14,15 @@ type Conf struct {
 	FallbackServerAddress string             `json:"FallbackServerAddress"`
 	Ed25519PublicKey      ed25519.PublicKey  `json:"Ed25519PublicKey"`
 	Ed25519PrivateKey     ed25519.PrivateKey `json:"Ed25519PrivateKey"`
+	ClientCounter         uint8              `json:"ClientCounter"`
 }
 
 func (s *Conf) InsertEdKeys(public ed25519.PublicKey, private ed25519.PrivateKey) error {
-	confPath, err := getServerConfPath()
-	if err != nil {
-		return err
-	}
-
 	currentConf, err := s.Read()
 	currentConf.Ed25519PublicKey = public
 	currentConf.Ed25519PrivateKey = private
 
-	jsonContent, err := json.Marshal(currentConf)
-	if err != nil {
-		return err
-	}
-
-	file, err := os.Create(confPath)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	_, err = file.Write(jsonContent)
+	err = s.RewriteConf()
 	if err != nil {
 		return err
 	}
@@ -62,6 +47,31 @@ func (s *Conf) Read() (*Conf, error) {
 	}
 
 	return s, nil
+}
+
+func (s *Conf) RewriteConf() error {
+	confPath, err := getServerConfPath()
+	if err != nil {
+		return err
+	}
+
+	jsonContent, err := json.MarshalIndent(s, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	file, err := os.Create(confPath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	_, err = file.Write(jsonContent)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func getServerConfPath() (string, error) {
