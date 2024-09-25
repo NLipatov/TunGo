@@ -1,5 +1,8 @@
 {
   "IfName": "ethatun0",
   "IfIP": "10.0.0.1/24",
-  "TCPPort": ":8080"
+  "TCPPort": ":8080",
+  "FallbackServerAddress": "192.168.122.194",
+  "Ed25519PublicKey": "m+tjQmYAG8tYt8xSTry29Mrl9SInd9pvoIsSywzPzdU=",
+  "Ed25519PrivateKey": "ZuQO8SI3rxY/v1sJn9DtGQ2vRgz/DiPg545iFYmSWleb62NCZgAby1i3zFJOvLb0yuX1Iid32m+gixLLDM/N1Q=="
 }
