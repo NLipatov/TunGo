@@ -26,14 +26,21 @@ func Generate() (*client.Conf, error) {
 	var serverTCPAddress string
 	// for IPv6, port must be handled in different way
 	if strings.Contains(serverIpAddr, ":") {
-		serverTCPAddress = fmt.Sprintf("[%s]:%s", serverIpAddr, serverConf.TCPPort)
+		serverTCPAddress = fmt.Sprintf("[%s]%s", serverIpAddr, serverConf.TCPPort)
 	} else {
-		serverTCPAddress = fmt.Sprintf("%s:%s", serverIpAddr, serverConf.TCPPort)
+		serverTCPAddress = fmt.Sprintf("%s%s", serverIpAddr, serverConf.TCPPort)
+	}
+
+	serverConf.ClientCounter += 1
+	clientIfIp := fmt.Sprintf("10.0.0.%d/24", serverConf.ClientCounter+1)
+	err = serverConf.RewriteConf()
+	if err != nil {
+		return nil, err
 	}
 
 	conf := client.Conf{
 		IfName:           "ethatun0",
-		IfIP:             "10.0.0.2/24",
+		IfIP:             clientIfIp,
 		ServerTCPAddress: serverTCPAddress,
 		Ed25519PublicKey: serverConf.Ed25519PublicKey,
 	}
