@@ -38,12 +38,12 @@ func main() {
 			log.Fatalf("failed to generate client conf: %s\n", err)
 		}
 
-		marshalled, err := json.Marshal(newConf)
+		marshalled, err := json.MarshalIndent(newConf, "", "  ")
 		if err != nil {
 			log.Fatalf("failed to marshalize client conf: %s\n", err)
 		}
 
-		fmt.Printf(string(marshalled))
+		fmt.Println(string(marshalled))
 		return
 	}
 
