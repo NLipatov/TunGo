@@ -1,16 +1,17 @@
 package client
 
 import (
+	"crypto/ed25519"
 	"encoding/json"
 	"os"
 	"path/filepath"
 )
 
 type Conf struct {
-	IfName                 string `json:"IfName"`
-	IfIP                   string `json:"IfIP"`
-	ServerTCPAddress       string `json:"ServerTCPAddress"`
-	ServerEd25519PublicKey string `json:"ServerEd25519PublicKey"`
+	IfName           string            `json:"IfName"`
+	IfIP             string            `json:"IfIP"`
+	ServerTCPAddress string            `json:"ServerTCPAddress"`
+	Ed25519PublicKey ed25519.PublicKey `json:"Ed25519PublicKey"`
 }
 
 func (s *Conf) Read() (*Conf, error) {
