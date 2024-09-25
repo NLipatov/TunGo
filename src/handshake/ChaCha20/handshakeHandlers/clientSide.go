@@ -3,7 +3,6 @@ package handshakeHandlers
 import (
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
 	"etha-tunnel/handshake/ChaCha20"
 	"etha-tunnel/settings/client"
 	"fmt"
@@ -54,10 +53,7 @@ func OnConnectedToServer(conn net.Conn, conf *client.Conf) (*ChaCha20.Session, e
 	if err != nil {
 		return nil, fmt.Errorf("failed to read client configuration: %s", err)
 	}
-	serverEdPub, err := base64.StdEncoding.DecodeString(clientConf.ServerEd25519PublicKey)
-	if err != nil {
-		return nil, fmt.Errorf("invalid ed pub key in configuration: %s", err)
-	}
+	serverEdPub := clientConf.Ed25519PublicKey
 	if !ed25519.Verify(serverEdPub, append(append(serverHello.CurvePublicKey, serverHello.ServerNonce...), nonce...), serverHello.ServerSignature) {
 		return nil, fmt.Errorf("server failed signature check")
 	}
