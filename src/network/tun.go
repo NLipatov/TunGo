@@ -64,6 +64,7 @@ func OpenTunByName(ifname string) (*os.File, error) {
 }
 
 func enableIPv4Forwarding() error {
+	// ToDo: ipv6 forwarding
 	cmd := exec.Command("sysctl", "net.ipv4.ip_forward")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
