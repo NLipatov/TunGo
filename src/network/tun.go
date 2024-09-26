@@ -2,8 +2,10 @@ package network
 
 import (
 	"etha-tunnel/network/utils"
+	"etha-tunnel/settings/server"
 	"fmt"
 	"golang.org/x/sys/unix"
+	"log"
 	"os"
 	"os/exec"
 	"unsafe"
@@ -70,19 +72,28 @@ func enableIPv4Forwarding() error {
 	return nil
 }
 
-func ReadFromTun(tun *os.File) ([]byte, error) {
-	buf := make([]byte, 65535) // Max IP packet size
-	n, err := tun.Read(buf)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read from TUN: %v", err)
-	}
-	return buf[:n], nil
-}
-
 func WriteToTun(tun *os.File, data []byte) error {
 	_, err := tun.Write(data)
 	if err != nil {
 		return fmt.Errorf("failed to write to TUN: %v", err)
 	}
+	return nil
+}
+
+func CreateNewTun(conf *server.Conf) error {
+	_, _ = utils.DelTun(conf.IfName)
+
+	name, err := UpNewTun(conf.IfName)
+	if err != nil {
+		log.Fatalf("failed to create interface %v: %v", conf.IfName, err)
+	}
+	fmt.Printf("Created TUN interface: %v\n", name)
+
+	_, err = utils.AssignTunIP(conf.IfName, conf.IfIP)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("assigned IP %s to interface %s\n", conf.TCPPort, conf.IfName)
+
 	return nil
 }
