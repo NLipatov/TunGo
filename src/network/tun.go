@@ -64,8 +64,18 @@ func OpenTunByName(ifname string) (*os.File, error) {
 }
 
 func enableIPv4Forwarding() error {
-	cmd := exec.Command("sysctl", "-w", "net.ipv4.ip_forward=1")
+	cmd := exec.Command("sysctl", "net.ipv4.ip_forward")
 	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to enable IPv4 packet forwarding: %v, output: %s", err, output)
+	}
+
+	if string(output) == "net.ipv4.ip_forward = 1\n" {
+		return nil
+	}
+
+	cmd = exec.Command("sysctl", "-w", "net.ipv4.ip_forward=1")
+	output, err = cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to enable IPv4 packet forwarding: %v, output: %s", err, output)
 	}
