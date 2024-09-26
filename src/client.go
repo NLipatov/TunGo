@@ -12,6 +12,8 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/exec"
+	"strings"
 	"sync"
 	"sync/atomic"
 )
@@ -74,7 +76,45 @@ func configureClient(conf *client.Conf) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("sssigned IP %s to interface %s\n", conf.IfIP, conf.IfName)
+	fmt.Printf("assigned IP %s to interface %s\n", conf.IfIP, conf.IfName)
+
+	serverIP, _, err := net.SplitHostPort(conf.ServerTCPAddress)
+	if err != nil {
+		return fmt.Errorf("failed to parse server address: %v", err)
+	}
+
+	cmd := exec.Command("ip", "route", "get", serverIP)
+	output, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to get route to server IP: %v", err)
+	}
+
+	routeInfo := string(output)
+	var viaGateway, devInterface string
+	fields := strings.Fields(routeInfo)
+	for i, field := range fields {
+		if field == "via" && i+1 < len(fields) {
+			viaGateway = fields[i+1]
+		}
+		if field == "dev" && i+1 < len(fields) {
+			devInterface = fields[i+1]
+		}
+	}
+	if devInterface == "" {
+		return fmt.Errorf("failed to parse route to server IP")
+	}
+
+	if viaGateway != "" {
+		cmd = exec.Command("ip", "route", "add", serverIP, "via", viaGateway, "dev", devInterface)
+	} else {
+		cmd = exec.Command("ip", "route", "add", serverIP, "dev", devInterface)
+	}
+	err = cmd.Run()
+	if err != nil {
+		return fmt.Errorf("failed to add route to server IP: %v", err)
+	}
+
+	fmt.Printf("added route to server %s via %s dev %s\n", serverIP, viaGateway, devInterface)
 
 	_, err = utils.SetDefaultIf(conf.IfName)
 	if err != nil {
