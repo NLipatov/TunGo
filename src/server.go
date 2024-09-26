@@ -18,15 +18,9 @@ func main() {
 		log.Fatalf("failed to read configuration: %v", err)
 	}
 
-	if len(conf.Ed25519PublicKey) == 0 || len(conf.Ed25519PrivateKey) == 0 {
-		edPub, ed, keyGenerationErr := ed25519.GenerateKey(rand.Reader)
-		if keyGenerationErr != nil {
-			log.Fatalf("failed to generate ed25519 key pair: %s", err)
-		}
-		err = conf.InsertEdKeys(edPub, ed)
-		if err != nil {
-			log.Fatalf("failed to insert ed25519 keys to server conf: %s", err)
-		}
+	err = ensureEd25519KeyPairCreated(conf)
+	if err != nil {
+		log.Fatalf("failed to generate ed25519 keys: %s", err)
 	}
 
 	// Handle args
@@ -57,4 +51,22 @@ func main() {
 	if err != nil {
 		log.Print(err)
 	}
+}
+
+func ensureEd25519KeyPairCreated(conf *server.Conf) error {
+	// if keys are generated
+	if len(conf.Ed25519PublicKey) > 0 && len(conf.Ed25519PrivateKey) > 0 {
+		return nil
+	}
+
+	edPub, ed, keyGenerationErr := ed25519.GenerateKey(rand.Reader)
+	if keyGenerationErr != nil {
+		log.Fatalf("failed to generate ed25519 key pair: %s", keyGenerationErr)
+	}
+	err := conf.InsertEdKeys(edPub, ed)
+	if err != nil {
+		log.Fatalf("failed to insert ed25519 keys to server conf: %s", err)
+	}
+
+	return nil
 }
