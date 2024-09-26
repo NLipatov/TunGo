@@ -26,28 +26,14 @@ func main() {
 	// Handle args
 	args := os.Args
 	if len(args[1:]) == 1 && args[1] == "gen" {
-		newConf, err := clientConfGenerator.Generate()
+		err = generateClientConf()
 		if err != nil {
-			log.Fatalf("failed to generate client conf: %s\n", err)
+			log.Fatalf("failed to generate new client conf: %s", err)
 		}
-
-		marshalled, err := json.MarshalIndent(newConf, "", "  ")
-		if err != nil {
-			log.Fatalf("failed to marshalize client conf: %s\n", err)
-		}
-
-		fmt.Println(string(marshalled))
 		return
 	}
 
-	err = network.CreateNewTun(conf)
-	tunFile, err := network.OpenTunByName(conf.IfName)
-	if err != nil {
-		log.Fatalf("failed to open TUN interface: %v", err)
-	}
-	defer tunFile.Close()
-
-	err = network.Serve(tunFile, conf.TCPPort)
+	err = startServer(conf)
 	if err != nil {
 		log.Print(err)
 	}
@@ -66,6 +52,37 @@ func ensureEd25519KeyPairCreated(conf *server.Conf) error {
 	err := conf.InsertEdKeys(edPub, ed)
 	if err != nil {
 		log.Fatalf("failed to insert ed25519 keys to server conf: %s", err)
+	}
+
+	return nil
+}
+
+func generateClientConf() error {
+	newConf, err := clientConfGenerator.Generate()
+	if err != nil {
+		log.Fatalf("failed to generate client conf: %s\n", err)
+	}
+
+	marshalled, err := json.MarshalIndent(newConf, "", "  ")
+	if err != nil {
+		log.Fatalf("failed to marshalize client conf: %s\n", err)
+	}
+
+	fmt.Println(string(marshalled))
+	return nil
+}
+
+func startServer(conf *server.Conf) error {
+	err := network.CreateNewTun(conf)
+	tunFile, err := network.OpenTunByName(conf.IfName)
+	if err != nil {
+		log.Fatalf("failed to open TUN interface: %v", err)
+	}
+	defer tunFile.Close()
+
+	err = network.Serve(tunFile, conf.TCPPort)
+	if err != nil {
+		return err
 	}
 
 	return nil
