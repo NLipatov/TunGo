@@ -6,22 +6,21 @@ import (
 	"etha-tunnel/handshake/ChaCha20/handshakeHandlers"
 	"etha-tunnel/network/packets"
 	"etha-tunnel/network/utils"
-	"etha-tunnel/settings/server"
 	"fmt"
 	"golang.org/x/sys/unix"
 	"io"
 	"log"
 	"net"
 	"os"
+	"os/exec"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"unsafe"
 )
 
-func ServeConnections(tunFile *os.File, listenPort string) error {
-	err := createNewTun()
-	err = configureServer(tunFile)
+func Serve(tunFile *os.File, listenPort string) error {
+	err := configureServer(tunFile)
 	if err != nil {
 		return fmt.Errorf("failed to configure a server: %s\n", err)
 	}
@@ -56,7 +55,7 @@ func configureServer(tunFile *os.File) error {
 		return err
 	}
 
-	err = EnableNAT(externalIfName)
+	err = enableNAT(externalIfName)
 	if err != nil {
 		return fmt.Errorf("failed enabling NAT: %v", err)
 	}
@@ -75,7 +74,7 @@ func undoConfigureSever(tunFile *os.File) {
 		log.Printf("failed to determing tunnel ifName: %s\n", err)
 	}
 
-	err = DisableNAT(tunName)
+	err = disableNAT(tunName)
 	if err != nil {
 		log.Printf("failed to disbale NAT: %s\n", err)
 	}
@@ -238,26 +237,71 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 	}
 }
 
-func createNewTun() error {
-	conf, err := (&server.Conf{}).Read()
+func enableNAT(iface string) error {
+	cmd := exec.Command("iptables", "-t", "nat", "-A", "POSTROUTING", "-o", iface, "-j", "MASQUERADE")
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("failed to read server conf: %s", err)
+		return fmt.Errorf("failed to enable NAT on %s: %v, output: %s", iface, err, output)
+	}
+	return nil
+}
+
+func disableNAT(iface string) error {
+	cmd := exec.Command("iptables", "-t", "nat", "-D", "POSTROUTING", "-o", iface, "-j", "MASQUERADE")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to disable NAT on %s: %v, output: %s", iface, err, output)
+	}
+	return nil
+}
+
+func setupForwarding(tunFile *os.File, extIface string) error {
+	// Get the name of the TUN interface
+	tunName, err := getIfName(tunFile)
+	if err != nil {
+		return fmt.Errorf("failed to determing tunnel ifName: %s\n", err)
+	}
+	if tunName == "" {
+		return fmt.Errorf("failed to get TUN interface name")
 	}
 
-	_, _ = utils.DelTun(conf.IfName)
-
-	name, err := UpNewTun(conf.IfName)
+	// Set up iptables rules
+	cmd := exec.Command("iptables", "-A", "FORWARD", "-i", extIface, "-o", tunName, "-m", "state", "--state",
+		"RELATED,ESTABLISHED", "-j", "ACCEPT")
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Fatalf("failed to create interface %v: %v", conf.IfName, err)
+		return fmt.Errorf("failed to set up forwarding rule for %s -> %s: %v, output: %s", extIface, tunName, err, output)
 	}
-	fmt.Printf("Created TUN interface: %v\n", name)
 
-	_, err = utils.AssignTunIP(conf.IfName, conf.IfIP)
+	cmd = exec.Command("iptables", "-A", "FORWARD", "-i", tunName, "-o", extIface, "-j", "ACCEPT")
+	output, err = cmd.CombinedOutput()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to set up forwarding rule for %s -> %s: %v, output: %s", tunName, extIface, err, output)
 	}
-	fmt.Printf("assigned IP %s to interface %s\n", conf.TCPPort, conf.IfName)
+	return nil
+}
 
+func clearForwarding(tunFile *os.File, extIface string) error {
+	tunName, err := getIfName(tunFile)
+	if err != nil {
+		return fmt.Errorf("failed to determing tunnel ifName: %s\n", err)
+	}
+	if tunName == "" {
+		return fmt.Errorf("failed to get TUN interface name")
+	}
+
+	cmd := exec.Command("iptables", "-D", "FORWARD", "-i", extIface, "-o", tunName, "-m", "state", "--state",
+		"RELATED,ESTABLISHED", "-j", "ACCEPT")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to remove forwarding rule for %s -> %s: %v, output: %s", extIface, tunName, err, output)
+	}
+
+	cmd = exec.Command("iptables", "-D", "FORWARD", "-i", tunName, "-o", extIface, "-j", "ACCEPT")
+	output, err = cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to remove forwarding rule for %s -> %s: %v, output: %s", tunName, extIface, err, output)
+	}
 	return nil
 }
 
