@@ -5,6 +5,7 @@ import (
 	"etha-tunnel/handshake/ChaCha20"
 	"etha-tunnel/handshake/ChaCha20/handshakeHandlers"
 	"etha-tunnel/network/ip"
+	"etha-tunnel/network/iptables"
 	"etha-tunnel/network/packets"
 	"fmt"
 	"golang.org/x/sys/unix"
@@ -12,7 +13,6 @@ import (
 	"log"
 	"net"
 	"os"
-	"os/exec"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -55,7 +55,7 @@ func configureServer(tunFile *os.File) error {
 		return err
 	}
 
-	err = enableNAT(externalIfName)
+	err = iptables.EnableMasquerade(externalIfName)
 	if err != nil {
 		return fmt.Errorf("failed enabling NAT: %v", err)
 	}
@@ -74,7 +74,7 @@ func undoConfigureSever(tunFile *os.File) {
 		log.Printf("failed to determing tunnel ifName: %s\n", err)
 	}
 
-	err = disableNAT(tunName)
+	err = iptables.DisableMasquerade(tunName)
 	if err != nil {
 		log.Printf("failed to disbale NAT: %s\n", err)
 	}
@@ -239,24 +239,6 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 	}
 }
 
-func enableNAT(iface string) error {
-	cmd := exec.Command("iptables", "-t", "nat", "-A", "POSTROUTING", "-o", iface, "-j", "MASQUERADE")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed to enable NAT on %s: %v, output: %s", iface, err, output)
-	}
-	return nil
-}
-
-func disableNAT(iface string) error {
-	cmd := exec.Command("iptables", "-t", "nat", "-D", "POSTROUTING", "-o", iface, "-j", "MASQUERADE")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed to disable NAT on %s: %v, output: %s", iface, err, output)
-	}
-	return nil
-}
-
 func setupForwarding(tunFile *os.File, extIface string) error {
 	// Get the name of the TUN interface
 	tunName, err := getIfName(tunFile)
@@ -268,18 +250,16 @@ func setupForwarding(tunFile *os.File, extIface string) error {
 	}
 
 	// Set up iptables rules
-	cmd := exec.Command("iptables", "-A", "FORWARD", "-i", extIface, "-o", tunName, "-m", "state", "--state",
-		"RELATED,ESTABLISHED", "-j", "ACCEPT")
-	output, err := cmd.CombinedOutput()
+	err = iptables.AcceptForwardFromTunToDev(tunName, extIface)
 	if err != nil {
-		return fmt.Errorf("failed to set up forwarding rule for %s -> %s: %v, output: %s", extIface, tunName, err, output)
+		return fmt.Errorf("failed to setup forwarding rule: %s", err)
 	}
 
-	cmd = exec.Command("iptables", "-A", "FORWARD", "-i", tunName, "-o", extIface, "-j", "ACCEPT")
-	output, err = cmd.CombinedOutput()
+	err = iptables.AcceptForwardFromDevToTun(tunName, extIface)
 	if err != nil {
-		return fmt.Errorf("failed to set up forwarding rule for %s -> %s: %v, output: %s", tunName, extIface, err, output)
+		return fmt.Errorf("failed to setup forwarding rule: %s", err)
 	}
+
 	return nil
 }
 
@@ -292,17 +272,14 @@ func clearForwarding(tunFile *os.File, extIface string) error {
 		return fmt.Errorf("failed to get TUN interface name")
 	}
 
-	cmd := exec.Command("iptables", "-D", "FORWARD", "-i", extIface, "-o", tunName, "-m", "state", "--state",
-		"RELATED,ESTABLISHED", "-j", "ACCEPT")
-	output, err := cmd.CombinedOutput()
+	err = iptables.DropForwardFromTunToDev(tunName, extIface)
 	if err != nil {
-		return fmt.Errorf("failed to remove forwarding rule for %s -> %s: %v, output: %s", extIface, tunName, err, output)
+		return fmt.Errorf("failed to execute iptables command: %s", err)
 	}
 
-	cmd = exec.Command("iptables", "-D", "FORWARD", "-i", tunName, "-o", extIface, "-j", "ACCEPT")
-	output, err = cmd.CombinedOutput()
+	err = iptables.DropForwardFromDevToTun(tunName, extIface)
 	if err != nil {
-		return fmt.Errorf("failed to remove forwarding rule for %s -> %s: %v, output: %s", tunName, extIface, err, output)
+		return fmt.Errorf("failed to execute iptables command: %s", err)
 	}
 	return nil
 }
