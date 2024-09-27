@@ -4,8 +4,8 @@ import (
 	"encoding/binary"
 	"etha-tunnel/handshake/ChaCha20"
 	"etha-tunnel/handshake/ChaCha20/handshakeHandlers"
+	"etha-tunnel/network/ip"
 	"etha-tunnel/network/packets"
-	"etha-tunnel/network/utils"
 	"fmt"
 	"golang.org/x/sys/unix"
 	"io"
@@ -50,7 +50,7 @@ func Serve(tunFile *os.File, listenPort string) error {
 }
 
 func configureServer(tunFile *os.File) error {
-	externalIfName, err := utils.GetDefaultIf()
+	externalIfName, err := ip.RouteDefault()
 	if err != nil {
 		return err
 	}

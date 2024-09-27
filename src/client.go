@@ -5,14 +5,13 @@ import (
 	"etha-tunnel/handshake/ChaCha20"
 	"etha-tunnel/handshake/ChaCha20/handshakeHandlers"
 	"etha-tunnel/network"
-	"etha-tunnel/network/utils"
+	"etha-tunnel/network/ip"
 	"etha-tunnel/settings/client"
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"os"
-	"os/exec"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -65,14 +64,14 @@ func main() {
 }
 
 func configureClient(conf *client.Conf) error {
-	_, _ = utils.DelTun(conf.IfName)
+	_, _ = ip.LinkDel(conf.IfName)
 	name, err := network.UpNewTun(conf.IfName)
 	if err != nil {
 		return fmt.Errorf("failed to create interface %v: %v", conf.IfName, err)
 	}
 	fmt.Printf("created TUN interface: %v\n", name)
 
-	_, err = utils.AssignTunIP(conf.IfName, conf.IfIP)
+	_, err = ip.LinkAddrAdd(conf.IfName, conf.IfIP)
 	if err != nil {
 		return err
 	}
@@ -83,13 +82,7 @@ func configureClient(conf *client.Conf) error {
 		return fmt.Errorf("failed to parse server address: %v", err)
 	}
 
-	cmd := exec.Command("ip", "route", "get", serverIP)
-	output, err := cmd.Output()
-	if err != nil {
-		return fmt.Errorf("failed to get route to server IP: %v", err)
-	}
-
-	routeInfo := string(output)
+	routeInfo, err := ip.RouteGet(serverIP)
 	var viaGateway, devInterface string
 	fields := strings.Fields(routeInfo)
 	for i, field := range fields {
@@ -104,19 +97,19 @@ func configureClient(conf *client.Conf) error {
 		return fmt.Errorf("failed to parse route to server IP")
 	}
 
-	if viaGateway != "" {
-		cmd = exec.Command("ip", "route", "add", serverIP, "via", viaGateway, "dev", devInterface)
+	if viaGateway == "" {
+		err = ip.RouteAddViaGateway(serverIP, devInterface, viaGateway)
 	} else {
-		cmd = exec.Command("ip", "route", "add", serverIP, "dev", devInterface)
+		err = ip.RouteAdd(serverIP, devInterface)
 	}
-	err = cmd.Run()
+
 	if err != nil {
 		return fmt.Errorf("failed to add route to server IP: %v", err)
 	}
 
 	fmt.Printf("added route to server %s via %s dev %s\n", serverIP, viaGateway, devInterface)
 
-	_, err = utils.SetDefaultIf(conf.IfName)
+	_, err = ip.RouteAddDefaultDev(conf.IfName)
 	if err != nil {
 		return err
 	}

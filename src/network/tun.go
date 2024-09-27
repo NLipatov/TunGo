@@ -1,7 +1,7 @@
 package network
 
 import (
-	"etha-tunnel/network/utils"
+	"etha-tunnel/network/ip"
 	"etha-tunnel/settings/server"
 	"fmt"
 	"golang.org/x/sys/unix"
@@ -30,12 +30,12 @@ func UpNewTun(ifName string) (string, error) {
 		return "", err
 	}
 
-	_, err = utils.AddTun(ifName)
+	_, err = ip.LinkAdd(ifName)
 	if err != nil {
 		return "", err
 	}
 
-	_, err = utils.SetTunUp(ifName)
+	_, err = ip.LinkSetUp(ifName)
 	if err != nil {
 		return "", err
 	}
@@ -92,7 +92,7 @@ func WriteToTun(tun *os.File, data []byte) error {
 }
 
 func CreateNewTun(conf *server.Conf) error {
-	_, _ = utils.DelTun(conf.IfName)
+	_, _ = ip.LinkDel(conf.IfName)
 
 	name, err := UpNewTun(conf.IfName)
 	if err != nil {
@@ -100,7 +100,7 @@ func CreateNewTun(conf *server.Conf) error {
 	}
 	fmt.Printf("Created TUN interface: %v\n", name)
 
-	_, err = utils.AssignTunIP(conf.IfName, conf.IfIP)
+	_, err = ip.LinkAddrAdd(conf.IfName, conf.IfIP)
 	if err != nil {
 		return err
 	}
