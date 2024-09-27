@@ -159,7 +159,9 @@ func registerClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, lo
 
 	serverSession, extIpAddr, err := handshakeHandlers.OnClientConnected(conn)
 	if err != nil {
-		log.Printf("failed register a client: %s\n", err)
+		log.Printf("failed register a client: %s. Closing connection with: %s\n", err, conn.RemoteAddr())
+		conn.Close()
+		return
 	}
 
 	localIpToConn.Store(*extIpAddr, conn)
