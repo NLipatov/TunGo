@@ -98,9 +98,9 @@ func configureClient(conf *client.Conf) error {
 	}
 
 	if viaGateway == "" {
-		err = ip.RouteAddViaGateway(serverIP, devInterface, viaGateway)
-	} else {
 		err = ip.RouteAdd(serverIP, devInterface)
+	} else {
+		err = ip.RouteAddViaGateway(serverIP, devInterface, viaGateway)
 	}
 
 	if err != nil {
