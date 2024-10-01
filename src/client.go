@@ -26,6 +26,13 @@ func main() {
 	if clientConfigurationErr != nil {
 		log.Fatalf("failed to configure client: %v", clientConfigurationErr)
 	}
+	deconfigureClient(strings.Split(conf.ServerTCPAddress, ":")[0], conf.IfName)
+
+	// Handle args
+	args := os.Args
+	if len(args[1:]) == 1 && args[1] == "deconfigure" {
+		return
+	}
 
 	tunFile, err := network.OpenTunByName(conf.IfName)
 	if err != nil {
@@ -116,6 +123,18 @@ func configureClient(conf *client.Conf) error {
 	fmt.Printf("set %s as default gateway\n", conf.IfName)
 
 	return nil
+}
+
+func deconfigureClient(hostIp string, devName string) {
+	routeDelErr := ip.RouteDel(hostIp)
+	if routeDelErr != nil {
+		log.Printf("failed to delete route: %s", routeDelErr)
+	}
+
+	_, linkDelErr := ip.LinkDel(devName)
+	if linkDelErr != nil {
+		log.Printf("failed to delete link: %s", linkDelErr)
+	}
 }
 
 func forwardTunToTCP(conn net.Conn, tunFile *os.File, session ChaCha20.Session) {
