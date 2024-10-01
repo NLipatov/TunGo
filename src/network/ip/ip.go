@@ -112,3 +112,13 @@ func RouteAddViaGateway(hostIp string, ifName string, gateway string) error {
 	}
 	return err
 }
+
+// RouteDel deletes a route to host
+func RouteDel(hostIp string) error {
+	cmd := exec.Command("ip", "route", "del", hostIp)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to del route: %s, output: %s", err, output)
+	}
+	return err
+}
