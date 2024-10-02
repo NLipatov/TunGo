@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"etha-tunnel/client/forwarding/ipconfiguration"
 	"etha-tunnel/client/forwarding/tcptunforward"
 	"etha-tunnel/handshake/ChaCha20"
 	"etha-tunnel/handshake/ChaCha20/handshakeHandlers"
