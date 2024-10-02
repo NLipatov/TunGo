@@ -125,7 +125,7 @@ func main() {
 
 func listenForExitCommand(cancelFunc context.CancelFunc) {
 	scanner := bufio.NewScanner(os.Stdin)
-	fmt.Println("Type 'exit' to close the connection and shut down the client.")
+	fmt.Printf("Type '%s' to turn off the client\n", shutdownCommand)
 	for scanner.Scan() {
 		text := strings.TrimSpace(scanner.Text())
 		if strings.EqualFold(text, shutdownCommand) {
