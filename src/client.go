@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"context"
-	"etha-tunnel/client/forwarding/configuration"
 	"etha-tunnel/client/forwarding/tcptunforward"
 	"etha-tunnel/handshake/ChaCha20"
 	"etha-tunnel/handshake/ChaCha20/handshakeHandlers"
@@ -35,9 +34,9 @@ func main() {
 	go listenForExitCommand(cancel)
 
 	// Client configuration (enabling TUN/TCP forwarding)
-	configuration.Unconfigure()
-	defer configuration.Unconfigure()
-	if err := configuration.Configure(); err != nil {
+	ipconfiguration.Unconfigure()
+	defer ipconfiguration.Unconfigure()
+	if err := ipconfiguration.Configure(); err != nil {
 		log.Fatalf("Failed to configure client: %v", err)
 	}
 
@@ -64,7 +63,7 @@ func main() {
 		session, err := handshakeHandlers.OnConnectedToServer(conn, conf)
 		if err != nil {
 			conn.Close()
-			configuration.Unconfigure()
+			ipconfiguration.Unconfigure()
 			log.Printf("registration failed: %s\n", err)
 			log.Fatalf("connection is aborted")
 		}
@@ -153,7 +152,7 @@ func establishConnection(conf client.Conf, ctx context.Context) (net.Conn, error
 			log.Printf("Failed to connect to server: %v", err)
 			reconnectAttempts++
 			if reconnectAttempts > maxReconnectAttempts {
-				configuration.Unconfigure()
+				ipconfiguration.Unconfigure()
 				log.Fatalf("Exceeded maximum reconnect attempts (%d)", maxReconnectAttempts)
 			}
 			log.Printf("Retrying to connect in %v...", backoff)

@@ -1,4 +1,4 @@
-package configuration
+package ipconfiguration
 
 import (
 	"etha-tunnel/network"
