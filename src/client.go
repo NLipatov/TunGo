@@ -3,11 +3,11 @@ package main
 import (
 	"bufio"
 	"context"
+	"etha-tunnel/client/forwarding/clientconfiguration"
 	"etha-tunnel/client/forwarding/tcptunforward"
 	"etha-tunnel/handshake/ChaCha20"
 	"etha-tunnel/handshake/ChaCha20/handshakeHandlers"
 	"etha-tunnel/network"
-	"etha-tunnel/network/ip"
 	"etha-tunnel/settings/client"
 	"fmt"
 	"log"
@@ -52,7 +52,7 @@ func main() {
 	}
 
 	// Deconfigure client at startup to ensure a clean state
-	deconfigureClient(*conf)
+	clientconfiguration.Unconfigure()
 
 	// Handle command-line arguments
 	args := os.Args
@@ -61,12 +61,12 @@ func main() {
 	}
 
 	// Configure the client
-	if err := configureClient(conf); err != nil {
+	if err := clientconfiguration.Configure(); err != nil {
 		log.Fatalf("Failed to configure client: %v", err)
 	}
 
 	// Ensure deconfiguration is performed on exit
-	defer deconfigureClient(*conf)
+	defer clientconfiguration.Unconfigure()
 
 	// Open the TUN interface
 	tunFile, err := network.OpenTunByName(conf.IfName)
@@ -89,7 +89,7 @@ func main() {
 			log.Printf("Failed to connect to server: %v", err)
 			reconnectAttempts++
 			if reconnectAttempts > maxReconnectAttempts {
-				deconfigureClient(*conf)
+				clientconfiguration.Unconfigure()
 				log.Fatalf("Exceeded maximum reconnect attempts (%d)", maxReconnectAttempts)
 			}
 			log.Printf("Retrying to connect in %v...", backoff)
@@ -113,7 +113,7 @@ func main() {
 			conn.Close()
 			reconnectAttempts++
 			if reconnectAttempts > maxReconnectAttempts {
-				deconfigureClient(*conf)
+				clientconfiguration.Unconfigure()
 				log.Fatalf("Exceeded maximum reconnect attempts (%d)", maxReconnectAttempts)
 			}
 			log.Printf("Retrying to connect in %v...", backoff)
@@ -202,80 +202,5 @@ func listenForExitCommand(cancelFunc context.CancelFunc) {
 	}
 	if err := scanner.Err(); err != nil {
 		log.Printf("Error reading standard input: %v", err)
-	}
-}
-
-// configureClient configures the client by setting up the TUN interface and routing
-func configureClient(conf *client.Conf) error {
-	// Delete existing link if any
-	_, _ = ip.LinkDel(conf.IfName)
-
-	name, err := network.UpNewTun(conf.IfName)
-	if err != nil {
-		return fmt.Errorf("failed to create interface %v: %v", conf.IfName, err)
-	}
-	fmt.Printf("Created TUN interface: %v\n", name)
-
-	// Assign IP address to the TUN interface
-	_, err = ip.LinkAddrAdd(conf.IfName, conf.IfIP)
-	if err != nil {
-		return err
-	}
-	fmt.Printf("Assigned IP %s to interface %s\n", conf.IfIP, conf.IfName)
-
-	// Parse server IP
-	serverIP, _, err := net.SplitHostPort(conf.ServerTCPAddress)
-	if err != nil {
-		return fmt.Errorf("failed to parse server address: %v", err)
-	}
-
-	// Get routing information
-	routeInfo, err := ip.RouteGet(serverIP)
-	var viaGateway, devInterface string
-	fields := strings.Fields(routeInfo)
-	for i, field := range fields {
-		if field == "via" && i+1 < len(fields) {
-			viaGateway = fields[i+1]
-		}
-		if field == "dev" && i+1 < len(fields) {
-			devInterface = fields[i+1]
-		}
-	}
-	if devInterface == "" {
-		return fmt.Errorf("failed to parse route to server IP")
-	}
-
-	// Add route to server IP
-	if viaGateway == "" {
-		err = ip.RouteAdd(serverIP, devInterface)
-	} else {
-		err = ip.RouteAddViaGateway(serverIP, devInterface, viaGateway)
-	}
-	if err != nil {
-		return fmt.Errorf("failed to add route to server IP: %v", err)
-	}
-	fmt.Printf("Added route to server %s via %s dev %s\n", serverIP, viaGateway, devInterface)
-
-	// Set the TUN interface as the default gateway
-	_, err = ip.RouteAddDefaultDev(conf.IfName)
-	if err != nil {
-		return err
-	}
-	fmt.Printf("Set %s as default gateway\n", conf.IfName)
-
-	return nil
-}
-
-// deconfigureClient deconfigures the client by removing routes and deleting the TUN interface
-func deconfigureClient(conf client.Conf) {
-	hostIp, devName := strings.Split(conf.ServerTCPAddress, ":")[0], conf.IfName
-	// Delete the route to the host IP
-	if err := ip.RouteDel(hostIp); err != nil {
-		log.Printf("Failed to delete route: %s", err)
-	}
-
-	// Delete the TUN interface
-	if _, err := ip.LinkDel(devName); err != nil {
-		log.Printf("Failed to delete interface: %s", err)
 	}
 }
