@@ -3,7 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
-	"etha-tunnel/client/forwarding/clientconfiguration"
+	"etha-tunnel/client/forwarding/configuration"
 	"etha-tunnel/client/forwarding/tcptunforward"
 	"etha-tunnel/handshake/ChaCha20"
 	"etha-tunnel/handshake/ChaCha20/handshakeHandlers"
@@ -52,7 +52,7 @@ func main() {
 	}
 
 	// Deconfigure client at startup to ensure a clean state
-	clientconfiguration.Unconfigure()
+	configuration.Unconfigure()
 
 	// Handle command-line arguments
 	args := os.Args
@@ -61,12 +61,12 @@ func main() {
 	}
 
 	// Configure the client
-	if err := clientconfiguration.Configure(); err != nil {
+	if err := configuration.Configure(); err != nil {
 		log.Fatalf("Failed to configure client: %v", err)
 	}
 
 	// Ensure deconfiguration is performed on exit
-	defer clientconfiguration.Unconfigure()
+	defer configuration.Unconfigure()
 
 	// Open the TUN interface
 	tunFile, err := network.OpenTunByName(conf.IfName)
@@ -89,7 +89,7 @@ func main() {
 			log.Printf("Failed to connect to server: %v", err)
 			reconnectAttempts++
 			if reconnectAttempts > maxReconnectAttempts {
-				clientconfiguration.Unconfigure()
+				configuration.Unconfigure()
 				log.Fatalf("Exceeded maximum reconnect attempts (%d)", maxReconnectAttempts)
 			}
 			log.Printf("Retrying to connect in %v...", backoff)
@@ -113,7 +113,7 @@ func main() {
 			conn.Close()
 			reconnectAttempts++
 			if reconnectAttempts > maxReconnectAttempts {
-				clientconfiguration.Unconfigure()
+				configuration.Unconfigure()
 				log.Fatalf("Exceeded maximum reconnect attempts (%d)", maxReconnectAttempts)
 			}
 			log.Printf("Retrying to connect in %v...", backoff)

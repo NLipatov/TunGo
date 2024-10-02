@@ -1,4 +1,4 @@
-package clientconfiguration
+package configuration
 
 import (
 	"etha-tunnel/network"
