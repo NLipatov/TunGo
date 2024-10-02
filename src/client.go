@@ -13,10 +13,8 @@ import (
 	"log"
 	"net"
 	"os"
-	"os/signal"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -33,40 +31,21 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Handle OS signals for graceful shutdown
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		sig := <-sigChan
-		log.Printf("Received signal: %v. Shutting down...", sig)
-		cancel()
-	}()
-
 	// Start a goroutine to listen for user input
 	go listenForExitCommand(cancel)
+
+	// Client configuration (enabling TUN/TCP forwarding)
+	configuration.Unconfigure()
+	defer configuration.Unconfigure()
+	if err := configuration.Configure(); err != nil {
+		log.Fatalf("Failed to configure client: %v", err)
+	}
 
 	// Read client configuration
 	conf, err := (&client.Conf{}).Read()
 	if err != nil {
 		log.Fatalf("Failed to read configuration: %v", err)
 	}
-
-	// Deconfigure client at startup to ensure a clean state
-	configuration.Unconfigure()
-
-	// Handle command-line arguments
-	args := os.Args
-	if len(args[1:]) == 1 && args[1] == "deconfigure" {
-		return
-	}
-
-	// Configure the client
-	if err := configuration.Configure(); err != nil {
-		log.Fatalf("Failed to configure client: %v", err)
-	}
-
-	// Ensure deconfiguration is performed on exit
-	defer configuration.Unconfigure()
 
 	// Open the TUN interface
 	tunFile, err := network.OpenTunByName(conf.IfName)
@@ -188,7 +167,6 @@ func main() {
 	}
 }
 
-// listenForExitCommand listens for the 'exit' command from the user to initiate shutdown
 func listenForExitCommand(cancelFunc context.CancelFunc) {
 	scanner := bufio.NewScanner(os.Stdin)
 	fmt.Println("Type 'exit' to close the connection and shut down the client.")
