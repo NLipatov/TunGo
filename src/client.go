@@ -54,64 +54,20 @@ func main() {
 	}
 	defer tunFile.Close()
 
-	var reconnectAttempts int
-	backoff := initialBackoff
-
 	for {
-		// Attempt to connect using DialContext with a pointer to net.Dialer
-		dialer := &net.Dialer{}
-		dialCtx, dialCancel := context.WithTimeout(ctx, connectionTimeout)
-		conn, err := dialer.DialContext(dialCtx, "tcp", conf.ServerTCPAddress)
-		dialCancel()
-
-		if err != nil {
-			log.Printf("Failed to connect to server: %v", err)
-			reconnectAttempts++
-			if reconnectAttempts > maxReconnectAttempts {
-				configuration.Unconfigure()
-				log.Fatalf("Exceeded maximum reconnect attempts (%d)", maxReconnectAttempts)
-			}
-			log.Printf("Retrying to connect in %v...", backoff)
-			select {
-			case <-ctx.Done():
-				log.Println("Client is shutting down.")
-				return
-			case <-time.After(backoff):
-			}
-			backoff *= 2
-			if backoff > maxBackoff {
-				backoff = maxBackoff
-			}
-			continue
+		conn, connectionError := establishConnection(*conf, ctx)
+		if connectionError != nil {
+			log.Fatalf("failed establish connection: %s", connectionError)
 		}
 
 		log.Printf("Connected to server at %s", conf.ServerTCPAddress)
 		session, err := handshakeHandlers.OnConnectedToServer(conn, conf)
 		if err != nil {
-			log.Printf("Registration failed: %s", err)
 			conn.Close()
-			reconnectAttempts++
-			if reconnectAttempts > maxReconnectAttempts {
-				configuration.Unconfigure()
-				log.Fatalf("Exceeded maximum reconnect attempts (%d)", maxReconnectAttempts)
-			}
-			log.Printf("Retrying to connect in %v...", backoff)
-			select {
-			case <-ctx.Done():
-				log.Println("Client is shutting down.")
-				return
-			case <-time.After(backoff):
-			}
-			backoff *= 2
-			if backoff > maxBackoff {
-				backoff = maxBackoff
-			}
-			continue
+			configuration.Unconfigure()
+			log.Printf("registration failed: %s\n", err)
+			log.Fatalf("connection is aborted")
 		}
-
-		// Reset backoff after successful connection
-		reconnectAttempts = 0
-		backoff = initialBackoff
 
 		// Create a child context for managing data forwarding goroutines
 		connCtx, connCancel := context.WithCancel(ctx)
@@ -180,5 +136,40 @@ func listenForExitCommand(cancelFunc context.CancelFunc) {
 	}
 	if err := scanner.Err(); err != nil {
 		log.Printf("Error reading standard input: %v", err)
+	}
+}
+
+func establishConnection(conf client.Conf, ctx context.Context) (net.Conn, error) {
+	reconnectAttempts := 0
+	backoff := initialBackoff
+
+	for {
+		dialer := &net.Dialer{}
+		dialCtx, dialCancel := context.WithTimeout(ctx, connectionTimeout)
+		conn, err := dialer.DialContext(dialCtx, "tcp", conf.ServerTCPAddress)
+		dialCancel()
+
+		if err != nil {
+			log.Printf("Failed to connect to server: %v", err)
+			reconnectAttempts++
+			if reconnectAttempts > maxReconnectAttempts {
+				configuration.Unconfigure()
+				log.Fatalf("Exceeded maximum reconnect attempts (%d)", maxReconnectAttempts)
+			}
+			log.Printf("Retrying to connect in %v...", backoff)
+			select {
+			case <-ctx.Done():
+				log.Println("Client is shutting down.")
+				return nil, err
+			case <-time.After(backoff):
+			}
+			backoff *= 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
+			continue
+		}
+
+		return conn, nil
 	}
 }
