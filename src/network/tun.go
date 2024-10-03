@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strings"
 	"unsafe"
 )
 
@@ -17,12 +18,6 @@ const (
 	IFF_TUN   = 0x0001     // Enabling TUN flag
 	IFF_NO_PI = 0x1000     // Disabling PI (Packet Information)
 )
-
-type ifreq struct {
-	Name  [IFNAMSIZ]byte
-	Flags uint16
-	_     [24]byte
-}
 
 func UpNewTun(ifName string) (string, error) {
 	err := enableIPv4Forwarding()
@@ -50,7 +45,7 @@ func OpenTunByName(ifname string) (*os.File, error) {
 		return nil, fmt.Errorf("failed to open %v: %v", tunFilePath, err)
 	}
 
-	var req ifreq
+	var req IfReq
 	copy(req.Name[:], ifname)
 	req.Flags = IFF_TUN | IFF_NO_PI
 
@@ -83,14 +78,6 @@ func enableIPv4Forwarding() error {
 	return nil
 }
 
-func WriteToTun(tun *os.File, data []byte) error {
-	_, err := tun.Write(data)
-	if err != nil {
-		return fmt.Errorf("failed to write to TUN: %v", err)
-	}
-	return nil
-}
-
 func CreateNewTun(conf *server.Conf) error {
 	_, _ = ip.LinkDel(conf.IfName)
 
@@ -107,4 +94,22 @@ func CreateNewTun(conf *server.Conf) error {
 	fmt.Printf("assigned IP %s to interface %s\n", conf.TCPPort, conf.IfName)
 
 	return nil
+}
+
+func GetIfName(tunFile *os.File) (string, error) {
+	var ifr IfReq
+
+	_, _, errno := unix.Syscall(
+		unix.SYS_IOCTL,
+		tunFile.Fd(),
+		uintptr(unix.TUNGETIFF),
+		uintptr(unsafe.Pointer(&ifr)),
+	)
+	if errno != 0 {
+		return "", errno
+	}
+
+	ifName := string(ifr.Name[:])
+	ifName = strings.Trim(string(ifr.Name[:]), "\x00")
+	return ifName, nil
 }

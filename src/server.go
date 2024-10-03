@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"etha-tunnel/clientConfGenerator"
 	"etha-tunnel/network"
+	"etha-tunnel/server/forwarding/routing"
 	"etha-tunnel/settings/server"
 	"fmt"
 	"log"
@@ -80,7 +81,7 @@ func startServer(conf *server.Conf) error {
 	}
 	defer tunFile.Close()
 
-	err = network.Serve(tunFile, conf.TCPPort)
+	err = routing.Start(tunFile, conf.TCPPort)
 	if err != nil {
 		return err
 	}

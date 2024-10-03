@@ -1,4 +1,4 @@
-package tcptunforward
+package clienttcptunforward
 
 import (
 	"context"

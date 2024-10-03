@@ -1,91 +1,19 @@
-package network
+package servertcptunforward
 
 import (
 	"encoding/binary"
 	"etha-tunnel/handshake/ChaCha20"
 	"etha-tunnel/handshake/ChaCha20/handshakeHandlers"
-	"etha-tunnel/network/ip"
-	"etha-tunnel/network/iptables"
 	"etha-tunnel/network/packets"
-	"fmt"
-	"golang.org/x/sys/unix"
 	"io"
 	"log"
 	"net"
 	"os"
-	"strings"
 	"sync"
 	"sync/atomic"
-	"unsafe"
 )
 
-func Serve(tunFile *os.File, listenPort string) error {
-	err := configureServer(tunFile)
-	if err != nil {
-		return fmt.Errorf("failed to configure a server: %s\n", err)
-	}
-	defer undoConfigureSever(tunFile)
-
-	// Map to keep track of connected clients
-	var extIpToLocalIp sync.Map
-	var extIpToCryptoSession sync.Map
-
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-	// TUN -> TCP
-	go func() {
-		defer wg.Done()
-		forwardTunToTCP(tunFile, &extIpToLocalIp, &extIpToCryptoSession)
-	}()
-
-	// TCP -> TUN
-	go func() {
-		defer wg.Done()
-		forwardTCPToTun(listenPort, tunFile, &extIpToLocalIp, &extIpToCryptoSession)
-	}()
-
-	wg.Wait()
-	return nil
-}
-
-func configureServer(tunFile *os.File) error {
-	externalIfName, err := ip.RouteDefault()
-	if err != nil {
-		return err
-	}
-
-	err = iptables.EnableMasquerade(externalIfName)
-	if err != nil {
-		return fmt.Errorf("failed enabling NAT: %v", err)
-	}
-
-	err = setupForwarding(tunFile, externalIfName)
-	if err != nil {
-		return fmt.Errorf("failed to set up forwarding: %v", err)
-	}
-
-	return err
-}
-
-func undoConfigureSever(tunFile *os.File) {
-	tunName, err := getIfName(tunFile)
-	if err != nil {
-		log.Printf("failed to determing tunnel ifName: %s\n", err)
-	}
-
-	err = iptables.DisableMasquerade(tunName)
-	if err != nil {
-		log.Printf("failed to disbale NAT: %s\n", err)
-	}
-
-	err = clearForwarding(tunFile, tunName)
-	if err != nil {
-		log.Printf("failed to disbale forwarding: %s\n", err)
-	}
-}
-
-func forwardTunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map) {
+func ToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map) {
 	buf := make([]byte, 65535)
 	for {
 		n, err := tunFile.Read(buf)
@@ -136,7 +64,7 @@ func forwardTunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap
 	}
 }
 
-func forwardTCPToTun(listenPort string, tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map) {
+func ToTun(listenPort string, tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map) {
 	listener, err := net.Listen("tcp", listenPort)
 	if err != nil {
 		log.Printf("failed to listen on port %s: %v", listenPort, err)
@@ -153,7 +81,6 @@ func forwardTCPToTun(listenPort string, tunFile *os.File, localIpMap *sync.Map, 
 		go registerClient(conn, tunFile, localIpMap, localIpToSessionMap)
 	}
 }
-
 func registerClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, localIpToServerSessionMap *sync.Map) {
 	log.Printf("client connected: %s", conn.RemoteAddr())
 
@@ -232,72 +159,10 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 		}
 
 		// Write the decrypted packet to the TUN interface
-		if err := WriteToTun(tunFile, packet); err != nil {
+		_, err = tunFile.Write(packet)
+		if err != nil {
 			log.Printf("failed to write to TUN: %v", err)
 			return
 		}
 	}
-}
-
-func setupForwarding(tunFile *os.File, extIface string) error {
-	// Get the name of the TUN interface
-	tunName, err := getIfName(tunFile)
-	if err != nil {
-		return fmt.Errorf("failed to determing tunnel ifName: %s\n", err)
-	}
-	if tunName == "" {
-		return fmt.Errorf("failed to get TUN interface name")
-	}
-
-	// Set up iptables rules
-	err = iptables.AcceptForwardFromTunToDev(tunName, extIface)
-	if err != nil {
-		return fmt.Errorf("failed to setup forwarding rule: %s", err)
-	}
-
-	err = iptables.AcceptForwardFromDevToTun(tunName, extIface)
-	if err != nil {
-		return fmt.Errorf("failed to setup forwarding rule: %s", err)
-	}
-
-	return nil
-}
-
-func clearForwarding(tunFile *os.File, extIface string) error {
-	tunName, err := getIfName(tunFile)
-	if err != nil {
-		return fmt.Errorf("failed to determing tunnel ifName: %s\n", err)
-	}
-	if tunName == "" {
-		return fmt.Errorf("failed to get TUN interface name")
-	}
-
-	err = iptables.DropForwardFromTunToDev(tunName, extIface)
-	if err != nil {
-		return fmt.Errorf("failed to execute iptables command: %s", err)
-	}
-
-	err = iptables.DropForwardFromDevToTun(tunName, extIface)
-	if err != nil {
-		return fmt.Errorf("failed to execute iptables command: %s", err)
-	}
-	return nil
-}
-
-func getIfName(tunFile *os.File) (string, error) {
-	var ifr ifreq
-
-	_, _, errno := unix.Syscall(
-		unix.SYS_IOCTL,
-		tunFile.Fd(),
-		uintptr(unix.TUNGETIFF),
-		uintptr(unsafe.Pointer(&ifr)),
-	)
-	if errno != 0 {
-		return "", errno
-	}
-
-	ifName := string(ifr.Name[:])
-	ifName = strings.Trim(string(ifr.Name[:]), "\x00")
-	return ifName, nil
 }

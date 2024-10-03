@@ -3,8 +3,8 @@ package main
 import (
 	"bufio"
 	"context"
+	"etha-tunnel/client/forwarding/clienttcptunforward"
 	"etha-tunnel/client/forwarding/ipconfiguration"
-	"etha-tunnel/client/forwarding/tcptunforward"
 	"etha-tunnel/handshake/ChaCha20"
 	"etha-tunnel/handshake/ChaCha20/handshakeHandlers"
 	"etha-tunnel/network"
@@ -83,7 +83,7 @@ func main() {
 		// Goroutine for forwarding data from TUN to TCP
 		go func(conn net.Conn, tunFile *os.File, session ChaCha20.Session, ctx context.Context) {
 			defer wg.Done()
-			if err := tcptunforward.ToTCP(conn, tunFile, session, ctx); err != nil {
+			if err := clienttcptunforward.ToTCP(conn, tunFile, session, ctx); err != nil {
 				if ctx.Err() != nil {
 					// Context was canceled, no need to log as an error
 					return
@@ -96,7 +96,7 @@ func main() {
 		// Goroutine for forwarding data from TCP to TUN
 		go func(conn net.Conn, tunFile *os.File, session ChaCha20.Session, ctx context.Context) {
 			defer wg.Done()
-			if err := tcptunforward.ToTun(conn, tunFile, session, ctx); err != nil {
+			if err := clienttcptunforward.ToTun(conn, tunFile, session, ctx); err != nil {
 				if ctx.Err() != nil {
 					// Context was canceled, no need to log as an error
 					return
