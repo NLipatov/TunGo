@@ -25,7 +25,12 @@ func Configure(tunFile *os.File) error {
 		return fmt.Errorf("failed to set up forwarding: %v", err)
 	}
 
-	return err
+	if err != nil {
+		return err
+	}
+
+	log.Printf("server configured\n")
+	return nil
 }
 
 func Unconfigure(tunFile *os.File) {
@@ -43,6 +48,8 @@ func Unconfigure(tunFile *os.File) {
 	if err != nil {
 		log.Printf("failed to disbale forwarding: %s\n", err)
 	}
+
+	log.Printf("server unconfigured\n")
 }
 
 func setupForwarding(tunFile *os.File, extIface string) error {

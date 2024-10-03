@@ -4,7 +4,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/json"
-	"etha-tunnel/clientConfGenerator"
+	"etha-tunnel/connectionconfgeneration"
 	"etha-tunnel/network"
 	"etha-tunnel/server/forwarding/routing"
 	"etha-tunnel/settings/server"
@@ -59,7 +59,7 @@ func ensureEd25519KeyPairCreated(conf *server.Conf) error {
 }
 
 func generateClientConf() error {
-	newConf, err := clientConfGenerator.Generate()
+	newConf, err := connectionconfgeneration.Generate()
 	if err != nil {
 		log.Fatalf("failed to generate client conf: %s\n", err)
 	}

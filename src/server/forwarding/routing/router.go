@@ -1,6 +1,8 @@
 package routing
 
 import (
+	"context"
+	"etha-tunnel/inputcommands"
 	"etha-tunnel/server/forwarding/serveripconfiguration"
 	"etha-tunnel/server/forwarding/servertcptunforward"
 	"fmt"
@@ -8,7 +10,16 @@ import (
 	"sync"
 )
 
+const shutdownCommand = "exit"
+
 func Start(tunFile *os.File, listenPort string) error {
+	// Create a context that can be canceled
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Start a goroutine to listen for user input
+	go inputcommands.ListenForExitCommand(cancel, shutdownCommand)
+
 	// Setup server
 	err := serveripconfiguration.Configure(tunFile)
 	if err != nil {
@@ -26,13 +37,13 @@ func Start(tunFile *os.File, listenPort string) error {
 	// TUN -> TCP
 	go func() {
 		defer wg.Done()
-		servertcptunforward.ToTCP(tunFile, &extToLocalIp, &extIpToSession)
+		servertcptunforward.ToTCP(tunFile, &extToLocalIp, &extIpToSession, ctx)
 	}()
 
 	// TCP -> TUN
 	go func() {
 		defer wg.Done()
-		servertcptunforward.ToTun(listenPort, tunFile, &extToLocalIp, &extIpToSession)
+		servertcptunforward.ToTun(listenPort, tunFile, &extToLocalIp, &extIpToSession, ctx)
 	}()
 
 	wg.Wait()

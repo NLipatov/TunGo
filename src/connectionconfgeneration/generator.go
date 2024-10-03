@@ -1,4 +1,4 @@
-package clientConfGenerator
+package connectionconfgeneration
 
 import (
 	"etha-tunnel/settings/client"

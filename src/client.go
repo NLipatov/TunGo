@@ -1,19 +1,17 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"etha-tunnel/client/forwarding/clienttcptunforward"
 	"etha-tunnel/client/forwarding/ipconfiguration"
 	"etha-tunnel/handshake/ChaCha20"
 	"etha-tunnel/handshake/ChaCha20/handshakeHandlers"
+	"etha-tunnel/inputcommands"
 	"etha-tunnel/network"
 	"etha-tunnel/settings/client"
-	"fmt"
 	"log"
 	"net"
 	"os"
-	"strings"
 	"sync"
 	"time"
 )
@@ -32,7 +30,7 @@ func main() {
 	defer cancel()
 
 	// Start a goroutine to listen for user input
-	go listenForExitCommand(cancel)
+	go inputcommands.ListenForExitCommand(cancel, shutdownCommand)
 
 	// Client configuration (enabling TUN/TCP forwarding)
 	ipconfiguration.Unconfigure()
@@ -120,22 +118,6 @@ func main() {
 
 		// Close the connection (if not already closed)
 		conn.Close()
-	}
-}
-
-func listenForExitCommand(cancelFunc context.CancelFunc) {
-	scanner := bufio.NewScanner(os.Stdin)
-	fmt.Printf("Type '%s' to turn off the client\n", shutdownCommand)
-	for scanner.Scan() {
-		text := strings.TrimSpace(scanner.Text())
-		if strings.EqualFold(text, shutdownCommand) {
-			log.Println("Exit command received. Shutting down...")
-			cancelFunc()
-			return
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		log.Printf("Error reading standard input: %v", err)
 	}
 }
 

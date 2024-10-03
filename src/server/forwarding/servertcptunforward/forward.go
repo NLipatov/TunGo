@@ -1,6 +1,7 @@
 package servertcptunforward
 
 import (
+	"context"
 	"encoding/binary"
 	"etha-tunnel/handshake/ChaCha20"
 	"etha-tunnel/handshake/ChaCha20/handshakeHandlers"
@@ -13,58 +14,67 @@ import (
 	"sync/atomic"
 )
 
-func ToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map) {
-	buf := make([]byte, 65535)
+const (
+	maxPacketLengthBytes = 65535
+)
+
+func ToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map, ctx context.Context) {
+	buf := make([]byte, maxPacketLengthBytes)
 	for {
-		n, err := tunFile.Read(buf)
-		if err != nil {
-			log.Printf("failed to read from TUN: %v", err)
-			continue
-		}
-		packet := buf[:n]
-		if len(packet) < 1 {
-			log.Printf("invalid IP packet")
-			continue
-		}
-
-		header, err := packets.Parse(packet)
-		if err != nil {
-			log.Printf("failed to parse a IPv4 header")
-			continue
-		}
-		destinationIP := header.GetDestinationIP().String()
-		v, ok := localIpMap.Load(destinationIP)
-		if ok {
-			conn := v.(net.Conn)
-			///
-			sessionValue, sessionExists := localIpToSessionMap.Load(destinationIP)
-			if !sessionExists {
-				log.Printf("failed to load session")
+		select {
+		case <-ctx.Done():
+			log.Println("Server is shutting down.")
+			return
+		default:
+			n, err := tunFile.Read(buf)
+			if err != nil {
+				log.Printf("failed to read from TUN: %v", err)
 				continue
 			}
-			session := sessionValue.(*ChaCha20.Session)
-			aad := session.CreateAAD(true, session.S2CCounter)
-			encryptedPacket, err := session.Encrypt(packet, aad)
-			if err != nil {
-				log.Printf("failder to encrypt a package")
+			packet := buf[:n]
+			if len(packet) < 1 {
+				log.Printf("invalid IP packet")
 				continue
 			}
-			atomic.AddUint64(&session.S2CCounter, 1)
 
-			length := uint32(len(encryptedPacket))
-			lengthBuf := make([]byte, 4)
-			binary.BigEndian.PutUint32(lengthBuf, length)
-			_, err = conn.Write(append(lengthBuf, encryptedPacket...))
+			header, err := packets.Parse(packet)
 			if err != nil {
-				log.Printf("failed to send packet to client: %v", err)
-				localIpMap.Delete(destinationIP)
-				localIpToSessionMap.Delete(destinationIP)
+				log.Printf("failed to parse a IPv4 header")
+				continue
+			}
+			destinationIP := header.GetDestinationIP().String()
+			v, ok := localIpMap.Load(destinationIP)
+			if ok {
+				conn := v.(net.Conn)
+				sessionValue, sessionExists := localIpToSessionMap.Load(destinationIP)
+				if !sessionExists {
+					log.Printf("failed to load session")
+					continue
+				}
+				session := sessionValue.(*ChaCha20.Session)
+				aad := session.CreateAAD(true, session.S2CCounter)
+				encryptedPacket, err := session.Encrypt(packet, aad)
+				if err != nil {
+					log.Printf("failder to encrypt a package")
+					continue
+				}
+				atomic.AddUint64(&session.S2CCounter, 1)
+
+				length := uint32(len(encryptedPacket))
+				lengthBuf := make([]byte, 4)
+				binary.BigEndian.PutUint32(lengthBuf, length)
+				_, err = conn.Write(append(lengthBuf, encryptedPacket...))
+				if err != nil {
+					log.Printf("failed to send packet to client: %v", err)
+					localIpMap.Delete(destinationIP)
+					localIpToSessionMap.Delete(destinationIP)
+				}
 			}
 		}
 	}
 }
 
-func ToTun(listenPort string, tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map) {
+func ToTun(listenPort string, tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map, ctx context.Context) {
 	listener, err := net.Listen("tcp", listenPort)
 	if err != nil {
 		log.Printf("failed to listen on port %s: %v", listenPort, err)
@@ -72,15 +82,28 @@ func ToTun(listenPort string, tunFile *os.File, localIpMap *sync.Map, localIpToS
 	defer listener.Close()
 	log.Printf("server listening on port %s", listenPort)
 
+	//using this goroutine to 'unblock' Listener.Accept blocking-call
+	go func() {
+		<-ctx.Done()
+		listener.Close()
+	}()
+
 	for {
-		conn, err := listener.Accept()
-		if err != nil {
-			log.Printf("failed to accept connection: %v", err)
-			continue
+		select {
+		case <-ctx.Done():
+			log.Println("Server is shutting down.")
+			return
+		default:
+			conn, err := listener.Accept()
+			if err != nil {
+				log.Printf("failed to accept connection: %v", err)
+				continue
+			}
+			go registerClient(conn, tunFile, localIpMap, localIpToSessionMap)
 		}
-		go registerClient(conn, tunFile, localIpMap, localIpToSessionMap)
 	}
 }
+
 func registerClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, localIpToServerSessionMap *sync.Map) {
 	log.Printf("client connected: %s", conn.RemoteAddr())
 
@@ -105,7 +128,7 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 		log.Printf("client disconnected: %s", conn.RemoteAddr())
 	}()
 
-	buf := make([]byte, 65535)
+	buf := make([]byte, maxPacketLengthBytes)
 	for {
 		// Read the length of the encrypted packet (4 bytes)
 		_, err := io.ReadFull(conn, buf[:4])
@@ -118,7 +141,7 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 
 		// Extract the length
 		length := binary.BigEndian.Uint32(buf[:4])
-		if length > 65535 {
+		if length > maxPacketLengthBytes {
 			log.Printf("packet too large: %d", length)
 			return
 		}
