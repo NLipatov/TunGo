@@ -4,14 +4,12 @@ import (
 	"context"
 	"etha-tunnel/client/forwarding/clienttcptunforward"
 	"etha-tunnel/client/forwarding/ipconfiguration"
-	"etha-tunnel/handshake/ChaCha20"
 	"etha-tunnel/handshake/ChaCha20/handshakeHandlers"
 	"etha-tunnel/inputcommands"
 	"etha-tunnel/network"
 	"etha-tunnel/settings/client"
 	"log"
 	"net"
-	"os"
 	"sync"
 	"time"
 )
@@ -75,33 +73,20 @@ func main() {
 		go func() {
 			<-connCtx.Done()
 			conn.Close()
+			connCancel()
 		}()
 
-		// Goroutine for forwarding data from TUN to TCP
-		go func(conn net.Conn, tunFile *os.File, session ChaCha20.Session, ctx context.Context) {
+		// TUN -> TCP
+		go func() {
 			defer wg.Done()
-			if err := clienttcptunforward.ToTCP(conn, tunFile, session, ctx); err != nil {
-				if ctx.Err() != nil {
-					// Context was canceled, no need to log as an error
-					return
-				}
-				log.Printf("Error in TUN->TCP: %v", err)
-				connCancel()
-			}
-		}(conn, tunFile, *session, connCtx)
+			clienttcptunforward.ToTCP(conn, tunFile, *session, ctx)
+		}()
 
-		// Goroutine for forwarding data from TCP to TUN
-		go func(conn net.Conn, tunFile *os.File, session ChaCha20.Session, ctx context.Context) {
+		// TCP -> TUN
+		go func() {
 			defer wg.Done()
-			if err := clienttcptunforward.ToTun(conn, tunFile, session, ctx); err != nil {
-				if ctx.Err() != nil {
-					// Context was canceled, no need to log as an error
-					return
-				}
-				log.Printf("Error in TCP->TUN: %v", err)
-				connCancel()
-			}
-		}(conn, tunFile, *session, connCtx)
+			clienttcptunforward.ToTun(conn, tunFile, *session, ctx)
+		}()
 
 		// Wait for goroutines to finish
 		wg.Wait()
