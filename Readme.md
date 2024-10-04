@@ -6,66 +6,71 @@ alt="2 gophers dancing a tango"
 src="https://i.ibb.co/K7yzDf6/DALL-E-2024-10-04-20-18-51-A-minimalist-logo-featuring-two-Go-language-mascots-dancing-tango-togethe.webp" width="40%"/>
 </p>
 
-Tiny, secure VPN implemented from scratch in Go.  
-TunGo uses Ed25519 for key exchange and ChaCha20 to encrypt traffic between server and client.
+TunGo is a tiny, secure VPN implemented from scratch in Go.  
+It uses Ed25519 for key exchange and ChaCha20 for traffic encryption between the server and client.
 
-# Usage
+# Quick Start
 
-### Run the server in a Docker container:
+### Run the Server
+
+Start the server in a Docker container using the following command:
+
 ```bash
 docker run -it --device=/dev/net/tun --cap-add=NET_ADMIN -p 8080:8080 nlipatov/tungo:tungo-server
 ```
+NOTE: This container has no ED25519 kets in it's server conf.json, so new pair will be generated.
 
-Connect to the server as a client:
+### Connect as a Client
+
+Run the client from the command line:
 
 ```bash
 sudo go run client.go
 ```
 
-# Regenerate Server Ed25519 Keys
+# Interactive Commands
 
-To regenerate server Ed25519 keys, remove the key lines from src/settings/settings/conf.json.
-The server will generate new keys on the next startup.
+TunGo supports a few interactive commands that simplify the management of your VPN setup.
 
-After regeneration, each client must update its configuration with the server’s new public Ed25519 key.
+### Command: generate client configuration
 
-# Generate Client Configuration
+While the server is running, type the gen command to generate the client configuration. 
+This will print out the necessary connection details.
 
-Run the following command to generate the client configuration:
-
-```bash
-sudo go run server.go
-```
-
-type 'gen' in terminal.
-
-Example output:
+Example:
 ```
 2024/10/04 20:12:13 server configured
 2024/10/04 20:12:13 server listening on port :8080
-gen <-- 'gen' command
+gen
 {
-"IfName": "ethatun0",
-"IfIP": "10.0.0.4/24",
-"ServerTCPAddress": "192.168.122.194:8080",
-"Ed25519PublicKey": "PSGbN32XBr+foaD5HkZatNqigTfpqUlbdYBOCNXjtBo="
+  "IfName": "ethatun0",
+  "IfIP": "10.0.0.4/24",
+  "ServerTCPAddress": "192.168.122.194:8080",
+  "Ed25519PublicKey": "PSGbN32XBr+foaD5HkZatNqigTfpqUlbdYBOCNXjtBo="
 }
 ```
 
-Client configuration is:
-```json
-{
-"IfName": "ethatun0",
-"IfIP": "10.0.0.4/24",
-"ServerTCPAddress": "192.168.122.194:8080",
-"Ed25519PublicKey": "PSGbN32XBr+foaD5HkZatNqigTfpqUlbdYBOCNXjtBo="
-}
-```
+Save the generated client configuration into `src/settings/client/conf.json`.
 
-Save this configuration in src/settings/client/conf.json.
+# Command: shutdown Server or Client
+
+To gracefully stop the server or client, use the exit command from the interactive terminal:
+
+```bash
+exit
+```
 
 # Build the Server Container
+
+To build the server Docker container, run the following command from the project root:
 
 ```bash
 docker buildx build -t tungo-server src
 ```
+
+# Regenerate Server Ed25519 Keys
+
+To regenerate server keys, manually delete the lines containing Ed25519 keys from `src/settings/settings/conf.json`.
+On the next startup, the server will generate new keys.
+
+After regeneration, all clients need to update their configurations with the server’s new public Ed25519 key.
