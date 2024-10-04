@@ -30,7 +30,7 @@ func OnClientConnected(conn net.Conn) (*ChaCha20.Session, *string, error) {
 	//Read client hello
 	clientHello, err := (&ChaCha20.ClientHello{}).Read(buf)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to deserialize registration message: %s", err)
+		return nil, nil, fmt.Errorf("invalid client hello: %s", err)
 	}
 
 	// Generate server hello response

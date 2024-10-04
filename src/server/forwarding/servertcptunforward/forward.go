@@ -105,12 +105,12 @@ func ToTun(listenPort string, tunFile *os.File, localIpMap *sync.Map, localIpToS
 }
 
 func registerClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, localIpToServerSessionMap *sync.Map) {
-	log.Printf("client connected: %s", conn.RemoteAddr())
+	log.Printf("Connected: %s", conn.RemoteAddr())
 
 	serverSession, extIpAddr, err := handshakeHandlers.OnClientConnected(conn)
 	if err != nil {
-		log.Printf("failed register a client: %s. Closing connection with: %s\n", err, conn.RemoteAddr())
 		conn.Close()
+		log.Printf("Connection with %s is closed (regfail: %s)\n", conn.RemoteAddr(), err)
 		return
 	}
 
@@ -125,7 +125,7 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 		localIpToConn.Delete(*extIpAddr)
 		localIpToSession.Delete(*extIpAddr)
 		conn.Close()
-		log.Printf("client disconnected: %s", conn.RemoteAddr())
+		log.Printf("Disconnected: %s", conn.RemoteAddr())
 	}()
 
 	buf := make([]byte, maxPacketLengthBytes)
