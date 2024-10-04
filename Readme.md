@@ -34,18 +34,31 @@ After regeneration, each client must update its configuration with the server’
 Run the following command to generate the client configuration:
 
 ```bash
-sudo go run server.go gen
+sudo go run server.go
 ```
+
+type 'gen' in terminal.
 
 Example output:
 ```
-json
-
+2024/10/04 20:12:13 server configured
+2024/10/04 20:12:13 server listening on port :8080
+gen <-- 'gen' command
 {
-  "IfName": "ethatun0",
-  "IfIP": "10.0.0.3/24",
-  "ServerTCPAddress": "192.168.122.194:8080",
-  "Ed25519PublicKey": "m+tjQmYAG8tYt8xSTry29Mrl9SInd9pvoIsSywzPzdU="
+"IfName": "ethatun0",
+"IfIP": "10.0.0.4/24",
+"ServerTCPAddress": "192.168.122.194:8080",
+"Ed25519PublicKey": "PSGbN32XBr+foaD5HkZatNqigTfpqUlbdYBOCNXjtBo="
+}
+```
+
+Client configuration is:
+```json
+{
+"IfName": "ethatun0",
+"IfIP": "10.0.0.4/24",
+"ServerTCPAddress": "192.168.122.194:8080",
+"Ed25519PublicKey": "PSGbN32XBr+foaD5HkZatNqigTfpqUlbdYBOCNXjtBo="
 }
 ```
 
