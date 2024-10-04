@@ -23,7 +23,7 @@ func ToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map
 	for {
 		select {
 		case <-ctx.Done():
-			log.Println("Server is shutting down.")
+			log.Println("server is shutting down.")
 			return
 		default:
 			n, err := tunFile.Read(buf)
@@ -126,7 +126,7 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 		localIpToConn.Delete(*extIpAddr)
 		localIpToSession.Delete(*extIpAddr)
 		conn.Close()
-		log.Printf("Disconnected: %s", conn.RemoteAddr())
+		log.Printf("disconnected: %s", conn.RemoteAddr())
 	}()
 
 	buf := make([]byte, maxPacketLengthBytes)
