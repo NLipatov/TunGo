@@ -18,7 +18,7 @@ Start the server in a Docker container using the following command:
 ```bash
 docker run -it --device=/dev/net/tun --cap-add=NET_ADMIN -p 8080:8080 nlipatov/tungo:tungo-server
 ```
-NOTE: This container has no ED25519 kets in it's server conf.json, so new pair will be generated.
+NOTE: This container has no ED25519 keys in its server conf.json, so new pair will be generated.
 
 ### Connect as a Client
 
