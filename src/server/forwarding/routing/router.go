@@ -10,15 +10,13 @@ import (
 	"sync"
 )
 
-const shutdownCommand = "exit"
-
 func Start(tunFile *os.File, listenPort string) error {
 	// Create a context that can be canceled
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	// Start a goroutine to listen for user input
-	go inputcommands.ListenForExitCommand(cancel, shutdownCommand)
+	go inputcommands.ListenForCommand(cancel)
 
 	// Setup server
 	err := serveripconfiguration.Configure(tunFile)

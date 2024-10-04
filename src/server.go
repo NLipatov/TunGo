@@ -3,14 +3,10 @@ package main
 import (
 	"crypto/ed25519"
 	"crypto/rand"
-	"encoding/json"
-	"etha-tunnel/connectionconfgeneration"
 	"etha-tunnel/network"
 	"etha-tunnel/server/forwarding/routing"
 	"etha-tunnel/settings/server"
-	"fmt"
 	"log"
-	"os"
 )
 
 func main() {
@@ -22,16 +18,6 @@ func main() {
 	err = ensureEd25519KeyPairCreated(conf)
 	if err != nil {
 		log.Fatalf("failed to generate ed25519 keys: %s", err)
-	}
-
-	// Handle args
-	args := os.Args
-	if len(args[1:]) == 1 && args[1] == "gen" {
-		err = generateClientConf()
-		if err != nil {
-			log.Fatalf("failed to generate new client conf: %s", err)
-		}
-		return
 	}
 
 	err = startServer(conf)
@@ -55,21 +41,6 @@ func ensureEd25519KeyPairCreated(conf *server.Conf) error {
 		log.Fatalf("failed to insert ed25519 keys to server conf: %s", err)
 	}
 
-	return nil
-}
-
-func generateClientConf() error {
-	newConf, err := connectionconfgeneration.Generate()
-	if err != nil {
-		log.Fatalf("failed to generate client conf: %s\n", err)
-	}
-
-	marshalled, err := json.MarshalIndent(newConf, "", "  ")
-	if err != nil {
-		log.Fatalf("failed to marshalize client conf: %s\n", err)
-	}
-
-	fmt.Println(string(marshalled))
 	return nil
 }
 

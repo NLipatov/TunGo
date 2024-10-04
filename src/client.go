@@ -20,7 +20,6 @@ const (
 	initialBackoff       = 1 * time.Second
 	maxBackoff           = 32 * time.Second
 	maxReconnectAttempts = 5
-	shutdownCommand      = "exit"
 	connectionTimeout    = 10 * time.Second
 )
 
@@ -30,7 +29,7 @@ func main() {
 	defer cancel()
 
 	// Start a goroutine to listen for user input
-	go inputcommands.ListenForExitCommand(cancel, shutdownCommand)
+	go inputcommands.ListenForCommand(cancel)
 
 	// Client configuration (enabling TUN/TCP forwarding)
 	ipconfiguration.Unconfigure()
