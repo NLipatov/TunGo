@@ -85,7 +85,7 @@ func CreateNewTun(conf *server.Conf) error {
 	if err != nil {
 		log.Fatalf("failed to create interface %v: %v", conf.IfName, err)
 	}
-	fmt.Printf("Created TUN interface: %v\n", name)
+	fmt.Printf("created TUN interface: %v\n", name)
 
 	_, err = ip.LinkAddrAdd(conf.IfName, conf.IfIP)
 	if err != nil {

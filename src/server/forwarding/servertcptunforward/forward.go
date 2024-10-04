@@ -105,14 +105,15 @@ func ToTun(listenPort string, tunFile *os.File, localIpMap *sync.Map, localIpToS
 }
 
 func registerClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, localIpToServerSessionMap *sync.Map) {
-	log.Printf("Connected: %s", conn.RemoteAddr())
+	log.Printf("connected: %s", conn.RemoteAddr())
 
 	serverSession, extIpAddr, err := handshakeHandlers.OnClientConnected(conn)
 	if err != nil {
 		conn.Close()
-		log.Printf("Connection with %s is closed (regfail: %s)\n", conn.RemoteAddr(), err)
+		log.Printf("connection with %s is closed (regfail: %s)\n", conn.RemoteAddr(), err)
 		return
 	}
+	log.Printf("registered: %s", conn.RemoteAddr())
 
 	localIpToConn.Store(*extIpAddr, conn)
 	localIpToServerSessionMap.Store(*extIpAddr, serverSession)

@@ -13,7 +13,7 @@ import (
 func Configure() error {
 	conf, err := (&client.Conf{}).Read()
 	if err != nil {
-		log.Fatalf("Failed to read configuration: %v", err)
+		log.Fatalf("failed to read configuration: %v", err)
 	}
 
 	// Delete existing link if any
@@ -23,14 +23,14 @@ func Configure() error {
 	if err != nil {
 		return fmt.Errorf("failed to create interface %v: %v", conf.IfName, err)
 	}
-	fmt.Printf("Created TUN interface: %v\n", name)
+	fmt.Printf("created TUN interface: %v\n", name)
 
 	// Assign IP address to the TUN interface
 	_, err = ip.LinkAddrAdd(conf.IfName, conf.IfIP)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Assigned IP %s to interface %s\n", conf.IfIP, conf.IfName)
+	fmt.Printf("assigned IP %s to interface %s\n", conf.IfIP, conf.IfName)
 
 	// Parse server IP
 	serverIP, _, err := net.SplitHostPort(conf.ServerTCPAddress)
@@ -63,14 +63,14 @@ func Configure() error {
 	if err != nil {
 		return fmt.Errorf("failed to add route to server IP: %v", err)
 	}
-	fmt.Printf("Added route to server %s via %s dev %s\n", serverIP, viaGateway, devInterface)
+	fmt.Printf("added route to server %s via %s dev %s\n", serverIP, viaGateway, devInterface)
 
 	// Set the TUN interface as the default gateway
 	_, err = ip.RouteAddDefaultDev(conf.IfName)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Set %s as default gateway\n", conf.IfName)
+	fmt.Printf("set %s as default gateway\n", conf.IfName)
 
 	return nil
 }
@@ -78,17 +78,17 @@ func Configure() error {
 func Unconfigure() {
 	conf, err := (&client.Conf{}).Read()
 	if err != nil {
-		log.Fatalf("Failed to read configuration: %v", err)
+		log.Fatalf("failed to read configuration: %v", err)
 	}
 
 	hostIp, devName := strings.Split(conf.ServerTCPAddress, ":")[0], conf.IfName
 	// Delete the route to the host IP
 	if err := ip.RouteDel(hostIp); err != nil {
-		log.Printf("Failed to delete route: %s", err)
+		log.Printf("failed to delete route: %s", err)
 	}
 
 	// Delete the TUN interface
 	if _, err := ip.LinkDel(devName); err != nil {
-		log.Printf("Failed to delete interface: %s", err)
+		log.Printf("failed to delete interface: %s", err)
 	}
 }
