@@ -57,7 +57,7 @@ Save the generated client configuration into `src/settings/client/conf.json`.
 
 # Command: shutdown Server or Client
 
-To gracefully stop the server or client, use the exit command from the interactive terminal:
+To remove all the network configuration changes and gracefully stop the server or client, use the exit command from the interactive terminal:
 
 ```bash
 exit
