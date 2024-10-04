@@ -34,8 +34,11 @@ TunGo supports a few interactive commands that simplify the management of your V
 
 ### Command: generate client configuration
 
-While the server is running, type the gen command to generate the client configuration. 
+While the server is running, type the gen command to generate the client configuration.
 This will print out the necessary connection details.
+```bash
+gen
+```
 
 Example:
 ```
@@ -60,6 +63,12 @@ To gracefully stop the server or client, use the exit command from the interacti
 exit
 ```
 
+Example:
+```bash
+exit
+2024/10/04 20:34:24 Exit command received. Shutting down...
+2024/10/04 20:34:24 Client is shutting down.
+```
 # Build the Server Container
 
 To build the server Docker container, run the following command from the project root:
