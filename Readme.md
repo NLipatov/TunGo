@@ -13,7 +13,7 @@ TunGo uses Ed25519 for key exchange and ChaCha20 to encrypt traffic between serv
 
 ### Run the server in a Docker container:
 ```bash
-docker run -it --device=/dev/net/tun --cap-add=NET_ADMIN -p 8080:8080 tungo-server
+docker run -it --device=/dev/net/tun --cap-add=NET_ADMIN -p 8080:8080 nlipatov/tungo:tungo-server
 ```
 
 Connect to the server as a client:
