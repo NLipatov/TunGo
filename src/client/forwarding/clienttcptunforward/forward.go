@@ -36,14 +36,14 @@ func ToTCP(conn net.Conn, tunFile *os.File, session ChaCha20.Session, ctx contex
 				log.Printf("failed to read from TUN: %v", err)
 			}
 
-			aad := session.CreateAAD(false, session.C2SCounter)
+			aad := session.CreateAAD(false, session.SendNonce)
 
 			encryptedPacket, err := session.Encrypt(buf[:n], aad)
 			if err != nil {
 				log.Printf("failed to encrypt packet: %v", err)
 			}
 
-			err = ChaCha20.IncrementNonce(&session.C2SCounter, &C2SMutex)
+			err = ChaCha20.IncrementNonce(&session.SendNonce, &C2SMutex)
 			if err != nil {
 				log.Print(err)
 				return
@@ -91,13 +91,13 @@ func ToTun(conn net.Conn, tunFile *os.File, session ChaCha20.Session, ctx contex
 				log.Printf("failed to read encrypted packet: %v", err)
 			}
 
-			aad := session.CreateAAD(true, session.S2CCounter)
+			aad := session.CreateAAD(true, session.RecvNonce)
 			decrypted, err := session.Decrypt(buf[:length], aad)
 			if err != nil {
 				log.Printf("failed to decrypt server packet: %v", err)
 			}
 
-			err = ChaCha20.IncrementNonce(&session.S2CCounter, &S2CMutex)
+			err = ChaCha20.IncrementNonce(&session.RecvNonce, &S2CMutex)
 			if err != nil {
 				log.Print(err)
 				return
