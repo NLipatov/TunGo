@@ -8,13 +8,14 @@ import (
 )
 
 type Session struct {
-	sendCipher cipher.AEAD
-	recvCipher cipher.AEAD
-	SendNonce  [12]byte // Used for encryption
-	RecvNonce  [12]byte // Used for decryption
-	isServer   bool
-	SessionId  [32]byte
-	nonceMutex sync.Mutex
+	sendCipher     cipher.AEAD
+	recvCipher     cipher.AEAD
+	SendNonce      [12]byte // Used for encryption
+	RecvNonce      [12]byte // Used for decryption
+	isServer       bool
+	SessionId      [32]byte
+	sendNonceMutex sync.Mutex
+	recvNonceMutex sync.Mutex
 }
 
 func NewSession(sendKey, recvKey []byte, isServer bool) (*Session, error) {
@@ -38,8 +39,8 @@ func NewSession(sendKey, recvKey []byte, isServer bool) (*Session, error) {
 }
 
 func (s *Session) Encrypt(plaintext []byte) ([]byte, error) {
-	s.nonceMutex.Lock()
-	defer s.nonceMutex.Unlock()
+	s.sendNonceMutex.Lock()
+	defer s.sendNonceMutex.Unlock()
 
 	aad := s.CreateAAD(s.isServer, s.SendNonce)
 
@@ -54,8 +55,8 @@ func (s *Session) Encrypt(plaintext []byte) ([]byte, error) {
 }
 
 func (s *Session) Decrypt(ciphertext []byte) ([]byte, error) {
-	s.nonceMutex.Lock()
-	defer s.nonceMutex.Unlock()
+	s.recvNonceMutex.Lock()
+	defer s.recvNonceMutex.Unlock()
 
 	aad := s.CreateAAD(!s.isServer, s.RecvNonce)
 
