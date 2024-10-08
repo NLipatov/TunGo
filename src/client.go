@@ -79,13 +79,13 @@ func main() {
 		// TUN -> TCP
 		go func() {
 			defer wg.Done()
-			clienttcptunforward.ToTCP(conn, tunFile, *session, ctx)
+			clienttcptunforward.ToTCP(conn, tunFile, session, ctx)
 		}()
 
 		// TCP -> TUN
 		go func() {
 			defer wg.Done()
-			clienttcptunforward.ToTun(conn, tunFile, *session, ctx)
+			clienttcptunforward.ToTun(conn, tunFile, session, ctx)
 		}()
 
 		// Wait for goroutines to finish

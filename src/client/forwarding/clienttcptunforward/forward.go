@@ -9,18 +9,14 @@ import (
 	"log"
 	"net"
 	"os"
-	"sync"
 )
 
 const (
 	maxPacketLengthBytes = 65535
 )
 
-var S2CMutex sync.Mutex
-var C2SMutex sync.Mutex
-
 // ToTCP forwards packets from TUN to TCP
-func ToTCP(conn net.Conn, tunFile *os.File, session ChaCha20.Session, ctx context.Context) {
+func ToTCP(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx context.Context) {
 	buf := make([]byte, maxPacketLengthBytes)
 	for {
 		select {
@@ -34,13 +30,13 @@ func ToTCP(conn net.Conn, tunFile *os.File, session ChaCha20.Session, ctx contex
 					return
 				}
 				log.Printf("failed to read from TUN: %v", err)
+				continue
 			}
 
-			aad := session.CreateAAD(false, session.SendNonce)
-
-			encryptedPacket, err := session.Encrypt(buf[:n], aad)
+			encryptedPacket, err := session.Encrypt(buf[:n])
 			if err != nil {
 				log.Printf("failed to encrypt packet: %v", err)
+				continue
 			}
 
 			length := uint32(len(encryptedPacket))
@@ -49,12 +45,13 @@ func ToTCP(conn net.Conn, tunFile *os.File, session ChaCha20.Session, ctx contex
 			_, err = conn.Write(append(lengthBuf, encryptedPacket...))
 			if err != nil {
 				log.Printf("failed to write to server: %v", err)
+				return
 			}
 		}
 	}
 }
 
-func ToTun(conn net.Conn, tunFile *os.File, session ChaCha20.Session, ctx context.Context) {
+func ToTun(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx context.Context) {
 	buf := make([]byte, maxPacketLengthBytes)
 	for {
 		select {
@@ -68,11 +65,13 @@ func ToTun(conn net.Conn, tunFile *os.File, session ChaCha20.Session, ctx contex
 					return
 				}
 				log.Printf("failed to read from server: %v", err)
+				return
 			}
 			length := binary.BigEndian.Uint32(buf[:4])
 
 			if length > maxPacketLengthBytes {
 				log.Printf("packet too large: %d", length)
+				return
 			}
 
 			// Read the encrypted packet based on the length
@@ -83,18 +82,20 @@ func ToTun(conn net.Conn, tunFile *os.File, session ChaCha20.Session, ctx contex
 					return
 				}
 				log.Printf("failed to read encrypted packet: %v", err)
+				return
 			}
 
-			aad := session.CreateAAD(true, session.RecvNonce)
-			decrypted, err := session.Decrypt(buf[:length], aad)
+			decrypted, err := session.Decrypt(buf[:length])
 			if err != nil {
 				log.Printf("failed to decrypt server packet: %v", err)
+				return
 			}
 
 			// Write the decrypted packet to the TUN interface
 			_, err = tunFile.Write(decrypted)
 			if err != nil {
 				log.Printf("failed to write to TUN: %v", err)
+				return
 			}
 		}
 	}

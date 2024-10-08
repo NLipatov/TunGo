@@ -54,8 +54,7 @@ func ToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map
 					continue
 				}
 				session := sessionValue.(*ChaCha20.Session)
-				aad := session.CreateAAD(true, session.SendNonce)
-				encryptedPacket, err := session.Encrypt(packet, aad)
+				encryptedPacket, err := session.Encrypt(packet)
 				if err != nil {
 					log.Printf("failder to encrypt a package")
 					continue
@@ -164,11 +163,8 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 
 		session := sessionValue.(*ChaCha20.Session)
 
-		// Create AAD for decryption using C2SCounter
-		aad := session.CreateAAD(false, session.RecvNonce)
-
 		// Decrypt the data
-		packet, err := session.Decrypt(buf[:length], aad)
+		packet, err := session.Decrypt(buf[:length])
 		if err != nil {
 			log.Printf("failed to decrypt packet: %v", err)
 			return

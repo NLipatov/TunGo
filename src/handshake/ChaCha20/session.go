@@ -37,28 +37,38 @@ func NewSession(sendKey, recvKey []byte, isServer bool) (*Session, error) {
 	}, nil
 }
 
-func (s *Session) Encrypt(plaintext []byte, aad []byte) ([]byte, error) {
-	err := incrementNonce(&s.SendNonce, &s.nonceMutex)
+func (s *Session) Encrypt(plaintext []byte) ([]byte, error) {
+	s.nonceMutex.Lock()
+	defer s.nonceMutex.Unlock()
 
+	aad := s.CreateAAD(s.isServer, s.SendNonce)
+
+	ciphertext := s.sendCipher.Seal(nil, s.SendNonce[:], plaintext, aad)
+
+	err := incrementNonce(&s.SendNonce)
 	if err != nil {
 		return nil, err
 	}
 
-	ciphertext := s.sendCipher.Seal(nil, s.SendNonce[:], plaintext, aad)
 	return ciphertext, nil
 }
 
-func (s *Session) Decrypt(ciphertext []byte, aad []byte) ([]byte, error) {
-	err := incrementNonce(&s.RecvNonce, &s.nonceMutex)
+func (s *Session) Decrypt(ciphertext []byte) ([]byte, error) {
+	s.nonceMutex.Lock()
+	defer s.nonceMutex.Unlock()
 
-	if err != nil {
-		return nil, err
-	}
+	aad := s.CreateAAD(!s.isServer, s.RecvNonce)
 
 	plaintext, err := s.recvCipher.Open(nil, s.RecvNonce[:], ciphertext, aad)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt: %w", err)
 	}
+
+	err = incrementNonce(&s.RecvNonce)
+	if err != nil {
+		return nil, err
+	}
+
 	return plaintext, nil
 }
 
@@ -73,9 +83,7 @@ func (s *Session) CreateAAD(isServerToClient bool, nonce [12]byte) []byte {
 	return aad
 }
 
-func incrementNonce(b *[12]byte, l *sync.Mutex) error {
-	l.Lock()
-	defer l.Unlock()
+func incrementNonce(b *[12]byte) error {
 	for i := len(b) - 1; i >= 0; i-- {
 		b[i]++
 		if b[i] != 0 {
