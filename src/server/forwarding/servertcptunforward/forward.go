@@ -17,9 +17,6 @@ const (
 	maxPacketLengthBytes = 65535
 )
 
-var S2CMutex sync.Mutex
-var C2SMutex sync.Mutex
-
 func ToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map, ctx context.Context) {
 	buf := make([]byte, maxPacketLengthBytes)
 	for {
