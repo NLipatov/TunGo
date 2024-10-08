@@ -4,17 +4,19 @@ import (
 	"crypto/cipher"
 	"fmt"
 	"golang.org/x/crypto/chacha20poly1305"
+	"sync"
 )
 
 type Session struct {
 	sendCipher cipher.AEAD
 	recvCipher cipher.AEAD
-	sendNonce  uint64
-	recvNonce  uint64
+	sendNonce  [12]byte // Used for encryption
+	recvNonce  [12]byte // Used for decryption
 	isServer   bool
 	SessionId  [32]byte
-	S2CCounter uint64 // Server to Client message counter
-	C2SCounter uint64 // Client to Server message counter
+	S2CCounter [12]byte // Server to Client message counter
+	C2SCounter [12]byte // Client to Server message counter
+	nonceMutex sync.Mutex
 }
 
 func NewSession(sendKey, recvKey []byte, isServer bool) (*Session, error) {
@@ -31,48 +33,56 @@ func NewSession(sendKey, recvKey []byte, isServer bool) (*Session, error) {
 	return &Session{
 		sendCipher: sendCipher,
 		recvCipher: recvCipher,
-		sendNonce:  0,
-		recvNonce:  0,
+		sendNonce:  [12]byte{},
+		recvNonce:  [12]byte{},
 		isServer:   isServer,
 	}, nil
 }
 
 func (s *Session) Encrypt(plaintext []byte, aad []byte) ([]byte, error) {
-	nonce := make([]byte, chacha20poly1305.NonceSize)
-	copy(nonce, uint64ToBytes(s.sendNonce)) // sendNonce used as out-coming nonce counter
-	s.sendNonce++
+	err := IncrementNonce(&s.sendNonce, &s.nonceMutex)
 
-	ciphertext := s.sendCipher.Seal(nil, nonce, plaintext, aad)
+	if err != nil {
+		return nil, err
+	}
+
+	ciphertext := s.sendCipher.Seal(nil, s.sendNonce[:], plaintext, aad)
 	return ciphertext, nil
 }
 
 func (s *Session) Decrypt(ciphertext []byte, aad []byte) ([]byte, error) {
-	nonce := make([]byte, chacha20poly1305.NonceSize)
-	copy(nonce, uint64ToBytes(s.recvNonce)) // recvNonce used as in-coming nonce counter
-	s.recvNonce++
+	err := IncrementNonce(&s.recvNonce, &s.nonceMutex)
 
-	plaintext, err := s.recvCipher.Open(nil, nonce, ciphertext, aad)
+	if err != nil {
+		return nil, err
+	}
+
+	plaintext, err := s.recvCipher.Open(nil, s.recvNonce[:], ciphertext, aad)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt: %w", err)
 	}
 	return plaintext, nil
 }
 
-func (s *Session) CreateAAD(isServerToClient bool, messageNumber uint64) []byte {
+func (s *Session) CreateAAD(isServerToClient bool, nonce [12]byte) []byte {
 	direction := []byte("client-to-server")
 	if isServerToClient {
 		direction = []byte("server-to-client")
 	}
 
 	aad := append(s.SessionId[:], direction...)
-	aad = append(aad, uint64ToBytes(messageNumber)...)
+	aad = append(aad, nonce[:]...)
 	return aad
 }
 
-func uint64ToBytes(num uint64) []byte {
-	b := make([]byte, 8)
-	for i := uint(0); i < 8; i++ {
-		b[7-i] = byte(num >> (i * 8))
+func IncrementNonce(b *[12]byte, l *sync.Mutex) error {
+	l.Lock()
+	defer l.Unlock()
+	for i := len(b) - 1; i >= 0; i-- {
+		b[i]++
+		if b[i] != 0 {
+			return nil
+		}
 	}
-	return b
+	return fmt.Errorf("nonce overflow")
 }

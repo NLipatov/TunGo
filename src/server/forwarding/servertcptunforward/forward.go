@@ -11,12 +11,14 @@ import (
 	"net"
 	"os"
 	"sync"
-	"sync/atomic"
 )
 
 const (
 	maxPacketLengthBytes = 65535
 )
+
+var S2CMutex sync.Mutex
+var C2SMutex sync.Mutex
 
 func ToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map, ctx context.Context) {
 	buf := make([]byte, maxPacketLengthBytes)
@@ -58,7 +60,11 @@ func ToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map
 					log.Printf("failder to encrypt a package")
 					continue
 				}
-				atomic.AddUint64(&session.S2CCounter, 1)
+				err = ChaCha20.IncrementNonce(&session.S2CCounter, &S2CMutex)
+				if err != nil {
+					log.Print(err)
+					return
+				}
 
 				length := uint32(len(encryptedPacket))
 				lengthBuf := make([]byte, 4)
@@ -173,8 +179,11 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 			return
 		}
 
-		// Increment the C2SCounter after successful decryption
-		atomic.AddUint64(&session.C2SCounter, 1)
+		err = ChaCha20.IncrementNonce(&session.C2SCounter, &C2SMutex)
+		if err != nil {
+			log.Print(err)
+			return
+		}
 
 		// Validate the packet (optional but recommended)
 		if _, err := packets.Parse(packet); err != nil {

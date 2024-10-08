@@ -9,12 +9,15 @@ import (
 	"log"
 	"net"
 	"os"
-	"sync/atomic"
+	"sync"
 )
 
 const (
 	maxPacketLengthBytes = 65535
 )
+
+var S2CMutex sync.Mutex
+var C2SMutex sync.Mutex
 
 // ToTCP forwards packets from TUN to TCP
 func ToTCP(conn net.Conn, tunFile *os.File, session ChaCha20.Session, ctx context.Context) {
@@ -40,7 +43,11 @@ func ToTCP(conn net.Conn, tunFile *os.File, session ChaCha20.Session, ctx contex
 				log.Printf("failed to encrypt packet: %v", err)
 			}
 
-			atomic.AddUint64(&session.C2SCounter, 1)
+			err = ChaCha20.IncrementNonce(&session.C2SCounter, &C2SMutex)
+			if err != nil {
+				log.Print(err)
+				return
+			}
 
 			length := uint32(len(encryptedPacket))
 			lengthBuf := make([]byte, 4)
@@ -90,7 +97,11 @@ func ToTun(conn net.Conn, tunFile *os.File, session ChaCha20.Session, ctx contex
 				log.Printf("failed to decrypt server packet: %v", err)
 			}
 
-			atomic.AddUint64(&session.S2CCounter, 1)
+			err = ChaCha20.IncrementNonce(&session.S2CCounter, &S2CMutex)
+			if err != nil {
+				log.Print(err)
+				return
+			}
 
 			// Write the decrypted packet to the TUN interface
 			_, err = tunFile.Write(decrypted)
