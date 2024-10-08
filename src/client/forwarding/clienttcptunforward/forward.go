@@ -43,12 +43,6 @@ func ToTCP(conn net.Conn, tunFile *os.File, session ChaCha20.Session, ctx contex
 				log.Printf("failed to encrypt packet: %v", err)
 			}
 
-			err = ChaCha20.IncrementNonce(&session.SendNonce, &C2SMutex)
-			if err != nil {
-				log.Print(err)
-				return
-			}
-
 			length := uint32(len(encryptedPacket))
 			lengthBuf := make([]byte, 4)
 			binary.BigEndian.PutUint32(lengthBuf, length)
@@ -95,12 +89,6 @@ func ToTun(conn net.Conn, tunFile *os.File, session ChaCha20.Session, ctx contex
 			decrypted, err := session.Decrypt(buf[:length], aad)
 			if err != nil {
 				log.Printf("failed to decrypt server packet: %v", err)
-			}
-
-			err = ChaCha20.IncrementNonce(&session.RecvNonce, &S2CMutex)
-			if err != nil {
-				log.Print(err)
-				return
 			}
 
 			// Write the decrypted packet to the TUN interface

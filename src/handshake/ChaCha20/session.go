@@ -38,7 +38,7 @@ func NewSession(sendKey, recvKey []byte, isServer bool) (*Session, error) {
 }
 
 func (s *Session) Encrypt(plaintext []byte, aad []byte) ([]byte, error) {
-	err := IncrementNonce(&s.SendNonce, &s.nonceMutex)
+	err := incrementNonce(&s.SendNonce, &s.nonceMutex)
 
 	if err != nil {
 		return nil, err
@@ -49,7 +49,7 @@ func (s *Session) Encrypt(plaintext []byte, aad []byte) ([]byte, error) {
 }
 
 func (s *Session) Decrypt(ciphertext []byte, aad []byte) ([]byte, error) {
-	err := IncrementNonce(&s.RecvNonce, &s.nonceMutex)
+	err := incrementNonce(&s.RecvNonce, &s.nonceMutex)
 
 	if err != nil {
 		return nil, err
@@ -73,7 +73,7 @@ func (s *Session) CreateAAD(isServerToClient bool, nonce [12]byte) []byte {
 	return aad
 }
 
-func IncrementNonce(b *[12]byte, l *sync.Mutex) error {
+func incrementNonce(b *[12]byte, l *sync.Mutex) error {
 	l.Lock()
 	defer l.Unlock()
 	for i := len(b) - 1; i >= 0; i-- {

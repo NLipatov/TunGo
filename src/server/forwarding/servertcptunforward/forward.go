@@ -60,11 +60,6 @@ func ToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map
 					log.Printf("failder to encrypt a package")
 					continue
 				}
-				err = ChaCha20.IncrementNonce(&session.SendNonce, &S2CMutex)
-				if err != nil {
-					log.Print(err)
-					return
-				}
 
 				length := uint32(len(encryptedPacket))
 				lengthBuf := make([]byte, 4)
@@ -176,12 +171,6 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 		packet, err := session.Decrypt(buf[:length], aad)
 		if err != nil {
 			log.Printf("failed to decrypt packet: %v", err)
-			return
-		}
-
-		err = ChaCha20.IncrementNonce(&session.RecvNonce, &C2SMutex)
-		if err != nil {
-			log.Print(err)
 			return
 		}
 
