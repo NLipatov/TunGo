@@ -54,13 +54,13 @@ func ToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map
 					continue
 				}
 				session := sessionValue.(*ChaCha20.Session)
-				aad := session.CreateAAD(true, session.S2CCounter)
+				aad := session.CreateAAD(true, session.SendNonce)
 				encryptedPacket, err := session.Encrypt(packet, aad)
 				if err != nil {
 					log.Printf("failder to encrypt a package")
 					continue
 				}
-				err = ChaCha20.IncrementNonce(&session.S2CCounter, &S2CMutex)
+				err = ChaCha20.IncrementNonce(&session.SendNonce, &S2CMutex)
 				if err != nil {
 					log.Print(err)
 					return
@@ -170,7 +170,7 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 		session := sessionValue.(*ChaCha20.Session)
 
 		// Create AAD for decryption using C2SCounter
-		aad := session.CreateAAD(false, session.C2SCounter)
+		aad := session.CreateAAD(false, session.RecvNonce)
 
 		// Decrypt the data
 		packet, err := session.Decrypt(buf[:length], aad)
@@ -179,7 +179,7 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 			return
 		}
 
-		err = ChaCha20.IncrementNonce(&session.C2SCounter, &C2SMutex)
+		err = ChaCha20.IncrementNonce(&session.RecvNonce, &C2SMutex)
 		if err != nil {
 			log.Print(err)
 			return

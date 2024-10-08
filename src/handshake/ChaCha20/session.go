@@ -10,12 +10,10 @@ import (
 type Session struct {
 	sendCipher cipher.AEAD
 	recvCipher cipher.AEAD
-	sendNonce  [12]byte // Used for encryption
-	recvNonce  [12]byte // Used for decryption
+	SendNonce  [12]byte // Used for encryption
+	RecvNonce  [12]byte // Used for decryption
 	isServer   bool
 	SessionId  [32]byte
-	S2CCounter [12]byte // Server to Client message counter
-	C2SCounter [12]byte // Client to Server message counter
 	nonceMutex sync.Mutex
 }
 
@@ -33,31 +31,31 @@ func NewSession(sendKey, recvKey []byte, isServer bool) (*Session, error) {
 	return &Session{
 		sendCipher: sendCipher,
 		recvCipher: recvCipher,
-		sendNonce:  [12]byte{},
-		recvNonce:  [12]byte{},
+		SendNonce:  [12]byte{},
+		RecvNonce:  [12]byte{},
 		isServer:   isServer,
 	}, nil
 }
 
 func (s *Session) Encrypt(plaintext []byte, aad []byte) ([]byte, error) {
-	err := IncrementNonce(&s.sendNonce, &s.nonceMutex)
+	err := IncrementNonce(&s.SendNonce, &s.nonceMutex)
 
 	if err != nil {
 		return nil, err
 	}
 
-	ciphertext := s.sendCipher.Seal(nil, s.sendNonce[:], plaintext, aad)
+	ciphertext := s.sendCipher.Seal(nil, s.SendNonce[:], plaintext, aad)
 	return ciphertext, nil
 }
 
 func (s *Session) Decrypt(ciphertext []byte, aad []byte) ([]byte, error) {
-	err := IncrementNonce(&s.recvNonce, &s.nonceMutex)
+	err := IncrementNonce(&s.RecvNonce, &s.nonceMutex)
 
 	if err != nil {
 		return nil, err
 	}
 
-	plaintext, err := s.recvCipher.Open(nil, s.recvNonce[:], ciphertext, aad)
+	plaintext, err := s.recvCipher.Open(nil, s.RecvNonce[:], ciphertext, aad)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt: %w", err)
 	}
