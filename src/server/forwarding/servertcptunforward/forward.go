@@ -104,18 +104,25 @@ func ToTun(listenPort string, tunFile *os.File, localIpMap *sync.Map, localIpToS
 func registerClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, localIpToServerSessionMap *sync.Map) {
 	log.Printf("connected: %s", conn.RemoteAddr())
 
-	serverSession, extIpAddr, err := handshakeHandlers.OnClientConnected(conn)
+	serverSession, internalIpAddr, err := handshakeHandlers.OnClientConnected(conn)
 	if err != nil {
 		conn.Close()
-		log.Printf("connection with %s is closed (regfail: %s)\n", conn.RemoteAddr(), err)
+		log.Printf("conn closed: %s (regfail: %s)\n", conn.RemoteAddr(), err)
 		return
 	}
 	log.Printf("registered: %s", conn.RemoteAddr())
 
-	localIpToConn.Store(*extIpAddr, conn)
-	localIpToServerSessionMap.Store(*extIpAddr, serverSession)
+	// Prevent IP spoofing
+	_, ipCollision := localIpToConn.Load(*internalIpAddr)
+	if ipCollision {
+		log.Printf("conn closed: %s (internal ip %s already in use)\n", conn.RemoteAddr(), *internalIpAddr)
+		_ = conn.Close()
+	}
 
-	handleClient(conn, tunFile, localIpToConn, localIpToServerSessionMap, extIpAddr)
+	localIpToConn.Store(*internalIpAddr, conn)
+	localIpToServerSessionMap.Store(*internalIpAddr, serverSession)
+
+	handleClient(conn, tunFile, localIpToConn, localIpToServerSessionMap, internalIpAddr)
 }
 
 func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, localIpToSession *sync.Map, extIpAddr *string) {
