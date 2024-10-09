@@ -3,5 +3,7 @@
   "IfIP": "10.0.0.1/24",
   "TCPPort": ":8080",
   "FallbackServerAddress": "192.168.122.194",
-  "ClientCounter": 1
+  "Ed25519PublicKey": "EJZpPA9K1gw9Wxgv6SLvUrALsm0AjNENoW0LdkKQBF4=",
+  "Ed25519PrivateKey": "rfmU1Waz2XQ11SH3cXplJmz3gbAMikYXiTjT2LtJcOQQlmk8D0rWDD1bGC/pIu9SsAuybQCM0Q2hbQt2QpAEXg==",
+  "ClientCounter": 0
 }
