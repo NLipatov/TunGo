@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"etha-tunnel/connectionconfgeneration"
+	"etha-tunnel/server/confgen"
 	"fmt"
 	"log"
 	"os"
@@ -38,7 +38,7 @@ func ListenForCommand(cancelFunc context.CancelFunc) {
 }
 
 func printNewClientConf() error {
-	newConf, err := connectionconfgeneration.Generate()
+	newConf, err := confgen.Generate()
 	if err != nil {
 		log.Fatalf("failed to generate client conf: %s\n", err)
 	}

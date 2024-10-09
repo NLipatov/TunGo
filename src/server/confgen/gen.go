@@ -1,4 +1,4 @@
-package connectionconfgeneration
+package confgen
 
 import (
 	"etha-tunnel/settings/client"
@@ -9,6 +9,7 @@ import (
 	"strings"
 )
 
+// Generate generates new client configuration
 func Generate() (*client.Conf, error) {
 	serverConf, err := (&server.Conf{}).Read()
 	if err != nil {
