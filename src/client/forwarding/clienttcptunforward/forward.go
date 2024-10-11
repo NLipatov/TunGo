@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"etha-tunnel/handshake/ChaCha20"
+	"etha-tunnel/network/keepalive"
 	"fmt"
 	"io"
 	"log"
@@ -16,13 +17,12 @@ const (
 )
 
 // ToTCP forwards packets from TUN to TCP
-func ToTCP(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx context.Context) {
+func ToTCP(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx context.Context, sendKeepAliveChan chan bool) {
 	buf := make([]byte, maxPacketLengthBytes)
-	for {
-		select {
-		case <-ctx.Done(): // Stop-signal
-			return
-		default:
+	tunDataChan := make(chan []byte)
+
+	go func() {
+		for {
 			n, err := tunFile.Read(buf)
 			if err != nil {
 				if ctx.Err() != nil {
@@ -32,8 +32,27 @@ func ToTCP(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx conte
 				log.Printf("failed to read from TUN: %v", err)
 				continue
 			}
+			data := make([]byte, n)
+			copy(data, buf[:n])
+			select {
+			case tunDataChan <- data:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
 
-			encryptedPacket, err := session.Encrypt(buf[:n])
+	for {
+		select {
+		case <-ctx.Done(): // Stop-signal
+			return
+		case <-sendKeepAliveChan:
+			keepAliveWriteErr := keepalive.Send(conn)
+			if keepAliveWriteErr != nil {
+				log.Printf("failed to send keep alive: %s", keepAliveWriteErr)
+			}
+		case data := <-tunDataChan:
+			encryptedPacket, err := session.Encrypt(data)
 			if err != nil {
 				log.Printf("failed to encrypt packet: %v", err)
 				continue
@@ -51,7 +70,7 @@ func ToTCP(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx conte
 	}
 }
 
-func ToTun(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx context.Context) {
+func ToTun(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx context.Context, receiveKeepAliveChan chan bool) {
 	buf := make([]byte, maxPacketLengthBytes)
 	for {
 		select {
@@ -83,6 +102,11 @@ func ToTun(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx conte
 				}
 				log.Printf("failed to read encrypted packet: %v", err)
 				return
+			}
+
+			if length == 9 && string(buf[:length]) == "KEEPALIVE" {
+				receiveKeepAliveChan <- true
+				continue
 			}
 
 			decrypted, err := session.Decrypt(buf[:length])

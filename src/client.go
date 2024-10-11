@@ -7,6 +7,7 @@ import (
 	"etha-tunnel/handshake/ChaCha20/handshakeHandlers"
 	"etha-tunnel/inputcommands"
 	"etha-tunnel/network"
+	"etha-tunnel/network/keepalive"
 	"etha-tunnel/settings/client"
 	"log"
 	"net"
@@ -74,18 +75,23 @@ func main() {
 			<-connCtx.Done()
 			conn.Close()
 			connCancel()
+			return
 		}()
+
+		sendKeepAliveChan := make(chan bool, 1)
+		receiveKeepAliveChan := make(chan bool, 1)
+		go keepalive.StartConnectionProbing(connCancel, sendKeepAliveChan, receiveKeepAliveChan)
 
 		// TUN -> TCP
 		go func() {
 			defer wg.Done()
-			clienttcptunforward.ToTCP(conn, tunFile, session, ctx)
+			clienttcptunforward.ToTCP(conn, tunFile, session, ctx, sendKeepAliveChan)
 		}()
 
 		// TCP -> TUN
 		go func() {
 			defer wg.Done()
-			clienttcptunforward.ToTun(conn, tunFile, session, ctx)
+			clienttcptunforward.ToTun(conn, tunFile, session, ctx, receiveKeepAliveChan)
 		}()
 
 		// Wait for goroutines to finish

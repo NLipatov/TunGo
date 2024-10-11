@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"etha-tunnel/handshake/ChaCha20"
 	"etha-tunnel/handshake/ChaCha20/handshakeHandlers"
+	"etha-tunnel/network/keepalive"
 	"etha-tunnel/network/packets"
 	"io"
 	"log"
@@ -156,6 +157,14 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 		if err != nil {
 			log.Printf("failed to read encrypted packet from client: %v", err)
 			return
+		}
+
+		if length == 9 && string(buf[:length]) == "KEEPALIVE" {
+			respondToKeepAliveErr := keepalive.Send(conn)
+			if respondToKeepAliveErr != nil {
+				log.Printf("failed to respond to keep alive: %s", respondToKeepAliveErr)
+			}
+			continue
 		}
 
 		// Retrieve the session for this client
