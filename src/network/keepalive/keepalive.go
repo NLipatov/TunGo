@@ -4,37 +4,46 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"log"
 	"net"
 	"time"
 )
 
-func StartConnectionProbing(connCancel context.CancelFunc, sendKeepAliveChan chan bool, receiveKeepAliveChan chan bool) {
-	var sendIntervalSeconds int64 = 15
-	var reconnectIntervalSeconds int64 = 45
-	lastSent := time.Now().Unix()
-	lastReceived := time.Now().Unix()
+func StartConnectionProbing(ctx context.Context, connCancel context.CancelFunc, sendKeepAliveChan chan bool, receiveKeepAliveChan chan bool) {
+	sendInterval := time.Duration(25) * time.Second
+	reconnectInterval := time.Duration(35) * time.Second
+	lastSent := time.Now()
+	lastPacketReceived := time.Now()
+
+	ticker := time.NewTicker(sendInterval)
+	defer ticker.Stop()
+
 	go func() {
 		for {
 			select {
+			case <-ctx.Done():
+				return
 			case r := <-receiveKeepAliveChan:
 				if r {
-					log.Println("keep-alive: OK")
-					lastReceived = time.Now().Unix()
+					lastPacketReceived = time.Now()
 				}
-			default:
-				if time.Now().Unix()-lastReceived > reconnectIntervalSeconds {
+			case <-ticker.C:
+				if time.Since(lastPacketReceived) > reconnectInterval {
 					connCancel()
 					return
 				}
 
-				if lastSent+sendIntervalSeconds < time.Now().Unix() {
-					lastSent = time.Now().Unix()
+				if time.Since(lastPacketReceived) <= sendInterval {
+					continue
+				}
+
+				if time.Since(lastSent) > sendInterval {
+					lastSent = time.Now()
 					sendKeepAliveChan <- true
 				}
 			}
 		}
 	}()
+	<-ctx.Done()
 }
 
 func Send(conn net.Conn) error {

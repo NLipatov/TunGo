@@ -78,20 +78,20 @@ func main() {
 			return
 		}()
 
-		sendKeepAliveChan := make(chan bool, 1)
-		receiveKeepAliveChan := make(chan bool, 1)
-		go keepalive.StartConnectionProbing(connCancel, sendKeepAliveChan, receiveKeepAliveChan)
+		sendKeepAliveCommandChan := make(chan bool, 1)
+		connPacketReceivedChan := make(chan bool, 1)
+		go keepalive.StartConnectionProbing(connCtx, connCancel, sendKeepAliveCommandChan, connPacketReceivedChan)
 
 		// TUN -> TCP
 		go func() {
 			defer wg.Done()
-			clienttcptunforward.ToTCP(conn, tunFile, session, ctx, sendKeepAliveChan)
+			clienttcptunforward.ToTCP(conn, tunFile, session, ctx, sendKeepAliveCommandChan)
 		}()
 
 		// TCP -> TUN
 		go func() {
 			defer wg.Done()
-			clienttcptunforward.ToTun(conn, tunFile, session, ctx, receiveKeepAliveChan)
+			clienttcptunforward.ToTun(conn, tunFile, session, ctx, connPacketReceivedChan)
 		}()
 
 		// Wait for goroutines to finish
