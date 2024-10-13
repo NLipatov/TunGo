@@ -106,7 +106,7 @@ func ToTun(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx conte
 
 			select {
 			case receiveKeepAliveChan <- true:
-				if length == 9 && string(buf[:length]) == "KEEPALIVE" {
+				if length == 9 && keepalive.IsKeepAlive(buf[:length]) {
 					log.Println("keep-alive: OK")
 					continue
 				}

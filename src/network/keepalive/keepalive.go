@@ -1,12 +1,15 @@
 package keepalive
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"fmt"
 	"net"
 	"time"
 )
+
+var keepAlivePacketContent = []byte{'K', 'E', 'E', 'P', 'A', 'L', 'I', 'V', 'E'}
 
 func StartConnectionProbing(ctx context.Context, connCancel context.CancelFunc, sendKeepAliveChan chan bool, receiveKeepAliveChan chan bool) {
 	sendInterval := time.Duration(25) * time.Second
@@ -56,4 +59,11 @@ func Send(conn net.Conn) error {
 	}
 
 	return nil
+}
+
+func IsKeepAlive(data []byte) bool {
+	if bytes.Equal(data, keepAlivePacketContent) {
+		return true
+	}
+	return false
 }
