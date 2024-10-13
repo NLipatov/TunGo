@@ -19,29 +19,6 @@ const (
 // ToTCP forwards packets from TUN to TCP
 func ToTCP(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx context.Context, sendKeepAliveChan chan bool) {
 	buf := make([]byte, maxPacketLengthBytes)
-	tunDataChan := make(chan []byte)
-
-	go func() {
-		for {
-			n, err := tunFile.Read(buf)
-			if err != nil {
-				if ctx.Err() != nil {
-					fmt.Printf("context ended with error: %s\n", err)
-					return
-				}
-				log.Printf("failed to read from TUN: %v", err)
-				continue
-			}
-			data := make([]byte, n)
-			copy(data, buf[:n])
-			select {
-			case tunDataChan <- data:
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-
 	for {
 		select {
 		case <-ctx.Done(): // Stop-signal
@@ -51,8 +28,18 @@ func ToTCP(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx conte
 			if keepAliveWriteErr != nil {
 				log.Printf("failed to send keep alive: %s", keepAliveWriteErr)
 			}
-		case data := <-tunDataChan:
-			encryptedPacket, err := session.Encrypt(data)
+		default:
+			n, err := tunFile.Read(buf)
+			if err != nil {
+				if ctx.Err() != nil {
+					fmt.Printf("context ended with error: %s\n", err)
+					return
+				}
+				log.Printf("failed to read from TUN: %v", err)
+				continue
+			}
+
+			encryptedPacket, err := session.Encrypt(buf[:n])
 			if err != nil {
 				log.Printf("failed to encrypt packet: %v", err)
 				continue
