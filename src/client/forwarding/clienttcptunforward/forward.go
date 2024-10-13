@@ -106,16 +106,11 @@ func ToTun(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx conte
 
 			select {
 			case receiveKeepAliveChan <- true:
-			default:
-			}
-
-			if length == 9 && string(buf[:length]) == "KEEPALIVE" {
-				select {
-				case receiveKeepAliveChan <- true:
+				if length == 9 && string(buf[:length]) == "KEEPALIVE" {
 					log.Println("keep-alive: OK")
-				default:
+					continue
 				}
-				continue
+			default:
 			}
 
 			decrypted, err := session.Decrypt(buf[:length])
