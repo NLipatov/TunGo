@@ -83,3 +83,17 @@ To regenerate server keys, manually delete the lines containing Ed25519 keys fro
 On the next startup, the server will generate new keys.
 
 After regeneration, all clients need to update their configurations with the server’s new public Ed25519 key.
+
+# iperf throughput benchmark
+## Start iperf on server
+```bash
+iperf -s -B 10.0.0.1
+```
+In this example `10.0.0.1` is a server's address in vpn network. 
+
+## Start iperf on client
+```bash
+iperf -c 10.0.0.1
+```
+
+After the test is completed, you can see results in the terminal.
