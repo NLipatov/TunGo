@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"etha-tunnel/handshake/ChaCha20"
 	"etha-tunnel/handshake/ChaCha20/handshakeHandlers"
+	"etha-tunnel/network"
 	"etha-tunnel/network/keepalive"
 	"etha-tunnel/network/packets"
 	"io"
@@ -145,28 +146,6 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 			return
 		}
 
-		// Extract the length
-		length := binary.BigEndian.Uint32(buf[:4])
-		if length > maxPacketLengthBytes {
-			log.Printf("packet too large: %d", length)
-			return
-		}
-
-		// Read the encrypted packet
-		_, err = io.ReadFull(conn, buf[:length])
-		if err != nil {
-			log.Printf("failed to read encrypted packet from client: %v", err)
-			return
-		}
-
-		if length == 9 && string(buf[:length]) == "KEEPALIVE" {
-			respondToKeepAliveErr := keepalive.Send(conn)
-			if respondToKeepAliveErr != nil {
-				log.Printf("failed to respond to keep alive: %s", respondToKeepAliveErr)
-			}
-			continue
-		}
-
 		// Retrieve the session for this client
 		sessionValue, sessionExists := localIpToSession.Load(*extIpAddr)
 		if !sessionExists {
@@ -176,21 +155,28 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 
 		session := sessionValue.(*ChaCha20.Session)
 
-		// Decrypt the data
-		packet, err := session.Decrypt(buf[:length])
+		packet, err := (&network.Packet{}).Parse(conn, buf, session)
 		if err != nil {
-			log.Printf("failed to decrypt packet: %v", err)
-			return
+			log.Println(err)
+			continue
+		}
+
+		if packet.IsKeepAlive {
+			respondToKeepAliveErr := keepalive.Send(conn)
+			if respondToKeepAliveErr != nil {
+				log.Printf("failed to respond to keep alive: %s", respondToKeepAliveErr)
+			}
+			continue
 		}
 
 		// Validate the packet (optional but recommended)
-		if _, err := packets.Parse(packet); err != nil {
+		if _, err := packets.Parse(packet.Payload); err != nil {
 			log.Printf("invalid IP packet structure: %v", err)
 			continue
 		}
 
 		// Write the decrypted packet to the TUN interface
-		_, err = tunFile.Write(packet)
+		_, err = tunFile.Write(packet.Payload)
 		if err != nil {
 			log.Printf("failed to write to TUN: %v", err)
 			return

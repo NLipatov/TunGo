@@ -44,7 +44,7 @@ func (s *Session) Encrypt(plaintext []byte) ([]byte, error) {
 
 	aad := s.CreateAAD(s.isServer, s.SendNonce)
 
-	ciphertext := s.sendCipher.Seal(nil, s.SendNonce[:], plaintext, aad)
+	ciphertext := s.sendCipher.Seal(plaintext[:0], s.SendNonce[:], plaintext, aad)
 
 	err := incrementNonce(&s.SendNonce)
 	if err != nil {
@@ -60,7 +60,7 @@ func (s *Session) Decrypt(ciphertext []byte) ([]byte, error) {
 
 	aad := s.CreateAAD(!s.isServer, s.RecvNonce)
 
-	plaintext, err := s.recvCipher.Open(nil, s.RecvNonce[:], ciphertext, aad)
+	plaintext, err := s.recvCipher.Open(ciphertext[:0], s.RecvNonce[:], ciphertext, aad)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt: %w", err)
 	}
