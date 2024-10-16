@@ -14,8 +14,7 @@ var keepAlivePacketContent = []byte{'K', 'E', 'E', 'P', 'A', 'L', 'I', 'V', 'E'}
 func StartConnectionProbing(ctx context.Context, connCancel context.CancelFunc, sendKeepAliveChan chan bool, receiveKeepAliveChan chan bool) {
 	sendInterval := time.Duration(25) * time.Second
 	reconnectInterval := time.Duration(35) * time.Second
-	lastSent := time.Now()
-	lastPacketReceived := time.Now()
+	lastPacket := time.Now()
 
 	ticker := time.NewTicker(sendInterval)
 	defer ticker.Stop()
@@ -27,22 +26,15 @@ func StartConnectionProbing(ctx context.Context, connCancel context.CancelFunc, 
 				return
 			case r := <-receiveKeepAliveChan:
 				if r {
-					lastPacketReceived = time.Now()
+					lastPacket = time.Now()
 				}
 			case <-ticker.C:
-				if time.Since(lastPacketReceived) > reconnectInterval {
+				if time.Since(lastPacket) > reconnectInterval {
 					connCancel()
 					return
 				}
 
-				if time.Since(lastPacketReceived) <= sendInterval {
-					continue
-				}
-
-				if time.Since(lastSent) > sendInterval {
-					lastSent = time.Now()
-					sendKeepAliveChan <- true
-				}
+				sendKeepAliveChan <- true
 			}
 		}
 	}()
