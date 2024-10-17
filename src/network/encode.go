@@ -17,7 +17,7 @@ type Packet struct {
 	IsKeepAlive bool
 }
 
-func (p *Packet) Parse(conn net.Conn, buffer []byte, session *ChaCha20.Session) (*Packet, error) {
+func (p *Packet) Decode(conn net.Conn, buffer []byte, session *ChaCha20.Session) (*Packet, error) {
 	//read packet length from 4-byte length prefix
 	var length = binary.BigEndian.Uint32(buffer[:4])
 	if length < 4 || length > MaxPacketSizeBytes {
@@ -30,6 +30,7 @@ func (p *Packet) Parse(conn net.Conn, buffer []byte, session *ChaCha20.Session) 
 		return nil, err
 	}
 
+	// shortcut - keep-alive messages are not encrypted
 	if length == 9 && keepalive.IsKeepAlive(buffer[:length]) {
 		return &Packet{
 			Length:      length,
@@ -38,7 +39,6 @@ func (p *Packet) Parse(conn net.Conn, buffer []byte, session *ChaCha20.Session) 
 		}, nil
 	}
 
-	//decrypt packet data
 	decrypted, err := session.Decrypt(buffer[:length])
 	if err != nil {
 		return nil, err
@@ -47,5 +47,17 @@ func (p *Packet) Parse(conn net.Conn, buffer []byte, session *ChaCha20.Session) 
 	return &Packet{
 		Length:  length,
 		Payload: decrypted,
+	}, nil
+}
+
+func (p *Packet) Encode(payload []byte) (*Packet, error) {
+	length := uint32(len(payload))
+	lengthBuf := make([]byte, 4)
+	binary.BigEndian.PutUint32(lengthBuf, length)
+
+	return &Packet{
+		Length:      length,
+		Payload:     append(lengthBuf, payload...),
+		IsKeepAlive: false,
 	}, nil
 }
