@@ -14,7 +14,7 @@ func StartConnectionProbing(ctx context.Context, connCancel context.CancelFunc, 
 	reconnectInterval := time.Duration(35) * time.Second
 	lastPacket := time.Now()
 
-	ticker := time.NewTicker(sendInterval - sendInterval/4)
+	ticker := time.NewTicker(sendInterval)
 	defer ticker.Stop()
 
 	go func() {
@@ -32,7 +32,7 @@ func StartConnectionProbing(ctx context.Context, connCancel context.CancelFunc, 
 					return
 				}
 
-				if time.Since(lastPacket) < sendInterval {
+				if time.Since(lastPacket)+time.Millisecond*500 <= sendInterval {
 					continue
 				}
 
