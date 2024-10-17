@@ -2,7 +2,6 @@ package clienttcptunforward
 
 import (
 	"context"
-	"encoding/binary"
 	"etha-tunnel/handshake/ChaCha20"
 	"etha-tunnel/network"
 	"etha-tunnel/network/keepalive"
@@ -11,7 +10,6 @@ import (
 	"log"
 	"net"
 	"os"
-	"sync"
 )
 
 const (
@@ -21,26 +19,42 @@ const (
 // ToTCP forwards packets from TUN to TCP
 func ToTCP(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx context.Context, sendKeepAliveChan chan bool) {
 	buf := make([]byte, maxPacketLengthBytes)
-	var connMutex sync.Mutex
+	connWriteChan := make(chan []byte, 1000)
+	defer close(connWriteChan)
 
-	// Goroutine for handling keepalive signals
+	//writes whatever comes from chan to TCP
+	go func() {
+		for {
+			select {
+			case <-ctx.Done(): // Stop-signal
+				return
+			case data := <-connWriteChan:
+				_, err := conn.Write(data)
+				if err != nil {
+					log.Printf("write to TCP failed: %s", err)
+					continue
+				}
+			}
+		}
+	}()
+
+	//passes keepalive messages chan
 	go func() {
 		for {
 			select {
 			case <-ctx.Done(): // Stop-signal
 				return
 			case <-sendKeepAliveChan:
-				connMutex.Lock()
-				err := keepalive.Send(conn)
-				connMutex.Unlock()
+				data, err := keepalive.Generate()
 				if err != nil {
-					log.Printf("failed to send keep alive: %s", err)
+					log.Println(err)
 				}
+				connWriteChan <- data
 			}
 		}
 	}()
 
-	// Main loop for reading from TUN and sending to the server
+	//passes anything from tun to chan
 	for {
 		select {
 		case <-ctx.Done(): // Stop-signal
@@ -62,17 +76,12 @@ func ToTCP(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx conte
 				continue
 			}
 
-			length := uint32(len(encryptedPacket))
-			lengthBuf := make([]byte, 4)
-			binary.BigEndian.PutUint32(lengthBuf, length)
-
-			connMutex.Lock()
-			_, err = conn.Write(append(lengthBuf, encryptedPacket...))
-			connMutex.Unlock()
+			packet, err := (&network.Packet{}).Encode(encryptedPacket)
 			if err != nil {
-				log.Printf("failed to write to server: %v", err)
-				return
+				log.Printf("packet encoding failed: %s", err)
 			}
+
+			connWriteChan <- packet.Payload
 		}
 	}
 }
@@ -94,7 +103,7 @@ func ToTun(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx conte
 				return
 			}
 
-			packet, err := (&network.Packet{}).Parse(conn, buf, session)
+			packet, err := (&network.Packet{}).Decode(conn, buf, session)
 			if err != nil {
 				log.Println(err)
 			}
