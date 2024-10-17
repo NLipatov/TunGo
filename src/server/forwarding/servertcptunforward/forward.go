@@ -2,7 +2,6 @@ package servertcptunforward
 
 import (
 	"context"
-	"encoding/binary"
 	"etha-tunnel/handshake/ChaCha20"
 	"etha-tunnel/handshake/ChaCha20/handshakeHandlers"
 	"etha-tunnel/network"
@@ -32,13 +31,13 @@ func ToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map
 				log.Printf("failed to read from TUN: %v", err)
 				continue
 			}
-			packet := buf[:n]
-			if len(packet) < 1 {
-				log.Printf("invalid IP packet")
+			data := buf[:n]
+			if len(data) < 1 {
+				log.Printf("invalid IP data")
 				continue
 			}
 
-			header, err := packets.Parse(packet)
+			header, err := packets.Parse(data)
 			if err != nil {
 				log.Printf("failed to parse a IPv4 header")
 				continue
@@ -53,18 +52,20 @@ func ToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map
 					continue
 				}
 				session := sessionValue.(*ChaCha20.Session)
-				encryptedPacket, err := session.Encrypt(packet)
-				if err != nil {
-					log.Printf("failder to encrypt a package")
+				encryptedPacket, encryptErr := session.Encrypt(data)
+				if encryptErr != nil {
+					log.Printf("failder to encrypt a package: %s", encryptErr)
 					continue
 				}
 
-				length := uint32(len(encryptedPacket))
-				lengthBuf := make([]byte, 4)
-				binary.BigEndian.PutUint32(lengthBuf, length)
-				_, err = conn.Write(append(lengthBuf, encryptedPacket...))
-				if err != nil {
-					log.Printf("failed to send packet to client: %v", err)
+				packet, packetEncodeErr := (&network.Packet{}).Encode(encryptedPacket)
+				if packetEncodeErr != nil {
+					log.Printf("packet encoding failed: %s", packetEncodeErr)
+				}
+
+				_, connWriteErr := conn.Write(packet.Payload)
+				if connWriteErr != nil {
+					log.Printf("failed to write to TCP: %v", connWriteErr)
 					localIpMap.Delete(destinationIP)
 					localIpToSessionMap.Delete(destinationIP)
 				}
