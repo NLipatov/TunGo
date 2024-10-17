@@ -155,16 +155,20 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 
 		session := sessionValue.(*ChaCha20.Session)
 
-		packet, err := (&network.Packet{}).Parse(conn, buf, session)
+		packet, err := (&network.Packet{}).Decode(conn, buf, session)
 		if err != nil {
 			log.Println(err)
 			continue
 		}
 
 		if packet.IsKeepAlive {
-			respondToKeepAliveErr := keepalive.Send(conn)
-			if respondToKeepAliveErr != nil {
-				log.Printf("failed to respond to keep alive: %s", respondToKeepAliveErr)
+			kaResponse, kaErr := keepalive.Generate()
+			if kaErr != nil {
+				log.Printf("failed to generate keep-alive response: %s", kaErr)
+			}
+			_, tcpWriteErr := conn.Write(kaResponse)
+			if tcpWriteErr != nil {
+				log.Printf("failed to write keep-alive response to TCP: %s", tcpWriteErr)
 			}
 			continue
 		}
