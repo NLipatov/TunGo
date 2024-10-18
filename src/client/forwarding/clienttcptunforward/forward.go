@@ -5,6 +5,7 @@ import (
 	"etha-tunnel/handshake/ChaCha20"
 	"etha-tunnel/network"
 	"etha-tunnel/network/keepalive"
+	"etha-tunnel/settings/client"
 	"fmt"
 	"io"
 	"log"
@@ -19,7 +20,7 @@ const (
 // ToTCP forwards packets from TUN to TCP
 func ToTCP(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx context.Context, connCancel context.CancelFunc, sendKeepAliveChan chan bool) {
 	buf := make([]byte, maxPacketLengthBytes)
-	connWriteChan := make(chan []byte, 1000)
+	connWriteChan := make(chan []byte, getConnWriteBufferSize())
 
 	//writes whatever comes from chan to TCP
 	go func() {
@@ -135,4 +136,14 @@ func ToTun(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx conte
 			}
 		}
 	}
+}
+
+func getConnWriteBufferSize() int32 {
+	conf, err := (&client.Conf{}).Read()
+	if err != nil {
+		log.Println("failed to read connection buffer size from client configuration. Using fallback value: 1000")
+		return 1000
+	}
+
+	return conf.TCPWriteChannelBufferSize
 }

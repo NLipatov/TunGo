@@ -8,10 +8,11 @@ import (
 )
 
 type Conf struct {
-	IfName           string            `json:"IfName"`
-	IfIP             string            `json:"IfIP"`
-	ServerTCPAddress string            `json:"ServerTCPAddress"`
-	Ed25519PublicKey ed25519.PublicKey `json:"Ed25519PublicKey"`
+	IfName                    string            `json:"IfName"`
+	IfIP                      string            `json:"IfIP"`
+	ServerTCPAddress          string            `json:"ServerTCPAddress"`
+	Ed25519PublicKey          ed25519.PublicKey `json:"Ed25519PublicKey"`
+	TCPWriteChannelBufferSize int32             `json:"TCPWriteChannelBufferSize"`
 }
 
 func (s *Conf) Read() (*Conf, error) {
