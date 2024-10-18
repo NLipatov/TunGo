@@ -4,6 +4,7 @@ import (
 	"context"
 	"etha-tunnel/client/forwarding/clienttcptunforward"
 	"etha-tunnel/client/forwarding/ipconfiguration"
+	"etha-tunnel/handshake/ChaCha20"
 	"etha-tunnel/handshake/ChaCha20/handshakeHandlers"
 	"etha-tunnel/inputcommands"
 	"etha-tunnel/network"
@@ -11,6 +12,7 @@ import (
 	"etha-tunnel/settings/client"
 	"log"
 	"net"
+	"os"
 	"sync"
 	"time"
 )
@@ -51,7 +53,7 @@ func main() {
 	defer tunFile.Close()
 
 	for {
-		conn, connectionError := establishConnection(*conf, ctx)
+		conn, connectionError := establishTCPConnection(*conf, ctx)
 		if connectionError != nil {
 			log.Printf("failed to establish connection: %s", connectionError)
 			continue // Retry connection
@@ -79,21 +81,7 @@ func main() {
 			return
 		}()
 
-		sendKeepAliveCommandChan := make(chan bool, 1)
-		connPacketReceivedChan := make(chan bool, 1)
-		go keepalive.StartConnectionProbing(connCtx, connCancel, sendKeepAliveCommandChan, connPacketReceivedChan)
-
-		// TUN -> TCP
-		go func() {
-			defer wg.Done()
-			clienttcptunforward.ToTCP(conn, tunFile, session, connCtx, connCancel, sendKeepAliveCommandChan)
-		}()
-
-		// TCP -> TUN
-		go func() {
-			defer wg.Done()
-			clienttcptunforward.ToTun(conn, tunFile, session, connCtx, connCancel, connPacketReceivedChan)
-		}()
+		go startTCPForwarding(&conn, tunFile, session, &connCtx, &connCancel, &wg)
 
 		// Wait for goroutines to finish
 		wg.Wait()
@@ -112,7 +100,7 @@ func main() {
 	}
 }
 
-func establishConnection(conf client.Conf, ctx context.Context) (net.Conn, error) {
+func establishTCPConnection(conf client.Conf, ctx context.Context) (net.Conn, error) {
 	reconnectAttempts := 0
 	backoff := initialBackoff
 
@@ -145,4 +133,22 @@ func establishConnection(conf client.Conf, ctx context.Context) (net.Conn, error
 
 		return conn, nil
 	}
+}
+
+func startTCPForwarding(conn *net.Conn, tunFile *os.File, session *ChaCha20.Session, connCtx *context.Context, connCancel *context.CancelFunc, wg *sync.WaitGroup) {
+	sendKeepAliveCommandChan := make(chan bool, 1)
+	connPacketReceivedChan := make(chan bool, 1)
+	go keepalive.StartConnectionProbing(*connCtx, *connCancel, sendKeepAliveCommandChan, connPacketReceivedChan)
+
+	// TUN -> TCP
+	go func() {
+		defer wg.Done()
+		clienttcptunforward.ToTCP(*conn, tunFile, session, *connCtx, *connCancel, sendKeepAliveCommandChan)
+	}()
+
+	// TCP -> TUN
+	go func() {
+		defer wg.Done()
+		clienttcptunforward.ToTun(*conn, tunFile, session, *connCtx, *connCancel, connPacketReceivedChan)
+	}()
 }
