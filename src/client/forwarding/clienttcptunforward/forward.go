@@ -17,10 +17,9 @@ const (
 )
 
 // ToTCP forwards packets from TUN to TCP
-func ToTCP(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx context.Context, sendKeepAliveChan chan bool) {
+func ToTCP(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx context.Context, connCancel context.CancelFunc, sendKeepAliveChan chan bool) {
 	buf := make([]byte, maxPacketLengthBytes)
 	connWriteChan := make(chan []byte, 1000)
-	defer close(connWriteChan)
 
 	//writes whatever comes from chan to TCP
 	go func() {
@@ -32,13 +31,14 @@ func ToTCP(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx conte
 				_, err := conn.Write(data)
 				if err != nil {
 					log.Printf("write to TCP failed: %s", err)
-					continue
+					connCancel()
+					return
 				}
 			}
 		}
 	}()
 
-	//passes keepalive messages chan
+	//passes keepalive messages to chan
 	go func() {
 		for {
 			select {
@@ -49,7 +49,11 @@ func ToTCP(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx conte
 				if err != nil {
 					log.Println(err)
 				}
-				connWriteChan <- data
+				select {
+				case connWriteChan <- data:
+				case <-ctx.Done():
+					return
+				}
 			}
 		}
 	}()
@@ -79,14 +83,19 @@ func ToTCP(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx conte
 			packet, err := (&network.Packet{}).Encode(encryptedPacket)
 			if err != nil {
 				log.Printf("packet encoding failed: %s", err)
+				continue
 			}
 
-			connWriteChan <- packet.Payload
+			select {
+			case connWriteChan <- packet.Payload:
+			case <-ctx.Done():
+				return
+			}
 		}
 	}
 }
 
-func ToTun(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx context.Context, receiveKeepAliveChan chan bool) {
+func ToTun(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx context.Context, connCancel context.CancelFunc, receiveKeepAliveChan chan bool) {
 	buf := make([]byte, maxPacketLengthBytes)
 	for {
 		select {
@@ -99,7 +108,8 @@ func ToTun(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx conte
 					fmt.Printf("context ended with error: %s\n", err)
 					return
 				}
-				log.Printf("failed to read from server: %v", err)
+				log.Printf("read from TCP failed: %v", err)
+				connCancel()
 				return
 			}
 

@@ -53,7 +53,8 @@ func main() {
 	for {
 		conn, connectionError := establishConnection(*conf, ctx)
 		if connectionError != nil {
-			log.Fatalf("failed establish connection: %s", connectionError)
+			log.Printf("failed to establish connection: %s", connectionError)
+			continue // Retry connection
 		}
 
 		log.Printf("Connected to server at %s", conf.ServerTCPAddress)
@@ -62,7 +63,8 @@ func main() {
 			conn.Close()
 			ipconfiguration.Unconfigure()
 			log.Printf("registration failed: %s\n", err)
-			log.Fatalf("connection is aborted")
+			log.Println("connection is aborted")
+			return
 		}
 
 		// Create a child context for managing data forwarding goroutines
@@ -74,7 +76,6 @@ func main() {
 		go func() {
 			<-connCtx.Done()
 			conn.Close()
-			connCancel()
 			return
 		}()
 
@@ -85,13 +86,13 @@ func main() {
 		// TUN -> TCP
 		go func() {
 			defer wg.Done()
-			clienttcptunforward.ToTCP(conn, tunFile, session, ctx, sendKeepAliveCommandChan)
+			clienttcptunforward.ToTCP(conn, tunFile, session, connCtx, connCancel, sendKeepAliveCommandChan)
 		}()
 
 		// TCP -> TUN
 		go func() {
 			defer wg.Done()
-			clienttcptunforward.ToTun(conn, tunFile, session, ctx, connPacketReceivedChan)
+			clienttcptunforward.ToTun(conn, tunFile, session, connCtx, connCancel, connPacketReceivedChan)
 		}()
 
 		// Wait for goroutines to finish
