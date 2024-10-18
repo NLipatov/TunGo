@@ -91,9 +91,14 @@ iperf -s -B 10.0.0.1
 ```
 In this example `10.0.0.1` is a server's address in vpn network. 
 
+### Basic Test
 ## Start iperf on client
 ```bash
 iperf -c 10.0.0.1
 ```
 
+### Stress Test with 100 parallel connections during 600 seconds
+```bash
+iperf -c 10.0.0.1 -P 100 -t 600
+```
 After the test is completed, you can see results in the terminal.
