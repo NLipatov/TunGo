@@ -7,12 +7,13 @@ import (
 	"etha-tunnel/handshake/ChaCha20"
 	"etha-tunnel/settings/server"
 	"fmt"
-	"golang.org/x/crypto/chacha20poly1305"
-	"golang.org/x/crypto/curve25519"
-	"golang.org/x/crypto/hkdf"
 	"io"
 	"log"
 	"net"
+
+	"golang.org/x/crypto/chacha20poly1305"
+	"golang.org/x/crypto/curve25519"
+	"golang.org/x/crypto/hkdf"
 )
 
 func OnClientConnected(conn net.Conn) (*ChaCha20.Session, *string, error) {
@@ -21,10 +22,10 @@ func OnClientConnected(conn net.Conn) (*ChaCha20.Session, *string, error) {
 		return nil, nil, fmt.Errorf("failed to read server conf: %s", err)
 	}
 
-	buf := make([]byte, 39+2+32+32+32) // 39(max ip) + 2(length headers) + 32 (ed25519 pub key) + 32 (curve pub key)
+	buf := make([]byte, ChaCha20.MaxClientHelloSizeBytes)
 	_, err = conn.Read(buf)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to read from client: %v\n", err)
+		return nil, nil, fmt.Errorf("failed to read from client: %v", err)
 	}
 
 	//Read client hello
