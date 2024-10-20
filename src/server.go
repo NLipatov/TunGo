@@ -46,6 +46,10 @@ func ensureEd25519KeyPairCreated(conf *server.Conf) error {
 
 func startServer(conf *server.Conf) error {
 	err := network.CreateNewTun(conf)
+	if err != nil {
+		log.Fatalf("failed to create TUN: %s", err)
+	}
+
 	tunFile, err := network.OpenTunByName(conf.IfName)
 	if err != nil {
 		log.Fatalf("failed to open TUN interface: %v", err)
