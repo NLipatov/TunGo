@@ -40,10 +40,11 @@ func Generate() (*client.Conf, error) {
 	}
 
 	conf := client.Conf{
-		IfName:           "ethatun0",
-		IfIP:             clientIfIp,
-		ServerTCPAddress: serverTCPAddress,
-		Ed25519PublicKey: serverConf.Ed25519PublicKey,
+		IfName:                    "ethatun0",
+		IfIP:                      clientIfIp,
+		ServerTCPAddress:          serverTCPAddress,
+		Ed25519PublicKey:          serverConf.Ed25519PublicKey,
+		TCPWriteChannelBufferSize: 1000,
 	}
 
 	return &conf, nil
