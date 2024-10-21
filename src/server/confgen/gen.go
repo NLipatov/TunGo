@@ -1,6 +1,7 @@
 package confgen
 
 import (
+	"etha-tunnel/network/ip"
 	"etha-tunnel/settings/client"
 	"etha-tunnel/settings/server"
 	"fmt"
@@ -32,8 +33,10 @@ func Generate() (*client.Conf, error) {
 		serverTCPAddress = fmt.Sprintf("%s%s", serverIpAddr, serverConf.TCPPort)
 	}
 
-	serverConf.ClientCounter += 1
-	clientIfIp := fmt.Sprintf("10.0.0.%d/24", serverConf.ClientCounter+1)
+	IncrementedClientCounter := serverConf.ClientCounter + 1
+	clientIfIp, err := ip.AllocateClientIp(serverConf.InterfaceSubnetCIDR, IncrementedClientCounter)
+
+	serverConf.ClientCounter = IncrementedClientCounter
 	err = serverConf.RewriteConf()
 	if err != nil {
 		return nil, err
