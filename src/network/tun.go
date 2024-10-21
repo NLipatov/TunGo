@@ -87,7 +87,16 @@ func CreateNewTun(conf *server.Conf) error {
 	}
 	fmt.Printf("created TUN interface: %v\n", name)
 
-	_, err = ip.LinkAddrAdd(conf.IfName, conf.IfIP)
+	serverIp, err := ip.AllocateServerIp(conf.InterfaceSubnetCIDR)
+	if err != nil {
+		return err
+	}
+
+	cidrServerIp, err := ip.ToCIDR(conf.InterfaceSubnetCIDR, serverIp)
+	if err != nil {
+		return fmt.Errorf("failed to conver server ip to CIDR format: %s", err)
+	}
+	_, err = ip.LinkAddrAdd(conf.IfName, cidrServerIp)
 	if err != nil {
 		return err
 	}
