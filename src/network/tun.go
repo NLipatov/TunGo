@@ -79,11 +79,11 @@ func enableIPv4Forwarding() error {
 }
 
 func CreateNewTun(conf *server.Conf) error {
-	_, _ = ip.LinkDel(conf.IfName)
+	_, _ = ip.LinkDel(conf.TCPSettings.InterfaceName)
 
-	name, err := UpNewTun(conf.IfName)
+	name, err := UpNewTun(conf.TCPSettings.InterfaceName)
 	if err != nil {
-		log.Fatalf("failed to create interface %v: %v", conf.IfName, err)
+		log.Fatalf("failed to create interface %v: %v", conf.TCPSettings.InterfaceName, err)
 	}
 	fmt.Printf("created TUN interface: %v\n", name)
 
@@ -96,11 +96,11 @@ func CreateNewTun(conf *server.Conf) error {
 	if err != nil {
 		return fmt.Errorf("failed to conver server ip to CIDR format: %s", err)
 	}
-	_, err = ip.LinkAddrAdd(conf.IfName, cidrServerIp)
+	_, err = ip.LinkAddrAdd(conf.TCPSettings.InterfaceName, cidrServerIp)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("assigned IP %s to interface %s\n", conf.TCPPort, conf.IfName)
+	fmt.Printf("assigned IP %s to interface %s\n", conf.TCPSettings.ConnectionPort, conf.TCPSettings.InterfaceName)
 
 	return nil
 }

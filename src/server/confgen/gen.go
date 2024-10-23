@@ -28,9 +28,9 @@ func Generate() (*client.Conf, error) {
 	var serverTCPAddress string
 	// for IPv6, port must be handled in different way
 	if strings.Contains(serverIpAddr, ":") {
-		serverTCPAddress = fmt.Sprintf("[%s]%s", serverIpAddr, serverConf.TCPPort)
+		serverTCPAddress = fmt.Sprintf("[%s]%s", serverIpAddr, serverConf.TCPSettings.ConnectionPort)
 	} else {
-		serverTCPAddress = fmt.Sprintf("%s%s", serverIpAddr, serverConf.TCPPort)
+		serverTCPAddress = fmt.Sprintf("%s%s", serverIpAddr, serverConf.TCPSettings.ConnectionPort)
 	}
 
 	IncrementedClientCounter := serverConf.ClientCounter + 1

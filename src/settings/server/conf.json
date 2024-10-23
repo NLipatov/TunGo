@@ -1,8 +1,16 @@
 {
+  "TCPSettings": {
+    "InterfaceName": "tcptun0",
+    "InterfaceIPCIDR": "10.0.0.0/24",
+    "ConnectionPort": ":8080"
+  },
+  "UDPSettings": {
+    "InterfaceName": "udptun0", 
+    "InterfaceIPCIDR": "10.0.1.0/24",
+    "ConnectionPort": ":9090"
+  },
   "InterfaceSubnetCIDR": "10.0.0.0/24",
   "IfName": "ethatun0",
-  "IfIP": "10.0.0.1/24",
-  "TCPPort": ":8080",
   "FallbackServerAddress": "192.168.122.194",
   "ClientCounter": 0
 }

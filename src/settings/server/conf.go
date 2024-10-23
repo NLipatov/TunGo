@@ -7,11 +7,16 @@ import (
 	"path/filepath"
 )
 
+type ConnectionSettings struct {
+	InterfaceName   string `json:"InterfaceName"`
+	InterfaceIPCIDR string `json:"InterfaceIPCIDR"`
+	ConnectionPort  string `json:"ConnectionPort"`
+}
+
 type Conf struct {
+	TCPSettings           ConnectionSettings `json:"TCPSettings"`
+	UDPSettings           ConnectionSettings `json:"UDPSettings"`
 	InterfaceSubnetCIDR   string             `json:"InterfaceSubnetCIDR"`
-	IfName                string             `json:"IfName"`
-	IfIP                  string             `json:"IfIP"`
-	TCPPort               string             `json:"TCPPort"`
 	FallbackServerAddress string             `json:"FallbackServerAddress"`
 	Ed25519PublicKey      ed25519.PublicKey  `json:"Ed25519PublicKey"`
 	Ed25519PrivateKey     ed25519.PrivateKey `json:"Ed25519PrivateKey"`

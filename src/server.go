@@ -50,7 +50,7 @@ func startServer(conf *server.Conf) error {
 		log.Fatalf("failed to create TUN: %s", err)
 	}
 
-	tunFile, err := network.OpenTunByName(conf.IfName)
+	tunFile, err := network.OpenTunByName(conf.TCPSettings.InterfaceName)
 	if err != nil {
 		log.Fatalf("failed to open TUN interface: %v", err)
 	}
@@ -58,7 +58,7 @@ func startServer(conf *server.Conf) error {
 		_ = tunFile.Close()
 	}()
 
-	err = routing.Start(tunFile, conf.TCPPort)
+	err = routing.Start(tunFile, conf.TCPSettings.ConnectionPort)
 	if err != nil {
 		return err
 	}
