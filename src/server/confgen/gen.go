@@ -26,14 +26,6 @@ func Generate() (*client.Conf, error) {
 		serverIpAddr = serverConf.FallbackServerAddress
 	}
 
-	var serverTCPAddress string
-	// for IPv6, port must be handled in different way
-	if strings.Contains(serverIpAddr, ":") {
-		serverTCPAddress = fmt.Sprintf("[%s]%s", serverIpAddr, serverConf.TCPSettings.ConnectionPort)
-	} else {
-		serverTCPAddress = fmt.Sprintf("%s%s", serverIpAddr, serverConf.TCPSettings.ConnectionPort)
-	}
-
 	IncrementedClientCounter := serverConf.ClientCounter + 1
 	clientIfIp, err := ip.AllocateClientIp(serverConf.TCPSettings.InterfaceIPCIDR, IncrementedClientCounter)
 
@@ -48,9 +40,9 @@ func Generate() (*client.Conf, error) {
 			InterfaceName:    serverConf.TCPSettings.InterfaceName,
 			InterfaceIPCIDR:  serverConf.TCPSettings.InterfaceIPCIDR,
 			InterfaceAddress: clientIfIp,
+			ConnectionIP:     serverIpAddr,
 			ConnectionPort:   serverConf.TCPSettings.ConnectionPort,
 		},
-		ServerTCPAddress:          serverTCPAddress,
 		Ed25519PublicKey:          serverConf.Ed25519PublicKey,
 		TCPWriteChannelBufferSize: 1000,
 	}

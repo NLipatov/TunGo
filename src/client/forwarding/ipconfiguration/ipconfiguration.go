@@ -6,7 +6,6 @@ import (
 	"etha-tunnel/settings/client"
 	"fmt"
 	"log"
-	"net"
 	"strings"
 )
 
@@ -33,10 +32,7 @@ func Configure() error {
 	fmt.Printf("assigned IP %s to interface %s\n", conf.TCPSettings.InterfaceAddress, conf.TCPSettings.InterfaceName)
 
 	// Parse server IP
-	serverIP, _, err := net.SplitHostPort(conf.ServerTCPAddress)
-	if err != nil {
-		return fmt.Errorf("failed to parse server address: %v", err)
-	}
+	serverIP := conf.TCPSettings.ConnectionIP
 
 	// Get routing information
 	routeInfo, err := ip.RouteGet(serverIP)
@@ -81,7 +77,7 @@ func Unconfigure() {
 		log.Fatalf("failed to read configuration: %v", err)
 	}
 
-	hostIp, devName := strings.Split(conf.ServerTCPAddress, ":")[0], conf.TCPSettings.InterfaceName
+	hostIp, devName := conf.TCPSettings.ConnectionIP, conf.TCPSettings.InterfaceName
 	// Delete the route to the host IP
 	if err := ip.RouteDel(hostIp); err != nil {
 		log.Printf("failed to delete route: %s", err)

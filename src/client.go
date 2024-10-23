@@ -10,6 +10,7 @@ import (
 	"etha-tunnel/network"
 	"etha-tunnel/network/keepalive"
 	"etha-tunnel/settings/client"
+	"fmt"
 	"log"
 	"net"
 	"os"
@@ -59,7 +60,7 @@ func main() {
 			continue // Retry connection
 		}
 
-		log.Printf("Connected to server at %s", conf.ServerTCPAddress)
+		log.Printf("Connected to server at %s", conf.TCPSettings.ConnectionIP)
 		session, err := handshakeHandlers.OnConnectedToServer(conn, conf)
 		if err != nil {
 			conn.Close()
@@ -107,7 +108,7 @@ func establishTCPConnection(conf client.Conf, ctx context.Context) (net.Conn, er
 	for {
 		dialer := &net.Dialer{}
 		dialCtx, dialCancel := context.WithTimeout(ctx, connectionTimeout)
-		conn, err := dialer.DialContext(dialCtx, "tcp", conf.ServerTCPAddress)
+		conn, err := dialer.DialContext(dialCtx, "tcp", fmt.Sprintf("%s%s", conf.TCPSettings.ConnectionIP, conf.TCPSettings.ConnectionPort))
 		dialCancel()
 
 		if err != nil {
