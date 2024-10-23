@@ -50,7 +50,6 @@ func Generate() (*client.Conf, error) {
 			InterfaceAddress: clientIfIp,
 			ConnectionPort:   serverConf.TCPSettings.ConnectionPort,
 		},
-		IfName:                    "ethatun0",
 		IfIP:                      clientIfIp,
 		ServerTCPAddress:          serverTCPAddress,
 		Ed25519PublicKey:          serverConf.Ed25519PublicKey,

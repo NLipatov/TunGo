@@ -10,7 +10,6 @@ import (
 
 type Conf struct {
 	TCPSettings               settings.ConnectionSettings `json:"TCPSettings"`
-	IfName                    string                      `json:"IfName"`
 	IfIP                      string                      `json:"IfIP"`
 	ServerTCPAddress          string                      `json:"ServerTCPAddress"`
 	Ed25519PublicKey          ed25519.PublicKey           `json:"Ed25519PublicKey"`

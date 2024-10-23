@@ -17,20 +17,20 @@ func Configure() error {
 	}
 
 	// Delete existing link if any
-	_, _ = ip.LinkDel(conf.IfName)
+	_, _ = ip.LinkDel(conf.TCPSettings.InterfaceName)
 
-	name, err := network.UpNewTun(conf.IfName)
+	name, err := network.UpNewTun(conf.TCPSettings.InterfaceName)
 	if err != nil {
-		return fmt.Errorf("failed to create interface %v: %v", conf.IfName, err)
+		return fmt.Errorf("failed to create interface %v: %v", conf.TCPSettings.InterfaceName, err)
 	}
 	fmt.Printf("created TUN interface: %v\n", name)
 
 	// Assign IP address to the TUN interface
-	_, err = ip.LinkAddrAdd(conf.IfName, conf.IfIP)
+	_, err = ip.LinkAddrAdd(conf.TCPSettings.InterfaceName, conf.IfIP)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("assigned IP %s to interface %s\n", conf.IfIP, conf.IfName)
+	fmt.Printf("assigned IP %s to interface %s\n", conf.IfIP, conf.TCPSettings.InterfaceName)
 
 	// Parse server IP
 	serverIP, _, err := net.SplitHostPort(conf.ServerTCPAddress)
@@ -66,11 +66,11 @@ func Configure() error {
 	fmt.Printf("added route to server %s via %s dev %s\n", serverIP, viaGateway, devInterface)
 
 	// Set the TUN interface as the default gateway
-	_, err = ip.RouteAddDefaultDev(conf.IfName)
+	_, err = ip.RouteAddDefaultDev(conf.TCPSettings.InterfaceName)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("set %s as default gateway\n", conf.IfName)
+	fmt.Printf("set %s as default gateway\n", conf.TCPSettings.InterfaceName)
 
 	return nil
 }
@@ -81,7 +81,7 @@ func Unconfigure() {
 		log.Fatalf("failed to read configuration: %v", err)
 	}
 
-	hostIp, devName := strings.Split(conf.ServerTCPAddress, ":")[0], conf.IfName
+	hostIp, devName := strings.Split(conf.ServerTCPAddress, ":")[0], conf.TCPSettings.InterfaceName
 	// Delete the route to the host IP
 	if err := ip.RouteDel(hostIp); err != nil {
 		log.Printf("failed to delete route: %s", err)

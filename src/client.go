@@ -46,7 +46,7 @@ func main() {
 	}
 
 	// Open the TUN interface
-	tunFile, err := network.OpenTunByName(conf.IfName)
+	tunFile, err := network.OpenTunByName(conf.TCPSettings.InterfaceName)
 	if err != nil {
 		log.Fatalf("Failed to open TUN interface: %v", err)
 	}
