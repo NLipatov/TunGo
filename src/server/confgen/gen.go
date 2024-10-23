@@ -34,7 +34,7 @@ func Generate() (*client.Conf, error) {
 	}
 
 	IncrementedClientCounter := serverConf.ClientCounter + 1
-	clientIfIp, err := ip.AllocateClientIp(serverConf.InterfaceSubnetCIDR, IncrementedClientCounter)
+	clientIfIp, err := ip.AllocateClientIp(serverConf.TCPSettings.InterfaceIPCIDR, IncrementedClientCounter)
 
 	serverConf.ClientCounter = IncrementedClientCounter
 	err = serverConf.RewriteConf()
