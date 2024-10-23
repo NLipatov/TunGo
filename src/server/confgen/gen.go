@@ -2,6 +2,7 @@ package confgen
 
 import (
 	"etha-tunnel/network/ip"
+	"etha-tunnel/settings"
 	"etha-tunnel/settings/client"
 	"etha-tunnel/settings/server"
 	"fmt"
@@ -43,6 +44,12 @@ func Generate() (*client.Conf, error) {
 	}
 
 	conf := client.Conf{
+		TCPSettings: settings.ConnectionSettings{
+			InterfaceName:    serverConf.TCPSettings.InterfaceName,
+			InterfaceIPCIDR:  serverConf.TCPSettings.InterfaceIPCIDR,
+			InterfaceAddress: clientIfIp,
+			ConnectionPort:   serverConf.TCPSettings.ConnectionPort,
+		},
 		IfName:                    "ethatun0",
 		IfIP:                      clientIfIp,
 		ServerTCPAddress:          serverTCPAddress,
