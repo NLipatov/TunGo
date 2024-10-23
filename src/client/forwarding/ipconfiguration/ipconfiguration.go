@@ -26,11 +26,11 @@ func Configure() error {
 	fmt.Printf("created TUN interface: %v\n", name)
 
 	// Assign IP address to the TUN interface
-	_, err = ip.LinkAddrAdd(conf.TCPSettings.InterfaceName, conf.IfIP)
+	_, err = ip.LinkAddrAdd(conf.TCPSettings.InterfaceName, conf.TCPSettings.InterfaceAddress)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("assigned IP %s to interface %s\n", conf.IfIP, conf.TCPSettings.InterfaceName)
+	fmt.Printf("assigned IP %s to interface %s\n", conf.TCPSettings.InterfaceAddress, conf.TCPSettings.InterfaceName)
 
 	// Parse server IP
 	serverIP, _, err := net.SplitHostPort(conf.ServerTCPAddress)

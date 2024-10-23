@@ -12,7 +12,6 @@ import (
 	"golang.org/x/crypto/hkdf"
 	"io"
 	"net"
-	"strings"
 )
 
 func OnConnectedToServer(conn net.Conn, conf *client.Conf) (*ChaCha20.Session, error) {
@@ -27,7 +26,7 @@ func OnConnectedToServer(conn net.Conn, conf *client.Conf) (*ChaCha20.Session, e
 	nonce := make([]byte, 32)
 	_, _ = io.ReadFull(rand.Reader, nonce)
 
-	rm, err := (&ChaCha20.ClientHello{}).Write(4, strings.Split(conf.IfIP, "/")[0], edPub, &curvePublic, &nonce)
+	rm, err := (&ChaCha20.ClientHello{}).Write(4, conf.TCPSettings.InterfaceAddress, edPub, &curvePublic, &nonce)
 	if err != nil {
 		return nil, fmt.Errorf("failed to serialize registration message")
 	}

@@ -50,7 +50,6 @@ func Generate() (*client.Conf, error) {
 			InterfaceAddress: clientIfIp,
 			ConnectionPort:   serverConf.TCPSettings.ConnectionPort,
 		},
-		IfIP:                      clientIfIp,
 		ServerTCPAddress:          serverTCPAddress,
 		Ed25519PublicKey:          serverConf.Ed25519PublicKey,
 		TCPWriteChannelBufferSize: 1000,
