@@ -18,7 +18,7 @@ const (
 	maxPacketLengthBytes = 65535
 )
 
-func ToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map, ctx context.Context) {
+func TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map, ctx context.Context) {
 	buf := make([]byte, maxPacketLengthBytes)
 	for {
 		select {
@@ -83,7 +83,7 @@ func ToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map
 	}
 }
 
-func ToTun(listenPort string, tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map, ctx context.Context) {
+func TCPToTun(listenPort string, tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map, ctx context.Context) {
 	listener, err := net.Listen("tcp", listenPort)
 	if err != nil {
 		log.Printf("failed to listen on port %s: %v", listenPort, err)

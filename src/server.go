@@ -80,7 +80,10 @@ func startUDPServer(conf *server.Conf) error {
 		_ = tunFile.Close()
 	}()
 
-	//ToDo: implement udp traffic routing
+	err = routing.StartUDPRouting(tunFile, conf.TCPSettings.ConnectionPort)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }

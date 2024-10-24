@@ -35,13 +35,13 @@ func StartTCPRouting(tunFile *os.File, listenPort string) error {
 	// TUN -> TCP
 	go func() {
 		defer wg.Done()
-		servertcptunforward.ToTCP(tunFile, &extToLocalIp, &extIpToSession, ctx)
+		servertcptunforward.TunToTCP(tunFile, &extToLocalIp, &extIpToSession, ctx)
 	}()
 
 	// TCP -> TUN
 	go func() {
 		defer wg.Done()
-		servertcptunforward.ToTun(listenPort, tunFile, &extToLocalIp, &extIpToSession, ctx)
+		servertcptunforward.TCPToTun(listenPort, tunFile, &extToLocalIp, &extIpToSession, ctx)
 	}()
 
 	wg.Wait()
