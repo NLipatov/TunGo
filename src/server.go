@@ -20,7 +20,7 @@ func main() {
 		log.Fatalf("failed to generate ed25519 keys: %s", err)
 	}
 
-	err = startServer(conf)
+	err = startTCPServer(conf)
 	if err != nil {
 		log.Print(err)
 	}
@@ -44,8 +44,8 @@ func ensureEd25519KeyPairCreated(conf *server.Conf) error {
 	return nil
 }
 
-func startServer(conf *server.Conf) error {
-	err := network.CreateNewTun(conf)
+func startTCPServer(conf *server.Conf) error {
+	err := network.CreateNewTun(conf.TCPSettings)
 	if err != nil {
 		log.Fatalf("failed to create TUN: %s", err)
 	}

@@ -2,7 +2,7 @@ package network
 
 import (
 	"etha-tunnel/network/ip"
-	"etha-tunnel/settings/server"
+	"etha-tunnel/settings"
 	"fmt"
 	"golang.org/x/sys/unix"
 	"log"
@@ -78,29 +78,29 @@ func enableIPv4Forwarding() error {
 	return nil
 }
 
-func CreateNewTun(conf *server.Conf) error {
-	_, _ = ip.LinkDel(conf.TCPSettings.InterfaceName)
+func CreateNewTun(settings settings.ConnectionSettings) error {
+	_, _ = ip.LinkDel(settings.InterfaceName)
 
-	name, err := UpNewTun(conf.TCPSettings.InterfaceName)
+	name, err := UpNewTun(settings.InterfaceName)
 	if err != nil {
-		log.Fatalf("failed to create interface %v: %v", conf.TCPSettings.InterfaceName, err)
+		log.Fatalf("failed to create interface %v: %v", settings.InterfaceName, err)
 	}
 	fmt.Printf("created TUN interface: %v\n", name)
 
-	serverIp, err := ip.AllocateServerIp(conf.TCPSettings.InterfaceIPCIDR)
+	serverIp, err := ip.AllocateServerIp(settings.InterfaceIPCIDR)
 	if err != nil {
 		return err
 	}
 
-	cidrServerIp, err := ip.ToCIDR(conf.TCPSettings.InterfaceIPCIDR, serverIp)
+	cidrServerIp, err := ip.ToCIDR(settings.InterfaceIPCIDR, serverIp)
 	if err != nil {
 		return fmt.Errorf("failed to conver server ip to CIDR format: %s", err)
 	}
-	_, err = ip.LinkAddrAdd(conf.TCPSettings.InterfaceName, cidrServerIp)
+	_, err = ip.LinkAddrAdd(settings.InterfaceName, cidrServerIp)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("assigned IP %s to interface %s\n", conf.TCPSettings.ConnectionPort, conf.TCPSettings.InterfaceName)
+	fmt.Printf("assigned IP %s to interface %s\n", settings.ConnectionPort, settings.InterfaceName)
 
 	return nil
 }
