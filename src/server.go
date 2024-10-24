@@ -65,3 +65,22 @@ func startTCPServer(conf *server.Conf) error {
 
 	return nil
 }
+
+func startUDPServer(conf *server.Conf) error {
+	err := network.CreateNewTun(conf.UDPSettings)
+	if err != nil {
+		log.Fatalf("failed to create TUN: %s", err)
+	}
+
+	tunFile, err := network.OpenTunByName(conf.UDPSettings.InterfaceName)
+	if err != nil {
+		log.Fatalf("failed to open TUN interface: %v", err)
+	}
+	defer func() {
+		_ = tunFile.Close()
+	}()
+
+	//ToDo: implement udp traffic routing
+
+	return nil
+}
