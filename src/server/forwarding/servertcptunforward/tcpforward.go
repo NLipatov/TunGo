@@ -14,12 +14,8 @@ import (
 	"sync"
 )
 
-const (
-	maxPacketLengthBytes = 65535
-)
-
 func TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map, ctx context.Context) {
-	buf := make([]byte, maxPacketLengthBytes)
+	buf := make([]byte, IPPacketMaxSizeBytes)
 	for {
 		select {
 		case <-ctx.Done():
@@ -151,7 +147,7 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 		log.Printf("disconnected: %s", conn.RemoteAddr())
 	}()
 
-	buf := make([]byte, maxPacketLengthBytes)
+	buf := make([]byte, IPPacketMaxSizeBytes)
 	for {
 		select {
 		case <-ctx.Done():
