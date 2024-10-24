@@ -10,7 +10,7 @@ import (
 	"sync"
 )
 
-func Start(tunFile *os.File, listenPort string) error {
+func StartTCPRouting(tunFile *os.File, listenPort string) error {
 	// Create a context that can be canceled
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

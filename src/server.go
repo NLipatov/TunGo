@@ -58,7 +58,7 @@ func startTCPServer(conf *server.Conf) error {
 		_ = tunFile.Close()
 	}()
 
-	err = routing.Start(tunFile, conf.TCPSettings.ConnectionPort)
+	err = routing.StartTCPRouting(tunFile, conf.TCPSettings.ConnectionPort)
 	if err != nil {
 		return err
 	}
