@@ -80,7 +80,7 @@ func startUDPServer(conf *server.Conf) error {
 		_ = tunFile.Close()
 	}()
 
-	err = routing.StartUDPRouting(tunFile, conf.TCPSettings.ConnectionPort)
+	err = routing.StartUDPRouting(tunFile, conf.UDPSettings.ConnectionPort)
 	if err != nil {
 		return err
 	}
