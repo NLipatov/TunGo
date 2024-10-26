@@ -43,6 +43,13 @@ func Generate() (*client.Conf, error) {
 			ConnectionIP:     serverIpAddr,
 			ConnectionPort:   serverConf.TCPSettings.ConnectionPort,
 		},
+		UDPSettings: settings.ConnectionSettings{
+			InterfaceName:    serverConf.UDPSettings.InterfaceName,
+			InterfaceIPCIDR:  serverConf.UDPSettings.InterfaceIPCIDR,
+			InterfaceAddress: serverConf.UDPSettings.InterfaceAddress,
+			ConnectionIP:     serverConf.UDPSettings.ConnectionIP,
+			ConnectionPort:   serverConf.UDPSettings.ConnectionPort,
+		},
 		Ed25519PublicKey:          serverConf.Ed25519PublicKey,
 		TCPWriteChannelBufferSize: 1000,
 	}
