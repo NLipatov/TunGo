@@ -8,11 +8,19 @@ import (
 	"path/filepath"
 )
 
+type Protocol int
+
+const (
+	TCP = iota
+	UDP
+)
+
 type Conf struct {
 	TCPSettings               settings.ConnectionSettings `json:"TCPSettings"`
 	UDPSettings               settings.ConnectionSettings `json:"UDPSettings"`
 	Ed25519PublicKey          ed25519.PublicKey           `json:"Ed25519PublicKey"`
 	TCPWriteChannelBufferSize int32                       `json:"TCPWriteChannelBufferSize"`
+	Protocol                  int                         `json:"Protocol"`
 }
 
 func (s *Conf) Read() (*Conf, error) {
