@@ -18,16 +18,32 @@ func Generate() (*client.Conf, error) {
 		return nil, fmt.Errorf("failed to read server configuration: %s", err)
 	}
 
-	serverIpAddr, addressResolutionError := getServerIpString()
+	serverTCPIpAddr, addressResolutionError := getServerIpString()
 	if addressResolutionError != nil {
 		if serverConf.FallbackServerAddress == "" {
 			return nil, fmt.Errorf("failed to resolve server IP and no fallback address provided in server configuration: %s", addressResolutionError)
 		}
-		serverIpAddr = serverConf.FallbackServerAddress
+		serverTCPIpAddr = serverConf.FallbackServerAddress
+	}
+
+	serverUDPIpAddr, addressResolutionError := getServerIpString()
+	if addressResolutionError != nil {
+		if serverConf.FallbackServerAddress == "" {
+			return nil, fmt.Errorf("failed to resolve server IP and no fallback address provided in server configuration: %s", addressResolutionError)
+		}
+		serverUDPIpAddr = serverConf.FallbackServerAddress
 	}
 
 	IncrementedClientCounter := serverConf.ClientCounter + 1
-	clientIfIp, err := ip.AllocateClientIp(serverConf.TCPSettings.InterfaceIPCIDR, IncrementedClientCounter)
+	clientTCPIfIp, err := ip.AllocateClientIp(serverConf.TCPSettings.InterfaceIPCIDR, IncrementedClientCounter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to allocate client's TCP IP address: %s", err)
+	}
+
+	clientUIDPIfIp, err := ip.AllocateClientIp(serverConf.UDPSettings.InterfaceIPCIDR, IncrementedClientCounter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to allocate client's TCP IP address: %s", err)
+	}
 
 	serverConf.ClientCounter = IncrementedClientCounter
 	err = serverConf.RewriteConf()
@@ -39,15 +55,15 @@ func Generate() (*client.Conf, error) {
 		TCPSettings: settings.ConnectionSettings{
 			InterfaceName:    serverConf.TCPSettings.InterfaceName,
 			InterfaceIPCIDR:  serverConf.TCPSettings.InterfaceIPCIDR,
-			InterfaceAddress: clientIfIp,
-			ConnectionIP:     serverIpAddr,
+			InterfaceAddress: clientTCPIfIp,
+			ConnectionIP:     serverTCPIpAddr,
 			ConnectionPort:   serverConf.TCPSettings.ConnectionPort,
 		},
 		UDPSettings: settings.ConnectionSettings{
 			InterfaceName:    serverConf.UDPSettings.InterfaceName,
 			InterfaceIPCIDR:  serverConf.UDPSettings.InterfaceIPCIDR,
-			InterfaceAddress: serverConf.UDPSettings.InterfaceAddress,
-			ConnectionIP:     serverConf.UDPSettings.ConnectionIP,
+			InterfaceAddress: clientUIDPIfIp,
+			ConnectionIP:     serverUDPIpAddr,
 			ConnectionPort:   serverConf.UDPSettings.ConnectionPort,
 		},
 		Ed25519PublicKey:          serverConf.Ed25519PublicKey,
