@@ -23,24 +23,29 @@ func main() {
 	}
 
 	var wg sync.WaitGroup
-	wg.Add(2)
+	if conf.EnableTCP {
+		wg.Add(1)
 
-	go func() {
-		defer wg.Done()
-		err = startTCPServer(conf.TCPSettings)
-		if err != nil {
-			log.Print(err)
-		}
+		go func() {
+			defer wg.Done()
+			err = startTCPServer(conf.TCPSettings)
+			if err != nil {
+				log.Print(err)
+			}
 
-	}()
+		}()
+	}
+	if conf.EnableUDP {
+		wg.Add(1)
 
-	go func() {
-		defer wg.Done()
-		err = startUDPServer(conf.UDPSettings)
-		if err != nil {
-			log.Print(err)
-		}
-	}()
+		go func() {
+			defer wg.Done()
+			err = startUDPServer(conf.UDPSettings)
+			if err != nil {
+				log.Print(err)
+			}
+		}()
+	}
 
 	wg.Wait()
 }

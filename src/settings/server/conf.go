@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"encoding/json"
 	"etha-tunnel/settings"
+	"log"
 	"os"
 	"path/filepath"
 )
@@ -15,10 +16,16 @@ type Conf struct {
 	Ed25519PublicKey      ed25519.PublicKey           `json:"Ed25519PublicKey"`
 	Ed25519PrivateKey     ed25519.PrivateKey          `json:"Ed25519PrivateKey"`
 	ClientCounter         int                         `json:"ClientCounter"`
+	EnableTCP             bool                        `json:"EnableTCP"`
+	EnableUDP             bool                        `json:"EnableUDP"`
 }
 
 func (s *Conf) InsertEdKeys(public ed25519.PublicKey, private ed25519.PrivateKey) error {
 	currentConf, err := s.Read()
+	if err != nil {
+		log.Printf("failed to read configuration: %s", err)
+	}
+
 	currentConf.Ed25519PublicKey = public
 	currentConf.Ed25519PrivateKey = private
 
