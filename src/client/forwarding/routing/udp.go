@@ -3,6 +3,7 @@ package routing
 import (
 	"context"
 	"etha-tunnel/client/forwarding/ipconfiguration"
+	"etha-tunnel/handshake/ChaCha20/handshakeHandlers"
 	"etha-tunnel/settings"
 	"fmt"
 	"log"
@@ -19,8 +20,18 @@ func StartUDPRouting(settings settings.ConnectionSettings, tunFile *os.File, ctx
 			continue // Retry connection
 		}
 
+		conn.Write([]byte("INIT"))
+
 		log.Printf("Connected to server at %s (UDP)", settings.ConnectionIP)
-		conn.Write([]byte("Hello"))
+		session, err := handshakeHandlers.OnConnectedToServer(conn, settings)
+		if err != nil {
+			conn.Close()
+			ipconfiguration.Unconfigure()
+			log.Printf("registration failed: %s\n", err)
+			log.Println("connection is aborted")
+			return err
+		}
+		log.Println("sessionId: %s", session.SessionId)
 	}
 }
 
