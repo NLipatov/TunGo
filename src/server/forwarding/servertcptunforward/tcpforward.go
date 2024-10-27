@@ -87,7 +87,7 @@ func TCPToTun(listenPort string, tunFile *os.File, localIpMap *sync.Map, localIp
 	defer func() {
 		_ = listener.Close()
 	}()
-	log.Printf("server listening on port %s", listenPort)
+	log.Printf("server listening on port tcp:%s", listenPort)
 
 	//using this goroutine to 'unblock' Listener.Accept blocking-call
 	go func() {

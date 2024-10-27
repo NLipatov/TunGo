@@ -68,13 +68,14 @@ func StartUDPRouting(tunFile *os.File, listenPort string) error {
 	var extIpToSession sync.Map // external ip to session map
 
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(1)
 
+	//ToDo: implement TunToUDP
 	// TUN -> UDP
-	go func() {
-		defer wg.Done()
-		servertcptunforward.TunToUDP(tunFile, &extToLocalIp, &extIpToSession, ctx)
-	}()
+	// go func() {
+	// 	defer wg.Done()
+	// 	servertcptunforward.TunToUDP(tunFile, &extToLocalIp, &extIpToSession, ctx)
+	// }()
 
 	// UDP -> TUN
 	go func() {

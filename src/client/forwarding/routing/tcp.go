@@ -24,7 +24,7 @@ func StartTCPRouting(settings settings.ConnectionSettings, tunFile *os.File, ctx
 			continue // Retry connection
 		}
 
-		log.Printf("Connected to server at %s", settings.ConnectionIP)
+		log.Printf("Connected to server at %s (TCP)", settings.ConnectionIP)
 		session, err := handshakeHandlers.OnConnectedToServer(conn, settings)
 		if err != nil {
 			conn.Close()
@@ -116,8 +116,4 @@ func startTCPForwarding(conn *net.Conn, tunFile *os.File, session *ChaCha20.Sess
 		defer wg.Done()
 		clienttcptunforward.ToTun(*conn, tunFile, session, *connCtx, *connCancel, connPacketReceivedChan)
 	}()
-}
-
-func startUDPRouting() {
-
 }

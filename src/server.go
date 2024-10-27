@@ -5,8 +5,10 @@ import (
 	"crypto/rand"
 	"etha-tunnel/network"
 	"etha-tunnel/server/forwarding/routing"
+	"etha-tunnel/settings"
 	"etha-tunnel/settings/server"
 	"log"
+	"sync"
 )
 
 func main() {
@@ -20,10 +22,28 @@ func main() {
 		log.Fatalf("failed to generate ed25519 keys: %s", err)
 	}
 
-	err = startTCPServer(conf)
-	if err != nil {
-		log.Print(err)
-	}
+	var wg sync.WaitGroup
+
+	go func() {
+		wg.Add(1)
+		err = startTCPServer(conf.TCPSettings)
+		if err != nil {
+			log.Print(err)
+		}
+
+		wg.Done()
+	}()
+
+	go func() {
+		wg.Add(1)
+		err = startUDPServer(conf.UDPSettings)
+		if err != nil {
+			log.Print(err)
+		}
+		wg.Done()
+	}()
+
+	wg.Wait()
 }
 
 func ensureEd25519KeyPairCreated(conf *server.Conf) error {
@@ -44,13 +64,13 @@ func ensureEd25519KeyPairCreated(conf *server.Conf) error {
 	return nil
 }
 
-func startTCPServer(conf *server.Conf) error {
-	err := network.CreateNewTun(conf.TCPSettings)
+func startTCPServer(settings settings.ConnectionSettings) error {
+	err := network.CreateNewTun(settings)
 	if err != nil {
 		log.Fatalf("failed to create TUN: %s", err)
 	}
 
-	tunFile, err := network.OpenTunByName(conf.TCPSettings.InterfaceName)
+	tunFile, err := network.OpenTunByName(settings.InterfaceName)
 	if err != nil {
 		log.Fatalf("failed to open TUN interface: %v", err)
 	}
@@ -58,7 +78,7 @@ func startTCPServer(conf *server.Conf) error {
 		_ = tunFile.Close()
 	}()
 
-	err = routing.StartTCPRouting(tunFile, conf.TCPSettings.ConnectionPort)
+	err = routing.StartTCPRouting(tunFile, settings.ConnectionPort)
 	if err != nil {
 		return err
 	}
@@ -66,13 +86,13 @@ func startTCPServer(conf *server.Conf) error {
 	return nil
 }
 
-func startUDPServer(conf *server.Conf) error {
-	err := network.CreateNewTun(conf.UDPSettings)
+func startUDPServer(settings settings.ConnectionSettings) error {
+	err := network.CreateNewTun(settings)
 	if err != nil {
 		log.Fatalf("failed to create TUN: %s", err)
 	}
 
-	tunFile, err := network.OpenTunByName(conf.UDPSettings.InterfaceName)
+	tunFile, err := network.OpenTunByName(settings.InterfaceName)
 	if err != nil {
 		log.Fatalf("failed to open TUN interface: %v", err)
 	}
@@ -80,7 +100,7 @@ func startUDPServer(conf *server.Conf) error {
 		_ = tunFile.Close()
 	}()
 
-	err = routing.StartUDPRouting(tunFile, conf.UDPSettings.ConnectionPort)
+	err = routing.StartUDPRouting(tunFile, settings.ConnectionPort)
 	if err != nil {
 		return err
 	}
