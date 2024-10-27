@@ -38,7 +38,7 @@ func OnConnectedToServer(conn net.Conn, settings settings.ConnectionSettings) (*
 		return nil, fmt.Errorf("failed to notice server on local address: %v", err)
 	}
 
-	//Mocked server hello
+	//Read server hello
 	sHBuf := make([]byte, 128)
 	_, err = conn.Read(sHBuf)
 	if err != nil {
