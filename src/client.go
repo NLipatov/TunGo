@@ -40,7 +40,7 @@ func main() {
 
 	switch conf.Protocol {
 	case 0:
-		err = routing.StartTCPRouting(conf, tunFile, &ctx)
+		err = routing.StartTCPRouting(conf.TCPSettings, tunFile, &ctx)
 		if err != nil {
 			log.Fatalf("failed to route trafic: %s", err)
 		}

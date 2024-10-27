@@ -7,7 +7,7 @@ import (
 	"etha-tunnel/handshake/ChaCha20"
 	"etha-tunnel/handshake/ChaCha20/handshakeHandlers"
 	"etha-tunnel/network/keepalive"
-	"etha-tunnel/settings/client"
+	"etha-tunnel/settings"
 	"fmt"
 	"log"
 	"net"
@@ -16,16 +16,16 @@ import (
 	"time"
 )
 
-func StartTCPRouting(conf *client.Conf, tunFile *os.File, ctx *context.Context) error {
+func StartTCPRouting(settings settings.ConnectionSettings, tunFile *os.File, ctx *context.Context) error {
 	for {
-		conn, connectionError := establishTCPConnection(*conf, *ctx)
+		conn, connectionError := establishTCPConnection(settings, *ctx)
 		if connectionError != nil {
 			log.Printf("failed to establish connection: %s", connectionError)
 			continue // Retry connection
 		}
 
-		log.Printf("Connected to server at %s", conf.TCPSettings.ConnectionIP)
-		session, err := handshakeHandlers.OnConnectedToServer(conn, conf)
+		log.Printf("Connected to server at %s", settings.ConnectionIP)
+		session, err := handshakeHandlers.OnConnectedToServer(conn, settings)
 		if err != nil {
 			conn.Close()
 			ipconfiguration.Unconfigure()
@@ -65,14 +65,14 @@ func StartTCPRouting(conf *client.Conf, tunFile *os.File, ctx *context.Context) 
 	}
 }
 
-func establishTCPConnection(conf client.Conf, ctx context.Context) (net.Conn, error) {
+func establishTCPConnection(settings settings.ConnectionSettings, ctx context.Context) (net.Conn, error) {
 	reconnectAttempts := 0
 	backoff := initialBackoff
 
 	for {
 		dialer := &net.Dialer{}
 		dialCtx, dialCancel := context.WithTimeout(ctx, connectionTimeout)
-		conn, err := dialer.DialContext(dialCtx, "tcp", fmt.Sprintf("%s%s", conf.TCPSettings.ConnectionIP, conf.TCPSettings.ConnectionPort))
+		conn, err := dialer.DialContext(dialCtx, "tcp", fmt.Sprintf("%s%s", settings.ConnectionIP, settings.ConnectionPort))
 		dialCancel()
 
 		if err != nil {

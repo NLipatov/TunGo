@@ -4,17 +4,19 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"etha-tunnel/handshake/ChaCha20"
+	"etha-tunnel/settings"
 	"etha-tunnel/settings/client"
 	"fmt"
+	"io"
+	"net"
+
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/curve25519"
 	"golang.org/x/crypto/ed25519"
 	"golang.org/x/crypto/hkdf"
-	"io"
-	"net"
 )
 
-func OnConnectedToServer(conn net.Conn, conf *client.Conf) (*ChaCha20.Session, error) {
+func OnConnectedToServer(conn net.Conn, settings settings.ConnectionSettings) (*ChaCha20.Session, error) {
 	edPub, ed, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate ed25519 key pair: %s", err)
@@ -26,7 +28,7 @@ func OnConnectedToServer(conn net.Conn, conf *client.Conf) (*ChaCha20.Session, e
 	nonce := make([]byte, 32)
 	_, _ = io.ReadFull(rand.Reader, nonce)
 
-	rm, err := (&ChaCha20.ClientHello{}).Write(4, conf.TCPSettings.InterfaceAddress, edPub, &curvePublic, &nonce)
+	rm, err := (&ChaCha20.ClientHello{}).Write(4, settings.InterfaceAddress, edPub, &curvePublic, &nonce)
 	if err != nil {
 		return nil, fmt.Errorf("failed to serialize registration message")
 	}
