@@ -130,18 +130,15 @@ func ToTun(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx conte
 				continue
 			}
 
-			decrypted, decryptionErr := session.Decrypt(buf[:length])
-			if decryptionErr != nil {
-				log.Printf("failed to decrypt data: %s", decryptionErr)
-				continue
-			}
-			packet, err := (&network.Packet{}).Decode(decrypted)
+			packet, err := (&network.Packet{}).Decode(buf[:length])
 			if err != nil {
 				log.Println(err)
 			}
 
 			select {
+			//refreshes last packet time
 			case receiveKeepAliveChan <- true:
+				//shortcut for keep alive response case
 				if packet.Length == 9 && keepalive.IsKeepAlive(packet.Payload) {
 					log.Println("keep-alive: OK")
 					continue
@@ -149,8 +146,14 @@ func ToTun(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx conte
 			default:
 			}
 
+			decrypted, decryptionErr := session.Decrypt(packet.Payload)
+			if decryptionErr != nil {
+				log.Printf("failed to decrypt data: %s", decryptionErr)
+				continue
+			}
+
 			// Write the decrypted packet to the TUN interface
-			_, err = tunFile.Write(packet.Payload)
+			_, err = tunFile.Write(decrypted)
 			if err != nil {
 				log.Printf("failed to write to TUN: %v", err)
 				return

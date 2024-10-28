@@ -186,14 +186,10 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 				continue
 			}
 
-			decrypted, decryptionErr := session.Decrypt(buf[:length])
-			if decryptionErr != nil {
-				log.Printf("failed to decrypt data: %s", decryptionErr)
-				continue
-			}
-			packet, err := (&network.Packet{}).Decode(decrypted)
+			packet, err := (&network.Packet{}).Decode(buf[:length])
 
-			if packet.IsKeepAlive {
+			//shortcut for keep alive response case
+			if packet.Length == 9 && keepalive.IsKeepAlive(packet.Payload) {
 				kaResponse, kaErr := keepalive.Generate()
 				if kaErr != nil {
 					log.Printf("failed to generate keep-alive response: %s", kaErr)
@@ -205,14 +201,14 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 				continue
 			}
 
-			// Validate the packet (optional but recommended)
-			if _, err := packets.Parse(packet.Payload); err != nil {
-				log.Printf("invalid IP packet structure: %v", err)
+			decrypted, decryptionErr := session.Decrypt(buf[:length])
+			if decryptionErr != nil {
+				log.Printf("failed to decrypt data: %s", decryptionErr)
 				continue
 			}
 
 			// Write the decrypted packet to the TUN interface
-			_, err = tunFile.Write(packet.Payload)
+			_, err = tunFile.Write(decrypted)
 			if err != nil {
 				log.Printf("failed to write to TUN: %v", err)
 				return
