@@ -6,7 +6,6 @@ import (
 	"etha-tunnel/handshake/ChaCha20"
 	"etha-tunnel/network"
 	"etha-tunnel/network/keepalive"
-	"etha-tunnel/server/forwarding"
 	"etha-tunnel/settings/client"
 	"fmt"
 	"io"
@@ -15,13 +14,9 @@ import (
 	"os"
 )
 
-const (
-	maxPacketLengthBytes = 65535
-)
-
 // ToTCP forwards packets from TUN to TCP
 func ToTCP(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx context.Context, connCancel context.CancelFunc, sendKeepAliveChan chan bool) {
-	buf := make([]byte, maxPacketLengthBytes)
+	buf := make([]byte, network.IPPacketMaxSizeBytes)
 	connWriteChan := make(chan []byte, getConnWriteBufferSize())
 
 	//writes whatever comes from chan to TCP
@@ -99,7 +94,7 @@ func ToTCP(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx conte
 }
 
 func ToTun(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx context.Context, connCancel context.CancelFunc, receiveKeepAliveChan chan bool) {
-	buf := make([]byte, maxPacketLengthBytes)
+	buf := make([]byte, network.IPPacketMaxSizeBytes)
 	for {
 		select {
 		case <-ctx.Done(): // Stop-signal
@@ -118,7 +113,7 @@ func ToTun(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx conte
 
 			//read packet length from 4-byte length prefix
 			var length = binary.BigEndian.Uint32(buf[:4])
-			if length < 4 || length > forwarding.IPPacketMaxSizeBytes {
+			if length < 4 || length > network.IPPacketMaxSizeBytes {
 				log.Printf("invalid packet Length: %d", length)
 				continue
 			}

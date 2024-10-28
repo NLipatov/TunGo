@@ -16,7 +16,7 @@ import (
 )
 
 func TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map, ctx context.Context) {
-	buf := make([]byte, IPPacketMaxSizeBytes)
+	buf := make([]byte, network.IPPacketMaxSizeBytes)
 	for {
 		select {
 		case <-ctx.Done():
@@ -148,7 +148,7 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 		log.Printf("disconnected: %s", conn.RemoteAddr())
 	}()
 
-	buf := make([]byte, IPPacketMaxSizeBytes)
+	buf := make([]byte, network.IPPacketMaxSizeBytes)
 	for {
 		select {
 		case <-ctx.Done():
@@ -174,7 +174,7 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 
 			//read packet length from 4-byte length prefix
 			var length = binary.BigEndian.Uint32(buf[:4])
-			if length < 4 || length > IPPacketMaxSizeBytes {
+			if length < 4 || length > network.IPPacketMaxSizeBytes {
 				log.Printf("invalid packet Length: %d", length)
 				continue
 			}
