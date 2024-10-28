@@ -21,9 +21,6 @@ func main() {
 	// Client configuration (enabling TUN/TCP forwarding)
 	ipconfiguration.Unconfigure()
 	defer ipconfiguration.Unconfigure()
-	if err := ipconfiguration.Configure(); err != nil {
-		log.Fatalf("Failed to configure client: %v", err)
-	}
 
 	// Read client configuration
 	conf, err := (&client.Conf{}).Read()
@@ -33,6 +30,9 @@ func main() {
 
 	switch conf.Protocol {
 	case 0:
+		if err := ipconfiguration.Configure(conf.TCPSettings); err != nil {
+			log.Fatalf("Failed to configure client: %v", err)
+		}
 		// Open the TUN interface
 		tunFile, err := network.OpenTunByName(conf.TCPSettings.InterfaceName)
 		if err != nil {
@@ -45,6 +45,9 @@ func main() {
 			log.Fatalf("failed to route trafic: %s", err)
 		}
 	case 1:
+		if err := ipconfiguration.Configure(conf.UDPSettings); err != nil {
+			log.Fatalf("Failed to configure client: %v", err)
+		}
 		// Open the TUN interface
 		tunFile, err := network.OpenTunByName(conf.UDPSettings.InterfaceName)
 		if err != nil {

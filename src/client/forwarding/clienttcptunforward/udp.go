@@ -14,7 +14,7 @@ func TunToUDP(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ct
 	buf := make([]byte, maxPacketLengthBytes)
 	connWriteChan := make(chan []byte, getConnWriteBufferSize())
 
-	//writes whatever comes from chan to UDP
+	// Goroutine to write data to UDP
 	go func() {
 		for {
 			select {
@@ -31,7 +31,7 @@ func TunToUDP(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ct
 		}
 	}()
 
-	//passes keepalive messages to chan
+	// Goroutine to send keepalive messages
 	go func() {
 		for {
 			select {
@@ -51,7 +51,7 @@ func TunToUDP(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ct
 		}
 	}()
 
-	//passes anything from tun to chan
+	// Main loop to read from TUN and send data
 	for {
 		select {
 		case <-ctx.Done(): // Stop-signal

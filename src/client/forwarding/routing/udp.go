@@ -24,9 +24,9 @@ func StartUDPRouting(settings settings.ConnectionSettings, tunFile *os.File, ctx
 			continue // Retry connection
 		}
 
-		conn.Write([]byte("INIT"))
-
 		log.Printf("Connected to server at %s (UDP)", settings.ConnectionIP)
+		// Read initial data from the server if required
+
 		session, err := handshakeHandlers.OnConnectedToServer(conn, settings)
 		if err != nil {
 			conn.Close()
@@ -48,7 +48,7 @@ func StartUDPRouting(settings settings.ConnectionSettings, tunFile *os.File, ctx
 			return
 		}()
 
-		go startUDPForwarding(conn, tunFile, session, &connCtx, &connCancel, &wg)
+		startUDPForwarding(conn, tunFile, session, &connCtx, &connCancel, &wg)
 
 		// Wait for goroutines to finish
 		wg.Wait()
@@ -76,7 +76,7 @@ func establishUDPConnection(settings settings.ConnectionSettings, ctx context.Co
 
 		udpAddr, err := net.ResolveUDPAddr("udp", serverAddr)
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve UDP address: %w", err)
+			return nil, err
 		}
 
 		conn, err := net.DialUDP("udp", nil, udpAddr)
@@ -112,13 +112,13 @@ func startUDPForwarding(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.S
 	connPacketReceivedChan := make(chan bool, 1)
 	go keepalive.StartConnectionProbing(*connCtx, *connCancel, sendKeepAliveCommandChan, connPacketReceivedChan)
 
-	// TUN -> TCP
+	// TUN -> UDP
 	go func() {
 		defer wg.Done()
 		clienttcptunforward.TunToUDP(conn, tunFile, session, *connCtx, *connCancel, sendKeepAliveCommandChan)
 	}()
 
-	// TCP -> TUN
+	// UDP -> TUN
 	go func() {
 		defer wg.Done()
 		clienttcptunforward.UDPToTun(conn, tunFile, session, *connCtx, *connCancel, connPacketReceivedChan)

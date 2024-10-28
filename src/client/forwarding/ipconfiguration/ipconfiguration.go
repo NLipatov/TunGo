@@ -3,36 +3,32 @@ package ipconfiguration
 import (
 	"etha-tunnel/network"
 	"etha-tunnel/network/ip"
+	"etha-tunnel/settings"
 	"etha-tunnel/settings/client"
 	"fmt"
 	"log"
 	"strings"
 )
 
-func Configure() error {
-	conf, err := (&client.Conf{}).Read()
-	if err != nil {
-		log.Fatalf("failed to read configuration: %v", err)
-	}
-
+func Configure(connSettings settings.ConnectionSettings) error {
 	// Delete existing link if any
-	_, _ = ip.LinkDel(conf.TCPSettings.InterfaceName)
+	_, _ = ip.LinkDel(connSettings.InterfaceName)
 
-	name, err := network.UpNewTun(conf.TCPSettings.InterfaceName)
+	name, err := network.UpNewTun(connSettings.InterfaceName)
 	if err != nil {
-		return fmt.Errorf("failed to create interface %v: %v", conf.TCPSettings.InterfaceName, err)
+		return fmt.Errorf("failed to create interface %v: %v", connSettings.InterfaceName, err)
 	}
 	fmt.Printf("created TUN interface: %v\n", name)
 
 	// Assign IP address to the TUN interface
-	_, err = ip.LinkAddrAdd(conf.TCPSettings.InterfaceName, conf.TCPSettings.InterfaceAddress)
+	_, err = ip.LinkAddrAdd(connSettings.InterfaceName, connSettings.InterfaceAddress)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("assigned IP %s to interface %s\n", conf.TCPSettings.InterfaceAddress, conf.TCPSettings.InterfaceName)
+	fmt.Printf("assigned IP %s to interface %s\n", connSettings.InterfaceAddress, connSettings.InterfaceName)
 
 	// Parse server IP
-	serverIP := conf.TCPSettings.ConnectionIP
+	serverIP := connSettings.ConnectionIP
 
 	// Get routing information
 	routeInfo, err := ip.RouteGet(serverIP)
@@ -62,11 +58,11 @@ func Configure() error {
 	fmt.Printf("added route to server %s via %s dev %s\n", serverIP, viaGateway, devInterface)
 
 	// Set the TUN interface as the default gateway
-	_, err = ip.RouteAddDefaultDev(conf.TCPSettings.InterfaceName)
+	_, err = ip.RouteAddDefaultDev(connSettings.InterfaceName)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("set %s as default gateway\n", conf.TCPSettings.InterfaceName)
+	fmt.Printf("set %s as default gateway\n", connSettings.InterfaceName)
 
 	return nil
 }
