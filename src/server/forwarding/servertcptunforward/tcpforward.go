@@ -190,7 +190,7 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 
 			//shortcut for keep alive response case
 			if packet.Length == 9 && keepalive.IsKeepAlive(packet.Payload) {
-				kaResponse, kaErr := keepalive.Generate()
+				kaResponse, kaErr := keepalive.GenerateTCP()
 				if kaErr != nil {
 					log.Printf("failed to generate keep-alive response: %s", kaErr)
 				}

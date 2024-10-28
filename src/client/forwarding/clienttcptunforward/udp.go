@@ -38,7 +38,7 @@ func TunToUDP(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ct
 			case <-ctx.Done(): // Stop-signal
 				return
 			case <-sendKeepAliveChan:
-				data, err := keepalive.Generate()
+				data, err := keepalive.GenerateUDP()
 				if err != nil {
 					log.Println(err)
 				}
@@ -106,24 +106,29 @@ func UDPToTun(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ct
 				return
 			}
 
-			decrypted, decryptionErr := session.Decrypt(buf[:n])
-			if decryptionErr != nil {
-				log.Printf("failed to decrypt data: %s", decryptionErr)
-				continue
-			}
-			packet, err := (&network.Packet{}).Decode(decrypted)
+			packet, err := (&network.Packet{}).Decode(buf[:n])
 			if err != nil {
 				log.Println(err)
 				continue
 			}
 
-			if packet.IsKeepAlive {
-				log.Println("keep-alive: OK")
+			select {
+			case receiveKeepAliveChan <- true:
+				if packet.IsKeepAlive {
+					log.Println("keep-alive: OK")
+					continue
+				}
+			default:
+			}
+
+			decrypted, decryptionErr := session.Decrypt(packet.Payload)
+			if decryptionErr != nil {
+				log.Printf("failed to decrypt data: %s", decryptionErr)
 				continue
 			}
 
 			// Write the decrypted packet to the TUN interface
-			_, err = tunFile.Write(packet.Payload)
+			_, err = tunFile.Write(decrypted)
 			if err != nil {
 				log.Printf("failed to write to TUN: %v", err)
 				return

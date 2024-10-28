@@ -149,20 +149,14 @@ func UDPToTun(listenPort string, tunFile *os.File, intIPToUDPClientAddr *sync.Ma
 			}
 			session := sessionValue.(*ChaCha20.Session)
 
-			// Handle client data
-			decrypted, decryptionErr := session.Decrypt(buf[:n])
-			if decryptionErr != nil {
-				log.Printf("failed to decrypt data: %s", decryptionErr)
-				continue
-			}
-			packet, err := (&network.Packet{}).Decode(decrypted)
+			packet, err := (&network.Packet{}).Decode(buf[:n])
 			if err != nil {
 				log.Printf("failed to decode packet from %s: %v", clientAddr, err)
 				continue
 			}
 
 			if packet.IsKeepAlive {
-				kaResponse, kaErr := keepalive.Generate()
+				kaResponse, kaErr := keepalive.GenerateUDP()
 				if kaErr != nil {
 					log.Printf("failed to generate keep-alive response: %s", kaErr)
 				}
@@ -173,8 +167,15 @@ func UDPToTun(listenPort string, tunFile *os.File, intIPToUDPClientAddr *sync.Ma
 				continue
 			}
 
+			// Handle client data
+			decrypted, decryptionErr := session.Decrypt(packet.Payload)
+			if decryptionErr != nil {
+				log.Printf("failed to decrypt data: %s", decryptionErr)
+				continue
+			}
+
 			// Write the decrypted packet to the TUN interface
-			_, err = tunFile.Write(packet.Payload)
+			_, err = tunFile.Write(decrypted)
 			if err != nil {
 				log.Printf("failed to write to TUN: %v", err)
 			}

@@ -48,7 +48,7 @@ func ToTCP(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx conte
 			case <-ctx.Done(): // Stop-signal
 				return
 			case <-sendKeepAliveChan:
-				data, err := keepalive.Generate()
+				data, err := keepalive.GenerateTCP()
 				if err != nil {
 					log.Println(err)
 				}
