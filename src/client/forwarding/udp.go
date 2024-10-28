@@ -11,7 +11,7 @@ import (
 )
 
 func TunToUDP(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ctx context.Context, connCancel context.CancelFunc, sendKeepAliveChan chan bool) {
-	buf := make([]byte, maxPacketLengthBytes)
+	buf := make([]byte, network.IPPacketMaxSizeBytes)
 	connWriteChan := make(chan []byte, getConnWriteBufferSize())
 
 	// Goroutine to write data to UDP
@@ -89,7 +89,7 @@ func TunToUDP(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ct
 }
 
 func UDPToTun(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ctx context.Context, connCancel context.CancelFunc, receiveKeepAliveChan chan bool) {
-	buf := make([]byte, maxPacketLengthBytes)
+	buf := make([]byte, network.IPPacketMaxSizeBytes)
 	for {
 		select {
 		case <-ctx.Done(): // Stop-signal
