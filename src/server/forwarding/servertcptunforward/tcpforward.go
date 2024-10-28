@@ -186,7 +186,12 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 				continue
 			}
 
-			packet, err := (&network.Packet{}).Decode(buf[:length], session)
+			decrypted, decryptionErr := session.Decrypt(buf[:length])
+			if decryptionErr != nil {
+				log.Printf("failed to decrypt data: %s", decryptionErr)
+				continue
+			}
+			packet, err := (&network.Packet{}).Decode(decrypted)
 
 			if packet.IsKeepAlive {
 				kaResponse, kaErr := keepalive.Generate()

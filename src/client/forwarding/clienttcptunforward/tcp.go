@@ -130,7 +130,12 @@ func ToTun(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx conte
 				continue
 			}
 
-			packet, err := (&network.Packet{}).Decode(buf[:length], session)
+			decrypted, decryptionErr := session.Decrypt(buf[:length])
+			if decryptionErr != nil {
+				log.Printf("failed to decrypt data: %s", decryptionErr)
+				continue
+			}
+			packet, err := (&network.Packet{}).Decode(decrypted)
 			if err != nil {
 				log.Println(err)
 			}

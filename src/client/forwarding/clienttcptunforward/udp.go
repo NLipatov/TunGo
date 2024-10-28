@@ -106,7 +106,12 @@ func UDPToTun(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ct
 				return
 			}
 
-			packet, err := (&network.Packet{}).Decode(buf[:n], session)
+			decrypted, decryptionErr := session.Decrypt(buf[:n])
+			if decryptionErr != nil {
+				log.Printf("failed to decrypt data: %s", decryptionErr)
+				continue
+			}
+			packet, err := (&network.Packet{}).Decode(decrypted)
 			if err != nil {
 				log.Println(err)
 				continue

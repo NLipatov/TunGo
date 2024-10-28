@@ -2,7 +2,6 @@ package network
 
 import (
 	"encoding/binary"
-	"etha-tunnel/handshake/ChaCha20"
 	"etha-tunnel/network/keepalive"
 )
 
@@ -15,7 +14,7 @@ type Packet struct {
 }
 
 // bytes to packet
-func (p *Packet) Decode(data []byte, session *ChaCha20.Session) (*Packet, error) {
+func (p *Packet) Decode(data []byte) (*Packet, error) {
 	length := uint32(len(data))
 
 	// shortcut - keep-alive messages are not encrypted
@@ -27,13 +26,8 @@ func (p *Packet) Decode(data []byte, session *ChaCha20.Session) (*Packet, error)
 		}, nil
 	}
 
-	decrypted, err := session.Decrypt(data)
-	if err != nil {
-		return nil, err
-	}
-
 	return &Packet{
-		Length:  uint32(len(decrypted)),
+		Length:  length,
 		Payload: data,
 	}, nil
 }

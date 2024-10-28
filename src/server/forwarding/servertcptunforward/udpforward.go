@@ -150,7 +150,12 @@ func UDPToTun(listenPort string, tunFile *os.File, intIPToUDPClientAddr *sync.Ma
 			session := sessionValue.(*ChaCha20.Session)
 
 			// Handle client data
-			packet, err := (&network.Packet{}).Decode(buf[:n], session)
+			decrypted, decryptionErr := session.Decrypt(buf[:n])
+			if decryptionErr != nil {
+				log.Printf("failed to decrypt data: %s", decryptionErr)
+				continue
+			}
+			packet, err := (&network.Packet{}).Decode(decrypted)
 			if err != nil {
 				log.Printf("failed to decode packet from %s: %v", clientAddr, err)
 				continue
