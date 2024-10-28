@@ -43,10 +43,14 @@ func StartConnectionProbing(ctx context.Context, connCancel context.CancelFunc, 
 	<-ctx.Done()
 }
 
-func Generate() ([]byte, error) {
+func GenerateTCP() ([]byte, error) {
 	lengthBuf := make([]byte, 4)
 	binary.BigEndian.PutUint32(lengthBuf, uint32(len(keepAlivePacketContent)))
 	return append(lengthBuf, keepAlivePacketContent[:]...), nil
+}
+
+func GenerateUDP() ([]byte, error) {
+	return keepAlivePacketContent[:], nil
 }
 
 func IsKeepAlive(data []byte) bool {
