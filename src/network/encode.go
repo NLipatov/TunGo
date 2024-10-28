@@ -34,7 +34,7 @@ func (p *Packet) Decode(data []byte, session *ChaCha20.Session) (*Packet, error)
 
 	return &Packet{
 		Length:  uint32(len(decrypted)),
-		Payload: decrypted,
+		Payload: data,
 	}, nil
 }
 
@@ -47,6 +47,16 @@ func (p *Packet) Encode(payload []byte) (*Packet, error) {
 	return &Packet{
 		Length:      length,
 		Payload:     append(lengthBuf, payload...),
+		IsKeepAlive: false,
+	}, nil
+}
+
+func (p *Packet) EncodeUDP(payload []byte) (*Packet, error) {
+	length := uint32(len(payload))
+
+	return &Packet{
+		Length:      length,
+		Payload:     payload,
 		IsKeepAlive: false,
 	}, nil
 }
