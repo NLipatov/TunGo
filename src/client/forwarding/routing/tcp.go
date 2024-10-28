@@ -28,9 +28,7 @@ func StartTCPRouting(settings settings.ConnectionSettings, tunFile *os.File, ctx
 		session, err := handshakeHandlers.OnConnectedToServer(conn, settings)
 		if err != nil {
 			conn.Close()
-			ipconfiguration.Unconfigure()
-			log.Printf("registration failed: %s\n", err)
-			log.Println("connection is aborted")
+			log.Printf("aborting connection: registration failed: %s\n", err)
 			return err
 		}
 
@@ -79,7 +77,7 @@ func establishTCPConnection(settings settings.ConnectionSettings, ctx context.Co
 			log.Printf("Failed to connect to server: %v", err)
 			reconnectAttempts++
 			if reconnectAttempts > maxReconnectAttempts {
-				ipconfiguration.Unconfigure()
+				ipconfiguration.Unconfigure(settings)
 				log.Fatalf("Exceeded maximum reconnect attempts (%d)", maxReconnectAttempts)
 			}
 			log.Printf("Retrying to connect in %v...", backoff)
