@@ -5,8 +5,6 @@ import (
 	"etha-tunnel/network/keepalive"
 )
 
-const MaxPacketSizeBytes = 65535
-
 type Packet struct {
 	Length      uint32 //number of bytes in packet
 	Payload     []byte
