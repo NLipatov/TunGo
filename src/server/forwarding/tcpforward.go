@@ -17,6 +17,11 @@ import (
 
 func TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map, ctx context.Context) {
 	buf := make([]byte, network.IPPacketMaxSizeBytes)
+	connWriteChan := make(chan ClientData, 1_000)
+
+	//starts a goroutine that writes whatever comes from chan to TCP
+	go processConnWriteChan(connWriteChan, localIpMap, localIpToSessionMap, ctx)
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -69,11 +74,10 @@ func TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.
 					log.Printf("packet encoding failed: %s", packetEncodeErr)
 				}
 
-				_, connWriteErr := conn.Write(packet.Payload)
-				if connWriteErr != nil {
-					log.Printf("failed to write to TCP: %v", connWriteErr)
-					localIpMap.Delete(destinationIP)
-					localIpToSessionMap.Delete(destinationIP)
+				connWriteChan <- ClientData{
+					conn:  conn,
+					extIP: destinationIP,
+					data:  packet.Payload,
 				}
 			}
 		}
@@ -189,7 +193,7 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 			packet, err := (&network.Packet{}).Decode(buf[:length])
 
 			//shortcut for keep alive response case
-			if packet.Length == 9 && keepalive.IsKeepAlive(packet.Payload) {
+			if packet.IsKeepAlive {
 				kaResponse, kaErr := keepalive.GenerateTCP()
 				if kaErr != nil {
 					log.Printf("failed to generate keep-alive response: %s", kaErr)
@@ -212,6 +216,22 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 			if err != nil {
 				log.Printf("failed to write to TUN: %v", err)
 				return
+			}
+		}
+	}
+}
+
+func processConnWriteChan(connWriteChan chan ClientData, localIpMap *sync.Map, localIpToSessionMap *sync.Map, ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done(): // Stop-signal
+			return
+		case data := <-connWriteChan:
+			_, connWriteErr := data.conn.Write(data.data)
+			if connWriteErr != nil {
+				log.Printf("failed to write to TCP: %v", connWriteErr)
+				localIpMap.Delete(data.extIP)
+				localIpToSessionMap.Delete(data.extIP)
 			}
 		}
 	}

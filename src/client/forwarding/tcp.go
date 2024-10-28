@@ -134,7 +134,7 @@ func ToTun(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx conte
 			//refreshes last packet time
 			case receiveKeepAliveChan <- true:
 				//shortcut for keep alive response case
-				if packet.Length == 9 && keepalive.IsKeepAlive(packet.Payload) {
+				if packet.IsKeepAlive {
 					log.Println("keep-alive: OK")
 					continue
 				}
