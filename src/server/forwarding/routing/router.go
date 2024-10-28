@@ -64,23 +64,22 @@ func StartUDPRouting(tunFile *os.File, listenPort string) error {
 	defer serveripconfiguration.Unconfigure(tunFile)
 
 	// Map to keep track of connected clients
-	var extToLocalIp sync.Map   // external ip to local ip map
-	var extIpToSession sync.Map // external ip to session map
+	var intIPToUDPClient sync.Map // external ip to local ip map
+	var intIPToSession sync.Map   // external ip to session map
 
 	var wg sync.WaitGroup
-	wg.Add(1)
+	wg.Add(2)
 
-	//ToDo: implement TunToUDP
 	// TUN -> UDP
-	// go func() {
-	// 	defer wg.Done()
-	// 	servertcptunforward.TunToUDP(tunFile, &extToLocalIp, &extIpToSession, ctx)
-	// }()
+	go func() {
+		defer wg.Done()
+		servertcptunforward.TunToUDP(tunFile, &intIPToUDPClient, &intIPToSession, ctx)
+	}()
 
 	// UDP -> TUN
 	go func() {
 		defer wg.Done()
-		servertcptunforward.UDPToTun(listenPort, tunFile, &extToLocalIp, &extIpToSession, ctx)
+		servertcptunforward.UDPToTun(listenPort, tunFile, &intIPToUDPClient, &intIPToSession, ctx)
 	}()
 
 	wg.Wait()

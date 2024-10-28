@@ -16,18 +16,13 @@ import (
 	"golang.org/x/crypto/hkdf"
 )
 
-func OnClientConnectedUDP(conn *net.UDPConn) (*ChaCha20.Session, *string, error) {
+func OnClientConnectedUDP(conn *net.UDPConn, clientAddr *net.UDPAddr, initialData []byte) (*ChaCha20.Session, *string, error) {
 	conf, err := (&server.Conf{}).Read()
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to read server conf: %s", err)
 	}
 
-	buf := make([]byte, ChaCha20.MaxClientHelloSizeBytes)
-	n, clientAddr, err := conn.ReadFromUDP(buf)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to read from client: %v", err)
-	}
-	buf = buf[:n]
+	buf := initialData
 
 	// Read client hello
 	clientHello, err := (&ChaCha20.ClientHello{}).Read(buf)
@@ -72,7 +67,7 @@ func OnClientConnectedUDP(conn *net.UDPConn) (*ChaCha20.Session, *string, error)
 
 	// Verify client signature
 	if !ed25519.Verify(clientHello.EdPublicKey, append(append(clientHello.CurvePublicKey, clientHello.ClientNonce...), serverNonce...), clientSignature.ClientSignature) {
-		return nil, nil, fmt.Errorf("client signature verification failed: %s\n", err)
+		return nil, nil, fmt.Errorf("client signature verification failed")
 	}
 
 	// Generate shared secret and salt

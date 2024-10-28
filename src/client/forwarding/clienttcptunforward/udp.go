@@ -5,7 +5,6 @@ import (
 	"etha-tunnel/handshake/ChaCha20"
 	"etha-tunnel/network"
 	"etha-tunnel/network/keepalive"
-	"fmt"
 	"log"
 	"net"
 	"os"
@@ -61,7 +60,7 @@ func TunToUDP(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ct
 			n, err := tunFile.Read(buf)
 			if err != nil {
 				if ctx.Err() != nil {
-					fmt.Printf("context ended with error: %s\n", err)
+					log.Printf("context ended with error: %s\n", err)
 					return
 				}
 				log.Printf("failed to read from TUN: %v", err)
@@ -74,7 +73,7 @@ func TunToUDP(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ct
 				continue
 			}
 
-			packet, err := (&network.Packet{}).Encode(encryptedPacket)
+			packet, err := (&network.Packet{}).EncodeUDP(encryptedPacket)
 			if err != nil {
 				log.Printf("packet encoding failed: %s", err)
 				continue
@@ -99,7 +98,7 @@ func UDPToTun(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ct
 			n, _, err := conn.ReadFromUDP(buf)
 			if err != nil {
 				if ctx.Err() != nil {
-					fmt.Printf("context ended with error: %s\n", err)
+					log.Printf("context ended with error: %s\n", err)
 					return
 				}
 				log.Printf("read from UDP failed: %v", err)
@@ -113,13 +112,9 @@ func UDPToTun(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ct
 				continue
 			}
 
-			select {
-			case receiveKeepAliveChan <- true:
-				if packet.Length == 9 && keepalive.IsKeepAlive(packet.Payload) {
-					log.Println("keep-alive: OK")
-					continue
-				}
-			default:
+			if packet.IsKeepAlive {
+				log.Println("keep-alive: OK")
+				continue
 			}
 
 			// Write the decrypted packet to the TUN interface
