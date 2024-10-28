@@ -3,8 +3,8 @@ package routing
 import (
 	"context"
 	"etha-tunnel/inputcommands"
+	"etha-tunnel/server/forwarding"
 	"etha-tunnel/server/forwarding/serveripconfiguration"
-	"etha-tunnel/server/forwarding/servertcptunforward"
 	"fmt"
 	"os"
 	"sync"
@@ -35,13 +35,13 @@ func StartTCPRouting(tunFile *os.File, listenPort string) error {
 	// TUN -> TCP
 	go func() {
 		defer wg.Done()
-		servertcptunforward.TunToTCP(tunFile, &extToLocalIp, &extIpToSession, ctx)
+		forwarding.TunToTCP(tunFile, &extToLocalIp, &extIpToSession, ctx)
 	}()
 
 	// TCP -> TUN
 	go func() {
 		defer wg.Done()
-		servertcptunforward.TCPToTun(listenPort, tunFile, &extToLocalIp, &extIpToSession, ctx)
+		forwarding.TCPToTun(listenPort, tunFile, &extToLocalIp, &extIpToSession, ctx)
 	}()
 
 	wg.Wait()
@@ -73,13 +73,13 @@ func StartUDPRouting(tunFile *os.File, listenPort string) error {
 	// TUN -> UDP
 	go func() {
 		defer wg.Done()
-		servertcptunforward.TunToUDP(tunFile, &intIPToUDPClient, &intIPToSession, ctx)
+		forwarding.TunToUDP(tunFile, &intIPToUDPClient, &intIPToSession, ctx)
 	}()
 
 	// UDP -> TUN
 	go func() {
 		defer wg.Done()
-		servertcptunforward.UDPToTun(listenPort, tunFile, &intIPToUDPClient, &intIPToSession, ctx)
+		forwarding.UDPToTun(listenPort, tunFile, &intIPToUDPClient, &intIPToSession, ctx)
 	}()
 
 	wg.Wait()

@@ -6,7 +6,7 @@ import (
 	"etha-tunnel/handshake/ChaCha20"
 	"etha-tunnel/network"
 	"etha-tunnel/network/keepalive"
-	"etha-tunnel/server/forwarding/servertcptunforward"
+	"etha-tunnel/server/forwarding"
 	"etha-tunnel/settings/client"
 	"fmt"
 	"io"
@@ -118,7 +118,7 @@ func ToTun(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx conte
 
 			//read packet length from 4-byte length prefix
 			var length = binary.BigEndian.Uint32(buf[:4])
-			if length < 4 || length > servertcptunforward.IPPacketMaxSizeBytes {
+			if length < 4 || length > forwarding.IPPacketMaxSizeBytes {
 				log.Printf("invalid packet Length: %d", length)
 				continue
 			}
