@@ -16,19 +16,14 @@ import (
 	"golang.org/x/crypto/hkdf"
 )
 
-func OnClientConnectedUDP(conn net.Conn) (*ChaCha20.Session, *string, error) {
+func OnClientConnectedUDP(conn *net.UDPConn) (*ChaCha20.Session, *string, error) {
 	conf, err := (&server.Conf{}).Read()
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to read server conf: %s", err)
 	}
 
-	udpConn, ok := conn.(*net.UDPConn)
-	if !ok {
-		return nil, nil, fmt.Errorf("connection is not UDP")
-	}
-
 	buf := make([]byte, ChaCha20.MaxClientHelloSizeBytes)
-	n, clientAddr, err := udpConn.ReadFromUDP(buf)
+	n, clientAddr, err := conn.ReadFromUDP(buf)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to read from client: %v", err)
 	}
@@ -55,14 +50,14 @@ func OnClientConnectedUDP(conn net.Conn) (*ChaCha20.Session, *string, error) {
 	}
 
 	// Send server hello to the client
-	_, err = udpConn.WriteToUDP(*serverHello, clientAddr)
+	_, err = conn.WriteToUDP(*serverHello, clientAddr)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to send serverHello to client: %v", err)
 	}
 
 	// Read client signature
 	clientSignatureBuf := make([]byte, 64)
-	n, addr, err := udpConn.ReadFromUDP(clientSignatureBuf)
+	n, addr, err := conn.ReadFromUDP(clientSignatureBuf)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to read client signature: %s\n", err)
 	}
