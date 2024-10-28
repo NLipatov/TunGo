@@ -2,7 +2,7 @@ package routing
 
 import (
 	"context"
-	"etha-tunnel/client/forwarding/clienttcptunforward"
+	"etha-tunnel/client/forwarding"
 	"etha-tunnel/client/forwarding/ipconfiguration"
 	"etha-tunnel/handshake/ChaCha20"
 	"etha-tunnel/handshake/ChaCha20/handshakeHandlers"
@@ -114,12 +114,12 @@ func startUDPForwarding(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.S
 	// TUN -> UDP
 	go func() {
 		defer wg.Done()
-		clienttcptunforward.TunToUDP(conn, tunFile, session, *connCtx, *connCancel, sendKeepAliveCommandChan)
+		forwarding.TunToUDP(conn, tunFile, session, *connCtx, *connCancel, sendKeepAliveCommandChan)
 	}()
 
 	// UDP -> TUN
 	go func() {
 		defer wg.Done()
-		clienttcptunforward.UDPToTun(conn, tunFile, session, *connCtx, *connCancel, connPacketReceivedChan)
+		forwarding.UDPToTun(conn, tunFile, session, *connCtx, *connCancel, connPacketReceivedChan)
 	}()
 }

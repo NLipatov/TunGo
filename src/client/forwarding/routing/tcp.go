@@ -2,7 +2,7 @@ package routing
 
 import (
 	"context"
-	"etha-tunnel/client/forwarding/clienttcptunforward"
+	"etha-tunnel/client/forwarding"
 	"etha-tunnel/client/forwarding/ipconfiguration"
 	"etha-tunnel/handshake/ChaCha20"
 	"etha-tunnel/handshake/ChaCha20/handshakeHandlers"
@@ -106,12 +106,12 @@ func startTCPForwarding(conn *net.Conn, tunFile *os.File, session *ChaCha20.Sess
 	// TUN -> TCP
 	go func() {
 		defer wg.Done()
-		clienttcptunforward.ToTCP(*conn, tunFile, session, *connCtx, *connCancel, sendKeepAliveCommandChan)
+		forwarding.ToTCP(*conn, tunFile, session, *connCtx, *connCancel, sendKeepAliveCommandChan)
 	}()
 
 	// TCP -> TUN
 	go func() {
 		defer wg.Done()
-		clienttcptunforward.ToTun(*conn, tunFile, session, *connCtx, *connCancel, connPacketReceivedChan)
+		forwarding.ToTun(*conn, tunFile, session, *connCtx, *connCancel, connPacketReceivedChan)
 	}()
 }

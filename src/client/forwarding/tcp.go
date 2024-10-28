@@ -1,4 +1,4 @@
-package clienttcptunforward
+package forwarding
 
 import (
 	"context"
