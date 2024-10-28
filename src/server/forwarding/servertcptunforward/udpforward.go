@@ -60,7 +60,7 @@ func UDPToTun(listenPort string, tunFile *os.File, localIpMap *sync.Map, localIp
 	}
 }
 
-func udpRegisterClient(conn *net.UDPConn, clientAddr net.UDPAddr, tunFile *os.File, localIpToConn *sync.Map, localIpToServerSessionMap *sync.Map, ctx context.Context) {
+func udpRegisterClient(conn *net.UDPConn, clientAddr net.UDPAddr, tunFile *os.File, intIPToExtIP *sync.Map, intIPToSession *sync.Map, ctx context.Context) {
 	log.Printf("connected: %s", clientAddr.IP.String())
 
 	serverSession, internalIpAddr, err := handshakeHandlers.OnClientConnectedUDP(conn)
@@ -72,16 +72,16 @@ func udpRegisterClient(conn *net.UDPConn, clientAddr net.UDPAddr, tunFile *os.Fi
 	log.Printf("registered: %s", clientAddr.IP.String())
 
 	// Prevent IP spoofing
-	_, ipCollision := localIpToConn.Load(*internalIpAddr)
+	_, ipCollision := intIPToExtIP.Load(*internalIpAddr)
 	if ipCollision {
 		log.Printf("conn closed: %s (internal ip %s already in use)\n", conn.RemoteAddr(), *internalIpAddr)
 		_ = conn.Close()
 	}
 
-	localIpToConn.Store(*internalIpAddr, clientAddr)
-	localIpToServerSessionMap.Store(*internalIpAddr, serverSession)
+	intIPToExtIP.Store(*internalIpAddr, clientAddr)
+	intIPToSession.Store(*internalIpAddr, serverSession)
 
-	udpHandleClient(conn, tunFile, localIpToConn, localIpToServerSessionMap, internalIpAddr, ctx)
+	udpHandleClient(conn, tunFile, intIPToExtIP, intIPToSession, internalIpAddr, ctx)
 }
 
 func udpHandleClient(conn *net.UDPConn, tunFile *os.File, localIpToConn *sync.Map, localIpToSession *sync.Map, extIpAddr *string, ctx context.Context) {
