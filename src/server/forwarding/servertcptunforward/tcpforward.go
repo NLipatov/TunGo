@@ -2,6 +2,7 @@ package servertcptunforward
 
 import (
 	"context"
+	"encoding/binary"
 	"etha-tunnel/handshake/ChaCha20"
 	"etha-tunnel/handshake/ChaCha20/handshakeHandlers"
 	"etha-tunnel/network"
@@ -171,11 +172,21 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 
 			session := sessionValue.(*ChaCha20.Session)
 
-			packet, err := (&network.Packet{}).Decode(conn, buf, session)
-			if err != nil {
-				log.Println(err)
+			//read packet length from 4-byte length prefix
+			var length = binary.BigEndian.Uint32(buf[:4])
+			if length < 4 || length > IPPacketMaxSizeBytes {
+				log.Printf("invalid packet Length: %d", length)
 				continue
 			}
+
+			//read n-bytes from connection
+			_, err = io.ReadFull(conn, buf[:length])
+			if err != nil {
+				log.Printf("failed to read packet from connection: %s", err)
+				continue
+			}
+
+			packet, err := (&network.Packet{}).Decode(buf[:length], session)
 
 			if packet.IsKeepAlive {
 				kaResponse, kaErr := keepalive.Generate()
