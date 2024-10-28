@@ -4,7 +4,6 @@ import (
 	"etha-tunnel/network"
 	"etha-tunnel/network/ip"
 	"etha-tunnel/settings"
-	"etha-tunnel/settings/client"
 	"fmt"
 	"log"
 	"strings"
@@ -67,13 +66,8 @@ func Configure(connSettings settings.ConnectionSettings) error {
 	return nil
 }
 
-func Unconfigure() {
-	conf, err := (&client.Conf{}).Read()
-	if err != nil {
-		log.Fatalf("failed to read configuration: %v", err)
-	}
-
-	hostIp, devName := conf.TCPSettings.ConnectionIP, conf.TCPSettings.InterfaceName
+func Unconfigure(connectionSettings settings.ConnectionSettings) {
+	hostIp, devName := connectionSettings.ConnectionIP, connectionSettings.InterfaceName
 	// Delete the route to the host IP
 	if err := ip.RouteDel(hostIp); err != nil {
 		log.Printf("failed to delete route: %s", err)

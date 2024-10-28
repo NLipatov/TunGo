@@ -18,18 +18,19 @@ func main() {
 	// Start a goroutine to listen for user input
 	go inputcommands.ListenForCommand(cancel)
 
-	// Client configuration (enabling TUN/TCP forwarding)
-	ipconfiguration.Unconfigure()
-	defer ipconfiguration.Unconfigure()
-
 	// Read client configuration
 	conf, err := (&client.Conf{}).Read()
 	if err != nil {
 		log.Fatalf("Failed to read configuration: %v", err)
 	}
 
+	// Client configuration (enabling TUN/TCP forwarding)
+	ipconfiguration.Unconfigure(conf.TCPSettings)
+	ipconfiguration.Unconfigure(conf.UDPSettings)
+
 	switch conf.Protocol {
 	case 0:
+		defer ipconfiguration.Unconfigure(conf.TCPSettings)
 		if err := ipconfiguration.Configure(conf.TCPSettings); err != nil {
 			log.Fatalf("Failed to configure client: %v", err)
 		}
@@ -45,6 +46,7 @@ func main() {
 			log.Fatalf("failed to route trafic: %s", err)
 		}
 	case 1:
+		defer ipconfiguration.Unconfigure(conf.UDPSettings)
 		if err := ipconfiguration.Configure(conf.UDPSettings); err != nil {
 			log.Fatalf("Failed to configure client: %v", err)
 		}
