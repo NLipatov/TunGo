@@ -2,9 +2,11 @@ package clienttcptunforward
 
 import (
 	"context"
+	"encoding/binary"
 	"etha-tunnel/handshake/ChaCha20"
 	"etha-tunnel/network"
 	"etha-tunnel/network/keepalive"
+	"etha-tunnel/server/forwarding/servertcptunforward"
 	"etha-tunnel/settings/client"
 	"fmt"
 	"io"
@@ -114,7 +116,21 @@ func ToTun(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx conte
 				return
 			}
 
-			packet, err := (&network.Packet{}).Decode(conn, buf, session)
+			//read packet length from 4-byte length prefix
+			var length = binary.BigEndian.Uint32(buf[:4])
+			if length < 4 || length > servertcptunforward.IPPacketMaxSizeBytes {
+				log.Printf("invalid packet Length: %d", length)
+				continue
+			}
+
+			//read n-bytes from connection
+			_, err = io.ReadFull(conn, buf[:length])
+			if err != nil {
+				log.Printf("failed to read packet from connection: %s", err)
+				continue
+			}
+
+			packet, err := (&network.Packet{}).Decode(buf[:length], session)
 			if err != nil {
 				log.Println(err)
 			}
