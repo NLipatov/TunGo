@@ -8,6 +8,7 @@ import (
 	"etha-tunnel/network"
 	"etha-tunnel/network/keepalive"
 	"etha-tunnel/network/packets"
+	"etha-tunnel/settings/server"
 	"io"
 	"log"
 	"net"
@@ -17,7 +18,7 @@ import (
 
 func TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map, ctx context.Context) {
 	buf := make([]byte, network.IPPacketMaxSizeBytes)
-	connWriteChan := make(chan ClientData, 1_000)
+	connWriteChan := make(chan ClientData, getConnWriteBufferSize())
 
 	//starts a goroutine that writes whatever comes from chan to TCP
 	go processConnWriteChan(connWriteChan, localIpMap, localIpToSessionMap, ctx)
@@ -235,4 +236,14 @@ func processConnWriteChan(connWriteChan chan ClientData, localIpMap *sync.Map, l
 			}
 		}
 	}
+}
+
+func getConnWriteBufferSize() int32 {
+	conf, err := (&server.Conf{}).Read()
+	if err != nil {
+		log.Println("failed to read connection buffer size from client configuration. Using fallback value: 1000")
+		return 1000
+	}
+
+	return conf.TCPWriteChannelBufferSize
 }

@@ -10,14 +10,15 @@ import (
 )
 
 type Conf struct {
-	TCPSettings           settings.ConnectionSettings `json:"TCPSettings"`
-	UDPSettings           settings.ConnectionSettings `json:"UDPSettings"`
-	FallbackServerAddress string                      `json:"FallbackServerAddress"`
-	Ed25519PublicKey      ed25519.PublicKey           `json:"Ed25519PublicKey"`
-	Ed25519PrivateKey     ed25519.PrivateKey          `json:"Ed25519PrivateKey"`
-	ClientCounter         int                         `json:"ClientCounter"`
-	EnableTCP             bool                        `json:"EnableTCP"`
-	EnableUDP             bool                        `json:"EnableUDP"`
+	TCPSettings               settings.ConnectionSettings `json:"TCPSettings"`
+	UDPSettings               settings.ConnectionSettings `json:"UDPSettings"`
+	FallbackServerAddress     string                      `json:"FallbackServerAddress"`
+	Ed25519PublicKey          ed25519.PublicKey           `json:"Ed25519PublicKey"`
+	Ed25519PrivateKey         ed25519.PrivateKey          `json:"Ed25519PrivateKey"`
+	ClientCounter             int                         `json:"ClientCounter"`
+	TCPWriteChannelBufferSize int32                       `json:"TCPWriteChannelBufferSize"`
+	EnableTCP                 bool                        `json:"EnableTCP"`
+	EnableUDP                 bool                        `json:"EnableUDP"`
 }
 
 func (s *Conf) InsertEdKeys(public ed25519.PublicKey, private ed25519.PrivateKey) error {
