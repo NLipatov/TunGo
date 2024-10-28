@@ -22,7 +22,7 @@ type UDPClient struct {
 }
 
 func TunToUDP(tunFile *os.File, intIPToUDPClientAddr *sync.Map, intIPToSession *sync.Map, ctx context.Context) {
-	buf := make([]byte, IPPacketMaxSizeBytes)
+	buf := make([]byte, network.IPPacketMaxSizeBytes)
 
 	for {
 		select {
@@ -122,7 +122,7 @@ func UDPToTun(listenPort string, tunFile *os.File, intIPToUDPClientAddr *sync.Ma
 		_ = conn.Close()
 	}()
 
-	buf := make([]byte, IPPacketMaxSizeBytes)
+	buf := make([]byte, network.IPPacketMaxSizeBytes)
 	for {
 		select {
 		case <-ctx.Done():
