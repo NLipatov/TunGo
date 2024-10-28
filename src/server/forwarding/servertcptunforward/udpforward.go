@@ -60,7 +60,7 @@ func UDPToTun(listenPort string, tunFile *os.File, localIpMap *sync.Map, localIp
 	}
 }
 
-func udpRegisterClient(conn net.Conn, clientAddr net.UDPAddr, tunFile *os.File, localIpToConn *sync.Map, localIpToServerSessionMap *sync.Map, ctx context.Context) {
+func udpRegisterClient(conn *net.UDPConn, clientAddr net.UDPAddr, tunFile *os.File, localIpToConn *sync.Map, localIpToServerSessionMap *sync.Map, ctx context.Context) {
 	log.Printf("connected: %s", clientAddr.IP.String())
 
 	serverSession, internalIpAddr, err := handshakeHandlers.OnClientConnectedUDP(conn)
@@ -78,11 +78,12 @@ func udpRegisterClient(conn net.Conn, clientAddr net.UDPAddr, tunFile *os.File, 
 		_ = conn.Close()
 	}
 
+	localIpToConn.Store(*internalIpAddr, clientAddr)
 	localIpToServerSessionMap.Store(*internalIpAddr, serverSession)
 
-	handleClient(conn, tunFile, localIpToConn, localIpToServerSessionMap, internalIpAddr, ctx)
+	udpHandleClient(conn, tunFile, localIpToConn, localIpToServerSessionMap, internalIpAddr, ctx)
 }
 
-func udpHandleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, localIpToSession *sync.Map, extIpAddr *string, ctx context.Context) {
+func udpHandleClient(conn *net.UDPConn, tunFile *os.File, localIpToConn *sync.Map, localIpToSession *sync.Map, extIpAddr *string, ctx context.Context) {
 	log.Fatalf("udpHandleClient is not implemented")
 }
