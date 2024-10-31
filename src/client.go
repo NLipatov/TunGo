@@ -30,36 +30,43 @@ func main() {
 
 	switch conf.Protocol {
 	case 0:
-		defer ipconfiguration.Unconfigure(conf.TCPSettings)
-		if err := ipconfiguration.Configure(conf.TCPSettings); err != nil {
-			log.Fatalf("Failed to configure client: %v", err)
+		// Configure client
+		if tcpConfigurationErr := ipconfiguration.Configure(conf.TCPSettings); tcpConfigurationErr != nil {
+			log.Fatalf("Failed to configure client: %v", tcpConfigurationErr)
 		}
+		defer ipconfiguration.Unconfigure(conf.TCPSettings)
+
 		// Open the TUN interface
-		tunFile, err := network.OpenTunByName(conf.TCPSettings.InterfaceName)
-		if err != nil {
-			log.Fatalf("Failed to open TUN interface: %v", err)
+		tunFile, openTunErr := network.OpenTunByName(conf.TCPSettings.InterfaceName)
+		if openTunErr != nil {
+			log.Fatalf("Failed to open TUN interface: %v", openTunErr)
 		}
 		defer tunFile.Close()
 
-		err = routing.StartTCPRouting(conf.TCPSettings, tunFile, &ctx)
-		if err != nil {
-			log.Fatalf("failed to route trafic: %s", err)
+		routingErr := routing.StartTCPRouting(conf.TCPSettings, tunFile, ctx)
+		if ctx.Err() != nil {
+			return
+		}
+		if routingErr != nil {
+			log.Printf("failed to route trafic: %s", routingErr)
 		}
 	case 1:
-		defer ipconfiguration.Unconfigure(conf.UDPSettings)
-		if err := ipconfiguration.Configure(conf.UDPSettings); err != nil {
-			log.Fatalf("Failed to configure client: %v", err)
+		// Configure client
+		if udpConfigurationErr := ipconfiguration.Configure(conf.UDPSettings); udpConfigurationErr != nil {
+			log.Fatalf("Failed to configure client: %v", udpConfigurationErr)
 		}
+		defer ipconfiguration.Unconfigure(conf.UDPSettings)
+
 		// Open the TUN interface
-		tunFile, err := network.OpenTunByName(conf.UDPSettings.InterfaceName)
-		if err != nil {
-			log.Fatalf("Failed to open TUN interface: %v", err)
+		tunFile, openTunErr := network.OpenTunByName(conf.UDPSettings.InterfaceName)
+		if openTunErr != nil {
+			log.Fatalf("Failed to open TUN interface: %v", openTunErr)
 		}
 		defer tunFile.Close()
 
-		err = routing.StartUDPRouting(conf.UDPSettings, tunFile, &ctx)
-		if err != nil {
-			log.Fatalf("failed to route trafic: %s", err)
+		routingErr := routing.StartUDPRouting(conf.UDPSettings, tunFile, &ctx)
+		if routingErr != nil {
+			log.Fatalf("failed to route trafic: %s", routingErr)
 		}
 	}
 }

@@ -16,9 +16,9 @@ import (
 	"time"
 )
 
-func StartTCPRouting(settings settings.ConnectionSettings, tunFile *os.File, ctx *context.Context) error {
+func StartTCPRouting(settings settings.ConnectionSettings, tunFile *os.File, ctx context.Context) error {
 	for {
-		conn, connectionError := connect(settings, *ctx)
+		conn, connectionError := connect(settings, ctx)
 		if connectionError != nil {
 			log.Printf("failed to establish connection: %s", connectionError)
 			continue // Retry connection
@@ -30,8 +30,8 @@ func StartTCPRouting(settings settings.ConnectionSettings, tunFile *os.File, ctx
 		}
 
 		// Create a child context for managing data forwarding goroutines
-		connCtx, connCancel := context.WithCancel(*ctx)
-		forwardIPPackets(&conn, tunFile, session, &connCtx, &connCancel)
+		connCtx, connCancel := context.WithCancel(ctx)
+		forwardIPPackets(&conn, tunFile, session, connCtx, connCancel)
 		return conn.Close()
 	}
 }
@@ -83,10 +83,10 @@ func register(conn *net.Conn, settings settings.ConnectionSettings) (*ChaCha20.S
 	return session, err
 }
 
-func forwardIPPackets(conn *net.Conn, tunFile *os.File, session *ChaCha20.Session, connCtx *context.Context, connCancel *context.CancelFunc) {
-	sendKeepAliveCommandChan := make(chan bool, 1)
-	connPacketReceivedChan := make(chan bool, 1)
-	go keepalive.StartConnectionProbing(*connCtx, *connCancel, sendKeepAliveCommandChan, connPacketReceivedChan)
+func forwardIPPackets(conn *net.Conn, tunFile *os.File, session *ChaCha20.Session, connCtx context.Context, connCancel context.CancelFunc) {
+	sendKeepaliveCh := make(chan bool, 1)
+	receiveKeepaliveCh := make(chan bool, 1)
+	go keepalive.StartConnectionProbing(connCtx, connCancel, sendKeepaliveCh, receiveKeepaliveCh)
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -94,14 +94,17 @@ func forwardIPPackets(conn *net.Conn, tunFile *os.File, session *ChaCha20.Sessio
 	// TUN -> TCP
 	go func() {
 		defer wg.Done()
-		forwarding.ToTCP(*conn, tunFile, session, *connCtx, *connCancel, sendKeepAliveCommandChan)
+		forwarding.ToTCP(*conn, tunFile, session, connCtx, connCancel, sendKeepaliveCh)
 	}()
 
 	// TCP -> TUN
 	go func() {
 		defer wg.Done()
-		forwarding.ToTun(*conn, tunFile, session, *connCtx, *connCancel, connPacketReceivedChan)
+		forwarding.ToTun(*conn, tunFile, session, connCtx, connCancel, receiveKeepaliveCh)
 	}()
 
 	wg.Wait()
+
+	close(sendKeepaliveCh)
+	close(receiveKeepaliveCh)
 }

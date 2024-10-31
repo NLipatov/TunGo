@@ -7,7 +7,6 @@ import (
 	"etha-tunnel/network"
 	"etha-tunnel/network/keepalive"
 	"etha-tunnel/settings/client"
-	"fmt"
 	"io"
 	"log"
 	"net"
@@ -15,9 +14,14 @@ import (
 )
 
 // ToTCP forwards packets from TUN to TCP
-func ToTCP(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx context.Context, connCancel context.CancelFunc, sendKeepAliveChan chan bool) {
+func ToTCP(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx context.Context, connCancel context.CancelFunc, sendKeepaliveCh chan bool) {
 	buf := make([]byte, network.IPPacketMaxSizeBytes)
 	connWriteChan := make(chan []byte, getConnWriteBufferSize())
+
+	go func() {
+		<-ctx.Done()
+		_ = conn.Close()
+	}()
 
 	//writes whatever comes from chan to TCP
 	go func() {
@@ -25,7 +29,10 @@ func ToTCP(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx conte
 			select {
 			case <-ctx.Done(): // Stop-signal
 				return
-			case data := <-connWriteChan:
+			case data, ok := <-connWriteChan:
+				if !ok { //if connWriteChan is closed
+					return
+				}
 				_, err := conn.Write(data)
 				if err != nil {
 					log.Printf("write to TCP failed: %s", err)
@@ -42,7 +49,7 @@ func ToTCP(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx conte
 			select {
 			case <-ctx.Done(): // Stop-signal
 				return
-			case <-sendKeepAliveChan:
+			case <-sendKeepaliveCh:
 				data, err := keepalive.GenerateTCP()
 				if err != nil {
 					log.Println(err)
@@ -65,7 +72,6 @@ func ToTCP(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx conte
 			n, err := tunFile.Read(buf)
 			if err != nil {
 				if ctx.Err() != nil {
-					fmt.Printf("context ended with error: %s\n", err)
 					return
 				}
 				log.Printf("failed to read from TUN: %v", err)
@@ -85,16 +91,24 @@ func ToTCP(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx conte
 			}
 
 			select {
-			case connWriteChan <- packet.Payload:
 			case <-ctx.Done():
+				close(connWriteChan)
 				return
+			case connWriteChan <- packet.Payload:
 			}
 		}
 	}
 }
 
-func ToTun(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx context.Context, connCancel context.CancelFunc, receiveKeepAliveChan chan bool) {
+func ToTun(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx context.Context, connCancel context.CancelFunc, receiveKeepaliveCh chan bool) {
 	buf := make([]byte, network.IPPacketMaxSizeBytes)
+
+	go func() {
+		<-ctx.Done()
+		_ = conn.Close()
+		_ = tunFile.Close()
+	}()
+
 	for {
 		select {
 		case <-ctx.Done(): // Stop-signal
@@ -103,7 +117,6 @@ func ToTun(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx conte
 			_, err := io.ReadFull(conn, buf[:4])
 			if err != nil {
 				if ctx.Err() != nil {
-					fmt.Printf("context ended with error: %s\n", err)
 					return
 				}
 				log.Printf("read from TCP failed: %v", err)
@@ -132,7 +145,7 @@ func ToTun(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx conte
 
 			select {
 			//refreshes last packet time
-			case receiveKeepAliveChan <- true:
+			case receiveKeepaliveCh <- true:
 				//shortcut for keep alive response case
 				if packet.IsKeepAlive {
 					log.Println("keep-alive: OK")
