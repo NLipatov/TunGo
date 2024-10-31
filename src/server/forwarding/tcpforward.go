@@ -226,6 +226,7 @@ func processConnWriteChan(connWriteChan chan ClientData, localIpMap *sync.Map, l
 	for {
 		select {
 		case <-ctx.Done(): // Stop-signal
+			close(connWriteChan)
 			return
 		case data := <-connWriteChan:
 			_, connWriteErr := data.conn.Write(data.data)
