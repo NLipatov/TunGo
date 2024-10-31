@@ -18,52 +18,25 @@ import (
 
 func StartTCPRouting(settings settings.ConnectionSettings, tunFile *os.File, ctx *context.Context) error {
 	for {
-		conn, connectionError := establishTCPConnection(settings, *ctx)
+		conn, connectionError := connect(settings, *ctx)
 		if connectionError != nil {
 			log.Printf("failed to establish connection: %s", connectionError)
 			continue // Retry connection
 		}
 
-		log.Printf("Connected to server at %s (TCP)", settings.ConnectionIP)
-		session, err := handshakeHandlers.OnConnectedToServer(conn, settings)
-		if err != nil {
-			conn.Close()
-			log.Printf("aborting connection: registration failed: %s\n", err)
-			return err
+		session, registrationErr := register(&conn, settings)
+		if registrationErr != nil {
+			log.Fatalf("failed to register: %s", registrationErr)
 		}
 
 		// Create a child context for managing data forwarding goroutines
 		connCtx, connCancel := context.WithCancel(*ctx)
-		var wg sync.WaitGroup
-		wg.Add(2)
-
-		// Start a goroutine to monitor context cancellation and close the connection
-		go func() {
-			<-connCtx.Done()
-			conn.Close()
-			return
-		}()
-
-		go startTCPForwarding(&conn, tunFile, session, &connCtx, &connCancel, &wg)
-
-		// Wait for goroutines to finish
-		wg.Wait()
-
-		// After goroutines finish, check if shutdown was initiated
-		if (*ctx).Err() != nil {
-			log.Println("Client is shutting down.")
-			return err
-		} else {
-			// Connection lost unexpectedly, attempt to reconnect
-			log.Println("Connection lost, attempting to reconnect...")
-		}
-
-		// Close the connection (if not already closed)
-		conn.Close()
+		forwardIPPackets(&conn, tunFile, session, &connCtx, &connCancel)
+		return conn.Close()
 	}
 }
 
-func establishTCPConnection(settings settings.ConnectionSettings, ctx context.Context) (net.Conn, error) {
+func connect(settings settings.ConnectionSettings, ctx context.Context) (net.Conn, error) {
 	reconnectAttempts := 0
 	backoff := initialBackoff
 
@@ -94,14 +67,29 @@ func establishTCPConnection(settings settings.ConnectionSettings, ctx context.Co
 			continue
 		}
 
+		log.Printf("Connected to server at %s (TCP)", settings.ConnectionIP)
+
 		return conn, nil
 	}
 }
 
-func startTCPForwarding(conn *net.Conn, tunFile *os.File, session *ChaCha20.Session, connCtx *context.Context, connCancel *context.CancelFunc, wg *sync.WaitGroup) {
+func register(conn *net.Conn, settings settings.ConnectionSettings) (*ChaCha20.Session, error) {
+	session, err := handshakeHandlers.OnConnectedToServer(*conn, settings)
+	if err != nil {
+		log.Printf("aborting connection: registration failed: %s\n", err)
+		return nil, err
+	}
+
+	return session, err
+}
+
+func forwardIPPackets(conn *net.Conn, tunFile *os.File, session *ChaCha20.Session, connCtx *context.Context, connCancel *context.CancelFunc) {
 	sendKeepAliveCommandChan := make(chan bool, 1)
 	connPacketReceivedChan := make(chan bool, 1)
 	go keepalive.StartConnectionProbing(*connCtx, *connCancel, sendKeepAliveCommandChan, connPacketReceivedChan)
+
+	var wg sync.WaitGroup
+	wg.Add(2)
 
 	// TUN -> TCP
 	go func() {
@@ -114,4 +102,6 @@ func startTCPForwarding(conn *net.Conn, tunFile *os.File, session *ChaCha20.Sess
 		defer wg.Done()
 		forwarding.ToTun(*conn, tunFile, session, *connCtx, *connCancel, connPacketReceivedChan)
 	}()
+
+	wg.Wait()
 }
