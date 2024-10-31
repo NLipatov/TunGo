@@ -46,7 +46,7 @@ func Unconfigure(tunFile *os.File) {
 
 	err = clearForwarding(tunFile, tunName)
 	if err != nil {
-		log.Printf("failed to disbale forwarding: %s\n", err)
+		log.Printf("failed to disable forwarding: %s\n", err)
 	}
 
 	log.Printf("server unconfigured\n")
