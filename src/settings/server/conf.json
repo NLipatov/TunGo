@@ -16,7 +16,6 @@
     "Protocol": "udp"
   },
   "TCPWriteChannelBufferSize": 1000,
-  "EnableTCP": true,
-  "FallbackServerAddress": "192.168.122.194",
-  "ClientCounter": 0
+  "EnableTCP": false,
+  "EnableUDP": true
 }
