@@ -13,6 +13,7 @@ type Session struct {
 	RecvNonce  *Nonce
 	isServer   bool
 	SessionId  [32]byte
+	nonceBuf   *NonceBuf
 }
 
 func NewSession(sendKey, recvKey []byte, isServer bool) (*Session, error) {
@@ -32,6 +33,7 @@ func NewSession(sendKey, recvKey []byte, isServer bool) (*Session, error) {
 		RecvNonce:  NewNonce(),
 		SendNonce:  NewNonce(),
 		isServer:   isServer,
+		nonceBuf:   NewNonceBuf(512),
 	}, nil
 }
 
@@ -61,7 +63,12 @@ func (s *Session) Decrypt(ciphertext []byte) ([]byte, uint32, uint64, error) {
 	return plaintext, high, low, nil
 }
 
-func (s *Session) DecryptWithNonce(ciphertext []byte, nonce Nonce) ([]byte, uint32, uint64, error) {
+func (s *Session) DecryptViaNonceBuf(ciphertext []byte, nonce Nonce) ([]byte, uint32, uint64, error) {
+	nBErr := s.nonceBuf.Insert(nonce)
+	if nBErr != nil {
+		return nil, 0, 0, nBErr
+	}
+
 	nonceBytes := Encode(nonce.High, nonce.Low)
 	aad := s.CreateAAD(!s.isServer, nonceBytes)
 	plaintext, err := s.recvCipher.Open(ciphertext[:0], nonceBytes, ciphertext, aad)

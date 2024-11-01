@@ -171,7 +171,7 @@ func UDPToTun(listenPort string, tunFile *os.File, intIPToUDPClientAddr *sync.Ma
 			}
 
 			// Handle client data
-			decrypted, _, _, decryptionErr := session.DecryptWithNonce(*packet.Payload, *packet.Nonce)
+			decrypted, _, _, decryptionErr := session.DecryptViaNonceBuf(*packet.Payload, *packet.Nonce)
 			if decryptionErr != nil {
 				log.Printf("failed to decrypt data: %s", decryptionErr)
 				continue
