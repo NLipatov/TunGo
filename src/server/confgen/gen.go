@@ -68,7 +68,7 @@ func Generate() (*client.Conf, error) {
 		},
 		Ed25519PublicKey:          serverConf.Ed25519PublicKey,
 		TCPWriteChannelBufferSize: 1000,
-		Protocol:                  0,
+		Protocol:                  settings.UDP,
 	}
 
 	return &conf, nil

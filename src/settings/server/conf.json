@@ -4,14 +4,16 @@
     "InterfaceIPCIDR": "10.0.0.0/24",
     "InterfaceAddress": "10.0.0.1",
     "ConnectionIP": "192.168.122.194",
-    "ConnectionPort": ":8080"
+    "ConnectionPort": ":8080",
+    "Protocol": "tcp"
   },
   "UDPSettings": {
     "InterfaceName": "udptun0",
     "InterfaceIPCIDR": "10.0.1.0/24",
     "InterfaceAddress": "",
     "ConnectionIP": "",
-    "ConnectionPort": ":9090"
+    "ConnectionPort": ":9090",
+    "Protocol": "udp"
   },
   "TCPWriteChannelBufferSize": 1000,
   "EnableTCP": true,

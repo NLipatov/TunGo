@@ -6,6 +6,7 @@ import (
 	"etha-tunnel/client/forwarding/routing"
 	"etha-tunnel/inputcommands"
 	"etha-tunnel/network"
+	"etha-tunnel/settings"
 	"etha-tunnel/settings/client"
 	"log"
 )
@@ -29,7 +30,7 @@ func main() {
 	ipconfiguration.Unconfigure(conf.UDPSettings)
 
 	switch conf.Protocol {
-	case 0:
+	case settings.TCP:
 		// Configure client
 		if tcpConfigurationErr := ipconfiguration.Configure(conf.TCPSettings); tcpConfigurationErr != nil {
 			log.Fatalf("Failed to configure client: %v", tcpConfigurationErr)
@@ -50,7 +51,7 @@ func main() {
 		if routingErr != nil {
 			log.Printf("failed to route trafic: %s", routingErr)
 		}
-	case 1:
+	case settings.UDP:
 		// Configure client
 		if udpConfigurationErr := ipconfiguration.Configure(conf.UDPSettings); udpConfigurationErr != nil {
 			log.Fatalf("Failed to configure client: %v", udpConfigurationErr)
@@ -68,5 +69,7 @@ func main() {
 		if routingErr != nil {
 			log.Fatalf("failed to route trafic: %s", routingErr)
 		}
+	default:
+		log.Fatalf("invalid configuration: invalid protocol.")
 	}
 }
