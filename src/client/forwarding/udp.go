@@ -14,6 +14,11 @@ func TunToUDP(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ct
 	buf := make([]byte, network.IPPacketMaxSizeBytes)
 	connWriteChan := make(chan []byte, getConnWriteBufferSize())
 
+	go func() {
+		<-ctx.Done()
+		_ = conn.Close()
+	}()
+
 	// Goroutine to write data to UDP
 	go func() {
 		for {
@@ -60,7 +65,6 @@ func TunToUDP(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ct
 			n, err := tunFile.Read(buf)
 			if err != nil {
 				if ctx.Err() != nil {
-					log.Printf("context ended with error: %s\n", err)
 					return
 				}
 				log.Printf("failed to read from TUN: %v", err)
@@ -93,6 +97,12 @@ func TunToUDP(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ct
 
 func UDPToTun(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ctx context.Context, connCancel context.CancelFunc, receiveKeepAliveChan chan bool) {
 	buf := make([]byte, network.IPPacketMaxSizeBytes)
+
+	go func() {
+		<-ctx.Done()
+		_ = conn.Close()
+	}()
+
 	for {
 		select {
 		case <-ctx.Done(): // Stop-signal
@@ -101,7 +111,6 @@ func UDPToTun(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ct
 			n, _, err := conn.ReadFromUDP(buf)
 			if err != nil {
 				if ctx.Err() != nil {
-					log.Printf("context ended with error: %s\n", err)
 					return
 				}
 				log.Printf("read from UDP failed: %v", err)
