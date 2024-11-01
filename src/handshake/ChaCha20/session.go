@@ -33,7 +33,7 @@ func NewSession(sendKey, recvKey []byte, isServer bool) (*Session, error) {
 		RecvNonce:  NewNonce(),
 		SendNonce:  NewNonce(),
 		isServer:   isServer,
-		nonceBuf:   NewNonceBuf(512),
+		nonceBuf:   NewNonceBuf(1024),
 	}, nil
 }
 
