@@ -42,6 +42,18 @@ func (n *Nonce) incrementNonce() ([]byte, uint32, uint64, error) {
 	return nonce, highVal, lowVal, nil
 }
 
+func Encode(high uint32, low uint64) []byte {
+	nonce := make([]byte, 12)
+	for i := 0; i < 8; i++ {
+		nonce[i] = byte(low >> (8 * i))
+	}
+	for i := 0; i < 4; i++ {
+		nonce[8+i] = byte(high >> (8 * i))
+	}
+
+	return nonce
+}
+
 func (n *Nonce) Hash() uint64 {
 	return n.Low ^ uint64(n.High)
 }

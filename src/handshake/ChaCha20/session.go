@@ -61,6 +61,18 @@ func (s *Session) Decrypt(ciphertext []byte) ([]byte, uint32, uint64, error) {
 	return plaintext, high, low, nil
 }
 
+func (s *Session) DecryptWithNonce(ciphertext []byte, nonce Nonce) ([]byte, uint32, uint64, error) {
+	nonceBytes := Encode(nonce.High, nonce.Low)
+	aad := s.CreateAAD(!s.isServer, nonceBytes)
+	plaintext, err := s.recvCipher.Open(ciphertext[:0], nonceBytes, ciphertext, aad)
+	if err != nil {
+		// Properly handle failed decryption attempt to avoid reuse of any state
+		return nil, nonce.High, nonce.Low, fmt.Errorf("failed to decrypt: %w", err)
+	}
+
+	return plaintext, nonce.High, nonce.Low, nil
+}
+
 func (s *Session) CreateAAD(isServerToClient bool, nonce []byte) []byte {
 	direction := []byte("client-to-server")
 	if isServerToClient {
