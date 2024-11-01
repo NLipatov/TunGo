@@ -1,6 +1,8 @@
 package ChaCha20
 
 import (
+	"crypto/sha256"
+	"encoding/binary"
 	"fmt"
 	"sync/atomic"
 )
@@ -55,5 +57,10 @@ func Encode(high uint32, low uint64) []byte {
 }
 
 func (n *Nonce) Hash() uint64 {
-	return n.Low ^ uint64(n.High)
+	hash := sha256.Sum256([]byte{
+		byte(n.High >> 24), byte(n.High >> 16), byte(n.High >> 8), byte(n.High),
+		byte(n.Low >> 56), byte(n.Low >> 48), byte(n.Low >> 40), byte(n.Low >> 32),
+		byte(n.Low >> 24), byte(n.Low >> 16), byte(n.Low >> 8), byte(n.Low),
+	})
+	return binary.LittleEndian.Uint64(hash[:8])
 }
