@@ -64,13 +64,13 @@ func TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.
 					continue
 				}
 				session := sessionValue.(*ChaCha20.Session)
-				encryptedPacket, encryptErr := session.Encrypt(data)
+				encryptedPacket, _, _, encryptErr := session.Encrypt(data)
 				if encryptErr != nil {
 					log.Printf("failder to encrypt a package: %s", encryptErr)
 					continue
 				}
 
-				packet, packetEncodeErr := (&network.Packet{}).Encode(encryptedPacket)
+				packet, packetEncodeErr := (&network.Packet{}).EncodeTCP(encryptedPacket)
 				if packetEncodeErr != nil {
 					log.Printf("packet encoding failed: %s", packetEncodeErr)
 				}
@@ -191,7 +191,7 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 				continue
 			}
 
-			packet, err := (&network.Packet{}).Decode(buf[:length])
+			packet, err := (&network.Packet{}).DecodeTCP(buf[:length])
 
 			//shortcut for keep alive response case
 			if packet.IsKeepAlive {
@@ -206,7 +206,7 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 				continue
 			}
 
-			decrypted, decryptionErr := session.Decrypt(buf[:length])
+			decrypted, _, _, decryptionErr := session.Decrypt(buf[:length])
 			if decryptionErr != nil {
 				log.Printf("failed to decrypt data: %s", decryptionErr)
 				continue

@@ -14,10 +14,10 @@ func NewNonce() *Nonce {
 	return &Nonce{Low: 0, High: 0}
 }
 
-func (n *Nonce) incrementNonce() ([]byte, error) {
+func (n *Nonce) incrementNonce() ([]byte, uint32, uint64, error) {
 	// Ensure nonce does not overflow
 	if atomic.LoadUint32(&n.High) == ^uint32(0) && atomic.LoadUint64(&n.Low) == ^uint64(0) {
-		return nil, fmt.Errorf("nonce overflow: maximum number of messages reached")
+		return nil, 0, 0, fmt.Errorf("nonce overflow: maximum number of messages reached")
 	}
 
 	nonce := make([]byte, 12)
@@ -39,7 +39,7 @@ func (n *Nonce) incrementNonce() ([]byte, error) {
 		nonce[8+i] = byte(highVal >> (8 * i))
 	}
 
-	return nonce, nil
+	return nonce, highVal, lowVal, nil
 }
 
 func (n *Nonce) Hash() uint64 {

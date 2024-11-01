@@ -78,13 +78,13 @@ func ToTCP(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx conte
 				continue
 			}
 
-			encryptedPacket, err := session.Encrypt(buf[:n])
+			encryptedPacket, _, _, err := session.Encrypt(buf[:n])
 			if err != nil {
 				log.Printf("failed to encrypt packet: %v", err)
 				continue
 			}
 
-			packet, err := (&network.Packet{}).Encode(encryptedPacket)
+			packet, err := (&network.Packet{}).EncodeTCP(encryptedPacket)
 			if err != nil {
 				log.Printf("packet encoding failed: %s", err)
 				continue
@@ -138,7 +138,7 @@ func ToTun(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx conte
 				continue
 			}
 
-			packet, err := (&network.Packet{}).Decode(buf[:length])
+			packet, err := (&network.Packet{}).DecodeTCP(buf[:length])
 			if err != nil {
 				log.Println(err)
 			}
@@ -154,7 +154,7 @@ func ToTun(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx conte
 			default:
 			}
 
-			decrypted, decryptionErr := session.Decrypt(packet.Payload)
+			decrypted, _, _, decryptionErr := session.Decrypt(packet.Payload)
 			if decryptionErr != nil {
 				log.Printf("failed to decrypt data: %s", decryptionErr)
 				continue

@@ -67,20 +67,23 @@ func TunToUDP(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ct
 				continue
 			}
 
-			encryptedPacket, err := session.Encrypt(buf[:n])
+			encryptedPacket, high, low, err := session.Encrypt(buf[:n])
 			if err != nil {
 				log.Printf("failed to encrypt packet: %v", err)
 				continue
 			}
 
-			packet, err := (&network.Packet{}).EncodeUDP(encryptedPacket)
+			packet, err := (&network.Packet{}).EncodeUDP(encryptedPacket, &ChaCha20.Nonce{
+				Low:  low,
+				High: high,
+			})
 			if err != nil {
 				log.Printf("packet encoding failed: %s", err)
 				continue
 			}
 
 			select {
-			case connWriteChan <- packet.Payload:
+			case connWriteChan <- *packet.Payload:
 			case <-ctx.Done():
 				return
 			}
@@ -106,9 +109,9 @@ func UDPToTun(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ct
 				return
 			}
 
-			packet, err := (&network.Packet{}).Decode(buf[:n])
-			if err != nil {
-				log.Println(err)
+			packet, packetDecodeErr := (&network.Packet{}).DecodeUDP(buf[:n])
+			if packetDecodeErr != nil {
+				log.Printf("failed to decode a packet: %s", packetDecodeErr)
 				continue
 			}
 
@@ -121,7 +124,7 @@ func UDPToTun(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ct
 			default:
 			}
 
-			decrypted, decryptionErr := session.Decrypt(packet.Payload)
+			decrypted, _, _, decryptionErr := session.Decrypt(*packet.Payload)
 			if decryptionErr != nil {
 				log.Printf("failed to decrypt data: %s", decryptionErr)
 				continue

@@ -80,19 +80,22 @@ func TunToUDP(tunFile *os.File, intIPToUDPClientAddr *sync.Map, intIPToSession *
 			}
 			session := sessionValue.(*ChaCha20.Session)
 
-			encryptedPacket, encryptErr := session.Encrypt(data)
+			encryptedPacket, high, low, encryptErr := session.Encrypt(data)
 			if encryptErr != nil {
 				log.Printf("failed to encrypt packet: %s", encryptErr)
 				continue
 			}
 
-			packet, packetEncodeErr := (&network.Packet{}).EncodeUDP(encryptedPacket)
+			packet, packetEncodeErr := (&network.Packet{}).EncodeUDP(encryptedPacket, &ChaCha20.Nonce{
+				Low:  low,
+				High: high,
+			})
 			if packetEncodeErr != nil {
 				log.Printf("packet encoding failed: %s", packetEncodeErr)
 				continue
 			}
 
-			_, udpWriteErr := clientInfo.conn.WriteToUDP(packet.Payload, clientInfo.addr)
+			_, udpWriteErr := clientInfo.conn.WriteToUDP(*packet.Payload, clientInfo.addr)
 			if udpWriteErr != nil {
 				log.Printf("failed to send packet to %s: %v", clientInfo.addr, udpWriteErr)
 				intIPToUDPClientAddr.Delete(destinationIP)
@@ -149,7 +152,7 @@ func UDPToTun(listenPort string, tunFile *os.File, intIPToUDPClientAddr *sync.Ma
 			}
 			session := sessionValue.(*ChaCha20.Session)
 
-			packet, err := (&network.Packet{}).Decode(buf[:n])
+			packet, err := (&network.Packet{}).DecodeUDP(buf[:n])
 			if err != nil {
 				log.Printf("failed to decode packet from %s: %v", clientAddr, err)
 				continue
@@ -168,7 +171,7 @@ func UDPToTun(listenPort string, tunFile *os.File, intIPToUDPClientAddr *sync.Ma
 			}
 
 			// Handle client data
-			decrypted, decryptionErr := session.Decrypt(packet.Payload)
+			decrypted, _, _, decryptionErr := session.Decrypt(*packet.Payload)
 			if decryptionErr != nil {
 				log.Printf("failed to decrypt data: %s", decryptionErr)
 				continue

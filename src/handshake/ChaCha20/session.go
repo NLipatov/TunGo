@@ -35,30 +35,30 @@ func NewSession(sendKey, recvKey []byte, isServer bool) (*Session, error) {
 	}, nil
 }
 
-func (s *Session) Encrypt(plaintext []byte) ([]byte, error) {
-	nonce, err := s.SendNonce.incrementNonce()
+func (s *Session) Encrypt(plaintext []byte) ([]byte, uint32, uint64, error) {
+	nonce, high, low, err := s.SendNonce.incrementNonce()
 	if err != nil {
-		return nil, err
+		return nil, high, low, err
 	}
 	aad := s.CreateAAD(s.isServer, nonce)
 	ciphertext := s.sendCipher.Seal(plaintext[:0], nonce, plaintext, aad)
 
-	return ciphertext, nil
+	return ciphertext, high, low, nil
 }
 
-func (s *Session) Decrypt(ciphertext []byte) ([]byte, error) {
-	nonce, err := s.RecvNonce.incrementNonce()
+func (s *Session) Decrypt(ciphertext []byte) ([]byte, uint32, uint64, error) {
+	nonce, high, low, err := s.RecvNonce.incrementNonce()
 	if err != nil {
-		return nil, err
+		return nil, high, low, err
 	}
 	aad := s.CreateAAD(!s.isServer, nonce)
 	plaintext, err := s.recvCipher.Open(ciphertext[:0], nonce, ciphertext, aad)
 	if err != nil {
 		// Properly handle failed decryption attempt to avoid reuse of any state
-		return nil, fmt.Errorf("failed to decrypt: %w", err)
+		return nil, high, low, fmt.Errorf("failed to decrypt: %w", err)
 	}
 
-	return plaintext, nil
+	return plaintext, high, low, nil
 }
 
 func (s *Session) CreateAAD(isServerToClient bool, nonce []byte) []byte {
