@@ -133,6 +133,9 @@ func UDPToTun(listenPort string, tunFile *os.File, intIPToUDPClientAddr *sync.Ma
 		default:
 			n, clientAddr, readFromUdpErr := conn.ReadFromUDP(buf)
 			if readFromUdpErr != nil {
+				if ctx.Err() != nil {
+					return
+				}
 				log.Printf("failed to read from UDP: %s", readFromUdpErr)
 				continue
 			}
