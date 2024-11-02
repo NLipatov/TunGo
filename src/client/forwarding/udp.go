@@ -19,24 +19,9 @@ func TunToUDP(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ct
 		_ = conn.Close()
 	}()
 
-	// Goroutine to write data to UDP
-	go func() {
-		for {
-			select {
-			case <-ctx.Done(): // Stop-signal
-				return
-			case data := <-connWriteChan:
-				_, err := conn.Write(data)
-				if err != nil {
-					log.Printf("write to UDP failed: %s", err)
-					connCancel()
-					return
-				}
-			}
-		}
-	}()
+	startUDPSenderPool(conn, connWriteChan, 10, connCancel)
 
-	// Goroutine to send keepalive messages
+	// Goroutine to write data to UDP
 	go func() {
 		for {
 			select {
@@ -45,7 +30,8 @@ func TunToUDP(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ct
 			case <-sendKeepAliveChan:
 				data, err := keepalive.GenerateUDP()
 				if err != nil {
-					log.Println(err)
+					log.Println("failed to generate keep-alive:", err)
+					continue
 				}
 				select {
 				case connWriteChan <- data:
@@ -77,10 +63,7 @@ func TunToUDP(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ct
 				continue
 			}
 
-			packet, err := (&network.Packet{}).EncodeUDP(encryptedPacket, &ChaCha20.Nonce{
-				Low:  low,
-				High: high,
-			})
+			packet, err := (&network.Packet{}).EncodeUDP(encryptedPacket, &ChaCha20.Nonce{Low: low, High: high})
 			if err != nil {
 				log.Printf("packet encoding failed: %s", err)
 				continue
@@ -146,5 +129,20 @@ func UDPToTun(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ct
 				return
 			}
 		}
+	}
+}
+
+func startUDPSenderPool(conn *net.UDPConn, connWriteChan chan []byte, numWorkers int, connCancel context.CancelFunc) {
+	for i := 0; i < numWorkers; i++ {
+		go func() {
+			for data := range connWriteChan {
+				_, err := conn.Write(data)
+				if err != nil {
+					log.Printf("write to UDP failed: %s", err)
+					connCancel()
+					return
+				}
+			}
+		}()
 	}
 }
