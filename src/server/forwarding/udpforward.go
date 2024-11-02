@@ -159,13 +159,27 @@ func UDPToTun(listenPort string, tunFile *os.File, intIPToUDPClientAddr *sync.Ma
 				continue
 			}
 
-			internalIPValue, exists := clientAddrToInternalIP.Load(clientAddr.String())
+			intIPValue, exists := clientAddrToInternalIP.Load(clientAddr.String())
 			if !exists {
+				if len(buf[:n]) == 3 && string(buf[:n]) == "REG" {
+					log.Printf("registration request from %s", clientAddr.String())
+
+					intIPToSession.Delete(intIPValue)
+					intIPToUDPClientAddr.Delete(intIPValue)
+					clientAddrToInternalIP.Delete(clientAddr.String())
+					continue
+				}
+
 				// Pass initial data to registration function
-				udpRegisterClient(conn, *clientAddr, buf[:n], tunFile, intIPToUDPClientAddr, intIPToSession, ctx)
+				regErr := udpRegisterClient(conn, *clientAddr, buf[:n], tunFile, intIPToUDPClientAddr, intIPToSession, ctx)
+				if regErr != nil {
+					log.Printf("connection with %s closed as client unable to register", clientAddr.String())
+					_ = conn.Close()
+					return
+				}
 				continue
 			}
-			internalIP := internalIPValue.(string)
+			internalIP := intIPValue.(string)
 
 			sessionValue, sessionExists := intIPToSession.Load(internalIP)
 			if !sessionExists {
@@ -208,14 +222,14 @@ func UDPToTun(listenPort string, tunFile *os.File, intIPToUDPClientAddr *sync.Ma
 	}
 }
 
-func udpRegisterClient(conn *net.UDPConn, clientAddr net.UDPAddr, initialData []byte, tunFile *os.File, intIPToUDPClientAddr *sync.Map, intIPToSession *sync.Map, ctx context.Context) {
+func udpRegisterClient(conn *net.UDPConn, clientAddr net.UDPAddr, initialData []byte, tunFile *os.File, intIPToUDPClientAddr *sync.Map, intIPToSession *sync.Map, ctx context.Context) error {
 	log.Printf("connected: %s", clientAddr.IP.String())
 
 	// Pass initialData and clientAddr to the handshake function
 	serverSession, internalIpAddr, err := handshakeHandlers.OnClientConnectedUDP(conn, &clientAddr, initialData)
 	if err != nil {
 		log.Printf("registration failed for %s: %s\n", clientAddr.String(), err)
-		return
+		return err
 	}
 	log.Printf("registered: %s", *internalIpAddr)
 
@@ -226,4 +240,6 @@ func udpRegisterClient(conn *net.UDPConn, clientAddr net.UDPAddr, initialData []
 	})
 	intIPToSession.Store(*internalIpAddr, serverSession)
 	clientAddrToInternalIP.Store(clientAddr.String(), *internalIpAddr)
+
+	return nil
 }

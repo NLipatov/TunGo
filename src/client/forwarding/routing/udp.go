@@ -25,7 +25,11 @@ func StartUDPRouting(settings settings.ConnectionSettings, tunFile *os.File, ctx
 		}
 
 		log.Printf("Connected to server at %s (UDP)", settings.ConnectionIP)
-		// Read initial data from the server if required
+
+		_, err := conn.Write([]byte("REG"))
+		if err != nil {
+			log.Fatalf("failed to send reg request to server")
+		}
 
 		session, err := handshakeHandlers.OnConnectedToServer(conn, settings)
 		if err != nil {
