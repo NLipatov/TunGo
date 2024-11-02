@@ -173,8 +173,8 @@ func ToTun(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx conte
 func getConnWriteBufferSize() int32 {
 	conf, err := (&client.Conf{}).Read()
 	if err != nil {
-		log.Println("failed to read connection buffer size from client configuration. Using fallback value: 1000")
-		return 1000
+		log.Println("failed to read connection buffer size from client configuration. Using fallback value: 125 000")
+		return 125_000
 	}
 
 	return conf.TCPWriteChannelBufferSize
