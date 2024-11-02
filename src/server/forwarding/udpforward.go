@@ -24,6 +24,8 @@ type UDPClient struct {
 func TunToUDP(tunFile *os.File, intIPToUDPClientAddr *sync.Map, intIPToSession *sync.Map, ctx context.Context) {
 	buf := make([]byte, network.IPPacketMaxSizeBytes)
 
+	sendChan := startUDPSenderPool(10)
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -95,14 +97,31 @@ func TunToUDP(tunFile *os.File, intIPToUDPClientAddr *sync.Map, intIPToSession *
 				continue
 			}
 
-			_, udpWriteErr := clientInfo.conn.WriteToUDP(*packet.Payload, clientInfo.addr)
-			if udpWriteErr != nil {
-				log.Printf("failed to send packet to %s: %v", clientInfo.addr, udpWriteErr)
-				intIPToUDPClientAddr.Delete(destinationIP)
-				intIPToSession.Delete(destinationIP)
-			}
+			sendChan <- UDPClientPacket{client: clientInfo, payload: *packet.Payload}
 		}
 	}
+}
+
+func startUDPSenderPool(numWorkers int) chan<- UDPClientPacket {
+	sendChan := make(chan UDPClientPacket, 500_000)
+
+	for i := 0; i < numWorkers; i++ {
+		go func() {
+			for packet := range sendChan {
+				_, err := packet.client.conn.WriteToUDP(packet.payload, packet.client.addr)
+				if err != nil {
+					log.Printf("failed to send packet to %s: %v", packet.client.addr, err)
+				}
+			}
+		}()
+	}
+
+	return sendChan
+}
+
+type UDPClientPacket struct {
+	client  *UDPClient
+	payload []byte
 }
 
 func UDPToTun(listenPort string, tunFile *os.File, intIPToUDPClientAddr *sync.Map, intIPToSession *sync.Map, ctx context.Context) {
