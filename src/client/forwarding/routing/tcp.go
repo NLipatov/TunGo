@@ -1,4 +1,4 @@
-package routerImpl
+package routing
 
 import (
 	"context"
@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-func StartTCPRouting(settings settings.ConnectionSettings, tunFile *os.File, ctx context.Context) error {
+func startTCPRouting(settings settings.ConnectionSettings, tunFile *os.File, ctx context.Context) error {
 	for {
 		conn, connectionError := connect(settings, ctx)
 		if connectionError != nil {

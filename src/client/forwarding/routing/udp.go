@@ -1,4 +1,4 @@
-package routerImpl
+package routing
 
 import (
 	"context"
@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-func StartUDPRouting(settings settings.ConnectionSettings, tunFile *os.File, ctx context.Context) error {
+func startUDPRouting(settings settings.ConnectionSettings, tunFile *os.File, ctx context.Context) error {
 	for {
 		conn, connectionError := establishUDPConnection(settings, ctx)
 		if connectionError != nil {

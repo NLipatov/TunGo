@@ -29,7 +29,7 @@ func main() {
 
 	clientRouter := routing.ClientRouter{}
 
-	routingErr := clientRouter.Route(conf.TCPSettings, ctx)
+	routingErr := clientRouter.Route(*conf, ctx)
 	if routingErr != nil {
 		log.Printf("failed to route trafic: %s", routingErr)
 	}
