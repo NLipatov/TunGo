@@ -1,8 +1,8 @@
 package ChaCha20
 
 import (
-	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"sync/atomic"
 )
@@ -56,11 +56,9 @@ func Encode(high uint32, low uint64) []byte {
 	return nonce
 }
 
-func (n *Nonce) Hash() uint64 {
-	hash := sha256.Sum256([]byte{
-		byte(n.High >> 24), byte(n.High >> 16), byte(n.High >> 8), byte(n.High),
-		byte(n.Low >> 56), byte(n.Low >> 48), byte(n.Low >> 40), byte(n.Low >> 32),
-		byte(n.Low >> 24), byte(n.Low >> 16), byte(n.Low >> 8), byte(n.Low),
-	})
-	return binary.LittleEndian.Uint64(hash[:8])
+func (n *Nonce) Hash() string {
+	var buf [12]byte
+	binary.BigEndian.PutUint64(buf[:8], n.Low)
+	binary.BigEndian.PutUint32(buf[8:], n.High)
+	return hex.EncodeToString(buf[:])
 }

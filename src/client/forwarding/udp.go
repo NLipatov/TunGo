@@ -12,41 +12,19 @@ import (
 
 func TunToUDP(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ctx context.Context, connCancel context.CancelFunc, sendKeepAliveChan chan bool) {
 	buf := make([]byte, network.IPPacketMaxSizeBytes)
-	connWriteChan := make(chan []byte, getConnWriteBufferSize())
-
-	go func() {
-		<-ctx.Done()
-		_ = conn.Close()
-	}()
-
-	startUDPSenderPool(conn, connWriteChan, 10, connCancel)
-
-	// Goroutine to write data to UDP
-	go func() {
-		for {
-			select {
-			case <-ctx.Done(): // Stop-signal
-				return
-			case <-sendKeepAliveChan:
-				data, err := keepalive.GenerateUDP()
-				if err != nil {
-					log.Println("failed to generate keep-alive:", err)
-					continue
-				}
-				select {
-				case connWriteChan <- data:
-				case <-ctx.Done():
-					return
-				}
-			}
-		}
-	}()
 
 	// Main loop to read from TUN and send data
 	for {
 		select {
 		case <-ctx.Done(): // Stop-signal
 			return
+		case <-sendKeepAliveChan:
+			data, err := keepalive.GenerateUDP()
+			if err != nil {
+				log.Println("failed to generate keep-alive:", err)
+				continue
+			}
+			writeOrReconnect(conn, &data, connCancel)
 		default:
 			n, err := tunFile.Read(buf)
 			if err != nil {
@@ -68,13 +46,17 @@ func TunToUDP(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ct
 				log.Printf("packet encoding failed: %s", err)
 				continue
 			}
-
-			select {
-			case connWriteChan <- *packet.Payload:
-			case <-ctx.Done():
-				return
-			}
+			writeOrReconnect(conn, packet.Payload, connCancel)
 		}
+	}
+}
+
+func writeOrReconnect(conn *net.UDPConn, data *[]byte, connCancel context.CancelFunc) {
+	_, err := conn.Write(*data)
+	if err != nil {
+		log.Printf("write to UDP failed: %s", err)
+		connCancel()
+		return
 	}
 }
 
@@ -129,20 +111,5 @@ func UDPToTun(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ct
 				return
 			}
 		}
-	}
-}
-
-func startUDPSenderPool(conn *net.UDPConn, connWriteChan chan []byte, numWorkers int, connCancel context.CancelFunc) {
-	for i := 0; i < numWorkers; i++ {
-		go func() {
-			for data := range connWriteChan {
-				_, err := conn.Write(data)
-				if err != nil {
-					log.Printf("write to UDP failed: %s", err)
-					connCancel()
-					return
-				}
-			}
-		}()
 	}
 }

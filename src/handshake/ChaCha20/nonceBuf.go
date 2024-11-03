@@ -10,7 +10,7 @@ type NonceBuf struct {
 	size       int
 	lastInsert int
 	nextRead   int
-	set        map[uint64]struct{}
+	set        map[string]struct{}
 	setMu      sync.Mutex
 }
 
@@ -20,7 +20,7 @@ func NewNonceBuf(size int) *NonceBuf {
 		size:       size,
 		lastInsert: -1,
 		nextRead:   0,
-		set:        make(map[uint64]struct{}),
+		set:        make(map[string]struct{}),
 	}
 }
 
@@ -47,22 +47,22 @@ func (r *NonceBuf) Insert(input Nonce) error {
 	return nil
 }
 
-func (r *NonceBuf) contains(hash uint64) bool {
+func (r *NonceBuf) contains(key string) bool {
 	r.setMu.Lock()
 	defer r.setMu.Unlock()
-	_, exist := r.set[hash]
+	_, exist := r.set[key]
 
 	return exist
 }
 
-func (r *NonceBuf) addToSet(hash uint64) {
+func (r *NonceBuf) addToSet(key string) {
 	r.setMu.Lock()
 	defer r.setMu.Unlock()
-	r.set[hash] = struct{}{}
+	r.set[key] = struct{}{}
 }
 
-func (r *NonceBuf) removeFromSet(hash uint64) {
+func (r *NonceBuf) removeFromSet(key string) {
 	r.setMu.Lock()
 	defer r.setMu.Unlock()
-	delete(r.set, hash)
+	delete(r.set, key)
 }
