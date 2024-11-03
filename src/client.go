@@ -5,8 +5,6 @@ import (
 	"etha-tunnel/client/forwarding/ipconfiguration"
 	"etha-tunnel/client/forwarding/routing"
 	"etha-tunnel/inputcommands"
-	"etha-tunnel/network"
-	"etha-tunnel/settings"
 	"etha-tunnel/settings/client"
 	"log"
 )
@@ -29,47 +27,10 @@ func main() {
 	ipconfiguration.Unconfigure(conf.TCPSettings)
 	ipconfiguration.Unconfigure(conf.UDPSettings)
 
-	switch conf.Protocol {
-	case settings.TCP:
-		// Configure client
-		if tcpConfigurationErr := ipconfiguration.Configure(conf.TCPSettings); tcpConfigurationErr != nil {
-			log.Fatalf("Failed to configure client: %v", tcpConfigurationErr)
-		}
-		defer ipconfiguration.Unconfigure(conf.TCPSettings)
+	clientRouter := routing.ClientRouter{}
 
-		// Open the TUN interface
-		tunFile, openTunErr := network.OpenTunByName(conf.TCPSettings.InterfaceName)
-		if openTunErr != nil {
-			log.Fatalf("Failed to open TUN interface: %v", openTunErr)
-		}
-		defer tunFile.Close()
-
-		routingErr := routing.StartTCPRouting(conf.TCPSettings, tunFile, ctx)
-		if ctx.Err() != nil {
-			return
-		}
-		if routingErr != nil {
-			log.Printf("failed to route trafic: %s", routingErr)
-		}
-	case settings.UDP:
-		// Configure client
-		if udpConfigurationErr := ipconfiguration.Configure(conf.UDPSettings); udpConfigurationErr != nil {
-			log.Fatalf("Failed to configure client: %v", udpConfigurationErr)
-		}
-		defer ipconfiguration.Unconfigure(conf.UDPSettings)
-
-		// Open the TUN interface
-		tunFile, openTunErr := network.OpenTunByName(conf.UDPSettings.InterfaceName)
-		if openTunErr != nil {
-			log.Fatalf("Failed to open TUN interface: %v", openTunErr)
-		}
-		defer tunFile.Close()
-
-		routingErr := routing.StartUDPRouting(conf.UDPSettings, tunFile, &ctx)
-		if routingErr != nil {
-			log.Fatalf("failed to route trafic: %s", routingErr)
-		}
-	default:
-		log.Fatalf("invalid configuration: invalid protocol.")
+	routingErr := clientRouter.Route(conf.TCPSettings, ctx)
+	if routingErr != nil {
+		log.Printf("failed to route trafic: %s", routingErr)
 	}
 }

@@ -1,9 +1,9 @@
-package routing
+package routerImpl
 
 import (
 	"context"
-	"etha-tunnel/client/forwarding"
 	"etha-tunnel/client/forwarding/ipconfiguration"
+	"etha-tunnel/client/forwarding/routing/connHandling"
 	"etha-tunnel/handshake/ChaCha20"
 	"etha-tunnel/handshake/ChaCha20/handshakeHandlers"
 	"etha-tunnel/network/keepalive"
@@ -94,13 +94,13 @@ func forwardIPPackets(conn *net.Conn, tunFile *os.File, session *ChaCha20.Sessio
 	// TUN -> TCP
 	go func() {
 		defer wg.Done()
-		forwarding.ToTCP(*conn, tunFile, session, connCtx, connCancel, sendKeepaliveCh)
+		connHandling.ToTCP(*conn, tunFile, session, connCtx, connCancel, sendKeepaliveCh)
 	}()
 
 	// TCP -> TUN
 	go func() {
 		defer wg.Done()
-		forwarding.ToTun(*conn, tunFile, session, connCtx, connCancel, receiveKeepaliveCh)
+		connHandling.ToTun(*conn, tunFile, session, connCtx, connCancel, receiveKeepaliveCh)
 	}()
 
 	wg.Wait()

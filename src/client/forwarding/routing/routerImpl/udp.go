@@ -1,9 +1,9 @@
-package routing
+package routerImpl
 
 import (
 	"context"
-	"etha-tunnel/client/forwarding"
 	"etha-tunnel/client/forwarding/ipconfiguration"
+	"etha-tunnel/client/forwarding/routing/connHandling"
 	"etha-tunnel/handshake/ChaCha20"
 	"etha-tunnel/handshake/ChaCha20/handshakeHandlers"
 	"etha-tunnel/network/keepalive"
@@ -16,9 +16,9 @@ import (
 	"time"
 )
 
-func StartUDPRouting(settings settings.ConnectionSettings, tunFile *os.File, ctx *context.Context) error {
+func StartUDPRouting(settings settings.ConnectionSettings, tunFile *os.File, ctx context.Context) error {
 	for {
-		conn, connectionError := establishUDPConnection(settings, *ctx)
+		conn, connectionError := establishUDPConnection(settings, ctx)
 		if connectionError != nil {
 			log.Printf("failed to establish connection: %s", connectionError)
 			continue // Retry connection
@@ -33,21 +33,21 @@ func StartUDPRouting(settings settings.ConnectionSettings, tunFile *os.File, ctx
 
 		session, err := handshakeHandlers.OnConnectedToServer(conn, settings)
 		if err != nil {
-			conn.Close()
+			_ = conn.Close()
 			log.Printf("registration failed: %s\n", err)
 			log.Println("connection is aborted")
 			return err
 		}
 
 		// Create a child context for managing data forwarding goroutines
-		connCtx, connCancel := context.WithCancel(*ctx)
+		connCtx, connCancel := context.WithCancel(ctx)
 		var wg sync.WaitGroup
 		wg.Add(2)
 
 		// Start a goroutine to monitor context cancellation and close the connection
 		go func() {
 			<-connCtx.Done()
-			conn.Close()
+			_ = conn.Close()
 			return
 		}()
 
@@ -57,7 +57,7 @@ func StartUDPRouting(settings settings.ConnectionSettings, tunFile *os.File, ctx
 		wg.Wait()
 
 		// After goroutines finish, check if shutdown was initiated
-		if (*ctx).Err() != nil {
+		if ctx.Err() != nil {
 			log.Println("Client is shutting down.")
 			return err
 		} else {
@@ -66,7 +66,7 @@ func StartUDPRouting(settings settings.ConnectionSettings, tunFile *os.File, ctx
 		}
 
 		// Close the connection (if not already closed)
-		conn.Close()
+		_ = conn.Close()
 	}
 }
 
@@ -118,12 +118,12 @@ func startUDPForwarding(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.S
 	// TUN -> UDP
 	go func() {
 		defer wg.Done()
-		forwarding.TunToUDP(conn, tunFile, session, *connCtx, *connCancel, sendKeepAliveCommandChan)
+		connHandling.TunToUDP(conn, tunFile, session, *connCtx, *connCancel, sendKeepAliveCommandChan)
 	}()
 
 	// UDP -> TUN
 	go func() {
 		defer wg.Done()
-		forwarding.UDPToTun(conn, tunFile, session, *connCtx, *connCancel, connPacketReceivedChan)
+		connHandling.UDPToTun(conn, tunFile, session, *connCtx, *connCancel, connPacketReceivedChan)
 	}()
 }
