@@ -47,16 +47,16 @@ func connect(settings settings.ConnectionSettings, ctx context.Context) (net.Con
 		dialCancel()
 
 		if err != nil {
-			log.Printf("Failed to connect to server: %v", err)
+			log.Printf("failed to connect to server: %v", err)
 			reconnectAttempts++
 			if reconnectAttempts > maxReconnectAttempts {
 				ipconfiguration.Unconfigure(settings)
-				log.Fatalf("Exceeded maximum reconnect attempts (%d)", maxReconnectAttempts)
+				log.Fatalf("exceeded maximum reconnect attempts (%d)", maxReconnectAttempts)
 			}
-			log.Printf("Retrying to connect in %v...", backoff)
+			log.Printf("retrying to connect in %v...", backoff)
 			select {
 			case <-ctx.Done():
-				log.Println("Client is shutting down.")
+				log.Println("client is shutting down.")
 				return nil, err
 			case <-time.After(backoff):
 			}
@@ -67,7 +67,7 @@ func connect(settings settings.ConnectionSettings, ctx context.Context) (net.Con
 			continue
 		}
 
-		log.Printf("Connected to server at %s (TCP)", settings.ConnectionIP)
+		log.Printf("connected to server at %s (TCP)", settings.ConnectionIP)
 
 		return conn, nil
 	}

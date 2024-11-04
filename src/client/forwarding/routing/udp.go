@@ -24,7 +24,7 @@ func startUDPRouting(settings settings.ConnectionSettings, tunFile *os.File, ctx
 			continue // Retry connection
 		}
 
-		log.Printf("Connected to server at %s (UDP)", settings.ConnectionIP)
+		log.Printf("connected to server at %s (UDP)", settings.ConnectionIP)
 
 		_, err := conn.Write([]byte("REG"))
 		if err != nil {
@@ -53,11 +53,11 @@ func startUDPRouting(settings settings.ConnectionSettings, tunFile *os.File, ctx
 
 		// After goroutines finish, check if shutdown was initiated
 		if ctx.Err() != nil {
-			log.Println("Client is shutting down.")
+			log.Println("client is shutting down.")
 			return err
 		} else {
 			// Connection lost unexpectedly, attempt to reconnect
-			log.Println("Connection lost, attempting to reconnect...")
+			log.Println("connection lost, attempting to reconnect...")
 		}
 
 		// Close the connection (if not already closed)
@@ -79,17 +79,17 @@ func establishUDPConnection(settings settings.ConnectionSettings, ctx context.Co
 
 		conn, err := net.DialUDP("udp", nil, udpAddr)
 		if err != nil {
-			log.Printf("Failed to connect to server: %v", err)
+			log.Printf("failed to connect to server: %v", err)
 			reconnectAttempts++
 			if reconnectAttempts > maxReconnectAttempts {
 				ipconfiguration.Unconfigure(settings)
-				log.Fatalf("Exceeded maximum reconnect attempts (%d)", maxReconnectAttempts)
+				log.Fatalf("exceeded maximum reconnect attempts (%d)", maxReconnectAttempts)
 			}
-			log.Printf("Retrying to connect in %v...", backoff)
+			log.Printf("retrying to connect in %v...", backoff)
 
 			select {
 			case <-ctx.Done():
-				log.Println("Client is shutting down.")
+				log.Println("client is shutting down.")
 				return nil, err
 			case <-time.After(backoff):
 			}

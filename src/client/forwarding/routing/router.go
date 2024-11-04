@@ -44,13 +44,13 @@ func (cr ClientRouter) Route(conf client.Conf, ctx context.Context) error {
 func configureTun(connectionSettings settings.ConnectionSettings) *os.File {
 	// Configure client
 	if udpConfigurationErr := ipconfiguration.Configure(connectionSettings); udpConfigurationErr != nil {
-		log.Fatalf("Failed to configure client: %v", udpConfigurationErr)
+		log.Fatalf("failed to configure client: %v", udpConfigurationErr)
 	}
 
 	// Open the TUN interface
 	tunFile, openTunErr := network.OpenTunByName(connectionSettings.InterfaceName)
 	if openTunErr != nil {
-		log.Fatalf("Failed to open TUN interface: %v", openTunErr)
+		log.Fatalf("failed to open TUN interface: %v", openTunErr)
 	}
 
 	return tunFile
