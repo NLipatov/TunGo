@@ -19,7 +19,7 @@ func main() {
 	// Read client configuration
 	conf, err := (&client.Conf{}).Read()
 	if err != nil {
-		log.Fatalf("Failed to read configuration: %v", err)
+		log.Fatalf("failed to read configuration: %v", err)
 	}
 
 	clientRouter := routing.ClientRouter{}
