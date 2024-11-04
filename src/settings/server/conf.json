@@ -3,7 +3,7 @@
     "InterfaceName": "tcptun0",
     "InterfaceIPCIDR": "10.0.0.0/24",
     "InterfaceAddress": "10.0.0.1",
-    "ConnectionIP": "192.168.122.194",
+    "ConnectionIP": "",
     "ConnectionPort": ":8080",
     "Protocol": "tcp"
   },
@@ -15,6 +15,8 @@
     "ConnectionPort": ":9090",
     "Protocol": "udp"
   },
+  "FallbackServerAddress": "",
+  "ClientCounter": 0,
   "TCPWriteChannelBufferSize": 1000,
   "EnableTCP": false,
   "EnableUDP": true

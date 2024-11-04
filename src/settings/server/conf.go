@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 )
 
 type Conf struct {
@@ -54,7 +55,36 @@ func (s *Conf) Read() (*Conf, error) {
 		return nil, err
 	}
 
+	setEnvServerAddress(s)
+	setEnvEnabledProtocols(s)
+
 	return s, nil
+}
+
+func setEnvServerAddress(conf *Conf) {
+	sIP := os.Getenv("ServerIP")
+	if sIP != "" {
+		conf.FallbackServerAddress = sIP
+	}
+}
+
+func setEnvEnabledProtocols(conf *Conf) {
+	envUdp := os.Getenv("EnableUDP")
+	envTCP := os.Getenv("EnableTCP")
+
+	if envUdp != "" {
+		eUDPBool, parseErr := strconv.ParseBool(envUdp)
+		if parseErr == nil {
+			conf.EnableUDP = eUDPBool
+		}
+	}
+
+	if envTCP != "" {
+		eTCPBool, parseErr := strconv.ParseBool(envTCP)
+		if parseErr == nil {
+			conf.EnableTCP = eTCPBool
+		}
+	}
 }
 
 func (s *Conf) RewriteConf() error {
