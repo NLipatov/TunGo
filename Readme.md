@@ -42,8 +42,10 @@ NOTE: This container has no ED25519 keys in its server conf.json, so new pair wi
 
 ### Connect as a Client
 
-Run the client from the command line:
+First, you need to generate a client's conf via `gen` command - see `Interactive Commands` section below.
+Save the generated client configuration into `/src/settings/client/conf.json` before running the client.
 
+From `/src` run the client from the command line:
 ```bash
 sudo go run client.go
 ```
@@ -66,10 +68,25 @@ Example:
 2024/10/04 20:12:13 server listening on port :8080
 gen
 {
-  "IfName": "ethatun0",
-  "IfIP": "10.0.0.4/24",
-  "ServerTCPAddress": "192.168.122.194:8080",
-  "Ed25519PublicKey": "PSGbN32XBr+foaD5HkZatNqigTfpqUlbdYBOCNXjtBo="
+  "TCPSettings": {
+    "InterfaceName": "tcptun0",
+    "InterfaceIPCIDR": "10.0.0.0/24",
+    "InterfaceAddress": "10.0.0.2",
+    "ConnectionIP": "46.226.163.79",
+    "ConnectionPort": ":8080",
+    "Protocol": "tcp"
+  },
+  "UDPSettings": {
+    "InterfaceName": "udptun0",
+    "InterfaceIPCIDR": "10.0.1.0/24",
+    "InterfaceAddress": "10.0.1.2",
+    "ConnectionIP": "46.226.163.79",
+    "ConnectionPort": ":9090",
+    "Protocol": "tcp"
+  },
+  "Ed25519PublicKey": "X7zGjLlcULRCIa4XfNm4v/RYnmN7UDgI+r1ySKs6WX4=",
+  "TCPWriteChannelBufferSize": 1000,
+  "Protocol": "udp"
 }
 ```
 
