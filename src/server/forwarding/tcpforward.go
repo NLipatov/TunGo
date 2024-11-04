@@ -76,9 +76,9 @@ func TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.
 				}
 
 				connWriteChan <- ClientData{
-					conn:  conn,
-					extIP: destinationIP,
-					data:  packet.Payload,
+					Conn:  conn,
+					ExtIP: destinationIP,
+					Data:  packet.Payload,
 				}
 			}
 		}
@@ -229,11 +229,11 @@ func processConnWriteChan(connWriteChan chan ClientData, localIpMap *sync.Map, l
 			close(connWriteChan)
 			return
 		case data := <-connWriteChan:
-			_, connWriteErr := data.conn.Write(data.data)
+			_, connWriteErr := data.Conn.Write(data.Data)
 			if connWriteErr != nil {
 				log.Printf("failed to write to TCP: %v", connWriteErr)
-				localIpMap.Delete(data.extIP)
-				localIpToSessionMap.Delete(data.extIP)
+				localIpMap.Delete(data.ExtIP)
+				localIpToSessionMap.Delete(data.ExtIP)
 			}
 		}
 	}
