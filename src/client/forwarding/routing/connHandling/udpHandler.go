@@ -24,7 +24,7 @@ func TunToUDP(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ct
 				log.Println("failed to generate keep-alive:", err)
 				continue
 			}
-			writeOrReconnect(conn, &data, connCancel)
+			writeOrReconnect(conn, &data, ctx, connCancel)
 		default:
 			n, err := tunFile.Read(buf)
 			if err != nil {
@@ -46,14 +46,17 @@ func TunToUDP(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ct
 				log.Printf("packet encoding failed: %s", err)
 				continue
 			}
-			writeOrReconnect(conn, packet.Payload, connCancel)
+			writeOrReconnect(conn, packet.Payload, ctx, connCancel)
 		}
 	}
 }
 
-func writeOrReconnect(conn *net.UDPConn, data *[]byte, connCancel context.CancelFunc) {
+func writeOrReconnect(conn *net.UDPConn, data *[]byte, ctx context.Context, connCancel context.CancelFunc) {
 	_, err := conn.Write(*data)
 	if err != nil {
+		if ctx.Err() != nil {
+			return
+		}
 		log.Printf("write to UDP failed: %s", err)
 		connCancel()
 		return
