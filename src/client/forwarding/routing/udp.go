@@ -41,8 +41,6 @@ func startUDPRouting(settings settings.ConnectionSettings, tunFile *os.File, ctx
 
 		// Create a child context for managing data forwarding goroutines
 		connCtx, connCancel := context.WithCancel(ctx)
-		var wg sync.WaitGroup
-		wg.Add(2)
 
 		// Start a goroutine to monitor context cancellation and close the connection
 		go func() {
@@ -51,10 +49,7 @@ func startUDPRouting(settings settings.ConnectionSettings, tunFile *os.File, ctx
 			return
 		}()
 
-		startUDPForwarding(conn, tunFile, session, &connCtx, &connCancel, &wg)
-
-		// Wait for goroutines to finish
-		wg.Wait()
+		startUDPForwarding(conn, tunFile, session, &connCtx, &connCancel)
 
 		// After goroutines finish, check if shutdown was initiated
 		if ctx.Err() != nil {
@@ -110,10 +105,13 @@ func establishUDPConnection(settings settings.ConnectionSettings, ctx context.Co
 	}
 }
 
-func startUDPForwarding(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, connCtx *context.Context, connCancel *context.CancelFunc, wg *sync.WaitGroup) {
+func startUDPForwarding(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, connCtx *context.Context, connCancel *context.CancelFunc) {
 	sendKeepAliveCommandChan := make(chan bool, 1)
 	connPacketReceivedChan := make(chan bool, 1)
 	go keepalive.StartConnectionProbing(*connCtx, *connCancel, sendKeepAliveCommandChan, connPacketReceivedChan)
+
+	var wg sync.WaitGroup
+	wg.Add(2)
 
 	// TUN -> UDP
 	go func() {
@@ -126,4 +124,6 @@ func startUDPForwarding(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.S
 		defer wg.Done()
 		connHandling.UDPToTun(conn, tunFile, session, *connCtx, *connCancel, connPacketReceivedChan)
 	}()
+
+	wg.Wait()
 }
