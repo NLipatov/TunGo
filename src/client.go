@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"etha-tunnel/client/forwarding/ipconfiguration"
 	"etha-tunnel/client/forwarding/routing"
 	"etha-tunnel/inputcommands"
 	"etha-tunnel/settings/client"
@@ -22,10 +21,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to read configuration: %v", err)
 	}
-
-	// Client configuration (enabling TUN/TCP forwarding)
-	ipconfiguration.Unconfigure(conf.TCPSettings)
-	ipconfiguration.Unconfigure(conf.UDPSettings)
 
 	clientRouter := routing.ClientRouter{}
 

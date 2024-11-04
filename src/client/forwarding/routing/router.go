@@ -15,8 +15,13 @@ type ClientRouter struct {
 }
 
 func (cr ClientRouter) Route(conf client.Conf, ctx context.Context) error {
+	// Clear existing client configuration
+	ipconfiguration.Unconfigure(conf.TCPSettings)
+	ipconfiguration.Unconfigure(conf.UDPSettings)
+
 	switch conf.Protocol {
 	case settings.TCP:
+		defer ipconfiguration.Unconfigure(conf.TCPSettings)
 		tunFile := configureTun(conf.TCPSettings)
 		defer func() {
 			_ = tunFile.Close()
@@ -24,6 +29,7 @@ func (cr ClientRouter) Route(conf client.Conf, ctx context.Context) error {
 		return startTCPRouting(conf.TCPSettings, tunFile, ctx)
 
 	case settings.UDP:
+		defer ipconfiguration.Unconfigure(conf.UDPSettings)
 		tunFile := configureTun(conf.UDPSettings)
 		defer func() {
 			_ = tunFile.Close()
