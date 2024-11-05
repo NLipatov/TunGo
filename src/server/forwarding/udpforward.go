@@ -172,7 +172,7 @@ func UDPToTun(listenPort string, tunFile *os.File, intIPToUDPClientAddr *sync.Ma
 				}
 
 				// Pass initial data to registration function
-				regErr := udpRegisterClient(conn, *clientAddr, buf[:n], tunFile, intIPToUDPClientAddr, intIPToSession, ctx)
+				regErr := udpRegisterClient(conn, *clientAddr, buf[:n], intIPToUDPClientAddr, intIPToSession)
 				if regErr != nil {
 					log.Printf("connection with %s closed as client unable to register", clientAddr.String())
 					_ = conn.Close()
@@ -223,7 +223,7 @@ func UDPToTun(listenPort string, tunFile *os.File, intIPToUDPClientAddr *sync.Ma
 	}
 }
 
-func udpRegisterClient(conn *net.UDPConn, clientAddr net.UDPAddr, initialData []byte, tunFile *os.File, intIPToUDPClientAddr *sync.Map, intIPToSession *sync.Map, ctx context.Context) error {
+func udpRegisterClient(conn *net.UDPConn, clientAddr net.UDPAddr, initialData []byte, intIPToUDPClientAddr *sync.Map, intIPToSession *sync.Map) error {
 	log.Printf("connected: %s", clientAddr.IP.String())
 
 	// Pass initialData and clientAddr to the handshake function
