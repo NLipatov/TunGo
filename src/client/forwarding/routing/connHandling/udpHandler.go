@@ -5,13 +5,14 @@ import (
 	"etha-tunnel/handshake/ChaCha20"
 	"etha-tunnel/network"
 	"etha-tunnel/network/keepalive"
+	"etha-tunnel/network/udpConstants"
 	"log"
 	"net"
 	"os"
 )
 
 func TunToUDP(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ctx context.Context, connCancel context.CancelFunc, sendKeepAliveChan chan bool) {
-	buf := make([]byte, network.IPPacketMaxSizeBytes)
+	buf := make([]byte, udpConstants.MaxTunPacketSize)
 
 	// Main loop to read from TUN and send data
 	for {
@@ -64,7 +65,7 @@ func writeOrReconnect(conn *net.UDPConn, data *[]byte, ctx context.Context, conn
 }
 
 func UDPToTun(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ctx context.Context, connCancel context.CancelFunc, receiveKeepAliveChan chan bool) {
-	buf := make([]byte, network.IPPacketMaxSizeBytes)
+	buf := make([]byte, udpConstants.MaxUdpPacketSize)
 
 	go func() {
 		<-ctx.Done()
