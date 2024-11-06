@@ -23,6 +23,10 @@ func (h *IPv6Header) GetDestinationIP() net.IP {
 	return h.DestinationIP
 }
 
+func (h *IPv6Header) GetSourceIP() net.IP {
+	return h.SourceIP
+}
+
 func ParseIPv6Header(packet []byte) (*IPv6Header, error) {
 	if len(packet) < 40 {
 		return nil, fmt.Errorf("invalid packet length for IPv6")

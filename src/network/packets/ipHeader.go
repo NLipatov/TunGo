@@ -7,6 +7,7 @@ import (
 
 type IPHeader interface {
 	GetDestinationIP() net.IP
+	GetSourceIP() net.IP
 }
 
 func Parse(packet []byte) (IPHeader, error) {
