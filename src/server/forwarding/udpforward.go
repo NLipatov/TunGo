@@ -159,7 +159,7 @@ func UDPToTun(listenPort string, tunFile *os.File, intIPToUDPClientAddr *sync.Ma
 			intIPValue, exists := clientAddrToInternalIP.Load(clientAddr.String())
 			if !exists {
 				if len(buf[:n]) == 3 && string(buf[:n]) == "REG" {
-					log.Printf("registration request from %s", clientAddr.String())
+					log.Printf("registration requested from %s", clientAddr.String())
 
 					intIPToSession.Delete(intIPValue)
 					intIPToUDPClientAddr.Delete(intIPValue)
@@ -170,9 +170,7 @@ func UDPToTun(listenPort string, tunFile *os.File, intIPToUDPClientAddr *sync.Ma
 				// Pass initial data to registration function
 				regErr := udpRegisterClient(conn, *clientAddr, buf[:n], intIPToUDPClientAddr, intIPToSession)
 				if regErr != nil {
-					log.Printf("connection with %s closed as client unable to register", clientAddr.String())
-					_ = conn.Close()
-					return
+					log.Printf("%s failed registration: %s\n", clientAddr.String(), regErr)
 				}
 				continue
 			}
@@ -225,7 +223,6 @@ func udpRegisterClient(conn *net.UDPConn, clientAddr net.UDPAddr, initialData []
 	// Pass initialData and clientAddr to the handshake function
 	serverSession, internalIpAddr, err := handshakeHandlers.OnClientConnectedUDP(conn, &clientAddr, initialData)
 	if err != nil {
-		log.Printf("registration failed for %s: %s\n", clientAddr.String(), err)
 		return err
 	}
 	log.Printf("registered: %s", *internalIpAddr)
