@@ -83,7 +83,8 @@ func TunToUDP(tunFile *os.File, intIPToUDPClientAddr *sync.Map, intIPToSession *
 			destinationIP := header.GetDestinationIP().String()
 			clientInfoValue, ok := intIPToUDPClientAddr.Load(destinationIP)
 			if !ok {
-				log.Printf("packet dropped: no conn with destination - %s", destinationIP)
+				sourceIP := header.GetSourceIP().String()
+				log.Printf("packet dropped: no conn with destination (source IP: %s, dest. IP:%s)", sourceIP, destinationIP)
 				continue
 			}
 			clientInfo := clientInfoValue.(*UDPClient)
