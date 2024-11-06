@@ -70,7 +70,7 @@ func Generate() (*client.Conf, error) {
 		},
 		Ed25519PublicKey:          serverConf.Ed25519PublicKey,
 		TCPWriteChannelBufferSize: 1000,
-		Protocol:                  settings.UDP,
+		Protocol:                  getDefaultProtocol(serverConf),
 	}
 
 	return &conf, nil
@@ -192,4 +192,12 @@ func isValidIPv6(ip string) bool {
 	}
 
 	return true
+}
+
+func getDefaultProtocol(conf *server.Conf) settings.Protocol {
+	if conf.EnableUDP {
+		return settings.UDP
+	}
+
+	return settings.TCP
 }
