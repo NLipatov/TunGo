@@ -5,6 +5,7 @@
     "InterfaceAddress": "10.0.0.1",
     "ConnectionIP": "",
     "ConnectionPort": ":8080",
+    "MTU": 1500,
     "Protocol": "tcp"
   },
   "UDPSettings": {
@@ -13,6 +14,7 @@
     "InterfaceAddress": "",
     "ConnectionIP": "",
     "ConnectionPort": ":9090",
+    "MTU": 1475,
     "Protocol": "udp"
   },
   "FallbackServerAddress": "",

@@ -7,7 +7,7 @@ import (
 	"etha-tunnel/network"
 	"etha-tunnel/network/keepalive"
 	"etha-tunnel/network/packets"
-	"etha-tunnel/network/udpConstants"
+	"etha-tunnel/settings/server"
 	"io"
 	"log"
 	"net"
@@ -23,7 +23,12 @@ type UDPClient struct {
 }
 
 func TunToUDP(tunFile *os.File, intIPToUDPClientAddr *sync.Map, intIPToSession *sync.Map, ctx context.Context) {
-	buf := make([]byte, udpConstants.MaxTunPacketSize)
+	conf, err := (&server.Conf{}).Read()
+	if err != nil {
+		log.Fatalf("failed to read configuration: %v", err)
+	}
+
+	buf := make([]byte, conf.UDPSettings.MTU-12)
 	sendChan := make(chan UDPClientPacket, 100_000)
 
 	go func(sendChan chan UDPClientPacket, ctx context.Context) {
@@ -142,7 +147,12 @@ func UDPToTun(listenPort string, tunFile *os.File, intIPToUDPClientAddr *sync.Ma
 		_ = conn.Close()
 	}()
 
-	buf := make([]byte, udpConstants.MaxUdpPacketSize)
+	conf, err := (&server.Conf{}).Read()
+	if err != nil {
+		log.Fatalf("failed to read configuration: %v", err)
+	}
+
+	buf := make([]byte, conf.UDPSettings.MTU)
 	for {
 		select {
 		case <-ctx.Done():

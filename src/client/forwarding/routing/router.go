@@ -4,6 +4,7 @@ import (
 	"context"
 	"etha-tunnel/client/forwarding/ipconfiguration"
 	"etha-tunnel/network"
+	"etha-tunnel/network/ip"
 	"etha-tunnel/settings"
 	"etha-tunnel/settings/client"
 	"fmt"
@@ -41,14 +42,18 @@ func (cr ClientRouter) Route(conf client.Conf, ctx context.Context) error {
 	}
 }
 
-func configureTun(connectionSettings settings.ConnectionSettings) *os.File {
+func configureTun(s settings.ConnectionSettings) *os.File {
 	// Configure client
-	if udpConfigurationErr := ipconfiguration.Configure(connectionSettings); udpConfigurationErr != nil {
+	if udpConfigurationErr := ipconfiguration.Configure(s); udpConfigurationErr != nil {
 		log.Fatalf("failed to configure client: %v", udpConfigurationErr)
 	}
 
+	if setMtuErr := ip.SetMtu(s.InterfaceName, s.MTU); setMtuErr != nil {
+		log.Fatalf("failed to set %d MTU for %s: %s", s.MTU, s.InterfaceName, setMtuErr)
+	}
+
 	// Open the TUN interface
-	tunFile, openTunErr := network.OpenTunByName(connectionSettings.InterfaceName)
+	tunFile, openTunErr := network.OpenTunByName(s.InterfaceName)
 	if openTunErr != nil {
 		log.Fatalf("failed to open TUN interface: %v", openTunErr)
 	}

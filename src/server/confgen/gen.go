@@ -58,6 +58,7 @@ func Generate() (*client.Conf, error) {
 			InterfaceAddress: clientTCPIfIp,
 			ConnectionIP:     serverTCPIpAddr,
 			ConnectionPort:   serverConf.TCPSettings.ConnectionPort,
+			MTU:              serverConf.TCPSettings.MTU,
 			Protocol:         settings.TCP,
 		},
 		UDPSettings: settings.ConnectionSettings{
@@ -66,6 +67,7 @@ func Generate() (*client.Conf, error) {
 			InterfaceAddress: clientUIDPIfIp,
 			ConnectionIP:     serverUDPIpAddr,
 			ConnectionPort:   serverConf.UDPSettings.ConnectionPort,
+			MTU:              serverConf.UDPSettings.MTU,
 			Protocol:         settings.UDP,
 		},
 		Ed25519PublicKey:          serverConf.Ed25519PublicKey,

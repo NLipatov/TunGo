@@ -122,3 +122,13 @@ func RouteDel(hostIp string) error {
 	}
 	return err
 }
+
+// SetMtu sets device mtu
+func SetMtu(devName string, mtu int) error {
+	cmd := exec.Command("ip", "link", "set", "dev", devName, "mtu", fmt.Sprintf("%d", mtu))
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to del route: %s, output: %s", err, output)
+	}
+	return err
+}
