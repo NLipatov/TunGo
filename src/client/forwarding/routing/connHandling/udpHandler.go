@@ -40,11 +40,6 @@ func TunToUDP(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ct
 				continue
 			}
 
-			if n+ChaCha20.UdpOverhead > conf.UDPSettings.MTU {
-				log.Printf("packet dropped: MTU exceeded (%v + %v > %v)", n, ChaCha20.UdpOverhead, conf.UDPSettings.MTU)
-				continue
-			}
-
 			encryptedPacket, high, low, err := session.Encrypt(buf[:n])
 			if err != nil {
 				log.Printf("failed to encrypt packet: %v", err)

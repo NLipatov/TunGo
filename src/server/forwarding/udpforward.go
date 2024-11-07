@@ -66,11 +66,6 @@ func TunToUDP(tunFile *os.File, intIPToUDPClientAddr *sync.Map, intIPToSession *
 				continue
 			}
 
-			if n+ChaCha20.UdpOverhead > conf.UDPSettings.MTU {
-				log.Printf("packet dropped: MTU exceeded (%v + %v > %v)", n, ChaCha20.UdpOverhead, conf.UDPSettings.MTU)
-				continue
-			}
-
 			data := buf[:n]
 			if len(data) < 1 {
 				log.Printf("invalid IP data")
