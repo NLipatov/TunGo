@@ -28,7 +28,7 @@ func TunToUDP(tunFile *os.File, intIPToUDPClientAddr *sync.Map, intIPToSession *
 		log.Fatalf("failed to read configuration: %v", err)
 	}
 
-	buf := make([]byte, conf.UDPSettings.MTU)
+	buf := make([]byte, conf.UDPSettings.MTU+28)
 	sendChan := make(chan UDPClientPacket, 100_000)
 
 	go func(sendChan chan UDPClientPacket, ctx context.Context) {
@@ -152,7 +152,7 @@ func UDPToTun(listenPort string, tunFile *os.File, intIPToUDPClientAddr *sync.Ma
 		log.Fatalf("failed to read configuration: %v", err)
 	}
 
-	buf := make([]byte, conf.UDPSettings.MTU)
+	buf := make([]byte, conf.UDPSettings.MTU+28)
 	for {
 		select {
 		case <-ctx.Done():
