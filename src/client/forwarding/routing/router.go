@@ -3,6 +3,7 @@ package routing
 import (
 	"context"
 	"etha-tunnel/client/forwarding/ipconfiguration"
+	"etha-tunnel/handshake/ChaCha20"
 	"etha-tunnel/network"
 	"etha-tunnel/network/ip"
 	"etha-tunnel/settings"
@@ -48,7 +49,7 @@ func configureTun(s settings.ConnectionSettings) *os.File {
 		log.Fatalf("failed to configure client: %v", udpConfigurationErr)
 	}
 
-	if setMtuErr := ip.SetMtu(s.InterfaceName, s.MTU); setMtuErr != nil {
+	if setMtuErr := ip.SetMtu(s.InterfaceName, s.MTU-ChaCha20.TotalOverhead); setMtuErr != nil {
 		log.Fatalf("failed to set %d MTU for %s: %s", s.MTU, s.InterfaceName, setMtuErr)
 	}
 

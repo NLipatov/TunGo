@@ -6,6 +6,12 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
+const (
+	authTag       = 16
+	nonce         = 12
+	TotalOverhead = authTag + nonce
+)
+
 type Session struct {
 	sendCipher cipher.AEAD
 	recvCipher cipher.AEAD

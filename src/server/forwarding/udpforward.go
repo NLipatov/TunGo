@@ -27,8 +27,9 @@ func TunToUDP(tunFile *os.File, intIPToUDPClientAddr *sync.Map, intIPToSession *
 	if err != nil {
 		log.Fatalf("failed to read configuration: %v", err)
 	}
+	maxPacketSizeBytes := conf.UDPSettings.MTU - ChaCha20.TotalOverhead
 
-	buf := make([]byte, conf.UDPSettings.MTU-28)
+	buf := make([]byte, maxPacketSizeBytes)
 	sendChan := make(chan UDPClientPacket, 100_000)
 
 	go func(sendChan chan UDPClientPacket, ctx context.Context) {
@@ -63,6 +64,11 @@ func TunToUDP(tunFile *os.File, intIPToUDPClientAddr *sync.Map, intIPToSession *
 				}
 
 				log.Printf("failed to read from TUN, retrying: %v", err)
+				continue
+			}
+
+			if n > maxPacketSizeBytes {
+				log.Printf("packet dropped: length(%d) exceeded max length %d", n, maxPacketSizeBytes)
 				continue
 			}
 
@@ -151,8 +157,9 @@ func UDPToTun(listenPort string, tunFile *os.File, intIPToUDPClientAddr *sync.Ma
 	if err != nil {
 		log.Fatalf("failed to read configuration: %v", err)
 	}
+	maxPacketSizeBytes := conf.UDPSettings.MTU - ChaCha20.TotalOverhead
 
-	buf := make([]byte, conf.UDPSettings.MTU)
+	buf := make([]byte, maxPacketSizeBytes)
 	for {
 		select {
 		case <-ctx.Done():
