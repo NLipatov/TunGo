@@ -7,9 +7,11 @@ import (
 )
 
 const (
-	authTag       = 16
-	nonce         = 12
-	TotalOverhead = authTag + nonce
+	authTag     = 16 // ChaCha20-Poly1305 Authentication Tag
+	nonce       = 12 //Unique nonce used by ChaCha20 decryption/encryption operations
+	ipV4Header  = 20 //IPv4 header
+	udpHeader   = 8  //Udp header
+	UdpOverhead = authTag + nonce + ipV4Header + udpHeader
 )
 
 type Session struct {

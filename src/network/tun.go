@@ -103,7 +103,7 @@ func CreateNewTun(settings settings.ConnectionSettings) error {
 	}
 	fmt.Printf("assigned IP %s to interface %s\n", settings.ConnectionPort, settings.InterfaceName)
 
-	setMtuErr := ip.SetMtu(settings.InterfaceName, settings.MTU-ChaCha20.TotalOverhead)
+	setMtuErr := ip.SetMtu(settings.InterfaceName, settings.MTU-ChaCha20.UdpOverhead)
 	if setMtuErr != nil {
 		log.Fatalf("failed to set MTU: %s", setMtuErr)
 	}

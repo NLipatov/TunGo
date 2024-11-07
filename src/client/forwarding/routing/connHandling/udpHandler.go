@@ -16,7 +16,7 @@ func TunToUDP(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ct
 	if err != nil {
 		log.Fatalf("failed to read configuration: %v", err)
 	}
-	maxPacketSizeBytes := conf.UDPSettings.MTU - ChaCha20.TotalOverhead
+	maxPacketSizeBytes := conf.UDPSettings.MTU - ChaCha20.UdpOverhead
 
 	buf := make([]byte, maxPacketSizeBytes)
 
@@ -42,8 +42,8 @@ func TunToUDP(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ct
 				continue
 			}
 
-			if n > maxPacketSizeBytes {
-				log.Printf("packet dropped: length(%d) exceeded max length %d", n, maxPacketSizeBytes)
+			if n+ChaCha20.UdpOverhead > maxPacketSizeBytes {
+				log.Printf("packet dropped: MTU exceeded (%v + %v > %v)", n, ChaCha20.UdpOverhead, conf.UDPSettings.MTU)
 				continue
 			}
 
@@ -80,7 +80,7 @@ func UDPToTun(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ct
 	if err != nil {
 		log.Fatalf("failed to read configuration: %v", err)
 	}
-	maxPacketSizeBytes := conf.UDPSettings.MTU - ChaCha20.TotalOverhead
+	maxPacketSizeBytes := conf.UDPSettings.MTU - ChaCha20.UdpOverhead
 
 	buf := make([]byte, maxPacketSizeBytes)
 

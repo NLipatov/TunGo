@@ -27,7 +27,7 @@ func TunToUDP(tunFile *os.File, intIPToUDPClientAddr *sync.Map, intIPToSession *
 	if err != nil {
 		log.Fatalf("failed to read configuration: %v", err)
 	}
-	maxPacketSizeBytes := conf.UDPSettings.MTU - ChaCha20.TotalOverhead
+	maxPacketSizeBytes := conf.UDPSettings.MTU - ChaCha20.UdpOverhead
 
 	buf := make([]byte, maxPacketSizeBytes)
 	sendChan := make(chan UDPClientPacket, 100_000)
@@ -157,7 +157,7 @@ func UDPToTun(listenPort string, tunFile *os.File, intIPToUDPClientAddr *sync.Ma
 	if err != nil {
 		log.Fatalf("failed to read configuration: %v", err)
 	}
-	maxPacketSizeBytes := conf.UDPSettings.MTU - ChaCha20.TotalOverhead
+	maxPacketSizeBytes := conf.UDPSettings.MTU - ChaCha20.UdpOverhead
 
 	buf := make([]byte, maxPacketSizeBytes)
 	for {

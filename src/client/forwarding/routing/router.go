@@ -49,7 +49,7 @@ func configureTun(s settings.ConnectionSettings) *os.File {
 		log.Fatalf("failed to configure client: %v", udpConfigurationErr)
 	}
 
-	if setMtuErr := ip.SetMtu(s.InterfaceName, s.MTU-ChaCha20.TotalOverhead); setMtuErr != nil {
+	if setMtuErr := ip.SetMtu(s.InterfaceName, s.MTU-ChaCha20.UdpOverhead); setMtuErr != nil {
 		log.Fatalf("failed to set %d MTU for %s: %s", s.MTU, s.InterfaceName, setMtuErr)
 	}
 
