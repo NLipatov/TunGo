@@ -17,7 +17,7 @@ func TunToUDP(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ct
 		log.Fatalf("failed to read configuration: %v", err)
 	}
 
-	buf := make([]byte, conf.UDPSettings.MTU-12)
+	buf := make([]byte, conf.UDPSettings.MTU-28)
 
 	// Main loop to read from TUN and send data
 	for {
