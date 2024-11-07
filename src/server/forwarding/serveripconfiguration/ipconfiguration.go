@@ -25,8 +25,9 @@ func Configure(tunFile *os.File) error {
 		return fmt.Errorf("failed to set up forwarding: %v", err)
 	}
 
-	if err != nil {
-		return err
+	configureClampingErr := iptables.ConfigureMssClamping()
+	if configureClampingErr != nil {
+		return configureClampingErr
 	}
 
 	log.Printf("server configured\n")

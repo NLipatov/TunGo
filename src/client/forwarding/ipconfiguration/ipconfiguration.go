@@ -3,6 +3,7 @@ package ipconfiguration
 import (
 	"etha-tunnel/network"
 	"etha-tunnel/network/ip"
+	"etha-tunnel/network/iptables"
 	"etha-tunnel/settings"
 	"fmt"
 	"log"
@@ -62,6 +63,11 @@ func Configure(connSettings settings.ConnectionSettings) error {
 		return err
 	}
 	fmt.Printf("set %s as default gateway\n", connSettings.InterfaceName)
+
+	configureClampingErr := iptables.ConfigureMssClamping()
+	if configureClampingErr != nil {
+		return configureClampingErr
+	}
 
 	return nil
 }

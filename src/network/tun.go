@@ -1,7 +1,6 @@
 package network
 
 import (
-	"etha-tunnel/handshake/ChaCha20"
 	"etha-tunnel/network/ip"
 	"etha-tunnel/settings"
 	"fmt"
@@ -103,7 +102,7 @@ func CreateNewTun(settings settings.ConnectionSettings) error {
 	}
 	fmt.Printf("assigned IP %s to interface %s\n", settings.ConnectionPort, settings.InterfaceName)
 
-	setMtuErr := ip.SetMtu(settings.InterfaceName, settings.MTU-ChaCha20.UdpOverhead)
+	setMtuErr := ip.SetMtu(settings.InterfaceName, settings.MTU)
 	if setMtuErr != nil {
 		log.Fatalf("failed to set MTU: %s", setMtuErr)
 	}
