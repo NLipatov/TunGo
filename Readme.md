@@ -20,17 +20,9 @@ Args:
 - EnableUDP - tells server-app if UDP should be enabled (PORT 9090);
 - EnableTCP - tells server-app if TCP should be enabled (PORT 8080);
 - ServerIP - generated client configs will contain this IP as a server IP. 
+
 ```bash
-docker run --restart always -it --network host --device=/dev/net/tun --cap-add=NET_ADMIN \
-    -p 8080:8080 -p 9090:9090 \
-    -e EnableUDP=true  \
-    -e EnableTCP=false \
-    -e ServerIP="192.168.122.194" \
-    nlipatov/tungo:tungo
-```
-You can also use a Docker volume, so server keys will be same after restart:
-```bash
-docker run --restart always -it --network host --device=/dev/net/tun --cap-add=NET_ADMIN \
+sudo docker run --restart always -it --network host --device=/dev/net/tun --cap-add=NET_ADMIN \
     -p 8080:8080 -p 9090:9090 \
     -e EnableUDP=true  \
     -e EnableTCP=false \
