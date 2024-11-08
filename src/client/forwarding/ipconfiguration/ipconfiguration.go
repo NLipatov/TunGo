@@ -1,7 +1,6 @@
 package ipconfiguration
 
 import (
-	"etha-tunnel/network"
 	"etha-tunnel/network/ip"
 	"etha-tunnel/network/iptables"
 	"etha-tunnel/settings"
@@ -14,7 +13,7 @@ func Configure(connSettings settings.ConnectionSettings) error {
 	// Delete existing link if any
 	_, _ = ip.LinkDel(connSettings.InterfaceName)
 
-	name, err := network.UpNewTun(connSettings.InterfaceName)
+	name, err := ip.UpNewTun(connSettings.InterfaceName)
 	if err != nil {
 		return fmt.Errorf("failed to create interface %v: %v", connSettings.InterfaceName, err)
 	}

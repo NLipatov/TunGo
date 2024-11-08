@@ -1,7 +1,6 @@
 package serveripconfiguration
 
 import (
-	"etha-tunnel/network"
 	"etha-tunnel/network/ip"
 	"etha-tunnel/network/iptables"
 	"fmt"
@@ -35,7 +34,7 @@ func Configure(tunFile *os.File) error {
 }
 
 func Unconfigure(tunFile *os.File) {
-	tunName, err := network.GetIfName(tunFile)
+	tunName, err := ip.GetIfName(tunFile)
 	if err != nil {
 		log.Printf("failed to determing tunnel ifName: %s\n", err)
 	}
@@ -55,7 +54,7 @@ func Unconfigure(tunFile *os.File) {
 
 func setupForwarding(tunFile *os.File, extIface string) error {
 	// Get the name of the TUN interface
-	tunName, err := network.GetIfName(tunFile)
+	tunName, err := ip.GetIfName(tunFile)
 	if err != nil {
 		return fmt.Errorf("failed to determing tunnel ifName: %s\n", err)
 	}
@@ -78,7 +77,7 @@ func setupForwarding(tunFile *os.File, extIface string) error {
 }
 
 func clearForwarding(tunFile *os.File, extIface string) error {
-	tunName, err := network.GetIfName(tunFile)
+	tunName, err := ip.GetIfName(tunFile)
 	if err != nil {
 		return fmt.Errorf("failed to determing tunnel ifName: %s\n", err)
 	}

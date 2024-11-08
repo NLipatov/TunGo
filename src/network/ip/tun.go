@@ -1,7 +1,6 @@
-package network
+package ip
 
 import (
-	"etha-tunnel/network/ip"
 	"etha-tunnel/settings"
 	"fmt"
 	"golang.org/x/sys/unix"
@@ -13,10 +12,10 @@ import (
 )
 
 const (
-	IFNAMSIZ  = 16         // Max if name size, bytes
-	TUNSETIFF = 0x400454ca // Code to create TUN/TAP if via ioctl
-	IFF_TUN   = 0x0001     // Enabling TUN flag
-	IFF_NO_PI = 0x1000     // Disabling PI (Packet Information)
+	ifNamSiz  = 16         // Max if name size, bytes
+	tunSetIff = 0x400454ca // Code to create TUN/TAP if via ioctl
+	iffTun    = 0x0001     // Enabling TUN flag
+	IffNoPi   = 0x1000     // Disabling PI (Packet Information)
 )
 
 func UpNewTun(ifName string) (string, error) {
@@ -25,12 +24,12 @@ func UpNewTun(ifName string) (string, error) {
 		return "", err
 	}
 
-	_, err = ip.LinkAdd(ifName)
+	_, err = LinkAdd(ifName)
 	if err != nil {
 		return "", err
 	}
 
-	_, err = ip.LinkSetUp(ifName)
+	_, err = LinkSetUp(ifName)
 	if err != nil {
 		return "", err
 	}
@@ -38,7 +37,7 @@ func UpNewTun(ifName string) (string, error) {
 	return ifName, nil
 }
 
-func OpenTunByName(ifname string) (*os.File, error) {
+func OpenTunByName(ifName string) (*os.File, error) {
 	tunFilePath := "/dev/net/tun"
 	tun, err := os.OpenFile(tunFilePath, os.O_RDWR, 0)
 	if err != nil {
@@ -46,12 +45,12 @@ func OpenTunByName(ifname string) (*os.File, error) {
 	}
 
 	var req IfReq
-	copy(req.Name[:], ifname)
-	req.Flags = IFF_TUN | IFF_NO_PI
+	copy(req.Name[:], ifName)
+	req.Flags = iffTun | IffNoPi
 
-	_, _, errno := unix.Syscall(unix.SYS_IOCTL, tun.Fd(), uintptr(TUNSETIFF), uintptr(unsafe.Pointer(&req)))
+	_, _, errno := unix.Syscall(unix.SYS_IOCTL, tun.Fd(), uintptr(tunSetIff), uintptr(unsafe.Pointer(&req)))
 	if errno != 0 {
-		tun.Close()
+		_ = tun.Close()
 		return nil, fmt.Errorf("ioctl failed: %v", errno)
 	}
 
@@ -79,7 +78,7 @@ func enableIPv4Forwarding() error {
 }
 
 func CreateNewTun(settings settings.ConnectionSettings) error {
-	_, _ = ip.LinkDel(settings.InterfaceName)
+	_, _ = LinkDel(settings.InterfaceName)
 
 	name, err := UpNewTun(settings.InterfaceName)
 	if err != nil {
@@ -87,22 +86,22 @@ func CreateNewTun(settings settings.ConnectionSettings) error {
 	}
 	fmt.Printf("created TUN interface: %v\n", name)
 
-	serverIp, err := ip.AllocateServerIp(settings.InterfaceIPCIDR)
+	serverIp, err := AllocateServerIp(settings.InterfaceIPCIDR)
 	if err != nil {
 		return err
 	}
 
-	cidrServerIp, err := ip.ToCIDR(settings.InterfaceIPCIDR, serverIp)
+	cidrServerIp, err := ToCIDR(settings.InterfaceIPCIDR, serverIp)
 	if err != nil {
 		return fmt.Errorf("failed to conver server ip to CIDR format: %s", err)
 	}
-	_, err = ip.LinkAddrAdd(settings.InterfaceName, cidrServerIp)
+	_, err = LinkAddrAdd(settings.InterfaceName, cidrServerIp)
 	if err != nil {
 		return err
 	}
 	fmt.Printf("assigned IP %s to interface %s\n", settings.ConnectionPort, settings.InterfaceName)
 
-	setMtuErr := ip.SetMtu(settings.InterfaceName, settings.MTU)
+	setMtuErr := SetMtu(settings.InterfaceName, settings.MTU)
 	if setMtuErr != nil {
 		log.Fatalf("failed to set MTU: %s", setMtuErr)
 	}

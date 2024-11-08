@@ -1,7 +1,7 @@
-package network
+package ip
 
 type IfReq struct {
-	Name  [IFNAMSIZ]byte
+	Name  [ifNamSiz]byte
 	Flags uint16
 	_     [24]byte
 }

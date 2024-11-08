@@ -3,7 +3,6 @@ package routing
 import (
 	"context"
 	"etha-tunnel/client/forwarding/ipconfiguration"
-	"etha-tunnel/network"
 	"etha-tunnel/network/ip"
 	"etha-tunnel/settings"
 	"etha-tunnel/settings/client"
@@ -53,7 +52,7 @@ func configureTun(s settings.ConnectionSettings) *os.File {
 	}
 
 	// Open the TUN interface
-	tunFile, openTunErr := network.OpenTunByName(s.InterfaceName)
+	tunFile, openTunErr := ip.OpenTunByName(s.InterfaceName)
 	if openTunErr != nil {
 		log.Fatalf("failed to open TUN interface: %v", openTunErr)
 	}
