@@ -4,7 +4,7 @@ import (
 	"context"
 	"etha-tunnel/inputcommands"
 	"etha-tunnel/server/forwarding"
-	"etha-tunnel/server/forwarding/serveripconfiguration"
+	"etha-tunnel/server/forwarding/serveripconf"
 	"fmt"
 	"os"
 	"sync"
@@ -19,11 +19,11 @@ func StartTCPRouting(tunFile *os.File, listenPort string) error {
 	go inputcommands.ListenForCommand(cancel)
 
 	// Setup server
-	err := serveripconfiguration.Configure(tunFile)
+	err := serveripconf.Configure(tunFile)
 	if err != nil {
 		return fmt.Errorf("failed to configure a server: %s\n", err)
 	}
-	defer serveripconfiguration.Unconfigure(tunFile)
+	defer serveripconf.Unconfigure(tunFile)
 
 	// Map to keep track of connected clients
 	var extToLocalIp sync.Map   // external ip to local ip map
@@ -57,11 +57,11 @@ func StartUDPRouting(tunFile *os.File, listenPort string) error {
 	go inputcommands.ListenForCommand(cancel)
 
 	// Setup server
-	err := serveripconfiguration.Configure(tunFile)
+	err := serveripconf.Configure(tunFile)
 	if err != nil {
 		return fmt.Errorf("failed to configure a server: %s\n", err)
 	}
-	defer serveripconfiguration.Unconfigure(tunFile)
+	defer serveripconf.Unconfigure(tunFile)
 
 	// Map to keep track of connected clients
 	var intIPToUDPClient sync.Map // external ip to local ip map
