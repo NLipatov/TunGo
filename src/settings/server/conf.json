@@ -14,7 +14,7 @@
     "InterfaceAddress": "",
     "ConnectionIP": "",
     "ConnectionPort": ":9090",
-    "MTU": 1444,
+    "MTU": 1475,
     "Protocol": "udp"
   },
   "FallbackServerAddress": "",
