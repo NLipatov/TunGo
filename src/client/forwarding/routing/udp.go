@@ -2,18 +2,18 @@ package routing
 
 import (
 	"context"
-	"etha-tunnel/client/forwarding/clientipconf"
-	"etha-tunnel/client/forwarding/routing/connHandling"
-	"etha-tunnel/handshake/ChaCha20"
-	"etha-tunnel/handshake/ChaCha20/handshakeHandlers"
-	"etha-tunnel/network/keepalive"
-	"etha-tunnel/settings"
 	"fmt"
 	"log"
 	"net"
 	"os"
 	"sync"
 	"time"
+	"tungo/client/forwarding/clientipconf"
+	"tungo/client/forwarding/routing/connHandling"
+	"tungo/handshake/ChaCha20"
+	"tungo/handshake/ChaCha20/handshakeHandlers"
+	"tungo/network/keepalive"
+	"tungo/settings"
 )
 
 func startUDPRouting(settings settings.ConnectionSettings, tunFile *os.File, ctx context.Context) error {

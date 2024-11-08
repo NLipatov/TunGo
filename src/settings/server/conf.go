@@ -3,11 +3,11 @@ package server
 import (
 	"crypto/ed25519"
 	"encoding/json"
-	"etha-tunnel/settings"
 	"log"
 	"os"
 	"path/filepath"
 	"strconv"
+	"tungo/settings"
 )
 
 type Conf struct {

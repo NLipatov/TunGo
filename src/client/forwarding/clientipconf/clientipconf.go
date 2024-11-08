@@ -1,12 +1,12 @@
 package clientipconf
 
 import (
-	"etha-tunnel/network/ip"
-	"etha-tunnel/network/iptables"
-	"etha-tunnel/settings"
 	"fmt"
 	"log"
 	"strings"
+	"tungo/network/ip"
+	"tungo/network/iptables"
+	"tungo/settings"
 )
 
 func Configure(connSettings settings.ConnectionSettings) error {

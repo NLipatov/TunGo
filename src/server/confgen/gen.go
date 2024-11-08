@@ -1,14 +1,14 @@
 package confgen
 
 import (
-	"etha-tunnel/network/ip"
-	"etha-tunnel/settings"
-	"etha-tunnel/settings/client"
-	"etha-tunnel/settings/server"
 	"fmt"
 	"net"
 	"os/exec"
 	"strings"
+	"tungo/network/ip"
+	"tungo/settings"
+	"tungo/settings/client"
+	"tungo/settings/server"
 )
 
 // Generate generates new client configuration

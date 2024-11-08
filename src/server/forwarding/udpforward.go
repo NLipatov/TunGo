@@ -2,17 +2,17 @@ package forwarding
 
 import (
 	"context"
-	"etha-tunnel/handshake/ChaCha20"
-	"etha-tunnel/handshake/ChaCha20/handshakeHandlers"
-	"etha-tunnel/network"
-	"etha-tunnel/network/ip"
-	"etha-tunnel/network/keepalive"
-	"etha-tunnel/network/packets"
 	"io"
 	"log"
 	"net"
 	"os"
 	"sync"
+	"tungo/handshake/ChaCha20"
+	"tungo/handshake/ChaCha20/handshakeHandlers"
+	"tungo/network"
+	"tungo/network/ip"
+	"tungo/network/keepalive"
+	"tungo/network/packets"
 )
 
 var clientAddrToInternalIP sync.Map

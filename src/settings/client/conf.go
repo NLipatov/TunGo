@@ -3,9 +3,9 @@ package client
 import (
 	"crypto/ed25519"
 	"encoding/json"
-	"etha-tunnel/settings"
 	"os"
 	"path/filepath"
+	"tungo/settings"
 )
 
 type Conf struct {

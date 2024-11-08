@@ -2,13 +2,13 @@ package connHandling
 
 import (
 	"context"
-	"etha-tunnel/handshake/ChaCha20"
-	"etha-tunnel/network"
-	"etha-tunnel/network/ip"
-	"etha-tunnel/network/keepalive"
 	"log"
 	"net"
 	"os"
+	"tungo/handshake/ChaCha20"
+	"tungo/network"
+	"tungo/network/ip"
+	"tungo/network/keepalive"
 )
 
 func TunToUDP(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ctx context.Context, connCancel context.CancelFunc, sendKeepAliveChan chan bool) {

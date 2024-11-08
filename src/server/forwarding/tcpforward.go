@@ -3,17 +3,17 @@ package forwarding
 import (
 	"context"
 	"encoding/binary"
-	"etha-tunnel/handshake/ChaCha20"
-	"etha-tunnel/handshake/ChaCha20/handshakeHandlers"
-	"etha-tunnel/network"
-	"etha-tunnel/network/keepalive"
-	"etha-tunnel/network/packets"
-	"etha-tunnel/settings/server"
 	"io"
 	"log"
 	"net"
 	"os"
 	"sync"
+	"tungo/handshake/ChaCha20"
+	"tungo/handshake/ChaCha20/handshakeHandlers"
+	"tungo/network"
+	"tungo/network/keepalive"
+	"tungo/network/packets"
+	"tungo/settings/server"
 )
 
 func TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map, ctx context.Context) {

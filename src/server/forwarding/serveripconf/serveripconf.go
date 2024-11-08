@@ -1,12 +1,12 @@
 package serveripconf
 
 import (
-	"etha-tunnel/network/ip"
-	"etha-tunnel/network/iptables"
-	"etha-tunnel/settings"
 	"fmt"
 	"log"
 	"os"
+	"tungo/network/ip"
+	"tungo/network/iptables"
+	"tungo/settings"
 )
 
 func SetupServerTun(settings settings.ConnectionSettings) (*os.File, error) {

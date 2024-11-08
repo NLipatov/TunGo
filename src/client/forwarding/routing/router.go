@@ -2,13 +2,13 @@ package routing
 
 import (
 	"context"
-	"etha-tunnel/client/forwarding/clientipconf"
-	"etha-tunnel/network/ip"
-	"etha-tunnel/settings"
-	"etha-tunnel/settings/client"
 	"fmt"
 	"log"
 	"os"
+	"tungo/client/forwarding/clientipconf"
+	"tungo/network/ip"
+	"tungo/settings"
+	"tungo/settings/client"
 )
 
 type ClientRouter struct {

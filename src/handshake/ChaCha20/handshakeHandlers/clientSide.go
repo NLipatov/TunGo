@@ -3,12 +3,12 @@ package handshakeHandlers
 import (
 	"crypto/rand"
 	"crypto/sha256"
-	"etha-tunnel/handshake/ChaCha20"
-	"etha-tunnel/settings"
-	"etha-tunnel/settings/client"
 	"fmt"
 	"io"
 	"net"
+	"tungo/handshake/ChaCha20"
+	"tungo/settings"
+	"tungo/settings/client"
 
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/curve25519"

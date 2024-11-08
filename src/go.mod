@@ -1,4 +1,4 @@
-module etha-tunnel
+module tungo
 
 go 1.22.2
 

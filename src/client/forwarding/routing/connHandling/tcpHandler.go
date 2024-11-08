@@ -3,14 +3,14 @@ package connHandling
 import (
 	"context"
 	"encoding/binary"
-	"etha-tunnel/handshake/ChaCha20"
-	"etha-tunnel/network"
-	"etha-tunnel/network/keepalive"
-	"etha-tunnel/settings/client"
 	"io"
 	"log"
 	"net"
 	"os"
+	"tungo/handshake/ChaCha20"
+	"tungo/network"
+	"tungo/network/keepalive"
+	"tungo/settings/client"
 )
 
 // ToTCP forwards packets from TUN to TCP

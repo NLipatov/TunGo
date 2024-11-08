@@ -2,8 +2,8 @@ package network
 
 import (
 	"encoding/binary"
-	"etha-tunnel/handshake/ChaCha20"
-	"etha-tunnel/network/keepalive"
+	"tungo/handshake/ChaCha20"
+	"tungo/network/keepalive"
 )
 
 type UDPPacket struct {

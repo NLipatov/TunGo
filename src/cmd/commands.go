@@ -4,11 +4,11 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"etha-tunnel/server/confgen"
 	"fmt"
 	"log"
 	"os"
 	"strings"
+	"tungo/server/confgen"
 )
 
 const (

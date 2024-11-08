@@ -2,10 +2,10 @@ package main
 
 import (
 	"context"
-	"etha-tunnel/client/forwarding/routing"
-	"etha-tunnel/cmd"
-	"etha-tunnel/settings/client"
 	"log"
+	"tungo/client/forwarding/routing"
+	"tungo/cmd"
+	"tungo/settings/client"
 )
 
 func main() {

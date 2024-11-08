@@ -3,12 +3,12 @@ package main
 import (
 	"crypto/ed25519"
 	"crypto/rand"
-	"etha-tunnel/server/forwarding/routing"
-	"etha-tunnel/server/forwarding/serveripconf"
-	"etha-tunnel/settings"
-	"etha-tunnel/settings/server"
 	"log"
 	"sync"
+	"tungo/server/forwarding/routing"
+	"tungo/server/forwarding/serveripconf"
+	"tungo/settings"
+	"tungo/settings/server"
 )
 
 func main() {
