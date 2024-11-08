@@ -113,21 +113,33 @@ On the next startup, the server will generate new keys.
 
 After regeneration, all clients need to update their configurations with the server’s new public Ed25519 key.
 
-# iperf throughput benchmark
-## Start iperf on server
+# Benchmarking
+## Iperf2
+### TCP
+Server:
 ```bash
 iperf -s -B 10.0.0.1
 ```
 In this example `10.0.0.1` is a server's address in vpn network. 
 
-### Basic Test
-## Start iperf on client
+Client:
 ```bash
 iperf -c 10.0.0.1
 ```
 
-### Stress Test with 100 parallel connections during 600 seconds
+or with 100 parallel connections for 600 seconds:
+
 ```bash
 iperf -c 10.0.0.1 -P 100 -t 600
 ```
-After the test is completed, you can see results in the terminal.
+
+### UDP
+Server:
+```shell
+iperf -s -u
+```
+
+Client (at 1GB bandwidth):
+```shell
+iperf -c 10.0.1.1 -u -b 1G
+```
