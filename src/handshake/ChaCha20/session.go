@@ -6,12 +6,6 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
-const (
-	authTag     = 16 // ChaCha20-Poly1305 Authentication Tag
-	nonce       = 12 //Unique nonce used by ChaCha20 decryption/encryption operations
-	UdpOverhead = authTag + nonce
-)
-
 type Session struct {
 	sendCipher cipher.AEAD
 	recvCipher cipher.AEAD

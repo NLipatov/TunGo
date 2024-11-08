@@ -4,19 +4,15 @@ import (
 	"context"
 	"etha-tunnel/handshake/ChaCha20"
 	"etha-tunnel/network"
+	"etha-tunnel/network/ip"
 	"etha-tunnel/network/keepalive"
-	"etha-tunnel/settings/client"
 	"log"
 	"net"
 	"os"
 )
 
 func TunToUDP(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ctx context.Context, connCancel context.CancelFunc, sendKeepAliveChan chan bool) {
-	conf, err := (&client.Conf{}).Read()
-	if err != nil {
-		log.Fatalf("failed to read configuration: %v", err)
-	}
-	buf := make([]byte, conf.UDPSettings.MTU+ChaCha20.UdpOverhead)
+	buf := make([]byte, ip.MaxPacketLengthBytes)
 
 	// Main loop to read from TUN and send data
 	for {
@@ -69,12 +65,7 @@ func writeOrReconnect(conn *net.UDPConn, data *[]byte, ctx context.Context, conn
 }
 
 func UDPToTun(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ctx context.Context, connCancel context.CancelFunc, receiveKeepAliveChan chan bool) {
-	conf, err := (&client.Conf{}).Read()
-	if err != nil {
-		log.Fatalf("failed to read configuration: %v", err)
-	}
-
-	buf := make([]byte, conf.UDPSettings.MTU+ChaCha20.UdpOverhead)
+	buf := make([]byte, ip.MaxPacketLengthBytes)
 
 	go func() {
 		<-ctx.Done()

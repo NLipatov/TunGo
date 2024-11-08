@@ -5,9 +5,9 @@ import (
 	"etha-tunnel/handshake/ChaCha20"
 	"etha-tunnel/handshake/ChaCha20/handshakeHandlers"
 	"etha-tunnel/network"
+	"etha-tunnel/network/ip"
 	"etha-tunnel/network/keepalive"
 	"etha-tunnel/network/packets"
-	"etha-tunnel/settings/server"
 	"io"
 	"log"
 	"net"
@@ -23,12 +23,7 @@ type UDPClient struct {
 }
 
 func TunToUDP(tunFile *os.File, intIPToUDPClientAddr *sync.Map, intIPToSession *sync.Map, ctx context.Context) {
-	conf, err := (&server.Conf{}).Read()
-	if err != nil {
-		log.Fatalf("failed to read configuration: %v", err)
-	}
-
-	buf := make([]byte, conf.UDPSettings.MTU+ChaCha20.UdpOverhead)
+	buf := make([]byte, ip.MaxPacketLengthBytes)
 	sendChan := make(chan UDPClientPacket, 100_000)
 
 	go func(sendChan chan UDPClientPacket, ctx context.Context) {
@@ -147,12 +142,7 @@ func UDPToTun(listenPort string, tunFile *os.File, intIPToUDPClientAddr *sync.Ma
 		_ = conn.Close()
 	}()
 
-	conf, err := (&server.Conf{}).Read()
-	if err != nil {
-		log.Fatalf("failed to read configuration: %v", err)
-	}
-
-	buf := make([]byte, conf.UDPSettings.MTU+ChaCha20.UdpOverhead)
+	buf := make([]byte, ip.MaxPacketLengthBytes)
 	for {
 		select {
 		case <-ctx.Done():
