@@ -16,7 +16,7 @@ func TunToUDP(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ct
 	if err != nil {
 		log.Fatalf("failed to read configuration: %v", err)
 	}
-	buf := make([]byte, conf.UDPSettings.MTU+28)
+	buf := make([]byte, conf.UDPSettings.MTU+ChaCha20.UdpOverhead)
 
 	// Main loop to read from TUN and send data
 	for {
@@ -74,7 +74,7 @@ func UDPToTun(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ct
 		log.Fatalf("failed to read configuration: %v", err)
 	}
 
-	buf := make([]byte, conf.UDPSettings.MTU+28)
+	buf := make([]byte, conf.UDPSettings.MTU+ChaCha20.UdpOverhead)
 
 	go func() {
 		<-ctx.Done()
