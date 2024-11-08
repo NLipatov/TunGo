@@ -93,37 +93,37 @@ func getServerIpString() (string, error) {
 }
 
 func getV4Addr() (string, error) {
-	cmd := exec.Command("sh", "-c", `ip -4 addr | sed -ne 's|^.* inet \([^/]*\)/.* scope global.*$|\1|p' | awk '{print $1}' | head -1`)
+	cmd := exec.Command("sh", "-c", `ipAddr -4 addr | sed -ne 's|^.* inet \([^/]*\)/.* scope global.*$|\1|p' | awk '{print $1}' | head -1`)
 	res, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve ipV4 address")
 	}
 
-	ip := strings.Trim(string(res), "\n")
+	ipAddr := strings.Trim(string(res), "\n")
 
-	v4Valid := isValidIPv4(ip)
+	v4Valid := isValidIPv4(ipAddr)
 	if !v4Valid {
 		return "", fmt.Errorf("not a valid IPv4 address")
 	}
 
-	return ip, nil
+	return ipAddr, nil
 }
 
 func getV6Addr() (string, error) {
-	cmd := exec.Command("sh", "-c", `ip -6 addr | sed -ne 's|^.* inet6 \([^/]*\)/.* scope global.*$|\1|p' | head -1`)
+	cmd := exec.Command("sh", "-c", `ipAddr -6 addr | sed -ne 's|^.* inet6 \([^/]*\)/.* scope global.*$|\1|p' | head -1`)
 	res, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve ipV6 address")
 	}
 
-	ip := strings.Trim(string(res), "\n")
+	ipAddr := strings.Trim(string(res), "\n")
 
-	v6Valid := isValidIPv6(ip)
+	v6Valid := isValidIPv6(ipAddr)
 	if !v6Valid {
 		return "", fmt.Errorf("not a valid IPv6 address")
 	}
 
-	return ip, nil
+	return ipAddr, nil
 }
 
 func isValidIPv4(ip string) bool {

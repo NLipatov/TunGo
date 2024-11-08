@@ -18,7 +18,7 @@ type Packet struct {
 	IsKeepAlive bool
 }
 
-// bytes to packet
+// DecodeTCP bytes to packet
 func (p *Packet) DecodeTCP(data []byte) (*Packet, error) {
 	length := uint32(len(data))
 
@@ -37,7 +37,7 @@ func (p *Packet) DecodeTCP(data []byte) (*Packet, error) {
 	}, nil
 }
 
-// packet to bytes
+// EncodeTCP packet to bytes
 func (p *Packet) EncodeTCP(payload []byte) (*Packet, error) {
 	length := uint32(len(payload))
 	lengthBuf := make([]byte, 4)

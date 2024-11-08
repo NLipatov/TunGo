@@ -2,7 +2,7 @@ package routing
 
 import (
 	"context"
-	"etha-tunnel/inputcommands"
+	"etha-tunnel/cmd"
 	"etha-tunnel/server/forwarding"
 	"etha-tunnel/server/forwarding/serveripconf"
 	"fmt"
@@ -16,7 +16,7 @@ func StartTCPRouting(tunFile *os.File, listenPort string) error {
 	defer cancel()
 
 	// Start a goroutine to listen for user input
-	go inputcommands.ListenForCommand(cancel)
+	go cmd.ListenForCommand(cancel)
 
 	// Setup server
 	err := serveripconf.Configure(tunFile)
@@ -54,7 +54,7 @@ func StartUDPRouting(tunFile *os.File, listenPort string) error {
 	defer cancel()
 
 	// Start a goroutine to listen for user input
-	go inputcommands.ListenForCommand(cancel)
+	go cmd.ListenForCommand(cancel)
 
 	// Setup server
 	err := serveripconf.Configure(tunFile)

@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"etha-tunnel/client/forwarding/routing"
-	"etha-tunnel/inputcommands"
+	"etha-tunnel/cmd"
 	"etha-tunnel/settings/client"
 	"log"
 )
@@ -14,7 +14,7 @@ func main() {
 	defer cancel()
 
 	// Start a goroutine to listen for user input
-	go inputcommands.ListenForCommand(cancel)
+	go cmd.ListenForCommand(cancel)
 
 	// Read client configuration
 	conf, err := (&client.Conf{}).Read()

@@ -48,7 +48,7 @@ func ParseIPv6Header(packet []byte) (*IPv6Header, error) {
 		PayloadLength: binary.BigEndian.Uint16(packet[4:6]),
 		NextHeader:    packet[6],
 		HopLimit:      packet[7],
-		SourceIP:      net.IP(packet[8:24]),
-		DestinationIP: net.IP(packet[24:40]),
+		SourceIP:      packet[8:24],
+		DestinationIP: packet[24:40],
 	}, nil
 }

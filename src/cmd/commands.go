@@ -1,4 +1,4 @@
-package inputcommands
+package cmd
 
 import (
 	"bufio"

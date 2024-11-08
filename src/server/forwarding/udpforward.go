@@ -133,7 +133,9 @@ func UDPToTun(listenPort string, tunFile *os.File, intIPToUDPClientAddr *sync.Ma
 	if err != nil {
 		log.Fatalf("failed to listen on port: %s", err)
 	}
-	defer conn.Close()
+	defer func(conn net.Conn) {
+		_ = conn.Close()
+	}(conn)
 
 	log.Printf("server listening on port udp:%s", listenPort)
 

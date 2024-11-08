@@ -8,19 +8,19 @@ type ServerHello struct {
 	CurvePublicKey  []byte
 }
 
-func (s *ServerHello) Read(data []byte) (*ServerHello, error) {
+func (sH *ServerHello) Read(data []byte) (*ServerHello, error) {
 	if len(data) < 128 {
 		return nil, fmt.Errorf("invalid data")
 	}
 
-	s.ServerSignature = data[:64]
-	s.ServerNonce = data[64 : 64+32]
-	s.CurvePublicKey = data[64+32 : 128]
+	sH.ServerSignature = data[:64]
+	sH.ServerNonce = data[64 : 64+32]
+	sH.CurvePublicKey = data[64+32 : 128]
 
-	return s, nil
+	return sH, nil
 }
 
-func (m *ServerHello) Write(signature *[]byte, nonce *[]byte, curvePublicKey *[]byte) (*[]byte, error) {
+func (sH *ServerHello) Write(signature *[]byte, nonce *[]byte, curvePublicKey *[]byte) (*[]byte, error) {
 	if len(*signature) != 64 {
 		return nil, fmt.Errorf("invalid signature")
 	}
