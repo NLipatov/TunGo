@@ -1,4 +1,4 @@
-package ipconfiguration
+package clientipconf
 
 import (
 	"etha-tunnel/network/ip"

@@ -3,8 +3,8 @@ package main
 import (
 	"crypto/ed25519"
 	"crypto/rand"
-	"etha-tunnel/network/ip"
 	"etha-tunnel/server/forwarding/routing"
+	"etha-tunnel/server/forwarding/serveripconf"
 	"etha-tunnel/settings"
 	"etha-tunnel/settings/server"
 	"log"
@@ -69,12 +69,7 @@ func ensureEd25519KeyPairCreated(conf *server.Conf) error {
 }
 
 func startTCPServer(settings settings.ConnectionSettings) error {
-	err := ip.CreateNewTun(settings)
-	if err != nil {
-		log.Fatalf("failed to create TUN: %s", err)
-	}
-
-	tunFile, err := ip.OpenTunByName(settings.InterfaceName)
+	tunFile, err := serveripconf.SetupServerTun(settings)
 	if err != nil {
 		log.Fatalf("failed to open TUN interface: %v", err)
 	}
@@ -91,12 +86,7 @@ func startTCPServer(settings settings.ConnectionSettings) error {
 }
 
 func startUDPServer(settings settings.ConnectionSettings) error {
-	err := ip.CreateNewTun(settings)
-	if err != nil {
-		log.Fatalf("failed to create TUN: %s", err)
-	}
-
-	tunFile, err := ip.OpenTunByName(settings.InterfaceName)
+	tunFile, err := serveripconf.SetupServerTun(settings)
 	if err != nil {
 		log.Fatalf("failed to open TUN interface: %v", err)
 	}

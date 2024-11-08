@@ -1,10 +1,8 @@
 package ip
 
 import (
-	"etha-tunnel/settings"
 	"fmt"
 	"golang.org/x/sys/unix"
-	"log"
 	"os"
 	"os/exec"
 	"strings"
@@ -74,38 +72,6 @@ func enableIPv4Forwarding() error {
 	if err != nil {
 		return fmt.Errorf("failed to enable IPv4 packet forwarding: %v, output: %s", err, output)
 	}
-	return nil
-}
-
-func CreateNewTun(settings settings.ConnectionSettings) error {
-	_, _ = LinkDel(settings.InterfaceName)
-
-	name, err := UpNewTun(settings.InterfaceName)
-	if err != nil {
-		log.Fatalf("failed to create interface %v: %v", settings.InterfaceName, err)
-	}
-	fmt.Printf("created TUN interface: %v\n", name)
-
-	serverIp, err := AllocateServerIp(settings.InterfaceIPCIDR)
-	if err != nil {
-		return err
-	}
-
-	cidrServerIp, err := ToCIDR(settings.InterfaceIPCIDR, serverIp)
-	if err != nil {
-		return fmt.Errorf("failed to conver server ip to CIDR format: %s", err)
-	}
-	_, err = LinkAddrAdd(settings.InterfaceName, cidrServerIp)
-	if err != nil {
-		return err
-	}
-	fmt.Printf("assigned IP %s to interface %s\n", settings.ConnectionPort, settings.InterfaceName)
-
-	setMtuErr := SetMtu(settings.InterfaceName, settings.MTU)
-	if setMtuErr != nil {
-		log.Fatalf("failed to set MTU: %s", setMtuErr)
-	}
-
 	return nil
 }
 

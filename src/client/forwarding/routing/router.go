@@ -2,7 +2,7 @@ package routing
 
 import (
 	"context"
-	"etha-tunnel/client/forwarding/ipconfiguration"
+	"etha-tunnel/client/forwarding/clientipconf"
 	"etha-tunnel/network/ip"
 	"etha-tunnel/settings"
 	"etha-tunnel/settings/client"
@@ -16,12 +16,12 @@ type ClientRouter struct {
 
 func (cr ClientRouter) Route(conf client.Conf, ctx context.Context) error {
 	// Clear existing client configuration
-	ipconfiguration.Unconfigure(conf.TCPSettings)
-	ipconfiguration.Unconfigure(conf.UDPSettings)
+	clientipconf.Unconfigure(conf.TCPSettings)
+	clientipconf.Unconfigure(conf.UDPSettings)
 
 	switch conf.Protocol {
 	case settings.TCP:
-		defer ipconfiguration.Unconfigure(conf.TCPSettings)
+		defer clientipconf.Unconfigure(conf.TCPSettings)
 		tunFile := configureTun(conf.TCPSettings)
 		defer func() {
 			_ = tunFile.Close()
@@ -29,7 +29,7 @@ func (cr ClientRouter) Route(conf client.Conf, ctx context.Context) error {
 		return startTCPRouting(conf.TCPSettings, tunFile, ctx)
 
 	case settings.UDP:
-		defer ipconfiguration.Unconfigure(conf.UDPSettings)
+		defer clientipconf.Unconfigure(conf.UDPSettings)
 		tunFile := configureTun(conf.UDPSettings)
 		defer func() {
 			_ = tunFile.Close()
@@ -43,7 +43,7 @@ func (cr ClientRouter) Route(conf client.Conf, ctx context.Context) error {
 
 func configureTun(s settings.ConnectionSettings) *os.File {
 	// Configure client
-	if udpConfigurationErr := ipconfiguration.Configure(s); udpConfigurationErr != nil {
+	if udpConfigurationErr := clientipconf.Configure(s); udpConfigurationErr != nil {
 		log.Fatalf("failed to configure client: %v", udpConfigurationErr)
 	}
 

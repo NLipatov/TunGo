@@ -2,7 +2,7 @@ package routing
 
 import (
 	"context"
-	"etha-tunnel/client/forwarding/ipconfiguration"
+	"etha-tunnel/client/forwarding/clientipconf"
 	"etha-tunnel/client/forwarding/routing/connHandling"
 	"etha-tunnel/handshake/ChaCha20"
 	"etha-tunnel/handshake/ChaCha20/handshakeHandlers"
@@ -82,7 +82,7 @@ func establishUDPConnection(settings settings.ConnectionSettings, ctx context.Co
 			log.Printf("failed to connect to server: %v", err)
 			reconnectAttempts++
 			if reconnectAttempts > maxReconnectAttempts {
-				ipconfiguration.Unconfigure(settings)
+				clientipconf.Unconfigure(settings)
 				log.Fatalf("exceeded maximum reconnect attempts (%d)", maxReconnectAttempts)
 			}
 			log.Printf("retrying to connect in %v...", backoff)
