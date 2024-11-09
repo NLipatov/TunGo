@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"time"
 	"tungo/handshake/ChaCha20"
 	"tungo/network"
 	"tungo/network/ip"
@@ -53,14 +54,14 @@ func TunToUDP(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ct
 }
 
 func writeOrReconnect(conn *net.UDPConn, data *[]byte, ctx context.Context, connCancel context.CancelFunc) {
+	_ = conn.SetWriteDeadline(time.Now().Add(time.Second * 1))
 	_, err := conn.Write(*data)
 	if err != nil {
+		log.Printf("write to UDP failed: %s", err)
 		if ctx.Err() != nil {
 			return
 		}
-		log.Printf("write to UDP failed: %s", err)
 		connCancel()
-		return
 	}
 }
 
@@ -77,12 +78,19 @@ func UDPToTun(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ct
 		case <-ctx.Done(): // Stop-signal
 			return
 		default:
+			_ = conn.SetReadDeadline(time.Now().Add(time.Second * 10))
 			n, _, err := conn.ReadFromUDP(buf)
 			if err != nil {
 				if ctx.Err() != nil {
 					return
 				}
 				log.Printf("read from UDP failed: %v", err)
+				connCancel()
+				return
+			}
+
+			if len(buf[:n]) == 3 && string(buf[:n]) == "REG" {
+				log.Printf("re-registration request by server")
 				connCancel()
 				return
 			}

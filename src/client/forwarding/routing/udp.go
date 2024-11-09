@@ -24,8 +24,6 @@ func startUDPRouting(settings settings.ConnectionSettings, tunFile *os.File, ctx
 			continue // Retry connection
 		}
 
-		log.Printf("connected to server at %s (UDP)", settings.ConnectionIP)
-
 		_, err := conn.Write([]byte("REG"))
 		if err != nil {
 			log.Fatalf("failed to send reg request to server")
@@ -35,9 +33,11 @@ func startUDPRouting(settings settings.ConnectionSettings, tunFile *os.File, ctx
 		if err != nil {
 			_ = conn.Close()
 			log.Printf("registration failed: %s\n", err)
-			log.Println("connection is aborted")
-			return err
+			time.Sleep(time.Second * 1)
+			continue
 		}
+
+		log.Printf("connected to server at %s (UDP)", settings.ConnectionIP)
 
 		// Create a child context for managing data forwarding goroutines
 		connCtx, connCancel := context.WithCancel(ctx)

@@ -162,8 +162,6 @@ func UDPToTun(listenPort string, tunFile *os.File, intIPToUDPClientAddr *sync.Ma
 			intIPValue, exists := clientAddrToInternalIP.Load(clientAddr.String())
 			if !exists {
 				if len(buf[:n]) == 3 && string(buf[:n]) == "REG" {
-					log.Printf("registration requested from %s", clientAddr.String())
-
 					intIPToSession.Delete(intIPValue)
 					intIPToUDPClientAddr.Delete(intIPValue)
 					clientAddrToInternalIP.Delete(clientAddr.String())
@@ -174,6 +172,7 @@ func UDPToTun(listenPort string, tunFile *os.File, intIPToUDPClientAddr *sync.Ma
 				regErr := udpRegisterClient(conn, *clientAddr, buf[:n], intIPToUDPClientAddr, intIPToSession)
 				if regErr != nil {
 					log.Printf("%s failed registration: %s\n", clientAddr.String(), regErr)
+					_, _ = conn.WriteToUDP([]byte("REG"), clientAddr)
 				}
 				continue
 			}
@@ -221,14 +220,12 @@ func UDPToTun(listenPort string, tunFile *os.File, intIPToUDPClientAddr *sync.Ma
 }
 
 func udpRegisterClient(conn *net.UDPConn, clientAddr net.UDPAddr, initialData []byte, intIPToUDPClientAddr *sync.Map, intIPToSession *sync.Map) error {
-	log.Printf("connected: %s", clientAddr.IP.String())
-
 	// Pass initialData and clientAddr to the handshake function
 	serverSession, internalIpAddr, err := handshakeHandlers.OnClientConnectedUDP(conn, &clientAddr, initialData)
 	if err != nil {
 		return err
 	}
-	log.Printf("registered: %s", *internalIpAddr)
+	log.Printf("%s registered as: %s", clientAddr.String(), *internalIpAddr)
 
 	// Use internal IP as key
 	intIPToUDPClientAddr.Store(*internalIpAddr, &UDPClient{
