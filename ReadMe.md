@@ -74,7 +74,7 @@ gen
     "InterfaceAddress": "10.0.1.2",
     "ConnectionIP": "46.226.163.79",
     "ConnectionPort": ":9090",
-    "Protocol": "tcp"
+    "Protocol": "udp"
   },
   "Ed25519PublicKey": "X7zGjLlcULRCIa4XfNm4v/RYnmN7UDgI+r1ySKs6WX4=",
   "TCPWriteChannelBufferSize": 1000,
