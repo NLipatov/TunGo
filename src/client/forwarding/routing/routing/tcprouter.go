@@ -1,4 +1,4 @@
-package routers
+package routing
 
 import (
 	"context"
@@ -9,14 +9,14 @@ import (
 	"sync"
 	"time"
 	"tungo/client/forwarding/clienttunconf"
-	"tungo/client/forwarding/routing/connHandling"
+	"tungo/client/forwarding/routing/routing/connHandling"
 	"tungo/handshake/ChaCha20"
 	"tungo/handshake/ChaCha20/handshakeHandlers"
 	"tungo/network/keepalive"
 	"tungo/settings"
 )
 
-func StartTCPRouting(settings settings.ConnectionSettings, ctx context.Context) error {
+func startTCPRouting(settings settings.ConnectionSettings, ctx context.Context) error {
 	tunFile := clienttunconf.ConfigureWithSettings(settings)
 	defer func() {
 		_ = tunFile.Close()
