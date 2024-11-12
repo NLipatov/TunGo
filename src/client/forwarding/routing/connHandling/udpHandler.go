@@ -78,7 +78,6 @@ func UDPToTun(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ct
 		case <-ctx.Done(): // Stop-signal
 			return
 		default:
-			_ = conn.SetReadDeadline(time.Now().Add(time.Second * 10))
 			n, _, err := conn.ReadFromUDP(buf)
 			if err != nil {
 				if ctx.Err() != nil {
