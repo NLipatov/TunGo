@@ -75,7 +75,7 @@ func ToTCP(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx conte
 					return
 				}
 				log.Printf("failed to read from TUN: %v", err)
-				continue
+				connCancel()
 			}
 
 			encryptedPacket, _, _, err := session.Encrypt(buf[:n])
@@ -106,7 +106,6 @@ func ToTun(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx conte
 	go func() {
 		<-ctx.Done()
 		_ = conn.Close()
-		_ = tunFile.Close()
 	}()
 
 	for {
@@ -121,7 +120,6 @@ func ToTun(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx conte
 				}
 				log.Printf("read from TCP failed: %v", err)
 				connCancel()
-				return
 			}
 
 			//read packet length from 4-byte length prefix

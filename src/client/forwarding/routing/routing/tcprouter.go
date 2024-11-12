@@ -30,13 +30,33 @@ func startTCPRouting(settings settings.ConnectionSettings, ctx context.Context) 
 
 		session, registrationErr := register(&conn, settings)
 		if registrationErr != nil {
-			log.Fatalf("failed to register: %s", registrationErr)
+			log.Printf("failed to register: %s", registrationErr)
+			time.Sleep(time.Second * 1)
 		}
 
 		// Create a child context for managing data forwarding goroutines
 		connCtx, connCancel := context.WithCancel(ctx)
+
+		// Start a goroutine to monitor context cancellation and close the connection
+		go func() {
+			<-connCtx.Done()
+			_ = conn.Close()
+			return
+		}()
+
 		forwardIPPackets(&conn, tunFile, session, connCtx, connCancel)
-		return conn.Close()
+
+		// After goroutines finish, check if shutdown was initiated
+		if ctx.Err() != nil {
+			log.Println("client is shutting down.")
+			return nil
+		} else {
+			// Connection lost unexpectedly, attempt to reconnect
+			log.Println("connection lost, attempting to reconnect...")
+		}
+
+		// Close the connection (if not already closed)
+		_ = conn.Close()
 	}
 }
 
@@ -108,7 +128,4 @@ func forwardIPPackets(conn *net.Conn, tunFile *os.File, session *ChaCha20.Sessio
 	}()
 
 	wg.Wait()
-
-	close(sendKeepaliveCh)
-	close(receiveKeepaliveCh)
 }
