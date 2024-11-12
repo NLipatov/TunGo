@@ -59,7 +59,7 @@ func startUDPRouting(settings settings.ConnectionSettings, ctx context.Context) 
 		// After goroutines finish, check if shutdown was initiated
 		if ctx.Err() != nil {
 			log.Println("client is shutting down.")
-			return err
+			return nil
 		} else {
 			// Connection lost unexpectedly, attempt to reconnect
 			log.Println("connection lost, attempting to reconnect...")
