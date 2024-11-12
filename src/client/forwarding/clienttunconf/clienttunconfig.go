@@ -1,15 +1,38 @@
-package clientipconf
+package clienttunconf
 
 import (
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"tungo/network/ip"
 	"tungo/network/iptables"
 	"tungo/settings"
 )
 
-func Configure(connSettings settings.ConnectionSettings) error {
+// ConfigureWithSettings configures a client TUN device
+func ConfigureWithSettings(s settings.ConnectionSettings) *os.File {
+	// configureTUN client
+	if udpConfigurationErr := configureTUN(s); udpConfigurationErr != nil {
+		log.Fatalf("failed to configure client: %v", udpConfigurationErr)
+	}
+
+	// sets client's TUN device maximum transmission unit (MTU)
+	if setMtuErr := ip.SetMtu(s.InterfaceName, s.MTU); setMtuErr != nil {
+		log.Fatalf("failed to set %d MTU for %s: %s", s.MTU, s.InterfaceName, setMtuErr)
+	}
+
+	// opens the TUN device
+	tunFile, openTunErr := ip.OpenTunByName(s.InterfaceName)
+	if openTunErr != nil {
+		log.Fatalf("failed to open TUN interface: %v", openTunErr)
+	}
+
+	return tunFile
+}
+
+// configureTUN Configures client's TUN device (creates the TUN device, assigns an IP to it, etc)
+func configureTUN(connSettings settings.ConnectionSettings) error {
 	// Delete existing link if any
 	_, _ = ip.LinkDel(connSettings.InterfaceName)
 
@@ -71,7 +94,8 @@ func Configure(connSettings settings.ConnectionSettings) error {
 	return nil
 }
 
-func Unconfigure(connectionSettings settings.ConnectionSettings) {
+// Deconfigure does the de-configuration client device by deleting route to sever and TUN-device
+func Deconfigure(connectionSettings settings.ConnectionSettings) {
 	hostIp, devName := connectionSettings.ConnectionIP, connectionSettings.InterfaceName
 	// Delete the route to the host IP
 	if err := ip.RouteDel(hostIp); err != nil {

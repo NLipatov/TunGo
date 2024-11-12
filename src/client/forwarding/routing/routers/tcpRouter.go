@@ -1,4 +1,4 @@
-package routing
+package routers
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"os"
 	"sync"
 	"time"
-	"tungo/client/forwarding/clientipconf"
+	"tungo/client/forwarding/clienttunconf"
 	"tungo/client/forwarding/routing/connHandling"
 	"tungo/handshake/ChaCha20"
 	"tungo/handshake/ChaCha20/handshakeHandlers"
@@ -16,7 +16,11 @@ import (
 	"tungo/settings"
 )
 
-func startTCPRouting(settings settings.ConnectionSettings, tunFile *os.File, ctx context.Context) error {
+func StartTCPRouting(settings settings.ConnectionSettings, ctx context.Context) error {
+	tunFile := clienttunconf.ConfigureWithSettings(settings)
+	defer func() {
+		_ = tunFile.Close()
+	}()
 	for {
 		conn, connectionError := connect(settings, ctx)
 		if connectionError != nil {
@@ -50,7 +54,7 @@ func connect(settings settings.ConnectionSettings, ctx context.Context) (net.Con
 			log.Printf("failed to connect to server: %v", err)
 			reconnectAttempts++
 			if reconnectAttempts > maxReconnectAttempts {
-				clientipconf.Unconfigure(settings)
+				clienttunconf.Deconfigure(settings)
 				log.Fatalf("exceeded maximum reconnect attempts (%d)", maxReconnectAttempts)
 			}
 			log.Printf("retrying to connect in %v...", backoff)
