@@ -17,12 +17,16 @@ import (
 )
 
 func startUDPRouting(settings settings.ConnectionSettings, ctx context.Context) error {
-	tunFile := clienttunconf.ConfigureWithSettings(settings)
+	var tunFile *os.File
 	defer func() {
 		_ = tunFile.Close()
 	}()
+	defer clienttunconf.Deconfigure(settings)
 
 	for {
+		_ = tunFile.Close()
+		tunFile = clienttunconf.Configure(settings)
+
 		conn, connectionError := establishUDPConnection(settings, ctx)
 		if connectionError != nil {
 			log.Printf("failed to establish connection: %s", connectionError)

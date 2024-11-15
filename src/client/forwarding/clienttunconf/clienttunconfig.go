@@ -10,8 +10,10 @@ import (
 	"tungo/settings"
 )
 
-// ConfigureWithSettings configures a client TUN device
-func ConfigureWithSettings(s settings.ConnectionSettings) *os.File {
+// Configure configures a client TUN device
+func Configure(s settings.ConnectionSettings) *os.File {
+	Deconfigure(s)
+
 	// configureTUN client
 	if udpConfigurationErr := configureTUN(s); udpConfigurationErr != nil {
 		log.Fatalf("failed to configure client: %v", udpConfigurationErr)
