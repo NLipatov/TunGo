@@ -16,17 +16,22 @@ It uses Ed25519 for key exchange and ChaCha20 for traffic encryption between the
 Start the server in a Docker container using the following command:
 
 ### Important: **Replace 'ServerIP' with an IP of your server**
-Args:
-- EnableUDP - tells server-app if UDP should be enabled (PORT 9090);
-- EnableTCP - tells server-app if TCP should be enabled (PORT 8080);
-- ServerIP - generated client configs will contain this IP as a server IP. 
+env variables:
+- **EnableUDP** - tells server-app if UDP should be enabled (PORT 9090);
+- **EnableTCP** - tells server-app if TCP should be enabled (PORT 8080);
+- **ServerIP** - generated client configs will contain this IP as a server IP. 
+
+ports:
+
+- 8080 - default TCP port;
+- 9090 - default UDP port.
+
+(Default port values can be set in `settings/server/conf.json`)
 
 ```bash
 sudo docker run --restart always -it --network host --device=/dev/net/tun --cap-add=NET_ADMIN \
-    -p 8080:8080 -p 9090:9090 \
     -e EnableUDP=true  \
     -e EnableTCP=false \
-    -e ServerIP="192.168.122.194" \
     -v tungo_src:/src \
     nlipatov/tungo:tungo
 ```
