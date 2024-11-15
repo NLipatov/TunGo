@@ -132,3 +132,22 @@ func SetMtu(devName string, mtu int) error {
 	}
 	return err
 }
+
+// InterfaceIpAddr resolves an IP address (IPv4 or IPv6) assigned to interface
+func InterfaceIpAddr(ipV int, ifName string) (string, error) {
+	cmd := exec.Command("sh", "-c", fmt.Sprintf(
+		`ip -%v -o addr show dev %v | awk '{print $4}' | cut -d'/' -f1`, ipV, ifName))
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf(
+			"failed to get IP for interface %s: %v (%s)", ifName, err, strings.TrimSpace(string(output)))
+	}
+
+	ip := strings.TrimSpace(string(output))
+	if ip == "" {
+		return "", fmt.Errorf("no IP address found for interface %s", ifName)
+	}
+
+	return ip, nil
+}
