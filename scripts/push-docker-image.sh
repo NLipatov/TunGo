@@ -6,6 +6,9 @@ fi
 
 REPO="$1"
 
+#Discard local changes
+git reset --hard
+
 #Delete previous images
 docker image rm tungo:latest "$REPO"/tungo:tungo -f
 
