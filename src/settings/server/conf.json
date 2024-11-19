@@ -6,7 +6,7 @@
     "ConnectionIP": "",
     "Port": ":8080",
     "MTU": 1500,
-    "SessionMarker": "SEND_NUDES",
+    "SessionMarker": "DEEP_PORT_PROBING",
     "Protocol": "tcp"
   },
   "UDPSettings": {
@@ -16,7 +16,7 @@
     "ConnectionIP": "",
     "Port": ":9090",
     "MTU": 1475,
-    "SessionMarker": "SEND_NUDES",
+    "SessionMarker": "ACK_IS_FOR_LOSERS",
     "Protocol": "udp"
   },
   "FallbackServerAddress": "",
