@@ -2,8 +2,8 @@ package routing
 
 import (
 	"fmt"
-	"tungo/client/forwarding/routing/tuntcp"
-	"tungo/client/forwarding/routing/tunudp"
+	"tungo/client/routing/tuntcp"
+	"tungo/client/routing/tunudp"
 	"tungo/settings"
 	"tungo/settings/client"
 )

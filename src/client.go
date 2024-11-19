@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"log"
-	"tungo/client/forwarding/routing"
+	"tungo/client/routing"
 	"tungo/cmd"
 	"tungo/settings/client"
 )

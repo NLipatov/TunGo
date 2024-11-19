@@ -35,7 +35,7 @@ func FromTun(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ctx
 					return
 				}
 				log.Printf("failed to read from TUN: %v", err)
-				continue
+				connCancel()
 			}
 
 			encryptedPacket, high, low, err := session.Encrypt(buf[:n])
