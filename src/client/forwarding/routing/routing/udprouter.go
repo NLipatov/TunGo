@@ -33,7 +33,7 @@ func startUDPRouting(settings settings.ConnectionSettings, ctx context.Context) 
 			continue // Retry connection
 		}
 
-		_, err := conn.Write([]byte("REG"))
+		_, err := conn.Write([]byte(settings.SessionMarker))
 		if err != nil {
 			log.Fatalf("failed to send reg request to server")
 		}
@@ -58,7 +58,7 @@ func startUDPRouting(settings settings.ConnectionSettings, ctx context.Context) 
 			return
 		}()
 
-		startUDPForwarding(conn, tunFile, session, &connCtx, &connCancel)
+		startUDPForwarding(settings, conn, tunFile, session, &connCtx, &connCancel)
 
 		// After goroutines finish, check if shutdown was initiated
 		if ctx.Err() != nil {
@@ -79,7 +79,7 @@ func establishUDPConnection(settings settings.ConnectionSettings, ctx context.Co
 	backoff := initialBackoff
 
 	for {
-		serverAddr := fmt.Sprintf("%s%s", settings.ConnectionIP, settings.ConnectionPort)
+		serverAddr := fmt.Sprintf("%s%s", settings.ConnectionIP, settings.Port)
 
 		udpAddr, err := net.ResolveUDPAddr("udp", serverAddr)
 		if err != nil {
@@ -114,7 +114,7 @@ func establishUDPConnection(settings settings.ConnectionSettings, ctx context.Co
 	}
 }
 
-func startUDPForwarding(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, connCtx *context.Context, connCancel *context.CancelFunc) {
+func startUDPForwarding(settings settings.ConnectionSettings, conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, connCtx *context.Context, connCancel *context.CancelFunc) {
 	sendKeepAliveCommandChan := make(chan bool, 1)
 	connPacketReceivedChan := make(chan bool, 1)
 	go keepalive.StartConnectionProbing(*connCtx, *connCancel, sendKeepAliveCommandChan, connPacketReceivedChan)
@@ -131,7 +131,7 @@ func startUDPForwarding(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.S
 	// UDP -> TUN
 	go func() {
 		defer wg.Done()
-		connHandling.UDPToTun(conn, tunFile, session, *connCtx, *connCancel, connPacketReceivedChan)
+		connHandling.UDPToTun(settings, conn, tunFile, session, *connCtx, *connCancel, connPacketReceivedChan)
 	}()
 
 	wg.Wait()

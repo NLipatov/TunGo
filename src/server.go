@@ -77,7 +77,7 @@ func startTCPServer(settings settings.ConnectionSettings) error {
 		_ = tunFile.Close()
 	}()
 
-	err = routing.StartTCPRouting(tunFile, settings.ConnectionPort)
+	err = routing.StartTCPRouting(tunFile, settings)
 	if err != nil {
 		return err
 	}
@@ -94,7 +94,7 @@ func startUDPServer(settings settings.ConnectionSettings) error {
 		_ = tunFile.Close()
 	}()
 
-	err = routing.StartUDPRouting(tunFile, settings.ConnectionPort)
+	err = routing.StartUDPRouting(tunFile, settings)
 	if err != nil {
 		return err
 	}

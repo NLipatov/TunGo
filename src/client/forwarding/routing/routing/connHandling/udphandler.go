@@ -10,6 +10,7 @@ import (
 	"tungo/network"
 	"tungo/network/ip"
 	"tungo/network/keepalive"
+	"tungo/settings"
 )
 
 func TunToUDP(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ctx context.Context, connCancel context.CancelFunc, sendKeepAliveChan chan bool) {
@@ -65,7 +66,7 @@ func writeOrReconnect(conn *net.UDPConn, data *[]byte, ctx context.Context, conn
 	}
 }
 
-func UDPToTun(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ctx context.Context, connCancel context.CancelFunc, receiveKeepAliveChan chan bool) {
+func UDPToTun(settings settings.ConnectionSettings, conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ctx context.Context, connCancel context.CancelFunc, receiveKeepAliveChan chan bool) {
 	buf := make([]byte, ip.MaxPacketLengthBytes)
 
 	go func() {
@@ -88,7 +89,7 @@ func UDPToTun(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ct
 				return
 			}
 
-			if len(buf[:n]) == 3 && string(buf[:n]) == "REG" {
+			if len(buf[:n]) == 3 && string(buf[:n]) == settings.SessionMarker {
 				log.Printf("re-registration request by server")
 				connCancel()
 				return

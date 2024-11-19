@@ -13,6 +13,7 @@ import (
 	"tungo/network/ip"
 	"tungo/network/keepalive"
 	"tungo/network/packets"
+	"tungo/settings"
 )
 
 var clientAddrToInternalIP sync.Map
@@ -122,8 +123,8 @@ type UDPClientPacket struct {
 	payload []byte
 }
 
-func UDPToTun(listenPort string, tunFile *os.File, intIPToUDPClientAddr *sync.Map, intIPToSession *sync.Map, ctx context.Context) {
-	addr, err := net.ResolveUDPAddr("udp", listenPort)
+func UDPToTun(settings settings.ConnectionSettings, tunFile *os.File, intIPToUDPClientAddr *sync.Map, intIPToSession *sync.Map, ctx context.Context) {
+	addr, err := net.ResolveUDPAddr("udp", settings.Port)
 	if err != nil {
 		log.Fatalf("failed to resolve udp address: %s", err)
 		return
@@ -137,7 +138,7 @@ func UDPToTun(listenPort string, tunFile *os.File, intIPToUDPClientAddr *sync.Ma
 		_ = conn.Close()
 	}(conn)
 
-	log.Printf("server listening on port udp:%s", listenPort)
+	log.Printf("server listening on port %s (UDP)", settings.Port)
 
 	go func() {
 		<-ctx.Done()
@@ -161,7 +162,7 @@ func UDPToTun(listenPort string, tunFile *os.File, intIPToUDPClientAddr *sync.Ma
 
 			intIPValue, exists := clientAddrToInternalIP.Load(clientAddr.String())
 			if !exists {
-				if len(buf[:n]) == 3 && string(buf[:n]) == "REG" {
+				if len(buf[:n]) == 3 && string(buf[:n]) == settings.SessionMarker {
 					intIPToSession.Delete(intIPValue)
 					intIPToUDPClientAddr.Delete(intIPValue)
 					clientAddrToInternalIP.Delete(clientAddr.String())
@@ -172,7 +173,7 @@ func UDPToTun(listenPort string, tunFile *os.File, intIPToUDPClientAddr *sync.Ma
 				regErr := udpRegisterClient(conn, *clientAddr, buf[:n], intIPToUDPClientAddr, intIPToSession)
 				if regErr != nil {
 					log.Printf("%s failed registration: %s\n", clientAddr.String(), regErr)
-					_, _ = conn.WriteToUDP([]byte("REG"), clientAddr)
+					_, _ = conn.WriteToUDP([]byte(settings.SessionMarker), clientAddr)
 				}
 				continue
 			}

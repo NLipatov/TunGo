@@ -18,8 +18,9 @@ type ConnectionSettings struct {
 	InterfaceIPCIDR  string `json:"InterfaceIPCIDR"`
 	InterfaceAddress string `json:"InterfaceAddress"`
 	ConnectionIP     string `json:"ConnectionIP"`
-	ConnectionPort   string `json:"ConnectionPort"`
+	Port             string `json:"Port"`
 	MTU              int    `json:"MTU"`
+	SessionMarker    string `json:"SessionMarker"`
 	Protocol         Protocol
 }
 

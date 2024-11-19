@@ -8,9 +8,10 @@ import (
 	"tungo/cmd"
 	"tungo/server/forwarding"
 	"tungo/server/forwarding/serveripconf"
+	"tungo/settings"
 )
 
-func StartTCPRouting(tunFile *os.File, listenPort string) error {
+func StartTCPRouting(tunFile *os.File, settings settings.ConnectionSettings) error {
 	// Create a context that can be canceled
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -41,14 +42,14 @@ func StartTCPRouting(tunFile *os.File, listenPort string) error {
 	// TCP -> TUN
 	go func() {
 		defer wg.Done()
-		forwarding.TCPToTun(listenPort, tunFile, &extToLocalIp, &extIpToSession, ctx)
+		forwarding.TCPToTun(settings, tunFile, &extToLocalIp, &extIpToSession, ctx)
 	}()
 
 	wg.Wait()
 	return nil
 }
 
-func StartUDPRouting(tunFile *os.File, listenPort string) error {
+func StartUDPRouting(tunFile *os.File, settings settings.ConnectionSettings) error {
 	// Create a context that can be canceled
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -79,7 +80,7 @@ func StartUDPRouting(tunFile *os.File, listenPort string) error {
 	// UDP -> TUN
 	go func() {
 		defer wg.Done()
-		forwarding.UDPToTun(listenPort, tunFile, &intIPToUDPClient, &intIPToSession, ctx)
+		forwarding.UDPToTun(settings, tunFile, &intIPToUDPClient, &intIPToSession, ctx)
 	}()
 
 	wg.Wait()

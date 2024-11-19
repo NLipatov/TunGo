@@ -31,7 +31,7 @@ func SetupServerTun(settings settings.ConnectionSettings) (*os.File, error) {
 	if err != nil {
 		log.Fatalf("failed to conver server ip to CIDR format: %s", err)
 	}
-	fmt.Printf("assigned IP %s to interface %s\n", settings.ConnectionPort, settings.InterfaceName)
+	fmt.Printf("assigned IP %s to interface %s\n", settings.Port, settings.InterfaceName)
 
 	setMtuErr := ip.SetMtu(settings.InterfaceName, settings.MTU)
 	if setMtuErr != nil {

@@ -4,8 +4,9 @@
     "InterfaceIPCIDR": "10.0.0.0/24",
     "InterfaceAddress": "10.0.0.1",
     "ConnectionIP": "",
-    "ConnectionPort": ":8080",
+    "Port": ":8080",
     "MTU": 1500,
+    "SessionMarker": "REG",
     "Protocol": "tcp"
   },
   "UDPSettings": {
@@ -13,8 +14,9 @@
     "InterfaceIPCIDR": "10.0.1.0/24",
     "InterfaceAddress": "",
     "ConnectionIP": "",
-    "ConnectionPort": ":9090",
+    "Port": ":9090",
     "MTU": 1475,
+    "SessionMarker": "REG",
     "Protocol": "udp"
   },
   "FallbackServerAddress": "",

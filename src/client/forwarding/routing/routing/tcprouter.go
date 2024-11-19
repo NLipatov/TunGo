@@ -72,7 +72,7 @@ func connect(settings settings.ConnectionSettings, ctx context.Context) (net.Con
 	for {
 		dialer := &net.Dialer{}
 		dialCtx, dialCancel := context.WithTimeout(ctx, connectionTimeout)
-		conn, err := dialer.DialContext(dialCtx, "tcp", fmt.Sprintf("%s%s", settings.ConnectionIP, settings.ConnectionPort))
+		conn, err := dialer.DialContext(dialCtx, "tcp", fmt.Sprintf("%s%s", settings.ConnectionIP, settings.Port))
 		dialCancel()
 
 		if err != nil {

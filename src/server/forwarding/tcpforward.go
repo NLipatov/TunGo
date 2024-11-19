@@ -13,6 +13,7 @@ import (
 	"tungo/network"
 	"tungo/network/keepalive"
 	"tungo/network/packets"
+	"tungo/settings"
 	"tungo/settings/server"
 )
 
@@ -85,15 +86,15 @@ func TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.
 	}
 }
 
-func TCPToTun(listenPort string, tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map, ctx context.Context) {
-	listener, err := net.Listen("tcp", listenPort)
+func TCPToTun(settings settings.ConnectionSettings, tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map, ctx context.Context) {
+	listener, err := net.Listen("tcp", settings.Port)
 	if err != nil {
-		log.Printf("failed to listen on port %s: %v", listenPort, err)
+		log.Printf("failed to listen on port %s: %v", settings.Port, err)
 	}
 	defer func() {
 		_ = listener.Close()
 	}()
-	log.Printf("server listening on port tcp:%s", listenPort)
+	log.Printf("server listening on port %s (TCP)", settings.Port)
 
 	//using this goroutine to 'unblock' Listener.Accept blocking-call
 	go func() {
