@@ -1,4 +1,4 @@
-package connHandling
+package tunudp
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 	"tungo/settings"
 )
 
-func TunToUDP(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ctx context.Context, connCancel context.CancelFunc, sendKeepAliveChan chan bool) {
+func FromTun(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ctx context.Context, connCancel context.CancelFunc, sendKeepAliveChan chan bool) {
 	buf := make([]byte, ip.MaxPacketLengthBytes)
 
 	// Main loop to read from TUN and send data
@@ -66,7 +66,7 @@ func writeOrReconnect(conn *net.UDPConn, data *[]byte, ctx context.Context, conn
 	}
 }
 
-func UDPToTun(settings settings.ConnectionSettings, conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ctx context.Context, connCancel context.CancelFunc, receiveKeepAliveChan chan bool) {
+func ToTun(settings settings.ConnectionSettings, conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ctx context.Context, connCancel context.CancelFunc, receiveKeepAliveChan chan bool) {
 	buf := make([]byte, ip.MaxPacketLengthBytes)
 
 	go func() {
@@ -89,7 +89,7 @@ func UDPToTun(settings settings.ConnectionSettings, conn *net.UDPConn, tunFile *
 				return
 			}
 
-			if len(buf[:n]) == 3 && string(buf[:n]) == settings.SessionMarker {
+			if len(buf[:n]) == len(settings.SessionMarker) && string(buf[:n]) == settings.SessionMarker {
 				log.Printf("re-registration request by server")
 				connCancel()
 				return

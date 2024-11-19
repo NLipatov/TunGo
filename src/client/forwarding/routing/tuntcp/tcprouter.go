@@ -1,4 +1,4 @@
-package routing
+package tuntcp
 
 import (
 	"context"
@@ -8,32 +8,35 @@ import (
 	"os"
 	"sync"
 	"time"
-	"tungo/client/forwarding/clienttunconf"
-	"tungo/client/forwarding/routing/routing/connHandling"
+	"tungo/client/forwarding/tunconf"
 	"tungo/handshake/ChaCha20"
 	"tungo/handshake/ChaCha20/handshakeHandlers"
 	"tungo/network/keepalive"
 	"tungo/settings"
 )
 
-func startTCPRouting(settings settings.ConnectionSettings, ctx context.Context) error {
+type TCPRouter struct {
+	Settings settings.ConnectionSettings
+}
+
+func (tr *TCPRouter) ForwardTraffic(ctx context.Context) error {
 	var tunFile *os.File
 	defer func() {
 		_ = tunFile.Close()
 	}()
-	defer clienttunconf.Deconfigure(settings)
+	defer tunconf.Deconfigure(tr.Settings)
 
 	for {
 		_ = tunFile.Close()
-		tunFile = clienttunconf.Configure(settings)
+		tunFile = tunconf.Configure(tr.Settings)
 
-		conn, connectionError := connect(settings, ctx)
+		conn, connectionError := connect(tr.Settings, ctx)
 		if connectionError != nil {
 			log.Printf("failed to establish connection: %s", connectionError)
 			continue // Retry connection
 		}
 
-		session, registrationErr := register(&conn, settings)
+		session, registrationErr := register(&conn, tr.Settings)
 		if registrationErr != nil {
 			log.Printf("failed to register: %s", registrationErr)
 			time.Sleep(time.Second * 1)
@@ -79,7 +82,7 @@ func connect(settings settings.ConnectionSettings, ctx context.Context) (net.Con
 			log.Printf("failed to connect to server: %v", err)
 			reconnectAttempts++
 			if reconnectAttempts > maxReconnectAttempts {
-				clienttunconf.Deconfigure(settings)
+				tunconf.Deconfigure(settings)
 				log.Fatalf("exceeded maximum reconnect attempts (%d)", maxReconnectAttempts)
 			}
 			log.Printf("retrying to connect in %v...", backoff)
@@ -123,13 +126,13 @@ func forwardIPPackets(conn *net.Conn, tunFile *os.File, session *ChaCha20.Sessio
 	// TUN -> TCP
 	go func() {
 		defer wg.Done()
-		connHandling.ToTCP(*conn, tunFile, session, connCtx, connCancel, sendKeepaliveCh)
+		ToTCP(*conn, tunFile, session, connCtx, connCancel, sendKeepaliveCh)
 	}()
 
 	// TCP -> TUN
 	go func() {
 		defer wg.Done()
-		connHandling.ToTun(*conn, tunFile, session, connCtx, connCancel, receiveKeepaliveCh)
+		ToTun(*conn, tunFile, session, connCtx, connCancel, receiveKeepaliveCh)
 	}()
 
 	wg.Wait()
