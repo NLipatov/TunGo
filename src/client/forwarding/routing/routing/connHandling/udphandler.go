@@ -89,7 +89,7 @@ func UDPToTun(settings settings.ConnectionSettings, conn *net.UDPConn, tunFile *
 				return
 			}
 
-			if len(buf[:n]) == 3 && string(buf[:n]) == settings.SessionMarker {
+			if len(buf[:n]) == len(settings.SessionMarker) && string(buf[:n]) == settings.SessionMarker {
 				log.Printf("re-registration request by server")
 				connCancel()
 				return

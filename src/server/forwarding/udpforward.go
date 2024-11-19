@@ -162,7 +162,7 @@ func UDPToTun(settings settings.ConnectionSettings, tunFile *os.File, intIPToUDP
 
 			intIPValue, exists := clientAddrToInternalIP.Load(clientAddr.String())
 			if !exists {
-				if len(buf[:n]) == 3 && string(buf[:n]) == settings.SessionMarker {
+				if len(buf[:n]) == len(settings.SessionMarker) && string(buf[:n]) == settings.SessionMarker {
 					intIPToSession.Delete(intIPValue)
 					intIPToUDPClientAddr.Delete(intIPValue)
 					clientAddrToInternalIP.Delete(clientAddr.String())
