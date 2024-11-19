@@ -1,4 +1,4 @@
-package clienttunconf
+package tunconf
 
 import (
 	"fmt"

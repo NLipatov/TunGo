@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"log"
-	"tungo/client/forwarding/routing/routing"
+	"tungo/client/forwarding/routing"
 	"tungo/cmd"
 	"tungo/settings/client"
 )
@@ -22,9 +22,13 @@ func main() {
 		log.Fatalf("failed to read configuration: %v", err)
 	}
 
-	clientRouter := routing.ClientRouter{}
+	routerFactory := routing.NewRouterFactory()
+	router, factoryErr := routerFactory.CreateRouter(*conf)
+	if factoryErr != nil {
+		log.Fatalf("failed to create a %s router: %s", conf.Protocol, factoryErr)
+	}
 
-	routingErr := clientRouter.Route(*conf, ctx)
+	routingErr := router.ForwardTraffic(ctx)
 	if routingErr != nil {
 		log.Printf("failed to route trafic: %s", routingErr)
 	}
