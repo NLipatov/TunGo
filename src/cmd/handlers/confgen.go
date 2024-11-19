@@ -1,15 +1,32 @@
-package confgen
+package handlers
 
 import (
+	"encoding/json"
 	"fmt"
+	"log"
 	"tungo/network/ip"
 	"tungo/settings"
 	"tungo/settings/client"
 	"tungo/settings/server"
 )
 
-// Generate generates new client configuration
-func Generate() (*client.Conf, error) {
+func GenerateNewClientConf() error {
+	newConf, err := generate()
+	if err != nil {
+		log.Fatalf("failed to generate client conf: %s\n", err)
+	}
+
+	marshalled, err := json.MarshalIndent(newConf, "", "  ")
+	if err != nil {
+		log.Fatalf("failed to marshalize client conf: %s\n", err)
+	}
+
+	fmt.Println(string(marshalled))
+	return nil
+}
+
+// generate generates new client configuration
+func generate() (*client.Conf, error) {
 	serverConf, err := (&server.Conf{}).Read()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read server configuration: %s", err)
