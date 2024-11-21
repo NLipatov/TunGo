@@ -24,9 +24,9 @@ type ConnectionSettings struct {
 	Protocol         Protocol
 }
 
-func (p Protocol) MarshalJSON() ([]byte, error) {
+func (p *Protocol) MarshalJSON() ([]byte, error) {
 	var protocolStr string
-	switch p {
+	switch *p {
 	case TCP:
 		protocolStr = "tcp"
 	case UDP:
