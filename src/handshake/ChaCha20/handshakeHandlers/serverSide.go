@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net"
 	"tungo/handshake/ChaCha20"
+	"tungo/network"
 	"tungo/settings/server"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -16,7 +16,7 @@ import (
 	"golang.org/x/crypto/hkdf"
 )
 
-func OnClientConnected(conn net.Conn) (*ChaCha20.Session, *string, error) {
+func OnClientConnected(conn network.ConnectionAdapter) (*ChaCha20.Session, *string, error) {
 	conf, err := (&server.Conf{}).Read()
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to read server conf: %s", err)
