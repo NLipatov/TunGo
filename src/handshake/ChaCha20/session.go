@@ -70,8 +70,8 @@ func (s *Session) DecryptViaNonceBuf(ciphertext []byte, nonce Nonce) ([]byte, ui
 	}
 
 	nonceBytes := Encode(nonce.High, nonce.Low)
-	aad := s.CreateAAD(!s.isServer, nonceBytes)
-	plaintext, err := s.recvCipher.Open(ciphertext[:0], nonceBytes, ciphertext, aad)
+	aad := s.CreateAAD(!s.isServer, nonceBytes[:])
+	plaintext, err := s.recvCipher.Open(ciphertext[:0], nonceBytes[:], ciphertext, aad)
 	if err != nil {
 		// Properly handle failed decryption attempt to avoid reuse of any state
 		return nil, nonce.High, nonce.Low, fmt.Errorf("failed to decrypt: %w", err)
