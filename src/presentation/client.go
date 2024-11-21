@@ -25,7 +25,7 @@ func StartClient() {
 	routerFactory := routing.NewRouterFactory()
 	router, factoryErr := routerFactory.CreateRouter(*conf)
 	if factoryErr != nil {
-		log.Fatalf("failed to create a %s router: %s", conf.Protocol, factoryErr)
+		log.Fatalf("failed to create a %v router: %s", conf.Protocol, factoryErr)
 	}
 
 	routingErr := router.ForwardTraffic(ctx)

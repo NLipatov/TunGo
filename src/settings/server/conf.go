@@ -103,7 +103,9 @@ func (s *Conf) RewriteConf() error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func(file *os.File) {
+		_ = file.Close()
+	}(file)
 
 	_, err = file.Write(jsonContent)
 	if err != nil {
