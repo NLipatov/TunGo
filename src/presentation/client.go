@@ -1,4 +1,4 @@
-package main
+package presentation
 
 import (
 	"context"
@@ -8,13 +8,13 @@ import (
 	"tungo/settings/client"
 )
 
-func main() {
+func StartClient() {
 	// Create a context that can be canceled
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	// Start a goroutine to listen for user input
-	go cmd.ListenForCommand(cancel)
+	go cmd.ListenForCommand(cancel, "client")
 
 	// Read client configuration
 	conf, err := (&client.Conf{}).Read()

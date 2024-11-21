@@ -17,7 +17,7 @@ func StartTCPRouting(tunFile *os.File, settings settings.ConnectionSettings) err
 	defer cancel()
 
 	// Start a goroutine to listen for user input
-	go cmd.ListenForCommand(cancel)
+	go cmd.ListenForCommand(cancel, "server")
 
 	// Setup server
 	err := serveripconf.Configure(tunFile)
@@ -55,7 +55,7 @@ func StartUDPRouting(tunFile *os.File, settings settings.ConnectionSettings) err
 	defer cancel()
 
 	// Start a goroutine to listen for user input
-	go cmd.ListenForCommand(cancel)
+	go cmd.ListenForCommand(cancel, "server")
 
 	// Setup server
 	err := serveripconf.Configure(tunFile)
