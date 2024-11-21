@@ -25,7 +25,7 @@ func main() {
 		fmt.Println("🚀 Starting server...")
 		presentation.StartServer()
 	case ClientMode:
-		fmt.Println("🔒 Connecting...")
+		fmt.Println("🛡️ Starting client...")
 		presentation.StartClient()
 	default:
 		fmt.Printf("Unknown mode: %s\n", mode)
