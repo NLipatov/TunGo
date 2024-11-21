@@ -22,8 +22,6 @@ func (n *Nonce) incrementNonce() ([]byte, uint32, uint64, error) {
 		return nil, 0, 0, fmt.Errorf("nonce overflow: maximum number of messages reached")
 	}
 
-	nonce := make([]byte, 12)
-
 	if atomic.LoadUint64(&n.Low) == ^uint64(0) {
 		atomic.AddUint32(&n.High, 1)
 		atomic.StoreUint64(&n.Low, 0)
@@ -33,32 +31,23 @@ func (n *Nonce) incrementNonce() ([]byte, uint32, uint64, error) {
 
 	lowVal := atomic.LoadUint64(&n.Low)
 	highVal := atomic.LoadUint32(&n.High)
+	nonce := Encode(highVal, lowVal)
 
-	for i := 0; i < 8; i++ {
-		nonce[i] = byte(lowVal >> (8 * i))
-	}
-	for i := 0; i < 4; i++ {
-		nonce[8+i] = byte(highVal >> (8 * i))
-	}
-
-	return nonce, highVal, lowVal, nil
-}
-
-func Encode(high uint32, low uint64) []byte {
-	nonce := make([]byte, 12)
-	for i := 0; i < 8; i++ {
-		nonce[i] = byte(low >> (8 * i))
-	}
-	for i := 0; i < 4; i++ {
-		nonce[8+i] = byte(high >> (8 * i))
-	}
-
-	return nonce
+	return nonce[:], highVal, lowVal, nil
 }
 
 func (n *Nonce) Hash() string {
-	var buf [12]byte
-	binary.BigEndian.PutUint64(buf[:8], n.Low)
-	binary.BigEndian.PutUint32(buf[8:], n.High)
-	return hex.EncodeToString(buf[:])
+	lowVal := atomic.LoadUint64(&n.Low)
+	highVal := atomic.LoadUint32(&n.High)
+	nonce := Encode(highVal, lowVal)
+
+	return hex.EncodeToString(nonce[:])
+}
+
+func Encode(high uint32, low uint64) [12]byte {
+	var nonce [12]byte
+	binary.BigEndian.PutUint64(nonce[:8], low)
+	binary.BigEndian.PutUint32(nonce[8:], high)
+
+	return nonce
 }

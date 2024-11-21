@@ -88,7 +88,12 @@ func OnConnectedToServer(conn net.Conn, settings settings.ConnectionSettings) (*
 		return nil, fmt.Errorf("failed to create client session: %s\n", err)
 	}
 
-	clientSession.SessionId = sha256.Sum256(append(sharedSecret, salt[:]...))
+	derivedSessionId, deriveSessionIdErr := ChaCha20.DeriveSessionId(sharedSecret, salt[:])
+	if deriveSessionIdErr != nil {
+		return nil, fmt.Errorf("failed to derive session id: %s", derivedSessionId)
+	}
+
+	clientSession.SessionId = derivedSessionId
 
 	return clientSession, nil
 }

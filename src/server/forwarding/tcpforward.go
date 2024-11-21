@@ -125,7 +125,9 @@ func TCPToTun(settings settings.ConnectionSettings, tunFile *os.File, localIpMap
 func registerClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, localIpToServerSessionMap *sync.Map, ctx context.Context) {
 	log.Printf("connected: %s", conn.RemoteAddr())
 
-	serverSession, internalIpAddr, err := handshakeHandlers.OnClientConnected(conn)
+	serverSession, internalIpAddr, err := handshakeHandlers.OnClientConnected(&network.TcpAdapter{
+		Conn: conn,
+	})
 	if err != nil {
 		_ = conn.Close()
 		log.Printf("conn closed: %s (regfail: %s)\n", conn.RemoteAddr(), err)

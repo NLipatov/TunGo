@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net"
 	"tungo/handshake/ChaCha20"
+	"tungo/network"
 	"tungo/settings/server"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -16,7 +16,7 @@ import (
 	"golang.org/x/crypto/hkdf"
 )
 
-func OnClientConnected(conn net.Conn) (*ChaCha20.Session, *string, error) {
+func OnClientConnected(conn network.ConnectionAdapter) (*ChaCha20.Session, *string, error) {
 	conf, err := (&server.Conf{}).Read()
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to read server conf: %s", err)
@@ -64,7 +64,7 @@ func OnClientConnected(conn net.Conn) (*ChaCha20.Session, *string, error) {
 
 	// Verify client signature
 	if !ed25519.Verify(clientHello.EdPublicKey, append(append(clientHello.CurvePublicKey, clientHello.ClientNonce...), serverNonce...), clientSignature.ClientSignature) {
-		return nil, nil, fmt.Errorf("client signature verification failed: %s\n", err)
+		return nil, nil, fmt.Errorf("client signature verification failed")
 	}
 
 	// Generate shared secret and salt
@@ -91,7 +91,12 @@ func OnClientConnected(conn net.Conn) (*ChaCha20.Session, *string, error) {
 		log.Fatalf("failed to create server session: %s\n", err)
 	}
 
-	serverSession.SessionId = sha256.Sum256(append(sharedSecret, salt[:]...))
+	derivedSessionId, deriveSessionIdErr := ChaCha20.DeriveSessionId(sharedSecret, salt[:])
+	if deriveSessionIdErr != nil {
+		return nil, nil, fmt.Errorf("failed to derive session id: %s", derivedSessionId)
+	}
+
+	serverSession.SessionId = derivedSessionId
 
 	return serverSession, &clientHello.IpAddress, nil
 }

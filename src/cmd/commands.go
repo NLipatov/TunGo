@@ -15,9 +15,9 @@ const (
 	generateClientConfCmd = "gen"
 )
 
-func ListenForCommand(cancelFunc context.CancelFunc) {
+func ListenForCommand(cancelFunc context.CancelFunc, mode string) {
 	scanner := bufio.NewScanner(os.Stdin)
-	fmt.Printf("Type '%s' to turn off the client\n", shutdownCmd)
+	fmt.Printf("Type '%s' to turn off the %s\n", shutdownCmd, mode)
 	for scanner.Scan() {
 		command := strings.TrimSpace(scanner.Text())
 

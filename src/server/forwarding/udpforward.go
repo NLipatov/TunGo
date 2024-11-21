@@ -222,7 +222,11 @@ func UDPToTun(settings settings.ConnectionSettings, tunFile *os.File, intIPToUDP
 
 func udpRegisterClient(conn *net.UDPConn, clientAddr net.UDPAddr, initialData []byte, intIPToUDPClientAddr *sync.Map, intIPToSession *sync.Map) error {
 	// Pass initialData and clientAddr to the handshake function
-	serverSession, internalIpAddr, err := handshakeHandlers.OnClientConnectedUDP(conn, &clientAddr, initialData)
+	serverSession, internalIpAddr, err := handshakeHandlers.OnClientConnected(&network.UdpAdapter{
+		*conn,
+		clientAddr,
+		initialData,
+	})
 	if err != nil {
 		return err
 	}

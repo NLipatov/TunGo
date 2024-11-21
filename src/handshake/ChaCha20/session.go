@@ -2,8 +2,11 @@ package ChaCha20
 
 import (
 	"crypto/cipher"
+	"crypto/sha256"
 	"fmt"
 	"golang.org/x/crypto/chacha20poly1305"
+	"golang.org/x/crypto/hkdf"
+	"io"
 )
 
 type Session struct {
@@ -14,6 +17,17 @@ type Session struct {
 	isServer   bool
 	SessionId  [32]byte
 	nonceBuf   *NonceBuf
+}
+
+func DeriveSessionId(sharedSecret []byte, salt []byte) ([32]byte, error) {
+	var sessionID [32]byte
+
+	hkdfReader := hkdf.New(sha256.New, sharedSecret, salt, []byte("session-id-derivation"))
+	if _, err := io.ReadFull(hkdfReader, sessionID[:]); err != nil {
+		return [32]byte{}, fmt.Errorf("failed to derive session ID: %w", err)
+	}
+
+	return sessionID, nil
 }
 
 func NewSession(sendKey, recvKey []byte, isServer bool) (*Session, error) {
@@ -70,8 +84,8 @@ func (s *Session) DecryptViaNonceBuf(ciphertext []byte, nonce Nonce) ([]byte, ui
 	}
 
 	nonceBytes := Encode(nonce.High, nonce.Low)
-	aad := s.CreateAAD(!s.isServer, nonceBytes)
-	plaintext, err := s.recvCipher.Open(ciphertext[:0], nonceBytes, ciphertext, aad)
+	aad := s.CreateAAD(!s.isServer, nonceBytes[:])
+	plaintext, err := s.recvCipher.Open(ciphertext[:0], nonceBytes[:], ciphertext, aad)
 	if err != nil {
 		// Properly handle failed decryption attempt to avoid reuse of any state
 		return nil, nonce.High, nonce.Low, fmt.Errorf("failed to decrypt: %w", err)

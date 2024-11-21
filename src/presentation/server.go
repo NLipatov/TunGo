@@ -1,4 +1,4 @@
-package main
+package presentation
 
 import (
 	"crypto/ed25519"
@@ -11,7 +11,7 @@ import (
 	"tungo/settings/server"
 )
 
-func main() {
+func StartServer() {
 	conf, err := (&server.Conf{}).Read()
 	if err != nil {
 		log.Fatalf("failed to read configuration: %v", err)
