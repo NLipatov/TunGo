@@ -64,7 +64,7 @@ func OnClientConnected(conn net.Conn) (*ChaCha20.Session, *string, error) {
 
 	// Verify client signature
 	if !ed25519.Verify(clientHello.EdPublicKey, append(append(clientHello.CurvePublicKey, clientHello.ClientNonce...), serverNonce...), clientSignature.ClientSignature) {
-		return nil, nil, fmt.Errorf("client signature verification failed: %s\n", err)
+		return nil, nil, fmt.Errorf("client signature verification failed")
 	}
 
 	// Generate shared secret and salt
