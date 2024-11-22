@@ -1,150 +1,131 @@
-# Introducing TunGo
+
+# TunGo: Fast & Secure VPN in Go
 
 <p align="center">
-  <img 
-alt="2 gophers dancing a tango"
-src="https://i.ibb.co/K7yzDf6/DALL-E-2024-10-04-20-18-51-A-minimalist-logo-featuring-two-Go-language-mascots-dancing-tango-togethe.webp" width="40%"/>
+  <img alt="Two gophers dancing tango" src="https://i.ibb.co/K7yzDf6/DALL-E-2024-10-04-20-18-51-A-minimalist-logo-featuring-two-Go-language-mascots-dancing-tango-togethe.webp" width="40%"/>
 </p>
 
-TunGo is a tiny, secure VPN implemented from scratch in Go.  
-It uses Ed25519 for key exchange and ChaCha20 for traffic encryption between the server and client.
+**TunGo** is a lightweight and secure VPN built from scratch in Go, using **Ed25519** for key exchange and **ChaCha20** for encryption.
 
-# Quick Start
+---
 
-### Run the Server
-
-Start the server in a Docker container using the following command:
-
-### Important: **Replace 'ServerIP' with an IP of your server**
-env variables:
-- **EnableUDP** - tells server-app if UDP should be enabled (PORT 9090);
-- **EnableTCP** - tells server-app if TCP should be enabled (PORT 8080);
-- **ServerIP** - generated client configs will contain this IP as a server IP. 
-
-ports:
-
-- 8080 - default TCP port;
-- 9090 - default UDP port.
-
-(Default port values can be set in `settings/server/conf.json`)
-
+### Usage
+Run:
 ```bash
-sudo docker run --restart always -it --network host --device=/dev/net/tun --cap-add=NET_ADMIN \
-    -e EnableUDP=true  \
-    -e EnableTCP=false \
-    -v tungo_src:/src \
-    nlipatov/tungo:tungo
+main.go <mode>
 ```
-NOTE: This container has no ED25519 keys in its server conf.json, so new pair will be generated.
+- `<mode>`: `s` (server) or `c` (client).
 
-### Connect as a Client
+---
 
-First, you need to generate a client's conf via `gen` command - see `Interactive Commands` section below.
-Save the generated client configuration into `/src/settings/client/conf.json` before running the client.
+## 🚀 Quick Start
+1. Start the server.
+2. Generate client configuration (`gen` command).
+3. Start the client with the generated configuration.
 
-From `/src` run the client from the command line:
+## Detailed Setup
+
+### Start the Server
+1. Launch the server:
+   ```bash
+   main.go s
+   ```
+2. Generate client configuration:
+   ```bash
+      gen #`gen` command
+      {
+        "TCPSettings": {
+          "...": "..."
+        },
+        "UDPSettings": {
+          "...": "..."
+        },
+        "Ed25519PublicKey": "someGeneratedPublicKey",
+        "TCPWriteChannelBufferSize": 1000,
+        "Protocol": "udp"
+      }
+   ```
+
+3. Save the output as client conf (`settings/client/conf.json`)
+
+4. Start the client:
+   ```bash
+   main.go c
+   ```
+
+✅ VPN tunnel is now established!
+
+To stop and clean up:
 ```bash
-sudo go run client.go
+exit  # from client terminal
 ```
-
-# Interactive Commands
-
-TunGo supports a few interactive commands that simplify the management of your VPN setup.
-
-### Command: generate client configuration
-
-While the server is running, type the gen command to generate the client configuration.
-This will print out the necessary connection details.
+OR stop client and reconfigure network
 ```bash
-gen
+sudo ip link delete udptun0
+sudo ip link delete tcptun0
 ```
 
-Example:
-```
-2024/10/04 20:12:13 server configured
-2024/10/04 20:12:13 server listening on port :8080
-gen
-{
-  "TCPSettings": {
-    "InterfaceName": "tcptun0",
-    "InterfaceIPCIDR": "10.0.0.0/24",
-    "InterfaceAddress": "10.0.0.2",
-    "ConnectionIP": "46.226.163.79",
-    "ConnectionPort": ":8080",
-    "Protocol": "tcp"
-  },
-  "UDPSettings": {
-    "InterfaceName": "udptun0",
-    "InterfaceIPCIDR": "10.0.1.0/24",
-    "InterfaceAddress": "10.0.1.2",
-    "ConnectionIP": "46.226.163.79",
-    "ConnectionPort": ":9090",
-    "Protocol": "udp"
-  },
-  "Ed25519PublicKey": "X7zGjLlcULRCIa4XfNm4v/RYnmN7UDgI+r1ySKs6WX4=",
-  "TCPWriteChannelBufferSize": 1000,
-  "Protocol": "udp"
-}
-```
+---
 
-Save the generated client configuration into `src/settings/client/conf.json`.
-
-# Command: shutdown Server or Client
-
-To remove all the network configuration changes and gracefully stop the server or client, use the exit command from the interactive terminal:
-
+## Using Docker
+Run the server in Docker:
 ```bash
-exit
+docker run -d \
+  --name tungo \
+  --restart always \
+  --network host \
+  --device /dev/net/tun \
+  --cap-add NET_ADMIN \
+  -e EnableUDP=true \
+  -e EnableTCP=false \
+  -v tungo_volume:/src \
+  nlipatov/tungo:tungo
 ```
 
-Example:
-```bash
-exit
-2024/10/04 20:34:24 Exit command received. Shutting down...
-2024/10/04 20:34:24 Client is shutting down.
-```
-# Build the Server Container
+Continue with the same steps:
+1. Generate client config (`gen`).
+2. Save it as `client/conf.json`.
+3. Start the client.
 
-To build the server Docker container, run the following command from the project root:
+---
 
-```bash
-docker buildx build -t tungo-server src
-```
+## 🔑 Regenerate Server Keys
+To reset the server’s Ed25519 keys:
+1. Remove the Ed25519 keys from `src/settings/settings/conf.json`.
+2. Restart the server.
 
-# Regenerate Server Ed25519 Keys
+**Note**: Clients must update their configurations with the new server public key.
 
-To regenerate server keys, manually delete the lines containing Ed25519 keys from `src/settings/settings/conf.json`.
-On the next startup, the server will generate new keys.
+---
 
-After regeneration, all clients need to update their configurations with the server’s new public Ed25519 key.
+## 📊 Performance Benchmarking
 
-# Benchmarking
-## Iperf2
-### TCP
-Server:
+### TCP (Iperf2)
+**Server**:
 ```bash
 iperf -s -B 10.0.0.1
 ```
-In this example `10.0.0.1` is a server's address in vpn network. 
 
-Client:
+**Client**:
 ```bash
 iperf -c 10.0.0.1
 ```
-
-or with 100 parallel connections for 600 seconds:
-
+With parallel connections:
 ```bash
 iperf -c 10.0.0.1 -P 100 -t 600
 ```
 
 ### UDP
-Server:
-```shell
+**Server**:
+```bash
 iperf -s -u
 ```
 
-Client (at 1GB bandwidth):
-```shell
+**Client** (1GB bandwidth):
+```bash
 iperf -c 10.0.1.1 -u -b 1G
 ```
+
+--- 
+
+Start enjoying fast and secure tunneling with **TunGo**!
