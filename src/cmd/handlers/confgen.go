@@ -32,12 +32,12 @@ func generate() (*client.Conf, error) {
 		return nil, fmt.Errorf("failed to read server configuration: %s", err)
 	}
 
-	defaultIf, err := ip.RouteDefault()
+	defaultIf, err := ip.Route()
 	if err != nil {
 		return nil, err
 	}
 
-	defaultIfIpV4, addressResolutionError := ip.InterfaceIpAddr(4, defaultIf)
+	defaultIfIpV4, addressResolutionError := ip.GetDevAddr(4, defaultIf)
 	if addressResolutionError != nil {
 		if serverConf.FallbackServerAddress == "" {
 			return nil, fmt.Errorf("failed to resolve server IP and no fallback address provided in server configuration: %s", addressResolutionError)

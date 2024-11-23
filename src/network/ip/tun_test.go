@@ -22,7 +22,7 @@ func Test_CreateAndDeleteInterface(t *testing.T) {
 		return
 	}
 
-	_, err = LinkDel(ifName)
+	_, err = LinkDelete(ifName)
 	if err != nil {
 		t.Errorf("failed to delete %s tunnel", err)
 		return
@@ -39,7 +39,7 @@ func Test_WriteAndReadFromTun(t *testing.T) {
 		t.Fatalf("failed to create interface %v: %v", ifName, err)
 	}
 	defer func() {
-		_, err = LinkDel(ifName)
+		_, err = LinkDelete(ifName)
 		if err != nil {
 			t.Fatalf("failed to delete interface %v: %v", ifName, err)
 		}

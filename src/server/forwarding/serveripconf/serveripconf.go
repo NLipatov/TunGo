@@ -10,7 +10,7 @@ import (
 )
 
 func SetupServerTun(settings settings.ConnectionSettings) (*os.File, error) {
-	_, _ = ip.LinkDel(settings.InterfaceName)
+	_, _ = ip.LinkDelete(settings.InterfaceName)
 
 	name, err := ip.UpNewTun(settings.InterfaceName)
 	if err != nil {
@@ -27,13 +27,13 @@ func SetupServerTun(settings settings.ConnectionSettings) (*os.File, error) {
 	if err != nil {
 		log.Fatalf("failed to conver server ip to CIDR format: %s", err)
 	}
-	_, err = ip.LinkAddrAdd(settings.InterfaceName, cidrServerIp)
+	_, err = ip.AddrAddDev(settings.InterfaceName, cidrServerIp)
 	if err != nil {
 		log.Fatalf("failed to conver server ip to CIDR format: %s", err)
 	}
 	fmt.Printf("assigned IP %s to interface %s\n", settings.Port, settings.InterfaceName)
 
-	setMtuErr := ip.SetMtu(settings.InterfaceName, settings.MTU)
+	setMtuErr := ip.LinkSetDevMtu(settings.InterfaceName, settings.MTU)
 	if setMtuErr != nil {
 		log.Fatalf("failed to set MTU: %s", setMtuErr)
 	}
@@ -47,7 +47,7 @@ func SetupServerTun(settings settings.ConnectionSettings) (*os.File, error) {
 }
 
 func Configure(tunFile *os.File) error {
-	externalIfName, err := ip.RouteDefault()
+	externalIfName, err := ip.Route()
 	if err != nil {
 		return err
 	}
