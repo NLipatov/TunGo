@@ -32,12 +32,15 @@ func (f *RouterFactory) CreateRouter(conf client.Conf) (Router, error) {
 	switch conf.Protocol {
 	case settings.TCP:
 		return &tuntcp.TCPRouter{
-			Settings: conf.TCPSettings,
+			Settings:        conf.TCPSettings,
+			Tun:             tunConfigurator.Configure(conf.TCPSettings),
+			TunConfigurator: tunConfigurator,
 		}, nil
 	case settings.UDP:
 		return &tunudp.UDPRouter{
-			Settings: conf.UDPSettings,
-			Tun:      tunConfigurator.Configure(conf.UDPSettings),
+			Settings:        conf.UDPSettings,
+			Tun:             tunConfigurator.Configure(conf.UDPSettings),
+			TunConfigurator: tunConfigurator,
 		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported conf: %v", conf)
