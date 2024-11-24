@@ -22,12 +22,12 @@ func UpNewTun(ifName string) (string, error) {
 		return "", err
 	}
 
-	_, err = AddTunDev(ifName)
+	_, err = LinkAdd(ifName)
 	if err != nil {
 		return "", err
 	}
 
-	_, err = LinkSetDevUp(ifName)
+	_, err = LinkSetUp(ifName)
 	if err != nil {
 		return "", err
 	}
