@@ -6,8 +6,8 @@ import (
 	"os"
 	"sync"
 	"tungo/cmd"
-	"tungo/server/forwarding"
-	"tungo/server/forwarding/serveripconf"
+	"tungo/server"
+	"tungo/server/serveripconf"
 	"tungo/settings"
 )
 
@@ -36,13 +36,13 @@ func StartTCPRouting(tunFile *os.File, settings settings.ConnectionSettings) err
 	// TUN -> TCP
 	go func() {
 		defer wg.Done()
-		forwarding.TunToTCP(tunFile, &extToLocalIp, &extIpToSession, ctx)
+		server.TunToTCP(tunFile, &extToLocalIp, &extIpToSession, ctx)
 	}()
 
 	// TCP -> TUN
 	go func() {
 		defer wg.Done()
-		forwarding.TCPToTun(settings, tunFile, &extToLocalIp, &extIpToSession, ctx)
+		server.TCPToTun(settings, tunFile, &extToLocalIp, &extIpToSession, ctx)
 	}()
 
 	wg.Wait()
@@ -74,13 +74,13 @@ func StartUDPRouting(tunFile *os.File, settings settings.ConnectionSettings) err
 	// TUN -> UDP
 	go func() {
 		defer wg.Done()
-		forwarding.TunToUDP(tunFile, &intIPToUDPClient, &intIPToSession, ctx)
+		server.TunToUDP(tunFile, &intIPToUDPClient, &intIPToSession, ctx)
 	}()
 
 	// UDP -> TUN
 	go func() {
 		defer wg.Done()
-		forwarding.UDPToTun(settings, tunFile, &intIPToUDPClient, &intIPToSession, ctx)
+		server.UDPToTun(settings, tunFile, &intIPToUDPClient, &intIPToSession, ctx)
 	}()
 
 	wg.Wait()

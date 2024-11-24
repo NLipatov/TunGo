@@ -5,8 +5,8 @@ import (
 	"crypto/rand"
 	"log"
 	"sync"
-	"tungo/server/forwarding/routing"
-	"tungo/server/forwarding/serveripconf"
+	"tungo/server/routing"
+	"tungo/server/serveripconf"
 	"tungo/settings"
 	"tungo/settings/server"
 )
