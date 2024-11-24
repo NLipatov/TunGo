@@ -18,7 +18,6 @@ type Conf struct {
 	Ed25519PrivateKey         ed25519.PrivateKey          `json:"Ed25519PrivateKey"`
 	ClientCounter             int                         `json:"ClientCounter"`
 	TCPWriteChannelBufferSize int32                       `json:"TCPWriteChannelBufferSize"`
-	SessionMarker             string                      `json:"SessionMarker"`
 	EnableTCP                 bool                        `json:"EnableTCP"`
 	EnableUDP                 bool                        `json:"EnableUDP"`
 }
