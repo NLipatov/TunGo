@@ -27,7 +27,6 @@ func (f *TunConfiguratorFactory) CreateTunConfigurator() (TunConfigurator, error
 	case "linux":
 		return &LinuxTunConfigurator{}, nil
 	default:
-
 		return nil, fmt.Errorf("unsupported platform: %s", platform)
 	}
 }
