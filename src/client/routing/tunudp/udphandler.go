@@ -4,16 +4,14 @@ import (
 	"context"
 	"log"
 	"net"
-	"os"
 	"time"
 	"tungo/handshake/ChaCha20"
 	"tungo/network"
 	"tungo/network/ip"
 	"tungo/network/keepalive"
-	"tungo/settings"
 )
 
-func FromTun(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ctx context.Context, connCancel context.CancelFunc, sendKeepAliveChan chan bool) {
+func FromTun(r *UDPRouter, conn *net.UDPConn, session *ChaCha20.Session, ctx context.Context, connCancel context.CancelFunc, sendKeepAliveChan chan bool) {
 	buf := make([]byte, ip.MaxPacketLengthBytes)
 
 	// Main loop to read from TUN and send data
@@ -29,7 +27,7 @@ func FromTun(conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ctx
 			}
 			writeOrReconnect(conn, &data, ctx, connCancel)
 		default:
-			n, err := tunFile.Read(buf)
+			n, err := r.Tun.Read(buf)
 			if err != nil {
 				if ctx.Err() != nil {
 					return
@@ -66,7 +64,7 @@ func writeOrReconnect(conn *net.UDPConn, data *[]byte, ctx context.Context, conn
 	}
 }
 
-func ToTun(settings settings.ConnectionSettings, conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, ctx context.Context, connCancel context.CancelFunc, receiveKeepAliveChan chan bool) {
+func ToTun(r *UDPRouter, conn *net.UDPConn, session *ChaCha20.Session, ctx context.Context, connCancel context.CancelFunc, receiveKeepAliveChan chan bool) {
 	buf := make([]byte, ip.MaxPacketLengthBytes)
 
 	go func() {
@@ -89,7 +87,7 @@ func ToTun(settings settings.ConnectionSettings, conn *net.UDPConn, tunFile *os.
 				return
 			}
 
-			if len(buf[:n]) == len(settings.SessionMarker) && string(buf[:n]) == settings.SessionMarker {
+			if len(buf[:n]) == len(r.Settings.SessionMarker) && string(buf[:n]) == r.Settings.SessionMarker {
 				log.Printf("re-registration request by server")
 				connCancel()
 				return
@@ -117,7 +115,7 @@ func ToTun(settings settings.ConnectionSettings, conn *net.UDPConn, tunFile *os.
 			}
 
 			// Write the decrypted packet to the TUN interface
-			_, err = tunFile.Write(decrypted)
+			_, err = r.Tun.Write(decrypted)
 			if err != nil {
 				log.Printf("failed to write to TUN: %v", err)
 				return

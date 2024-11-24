@@ -5,43 +5,45 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"os"
 	"sync"
 	"time"
 	"tungo/client/tunconf"
 	"tungo/handshake/ChaCha20"
 	"tungo/handshake/ChaCha20/handshakeHandlers"
+	"tungo/network"
 	"tungo/network/keepalive"
 	"tungo/settings"
 )
 
 type UDPRouter struct {
 	Settings settings.ConnectionSettings
+	Tun      network.TunAdapter
 }
 
-func (ur *UDPRouter) ForwardTraffic(ctx context.Context) error {
-	var tunFile *os.File
+func (r *UDPRouter) ForwardTraffic(ctx context.Context) error {
 	defer func() {
-		_ = tunFile.Close()
+		_ = r.Tun.Close()
 	}()
-	defer tunconf.Deconfigure(ur.Settings)
+	defer tunconf.Deconfigure(r.Settings)
 
 	for {
-		_ = tunFile.Close()
-		tunFile = tunconf.Configure(ur.Settings)
+		if r.Tun != nil {
+			_ = r.Tun.Close()
+		}
+		r.Tun = tunconf.Configure(r.Settings)
 
-		conn, connectionError := establishUDPConnection(ur.Settings, ctx)
+		conn, connectionError := establishUDPConnection(r.Settings, ctx)
 		if connectionError != nil {
 			log.Printf("failed to establish connection: %s", connectionError)
 			continue // Retry connection
 		}
 
-		_, err := conn.Write([]byte(ur.Settings.SessionMarker))
+		_, err := conn.Write([]byte(r.Settings.SessionMarker))
 		if err != nil {
 			log.Fatalf("failed to send reg request to server")
 		}
 
-		session, err := handshakeHandlers.OnConnectedToServer(conn, ur.Settings)
+		session, err := handshakeHandlers.OnConnectedToServer(conn, r.Settings)
 		if err != nil {
 			_ = conn.Close()
 			log.Printf("registration failed: %s\n", err)
@@ -49,7 +51,7 @@ func (ur *UDPRouter) ForwardTraffic(ctx context.Context) error {
 			continue
 		}
 
-		log.Printf("connected to server at %s (UDP)", ur.Settings.ConnectionIP)
+		log.Printf("connected to server at %s (UDP)", r.Settings.ConnectionIP)
 
 		// Create a child context for managing data forwarding goroutines
 		connCtx, connCancel := context.WithCancel(ctx)
@@ -58,11 +60,11 @@ func (ur *UDPRouter) ForwardTraffic(ctx context.Context) error {
 		go func() {
 			<-connCtx.Done()
 			_ = conn.Close()
-			tunconf.Deconfigure(ur.Settings)
+			tunconf.Deconfigure(r.Settings)
 			return
 		}()
 
-		startUDPForwarding(ur.Settings, conn, tunFile, session, &connCtx, &connCancel)
+		startUDPForwarding(r, conn, session, &connCtx, &connCancel)
 
 		// After goroutines finish, check if shutdown was initiated
 		if ctx.Err() != nil {
@@ -116,7 +118,7 @@ func establishUDPConnection(settings settings.ConnectionSettings, ctx context.Co
 	}
 }
 
-func startUDPForwarding(settings settings.ConnectionSettings, conn *net.UDPConn, tunFile *os.File, session *ChaCha20.Session, connCtx *context.Context, connCancel *context.CancelFunc) {
+func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *ChaCha20.Session, connCtx *context.Context, connCancel *context.CancelFunc) {
 	sendKeepAliveCommandChan := make(chan bool, 1)
 	connPacketReceivedChan := make(chan bool, 1)
 	go keepalive.StartConnectionProbing(*connCtx, *connCancel, sendKeepAliveCommandChan, connPacketReceivedChan)
@@ -127,13 +129,13 @@ func startUDPForwarding(settings settings.ConnectionSettings, conn *net.UDPConn,
 	// TUN -> UDP
 	go func() {
 		defer wg.Done()
-		FromTun(conn, tunFile, session, *connCtx, *connCancel, sendKeepAliveCommandChan)
+		FromTun(r, conn, session, *connCtx, *connCancel, sendKeepAliveCommandChan)
 	}()
 
 	// UDP -> TUN
 	go func() {
 		defer wg.Done()
-		ToTun(settings, conn, tunFile, session, *connCtx, *connCancel, connPacketReceivedChan)
+		ToTun(r, conn, session, *connCtx, *connCancel, connPacketReceivedChan)
 	}()
 
 	wg.Wait()

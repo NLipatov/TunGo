@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"tungo/client/routing/tuntcp"
 	"tungo/client/routing/tunudp"
+	"tungo/client/tunconf"
 	"tungo/settings"
 	"tungo/settings/client"
 )
@@ -26,6 +27,7 @@ func (f *RouterFactory) CreateRouter(conf client.Conf) (Router, error) {
 	case settings.UDP:
 		return &tunudp.UDPRouter{
 			Settings: conf.UDPSettings,
+			Tun:      tunconf.Configure(conf.UDPSettings),
 		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported conf: %v", conf)
