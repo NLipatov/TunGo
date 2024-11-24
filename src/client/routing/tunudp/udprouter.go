@@ -58,6 +58,7 @@ func (ur *UDPRouter) ForwardTraffic(ctx context.Context) error {
 		go func() {
 			<-connCtx.Done()
 			_ = conn.Close()
+			tunconf.Deconfigure(ur.Settings)
 			return
 		}()
 
@@ -65,7 +66,6 @@ func (ur *UDPRouter) ForwardTraffic(ctx context.Context) error {
 
 		// After goroutines finish, check if shutdown was initiated
 		if ctx.Err() != nil {
-			log.Println("client is shutting down.")
 			return nil
 		} else {
 			// Connection lost unexpectedly, attempt to reconnect
@@ -101,7 +101,6 @@ func establishUDPConnection(settings settings.ConnectionSettings, ctx context.Co
 
 			select {
 			case <-ctx.Done():
-				log.Println("client is shutting down.")
 				return nil, err
 			case <-time.After(backoff):
 			}

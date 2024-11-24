@@ -49,6 +49,7 @@ func (tr *TCPRouter) ForwardTraffic(ctx context.Context) error {
 		go func() {
 			<-connCtx.Done()
 			_ = conn.Close()
+			tunconf.Deconfigure(tr.Settings)
 			return
 		}()
 
@@ -56,7 +57,6 @@ func (tr *TCPRouter) ForwardTraffic(ctx context.Context) error {
 
 		// After goroutines finish, check if shutdown was initiated
 		if ctx.Err() != nil {
-			log.Println("client is shutting down.")
 			return nil
 		} else {
 			// Connection lost unexpectedly, attempt to reconnect
@@ -88,7 +88,6 @@ func connect(settings settings.ConnectionSettings, ctx context.Context) (net.Con
 			log.Printf("retrying to connect in %v...", backoff)
 			select {
 			case <-ctx.Done():
-				log.Println("client is shutting down.")
 				return nil, err
 			case <-time.After(backoff):
 			}
