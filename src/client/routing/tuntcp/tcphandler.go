@@ -6,7 +6,6 @@ import (
 	"io"
 	"log"
 	"net"
-	"os"
 	"tungo/handshake/ChaCha20"
 	"tungo/network"
 	"tungo/network/keepalive"
@@ -14,7 +13,7 @@ import (
 )
 
 // ToTCP forwards packets from TUN to TCP
-func ToTCP(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx context.Context, connCancel context.CancelFunc, sendKeepaliveCh chan bool) {
+func ToTCP(r *TCPRouter, conn net.Conn, session *ChaCha20.Session, ctx context.Context, connCancel context.CancelFunc, sendKeepaliveCh chan bool) {
 	buf := make([]byte, network.IPPacketMaxSizeBytes)
 	connWriteChan := make(chan []byte, getConnWriteBufferSize())
 
@@ -69,7 +68,7 @@ func ToTCP(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx conte
 		case <-ctx.Done(): // Stop-signal
 			return
 		default:
-			n, err := tunFile.Read(buf)
+			n, err := r.Tun.Read(buf)
 			if err != nil {
 				if ctx.Err() != nil {
 					return
@@ -100,7 +99,7 @@ func ToTCP(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx conte
 	}
 }
 
-func ToTun(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx context.Context, connCancel context.CancelFunc, receiveKeepaliveCh chan bool) {
+func ToTun(r *TCPRouter, conn net.Conn, session *ChaCha20.Session, ctx context.Context, connCancel context.CancelFunc, receiveKeepaliveCh chan bool) {
 	buf := make([]byte, network.IPPacketMaxSizeBytes)
 
 	go func() {
@@ -159,7 +158,7 @@ func ToTun(conn net.Conn, tunFile *os.File, session *ChaCha20.Session, ctx conte
 			}
 
 			// Write the decrypted packet to the TUN interface
-			_, err = tunFile.Write(decrypted)
+			_, err = r.Tun.Write(decrypted)
 			if err != nil {
 				log.Printf("failed to write to TUN: %v", err)
 				return

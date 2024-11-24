@@ -4,7 +4,6 @@ import (
 	"context"
 	"log"
 	"tungo/client/routing"
-	"tungo/client/tunconf"
 	"tungo/cmd"
 	"tungo/settings/client"
 )
@@ -22,9 +21,6 @@ func StartClient() {
 	if err != nil {
 		log.Fatalf("failed to read configuration: %v", err)
 	}
-
-	tunconf.Deconfigure(conf.TCPSettings)
-	tunconf.Deconfigure(conf.UDPSettings)
 
 	routerFactory := routing.NewRouterFactory()
 	router, factoryErr := routerFactory.CreateRouter(*conf)

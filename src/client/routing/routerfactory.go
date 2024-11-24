@@ -2,6 +2,7 @@ package routing
 
 import (
 	"fmt"
+	"log"
 	"tungo/client/routing/tuntcp"
 	"tungo/client/routing/tunudp"
 	"tungo/client/tunconf"
@@ -19,6 +20,15 @@ func NewRouterFactory() *RouterFactory {
 
 // CreateRouter creates a Router instance for the specified protocol.
 func (f *RouterFactory) CreateRouter(conf client.Conf) (Router, error) {
+	tunConfiguratorFactory := tunconf.NewTunConfiguratorFactory()
+	tunConfigurator, tunConfiguratorFactoryErr := tunConfiguratorFactory.CreateTunConfigurator()
+	if tunConfiguratorFactoryErr != nil {
+		log.Fatalf("failed to create a %v tun configurator: %s", conf.Protocol, tunConfiguratorFactoryErr)
+	}
+
+	tunConfigurator.Deconfigure(conf.TCPSettings)
+	tunConfigurator.Deconfigure(conf.UDPSettings)
+
 	switch conf.Protocol {
 	case settings.TCP:
 		return &tuntcp.TCPRouter{
@@ -27,7 +37,7 @@ func (f *RouterFactory) CreateRouter(conf client.Conf) (Router, error) {
 	case settings.UDP:
 		return &tunudp.UDPRouter{
 			Settings: conf.UDPSettings,
-			Tun:      tunconf.Configure(conf.UDPSettings),
+			Tun:      tunConfigurator.Configure(conf.UDPSettings),
 		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported conf: %v", conf)

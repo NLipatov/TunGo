@@ -5,30 +5,33 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"os"
 	"sync"
 	"time"
 	"tungo/client/tunconf"
 	"tungo/handshake/ChaCha20"
 	"tungo/handshake/ChaCha20/handshakeHandlers"
+	"tungo/network"
 	"tungo/network/keepalive"
 	"tungo/settings"
 )
 
 type TCPRouter struct {
-	Settings settings.ConnectionSettings
+	Settings        settings.ConnectionSettings
+	Tun             network.TunAdapter
+	TunConfigurator tunconf.TunConfigurator
 }
 
 func (tr *TCPRouter) ForwardTraffic(ctx context.Context) error {
-	var tunFile *os.File
 	defer func() {
-		_ = tunFile.Close()
+		_ = tr.Tun.Close()
 	}()
-	defer tunconf.Deconfigure(tr.Settings)
+	defer tr.TunConfigurator.Deconfigure(tr.Settings)
 
 	for {
-		_ = tunFile.Close()
-		tunFile = tunconf.Configure(tr.Settings)
+		if tr.Tun != nil {
+			_ = tr.Tun.Close()
+		}
+		tr.Tun = tr.TunConfigurator.Configure(tr.Settings)
 
 		conn, connectionError := connect(tr.Settings, ctx)
 		if connectionError != nil {
@@ -49,11 +52,11 @@ func (tr *TCPRouter) ForwardTraffic(ctx context.Context) error {
 		go func() {
 			<-connCtx.Done()
 			_ = conn.Close()
-			tunconf.Deconfigure(tr.Settings)
+			tr.TunConfigurator.Deconfigure(tr.Settings)
 			return
 		}()
 
-		forwardIPPackets(&conn, tunFile, session, connCtx, connCancel)
+		forwardIPPackets(tr, &conn, session, connCtx, connCancel)
 
 		// After goroutines finish, check if shutdown was initiated
 		if ctx.Err() != nil {
@@ -82,7 +85,6 @@ func connect(settings settings.ConnectionSettings, ctx context.Context) (net.Con
 			log.Printf("failed to connect to server: %v", err)
 			reconnectAttempts++
 			if reconnectAttempts > maxReconnectAttempts {
-				tunconf.Deconfigure(settings)
 				log.Fatalf("exceeded maximum reconnect attempts (%d)", maxReconnectAttempts)
 			}
 			log.Printf("retrying to connect in %v...", backoff)
@@ -114,7 +116,7 @@ func register(conn *net.Conn, settings settings.ConnectionSettings) (*ChaCha20.S
 	return session, err
 }
 
-func forwardIPPackets(conn *net.Conn, tunFile *os.File, session *ChaCha20.Session, connCtx context.Context, connCancel context.CancelFunc) {
+func forwardIPPackets(r *TCPRouter, conn *net.Conn, session *ChaCha20.Session, connCtx context.Context, connCancel context.CancelFunc) {
 	sendKeepaliveCh := make(chan bool, 1)
 	receiveKeepaliveCh := make(chan bool, 1)
 	go keepalive.StartConnectionProbing(connCtx, connCancel, sendKeepaliveCh, receiveKeepaliveCh)
@@ -125,13 +127,13 @@ func forwardIPPackets(conn *net.Conn, tunFile *os.File, session *ChaCha20.Sessio
 	// TUN -> TCP
 	go func() {
 		defer wg.Done()
-		ToTCP(*conn, tunFile, session, connCtx, connCancel, sendKeepaliveCh)
+		ToTCP(r, *conn, session, connCtx, connCancel, sendKeepaliveCh)
 	}()
 
 	// TCP -> TUN
 	go func() {
 		defer wg.Done()
-		ToTun(*conn, tunFile, session, connCtx, connCancel, receiveKeepaliveCh)
+		ToTun(r, *conn, session, connCtx, connCancel, receiveKeepaliveCh)
 	}()
 
 	wg.Wait()

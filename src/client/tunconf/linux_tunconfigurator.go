@@ -3,16 +3,19 @@ package tunconf
 import (
 	"fmt"
 	"log"
-	"os"
 	"strings"
+	"tungo/network"
 	"tungo/network/ip"
 	"tungo/network/iptables"
 	"tungo/settings"
 )
 
+type LinuxTunConfigurator struct {
+}
+
 // Configure configures a client TUN device
-func Configure(s settings.ConnectionSettings) *os.File {
-	Deconfigure(s)
+func (t *LinuxTunConfigurator) Configure(s settings.ConnectionSettings) network.TunAdapter {
+	t.Deconfigure(s)
 
 	// configureTUN client
 	if udpConfigurationErr := configureTUN(s); udpConfigurationErr != nil {
@@ -97,7 +100,7 @@ func configureTUN(connSettings settings.ConnectionSettings) error {
 }
 
 // Deconfigure does the de-configuration client device by deleting route to sever and TUN-device
-func Deconfigure(connectionSettings settings.ConnectionSettings) {
+func (t *LinuxTunConfigurator) Deconfigure(connectionSettings settings.ConnectionSettings) {
 	// Delete route to server
 	_ = ip.RouteDel(connectionSettings.ConnectionIP)
 	// Delete the TUN interface

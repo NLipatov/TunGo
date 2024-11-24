@@ -16,21 +16,22 @@ import (
 )
 
 type UDPRouter struct {
-	Settings settings.ConnectionSettings
-	Tun      network.TunAdapter
+	Settings        settings.ConnectionSettings
+	Tun             network.TunAdapter
+	TunConfigurator tunconf.TunConfigurator
 }
 
 func (r *UDPRouter) ForwardTraffic(ctx context.Context) error {
 	defer func() {
 		_ = r.Tun.Close()
 	}()
-	defer tunconf.Deconfigure(r.Settings)
+	defer r.TunConfigurator.Deconfigure(r.Settings)
 
 	for {
 		if r.Tun != nil {
 			_ = r.Tun.Close()
 		}
-		r.Tun = tunconf.Configure(r.Settings)
+		r.Tun = r.TunConfigurator.Configure(r.Settings)
 
 		conn, connectionError := establishUDPConnection(r.Settings, ctx)
 		if connectionError != nil {
@@ -60,7 +61,7 @@ func (r *UDPRouter) ForwardTraffic(ctx context.Context) error {
 		go func() {
 			<-connCtx.Done()
 			_ = conn.Close()
-			tunconf.Deconfigure(r.Settings)
+			r.TunConfigurator.Deconfigure(r.Settings)
 			return
 		}()
 
@@ -96,7 +97,6 @@ func establishUDPConnection(settings settings.ConnectionSettings, ctx context.Co
 			log.Printf("failed to connect to server: %v", err)
 			reconnectAttempts++
 			if reconnectAttempts > maxReconnectAttempts {
-				tunconf.Deconfigure(settings)
 				log.Fatalf("exceeded maximum reconnect attempts (%d)", maxReconnectAttempts)
 			}
 			log.Printf("retrying to connect in %v...", backoff)
