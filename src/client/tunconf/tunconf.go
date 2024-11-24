@@ -98,14 +98,8 @@ func configureTUN(connSettings settings.ConnectionSettings) error {
 
 // Deconfigure does the de-configuration client device by deleting route to sever and TUN-device
 func Deconfigure(connectionSettings settings.ConnectionSettings) {
-	hostIp, devName := connectionSettings.ConnectionIP, connectionSettings.InterfaceName
-	// Delete the route to the host IP
-	if err := ip.RouteDel(hostIp); err != nil {
-		log.Printf("failed to delete route: %s", err)
-	}
-
+	// Delete route to server
+	_ = ip.RouteDel(connectionSettings.ConnectionIP)
 	// Delete the TUN interface
-	if _, err := ip.LinkDel(devName); err != nil {
-		log.Printf("failed to delete interface: %s", err)
-	}
+	_, _ = ip.LinkDel(connectionSettings.InterfaceName)
 }
