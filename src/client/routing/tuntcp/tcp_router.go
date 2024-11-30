@@ -21,25 +21,20 @@ type TCPRouter struct {
 	TunConfigurator tunconf.TunConfigurator
 }
 
-func (tr *TCPRouter) ForwardTraffic(ctx context.Context) error {
+func (r *TCPRouter) ForwardTraffic(ctx context.Context) error {
 	defer func() {
-		_ = tr.Tun.Close()
+		_ = r.Tun.Close()
+		r.TunConfigurator.Deconfigure(r.Settings)
 	}()
-	defer tr.TunConfigurator.Deconfigure(tr.Settings)
 
 	for {
-		if tr.Tun != nil {
-			_ = tr.Tun.Close()
-		}
-		tr.Tun = tr.TunConfigurator.Configure(tr.Settings)
-
-		conn, connectionError := connect(tr.Settings, ctx)
+		conn, connectionError := connect(r.Settings, ctx)
 		if connectionError != nil {
 			log.Printf("failed to establish connection: %s", connectionError)
 			continue // Retry connection
 		}
 
-		session, registrationErr := register(&conn, tr.Settings)
+		session, registrationErr := register(&conn, r.Settings)
 		if registrationErr != nil {
 			log.Printf("failed to register: %s", registrationErr)
 			time.Sleep(time.Second * 1)
@@ -52,11 +47,10 @@ func (tr *TCPRouter) ForwardTraffic(ctx context.Context) error {
 		go func() {
 			<-connCtx.Done()
 			_ = conn.Close()
-			tr.TunConfigurator.Deconfigure(tr.Settings)
-			return
+			r.TunConfigurator.Deconfigure(r.Settings)
 		}()
 
-		forwardIPPackets(tr, &conn, session, connCtx, connCancel)
+		forwardIPPackets(r, &conn, session, connCtx, connCancel)
 
 		// After goroutines finish, check if shutdown was initiated
 		if ctx.Err() != nil {
@@ -68,6 +62,9 @@ func (tr *TCPRouter) ForwardTraffic(ctx context.Context) error {
 
 		// Close the connection (if not already closed)
 		_ = conn.Close()
+
+		// recreate tun interface
+		reconfigureTun(r)
 	}
 }
 
@@ -137,4 +134,12 @@ func forwardIPPackets(r *TCPRouter, conn *net.Conn, session *ChaCha20.Session, c
 	}()
 
 	wg.Wait()
+}
+
+// Recreates the TUN interface to ensure proper routing after connection loss.
+func reconfigureTun(r *TCPRouter) {
+	if r.Tun != nil {
+		_ = r.Tun.Close()
+	}
+	r.Tun = r.TunConfigurator.Configure(r.Settings)
 }
