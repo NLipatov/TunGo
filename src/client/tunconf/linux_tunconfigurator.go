@@ -15,8 +15,6 @@ type LinuxTunConfigurator struct {
 
 // Configure configures a client TUN device
 func (t *LinuxTunConfigurator) Configure(s settings.ConnectionSettings) network.TunAdapter {
-	t.Deconfigure(s)
-
 	// configureTUN client
 	if udpConfigurationErr := configureTUN(s); udpConfigurationErr != nil {
 		log.Fatalf("failed to configure client: %v", udpConfigurationErr)
