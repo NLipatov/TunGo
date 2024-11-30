@@ -24,15 +24,10 @@ type UDPRouter struct {
 func (r *UDPRouter) ForwardTraffic(ctx context.Context) error {
 	defer func() {
 		_ = r.Tun.Close()
+		r.TunConfigurator.Deconfigure(r.Settings)
 	}()
-	defer r.TunConfigurator.Deconfigure(r.Settings)
 
 	for {
-		if r.Tun != nil {
-			_ = r.Tun.Close()
-		}
-		r.Tun = r.TunConfigurator.Configure(r.Settings)
-
 		conn, connectionError := establishUDPConnection(r.Settings, ctx)
 		if connectionError != nil {
 			log.Printf("failed to establish connection: %s", connectionError)
@@ -41,7 +36,7 @@ func (r *UDPRouter) ForwardTraffic(ctx context.Context) error {
 
 		_, err := conn.Write([]byte(r.Settings.SessionMarker))
 		if err != nil {
-			log.Fatalf("failed to send reg request to server")
+			log.Println("failed to send reg request to server")
 		}
 
 		session, err := handshakeHandlers.OnConnectedToServer(conn, r.Settings)
@@ -77,6 +72,9 @@ func (r *UDPRouter) ForwardTraffic(ctx context.Context) error {
 
 		// Close the connection (if not already closed)
 		_ = conn.Close()
+
+		// recreate tun interface
+		reconfigureTun(r)
 	}
 }
 
@@ -139,4 +137,12 @@ func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *ChaCha20.Sessi
 	}()
 
 	wg.Wait()
+}
+
+// Recreates the TUN interface to ensure proper routing after connection loss.
+func reconfigureTun(r *UDPRouter) {
+	if r.Tun != nil {
+		_ = r.Tun.Close()
+	}
+	r.Tun = r.TunConfigurator.Configure(r.Settings)
 }
