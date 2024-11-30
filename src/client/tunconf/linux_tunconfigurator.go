@@ -38,9 +38,6 @@ func (t *LinuxTunConfigurator) Configure(s settings.ConnectionSettings) network.
 
 // configureTUN Configures client's TUN device (creates the TUN device, assigns an IP to it, etc)
 func configureTUN(connSettings settings.ConnectionSettings) error {
-	// Delete existing link if any
-	_, _ = ip.LinkDel(connSettings.InterfaceName)
-
 	name, err := ip.UpNewTun(connSettings.InterfaceName)
 	if err != nil {
 		return fmt.Errorf("failed to create interface %v: %v", connSettings.InterfaceName, err)
