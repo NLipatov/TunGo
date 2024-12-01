@@ -27,7 +27,7 @@ func FromTun(r *UDPRouter, conn *net.UDPConn, session *ChaCha20.Session, ctx con
 			}
 			writeOrReconnect(conn, &data, ctx, connCancel)
 		default:
-			n, err := r.Tun.Read(buf)
+			n, err := r.tun.Read(buf)
 			if err != nil {
 				if ctx.Err() != nil {
 					return
@@ -115,7 +115,7 @@ func ToTun(r *UDPRouter, conn *net.UDPConn, session *ChaCha20.Session, ctx conte
 			}
 
 			// Write the decrypted packet to the TUN interface
-			_, err = r.Tun.Write(decrypted)
+			_, err = r.tun.Write(decrypted)
 			if err != nil {
 				log.Printf("failed to write to TUN: %v", err)
 				return
