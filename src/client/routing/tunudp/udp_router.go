@@ -2,14 +2,11 @@ package tunudp
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net"
 	"sync"
-	"time"
 	"tungo/client/tunconf"
 	"tungo/handshake/ChaCha20"
-	"tungo/handshake/ChaCha20/handshakeHandlers"
 	"tungo/network"
 	"tungo/network/keepalive"
 	"tungo/settings"
@@ -28,23 +25,9 @@ func (r *UDPRouter) ForwardTraffic(ctx context.Context) error {
 	}()
 
 	for {
-		conn, connectionError := establishUDPConnection(r.Settings, ctx)
-		if connectionError != nil {
-			log.Printf("failed to establish connection: %s", connectionError)
-			continue // Retry connection
-		}
-
-		_, err := conn.Write([]byte(r.Settings.SessionMarker))
+		conn, session, err := newUDPConnectionBuilder().useSettings(r.Settings).connect(ctx).handshake().build()
 		if err != nil {
-			log.Println("failed to send reg request to server")
-		}
-
-		session, err := handshakeHandlers.OnConnectedToServer(conn, r.Settings)
-		if err != nil {
-			_ = conn.Close()
-			log.Printf("registration failed: %s\n", err)
-			time.Sleep(time.Second * 1)
-			continue
+			log.Printf("could not connect to server at %s: %s", r.Settings.ConnectionIP, err)
 		}
 
 		log.Printf("connected to server at %s (UDP)", r.Settings.ConnectionIP)
@@ -75,44 +58,6 @@ func (r *UDPRouter) ForwardTraffic(ctx context.Context) error {
 
 		// recreate tun interface
 		reconfigureTun(r)
-	}
-}
-
-func establishUDPConnection(settings settings.ConnectionSettings, ctx context.Context) (*net.UDPConn, error) {
-	reconnectAttempts := 0
-	backoff := initialBackoff
-
-	for {
-		serverAddr := fmt.Sprintf("%s%s", settings.ConnectionIP, settings.Port)
-
-		udpAddr, err := net.ResolveUDPAddr("udp", serverAddr)
-		if err != nil {
-			return nil, err
-		}
-
-		conn, err := net.DialUDP("udp", nil, udpAddr)
-		if err != nil {
-			log.Printf("failed to connect to server: %v", err)
-			reconnectAttempts++
-			if reconnectAttempts > maxReconnectAttempts {
-				log.Fatalf("exceeded maximum reconnect attempts (%d)", maxReconnectAttempts)
-			}
-			log.Printf("retrying to connect in %v...", backoff)
-
-			select {
-			case <-ctx.Done():
-				return nil, err
-			case <-time.After(backoff):
-			}
-
-			backoff *= 2
-			if backoff > maxBackoff {
-				backoff = maxBackoff
-			}
-			continue
-		}
-
-		return conn, nil
 	}
 }
 
