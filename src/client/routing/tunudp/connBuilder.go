@@ -3,6 +3,7 @@ package tunudp
 import (
 	"context"
 	"fmt"
+	"log"
 	"net"
 	"time"
 	"tungo/handshake/ChaCha20"
@@ -64,34 +65,34 @@ func (b *udpConnectionBuilder) handshake() *udpConnectionBuilder {
 		return b
 	}
 
-	reconnectAttempts := 0
 	backoff := initialBackoff
-
-	for {
+	for reconnectAttempts := 0; reconnectAttempts <= maxReconnectAttempts; reconnectAttempts++ {
 		session, err := handshakeHandlers.OnConnectedToServer(b.conn, b.settings)
 		if err != nil {
-			reconnectAttempts++
-			if reconnectAttempts > maxReconnectAttempts {
-				b.err = fmt.Errorf("exceeded maximum reconnect attempts (%d)", maxReconnectAttempts)
-				_ = b.conn.Close()
-				return b
-			}
+			log.Printf("could not connect to server at %s: %s", b.settings.ConnectionIP, err)
+			log.Printf("reconnecting in %.0f seconds", backoff.Seconds())
+
 			select {
 			case <-b.ctx.Done():
 				b.err = b.ctx.Err()
 				return b
 			case <-time.After(backoff):
 			}
+
 			backoff *= 2
 			if backoff > maxBackoff {
 				backoff = maxBackoff
 			}
+
 			continue
 		}
 
 		b.session = session
 		return b
 	}
+
+	b.err = fmt.Errorf("exceeded maximum reconnect attempts (%d)", maxReconnectAttempts)
+	return b
 }
 
 func (b *udpConnectionBuilder) build() (*net.UDPConn, *ChaCha20.Session, error) {

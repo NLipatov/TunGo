@@ -25,7 +25,7 @@ func (r *UDPRouter) ForwardTraffic(ctx context.Context) error {
 	}()
 
 	for {
-		conn, session, err := newUDPConnectionBuilder().useSettings(r.Settings).connect(ctx).handshake().build()
+		conn, session, err := newConnectionManager(r.Settings).connect(ctx)
 		if err != nil {
 			log.Printf("could not connect to server at %s: %s", r.Settings.ConnectionIP, err)
 		}
