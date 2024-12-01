@@ -24,7 +24,12 @@ func (m *connManager) connect(ctx context.Context) (*net.UDPConn, *ChaCha20.Sess
 	backoff := initialBackoff
 	for reconnectAttempts := 0; reconnectAttempts <= maxReconnectAttempts; reconnectAttempts++ {
 
-		conn, session, err := newUDPConnectionBuilder().useSettings(m.settings).connect(ctx).handshake().build()
+		conn, session, err := newUDPConnectionBuilder().
+			useSettings(m.settings).
+			connect(ctx).
+			handshake().
+			build()
+
 		if err != nil {
 			log.Printf("could not connect to server at %s: %s", m.settings.ConnectionIP, err)
 			log.Printf("reconnecting in %.0f seconds", backoff.Seconds())
