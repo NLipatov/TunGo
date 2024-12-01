@@ -2,14 +2,11 @@ package tuntcp
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net"
 	"sync"
-	"time"
 	"tungo/client/tunconf"
 	"tungo/handshake/ChaCha20"
-	"tungo/handshake/ChaCha20/handshakeHandlers"
 	"tungo/network"
 	"tungo/network/keepalive"
 	"tungo/settings"
@@ -28,16 +25,9 @@ func (r *TCPRouter) ForwardTraffic(ctx context.Context) error {
 	}()
 
 	for {
-		conn, connectionError := connect(r.Settings, ctx)
-		if connectionError != nil {
-			log.Printf("failed to establish connection: %s", connectionError)
-			continue // Retry connection
-		}
-
-		session, registrationErr := register(&conn, r.Settings)
-		if registrationErr != nil {
-			log.Printf("failed to register: %s", registrationErr)
-			time.Sleep(time.Second * 1)
+		conn, session, err := newConnectionManager(r.Settings).connect(ctx)
+		if err != nil {
+			log.Fatalf("failed to establish connection: %s", err)
 		}
 
 		// Create a child context for managing data forwarding goroutines
@@ -60,57 +50,15 @@ func (r *TCPRouter) ForwardTraffic(ctx context.Context) error {
 			log.Println("connection lost, attempting to reconnect...")
 		}
 
+		//cancel connection context
+		<-connCtx.Done()
+
 		// Close the connection (if not already closed)
 		_ = conn.Close()
 
 		// recreate tun interface
 		reconfigureTun(r)
 	}
-}
-
-func connect(settings settings.ConnectionSettings, ctx context.Context) (net.Conn, error) {
-	reconnectAttempts := 0
-	backoff := initialBackoff
-
-	for {
-		dialer := &net.Dialer{}
-		dialCtx, dialCancel := context.WithTimeout(ctx, connectionTimeout)
-		conn, err := dialer.DialContext(dialCtx, "tcp", fmt.Sprintf("%s%s", settings.ConnectionIP, settings.Port))
-		dialCancel()
-
-		if err != nil {
-			log.Printf("failed to connect to server: %v", err)
-			reconnectAttempts++
-			if reconnectAttempts > maxReconnectAttempts {
-				log.Fatalf("exceeded maximum reconnect attempts (%d)", maxReconnectAttempts)
-			}
-			log.Printf("retrying to connect in %v...", backoff)
-			select {
-			case <-ctx.Done():
-				return nil, err
-			case <-time.After(backoff):
-			}
-			backoff *= 2
-			if backoff > maxBackoff {
-				backoff = maxBackoff
-			}
-			continue
-		}
-
-		log.Printf("connected to server at %s (TCP)", settings.ConnectionIP)
-
-		return conn, nil
-	}
-}
-
-func register(conn *net.Conn, settings settings.ConnectionSettings) (*ChaCha20.Session, error) {
-	session, err := handshakeHandlers.OnConnectedToServer(*conn, settings)
-	if err != nil {
-		log.Printf("aborting connection: registration failed: %s\n", err)
-		return nil, err
-	}
-
-	return session, err
 }
 
 func forwardIPPackets(r *TCPRouter, conn *net.Conn, session *ChaCha20.Session, connCtx context.Context, connCancel context.CancelFunc) {
@@ -141,5 +89,6 @@ func reconfigureTun(r *TCPRouter) {
 	if r.Tun != nil {
 		_ = r.Tun.Close()
 	}
+	r.TunConfigurator.Deconfigure(r.Settings)
 	r.Tun = r.TunConfigurator.Configure(r.Settings)
 }
