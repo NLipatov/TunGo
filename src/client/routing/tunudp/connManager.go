@@ -43,7 +43,7 @@ func (m *connManager) connect(ctx context.Context) (*net.UDPConn, *ChaCha20.Sess
 			continue
 		}
 
-		log.Printf("connected to server at %s (TCP)", m.settings.ConnectionIP)
+		log.Printf("connected to server at %s (UDP)", m.settings.ConnectionIP)
 
 		return conn, session, nil
 	}
