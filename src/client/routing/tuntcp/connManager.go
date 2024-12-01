@@ -23,7 +23,6 @@ func newConnectionManager(settings settings.ConnectionSettings) *connManager {
 func (m *connManager) connect(ctx context.Context) (net.Conn, *ChaCha20.Session, error) {
 	backoff := initialBackoff
 	for reconnectAttempts := 0; reconnectAttempts <= maxReconnectAttempts; reconnectAttempts++ {
-		//try to connect
 		conn, session, err := newTCPConnectionBuilder().useSettings(m.settings).connect(ctx).handshake().build()
 		if err != nil {
 			log.Printf("could not connect to server at %s: %s", m.settings.ConnectionIP, err)
