@@ -33,13 +33,11 @@ func (f *RouterFactory) CreateRouter(conf client.Conf) (Router, error) {
 	case settings.TCP:
 		return &tuntcp.TCPRouter{
 			Settings:        conf.TCPSettings,
-			Tun:             tunConfigurator.Configure(conf.TCPSettings),
 			TunConfigurator: tunConfigurator,
 		}, nil
 	case settings.UDP:
 		return &tunudp.UDPRouter{
 			Settings:        conf.UDPSettings,
-			Tun:             tunConfigurator.Configure(conf.UDPSettings),
 			TunConfigurator: tunConfigurator,
 		}, nil
 	default:

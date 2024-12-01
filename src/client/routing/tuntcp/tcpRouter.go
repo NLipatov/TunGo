@@ -14,13 +14,14 @@ import (
 
 type TCPRouter struct {
 	Settings        settings.ConnectionSettings
-	Tun             network.TunAdapter
 	TunConfigurator tunconf.TunConfigurator
+	tun             network.TunAdapter
 }
 
 func (r *TCPRouter) ForwardTraffic(ctx context.Context) error {
+	r.tun = r.TunConfigurator.Configure(r.Settings)
 	defer func() {
-		_ = r.Tun.Close()
+		_ = r.tun.Close()
 		r.TunConfigurator.Deconfigure(r.Settings)
 	}()
 
@@ -86,9 +87,9 @@ func forwardIPPackets(r *TCPRouter, conn *net.Conn, session *ChaCha20.Session, c
 
 // Recreates the TUN interface to ensure proper routing after connection loss.
 func reconfigureTun(r *TCPRouter) {
-	if r.Tun != nil {
-		_ = r.Tun.Close()
+	if r.tun != nil {
+		_ = r.tun.Close()
 	}
 	r.TunConfigurator.Deconfigure(r.Settings)
-	r.Tun = r.TunConfigurator.Configure(r.Settings)
+	r.tun = r.TunConfigurator.Configure(r.Settings)
 }

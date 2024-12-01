@@ -68,7 +68,7 @@ func ToTCP(r *TCPRouter, conn net.Conn, session *ChaCha20.Session, ctx context.C
 		case <-ctx.Done(): // Stop-signal
 			return
 		default:
-			n, err := r.Tun.Read(buf)
+			n, err := r.tun.Read(buf)
 			if err != nil {
 				if ctx.Err() != nil {
 					return
@@ -158,7 +158,7 @@ func ToTun(r *TCPRouter, conn net.Conn, session *ChaCha20.Session, ctx context.C
 			}
 
 			// Write the decrypted packet to the TUN interface
-			_, err = r.Tun.Write(decrypted)
+			_, err = r.tun.Write(decrypted)
 			if err != nil {
 				log.Printf("failed to write to TUN: %v", err)
 				return

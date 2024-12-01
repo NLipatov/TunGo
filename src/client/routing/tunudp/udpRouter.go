@@ -14,13 +14,14 @@ import (
 
 type UDPRouter struct {
 	Settings        settings.ConnectionSettings
-	Tun             network.TunAdapter
 	TunConfigurator tunconf.TunConfigurator
+	tun             network.TunAdapter
 }
 
 func (r *UDPRouter) ForwardTraffic(ctx context.Context) error {
+	r.tun = r.TunConfigurator.Configure(r.Settings)
 	defer func() {
-		_ = r.Tun.Close()
+		_ = r.tun.Close()
 		r.TunConfigurator.Deconfigure(r.Settings)
 	}()
 
@@ -86,8 +87,8 @@ func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *ChaCha20.Sessi
 
 // Recreates the TUN interface to ensure proper routing after connection loss.
 func reconfigureTun(r *UDPRouter) {
-	if r.Tun != nil {
-		_ = r.Tun.Close()
+	if r.tun != nil {
+		_ = r.tun.Close()
 	}
-	r.Tun = r.TunConfigurator.Configure(r.Settings)
+	r.tun = r.TunConfigurator.Configure(r.Settings)
 }
