@@ -2,6 +2,7 @@ package tunudp
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net"
 	"time"
@@ -110,6 +111,12 @@ func ToTun(r *UDPRouter, conn *net.UDPConn, session *ChaCha20.Session, ctx conte
 
 			decrypted, _, _, decryptionErr := session.DecryptViaNonceBuf(*packet.Payload, *packet.Nonce)
 			if decryptionErr != nil {
+				if errors.Is(err, ChaCha20.ErrNonUniqueNonce) {
+					log.Printf("reconnecting on critical decryption err: %s", err)
+					connCancel()
+					return
+				}
+
 				log.Printf("failed to decrypt data: %s", decryptionErr)
 				continue
 			}
