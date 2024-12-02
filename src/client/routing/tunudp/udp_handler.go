@@ -111,7 +111,7 @@ func ToTun(r *UDPRouter, conn *net.UDPConn, session *ChaCha20.Session, ctx conte
 
 			decrypted, _, _, decryptionErr := session.DecryptViaNonceBuf(*packet.Payload, *packet.Nonce)
 			if decryptionErr != nil {
-				if errors.Is(err, ChaCha20.ErrNonUniqueNonce) {
+				if errors.Is(decryptionErr, ChaCha20.ErrNonUniqueNonce) {
 					log.Printf("reconnecting on critical decryption err: %s", err)
 					connCancel()
 					return
