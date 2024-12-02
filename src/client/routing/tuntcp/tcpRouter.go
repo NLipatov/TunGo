@@ -5,6 +5,8 @@ import (
 	"log"
 	"net"
 	"sync"
+	"time"
+	"tungo/client/transportconf"
 	"tungo/client/tunconf"
 	"tungo/handshake/ChaCha20"
 	"tungo/network"
@@ -26,10 +28,12 @@ func (r *TCPRouter) RouteTraffic(ctx context.Context) error {
 	}()
 
 	for {
-		conn, session, err := newConnectionManager(r.Settings).connect(ctx)
+		conn, session, err := r.connectToServer(ctx)
 		if err != nil {
 			log.Fatalf("failed to establish connection: %s", err)
 		}
+
+		log.Printf("connected to server at %s (TCP)", r.Settings.ConnectionIP)
 
 		// Create a child context for managing data forwarding goroutines
 		connCtx, connCancel := context.WithCancel(ctx)
@@ -58,7 +62,11 @@ func (r *TCPRouter) RouteTraffic(ctx context.Context) error {
 		_ = conn.Close()
 
 		// recreate tun interface
-		reconfigureTun(r)
+		if r.tun != nil {
+			_ = r.tun.Close()
+		}
+		r.TunConfigurator.Deconfigure(r.Settings)
+		r.tun = r.TunConfigurator.Configure(r.Settings)
 	}
 }
 
@@ -85,11 +93,18 @@ func forwardIPPackets(r *TCPRouter, conn *net.Conn, session *ChaCha20.Session, c
 	wg.Wait()
 }
 
-// Recreates the TUN interface to ensure proper routing after connection loss.
-func reconfigureTun(r *TCPRouter) {
-	if r.tun != nil {
-		_ = r.tun.Close()
+func (r *TCPRouter) connectToServer(ctx context.Context) (net.Conn, *ChaCha20.Session, error) {
+	connectionDelegate := func() (net.Conn, *ChaCha20.Session, error) {
+		return newTCPConnectionBuilder().
+			useSettings(r.Settings).
+			useConnectionTimeout(time.Second * 5).
+			connect(ctx).
+			handshake().
+			build()
 	}
-	r.TunConfigurator.Deconfigure(r.Settings)
-	r.tun = r.TunConfigurator.Configure(r.Settings)
+	transportConnManager := &transportconf.ConnectionManager{
+		ConnectionDelegate: connectionDelegate,
+	}
+
+	return transportConnManager.EstablishConnectionWithRetry(ctx)
 }
