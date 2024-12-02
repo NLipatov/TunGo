@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"sync"
+	"tungo/client/transportconf"
 	"tungo/client/tunconf"
 	"tungo/handshake/ChaCha20"
 	"tungo/network"
@@ -18,7 +19,7 @@ type UDPRouter struct {
 	tun             network.TunAdapter
 }
 
-func (r *UDPRouter) ForwardTraffic(ctx context.Context) error {
+func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
 	r.tun = r.TunConfigurator.Configure(r.Settings)
 	defer func() {
 		_ = r.tun.Close()
@@ -26,7 +27,7 @@ func (r *UDPRouter) ForwardTraffic(ctx context.Context) error {
 	}()
 
 	for {
-		conn, session, err := newConnectionManager(r.Settings).connect(ctx)
+		conn, session, err := r.connectToServer(ctx)
 		if err != nil {
 			log.Printf("could not connect to server at %s: %s", r.Settings.ConnectionIP, err)
 		}
@@ -44,7 +45,8 @@ func (r *UDPRouter) ForwardTraffic(ctx context.Context) error {
 			return
 		}()
 
-		startUDPForwarding(r, conn, session, &connCtx, &connCancel)
+		//starts forwarding packets from conn to tun-interface and from tun-interface to conn
+		startUDPForwarding(r, conn.(*net.UDPConn), session, &connCtx, &connCancel)
 
 		// After goroutines finish, check if shutdown was initiated
 		if ctx.Err() != nil {
@@ -57,8 +59,12 @@ func (r *UDPRouter) ForwardTraffic(ctx context.Context) error {
 		// Close the connection (if not already closed)
 		_ = conn.Close()
 
-		// recreate tun interface
-		reconfigureTun(r)
+		// recreate tun-interface
+		if r.tun != nil {
+			_ = r.tun.Close()
+		}
+		r.TunConfigurator.Deconfigure(r.Settings)
+		r.tun = r.TunConfigurator.Configure(r.Settings)
 	}
 }
 
@@ -85,10 +91,17 @@ func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *ChaCha20.Sessi
 	wg.Wait()
 }
 
-// Recreates the TUN interface to ensure proper routing after connection loss.
-func reconfigureTun(r *UDPRouter) {
-	if r.tun != nil {
-		_ = r.tun.Close()
+func (r *UDPRouter) connectToServer(ctx context.Context) (net.Conn, *ChaCha20.Session, error) {
+	connectionDelegate := func() (net.Conn, *ChaCha20.Session, error) {
+		return newConnectionBuilder().
+			useSettings(r.Settings).
+			connect(ctx).
+			handshake().
+			build()
 	}
-	r.tun = r.TunConfigurator.Configure(r.Settings)
+	transportConnManager := &transportconf.ConnectionManager{
+		ConnectionDelegate: connectionDelegate,
+	}
+
+	return transportConnManager.EstablishConnectionWithRetry(ctx)
 }

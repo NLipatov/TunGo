@@ -10,7 +10,7 @@ import (
 	"tungo/settings/client"
 )
 
-// RouterFactory is responsible for creating Router instances.
+// RouterFactory is responsible for creating TrafficRouter instances.
 type RouterFactory struct{}
 
 // NewRouterFactory creates a new instance of RouterFactory.
@@ -18,8 +18,8 @@ func NewRouterFactory() *RouterFactory {
 	return &RouterFactory{}
 }
 
-// CreateRouter creates a Router instance for the specified protocol.
-func (f *RouterFactory) CreateRouter(conf client.Conf) (Router, error) {
+// CreateRouter creates a TrafficRouter instance for the specified protocol.
+func (f *RouterFactory) CreateRouter(conf client.Conf) (TrafficRouter, error) {
 	tunConfiguratorFactory := tunconf.NewTunConfiguratorFactory()
 	tunConfigurator, tunConfiguratorFactoryErr := tunConfiguratorFactory.CreateTunConfigurator()
 	if tunConfiguratorFactoryErr != nil {
