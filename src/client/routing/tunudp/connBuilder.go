@@ -9,7 +9,7 @@ import (
 	"tungo/settings"
 )
 
-type udpConnectionBuilder struct {
+type connectionBuilder struct {
 	settings settings.ConnectionSettings
 	conn     *net.UDPConn
 	session  *ChaCha20.Session
@@ -17,11 +17,11 @@ type udpConnectionBuilder struct {
 	err      error
 }
 
-func newUDPConnectionBuilder() *udpConnectionBuilder {
-	return &udpConnectionBuilder{}
+func newConnectionBuilder() *connectionBuilder {
+	return &connectionBuilder{}
 }
 
-func (b *udpConnectionBuilder) useSettings(s settings.ConnectionSettings) *udpConnectionBuilder {
+func (b *connectionBuilder) useSettings(s settings.ConnectionSettings) *connectionBuilder {
 	if b.err != nil {
 		return b
 	}
@@ -35,7 +35,7 @@ func (b *udpConnectionBuilder) useSettings(s settings.ConnectionSettings) *udpCo
 	return b
 }
 
-func (b *udpConnectionBuilder) connect(ctx context.Context) *udpConnectionBuilder {
+func (b *connectionBuilder) connect(ctx context.Context) *connectionBuilder {
 	if b.err != nil {
 		return b
 	}
@@ -58,7 +58,7 @@ func (b *udpConnectionBuilder) connect(ctx context.Context) *udpConnectionBuilde
 	return b
 }
 
-func (b *udpConnectionBuilder) handshake() *udpConnectionBuilder {
+func (b *connectionBuilder) handshake() *connectionBuilder {
 	if b.err != nil {
 		return b
 	}
@@ -69,7 +69,7 @@ func (b *udpConnectionBuilder) handshake() *udpConnectionBuilder {
 	return b
 }
 
-func (b *udpConnectionBuilder) build() (*net.UDPConn, *ChaCha20.Session, error) {
+func (b *connectionBuilder) build() (net.Conn, *ChaCha20.Session, error) {
 	if b.err != nil {
 		return nil, nil, b.err
 	}

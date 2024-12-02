@@ -18,7 +18,7 @@ type TCPRouter struct {
 	tun             network.TunAdapter
 }
 
-func (r *TCPRouter) ForwardTraffic(ctx context.Context) error {
+func (r *TCPRouter) RouteTraffic(ctx context.Context) error {
 	r.tun = r.TunConfigurator.Configure(r.Settings)
 	defer func() {
 		_ = r.tun.Close()
