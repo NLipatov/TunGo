@@ -1,7 +1,6 @@
 package ChaCha20
 
 import (
-	"fmt"
 	"sync"
 )
 
@@ -27,7 +26,7 @@ func NewNonceBuf(size int) *NonceBuf {
 func (r *NonceBuf) Insert(input Nonce) error {
 	hash := input.Hash()
 	if r.contains(hash) {
-		return fmt.Errorf("nonce already exists in buffer: %v", hash)
+		return ErrNonUniqueNonce
 	}
 
 	r.lastInsert = (r.lastInsert + 1) % r.size
