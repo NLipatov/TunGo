@@ -5,7 +5,7 @@
     "InterfaceAddress": "10.0.0.1",
     "ConnectionIP": "",
     "Port": ":8080",
-    "MTU": 1500,
+    "MTU": 1472,
     "SessionMarker": "DEEP_PORT_PROBING",
     "Protocol": "tcp"
   },
@@ -15,7 +15,7 @@
     "InterfaceAddress": "",
     "ConnectionIP": "",
     "Port": ":9090",
-    "MTU": 1475,
+    "MTU": 1444,
     "SessionMarker": "ACK_IS_FOR_LOSERS",
     "Protocol": "udp"
   },
