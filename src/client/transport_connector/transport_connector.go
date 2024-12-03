@@ -1,4 +1,4 @@
-package transportconf
+package transport_connector
 
 import (
 	"context"
@@ -15,16 +15,25 @@ const (
 	maxReconnectAttempts = 30
 )
 
-type ConnectionManager struct {
+type TransportConnector struct {
 	//concrete logic on creating a connection instance using concrete transport (udp, tcp, etc.)
-	ConnectionDelegate func() (net.Conn, *ChaCha20.Session, error)
+	connectDelegate func() (net.Conn, *ChaCha20.Session, error)
 }
 
-func (m *ConnectionManager) EstablishConnectionWithRetry(ctx context.Context) (net.Conn, *ChaCha20.Session, error) {
+func NewTransportConnector() Connector {
+	return &TransportConnector{}
+}
+
+func (m *TransportConnector) UseConnectorDelegate(f func() (net.Conn, *ChaCha20.Session, error)) Connector {
+	m.connectDelegate = f
+	return m
+}
+
+func (m *TransportConnector) Connect(ctx context.Context) (net.Conn, *ChaCha20.Session, error) {
 	backoff := initialBackoff
 	for reconnectAttempts := 0; reconnectAttempts <= maxReconnectAttempts; reconnectAttempts++ {
 
-		conn, session, err := m.ConnectionDelegate()
+		conn, session, err := m.connectDelegate()
 
 		if err != nil {
 			log.Printf("could not connect to server: %s", err)

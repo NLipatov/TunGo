@@ -5,7 +5,7 @@ import (
 	"log"
 	"net"
 	"sync"
-	"tungo/client/transportconf"
+	"tungo/client/transport_connector"
 	"tungo/client/tunconf"
 	"tungo/handshake/ChaCha20"
 	"tungo/network"
@@ -92,16 +92,16 @@ func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *ChaCha20.Sessi
 }
 
 func (r *UDPRouter) connectToServer(ctx context.Context) (net.Conn, *ChaCha20.Session, error) {
-	connectionDelegate := func() (net.Conn, *ChaCha20.Session, error) {
+	connectorDelegate := func() (net.Conn, *ChaCha20.Session, error) {
 		return newConnectionBuilder().
 			useSettings(r.Settings).
 			connect(ctx).
 			handshake().
 			build()
 	}
-	transportConnManager := &transportconf.ConnectionManager{
-		ConnectionDelegate: connectionDelegate,
-	}
 
-	return transportConnManager.EstablishConnectionWithRetry(ctx)
+	return transport_connector.
+		NewTransportConnector().
+		UseConnectorDelegate(connectorDelegate).
+		Connect(ctx)
 }
