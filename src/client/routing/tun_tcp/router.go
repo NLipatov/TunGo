@@ -89,7 +89,7 @@ func forwardIPPackets(r *TCPRouter, conn *net.Conn, session *chacha20.Session, c
 			HandlePacketsFromTun(connCtx, connCancel)
 
 		if tunWorkerErr != nil {
-			log.Fatalf("failed to handle TUN package: %s", tunWorkerErr)
+			log.Fatalf("failed to handle TUN-packet: %s", tunWorkerErr)
 		}
 	}()
 
