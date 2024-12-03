@@ -79,7 +79,7 @@ func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *ChaCha20.Sessi
 	// TUN -> UDP
 	go func() {
 		defer wg.Done()
-		tunWorkerErr := newTcpTunWorker().
+		tunWorkerErr := newUdpTunWorker().
 			UseRouter(*r).
 			UseConn(conn).
 			UseSession(session).
@@ -87,14 +87,14 @@ func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *ChaCha20.Sessi
 			HandlePacketsFromTun(*connCtx, *connCancel)
 
 		if tunWorkerErr != nil {
-			log.Fatalf("failed to handle TUN package: %s", tunWorkerErr)
+			log.Fatalf("failed to handle TUN-packet: %s", tunWorkerErr)
 		}
 	}()
 
 	// UDP -> TUN
 	go func() {
 		defer wg.Done()
-		tunWorkerErr := newTcpTunWorker().
+		tunWorkerErr := newUdpTunWorker().
 			UseRouter(*r).
 			UseConn(conn).
 			UseSession(session).
@@ -102,7 +102,7 @@ func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *ChaCha20.Sessi
 			HandlePacketsFromConn(*connCtx, *connCancel)
 
 		if tunWorkerErr != nil {
-			log.Fatalf("failed to handle TUN package: %s", tunWorkerErr)
+			log.Fatalf("failed to handle CONN-packet: %s", tunWorkerErr)
 		}
 	}()
 

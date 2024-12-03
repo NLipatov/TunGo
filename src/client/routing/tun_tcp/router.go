@@ -81,13 +81,31 @@ func forwardIPPackets(r *TCPRouter, conn *net.Conn, session *ChaCha20.Session, c
 	// TUN -> TCP
 	go func() {
 		defer wg.Done()
-		FromTun(r, *conn, session, connCtx, connCancel, sendKeepaliveCh)
+		tunWorkerErr := newTcpTunWorker().
+			UseRouter(*r).
+			UseConn(*conn).
+			UseSession(session).
+			UseSendKeepAliveChan(sendKeepaliveCh).
+			HandlePacketsFromTun(connCtx, connCancel)
+
+		if tunWorkerErr != nil {
+			log.Fatalf("failed to handle TUN package: %s", tunWorkerErr)
+		}
 	}()
 
 	// TCP -> TUN
 	go func() {
 		defer wg.Done()
-		ToTun(r, *conn, session, connCtx, connCancel, receiveKeepaliveCh)
+		tunWorkerErr := newTcpTunWorker().
+			UseRouter(*r).
+			UseConn(*conn).
+			UseSession(session).
+			UseReceiveKeepAliveChan(receiveKeepaliveCh).
+			HandlePacketsFromConn(connCtx, connCancel)
+
+		if tunWorkerErr != nil {
+			log.Fatalf("failed to handle CONN-packet: %s", tunWorkerErr)
+		}
 	}()
 
 	wg.Wait()

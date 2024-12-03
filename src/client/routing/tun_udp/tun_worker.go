@@ -12,21 +12,20 @@ import (
 	"tungo/network/keepalive"
 )
 
-type tcpTunWorker struct {
+type udpTunWorker struct {
 	router               UDPRouter
 	conn                 *net.UDPConn
 	session              *ChaCha20.Session
 	sendKeepAliveChan    chan bool
 	receiveKeepAliveChan chan bool
-	connCancel           context.CancelFunc
 	err                  error
 }
 
-func newTcpTunWorker() *tcpTunWorker {
-	return &tcpTunWorker{}
+func newUdpTunWorker() *udpTunWorker {
+	return &udpTunWorker{}
 }
 
-func (w *tcpTunWorker) UseRouter(router UDPRouter) *tcpTunWorker {
+func (w *udpTunWorker) UseRouter(router UDPRouter) *udpTunWorker {
 	if w.err != nil {
 		return w
 	}
@@ -35,7 +34,7 @@ func (w *tcpTunWorker) UseRouter(router UDPRouter) *tcpTunWorker {
 	return w
 }
 
-func (w *tcpTunWorker) UseSession(session *ChaCha20.Session) *tcpTunWorker {
+func (w *udpTunWorker) UseSession(session *ChaCha20.Session) *udpTunWorker {
 	if w.err != nil {
 		return w
 	}
@@ -45,7 +44,7 @@ func (w *tcpTunWorker) UseSession(session *ChaCha20.Session) *tcpTunWorker {
 	return w
 }
 
-func (w *tcpTunWorker) UseConn(conn *net.UDPConn) *tcpTunWorker {
+func (w *udpTunWorker) UseConn(conn *net.UDPConn) *udpTunWorker {
 	if w.err != nil {
 		return w
 	}
@@ -55,7 +54,7 @@ func (w *tcpTunWorker) UseConn(conn *net.UDPConn) *tcpTunWorker {
 	return w
 }
 
-func (w *tcpTunWorker) UseSendKeepAliveChan(ch chan bool) *tcpTunWorker {
+func (w *udpTunWorker) UseSendKeepAliveChan(ch chan bool) *udpTunWorker {
 	if w.err != nil {
 		return w
 	}
@@ -65,7 +64,7 @@ func (w *tcpTunWorker) UseSendKeepAliveChan(ch chan bool) *tcpTunWorker {
 	return w
 }
 
-func (w *tcpTunWorker) UseReceiveKeepAliveChan(ch chan bool) *tcpTunWorker {
+func (w *udpTunWorker) UseReceiveKeepAliveChan(ch chan bool) *udpTunWorker {
 	if w.err != nil {
 		return w
 	}
@@ -75,7 +74,7 @@ func (w *tcpTunWorker) UseReceiveKeepAliveChan(ch chan bool) *tcpTunWorker {
 	return w
 }
 
-func (w *tcpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnect context.CancelFunc) error {
+func (w *udpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnect context.CancelFunc) error {
 	workerSetupErr := w.err
 	if workerSetupErr != nil {
 		return workerSetupErr
@@ -132,7 +131,7 @@ func writeOrReconnect(conn *net.UDPConn, data *[]byte, ctx context.Context, conn
 	}
 }
 
-func (w *tcpTunWorker) HandlePacketsFromConn(ctx context.Context, connCancel context.CancelFunc) error {
+func (w *udpTunWorker) HandlePacketsFromConn(ctx context.Context, connCancel context.CancelFunc) error {
 	workerSetupErr := w.err
 	if workerSetupErr != nil {
 		return workerSetupErr

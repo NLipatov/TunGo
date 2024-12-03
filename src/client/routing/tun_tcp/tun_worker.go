@@ -12,14 +12,79 @@ import (
 	"tungo/settings/client"
 )
 
-// FromTun forwards packets from TUN to TCP
-func FromTun(r *TCPRouter, conn net.Conn, session *ChaCha20.Session, ctx context.Context, connCancel context.CancelFunc, sendKeepaliveCh chan bool) {
+type tcpTunWorker struct {
+	router               TCPRouter
+	conn                 net.Conn
+	session              *ChaCha20.Session
+	sendKeepAliveChan    chan bool
+	receiveKeepAliveChan chan bool
+	err                  error
+}
+
+func newTcpTunWorker() *tcpTunWorker {
+	return &tcpTunWorker{}
+}
+
+func (w *tcpTunWorker) UseRouter(router TCPRouter) *tcpTunWorker {
+	if w.err != nil {
+		return w
+	}
+
+	w.router = router
+	return w
+}
+
+func (w *tcpTunWorker) UseSession(session *ChaCha20.Session) *tcpTunWorker {
+	if w.err != nil {
+		return w
+	}
+
+	w.session = session
+
+	return w
+}
+
+func (w *tcpTunWorker) UseConn(conn net.Conn) *tcpTunWorker {
+	if w.err != nil {
+		return w
+	}
+
+	w.conn = conn
+
+	return w
+}
+
+func (w *tcpTunWorker) UseSendKeepAliveChan(ch chan bool) *tcpTunWorker {
+	if w.err != nil {
+		return w
+	}
+
+	w.sendKeepAliveChan = ch
+
+	return w
+}
+
+func (w *tcpTunWorker) UseReceiveKeepAliveChan(ch chan bool) *tcpTunWorker {
+	if w.err != nil {
+		return w
+	}
+
+	w.receiveKeepAliveChan = ch
+
+	return w
+}
+
+func (w *tcpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnect context.CancelFunc) error {
+	workerSetupErr := w.err
+	if workerSetupErr != nil {
+		return workerSetupErr
+	}
 	buf := make([]byte, network.IPPacketMaxSizeBytes)
 	connWriteChan := make(chan []byte, getConnWriteBufferSize())
 
 	go func() {
 		<-ctx.Done()
-		_ = conn.Close()
+		_ = w.conn.Close()
 	}()
 
 	//writes whatever comes from chan to TCP
@@ -32,10 +97,10 @@ func FromTun(r *TCPRouter, conn net.Conn, session *ChaCha20.Session, ctx context
 				if !ok { //if connWriteChan is closed
 					return
 				}
-				_, err := conn.Write(data)
+				_, err := w.conn.Write(data)
 				if err != nil {
 					log.Printf("write to TCP failed: %s", err)
-					connCancel()
+					triggerReconnect()
 					return
 				}
 			}
@@ -48,7 +113,7 @@ func FromTun(r *TCPRouter, conn net.Conn, session *ChaCha20.Session, ctx context
 			select {
 			case <-ctx.Done(): // Stop-signal
 				return
-			case <-sendKeepaliveCh:
+			case <-w.sendKeepAliveChan:
 				data, err := keepalive.GenerateTCP()
 				if err != nil {
 					log.Println(err)
@@ -66,18 +131,18 @@ func FromTun(r *TCPRouter, conn net.Conn, session *ChaCha20.Session, ctx context
 	for {
 		select {
 		case <-ctx.Done(): // Stop-signal
-			return
+			return nil
 		default:
-			n, err := r.tun.Read(buf)
+			n, err := w.router.tun.Read(buf)
 			if err != nil {
 				if ctx.Err() != nil {
-					return
+					return nil
 				}
 				log.Printf("failed to read from TUN: %v", err)
-				connCancel()
+				triggerReconnect()
 			}
 
-			encryptedPacket, _, _, err := session.Encrypt(buf[:n])
+			encryptedPacket, _, _, err := w.session.Encrypt(buf[:n])
 			if err != nil {
 				log.Printf("failed to encrypt packet: %v", err)
 				continue
@@ -92,30 +157,34 @@ func FromTun(r *TCPRouter, conn net.Conn, session *ChaCha20.Session, ctx context
 			select {
 			case <-ctx.Done():
 				close(connWriteChan)
-				return
+				return nil
 			case connWriteChan <- packet.Payload:
 			}
 		}
 	}
 }
 
-func ToTun(r *TCPRouter, conn net.Conn, session *ChaCha20.Session, ctx context.Context, connCancel context.CancelFunc, receiveKeepaliveCh chan bool) {
+func (w *tcpTunWorker) HandlePacketsFromConn(ctx context.Context, connCancel context.CancelFunc) error {
+	workerSetupErr := w.err
+	if workerSetupErr != nil {
+		return workerSetupErr
+	}
 	buf := make([]byte, network.IPPacketMaxSizeBytes)
 
 	go func() {
 		<-ctx.Done()
-		_ = conn.Close()
+		_ = w.conn.Close()
 	}()
 
 	for {
 		select {
 		case <-ctx.Done(): // Stop-signal
-			return
+			return nil
 		default:
-			_, err := io.ReadFull(conn, buf[:4])
+			_, err := io.ReadFull(w.conn, buf[:4])
 			if err != nil {
 				if ctx.Err() != nil {
-					return
+					return nil
 				}
 				log.Printf("read from TCP failed: %v", err)
 				connCancel()
@@ -129,7 +198,7 @@ func ToTun(r *TCPRouter, conn net.Conn, session *ChaCha20.Session, ctx context.C
 			}
 
 			//read n-bytes from connection
-			_, err = io.ReadFull(conn, buf[:length])
+			_, err = io.ReadFull(w.conn, buf[:length])
 			if err != nil {
 				log.Printf("failed to read packet from connection: %s", err)
 				continue
@@ -142,7 +211,7 @@ func ToTun(r *TCPRouter, conn net.Conn, session *ChaCha20.Session, ctx context.C
 
 			select {
 			//refreshes last packet time
-			case receiveKeepaliveCh <- true:
+			case w.receiveKeepAliveChan <- true:
 				//shortcut for keep alive response case
 				if packet.IsKeepAlive {
 					log.Println("keep-alive: OK")
@@ -151,17 +220,17 @@ func ToTun(r *TCPRouter, conn net.Conn, session *ChaCha20.Session, ctx context.C
 			default:
 			}
 
-			decrypted, _, _, decryptionErr := session.Decrypt(packet.Payload)
+			decrypted, _, _, decryptionErr := w.session.Decrypt(packet.Payload)
 			if decryptionErr != nil {
 				log.Printf("failed to decrypt data: %s", decryptionErr)
 				continue
 			}
 
 			// Write the decrypted packet to the TUN interface
-			_, err = r.tun.Write(decrypted)
+			_, err = w.router.tun.Write(decrypted)
 			if err != nil {
 				log.Printf("failed to write to TUN: %v", err)
-				return
+				return err
 			}
 		}
 	}
