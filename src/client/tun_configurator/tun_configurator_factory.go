@@ -1,17 +1,8 @@
-package tunconf
+package tun_configurator
 
 import (
 	"fmt"
 	"runtime"
-	"tungo/network"
-	"tungo/settings"
-)
-
-type (
-	TunConfigurator interface {
-		Configure(s settings.ConnectionSettings) network.TunAdapter
-		Deconfigure(s settings.ConnectionSettings)
-	}
 )
 
 type TunConfiguratorFactory struct{}

@@ -5,7 +5,7 @@ import (
 	"log"
 	"tungo/client/routing/tuntcp"
 	"tungo/client/routing/tunudp"
-	"tungo/client/tunconf"
+	"tungo/client/tun_configurator"
 	"tungo/settings"
 	"tungo/settings/client"
 )
@@ -20,7 +20,7 @@ func NewRouterFactory() *RouterFactory {
 
 // CreateRouter creates a TrafficRouter instance for the specified protocol.
 func (f *RouterFactory) CreateRouter(conf client.Conf) (TrafficRouter, error) {
-	tunConfiguratorFactory := tunconf.NewTunConfiguratorFactory()
+	tunConfiguratorFactory := tun_configurator.NewTunConfiguratorFactory()
 	tunConfigurator, tunConfiguratorFactoryErr := tunConfiguratorFactory.CreateTunConfigurator()
 	if tunConfiguratorFactoryErr != nil {
 		log.Fatalf("failed to create a %v tun configurator: %s", conf.Protocol, tunConfiguratorFactoryErr)

@@ -6,8 +6,8 @@ import (
 	"net"
 	"sync"
 	"time"
-	"tungo/client/transportconf"
-	"tungo/client/tunconf"
+	"tungo/client/transport_connector"
+	"tungo/client/tun_configurator"
 	"tungo/handshake/ChaCha20"
 	"tungo/network"
 	"tungo/network/keepalive"
@@ -16,7 +16,7 @@ import (
 
 type TCPRouter struct {
 	Settings        settings.ConnectionSettings
-	TunConfigurator tunconf.TunConfigurator
+	TunConfigurator tun_configurator.TunConfigurator
 	tun             network.TunAdapter
 }
 
@@ -94,7 +94,7 @@ func forwardIPPackets(r *TCPRouter, conn *net.Conn, session *ChaCha20.Session, c
 }
 
 func (r *TCPRouter) connectToServer(ctx context.Context) (net.Conn, *ChaCha20.Session, error) {
-	connectionDelegate := func() (net.Conn, *ChaCha20.Session, error) {
+	connectorDelegate := func() (net.Conn, *ChaCha20.Session, error) {
 		return newTCPConnectionBuilder().
 			useSettings(r.Settings).
 			useConnectionTimeout(time.Second * 5).
@@ -102,9 +102,9 @@ func (r *TCPRouter) connectToServer(ctx context.Context) (net.Conn, *ChaCha20.Se
 			handshake().
 			build()
 	}
-	transportConnManager := &transportconf.ConnectionManager{
-		ConnectionDelegate: connectionDelegate,
-	}
 
-	return transportConnManager.EstablishConnectionWithRetry(ctx)
+	return transport_connector.
+		NewTransportConnector().
+		UseConnectorDelegate(connectorDelegate).
+		Connect(ctx)
 }
