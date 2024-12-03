@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 	"tungo/client/transport_connector"
-	"tungo/client/tunconf"
+	"tungo/client/tun_configurator"
 	"tungo/handshake/ChaCha20"
 	"tungo/network"
 	"tungo/network/keepalive"
@@ -16,7 +16,7 @@ import (
 
 type TCPRouter struct {
 	Settings        settings.ConnectionSettings
-	TunConfigurator tunconf.TunConfigurator
+	TunConfigurator tun_configurator.TunConfigurator
 	tun             network.TunAdapter
 }
 

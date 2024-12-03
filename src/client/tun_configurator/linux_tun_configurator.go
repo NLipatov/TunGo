@@ -1,4 +1,4 @@
-package tunconf
+package tun_configurator
 
 import (
 	"fmt"
@@ -10,6 +10,7 @@ import (
 	"tungo/settings"
 )
 
+// LinuxTunConfigurator platform specific TUN-configurator used for Linux platform
 type LinuxTunConfigurator struct {
 }
 
