@@ -1,4 +1,4 @@
-package tunudp
+package tun_udp
 
 import (
 	"context"
@@ -79,13 +79,31 @@ func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *ChaCha20.Sessi
 	// TUN -> UDP
 	go func() {
 		defer wg.Done()
-		FromTun(r, conn, session, *connCtx, *connCancel, sendKeepAliveCommandChan)
+		tunWorkerErr := newTcpTunWorker().
+			UseRouter(*r).
+			UseConn(conn).
+			UseSession(session).
+			UseSendKeepAliveChan(sendKeepAliveCommandChan).
+			HandlePacketsFromTun(*connCtx, *connCancel)
+
+		if tunWorkerErr != nil {
+			log.Fatalf("failed to handle TUN package: %s", tunWorkerErr)
+		}
 	}()
 
 	// UDP -> TUN
 	go func() {
 		defer wg.Done()
-		ToTun(r, conn, session, *connCtx, *connCancel, connPacketReceivedChan)
+		tunWorkerErr := newTcpTunWorker().
+			UseRouter(*r).
+			UseConn(conn).
+			UseSession(session).
+			UseReceiveKeepAliveChan(connPacketReceivedChan).
+			HandlePacketsFromConn(*connCtx, *connCancel)
+
+		if tunWorkerErr != nil {
+			log.Fatalf("failed to handle TUN package: %s", tunWorkerErr)
+		}
 	}()
 
 	wg.Wait()

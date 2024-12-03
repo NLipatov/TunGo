@@ -3,8 +3,8 @@ package routing
 import (
 	"fmt"
 	"log"
-	"tungo/client/routing/tuntcp"
-	"tungo/client/routing/tunudp"
+	"tungo/client/routing/tun_tcp"
+	"tungo/client/routing/tun_udp"
 	"tungo/client/tun_configurator"
 	"tungo/settings"
 	"tungo/settings/client"
@@ -31,12 +31,12 @@ func (f *RouterFactory) CreateRouter(conf client.Conf) (TrafficRouter, error) {
 
 	switch conf.Protocol {
 	case settings.TCP:
-		return &tuntcp.TCPRouter{
+		return &tun_tcp.TCPRouter{
 			Settings:        conf.TCPSettings,
 			TunConfigurator: tunConfigurator,
 		}, nil
 	case settings.UDP:
-		return &tunudp.UDPRouter{
+		return &tun_udp.UDPRouter{
 			Settings:        conf.UDPSettings,
 			TunConfigurator: tunConfigurator,
 		}, nil

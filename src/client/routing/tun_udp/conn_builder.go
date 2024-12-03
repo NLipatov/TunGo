@@ -1,4 +1,4 @@
-package tunudp
+package tun_udp
 
 import (
 	"context"

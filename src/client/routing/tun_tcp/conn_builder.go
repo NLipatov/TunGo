@@ -1,4 +1,4 @@
-package tuntcp
+package tun_tcp
 
 import (
 	"context"

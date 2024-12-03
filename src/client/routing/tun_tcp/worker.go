@@ -1,4 +1,4 @@
-package tuntcp
+package tun_tcp
 
 import (
 	"context"
@@ -12,8 +12,8 @@ import (
 	"tungo/settings/client"
 )
 
-// ToTCP forwards packets from TUN to TCP
-func ToTCP(r *TCPRouter, conn net.Conn, session *ChaCha20.Session, ctx context.Context, connCancel context.CancelFunc, sendKeepaliveCh chan bool) {
+// FromTun forwards packets from TUN to TCP
+func FromTun(r *TCPRouter, conn net.Conn, session *ChaCha20.Session, ctx context.Context, connCancel context.CancelFunc, sendKeepaliveCh chan bool) {
 	buf := make([]byte, network.IPPacketMaxSizeBytes)
 	connWriteChan := make(chan []byte, getConnWriteBufferSize())
 

@@ -1,4 +1,4 @@
-package tunudp
+package tun_udp
 
 import (
 	"context"
@@ -12,32 +12,99 @@ import (
 	"tungo/network/keepalive"
 )
 
-func FromTun(r *UDPRouter, conn *net.UDPConn, session *ChaCha20.Session, ctx context.Context, connCancel context.CancelFunc, sendKeepAliveChan chan bool) {
+type tcpTunWorker struct {
+	router               UDPRouter
+	conn                 *net.UDPConn
+	session              *ChaCha20.Session
+	sendKeepAliveChan    chan bool
+	receiveKeepAliveChan chan bool
+	connCancel           context.CancelFunc
+	err                  error
+}
+
+func newTcpTunWorker() *tcpTunWorker {
+	return &tcpTunWorker{}
+}
+
+func (w *tcpTunWorker) UseRouter(router UDPRouter) *tcpTunWorker {
+	if w.err != nil {
+		return w
+	}
+
+	w.router = router
+	return w
+}
+
+func (w *tcpTunWorker) UseSession(session *ChaCha20.Session) *tcpTunWorker {
+	if w.err != nil {
+		return w
+	}
+
+	w.session = session
+
+	return w
+}
+
+func (w *tcpTunWorker) UseConn(conn *net.UDPConn) *tcpTunWorker {
+	if w.err != nil {
+		return w
+	}
+
+	w.conn = conn
+
+	return w
+}
+
+func (w *tcpTunWorker) UseSendKeepAliveChan(ch chan bool) *tcpTunWorker {
+	if w.err != nil {
+		return w
+	}
+
+	w.sendKeepAliveChan = ch
+
+	return w
+}
+
+func (w *tcpTunWorker) UseReceiveKeepAliveChan(ch chan bool) *tcpTunWorker {
+	if w.err != nil {
+		return w
+	}
+
+	w.receiveKeepAliveChan = ch
+
+	return w
+}
+
+func (w *tcpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnect context.CancelFunc) error {
+	workerSetupErr := w.err
+	if workerSetupErr != nil {
+		return workerSetupErr
+	}
 	buf := make([]byte, ip.MaxPacketLengthBytes)
 
 	// Main loop to read from TUN and send data
 	for {
 		select {
 		case <-ctx.Done(): // Stop-signal
-			return
-		case <-sendKeepAliveChan:
+			return nil
+		case <-w.sendKeepAliveChan:
 			data, err := keepalive.GenerateUDP()
 			if err != nil {
 				log.Println("failed to generate keep-alive:", err)
 				continue
 			}
-			writeOrReconnect(conn, &data, ctx, connCancel)
+			writeOrReconnect(w.conn, &data, ctx, triggerReconnect)
 		default:
-			n, err := r.tun.Read(buf)
+			n, err := w.router.tun.Read(buf)
 			if err != nil {
 				if ctx.Err() != nil {
-					return
+					return nil
 				}
 				log.Printf("failed to read from TUN: %v", err)
-				connCancel()
+				triggerReconnect()
 			}
 
-			encryptedPacket, high, low, err := session.Encrypt(buf[:n])
+			encryptedPacket, high, low, err := w.session.Encrypt(buf[:n])
 			if err != nil {
 				log.Printf("failed to encrypt packet: %v", err)
 				continue
@@ -48,7 +115,7 @@ func FromTun(r *UDPRouter, conn *net.UDPConn, session *ChaCha20.Session, ctx con
 				log.Printf("packet encoding failed: %s", err)
 				continue
 			}
-			writeOrReconnect(conn, packet.Payload, ctx, connCancel)
+			writeOrReconnect(w.conn, packet.Payload, ctx, triggerReconnect)
 		}
 	}
 }
@@ -65,33 +132,37 @@ func writeOrReconnect(conn *net.UDPConn, data *[]byte, ctx context.Context, conn
 	}
 }
 
-func ToTun(r *UDPRouter, conn *net.UDPConn, session *ChaCha20.Session, ctx context.Context, connCancel context.CancelFunc, receiveKeepAliveChan chan bool) {
+func (w *tcpTunWorker) HandlePacketsFromConn(ctx context.Context, connCancel context.CancelFunc) error {
+	workerSetupErr := w.err
+	if workerSetupErr != nil {
+		return workerSetupErr
+	}
 	buf := make([]byte, ip.MaxPacketLengthBytes)
 
 	go func() {
 		<-ctx.Done()
-		_ = conn.Close()
+		_ = w.conn.Close()
 	}()
 
 	for {
 		select {
 		case <-ctx.Done(): // Stop-signal
-			return
+			return nil
 		default:
-			n, _, err := conn.ReadFromUDP(buf)
+			n, _, err := w.conn.ReadFromUDP(buf)
 			if err != nil {
 				if ctx.Err() != nil {
-					return
+					return nil
 				}
 				log.Printf("read from UDP failed: %v", err)
 				connCancel()
-				return
+				return nil
 			}
 
-			if len(buf[:n]) == len(r.Settings.SessionMarker) && string(buf[:n]) == r.Settings.SessionMarker {
+			if len(buf[:n]) == len(w.router.Settings.SessionMarker) && string(buf[:n]) == w.router.Settings.SessionMarker {
 				log.Printf("re-registration request by server")
 				connCancel()
-				return
+				return nil
 			}
 
 			packet, packetDecodeErr := (&network.Packet{}).DecodeUDP(buf[:n])
@@ -101,7 +172,7 @@ func ToTun(r *UDPRouter, conn *net.UDPConn, session *ChaCha20.Session, ctx conte
 			}
 
 			select {
-			case receiveKeepAliveChan <- true:
+			case w.receiveKeepAliveChan <- true:
 				if packet.IsKeepAlive {
 					log.Println("keep-alive: OK")
 					continue
@@ -109,12 +180,12 @@ func ToTun(r *UDPRouter, conn *net.UDPConn, session *ChaCha20.Session, ctx conte
 			default:
 			}
 
-			decrypted, _, _, decryptionErr := session.DecryptViaNonceBuf(*packet.Payload, *packet.Nonce)
+			decrypted, _, _, decryptionErr := w.session.DecryptViaNonceBuf(*packet.Payload, *packet.Nonce)
 			if decryptionErr != nil {
 				if errors.Is(decryptionErr, ChaCha20.ErrNonUniqueNonce) {
 					log.Printf("reconnecting on critical decryption err: %s", err)
 					connCancel()
-					return
+					return nil
 				}
 
 				log.Printf("failed to decrypt data: %s", decryptionErr)
@@ -122,10 +193,10 @@ func ToTun(r *UDPRouter, conn *net.UDPConn, session *ChaCha20.Session, ctx conte
 			}
 
 			// Write the decrypted packet to the TUN interface
-			_, err = r.tun.Write(decrypted)
+			_, err = w.router.tun.Write(decrypted)
 			if err != nil {
 				log.Printf("failed to write to TUN: %v", err)
-				return
+				return err
 			}
 		}
 	}

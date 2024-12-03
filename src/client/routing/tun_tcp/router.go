@@ -1,4 +1,4 @@
-package tuntcp
+package tun_tcp
 
 import (
 	"context"
@@ -81,7 +81,7 @@ func forwardIPPackets(r *TCPRouter, conn *net.Conn, session *ChaCha20.Session, c
 	// TUN -> TCP
 	go func() {
 		defer wg.Done()
-		ToTCP(r, *conn, session, connCtx, connCancel, sendKeepaliveCh)
+		FromTun(r, *conn, session, connCtx, connCancel, sendKeepaliveCh)
 	}()
 
 	// TCP -> TUN
