@@ -1,4 +1,4 @@
-package tuntcp
+package tun_tcp
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"time"
 	"tungo/client/transport_connector"
 	"tungo/client/tun_configurator"
-	"tungo/handshake/ChaCha20"
+	"tungo/handshake/chacha20"
 	"tungo/network"
 	"tungo/network/keepalive"
 	"tungo/settings"
@@ -70,7 +70,7 @@ func (r *TCPRouter) RouteTraffic(ctx context.Context) error {
 	}
 }
 
-func forwardIPPackets(r *TCPRouter, conn *net.Conn, session *ChaCha20.Session, connCtx context.Context, connCancel context.CancelFunc) {
+func forwardIPPackets(r *TCPRouter, conn *net.Conn, session *chacha20.Session, connCtx context.Context, connCancel context.CancelFunc) {
 	sendKeepaliveCh := make(chan bool, 1)
 	receiveKeepaliveCh := make(chan bool, 1)
 	go keepalive.StartConnectionProbing(connCtx, connCancel, sendKeepaliveCh, receiveKeepaliveCh)
@@ -81,20 +81,38 @@ func forwardIPPackets(r *TCPRouter, conn *net.Conn, session *ChaCha20.Session, c
 	// TUN -> TCP
 	go func() {
 		defer wg.Done()
-		ToTCP(r, *conn, session, connCtx, connCancel, sendKeepaliveCh)
+		tunWorkerErr := newTcpTunWorker().
+			UseRouter(*r).
+			UseConn(*conn).
+			UseSession(session).
+			UseSendKeepAliveChan(sendKeepaliveCh).
+			HandlePacketsFromTun(connCtx, connCancel)
+
+		if tunWorkerErr != nil {
+			log.Fatalf("failed to handle TUN-packet: %s", tunWorkerErr)
+		}
 	}()
 
 	// TCP -> TUN
 	go func() {
 		defer wg.Done()
-		ToTun(r, *conn, session, connCtx, connCancel, receiveKeepaliveCh)
+		tunWorkerErr := newTcpTunWorker().
+			UseRouter(*r).
+			UseConn(*conn).
+			UseSession(session).
+			UseReceiveKeepAliveChan(receiveKeepaliveCh).
+			HandlePacketsFromConn(connCtx, connCancel)
+
+		if tunWorkerErr != nil {
+			log.Fatalf("failed to handle CONN-packet: %s", tunWorkerErr)
+		}
 	}()
 
 	wg.Wait()
 }
 
-func (r *TCPRouter) connectToServer(ctx context.Context) (net.Conn, *ChaCha20.Session, error) {
-	connectorDelegate := func() (net.Conn, *ChaCha20.Session, error) {
+func (r *TCPRouter) connectToServer(ctx context.Context) (net.Conn, *chacha20.Session, error) {
+	connectorDelegate := func() (net.Conn, *chacha20.Session, error) {
 		return newTCPConnectionBuilder().
 			useSettings(r.Settings).
 			useConnectionTimeout(time.Second * 5).

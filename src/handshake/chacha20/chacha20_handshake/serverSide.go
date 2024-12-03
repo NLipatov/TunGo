@@ -1,4 +1,4 @@
-package handshakeHandlers
+package chacha20_handshake
 
 import (
 	"crypto/ed25519"
@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"tungo/handshake/ChaCha20"
+	"tungo/handshake/chacha20"
 	"tungo/network"
 	"tungo/settings/server"
 
@@ -16,20 +16,20 @@ import (
 	"golang.org/x/crypto/hkdf"
 )
 
-func OnClientConnected(conn network.ConnectionAdapter) (*ChaCha20.Session, *string, error) {
+func OnClientConnected(conn network.ConnectionAdapter) (*chacha20.Session, *string, error) {
 	conf, err := (&server.Conf{}).Read()
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to read server conf: %s", err)
 	}
 
-	buf := make([]byte, ChaCha20.MaxClientHelloSizeBytes)
+	buf := make([]byte, chacha20.MaxClientHelloSizeBytes)
 	_, err = conn.Read(buf)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to read from client: %v", err)
 	}
 
 	//Read client hello
-	clientHello, err := (&ChaCha20.ClientHello{}).Read(buf)
+	clientHello, err := (&chacha20.ClientHello{}).Read(buf)
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid client hello: %s", err)
 	}
@@ -43,7 +43,7 @@ func OnClientConnected(conn network.ConnectionAdapter) (*ChaCha20.Session, *stri
 	serverDataToSign := append(append(curvePublic, serverNonce...), clientHello.ClientNonce...)
 	privateEd := conf.Ed25519PrivateKey
 	serverSignature := ed25519.Sign(privateEd, serverDataToSign)
-	serverHello, err := (&ChaCha20.ServerHello{}).Write(&serverSignature, &serverNonce, &curvePublic)
+	serverHello, err := (&chacha20.ServerHello{}).Write(&serverSignature, &serverNonce, &curvePublic)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to write server hello: %s\n", err)
 	}
@@ -57,7 +57,7 @@ func OnClientConnected(conn network.ConnectionAdapter) (*ChaCha20.Session, *stri
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to read client signature: %s\n", err)
 	}
-	clientSignature, err := (&ChaCha20.ClientSignature{}).Read(clientSignatureBuf)
+	clientSignature, err := (&chacha20.ClientSignature{}).Read(clientSignatureBuf)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to read client signature: %s", err)
 	}
@@ -86,12 +86,12 @@ func OnClientConnected(conn network.ConnectionAdapter) (*ChaCha20.Session, *stri
 	_, _ = io.ReadFull(clientToServerHKDF, clientToServerKey)
 
 	// Generate server session
-	serverSession, err := ChaCha20.NewSession(serverToClientKey, clientToServerKey, true)
+	serverSession, err := chacha20.NewSession(serverToClientKey, clientToServerKey, true)
 	if err != nil {
 		log.Fatalf("failed to create server session: %s\n", err)
 	}
 
-	derivedSessionId, deriveSessionIdErr := ChaCha20.DeriveSessionId(sharedSecret, salt[:])
+	derivedSessionId, deriveSessionIdErr := chacha20.DeriveSessionId(sharedSecret, salt[:])
 	if deriveSessionIdErr != nil {
 		return nil, nil, fmt.Errorf("failed to derive session id: %s", derivedSessionId)
 	}
