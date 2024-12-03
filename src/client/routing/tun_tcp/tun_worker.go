@@ -6,7 +6,7 @@ import (
 	"io"
 	"log"
 	"net"
-	"tungo/handshake/ChaCha20"
+	"tungo/handshake/chacha20"
 	"tungo/network"
 	"tungo/network/keepalive"
 	"tungo/settings/client"
@@ -15,7 +15,7 @@ import (
 type tcpTunWorker struct {
 	router               TCPRouter
 	conn                 net.Conn
-	session              *ChaCha20.Session
+	session              *chacha20.Session
 	sendKeepAliveChan    chan bool
 	receiveKeepAliveChan chan bool
 	err                  error
@@ -34,7 +34,7 @@ func (w *tcpTunWorker) UseRouter(router TCPRouter) *tcpTunWorker {
 	return w
 }
 
-func (w *tcpTunWorker) UseSession(session *ChaCha20.Session) *tcpTunWorker {
+func (w *tcpTunWorker) UseSession(session *chacha20.Session) *tcpTunWorker {
 	if w.err != nil {
 		return w
 	}

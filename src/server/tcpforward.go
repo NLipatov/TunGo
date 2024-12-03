@@ -8,8 +8,8 @@ import (
 	"net"
 	"os"
 	"sync"
-	"tungo/handshake/ChaCha20"
-	"tungo/handshake/ChaCha20/handshakeHandlers"
+	"tungo/handshake/chacha20"
+	"tungo/handshake/chacha20/chacha20_handshake"
 	"tungo/network"
 	"tungo/network/keepalive"
 	"tungo/network/packets"
@@ -64,7 +64,7 @@ func TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.
 					log.Printf("failed to load session")
 					continue
 				}
-				session := sessionValue.(*ChaCha20.Session)
+				session := sessionValue.(*chacha20.Session)
 				encryptedPacket, _, _, encryptErr := session.Encrypt(data)
 				if encryptErr != nil {
 					log.Printf("failder to encrypt a package: %s", encryptErr)
@@ -125,7 +125,7 @@ func TCPToTun(settings settings.ConnectionSettings, tunFile *os.File, localIpMap
 func registerClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, localIpToServerSessionMap *sync.Map, ctx context.Context) {
 	log.Printf("connected: %s", conn.RemoteAddr())
 
-	serverSession, internalIpAddr, err := handshakeHandlers.OnClientConnected(&network.TcpAdapter{
+	serverSession, internalIpAddr, err := chacha20_handshake.OnClientConnected(&network.TcpAdapter{
 		Conn: conn,
 	})
 	if err != nil {
@@ -178,7 +178,7 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 				continue
 			}
 
-			session := sessionValue.(*ChaCha20.Session)
+			session := sessionValue.(*chacha20.Session)
 
 			//read packet length from 4-byte length prefix
 			var length = binary.BigEndian.Uint32(buf[:4])

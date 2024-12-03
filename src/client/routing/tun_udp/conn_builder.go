@@ -4,15 +4,15 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"tungo/handshake/ChaCha20"
-	"tungo/handshake/ChaCha20/handshakeHandlers"
+	"tungo/handshake/chacha20"
+	"tungo/handshake/chacha20/chacha20_handshake"
 	"tungo/settings"
 )
 
 type connectionBuilder struct {
 	settings settings.ConnectionSettings
 	conn     *net.UDPConn
-	session  *ChaCha20.Session
+	session  *chacha20.Session
 	ctx      context.Context
 	err      error
 }
@@ -63,13 +63,13 @@ func (b *connectionBuilder) handshake() *connectionBuilder {
 		return b
 	}
 
-	session, err := handshakeHandlers.OnConnectedToServer(b.conn, b.settings)
+	session, err := chacha20_handshake.OnConnectedToServer(b.conn, b.settings)
 	b.session = session
 	b.err = err
 	return b
 }
 
-func (b *connectionBuilder) build() (net.Conn, *ChaCha20.Session, error) {
+func (b *connectionBuilder) build() (net.Conn, *chacha20.Session, error) {
 	if b.err != nil {
 		return nil, nil, b.err
 	}

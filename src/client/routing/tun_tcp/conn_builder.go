@@ -5,15 +5,15 @@ import (
 	"fmt"
 	"net"
 	"time"
-	"tungo/handshake/ChaCha20"
-	"tungo/handshake/ChaCha20/handshakeHandlers"
+	"tungo/handshake/chacha20"
+	"tungo/handshake/chacha20/chacha20_handshake"
 	"tungo/settings"
 )
 
 type tcpConnectionBuilder struct {
 	settings    settings.ConnectionSettings
 	conn        net.Conn
-	session     *ChaCha20.Session
+	session     *chacha20.Session
 	ctx         context.Context
 	dialCancel  context.CancelFunc
 	dialTimeout time.Duration
@@ -77,7 +77,7 @@ func (b *tcpConnectionBuilder) handshake() *tcpConnectionBuilder {
 		return b
 	}
 
-	session, err := handshakeHandlers.OnConnectedToServer(b.conn, b.settings)
+	session, err := chacha20_handshake.OnConnectedToServer(b.conn, b.settings)
 	if err != nil {
 		b.err = fmt.Errorf("aborting connection: registration failed: %s\n", err)
 	}
@@ -86,7 +86,7 @@ func (b *tcpConnectionBuilder) handshake() *tcpConnectionBuilder {
 	return b
 }
 
-func (b *tcpConnectionBuilder) build() (net.Conn, *ChaCha20.Session, error) {
+func (b *tcpConnectionBuilder) build() (net.Conn, *chacha20.Session, error) {
 	if b.err != nil {
 		return nil, nil, b.err
 	}

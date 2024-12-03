@@ -7,7 +7,7 @@ import (
 	"sync"
 	"tungo/client/transport_connector"
 	"tungo/client/tun_configurator"
-	"tungo/handshake/ChaCha20"
+	"tungo/handshake/chacha20"
 	"tungo/network"
 	"tungo/network/keepalive"
 	"tungo/settings"
@@ -68,7 +68,7 @@ func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
 	}
 }
 
-func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *ChaCha20.Session, connCtx *context.Context, connCancel *context.CancelFunc) {
+func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *chacha20.Session, connCtx *context.Context, connCancel *context.CancelFunc) {
 	sendKeepAliveCommandChan := make(chan bool, 1)
 	connPacketReceivedChan := make(chan bool, 1)
 	go keepalive.StartConnectionProbing(*connCtx, *connCancel, sendKeepAliveCommandChan, connPacketReceivedChan)
@@ -109,8 +109,8 @@ func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *ChaCha20.Sessi
 	wg.Wait()
 }
 
-func (r *UDPRouter) connectToServer(ctx context.Context) (net.Conn, *ChaCha20.Session, error) {
-	connectorDelegate := func() (net.Conn, *ChaCha20.Session, error) {
+func (r *UDPRouter) connectToServer(ctx context.Context) (net.Conn, *chacha20.Session, error) {
+	connectorDelegate := func() (net.Conn, *chacha20.Session, error) {
 		return newConnectionBuilder().
 			useSettings(r.Settings).
 			connect(ctx).

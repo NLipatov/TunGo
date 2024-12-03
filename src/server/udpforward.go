@@ -7,8 +7,8 @@ import (
 	"net"
 	"os"
 	"sync"
-	"tungo/handshake/ChaCha20"
-	"tungo/handshake/ChaCha20/handshakeHandlers"
+	"tungo/handshake/chacha20"
+	"tungo/handshake/chacha20/chacha20_handshake"
 	"tungo/network"
 	"tungo/network/ip"
 	"tungo/network/keepalive"
@@ -96,7 +96,7 @@ func TunToUDP(tunFile *os.File, intIPToUDPClientAddr *sync.Map, intIPToSession *
 				log.Printf("failed to load session for IP %s", destinationIP)
 				continue
 			}
-			session := sessionValue.(*ChaCha20.Session)
+			session := sessionValue.(*chacha20.Session)
 
 			encryptedPacket, high, low, encryptErr := session.Encrypt(data)
 			if encryptErr != nil {
@@ -104,7 +104,7 @@ func TunToUDP(tunFile *os.File, intIPToUDPClientAddr *sync.Map, intIPToSession *
 				continue
 			}
 
-			packet, packetEncodeErr := (&network.Packet{}).EncodeUDP(encryptedPacket, &ChaCha20.Nonce{
+			packet, packetEncodeErr := (&network.Packet{}).EncodeUDP(encryptedPacket, &chacha20.Nonce{
 				Low:  low,
 				High: high,
 			})
@@ -184,7 +184,7 @@ func UDPToTun(settings settings.ConnectionSettings, tunFile *os.File, intIPToUDP
 				log.Printf("failed to load session for IP %s", internalIP)
 				continue
 			}
-			session := sessionValue.(*ChaCha20.Session)
+			session := sessionValue.(*chacha20.Session)
 
 			packet, err := (&network.Packet{}).DecodeUDP(buf[:n])
 			if err != nil {
@@ -222,7 +222,7 @@ func UDPToTun(settings settings.ConnectionSettings, tunFile *os.File, intIPToUDP
 
 func udpRegisterClient(conn *net.UDPConn, clientAddr net.UDPAddr, initialData []byte, intIPToUDPClientAddr *sync.Map, intIPToSession *sync.Map) error {
 	// Pass initialData and clientAddr to the handshake function
-	serverSession, internalIpAddr, err := handshakeHandlers.OnClientConnected(&network.UdpAdapter{
+	serverSession, internalIpAddr, err := chacha20_handshake.OnClientConnected(&network.UdpAdapter{
 		Conn:        *conn,
 		Addr:        clientAddr,
 		InitialData: initialData,
