@@ -70,7 +70,6 @@ func generate() (*client.Conf, error) {
 			ConnectionIP:     defaultIfIpV4,
 			Port:             serverConf.TCPSettings.Port,
 			MTU:              serverConf.TCPSettings.MTU,
-			SessionMarker:    serverConf.TCPSettings.SessionMarker,
 			Protocol:         settings.TCP,
 		},
 		UDPSettings: settings.ConnectionSettings{
@@ -80,7 +79,6 @@ func generate() (*client.Conf, error) {
 			ConnectionIP:     defaultIfIpV4,
 			Port:             serverConf.UDPSettings.Port,
 			MTU:              serverConf.UDPSettings.MTU,
-			SessionMarker:    serverConf.UDPSettings.SessionMarker,
 			Protocol:         settings.UDP,
 		},
 		Ed25519PublicKey:          serverConf.Ed25519PublicKey,

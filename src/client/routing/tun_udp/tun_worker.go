@@ -158,12 +158,6 @@ func (w *udpTunWorker) HandlePacketsFromConn(ctx context.Context, connCancel con
 				return nil
 			}
 
-			if len(buf[:n]) == len(w.router.Settings.SessionMarker) && string(buf[:n]) == w.router.Settings.SessionMarker {
-				log.Printf("re-registration request by server")
-				connCancel()
-				return nil
-			}
-
 			packet, packetDecodeErr := (&network.Packet{}).DecodeUDP(buf[:n])
 			if packetDecodeErr != nil {
 				log.Printf("failed to decode a packet: %s", packetDecodeErr)

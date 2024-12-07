@@ -162,18 +162,14 @@ func UDPToTun(settings settings.ConnectionSettings, tunFile *os.File, intIPToUDP
 
 			intIPValue, exists := clientAddrToInternalIP.Load(clientAddr.String())
 			if !exists {
-				if len(buf[:n]) == len(settings.SessionMarker) && string(buf[:n]) == settings.SessionMarker {
-					intIPToSession.Delete(intIPValue)
-					intIPToUDPClientAddr.Delete(intIPValue)
-					clientAddrToInternalIP.Delete(clientAddr.String())
-					continue
-				}
+				intIPToSession.Delete(intIPValue)
+				intIPToUDPClientAddr.Delete(intIPValue)
+				clientAddrToInternalIP.Delete(clientAddr.String())
 
 				// Pass initial data to registration function
 				regErr := udpRegisterClient(conn, *clientAddr, buf[:n], intIPToUDPClientAddr, intIPToSession)
 				if regErr != nil {
 					log.Printf("%s failed registration: %s\n", clientAddr.String(), regErr)
-					_, _ = conn.WriteToUDP([]byte(settings.SessionMarker), clientAddr)
 				}
 				continue
 			}

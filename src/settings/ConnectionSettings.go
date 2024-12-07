@@ -20,7 +20,6 @@ type ConnectionSettings struct {
 	ConnectionIP     string `json:"ConnectionIP"`
 	Port             string `json:"Port"`
 	MTU              int    `json:"MTU"`
-	SessionMarker    string `json:"SessionMarker"`
 	Protocol         Protocol
 }
 
