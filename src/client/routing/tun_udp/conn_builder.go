@@ -4,21 +4,25 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"time"
 	"tungo/handshake/chacha20"
 	"tungo/handshake/chacha20/chacha20_handshake"
 	"tungo/settings"
 )
 
 type connectionBuilder struct {
-	settings settings.ConnectionSettings
-	conn     *net.UDPConn
-	session  *chacha20.Session
-	ctx      context.Context
-	err      error
+	settings    settings.ConnectionSettings
+	conn        *net.UDPConn
+	session     *chacha20.Session
+	ctx         context.Context
+	dialTimeout time.Duration
+	err         error
 }
 
 func newConnectionBuilder() *connectionBuilder {
-	return &connectionBuilder{}
+	return &connectionBuilder{
+		dialTimeout: time.Second * 5,
+	}
 }
 
 func (b *connectionBuilder) useSettings(s settings.ConnectionSettings) *connectionBuilder {
@@ -32,6 +36,15 @@ func (b *connectionBuilder) useSettings(s settings.ConnectionSettings) *connecti
 	}
 
 	b.settings = s
+	return b
+}
+
+func (b *connectionBuilder) useConnectionTimeout(duration time.Duration) *connectionBuilder {
+	if b.err != nil {
+		return b
+	}
+
+	b.dialTimeout = duration
 	return b
 }
 
@@ -63,10 +76,32 @@ func (b *connectionBuilder) handshake() *connectionBuilder {
 		return b
 	}
 
-	session, err := chacha20_handshake.OnConnectedToServer(b.conn, b.settings)
-	b.session = session
-	b.err = err
-	return b
+	ctx, cancel := context.WithTimeout(b.ctx, b.dialTimeout)
+	defer cancel()
+
+	resultChan := make(chan struct {
+		session *chacha20.Session
+		err     error
+	})
+
+	go func(conn net.Conn, settings settings.ConnectionSettings) {
+		defer close(resultChan)
+		session, handshakeErr := chacha20_handshake.OnConnectedToServer(ctx, conn, settings)
+		resultChan <- struct {
+			session *chacha20.Session
+			err     error
+		}{session, handshakeErr}
+	}(b.conn, b.settings)
+
+	select {
+	case <-ctx.Done():
+		b.err = fmt.Errorf("server took too long to respond: %w", ctx.Err())
+		return b
+	case res := <-resultChan:
+		b.session = res.session
+		b.err = res.err
+		return b
+	}
 }
 
 func (b *connectionBuilder) build() (net.Conn, *chacha20.Session, error) {

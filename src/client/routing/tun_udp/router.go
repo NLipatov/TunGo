@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"sync"
+	"time"
 	"tungo/client/transport_connector"
 	"tungo/client/tun_configurator"
 	"tungo/handshake/chacha20"
@@ -113,6 +114,7 @@ func (r *UDPRouter) connectToServer(ctx context.Context) (net.Conn, *chacha20.Se
 	connectorDelegate := func() (net.Conn, *chacha20.Session, error) {
 		return newConnectionBuilder().
 			useSettings(r.Settings).
+			useConnectionTimeout(time.Second * 5).
 			connect(ctx).
 			handshake().
 			build()

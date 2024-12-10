@@ -34,7 +34,9 @@ func Test_CreateAndDeleteInterface(t *testing.T) {
 }
 
 func Test_WriteAndReadFromTun(t *testing.T) {
-	ifName, err := UpNewTun("rwtesttun0")
+	tunName := "rwtesttun0"
+	_, _ = LinkDel(tunName)
+	ifName, err := UpNewTun(tunName)
 	if err != nil {
 		t.Fatalf("failed to create interface %v: %v", ifName, err)
 	}
