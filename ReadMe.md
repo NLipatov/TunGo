@@ -9,6 +9,14 @@
 
 ---
 
+Just a few quick notes before you continue:
+
+    1) Encountered an issue? Feel free to create an issue.
+    2) Spot something that could be improved? We'd really love to see your pull request!
+    3) If you find the project useful, consider giving it a ⭐.
+
+---
+
 ### Usage
 Run:
 ```bash
