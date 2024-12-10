@@ -21,7 +21,9 @@ type tcpConnectionBuilder struct {
 }
 
 func newTCPConnectionBuilder() *tcpConnectionBuilder {
-	return &tcpConnectionBuilder{}
+	return &tcpConnectionBuilder{
+		dialTimeout: time.Second * 5,
+	}
 }
 
 func (b *tcpConnectionBuilder) useSettings(s settings.ConnectionSettings) *tcpConnectionBuilder {
@@ -53,9 +55,6 @@ func (b *tcpConnectionBuilder) connect(ctx context.Context) *tcpConnectionBuilde
 	}
 
 	dialer := &net.Dialer{}
-	if b.dialTimeout == 0 {
-		b.dialTimeout = time.Second * 5
-	}
 	dialCtx, cancel := context.WithTimeout(ctx, b.dialTimeout)
 	defer cancel()
 	conn, err := dialer.DialContext(dialCtx, "tcp", fmt.Sprintf("%s%s", b.settings.ConnectionIP, b.settings.Port))
@@ -77,13 +76,32 @@ func (b *tcpConnectionBuilder) handshake() *tcpConnectionBuilder {
 		return b
 	}
 
-	session, err := chacha20_handshake.OnConnectedToServer(b.conn, b.settings)
-	if err != nil {
-		b.err = fmt.Errorf("aborting connection: registration failed: %s\n", err)
-	}
+	ctx, cancel := context.WithTimeout(b.ctx, b.dialTimeout)
+	defer cancel()
 
-	b.session = session
-	return b
+	resultChan := make(chan struct {
+		session *chacha20.Session
+		err     error
+	})
+
+	go func(conn net.Conn, settings settings.ConnectionSettings) {
+		defer close(resultChan)
+		session, handshakeErr := chacha20_handshake.OnConnectedToServer(ctx, conn, settings)
+		resultChan <- struct {
+			session *chacha20.Session
+			err     error
+		}{session, handshakeErr}
+	}(b.conn, b.settings)
+
+	select {
+	case <-ctx.Done():
+		b.err = fmt.Errorf("server took too long to respond: %w", ctx.Err())
+		return b
+	case res := <-resultChan:
+		b.session = res.session
+		b.err = res.err
+		return b
+	}
 }
 
 func (b *tcpConnectionBuilder) build() (net.Conn, *chacha20.Session, error) {
