@@ -1,3 +1,8 @@
+![Build](https://github.com/NLipatov/TunGo/actions/workflows/main.yml/badge.svg)
+![License](https://img.shields.io/github/license/NLipatov/TunGo.svg)
+![Stars](https://img.shields.io/github/stars/NLipatov/TunGo.svg)
+![Forks](https://img.shields.io/github/forks/NLipatov/TunGo.svg)
+![Issues](https://img.shields.io/github/issues/NLipatov/TunGo.svg)
 
 # TunGo: Fast & Secure VPN in Go
 
