@@ -23,7 +23,7 @@ func NewNonceBuf(size int) *NonceBuf {
 	}
 }
 
-func (r *NonceBuf) Insert(input Nonce) error {
+func (r *NonceBuf) Insert(input *Nonce) error {
 	hash := input.Hash()
 	if r.contains(hash) {
 		return ErrNonUniqueNonce
@@ -36,7 +36,7 @@ func (r *NonceBuf) Insert(input Nonce) error {
 		r.removeFromSet(oldNonce.Hash())
 	}
 
-	r.data[r.lastInsert] = &input
+	r.data[r.lastInsert] = input
 	r.addToSet(hash)
 
 	if r.nextRead == r.lastInsert {

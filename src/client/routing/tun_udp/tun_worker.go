@@ -7,7 +7,6 @@ import (
 	"net"
 	"time"
 	"tungo/handshake/chacha20"
-	"tungo/network"
 	"tungo/network/ip"
 	"tungo/network/keepalive"
 )
@@ -103,13 +102,13 @@ func (w *udpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnec
 				triggerReconnect()
 			}
 
-			encryptedPacket, high, low, err := w.session.Encrypt(buf[:n])
+			encryptedPacket, nonce, err := w.session.Encrypt(buf[:n])
 			if err != nil {
 				log.Printf("failed to encrypt packet: %v", err)
 				continue
 			}
 
-			packet, err := (&network.Packet{}).EncodeUDP(encryptedPacket, &chacha20.Nonce{Low: low, High: high})
+			packet, err := (&chacha20.Packet{}).EncodeUDP(encryptedPacket, nonce)
 			if err != nil {
 				log.Printf("packet encoding failed: %s", err)
 				continue
@@ -158,7 +157,7 @@ func (w *udpTunWorker) HandlePacketsFromConn(ctx context.Context, connCancel con
 				return nil
 			}
 
-			packet, packetDecodeErr := (&network.Packet{}).DecodeUDP(buf[:n])
+			packet, packetDecodeErr := (&chacha20.Packet{}).DecodeUDP(buf[:n])
 			if packetDecodeErr != nil {
 				log.Printf("failed to decode a packet: %s", packetDecodeErr)
 				continue
@@ -173,7 +172,7 @@ func (w *udpTunWorker) HandlePacketsFromConn(ctx context.Context, connCancel con
 			default:
 			}
 
-			decrypted, _, _, decryptionErr := w.session.DecryptViaNonceBuf(*packet.Payload, *packet.Nonce)
+			decrypted, _, _, decryptionErr := w.session.DecryptViaNonceBuf(*packet.Payload, packet.Nonce)
 			if decryptionErr != nil {
 				if errors.Is(decryptionErr, chacha20.ErrNonUniqueNonce) {
 					log.Printf("reconnecting on critical decryption err: %s", err)
