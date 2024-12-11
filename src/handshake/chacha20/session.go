@@ -71,13 +71,13 @@ func (s *Session) Decrypt(ciphertext []byte) ([]byte, *Nonce, error) {
 		return nil, nil, err
 	}
 
-	nonceBytes := s.SendNonce.Encode()
+	nonceBytes := s.RecvNonce.Encode()
 
 	aad := s.CreateAAD(!s.isServer, nonceBytes)
 	plaintext, err := s.recvCipher.Open(ciphertext[:0], nonceBytes, ciphertext, aad)
 	if err != nil {
 		// Properly handle failed decryption attempt to avoid reuse of any state
-		return nil, nil, fmt.Errorf("failed to decrypt: %w", err)
+		return nil, nil, err
 	}
 
 	return plaintext, s.RecvNonce, nil
