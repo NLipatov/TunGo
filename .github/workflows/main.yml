@@ -24,10 +24,18 @@ jobs:
           cd src
           go mod tidy
 
-      - name: Run tests
+      - name: Run tests with coverage
         run: |
           cd src
-          sudo go test ./...
+          go test -coverprofile=coverage.txt ./...
+          
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: src/coverage.txt
+          flags: unittests
+          fail_ci_if_error: true
 
   build-image:
     runs-on: ubuntu-latest
