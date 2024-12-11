@@ -1,13 +1,12 @@
-package network
+package chacha20
 
 import (
 	"encoding/binary"
-	"tungo/handshake/chacha20"
 	"tungo/network/keepalive"
 )
 
 type UDPPacket struct {
-	Nonce       *chacha20.Nonce
+	Nonce       *Nonce
 	Payload     *[]byte
 	IsKeepAlive bool
 }
@@ -50,12 +49,12 @@ func (p *Packet) EncodeTCP(payload []byte) (*Packet, error) {
 	}, nil
 }
 
-func (p *Packet) EncodeUDP(payload []byte, nonce *chacha20.Nonce) (*UDPPacket, error) {
+func (p *Packet) EncodeUDP(payload []byte, nonce *Nonce) (*UDPPacket, error) {
 	high := make([]byte, 4)
-	binary.BigEndian.PutUint32(high, nonce.High)
+	binary.BigEndian.PutUint32(high, nonce.high)
 
 	low := make([]byte, 8)
-	binary.BigEndian.PutUint64(low, nonce.Low)
+	binary.BigEndian.PutUint64(low, nonce.low)
 
 	data := make([]byte, 0, len(high)+len(low)+len(payload))
 	data = append(data, high...)
@@ -86,9 +85,9 @@ func (p *Packet) DecodeUDP(data []byte) (*UDPPacket, error) {
 
 	return &UDPPacket{
 		Payload: &payload,
-		Nonce: &chacha20.Nonce{
-			High: high,
-			Low:  low,
+		Nonce: &Nonce{
+			high: high,
+			low:  low,
 		},
 	}, nil
 }

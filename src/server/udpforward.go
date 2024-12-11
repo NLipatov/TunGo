@@ -98,16 +98,13 @@ func TunToUDP(tunFile *os.File, intIPToUDPClientAddr *sync.Map, intIPToSession *
 			}
 			session := sessionValue.(*chacha20.Session)
 
-			encryptedPacket, high, low, encryptErr := session.Encrypt(data)
+			encryptedPacket, nonce, encryptErr := session.Encrypt(data)
 			if encryptErr != nil {
 				log.Printf("failed to encrypt packet: %s", encryptErr)
 				continue
 			}
 
-			packet, packetEncodeErr := (&network.Packet{}).EncodeUDP(encryptedPacket, &chacha20.Nonce{
-				Low:  low,
-				High: high,
-			})
+			packet, packetEncodeErr := (&chacha20.Packet{}).EncodeUDP(encryptedPacket, nonce)
 			if packetEncodeErr != nil {
 				log.Printf("packet encoding failed: %s", packetEncodeErr)
 				continue
@@ -182,7 +179,7 @@ func UDPToTun(settings settings.ConnectionSettings, tunFile *os.File, intIPToUDP
 			}
 			session := sessionValue.(*chacha20.Session)
 
-			packet, err := (&network.Packet{}).DecodeUDP(buf[:n])
+			packet, err := (&chacha20.Packet{}).DecodeUDP(buf[:n])
 			if err != nil {
 				log.Printf("failed to decode packet from %s: %v", clientAddr, err)
 				continue
@@ -201,7 +198,7 @@ func UDPToTun(settings settings.ConnectionSettings, tunFile *os.File, intIPToUDP
 			}
 
 			// Handle client data
-			decrypted, _, _, decryptionErr := session.DecryptViaNonceBuf(*packet.Payload, *packet.Nonce)
+			decrypted, _, _, decryptionErr := session.DecryptViaNonceBuf(*packet.Payload, packet.Nonce)
 			if decryptionErr != nil {
 				log.Printf("failed to decrypt data: %s", decryptionErr)
 				continue

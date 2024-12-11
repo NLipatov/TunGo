@@ -51,47 +51,53 @@ func NewSession(sendKey, recvKey []byte, isServer bool) (*Session, error) {
 	}, nil
 }
 
-func (s *Session) Encrypt(plaintext []byte) ([]byte, uint32, uint64, error) {
-	nonce, high, low, err := s.SendNonce.incrementNonce()
+func (s *Session) Encrypt(plaintext []byte) ([]byte, *Nonce, error) {
+	err := s.SendNonce.incrementNonce()
 	if err != nil {
-		return nil, high, low, err
+		return nil, nil, err
 	}
-	aad := s.CreateAAD(s.isServer, nonce)
-	ciphertext := s.sendCipher.Seal(plaintext[:0], nonce, plaintext, aad)
 
-	return ciphertext, high, low, nil
+	nonceBytes := s.SendNonce.Encode()
+
+	aad := s.CreateAAD(s.isServer, nonceBytes)
+	ciphertext := s.sendCipher.Seal(plaintext[:0], nonceBytes, plaintext, aad)
+
+	return ciphertext, s.SendNonce, nil
 }
 
-func (s *Session) Decrypt(ciphertext []byte) ([]byte, uint32, uint64, error) {
-	nonce, high, low, err := s.RecvNonce.incrementNonce()
+func (s *Session) Decrypt(ciphertext []byte) ([]byte, *Nonce, error) {
+	err := s.RecvNonce.incrementNonce()
 	if err != nil {
-		return nil, high, low, err
+		return nil, nil, err
 	}
-	aad := s.CreateAAD(!s.isServer, nonce)
-	plaintext, err := s.recvCipher.Open(ciphertext[:0], nonce, ciphertext, aad)
+
+	nonceBytes := s.RecvNonce.Encode()
+
+	aad := s.CreateAAD(!s.isServer, nonceBytes)
+	plaintext, err := s.recvCipher.Open(ciphertext[:0], nonceBytes, ciphertext, aad)
 	if err != nil {
 		// Properly handle failed decryption attempt to avoid reuse of any state
-		return nil, high, low, fmt.Errorf("failed to decrypt: %w", err)
+		return nil, nil, err
 	}
 
-	return plaintext, high, low, nil
+	return plaintext, s.RecvNonce, nil
 }
 
-func (s *Session) DecryptViaNonceBuf(ciphertext []byte, nonce Nonce) ([]byte, uint32, uint64, error) {
+func (s *Session) DecryptViaNonceBuf(ciphertext []byte, nonce *Nonce) ([]byte, uint32, uint64, error) {
 	nBErr := s.nonceBuf.Insert(nonce)
 	if nBErr != nil {
 		return nil, 0, 0, nBErr
 	}
 
-	nonceBytes := Encode(nonce.High, nonce.Low)
+	nonceBytes := nonce.Encode()
 	aad := s.CreateAAD(!s.isServer, nonceBytes[:])
-	plaintext, err := s.recvCipher.Open(ciphertext[:0], nonceBytes[:], ciphertext, aad)
+	plaintext, err := s.recvCipher.Open(ciphertext[:0], nonceBytes, ciphertext, aad)
 	if err != nil {
 		// Properly handle failed decryption attempt to avoid reuse of any state
-		return nil, nonce.High, nonce.Low, fmt.Errorf("failed to decrypt: %w", err)
+		return nil, nonce.high, nonce.low, fmt.Errorf("failed to decrypt: %w", err)
 	}
 
-	return plaintext, nonce.High, nonce.Low, nil
+	return plaintext, nonce.high, nonce.low, nil
 }
 
 func (s *Session) CreateAAD(isServerToClient bool, nonce []byte) []byte {

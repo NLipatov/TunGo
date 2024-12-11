@@ -12,7 +12,7 @@ func TestNonceBuf_Insert_Unique(t *testing.T) {
 	nonceBuf := NewNonceBuf(bufSize)
 
 	for i := 0; i < bufSize; i++ {
-		nonce := Nonce{Low: uint64(i), High: 0}
+		nonce := &Nonce{low: uint64(i), high: 0}
 		err := nonceBuf.Insert(nonce)
 		if err != nil {
 			t.Errorf("Failed to insert unique nonce: %v", err)
@@ -23,7 +23,7 @@ func TestNonceBuf_Insert_Unique(t *testing.T) {
 // TestNonceBuf_Insert_Duplicate non-unique nonce should not be inserted
 func TestNonceBuf_Insert_Duplicate(t *testing.T) {
 	nonceBuf := NewNonceBuf(5)
-	nonce := Nonce{Low: 12345, High: 0}
+	nonce := &Nonce{low: 12345, high: 0}
 
 	err := nonceBuf.Insert(nonce)
 	if err != nil {
@@ -42,10 +42,10 @@ func TestNonceBuf_Overwrite(t *testing.T) {
 	bufSize := 3
 	nonceBuf := NewNonceBuf(bufSize)
 
-	values := []Nonce{
-		{Low: 1, High: 0},
-		{Low: 2, High: 0},
-		{Low: 3, High: 0},
+	values := []*Nonce{
+		{low: 1, high: 0},
+		{low: 2, high: 0},
+		{low: 3, high: 0},
 	}
 
 	for _, nonce := range values {
@@ -55,7 +55,7 @@ func TestNonceBuf_Overwrite(t *testing.T) {
 		}
 	}
 
-	newNonce := Nonce{Low: 4, High: 0}
+	newNonce := &Nonce{low: 4, high: 0}
 	err := nonceBuf.Insert(newNonce)
 	if err != nil {
 		t.Errorf("Failed to insert new nonce: %v", err)
@@ -79,7 +79,7 @@ func TestNonceBuf_ConcurrentInsert(t *testing.T) {
 		go func(gid int) {
 			defer wg.Done()
 			for j := 0; j < nonceCountPerGoroutine; j++ {
-				nonce := Nonce{Low: uint64(gid*nonceCountPerGoroutine + j), High: 0}
+				nonce := &Nonce{low: uint64(gid*nonceCountPerGoroutine + j), high: 0}
 				err := nonceBuf.Insert(nonce)
 				if err != nil {
 					t.Errorf("Goroutine %d: Failed to insert nonce %v: %v", gid, nonce, err)
@@ -97,7 +97,7 @@ func TestNonceBuf_Insert_AfterOverwrite(t *testing.T) {
 	nonceBuf := NewNonceBuf(bufSize)
 
 	for i := 0; i < bufSize; i++ {
-		nonce := Nonce{Low: uint64(i), High: 0}
+		nonce := &Nonce{low: uint64(i), high: 0}
 		err := nonceBuf.Insert(nonce)
 		if err != nil {
 			t.Errorf("Failed to insert nonce: %v", err)
@@ -105,7 +105,7 @@ func TestNonceBuf_Insert_AfterOverwrite(t *testing.T) {
 	}
 
 	for i := bufSize; i < bufSize*2; i++ {
-		nonce := Nonce{Low: uint64(i), High: 0}
+		nonce := &Nonce{low: uint64(i), high: 0}
 		err := nonceBuf.Insert(nonce)
 		if err != nil {
 			t.Errorf("Failed to insert nonce: %v", err)
@@ -113,7 +113,7 @@ func TestNonceBuf_Insert_AfterOverwrite(t *testing.T) {
 	}
 
 	for i := 0; i < bufSize; i++ {
-		nonce := Nonce{Low: uint64(i), High: 0}
+		nonce := &Nonce{low: uint64(i), high: 0}
 		err := nonceBuf.Insert(nonce)
 		if err != nil {
 			t.Errorf("Expected to insert old nonce again, but got error: %v", err)
