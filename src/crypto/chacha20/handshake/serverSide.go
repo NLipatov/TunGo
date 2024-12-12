@@ -1,4 +1,4 @@
-package chacha20_handshake
+package handshake
 
 import (
 	"crypto/ed25519"
@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"tungo/handshake/chacha20"
+	"tungo/crypto/chacha20"
 	"tungo/network"
 	"tungo/settings/server"
 

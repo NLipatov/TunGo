@@ -1,4 +1,4 @@
-package chacha20_handshake
+package handshake
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"log"
 	"net"
 	"time"
-	"tungo/handshake/chacha20"
+	"tungo/crypto/chacha20"
 	"tungo/settings"
 	"tungo/settings/client"
 

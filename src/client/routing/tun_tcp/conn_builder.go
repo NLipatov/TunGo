@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net"
 	"time"
-	"tungo/handshake/chacha20"
-	"tungo/handshake/chacha20/chacha20_handshake"
+	"tungo/crypto/chacha20"
+	"tungo/crypto/chacha20/handshake"
 	"tungo/settings"
 )
 
@@ -86,7 +86,7 @@ func (b *tcpConnectionBuilder) handshake() *tcpConnectionBuilder {
 
 	go func(conn net.Conn, settings settings.ConnectionSettings) {
 		defer close(resultChan)
-		session, handshakeErr := chacha20_handshake.OnConnectedToServer(ctx, conn, settings)
+		session, handshakeErr := handshake.OnConnectedToServer(ctx, conn, settings)
 		resultChan <- struct {
 			session *chacha20.Session
 			err     error

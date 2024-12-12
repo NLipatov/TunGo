@@ -7,8 +7,8 @@ import (
 	"net"
 	"os"
 	"sync"
-	"tungo/handshake/chacha20"
-	"tungo/handshake/chacha20/chacha20_handshake"
+	"tungo/crypto/chacha20"
+	"tungo/crypto/chacha20/handshake"
 	"tungo/network"
 	"tungo/network/ip"
 	"tungo/network/keepalive"
@@ -214,8 +214,8 @@ func UDPToTun(settings settings.ConnectionSettings, tunFile *os.File, intIPToUDP
 }
 
 func udpRegisterClient(conn *net.UDPConn, clientAddr net.UDPAddr, initialData []byte, intIPToUDPClientAddr *sync.Map, intIPToSession *sync.Map) error {
-	// Pass initialData and clientAddr to the handshake function
-	serverSession, internalIpAddr, err := chacha20_handshake.OnClientConnected(&network.UdpAdapter{
+	// Pass initialData and clientAddr to the crypto function
+	serverSession, internalIpAddr, err := handshake.OnClientConnected(&network.UdpAdapter{
 		Conn:        *conn,
 		Addr:        clientAddr,
 		InitialData: initialData,

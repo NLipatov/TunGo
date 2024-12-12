@@ -6,7 +6,7 @@ import (
 	"io"
 	"log"
 	"net"
-	"tungo/handshake/chacha20"
+	"tungo/crypto/chacha20"
 	"tungo/network"
 	"tungo/network/keepalive"
 	"tungo/settings/client"

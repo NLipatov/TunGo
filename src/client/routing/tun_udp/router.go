@@ -8,7 +8,7 @@ import (
 	"time"
 	"tungo/client/transport_connector"
 	"tungo/client/tun_configurator"
-	"tungo/handshake/chacha20"
+	"tungo/crypto/chacha20"
 	"tungo/network"
 	"tungo/network/keepalive"
 	"tungo/settings"
