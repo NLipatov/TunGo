@@ -14,10 +14,8 @@ type ClientHello struct {
 	ClientNonce     []byte
 }
 
-const MaxClientHelloSizeBytes = 39 + 2 + 32 + 32 + 32 // 39(max ip) + 2(length headers) + 32 (ed25519 pub key) + 32 (curve pub key)
-
 func (m *ClientHello) Read(data []byte) (*ClientHello, error) {
-	if len(data) < 4 || len(data) > MaxClientHelloSizeBytes {
+	if len(data) < minClientHelloSizeBytes || len(data) > MaxClientHelloSizeBytes {
 		return nil, fmt.Errorf("invalid message length")
 	}
 

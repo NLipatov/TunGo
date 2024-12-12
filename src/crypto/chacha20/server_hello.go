@@ -2,12 +2,6 @@ package chacha20
 
 import "fmt"
 
-const (
-	signatureLength      = 64
-	nonceLength          = 32
-	curvePublicKeyLength = 32
-)
-
 type ServerHello struct {
 	Signature      []byte
 	Nonce          []byte
