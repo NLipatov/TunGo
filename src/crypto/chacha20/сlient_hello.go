@@ -14,10 +14,8 @@ type ClientHello struct {
 	ClientNonce     []byte
 }
 
-const MaxClientHelloSizeBytes = 39 + 2 + 32 + 32 + 32 // 39(max ip) + 2(length headers) + 32 (ed25519 pub key) + 32 (curve pub key)
-
 func (m *ClientHello) Read(data []byte) (*ClientHello, error) {
-	if len(data) < 4 || len(data) > MaxClientHelloSizeBytes {
+	if len(data) < minClientHelloSizeBytes || len(data) > MaxClientHelloSizeBytes {
 		return nil, fmt.Errorf("invalid message length")
 	}
 
@@ -29,17 +27,17 @@ func (m *ClientHello) Read(data []byte) (*ClientHello, error) {
 
 	m.IpAddressLength = data[1]
 
-	if int(2+m.IpAddressLength) > len(data) {
+	if int(m.IpAddressLength+lengthHeaderLength) > len(data) {
 		return nil, fmt.Errorf("invalid IP address length")
 	}
 
-	m.IpAddress = string(data[2 : 2+m.IpAddressLength])
+	m.IpAddress = string(data[lengthHeaderLength : lengthHeaderLength+m.IpAddressLength])
 
-	m.EdPublicKey = data[2+m.IpAddressLength : 2+m.IpAddressLength+32]
+	m.EdPublicKey = data[lengthHeaderLength+m.IpAddressLength : lengthHeaderLength+m.IpAddressLength+curvePublicKeyLength]
 
-	m.CurvePublicKey = data[2+m.IpAddressLength+32 : 2+m.IpAddressLength+32+32]
+	m.CurvePublicKey = data[lengthHeaderLength+m.IpAddressLength+curvePublicKeyLength : lengthHeaderLength+m.IpAddressLength+curvePublicKeyLength+curvePublicKeyLength]
 
-	m.ClientNonce = data[2+m.IpAddressLength+32+32 : 2+m.IpAddressLength+32+32+32]
+	m.ClientNonce = data[lengthHeaderLength+m.IpAddressLength+curvePublicKeyLength+curvePublicKeyLength : lengthHeaderLength+m.IpAddressLength+curvePublicKeyLength+curvePublicKeyLength+nonceLength]
 
 	return m, nil
 }
@@ -48,22 +46,20 @@ func (m *ClientHello) Write(ipVersion uint8, ip string, EdPublicKey ed25519.Publ
 	if ipVersion != 4 && ipVersion != 6 {
 		return nil, fmt.Errorf("invalid ip version")
 	}
-
 	if ipVersion == 4 && len(ip) < 7 { //min IPv4 address length is 7 characters
 		return nil, fmt.Errorf("invalid ip address")
 	}
-
 	if ipVersion == 6 && len(ip) < 2 { //min IPv6 address length is 2 characters
 		return nil, fmt.Errorf("invalid ip address")
 	}
 
-	arr := make([]byte, 2+len(ip)+32+32+32)
+	arr := make([]byte, lengthHeaderLength+len(ip)+curvePublicKeyLength+curvePublicKeyLength+nonceLength)
 	arr[0] = ipVersion
 	arr[1] = uint8(len(ip))
-	copy(arr[2:], ip)
-	copy(arr[2+len(ip):], EdPublicKey)
-	copy(arr[2+len(ip)+32:], *curvePublic)
-	copy(arr[2+len(ip)+32+32:], *nonce)
+	copy(arr[lengthHeaderLength:], ip)
+	copy(arr[lengthHeaderLength+len(ip):], EdPublicKey)
+	copy(arr[lengthHeaderLength+len(ip)+curvePublicKeyLength:], *curvePublic)
+	copy(arr[lengthHeaderLength+len(ip)+curvePublicKeyLength+curvePublicKeyLength:], *nonce)
 
 	return &arr, nil
 }

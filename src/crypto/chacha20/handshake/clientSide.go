@@ -1,4 +1,4 @@
-package chacha20_handshake
+package handshake
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"log"
 	"net"
 	"time"
-	"tungo/handshake/chacha20"
+	"tungo/crypto/chacha20"
 	"tungo/settings"
 	"tungo/settings/client"
 
@@ -59,11 +59,11 @@ func OnConnectedToServer(ctx context.Context, conn net.Conn, settings settings.C
 		return nil, fmt.Errorf("failed to read client configuration: %s", err)
 	}
 	serverEdPub := clientConf.Ed25519PublicKey
-	if !ed25519.Verify(serverEdPub, append(append(serverHello.CurvePublicKey, serverHello.ServerNonce...), nonce...), serverHello.ServerSignature) {
+	if !ed25519.Verify(serverEdPub, append(append(serverHello.CurvePublicKey, serverHello.Nonce...), nonce...), serverHello.Signature) {
 		return nil, fmt.Errorf("server failed signature check")
 	}
 
-	clientDataToSign := append(append(curvePublic, nonce...), serverHello.ServerNonce...)
+	clientDataToSign := append(append(curvePublic, nonce...), serverHello.Nonce...)
 	clientSignature := ed25519.Sign(ed, clientDataToSign)
 	cS, err := (&chacha20.ClientSignature{}).Write(&clientSignature)
 	if err != nil {
@@ -76,7 +76,7 @@ func OnConnectedToServer(ctx context.Context, conn net.Conn, settings settings.C
 	}
 
 	sharedSecret, _ := curve25519.X25519(curvePrivate[:], serverHello.CurvePublicKey)
-	salt := sha256.Sum256(append(serverHello.ServerNonce, nonce...))
+	salt := sha256.Sum256(append(serverHello.Nonce, nonce...))
 	infoSC := []byte("server-to-client") // server-key info
 	infoCS := []byte("client-to-server") // client-key info
 	serverToClientHKDF := hkdf.New(sha256.New, sharedSecret, salt[:], infoSC)

@@ -8,8 +8,8 @@ import (
 	"net"
 	"os"
 	"sync"
-	"tungo/handshake/chacha20"
-	"tungo/handshake/chacha20/chacha20_handshake"
+	"tungo/crypto/chacha20"
+	"tungo/crypto/chacha20/handshake"
 	"tungo/network"
 	"tungo/network/keepalive"
 	"tungo/network/packets"
@@ -125,7 +125,7 @@ func TCPToTun(settings settings.ConnectionSettings, tunFile *os.File, localIpMap
 func registerClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, localIpToServerSessionMap *sync.Map, ctx context.Context) {
 	log.Printf("connected: %s", conn.RemoteAddr())
 
-	serverSession, internalIpAddr, err := chacha20_handshake.OnClientConnected(&network.TcpAdapter{
+	serverSession, internalIpAddr, err := handshake.OnClientConnected(&network.TcpAdapter{
 		Conn: conn,
 	})
 	if err != nil {
