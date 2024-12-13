@@ -11,7 +11,6 @@ import (
 	"tungo/crypto/chacha20/handshake"
 	"tungo/network"
 	"tungo/network/ip"
-	"tungo/network/keepalive"
 	"tungo/network/packets"
 	"tungo/settings"
 )
@@ -182,18 +181,6 @@ func UDPToTun(settings settings.ConnectionSettings, tunFile *os.File, intIPToUDP
 			packet, err := (&chacha20.Packet{}).DecodeUDP(buf[:n])
 			if err != nil {
 				log.Printf("failed to decode packet from %s: %v", clientAddr, err)
-				continue
-			}
-
-			if packet.IsKeepAlive {
-				kaResponse, kaErr := keepalive.GenerateUDP()
-				if kaErr != nil {
-					log.Printf("failed to generate keep-alive response: %s", kaErr)
-				}
-				_, udpWriteErr := conn.WriteToUDP(kaResponse, clientAddr)
-				if udpWriteErr != nil {
-					log.Printf("failed to write keep-alive response to UDP: %s", udpWriteErr)
-				}
 				continue
 			}
 

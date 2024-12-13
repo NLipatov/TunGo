@@ -1,4 +1,4 @@
-package tun_tcp
+package tun_udp_chacha20
 
 import (
 	"context"
@@ -10,23 +10,22 @@ import (
 	"tungo/settings"
 )
 
-type tcpConnectionBuilder struct {
+type connectionBuilder struct {
 	settings    settings.ConnectionSettings
-	conn        net.Conn
+	conn        *net.UDPConn
 	session     *chacha20.Session
 	ctx         context.Context
-	dialCancel  context.CancelFunc
 	dialTimeout time.Duration
 	err         error
 }
 
-func newTCPConnectionBuilder() *tcpConnectionBuilder {
-	return &tcpConnectionBuilder{
+func newConnectionBuilder() *connectionBuilder {
+	return &connectionBuilder{
 		dialTimeout: time.Second * 5,
 	}
 }
 
-func (b *tcpConnectionBuilder) useSettings(s settings.ConnectionSettings) *tcpConnectionBuilder {
+func (b *connectionBuilder) useSettings(s settings.ConnectionSettings) *connectionBuilder {
 	if b.err != nil {
 		return b
 	}
@@ -40,7 +39,7 @@ func (b *tcpConnectionBuilder) useSettings(s settings.ConnectionSettings) *tcpCo
 	return b
 }
 
-func (b *tcpConnectionBuilder) useConnectionTimeout(duration time.Duration) *tcpConnectionBuilder {
+func (b *connectionBuilder) useConnectionTimeout(duration time.Duration) *connectionBuilder {
 	if b.err != nil {
 		return b
 	}
@@ -49,20 +48,21 @@ func (b *tcpConnectionBuilder) useConnectionTimeout(duration time.Duration) *tcp
 	return b
 }
 
-func (b *tcpConnectionBuilder) connect(ctx context.Context) *tcpConnectionBuilder {
+func (b *connectionBuilder) connect(ctx context.Context) *connectionBuilder {
 	if b.err != nil {
 		return b
 	}
 
-	dialer := &net.Dialer{}
-	dialCtx, cancel := context.WithTimeout(ctx, b.dialTimeout)
-	defer cancel()
-	conn, err := dialer.DialContext(dialCtx, "tcp", fmt.Sprintf("%s%s", b.settings.ConnectionIP, b.settings.Port))
+	serverAddr := fmt.Sprintf("%s%s", b.settings.ConnectionIP, b.settings.Port)
+	udpAddr, err := net.ResolveUDPAddr("udp", serverAddr)
 	if err != nil {
-		if b.conn != nil {
-			_ = b.conn.Close()
-		}
-		b.err = err
+		b.err = fmt.Errorf("server address resolution failed: %w", err)
+		return b
+	}
+
+	conn, err := net.DialUDP("udp", nil, udpAddr)
+	if err != nil {
+		b.err = fmt.Errorf("failed to dial server's udp address: %w", err)
 		return b
 	}
 
@@ -71,7 +71,7 @@ func (b *tcpConnectionBuilder) connect(ctx context.Context) *tcpConnectionBuilde
 	return b
 }
 
-func (b *tcpConnectionBuilder) handshake() *tcpConnectionBuilder {
+func (b *connectionBuilder) handshake() *connectionBuilder {
 	if b.err != nil {
 		return b
 	}
@@ -104,9 +104,10 @@ func (b *tcpConnectionBuilder) handshake() *tcpConnectionBuilder {
 	}
 }
 
-func (b *tcpConnectionBuilder) build() (net.Conn, *chacha20.Session, error) {
+func (b *connectionBuilder) build() (net.Conn, *chacha20.Session, error) {
 	if b.err != nil {
 		return nil, nil, b.err
 	}
+
 	return b.conn, b.session, b.err
 }

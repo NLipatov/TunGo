@@ -1,4 +1,4 @@
-package tun_tcp
+package tun_tcp_chacha20
 
 import (
 	"context"
@@ -8,17 +8,14 @@ import (
 	"net"
 	"tungo/crypto/chacha20"
 	"tungo/network"
-	"tungo/network/keepalive"
 	"tungo/settings/client"
 )
 
 type tcpTunWorker struct {
-	router               TCPRouter
-	conn                 net.Conn
-	session              *chacha20.Session
-	sendKeepAliveChan    chan bool
-	receiveKeepAliveChan chan bool
-	err                  error
+	router  TCPRouter
+	conn    net.Conn
+	session *chacha20.Session
+	err     error
 }
 
 func newTcpTunWorker() *tcpTunWorker {
@@ -50,26 +47,6 @@ func (w *tcpTunWorker) UseConn(conn net.Conn) *tcpTunWorker {
 	}
 
 	w.conn = conn
-
-	return w
-}
-
-func (w *tcpTunWorker) UseSendKeepAliveChan(ch chan bool) *tcpTunWorker {
-	if w.err != nil {
-		return w
-	}
-
-	w.sendKeepAliveChan = ch
-
-	return w
-}
-
-func (w *tcpTunWorker) UseReceiveKeepAliveChan(ch chan bool) *tcpTunWorker {
-	if w.err != nil {
-		return w
-	}
-
-	w.receiveKeepAliveChan = ch
 
 	return w
 }
@@ -113,16 +90,6 @@ func (w *tcpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnec
 			select {
 			case <-ctx.Done(): // Stop-signal
 				return
-			case <-w.sendKeepAliveChan:
-				data, err := keepalive.GenerateTCP()
-				if err != nil {
-					log.Println(err)
-				}
-				select {
-				case connWriteChan <- data:
-				case <-ctx.Done():
-					return
-				}
 			}
 		}
 	}()
@@ -207,17 +174,6 @@ func (w *tcpTunWorker) HandlePacketsFromConn(ctx context.Context, connCancel con
 			packet, err := (&chacha20.Packet{}).DecodeTCP(buf[:length])
 			if err != nil {
 				log.Println(err)
-			}
-
-			select {
-			//refreshes last packet time
-			case w.receiveKeepAliveChan <- true:
-				//shortcut for keep alive response case
-				if packet.IsKeepAlive {
-					log.Println("keep-alive: OK")
-					continue
-				}
-			default:
 			}
 
 			decrypted, _, decryptionErr := w.session.Decrypt(packet.Payload)

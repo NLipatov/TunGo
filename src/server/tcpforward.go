@@ -11,7 +11,6 @@ import (
 	"tungo/crypto/chacha20"
 	"tungo/crypto/chacha20/handshake"
 	"tungo/network"
-	"tungo/network/keepalive"
 	"tungo/network/packets"
 	"tungo/settings"
 	"tungo/settings/server"
@@ -191,21 +190,6 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 			_, err = io.ReadFull(conn, buf[:length])
 			if err != nil {
 				log.Printf("failed to read packet from connection: %s", err)
-				continue
-			}
-
-			packet, err := (&chacha20.Packet{}).DecodeTCP(buf[:length])
-
-			//shortcut for keep alive response case
-			if packet.IsKeepAlive {
-				kaResponse, kaErr := keepalive.GenerateTCP()
-				if kaErr != nil {
-					log.Printf("failed to generate keep-alive response: %s", kaErr)
-				}
-				_, tcpWriteErr := conn.Write(kaResponse)
-				if tcpWriteErr != nil {
-					log.Printf("failed to write keep-alive response to TCP: %s", tcpWriteErr)
-				}
 				continue
 			}
 

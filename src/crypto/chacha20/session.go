@@ -51,7 +51,7 @@ func NewSession(sendKey, recvKey []byte, isServer bool) (*Session, error) {
 	}, nil
 }
 
-func (s *Session) UseNonceRingBufferSize(size int) *Session {
+func (s *Session) UseNonceRingBuffer(size int) *Session {
 	if size < 1024 {
 		size = 1024
 	}

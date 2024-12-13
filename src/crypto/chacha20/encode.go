@@ -2,33 +2,21 @@ package chacha20
 
 import (
 	"encoding/binary"
-	"tungo/network/keepalive"
 )
 
 type UDPPacket struct {
-	Nonce       *Nonce
-	Payload     *[]byte
-	IsKeepAlive bool
+	Nonce   *Nonce
+	Payload *[]byte
 }
 
 type Packet struct {
-	Length      uint32 //number of bytes in packet
-	Payload     []byte
-	IsKeepAlive bool
+	Length  uint32 //number of bytes in packet
+	Payload []byte
 }
 
 // DecodeTCP bytes to packet
 func (p *Packet) DecodeTCP(data []byte) (*Packet, error) {
 	length := uint32(len(data))
-
-	// shortcut - keep-alive messages are not encrypted
-	if length == 9 && keepalive.IsKeepAlive(data) {
-		return &Packet{
-			Length:      length,
-			Payload:     data,
-			IsKeepAlive: true,
-		}, nil
-	}
 
 	return &Packet{
 		Length:  length,
@@ -43,9 +31,8 @@ func (p *Packet) EncodeTCP(payload []byte) (*Packet, error) {
 	binary.BigEndian.PutUint32(lengthBuf, length)
 
 	return &Packet{
-		Length:      length,
-		Payload:     append(lengthBuf, payload...),
-		IsKeepAlive: false,
+		Length:  length,
+		Payload: append(lengthBuf, payload...),
 	}, nil
 }
 
@@ -62,23 +49,12 @@ func (p *Packet) EncodeUDP(payload []byte, nonce *Nonce) (*UDPPacket, error) {
 	data = append(data, payload...)
 
 	return &UDPPacket{
-		Payload:     &data,
-		IsKeepAlive: false,
-		Nonce:       nonce,
+		Payload: &data,
+		Nonce:   nonce,
 	}, nil
 }
 
 func (p *Packet) DecodeUDP(data []byte) (*UDPPacket, error) {
-	length := uint32(len(data))
-
-	// shortcut - keep-alive messages are not encrypted
-	if length == 9 && keepalive.IsKeepAlive(data) {
-		return &UDPPacket{
-			Payload:     &data,
-			IsKeepAlive: true,
-		}, nil
-	}
-
 	high := binary.BigEndian.Uint32(data[:4])
 	low := binary.BigEndian.Uint64(data[4:12])
 	payload := data[12:]
