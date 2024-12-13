@@ -18,6 +18,7 @@ type Conf struct {
 	Ed25519PrivateKey         ed25519.PrivateKey          `json:"Ed25519PrivateKey"`
 	ClientCounter             int                         `json:"ClientCounter"`
 	TCPWriteChannelBufferSize int32                       `json:"TCPWriteChannelBufferSize"`
+	UDPNonceRingBufferSize    int                         `json:"UDPNonceRingBufferSize"`
 	EnableTCP                 bool                        `json:"EnableTCP"`
 	EnableUDP                 bool                        `json:"EnableUDP"`
 }
@@ -57,6 +58,7 @@ func (s *Conf) Read() (*Conf, error) {
 
 	setEnvServerAddress(s)
 	setEnvEnabledProtocols(s)
+	setEnvUdpRingBufferSize(s)
 
 	return s, nil
 }
@@ -83,6 +85,17 @@ func setEnvEnabledProtocols(conf *Conf) {
 		eTCPBool, parseErr := strconv.ParseBool(envTCP)
 		if parseErr == nil {
 			conf.EnableTCP = eTCPBool
+		}
+	}
+}
+
+func setEnvUdpRingBufferSize(conf *Conf) {
+	envRBSize := os.Getenv("UDPRingBufferSize")
+
+	if envRBSize != "" {
+		size, parseErr := strconv.Atoi(envRBSize)
+		if parseErr == nil {
+			conf.UDPNonceRingBufferSize = size
 		}
 	}
 }
