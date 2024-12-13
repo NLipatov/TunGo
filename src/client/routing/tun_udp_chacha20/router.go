@@ -1,4 +1,4 @@
-package tun_tcp
+package tun_udp_chacha20
 
 import (
 	"context"
@@ -14,13 +14,13 @@ import (
 	"tungo/settings"
 )
 
-type TCPRouter struct {
+type UDPRouter struct {
 	Settings        settings.ConnectionSettings
 	TunConfigurator tun_configurator.TunConfigurator
 	tun             network.TunAdapter
 }
 
-func (r *TCPRouter) RouteTraffic(ctx context.Context) error {
+func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
 	r.tun = r.TunConfigurator.Configure(r.Settings)
 	defer func() {
 		_ = r.tun.Close()
@@ -30,10 +30,10 @@ func (r *TCPRouter) RouteTraffic(ctx context.Context) error {
 	for {
 		conn, session, err := r.connectToServer(ctx)
 		if err != nil {
-			log.Fatalf("failed to establish connection: %s", err)
+			log.Printf("could not connect to server at %s: %s", r.Settings.ConnectionIP, err)
 		}
 
-		log.Printf("connected to server at %s (TCP)", r.Settings.ConnectionIP)
+		log.Printf("connected to server at %s (UDP)", r.Settings.ConnectionIP)
 
 		// Create a child context for managing data forwarding goroutines
 		connCtx, connCancel := context.WithCancel(ctx)
@@ -43,9 +43,11 @@ func (r *TCPRouter) RouteTraffic(ctx context.Context) error {
 			<-connCtx.Done()
 			_ = conn.Close()
 			r.TunConfigurator.Deconfigure(r.Settings)
+			return
 		}()
 
-		forwardIPPackets(r, &conn, session, connCtx, connCancel)
+		//starts forwarding packets from conn to tun-interface and from tun-interface to conn
+		startUDPForwarding(r, conn.(*net.UDPConn), session, &connCtx, &connCancel)
 
 		// After goroutines finish, check if shutdown was initiated
 		if ctx.Err() != nil {
@@ -55,13 +57,10 @@ func (r *TCPRouter) RouteTraffic(ctx context.Context) error {
 			log.Println("connection lost, attempting to reconnect...")
 		}
 
-		//cancel connection context
-		<-connCtx.Done()
-
 		// Close the connection (if not already closed)
 		_ = conn.Close()
 
-		// recreate tun interface
+		// recreate tun-interface
 		if r.tun != nil {
 			_ = r.tun.Close()
 		}
@@ -70,38 +69,38 @@ func (r *TCPRouter) RouteTraffic(ctx context.Context) error {
 	}
 }
 
-func forwardIPPackets(r *TCPRouter, conn *net.Conn, session *chacha20.Session, connCtx context.Context, connCancel context.CancelFunc) {
-	sendKeepaliveCh := make(chan bool, 1)
-	receiveKeepaliveCh := make(chan bool, 1)
-	go keepalive.StartConnectionProbing(connCtx, connCancel, sendKeepaliveCh, receiveKeepaliveCh)
+func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *chacha20.Session, connCtx *context.Context, connCancel *context.CancelFunc) {
+	sendKeepAliveCommandChan := make(chan bool, 1)
+	connPacketReceivedChan := make(chan bool, 1)
+	go keepalive.StartConnectionProbing(*connCtx, *connCancel, sendKeepAliveCommandChan, connPacketReceivedChan)
 
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	// TUN -> TCP
+	// TUN -> UDP
 	go func() {
 		defer wg.Done()
-		tunWorkerErr := newTcpTunWorker().
+		tunWorkerErr := newUdpTunWorker().
 			UseRouter(*r).
-			UseConn(*conn).
+			UseConn(conn).
 			UseSession(session).
-			UseSendKeepAliveChan(sendKeepaliveCh).
-			HandlePacketsFromTun(connCtx, connCancel)
+			UseSendKeepAliveChan(sendKeepAliveCommandChan).
+			HandlePacketsFromTun(*connCtx, *connCancel)
 
 		if tunWorkerErr != nil {
 			log.Fatalf("failed to handle TUN-packet: %s", tunWorkerErr)
 		}
 	}()
 
-	// TCP -> TUN
+	// UDP -> TUN
 	go func() {
 		defer wg.Done()
-		tunWorkerErr := newTcpTunWorker().
+		tunWorkerErr := newUdpTunWorker().
 			UseRouter(*r).
-			UseConn(*conn).
+			UseConn(conn).
 			UseSession(session).
-			UseReceiveKeepAliveChan(receiveKeepaliveCh).
-			HandlePacketsFromConn(connCtx, connCancel)
+			UseReceiveKeepAliveChan(connPacketReceivedChan).
+			HandlePacketsFromConn(*connCtx, *connCancel)
 
 		if tunWorkerErr != nil {
 			log.Fatalf("failed to handle CONN-packet: %s", tunWorkerErr)
@@ -111,9 +110,9 @@ func forwardIPPackets(r *TCPRouter, conn *net.Conn, session *chacha20.Session, c
 	wg.Wait()
 }
 
-func (r *TCPRouter) connectToServer(ctx context.Context) (net.Conn, *chacha20.Session, error) {
+func (r *UDPRouter) connectToServer(ctx context.Context) (net.Conn, *chacha20.Session, error) {
 	connectorDelegate := func() (net.Conn, *chacha20.Session, error) {
-		return newTCPConnectionBuilder().
+		return newConnectionBuilder().
 			useSettings(r.Settings).
 			useConnectionTimeout(time.Second * 5).
 			connect(ctx).

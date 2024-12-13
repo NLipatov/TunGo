@@ -1,4 +1,4 @@
-package tun_tcp
+package tun_tcp_chacha20
 
 import (
 	"context"
