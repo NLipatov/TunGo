@@ -58,7 +58,7 @@ func (s *Conf) Read() (*Conf, error) {
 
 	setEnvServerAddress(s)
 	setEnvEnabledProtocols(s)
-	setEnvUdpRingBufferSize(s)
+	setEnvUDPNonceRingBufferSize(s)
 
 	return s, nil
 }
@@ -89,8 +89,8 @@ func setEnvEnabledProtocols(conf *Conf) {
 	}
 }
 
-func setEnvUdpRingBufferSize(conf *Conf) {
-	envRBSize := os.Getenv("UDPRingBufferSize")
+func setEnvUDPNonceRingBufferSize(conf *Conf) {
+	envRBSize := os.Getenv("UDPNonceRingBufferSize")
 
 	if envRBSize != "" {
 		size, parseErr := strconv.Atoi(envRBSize)
