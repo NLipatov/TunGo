@@ -92,6 +92,7 @@ docker run -d \
   --cap-add NET_ADMIN \
   -e EnableUDP=true \
   -e EnableTCP=false \
+  -e UDPRingBufferSize=100_000 \
   -v tungo_volume:/src \
   nlipatov/tungo:tungo
 ```

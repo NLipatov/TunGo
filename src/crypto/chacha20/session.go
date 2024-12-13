@@ -47,8 +47,17 @@ func NewSession(sendKey, recvKey []byte, isServer bool) (*Session, error) {
 		RecvNonce:  NewNonce(),
 		SendNonce:  NewNonce(),
 		isServer:   isServer,
-		nonceBuf:   NewNonceBuf(1024),
+		nonceBuf:   nil,
 	}, nil
+}
+
+func (s *Session) UseNonceRingBufferSize(size int) *Session {
+	if size < 1024 {
+		size = 1024
+	}
+
+	s.nonceBuf = NewNonceBuf(size)
+	return s
 }
 
 func (s *Session) Encrypt(plaintext []byte) ([]byte, *Nonce, error) {

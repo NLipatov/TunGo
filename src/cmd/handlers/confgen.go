@@ -83,6 +83,7 @@ func generate() (*client.Conf, error) {
 		},
 		Ed25519PublicKey:          serverConf.Ed25519PublicKey,
 		TCPWriteChannelBufferSize: 1000,
+		UDPNonceRingBufferSize:    serverConf.UDPNonceRingBufferSize,
 		Protocol:                  getDefaultProtocol(serverConf),
 	}
 
