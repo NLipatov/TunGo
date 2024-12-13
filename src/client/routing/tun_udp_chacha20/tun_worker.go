@@ -8,16 +8,13 @@ import (
 	"time"
 	"tungo/crypto/chacha20"
 	"tungo/network/ip"
-	"tungo/network/keepalive"
 )
 
 type udpTunWorker struct {
-	router               UDPRouter
-	conn                 *net.UDPConn
-	session              *chacha20.Session
-	sendKeepAliveChan    chan bool
-	receiveKeepAliveChan chan bool
-	err                  error
+	router  UDPRouter
+	conn    *net.UDPConn
+	session *chacha20.Session
+	err     error
 }
 
 func newUdpTunWorker() *udpTunWorker {
@@ -53,26 +50,6 @@ func (w *udpTunWorker) UseConn(conn *net.UDPConn) *udpTunWorker {
 	return w
 }
 
-func (w *udpTunWorker) UseSendKeepAliveChan(ch chan bool) *udpTunWorker {
-	if w.err != nil {
-		return w
-	}
-
-	w.sendKeepAliveChan = ch
-
-	return w
-}
-
-func (w *udpTunWorker) UseReceiveKeepAliveChan(ch chan bool) *udpTunWorker {
-	if w.err != nil {
-		return w
-	}
-
-	w.receiveKeepAliveChan = ch
-
-	return w
-}
-
 func (w *udpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnect context.CancelFunc) error {
 	workerSetupErr := w.err
 	if workerSetupErr != nil {
@@ -85,13 +62,6 @@ func (w *udpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnec
 		select {
 		case <-ctx.Done(): // Stop-signal
 			return nil
-		case <-w.sendKeepAliveChan:
-			data, err := keepalive.GenerateUDP()
-			if err != nil {
-				log.Println("failed to generate keep-alive:", err)
-				continue
-			}
-			writeOrReconnect(w.conn, &data, ctx, triggerReconnect)
 		default:
 			n, err := w.router.tun.Read(buf)
 			if err != nil {
@@ -155,15 +125,6 @@ func (w *udpTunWorker) HandlePacketsFromConn(ctx context.Context, connCancel con
 				log.Printf("read from UDP failed: %v", err)
 				connCancel()
 				return nil
-			}
-
-			select {
-			case w.receiveKeepAliveChan <- true:
-				if n == 9 && keepalive.IsKeepAlive(buf[:n]) {
-					log.Println("keep-alive: OK")
-					continue
-				}
-			default:
 			}
 
 			packet, packetDecodeErr := (&chacha20.Packet{}).DecodeUDP(buf[:n])

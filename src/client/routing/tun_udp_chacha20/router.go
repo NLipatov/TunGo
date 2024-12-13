@@ -10,7 +10,6 @@ import (
 	"tungo/client/tun_configurator"
 	"tungo/crypto/chacha20"
 	"tungo/network"
-	"tungo/network/keepalive"
 	"tungo/settings"
 )
 
@@ -70,9 +69,6 @@ func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
 }
 
 func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *chacha20.Session, connCtx *context.Context, connCancel *context.CancelFunc) {
-	sendKeepAliveCommandChan := make(chan bool, 1)
-	connPacketReceivedChan := make(chan bool, 1)
-	go keepalive.StartConnectionProbing(*connCtx, *connCancel, sendKeepAliveCommandChan, connPacketReceivedChan)
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -84,7 +80,6 @@ func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *chacha20.Sessi
 			UseRouter(*r).
 			UseConn(conn).
 			UseSession(session).
-			UseSendKeepAliveChan(sendKeepAliveCommandChan).
 			HandlePacketsFromTun(*connCtx, *connCancel)
 
 		if tunWorkerErr != nil {
@@ -99,7 +94,6 @@ func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *chacha20.Sessi
 			UseRouter(*r).
 			UseConn(conn).
 			UseSession(session).
-			UseReceiveKeepAliveChan(connPacketReceivedChan).
 			HandlePacketsFromConn(*connCtx, *connCancel)
 
 		if tunWorkerErr != nil {
