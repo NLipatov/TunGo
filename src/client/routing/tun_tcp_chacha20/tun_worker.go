@@ -204,20 +204,20 @@ func (w *tcpTunWorker) HandlePacketsFromConn(ctx context.Context, connCancel con
 				continue
 			}
 
-			packet, err := (&chacha20.Packet{}).DecodeTCP(buf[:length])
-			if err != nil {
-				log.Println(err)
-			}
-
 			select {
 			//refreshes last packet time
 			case w.receiveKeepAliveChan <- true:
 				//shortcut for keep alive response case
-				if packet.IsKeepAlive {
+				if length == 9 && keepalive.IsKeepAlive(buf[:length]) {
 					log.Println("keep-alive: OK")
 					continue
 				}
 			default:
+			}
+
+			packet, err := (&chacha20.Packet{}).DecodeTCP(buf[:length])
+			if err != nil {
+				log.Println(err)
 			}
 
 			decrypted, _, decryptionErr := w.session.Decrypt(packet.Payload)

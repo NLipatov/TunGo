@@ -194,10 +194,7 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 				continue
 			}
 
-			packet, err := (&chacha20.Packet{}).DecodeTCP(buf[:length])
-
-			//shortcut for keep alive response case
-			if packet.IsKeepAlive {
+			if length == 9 && keepalive.IsKeepAlive(buf[:length]) {
 				kaResponse, kaErr := keepalive.GenerateTCP()
 				if kaErr != nil {
 					log.Printf("failed to generate keep-alive response: %s", kaErr)

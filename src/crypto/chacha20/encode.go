@@ -12,23 +12,13 @@ type UDPPacket struct {
 }
 
 type Packet struct {
-	Length      uint32 //number of bytes in packet
-	Payload     []byte
-	IsKeepAlive bool
+	Length  uint32 //number of bytes in packet
+	Payload []byte
 }
 
 // DecodeTCP bytes to packet
 func (p *Packet) DecodeTCP(data []byte) (*Packet, error) {
 	length := uint32(len(data))
-
-	// shortcut - keep-alive messages are not encrypted
-	if length == 9 && keepalive.IsKeepAlive(data) {
-		return &Packet{
-			Length:      length,
-			Payload:     data,
-			IsKeepAlive: true,
-		}, nil
-	}
 
 	return &Packet{
 		Length:  length,
@@ -43,9 +33,8 @@ func (p *Packet) EncodeTCP(payload []byte) (*Packet, error) {
 	binary.BigEndian.PutUint32(lengthBuf, length)
 
 	return &Packet{
-		Length:      length,
-		Payload:     append(lengthBuf, payload...),
-		IsKeepAlive: false,
+		Length:  length,
+		Payload: append(lengthBuf, payload...),
 	}, nil
 }
 
