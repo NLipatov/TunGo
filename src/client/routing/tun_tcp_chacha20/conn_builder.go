@@ -3,6 +3,7 @@ package tun_tcp_chacha20
 import (
 	"context"
 	"fmt"
+	"log"
 	"net"
 	"time"
 	"tungo/crypto/chacha20"
@@ -64,6 +65,17 @@ func (b *tcpConnectionBuilder) connect(ctx context.Context) *tcpConnectionBuilde
 		}
 		b.err = err
 		return b
+	}
+
+	tcpConn := conn.(*net.TCPConn)
+	err = tcpConn.SetKeepAlive(true)
+	if err != nil {
+		log.Fatalf("Failed to enable keep-alive: %v", err)
+	}
+
+	err = tcpConn.SetKeepAlivePeriod(30 * time.Second)
+	if err != nil {
+		log.Fatalf("Failed to set keep-alive period: %v", err)
 	}
 
 	b.conn = conn

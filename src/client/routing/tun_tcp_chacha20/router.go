@@ -10,7 +10,6 @@ import (
 	"tungo/client/tun_configurator"
 	"tungo/crypto/chacha20"
 	"tungo/network"
-	"tungo/network/keepalive"
 	"tungo/settings"
 )
 
@@ -71,10 +70,6 @@ func (r *TCPRouter) RouteTraffic(ctx context.Context) error {
 }
 
 func forwardIPPackets(r *TCPRouter, conn *net.Conn, session *chacha20.Session, connCtx context.Context, connCancel context.CancelFunc) {
-	sendKeepaliveCh := make(chan bool, 1)
-	receiveKeepaliveCh := make(chan bool, 1)
-	go keepalive.StartConnectionProbing(connCtx, connCancel, sendKeepaliveCh, receiveKeepaliveCh)
-
 	var wg sync.WaitGroup
 	wg.Add(2)
 
@@ -85,7 +80,6 @@ func forwardIPPackets(r *TCPRouter, conn *net.Conn, session *chacha20.Session, c
 			UseRouter(*r).
 			UseConn(*conn).
 			UseSession(session).
-			UseSendKeepAliveChan(sendKeepaliveCh).
 			HandlePacketsFromTun(connCtx, connCancel)
 
 		if tunWorkerErr != nil {
@@ -100,7 +94,6 @@ func forwardIPPackets(r *TCPRouter, conn *net.Conn, session *chacha20.Session, c
 			UseRouter(*r).
 			UseConn(*conn).
 			UseSession(session).
-			UseReceiveKeepAliveChan(receiveKeepaliveCh).
 			HandlePacketsFromConn(connCtx, connCancel)
 
 		if tunWorkerErr != nil {
