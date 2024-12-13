@@ -11,7 +11,6 @@ import (
 	"tungo/crypto/chacha20/handshake"
 	"tungo/network"
 	"tungo/network/ip"
-	"tungo/network/keepalive"
 	"tungo/network/packets"
 	"tungo/settings"
 )
@@ -178,18 +177,6 @@ func UDPToTun(settings settings.ConnectionSettings, tunFile *os.File, intIPToUDP
 				continue
 			}
 			session := sessionValue.(*chacha20.Session)
-
-			if n == 9 && keepalive.IsKeepAlive(buf[:n]) {
-				kaResponse, kaErr := keepalive.GenerateTCP()
-				if kaErr != nil {
-					log.Printf("failed to generate keep-alive response: %s", kaErr)
-				}
-				_, tcpWriteErr := conn.Write(kaResponse)
-				if tcpWriteErr != nil {
-					log.Printf("failed to write keep-alive response to TCP: %s", tcpWriteErr)
-				}
-				continue
-			}
 
 			packet, err := (&chacha20.Packet{}).DecodeUDP(buf[:n])
 			if err != nil {
