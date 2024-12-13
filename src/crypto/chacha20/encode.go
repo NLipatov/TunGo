@@ -2,13 +2,11 @@ package chacha20
 
 import (
 	"encoding/binary"
-	"tungo/network/keepalive"
 )
 
 type UDPPacket struct {
-	Nonce       *Nonce
-	Payload     *[]byte
-	IsKeepAlive bool
+	Nonce   *Nonce
+	Payload *[]byte
 }
 
 type Packet struct {
@@ -51,23 +49,12 @@ func (p *Packet) EncodeUDP(payload []byte, nonce *Nonce) (*UDPPacket, error) {
 	data = append(data, payload...)
 
 	return &UDPPacket{
-		Payload:     &data,
-		IsKeepAlive: false,
-		Nonce:       nonce,
+		Payload: &data,
+		Nonce:   nonce,
 	}, nil
 }
 
 func (p *Packet) DecodeUDP(data []byte) (*UDPPacket, error) {
-	length := uint32(len(data))
-
-	// shortcut - keep-alive messages are not encrypted
-	if length == 9 && keepalive.IsKeepAlive(data) {
-		return &UDPPacket{
-			Payload:     &data,
-			IsKeepAlive: true,
-		}, nil
-	}
-
 	high := binary.BigEndian.Uint32(data[:4])
 	low := binary.BigEndian.Uint64(data[4:12])
 	payload := data[12:]

@@ -179,21 +179,21 @@ func UDPToTun(settings settings.ConnectionSettings, tunFile *os.File, intIPToUDP
 			}
 			session := sessionValue.(*chacha20.Session)
 
-			packet, err := (&chacha20.Packet{}).DecodeUDP(buf[:n])
-			if err != nil {
-				log.Printf("failed to decode packet from %s: %v", clientAddr, err)
-				continue
-			}
-
-			if packet.IsKeepAlive {
-				kaResponse, kaErr := keepalive.GenerateUDP()
+			if n == 9 && keepalive.IsKeepAlive(buf[:n]) {
+				kaResponse, kaErr := keepalive.GenerateTCP()
 				if kaErr != nil {
 					log.Printf("failed to generate keep-alive response: %s", kaErr)
 				}
-				_, udpWriteErr := conn.WriteToUDP(kaResponse, clientAddr)
-				if udpWriteErr != nil {
-					log.Printf("failed to write keep-alive response to UDP: %s", udpWriteErr)
+				_, tcpWriteErr := conn.Write(kaResponse)
+				if tcpWriteErr != nil {
+					log.Printf("failed to write keep-alive response to TCP: %s", tcpWriteErr)
 				}
+				continue
+			}
+
+			packet, err := (&chacha20.Packet{}).DecodeUDP(buf[:n])
+			if err != nil {
+				log.Printf("failed to decode packet from %s: %v", clientAddr, err)
 				continue
 			}
 

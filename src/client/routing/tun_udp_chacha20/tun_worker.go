@@ -157,19 +157,19 @@ func (w *udpTunWorker) HandlePacketsFromConn(ctx context.Context, connCancel con
 				return nil
 			}
 
-			packet, packetDecodeErr := (&chacha20.Packet{}).DecodeUDP(buf[:n])
-			if packetDecodeErr != nil {
-				log.Printf("failed to decode a packet: %s", packetDecodeErr)
-				continue
-			}
-
 			select {
 			case w.receiveKeepAliveChan <- true:
-				if packet.IsKeepAlive {
+				if n == 9 && keepalive.IsKeepAlive(buf[:n]) {
 					log.Println("keep-alive: OK")
 					continue
 				}
 			default:
+			}
+
+			packet, packetDecodeErr := (&chacha20.Packet{}).DecodeUDP(buf[:n])
+			if packetDecodeErr != nil {
+				log.Printf("failed to decode a packet: %s", packetDecodeErr)
+				continue
 			}
 
 			decrypted, _, _, decryptionErr := w.session.DecryptViaNonceBuf(*packet.Payload, packet.Nonce)
