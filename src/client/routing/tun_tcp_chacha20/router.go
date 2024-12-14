@@ -76,11 +76,18 @@ func forwardIPPackets(r *TCPRouter, conn *net.Conn, session *chacha20.Session, c
 	// TUN -> TCP
 	go func() {
 		defer wg.Done()
-		tunWorkerErr := newTcpTunWorker().
-			UseRouter(*r).
+		tunWorker, buildErr := newTcpTunWorker().
+			UseRouter(r).
 			UseConn(*conn).
 			UseSession(session).
-			HandlePacketsFromTun(connCtx, connCancel)
+			UseEncoder(&chacha20.TCPEncoder{}).
+			Build()
+
+		if buildErr != nil {
+			log.Fatalf("failed to build TCP TUN worker: %s", buildErr)
+		}
+
+		tunWorkerErr := tunWorker.HandlePacketsFromTun(connCtx, connCancel)
 
 		if tunWorkerErr != nil {
 			log.Fatalf("failed to handle TUN-packet: %s", tunWorkerErr)
@@ -90,14 +97,21 @@ func forwardIPPackets(r *TCPRouter, conn *net.Conn, session *chacha20.Session, c
 	// TCP -> TUN
 	go func() {
 		defer wg.Done()
-		tunWorkerErr := newTcpTunWorker().
-			UseRouter(*r).
+		tunWorker, buildErr := newTcpTunWorker().
+			UseRouter(r).
 			UseConn(*conn).
 			UseSession(session).
-			HandlePacketsFromConn(connCtx, connCancel)
+			UseEncoder(&chacha20.TCPEncoder{}).
+			Build()
 
-		if tunWorkerErr != nil {
-			log.Fatalf("failed to handle CONN-packet: %s", tunWorkerErr)
+		if buildErr != nil {
+			log.Fatalf("failed to build TCP TUN worker: %s", buildErr)
+		}
+
+		handlingErr := tunWorker.HandlePacketsFromConn(connCtx, connCancel)
+
+		if handlingErr != nil {
+			log.Fatalf("failed to handle CONN-packet: %s", handlingErr)
 		}
 	}()
 

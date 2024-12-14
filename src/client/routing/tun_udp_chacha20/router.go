@@ -46,7 +46,7 @@ func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
 		}()
 
 		//starts forwarding packets from conn to tun-interface and from tun-interface to conn
-		startUDPForwarding(r, conn.(*net.UDPConn), session, &connCtx, &connCancel)
+		startUDPForwarding(r, conn.(*net.UDPConn), session, connCtx, connCancel)
 
 		// After goroutines finish, check if shutdown was initiated
 		if ctx.Err() != nil {
@@ -68,7 +68,7 @@ func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
 	}
 }
 
-func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *chacha20.Session, connCtx *context.Context, connCancel *context.CancelFunc) {
+func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *chacha20.Session, connCtx context.Context, connCancel context.CancelFunc) {
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -76,28 +76,42 @@ func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *chacha20.Sessi
 	// TUN -> UDP
 	go func() {
 		defer wg.Done()
-		tunWorkerErr := newUdpTunWorker().
-			UseRouter(*r).
+		tunWorker, buildErr := newUdpTunWorker().
+			UseRouter(r).
 			UseConn(conn).
 			UseSession(session).
-			HandlePacketsFromTun(*connCtx, *connCancel)
+			UseEncoder(&chacha20.UDPEncoder{}).
+			Build()
 
-		if tunWorkerErr != nil {
-			log.Fatalf("failed to handle TUN-packet: %s", tunWorkerErr)
+		if buildErr != nil {
+			log.Fatalf("failed to build TCP TUN worker: %s", buildErr)
+		}
+
+		handlingErr := tunWorker.HandlePacketsFromTun(connCtx, connCancel)
+
+		if handlingErr != nil {
+			log.Fatalf("failed to handle TUN-packet: %s", handlingErr)
 		}
 	}()
 
 	// UDP -> TUN
 	go func() {
 		defer wg.Done()
-		tunWorkerErr := newUdpTunWorker().
-			UseRouter(*r).
+		tunWorker, buildErr := newUdpTunWorker().
+			UseRouter(r).
 			UseConn(conn).
 			UseSession(session).
-			HandlePacketsFromConn(*connCtx, *connCancel)
+			UseEncoder(&chacha20.UDPEncoder{}).
+			Build()
 
-		if tunWorkerErr != nil {
-			log.Fatalf("failed to handle CONN-packet: %s", tunWorkerErr)
+		if buildErr != nil {
+			log.Fatalf("failed to build TCP CONN worker: %s", buildErr)
+		}
+
+		handlingErr := tunWorker.HandlePacketsFromConn(connCtx, connCancel)
+
+		if handlingErr != nil {
+			log.Fatalf("failed to handle CONN-packet: %s", handlingErr)
 		}
 	}()
 

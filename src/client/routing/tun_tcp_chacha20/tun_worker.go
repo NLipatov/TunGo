@@ -3,6 +3,7 @@ package tun_tcp_chacha20
 import (
 	"context"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -12,9 +13,10 @@ import (
 )
 
 type tcpTunWorker struct {
-	router  TCPRouter
+	router  *TCPRouter
 	conn    net.Conn
 	session *chacha20.Session
+	encoder *chacha20.TCPEncoder
 	err     error
 }
 
@@ -22,7 +24,7 @@ func newTcpTunWorker() *tcpTunWorker {
 	return &tcpTunWorker{}
 }
 
-func (w *tcpTunWorker) UseRouter(router TCPRouter) *tcpTunWorker {
+func (w *tcpTunWorker) UseRouter(router *TCPRouter) *tcpTunWorker {
 	if w.err != nil {
 		return w
 	}
@@ -49,6 +51,40 @@ func (w *tcpTunWorker) UseConn(conn net.Conn) *tcpTunWorker {
 	w.conn = conn
 
 	return w
+}
+
+func (w *tcpTunWorker) UseEncoder(encoder *chacha20.TCPEncoder) *tcpTunWorker {
+	if w.err != nil {
+		return w
+	}
+
+	w.encoder = encoder
+
+	return w
+}
+
+func (w *tcpTunWorker) Build() (*tcpTunWorker, error) {
+	if w.err != nil {
+		return nil, w.err
+	}
+
+	if w.router == nil {
+		return nil, fmt.Errorf("router required but not provided")
+	}
+
+	if w.session == nil {
+		return nil, fmt.Errorf("session required but not provided")
+	}
+
+	if w.conn == nil {
+		return nil, fmt.Errorf("conn required but not provided")
+	}
+
+	if w.encoder == nil {
+		return nil, fmt.Errorf("encoder required but not provided")
+	}
+
+	return w, nil
 }
 
 func (w *tcpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnect context.CancelFunc) error {
@@ -115,7 +151,7 @@ func (w *tcpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnec
 				continue
 			}
 
-			packet, err := (&chacha20.Packet{}).EncodeTCP(encryptedPacket)
+			packet, err := w.encoder.Encode(encryptedPacket)
 			if err != nil {
 				log.Printf("packet encoding failed: %s", err)
 				continue
@@ -171,7 +207,7 @@ func (w *tcpTunWorker) HandlePacketsFromConn(ctx context.Context, connCancel con
 				continue
 			}
 
-			packet, err := (&chacha20.Packet{}).DecodeTCP(buf[:length])
+			packet, err := w.encoder.Decode(buf[:length])
 			if err != nil {
 				log.Println(err)
 			}
