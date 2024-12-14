@@ -103,7 +103,7 @@ func TunToUDP(tunFile *os.File, intIPToUDPClientAddr *sync.Map, intIPToSession *
 				continue
 			}
 
-			packet, packetEncodeErr := (&chacha20.Packet{}).EncodeUDP(encryptedPacket, nonce)
+			packet, packetEncodeErr := (&chacha20.UDPEncoder{}).Encode(encryptedPacket, nonce)
 			if packetEncodeErr != nil {
 				log.Printf("packet encoding failed: %s", packetEncodeErr)
 				continue
@@ -178,7 +178,7 @@ func UDPToTun(settings settings.ConnectionSettings, tunFile *os.File, intIPToUDP
 			}
 			session := sessionValue.(*chacha20.Session)
 
-			packet, err := (&chacha20.Packet{}).DecodeUDP(buf[:n])
+			packet, err := (&chacha20.UDPEncoder{}).Decode(buf[:n])
 			if err != nil {
 				log.Printf("failed to decode packet from %s: %v", clientAddr, err)
 				continue

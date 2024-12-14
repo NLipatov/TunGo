@@ -3,6 +3,7 @@ package tun_udp_chacha20
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"time"
@@ -11,17 +12,18 @@ import (
 )
 
 type udpTunWorker struct {
-	router  UDPRouter
+	router  *UDPRouter
 	conn    *net.UDPConn
 	session *chacha20.Session
 	err     error
+	encoder *chacha20.UDPEncoder
 }
 
 func newUdpTunWorker() *udpTunWorker {
 	return &udpTunWorker{}
 }
 
-func (w *udpTunWorker) UseRouter(router UDPRouter) *udpTunWorker {
+func (w *udpTunWorker) UseRouter(router *UDPRouter) *udpTunWorker {
 	if w.err != nil {
 		return w
 	}
@@ -48,6 +50,40 @@ func (w *udpTunWorker) UseConn(conn *net.UDPConn) *udpTunWorker {
 	w.conn = conn
 
 	return w
+}
+
+func (w *udpTunWorker) UseEncoder(encoder *chacha20.UDPEncoder) *udpTunWorker {
+	if w.err != nil {
+		return w
+	}
+
+	w.encoder = encoder
+
+	return w
+}
+
+func (w *udpTunWorker) Build() (*udpTunWorker, error) {
+	if w.err != nil {
+		return nil, w.err
+	}
+
+	if w.router == nil {
+		return nil, fmt.Errorf("router required but not provided")
+	}
+
+	if w.session == nil {
+		return nil, fmt.Errorf("session required but not provided")
+	}
+
+	if w.conn == nil {
+		return nil, fmt.Errorf("conn required but not provided")
+	}
+
+	if w.encoder == nil {
+		return nil, fmt.Errorf("encoder required but not provided")
+	}
+
+	return w, nil
 }
 
 func (w *udpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnect context.CancelFunc) error {
@@ -78,7 +114,7 @@ func (w *udpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnec
 				continue
 			}
 
-			packet, err := (&chacha20.Packet{}).EncodeUDP(encryptedPacket, nonce)
+			packet, err := w.encoder.Encode(encryptedPacket, nonce)
 			if err != nil {
 				log.Printf("packet encoding failed: %s", err)
 				continue
@@ -127,7 +163,7 @@ func (w *udpTunWorker) HandlePacketsFromConn(ctx context.Context, connCancel con
 				return nil
 			}
 
-			packet, packetDecodeErr := (&chacha20.Packet{}).DecodeUDP(buf[:n])
+			packet, packetDecodeErr := w.encoder.Decode(buf[:n])
 			if packetDecodeErr != nil {
 				log.Printf("failed to decode a packet: %s", packetDecodeErr)
 				continue

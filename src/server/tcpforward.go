@@ -70,7 +70,7 @@ func TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.
 					continue
 				}
 
-				packet, packetEncodeErr := (&chacha20.Packet{}).EncodeTCP(encryptedPacket)
+				packet, packetEncodeErr := (&chacha20.TCPEncoder{}).Encode(encryptedPacket)
 				if packetEncodeErr != nil {
 					log.Printf("packet encoding failed: %s", packetEncodeErr)
 				}
