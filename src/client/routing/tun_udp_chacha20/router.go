@@ -87,7 +87,7 @@ func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *chacha20.Sessi
 			log.Fatalf("failed to build TCP TUN worker: %s", buildErr)
 		}
 
-		handlingErr := tunWorker.HandlePacketsFromConn(connCtx, connCancel)
+		handlingErr := tunWorker.HandlePacketsFromTun(connCtx, connCancel)
 
 		if handlingErr != nil {
 			log.Fatalf("failed to handle TUN-packet: %s", handlingErr)
