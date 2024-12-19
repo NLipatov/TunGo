@@ -92,7 +92,7 @@ func OnConnectedToServer(ctx context.Context, conn net.Conn, settings settings.C
 		return nil, fmt.Errorf("failed to create client session: %s\n", err)
 	}
 
-	clientSession = clientSession.UseNonceRingBufferSize(clientConf.UDPNonceRingBufferSize)
+	clientSession = clientSession.UseNonceRingBuffer(clientConf.UDPNonceRingBufferSize)
 
 	derivedSessionId, deriveSessionIdErr := chacha20.DeriveSessionId(sharedSecret, salt[:])
 	if deriveSessionIdErr != nil {
