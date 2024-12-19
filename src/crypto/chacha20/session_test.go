@@ -40,6 +40,110 @@ func TestNewSession(t *testing.T) {
 }
 
 func TestSession_ClientServerEncryption(t *testing.T) {
+	serverSession, clientSession := createServerAndClienSessions(t)
+
+	plaintext := []byte("Hello, secure world!")
+
+	ciphertext, clientNonce, err := clientSession.Encrypt(plaintext)
+	if err != nil {
+		t.Fatalf("Client encryption failed: %v", err)
+	}
+
+	if bytes.Contains(ciphertext, plaintext) {
+		t.Fatalf("ciphertext must not contain plaintext as a subarray")
+	}
+
+	decrypted, serverNonce, err := serverSession.Decrypt(ciphertext)
+	if err != nil {
+		t.Fatalf("Server decryption failed: %v", err)
+	}
+
+	if !bytes.Equal(plaintext, decrypted) {
+		t.Errorf("Decrypted text mismatch: expected %s, got %s", plaintext, decrypted)
+	}
+
+	if !bytes.Equal(clientNonce.Encode(), serverNonce.Encode()) {
+		t.Errorf("Nonce mismatch: expected %v, got %v", clientNonce.Encode(), serverNonce.Encode())
+	}
+
+	serverCiphertext, serverNonce, err := serverSession.Encrypt(plaintext)
+	if err != nil {
+		t.Fatalf("Server encryption failed: %v", err)
+	}
+
+	if bytes.Contains(serverCiphertext, plaintext) {
+		t.Fatalf("ciphertext must not contain plaintext as a subarray")
+	}
+
+	clientDecrypted, clientNonce, err := clientSession.Decrypt(serverCiphertext)
+	if err != nil {
+		t.Fatalf("Client decryption failed: %v", err)
+	}
+
+	if !bytes.Equal(plaintext, clientDecrypted) {
+		t.Errorf("Decrypted text mismatch: expected %s, got %s", plaintext, clientDecrypted)
+	}
+
+	if !bytes.Equal(serverNonce.Encode(), clientNonce.Encode()) {
+		t.Errorf("Nonce mismatch: expected %v, got %v", serverNonce.Encode(), clientNonce.Encode())
+	}
+}
+
+func TestSession_ClientServerEncryption_ServerDecryptsViaNonceBuf(t *testing.T) {
+	serverSession, clientSession := createServerAndClienSessions(t)
+
+	serverSession.UseNonceRingBuffer(2096)
+	clientSession.UseNonceRingBuffer(2096)
+
+	plaintext := []byte("Hello, secure world!")
+
+	ciphertext, clientNonce, err := clientSession.Encrypt(plaintext)
+	if err != nil {
+		t.Fatalf("Client encryption failed: %v", err)
+	}
+
+	if bytes.Contains(ciphertext, plaintext) {
+		t.Fatalf("ciphertext must not contain plaintext as a subarray")
+	}
+
+	decrypted, _, _, err := serverSession.DecryptViaNonceBuf(ciphertext, clientNonce)
+	if err != nil {
+		t.Fatalf("Server decryption failed: %v", err)
+	}
+
+	if !bytes.Equal(plaintext, decrypted) {
+		t.Errorf("Decrypted text mismatch: expected %s, got %s", plaintext, decrypted)
+	}
+}
+
+func TestSession_ClientServerEncryption_ClientDecryptsViaNonceBuf(t *testing.T) {
+	serverSession, clientSession := createServerAndClienSessions(t)
+
+	serverSession.UseNonceRingBuffer(2096)
+	clientSession.UseNonceRingBuffer(2096)
+
+	plaintext := []byte("Hello, secure world!")
+
+	ciphertext, serverNonce, err := serverSession.Encrypt(plaintext)
+	if err != nil {
+		t.Fatalf("Server encryption failed: %v", err)
+	}
+
+	if bytes.Contains(ciphertext, plaintext) {
+		t.Fatalf("ciphertext must not contain plaintext as a subarray")
+	}
+
+	decrypted, _, _, err := clientSession.DecryptViaNonceBuf(ciphertext, serverNonce)
+	if err != nil {
+		t.Fatalf("Client decryption failed: %v", err)
+	}
+
+	if !bytes.Equal(plaintext, decrypted) {
+		t.Errorf("Decrypted text mismatch: expected %s, got %s", plaintext, decrypted)
+	}
+}
+
+func createServerAndClienSessions(t *testing.T) (*Session, *Session) {
 	clientPrivate := make([]byte, 32)
 	serverPrivate := make([]byte, 32)
 	_, _ = rand.Read(clientPrivate)
@@ -72,43 +176,7 @@ func TestSession_ClientServerEncryption(t *testing.T) {
 		t.Fatalf("Failed to create server session: %v", err)
 	}
 
-	plaintext := []byte("Hello, secure world!")
-
-	ciphertext, clientNonce, err := clientSession.Encrypt(plaintext)
-	if err != nil {
-		t.Fatalf("Client encryption failed: %v", err)
-	}
-
-	decrypted, serverNonce, err := serverSession.Decrypt(ciphertext)
-	if err != nil {
-		t.Fatalf("Server decryption failed: %v", err)
-	}
-
-	if !bytes.Equal(plaintext, decrypted) {
-		t.Errorf("Decrypted text mismatch: expected %s, got %s", plaintext, decrypted)
-	}
-
-	if !bytes.Equal(clientNonce.Encode(), serverNonce.Encode()) {
-		t.Errorf("Nonce mismatch: expected %v, got %v", clientNonce.Encode(), serverNonce.Encode())
-	}
-
-	serverCiphertext, serverNonce, err := serverSession.Encrypt(plaintext)
-	if err != nil {
-		t.Fatalf("Server encryption failed: %v", err)
-	}
-
-	clientDecrypted, clientNonce, err := clientSession.Decrypt(serverCiphertext)
-	if err != nil {
-		t.Fatalf("Client decryption failed: %v", err)
-	}
-
-	if !bytes.Equal(plaintext, clientDecrypted) {
-		t.Errorf("Decrypted text mismatch: expected %s, got %s", plaintext, clientDecrypted)
-	}
-
-	if !bytes.Equal(serverNonce.Encode(), clientNonce.Encode()) {
-		t.Errorf("Nonce mismatch: expected %v, got %v", serverNonce.Encode(), clientNonce.Encode())
-	}
+	return serverSession, clientSession
 }
 
 func TestSession_CreateAAD(t *testing.T) {
