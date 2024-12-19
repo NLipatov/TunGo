@@ -129,3 +129,37 @@ func TestSession_CreateAAD(t *testing.T) {
 		t.Errorf("AAD mismatch: expected %v, got %v", expectedAAD, aad)
 	}
 }
+
+func TestSession_UseNonceRingBufferSize(t *testing.T) {
+	sendKey := make([]byte, 32)
+	recvKey := make([]byte, 32)
+	_, _ = rand.Read(sendKey)
+	_, _ = rand.Read(recvKey)
+
+	session, _ := NewSession(sendKey, recvKey, true)
+	session.UseNonceRingBuffer(2096)
+
+	if session.nonceBuf == nil {
+		t.Fatalf("nonceBuf not initialized")
+	}
+	if session.nonceBuf.size != 2096 {
+		t.Errorf("nonceBuf size mismatch: expected 2096, got %d", session.nonceBuf.size)
+	}
+}
+
+func TestSession_UseNonceRingBufferSize_SmallSize(t *testing.T) {
+	sendKey := make([]byte, 32)
+	recvKey := make([]byte, 32)
+	_, _ = rand.Read(sendKey)
+	_, _ = rand.Read(recvKey)
+
+	session, _ := NewSession(sendKey, recvKey, true)
+	session.UseNonceRingBuffer(512)
+
+	if session.nonceBuf == nil {
+		t.Fatalf("nonceBuf not initialized")
+	}
+	if session.nonceBuf.size != 1024 {
+		t.Errorf("nonceBuf size mismatch: expected 1024, got %d", session.nonceBuf.size)
+	}
+}
