@@ -91,7 +91,7 @@ func OnClientConnected(conn network.ConnectionAdapter) (*chacha20.Session, *stri
 		log.Fatalf("failed to create server session: %s\n", err)
 	}
 
-	serverSession = serverSession.UseNonceRingBuffer(conf.UDPNonceRingBufferSize)
+	serverSession = serverSession.UseNonceRingBufferSize(conf.UDPNonceRingBufferSize)
 
 	derivedSessionId, deriveSessionIdErr := chacha20.DeriveSessionId(sharedSecret, salt[:])
 	if deriveSessionIdErr != nil {
