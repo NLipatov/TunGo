@@ -109,5 +109,13 @@ func (b *connectionBuilder) build() (net.Conn, *chacha20.Session, error) {
 		return nil, nil, b.err
 	}
 
+	if b.session == nil {
+		return nil, nil, fmt.Errorf("session is nil")
+	}
+
+	if b.conn == nil {
+		return nil, nil, fmt.Errorf("conn is nil")
+	}
+
 	return b.conn, b.session, b.err
 }
