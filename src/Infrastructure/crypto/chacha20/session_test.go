@@ -106,7 +106,7 @@ func TestSession_ClientServerEncryption_ServerDecryptsViaNonceBuf(t *testing.T) 
 		t.Fatalf("ciphertext must not contain plaintext as a subarray")
 	}
 
-	decrypted, err := serverSession.DecryptViaNonceBuf(ciphertext, clientNonce)
+	decrypted, err := serverSession.DecryptViaNonceBuf(append(clientNonce.Encode(), ciphertext...))
 	if err != nil {
 		t.Fatalf("Server decryption failed: %v", err)
 	}
@@ -133,7 +133,7 @@ func TestSession_ClientServerEncryption_ClientDecryptsViaNonceBuf(t *testing.T) 
 		t.Fatalf("ciphertext must not contain plaintext as a subarray")
 	}
 
-	decrypted, err := clientSession.DecryptViaNonceBuf(ciphertext, serverNonce)
+	decrypted, err := clientSession.DecryptViaNonceBuf(append(serverNonce.Encode(), ciphertext...))
 	if err != nil {
 		t.Fatalf("Client decryption failed: %v", err)
 	}

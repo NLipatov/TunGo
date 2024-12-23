@@ -3,6 +3,7 @@ package chacha20
 import (
 	"crypto/cipher"
 	"crypto/sha256"
+	"encoding/binary"
 	"fmt"
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/hkdf"
@@ -92,17 +93,26 @@ func (s *Session) Decrypt(ciphertext []byte) ([]byte, *Nonce, error) {
 	return plaintext, s.RecvNonce, nil
 }
 
-func (s *Session) DecryptViaNonceBuf(ciphertext []byte, nonce *Nonce) ([]byte, error) {
+func (s *Session) DecryptViaNonceBuf(ciphertext []byte) ([]byte, error) {
+	if len(ciphertext) < 12 {
+		return nil, fmt.Errorf("ciphertext is too short")
+	}
+
+	nonceBytes := ciphertext[:12]
+	nonce := &Nonce{
+		low:  binary.BigEndian.Uint64(nonceBytes[:8]),
+		high: binary.BigEndian.Uint32(nonceBytes[8:]),
+	}
+
 	nBErr := s.nonceBuf.Insert(nonce)
 	if nBErr != nil {
 		return nil, nBErr
 	}
 
-	nonceBytes := nonce.Encode()
-	aad := s.CreateAAD(!s.isServer, nonceBytes[:])
-	plaintext, err := s.recvCipher.Open(ciphertext[:0], nonceBytes, ciphertext, aad)
+	aad := s.CreateAAD(!s.isServer, nonceBytes)
+
+	plaintext, err := s.recvCipher.Open(nil, nonceBytes, ciphertext[12:], aad)
 	if err != nil {
-		// Properly handle failed decryption attempt to avoid reuse of any state
 		return nil, fmt.Errorf("failed to decrypt: %w", err)
 	}
 
