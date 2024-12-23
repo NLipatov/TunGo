@@ -178,14 +178,8 @@ func UDPToTun(settings settings.ConnectionSettings, tunFile *os.File, intIPToUDP
 			}
 			session := sessionValue.(*chacha21.Session)
 
-			packet, err := (&chacha21.UDPEncoder{}).Decode(buf[:n])
-			if err != nil {
-				log.Printf("failed to decode packet from %s: %v", clientAddr, err)
-				continue
-			}
-
 			// Handle client data
-			decrypted, decryptionErr := session.DecryptViaNonceBuf(*packet.Payload, packet.Nonce)
+			decrypted, decryptionErr := session.DecryptViaNonceBuf(buf[:n])
 			if decryptionErr != nil {
 				log.Printf("failed to decrypt data: %s", decryptionErr)
 				continue

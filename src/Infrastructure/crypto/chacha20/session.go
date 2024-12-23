@@ -7,6 +7,7 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/hkdf"
 	"io"
+	"log"
 )
 
 type Session struct {
@@ -92,13 +93,19 @@ func (s *Session) Decrypt(ciphertext []byte) ([]byte, *Nonce, error) {
 	return plaintext, s.RecvNonce, nil
 }
 
-func (s *Session) DecryptViaNonceBuf(ciphertext []byte, nonce *Nonce) ([]byte, error) {
-	nBErr := s.nonceBuf.Insert(nonce)
+func (s *Session) DecryptViaNonceBuf(ciphertext []byte) ([]byte, error) {
+	packet, err := (&UDPEncoder{}).Decode(ciphertext)
+	if err != nil {
+		log.Printf("failed to decode packet from %v", err)
+		return nil, err
+	}
+
+	nBErr := s.nonceBuf.Insert(packet.Nonce)
 	if nBErr != nil {
 		return nil, nBErr
 	}
 
-	nonceBytes := nonce.Encode()
+	nonceBytes := packet.Nonce.Encode()
 	aad := s.CreateAAD(!s.isServer, nonceBytes[:])
 	plaintext, err := s.recvCipher.Open(ciphertext[:0], nonceBytes, ciphertext, aad)
 	if err != nil {
