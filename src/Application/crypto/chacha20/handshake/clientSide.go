@@ -14,12 +14,12 @@ import (
 	"log"
 	"net"
 	"time"
+	"tungo/Application/crypto/chacha20"
 	"tungo/Domain/settings"
 	"tungo/Domain/settings/client"
-	chacha21 "tungo/Infrastructure/crypto/chacha20"
 )
 
-func OnConnectedToServer(ctx context.Context, conn net.Conn, settings settings.ConnectionSettings) (*chacha21.Session, error) {
+func OnConnectedToServer(ctx context.Context, conn net.Conn, settings settings.ConnectionSettings) (*chacha20.Session, error) {
 	edPub, ed, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate ed25519 key pair: %s", err)
@@ -31,7 +31,7 @@ func OnConnectedToServer(ctx context.Context, conn net.Conn, settings settings.C
 	nonce := make([]byte, 32)
 	_, _ = io.ReadFull(rand.Reader, nonce)
 
-	rm, err := (&chacha21.ClientHello{}).Write(4, settings.InterfaceAddress, edPub, &curvePublic, &nonce)
+	rm, err := (&chacha20.ClientHello{}).Write(4, settings.InterfaceAddress, edPub, &curvePublic, &nonce)
 	if err != nil {
 		return nil, fmt.Errorf("failed to serialize registration message")
 	}
@@ -48,7 +48,7 @@ func OnConnectedToServer(ctx context.Context, conn net.Conn, settings settings.C
 		return nil, fmt.Errorf("failed to read server-hello message")
 	}
 
-	serverHello, err := (&chacha21.ServerHello{}).Read(sHBuf)
+	serverHello, err := (&chacha20.ServerHello{}).Read(sHBuf)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read server-hello message")
 	}
@@ -64,7 +64,7 @@ func OnConnectedToServer(ctx context.Context, conn net.Conn, settings settings.C
 
 	clientDataToSign := append(append(curvePublic, nonce...), serverHello.Nonce...)
 	clientSignature := ed25519.Sign(ed, clientDataToSign)
-	cS, err := (&chacha21.ClientSignature{}).Write(&clientSignature)
+	cS, err := (&chacha20.ClientSignature{}).Write(&clientSignature)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create client signature message: %s", err)
 	}
@@ -86,14 +86,14 @@ func OnConnectedToServer(ctx context.Context, conn net.Conn, settings settings.C
 	clientToServerKey := make([]byte, keySize)
 	_, _ = io.ReadFull(clientToServerHKDF, clientToServerKey)
 
-	clientSession, err := chacha21.NewSession(clientToServerKey, serverToClientKey, false)
+	clientSession, err := chacha20.NewSession(clientToServerKey, serverToClientKey, false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create client session: %s\n", err)
 	}
 
 	clientSession = clientSession.UseNonceRingBuffer(clientConf.UDPNonceRingBufferSize)
 
-	derivedSessionId, deriveSessionIdErr := chacha21.DeriveSessionId(sharedSecret, salt[:])
+	derivedSessionId, deriveSessionIdErr := chacha20.DeriveSessionId(sharedSecret, salt[:])
 	if deriveSessionIdErr != nil {
 		return nil, fmt.Errorf("failed to derive session id: %s", derivedSessionId)
 	}

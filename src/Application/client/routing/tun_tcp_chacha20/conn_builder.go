@@ -6,9 +6,9 @@ import (
 	"log"
 	"net"
 	"time"
+	"tungo/Application/crypto/chacha20"
+	"tungo/Application/crypto/chacha20/handshake"
 	"tungo/Domain/settings"
-	"tungo/Infrastructure/crypto/chacha20"
-	"tungo/Infrastructure/crypto/chacha20/handshake"
 )
 
 type tcpConnectionBuilder struct {

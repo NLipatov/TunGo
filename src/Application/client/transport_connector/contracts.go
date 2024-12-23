@@ -3,7 +3,7 @@ package transport_connector
 import (
 	"context"
 	"net"
-	"tungo/Infrastructure/crypto/chacha20"
+	"tungo/Application/crypto/chacha20"
 )
 
 type Connector interface {

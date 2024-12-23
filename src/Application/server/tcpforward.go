@@ -8,16 +8,17 @@ import (
 	"net"
 	"os"
 	"sync"
+	"tungo/Application/crypto/chacha20"
+	"tungo/Application/crypto/chacha20/handshake"
+	"tungo/Domain"
 	"tungo/Domain/settings"
 	"tungo/Domain/settings/server"
-	chacha21 "tungo/Infrastructure/crypto/chacha20"
-	"tungo/Infrastructure/crypto/chacha20/handshake"
 	network2 "tungo/Infrastructure/network"
 	"tungo/Infrastructure/network/packets"
 )
 
 func TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map, ctx context.Context) {
-	buf := make([]byte, network2.IPPacketMaxSizeBytes)
+	buf := make([]byte, Domain.IPPacketMaxSizeBytes)
 	connWriteChan := make(chan ClientData, getConnWriteBufferSize())
 
 	//starts a goroutine that writes whatever comes from chan to TCP
@@ -63,14 +64,14 @@ func TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.
 					log.Printf("failed to load session")
 					continue
 				}
-				session := sessionValue.(*chacha21.Session)
+				session := sessionValue.(*chacha20.Session)
 				encryptedPacket, _, encryptErr := session.Encrypt(data)
 				if encryptErr != nil {
 					log.Printf("failder to encrypt a package: %s", encryptErr)
 					continue
 				}
 
-				packet, packetEncodeErr := (&chacha21.TCPEncoder{}).Encode(encryptedPacket)
+				packet, packetEncodeErr := (&chacha20.TCPEncoder{}).Encode(encryptedPacket)
 				if packetEncodeErr != nil {
 					log.Printf("packet encoding failed: %s", packetEncodeErr)
 				}
@@ -155,7 +156,7 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 		log.Printf("disconnected: %s", conn.RemoteAddr())
 	}()
 
-	buf := make([]byte, network2.IPPacketMaxSizeBytes)
+	buf := make([]byte, Domain.IPPacketMaxSizeBytes)
 	for {
 		select {
 		case <-ctx.Done():
@@ -177,11 +178,11 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 				continue
 			}
 
-			session := sessionValue.(*chacha21.Session)
+			session := sessionValue.(*chacha20.Session)
 
 			//read packet length from 4-byte length prefix
 			var length = binary.BigEndian.Uint32(buf[:4])
-			if length < 4 || length > network2.IPPacketMaxSizeBytes {
+			if length < 4 || length > Domain.IPPacketMaxSizeBytes {
 				log.Printf("invalid packet Length: %d", length)
 				continue
 			}

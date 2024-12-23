@@ -7,16 +7,16 @@ import (
 	"log"
 	"net"
 	"time"
-	chacha21 "tungo/Infrastructure/crypto/chacha20"
-	"tungo/Infrastructure/network/ip"
+	"tungo/Application/crypto/chacha20"
+	"tungo/Domain"
 )
 
 type udpTunWorker struct {
 	router  *UDPRouter
 	conn    *net.UDPConn
-	session *chacha21.Session
+	session *chacha20.Session
 	err     error
-	encoder *chacha21.UDPEncoder
+	encoder *chacha20.UDPEncoder
 }
 
 func newUdpTunWorker() *udpTunWorker {
@@ -32,7 +32,7 @@ func (w *udpTunWorker) UseRouter(router *UDPRouter) *udpTunWorker {
 	return w
 }
 
-func (w *udpTunWorker) UseSession(session *chacha21.Session) *udpTunWorker {
+func (w *udpTunWorker) UseSession(session *chacha20.Session) *udpTunWorker {
 	if w.err != nil {
 		return w
 	}
@@ -52,7 +52,7 @@ func (w *udpTunWorker) UseConn(conn *net.UDPConn) *udpTunWorker {
 	return w
 }
 
-func (w *udpTunWorker) UseEncoder(encoder *chacha21.UDPEncoder) *udpTunWorker {
+func (w *udpTunWorker) UseEncoder(encoder *chacha20.UDPEncoder) *udpTunWorker {
 	if w.err != nil {
 		return w
 	}
@@ -91,7 +91,7 @@ func (w *udpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnec
 	if workerSetupErr != nil {
 		return workerSetupErr
 	}
-	buf := make([]byte, ip.MaxPacketLengthBytes)
+	buf := make([]byte, Domain.IPPacketMaxSizeBytes)
 
 	// Main loop to read from TUN and send data
 	for {
@@ -141,7 +141,7 @@ func (w *udpTunWorker) HandlePacketsFromConn(ctx context.Context, connCancel con
 	if workerSetupErr != nil {
 		return workerSetupErr
 	}
-	buf := make([]byte, ip.MaxPacketLengthBytes)
+	buf := make([]byte, Domain.IPPacketMaxSizeBytes)
 
 	go func() {
 		<-ctx.Done()
@@ -165,7 +165,7 @@ func (w *udpTunWorker) HandlePacketsFromConn(ctx context.Context, connCancel con
 
 			decrypted, _, decryptionErr := w.session.DecryptViaNonceBuf(buf[:n])
 			if decryptionErr != nil {
-				if errors.Is(decryptionErr, chacha21.ErrNonUniqueNonce) {
+				if errors.Is(decryptionErr, chacha20.ErrNonUniqueNonce) {
 					log.Printf("reconnecting on critical decryption err: %s", err)
 					connCancel()
 					return nil

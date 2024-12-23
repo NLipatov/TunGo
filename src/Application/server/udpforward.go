@@ -7,11 +7,11 @@ import (
 	"net"
 	"os"
 	"sync"
+	"tungo/Application/crypto/chacha20"
+	"tungo/Application/crypto/chacha20/handshake"
+	"tungo/Domain"
 	"tungo/Domain/settings"
-	chacha21 "tungo/Infrastructure/crypto/chacha20"
-	"tungo/Infrastructure/crypto/chacha20/handshake"
 	"tungo/Infrastructure/network"
-	"tungo/Infrastructure/network/ip"
 	"tungo/Infrastructure/network/packets"
 )
 
@@ -23,7 +23,7 @@ type UDPClient struct {
 }
 
 func TunToUDP(tunFile *os.File, intIPToUDPClientAddr *sync.Map, intIPToSession *sync.Map, ctx context.Context) {
-	buf := make([]byte, ip.MaxPacketLengthBytes)
+	buf := make([]byte, Domain.IPPacketMaxSizeBytes)
 	sendChan := make(chan UDPClientPacket, 100_000)
 
 	go func(sendChan chan UDPClientPacket, ctx context.Context) {
@@ -95,7 +95,7 @@ func TunToUDP(tunFile *os.File, intIPToUDPClientAddr *sync.Map, intIPToSession *
 				log.Printf("failed to load session for IP %s", destinationIP)
 				continue
 			}
-			session := sessionValue.(*chacha21.Session)
+			session := sessionValue.(*chacha20.Session)
 
 			encryptedPacket, nonce, encryptErr := session.Encrypt(data)
 			if encryptErr != nil {
@@ -103,7 +103,7 @@ func TunToUDP(tunFile *os.File, intIPToUDPClientAddr *sync.Map, intIPToSession *
 				continue
 			}
 
-			packet, packetEncodeErr := (&chacha21.UDPEncoder{}).Encode(encryptedPacket, nonce)
+			packet, packetEncodeErr := (&chacha20.UDPEncoder{}).Encode(encryptedPacket, nonce)
 			if packetEncodeErr != nil {
 				log.Printf("packet encoding failed: %s", packetEncodeErr)
 				continue
@@ -141,7 +141,7 @@ func UDPToTun(settings settings.ConnectionSettings, tunFile *os.File, intIPToUDP
 		_ = conn.Close()
 	}()
 
-	buf := make([]byte, ip.MaxPacketLengthBytes)
+	buf := make([]byte, Domain.IPPacketMaxSizeBytes)
 	for {
 		select {
 		case <-ctx.Done():
@@ -176,7 +176,7 @@ func UDPToTun(settings settings.ConnectionSettings, tunFile *os.File, intIPToUDP
 				log.Printf("failed to load session for IP %s", internalIP)
 				continue
 			}
-			session := sessionValue.(*chacha21.Session)
+			session := sessionValue.(*chacha20.Session)
 
 			// Handle client data
 			decrypted, _, decryptionErr := session.DecryptViaNonceBuf(buf[:n])

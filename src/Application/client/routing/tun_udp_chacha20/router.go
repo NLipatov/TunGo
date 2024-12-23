@@ -6,17 +6,17 @@ import (
 	"net"
 	"sync"
 	"time"
+	"tungo/Application/boundary"
 	"tungo/Application/client/transport_connector"
 	"tungo/Application/client/tun_configurator"
+	"tungo/Application/crypto/chacha20"
 	"tungo/Domain/settings"
-	chacha21 "tungo/Infrastructure/crypto/chacha20"
-	"tungo/Infrastructure/network"
 )
 
 type UDPRouter struct {
 	Settings        settings.ConnectionSettings
 	TunConfigurator tun_configurator.TunConfigurator
-	tun             network.TunAdapter
+	tun             boundary.TunAdapter
 }
 
 func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
@@ -68,7 +68,7 @@ func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
 	}
 }
 
-func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *chacha21.Session, connCtx context.Context, connCancel context.CancelFunc) {
+func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *chacha20.Session, connCtx context.Context, connCancel context.CancelFunc) {
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -80,7 +80,7 @@ func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *chacha21.Sessi
 			UseRouter(r).
 			UseConn(conn).
 			UseSession(session).
-			UseEncoder(&chacha21.UDPEncoder{}).
+			UseEncoder(&chacha20.UDPEncoder{}).
 			Build()
 
 		if buildErr != nil {
@@ -101,7 +101,7 @@ func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *chacha21.Sessi
 			UseRouter(r).
 			UseConn(conn).
 			UseSession(session).
-			UseEncoder(&chacha21.UDPEncoder{}).
+			UseEncoder(&chacha20.UDPEncoder{}).
 			Build()
 
 		if buildErr != nil {
@@ -118,8 +118,8 @@ func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *chacha21.Sessi
 	wg.Wait()
 }
 
-func (r *UDPRouter) connectToServer(ctx context.Context) (net.Conn, *chacha21.Session, error) {
-	connectorDelegate := func() (net.Conn, *chacha21.Session, error) {
+func (r *UDPRouter) connectToServer(ctx context.Context) (net.Conn, *chacha20.Session, error) {
+	connectorDelegate := func() (net.Conn, *chacha20.Session, error) {
 		return newConnectionBuilder().
 			useSettings(r.Settings).
 			useConnectionTimeout(time.Second * 5).

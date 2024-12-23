@@ -7,16 +7,16 @@ import (
 	"io"
 	"log"
 	"net"
+	"tungo/Application/crypto/chacha20"
+	"tungo/Domain"
 	"tungo/Domain/settings/client"
-	chacha21 "tungo/Infrastructure/crypto/chacha20"
-	"tungo/Infrastructure/network"
 )
 
 type tcpTunWorker struct {
 	router  *TCPRouter
 	conn    net.Conn
-	session *chacha21.Session
-	encoder *chacha21.TCPEncoder
+	session *chacha20.Session
+	encoder *chacha20.TCPEncoder
 	err     error
 }
 
@@ -33,7 +33,7 @@ func (w *tcpTunWorker) UseRouter(router *TCPRouter) *tcpTunWorker {
 	return w
 }
 
-func (w *tcpTunWorker) UseSession(session *chacha21.Session) *tcpTunWorker {
+func (w *tcpTunWorker) UseSession(session *chacha20.Session) *tcpTunWorker {
 	if w.err != nil {
 		return w
 	}
@@ -53,7 +53,7 @@ func (w *tcpTunWorker) UseConn(conn net.Conn) *tcpTunWorker {
 	return w
 }
 
-func (w *tcpTunWorker) UseEncoder(encoder *chacha21.TCPEncoder) *tcpTunWorker {
+func (w *tcpTunWorker) UseEncoder(encoder *chacha20.TCPEncoder) *tcpTunWorker {
 	if w.err != nil {
 		return w
 	}
@@ -92,7 +92,7 @@ func (w *tcpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnec
 	if workerSetupErr != nil {
 		return workerSetupErr
 	}
-	buf := make([]byte, network.IPPacketMaxSizeBytes)
+	buf := make([]byte, Domain.IPPacketMaxSizeBytes)
 	connWriteChan := make(chan []byte, getConnWriteBufferSize())
 
 	go func() {
@@ -172,7 +172,7 @@ func (w *tcpTunWorker) HandlePacketsFromConn(ctx context.Context, connCancel con
 	if workerSetupErr != nil {
 		return workerSetupErr
 	}
-	buf := make([]byte, network.IPPacketMaxSizeBytes)
+	buf := make([]byte, Domain.IPPacketMaxSizeBytes)
 
 	go func() {
 		<-ctx.Done()
@@ -195,7 +195,7 @@ func (w *tcpTunWorker) HandlePacketsFromConn(ctx context.Context, connCancel con
 
 			//read packet length from 4-byte length prefix
 			var length = binary.BigEndian.Uint32(buf[:4])
-			if length < 4 || length > network.IPPacketMaxSizeBytes {
+			if length < 4 || length > Domain.IPPacketMaxSizeBytes {
 				log.Printf("invalid packet Length: %d", length)
 				continue
 			}

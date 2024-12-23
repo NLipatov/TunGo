@@ -6,8 +6,8 @@ import (
 	"net"
 	"testing"
 	"time"
-	transport_connector2 "tungo/Application/client/transport_connector"
-	"tungo/Infrastructure/crypto/chacha20"
+	"tungo/Application/client/transport_connector"
+	"tungo/Application/crypto/chacha20"
 )
 
 type MockConn struct{}
@@ -39,7 +39,7 @@ func (m *MockConn) SetWriteDeadline(_ time.Time) error {
 
 // Checks that TransportConnector is an implementation of Connector
 func TestTransportConnectorImplementsConnector(t *testing.T) {
-	var _ transport_connector2.Connector = &transport_connector2.TransportConnector{}
+	var _ transport_connector.Connector = &transport_connector.TransportConnector{}
 }
 
 // Checks that TransportConnector is returning a connection if connection was created by connection delegate
@@ -54,7 +54,7 @@ func TestEstablishConnectionWithRetry_Success(t *testing.T) {
 		return mockConn, mockSession, nil
 	}
 
-	conn, session, err := transport_connector2.NewTransportConnector().
+	conn, session, err := transport_connector.NewTransportConnector().
 		UseConnectorDelegate(connectorDelegate).
 		Connect(ctx)
 
@@ -80,7 +80,7 @@ func TestEstablishConnectionWithRetry_RetryAndFail(t *testing.T) {
 		return nil, nil, errors.New("mock connection error")
 	}
 
-	conn, session, err := transport_connector2.NewTransportConnector().
+	conn, session, err := transport_connector.NewTransportConnector().
 		UseConnectorDelegate(connectorDelegate).
 		Connect(ctx)
 
@@ -114,7 +114,7 @@ func TestEstablishConnectionWithRetry_CancelContext(t *testing.T) {
 		return nil, nil, errors.New("mock connection error")
 	}
 
-	conn, session, err := transport_connector2.NewTransportConnector().
+	conn, session, err := transport_connector.NewTransportConnector().
 		UseConnectorDelegate(connectorDelegate).
 		Connect(ctx)
 
@@ -153,7 +153,7 @@ func TestEstablishConnectionWithRetry_SuccessAfterRetries(t *testing.T) {
 		return mockConn, mockSession, nil
 	}
 
-	conn, session, err := transport_connector2.NewTransportConnector().
+	conn, session, err := transport_connector.NewTransportConnector().
 		UseConnectorDelegate(connectorDelegate).
 		Connect(ctx)
 

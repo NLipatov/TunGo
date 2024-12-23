@@ -1,14 +1,17 @@
 package presentation
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"fmt"
 	"log"
 	"sync"
 	"tungo/Application/server/routing"
 	"tungo/Application/server/serveripconf"
 	"tungo/Domain/settings"
 	"tungo/Domain/settings/server"
+	"tungo/Infrastructure/cmd"
 )
 
 func StartServer() {
@@ -77,7 +80,21 @@ func startTCPServer(settings settings.ConnectionSettings) error {
 		_ = tunFile.Close()
 	}()
 
-	err = routing.StartTCPRouting(tunFile, settings)
+	// Create a context that can be canceled
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Start a goroutine to listen for user input
+	go cmd.ListenForCommand(cancel, "server")
+
+	// Setup server
+	err = serveripconf.Configure(tunFile)
+	if err != nil {
+		return fmt.Errorf("failed to configure a server: %s\n", err)
+	}
+	defer serveripconf.Unconfigure(tunFile)
+
+	err = routing.StartTCPRouting(ctx, tunFile, settings)
 	if err != nil {
 		return err
 	}
@@ -94,7 +111,20 @@ func startUDPServer(settings settings.ConnectionSettings) error {
 		_ = tunFile.Close()
 	}()
 
-	err = routing.StartUDPRouting(tunFile, settings)
+	// Create a context that can be canceled
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Start a goroutine to listen for user input
+	go cmd.ListenForCommand(cancel, "server")
+
+	// Setup server
+	err = serveripconf.Configure(tunFile)
+	if err != nil {
+		return fmt.Errorf("failed to configure a server: %s\n", err)
+	}
+	defer serveripconf.Unconfigure(tunFile)
+	err = routing.StartUDPRouting(ctx, tunFile, settings)
 	if err != nil {
 		return err
 	}

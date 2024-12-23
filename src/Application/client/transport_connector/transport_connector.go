@@ -6,7 +6,7 @@ import (
 	"log"
 	"net"
 	"time"
-	"tungo/Infrastructure/crypto/chacha20"
+	"tungo/Application/crypto/chacha20"
 )
 
 const (

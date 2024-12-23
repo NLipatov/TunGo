@@ -5,12 +5,6 @@ import (
 )
 
 type (
-	//TunAdapter provides a single and trivial API for any supported tun devices
-	TunAdapter interface {
-		Read(data []byte) (int, error)
-		Write(data []byte) (int, error)
-		Close() error
-	}
 	LinuxTunAdapter struct {
 		TunFile *os.File
 	}
