@@ -32,8 +32,8 @@ func (p *UDPEncoder) Encode(payload []byte, nonce *Nonce) (*UDPPacket, error) {
 }
 
 func (p *UDPEncoder) Decode(data []byte) (*UDPPacket, error) {
-	high := binary.BigEndian.Uint32(data[:4])
-	low := binary.BigEndian.Uint64(data[4:12])
+	high := binary.BigEndian.Uint32(data[8:])
+	low := binary.BigEndian.Uint64(data[:8])
 	payload := data[12:]
 
 	return &UDPPacket{

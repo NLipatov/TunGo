@@ -26,8 +26,8 @@ func TestUDPEncoder_Encode(t *testing.T) {
 	low := make([]byte, 8)
 	binary.BigEndian.PutUint64(low, nonce.low)
 
-	expectedPayload = append(expectedPayload, high...)
 	expectedPayload = append(expectedPayload, low...)
+	expectedPayload = append(expectedPayload, high...)
 	expectedPayload = append(expectedPayload, payload...)
 
 	if !bytes.Equal(*packet.Payload, expectedPayload) {
@@ -44,7 +44,7 @@ func TestUDPEncoder_Decode(t *testing.T) {
 	binary.BigEndian.PutUint32(high, nonce.high)
 	low := make([]byte, 8)
 	binary.BigEndian.PutUint64(low, nonce.low)
-	rawData := append(append(high, low...), payload...)
+	rawData := append(append(low, high...), payload...)
 
 	// Декодируем данные
 	packet, err := encoder.Decode(rawData)
