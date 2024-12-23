@@ -2,16 +2,31 @@ package routing
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"sync"
+	"tungo/Application/boundary"
 	"tungo/Application/server"
+	"tungo/Application/server/routing/tun_tcp_chacha20"
 	"tungo/Domain/settings"
 )
 
-func StartTCPRouting(ctx context.Context, tunFile *os.File, settings settings.ConnectionSettings) error {
+func StartTCPRouting(ctx context.Context, tunFile boundary.TunAdapter, settings settings.ConnectionSettings) error {
 	// Map to keep track of connected clients
 	var extToLocalIp sync.Map   // external ip to local ip map
 	var extIpToSession sync.Map // external ip to session map
+
+	router, err := tun_tcp_chacha20.NewTCPRouter().
+		UseContext(ctx).
+		UseLocalIPMap(&extToLocalIp).
+		UseLocalIPToSessionMap(&extIpToSession).
+		UseTun(tunFile).
+		UseSettings(settings).
+		Build()
+
+	if err != nil {
+		return fmt.Errorf("failed to build router: %s", err)
+	}
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -19,13 +34,13 @@ func StartTCPRouting(ctx context.Context, tunFile *os.File, settings settings.Co
 	// TUN -> TCP
 	go func() {
 		defer wg.Done()
-		server.TunToTCP(tunFile, &extToLocalIp, &extIpToSession, ctx)
+		router.TunToTCP()
 	}()
 
 	// TCP -> TUN
 	go func() {
 		defer wg.Done()
-		server.TCPToTun(settings, tunFile, &extToLocalIp, &extIpToSession, ctx)
+		router.TCPToTun()
 	}()
 
 	wg.Wait()

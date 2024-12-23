@@ -8,10 +8,10 @@ import (
 	"log"
 	"sync"
 	"tungo/Application/server/routing"
-	"tungo/Application/server/serveripconf"
 	"tungo/Domain/settings"
 	"tungo/Domain/settings/server"
 	"tungo/Infrastructure/cmd"
+	"tungo/Infrastructure/network"
 )
 
 func StartServer() {
@@ -72,7 +72,7 @@ func ensureEd25519KeyPairCreated(conf *server.Conf) error {
 }
 
 func startTCPServer(settings settings.ConnectionSettings) error {
-	tunFile, err := serveripconf.SetupServerTun(settings)
+	tunFile, err := network.SetupServerTun(settings)
 	if err != nil {
 		log.Fatalf("failed to open TUN interface: %v", err)
 	}
@@ -88,11 +88,11 @@ func startTCPServer(settings settings.ConnectionSettings) error {
 	go cmd.ListenForCommand(cancel, "server")
 
 	// Setup server
-	err = serveripconf.Configure(tunFile)
+	err = network.Configure(tunFile)
 	if err != nil {
 		return fmt.Errorf("failed to configure a server: %s\n", err)
 	}
-	defer serveripconf.Unconfigure(tunFile)
+	defer network.Unconfigure(tunFile)
 
 	err = routing.StartTCPRouting(ctx, tunFile, settings)
 	if err != nil {
@@ -103,7 +103,7 @@ func startTCPServer(settings settings.ConnectionSettings) error {
 }
 
 func startUDPServer(settings settings.ConnectionSettings) error {
-	tunFile, err := serveripconf.SetupServerTun(settings)
+	tunFile, err := network.SetupServerTun(settings)
 	if err != nil {
 		log.Fatalf("failed to open TUN interface: %v", err)
 	}
@@ -119,11 +119,11 @@ func startUDPServer(settings settings.ConnectionSettings) error {
 	go cmd.ListenForCommand(cancel, "server")
 
 	// Setup server
-	err = serveripconf.Configure(tunFile)
+	err = network.Configure(tunFile)
 	if err != nil {
 		return fmt.Errorf("failed to configure a server: %s\n", err)
 	}
-	defer serveripconf.Unconfigure(tunFile)
+	defer network.Unconfigure(tunFile)
 	err = routing.StartUDPRouting(ctx, tunFile, settings)
 	if err != nil {
 		return err

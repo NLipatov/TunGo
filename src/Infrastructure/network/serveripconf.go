@@ -1,4 +1,4 @@
-package serveripconf
+package network
 
 import (
 	"fmt"
