@@ -19,16 +19,20 @@ func NewRouterFactory() *RouterFactory {
 
 // CreateRouter creates a TrafficRouter instance for the specified protocol.
 func (f *RouterFactory) CreateRouter(conf client.Conf) (TrafficRouter, error) {
+	tunConfigurator := &tun_configurator.LinuxTunConfigurator{}
+	tunConfigurator.Deconfigure(conf.UDPSettings)
+	tunConfigurator.Deconfigure(conf.TCPSettings)
+
 	switch conf.Protocol {
 	case settings.TCP:
 		return &tun_tcp_chacha20.TCPRouter{
 			Settings:        conf.TCPSettings,
-			TunConfigurator: &tun_configurator.LinuxTunConfigurator{},
+			TunConfigurator: tunConfigurator,
 		}, nil
 	case settings.UDP:
 		return &tun_udp_chacha20.UDPRouter{
 			Settings:        conf.UDPSettings,
-			TunConfigurator: &tun_configurator.LinuxTunConfigurator{},
+			TunConfigurator: tunConfigurator,
 		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported conf: %v", conf)
