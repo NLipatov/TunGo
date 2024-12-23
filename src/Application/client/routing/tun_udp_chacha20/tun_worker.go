@@ -163,7 +163,7 @@ func (w *udpTunWorker) HandlePacketsFromConn(ctx context.Context, connCancel con
 				return nil
 			}
 
-			decrypted, decryptionErr := w.session.DecryptViaNonceBuf(buf[:n])
+			decrypted, _, decryptionErr := w.session.DecryptViaNonceBuf(buf[:n])
 			if decryptionErr != nil {
 				if errors.Is(decryptionErr, chacha21.ErrNonUniqueNonce) {
 					log.Printf("reconnecting on critical decryption err: %s", err)

@@ -179,7 +179,7 @@ func UDPToTun(settings settings.ConnectionSettings, tunFile *os.File, intIPToUDP
 			session := sessionValue.(*chacha21.Session)
 
 			// Handle client data
-			decrypted, decryptionErr := session.DecryptViaNonceBuf(buf[:n])
+			decrypted, _, decryptionErr := session.DecryptViaNonceBuf(buf[:n])
 			if decryptionErr != nil {
 				log.Printf("failed to decrypt data: %s", decryptionErr)
 				continue

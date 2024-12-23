@@ -92,21 +92,22 @@ func (s *Session) Decrypt(ciphertext []byte) ([]byte, *Nonce, error) {
 	return plaintext, s.RecvNonce, nil
 }
 
-func (s *Session) DecryptViaNonceBuf(ciphertext []byte) ([]byte, error) {
+func (s *Session) DecryptViaNonceBuf(ciphertext []byte) ([]byte, *Nonce, error) {
 	nonceBytes := ciphertext[:12]
-	nBErr := s.nonceBuf.Insert((&Nonce{}).Decode(nonceBytes))
+	nonce := (&Nonce{}).Decode(nonceBytes)
+	nBErr := s.nonceBuf.Insert(nonce)
 	if nBErr != nil {
-		return nil, nBErr
+		return nil, nonce, nBErr
 	}
 
 	aad := s.CreateAAD(!s.isServer, nonceBytes)
 
 	plaintext, err := s.recvCipher.Open(nil, nonceBytes, ciphertext[12:], aad)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt: %w", err)
+		return nil, nonce, fmt.Errorf("failed to decrypt: %w", err)
 	}
 
-	return plaintext, nil
+	return plaintext, nonce, nil
 }
 
 func (s *Session) CreateAAD(isServerToClient bool, nonce []byte) []byte {
