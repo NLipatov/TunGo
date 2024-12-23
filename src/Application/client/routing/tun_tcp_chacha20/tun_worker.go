@@ -207,12 +207,7 @@ func (w *tcpTunWorker) HandlePacketsFromConn(ctx context.Context, connCancel con
 				continue
 			}
 
-			packet, err := w.encoder.Decode(buf[:length])
-			if err != nil {
-				log.Println(err)
-			}
-
-			decrypted, _, decryptionErr := w.session.Decrypt(packet.Payload)
+			decrypted, _, decryptionErr := w.session.Decrypt(buf[:length])
 			if decryptionErr != nil {
 				log.Printf("failed to decrypt data: %s", decryptionErr)
 				continue
