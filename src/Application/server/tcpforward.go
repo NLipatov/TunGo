@@ -13,7 +13,6 @@ import (
 	"tungo/Domain"
 	"tungo/Domain/settings"
 	"tungo/Domain/settings/server"
-	"tungo/Infrastructure/network"
 	"tungo/Infrastructure/network/packets"
 )
 
@@ -125,9 +124,7 @@ func TCPToTun(settings settings.ConnectionSettings, tunFile *os.File, localIpMap
 func registerClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, localIpToServerSessionMap *sync.Map, ctx context.Context) {
 	log.Printf("connected: %s", conn.RemoteAddr())
 
-	serverSession, internalIpAddr, err := handshake.OnClientConnected(&network.TcpAdapter{
-		Conn: conn,
-	})
+	serverSession, internalIpAddr, err := handshake.OnClientConnected(conn)
 	if err != nil {
 		_ = conn.Close()
 		log.Printf("conn closed: %s (regfail: %s)\n", conn.RemoteAddr(), err)
