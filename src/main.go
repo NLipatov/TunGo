@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
-	"tungo/presentation"
+	presentation2 "tungo/Infrastructure/presentation"
 )
 
 const (
@@ -23,10 +23,10 @@ func main() {
 	switch mode {
 	case ServerMode:
 		fmt.Println("🚀 Starting server...")
-		presentation.StartServer()
+		presentation2.StartServer()
 	case ClientMode:
 		fmt.Println("🛡️ Starting client...")
-		presentation.StartClient()
+		presentation2.StartClient()
 	default:
 		fmt.Printf("Unknown mode: %s\n", mode)
 		printUsage()
