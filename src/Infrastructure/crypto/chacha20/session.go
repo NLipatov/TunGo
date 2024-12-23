@@ -3,7 +3,6 @@ package chacha20
 import (
 	"crypto/cipher"
 	"crypto/sha256"
-	"encoding/binary"
 	"fmt"
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/hkdf"
@@ -94,17 +93,8 @@ func (s *Session) Decrypt(ciphertext []byte) ([]byte, *Nonce, error) {
 }
 
 func (s *Session) DecryptViaNonceBuf(ciphertext []byte) ([]byte, error) {
-	if len(ciphertext) < 12 {
-		return nil, fmt.Errorf("ciphertext is too short")
-	}
-
 	nonceBytes := ciphertext[:12]
-	nonce := &Nonce{
-		low:  binary.BigEndian.Uint64(nonceBytes[:8]),
-		high: binary.BigEndian.Uint32(nonceBytes[8:]),
-	}
-
-	nBErr := s.nonceBuf.Insert(nonce)
+	nBErr := s.nonceBuf.Insert((&Nonce{}).Decode(nonceBytes))
 	if nBErr != nil {
 		return nil, nBErr
 	}

@@ -49,3 +49,12 @@ func (n *Nonce) Encode() []byte {
 
 	return nonce[:]
 }
+
+func (n *Nonce) Decode(data []byte) *Nonce {
+	return &Nonce{
+		low:  binary.BigEndian.Uint64(data[:8]),
+		high: binary.BigEndian.Uint32(data[8:]),
+		mu:   sync.Mutex{},
+	}
+
+}
