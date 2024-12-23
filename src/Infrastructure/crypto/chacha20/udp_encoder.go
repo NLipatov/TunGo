@@ -21,8 +21,8 @@ func (p *UDPEncoder) Encode(payload []byte, nonce *Nonce) (*UDPPacket, error) {
 	binary.BigEndian.PutUint64(low, nonce.low)
 
 	data := make([]byte, 0, len(high)+len(low)+len(payload))
-	data = append(data, high...)
 	data = append(data, low...)
+	data = append(data, high...)
 	data = append(data, payload...)
 
 	return &UDPPacket{
