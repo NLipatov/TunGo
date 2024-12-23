@@ -74,10 +74,10 @@ func (s *Session) Encrypt(plaintext []byte) ([]byte, *Nonce, error) {
 	return ciphertext, s.SendNonce, nil
 }
 
-func (s *Session) Decrypt(ciphertext []byte) ([]byte, *Nonce, error) {
+func (s *Session) Decrypt(ciphertext []byte) ([]byte, error) {
 	err := s.RecvNonce.incrementNonce()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	nonceBytes := s.RecvNonce.Encode()
@@ -86,13 +86,14 @@ func (s *Session) Decrypt(ciphertext []byte) ([]byte, *Nonce, error) {
 	plaintext, err := s.recvCipher.Open(ciphertext[:0], nonceBytes, ciphertext, aad)
 	if err != nil {
 		// Properly handle failed decryption attempt to avoid reuse of any state
-		return nil, nil, err
+		return nil, err
 	}
 
-	return plaintext, s.RecvNonce, nil
+	return plaintext, nil
 }
 
-func (s *Session) DecryptViaNonceBuf(ciphertext []byte, nonce *Nonce) ([]byte, error) {
+func (s *Session) DecryptViaNonceBuf(ciphertext []byte) ([]byte, error) {
+	nonce := (&Nonce{}).Decode(ciphertext[:12])
 	nBErr := s.nonceBuf.Insert(nonce)
 	if nBErr != nil {
 		return nil, nBErr

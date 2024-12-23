@@ -193,7 +193,7 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 				continue
 			}
 
-			decrypted, _, decryptionErr := session.Decrypt(buf[:length])
+			decrypted, decryptionErr := session.Decrypt(buf[:length])
 			if decryptionErr != nil {
 				log.Printf("failed to decrypt data: %s", decryptionErr)
 				continue
