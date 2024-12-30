@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"log"
+	"os"
 	"sync"
 	"tungo/server/routing"
 	"tungo/server/serveripconf"
@@ -56,11 +57,24 @@ func ensureEd25519KeyPairCreated(conf *server.Conf) error {
 		return nil
 	}
 
-	edPub, ed, keyGenerationErr := ed25519.GenerateKey(rand.Reader)
-	if keyGenerationErr != nil {
-		log.Fatalf("failed to generate ed25519 key pair: %s", keyGenerationErr)
+	envPublic := os.Getenv("ED25519_PUBLIC_KEY")
+	encPrivate := os.Getenv("ED25519_PRIVATE_KEY")
+
+	var public ed25519.PublicKey
+	var private ed25519.PrivateKey
+	if envPublic != "" && encPrivate != "" {
+		public = []byte(envPublic)
+		private = []byte(encPrivate)
+	} else {
+		publicKey, privateKey, keyGenerationErr := ed25519.GenerateKey(rand.Reader)
+		if keyGenerationErr != nil {
+			log.Fatalf("failed to generate ed25519 key pair: %s", keyGenerationErr)
+		}
+		public = publicKey
+		private = privateKey
 	}
-	err := conf.InsertEdKeys(edPub, ed)
+
+	err := conf.InsertEdKeys(public, private)
 	if err != nil {
 		log.Fatalf("failed to insert ed25519 keys to server conf: %s", err)
 	}
