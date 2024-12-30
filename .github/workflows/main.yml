@@ -37,7 +37,7 @@ jobs:
           flags: unittests
           fail_ci_if_error: true
 
-  build-image:
+  version-and-tag:
     runs-on: ubuntu-latest
     needs: run-tests
     steps:
@@ -47,33 +47,68 @@ jobs:
           fetch-depth: 0
           submodules: 'recursive'
 
+      - name: Install GitVersion
+        uses: gittools/actions/gitversion/setup@v0.9
+        with:
+          versionSpec: '5.x'
+
+      - name: Generate Version
+        id: gitversion
+        uses: gittools/actions/gitversion/execute@v0.9
+
+      - name: Tag and Push Version
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git tag $(echo ${{ steps.gitversion.outputs.semver }})
+          git push origin $(echo ${{ steps.gitversion.outputs.semver }})
+
+  build-image:
+    runs-on: ubuntu-latest
+    needs: version-and-tag
+    steps:
+      - name: Get repository code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: 'recursive'
+  
+      - name: Get Version from Git
+        id: get_version
+        run: echo "VERSION=$(git describe --tags --abbrev=0)" >> $GITHUB_ENV
+  
       - name: Setup Go
         uses: actions/setup-go@v4
         with:
           go-version: '1.x'
-
+  
       - name: Install dependencies
         run: |
           cd src
           go mod tidy
-
+  
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
+  
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+  
+      - name: Build and Tag Docker Image
+        env:
+          VERSION: ${{ env.VERSION }}
+        run: |
+          docker build -t nlipatov/tungo:${VERSION} src
+          docker tag nlipatov/tungo:${VERSION} nlipatov/tungo:latest
 
-      - name: Build a Docker container
-        run: docker build -t tungo src
-
-      - name: Tag Docker image as latest
-        run: docker tag tungo:latest nlipatov/tungo:tungo
-
-      - name: Push image to hub
-        run: docker push nlipatov/tungo:tungo
+      - name: Push Docker Images
+        env:
+          VERSION: ${{ env.VERSION }}
+        run: |
+          docker push nlipatov/tungo:${VERSION}
+          docker push nlipatov/tungo:latest
 
   redeploy:
     runs-on: ubuntu-latest
@@ -87,4 +122,6 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd tungo
-            sudo docker compose pull && sudo docker compose up -d --remove-orphans --build && sudo docker system prune -f
+            sudo docker compose pull
+            sudo docker compose up -d --remove-orphans --force-recreate
+            sudo docker system prune -f
