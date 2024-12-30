@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
-	"tungo/Infrastructure/presentation"
+	"tungo/presentation"
 )
 
 const (
