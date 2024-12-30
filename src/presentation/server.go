@@ -3,6 +3,7 @@ package presentation
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/base64"
 	"log"
 	"os"
 	"sync"
@@ -63,8 +64,17 @@ func ensureEd25519KeyPairCreated(conf *server.Conf) error {
 	var public ed25519.PublicKey
 	var private ed25519.PrivateKey
 	if envPublic != "" && encPrivate != "" {
-		public = []byte(envPublic)
-		private = []byte(encPrivate)
+		publicKey, err := base64.StdEncoding.DecodeString(envPublic)
+		if err != nil {
+			log.Fatalf("failed to decode ED25519_PUBLIC_KEY from env var: %s", err)
+		}
+		privateKey, err := base64.StdEncoding.DecodeString(encPrivate)
+		if err != nil {
+			log.Fatalf("failed to decode ED25519_PRIVATE_KEY from env var: %s", err)
+		}
+
+		public = publicKey
+		private = privateKey
 	} else {
 		publicKey, privateKey, keyGenerationErr := ed25519.GenerateKey(rand.Reader)
 		if keyGenerationErr != nil {
