@@ -98,6 +98,8 @@ docker run -d \
   -e EnableUDP=true \
   -e EnableTCP=false \
   -e UDPRingBufferSize=100_000 \
+  -e ED25519_PUBLIC_KEY="base64-encoded key" \
+  -e ED25519_PRIVATE_KEY="base64-encoded key" \
   -v tungo_volume:/src \
   nlipatov/tungo:tungo
 ```
