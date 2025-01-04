@@ -103,6 +103,7 @@ docker run -d \
   -v tungo_volume:/src \
   nlipatov/tungo:tungo
 ```
+if no `ED25519_PUBLIC_KEY` and `ED25519_PRIVATE_KEY` provided, server-app will generate it on startup.
 
 Continue with the same steps:
 1. Generate client config (`gen`).
