@@ -120,16 +120,6 @@ func (w *tcpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnec
 		}
 	}()
 
-	//passes keepalive messages to chan
-	go func() {
-		for {
-			select {
-			case <-ctx.Done(): // Stop-signal
-				return
-			}
-		}
-	}()
-
 	//passes anything from tun to chan
 	for {
 		select {
