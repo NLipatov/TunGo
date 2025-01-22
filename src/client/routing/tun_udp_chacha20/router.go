@@ -69,7 +69,6 @@ func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
 }
 
 func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *chacha20.Session, connCtx context.Context, connCancel context.CancelFunc) {
-
 	var wg sync.WaitGroup
 	wg.Add(2)
 
@@ -90,7 +89,9 @@ func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *chacha20.Sessi
 		handlingErr := tunWorker.HandlePacketsFromTun(connCtx, connCancel)
 
 		if handlingErr != nil {
-			log.Fatalf("failed to handle TUN-packet: %s", handlingErr)
+			log.Printf("failed to handle TUN-packet: %s", handlingErr)
+			connCancel()
+			return
 		}
 	}()
 
@@ -111,7 +112,9 @@ func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *chacha20.Sessi
 		handlingErr := tunWorker.HandlePacketsFromConn(connCtx, connCancel)
 
 		if handlingErr != nil {
-			log.Fatalf("failed to handle CONN-packet: %s", handlingErr)
+			log.Printf("failed to handle CONN-packet: %s", handlingErr)
+			connCancel()
+			return
 		}
 	}()
 
