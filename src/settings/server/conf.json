@@ -6,7 +6,8 @@
     "ConnectionIP": "",
     "Port": "8080",
     "MTU": 1472,
-    "Protocol": "tcp"
+    "Protocol": "tcp",
+    "DialTimeoutMs": 5000
   },
   "UDPSettings": {
     "InterfaceName": "udptun0",
@@ -15,7 +16,8 @@
     "ConnectionIP": "",
     "Port": "9090",
     "MTU": 1444,
-    "Protocol": "udp"
+    "Protocol": "udp",
+    "DialTimeoutMs": 5000
   },
   "FallbackServerAddress": "",
   "ClientCounter": 0,

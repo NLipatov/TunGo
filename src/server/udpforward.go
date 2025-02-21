@@ -120,7 +120,7 @@ type UDPClientPacket struct {
 }
 
 func UDPToTun(settings settings.ConnectionSettings, tunFile *os.File, intIPToUDPClientAddr *sync.Map, intIPToSession *sync.Map, ctx context.Context) {
-	addr, err := net.ResolveUDPAddr("udp", settings.Port)
+	addr, err := net.ResolveUDPAddr("udp", net.JoinHostPort("", settings.Port))
 	if err != nil {
 		log.Fatalf("failed to resolve udp address: %s", err)
 		return
