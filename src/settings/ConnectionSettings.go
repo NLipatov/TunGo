@@ -21,6 +21,7 @@ type ConnectionSettings struct {
 	Port             string `json:"Port"`
 	MTU              int    `json:"MTU"`
 	Protocol         Protocol
+	DialTimeoutMs    int `json:"DialTimeoutMs"`
 }
 
 func (p *Protocol) MarshalJSON() ([]byte, error) {

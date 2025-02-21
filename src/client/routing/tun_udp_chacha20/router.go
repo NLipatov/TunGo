@@ -5,8 +5,6 @@ import (
 	"log"
 	"net"
 	"sync"
-	"time"
-	"tungo/client/transport_connector"
 	"tungo/client/tun_configurator"
 	"tungo/crypto/chacha20"
 	"tungo/network"
@@ -27,7 +25,8 @@ func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
 	}()
 
 	for {
-		conn, session, err := r.connectToServer(ctx)
+		connector := NewConnector(r.Settings)
+		conn, session, err := connector.Connect(ctx)
 		if err != nil {
 			log.Printf("could not connect to server at %s: %s", r.Settings.ConnectionIP, err)
 		}
@@ -46,7 +45,7 @@ func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
 		}()
 
 		//starts forwarding packets from conn to tun-interface and from tun-interface to conn
-		startUDPForwarding(r, conn.(*net.UDPConn), session, connCtx, connCancel)
+		startUDPForwarding(r, conn, session, connCtx, connCancel)
 
 		// After goroutines finish, check if shutdown was initiated
 		if ctx.Err() != nil {
@@ -119,20 +118,4 @@ func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *chacha20.Sessi
 	}()
 
 	wg.Wait()
-}
-
-func (r *UDPRouter) connectToServer(ctx context.Context) (net.Conn, *chacha20.Session, error) {
-	connectorDelegate := func() (net.Conn, *chacha20.Session, error) {
-		return newConnectionBuilder().
-			useSettings(r.Settings).
-			useConnectionTimeout(time.Second * 5).
-			connect(ctx).
-			handshake().
-			build()
-	}
-
-	return transport_connector.
-		NewTransportConnector().
-		UseConnectorDelegate(connectorDelegate).
-		Connect(ctx)
 }
