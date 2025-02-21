@@ -86,7 +86,7 @@ func TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.
 }
 
 func TCPToTun(settings settings.ConnectionSettings, tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map, ctx context.Context) {
-	listener, err := net.Listen("tcp", settings.Port)
+	listener, err := net.Listen("tcp", net.JoinHostPort("", settings.Port))
 	if err != nil {
 		log.Printf("failed to listen on port %s: %v", settings.Port, err)
 	}
