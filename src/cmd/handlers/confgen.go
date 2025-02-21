@@ -71,6 +71,7 @@ func generate() (*client.Conf, error) {
 			Port:             serverConf.TCPSettings.Port,
 			MTU:              serverConf.TCPSettings.MTU,
 			Protocol:         settings.TCP,
+			DialTimeoutMs:    serverConf.TCPSettings.DialTimeoutMs,
 		},
 		UDPSettings: settings.ConnectionSettings{
 			InterfaceName:    serverConf.UDPSettings.InterfaceName,
@@ -80,6 +81,7 @@ func generate() (*client.Conf, error) {
 			Port:             serverConf.UDPSettings.Port,
 			MTU:              serverConf.UDPSettings.MTU,
 			Protocol:         settings.UDP,
+			DialTimeoutMs:    serverConf.UDPSettings.DialTimeoutMs,
 		},
 		Ed25519PublicKey:          serverConf.Ed25519PublicKey,
 		TCPWriteChannelBufferSize: 1000,

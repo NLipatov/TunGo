@@ -5,8 +5,6 @@ import (
 	"log"
 	"net"
 	"sync"
-	"time"
-	"tungo/client/transport_connector"
 	"tungo/client/tun_configurator"
 	"tungo/crypto/chacha20"
 	"tungo/network"
@@ -27,7 +25,8 @@ func (r *TCPRouter) RouteTraffic(ctx context.Context) error {
 	}()
 
 	for {
-		conn, session, err := r.connectToServer(ctx)
+		connector := NewConnector(r.Settings)
+		conn, session, err := connector.Connect(ctx)
 		if err != nil {
 			log.Fatalf("failed to establish connection: %s", err)
 		}
@@ -116,20 +115,4 @@ func forwardIPPackets(r *TCPRouter, conn *net.Conn, session *chacha20.Session, c
 	}()
 
 	wg.Wait()
-}
-
-func (r *TCPRouter) connectToServer(ctx context.Context) (net.Conn, *chacha20.Session, error) {
-	connectorDelegate := func() (net.Conn, *chacha20.Session, error) {
-		return newTCPConnectionBuilder().
-			useSettings(r.Settings).
-			useConnectionTimeout(time.Second * 5).
-			connect(ctx).
-			handshake().
-			build()
-	}
-
-	return transport_connector.
-		NewTransportConnector().
-		UseConnectorDelegate(connectorDelegate).
-		Connect(ctx)
 }
