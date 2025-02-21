@@ -58,7 +58,7 @@ func (b *tcpConnectionBuilder) connect(ctx context.Context) *tcpConnectionBuilde
 	dialer := &net.Dialer{}
 	dialCtx, cancel := context.WithTimeout(ctx, b.dialTimeout)
 	defer cancel()
-	conn, err := dialer.DialContext(dialCtx, "tcp", fmt.Sprintf("%s%s", b.settings.ConnectionIP, b.settings.Port))
+	conn, err := dialer.DialContext(dialCtx, "tcp", net.JoinHostPort(b.settings.ConnectionIP, b.settings.Port))
 	if err != nil {
 		if b.conn != nil {
 			_ = b.conn.Close()
