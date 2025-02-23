@@ -1,4 +1,4 @@
-package tun_udp_chacha20
+package udp_chacha20
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 type udpTunWorker struct {
 	router  *UDPRouter
 	conn    *net.UDPConn
-	session *chacha20.Session
+	session *chacha20.UdpSession
 	err     error
 	encoder *chacha20.UDPEncoder
 }
@@ -32,7 +32,7 @@ func (w *udpTunWorker) UseRouter(router *UDPRouter) *udpTunWorker {
 	return w
 }
 
-func (w *udpTunWorker) UseSession(session *chacha20.Session) *udpTunWorker {
+func (w *udpTunWorker) UseSession(session *chacha20.UdpSession) *udpTunWorker {
 	if w.err != nil {
 		return w
 	}
@@ -108,18 +108,13 @@ func (w *udpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnec
 				triggerReconnect()
 			}
 
-			encryptedPacket, nonce, err := w.session.Encrypt(buf[:n])
+			encryptedPacket, err := w.session.Encrypt(buf[:n])
 			if err != nil {
 				log.Printf("failed to encrypt packet: %v", err)
 				continue
 			}
 
-			packet, err := w.encoder.Encode(encryptedPacket, nonce)
-			if err != nil {
-				log.Printf("packet encoding failed: %s", err)
-				continue
-			}
-			writeOrReconnect(w.conn, packet.Payload, ctx, triggerReconnect)
+			writeOrReconnect(w.conn, &encryptedPacket, ctx, triggerReconnect)
 		}
 	}
 }
@@ -163,13 +158,7 @@ func (w *udpTunWorker) HandlePacketsFromConn(ctx context.Context, connCancel con
 				return nil
 			}
 
-			packet, packetDecodeErr := w.encoder.Decode(buf[:n])
-			if packetDecodeErr != nil {
-				log.Printf("failed to decode a packet: %s", packetDecodeErr)
-				continue
-			}
-
-			decrypted, _, _, decryptionErr := w.session.DecryptViaNonceBuf(*packet.Payload, packet.Nonce)
+			decrypted, decryptionErr := w.session.Decrypt(buf[:n])
 			if decryptionErr != nil {
 				if errors.Is(decryptionErr, chacha20.ErrNonUniqueNonce) {
 					log.Printf("reconnecting on critical decryption err: %s", decryptionErr)
