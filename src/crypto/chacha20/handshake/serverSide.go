@@ -16,7 +16,7 @@ import (
 	"golang.org/x/crypto/hkdf"
 )
 
-func OnClientConnected(conn network.ConnectionAdapter) (*chacha20.Session, *string, error) {
+func OnClientConnected(conn network.ConnectionAdapter) (*chacha20.SessionImpl, *string, error) {
 	conf, err := (&server.Conf{}).Read()
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to read server conf: %s", err)

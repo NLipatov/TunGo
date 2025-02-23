@@ -63,7 +63,7 @@ func TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.
 					log.Printf("failed to load session")
 					continue
 				}
-				session := sessionValue.(*chacha20.Session)
+				session := sessionValue.(*chacha20.SessionImpl)
 				encryptedPacket, _, encryptErr := session.Encrypt(data)
 				if encryptErr != nil {
 					log.Printf("failder to encrypt a package: %s", encryptErr)
@@ -177,7 +177,7 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 				continue
 			}
 
-			session := sessionValue.(*chacha20.Session)
+			session := sessionValue.(*chacha20.SessionImpl)
 
 			//read packet length from 4-byte length prefix
 			var length = binary.BigEndian.Uint32(buf[:4])

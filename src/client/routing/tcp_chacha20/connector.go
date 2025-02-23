@@ -21,7 +21,7 @@ func NewConnector(settings settings.ConnectionSettings) *Connector {
 	}
 }
 
-func (c *Connector) Connect(ctx context.Context) (net.Conn, *chacha20.Session, error) {
+func (c *Connector) Connect(ctx context.Context) (net.Conn, *chacha20.SessionImpl, error) {
 	conn, connErr := c.dial(ctx)
 	if connErr != nil {
 		return nil, nil, connErr
@@ -69,14 +69,14 @@ func (c *Connector) dial(ctx context.Context) (net.Conn, error) {
 	return conn, nil
 }
 
-func (c *Connector) handshake(ctx context.Context, conn net.Conn) (*chacha20.Session, error) {
+func (c *Connector) handshake(ctx context.Context, conn net.Conn) (*chacha20.SessionImpl, error) {
 	var closeOnce sync.Once
 	closeConn := func() {
 		_ = conn.Close()
 	}
 
 	resultChan := make(chan struct {
-		session *chacha20.Session
+		session *chacha20.SessionImpl
 		err     error
 	}, 1)
 
@@ -86,7 +86,7 @@ func (c *Connector) handshake(ctx context.Context, conn net.Conn) (*chacha20.Ses
 			closeOnce.Do(closeConn)
 		}
 		resultChan <- struct {
-			session *chacha20.Session
+			session *chacha20.SessionImpl
 			err     error
 		}{session, handshakeErr}
 	}(conn, c.settings)

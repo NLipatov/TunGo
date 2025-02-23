@@ -19,7 +19,7 @@ func NewConnector(settings settings.ConnectionSettings) *Connector {
 	}
 }
 
-func (c *Connector) Connect(ctx context.Context) (*net.UDPConn, *chacha20.Session, error) {
+func (c *Connector) Connect(ctx context.Context) (*net.UDPConn, *chacha20.SessionImpl, error) {
 	conn, connErr := c.dial(c.settings)
 	if connErr != nil {
 		return nil, nil, connErr
@@ -48,7 +48,7 @@ func (c *Connector) dial(settings settings.ConnectionSettings) (*net.UDPConn, er
 	return conn, nil
 }
 
-func (c *Connector) handshake(ctx context.Context, conn *net.UDPConn) (*chacha20.Session, error) {
+func (c *Connector) handshake(ctx context.Context, conn *net.UDPConn) (*chacha20.SessionImpl, error) {
 	if c.settings.DialTimeoutMs <= 0 || c.settings.DialTimeoutMs >= 300_000 {
 		c.settings.DialTimeoutMs = 5_000 //5 seconds is default timeout
 	}
@@ -57,14 +57,14 @@ func (c *Connector) handshake(ctx context.Context, conn *net.UDPConn) (*chacha20
 	defer cancel()
 
 	resultChan := make(chan struct {
-		session *chacha20.Session
+		session *chacha20.SessionImpl
 		err     error
 	}, 1)
 
 	go func(conn net.Conn, settings settings.ConnectionSettings) {
 		session, handshakeErr := handshake.OnConnectedToServer(ctx, conn, settings)
 		resultChan <- struct {
-			session *chacha20.Session
+			session *chacha20.SessionImpl
 			err     error
 		}{session, handshakeErr}
 	}(conn, c.settings)

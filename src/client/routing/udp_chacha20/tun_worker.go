@@ -14,7 +14,7 @@ import (
 type udpTunWorker struct {
 	router  *UDPRouter
 	conn    *net.UDPConn
-	session *chacha20.Session
+	session *chacha20.SessionImpl
 	err     error
 	encoder *chacha20.UDPEncoder
 }
@@ -32,7 +32,7 @@ func (w *udpTunWorker) UseRouter(router *UDPRouter) *udpTunWorker {
 	return w
 }
 
-func (w *udpTunWorker) UseSession(session *chacha20.Session) *udpTunWorker {
+func (w *udpTunWorker) UseSession(session *chacha20.SessionImpl) *udpTunWorker {
 	if w.err != nil {
 		return w
 	}
@@ -169,7 +169,7 @@ func (w *udpTunWorker) HandlePacketsFromConn(ctx context.Context, connCancel con
 				continue
 			}
 
-			decrypted, _, _, decryptionErr := w.session.DecryptViaNonceBuf(*packet.Payload, packet.Nonce)
+			decrypted, decryptionErr := w.session.DecryptViaNonceBuf(*packet.Payload, packet.Nonce)
 			if decryptionErr != nil {
 				if errors.Is(decryptionErr, chacha20.ErrNonUniqueNonce) {
 					log.Printf("reconnecting on critical decryption err: %s", decryptionErr)

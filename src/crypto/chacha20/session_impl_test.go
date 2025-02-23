@@ -106,7 +106,7 @@ func TestSession_ClientServerEncryption_ServerDecryptsViaNonceBuf(t *testing.T) 
 		t.Fatalf("ciphertext must not contain plaintext as a subarray")
 	}
 
-	decrypted, _, _, err := serverSession.DecryptViaNonceBuf(ciphertext, clientNonce)
+	decrypted, err := serverSession.DecryptViaNonceBuf(ciphertext, clientNonce)
 	if err != nil {
 		t.Fatalf("Server decryption failed: %v", err)
 	}
@@ -133,7 +133,7 @@ func TestSession_ClientServerEncryption_ClientDecryptsViaNonceBuf(t *testing.T) 
 		t.Fatalf("ciphertext must not contain plaintext as a subarray")
 	}
 
-	decrypted, _, _, err := clientSession.DecryptViaNonceBuf(ciphertext, serverNonce)
+	decrypted, err := clientSession.DecryptViaNonceBuf(ciphertext, serverNonce)
 	if err != nil {
 		t.Fatalf("Client decryption failed: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestSession_ClientServerEncryption_ClientDecryptsViaNonceBuf(t *testing.T) 
 	}
 }
 
-func createServerAndClienSessions(t *testing.T) (*Session, *Session) {
+func createServerAndClienSessions(t *testing.T) (*SessionImpl, *SessionImpl) {
 	clientPrivate := make([]byte, 32)
 	serverPrivate := make([]byte, 32)
 	_, _ = rand.Read(clientPrivate)
@@ -183,7 +183,7 @@ func TestSession_CreateAAD(t *testing.T) {
 	sessionID := [32]byte{}
 	copy(sessionID[:], "test-session-id-32-bytes-long")
 
-	session := &Session{
+	session := &SessionImpl{
 		SessionId: sessionID,
 	}
 

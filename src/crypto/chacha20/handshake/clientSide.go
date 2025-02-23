@@ -20,7 +20,7 @@ import (
 	"golang.org/x/crypto/hkdf"
 )
 
-func OnConnectedToServer(ctx context.Context, conn net.Conn, settings settings.ConnectionSettings) (*chacha20.Session, error) {
+func OnConnectedToServer(ctx context.Context, conn net.Conn, settings settings.ConnectionSettings) (*chacha20.SessionImpl, error) {
 	edPub, ed, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate ed25519 key pair: %s", err)
