@@ -67,7 +67,7 @@ func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
 	}
 }
 
-func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *chacha20.SessionImpl, connCtx context.Context, connCancel context.CancelFunc) {
+func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *chacha20.UdpSession, connCtx context.Context, connCancel context.CancelFunc) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 

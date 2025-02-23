@@ -15,7 +15,7 @@ import (
 type tcpTunWorker struct {
 	router  *TCPRouter
 	conn    net.Conn
-	session *chacha20.SessionImpl
+	session *chacha20.TcpSession
 	encoder *chacha20.TCPEncoder
 	err     error
 }
@@ -33,7 +33,7 @@ func (w *tcpTunWorker) UseRouter(router *TCPRouter) *tcpTunWorker {
 	return w
 }
 
-func (w *tcpTunWorker) UseSession(session *chacha20.SessionImpl) *tcpTunWorker {
+func (w *tcpTunWorker) UseSession(session *chacha20.TcpSession) *tcpTunWorker {
 	if w.err != nil {
 		return w
 	}

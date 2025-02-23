@@ -68,7 +68,7 @@ func (r *TCPRouter) RouteTraffic(ctx context.Context) error {
 	}
 }
 
-func forwardIPPackets(r *TCPRouter, conn *net.Conn, session *chacha20.SessionImpl, connCtx context.Context, connCancel context.CancelFunc) {
+func forwardIPPackets(r *TCPRouter, conn *net.Conn, session *chacha20.TcpSession, connCtx context.Context, connCancel context.CancelFunc) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 

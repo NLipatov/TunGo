@@ -8,7 +8,6 @@ import (
 	"os"
 	"sync"
 	"tungo/crypto/chacha20"
-	"tungo/crypto/chacha20/handshake"
 	"tungo/network"
 	"tungo/network/ip"
 	"tungo/network/packets"
@@ -95,7 +94,7 @@ func TunToUDP(tunFile *os.File, intIPToUDPClientAddr *sync.Map, intIPToSession *
 				log.Printf("failed to load session for IP %s", destinationIP)
 				continue
 			}
-			session := sessionValue.(*chacha20.SessionImpl)
+			session := sessionValue.(*chacha20.TcpSession)
 
 			encryptedPacket, nonce, encryptErr := session.Encrypt(data)
 			if encryptErr != nil {
@@ -176,7 +175,7 @@ func UDPToTun(settings settings.ConnectionSettings, tunFile *os.File, intIPToUDP
 				log.Printf("failed to load session for IP %s", internalIP)
 				continue
 			}
-			session := sessionValue.(*chacha20.SessionImpl)
+			session := sessionValue.(*chacha20.UdpSession)
 
 			packet, err := (&chacha20.UDPEncoder{}).Decode(buf[:n])
 			if err != nil {
@@ -185,7 +184,7 @@ func UDPToTun(settings settings.ConnectionSettings, tunFile *os.File, intIPToUDP
 			}
 
 			// Handle client data
-			decrypted, decryptionErr := session.DecryptViaNonceBuf(*packet.Payload, packet.Nonce)
+			decrypted, decryptionErr := session.Decrypt(*packet.Payload)
 			if decryptionErr != nil {
 				log.Printf("failed to decrypt data: %s", decryptionErr)
 				continue
@@ -202,22 +201,28 @@ func UDPToTun(settings settings.ConnectionSettings, tunFile *os.File, intIPToUDP
 
 func udpRegisterClient(conn *net.UDPConn, clientAddr net.UDPAddr, initialData []byte, intIPToUDPClientAddr *sync.Map, intIPToSession *sync.Map) error {
 	// Pass initialData and clientAddr to the crypto function
-	serverSession, internalIpAddr, err := handshake.OnClientConnected(&network.UdpAdapter{
+	h := chacha20.NewHandshake()
+	internalIpAddr, handshakeErr := h.ServerSideHandshake(&network.UdpAdapter{
 		Conn:        *conn,
 		Addr:        clientAddr,
 		InitialData: initialData,
 	})
-	if err != nil {
-		return err
+	if handshakeErr != nil {
+		return handshakeErr
 	}
 	log.Printf("%s registered as: %s", clientAddr.String(), *internalIpAddr)
+
+	udpSession, tcpSessionErr := chacha20.NewUdpSession(h.Id(), h.ServerKey(), h.ClientKey(), true)
+	if tcpSessionErr != nil {
+		log.Printf("%s failed registration: %s", conn.RemoteAddr(), tcpSessionErr)
+	}
 
 	// Use internal IP as key
 	intIPToUDPClientAddr.Store(*internalIpAddr, &UDPClient{
 		conn: conn,
 		addr: &clientAddr,
 	})
-	intIPToSession.Store(*internalIpAddr, serverSession)
+	intIPToSession.Store(*internalIpAddr, udpSession)
 	clientAddrToInternalIP.Store(clientAddr.String(), *internalIpAddr)
 
 	return nil

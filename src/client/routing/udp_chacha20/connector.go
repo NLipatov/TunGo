@@ -2,11 +2,12 @@ package udp_chacha20
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"time"
 	"tungo/crypto/chacha20"
-	"tungo/crypto/chacha20/handshake"
 	"tungo/settings"
+	"tungo/settings/client"
 )
 
 type Connector struct {
@@ -19,7 +20,7 @@ func NewConnector(settings settings.ConnectionSettings) *Connector {
 	}
 }
 
-func (c *Connector) Connect(ctx context.Context) (*net.UDPConn, *chacha20.SessionImpl, error) {
+func (c *Connector) Connect(ctx context.Context) (*net.UDPConn, *chacha20.UdpSession, error) {
 	conn, connErr := c.dial(c.settings)
 	if connErr != nil {
 		return nil, nil, connErr
@@ -48,7 +49,7 @@ func (c *Connector) dial(settings settings.ConnectionSettings) (*net.UDPConn, er
 	return conn, nil
 }
 
-func (c *Connector) handshake(ctx context.Context, conn *net.UDPConn) (*chacha20.SessionImpl, error) {
+func (c *Connector) handshake(ctx context.Context, conn *net.UDPConn) (*chacha20.UdpSession, error) {
 	if c.settings.DialTimeoutMs <= 0 || c.settings.DialTimeoutMs >= 300_000 {
 		c.settings.DialTimeoutMs = 5_000 //5 seconds is default timeout
 	}
@@ -57,16 +58,17 @@ func (c *Connector) handshake(ctx context.Context, conn *net.UDPConn) (*chacha20
 	defer cancel()
 
 	resultChan := make(chan struct {
-		session *chacha20.SessionImpl
-		err     error
+		handshake *chacha20.Handshake
+		err       error
 	}, 1)
 
 	go func(conn net.Conn, settings settings.ConnectionSettings) {
-		session, handshakeErr := handshake.OnConnectedToServer(ctx, conn, settings)
+		h := chacha20.NewHandshake()
+		handshakeErr := h.ClientSideHandshake(ctx, conn, settings)
 		resultChan <- struct {
-			session *chacha20.SessionImpl
-			err     error
-		}{session, handshakeErr}
+			handshake *chacha20.Handshake
+			err       error
+		}{h, handshakeErr}
 	}(conn, c.settings)
 
 	select {
@@ -77,6 +79,17 @@ func (c *Connector) handshake(ctx context.Context, conn *net.UDPConn) (*chacha20
 			return nil, res.err
 		}
 
-		return res.session, nil
+		session, sessionErr := chacha20.NewUdpSession(res.handshake.Id(), res.handshake.ClientKey(), res.handshake.ServerKey(), false)
+		if sessionErr != nil {
+			return nil, fmt.Errorf("failed to create client session: %s\n", sessionErr)
+		}
+
+		conf, confErr := (&client.Conf{}).Read()
+		if confErr != nil {
+			return nil, confErr
+		}
+		session.UseNonceRingBuffer(conf.UDPNonceRingBufferSize)
+
+		return session, nil
 	}
 }

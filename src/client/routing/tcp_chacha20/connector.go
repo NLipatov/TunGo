@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 	"tungo/crypto/chacha20"
-	"tungo/crypto/chacha20/handshake"
 	"tungo/settings"
 )
 
@@ -21,7 +20,7 @@ func NewConnector(settings settings.ConnectionSettings) *Connector {
 	}
 }
 
-func (c *Connector) Connect(ctx context.Context) (net.Conn, *chacha20.SessionImpl, error) {
+func (c *Connector) Connect(ctx context.Context) (net.Conn, *chacha20.TcpSession, error) {
 	conn, connErr := c.dial(ctx)
 	if connErr != nil {
 		return nil, nil, connErr
@@ -69,26 +68,27 @@ func (c *Connector) dial(ctx context.Context) (net.Conn, error) {
 	return conn, nil
 }
 
-func (c *Connector) handshake(ctx context.Context, conn net.Conn) (*chacha20.SessionImpl, error) {
+func (c *Connector) handshake(ctx context.Context, conn net.Conn) (*chacha20.TcpSession, error) {
 	var closeOnce sync.Once
 	closeConn := func() {
 		_ = conn.Close()
 	}
 
 	resultChan := make(chan struct {
-		session *chacha20.SessionImpl
-		err     error
+		handshake *chacha20.Handshake
+		err       error
 	}, 1)
 
 	go func(conn net.Conn, settings settings.ConnectionSettings) {
-		session, handshakeErr := handshake.OnConnectedToServer(ctx, conn, settings)
+		h := chacha20.NewHandshake()
+		handshakeErr := h.ClientSideHandshake(ctx, conn, settings)
 		if handshakeErr != nil {
 			closeOnce.Do(closeConn)
 		}
 		resultChan <- struct {
-			session *chacha20.SessionImpl
-			err     error
-		}{session, handshakeErr}
+			handshake *chacha20.Handshake
+			err       error
+		}{h, handshakeErr}
 	}(conn, c.settings)
 
 	select {
@@ -100,6 +100,11 @@ func (c *Connector) handshake(ctx context.Context, conn net.Conn) (*chacha20.Ses
 			return nil, res.err
 		}
 
-		return res.session, nil
+		session, sessionErr := chacha20.NewTcpSession(res.handshake.Id(), res.handshake.ClientKey(), res.handshake.ServerKey(), false)
+		if sessionErr != nil {
+			return nil, fmt.Errorf("failed to create client session: %s\n", sessionErr)
+		}
+
+		return session, nil
 	}
 }
