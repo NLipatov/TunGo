@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 	"tungo/client/transport_connector"
+	"tungo/crypto"
 	"tungo/crypto/chacha20"
 )
 
@@ -50,7 +51,7 @@ func TestEstablishConnectionWithRetry_Success(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	connectorDelegate := func() (net.Conn, *chacha20.TcpSession, error) {
+	connectorDelegate := func() (net.Conn, crypto.Session, error) {
 		return mockConn, mockSession, nil
 	}
 
@@ -77,7 +78,7 @@ func TestEstablishConnectionWithRetry_RetryAndFail(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	connectorDelegate := func() (net.Conn, *chacha20.TcpSession, error) {
+	connectorDelegate := func() (net.Conn, crypto.Session, error) {
 		return nil, nil, errors.New("mock connection error")
 	}
 
@@ -111,7 +112,7 @@ func TestEstablishConnectionWithRetry_CancelContext(t *testing.T) {
 		cancel()
 	}()
 
-	connectorDelegate := func() (net.Conn, *chacha20.TcpSession, error) {
+	connectorDelegate := func() (net.Conn, crypto.Session, error) {
 		time.Sleep(5 * time.Second)
 		return nil, nil, errors.New("mock connection error")
 	}
@@ -148,7 +149,7 @@ func TestEstablishConnectionWithRetry_SuccessAfterRetries(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	connectorDelegate := func() (net.Conn, *chacha20.TcpSession, error) {
+	connectorDelegate := func() (net.Conn, crypto.Session, error) {
 		attempts++
 		if attempts < 3 {
 			return nil, nil, errors.New("mock connection error")

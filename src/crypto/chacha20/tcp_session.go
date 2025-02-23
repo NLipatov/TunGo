@@ -61,10 +61,10 @@ func (s *TcpSession) UseNonceRingBuffer(size int) *TcpSession {
 	return s
 }
 
-func (s *TcpSession) Encrypt(plaintext []byte) ([]byte, *Nonce, error) {
+func (s *TcpSession) Encrypt(plaintext []byte) ([]byte, error) {
 	err := s.SendNonce.incrementNonce()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	nonceBytes := s.SendNonce.Encode()
@@ -72,13 +72,13 @@ func (s *TcpSession) Encrypt(plaintext []byte) ([]byte, *Nonce, error) {
 	aad := s.CreateAAD(s.isServer, nonceBytes)
 	ciphertext := s.sendCipher.Seal(plaintext[:0], nonceBytes, plaintext, aad)
 
-	return ciphertext, s.SendNonce, nil
+	return ciphertext, nil
 }
 
-func (s *TcpSession) Decrypt(ciphertext []byte) ([]byte, *Nonce, error) {
+func (s *TcpSession) Decrypt(ciphertext []byte) ([]byte, error) {
 	err := s.RecvNonce.incrementNonce()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	nonceBytes := s.RecvNonce.Encode()
@@ -87,10 +87,10 @@ func (s *TcpSession) Decrypt(ciphertext []byte) ([]byte, *Nonce, error) {
 	plaintext, err := s.recvCipher.Open(ciphertext[:0], nonceBytes, ciphertext, aad)
 	if err != nil {
 		// Properly handle failed decryption attempt to avoid reuse of any state
-		return nil, nil, err
+		return nil, err
 	}
 
-	return plaintext, s.RecvNonce, nil
+	return plaintext, nil
 }
 
 func (s *TcpSession) CreateAAD(isServerToClient bool, nonce []byte) []byte {

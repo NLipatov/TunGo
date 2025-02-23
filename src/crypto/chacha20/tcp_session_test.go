@@ -21,12 +21,14 @@ func TestDeriveSessionId(t *testing.T) {
 }
 
 func TestNewSession(t *testing.T) {
+	id := [32]byte{}
 	sendKey := make([]byte, 32)
 	recvKey := make([]byte, 32)
+	_, _ = rand.Read(id[:])
 	_, _ = rand.Read(sendKey)
 	_, _ = rand.Read(recvKey)
 
-	session, err := NewTcpSession(sendKey, recvKey, true)
+	session, err := NewTcpSession(id, sendKey, recvKey, true)
 	if err != nil {
 		t.Fatalf("unexpected error during session creation: %v", err)
 	}
@@ -44,7 +46,7 @@ func TestSession_ClientServerEncryption(t *testing.T) {
 
 	plaintext := []byte("Hello, secure world!")
 
-	ciphertext, clientNonce, err := clientSession.Encrypt(plaintext)
+	ciphertext, err := clientSession.Encrypt(plaintext)
 	if err != nil {
 		t.Fatalf("Client encryption failed: %v", err)
 	}
@@ -53,7 +55,7 @@ func TestSession_ClientServerEncryption(t *testing.T) {
 		t.Fatalf("ciphertext must not contain plaintext as a subarray")
 	}
 
-	decrypted, serverNonce, err := serverSession.Decrypt(ciphertext)
+	decrypted, err := serverSession.Decrypt(ciphertext)
 	if err != nil {
 		t.Fatalf("Server decryption failed: %v", err)
 	}
@@ -62,11 +64,7 @@ func TestSession_ClientServerEncryption(t *testing.T) {
 		t.Errorf("Decrypted text mismatch: expected %s, got %s", plaintext, decrypted)
 	}
 
-	if !bytes.Equal(clientNonce.Encode(), serverNonce.Encode()) {
-		t.Errorf("Nonce mismatch: expected %v, got %v", clientNonce.Encode(), serverNonce.Encode())
-	}
-
-	serverCiphertext, serverNonce, err := serverSession.Encrypt(plaintext)
+	serverCiphertext, err := serverSession.Encrypt(plaintext)
 	if err != nil {
 		t.Fatalf("Server encryption failed: %v", err)
 	}
@@ -75,7 +73,7 @@ func TestSession_ClientServerEncryption(t *testing.T) {
 		t.Fatalf("ciphertext must not contain plaintext as a subarray")
 	}
 
-	clientDecrypted, clientNonce, err := clientSession.Decrypt(serverCiphertext)
+	clientDecrypted, err := clientSession.Decrypt(serverCiphertext)
 	if err != nil {
 		t.Fatalf("Client decryption failed: %v", err)
 	}
@@ -83,15 +81,13 @@ func TestSession_ClientServerEncryption(t *testing.T) {
 	if !bytes.Equal(plaintext, clientDecrypted) {
 		t.Errorf("Decrypted text mismatch: expected %s, got %s", plaintext, clientDecrypted)
 	}
-
-	if !bytes.Equal(serverNonce.Encode(), clientNonce.Encode()) {
-		t.Errorf("Nonce mismatch: expected %v, got %v", serverNonce.Encode(), clientNonce.Encode())
-	}
 }
 
 func createServerAndClienSessions(t *testing.T) (*TcpSession, *TcpSession) {
+	id := [32]byte{}
 	clientPrivate := make([]byte, 32)
 	serverPrivate := make([]byte, 32)
+	_, _ = rand.Read(id[:])
 	_, _ = rand.Read(clientPrivate)
 	_, _ = rand.Read(serverPrivate)
 
@@ -112,12 +108,12 @@ func createServerAndClienSessions(t *testing.T) (*TcpSession, *TcpSession) {
 	_, _ = rand.Read(clientToServerKey)
 	_, _ = rand.Read(serverToClientKey)
 
-	clientSession, err := NewTcpSession(clientToServerKey, serverToClientKey, false)
+	clientSession, err := NewTcpSession(id, clientToServerKey, serverToClientKey, false)
 	if err != nil {
 		t.Fatalf("Failed to create client session: %v", err)
 	}
 
-	serverSession, err := NewTcpSession(serverToClientKey, clientToServerKey, true)
+	serverSession, err := NewTcpSession(id, serverToClientKey, clientToServerKey, true)
 	if err != nil {
 		t.Fatalf("Failed to create server session: %v", err)
 	}
@@ -145,12 +141,14 @@ func TestSession_CreateAAD(t *testing.T) {
 }
 
 func TestSession_UseNonceRingBufferSize(t *testing.T) {
+	id := [32]byte{}
 	sendKey := make([]byte, 32)
 	recvKey := make([]byte, 32)
+	_, _ = rand.Read(id[:])
 	_, _ = rand.Read(sendKey)
 	_, _ = rand.Read(recvKey)
 
-	session, _ := NewTcpSession(sendKey, recvKey, true)
+	session, _ := NewTcpSession(id, sendKey, recvKey, true)
 	session.UseNonceRingBuffer(2096)
 
 	if session.nonceBuf == nil {
@@ -162,12 +160,14 @@ func TestSession_UseNonceRingBufferSize(t *testing.T) {
 }
 
 func TestSession_UseNonceRingBufferSize_SmallSize(t *testing.T) {
+	id := [32]byte{}
 	sendKey := make([]byte, 32)
 	recvKey := make([]byte, 32)
+	_, _ = rand.Read(id[:])
 	_, _ = rand.Read(sendKey)
 	_, _ = rand.Read(recvKey)
 
-	session, _ := NewTcpSession(sendKey, recvKey, true)
+	session, _ := NewTcpSession(id, sendKey, recvKey, true)
 	session.UseNonceRingBuffer(512)
 
 	if session.nonceBuf == nil {
