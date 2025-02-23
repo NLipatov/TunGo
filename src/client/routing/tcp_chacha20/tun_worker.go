@@ -135,7 +135,7 @@ func (w *tcpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnec
 				triggerReconnect()
 			}
 
-			encryptedPacket, _, err := w.session.Encrypt(buf[:n])
+			encryptedPacket, err := w.session.Encrypt(buf[:n])
 			if err != nil {
 				log.Printf("failed to encrypt packet: %v", err)
 				continue
@@ -202,7 +202,7 @@ func (w *tcpTunWorker) HandlePacketsFromConn(ctx context.Context, connCancel con
 				log.Println(err)
 			}
 
-			decrypted, _, decryptionErr := w.session.Decrypt(packet.Payload)
+			decrypted, decryptionErr := w.session.Decrypt(packet.Payload)
 			if decryptionErr != nil {
 				log.Printf("failed to decrypt data: %s", decryptionErr)
 				continue

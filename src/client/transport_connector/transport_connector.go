@@ -6,7 +6,7 @@ import (
 	"log"
 	"net"
 	"time"
-	"tungo/crypto/chacha20"
+	"tungo/crypto"
 )
 
 const (
@@ -17,19 +17,19 @@ const (
 
 type TransportConnector struct {
 	//concrete logic on creating a connection instance using concrete transport (udp, tcp, etc.)
-	connectDelegate func() (net.Conn, *chacha20.TcpSession, error)
+	connectDelegate func() (net.Conn, crypto.Session, error)
 }
 
 func NewTransportConnector() Connector {
 	return &TransportConnector{}
 }
 
-func (m *TransportConnector) UseConnectorDelegate(f func() (net.Conn, *chacha20.TcpSession, error)) Connector {
+func (m *TransportConnector) UseConnectorDelegate(f func() (net.Conn, crypto.Session, error)) Connector {
 	m.connectDelegate = f
 	return m
 }
 
-func (m *TransportConnector) Connect(ctx context.Context) (net.Conn, *chacha20.TcpSession, error) {
+func (m *TransportConnector) Connect(ctx context.Context) (net.Conn, crypto.Session, error) {
 	backoff := initialBackoff
 	for reconnectAttempts := 0; reconnectAttempts <= maxReconnectAttempts; reconnectAttempts++ {
 
