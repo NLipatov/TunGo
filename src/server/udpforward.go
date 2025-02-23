@@ -12,6 +12,7 @@ import (
 	"tungo/network/ip"
 	"tungo/network/packets"
 	"tungo/settings"
+	"tungo/settings/server"
 )
 
 var clientAddrToInternalIP sync.Map
@@ -94,21 +95,15 @@ func TunToUDP(tunFile *os.File, intIPToUDPClientAddr *sync.Map, intIPToSession *
 				log.Printf("failed to load session for IP %s", destinationIP)
 				continue
 			}
-			session := sessionValue.(*chacha20.TcpSession)
+			session := sessionValue.(*chacha20.UdpSession)
 
-			encryptedPacket, nonce, encryptErr := session.Encrypt(data)
+			encryptedPacket, encryptErr := session.Encrypt(data)
 			if encryptErr != nil {
 				log.Printf("failed to encrypt packet: %s", encryptErr)
 				continue
 			}
 
-			packet, packetEncodeErr := (&chacha20.UDPEncoder{}).Encode(encryptedPacket, nonce)
-			if packetEncodeErr != nil {
-				log.Printf("packet encoding failed: %s", packetEncodeErr)
-				continue
-			}
-
-			sendChan <- UDPClientPacket{client: clientInfo, payload: *packet.Payload}
+			sendChan <- UDPClientPacket{client: clientInfo, payload: encryptedPacket}
 		}
 	}
 }
@@ -177,14 +172,8 @@ func UDPToTun(settings settings.ConnectionSettings, tunFile *os.File, intIPToUDP
 			}
 			session := sessionValue.(*chacha20.UdpSession)
 
-			packet, err := (&chacha20.UDPEncoder{}).Decode(buf[:n])
-			if err != nil {
-				log.Printf("failed to decode packet from %s: %v", clientAddr, err)
-				continue
-			}
-
 			// Handle client data
-			decrypted, decryptionErr := session.Decrypt(*packet.Payload)
+			decrypted, decryptionErr := session.Decrypt(buf[:n])
 			if decryptionErr != nil {
 				log.Printf("failed to decrypt data: %s", decryptionErr)
 				continue
@@ -215,6 +204,13 @@ func udpRegisterClient(conn *net.UDPConn, clientAddr net.UDPAddr, initialData []
 	udpSession, tcpSessionErr := chacha20.NewUdpSession(h.Id(), h.ServerKey(), h.ClientKey(), true)
 	if tcpSessionErr != nil {
 		log.Printf("%s failed registration: %s", conn.RemoteAddr(), tcpSessionErr)
+	}
+
+	conf, confErr := (&server.Conf{}).Read()
+	if confErr != nil {
+		udpSession.UseNonceRingBuffer(100_000)
+	} else {
+		udpSession.UseNonceRingBuffer(conf.UDPNonceRingBufferSize)
 	}
 
 	// Use internal IP as key
