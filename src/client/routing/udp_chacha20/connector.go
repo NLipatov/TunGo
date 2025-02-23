@@ -1,4 +1,4 @@
-package tun_udp_chacha20
+package udp_chacha20
 
 import (
 	"context"
