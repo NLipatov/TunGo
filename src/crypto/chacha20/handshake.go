@@ -123,17 +123,6 @@ func (h *Handshake) ServerSideHandshake(conn network.ConnectionAdapter) (*string
 	h.serverKey = serverToClientKey
 
 	return &clientHello.IpAddress, nil
-	//// Generate server session
-	//serverSession, err := chacha20.NewTcpSession(serverToClientKey, clientToServerKey, true)
-	//if err != nil {
-	//	log.Fatalf("failed to create server session: %s\n", err)
-	//}
-	//
-	//serverSession = serverSession.UseNonceRingBuffer(conf.UDPNonceRingBufferSize)
-	//
-	//serverSession.SessionId = derivedSessionId
-	//
-	//return serverSession, &clientHello.IpAddress, nil
 }
 
 func (h *Handshake) ClientSideHandshake(ctx context.Context, conn net.Conn, settings settings.ConnectionSettings) error {
