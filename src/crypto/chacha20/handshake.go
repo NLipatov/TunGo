@@ -21,30 +21,37 @@ import (
 	"golang.org/x/crypto/hkdf"
 )
 
-type Handshake struct {
+type Handshake interface {
+	Id() [32]byte
+	ClientKey() []byte
+	ServerKey() []byte
+	ServerSideHandshake(conn network.ConnectionAdapter) (*string, error)
+	ClientSideHandshake(ctx context.Context, conn net.Conn, settings settings.ConnectionSettings) error
+}
+
+type HandshakeImpl struct {
 	id        [32]byte
 	clientKey []byte
 	serverKey []byte
 }
 
-func NewHandshake() *Handshake {
-	h := &Handshake{}
-	return h
+func NewHandshake() *HandshakeImpl {
+	return &HandshakeImpl{}
 }
 
-func (h *Handshake) Id() [32]byte {
+func (h *HandshakeImpl) Id() [32]byte {
 	return h.id
 }
 
-func (h *Handshake) ClientKey() []byte {
+func (h *HandshakeImpl) ClientKey() []byte {
 	return h.clientKey
 }
 
-func (h *Handshake) ServerKey() []byte {
+func (h *HandshakeImpl) ServerKey() []byte {
 	return h.serverKey
 }
 
-func (h *Handshake) ServerSideHandshake(conn network.ConnectionAdapter) (*string, error) {
+func (h *HandshakeImpl) ServerSideHandshake(conn network.ConnectionAdapter) (*string, error) {
 	conf, err := (&server.Conf{}).Read()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read server conf: %s", err)
@@ -125,7 +132,7 @@ func (h *Handshake) ServerSideHandshake(conn network.ConnectionAdapter) (*string
 	return &clientHello.IpAddress, nil
 }
 
-func (h *Handshake) ClientSideHandshake(ctx context.Context, conn net.Conn, settings settings.ConnectionSettings) error {
+func (h *HandshakeImpl) ClientSideHandshake(ctx context.Context, conn net.Conn, settings settings.ConnectionSettings) error {
 	edPub, ed, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		return fmt.Errorf("failed to generate ed25519 key pair: %s", err)
@@ -204,7 +211,7 @@ func (h *Handshake) ClientSideHandshake(ctx context.Context, conn net.Conn, sett
 	return nil
 }
 
-func (h *Handshake) readWithContext(ctx context.Context, conn net.Conn, buf []byte) (int, error) {
+func (h *HandshakeImpl) readWithContext(ctx context.Context, conn net.Conn, buf []byte) (int, error) {
 	select {
 	case <-ctx.Done(): //if ctx already cancelled
 		return 0, fmt.Errorf("operation canceled before reading: %w", ctx.Err())
@@ -240,7 +247,7 @@ func (h *Handshake) readWithContext(ctx context.Context, conn net.Conn, buf []by
 	return n, nil
 }
 
-func (h *Handshake) writeWithContext(ctx context.Context, conn net.Conn, data []byte) (int, error) {
+func (h *HandshakeImpl) writeWithContext(ctx context.Context, conn net.Conn, data []byte) (int, error) {
 	select {
 	case <-ctx.Done(): //if ctx already cancelled
 		return 0, fmt.Errorf("operation canceled before writing: %w", ctx.Err())

@@ -25,7 +25,7 @@ func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
 	}()
 
 	for {
-		connector := NewConnector(r.Settings)
+		connector := NewConnector(r.Settings, NewUDPConnection(r.Settings), NewSecretExchangerImpl(r.Settings, chacha20.NewHandshake()))
 		conn, session, err := connector.Connect(ctx)
 		if err != nil {
 			log.Printf("could not connect to server at %s: %s", r.Settings.ConnectionIP, err)
@@ -105,7 +105,7 @@ func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *chacha20.UdpSe
 			Build()
 
 		if buildErr != nil {
-			log.Fatalf("failed to build TCP CONN worker: %s", buildErr)
+			log.Fatalf("failed to build UDP CONN worker: %s", buildErr)
 		}
 
 		handlingErr := tunWorker.HandlePacketsFromConn(connCtx, connCancel)

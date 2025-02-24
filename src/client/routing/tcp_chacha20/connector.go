@@ -75,7 +75,7 @@ func (c *Connector) handshake(ctx context.Context, conn net.Conn) (*chacha20.Tcp
 	}
 
 	resultChan := make(chan struct {
-		handshake *chacha20.Handshake
+		handshake chacha20.Handshake
 		err       error
 	}, 1)
 
@@ -86,7 +86,7 @@ func (c *Connector) handshake(ctx context.Context, conn net.Conn) (*chacha20.Tcp
 			closeOnce.Do(closeConn)
 		}
 		resultChan <- struct {
-			handshake *chacha20.Handshake
+			handshake chacha20.Handshake
 			err       error
 		}{h, handshakeErr}
 	}(conn, c.settings)
