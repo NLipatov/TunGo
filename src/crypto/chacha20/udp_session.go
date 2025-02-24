@@ -65,7 +65,7 @@ func (s *UdpSession) Encrypt(plaintext []byte) ([]byte, error) {
 		return nil, packetErr
 	}
 
-	return *packet.Payload, nil
+	return packet.Payload, nil
 }
 
 func (s *UdpSession) Decrypt(ciphertext []byte) ([]byte, error) {
