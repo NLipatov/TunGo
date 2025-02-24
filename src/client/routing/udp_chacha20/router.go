@@ -25,7 +25,7 @@ func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
 	}()
 
 	for {
-		connector := NewConnector(r.Settings)
+		connector := NewConnector(r.Settings, NewUDPConnection(r.Settings))
 		conn, session, err := connector.Connect(ctx)
 		if err != nil {
 			log.Printf("could not connect to server at %s: %s", r.Settings.ConnectionIP, err)

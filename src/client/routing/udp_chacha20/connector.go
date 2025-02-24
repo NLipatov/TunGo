@@ -11,17 +11,19 @@ import (
 )
 
 type Connector struct {
-	settings settings.ConnectionSettings
+	settings   settings.ConnectionSettings
+	connection Connection
 }
 
-func NewConnector(settings settings.ConnectionSettings) *Connector {
+func NewConnector(settings settings.ConnectionSettings, connection Connection) *Connector {
 	return &Connector{
-		settings: settings,
+		settings:   settings,
+		connection: connection,
 	}
 }
 
 func (c *Connector) Connect(ctx context.Context) (*net.UDPConn, *chacha20.UdpSession, error) {
-	conn, connErr := c.dial(c.settings)
+	conn, connErr := c.connection.Establish()
 	if connErr != nil {
 		return nil, nil, connErr
 	}
@@ -32,21 +34,6 @@ func (c *Connector) Connect(ctx context.Context) (*net.UDPConn, *chacha20.UdpSes
 	}
 
 	return conn, session, nil
-}
-
-func (c *Connector) dial(settings settings.ConnectionSettings) (*net.UDPConn, error) {
-	serverAddr := net.JoinHostPort(settings.ConnectionIP, settings.Port)
-	udpAddr, err := net.ResolveUDPAddr("udp", serverAddr)
-	if err != nil {
-		return nil, err
-	}
-
-	conn, err := net.DialUDP("udp", nil, udpAddr)
-	if err != nil {
-		return nil, err
-	}
-
-	return conn, nil
 }
 
 func (c *Connector) handshake(ctx context.Context, conn *net.UDPConn) (*chacha20.UdpSession, error) {
