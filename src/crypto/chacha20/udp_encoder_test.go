@@ -26,12 +26,12 @@ func TestUDPEncoder_Encode(t *testing.T) {
 	low := make([]byte, 8)
 	binary.BigEndian.PutUint64(low, nonce.low)
 
-	expectedPayload = append(expectedPayload, high...)
 	expectedPayload = append(expectedPayload, low...)
+	expectedPayload = append(expectedPayload, high...)
 	expectedPayload = append(expectedPayload, payload...)
 
-	if !bytes.Equal(*packet.Payload, expectedPayload) {
-		t.Errorf("payload mismatch: expected %v, got %v", expectedPayload, *packet.Payload)
+	if !bytes.Equal(packet.Payload, expectedPayload) {
+		t.Errorf("payload mismatch: expected %v, got %v", expectedPayload, packet.Payload)
 	}
 }
 
@@ -44,7 +44,7 @@ func TestUDPEncoder_Decode(t *testing.T) {
 	binary.BigEndian.PutUint32(high, nonce.high)
 	low := make([]byte, 8)
 	binary.BigEndian.PutUint64(low, nonce.low)
-	rawData := append(append(high, low...), payload...)
+	rawData := append(append(low, high...), payload...)
 
 	// Декодируем данные
 	packet, err := encoder.Decode(rawData)
@@ -56,8 +56,8 @@ func TestUDPEncoder_Decode(t *testing.T) {
 		t.Errorf("expected nonce %v, got %v", nonce, packet.Nonce)
 	}
 
-	if !bytes.Equal(*packet.Payload, payload) {
-		t.Errorf("payload mismatch: expected %v, got %v", payload, *packet.Payload)
+	if !bytes.Equal(packet.Payload, payload) {
+		t.Errorf("payload mismatch: expected %v, got %v", payload, packet.Payload)
 	}
 }
 
@@ -71,7 +71,7 @@ func TestUDPEncodeDecode(t *testing.T) {
 		t.Fatalf("unexpected error during encoding: %v", err)
 	}
 
-	decodedPacket, err := encoder.Decode(*encodedPacket.Payload)
+	decodedPacket, err := encoder.Decode(encodedPacket.Payload)
 	if err != nil {
 		t.Fatalf("unexpected error during decoding: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestUDPEncodeDecode(t *testing.T) {
 		t.Errorf("expected nonce %v, got %v", nonce, decodedPacket.Nonce)
 	}
 
-	if !bytes.Equal(*decodedPacket.Payload, payload) {
-		t.Errorf("payload mismatch: expected %v, got %v", payload, *decodedPacket.Payload)
+	if !bytes.Equal(decodedPacket.Payload, payload) {
+		t.Errorf("payload mismatch: expected %v, got %v", payload, decodedPacket.Payload)
 	}
 }
