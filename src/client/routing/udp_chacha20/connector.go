@@ -27,7 +27,7 @@ func (c *Connector) Connect(ctx context.Context) (*net.UDPConn, *chacha20.UdpSes
 		return nil, nil, connErr
 	}
 
-	session, sessionErr := c.secretExchanger.exchange(ctx, conn)
+	session, sessionErr := c.secretExchanger.Exchange(ctx, conn)
 	if sessionErr != nil {
 		return nil, nil, sessionErr
 	}

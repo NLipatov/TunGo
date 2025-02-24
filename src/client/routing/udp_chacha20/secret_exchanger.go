@@ -11,7 +11,7 @@ import (
 )
 
 type SecretExchanger interface {
-	exchange(ctx context.Context, conn *net.UDPConn) (*chacha20.UdpSession, error)
+	Exchange(ctx context.Context, conn *net.UDPConn) (*chacha20.UdpSession, error)
 }
 
 type SecretExchangerImpl struct {
@@ -26,7 +26,7 @@ func NewSecretExchangerImpl(settings settings.ConnectionSettings, handshake chac
 	}
 }
 
-func (s *SecretExchangerImpl) exchange(ctx context.Context, conn *net.UDPConn) (*chacha20.UdpSession, error) {
+func (s *SecretExchangerImpl) Exchange(ctx context.Context, conn *net.UDPConn) (*chacha20.UdpSession, error) {
 	if s.settings.DialTimeoutMs <= 0 || s.settings.DialTimeoutMs >= 300_000 {
 		s.settings.DialTimeoutMs = 5_000 //5 seconds is default timeout
 	}
