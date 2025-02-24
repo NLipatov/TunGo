@@ -105,7 +105,7 @@ func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *chacha20.UdpSe
 			Build()
 
 		if buildErr != nil {
-			log.Fatalf("failed to build TCP CONN worker: %s", buildErr)
+			log.Fatalf("failed to build UDP CONN worker: %s", buildErr)
 		}
 
 		handlingErr := tunWorker.HandlePacketsFromConn(connCtx, connCancel)
