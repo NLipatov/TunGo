@@ -30,16 +30,15 @@ func (s *DefaultSecret) Exchange(conn *net.UDPConn) (*chacha20.UdpSession, error
 		return nil, handshakeErr
 	}
 
-	session, sessionErr := chacha20.NewUdpSession(s.handshake.Id(), s.handshake.ClientKey(), s.handshake.ServerKey(), false)
-	if sessionErr != nil {
-		return nil, fmt.Errorf("failed to create client session: %s\n", sessionErr)
-	}
-
 	conf, confErr := (&client.Conf{}).Read()
 	if confErr != nil {
 		return nil, confErr
 	}
-	session.UseNonceRingBuffer(conf.UDPNonceRingBufferSize)
+
+	session, sessionErr := chacha20.NewUdpSession(s.handshake.Id(), s.handshake.ClientKey(), s.handshake.ServerKey(), false, conf.UDPNonceRingBufferSize)
+	if sessionErr != nil {
+		return nil, fmt.Errorf("failed to create client session: %s\n", sessionErr)
+	}
 
 	return session, nil
 }

@@ -201,16 +201,14 @@ func udpRegisterClient(conn *net.UDPConn, clientAddr net.UDPAddr, initialData []
 	}
 	log.Printf("%s registered as: %s", clientAddr.String(), *internalIpAddr)
 
-	udpSession, tcpSessionErr := chacha20.NewUdpSession(h.Id(), h.ServerKey(), h.ClientKey(), true)
-	if tcpSessionErr != nil {
-		log.Printf("%s failed registration: %s", conn.RemoteAddr(), tcpSessionErr)
-	}
-
 	conf, confErr := (&server.Conf{}).Read()
 	if confErr != nil {
-		udpSession.UseNonceRingBuffer(100_000)
-	} else {
-		udpSession.UseNonceRingBuffer(conf.UDPNonceRingBufferSize)
+		return confErr
+	}
+
+	udpSession, tcpSessionErr := chacha20.NewUdpSession(h.Id(), h.ServerKey(), h.ClientKey(), true, conf.UDPNonceRingBufferSize)
+	if tcpSessionErr != nil {
+		log.Printf("%s failed registration: %s", conn.RemoteAddr(), tcpSessionErr)
 	}
 
 	// Use internal IP as key

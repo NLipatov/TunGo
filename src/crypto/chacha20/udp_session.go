@@ -17,7 +17,7 @@ type UdpSession struct {
 	nonceBuf   *NonceBuf
 }
 
-func NewUdpSession(id [32]byte, sendKey, recvKey []byte, isServer bool) (*UdpSession, error) {
+func NewUdpSession(id [32]byte, sendKey, recvKey []byte, isServer bool, nonceBufferSize int) (*UdpSession, error) {
 	sendCipher, err := chacha20poly1305.New(sendKey)
 	if err != nil {
 		return nil, err
@@ -35,18 +35,9 @@ func NewUdpSession(id [32]byte, sendKey, recvKey []byte, isServer bool) (*UdpSes
 		RecvNonce:  NewNonce(),
 		SendNonce:  NewNonce(),
 		isServer:   isServer,
-		nonceBuf:   nil,
+		nonceBuf:   NewNonceBuf(nonceBufferSize),
 		encoder:    UDPEncoder{},
 	}, nil
-}
-
-func (s *UdpSession) UseNonceRingBuffer(size int) *UdpSession {
-	if size < 1024 {
-		size = 1024
-	}
-
-	s.nonceBuf = NewNonceBuf(size)
-	return s
 }
 
 func (s *UdpSession) Encrypt(plaintext []byte) ([]byte, error) {
