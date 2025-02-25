@@ -95,7 +95,7 @@ func TunToUDP(tunFile *os.File, intIPToUDPClientAddr *sync.Map, intIPToSession *
 				log.Printf("failed to load session for IP %s", destinationIP)
 				continue
 			}
-			session := sessionValue.(*chacha20.UdpSession)
+			session := sessionValue.(*chacha20.DefaultUdpSession)
 
 			encryptedPacket, encryptErr := session.Encrypt(data)
 			if encryptErr != nil {
@@ -170,7 +170,7 @@ func UDPToTun(settings settings.ConnectionSettings, tunFile *os.File, intIPToUDP
 				log.Printf("failed to load session for IP %s", internalIP)
 				continue
 			}
-			session := sessionValue.(*chacha20.UdpSession)
+			session := sessionValue.(*chacha20.DefaultUdpSession)
 
 			// Handle client data
 			decrypted, decryptionErr := session.Decrypt(buf[:n])

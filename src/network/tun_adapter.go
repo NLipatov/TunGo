@@ -27,5 +27,5 @@ func (a *LinuxTunAdapter) Write(data []byte) (int, error) {
 }
 
 func (a *LinuxTunAdapter) Close() error {
-	return a.Close()
+	return a.TunFile.Close()
 }

@@ -19,10 +19,10 @@ func NewSecureSessionWithDeadline(ctx context.Context, secureConnection SecureSe
 	}
 }
 
-func (c *SecureSessionWithDeadline) Establish() (*net.UDPConn, *chacha20.UdpSession, error) {
+func (c *SecureSessionWithDeadline) Establish() (*net.UDPConn, *chacha20.DefaultUdpSession, error) {
 	type result struct {
 		conn *net.UDPConn
-		sess *chacha20.UdpSession
+		sess *chacha20.DefaultUdpSession
 		err  error
 	}
 

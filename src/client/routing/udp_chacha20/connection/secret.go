@@ -9,7 +9,7 @@ import (
 )
 
 type Secret interface {
-	Exchange(conn *net.UDPConn) (*chacha20.UdpSession, error)
+	Exchange(conn *net.UDPConn) (*chacha20.DefaultUdpSession, error)
 }
 
 type DefaultSecret struct {
@@ -24,7 +24,7 @@ func NewDefaultSecret(settings settings.ConnectionSettings, handshake chacha20.H
 	}
 }
 
-func (s *DefaultSecret) Exchange(conn *net.UDPConn) (*chacha20.UdpSession, error) {
+func (s *DefaultSecret) Exchange(conn *net.UDPConn) (*chacha20.DefaultUdpSession, error) {
 	handshakeErr := s.handshake.ClientSideHandshake(conn, s.settings)
 	if handshakeErr != nil {
 		return nil, handshakeErr

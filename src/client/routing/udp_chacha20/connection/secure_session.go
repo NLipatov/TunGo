@@ -6,7 +6,7 @@ import (
 )
 
 type SecureSession interface {
-	Establish() (*net.UDPConn, *chacha20.UdpSession, error)
+	Establish() (*net.UDPConn, *chacha20.DefaultUdpSession, error)
 }
 
 type DefaultSecureSession struct {
@@ -21,7 +21,7 @@ func NewDefaultSecureSession(connection Connection, secret Secret) *DefaultSecur
 	}
 }
 
-func (c *DefaultSecureSession) Establish() (*net.UDPConn, *chacha20.UdpSession, error) {
+func (c *DefaultSecureSession) Establish() (*net.UDPConn, *chacha20.DefaultUdpSession, error) {
 	conn, connErr := c.connection.Establish()
 	if connErr != nil {
 		return nil, nil, connErr

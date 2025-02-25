@@ -19,9 +19,9 @@ func NewSecretWithDeadline(ctx context.Context, secret Secret) SecretWithDeadlin
 	}
 }
 
-func (s SecretWithDeadline) Exchange(conn *net.UDPConn) (*chacha20.UdpSession, error) {
+func (s SecretWithDeadline) Exchange(conn *net.UDPConn) (*chacha20.DefaultUdpSession, error) {
 	type result struct {
-		session *chacha20.UdpSession
+		session *chacha20.DefaultUdpSession
 		err     error
 	}
 

@@ -74,7 +74,7 @@ func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
 	}
 }
 
-func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *chacha20.UdpSession, connCtx context.Context, connCancel context.CancelFunc) {
+func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *chacha20.DefaultUdpSession, connCtx context.Context, connCancel context.CancelFunc) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
@@ -85,7 +85,7 @@ func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *chacha20.UdpSe
 			UseRouter(r).
 			UseConn(conn).
 			UseSession(session).
-			UseEncoder(&chacha20.UDPEncoder{}).
+			UseEncoder(&chacha20.DefaultUDPEncoder{}).
 			Build()
 
 		if buildErr != nil {
@@ -108,7 +108,7 @@ func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *chacha20.UdpSe
 			UseRouter(r).
 			UseConn(conn).
 			UseSession(session).
-			UseEncoder(&chacha20.UDPEncoder{}).
+			UseEncoder(&chacha20.DefaultUDPEncoder{}).
 			Build()
 
 		if buildErr != nil {
@@ -127,7 +127,7 @@ func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *chacha20.UdpSe
 	wg.Wait()
 }
 
-func (r *UDPRouter) establishSecureConnection(ctx context.Context) (*net.UDPConn, *chacha20.UdpSession, error) {
+func (r *UDPRouter) establishSecureConnection(ctx context.Context) (*net.UDPConn, *chacha20.DefaultUdpSession, error) {
 	//setup ctx deadline
 	deadline := time.Now().Add(time.Duration(r.Settings.DialTimeoutMs) * time.Millisecond)
 	handshakeCtx, handshakeCtxCancel := context.WithDeadline(ctx, deadline)
