@@ -25,18 +25,15 @@ type fakeTun struct {
 }
 
 func (f *fakeTun) Read(p []byte) (int, error) {
-	if f.readErr != nil {
-		return 0, f.readErr
-	}
-	// Return preset data once, then error out.
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if len(f.readData) == 0 {
+		// Instead of immediately erroring, wait a bit (simulate blocking) then return an error.
+		time.Sleep(50 * time.Millisecond)
 		return 0, errors.New("no data")
 	}
 	n := copy(p, f.readData)
-	// Clear data so that subsequent calls return error.
-	f.readData = nil
+	// Do not clear f.readData so that subsequent reads can also return the data.
 	return n, nil
 }
 
