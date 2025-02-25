@@ -7,7 +7,7 @@ import (
 )
 
 func TestTCPEncoder_Encode(t *testing.T) {
-	encoder := &TCPEncoder{}
+	encoder := &DefaultTCPEncoder{}
 	payload := []byte("test payload")
 
 	packet, err := encoder.Encode(payload)
@@ -32,7 +32,7 @@ func TestTCPEncoder_Encode(t *testing.T) {
 }
 
 func TestTCPEncoder_Decode(t *testing.T) {
-	encoder := &TCPEncoder{}
+	encoder := &DefaultTCPEncoder{}
 	payload := []byte("test payload")
 
 	lengthBuf := make([]byte, 4)
@@ -54,7 +54,7 @@ func TestTCPEncoder_Decode(t *testing.T) {
 }
 
 func TestTCPEncodeDecode(t *testing.T) {
-	encoder := &TCPEncoder{}
+	encoder := &DefaultTCPEncoder{}
 	payload := []byte("test payload")
 
 	encodedPacket, err := encoder.Encode(payload)

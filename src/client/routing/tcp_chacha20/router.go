@@ -2,9 +2,12 @@ package tcp_chacha20
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net"
 	"sync"
+	"time"
+	"tungo/client/routing/tcp_chacha20/connection"
 	"tungo/client/tun_configurator"
 	"tungo/crypto/chacha20"
 	"tungo/network"
@@ -25,10 +28,14 @@ func (r *TCPRouter) RouteTraffic(ctx context.Context) error {
 	}()
 
 	for {
-		connector := NewConnector(r.Settings)
-		conn, session, err := connector.Connect(ctx)
+		conn, session, err := r.establishSecureConnection(ctx)
 		if err != nil {
-			log.Fatalf("failed to establish connection: %s", err)
+			if errors.Is(err, context.Canceled) { //client shutdown
+				return nil
+			}
+
+			log.Printf("connection to server at %s (TCP) failed: %s", r.Settings.ConnectionIP, err)
+			continue
 		}
 
 		log.Printf("connected to server at %s (TCP)", r.Settings.ConnectionIP)
@@ -79,7 +86,7 @@ func forwardIPPackets(r *TCPRouter, conn *net.Conn, session *chacha20.TcpSession
 			UseRouter(r).
 			UseConn(*conn).
 			UseSession(session).
-			UseEncoder(&chacha20.TCPEncoder{}).
+			UseEncoder(&chacha20.DefaultTCPEncoder{}).
 			Build()
 
 		if buildErr != nil {
@@ -100,7 +107,7 @@ func forwardIPPackets(r *TCPRouter, conn *net.Conn, session *chacha20.TcpSession
 			UseRouter(r).
 			UseConn(*conn).
 			UseSession(session).
-			UseEncoder(&chacha20.TCPEncoder{}).
+			UseEncoder(&chacha20.DefaultTCPEncoder{}).
 			Build()
 
 		if buildErr != nil {
@@ -115,4 +122,24 @@ func forwardIPPackets(r *TCPRouter, conn *net.Conn, session *chacha20.TcpSession
 	}()
 
 	wg.Wait()
+}
+
+func (r *TCPRouter) establishSecureConnection(ctx context.Context) (net.Conn, *chacha20.TcpSession, error) {
+	//setup ctx deadline
+	deadline := time.Now().Add(time.Duration(r.Settings.DialTimeoutMs) * time.Millisecond)
+	handshakeCtx, handshakeCtxCancel := context.WithDeadline(ctx, deadline)
+	defer handshakeCtxCancel()
+
+	//connect to server and exchange secret
+	secret := connection.NewDefaultSecret(r.Settings, chacha20.NewHandshake())
+	cancellableSecret := connection.NewSecretWithDeadline(handshakeCtx, secret)
+
+	session := connection.NewDefaultSecureSession(connection.NewDefaultConnection(r.Settings), cancellableSecret)
+	cancellableSession := connection.NewSecureSessionWithDeadline(handshakeCtx, session)
+	conn, tcpSession, err := cancellableSession.Establish()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return *conn, tcpSession, nil
 }

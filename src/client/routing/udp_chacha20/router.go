@@ -2,9 +2,12 @@ package udp_chacha20
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net"
 	"sync"
+	"time"
+	"tungo/client/routing/udp_chacha20/connection"
 	"tungo/client/tun_configurator"
 	"tungo/crypto/chacha20"
 	"tungo/network"
@@ -25,10 +28,14 @@ func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
 	}()
 
 	for {
-		connector := NewConnector(r.Settings, NewUDPConnection(r.Settings), NewSecretExchangerImpl(r.Settings, chacha20.NewHandshake()))
-		conn, session, err := connector.Connect(ctx)
+		conn, session, err := r.establishSecureConnection(ctx)
 		if err != nil {
-			log.Printf("could not connect to server at %s: %s", r.Settings.ConnectionIP, err)
+			if errors.Is(err, context.Canceled) { //client shutdown
+				return nil
+			}
+
+			log.Printf("connection to server at %s (UDP) failed: %s", r.Settings.ConnectionIP, err)
+			continue
 		}
 
 		log.Printf("connected to server at %s (UDP)", r.Settings.ConnectionIP)
@@ -44,7 +51,7 @@ func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
 			return
 		}()
 
-		//starts forwarding packets from conn to tun-interface and from tun-interface to conn
+		//starts forwarding packets from connection to tun-interface and from tun-interface to connection
 		startUDPForwarding(r, conn, session, connCtx, connCancel)
 
 		// After goroutines finish, check if shutdown was initiated
@@ -67,7 +74,7 @@ func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
 	}
 }
 
-func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *chacha20.UdpSession, connCtx context.Context, connCancel context.CancelFunc) {
+func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *chacha20.DefaultUdpSession, connCtx context.Context, connCancel context.CancelFunc) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
@@ -78,7 +85,7 @@ func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *chacha20.UdpSe
 			UseRouter(r).
 			UseConn(conn).
 			UseSession(session).
-			UseEncoder(&chacha20.UDPEncoder{}).
+			UseEncoder(&chacha20.DefaultUDPEncoder{}).
 			Build()
 
 		if buildErr != nil {
@@ -101,7 +108,7 @@ func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *chacha20.UdpSe
 			UseRouter(r).
 			UseConn(conn).
 			UseSession(session).
-			UseEncoder(&chacha20.UDPEncoder{}).
+			UseEncoder(&chacha20.DefaultUDPEncoder{}).
 			Build()
 
 		if buildErr != nil {
@@ -118,4 +125,19 @@ func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *chacha20.UdpSe
 	}()
 
 	wg.Wait()
+}
+
+func (r *UDPRouter) establishSecureConnection(ctx context.Context) (*net.UDPConn, *chacha20.DefaultUdpSession, error) {
+	//setup ctx deadline
+	deadline := time.Now().Add(time.Duration(r.Settings.DialTimeoutMs) * time.Millisecond)
+	handshakeCtx, handshakeCtxCancel := context.WithDeadline(ctx, deadline)
+	defer handshakeCtxCancel()
+
+	//connect to server and exchange secret
+	secret := connection.NewDefaultSecret(r.Settings, chacha20.NewHandshake())
+	cancellableSecret := connection.NewSecretWithDeadline(handshakeCtx, secret)
+
+	session := connection.NewDefaultSecureSession(connection.NewConnection(r.Settings), cancellableSecret)
+	cancellableSession := connection.NewSecureSessionWithDeadline(handshakeCtx, session)
+	return cancellableSession.Establish()
 }

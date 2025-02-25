@@ -69,7 +69,7 @@ func TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.
 					continue
 				}
 
-				packet, packetEncodeErr := (&chacha20.TCPEncoder{}).Encode(encryptedPacket)
+				packet, packetEncodeErr := (&chacha20.DefaultTCPEncoder{}).Encode(encryptedPacket)
 				if packetEncodeErr != nil {
 					log.Printf("packet encoding failed: %s", packetEncodeErr)
 				}
@@ -128,7 +128,7 @@ func registerClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, lo
 	})
 	if handshakeErr != nil {
 		_ = conn.Close()
-		log.Printf("conn closed: %s (regfail: %s)\n", conn.RemoteAddr(), handshakeErr)
+		log.Printf("connection closed: %s (regfail: %s)\n", conn.RemoteAddr(), handshakeErr)
 		return
 	}
 	log.Printf("registered: %s", conn.RemoteAddr())
@@ -136,13 +136,13 @@ func registerClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, lo
 	tcpSession, tcpSessionErr := chacha20.NewTcpSession(h.Id(), h.ServerKey(), h.ClientKey(), true)
 	if tcpSessionErr != nil {
 		_ = conn.Close()
-		log.Printf("conn closed: %s (regfail: %s)\n", conn.RemoteAddr(), tcpSessionErr)
+		log.Printf("connection closed: %s (regfail: %s)\n", conn.RemoteAddr(), tcpSessionErr)
 	}
 
 	// Prevent IP spoofing
 	_, ipCollision := localIpToConn.Load(*internalIpAddr)
 	if ipCollision {
-		log.Printf("conn closed: %s (internal ip %s already in use)\n", conn.RemoteAddr(), *internalIpAddr)
+		log.Printf("connection closed: %s (internal ip %s already in use)\n", conn.RemoteAddr(), *internalIpAddr)
 		_ = conn.Close()
 	}
 

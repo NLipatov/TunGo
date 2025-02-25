@@ -7,7 +7,7 @@ import (
 )
 
 func TestUDPEncoder_Encode(t *testing.T) {
-	encoder := &UDPEncoder{}
+	encoder := &DefaultUDPEncoder{}
 	payload := []byte("test payload")
 	nonce := &Nonce{high: 1234, low: 567890}
 
@@ -36,7 +36,7 @@ func TestUDPEncoder_Encode(t *testing.T) {
 }
 
 func TestUDPEncoder_Decode(t *testing.T) {
-	encoder := &UDPEncoder{}
+	encoder := &DefaultUDPEncoder{}
 	payload := []byte("test payload")
 	nonce := &Nonce{high: 1234, low: 567890}
 
@@ -62,7 +62,7 @@ func TestUDPEncoder_Decode(t *testing.T) {
 }
 
 func TestUDPEncodeDecode(t *testing.T) {
-	encoder := &UDPEncoder{}
+	encoder := &DefaultUDPEncoder{}
 	payload := []byte("test payload")
 	nonce := &Nonce{high: 1234, low: 567890}
 

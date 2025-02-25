@@ -5,7 +5,11 @@ import (
 )
 
 type (
-	UDPEncoder struct {
+	UDPEncoder interface {
+		Encode(payload []byte, nonce *Nonce) (*UDPPacket, error)
+		Decode(data []byte) (*UDPPacket, error)
+	}
+	DefaultUDPEncoder struct {
 	}
 	UDPPacket struct {
 		Nonce   *Nonce
@@ -13,7 +17,7 @@ type (
 	}
 )
 
-func (p *UDPEncoder) Encode(payload []byte, nonce *Nonce) (*UDPPacket, error) {
+func (p *DefaultUDPEncoder) Encode(payload []byte, nonce *Nonce) (*UDPPacket, error) {
 	data := make([]byte, len(payload)+12)
 	copy(data[:12], nonce.Encode())
 	copy(data[12:], payload)
@@ -24,7 +28,7 @@ func (p *UDPEncoder) Encode(payload []byte, nonce *Nonce) (*UDPPacket, error) {
 	}, nil
 }
 
-func (p *UDPEncoder) Decode(data []byte) (*UDPPacket, error) {
+func (p *DefaultUDPEncoder) Decode(data []byte) (*UDPPacket, error) {
 	low := binary.BigEndian.Uint64(data[:8])
 	high := binary.BigEndian.Uint32(data[8:12])
 	payload := data[12:]

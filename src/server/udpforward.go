@@ -84,7 +84,7 @@ func TunToUDP(tunFile *os.File, intIPToUDPClientAddr *sync.Map, intIPToSession *
 			clientInfoValue, ok := intIPToUDPClientAddr.Load(destinationIP)
 			if !ok {
 				sourceIP := header.GetSourceIP().String()
-				log.Printf("packet dropped: no conn with destination (source IP: %s, dest. IP:%s)", sourceIP, destinationIP)
+				log.Printf("packet dropped: no connection with destination (source IP: %s, dest. IP:%s)", sourceIP, destinationIP)
 				continue
 			}
 			clientInfo := clientInfoValue.(*UDPClient)
@@ -95,7 +95,7 @@ func TunToUDP(tunFile *os.File, intIPToUDPClientAddr *sync.Map, intIPToSession *
 				log.Printf("failed to load session for IP %s", destinationIP)
 				continue
 			}
-			session := sessionValue.(*chacha20.UdpSession)
+			session := sessionValue.(*chacha20.DefaultUdpSession)
 
 			encryptedPacket, encryptErr := session.Encrypt(data)
 			if encryptErr != nil {
@@ -170,7 +170,7 @@ func UDPToTun(settings settings.ConnectionSettings, tunFile *os.File, intIPToUDP
 				log.Printf("failed to load session for IP %s", internalIP)
 				continue
 			}
-			session := sessionValue.(*chacha20.UdpSession)
+			session := sessionValue.(*chacha20.DefaultUdpSession)
 
 			// Handle client data
 			decrypted, decryptionErr := session.Decrypt(buf[:n])
@@ -201,16 +201,14 @@ func udpRegisterClient(conn *net.UDPConn, clientAddr net.UDPAddr, initialData []
 	}
 	log.Printf("%s registered as: %s", clientAddr.String(), *internalIpAddr)
 
-	udpSession, tcpSessionErr := chacha20.NewUdpSession(h.Id(), h.ServerKey(), h.ClientKey(), true)
-	if tcpSessionErr != nil {
-		log.Printf("%s failed registration: %s", conn.RemoteAddr(), tcpSessionErr)
-	}
-
 	conf, confErr := (&server.Conf{}).Read()
 	if confErr != nil {
-		udpSession.UseNonceRingBuffer(100_000)
-	} else {
-		udpSession.UseNonceRingBuffer(conf.UDPNonceRingBufferSize)
+		return confErr
+	}
+
+	udpSession, tcpSessionErr := chacha20.NewUdpSession(h.Id(), h.ServerKey(), h.ClientKey(), true, conf.UDPNonceRingBufferSize)
+	if tcpSessionErr != nil {
+		log.Printf("%s failed registration: %s", conn.RemoteAddr(), tcpSessionErr)
 	}
 
 	// Use internal IP as key

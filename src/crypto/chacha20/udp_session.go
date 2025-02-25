@@ -6,18 +6,24 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
-type UdpSession struct {
-	SessionId  [32]byte
-	encoder    UDPEncoder
-	sendCipher cipher.AEAD
-	recvCipher cipher.AEAD
-	SendNonce  *Nonce
-	RecvNonce  *Nonce
-	isServer   bool
-	nonceBuf   *NonceBuf
-}
+type (
+	UdpSession interface {
+		Encrypt(plaintext []byte) ([]byte, error)
+		Decrypt(ciphertext []byte) ([]byte, error)
+	}
+	DefaultUdpSession struct {
+		SessionId  [32]byte
+		encoder    DefaultUDPEncoder
+		sendCipher cipher.AEAD
+		recvCipher cipher.AEAD
+		SendNonce  *Nonce
+		RecvNonce  *Nonce
+		isServer   bool
+		nonceBuf   *NonceBuf
+	}
+)
 
-func NewUdpSession(id [32]byte, sendKey, recvKey []byte, isServer bool) (*UdpSession, error) {
+func NewUdpSession(id [32]byte, sendKey, recvKey []byte, isServer bool, nonceBufferSize int) (*DefaultUdpSession, error) {
 	sendCipher, err := chacha20poly1305.New(sendKey)
 	if err != nil {
 		return nil, err
@@ -28,28 +34,19 @@ func NewUdpSession(id [32]byte, sendKey, recvKey []byte, isServer bool) (*UdpSes
 		return nil, err
 	}
 
-	return &UdpSession{
+	return &DefaultUdpSession{
 		SessionId:  id,
 		sendCipher: sendCipher,
 		recvCipher: recvCipher,
 		RecvNonce:  NewNonce(),
 		SendNonce:  NewNonce(),
 		isServer:   isServer,
-		nonceBuf:   nil,
-		encoder:    UDPEncoder{},
+		nonceBuf:   NewNonceBuf(nonceBufferSize),
+		encoder:    DefaultUDPEncoder{},
 	}, nil
 }
 
-func (s *UdpSession) UseNonceRingBuffer(size int) *UdpSession {
-	if size < 1024 {
-		size = 1024
-	}
-
-	s.nonceBuf = NewNonceBuf(size)
-	return s
-}
-
-func (s *UdpSession) Encrypt(plaintext []byte) ([]byte, error) {
+func (s *DefaultUdpSession) Encrypt(plaintext []byte) ([]byte, error) {
 	err := s.SendNonce.incrementNonce()
 	if err != nil {
 		return nil, err
@@ -68,7 +65,7 @@ func (s *UdpSession) Encrypt(plaintext []byte) ([]byte, error) {
 	return packet.Payload, nil
 }
 
-func (s *UdpSession) Decrypt(ciphertext []byte) ([]byte, error) {
+func (s *DefaultUdpSession) Decrypt(ciphertext []byte) ([]byte, error) {
 	packet, packetErr := s.encoder.Decode(ciphertext)
 	if packetErr != nil {
 		return nil, packetErr
@@ -91,7 +88,7 @@ func (s *UdpSession) Decrypt(ciphertext []byte) ([]byte, error) {
 	return plaintext, nil
 }
 
-func (s *UdpSession) CreateAAD(isServerToClient bool, nonce []byte) []byte {
+func (s *DefaultUdpSession) CreateAAD(isServerToClient bool, nonce []byte) []byte {
 	direction := []byte("client-to-server")
 	if isServerToClient {
 		direction = []byte("server-to-client")
