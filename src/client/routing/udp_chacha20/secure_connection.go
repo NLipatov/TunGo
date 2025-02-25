@@ -1,7 +1,6 @@
 package udp_chacha20
 
 import (
-	"context"
 	"net"
 	"tungo/crypto/chacha20"
 )
@@ -18,13 +17,13 @@ func NewSecureConnection(connection Connection, secret Secret) *SecureConnection
 	}
 }
 
-func (c *SecureConnection) Establish(ctx context.Context) (*net.UDPConn, *chacha20.UdpSession, error) {
+func (c *SecureConnection) Establish() (*net.UDPConn, *chacha20.UdpSession, error) {
 	conn, connErr := c.connection.Establish()
 	if connErr != nil {
 		return nil, nil, connErr
 	}
 
-	session, sessionErr := c.secret.Exchange(ctx, conn)
+	session, sessionErr := c.secret.Exchange(conn)
 	if sessionErr != nil {
 		return nil, nil, sessionErr
 	}

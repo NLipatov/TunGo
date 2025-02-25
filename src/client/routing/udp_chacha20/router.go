@@ -2,9 +2,11 @@ package udp_chacha20
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net"
 	"sync"
+	"time"
 	"tungo/client/tun_configurator"
 	"tungo/crypto/chacha20"
 	"tungo/network"
@@ -25,10 +27,14 @@ func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
 	}()
 
 	for {
-		connector := NewSecureConnection(NewConnection(r.Settings), NewSecret(r.Settings, chacha20.NewHandshake()))
-		conn, session, err := connector.Establish(ctx)
+		conn, session, err := r.establishSecureConnection(ctx)
 		if err != nil {
-			log.Printf("could not connect to server at %s: %s", r.Settings.ConnectionIP, err)
+			if errors.Is(err, context.Canceled) { //client shutdown
+				return nil
+			}
+
+			log.Printf("connection to server at %s (UDP) failed: %s", r.Settings.ConnectionIP, err)
+			continue
 		}
 
 		log.Printf("connected to server at %s (UDP)", r.Settings.ConnectionIP)
@@ -118,4 +124,17 @@ func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *chacha20.UdpSe
 	}()
 
 	wg.Wait()
+}
+
+func (r *UDPRouter) establishSecureConnection(ctx context.Context) (*net.UDPConn, *chacha20.UdpSession, error) {
+	//setup ctx deadline
+	deadline := time.Now().Add(time.Duration(r.Settings.DialTimeoutMs) * time.Millisecond)
+	handshakeCtx, handshakeCtxCancel := context.WithDeadline(ctx, deadline)
+	defer handshakeCtxCancel()
+
+	//connect to server and exchange secret
+	connection := NewConnection(r.Settings)
+	cancellableSecret := NewCancellableSecret(handshakeCtx, NewDefaultSecret(r.Settings, chacha20.NewHandshake()))
+	connector := NewSecureConnection(connection, cancellableSecret)
+	return connector.Establish()
 }

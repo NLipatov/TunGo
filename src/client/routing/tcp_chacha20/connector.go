@@ -81,7 +81,7 @@ func (c *Connector) handshake(ctx context.Context, conn net.Conn) (*chacha20.Tcp
 
 	go func(conn net.Conn, settings settings.ConnectionSettings) {
 		h := chacha20.NewHandshake()
-		handshakeErr := h.ClientSideHandshake(ctx, conn, settings)
+		handshakeErr := h.ClientSideHandshake(conn, settings)
 		if handshakeErr != nil {
 			closeOnce.Do(closeConn)
 		}

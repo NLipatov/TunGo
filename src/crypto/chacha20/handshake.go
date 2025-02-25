@@ -1,15 +1,11 @@
 package chacha20
 
 import (
-	"context"
 	"crypto/rand"
 	"crypto/sha256"
-	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
-	"time"
 	"tungo/network"
 	"tungo/settings"
 	"tungo/settings/client"
@@ -26,7 +22,7 @@ type Handshake interface {
 	ClientKey() []byte
 	ServerKey() []byte
 	ServerSideHandshake(conn network.ConnectionAdapter) (*string, error)
-	ClientSideHandshake(ctx context.Context, conn net.Conn, settings settings.ConnectionSettings) error
+	ClientSideHandshake(conn net.Conn, settings settings.ConnectionSettings) error
 }
 
 type HandshakeImpl struct {
@@ -132,7 +128,7 @@ func (h *HandshakeImpl) ServerSideHandshake(conn network.ConnectionAdapter) (*st
 	return &clientHello.IpAddress, nil
 }
 
-func (h *HandshakeImpl) ClientSideHandshake(ctx context.Context, conn net.Conn, settings settings.ConnectionSettings) error {
+func (h *HandshakeImpl) ClientSideHandshake(conn net.Conn, settings settings.ConnectionSettings) error {
 	edPub, ed, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		return fmt.Errorf("failed to generate ed25519 key pair: %s", err)
@@ -149,19 +145,19 @@ func (h *HandshakeImpl) ClientSideHandshake(ctx context.Context, conn net.Conn, 
 		return fmt.Errorf("failed to serialize registration message")
 	}
 
-	_, err = h.writeWithContext(ctx, conn, *rm)
-	if err != nil {
-		return fmt.Errorf("failed to notice server on local address: %v", err)
+	_, rmWriteErr := conn.Write(*rm)
+	if rmWriteErr != nil {
+		return fmt.Errorf("failed to write registration message: %s", rmWriteErr)
 	}
 
 	//Read server hello
-	sHBuf := make([]byte, 128)
-	_, err = h.readWithContext(ctx, conn, sHBuf)
-	if err != nil {
+	shmBuf := make([]byte, 128)
+	_, shmErr := conn.Read(shmBuf)
+	if shmErr != nil {
 		return fmt.Errorf("failed to read server-hello message")
 	}
 
-	serverHello, err := (&ServerHello{}).Read(sHBuf)
+	serverHello, err := (&ServerHello{}).Read(shmBuf)
 	if err != nil {
 		return fmt.Errorf("failed to read server-hello message")
 	}
@@ -182,9 +178,9 @@ func (h *HandshakeImpl) ClientSideHandshake(ctx context.Context, conn net.Conn, 
 		return fmt.Errorf("failed to create client signature message: %s", err)
 	}
 
-	_, err = h.writeWithContext(ctx, conn, *cS)
-	if err != nil {
-		return fmt.Errorf("failed to send client signature message: %s", err)
+	_, csErr := conn.Write(*cS)
+	if csErr != nil {
+		return fmt.Errorf("failed to send client signature message: %s", csErr)
 	}
 
 	sharedSecret, _ := curve25519.X25519(curvePrivate[:], serverHello.CurvePublicKey)
@@ -209,76 +205,4 @@ func (h *HandshakeImpl) ClientSideHandshake(ctx context.Context, conn net.Conn, 
 	h.serverKey = serverToClientKey
 
 	return nil
-}
-
-func (h *HandshakeImpl) readWithContext(ctx context.Context, conn net.Conn, buf []byte) (int, error) {
-	select {
-	case <-ctx.Done(): //if ctx already cancelled
-		return 0, fmt.Errorf("operation canceled before reading: %w", ctx.Err())
-	default:
-	}
-
-	deadline, ok := ctx.Deadline()
-	if ok {
-		if err := conn.SetReadDeadline(deadline); err != nil {
-			return 0, fmt.Errorf("failed to set read deadline: %w", err)
-		}
-	}
-
-	n, err := conn.Read(buf)
-
-	if ok {
-		if resetErr := conn.SetReadDeadline(time.Time{}); resetErr != nil {
-			log.Printf("failed to reset read deadline: %v", resetErr)
-		}
-	}
-
-	if err != nil {
-		if errors.Is(err, io.EOF) {
-			return 0, fmt.Errorf("connection closed by peer: %w", err)
-		}
-		var netErr net.Error
-		if errors.As(err, &netErr) && netErr.Timeout() {
-			return 0, fmt.Errorf("read timed out: %w", err)
-		}
-		return 0, fmt.Errorf("unexpected read error: %w", err)
-	}
-
-	return n, nil
-}
-
-func (h *HandshakeImpl) writeWithContext(ctx context.Context, conn net.Conn, data []byte) (int, error) {
-	select {
-	case <-ctx.Done(): //if ctx already cancelled
-		return 0, fmt.Errorf("operation canceled before writing: %w", ctx.Err())
-	default:
-	}
-
-	deadline, ok := ctx.Deadline()
-	if ok {
-		if err := conn.SetWriteDeadline(deadline); err != nil {
-			return 0, fmt.Errorf("failed to set write deadline: %w", err)
-		}
-	}
-
-	n, err := conn.Write(data)
-
-	if ok {
-		if resetErr := conn.SetWriteDeadline(time.Time{}); resetErr != nil {
-			log.Printf("failed to reset write deadline: %v", resetErr)
-		}
-	}
-
-	if err != nil {
-		if errors.Is(err, io.EOF) {
-			return 0, fmt.Errorf("connection closed by peer: %w", err)
-		}
-		var netErr net.Error
-		if errors.As(err, &netErr) && netErr.Timeout() {
-			return 0, fmt.Errorf("write timed out: %w", err)
-		}
-		return 0, fmt.Errorf("unexpected write error: %w", err)
-	}
-
-	return n, nil
 }
