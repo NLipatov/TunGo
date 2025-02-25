@@ -25,8 +25,8 @@ func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
 	}()
 
 	for {
-		connector := NewConnector(r.Settings, NewUDPConnection(r.Settings), NewSecretExchangerImpl(r.Settings, chacha20.NewHandshake()))
-		conn, session, err := connector.Connect(ctx)
+		connector := NewSecureConnection(NewConnection(r.Settings), NewSecret(r.Settings, chacha20.NewHandshake()))
+		conn, session, err := connector.Establish(ctx)
 		if err != nil {
 			log.Printf("could not connect to server at %s: %s", r.Settings.ConnectionIP, err)
 		}

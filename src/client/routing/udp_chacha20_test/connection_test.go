@@ -30,7 +30,7 @@ func TestUDPConnection_Establish(t *testing.T) {
 		Port:         fmt.Sprintf("%d", actualAddr.Port),
 	}
 
-	udpConn := udp_chacha20.NewUDPConnection(clientSettings)
+	udpConn := udp_chacha20.NewConnection(clientSettings)
 
 	clientConn, err := udpConn.Establish()
 	if err != nil {

@@ -10,7 +10,7 @@ import (
 	"tungo/settings/client"
 )
 
-type SecretExchanger interface {
+type Secret interface {
 	Exchange(ctx context.Context, conn *net.UDPConn) (*chacha20.UdpSession, error)
 }
 
@@ -19,7 +19,7 @@ type SecretExchangerImpl struct {
 	handshake chacha20.Handshake
 }
 
-func NewSecretExchangerImpl(settings settings.ConnectionSettings, handshake chacha20.Handshake) SecretExchanger {
+func NewSecret(settings settings.ConnectionSettings, handshake chacha20.Handshake) Secret {
 	return &SecretExchangerImpl{
 		settings:  settings,
 		handshake: handshake,

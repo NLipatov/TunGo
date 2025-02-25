@@ -66,14 +66,14 @@ func TestConnector_Connect_Success(t *testing.T) {
 		DialTimeoutMs: 5000,
 	}
 
-	connector := udp_chacha20.NewConnector(connSettings, fakeConn, fakeExchanger)
+	connector := udp_chacha20.NewSecureConnection(connSettings, fakeConn, fakeExchanger)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	conn, sess, err := connector.Connect(ctx)
+	conn, sess, err := connector.Establish(ctx)
 	if err != nil {
-		t.Fatalf("Connect failed: %v", err)
+		t.Fatalf("Establish failed: %v", err)
 	}
 	if conn == nil {
 		t.Fatal("expected non-nil connection")
@@ -92,11 +92,11 @@ func TestConnector_Connect_FailDial(t *testing.T) {
 		Port:          "12345",
 		DialTimeoutMs: 5000,
 	}
-	connector := udp_chacha20.NewConnector(connSettings, fakeConn, fakeExchanger)
+	connector := udp_chacha20.NewSecureConnection(connSettings, fakeConn, fakeExchanger)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	_, _, err := connector.Connect(ctx)
+	_, _, err := connector.Establish(ctx)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -116,11 +116,11 @@ func TestConnector_Connect_FailHandshake(t *testing.T) {
 		Port:          "12345",
 		DialTimeoutMs: 5000,
 	}
-	connector := udp_chacha20.NewConnector(connSettings, fakeConn, fakeExchanger)
+	connector := udp_chacha20.NewSecureConnection(connSettings, fakeConn, fakeExchanger)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	_, _, err := connector.Connect(ctx)
+	_, _, err := connector.Establish(ctx)
 	if err == nil {
 		t.Fatal("expected handshake error, got nil")
 	}
