@@ -1,23 +1,27 @@
-package udp_chacha20
+package connection
 
 import (
 	"net"
 	"tungo/crypto/chacha20"
 )
 
-type SecureConnection struct {
+type SecureSession interface {
+	Establish() (*net.UDPConn, *chacha20.UdpSession, error)
+}
+
+type DefaultSecureSession struct {
 	connection Connection
 	secret     Secret
 }
 
-func NewSecureConnection(connection Connection, secret Secret) *SecureConnection {
-	return &SecureConnection{
+func NewDefaultSecureSession(connection Connection, secret Secret) *DefaultSecureSession {
+	return &DefaultSecureSession{
 		connection: connection,
 		secret:     secret,
 	}
 }
 
-func (c *SecureConnection) Establish() (*net.UDPConn, *chacha20.UdpSession, error) {
+func (c *DefaultSecureSession) Establish() (*net.UDPConn, *chacha20.UdpSession, error) {
 	conn, connErr := c.connection.Establish()
 	if connErr != nil {
 		return nil, nil, connErr

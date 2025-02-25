@@ -1,4 +1,4 @@
-package udp_chacha20
+package connection
 
 import (
 	"fmt"

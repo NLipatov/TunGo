@@ -76,7 +76,7 @@ func (w *udpTunWorker) Build() (*udpTunWorker, error) {
 	}
 
 	if w.conn == nil {
-		return nil, fmt.Errorf("conn required but not provided")
+		return nil, fmt.Errorf("connection required but not provided")
 	}
 
 	if w.encoder == nil {

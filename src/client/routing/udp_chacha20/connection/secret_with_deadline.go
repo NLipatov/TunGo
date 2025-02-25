@@ -1,4 +1,4 @@
-package udp_chacha20
+package connection
 
 import (
 	"context"
@@ -6,19 +6,20 @@ import (
 	"tungo/crypto/chacha20"
 )
 
-type CancellableSecret struct {
+// SecretWithDeadline is a decorator for Secret which allows cancellation via ctx
+type SecretWithDeadline struct {
 	secret Secret
 	ctx    context.Context
 }
 
-func NewCancellableSecret(ctx context.Context, secret Secret) CancellableSecret {
-	return CancellableSecret{
+func NewSecretWithDeadline(ctx context.Context, secret Secret) SecretWithDeadline {
+	return SecretWithDeadline{
 		secret: secret,
 		ctx:    ctx,
 	}
 }
 
-func (s CancellableSecret) Exchange(conn *net.UDPConn) (*chacha20.UdpSession, error) {
+func (s SecretWithDeadline) Exchange(conn *net.UDPConn) (*chacha20.UdpSession, error) {
 	type result struct {
 		session *chacha20.UdpSession
 		err     error

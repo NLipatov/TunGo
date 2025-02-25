@@ -7,6 +7,7 @@ import (
 	"net"
 	"sync"
 	"time"
+	"tungo/client/routing/udp_chacha20/connection"
 	"tungo/client/tun_configurator"
 	"tungo/crypto/chacha20"
 	"tungo/network"
@@ -50,7 +51,7 @@ func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
 			return
 		}()
 
-		//starts forwarding packets from conn to tun-interface and from tun-interface to conn
+		//starts forwarding packets from connection to tun-interface and from tun-interface to connection
 		startUDPForwarding(r, conn, session, connCtx, connCancel)
 
 		// After goroutines finish, check if shutdown was initiated
@@ -133,8 +134,10 @@ func (r *UDPRouter) establishSecureConnection(ctx context.Context) (*net.UDPConn
 	defer handshakeCtxCancel()
 
 	//connect to server and exchange secret
-	connection := NewConnection(r.Settings)
-	cancellableSecret := NewCancellableSecret(handshakeCtx, NewDefaultSecret(r.Settings, chacha20.NewHandshake()))
-	connector := NewSecureConnection(connection, cancellableSecret)
-	return connector.Establish()
+	secret := connection.NewDefaultSecret(r.Settings, chacha20.NewHandshake())
+	cancellableSecret := connection.NewSecretWithDeadline(handshakeCtx, secret)
+
+	session := connection.NewDefaultSecureSession(connection.NewConnection(r.Settings), cancellableSecret)
+	cancellableSession := connection.NewSecureSessionWithDeadline(handshakeCtx, session)
+	return cancellableSession.Establish()
 }
