@@ -3,7 +3,11 @@ package chacha20
 import "encoding/binary"
 
 type (
-	TCPEncoder struct {
+	TCPEncoder interface {
+		Decode(data []byte) (*TCPPacket, error)
+		Encode(payload []byte) (*TCPPacket, error)
+	}
+	DefaultTCPEncoder struct {
 	}
 
 	TCPPacket struct {
@@ -12,7 +16,7 @@ type (
 	}
 )
 
-func (p *TCPEncoder) Decode(data []byte) (*TCPPacket, error) {
+func (p *DefaultTCPEncoder) Decode(data []byte) (*TCPPacket, error) {
 	length := uint32(len(data))
 
 	return &TCPPacket{
@@ -21,7 +25,7 @@ func (p *TCPEncoder) Decode(data []byte) (*TCPPacket, error) {
 	}, nil
 }
 
-func (p *TCPEncoder) Encode(payload []byte) (*TCPPacket, error) {
+func (p *DefaultTCPEncoder) Encode(payload []byte) (*TCPPacket, error) {
 	length := uint32(len(payload))
 	lengthBuf := make([]byte, 4)
 	binary.BigEndian.PutUint32(lengthBuf, length)

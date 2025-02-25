@@ -86,7 +86,7 @@ func forwardIPPackets(r *TCPRouter, conn *net.Conn, session *chacha20.TcpSession
 			UseRouter(r).
 			UseConn(*conn).
 			UseSession(session).
-			UseEncoder(&chacha20.TCPEncoder{}).
+			UseEncoder(&chacha20.DefaultTCPEncoder{}).
 			Build()
 
 		if buildErr != nil {
@@ -107,7 +107,7 @@ func forwardIPPackets(r *TCPRouter, conn *net.Conn, session *chacha20.TcpSession
 			UseRouter(r).
 			UseConn(*conn).
 			UseSession(session).
-			UseEncoder(&chacha20.TCPEncoder{}).
+			UseEncoder(&chacha20.DefaultTCPEncoder{}).
 			Build()
 
 		if buildErr != nil {

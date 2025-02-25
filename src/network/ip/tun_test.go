@@ -3,6 +3,7 @@ package ip
 import (
 	"os/exec"
 	"testing"
+	"time"
 )
 
 func interfaceExists(ifName string) bool {
@@ -66,13 +67,31 @@ func Test_WriteAndReadFromTun(t *testing.T) {
 		t.Fatalf("nothing was written to TUN")
 	}
 
-	data := make([]byte, 1500)
-	n, err = tun.Read(data)
-	if err != nil {
-		t.Fatalf("error reading from TUN: %v", err)
-	}
+	// Run the read in a separate goroutine and use a channel to receive the result.
+	resultCh := make(chan struct {
+		n   int
+		err error
+	})
 
-	if n < 1 {
-		t.Fatalf("nothing was read from TUN")
+	data := make([]byte, 1500)
+	go func() {
+		read, readErr := tun.Read(data)
+		resultCh <- struct {
+			n   int
+			err error
+		}{read, readErr}
+	}()
+
+	// Wait for the read to complete or timeout.
+	select {
+	case res := <-resultCh:
+		if res.err != nil {
+			t.Fatalf("error reading from TUN: %v", res.err)
+		}
+		if res.n < 1 {
+			t.Fatalf("nothing was read from TUN")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for TUN read")
 	}
 }

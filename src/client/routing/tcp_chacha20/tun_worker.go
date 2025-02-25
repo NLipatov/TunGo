@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"tungo/crypto"
 	"tungo/crypto/chacha20"
 	"tungo/network"
 	"tungo/settings/client"
@@ -15,8 +16,8 @@ import (
 type tcpTunWorker struct {
 	router  *TCPRouter
 	conn    net.Conn
-	session *chacha20.TcpSession
-	encoder *chacha20.TCPEncoder
+	session crypto.Session
+	encoder chacha20.TCPEncoder
 	err     error
 }
 
@@ -33,7 +34,7 @@ func (w *tcpTunWorker) UseRouter(router *TCPRouter) *tcpTunWorker {
 	return w
 }
 
-func (w *tcpTunWorker) UseSession(session *chacha20.TcpSession) *tcpTunWorker {
+func (w *tcpTunWorker) UseSession(session crypto.Session) *tcpTunWorker {
 	if w.err != nil {
 		return w
 	}
@@ -53,7 +54,7 @@ func (w *tcpTunWorker) UseConn(conn net.Conn) *tcpTunWorker {
 	return w
 }
 
-func (w *tcpTunWorker) UseEncoder(encoder *chacha20.TCPEncoder) *tcpTunWorker {
+func (w *tcpTunWorker) UseEncoder(encoder *chacha20.DefaultTCPEncoder) *tcpTunWorker {
 	if w.err != nil {
 		return w
 	}
