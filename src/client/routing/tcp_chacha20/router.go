@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"math"
 	"net"
 	"sync"
 	"time"
@@ -126,7 +127,7 @@ func forwardIPPackets(r *TCPRouter, conn *net.Conn, session *chacha20.TcpSession
 
 func (r *TCPRouter) establishSecureConnection(ctx context.Context) (net.Conn, *chacha20.TcpSession, error) {
 	//setup ctx deadline
-	deadline := time.Now().Add(time.Duration(r.Settings.DialTimeoutMs) * time.Millisecond)
+	deadline := time.Now().Add(time.Duration(math.Max(float64(r.Settings.DialTimeoutMs), 5000)) * time.Millisecond)
 	handshakeCtx, handshakeCtxCancel := context.WithDeadline(ctx, deadline)
 	defer handshakeCtxCancel()
 
