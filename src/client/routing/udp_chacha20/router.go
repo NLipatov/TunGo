@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"math"
 	"net"
 	"sync"
 	"time"
@@ -129,7 +130,7 @@ func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *chacha20.Defau
 
 func (r *UDPRouter) establishSecureConnection(ctx context.Context) (*net.UDPConn, *chacha20.DefaultUdpSession, error) {
 	//setup ctx deadline
-	deadline := time.Now().Add(time.Duration(r.Settings.DialTimeoutMs) * time.Millisecond)
+	deadline := time.Now().Add(time.Duration(math.Max(float64(r.Settings.DialTimeoutMs), 5000)) * time.Millisecond)
 	handshakeCtx, handshakeCtxCancel := context.WithDeadline(ctx, deadline)
 	defer handshakeCtxCancel()
 
