@@ -5,19 +5,19 @@ import (
 )
 
 type ReaderPipe struct {
-	pipe   Pipe
-	reader io.Reader
+	pipe Pipe
+	from io.Reader
 }
 
-func NewReaderPipe(pipe Pipe, reader io.Reader) Pipe {
+func NewReaderPipe(pipe Pipe, from io.Reader) Pipe {
 	return &ReaderPipe{
-		pipe:   pipe,
-		reader: reader,
+		pipe: pipe,
+		from: from,
 	}
 }
 
 func (rp *ReaderPipe) Pass(buffer []byte) error {
-	n, readErr := rp.reader.Read(buffer)
+	n, readErr := rp.from.Read(buffer)
 	if readErr != nil {
 		return readErr
 	}

@@ -2,15 +2,13 @@ package tcp_chacha20
 
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"tungo/crypto"
 	"tungo/crypto/chacha20"
 	"tungo/network"
-	"tungo/settings/client"
+	"tungo/network/pipes"
 )
 
 type tcpTunWorker struct {
@@ -94,32 +92,17 @@ func (w *tcpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnec
 		return workerSetupErr
 	}
 	buf := make([]byte, network.IPPacketMaxSizeBytes)
-	connWriteChan := make(chan []byte, getConnWriteBufferSize())
 
 	go func() {
 		<-ctx.Done()
 		_ = w.conn.Close()
 	}()
 
-	//writes whatever comes from chan to TCP
-	go func() {
-		for {
-			select {
-			case <-ctx.Done(): // Stop-signal
-				return
-			case data, ok := <-connWriteChan:
-				if !ok { //if connWriteChan is closed
-					return
-				}
-				_, err := w.conn.Write(data)
-				if err != nil {
-					log.Printf("write to TCP failed: %s", err)
-					triggerReconnect()
-					return
-				}
-			}
-		}
-	}()
+	readerPipe := pipes.
+		NewReaderPipe(pipes.
+			NewEncryptionPipe(pipes.
+				NewTcpEncodingPipe(pipes.
+					NewDefaultPipe(w.router.tun, w.conn), w.encoder), w.session), w.router.tun)
 
 	//passes anything from tun to chan
 	for {
@@ -127,32 +110,13 @@ func (w *tcpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnec
 		case <-ctx.Done(): // Stop-signal
 			return nil
 		default:
-			n, err := w.router.tun.Read(buf)
-			if err != nil {
+			passErr := readerPipe.Pass(buf)
+			if passErr != nil {
 				if ctx.Err() != nil {
 					return nil
 				}
-				log.Printf("failed to read from TUN: %v", err)
+				log.Printf("write to TCP failed: %v", passErr)
 				triggerReconnect()
-			}
-
-			encryptedPacket, err := w.session.Encrypt(buf[:n])
-			if err != nil {
-				log.Printf("failed to encrypt packet: %v", err)
-				continue
-			}
-
-			packet, err := w.encoder.Encode(encryptedPacket)
-			if err != nil {
-				log.Printf("packet encoding failed: %s", err)
-				continue
-			}
-
-			select {
-			case <-ctx.Done():
-				close(connWriteChan)
-				return nil
-			case connWriteChan <- packet.Payload:
 			}
 		}
 	}
@@ -170,61 +134,25 @@ func (w *tcpTunWorker) HandlePacketsFromConn(ctx context.Context, connCancel con
 		_ = w.conn.Close()
 	}()
 
+	pipe := pipes.
+		NewTCPReaderPipe(pipes.
+			NewTCPDecodingPipe(pipes.
+				NewDecryptionPipe(pipes.
+					NewDefaultPipe(w.conn, w.router.tun), w.session), w.encoder), w.conn, w.router.tun)
+
 	for {
 		select {
 		case <-ctx.Done(): // Stop-signal
 			return nil
 		default:
-			_, err := io.ReadFull(w.conn, buf[:4])
-			if err != nil {
+			passErr := pipe.Pass(buf)
+			if passErr != nil {
 				if ctx.Err() != nil {
 					return nil
 				}
-				log.Printf("read from TCP failed: %v", err)
+				log.Printf("read from TCP failed: %v", passErr)
 				connCancel()
-			}
-
-			//read packet length from 4-byte length prefix
-			var length = binary.BigEndian.Uint32(buf[:4])
-			if length < 4 || length > network.IPPacketMaxSizeBytes {
-				log.Printf("invalid packet Length: %d", length)
-				continue
-			}
-
-			//read n-bytes from connection
-			_, err = io.ReadFull(w.conn, buf[:length])
-			if err != nil {
-				log.Printf("failed to read packet from connection: %s", err)
-				continue
-			}
-
-			packet, err := w.encoder.Decode(buf[:length])
-			if err != nil {
-				log.Println(err)
-			}
-
-			decrypted, decryptionErr := w.session.Decrypt(packet.Payload)
-			if decryptionErr != nil {
-				log.Printf("failed to decrypt data: %s", decryptionErr)
-				continue
-			}
-
-			// Write the decrypted packet to the TUN interface
-			_, err = w.router.tun.Write(decrypted)
-			if err != nil {
-				log.Printf("failed to write to TUN: %v", err)
-				return err
 			}
 		}
 	}
-}
-
-func getConnWriteBufferSize() int32 {
-	conf, err := (&client.Conf{}).Read()
-	if err != nil {
-		log.Println("failed to read connection buffer size from client configuration. Using fallback value: 125 000")
-		return 125_000
-	}
-
-	return conf.TCPWriteChannelBufferSize
 }
