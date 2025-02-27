@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/binary"
 	"io"
 	"log"
 	"net"
@@ -161,6 +160,7 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 	}()
 
 	buf := make([]byte, network.IPPacketMaxSizeBytes)
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -183,30 +183,13 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 			}
 
 			session := sessionValue.(*chacha20.TcpSession)
-
-			//read packet length from 4-byte length prefix
-			var length = binary.BigEndian.Uint32(buf[:4])
-			if length < 4 || length > network.IPPacketMaxSizeBytes {
-				log.Printf("invalid packet Length: %d", length)
-				continue
-			}
-
-			//read n-bytes from connection
-			_, err = io.ReadFull(conn, buf[:length])
-			if err != nil {
-				log.Printf("failed to read packet from connection: %s", err)
-				continue
-			}
-
-			decrypted, decryptionErr := session.Decrypt(buf[:length])
-			if decryptionErr != nil {
-				log.Printf("failed to decrypt data: %s", decryptionErr)
-				continue
-			}
-
-			// Write the decrypted packet to the TUN interface
-			_, err = tunFile.Write(decrypted)
-			if err != nil {
+			pipe := pipes.
+				NewTcpFrameBufferReadPipe(pipes.
+					NewReaderPipe(pipes.
+						NewDecryptionPipe(pipes.
+							NewDefaultPipe(tunFile), session), conn))
+			passErr := pipe.Pass(buf[:4])
+			if passErr != nil {
 				log.Printf("failed to write to TUN: %v", err)
 				return
 			}
