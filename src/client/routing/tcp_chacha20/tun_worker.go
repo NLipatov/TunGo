@@ -102,7 +102,7 @@ func (w *tcpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnec
 		NewReaderPipe(pipes.
 			NewEncryptionPipe(pipes.
 				NewTcpEncodingPipe(pipes.
-					NewDefaultPipe(w.router.tun, w.conn), w.encoder), w.session), w.router.tun)
+					NewDefaultPipe(w.conn), w.encoder), w.session), w.router.tun)
 
 	//passes anything from tun to chan
 	for {
@@ -138,7 +138,7 @@ func (w *tcpTunWorker) HandlePacketsFromConn(ctx context.Context, connCancel con
 		NewTCPReaderPipe(pipes.
 			NewTCPDecodingPipe(pipes.
 				NewDecryptionPipe(pipes.
-					NewDefaultPipe(w.conn, w.router.tun), w.session), w.encoder), w.conn, w.router.tun)
+					NewDefaultPipe(w.router.tun), w.session), w.encoder), w.conn, w.router.tun)
 
 	for {
 		select {

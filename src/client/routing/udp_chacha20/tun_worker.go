@@ -95,7 +95,7 @@ func (w *udpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnec
 	readerPipe := pipes.
 		NewReaderPipe(pipes.
 			NewEncryptionPipe(pipes.
-				NewDefaultPipe(w.router.tun, w.conn), w.session), w.router.tun)
+				NewDefaultPipe(w.conn), w.session), w.router.tun)
 
 	// Main loop to read from TUN and send data
 	for {
@@ -130,7 +130,7 @@ func (w *udpTunWorker) HandlePacketsFromConn(ctx context.Context, connCancel con
 	pipe := pipes.
 		NewReaderPipe(pipes.
 			NewDecryptionPipe(pipes.
-				NewDefaultPipe(w.conn, w.router.tun), w.session), w.conn)
+				NewDefaultPipe(w.router.tun), w.session), w.conn)
 
 	for {
 		select {

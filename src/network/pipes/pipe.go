@@ -9,15 +9,13 @@ type (
 		Pass(data []byte) error
 	}
 	DefaultPipe struct {
-		from io.Reader
-		to   io.Writer
+		to io.Writer
 	}
 )
 
-func NewDefaultPipe(from io.Reader, to io.Writer) *DefaultPipe {
+func NewDefaultPipe(to io.Writer) *DefaultPipe {
 	return &DefaultPipe{
-		from: from,
-		to:   to,
+		to: to,
 	}
 }
 
