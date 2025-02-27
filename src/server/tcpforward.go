@@ -11,16 +11,14 @@ import (
 	"tungo/crypto/chacha20"
 	"tungo/network"
 	"tungo/network/packets"
+	"tungo/network/pipes"
 	"tungo/settings"
-	"tungo/settings/server"
 )
 
 func TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map, ctx context.Context) {
 	buf := make([]byte, network.IPPacketMaxSizeBytes)
-	connWriteChan := make(chan ClientData, getConnWriteBufferSize())
-
-	//starts a goroutine that writes whatever comes from chan to TCP
-	go processConnWriteChan(connWriteChan, localIpMap, localIpToSessionMap, ctx)
+	encoder := chacha20.DefaultTCPEncoder{}
+	pipeMap := sync.Map{}
 
 	for {
 		select {
@@ -42,13 +40,12 @@ func TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.
 				log.Printf("failed to read from TUN, retrying: %v", err)
 				continue
 			}
-			data := buf[:n]
-			if len(data) < 1 {
+			if len(buf[:n]) < 1 {
 				log.Printf("invalid IP data")
 				continue
 			}
 
-			header, err := packets.Parse(data)
+			header, err := packets.Parse(buf[:n])
 			if err != nil {
 				log.Printf("failed to parse a IPv4 header")
 				continue
@@ -56,28 +53,31 @@ func TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.
 			destinationIP := header.GetDestinationIP().String()
 			v, ok := localIpMap.Load(destinationIP)
 			if ok {
-				conn := v.(net.Conn)
-				sessionValue, sessionExists := localIpToSessionMap.Load(destinationIP)
-				if !sessionExists {
-					log.Printf("failed to load session")
-					continue
-				}
-				session := sessionValue.(*chacha20.TcpSession)
-				encryptedPacket, encryptErr := session.Encrypt(data)
-				if encryptErr != nil {
-					log.Printf("failder to encrypt a package: %s", encryptErr)
-					continue
+				var pipe pipes.Pipe
+				pipeValue, pipeExist := pipeMap.Load(destinationIP)
+				if !pipeExist {
+					conn := v.(net.Conn)
+					sessionValue, sessionExists := localIpToSessionMap.Load(destinationIP)
+					if !sessionExists {
+						log.Printf("failed to load session")
+						continue
+					}
+					session := sessionValue.(*chacha20.TcpSession)
+
+					pipe = pipes.NewEncryptionPipe(
+						pipes.NewTcpEncodingPipe(
+							pipes.NewDefaultPipe(conn), &encoder),
+						session)
+					pipeMap.Store(destinationIP, pipe)
+				} else {
+					pipe = pipeValue.(*pipes.EncryptionPipe)
 				}
 
-				packet, packetEncodeErr := (&chacha20.DefaultTCPEncoder{}).Encode(encryptedPacket)
-				if packetEncodeErr != nil {
-					log.Printf("packet encoding failed: %s", packetEncodeErr)
-				}
-
-				connWriteChan <- ClientData{
-					Conn:  conn,
-					ExtIP: destinationIP,
-					Data:  packet.Payload,
+				passErr := pipe.Pass(buf[:n])
+				if passErr != nil {
+					pipeMap.Delete(destinationIP)
+					localIpMap.Delete(destinationIP)
+					localIpToSessionMap.Delete(destinationIP)
 				}
 			}
 		}
@@ -212,31 +212,4 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 			}
 		}
 	}
-}
-
-func processConnWriteChan(connWriteChan chan ClientData, localIpMap *sync.Map, localIpToSessionMap *sync.Map, ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done(): // Stop-signal
-			close(connWriteChan)
-			return
-		case data := <-connWriteChan:
-			_, connWriteErr := data.Conn.Write(data.Data)
-			if connWriteErr != nil {
-				log.Printf("failed to write to TCP: %v", connWriteErr)
-				localIpMap.Delete(data.ExtIP)
-				localIpToSessionMap.Delete(data.ExtIP)
-			}
-		}
-	}
-}
-
-func getConnWriteBufferSize() int32 {
-	conf, err := (&server.Conf{}).Read()
-	if err != nil {
-		log.Println("failed to read connection buffer size from client configuration. Using fallback value: 1000")
-		return 1000
-	}
-
-	return conf.TCPWriteChannelBufferSize
 }
