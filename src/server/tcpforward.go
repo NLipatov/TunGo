@@ -12,15 +12,10 @@ import (
 	"tungo/network"
 	"tungo/network/packets"
 	"tungo/settings"
-	"tungo/settings/server"
 )
 
 func TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map, ctx context.Context) {
 	buf := make([]byte, network.IPPacketMaxSizeBytes)
-	connWriteChan := make(chan ClientData, getConnWriteBufferSize())
-
-	//starts a goroutine that writes whatever comes from chan to TCP
-	go processConnWriteChan(connWriteChan, localIpMap, localIpToSessionMap, ctx)
 
 	for {
 		select {
@@ -74,10 +69,11 @@ func TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.
 					log.Printf("packet encoding failed: %s", packetEncodeErr)
 				}
 
-				connWriteChan <- ClientData{
-					Conn:  conn,
-					ExtIP: destinationIP,
-					Data:  packet.Payload,
+				_, connWriteErr := conn.Write(packet.Payload)
+				if connWriteErr != nil {
+					log.Printf("failed to write to TCP: %v", connWriteErr)
+					localIpMap.Delete(destinationIP)
+					localIpToSessionMap.Delete(destinationIP)
 				}
 			}
 		}
@@ -212,31 +208,4 @@ func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, loca
 			}
 		}
 	}
-}
-
-func processConnWriteChan(connWriteChan chan ClientData, localIpMap *sync.Map, localIpToSessionMap *sync.Map, ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done(): // Stop-signal
-			close(connWriteChan)
-			return
-		case data := <-connWriteChan:
-			_, connWriteErr := data.Conn.Write(data.Data)
-			if connWriteErr != nil {
-				log.Printf("failed to write to TCP: %v", connWriteErr)
-				localIpMap.Delete(data.ExtIP)
-				localIpToSessionMap.Delete(data.ExtIP)
-			}
-		}
-	}
-}
-
-func getConnWriteBufferSize() int32 {
-	conf, err := (&server.Conf{}).Read()
-	if err != nil {
-		log.Println("failed to read connection buffer size from client configuration. Using fallback value: 1000")
-		return 1000
-	}
-
-	return conf.TCPWriteChannelBufferSize
 }
