@@ -123,7 +123,9 @@ To reset the server’s Ed25519 keys:
 
 ## 📊 Performance Benchmarking
 
-### TCP (Iperf2)
+### iperf2
+
+#### TCP
 **Server**:
 ```bash
 iperf -s -B 10.0.0.1
@@ -133,12 +135,13 @@ iperf -s -B 10.0.0.1
 ```bash
 iperf -c 10.0.0.1
 ```
-With parallel connections:
+
+For parallel connections:
 ```bash
 iperf -c 10.0.0.1 -P 100 -t 600
 ```
 
-### UDP
+#### UDP
 **Server**:
 ```bash
 iperf -s -u
@@ -149,6 +152,35 @@ iperf -s -u
 iperf -c 10.0.1.1 -u -b 1G
 ```
 
---- 
+### iperf3
+
+#### TCP
+**Server**:
+```bash
+iperf3 -s -B 10.0.0.1
+```
+
+**Client**:
+```bash
+iperf3 -c 10.0.0.1
+```
+
+For parallel connections:
+```bash
+iperf3 -c 10.0.0.1 -P 100 -t 600
+```
+
+#### UDP
+**Server**:
+```bash
+iperf3 -s -u
+```
+
+**Client** (1GB bandwidth):
+```bash
+iperf3 -c 10.0.1.1 -u -b 1G
+```
+
+---
 
 Start enjoying fast and secure tunneling with **TunGo**!
