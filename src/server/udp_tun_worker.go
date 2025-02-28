@@ -53,20 +53,19 @@ func (u *UdpTunWorker) TunToUDP(tunFile *os.File, intIPToUDPClientAddr *sync.Map
 			continue
 		}
 
-		data := buf[:n]
-		if len(data) < 1 {
+		if n < 1 {
 			log.Printf("invalid IP data")
 			continue
 		}
 
 		// Check IP version
-		ipVersion := data[0] >> 4
+		ipVersion := buf[0] >> 4
 		if ipVersion == 6 {
 			// Skip IPv6 packet
 			continue
 		}
 
-		header, err := packets.Parse(data)
+		header, err := packets.Parse(buf[:n])
 		if err != nil {
 			log.Printf("failed to parse IP header: %v", err)
 			continue
@@ -89,7 +88,7 @@ func (u *UdpTunWorker) TunToUDP(tunFile *os.File, intIPToUDPClientAddr *sync.Map
 		}
 		session := sessionValue.(*chacha20.DefaultUdpSession)
 
-		encryptedPacket, encryptErr := session.Encrypt(data)
+		encryptedPacket, encryptErr := session.Encrypt(buf[:n])
 		if encryptErr != nil {
 			log.Printf("failed to encrypt packet: %s", encryptErr)
 			continue
