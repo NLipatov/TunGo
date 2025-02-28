@@ -15,7 +15,7 @@
     "InterfaceAddress": "",
     "ConnectionIP": "",
     "Port": "9090",
-    "MTU": 1444,
+    "MTU": 1416,
     "Protocol": "udp",
     "DialTimeoutMs": 5000
   },
