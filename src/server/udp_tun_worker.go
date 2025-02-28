@@ -20,11 +20,6 @@ type UDPClient struct {
 	addr *net.UDPAddr
 }
 
-type UDPClientPacket struct {
-	client  *UDPClient
-	payload []byte
-}
-
 type UdpTunWorker struct {
 	clientAddrToInternalIP sync.Map
 }
