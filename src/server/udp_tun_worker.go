@@ -21,83 +21,99 @@ type UDPClient struct {
 }
 
 type UdpTunWorker struct {
+	ctx                    context.Context
+	tun                    *os.File
+	settings               settings.ConnectionSettings
 	clientAddrToInternalIP sync.Map
+	intIPToUDPClient       *sync.Map
+	intIPToSession         *sync.Map
 }
 
-func NewUdpTunWorker() UdpTunWorker {
-	return UdpTunWorker{}
+func NewUdpTunWorker(ctx context.Context, tun *os.File, settings settings.ConnectionSettings, intIPToUDPClient *sync.Map, intIPToSession *sync.Map) UdpTunWorker {
+	return UdpTunWorker{
+		tun:              tun,
+		ctx:              ctx,
+		settings:         settings,
+		intIPToUDPClient: intIPToUDPClient,
+		intIPToSession:   intIPToSession,
+	}
 }
 
-func (u *UdpTunWorker) TunToUDP(tunFile *os.File, intIPToUDPClientAddr *sync.Map, intIPToSession *sync.Map, ctx context.Context) {
+func (u *UdpTunWorker) TunToUDP() {
 	buf := make([]byte, ip.MaxPacketLengthBytes)
 
 	for {
-		n, err := tunFile.Read(buf)
-		if err != nil {
-			if err == io.EOF {
-				log.Println("TUN interface closed, shutting down...")
-				return
+		select {
+		case <-u.ctx.Done():
+			return
+		default:
+			n, err := u.tun.Read(buf)
+			if err != nil {
+				if err == io.EOF {
+					log.Println("TUN interface closed, shutting down...")
+					return
+				}
+
+				if os.IsNotExist(err) || os.IsPermission(err) {
+					log.Printf("TUN interface error (closed or permission issue): %v", err)
+					return
+				}
+
+				log.Printf("failed to read from TUN, retrying: %v", err)
+				continue
 			}
 
-			if os.IsNotExist(err) || os.IsPermission(err) {
-				log.Printf("TUN interface error (closed or permission issue): %v", err)
-				return
+			if n < 1 {
+				log.Printf("invalid IP data")
+				continue
 			}
 
-			log.Printf("failed to read from TUN, retrying: %v", err)
-			continue
-		}
+			// Check IP version
+			ipVersion := buf[0] >> 4
+			if ipVersion == 6 {
+				// Skip IPv6 packet
+				continue
+			}
 
-		if n < 1 {
-			log.Printf("invalid IP data")
-			continue
-		}
+			header, err := packets.Parse(buf[:n])
+			if err != nil {
+				log.Printf("failed to parse IP header: %v", err)
+				continue
+			}
 
-		// Check IP version
-		ipVersion := buf[0] >> 4
-		if ipVersion == 6 {
-			// Skip IPv6 packet
-			continue
-		}
+			destinationIP := header.GetDestinationIP().String()
+			clientInfoValue, ok := u.intIPToUDPClient.Load(destinationIP)
+			if !ok {
+				sourceIP := header.GetSourceIP().String()
+				log.Printf("packet dropped: no connection with destination (source IP: %s, dest. IP:%s)", sourceIP, destinationIP)
+				continue
+			}
+			clientInfo := clientInfoValue.(*UDPClient)
 
-		header, err := packets.Parse(buf[:n])
-		if err != nil {
-			log.Printf("failed to parse IP header: %v", err)
-			continue
-		}
+			// Retrieve the session for this client
+			sessionValue, sessionExists := u.intIPToSession.Load(destinationIP)
+			if !sessionExists {
+				log.Printf("failed to load session for IP %s", destinationIP)
+				continue
+			}
+			session := sessionValue.(*chacha20.DefaultUdpSession)
 
-		destinationIP := header.GetDestinationIP().String()
-		clientInfoValue, ok := intIPToUDPClientAddr.Load(destinationIP)
-		if !ok {
-			sourceIP := header.GetSourceIP().String()
-			log.Printf("packet dropped: no connection with destination (source IP: %s, dest. IP:%s)", sourceIP, destinationIP)
-			continue
-		}
-		clientInfo := clientInfoValue.(*UDPClient)
+			encryptedPacket, encryptErr := session.Encrypt(buf[:n])
+			if encryptErr != nil {
+				log.Printf("failed to encrypt packet: %s", encryptErr)
+				continue
+			}
 
-		// Retrieve the session for this client
-		sessionValue, sessionExists := intIPToSession.Load(destinationIP)
-		if !sessionExists {
-			log.Printf("failed to load session for IP %s", destinationIP)
-			continue
-		}
-		session := sessionValue.(*chacha20.DefaultUdpSession)
-
-		encryptedPacket, encryptErr := session.Encrypt(buf[:n])
-		if encryptErr != nil {
-			log.Printf("failed to encrypt packet: %s", encryptErr)
-			continue
-		}
-
-		_, writeToUDPErr := clientInfo.conn.WriteToUDP(encryptedPacket, clientInfo.addr)
-		if err != nil {
-			log.Printf("failed to send packet to %s: %v", clientInfo.addr, writeToUDPErr)
+			_, writeToUDPErr := clientInfo.conn.WriteToUDP(encryptedPacket, clientInfo.addr)
+			if err != nil {
+				log.Printf("failed to send packet to %s: %v", clientInfo.addr, writeToUDPErr)
+			}
 		}
 	}
 }
 
-func (u *UdpTunWorker) UDPToTun(settings settings.ConnectionSettings, tunFile *os.File, intIPToUDPClientAddr *sync.Map, intIPToSession *sync.Map, ctx context.Context) {
-	addr, err := net.ResolveUDPAddr("udp", net.JoinHostPort("", settings.Port))
+func (u *UdpTunWorker) UDPToTun() {
+	addr, err := net.ResolveUDPAddr("udp", net.JoinHostPort("", u.settings.Port))
 	if err != nil {
 		log.Fatalf("failed to resolve udp address: %s", err)
 		return
@@ -111,57 +127,62 @@ func (u *UdpTunWorker) UDPToTun(settings settings.ConnectionSettings, tunFile *o
 		_ = conn.Close()
 	}(conn)
 
-	log.Printf("server listening on port %s (UDP)", settings.Port)
+	log.Printf("server listening on port %s (UDP)", u.settings.Port)
 
 	go func() {
-		<-ctx.Done()
+		<-u.ctx.Done()
 		_ = conn.Close()
 	}()
 
 	buf := make([]byte, ip.MaxPacketLengthBytes)
 	for {
-		n, clientAddr, readFromUdpErr := conn.ReadFromUDP(buf)
-		if readFromUdpErr != nil {
-			if ctx.Err() != nil {
-				return
+		select {
+		case <-u.ctx.Done():
+			return
+		default:
+			n, clientAddr, readFromUdpErr := conn.ReadFromUDP(buf)
+			if readFromUdpErr != nil {
+				if u.ctx.Err() != nil {
+					return
+				}
+				log.Printf("failed to read from UDP: %s", readFromUdpErr)
+				continue
 			}
-			log.Printf("failed to read from UDP: %s", readFromUdpErr)
-			continue
-		}
 
-		intIPValue, exists := u.clientAddrToInternalIP.Load(clientAddr.String())
-		if !exists {
-			intIPToSession.Delete(intIPValue)
-			intIPToUDPClientAddr.Delete(intIPValue)
-			u.clientAddrToInternalIP.Delete(clientAddr.String())
+			intIPValue, exists := u.clientAddrToInternalIP.Load(clientAddr.String())
+			if !exists {
+				u.intIPToSession.Delete(intIPValue)
+				u.intIPToUDPClient.Delete(intIPValue)
+				u.clientAddrToInternalIP.Delete(clientAddr.String())
 
-			// Pass initial data to registration function
-			regErr := u.udpRegisterClient(conn, *clientAddr, buf[:n], intIPToUDPClientAddr, intIPToSession)
-			if regErr != nil {
-				log.Printf("%s failed registration: %s\n", clientAddr.String(), regErr)
+				// Pass initial data to registration function
+				regErr := u.udpRegisterClient(conn, *clientAddr, buf[:n], u.intIPToUDPClient, u.intIPToSession)
+				if regErr != nil {
+					log.Printf("%s failed registration: %s\n", clientAddr.String(), regErr)
+				}
+				continue
 			}
-			continue
-		}
-		internalIP := intIPValue.(string)
+			internalIP := intIPValue.(string)
 
-		sessionValue, sessionExists := intIPToSession.Load(internalIP)
-		if !sessionExists {
-			log.Printf("failed to load session for IP %s", internalIP)
-			continue
-		}
-		session := sessionValue.(*chacha20.DefaultUdpSession)
+			sessionValue, sessionExists := u.intIPToSession.Load(internalIP)
+			if !sessionExists {
+				log.Printf("failed to load session for IP %s", internalIP)
+				continue
+			}
+			session := sessionValue.(*chacha20.DefaultUdpSession)
 
-		// Handle client data
-		decrypted, decryptionErr := session.Decrypt(buf[:n])
-		if decryptionErr != nil {
-			log.Printf("failed to decrypt data: %s", decryptionErr)
-			continue
-		}
+			// Handle client data
+			decrypted, decryptionErr := session.Decrypt(buf[:n])
+			if decryptionErr != nil {
+				log.Printf("failed to decrypt data: %s", decryptionErr)
+				continue
+			}
 
-		// Write the decrypted packet to the TUN interface
-		_, err = tunFile.Write(decrypted)
-		if err != nil {
-			log.Printf("failed to write to TUN: %v", err)
+			// Write the decrypted packet to the TUN interface
+			_, err = u.tun.Write(decrypted)
+			if err != nil {
+				log.Printf("failed to write to TUN: %v", err)
+			}
 		}
 	}
 }

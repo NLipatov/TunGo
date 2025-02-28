@@ -70,7 +70,7 @@ func StartUDPRouting(tunFile *os.File, settings settings.ConnectionSettings) err
 	var intIPToUDPClient sync.Map // external ip to local ip map
 	var intIPToSession sync.Map   // external ip to session map
 
-	udpTunWorker := server.NewUdpTunWorker()
+	udpTunWorker := server.NewUdpTunWorker(ctx, tunFile, settings, &intIPToUDPClient, &intIPToSession)
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -78,13 +78,13 @@ func StartUDPRouting(tunFile *os.File, settings settings.ConnectionSettings) err
 	// TUN -> UDP
 	go func() {
 		defer wg.Done()
-		udpTunWorker.TunToUDP(tunFile, &intIPToUDPClient, &intIPToSession, ctx)
+		udpTunWorker.TunToUDP()
 	}()
 
 	// UDP -> TUN
 	go func() {
 		defer wg.Done()
-		udpTunWorker.UDPToTun(settings, tunFile, &intIPToUDPClient, &intIPToSession, ctx)
+		udpTunWorker.UDPToTun()
 	}()
 
 	wg.Wait()
