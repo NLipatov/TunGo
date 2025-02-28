@@ -49,6 +49,10 @@ func (u *UdpTunWorker) TunToUDP() {
 		default:
 			n, err := u.tun.Read(buf)
 			if err != nil {
+				if u.ctx.Done() != nil {
+					return
+				}
+
 				if err == io.EOF {
 					log.Println("TUN interface closed, shutting down...")
 					return
@@ -142,9 +146,10 @@ func (u *UdpTunWorker) UDPToTun() {
 		default:
 			n, clientAddr, readFromUdpErr := conn.ReadFromUDP(buf)
 			if readFromUdpErr != nil {
-				if u.ctx.Err() != nil {
+				if u.ctx.Done() != nil {
 					return
 				}
+
 				log.Printf("failed to read from UDP: %s", readFromUdpErr)
 				continue
 			}
