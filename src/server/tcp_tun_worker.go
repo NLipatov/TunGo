@@ -14,7 +14,14 @@ import (
 	"tungo/settings"
 )
 
-func TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map, ctx context.Context) {
+type TcpTunWorker struct {
+}
+
+func NewTcpTunWorker() TcpTunWorker {
+	return TcpTunWorker{}
+}
+
+func (w *TcpTunWorker) TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map, ctx context.Context) {
 	buf := make([]byte, network.IPPacketMaxSizeBytes)
 
 	for {
@@ -80,7 +87,7 @@ func TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.
 	}
 }
 
-func TCPToTun(settings settings.ConnectionSettings, tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map, ctx context.Context) {
+func (w *TcpTunWorker) TCPToTun(settings settings.ConnectionSettings, tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map, ctx context.Context) {
 	listener, err := net.Listen("tcp", net.JoinHostPort("", settings.Port))
 	if err != nil {
 		log.Printf("failed to listen on port %s: %v", settings.Port, err)
@@ -111,12 +118,12 @@ func TCPToTun(settings settings.ConnectionSettings, tunFile *os.File, localIpMap
 				log.Printf("failed to accept connection: %v", listenErr)
 				continue
 			}
-			go registerClient(conn, tunFile, localIpMap, localIpToSessionMap, ctx)
+			go w.registerClient(conn, tunFile, localIpMap, localIpToSessionMap, ctx)
 		}
 	}
 }
 
-func registerClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, localIpToServerSessionMap *sync.Map, ctx context.Context) {
+func (w *TcpTunWorker) registerClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, localIpToServerSessionMap *sync.Map, ctx context.Context) {
 	log.Printf("connected: %s", conn.RemoteAddr())
 	h := chacha20.NewHandshake()
 	internalIpAddr, handshakeErr := h.ServerSideHandshake(&network.TcpAdapter{
@@ -145,10 +152,10 @@ func registerClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, lo
 	localIpToConn.Store(*internalIpAddr, conn)
 	localIpToServerSessionMap.Store(*internalIpAddr, tcpSession)
 
-	handleClient(conn, tunFile, localIpToConn, localIpToServerSessionMap, internalIpAddr, ctx)
+	w.handleClient(conn, tunFile, localIpToConn, localIpToServerSessionMap, internalIpAddr, ctx)
 }
 
-func handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, localIpToSession *sync.Map, extIpAddr *string, ctx context.Context) {
+func (w *TcpTunWorker) handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, localIpToSession *sync.Map, extIpAddr *string, ctx context.Context) {
 	defer func() {
 		localIpToConn.Delete(*extIpAddr)
 		localIpToSession.Delete(*extIpAddr)
