@@ -98,7 +98,7 @@ func (s *DefaultUdpSession) InplaceDecrypt(ciphertext []byte) ([]byte, error) {
 		return nil, packetErr
 	}
 
-	nonceBytes := packet.Nonce.Encode()
+	nonceBytes := ciphertext[:12]
 	payloadBytes := ciphertext[12:]
 
 	nBErr := s.nonceBuf.Insert(packet.Nonce)
