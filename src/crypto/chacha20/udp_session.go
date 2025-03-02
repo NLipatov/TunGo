@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"golang.org/x/crypto/chacha20poly1305"
+	"unsafe"
 )
 
 type (
@@ -93,10 +94,12 @@ func (s *DefaultUdpSession) InplaceDecrypt(ciphertext []byte) ([]byte, error) {
 	nonceBytes := ciphertext[:12]
 	payloadBytes := ciphertext[12:]
 
-	nBErr := s.nonceBuf.InsertNonceBytes(nonceBytes)
+	//converts nonceBytes to [12]byte with no allocations
+	nBErr := s.nonceBuf.InsertNonceBytes(*(*[12]byte)(unsafe.Pointer(&nonceBytes[0])))
 	if nBErr != nil {
 		return nil, nBErr
 	}
+
 	aad := s.InplaceCreateAAD(!s.isServer, nonceBytes[:], s.decryptionAadBuf)
 	plaintext, err := s.recvCipher.Open(payloadBytes[:0], nonceBytes, payloadBytes, aad)
 	if err != nil {

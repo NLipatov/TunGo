@@ -21,19 +21,15 @@ func NewNonceBuf(size int) *NonceBuf {
 		size:       size,
 		lastInsert: -1,
 		nextRead:   0,
-		set:        make(map[[12]byte]struct{}),
+		set:        make(map[[12]byte]struct{}, size),
 	}
 }
 
-func (r *NonceBuf) InsertNonceBytes(data []byte) error {
-	if len(data) != 12 {
-		return InvalidNonce
-	}
-
+func (r *NonceBuf) InsertNonceBytes(data [12]byte) error {
 	low := binary.BigEndian.Uint64(data[:8])
 	high := binary.BigEndian.Uint32(data[8:])
 
-	hash := [12]byte(data)
+	hash := data
 	if r.contains(hash) {
 		return ErrNonUniqueNonce
 	}
@@ -84,20 +80,20 @@ func (r *NonceBuf) Insert(input *Nonce) error {
 
 func (r *NonceBuf) contains(key [12]byte) bool {
 	r.setMu.Lock()
-	defer r.setMu.Unlock()
 	_, exist := r.set[key]
+	r.setMu.Unlock()
 
 	return exist
 }
 
 func (r *NonceBuf) addToSet(key [12]byte) {
 	r.setMu.Lock()
-	defer r.setMu.Unlock()
 	r.set[key] = struct{}{}
+	r.setMu.Unlock()
 }
 
 func (r *NonceBuf) removeFromSet(key [12]byte) {
 	r.setMu.Lock()
-	defer r.setMu.Unlock()
 	delete(r.set, key)
+	r.setMu.Unlock()
 }

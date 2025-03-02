@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"sync"
+	"unsafe"
 )
 
 type Nonce struct {
@@ -18,7 +19,9 @@ func NewNonce() *Nonce {
 
 func (n *Nonce) Hash(buffer [12]byte) [12]byte {
 	keyBuf := n.InplaceEncode(buffer[:])
-	return [12]byte(keyBuf)
+
+	//converts keyBuf to [12]byte with no allocations
+	return *(*[12]byte)(unsafe.Pointer(&keyBuf[0]))
 }
 
 func (n *Nonce) incrementNonce() error {
