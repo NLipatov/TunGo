@@ -92,7 +92,7 @@ func (w *udpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnec
 	if workerSetupErr != nil {
 		return workerSetupErr
 	}
-	buf := make([]byte, ip.MaxPacketLengthBytes)
+	buf := make([]byte, ip.MaxPacketLengthBytes+12)
 
 	// Main loop to read from TUN and send data
 	for {
