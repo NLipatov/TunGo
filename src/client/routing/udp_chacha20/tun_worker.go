@@ -111,7 +111,7 @@ func (w *udpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnec
 
 			binary.BigEndian.PutUint32(buf[:12], uint32(n+12))
 
-			encryptedPacket, err := w.session.Encrypt(buf)
+			encryptedPacket, err := w.session.InplaceEncrypt(buf)
 			if err != nil {
 				log.Printf("failed to encrypt packet: %v", err)
 				continue

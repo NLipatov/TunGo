@@ -9,7 +9,9 @@ import (
 
 type (
 	UdpSession interface {
+		// Encrypt deprecated, use InplaceEncrypt
 		Encrypt(plaintext []byte) ([]byte, error)
+		InplaceEncrypt(plaintext []byte) ([]byte, error)
 		Decrypt(ciphertext []byte) ([]byte, error)
 	}
 	DefaultUdpSession struct {
@@ -47,7 +49,7 @@ func NewUdpSession(id [32]byte, sendKey, recvKey []byte, isServer bool, nonceBuf
 	}, nil
 }
 
-func (s *DefaultUdpSession) Encrypt(data []byte) ([]byte, error) {
+func (s *DefaultUdpSession) InplaceEncrypt(data []byte) ([]byte, error) {
 	packageLen := binary.BigEndian.Uint32(data[:12])
 	plaintext := data[12 : 12+packageLen]
 	err := s.SendNonce.incrementNonce()
@@ -64,6 +66,25 @@ func (s *DefaultUdpSession) Encrypt(data []byte) ([]byte, error) {
 	ciphertext := s.sendCipher.Seal(plaintext[:0], data[:12], plaintext, aad)
 
 	return data[:len(ciphertext)+12], nil
+}
+
+func (s *DefaultUdpSession) Encrypt(plaintext []byte) ([]byte, error) {
+	err := s.SendNonce.incrementNonce()
+	if err != nil {
+		return nil, err
+	}
+
+	nonceBytes := s.SendNonce.Encode()
+
+	aad := s.CreateAAD(s.isServer, nonceBytes)
+	ciphertext := s.sendCipher.Seal(plaintext[:0], nonceBytes, plaintext, aad)
+
+	packet, packetErr := s.encoder.Encode(ciphertext, s.SendNonce)
+	if packetErr != nil {
+		return nil, packetErr
+	}
+
+	return packet.Payload, nil
 }
 
 func (s *DefaultUdpSession) Decrypt(ciphertext []byte) ([]byte, error) {
