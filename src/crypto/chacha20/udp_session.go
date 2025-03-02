@@ -90,15 +90,10 @@ func (s *DefaultUdpSession) Encrypt(plaintext []byte) ([]byte, error) {
 }
 
 func (s *DefaultUdpSession) InplaceDecrypt(ciphertext []byte) ([]byte, error) {
-	packet, packetErr := s.encoder.Decode(ciphertext)
-	if packetErr != nil {
-		return nil, packetErr
-	}
-
 	nonceBytes := ciphertext[:12]
 	payloadBytes := ciphertext[12:]
 
-	nBErr := s.nonceBuf.Insert(packet.Nonce)
+	nBErr := s.nonceBuf.InsertNonceBytes(nonceBytes)
 	if nBErr != nil {
 		return nil, nBErr
 	}
