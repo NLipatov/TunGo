@@ -12,6 +12,7 @@ type (
 		// Encrypt deprecated, use InplaceEncrypt
 		Encrypt(plaintext []byte) ([]byte, error)
 		InplaceEncrypt(plaintext []byte) ([]byte, error)
+		InplaceDecrypt(ciphertext []byte) ([]byte, error)
 		Decrypt(ciphertext []byte) ([]byte, error)
 	}
 	DefaultUdpSession struct {
@@ -89,6 +90,29 @@ func (s *DefaultUdpSession) Encrypt(plaintext []byte) ([]byte, error) {
 	}
 
 	return packet.Payload, nil
+}
+
+func (s *DefaultUdpSession) InplaceDecrypt(ciphertext []byte) ([]byte, error) {
+	packet, packetErr := s.encoder.Decode(ciphertext)
+	if packetErr != nil {
+		return nil, packetErr
+	}
+
+	nonceBytes := packet.Nonce.Encode()
+	payloadBytes := ciphertext[12:]
+
+	nBErr := s.nonceBuf.Insert(packet.Nonce)
+	if nBErr != nil {
+		return nil, nBErr
+	}
+	aad := s.InplaceCreateAAD(!s.isServer, nonceBytes[:], s.decryptionAadBuf)
+	plaintext, err := s.recvCipher.Open(payloadBytes[:0], nonceBytes, payloadBytes, aad)
+	if err != nil {
+		// Properly handle failed decryption attempt to avoid reuse of any state
+		return nil, fmt.Errorf("failed to decrypt: %w", err)
+	}
+
+	return plaintext, nil
 }
 
 func (s *DefaultUdpSession) Decrypt(ciphertext []byte) ([]byte, error) {

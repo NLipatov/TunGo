@@ -139,7 +139,7 @@ func (w *udpTunWorker) HandlePacketsFromConn(ctx context.Context, connCancel con
 	if workerSetupErr != nil {
 		return workerSetupErr
 	}
-	buf := make([]byte, ip.MaxPacketLengthBytes)
+	buf := make([]byte, ip.MaxPacketLengthBytes+12)
 
 	go func() {
 		<-ctx.Done()
@@ -161,7 +161,7 @@ func (w *udpTunWorker) HandlePacketsFromConn(ctx context.Context, connCancel con
 				return nil
 			}
 
-			decrypted, decryptionErr := w.session.Decrypt(buf[:n])
+			decrypted, decryptionErr := w.session.InplaceDecrypt(buf[:n])
 			if decryptionErr != nil {
 				if errors.Is(decryptionErr, chacha20.ErrNonUniqueNonce) {
 					log.Printf("reconnecting on critical decryption err: %s", decryptionErr)
