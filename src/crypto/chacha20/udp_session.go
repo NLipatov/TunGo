@@ -15,14 +15,16 @@ type (
 		Decrypt(ciphertext []byte) ([]byte, error)
 	}
 	DefaultUdpSession struct {
-		SessionId  [32]byte
-		encoder    DefaultUDPEncoder
-		sendCipher cipher.AEAD
-		recvCipher cipher.AEAD
-		SendNonce  *Nonce
-		RecvNonce  *Nonce
-		isServer   bool
-		nonceBuf   *NonceBuf
+		SessionId        [32]byte
+		encoder          DefaultUDPEncoder
+		sendCipher       cipher.AEAD
+		recvCipher       cipher.AEAD
+		SendNonce        *Nonce
+		RecvNonce        *Nonce
+		isServer         bool
+		nonceBuf         *NonceBuf
+		encryptionAadBuf []byte
+		decryptionAadBuf []byte
 	}
 )
 
@@ -38,14 +40,16 @@ func NewUdpSession(id [32]byte, sendKey, recvKey []byte, isServer bool, nonceBuf
 	}
 
 	return &DefaultUdpSession{
-		SessionId:  id,
-		sendCipher: sendCipher,
-		recvCipher: recvCipher,
-		RecvNonce:  NewNonce(),
-		SendNonce:  NewNonce(),
-		isServer:   isServer,
-		nonceBuf:   NewNonceBuf(nonceBufferSize),
-		encoder:    DefaultUDPEncoder{},
+		SessionId:        id,
+		sendCipher:       sendCipher,
+		recvCipher:       recvCipher,
+		RecvNonce:        NewNonce(),
+		SendNonce:        NewNonce(),
+		isServer:         isServer,
+		nonceBuf:         NewNonceBuf(nonceBufferSize),
+		encoder:          DefaultUDPEncoder{},
+		encryptionAadBuf: make([]byte, 80),
+		decryptionAadBuf: make([]byte, 80),
 	}, nil
 }
 
@@ -62,7 +66,7 @@ func (s *DefaultUdpSession) InplaceEncrypt(data []byte) ([]byte, error) {
 		return nil, nonceEncodingErr
 	}
 
-	aad := s.CreateAAD(s.isServer, data[:12])
+	aad := s.InplaceCreateAAD(s.isServer, data[:12], s.encryptionAadBuf)
 	ciphertext := s.sendCipher.Seal(plaintext[:0], data[:12], plaintext, aad)
 
 	return data[:len(ciphertext)+12], nil
@@ -119,4 +123,16 @@ func (s *DefaultUdpSession) CreateAAD(isServerToClient bool, nonce []byte) []byt
 	aad := append(s.SessionId[:], direction...)
 	aad = append(aad, nonce...)
 	return aad
+}
+
+func (s *DefaultUdpSession) InplaceCreateAAD(isServerToClient bool, nonce, aad []byte) []byte {
+	direction := []byte("client-to-server")
+	if isServerToClient {
+		direction = []byte("server-to-client")
+	}
+
+	copy(aad[:32], s.SessionId[:])
+	copy(aad[len(s.SessionId[:]):], direction)
+	copy(aad[len(s.SessionId[:])+len(direction):], nonce)
+	return aad[:len(s.SessionId[:])+len(direction)+len(nonce)]
 }
