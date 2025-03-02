@@ -49,3 +49,9 @@ func (n *Nonce) Encode() []byte {
 
 	return nonce[:]
 }
+
+func (n *Nonce) InplaceEncode(data []byte) error {
+	binary.BigEndian.PutUint64(data[:8], n.low)
+	binary.BigEndian.PutUint32(data[8:], n.high)
+	return nil
+}

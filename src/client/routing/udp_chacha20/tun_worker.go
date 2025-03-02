@@ -2,6 +2,7 @@ package udp_chacha20
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"log"
@@ -99,7 +100,7 @@ func (w *udpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnec
 		case <-ctx.Done(): // Stop-signal
 			return nil
 		default:
-			n, err := w.router.tun.Read(buf)
+			n, err := w.router.tun.Read(buf[12:])
 			if err != nil {
 				if ctx.Err() != nil {
 					return nil
@@ -108,7 +109,9 @@ func (w *udpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnec
 				triggerReconnect()
 			}
 
-			encryptedPacket, err := w.session.Encrypt(buf[:n])
+			binary.BigEndian.PutUint32(buf[:12], uint32(n+12))
+
+			encryptedPacket, err := w.session.Encrypt(buf)
 			if err != nil {
 				log.Printf("failed to encrypt packet: %v", err)
 				continue

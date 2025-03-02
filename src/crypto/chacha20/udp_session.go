@@ -2,6 +2,7 @@ package chacha20
 
 import (
 	"crypto/cipher"
+	"encoding/binary"
 	"fmt"
 	"golang.org/x/crypto/chacha20poly1305"
 )
@@ -46,23 +47,23 @@ func NewUdpSession(id [32]byte, sendKey, recvKey []byte, isServer bool, nonceBuf
 	}, nil
 }
 
-func (s *DefaultUdpSession) Encrypt(plaintext []byte) ([]byte, error) {
+func (s *DefaultUdpSession) Encrypt(data []byte) ([]byte, error) {
+	packageLen := binary.BigEndian.Uint32(data[:12])
+	plaintext := data[12 : 12+packageLen]
 	err := s.SendNonce.incrementNonce()
 	if err != nil {
 		return nil, err
 	}
 
-	nonceBytes := s.SendNonce.Encode()
-
-	aad := s.CreateAAD(s.isServer, nonceBytes)
-	ciphertext := s.sendCipher.Seal(plaintext[:0], nonceBytes, plaintext, aad)
-
-	packet, packetErr := s.encoder.Encode(ciphertext, s.SendNonce)
-	if packetErr != nil {
-		return nil, packetErr
+	nonceEncodingErr := s.SendNonce.InplaceEncode(data[:12])
+	if nonceEncodingErr != nil {
+		return nil, nonceEncodingErr
 	}
 
-	return packet.Payload, nil
+	aad := s.CreateAAD(s.isServer, data[:12])
+	ciphertext := s.sendCipher.Seal(plaintext[:0], data[:12], plaintext, aad)
+
+	return data[:len(ciphertext)+12], nil
 }
 
 func (s *DefaultUdpSession) Decrypt(ciphertext []byte) ([]byte, error) {
