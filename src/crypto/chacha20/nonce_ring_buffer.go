@@ -9,8 +9,9 @@ type NonceBuf struct {
 	size       int
 	lastInsert int
 	nextRead   int
-	set        map[string]struct{}
+	set        map[[12]byte]struct{}
 	setMu      sync.Mutex
+	keyBuf     [12]byte
 }
 
 func NewNonceBuf(size int) *NonceBuf {
@@ -19,12 +20,12 @@ func NewNonceBuf(size int) *NonceBuf {
 		size:       size,
 		lastInsert: -1,
 		nextRead:   0,
-		set:        make(map[string]struct{}),
+		set:        make(map[[12]byte]struct{}),
 	}
 }
 
 func (r *NonceBuf) Insert(input *Nonce) error {
-	hash := input.Hash()
+	hash := input.Hash(r.keyBuf)
 	if r.contains(hash) {
 		return ErrNonUniqueNonce
 	}
@@ -33,7 +34,7 @@ func (r *NonceBuf) Insert(input *Nonce) error {
 
 	//if set contains old nonce, remove it from set
 	if oldNonce := r.data[r.lastInsert]; oldNonce != nil {
-		r.removeFromSet(oldNonce.Hash())
+		r.removeFromSet(oldNonce.Hash(r.keyBuf))
 	}
 
 	r.data[r.lastInsert] = input
@@ -46,7 +47,7 @@ func (r *NonceBuf) Insert(input *Nonce) error {
 	return nil
 }
 
-func (r *NonceBuf) contains(key string) bool {
+func (r *NonceBuf) contains(key [12]byte) bool {
 	r.setMu.Lock()
 	defer r.setMu.Unlock()
 	_, exist := r.set[key]
@@ -54,13 +55,13 @@ func (r *NonceBuf) contains(key string) bool {
 	return exist
 }
 
-func (r *NonceBuf) addToSet(key string) {
+func (r *NonceBuf) addToSet(key [12]byte) {
 	r.setMu.Lock()
 	defer r.setMu.Unlock()
 	r.set[key] = struct{}{}
 }
 
-func (r *NonceBuf) removeFromSet(key string) {
+func (r *NonceBuf) removeFromSet(key [12]byte) {
 	r.setMu.Lock()
 	defer r.setMu.Unlock()
 	delete(r.set, key)
