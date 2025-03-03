@@ -63,7 +63,7 @@ func (s *DefaultUdpSession) Encrypt(data []byte) ([]byte, error) {
 
 	_ = s.SendNonce.InplaceEncode(data[:12])
 
-	aad := s.InplaceCreateAAD(s.isServer, data[:12], s.encryptionAadBuf)
+	aad := s.CreateAAD(s.isServer, data[:12], s.encryptionAadBuf)
 	ciphertext := s.sendCipher.Seal(plaintext[:0], data[:12], plaintext, aad)
 
 	return data[:len(ciphertext)+12], nil
@@ -79,7 +79,7 @@ func (s *DefaultUdpSession) Decrypt(ciphertext []byte) ([]byte, error) {
 		return nil, nBErr
 	}
 
-	aad := s.InplaceCreateAAD(!s.isServer, nonceBytes[:], s.decryptionAadBuf)
+	aad := s.CreateAAD(!s.isServer, nonceBytes[:], s.decryptionAadBuf)
 	plaintext, err := s.recvCipher.Open(payloadBytes[:0], nonceBytes, payloadBytes, aad)
 	if err != nil {
 		// Properly handle failed decryption attempt to avoid reuse of any state
@@ -89,7 +89,7 @@ func (s *DefaultUdpSession) Decrypt(ciphertext []byte) ([]byte, error) {
 	return plaintext, nil
 }
 
-func (s *DefaultUdpSession) InplaceCreateAAD(isServerToClient bool, nonce, aad []byte) []byte {
+func (s *DefaultUdpSession) CreateAAD(isServerToClient bool, nonce, aad []byte) []byte {
 	direction := []byte("client-to-server")
 	if isServerToClient {
 		direction = []byte("server-to-client")
