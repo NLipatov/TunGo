@@ -14,15 +14,18 @@ import (
 )
 
 type tcpTunWorker struct {
-	router  *TCPRouter
-	conn    net.Conn
-	session crypto.Session
-	encoder chacha20.TCPEncoder
-	err     error
+	router        *TCPRouter
+	conn          net.Conn
+	session       crypto.Session
+	encoder       chacha20.TCPEncoder
+	tunReadBuffer []byte
+	err           error
 }
 
 func newTcpTunWorker() *tcpTunWorker {
-	return &tcpTunWorker{}
+	return &tcpTunWorker{
+		tunReadBuffer: make([]byte, network.IPPacketMaxSizeBytes+4+chacha20poly1305.Overhead),
+	}
 }
 
 func (w *tcpTunWorker) UseRouter(router *TCPRouter) *tcpTunWorker {
@@ -93,7 +96,6 @@ func (w *tcpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnec
 	if workerSetupErr != nil {
 		return workerSetupErr
 	}
-	buf := make([]byte, network.IPPacketMaxSizeBytes+4+chacha20poly1305.Overhead)
 	reader := chacha20.NewTcpReader(w.router.tun)
 
 	go func() {
@@ -107,7 +109,7 @@ func (w *tcpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnec
 		case <-ctx.Done(): // Stop-signal
 			return nil
 		default:
-			n, err := reader.Read(buf)
+			n, err := reader.Read(w.tunReadBuffer)
 			if err != nil {
 				if ctx.Err() != nil {
 					return nil
@@ -116,19 +118,19 @@ func (w *tcpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnec
 				triggerReconnect()
 			}
 
-			_, err = w.session.Encrypt(buf[4 : n+4])
+			_, err = w.session.Encrypt(w.tunReadBuffer[4 : n+4])
 			if err != nil {
 				log.Printf("failed to encrypt packet: %v", err)
 				continue
 			}
 
-			encodingErr := w.encoder.Encode(buf[:n+4+chacha20poly1305.Overhead])
+			encodingErr := w.encoder.Encode(w.tunReadBuffer[:n+4+chacha20poly1305.Overhead])
 			if encodingErr != nil {
 				log.Printf("failed to encode packet: %v", encodingErr)
 				continue
 			}
 
-			_, err = w.conn.Write(buf[:n+4+chacha20poly1305.Overhead])
+			_, err = w.conn.Write(w.tunReadBuffer[:n+4+chacha20poly1305.Overhead])
 			if err != nil {
 				log.Printf("write to TCP failed: %s", err)
 				triggerReconnect()
@@ -142,7 +144,7 @@ func (w *tcpTunWorker) HandlePacketsFromConn(ctx context.Context, connCancel con
 	if workerSetupErr != nil {
 		return workerSetupErr
 	}
-	buf := make([]byte, network.IPPacketMaxSizeBytes)
+	buf := make([]byte, network.IPPacketMaxSizeBytes+4)
 
 	go func() {
 		<-ctx.Done()
