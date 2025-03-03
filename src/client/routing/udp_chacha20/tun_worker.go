@@ -134,7 +134,16 @@ func (w *udpTunWorker) HandlePacketsFromConn(ctx context.Context, connCancel con
 	if workerSetupErr != nil {
 		return workerSetupErr
 	}
-	buf := make([]byte, ip.MaxPacketLengthBytes+12)
+	dataBuf := make([]byte, ip.MaxPacketLengthBytes+12)
+	oobBuf := make([]byte, 1024)
+	err := w.conn.SetReadBuffer(4 * 1024 * 1024)
+	if err != nil {
+		log.Printf("SetReadBuffer error: %v", err)
+	}
+	err = w.conn.SetWriteBuffer(4 * 1024 * 1024)
+	if err != nil {
+		log.Printf("SetWriteBuffer error: %v", err)
+	}
 
 	go func() {
 		<-ctx.Done()
@@ -146,33 +155,31 @@ func (w *udpTunWorker) HandlePacketsFromConn(ctx context.Context, connCancel con
 		case <-ctx.Done(): // Stop-signal
 			return nil
 		default:
-			n, _, err := w.conn.ReadFromUDP(buf)
-			if err != nil {
+			n, _, _, _, readErr := w.conn.ReadMsgUDP(dataBuf, oobBuf)
+			if readErr != nil {
 				if ctx.Err() != nil {
 					return nil
 				}
-				log.Printf("read from UDP failed: %v", err)
+				log.Printf("read from UDP failed: %v", readErr)
 				connCancel()
-				return nil
+				return readErr
 			}
 
-			decrypted, decryptionErr := w.session.InplaceDecrypt(buf[:n])
+			decrypted, decryptionErr := w.session.InplaceDecrypt(dataBuf[:n])
 			if decryptionErr != nil {
 				if errors.Is(decryptionErr, chacha20.ErrNonUniqueNonce) {
 					log.Printf("reconnecting on critical decryption err: %s", decryptionErr)
 					connCancel()
 					return nil
 				}
-
 				log.Printf("failed to decrypt data: %s", decryptionErr)
 				continue
 			}
 
-			// Write the decrypted packet to the TUN interface
-			_, err = w.router.tun.Write(decrypted)
-			if err != nil {
-				log.Printf("failed to write to TUN: %v", err)
-				return err
+			_, writeErr := w.router.tun.Write(decrypted)
+			if writeErr != nil {
+				log.Printf("failed to write to TUN: %v", writeErr)
+				return writeErr
 			}
 		}
 	}
