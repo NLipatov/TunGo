@@ -95,6 +95,7 @@ func (w *tcpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnec
 		return workerSetupErr
 	}
 	buf := make([]byte, network.IPPacketMaxSizeBytes+4+chacha20poly1305.Overhead)
+	reader := chacha20.NewTcpReader(w.router.tun)
 
 	go func() {
 		<-ctx.Done()
@@ -107,7 +108,7 @@ func (w *tcpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnec
 		case <-ctx.Done(): // Stop-signal
 			return nil
 		default:
-			n, err := w.router.tun.Read(buf[4:])
+			n, err := reader.Read(buf)
 			if err != nil {
 				if ctx.Err() != nil {
 					return nil
