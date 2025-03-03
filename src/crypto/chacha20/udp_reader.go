@@ -17,14 +17,14 @@ func NewUdpReader(buffer []byte, reader io.Reader) *UdpReader {
 	}
 }
 
-func (r *UdpReader) Read() error {
+func (r *UdpReader) Read() (int, error) {
 	n, err := r.reader.Read(r.buffer[12:])
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	// put payload length into first 12 bytes
 	binary.BigEndian.PutUint32(r.buffer[:12], uint32(n+12))
 
-	return nil
+	return n, nil
 }

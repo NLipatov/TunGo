@@ -100,7 +100,7 @@ func (w *udpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnec
 		case <-ctx.Done(): // Stop-signal
 			return nil
 		default:
-			readErr := udpReader.Read()
+			_, readErr := udpReader.Read()
 			if readErr != nil {
 				if ctx.Err() != nil {
 					return nil

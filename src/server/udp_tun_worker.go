@@ -40,14 +40,15 @@ func NewUdpTunWorker(ctx context.Context, tun *os.File, settings settings.Connec
 }
 
 func (u *UdpTunWorker) TunToUDP() {
-	buf := make([]byte, ip.MaxPacketLengthBytes)
+	buf := make([]byte, ip.MaxPacketLengthBytes+12)
+	udpReader := chacha20.NewUdpReader(buf, u.tun)
 
 	for {
 		select {
 		case <-u.ctx.Done():
 			return
 		default:
-			n, err := u.tun.Read(buf)
+			n, err := udpReader.Read()
 			if err != nil {
 				if u.ctx.Done() != nil {
 					return
@@ -73,13 +74,13 @@ func (u *UdpTunWorker) TunToUDP() {
 			}
 
 			// Check IP version
-			ipVersion := buf[0] >> 4
+			ipVersion := buf[12] >> 4
 			if ipVersion == 6 {
 				// Skip IPv6 packet
 				continue
 			}
 
-			header, err := packets.Parse(buf[:n])
+			header, err := packets.Parse(buf[12 : n+12])
 			if err != nil {
 				log.Printf("failed to parse IP header: %v", err)
 				continue
@@ -102,7 +103,7 @@ func (u *UdpTunWorker) TunToUDP() {
 			}
 			session := sessionValue.(*chacha20.DefaultUdpSession)
 
-			encryptedPacket, encryptErr := session.Encrypt(buf[:n])
+			encryptedPacket, encryptErr := session.InplaceEncrypt(buf)
 			if encryptErr != nil {
 				log.Printf("failed to encrypt packet: %s", encryptErr)
 				continue
