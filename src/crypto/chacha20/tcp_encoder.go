@@ -26,12 +26,11 @@ func (p *DefaultTCPEncoder) Decode(data []byte) (*TCPPacket, error) {
 }
 
 func (p *DefaultTCPEncoder) Encode(payload []byte) (*TCPPacket, error) {
-	length := uint32(len(payload))
-	lengthBuf := make([]byte, 4)
-	binary.BigEndian.PutUint32(lengthBuf, length)
+	length := uint32(len(payload[4:]))
+	binary.BigEndian.PutUint32(payload[:4], length)
 
 	return &TCPPacket{
 		Length:  length,
-		Payload: append(lengthBuf, payload...),
+		Payload: payload,
 	}, nil
 }

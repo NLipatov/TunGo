@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"golang.org/x/crypto/chacha20poly1305"
 	"io"
 	"log"
 	"net"
@@ -93,32 +94,11 @@ func (w *tcpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnec
 	if workerSetupErr != nil {
 		return workerSetupErr
 	}
-	buf := make([]byte, network.IPPacketMaxSizeBytes)
-	connWriteChan := make(chan []byte, getConnWriteBufferSize())
+	buf := make([]byte, network.IPPacketMaxSizeBytes+4+chacha20poly1305.Overhead)
 
 	go func() {
 		<-ctx.Done()
 		_ = w.conn.Close()
-	}()
-
-	//writes whatever comes from chan to TCP
-	go func() {
-		for {
-			select {
-			case <-ctx.Done(): // Stop-signal
-				return
-			case data, ok := <-connWriteChan:
-				if !ok { //if connWriteChan is closed
-					return
-				}
-				_, err := w.conn.Write(data)
-				if err != nil {
-					log.Printf("write to TCP failed: %s", err)
-					triggerReconnect()
-					return
-				}
-			}
-		}
 	}()
 
 	//passes anything from tun to chan
@@ -127,7 +107,7 @@ func (w *tcpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnec
 		case <-ctx.Done(): // Stop-signal
 			return nil
 		default:
-			n, err := w.router.tun.Read(buf)
+			n, err := w.router.tun.Read(buf[4:])
 			if err != nil {
 				if ctx.Err() != nil {
 					return nil
@@ -136,23 +116,22 @@ func (w *tcpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnec
 				triggerReconnect()
 			}
 
-			encryptedPacket, err := w.session.Encrypt(buf[:n])
+			_, err = w.session.Encrypt(buf[4 : n+4])
 			if err != nil {
 				log.Printf("failed to encrypt packet: %v", err)
 				continue
 			}
 
-			packet, err := w.encoder.Encode(encryptedPacket)
+			_, err = w.encoder.Encode(buf[:n+4+chacha20poly1305.Overhead])
 			if err != nil {
 				log.Printf("packet encoding failed: %s", err)
 				continue
 			}
 
-			select {
-			case <-ctx.Done():
-				close(connWriteChan)
-				return nil
-			case connWriteChan <- packet.Payload:
+			_, err = w.conn.Write(buf[:n+4+chacha20poly1305.Overhead])
+			if err != nil {
+				log.Printf("write to TCP failed: %s", err)
+				triggerReconnect()
 			}
 		}
 	}
