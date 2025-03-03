@@ -6,25 +6,23 @@ import (
 )
 
 type UdpReader struct {
-	buffer []byte
 	reader io.Reader
 }
 
-func NewUdpReader(buffer []byte, reader io.Reader) *UdpReader {
+func NewUdpReader(reader io.Reader) *UdpReader {
 	return &UdpReader{
-		buffer: buffer,
 		reader: reader,
 	}
 }
 
-func (r *UdpReader) Read() (int, error) {
-	n, err := r.reader.Read(r.buffer[12:])
+func (r *UdpReader) Read(buffer []byte) (int, error) {
+	n, err := r.reader.Read(buffer[12:])
 	if err != nil {
 		return 0, err
 	}
 
 	// put payload length into first 12 bytes
-	binary.BigEndian.PutUint32(r.buffer[:12], uint32(n+12))
+	binary.BigEndian.PutUint32(buffer[:12], uint32(n+12))
 
 	return n, nil
 }

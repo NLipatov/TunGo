@@ -92,7 +92,7 @@ func (w *udpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnec
 		return workerSetupErr
 	}
 	buf := make([]byte, ip.MaxPacketLengthBytes+12)
-	udpReader := chacha20.NewUdpReader(buf, w.router.tun)
+	udpReader := chacha20.NewUdpReader(w.router.tun)
 	_ = w.conn.SetWriteBuffer(len(buf))
 
 	// Main loop to read from TUN and send data
@@ -101,7 +101,7 @@ func (w *udpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnec
 		case <-ctx.Done(): // Stop-signal
 			return nil
 		default:
-			_, readErr := udpReader.Read()
+			_, readErr := udpReader.Read(buf)
 			if readErr != nil {
 				if ctx.Err() != nil {
 					return nil

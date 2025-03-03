@@ -41,14 +41,14 @@ func NewUdpTunWorker(ctx context.Context, tun *os.File, settings settings.Connec
 
 func (u *UdpTunWorker) TunToUDP() {
 	buf := make([]byte, ip.MaxPacketLengthBytes+12)
-	udpReader := chacha20.NewUdpReader(buf, u.tun)
+	udpReader := chacha20.NewUdpReader(u.tun)
 
 	for {
 		select {
 		case <-u.ctx.Done():
 			return
 		default:
-			n, err := udpReader.Read()
+			n, err := udpReader.Read(buf)
 			if err != nil {
 				if u.ctx.Done() != nil {
 					return
