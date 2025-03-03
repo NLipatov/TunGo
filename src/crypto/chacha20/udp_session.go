@@ -12,8 +12,6 @@ type (
 	UdpSession interface {
 		// Encrypt deprecated, use InplaceEncrypt
 		Encrypt(plaintext []byte) ([]byte, error)
-		InplaceEncrypt(plaintext []byte) ([]byte, error)
-		InplaceDecrypt(ciphertext []byte) ([]byte, error)
 		Decrypt(ciphertext []byte) ([]byte, error)
 	}
 	DefaultUdpSession struct {
@@ -55,7 +53,7 @@ func NewUdpSession(id [32]byte, sendKey, recvKey []byte, isServer bool, nonceBuf
 	}, nil
 }
 
-func (s *DefaultUdpSession) InplaceEncrypt(data []byte) ([]byte, error) {
+func (s *DefaultUdpSession) Encrypt(data []byte) ([]byte, error) {
 	packageLen := binary.BigEndian.Uint32(data[:12])
 	plaintext := data[12 : 12+packageLen]
 	err := s.SendNonce.incrementNonce()
@@ -71,26 +69,7 @@ func (s *DefaultUdpSession) InplaceEncrypt(data []byte) ([]byte, error) {
 	return data[:len(ciphertext)+12], nil
 }
 
-func (s *DefaultUdpSession) Encrypt(plaintext []byte) ([]byte, error) {
-	err := s.SendNonce.incrementNonce()
-	if err != nil {
-		return nil, err
-	}
-
-	nonceBytes := s.SendNonce.Encode()
-
-	aad := s.CreateAAD(s.isServer, nonceBytes)
-	ciphertext := s.sendCipher.Seal(plaintext[:0], nonceBytes, plaintext, aad)
-
-	packet, packetErr := s.encoder.Encode(ciphertext, s.SendNonce)
-	if packetErr != nil {
-		return nil, packetErr
-	}
-
-	return packet.Payload, nil
-}
-
-func (s *DefaultUdpSession) InplaceDecrypt(ciphertext []byte) ([]byte, error) {
+func (s *DefaultUdpSession) Decrypt(ciphertext []byte) ([]byte, error) {
 	nonceBytes := ciphertext[:12]
 	payloadBytes := ciphertext[12:]
 
@@ -108,40 +87,6 @@ func (s *DefaultUdpSession) InplaceDecrypt(ciphertext []byte) ([]byte, error) {
 	}
 
 	return plaintext, nil
-}
-
-func (s *DefaultUdpSession) Decrypt(ciphertext []byte) ([]byte, error) {
-	packet, packetErr := s.encoder.Decode(ciphertext)
-	if packetErr != nil {
-		return nil, packetErr
-	}
-
-	nonceBytes := packet.Nonce.Encode()
-	payloadBytes := ciphertext[12:]
-
-	nBErr := s.nonceBuf.Insert(packet.Nonce)
-	if nBErr != nil {
-		return nil, nBErr
-	}
-	aad := s.CreateAAD(!s.isServer, nonceBytes[:])
-	plaintext, err := s.recvCipher.Open(payloadBytes[:0], nonceBytes, payloadBytes, aad)
-	if err != nil {
-		// Properly handle failed decryption attempt to avoid reuse of any state
-		return nil, fmt.Errorf("failed to decrypt: %w", err)
-	}
-
-	return plaintext, nil
-}
-
-func (s *DefaultUdpSession) CreateAAD(isServerToClient bool, nonce []byte) []byte {
-	direction := []byte("client-to-server")
-	if isServerToClient {
-		direction = []byte("server-to-client")
-	}
-
-	aad := append(s.SessionId[:], direction...)
-	aad = append(aad, nonce...)
-	return aad
 }
 
 func (s *DefaultUdpSession) InplaceCreateAAD(isServerToClient bool, nonce, aad []byte) []byte {

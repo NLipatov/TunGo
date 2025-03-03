@@ -103,7 +103,7 @@ func (u *UdpTunWorker) TunToUDP() {
 			}
 			session := sessionValue.(*chacha20.DefaultUdpSession)
 
-			encryptedPacket, encryptErr := session.InplaceEncrypt(buf)
+			encryptedPacket, encryptErr := session.Encrypt(buf)
 			if encryptErr != nil {
 				log.Printf("failed to encrypt packet: %s", encryptErr)
 				continue

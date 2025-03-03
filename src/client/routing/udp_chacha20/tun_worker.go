@@ -110,7 +110,7 @@ func (w *udpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnec
 				triggerReconnect()
 			}
 
-			encryptedPacket, err := w.session.InplaceEncrypt(buf)
+			encryptedPacket, err := w.session.Encrypt(buf)
 			if err != nil {
 				log.Printf("failed to encrypt packet: %v", err)
 				continue
@@ -165,7 +165,7 @@ func (w *udpTunWorker) HandlePacketsFromConn(ctx context.Context, connCancel con
 				return readErr
 			}
 
-			decrypted, decryptionErr := w.session.InplaceDecrypt(dataBuf[:n])
+			decrypted, decryptionErr := w.session.Decrypt(dataBuf[:n])
 			if decryptionErr != nil {
 				if errors.Is(decryptionErr, chacha20.ErrNonUniqueNonce) {
 					log.Printf("reconnecting on critical decryption err: %s", decryptionErr)
