@@ -2,9 +2,9 @@ package chacha20
 
 import (
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 	"sync"
+	"unsafe"
 )
 
 type Nonce struct {
@@ -15,6 +15,13 @@ type Nonce struct {
 
 func NewNonce() *Nonce {
 	return &Nonce{low: 0, high: 0}
+}
+
+func (n *Nonce) Hash(buffer [12]byte) [12]byte {
+	keyBuf := n.Encode(buffer[:])
+
+	//converts keyBuf to [12]byte with no allocations
+	return *(*[12]byte)(unsafe.Pointer(&keyBuf[0]))
 }
 
 func (n *Nonce) incrementNonce() error {
@@ -36,16 +43,8 @@ func (n *Nonce) incrementNonce() error {
 	return nil
 }
 
-func (n *Nonce) Hash() string {
-	nonce := n.Encode()
-
-	return hex.EncodeToString(nonce[:])
-}
-
-func (n *Nonce) Encode() []byte {
-	var nonce [12]byte
-	binary.BigEndian.PutUint64(nonce[:8], n.low)
-	binary.BigEndian.PutUint32(nonce[8:], n.high)
-
-	return nonce[:]
+func (n *Nonce) Encode(buffer []byte) []byte {
+	binary.BigEndian.PutUint64(buffer[:8], n.low)
+	binary.BigEndian.PutUint32(buffer[8:], n.high)
+	return buffer
 }

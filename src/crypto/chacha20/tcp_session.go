@@ -10,13 +10,17 @@ import (
 )
 
 type TcpSession struct {
-	sendCipher cipher.AEAD
-	recvCipher cipher.AEAD
-	SendNonce  *Nonce
-	RecvNonce  *Nonce
-	isServer   bool
-	SessionId  [32]byte
-	nonceBuf   *NonceBuf
+	sendCipher         cipher.AEAD
+	recvCipher         cipher.AEAD
+	SendNonce          *Nonce
+	RecvNonce          *Nonce
+	isServer           bool
+	SessionId          [32]byte
+	nonceBuf           *NonceBuf
+	encryptionAadBuf   []byte
+	decryptionAadBuf   []byte
+	encryptionNonceBuf [12]byte
+	decryptionNonceBuf [12]byte
 }
 
 func DeriveSessionId(sharedSecret []byte, salt []byte) ([32]byte, error) {
@@ -42,22 +46,21 @@ func NewTcpSession(id [32]byte, sendKey, recvKey []byte, isServer bool) (*TcpSes
 	}
 
 	return &TcpSession{
-		SessionId:  id,
-		sendCipher: sendCipher,
-		recvCipher: recvCipher,
-		RecvNonce:  NewNonce(),
-		SendNonce:  NewNonce(),
-		isServer:   isServer,
-		nonceBuf:   nil,
+		SessionId:          id,
+		sendCipher:         sendCipher,
+		recvCipher:         recvCipher,
+		RecvNonce:          NewNonce(),
+		SendNonce:          NewNonce(),
+		isServer:           isServer,
+		nonceBuf:           nil,
+		encryptionNonceBuf: [12]byte{},
+		decryptionNonceBuf: [12]byte{},
+		encryptionAadBuf:   make([]byte, 80),
+		decryptionAadBuf:   make([]byte, 80),
 	}, nil
 }
 
 func (s *TcpSession) UseNonceRingBuffer(size int) *TcpSession {
-	if size < 1024 {
-		size = 1024
-	}
-
-	s.nonceBuf = NewNonceBuf(size)
 	return s
 }
 
@@ -67,9 +70,9 @@ func (s *TcpSession) Encrypt(plaintext []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	nonceBytes := s.SendNonce.Encode()
+	nonceBytes := s.SendNonce.Encode(s.encryptionNonceBuf[:])
 
-	aad := s.CreateAAD(s.isServer, nonceBytes)
+	aad := s.CreateAAD(s.isServer, nonceBytes, s.encryptionAadBuf)
 	ciphertext := s.sendCipher.Seal(plaintext[:0], nonceBytes, plaintext, aad)
 
 	return ciphertext, nil
@@ -81,9 +84,9 @@ func (s *TcpSession) Decrypt(ciphertext []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	nonceBytes := s.RecvNonce.Encode()
+	nonceBytes := s.RecvNonce.Encode(s.decryptionNonceBuf[:])
 
-	aad := s.CreateAAD(!s.isServer, nonceBytes)
+	aad := s.CreateAAD(!s.isServer, nonceBytes, s.decryptionAadBuf)
 	plaintext, err := s.recvCipher.Open(ciphertext[:0], nonceBytes, ciphertext, aad)
 	if err != nil {
 		// Properly handle failed decryption attempt to avoid reuse of any state
@@ -93,13 +96,14 @@ func (s *TcpSession) Decrypt(ciphertext []byte) ([]byte, error) {
 	return plaintext, nil
 }
 
-func (s *TcpSession) CreateAAD(isServerToClient bool, nonce []byte) []byte {
+func (s *TcpSession) CreateAAD(isServerToClient bool, nonce, aad []byte) []byte {
 	direction := []byte("client-to-server")
 	if isServerToClient {
 		direction = []byte("server-to-client")
 	}
 
-	aad := append(s.SessionId[:], direction...)
-	aad = append(aad, nonce...)
-	return aad
+	copy(aad, s.SessionId[:])
+	copy(aad[len(s.SessionId):], direction)
+	copy(aad[len(s.SessionId)+len(direction):], nonce)
+	return aad[:len(s.SessionId)+len(direction)+len(nonce)]
 }

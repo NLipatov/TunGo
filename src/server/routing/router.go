@@ -30,19 +30,21 @@ func StartTCPRouting(tunFile *os.File, settings settings.ConnectionSettings) err
 	var extToLocalIp sync.Map   // external ip to local ip map
 	var extIpToSession sync.Map // external ip to session map
 
+	tcpTunWorker := server.NewTcpTunWorker()
+
 	var wg sync.WaitGroup
 	wg.Add(2)
 
 	// TUN -> TCP
 	go func() {
 		defer wg.Done()
-		server.TunToTCP(tunFile, &extToLocalIp, &extIpToSession, ctx)
+		tcpTunWorker.TunToTCP(tunFile, &extToLocalIp, &extIpToSession, ctx)
 	}()
 
 	// TCP -> TUN
 	go func() {
 		defer wg.Done()
-		server.TCPToTun(settings, tunFile, &extToLocalIp, &extIpToSession, ctx)
+		tcpTunWorker.TCPToTun(settings, tunFile, &extToLocalIp, &extIpToSession, ctx)
 	}()
 
 	wg.Wait()
@@ -68,19 +70,21 @@ func StartUDPRouting(tunFile *os.File, settings settings.ConnectionSettings) err
 	var intIPToUDPClient sync.Map // external ip to local ip map
 	var intIPToSession sync.Map   // external ip to session map
 
+	udpTunWorker := server.NewUdpTunWorker(ctx, tunFile, settings, &intIPToUDPClient, &intIPToSession)
+
 	var wg sync.WaitGroup
 	wg.Add(2)
 
 	// TUN -> UDP
 	go func() {
 		defer wg.Done()
-		server.TunToUDP(tunFile, &intIPToUDPClient, &intIPToSession, ctx)
+		udpTunWorker.TunToUDP()
 	}()
 
 	// UDP -> TUN
 	go func() {
 		defer wg.Done()
-		server.UDPToTun(settings, tunFile, &intIPToUDPClient, &intIPToSession, ctx)
+		udpTunWorker.UDPToTun()
 	}()
 
 	wg.Wait()
