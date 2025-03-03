@@ -6,7 +6,7 @@ import (
 
 type (
 	TCPEncoder interface {
-		Decode(data []byte) (*TCPPacket, error)
+		Decode(data []byte, packet *TCPPacket) error
 		Encode(buffer []byte) error
 	}
 	DefaultTCPEncoder struct {
@@ -22,13 +22,10 @@ func NewDefaultTCPEncoder() DefaultTCPEncoder {
 	return DefaultTCPEncoder{}
 }
 
-func (p *DefaultTCPEncoder) Decode(data []byte) (*TCPPacket, error) {
-	length := uint32(len(data))
-
-	return &TCPPacket{
-		Length:  length,
-		Payload: data,
-	}, nil
+func (p *DefaultTCPEncoder) Decode(data []byte, packet *TCPPacket) error {
+	packet.Length = uint32(len(data))
+	packet.Payload = data
+	return nil
 }
 
 func (p *DefaultTCPEncoder) Encode(buffer []byte) error {

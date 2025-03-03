@@ -11,7 +11,6 @@ import (
 	"tungo/crypto"
 	"tungo/crypto/chacha20"
 	"tungo/network"
-	"tungo/settings/client"
 )
 
 type tcpTunWorker struct {
@@ -178,12 +177,7 @@ func (w *tcpTunWorker) HandlePacketsFromConn(ctx context.Context, connCancel con
 				continue
 			}
 
-			packet, err := w.encoder.Decode(buf[:length])
-			if err != nil {
-				log.Println(err)
-			}
-
-			decrypted, decryptionErr := w.session.Decrypt(packet.Payload)
+			decrypted, decryptionErr := w.session.Decrypt(buf[:length])
 			if decryptionErr != nil {
 				log.Printf("failed to decrypt data: %s", decryptionErr)
 				continue
@@ -197,14 +191,4 @@ func (w *tcpTunWorker) HandlePacketsFromConn(ctx context.Context, connCancel con
 			}
 		}
 	}
-}
-
-func getConnWriteBufferSize() int32 {
-	conf, err := (&client.Conf{}).Read()
-	if err != nil {
-		log.Println("failed to read connection buffer size from client configuration. Using fallback value: 125 000")
-		return 125_000
-	}
-
-	return conf.TCPWriteChannelBufferSize
 }
