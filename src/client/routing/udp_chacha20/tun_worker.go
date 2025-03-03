@@ -2,7 +2,6 @@ package udp_chacha20
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"log"
@@ -93,6 +92,7 @@ func (w *udpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnec
 		return workerSetupErr
 	}
 	buf := make([]byte, ip.MaxPacketLengthBytes+12)
+	udpReader := chacha20.NewUdpReader(buf, w.router.tun)
 
 	// Main loop to read from TUN and send data
 	for {
@@ -100,16 +100,14 @@ func (w *udpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnec
 		case <-ctx.Done(): // Stop-signal
 			return nil
 		default:
-			n, err := w.router.tun.Read(buf[12:])
-			if err != nil {
+			readErr := udpReader.Read()
+			if readErr != nil {
 				if ctx.Err() != nil {
 					return nil
 				}
-				log.Printf("failed to read from TUN: %v", err)
+				log.Printf("failed to read from TUN: %v", readErr)
 				triggerReconnect()
 			}
-
-			binary.BigEndian.PutUint32(buf[:12], uint32(n+12))
 
 			encryptedPacket, err := w.session.InplaceEncrypt(buf)
 			if err != nil {
