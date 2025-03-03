@@ -1,11 +1,13 @@
 package chacha20
 
-import "encoding/binary"
+import (
+	"encoding/binary"
+)
 
 type (
 	TCPEncoder interface {
 		Decode(data []byte) (*TCPPacket, error)
-		Encode(payload []byte) (*TCPPacket, error)
+		Encode(buffer []byte) error
 	}
 	DefaultTCPEncoder struct {
 	}
@@ -29,12 +31,9 @@ func (p *DefaultTCPEncoder) Decode(data []byte) (*TCPPacket, error) {
 	}, nil
 }
 
-func (p *DefaultTCPEncoder) Encode(payload []byte) (*TCPPacket, error) {
-	length := uint32(len(payload[4:]))
-	binary.BigEndian.PutUint32(payload[:4], length)
+func (p *DefaultTCPEncoder) Encode(buffer []byte) error {
+	length := uint32(len(buffer[4:]))
+	binary.BigEndian.PutUint32(buffer[:4], length)
 
-	return &TCPPacket{
-		Length:  length,
-		Payload: payload,
-	}, nil
+	return nil
 }

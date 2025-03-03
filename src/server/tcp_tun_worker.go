@@ -74,13 +74,13 @@ func (w *TcpTunWorker) TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpT
 					continue
 				}
 
-				packet, packetErr := encoder.Encode(buf[:n+4+chacha20poly1305.Overhead])
-				if packetErr != nil {
-					log.Printf("failder to encode a packet: %s", packetErr)
+				encodingErr := encoder.Encode(buf[:n+4+chacha20poly1305.Overhead])
+				if encodingErr != nil {
+					log.Printf("failed to encode packet: %v", encodingErr)
 					continue
 				}
 
-				_, connWriteErr := conn.Write(packet.Payload)
+				_, connWriteErr := conn.Write(buf[:n+4+chacha20poly1305.Overhead])
 				if connWriteErr != nil {
 					log.Printf("failed to write to TCP: %v", connWriteErr)
 					localIpMap.Delete(destinationIP)

@@ -123,9 +123,9 @@ func (w *tcpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnec
 				continue
 			}
 
-			_, err = w.encoder.Encode(buf[:n+4+chacha20poly1305.Overhead])
-			if err != nil {
-				log.Printf("packet encoding failed: %s", err)
+			encodingErr := w.encoder.Encode(buf[:n+4+chacha20poly1305.Overhead])
+			if encodingErr != nil {
+				log.Printf("failed to encode packet: %v", encodingErr)
 				continue
 			}
 
