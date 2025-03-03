@@ -16,6 +16,10 @@ type (
 	}
 )
 
+func NewDefaultTCPEncoder() DefaultTCPEncoder {
+	return DefaultTCPEncoder{}
+}
+
 func (p *DefaultTCPEncoder) Decode(data []byte) (*TCPPacket, error) {
 	length := uint32(len(data))
 

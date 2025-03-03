@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/binary"
+	"golang.org/x/crypto/chacha20poly1305"
 	"io"
 	"log"
 	"net"
@@ -23,13 +24,15 @@ func NewTcpTunWorker() TcpTunWorker {
 
 func (w *TcpTunWorker) TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map, ctx context.Context) {
 	buf := make([]byte, network.IPPacketMaxSizeBytes)
+	reader := chacha20.NewTcpReader(tunFile)
+	encoder := chacha20.NewDefaultTCPEncoder()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		default:
-			n, err := tunFile.Read(buf)
+			n, err := reader.Read(buf)
 			if err != nil {
 				if err == io.EOF {
 					log.Println("TUN interface closed, shutting down...")
@@ -44,7 +47,7 @@ func (w *TcpTunWorker) TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpT
 				log.Printf("failed to read from TUN, retrying: %v", err)
 				continue
 			}
-			data := buf[:n]
+			data := buf[4 : n+4]
 			if len(data) < 1 {
 				log.Printf("invalid IP data")
 				continue
@@ -65,15 +68,16 @@ func (w *TcpTunWorker) TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpT
 					continue
 				}
 				session := sessionValue.(*chacha20.TcpSession)
-				encryptedPacket, encryptErr := session.Encrypt(data)
+				_, encryptErr := session.Encrypt(buf[4 : n+4])
 				if encryptErr != nil {
 					log.Printf("failder to encrypt a package: %s", encryptErr)
 					continue
 				}
 
-				packet, packetEncodeErr := (&chacha20.DefaultTCPEncoder{}).Encode(encryptedPacket)
-				if packetEncodeErr != nil {
-					log.Printf("packet encoding failed: %s", packetEncodeErr)
+				packet, packetErr := encoder.Encode(buf[:n+4+chacha20poly1305.Overhead])
+				if packetErr != nil {
+					log.Printf("failder to encode a packet: %s", packetErr)
+					continue
 				}
 
 				_, connWriteErr := conn.Write(packet.Payload)
