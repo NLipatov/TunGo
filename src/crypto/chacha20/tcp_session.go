@@ -61,11 +61,6 @@ func NewTcpSession(id [32]byte, sendKey, recvKey []byte, isServer bool) (*TcpSes
 }
 
 func (s *TcpSession) UseNonceRingBuffer(size int) *TcpSession {
-	if size < 1024 {
-		size = 1024
-	}
-
-	s.nonceBuf = NewNonceBuf(size)
 	return s
 }
 
