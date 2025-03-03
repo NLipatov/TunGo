@@ -61,7 +61,7 @@ func (s *DefaultUdpSession) Encrypt(data []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	_ = s.SendNonce.InplaceEncode(data[:12])
+	_ = s.SendNonce.Encode(data[:12])
 
 	aad := s.CreateAAD(s.isServer, data[:12], s.encryptionAadBuf)
 	ciphertext := s.sendCipher.Seal(plaintext[:0], data[:12], plaintext, aad)

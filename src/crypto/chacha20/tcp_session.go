@@ -70,7 +70,7 @@ func (s *TcpSession) Encrypt(plaintext []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	nonceBytes := s.SendNonce.InplaceEncode(s.encryptionNonceBuf[:])
+	nonceBytes := s.SendNonce.Encode(s.encryptionNonceBuf[:])
 
 	aad := s.CreateAAD(s.isServer, nonceBytes, s.encryptionAadBuf)
 	ciphertext := s.sendCipher.Seal(plaintext[:0], nonceBytes, plaintext, aad)
@@ -84,7 +84,7 @@ func (s *TcpSession) Decrypt(ciphertext []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	nonceBytes := s.RecvNonce.InplaceEncode(s.decryptionNonceBuf[:])
+	nonceBytes := s.RecvNonce.Encode(s.decryptionNonceBuf[:])
 
 	aad := s.CreateAAD(!s.isServer, nonceBytes, s.decryptionAadBuf)
 	plaintext, err := s.recvCipher.Open(ciphertext[:0], nonceBytes, ciphertext, aad)

@@ -6,7 +6,6 @@ import (
 
 type (
 	UDPEncoder interface {
-		Encode(payload []byte, nonce *Nonce) (*UDPPacket, error)
 		Decode(data []byte) (*UDPPacket, error)
 	}
 	DefaultUDPEncoder struct {
@@ -16,17 +15,6 @@ type (
 		Payload []byte
 	}
 )
-
-func (p *DefaultUDPEncoder) Encode(payload []byte, nonce *Nonce) (*UDPPacket, error) {
-	data := make([]byte, len(payload)+12)
-	copy(data[:12], nonce.Encode())
-	copy(data[12:], payload)
-
-	return &UDPPacket{
-		Payload: data,
-		Nonce:   nonce,
-	}, nil
-}
 
 func (p *DefaultUDPEncoder) Decode(data []byte) (*UDPPacket, error) {
 	low := binary.BigEndian.Uint64(data[:8])

@@ -18,7 +18,7 @@ func NewNonce() *Nonce {
 }
 
 func (n *Nonce) Hash(buffer [12]byte) [12]byte {
-	keyBuf := n.InplaceEncode(buffer[:])
+	keyBuf := n.Encode(buffer[:])
 
 	//converts keyBuf to [12]byte with no allocations
 	return *(*[12]byte)(unsafe.Pointer(&keyBuf[0]))
@@ -43,16 +43,8 @@ func (n *Nonce) incrementNonce() error {
 	return nil
 }
 
-func (n *Nonce) Encode() []byte {
-	var nonce [12]byte
-	binary.BigEndian.PutUint64(nonce[:8], n.low)
-	binary.BigEndian.PutUint32(nonce[8:], n.high)
-
-	return nonce[:]
-}
-
-func (n *Nonce) InplaceEncode(data []byte) []byte {
-	binary.BigEndian.PutUint64(data[:8], n.low)
-	binary.BigEndian.PutUint32(data[8:], n.high)
-	return data
+func (n *Nonce) Encode(buffer []byte) []byte {
+	binary.BigEndian.PutUint64(buffer[:8], n.low)
+	binary.BigEndian.PutUint32(buffer[8:], n.high)
+	return buffer
 }
