@@ -93,6 +93,7 @@ func (w *udpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnec
 	}
 	buf := make([]byte, ip.MaxPacketLengthBytes+12)
 	udpReader := chacha20.NewUdpReader(buf, w.router.tun)
+	_ = w.conn.SetWriteDeadline(time.Now().Add(time.Second * 1))
 
 	// Main loop to read from TUN and send data
 	for {
@@ -115,20 +116,15 @@ func (w *udpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnec
 				continue
 			}
 
-			writeOrReconnect(w.conn, &encryptedPacket, ctx, triggerReconnect)
+			_, err = w.conn.Write(encryptedPacket)
+			if err != nil {
+				log.Printf("write to UDP failed: %s", err)
+				if ctx.Err() != nil {
+					return nil
+				}
+				triggerReconnect()
+			}
 		}
-	}
-}
-
-func writeOrReconnect(conn *net.UDPConn, data *[]byte, ctx context.Context, connCancel context.CancelFunc) {
-	_ = conn.SetWriteDeadline(time.Now().Add(time.Second * 1))
-	_, err := conn.Write(*data)
-	if err != nil {
-		log.Printf("write to UDP failed: %s", err)
-		if ctx.Err() != nil {
-			return
-		}
-		connCancel()
 	}
 }
 
