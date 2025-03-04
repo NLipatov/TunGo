@@ -195,38 +195,35 @@ func TestTcpTunWorker_HandlePacketsFromTun(t *testing.T) {
 }
 
 // TestTcpTunWorker_HandlePacketsFromConn simulates reading a TCP-encoded packet, decrypting it, and writing to TUN.
+// В TestTcpTunWorker_HandlePacketsFromConn создаём пакет с префиксом длины
 func TestTcpTunWorker_HandlePacketsFromConn(t *testing.T) {
 	// Prepare fake decrypted data.
 	plainData := []byte("hello from TCP")
-	// Use fake session to simulate encryption.
 	sess := &fakeSession{}
-	encryptedData, err := sess.Encrypt(plainData)
+	encryptedPayload, err := sess.Encrypt(plainData)
 	if err != nil {
 		t.Fatalf("failed to encrypt test data: %v", err)
 	}
 	// Encode the encrypted data using DefaultTCPEncoder.
+	packetLen := len(encryptedPayload)
+	encodedPacket := make([]byte, 4+packetLen)
+	copy(encodedPacket[4:], encryptedPayload)
 	encoder := &chacha20.DefaultTCPEncoder{}
-	packet, err := encoder.Encode(encryptedData)
-	if err != nil {
+	if err = encoder.Encode(encodedPacket); err != nil {
 		t.Fatalf("failed to encode packet: %v", err)
 	}
 	// Create a buffer that simulates the TCP connection read stream.
 	// The worker will first read 4 bytes (length) then the rest.
 	var buf bytes.Buffer
-	buf.Write(packet.Payload) // packet.Payload already includes 4-byte length prefix
+	buf.Write(encodedPacket)
 
-	// Create a fake TCP connection that reads from buf.
 	fakeConn := newFakeTCPConn(buf.Bytes())
-
-	// Prepare fake TUN to capture written decrypted data.
 	fakeTun := &fakeTun{}
 
-	// Create a dummy TCPRouter that holds the fake TUN.
 	router := &TCPRouter{
 		TunConfigurator: &fakeTunConfigurator{tun: fakeTun},
 		Settings:        settings.ConnectionSettings{},
 	}
-	// Ensure router.tun is set.
 	router.tun = router.TunConfigurator.Configure(router.Settings)
 
 	worker, err := newTcpTunWorker().
@@ -240,21 +237,17 @@ func TestTcpTunWorker_HandlePacketsFromConn(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	// Cancel context after a short delay.
 	go func() {
 		time.Sleep(100 * time.Millisecond)
 		cancel()
 	}()
 
-	// Run HandlePacketsFromConn in a goroutine.
 	go func() {
 		_ = worker.HandlePacketsFromConn(ctx, cancel)
 	}()
 
-	// Wait until context is cancelled.
 	<-ctx.Done()
 
-	// Verify that the fake TUN has received the decrypted data.
 	fakeTun.mu.Lock()
 	defer fakeTun.mu.Unlock()
 	if len(fakeTun.written) == 0 {
