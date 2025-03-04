@@ -3,7 +3,7 @@ package udp_chacha20
 import (
 	"context"
 	"errors"
-	"log"
+	"fmt"
 	"net"
 	"time"
 	"tungo/crypto/chacha20"
@@ -24,7 +24,7 @@ func newChacha20UdpWorker(router *UDPRouter, conn *net.UDPConn, session chacha20
 	}
 }
 
-func (w *chacha20UdpWorker) HandleTun(ctx context.Context, triggerReconnect context.CancelFunc) error {
+func (w *chacha20UdpWorker) HandleTun(ctx context.Context, cancelFunc context.CancelFunc) error {
 	buf := make([]byte, ip.MaxPacketLengthBytes+12)
 	udpReader := chacha20.NewUdpReader(w.router.tun)
 	_ = w.conn.SetWriteBuffer(len(buf))
@@ -40,32 +40,39 @@ func (w *chacha20UdpWorker) HandleTun(ctx context.Context, triggerReconnect cont
 				if ctx.Err() != nil {
 					return nil
 				}
-				log.Printf("failed to read from TUN: %v", readErr)
-				triggerReconnect()
+
+				cancelFunc()
+				return fmt.Errorf("could not read a packet from TUN: %v", readErr)
 			}
 
-			encryptedPacket, err := w.session.Encrypt(buf)
-			if err != nil {
-				log.Printf("failed to encrypt packet: %v", err)
-				continue
-			}
-
-			_ = w.conn.SetWriteDeadline(time.Now().Add(time.Second * 2))
-			_, err = w.conn.Write(encryptedPacket)
-			if err != nil {
-				log.Printf("write to UDP failed: %s", err)
+			encryptedPacket, EncryptErr := w.session.Encrypt(buf)
+			if EncryptErr != nil {
 				if ctx.Err() != nil {
 					return nil
 				}
-				triggerReconnect()
+
+				cancelFunc()
+				return fmt.Errorf("could not encrypt packet: %v", EncryptErr)
+			}
+
+			_ = w.conn.SetWriteDeadline(time.Now().Add(time.Second * 2))
+			_, writeErr := w.conn.Write(encryptedPacket)
+			if writeErr != nil {
+				if ctx.Err() != nil {
+					return nil
+				}
+
+				cancelFunc()
+				return fmt.Errorf("could not write packet to conn: %v", writeErr)
 			}
 		}
 	}
 }
 
-func (w *chacha20UdpWorker) HandleConn(ctx context.Context, connCancel context.CancelFunc) error {
+func (w *chacha20UdpWorker) HandleConn(ctx context.Context, cancelFunc context.CancelFunc) error {
 	dataBuf := make([]byte, ip.MaxPacketLengthBytes+12)
 	oobBuf := make([]byte, 1024)
+	_ = w.conn.SetReadBuffer(len(dataBuf))
 
 	go func() {
 		<-ctx.Done()
@@ -82,26 +89,34 @@ func (w *chacha20UdpWorker) HandleConn(ctx context.Context, connCancel context.C
 				if ctx.Err() != nil {
 					return nil
 				}
-				log.Printf("read from UDP failed: %v", readErr)
-				connCancel()
-				return readErr
+
+				cancelFunc()
+				return fmt.Errorf("could not read a packet from conn: %v", readErr)
 			}
 
 			decrypted, decryptionErr := w.session.Decrypt(dataBuf[:n])
 			if decryptionErr != nil {
-				if errors.Is(decryptionErr, chacha20.ErrNonUniqueNonce) {
-					log.Printf("reconnecting on critical decryption err: %s", decryptionErr)
-					connCancel()
+				if ctx.Err() != nil {
 					return nil
 				}
-				log.Printf("failed to decrypt data: %s", decryptionErr)
-				continue
+
+				if errors.Is(decryptionErr, chacha20.ErrNonUniqueNonce) {
+					cancelFunc()
+					return fmt.Errorf("reconnecting on critical decryption err: %s", decryptionErr)
+				}
+
+				cancelFunc()
+				return fmt.Errorf("failed to decrypt data: %s", decryptionErr)
 			}
 
 			_, writeErr := w.router.tun.Write(decrypted)
 			if writeErr != nil {
-				log.Printf("failed to write to TUN: %v", writeErr)
-				return writeErr
+				if ctx.Err() != nil {
+					return nil
+				}
+
+				cancelFunc()
+				return fmt.Errorf("failed to write to TUN: %s", decryptionErr)
 			}
 		}
 	}
