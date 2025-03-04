@@ -116,7 +116,7 @@ func (w *chacha20UdpWorker) HandleConn(ctx context.Context, cancelFunc context.C
 				}
 
 				cancelFunc()
-				return fmt.Errorf("failed to write to TUN: %s", decryptionErr)
+				return fmt.Errorf("failed to write to TUN: %s", writeErr)
 			}
 		}
 	}
