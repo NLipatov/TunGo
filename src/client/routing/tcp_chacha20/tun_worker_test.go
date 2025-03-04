@@ -169,7 +169,7 @@ func TestTcpTunWorker_HandlePacketsFromTun(t *testing.T) {
 
 	// Run the worker in a separate goroutine.
 	go func() {
-		_ = worker.HandlePacketsFromTun(ctx, triggerReconnect)
+		_ = worker.HandleTun(ctx, triggerReconnect)
 	}()
 
 	// Wait for context cancellation.
@@ -243,7 +243,7 @@ func TestTcpTunWorker_HandlePacketsFromConn(t *testing.T) {
 	}()
 
 	go func() {
-		_ = worker.HandlePacketsFromConn(ctx, cancel)
+		_ = worker.HandleConn(ctx, cancel)
 	}()
 
 	<-ctx.Done()

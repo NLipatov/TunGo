@@ -91,7 +91,7 @@ func (w *tcpTunWorker) Build() (*tcpTunWorker, error) {
 	return w, nil
 }
 
-func (w *tcpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnect context.CancelFunc) error {
+func (w *tcpTunWorker) HandleTun(ctx context.Context, triggerReconnect context.CancelFunc) error {
 	workerSetupErr := w.err
 	if workerSetupErr != nil {
 		return workerSetupErr
@@ -139,7 +139,7 @@ func (w *tcpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnec
 	}
 }
 
-func (w *tcpTunWorker) HandlePacketsFromConn(ctx context.Context, connCancel context.CancelFunc) error {
+func (w *tcpTunWorker) HandleConn(ctx context.Context, connCancel context.CancelFunc) error {
 	workerSetupErr := w.err
 	if workerSetupErr != nil {
 		return workerSetupErr

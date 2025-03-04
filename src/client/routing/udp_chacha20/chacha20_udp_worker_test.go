@@ -82,16 +82,6 @@ func (e *fakeEncoder) Decode(data []byte) (*chacha20.UDPPacket, error) {
 	}, nil
 }
 
-// TestBuild verifies that Build fails if required dependencies are missing.
-func TestUdpTunWorker_BuildError(t *testing.T) {
-	worker := newUdpTunWorker()
-	// No dependencies set.
-	_, err := worker.Build()
-	if err == nil {
-		t.Fatal("expected error when dependencies are missing")
-	}
-}
-
 // TestHandlePacketsFromTun simulates reading from TUN and sending encrypted data via UDP.
 func TestHandlePacketsFromTun(t *testing.T) {
 	// Prepare fake TUN that returns a test packet.
@@ -112,15 +102,7 @@ func TestHandlePacketsFromTun(t *testing.T) {
 		_ = udpConn.Close()
 	}(udpConn)
 
-	worker := newUdpTunWorker().
-		UseRouter(&UDPRouter{tun: router.tun}).
-		UseConn(udpConn).
-		UseSession(&fakeSession{}).
-		UseEncoder(&fakeEncoder{})
-	builtWorker, err := worker.Build()
-	if err != nil {
-		t.Fatalf("Build failed: %v", err)
-	}
+	worker := newChacha20UdpWorker(&UDPRouter{tun: router.tun}, udpConn, &fakeSession{})
 
 	// Use a context that cancels shortly.
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
@@ -131,9 +113,9 @@ func TestHandlePacketsFromTun(t *testing.T) {
 		cancel()
 	}
 
-	// Run HandlePacketsFromTun in a goroutine.
+	// Run HandleTun in a goroutine.
 	go func() {
-		_ = builtWorker.HandlePacketsFromTun(ctx, triggerReconnect)
+		_ = worker.HandleTun(ctx, triggerReconnect)
 	}()
 
 	// Wait until context is done.
@@ -167,15 +149,7 @@ func TestHandlePacketsFromConn(t *testing.T) {
 	// Use the fake session.
 	sess := &fakeSession{}
 
-	worker := newUdpTunWorker().
-		UseRouter(&UDPRouter{tun: router.tun}).
-		UseConn(udpConn).
-		UseSession(sess).
-		UseEncoder(&fakeEncoder{})
-	builtWorker, err := worker.Build()
-	if err != nil {
-		t.Fatalf("Build failed: %v", err)
-	}
+	worker := newChacha20UdpWorker(&UDPRouter{tun: router.tun}, udpConn, sess)
 
 	// Prepare a fake encrypted packet.
 	plaintext := []byte("hello tun")
@@ -192,9 +166,9 @@ func TestHandlePacketsFromConn(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
-	// Run HandlePacketsFromConn in a goroutine.
+	// Run HandleConn in a goroutine.
 	go func() {
-		_ = builtWorker.HandlePacketsFromConn(ctx, cancel)
+		_ = worker.HandleConn(ctx, cancel)
 	}()
 
 	// Wait until context is done.

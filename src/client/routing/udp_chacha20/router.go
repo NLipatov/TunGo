@@ -82,18 +82,9 @@ func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *chacha20.Defau
 	// TUN -> UDP
 	go func() {
 		defer wg.Done()
-		tunWorker, buildErr := newUdpTunWorker().
-			UseRouter(r).
-			UseConn(conn).
-			UseSession(session).
-			UseEncoder(&chacha20.DefaultUDPEncoder{}).
-			Build()
+		tunWorker := newChacha20UdpWorker(r, conn, session)
 
-		if buildErr != nil {
-			log.Fatalf("failed to build TCP TUN worker: %s", buildErr)
-		}
-
-		handlingErr := tunWorker.HandlePacketsFromTun(connCtx, connCancel)
+		handlingErr := tunWorker.HandleTun(connCtx, connCancel)
 
 		if handlingErr != nil {
 			log.Printf("failed to handle TUN-packet: %s", handlingErr)
@@ -105,18 +96,9 @@ func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *chacha20.Defau
 	// UDP -> TUN
 	go func() {
 		defer wg.Done()
-		tunWorker, buildErr := newUdpTunWorker().
-			UseRouter(r).
-			UseConn(conn).
-			UseSession(session).
-			UseEncoder(&chacha20.DefaultUDPEncoder{}).
-			Build()
+		tunWorker := newChacha20UdpWorker(r, conn, session)
 
-		if buildErr != nil {
-			log.Fatalf("failed to build UDP CONN worker: %s", buildErr)
-		}
-
-		handlingErr := tunWorker.HandlePacketsFromConn(connCtx, connCancel)
+		handlingErr := tunWorker.HandleConn(connCtx, connCancel)
 
 		if handlingErr != nil {
 			log.Printf("failed to handle CONN-packet: %s", handlingErr)

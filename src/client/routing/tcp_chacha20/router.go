@@ -94,7 +94,7 @@ func forwardIPPackets(r *TCPRouter, conn *net.Conn, session *chacha20.TcpSession
 			log.Fatalf("failed to build TCP TUN worker: %s", buildErr)
 		}
 
-		tunWorkerErr := tunWorker.HandlePacketsFromTun(connCtx, connCancel)
+		tunWorkerErr := tunWorker.HandleTun(connCtx, connCancel)
 
 		if tunWorkerErr != nil {
 			log.Fatalf("failed to handle TUN-packet: %s", tunWorkerErr)
@@ -115,7 +115,7 @@ func forwardIPPackets(r *TCPRouter, conn *net.Conn, session *chacha20.TcpSession
 			log.Fatalf("failed to build TCP TUN worker: %s", buildErr)
 		}
 
-		handlingErr := tunWorker.HandlePacketsFromConn(connCtx, connCancel)
+		handlingErr := tunWorker.HandleConn(connCtx, connCancel)
 
 		if handlingErr != nil {
 			log.Fatalf("failed to handle CONN-packet: %s", handlingErr)

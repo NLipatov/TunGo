@@ -3,7 +3,6 @@ package udp_chacha20
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log"
 	"net"
 	"time"
@@ -11,86 +10,21 @@ import (
 	"tungo/network/ip"
 )
 
-type udpTunWorker struct {
+type chacha20UdpWorker struct {
 	router  *UDPRouter
 	conn    *net.UDPConn
 	session chacha20.UdpSession
-	err     error
-	encoder chacha20.UDPEncoder
 }
 
-func newUdpTunWorker() *udpTunWorker {
-	return &udpTunWorker{}
+func newChacha20UdpWorker(router *UDPRouter, conn *net.UDPConn, session chacha20.UdpSession) *chacha20UdpWorker {
+	return &chacha20UdpWorker{
+		router:  router,
+		conn:    conn,
+		session: session,
+	}
 }
 
-func (w *udpTunWorker) UseRouter(router *UDPRouter) *udpTunWorker {
-	if w.err != nil {
-		return w
-	}
-
-	w.router = router
-	return w
-}
-
-func (w *udpTunWorker) UseSession(session chacha20.UdpSession) *udpTunWorker {
-	if w.err != nil {
-		return w
-	}
-
-	w.session = session
-
-	return w
-}
-
-func (w *udpTunWorker) UseConn(conn *net.UDPConn) *udpTunWorker {
-	if w.err != nil {
-		return w
-	}
-
-	w.conn = conn
-
-	return w
-}
-
-func (w *udpTunWorker) UseEncoder(encoder chacha20.UDPEncoder) *udpTunWorker {
-	if w.err != nil {
-		return w
-	}
-
-	w.encoder = encoder
-
-	return w
-}
-
-func (w *udpTunWorker) Build() (*udpTunWorker, error) {
-	if w.err != nil {
-		return nil, w.err
-	}
-
-	if w.router == nil {
-		return nil, fmt.Errorf("router required but not provided")
-	}
-
-	if w.session == nil {
-		return nil, fmt.Errorf("session required but not provided")
-	}
-
-	if w.conn == nil {
-		return nil, fmt.Errorf("connection required but not provided")
-	}
-
-	if w.encoder == nil {
-		return nil, fmt.Errorf("encoder required but not provided")
-	}
-
-	return w, nil
-}
-
-func (w *udpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnect context.CancelFunc) error {
-	workerSetupErr := w.err
-	if workerSetupErr != nil {
-		return workerSetupErr
-	}
+func (w *chacha20UdpWorker) HandleTun(ctx context.Context, triggerReconnect context.CancelFunc) error {
 	buf := make([]byte, ip.MaxPacketLengthBytes+12)
 	udpReader := chacha20.NewUdpReader(w.router.tun)
 	_ = w.conn.SetWriteBuffer(len(buf))
@@ -129,21 +63,9 @@ func (w *udpTunWorker) HandlePacketsFromTun(ctx context.Context, triggerReconnec
 	}
 }
 
-func (w *udpTunWorker) HandlePacketsFromConn(ctx context.Context, connCancel context.CancelFunc) error {
-	workerSetupErr := w.err
-	if workerSetupErr != nil {
-		return workerSetupErr
-	}
+func (w *chacha20UdpWorker) HandleConn(ctx context.Context, connCancel context.CancelFunc) error {
 	dataBuf := make([]byte, ip.MaxPacketLengthBytes+12)
 	oobBuf := make([]byte, 1024)
-	err := w.conn.SetReadBuffer(4 * 1024 * 1024)
-	if err != nil {
-		log.Printf("SetReadBuffer error: %v", err)
-	}
-	err = w.conn.SetWriteBuffer(4 * 1024 * 1024)
-	if err != nil {
-		log.Printf("SetWriteBuffer error: %v", err)
-	}
 
 	go func() {
 		<-ctx.Done()
