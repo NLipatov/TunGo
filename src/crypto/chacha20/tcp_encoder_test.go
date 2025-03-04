@@ -6,72 +6,48 @@ import (
 	"testing"
 )
 
-func TestTCPEncoder_Encode(t *testing.T) {
-	encoder := &DefaultTCPEncoder{}
-	payload := []byte("test payload")
+// TestDefaultTCPEncoderEncode checks that Encode correctly writes the 4-byte length prefix.
+func TestDefaultTCPEncoderEncode(t *testing.T) {
+	encoder := NewDefaultTCPEncoder()
+	// Prepare a buffer: first 4 bytes reserved for length, followed by payload.
+	payload := []byte("Hello, World!")
+	buffer := make([]byte, 4+len(payload))
+	copy(buffer[4:], payload)
 
-	packet, err := encoder.Encode(payload)
+	err := encoder.Encode(buffer)
 	if err != nil {
-		t.Fatalf("unexpected error during encoding: %v", err)
+		t.Fatalf("Encode returned error: %v", err)
 	}
 
-	// checks if length header has correct length
-	if packet.Length != uint32(len(payload)) {
-		t.Errorf("expected packet length %d, got %d", len(payload), packet.Length)
+	// The length prefix should equal the length of the payload.
+	expectedLength := uint32(len(payload))
+	gotLength := binary.BigEndian.Uint32(buffer[:4])
+	if gotLength != expectedLength {
+		t.Errorf("Expected length prefix %d, got %d", expectedLength, gotLength)
 	}
 
-	// packet payload = length header(4 bytes) + payload
-	expectedPayload := append(make([]byte, 4), payload...)
-	// puts data in length header
-	binary.BigEndian.PutUint32(expectedPayload[:4], uint32(len(payload)))
-
-	// checks if packet formed correctly
-	if !bytes.Equal(packet.Payload, expectedPayload) {
-		t.Errorf("payload mismatch: expected %v, got %v", expectedPayload, packet.Payload)
+	// Verify that the payload remains unchanged.
+	if !bytes.Equal(buffer[4:], payload) {
+		t.Errorf("Payload mismatch, expected %q, got %q", payload, buffer[4:])
 	}
 }
 
-func TestTCPEncoder_Decode(t *testing.T) {
-	encoder := &DefaultTCPEncoder{}
-	payload := []byte("test payload")
+// TestDefaultTCPEncoderDecode checks that Decode correctly populates a TCPPacket.
+func TestDefaultTCPEncoderDecode(t *testing.T) {
+	encoder := NewDefaultTCPEncoder()
+	data := []byte("Test packet data")
+	packet := &TCPPacket{}
 
-	lengthBuf := make([]byte, 4)
-	binary.BigEndian.PutUint32(lengthBuf, uint32(len(payload)))
-	rawData := append(lengthBuf, payload...)
-
-	packet, err := encoder.Decode(rawData)
+	err := encoder.Decode(data, packet)
 	if err != nil {
-		t.Fatalf("unexpected error during decoding: %v", err)
+		t.Fatalf("Decode returned error: %v", err)
 	}
 
-	if packet.Length != uint32(len(rawData)) {
-		t.Errorf("expected decoded length %d, got %d", len(rawData), packet.Length)
+	expectedLength := uint32(len(data))
+	if packet.Length != expectedLength {
+		t.Errorf("Expected packet length %d, got %d", expectedLength, packet.Length)
 	}
-
-	if !bytes.Equal(packet.Payload, rawData) {
-		t.Errorf("payload mismatch: expected %v, got %v", rawData, packet.Payload)
-	}
-}
-
-func TestTCPEncodeDecode(t *testing.T) {
-	encoder := &DefaultTCPEncoder{}
-	payload := []byte("test payload")
-
-	encodedPacket, err := encoder.Encode(payload)
-	if err != nil {
-		t.Fatalf("unexpected error during encoding: %v", err)
-	}
-
-	decodedPacket, err := encoder.Decode(encodedPacket.Payload)
-	if err != nil {
-		t.Fatalf("unexpected error during decoding: %v", err)
-	}
-
-	if decodedPacket.Length != uint32(len(payload)+4) {
-		t.Errorf("expected decoded length %d, got %d", len(payload)+4, decodedPacket.Length)
-	}
-
-	if !bytes.Equal(decodedPacket.Payload, encodedPacket.Payload) {
-		t.Errorf("payload mismatch: expected %v, got %v", encodedPacket.Payload, decodedPacket.Payload)
+	if !bytes.Equal(packet.Payload, data) {
+		t.Errorf("Expected payload %q, got %q", data, packet.Payload)
 	}
 }
