@@ -1,6 +1,7 @@
 package ip
 
 import (
+	"os"
 	"os/exec"
 	"testing"
 	"time"
@@ -35,6 +36,10 @@ func Test_CreateAndDeleteInterface(t *testing.T) {
 }
 
 func Test_WriteAndReadFromTun(t *testing.T) {
+	if _, err := os.Stat("/dev/net/tun"); err != nil {
+		t.Skip("/dev/net/tun is not available; skipping TUN test")
+	}
+
 	tunName := "rwtesttun0"
 	_, _ = LinkDel(tunName)
 	ifName, err := UpNewTun(tunName)
