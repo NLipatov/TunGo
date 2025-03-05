@@ -69,8 +69,8 @@ func (u *UdpTunWorker) TunToUDP() {
 				continue
 			}
 
-			if n < 1 {
-				log.Printf("invalid IP data")
+			if n < 12 {
+				log.Printf("invalid packet length (%d < 12)", n)
 				continue
 			}
 
