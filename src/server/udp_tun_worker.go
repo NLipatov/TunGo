@@ -139,13 +139,14 @@ func (u *UdpTunWorker) UDPToTun() {
 		_ = conn.Close()
 	}()
 
-	buf := make([]byte, ip.MaxPacketLengthBytes)
+	dataBuf := make([]byte, ip.MaxPacketLengthBytes+12)
+	oobBuf := make([]byte, 1024)
 	for {
 		select {
 		case <-u.ctx.Done():
 			return
 		default:
-			n, clientAddr, readFromUdpErr := conn.ReadFromUDP(buf)
+			n, _, _, clientAddr, readFromUdpErr := conn.ReadMsgUDP(dataBuf, oobBuf)
 			if readFromUdpErr != nil {
 				if u.ctx.Done() != nil {
 					return
@@ -162,7 +163,7 @@ func (u *UdpTunWorker) UDPToTun() {
 				u.clientAddrToInternalIP.Delete(clientAddr.String())
 
 				// Pass initial data to registration function
-				regErr := u.udpRegisterClient(conn, *clientAddr, buf[:n], u.intIPToUDPClient, u.intIPToSession)
+				regErr := u.udpRegisterClient(conn, *clientAddr, dataBuf[:n], u.intIPToUDPClient, u.intIPToSession)
 				if regErr != nil {
 					log.Printf("%s failed registration: %s\n", clientAddr.String(), regErr)
 				}
@@ -178,7 +179,7 @@ func (u *UdpTunWorker) UDPToTun() {
 			session := sessionValue.(*chacha20.DefaultUdpSession)
 
 			// Handle client data
-			decrypted, decryptionErr := session.Decrypt(buf[:n])
+			decrypted, decryptionErr := session.Decrypt(dataBuf[:n])
 			if decryptionErr != nil {
 				log.Printf("failed to decrypt data: %s", decryptionErr)
 				continue
