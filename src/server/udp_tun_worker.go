@@ -40,8 +40,8 @@ func NewUdpTunWorker(ctx context.Context, tun *os.File, settings settings.Connec
 }
 
 func (u *UdpTunWorker) TunToUDP() {
-	v4Header := packets.IPv4Header{}
-	v6Header := packets.IPv6Header{}
+	v4Header := packets.IPHeaderV4{}
+	v6Header := packets.IPHeaderV6{}
 
 	buf := make([]byte, ip.MaxPacketLengthBytes+12)
 	udpReader := chacha20.NewUdpReader(u.tun)
@@ -76,8 +76,7 @@ func (u *UdpTunWorker) TunToUDP() {
 				continue
 			}
 
-			destinationIP := ""
-			sourceIP := ""
+			var header packets.IPHeader
 			// Check IP version
 			ipVersion := buf[12] >> 4
 			switch ipVersion {
@@ -87,18 +86,18 @@ func (u *UdpTunWorker) TunToUDP() {
 					log.Printf("failed to parse IPv4 header: %v", v4ParseErr)
 					continue
 				}
-				destinationIP = v4Header.DestinationIP.String()
-				sourceIP = v4Header.SourceIP.String()
+				header = &v4Header
 			case 6:
 				v6ParseErr := packets.ParseIPv6Header(buf[12:n+12], &v6Header)
 				if v6ParseErr != nil {
 					log.Printf("failed to parse IPv4 header: %v", v6ParseErr)
 					continue
 				}
-				destinationIP = v4Header.DestinationIP.String()
-				sourceIP = v6Header.SourceIP.String()
+				header = &v6Header
 			}
 
+			destinationIP := header.GetDestinationIP().String()
+			sourceIP := header.GetSourceIP().String()
 			clientInfoValue, ok := u.intIPToUDPClient.Load(destinationIP)
 			if !ok {
 				if destinationIP == "" || destinationIP == "<nil>" {

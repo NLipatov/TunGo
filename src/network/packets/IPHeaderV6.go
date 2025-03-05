@@ -8,7 +8,7 @@ import (
 
 // https://en.wikipedia.org/wiki/IPv6_packet#Fixed_header
 
-type IPv6Header struct {
+type IPHeaderV6 struct {
 	Version       uint8
 	TrafficClass  uint8
 	FlowLabel     uint32
@@ -19,15 +19,15 @@ type IPv6Header struct {
 	DestinationIP net.IP
 }
 
-func (h *IPv6Header) GetDestinationIP() net.IP {
+func (h *IPHeaderV6) GetDestinationIP() net.IP {
 	return h.DestinationIP
 }
 
-func (h *IPv6Header) GetSourceIP() net.IP {
+func (h *IPHeaderV6) GetSourceIP() net.IP {
 	return h.SourceIP
 }
 
-func ParseIPv6Header(packet []byte, header *IPv6Header) error {
+func ParseIPv6Header(packet []byte, header *IPHeaderV6) error {
 	if len(packet) < 40 {
 		return fmt.Errorf("invalid packet length for IPv6")
 	}
