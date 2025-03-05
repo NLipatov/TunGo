@@ -11,7 +11,6 @@ import (
 	"sync"
 	"tungo/crypto/chacha20"
 	"tungo/network"
-	"tungo/network/packets"
 	"tungo/settings"
 )
 
@@ -23,8 +22,7 @@ func NewTcpTunWorker() TcpTunWorker {
 }
 
 func (w *TcpTunWorker) TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map, ctx context.Context) {
-	v4Header := packets.IPHeaderV4{}
-	v6Header := packets.IPHeaderV6{}
+	headerParser := newBaseIpHeaderParser()
 
 	buf := make([]byte, network.IPPacketMaxSizeBytes)
 	reader := chacha20.NewTcpReader(tunFile)
@@ -56,24 +54,10 @@ func (w *TcpTunWorker) TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpT
 				continue
 			}
 
-			var header packets.IPHeader
-			// Check IP version
-			ipVersion := data[0] >> 4
-			switch ipVersion {
-			case 4:
-				v4ParseErr := packets.ParseIPv4Header(data, &v4Header)
-				if v4ParseErr != nil {
-					log.Printf("failed to parse IPv4 header: %v", v4ParseErr)
-					continue
-				}
-				header = &v4Header
-			case 6:
-				v6ParseErr := packets.ParseIPv6Header(data, &v6Header)
-				if v6ParseErr != nil {
-					log.Printf("failed to parse IPv4 header: %v", v6ParseErr)
-					continue
-				}
-				header = &v6Header
+			header, headerErr := headerParser.Parse(data)
+			if headerErr != nil {
+				log.Printf("failed to parse IP header: %v", headerErr)
+				continue
 			}
 
 			destinationIP := header.GetDestinationIP().String()

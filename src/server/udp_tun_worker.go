@@ -10,7 +10,6 @@ import (
 	"tungo/crypto/chacha20"
 	"tungo/network"
 	"tungo/network/ip"
-	"tungo/network/packets"
 	"tungo/settings"
 	"tungo/settings/server"
 )
@@ -40,8 +39,7 @@ func NewUdpTunWorker(ctx context.Context, tun *os.File, settings settings.Connec
 }
 
 func (u *UdpTunWorker) TunToUDP() {
-	v4Header := packets.IPHeaderV4{}
-	v6Header := packets.IPHeaderV6{}
+	headerParser := newBaseIpHeaderParser()
 
 	buf := make([]byte, ip.MaxPacketLengthBytes+12)
 	udpReader := chacha20.NewUdpReader(u.tun)
@@ -76,24 +74,10 @@ func (u *UdpTunWorker) TunToUDP() {
 				continue
 			}
 
-			var header packets.IPHeader
-			// Check IP version
-			ipVersion := buf[12] >> 4
-			switch ipVersion {
-			case 4:
-				v4ParseErr := packets.ParseIPv4Header(buf[12:n+12], &v4Header)
-				if v4ParseErr != nil {
-					log.Printf("failed to parse IPv4 header: %v", v4ParseErr)
-					continue
-				}
-				header = &v4Header
-			case 6:
-				v6ParseErr := packets.ParseIPv6Header(buf[12:n+12], &v6Header)
-				if v6ParseErr != nil {
-					log.Printf("failed to parse IPv4 header: %v", v6ParseErr)
-					continue
-				}
-				header = &v6Header
+			header, headerErr := headerParser.Parse(buf[12 : n+12])
+			if headerErr != nil {
+				log.Printf("failed to parse IP header: %v", headerErr)
+				continue
 			}
 
 			destinationIP := header.GetDestinationIP().String()
