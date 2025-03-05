@@ -23,6 +23,9 @@ func NewTcpTunWorker() TcpTunWorker {
 }
 
 func (w *TcpTunWorker) TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map, ctx context.Context) {
+	v4Header := packets.IPv4Header{}
+	v6Header := packets.IPv6Header{}
+
 	buf := make([]byte, network.IPPacketMaxSizeBytes)
 	reader := chacha20.NewTcpReader(tunFile)
 	encoder := chacha20.NewDefaultTCPEncoder()
@@ -53,12 +56,26 @@ func (w *TcpTunWorker) TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpT
 				continue
 			}
 
-			header, err := packets.Parse(data)
-			if err != nil {
-				log.Printf("failed to parse a IPv4 header")
-				continue
+			destinationIP := ""
+			// Check IP version
+			ipVersion := buf[12] >> 4
+			switch ipVersion {
+			case 4:
+				v4ParseErr := packets.ParseIPv4Header(data, &v4Header)
+				if v4ParseErr != nil {
+					log.Printf("failed to parse IPv4 header: %v", v4ParseErr)
+					continue
+				}
+				destinationIP = v4Header.DestinationIP.String()
+			case 6:
+				v6ParseErr := packets.ParseIPv6Header(data, &v6Header)
+				if v6ParseErr != nil {
+					log.Printf("failed to parse IPv4 header: %v", v6ParseErr)
+					continue
+				}
+				destinationIP = v4Header.DestinationIP.String()
 			}
-			destinationIP := header.GetDestinationIP().String()
+
 			v, ok := localIpMap.Load(destinationIP)
 			if ok {
 				conn := v.(net.Conn)

@@ -31,9 +31,9 @@ func (h *IPv4Header) GetSourceIP() net.IP {
 	return h.SourceIP
 }
 
-func ParseIPv4Header(packet []byte) (*IPv4Header, error) {
+func ParseIPv4Header(packet []byte, header *IPv4Header) error {
 	if len(packet) < 20 {
-		return nil, fmt.Errorf("invalid packet length")
+		return fmt.Errorf("invalid packet length")
 	}
 
 	versionIHL := packet[0]    // The first byte contains both the version (first 4 bits) and the IHL (next 4 bits)
@@ -41,25 +41,25 @@ func ParseIPv4Header(packet []byte) (*IPv4Header, error) {
 	ihl := versionIHL & 0x0F   // Extracting the next 4 bits (IHL)
 
 	if version != 4 {
-		return nil, fmt.Errorf("not a IPv4 packet")
+		return fmt.Errorf("not a IPv4 packet")
 	}
 
 	if len(packet) < int(ihl)*4 {
-		return nil, fmt.Errorf("invalid IPv4 header length")
+		return fmt.Errorf("invalid IPv4 header length")
 	}
 
-	return &IPv4Header{
-		Version:        version,
-		IHL:            ihl,
-		DSCP:           packet[1],
-		TotalLength:    binary.BigEndian.Uint16(packet[2:4]),
-		Identification: binary.BigEndian.Uint16(packet[4:6]),
-		Flags:          packet[6] >> 5, // Extract the first 3 bits of the 6th byte (flags)
-		FragmentOffset: binary.BigEndian.Uint16(packet[6:8]) & 0x1FFF,
-		TTL:            packet[8],
-		Protocol:       packet[9],
-		HeaderChecksum: binary.BigEndian.Uint16(packet[10:12]),
-		SourceIP:       net.IPv4(packet[12], packet[13], packet[14], packet[15]),
-		DestinationIP:  net.IPv4(packet[16], packet[17], packet[18], packet[19]),
-	}, nil
+	header.Version = version
+	header.IHL = ihl
+	header.DSCP = packet[1]
+	header.TotalLength = binary.BigEndian.Uint16(packet[2:4])
+	header.Identification = binary.BigEndian.Uint16(packet[4:6])
+	header.Flags = packet[6] >> 5 // Extract the first 3 bits of the 6th byte (flags)
+	header.FragmentOffset = binary.BigEndian.Uint16(packet[6:8]) & 0x1FFF
+	header.TTL = packet[8]
+	header.Protocol = packet[9]
+	header.HeaderChecksum = binary.BigEndian.Uint16(packet[10:12])
+	header.SourceIP = net.IPv4(packet[12], packet[13], packet[14], packet[15])
+	header.DestinationIP = net.IPv4(packet[16], packet[17], packet[18], packet[19])
+
+	return nil
 }

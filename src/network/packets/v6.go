@@ -27,28 +27,26 @@ func (h *IPv6Header) GetSourceIP() net.IP {
 	return h.SourceIP
 }
 
-func ParseIPv6Header(packet []byte) (*IPv6Header, error) {
+func ParseIPv6Header(packet []byte, header *IPv6Header) error {
 	if len(packet) < 40 {
-		return nil, fmt.Errorf("invalid packet length for IPv6")
+		return fmt.Errorf("invalid packet length for IPv6")
 	}
 
 	versionTrafficClass := packet[0] // First 4 bits for version and next 4 for traffic class
 	version := versionTrafficClass >> 4
 	if version != 6 {
-		return nil, fmt.Errorf("not an IPv6 packet")
+		return fmt.Errorf("not an IPv6 packet")
 	}
 
-	trafficClass := (versionTrafficClass & 0x0F << 4) | (packet[1] >> 4)
 	flowLabel := binary.BigEndian.Uint32([]byte{0, packet[1] & 0x0F, packet[2], packet[3]})
+	header.Version = version
+	header.TrafficClass = (versionTrafficClass & 0x0F << 4) | (packet[1] >> 4)
+	header.FlowLabel = flowLabel
+	header.PayloadLength = binary.BigEndian.Uint16(packet[4:6])
+	header.NextHeader = packet[6]
+	header.HopLimit = packet[7]
+	header.SourceIP = packet[8:24]
+	header.DestinationIP = packet[24:40]
 
-	return &IPv6Header{
-		Version:       version,
-		TrafficClass:  trafficClass,
-		FlowLabel:     flowLabel,
-		PayloadLength: binary.BigEndian.Uint16(packet[4:6]),
-		NextHeader:    packet[6],
-		HopLimit:      packet[7],
-		SourceIP:      packet[8:24],
-		DestinationIP: packet[24:40],
-	}, nil
+	return nil
 }
