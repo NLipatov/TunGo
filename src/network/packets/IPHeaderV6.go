@@ -9,22 +9,22 @@ import (
 // https://en.wikipedia.org/wiki/IPv6_packet#Fixed_header
 
 type IPHeaderV6 struct {
-	Version       uint8
-	TrafficClass  uint8
-	FlowLabel     uint32
-	PayloadLength uint16
-	NextHeader    uint8
-	HopLimit      uint8
-	SourceIP      net.IP
-	DestinationIP net.IP
+	version       uint8
+	trafficClass  uint8
+	flowLabel     uint32
+	payloadLength uint16
+	nextHeader    uint8
+	hopLimit      uint8
+	sourceIP      net.IP
+	destinationIP net.IP
 }
 
 func (h *IPHeaderV6) GetDestinationIP() net.IP {
-	return h.DestinationIP
+	return h.destinationIP
 }
 
 func (h *IPHeaderV6) GetSourceIP() net.IP {
-	return h.SourceIP
+	return h.sourceIP
 }
 
 func ParseIPv6Header(packet []byte, header *IPHeaderV6) error {
@@ -39,14 +39,14 @@ func ParseIPv6Header(packet []byte, header *IPHeaderV6) error {
 	}
 
 	flowLabel := binary.BigEndian.Uint32([]byte{0, packet[1] & 0x0F, packet[2], packet[3]})
-	header.Version = version
-	header.TrafficClass = (versionTrafficClass & 0x0F << 4) | (packet[1] >> 4)
-	header.FlowLabel = flowLabel
-	header.PayloadLength = binary.BigEndian.Uint16(packet[4:6])
-	header.NextHeader = packet[6]
-	header.HopLimit = packet[7]
-	header.SourceIP = packet[8:24]
-	header.DestinationIP = packet[24:40]
+	header.version = version
+	header.trafficClass = (versionTrafficClass & 0x0F << 4) | (packet[1] >> 4)
+	header.flowLabel = flowLabel
+	header.payloadLength = binary.BigEndian.Uint16(packet[4:6])
+	header.nextHeader = packet[6]
+	header.hopLimit = packet[7]
+	header.sourceIP = packet[8:24]
+	header.destinationIP = packet[24:40]
 
 	return nil
 }
