@@ -6,10 +6,10 @@ import (
 	"log"
 	"net"
 	"os"
-	"sync"
 	"tungo/crypto/chacha20"
 	"tungo/network"
 	"tungo/network/ip"
+	"tungo/server/clientsession"
 	"tungo/settings"
 	"tungo/settings/server"
 )
@@ -20,21 +20,18 @@ type UDPClient struct {
 }
 
 type UdpTunWorker struct {
-	ctx                    context.Context
-	tun                    *os.File
-	settings               settings.ConnectionSettings
-	clientAddrToInternalIP sync.Map
-	intIPToUDPClient       *sync.Map
-	intIPToSession         *sync.Map
+	ctx            context.Context
+	tun            *os.File
+	settings       settings.ConnectionSettings
+	sessionManager *clientsession.UdpSessionManager
 }
 
-func NewUdpTunWorker(ctx context.Context, tun *os.File, settings settings.ConnectionSettings, intIPToUDPClient *sync.Map, intIPToSession *sync.Map) UdpTunWorker {
+func NewUdpTunWorker(ctx context.Context, tun *os.File, settings settings.ConnectionSettings) UdpTunWorker {
 	return UdpTunWorker{
-		tun:              tun,
-		ctx:              ctx,
-		settings:         settings,
-		intIPToUDPClient: intIPToUDPClient,
-		intIPToSession:   intIPToSession,
+		tun:            tun,
+		ctx:            ctx,
+		settings:       settings,
+		sessionManager: clientsession.NewUdpSessionManager(),
 	}
 }
 
@@ -82,7 +79,7 @@ func (u *UdpTunWorker) TunToUDP() {
 
 			destinationIP := header.GetDestinationIP().String()
 			sourceIP := header.GetSourceIP().String()
-			clientInfoValue, ok := u.intIPToUDPClient.Load(destinationIP)
+			udpClientSession, ok := u.sessionManager.Load(destinationIP)
 			if !ok {
 				if destinationIP == "" || destinationIP == "<nil>" {
 					log.Printf("packet dropped: no dest. IP specified in IP packet header")
@@ -92,25 +89,16 @@ func (u *UdpTunWorker) TunToUDP() {
 				log.Printf("packet dropped: no connection with destination (source IP: %s, dest. IP:%s)", sourceIP, destinationIP)
 				continue
 			}
-			clientInfo := clientInfoValue.(*UDPClient)
 
-			// Retrieve the session for this client
-			sessionValue, sessionExists := u.intIPToSession.Load(destinationIP)
-			if !sessionExists {
-				log.Printf("failed to load session for IP %s", destinationIP)
-				continue
-			}
-			session := sessionValue.(*chacha20.DefaultUdpSession)
-
-			encryptedPacket, encryptErr := session.Encrypt(buf)
+			encryptedPacket, encryptErr := udpClientSession.Session().Encrypt(buf)
 			if encryptErr != nil {
 				log.Printf("failed to encrypt packet: %s", encryptErr)
 				continue
 			}
 
-			_, writeToUDPErr := clientInfo.conn.WriteToUDP(encryptedPacket, clientInfo.addr)
-			if err != nil {
-				log.Printf("failed to send packet to %s: %v", clientInfo.addr, writeToUDPErr)
+			_, writeToUDPErr := udpClientSession.Conn().WriteToUDP(encryptedPacket, udpClientSession.UdpAddr())
+			if writeToUDPErr != nil {
+				log.Printf("failed to send packet to %s: %v", udpClientSession.UdpAddr(), writeToUDPErr)
 			}
 		}
 	}
@@ -155,30 +143,18 @@ func (u *UdpTunWorker) UDPToTun() {
 				continue
 			}
 
-			intIPValue, exists := u.clientAddrToInternalIP.Load(clientAddr.String())
+			udpClientSession, exists := u.sessionManager.Load(clientAddr.String())
 			if !exists {
-				u.intIPToSession.Delete(intIPValue)
-				u.intIPToUDPClient.Delete(intIPValue)
-				u.clientAddrToInternalIP.Delete(clientAddr.String())
-
 				// Pass initial data to registration function
-				regErr := u.udpRegisterClient(conn, *clientAddr, dataBuf[:n], u.intIPToUDPClient, u.intIPToSession)
+				regErr := u.udpRegisterClient(conn, clientAddr, dataBuf[:n])
 				if regErr != nil {
 					log.Printf("%s failed registration: %s\n", clientAddr.String(), regErr)
 				}
 				continue
 			}
-			internalIP := intIPValue.(string)
-
-			sessionValue, sessionExists := u.intIPToSession.Load(internalIP)
-			if !sessionExists {
-				log.Printf("failed to load session for IP %s", internalIP)
-				continue
-			}
-			session := sessionValue.(*chacha20.DefaultUdpSession)
 
 			// Handle client data
-			decrypted, decryptionErr := session.Decrypt(dataBuf[:n])
+			decrypted, decryptionErr := udpClientSession.Session().Decrypt(dataBuf[:n])
 			if decryptionErr != nil {
 				log.Printf("failed to decrypt data: %s", decryptionErr)
 				continue
@@ -193,12 +169,12 @@ func (u *UdpTunWorker) UDPToTun() {
 	}
 }
 
-func (u *UdpTunWorker) udpRegisterClient(conn *net.UDPConn, clientAddr net.UDPAddr, initialData []byte, intIPToUDPClientAddr *sync.Map, intIPToSession *sync.Map) error {
+func (u *UdpTunWorker) udpRegisterClient(conn *net.UDPConn, clientAddr *net.UDPAddr, initialData []byte) error {
 	// Pass initialData and clientAddr to the crypto function
 	h := chacha20.NewHandshake()
 	internalIpAddr, handshakeErr := h.ServerSideHandshake(&network.UdpAdapter{
 		Conn:        *conn,
-		Addr:        clientAddr,
+		Addr:        *clientAddr,
 		InitialData: initialData,
 	})
 	if handshakeErr != nil {
@@ -211,18 +187,12 @@ func (u *UdpTunWorker) udpRegisterClient(conn *net.UDPConn, clientAddr net.UDPAd
 		return confErr
 	}
 
-	udpSession, tcpSessionErr := chacha20.NewUdpSession(h.Id(), h.ServerKey(), h.ClientKey(), true, conf.UDPNonceRingBufferSize)
-	if tcpSessionErr != nil {
-		log.Printf("%s failed registration: %s", conn.RemoteAddr(), tcpSessionErr)
+	udpSession, udpSessionErr := chacha20.NewUdpSession(h.Id(), h.ServerKey(), h.ClientKey(), true, conf.UDPNonceRingBufferSize)
+	if udpSessionErr != nil {
+		log.Printf("%s failed registration: %s", conn.RemoteAddr(), udpSessionErr)
 	}
 
-	// Use internal IP as key
-	intIPToUDPClientAddr.Store(*internalIpAddr, &UDPClient{
-		conn: conn,
-		addr: &clientAddr,
-	})
-	intIPToSession.Store(*internalIpAddr, udpSession)
-	u.clientAddrToInternalIP.Store(clientAddr.String(), *internalIpAddr)
+	u.sessionManager.Store(clientsession.NewUdpSession(conn, *internalIpAddr, clientAddr, udpSession))
 
 	return nil
 }

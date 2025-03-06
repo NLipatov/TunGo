@@ -66,11 +66,7 @@ func StartUDPRouting(tunFile *os.File, settings settings.ConnectionSettings) err
 	}
 	defer serveripconf.Unconfigure(tunFile)
 
-	// Map to keep track of connected clients
-	var intIPToUDPClient sync.Map // external ip to local ip map
-	var intIPToSession sync.Map   // external ip to session map
-
-	udpTunWorker := server.NewUdpTunWorker(ctx, tunFile, settings, &intIPToUDPClient, &intIPToSession)
+	udpTunWorker := server.NewUdpTunWorker(ctx, tunFile, settings)
 
 	var wg sync.WaitGroup
 	wg.Add(2)
