@@ -189,7 +189,7 @@ func (u *UdpTunWorker) udpRegisterClient(conn *net.UDPConn, clientAddr *net.UDPA
 
 	udpSession, udpSessionErr := chacha20.NewUdpSession(h.Id(), h.ServerKey(), h.ClientKey(), true, conf.UDPNonceRingBufferSize)
 	if udpSessionErr != nil {
-		log.Printf("%s failed registration: %s", conn.RemoteAddr(), udpSessionErr)
+		return udpSessionErr
 	}
 
 	u.sessionManager.Store(clientsession.NewUdpSession(conn, *internalIpAddr, clientAddr, udpSession))
