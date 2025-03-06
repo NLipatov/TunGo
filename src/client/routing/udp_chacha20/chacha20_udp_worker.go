@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"time"
 	"tungo/crypto/chacha20"
@@ -92,6 +93,15 @@ func (w *chacha20UdpWorker) HandleConn(ctx context.Context, cancelFunc context.C
 
 				cancelFunc()
 				return fmt.Errorf("could not read a packet from conn: %v", readErr)
+			}
+
+			if n == 7 {
+				msg := string(dataBuf[:n])
+				if msg == "HSK_RST" {
+					log.Printf("received handshake reset packet from server. reconnecting...")
+					cancelFunc()
+					return fmt.Errorf("handshake reset requested by server")
+				}
 			}
 
 			decrypted, decryptionErr := w.session.Decrypt(dataBuf[:n])

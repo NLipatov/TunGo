@@ -149,6 +149,7 @@ func (u *UdpTunWorker) UDPToTun() {
 				regErr := u.udpRegisterClient(conn, clientAddr, dataBuf[:n])
 				if regErr != nil {
 					log.Printf("%s failed registration: %s\n", clientAddr.String(), regErr)
+					_, _ = conn.WriteToUDP([]byte("HSK_RST"), clientAddr)
 				}
 				continue
 			}
