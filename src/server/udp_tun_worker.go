@@ -39,7 +39,7 @@ func NewUdpTunWorker(ctx context.Context, tun *os.File, settings settings.Connec
 }
 
 func (u *UdpTunWorker) TunToUDP() {
-	headerParser := newBaseIpHeaderParser()
+	headerParser := ip.NewBaseHeaderParser()
 
 	buf := make([]byte, ip.MaxPacketLengthBytes+12)
 	udpReader := chacha20.NewUdpReader(u.tun)

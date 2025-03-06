@@ -1,4 +1,4 @@
-package packets
+package ip
 
 import (
 	"encoding/binary"
@@ -8,9 +8,9 @@ import (
 
 // https://en.wikipedia.org/wiki/IPv4#Packet_structure
 
-type IPHeaderV4 struct {
+type headerV4 struct {
 	version        uint8
-	Ihl            uint8 // Internet IPHeader Length in 32-bit words (1 word = 4 bytes)
+	Ihl            uint8 // Internet Header Length in 32-bit words (1 word = 4 bytes)
 	dscp           uint8 // Differentiated Services Code Point (QoS field)
 	totalLength    uint16
 	identification uint16 // Unique identifier for the packet group (for fragmentation)
@@ -23,15 +23,15 @@ type IPHeaderV4 struct {
 	destinationIP  net.IP
 }
 
-func (h *IPHeaderV4) GetDestinationIP() net.IP {
+func (h *headerV4) GetDestinationIP() net.IP {
 	return h.destinationIP
 }
 
-func (h *IPHeaderV4) GetSourceIP() net.IP {
+func (h *headerV4) GetSourceIP() net.IP {
 	return h.sourceIP
 }
 
-func ParseIPv4Header(packet []byte, header *IPHeaderV4) error {
+func ParseIPv4Header(packet []byte, header *headerV4) error {
 	if len(packet) < 20 {
 		return fmt.Errorf("invalid packet length")
 	}

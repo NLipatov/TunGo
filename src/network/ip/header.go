@@ -1,8 +1,8 @@
-package packets
+package ip
 
 import "net"
 
-type IPHeader interface {
+type Header interface {
 	GetSourceIP() net.IP
 	GetDestinationIP() net.IP
 }

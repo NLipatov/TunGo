@@ -11,6 +11,7 @@ import (
 	"sync"
 	"tungo/crypto/chacha20"
 	"tungo/network"
+	"tungo/network/ip"
 	"tungo/settings"
 )
 
@@ -22,7 +23,7 @@ func NewTcpTunWorker() TcpTunWorker {
 }
 
 func (w *TcpTunWorker) TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map, ctx context.Context) {
-	headerParser := newBaseIpHeaderParser()
+	headerParser := ip.NewBaseHeaderParser()
 
 	buf := make([]byte, network.IPPacketMaxSizeBytes)
 	reader := chacha20.NewTcpReader(tunFile)
