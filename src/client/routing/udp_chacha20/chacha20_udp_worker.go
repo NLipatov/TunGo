@@ -8,6 +8,7 @@ import (
 	"time"
 	"tungo/crypto/chacha20"
 	"tungo/network/ip"
+	"tungo/network/signal"
 )
 
 type chacha20UdpWorker struct {
@@ -95,9 +96,9 @@ func (w *chacha20UdpWorker) HandleConn(ctx context.Context, cancelFunc context.C
 			}
 
 			if n == 1 {
-				if dataBuf[:n][0] == 0 {
+				if dataBuf[:n][0] == signal.SessionReset {
 					cancelFunc()
-					return fmt.Errorf("handshake reset requested by server")
+					return fmt.Errorf("server requested session reset")
 				}
 			}
 

@@ -9,6 +9,7 @@ import (
 	"tungo/crypto/chacha20"
 	"tungo/network"
 	"tungo/network/ip"
+	"tungo/network/signal"
 	"tungo/server/clientsession"
 	"tungo/settings"
 	"tungo/settings/server"
@@ -149,7 +150,9 @@ func (u *UdpTunWorker) UDPToTun() {
 				regErr := u.udpRegisterClient(conn, clientAddr, dataBuf[:n])
 				if regErr != nil {
 					log.Printf("%s failed registration: %s\n", clientAddr.String(), regErr)
-					_, _ = conn.WriteToUDP([]byte{0}, clientAddr)
+					_, _ = conn.WriteToUDP([]byte{
+						signal.SessionReset,
+					}, clientAddr)
 				}
 				continue
 			}
