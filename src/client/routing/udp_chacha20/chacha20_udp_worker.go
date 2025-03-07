@@ -7,8 +7,8 @@ import (
 	"net"
 	"time"
 	"tungo/crypto/chacha20"
+	"tungo/network"
 	"tungo/network/ip"
-	"tungo/network/signal"
 )
 
 type chacha20UdpWorker struct {
@@ -96,7 +96,7 @@ func (w *chacha20UdpWorker) HandleConn(ctx context.Context, cancelFunc context.C
 			}
 
 			if n == 1 {
-				if dataBuf[:n][0] == signal.SessionReset {
+				if network.SignalIs(dataBuf[:n][0], network.SessionReset) {
 					cancelFunc()
 					return fmt.Errorf("server requested session reset")
 				}
