@@ -53,7 +53,7 @@ func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
 		}()
 
 		//starts forwarding packets from connection to tun-interface and from tun-interface to connection
-		startUDPForwarding(r, conn, session, connCtx, connCancel)
+		r.startUDPForwarding(conn, session, connCtx, connCancel)
 
 		// After goroutines finish, check if shutdown was initiated
 		if ctx.Err() != nil {
@@ -75,7 +75,7 @@ func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
 	}
 }
 
-func startUDPForwarding(r *UDPRouter, conn *net.UDPConn, session *chacha20.DefaultUdpSession, connCtx context.Context, connCancel context.CancelFunc) {
+func (r *UDPRouter) startUDPForwarding(conn *net.UDPConn, session *chacha20.DefaultUdpSession, connCtx context.Context, connCancel context.CancelFunc) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
