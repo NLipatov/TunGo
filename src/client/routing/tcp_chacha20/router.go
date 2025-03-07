@@ -36,6 +36,7 @@ func (r *TCPRouter) RouteTraffic(ctx context.Context) error {
 			}
 
 			log.Printf("connection to server at %s (TCP) failed: %s", r.Settings.ConnectionIP, err)
+			time.Sleep(time.Millisecond * 1000)
 			continue
 		}
 
