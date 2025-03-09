@@ -54,8 +54,8 @@ type tcpRouterTestFakeTunConfigurator struct {
 	deconfigured bool
 }
 
-func (f *tcpRouterTestFakeTunConfigurator) Configure(_ settings.ConnectionSettings) network.TunAdapter {
-	return f.tun
+func (f *tcpRouterTestFakeTunConfigurator) Configure(_ settings.ConnectionSettings) (network.TunAdapter, error) {
+	return f.tun, nil
 }
 
 func (f *tcpRouterTestFakeTunConfigurator) Deconfigure(_ settings.ConnectionSettings) {

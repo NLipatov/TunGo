@@ -54,8 +54,8 @@ type routerTestFakeTunConfigurator struct {
 	deconfigured bool
 }
 
-func (f *routerTestFakeTunConfigurator) Configure(_ settings.ConnectionSettings) network.TunAdapter {
-	return f.tun
+func (f *routerTestFakeTunConfigurator) Configure(_ settings.ConnectionSettings) (network.TunAdapter, error) {
+	return f.tun, nil
 }
 
 func (f *routerTestFakeTunConfigurator) Deconfigure(_ settings.ConnectionSettings) {

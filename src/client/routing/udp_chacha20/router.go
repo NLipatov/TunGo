@@ -22,13 +22,20 @@ type UDPRouter struct {
 }
 
 func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
-	r.tun = r.TunConfigurator.Configure(r.Settings)
 	defer func() {
 		_ = r.tun.Close()
 		r.TunConfigurator.Deconfigure(r.Settings)
 	}()
 
+	//prepare TUN
+	tun, tunErr := r.TunConfigurator.Configure(r.Settings)
+	if tunErr != nil {
+		return tunErr
+	}
+	r.tun = tun
+
 	for {
+		//establish connection with server
 		conn, session, err := r.establishSecureConnection(ctx)
 		if err != nil {
 			if errors.Is(err, context.Canceled) { //client shutdown
@@ -43,36 +50,16 @@ func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
 		log.Printf("connected to server at %s (UDP)", r.Settings.ConnectionIP)
 
 		// Create a child context for managing data forwarding goroutines
-		connCtx, connCancel := context.WithCancel(ctx)
+		routingCtx, routingCancel := context.WithCancel(ctx)
 
 		// Start a goroutine to monitor context cancellation and close the connection
 		go func() {
-			<-connCtx.Done()
+			<-routingCtx.Done()
 			_ = conn.Close()
-			r.TunConfigurator.Deconfigure(r.Settings)
-			return
 		}()
 
 		//starts forwarding packets from connection to tun-interface and from tun-interface to connection
-		r.startUDPForwarding(conn, session, connCtx, connCancel)
-
-		// After goroutines finish, check if shutdown was initiated
-		if ctx.Err() != nil {
-			return nil
-		} else {
-			// Connection lost unexpectedly, attempt to reconnect
-			log.Println("connection lost, attempting to reconnect...")
-		}
-
-		// Close the connection (if not already closed)
-		_ = conn.Close()
-
-		// recreate tun-interface
-		if r.tun != nil {
-			_ = r.tun.Close()
-		}
-		r.TunConfigurator.Deconfigure(r.Settings)
-		r.tun = r.TunConfigurator.Configure(r.Settings)
+		r.startUDPForwarding(conn, session, routingCtx, routingCancel)
 	}
 }
 
