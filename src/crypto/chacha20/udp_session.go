@@ -23,8 +23,8 @@ type (
 		RecvNonce        *Nonce
 		isServer         bool
 		nonceBuf         *NonceBuf
-		encryptionAadBuf []byte
-		decryptionAadBuf []byte
+		encryptionAadBuf [60]byte //32 bytes for sessionId, 16 bytes for direction, 12 bytes for nonce. 60 bytes total.
+		decryptionAadBuf [60]byte //32 bytes for sessionId, 16 bytes for direction, 12 bytes for nonce. 60 bytes total.
 	}
 )
 
@@ -40,16 +40,14 @@ func NewUdpSession(id [32]byte, sendKey, recvKey []byte, isServer bool, nonceBuf
 	}
 
 	return &DefaultUdpSession{
-		SessionId:        id,
-		sendCipher:       sendCipher,
-		recvCipher:       recvCipher,
-		RecvNonce:        NewNonce(),
-		SendNonce:        NewNonce(),
-		isServer:         isServer,
-		nonceBuf:         NewNonceBuf(nonceBufferSize),
-		encoder:          DefaultUDPEncoder{},
-		encryptionAadBuf: make([]byte, 80),
-		decryptionAadBuf: make([]byte, 80),
+		SessionId:  id,
+		sendCipher: sendCipher,
+		recvCipher: recvCipher,
+		RecvNonce:  NewNonce(),
+		SendNonce:  NewNonce(),
+		isServer:   isServer,
+		nonceBuf:   NewNonceBuf(nonceBufferSize),
+		encoder:    DefaultUDPEncoder{},
 	}, nil
 }
 
@@ -63,13 +61,17 @@ func (s *DefaultUdpSession) Encrypt(data []byte) ([]byte, error) {
 
 	_ = s.SendNonce.Encode(data[:12])
 
-	aad := s.CreateAAD(s.isServer, data[:12], s.encryptionAadBuf)
+	aad := s.CreateAAD(s.isServer, data[:12], s.encryptionAadBuf[:])
 	ciphertext := s.sendCipher.Seal(plaintext[:0], data[:12], plaintext, aad)
 
 	return data[:len(ciphertext)+12], nil
 }
 
 func (s *DefaultUdpSession) Decrypt(ciphertext []byte) ([]byte, error) {
+	if len(ciphertext) < 12 {
+		return nil, fmt.Errorf("invalid ciphertext: too short (%d bytes long)", len(ciphertext))
+	}
+
 	nonceBytes := ciphertext[:12]
 	payloadBytes := ciphertext[12:]
 
@@ -79,7 +81,7 @@ func (s *DefaultUdpSession) Decrypt(ciphertext []byte) ([]byte, error) {
 		return nil, nBErr
 	}
 
-	aad := s.CreateAAD(!s.isServer, nonceBytes[:], s.decryptionAadBuf)
+	aad := s.CreateAAD(!s.isServer, nonceBytes[:], s.decryptionAadBuf[:])
 	plaintext, err := s.recvCipher.Open(payloadBytes[:0], nonceBytes, payloadBytes, aad)
 	if err != nil {
 		// Properly handle failed decryption attempt to avoid reuse of any state
