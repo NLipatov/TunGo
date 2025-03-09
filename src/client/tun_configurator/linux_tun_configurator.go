@@ -2,7 +2,6 @@ package tun_configurator
 
 import (
 	"fmt"
-	"log"
 	"strings"
 	"tungo/network"
 	"tungo/network/ip"
@@ -15,24 +14,24 @@ type LinuxTunConfigurator struct {
 }
 
 // Configure configures a client TUN device
-func (t *LinuxTunConfigurator) Configure(s settings.ConnectionSettings) network.TunAdapter {
+func (t *LinuxTunConfigurator) Configure(s settings.ConnectionSettings) (network.TunAdapter, error) {
 	// configureTUN client
 	if udpConfigurationErr := configureTUN(s); udpConfigurationErr != nil {
-		log.Fatalf("failed to configure client: %v", udpConfigurationErr)
+		return nil, fmt.Errorf("failed to configure client: %v", udpConfigurationErr)
 	}
 
 	// sets client's TUN device maximum transmission unit (MTU)
 	if setMtuErr := ip.SetMtu(s.InterfaceName, s.MTU); setMtuErr != nil {
-		log.Fatalf("failed to set %d MTU for %s: %s", s.MTU, s.InterfaceName, setMtuErr)
+		return nil, fmt.Errorf("failed to set %d MTU for %s: %s", s.MTU, s.InterfaceName, setMtuErr)
 	}
 
 	// opens the TUN device
 	tunFile, openTunErr := ip.OpenTunByName(s.InterfaceName)
 	if openTunErr != nil {
-		log.Fatalf("failed to open TUN interface: %v", openTunErr)
+		return nil, fmt.Errorf("failed to open TUN interface: %v", openTunErr)
 	}
 
-	return tunFile
+	return tunFile, nil
 }
 
 // configureTUN Configures client's TUN device (creates the TUN device, assigns an IP to it, etc)

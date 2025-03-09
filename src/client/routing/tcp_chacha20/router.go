@@ -22,11 +22,16 @@ type TCPRouter struct {
 }
 
 func (r *TCPRouter) RouteTraffic(ctx context.Context) error {
-	r.tun = r.TunConfigurator.Configure(r.Settings)
 	defer func() {
 		_ = r.tun.Close()
 		r.TunConfigurator.Deconfigure(r.Settings)
 	}()
+
+	tun, tunErr := r.TunConfigurator.Configure(r.Settings)
+	if tunErr != nil {
+		return tunErr
+	}
+	r.tun = tun
 
 	for {
 		conn, session, err := r.establishSecureConnection(ctx)
@@ -36,6 +41,7 @@ func (r *TCPRouter) RouteTraffic(ctx context.Context) error {
 			}
 
 			log.Printf("connection to server at %s (TCP) failed: %s", r.Settings.ConnectionIP, err)
+			time.Sleep(time.Millisecond * 1000)
 			continue
 		}
 
@@ -48,31 +54,9 @@ func (r *TCPRouter) RouteTraffic(ctx context.Context) error {
 		go func() {
 			<-connCtx.Done()
 			_ = conn.Close()
-			r.TunConfigurator.Deconfigure(r.Settings)
 		}()
 
 		forwardIPPackets(r, &conn, session, connCtx, connCancel)
-
-		// After goroutines finish, check if shutdown was initiated
-		if ctx.Err() != nil {
-			return nil
-		} else {
-			// Connection lost unexpectedly, attempt to reconnect
-			log.Println("connection lost, attempting to reconnect...")
-		}
-
-		//cancel connection context
-		<-connCtx.Done()
-
-		// Close the connection (if not already closed)
-		_ = conn.Close()
-
-		// recreate tun interface
-		if r.tun != nil {
-			_ = r.tun.Close()
-		}
-		r.TunConfigurator.Deconfigure(r.Settings)
-		r.tun = r.TunConfigurator.Configure(r.Settings)
 	}
 }
 
@@ -94,7 +78,7 @@ func forwardIPPackets(r *TCPRouter, conn *net.Conn, session *chacha20.TcpSession
 			log.Fatalf("failed to build TCP TUN worker: %s", buildErr)
 		}
 
-		tunWorkerErr := tunWorker.HandlePacketsFromTun(connCtx, connCancel)
+		tunWorkerErr := tunWorker.HandleTun(connCtx, connCancel)
 
 		if tunWorkerErr != nil {
 			log.Fatalf("failed to handle TUN-packet: %s", tunWorkerErr)
@@ -115,7 +99,7 @@ func forwardIPPackets(r *TCPRouter, conn *net.Conn, session *chacha20.TcpSession
 			log.Fatalf("failed to build TCP TUN worker: %s", buildErr)
 		}
 
-		handlingErr := tunWorker.HandlePacketsFromConn(connCtx, connCancel)
+		handlingErr := tunWorker.HandleConn(connCtx, connCancel)
 
 		if handlingErr != nil {
 			log.Fatalf("failed to handle CONN-packet: %s", handlingErr)

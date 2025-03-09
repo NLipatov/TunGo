@@ -55,8 +55,8 @@ type fakeTunConfigurator struct {
 	deconfigured bool
 }
 
-func (f *fakeTunConfigurator) Configure(_ settings.ConnectionSettings) network.TunAdapter {
-	return f.tun
+func (f *fakeTunConfigurator) Configure(_ settings.ConnectionSettings) (network.TunAdapter, error) {
+	return f.tun, nil
 }
 
 func (f *fakeTunConfigurator) Deconfigure(_ settings.ConnectionSettings) {
@@ -146,7 +146,7 @@ func TestTcpTunWorker_HandlePacketsFromTun(t *testing.T) {
 		Settings:        settings.ConnectionSettings{},
 	}
 	// Ensure router.tun is set using the configurator.
-	router.tun = router.TunConfigurator.Configure(router.Settings)
+	router.tun, _ = router.TunConfigurator.Configure(router.Settings)
 
 	worker, err := newTcpTunWorker().
 		UseRouter(router).
@@ -169,7 +169,7 @@ func TestTcpTunWorker_HandlePacketsFromTun(t *testing.T) {
 
 	// Run the worker in a separate goroutine.
 	go func() {
-		_ = worker.HandlePacketsFromTun(ctx, triggerReconnect)
+		_ = worker.HandleTun(ctx, triggerReconnect)
 	}()
 
 	// Wait for context cancellation.
@@ -224,7 +224,7 @@ func TestTcpTunWorker_HandlePacketsFromConn(t *testing.T) {
 		TunConfigurator: &fakeTunConfigurator{tun: fakeTun},
 		Settings:        settings.ConnectionSettings{},
 	}
-	router.tun = router.TunConfigurator.Configure(router.Settings)
+	router.tun, _ = router.TunConfigurator.Configure(router.Settings)
 
 	worker, err := newTcpTunWorker().
 		UseRouter(router).
@@ -243,7 +243,7 @@ func TestTcpTunWorker_HandlePacketsFromConn(t *testing.T) {
 	}()
 
 	go func() {
-		_ = worker.HandlePacketsFromConn(ctx, cancel)
+		_ = worker.HandleConn(ctx, cancel)
 	}()
 
 	<-ctx.Done()

@@ -11,7 +11,7 @@ import (
 	"sync"
 	"tungo/crypto/chacha20"
 	"tungo/network"
-	"tungo/network/packets"
+	"tungo/network/ip"
 	"tungo/settings"
 )
 
@@ -23,6 +23,8 @@ func NewTcpTunWorker() TcpTunWorker {
 }
 
 func (w *TcpTunWorker) TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map, ctx context.Context) {
+	headerParser := ip.NewBaseHeaderParser()
+
 	buf := make([]byte, network.IPPacketMaxSizeBytes)
 	reader := chacha20.NewTcpReader(tunFile)
 	encoder := chacha20.NewDefaultTCPEncoder()
@@ -53,11 +55,12 @@ func (w *TcpTunWorker) TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpT
 				continue
 			}
 
-			header, err := packets.Parse(data)
-			if err != nil {
-				log.Printf("failed to parse a IPv4 header")
+			header, headerErr := headerParser.Parse(data)
+			if headerErr != nil {
+				log.Printf("failed to parse IP header: %v", headerErr)
 				continue
 			}
+
 			destinationIP := header.GetDestinationIP().String()
 			v, ok := localIpMap.Load(destinationIP)
 			if ok {
