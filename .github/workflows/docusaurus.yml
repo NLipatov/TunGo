@@ -16,16 +16,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 18
-          cache: yarn
+          cache: npm
+          cache-dependency-path: docs/TunGo/package-lock.json
 
       - name: Install dependencies
         run: |
           cd docs/TunGo
-          yarn install --frozen-lockfile
+          npm ci
       - name: Build website
         run: |
           cd docs/TunGo
-          yarn build
+          npm run build
 
       - name: Upload Build Artifact
         uses: actions/upload-pages-artifact@v3
