@@ -18,16 +18,19 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '23'
+          node-version: '20'
       - name: Install dependencies and build docs
         run: |
           cd docs/TunGo/
           npm ci
           npm run build
+      - name: Configure Git
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "github-actions@github.com"
       - name: Deploy to GitHub Pages
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GIT_USER: ${{ github.actor }}
         run: |
           cd docs/TunGo/
-          npm run deploy
+          GIT_USER="${{ github.actor }}" npm run deploy -- --force
