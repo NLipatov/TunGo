@@ -33,4 +33,4 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cd docs/TunGo/
-          GIT_USER="${{ github.actor }}" npm run deploy -- --force
+          GIT_USER="${{ github.actor }}" npm run deploy
