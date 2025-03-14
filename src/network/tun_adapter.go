@@ -4,17 +4,9 @@ import (
 	"os"
 )
 
-type (
-	//TunAdapter provides a single and trivial API for any supported tun devices
-	TunAdapter interface {
-		Read(data []byte) (int, error)
-		Write(data []byte) (int, error)
-		Close() error
-	}
-	LinuxTunAdapter struct {
-		TunFile *os.File
-	}
-)
+type LinuxTunAdapter struct {
+	TunFile *os.File
+}
 
 func (a *LinuxTunAdapter) Read(buffer []byte) (int, error) {
 	n, err := a.TunFile.Read(buffer)

@@ -3,7 +3,7 @@ package tun_configurator
 import (
 	"fmt"
 	"strings"
-	"tungo/network"
+	"tungo/application"
 	"tungo/network/ip"
 	"tungo/network/iptables"
 	"tungo/settings"
@@ -14,7 +14,7 @@ type LinuxTunConfigurator struct {
 }
 
 // Configure configures a client TUN device
-func (t *LinuxTunConfigurator) Configure(s settings.ConnectionSettings) (network.TunAdapter, error) {
+func (t *LinuxTunConfigurator) Configure(s settings.ConnectionSettings) (application.TunDevice, error) {
 	// configureTUN client
 	if udpConfigurationErr := configureTUN(s); udpConfigurationErr != nil {
 		return nil, fmt.Errorf("failed to configure client: %v", udpConfigurationErr)

@@ -12,14 +12,13 @@ import (
 	"tungo/client/routing/udp_chacha20/connection"
 	"tungo/client/tun_configurator"
 	"tungo/infrastructure/cryptography/chacha20"
-	"tungo/network"
 	"tungo/settings"
 )
 
 type UDPRouter struct {
 	Settings        settings.ConnectionSettings
 	TunConfigurator tun_configurator.TunConfigurator
-	tun             network.TunAdapter
+	tun             application.TunDevice
 }
 
 func (r *UDPRouter) RouteTraffic(ctx context.Context) error {

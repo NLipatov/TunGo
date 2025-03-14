@@ -12,14 +12,13 @@ import (
 	"tungo/client/routing/tcp_chacha20/connection"
 	"tungo/client/tun_configurator"
 	chacha21 "tungo/infrastructure/cryptography/chacha20"
-	"tungo/network"
 	"tungo/settings"
 )
 
 type TCPRouter struct {
 	Settings        settings.ConnectionSettings
 	TunConfigurator tun_configurator.TunConfigurator
-	tun             network.TunAdapter
+	tun             application.TunDevice
 }
 
 func (r *TCPRouter) RouteTraffic(ctx context.Context) error {
