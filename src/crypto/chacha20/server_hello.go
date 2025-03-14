@@ -25,7 +25,7 @@ func (sH *ServerHello) Write(signature *[]byte, nonce *[]byte, curvePublicKey *[
 		return nil, fmt.Errorf("invalid signature")
 	}
 	if len(*nonce) != nonceLength {
-		return nil, fmt.Errorf("invalid nonce")
+		return nil, InvalidNonce
 	}
 	if len(*curvePublicKey) != curvePublicKeyLength {
 		return nil, fmt.Errorf("invalid curve public key")
