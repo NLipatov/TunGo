@@ -1,9 +1,16 @@
-name: Deploy to GitHub Pages
+name: Deploy Docusaurus to GitHub Pages
 
 on:
   push:
     branches:
       - main
+    paths:
+      - 'docs/TunGo/**'   # Only if Docusaurus directory files changed
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'docs/TunGo/**'   # Only if Docusaurus directory files changed
 
 jobs:
   build:
