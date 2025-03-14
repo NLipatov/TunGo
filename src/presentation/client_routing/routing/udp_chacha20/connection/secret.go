@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net"
 	"tungo/application"
-	chacha21 "tungo/infrastructure/cryptography/chacha20"
+	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/settings"
 	"tungo/settings/client"
 )
@@ -15,10 +15,10 @@ type Secret interface {
 
 type DefaultSecret struct {
 	settings  settings.ConnectionSettings
-	handshake chacha21.Handshake
+	handshake chacha20.Handshake
 }
 
-func NewDefaultSecret(settings settings.ConnectionSettings, handshake chacha21.Handshake) Secret {
+func NewDefaultSecret(settings settings.ConnectionSettings, handshake chacha20.Handshake) Secret {
 	return &DefaultSecret{
 		settings:  settings,
 		handshake: handshake,
@@ -36,7 +36,7 @@ func (s *DefaultSecret) Exchange(conn *net.UDPConn) (application.CryptographySer
 		return nil, confErr
 	}
 
-	session, sessionErr := chacha21.NewUdpSession(s.handshake.Id(), s.handshake.ClientKey(), s.handshake.ServerKey(), false, conf.UDPNonceRingBufferSize)
+	session, sessionErr := chacha20.NewUdpSession(s.handshake.Id(), s.handshake.ClientKey(), s.handshake.ServerKey(), false, conf.UDPNonceRingBufferSize)
 	if sessionErr != nil {
 		return nil, fmt.Errorf("failed to create client session: %s\n", sessionErr)
 	}

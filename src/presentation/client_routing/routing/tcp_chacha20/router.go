@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 	"tungo/application"
-	chacha21 "tungo/infrastructure/cryptography/chacha20"
-	connection2 "tungo/presentation/client_routing/routing/tcp_chacha20/connection"
+	"tungo/infrastructure/cryptography/chacha20"
+	"tungo/presentation/client_routing/routing/tcp_chacha20/connection"
 	"tungo/presentation/client_routing/tun_configurator"
 	"tungo/settings"
 )
@@ -71,7 +71,7 @@ func forwardIPPackets(r *TCPRouter, conn *net.Conn, cryptographyService applicat
 			UseRouter(r).
 			UseConn(*conn).
 			UseCryptographyService(cryptographyService).
-			UseEncoder(&chacha21.DefaultTCPEncoder{}).
+			UseEncoder(&chacha20.DefaultTCPEncoder{}).
 			Build()
 
 		if buildErr != nil {
@@ -92,7 +92,7 @@ func forwardIPPackets(r *TCPRouter, conn *net.Conn, cryptographyService applicat
 			UseRouter(r).
 			UseConn(*conn).
 			UseCryptographyService(cryptographyService).
-			UseEncoder(&chacha21.DefaultTCPEncoder{}).
+			UseEncoder(&chacha20.DefaultTCPEncoder{}).
 			Build()
 
 		if buildErr != nil {
@@ -116,11 +116,11 @@ func (r *TCPRouter) establishSecureConnection(ctx context.Context) (net.Conn, ap
 	defer handshakeCtxCancel()
 
 	//connect to server and exchange secret
-	secret := connection2.NewDefaultSecret(r.Settings, chacha21.NewHandshake())
-	cancellableSecret := connection2.NewSecretWithDeadline(handshakeCtx, secret)
+	secret := connection.NewDefaultSecret(r.Settings, chacha20.NewHandshake())
+	cancellableSecret := connection.NewSecretWithDeadline(handshakeCtx, secret)
 
-	session := connection2.NewDefaultSecureSession(connection2.NewDefaultConnection(r.Settings), cancellableSecret)
-	cancellableSession := connection2.NewSecureSessionWithDeadline(handshakeCtx, session)
+	session := connection.NewDefaultSecureSession(connection.NewDefaultConnection(r.Settings), cancellableSecret)
+	cancellableSession := connection.NewSecureSessionWithDeadline(handshakeCtx, session)
 	conn, tcpSession, err := cancellableSession.Establish()
 	if err != nil {
 		return nil, nil, err

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	ip2 "tungo/infrastructure/network/ip"
+	"tungo/infrastructure/network/ip"
 	"tungo/settings"
 	"tungo/settings/client"
 	"tungo/settings/server"
@@ -32,12 +32,12 @@ func generate() (*client.Conf, error) {
 		return nil, fmt.Errorf("failed to read server configuration: %s", err)
 	}
 
-	defaultIf, err := ip2.RouteDefault()
+	defaultIf, err := ip.RouteDefault()
 	if err != nil {
 		return nil, err
 	}
 
-	defaultIfIpV4, addressResolutionError := ip2.InterfaceIpAddr(4, defaultIf)
+	defaultIfIpV4, addressResolutionError := ip.InterfaceIpAddr(4, defaultIf)
 	if addressResolutionError != nil {
 		if serverConf.FallbackServerAddress == "" {
 			return nil, fmt.Errorf("failed to resolve server IP and no fallback address provided in server configuration: %s", addressResolutionError)
@@ -46,12 +46,12 @@ func generate() (*client.Conf, error) {
 	}
 
 	IncrementedClientCounter := serverConf.ClientCounter + 1
-	clientTCPIfIp, err := ip2.AllocateClientIp(serverConf.TCPSettings.InterfaceIPCIDR, IncrementedClientCounter)
+	clientTCPIfIp, err := ip.AllocateClientIp(serverConf.TCPSettings.InterfaceIPCIDR, IncrementedClientCounter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to allocate client's TCP IP address: %s", err)
 	}
 
-	clientUIDPIfIp, err := ip2.AllocateClientIp(serverConf.UDPSettings.InterfaceIPCIDR, IncrementedClientCounter)
+	clientUIDPIfIp, err := ip.AllocateClientIp(serverConf.UDPSettings.InterfaceIPCIDR, IncrementedClientCounter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to allocate client's TCP IP address: %s", err)
 	}

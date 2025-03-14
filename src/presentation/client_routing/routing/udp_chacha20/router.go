@@ -10,7 +10,7 @@ import (
 	"time"
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
-	connection2 "tungo/presentation/client_routing/routing/udp_chacha20/connection"
+	"tungo/presentation/client_routing/routing/udp_chacha20/connection"
 	"tungo/presentation/client_routing/tun_configurator"
 	"tungo/settings"
 )
@@ -105,10 +105,10 @@ func (r *UDPRouter) establishSecureConnection(ctx context.Context) (*net.UDPConn
 	defer handshakeCtxCancel()
 
 	//connect to server and exchange secret
-	secret := connection2.NewDefaultSecret(r.Settings, chacha20.NewHandshake())
-	cancellableSecret := connection2.NewSecretWithDeadline(handshakeCtx, secret)
+	secret := connection.NewDefaultSecret(r.Settings, chacha20.NewHandshake())
+	cancellableSecret := connection.NewSecretWithDeadline(handshakeCtx, secret)
 
-	session := connection2.NewDefaultSecureSession(connection2.NewConnection(r.Settings), cancellableSecret)
-	cancellableSession := connection2.NewSecureSessionWithDeadline(handshakeCtx, session)
+	session := connection.NewDefaultSecureSession(connection.NewConnection(r.Settings), cancellableSecret)
+	cancellableSession := connection.NewSecureSessionWithDeadline(handshakeCtx, session)
 	return cancellableSession.Establish()
 }

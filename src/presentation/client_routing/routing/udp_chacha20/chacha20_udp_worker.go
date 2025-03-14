@@ -7,7 +7,7 @@ import (
 	"net"
 	"time"
 	"tungo/application"
-	chacha21 "tungo/infrastructure/cryptography/chacha20"
+	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/network/ip"
 )
@@ -28,7 +28,7 @@ func newChacha20UdpWorker(router *UDPRouter, conn *net.UDPConn, cryptographyServ
 
 func (w *chacha20UdpWorker) HandleTun(ctx context.Context, cancelFunc context.CancelFunc) error {
 	buf := make([]byte, ip.MaxPacketLengthBytes+12)
-	udpReader := chacha21.NewUdpReader(w.router.tun)
+	udpReader := chacha20.NewUdpReader(w.router.tun)
 	_ = w.conn.SetWriteBuffer(len(buf))
 
 	// Main loop to read from TUN and send data
@@ -109,7 +109,7 @@ func (w *chacha20UdpWorker) HandleConn(ctx context.Context, cancelFunc context.C
 					return nil
 				}
 
-				if errors.Is(decryptionErr, chacha21.ErrNonUniqueNonce) {
+				if errors.Is(decryptionErr, chacha20.ErrNonUniqueNonce) {
 					cancelFunc()
 					return fmt.Errorf("reconnecting on critical decryption err: %s", decryptionErr)
 				}

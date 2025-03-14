@@ -6,7 +6,7 @@ import (
 	"os"
 	"sync"
 	"tungo/presentation/interactive_commands"
-	server2 "tungo/presentation/server_routing"
+	server "tungo/presentation/server_routing"
 	"tungo/presentation/server_routing/serveripconf"
 	"tungo/settings"
 )
@@ -30,7 +30,7 @@ func StartTCPRouting(tunFile *os.File, settings settings.ConnectionSettings) err
 	var extToLocalIp sync.Map   // external ip to local ip map
 	var extIpToSession sync.Map // external ip to session map
 
-	tcpTunWorker := server2.NewTcpTunWorker()
+	tcpTunWorker := server.NewTcpTunWorker()
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -66,7 +66,7 @@ func StartUDPRouting(tunFile *os.File, settings settings.ConnectionSettings) err
 	}
 	defer serveripconf.Unconfigure(tunFile)
 
-	udpTunWorker := server2.NewUdpTunWorker(ctx, tunFile, settings)
+	udpTunWorker := server.NewUdpTunWorker(ctx, tunFile, settings)
 
 	var wg sync.WaitGroup
 	wg.Add(2)

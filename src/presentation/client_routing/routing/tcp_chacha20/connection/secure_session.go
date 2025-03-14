@@ -2,11 +2,11 @@ package connection
 
 import (
 	"net"
-	"tungo/infrastructure/cryptography/chacha20"
+	"tungo/application"
 )
 
 type SecureSession interface {
-	Establish() (*net.Conn, *chacha20.TcpCryptographyService, error)
+	Establish() (*net.Conn, application.CryptographyService, error)
 }
 
 type DefaultSecureSession struct {
@@ -21,7 +21,7 @@ func NewDefaultSecureSession(connection Connection, secret Secret) *DefaultSecur
 	}
 }
 
-func (c *DefaultSecureSession) Establish() (*net.Conn, *chacha20.TcpCryptographyService, error) {
+func (c *DefaultSecureSession) Establish() (*net.Conn, application.CryptographyService, error) {
 	conn, connErr := c.connection.Establish()
 	if connErr != nil {
 		return nil, nil, connErr
