@@ -3,6 +3,7 @@ package ip
 import (
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 	"time"
 )
@@ -91,6 +92,9 @@ func Test_WriteAndReadFromTun(t *testing.T) {
 	select {
 	case res := <-resultCh:
 		if res.err != nil {
+			if strings.Contains(res.err.Error(), "not pollable") {
+				t.Skip("Skipping TUN test: /dev/net/tun is not pollable in current environment")
+			}
 			t.Fatalf("error reading from TUN: %v", res.err)
 		}
 		if res.n < 1 {
