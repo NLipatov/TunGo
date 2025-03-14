@@ -11,7 +11,7 @@ import (
 	"tungo/application"
 	"tungo/client/routing/udp_chacha20/connection"
 	"tungo/client/tun_configurator"
-	"tungo/crypto/chacha20"
+	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/network"
 	"tungo/settings"
 )

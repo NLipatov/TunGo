@@ -3,7 +3,7 @@ package connection
 import (
 	"context"
 	"net"
-	"tungo/crypto/chacha20"
+	"tungo/infrastructure/cryptography/chacha20"
 )
 
 // SecureSessionWithDeadline is a decorator for SecureSession which allows cancellation via ctx

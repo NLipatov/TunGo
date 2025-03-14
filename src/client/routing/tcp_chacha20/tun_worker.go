@@ -9,7 +9,7 @@ import (
 	"log"
 	"net"
 	"tungo/application"
-	"tungo/crypto/chacha20"
+	chacha21 "tungo/infrastructure/cryptography/chacha20"
 	"tungo/network"
 )
 
@@ -17,7 +17,7 @@ type tcpTunWorker struct {
 	router              *TCPRouter
 	conn                net.Conn
 	cryptographyService application.CryptographyService
-	encoder             chacha20.TCPEncoder
+	encoder             chacha21.TCPEncoder
 	tunReadBuffer       []byte
 	err                 error
 }
@@ -57,7 +57,7 @@ func (w *tcpTunWorker) UseConn(conn net.Conn) *tcpTunWorker {
 	return w
 }
 
-func (w *tcpTunWorker) UseEncoder(encoder *chacha20.DefaultTCPEncoder) *tcpTunWorker {
+func (w *tcpTunWorker) UseEncoder(encoder *chacha21.DefaultTCPEncoder) *tcpTunWorker {
 	if w.err != nil {
 		return w
 	}
@@ -96,7 +96,7 @@ func (w *tcpTunWorker) HandleTun(ctx context.Context, triggerReconnect context.C
 	if workerSetupErr != nil {
 		return workerSetupErr
 	}
-	reader := chacha20.NewTcpReader(w.router.tun)
+	reader := chacha21.NewTcpReader(w.router.tun)
 
 	go func() {
 		<-ctx.Done()

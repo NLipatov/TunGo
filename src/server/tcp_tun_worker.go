@@ -9,7 +9,7 @@ import (
 	"net"
 	"os"
 	"sync"
-	"tungo/crypto/chacha20"
+	chacha21 "tungo/infrastructure/cryptography/chacha20"
 	"tungo/network"
 	"tungo/network/ip"
 	"tungo/settings"
@@ -26,8 +26,8 @@ func (w *TcpTunWorker) TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpT
 	headerParser := ip.NewBaseHeaderParser()
 
 	buf := make([]byte, network.IPPacketMaxSizeBytes)
-	reader := chacha20.NewTcpReader(tunFile)
-	encoder := chacha20.NewDefaultTCPEncoder()
+	reader := chacha21.NewTcpReader(tunFile)
+	encoder := chacha21.NewDefaultTCPEncoder()
 
 	for {
 		select {
@@ -70,7 +70,7 @@ func (w *TcpTunWorker) TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpT
 					log.Printf("failed to load cryptographyService")
 					continue
 				}
-				cryptographyService := sessionValue.(*chacha20.TcpCryptographyService)
+				cryptographyService := sessionValue.(*chacha21.TcpCryptographyService)
 				_, encryptErr := cryptographyService.Encrypt(buf[4 : n+4])
 				if encryptErr != nil {
 					log.Printf("failder to encrypt a package: %s", encryptErr)
@@ -132,7 +132,7 @@ func (w *TcpTunWorker) TCPToTun(settings settings.ConnectionSettings, tunFile *o
 
 func (w *TcpTunWorker) registerClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, localIpToServerSessionMap *sync.Map, ctx context.Context) {
 	log.Printf("connected: %s", conn.RemoteAddr())
-	h := chacha20.NewHandshake()
+	h := chacha21.NewHandshake()
 	internalIpAddr, handshakeErr := h.ServerSideHandshake(&network.TcpAdapter{
 		Conn: conn,
 	})
@@ -143,7 +143,7 @@ func (w *TcpTunWorker) registerClient(conn net.Conn, tunFile *os.File, localIpTo
 	}
 	log.Printf("registered: %s", conn.RemoteAddr())
 
-	cryptographyService, cryptographyServiceErr := chacha20.NewTcpCryptographyService(h.Id(), h.ServerKey(), h.ClientKey(), true)
+	cryptographyService, cryptographyServiceErr := chacha21.NewTcpCryptographyService(h.Id(), h.ServerKey(), h.ClientKey(), true)
 	if cryptographyServiceErr != nil {
 		_ = conn.Close()
 		log.Printf("connection closed: %s (regfail: %s)\n", conn.RemoteAddr(), cryptographyServiceErr)
@@ -192,7 +192,7 @@ func (w *TcpTunWorker) handleClient(conn net.Conn, tunFile *os.File, localIpToCo
 				continue
 			}
 
-			session := sessionValue.(*chacha20.TcpCryptographyService)
+			session := sessionValue.(*chacha21.TcpCryptographyService)
 
 			//read packet length from 4-byte length prefix
 			var length = binary.BigEndian.Uint32(buf[:4])

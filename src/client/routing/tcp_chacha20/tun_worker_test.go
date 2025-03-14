@@ -9,9 +9,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/settings"
 
-	"tungo/crypto/chacha20"
 	"tungo/network"
 )
 

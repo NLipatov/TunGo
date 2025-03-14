@@ -2,7 +2,7 @@ package connection
 
 import (
 	"net"
-	"tungo/crypto/chacha20"
+	"tungo/infrastructure/cryptography/chacha20"
 )
 
 type SecureSession interface {

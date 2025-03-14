@@ -6,7 +6,7 @@ import (
 	"log"
 	"net"
 	"os"
-	"tungo/crypto/chacha20"
+	chacha21 "tungo/infrastructure/cryptography/chacha20"
 	"tungo/network"
 	"tungo/network/ip"
 	"tungo/server/clientsession"
@@ -39,7 +39,7 @@ func (u *UdpTunWorker) TunToUDP() {
 	headerParser := ip.NewBaseHeaderParser()
 
 	buf := make([]byte, ip.MaxPacketLengthBytes+12)
-	udpReader := chacha20.NewUdpReader(u.tun)
+	udpReader := chacha21.NewUdpReader(u.tun)
 
 	for {
 		select {
@@ -174,7 +174,7 @@ func (u *UdpTunWorker) UDPToTun() {
 
 func (u *UdpTunWorker) udpRegisterClient(conn *net.UDPConn, clientAddr *net.UDPAddr, initialData []byte) error {
 	// Pass initialData and clientAddr to the crypto function
-	h := chacha20.NewHandshake()
+	h := chacha21.NewHandshake()
 	internalIpAddr, handshakeErr := h.ServerSideHandshake(&network.UdpAdapter{
 		Conn:        *conn,
 		Addr:        *clientAddr,
@@ -190,7 +190,7 @@ func (u *UdpTunWorker) udpRegisterClient(conn *net.UDPConn, clientAddr *net.UDPA
 		return confErr
 	}
 
-	udpSession, udpSessionErr := chacha20.NewUdpSession(h.Id(), h.ServerKey(), h.ClientKey(), true, conf.UDPNonceRingBufferSize)
+	udpSession, udpSessionErr := chacha21.NewUdpSession(h.Id(), h.ServerKey(), h.ClientKey(), true, conf.UDPNonceRingBufferSize)
 	if udpSessionErr != nil {
 		return udpSessionErr
 	}

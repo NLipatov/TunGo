@@ -11,7 +11,7 @@ import (
 	"tungo/application"
 	"tungo/client/routing/tcp_chacha20/connection"
 	"tungo/client/tun_configurator"
-	"tungo/crypto/chacha20"
+	chacha21 "tungo/infrastructure/cryptography/chacha20"
 	"tungo/network"
 	"tungo/settings"
 )
@@ -72,7 +72,7 @@ func forwardIPPackets(r *TCPRouter, conn *net.Conn, cryptographyService applicat
 			UseRouter(r).
 			UseConn(*conn).
 			UseCryptographyService(cryptographyService).
-			UseEncoder(&chacha20.DefaultTCPEncoder{}).
+			UseEncoder(&chacha21.DefaultTCPEncoder{}).
 			Build()
 
 		if buildErr != nil {
@@ -93,7 +93,7 @@ func forwardIPPackets(r *TCPRouter, conn *net.Conn, cryptographyService applicat
 			UseRouter(r).
 			UseConn(*conn).
 			UseCryptographyService(cryptographyService).
-			UseEncoder(&chacha20.DefaultTCPEncoder{}).
+			UseEncoder(&chacha21.DefaultTCPEncoder{}).
 			Build()
 
 		if buildErr != nil {
@@ -117,7 +117,7 @@ func (r *TCPRouter) establishSecureConnection(ctx context.Context) (net.Conn, ap
 	defer handshakeCtxCancel()
 
 	//connect to server and exchange secret
-	secret := connection.NewDefaultSecret(r.Settings, chacha20.NewHandshake())
+	secret := connection.NewDefaultSecret(r.Settings, chacha21.NewHandshake())
 	cancellableSecret := connection.NewSecretWithDeadline(handshakeCtx, secret)
 
 	session := connection.NewDefaultSecureSession(connection.NewDefaultConnection(r.Settings), cancellableSecret)
