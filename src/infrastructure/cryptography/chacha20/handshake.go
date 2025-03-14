@@ -10,7 +10,7 @@ import (
 	"golang.org/x/crypto/hkdf"
 	"io"
 	"net"
-	"tungo/infrastructure/network"
+	"tungo/application"
 	"tungo/settings"
 	"tungo/settings/client"
 	"tungo/settings/server"
@@ -20,7 +20,7 @@ type Handshake interface {
 	Id() [32]byte
 	ClientKey() []byte
 	ServerKey() []byte
-	ServerSideHandshake(conn network.ConnectionAdapter) (*string, error)
+	ServerSideHandshake(conn application.ConnectionAdapter) (*string, error)
 	ClientSideHandshake(conn net.Conn, settings settings.ConnectionSettings) error
 }
 
@@ -46,7 +46,7 @@ func (h *HandshakeImpl) ServerKey() []byte {
 	return h.serverKey
 }
 
-func (h *HandshakeImpl) ServerSideHandshake(conn network.ConnectionAdapter) (*string, error) {
+func (h *HandshakeImpl) ServerSideHandshake(conn application.ConnectionAdapter) (*string, error) {
 	conf, err := (&server.Conf{}).Read()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read server conf: %s", err)
