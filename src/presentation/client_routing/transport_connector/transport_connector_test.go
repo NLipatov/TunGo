@@ -8,7 +8,7 @@ import (
 	"time"
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
-	"tungo/presentation/client/transport_connector"
+	"tungo/presentation/client_routing/transport_connector"
 )
 
 type MockConn struct{}

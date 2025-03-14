@@ -10,8 +10,8 @@ import (
 	"time"
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
-	connection2 "tungo/presentation/client/routing/udp_chacha20/connection"
-	"tungo/presentation/client/tun_configurator"
+	connection2 "tungo/presentation/client_routing/routing/udp_chacha20/connection"
+	"tungo/presentation/client_routing/tun_configurator"
 	"tungo/settings"
 )
 

@@ -1,4 +1,4 @@
-package server
+package server_routing
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	chacha21 "tungo/infrastructure/cryptography/chacha20"
 	network2 "tungo/infrastructure/network"
 	ip2 "tungo/infrastructure/network/ip"
-	clientsession2 "tungo/presentation/server/clientsession"
+	clientsession2 "tungo/presentation/server_routing/clientsession"
 	"tungo/settings"
 	"tungo/settings/server"
 )

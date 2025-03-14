@@ -7,8 +7,8 @@ import (
 	"log"
 	"os"
 	"sync"
-	"tungo/presentation/server/routing"
-	"tungo/presentation/server/serveripconf"
+	"tungo/presentation/server_routing/routing"
+	"tungo/presentation/server_routing/serveripconf"
 	"tungo/settings"
 	"tungo/settings/server"
 )

@@ -6,8 +6,8 @@ import (
 	"os"
 	"sync"
 	"tungo/presentation/interactive_commands"
-	server2 "tungo/presentation/server"
-	"tungo/presentation/server/serveripconf"
+	server2 "tungo/presentation/server_routing"
+	"tungo/presentation/server_routing/serveripconf"
 	"tungo/settings"
 )
 
