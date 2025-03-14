@@ -7,8 +7,7 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"tungo/network"
+	"tungo/application"
 )
 
 // fakeTun implements the TunAdapter interface.
@@ -45,7 +44,7 @@ func (f *fakeTun) Close() error {
 
 // fakeRouter implements a minimal UDPRouter.
 type fakeRouter struct {
-	tun network.TunAdapter
+	tun application.TunDevice
 }
 
 // fakeCryptographyService implements chacha20.UdpSession.
