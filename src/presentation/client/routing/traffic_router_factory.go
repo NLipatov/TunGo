@@ -3,9 +3,9 @@ package routing
 import (
 	"fmt"
 	"log"
-	"tungo/client/routing/tcp_chacha20"
-	"tungo/client/routing/udp_chacha20"
-	"tungo/client/tun_configurator"
+	"tungo/presentation/client/routing/tcp_chacha20"
+	"tungo/presentation/client/routing/udp_chacha20"
+	"tungo/presentation/client/tun_configurator"
 	"tungo/settings"
 	"tungo/settings/client"
 )

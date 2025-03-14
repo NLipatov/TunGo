@@ -4,41 +4,41 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"tungo/network/ip"
-	"tungo/network/iptables"
+	ip2 "tungo/infrastructure/network/ip"
+	"tungo/infrastructure/network/iptables"
 	"tungo/settings"
 )
 
 func SetupServerTun(settings settings.ConnectionSettings) (*os.File, error) {
-	_, _ = ip.LinkDel(settings.InterfaceName)
+	_, _ = ip2.LinkDel(settings.InterfaceName)
 
-	name, err := ip.UpNewTun(settings.InterfaceName)
+	name, err := ip2.UpNewTun(settings.InterfaceName)
 	if err != nil {
 		log.Fatalf("failed to create interface %v: %v", settings.InterfaceName, err)
 	}
 	fmt.Printf("created TUN interface: %v\n", name)
 
-	serverIp, err := ip.AllocateServerIp(settings.InterfaceIPCIDR)
+	serverIp, err := ip2.AllocateServerIp(settings.InterfaceIPCIDR)
 	if err != nil {
 		log.Fatalf("failed to allocate server ip %v: %v", settings.InterfaceName, err)
 	}
 
-	cidrServerIp, err := ip.ToCIDR(settings.InterfaceIPCIDR, serverIp)
+	cidrServerIp, err := ip2.ToCIDR(settings.InterfaceIPCIDR, serverIp)
 	if err != nil {
 		log.Fatalf("failed to conver server ip to CIDR format: %s", err)
 	}
-	_, err = ip.LinkAddrAdd(settings.InterfaceName, cidrServerIp)
+	_, err = ip2.LinkAddrAdd(settings.InterfaceName, cidrServerIp)
 	if err != nil {
 		log.Fatalf("failed to conver server ip to CIDR format: %s", err)
 	}
 	fmt.Printf("assigned IP %s to interface %s\n", settings.Port, settings.InterfaceName)
 
-	setMtuErr := ip.SetMtu(settings.InterfaceName, settings.MTU)
+	setMtuErr := ip2.SetMtu(settings.InterfaceName, settings.MTU)
 	if setMtuErr != nil {
 		log.Fatalf("failed to set MTU: %s", setMtuErr)
 	}
 
-	tunFile, err := ip.OpenTunByName(settings.InterfaceName)
+	tunFile, err := ip2.OpenTunByName(settings.InterfaceName)
 	if err != nil {
 		log.Fatalf("failed to open TUN interface: %v", err)
 	}
@@ -47,7 +47,7 @@ func SetupServerTun(settings settings.ConnectionSettings) (*os.File, error) {
 }
 
 func Configure(tunFile *os.File) error {
-	externalIfName, err := ip.RouteDefault()
+	externalIfName, err := ip2.RouteDefault()
 	if err != nil {
 		return err
 	}
@@ -72,7 +72,7 @@ func Configure(tunFile *os.File) error {
 }
 
 func Unconfigure(tunFile *os.File) {
-	tunName, err := ip.GetIfName(tunFile)
+	tunName, err := ip2.GetIfName(tunFile)
 	if err != nil {
 		log.Printf("failed to determing tunnel ifName: %s\n", err)
 	}
@@ -92,7 +92,7 @@ func Unconfigure(tunFile *os.File) {
 
 func setupForwarding(tunFile *os.File, extIface string) error {
 	// Get the name of the TUN interface
-	tunName, err := ip.GetIfName(tunFile)
+	tunName, err := ip2.GetIfName(tunFile)
 	if err != nil {
 		return fmt.Errorf("failed to determing tunnel ifName: %s\n", err)
 	}
@@ -115,7 +115,7 @@ func setupForwarding(tunFile *os.File, extIface string) error {
 }
 
 func clearForwarding(tunFile *os.File, extIface string) error {
-	tunName, err := ip.GetIfName(tunFile)
+	tunName, err := ip2.GetIfName(tunFile)
 	if err != nil {
 		return fmt.Errorf("failed to determing tunnel ifName: %s\n", err)
 	}

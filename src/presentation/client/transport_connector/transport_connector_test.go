@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 	"tungo/application"
-	"tungo/client/transport_connector"
 	"tungo/infrastructure/cryptography/chacha20"
+	"tungo/presentation/client/transport_connector"
 )
 
 type MockConn struct{}
@@ -55,8 +55,7 @@ func TestEstablishConnectionWithRetry_Success(t *testing.T) {
 		return mockConn, mockSession, nil
 	}
 
-	conn, session, err := transport_connector.
-		NewTransportConnector().
+	conn, session, err := transport_connector.NewTransportConnector().
 		UseConnectorDelegate(connectorDelegate).
 		Connect(ctx)
 
@@ -82,8 +81,7 @@ func TestEstablishConnectionWithRetry_RetryAndFail(t *testing.T) {
 		return nil, nil, errors.New("mock connection error")
 	}
 
-	conn, cryptographyService, err := transport_connector.
-		NewTransportConnector().
+	conn, cryptographyService, err := transport_connector.NewTransportConnector().
 		UseConnectorDelegate(connectorDelegate).
 		Connect(ctx)
 
@@ -117,8 +115,7 @@ func TestEstablishConnectionWithRetry_CancelContext(t *testing.T) {
 		return nil, nil, errors.New("mock connection error")
 	}
 
-	conn, session, err := transport_connector.
-		NewTransportConnector().
+	conn, session, err := transport_connector.NewTransportConnector().
 		UseConnectorDelegate(connectorDelegate).
 		Connect(ctx)
 
@@ -157,8 +154,7 @@ func TestEstablishConnectionWithRetry_SuccessAfterRetries(t *testing.T) {
 		return mockConn, mockSession, nil
 	}
 
-	conn, session, err := transport_connector.
-		NewTransportConnector().
+	conn, session, err := transport_connector.NewTransportConnector().
 		UseConnectorDelegate(connectorDelegate).
 		Connect(ctx)
 

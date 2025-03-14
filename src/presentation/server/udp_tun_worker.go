@@ -7,9 +7,9 @@ import (
 	"net"
 	"os"
 	chacha21 "tungo/infrastructure/cryptography/chacha20"
-	"tungo/network"
-	"tungo/network/ip"
-	"tungo/server/clientsession"
+	network2 "tungo/infrastructure/network"
+	ip2 "tungo/infrastructure/network/ip"
+	clientsession2 "tungo/presentation/server/clientsession"
 	"tungo/settings"
 	"tungo/settings/server"
 )
@@ -23,7 +23,7 @@ type UdpTunWorker struct {
 	ctx            context.Context
 	tun            *os.File
 	settings       settings.ConnectionSettings
-	sessionManager *clientsession.UdpSessionManager
+	sessionManager *clientsession2.UdpSessionManager
 }
 
 func NewUdpTunWorker(ctx context.Context, tun *os.File, settings settings.ConnectionSettings) UdpTunWorker {
@@ -31,14 +31,14 @@ func NewUdpTunWorker(ctx context.Context, tun *os.File, settings settings.Connec
 		tun:            tun,
 		ctx:            ctx,
 		settings:       settings,
-		sessionManager: clientsession.NewUdpSessionManager(),
+		sessionManager: clientsession2.NewUdpSessionManager(),
 	}
 }
 
 func (u *UdpTunWorker) TunToUDP() {
-	headerParser := ip.NewBaseHeaderParser()
+	headerParser := ip2.NewBaseHeaderParser()
 
-	buf := make([]byte, ip.MaxPacketLengthBytes+12)
+	buf := make([]byte, ip2.MaxPacketLengthBytes+12)
 	udpReader := chacha21.NewUdpReader(u.tun)
 
 	for {
@@ -126,7 +126,7 @@ func (u *UdpTunWorker) UDPToTun() {
 		_ = conn.Close()
 	}()
 
-	dataBuf := make([]byte, ip.MaxPacketLengthBytes+12)
+	dataBuf := make([]byte, ip2.MaxPacketLengthBytes+12)
 	oobBuf := make([]byte, 1024)
 	for {
 		select {
@@ -150,7 +150,7 @@ func (u *UdpTunWorker) UDPToTun() {
 				if regErr != nil {
 					log.Printf("%s failed registration: %s\n", clientAddr.String(), regErr)
 					_, _ = conn.WriteToUDP([]byte{
-						byte(network.SessionReset),
+						byte(network2.SessionReset),
 					}, clientAddr)
 				}
 				continue
@@ -175,7 +175,7 @@ func (u *UdpTunWorker) UDPToTun() {
 func (u *UdpTunWorker) udpRegisterClient(conn *net.UDPConn, clientAddr *net.UDPAddr, initialData []byte) error {
 	// Pass initialData and clientAddr to the crypto function
 	h := chacha21.NewHandshake()
-	internalIpAddr, handshakeErr := h.ServerSideHandshake(&network.UdpAdapter{
+	internalIpAddr, handshakeErr := h.ServerSideHandshake(&network2.UdpAdapter{
 		Conn:        *conn,
 		Addr:        *clientAddr,
 		InitialData: initialData,
@@ -195,7 +195,7 @@ func (u *UdpTunWorker) udpRegisterClient(conn *net.UDPConn, clientAddr *net.UDPA
 		return udpSessionErr
 	}
 
-	u.sessionManager.Store(clientsession.NewUdpSession(conn, *internalIpAddr, clientAddr, udpSession))
+	u.sessionManager.Store(clientsession2.NewUdpSession(conn, *internalIpAddr, clientAddr, udpSession))
 
 	return nil
 }

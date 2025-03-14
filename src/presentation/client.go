@@ -3,8 +3,8 @@ package presentation
 import (
 	"context"
 	"log"
-	"tungo/client/routing"
-	"tungo/cmd"
+	"tungo/presentation/client/routing"
+	"tungo/presentation/interactive_commands"
 	"tungo/settings/client"
 )
 
@@ -14,7 +14,7 @@ func StartClient() {
 	defer cancel()
 
 	// Start a goroutine to listen for user input
-	go cmd.ListenForCommand(cancel, "client")
+	go interactive_commands.ListenForCommand(cancel, "client")
 
 	// Read client configuration
 	conf, err := (&client.Conf{}).Read()

@@ -1,4 +1,4 @@
-package tcp_chacha20
+package udp_chacha20
 
 import (
 	"context"
@@ -6,13 +6,12 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"tungo/network"
+	"tungo/application"
 	"tungo/settings"
 )
 
-// tcpRouterTestFakeTun implements the TunAdapter interface for TCP tests.
-type tcpRouterTestFakeTun struct {
+// routerTestFakeTun implements the TunAdapter interface.
+type routerTestFakeTun struct {
 	readData    []byte
 	readErr     error
 	written     [][]byte
@@ -20,7 +19,7 @@ type tcpRouterTestFakeTun struct {
 	mu          sync.Mutex
 }
 
-func (f *tcpRouterTestFakeTun) Read(p []byte) (int, error) {
+func (f *routerTestFakeTun) Read(p []byte) (int, error) {
 	if f.readErr != nil {
 		return 0, f.readErr
 	}
@@ -36,48 +35,47 @@ func (f *tcpRouterTestFakeTun) Read(p []byte) (int, error) {
 	return n, nil
 }
 
-func (f *tcpRouterTestFakeTun) Write(p []byte) (int, error) {
+func (f *routerTestFakeTun) Write(p []byte) (int, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.written = append(f.written, p)
 	return len(p), nil
 }
 
-func (f *tcpRouterTestFakeTun) Close() error {
+func (f *routerTestFakeTun) Close() error {
 	f.closeCalled = true
 	return nil
 }
 
-// tcpRouterTestFakeTunConfigurator implements the TunConfigurator interface.
-type tcpRouterTestFakeTunConfigurator struct {
-	tun          network.TunAdapter
+// routerTestFakeTunConfigurator implements the TunConfigurator interface.
+type routerTestFakeTunConfigurator struct {
+	tun          application.TunDevice
 	deconfigured bool
 }
 
-func (f *tcpRouterTestFakeTunConfigurator) Configure(_ settings.ConnectionSettings) (network.TunAdapter, error) {
+func (f *routerTestFakeTunConfigurator) Configure(_ settings.ConnectionSettings) (application.TunDevice, error) {
 	return f.tun, nil
 }
 
-func (f *tcpRouterTestFakeTunConfigurator) Deconfigure(_ settings.ConnectionSettings) {
+func (f *routerTestFakeTunConfigurator) Deconfigure(_ settings.ConnectionSettings) {
 	f.deconfigured = true
 }
 
-// For testing secure connection, we simulate failure by letting the secure connection
-// establishment (which is based on a short DialTimeoutMs) fail.
-func TestTCPRouter_RouteTraffic_ContextCancelled(t *testing.T) {
+// TestUDPRouter_RouteTraffic_ContextCancelled tests that RouteTraffic gracefully terminates when context is cancelled.
+func TestUDPRouter_RouteTraffic_ContextCancelled(t *testing.T) {
 	// Create fake TUN and configurator.
-	ftun := &tcpRouterTestFakeTun{
+	ftun := &routerTestFakeTun{
 		readData: []byte("test packet"),
 	}
-	ftc := &tcpRouterTestFakeTunConfigurator{
+	ftc := &routerTestFakeTunConfigurator{
 		tun: ftun,
 	}
-	// Use settings with a short DialTimeoutMs.
+	// Use settings with a short timeout.
 	sett := settings.ConnectionSettings{
 		ConnectionIP:  "127.0.0.1",
 		DialTimeoutMs: 10,
 	}
-	router := &TCPRouter{
+	router := &UDPRouter{
 		Settings:        sett,
 		TunConfigurator: ftc,
 	}
@@ -97,28 +95,28 @@ func TestTCPRouter_RouteTraffic_ContextCancelled(t *testing.T) {
 	}
 }
 
-// TestTCPRouter_RouteTraffic_EstablishFailure tests that the TCPRouter cleans up properly when secure
-// connection establishment fails. Instead of using a timeout context, we cancel the context manually.
-func TestTCPRouter_RouteTraffic_EstablishFailure(t *testing.T) {
+// TestUDPRouter_RouteTraffic_EstablishFailure tests that RouteTraffic terminates properly when secure connection establishment fails.
+func TestUDPRouter_RouteTraffic_EstablishFailure(t *testing.T) {
 	// Create fake TUN and configurator.
-	ftun := &tcpRouterTestFakeTun{
+	ftun := &routerTestFakeTun{
 		readData: []byte("dummy"),
 	}
-	ftc := &tcpRouterTestFakeTunConfigurator{
+	ftc := &routerTestFakeTunConfigurator{
 		tun: ftun,
 	}
-	// Use settings with a short DialTimeoutMs so that secure connection quickly fails.
+	// Use settings with a short DialTimeoutMs.
 	sett := settings.ConnectionSettings{
 		ConnectionIP:  "127.0.0.1",
 		DialTimeoutMs: 10,
 	}
-	router := &TCPRouter{
+	router := &UDPRouter{
 		Settings:        sett,
 		TunConfigurator: ftc,
 	}
 
-	// Use a context that we cancel manually after a short delay.
+	// Instead of a timeout context, use a cancelable context and cancel manually.
 	ctx, cancel := context.WithCancel(context.Background())
+	// Cancel the context after a short delay.
 	go func() {
 		time.Sleep(100 * time.Millisecond)
 		cancel()

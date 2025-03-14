@@ -8,8 +8,8 @@ import (
 	"time"
 	"tungo/application"
 	chacha21 "tungo/infrastructure/cryptography/chacha20"
-	"tungo/network"
-	"tungo/network/ip"
+	"tungo/infrastructure/network"
+	"tungo/infrastructure/network/ip"
 )
 
 type chacha20UdpWorker struct {

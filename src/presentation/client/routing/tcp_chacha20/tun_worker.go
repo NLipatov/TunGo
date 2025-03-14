@@ -10,7 +10,7 @@ import (
 	"net"
 	"tungo/application"
 	chacha21 "tungo/infrastructure/cryptography/chacha20"
-	"tungo/network"
+	"tungo/infrastructure/network"
 )
 
 type tcpTunWorker struct {

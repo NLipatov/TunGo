@@ -4,17 +4,16 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
-	"io"
-	"net"
-	"tungo/network"
-	"tungo/settings"
-	"tungo/settings/client"
-	"tungo/settings/server"
-
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/curve25519"
 	"golang.org/x/crypto/ed25519"
 	"golang.org/x/crypto/hkdf"
+	"io"
+	"net"
+	"tungo/infrastructure/network"
+	"tungo/settings"
+	"tungo/settings/client"
+	"tungo/settings/server"
 )
 
 type Handshake interface {

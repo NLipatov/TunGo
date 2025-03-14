@@ -1,4 +1,4 @@
-package cmd
+package interactive_commands
 
 import (
 	"bufio"
@@ -7,7 +7,7 @@ import (
 	"log"
 	"os"
 	"strings"
-	"tungo/cmd/handlers"
+	"tungo/presentation/interactive_commands/handlers"
 )
 
 const (

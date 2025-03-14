@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 	"tungo/application"
-	"tungo/client/routing/tcp_chacha20/connection"
-	"tungo/client/tun_configurator"
 	chacha21 "tungo/infrastructure/cryptography/chacha20"
+	connection2 "tungo/presentation/client/routing/tcp_chacha20/connection"
+	"tungo/presentation/client/tun_configurator"
 	"tungo/settings"
 )
 
@@ -116,11 +116,11 @@ func (r *TCPRouter) establishSecureConnection(ctx context.Context) (net.Conn, ap
 	defer handshakeCtxCancel()
 
 	//connect to server and exchange secret
-	secret := connection.NewDefaultSecret(r.Settings, chacha21.NewHandshake())
-	cancellableSecret := connection.NewSecretWithDeadline(handshakeCtx, secret)
+	secret := connection2.NewDefaultSecret(r.Settings, chacha21.NewHandshake())
+	cancellableSecret := connection2.NewSecretWithDeadline(handshakeCtx, secret)
 
-	session := connection.NewDefaultSecureSession(connection.NewDefaultConnection(r.Settings), cancellableSecret)
-	cancellableSession := connection.NewSecureSessionWithDeadline(handshakeCtx, session)
+	session := connection2.NewDefaultSecureSession(connection2.NewDefaultConnection(r.Settings), cancellableSecret)
+	cancellableSession := connection2.NewSecureSessionWithDeadline(handshakeCtx, session)
 	conn, tcpSession, err := cancellableSession.Establish()
 	if err != nil {
 		return nil, nil, err

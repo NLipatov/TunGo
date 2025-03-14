@@ -9,10 +9,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/settings"
-
-	"tungo/network"
 )
 
 // fakeTun implements the network.TunAdapter interface.
@@ -51,11 +50,11 @@ func (f *fakeTun) Close() error {
 
 // fakeTunConfigurator implements a minimal TunConfigurator.
 type fakeTunConfigurator struct {
-	tun          network.TunAdapter
+	tun          application.TunDevice
 	deconfigured bool
 }
 
-func (f *fakeTunConfigurator) Configure(_ settings.ConnectionSettings) (network.TunAdapter, error) {
+func (f *fakeTunConfigurator) Configure(_ settings.ConnectionSettings) (application.TunDevice, error) {
 	return f.tun, nil
 }
 

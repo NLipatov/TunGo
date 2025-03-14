@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 	"sync"
-	"tungo/cmd"
-	"tungo/server"
-	"tungo/server/serveripconf"
+	"tungo/presentation/interactive_commands"
+	server2 "tungo/presentation/server"
+	"tungo/presentation/server/serveripconf"
 	"tungo/settings"
 )
 
@@ -17,7 +17,7 @@ func StartTCPRouting(tunFile *os.File, settings settings.ConnectionSettings) err
 	defer cancel()
 
 	// Start a goroutine to listen for user input
-	go cmd.ListenForCommand(cancel, "server")
+	go interactive_commands.ListenForCommand(cancel, "server")
 
 	// Setup server
 	err := serveripconf.Configure(tunFile)
@@ -30,7 +30,7 @@ func StartTCPRouting(tunFile *os.File, settings settings.ConnectionSettings) err
 	var extToLocalIp sync.Map   // external ip to local ip map
 	var extIpToSession sync.Map // external ip to session map
 
-	tcpTunWorker := server.NewTcpTunWorker()
+	tcpTunWorker := server2.NewTcpTunWorker()
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -57,7 +57,7 @@ func StartUDPRouting(tunFile *os.File, settings settings.ConnectionSettings) err
 	defer cancel()
 
 	// Start a goroutine to listen for user input
-	go cmd.ListenForCommand(cancel, "server")
+	go interactive_commands.ListenForCommand(cancel, "server")
 
 	// Setup server
 	err := serveripconf.Configure(tunFile)
@@ -66,7 +66,7 @@ func StartUDPRouting(tunFile *os.File, settings settings.ConnectionSettings) err
 	}
 	defer serveripconf.Unconfigure(tunFile)
 
-	udpTunWorker := server.NewUdpTunWorker(ctx, tunFile, settings)
+	udpTunWorker := server2.NewUdpTunWorker(ctx, tunFile, settings)
 
 	var wg sync.WaitGroup
 	wg.Add(2)
