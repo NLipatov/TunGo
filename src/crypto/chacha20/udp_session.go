@@ -9,11 +9,6 @@ import (
 )
 
 type (
-	UdpSession interface {
-		// Encrypt deprecated, use InplaceEncrypt
-		Encrypt(plaintext []byte) ([]byte, error)
-		Decrypt(ciphertext []byte) ([]byte, error)
-	}
 	DefaultUdpSession struct {
 		SessionId        [32]byte
 		encoder          DefaultUDPEncoder

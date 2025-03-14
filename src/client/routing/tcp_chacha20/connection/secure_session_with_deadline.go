@@ -19,18 +19,18 @@ func NewSecureSessionWithDeadline(ctx context.Context, secureConnection SecureSe
 	}
 }
 
-func (c *SecureSessionWithDeadline) Establish() (*net.Conn, *chacha20.TcpSession, error) {
+func (c *SecureSessionWithDeadline) Establish() (*net.Conn, *chacha20.TcpCryptographyService, error) {
 	type result struct {
 		conn *net.Conn
-		sess *chacha20.TcpSession
+		sess *chacha20.TcpCryptographyService
 		err  error
 	}
 
 	resultChan := make(chan result, 1)
 
 	go func() {
-		conn, session, err := c.secureConnection.Establish()
-		resultChan <- result{conn: conn, sess: session, err: err}
+		conn, cryptographyService, err := c.secureConnection.Establish()
+		resultChan <- result{conn: conn, sess: cryptographyService, err: err}
 	}()
 
 	select {

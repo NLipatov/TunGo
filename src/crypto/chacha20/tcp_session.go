@@ -9,7 +9,7 @@ import (
 	"io"
 )
 
-type TcpSession struct {
+type TcpCryptographyService struct {
 	sendCipher         cipher.AEAD
 	recvCipher         cipher.AEAD
 	SendNonce          *Nonce
@@ -34,7 +34,7 @@ func DeriveSessionId(sharedSecret []byte, salt []byte) ([32]byte, error) {
 	return sessionID, nil
 }
 
-func NewTcpSession(id [32]byte, sendKey, recvKey []byte, isServer bool) (*TcpSession, error) {
+func NewTcpCryptographyService(id [32]byte, sendKey, recvKey []byte, isServer bool) (*TcpCryptographyService, error) {
 	sendCipher, err := chacha20poly1305.New(sendKey)
 	if err != nil {
 		return nil, err
@@ -45,7 +45,7 @@ func NewTcpSession(id [32]byte, sendKey, recvKey []byte, isServer bool) (*TcpSes
 		return nil, err
 	}
 
-	return &TcpSession{
+	return &TcpCryptographyService{
 		SessionId:          id,
 		sendCipher:         sendCipher,
 		recvCipher:         recvCipher,
@@ -60,11 +60,11 @@ func NewTcpSession(id [32]byte, sendKey, recvKey []byte, isServer bool) (*TcpSes
 	}, nil
 }
 
-func (s *TcpSession) UseNonceRingBuffer(size int) *TcpSession {
+func (s *TcpCryptographyService) UseNonceRingBuffer() *TcpCryptographyService {
 	return s
 }
 
-func (s *TcpSession) Encrypt(plaintext []byte) ([]byte, error) {
+func (s *TcpCryptographyService) Encrypt(plaintext []byte) ([]byte, error) {
 	err := s.SendNonce.incrementNonce()
 	if err != nil {
 		return nil, err
@@ -78,7 +78,7 @@ func (s *TcpSession) Encrypt(plaintext []byte) ([]byte, error) {
 	return ciphertext, nil
 }
 
-func (s *TcpSession) Decrypt(ciphertext []byte) ([]byte, error) {
+func (s *TcpCryptographyService) Decrypt(ciphertext []byte) ([]byte, error) {
 	err := s.RecvNonce.incrementNonce()
 	if err != nil {
 		return nil, err
@@ -96,7 +96,7 @@ func (s *TcpSession) Decrypt(ciphertext []byte) ([]byte, error) {
 	return plaintext, nil
 }
 
-func (s *TcpSession) CreateAAD(isServerToClient bool, nonce, aad []byte) []byte {
+func (s *TcpCryptographyService) CreateAAD(isServerToClient bool, nonce, aad []byte) []byte {
 	direction := []byte("client-to-server")
 	if isServerToClient {
 		direction = []byte("server-to-client")

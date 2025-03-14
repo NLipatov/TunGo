@@ -6,7 +6,7 @@ import (
 )
 
 type SecureSession interface {
-	Establish() (*net.Conn, *chacha20.TcpSession, error)
+	Establish() (*net.Conn, *chacha20.TcpCryptographyService, error)
 }
 
 type DefaultSecureSession struct {
@@ -21,16 +21,16 @@ func NewDefaultSecureSession(connection Connection, secret Secret) *DefaultSecur
 	}
 }
 
-func (c *DefaultSecureSession) Establish() (*net.Conn, *chacha20.TcpSession, error) {
+func (c *DefaultSecureSession) Establish() (*net.Conn, *chacha20.TcpCryptographyService, error) {
 	conn, connErr := c.connection.Establish()
 	if connErr != nil {
 		return nil, nil, connErr
 	}
 
-	session, sessionErr := c.secret.Exchange(conn)
-	if sessionErr != nil {
-		return nil, nil, sessionErr
+	cryptographyService, cryptographyServiceErr := c.secret.Exchange(conn)
+	if cryptographyServiceErr != nil {
+		return nil, nil, cryptographyServiceErr
 	}
 
-	return conn, session, nil
+	return conn, cryptographyService, nil
 }

@@ -108,15 +108,13 @@ func (f *fakeTCPConn) SetDeadline(_ time.Time) error      { return nil }
 func (f *fakeTCPConn) SetReadDeadline(_ time.Time) error  { return nil }
 func (f *fakeTCPConn) SetWriteDeadline(_ time.Time) error { return nil }
 
-// fakeSession implements crypto.Session. For simplicity, Encrypt() prefixes data with "enc:" and
-// Decrypt() removes that prefix.
-type fakeSession struct{}
+type fakeCryptographyService struct{}
 
-func (s *fakeSession) Encrypt(plaintext []byte) ([]byte, error) {
+func (s *fakeCryptographyService) Encrypt(plaintext []byte) ([]byte, error) {
 	return append([]byte("enc:"), plaintext...), nil
 }
 
-func (s *fakeSession) Decrypt(ciphertext []byte) ([]byte, error) {
+func (s *fakeCryptographyService) Decrypt(ciphertext []byte) ([]byte, error) {
 	prefix := []byte("enc:")
 	if len(ciphertext) < len(prefix) || string(ciphertext[:len(prefix)]) != string(prefix) {
 		return nil, errors.New("decryption failed")
@@ -134,8 +132,8 @@ func TestTcpTunWorker_HandlePacketsFromTun(t *testing.T) {
 	// Create a fake TCP connection to capture writes.
 	conn := newFakeTCPConn(nil)
 
-	// Create a fake session.
-	sess := &fakeSession{}
+	// Create a fake cryptographyService.
+	sess := &fakeCryptographyService{}
 
 	// Use DefaultTCPEncoder.
 	encoder := &chacha20.DefaultTCPEncoder{}
@@ -151,7 +149,7 @@ func TestTcpTunWorker_HandlePacketsFromTun(t *testing.T) {
 	worker, err := newTcpTunWorker().
 		UseRouter(router).
 		UseConn(conn).
-		UseSession(sess).
+		UseCryptographyService(sess).
 		UseEncoder(encoder).
 		Build()
 	if err != nil {
@@ -181,7 +179,7 @@ func TestTcpTunWorker_HandlePacketsFromTun(t *testing.T) {
 	if len(conn.written) == 0 {
 		t.Error("expected data to be written to TCP connection, but none found")
 	} else {
-		// The fake session adds "enc:" and encoder prepends a 4-byte length.
+		// The fake cryptographyService adds "enc:" and encoder prepends a 4-byte length.
 		// Verify the length prefix.
 		writtenData := conn.written[0]
 		if len(writtenData) < 4 {
@@ -199,7 +197,7 @@ func TestTcpTunWorker_HandlePacketsFromTun(t *testing.T) {
 func TestTcpTunWorker_HandlePacketsFromConn(t *testing.T) {
 	// Prepare fake decrypted data.
 	plainData := []byte("hello from TCP")
-	sess := &fakeSession{}
+	sess := &fakeCryptographyService{}
 	encryptedPayload, err := sess.Encrypt(plainData)
 	if err != nil {
 		t.Fatalf("failed to encrypt test data: %v", err)
@@ -229,7 +227,7 @@ func TestTcpTunWorker_HandlePacketsFromConn(t *testing.T) {
 	worker, err := newTcpTunWorker().
 		UseRouter(router).
 		UseConn(fakeConn).
-		UseSession(sess).
+		UseCryptographyService(sess).
 		UseEncoder(encoder).
 		Build()
 	if err != nil {

@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"tungo/crypto/chacha20"
 	"tungo/network"
 )
 
@@ -49,37 +48,20 @@ type fakeRouter struct {
 	tun network.TunAdapter
 }
 
-// fakeSession implements chacha20.UdpSession.
-type fakeSession struct{}
+// fakeCryptographyService implements chacha20.UdpSession.
+type fakeCryptographyService struct{}
 
-func (s *fakeSession) Encrypt(plaintext []byte) ([]byte, error) {
+func (s *fakeCryptographyService) Encrypt(plaintext []byte) ([]byte, error) {
 	// For testing, prepend "enc:" to simulate encryption.
 	return append([]byte("enc:"), plaintext...), nil
 }
 
-func (s *fakeSession) Decrypt(ciphertext []byte) ([]byte, error) {
+func (s *fakeCryptographyService) Decrypt(ciphertext []byte) ([]byte, error) {
 	prefix := []byte("enc:")
 	if len(ciphertext) < len(prefix) || string(ciphertext[:len(prefix)]) != string(prefix) {
 		return nil, errors.New("decryption failed")
 	}
 	return ciphertext[len(prefix):], nil
-}
-
-// fakeEncoder implements chacha20.UDPEncoder.
-type fakeEncoder struct{}
-
-func (e *fakeEncoder) Encode(payload []byte, nonce *chacha20.Nonce) (*chacha20.UDPPacket, error) {
-	return &chacha20.UDPPacket{
-		Payload: payload,
-		Nonce:   nonce,
-	}, nil
-}
-
-func (e *fakeEncoder) Decode(data []byte) (*chacha20.UDPPacket, error) {
-	return &chacha20.UDPPacket{
-		Payload: data,
-		Nonce:   &chacha20.Nonce{},
-	}, nil
 }
 
 // TestHandlePacketsFromTun simulates reading from TUN and sending encrypted data via UDP.
@@ -102,7 +84,7 @@ func TestHandlePacketsFromTun(t *testing.T) {
 		_ = udpConn.Close()
 	}(udpConn)
 
-	worker := newChacha20UdpWorker(&UDPRouter{tun: router.tun}, udpConn, &fakeSession{})
+	worker := newChacha20UdpWorker(&UDPRouter{tun: router.tun}, udpConn, &fakeCryptographyService{})
 
 	// Use a context that cancels shortly.
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
@@ -146,8 +128,8 @@ func TestHandlePacketsFromConn(t *testing.T) {
 	ftun := &fakeTun{}
 	router := &fakeRouter{tun: ftun}
 
-	// Use the fake session.
-	sess := &fakeSession{}
+	// Use the fake CryptographyService.
+	sess := &fakeCryptographyService{}
 
 	worker := newChacha20UdpWorker(&UDPRouter{tun: router.tun}, udpConn, sess)
 

@@ -8,6 +8,7 @@ import (
 	"net"
 	"sync"
 	"time"
+	"tungo/application"
 	"tungo/client/routing/tcp_chacha20/connection"
 	"tungo/client/tun_configurator"
 	"tungo/crypto/chacha20"
@@ -34,7 +35,7 @@ func (r *TCPRouter) RouteTraffic(ctx context.Context) error {
 	r.tun = tun
 
 	for {
-		conn, session, err := r.establishSecureConnection(ctx)
+		conn, cryptographyService, err := r.establishSecureConnection(ctx)
 		if err != nil {
 			if errors.Is(err, context.Canceled) { //client shutdown
 				return nil
@@ -56,11 +57,11 @@ func (r *TCPRouter) RouteTraffic(ctx context.Context) error {
 			_ = conn.Close()
 		}()
 
-		forwardIPPackets(r, &conn, session, connCtx, connCancel)
+		forwardIPPackets(r, &conn, cryptographyService, connCtx, connCancel)
 	}
 }
 
-func forwardIPPackets(r *TCPRouter, conn *net.Conn, session *chacha20.TcpSession, connCtx context.Context, connCancel context.CancelFunc) {
+func forwardIPPackets(r *TCPRouter, conn *net.Conn, cryptographyService application.CryptographyService, connCtx context.Context, connCancel context.CancelFunc) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
@@ -70,7 +71,7 @@ func forwardIPPackets(r *TCPRouter, conn *net.Conn, session *chacha20.TcpSession
 		tunWorker, buildErr := newTcpTunWorker().
 			UseRouter(r).
 			UseConn(*conn).
-			UseSession(session).
+			UseCryptographyService(cryptographyService).
 			UseEncoder(&chacha20.DefaultTCPEncoder{}).
 			Build()
 
@@ -91,7 +92,7 @@ func forwardIPPackets(r *TCPRouter, conn *net.Conn, session *chacha20.TcpSession
 		tunWorker, buildErr := newTcpTunWorker().
 			UseRouter(r).
 			UseConn(*conn).
-			UseSession(session).
+			UseCryptographyService(cryptographyService).
 			UseEncoder(&chacha20.DefaultTCPEncoder{}).
 			Build()
 
@@ -109,7 +110,7 @@ func forwardIPPackets(r *TCPRouter, conn *net.Conn, session *chacha20.TcpSession
 	wg.Wait()
 }
 
-func (r *TCPRouter) establishSecureConnection(ctx context.Context) (net.Conn, *chacha20.TcpSession, error) {
+func (r *TCPRouter) establishSecureConnection(ctx context.Context) (net.Conn, application.CryptographyService, error) {
 	//setup ctx deadline
 	deadline := time.Now().Add(time.Duration(math.Max(float64(r.Settings.DialTimeoutMs), 5000)) * time.Millisecond)
 	handshakeCtx, handshakeCtxCancel := context.WithDeadline(ctx, deadline)

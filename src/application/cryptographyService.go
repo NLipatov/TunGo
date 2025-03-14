@@ -1,6 +1,6 @@
-package crypto
+package application
 
-type Session interface {
+type CryptographyService interface {
 	Encrypt(plaintext []byte) ([]byte, error)
 	Decrypt(ciphertext []byte) ([]byte, error)
 }

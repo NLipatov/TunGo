@@ -3,13 +3,14 @@ package connection
 import (
 	"fmt"
 	"net"
+	"tungo/application"
 	"tungo/crypto/chacha20"
 	"tungo/settings"
 	"tungo/settings/client"
 )
 
 type Secret interface {
-	Exchange(conn *net.UDPConn) (*chacha20.DefaultUdpSession, error)
+	Exchange(conn *net.UDPConn) (application.CryptographyService, error)
 }
 
 type DefaultSecret struct {
@@ -24,7 +25,7 @@ func NewDefaultSecret(settings settings.ConnectionSettings, handshake chacha20.H
 	}
 }
 
-func (s *DefaultSecret) Exchange(conn *net.UDPConn) (*chacha20.DefaultUdpSession, error) {
+func (s *DefaultSecret) Exchange(conn *net.UDPConn) (application.CryptographyService, error) {
 	handshakeErr := s.handshake.ClientSideHandshake(conn, s.settings)
 	if handshakeErr != nil {
 		return nil, handshakeErr

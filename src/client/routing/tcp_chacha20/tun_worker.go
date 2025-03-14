@@ -8,18 +8,18 @@ import (
 	"io"
 	"log"
 	"net"
-	"tungo/crypto"
+	"tungo/application"
 	"tungo/crypto/chacha20"
 	"tungo/network"
 )
 
 type tcpTunWorker struct {
-	router        *TCPRouter
-	conn          net.Conn
-	session       crypto.Session
-	encoder       chacha20.TCPEncoder
-	tunReadBuffer []byte
-	err           error
+	router              *TCPRouter
+	conn                net.Conn
+	cryptographyService application.CryptographyService
+	encoder             chacha20.TCPEncoder
+	tunReadBuffer       []byte
+	err                 error
 }
 
 func newTcpTunWorker() *tcpTunWorker {
@@ -37,12 +37,12 @@ func (w *tcpTunWorker) UseRouter(router *TCPRouter) *tcpTunWorker {
 	return w
 }
 
-func (w *tcpTunWorker) UseSession(session crypto.Session) *tcpTunWorker {
+func (w *tcpTunWorker) UseCryptographyService(cryptographyService application.CryptographyService) *tcpTunWorker {
 	if w.err != nil {
 		return w
 	}
 
-	w.session = session
+	w.cryptographyService = cryptographyService
 
 	return w
 }
@@ -76,8 +76,8 @@ func (w *tcpTunWorker) Build() (*tcpTunWorker, error) {
 		return nil, fmt.Errorf("router required but not provided")
 	}
 
-	if w.session == nil {
-		return nil, fmt.Errorf("session required but not provided")
+	if w.cryptographyService == nil {
+		return nil, fmt.Errorf("cryptographyService required but not provided")
 	}
 
 	if w.conn == nil {
@@ -118,7 +118,7 @@ func (w *tcpTunWorker) HandleTun(ctx context.Context, triggerReconnect context.C
 				triggerReconnect()
 			}
 
-			_, err = w.session.Encrypt(w.tunReadBuffer[4 : n+4])
+			_, err = w.cryptographyService.Encrypt(w.tunReadBuffer[4 : n+4])
 			if err != nil {
 				log.Printf("failed to encrypt packet: %v", err)
 				continue
@@ -179,7 +179,7 @@ func (w *tcpTunWorker) HandleConn(ctx context.Context, connCancel context.Cancel
 				continue
 			}
 
-			decrypted, decryptionErr := w.session.Decrypt(buf[:length])
+			decrypted, decryptionErr := w.cryptographyService.Decrypt(buf[:length])
 			if decryptionErr != nil {
 				log.Printf("failed to decrypt data: %s", decryptionErr)
 				continue

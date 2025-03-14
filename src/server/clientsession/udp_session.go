@@ -2,17 +2,17 @@ package clientsession
 
 import (
 	"net"
-	"tungo/crypto"
+	"tungo/application"
 )
 
 type UdpSession struct {
 	conn       *net.UDPConn
 	internalIP string
 	udpAddr    *net.UDPAddr
-	session    crypto.Session
+	session    application.CryptographyService
 }
 
-func NewUdpSession(conn *net.UDPConn, internalIP string, addr *net.UDPAddr, session crypto.Session) *UdpSession {
+func NewUdpSession(conn *net.UDPConn, internalIP string, addr *net.UDPAddr, session application.CryptographyService) *UdpSession {
 	return &UdpSession{
 		conn:       conn,
 		internalIP: internalIP,
@@ -33,6 +33,6 @@ func (s *UdpSession) UdpAddr() *net.UDPAddr {
 	return s.udpAddr
 }
 
-func (s *UdpSession) Session() crypto.Session {
+func (s *UdpSession) Session() application.CryptographyService {
 	return s.session
 }

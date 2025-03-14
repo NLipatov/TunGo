@@ -3,7 +3,7 @@ package connection
 import (
 	"context"
 	"net"
-	"tungo/crypto/chacha20"
+	"tungo/application"
 )
 
 // SecureSessionWithDeadline is a decorator for SecureSession which allows cancellation via ctx
@@ -19,10 +19,10 @@ func NewSecureSessionWithDeadline(ctx context.Context, secureConnection SecureSe
 	}
 }
 
-func (c *SecureSessionWithDeadline) Establish() (*net.UDPConn, *chacha20.DefaultUdpSession, error) {
+func (c *SecureSessionWithDeadline) Establish() (*net.UDPConn, application.CryptographyService, error) {
 	type result struct {
 		conn *net.UDPConn
-		sess *chacha20.DefaultUdpSession
+		sess application.CryptographyService
 		err  error
 	}
 

@@ -8,6 +8,7 @@ import (
 	"net"
 	"sync"
 	"time"
+	"tungo/application"
 	"tungo/client/routing/udp_chacha20/connection"
 	"tungo/client/tun_configurator"
 	"tungo/crypto/chacha20"
@@ -63,14 +64,14 @@ func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
 	}
 }
 
-func (r *UDPRouter) startUDPForwarding(conn *net.UDPConn, session *chacha20.DefaultUdpSession, connCtx context.Context, connCancel context.CancelFunc) {
+func (r *UDPRouter) startUDPForwarding(conn *net.UDPConn, cryptographyService application.CryptographyService, connCtx context.Context, connCancel context.CancelFunc) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
 	// TUN -> UDP
 	go func() {
 		defer wg.Done()
-		tunWorker := newChacha20UdpWorker(r, conn, session)
+		tunWorker := newChacha20UdpWorker(r, conn, cryptographyService)
 
 		handlingErr := tunWorker.HandleTun(connCtx, connCancel)
 
@@ -84,7 +85,7 @@ func (r *UDPRouter) startUDPForwarding(conn *net.UDPConn, session *chacha20.Defa
 	// UDP -> TUN
 	go func() {
 		defer wg.Done()
-		tunWorker := newChacha20UdpWorker(r, conn, session)
+		tunWorker := newChacha20UdpWorker(r, conn, cryptographyService)
 
 		handlingErr := tunWorker.HandleConn(connCtx, connCancel)
 
@@ -98,7 +99,7 @@ func (r *UDPRouter) startUDPForwarding(conn *net.UDPConn, session *chacha20.Defa
 	wg.Wait()
 }
 
-func (r *UDPRouter) establishSecureConnection(ctx context.Context) (*net.UDPConn, *chacha20.DefaultUdpSession, error) {
+func (r *UDPRouter) establishSecureConnection(ctx context.Context) (*net.UDPConn, application.CryptographyService, error) {
 	//setup ctx deadline
 	deadline := time.Now().Add(time.Duration(math.Max(float64(r.Settings.DialTimeoutMs), 5000)) * time.Millisecond)
 	handshakeCtx, handshakeCtxCancel := context.WithDeadline(ctx, deadline)

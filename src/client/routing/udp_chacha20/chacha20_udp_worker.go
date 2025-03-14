@@ -6,22 +6,23 @@ import (
 	"fmt"
 	"net"
 	"time"
+	"tungo/application"
 	"tungo/crypto/chacha20"
 	"tungo/network"
 	"tungo/network/ip"
 )
 
 type chacha20UdpWorker struct {
-	router  *UDPRouter
-	conn    *net.UDPConn
-	session chacha20.UdpSession
+	router              *UDPRouter
+	conn                *net.UDPConn
+	cryptographyService application.CryptographyService
 }
 
-func newChacha20UdpWorker(router *UDPRouter, conn *net.UDPConn, session chacha20.UdpSession) *chacha20UdpWorker {
+func newChacha20UdpWorker(router *UDPRouter, conn *net.UDPConn, cryptographyService application.CryptographyService) *chacha20UdpWorker {
 	return &chacha20UdpWorker{
-		router:  router,
-		conn:    conn,
-		session: session,
+		router:              router,
+		conn:                conn,
+		cryptographyService: cryptographyService,
 	}
 }
 
@@ -46,7 +47,7 @@ func (w *chacha20UdpWorker) HandleTun(ctx context.Context, cancelFunc context.Ca
 				return fmt.Errorf("could not read a packet from TUN: %v", readErr)
 			}
 
-			encryptedPacket, EncryptErr := w.session.Encrypt(buf)
+			encryptedPacket, EncryptErr := w.cryptographyService.Encrypt(buf)
 			if EncryptErr != nil {
 				if ctx.Err() != nil {
 					return nil
@@ -98,11 +99,11 @@ func (w *chacha20UdpWorker) HandleConn(ctx context.Context, cancelFunc context.C
 			if n == 1 {
 				if network.SignalIs(dataBuf[:n][0], network.SessionReset) {
 					cancelFunc()
-					return fmt.Errorf("server requested session reset")
+					return fmt.Errorf("server requested cryptographyService reset")
 				}
 			}
 
-			decrypted, decryptionErr := w.session.Decrypt(dataBuf[:n])
+			decrypted, decryptionErr := w.cryptographyService.Decrypt(dataBuf[:n])
 			if decryptionErr != nil {
 				if ctx.Err() != nil {
 					return nil

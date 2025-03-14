@@ -5,11 +5,10 @@ import (
 	"net"
 	"tungo/crypto/chacha20"
 	"tungo/settings"
-	"tungo/settings/client"
 )
 
 type Secret interface {
-	Exchange(conn *net.Conn) (*chacha20.TcpSession, error)
+	Exchange(conn *net.Conn) (*chacha20.TcpCryptographyService, error)
 }
 
 type DefaultSecret struct {
@@ -24,22 +23,18 @@ func NewDefaultSecret(settings settings.ConnectionSettings, handshake chacha20.H
 	}
 }
 
-func (s *DefaultSecret) Exchange(conn *net.Conn) (*chacha20.TcpSession, error) {
+func (s *DefaultSecret) Exchange(conn *net.Conn) (*chacha20.TcpCryptographyService, error) {
 	handshakeErr := s.handshake.ClientSideHandshake(*conn, s.settings)
 	if handshakeErr != nil {
 		return nil, handshakeErr
 	}
 
-	session, sessionErr := chacha20.NewTcpSession(s.handshake.Id(), s.handshake.ClientKey(), s.handshake.ServerKey(), false)
-	if sessionErr != nil {
-		return nil, fmt.Errorf("failed to create client session: %s\n", sessionErr)
+	cryptographyService, cryptographyServiceErr := chacha20.NewTcpCryptographyService(s.handshake.Id(), s.handshake.ClientKey(), s.handshake.ServerKey(), false)
+	if cryptographyServiceErr != nil {
+		return nil, fmt.Errorf("failed to create client cryptographyService: %s\n", cryptographyServiceErr)
 	}
 
-	conf, confErr := (&client.Conf{}).Read()
-	if confErr != nil {
-		return nil, confErr
-	}
-	session.UseNonceRingBuffer(conf.UDPNonceRingBufferSize)
+	cryptographyService.UseNonceRingBuffer()
 
-	return session, nil
+	return cryptographyService, nil
 }

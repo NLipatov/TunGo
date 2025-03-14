@@ -19,23 +19,23 @@ func NewSecretWithDeadline(ctx context.Context, secret Secret) SecretWithDeadlin
 	}
 }
 
-func (s SecretWithDeadline) Exchange(conn *net.Conn) (*chacha20.TcpSession, error) {
+func (s SecretWithDeadline) Exchange(conn *net.Conn) (*chacha20.TcpCryptographyService, error) {
 	type result struct {
-		session *chacha20.TcpSession
-		err     error
+		cryptographyService *chacha20.TcpCryptographyService
+		err                 error
 	}
 
 	resultChan := make(chan result, 1)
 
 	go func() {
-		session, err := s.secret.Exchange(conn)
-		resultChan <- result{session, err}
+		cryptographyService, err := s.secret.Exchange(conn)
+		resultChan <- result{cryptographyService, err}
 	}()
 
 	select {
 	case <-s.ctx.Done():
 		return nil, s.ctx.Err()
 	case res := <-resultChan:
-		return res.session, res.err
+		return res.cryptographyService, res.err
 	}
 }

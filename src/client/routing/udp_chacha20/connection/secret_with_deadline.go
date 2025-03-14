@@ -3,7 +3,7 @@ package connection
 import (
 	"context"
 	"net"
-	"tungo/crypto/chacha20"
+	"tungo/application"
 )
 
 // SecretWithDeadline is a decorator for Secret which allows cancellation via ctx
@@ -19,9 +19,9 @@ func NewSecretWithDeadline(ctx context.Context, secret Secret) SecretWithDeadlin
 	}
 }
 
-func (s SecretWithDeadline) Exchange(conn *net.UDPConn) (*chacha20.DefaultUdpSession, error) {
+func (s SecretWithDeadline) Exchange(conn *net.UDPConn) (application.CryptographyService, error) {
 	type result struct {
-		session *chacha20.DefaultUdpSession
+		session application.CryptographyService
 		err     error
 	}
 

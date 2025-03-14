@@ -67,11 +67,11 @@ func (w *TcpTunWorker) TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpT
 				conn := v.(net.Conn)
 				sessionValue, sessionExists := localIpToSessionMap.Load(destinationIP)
 				if !sessionExists {
-					log.Printf("failed to load session")
+					log.Printf("failed to load cryptographyService")
 					continue
 				}
-				session := sessionValue.(*chacha20.TcpSession)
-				_, encryptErr := session.Encrypt(buf[4 : n+4])
+				cryptographyService := sessionValue.(*chacha20.TcpCryptographyService)
+				_, encryptErr := cryptographyService.Encrypt(buf[4 : n+4])
 				if encryptErr != nil {
 					log.Printf("failder to encrypt a package: %s", encryptErr)
 					continue
@@ -143,10 +143,10 @@ func (w *TcpTunWorker) registerClient(conn net.Conn, tunFile *os.File, localIpTo
 	}
 	log.Printf("registered: %s", conn.RemoteAddr())
 
-	tcpSession, tcpSessionErr := chacha20.NewTcpSession(h.Id(), h.ServerKey(), h.ClientKey(), true)
-	if tcpSessionErr != nil {
+	cryptographyService, cryptographyServiceErr := chacha20.NewTcpCryptographyService(h.Id(), h.ServerKey(), h.ClientKey(), true)
+	if cryptographyServiceErr != nil {
 		_ = conn.Close()
-		log.Printf("connection closed: %s (regfail: %s)\n", conn.RemoteAddr(), tcpSessionErr)
+		log.Printf("connection closed: %s (regfail: %s)\n", conn.RemoteAddr(), cryptographyServiceErr)
 	}
 
 	// Prevent IP spoofing
@@ -157,7 +157,7 @@ func (w *TcpTunWorker) registerClient(conn net.Conn, tunFile *os.File, localIpTo
 	}
 
 	localIpToConn.Store(*internalIpAddr, conn)
-	localIpToServerSessionMap.Store(*internalIpAddr, tcpSession)
+	localIpToServerSessionMap.Store(*internalIpAddr, cryptographyService)
 
 	w.handleClient(conn, tunFile, localIpToConn, localIpToServerSessionMap, internalIpAddr, ctx)
 }
@@ -192,7 +192,7 @@ func (w *TcpTunWorker) handleClient(conn net.Conn, tunFile *os.File, localIpToCo
 				continue
 			}
 
-			session := sessionValue.(*chacha20.TcpSession)
+			session := sessionValue.(*chacha20.TcpCryptographyService)
 
 			//read packet length from 4-byte length prefix
 			var length = binary.BigEndian.Uint32(buf[:4])

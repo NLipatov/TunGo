@@ -22,8 +22,8 @@ func TestDeriveSessionId(t *testing.T) {
 	}
 }
 
-// TestNewTcpSession verifies that a new TcpSession is created without error.
-func TestNewTcpSession(t *testing.T) {
+// TestNewTcpCryptographyService verifies that a new TcpCryptographyService is created without error.
+func TestNewTcpCryptographyService(t *testing.T) {
 	// Create valid 32-byte keys.
 	sendKey := make([]byte, 32)
 	recvKey := make([]byte, 32)
@@ -35,14 +35,14 @@ func TestNewTcpSession(t *testing.T) {
 	}
 
 	var sessionID [32]byte
-	copy(sessionID[:], []byte("static session id for testing!!")) // 32 bytes
+	copy(sessionID[:], []byte("static cryptographyService id for testing!!")) // 32 bytes
 
-	session, err := NewTcpSession(sessionID, sendKey, recvKey, false)
+	cryptographyService, err := NewTcpCryptographyService(sessionID, sendKey, recvKey, false)
 	if err != nil {
-		t.Fatalf("NewTcpSession error: %v", err)
+		t.Fatalf("NewTcpCryptographyService error: %v", err)
 	}
-	if session.SessionId != sessionID {
-		t.Errorf("Expected sessionID %x, got %x", sessionID, session.SessionId)
+	if cryptographyService.SessionId != sessionID {
+		t.Errorf("Expected sessionID %x, got %x", sessionID, cryptographyService.SessionId)
 	}
 }
 
@@ -60,13 +60,13 @@ func TestTcpSessionEncryptDecryptRoundTrip(t *testing.T) {
 	copy(sessionID[:], []byte("static session id for testing!!")) // 32 bytes
 
 	// Create client (isServer=false) and server (isServer=true) sessions.
-	clientSession, err := NewTcpSession(sessionID, clientSendKey, clientRecvKey, false)
+	clientSession, err := NewTcpCryptographyService(sessionID, clientSendKey, clientRecvKey, false)
 	if err != nil {
-		t.Fatalf("client NewTcpSession error: %v", err)
+		t.Fatalf("client NewTcpCryptographyService error: %v", err)
 	}
-	serverSession, err := NewTcpSession(sessionID, serverSendKey, serverRecvKey, true)
+	serverSession, err := NewTcpCryptographyService(sessionID, serverSendKey, serverRecvKey, true)
 	if err != nil {
-		t.Fatalf("server NewTcpSession error: %v", err)
+		t.Fatalf("server NewTcpCryptographyService error: %v", err)
 	}
 
 	plaintext := []byte("Hello, secure world!")
@@ -90,12 +90,12 @@ func TestUseNonceRingBuffer(t *testing.T) {
 	var sessionID [32]byte
 	copy(sessionID[:], []byte("static session id for testing!!"))
 	key := bytes.Repeat([]byte{0xCC}, 32)
-	session, err := NewTcpSession(sessionID, key, key, false)
+	session, err := NewTcpCryptographyService(sessionID, key, key, false)
 	if err != nil {
-		t.Fatalf("NewTcpSession error: %v", err)
+		t.Fatalf("NewTcpCryptographyService error: %v", err)
 	}
 
-	ret := session.UseNonceRingBuffer(100)
+	ret := session.UseNonceRingBuffer()
 	if ret != session {
 		t.Error("UseNonceRingBuffer did not return the same session instance")
 	}
@@ -106,9 +106,9 @@ func TestCreateAAD(t *testing.T) {
 	var sessionID [32]byte
 	copy(sessionID[:], []byte("static session id for testing!!"))
 	key := bytes.Repeat([]byte{0xDD}, 32)
-	session, err := NewTcpSession(sessionID, key, key, false)
+	session, err := NewTcpCryptographyService(sessionID, key, key, false)
 	if err != nil {
-		t.Fatalf("NewTcpSession error: %v", err)
+		t.Fatalf("NewTcpCryptographyService error: %v", err)
 	}
 
 	// Use a sample nonce.

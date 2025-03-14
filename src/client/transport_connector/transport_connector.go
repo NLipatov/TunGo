@@ -6,7 +6,7 @@ import (
 	"log"
 	"net"
 	"time"
-	"tungo/crypto"
+	"tungo/application"
 )
 
 const (
@@ -17,19 +17,19 @@ const (
 
 type TransportConnector struct {
 	//concrete logic on creating a connection instance using concrete transport (udp, tcp, etc.)
-	connectDelegate func() (net.Conn, crypto.Session, error)
+	connectDelegate func() (net.Conn, application.CryptographyService, error)
 }
 
-func NewTransportConnector() Connector {
+func NewTransportConnector() application.Connector {
 	return &TransportConnector{}
 }
 
-func (m *TransportConnector) UseConnectorDelegate(f func() (net.Conn, crypto.Session, error)) Connector {
+func (m *TransportConnector) UseConnectorDelegate(f func() (net.Conn, application.CryptographyService, error)) application.Connector {
 	m.connectDelegate = f
 	return m
 }
 
-func (m *TransportConnector) Connect(ctx context.Context) (net.Conn, crypto.Session, error) {
+func (m *TransportConnector) Connect(ctx context.Context) (net.Conn, application.CryptographyService, error) {
 	backoff := initialBackoff
 	for reconnectAttempts := 0; reconnectAttempts <= maxReconnectAttempts; reconnectAttempts++ {
 
