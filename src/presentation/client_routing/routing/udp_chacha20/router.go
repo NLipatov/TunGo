@@ -15,24 +15,11 @@ import (
 )
 
 type UDPRouter struct {
-	Settings        settings.ConnectionSettings
-	TunConfigurator application.TunDeviceConfigurator
-	Tun             application.TunDevice
+	Settings settings.ConnectionSettings
+	Tun      application.TunDevice
 }
 
 func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
-	defer func() {
-		_ = r.Tun.Close()
-		r.TunConfigurator.Dispose(r.Settings)
-	}()
-
-	//prepare TUN
-	tun, tunErr := r.TunConfigurator.Configure(r.Settings)
-	if tunErr != nil {
-		return tunErr
-	}
-	r.Tun = tun
-
 	for {
 		//establish connection with server
 		conn, session, err := r.establishSecureConnection(ctx)
