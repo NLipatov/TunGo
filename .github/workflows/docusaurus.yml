@@ -6,11 +6,6 @@ on:
       - main
     paths:
       - 'docs/TunGo/**'   # Only if Docusaurus directory files changed
-  pull_request:
-    branches:
-      - main
-    paths:
-      - 'docs/TunGo/**'   # Only if Docusaurus directory files changed
 
 jobs:
   build:
