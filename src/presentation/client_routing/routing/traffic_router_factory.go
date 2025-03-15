@@ -19,9 +19,12 @@ func NewRouterFactory() *RouterFactory {
 
 // CreateRouter creates a TrafficRouter instance for the specified protocol.
 func (f *RouterFactory) CreateRouter(conf client.Conf) (TrafficRouter, error) {
+	linuxTunConfigurator := linux_tun.LinuxTunConfigurator{}
+	linuxTunConfigurator.Dispose(conf.TCPSettings)
+	linuxTunConfigurator.Dispose(conf.UDPSettings)
+
 	switch conf.Protocol {
 	case settings.TCP:
-		linuxTunConfigurator := linux_tun.LinuxTunConfigurator{}
 		configuredTunDevice, configuredTunDeviceErr := linuxTunConfigurator.Configure(conf.TCPSettings)
 		if configuredTunDeviceErr != nil {
 			return nil, configuredTunDeviceErr
@@ -32,7 +35,6 @@ func (f *RouterFactory) CreateRouter(conf client.Conf) (TrafficRouter, error) {
 			Tun:      linux_tun.NewDisposableTunDevice(configuredTunDevice, conf.TCPSettings),
 		}, nil
 	case settings.UDP:
-		linuxTunConfigurator := linux_tun.LinuxTunConfigurator{}
 		configuredTunDevice, configuredTunDeviceErr := linuxTunConfigurator.Configure(conf.UDPSettings)
 		if configuredTunDeviceErr != nil {
 			return nil, configuredTunDeviceErr
