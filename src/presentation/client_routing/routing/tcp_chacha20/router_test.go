@@ -47,7 +47,7 @@ func (f *tcpRouterTestFakeTun) Close() error {
 	return nil
 }
 
-// tcpRouterTestFakeTunConfigurator implements the TunConfigurator interface.
+// tcpRouterTestFakeTunConfigurator implements the TunDeviceConfigurator interface.
 type tcpRouterTestFakeTunConfigurator struct {
 	tun          application.TunDevice
 	deconfigured bool
@@ -57,7 +57,7 @@ func (f *tcpRouterTestFakeTunConfigurator) Configure(_ settings.ConnectionSettin
 	return f.tun, nil
 }
 
-func (f *tcpRouterTestFakeTunConfigurator) Deconfigure(_ settings.ConnectionSettings) {
+func (f *tcpRouterTestFakeTunConfigurator) Dispose(_ settings.ConnectionSettings) {
 	f.deconfigured = true
 }
 
@@ -77,8 +77,7 @@ func TestTCPRouter_RouteTraffic_ContextCancelled(t *testing.T) {
 		DialTimeoutMs: 10,
 	}
 	router := &TCPRouter{
-		Settings:        sett,
-		TunConfigurator: ftc,
+		Settings: sett,
 	}
 
 	// Start RouteTraffic with a cancelled context.
@@ -89,10 +88,10 @@ func TestTCPRouter_RouteTraffic_ContextCancelled(t *testing.T) {
 		t.Errorf("expected no error on context cancellation, got %v", err)
 	}
 	if !ftc.deconfigured {
-		t.Error("expected tun configurator to be deconfigured")
+		t.Error("expected Tun configurator to be deconfigured")
 	}
 	if !ftun.closeCalled {
-		t.Error("expected tun to be closed")
+		t.Error("expected Tun to be closed")
 	}
 }
 
@@ -112,8 +111,7 @@ func TestTCPRouter_RouteTraffic_EstablishFailure(t *testing.T) {
 		DialTimeoutMs: 10,
 	}
 	router := &TCPRouter{
-		Settings:        sett,
-		TunConfigurator: ftc,
+		Settings: sett,
 	}
 
 	// Use a context that we cancel manually after a short delay.
@@ -128,9 +126,9 @@ func TestTCPRouter_RouteTraffic_EstablishFailure(t *testing.T) {
 		t.Errorf("expected no error on context cancellation, got %v", err)
 	}
 	if !ftc.deconfigured {
-		t.Error("expected tun configurator to be deconfigured")
+		t.Error("expected Tun configurator to be deconfigured")
 	}
 	if !ftun.closeCalled {
-		t.Error("expected tun to be closed")
+		t.Error("expected Tun to be closed")
 	}
 }

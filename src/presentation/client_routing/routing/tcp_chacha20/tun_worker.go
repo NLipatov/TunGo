@@ -10,7 +10,7 @@ import (
 	"net"
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
-	"tungo/infrastructure/network"
+	"tungo/infrastructure/network/ip"
 )
 
 type tcpTunWorker struct {
@@ -24,7 +24,7 @@ type tcpTunWorker struct {
 
 func newTcpTunWorker() *tcpTunWorker {
 	return &tcpTunWorker{
-		tunReadBuffer: make([]byte, network.IPPacketMaxSizeBytes+4+chacha20poly1305.Overhead),
+		tunReadBuffer: make([]byte, ip.MaxPacketLengthBytes+4+chacha20poly1305.Overhead),
 	}
 }
 
@@ -96,14 +96,14 @@ func (w *tcpTunWorker) HandleTun(ctx context.Context, triggerReconnect context.C
 	if workerSetupErr != nil {
 		return workerSetupErr
 	}
-	reader := chacha20.NewTcpReader(w.router.tun)
+	reader := chacha20.NewTcpReader(w.router.Tun)
 
 	go func() {
 		<-ctx.Done()
 		_ = w.conn.Close()
 	}()
 
-	//passes anything from tun to chan
+	//passes anything from Tun to chan
 	for {
 		select {
 		case <-ctx.Done(): // Stop-signal
@@ -144,7 +144,7 @@ func (w *tcpTunWorker) HandleConn(ctx context.Context, connCancel context.Cancel
 	if workerSetupErr != nil {
 		return workerSetupErr
 	}
-	buf := make([]byte, network.IPPacketMaxSizeBytes+4)
+	buf := make([]byte, ip.MaxPacketLengthBytes+4)
 
 	go func() {
 		<-ctx.Done()
@@ -167,7 +167,7 @@ func (w *tcpTunWorker) HandleConn(ctx context.Context, connCancel context.Cancel
 
 			//read packet length from 4-byte length prefix
 			var length = binary.BigEndian.Uint32(buf[:4])
-			if length < 4 || length > network.IPPacketMaxSizeBytes {
+			if length < 4 || length > ip.MaxPacketLengthBytes {
 				log.Printf("invalid packet Length: %d", length)
 				continue
 			}
@@ -186,7 +186,7 @@ func (w *tcpTunWorker) HandleConn(ctx context.Context, connCancel context.Cancel
 			}
 
 			// Write the decrypted packet to the TUN interface
-			_, err = w.router.tun.Write(decrypted)
+			_, err = w.router.Tun.Write(decrypted)
 			if err != nil {
 				log.Printf("failed to write to TUN: %v", err)
 				return err

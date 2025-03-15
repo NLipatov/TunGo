@@ -11,29 +11,15 @@ import (
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/presentation/client_routing/routing/udp_chacha20/connection"
-	"tungo/presentation/client_routing/tun_configurator"
 	"tungo/settings"
 )
 
 type UDPRouter struct {
-	Settings        settings.ConnectionSettings
-	TunConfigurator tun_configurator.TunConfigurator
-	tun             application.TunDevice
+	Settings settings.ConnectionSettings
+	Tun      application.TunDevice
 }
 
 func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
-	defer func() {
-		_ = r.tun.Close()
-		r.TunConfigurator.Deconfigure(r.Settings)
-	}()
-
-	//prepare TUN
-	tun, tunErr := r.TunConfigurator.Configure(r.Settings)
-	if tunErr != nil {
-		return tunErr
-	}
-	r.tun = tun
-
 	for {
 		//establish connection with server
 		conn, session, err := r.establishSecureConnection(ctx)
@@ -58,7 +44,7 @@ func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
 			_ = conn.Close()
 		}()
 
-		//starts forwarding packets from connection to tun-interface and from tun-interface to connection
+		//starts forwarding packets from connection to Tun-interface and from Tun-interface to connection
 		r.startUDPForwarding(conn, session, routingCtx, routingCancel)
 	}
 }

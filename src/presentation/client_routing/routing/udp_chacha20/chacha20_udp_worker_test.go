@@ -83,7 +83,7 @@ func TestHandlePacketsFromTun(t *testing.T) {
 		_ = udpConn.Close()
 	}(udpConn)
 
-	worker := newChacha20UdpWorker(&UDPRouter{tun: router.tun}, udpConn, &fakeCryptographyService{})
+	worker := newChacha20UdpWorker(&UDPRouter{Tun: router.tun}, udpConn, &fakeCryptographyService{})
 
 	// Use a context that cancels shortly.
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
@@ -130,10 +130,10 @@ func TestHandlePacketsFromConn(t *testing.T) {
 	// Use the fake CryptographyService.
 	sess := &fakeCryptographyService{}
 
-	worker := newChacha20UdpWorker(&UDPRouter{tun: router.tun}, udpConn, sess)
+	worker := newChacha20UdpWorker(&UDPRouter{Tun: router.tun}, udpConn, sess)
 
 	// Prepare a fake encrypted packet.
-	plaintext := []byte("hello tun")
+	plaintext := []byte("hello Tun")
 	encrypted, err := sess.Encrypt(plaintext)
 	if err != nil {
 		t.Fatalf("Encrypt error: %v", err)
