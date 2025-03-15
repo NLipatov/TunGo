@@ -28,7 +28,7 @@ func newChacha20UdpWorker(router *UDPRouter, conn *net.UDPConn, cryptographyServ
 
 func (w *chacha20UdpWorker) HandleTun(ctx context.Context, cancelFunc context.CancelFunc) error {
 	buf := make([]byte, ip.MaxPacketLengthBytes+12)
-	udpReader := chacha20.NewUdpReader(w.router.tun)
+	udpReader := chacha20.NewUdpReader(w.router.Tun)
 	_ = w.conn.SetWriteBuffer(len(buf))
 
 	// Main loop to read from TUN and send data
@@ -118,7 +118,7 @@ func (w *chacha20UdpWorker) HandleConn(ctx context.Context, cancelFunc context.C
 				return fmt.Errorf("failed to decrypt data: %s", decryptionErr)
 			}
 
-			_, writeErr := w.router.tun.Write(decrypted)
+			_, writeErr := w.router.Tun.Write(decrypted)
 			if writeErr != nil {
 				if ctx.Err() != nil {
 					return nil

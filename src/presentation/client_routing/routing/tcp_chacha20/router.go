@@ -11,28 +11,15 @@ import (
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/presentation/client_routing/routing/tcp_chacha20/connection"
-	"tungo/presentation/client_routing/tun_configurator"
 	"tungo/settings"
 )
 
 type TCPRouter struct {
-	Settings        settings.ConnectionSettings
-	TunConfigurator tun_configurator.TunConfigurator
-	tun             application.TunDevice
+	Settings settings.ConnectionSettings
+	Tun      application.TunDevice
 }
 
 func (r *TCPRouter) RouteTraffic(ctx context.Context) error {
-	defer func() {
-		_ = r.tun.Close()
-		r.TunConfigurator.Deconfigure(r.Settings)
-	}()
-
-	tun, tunErr := r.TunConfigurator.Configure(r.Settings)
-	if tunErr != nil {
-		return tunErr
-	}
-	r.tun = tun
-
 	for {
 		conn, cryptographyService, err := r.establishSecureConnection(ctx)
 		if err != nil {

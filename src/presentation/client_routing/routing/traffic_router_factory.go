@@ -2,10 +2,9 @@ package routing
 
 import (
 	"fmt"
-	"log"
+	"tungo/infrastructure/tun/linux_tun"
 	"tungo/presentation/client_routing/routing/tcp_chacha20"
 	"tungo/presentation/client_routing/routing/udp_chacha20"
-	"tungo/presentation/client_routing/tun_configurator"
 	"tungo/settings"
 	"tungo/settings/client"
 )
@@ -20,25 +19,28 @@ func NewRouterFactory() *RouterFactory {
 
 // CreateRouter creates a TrafficRouter instance for the specified protocol.
 func (f *RouterFactory) CreateRouter(conf client.Conf) (TrafficRouter, error) {
-	tunConfiguratorFactory := tun_configurator.NewTunConfiguratorFactory()
-	tunConfigurator, tunConfiguratorFactoryErr := tunConfiguratorFactory.CreateTunConfigurator()
-	if tunConfiguratorFactoryErr != nil {
-		log.Fatalf("failed to create a %v tun configurator: %s", conf.Protocol, tunConfiguratorFactoryErr)
-	}
-
-	tunConfigurator.Deconfigure(conf.TCPSettings)
-	tunConfigurator.Deconfigure(conf.UDPSettings)
-
 	switch conf.Protocol {
 	case settings.TCP:
+		linuxTunConfigurator := linux_tun.LinuxTunConfigurator{}
+		configuredTunDevice, configuredTunDeviceErr := linuxTunConfigurator.Configure(conf.TCPSettings)
+		if configuredTunDeviceErr != nil {
+			return nil, configuredTunDeviceErr
+		}
+
 		return &tcp_chacha20.TCPRouter{
-			Settings:        conf.TCPSettings,
-			TunConfigurator: tunConfigurator,
+			Settings: conf.TCPSettings,
+			Tun:      linux_tun.NewDisposableTunDevice(configuredTunDevice, conf.TCPSettings),
 		}, nil
 	case settings.UDP:
+		linuxTunConfigurator := linux_tun.LinuxTunConfigurator{}
+		configuredTunDevice, configuredTunDeviceErr := linuxTunConfigurator.Configure(conf.UDPSettings)
+		if configuredTunDeviceErr != nil {
+			return nil, configuredTunDeviceErr
+		}
+
 		return &udp_chacha20.UDPRouter{
-			Settings:        conf.UDPSettings,
-			TunConfigurator: tunConfigurator,
+			Settings: conf.UDPSettings,
+			Tun:      linux_tun.NewDisposableTunDevice(configuredTunDevice, conf.UDPSettings),
 		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported conf: %v", conf)

@@ -1,4 +1,4 @@
-package network
+package linux_tun
 
 import (
 	"bytes"
@@ -20,7 +20,7 @@ func TestLinuxTunAdapter_ReadWrite(t *testing.T) {
 	}(pw)
 
 	// Use the write end for the adapter.
-	adapter := LinuxTunAdapter{TunFile: pw}
+	adapter := DisposableTunDevice{device: pw}
 	data := []byte("tun test")
 
 	// Test Write.
@@ -50,7 +50,7 @@ func TestLinuxTunAdapter_Close(t *testing.T) {
 		t.Fatalf("Error creating pipe: %v", err)
 	}
 	// Do not defer close for pw, since we want to test adapter.Close.
-	adapter := LinuxTunAdapter{TunFile: pw}
+	adapter := DisposableTunDevice{device: pw}
 
 	// Close the adapter.
 	if err := adapter.Close(); err != nil {

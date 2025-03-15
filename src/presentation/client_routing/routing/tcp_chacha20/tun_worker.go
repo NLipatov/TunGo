@@ -96,14 +96,14 @@ func (w *tcpTunWorker) HandleTun(ctx context.Context, triggerReconnect context.C
 	if workerSetupErr != nil {
 		return workerSetupErr
 	}
-	reader := chacha20.NewTcpReader(w.router.tun)
+	reader := chacha20.NewTcpReader(w.router.Tun)
 
 	go func() {
 		<-ctx.Done()
 		_ = w.conn.Close()
 	}()
 
-	//passes anything from tun to chan
+	//passes anything from Tun to chan
 	for {
 		select {
 		case <-ctx.Done(): // Stop-signal
@@ -186,7 +186,7 @@ func (w *tcpTunWorker) HandleConn(ctx context.Context, connCancel context.Cancel
 			}
 
 			// Write the decrypted packet to the TUN interface
-			_, err = w.router.tun.Write(decrypted)
+			_, err = w.router.Tun.Write(decrypted)
 			if err != nil {
 				log.Printf("failed to write to TUN: %v", err)
 				return err

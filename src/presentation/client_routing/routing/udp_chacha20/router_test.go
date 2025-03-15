@@ -47,7 +47,7 @@ func (f *routerTestFakeTun) Close() error {
 	return nil
 }
 
-// routerTestFakeTunConfigurator implements the TunConfigurator interface.
+// routerTestFakeTunConfigurator implements the TunDeviceConfigurator interface.
 type routerTestFakeTunConfigurator struct {
 	tun          application.TunDevice
 	deconfigured bool
@@ -57,7 +57,7 @@ func (f *routerTestFakeTunConfigurator) Configure(_ settings.ConnectionSettings)
 	return f.tun, nil
 }
 
-func (f *routerTestFakeTunConfigurator) Deconfigure(_ settings.ConnectionSettings) {
+func (f *routerTestFakeTunConfigurator) Dispose(_ settings.ConnectionSettings) {
 	f.deconfigured = true
 }
 
@@ -88,10 +88,10 @@ func TestUDPRouter_RouteTraffic_ContextCancelled(t *testing.T) {
 		t.Errorf("expected no error on context cancellation, got %v", err)
 	}
 	if !ftc.deconfigured {
-		t.Error("expected tun configurator to be deconfigured")
+		t.Error("expected Tun configurator to be deconfigured")
 	}
 	if !ftun.closeCalled {
-		t.Error("expected tun to be closed")
+		t.Error("expected Tun to be closed")
 	}
 }
 
@@ -127,9 +127,9 @@ func TestUDPRouter_RouteTraffic_EstablishFailure(t *testing.T) {
 		t.Errorf("expected no error on context cancellation, got %v", err)
 	}
 	if !ftc.deconfigured {
-		t.Error("expected tun configurator to be deconfigured")
+		t.Error("expected Tun configurator to be deconfigured")
 	}
 	if !ftun.closeCalled {
-		t.Error("expected tun to be closed")
+		t.Error("expected Tun to be closed")
 	}
 }
