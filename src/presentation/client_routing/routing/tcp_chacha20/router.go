@@ -38,7 +38,7 @@ func (r *TCPRouter) RouteTraffic(ctx context.Context) error {
 	// TUN -> TCP
 	go func() {
 		defer wg.Done()
-		tunWorker := newTcpTunWorker(r, r.conn, r.tun, r.cryptographyService)
+		tunWorker := newTcpTunWorker(r.conn, r.tun, r.cryptographyService)
 		handleTunErr := tunWorker.HandleTun(routingCtx, routingCancel)
 		if handleTunErr != nil {
 			log.Fatalf("failed to handle TUN-packet: %s", handleTunErr)
@@ -48,7 +48,7 @@ func (r *TCPRouter) RouteTraffic(ctx context.Context) error {
 	// TCP -> TUN
 	go func() {
 		defer wg.Done()
-		tunWorker := newTcpTunWorker(r, r.conn, r.tun, r.cryptographyService)
+		tunWorker := newTcpTunWorker(r.conn, r.tun, r.cryptographyService)
 		handleConnErr := tunWorker.HandleConn(routingCtx, routingCancel)
 		if handleConnErr != nil {
 			log.Fatalf("failed to handle CONN-packet: %s", handleConnErr)
