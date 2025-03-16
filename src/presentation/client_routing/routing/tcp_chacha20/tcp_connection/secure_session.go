@@ -1,4 +1,4 @@
-package connection
+package tcp_connection
 
 import (
 	"net"

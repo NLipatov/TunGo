@@ -11,7 +11,7 @@ import (
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/presentation/client_routing/routing"
 	"tungo/presentation/client_routing/routing/tcp_chacha20"
-	"tungo/presentation/client_routing/routing/tcp_chacha20/connection"
+	"tungo/presentation/client_routing/routing/tcp_chacha20/tcp_connection"
 	"tungo/presentation/client_routing/routing/udp_chacha20"
 	"tungo/presentation/client_routing/routing/udp_chacha20/udp_connection"
 	"tungo/settings"
@@ -58,11 +58,11 @@ func (u *RouterBuilder) tcpConn(ctx context.Context, settings settings.Connectio
 	defer handshakeCtxCancel()
 
 	//connect to server and exchange secret
-	secret := connection.NewDefaultSecret(settings, chacha20.NewHandshake())
-	cancellableSecret := connection.NewSecretWithDeadline(handshakeCtx, secret)
+	secret := tcp_connection.NewDefaultSecret(settings, chacha20.NewHandshake())
+	cancellableSecret := tcp_connection.NewSecretWithDeadline(handshakeCtx, secret)
 
-	session := connection.NewDefaultSecureSession(connection.NewDefaultConnection(settings), cancellableSecret)
-	cancellableSession := connection.NewSecureSessionWithDeadline(handshakeCtx, session)
+	session := tcp_connection.NewDefaultSecureSession(tcp_connection.NewDefaultConnection(settings), cancellableSecret)
+	cancellableSession := tcp_connection.NewSecureSessionWithDeadline(handshakeCtx, session)
 	conn, tcpSession, err := cancellableSession.Establish()
 	if err != nil {
 		return nil, nil, err
