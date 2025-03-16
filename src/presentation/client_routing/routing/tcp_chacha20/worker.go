@@ -13,17 +13,15 @@ import (
 )
 
 type tcpTunWorker struct {
-	router              application.TrafficRouter
 	conn                net.Conn
 	tun                 io.ReadWriteCloser
 	cryptographyService application.CryptographyService
 }
 
 func newTcpTunWorker(
-	router application.TrafficRouter, conn net.Conn, tun io.ReadWriteCloser, cryptographyService application.CryptographyService,
+	conn net.Conn, tun io.ReadWriteCloser, cryptographyService application.CryptographyService,
 ) *tcpTunWorker {
 	return &tcpTunWorker{
-		router:              router,
 		conn:                conn,
 		tun:                 tun,
 		cryptographyService: cryptographyService,

@@ -14,18 +14,15 @@ import (
 )
 
 type UdpWorker struct {
-	router              application.TrafficRouter
 	conn                *net.UDPConn
 	tun                 io.ReadWriteCloser
 	cryptographyService application.CryptographyService
 }
 
 func newUdpWorker(
-	router application.TrafficRouter, conn *net.UDPConn, tun io.ReadWriteCloser,
-	cryptographyService application.CryptographyService,
+	conn *net.UDPConn, tun io.ReadWriteCloser, cryptographyService application.CryptographyService,
 ) *UdpWorker {
 	return &UdpWorker{
-		router:              router,
 		conn:                conn,
 		tun:                 tun,
 		cryptographyService: cryptographyService,
