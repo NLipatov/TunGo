@@ -1,4 +1,4 @@
-package routing
+package client_routing
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/tun_device"
+	"tungo/presentation/client_routing/routing"
 	"tungo/presentation/client_routing/routing/tcp_chacha20"
 	"tungo/presentation/client_routing/routing/tcp_chacha20/connection"
 	"tungo/presentation/client_routing/routing/udp_chacha20"
@@ -25,7 +26,7 @@ func NewRouterBuilder() RouterBuilder {
 	return RouterBuilder{}
 }
 
-func (u *RouterBuilder) Build(ctx context.Context, conf client.Conf) (TrafficRouter, error) {
+func (u *RouterBuilder) Build(ctx context.Context, conf client.Conf) (routing.TrafficRouter, error) {
 	tunDeviceConfigurator, tunDeviceErr := tun_device.NewTunDeviceConfigurator(conf)
 	if tunDeviceErr != nil {
 		return nil, tunDeviceErr

@@ -3,7 +3,7 @@ package presentation
 import (
 	"context"
 	"log"
-	"tungo/presentation/client_routing/routing"
+	"tungo/presentation/client_routing"
 	"tungo/presentation/interactive_commands"
 	"tungo/settings/client"
 )
@@ -22,7 +22,7 @@ func StartClient() {
 		log.Fatalf("failed to read configuration: %v", err)
 	}
 
-	routerBuilder := routing.NewRouterBuilder()
+	routerBuilder := client_routing.NewRouterBuilder()
 	router, routerErr := routerBuilder.Build(ctx, *conf)
 	if routerErr != nil {
 		log.Fatalf("failed to create router: %s", routerErr)
