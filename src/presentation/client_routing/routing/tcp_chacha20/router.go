@@ -6,12 +6,11 @@ import (
 	"net"
 	"sync"
 	"tungo/application"
-	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/presentation/client_routing/routing"
 )
 
 type TCPRouter struct {
-	Tun                 application.TunDevice
+	tun                 application.TunDevice
 	conn                net.Conn
 	cryptographyService application.CryptographyService
 }
@@ -20,7 +19,7 @@ func NewTCPRouter(
 	conn *net.Conn, tun application.TunDevice, cryptographyService application.CryptographyService,
 ) routing.TrafficRouter {
 	return &TCPRouter{
-		Tun:                 tun,
+		tun:                 tun,
 		conn:                *conn,
 		cryptographyService: cryptographyService,
 	}
@@ -31,7 +30,7 @@ func (r *TCPRouter) RouteTraffic(ctx context.Context) error {
 	go func() {
 		<-routingCtx.Done()
 		_ = r.conn.Close()
-		_ = r.Tun.Close()
+		_ = r.tun.Close()
 	}()
 
 	var wg sync.WaitGroup
@@ -40,42 +39,20 @@ func (r *TCPRouter) RouteTraffic(ctx context.Context) error {
 	// TUN -> TCP
 	go func() {
 		defer wg.Done()
-		tunWorker, buildErr := newTcpTunWorker().
-			UseRouter(r).
-			UseConn(r.conn).
-			UseCryptographyService(r.cryptographyService).
-			UseEncoder(&chacha20.DefaultTCPEncoder{}).
-			Build()
-
-		if buildErr != nil {
-			log.Fatalf("failed to build TCP TUN worker: %s", buildErr)
-		}
-
-		tunWorkerErr := tunWorker.HandleTun(routingCtx, routingCancel)
-
-		if tunWorkerErr != nil {
-			log.Fatalf("failed to handle TUN-packet: %s", tunWorkerErr)
+		tunWorker := newTcpTunWorker(r, r.conn, r.tun, r.cryptographyService)
+		handleTunErr := tunWorker.HandleTun(routingCtx, routingCancel)
+		if handleTunErr != nil {
+			log.Fatalf("failed to handle TUN-packet: %s", handleTunErr)
 		}
 	}()
 
 	// TCP -> TUN
 	go func() {
 		defer wg.Done()
-		tunWorker, buildErr := newTcpTunWorker().
-			UseRouter(r).
-			UseConn(r.conn).
-			UseCryptographyService(r.cryptographyService).
-			UseEncoder(&chacha20.DefaultTCPEncoder{}).
-			Build()
-
-		if buildErr != nil {
-			log.Fatalf("failed to build TCP TUN worker: %s", buildErr)
-		}
-
-		handlingErr := tunWorker.HandleConn(routingCtx, routingCancel)
-
-		if handlingErr != nil {
-			log.Fatalf("failed to handle CONN-packet: %s", handlingErr)
+		tunWorker := newTcpTunWorker(r, r.conn, r.tun, r.cryptographyService)
+		handleConnErr := tunWorker.HandleConn(routingCtx, routingCancel)
+		if handleConnErr != nil {
+			log.Fatalf("failed to handle CONN-packet: %s", handleConnErr)
 		}
 	}()
 

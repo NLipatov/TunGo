@@ -10,7 +10,7 @@ import (
 )
 
 type UDPRouter struct {
-	Tun                 application.TunDevice
+	tun                 application.TunDevice
 	conn                *net.UDPConn
 	cryptographyService application.CryptographyService
 }
@@ -19,7 +19,7 @@ func NewUDPRouter(
 	conn *net.UDPConn, tun application.TunDevice, cryptographyService application.CryptographyService,
 ) routing.TrafficRouter {
 	return &UDPRouter{
-		Tun:                 tun,
+		tun:                 tun,
 		conn:                conn,
 		cryptographyService: cryptographyService,
 	}
@@ -31,7 +31,7 @@ func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
 	go func() {
 		<-routingCtx.Done()
 		_ = r.conn.Close()
-		_ = r.Tun.Close()
+		_ = r.tun.Close()
 	}()
 
 	var wg sync.WaitGroup
@@ -40,7 +40,7 @@ func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
 	// TUN -> UDP
 	go func() {
 		defer wg.Done()
-		tunWorker := newChacha20UdpWorker(r, r.conn, r.cryptographyService)
+		tunWorker := newUdpWorker(r, r.conn, r.tun, r.cryptographyService)
 
 		handlingErr := tunWorker.HandleTun(routingCtx, routingCancel)
 
@@ -54,7 +54,7 @@ func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
 	// UDP -> TUN
 	go func() {
 		defer wg.Done()
-		tunWorker := newChacha20UdpWorker(r, r.conn, r.cryptographyService)
+		tunWorker := newUdpWorker(r, r.conn, r.tun, r.cryptographyService)
 
 		handlingErr := tunWorker.HandleConn(routingCtx, routingCancel)
 

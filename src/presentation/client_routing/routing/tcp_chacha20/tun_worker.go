@@ -3,7 +3,6 @@ package tcp_chacha20
 import (
 	"context"
 	"encoding/binary"
-	"fmt"
 	"golang.org/x/crypto/chacha20poly1305"
 	"io"
 	"log"
@@ -11,105 +10,44 @@ import (
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network/ip"
+	"tungo/presentation/client_routing/routing"
 )
 
 type tcpTunWorker struct {
-	router              *TCPRouter
+	router              routing.TrafficRouter
 	conn                net.Conn
+	tun                 io.ReadWriteCloser
 	cryptographyService application.CryptographyService
-	encoder             chacha20.TCPEncoder
-	tunReadBuffer       []byte
-	err                 error
 }
 
-func newTcpTunWorker() *tcpTunWorker {
+func newTcpTunWorker(
+	router routing.TrafficRouter, conn net.Conn, tun io.ReadWriteCloser, cryptographyService application.CryptographyService,
+) *tcpTunWorker {
 	return &tcpTunWorker{
-		tunReadBuffer: make([]byte, ip.MaxPacketLengthBytes+4+chacha20poly1305.Overhead),
+		router:              router,
+		conn:                conn,
+		tun:                 tun,
+		cryptographyService: cryptographyService,
 	}
-}
-
-func (w *tcpTunWorker) UseRouter(router *TCPRouter) *tcpTunWorker {
-	if w.err != nil {
-		return w
-	}
-
-	w.router = router
-	return w
-}
-
-func (w *tcpTunWorker) UseCryptographyService(cryptographyService application.CryptographyService) *tcpTunWorker {
-	if w.err != nil {
-		return w
-	}
-
-	w.cryptographyService = cryptographyService
-
-	return w
-}
-
-func (w *tcpTunWorker) UseConn(conn net.Conn) *tcpTunWorker {
-	if w.err != nil {
-		return w
-	}
-
-	w.conn = conn
-
-	return w
-}
-
-func (w *tcpTunWorker) UseEncoder(encoder *chacha20.DefaultTCPEncoder) *tcpTunWorker {
-	if w.err != nil {
-		return w
-	}
-
-	w.encoder = encoder
-
-	return w
-}
-
-func (w *tcpTunWorker) Build() (*tcpTunWorker, error) {
-	if w.err != nil {
-		return nil, w.err
-	}
-
-	if w.router == nil {
-		return nil, fmt.Errorf("router required but not provided")
-	}
-
-	if w.cryptographyService == nil {
-		return nil, fmt.Errorf("cryptographyService required but not provided")
-	}
-
-	if w.conn == nil {
-		return nil, fmt.Errorf("connection required but not provided")
-	}
-
-	if w.encoder == nil {
-		return nil, fmt.Errorf("encoder required but not provided")
-	}
-
-	return w, nil
 }
 
 func (w *tcpTunWorker) HandleTun(ctx context.Context, triggerReconnect context.CancelFunc) error {
-	workerSetupErr := w.err
-	if workerSetupErr != nil {
-		return workerSetupErr
-	}
-	reader := chacha20.NewTcpReader(w.router.Tun)
+	reader := chacha20.NewTcpReader(w.tun)
+	buffer := make([]byte, ip.MaxPacketLengthBytes+4+chacha20poly1305.Overhead)
+	tcpEncoder := chacha20.NewDefaultTCPEncoder()
 
 	go func() {
 		<-ctx.Done()
 		_ = w.conn.Close()
 	}()
 
-	//passes anything from Tun to chan
+	//passes anything from tun to chan
 	for {
 		select {
 		case <-ctx.Done(): // Stop-signal
 			return nil
 		default:
-			n, err := reader.Read(w.tunReadBuffer)
+			n, err := reader.Read(buffer)
 			if err != nil {
 				if ctx.Err() != nil {
 					return nil
@@ -118,19 +56,19 @@ func (w *tcpTunWorker) HandleTun(ctx context.Context, triggerReconnect context.C
 				triggerReconnect()
 			}
 
-			_, err = w.cryptographyService.Encrypt(w.tunReadBuffer[4 : n+4])
+			_, err = w.cryptographyService.Encrypt(buffer[4 : n+4])
 			if err != nil {
 				log.Printf("failed to encrypt packet: %v", err)
 				continue
 			}
 
-			encodingErr := w.encoder.Encode(w.tunReadBuffer[:n+4+chacha20poly1305.Overhead])
+			encodingErr := tcpEncoder.Encode(buffer[:n+4+chacha20poly1305.Overhead])
 			if encodingErr != nil {
 				log.Printf("failed to encode packet: %v", encodingErr)
 				continue
 			}
 
-			_, err = w.conn.Write(w.tunReadBuffer[:n+4+chacha20poly1305.Overhead])
+			_, err = w.conn.Write(buffer[:n+4+chacha20poly1305.Overhead])
 			if err != nil {
 				log.Printf("write to TCP failed: %s", err)
 				triggerReconnect()
@@ -140,11 +78,7 @@ func (w *tcpTunWorker) HandleTun(ctx context.Context, triggerReconnect context.C
 }
 
 func (w *tcpTunWorker) HandleConn(ctx context.Context, connCancel context.CancelFunc) error {
-	workerSetupErr := w.err
-	if workerSetupErr != nil {
-		return workerSetupErr
-	}
-	buf := make([]byte, ip.MaxPacketLengthBytes+4)
+	buffer := make([]byte, ip.MaxPacketLengthBytes+4)
 
 	go func() {
 		<-ctx.Done()
@@ -156,7 +90,7 @@ func (w *tcpTunWorker) HandleConn(ctx context.Context, connCancel context.Cancel
 		case <-ctx.Done(): // Stop-signal
 			return nil
 		default:
-			_, err := io.ReadFull(w.conn, buf[:4])
+			_, err := io.ReadFull(w.conn, buffer[:4])
 			if err != nil {
 				if ctx.Err() != nil {
 					return nil
@@ -166,27 +100,27 @@ func (w *tcpTunWorker) HandleConn(ctx context.Context, connCancel context.Cancel
 			}
 
 			//read packet length from 4-byte length prefix
-			var length = binary.BigEndian.Uint32(buf[:4])
+			var length = binary.BigEndian.Uint32(buffer[:4])
 			if length < 4 || length > ip.MaxPacketLengthBytes {
 				log.Printf("invalid packet Length: %d", length)
 				continue
 			}
 
 			//read n-bytes from connection
-			_, err = io.ReadFull(w.conn, buf[:length])
+			_, err = io.ReadFull(w.conn, buffer[:length])
 			if err != nil {
 				log.Printf("failed to read packet from connection: %s", err)
 				continue
 			}
 
-			decrypted, decryptionErr := w.cryptographyService.Decrypt(buf[:length])
+			decrypted, decryptionErr := w.cryptographyService.Decrypt(buffer[:length])
 			if decryptionErr != nil {
 				log.Printf("failed to decrypt data: %s", decryptionErr)
 				continue
 			}
 
 			// Write the decrypted packet to the TUN interface
-			_, err = w.router.Tun.Write(decrypted)
+			_, err = w.tun.Write(decrypted)
 			if err != nil {
 				log.Printf("failed to write to TUN: %v", err)
 				return err
