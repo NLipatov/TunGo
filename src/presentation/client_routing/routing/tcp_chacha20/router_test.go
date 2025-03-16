@@ -2,75 +2,27 @@ package tcp_chacha20
 
 import (
 	"context"
-	"errors"
-	"sync"
+	"math"
+	"math/rand"
+	"os"
+	"path"
+	"strconv"
 	"testing"
 	"time"
-	"tungo/application"
 	"tungo/settings"
 )
-
-// tcpRouterTestFakeTun implements the TunAdapter interface for TCP tests.
-type tcpRouterTestFakeTun struct {
-	readData    []byte
-	readErr     error
-	written     [][]byte
-	closeCalled bool
-	mu          sync.Mutex
-}
-
-func (f *tcpRouterTestFakeTun) Read(p []byte) (int, error) {
-	if f.readErr != nil {
-		return 0, f.readErr
-	}
-	// Return preset data once, then return an error to break the loop.
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if len(f.readData) == 0 {
-		return 0, errors.New("no data")
-	}
-	n := copy(p, f.readData)
-	// Clear data so that the next call results in an error.
-	f.readData = nil
-	return n, nil
-}
-
-func (f *tcpRouterTestFakeTun) Write(p []byte) (int, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.written = append(f.written, p)
-	return len(p), nil
-}
-
-func (f *tcpRouterTestFakeTun) Close() error {
-	f.closeCalled = true
-	return nil
-}
-
-// tcpRouterTestFakeTunConfigurator implements the TunDeviceConfigurator interface.
-type tcpRouterTestFakeTunConfigurator struct {
-	tun          application.TunDevice
-	deconfigured bool
-}
-
-func (f *tcpRouterTestFakeTunConfigurator) Configure(_ settings.ConnectionSettings) (application.TunDevice, error) {
-	return f.tun, nil
-}
-
-func (f *tcpRouterTestFakeTunConfigurator) Dispose(_ settings.ConnectionSettings) {
-	f.deconfigured = true
-}
 
 // For testing secure connection, we simulate failure by letting the secure connection
 // establishment (which is based on a short DialTimeoutMs) fail.
 func TestTCPRouter_RouteTraffic_ContextCancelled(t *testing.T) {
-	// Create fake TUN and configurator.
-	ftun := &tcpRouterTestFakeTun{
-		readData: []byte("test packet"),
+	tun, tunErr := os.Create(path.Join(t.TempDir(), strconv.Itoa(rand.Intn(math.MaxInt32))))
+	if tunErr != nil {
+		t.Fatal(tunErr)
 	}
-	ftc := &tcpRouterTestFakeTunConfigurator{
-		tun: ftun,
-	}
+	defer func(tun *os.File) {
+		_ = tun.Close()
+	}(tun)
+
 	// Use settings with a short DialTimeoutMs.
 	sett := settings.ConnectionSettings{
 		ConnectionIP:  "127.0.0.1",
@@ -87,24 +39,19 @@ func TestTCPRouter_RouteTraffic_ContextCancelled(t *testing.T) {
 	if err != nil {
 		t.Errorf("expected no error on context cancellation, got %v", err)
 	}
-	if !ftc.deconfigured {
-		t.Error("expected Tun configurator to be deconfigured")
-	}
-	if !ftun.closeCalled {
-		t.Error("expected Tun to be closed")
-	}
 }
 
 // TestTCPRouter_RouteTraffic_EstablishFailure tests that the TCPRouter cleans up properly when secure
 // connection establishment fails. Instead of using a timeout context, we cancel the context manually.
 func TestTCPRouter_RouteTraffic_EstablishFailure(t *testing.T) {
-	// Create fake TUN and configurator.
-	ftun := &tcpRouterTestFakeTun{
-		readData: []byte("dummy"),
+	tun, tunErr := os.Create(path.Join(t.TempDir(), strconv.Itoa(rand.Intn(math.MaxInt32))))
+	if tunErr != nil {
+		t.Fatal(tunErr)
 	}
-	ftc := &tcpRouterTestFakeTunConfigurator{
-		tun: ftun,
-	}
+	defer func(tun *os.File) {
+		_ = tun.Close()
+	}(tun)
+
 	// Use settings with a short DialTimeoutMs so that secure connection quickly fails.
 	sett := settings.ConnectionSettings{
 		ConnectionIP:  "127.0.0.1",
@@ -112,6 +59,7 @@ func TestTCPRouter_RouteTraffic_EstablishFailure(t *testing.T) {
 	}
 	router := &TCPRouter{
 		Settings: sett,
+		Tun:      tun,
 	}
 
 	// Use a context that we cancel manually after a short delay.
@@ -124,11 +72,5 @@ func TestTCPRouter_RouteTraffic_EstablishFailure(t *testing.T) {
 	err := router.RouteTraffic(ctx)
 	if err != nil {
 		t.Errorf("expected no error on context cancellation, got %v", err)
-	}
-	if !ftc.deconfigured {
-		t.Error("expected Tun configurator to be deconfigured")
-	}
-	if !ftun.closeCalled {
-		t.Error("expected Tun to be closed")
 	}
 }

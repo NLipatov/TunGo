@@ -1,4 +1,4 @@
-package linux_tun
+package tun_device
 
 import (
 	"fmt"
@@ -7,26 +7,49 @@ import (
 	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/network/iptables"
 	"tungo/settings"
+	"tungo/settings/client"
 )
 
-// LinuxTunConfigurator platform specific TUN-configurator used for Linux platform
-type LinuxTunConfigurator struct {
+// linuxTunDeviceManager Linux-specific TunDevice manager
+type linuxTunDeviceManager struct {
+	tunSettings settings.ConnectionSettings
 }
 
-// Configure configures a client TUN device
-func (t *LinuxTunConfigurator) Configure(s settings.ConnectionSettings) (application.TunDevice, error) {
+func newLinuxTunDeviceManager(conf client.Conf) (application.TunDevice, error) {
+	tcpDevManager := &linuxTunDeviceManager{
+		tunSettings: conf.TCPSettings,
+	}
+
+	udpDevManager := &linuxTunDeviceManager{
+		tunSettings: conf.UDPSettings,
+	}
+
+	tcpDevManager.DisposeTunDevice()
+	udpDevManager.DisposeTunDevice()
+
+	switch conf.Protocol {
+	case settings.TCP:
+		return tcpDevManager.NewTunDevice()
+	case settings.UDP:
+		return udpDevManager.NewTunDevice()
+	default:
+		return nil, fmt.Errorf("unsupported protocol")
+	}
+}
+
+func (t *linuxTunDeviceManager) NewTunDevice() (application.TunDevice, error) {
 	// configureTUN client
-	if udpConfigurationErr := configureTUN(s); udpConfigurationErr != nil {
+	if udpConfigurationErr := configureTUN(t.tunSettings); udpConfigurationErr != nil {
 		return nil, fmt.Errorf("failed to configure client: %v", udpConfigurationErr)
 	}
 
 	// sets client's TUN device maximum transmission unit (MTU)
-	if setMtuErr := ip.SetMtu(s.InterfaceName, s.MTU); setMtuErr != nil {
-		return nil, fmt.Errorf("failed to set %d MTU for %s: %s", s.MTU, s.InterfaceName, setMtuErr)
+	if setMtuErr := ip.SetMtu(t.tunSettings.InterfaceName, t.tunSettings.MTU); setMtuErr != nil {
+		return nil, fmt.Errorf("failed to set %d MTU for %s: %s", t.tunSettings.MTU, t.tunSettings.InterfaceName, setMtuErr)
 	}
 
 	// opens the TUN device
-	tunFile, openTunErr := ip.OpenTunByName(s.InterfaceName)
+	tunFile, openTunErr := ip.OpenTunByName(t.tunSettings.InterfaceName)
 	if openTunErr != nil {
 		return nil, fmt.Errorf("failed to open TUN interface: %v", openTunErr)
 	}
@@ -94,10 +117,9 @@ func configureTUN(connSettings settings.ConnectionSettings) error {
 	return nil
 }
 
-// Deconfigure does the de-configuration client device by deleting route to sever and TUN-device
-func (t *LinuxTunConfigurator) Dispose(connectionSettings settings.ConnectionSettings) {
+func (t *linuxTunDeviceManager) DisposeTunDevice() {
 	// Delete route to server
-	_ = ip.RouteDel(connectionSettings.ConnectionIP)
+	_ = ip.RouteDel(t.tunSettings.ConnectionIP)
 	// Delete the TUN interface
-	_, _ = ip.LinkDel(connectionSettings.InterfaceName)
+	_, _ = ip.LinkDel(t.tunSettings.InterfaceName)
 }

@@ -9,7 +9,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/settings"
 )
@@ -46,20 +45,6 @@ func (f *fakeTun) Write(p []byte) (int, error) {
 func (f *fakeTun) Close() error {
 	f.closeCalled = true
 	return nil
-}
-
-// fakeTunConfigurator implements a minimal TunConfigurator.
-type fakeTunConfigurator struct {
-	tun          application.TunDevice
-	deconfigured bool
-}
-
-func (f *fakeTunConfigurator) Configure(_ settings.ConnectionSettings) (application.TunDevice, error) {
-	return f.tun, nil
-}
-
-func (f *fakeTunConfigurator) Deconfigure(_ settings.ConnectionSettings) {
-	f.deconfigured = true
 }
 
 // fakeTCPConn implements net.Conn. It uses an internal buffer for reads and captures writes.
@@ -139,11 +124,9 @@ func TestTcpTunWorker_HandlePacketsFromTun(t *testing.T) {
 
 	// Create a dummy TCPRouter that holds the fake TUN.
 	router := &TCPRouter{
-		TunConfigurator: &fakeTunConfigurator{tun: tun},
-		Settings:        settings.ConnectionSettings{},
+		Tun:      tun,
+		Settings: settings.ConnectionSettings{},
 	}
-	// Ensure router.tun is set using the configurator.
-	router.tun, _ = router.TunConfigurator.Configure(router.Settings)
 
 	worker, err := newTcpTunWorker().
 		UseRouter(router).
@@ -218,10 +201,9 @@ func TestTcpTunWorker_HandlePacketsFromConn(t *testing.T) {
 	fakeTun := &fakeTun{}
 
 	router := &TCPRouter{
-		TunConfigurator: &fakeTunConfigurator{tun: fakeTun},
-		Settings:        settings.ConnectionSettings{},
+		Tun:      fakeTun,
+		Settings: settings.ConnectionSettings{},
 	}
-	router.tun, _ = router.TunConfigurator.Configure(router.Settings)
 
 	worker, err := newTcpTunWorker().
 		UseRouter(router).

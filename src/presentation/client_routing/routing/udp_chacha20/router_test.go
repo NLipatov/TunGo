@@ -3,10 +3,14 @@ package udp_chacha20
 import (
 	"context"
 	"errors"
+	"math"
+	"math/rand"
+	"os"
+	"path"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
-	"tungo/application"
 	"tungo/settings"
 )
 
@@ -47,37 +51,24 @@ func (f *routerTestFakeTun) Close() error {
 	return nil
 }
 
-// routerTestFakeTunConfigurator implements the TunDeviceConfigurator interface.
-type routerTestFakeTunConfigurator struct {
-	tun          application.TunDevice
-	deconfigured bool
-}
-
-func (f *routerTestFakeTunConfigurator) Configure(_ settings.ConnectionSettings) (application.TunDevice, error) {
-	return f.tun, nil
-}
-
-func (f *routerTestFakeTunConfigurator) Dispose(_ settings.ConnectionSettings) {
-	f.deconfigured = true
-}
-
 // TestUDPRouter_RouteTraffic_ContextCancelled tests that RouteTraffic gracefully terminates when context is cancelled.
 func TestUDPRouter_RouteTraffic_ContextCancelled(t *testing.T) {
-	// Create fake TUN and configurator.
-	ftun := &routerTestFakeTun{
-		readData: []byte("test packet"),
+	tun, tunErr := os.Create(path.Join(t.TempDir(), strconv.Itoa(rand.Intn(math.MaxInt32))))
+	if tunErr != nil {
+		t.Fatal(tunErr)
 	}
-	ftc := &routerTestFakeTunConfigurator{
-		tun: ftun,
-	}
+	defer func(tun *os.File) {
+		_ = tun.Close()
+	}(tun)
+
 	// Use settings with a short timeout.
 	sett := settings.ConnectionSettings{
 		ConnectionIP:  "127.0.0.1",
 		DialTimeoutMs: 10,
 	}
 	router := &UDPRouter{
-		Settings:        sett,
-		TunConfigurator: ftc,
+		Settings: sett,
+		Tun:      tun,
 	}
 
 	// Start RouteTraffic with a cancelled context.
@@ -87,12 +78,6 @@ func TestUDPRouter_RouteTraffic_ContextCancelled(t *testing.T) {
 	if err != nil {
 		t.Errorf("expected no error on context cancellation, got %v", err)
 	}
-	if !ftc.deconfigured {
-		t.Error("expected Tun configurator to be deconfigured")
-	}
-	if !ftun.closeCalled {
-		t.Error("expected Tun to be closed")
-	}
 }
 
 // TestUDPRouter_RouteTraffic_EstablishFailure tests that RouteTraffic terminates properly when secure connection establishment fails.
@@ -101,17 +86,14 @@ func TestUDPRouter_RouteTraffic_EstablishFailure(t *testing.T) {
 	ftun := &routerTestFakeTun{
 		readData: []byte("dummy"),
 	}
-	ftc := &routerTestFakeTunConfigurator{
-		tun: ftun,
-	}
 	// Use settings with a short DialTimeoutMs.
 	sett := settings.ConnectionSettings{
 		ConnectionIP:  "127.0.0.1",
 		DialTimeoutMs: 10,
 	}
 	router := &UDPRouter{
-		Settings:        sett,
-		TunConfigurator: ftc,
+		Settings: sett,
+		Tun:      ftun,
 	}
 
 	// Instead of a timeout context, use a cancelable context and cancel manually.
@@ -125,11 +107,5 @@ func TestUDPRouter_RouteTraffic_EstablishFailure(t *testing.T) {
 	err := router.RouteTraffic(ctx)
 	if err != nil {
 		t.Errorf("expected no error on context cancellation, got %v", err)
-	}
-	if !ftc.deconfigured {
-		t.Error("expected Tun configurator to be deconfigured")
-	}
-	if !ftun.closeCalled {
-		t.Error("expected Tun to be closed")
 	}
 }
