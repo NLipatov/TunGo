@@ -1,4 +1,4 @@
-package connection
+package udp_connection
 
 import (
 	"net"
