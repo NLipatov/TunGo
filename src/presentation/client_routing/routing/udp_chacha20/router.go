@@ -6,6 +6,7 @@ import (
 	"net"
 	"sync"
 	"tungo/application"
+	"tungo/presentation/client_routing/routing"
 )
 
 type UDPRouter struct {
@@ -16,15 +17,15 @@ type UDPRouter struct {
 
 func NewUDPRouter(
 	conn *net.UDPConn, tun application.TunDevice, cryptographyService application.CryptographyService,
-) UDPRouter {
-	return UDPRouter{
+) routing.TrafficRouter {
+	return &UDPRouter{
 		Tun:                 tun,
 		conn:                conn,
 		cryptographyService: cryptographyService,
 	}
 }
 
-func (r *UDPRouter) RouteTraffic(ctx context.Context) {
+func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
 	routingCtx, routingCancel := context.WithCancel(ctx)
 	// Start a goroutine to monitor context cancellation and close the udp_connection
 	go func() {
@@ -65,4 +66,6 @@ func (r *UDPRouter) RouteTraffic(ctx context.Context) {
 	}()
 
 	wg.Wait()
+
+	return nil
 }

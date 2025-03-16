@@ -2,52 +2,38 @@ package tcp_chacha20
 
 import (
 	"context"
-	"errors"
 	"log"
-	"math"
 	"net"
 	"sync"
-	"time"
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
-	"tungo/presentation/client_routing/routing/tcp_chacha20/connection"
-	"tungo/settings"
+	"tungo/presentation/client_routing/routing"
 )
 
 type TCPRouter struct {
-	Settings settings.ConnectionSettings
-	Tun      application.TunDevice
+	Tun                 application.TunDevice
+	conn                net.Conn
+	cryptographyService application.CryptographyService
 }
 
-func (r *TCPRouter) RouteTraffic(ctx context.Context) error {
-	for {
-		conn, cryptographyService, err := r.establishSecureConnection(ctx)
-		if err != nil {
-			if errors.Is(err, context.Canceled) { //client shutdown
-				return nil
-			}
-
-			log.Printf("connection to server at %s (TCP) failed: %s", r.Settings.ConnectionIP, err)
-			time.Sleep(time.Millisecond * 1000)
-			continue
-		}
-
-		log.Printf("connected to server at %s (TCP)", r.Settings.ConnectionIP)
-
-		// Create a child context for managing data forwarding goroutines
-		connCtx, connCancel := context.WithCancel(ctx)
-
-		// Start a goroutine to monitor context cancellation and close the connection
-		go func() {
-			<-connCtx.Done()
-			_ = conn.Close()
-		}()
-
-		forwardIPPackets(r, &conn, cryptographyService, connCtx, connCancel)
+func NewTCPRouter(
+	conn *net.Conn, tun application.TunDevice, cryptographyService application.CryptographyService,
+) routing.TrafficRouter {
+	return &TCPRouter{
+		Tun:                 tun,
+		conn:                *conn,
+		cryptographyService: cryptographyService,
 	}
 }
 
-func forwardIPPackets(r *TCPRouter, conn *net.Conn, cryptographyService application.CryptographyService, connCtx context.Context, connCancel context.CancelFunc) {
+func (r *TCPRouter) RouteTraffic(ctx context.Context) error {
+	routingCtx, routingCancel := context.WithCancel(ctx)
+	go func() {
+		<-routingCtx.Done()
+		_ = r.conn.Close()
+		_ = r.Tun.Close()
+	}()
+
 	var wg sync.WaitGroup
 	wg.Add(2)
 
@@ -56,8 +42,8 @@ func forwardIPPackets(r *TCPRouter, conn *net.Conn, cryptographyService applicat
 		defer wg.Done()
 		tunWorker, buildErr := newTcpTunWorker().
 			UseRouter(r).
-			UseConn(*conn).
-			UseCryptographyService(cryptographyService).
+			UseConn(r.conn).
+			UseCryptographyService(r.cryptographyService).
 			UseEncoder(&chacha20.DefaultTCPEncoder{}).
 			Build()
 
@@ -65,7 +51,7 @@ func forwardIPPackets(r *TCPRouter, conn *net.Conn, cryptographyService applicat
 			log.Fatalf("failed to build TCP TUN worker: %s", buildErr)
 		}
 
-		tunWorkerErr := tunWorker.HandleTun(connCtx, connCancel)
+		tunWorkerErr := tunWorker.HandleTun(routingCtx, routingCancel)
 
 		if tunWorkerErr != nil {
 			log.Fatalf("failed to handle TUN-packet: %s", tunWorkerErr)
@@ -77,8 +63,8 @@ func forwardIPPackets(r *TCPRouter, conn *net.Conn, cryptographyService applicat
 		defer wg.Done()
 		tunWorker, buildErr := newTcpTunWorker().
 			UseRouter(r).
-			UseConn(*conn).
-			UseCryptographyService(cryptographyService).
+			UseConn(r.conn).
+			UseCryptographyService(r.cryptographyService).
 			UseEncoder(&chacha20.DefaultTCPEncoder{}).
 			Build()
 
@@ -86,7 +72,7 @@ func forwardIPPackets(r *TCPRouter, conn *net.Conn, cryptographyService applicat
 			log.Fatalf("failed to build TCP TUN worker: %s", buildErr)
 		}
 
-		handlingErr := tunWorker.HandleConn(connCtx, connCancel)
+		handlingErr := tunWorker.HandleConn(routingCtx, routingCancel)
 
 		if handlingErr != nil {
 			log.Fatalf("failed to handle CONN-packet: %s", handlingErr)
@@ -94,24 +80,6 @@ func forwardIPPackets(r *TCPRouter, conn *net.Conn, cryptographyService applicat
 	}()
 
 	wg.Wait()
-}
 
-func (r *TCPRouter) establishSecureConnection(ctx context.Context) (net.Conn, application.CryptographyService, error) {
-	//setup ctx deadline
-	deadline := time.Now().Add(time.Duration(math.Max(float64(r.Settings.DialTimeoutMs), 5000)) * time.Millisecond)
-	handshakeCtx, handshakeCtxCancel := context.WithDeadline(ctx, deadline)
-	defer handshakeCtxCancel()
-
-	//connect to server and exchange secret
-	secret := connection.NewDefaultSecret(r.Settings, chacha20.NewHandshake())
-	cancellableSecret := connection.NewSecretWithDeadline(handshakeCtx, secret)
-
-	session := connection.NewDefaultSecureSession(connection.NewDefaultConnection(r.Settings), cancellableSecret)
-	cancellableSession := connection.NewSecureSessionWithDeadline(handshakeCtx, session)
-	conn, tcpSession, err := cancellableSession.Establish()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return *conn, tcpSession, nil
+	return nil
 }

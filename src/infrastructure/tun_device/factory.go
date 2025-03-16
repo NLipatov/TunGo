@@ -11,10 +11,10 @@ type PlatformAgnosticTunDeviceFactory struct {
 	goos string
 }
 
-func NewTunDevice(conf client.Conf) (application.TunDevice, error) {
+func NewTunDeviceConfigurator(conf client.Conf) (application.PlatformTunConfigurator, error) {
 	switch runtime.GOOS {
 	case "linux":
-		return newLinuxTunDeviceManager(conf)
+		return newLinuxTunDeviceManager(conf), nil
 	default:
 		return nil, fmt.Errorf("unsupported platfrom: %s", runtime.GOOS)
 	}
