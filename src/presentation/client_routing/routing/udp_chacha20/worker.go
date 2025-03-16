@@ -11,18 +11,17 @@ import (
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/network/ip"
-	"tungo/presentation/client_routing/routing"
 )
 
 type UdpWorker struct {
-	router              routing.TrafficRouter
+	router              application.TrafficRouter
 	conn                *net.UDPConn
 	tun                 io.ReadWriteCloser
 	cryptographyService application.CryptographyService
 }
 
 func newUdpWorker(
-	router routing.TrafficRouter, conn *net.UDPConn, tun io.ReadWriteCloser,
+	router application.TrafficRouter, conn *net.UDPConn, tun io.ReadWriteCloser,
 	cryptographyService application.CryptographyService,
 ) *UdpWorker {
 	return &UdpWorker{

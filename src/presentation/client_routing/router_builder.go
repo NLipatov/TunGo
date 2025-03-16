@@ -9,7 +9,6 @@ import (
 	"time"
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
-	"tungo/presentation/client_routing/routing"
 	"tungo/presentation/client_routing/routing/tcp_chacha20"
 	"tungo/presentation/client_routing/routing/tcp_chacha20/tcp_connection"
 	"tungo/presentation/client_routing/routing/udp_chacha20"
@@ -27,7 +26,7 @@ func NewRouterBuilder() RouterBuilder {
 
 func (u *RouterBuilder) Build(
 	ctx context.Context, conf client.Conf, tunDevConfigurator application.PlatformTunConfigurator,
-) (routing.TrafficRouter, error) {
+) (application.TrafficRouter, error) {
 	tun, tunErr := tunDevConfigurator.CreateTunDevice()
 	if tunErr != nil {
 		log.Printf("failed to create tun: %s", tunErr)

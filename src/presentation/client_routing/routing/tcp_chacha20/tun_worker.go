@@ -10,18 +10,17 @@ import (
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network/ip"
-	"tungo/presentation/client_routing/routing"
 )
 
 type tcpTunWorker struct {
-	router              routing.TrafficRouter
+	router              application.TrafficRouter
 	conn                net.Conn
 	tun                 io.ReadWriteCloser
 	cryptographyService application.CryptographyService
 }
 
 func newTcpTunWorker(
-	router routing.TrafficRouter, conn net.Conn, tun io.ReadWriteCloser, cryptographyService application.CryptographyService,
+	router application.TrafficRouter, conn net.Conn, tun io.ReadWriteCloser, cryptographyService application.CryptographyService,
 ) *tcpTunWorker {
 	return &tcpTunWorker{
 		router:              router,

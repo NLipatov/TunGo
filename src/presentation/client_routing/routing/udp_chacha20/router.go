@@ -6,7 +6,6 @@ import (
 	"net"
 	"sync"
 	"tungo/application"
-	"tungo/presentation/client_routing/routing"
 )
 
 type UDPRouter struct {
@@ -17,7 +16,7 @@ type UDPRouter struct {
 
 func NewUDPRouter(
 	conn *net.UDPConn, tun application.TunDevice, cryptographyService application.CryptographyService,
-) routing.TrafficRouter {
+) application.TrafficRouter {
 	return &UDPRouter{
 		tun:                 tun,
 		conn:                conn,

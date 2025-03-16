@@ -6,7 +6,6 @@ import (
 	"net"
 	"sync"
 	"tungo/application"
-	"tungo/presentation/client_routing/routing"
 )
 
 type TCPRouter struct {
@@ -17,7 +16,7 @@ type TCPRouter struct {
 
 func NewTCPRouter(
 	conn *net.Conn, tun application.TunDevice, cryptographyService application.CryptographyService,
-) routing.TrafficRouter {
+) application.TrafficRouter {
 	return &TCPRouter{
 		tun:                 tun,
 		conn:                *conn,
