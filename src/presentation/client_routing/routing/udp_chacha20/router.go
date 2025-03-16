@@ -39,7 +39,7 @@ func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
 	// TUN -> UDP
 	go func() {
 		defer wg.Done()
-		tunWorker := newUdpWorker(r, r.conn, r.tun, r.cryptographyService)
+		tunWorker := newUdpWorker(r.conn, r.tun, r.cryptographyService)
 
 		handlingErr := tunWorker.HandleTun(routingCtx, routingCancel)
 
@@ -53,7 +53,7 @@ func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
 	// UDP -> TUN
 	go func() {
 		defer wg.Done()
-		tunWorker := newUdpWorker(r, r.conn, r.tun, r.cryptographyService)
+		tunWorker := newUdpWorker(r.conn, r.tun, r.cryptographyService)
 
 		handlingErr := tunWorker.HandleConn(routingCtx, routingCancel)
 
