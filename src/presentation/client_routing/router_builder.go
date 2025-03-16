@@ -32,6 +32,8 @@ func (u *RouterBuilder) Build(ctx context.Context, conf client.Conf) (routing.Tr
 		return nil, tunDeviceErr
 	}
 
+	_ = tunDeviceConfigurator.DisposeTunDevices()
+
 	tun, tunErr := tunDeviceConfigurator.CreateTunDevice()
 	if tunErr != nil {
 		log.Printf("failed to create tun: %s", tunErr)

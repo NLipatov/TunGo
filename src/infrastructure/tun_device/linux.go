@@ -1,7 +1,6 @@
 package tun_device
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 	"tungo/application"
@@ -113,24 +112,11 @@ func configureTUN(connSettings settings.ConnectionSettings) error {
 }
 
 func (t *linuxTunDeviceManager) DisposeTunDevices() error {
-	var s settings.ConnectionSettings
-	switch t.conf.Protocol {
-	case settings.UDP:
-		s = t.conf.UDPSettings
-	case settings.TCP:
-		s = t.conf.TCPSettings
-	default:
-		return fmt.Errorf("unsupported protocol")
-	}
+	_ = ip.RouteDel(t.conf.UDPSettings.ConnectionIP)
+	_, _ = ip.LinkDel(t.conf.UDPSettings.InterfaceName)
 
-	// Delete route to server
-	routeDelErr := ip.RouteDel(s.ConnectionIP)
-	// Delete the TUN interface
-	_, linkDelErr := ip.LinkDel(s.InterfaceName)
-
-	if routeDelErr != nil || linkDelErr != nil {
-		return errors.Join(routeDelErr, linkDelErr)
-	}
+	_ = ip.RouteDel(t.conf.TCPSettings.ConnectionIP)
+	_, _ = ip.LinkDel(t.conf.TCPSettings.InterfaceName)
 
 	return nil
 }
