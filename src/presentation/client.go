@@ -3,6 +3,8 @@ package presentation
 import (
 	"context"
 	"log"
+	"tungo/application"
+	"tungo/infrastructure/tun_device"
 	"tungo/presentation/client_routing"
 	"tungo/presentation/interactive_commands"
 	"tungo/settings/client"
@@ -22,8 +24,17 @@ func StartClient() {
 		log.Fatalf("failed to read configuration: %v", err)
 	}
 
+	tunDevConfigurator, tunDevConfiguratorErr := tun_device.NewTunDeviceConfigurator(*conf)
+	if tunDevConfiguratorErr != nil {
+		log.Fatalf("failed to configure tun: %s", tunDevConfiguratorErr)
+	}
+	_ = tunDevConfigurator.DisposeTunDevices()
+	defer func(tunDevConfigurator application.PlatformTunConfigurator) {
+		_ = tunDevConfigurator.DisposeTunDevices()
+	}(tunDevConfigurator)
+
 	routerBuilder := client_routing.NewRouterBuilder()
-	router, routerErr := routerBuilder.Build(ctx, *conf)
+	router, routerErr := routerBuilder.Build(ctx, *conf, tunDevConfigurator)
 	if routerErr != nil {
 		log.Fatalf("failed to create router: %s", routerErr)
 	}
