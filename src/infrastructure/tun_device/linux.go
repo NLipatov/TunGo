@@ -1,32 +1,49 @@
-package tun_configurator
+package tun_device
 
 import (
 	"fmt"
 	"strings"
 	"tungo/application"
-	ip2 "tungo/infrastructure/network/ip"
+	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/network/iptables"
 	"tungo/settings"
+	"tungo/settings/client"
 )
 
-// LinuxTunConfigurator platform specific TUN-configurator used for Linux platform
-type LinuxTunConfigurator struct {
+// linuxTunDeviceManager Linux-specific TunDevice manager
+type linuxTunDeviceManager struct {
+	conf client.Conf
 }
 
-// Configure configures a client TUN device
-func (t *LinuxTunConfigurator) Configure(s settings.ConnectionSettings) (application.TunDevice, error) {
+func newLinuxTunDeviceManager(conf client.Conf) application.PlatformTunConfigurator {
+	return &linuxTunDeviceManager{
+		conf: conf,
+	}
+}
+
+func (t *linuxTunDeviceManager) CreateTunDevice() (application.TunDevice, error) {
+	var s settings.ConnectionSettings
+	switch t.conf.Protocol {
+	case settings.UDP:
+		s = t.conf.UDPSettings
+	case settings.TCP:
+		s = t.conf.TCPSettings
+	default:
+		return nil, fmt.Errorf("unsupported protocol")
+	}
+
 	// configureTUN client
 	if udpConfigurationErr := configureTUN(s); udpConfigurationErr != nil {
 		return nil, fmt.Errorf("failed to configure client: %v", udpConfigurationErr)
 	}
 
 	// sets client's TUN device maximum transmission unit (MTU)
-	if setMtuErr := ip2.SetMtu(s.InterfaceName, s.MTU); setMtuErr != nil {
+	if setMtuErr := ip.SetMtu(s.InterfaceName, s.MTU); setMtuErr != nil {
 		return nil, fmt.Errorf("failed to set %d MTU for %s: %s", s.MTU, s.InterfaceName, setMtuErr)
 	}
 
 	// opens the TUN device
-	tunFile, openTunErr := ip2.OpenTunByName(s.InterfaceName)
+	tunFile, openTunErr := ip.OpenTunByName(s.InterfaceName)
 	if openTunErr != nil {
 		return nil, fmt.Errorf("failed to open TUN interface: %v", openTunErr)
 	}
@@ -36,14 +53,14 @@ func (t *LinuxTunConfigurator) Configure(s settings.ConnectionSettings) (applica
 
 // configureTUN Configures client's TUN device (creates the TUN device, assigns an IP to it, etc)
 func configureTUN(connSettings settings.ConnectionSettings) error {
-	name, err := ip2.UpNewTun(connSettings.InterfaceName)
+	name, err := ip.UpNewTun(connSettings.InterfaceName)
 	if err != nil {
 		return fmt.Errorf("failed to create interface %v: %v", connSettings.InterfaceName, err)
 	}
 	fmt.Printf("created TUN interface: %v\n", name)
 
 	// Assign IP address to the TUN interface
-	_, err = ip2.LinkAddrAdd(connSettings.InterfaceName, connSettings.InterfaceAddress)
+	_, err = ip.LinkAddrAdd(connSettings.InterfaceName, connSettings.InterfaceAddress)
 	if err != nil {
 		return err
 	}
@@ -53,7 +70,7 @@ func configureTUN(connSettings settings.ConnectionSettings) error {
 	serverIP := connSettings.ConnectionIP
 
 	// Get routing information
-	routeInfo, err := ip2.RouteGet(serverIP)
+	routeInfo, err := ip.RouteGet(serverIP)
 	var viaGateway, devInterface string
 	fields := strings.Fields(routeInfo)
 	for i, field := range fields {
@@ -70,9 +87,9 @@ func configureTUN(connSettings settings.ConnectionSettings) error {
 
 	// Add route to server IP
 	if viaGateway == "" {
-		err = ip2.RouteAdd(serverIP, devInterface)
+		err = ip.RouteAdd(serverIP, devInterface)
 	} else {
-		err = ip2.RouteAddViaGateway(serverIP, devInterface, viaGateway)
+		err = ip.RouteAddViaGateway(serverIP, devInterface, viaGateway)
 	}
 	if err != nil {
 		return fmt.Errorf("failed to add route to server IP: %v", err)
@@ -80,7 +97,7 @@ func configureTUN(connSettings settings.ConnectionSettings) error {
 	fmt.Printf("added route to server %s via %s dev %s\n", serverIP, viaGateway, devInterface)
 
 	// Set the TUN interface as the default gateway
-	_, err = ip2.RouteAddDefaultDev(connSettings.InterfaceName)
+	_, err = ip.RouteAddDefaultDev(connSettings.InterfaceName)
 	if err != nil {
 		return err
 	}
@@ -94,10 +111,12 @@ func configureTUN(connSettings settings.ConnectionSettings) error {
 	return nil
 }
 
-// Deconfigure does the de-configuration client device by deleting route to sever and TUN-device
-func (t *LinuxTunConfigurator) Deconfigure(connectionSettings settings.ConnectionSettings) {
-	// Delete route to server
-	_ = ip2.RouteDel(connectionSettings.ConnectionIP)
-	// Delete the TUN interface
-	_, _ = ip2.LinkDel(connectionSettings.InterfaceName)
+func (t *linuxTunDeviceManager) DisposeTunDevices() error {
+	_ = ip.RouteDel(t.conf.UDPSettings.ConnectionIP)
+	_, _ = ip.LinkDel(t.conf.UDPSettings.InterfaceName)
+
+	_ = ip.RouteDel(t.conf.TCPSettings.ConnectionIP)
+	_, _ = ip.LinkDel(t.conf.TCPSettings.InterfaceName)
+
+	return nil
 }

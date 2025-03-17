@@ -1,4 +1,4 @@
-package connection
+package tcp_connection
 
 import (
 	"context"
@@ -19,9 +19,9 @@ func NewSecureSessionWithDeadline(ctx context.Context, secureConnection SecureSe
 	}
 }
 
-func (c *SecureSessionWithDeadline) Establish() (*net.Conn, application.CryptographyService, error) {
+func (c *SecureSessionWithDeadline) Establish() (net.Conn, application.CryptographyService, error) {
 	type result struct {
-		conn *net.Conn
+		conn net.Conn
 		sess application.CryptographyService
 		err  error
 	}

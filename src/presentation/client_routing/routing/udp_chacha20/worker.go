@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"time"
 	"tungo/application"
@@ -12,23 +13,25 @@ import (
 	"tungo/infrastructure/network/ip"
 )
 
-type chacha20UdpWorker struct {
-	router              *UDPRouter
+type UdpWorker struct {
 	conn                *net.UDPConn
+	tun                 io.ReadWriteCloser
 	cryptographyService application.CryptographyService
 }
 
-func newChacha20UdpWorker(router *UDPRouter, conn *net.UDPConn, cryptographyService application.CryptographyService) *chacha20UdpWorker {
-	return &chacha20UdpWorker{
-		router:              router,
+func newUdpWorker(
+	conn *net.UDPConn, tun io.ReadWriteCloser, cryptographyService application.CryptographyService,
+) *UdpWorker {
+	return &UdpWorker{
 		conn:                conn,
+		tun:                 tun,
 		cryptographyService: cryptographyService,
 	}
 }
 
-func (w *chacha20UdpWorker) HandleTun(ctx context.Context, cancelFunc context.CancelFunc) error {
+func (w *UdpWorker) HandleTun(ctx context.Context, cancelFunc context.CancelFunc) error {
 	buf := make([]byte, ip.MaxPacketLengthBytes+12)
-	udpReader := chacha20.NewUdpReader(w.router.tun)
+	udpReader := chacha20.NewUdpReader(w.tun)
 	_ = w.conn.SetWriteBuffer(len(buf))
 
 	// Main loop to read from TUN and send data
@@ -71,7 +74,7 @@ func (w *chacha20UdpWorker) HandleTun(ctx context.Context, cancelFunc context.Ca
 	}
 }
 
-func (w *chacha20UdpWorker) HandleConn(ctx context.Context, cancelFunc context.CancelFunc) error {
+func (w *UdpWorker) HandleConn(ctx context.Context, cancelFunc context.CancelFunc) error {
 	dataBuf := make([]byte, ip.MaxPacketLengthBytes+12)
 	oobBuf := make([]byte, 1024)
 	_ = w.conn.SetReadBuffer(len(dataBuf))
@@ -118,7 +121,7 @@ func (w *chacha20UdpWorker) HandleConn(ctx context.Context, cancelFunc context.C
 				return fmt.Errorf("failed to decrypt data: %s", decryptionErr)
 			}
 
-			_, writeErr := w.router.tun.Write(decrypted)
+			_, writeErr := w.tun.Write(decrypted)
 			if writeErr != nil {
 				if ctx.Err() != nil {
 					return nil

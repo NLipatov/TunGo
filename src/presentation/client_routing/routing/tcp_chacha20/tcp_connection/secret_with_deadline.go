@@ -1,4 +1,4 @@
-package connection
+package tcp_connection
 
 import (
 	"context"
@@ -19,7 +19,7 @@ func NewSecretWithDeadline(ctx context.Context, secret Secret) SecretWithDeadlin
 	}
 }
 
-func (s SecretWithDeadline) Exchange(conn *net.Conn) (application.CryptographyService, error) {
+func (s SecretWithDeadline) Exchange(conn net.Conn) (application.CryptographyService, error) {
 	type result struct {
 		cryptographyService application.CryptographyService
 		err                 error

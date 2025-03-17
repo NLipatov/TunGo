@@ -1,4 +1,4 @@
-package connection
+package udp_connection
 
 import (
 	"net"
@@ -6,7 +6,7 @@ import (
 )
 
 type SecureSession interface {
-	Establish() (*net.Conn, application.CryptographyService, error)
+	Establish() (*net.UDPConn, application.CryptographyService, error)
 }
 
 type DefaultSecureSession struct {
@@ -21,16 +21,16 @@ func NewDefaultSecureSession(connection Connection, secret Secret) *DefaultSecur
 	}
 }
 
-func (c *DefaultSecureSession) Establish() (*net.Conn, application.CryptographyService, error) {
+func (c *DefaultSecureSession) Establish() (*net.UDPConn, application.CryptographyService, error) {
 	conn, connErr := c.connection.Establish()
 	if connErr != nil {
 		return nil, nil, connErr
 	}
 
-	cryptographyService, cryptographyServiceErr := c.secret.Exchange(conn)
-	if cryptographyServiceErr != nil {
-		return nil, nil, cryptographyServiceErr
+	session, sessionErr := c.secret.Exchange(conn)
+	if sessionErr != nil {
+		return nil, nil, sessionErr
 	}
 
-	return conn, cryptographyService, nil
+	return conn, session, nil
 }

@@ -1,4 +1,4 @@
-package connection
+package tcp_connection
 
 import (
 	"fmt"
@@ -9,7 +9,7 @@ import (
 )
 
 type Secret interface {
-	Exchange(conn *net.Conn) (application.CryptographyService, error)
+	Exchange(conn net.Conn) (application.CryptographyService, error)
 }
 
 type DefaultSecret struct {
@@ -24,8 +24,8 @@ func NewDefaultSecret(settings settings.ConnectionSettings, handshake chacha20.H
 	}
 }
 
-func (s *DefaultSecret) Exchange(conn *net.Conn) (application.CryptographyService, error) {
-	handshakeErr := s.handshake.ClientSideHandshake(*conn, s.settings)
+func (s *DefaultSecret) Exchange(conn net.Conn) (application.CryptographyService, error) {
+	handshakeErr := s.handshake.ClientSideHandshake(conn, s.settings)
 	if handshakeErr != nil {
 		return nil, handshakeErr
 	}

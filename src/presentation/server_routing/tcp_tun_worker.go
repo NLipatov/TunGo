@@ -25,7 +25,7 @@ func NewTcpTunWorker() TcpTunWorker {
 func (w *TcpTunWorker) TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map, ctx context.Context) {
 	headerParser := ip.NewBaseHeaderParser()
 
-	buf := make([]byte, network.IPPacketMaxSizeBytes)
+	buf := make([]byte, ip.MaxPacketLengthBytes)
 	reader := chacha20.NewTcpReader(tunFile)
 	encoder := chacha20.NewDefaultTCPEncoder()
 
@@ -170,7 +170,7 @@ func (w *TcpTunWorker) handleClient(conn net.Conn, tunFile *os.File, localIpToCo
 		log.Printf("disconnected: %s", conn.RemoteAddr())
 	}()
 
-	buf := make([]byte, network.IPPacketMaxSizeBytes)
+	buf := make([]byte, ip.MaxPacketLengthBytes)
 	for {
 		select {
 		case <-ctx.Done():
@@ -196,7 +196,7 @@ func (w *TcpTunWorker) handleClient(conn net.Conn, tunFile *os.File, localIpToCo
 
 			//read packet length from 4-byte length prefix
 			var length = binary.BigEndian.Uint32(buf[:4])
-			if length < 4 || length > network.IPPacketMaxSizeBytes {
+			if length < 4 || length > ip.MaxPacketLengthBytes {
 				log.Printf("invalid packet Length: %d", length)
 				continue
 			}
