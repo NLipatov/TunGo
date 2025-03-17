@@ -15,11 +15,11 @@ type TCPRouter struct {
 }
 
 func NewTCPRouter(
-	conn *net.Conn, tun application.TunDevice, cryptographyService application.CryptographyService,
+	conn net.Conn, tun application.TunDevice, cryptographyService application.CryptographyService,
 ) application.TrafficRouter {
 	return &TCPRouter{
 		tun:                 tun,
-		conn:                *conn,
+		conn:                conn,
 		cryptographyService: cryptographyService,
 	}
 }

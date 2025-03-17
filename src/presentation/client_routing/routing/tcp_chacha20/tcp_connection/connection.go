@@ -6,7 +6,7 @@ import (
 )
 
 type Connection interface {
-	Establish() (*net.Conn, error)
+	Establish() (net.Conn, error)
 }
 
 type DefaultConnection struct {
@@ -19,12 +19,12 @@ func NewDefaultConnection(settings settings.ConnectionSettings) *DefaultConnecti
 	}
 }
 
-func (u *DefaultConnection) Establish() (*net.Conn, error) {
+func (u *DefaultConnection) Establish() (net.Conn, error) {
 	dialer := net.Dialer{}
 	conn, connErr := dialer.Dial("tcp", net.JoinHostPort(u.settings.ConnectionIP, u.settings.Port))
 	if connErr != nil {
 		return nil, connErr
 	}
 
-	return &conn, nil
+	return conn, nil
 }
