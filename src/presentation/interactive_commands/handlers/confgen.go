@@ -71,6 +71,7 @@ func generate() (*client.Conf, error) {
 			Port:             serverConf.TCPSettings.Port,
 			MTU:              serverConf.TCPSettings.MTU,
 			Protocol:         settings.TCP,
+			Encryption:       serverConf.TCPSettings.Encryption,
 			DialTimeoutMs:    serverConf.TCPSettings.DialTimeoutMs,
 		},
 		UDPSettings: settings.ConnectionSettings{
@@ -81,6 +82,7 @@ func generate() (*client.Conf, error) {
 			Port:             serverConf.UDPSettings.Port,
 			MTU:              serverConf.UDPSettings.MTU,
 			Protocol:         settings.UDP,
+			Encryption:       serverConf.UDPSettings.Encryption,
 			DialTimeoutMs:    serverConf.UDPSettings.DialTimeoutMs,
 		},
 		Ed25519PublicKey:          serverConf.Ed25519PublicKey,
