@@ -44,10 +44,12 @@ func StartClient() {
 			continue
 		}
 
+		log.Printf("tunneling traffic via tun device")
+
 		// Start routing traffic using router
 		routeTrafficErr := router.RouteTraffic(ctx)
 		if routeTrafficErr != nil {
-			log.Printf("routing err: %s", routeTrafficErr)
+			log.Printf("tunneling err: %s", routeTrafficErr)
 		}
 	}
 
