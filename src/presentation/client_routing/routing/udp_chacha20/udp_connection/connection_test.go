@@ -9,7 +9,7 @@ import (
 )
 
 func TestDefaultConnection_Establish(t *testing.T) {
-	port := 3001
+	port := 3002
 	testSettings := settings.ConnectionSettings{
 		ConnectionIP: "127.0.0.1",
 		Port:         fmt.Sprintf("%d", port),
