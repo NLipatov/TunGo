@@ -4,29 +4,29 @@ import styles from './styles.module.css';
 
 const FeatureList = [
   {
-    title: 'Easy to Use',
-    Svg: require('@site/static/img/peg.svg').default,
+    title: 'Fast',
+    Svg: require('@site/static/svg/racing-car.svg').default,
     description: (
       <>
-        It&apos;s easy to use. Like peg.
+          <strong>No allocations</strong> and practically no CPU time
       </>
     ),
   },
   {
-    title: 'Focus on What Matters',
-    Svg: require('@site/static/img/baloons.svg').default,
+    title: 'Open Sourced',
+    Svg: require('@site/static/svg/github.svg').default,
     description: (
       <>
-        It&apos;s fast lightweight reliable and secure.
+        TunGo is an <strong>MIT licensed</strong> open source project 
       </>
     ),
   },
   {
-    title: 'Powered by Go',
-    Svg: require('@site/static/img/gopher.svg').default,
+    title: 'Secure',
+    Svg: require('@site/static/svg/key.svg').default,
     description: (
       <>
-          High performance, simple syntax, and efficient concurrency support made it a perfect choice for TunGo.
+          ChaCha20 used to bidirectional tunnel traffic encryption
       </>
     ),
   },

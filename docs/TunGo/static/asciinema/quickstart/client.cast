@@ -1,5 +1,5 @@
 {"version": 2, "width": 169, "height": 6, "timestamp": 1742289725, "env": {"SHELL": "/bin/bash", "TERM": "xterm-256color"}}
-[0.010222, "o", "\u001b[?2004h\u001b]0;nikita@client: ~/dev/TunGo/src\u0007\u001b[01;32mnikita@client\u001b[00m:\u001b[01;34m~/dev/TunGo/src\u001b[00m$ "]
+[0.010222, "o", "\u001b[?2004h\u001b]0;user@client: ~/dev/TunGo/src\u0007\u001b[01;32muser@client\u001b[00m:\u001b[01;34m~/dev/TunGo/src\u001b[00m$ "]
 [0.634417, "o", "s"]
 [0.760588, "o", "u"]
 [0.921726, "o", "d"]
