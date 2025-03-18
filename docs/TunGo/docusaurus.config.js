@@ -80,10 +80,6 @@ const config = {
           },
         ],
       },
-      footer: {
-        style: 'dark',
-        copyright: `Copyright © ${new Date().getFullYear()} TunGo contributors. Built with Docusaurus.`,
-      },
       prism: {
         theme: prismThemes.github,
         darkTheme: prismThemes.dracula,
