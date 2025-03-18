@@ -8,6 +8,8 @@ on:
   pull_request:
     branches:
       - main
+    paths:
+      - 'src/**'   # Only if src directory files changed
       
 jobs:
   run-tests:
