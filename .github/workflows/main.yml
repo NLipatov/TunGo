@@ -3,6 +3,8 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'src/**'   # Only if src directory files changed
   pull_request:
     branches:
       - main
