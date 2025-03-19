@@ -32,8 +32,8 @@ export default function Home() {
   const {siteConfig} = useDocusaurusContext();
   return (
     <Layout
-      title={`Introducing ${siteConfig.title}`}
-      description="TunGo VPN. Simple, Fast and Secure OpenSource VPN.">
+        title={`${siteConfig.title} — Minimalistic, Fast & Secure Open Source VPN`}
+        description={`Secure your connection with ${siteConfig.title}: lightweight, fast, open-source VPN built in Go using modern cryptography.`}>
       <HomepageHeader />
       <main>
         <HomepageFeatures />
