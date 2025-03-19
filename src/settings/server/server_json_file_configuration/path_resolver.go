@@ -6,6 +6,10 @@ import (
 	"path/filepath"
 )
 
+type resolver interface {
+	resolve() (string, error)
+}
+
 type pathResolver struct {
 }
 

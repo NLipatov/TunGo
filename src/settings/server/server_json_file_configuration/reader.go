@@ -2,6 +2,7 @@ package server_json_file_configuration
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -19,7 +20,11 @@ func newReader(path string) *reader {
 }
 
 func (c *reader) read() (*server.Configuration, error) {
-	if !c.fileExists(c.path) {
+	if _, statErr := os.Stat(c.path); statErr != nil {
+		if errors.Is(statErr, os.ErrNotExist) {
+			return nil, fmt.Errorf("configuration file does not exist: %s", c.path)
+		}
+
 		return nil, fmt.Errorf("configuration file not found: %s", c.path)
 	}
 
@@ -39,11 +44,6 @@ func (c *reader) read() (*server.Configuration, error) {
 	c.setEnvUDPNonceRingBufferSize(&configuration)
 
 	return &configuration, nil
-}
-
-func (c *reader) fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
 }
 
 func (c *reader) setEnvServerAddress(conf *server.Configuration) {

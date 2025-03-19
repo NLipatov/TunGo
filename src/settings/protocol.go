@@ -26,16 +26,16 @@ func (p Protocol) MarshalJSON() ([]byte, error) {
 	return json.Marshal(protocolStr)
 }
 
-func (p Protocol) UnmarshalJSON(data []byte) error {
+func (p *Protocol) UnmarshalJSON(data []byte) error {
 	var s string
 	if err := json.Unmarshal(data, &s); err != nil {
 		return err
 	}
 	switch strings.ToUpper(s) {
 	case "TCP":
-		p = TCP
+		*p = TCP
 	case "UDP":
-		p = UDP
+		*p = UDP
 	default:
 		return errors.New("invalid protocol")
 	}
