@@ -27,7 +27,7 @@ func GenerateNewClientConf() error {
 
 // generate generates new client configuration
 func generate() (*client.Conf, error) {
-	serverConf, err := (&server.Conf{}).Read()
+	serverConf, err := (&server.Configuration{}).Read()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read server configuration: %s", err)
 	}
@@ -94,7 +94,7 @@ func generate() (*client.Conf, error) {
 	return &conf, nil
 }
 
-func getDefaultProtocol(conf *server.Conf) settings.Protocol {
+func getDefaultProtocol(conf *server.Configuration) settings.Protocol {
 	if conf.EnableUDP {
 		return settings.UDP
 	}

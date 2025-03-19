@@ -14,7 +14,7 @@ import (
 )
 
 func StartServer() {
-	conf, err := (&server.Conf{}).Read()
+	conf, err := (&server.Configuration{}).Read()
 	if err != nil {
 		log.Fatalf("failed to read configuration: %v", err)
 	}
@@ -52,7 +52,7 @@ func StartServer() {
 	wg.Wait()
 }
 
-func ensureEd25519KeyPairCreated(conf *server.Conf) error {
+func ensureEd25519KeyPairCreated(conf *server.Configuration) error {
 	// if keys are generated
 	if len(conf.Ed25519PublicKey) > 0 && len(conf.Ed25519PrivateKey) > 0 {
 		return nil

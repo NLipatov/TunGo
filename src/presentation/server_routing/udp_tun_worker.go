@@ -185,7 +185,7 @@ func (u *UdpTunWorker) udpRegisterClient(conn *net.UDPConn, clientAddr *net.UDPA
 	}
 	log.Printf("%s registered as: %s", clientAddr.String(), *internalIpAddr)
 
-	conf, confErr := (&server.Conf{}).Read()
+	conf, confErr := (&server.Configuration{}).Read()
 	if confErr != nil {
 		return confErr
 	}

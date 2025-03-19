@@ -47,7 +47,7 @@ func (h *HandshakeImpl) ServerKey() []byte {
 }
 
 func (h *HandshakeImpl) ServerSideHandshake(conn application.ConnectionAdapter) (*string, error) {
-	conf, err := (&server.Conf{}).Read()
+	conf, err := (&server.Configuration{}).Read()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read server conf: %s", err)
 	}

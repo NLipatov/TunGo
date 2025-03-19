@@ -10,7 +10,7 @@ import (
 	"tungo/settings"
 )
 
-type Conf struct {
+type Configuration struct {
 	TCPSettings               settings.ConnectionSettings `json:"TCPSettings"`
 	UDPSettings               settings.ConnectionSettings `json:"UDPSettings"`
 	FallbackServerAddress     string                      `json:"FallbackServerAddress"`
@@ -40,7 +40,7 @@ func (s *Conf) InsertEdKeys(public ed25519.PublicKey, private ed25519.PrivateKey
 	return nil
 }
 
-func (s *Conf) Read() (*Conf, error) {
+func (s *Configuration) Read() (*Configuration, error) {
 	confPath, err := getServerConfPath()
 	if err != nil {
 		return nil, err
@@ -63,14 +63,14 @@ func (s *Conf) Read() (*Conf, error) {
 	return s, nil
 }
 
-func setEnvServerAddress(conf *Conf) {
+func setEnvServerAddress(conf *Configuration) {
 	sIP := os.Getenv("ServerIP")
 	if sIP != "" {
 		conf.FallbackServerAddress = sIP
 	}
 }
 
-func setEnvEnabledProtocols(conf *Conf) {
+func setEnvEnabledProtocols(conf *Configuration) {
 	envUdp := os.Getenv("EnableUDP")
 	envTCP := os.Getenv("EnableTCP")
 
@@ -89,7 +89,7 @@ func setEnvEnabledProtocols(conf *Conf) {
 	}
 }
 
-func setEnvUDPNonceRingBufferSize(conf *Conf) {
+func setEnvUDPNonceRingBufferSize(conf *Configuration) {
 	envRBSize := os.Getenv("UDPNonceRingBufferSize")
 
 	if envRBSize != "" {
@@ -100,7 +100,7 @@ func setEnvUDPNonceRingBufferSize(conf *Conf) {
 	}
 }
 
-func (s *Conf) RewriteConf() error {
+func (s *Configuration) RewriteConf() error {
 	confPath, err := getServerConfPath()
 	if err != nil {
 		return err
