@@ -3,41 +3,35 @@ package server_json_file_configuration
 import (
 	"encoding/json"
 	"os"
-	"tungo/settings/server"
 )
 
 type writer struct {
-	resolver pathResolver
+	path string
 }
 
-func newWriter(resolver pathResolver) *writer {
+func newWriter(path string) *writer {
 	return &writer{
-		resolver: resolver,
+		path: path,
 	}
 }
 
-func (w *writer) Write(configuration server.Configuration) error {
-	confPath, err := w.resolver.resolve()
-	if err != nil {
-		return err
+func (w *writer) Write(data interface{}) error {
+	jsonContent, jsonContentErr := json.MarshalIndent(data, "", "  ")
+	if jsonContentErr != nil {
+		return jsonContentErr
 	}
 
-	jsonContent, err := json.MarshalIndent(configuration, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	file, err := os.Create(confPath)
-	if err != nil {
-		return err
+	file, fileErr := os.Create(w.path)
+	if fileErr != nil {
+		return fileErr
 	}
 	defer func(file *os.File) {
 		_ = file.Close()
 	}(file)
 
-	_, err = file.Write(jsonContent)
-	if err != nil {
-		return err
+	_, writeErr := file.Write(jsonContent)
+	if writeErr != nil {
+		return writeErr
 	}
 
 	return nil

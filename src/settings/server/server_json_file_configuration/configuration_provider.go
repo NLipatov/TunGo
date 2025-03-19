@@ -16,23 +16,23 @@ func NewServerConfigurationManager() *ServerConfigurationManager {
 }
 
 func (c *ServerConfigurationManager) Configuration() (*server.Configuration, error) {
-	configurationPathResolver := newPathResolver()
-	configurationPath, configurationPathErr := configurationPathResolver.resolve()
-	_, statErr := os.Stat(configurationPath)
+	resolver := newPathResolver()
+	path, pathErr := resolver.resolve()
+	_, statErr := os.Stat(path)
 	if statErr != nil {
 		configuration := server.NewDefaultConfiguration()
-		w := newWriter(configurationPathResolver)
+		w := newWriter(path)
 		writeErr := w.Write(*configuration)
 		if writeErr != nil {
 			log.Fatalf("could not write default configuration: %s", writeErr)
 		}
 	}
 
-	if configurationPathErr != nil {
-		return nil, fmt.Errorf("failed to read configuration: %s", configurationPath)
+	if pathErr != nil {
+		return nil, fmt.Errorf("failed to read configuration: %s", path)
 	}
 
-	return newReader(configurationPath).read()
+	return newReader(path).read()
 }
 
 func (c *ServerConfigurationManager) IncrementClientCounter() error {
@@ -42,8 +42,14 @@ func (c *ServerConfigurationManager) IncrementClientCounter() error {
 	}
 
 	configuration.ClientCounter += 1
-	configurationPathResolver := newPathResolver()
-	return newWriter(configurationPathResolver).Write(*configuration)
+	resolver := newPathResolver()
+	path, pathErr := resolver.resolve()
+	if pathErr != nil {
+		return pathErr
+	}
+
+	w := newWriter(path)
+	return w.Write(*configuration)
 }
 
 func (c *ServerConfigurationManager) InjectEdKeys(public ed25519.PublicKey, private ed25519.PrivateKey) error {
@@ -55,6 +61,12 @@ func (c *ServerConfigurationManager) InjectEdKeys(public ed25519.PublicKey, priv
 	configuration.Ed25519PublicKey = public
 	configuration.Ed25519PrivateKey = private
 
-	configurationPathResolver := newPathResolver()
-	return newWriter(configurationPathResolver).Write(*configuration)
+	resolver := newPathResolver()
+	path, pathErr := resolver.resolve()
+	if pathErr != nil {
+		return pathErr
+	}
+
+	w := newWriter(path)
+	return w.Write(*configuration)
 }
