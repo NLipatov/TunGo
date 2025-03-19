@@ -23,6 +23,41 @@ type Configuration struct {
 	EnableUDP                 bool                        `json:"EnableUDP"`
 }
 
+func NewDefaultConfiguration() Configuration {
+	return Configuration{
+		TCPSettings: settings.ConnectionSettings{
+			InterfaceName:    "tcptun0",
+			InterfaceIPCIDR:  "10.0.0.0/24",
+			InterfaceAddress: "10.0.0.1",
+			ConnectionIP:     "",
+			Port:             "8080",
+			MTU:              1472,
+			Protocol:         0,
+			Encryption:       0,
+			DialTimeoutMs:    5000,
+		},
+		UDPSettings: settings.ConnectionSettings{
+			InterfaceName:    "udptun0",
+			InterfaceIPCIDR:  "10.0.1.0/24",
+			InterfaceAddress: "10.0.1.1",
+			ConnectionIP:     "",
+			Port:             "9090",
+			MTU:              1416,
+			Protocol:         1,
+			Encryption:       0,
+			DialTimeoutMs:    5000,
+		},
+		FallbackServerAddress:     "",
+		Ed25519PublicKey:          nil,
+		Ed25519PrivateKey:         nil,
+		ClientCounter:             0,
+		TCPWriteChannelBufferSize: 1000,
+		UDPNonceRingBufferSize:    100_000,
+		EnableTCP:                 false,
+		EnableUDP:                 true,
+	}
+}
+
 func (s *Configuration) InsertEdKeys(public ed25519.PublicKey, private ed25519.PrivateKey) error {
 	currentConf, err := s.Read()
 	if err != nil {
