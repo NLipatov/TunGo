@@ -23,7 +23,7 @@ type Configuration struct {
 	EnableUDP                 bool                        `json:"EnableUDP"`
 }
 
-func (s *Conf) InsertEdKeys(public ed25519.PublicKey, private ed25519.PrivateKey) error {
+func (s *Configuration) InsertEdKeys(public ed25519.PublicKey, private ed25519.PrivateKey) error {
 	currentConf, err := s.Read()
 	if err != nil {
 		log.Printf("failed to read configuration: %s", err)
