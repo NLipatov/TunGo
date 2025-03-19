@@ -8,6 +8,7 @@ import (
 	"tungo/settings"
 	"tungo/settings/client"
 	"tungo/settings/server"
+	"tungo/settings/server/server_json_file_configuration"
 )
 
 func GenerateNewClientConf() error {
@@ -27,7 +28,8 @@ func GenerateNewClientConf() error {
 
 // generate generates new client configuration
 func generate() (*client.Conf, error) {
-	serverConf, err := (&server.Configuration{}).Read()
+	serverConfigurationManager := server_json_file_configuration.NewServerConfigurationManager()
+	serverConf, err := serverConfigurationManager.Configuration()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read server configuration: %s", err)
 	}
@@ -56,8 +58,7 @@ func generate() (*client.Conf, error) {
 		return nil, fmt.Errorf("failed to allocate client's TCP IP address: %s", err)
 	}
 
-	serverConf.ClientCounter = IncrementedClientCounter
-	err = serverConf.RewriteConf()
+	err = serverConfigurationManager.IncrementClientCounter()
 	if err != nil {
 		return nil, err
 	}

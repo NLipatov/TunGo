@@ -2,11 +2,6 @@ package server
 
 import (
 	"crypto/ed25519"
-	"encoding/json"
-	"log"
-	"os"
-	"path/filepath"
-	"strconv"
 	"tungo/settings"
 )
 
@@ -23,8 +18,8 @@ type Configuration struct {
 	EnableUDP                 bool                        `json:"EnableUDP"`
 }
 
-func NewDefaultConfiguration() Configuration {
-	return Configuration{
+func NewDefaultConfiguration() *Configuration {
+	return &Configuration{
 		TCPSettings: settings.ConnectionSettings{
 			InterfaceName:    "tcptun0",
 			InterfaceIPCIDR:  "10.0.0.0/24",
@@ -56,117 +51,4 @@ func NewDefaultConfiguration() Configuration {
 		EnableTCP:                 false,
 		EnableUDP:                 true,
 	}
-}
-
-func (s *Configuration) InsertEdKeys(public ed25519.PublicKey, private ed25519.PrivateKey) error {
-	currentConf, err := s.Read()
-	if err != nil {
-		log.Printf("failed to read configuration: %s", err)
-	}
-
-	currentConf.Ed25519PublicKey = public
-	currentConf.Ed25519PrivateKey = private
-
-	err = s.RewriteConf()
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (s *Configuration) Read() (*Configuration, error) {
-	confPath, err := getServerConfPath()
-	if err != nil {
-		return nil, err
-	}
-
-	data, err := os.ReadFile(confPath)
-	if err != nil {
-		return nil, err
-	}
-
-	err = json.Unmarshal(data, s)
-	if err != nil {
-		return nil, err
-	}
-
-	setEnvServerAddress(s)
-	setEnvEnabledProtocols(s)
-	setEnvUDPNonceRingBufferSize(s)
-
-	return s, nil
-}
-
-func setEnvServerAddress(conf *Configuration) {
-	sIP := os.Getenv("ServerIP")
-	if sIP != "" {
-		conf.FallbackServerAddress = sIP
-	}
-}
-
-func setEnvEnabledProtocols(conf *Configuration) {
-	envUdp := os.Getenv("EnableUDP")
-	envTCP := os.Getenv("EnableTCP")
-
-	if envUdp != "" {
-		eUDPBool, parseErr := strconv.ParseBool(envUdp)
-		if parseErr == nil {
-			conf.EnableUDP = eUDPBool
-		}
-	}
-
-	if envTCP != "" {
-		eTCPBool, parseErr := strconv.ParseBool(envTCP)
-		if parseErr == nil {
-			conf.EnableTCP = eTCPBool
-		}
-	}
-}
-
-func setEnvUDPNonceRingBufferSize(conf *Configuration) {
-	envRBSize := os.Getenv("UDPNonceRingBufferSize")
-
-	if envRBSize != "" {
-		size, parseErr := strconv.Atoi(envRBSize)
-		if parseErr == nil {
-			conf.UDPNonceRingBufferSize = size
-		}
-	}
-}
-
-func (s *Configuration) RewriteConf() error {
-	confPath, err := getServerConfPath()
-	if err != nil {
-		return err
-	}
-
-	jsonContent, err := json.MarshalIndent(s, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	file, err := os.Create(confPath)
-	if err != nil {
-		return err
-	}
-	defer func(file *os.File) {
-		_ = file.Close()
-	}(file)
-
-	_, err = file.Write(jsonContent)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func getServerConfPath() (string, error) {
-	execPath, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-	settingsPath := filepath.Join(filepath.Dir(execPath), "src", "settings", "server", "conf.json")
-	return settingsPath, nil
 }

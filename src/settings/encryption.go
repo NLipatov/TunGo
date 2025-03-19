@@ -3,7 +3,6 @@ package settings
 import (
 	"encoding/json"
 	"errors"
-	"strings"
 )
 
 type Encryption int
@@ -12,27 +11,23 @@ const (
 	ChaCha20Poly1305 Encryption = iota
 )
 
-func (e *Encryption) MarshalJSON() ([]byte, error) {
-	var encryptionStr string
-	switch *e {
+func (e Encryption) MarshalJSON() ([]byte, error) {
+	switch e {
 	case ChaCha20Poly1305:
-		encryptionStr = "ChaCha20Poly1305"
+		return json.Marshal("ChaCha20Poly1305")
 	default:
-		return nil, errors.New("unsupported protocol")
+		return nil, errors.New("invalid encryption")
 	}
-	return json.Marshal(encryptionStr)
 }
 
-func (e *Encryption) UnmarshalJSON(data []byte) error {
-	var encryptionStr string
-	if err := json.Unmarshal(data, &encryptionStr); err != nil {
+func (e Encryption) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
 		return err
 	}
-	switch strings.ToLower(encryptionStr) {
-	case "chacha20poly1305":
-		*e = ChaCha20Poly1305
-	default:
-		return errors.New("unsupported protocol")
+	if s == "ChaCha20Poly1305" {
+		e = ChaCha20Poly1305
+		return nil
 	}
-	return nil
+	return errors.New("invalid encryption")
 }
