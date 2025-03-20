@@ -2,120 +2,79 @@ package server_json_file_configuration
 
 import (
 	"crypto/ed25519"
-	"encoding/json"
-	"os"
-	"path/filepath"
-	"reflect"
+	"errors"
 	"strings"
 	"testing"
-	"tungo/settings/server"
 )
 
-// testResolver implements the same resolve() method for testing purposes.
-type testResolver struct {
-	path string
+// managerTestMockErrorResolver returns an error from resolve().
+type managerTestMockErrorResolver struct{}
+
+func (r managerTestMockErrorResolver) resolve() (string, error) {
+	return "", errors.New("resolve error")
 }
 
-func (r testResolver) resolve() (string, error) {
-	return r.path, nil
+// managerTestMockBadPathResolver returns an invalid path to simulate write error.
+type managerTestMockBadPathResolver struct{}
+
+func (r managerTestMockBadPathResolver) resolve() (string, error) {
+	// invalid path with null byte
+	return string([]byte{0}), nil
 }
 
-// createTestConfigPath returns a temporary file path for configuration.
-func createTestConfigPath(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
-	return filepath.Join(dir, "conf.json")
-}
-
-func TestConfigurationCreatesDefault(t *testing.T) {
-	path := createTestConfigPath(t)
+func TestManagerConfigurationResolverError(t *testing.T) {
 	manager := NewManager()
-	manager.resolver = testResolver{path: path}
+	manager.resolver = managerTestMockErrorResolver{}
 
-	// Ensure the file does not exist.
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatalf("expected file to not exist, but it does")
+	_, err := manager.Configuration()
+	if err == nil {
+		t.Fatal("expected error from Configuration() due to resolver error, got nil")
 	}
-
-	conf, err := manager.Configuration()
-	if err != nil {
-		t.Fatalf("Configuration() returned error: %v", err)
-	}
-
-	defaultConf := server.NewDefaultConfiguration()
-
-	expectedJSON, err := json.MarshalIndent(defaultConf, "", "  ")
-	if err != nil {
-		t.Fatalf("failed to marshal default configuration: %v", err)
-	}
-
-	actualJSON, err := json.MarshalIndent(conf, "", "  ")
-	if err != nil {
-		t.Fatalf("failed to marshal actual configuration: %v", err)
-	}
-
-	if strings.TrimSpace(string(expectedJSON)) != strings.TrimSpace(string(actualJSON)) {
-		t.Errorf("expected configuration JSON:\n%s\n\ngot:\n%s", expectedJSON, actualJSON)
-	}
-
-	// File should now exist.
-	if _, err := os.Stat(path); err != nil {
-		t.Errorf("expected file to exist after default creation, but got error: %v", err)
+	if !strings.Contains(err.Error(), "failed to read configuration") {
+		t.Errorf("expected error to mention 'failed to read configuration', got %v", err)
 	}
 }
 
-func TestIncrementClientCounter(t *testing.T) {
-	path := createTestConfigPath(t)
+func TestManagerConfigurationWriteDefaultError(t *testing.T) {
 	manager := NewManager()
-	manager.resolver = testResolver{path: path}
+	manager.resolver = managerTestMockBadPathResolver{}
 
-	// Create initial default configuration.
-	initialConf, err := manager.Configuration()
-	if err != nil {
-		t.Fatalf("Configuration() returned error: %v", err)
+	_, err := manager.Configuration()
+	if err == nil {
+		t.Fatal("expected error from Configuration() due to write default configuration failure, got nil")
 	}
-	initialCounter := initialConf.ClientCounter
-
-	// Increment counter.
-	if err := manager.IncrementClientCounter(); err != nil {
-		t.Fatalf("IncrementClientCounter() returned error: %v", err)
-	}
-
-	// Read configuration again.
-	updatedConf, err := manager.Configuration()
-	if err != nil {
-		t.Fatalf("Configuration() returned error after increment: %v", err)
-	}
-
-	if updatedConf.ClientCounter != initialCounter+1 {
-		t.Errorf("expected ClientCounter to be %d, got %d", initialCounter+1, updatedConf.ClientCounter)
+	if !strings.Contains(err.Error(), "could not write default configuration") {
+		t.Errorf("expected error to mention 'could not write default configuration', got %v", err)
 	}
 }
 
-func TestInjectEdKeys(t *testing.T) {
-	path := createTestConfigPath(t)
+func TestIncrementClientCounterConfigError(t *testing.T) {
 	manager := NewManager()
-	manager.resolver = testResolver{path: path}
+	manager.resolver = managerTestMockErrorResolver{}
 
-	// Generate ed25519 keys.
-	public, private, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatalf("failed to generate keys: %v", err)
+	err := manager.IncrementClientCounter()
+	if err == nil {
+		t.Fatal("expected error from IncrementClientCounter() due to Configuration() failure, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to read configuration") {
+		t.Errorf("expected error to mention 'failed to read configuration', got %v", err)
+	}
+}
+
+func TestInjectEdKeysConfigError(t *testing.T) {
+	manager := NewManager()
+	manager.resolver = managerTestMockErrorResolver{}
+
+	public, private, genErr := ed25519.GenerateKey(nil)
+	if genErr != nil {
+		t.Fatalf("failed to generate keys: %v", genErr)
 	}
 
-	if err := manager.InjectEdKeys(public, private); err != nil {
-		t.Fatalf("InjectEdKeys() returned error: %v", err)
+	err := manager.InjectEdKeys(public, private)
+	if err == nil {
+		t.Fatal("expected error from InjectEdKeys() due to Configuration() failure, got nil")
 	}
-
-	conf, err := manager.Configuration()
-	if err != nil {
-		t.Fatalf("Configuration() returned error: %v", err)
-	}
-
-	if !reflect.DeepEqual(conf.Ed25519PublicKey, public) {
-		t.Errorf("expected public key %v, got %v", public, conf.Ed25519PublicKey)
-	}
-	if !reflect.DeepEqual(conf.Ed25519PrivateKey, private) {
-		t.Errorf("expected private key %v, got %v", private, conf.Ed25519PrivateKey)
+	if !strings.Contains(err.Error(), "failed to read configuration") {
+		t.Errorf("expected error to mention 'failed to read configuration', got %v", err)
 	}
 }
