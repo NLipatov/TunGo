@@ -11,11 +11,11 @@ import (
 	"tungo/presentation/server_routing/serveripconf"
 	"tungo/settings"
 	"tungo/settings/server"
-	"tungo/settings/server/server_json_file_configuration"
+	"tungo/settings/server/server_configuration"
 )
 
 func StartServer() {
-	configurationManager := server_json_file_configuration.NewManager()
+	configurationManager := server_configuration.NewManager()
 	conf, confErr := configurationManager.Configuration()
 	if confErr != nil {
 		log.Fatal(confErr)
@@ -54,7 +54,7 @@ func StartServer() {
 	wg.Wait()
 }
 
-func ensureEd25519KeyPairCreated(conf *server.Configuration, manager *server_json_file_configuration.Manager) error {
+func ensureEd25519KeyPairCreated(conf *server.Configuration, manager *server_configuration.Manager) error {
 	// if keys are generated
 	if len(conf.Ed25519PublicKey) > 0 && len(conf.Ed25519PrivateKey) > 0 {
 		return nil

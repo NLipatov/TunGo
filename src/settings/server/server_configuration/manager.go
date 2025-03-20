@@ -1,4 +1,4 @@
-package server_json_file_configuration
+package server_configuration
 
 import (
 	"crypto/ed25519"
@@ -8,7 +8,7 @@ import (
 )
 
 type Manager struct {
-	resolver ConfigurationResolver
+	resolver linuxResolver
 }
 
 func NewManager() *Manager {

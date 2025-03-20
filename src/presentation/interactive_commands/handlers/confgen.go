@@ -8,7 +8,7 @@ import (
 	"tungo/settings"
 	"tungo/settings/client"
 	"tungo/settings/server"
-	"tungo/settings/server/server_json_file_configuration"
+	"tungo/settings/server/server_configuration"
 )
 
 func GenerateNewClientConf() error {
@@ -28,7 +28,7 @@ func GenerateNewClientConf() error {
 
 // generate generates new client configuration
 func generate() (*client.Conf, error) {
-	serverConfigurationManager := server_json_file_configuration.NewManager()
+	serverConfigurationManager := server_configuration.NewManager()
 	serverConf, err := serverConfigurationManager.Configuration()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read server configuration: %s", err)
