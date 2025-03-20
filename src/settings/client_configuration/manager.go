@@ -6,7 +6,7 @@ import (
 )
 
 type Manager struct {
-	resolver clientResolver
+	resolver resolver
 }
 
 func NewManager() Manager {

@@ -5,6 +5,10 @@ import (
 	"path/filepath"
 )
 
+type resolver interface {
+	resolve() (string, error)
+}
+
 type clientResolver struct {
 }
 
