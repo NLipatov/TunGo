@@ -11,15 +11,17 @@ import (
 	"tungo/presentation/server_routing/serveripconf"
 	"tungo/settings"
 	"tungo/settings/server"
+	"tungo/settings/server/server_json_file_configuration"
 )
 
 func StartServer() {
-	conf, err := (&server.Conf{}).Read()
-	if err != nil {
-		log.Fatalf("failed to read configuration: %v", err)
+	configurationManager := server_json_file_configuration.NewManager()
+	conf, confErr := configurationManager.Configuration()
+	if confErr != nil {
+		log.Fatal(confErr)
 	}
 
-	err = ensureEd25519KeyPairCreated(conf)
+	err := ensureEd25519KeyPairCreated(conf, configurationManager)
 	if err != nil {
 		log.Fatalf("failed to generate ed25519 keys: %s", err)
 	}
@@ -52,7 +54,7 @@ func StartServer() {
 	wg.Wait()
 }
 
-func ensureEd25519KeyPairCreated(conf *server.Conf) error {
+func ensureEd25519KeyPairCreated(conf *server.Configuration, manager *server_json_file_configuration.Manager) error {
 	// if keys are generated
 	if len(conf.Ed25519PublicKey) > 0 && len(conf.Ed25519PrivateKey) > 0 {
 		return nil
@@ -84,12 +86,7 @@ func ensureEd25519KeyPairCreated(conf *server.Conf) error {
 		private = privateKey
 	}
 
-	err := conf.InsertEdKeys(public, private)
-	if err != nil {
-		log.Fatalf("failed to insert ed25519 keys to server conf: %s", err)
-	}
-
-	return nil
+	return manager.InjectEdKeys(public, private)
 }
 
 func startTCPServer(settings settings.ConnectionSettings) error {

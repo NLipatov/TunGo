@@ -2,6 +2,7 @@ package server_routing
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -11,7 +12,7 @@ import (
 	"tungo/infrastructure/network/ip"
 	"tungo/presentation/server_routing/clientsession"
 	"tungo/settings"
-	"tungo/settings/server"
+	"tungo/settings/server/server_json_file_configuration"
 )
 
 type UDPClient struct {
@@ -185,12 +186,13 @@ func (u *UdpTunWorker) udpRegisterClient(conn *net.UDPConn, clientAddr *net.UDPA
 	}
 	log.Printf("%s registered as: %s", clientAddr.String(), *internalIpAddr)
 
-	conf, confErr := (&server.Conf{}).Read()
-	if confErr != nil {
-		return confErr
+	serverConfigurationManager := server_json_file_configuration.NewManager()
+	serverConf, err := serverConfigurationManager.Configuration()
+	if err != nil {
+		return fmt.Errorf("failed to read server configuration: %s", err)
 	}
 
-	udpSession, udpSessionErr := chacha20.NewUdpSession(h.Id(), h.ServerKey(), h.ClientKey(), true, conf.UDPNonceRingBufferSize)
+	udpSession, udpSessionErr := chacha20.NewUdpSession(h.Id(), h.ServerKey(), h.ClientKey(), true, serverConf.UDPNonceRingBufferSize)
 	if udpSessionErr != nil {
 		return udpSessionErr
 	}
