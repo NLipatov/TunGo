@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -93,5 +94,25 @@ func TestPathResolverSuccess(t *testing.T) {
 	expected := filepath.Join(string(os.PathSeparator), "etc", "tungo", "server_configuration.json")
 	if resolved != expected {
 		t.Errorf("expected %q, got %q", expected, resolved)
+	}
+}
+
+func TestMkdirAllError(t *testing.T) {
+	// Create a temporary directory.
+	tmpDir := t.TempDir()
+	// Create a file that will be used in place of a directory.
+	fakeDir := filepath.Join(tmpDir, "notadir")
+	if err := os.WriteFile(fakeDir, []byte("content"), 0644); err != nil {
+		t.Fatalf("failed to create file: %v", err)
+	}
+	// Use a path inside fakeDir so that MkdirAll fails because fakeDir is not a directory.
+	filePath := filepath.Join(fakeDir, "conf.json")
+	w := newWriter(writerTestMockResolver{path: filePath})
+	err := w.Write(map[string]string{"key": "value"})
+	if err == nil {
+		t.Fatal("expected error from MkdirAll, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to create configuration directory") {
+		t.Errorf("expected error to mention 'failed to create configuration directory', got %v", err)
 	}
 }
