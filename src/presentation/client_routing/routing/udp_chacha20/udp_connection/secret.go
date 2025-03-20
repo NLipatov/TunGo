@@ -6,7 +6,7 @@ import (
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/settings"
-	"tungo/settings/client"
+	"tungo/settings/client_configuration"
 )
 
 type Secret interface {
@@ -31,12 +31,13 @@ func (s *DefaultSecret) Exchange(conn *net.UDPConn) (application.CryptographySer
 		return nil, handshakeErr
 	}
 
-	conf, confErr := (&client.Conf{}).Read()
-	if confErr != nil {
-		return nil, confErr
+	configurationManager := client_configuration.NewManager()
+	clientConf, clientConfErr := configurationManager.Configuration()
+	if clientConfErr != nil {
+		return nil, fmt.Errorf("failed to read client configuration: %s", clientConfErr)
 	}
 
-	session, sessionErr := chacha20.NewUdpSession(s.handshake.Id(), s.handshake.ClientKey(), s.handshake.ServerKey(), false, conf.UDPNonceRingBufferSize)
+	session, sessionErr := chacha20.NewUdpSession(s.handshake.Id(), s.handshake.ClientKey(), s.handshake.ServerKey(), false, clientConf.UDPNonceRingBufferSize)
 	if sessionErr != nil {
 		return nil, fmt.Errorf("failed to create client session: %s\n", sessionErr)
 	}

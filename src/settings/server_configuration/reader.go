@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"tungo/settings/server"
 )
 
 type reader struct {
@@ -19,7 +18,7 @@ func newReader(path string) *reader {
 	}
 }
 
-func (c *reader) read() (*server.Configuration, error) {
+func (c *reader) read() (*Configuration, error) {
 	if _, statErr := os.Stat(c.path); statErr != nil {
 		if errors.Is(statErr, os.ErrNotExist) {
 			return nil, fmt.Errorf("configuration file does not exist: %s", c.path)
@@ -33,7 +32,7 @@ func (c *reader) read() (*server.Configuration, error) {
 		return nil, fmt.Errorf("configuration file (%s) is unreadable: %s", c.path, readFileErr)
 	}
 
-	var configuration server.Configuration
+	var configuration Configuration
 	deserializationErr := json.Unmarshal(fileBytes, &configuration)
 	if deserializationErr != nil {
 		return nil, fmt.Errorf("configuration file (%s) is invalid: %s", c.path, deserializationErr)
@@ -46,14 +45,14 @@ func (c *reader) read() (*server.Configuration, error) {
 	return &configuration, nil
 }
 
-func (c *reader) setEnvServerAddress(conf *server.Configuration) {
+func (c *reader) setEnvServerAddress(conf *Configuration) {
 	sIP := os.Getenv("ServerIP")
 	if sIP != "" {
 		conf.FallbackServerAddress = sIP
 	}
 }
 
-func (c *reader) setEnvEnabledProtocols(conf *server.Configuration) {
+func (c *reader) setEnvEnabledProtocols(conf *Configuration) {
 	envUdp := os.Getenv("EnableUDP")
 	envTCP := os.Getenv("EnableTCP")
 
@@ -72,7 +71,7 @@ func (c *reader) setEnvEnabledProtocols(conf *server.Configuration) {
 	}
 }
 
-func (c *reader) setEnvUDPNonceRingBufferSize(conf *server.Configuration) {
+func (c *reader) setEnvUDPNonceRingBufferSize(conf *Configuration) {
 	envRBSize := os.Getenv("UDPNonceRingBufferSize")
 
 	if envRBSize != "" {

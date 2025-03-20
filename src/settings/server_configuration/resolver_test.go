@@ -7,7 +7,7 @@ import (
 )
 
 func TestResolveSuccess(t *testing.T) {
-	resolver := newResolver()
+	resolver := NewServerResolver()
 	actual, err := resolver.resolve()
 	if err != nil {
 		t.Fatalf("resolve() returned error: %v", err)

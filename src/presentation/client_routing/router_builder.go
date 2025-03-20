@@ -9,7 +9,7 @@ import (
 	"tungo/presentation/client_routing/routing/tcp_chacha20"
 	"tungo/presentation/client_routing/routing/udp_chacha20"
 	"tungo/settings"
-	"tungo/settings/client"
+	"tungo/settings/client_configuration"
 )
 
 type RouterBuilder struct {
@@ -20,7 +20,7 @@ func NewRouterBuilder() RouterBuilder {
 }
 
 func (u *RouterBuilder) Build(
-	ctx context.Context, conf client.Conf, tunDevConfigurator application.PlatformTunConfigurator,
+	ctx context.Context, conf client_configuration.Configuration, tunDevConfigurator application.PlatformTunConfigurator,
 ) (application.TrafficRouter, error) {
 	connectionFactory := NewConnectionFactory()
 	tun, tunErr := tunDevConfigurator.CreateTunDevice()

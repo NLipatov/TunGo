@@ -8,7 +8,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"tungo/settings/server"
 )
 
 // managerTestMockErrorResolver returns an error from resolve().
@@ -83,7 +82,7 @@ func TestManagerConfigurationReadSuccess(t *testing.T) {
 	}
 
 	// At this point, the default configuration should have been written.
-	defaultConf := server.NewDefaultConfiguration()
+	defaultConf := NewDefaultConfiguration()
 	if !reflect.DeepEqual(conf, defaultConf) {
 		t.Errorf("expected default configuration %v, got %v", defaultConf, conf)
 	}

@@ -10,8 +10,7 @@ import (
 	"tungo/presentation/server_routing/routing"
 	"tungo/presentation/server_routing/serveripconf"
 	"tungo/settings"
-	"tungo/settings/server"
-	"tungo/settings/server/server_configuration"
+	"tungo/settings/server_configuration"
 )
 
 func StartServer() {
@@ -54,7 +53,7 @@ func StartServer() {
 	wg.Wait()
 }
 
-func ensureEd25519KeyPairCreated(conf *server.Configuration, manager *server_configuration.Manager) error {
+func ensureEd25519KeyPairCreated(conf *server_configuration.Configuration, manager *server_configuration.Manager) error {
 	// if keys are generated
 	if len(conf.Ed25519PublicKey) > 0 && len(conf.Ed25519PrivateKey) > 0 {
 		return nil
