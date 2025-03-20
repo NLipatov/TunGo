@@ -12,7 +12,7 @@ type Manager struct {
 
 func NewManager() *Manager {
 	return &Manager{
-		resolver: NewServerResolver(),
+		resolver: newServerResolver(),
 	}
 }
 

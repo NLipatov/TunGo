@@ -85,8 +85,8 @@ func TestFileWriteError(t *testing.T) {
 }
 
 func TestPathResolverSuccess(t *testing.T) {
-	// NewServerResolver returns a fixed absolute path.
-	resolver := NewServerResolver()
+	// newServerResolver returns a fixed absolute path.
+	resolver := newServerResolver()
 	resolved, err := resolver.resolve()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
