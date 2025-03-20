@@ -6,12 +6,12 @@ import (
 )
 
 type writer struct {
-	path string
+	resolver ConfigurationResolver
 }
 
-func newWriter(path string) *writer {
+func newWriter(resolver ConfigurationResolver) *writer {
 	return &writer{
-		path: path,
+		resolver: resolver,
 	}
 }
 
@@ -21,7 +21,12 @@ func (w *writer) Write(data interface{}) error {
 		return jsonContentErr
 	}
 
-	file, fileErr := os.Create(w.path)
+	path, pathErr := w.resolver.resolve()
+	if pathErr != nil {
+		return pathErr
+	}
+
+	file, fileErr := os.Create(path)
 	if fileErr != nil {
 		return fileErr
 	}

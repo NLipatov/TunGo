@@ -7,17 +7,17 @@ import (
 	"tungo/settings/server"
 )
 
-type ServerConfigurationManager struct {
-	resolver resolver
+type Manager struct {
+	resolver ConfigurationResolver
 }
 
-func NewServerConfigurationManager() *ServerConfigurationManager {
-	return &ServerConfigurationManager{
-		resolver: newPathResolver(),
+func NewManager() *Manager {
+	return &Manager{
+		resolver: newResolver(),
 	}
 }
 
-func (c *ServerConfigurationManager) Configuration() (*server.Configuration, error) {
+func (c *Manager) Configuration() (*server.Configuration, error) {
 	path, pathErr := c.resolver.resolve()
 	if pathErr != nil {
 		return nil, fmt.Errorf("failed to read configuration: %s", path)
@@ -26,7 +26,7 @@ func (c *ServerConfigurationManager) Configuration() (*server.Configuration, err
 	_, statErr := os.Stat(path)
 	if statErr != nil {
 		configuration := server.NewDefaultConfiguration()
-		w := newWriter(path)
+		w := newWriter(c.resolver)
 		writeErr := w.Write(*configuration)
 		if writeErr != nil {
 			return nil, fmt.Errorf("could not write default configuration: %s", writeErr)
@@ -35,23 +35,18 @@ func (c *ServerConfigurationManager) Configuration() (*server.Configuration, err
 	return newReader(path).read()
 }
 
-func (c *ServerConfigurationManager) IncrementClientCounter() error {
+func (c *Manager) IncrementClientCounter() error {
 	configuration, configurationErr := c.Configuration()
 	if configurationErr != nil {
 		return configurationErr
 	}
 
 	configuration.ClientCounter += 1
-	path, pathErr := c.resolver.resolve()
-	if pathErr != nil {
-		return pathErr
-	}
-
-	w := newWriter(path)
+	w := newWriter(c.resolver)
 	return w.Write(*configuration)
 }
 
-func (c *ServerConfigurationManager) InjectEdKeys(public ed25519.PublicKey, private ed25519.PrivateKey) error {
+func (c *Manager) InjectEdKeys(public ed25519.PublicKey, private ed25519.PrivateKey) error {
 	configuration, configurationErr := c.Configuration()
 	if configurationErr != nil {
 		return configurationErr
@@ -60,11 +55,6 @@ func (c *ServerConfigurationManager) InjectEdKeys(public ed25519.PublicKey, priv
 	configuration.Ed25519PublicKey = public
 	configuration.Ed25519PrivateKey = private
 
-	path, pathErr := c.resolver.resolve()
-	if pathErr != nil {
-		return pathErr
-	}
-
-	w := newWriter(path)
+	w := newWriter(c.resolver)
 	return w.Write(*configuration)
 }

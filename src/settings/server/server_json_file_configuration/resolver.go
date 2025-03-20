@@ -6,18 +6,18 @@ import (
 	"path/filepath"
 )
 
-type resolver interface {
+type ConfigurationResolver interface {
 	resolve() (string, error)
 }
 
-type pathResolver struct {
+type Resolver struct {
 }
 
-func newPathResolver() pathResolver {
-	return pathResolver{}
+func newResolver() Resolver {
+	return Resolver{}
 }
 
-func (r pathResolver) resolve() (string, error) {
+func (r Resolver) resolve() (string, error) {
 	workingDirectory, workingDirectoryErr := os.Getwd()
 	if workingDirectoryErr != nil {
 		return "", fmt.Errorf("failed to resolve configuration path: %w", workingDirectoryErr)

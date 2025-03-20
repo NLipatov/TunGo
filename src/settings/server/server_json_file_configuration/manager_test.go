@@ -29,7 +29,7 @@ func createTestConfigPath(t *testing.T) string {
 
 func TestConfigurationCreatesDefault(t *testing.T) {
 	path := createTestConfigPath(t)
-	manager := NewServerConfigurationManager()
+	manager := NewManager()
 	manager.resolver = testResolver{path: path}
 
 	// Ensure the file does not exist.
@@ -66,7 +66,7 @@ func TestConfigurationCreatesDefault(t *testing.T) {
 
 func TestIncrementClientCounter(t *testing.T) {
 	path := createTestConfigPath(t)
-	manager := NewServerConfigurationManager()
+	manager := NewManager()
 	manager.resolver = testResolver{path: path}
 
 	// Create initial default configuration.
@@ -94,7 +94,7 @@ func TestIncrementClientCounter(t *testing.T) {
 
 func TestInjectEdKeys(t *testing.T) {
 	path := createTestConfigPath(t)
-	manager := NewServerConfigurationManager()
+	manager := NewManager()
 	manager.resolver = testResolver{path: path}
 
 	// Generate ed25519 keys.
