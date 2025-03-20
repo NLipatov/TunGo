@@ -93,29 +93,19 @@ func TestReadStatOtherError(t *testing.T) {
 // Test for branch: unreadable file (os.ReadFile error)
 func TestReadFileUnreadable(t *testing.T) {
 	dir := t.TempDir()
-	filePath := filepath.Join(dir, "conf.json")
-	config := server.Configuration{
-		FallbackServerAddress:  "192.168.1.1",
-		EnableUDP:              false,
-		EnableTCP:              true,
-		UDPNonceRingBufferSize: 100,
+	// Create a directory instead of a file to simulate an unreadable file.
+	unreadablePath := filepath.Join(dir, "conf.json")
+	if err := os.Mkdir(unreadablePath, 0755); err != nil {
+		t.Fatalf("failed to create directory: %v", err)
 	}
-	content, err := json.MarshalIndent(config, "", "  ")
-	if err != nil {
-		t.Fatalf("Failed to marshal config: %v", err)
-	}
-	if err := os.WriteFile(filePath, content, 0000); err != nil {
-		t.Fatalf("Failed to write file: %v", err)
-	}
-	defer os.Chmod(filePath, 0644) // restore permissions
 
-	r := newReader(filePath)
-	_, err = r.read()
+	r := newReader(unreadablePath)
+	_, err := r.read()
 	if err == nil {
-		t.Fatal("Expected error for unreadable file, got nil")
+		t.Fatal("expected error for unreadable file, got nil")
 	}
 	if !strings.Contains(err.Error(), "is unreadable") {
-		t.Errorf("Expected error to mention 'is unreadable', got %v", err)
+		t.Errorf("expected error to mention 'is unreadable', got %v", err)
 	}
 }
 
