@@ -3,6 +3,7 @@ package server_json_file_configuration
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -41,7 +42,7 @@ func TestResolveWorkingDirectoryError(t *testing.T) {
 	if err := os.Chdir(tmpDir); err != nil {
 		t.Fatalf("failed to change directory: %v", err)
 	}
-	// Remove the current directory.
+	// Remove the current directory to simulate os.Getwd() error.
 	if err := os.Remove(tmpDir); err != nil {
 		t.Fatalf("failed to remove temp dir: %v", err)
 	}
@@ -50,5 +51,8 @@ func TestResolveWorkingDirectoryError(t *testing.T) {
 	_, err = resolver.resolve()
 	if err == nil {
 		t.Error("expected error from resolve() due to removed working directory, got nil")
+	}
+	if err != nil && !strings.Contains(err.Error(), "failed to resolve configuration path") {
+		t.Errorf("expected error message to contain 'failed to resolve configuration path', got %v", err)
 	}
 }
