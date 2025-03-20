@@ -12,7 +12,7 @@ import (
 	"tungo/infrastructure/network/ip"
 	"tungo/presentation/server_routing/clientsession"
 	"tungo/settings"
-	"tungo/settings/server/server_json_file_configuration"
+	"tungo/settings/server/server_configuration"
 )
 
 type UDPClient struct {
@@ -186,7 +186,7 @@ func (u *UdpTunWorker) udpRegisterClient(conn *net.UDPConn, clientAddr *net.UDPA
 	}
 	log.Printf("%s registered as: %s", clientAddr.String(), *internalIpAddr)
 
-	serverConfigurationManager := server_json_file_configuration.NewManager()
+	serverConfigurationManager := server_configuration.NewManager()
 	serverConf, err := serverConfigurationManager.Configuration()
 	if err != nil {
 		return fmt.Errorf("failed to read server configuration: %s", err)

@@ -1,15 +1,16 @@
-package server_json_file_configuration
+package server_configuration
 
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 )
 
 type writer struct {
-	resolver ConfigurationResolver
+	resolver linuxResolver
 }
 
-func newWriter(resolver ConfigurationResolver) *writer {
+func newWriter(resolver linuxResolver) *writer {
 	return &writer{
 		resolver: resolver,
 	}
@@ -24,6 +25,12 @@ func (w *writer) Write(data interface{}) error {
 	path, pathErr := w.resolver.resolve()
 	if pathErr != nil {
 		return pathErr
+	}
+
+	dir := filepath.Dir(path)
+	mkdirErr := os.MkdirAll(dir, 0700)
+	if mkdirErr != nil {
+		return mkdirErr
 	}
 
 	file, fileErr := os.Create(path)
