@@ -112,7 +112,9 @@ func TestMkdirAllError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error from MkdirAll, got nil")
 	}
-	if !strings.Contains(err.Error(), "failed to create configuration directory") {
-		t.Errorf("expected error to mention 'failed to create configuration directory', got %v", err)
+
+	// not a directory err is expected, because we used a fakeDir
+	if !strings.Contains(err.Error(), "not a directory") {
+		t.Errorf("expected error to mention 'not a directory', got %v", err)
 	}
 }
