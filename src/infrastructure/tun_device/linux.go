@@ -7,15 +7,15 @@ import (
 	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/network/iptables"
 	"tungo/settings"
-	"tungo/settings/client"
+	"tungo/settings/client_configuration"
 )
 
 // linuxTunDeviceManager Linux-specific TunDevice manager
 type linuxTunDeviceManager struct {
-	conf client.Conf
+	conf client_configuration.Configuration
 }
 
-func newLinuxTunDeviceManager(conf client.Conf) application.PlatformTunConfigurator {
+func newLinuxTunDeviceManager(conf client_configuration.Configuration) application.PlatformTunConfigurator {
 	return &linuxTunDeviceManager{
 		conf: conf,
 	}

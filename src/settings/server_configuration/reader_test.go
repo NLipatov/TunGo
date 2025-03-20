@@ -6,12 +6,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"tungo/settings/server"
 )
 
 func TestReadSuccess(t *testing.T) {
 	// Create a valid configuration file.
-	initialConfig := server.Configuration{
+	initialConfig := Configuration{
 		FallbackServerAddress:  "192.168.1.1",
 		EnableUDP:              false,
 		EnableTCP:              true,

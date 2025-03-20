@@ -1,4 +1,4 @@
-package server
+package server_configuration
 
 import (
 	"crypto/ed25519"

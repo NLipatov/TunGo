@@ -4,7 +4,6 @@ import (
 	"crypto/ed25519"
 	"fmt"
 	"os"
-	"tungo/settings/server"
 )
 
 type Manager struct {
@@ -13,11 +12,11 @@ type Manager struct {
 
 func NewManager() *Manager {
 	return &Manager{
-		resolver: newResolver(),
+		resolver: NewServerResolver(),
 	}
 }
 
-func (c *Manager) Configuration() (*server.Configuration, error) {
+func (c *Manager) Configuration() (*Configuration, error) {
 	path, pathErr := c.resolver.resolve()
 	if pathErr != nil {
 		return nil, fmt.Errorf("failed to read configuration: %s", path)
@@ -25,7 +24,7 @@ func (c *Manager) Configuration() (*server.Configuration, error) {
 
 	_, statErr := os.Stat(path)
 	if statErr != nil {
-		configuration := server.NewDefaultConfiguration()
+		configuration := NewDefaultConfiguration()
 		w := newWriter(c.resolver)
 		writeErr := w.Write(*configuration)
 		if writeErr != nil {

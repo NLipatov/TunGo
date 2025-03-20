@@ -12,8 +12,8 @@ import (
 	"net"
 	"tungo/application"
 	"tungo/settings"
-	"tungo/settings/client"
-	"tungo/settings/server/server_configuration"
+	"tungo/settings/client_configuration"
+	json_configuration2 "tungo/settings/server_configuration"
 )
 
 type Handshake interface {
@@ -47,7 +47,7 @@ func (h *HandshakeImpl) ServerKey() []byte {
 }
 
 func (h *HandshakeImpl) ServerSideHandshake(conn application.ConnectionAdapter) (*string, error) {
-	serverConfigurationManager := server_configuration.NewManager()
+	serverConfigurationManager := json_configuration2.NewManager()
 	conf, err := serverConfigurationManager.Configuration()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read server configuration: %s", err)
@@ -162,7 +162,8 @@ func (h *HandshakeImpl) ClientSideHandshake(conn net.Conn, settings settings.Con
 		return fmt.Errorf("failed to read server-hello message")
 	}
 
-	clientConf, err := (&client.Conf{}).Read()
+	configurationManager := client_configuration.NewManager()
+	clientConf, err := configurationManager.Configuration()
 	if err != nil {
 		return fmt.Errorf("failed to read client configuration: %s", err)
 	}

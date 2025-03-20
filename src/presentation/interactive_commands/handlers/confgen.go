@@ -6,9 +6,8 @@ import (
 	"log"
 	"tungo/infrastructure/network/ip"
 	"tungo/settings"
-	"tungo/settings/client"
-	"tungo/settings/server"
-	"tungo/settings/server/server_configuration"
+	"tungo/settings/client_configuration"
+	json_configuration2 "tungo/settings/server_configuration"
 )
 
 func GenerateNewClientConf() error {
@@ -27,8 +26,8 @@ func GenerateNewClientConf() error {
 }
 
 // generate generates new client configuration
-func generate() (*client.Conf, error) {
-	serverConfigurationManager := server_configuration.NewManager()
+func generate() (*client_configuration.Configuration, error) {
+	serverConfigurationManager := json_configuration2.NewManager()
 	serverConf, err := serverConfigurationManager.Configuration()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read server configuration: %s", err)
@@ -63,7 +62,7 @@ func generate() (*client.Conf, error) {
 		return nil, err
 	}
 
-	conf := client.Conf{
+	conf := client_configuration.Configuration{
 		TCPSettings: settings.ConnectionSettings{
 			InterfaceName:    serverConf.TCPSettings.InterfaceName,
 			InterfaceIPCIDR:  serverConf.TCPSettings.InterfaceIPCIDR,
@@ -95,7 +94,7 @@ func generate() (*client.Conf, error) {
 	return &conf, nil
 }
 
-func getDefaultProtocol(conf *server.Configuration) settings.Protocol {
+func getDefaultProtocol(conf *json_configuration2.Configuration) settings.Protocol {
 	if conf.EnableUDP {
 		return settings.UDP
 	}

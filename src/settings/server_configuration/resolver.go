@@ -9,13 +9,13 @@ type linuxResolver interface {
 	resolve() (string, error)
 }
 
-type Resolver struct {
+type ServerResolver struct {
 }
 
-func newResolver() Resolver {
-	return Resolver{}
+func NewServerResolver() ServerResolver {
+	return ServerResolver{}
 }
 
-func (r Resolver) resolve() (string, error) {
+func (r ServerResolver) resolve() (string, error) {
 	return filepath.Join(string(os.PathSeparator), "etc", "tungo", "server_configuration.json"), nil
 }

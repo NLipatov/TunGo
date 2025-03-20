@@ -7,7 +7,7 @@ import (
 	"tungo/infrastructure/tun_device"
 	"tungo/presentation/client_routing"
 	"tungo/presentation/interactive_commands"
-	"tungo/settings/client"
+	"tungo/settings/client_configuration"
 )
 
 func StartClient() {
@@ -19,13 +19,14 @@ func StartClient() {
 	go interactive_commands.ListenForCommand(cancel, "client")
 
 	// Read client configuration
-	conf, err := (&client.Conf{}).Read()
-	if err != nil {
-		log.Fatalf("failed to read configuration: %v", err)
+	configurationManager := client_configuration.NewManager()
+	clientConf, clientConfErr := configurationManager.Configuration()
+	if clientConfErr != nil {
+		log.Fatalf("failed to read client configuration: %s", clientConfErr)
 	}
 
 	// Setup platform tun configurator
-	tunDevConfigurator, tunDevConfiguratorErr := tun_device.NewTunDeviceConfigurator(*conf)
+	tunDevConfigurator, tunDevConfiguratorErr := tun_device.NewTunDeviceConfigurator(*clientConf)
 	if tunDevConfiguratorErr != nil {
 		log.Fatalf("failed to configure tun: %s", tunDevConfiguratorErr)
 	}
@@ -37,7 +38,7 @@ func StartClient() {
 
 		// Build router. (udp or tcp based on client's conf.json file)
 		routerBuilder := client_routing.NewRouterBuilder()
-		router, routerErr := routerBuilder.Build(ctx, *conf, tunDevConfigurator)
+		router, routerErr := routerBuilder.Build(ctx, *clientConf, tunDevConfigurator)
 		if routerErr != nil {
 			log.Printf("failed to create router: %s", routerErr)
 			time.Sleep(500 * time.Millisecond)
