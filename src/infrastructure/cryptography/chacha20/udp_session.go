@@ -71,7 +71,7 @@ func (s *DefaultUdpSession) Decrypt(ciphertext []byte) ([]byte, error) {
 	payloadBytes := ciphertext[12:]
 
 	//converts nonceBytes to [12]byte with no allocations
-	nBErr := s.nonceBuf.InsertNonceBytes(*(*[12]byte)(unsafe.Pointer(&nonceBytes[0])))
+	nBErr := s.nonceBuf.Insert(*(*[12]byte)(unsafe.Pointer(&nonceBytes[0])))
 	if nBErr != nil {
 		return nil, nBErr
 	}
