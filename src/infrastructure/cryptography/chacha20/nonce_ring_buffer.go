@@ -3,6 +3,7 @@ package chacha20
 import (
 	"encoding/binary"
 	"sync"
+	"unsafe"
 )
 
 type NonceBuf struct {
@@ -38,7 +39,8 @@ func (r *NonceBuf) Insert(nonceBytes [12]byte) error {
 
 	//if set contains old nonce, remove it from set
 	if oldNonce := r.data[r.lastInsert]; oldNonce != nil {
-		delete(r.set, oldNonce.Hash(r.keyBuf))
+		key := *(*[12]byte)(unsafe.Pointer(&oldNonce.Encode(r.keyBuf[:])[0]))
+		delete(r.set, key)
 	}
 
 	r.data[r.lastInsert] = &Nonce{
