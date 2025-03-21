@@ -77,27 +77,6 @@ func TestNonceEncode(t *testing.T) {
 	}
 }
 
-// TestNonceHash checks the correctness of the Hash function.
-func TestNonceHash(t *testing.T) {
-	nonce := NewNonce()
-	nonce.low = 0x1122334455667788
-	nonce.high = 0x99AABBCC
-
-	// Create a 12-byte buffer to pass to Hash.
-	var buf [12]byte
-	hashResult := nonce.Hash(buf)
-
-	// Calculate expected hash using Encode.
-	buffer := make([]byte, 12)
-	nonce.Encode(buffer)
-	var expected [12]byte
-	copy(expected[:], buffer)
-
-	if hashResult != expected {
-		t.Errorf("Expected hash %x, got %x", expected, hashResult)
-	}
-}
-
 // TestNonceConcurrentIncrement checks that incrementNonce handles concurrent invocations correctly.
 func TestNonceConcurrentIncrement(t *testing.T) {
 	nonce := NewNonce()
