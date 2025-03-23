@@ -26,6 +26,12 @@ func (r *NonceBuf) Insert(nonceBytes [12]byte) error {
 	}
 
 	r.lastInsert = (r.lastInsert + 1) % r.size
+
+	oldNonce := r.data[r.lastInsert]
+	if _, exists := r.set[oldNonce]; exists {
+		delete(r.set, oldNonce)
+	}
+
 	r.data[r.lastInsert] = nonceBytes
 	r.set[nonceBytes] = struct{}{}
 
