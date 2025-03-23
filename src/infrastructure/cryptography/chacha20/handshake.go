@@ -13,7 +13,7 @@ import (
 	"tungo/application"
 	"tungo/settings"
 	"tungo/settings/client_configuration"
-	json_configuration2 "tungo/settings/server_configuration"
+	"tungo/settings/server_configuration"
 )
 
 type Handshake interface {
@@ -47,7 +47,7 @@ func (h *HandshakeImpl) ServerKey() []byte {
 }
 
 func (h *HandshakeImpl) ServerSideHandshake(conn application.ConnectionAdapter) (*string, error) {
-	serverConfigurationManager := json_configuration2.NewManager()
+	serverConfigurationManager := server_configuration.NewManager()
 	conf, err := serverConfigurationManager.Configuration()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read server configuration: %s", err)

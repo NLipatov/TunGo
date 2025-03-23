@@ -1,13 +1,7 @@
 package chacha20
 
-import (
-	"encoding/binary"
-	"sync"
-	"unsafe"
-)
-
 type NonceBuf struct {
-	data       []*Nonce
+	data       [][12]byte
 	size       int
 	lastInsert int
 	nextRead   int
@@ -17,7 +11,7 @@ type NonceBuf struct {
 
 func NewNonceBuf(size int) *NonceBuf {
 	return &NonceBuf{
-		data:       make([]*Nonce, size),
+		data:       make([][12]byte, size),
 		size:       size,
 		lastInsert: -1,
 		nextRead:   0,
@@ -26,29 +20,20 @@ func NewNonceBuf(size int) *NonceBuf {
 }
 
 func (r *NonceBuf) Insert(nonceBytes [12]byte) error {
-	low := binary.BigEndian.Uint64(nonceBytes[:8])
-	high := binary.BigEndian.Uint32(nonceBytes[8:])
-
-	hash := nonceBytes
-	_, exist := r.set[hash]
-	if exist {
+	_, notUnique := r.set[nonceBytes]
+	if notUnique {
 		return ErrNonUniqueNonce
 	}
 
 	r.lastInsert = (r.lastInsert + 1) % r.size
 
-	//if set contains old nonce, remove it from set
-	if oldNonce := r.data[r.lastInsert]; oldNonce != nil {
-		key := *(*[12]byte)(unsafe.Pointer(&oldNonce.Encode(r.keyBuf[:])[0]))
-		delete(r.set, key)
+	oldNonce := r.data[r.lastInsert]
+	if _, exists := r.set[oldNonce]; exists {
+		delete(r.set, oldNonce)
 	}
 
-	r.data[r.lastInsert] = &Nonce{
-		low:  low,
-		high: high,
-		mu:   sync.Mutex{},
-	}
-	r.set[hash] = struct{}{}
+	r.data[r.lastInsert] = nonceBytes
+	r.set[nonceBytes] = struct{}{}
 
 	if r.nextRead == r.lastInsert {
 		r.nextRead = (r.nextRead + 1) % r.size
