@@ -30,6 +30,16 @@ func TestInsertUnique(t *testing.T) {
 	if err := nb.Insert(nonce3); err != nil {
 		t.Fatalf("unexpected error on Insert nonce3: %v", err)
 	}
+
+	if _, exists := nb.set[nonce1]; !exists {
+		t.Errorf("expected nonce1 to be in set")
+	}
+	if _, exists := nb.set[nonce2]; !exists {
+		t.Errorf("expected nonce2 to be in set")
+	}
+	if _, exists := nb.set[nonce3]; !exists {
+		t.Errorf("expected nonce3 to be in set")
+	}
 }
 
 func TestInsertDuplicate(t *testing.T) {
@@ -81,6 +91,7 @@ func TestNextReadUpdate(t *testing.T) {
 	if err := nb.Insert(nonce1); err != nil {
 		t.Fatalf("Insert nonce1 error: %v", err)
 	}
+	// Expect nextRead to update to 1.
 	if nb.nextRead != 1 {
 		t.Errorf("expected nextRead to be updated to 1, got %d", nb.nextRead)
 	}
@@ -88,7 +99,42 @@ func TestNextReadUpdate(t *testing.T) {
 	if err := nb.Insert(nonce2); err != nil {
 		t.Fatalf("Insert nonce2 error: %v", err)
 	}
-	if nb.nextRead == 2 {
-		t.Errorf("expected nextRead to remain 1, got %d", nb.nextRead)
+	// After wrap-around, nextRead should update accordingly.
+	if nb.nextRead != 0 {
+		t.Errorf("expected nextRead to be updated to 0, got %d", nb.nextRead)
+	}
+}
+
+func TestNonceRulesChacha20(t *testing.T) {
+	nb := NewNonceBuf(3)
+	a := dummyNonceBytes(1, 1)
+	b := dummyNonceBytes(2, 2)
+	c := dummyNonceBytes(3, 3)
+
+	// Insert three unique nonces.
+	if err := nb.Insert(a); err != nil {
+		t.Fatalf("insert a failed: %v", err)
+	}
+	if err := nb.Insert(b); err != nil {
+		t.Fatalf("insert b failed: %v", err)
+	}
+	if err := nb.Insert(c); err != nil {
+		t.Fatalf("insert c failed: %v", err)
+	}
+
+	// Duplicate insertion of 'a' should fail.
+	if err := nb.Insert(a); err == nil || !errors.Is(err, ErrNonUniqueNonce) {
+		t.Fatalf("expected error on duplicate insert of a, got: %v", err)
+	}
+
+	// Inserting a new nonce forces wrap-around, evicting the oldest value (a).
+	d := dummyNonceBytes(4, 4)
+	if err := nb.Insert(d); err != nil {
+		t.Fatalf("insert d failed: %v", err)
+	}
+
+	// 'a' was evicted so it can be reinserted.
+	if err := nb.Insert(a); err != nil {
+		t.Fatalf("insert a after eviction failed: %v", err)
 	}
 }
