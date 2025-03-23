@@ -8,7 +8,7 @@ type ClientSignature struct {
 
 func (c *ClientSignature) Read(data []byte) (*ClientSignature, error) {
 	if len(data) < 64 {
-		return nil, fmt.Errorf("invalid data")
+		return nil, fmt.Errorf("invalid signature")
 	}
 
 	c.ClientSignature = data[:64]
