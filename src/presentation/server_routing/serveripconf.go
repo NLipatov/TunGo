@@ -1,4 +1,7 @@
-package serveripconf
+//go:build unix
+// +build unix
+
+package server_routing
 
 import (
 	"fmt"
