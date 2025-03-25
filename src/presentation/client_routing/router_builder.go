@@ -26,6 +26,7 @@ func (u *RouterBuilder) Build(
 	tun, tunErr := tunDevConfigurator.CreateTunDevice()
 	if tunErr != nil {
 		log.Printf("failed to create tun: %s", tunErr)
+		return nil, tunErr
 	}
 
 	switch conf.Protocol {
