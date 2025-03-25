@@ -1,6 +1,3 @@
-//go:build unix
-// +build unix
-
 package routing
 
 import (
@@ -9,8 +6,7 @@ import (
 	"os"
 	"sync"
 	"tungo/presentation/interactive_commands"
-	server "tungo/presentation/server_routing"
-	"tungo/presentation/server_routing/serveripconf"
+	"tungo/presentation/server_routing"
 	"tungo/settings"
 )
 
@@ -23,17 +19,17 @@ func StartTCPRouting(tunFile *os.File, settings settings.ConnectionSettings) err
 	go interactive_commands.ListenForCommand(cancel, "server")
 
 	// Setup server
-	err := serveripconf.Configure(tunFile)
+	err := server_routing.Configure(tunFile)
 	if err != nil {
 		return fmt.Errorf("failed to configure a server: %s\n", err)
 	}
-	defer serveripconf.Unconfigure(tunFile)
+	defer server_routing.Unconfigure(tunFile)
 
 	// Map to keep track of connected clients
 	var extToLocalIp sync.Map   // external ip to local ip map
 	var extIpToSession sync.Map // external ip to session map
 
-	tcpTunWorker := server.NewTcpTunWorker()
+	tcpTunWorker := server_routing.NewTcpTunWorker()
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -63,13 +59,13 @@ func StartUDPRouting(tunFile *os.File, settings settings.ConnectionSettings) err
 	go interactive_commands.ListenForCommand(cancel, "server")
 
 	// Setup server
-	err := serveripconf.Configure(tunFile)
+	err := server_routing.Configure(tunFile)
 	if err != nil {
 		return fmt.Errorf("failed to configure a server: %s\n", err)
 	}
-	defer serveripconf.Unconfigure(tunFile)
+	defer server_routing.Unconfigure(tunFile)
 
-	udpTunWorker := server.NewUdpTunWorker(ctx, tunFile, settings)
+	udpTunWorker := server_routing.NewUdpTunWorker(ctx, tunFile, settings)
 
 	var wg sync.WaitGroup
 	wg.Add(2)

@@ -1,6 +1,3 @@
-//go:build unix
-// +build unix
-
 package tun_device
 
 import (
@@ -18,10 +15,10 @@ type linuxTunDeviceManager struct {
 	conf client_configuration.Configuration
 }
 
-func newLinuxTunDeviceManager(conf client_configuration.Configuration) application.PlatformTunConfigurator {
+func newPlatformTunConfigurator(conf client_configuration.Configuration) (application.PlatformTunConfigurator, error) {
 	return &linuxTunDeviceManager{
 		conf: conf,
-	}
+	}, nil
 }
 
 func (t *linuxTunDeviceManager) CreateTunDevice() (application.TunDevice, error) {
