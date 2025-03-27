@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"tungo/infrastructure/network/netsh"
 	"tungo/settings"
 
 	"golang.org/x/sys/windows"
@@ -20,7 +21,9 @@ type windowsTunDeviceManager struct {
 	conf client_configuration.Configuration
 }
 
-func newPlatformTunConfigurator(conf client_configuration.Configuration) (application.PlatformTunConfigurator, error) {
+func newPlatformTunConfigurator(
+	conf client_configuration.Configuration,
+) (application.PlatformTunConfigurator, error) {
 	return &windowsTunDeviceManager{conf: conf}, nil
 }
 
@@ -60,11 +63,21 @@ func (m *windowsTunDeviceManager) CreateTunDevice() (application.TunDevice, erro
 		return nil, fmt.Errorf("session start error: %w", err)
 	}
 
-	device := &windowsTunDevice{
+	// wait for driver to start
+	waitEvent := session.ReadWaitEvent()
+	waitStatus, err := windows.WaitForSingleObject(waitEvent, 5000)
+	if err != nil || waitStatus != windows.WAIT_OBJECT_0 {
+		session.End()
+		_ = adapter.Close()
+		return nil, errors.New("timeout or error waiting for adapter readiness")
+	}
+
+	device := &wintunTun{
 		adapter: *adapter,
 		session: &session,
 		name:    s.InterfaceName,
 		mtu:     mtu,
+		closeCh: make(chan struct{}),
 	}
 
 	tunGateway, err := computeGateway(s.InterfaceAddress)
@@ -78,7 +91,7 @@ func (m *windowsTunDeviceManager) CreateTunDevice() (application.TunDevice, erro
 		return nil, err
 	}
 
-	_ = removeStaticRouteToServer(s.ConnectionIP)
+	_ = netsh.RouteDelete(s.ConnectionIP)
 	if err = addStaticRouteToServer(s.ConnectionIP, origPhysIP, origPhysGateway); err != nil {
 		_ = device.Close()
 		return nil, err
@@ -90,54 +103,16 @@ func (m *windowsTunDeviceManager) CreateTunDevice() (application.TunDevice, erro
 
 func (m *windowsTunDeviceManager) DisposeTunDevices() error {
 	// clear tcp settings
-	_ = exec.Command("netsh", "interface", "ip", "delete", "address", "name="+m.conf.TCPSettings.InterfaceName, "addr="+m.conf.TCPSettings.InterfaceAddress).Run()
-	_ = exec.Command("netsh", "interface", "ipv4", "delete", "route", "0.0.0.0/0", "name="+m.conf.TCPSettings.InterfaceName).Run()
-	_ = removeStaticRouteToServer(m.conf.TCPSettings.ConnectionIP)
+	_ = netsh.InterfaceIPDeleteAddress(m.conf.TCPSettings.InterfaceName, m.conf.TCPSettings.InterfaceAddress)
+	_ = netsh.InterfaceIPV4DeleteAddress(m.conf.TCPSettings.InterfaceName)
+	_ = netsh.RouteDelete(m.conf.TCPSettings.ConnectionIP)
 
 	// clear udp settings
-	_ = exec.Command("netsh", "interface", "ip", "delete", "address", "name="+m.conf.UDPSettings.InterfaceName, "addr="+m.conf.UDPSettings.InterfaceAddress).Run()
-	_ = exec.Command("netsh", "interface", "ipv4", "delete", "route", "0.0.0.0/0", "name="+m.conf.UDPSettings.InterfaceName).Run()
-	_ = removeStaticRouteToServer(m.conf.UDPSettings.ConnectionIP)
+	_ = netsh.InterfaceIPDeleteAddress(m.conf.UDPSettings.InterfaceName, m.conf.UDPSettings.InterfaceAddress)
+	_ = netsh.InterfaceIPV4DeleteAddress(m.conf.UDPSettings.InterfaceName)
+	_ = netsh.RouteDelete(m.conf.UDPSettings.ConnectionIP)
 
 	return nil
-}
-
-type windowsTunDevice struct {
-	adapter wintun.Adapter
-	session *wintun.Session
-	name    string
-	mtu     int
-}
-
-func (d *windowsTunDevice) Read(data []byte) (int, error) {
-	for {
-		packet, err := d.session.ReceivePacket()
-		if err == nil {
-			n := copy(data, packet)
-			d.session.ReleaseReceivePacket(packet)
-			return n, nil
-		}
-		if errors.Is(err, windows.ERROR_NO_MORE_ITEMS) {
-			_, _ = windows.WaitForSingleObject(d.session.ReadWaitEvent(), windows.INFINITE)
-			continue
-		}
-		return 0, err
-	}
-}
-
-func (d *windowsTunDevice) Write(data []byte) (int, error) {
-	packet, err := d.session.AllocateSendPacket(len(data))
-	if err != nil {
-		return 0, err
-	}
-	copy(packet, data)
-	d.session.SendPacket(packet)
-	return len(data), nil
-}
-
-func (d *windowsTunDevice) Close() error {
-	d.session.End()
-	return d.adapter.Close()
 }
 
 func configureWindowsTunNetsh(interfaceName, hostIP, ipCIDR, gateway string) error {
@@ -149,10 +124,10 @@ func configureWindowsTunNetsh(interfaceName, hostIP, ipCIDR, gateway string) err
 	mask := net.CIDRMask(prefix, 32)
 	maskStr := net.IP(mask).String()
 
-	if err := exec.Command("netsh", "interface", "ip", "set", "address", "name="+interfaceName, "static", hostIP, maskStr, gateway, "1").Run(); err != nil {
+	if err := netsh.InterfaceIPSetAddressStatic(interfaceName, hostIP, maskStr, gateway); err != nil {
 		return err
 	}
-	return exec.Command("netsh", "interface", "ipv4", "add", "route", "0.0.0.0/0", "name="+interfaceName, gateway, "metric=1").Run()
+	return netsh.InterfaceIPV4AddRouteDefault(interfaceName, gateway)
 }
 
 func getOriginalPhysicalGatewayAndInterface() (gateway, ifaceIP string, err error) {
@@ -183,11 +158,8 @@ func addStaticRouteToServer(serverIP, physIP, physGateway string) error {
 	if err != nil {
 		return err
 	}
-	return exec.Command("route", "add", serverIP, "mask", "255.255.255.255", physGateway, "metric", "1", "if", strconv.Itoa(iface.Index)).Run()
-}
-
-func removeStaticRouteToServer(serverIP string) error {
-	return exec.Command("route", "delete", serverIP).Run()
+	return exec.Command("route", "add", serverIP, "mask", "255.255.255.255",
+		physGateway, "metric", "1", "if", strconv.Itoa(iface.Index)).Run()
 }
 
 func computeGateway(ipAddr string) (string, error) {

@@ -26,7 +26,7 @@ func StartClient() {
 	}
 
 	// Setup platform tun configurator
-	tunDevConfigurator, tunDevConfiguratorErr := tun_device.NewTunDeviceConfigurator(*clientConf)
+	tunDevConfigurator, tunDevConfiguratorErr := tun_device.NewAbstractTunFactory(*clientConf)
 	if tunDevConfiguratorErr != nil {
 		log.Fatalf("failed to configure tun: %s", tunDevConfiguratorErr)
 	}

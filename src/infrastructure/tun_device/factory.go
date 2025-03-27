@@ -5,10 +5,12 @@ import (
 	"tungo/settings/client_configuration"
 )
 
-type PlatformAgnosticTunDeviceFactory struct {
-	goos string
+// AbstractTunFactory is used to configure platform specific PlatformTunConfigurator
+type AbstractTunFactory struct {
 }
 
-func NewTunDeviceConfigurator(conf client_configuration.Configuration) (application.PlatformTunConfigurator, error) {
+func NewAbstractTunFactory(
+	conf client_configuration.Configuration,
+) (application.PlatformTunConfigurator, error) {
 	return newPlatformTunConfigurator(conf)
 }
