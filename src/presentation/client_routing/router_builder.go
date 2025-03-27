@@ -23,11 +23,6 @@ func (u *RouterBuilder) Build(
 	ctx context.Context, conf client_configuration.Configuration, tunDevConfigurator application.PlatformTunConfigurator,
 ) (application.TrafficRouter, error) {
 	connectionFactory := NewConnectionFactory()
-	tun, tunErr := tunDevConfigurator.CreateTunDevice()
-	if tunErr != nil {
-		log.Printf("failed to create tun: %s", tunErr)
-		return nil, tunErr
-	}
 
 	switch conf.Protocol {
 	case settings.UDP:
@@ -35,11 +30,23 @@ func (u *RouterBuilder) Build(
 		if connErr != nil {
 			return nil, connErr
 		}
+
+		tun, tunErr := tunDevConfigurator.CreateTunDevice()
+		if tunErr != nil {
+			log.Printf("failed to create tun: %s", tunErr)
+			return nil, tunErr
+		}
 		return udp_chacha20.NewUDPRouter(conn.(*net.UDPConn), tun, cryptographyService), nil
 	case settings.TCP:
 		conn, cryptographyService, connErr := connectionFactory.EstablishConnection(ctx, conf.TCPSettings)
 		if connErr != nil {
 			return nil, connErr
+		}
+
+		tun, tunErr := tunDevConfigurator.CreateTunDevice()
+		if tunErr != nil {
+			log.Printf("failed to create tun: %s", tunErr)
+			return nil, tunErr
 		}
 		return tcp_chacha20.NewTCPRouter(conn, tun, cryptographyService), nil
 	default:
