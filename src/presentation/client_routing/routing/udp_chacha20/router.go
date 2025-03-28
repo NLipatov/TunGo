@@ -27,7 +27,7 @@ func NewUDPRouter(
 
 func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
 	routingCtx, routingCancel := context.WithCancel(ctx)
-	// Start a goroutine to monitor context cancellation and close the udp_connection
+	defer routingCancel()
 
 	var wg sync.WaitGroup
 	wg.Add(2)
