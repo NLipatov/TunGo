@@ -26,7 +26,7 @@ func NewTCPRouter(
 }
 
 func (r *TCPRouter) RouteTraffic(ctx context.Context) error {
-	ctx, cancel := context.WithCancel(ctx)
+	routingCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	var wg sync.WaitGroup
@@ -36,7 +36,7 @@ func (r *TCPRouter) RouteTraffic(ctx context.Context) error {
 	go func() {
 		defer wg.Done()
 		worker := newTcpTunWorker(r.conn, r.tun, r.cryptographyService)
-		if err := worker.HandleTun(ctx, cancel); err != nil && !errors.Is(err, context.Canceled) {
+		if err := worker.HandleTun(routingCtx, cancel); err != nil && !errors.Is(err, context.Canceled) {
 			log.Printf("TUN -> TCP error: %v", err)
 			cancel()
 		}
@@ -46,7 +46,7 @@ func (r *TCPRouter) RouteTraffic(ctx context.Context) error {
 	go func() {
 		defer wg.Done()
 		worker := newTcpTunWorker(r.conn, r.tun, r.cryptographyService)
-		if err := worker.HandleConn(ctx, cancel); err != nil && !errors.Is(err, context.Canceled) {
+		if err := worker.HandleConn(routingCtx, cancel); err != nil && !errors.Is(err, context.Canceled) {
 			log.Printf("TCP -> TUN error: %v", err)
 			cancel()
 		}
