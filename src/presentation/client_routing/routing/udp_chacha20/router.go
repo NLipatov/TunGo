@@ -2,6 +2,7 @@ package udp_chacha20
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net"
 	"sync"
@@ -34,12 +35,9 @@ func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
 	// TUN -> UDP
 	go func() {
 		defer wg.Done()
-		tunWorker := newUdpWorker(r.conn, r.tun, r.cryptographyService)
-
-		handlingErr := tunWorker.HandleTun(routingCtx, routingCancel)
-
-		if handlingErr != nil {
-			log.Printf("TUN -> UDP error: %v", handlingErr)
+		worker := newUdpWorker(r.conn, r.tun, r.cryptographyService)
+		if err := worker.HandleTun(ctx, routingCancel); err != nil && !errors.Is(err, context.Canceled) {
+			log.Printf("TUN -> UDP error: %v", err)
 			routingCancel()
 			return
 		}
@@ -48,12 +46,9 @@ func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
 	// UDP -> TUN
 	go func() {
 		defer wg.Done()
-		tunWorker := newUdpWorker(r.conn, r.tun, r.cryptographyService)
-
-		handlingErr := tunWorker.HandleConn(routingCtx, routingCancel)
-
-		if handlingErr != nil {
-			log.Printf("UDP -> TUN error: %v", handlingErr)
+		worker := newUdpWorker(r.conn, r.tun, r.cryptographyService)
+		if err := worker.HandleConn(ctx, routingCancel); err != nil && !errors.Is(err, context.Canceled) {
+			log.Printf("UDP -> TUN error: %v", err)
 			routingCancel()
 			return
 		}
