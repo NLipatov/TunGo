@@ -51,6 +51,7 @@ func (w *tcpTunWorker) HandleTun(ctx context.Context, triggerReconnect context.C
 				}
 				log.Printf("failed to read from TUN: %v", err)
 				triggerReconnect()
+				return err
 			}
 
 			_, err = w.cryptographyService.Encrypt(buffer[4 : n+4])
@@ -69,6 +70,7 @@ func (w *tcpTunWorker) HandleTun(ctx context.Context, triggerReconnect context.C
 			if err != nil {
 				log.Printf("write to TCP failed: %s", err)
 				triggerReconnect()
+				return err
 			}
 		}
 	}
@@ -94,6 +96,7 @@ func (w *tcpTunWorker) HandleConn(ctx context.Context, connCancel context.Cancel
 				}
 				log.Printf("read from TCP failed: %v", err)
 				connCancel()
+				return err
 			}
 
 			//read packet length from 4-byte length prefix
