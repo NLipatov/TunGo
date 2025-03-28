@@ -4,77 +4,100 @@ import (
 	"errors"
 	"golang.org/x/sys/windows"
 	"golang.zx2c4.com/wintun"
+	"log"
 	"sync"
 )
 
-// wintunTun is windows-specific TUN implementation via wintun driver(see https://www.wintun.net)
+// wintunTun is a Windows-specific TUN device using the wintun driver (https://www.wintun.net).
 type wintunTun struct {
-	adapter   wintun.Adapter
-	session   *wintun.Session
-	name      string
-	mtu       int
-	closeCh   chan struct{}
-	once      sync.Once
-	closeOnce sync.Once
-	closeMu   sync.Mutex
-	closed    bool
+	adapter wintun.Adapter
+	session *wintun.Session
+	name    string
+	mtu     int
+	closeCh chan struct{}
+	readWg  sync.WaitGroup
+	closeMu sync.Mutex
+	closed  bool
 }
 
-func (d *wintunTun) Read(data []byte) (int, error) {
-	event := d.session.ReadWaitEvent()
+// Read reads a packet from the TUN interface.
+func (t *wintunTun) Read(data []byte) (int, error) {
+	t.readWg.Add(1)
+	defer t.readWg.Done()
+
+	event := t.session.ReadWaitEvent()
+	timeout := uint32(500)
 
 	for {
 		select {
-		case <-d.closeCh:
+		case <-t.closeCh:
 			return 0, errors.New("tun device closed")
 		default:
-			// Wait before attempting ReceivePacket
-			var timeout uint32 = 500
 			status, _ := windows.WaitForSingleObject(event, timeout)
-			if status == windows.WAIT_OBJECT_0 {
-				// Only then try ReceivePacket
-				select {
-				case <-d.closeCh:
-					return 0, errors.New("tun device closed")
-				default:
-					packet, err := d.session.ReceivePacket()
-					if err != nil {
-						if errors.Is(err, windows.ERROR_NO_MORE_ITEMS) {
-							continue
-						}
-						return 0, err
+			if status != windows.WAIT_OBJECT_0 {
+				continue
+			}
+
+			select {
+			case <-t.closeCh:
+				return 0, errors.New("tun device closed")
+			default:
+				packet, err := t.session.ReceivePacket()
+				if err != nil {
+					if errors.Is(err, windows.ERROR_NO_MORE_ITEMS) {
+						continue
 					}
-					n := copy(data, packet)
-					d.session.ReleaseReceivePacket(packet)
-					return n, nil
+					return 0, err
 				}
+				n := copy(data, packet)
+				t.session.ReleaseReceivePacket(packet)
+				return n, nil
 			}
 		}
 	}
 }
 
-func (d *wintunTun) Write(data []byte) (int, error) {
-	packet, err := d.session.AllocateSendPacket(len(data))
+// Write sends a packet to the TUN interface.
+func (t *wintunTun) Write(data []byte) (int, error) {
+	t.readWg.Add(1)
+	defer t.readWg.Done()
+
+	packet, err := t.session.AllocateSendPacket(len(data))
 	if err != nil {
 		return 0, err
 	}
 	copy(packet, data)
-	d.session.SendPacket(packet)
+	t.session.SendPacket(packet)
 	return len(data), nil
 }
 
-func (w *wintunTun) Close() error {
-	w.closeMu.Lock()
-	defer w.closeMu.Unlock()
-
-	if w.closed {
+// Close cleanly shuts down the TUN device.
+func (t *wintunTun) Close() error {
+	t.closeMu.Lock()
+	if t.closed {
+		t.closeMu.Unlock()
 		return nil
 	}
-	w.closed = true
-	close(w.closeCh)
+	t.closed = true
+	close(t.closeCh)
+	t.closeMu.Unlock()
 
-	w.closeOnce.Do(func() {
-		w.session.End()
-	})
+	// Wait for all Read/Write operations to finish
+	t.readWg.Wait()
+
+	// End session in safe manner
+	if t.session != nil {
+		// Recover from driver crash
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("wintun:️ Recovered from panic in session.End(): %v", r)
+			}
+		}()
+		t.session.End()
+	}
+
+	if err := t.adapter.Close(); err != nil {
+		log.Printf("wintun:️ failed to close adapter: %v", err)
+	}
 	return nil
 }

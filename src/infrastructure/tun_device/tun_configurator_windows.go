@@ -47,11 +47,6 @@ func (m *windowsTunDeviceManager) CreateTunDevice() (application.TunDevice, erro
 	if err != nil {
 		return nil, fmt.Errorf("create adapter error: %w", err)
 	}
-	defer func() {
-		if err != nil {
-			_ = adapter.Close()
-		}
-	}()
 
 	mtu := s.MTU
 	if mtu == 0 {

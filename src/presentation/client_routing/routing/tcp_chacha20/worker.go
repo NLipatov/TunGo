@@ -18,9 +18,7 @@ type tcpTunWorker struct {
 	cryptographyService application.CryptographyService
 }
 
-func newTcpTunWorker(
-	conn net.Conn, tun io.ReadWriteCloser, cryptographyService application.CryptographyService,
-) *tcpTunWorker {
+func newTcpTunWorker(conn net.Conn, tun io.ReadWriteCloser, cryptographyService application.CryptographyService) *tcpTunWorker {
 	return &tcpTunWorker{
 		conn:                conn,
 		tun:                 tun,
@@ -28,7 +26,7 @@ func newTcpTunWorker(
 	}
 }
 
-func (w *tcpTunWorker) HandleTun(ctx context.Context, triggerReconnect context.CancelFunc) error {
+func (w *tcpTunWorker) HandleTun(ctx context.Context, cancel context.CancelFunc) error {
 	reader := chacha20.NewTcpReader(w.tun)
 	buffer := make([]byte, ip.MaxPacketLengthBytes+4+chacha20poly1305.Overhead)
 	tcpEncoder := chacha20.NewDefaultTCPEncoder()
@@ -50,7 +48,7 @@ func (w *tcpTunWorker) HandleTun(ctx context.Context, triggerReconnect context.C
 					return nil
 				}
 				log.Printf("failed to read from TUN: %v", err)
-				triggerReconnect()
+				cancel()
 				return err
 			}
 
@@ -69,14 +67,14 @@ func (w *tcpTunWorker) HandleTun(ctx context.Context, triggerReconnect context.C
 			_, err = w.conn.Write(buffer[:n+4+chacha20poly1305.Overhead])
 			if err != nil {
 				log.Printf("write to TCP failed: %s", err)
-				triggerReconnect()
+				cancel()
 				return err
 			}
 		}
 	}
 }
 
-func (w *tcpTunWorker) HandleConn(ctx context.Context, connCancel context.CancelFunc) error {
+func (w *tcpTunWorker) HandleConn(ctx context.Context, cancel context.CancelFunc) error {
 	buffer := make([]byte, ip.MaxPacketLengthBytes+4)
 
 	go func() {
@@ -95,7 +93,7 @@ func (w *tcpTunWorker) HandleConn(ctx context.Context, connCancel context.Cancel
 					return nil
 				}
 				log.Printf("read from TCP failed: %v", err)
-				connCancel()
+				cancel()
 				return err
 			}
 

@@ -44,7 +44,7 @@ func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
 		handlingErr := tunWorker.HandleTun(routingCtx, routingCancel)
 
 		if handlingErr != nil {
-			log.Printf("failed to handle TUN-packet: %s", handlingErr)
+			log.Printf("TUN -> UDP error: %v", handlingErr)
 			routingCancel()
 			return
 		}
@@ -58,7 +58,7 @@ func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
 		handlingErr := tunWorker.HandleConn(routingCtx, routingCancel)
 
 		if handlingErr != nil {
-			log.Printf("failed to handle CONN-packet: %s", handlingErr)
+			log.Printf("UDP -> TUN error: %v", handlingErr)
 			routingCancel()
 			return
 		}

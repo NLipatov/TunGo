@@ -2,6 +2,7 @@ package tcp_chacha20
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net"
 	"sync"
@@ -25,12 +26,8 @@ func NewTCPRouter(
 }
 
 func (r *TCPRouter) RouteTraffic(ctx context.Context) error {
-	routingCtx, routingCancel := context.WithCancel(ctx)
-	go func() {
-		<-routingCtx.Done()
-		_ = r.conn.Close()
-		_ = r.tun.Close()
-	}()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -38,20 +35,20 @@ func (r *TCPRouter) RouteTraffic(ctx context.Context) error {
 	// TUN -> TCP
 	go func() {
 		defer wg.Done()
-		tunWorker := newTcpTunWorker(r.conn, r.tun, r.cryptographyService)
-		handleTunErr := tunWorker.HandleTun(routingCtx, routingCancel)
-		if handleTunErr != nil {
-			log.Printf("failed to handle TUN-packet: %s", handleTunErr)
+		worker := newTcpTunWorker(r.conn, r.tun, r.cryptographyService)
+		if err := worker.HandleTun(ctx, cancel); err != nil && !errors.Is(err, context.Canceled) {
+			log.Printf("TUN -> TCP error: %v", err)
+			cancel()
 		}
 	}()
 
 	// TCP -> TUN
 	go func() {
 		defer wg.Done()
-		tunWorker := newTcpTunWorker(r.conn, r.tun, r.cryptographyService)
-		handleConnErr := tunWorker.HandleConn(routingCtx, routingCancel)
-		if handleConnErr != nil {
-			log.Printf("failed to handle CONN-packet: %s", handleConnErr)
+		worker := newTcpTunWorker(r.conn, r.tun, r.cryptographyService)
+		if err := worker.HandleConn(ctx, cancel); err != nil && !errors.Is(err, context.Canceled) {
+			log.Printf("TCP -> TUN error: %v", err)
+			cancel()
 		}
 	}()
 
