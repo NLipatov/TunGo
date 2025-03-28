@@ -36,7 +36,7 @@ func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
 	go func() {
 		defer wg.Done()
 		worker := newUdpWorker(r.conn, r.tun, r.cryptographyService)
-		if err := worker.HandleTun(ctx, routingCancel); err != nil && !errors.Is(err, context.Canceled) {
+		if err := worker.HandleTun(routingCtx, routingCancel); err != nil && !errors.Is(err, context.Canceled) {
 			log.Printf("TUN -> UDP error: %v", err)
 			routingCancel()
 			return
@@ -47,7 +47,7 @@ func (r *UDPRouter) RouteTraffic(ctx context.Context) error {
 	go func() {
 		defer wg.Done()
 		worker := newUdpWorker(r.conn, r.tun, r.cryptographyService)
-		if err := worker.HandleConn(ctx, routingCancel); err != nil && !errors.Is(err, context.Canceled) {
+		if err := worker.HandleConn(routingCtx, routingCancel); err != nil && !errors.Is(err, context.Canceled) {
 			log.Printf("UDP -> TUN error: %v", err)
 			routingCancel()
 			return
