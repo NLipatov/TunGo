@@ -20,48 +20,33 @@ type wintunTun struct {
 	closed  bool
 }
 
-// Read reads a packet from the TUN interface.
 func (t *wintunTun) Read(data []byte) (int, error) {
-	t.readWg.Add(1)
-	defer t.readWg.Done()
-
 	event := t.session.ReadWaitEvent()
-	timeout := uint32(500)
 
 	for {
 		select {
 		case <-t.closeCh:
 			return 0, errors.New("tun device closed")
 		default:
-			status, _ := windows.WaitForSingleObject(event, timeout)
-			if status != windows.WAIT_OBJECT_0 {
-				continue
-			}
-
-			select {
-			case <-t.closeCh:
-				return 0, errors.New("tun device closed")
-			default:
-				packet, err := t.session.ReceivePacket()
-				if err != nil {
-					if errors.Is(err, windows.ERROR_NO_MORE_ITEMS) {
-						continue
-					}
-					return 0, err
-				}
+			packet, err := t.session.ReceivePacket()
+			if err == nil {
 				n := copy(data, packet)
 				t.session.ReleaseReceivePacket(packet)
 				return n, nil
 			}
+			if errors.Is(err, windows.ERROR_NO_MORE_ITEMS) {
+				// Here, timeout is used to periodically unblock the WaitForSingleObject call,
+				// allowing the loop to check if the TUN interface has been closed via closeCh.
+				var timeout uint32 = 500
+				_, _ = windows.WaitForSingleObject(event, timeout)
+				continue
+			}
+			return 0, err
 		}
 	}
 }
 
-// Write sends a packet to the TUN interface.
 func (t *wintunTun) Write(data []byte) (int, error) {
-	t.readWg.Add(1)
-	defer t.readWg.Done()
-
 	packet, err := t.session.AllocateSendPacket(len(data))
 	if err != nil {
 		return 0, err
