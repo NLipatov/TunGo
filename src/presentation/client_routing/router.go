@@ -18,7 +18,7 @@ func NewRouter(worker application.TunWorker) application.TrafficRouter {
 	}
 }
 
-func (r *Router) RouteTraffic(ctx context.Context) error {
+func (r *Router) RouteTraffic(ctx context.Context) {
 	routingCtx, routingCancel := context.WithCancel(ctx)
 	defer routingCancel()
 
@@ -46,6 +46,4 @@ func (r *Router) RouteTraffic(ctx context.Context) error {
 	}()
 
 	wg.Wait()
-
-	return nil
 }
