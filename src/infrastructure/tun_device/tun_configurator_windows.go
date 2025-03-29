@@ -20,8 +20,7 @@ import (
 )
 
 type windowsTunDeviceManager struct {
-	conf   client_configuration.Configuration
-	device application.TunDevice
+	conf client_configuration.Configuration
 }
 
 func newPlatformTunConfigurator(
@@ -31,21 +30,6 @@ func newPlatformTunConfigurator(
 }
 
 func (m *windowsTunDeviceManager) CreateTunDevice() (application.TunDevice, error) {
-	hProcess := windows.CurrentProcess()
-	// Используйте windows.HIGH_PRIORITY_CLASS или windows.REALTIME_PRIORITY_CLASS по необходимости.
-	err := windows.SetPriorityClass(hProcess, windows.REALTIME_PRIORITY_CLASS)
-	if err != nil {
-		log.Printf("Не удалось установить высокий приоритет процесса: %v", err)
-	} else {
-		log.Printf("Приоритет процесса успешно повышен")
-	}
-
-	// Если устройство уже существует, закрываем его
-	if m.device != nil {
-		_ = m.device.Close()
-		m.device = nil
-	}
-
 	var s settings.ConnectionSettings
 	switch m.conf.Protocol {
 	case settings.UDP:
@@ -61,7 +45,6 @@ func (m *windowsTunDeviceManager) CreateTunDevice() (application.TunDevice, erro
 		return nil, fmt.Errorf("original route error: %w", err)
 	}
 
-	// Создаём новый адаптер
 	adapter, err := wintun.CreateAdapter(s.InterfaceName, "TunGo", nil)
 	if err != nil {
 		return nil, fmt.Errorf("create adapter error: %w", err)
@@ -77,7 +60,6 @@ func (m *windowsTunDeviceManager) CreateTunDevice() (application.TunDevice, erro
 		return nil, fmt.Errorf("session start error: %w", err)
 	}
 
-	// Ожидаем готовность драйвера
 	waitEvent := session.ReadWaitEvent()
 	waitStatus, err := windows.WaitForSingleObject(waitEvent, 5000)
 	if err != nil || waitStatus != windows.WAIT_OBJECT_0 {
@@ -87,7 +69,6 @@ func (m *windowsTunDeviceManager) CreateTunDevice() (application.TunDevice, erro
 	}
 
 	device := newWinTun(*adapter, session)
-	m.device = device
 
 	tunGateway, err := computeGateway(s.InterfaceAddress)
 	if err != nil {
@@ -111,19 +92,11 @@ func (m *windowsTunDeviceManager) CreateTunDevice() (application.TunDevice, erro
 }
 
 func (m *windowsTunDeviceManager) DisposeTunDevices() error {
-	// Закрываем текущее устройство, если оно есть
-	if m.device != nil {
-		if err := m.device.Close(); err != nil {
-			log.Printf("error closing device: %v", err)
-		}
-		m.device = nil
-	}
-
-	// Удаляем адаптеры по дружелюбным именам для TCP и UDP настроек
+	// dispose adapters by friendly names
 	_ = disposeExistingTunDevices(m.conf.TCPSettings.InterfaceName)
 	_ = disposeExistingTunDevices(m.conf.UDPSettings.InterfaceName)
 
-	// Очистка сетевых настроек через netsh
+	// net configuration cleanup
 	_ = netsh.InterfaceIPDeleteAddress(m.conf.TCPSettings.InterfaceName, m.conf.TCPSettings.InterfaceAddress)
 	_ = netsh.InterfaceIPV4DeleteAddress(m.conf.TCPSettings.InterfaceName)
 	_ = netsh.RouteDelete(m.conf.TCPSettings.ConnectionIP)
@@ -204,28 +177,26 @@ func getIfaceIndexByIP(ip string) int {
 	return 0
 }
 
-// --- Функции для EnumerateWintunAdapters и удаления адаптеров ---
-
 const (
-	DIGCF_PRESENT         = 0x00000002
-	DIGCF_DEVICEINTERFACE = 0x00000010
-	ERROR_NO_MORE_ITEMS   = 259
-	SPDRP_FRIENDLYNAME    = 0x0000000C
+	DigcfPresent         = 0x00000002
+	DigcfDeviceinterface = 0x00000010
+	ErrorNoMoreItems     = 259
+	SpdrpFriendlyname    = 0x0000000C
 )
 
-type SP_DEVICE_INTERFACE_DATA struct {
+type SpDeviceInterfaceData struct {
 	cbSize             uint32
 	InterfaceClassGuid windows.GUID
 	Flags              uint32
 	Reserved           uintptr
 }
 
-type SP_DEVICE_INTERFACE_DETAIL_DATA struct {
+type SpDeviceInterfaceDetailData struct {
 	cbSize     uint32
 	DevicePath [1]uint16
 }
 
-type SP_DEVINFO_DATA struct {
+type SpDevinfoData struct {
 	cbSize    uint32
 	ClassGuid windows.GUID
 	DevInst   uint32
@@ -242,10 +213,7 @@ var (
 	procSetupDiDestroyDeviceInfoList      = modsetupapi.NewProc("SetupDiDestroyDeviceInfoList")
 )
 
-// EnumerateWintunAdapters ищет устройства Wintun по GUID и возвращает их DevicePath
-// для адаптеров, у которых дружелюбное имя совпадает с targetName.
 func EnumerateWintunAdapters(targetName string) ([]string, error) {
-	// GUID из wintun.h
 	wintunGUID := windows.GUID{
 		Data1: 0x9C2C2E6E,
 		Data2: 0x3A89,
@@ -257,17 +225,19 @@ func EnumerateWintunAdapters(targetName string) ([]string, error) {
 		uintptr(unsafe.Pointer(&wintunGUID)),
 		0,
 		0,
-		uintptr(DIGCF_PRESENT|DIGCF_DEVICEINTERFACE),
+		uintptr(DigcfPresent|DigcfDeviceinterface),
 	)
 	if hDevInfo == uintptr(windows.InvalidHandle) || hDevInfo == 0 {
 		return nil, fmt.Errorf("SetupDiGetClassDevsW failed: %v", err)
 	}
-	defer procSetupDiDestroyDeviceInfoList.Call(hDevInfo)
+	defer func(hDevInfo uintptr) {
+		_, _, _ = procSetupDiDestroyDeviceInfoList.Call(hDevInfo)
+	}(hDevInfo)
 
 	var results []string
 	var index uint32 = 0
 	for {
-		var deviceInterfaceData SP_DEVICE_INTERFACE_DATA
+		var deviceInterfaceData SpDeviceInterfaceData
 		deviceInterfaceData.cbSize = uint32(unsafe.Sizeof(deviceInterfaceData))
 		ret, _, err := procSetupDiEnumDeviceInterfaces.Call(
 			hDevInfo,
@@ -277,7 +247,8 @@ func EnumerateWintunAdapters(targetName string) ([]string, error) {
 			uintptr(unsafe.Pointer(&deviceInterfaceData)),
 		)
 		if ret == 0 {
-			if errno, ok := err.(syscall.Errno); ok && errno == ERROR_NO_MORE_ITEMS {
+			var errno syscall.Errno
+			if errors.As(err, &errno) && errno == ErrorNoMoreItems {
 				break
 			}
 			index++
@@ -285,7 +256,7 @@ func EnumerateWintunAdapters(targetName string) ([]string, error) {
 		}
 
 		var requiredSize uint32
-		procSetupDiGetDeviceInterfaceDetailW.Call(
+		_, _, _ = procSetupDiGetDeviceInterfaceDetailW.Call(
 			hDevInfo,
 			uintptr(unsafe.Pointer(&deviceInterfaceData)),
 			0,
@@ -299,14 +270,14 @@ func EnumerateWintunAdapters(targetName string) ([]string, error) {
 		}
 
 		detailDataBuffer := make([]byte, requiredSize)
-		detailData := (*SP_DEVICE_INTERFACE_DETAIL_DATA)(unsafe.Pointer(&detailDataBuffer[0]))
+		detailData := (*SpDeviceInterfaceDetailData)(unsafe.Pointer(&detailDataBuffer[0]))
 		if unsafe.Sizeof(uintptr(0)) == 8 {
 			detailData.cbSize = 8
 		} else {
 			detailData.cbSize = 5
 		}
 
-		var devInfoData SP_DEVINFO_DATA
+		var devInfoData SpDevinfoData
 		devInfoData.cbSize = uint32(unsafe.Sizeof(devInfoData))
 		ret, _, err = procSetupDiGetDeviceInterfaceDetailW.Call(
 			hDevInfo,
@@ -329,7 +300,7 @@ func EnumerateWintunAdapters(targetName string) ([]string, error) {
 		_, _, _ = procSetupDiGetDeviceRegistryPropertyW.Call(
 			hDevInfo,
 			uintptr(unsafe.Pointer(&devInfoData)),
-			uintptr(SPDRP_FRIENDLYNAME),
+			uintptr(SpdrpFriendlyname),
 			uintptr(unsafe.Pointer(&propertyDataType)),
 			uintptr(unsafe.Pointer(&nameBuffer[0])),
 			uintptr(len(nameBuffer)*2),
@@ -348,7 +319,6 @@ func EnumerateWintunAdapters(targetName string) ([]string, error) {
 	return results, nil
 }
 
-// disposeExistingTunDevices открывает и закрывает адаптеры с заданным дружелюбным именем.
 func disposeExistingTunDevices(targetName string) error {
 	adapters, err := EnumerateWintunAdapters(targetName)
 	if err != nil {

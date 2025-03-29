@@ -47,7 +47,13 @@ func (d *wintunTun) Read(data []byte) (int, error) {
 			// Here, timeout is used to periodically unblock the WaitForSingleObject call,
 			// allowing the loop to check if the TUN interface has been closed via closeCh.
 			var timeout uint32 = 250
-			_, _ = windows.WaitForSingleObject(event, timeout)
+			ret, waitErr := windows.WaitForSingleObject(event, timeout)
+			if ret == windows.WAIT_FAILED {
+				return 0, fmt.Errorf("session closed")
+			}
+			if waitErr != nil {
+				return 0, waitErr
+			}
 			continue
 		}
 		return 0, err
@@ -69,22 +75,13 @@ func (t *wintunTun) Close() error {
 		return nil
 	}
 	t.closed = true
-	if err := windows.SetEvent(t.closeEvent); err != nil {
-		log.Printf("wintun: set event: %v", err)
-	}
+
+	_ = windows.SetEvent(t.closeEvent)
+
 	if t.session != nil {
-		defer func() {
-			if r := recover(); r != nil {
-				log.Printf("wintun: recovered from panic in session.End(): %v", r)
-			}
-		}()
 		t.session.End()
 	}
-	if err := t.adapter.Close(); err != nil {
-		log.Printf("wintun: failed to close adapter: %v", err)
-	}
-	if err := windows.CloseHandle(t.closeEvent); err != nil {
-		log.Printf("wintun: close handle event: %v", err)
-	}
+	_ = t.adapter.Close()
+	_ = windows.CloseHandle(t.closeEvent)
 	return nil
 }
