@@ -3,7 +3,6 @@ package tun_device
 import (
 	"errors"
 	"golang.org/x/sys/windows"
-	"golang.zx2c4.com/wintun"
 	"log"
 	"sync"
 )
@@ -21,28 +20,25 @@ type wintunTun struct {
 }
 
 func (t *wintunTun) Read(data []byte) (int, error) {
-	event := t.session.ReadWaitEvent()
-
+	handles := []windows.Handle{t.session.ReadWaitEvent(), t.closeEvent}
 	for {
-		select {
-		case <-t.closeCh:
+		ret, err := windows.WaitForMultipleObjects(handles, false, windows.INFINITE)
+		if err != nil {
+			return 0, err
+		}
+		if ret == windows.WAIT_OBJECT_0+1 {
 			return 0, errors.New("tun device closed")
-		default:
-			packet, err := t.session.ReceivePacket()
-			if err == nil {
-				n := copy(data, packet)
-				t.session.ReleaseReceivePacket(packet)
-				return n, nil
-			}
+		}
+		packet, err := t.session.ReceivePacket()
+		if err != nil {
 			if errors.Is(err, windows.ERROR_NO_MORE_ITEMS) {
-				// Here, timeout is used to periodically unblock the WaitForSingleObject call,
-				// allowing the loop to check if the TUN interface has been closed via closeCh.
-				var timeout uint32 = 500
-				_, _ = windows.WaitForSingleObject(event, timeout)
 				continue
 			}
 			return 0, err
 		}
+		n := copy(data, packet)
+		t.session.ReleaseReceivePacket(packet)
+		return n, nil
 	}
 }
 
@@ -56,33 +52,25 @@ func (t *wintunTun) Write(data []byte) (int, error) {
 	return len(data), nil
 }
 
-// Close cleanly shuts down the TUN device.
 func (t *wintunTun) Close() error {
-	t.closeMu.Lock()
 	if t.closed {
-		t.closeMu.Unlock()
 		return nil
 	}
 	t.closed = true
-	close(t.closeCh)
-	t.closeMu.Unlock()
+	windows.SetEvent(t.closeEvent)
 
-	// Wait for all Read/Write operations to finish
-	t.readWg.Wait()
-
-	// End session in safe manner
 	if t.session != nil {
-		// Recover from driver crash
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("wintun:️ Recovered from panic in session.End(): %v", r)
+				log.Printf("wintun: recovered from panic in session.End(): %v", r)
 			}
 		}()
 		t.session.End()
 	}
 
 	if err := t.adapter.Close(); err != nil {
-		log.Printf("wintun:️ failed to close adapter: %v", err)
+		log.Printf("wintun: failed to close adapter: %v", err)
 	}
+	windows.CloseHandle(t.closeEvent)
 	return nil
 }
