@@ -5,6 +5,7 @@ import (
 	"golang.org/x/sys/windows"
 	"golang.zx2c4.com/wintun"
 	"log"
+	"tungo/application"
 )
 
 // wintunTun is a Windows-specific TUN device using the wintun driver (https://www.wintun.net).
@@ -15,6 +16,21 @@ type wintunTun struct {
 	mtu        int
 	closeEvent windows.Handle
 	closed     bool
+}
+
+func newWinTun(adapter wintun.Adapter, session wintun.Session, name string, mtu int) application.TunDevice {
+	handle, handleErr := windows.CreateEvent(nil, 0, 0, nil)
+	if handleErr != nil {
+		log.Println("Error creating winTun handle:", handleErr)
+	}
+
+	return &wintunTun{
+		adapter:    adapter,
+		session:    &session,
+		name:       name,
+		mtu:        mtu,
+		closeEvent: handle,
+	}
 }
 
 func (t *wintunTun) Read(data []byte) (int, error) {
