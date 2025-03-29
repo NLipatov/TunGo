@@ -10,11 +10,9 @@ import (
 	"tungo/application"
 )
 
-// wintunTun представляет Windows-TUN устройство, использующее драйвер wintun.
 type wintunTun struct {
 	adapter    wintun.Adapter
 	session    *wintun.Session
-	name       string
 	closeEvent windows.Handle
 	closed     bool
 }
@@ -48,7 +46,7 @@ func (d *wintunTun) Read(data []byte) (int, error) {
 		if errors.Is(err, windows.ERROR_NO_MORE_ITEMS) {
 			// Here, timeout is used to periodically unblock the WaitForSingleObject call,
 			// allowing the loop to check if the TUN interface has been closed via closeCh.
-			var timeout uint32 = 500
+			var timeout uint32 = 250
 			_, _ = windows.WaitForSingleObject(event, timeout)
 			continue
 		}
