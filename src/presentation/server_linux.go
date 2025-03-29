@@ -7,8 +7,8 @@ import (
 	"log"
 	"os"
 	"sync"
+	"tungo/presentation/server_routing"
 	"tungo/presentation/server_routing/routing"
-	"tungo/presentation/server_routing/serveripconf"
 	"tungo/settings"
 	"tungo/settings/server_configuration"
 )
@@ -89,7 +89,7 @@ func ensureEd25519KeyPairCreated(conf *server_configuration.Configuration, manag
 }
 
 func startTCPServer(settings settings.ConnectionSettings) error {
-	tunFile, err := serveripconf.SetupServerTun(settings)
+	tunFile, err := server_routing.SetupServerTun(settings)
 	if err != nil {
 		log.Fatalf("failed to open TUN interface: %v", err)
 	}
@@ -106,7 +106,7 @@ func startTCPServer(settings settings.ConnectionSettings) error {
 }
 
 func startUDPServer(settings settings.ConnectionSettings) error {
-	tunFile, err := serveripconf.SetupServerTun(settings)
+	tunFile, err := server_routing.SetupServerTun(settings)
 	if err != nil {
 		log.Fatalf("failed to open TUN interface: %v", err)
 	}

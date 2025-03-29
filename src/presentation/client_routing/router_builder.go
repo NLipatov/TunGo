@@ -23,10 +23,6 @@ func (u *RouterBuilder) Build(
 	ctx context.Context, conf client_configuration.Configuration, tunDevConfigurator application.PlatformTunConfigurator,
 ) (application.TrafficRouter, error) {
 	connectionFactory := NewConnectionFactory()
-	tun, tunErr := tunDevConfigurator.CreateTunDevice()
-	if tunErr != nil {
-		log.Printf("failed to create tun: %s", tunErr)
-	}
 
 	switch conf.Protocol {
 	case settings.UDP:
@@ -34,13 +30,31 @@ func (u *RouterBuilder) Build(
 		if connErr != nil {
 			return nil, connErr
 		}
-		return udp_chacha20.NewUDPRouter(conn.(*net.UDPConn), tun, cryptographyService), nil
+
+		tun, tunErr := tunDevConfigurator.CreateTunDevice()
+		if tunErr != nil {
+			log.Printf("failed to create tun: %s", tunErr)
+			return nil, tunErr
+		}
+
+		worker := udp_chacha20.NewUdpWorker(*conn.(*net.UDPConn), tun, cryptographyService)
+
+		return NewRouter(worker), nil
 	case settings.TCP:
 		conn, cryptographyService, connErr := connectionFactory.EstablishConnection(ctx, conf.TCPSettings)
 		if connErr != nil {
 			return nil, connErr
 		}
-		return tcp_chacha20.NewTCPRouter(conn, tun, cryptographyService), nil
+
+		tun, tunErr := tunDevConfigurator.CreateTunDevice()
+		if tunErr != nil {
+			log.Printf("failed to create tun: %s", tunErr)
+			return nil, tunErr
+		}
+
+		worker := tcp_chacha20.NewTcpTunWorker(conn, tun, cryptographyService)
+
+		return NewRouter(worker), nil
 	default:
 		return nil, fmt.Errorf("unsupported protocol")
 	}

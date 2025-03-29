@@ -2,6 +2,7 @@ package presentation
 
 import (
 	"context"
+	"errors"
 	"log"
 	"time"
 	"tungo/infrastructure/tun_device"
@@ -26,7 +27,7 @@ func StartClient() {
 	}
 
 	// Setup platform tun configurator
-	tunDevConfigurator, tunDevConfiguratorErr := tun_device.NewTunDeviceConfigurator(*clientConf)
+	tunDevConfigurator, tunDevConfiguratorErr := tun_device.NewAbstractTunFactory(*clientConf)
 	if tunDevConfiguratorErr != nil {
 		log.Fatalf("failed to configure tun: %s", tunDevConfiguratorErr)
 	}
@@ -50,6 +51,9 @@ func StartClient() {
 		// Start routing traffic using router
 		routeTrafficErr := router.RouteTraffic(ctx)
 		if routeTrafficErr != nil {
+			if errors.Is(routeTrafficErr, context.Canceled) {
+				break
+			}
 			log.Printf("tunneling err: %s", routeTrafficErr)
 		}
 	}
