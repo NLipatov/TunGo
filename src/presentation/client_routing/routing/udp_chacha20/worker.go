@@ -74,7 +74,7 @@ func (w *UdpWorker) HandleTun(ctx context.Context, cancelFunc context.CancelFunc
 	}
 }
 
-func (w *UdpWorker) HandleConn(ctx context.Context, cancelFunc context.CancelFunc) error {
+func (w *UdpWorker) HandleTransport(ctx context.Context, cancelFunc context.CancelFunc) error {
 	dataBuf := make([]byte, ip.MaxPacketLengthBytes+12)
 	oobBuf := make([]byte, 1024)
 	_ = w.conn.SetReadBuffer(len(dataBuf))

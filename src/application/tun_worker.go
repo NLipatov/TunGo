@@ -6,6 +6,6 @@ import "context"
 type TunWorker interface {
 	// HandleTun handles packets from TUN-like interface
 	HandleTun(ctx context.Context, triggerReconnect context.CancelFunc) error
-	// HandleConn handles packets from transport connection
-	HandleConn(ctx context.Context, triggerReconnect context.CancelFunc) error
+	// HandleTransport handles packets from transport connection
+	HandleTransport(ctx context.Context, triggerReconnect context.CancelFunc) error
 }

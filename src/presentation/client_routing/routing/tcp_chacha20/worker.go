@@ -76,7 +76,7 @@ func (w *TcpTunWorker) HandleTun(ctx context.Context, cancel context.CancelFunc)
 	}
 }
 
-func (w *TcpTunWorker) HandleConn(ctx context.Context, cancel context.CancelFunc) error {
+func (w *TcpTunWorker) HandleTransport(ctx context.Context, cancel context.CancelFunc) error {
 	buffer := make([]byte, ip.MaxPacketLengthBytes+4)
 
 	go func() {

@@ -25,7 +25,7 @@ func (r *Router) RouteTraffic(ctx context.Context) error {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	// TUN -> UDP
+	// TUN -> Transport
 	go func() {
 		defer wg.Done()
 		if err := r.worker.HandleTun(routingCtx, routingCancel); err != nil && !errors.Is(err, context.Canceled) {
@@ -35,10 +35,10 @@ func (r *Router) RouteTraffic(ctx context.Context) error {
 		}
 	}()
 
-	// UDP -> TUN
+	// Transport -> TUN
 	go func() {
 		defer wg.Done()
-		if err := r.worker.HandleConn(routingCtx, routingCancel); err != nil && !errors.Is(err, context.Canceled) {
+		if err := r.worker.HandleTransport(routingCtx, routingCancel); err != nil && !errors.Is(err, context.Canceled) {
 			log.Printf("UDP -> TUN error: %v", err)
 			routingCancel()
 			return
