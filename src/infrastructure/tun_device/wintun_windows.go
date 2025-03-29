@@ -2,13 +2,15 @@ package tun_device
 
 import (
 	"errors"
+	"fmt"
+	"log"
+
 	"golang.org/x/sys/windows"
 	"golang.zx2c4.com/wintun"
-	"log"
 	"tungo/application"
 )
 
-// wintunTun is a Windows-specific TUN device using the wintun driver (https://www.wintun.net).
+// wintunTun представляет Windows-TUN устройство, использующее драйвер wintun.
 type wintunTun struct {
 	adapter    wintun.Adapter
 	session    *wintun.Session
@@ -19,11 +21,10 @@ type wintunTun struct {
 }
 
 func newWinTun(adapter wintun.Adapter, session wintun.Session, name string, mtu int) application.TunDevice {
-	handle, handleErr := windows.CreateEvent(nil, 0, 0, nil)
-	if handleErr != nil {
-		log.Println("Error creating winTun handle:", handleErr)
+	handle, err := windows.CreateEvent(nil, 0, 0, nil)
+	if err != nil {
+		log.Println("Error creating winTun handle:", err)
 	}
-
 	return &wintunTun{
 		adapter:    adapter,
 		session:    &session,
@@ -33,26 +34,28 @@ func newWinTun(adapter wintun.Adapter, session wintun.Session, name string, mtu 
 	}
 }
 
-func (t *wintunTun) Read(data []byte) (int, error) {
-	handles := []windows.Handle{t.session.ReadWaitEvent(), t.closeEvent}
+func (d *wintunTun) Read(data []byte) (int, error) {
+	event := d.session.ReadWaitEvent()
+
 	for {
-		ret, err := windows.WaitForMultipleObjects(handles, false, windows.INFINITE)
-		if err != nil {
-			return 0, err
+		if d.closed {
+			return 0, fmt.Errorf("session closed")
 		}
-		if ret == windows.WAIT_OBJECT_0+1 {
-			return 0, errors.New("tun device closed")
+
+		packet, err := d.session.ReceivePacket()
+		if err == nil {
+			n := copy(data, packet)
+			d.session.ReleaseReceivePacket(packet)
+			return n, nil
 		}
-		packet, err := t.session.ReceivePacket()
-		if err != nil {
-			if errors.Is(err, windows.ERROR_NO_MORE_ITEMS) {
-				continue
-			}
-			return 0, err
+		if errors.Is(err, windows.ERROR_NO_MORE_ITEMS) {
+			// Here, timeout is used to periodically unblock the WaitForSingleObject call,
+			// allowing the loop to check if the TUN interface has been closed via closeCh.
+			var timeout uint32 = 500
+			_, _ = windows.WaitForSingleObject(event, timeout)
+			continue
 		}
-		n := copy(data, packet)
-		t.session.ReleaseReceivePacket(packet)
-		return n, nil
+		return 0, err
 	}
 }
 
@@ -71,11 +74,9 @@ func (t *wintunTun) Close() error {
 		return nil
 	}
 	t.closed = true
-	setEventErr := windows.SetEvent(t.closeEvent)
-	if setEventErr != nil {
-		log.Printf("wintun: set event: %v", setEventErr)
+	if err := windows.SetEvent(t.closeEvent); err != nil {
+		log.Printf("wintun: set event: %v", err)
 	}
-
 	if t.session != nil {
 		defer func() {
 			if r := recover(); r != nil {
@@ -84,14 +85,11 @@ func (t *wintunTun) Close() error {
 		}()
 		t.session.End()
 	}
-
 	if err := t.adapter.Close(); err != nil {
 		log.Printf("wintun: failed to close adapter: %v", err)
 	}
-	closeHandleEventErr := windows.CloseHandle(t.closeEvent)
-	if closeHandleEventErr != nil {
-		log.Printf("wintun: close handle event: %v", closeHandleEventErr)
+	if err := windows.CloseHandle(t.closeEvent); err != nil {
+		log.Printf("wintun: close handle event: %v", err)
 	}
-
 	return nil
 }
