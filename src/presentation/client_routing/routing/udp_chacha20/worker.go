@@ -19,7 +19,7 @@ type UdpWorker struct {
 	cryptographyService application.CryptographyService
 }
 
-func newUdpWorker(
+func NewUdpWorker(
 	conn net.UDPConn, tun io.ReadWriteCloser, cryptographyService application.CryptographyService,
 ) *UdpWorker {
 	return &UdpWorker{

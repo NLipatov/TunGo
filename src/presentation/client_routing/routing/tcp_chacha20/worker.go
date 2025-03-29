@@ -12,21 +12,23 @@ import (
 	"tungo/infrastructure/network/ip"
 )
 
-type tcpTunWorker struct {
+type TcpTunWorker struct {
 	conn                net.Conn
 	tun                 io.ReadWriteCloser
 	cryptographyService application.CryptographyService
 }
 
-func newTcpTunWorker(conn net.Conn, tun io.ReadWriteCloser, cryptographyService application.CryptographyService) *tcpTunWorker {
-	return &tcpTunWorker{
+func NewTcpTunWorker(
+	conn net.Conn, tun io.ReadWriteCloser, cryptographyService application.CryptographyService,
+) application.TunWorker {
+	return &TcpTunWorker{
 		conn:                conn,
 		tun:                 tun,
 		cryptographyService: cryptographyService,
 	}
 }
 
-func (w *tcpTunWorker) HandleTun(ctx context.Context, cancel context.CancelFunc) error {
+func (w *TcpTunWorker) HandleTun(ctx context.Context, cancel context.CancelFunc) error {
 	reader := chacha20.NewTcpReader(w.tun)
 	buffer := make([]byte, ip.MaxPacketLengthBytes+4+chacha20poly1305.Overhead)
 	tcpEncoder := chacha20.NewDefaultTCPEncoder()
@@ -74,7 +76,7 @@ func (w *tcpTunWorker) HandleTun(ctx context.Context, cancel context.CancelFunc)
 	}
 }
 
-func (w *tcpTunWorker) HandleConn(ctx context.Context, cancel context.CancelFunc) error {
+func (w *TcpTunWorker) HandleConn(ctx context.Context, cancel context.CancelFunc) error {
 	buffer := make([]byte, ip.MaxPacketLengthBytes+4)
 
 	go func() {
