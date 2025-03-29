@@ -86,7 +86,7 @@ func (m *windowsTunDeviceManager) CreateTunDevice() (application.TunDevice, erro
 		return nil, errors.New("timeout or error waiting for adapter readiness")
 	}
 
-	device := newWinTun(*adapter, session, s.InterfaceName, s.MTU)
+	device := newWinTun(*adapter, session)
 	m.device = device
 
 	tunGateway, err := computeGateway(s.InterfaceAddress)

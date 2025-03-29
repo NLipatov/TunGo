@@ -15,12 +15,11 @@ type wintunTun struct {
 	adapter    wintun.Adapter
 	session    *wintun.Session
 	name       string
-	mtu        int
 	closeEvent windows.Handle
 	closed     bool
 }
 
-func newWinTun(adapter wintun.Adapter, session wintun.Session, name string, mtu int) application.TunDevice {
+func newWinTun(adapter wintun.Adapter, session wintun.Session) application.TunDevice {
 	handle, err := windows.CreateEvent(nil, 0, 0, nil)
 	if err != nil {
 		log.Println("Error creating winTun handle:", err)
@@ -28,8 +27,6 @@ func newWinTun(adapter wintun.Adapter, session wintun.Session, name string, mtu 
 	return &wintunTun{
 		adapter:    adapter,
 		session:    &session,
-		name:       name,
-		mtu:        mtu,
 		closeEvent: handle,
 	}
 }
