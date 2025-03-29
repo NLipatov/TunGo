@@ -2,6 +2,7 @@ package presentation
 
 import (
 	"context"
+	"errors"
 	"log"
 	"time"
 	"tungo/infrastructure/tun_device"
@@ -50,6 +51,9 @@ func StartClient() {
 		// Start routing traffic using router
 		routeTrafficErr := router.RouteTraffic(ctx)
 		if routeTrafficErr != nil {
+			if errors.Is(routeTrafficErr, context.Canceled) {
+				break
+			}
 			log.Printf("tunneling err: %s", routeTrafficErr)
 		}
 	}

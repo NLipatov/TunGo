@@ -14,13 +14,13 @@ import (
 )
 
 type UdpWorker struct {
-	conn                *net.UDPConn
+	conn                net.UDPConn
 	tun                 io.ReadWriteCloser
 	cryptographyService application.CryptographyService
 }
 
-func newUdpWorker(
-	conn *net.UDPConn, tun io.ReadWriteCloser, cryptographyService application.CryptographyService,
+func NewUdpWorker(
+	conn net.UDPConn, tun io.ReadWriteCloser, cryptographyService application.CryptographyService,
 ) *UdpWorker {
 	return &UdpWorker{
 		conn:                conn,
@@ -29,7 +29,7 @@ func newUdpWorker(
 	}
 }
 
-func (w *UdpWorker) HandleTun(ctx context.Context, cancelFunc context.CancelFunc) error {
+func (w *UdpWorker) HandleTun(ctx context.Context) error {
 	buf := make([]byte, ip.MaxPacketLengthBytes+12)
 	udpReader := chacha20.NewUdpReader(w.tun)
 	_ = w.conn.SetWriteBuffer(len(buf))
@@ -45,8 +45,6 @@ func (w *UdpWorker) HandleTun(ctx context.Context, cancelFunc context.CancelFunc
 				if ctx.Err() != nil {
 					return nil
 				}
-
-				cancelFunc()
 				return fmt.Errorf("could not read a packet from TUN: %v", readErr)
 			}
 
@@ -55,8 +53,6 @@ func (w *UdpWorker) HandleTun(ctx context.Context, cancelFunc context.CancelFunc
 				if ctx.Err() != nil {
 					return nil
 				}
-
-				cancelFunc()
 				return fmt.Errorf("could not encrypt packet: %v", EncryptErr)
 			}
 
@@ -66,15 +62,13 @@ func (w *UdpWorker) HandleTun(ctx context.Context, cancelFunc context.CancelFunc
 				if ctx.Err() != nil {
 					return nil
 				}
-
-				cancelFunc()
 				return fmt.Errorf("could not write packet to conn: %v", writeErr)
 			}
 		}
 	}
 }
 
-func (w *UdpWorker) HandleConn(ctx context.Context, cancelFunc context.CancelFunc) error {
+func (w *UdpWorker) HandleTransport(ctx context.Context) error {
 	dataBuf := make([]byte, ip.MaxPacketLengthBytes+12)
 	oobBuf := make([]byte, 1024)
 	_ = w.conn.SetReadBuffer(len(dataBuf))
@@ -94,14 +88,11 @@ func (w *UdpWorker) HandleConn(ctx context.Context, cancelFunc context.CancelFun
 				if ctx.Err() != nil {
 					return nil
 				}
-
-				cancelFunc()
 				return fmt.Errorf("could not read a packet from conn: %v", readErr)
 			}
 
 			if n == 1 {
 				if network.SignalIs(dataBuf[:n][0], network.SessionReset) {
-					cancelFunc()
 					return fmt.Errorf("server requested cryptographyService reset")
 				}
 			}
@@ -111,13 +102,9 @@ func (w *UdpWorker) HandleConn(ctx context.Context, cancelFunc context.CancelFun
 				if ctx.Err() != nil {
 					return nil
 				}
-
 				if errors.Is(decryptionErr, chacha20.ErrNonUniqueNonce) {
-					cancelFunc()
 					return fmt.Errorf("reconnecting on critical decryption err: %s", decryptionErr)
 				}
-
-				cancelFunc()
 				return fmt.Errorf("failed to decrypt data: %s", decryptionErr)
 			}
 
@@ -126,8 +113,6 @@ func (w *UdpWorker) HandleConn(ctx context.Context, cancelFunc context.CancelFun
 				if ctx.Err() != nil {
 					return nil
 				}
-
-				cancelFunc()
 				return fmt.Errorf("failed to write to TUN: %s", writeErr)
 			}
 		}

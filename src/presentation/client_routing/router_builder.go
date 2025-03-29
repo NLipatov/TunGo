@@ -36,7 +36,10 @@ func (u *RouterBuilder) Build(
 			log.Printf("failed to create tun: %s", tunErr)
 			return nil, tunErr
 		}
-		return udp_chacha20.NewUDPRouter(conn.(*net.UDPConn), tun, cryptographyService), nil
+
+		worker := udp_chacha20.NewUdpWorker(*conn.(*net.UDPConn), tun, cryptographyService)
+
+		return NewRouter(worker), nil
 	case settings.TCP:
 		conn, cryptographyService, connErr := connectionFactory.EstablishConnection(ctx, conf.TCPSettings)
 		if connErr != nil {
@@ -48,7 +51,10 @@ func (u *RouterBuilder) Build(
 			log.Printf("failed to create tun: %s", tunErr)
 			return nil, tunErr
 		}
-		return tcp_chacha20.NewTCPRouter(conn, tun, cryptographyService), nil
+
+		worker := tcp_chacha20.NewTcpTunWorker(conn, tun, cryptographyService)
+
+		return NewRouter(worker), nil
 	default:
 		return nil, fmt.Errorf("unsupported protocol")
 	}
