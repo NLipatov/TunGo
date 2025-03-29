@@ -36,7 +36,7 @@ func (u *RouterBuilder) Build(
 			log.Printf("failed to create tun: %s", tunErr)
 			return nil, tunErr
 		}
-		return udp_chacha20.NewUDPRouter(conn.(*net.UDPConn), tun, cryptographyService), nil
+		return udp_chacha20.NewUDPRouter(*conn.(*net.UDPConn), tun, cryptographyService), nil
 	case settings.TCP:
 		conn, cryptographyService, connErr := connectionFactory.EstablishConnection(ctx, conf.TCPSettings)
 		if connErr != nil {

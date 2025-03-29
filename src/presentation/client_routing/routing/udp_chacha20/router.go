@@ -11,12 +11,12 @@ import (
 
 type UDPRouter struct {
 	tun                 application.TunDevice
-	conn                *net.UDPConn
+	conn                net.UDPConn
 	cryptographyService application.CryptographyService
 }
 
 func NewUDPRouter(
-	conn *net.UDPConn, tun application.TunDevice, cryptographyService application.CryptographyService,
+	conn net.UDPConn, tun application.TunDevice, cryptographyService application.CryptographyService,
 ) application.TrafficRouter {
 	return &UDPRouter{
 		tun:                 tun,

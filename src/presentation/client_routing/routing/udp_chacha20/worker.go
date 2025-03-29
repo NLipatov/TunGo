@@ -14,13 +14,13 @@ import (
 )
 
 type UdpWorker struct {
-	conn                *net.UDPConn
+	conn                net.UDPConn
 	tun                 io.ReadWriteCloser
 	cryptographyService application.CryptographyService
 }
 
 func newUdpWorker(
-	conn *net.UDPConn, tun io.ReadWriteCloser, cryptographyService application.CryptographyService,
+	conn net.UDPConn, tun io.ReadWriteCloser, cryptographyService application.CryptographyService,
 ) *UdpWorker {
 	return &UdpWorker{
 		conn:                conn,
