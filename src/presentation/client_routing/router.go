@@ -2,9 +2,7 @@ package client_routing
 
 import (
 	"context"
-	"errors"
-	"log"
-	"sync"
+	"golang.org/x/sync/errgroup"
 	"tungo/application"
 )
 
@@ -18,32 +16,20 @@ func NewRouter(worker application.TunWorker) application.TrafficRouter {
 	}
 }
 
-func (r *Router) RouteTraffic(ctx context.Context) {
-	routingCtx, routingCancel := context.WithCancel(ctx)
-	defer routingCancel()
-
-	var wg sync.WaitGroup
-	wg.Add(2)
+func (r *Router) RouteTraffic(ctx context.Context) error {
+	errGroup, ctx := errgroup.WithContext(ctx)
 
 	// TUN -> Transport
-	go func() {
-		defer wg.Done()
-		if err := r.worker.HandleTun(routingCtx, routingCancel); err != nil && !errors.Is(err, context.Canceled) {
-			log.Printf("TUN -> Transport error: %v", err)
-			routingCancel()
-			return
-		}
-	}()
+	errGroup.Go(func() error {
+		err := r.worker.HandleTun(ctx)
+		return err
+	})
 
 	// Transport -> TUN
-	go func() {
-		defer wg.Done()
-		if err := r.worker.HandleTransport(routingCtx, routingCancel); err != nil && !errors.Is(err, context.Canceled) {
-			log.Printf("Transport -> TUN error: %v", err)
-			routingCancel()
-			return
-		}
-	}()
+	errGroup.Go(func() error {
+		err := r.worker.HandleTransport(ctx)
+		return err
+	})
 
-	wg.Wait()
+	return errGroup.Wait()
 }

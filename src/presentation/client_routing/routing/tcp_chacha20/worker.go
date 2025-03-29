@@ -28,7 +28,7 @@ func NewTcpTunWorker(
 	}
 }
 
-func (w *TcpTunWorker) HandleTun(ctx context.Context, cancel context.CancelFunc) error {
+func (w *TcpTunWorker) HandleTun(ctx context.Context) error {
 	reader := chacha20.NewTcpReader(w.tun)
 	buffer := make([]byte, ip.MaxPacketLengthBytes+4+chacha20poly1305.Overhead)
 	tcpEncoder := chacha20.NewDefaultTCPEncoder()
@@ -50,7 +50,6 @@ func (w *TcpTunWorker) HandleTun(ctx context.Context, cancel context.CancelFunc)
 					return nil
 				}
 				log.Printf("failed to read from TUN: %v", err)
-				cancel()
 				return err
 			}
 
@@ -69,14 +68,13 @@ func (w *TcpTunWorker) HandleTun(ctx context.Context, cancel context.CancelFunc)
 			_, err = w.conn.Write(buffer[:n+4+chacha20poly1305.Overhead])
 			if err != nil {
 				log.Printf("write to TCP failed: %s", err)
-				cancel()
 				return err
 			}
 		}
 	}
 }
 
-func (w *TcpTunWorker) HandleTransport(ctx context.Context, cancel context.CancelFunc) error {
+func (w *TcpTunWorker) HandleTransport(ctx context.Context) error {
 	buffer := make([]byte, ip.MaxPacketLengthBytes+4)
 
 	go func() {
@@ -95,7 +93,6 @@ func (w *TcpTunWorker) HandleTransport(ctx context.Context, cancel context.Cance
 					return nil
 				}
 				log.Printf("read from TCP failed: %v", err)
-				cancel()
 				return err
 			}
 
