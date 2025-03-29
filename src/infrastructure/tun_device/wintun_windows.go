@@ -3,20 +3,18 @@ package tun_device
 import (
 	"errors"
 	"golang.org/x/sys/windows"
+	"golang.zx2c4.com/wintun"
 	"log"
-	"sync"
 )
 
 // wintunTun is a Windows-specific TUN device using the wintun driver (https://www.wintun.net).
 type wintunTun struct {
-	adapter wintun.Adapter
-	session *wintun.Session
-	name    string
-	mtu     int
-	closeCh chan struct{}
-	readWg  sync.WaitGroup
-	closeMu sync.Mutex
-	closed  bool
+	adapter    wintun.Adapter
+	session    *wintun.Session
+	name       string
+	mtu        int
+	closeEvent windows.Handle
+	closed     bool
 }
 
 func (t *wintunTun) Read(data []byte) (int, error) {
@@ -57,7 +55,10 @@ func (t *wintunTun) Close() error {
 		return nil
 	}
 	t.closed = true
-	windows.SetEvent(t.closeEvent)
+	setEventErr := windows.SetEvent(t.closeEvent)
+	if setEventErr != nil {
+		log.Printf("wintun: set event: %v", setEventErr)
+	}
 
 	if t.session != nil {
 		defer func() {
@@ -71,6 +72,10 @@ func (t *wintunTun) Close() error {
 	if err := t.adapter.Close(); err != nil {
 		log.Printf("wintun: failed to close adapter: %v", err)
 	}
-	windows.CloseHandle(t.closeEvent)
+	closeHandleEventErr := windows.CloseHandle(t.closeEvent)
+	if closeHandleEventErr != nil {
+		log.Printf("wintun: close handle event: %v", closeHandleEventErr)
+	}
+
 	return nil
 }
