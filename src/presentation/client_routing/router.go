@@ -29,7 +29,7 @@ func (r *Router) RouteTraffic(ctx context.Context) error {
 	go func() {
 		defer wg.Done()
 		if err := r.worker.HandleTun(routingCtx, routingCancel); err != nil && !errors.Is(err, context.Canceled) {
-			log.Printf("TUN -> UDP error: %v", err)
+			log.Printf("TUN -> Transport error: %v", err)
 			routingCancel()
 			return
 		}
@@ -39,7 +39,7 @@ func (r *Router) RouteTraffic(ctx context.Context) error {
 	go func() {
 		defer wg.Done()
 		if err := r.worker.HandleTransport(routingCtx, routingCancel); err != nil && !errors.Is(err, context.Canceled) {
-			log.Printf("UDP -> TUN error: %v", err)
+			log.Printf("Transport -> TUN error: %v", err)
 			routingCancel()
 			return
 		}
