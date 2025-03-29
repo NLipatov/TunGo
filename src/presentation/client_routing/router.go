@@ -8,17 +8,17 @@ import (
 	"tungo/application"
 )
 
-type UnifiedRouter struct {
+type Router struct {
 	worker application.TunWorker
 }
 
-func NewUnifiedRouter(worker application.TunWorker) application.TrafficRouter {
-	return &UnifiedRouter{
+func NewRouter(worker application.TunWorker) application.TrafficRouter {
+	return &Router{
 		worker: worker,
 	}
 }
 
-func (r *UnifiedRouter) RouteTraffic(ctx context.Context) error {
+func (r *Router) RouteTraffic(ctx context.Context) error {
 	routingCtx, routingCancel := context.WithCancel(ctx)
 	defer routingCancel()
 

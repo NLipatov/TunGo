@@ -39,7 +39,7 @@ func (u *RouterBuilder) Build(
 
 		worker := udp_chacha20.NewUdpWorker(*conn.(*net.UDPConn), tun, cryptographyService)
 
-		return NewUnifiedRouter(worker), nil
+		return NewRouter(worker), nil
 	case settings.TCP:
 		conn, cryptographyService, connErr := connectionFactory.EstablishConnection(ctx, conf.TCPSettings)
 		if connErr != nil {
@@ -54,7 +54,7 @@ func (u *RouterBuilder) Build(
 
 		worker := tcp_chacha20.NewTcpTunWorker(conn, tun, cryptographyService)
 
-		return NewUnifiedRouter(worker), nil
+		return NewRouter(worker), nil
 	default:
 		return nil, fmt.Errorf("unsupported protocol")
 	}
