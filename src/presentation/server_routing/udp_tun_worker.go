@@ -9,7 +9,6 @@ import (
 	"os"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network"
-	"tungo/infrastructure/network/ip"
 	"tungo/presentation/server_routing/clientsession"
 	"tungo/settings"
 	"tungo/settings/server_configuration"
@@ -37,9 +36,9 @@ func NewUdpTunWorker(ctx context.Context, tun *os.File, settings settings.Connec
 }
 
 func (u *UdpTunWorker) TunToUDP() {
-	headerParser := ip.NewBaseHeaderParser()
+	headerParser := network.NewBaseHeaderParser()
 
-	buf := make([]byte, ip.MaxPacketLengthBytes+12)
+	buf := make([]byte, network.MaxPacketLengthBytes+12)
 	udpReader := chacha20.NewUdpReader(u.tun)
 
 	for {
@@ -127,7 +126,7 @@ func (u *UdpTunWorker) UDPToTun() {
 		_ = conn.Close()
 	}()
 
-	dataBuf := make([]byte, ip.MaxPacketLengthBytes+12)
+	dataBuf := make([]byte, network.MaxPacketLengthBytes+12)
 	oobBuf := make([]byte, 1024)
 	for {
 		select {

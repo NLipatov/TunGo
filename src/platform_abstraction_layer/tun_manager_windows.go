@@ -1,4 +1,4 @@
-package tun_device
+package platform_abstraction_layer
 
 import (
 	"errors"
@@ -9,27 +9,28 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"tungo/platform_abstraction_layer/tools_windows/netsh"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
-	"golang.zx2c4.com/wintun"
+	wintun "golang.zx2c4.com/wintun"
 	"tungo/application"
-	"tungo/infrastructure/network/netsh"
+	pal_windows "tungo/platform_abstraction_layer/tools_windows"
 	"tungo/settings"
 	"tungo/settings/client_configuration"
 )
 
-type windowsTunDeviceManager struct {
+type PlatformTunManager struct {
 	conf client_configuration.Configuration
 }
 
-func newPlatformTunConfigurator(
+func NewPlatformTunManager(
 	conf client_configuration.Configuration,
-) (application.PlatformTunConfigurator, error) {
-	return &windowsTunDeviceManager{conf: conf}, nil
+) (application.TunManager, error) {
+	return &PlatformTunManager{conf: conf}, nil
 }
 
-func (m *windowsTunDeviceManager) CreateTunDevice() (application.TunDevice, error) {
+func (m *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 	var s settings.ConnectionSettings
 	switch m.conf.Protocol {
 	case settings.UDP:
@@ -68,7 +69,7 @@ func (m *windowsTunDeviceManager) CreateTunDevice() (application.TunDevice, erro
 		return nil, errors.New("timeout or error waiting for adapter readiness")
 	}
 
-	device := newWinTun(*adapter, session)
+	device := pal_windows.NewWinTun(*adapter, session)
 
 	tunGateway, err := computeGateway(s.InterfaceAddress)
 	if err != nil {
@@ -91,7 +92,7 @@ func (m *windowsTunDeviceManager) CreateTunDevice() (application.TunDevice, erro
 	return device, nil
 }
 
-func (m *windowsTunDeviceManager) DisposeTunDevices() error {
+func (m *PlatformTunManager) DisposeTunDevices() error {
 	// dispose adapters by friendly names
 	_ = disposeExistingTunDevices(m.conf.TCPSettings.InterfaceName)
 	_ = disposeExistingTunDevices(m.conf.UDPSettings.InterfaceName)

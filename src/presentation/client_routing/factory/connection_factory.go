@@ -1,4 +1,4 @@
-package client_routing
+package factory
 
 import (
 	"context"
@@ -11,18 +11,32 @@ import (
 	"tungo/presentation/client_routing/routing/tcp_chacha20/tcp_connection"
 	"tungo/presentation/client_routing/routing/udp_chacha20/udp_connection"
 	"tungo/settings"
+	"tungo/settings/client_configuration"
 )
 
 type ConnectionFactory struct {
+	conf client_configuration.Configuration
 }
 
-func NewConnectionFactory() *ConnectionFactory {
-	return &ConnectionFactory{}
+func NewConnectionFactory(conf client_configuration.Configuration) application.ConnectionFactory {
+	return &ConnectionFactory{
+		conf: conf,
+	}
 }
 
 func (f *ConnectionFactory) EstablishConnection(
-	ctx context.Context, s settings.ConnectionSettings,
+	ctx context.Context,
 ) (net.Conn, application.CryptographyService, error) {
+	var s settings.ConnectionSettings
+	switch s.Protocol {
+	case settings.TCP:
+		s = f.conf.TCPSettings
+	case settings.UDP:
+		s = f.conf.UDPSettings
+	default:
+		return nil, nil, fmt.Errorf("unsupported protocol: %v", s.Protocol)
+	}
+
 	deadline := time.Now().Add(time.Duration(math.Max(float64(s.DialTimeoutMs), 5000)) * time.Millisecond)
 	handshakeCtx, handshakeCtxCancel := context.WithDeadline(ctx, deadline)
 	defer handshakeCtxCancel()

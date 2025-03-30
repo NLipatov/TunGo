@@ -5,12 +5,16 @@ import (
 	"os"
 )
 
+type ClientConfigurationManager interface {
+	Configuration() (*Configuration, error)
+}
+
 type Manager struct {
 	resolver resolver
 }
 
-func NewManager() Manager {
-	return Manager{
+func NewManager() ClientConfigurationManager {
+	return &Manager{
 		resolver: newClientResolver(),
 	}
 }
