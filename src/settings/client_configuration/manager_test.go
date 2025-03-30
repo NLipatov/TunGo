@@ -39,7 +39,7 @@ func createTempConfigFile(t *testing.T, data interface{}) string {
 
 func TestManagerConfigurationResolverError(t *testing.T) {
 	manager := NewManager()
-	manager.resolver = managerTestMockResolver{err: errors.New("resolver error")}
+	manager.(*Manager).resolver = managerTestMockResolver{err: errors.New("resolver error")}
 	_, err := manager.Configuration()
 	if err == nil {
 		t.Fatal("expected resolver error, got nil")
@@ -51,8 +51,7 @@ func TestManagerConfigurationResolverError(t *testing.T) {
 
 func TestManagerConfigurationFileNotExist(t *testing.T) {
 	manager := NewManager()
-	// Use a non-existent file path.
-	manager.resolver = managerTestMockResolver{path: "/non/existent/path/client_configuration.json"}
+	manager.(*Manager).resolver = managerTestMockResolver{path: "/non/existent/path/client_configuration.json"}
 	_, err := manager.Configuration()
 	if err == nil {
 		t.Fatal("expected error for non-existent file, got nil")
@@ -70,7 +69,7 @@ func TestManagerConfigurationInvalidJSON(t *testing.T) {
 		t.Fatalf("failed to write file: %v", err)
 	}
 	manager := NewManager()
-	manager.resolver = managerTestMockResolver{path: path}
+	manager.(*Manager).resolver = managerTestMockResolver{path: path}
 	_, err := manager.Configuration()
 	if err == nil {
 		t.Fatal("expected error for invalid JSON, got nil")
@@ -89,7 +88,7 @@ func TestManagerConfigurationSuccess(t *testing.T) {
 	}
 	path := createTempConfigFile(t, defaultConfig)
 	manager := NewManager()
-	manager.resolver = managerTestMockResolver{path: path}
+	manager.(*Manager).resolver = managerTestMockResolver{path: path}
 	config, err := manager.Configuration()
 	if err != nil {
 		t.Fatalf("expected success, got error: %v", err)
@@ -101,6 +100,6 @@ func TestManagerConfigurationSuccess(t *testing.T) {
 		t.Errorf("expected UDPNonceRingBufferSize 128, got %d", config.UDPNonceRingBufferSize)
 	}
 	if config.Protocol != settings.TCP {
-		t.Errorf("expected Protocol 'tcp', got %d", config.Protocol)
+		t.Errorf("expected Protocol %q, got %d", settings.TCP, config.Protocol)
 	}
 }
