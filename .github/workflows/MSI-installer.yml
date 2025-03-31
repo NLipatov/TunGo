@@ -38,9 +38,9 @@ jobs:
         shell: cmd
         run: |
           cd dist
-          for /f "delims=" %%i in ('uuidgen') do set UPGRADE_CODE=%%i
-          for /f "delims=" %%i in ('uuidgen') do set WINTUN_GUID=%%i
-          for /f "delims=" %%i in ('uuidgen') do set APP_GUID=%%i
+          for /f "delims=" %%i in ('powershell -Command "[guid]::NewGuid().ToString()"') do set UPGRADE_CODE=%%i
+          for /f "delims=" %%i in ('powershell -Command "[guid]::NewGuid().ToString()"') do set WINTUN_GUID=%%i
+          for /f "delims=" %%i in ('powershell -Command "[guid]::NewGuid().ToString()"') do set APP_GUID=%%i
           for /f "delims=" %%i in ('git describe --tags --abbrev=0 2^>nul') do set VERSION=%%i
           if not defined VERSION set VERSION=1.0.0
           (
