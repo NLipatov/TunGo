@@ -32,21 +32,24 @@ jobs:
       - name: Generate installer.wxs
         run: |
           cd dist
+              UPGRADE_CODE=$(uuidgen)
+              WINTUN_GUID=$(uuidgen)
+              APP_GUID=$(uuidgen)
           cat <<'EOFXML' > installer.wxs
           <?xml version="1.0"?>
           <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-            <Product Id="*" Name="Tungo" Language="1033" Version="1.0.0.0" Manufacturer="YourCompany" UpgradeCode="$(uuidgen)">
+            <Product Id="*" Name="Tungo" Language="1033" Version="1.0.0.0" Manufacturer="TunGo org" UpgradeCode="${UPGRADE_CODE}">
               <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine" />
               <Media Id="1" Cabinet="media1.cab" EmbedCab="yes"/>
               <Directory Id="TARGETDIR" Name="SourceDir">
                 <Directory Id="SystemFolder">
-                  <Component Id="WintunDLL" Guid="$(uuidgen)">
+                  <Component Id="WintunDLL" Guid="${WINTUN_GUID}">
                     <File Id="WintunFile" Name="wintun.dll" Source="wintun.dll" />
                   </Component>
                 </Directory>
                 <Directory Id="ProgramFilesFolder">
                   <Directory Id="INSTALLFOLDER" Name="Tungo">
-                    <Component Id="AppExe" Guid="$(uuidgen)">
+                    <Component Id="AppExe" Guid="${APP_GUID}">
                       <File Id="AppFile" Name="app.exe" Source="app.exe" />
                     </Component>
                   </Directory>
