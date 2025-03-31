@@ -26,8 +26,8 @@ jobs:
           mkdir -p dist
           cd dist
           curl -L -o wintun.zip https://www.wintun.net/builds/wintun-0.14.1.zip
-          unzip wintun.zip 'x64/wintun.dll'
-          mv 'x64/wintun.dll' .
+          unzip wintun.zip
+          mv 'wintun/bin/amd64/wintun.dll' .
 
       - name: Generate installer.wxs
         run: |
