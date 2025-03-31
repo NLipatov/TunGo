@@ -20,7 +20,11 @@ jobs:
           mkdir -p dist
           cd src
           GOOS=windows GOARCH=amd64 go build -o ../dist/app.exe .
-
+          
+      - name: Copy icon file
+        run: |
+          cp src/docs/TunGo/static/img/favicon.ico dist/tungo.ico
+          
       - name: Download and extract Wintun
         run: |
           mkdir -p dist
@@ -43,6 +47,7 @@ jobs:
               <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine" />
               <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER"/>
               <Media Id="1" Cabinet="media1.cab" EmbedCab="yes"/>
+              <Icon Id="AppIcon" SourceFile="tungo.ico"/>
               <Directory Id="TARGETDIR" Name="SourceDir">
                 <Directory Id="ProgramFilesFolder">
                   <Directory Id="INSTALLFOLDER" Name="TunGo">
