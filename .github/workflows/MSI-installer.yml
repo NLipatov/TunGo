@@ -44,39 +44,39 @@ jobs:
           for /f "delims=" %%i in ('git describe --tags --abbrev=0 2^>nul') do set VERSION=%%i
           if not defined VERSION set VERSION=1.0.0
           (
-            echo <?xml version="1.0"?>
-            echo <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-            echo   <Product Id="*" Name="TunGo" Language="1033" Version="%VERSION%" Manufacturer="TunGo Contributors" UpgradeCode="%UPGRADE_CODE%">
-            echo     <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine" />
-            echo     <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER"/>
-            echo     <Media Id="1" Cabinet="media1.cab" EmbedCab="yes"/>
-            echo     <Icon Id="AppIcon" SourceFile="tungo.ico"/>
-            echo     <Directory Id="TARGETDIR" Name="SourceDir">
-            echo       <Directory Id="ProgramFilesFolder">
-            echo         <Directory Id="INSTALLFOLDER" Name="TunGo">
-            echo           <Component Id="AppExe" Guid="%APP_GUID%">
-            echo             <File Id="AppFile" Name="TunGo.exe" Source="TunGo.exe">
-            echo               <Shortcut Id="DesktopShortcut" Directory="DesktopFolder" Name="TunGo" Description="Starting TunGo in client mode" WorkingDirectory="INSTALLFOLDER" Arguments="c" Icon="AppIcon" IconIndex="0"/>
-            echo             </File>
-            echo             <RegistryValue Root="HKLM" Key="Software\TunGo" Name="installed" Type="integer" Value="1" KeyPath="yes"/>
-            echo           </Component>
-            echo         </Directory>
-            echo       </Directory>
-            echo       <Directory Id="SystemFolder">
-            echo         <Component Id="WintunDLL" Guid="%WINTUN_GUID%">
-            echo           <File Id="WintunFile" Name="wintun.dll" Source="wintun.dll" />
-            echo         </Component>
-            echo       </Directory>
-            echo     </Directory>
-            echo     <Feature Id="DefaultFeature" Level="1">
-            echo       <ComponentRef Id="AppExe" />
-            echo       <ComponentRef Id="WintunDLL" />
-            echo     </Feature>
-            echo     <UI>
-            echo       <UIRef Id="WixUI_InstallDir" />
-            echo     </UI>
-            echo   </Product>
-            echo </Wix>
+          echo <?xml version="1.0"?>
+          echo <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+          echo   <Product Id="*" Name="TunGo" Language="1033" Version="%VERSION%" Manufacturer="TunGo Contributors" UpgradeCode="%UPGRADE_CODE%">
+          echo     <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine" />
+          echo     <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER"/>
+          echo     <Media Id="1" Cabinet="media1.cab" EmbedCab="yes"/>
+          echo     <Icon Id="AppIcon" SourceFile="tungo.ico"/>
+          echo     <Directory Id="TARGETDIR" Name="SourceDir">
+          echo       <Directory Id="ProgramFilesFolder">
+          echo         <Directory Id="INSTALLFOLDER" Name="TunGo">
+          echo           <Component Id="AppExe" Guid="%APP_GUID%">
+          echo             <File Id="AppFile" Name="TunGo.exe" Source="TunGo.exe">
+          echo               <Shortcut Id="DesktopShortcut" Directory="DesktopFolder" Name="TunGo" Description="Starting TunGo in client mode" WorkingDirectory="INSTALLFOLDER" Arguments="c" Icon="AppIcon" IconIndex="0"/>
+          echo             </File>
+          echo             <RegistryValue Root="HKLM" Key="Software\TunGo" Name="installed" Type="integer" Value="1" KeyPath="yes"/>
+          echo           </Component>
+          echo         </Directory>
+          echo       </Directory>
+          echo       <Directory Id="SystemFolder">
+          echo         <Component Id="WintunDLL" Guid="%WINTUN_GUID%">
+          echo           <File Id="WintunFile" Name="wintun.dll" Source="wintun.dll" />
+          echo         </Component>
+          echo       </Directory>
+          echo     </Directory>
+          echo     <Feature Id="DefaultFeature" Level="1">
+          echo       <ComponentRef Id="AppExe" />
+          echo       <ComponentRef Id="WintunDLL" />
+          echo     </Feature>
+          echo     <UI>
+          echo       <UIRef Id="WixUI_InstallDir" />
+          echo     </UI>
+          echo   </Product>
+          echo </Wix>
           ) > installer.wxs
 
       - name: Build MSI installer
