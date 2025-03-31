@@ -58,7 +58,7 @@ jobs:
                                   Name="TunGo"
                                   Description="Starting TunGo in client mode"
                                   WorkingDirectory="INSTALLFOLDER"
-                                  Arguments="c" 'c' argument (in client mode)
+                                  Arguments="c"
                                   Advertise="yes"/>
                       </File>
                       <RegistryValue Root="HKLM" Key="Software\TunGo" Name="installed" Type="integer" Value="1" KeyPath="yes"/>
