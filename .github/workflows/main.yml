@@ -194,12 +194,14 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: tungo-linux-x64
-
+          path: linux
+  
       - name: Download Windows binary artifact
         uses: actions/download-artifact@v4
         with:
           name: tungo-win-x64
-
+          path: win
+  
       - name: Create Release
         id: create_release
         uses: actions/create-release@v1
@@ -218,7 +220,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: tungo-linux-x64/tungo-linux-x64
+          asset_path: linux/tungo-linux-x64
           asset_name: tungo-linux-x64
           asset_content_type: application/octet-stream
 
@@ -228,6 +230,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: tungo-win-x64/tungo-win-x64.exe
+          asset_path: win/tungo-win-x64.exe
           asset_name: tungo-win-x64.exe
           asset_content_type: application/octet-stream
