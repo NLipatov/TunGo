@@ -35,14 +35,14 @@ jobs:
           Move-Item -Force "wintun\bin\amd64\wintun.dll" ..\  # Move Wintun.dll to the dist folder
 
       - name: Generate installer.wxs
+        shell: cmd
         run: |
           cd dist
-          for /f %%i in ('uuidgen') do set UPGRADE_CODE=%%i
-          for /f %%i in ('uuidgen') do set WINTUN_GUID=%%i
-          for /f %%i in ('uuidgen') do set APP_GUID=%%i
+          for /f "delims=" %%i in ('uuidgen') do set UPGRADE_CODE=%%i
+          for /f "delims=" %%i in ('uuidgen') do set WINTUN_GUID=%%i
+          for /f "delims=" %%i in ('uuidgen') do set APP_GUID=%%i
           for /f "delims=" %%i in ('git describe --tags --abbrev=0 2^>nul') do set VERSION=%%i
           if not defined VERSION set VERSION=1.0.0
-          rem Create installer.wxs with UI for choosing installation directory:
           (
             echo <?xml version="1.0"?>
             echo <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
