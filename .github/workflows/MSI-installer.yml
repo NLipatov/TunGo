@@ -23,7 +23,7 @@ jobs:
           
       - name: Copy icon file
         run: |
-          cp src/docs/TunGo/static/img/favicon.ico dist/tungo.ico
+          cp docs/TunGo/static/img/favicon.ico dist/tungo.ico
           
       - name: Download and extract Wintun
         run: |
