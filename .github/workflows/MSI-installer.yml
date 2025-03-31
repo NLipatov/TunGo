@@ -12,7 +12,7 @@ jobs:
 
       - name: Install WiX Toolset
         run: |
-          choco install wix-toolset -y --pre  # Install WiX Toolset via Chocolatey
+          choco install wix3 -y
 
       - name: Build Go app for Windows
         run: |
