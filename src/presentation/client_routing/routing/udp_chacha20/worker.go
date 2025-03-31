@@ -10,7 +10,6 @@ import (
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network"
-	"tungo/infrastructure/network/ip"
 )
 
 type UdpWorker struct {
@@ -20,17 +19,17 @@ type UdpWorker struct {
 }
 
 func NewUdpWorker(
-	conn net.UDPConn, tun io.ReadWriteCloser, cryptographyService application.CryptographyService,
+	conn net.Conn, tun io.ReadWriteCloser, cryptographyService application.CryptographyService,
 ) *UdpWorker {
 	return &UdpWorker{
-		conn:                conn,
+		conn:                *conn.(*net.UDPConn),
 		tun:                 tun,
 		cryptographyService: cryptographyService,
 	}
 }
 
 func (w *UdpWorker) HandleTun(ctx context.Context) error {
-	buf := make([]byte, ip.MaxPacketLengthBytes+12)
+	buf := make([]byte, network.MaxPacketLengthBytes+12)
 	udpReader := chacha20.NewUdpReader(w.tun)
 	_ = w.conn.SetWriteBuffer(len(buf))
 
@@ -69,7 +68,7 @@ func (w *UdpWorker) HandleTun(ctx context.Context) error {
 }
 
 func (w *UdpWorker) HandleTransport(ctx context.Context) error {
-	dataBuf := make([]byte, ip.MaxPacketLengthBytes+12)
+	dataBuf := make([]byte, network.MaxPacketLengthBytes+12)
 	oobBuf := make([]byte, 1024)
 	_ = w.conn.SetReadBuffer(len(dataBuf))
 

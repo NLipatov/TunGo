@@ -1,4 +1,4 @@
-package tun_device
+package pal_windows
 
 import (
 	"errors"
@@ -6,7 +6,7 @@ import (
 	"log"
 
 	"golang.org/x/sys/windows"
-	"golang.zx2c4.com/wintun"
+	wintun "golang.zx2c4.com/wintun"
 	"tungo/application"
 )
 
@@ -17,7 +17,7 @@ type wintunTun struct {
 	closed     bool
 }
 
-func newWinTun(adapter wintun.Adapter, session wintun.Session) application.TunDevice {
+func NewWinTun(adapter wintun.Adapter, session wintun.Session) application.TunDevice {
 	handle, err := windows.CreateEvent(nil, 0, 0, nil)
 	if err != nil {
 		log.Println("Error creating winTun handle:", err)

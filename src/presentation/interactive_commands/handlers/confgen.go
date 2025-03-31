@@ -4,7 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"tungo/infrastructure/network/ip"
+	"tungo/infrastructure/network"
+	"tungo/platform_abstraction_layer/tools_linux/ip"
 	"tungo/settings"
 	"tungo/settings/client_configuration"
 	"tungo/settings/server_configuration"
@@ -47,12 +48,12 @@ func generate() (*client_configuration.Configuration, error) {
 	}
 
 	IncrementedClientCounter := serverConf.ClientCounter + 1
-	clientTCPIfIp, err := ip.AllocateClientIp(serverConf.TCPSettings.InterfaceIPCIDR, IncrementedClientCounter)
+	clientTCPIfIp, err := network.AllocateClientIp(serverConf.TCPSettings.InterfaceIPCIDR, IncrementedClientCounter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to allocate client's TCP IP address: %s", err)
 	}
 
-	clientUIDPIfIp, err := ip.AllocateClientIp(serverConf.UDPSettings.InterfaceIPCIDR, IncrementedClientCounter)
+	clientUIDPIfIp, err := network.AllocateClientIp(serverConf.UDPSettings.InterfaceIPCIDR, IncrementedClientCounter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to allocate client's TCP IP address: %s", err)
 	}

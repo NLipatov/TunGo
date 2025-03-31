@@ -1,27 +1,27 @@
-package tun_device
+package platform_abstraction_layer
 
 import (
 	"fmt"
 	"strings"
 	"tungo/application"
-	"tungo/infrastructure/network/ip"
-	"tungo/infrastructure/network/iptables"
+	"tungo/platform_abstraction_layer/tools_linux/ip"
+	"tungo/platform_abstraction_layer/tools_linux/iptables"
 	"tungo/settings"
 	"tungo/settings/client_configuration"
 )
 
-// linuxTunDeviceManager Linux-specific TunDevice manager
-type linuxTunDeviceManager struct {
+// PlatformTunManager Linux-specific TunDevice manager
+type PlatformTunManager struct {
 	conf client_configuration.Configuration
 }
 
-func newPlatformTunConfigurator(conf client_configuration.Configuration) (application.PlatformTunConfigurator, error) {
-	return &linuxTunDeviceManager{
+func NewPlatformTunManager(conf client_configuration.Configuration) (application.TunManager, error) {
+	return &PlatformTunManager{
 		conf: conf,
 	}, nil
 }
 
-func (t *linuxTunDeviceManager) CreateTunDevice() (application.TunDevice, error) {
+func (t *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 	var s settings.ConnectionSettings
 	switch t.conf.Protocol {
 	case settings.UDP:
@@ -111,7 +111,7 @@ func configureTUN(connSettings settings.ConnectionSettings) error {
 	return nil
 }
 
-func (t *linuxTunDeviceManager) DisposeTunDevices() error {
+func (t *PlatformTunManager) DisposeTunDevices() error {
 	_ = ip.RouteDel(t.conf.UDPSettings.ConnectionIP)
 	_, _ = ip.LinkDel(t.conf.UDPSettings.InterfaceName)
 

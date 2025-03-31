@@ -9,7 +9,7 @@ import (
 	"net"
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
-	"tungo/infrastructure/network/ip"
+	"tungo/infrastructure/network"
 )
 
 type TcpTunWorker struct {
@@ -30,7 +30,7 @@ func NewTcpTunWorker(
 
 func (w *TcpTunWorker) HandleTun(ctx context.Context) error {
 	reader := chacha20.NewTcpReader(w.tun)
-	buffer := make([]byte, ip.MaxPacketLengthBytes+4+chacha20poly1305.Overhead)
+	buffer := make([]byte, network.MaxPacketLengthBytes+4+chacha20poly1305.Overhead)
 	tcpEncoder := chacha20.NewDefaultTCPEncoder()
 
 	go func() {
@@ -75,7 +75,7 @@ func (w *TcpTunWorker) HandleTun(ctx context.Context) error {
 }
 
 func (w *TcpTunWorker) HandleTransport(ctx context.Context) error {
-	buffer := make([]byte, ip.MaxPacketLengthBytes+4)
+	buffer := make([]byte, network.MaxPacketLengthBytes+4)
 
 	go func() {
 		<-ctx.Done()
@@ -98,7 +98,7 @@ func (w *TcpTunWorker) HandleTransport(ctx context.Context) error {
 
 			//read packet length from 4-byte length prefix
 			var length = binary.BigEndian.Uint32(buffer[:4])
-			if length < 4 || length > ip.MaxPacketLengthBytes {
+			if length < 4 || length > network.MaxPacketLengthBytes {
 				log.Printf("invalid packet Length: %d", length)
 				continue
 			}

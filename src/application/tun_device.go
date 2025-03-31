@@ -6,8 +6,3 @@ type TunDevice interface {
 	Write(data []byte) (int, error)
 	Close() error
 }
-
-type PlatformTunConfigurator interface {
-	CreateTunDevice() (TunDevice, error)
-	DisposeTunDevices() error
-}

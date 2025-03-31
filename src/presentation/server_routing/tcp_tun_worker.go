@@ -11,7 +11,6 @@ import (
 	"sync"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network"
-	"tungo/infrastructure/network/ip"
 	"tungo/settings"
 )
 
@@ -23,9 +22,9 @@ func NewTcpTunWorker() TcpTunWorker {
 }
 
 func (w *TcpTunWorker) TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map, ctx context.Context) {
-	headerParser := ip.NewBaseHeaderParser()
+	headerParser := network.NewBaseHeaderParser()
 
-	buf := make([]byte, ip.MaxPacketLengthBytes)
+	buf := make([]byte, network.MaxPacketLengthBytes)
 	reader := chacha20.NewTcpReader(tunFile)
 	encoder := chacha20.NewDefaultTCPEncoder()
 
@@ -170,7 +169,7 @@ func (w *TcpTunWorker) handleClient(conn net.Conn, tunFile *os.File, localIpToCo
 		log.Printf("disconnected: %s", conn.RemoteAddr())
 	}()
 
-	buf := make([]byte, ip.MaxPacketLengthBytes)
+	buf := make([]byte, network.MaxPacketLengthBytes)
 	for {
 		select {
 		case <-ctx.Done():
@@ -196,7 +195,7 @@ func (w *TcpTunWorker) handleClient(conn net.Conn, tunFile *os.File, localIpToCo
 
 			//read packet length from 4-byte length prefix
 			var length = binary.BigEndian.Uint32(buf[:4])
-			if length < 4 || length > ip.MaxPacketLengthBytes {
+			if length < 4 || length > network.MaxPacketLengthBytes {
 				log.Printf("invalid packet Length: %d", length)
 				continue
 			}
