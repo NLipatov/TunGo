@@ -1,19 +1,14 @@
-name: Build MSI Installer
+name: Build TunGo.exe for win amd64
 
 on:
   workflow_dispatch:
 
 jobs:
-  build-msi:
+  build-exe:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y msitools uuid-runtime unzip wixl
 
       - name: Build Go app for Windows
         run: |
@@ -21,71 +16,8 @@ jobs:
           cd src
           GOOS=windows GOARCH=amd64 go build -o ../dist/TunGo.exe .
 
-      - name: Copy icon file
-        run: |
-          cp docs/TunGo/static/img/favicon.ico dist/tungo.ico
-
-      - name: Download and extract Wintun
-        run: |
-          mkdir -p dist
-          cd dist
-          curl -L -o wintun.zip https://www.wintun.net/builds/wintun-0.14.1.zip
-          unzip wintun.zip
-          mv 'wintun/bin/amd64/wintun.dll' .
-
-      - name: Generate installer.wxs
-        run: |
-          cd dist
-          UPGRADE_CODE=$(uuidgen)
-          WINTUN_GUID=$(uuidgen)
-          APP_GUID=$(uuidgen)
-          VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "1.0.0")
-          cat <<EOF > installer.wxs
-          <?xml version="1.0"?>
-          <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-            <Product Id="*" Name="TunGo" Language="1033" Version="${VERSION}" Manufacturer="TunGo Contributors" UpgradeCode="${UPGRADE_CODE}">
-              <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine" />
-              <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER"/>
-              <Media Id="1" Cabinet="media1.cab" EmbedCab="yes"/>
-              <Icon Id="AppIcon" SourceFile="tungo.ico"/>
-              <Directory Id="TARGETDIR" Name="SourceDir">
-                <Directory Id="ProgramFilesFolder">
-                  <Directory Id="INSTALLFOLDER" Name="TunGo">
-                    <Component Id="AppExe" Guid="${APP_GUID}">
-                      <File Id="AppFile" Name="TunGo.exe" Source="TunGo.exe">
-                        <Shortcut Id="DesktopShortcut"
-                                  Directory="DesktopFolder"
-                                  Name="TunGo"
-                                  Description="Starting TunGo in client mode"
-                                  WorkingDirectory="INSTALLFOLDER"
-                                  Arguments="c"
-                                  Advertise="yes"/>
-                      </File>
-                      <RegistryValue Root="HKLM" Key="Software\TunGo" Name="installed" Type="integer" Value="1" KeyPath="yes"/>
-                    </Component>
-                  </Directory>
-                </Directory>
-                <Directory Id="SystemFolder">
-                  <Component Id="WintunDLL" Guid="${WINTUN_GUID}">
-                    <File Id="WintunFile" Name="wintun.dll" Source="wintun.dll" />
-                  </Component>
-                </Directory>
-              </Directory>
-              <Feature Id="DefaultFeature" Level="1">
-                <ComponentRef Id="AppExe" />
-                <ComponentRef Id="WintunDLL" />
-              </Feature>
-            </Product>
-          </Wix>
-          EOF
-
-      - name: Build MSI installer
-        run: |
-          cd dist
-          wixl -o tungo.msi installer.wxs
-      
-      - name: Upload MSI artifact
+      - name: Upload TunGo.exe artifact
         uses: actions/upload-artifact@v4
         with:
-          name: tungo-msi
-          path: dist/tungo.msi
+          name: TunGo-exe
+          path: dist/TunGo.exe
