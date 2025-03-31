@@ -28,7 +28,7 @@ func (f *ConnectionFactory) EstablishConnection(
 	ctx context.Context,
 ) (net.Conn, application.CryptographyService, error) {
 	var s settings.ConnectionSettings
-	switch s.Protocol {
+	switch f.conf.Protocol {
 	case settings.TCP:
 		s = f.conf.TCPSettings
 	case settings.UDP:
