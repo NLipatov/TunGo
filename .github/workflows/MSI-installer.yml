@@ -13,7 +13,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y msitools uuid-runtime unzip
+          sudo apt install -y msitools uuid-runtime unzip wixl
 
       - name: Build Go app for Windows
         run: |
