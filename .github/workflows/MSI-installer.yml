@@ -46,40 +46,40 @@ jobs:
           if (-not $VERSION) { $VERSION = "1.0.0" }
           # Create installer.wxs with a here-string
           $wxsContent = @"
-<?xml version="1.0"?>
-<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-  <Product Id="*" Name="TunGo" Language="1033" Version="$VERSION" Manufacturer="TunGo Contributors" UpgradeCode="$UPGRADE_CODE">
-    <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine" />
-    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER"/>
-    <Media Id="1" Cabinet="media1.cab" EmbedCab="yes"/>
-    <Icon Id="AppIcon" SourceFile="tungo.ico"/>
-    <Directory Id="TARGETDIR" Name="SourceDir">
-      <Directory Id="ProgramFilesFolder">
-        <Directory Id="INSTALLFOLDER" Name="TunGo">
-          <Component Id="AppExe" Guid="$APP_GUID">
-            <File Id="AppFile" Name="TunGo.exe" Source="TunGo.exe">
-              <Shortcut Id="DesktopShortcut" Directory="DesktopFolder" Name="TunGo" Description="Starting TunGo in client mode" WorkingDirectory="INSTALLFOLDER" Arguments="c" Icon="AppIcon" IconIndex="0"/>
-            </File>
-            <RegistryValue Root="HKLM" Key="Software\TunGo" Name="installed" Type="integer" Value="1" KeyPath="yes"/>
-          </Component>
-        </Directory>
-      </Directory>
-      <Directory Id="SystemFolder">
-        <Component Id="WintunDLL" Guid="$WINTUN_GUID">
-          <File Id="WintunFile" Name="wintun.dll" Source="wintun.dll" />
-        </Component>
-      </Directory>
-    </Directory>
-    <Feature Id="DefaultFeature" Level="1">
-      <ComponentRef Id="AppExe" />
-      <ComponentRef Id="WintunDLL" />
-    </Feature>
-    <UI>
-      <UIRef Id="WixUI_InstallDir" />
-    </UI>
-  </Product>
-</Wix>
-"@
+          <?xml version="1.0"?>
+          <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+            <Product Id="*" Name="TunGo" Language="1033" Version="$VERSION" Manufacturer="TunGo Contributors" UpgradeCode="$UPGRADE_CODE">
+              <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine" />
+              <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER"/>
+              <Media Id="1" Cabinet="media1.cab" EmbedCab="yes"/>
+              <Icon Id="AppIcon" SourceFile="tungo.ico"/>
+              <Directory Id="TARGETDIR" Name="SourceDir">
+                <Directory Id="ProgramFilesFolder">
+                  <Directory Id="INSTALLFOLDER" Name="TunGo">
+                    <Component Id="AppExe" Guid="$APP_GUID">
+                      <File Id="AppFile" Name="TunGo.exe" Source="TunGo.exe">
+                        <Shortcut Id="DesktopShortcut" Directory="DesktopFolder" Name="TunGo" Description="Starting TunGo in client mode" WorkingDirectory="INSTALLFOLDER" Arguments="c" Icon="AppIcon" IconIndex="0"/>
+                      </File>
+                      <RegistryValue Root="HKLM" Key="Software\TunGo" Name="installed" Type="integer" Value="1" KeyPath="yes"/>
+                    </Component>
+                  </Directory>
+                </Directory>
+                <Directory Id="SystemFolder">
+                  <Component Id="WintunDLL" Guid="$WINTUN_GUID">
+                    <File Id="WintunFile" Name="wintun.dll" Source="wintun.dll" />
+                  </Component>
+                </Directory>
+              </Directory>
+              <Feature Id="DefaultFeature" Level="1">
+                <ComponentRef Id="AppExe" />
+                <ComponentRef Id="WintunDLL" />
+              </Feature>
+              <UI>
+                <UIRef Id="WixUI_InstallDir" />
+              </UI>
+            </Product>
+          </Wix>
+          "@
           # Write the content to installer.wxs
           $wxsContent | Out-File -FilePath installer.wxs -Encoding utf8
 
