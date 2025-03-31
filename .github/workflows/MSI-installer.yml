@@ -19,12 +19,12 @@ jobs:
         run: |
           mkdir -p dist
           cd src
-          GOOS=windows GOARCH=amd64 go build -o ../dist/app.exe .
-          
+          GOOS=windows GOARCH=amd64 go build -o ../dist/TunGo.exe .
+
       - name: Copy icon file
         run: |
           cp docs/TunGo/static/img/favicon.ico dist/tungo.ico
-          
+
       - name: Download and extract Wintun
         run: |
           mkdir -p dist
