@@ -61,10 +61,10 @@ jobs:
                 <ComponentRef Id="AppExe" />
                 <ComponentRef Id="WintunDLL" />
               </Feature>
-              <UIRef Id="WixUI_InstallDir"/>
             </Product>
           </Wix>
           EOF
+
 
       - name: Build MSI installer
         run: |
