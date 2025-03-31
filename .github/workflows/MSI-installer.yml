@@ -1,0 +1,72 @@
+name: Build MSI Installer
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-msi:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y msitools uuid-runtime unzip
+
+      - name: Build Go app for Windows
+        run: |
+          mkdir -p dist
+          cd src
+          GOOS=windows GOARCH=amd64 go build -o ../dist/app.exe .
+
+      - name: Download and extract Wintun
+        run: |
+          mkdir -p dist
+          cd dist
+          curl -L -o wintun.zip https://www.wintun.net/builds/wintun-0.14.1.zip
+          unzip wintun.zip 'x64/wintun.dll'
+          mv 'x64/wintun.dll' .
+
+      - name: Generate installer.wxs
+        run: |
+          cd dist
+          cat <<'EOF' > installer.wxs
+  <?xml version="1.0"?>
+  <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*" Name="Tungo" Language="1033" Version="1.0.0.0" Manufacturer="YourCompany" UpgradeCode="$(uuidgen)">
+  <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine" />
+  <Media Id="1" Cabinet="media1.cab" EmbedCab="yes"/>
+  <Directory Id="TARGETDIR" Name="SourceDir">
+  <Directory Id="SystemFolder">
+  <Component Id="WintunDLL" Guid="$(uuidgen)">
+  <File Id="WintunFile" Name="wintun.dll" Source="wintun.dll" />
+  </Component>
+  </Directory>
+  <Directory Id="ProgramFilesFolder">
+  <Directory Id="INSTALLFOLDER" Name="Tungo">
+  <Component Id="AppExe" Guid="$(uuidgen)">
+  <File Id="AppFile" Name="app.exe" Source="app.exe" />
+  </Component>
+  </Directory>
+  </Directory>
+  </Directory>
+  <Feature Id="DefaultFeature" Level="1">
+  <ComponentRef Id="WintunDLL" />
+  <ComponentRef Id="AppExe" />
+  </Feature>
+  </Product>
+  </Wix>
+  EOF
+
+- name: Build MSI installer
+  run: |
+    cd dist
+    wixl -o tungo.msi installer.wxs
+
+- name: Upload MSI artifact
+  uses: actions/upload-artifact@v4
+  with:
+    name: tungo-msi
+    path: dist/tungo.msi
