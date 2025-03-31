@@ -47,7 +47,16 @@ jobs:
                 <Directory Id="ProgramFilesFolder">
                   <Directory Id="INSTALLFOLDER" Name="TunGo">
                     <Component Id="AppExe" Guid="${APP_GUID}">
-                      <File Id="AppFile" Name="TunGo.exe" Source="app.exe" />
+                      <File Id="AppFile" Name="TunGo.exe" Source="TunGo.exe">
+                        <Shortcut Id="DesktopShortcut"
+                                  Directory="DesktopFolder"
+                                  Name="TunGo"
+                                  Description="Starting TunGo in client mode"
+                                  WorkingDirectory="INSTALLFOLDER"
+                                  Arguments="c" 'c' argument (in client mode)
+                                  Advertise="yes"/>
+                      </File>
+                      <RegistryValue Root="HKLM" Key="Software\TunGo" Name="installed" Type="integer" Value="1" KeyPath="yes"/>
                     </Component>
                   </Directory>
                 </Directory>
@@ -64,7 +73,6 @@ jobs:
             </Product>
           </Wix>
           EOF
-
 
       - name: Build MSI installer
         run: |
