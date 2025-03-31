@@ -12,7 +12,7 @@ jobs:
 
       - name: Install WiX Toolset
         run: |
-          choco install wixtoolset -y
+          choco install wixtoolset -y  # Install WiX Toolset via Chocolatey
 
       - name: Build Go app for Windows
         run: |
@@ -35,53 +35,53 @@ jobs:
           Move-Item -Force "wintun\bin\amd64\wintun.dll" ..\  # Move Wintun.dll to the dist folder
 
       - name: Generate installer.wxs
-        shell: cmd
+        shell: powershell
         run: |
-          rem Create a temporary batch file to generate installer.wxs
-          echo @echo off > gen_installer.bat
-          echo cd dist >> gen_installer.bat
-          echo for /f "delims=" %%i in ('powershell -Command "[guid]::NewGuid().ToString()"') do set UPGRADE_CODE=%%i >> gen_installer.bat
-          echo for /f "delims=" %%i in ('powershell -Command "[guid]::NewGuid().ToString()"') do set WINTUN_GUID=%%i >> gen_installer.bat
-          echo for /f "delims=" %%i in ('powershell -Command "[guid]::NewGuid().ToString()"') do set APP_GUID=%%i >> gen_installer.bat
-          echo for /f "delims=" %%i in ('git describe --tags --abbrev=0 2^>nul') do set VERSION=%%i >> gen_installer.bat
-          echo if not defined VERSION set VERSION=1.0.0 >> gen_installer.bat
-          rem Write the WiX XML to installer.wxs. Note the careful escaping.
-          echo ( >> gen_installer.bat
-          echo    ^<echo <?xml version="1.0"?>^> >> gen_installer.bat
-          echo    ^<echo ^<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi"^>^> >> gen_installer.bat
-          echo    ^<echo ^<Product Id="*" Name="TunGo" Language="1033" Version="%%VERSION%%" Manufacturer="TunGo Contributors" UpgradeCode="%%UPGRADE_CODE%%"^>^> >> gen_installer.bat
-          echo    ^<echo ^<Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine" /^>^> >> gen_installer.bat
-          echo    ^<echo ^<Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" /^>^> >> gen_installer.bat
-          echo    ^<echo ^<Media Id="1" Cabinet="media1.cab" EmbedCab="yes" /^>^> >> gen_installer.bat
-          echo    ^<echo ^<Icon Id="AppIcon" SourceFile="tungo.ico" /^>^> >> gen_installer.bat
-          echo    ^<echo ^<Directory Id="TARGETDIR" Name="SourceDir"^>^> >> gen_installer.bat
-          echo    ^<echo ^<Directory Id="ProgramFilesFolder"^>^> >> gen_installer.bat
-          echo    ^<echo ^<Directory Id="INSTALLFOLDER" Name="TunGo"^>^> >> gen_installer.bat
-          echo    ^<echo ^<Component Id="AppExe" Guid="%%APP_GUID%%"^>^> >> gen_installer.bat
-          echo    ^<echo ^<File Id="AppFile" Name="TunGo.exe" Source="TunGo.exe"^>^> >> gen_installer.bat
-          echo    ^<echo ^<Shortcut Id="DesktopShortcut" Directory="DesktopFolder" Name="TunGo" Description="Starting TunGo in client mode" WorkingDirectory="INSTALLFOLDER" Arguments="c" Icon="AppIcon" IconIndex="0" /^>^> >> gen_installer.bat
-          echo    ^<echo ^</File^>^> >> gen_installer.bat
-          echo    ^<echo ^<RegistryValue Root="HKLM" Key="Software\TunGo" Name="installed" Type="integer" Value="1" KeyPath="yes" /^>^> >> gen_installer.bat
-          echo    ^<echo ^</Component^>^> >> gen_installer.bat
-          echo    ^<echo ^</Directory^>^> >> gen_installer.bat
-          echo    ^<echo ^</Directory^>^> >> gen_installer.bat
-          echo    ^<echo ^<Directory Id="SystemFolder"^>^> >> gen_installer.bat
-          echo    ^<echo ^<Component Id="WintunDLL" Guid="%%WINTUN_GUID%%"^>^> >> gen_installer.bat
-          echo    ^<echo ^<File Id="WintunFile" Name="wintun.dll" Source="wintun.dll" /^>^> >> gen_installer.bat
-          echo    ^<echo ^</Component^>^> >> gen_installer.bat
-          echo    ^<echo ^</Directory^>^> >> gen_installer.bat
-          echo    ^<echo ^</Directory^>^> >> gen_installer.bat
-          echo    ^<echo ^<Feature Id="DefaultFeature" Level="1"^>^> >> gen_installer.bat
-          echo    ^<echo ^<ComponentRef Id="AppExe" /^>^> >> gen_installer.bat
-          echo    ^<echo ^<ComponentRef Id="WintunDLL" /^>^> >> gen_installer.bat
-          echo    ^<echo ^</Feature^>^> >> gen_installer.bat
-          echo    ^<echo ^<UI^>^> >> gen_installer.bat
-          echo    ^<echo ^<UIRef Id="WixUI_InstallDir" /^>^> >> gen_installer.bat
-          echo    ^<echo ^</UI^>^> >> gen_installer.bat
-          echo    ^<echo ^</Product^>^> >> gen_installer.bat
-          echo    ^<echo ^</Wix^>^> >> gen_installer.bat
-          echo ) >> gen_installer.bat
-          call gen_installer.bat
+          Set-Location dist
+          # Generate GUIDs and get version from Git tags
+          $UPGRADE_CODE = [guid]::NewGuid().ToString()
+          $WINTUN_GUID = [guid]::NewGuid().ToString()
+          $APP_GUID     = [guid]::NewGuid().ToString()
+          $VERSION = (& git describe --tags --abbrev=0 2>$null)
+          if (-not $VERSION) { $VERSION = "1.0.0" }
+          # Create installer.wxs with a here-string
+          $wxsContent = @"
+<?xml version="1.0"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*" Name="TunGo" Language="1033" Version="$VERSION" Manufacturer="TunGo Contributors" UpgradeCode="$UPGRADE_CODE">
+    <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine" />
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER"/>
+    <Media Id="1" Cabinet="media1.cab" EmbedCab="yes"/>
+    <Icon Id="AppIcon" SourceFile="tungo.ico"/>
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFilesFolder">
+        <Directory Id="INSTALLFOLDER" Name="TunGo">
+          <Component Id="AppExe" Guid="$APP_GUID">
+            <File Id="AppFile" Name="TunGo.exe" Source="TunGo.exe">
+              <Shortcut Id="DesktopShortcut" Directory="DesktopFolder" Name="TunGo" Description="Starting TunGo in client mode" WorkingDirectory="INSTALLFOLDER" Arguments="c" Icon="AppIcon" IconIndex="0"/>
+            </File>
+            <RegistryValue Root="HKLM" Key="Software\TunGo" Name="installed" Type="integer" Value="1" KeyPath="yes"/>
+          </Component>
+        </Directory>
+      </Directory>
+      <Directory Id="SystemFolder">
+        <Component Id="WintunDLL" Guid="$WINTUN_GUID">
+          <File Id="WintunFile" Name="wintun.dll" Source="wintun.dll" />
+        </Component>
+      </Directory>
+    </Directory>
+    <Feature Id="DefaultFeature" Level="1">
+      <ComponentRef Id="AppExe" />
+      <ComponentRef Id="WintunDLL" />
+    </Feature>
+    <UI>
+      <UIRef Id="WixUI_InstallDir" />
+    </UI>
+  </Product>
+</Wix>
+"@
+          # Write the content to installer.wxs
+          $wxsContent | Out-File -FilePath installer.wxs -Encoding utf8
 
       - name: Build MSI installer
         run: |
