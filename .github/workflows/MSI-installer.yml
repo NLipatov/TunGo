@@ -12,7 +12,7 @@ jobs:
 
       - name: Install WiX Toolset
         run: |
-          choco install wix -y
+          choco install wix-toolset -y --pre  # Install WiX Toolset via Chocolatey
 
       - name: Build Go app for Windows
         run: |
@@ -20,11 +20,11 @@ jobs:
           cd src
           set GOOS=windows
           set GOARCH=amd64
-          go build -o ..\dist\TunGo.exe .
+          go build -o ..\dist\TunGo.exe .  # Build TunGo.exe
 
       - name: Copy icon file
         run: |
-          copy docs\TunGo\static\img\favicon.ico dist\tungo.ico
+          copy docs\TunGo\static\img\favicon.ico dist\tungo.ico  # Copy icon for the installer
 
       - name: Download and extract Wintun
         run: |
@@ -32,7 +32,7 @@ jobs:
           cd dist\wintun
           curl -L -o wintun.zip https://www.wintun.net/builds/wintun-0.14.1.zip
           tar -xf wintun.zip
-          move /Y wintun\bin\amd64\wintun.dll ..\
+          move /Y wintun\bin\amd64\wintun.dll ..\  # Move Wintun.dll to the dist folder
 
       - name: Generate installer.wxs
         run: |
@@ -42,7 +42,7 @@ jobs:
           for /f %%i in ('uuidgen') do set APP_GUID=%%i
           for /f "delims=" %%i in ('git describe --tags --abbrev=0 2^>nul') do set VERSION=%%i
           if not defined VERSION set VERSION=1.0.0
-          rem Создаём installer.wxs с UI для выбора папки установки:
+          rem Create installer.wxs with UI for choosing installation directory:
           (
             echo <?xml version="1.0"?>
             echo <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
@@ -82,8 +82,8 @@ jobs:
       - name: Build MSI installer
         run: |
           cd dist
-          candle.exe installer.wxs
-          light.exe -ext WixUIExtension installer.wixobj -o tungo.msi
+          candle.exe installer.wxs  # Compile WiX source
+          light.exe -ext WixUIExtension installer.wixobj -o tungo.msi  # Link to generate MSI
 
       - name: Upload MSI artifact
         uses: actions/upload-artifact@v4
