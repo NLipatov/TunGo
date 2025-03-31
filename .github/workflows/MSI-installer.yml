@@ -32,7 +32,7 @@ jobs:
           cd dist\wintun
           curl -L -o wintun.zip https://www.wintun.net/builds/wintun-0.14.1.zip
           tar -xf wintun.zip
-          move /Y wintun\bin\amd64\wintun.dll ..\  # Move Wintun.dll to the dist folder
+          Move-Item -Force "wintun\bin\amd64\wintun.dll" ..\  # Move Wintun.dll to the dist folder
 
       - name: Generate installer.wxs
         run: |
