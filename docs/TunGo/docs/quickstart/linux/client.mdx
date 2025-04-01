@@ -1,0 +1,25 @@
+import Download from './download.mdx'
+import BrowserOnly from '@docusaurus/BrowserOnly';
+
+# Client
+1. Download tungo:
+<Download/>
+
+2. Save client configuration in `/etc/tungo/client_configuration.json` (it's generated on server's step 3)
+
+3. Start the client
+```bash
+sudo ./tungo c
+```
+
+4. Type `exit` to stop tungo and deconfigure tunnel
+
+Recap:
+<BrowserOnly fallback={<div>Loading...</div>}>
+{() => {
+const Player = require('@site/src/components/asciinema/player').default;
+return (
+<Player castPath="/asciinema/quickstart/client.cast" rows="10" cols="60" />
+);
+}}
+</BrowserOnly>

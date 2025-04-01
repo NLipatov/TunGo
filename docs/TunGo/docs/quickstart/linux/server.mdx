@@ -1,0 +1,30 @@
+import BrowserOnly from '@docusaurus/BrowserOnly';
+import Download from './download.mdx'
+
+# Server
+1. Download tungo:
+<Download/>
+
+
+2. Start the server:
+```bash
+sudo ./tungo s
+```
+
+3. Generate client configuration:
+
+```text
+Type `gen` in the server terminal.
+```
+
+4. Type `exit` to stop tungo and deconfigure tunnel
+
+Recap:
+<BrowserOnly fallback={<div>Loading...</div>}>
+    {() => {
+        const Player = require('@site/src/components/asciinema/player').default;
+        return (
+            <Player castPath="/asciinema/quickstart/server.cast" rows="30" cols="60" />
+        );
+    }}
+</BrowserOnly>
