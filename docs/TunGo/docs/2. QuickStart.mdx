@@ -1,12 +1,16 @@
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-import Linux from './quickstart/linux.mdx';
+import Linux from './quickstart/linux/main.mdx';
+import Windows from './quickstart/windows/main.mdx';
 
-<Tabs defaultValue="linux_x64" values={[
-  { label: 'Linux', value: 'linux_x64' },
+<Tabs defaultValue="linux" values={[
+  { label: 'Linux', value: 'linux' },
   { label: 'Windows', value: 'windows' }
 ]}>
-  <TabItem value="linux_x64">
+  <TabItem value="linux">
     <Linux />
   </TabItem>
+    <TabItem value="windows">
+        <Windows />
+    </TabItem>
 </Tabs>

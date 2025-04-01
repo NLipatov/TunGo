@@ -1,0 +1,20 @@
+import DownloadWintun from './download-wintun.mdx'
+import Download from './download.mdx'
+
+# Client
+1. Open Powershell with admin rights
+
+2. Download wintun:
+<DownloadWintun />
+
+3. Download tungo:
+<Download />
+
+4. Save client configuration in `C:\ProgramData\TunGo\client_configuration.json` (it's generated on linux server's step 3)
+
+5. Start the client
+```bash
+sudo ./tungo.exe c
+```
+
+6. Type `exit` to stop tungo and deconfigure tunnel
