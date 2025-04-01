@@ -7,7 +7,7 @@ npm install
 
 ## 2. Start the Server
 ```bash
-npm run start docs
+npm run start
 ```
 
 ## 3. Open the Web UI
