@@ -1,0 +1,31 @@
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+<Tabs defaultValue="x64" values={[
+    { label: 'x64', value: 'x64' },
+]}>
+    <TabItem value="x64">
+
+        1. Download the Wintun zip archive:
+        ```powershell
+        Invoke-WebRequest -Uri "https://www.wintun.net/builds/wintun-0.14.1.zip" -OutFile "$env:TEMP\wintun.zip"
+        ```
+
+        2. Extract the archive:
+        ```powershell
+        Expand-Archive -Path "$env:TEMP\wintun.zip" -DestinationPath "$env:TEMP\wintun_extracted" -Force
+        ```
+
+        3. Copy wintun.dll to System32:
+        ```powershell
+        Copy-Item -Path "$env:TEMP\wintun_extracted\wintun\bin\amd64\wintun.dll" -Destination "C:\Windows\System32" -Force
+        ```
+
+        4. Clean up temporary files:
+        ```powershell
+        Remove-Item "$env:TEMP\wintun.zip"
+        Remove-Item "$env:TEMP\wintun_extracted" -Recurse -Force
+        ```
+        
+    </TabItem>
+</Tabs>

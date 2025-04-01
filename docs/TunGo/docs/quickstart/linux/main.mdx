@@ -1,0 +1,16 @@
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import LinuxServer from './server.mdx';
+import LinuxClient from './client.mdx';
+
+<Tabs defaultValue="server" values={[
+    { label: 'Server', value: 'server' },
+    { label: 'Client', value: 'client' }
+]}>
+    <TabItem value="server">
+        <LinuxServer />
+    </TabItem>
+    <TabItem value="client">
+        <LinuxClient />
+    </TabItem>
+</Tabs>
