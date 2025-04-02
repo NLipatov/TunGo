@@ -13,7 +13,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.x'
+          go-version: '1.24.0'
 
       - name: Install dependencies
         run: |
@@ -24,6 +24,12 @@ jobs:
         run: |
           cd src
           go build -o ../tungo-win-x64.exe .
+
+      - name: Create RunWithAdmin.ps1
+        run: |
+          @'
+          Start-Process "$PSScriptRoot\tungo-win-x64.exe" -ArgumentList "c" -Verb RunAs
+          '@ | Out-File RunWithAdmin.ps1 -Encoding utf8
 
       - name: Install Inno Setup via Chocolatey
         run: choco install innosetup -y
