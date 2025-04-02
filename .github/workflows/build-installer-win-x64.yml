@@ -65,9 +65,9 @@ jobs:
               CopyWintunDll;
           end;
           "@ | Out-File setup.iss -Encoding utf8
-
+      
       - name: Build installer with Inno Setup
-        run: "C:\\Program Files (x86)\\Inno Setup 6\\ISCC.exe setup.iss"
+        run: ISCC.exe setup.iss
 
       - name: Upload Installer Artifact
         uses: actions/upload-artifact@v4
