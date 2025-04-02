@@ -10,6 +10,21 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.x'
+
+      - name: Install dependencies
+        run: |
+          cd src
+          go mod tidy
+
+      - name: Build Go binary for Windows-x64
+        run: |
+          cd src
+          GOOS=windows GOARCH=amd64 go build -o ../tungo-win-x64.exe .
+
       - name: Install Inno Setup via Chocolatey
         run: choco install innosetup -y
 
@@ -65,7 +80,7 @@ jobs:
               CopyWintunDll;
           end;
           "@ | Out-File setup.iss -Encoding utf8
-      
+
       - name: Build installer with Inno Setup
         run: ISCC.exe setup.iss
 
