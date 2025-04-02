@@ -23,7 +23,7 @@ jobs:
       - name: Build Go binary for Windows-x64
         run: |
           cd src
-          GOARCH=amd64 go build -o ../tungo-win-x64.exe .
+          go build -o ../tungo-win-x64.exe .
 
       - name: Install Inno Setup via Chocolatey
         run: choco install innosetup -y
