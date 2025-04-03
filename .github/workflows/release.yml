@@ -74,7 +74,7 @@ jobs:
           AppVersion=1.0
           DefaultDirName={pf}\TunGo
           DefaultGroupName=TunGo
-          OutputBaseFilename=TunGo
+          OutputBaseFilename=tungo-installer-win-x64
           PrivilegesRequired=admin
           ArchitecturesAllowed=x86 x64
           ArchitecturesInstallIn64BitMode=x64
@@ -116,8 +116,8 @@ jobs:
       - name: Upload Windows installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: tungo-win-installer-x64
-          path: Output\TunGo.exe
+          name: tungo-installer-win-x64
+          path: Output\tungo-installer-win-x64.exe
 
   version-and-tag:
     runs-on: ubuntu-latest
@@ -149,7 +149,7 @@ jobs:
       - name: Download Windows installer artifact
         uses: actions/download-artifact@v4
         with:
-          name: tungo-win-installer-x64
+          name: tungo-installer-win-x64
           path: win
 
       - name: Create Release
@@ -180,6 +180,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: win/TunGo.exe
-          asset_name: TunGo.exe
+          asset_path: win/tungo-installer-win-x64.exe
+          asset_name: tungo-installer-win-x64.exe
           asset_content_type: application/octet-stream
