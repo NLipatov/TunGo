@@ -13,7 +13,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.x'
+          go-version: '1.24.0'
 
       - name: Build Linux x64 binary
         run: |
@@ -116,7 +116,7 @@ jobs:
       - name: Upload Windows installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: TunGo-Installer
+          name: tungo-win-installer-x64
           path: Output\TunGo.exe
 
   create-release:
@@ -125,6 +125,11 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      # Get the latest Git tag
+      - name: Get version from Git
+        id: get_version
+        run: echo "VERSION=$(git describe --tags --abbrev=0)" >> $GITHUB_ENV
 
       - name: Download Linux binary artifact
         uses: actions/download-artifact@v4
@@ -135,7 +140,7 @@ jobs:
       - name: Download Windows installer artifact
         uses: actions/download-artifact@v4
         with:
-          name: TunGo-Installer
+          name: tungo-win-installer-x64
           path: win
 
       - name: Create GitHub Release
@@ -144,8 +149,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: v1.0.0
-          release_name: Release v1.0.0
+          tag_name: ${{ env.VERSION }}
+          release_name: Release ${{ env.VERSION }}
           body: "Release created manually via workflow_dispatch"
           draft: false
           prerelease: false
@@ -167,5 +172,5 @@ jobs:
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: win/TunGo.exe
-          asset_name: TunGo-Installer.exe
+          asset_name: tungo-installer-win-x64.exe
           asset_content_type: application/octet-stream
