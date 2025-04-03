@@ -119,7 +119,6 @@ jobs:
           name: tungo-win-installer-x64
           path: Output\TunGo.exe
 
-  # Получаем последний тег из репозитория
   version-and-tag:
     runs-on: ubuntu-latest
     steps:
@@ -134,7 +133,6 @@ jobs:
   create-release:
     runs-on: ubuntu-latest
     needs: [build-linux-x64, build-installer-windows-x64, version-and-tag]
-    if: github.event_name == 'push'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
