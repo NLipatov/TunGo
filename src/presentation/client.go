@@ -16,7 +16,7 @@ func StartClient() {
 	deps := NewClientDependencies(client_configuration.NewManager())
 	depsErr := deps.Initialize()
 	if depsErr != nil {
-		log.Fatalf("dependencies init error: %s", depsErr)
+		log.Fatalf("init error: %s", depsErr)
 	}
 
 	runner := NewClientRunner(deps)
