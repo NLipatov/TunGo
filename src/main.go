@@ -2,10 +2,14 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"tungo/presentation"
+	"tungo/presentation/elevation"
 )
 
 const (
@@ -17,6 +21,23 @@ const (
 )
 
 func main() {
+	processElevation := elevation.NewProcessElevation()
+	if !processElevation.IsElevated() {
+		fmt.Printf("⚠️ Warning: %s must be run with admin privileges", PackageName)
+		return
+	}
+
+	appCtx, appCtxCancel := context.WithCancel(context.Background())
+	defer appCtxCancel()
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	go func() {
+		<-sigChan
+		fmt.Println("\n⏹️  Interrupt received. Shutting down...")
+		appCtxCancel()
+	}()
+
 	var mode string
 	if len(os.Args) < 2 {
 		mode = strings.
@@ -32,7 +53,7 @@ func main() {
 		presentation.StartServer()
 	case ClientMode:
 		fmt.Printf("%s️ Starting client...\n", ClientIcon)
-		presentation.StartClient()
+		presentation.StartClient(appCtx)
 	default:
 		fmt.Printf("❌ Unknown mode: %s\n", mode)
 		printUsage()
