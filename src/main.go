@@ -50,7 +50,7 @@ func main() {
 	switch mode {
 	case ServerMode:
 		fmt.Printf("%s Starting server...\n", ServerIcon)
-		presentation.StartServer()
+		presentation.StartServer(appCtx)
 	case ClientMode:
 		fmt.Printf("%s️ Starting client...\n", ClientIcon)
 		presentation.StartClient(appCtx)

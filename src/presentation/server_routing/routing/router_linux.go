@@ -10,9 +10,9 @@ import (
 	"tungo/settings"
 )
 
-func StartTCPRouting(tunFile *os.File, settings settings.ConnectionSettings) error {
+func StartTCPRouting(ctx context.Context, tunFile *os.File, settings settings.ConnectionSettings) error {
 	// Create a context that can be canceled
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	// Start a goroutine to listen for user input
@@ -50,9 +50,9 @@ func StartTCPRouting(tunFile *os.File, settings settings.ConnectionSettings) err
 	return nil
 }
 
-func StartUDPRouting(tunFile *os.File, settings settings.ConnectionSettings) error {
+func StartUDPRouting(ctx context.Context, tunFile *os.File, settings settings.ConnectionSettings) error {
 	// Create a context that can be canceled
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	// Start a goroutine to listen for user input
