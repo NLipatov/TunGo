@@ -1,6 +1,8 @@
 package mode
 
-import "fmt"
+import (
+	"fmt"
+)
 
 // NoModeProvided is returned when no Mode was provided when running an app
 type NoModeProvided struct {
@@ -25,5 +27,20 @@ func NewInvalidModeProvided(mode string) InvalidModeProvided {
 }
 
 func (i InvalidModeProvided) Error() string {
+	if i.mode == "" {
+		return "empty string is not a valid mode"
+	}
+
 	return fmt.Sprintf("%s is not a valid mode", i.mode)
+}
+
+type InvalidExecPathProvided struct {
+}
+
+func NewInvalidExecPathProvided() InvalidExecPathProvided {
+	return InvalidExecPathProvided{}
+}
+
+func (i InvalidExecPathProvided) Error() string {
+	return "missing execution binary path as first argument"
 }

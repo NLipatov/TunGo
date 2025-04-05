@@ -1,21 +1,25 @@
-package presentation
+package mode_selection
 
 import (
 	"strings"
 	"tungo/domain/mode"
 )
 
-type AppMode struct {
+type ArgsAppMode struct {
 	arguments []string
 }
 
-func NewAppMode(arguments []string) AppMode {
-	return AppMode{
+func NewArgsAppMode(arguments []string) AppMode {
+	return &ArgsAppMode{
 		arguments: arguments,
 	}
 }
 
-func (a *AppMode) Mode() (mode.Mode, error) {
+func (a *ArgsAppMode) Mode() (mode.Mode, error) {
+	if len(a.arguments) == 0 {
+		return mode.Unknown, mode.NewInvalidExecPathProvided()
+	}
+
 	if len(a.arguments) < 2 {
 		return mode.Unknown, mode.NewNoModeProvided()
 	}

@@ -1,4 +1,4 @@
-package presentation
+package mode_selection
 
 import (
 	"errors"
@@ -6,17 +6,25 @@ import (
 	"tungo/domain/mode"
 )
 
-func TestAppMode_Mode(t *testing.T) {
+func TestArgsAppMode_Mode(t *testing.T) {
 	tests := []struct {
 		name            string
 		arguments       []string
 		wantMode        mode.Mode
 		wantErr         bool
 		expectedErrMsg  string
-		expectedErrType interface{}
+		expectedErrType error
 	}{
 		{
-			name:            "no arguments provided",
+			name:            "empty arguments slice",
+			arguments:       []string{},
+			wantMode:        mode.Unknown,
+			wantErr:         true,
+			expectedErrMsg:  "missing execution binary path as first argument",
+			expectedErrType: mode.NewInvalidExecPathProvided(),
+		},
+		{
+			name:            "no mode provided",
 			arguments:       []string{"program"},
 			wantMode:        mode.Unknown,
 			wantErr:         true,
@@ -59,7 +67,7 @@ func TestAppMode_Mode(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			appMode := NewAppMode(tt.arguments)
+			appMode := NewArgsAppMode(tt.arguments)
 			gotMode, err := appMode.Mode()
 
 			if gotMode != tt.wantMode {
@@ -73,18 +81,26 @@ func TestAppMode_Mode(t *testing.T) {
 			if err != nil {
 				// Check error message
 				if tt.expectedErrMsg != "" && err.Error() != tt.expectedErrMsg {
-					t.Errorf("Mode() error message = %v, want %v", err.Error(), tt.expectedErrMsg)
+					t.Errorf("Mode() error message = %q, want %q", err.Error(), tt.expectedErrMsg)
 				}
-				// Check error type if expected type is provided
+				// Check error type using errors.As
 				if tt.expectedErrType != nil {
-					switch tt.expectedErrType.(type) {
-					case mode.NoModeProvided:
+					var noModeProvided mode.NoModeProvided
+					var invalidModeProvided mode.InvalidModeProvided
+					var invalidExecPathProvided mode.InvalidExecPathProvided
+					switch {
+					case errors.As(tt.expectedErrType, &noModeProvided):
 						var target mode.NoModeProvided
 						if !errors.As(err, &target) {
 							t.Errorf("expected error type %T, got %T", tt.expectedErrType, err)
 						}
-					case mode.InvalidModeProvided:
+					case errors.As(tt.expectedErrType, &invalidModeProvided):
 						var target mode.InvalidModeProvided
+						if !errors.As(err, &target) {
+							t.Errorf("expected error type %T, got %T", tt.expectedErrType, err)
+						}
+					case errors.As(tt.expectedErrType, &invalidExecPathProvided):
+						var target mode.InvalidExecPathProvided
 						if !errors.As(err, &target) {
 							t.Errorf("expected error type %T, got %T", tt.expectedErrType, err)
 						}
