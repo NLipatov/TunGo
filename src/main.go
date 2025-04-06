@@ -53,7 +53,6 @@ func main() {
 		fmt.Printf("%s️ Starting client...\n", ClientIcon)
 		presentation.StartClient(appCtx)
 	default:
-		fmt.Printf("❌ Unknown mode: %s\n", selectedMode)
 		printUsage()
 		os.Exit(1)
 	}
