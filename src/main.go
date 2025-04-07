@@ -23,7 +23,7 @@ const (
 func main() {
 	processElevation := elevation.NewProcessElevation()
 	if !processElevation.IsElevated() {
-		fmt.Printf("⚠️ Warning: %s must be run with admin privileges", PackageName)
+		fmt.Printf("Warning: %s must be run with admin privileges", PackageName)
 		return
 	}
 
