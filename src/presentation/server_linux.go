@@ -1,6 +1,7 @@
 package presentation
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
@@ -13,7 +14,7 @@ import (
 	"tungo/settings/server_configuration"
 )
 
-func StartServer() {
+func StartServer(ctx context.Context) {
 	configurationManager := server_configuration.NewManager()
 	conf, confErr := configurationManager.Configuration()
 	if confErr != nil {
@@ -31,7 +32,7 @@ func StartServer() {
 
 		go func() {
 			defer wg.Done()
-			err = startTCPServer(conf.TCPSettings)
+			err = startTCPServer(ctx, conf.TCPSettings)
 			if err != nil {
 				log.Print(err)
 			}
@@ -43,7 +44,7 @@ func StartServer() {
 
 		go func() {
 			defer wg.Done()
-			err = startUDPServer(conf.UDPSettings)
+			err = startUDPServer(ctx, conf.UDPSettings)
 			if err != nil {
 				log.Print(err)
 			}
@@ -88,7 +89,7 @@ func ensureEd25519KeyPairCreated(conf *server_configuration.Configuration, manag
 	return manager.InjectEdKeys(public, private)
 }
 
-func startTCPServer(settings settings.ConnectionSettings) error {
+func startTCPServer(ctx context.Context, settings settings.ConnectionSettings) error {
 	tunFile, err := server_routing.SetupServerTun(settings)
 	if err != nil {
 		log.Fatalf("failed to open TUN interface: %v", err)
@@ -97,7 +98,7 @@ func startTCPServer(settings settings.ConnectionSettings) error {
 		_ = tunFile.Close()
 	}()
 
-	err = routing.StartTCPRouting(tunFile, settings)
+	err = routing.StartTCPRouting(ctx, tunFile, settings)
 	if err != nil {
 		return err
 	}
@@ -105,7 +106,7 @@ func startTCPServer(settings settings.ConnectionSettings) error {
 	return nil
 }
 
-func startUDPServer(settings settings.ConnectionSettings) error {
+func startUDPServer(ctx context.Context, settings settings.ConnectionSettings) error {
 	tunFile, err := server_routing.SetupServerTun(settings)
 	if err != nil {
 		log.Fatalf("failed to open TUN interface: %v", err)
@@ -114,7 +115,7 @@ func startUDPServer(settings settings.ConnectionSettings) error {
 		_ = tunFile.Close()
 	}()
 
-	err = routing.StartUDPRouting(tunFile, settings)
+	err = routing.StartUDPRouting(ctx, tunFile, settings)
 	if err != nil {
 		return err
 	}
