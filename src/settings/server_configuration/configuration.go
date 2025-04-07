@@ -37,7 +37,7 @@ func NewDefaultConfiguration() *Configuration {
 			InterfaceAddress: "10.0.1.1",
 			ConnectionIP:     "",
 			Port:             "9090",
-			MTU:              1416,
+			MTU:              1472,
 			Protocol:         settings.UDP,
 			Encryption:       settings.ChaCha20Poly1305,
 			DialTimeoutMs:    5000,
