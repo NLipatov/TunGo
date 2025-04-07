@@ -76,37 +76,36 @@ jobs:
           DefaultGroupName=TunGo
           OutputBaseFilename=tungo-installer-win-x64
           PrivilegesRequired=admin
-          ArchitecturesAllowed=x86 x64
+          ArchitecturesAllowed=x64
           ArchitecturesInstallIn64BitMode=x64
 
           [Files]
           Source: "wintun.dll"; Flags: dontcopy
           Source: "tungo-win-x64.exe"; DestDir: "{app}"; Flags: ignoreversion
           Source: "TunGo.ico"; DestDir: "{app}"; Flags: ignoreversion
-          Source: "RunWithAdmin.ps1"; DestDir: "{app}"; Flags: ignoreversion
-
+        
           [Icons]
-          Name: "{group}\TunGo (Admin)"; Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File ""{app}\RunWithAdmin.ps1"""; WorkingDir: "{app}"; IconFilename: "{app}\TunGo.ico"
+          Name: "{group}\TunGo"; Filename: "{app}\tungo-win-x64.exe"; WorkingDir: "{app}"; IconFilename: "{app}\TunGo.ico"
 
           [Code]
           procedure CopyWintunDll;
           var
-            sysDir, targetFile, tempFile: string;
+          sysDir, targetFile, tempFile: string;
           begin
-            sysDir := ExpandConstant('{sys}');
-            targetFile := sysDir + '\wintun.dll';
-            if not FileExists(targetFile) then begin
-              ExtractTemporaryFile('wintun.dll');
-              tempFile := ExpandConstant('{tmp}\wintun.dll');
-              if not FileCopy(tempFile, targetFile, False) then
-                MsgBox('Failed to copy wintun.dll to ' + sysDir, mbError, MB_OK);
-            end;
+          sysDir := ExpandConstant('{sys}');
+          targetFile := sysDir + '\wintun.dll';
+          if not FileExists(targetFile) then begin
+          ExtractTemporaryFile('wintun.dll');
+          tempFile := ExpandConstant('{tmp}\wintun.dll');
+          if not FileCopy(tempFile, targetFile, False) then
+          MsgBox('Failed to copy wintun.dll to ' + sysDir, mbError, MB_OK);
+          end;
           end;
 
           procedure CurStepChanged(CurStep: TSetupStep);
           begin
-            if CurStep = ssPostInstall then
-              CopyWintunDll;
+          if CurStep = ssPostInstall then
+          CopyWintunDll;
           end;
           "@ | Out-File setup.iss -Encoding utf8
 
