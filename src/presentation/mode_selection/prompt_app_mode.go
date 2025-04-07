@@ -41,7 +41,7 @@ func (p *PromptAppMode) promptForMode() string {
 	fmt.Println("\ts - Server")
 	fmt.Println("\tc - Client")
 	fmt.Println("---")
-	fmt.Print("👉 Your choice: ")
+	fmt.Print("Your choice: ")
 
 	scanner := bufio.NewScanner(os.Stdin)
 	if scanner.Scan() {
