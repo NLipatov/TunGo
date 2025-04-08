@@ -16,8 +16,6 @@ const (
 	PackageName = "tungo"
 	ServerMode  = "s"
 	ClientMode  = "c"
-	ServerIcon  = "🌐"
-	ClientIcon  = "🖥️"
 )
 
 func main() {
@@ -34,7 +32,7 @@ func main() {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 	go func() {
 		<-sigChan
-		fmt.Println("\n⏹️  Interrupt received. Shutting down...")
+		fmt.Println("\nInterrupt received. Shutting down...")
 		appCtxCancel()
 	}()
 
@@ -47,10 +45,10 @@ func main() {
 
 	switch selectedMode {
 	case mode.Server:
-		fmt.Printf("%s Starting server...\n", ServerIcon)
+		fmt.Printf("Starting server...\n")
 		presentation.StartServer(appCtx)
 	case mode.Client:
-		fmt.Printf("%s️ Starting client...\n", ClientIcon)
+		fmt.Printf("Starting client...\n")
 		presentation.StartClient(appCtx)
 	default:
 		printUsage()
