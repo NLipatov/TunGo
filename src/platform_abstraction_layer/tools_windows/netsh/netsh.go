@@ -1,6 +1,9 @@
 package netsh
 
-import "os/exec"
+import (
+	"os/exec"
+	"strconv"
+)
 
 func RouteDelete(hostIP string) error {
 	return exec.Command("route", "delete", hostIP).Run()
@@ -31,5 +34,12 @@ func InterfaceIPDeleteAddress(IfName, IfAddr string) error {
 	return exec.
 		Command("netsh", "interface", "ip", "delete", "address",
 			"name="+IfName, "addr="+IfAddr).
+		Run()
+}
+
+func SetInterfaceMetric(interfaceName string, metric int) error {
+	return exec.
+		Command("netsh", "interface", "ipv4", "set", "interface",
+			interfaceName, "metric="+strconv.Itoa(metric)).
 		Run()
 }
