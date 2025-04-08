@@ -121,7 +121,24 @@ func configureWindowsTunNetsh(interfaceName, hostIP, ipCIDR, gateway string) err
 	if err := netsh.InterfaceIPSetAddressStatic(interfaceName, hostIP, maskStr, gateway); err != nil {
 		return err
 	}
-	return netsh.InterfaceIPV4AddRouteDefault(interfaceName, gateway)
+
+	if err := netsh.InterfaceIPV4AddRouteDefault(interfaceName, gateway); err != nil {
+		return err
+	}
+
+	minMetric, err := getMinInterfaceMetric()
+	if err != nil {
+		log.Printf("warning: can't get minimal metric: %v", err)
+		return nil
+	}
+
+	newMetric := minMetric - 1
+	if newMetric < 1 {
+		newMetric = 1
+	}
+
+	log.Printf("setting interface %s metric to %d", interfaceName, newMetric)
+	return netsh.SetInterfaceMetric(interfaceName, newMetric)
 }
 
 func getOriginalPhysicalGatewayAndInterface() (gateway, ifaceIP string, err error) {
@@ -338,4 +355,37 @@ func disposeExistingTunDevices(targetName string) error {
 		}
 	}
 	return nil
+}
+
+func getMinInterfaceMetric() (int, error) {
+	cmd := exec.Command("netsh", "interface", "ipv4", "show", "interfaces")
+	output, err := cmd.Output()
+	if err != nil {
+		return 0, fmt.Errorf("failed to run netsh show interfaces: %w", err)
+	}
+
+	lines := strings.Split(string(output), "\n")
+	minMetric := 9999
+
+	for _, line := range lines {
+		fields := strings.Fields(line)
+		if len(fields) < 5 {
+			continue
+		}
+
+		metric, err := strconv.Atoi(fields[1])
+		if err != nil {
+			continue
+		}
+
+		if metric > 0 && metric < minMetric {
+			minMetric = metric
+		}
+	}
+
+	if minMetric == 9999 {
+		return 0, errors.New("could not determine minimal interface metric")
+	}
+
+	return minMetric, nil
 }
