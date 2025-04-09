@@ -3,16 +3,15 @@ package pal_windows
 import (
 	"errors"
 	"fmt"
-	"log"
-
 	"golang.org/x/sys/windows"
 	"golang.zx2c4.com/wintun"
+	"log"
 	"tungo/application"
 )
 
 type wintunTun struct {
 	adapter    wintun.Adapter
-	session    *wintun.Session
+	session    wintun.Session
 	closeEvent windows.Handle
 	closed     bool
 }
@@ -24,7 +23,7 @@ func NewWinTun(adapter wintun.Adapter, session wintun.Session) application.TunDe
 	}
 	return &wintunTun{
 		adapter:    adapter,
-		session:    &session,
+		session:    session,
 		closeEvent: handle,
 	}
 }
@@ -78,9 +77,7 @@ func (t *wintunTun) Close() error {
 
 	_ = windows.SetEvent(t.closeEvent)
 
-	if t.session != nil {
-		t.session.End()
-	}
+	t.session.End()
 	_ = t.adapter.Close()
 	_ = windows.CloseHandle(t.closeEvent)
 	return nil
