@@ -10,17 +10,17 @@ type ClientConfigurationManager interface {
 }
 
 type Manager struct {
-	resolver resolver
+	resolver Resolver
 }
 
 func NewManager() ClientConfigurationManager {
 	return &Manager{
-		resolver: newClientResolver(),
+		resolver: NewDefaultResolver(),
 	}
 }
 
 func (m *Manager) Configuration() (*Configuration, error) {
-	path, pathErr := m.resolver.resolve()
+	path, pathErr := m.resolver.Resolve()
 	if pathErr != nil {
 		return nil, pathErr
 	}
