@@ -33,30 +33,22 @@ func TestSelectorStatError(t *testing.T) {
 	}
 }
 
-// TestSelectorReadFileError simulates an error during reading the configuration file by removing read permission.
+// TestSelectorReadFileError simulates a read error by creating a directory with the expected file name.
+// os.Stat will succeed for directories, but os.ReadFile returns an error when trying to read a directory.
 func TestSelectorReadFileError(t *testing.T) {
 	tempDir := t.TempDir()
-	filePath := filepath.Join(tempDir, "config.yaml")
-	// Create a configuration file.
-	if err := os.WriteFile(filePath, []byte("config data"), 0600); err != nil {
-		t.Fatalf("failed to create config file: %v", err)
+	// Create a directory with the name "config.yaml" to simulate a read error.
+	dirAsFile := filepath.Join(tempDir, "config.yaml")
+	if err := os.Mkdir(dirAsFile, 0700); err != nil {
+		t.Fatalf("failed to create directory: %v", err)
 	}
 
-	// Remove read permission to simulate a read error.
-	if err := os.Chmod(filePath, 0200); err != nil {
-		t.Fatalf("failed to change file permissions: %v", err)
-	}
 	resolver := &selectorTestResolver{resolvePath: filepath.Join(tempDir, "dest.yaml")}
 	selector := NewDefaultSelector(resolver)
 
-	err := selector.Select(filePath)
+	err := selector.Select(dirAsFile)
 	if err == nil {
 		t.Fatal("expected read file error, got nil")
-	}
-
-	// Restore permissions so that t.TempDir cleanup doesn't fail.
-	if err := os.Chmod(filePath, 0600); err != nil {
-		t.Fatalf("failed to restore file permissions: %v", err)
 	}
 }
 
