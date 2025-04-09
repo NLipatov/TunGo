@@ -101,8 +101,11 @@ func (w *UdpWorker) HandleTransport(ctx context.Context) error {
 				if ctx.Err() != nil {
 					return nil
 				}
+
+				// Duplicate nonce detected – this may indicate a network retransmission or a replay attack.
+				// In either case, skip this packet.
 				if errors.Is(decryptionErr, chacha20.ErrNonUniqueNonce) {
-					return fmt.Errorf("reconnecting on critical decryption err: %s", decryptionErr)
+					continue
 				}
 				return fmt.Errorf("failed to decrypt data: %s", decryptionErr)
 			}
