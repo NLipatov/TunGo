@@ -39,7 +39,7 @@ func (w *UdpWorker) HandleTun(ctx context.Context) error {
 		case <-ctx.Done(): // Stop-signal
 			return nil
 		default:
-			_, readErr := udpReader.Read(buf)
+			n, readErr := udpReader.Read(buf)
 			if readErr != nil {
 				if ctx.Err() != nil {
 					return nil
@@ -47,7 +47,7 @@ func (w *UdpWorker) HandleTun(ctx context.Context) error {
 				return fmt.Errorf("could not read a packet from TUN: %v", readErr)
 			}
 
-			encryptedPacket, EncryptErr := w.cryptographyService.Encrypt(buf)
+			encryptedPacket, EncryptErr := w.cryptographyService.Encrypt(buf[:n])
 			if EncryptErr != nil {
 				if ctx.Err() != nil {
 					return nil
