@@ -56,20 +56,11 @@ func (m *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 		mtu = 1420
 	}
 
-	session, err := adapter.StartSession(0x800000)
+	device, err := pal_windows.NewWinTun(adapter)
 	if err != nil {
-		return nil, fmt.Errorf("session start error: %w", err)
-	}
-
-	waitEvent := session.ReadWaitEvent()
-	waitStatus, err := windows.WaitForSingleObject(waitEvent, 5000)
-	if err != nil || waitStatus != windows.WAIT_OBJECT_0 {
-		session.End()
 		_ = adapter.Close()
-		return nil, errors.New("timeout or error waiting for adapter readiness")
+		return nil, err
 	}
-
-	device := pal_windows.NewWinTun(*adapter, session)
 
 	tunGateway, err := computeGateway(s.InterfaceAddress)
 	if err != nil {

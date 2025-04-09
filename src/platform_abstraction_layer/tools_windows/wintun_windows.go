@@ -12,24 +12,34 @@ import (
 )
 
 type wintunTun struct {
-	adapter     wintun.Adapter
-	session     atomic.Pointer[wintun.Session]
+	adapter     *wintun.Adapter
+	session     *wintun.Session
+	sessionMu   sync.RWMutex
+	reopenMutex sync.Mutex
 	closeEvent  windows.Handle
 	closed      atomic.Bool
-	reopenMutex sync.Mutex
 }
 
-func NewWinTun(adapter wintun.Adapter, session wintun.Session) application.TunDevice {
+func NewWinTun(adapter *wintun.Adapter) (application.TunDevice, error) {
 	handle, err := windows.CreateEvent(nil, 0, 0, nil)
 	if err != nil {
-		log.Println("Error creating winTun handle:", err)
+		return nil, fmt.Errorf("error creating winTun handle: %w", err)
 	}
-	tun := &wintunTun{
+
+	session, err := adapter.StartSession(0x800000)
+	if err != nil {
+		_ = windows.CloseHandle(handle)
+		return nil, fmt.Errorf("session start error: %w", err)
+	}
+
+	sessionPtr := new(wintun.Session)
+	*sessionPtr = session
+
+	return &wintunTun{
 		adapter:    adapter,
+		session:    sessionPtr,
 		closeEvent: handle,
-	}
-	tun.session.Store(&session)
-	return tun
+	}, nil
 }
 
 func (d *wintunTun) reopenSession() error {
@@ -40,29 +50,33 @@ func (d *wintunTun) reopenSession() error {
 		return fmt.Errorf("device already closed")
 	}
 
-	oldSession := d.session.Load()
-	if oldSession != nil {
-		oldSession.End()
+	d.sessionMu.Lock()
+	defer d.sessionMu.Unlock()
+
+	if d.session != nil {
+		d.session.End()
 	}
 
-	newSession, err := d.adapter.StartSession(0x800000)
+	newSession, err := d.adapter.StartSession(0x800000) // 8MB кольцевой буфер
 	if err != nil {
 		return err
 	}
-
-	ptr := new(wintun.Session)
-	*ptr = newSession
-	d.session.Store(ptr)
+	sessionPtr := new(wintun.Session)
+	*sessionPtr = newSession
+	d.session = sessionPtr
 	return nil
 }
 
 func (d *wintunTun) Read(data []byte) (int, error) {
 	for {
 		if d.closed.Load() {
-			return 0, fmt.Errorf("session closed")
+			return 0, fmt.Errorf("device closed")
 		}
 
-		session := d.session.Load()
+		d.sessionMu.RLock()
+		session := d.session
+		d.sessionMu.RUnlock()
+
 		packet, err := session.ReceivePacket()
 		if err == nil {
 			n := copy(data, packet)
@@ -74,18 +88,15 @@ func (d *wintunTun) Read(data []byte) (int, error) {
 			event := session.ReadWaitEvent()
 			timeout := uint32(250)
 			ret, waitErr := windows.WaitForSingleObject(event, timeout)
-			if ret == windows.WAIT_FAILED {
+			if ret == windows.WAIT_FAILED || waitErr != nil {
 				return 0, fmt.Errorf("session closed")
-			}
-			if waitErr != nil {
-				return 0, waitErr
 			}
 			continue
 		}
 
 		if errors.Is(err, windows.ERROR_HANDLE_EOF) {
-			if reopenErr := d.reopenSession(); reopenErr != nil {
-				return 0, reopenErr
+			if err := d.reopenSession(); err != nil {
+				return 0, err
 			}
 			continue
 		}
@@ -97,13 +108,16 @@ func (d *wintunTun) Read(data []byte) (int, error) {
 func (d *wintunTun) Write(data []byte) (int, error) {
 	for {
 		if d.closed.Load() {
-			return 0, fmt.Errorf("session closed")
+			return 0, fmt.Errorf("device closed")
 		}
 
-		session := d.session.Load()
+		d.sessionMu.RLock()
+		session := d.session
 		packet, err := session.AllocateSendPacket(len(data))
+		d.sessionMu.RUnlock()
+
 		if err != nil {
-			if err.Error() == "Reached the end of the file." {
+			if errors.Is(err, windows.ERROR_HANDLE_EOF) {
 				if reopenErr := d.reopenSession(); reopenErr != nil {
 					return 0, reopenErr
 				}
@@ -127,12 +141,18 @@ func (d *wintunTun) Close() error {
 		log.Printf("failed to signal close event: %v", err)
 	}
 
-	session := d.session.Load()
-	if session != nil {
-		session.End()
+	d.sessionMu.Lock()
+	if d.session != nil {
+		d.session.End()
+		d.session = nil
 	}
+	d.sessionMu.Unlock()
 
-	_ = d.adapter.Close()
-	_ = windows.CloseHandle(d.closeEvent)
+	if err := d.adapter.Close(); err != nil {
+		log.Printf("failed to close adapter: %v", err)
+	}
+	if err := windows.CloseHandle(d.closeEvent); err != nil {
+		log.Printf("failed to close event handle: %v", err)
+	}
 	return nil
 }
