@@ -6,7 +6,7 @@ import (
 	"log"
 
 	"golang.org/x/sys/windows"
-	wintun "golang.zx2c4.com/wintun"
+	"golang.zx2c4.com/wintun"
 	"tungo/application"
 )
 
