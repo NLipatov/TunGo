@@ -16,7 +16,7 @@ type managerTestMockResolver struct {
 	err  error
 }
 
-func (r managerTestMockResolver) resolve() (string, error) {
+func (r managerTestMockResolver) Resolve() (string, error) {
 	if r.err != nil {
 		return "", r.err
 	}

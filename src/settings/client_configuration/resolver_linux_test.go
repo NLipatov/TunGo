@@ -7,9 +7,9 @@ import (
 )
 
 func TestClientResolverResolve(t *testing.T) {
-	resolved, err := newClientResolver().resolve()
+	resolved, err := NewDefaultResolver().Resolve()
 	if err != nil {
-		t.Fatalf("resolve() returned error: %v", err)
+		t.Fatalf("Resolve() returned error: %v", err)
 	}
 	expected := filepath.Join(string(os.PathSeparator), "etc", "tungo", "client_configuration.json")
 	if resolved != expected {
