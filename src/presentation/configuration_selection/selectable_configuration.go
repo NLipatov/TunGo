@@ -1,13 +1,10 @@
 package configuration_selection
 
 import (
-	"bufio"
 	"encoding/json"
 	"errors"
-	"fmt"
 	tea "github.com/charmbracelet/bubbletea"
 	"os"
-	"strconv"
 	"strings"
 	"tungo/presentation/bubble_tea"
 	"tungo/settings/client_configuration"
@@ -71,27 +68,30 @@ func (p *SelectableConfiguration) selectConf(configurationNames []string) (strin
 		return "", defaultConfErr
 	}
 
-	fmt.Println("Please select configuration:")
-	for i := 0; i < len(configurationNames); i++ {
-		if configurationNames[i] == defaultConf {
+	options := make([]string, len(configurationNames))
+	optionsIndex := 0
+	for _, confName := range configurationNames {
+		if confName == defaultConf {
 			continue
 		}
-		fmt.Printf("\t%s - %d\n", configurationNames[i], i)
+
+		options[optionsIndex] = confName
+		optionsIndex++
 	}
-	fmt.Println("---")
-	fmt.Print("Your choice: ")
+	options = options[:optionsIndex]
 
-	scanner := bufio.NewScanner(os.Stdin)
-	if scanner.Scan() {
-		index, err := strconv.Atoi(strings.TrimSpace(scanner.Text()))
-		if err != nil {
-			return "", err
-		}
-
-		return configurationNames[index], nil
+	selector := bubble_tea.NewSelector("Please select configuration to use", options)
+	selectorProgram, selectorProgramErr := tea.NewProgram(selector).Run()
+	if selectorProgramErr != nil {
+		return "", selectorProgramErr
 	}
 
-	return "", errors.New("invalid choice")
+	selectorResult, ok := selectorProgram.(bubble_tea.Selector)
+	if !ok {
+		return "", errors.New("invalid selector format")
+	}
+
+	return selectorResult.Choice(), nil
 }
 
 func (p *SelectableConfiguration) createConf() error {
