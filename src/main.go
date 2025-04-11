@@ -39,7 +39,7 @@ func main() {
 		appCtxCancel()
 	}()
 
-	am := mode_selection.NewPromptAppMode(os.Args)
+	am := mode_selection.NewTeaAppMode(os.Args)
 	selectedMode, selectedModeErr := am.Mode()
 	if selectedModeErr != nil {
 		fmt.Print(selectedModeErr)
@@ -53,8 +53,11 @@ func main() {
 	case mode.Client:
 		confResolver := client_configuration.NewDefaultResolver()
 		confSelector := configuration_selection.
-			NewSelectableConfiguration(client_configuration.NewDefaultObserver(confResolver),
-				client_configuration.NewDefaultSelector(confResolver))
+			NewSelectableConfiguration(
+				client_configuration.NewDefaultObserver(confResolver),
+				client_configuration.NewDefaultSelector(confResolver),
+				client_configuration.NewDefaultCreator(confResolver),
+				confResolver)
 		selectConfigurationErr := confSelector.SelectConfiguration()
 		if selectConfigurationErr != nil {
 			log.Fatal(selectConfigurationErr)
