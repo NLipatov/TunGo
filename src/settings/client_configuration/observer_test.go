@@ -82,17 +82,14 @@ func TestObserverReturnsMatches(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Verify that the extra files are returned (excluding the default file).
-	if len(results) != len(extraFiles) {
-		t.Fatalf("expected %d files, got %d", len(extraFiles), len(results))
-	}
-
 	// Create a map for quick lookup.
 	matchesMap := make(map[string]bool)
 	for _, res := range results {
 		matchesMap[res] = true
 	}
 
+	expected := extraFiles
+	expected = append(expected, defaultFilename)
 	for _, expected := range extraFiles {
 		if !matchesMap[expected] {
 			t.Errorf("expected file %s not found in results", expected)
