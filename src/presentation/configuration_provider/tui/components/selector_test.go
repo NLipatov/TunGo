@@ -47,7 +47,7 @@ func TestSelector_UpdateDown(t *testing.T) {
 }
 
 func TestSelector_UpdateEnter(t *testing.T) {
-	sel := NewSelector("Select option:", []string{"client mode", "server mode"})
+	sel := NewSelector("Select option:", []string{"client", "server"})
 	sel.cursor = 0
 	updatedModel, cmd := sel.Update(tea.KeyMsg{Type: tea.KeyEnter, Runes: []rune("enter")})
 	updatedSel, ok := updatedModel.(Selector)
