@@ -1,4 +1,4 @@
-package bubble_tea
+package components
 
 import (
 	"github.com/charmbracelet/bubbles/textarea"
@@ -6,19 +6,20 @@ import (
 )
 
 type TextArea struct {
-	ta *textarea.Model
+	ta   *textarea.Model
+	done bool
 }
 
 func NewTextArea(placeholder string) *TextArea {
 	ta := textarea.New()
 	ta.Placeholder = placeholder
-	ta.ShowLineNumbers = false
 	ta.SetWidth(80)
 	ta.SetHeight(10)
 	ta.ShowLineNumbers = true
 	ta.Focus()
 	return &TextArea{
-		ta: &ta,
+		ta:   &ta,
+		done: false,
 	}
 }
 
@@ -33,8 +34,8 @@ func (m *TextArea) Init() tea.Cmd {
 func (m *TextArea) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "enter":
+		if msg.String() == "enter" {
+			m.done = true
 			return m, tea.Quit
 		}
 	}
@@ -44,5 +45,8 @@ func (m *TextArea) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *TextArea) View() string {
+	if m.done {
+		return ""
+	}
 	return m.ta.View()
 }

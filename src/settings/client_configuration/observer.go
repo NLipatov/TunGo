@@ -33,6 +33,9 @@ func (o *DefaultObserver) Observe() ([]string, error) {
 
 	var results []string
 	for _, match := range matches {
+		if match == defaultConfPath {
+			continue
+		}
 		results = append(results, match)
 	}
 

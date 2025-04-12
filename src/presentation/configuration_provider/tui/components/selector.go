@@ -1,9 +1,8 @@
-package bubble_tea
+package components
 
 import (
 	"fmt"
 	tea "github.com/charmbracelet/bubbletea"
-	"strings"
 )
 
 type Selector struct {
@@ -12,6 +11,7 @@ type Selector struct {
 	cursor      int
 	choice      string
 	checked     int
+	done        bool
 }
 
 func NewSelector(placeholder string, choices []string) Selector {
@@ -35,16 +35,19 @@ func (m Selector) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "up":
-			if m.cursor > 0 {
+			if m.cursor > 0 && !m.done {
 				m.cursor--
 			}
 		case "down":
-			if m.cursor < len(m.options)-1 {
+			if m.cursor < len(m.options)-1 && !m.done {
 				m.cursor++
 			}
 		case "enter":
-			m.choice = strings.Split(m.options[m.cursor], " ")[0]
-			m.checked = m.cursor
+			if !m.done {
+				m.choice = m.options[m.cursor]
+				m.checked = m.cursor
+				m.done = true
+			}
 			return m, tea.Quit
 		case "q":
 			return m, tea.Quit
@@ -54,9 +57,13 @@ func (m Selector) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Selector) View() string {
-	s := fmt.Sprintf("%s\n\n", m.placeholder)
+	if m.done {
+		return ""
+	}
+
+	s := fmt.Sprintf("%s\n", m.placeholder)
 	for i, choice := range m.options {
-		checked := "[ ]"
+		checked := "[]"
 		if m.checked == i {
 			checked = "[x]"
 		}

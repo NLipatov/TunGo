@@ -1,4 +1,4 @@
-package bubble_tea
+package components
 
 import (
 	"strings"

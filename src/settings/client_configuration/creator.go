@@ -2,11 +2,12 @@ package client_configuration
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 )
 
 type Creator interface {
-	Create(configuration Configuration) error
+	Create(configuration Configuration, name string) error
 }
 
 type DefaultCreator struct {
@@ -19,8 +20,8 @@ func NewDefaultCreator(resolver Resolver) Creator {
 	}
 }
 
-func (d *DefaultCreator) Create(configuration Configuration) error {
-	serialized, serializedErr := json.Marshal(configuration)
+func (d *DefaultCreator) Create(configuration Configuration, name string) error {
+	serialized, serializedErr := json.MarshalIndent(configuration, "", "\t")
 	if serializedErr != nil {
 		return serializedErr
 	}
@@ -30,7 +31,8 @@ func (d *DefaultCreator) Create(configuration Configuration) error {
 		return defaultConfPathErr
 	}
 
-	writeErr := os.WriteFile(defaultConfPath, serialized, 0600)
+	confPath := fmt.Sprintf("%s.%s", defaultConfPath, name)
+	writeErr := os.WriteFile(confPath, serialized, 0600)
 	if writeErr != nil {
 		return writeErr
 	}

@@ -7,24 +7,17 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"tungo/domain/app"
 	"tungo/domain/mode"
 	"tungo/presentation"
-	"tungo/presentation/configuration_selection"
+	"tungo/presentation/configuration_provider"
 	"tungo/presentation/elevation"
-	"tungo/presentation/mode_selection"
-	"tungo/settings/client_configuration"
-)
-
-const (
-	PackageName = "tungo"
-	ServerMode  = "s"
-	ClientMode  = "c"
 )
 
 func main() {
 	processElevation := elevation.NewProcessElevation()
 	if !processElevation.IsElevated() {
-		fmt.Printf("Warning: %s must be run with admin privileges", PackageName)
+		fmt.Printf("Warning: %s must be run with admin privileges", app.Name)
 		return
 	}
 
@@ -39,41 +32,23 @@ func main() {
 		appCtxCancel()
 	}()
 
-	am := mode_selection.NewTeaAppMode(os.Args)
-	selectedMode, selectedModeErr := am.Mode()
-	if selectedModeErr != nil {
-		fmt.Print(selectedModeErr)
+	configuratorFactory := configuration_provider.NewConfigurationFactory()
+	configurator := configuratorFactory.Configurator()
+	appMode, appModeErr := configurator.Configure()
+	if appModeErr != nil {
+		log.Printf("%v", appModeErr)
 		os.Exit(1)
 	}
 
-	switch selectedMode {
+	switch appMode {
 	case mode.Server:
 		fmt.Printf("Starting server...\n")
 		presentation.StartServer(appCtx)
 	case mode.Client:
-		confResolver := client_configuration.NewDefaultResolver()
-		confSelector := configuration_selection.
-			NewSelectableConfiguration(
-				client_configuration.NewDefaultObserver(confResolver),
-				client_configuration.NewDefaultSelector(confResolver),
-				client_configuration.NewDefaultCreator(confResolver),
-				confResolver)
-		selectConfigurationErr := confSelector.SelectConfiguration()
-		if selectConfigurationErr != nil {
-			log.Fatal(selectConfigurationErr)
-		}
 		fmt.Printf("Starting client...\n")
 		presentation.StartClient(appCtx)
 	default:
-		printUsage()
+		log.Printf("invalid app mode: %v", appMode)
 		os.Exit(1)
 	}
-}
-
-func printUsage() {
-	fmt.Printf(`Usage: %s <mode>
-Modes:
-  %s  - Server
-  %s  - Client
-`, PackageName, ServerMode, ClientMode)
 }
