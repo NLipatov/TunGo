@@ -5,21 +5,26 @@ import BrowserOnly from '@docusaurus/BrowserOnly';
 1. Download tungo:
 <Download/>
 
-2. Save client configuration in `/etc/tungo/client_configuration.json` (it's generated on server's step 3)
-
-3. Start the client
+2. Start the Client:
+Run the tungo in your terminal to start the client:
 ```bash
-sudo ./tungo c
+sudo ./tungo
 ```
 
-4. Type `exit` to stop tungo and deconfigure tunnel
+3. Add New Configuration:
+In the interactive menu, add a new configuration and select it (for instance, name it nl-server).
 
-Recap:
+4. Tunnel Established:
+Once the configuration is selected, the tunnel is established and you are ready to go.
+
+## Recap:
 <BrowserOnly fallback={<div>Loading...</div>}>
-{() => {
-const Player = require('@site/src/components/asciinema/player').default;
-return (
-<Player castPath="/asciinema/quickstart/client.cast" rows="10" cols="60" />
-);
-}}
+    {
+        () => {
+            const Player = require('@site/src/components/asciinema/player').default;
+            return (
+            <Player castPath="/asciinema/quickstart/client.cast" rows="30" cols="60" />
+            );
+        }
+    }
 </BrowserOnly>
