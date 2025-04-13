@@ -10,7 +10,7 @@ import (
 	"tungo/domain/app"
 	"tungo/domain/mode"
 	"tungo/presentation"
-	"tungo/presentation/configuration_provider"
+	"tungo/presentation/configuring"
 	"tungo/presentation/elevation"
 )
 
@@ -32,7 +32,7 @@ func main() {
 		appCtxCancel()
 	}()
 
-	configuratorFactory := configuration_provider.NewConfigurationFactory()
+	configuratorFactory := configuring.NewConfigurationFactory()
 	configurator := configuratorFactory.Configurator()
 	appMode, appModeErr := configurator.Configure()
 	if appModeErr != nil {

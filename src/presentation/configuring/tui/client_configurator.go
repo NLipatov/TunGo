@@ -6,7 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"os"
 	"strings"
-	"tungo/presentation/configuration_provider/tui/components"
+	"tungo/presentation/configuring/tui/components"
 	"tungo/settings/client_configuration"
 )
 

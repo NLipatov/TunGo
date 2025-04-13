@@ -9,7 +9,7 @@ import (
 	"os"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network"
-	"tungo/presentation/server_routing/clientsession"
+	clientsession2 "tungo/routing_layer/server_routing/clientsession"
 	"tungo/settings"
 	"tungo/settings/server_configuration"
 )
@@ -23,7 +23,7 @@ type UdpTunWorker struct {
 	ctx            context.Context
 	tun            *os.File
 	settings       settings.ConnectionSettings
-	sessionManager *clientsession.UdpSessionManager
+	sessionManager *clientsession2.UdpSessionManager
 }
 
 func NewUdpTunWorker(ctx context.Context, tun *os.File, settings settings.ConnectionSettings) UdpTunWorker {
@@ -31,7 +31,7 @@ func NewUdpTunWorker(ctx context.Context, tun *os.File, settings settings.Connec
 		tun:            tun,
 		ctx:            ctx,
 		settings:       settings,
-		sessionManager: clientsession.NewUdpSessionManager(),
+		sessionManager: clientsession2.NewUdpSessionManager(),
 	}
 }
 
@@ -196,7 +196,7 @@ func (u *UdpTunWorker) udpRegisterClient(conn *net.UDPConn, clientAddr *net.UDPA
 		return udpSessionErr
 	}
 
-	u.sessionManager.Store(clientsession.NewUdpSession(conn, *internalIpAddr, clientAddr, udpSession))
+	u.sessionManager.Store(clientsession2.NewUdpSession(conn, *internalIpAddr, clientAddr, udpSession))
 
 	return nil
 }

@@ -8,8 +8,8 @@ import (
 	"log"
 	"os"
 	"sync"
-	"tungo/presentation/server_routing"
-	"tungo/presentation/server_routing/routing"
+	"tungo/routing_layer/server_routing"
+	"tungo/routing_layer/server_routing/routing"
 	"tungo/settings"
 	"tungo/settings/server_configuration"
 )

@@ -1,4 +1,4 @@
-package configuration_provider
+package configuring
 
 import (
 	"tungo/domain/mode"

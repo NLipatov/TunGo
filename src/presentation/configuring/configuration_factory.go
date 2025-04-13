@@ -1,9 +1,9 @@
-package configuration_provider
+package configuring
 
 import (
 	"os"
-	"tungo/presentation/configuration_provider/cli"
-	"tungo/presentation/configuration_provider/tui"
+	"tungo/presentation/configuring/cli"
+	"tungo/presentation/configuring/tui"
 	"tungo/settings/client_configuration"
 )
 

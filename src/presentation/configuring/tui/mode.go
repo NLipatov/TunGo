@@ -4,7 +4,7 @@ import (
 	"fmt"
 	tea "github.com/charmbracelet/bubbletea"
 	"tungo/domain/mode"
-	"tungo/presentation/configuration_provider/tui/components"
+	"tungo/presentation/configuring/tui/components"
 )
 
 type AppMode struct {

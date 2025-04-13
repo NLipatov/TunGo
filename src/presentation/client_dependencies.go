@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"tungo/application"
 	"tungo/platform_abstraction_layer"
-	"tungo/presentation/client_routing/factory"
+	factory2 "tungo/routing_layer/client_routing/factory"
 	"tungo/settings/client_configuration"
 )
 
@@ -34,8 +34,8 @@ func (c *ClientDependencies) Initialize() error {
 		return fmt.Errorf("failed to read client configuration: %w", err)
 	}
 
-	c.conn = factory.NewConnectionFactory(*conf)
-	c.worker = factory.NewWorkerFactory(*conf)
+	c.conn = factory2.NewConnectionFactory(*conf)
+	c.worker = factory2.NewWorkerFactory(*conf)
 	c.tun, err = platform_abstraction_layer.NewPlatformTunManager(*conf)
 	if err != nil {
 		return fmt.Errorf("failed to configure tun: %w", err)
