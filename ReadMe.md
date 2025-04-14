@@ -183,4 +183,10 @@ iperf3 -c 10.0.1.1 -u -b 1G
 
 ---
 
+## Debugging with bubble tea
+see: https://github.com/charmbracelet/bubbletea?tab=readme-ov-file#debugging-with-delve
+```bash
+sudo dlv debug --headless --listen=:2345 --api-version=2 --log --check-go-version=false
+```
+
 Start enjoying fast and secure tunneling with **TunGo**!
