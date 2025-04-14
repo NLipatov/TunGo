@@ -8,8 +8,8 @@ import (
 	"time"
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
-	"tungo/presentation/client_routing/routing/tcp_chacha20/tcp_connection"
-	"tungo/presentation/client_routing/routing/udp_chacha20/udp_connection"
+	tcp_connection2 "tungo/routing_layer/client_routing/routing/tcp_chacha20/tcp_connection"
+	udp_connection2 "tungo/routing_layer/client_routing/routing/udp_chacha20/udp_connection"
 	"tungo/settings"
 	"tungo/settings/client_configuration"
 )
@@ -39,19 +39,19 @@ func (f *ConnectionFactory) EstablishConnection(
 	switch connSettings.Protocol {
 	case settings.UDP:
 		//connect to server and exchange secret
-		secret := udp_connection.NewDefaultSecret(connSettings, chacha20.NewHandshake())
-		cancellableSecret := udp_connection.NewSecretWithDeadline(handshakeCtx, secret)
+		secret := udp_connection2.NewDefaultSecret(connSettings, chacha20.NewHandshake())
+		cancellableSecret := udp_connection2.NewSecretWithDeadline(handshakeCtx, secret)
 
-		session := udp_connection.NewDefaultSecureSession(udp_connection.NewConnection(connSettings), cancellableSecret)
-		cancellableSession := udp_connection.NewSecureSessionWithDeadline(handshakeCtx, session)
+		session := udp_connection2.NewDefaultSecureSession(udp_connection2.NewConnection(connSettings), cancellableSecret)
+		cancellableSession := udp_connection2.NewSecureSessionWithDeadline(handshakeCtx, session)
 		return cancellableSession.Establish()
 	case settings.TCP:
 		//connect to server and exchange secret
-		secret := tcp_connection.NewDefaultSecret(connSettings, chacha20.NewHandshake())
-		cancellableSecret := tcp_connection.NewSecretWithDeadline(handshakeCtx, secret)
+		secret := tcp_connection2.NewDefaultSecret(connSettings, chacha20.NewHandshake())
+		cancellableSecret := tcp_connection2.NewSecretWithDeadline(handshakeCtx, secret)
 
-		session := tcp_connection.NewDefaultSecureSession(tcp_connection.NewDefaultConnection(connSettings), cancellableSecret)
-		cancellableSession := tcp_connection.NewSecureSessionWithDeadline(handshakeCtx, session)
+		session := tcp_connection2.NewDefaultSecureSession(tcp_connection2.NewDefaultConnection(connSettings), cancellableSecret)
+		cancellableSession := tcp_connection2.NewSecureSessionWithDeadline(handshakeCtx, session)
 		return cancellableSession.Establish()
 	default:
 		return nil, nil, fmt.Errorf("unsupported protocol: %v", connSettings.Protocol)

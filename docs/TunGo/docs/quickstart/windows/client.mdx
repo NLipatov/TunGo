@@ -1,5 +1,22 @@
+import Download from './download.mdx'
+import BrowserOnly from '@docusaurus/BrowserOnly';
+
 # Client
-1. Download latest TunGo installer from releases page - https://github.com/NLipatov/TunGo/releases
-2. Install TunGo
-3. Save client configuration in `C:\ProgramData\TunGo\client_configuration.json` (it's generated on linux server's step 3)
-4. Run TunGo with admin rights
+1. Install TunGo:
+<Download/>
+
+2. Start TunGo with admin rights
+
+3. Add new configuration and use it to create a vpn-tunnel
+
+## Recap:
+<BrowserOnly fallback={<div>Loading...</div>}>
+    {
+        () => {
+            const Player = require('@site/src/components/asciinema/player').default;
+            return (
+                <Player castPath="/asciinema/quickstart/client.windows.cast" rows="30" cols="60" />
+            );
+        }
+    }
+</BrowserOnly>

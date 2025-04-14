@@ -17,7 +17,7 @@ func newWriter(resolver linuxResolver) *writer {
 }
 
 func (w *writer) Write(data interface{}) error {
-	jsonContent, jsonContentErr := json.MarshalIndent(data, "", "  ")
+	jsonContent, jsonContentErr := json.MarshalIndent(data, "", "\t")
 	if jsonContentErr != nil {
 		return jsonContentErr
 	}

@@ -36,7 +36,7 @@ func TestWriteSuccess(t *testing.T) {
 		t.Fatalf("failed to read file: %v", err)
 	}
 
-	expected, _ := json.MarshalIndent(data, "", "  ")
+	expected, _ := json.MarshalIndent(data, "", "\t")
 	if string(content) != string(expected) {
 		t.Errorf("expected %s, got %s", expected, content)
 	}

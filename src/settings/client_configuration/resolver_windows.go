@@ -5,14 +5,14 @@ import (
 	"path/filepath"
 )
 
-type clientResolver struct {
+type DefaultResolver struct {
 }
 
-func newClientResolver() clientResolver {
-	return clientResolver{}
+func NewDefaultResolver() DefaultResolver {
+	return DefaultResolver{}
 }
 
-func (r clientResolver) resolve() (string, error) {
+func (r DefaultResolver) Resolve() (string, error) {
 	programData := os.Getenv("ProgramData")
 	if programData == "" {
 		programData = `C:\ProgramData` // fallback
