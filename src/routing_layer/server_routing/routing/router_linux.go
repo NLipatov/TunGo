@@ -7,7 +7,7 @@ import (
 	"sync"
 	"tungo/platform_abstraction_layer/tools_linux"
 	"tungo/presentation/interactive_commands"
-	server_routing2 "tungo/routing_layer/server_routing/routing/tcp_chacha20"
+	"tungo/routing_layer/server_routing/routing/tcp_chacha20"
 	"tungo/routing_layer/server_routing/routing/udp_chacha20"
 	"tungo/settings"
 )
@@ -31,7 +31,7 @@ func StartTCPRouting(ctx context.Context, tunFile *os.File, settings settings.Co
 	var extToLocalIp sync.Map   // external ip to local ip map
 	var extIpToSession sync.Map // external ip to session map
 
-	tcpTunWorker := server_routing2.NewTcpTunWorker()
+	tcpTunWorker := tcp_chacha20.NewTcpTunWorker()
 
 	var wg sync.WaitGroup
 	wg.Add(2)

@@ -1,4 +1,4 @@
-package clientsession
+package client_session
 
 import (
 	"sync"
