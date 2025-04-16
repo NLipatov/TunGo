@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"tungo/platform_abstraction_layer/tools_linux"
 	"tungo/presentation/interactive_commands"
-	server_routing2 "tungo/routing_layer/server_routing"
+	server_routing2 "tungo/routing_layer/server_routing/routing/tcp_chacha20"
+	"tungo/routing_layer/server_routing/routing/udp_chacha20"
 	"tungo/settings"
 )
 
@@ -19,11 +21,11 @@ func StartTCPRouting(ctx context.Context, tunFile *os.File, settings settings.Co
 	go interactive_commands.ListenForCommand(cancel, "server")
 
 	// Setup server
-	err := server_routing2.Configure(tunFile)
+	err := tools_linux.Configure(tunFile)
 	if err != nil {
 		return fmt.Errorf("failed to configure a server: %s\n", err)
 	}
-	defer server_routing2.Unconfigure(tunFile)
+	defer tools_linux.Unconfigure(tunFile)
 
 	// Map to keep track of connected clients
 	var extToLocalIp sync.Map   // external ip to local ip map
@@ -59,13 +61,13 @@ func StartUDPRouting(ctx context.Context, tunFile *os.File, settings settings.Co
 	go interactive_commands.ListenForCommand(cancel, "server")
 
 	// Setup server
-	err := server_routing2.Configure(tunFile)
+	err := tools_linux.Configure(tunFile)
 	if err != nil {
 		return fmt.Errorf("failed to configure a server: %s\n", err)
 	}
-	defer server_routing2.Unconfigure(tunFile)
+	defer tools_linux.Unconfigure(tunFile)
 
-	udpTunWorker := server_routing2.NewUdpTunWorker(ctx, tunFile, settings)
+	udpTunWorker := udp_chacha20.NewUdpTunWorker(ctx, tunFile, settings)
 
 	var wg sync.WaitGroup
 	wg.Add(2)
