@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"os"
 	"sync"
-	"tungo/platform_abstraction_layer/tools_linux"
+	"tungo/infrastructure/platform_tun/tools_linux"
+	"tungo/infrastructure/routing_layer/server_routing/routing/tcp_chacha20"
+	"tungo/infrastructure/routing_layer/server_routing/routing/udp_chacha20"
 	"tungo/presentation/interactive_commands"
-	"tungo/routing_layer/server_routing/routing/tcp_chacha20"
-	"tungo/routing_layer/server_routing/routing/udp_chacha20"
 	"tungo/settings"
 )
 

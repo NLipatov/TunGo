@@ -1,10 +1,9 @@
-package pal_windows
+package tools_windows
 
 import (
 	"errors"
 	"fmt"
 	"golang.org/x/sys/windows"
-	"golang.zx2c4.com/wintun"
 	"log"
 	"sync"
 	"sync/atomic"

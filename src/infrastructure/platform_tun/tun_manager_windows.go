@@ -1,4 +1,4 @@
-package platform_abstraction_layer
+package platform_tun
 
 import (
 	"errors"
@@ -9,13 +9,13 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
-	"tungo/platform_abstraction_layer/tools_windows/netsh"
+	"tungo/infrastructure/platform_tun/tools_windows/netsh"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
 	wintun "golang.zx2c4.com/wintun"
 	"tungo/application"
-	pal_windows "tungo/platform_abstraction_layer/tools_windows"
+	pal_windows "tungo/platform_tun/tools_windows"
 	"tungo/settings"
 	"tungo/settings/client_configuration"
 )

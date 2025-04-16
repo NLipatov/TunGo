@@ -4,7 +4,7 @@ import (
 	"context"
 	"log"
 	"tungo/application"
-	"tungo/routing_layer/client_routing"
+	"tungo/infrastructure/routing_layer/client_routing"
 )
 
 type RouterFactory struct {
