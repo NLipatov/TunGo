@@ -11,10 +11,12 @@ import (
 	"sync"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network"
+	"tungo/infrastructure/routing_layer/server_routing/client_session"
 	"tungo/settings"
 )
 
 type TcpTunWorker struct {
+	sessionManager *client_session.Manager[net.Conn, net.Addr]
 }
 
 func NewTcpTunWorker() TcpTunWorker {
