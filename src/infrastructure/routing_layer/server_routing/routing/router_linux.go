@@ -27,10 +27,6 @@ func StartTCPRouting(ctx context.Context, tunFile *os.File, settings settings.Co
 	}
 	defer tools_linux.Unconfigure(tunFile)
 
-	// Map to keep track of connected clients
-	var extToLocalIp sync.Map   // external ip to local ip map
-	var extIpToSession sync.Map // external ip to session map
-
 	tcpTunWorker := tcp_chacha20.NewTcpTunWorker()
 
 	var wg sync.WaitGroup
@@ -39,13 +35,13 @@ func StartTCPRouting(ctx context.Context, tunFile *os.File, settings settings.Co
 	// TUN -> TCP
 	go func() {
 		defer wg.Done()
-		tcpTunWorker.TunToTCP(tunFile, &extToLocalIp, &extIpToSession, ctx)
+		tcpTunWorker.TunToTCP(tunFile, ctx)
 	}()
 
 	// TCP -> TUN
 	go func() {
 		defer wg.Done()
-		tcpTunWorker.TCPToTun(settings, tunFile, &extToLocalIp, &extIpToSession, ctx)
+		tcpTunWorker.TCPToTun(settings, tunFile, ctx)
 	}()
 
 	wg.Wait()

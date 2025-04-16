@@ -8,7 +8,6 @@ import (
 	"log"
 	"net"
 	"os"
-	"sync"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/routing_layer/server_routing/client_session"
@@ -20,10 +19,11 @@ type TcpTunWorker struct {
 }
 
 func NewTcpTunWorker() TcpTunWorker {
-	return TcpTunWorker{}
+	return TcpTunWorker{
+		sessionManager: client_session.NewManager[net.Conn, net.Addr]()}
 }
 
-func (w *TcpTunWorker) TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map, ctx context.Context) {
+func (w *TcpTunWorker) TunToTCP(tunFile *os.File, ctx context.Context) {
 	headerParser := network.NewBaseHeaderParser()
 
 	buf := make([]byte, network.MaxPacketLengthBytes)
@@ -62,40 +62,36 @@ func (w *TcpTunWorker) TunToTCP(tunFile *os.File, localIpMap *sync.Map, localIpT
 				continue
 			}
 
-			destinationIP := header.GetDestinationIP().String()
-			v, ok := localIpMap.Load(destinationIP)
-			if ok {
-				conn := v.(net.Conn)
-				sessionValue, sessionExists := localIpToSessionMap.Load(destinationIP)
-				if !sessionExists {
-					log.Printf("failed to load cryptographyService")
-					continue
-				}
-				cryptographyService := sessionValue.(*chacha20.TcpCryptographyService)
-				_, encryptErr := cryptographyService.Encrypt(buf[4 : n+4])
-				if encryptErr != nil {
-					log.Printf("failder to encrypt a package: %s", encryptErr)
-					continue
-				}
+			internalIP := header.GetDestinationIP().String()
+			session, sessionExist := w.sessionManager.Load(internalIP)
+			if !sessionExist {
+				log.Printf("packet dropped: no session established with host: %s", internalIP)
+				continue
+			}
 
-				encodingErr := encoder.Encode(buf[:n+4+chacha20poly1305.Overhead])
-				if encodingErr != nil {
-					log.Printf("failed to encode packet: %v", encodingErr)
-					continue
-				}
+			cryptographyService := session.Session()
+			_, encryptErr := cryptographyService.Encrypt(buf[4 : n+4])
+			if encryptErr != nil {
+				log.Printf("failder to encrypt a package: %s", encryptErr)
+				continue
+			}
 
-				_, connWriteErr := conn.Write(buf[:n+4+chacha20poly1305.Overhead])
-				if connWriteErr != nil {
-					log.Printf("failed to write to TCP: %v", connWriteErr)
-					localIpMap.Delete(destinationIP)
-					localIpToSessionMap.Delete(destinationIP)
-				}
+			encodingErr := encoder.Encode(buf[:n+4+chacha20poly1305.Overhead])
+			if encodingErr != nil {
+				log.Printf("failed to encode packet: %v", encodingErr)
+				continue
+			}
+
+			_, connWriteErr := session.Conn().Write(buf[:n+4+chacha20poly1305.Overhead])
+			if connWriteErr != nil {
+				log.Printf("failed to write to TCP: %v", connWriteErr)
+				w.sessionManager.Delete(internalIP)
 			}
 		}
 	}
 }
 
-func (w *TcpTunWorker) TCPToTun(settings settings.ConnectionSettings, tunFile *os.File, localIpMap *sync.Map, localIpToSessionMap *sync.Map, ctx context.Context) {
+func (w *TcpTunWorker) TCPToTun(settings settings.ConnectionSettings, tunFile *os.File, ctx context.Context) {
 	listener, err := net.Listen("tcp", net.JoinHostPort("", settings.Port))
 	if err != nil {
 		log.Printf("failed to listen on port %s: %v", settings.Port, err)
@@ -126,15 +122,15 @@ func (w *TcpTunWorker) TCPToTun(settings settings.ConnectionSettings, tunFile *o
 				log.Printf("failed to accept connection: %v", listenErr)
 				continue
 			}
-			go w.registerClient(conn, tunFile, localIpMap, localIpToSessionMap, ctx)
+			go w.registerClient(conn, tunFile, ctx)
 		}
 	}
 }
 
-func (w *TcpTunWorker) registerClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, localIpToServerSessionMap *sync.Map, ctx context.Context) {
+func (w *TcpTunWorker) registerClient(conn net.Conn, tunFile *os.File, ctx context.Context) {
 	log.Printf("connected: %s", conn.RemoteAddr())
 	h := chacha20.NewHandshake()
-	internalIpAddr, handshakeErr := h.ServerSideHandshake(&network.TcpAdapter{
+	internalIP, handshakeErr := h.ServerSideHandshake(&network.TcpAdapter{
 		Conn: conn,
 	})
 	if handshakeErr != nil {
@@ -151,22 +147,21 @@ func (w *TcpTunWorker) registerClient(conn net.Conn, tunFile *os.File, localIpTo
 	}
 
 	// Prevent IP spoofing
-	_, ipCollision := localIpToConn.Load(*internalIpAddr)
+	_, ipCollision := w.sessionManager.Load(*internalIP)
 	if ipCollision {
-		log.Printf("connection closed: %s (internal ip %s already in use)\n", conn.RemoteAddr(), *internalIpAddr)
+		log.Printf("connection closed: %s (internal ip %s already in use)\n", conn.RemoteAddr(), *internalIP)
 		_ = conn.Close()
 	}
 
-	localIpToConn.Store(*internalIpAddr, conn)
-	localIpToServerSessionMap.Store(*internalIpAddr, cryptographyService)
+	w.sessionManager.Store(client_session.NewSessionImpl(conn, *internalIP, conn.RemoteAddr(), cryptographyService))
 
-	w.handleClient(conn, tunFile, localIpToConn, localIpToServerSessionMap, internalIpAddr, ctx)
+	w.handleClient(conn, tunFile, internalIP, ctx)
 }
 
-func (w *TcpTunWorker) handleClient(conn net.Conn, tunFile *os.File, localIpToConn *sync.Map, localIpToSession *sync.Map, extIpAddr *string, ctx context.Context) {
+func (w *TcpTunWorker) handleClient(conn net.Conn, tunFile *os.File, internalIP *string, ctx context.Context) {
 	defer func() {
-		localIpToConn.Delete(*extIpAddr)
-		localIpToSession.Delete(*extIpAddr)
+		w.sessionManager.Delete(*internalIP)
+		w.sessionManager.Delete(conn.RemoteAddr().String())
 		_ = conn.Close()
 		log.Printf("disconnected: %s", conn.RemoteAddr())
 	}()
@@ -187,13 +182,11 @@ func (w *TcpTunWorker) handleClient(conn net.Conn, tunFile *os.File, localIpToCo
 			}
 
 			// Retrieve the session for this client
-			sessionValue, sessionExists := localIpToSession.Load(*extIpAddr)
+			sessionValue, sessionExists := w.sessionManager.Load(*internalIP)
 			if !sessionExists {
-				log.Printf("failed to load session for IP %s", *extIpAddr)
+				log.Printf("failed to load session for IP %s", *internalIP)
 				continue
 			}
-
-			session := sessionValue.(*chacha20.TcpCryptographyService)
 
 			//read packet length from 4-byte length prefix
 			var length = binary.BigEndian.Uint32(buf[:4])
@@ -209,7 +202,7 @@ func (w *TcpTunWorker) handleClient(conn net.Conn, tunFile *os.File, localIpToCo
 				continue
 			}
 
-			decrypted, decryptionErr := session.Decrypt(buf[:length])
+			decrypted, decryptionErr := sessionValue.Session().Decrypt(buf[:length])
 			if decryptionErr != nil {
 				log.Printf("failed to decrypt data: %s", decryptionErr)
 				continue
