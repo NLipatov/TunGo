@@ -5,9 +5,9 @@ import (
 	"tungo/application"
 )
 
-type Session[T net.Conn, A net.Addr] interface {
-	Conn() *net.UDPConn
+type Session[Conn net.Conn, Addr net.Addr] interface {
+	Conn() Conn
 	InternalIP() string
-	UdpAddr() *net.UDPAddr
+	Addr() Addr
 	Session() application.CryptographyService
 }

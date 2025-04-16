@@ -23,7 +23,7 @@ type UdpTunWorker struct {
 	ctx            context.Context
 	tun            *os.File
 	settings       settings.ConnectionSettings
-	sessionManager *client_session.UdpSessionManager
+	sessionManager *client_session.Manager
 }
 
 func NewUdpTunWorker(ctx context.Context, tun *os.File, settings settings.ConnectionSettings) UdpTunWorker {
@@ -31,7 +31,7 @@ func NewUdpTunWorker(ctx context.Context, tun *os.File, settings settings.Connec
 		tun:            tun,
 		ctx:            ctx,
 		settings:       settings,
-		sessionManager: client_session.NewUdpSessionManager(),
+		sessionManager: client_session.NewManager(),
 	}
 }
 
@@ -96,9 +96,9 @@ func (u *UdpTunWorker) TunToUDP() {
 				continue
 			}
 
-			_, writeToUDPErr := udpClientSession.Conn().WriteToUDP(encryptedPacket, udpClientSession.UdpAddr())
+			_, writeToUDPErr := udpClientSession.Conn().WriteToUDP(encryptedPacket, udpClientSession.Addr())
 			if writeToUDPErr != nil {
-				log.Printf("failed to send packet to %s: %v", udpClientSession.UdpAddr(), writeToUDPErr)
+				log.Printf("failed to send packet to %s: %v", udpClientSession.Addr(), writeToUDPErr)
 			}
 		}
 	}
@@ -196,7 +196,7 @@ func (u *UdpTunWorker) udpRegisterClient(conn *net.UDPConn, clientAddr *net.UDPA
 		return udpSessionErr
 	}
 
-	u.sessionManager.Store(client_session.NewUdpSession(conn, *internalIpAddr, clientAddr, udpSession))
+	u.sessionManager.Store(client_session.NewSessionImpl(conn, *internalIpAddr, clientAddr, udpSession))
 
 	return nil
 }
