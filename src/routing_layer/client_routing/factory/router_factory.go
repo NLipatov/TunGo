@@ -10,7 +10,7 @@ import (
 type RouterFactory struct {
 }
 
-func NewRouterBuilder() application.TrafficRouterFactory {
+func NewRouterFactory() application.TrafficRouterFactory {
 	return &RouterFactory{}
 }
 
@@ -19,22 +19,22 @@ func (u *RouterFactory) CreateRouter(
 	connectionFactory application.ConnectionFactory,
 	tunFactory application.TunManager,
 	workerFactory application.TunWorkerFactory,
-) (application.TrafficRouter, error) {
+) (application.TrafficRouter, application.ConnectionAdapter, application.TunDevice, error) {
 	conn, cryptographyService, connErr := connectionFactory.EstablishConnection(ctx)
 	if connErr != nil {
-		return nil, connErr
+		return nil, nil, nil, connErr
 	}
 
 	tun, tunErr := tunFactory.CreateTunDevice()
 	if tunErr != nil {
 		log.Printf("failed to create tun: %s", tunErr)
-		return nil, tunErr
+		return nil, nil, nil, tunErr
 	}
 
-	worker, workerErr := workerFactory.CreateWorker(conn, tun, cryptographyService)
+	worker, workerErr := workerFactory.CreateWorker(ctx, conn, tun, cryptographyService)
 	if workerErr != nil {
-		return nil, workerErr
+		return nil, nil, nil, workerErr
 	}
 
-	return client_routing.NewRouter(worker), nil
+	return client_routing.NewRouter(worker), conn, tun, nil
 }

@@ -13,22 +13,24 @@ import (
 )
 
 type UdpWorker struct {
+	ctx                 context.Context
 	conn                net.UDPConn
 	tun                 io.ReadWriteCloser
 	cryptographyService application.CryptographyService
 }
 
 func NewUdpWorker(
-	conn net.Conn, tun io.ReadWriteCloser, cryptographyService application.CryptographyService,
+	ctx context.Context, conn net.Conn, tun io.ReadWriteCloser, cryptographyService application.CryptographyService,
 ) *UdpWorker {
 	return &UdpWorker{
+		ctx:                 ctx,
 		conn:                *conn.(*net.UDPConn),
 		tun:                 tun,
 		cryptographyService: cryptographyService,
 	}
 }
 
-func (w *UdpWorker) HandleTun(ctx context.Context) error {
+func (w *UdpWorker) HandleTun() error {
 	buf := make([]byte, network.MaxPacketLengthBytes+12)
 	udpReader := chacha20.NewUdpReader(w.tun)
 	_ = w.conn.SetWriteBuffer(len(buf))
@@ -36,12 +38,12 @@ func (w *UdpWorker) HandleTun(ctx context.Context) error {
 	// Main loop to read from TUN and send data
 	for {
 		select {
-		case <-ctx.Done(): // Stop-signal
+		case <-w.ctx.Done():
 			return nil
 		default:
 			n, readErr := udpReader.Read(buf)
 			if readErr != nil {
-				if ctx.Err() != nil {
+				if w.ctx.Err() != nil {
 					return nil
 				}
 				return fmt.Errorf("could not read a packet from TUN: %v", readErr)
@@ -49,7 +51,7 @@ func (w *UdpWorker) HandleTun(ctx context.Context) error {
 
 			encryptedPacket, EncryptErr := w.cryptographyService.Encrypt(buf[:n])
 			if EncryptErr != nil {
-				if ctx.Err() != nil {
+				if w.ctx.Err() != nil {
 					return nil
 				}
 				return fmt.Errorf("could not encrypt packet: %v", EncryptErr)
@@ -58,7 +60,7 @@ func (w *UdpWorker) HandleTun(ctx context.Context) error {
 			_ = w.conn.SetWriteDeadline(time.Now().Add(time.Second * 2))
 			_, writeErr := w.conn.Write(encryptedPacket)
 			if writeErr != nil {
-				if ctx.Err() != nil {
+				if w.ctx.Err() != nil {
 					return nil
 				}
 				return fmt.Errorf("could not write packet to conn: %v", writeErr)
@@ -67,24 +69,19 @@ func (w *UdpWorker) HandleTun(ctx context.Context) error {
 	}
 }
 
-func (w *UdpWorker) HandleTransport(ctx context.Context) error {
+func (w *UdpWorker) HandleTransport() error {
 	dataBuf := make([]byte, network.MaxPacketLengthBytes+12)
 	oobBuf := make([]byte, 1024)
 	_ = w.conn.SetReadBuffer(len(dataBuf))
 
-	go func() {
-		<-ctx.Done()
-		_ = w.conn.Close()
-	}()
-
 	for {
 		select {
-		case <-ctx.Done(): // Stop-signal
+		case <-w.ctx.Done():
 			return nil
 		default:
 			n, _, _, _, readErr := w.conn.ReadMsgUDP(dataBuf, oobBuf)
 			if readErr != nil {
-				if ctx.Err() != nil {
+				if w.ctx.Err() != nil {
 					return nil
 				}
 				return fmt.Errorf("could not read a packet from conn: %v", readErr)
@@ -98,7 +95,7 @@ func (w *UdpWorker) HandleTransport(ctx context.Context) error {
 
 			decrypted, decryptionErr := w.cryptographyService.Decrypt(dataBuf[:n])
 			if decryptionErr != nil {
-				if ctx.Err() != nil {
+				if w.ctx.Err() != nil {
 					return nil
 				}
 
@@ -112,7 +109,7 @@ func (w *UdpWorker) HandleTransport(ctx context.Context) error {
 
 			_, writeErr := w.tun.Write(decrypted)
 			if writeErr != nil {
-				if ctx.Err() != nil {
+				if w.ctx.Err() != nil {
 					return nil
 				}
 				return fmt.Errorf("failed to write to TUN: %s", writeErr)

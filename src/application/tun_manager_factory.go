@@ -7,5 +7,5 @@ type TrafficRouterFactory interface {
 		connectionFactory ConnectionFactory,
 		tunFactory TunManager,
 		workerFactory TunWorkerFactory,
-	) (TrafficRouter, error)
+	) (TrafficRouter, ConnectionAdapter, TunDevice, error)
 }

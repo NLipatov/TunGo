@@ -11,13 +11,13 @@ import (
 
 type ClientRunner struct {
 	deps          ClientAppDependencies
-	routerBuilder application.TrafficRouterFactory
+	routerFactory application.TrafficRouterFactory
 }
 
 func NewClientRunner(deps ClientAppDependencies) *ClientRunner {
 	return &ClientRunner{
 		deps:          deps,
-		routerBuilder: factory.NewRouterBuilder(),
+		routerFactory: factory.NewRouterFactory(),
 	}
 }
 
@@ -27,7 +27,7 @@ func (r *ClientRunner) Run(ctx context.Context) {
 			log.Printf("error disposing tun devices: %s", err)
 		}
 
-		router, err := r.routerBuilder.
+		router, conn, tun, err := r.routerFactory.
 			CreateRouter(ctx, r.deps.ConnectionFactory(), r.deps.TunManager(), r.deps.WorkerFactory())
 		if err != nil {
 			log.Printf("failed to create router: %s", err)
@@ -36,6 +36,12 @@ func (r *ClientRunner) Run(ctx context.Context) {
 		}
 
 		log.Printf("tunneling traffic via tun device")
+
+		go func() {
+			<-ctx.Done() //blocks until context is cancelled
+			_ = conn.Close()
+			_ = tun.Close()
+		}()
 
 		if routeTrafficErr := router.RouteTraffic(ctx); routeTrafficErr != nil {
 			if errors.Is(routeTrafficErr, context.Canceled) {

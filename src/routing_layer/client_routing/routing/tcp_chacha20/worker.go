@@ -13,40 +13,37 @@ import (
 )
 
 type TcpTunWorker struct {
+	ctx                 context.Context
 	conn                net.Conn
 	tun                 io.ReadWriteCloser
 	cryptographyService application.CryptographyService
 }
 
 func NewTcpTunWorker(
-	conn net.Conn, tun io.ReadWriteCloser, cryptographyService application.CryptographyService,
+	ctx context.Context, conn net.Conn, tun io.ReadWriteCloser, cryptographyService application.CryptographyService,
 ) application.TunWorker {
 	return &TcpTunWorker{
+		ctx:                 ctx,
 		conn:                conn,
 		tun:                 tun,
 		cryptographyService: cryptographyService,
 	}
 }
 
-func (w *TcpTunWorker) HandleTun(ctx context.Context) error {
+func (w *TcpTunWorker) HandleTun() error {
 	reader := chacha20.NewTcpReader(w.tun)
 	buffer := make([]byte, network.MaxPacketLengthBytes+4+chacha20poly1305.Overhead)
 	tcpEncoder := chacha20.NewDefaultTCPEncoder()
 
-	go func() {
-		<-ctx.Done()
-		_ = w.conn.Close()
-	}()
-
 	//passes anything from tun to chan
 	for {
 		select {
-		case <-ctx.Done(): // Stop-signal
+		case <-w.ctx.Done():
 			return nil
 		default:
 			n, err := reader.Read(buffer)
 			if err != nil {
-				if ctx.Err() != nil {
+				if w.ctx.Err() != nil {
 					return nil
 				}
 				log.Printf("failed to read from TUN: %v", err)
@@ -74,22 +71,17 @@ func (w *TcpTunWorker) HandleTun(ctx context.Context) error {
 	}
 }
 
-func (w *TcpTunWorker) HandleTransport(ctx context.Context) error {
+func (w *TcpTunWorker) HandleTransport() error {
 	buffer := make([]byte, network.MaxPacketLengthBytes+4)
-
-	go func() {
-		<-ctx.Done()
-		_ = w.conn.Close()
-	}()
 
 	for {
 		select {
-		case <-ctx.Done(): // Stop-signal
+		case <-w.ctx.Done():
 			return nil
 		default:
 			_, err := io.ReadFull(w.conn, buffer[:4])
 			if err != nil {
-				if ctx.Err() != nil {
+				if w.ctx.Err() != nil {
 					return nil
 				}
 				log.Printf("read from TCP failed: %v", err)

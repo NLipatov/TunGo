@@ -21,13 +21,13 @@ func (r *Router) RouteTraffic(ctx context.Context) error {
 
 	// TUN -> Transport
 	errGroup.Go(func() error {
-		err := r.worker.HandleTun(ctx)
+		err := r.worker.HandleTun()
 		return err
 	})
 
 	// Transport -> TUN
 	errGroup.Go(func() error {
-		err := r.worker.HandleTransport(ctx)
+		err := r.worker.HandleTransport()
 		return err
 	})
 

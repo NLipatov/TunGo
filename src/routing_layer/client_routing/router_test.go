@@ -10,6 +10,7 @@ import (
 
 // mockRouterTestTunWorker implements the application.TunWorker interface for testing.
 type mockRouterTestTunWorker struct {
+	ctx             context.Context
 	errTun          error
 	errTransport    error
 	tunCalled       bool
@@ -18,12 +19,12 @@ type mockRouterTestTunWorker struct {
 	delay time.Duration
 }
 
-func (m *mockRouterTestTunWorker) HandleTun(ctx context.Context) error {
+func (m *mockRouterTestTunWorker) HandleTun() error {
 	m.tunCalled = true
 	if m.delay > 0 {
 		select {
-		case <-ctx.Done():
-			return ctx.Err()
+		case <-m.ctx.Done():
+			return m.ctx.Err()
 		case <-time.After(m.delay):
 			// continue after delay
 		}
@@ -31,12 +32,12 @@ func (m *mockRouterTestTunWorker) HandleTun(ctx context.Context) error {
 	return m.errTun
 }
 
-func (m *mockRouterTestTunWorker) HandleTransport(ctx context.Context) error {
+func (m *mockRouterTestTunWorker) HandleTransport() error {
 	m.transportCalled = true
 	if m.delay > 0 {
 		select {
-		case <-ctx.Done():
-			return ctx.Err()
+		case <-m.ctx.Done():
+			return m.ctx.Err()
 		case <-time.After(m.delay):
 			// continue after delay
 		}
@@ -45,7 +46,9 @@ func (m *mockRouterTestTunWorker) HandleTransport(ctx context.Context) error {
 }
 
 func TestRouteTraffic_AllSucceed(t *testing.T) {
-	worker := &mockRouterTestTunWorker{}
+	worker := &mockRouterTestTunWorker{
+		ctx: context.Background(),
+	}
 	router := NewRouter(worker)
 
 	err := router.RouteTraffic(context.Background())
@@ -121,16 +124,18 @@ func TestRouteTraffic_BothErrors(t *testing.T) {
 }
 
 func TestRouteTraffic_ExternalContextCancel(t *testing.T) {
-	// Simulate external cancellation with delayed worker methods.
-	worker := &mockRouterTestTunWorker{
-		delay: 100 * time.Millisecond,
-	}
 	ctx, cancel := context.WithCancel(context.Background())
 	// Cancel the context after a short delay.
 	go func() {
 		time.Sleep(10 * time.Millisecond)
 		cancel()
 	}()
+
+	// Simulate external cancellation with delayed worker methods.
+	worker := &mockRouterTestTunWorker{
+		ctx:   ctx,
+		delay: 100 * time.Millisecond,
+	}
 
 	router := NewRouter(worker)
 	err := router.RouteTraffic(ctx)

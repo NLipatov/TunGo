@@ -16,6 +16,34 @@ import (
 	"tungo/settings/client_configuration"
 )
 
+type dummyConnectionAdapter struct{}
+
+func (d *dummyConnectionAdapter) Write(p []byte) (int, error) {
+	return len(p), nil
+}
+
+func (d *dummyConnectionAdapter) Read(p []byte) (int, error) {
+	return 0, io.EOF
+}
+
+func (d *dummyConnectionAdapter) Close() error {
+	return nil
+}
+
+type dummyTun struct{}
+
+func (t *dummyTun) Write([]byte) (int, error) {
+	return 0, nil
+}
+
+func (t *dummyTun) Read([]byte) (int, error) {
+	return 0, nil
+}
+
+func (t *dummyTun) Close() error {
+	return nil
+}
+
 // mockTunManager implements application.TunManager.
 type mockTunManager struct {
 	disposeCount int
@@ -43,7 +71,7 @@ func (d *mockConnectionFactory) EstablishConnection(_ context.Context,
 type mockWorkerFactory struct{}
 
 func (d *mockWorkerFactory) CreateWorker(
-	_ net.Conn, _ io.ReadWriteCloser, _ application.CryptographyService,
+	_ context.Context, _ net.Conn, _ io.ReadWriteCloser, _ application.CryptographyService,
 ) (application.TunWorker, error) {
 	return nil, nil
 }
@@ -75,8 +103,8 @@ func (d *mockRouterFactory) CreateRouter(
 	_ application.ConnectionFactory,
 	_ application.TunManager,
 	_ application.TunWorkerFactory,
-) (application.TrafficRouter, error) {
-	return d.router, d.err
+) (application.TrafficRouter, application.ConnectionAdapter, application.TunDevice, error) {
+	return d.router, &dummyConnectionAdapter{}, &dummyTun{}, d.err
 }
 
 // mockDeps implements presentation.ClientAppDependencies.
@@ -97,7 +125,10 @@ func (d *mockDeps) TunManager() application.TunManager               { return d.
 
 // setRouterBuilder sets the unexported routerBuilder field using unsafe.
 func setRouterBuilder(runner *presentation.ClientRunner, factory application.TrafficRouterFactory) {
-	v := reflect.ValueOf(runner).Elem().FieldByName("routerBuilder")
+	v := reflect.ValueOf(runner).Elem().FieldByName("routerFactory")
+	if !v.IsValid() {
+		panic("routerFactory field not found")
+	}
 	ptrToField := unsafe.Pointer(v.UnsafeAddr())
 	reflect.NewAt(v.Type(), ptrToField).Elem().Set(reflect.ValueOf(factory))
 }

@@ -14,3 +14,7 @@ func (ta *TcpAdapter) Read(buffer []byte) (int, error) {
 	n, err := ta.Conn.Read(buffer)
 	return n, err
 }
+
+func (ta *TcpAdapter) Close() error {
+	return ta.Conn.Close()
+}

@@ -4,4 +4,5 @@ package application
 type ConnectionAdapter interface {
 	Write([]byte) (int, error)
 	Read([]byte) (int, error)
+	Close() error
 }

@@ -1,6 +1,7 @@
 package factory
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -22,13 +23,13 @@ func NewWorkerFactory(configuration client_configuration.Configuration) applicat
 }
 
 func (w *WorkerFactory) CreateWorker(
-	conn net.Conn, tun io.ReadWriteCloser, cryptographyService application.CryptographyService,
+	ctx context.Context, conn net.Conn, tun io.ReadWriteCloser, cryptographyService application.CryptographyService,
 ) (application.TunWorker, error) {
 	switch w.conf.Protocol {
 	case settings.UDP:
-		return udp_chacha20.NewUdpWorker(conn, tun, cryptographyService), nil
+		return udp_chacha20.NewUdpWorker(ctx, conn, tun, cryptographyService), nil
 	case settings.TCP:
-		return tcp_chacha20.NewTcpTunWorker(conn, tun, cryptographyService), nil
+		return tcp_chacha20.NewTcpTunWorker(ctx, conn, tun, cryptographyService), nil
 	default:
 		return nil, fmt.Errorf("unsupported protocol")
 	}
