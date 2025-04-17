@@ -22,7 +22,7 @@ func (d *dummyConnectionAdapter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func (d *dummyConnectionAdapter) Read(p []byte) (int, error) {
+func (d *dummyConnectionAdapter) Read([]byte) (int, error) {
 	return 0, io.EOF
 }
 
