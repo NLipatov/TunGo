@@ -15,36 +15,42 @@ import (
 )
 
 type TcpTunWorker struct {
+	ctx            context.Context
+	tunFile        *os.File
+	settings       settings.ConnectionSettings
 	sessionManager *client_session.Manager[net.Conn, net.Addr]
 }
 
-func NewTcpTunWorker() TcpTunWorker {
+func NewTcpTunWorker(ctx context.Context, tunFile *os.File, settings settings.ConnectionSettings) TcpTunWorker {
 	return TcpTunWorker{
+		ctx:            ctx,
+		tunFile:        tunFile,
+		settings:       settings,
 		sessionManager: client_session.NewManager[net.Conn, net.Addr]()}
 }
 
-func (w *TcpTunWorker) HandleTun(tunFile *os.File, ctx context.Context) {
+func (w *TcpTunWorker) HandleTun() error {
 	headerParser := network.NewBaseHeaderParser()
 
 	buf := make([]byte, network.MaxPacketLengthBytes)
-	reader := chacha20.NewTcpReader(tunFile)
+	reader := chacha20.NewTcpReader(w.tunFile)
 	encoder := chacha20.NewDefaultTCPEncoder()
 
 	for {
 		select {
-		case <-ctx.Done():
-			return
+		case <-w.ctx.Done():
+			return nil
 		default:
 			n, err := reader.Read(buf)
 			if err != nil {
 				if err == io.EOF {
 					log.Println("TUN interface closed, shutting down...")
-					return
+					return err
 				}
 
 				if os.IsNotExist(err) || os.IsPermission(err) {
 					log.Printf("TUN interface error (closed or permission issue): %v", err)
-					return
+					return err
 				}
 
 				log.Printf("failed to read from TUN, retrying: %v", err)
@@ -91,38 +97,38 @@ func (w *TcpTunWorker) HandleTun(tunFile *os.File, ctx context.Context) {
 	}
 }
 
-func (w *TcpTunWorker) HandleTransport(settings settings.ConnectionSettings, tunFile *os.File, ctx context.Context) {
-	listener, err := net.Listen("tcp", net.JoinHostPort("", settings.Port))
+func (w *TcpTunWorker) HandleTransport() error {
+	listener, err := net.Listen("tcp", net.JoinHostPort("", w.settings.Port))
 	if err != nil {
-		log.Printf("failed to listen on port %s: %v", settings.Port, err)
+		log.Printf("failed to listen on port %s: %v", w.settings.Port, err)
 	}
 	defer func() {
 		_ = listener.Close()
 	}()
-	log.Printf("server listening on port %s (TCP)", settings.Port)
+	log.Printf("server listening on port %s (TCP)", w.settings.Port)
 
 	//using this goroutine to 'unblock' Listener.Accept blocking-call
 	go func() {
-		<-ctx.Done() //blocks till ctx.Done signal comes in
+		<-w.ctx.Done() //blocks till ctx.Done signal comes in
 		_ = listener.Close()
 		return
 	}()
 
 	for {
 		select {
-		case <-ctx.Done():
-			return
+		case <-w.ctx.Done():
+			return nil
 		default:
 			conn, listenErr := listener.Accept()
-			if ctx.Err() != nil {
-				log.Printf("exiting Accept loop: %s", ctx.Err())
-				return
+			if w.ctx.Err() != nil {
+				log.Printf("exiting Accept loop: %s", w.ctx.Err())
+				return err
 			}
 			if listenErr != nil {
 				log.Printf("failed to accept connection: %v", listenErr)
 				continue
 			}
-			go w.registerClient(conn, tunFile, ctx)
+			go w.registerClient(conn, w.tunFile, w.ctx)
 		}
 	}
 }

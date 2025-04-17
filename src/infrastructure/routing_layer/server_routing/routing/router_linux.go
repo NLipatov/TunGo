@@ -27,7 +27,7 @@ func StartTCPRouting(ctx context.Context, tunFile *os.File, settings settings.Co
 	}
 	defer tools_linux.Unconfigure(tunFile)
 
-	tcpTunWorker := tcp_chacha20.NewTcpTunWorker()
+	tcpTunWorker := tcp_chacha20.NewTcpTunWorker(ctx, tunFile, settings)
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -35,13 +35,13 @@ func StartTCPRouting(ctx context.Context, tunFile *os.File, settings settings.Co
 	// TUN -> TCP
 	go func() {
 		defer wg.Done()
-		tcpTunWorker.HandleTun(tunFile, ctx)
+		_ = tcpTunWorker.HandleTun()
 	}()
 
 	// TCP -> TUN
 	go func() {
 		defer wg.Done()
-		tcpTunWorker.HandleTransport(settings, tunFile, ctx)
+		_ = tcpTunWorker.HandleTransport()
 	}()
 
 	wg.Wait()
@@ -71,13 +71,13 @@ func StartUDPRouting(ctx context.Context, tunFile *os.File, settings settings.Co
 	// TUN -> UDP
 	go func() {
 		defer wg.Done()
-		udpTunWorker.HandleTun()
+		_ = udpTunWorker.HandleTun()
 	}()
 
 	// UDP -> TUN
 	go func() {
 		defer wg.Done()
-		udpTunWorker.HandleTransport()
+		_ = udpTunWorker.HandleTransport()
 	}()
 
 	wg.Wait()

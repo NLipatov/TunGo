@@ -35,7 +35,7 @@ func NewUdpTunWorker(ctx context.Context, tun *os.File, settings settings.Connec
 	}
 }
 
-func (u *UdpTunWorker) HandleTun() {
+func (u *UdpTunWorker) HandleTun() error {
 	headerParser := network.NewBaseHeaderParser()
 
 	buf := make([]byte, network.MaxPacketLengthBytes+12)
@@ -44,22 +44,22 @@ func (u *UdpTunWorker) HandleTun() {
 	for {
 		select {
 		case <-u.ctx.Done():
-			return
+			return nil
 		default:
 			n, err := udpReader.Read(buf)
 			if err != nil {
 				if u.ctx.Done() != nil {
-					return
+					return nil
 				}
 
 				if err == io.EOF {
 					log.Println("TUN interface closed, shutting down...")
-					return
+					return err
 				}
 
 				if os.IsNotExist(err) || os.IsPermission(err) {
 					log.Printf("TUN interface error (closed or permission issue): %v", err)
-					return
+					return err
 				}
 
 				log.Printf("failed to read from TUN, retrying: %v", err)
@@ -104,11 +104,11 @@ func (u *UdpTunWorker) HandleTun() {
 	}
 }
 
-func (u *UdpTunWorker) HandleTransport() {
+func (u *UdpTunWorker) HandleTransport() error {
 	addr, err := net.ResolveUDPAddr("udp", net.JoinHostPort("", u.settings.Port))
 	if err != nil {
 		log.Fatalf("failed to resolve udp address: %s", err)
-		return
+		return err
 	}
 
 	conn, err := net.ListenUDP("udp", addr)
@@ -131,12 +131,12 @@ func (u *UdpTunWorker) HandleTransport() {
 	for {
 		select {
 		case <-u.ctx.Done():
-			return
+			return nil
 		default:
 			n, _, _, clientAddr, readFromUdpErr := conn.ReadMsgUDP(dataBuf, oobBuf)
 			if readFromUdpErr != nil {
 				if u.ctx.Done() != nil {
-					return
+					return nil
 				}
 
 				log.Printf("failed to read from UDP: %s", readFromUdpErr)
