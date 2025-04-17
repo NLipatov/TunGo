@@ -4,7 +4,7 @@ import (
 	"context"
 	"log"
 	"tungo/application"
-	"tungo/infrastructure/routing_layer/client_routing"
+	"tungo/infrastructure/routing_layer"
 )
 
 type RouterFactory struct {
@@ -36,5 +36,5 @@ func (u *RouterFactory) CreateRouter(
 		return nil, nil, nil, workerErr
 	}
 
-	return client_routing.NewRouter(worker), conn, tun, nil
+	return routing_layer.NewRouter(worker), conn, tun, nil
 }
