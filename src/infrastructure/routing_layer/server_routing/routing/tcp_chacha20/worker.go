@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/routing_layer/server_routing/client_session"
@@ -16,13 +17,15 @@ import (
 
 type TcpTunWorker struct {
 	ctx            context.Context
-	tunFile        *os.File
+	tunFile        io.ReadWriteCloser
 	settings       settings.ConnectionSettings
 	sessionManager *client_session.Manager[net.Conn, net.Addr]
 }
 
-func NewTcpTunWorker(ctx context.Context, tunFile *os.File, settings settings.ConnectionSettings) TcpTunWorker {
-	return TcpTunWorker{
+func NewTcpTunWorker(
+	ctx context.Context, tunFile io.ReadWriteCloser, settings settings.ConnectionSettings,
+) application.TunWorker {
+	return &TcpTunWorker{
 		ctx:            ctx,
 		tunFile:        tunFile,
 		settings:       settings,
@@ -133,7 +136,7 @@ func (w *TcpTunWorker) HandleTransport() error {
 	}
 }
 
-func (w *TcpTunWorker) registerClient(conn net.Conn, tunFile *os.File, ctx context.Context) {
+func (w *TcpTunWorker) registerClient(conn net.Conn, tunFile io.ReadWriteCloser, ctx context.Context) {
 	log.Printf("connected: %s", conn.RemoteAddr())
 	h := chacha20.NewHandshake()
 	internalIP, handshakeErr := h.ServerSideHandshake(&network.TcpAdapter{
@@ -164,7 +167,7 @@ func (w *TcpTunWorker) registerClient(conn net.Conn, tunFile *os.File, ctx conte
 	w.handleClient(conn, tunFile, internalIP, ctx)
 }
 
-func (w *TcpTunWorker) handleClient(conn net.Conn, tunFile *os.File, internalIP *string, ctx context.Context) {
+func (w *TcpTunWorker) handleClient(conn net.Conn, tunFile io.ReadWriteCloser, internalIP *string, ctx context.Context) {
 	defer func() {
 		w.sessionManager.Delete(*internalIP)
 		w.sessionManager.Delete(conn.RemoteAddr().String())

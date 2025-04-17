@@ -16,7 +16,7 @@ type WorkerFactory struct {
 	conf client_configuration.Configuration
 }
 
-func NewWorkerFactory(configuration client_configuration.Configuration) application.TunWorkerFactory {
+func NewWorkerFactory(configuration client_configuration.Configuration) application.WorkerFactory {
 	return &WorkerFactory{
 		conf: configuration,
 	}

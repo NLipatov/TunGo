@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/routing_layer/server_routing/client_session"
@@ -21,13 +22,15 @@ type UDPClient struct {
 
 type UdpTunWorker struct {
 	ctx            context.Context
-	tun            *os.File
+	tun            io.ReadWriteCloser
 	settings       settings.ConnectionSettings
 	sessionManager *client_session.Manager[*net.UDPConn, *net.UDPAddr]
 }
 
-func NewUdpTunWorker(ctx context.Context, tun *os.File, settings settings.ConnectionSettings) UdpTunWorker {
-	return UdpTunWorker{
+func NewUdpTunWorker(
+	ctx context.Context, tun io.ReadWriteCloser, settings settings.ConnectionSettings,
+) application.TunWorker {
+	return &UdpTunWorker{
 		tun:            tun,
 		ctx:            ctx,
 		settings:       settings,

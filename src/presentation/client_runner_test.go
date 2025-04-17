@@ -67,7 +67,7 @@ func (d *mockConnectionFactory) EstablishConnection(_ context.Context,
 	return nil, nil, nil
 }
 
-// mockWorkerFactory implements application.TunWorkerFactory.
+// mockWorkerFactory implements application.WorkerFactory.
 type mockWorkerFactory struct{}
 
 func (d *mockWorkerFactory) CreateWorker(
@@ -102,7 +102,7 @@ func (d *mockRouterFactory) CreateRouter(
 	_ context.Context,
 	_ application.ConnectionFactory,
 	_ application.TunManager,
-	_ application.TunWorkerFactory,
+	_ application.WorkerFactory,
 ) (application.TrafficRouter, application.ConnectionAdapter, application.TunDevice, error) {
 	return d.router, &dummyConnectionAdapter{}, &dummyTun{}, d.err
 }
@@ -110,7 +110,7 @@ func (d *mockRouterFactory) CreateRouter(
 // mockDeps implements presentation.ClientAppDependencies.
 type mockDeps struct {
 	conn   application.ConnectionFactory
-	worker application.TunWorkerFactory
+	worker application.WorkerFactory
 	tun    *mockTunManager
 }
 
@@ -120,7 +120,7 @@ func (d *mockDeps) Configuration() client_configuration.Configuration {
 	return client_configuration.Configuration{}
 }
 func (d *mockDeps) ConnectionFactory() application.ConnectionFactory { return d.conn }
-func (d *mockDeps) WorkerFactory() application.TunWorkerFactory      { return d.worker }
+func (d *mockDeps) WorkerFactory() application.WorkerFactory         { return d.worker }
 func (d *mockDeps) TunManager() application.TunManager               { return d.tun }
 
 // setRouterBuilder sets the unexported routerBuilder field using unsafe.

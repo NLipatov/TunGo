@@ -18,7 +18,7 @@ func (u *RouterFactory) CreateRouter(
 	ctx context.Context,
 	connectionFactory application.ConnectionFactory,
 	tunFactory application.TunManager,
-	workerFactory application.TunWorkerFactory,
+	workerFactory application.WorkerFactory,
 ) (application.TrafficRouter, application.ConnectionAdapter, application.TunDevice, error) {
 	conn, cryptographyService, connErr := connectionFactory.EstablishConnection(ctx)
 	if connErr != nil {

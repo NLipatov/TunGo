@@ -12,14 +12,14 @@ type ClientAppDependencies interface {
 	Initialize() error
 	Configuration() client_configuration.Configuration
 	ConnectionFactory() application.ConnectionFactory
-	WorkerFactory() application.TunWorkerFactory
+	WorkerFactory() application.WorkerFactory
 	TunManager() application.TunManager
 }
 
 type ClientDependencies struct {
 	conf       client_configuration.Configuration
 	conn       application.ConnectionFactory
-	worker     application.TunWorkerFactory
+	worker     application.WorkerFactory
 	tun        application.TunManager
 	cfgManager client_configuration.ClientConfigurationManager
 }
@@ -53,7 +53,7 @@ func (c *ClientDependencies) ConnectionFactory() application.ConnectionFactory {
 	return c.conn
 }
 
-func (c *ClientDependencies) WorkerFactory() application.TunWorkerFactory {
+func (c *ClientDependencies) WorkerFactory() application.WorkerFactory {
 	return c.worker
 }
 
