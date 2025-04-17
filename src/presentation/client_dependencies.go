@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"tungo/application"
 	"tungo/infrastructure/platform_tun"
-	"tungo/infrastructure/routing_layer/client_routing/factory"
+	"tungo/infrastructure/routing/client_routing/factory"
 	"tungo/settings/client_configuration"
 )
 

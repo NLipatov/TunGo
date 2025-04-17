@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"io"
 	"tungo/application"
-	"tungo/infrastructure/routing_layer/server_routing/routing/tcp_chacha20"
-	"tungo/infrastructure/routing_layer/server_routing/routing/udp_chacha20"
+	"tungo/infrastructure/routing/server_routing/routing/tcp_chacha20"
+	"tungo/infrastructure/routing/server_routing/routing/udp_chacha20"
 	"tungo/settings"
 )
 

@@ -6,7 +6,7 @@ import (
 	"log"
 	"time"
 	"tungo/application"
-	"tungo/infrastructure/routing_layer/client_routing/factory"
+	"tungo/infrastructure/routing/client_routing/factory"
 )
 
 type ClientRunner struct {

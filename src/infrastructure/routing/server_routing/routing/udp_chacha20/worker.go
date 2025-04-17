@@ -10,7 +10,7 @@ import (
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network"
-	"tungo/infrastructure/routing_layer/server_routing/client_session"
+	"tungo/infrastructure/routing/server_routing/client_session"
 	"tungo/settings"
 	"tungo/settings/server_configuration"
 )

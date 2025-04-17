@@ -4,7 +4,7 @@ import (
 	"context"
 	"log"
 	"sync"
-	"tungo/infrastructure/routing_layer/server_routing/factory"
+	"tungo/infrastructure/routing/server_routing/factory"
 	"tungo/presentation/interactive_commands"
 	"tungo/settings"
 )

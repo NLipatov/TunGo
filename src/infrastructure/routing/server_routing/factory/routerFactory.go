@@ -2,7 +2,7 @@ package factory
 
 import (
 	"tungo/application"
-	"tungo/infrastructure/routing_layer"
+	"tungo/infrastructure/routing"
 )
 
 type ServerRouterFactory struct {
@@ -13,5 +13,5 @@ func NewServerRouterFactory() application.ServerTrafficRouterFactory {
 }
 
 func (s ServerRouterFactory) CreateRouter(worker application.TunWorker) application.TrafficRouter {
-	return routing_layer.NewRouter(worker)
+	return routing.NewRouter(worker)
 }

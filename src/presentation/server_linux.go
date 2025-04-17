@@ -7,7 +7,7 @@ import (
 	"encoding/base64"
 	"log"
 	"os"
-	"tungo/infrastructure/routing_layer/server_routing/factory"
+	"tungo/infrastructure/routing/server_routing/factory"
 	"tungo/settings/server_configuration"
 )
 
