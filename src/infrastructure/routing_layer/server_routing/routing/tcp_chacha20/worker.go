@@ -23,7 +23,7 @@ func NewTcpTunWorker() TcpTunWorker {
 		sessionManager: client_session.NewManager[net.Conn, net.Addr]()}
 }
 
-func (w *TcpTunWorker) TunToTCP(tunFile *os.File, ctx context.Context) {
+func (w *TcpTunWorker) HandleTun(tunFile *os.File, ctx context.Context) {
 	headerParser := network.NewBaseHeaderParser()
 
 	buf := make([]byte, network.MaxPacketLengthBytes)
@@ -91,7 +91,7 @@ func (w *TcpTunWorker) TunToTCP(tunFile *os.File, ctx context.Context) {
 	}
 }
 
-func (w *TcpTunWorker) TCPToTun(settings settings.ConnectionSettings, tunFile *os.File, ctx context.Context) {
+func (w *TcpTunWorker) HandleTransport(settings settings.ConnectionSettings, tunFile *os.File, ctx context.Context) {
 	listener, err := net.Listen("tcp", net.JoinHostPort("", settings.Port))
 	if err != nil {
 		log.Printf("failed to listen on port %s: %v", settings.Port, err)

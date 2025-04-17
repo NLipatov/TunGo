@@ -35,13 +35,13 @@ func StartTCPRouting(ctx context.Context, tunFile *os.File, settings settings.Co
 	// TUN -> TCP
 	go func() {
 		defer wg.Done()
-		tcpTunWorker.TunToTCP(tunFile, ctx)
+		tcpTunWorker.HandleTun(tunFile, ctx)
 	}()
 
 	// TCP -> TUN
 	go func() {
 		defer wg.Done()
-		tcpTunWorker.TCPToTun(settings, tunFile, ctx)
+		tcpTunWorker.HandleTransport(settings, tunFile, ctx)
 	}()
 
 	wg.Wait()
@@ -71,13 +71,13 @@ func StartUDPRouting(ctx context.Context, tunFile *os.File, settings settings.Co
 	// TUN -> UDP
 	go func() {
 		defer wg.Done()
-		udpTunWorker.TunToUDP()
+		udpTunWorker.HandleTun()
 	}()
 
 	// UDP -> TUN
 	go func() {
 		defer wg.Done()
-		udpTunWorker.UDPToTun()
+		udpTunWorker.HandleTransport()
 	}()
 
 	wg.Wait()

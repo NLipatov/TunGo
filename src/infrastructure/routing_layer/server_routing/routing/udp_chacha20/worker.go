@@ -35,7 +35,7 @@ func NewUdpTunWorker(ctx context.Context, tun *os.File, settings settings.Connec
 	}
 }
 
-func (u *UdpTunWorker) TunToUDP() {
+func (u *UdpTunWorker) HandleTun() {
 	headerParser := network.NewBaseHeaderParser()
 
 	buf := make([]byte, network.MaxPacketLengthBytes+12)
@@ -104,7 +104,7 @@ func (u *UdpTunWorker) TunToUDP() {
 	}
 }
 
-func (u *UdpTunWorker) UDPToTun() {
+func (u *UdpTunWorker) HandleTransport() {
 	addr, err := net.ResolveUDPAddr("udp", net.JoinHostPort("", u.settings.Port))
 	if err != nil {
 		log.Fatalf("failed to resolve udp address: %s", err)
