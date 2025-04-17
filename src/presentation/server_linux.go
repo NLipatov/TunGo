@@ -7,10 +7,7 @@ import (
 	"encoding/base64"
 	"log"
 	"os"
-	"sync"
-	"tungo/infrastructure/platform_tun/tools_linux"
-	"tungo/infrastructure/routing_layer/server_routing/routing"
-	"tungo/settings"
+	"tungo/infrastructure/routing_layer/server_routing/factory"
 	"tungo/settings/server_configuration"
 )
 
@@ -26,32 +23,11 @@ func StartServer(ctx context.Context) {
 		log.Fatalf("failed to generate ed25519 keys: %s", err)
 	}
 
-	var wg sync.WaitGroup
-	if conf.EnableTCP {
-		wg.Add(1)
+	tunFactory := factory.NewServerTunFactory()
+	deps := NewServerDependencies(tunFactory, *conf)
 
-		go func() {
-			defer wg.Done()
-			err = startTCPServer(ctx, conf.TCPSettings)
-			if err != nil {
-				log.Print(err)
-			}
-
-		}()
-	}
-	if conf.EnableUDP {
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-			err = startUDPServer(ctx, conf.UDPSettings)
-			if err != nil {
-				log.Print(err)
-			}
-		}()
-	}
-
-	wg.Wait()
+	runner := NewServerRunner(deps)
+	runner.Run(ctx)
 }
 
 func ensureEd25519KeyPairCreated(conf *server_configuration.Configuration, manager *server_configuration.Manager) error {
@@ -87,38 +63,4 @@ func ensureEd25519KeyPairCreated(conf *server_configuration.Configuration, manag
 	}
 
 	return manager.InjectEdKeys(public, private)
-}
-
-func startTCPServer(ctx context.Context, settings settings.ConnectionSettings) error {
-	tunFile, err := tools_linux.SetupServerTun(settings)
-	if err != nil {
-		log.Fatalf("failed to open TUN interface: %v", err)
-	}
-	defer func() {
-		_ = tunFile.Close()
-	}()
-
-	err = routing.StartTCPRouting(ctx, tunFile, settings)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func startUDPServer(ctx context.Context, settings settings.ConnectionSettings) error {
-	tunFile, err := tools_linux.SetupServerTun(settings)
-	if err != nil {
-		log.Fatalf("failed to open TUN interface: %v", err)
-	}
-	defer func() {
-		_ = tunFile.Close()
-	}()
-
-	err = routing.StartUDPRouting(ctx, tunFile, settings)
-	if err != nil {
-		return err
-	}
-
-	return nil
 }

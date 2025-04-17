@@ -1,6 +1,8 @@
 package application
 
-import "context"
+import (
+	"context"
+)
 
 type TrafficRouterFactory interface {
 	CreateRouter(ctx context.Context,
@@ -11,8 +13,5 @@ type TrafficRouterFactory interface {
 }
 
 type ServerTrafficRouterFactory interface {
-	CreateRouter(ctx context.Context,
-		tunFactory TunManager,
-		workerFactory ServerWorkerFactory,
-	) (TrafficRouter, error)
+	CreateRouter(worker TunWorker) TrafficRouter
 }

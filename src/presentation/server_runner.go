@@ -3,27 +3,85 @@ package presentation
 import (
 	"context"
 	"log"
-	"time"
+	"sync"
+	"tungo/infrastructure/routing_layer/server_routing/factory"
+	"tungo/presentation/interactive_commands"
+	"tungo/settings"
 )
 
 type ServerRunner struct {
 	deps ServerAppDependencies
 }
 
-func NewServerRunner(deps ClientAppDependencies) *ServerRunner {
-	return &ServerRunner{}
+func NewServerRunner(deps ServerAppDependencies) *ServerRunner {
+	return &ServerRunner{
+		deps: deps,
+	}
 }
 
 func (r *ServerRunner) Run(ctx context.Context) {
-	if err := r.deps.TunManager().DisposeTunDevices(); err != nil {
-		log.Printf("error disposing tun devices: %s", err)
+	// ToDo: move conf gen to bubble tea and cli
+	go interactive_commands.ListenForCommand()
+
+	var wg sync.WaitGroup
+	if r.deps.Configuration().EnableTCP {
+		wg.Add(1)
+
+		connSettings := r.deps.Configuration().TCPSettings
+		if err := r.deps.TunManager().DisposeTunDevices(connSettings); err != nil {
+			log.Printf("error disposing tun devices: %s", err)
+		}
+
+		go func() {
+			defer wg.Done()
+			routeErr := r.route(ctx, connSettings)
+			if routeErr != nil {
+				log.Println(routeErr)
+			}
+		}()
 	}
 
-	router, conn, tun, err := r.routerFactory.
-		CreateRouter(ctx, r.deps.ConnectionFactory(), r.deps.TunManager(), r.deps.WorkerFactory())
-	if err != nil {
-		log.Printf("failed to create router: %s", err)
-		time.Sleep(500 * time.Millisecond)
-		continue
+	if r.deps.Configuration().EnableUDP {
+		wg.Add(1)
+
+		connSettings := r.deps.Configuration().UDPSettings
+		if err := r.deps.TunManager().DisposeTunDevices(connSettings); err != nil {
+			log.Printf("error disposing tun devices: %s", err)
+		}
+
+		go func() {
+			defer wg.Done()
+			routeErr := r.route(ctx, connSettings)
+			if routeErr != nil {
+				log.Println(routeErr)
+			}
+		}()
 	}
+
+	wg.Wait()
+}
+
+func (r *ServerRunner) route(ctx context.Context, settings settings.ConnectionSettings) error {
+	workerFactory := factory.NewServerWorkerFactory(settings)
+	tunFactory := factory.NewServerTunFactory()
+	routerFactory := factory.NewServerRouterFactory()
+
+	tun, tunErr := tunFactory.CreateTunDevice(settings)
+	if tunErr != nil {
+		log.Fatalf("error creating tun device: %s", tunErr)
+	}
+
+	worker, workerErr := workerFactory.CreateWorker(ctx, tun)
+	if workerErr != nil {
+		log.Fatalf("error creating worker: %s", workerErr)
+	}
+
+	router := routerFactory.CreateRouter(worker)
+
+	routingErr := router.RouteTraffic(ctx)
+	if routingErr != nil {
+		log.Fatalf("error routing traffic: %s", routingErr)
+	}
+
+	return nil
 }
