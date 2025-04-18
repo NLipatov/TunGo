@@ -1,4 +1,4 @@
-package factory
+package client_factory
 
 import (
 	"context"
