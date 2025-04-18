@@ -15,7 +15,7 @@ import (
 	"golang.org/x/sys/windows"
 	wintun "golang.zx2c4.com/wintun"
 	"tungo/application"
-	pal_windows "tungo/platform_tun/tools_windows"
+	tools_windows "tungo/platform_tun/tools_windows"
 	"tungo/settings"
 	"tungo/settings/client_configuration"
 )
@@ -56,7 +56,7 @@ func (m *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 		mtu = 1420
 	}
 
-	device, err := pal_windows.NewWinTun(adapter)
+	device, err := tools_windows.NewWinTun(adapter)
 	if err != nil {
 		_ = adapter.Close()
 		return nil, err
