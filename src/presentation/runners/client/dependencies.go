@@ -1,4 +1,4 @@
-package presentation
+package client
 
 import (
 	"fmt"
@@ -8,7 +8,7 @@ import (
 	"tungo/settings/client_configuration"
 )
 
-type ClientAppDependencies interface {
+type AppDependencies interface {
 	Initialize() error
 	Configuration() client_configuration.Configuration
 	ConnectionFactory() application.ConnectionFactory
@@ -16,7 +16,7 @@ type ClientAppDependencies interface {
 	TunManager() application.TunManager
 }
 
-type ClientDependencies struct {
+type Dependencies struct {
 	conf       client_configuration.Configuration
 	conn       application.ConnectionFactory
 	worker     application.WorkerFactory
@@ -24,11 +24,11 @@ type ClientDependencies struct {
 	cfgManager client_configuration.ClientConfigurationManager
 }
 
-func NewClientDependencies(cfgManager client_configuration.ClientConfigurationManager) ClientAppDependencies {
-	return &ClientDependencies{cfgManager: cfgManager}
+func NewDependencies(cfgManager client_configuration.ClientConfigurationManager) AppDependencies {
+	return &Dependencies{cfgManager: cfgManager}
 }
 
-func (c *ClientDependencies) Initialize() error {
+func (c *Dependencies) Initialize() error {
 	conf, err := c.cfgManager.Configuration()
 	if err != nil {
 		return fmt.Errorf("failed to read client configuration: %w", err)
@@ -45,18 +45,18 @@ func (c *ClientDependencies) Initialize() error {
 	return nil
 }
 
-func (c *ClientDependencies) Configuration() client_configuration.Configuration {
+func (c *Dependencies) Configuration() client_configuration.Configuration {
 	return c.conf
 }
 
-func (c *ClientDependencies) ConnectionFactory() application.ConnectionFactory {
+func (c *Dependencies) ConnectionFactory() application.ConnectionFactory {
 	return c.conn
 }
 
-func (c *ClientDependencies) WorkerFactory() application.WorkerFactory {
+func (c *Dependencies) WorkerFactory() application.WorkerFactory {
 	return c.worker
 }
 
-func (c *ClientDependencies) TunManager() application.TunManager {
+func (c *Dependencies) TunManager() application.TunManager {
 	return c.tun
 }

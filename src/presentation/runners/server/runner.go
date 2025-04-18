@@ -1,4 +1,4 @@
-package presentation
+package server
 
 import (
 	"context"
@@ -9,17 +9,17 @@ import (
 	"tungo/settings"
 )
 
-type ServerRunner struct {
-	deps ServerAppDependencies
+type Runner struct {
+	deps AppDependencies
 }
 
-func NewServerRunner(deps ServerAppDependencies) *ServerRunner {
-	return &ServerRunner{
+func NewRunner(deps AppDependencies) *Runner {
+	return &Runner{
 		deps: deps,
 	}
 }
 
-func (r *ServerRunner) Run(ctx context.Context) {
+func (r *Runner) Run(ctx context.Context) {
 	// ToDo: move conf gen to bubble tea and cli
 	go interactive_commands.ListenForCommand()
 
@@ -61,7 +61,7 @@ func (r *ServerRunner) Run(ctx context.Context) {
 	wg.Wait()
 }
 
-func (r *ServerRunner) route(ctx context.Context, settings settings.ConnectionSettings) error {
+func (r *Runner) route(ctx context.Context, settings settings.ConnectionSettings) error {
 	workerFactory := factory.NewServerWorkerFactory(settings)
 	tunFactory := factory.NewServerTunFactory()
 	routerFactory := factory.NewServerRouterFactory()

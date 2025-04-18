@@ -1,33 +1,33 @@
-package presentation
+package server
 
 import (
 	"tungo/application"
 	"tungo/settings/server_configuration"
 )
 
-type ServerAppDependencies interface {
+type AppDependencies interface {
 	Configuration() server_configuration.Configuration
 	TunManager() application.ServerTunManager
 }
 
-type ServerDependencies struct {
+type Dependencies struct {
 	configuration server_configuration.Configuration
 	tunManager    application.ServerTunManager
 }
 
-func NewServerDependencies(
+func NewDependencies(
 	tunManager application.ServerTunManager, configuration server_configuration.Configuration,
-) ServerAppDependencies {
-	return &ServerDependencies{
+) AppDependencies {
+	return &Dependencies{
 		configuration: configuration,
 		tunManager:    tunManager,
 	}
 }
 
-func (s ServerDependencies) Configuration() server_configuration.Configuration {
+func (s Dependencies) Configuration() server_configuration.Configuration {
 	return s.configuration
 }
 
-func (s ServerDependencies) TunManager() application.ServerTunManager {
+func (s Dependencies) TunManager() application.ServerTunManager {
 	return s.tunManager
 }

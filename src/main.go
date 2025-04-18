@@ -9,9 +9,12 @@ import (
 	"syscall"
 	"tungo/domain/app"
 	"tungo/domain/mode"
-	"tungo/presentation"
+	"tungo/infrastructure/routing/client_routing/factory"
 	"tungo/presentation/configuring"
 	"tungo/presentation/elevation"
+	"tungo/presentation/runners/client"
+	"tungo/presentation/runners/server"
+	"tungo/settings/client_configuration"
 )
 
 func main() {
@@ -43,12 +46,25 @@ func main() {
 	switch appMode {
 	case mode.Server:
 		fmt.Printf("Starting server...\n")
-		presentation.StartServer(appCtx)
+		server.StartServer(appCtx)
 	case mode.Client:
 		fmt.Printf("Starting client...\n")
-		presentation.StartClient(appCtx)
+		startClient(appCtx)
 	default:
 		log.Printf("invalid app mode: %v", appMode)
 		os.Exit(1)
 	}
+}
+
+func startClient(appCtx context.Context) {
+	deps := client.NewDependencies(client_configuration.NewManager())
+	depsErr := deps.Initialize()
+	if depsErr != nil {
+		log.Fatalf("init error: %s", depsErr)
+	}
+
+	routerFactory := factory.NewRouterFactory()
+
+	runner := client.NewRunner(deps, routerFactory)
+	runner.Run(appCtx)
 }

@@ -1,11 +1,11 @@
-package presentation_test
+package client_test
 
 import (
 	"errors"
 	"reflect"
 	"testing"
+	"tungo/presentation/runners/client"
 
-	"tungo/presentation"
 	"tungo/settings/client_configuration"
 )
 
@@ -27,7 +27,7 @@ func TestClientDependencies_InitializeSuccess(t *testing.T) {
 		conf: newDummyConfig(),
 		err:  nil,
 	}
-	deps := presentation.NewClientDependencies(dcm)
+	deps := client.NewDependencies(dcm)
 	if err := deps.Initialize(); err != nil {
 		t.Fatalf("Initialize() returned error: %v", err)
 	}
@@ -54,7 +54,7 @@ func TestClientDependencies_InitializeError(t *testing.T) {
 		conf: nil,
 		err:  errors.New("dummy error"),
 	}
-	deps := presentation.NewClientDependencies(dcm)
+	deps := client.NewDependencies(dcm)
 	if err := deps.Initialize(); err == nil {
 		t.Error("Expected error from Initialize(), got nil")
 	}

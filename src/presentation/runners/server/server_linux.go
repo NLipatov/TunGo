@@ -1,4 +1,4 @@
-package presentation
+package server
 
 import (
 	"context"
@@ -24,9 +24,9 @@ func StartServer(ctx context.Context) {
 	}
 
 	tunFactory := factory.NewServerTunFactory()
-	deps := NewServerDependencies(tunFactory, *conf)
+	deps := NewDependencies(tunFactory, *conf)
 
-	runner := NewServerRunner(deps)
+	runner := NewRunner(deps)
 	runner.Run(ctx)
 }
 

@@ -1,4 +1,4 @@
-package presentation
+package client
 
 import (
 	"context"
@@ -6,22 +6,21 @@ import (
 	"log"
 	"time"
 	"tungo/application"
-	"tungo/infrastructure/routing/client_routing/factory"
 )
 
-type ClientRunner struct {
-	deps          ClientAppDependencies
+type Runner struct {
+	deps          AppDependencies
 	routerFactory application.TrafficRouterFactory
 }
 
-func NewClientRunner(deps ClientAppDependencies) *ClientRunner {
-	return &ClientRunner{
+func NewRunner(deps AppDependencies, routerFactory application.TrafficRouterFactory) *Runner {
+	return &Runner{
 		deps:          deps,
-		routerFactory: factory.NewRouterFactory(),
+		routerFactory: routerFactory,
 	}
 }
 
-func (r *ClientRunner) Run(ctx context.Context) {
+func (r *Runner) Run(ctx context.Context) {
 	for ctx.Err() == nil {
 		if err := r.deps.TunManager().DisposeTunDevices(); err != nil {
 			log.Printf("error disposing tun devices: %s", err)
