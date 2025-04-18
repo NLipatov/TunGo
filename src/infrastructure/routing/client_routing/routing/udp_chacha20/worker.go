@@ -87,10 +87,8 @@ func (w *UdpWorker) HandleTransport() error {
 				return fmt.Errorf("could not read a packet from conn: %v", readErr)
 			}
 
-			if n == 1 {
-				if network.SignalIs(dataBuf[:n][0], network.SessionReset) {
-					return fmt.Errorf("server requested cryptographyService reset")
-				}
+			if n == 1 && network.SignalIs(dataBuf[0], network.SessionReset) {
+				return fmt.Errorf("server requested cryptographyService reset")
 			}
 
 			decrypted, decryptionErr := w.cryptographyService.Decrypt(dataBuf[:n])
