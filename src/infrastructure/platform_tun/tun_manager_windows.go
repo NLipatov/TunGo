@@ -9,13 +9,13 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"tungo/infrastructure/platform_tun/tools_windows"
 	"tungo/infrastructure/platform_tun/tools_windows/netsh"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
-	wintun "golang.zx2c4.com/wintun"
+	"golang.zx2c4.com/wintun"
 	"tungo/application"
-	tools_windows "tungo/platform_tun/tools_windows"
 	"tungo/settings"
 	"tungo/settings/client_configuration"
 )
