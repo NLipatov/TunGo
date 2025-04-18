@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log"
 	"tungo/infrastructure/network"
-	"tungo/platform_abstraction_layer/tools_linux/ip"
+	"tungo/infrastructure/platform_tun/tools_linux/ip"
 	"tungo/settings"
 	"tungo/settings/client_configuration"
 	"tungo/settings/server_configuration"

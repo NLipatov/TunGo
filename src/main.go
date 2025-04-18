@@ -9,9 +9,14 @@ import (
 	"syscall"
 	"tungo/domain/app"
 	"tungo/domain/mode"
-	"tungo/presentation"
+	"tungo/infrastructure/routing/client_routing/client_factory"
+	server_factory "tungo/infrastructure/routing/server_routing/factory"
 	"tungo/presentation/configuring"
 	"tungo/presentation/elevation"
+	"tungo/presentation/runners/client"
+	"tungo/presentation/runners/server"
+	"tungo/settings/client_configuration"
+	"tungo/settings/server_configuration"
 )
 
 func main() {
@@ -43,12 +48,39 @@ func main() {
 	switch appMode {
 	case mode.Server:
 		fmt.Printf("Starting server...\n")
-		presentation.StartServer(appCtx)
+		startServer(appCtx)
 	case mode.Client:
 		fmt.Printf("Starting client...\n")
-		presentation.StartClient(appCtx)
+		startClient(appCtx)
 	default:
 		log.Printf("invalid app mode: %v", appMode)
 		os.Exit(1)
 	}
+}
+
+func startClient(appCtx context.Context) {
+	deps := client.NewDependencies(client_configuration.NewManager())
+	depsErr := deps.Initialize()
+	if depsErr != nil {
+		log.Fatalf("init error: %s", depsErr)
+	}
+
+	routerFactory := client_factory.NewRouterFactory()
+
+	runner := client.NewRunner(deps, routerFactory)
+	runner.Run(appCtx)
+}
+
+func startServer(appCtx context.Context) {
+	tunFactory := server_factory.NewServerTunFactory()
+	configurationManager := server_configuration.NewManager()
+	conf, confErr := configurationManager.Configuration()
+	if confErr != nil {
+		log.Fatal(confErr)
+	}
+
+	deps := server.NewDependencies(tunFactory, *conf)
+
+	runner := server.NewRunner(deps)
+	runner.Run(appCtx)
 }

@@ -2,8 +2,6 @@ package interactive_commands
 
 import (
 	"bufio"
-	"context"
-	"fmt"
 	"log"
 	"os"
 	"strings"
@@ -11,22 +9,15 @@ import (
 )
 
 const (
-	shutdownCmd           = "exit"
 	generateClientConfCmd = "gen"
 )
 
-func ListenForCommand(cancelFunc context.CancelFunc, mode string) {
+func ListenForCommand() {
 	scanner := bufio.NewScanner(os.Stdin)
-	fmt.Printf("Type '%s' to turn off the %s\n", shutdownCmd, mode)
 	for scanner.Scan() {
 		command := strings.TrimSpace(scanner.Text())
 
 		switch {
-		case strings.EqualFold(command, shutdownCmd): //handle 'shutdown_cmd' command
-			log.Println("Shutting down...")
-			cancelFunc()
-			return
-
 		case strings.EqualFold(command, generateClientConfCmd): //handle 'generate_new_client_conf_cmd' command
 			if err := handlers.GenerateNewClientConf(); err != nil {
 				log.Printf("failed to generate new client conf: %s", err)

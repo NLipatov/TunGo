@@ -7,6 +7,7 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/hkdf"
 	"io"
+	"unsafe"
 )
 
 type TcpCryptographyService struct {
@@ -16,7 +17,7 @@ type TcpCryptographyService struct {
 	RecvNonce          *Nonce
 	isServer           bool
 	SessionId          [32]byte
-	nonceBuf           *NonceBuf
+	nonceBuf           *StrictCounter
 	encryptionAadBuf   []byte
 	decryptionAadBuf   []byte
 	encryptionNonceBuf [12]byte
@@ -52,7 +53,7 @@ func NewTcpCryptographyService(id [32]byte, sendKey, recvKey []byte, isServer bo
 		RecvNonce:          NewNonce(),
 		SendNonce:          NewNonce(),
 		isServer:           isServer,
-		nonceBuf:           nil,
+		nonceBuf:           NewStrictCounter(),
 		encryptionNonceBuf: [12]byte{},
 		decryptionNonceBuf: [12]byte{},
 		encryptionAadBuf:   make([]byte, 80),
@@ -85,6 +86,12 @@ func (s *TcpCryptographyService) Decrypt(ciphertext []byte) ([]byte, error) {
 	}
 
 	nonceBytes := s.RecvNonce.Encode(s.decryptionNonceBuf[:])
+
+	//converts nonceBytes to [12]byte with no allocations
+	nBErr := s.nonceBuf.Validate(*(*[12]byte)(unsafe.Pointer(&nonceBytes[0])))
+	if nBErr != nil {
+		return nil, nBErr
+	}
 
 	aad := s.CreateAAD(!s.isServer, nonceBytes, s.decryptionAadBuf)
 	plaintext, err := s.recvCipher.Open(ciphertext[:0], nonceBytes, ciphertext, aad)

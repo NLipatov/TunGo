@@ -22,3 +22,7 @@ func (ua *UdpAdapter) Read(buffer []byte) (int, error) {
 	n, _, err := ua.Conn.ReadFromUDP(buffer)
 	return n, err
 }
+
+func (ua *UdpAdapter) Close() error {
+	return ua.Conn.Close()
+}
