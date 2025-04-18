@@ -79,7 +79,7 @@ func (w *UdpWorker) HandleTransport() error {
 		case <-w.ctx.Done():
 			return nil
 		default:
-			n, _, _, _, readErr := w.conn.ReadMsgUDP(dataBuf, oobBuf)
+			n, _, _, _, readErr := w.conn.ReadMsgUDPAddrPort(dataBuf, oobBuf)
 			if readErr != nil {
 				if w.ctx.Err() != nil {
 					return nil
