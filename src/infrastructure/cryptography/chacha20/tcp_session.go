@@ -16,7 +16,7 @@ type TcpCryptographyService struct {
 	RecvNonce          *Nonce
 	isServer           bool
 	SessionId          [32]byte
-	nonceBuf           *NonceBuf
+	nonceBuf           *NonceCounter
 	encryptionAadBuf   []byte
 	decryptionAadBuf   []byte
 	encryptionNonceBuf [12]byte

@@ -1,43 +1,37 @@
 package chacha20
 
-type NonceBuf struct {
-	data       [][12]byte
-	size       int
-	lastInsert int
-	nextRead   int
-	set        map[[12]byte]struct{}
-	keyBuf     [12]byte
+import (
+	"encoding/binary"
+	"errors"
+	"sync"
+)
+
+type NonceCounter struct {
+	mu      sync.Mutex
+	maxHigh uint32
+	maxLow  uint64
 }
 
-func NewNonceBuf(size int) *NonceBuf {
-	return &NonceBuf{
-		data:       make([][12]byte, size),
-		size:       size,
-		lastInsert: -1,
-		nextRead:   0,
-		set:        make(map[[12]byte]struct{}, size),
+// NewNonceCounter — GC‑free anti-replay counter
+func NewNonceCounter() *NonceCounter { return &NonceCounter{} }
+
+// Insert checks 96‑bit counter BE (low||high).
+func (c *NonceCounter) Insert(nonce [12]byte) error {
+	low := binary.BigEndian.Uint64(nonce[0:8])
+	high := binary.BigEndian.Uint32(nonce[8:12])
+
+	if high == ^uint32(0) && low == ^uint64(0) {
+		return errors.New("nonce overflow: maximum messages reached")
 	}
-}
 
-func (r *NonceBuf) Insert(nonceBytes [12]byte) error {
-	_, notUnique := r.set[nonceBytes]
-	if notUnique {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if high < c.maxHigh ||
+		(high == c.maxHigh && low <= c.maxLow) {
 		return ErrNonUniqueNonce
 	}
 
-	r.lastInsert = (r.lastInsert + 1) % r.size
-
-	oldNonce := r.data[r.lastInsert]
-	if _, exists := r.set[oldNonce]; exists {
-		delete(r.set, oldNonce)
-	}
-
-	r.data[r.lastInsert] = nonceBytes
-	r.set[nonceBytes] = struct{}{}
-
-	if r.nextRead == r.lastInsert {
-		r.nextRead = (r.nextRead + 1) % r.size
-	}
-
+	c.maxHigh, c.maxLow = high, low
 	return nil
 }

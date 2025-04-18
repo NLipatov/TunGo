@@ -17,7 +17,7 @@ type (
 		SendNonce        *Nonce
 		RecvNonce        *Nonce
 		isServer         bool
-		nonceBuf         *NonceBuf
+		nonceBuf         *NonceCounter
 		encryptionAadBuf [60]byte //32 bytes for sessionId, 16 bytes for direction, 12 bytes for nonce. 60 bytes total.
 		decryptionAadBuf [60]byte //32 bytes for sessionId, 16 bytes for direction, 12 bytes for nonce. 60 bytes total.
 	}
@@ -41,7 +41,7 @@ func NewUdpSession(id [32]byte, sendKey, recvKey []byte, isServer bool, nonceBuf
 		RecvNonce:  NewNonce(),
 		SendNonce:  NewNonce(),
 		isServer:   isServer,
-		nonceBuf:   NewNonceBuf(nonceBufferSize),
+		nonceBuf:   NewNonceCounter(),
 		encoder:    DefaultUDPEncoder{},
 	}, nil
 }
