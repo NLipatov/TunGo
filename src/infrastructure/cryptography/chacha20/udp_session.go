@@ -17,7 +17,7 @@ type (
 		SendNonce        *Nonce
 		RecvNonce        *Nonce
 		isServer         bool
-		nonceBuf         *NonceCounter
+		nonceBuf         *Sliding64
 		encryptionAadBuf [60]byte //32 bytes for sessionId, 16 bytes for direction, 12 bytes for nonce. 60 bytes total.
 		decryptionAadBuf [60]byte //32 bytes for sessionId, 16 bytes for direction, 12 bytes for nonce. 60 bytes total.
 	}
@@ -41,7 +41,7 @@ func NewUdpSession(id [32]byte, sendKey, recvKey []byte, isServer bool, nonceBuf
 		RecvNonce:  NewNonce(),
 		SendNonce:  NewNonce(),
 		isServer:   isServer,
-		nonceBuf:   NewNonceCounter(),
+		nonceBuf:   NewSliding64(),
 		encoder:    DefaultUDPEncoder{},
 	}, nil
 }
@@ -71,7 +71,7 @@ func (s *DefaultUdpSession) Decrypt(ciphertext []byte) ([]byte, error) {
 	payloadBytes := ciphertext[12:]
 
 	//converts nonceBytes to [12]byte with no allocations
-	nBErr := s.nonceBuf.Insert(*(*[12]byte)(unsafe.Pointer(&nonceBytes[0])))
+	nBErr := s.nonceBuf.Validate(*(*[12]byte)(unsafe.Pointer(&nonceBytes[0])))
 	if nBErr != nil {
 		return nil, nBErr
 	}

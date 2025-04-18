@@ -50,10 +50,10 @@ func (w *TcpTunWorker) HandleTun() error {
 				return err
 			}
 
-			_, err = w.cryptographyService.Encrypt(buffer[4 : n+4])
-			if err != nil {
-				log.Printf("failed to encrypt packet: %v", err)
-				continue
+			_, encryptErr := w.cryptographyService.Encrypt(buffer[4 : n+4])
+			if encryptErr != nil {
+				log.Printf("failed to encrypt packet: %v", encryptErr)
+				return encryptErr
 			}
 
 			encodingErr := tcpEncoder.Encode(buffer[:n+4+chacha20poly1305.Overhead])
@@ -105,7 +105,7 @@ func (w *TcpTunWorker) HandleTransport() error {
 			decrypted, decryptionErr := w.cryptographyService.Decrypt(buffer[:length])
 			if decryptionErr != nil {
 				log.Printf("failed to decrypt data: %s", decryptionErr)
-				continue
+				return decryptionErr
 			}
 
 			// Write the decrypted packet to the TUN interface
