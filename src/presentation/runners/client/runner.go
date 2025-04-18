@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"time"
 	"tungo/application"
@@ -21,36 +22,45 @@ func NewRunner(deps AppDependencies, routerFactory application.TrafficRouterFact
 }
 
 func (r *Runner) Run(ctx context.Context) {
-	for ctx.Err() == nil {
+	defer func() {
 		if err := r.deps.TunManager().DisposeTunDevices(); err != nil {
-			log.Printf("error disposing tun devices: %s", err)
+			log.Printf("error disposing tun devices on exit: %s", err)
 		}
+	}()
 
-		router, conn, tun, err := r.routerFactory.
-			CreateRouter(ctx, r.deps.ConnectionFactory(), r.deps.TunManager(), r.deps.WorkerFactory())
-		if err != nil {
-			log.Printf("failed to create router: %s", err)
+	for ctx.Err() == nil {
+		err := r.runSession(ctx)
+		switch {
+		case err == nil, errors.Is(err, context.Canceled):
+			return
+		default:
+			log.Printf("session error: %v, reconnecting…", err)
 			time.Sleep(500 * time.Millisecond)
-			continue
-		}
-
-		log.Printf("tunneling traffic via tun device")
-
-		go func() {
-			<-ctx.Done() //blocks until context is cancelled
-			_ = conn.Close()
-			_ = tun.Close()
-		}()
-
-		if routeTrafficErr := router.RouteTraffic(ctx); routeTrafficErr != nil {
-			if errors.Is(routeTrafficErr, context.Canceled) {
-				break
-			}
-			log.Printf("routing error: %s", routeTrafficErr)
 		}
 	}
+}
+
+func (r *Runner) runSession(parentCtx context.Context) error {
+	ctx, cancel := context.WithCancel(parentCtx)
+	defer cancel()
 
 	if err := r.deps.TunManager().DisposeTunDevices(); err != nil {
-		log.Printf("error disposing tun devices on exit: %s", err)
+		log.Printf("error disposing tun devices: %v", err)
 	}
+
+	router, conn, tun, err := r.routerFactory.
+		CreateRouter(ctx, r.deps.ConnectionFactory(), r.deps.TunManager(), r.deps.WorkerFactory())
+	if err != nil {
+		return fmt.Errorf("failed to create router: %s", err)
+	}
+
+	log.Printf("tunneling traffic via tun device")
+
+	go func() {
+		<-ctx.Done() //blocks until context is cancelled
+		_ = conn.Close()
+		_ = tun.Close()
+	}()
+
+	return router.RouteTraffic(ctx)
 }

@@ -2,7 +2,6 @@ package routing
 
 import (
 	"context"
-	"golang.org/x/sync/errgroup"
 	"tungo/application"
 )
 
@@ -17,19 +16,20 @@ func NewRouter(worker application.TunWorker) application.TrafficRouter {
 }
 
 func (r *Router) RouteTraffic(ctx context.Context) error {
-	errGroup, ctx := errgroup.WithContext(ctx)
+	routingErr := make(chan error, 2)
 
-	// TUN -> Transport
-	errGroup.Go(func() error {
-		err := r.worker.HandleTun()
+	go func() {
+		routingErr <- r.worker.HandleTun()
+	}()
+
+	go func() {
+		routingErr <- r.worker.HandleTransport()
+	}()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-routingErr:
 		return err
-	})
-
-	// Transport -> TUN
-	errGroup.Go(func() error {
-		err := r.worker.HandleTransport()
-		return err
-	})
-
-	return errGroup.Wait()
+	}
 }
