@@ -19,7 +19,7 @@ function HomepageHeader() {
         <div className={styles.buttons}>
           <Link
             className="button button--secondary button--lg"
-            to="/docs/QuickStart">
+            to="/docs/intro">
               Setup VPN Tunnel in 10 sec ⏱️
           </Link>
         </div>
