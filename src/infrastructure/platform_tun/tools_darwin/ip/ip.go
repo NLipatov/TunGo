@@ -25,34 +25,53 @@ func LinkAddrAdd(ifName, cidr string) error {
 	return nil
 }
 
-// RouteAddToServer selects the same gateway/interface the system would use for destIP and installs a specific route.
+// RouteAddToServer installs routes that keep the real LAN gateway reachable
+// even after the VPN adds the split /1 defaults.
 func RouteAddToServer(destIP string) error {
-	out, err := exec.Command("route", "get", destIP).CombinedOutput()
+	parseRoute := func(target string) (gw, iface string, err error) {
+		out, err := exec.Command("route", "-n", "get", target).CombinedOutput()
+		if err != nil {
+			return "", "", fmt.Errorf("route get %s: %w (%s)", target, err, out)
+		}
+		for _, ln := range strings.Split(string(out), "\n") {
+			f := strings.Fields(strings.TrimSpace(ln))
+			if len(f) < 2 {
+				continue
+			}
+			switch f[0] {
+			case "gateway:":
+				gw = f[1]
+			case "interface:":
+				iface = f[1]
+			}
+		}
+		return
+	}
+
+	gateway, iface, err := parseRoute(destIP)
 	if err != nil {
-		return fmt.Errorf("route get %s failed: %w", destIP, err)
+		return err
 	}
 
-	var gateway, iface string
-	for _, line := range strings.Split(string(out), "\n") {
-		f := strings.Fields(strings.TrimSpace(line))
-		if len(f) < 2 {
-			continue
-		}
-		switch f[0] {
-		case "gateway:":
-			gateway = f[1]
-		case "interface:":
-			iface = f[1]
+	if strings.HasPrefix(gateway, "127.") || gateway == "" {
+		if gwDef, ifDef, err2 := parseRoute("default"); err2 == nil {
+			gateway, iface = gwDef, ifDef
 		}
 	}
 
-	if gateway != "" {
+	switch {
+	case gateway != "":
+		if err := RouteAdd(gateway, iface); err != nil {
+			return fmt.Errorf("route keep gw %s: %w", gateway, err)
+		}
 		return RouteAddViaGateway(destIP, gateway)
-	}
-	if iface != "" {
+
+	case iface != "":
 		return RouteAdd(destIP, iface)
+
+	default:
+		return fmt.Errorf("no route found for %s", destIP)
 	}
-	return fmt.Errorf("no route found for %s", destIP)
 }
 
 func RouteAdd(ip, iface string) error {
