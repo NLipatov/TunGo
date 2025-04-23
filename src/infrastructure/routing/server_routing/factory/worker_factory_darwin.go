@@ -17,6 +17,9 @@ func NewServerWorkerFactory(settings settings.ConnectionSettings) application.Se
 	}
 }
 
-func (s ServerWorkerFactory) CreateWorker(_ context.Context, _ io.ReadWriteCloser) (application.TunWorker, error) {
+func (s ServerWorkerFactory) CreateWorker(
+	_ context.Context,
+	_ io.ReadWriteCloser,
+) (application.TunWorker, error) {
 	panic("not implemented")
 }
