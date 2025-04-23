@@ -9,36 +9,46 @@ import (
 	"tungo/infrastructure/network"
 )
 
-// DarwinWgTunAdapter wraps a wireguard/tun Device and uses **pre‑allocated**
-// read / write buffers to avoid per‑packet heap allocations. The first
-// 4 bytes of every frame contain the utun address‑family header; Read
-// strips it, Write prepends it.
+// DarwinWgTunAdapter wraps a wireguard/tun Device and is **allocation‑free**
+// in the steady state: all required buffers and slice headers are created
+// once in NewWgTunAdapter and then reused.
 type DarwinWgTunAdapter struct {
-	device      tun.Device
-	readBuffer  []byte // len == MaxPacketLengthBytes (+4 bytes for header already accounted for by tun.Read offset)
-	writeBuffer []byte // ditto
+	device tun.Device
+
+	readBuffer  []byte // backing array for incoming packets (+4 bytes hdr)
+	writeBuffer []byte // backing array for outgoing packets (+4 bytes hdr)
+
+	// Pre‑built slice headers reused on every Read/Write call.
+	readVec  [][]byte // len==1, always points to readBuffer
+	writeVec [][]byte // len==1, resliced to current packet size
+	sizes    []int    // len==1, scratch for Device.Read
 }
 
-// NewWgTunAdapter allocates two reusable buffers large enough to hold the
-// biggest frame the VPN ever processes.
+// NewWgTunAdapter allocates the buffers once and prepares reusable slice
+// headers. MaxPacketLengthBytes should already include the 4‑byte utun header.
 func NewWgTunAdapter(dev tun.Device) application.TunDevice {
+	rb := make([]byte, network.MaxPacketLengthBytes)
+	wb := make([]byte, network.MaxPacketLengthBytes)
 	return &DarwinWgTunAdapter{
 		device:      dev,
-		readBuffer:  make([]byte, network.MaxPacketLengthBytes),
-		writeBuffer: make([]byte, network.MaxPacketLengthBytes),
+		readBuffer:  rb,
+		writeBuffer: wb,
+		readVec:     [][]byte{rb},
+		writeVec:    [][]byte{wb}, // resliced per packet
+		sizes:       []int{0},
 	}
 }
 
-// Read copies an IP packet from the utun device into p. The utun header is
-// skipped, so the caller receives a clean IPv4/IPv6 packet.
+// Read copies a clean IP packet (without the 4‑byte utun header) into p.
+// No heap allocations occur.
 func (a *DarwinWgTunAdapter) Read(p []byte) (int, error) {
-	bufs, sizes := [][]byte{a.readBuffer}, []int{0}
+	a.sizes[0] = 0 // reset size slot
 
-	// offset 4 tells the driver that the first 4 bytes are the utun header
-	if _, err := a.device.Read(bufs, sizes, 4); err != nil {
+	// offset=4: driver writes after utun header
+	if _, err := a.device.Read(a.readVec, a.sizes, 4); err != nil {
 		return 0, err
 	}
-	n := sizes[0]
+	n := a.sizes[0]
 	if n > len(p) {
 		return 0, errors.New("destination slice too small")
 	}
@@ -46,8 +56,7 @@ func (a *DarwinWgTunAdapter) Read(p []byte) (int, error) {
 	return n, nil
 }
 
-// Write prepends the utun header to p and writes it to the kernel without
-// extra allocations.
+// Write prepends utun header and transmits p without allocations.
 func (a *DarwinWgTunAdapter) Write(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, errors.New("empty packet")
@@ -56,7 +65,7 @@ func (a *DarwinWgTunAdapter) Write(p []byte) (int, error) {
 		return 0, errors.New("packet exceeds max size")
 	}
 
-	// Determine address family
+	// Address family from first nibble of IP header
 	var family uint32
 	if p[0]>>4 == 6 {
 		family = syscall.AF_INET6
@@ -66,7 +75,10 @@ func (a *DarwinWgTunAdapter) Write(p []byte) (int, error) {
 	binary.BigEndian.PutUint32(a.writeBuffer[:4], family)
 	copy(a.writeBuffer[4:], p)
 
-	if _, err := a.device.Write([][]byte{a.writeBuffer[:len(p)+4]}, 4); err != nil {
+	// Re‑slice reusable header to actual packet length (+4 hdr)
+	a.writeVec[0] = a.writeBuffer[:len(p)+4]
+
+	if _, err := a.device.Write(a.writeVec, 4); err != nil {
 		return 0, err
 	}
 	return len(p), nil
