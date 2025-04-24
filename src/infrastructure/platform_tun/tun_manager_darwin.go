@@ -2,6 +2,8 @@ package platform_tun
 
 import (
 	"fmt"
+	"log"
+	"os/exec"
 	"strings"
 
 	"golang.zx2c4.com/wireguard/tun"
@@ -72,5 +74,24 @@ func (t *PlatformTunManager) DisposeTunDevices() error {
 	_ = ip.RouteDel(t.conf.TCPSettings.ConnectionIP)
 	_ = ip.LinkDel(t.conf.UDPSettings.InterfaceName)
 	_ = ip.LinkDel(t.conf.TCPSettings.InterfaceName)
+	if gw, err := defaultGateway(); err == nil {
+		log.Printf("Default %s deleted", gw)
+		_ = ip.RouteDel(gw)
+	}
 	return nil
+}
+
+// defaultGateway queries `route -n get default` to find the LAN gateway IP.
+func defaultGateway() (string, error) {
+	out, err := exec.Command("route", "-n", "get", "default").CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("defaultGateway: %v (%s)", err, out)
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 2 && fields[0] == "gateway:" {
+			return fields[1], nil
+		}
+	}
+	return "", fmt.Errorf("defaultGateway: no gateway found")
 }
