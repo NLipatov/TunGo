@@ -2,9 +2,9 @@ package platform_tun
 
 import (
 	"fmt"
-	"log"
 	"os/exec"
 	"strings"
+	"tungo/infrastructure/platform_tun/tools_darwin/route"
 
 	"golang.zx2c4.com/wireguard/tun"
 	"tungo/application"
@@ -42,7 +42,11 @@ func (t *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 		return nil, fmt.Errorf("failed to create TUN: %w", err)
 	}
 
-	name, _ := dev.Name()
+	name, nameErr := dev.Name()
+	if nameErr != nil {
+		return nil, fmt.Errorf("could not resolve created tun name: %w", nameErr)
+	}
+
 	t.devName = name
 	fmt.Printf("created TUN interface: %s\n", name)
 
@@ -55,11 +59,11 @@ func (t *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 	}
 	fmt.Printf("assigned IP %s to %s\n", addrCIDR, name)
 
-	if err := ip.RouteAddToServer(s.ConnectionIP); err != nil {
+	if err := route.Get(s.ConnectionIP); err != nil {
 		return nil, fmt.Errorf("failed to route to server: %w", err)
 	}
 
-	if err := ip.RouteAddSplit(name); err != nil {
+	if err := route.AddSplit(name); err != nil {
 		return nil, fmt.Errorf("failed to add split default routes: %w", err)
 	}
 	fmt.Printf("added split default routes via %s\n", name)
@@ -69,14 +73,14 @@ func (t *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 
 // DisposeTunDevices removes routes and destroys TUN interfaces.
 func (t *PlatformTunManager) DisposeTunDevices() error {
-	ip.RouteDelSplit(t.devName)
-	_ = ip.RouteDel(t.conf.UDPSettings.ConnectionIP)
-	_ = ip.RouteDel(t.conf.TCPSettings.ConnectionIP)
+	_ = route.DelSplit(t.devName)
+	_ = route.Del(t.conf.UDPSettings.ConnectionIP)
+	_ = route.Del(t.conf.TCPSettings.ConnectionIP)
 	_ = ip.LinkDel(t.conf.UDPSettings.InterfaceName)
 	_ = ip.LinkDel(t.conf.TCPSettings.InterfaceName)
-	if gw, err := defaultGateway(); err == nil {
-		log.Printf("Default %s deleted", gw)
-		_ = ip.RouteDel(gw)
+	gw, err := defaultGateway()
+	if err == nil {
+		return route.Del(gw)
 	}
 	return nil
 }
