@@ -2,7 +2,6 @@ package platform_tun
 
 import (
 	"fmt"
-	"os/exec"
 	"strings"
 	"tungo/infrastructure/platform_tun/tools_darwin/route"
 
@@ -54,17 +53,17 @@ func (t *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 	cidrPrefix := strings.Split(s.InterfaceIPCIDR, "/")[1]
 	addrCIDR := fmt.Sprintf("%s/%s", s.InterfaceAddress, cidrPrefix)
 
-	if err := ip.LinkAddrAdd(name, addrCIDR); err != nil {
-		return nil, fmt.Errorf("failed to assign IP to %s: %w", name, err)
+	if linkAddrAddErr := ip.LinkAddrAdd(name, addrCIDR); linkAddrAddErr != nil {
+		return nil, fmt.Errorf("failed to assign IP to %s: %w", name, linkAddrAddErr)
 	}
 	fmt.Printf("assigned IP %s to %s\n", addrCIDR, name)
 
-	if err := route.Get(s.ConnectionIP); err != nil {
-		return nil, fmt.Errorf("failed to route to server: %w", err)
+	if getErr := route.Get(s.ConnectionIP); getErr != nil {
+		return nil, fmt.Errorf("failed to route to server: %w", getErr)
 	}
 
-	if err := route.AddSplit(name); err != nil {
-		return nil, fmt.Errorf("failed to add split default routes: %w", err)
+	if addSplitErr := route.AddSplit(name); addSplitErr != nil {
+		return nil, fmt.Errorf("failed to add split default routes: %w", addSplitErr)
 	}
 	fmt.Printf("added split default routes via %s\n", name)
 
@@ -78,24 +77,9 @@ func (t *PlatformTunManager) DisposeTunDevices() error {
 	_ = route.Del(t.conf.TCPSettings.ConnectionIP)
 	_ = ip.LinkDel(t.conf.UDPSettings.InterfaceName)
 	_ = ip.LinkDel(t.conf.TCPSettings.InterfaceName)
-	gw, err := defaultGateway()
+	gw, err := route.DefaultGateway()
 	if err == nil {
 		return route.Del(gw)
 	}
 	return nil
-}
-
-// defaultGateway queries `route -n get default` to find the LAN gateway IP.
-func defaultGateway() (string, error) {
-	out, err := exec.Command("route", "-n", "get", "default").CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("defaultGateway: %v (%s)", err, out)
-	}
-	for _, line := range strings.Split(string(out), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) == 2 && fields[0] == "gateway:" {
-			return fields[1], nil
-		}
-	}
-	return "", fmt.Errorf("defaultGateway: no gateway found")
 }

@@ -101,3 +101,18 @@ func Del(destIP string) error {
 	}
 	return nil
 }
+
+// DefaultGateway queries `route -n get default` to find the LAN gateway IP.
+func DefaultGateway() (string, error) {
+	out, err := exec.Command("route", "-n", "get", "default").CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("defaultGateway: %v (%s)", err, out)
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 2 && fields[0] == "gateway:" {
+			return fields[1], nil
+		}
+	}
+	return "", fmt.Errorf("defaultGateway: no gateway found")
+}
