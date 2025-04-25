@@ -2,6 +2,7 @@ package elevation
 
 import "golang.org/x/sys/windows"
 
+// ProcessElevationImpl implements ProcessElevation on Windows
 type ProcessElevationImpl struct{}
 
 func NewProcessElevation() ProcessElevation {
