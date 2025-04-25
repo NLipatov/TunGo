@@ -7,7 +7,7 @@ env:
   GO_VERSION: '1.24.0'
   
 jobs:
-  build-linux-x64:
+  build-linux:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -65,7 +65,7 @@ jobs:
           name: darwin-arm64
           path: tungo-darwin-arm64
 
-  build-installer-windows-x64:
+  build-windows:
     runs-on: windows-latest
     steps:
       - name: Checkout repository
@@ -172,7 +172,7 @@ jobs:
 
   create-release:
     runs-on: ubuntu-latest
-    needs: [build-linux-x64, build-macos, build-installer-windows-x64, version-and-tag]
+    needs: [build-linux, build-macos, build-windows, version-and-tag]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
