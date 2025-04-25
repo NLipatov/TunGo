@@ -51,10 +51,8 @@ func (c *creatorTestConfigProvider) mockedConfig() Configuration {
 			Encryption:       settings.ChaCha20Poly1305,
 			DialTimeoutMs:    5000,
 		},
-		Ed25519PublicKey:          publicKey,
-		TCPWriteChannelBufferSize: 100000,
-		UDPNonceRingBufferSize:    100000,
-		Protocol:                  settings.UDP,
+		Ed25519PublicKey: publicKey,
+		Protocol:         settings.UDP,
 	}
 }
 

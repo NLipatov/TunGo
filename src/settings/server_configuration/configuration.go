@@ -6,16 +6,14 @@ import (
 )
 
 type Configuration struct {
-	TCPSettings               settings.ConnectionSettings `json:"TCPSettings"`
-	UDPSettings               settings.ConnectionSettings `json:"UDPSettings"`
-	FallbackServerAddress     string                      `json:"FallbackServerAddress"`
-	Ed25519PublicKey          ed25519.PublicKey           `json:"Ed25519PublicKey"`
-	Ed25519PrivateKey         ed25519.PrivateKey          `json:"Ed25519PrivateKey"`
-	ClientCounter             int                         `json:"ClientCounter"`
-	TCPWriteChannelBufferSize int32                       `json:"TCPWriteChannelBufferSize"`
-	UDPNonceRingBufferSize    int                         `json:"UDPNonceRingBufferSize"`
-	EnableTCP                 bool                        `json:"EnableTCP"`
-	EnableUDP                 bool                        `json:"EnableUDP"`
+	TCPSettings           settings.ConnectionSettings `json:"TCPSettings"`
+	UDPSettings           settings.ConnectionSettings `json:"UDPSettings"`
+	FallbackServerAddress string                      `json:"FallbackServerAddress"`
+	Ed25519PublicKey      ed25519.PublicKey           `json:"Ed25519PublicKey"`
+	Ed25519PrivateKey     ed25519.PrivateKey          `json:"Ed25519PrivateKey"`
+	ClientCounter         int                         `json:"ClientCounter"`
+	EnableTCP             bool                        `json:"EnableTCP"`
+	EnableUDP             bool                        `json:"EnableUDP"`
 }
 
 func NewDefaultConfiguration() *Configuration {
@@ -42,13 +40,11 @@ func NewDefaultConfiguration() *Configuration {
 			Encryption:       settings.ChaCha20Poly1305,
 			DialTimeoutMs:    5000,
 		},
-		FallbackServerAddress:     "",
-		Ed25519PublicKey:          nil,
-		Ed25519PrivateKey:         nil,
-		ClientCounter:             0,
-		TCPWriteChannelBufferSize: 1000,
-		UDPNonceRingBufferSize:    100_000,
-		EnableTCP:                 false,
-		EnableUDP:                 true,
+		FallbackServerAddress: "",
+		Ed25519PublicKey:      nil,
+		Ed25519PrivateKey:     nil,
+		ClientCounter:         0,
+		EnableTCP:             false,
+		EnableUDP:             true,
 	}
 }

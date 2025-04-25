@@ -26,12 +26,10 @@ func createTempClientConfigFile(t *testing.T, data interface{}) string {
 
 func TestReaderReadSuccess(t *testing.T) {
 	expectedConfig := Configuration{
-		TCPSettings:               settings.ConnectionSettings{},
-		UDPSettings:               settings.ConnectionSettings{},
-		Ed25519PublicKey:          nil,
-		TCPWriteChannelBufferSize: 2048,
-		UDPNonceRingBufferSize:    256,
-		Protocol:                  settings.UDP,
+		TCPSettings:      settings.ConnectionSettings{},
+		UDPSettings:      settings.ConnectionSettings{},
+		Ed25519PublicKey: nil,
+		Protocol:         settings.UDP,
 	}
 	path := createTempClientConfigFile(t, expectedConfig)
 	r := newReader(path)

@@ -32,12 +32,12 @@ func (s *DefaultSecret) Exchange(conn *net.UDPConn) (application.CryptographySer
 	}
 
 	configurationManager := client_configuration.NewManager()
-	clientConf, clientConfErr := configurationManager.Configuration()
+	_, clientConfErr := configurationManager.Configuration()
 	if clientConfErr != nil {
 		return nil, fmt.Errorf("failed to read client configuration: %s", clientConfErr)
 	}
 
-	session, sessionErr := chacha20.NewUdpSession(s.handshake.Id(), s.handshake.ClientKey(), s.handshake.ServerKey(), false, clientConf.UDPNonceRingBufferSize)
+	session, sessionErr := chacha20.NewUdpSession(s.handshake.Id(), s.handshake.ClientKey(), s.handshake.ServerKey(), false)
 	if sessionErr != nil {
 		return nil, fmt.Errorf("failed to create client session: %s\n", sessionErr)
 	}

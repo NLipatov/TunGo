@@ -189,12 +189,12 @@ func (u *UdpTunWorker) udpRegisterClient(conn *net.UDPConn, clientAddr *net.UDPA
 	log.Printf("%s registered as: %s", clientAddr.String(), *internalIpAddr)
 
 	serverConfigurationManager := server_configuration.NewManager()
-	serverConf, err := serverConfigurationManager.Configuration()
+	_, err := serverConfigurationManager.Configuration()
 	if err != nil {
 		return fmt.Errorf("failed to read server configuration: %s", err)
 	}
 
-	udpSession, udpSessionErr := chacha20.NewUdpSession(h.Id(), h.ServerKey(), h.ClientKey(), true, serverConf.UDPNonceRingBufferSize)
+	udpSession, udpSessionErr := chacha20.NewUdpSession(h.Id(), h.ServerKey(), h.ClientKey(), true)
 	if udpSessionErr != nil {
 		return udpSessionErr
 	}
