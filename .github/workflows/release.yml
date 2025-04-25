@@ -7,7 +7,7 @@ env:
   GO_VERSION: '1.24.0'
   
 jobs:
-  build-linux-x64:
+  build-linux:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -65,7 +65,7 @@ jobs:
           name: darwin-arm64
           path: tungo-darwin-arm64
 
-  build-installer-windows-x64:
+  build-windows:
     runs-on: windows-latest
     steps:
       - name: Checkout repository
@@ -89,7 +89,7 @@ jobs:
       - name: Create RunWithAdmin.ps1
         run: |
           @'
-          Start-Process "$PSScriptRoot\tungo-windows-x64" -ArgumentList "c" -Verb RunAs
+          Start-Process "$PSScriptRoot\tungo-windows-x64.exe" -ArgumentList "c" -Verb RunAs
           '@ | Out-File RunWithAdmin.ps1 -Encoding utf8
 
       - name: Install Inno Setup via Chocolatey
@@ -119,11 +119,11 @@ jobs:
 
           [Files]
           Source: "wintun.dll"; Flags: dontcopy
-          Source: "tungo-windows-x64"; DestDir: "{app}"; Flags: ignoreversion
+          Source: "tungo-windows-x64.exe"; DestDir: "{app}"; Flags: ignoreversion
           Source: "TunGo.ico"; DestDir: "{app}"; Flags: ignoreversion
         
           [Icons]
-          Name: "{group}\TunGo"; Filename: "{app}\tungo-windows-x64"; WorkingDir: "{app}"; IconFilename: "{app}\TunGo.ico"
+          Name: "{group}\TunGo"; Filename: "{app}\tungo-windows-x64.exe"; WorkingDir: "{app}"; IconFilename: "{app}\TunGo.ico"
 
           [Code]
           procedure CopyWintunDll;
@@ -172,7 +172,7 @@ jobs:
 
   create-release:
     runs-on: ubuntu-latest
-    needs: [build-linux-x64, build-macos, build-installer-windows-x64, version-and-tag]
+    needs: [build-linux, build-macos, build-windows, version-and-tag]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
