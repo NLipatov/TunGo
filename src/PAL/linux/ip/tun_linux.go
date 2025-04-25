@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"golang.org/x/sys/unix"
 	"os"
-	"os/exec"
 	"strings"
+	"tungo/PAL/linux/sysctl"
 	"unsafe"
 )
 
@@ -57,8 +57,7 @@ func OpenTunByName(ifName string) (*os.File, error) {
 
 func enableIPv4Forwarding() error {
 	// ToDo: ipv6 forwarding
-	cmd := exec.Command("sysctl", "net.ipv4.ip_forward")
-	output, err := cmd.CombinedOutput()
+	output, err := sysctl.NetIpv4IpForward()
 	if err != nil {
 		return fmt.Errorf("failed to enable IPv4 packet forwarding: %v, output: %s", err, output)
 	}
@@ -67,8 +66,7 @@ func enableIPv4Forwarding() error {
 		return nil
 	}
 
-	cmd = exec.Command("sysctl", "-w", "net.ipv4.ip_forward=1")
-	output, err = cmd.CombinedOutput()
+	output, err = sysctl.WNetIpv4IpForward()
 	if err != nil {
 		return fmt.Errorf("failed to enable IPv4 packet forwarding: %v, output: %s", err, output)
 	}
