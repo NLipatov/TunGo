@@ -89,7 +89,7 @@ jobs:
       - name: Create RunWithAdmin.ps1
         run: |
           @'
-          Start-Process "$PSScriptRoot\tungo-windows-x64" -ArgumentList "c" -Verb RunAs
+          Start-Process "$PSScriptRoot\tungo-windows-x64.exe" -ArgumentList "c" -Verb RunAs
           '@ | Out-File RunWithAdmin.ps1 -Encoding utf8
 
       - name: Install Inno Setup via Chocolatey
@@ -119,11 +119,11 @@ jobs:
 
           [Files]
           Source: "wintun.dll"; Flags: dontcopy
-          Source: "tungo-windows-x64"; DestDir: "{app}"; Flags: ignoreversion
+          Source: "tungo-windows-x64.exe"; DestDir: "{app}"; Flags: ignoreversion
           Source: "TunGo.ico"; DestDir: "{app}"; Flags: ignoreversion
         
           [Icons]
-          Name: "{group}\TunGo"; Filename: "{app}\tungo-windows-x64"; WorkingDir: "{app}"; IconFilename: "{app}\TunGo.ico"
+          Name: "{group}\TunGo"; Filename: "{app}\tungo-windows-x64.exe"; WorkingDir: "{app}"; IconFilename: "{app}\TunGo.ico"
 
           [Code]
           procedure CopyWintunDll;
