@@ -7,7 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	server_factory "tungo/PAL/linux/factory"
+	"tungo/PAL/pal_factory"
 	"tungo/domain/app"
 	"tungo/domain/mode"
 	"tungo/infrastructure/routing/client_routing/client_factory"
@@ -72,7 +72,7 @@ func startClient(appCtx context.Context) {
 }
 
 func startServer(appCtx context.Context) {
-	tunFactory := server_factory.NewServerTunFactory()
+	tunFactory := pal_factory.NewServerTunFactory()
 	configurationManager := server_configuration.NewManager()
 	conf, confErr := configurationManager.Configuration()
 	if confErr != nil {

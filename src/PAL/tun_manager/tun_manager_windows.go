@@ -1,4 +1,4 @@
-package windows
+package tun_manager
 
 import (
 	"errors"

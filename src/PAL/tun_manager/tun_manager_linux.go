@@ -1,4 +1,4 @@
-package linux
+package tun_manager
 
 import (
 	"fmt"
