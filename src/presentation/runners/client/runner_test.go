@@ -44,7 +44,7 @@ func (t *dummyTun) Close() error {
 	return nil
 }
 
-// mockTunManager implements application.TunManager.
+// mockTunManager implements application.ClientTunManager.
 type mockTunManager struct {
 	disposeCount int
 	disposeErr   error
@@ -67,7 +67,7 @@ func (d *mockConnectionFactory) EstablishConnection(_ context.Context,
 	return nil, nil, nil
 }
 
-// mockWorkerFactory implements application.WorkerFactory.
+// mockWorkerFactory implements application.ClientWorkerFactory.
 type mockWorkerFactory struct{}
 
 func (d *mockWorkerFactory) CreateWorker(
@@ -101,8 +101,8 @@ type mockRouterFactory struct {
 func (d *mockRouterFactory) CreateRouter(
 	_ context.Context,
 	_ application.ConnectionFactory,
-	_ application.TunManager,
-	_ application.WorkerFactory,
+	_ application.ClientTunManager,
+	_ application.ClientWorkerFactory,
 ) (application.TrafficRouter, application.ConnectionAdapter, application.TunDevice, error) {
 	return d.router, &dummyConnectionAdapter{}, &dummyTun{}, d.err
 }
@@ -110,7 +110,7 @@ func (d *mockRouterFactory) CreateRouter(
 // mockDeps implements presentation.ClientAppDependencies.
 type mockDeps struct {
 	conn   application.ConnectionFactory
-	worker application.WorkerFactory
+	worker application.ClientWorkerFactory
 	tun    *mockTunManager
 }
 
@@ -120,8 +120,8 @@ func (d *mockDeps) Configuration() client_configuration.Configuration {
 	return client_configuration.Configuration{}
 }
 func (d *mockDeps) ConnectionFactory() application.ConnectionFactory { return d.conn }
-func (d *mockDeps) WorkerFactory() application.WorkerFactory         { return d.worker }
-func (d *mockDeps) TunManager() application.TunManager               { return d.tun }
+func (d *mockDeps) WorkerFactory() application.ClientWorkerFactory   { return d.worker }
+func (d *mockDeps) TunManager() application.ClientTunManager         { return d.tun }
 
 // setRouterBuilder sets the unexported routerBuilder field using unsafe.
 func setRouterBuilder(runner *client.Runner, factory application.TrafficRouterFactory) {

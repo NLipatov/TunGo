@@ -40,7 +40,6 @@ func (c *reader) read() (*Configuration, error) {
 
 	c.setEnvServerAddress(&configuration)
 	c.setEnvEnabledProtocols(&configuration)
-	c.setEnvUDPNonceRingBufferSize(&configuration)
 
 	return &configuration, nil
 }
@@ -67,17 +66,6 @@ func (c *reader) setEnvEnabledProtocols(conf *Configuration) {
 		eTCPBool, parseErr := strconv.ParseBool(envTCP)
 		if parseErr == nil {
 			conf.EnableTCP = eTCPBool
-		}
-	}
-}
-
-func (c *reader) setEnvUDPNonceRingBufferSize(conf *Configuration) {
-	envRBSize := os.Getenv("UDPNonceRingBufferSize")
-
-	if envRBSize != "" {
-		size, parseErr := strconv.Atoi(envRBSize)
-		if parseErr == nil {
-			conf.UDPNonceRingBufferSize = size
 		}
 	}
 }

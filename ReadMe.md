@@ -60,7 +60,6 @@ main.go <mode>
           "...": "..."
         },
         "Ed25519PublicKey": "someGeneratedPublicKey",
-        "TCPWriteChannelBufferSize": 1000,
         "Protocol": "udp"
       }
    ```

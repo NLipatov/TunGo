@@ -23,7 +23,7 @@ type (
 	}
 )
 
-func NewUdpSession(id [32]byte, sendKey, recvKey []byte, isServer bool, nonceBufferSize int) (*DefaultUdpSession, error) {
+func NewUdpSession(id [32]byte, sendKey, recvKey []byte, isServer bool) (*DefaultUdpSession, error) {
 	sendCipher, err := chacha20poly1305.New(sendKey)
 	if err != nil {
 		return nil, err

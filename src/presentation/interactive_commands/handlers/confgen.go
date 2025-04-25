@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"tungo/PAL/linux/ip"
+	"tungo/infrastructure/PAL/linux/ip"
 	"tungo/infrastructure/network"
 	"tungo/settings"
 	"tungo/settings/client_configuration"
@@ -86,10 +86,8 @@ func generate() (*client_configuration.Configuration, error) {
 			Encryption:       serverConf.UDPSettings.Encryption,
 			DialTimeoutMs:    serverConf.UDPSettings.DialTimeoutMs,
 		},
-		Ed25519PublicKey:          serverConf.Ed25519PublicKey,
-		TCPWriteChannelBufferSize: 1000,
-		UDPNonceRingBufferSize:    serverConf.UDPNonceRingBufferSize,
-		Protocol:                  getDefaultProtocol(serverConf),
+		Ed25519PublicKey: serverConf.Ed25519PublicKey,
+		Protocol:         getDefaultProtocol(serverConf),
 	}
 
 	return &conf, nil

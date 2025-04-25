@@ -2,7 +2,7 @@ package elevation
 
 import "os"
 
-// ProcessElevationImpl implements ProcessElevation on macOS/Linux.
+// ProcessElevationImpl implements ProcessElevation on macOS
 type ProcessElevationImpl struct{}
 
 func NewProcessElevation() ProcessElevation {

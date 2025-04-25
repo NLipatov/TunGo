@@ -8,7 +8,7 @@ import (
 	"log"
 	"os"
 	"sync"
-	"tungo/PAL/pal_factory"
+	"tungo/infrastructure/PAL/pal_factory"
 	"tungo/infrastructure/routing/server_routing/factory"
 	"tungo/presentation/interactive_commands"
 	"tungo/settings"

@@ -79,12 +79,10 @@ func TestManagerConfigurationInvalidJSON(t *testing.T) {
 func TestManagerConfigurationSuccess(t *testing.T) {
 	// Create a valid configuration file.
 	defaultConfig := Configuration{
-		TCPSettings:               settings.ConnectionSettings{},
-		UDPSettings:               settings.ConnectionSettings{},
-		Ed25519PublicKey:          nil,
-		TCPWriteChannelBufferSize: 1024,
-		UDPNonceRingBufferSize:    128,
-		Protocol:                  settings.TCP,
+		TCPSettings:      settings.ConnectionSettings{},
+		UDPSettings:      settings.ConnectionSettings{},
+		Ed25519PublicKey: nil,
+		Protocol:         settings.TCP,
 	}
 	path := createTempConfigFile(t, defaultConfig)
 	manager := NewManager()
@@ -92,12 +90,6 @@ func TestManagerConfigurationSuccess(t *testing.T) {
 	config, err := manager.Configuration()
 	if err != nil {
 		t.Fatalf("expected success, got error: %v", err)
-	}
-	if config.TCPWriteChannelBufferSize != 1024 {
-		t.Errorf("expected TCPWriteChannelBufferSize 1024, got %d", config.TCPWriteChannelBufferSize)
-	}
-	if config.UDPNonceRingBufferSize != 128 {
-		t.Errorf("expected UDPNonceRingBufferSize 128, got %d", config.UDPNonceRingBufferSize)
 	}
 	if config.Protocol != settings.TCP {
 		t.Errorf("expected Protocol %q, got %d", settings.TCP, config.Protocol)

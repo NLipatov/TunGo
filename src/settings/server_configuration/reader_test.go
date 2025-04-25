@@ -11,10 +11,9 @@ import (
 func TestReadSuccess(t *testing.T) {
 	// Create a valid configuration file.
 	initialConfig := Configuration{
-		FallbackServerAddress:  "192.168.1.1",
-		EnableUDP:              false,
-		EnableTCP:              true,
-		UDPNonceRingBufferSize: 100,
+		FallbackServerAddress: "192.168.1.1",
+		EnableUDP:             false,
+		EnableTCP:             true,
 	}
 	filePath := createTempConfigFile(t, initialConfig)
 
@@ -22,8 +21,6 @@ func TestReadSuccess(t *testing.T) {
 	_ = os.Setenv("ServerIP", "10.0.0.1")
 	_ = os.Setenv("EnableUDP", "true")
 	_ = os.Setenv("EnableTCP", "false")
-	_ = os.Setenv("UDPNonceRingBufferSize", "200")
-	defer resetEnv("ServerIP", "EnableUDP", "EnableTCP", "UDPNonceRingBufferSize")
 
 	r := newReader(filePath)
 	conf, err := r.read()
@@ -39,9 +36,6 @@ func TestReadSuccess(t *testing.T) {
 	}
 	if conf.EnableTCP != false {
 		t.Errorf("Expected EnableTCP false, got %v", conf.EnableTCP)
-	}
-	if conf.UDPNonceRingBufferSize != 200 {
-		t.Errorf("Expected UDPNonceRingBufferSize 200, got %d", conf.UDPNonceRingBufferSize)
 	}
 }
 
@@ -120,10 +114,4 @@ func createTempConfigFile(t *testing.T, data interface{}) string {
 		t.Fatalf("Failed to write temp config file: %v", err)
 	}
 	return filePath
-}
-
-func resetEnv(keys ...string) {
-	for _, key := range keys {
-		_ = os.Unsetenv(key)
-	}
 }

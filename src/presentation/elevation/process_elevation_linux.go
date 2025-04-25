@@ -2,6 +2,7 @@ package elevation
 
 import "os"
 
+// ProcessElevationImpl implements ProcessElevation on GNU/Linux
 type ProcessElevationImpl struct {
 }
 
