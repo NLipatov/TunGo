@@ -3,9 +3,9 @@ package factory
 import (
 	"fmt"
 	"log"
+	"tungo/PAL/linux"
+	ip2 "tungo/PAL/linux/ip"
 	"tungo/application"
-	"tungo/infrastructure/platform_tun/tools_linux"
-	"tungo/infrastructure/platform_tun/tools_linux/ip"
 	"tungo/settings"
 )
 
@@ -17,12 +17,12 @@ func NewServerTunFactory() application.ServerTunManager {
 }
 
 func (s ServerTunFactory) CreateTunDevice(connSettings settings.ConnectionSettings) (application.TunDevice, error) {
-	tunFile, err := tools_linux.SetupServerTun(connSettings)
+	tunFile, err := linux.SetupServerTun(connSettings)
 	if err != nil {
 		log.Fatalf("failed to open TUN interface: %v", err)
 	}
 
-	configureErr := tools_linux.Configure(tunFile)
+	configureErr := linux.Configure(tunFile)
 	if configureErr != nil {
 		return nil, fmt.Errorf("failed to configure a server: %s\n", configureErr)
 	}
@@ -31,18 +31,18 @@ func (s ServerTunFactory) CreateTunDevice(connSettings settings.ConnectionSettin
 }
 
 func (s ServerTunFactory) DisposeTunDevices(connSettings settings.ConnectionSettings) error {
-	tun, openErr := ip.OpenTunByName(connSettings.InterfaceName)
+	tun, openErr := ip2.OpenTunByName(connSettings.InterfaceName)
 	if openErr != nil {
 		log.Fatalf("failed to open TUN interface by name: %v", openErr)
 	}
-	tools_linux.Unconfigure(tun)
+	linux.Unconfigure(tun)
 
 	closeErr := tun.Close()
 	if closeErr != nil {
 		log.Fatalf("failed to close TUN device: %v", closeErr)
 	}
 
-	_, delErr := ip.LinkDel(connSettings.InterfaceName)
+	_, delErr := ip2.LinkDel(connSettings.InterfaceName)
 	if delErr != nil {
 		return fmt.Errorf("error deleting TUN device: %v", delErr)
 	}

@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"sync"
+	factory2 "tungo/PAL/linux/factory"
 	"tungo/infrastructure/routing/server_routing/factory"
 	"tungo/presentation/interactive_commands"
 	"tungo/settings"
@@ -77,8 +78,8 @@ func (r *Runner) Run(ctx context.Context) {
 }
 
 func (r *Runner) route(ctx context.Context, settings settings.ConnectionSettings) error {
-	workerFactory := factory.NewServerWorkerFactory(settings)
-	tunFactory := factory.NewServerTunFactory()
+	workerFactory := factory2.NewServerWorkerFactory(settings)
+	tunFactory := factory2.NewServerTunFactory()
 	routerFactory := factory.NewServerRouterFactory()
 
 	tun, tunErr := tunFactory.CreateTunDevice(settings)
