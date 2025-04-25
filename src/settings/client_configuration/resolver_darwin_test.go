@@ -1,5 +1,11 @@
 package client_configuration
 
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
 func TestClientResolverResolve(t *testing.T) {
 	resolved, err := NewDefaultResolver().Resolve()
 	if err != nil {
