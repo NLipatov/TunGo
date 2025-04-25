@@ -3,14 +3,15 @@ package tun_manager
 import (
 	"errors"
 	"fmt"
+	"golang.zx2c4.com/wintun"
 	"log"
 	"net"
 	"os/exec"
 	"strconv"
 	"strings"
 	"syscall"
+	tools_windows "tungo/PAL/windows"
 	"tungo/PAL/windows/netsh"
-	"tungo/infrastructure/platform_tun/tools_windows"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
