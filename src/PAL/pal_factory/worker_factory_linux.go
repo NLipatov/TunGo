@@ -1,4 +1,4 @@
-package factory
+package pal_factory
 
 import (
 	"context"
