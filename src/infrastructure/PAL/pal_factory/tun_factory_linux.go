@@ -3,9 +3,9 @@ package pal_factory
 import (
 	"fmt"
 	"log"
-	"tungo/PAL/linux"
-	ip2 "tungo/PAL/linux/ip"
 	"tungo/application"
+	"tungo/infrastructure/PAL/linux"
+	"tungo/infrastructure/PAL/linux/ip"
 	"tungo/settings"
 )
 
@@ -31,7 +31,7 @@ func (s ServerTunFactory) CreateTunDevice(connSettings settings.ConnectionSettin
 }
 
 func (s ServerTunFactory) DisposeTunDevices(connSettings settings.ConnectionSettings) error {
-	tun, openErr := ip2.OpenTunByName(connSettings.InterfaceName)
+	tun, openErr := ip.OpenTunByName(connSettings.InterfaceName)
 	if openErr != nil {
 		log.Fatalf("failed to open TUN interface by name: %v", openErr)
 	}
@@ -42,7 +42,7 @@ func (s ServerTunFactory) DisposeTunDevices(connSettings settings.ConnectionSett
 		log.Fatalf("failed to close TUN device: %v", closeErr)
 	}
 
-	_, delErr := ip2.LinkDel(connSettings.InterfaceName)
+	_, delErr := ip.LinkDel(connSettings.InterfaceName)
 	if delErr != nil {
 		return fmt.Errorf("error deleting TUN device: %v", delErr)
 	}

@@ -5,10 +5,10 @@ import (
 	"golang.zx2c4.com/wireguard/tun"
 	"log"
 	"strings"
-	"tungo/PAL/darwin"
-	"tungo/PAL/darwin/ip"
-	"tungo/PAL/darwin/route"
 	"tungo/application"
+	"tungo/infrastructure/PAL/darwin"
+	"tungo/infrastructure/PAL/darwin/ip"
+	"tungo/infrastructure/PAL/darwin/route"
 	"tungo/settings"
 	"tungo/settings/client_configuration"
 )

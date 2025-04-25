@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"tungo/PAL/linux/ip"
+	"tungo/infrastructure/PAL/linux/ip"
 	"tungo/infrastructure/network"
 	"tungo/settings"
 	"tungo/settings/client_configuration"

@@ -2,8 +2,8 @@ package client
 
 import (
 	"fmt"
-	"tungo/PAL/tun_manager"
 	"tungo/application"
+	"tungo/infrastructure/PAL/tun_manager"
 	"tungo/infrastructure/routing/client_routing/client_factory"
 	"tungo/settings/client_configuration"
 )

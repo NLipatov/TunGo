@@ -5,7 +5,7 @@ import (
 	"golang.org/x/sys/unix"
 	"os"
 	"strings"
-	"tungo/PAL/linux/sysctl"
+	"tungo/infrastructure/PAL/linux/sysctl"
 	"unsafe"
 )
 
