@@ -3,6 +3,7 @@ package tun_manager
 import (
 	"fmt"
 	"golang.zx2c4.com/wireguard/tun"
+	"log"
 	"strings"
 	"tungo/PAL/darwin"
 	"tungo/PAL/darwin/ip"
@@ -14,8 +15,8 @@ import (
 
 // PlatformTunManager is the macOS-specific implementation of TunManager.
 type PlatformTunManager struct {
-	conf    client_configuration.Configuration
-	devName string
+	conf client_configuration.Configuration
+	dev  *tun.Device
 }
 
 // NewPlatformTunManager constructs a new PlatformTunManager.
@@ -45,7 +46,7 @@ func (t *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 		return nil, fmt.Errorf("could not resolve created tun name: %w", nameErr)
 	}
 
-	t.devName = name
+	t.dev = &dev
 	fmt.Printf("created TUN interface: %s\n", name)
 
 	// Use host address (InterfaceAddress) + prefix from InterfaceIPCIDR
@@ -71,14 +72,42 @@ func (t *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 
 // DisposeTunDevices removes routes and destroys TUN interfaces.
 func (t *PlatformTunManager) DisposeTunDevices() error {
-	_ = route.DelSplit(t.devName)
-	_ = route.Del(t.conf.UDPSettings.ConnectionIP)
-	_ = route.Del(t.conf.TCPSettings.ConnectionIP)
-	_ = ip.LinkDel(t.conf.UDPSettings.InterfaceName)
-	_ = ip.LinkDel(t.conf.TCPSettings.InterfaceName)
-	gw, err := route.DefaultGateway()
-	if err == nil {
-		return route.Del(gw)
+	if t.dev != nil {
+		dev := *t.dev
+
+		if t.dev != nil {
+			devCloseErr := dev.Close()
+			if devCloseErr != nil {
+				log.Printf("tun dev close error: %v", devCloseErr)
+			}
+		}
+
+		devName, devNameErr := dev.Name()
+		if devNameErr != nil {
+			delSplitErr := route.DelSplit(devName)
+			if delSplitErr != nil {
+				log.Printf(delSplitErr.Error())
+			}
+		}
 	}
+
+	// Delete explicit routes to servers
+	deleteRoute("UDP", t.conf.UDPSettings.ConnectionIP)
+	deleteRoute("TCP", t.conf.TCPSettings.ConnectionIP)
+
+	// Delete default gateway route if present
+	if gw, err := route.DefaultGateway(); err == nil {
+		deleteRoute("default gateway", gw)
+	}
+
 	return nil
+}
+
+func deleteRoute(label, dest string) {
+	if dest == "" {
+		return
+	}
+	if err := route.Del(dest); err != nil {
+		log.Printf("tun_manager failed to delete route (%s - %s): %v", label, dest, err)
+	}
 }
