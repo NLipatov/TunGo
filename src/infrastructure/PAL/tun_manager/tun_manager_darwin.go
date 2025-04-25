@@ -13,14 +13,14 @@ import (
 	"tungo/settings/client_configuration"
 )
 
-// PlatformTunManager is the macOS-specific implementation of TunManager.
+// PlatformTunManager is the macOS-specific implementation of ClientTunManager.
 type PlatformTunManager struct {
 	conf client_configuration.Configuration
 	dev  *tun.Device
 }
 
 // NewPlatformTunManager constructs a new PlatformTunManager.
-func NewPlatformTunManager(conf client_configuration.Configuration) (application.TunManager, error) {
+func NewPlatformTunManager(conf client_configuration.Configuration) (application.ClientTunManager, error) {
 	return &PlatformTunManager{conf: conf}, nil
 }
 

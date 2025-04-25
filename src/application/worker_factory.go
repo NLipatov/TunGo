@@ -6,7 +6,7 @@ import (
 	"net"
 )
 
-type WorkerFactory interface {
+type ClientWorkerFactory interface {
 	CreateWorker(ctx context.Context, conn net.Conn, tun io.ReadWriteCloser, cryptographyService CryptographyService) (TunWorker, error)
 }
 

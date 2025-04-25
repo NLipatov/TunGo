@@ -7,8 +7,8 @@ import (
 type TrafficRouterFactory interface {
 	CreateRouter(ctx context.Context,
 		connectionFactory ConnectionFactory,
-		tunFactory TunManager,
-		workerFactory WorkerFactory,
+		tunFactory ClientTunManager,
+		workerFactory ClientWorkerFactory,
 	) (TrafficRouter, ConnectionAdapter, TunDevice, error)
 }
 

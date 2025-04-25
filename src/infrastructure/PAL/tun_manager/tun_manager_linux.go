@@ -15,7 +15,7 @@ type PlatformTunManager struct {
 	conf client_configuration.Configuration
 }
 
-func NewPlatformTunManager(conf client_configuration.Configuration) (application.TunManager, error) {
+func NewPlatformTunManager(conf client_configuration.Configuration) (application.ClientTunManager, error) {
 	return &PlatformTunManager{
 		conf: conf,
 	}, nil

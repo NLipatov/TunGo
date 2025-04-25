@@ -2,7 +2,7 @@ package application
 
 import "tungo/settings"
 
-type TunManager interface {
+type ClientTunManager interface {
 	CreateTunDevice() (TunDevice, error)
 	DisposeTunDevices() error
 }
