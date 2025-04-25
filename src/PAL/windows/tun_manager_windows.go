@@ -1,4 +1,4 @@
-package platform_tun
+package windows
 
 import (
 	"errors"
@@ -9,12 +9,11 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"tungo/PAL/windows/netsh"
 	"tungo/infrastructure/platform_tun/tools_windows"
-	"tungo/infrastructure/platform_tun/tools_windows/netsh"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
-	"golang.zx2c4.com/wintun"
 	"tungo/application"
 	"tungo/settings"
 	"tungo/settings/client_configuration"

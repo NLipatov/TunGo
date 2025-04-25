@@ -1,4 +1,4 @@
-package tools_darwin
+package darwin
 
 import (
 	"encoding/binary"

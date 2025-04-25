@@ -1,14 +1,12 @@
-package platform_tun
+package darwin
 
 import (
 	"fmt"
-	"strings"
-	"tungo/infrastructure/platform_tun/tools_darwin/route"
-
 	"golang.zx2c4.com/wireguard/tun"
+	"strings"
+	"tungo/PAL/darwin/ip"
+	"tungo/PAL/darwin/route"
 	"tungo/application"
-	"tungo/infrastructure/platform_tun/tools_darwin"
-	"tungo/infrastructure/platform_tun/tools_darwin/ip"
 	"tungo/settings"
 	"tungo/settings/client_configuration"
 )
@@ -67,7 +65,7 @@ func (t *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 	}
 	fmt.Printf("added split default routes via %s\n", name)
 
-	return tools_darwin.NewWgTunAdapter(dev), nil
+	return NewWgTunAdapter(dev), nil
 }
 
 // DisposeTunDevices removes routes and destroys TUN interfaces.
