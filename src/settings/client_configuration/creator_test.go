@@ -99,10 +99,7 @@ func TestDefaultCreator_Create_ResolveError(t *testing.T) {
 
 func TestDefaultCreator_Create_WriteError(t *testing.T) {
 	tmp := t.TempDir()
-	readOnlyDir := filepath.Join(tmp, "ro_dir")
-	if err := os.Mkdir(readOnlyDir, 0500); err != nil {
-		t.Fatalf("setup mkdir failed: %v", err)
-	}
+	readOnlyDir := filepath.Join(tmp, "dir_that_does_not_exist")
 	resolver := &creatorTestResolver{path: filepath.Join(readOnlyDir, "cfg"), err: nil}
 	creator := NewDefaultCreator(resolver)
 
