@@ -3,38 +3,49 @@ import Heading from '@theme/Heading';
 import styles from './styles.module.css';
 
 const FeatureList = [
-  {
-    title: 'Fast',
-    Svg: require('@site/static/svg/racing-car.svg').default,
-    description: (
-      <>
-          <strong>No allocations</strong> and practically no CPU time
-      </>
-    ),
-  },
-  {
-    title: 'Open Sourced',
-    Svg: require('@site/static/svg/github.svg').default,
-    description: (
-      <>
-        TunGo is an <strong>MIT licensed</strong> open source project 
-      </>
-    ),
-  },
-  {
-    title: 'Secure',
-    Svg: require('@site/static/svg/key.svg').default,
-    description: (
-      <>
-          ChaCha20 used to bidirectional tunnel traffic encryption
-      </>
-    ),
-  },
+    {
+        title: 'CPU-Fast',
+        Svg: require('@site/static/svg/racing-car.svg').default,
+        description: (
+            <>
+                <strong>No allocations</strong> during runtime. <br/>
+                <strong>Negligible</strong> CPU usage under load.
+            </>
+        ),
+    },
+    {
+        title: 'RAM-Efficient',
+        Svg: require('@site/static/svg/raspberry-pi.svg').default,
+        description: (
+            <>
+                ~8 MB idle, ~14 MB under load. <br/>
+                Great for <strong>IoT and embedded systems</strong>
+            </>
+        ),
+    },
+    {
+        title: 'Secure',
+        Svg: require('@site/static/svg/key.svg').default,
+        description: (
+            <>
+                End-to-end tunnel with <strong>ChaCha20</strong> encryption
+            </>
+        ),
+    },
+    {
+        title: 'Open Source',
+        Svg: require('@site/static/svg/github.svg').default,
+        description: (
+            <>
+                License: <strong>MIT</strong>
+            </>
+        ),
+    },
 ];
 
 function Feature({Svg, title, description}) {
   return (
-    <div className={clsx('col col--4')}>
+    <div className={clsx('col col--3')}>
       <div className="text--center">
         <Svg className={styles.featureSvg} role="img" />
       </div>
