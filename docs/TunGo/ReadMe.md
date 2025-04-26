@@ -13,3 +13,9 @@ npm run start
 ## 3. Open the Web UI
 
 The project will be available at [http://localhost:3000](http://localhost:3000).
+
+# Update deps
+
+```bash
+npm  update
+```
