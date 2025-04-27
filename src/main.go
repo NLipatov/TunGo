@@ -13,6 +13,7 @@ import (
 	"tungo/infrastructure/routing/client_routing/client_factory"
 	"tungo/presentation/configuring"
 	"tungo/presentation/elevation"
+	"tungo/presentation/interactive_commands/handlers"
 	"tungo/presentation/runners/client"
 	"tungo/presentation/runners/server"
 	"tungo/settings/client_configuration"
@@ -49,6 +50,12 @@ func main() {
 	case mode.Server:
 		fmt.Printf("Starting server...\n")
 		startServer(appCtx)
+	case mode.ServerConfGen:
+		err := handlers.GenerateNewClientConf()
+		if err != nil {
+			log.Printf("failed to generate new client conf: %v", err)
+		}
+		return
 	case mode.Client:
 		fmt.Printf("Starting client...\n")
 		startClient(appCtx)

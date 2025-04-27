@@ -6,11 +6,17 @@ import (
 	"os"
 )
 
+type ServerConfigurationManager interface {
+	Configuration() (*Configuration, error)
+	IncrementClientCounter() error
+	InjectEdKeys(public ed25519.PublicKey, private ed25519.PrivateKey) error
+}
+
 type Manager struct {
 	resolver linuxResolver
 }
 
-func NewManager() *Manager {
+func NewManager() ServerConfigurationManager {
 	return &Manager{
 		resolver: newServerResolver(),
 	}

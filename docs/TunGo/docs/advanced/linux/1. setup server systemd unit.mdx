@@ -2,6 +2,14 @@
 Use this systemd unit to start TunGo automatically on reboot.
 :::
 
+:::warning
+You can generate new client configurations by executing:
+```bash
+sudo tungo s gen
+```
+:::
+
+## Setup
 1) Create the service file
 ```bash
 sudo vim /etc/systemd/system/tungo.service
@@ -9,7 +17,7 @@ sudo vim /etc/systemd/system/tungo.service
 
 :::info
 note 's' arg in `tungo s` command below.
-'s' stands for client mode and it will use default config - `/etc/tungo/server_configuration.json`
+'s' stands for server mode and it will use default config - `/etc/tungo/server_configuration.json`
 :::
 
 2) Paste in following configuration:

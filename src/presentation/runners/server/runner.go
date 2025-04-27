@@ -10,7 +10,6 @@ import (
 	"sync"
 	"tungo/infrastructure/PAL/pal_factory"
 	"tungo/infrastructure/routing/server_routing/factory"
-	"tungo/presentation/interactive_commands"
 	"tungo/settings"
 	"tungo/settings/server_configuration"
 )
@@ -35,9 +34,6 @@ func (r *Runner) Run(ctx context.Context) {
 	if err != nil {
 		log.Fatalf("failed to generate ed25519 keys: %s", err)
 	}
-
-	// ToDo: move conf gen to bubble tea and cli
-	go interactive_commands.ListenForCommand()
 
 	var wg sync.WaitGroup
 	if r.deps.Configuration().EnableTCP {
@@ -102,7 +98,7 @@ func (r *Runner) route(ctx context.Context, settings settings.ConnectionSettings
 	return nil
 }
 
-func (r *Runner) ensureEd25519KeyPairCreated(conf *server_configuration.Configuration, manager *server_configuration.Manager) error {
+func (r *Runner) ensureEd25519KeyPairCreated(conf *server_configuration.Configuration, manager server_configuration.ServerConfigurationManager) error {
 	// if keys are generated
 	if len(conf.Ed25519PublicKey) > 0 && len(conf.Ed25519PrivateKey) > 0 {
 		return nil

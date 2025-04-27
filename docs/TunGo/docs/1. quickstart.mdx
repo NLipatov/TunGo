@@ -1,0 +1,67 @@
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Quick start
+
+## 1. Server: setup
+<Tabs>
+    <TabItem value="linux" label="Linux amd64" default>
+        ```bash
+        wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-amd64 -O tungo
+        chmod +x tungo
+        sudo mv tungo /usr/local/bin/
+        ```
+    </TabItem>
+</Tabs>
+
+## 2. Server: generate client configuration
+
+```bash
+sudo tungo s gen
+```
+
+It will print out client configuration. Copy it to use on client.
+
+## 3. Client: setup
+
+<Tabs>
+    <TabItem value="linux" label="Linux amd64" default>
+        ```bash
+        wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-amd64 -O tungo
+        chmod +x tungo
+        sudo mv tungo /usr/local/bin/
+        ```
+    </TabItem>
+
+    <TabItem value="macos-arm" label="macOS arm64 (Apple Silicon)">
+        ```bash
+        wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-darwin-arm64 -O tungo
+        chmod +x tungo
+        sudo mv tungo /usr/local/bin/
+        ```
+    </TabItem>
+
+    <TabItem value="macos-intel" label="macOS amd64 (Intel)">
+        ```bash
+        wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-darwin-amd64 -O tungo
+        chmod +x tungo
+        sudo mv tungo /usr/local/bin/
+        ```
+    </TabItem>
+
+    <TabItem value="windows" label="Windows amd64">
+        Download and install TunGo for Windows from the [official release page](https://github.com/NLipatov/TunGo/releases).
+    </TabItem>
+</Tabs>
+
+## 4. Client: establish secure tunnel with server
+<Tabs>
+    <TabItem value="unix" label="Linux, macOS" default>
+        ```bash
+        sudo tungo
+        ```
+    </TabItem>
+    <TabItem value="windows" label="windows">
+        Install TunGo on Windows via the installer from the [official release page](https://github.com/NLipatov/TunGo/releases) then run it with admin rights.
+    </TabItem>
+</Tabs>

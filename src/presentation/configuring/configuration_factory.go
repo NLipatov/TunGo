@@ -5,6 +5,7 @@ import (
 	"tungo/presentation/configuring/cli"
 	"tungo/presentation/configuring/tui"
 	"tungo/settings/client_configuration"
+	"tungo/settings/server_configuration"
 )
 
 type ConfigurationFactory struct{}
@@ -31,7 +32,8 @@ func (c *ConfigurationFactory) buildTUIConfigurator() Configurator {
 		client_configuration.NewDefaultObserver(confResolver),
 		client_configuration.NewDefaultSelector(confResolver),
 		client_configuration.NewDefaultCreator(confResolver),
-		client_configuration.NewDefaultDeleter(confResolver))
+		client_configuration.NewDefaultDeleter(confResolver),
+		server_configuration.NewManager())
 
 	return tuiConfigurator
 }

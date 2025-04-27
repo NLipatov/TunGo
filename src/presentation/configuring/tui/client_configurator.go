@@ -10,6 +10,11 @@ import (
 	"tungo/settings/client_configuration"
 )
 
+const (
+	addOption    string = "+ add configuration"
+	removeOption string = "- remove configuration"
+)
+
 type clientConfigurator struct {
 	observer client_configuration.Observer
 	selector client_configuration.Selector
@@ -37,17 +42,17 @@ func (c *clientConfigurator) Configure() error {
 
 	// deletion option is only shown if there's anything to delete
 	if len(options) > 0 {
-		options = append(options, RemoveOption)
+		options = append(options, removeOption)
 	}
 	//add option is always shown
-	options = append(options, AddOption)
+	options = append(options, addOption)
 
 	selectedOption, selectedOptionErr := c.selectConf(options, "Select configuration – or add/remove one:")
 	if selectedOptionErr != nil {
 		return selectedOptionErr
 	}
 
-	if selectedOption == RemoveOption {
+	if selectedOption == removeOption {
 		optionsWithoutAddAndRemove := options[:len(options)-2]
 		confToDelete, confToDeleteErr := c.selectConf(optionsWithoutAddAndRemove, "Choose a configuration to remove:")
 		if confToDeleteErr != nil {
@@ -69,7 +74,7 @@ func (c *clientConfigurator) Configure() error {
 		}
 
 		return c.Configure()
-	} else if selectedOption == AddOption {
+	} else if selectedOption == addOption {
 		createErr := c.createConf()
 		if createErr != nil {
 			return createErr

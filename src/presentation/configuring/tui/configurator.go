@@ -4,11 +4,7 @@ import (
 	"fmt"
 	"tungo/domain/mode"
 	"tungo/settings/client_configuration"
-)
-
-const (
-	AddOption    string = "+ add configuration"
-	RemoveOption string = "- remove configuration"
+	"tungo/settings/server_configuration"
 )
 
 type Configurator struct {
@@ -22,10 +18,11 @@ func NewConfigurator(
 	selector client_configuration.Selector,
 	creator client_configuration.Creator,
 	deleter client_configuration.Deleter,
+	serverConfigurationManager server_configuration.ServerConfigurationManager,
 ) *Configurator {
 	return &Configurator{
 		clientConfigurator: newClientConfigurator(observer, selector, deleter, creator),
-		serverConfigurator: newServerConfigurator(),
+		serverConfigurator: newServerConfigurator(serverConfigurationManager),
 		appMode:            NewAppMode(),
 	}
 }
