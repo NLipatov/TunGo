@@ -37,7 +37,7 @@ const FeatureList = [
         Svg: require('@site/static/svg/github.svg').default,
         description: (
             <>
-                License: <strong>MIT</strong>
+                License: <strong>AGPLv3</strong>
             </>
         ),
     },
