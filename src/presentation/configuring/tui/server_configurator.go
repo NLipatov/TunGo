@@ -47,11 +47,7 @@ func (s *serverConfigurator) Configure() error {
 }
 
 func (s *serverConfigurator) selectOption() (string, error) {
-	options := make([]string, 2)
-	options[0] = startServerOption
-	options[1] = addClientOption
-
-	selector := components.NewSelector("Choose an option", options)
+	selector := components.NewSelector("Choose an option", s.optionsSet[:])
 	selectorProgram, selectorProgramErr := tea.NewProgram(selector).Run()
 	if selectorProgramErr != nil {
 		return "", selectorProgramErr
