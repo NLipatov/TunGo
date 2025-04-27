@@ -15,12 +15,14 @@ const (
 )
 
 type serverConfigurator struct {
-	manager server_configuration.ServerConfigurationManager
+	manager    server_configuration.ServerConfigurationManager
+	optionsSet [2]string
 }
 
 func newServerConfigurator(manager server_configuration.ServerConfigurationManager) *serverConfigurator {
 	return &serverConfigurator{
-		manager: manager,
+		manager:    manager,
+		optionsSet: [2]string{startServerOption, addClientOption},
 	}
 }
 
