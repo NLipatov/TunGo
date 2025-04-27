@@ -33,7 +33,7 @@ func (c *ConfigurationFactory) buildTUIConfigurator() Configurator {
 		client_configuration.NewDefaultSelector(confResolver),
 		client_configuration.NewDefaultCreator(confResolver),
 		client_configuration.NewDefaultDeleter(confResolver),
-		server_configuration.NewManager())
+		server_configuration.NewManager(server_configuration.NewServerResolver()))
 
 	return tuiConfigurator
 }

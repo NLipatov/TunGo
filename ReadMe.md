@@ -5,6 +5,18 @@
 ![Forks](https://img.shields.io/github/forks/NLipatov/TunGo.svg)
 ![Issues](https://img.shields.io/github/issues/NLipatov/TunGo.svg)
 
+# License
+
+This project is licensed under the GNU Affero General Public License v3.0 (AGPLv3).  
+See [LICENSE](./LICENSE) for details.
+
+Additional notices and exceptions are described in [LICENSE-EXCEPTIONS](./LICENSE-EXCEPTIONS).
+
+For commercial licensing inquiries, please contact: 
+Nikita Lipatov
+Email: 6stringsohei@gmail.com
+
+
 # TunGo: Fast & Secure VPN in Go
 
 <p align="center">
