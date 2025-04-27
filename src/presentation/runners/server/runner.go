@@ -102,7 +102,7 @@ func (r *Runner) route(ctx context.Context, settings settings.ConnectionSettings
 	return nil
 }
 
-func (r *Runner) ensureEd25519KeyPairCreated(conf *server_configuration.Configuration, manager *server_configuration.Manager) error {
+func (r *Runner) ensureEd25519KeyPairCreated(conf *server_configuration.Configuration, manager server_configuration.ServerConfigurationManager) error {
 	// if keys are generated
 	if len(conf.Ed25519PublicKey) > 0 && len(conf.Ed25519PrivateKey) > 0 {
 		return nil
