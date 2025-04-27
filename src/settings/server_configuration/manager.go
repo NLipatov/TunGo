@@ -16,9 +16,9 @@ type Manager struct {
 	resolver linuxResolver
 }
 
-func NewManager() ServerConfigurationManager {
+func NewManager(resolver linuxResolver) ServerConfigurationManager {
 	return &Manager{
-		resolver: newServerResolver(),
+		resolver: resolver,
 	}
 }
 

@@ -188,7 +188,7 @@ func (u *UdpTunWorker) udpRegisterClient(conn *net.UDPConn, clientAddr *net.UDPA
 	}
 	log.Printf("%s registered as: %s", clientAddr.String(), *internalIpAddr)
 
-	serverConfigurationManager := server_configuration.NewManager()
+	serverConfigurationManager := server_configuration.NewManager(server_configuration.NewServerResolver())
 	_, err := serverConfigurationManager.Configuration()
 	if err != nil {
 		return fmt.Errorf("failed to read server configuration: %s", err)

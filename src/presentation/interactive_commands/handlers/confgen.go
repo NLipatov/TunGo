@@ -28,7 +28,7 @@ func GenerateNewClientConf() error {
 
 // generate generates new client configuration
 func generate() (*client_configuration.Configuration, error) {
-	serverConfigurationManager := server_configuration.NewManager()
+	serverConfigurationManager := server_configuration.NewManager(server_configuration.NewServerResolver())
 	serverConf, err := serverConfigurationManager.Configuration()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read server configuration: %s", err)

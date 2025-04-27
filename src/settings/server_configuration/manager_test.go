@@ -41,8 +41,7 @@ func createTestConfigPath(t *testing.T) string {
 }
 
 func TestManagerConfigurationResolverError(t *testing.T) {
-	manager := NewManager()
-	manager.resolver = managerTestMockErrorResolver{}
+	manager := NewManager(managerTestMockErrorResolver{})
 
 	_, err := manager.Configuration()
 	if err == nil {
@@ -54,8 +53,7 @@ func TestManagerConfigurationResolverError(t *testing.T) {
 }
 
 func TestManagerConfigurationWriteDefaultError(t *testing.T) {
-	manager := NewManager()
-	manager.resolver = managerTestMockBadPathResolver{}
+	manager := NewManager(managerTestMockBadPathResolver{})
 
 	_, err := manager.Configuration()
 	if err == nil {
@@ -68,8 +66,7 @@ func TestManagerConfigurationWriteDefaultError(t *testing.T) {
 
 func TestManagerConfigurationReadSuccess(t *testing.T) {
 	path := createTestConfigPath(t)
-	manager := NewManager()
-	manager.resolver = managerTestValidResolver{path: path}
+	manager := NewManager(managerTestValidResolver{path: path})
 
 	// Ensure file does not exist initially.
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
@@ -95,8 +92,7 @@ func TestManagerConfigurationReadSuccess(t *testing.T) {
 
 func TestIncrementClientCounterSuccess(t *testing.T) {
 	path := createTestConfigPath(t)
-	manager := NewManager()
-	manager.resolver = managerTestValidResolver{path: path}
+	manager := NewManager(managerTestValidResolver{path: path})
 
 	// Create initial configuration.
 	conf, err := manager.Configuration()
@@ -125,8 +121,7 @@ func TestIncrementClientCounterSuccess(t *testing.T) {
 
 func TestInjectEdKeysSuccess(t *testing.T) {
 	path := createTestConfigPath(t)
-	manager := NewManager()
-	manager.resolver = managerTestValidResolver{path: path}
+	manager := NewManager(managerTestValidResolver{path: path})
 
 	// Initialize configuration.
 	if _, err := manager.Configuration(); err != nil {
@@ -161,8 +156,7 @@ func TestInjectEdKeysSuccess(t *testing.T) {
 }
 
 func TestIncrementClientCounterConfigError(t *testing.T) {
-	manager := NewManager()
-	manager.resolver = managerTestMockErrorResolver{}
+	manager := NewManager(managerTestMockErrorResolver{})
 
 	err := manager.IncrementClientCounter()
 	if err == nil {
@@ -174,8 +168,7 @@ func TestIncrementClientCounterConfigError(t *testing.T) {
 }
 
 func TestInjectEdKeysConfigError(t *testing.T) {
-	manager := NewManager()
-	manager.resolver = managerTestMockErrorResolver{}
+	manager := NewManager(managerTestMockErrorResolver{})
 
 	public, private, err := ed25519.GenerateKey(nil)
 	if err != nil {

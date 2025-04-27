@@ -25,7 +25,7 @@ func NewRunner(deps AppDependencies) *Runner {
 }
 
 func (r *Runner) Run(ctx context.Context) {
-	configurationManager := server_configuration.NewManager()
+	configurationManager := server_configuration.NewManager(server_configuration.NewServerResolver())
 	conf, confErr := configurationManager.Configuration()
 	if confErr != nil {
 		log.Fatal(confErr)

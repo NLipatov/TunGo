@@ -80,7 +80,7 @@ func startClient(appCtx context.Context) {
 
 func startServer(appCtx context.Context) {
 	tunFactory := pal_factory.NewServerTunFactory()
-	configurationManager := server_configuration.NewManager()
+	configurationManager := server_configuration.NewManager(server_configuration.NewServerResolver())
 	conf, confErr := configurationManager.Configuration()
 	if confErr != nil {
 		log.Fatal(confErr)

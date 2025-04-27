@@ -12,7 +12,7 @@ type linuxResolver interface {
 type resolver struct {
 }
 
-func newServerResolver() resolver {
+func NewServerResolver() resolver {
 	return resolver{}
 }
 

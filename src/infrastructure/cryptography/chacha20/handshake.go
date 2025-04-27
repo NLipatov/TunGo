@@ -47,7 +47,7 @@ func (h *HandshakeImpl) ServerKey() []byte {
 }
 
 func (h *HandshakeImpl) ServerSideHandshake(conn application.ConnectionAdapter) (*string, error) {
-	serverConfigurationManager := server_configuration.NewManager()
+	serverConfigurationManager := server_configuration.NewManager(server_configuration.NewServerResolver())
 	conf, err := serverConfigurationManager.Configuration()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read server configuration: %s", err)
