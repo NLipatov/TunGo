@@ -3,13 +3,15 @@ package cli
 import (
 	"fmt"
 	"os"
+	"strings"
 	"tungo/domain/app"
 	"tungo/domain/mode"
 )
 
 const (
-	ServerMode = "s"
-	ClientMode = "c"
+	ServerMode        = "s"
+	ServerConfGenMode = "s gen"
+	ClientMode        = "c"
 )
 
 type Configurator struct {
@@ -25,15 +27,25 @@ func (c *Configurator) Configure() (mode.Mode, error) {
 		return mode.Unknown, fmt.Errorf("invalid arguments")
 	}
 
-	switch os.Args[1] {
-	case "c":
+	switch strings.Join(c.trimArgs(os.Args[1:]), " ") {
+	case ClientMode:
 		return mode.Client, nil
-	case "s":
+	case ServerMode:
 		return mode.Server, nil
+	case ServerConfGenMode:
+		return mode.ServerConfGen, nil
 	default:
 		c.printUsage()
 		return mode.Unknown, fmt.Errorf("invalid arguments")
 	}
+}
+
+func (c *Configurator) trimArgs(args []string) []string {
+	for i, v := range args {
+		args[i] = strings.TrimSpace(v)
+	}
+
+	return args
 }
 
 func (c *Configurator) printUsage() {
