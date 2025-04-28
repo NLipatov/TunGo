@@ -24,5 +24,5 @@ func (r *TcpReader) Read(buffer []byte) (int, error) {
 	// put payload length into first 4 bytes
 	binary.BigEndian.PutUint32(buffer[:4], uint32(n+4))
 
-	return n, nil
+	return n + 4, nil
 }
