@@ -4,8 +4,9 @@ import (
 	"crypto/cipher"
 	"encoding/binary"
 	"fmt"
-	"golang.org/x/crypto/chacha20poly1305"
 	"unsafe"
+
+	"golang.org/x/crypto/chacha20poly1305"
 )
 
 type (
@@ -47,17 +48,21 @@ func NewUdpSession(id [32]byte, sendKey, recvKey []byte, isServer bool) (*Defaul
 }
 
 func (s *DefaultUdpSession) Encrypt(data []byte) ([]byte, error) {
-	packageLen := binary.BigEndian.Uint32(data[:12])
-	plaintext := data[12 : 12+packageLen]
+	// see udp_reader.go. It's putting payload length into first 12 bytes.
+	plainDataLen := binary.BigEndian.Uint32(data[:12])
+
+	// plainData - is data without header
+	plainData := data[12 : 12+plainDataLen]
 	err := s.SendNonce.incrementNonce()
 	if err != nil {
 		return nil, err
 	}
 
+	// header will now be used to write nonce into it
 	_ = s.SendNonce.Encode(data[:12])
 
 	aad := s.CreateAAD(s.isServer, data[:12], s.encryptionAadBuf[:])
-	ciphertext := s.sendCipher.Seal(plaintext[:0], data[:12], plaintext, aad)
+	ciphertext := s.sendCipher.Seal(plainData[:0], data[:12], plainData, aad)
 
 	return data[:len(ciphertext)+12], nil
 }

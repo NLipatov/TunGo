@@ -35,20 +35,24 @@ func TestNewUdpReader(t *testing.T) {
 }
 
 func TestUdpReader_Read_Success(t *testing.T) {
+	// 5-bytes long payload
 	payload := []byte("WORLD")
 	ur := NewUdpReader(bytes.NewReader(payload))
 
+	// buffer is 17 bytes, where 5 bytes is payload and 12 bytes is reserved for nonce
 	buf := make([]byte, 12+len(payload))
+	// will return 17 (12 bytes nonce and 5 bytes payload)
 	n, err := ur.Read(buf)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if n != len(payload) {
+	if n-12 != len(payload) {
 		t.Errorf("expected %d bytes, got %d", len(payload), n)
 	}
 
+	// first 4 bytes of package contains length of package (which is nonce header + payload)
 	prefix := binary.BigEndian.Uint32(buf[:4])
-	if want := uint32(n + 12); prefix != want {
+	if want := uint32(n); prefix != want {
 		t.Errorf("expected prefix %d, got %d", want, prefix)
 	}
 	if !bytes.Equal(buf[12:], payload) {

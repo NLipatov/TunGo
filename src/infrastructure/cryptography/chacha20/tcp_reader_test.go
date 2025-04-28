@@ -35,6 +35,7 @@ func TestNewTcpReader(t *testing.T) {
 }
 
 func TestTcpReader_Read_Success(t *testing.T) {
+	// 5 bytes long payload
 	payload := []byte("HELLO")
 	tr := NewTcpReader(bytes.NewReader(payload))
 
@@ -44,13 +45,13 @@ func TestTcpReader_Read_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if n != len(payload) {
+	if n-4 != len(payload) {
 		t.Errorf("expected %d bytes, got %d", len(payload), n)
 	}
 
 	// verify length prefix
 	total := binary.BigEndian.Uint32(buf[:4])
-	if want := uint32(n + 4); total != want {
+	if want := uint32(n); total != want {
 		t.Errorf("expected prefix %d, got %d", want, total)
 	}
 	if !bytes.Equal(buf[4:], payload) {
