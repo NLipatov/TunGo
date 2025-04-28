@@ -2,16 +2,11 @@ package server
 
 import (
 	"context"
-	"crypto/ed25519"
-	"crypto/rand"
-	"encoding/base64"
 	"log"
-	"os"
 	"sync"
 	"tungo/infrastructure/PAL/pal_factory"
 	"tungo/infrastructure/routing/server_routing/factory"
 	"tungo/settings"
-	"tungo/settings/server_configuration"
 )
 
 type Runner struct {
@@ -25,12 +20,7 @@ func NewRunner(deps AppDependencies) *Runner {
 }
 
 func (r *Runner) Run(ctx context.Context) {
-	configurationManager := server_configuration.NewManager(server_configuration.NewServerResolver())
-	conf, confErr := configurationManager.Configuration()
-	if confErr != nil {
-		log.Fatal(confErr)
-	}
-	err := r.ensureEd25519KeyPairCreated(conf, configurationManager)
+	err := r.deps.KeyManager().PrepareKeys()
 	if err != nil {
 		log.Fatalf("failed to generate ed25519 keys: %s", err)
 	}
@@ -96,39 +86,4 @@ func (r *Runner) route(ctx context.Context, settings settings.ConnectionSettings
 	}
 
 	return nil
-}
-
-func (r *Runner) ensureEd25519KeyPairCreated(conf *server_configuration.Configuration, manager server_configuration.ServerConfigurationManager) error {
-	// if keys are generated
-	if len(conf.Ed25519PublicKey) > 0 && len(conf.Ed25519PrivateKey) > 0 {
-		return nil
-	}
-
-	envPublic := os.Getenv("ED25519_PUBLIC_KEY")
-	encPrivate := os.Getenv("ED25519_PRIVATE_KEY")
-
-	var public ed25519.PublicKey
-	var private ed25519.PrivateKey
-	if envPublic != "" && encPrivate != "" {
-		publicKey, err := base64.StdEncoding.DecodeString(envPublic)
-		if err != nil {
-			log.Fatalf("failed to decode ED25519_PUBLIC_KEY from env var: %s", err)
-		}
-		privateKey, err := base64.StdEncoding.DecodeString(encPrivate)
-		if err != nil {
-			log.Fatalf("failed to decode ED25519_PRIVATE_KEY from env var: %s", err)
-		}
-
-		public = publicKey
-		private = privateKey
-	} else {
-		publicKey, privateKey, keyGenerationErr := ed25519.GenerateKey(rand.Reader)
-		if keyGenerationErr != nil {
-			log.Fatalf("failed to generate ed25519 key pair: %s", keyGenerationErr)
-		}
-		public = publicKey
-		private = privateKey
-	}
-
-	return manager.InjectEdKeys(public, private)
 }
