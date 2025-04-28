@@ -49,12 +49,12 @@ func (w *UdpWorker) HandleTun() error {
 				return fmt.Errorf("could not read a packet from TUN: %v", readErr)
 			}
 
-			encryptedPacket, EncryptErr := w.cryptographyService.Encrypt(buf[:n])
-			if EncryptErr != nil {
+			encryptedPacket, encryptErr := w.cryptographyService.Encrypt(buf[:n])
+			if encryptErr != nil {
 				if w.ctx.Err() != nil {
 					return nil
 				}
-				return fmt.Errorf("could not encrypt packet: %v", EncryptErr)
+				return fmt.Errorf("could not encrypt packet: %v", encryptErr)
 			}
 
 			_ = w.conn.SetWriteDeadline(time.Now().Add(time.Second * 2))
