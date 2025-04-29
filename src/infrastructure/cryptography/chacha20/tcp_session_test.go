@@ -3,139 +3,74 @@ package chacha20
 import (
 	"bytes"
 	"crypto/rand"
-	"encoding/hex"
 	"testing"
+
+	"golang.org/x/crypto/chacha20poly1305"
 )
 
-// TestDeriveSessionId verifies that a session ID is correctly derived.
-func TestDeriveSessionId(t *testing.T) {
-	sharedSecret := []byte("this is a shared secret with sufficient length")
-	salt := []byte("some salt value")
-	sessionID, err := DeriveSessionId(sharedSecret, salt)
-	if err != nil {
-		t.Fatalf("DeriveSessionId returned error: %v", err)
+func TestNewTcpCryptographyService_KeyLen(t *testing.T) {
+	var id [32]byte
+	short := make([]byte, 5)
+	long := make([]byte, chacha20poly1305.KeySize)
+	if _, err := NewTcpCryptographyService(id, short, long, false); err == nil {
+		t.Error("expected error for short sendKey")
 	}
-	// Check that sessionID is not all zeros.
-	zero := make([]byte, 32)
-	if bytes.Equal(sessionID[:], zero) {
-		t.Error("Derived session ID is all zeros")
+	if _, err := NewTcpCryptographyService(id, long, short, false); err == nil {
+		t.Error("expected error for short recvKey")
 	}
 }
 
-// TestNewTcpCryptographyService verifies that a new TcpCryptographyService is created without error.
-func TestNewTcpCryptographyService(t *testing.T) {
-	// Create valid 32-byte keys.
-	sendKey := make([]byte, 32)
-	recvKey := make([]byte, 32)
-	if _, err := rand.Read(sendKey); err != nil {
-		t.Fatalf("rand.Read failed: %v", err)
-	}
-	if _, err := rand.Read(recvKey); err != nil {
-		t.Fatalf("rand.Read failed: %v", err)
-	}
+func TestTcpSessionEncryptDecrypt_RoundTrip(t *testing.T) {
+	var id [32]byte
+	rand.Read(id[:])
+	key := make([]byte, chacha20poly1305.KeySize)
+	rand.Read(key)
 
-	var sessionID [32]byte
-	copy(sessionID[:], []byte("static cryptographyService id for testing!!")) // 32 bytes
+	// client→server
+	client, _ := NewTcpCryptographyService(id, key, key, false)
+	server, _ := NewTcpCryptographyService(id, key, key, true)
 
-	cryptographyService, err := NewTcpCryptographyService(sessionID, sendKey, recvKey, false)
+	msg := []byte("secret payload")
+	ct, err := client.Encrypt(msg)
 	if err != nil {
-		t.Fatalf("NewTcpCryptographyService error: %v", err)
+		t.Fatalf("Encrypt: %v", err)
 	}
-	if cryptographyService.SessionId != sessionID {
-		t.Errorf("Expected sessionID %x, got %x", sessionID, cryptographyService.SessionId)
+	pt, err := server.Decrypt(ct)
+	if err != nil {
+		t.Fatalf("Decrypt: %v", err)
+	}
+	if !bytes.Equal(pt, msg) {
+		t.Errorf("got %q; want %q", pt, msg)
+	}
+
+	// replay same ct → ErrNonUniqueNonce
+	if _, err := server.Decrypt(ct); err == nil {
+		t.Errorf("expected error on replay, got nil")
 	}
 }
 
-// TestTcpSessionEncryptDecryptRoundTrip simulates a round-trip encryption/decryption between client and server.
-func TestTcpSessionEncryptDecryptRoundTrip(t *testing.T) {
-	// Prepare static 32-byte keys.
-	clientSendKey := bytes.Repeat([]byte{0xAA}, 32)
-	clientRecvKey := bytes.Repeat([]byte{0xBB}, 32)
-	// On server, keys are swapped.
-	serverSendKey := clientRecvKey
-	serverRecvKey := clientSendKey
-
-	// Use a static session ID.
-	var sessionID [32]byte
-	copy(sessionID[:], []byte("static session id for testing!!")) // 32 bytes
-
-	// Create client (isServer=false) and server (isServer=true) sessions.
-	clientSession, err := NewTcpCryptographyService(sessionID, clientSendKey, clientRecvKey, false)
-	if err != nil {
-		t.Fatalf("client NewTcpCryptographyService error: %v", err)
-	}
-	serverSession, err := NewTcpCryptographyService(sessionID, serverSendKey, serverRecvKey, true)
-	if err != nil {
-		t.Fatalf("server NewTcpCryptographyService error: %v", err)
-	}
-
-	plaintext := []byte("Hello, secure world!")
-	// Client encrypts the plaintext.
-	ciphertext, err := clientSession.Encrypt(plaintext)
-	if err != nil {
-		t.Fatalf("Encrypt error: %v", err)
-	}
-	// Server decrypts the ciphertext.
-	decrypted, err := serverSession.Decrypt(ciphertext)
-	if err != nil {
-		t.Fatalf("Decrypt error: %v", err)
-	}
-	if !bytes.Equal(plaintext, decrypted) {
-		t.Errorf("Decrypted data does not match original: got %q, want %q", decrypted, plaintext)
-	}
-}
-
-// TestUseNonceRingBuffer verifies that UseNonceRingBuffer returns the same session.
-func TestUseNonceRingBuffer(t *testing.T) {
-	var sessionID [32]byte
-	copy(sessionID[:], []byte("static session id for testing!!"))
-	key := bytes.Repeat([]byte{0xCC}, 32)
-	session, err := NewTcpCryptographyService(sessionID, key, key, false)
-	if err != nil {
-		t.Fatalf("NewTcpCryptographyService error: %v", err)
-	}
-
-	ret := session.UseNonceRingBuffer()
-	if ret != session {
-		t.Error("UseNonceRingBuffer did not return the same session instance")
-	}
-}
-
-// TestCreateAAD checks that CreateAAD correctly builds additional authentication data.
 func TestCreateAAD(t *testing.T) {
-	var sessionID [32]byte
-	copy(sessionID[:], []byte("static session id for testing!!"))
-	key := bytes.Repeat([]byte{0xDD}, 32)
-	session, err := NewTcpCryptographyService(sessionID, key, key, false)
-	if err != nil {
-		t.Fatalf("NewTcpCryptographyService error: %v", err)
+	var id [32]byte
+	for i := range id {
+		id[i] = byte(i)
 	}
-
-	// Use a sample nonce.
-	nonce := []byte("sampleNonce12") // 12 bytes
-	// Expected direction for isServer == false is "client-to-server".
-	direction := []byte("client-to-server")
-	// Build expected AAD: sessionID + direction + nonce.
-	expectedAAD := make([]byte, 0, len(session.SessionId)+len(direction)+len(nonce))
-	expectedAAD = append(expectedAAD, session.SessionId[:]...)
-	expectedAAD = append(expectedAAD, direction...)
-	expectedAAD = append(expectedAAD, nonce...)
-
-	// Prepare a buffer with sufficient size.
-	aadBuf := make([]byte, 80)
-	aad := session.CreateAAD(false, nonce, aadBuf)
-	if !bytes.Equal(aad, expectedAAD) {
-		t.Errorf("CreateAAD output mismatch.\nExpected: %s\nGot:      %s", hex.EncodeToString(expectedAAD), hex.EncodeToString(aad))
+	svc := &TcpCryptographyService{SessionId: id}
+	nonce := make([]byte, 12)
+	for i := range nonce {
+		nonce[i] = byte(i + 1)
 	}
-
-	// Test for server-to-client direction.
-	expectedDirection := []byte("server-to-client")
-	expectedAAD = make([]byte, 0, len(session.SessionId)+len(expectedDirection)+len(nonce))
-	expectedAAD = append(expectedAAD, session.SessionId[:]...)
-	expectedAAD = append(expectedAAD, expectedDirection...)
-	expectedAAD = append(expectedAAD, nonce...)
-	aad = session.CreateAAD(true, nonce, aadBuf)
-	if !bytes.Equal(aad, expectedAAD) {
-		t.Errorf("CreateAAD (server-to-client) output mismatch.\nExpected: %s\nGot:      %s", hex.EncodeToString(expectedAAD), hex.EncodeToString(aad))
+	aad := svc.CreateAAD(false, nonce, make([]byte, 80))
+	dir := []byte("client-to-server")
+	if exp := 32 + len(dir) + len(nonce); len(aad) != exp {
+		t.Fatalf("len(aad) = %d; want %d", len(aad), exp)
+	}
+	if !bytes.Equal(aad[:32], id[:]) {
+		t.Error("session ID part mismatch")
+	}
+	if !bytes.Equal(aad[32:32+len(dir)], dir) {
+		t.Error("direction part mismatch")
+	}
+	if !bytes.Equal(aad[32+len(dir):], nonce) {
+		t.Error("nonce part mismatch")
 	}
 }

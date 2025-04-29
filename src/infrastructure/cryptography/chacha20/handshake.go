@@ -4,16 +4,17 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
-	"golang.org/x/crypto/chacha20poly1305"
-	"golang.org/x/crypto/curve25519"
-	"golang.org/x/crypto/ed25519"
-	"golang.org/x/crypto/hkdf"
 	"io"
 	"net"
 	"tungo/application"
 	"tungo/settings"
 	"tungo/settings/client_configuration"
 	"tungo/settings/server_configuration"
+
+	"golang.org/x/crypto/chacha20poly1305"
+	"golang.org/x/crypto/curve25519"
+	"golang.org/x/crypto/ed25519"
+	"golang.org/x/crypto/hkdf"
 )
 
 type Handshake interface {
@@ -116,7 +117,7 @@ func (h *HandshakeImpl) ServerSideHandshake(conn application.ConnectionAdapter) 
 	clientToServerKey := make([]byte, keySize)
 	_, _ = io.ReadFull(clientToServerHKDF, clientToServerKey)
 
-	derivedSessionId, deriveSessionIdErr := DeriveSessionId(sharedSecret, salt[:])
+	derivedSessionId, deriveSessionIdErr := deriveSessionId(sharedSecret, salt[:])
 	if deriveSessionIdErr != nil {
 		return nil, fmt.Errorf("failed to derive session id: %s", derivedSessionId)
 	}
@@ -196,7 +197,7 @@ func (h *HandshakeImpl) ClientSideHandshake(conn net.Conn, settings settings.Con
 	clientToServerKey := make([]byte, keySize)
 	_, _ = io.ReadFull(clientToServerHKDF, clientToServerKey)
 
-	derivedSessionId, deriveSessionIdErr := DeriveSessionId(sharedSecret, salt[:])
+	derivedSessionId, deriveSessionIdErr := deriveSessionId(sharedSecret, salt[:])
 	if deriveSessionIdErr != nil {
 		return fmt.Errorf("failed to derive session id: %s", derivedSessionId)
 	}
@@ -206,4 +207,15 @@ func (h *HandshakeImpl) ClientSideHandshake(conn net.Conn, settings settings.Con
 	h.serverKey = serverToClientKey
 
 	return nil
+}
+
+func deriveSessionId(sharedSecret []byte, salt []byte) ([32]byte, error) {
+	var sessionID [32]byte
+
+	hkdfReader := hkdf.New(sha256.New, sharedSecret, salt, []byte("session-id-derivation"))
+	if _, err := io.ReadFull(hkdfReader, sessionID[:]); err != nil {
+		return [32]byte{}, fmt.Errorf("failed to derive session ID: %w", err)
+	}
+
+	return sessionID, nil
 }

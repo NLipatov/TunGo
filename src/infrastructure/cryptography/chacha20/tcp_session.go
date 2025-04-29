@@ -2,12 +2,9 @@ package chacha20
 
 import (
 	"crypto/cipher"
-	"crypto/sha256"
-	"fmt"
-	"golang.org/x/crypto/chacha20poly1305"
-	"golang.org/x/crypto/hkdf"
-	"io"
 	"unsafe"
+
+	"golang.org/x/crypto/chacha20poly1305"
 )
 
 type TcpCryptographyService struct {
@@ -22,17 +19,6 @@ type TcpCryptographyService struct {
 	decryptionAadBuf   []byte
 	encryptionNonceBuf [12]byte
 	decryptionNonceBuf [12]byte
-}
-
-func DeriveSessionId(sharedSecret []byte, salt []byte) ([32]byte, error) {
-	var sessionID [32]byte
-
-	hkdfReader := hkdf.New(sha256.New, sharedSecret, salt, []byte("session-id-derivation"))
-	if _, err := io.ReadFull(hkdfReader, sessionID[:]); err != nil {
-		return [32]byte{}, fmt.Errorf("failed to derive session ID: %w", err)
-	}
-
-	return sessionID, nil
 }
 
 func NewTcpCryptographyService(id [32]byte, sendKey, recvKey []byte, isServer bool) (*TcpCryptographyService, error) {
