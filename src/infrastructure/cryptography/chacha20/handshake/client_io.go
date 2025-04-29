@@ -17,7 +17,7 @@ type ClientIO interface {
 type DefaultClientIO struct {
 	connection       net.Conn
 	settings         settings.ConnectionSettings
-	ed25519PublicKey ed25519.PublicKey
+	ed25519PublicKey []byte
 	sessionPublicKey []byte
 	randomSalt       []byte
 }

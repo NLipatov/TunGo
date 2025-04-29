@@ -9,18 +9,21 @@ import (
 	"strings"
 	"testing"
 	"time"
+
 	"tungo/settings"
 )
 
-type failingWriteConn struct{ net.Conn }
+// ClientIOTestFailingWriteConn simulates a Write error.
+type ClientIOTestFailingWriteConn struct{ net.Conn }
 
-func (c *failingWriteConn) Write(b []byte) (int, error) {
+func (c *ClientIOTestFailingWriteConn) Write(b []byte) (int, error) {
 	return 0, fmt.Errorf("write failure")
 }
 
-type failingReadConn struct{ net.Conn }
+// ClientIOTestFailingReadConn simulates a Read error.
+type ClientIOTestFailingReadConn struct{ net.Conn }
 
-func (c *failingReadConn) Read(b []byte) (int, error) {
+func (c *ClientIOTestFailingReadConn) Read(b []byte) (int, error) {
 	return 0, fmt.Errorf("read failure")
 }
 
@@ -68,7 +71,7 @@ func TestWriteClientHello_WriteError(t *testing.T) {
 	salt := make([]byte, 32)
 	rand.Read(salt)
 	cfg := settings.ConnectionSettings{InterfaceAddress: "10.0.0.1"}
-	bad := &failingWriteConn{clientConn}
+	bad := &ClientIOTestFailingWriteConn{clientConn}
 	io := NewDefaultClientIO(bad, cfg, pub, sessionPub, salt)
 
 	err := io.WriteClientHello()
@@ -92,9 +95,7 @@ func TestReadServerHello_Success(t *testing.T) {
 
 	io := NewDefaultClientIO(clientConn, settings.ConnectionSettings{}, nil, nil, nil)
 
-	go func() {
-		serverConn.Write(*shBytes)
-	}()
+	go serverConn.Write(*shBytes)
 
 	sh, err := io.ReadServerHello()
 	if err != nil {
@@ -113,8 +114,9 @@ func TestReadServerHello_Success(t *testing.T) {
 
 func TestReadServerHello_ReadError(t *testing.T) {
 	clientConn, _ := net.Pipe()
-	bad := &failingReadConn{clientConn}
+	bad := &ClientIOTestFailingReadConn{clientConn}
 	io := NewDefaultClientIO(bad, settings.ConnectionSettings{}, nil, nil, nil)
+
 	_, err := io.ReadServerHello()
 	if err == nil || !strings.Contains(err.Error(), "failed to read server hello message") {
 		t.Errorf("expected read error, got %v", err)
