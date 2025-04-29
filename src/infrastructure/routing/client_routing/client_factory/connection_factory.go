@@ -7,7 +7,7 @@ import (
 	"net"
 	"time"
 	"tungo/application"
-	"tungo/infrastructure/cryptography/chacha20"
+	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/routing/client_routing/routing/tcp_chacha20/tcp_connection"
 	"tungo/infrastructure/routing/client_routing/routing/udp_chacha20/udp_connection"
 	"tungo/settings"
@@ -39,7 +39,7 @@ func (f *ConnectionFactory) EstablishConnection(
 	switch connSettings.Protocol {
 	case settings.UDP:
 		//connect to server and exchange secret
-		secret := udp_connection.NewDefaultSecret(connSettings, chacha20.NewHandshake())
+		secret := udp_connection.NewDefaultSecret(connSettings, handshake.NewHandshake())
 		cancellableSecret := udp_connection.NewSecretWithDeadline(handshakeCtx, secret)
 
 		session := udp_connection.NewDefaultSecureSession(udp_connection.NewConnection(connSettings), cancellableSecret)
@@ -47,7 +47,7 @@ func (f *ConnectionFactory) EstablishConnection(
 		return cancellableSession.Establish()
 	case settings.TCP:
 		//connect to server and exchange secret
-		secret := tcp_connection.NewDefaultSecret(connSettings, chacha20.NewHandshake())
+		secret := tcp_connection.NewDefaultSecret(connSettings, handshake.NewHandshake())
 		cancellableSecret := tcp_connection.NewSecretWithDeadline(handshakeCtx, secret)
 
 		session := tcp_connection.NewDefaultSecureSession(tcp_connection.NewDefaultConnection(connSettings), cancellableSecret)

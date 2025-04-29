@@ -1,4 +1,4 @@
-package chacha20
+package handshake
 
 import "fmt"
 
@@ -8,19 +8,19 @@ type ServerHello struct {
 	CurvePublicKey []byte
 }
 
-func (sH *ServerHello) Read(data []byte) (*ServerHello, error) {
+func (s *ServerHello) Read(data []byte) (*ServerHello, error) {
 	if len(data) < signatureLength+nonceLength+curvePublicKeyLength {
 		return nil, fmt.Errorf("invalid data")
 	}
 
-	sH.Signature = data[:signatureLength]
-	sH.Nonce = data[signatureLength : signatureLength+nonceLength]
-	sH.CurvePublicKey = data[signatureLength+nonceLength : signatureLength+nonceLength+curvePublicKeyLength]
+	s.Signature = data[:signatureLength]
+	s.Nonce = data[signatureLength : signatureLength+nonceLength]
+	s.CurvePublicKey = data[signatureLength+nonceLength : signatureLength+nonceLength+curvePublicKeyLength]
 
-	return sH, nil
+	return s, nil
 }
 
-func (sH *ServerHello) Write(signature *[]byte, nonce *[]byte, curvePublicKey *[]byte) (*[]byte, error) {
+func (s *ServerHello) Write(signature *[]byte, nonce *[]byte, curvePublicKey *[]byte) (*[]byte, error) {
 	if len(*signature) != signatureLength {
 		return nil, fmt.Errorf("invalid signature")
 	}
