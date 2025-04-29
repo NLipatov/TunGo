@@ -1,4 +1,4 @@
-package chacha20
+package handshake
 
 import (
 	"crypto/rand"
@@ -15,6 +15,17 @@ import (
 	"golang.org/x/crypto/curve25519"
 	"golang.org/x/crypto/ed25519"
 	"golang.org/x/crypto/hkdf"
+)
+
+const (
+	lengthHeaderLength      = 2
+	signatureLength         = 64
+	nonceLength             = 32
+	curvePublicKeyLength    = 32
+	minIpLength             = 4
+	maxIpLength             = 39
+	MaxClientHelloSizeBytes = maxIpLength + lengthHeaderLength + curvePublicKeyLength + curvePublicKeyLength + nonceLength
+	minClientHelloSizeBytes = minIpLength + lengthHeaderLength + curvePublicKeyLength + curvePublicKeyLength + nonceLength
 )
 
 type Handshake interface {
@@ -130,76 +141,49 @@ func (h *HandshakeImpl) ServerSideHandshake(conn application.ConnectionAdapter) 
 }
 
 func (h *HandshakeImpl) ClientSideHandshake(conn net.Conn, settings settings.ConnectionSettings) error {
-	edPub, ed, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		return fmt.Errorf("failed to generate ed25519 key pair: %s", err)
-	}
-
-	var curvePrivate [32]byte
-	_, _ = io.ReadFull(rand.Reader, curvePrivate[:])
-	curvePublic, _ := curve25519.X25519(curvePrivate[:], curve25519.Basepoint)
-	nonce := make([]byte, 32)
-	_, _ = io.ReadFull(rand.Reader, nonce)
-
-	rm, err := (&ClientHello{}).Write(4, settings.InterfaceAddress, edPub, &curvePublic, &nonce)
-	if err != nil {
-		return fmt.Errorf("failed to serialize registration message")
-	}
-
-	_, rmWriteErr := conn.Write(*rm)
-	if rmWriteErr != nil {
-		return fmt.Errorf("failed to write registration message: %s", rmWriteErr)
-	}
-
-	//Read server hello
-	shmBuf := make([]byte, 128)
-	_, shmErr := conn.Read(shmBuf)
-	if shmErr != nil {
-		return fmt.Errorf("failed to read server-hello message")
-	}
-
-	serverHello, err := (&ServerHello{}).Read(shmBuf)
-	if err != nil {
-		return fmt.Errorf("failed to read server-hello message")
-	}
-
 	configurationManager := client_configuration.NewManager()
-	clientConf, err := configurationManager.Configuration()
-	if err != nil {
-		return fmt.Errorf("failed to read client configuration: %s", err)
+	clientConf, generateKeyErr := configurationManager.Configuration()
+	if generateKeyErr != nil {
+		return fmt.Errorf("failed to read client configuration: %s", generateKeyErr)
 	}
-	serverEdPub := clientConf.Ed25519PublicKey
-	if !ed25519.Verify(serverEdPub, append(append(serverHello.CurvePublicKey, serverHello.Nonce...), nonce...), serverHello.Signature) {
+
+	clientCrypto := NewDefaultClientCrypto()
+
+	edPublicKey, edPrivateKey, generateKeyErr := clientCrypto.GenerateEd25519Keys()
+	if generateKeyErr != nil {
+		return fmt.Errorf("failed to generate ed25519 key pair: %s", generateKeyErr)
+	}
+
+	// create session key pair
+	sessionPublicKey, sessionPrivateKey, sessionKeyPairErr := clientCrypto.NewX25519SessionKeyPair()
+	if sessionKeyPairErr != nil {
+		return sessionKeyPairErr
+	}
+
+	sessionSalt := clientCrypto.GenerateSalt()
+
+	clientIO := NewDefaultClientIO(conn, settings, edPublicKey, sessionPublicKey, sessionSalt)
+	clientHelloWriteErr := clientIO.WriteClientHello()
+	if clientHelloWriteErr != nil {
+		return clientHelloWriteErr
+	}
+
+	serverHello, readServerHelloErr := clientIO.ReadServerHello()
+	if readServerHelloErr != nil {
+		return readServerHelloErr
+	}
+
+	if !clientCrypto.Verify(clientConf.Ed25519PublicKey, append(append(serverHello.CurvePublicKey, serverHello.Nonce...), sessionSalt...), serverHello.Signature) {
 		return fmt.Errorf("server failed signature check")
 	}
 
-	clientDataToSign := append(append(curvePublic, nonce...), serverHello.Nonce...)
-	clientSignature := ed25519.Sign(ed, clientDataToSign)
-	cS, err := (&ClientSignature{}).Write(&clientSignature)
-	if err != nil {
-		return fmt.Errorf("failed to create client signature message: %s", err)
-	}
+	dataToSign := append(append(sessionPublicKey, sessionSalt...), serverHello.Nonce...)
+	signature := clientCrypto.Sign(edPrivateKey, dataToSign)
+	clientIO.WriteClientSignature(signature)
 
-	_, csErr := conn.Write(*cS)
-	if csErr != nil {
-		return fmt.Errorf("failed to send client signature message: %s", csErr)
-	}
-
-	sharedSecret, _ := curve25519.X25519(curvePrivate[:], serverHello.CurvePublicKey)
-	salt := sha256.Sum256(append(serverHello.Nonce, nonce...))
-	infoSC := []byte("server-to-client") // server-key info
-	infoCS := []byte("client-to-server") // client-key info
-	serverToClientHKDF := hkdf.New(sha256.New, sharedSecret, salt[:], infoSC)
-	clientToServerHKDF := hkdf.New(sha256.New, sharedSecret, salt[:], infoCS)
-	keySize := chacha20poly1305.KeySize
-	serverToClientKey := make([]byte, keySize)
-	_, _ = io.ReadFull(serverToClientHKDF, serverToClientKey)
-	clientToServerKey := make([]byte, keySize)
-	_, _ = io.ReadFull(clientToServerHKDF, clientToServerKey)
-
-	derivedSessionId, deriveSessionIdErr := deriveSessionId(sharedSecret, salt[:])
-	if deriveSessionIdErr != nil {
-		return fmt.Errorf("failed to derive session id: %s", derivedSessionId)
+	serverToClientKey, clientToServerKey, derivedSessionId, calculateKeysErr := clientCrypto.CalculateKeys(sessionPrivateKey[:], sessionSalt, serverHello.Nonce, serverHello.CurvePublicKey)
+	if calculateKeysErr != nil {
+		return calculateKeysErr
 	}
 
 	h.id = derivedSessionId
@@ -207,15 +191,4 @@ func (h *HandshakeImpl) ClientSideHandshake(conn net.Conn, settings settings.Con
 	h.serverKey = serverToClientKey
 
 	return nil
-}
-
-func deriveSessionId(sharedSecret []byte, salt []byte) ([32]byte, error) {
-	var sessionID [32]byte
-
-	hkdfReader := hkdf.New(sha256.New, sharedSecret, salt, []byte("session-id-derivation"))
-	if _, err := io.ReadFull(hkdfReader, sessionID[:]); err != nil {
-		return [32]byte{}, fmt.Errorf("failed to derive session ID: %w", err)
-	}
-
-	return sessionID, nil
 }

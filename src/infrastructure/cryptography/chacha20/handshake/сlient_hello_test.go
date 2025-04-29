@@ -1,4 +1,4 @@
-package chacha20
+package handshake
 
 import (
 	"crypto/ed25519"

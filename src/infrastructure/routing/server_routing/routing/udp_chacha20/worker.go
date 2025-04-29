@@ -9,6 +9,7 @@ import (
 	"os"
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
+	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/routing/server_routing/client_session"
 	"tungo/settings"
@@ -177,7 +178,7 @@ func (u *UdpTunWorker) HandleTransport() error {
 
 func (u *UdpTunWorker) udpRegisterClient(conn *net.UDPConn, clientAddr *net.UDPAddr, initialData []byte) error {
 	// Pass initialData and clientAddr to the crypto function
-	h := chacha20.NewHandshake()
+	h := handshake.NewHandshake()
 	internalIpAddr, handshakeErr := h.ServerSideHandshake(&network.UdpAdapter{
 		Conn:        *conn,
 		Addr:        *clientAddr,

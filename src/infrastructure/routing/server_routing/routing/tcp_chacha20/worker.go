@@ -3,16 +3,18 @@ package tcp_chacha20
 import (
 	"context"
 	"encoding/binary"
-	"golang.org/x/crypto/chacha20poly1305"
 	"io"
 	"log"
 	"net"
 	"os"
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
+	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/routing/server_routing/client_session"
 	"tungo/settings"
+
+	"golang.org/x/crypto/chacha20poly1305"
 )
 
 type TcpTunWorker struct {
@@ -138,7 +140,7 @@ func (w *TcpTunWorker) HandleTransport() error {
 
 func (w *TcpTunWorker) registerClient(conn net.Conn, tunFile io.ReadWriteCloser, ctx context.Context) {
 	log.Printf("connected: %s", conn.RemoteAddr())
-	h := chacha20.NewHandshake()
+	h := handshake.NewHandshake()
 	internalIP, handshakeErr := h.ServerSideHandshake(&network.TcpAdapter{
 		Conn: conn,
 	})
