@@ -141,12 +141,6 @@ func (h *HandshakeImpl) ServerSideHandshake(conn application.ConnectionAdapter) 
 }
 
 func (h *HandshakeImpl) ClientSideHandshake(conn net.Conn, settings settings.ConnectionSettings) error {
-	configurationManager := client_configuration.NewManager()
-	clientConf, generateKeyErr := configurationManager.Configuration()
-	if generateKeyErr != nil {
-		return fmt.Errorf("failed to read client configuration: %s", generateKeyErr)
-	}
-
 	clientCrypto := NewDefaultClientCrypto()
 
 	edPublicKey, edPrivateKey, generateKeyErr := clientCrypto.GenerateEd25519Keys()
@@ -173,7 +167,14 @@ func (h *HandshakeImpl) ClientSideHandshake(conn net.Conn, settings settings.Con
 		return readServerHelloErr
 	}
 
-	if !clientCrypto.Verify(clientConf.Ed25519PublicKey, append(append(serverHello.CurvePublicKey, serverHello.Nonce...), sessionSalt...), serverHello.Signature) {
+	configurationManager := client_configuration.NewManager()
+	clientConf := NewDefaultClientConf(configurationManager)
+	serverEd25519PublicKey, serverEd25519PublicKeyErr := clientConf.ServerEd25519PublicKey()
+	if serverEd25519PublicKeyErr != nil {
+		return serverEd25519PublicKeyErr
+	}
+
+	if !clientCrypto.Verify(serverEd25519PublicKey, append(append(serverHello.CurvePublicKey, serverHello.Nonce...), sessionSalt...), serverHello.Signature) {
 		return fmt.Errorf("server failed signature check")
 	}
 
