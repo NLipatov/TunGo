@@ -137,7 +137,9 @@ func (h *HandshakeImpl) ServerSideHandshake(conn application.ConnectionAdapter) 
 	clientToServerKey := make([]byte, keySize)
 	_, _ = io.ReadFull(clientToServerHKDF, clientToServerKey)
 
-	derivedSessionId, deriveSessionIdErr := deriveSessionId(sharedSecret, salt[:])
+	sessionDeriver := NewDefaultSessionIdDeriver(sharedSecret, salt[:])
+
+	derivedSessionId, deriveSessionIdErr := sessionDeriver.Derive()
 	if deriveSessionIdErr != nil {
 		return nil, fmt.Errorf("failed to derive session id: %s", derivedSessionId)
 	}
@@ -189,11 +191,23 @@ func (h *HandshakeImpl) ClientSideHandshake(conn net.Conn, settings settings.Con
 
 	dataToSign := append(append(sessionPublicKey, sessionSalt...), serverHello.Nonce...)
 	signature := clientCrypto.Sign(edPrivateKey, dataToSign)
-	clientIO.WriteClientSignature(signature)
+	clientIO.SendClientSignature(signature)
 
-	serverToClientKey, clientToServerKey, derivedSessionId, calculateKeysErr := clientCrypto.CalculateKeys(sessionPrivateKey[:], sessionSalt, serverHello.Nonce, serverHello.CurvePublicKey)
+	sharedSecret, sharedSecretErr := clientCrypto.GenerateSharedSecret(sessionPrivateKey[:], serverEd25519PublicKey)
+	if sharedSecretErr != nil {
+		return sharedSecretErr
+	}
+
+	serverToClientKey, clientToServerKey, calculateKeysErr := clientCrypto.CalculateKeys(sessionPrivateKey[:], sessionSalt, serverHello.Nonce, serverHello.CurvePublicKey, sharedSecret)
 	if calculateKeysErr != nil {
 		return calculateKeysErr
+	}
+
+	sessionDeriver := NewDefaultSessionIdDeriver(sharedSecret, sessionSalt[:])
+
+	derivedSessionId, deriveSessionIdErr := sessionDeriver.Derive()
+	if deriveSessionIdErr != nil {
+		return deriveSessionIdErr
 	}
 
 	h.id = derivedSessionId

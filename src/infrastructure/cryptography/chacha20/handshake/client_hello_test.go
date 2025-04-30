@@ -134,7 +134,7 @@ func TestWriteClientSignature_Success(t *testing.T) {
 		}
 		close(done)
 	}()
-	if err := io.WriteClientSignature(sig); err != nil {
+	if err := io.SendClientSignature(sig); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	<-done
@@ -145,7 +145,7 @@ func TestWriteClientSignature_SerializeError(t *testing.T) {
 	io := NewDefaultClientIO(client, settings.ConnectionSettings{}, nil, nil, nil)
 	// too-short signature
 	sig := []byte{1, 2, 3}
-	err := io.WriteClientSignature(sig)
+	err := io.SendClientSignature(sig)
 	if err == nil || !strings.Contains(err.Error(), "handshake: cannot create ClientSignature: handshake: invalid client signature length") {
 		t.Errorf("expected serialize error, got %v", err)
 	}
@@ -156,7 +156,7 @@ func TestWriteClientSignature_WriteError(t *testing.T) {
 	io := NewDefaultClientIO(&failWriteConn{client}, settings.ConnectionSettings{}, nil, nil, nil)
 	sig := make([]byte, signatureLength)
 	rand.Read(sig)
-	err := io.WriteClientSignature(sig)
+	err := io.SendClientSignature(sig)
 	if err == nil || !strings.Contains(err.Error(), "failed to send client signature message") {
 		t.Errorf("expected send error, got %v", err)
 	}

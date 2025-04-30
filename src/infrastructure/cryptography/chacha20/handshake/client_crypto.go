@@ -13,12 +13,13 @@ import (
 )
 
 type ClientCrypto interface {
+	GenerateSharedSecret(sessionPrivateKey, serverHelloCurvePublicKey []byte) ([]byte, error)
 	GenerateEd25519Keys() (ed25519.PublicKey, ed25519.PrivateKey, error)
 	NewX25519SessionKeyPair() ([]byte, [32]byte, error)
 	GenerateSalt() []byte
 	Sign(privateKey ed25519.PrivateKey, data []byte) []byte
 	Verify(publicKey ed25519.PublicKey, data []byte, signature []byte) bool
-	CalculateKeys(sessionPrivateKey, sessionSalt, serverHelloNonce, serverHelloCurvePublicKey []byte) ([]byte, []byte, [32]byte, error)
+	CalculateKeys(sessionPrivateKey, sessionSalt, serverHelloNonce, serverHelloCurvePublicKey, sharedSecret []byte) ([]byte, []byte, error)
 }
 
 type DefaultClientCrypto struct {
@@ -62,8 +63,11 @@ func (c *DefaultClientCrypto) Sign(privateKey ed25519.PrivateKey, data []byte) [
 	return ed25519.Sign(privateKey, data)
 }
 
-func (c *DefaultClientCrypto) CalculateKeys(sessionPrivateKey, sessionSalt, serverHelloNonce, serverHelloCurvePublicKey []byte) ([]byte, []byte, [32]byte, error) {
-	sharedSecret, _ := curve25519.X25519(sessionPrivateKey[:], serverHelloCurvePublicKey)
+func (c *DefaultClientCrypto) GenerateSharedSecret(sessionPrivateKey, serverHelloCurvePublicKey []byte) ([]byte, error) {
+	return curve25519.X25519(sessionPrivateKey[:], serverHelloCurvePublicKey)
+}
+
+func (c *DefaultClientCrypto) CalculateKeys(sessionPrivateKey, sessionSalt, serverHelloNonce, serverHelloCurvePublicKey, sharedSecret []byte) ([]byte, []byte, error) {
 	salt := sha256.Sum256(append(serverHelloNonce, sessionSalt...))
 	infoSC := []byte("server-to-client") // server-key info
 	infoCS := []byte("client-to-server") // client-key info
@@ -75,21 +79,5 @@ func (c *DefaultClientCrypto) CalculateKeys(sessionPrivateKey, sessionSalt, serv
 	clientToServerKey := make([]byte, keySize)
 	_, _ = io.ReadFull(clientToServerHKDF, clientToServerKey)
 
-	derivedSessionId, deriveSessionIdErr := deriveSessionId(sharedSecret, salt[:])
-	if deriveSessionIdErr != nil {
-		return nil, nil, [32]byte{}, fmt.Errorf("failed to derive session id: %s", derivedSessionId)
-	}
-
-	return serverToClientKey, clientToServerKey, derivedSessionId, nil
-}
-
-func deriveSessionId(sharedSecret []byte, salt []byte) ([32]byte, error) {
-	var sessionID [32]byte
-
-	hkdfReader := hkdf.New(sha256.New, sharedSecret, salt, []byte("session-id-derivation"))
-	if _, err := io.ReadFull(hkdfReader, sessionID[:]); err != nil {
-		return [32]byte{}, fmt.Errorf("failed to derive session ID: %w", err)
-	}
-
-	return sessionID, nil
+	return serverToClientKey, clientToServerKey, nil
 }

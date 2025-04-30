@@ -11,7 +11,7 @@ import (
 type ClientIO interface {
 	SendClientHello() error
 	ReceiveServerHello() (ServerHello, error)
-	WriteClientSignature(signature []byte) error
+	SendClientSignature(signature []byte) error
 }
 
 type DefaultClientIO struct {
@@ -66,7 +66,7 @@ func (c *DefaultClientIO) ReceiveServerHello() (ServerHello, error) {
 	return serverHello, nil
 }
 
-func (c *DefaultClientIO) WriteClientSignature(signature []byte) error {
+func (c *DefaultClientIO) SendClientSignature(signature []byte) error {
 	clientSignature, clientSignatureErr := NewClientSignature(signature)
 	if clientSignatureErr != nil {
 		return clientSignatureErr
