@@ -8,7 +8,6 @@ import (
 	"net"
 	"tungo/application"
 	"tungo/settings"
-	"tungo/settings/client_configuration"
 	"tungo/settings/server_configuration"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -151,68 +150,29 @@ func (h *HandshakeImpl) ServerSideHandshake(conn application.ConnectionAdapter) 
 	return &clientHello.IpAddress, nil
 }
 
-func (h *HandshakeImpl) ClientSideHandshake(conn net.Conn, settings settings.ConnectionSettings) error {
-	clientCrypto := NewDefaultClientCrypto()
-
-	edPublicKey, edPrivateKey, generateKeyErr := clientCrypto.GenerateEd25519Keys()
-	if generateKeyErr != nil {
-		return fmt.Errorf("failed to generate ed25519 key pair: %s", generateKeyErr)
+func (h *HandshakeImpl) ClientSideHandshake(conn net.Conn, cfg settings.ConnectionSettings) error {
+	// prepare kets
+	edPub, edPriv, sessPub, sessPriv, salt, err := prepareClientCredentials()
+	if err != nil {
+		return err
 	}
 
-	// create session key pair
-	sessionPublicKey, sessionPrivateKey, sessionKeyPairErr := clientCrypto.NewX25519SessionKeyPair()
-	if sessionKeyPairErr != nil {
-		return sessionKeyPairErr
+	// send ClientHello
+	if err := sendClientHello(conn, cfg.InterfaceAddress, edPub, sessPub, salt); err != nil {
+		return err
 	}
 
-	sessionSalt := clientCrypto.GenerateSalt()
-
-	clientIO := NewDefaultClientIO(conn, settings, edPublicKey, sessionPublicKey, sessionSalt)
-	clientHelloWriteErr := clientIO.SendClientHello()
-	if clientHelloWriteErr != nil {
-		return clientHelloWriteErr
+	// receive ServerHello
+	sh, err := receiveAndVerifyServerHello(conn, edPub, salt)
+	if err != nil {
+		return err
 	}
 
-	serverHello, readServerHelloErr := clientIO.ReceiveServerHello()
-	if readServerHelloErr != nil {
-		return readServerHelloErr
+	// sign and send signature
+	if err := signAndSendClientSignature(conn, edPriv, sessPub, salt, sh.Nonce); err != nil {
+		return err
 	}
 
-	configurationManager := client_configuration.NewManager()
-	clientConf := NewDefaultClientConf(configurationManager)
-	serverEd25519PublicKey, serverEd25519PublicKeyErr := clientConf.ServerEd25519PublicKey()
-	if serverEd25519PublicKeyErr != nil {
-		return serverEd25519PublicKeyErr
-	}
-
-	if !clientCrypto.Verify(serverEd25519PublicKey, append(append(serverHello.CurvePublicKey, serverHello.Nonce...), sessionSalt...), serverHello.Signature) {
-		return fmt.Errorf("server failed signature check")
-	}
-
-	dataToSign := append(append(sessionPublicKey, sessionSalt...), serverHello.Nonce...)
-	signature := clientCrypto.Sign(edPrivateKey, dataToSign)
-	clientIO.SendClientSignature(signature)
-
-	sharedSecret, sharedSecretErr := clientCrypto.GenerateSharedSecret(sessionPrivateKey[:], serverEd25519PublicKey)
-	if sharedSecretErr != nil {
-		return sharedSecretErr
-	}
-
-	serverToClientKey, clientToServerKey, calculateKeysErr := clientCrypto.CalculateKeys(sessionPrivateKey[:], sessionSalt, serverHello.Nonce, serverHello.CurvePublicKey, sharedSecret)
-	if calculateKeysErr != nil {
-		return calculateKeysErr
-	}
-
-	sessionDeriver := NewDefaultSessionIdDeriver(sharedSecret, sessionSalt[:])
-
-	derivedSessionId, deriveSessionIdErr := sessionDeriver.Derive()
-	if deriveSessionIdErr != nil {
-		return deriveSessionIdErr
-	}
-
-	h.id = derivedSessionId
-	h.clientKey = clientToServerKey
-	h.serverKey = serverToClientKey
-
-	return nil
+	// calculate shared keys and session id
+	return h.finishKeysAndID(sessPriv, salt, sh)
 }
