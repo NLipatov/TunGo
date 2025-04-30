@@ -18,8 +18,17 @@ type ServerHello struct {
 	CurvePublicKey []byte
 }
 
+// NewServerHello constructs a validated ServerHello.
+func NewServerHello(signature, nonce, curvePub []byte) (ServerHello, error) {
+	sh := ServerHello{Signature: signature, Nonce: nonce, CurvePublicKey: curvePub}
+	if _, err := sh.MarshalBinary(); err != nil {
+		return ServerHello{}, fmt.Errorf("handshake: cannot create ServerHello: %w", err)
+	}
+	return sh, nil
+}
+
 // MarshalBinary serializes ServerHello into a fresh buffer.
-func (s ServerHello) MarshalBinary() ([]byte, error) {
+func (s *ServerHello) MarshalBinary() ([]byte, error) {
 	if len(s.Signature) != signatureLength {
 		return nil, ErrInvalidSignatureLength
 	}
@@ -38,7 +47,7 @@ func (s ServerHello) MarshalBinary() ([]byte, error) {
 }
 
 // UnmarshalBinary parses data into ServerHello in-place.
-func (s ServerHello) UnmarshalBinary(data []byte) error {
+func (s *ServerHello) UnmarshalBinary(data []byte) error {
 	min := signatureLength + nonceLength + curvePublicKeyLength
 	if len(data) < min {
 		return ErrInvalidData
@@ -48,13 +57,4 @@ func (s ServerHello) UnmarshalBinary(data []byte) error {
 	start := signatureLength + nonceLength
 	s.CurvePublicKey = append([]byte(nil), data[start:start+curvePublicKeyLength]...)
 	return nil
-}
-
-// NewServerHello constructs a validated ServerHello.
-func NewServerHello(signature, nonce, curvePub []byte) (ServerHello, error) {
-	sh := ServerHello{Signature: signature, Nonce: nonce, CurvePublicKey: curvePub}
-	if _, err := sh.MarshalBinary(); err != nil {
-		return ServerHello{}, fmt.Errorf("handshake: cannot create ServerHello: %w", err)
-	}
-	return sh, nil
 }

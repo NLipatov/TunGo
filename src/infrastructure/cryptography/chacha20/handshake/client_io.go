@@ -2,6 +2,7 @@ package handshake
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"tungo/settings"
 
@@ -52,10 +53,9 @@ func (c *DefaultClientIO) SendClientHello() error {
 }
 
 func (c *DefaultClientIO) ReceiveServerHello() (ServerHello, error) {
-	serverHelloBuffer := make([]byte, 128)
-	_, shmErr := c.connection.Read(serverHelloBuffer)
-	if shmErr != nil {
-		return ServerHello{}, fmt.Errorf("failed to read server hello message")
+	serverHelloBuffer := make([]byte, signatureLength+nonceLength+curvePublicKeyLength)
+	if _, shmErr := io.ReadFull(c.connection, serverHelloBuffer); shmErr != nil {
+		return ServerHello{}, fmt.Errorf("failed to read server hello message: %w", shmErr)
 	}
 
 	var serverHello ServerHello
