@@ -86,13 +86,19 @@ func (h *HandshakeImpl) ServerSideHandshake(conn application.ConnectionAdapter) 
 	serverDataToSign := append(append(curvePublic, serverNonce...), clientHello.ClientNonce...)
 	privateEd := conf.Ed25519PrivateKey
 	serverSignature := ed25519.Sign(privateEd, serverDataToSign)
-	serverHello, err := (&ServerHello{}).Write(&serverSignature, &serverNonce, &curvePublic)
-	if err != nil {
-		return nil, fmt.Errorf("failed to write server hello: %s\n", err)
+
+	serverHello, serverHelloErr := NewServerHello(serverSignature, serverNonce, curvePublic)
+	if serverHelloErr != nil {
+		return nil, fmt.Errorf("failed to create server hello: %s", serverHelloErr)
+	}
+
+	serverHelloBytes, serverHelloBytesErr := serverHello.MarshalBinary()
+	if serverHelloBytesErr != nil {
+		return nil, fmt.Errorf("failed to marshal server hello: %s", serverHelloBytesErr)
 	}
 
 	// Send server hello
-	_, err = conn.Write(*serverHello)
+	_, err = conn.Write(serverHelloBytes)
 	clientSignatureBuf := make([]byte, 64)
 
 	// Read client signature

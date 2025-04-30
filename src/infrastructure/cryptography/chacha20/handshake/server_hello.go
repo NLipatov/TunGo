@@ -1,6 +1,16 @@
 package handshake
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
+
+var (
+	ErrInvalidData            = errors.New("handshake: invalid data length")
+	ErrInvalidSignatureLength = errors.New("handshake: invalid signature length")
+	ErrInvalidNonceLength     = errors.New("handshake: invalid nonce length")
+	ErrInvalidCurveKeyLength  = errors.New("handshake: invalid curve public key length")
+)
 
 type ServerHello struct {
 	Signature      []byte
@@ -8,34 +18,43 @@ type ServerHello struct {
 	CurvePublicKey []byte
 }
 
-func (s *ServerHello) Read(data []byte) (*ServerHello, error) {
-	if len(data) < signatureLength+nonceLength+curvePublicKeyLength {
-		return nil, fmt.Errorf("invalid data")
+// MarshalBinary serializes ServerHello into a fresh buffer.
+func (s *ServerHello) MarshalBinary() ([]byte, error) {
+	if len(s.Signature) != signatureLength {
+		return nil, ErrInvalidSignatureLength
+	}
+	if len(s.Nonce) != nonceLength {
+		return nil, ErrInvalidNonceLength
+	}
+	if len(s.CurvePublicKey) != curvePublicKeyLength {
+		return nil, ErrInvalidCurveKeyLength
 	}
 
-	s.Signature = data[:signatureLength]
-	s.Nonce = data[signatureLength : signatureLength+nonceLength]
-	s.CurvePublicKey = data[signatureLength+nonceLength : signatureLength+nonceLength+curvePublicKeyLength]
-
-	return s, nil
+	buf := make([]byte, signatureLength+nonceLength+curvePublicKeyLength)
+	copy(buf[0:], s.Signature)
+	copy(buf[signatureLength:], s.Nonce)
+	copy(buf[signatureLength+nonceLength:], s.CurvePublicKey)
+	return buf, nil
 }
 
-func (s *ServerHello) Write(signature *[]byte, nonce *[]byte, curvePublicKey *[]byte) (*[]byte, error) {
-	if len(*signature) != signatureLength {
-		return nil, fmt.Errorf("invalid signature")
+// UnmarshalBinary parses data into ServerHello in-place.
+func (s *ServerHello) UnmarshalBinary(data []byte) error {
+	min := signatureLength + nonceLength + curvePublicKeyLength
+	if len(data) < min {
+		return ErrInvalidData
 	}
-	if len(*nonce) != nonceLength {
-		return nil, InvalidNonce
+	s.Signature = append([]byte(nil), data[0:signatureLength]...)
+	s.Nonce = append([]byte(nil), data[signatureLength:signatureLength+nonceLength]...)
+	start := signatureLength + nonceLength
+	s.CurvePublicKey = append([]byte(nil), data[start:start+curvePublicKeyLength]...)
+	return nil
+}
+
+// NewServerHello constructs a validated ServerHello.
+func NewServerHello(signature, nonce, curvePub []byte) (*ServerHello, error) {
+	sh := &ServerHello{Signature: signature, Nonce: nonce, CurvePublicKey: curvePub}
+	if _, err := sh.MarshalBinary(); err != nil {
+		return nil, fmt.Errorf("handshake: cannot create ServerHello: %w", err)
 	}
-	if len(*curvePublicKey) != curvePublicKeyLength {
-		return nil, fmt.Errorf("invalid curve public key")
-	}
-
-	arr := make([]byte, signatureLength+nonceLength+curvePublicKeyLength)
-
-	copy(arr, *signature)
-	copy(arr[len(*signature):], *nonce)
-	copy(arr[len(*signature)+len(*nonce):], *curvePublicKey)
-
-	return &arr, nil
+	return sh, nil
 }

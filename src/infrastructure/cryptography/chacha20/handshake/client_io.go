@@ -10,7 +10,7 @@ import (
 
 type ClientIO interface {
 	SendClientHello() error
-	ReceiveServerHello() (*ServerHello, error)
+	ReceiveServerHello() (ServerHello, error)
 	WriteClientSignature(signature []byte) error
 }
 
@@ -46,16 +46,16 @@ func (c *DefaultClientIO) SendClientHello() error {
 	return nil
 }
 
-func (c *DefaultClientIO) ReceiveServerHello() (*ServerHello, error) {
+func (c *DefaultClientIO) ReceiveServerHello() (ServerHello, error) {
 	serverHelloBuffer := make([]byte, 128)
 	_, shmErr := c.connection.Read(serverHelloBuffer)
 	if shmErr != nil {
-		return nil, fmt.Errorf("failed to read server hello message")
+		return ServerHello{}, fmt.Errorf("failed to read server hello message")
 	}
 
-	serverHello, generateKeyErr := (&ServerHello{}).Read(serverHelloBuffer)
-	if generateKeyErr != nil {
-		return nil, fmt.Errorf("failed to read server hello message")
+	var serverHello ServerHello
+	if err := serverHello.UnmarshalBinary(serverHelloBuffer); err != nil {
+		return ServerHello{}, fmt.Errorf("cannot parse server hello: %s", err)
 	}
 
 	return serverHello, nil
