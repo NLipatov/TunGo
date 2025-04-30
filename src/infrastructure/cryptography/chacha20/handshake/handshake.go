@@ -107,13 +107,15 @@ func (h *HandshakeImpl) ServerSideHandshake(conn application.ConnectionAdapter) 
 	if err != nil {
 		return nil, fmt.Errorf("failed to read client signature: %s\n", err)
 	}
-	clientSignature, err := (&ClientSignature{}).Read(clientSignatureBuf)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read client signature: %s", err)
+
+	var clientSignature ClientSignature
+	unmarshalErr = clientSignature.UnmarshalBinary(clientSignatureBuf)
+	if unmarshalErr != nil {
+		return nil, unmarshalErr
 	}
 
 	// Verify client signature
-	if !ed25519.Verify(clientHello.Ed25519PubKey, append(append(clientHello.CurvePubKey, clientHello.ClientNonce...), serverNonce...), clientSignature.ClientSignature) {
+	if !ed25519.Verify(clientHello.Ed25519PubKey, append(append(clientHello.CurvePubKey, clientHello.ClientNonce...), serverNonce...), clientSignature.Signature) {
 		return nil, fmt.Errorf("client signature verification failed")
 	}
 

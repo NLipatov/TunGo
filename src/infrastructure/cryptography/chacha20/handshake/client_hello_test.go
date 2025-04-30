@@ -146,7 +146,7 @@ func TestWriteClientSignature_SerializeError(t *testing.T) {
 	// too-short signature
 	sig := []byte{1, 2, 3}
 	err := io.WriteClientSignature(sig)
-	if err == nil || !strings.Contains(err.Error(), "failed to create client signature message") {
+	if err == nil || !strings.Contains(err.Error(), "handshake: cannot create ClientSignature: handshake: invalid client signature length") {
 		t.Errorf("expected serialize error, got %v", err)
 	}
 }

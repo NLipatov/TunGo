@@ -67,12 +67,17 @@ func (c *DefaultClientIO) ReceiveServerHello() (ServerHello, error) {
 }
 
 func (c *DefaultClientIO) WriteClientSignature(signature []byte) error {
-	cS, generateKeyErr := (&ClientSignature{}).Write(&signature)
-	if generateKeyErr != nil {
-		return fmt.Errorf("failed to create client signature message: %s", generateKeyErr)
+	clientSignature, clientSignatureErr := NewClientSignature(signature)
+	if clientSignatureErr != nil {
+		return clientSignatureErr
 	}
 
-	_, csErr := c.connection.Write(*cS)
+	clientSignatureBytes, clientSignatureBytesErr := clientSignature.MarshalBinary()
+	if clientSignatureBytesErr != nil {
+		return clientSignatureBytesErr
+	}
+
+	_, csErr := c.connection.Write(clientSignatureBytes)
 	if csErr != nil {
 		return fmt.Errorf("failed to send client signature message: %s", csErr)
 	}
