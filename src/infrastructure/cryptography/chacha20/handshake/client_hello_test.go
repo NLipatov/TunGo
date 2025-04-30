@@ -2,115 +2,162 @@ package handshake
 
 import (
 	"bytes"
+	"crypto/ed25519"
+	"crypto/rand"
+	"fmt"
+	"net"
+	"strings"
 	"testing"
+	"tungo/settings"
 )
 
-func TestClientHelloReadValidIPv4(t *testing.T) {
-	ip := "127.0.0.1"
-	edPubKey := make([]byte, 32)
-	curvePubKey := make([]byte, 32)
-	clientNonce := make([]byte, 32)
+// failWriteConn simulates write failures
+type failWriteConn struct{ net.Conn }
 
-	data := append([]byte{4, byte(len(ip))}, ip...)
-	data = append(data, edPubKey...)
-	data = append(data, curvePubKey...)
-	data = append(data, clientNonce...)
+func (f *failWriteConn) Write(b []byte) (int, error) { return 0, fmt.Errorf("write failed") }
 
-	clientHello := &ClientHello{}
-	parsed, err := clientHello.Read(data)
+// failReadConn simulates read failures
+type failReadConn struct{ net.Conn }
 
+func (f *failReadConn) Read(b []byte) (int, error) { return 0, fmt.Errorf("read failed") }
+
+func TestSendClientHello_Success(t *testing.T) {
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+
+	pub, _, _ := ed25519.GenerateKey(rand.Reader)
+	session := make([]byte, 32)
+	rand.Read(session)
+	salt := make([]byte, 32)
+	rand.Read(salt)
+	cfg := settings.ConnectionSettings{InterfaceAddress: "192.168.0.1"}
+	io := NewDefaultClientIO(client, cfg, pub, session, salt)
+
+	done := make(chan struct{})
+	go func() {
+		buf := make([]byte, 512)
+		n, err := server.Read(buf)
+		if err != nil || n == 0 {
+			t.Errorf("server read error: %v, n=%d", err, n)
+		}
+		close(done)
+	}()
+
+	if err := io.SendClientHello(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	<-done
+}
+
+func TestSendClientHello_InvalidVersion(t *testing.T) {
+	client, _ := net.Pipe()
+	pub, _, _ := ed25519.GenerateKey(rand.Reader)
+	session := make([]byte, 32)
+	rand.Read(session)
+	salt := make([]byte, 32)
+	rand.Read(salt)
+	// create invalid ClientHello via settings
+	cfg := settings.ConnectionSettings{InterfaceAddress: "x"}
+	// use invalid version by passing through Write error of NewClientHello
+	io := NewDefaultClientIO(client, cfg, pub, session, salt)
+	err := io.SendClientHello()
+	if err == nil {
+		t.Error("expected error for invalid ip address, got nil")
+	}
+}
+
+func TestSendClientHello_WriteError(t *testing.T) {
+	client, _ := net.Pipe()
+	pub, _, _ := ed25519.GenerateKey(rand.Reader)
+	session := make([]byte, 32)
+	rand.Read(session)
+	salt := make([]byte, 32)
+	rand.Read(salt)
+	cfg := settings.ConnectionSettings{InterfaceAddress: "10.0.0.1"}
+	io := NewDefaultClientIO(&failWriteConn{client}, cfg, pub, session, salt)
+	err := io.SendClientHello()
+	if err == nil || !strings.Contains(err.Error(), "failed to write client hello") {
+		t.Errorf("expected write error, got %v", err)
+	}
+}
+
+func TestReceiveServerHello_Success(t *testing.T) {
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+
+	// prepare a valid ServerHello payload
+	sig := make([]byte, signatureLength)
+	rand.Read(sig)
+	nonce := make([]byte, nonceLength)
+	rand.Read(nonce)
+	curve := make([]byte, curvePublicKeyLength)
+	rand.Read(curve)
+	sh := ServerHello{sig, nonce, curve}
+	data, _ := sh.MarshalBinary()
+
+	io := NewDefaultClientIO(client, settings.ConnectionSettings{}, nil, nil, nil)
+	go server.Write(data)
+
+	out, err := io.ReceiveServerHello()
 	if err != nil {
-		t.Fatalf("Expected no error, got: %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
-
-	if parsed.IpAddress != ip {
-		t.Errorf("Expected IP %s, got %s", ip, parsed.IpAddress)
-	}
-	if !bytes.Equal(parsed.EdPublicKey, edPubKey) {
-		t.Errorf("EdPublicKey mismatch")
-	}
-	if !bytes.Equal(parsed.CurvePublicKey, curvePubKey) {
-		t.Errorf("CurvePublicKey mismatch")
-	}
-	if !bytes.Equal(parsed.ClientNonce, clientNonce) {
-		t.Errorf("ClientNonce mismatch")
+	if !bytes.Equal(out.Signature, sig) {
+		t.Error("signature mismatch")
 	}
 }
 
-func TestClientHelloReadInvalidLength(t *testing.T) {
-	data := make([]byte, minClientHelloSizeBytes-1)
-	clientHello := &ClientHello{}
-
-	_, err := clientHello.Read(data)
-	if err == nil {
-		t.Fatal("Expected error for invalid message length, got nil")
+func TestReceiveServerHello_ReadError(t *testing.T) {
+	client, _ := net.Pipe()
+	io := NewDefaultClientIO(&failReadConn{client}, settings.ConnectionSettings{}, nil, nil, nil)
+	_, err := io.ReceiveServerHello()
+	if err == nil || !strings.Contains(err.Error(), "failed to read server hello message") {
+		t.Errorf("expected read error, got %v", err)
 	}
 }
 
-func TestClientHelloReadInvalidIPVersion(t *testing.T) {
-	data := make([]byte, minClientHelloSizeBytes)
-	data[0] = 7 // Invalid IP version
+func TestWriteClientSignature_Success(t *testing.T) {
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+	io := NewDefaultClientIO(client, settings.ConnectionSettings{}, nil, nil, nil)
+	sig := make([]byte, signatureLength)
+	rand.Read(sig)
+	done := make(chan struct{})
+	go func() {
+		buf := make([]byte, 512)
+		n, _ := server.Read(buf)
+		if n == 0 {
+			t.Error("expected bytes")
+		}
+		close(done)
+	}()
+	if err := io.WriteClientSignature(sig); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	<-done
+}
 
-	clientHello := &ClientHello{}
-	_, err := clientHello.Read(data)
-	if err == nil {
-		t.Fatal("Expected error for invalid IP version, got nil")
+func TestWriteClientSignature_SerializeError(t *testing.T) {
+	client, _ := net.Pipe()
+	io := NewDefaultClientIO(client, settings.ConnectionSettings{}, nil, nil, nil)
+	// too-short signature
+	sig := []byte{1, 2, 3}
+	err := io.WriteClientSignature(sig)
+	if err == nil || !strings.Contains(err.Error(), "failed to create client signature message") {
+		t.Errorf("expected serialize error, got %v", err)
 	}
 }
 
-func TestClientHelloWriteValid(t *testing.T) {
-	ip := "192.168.0.1"
-	ipVersion := uint8(4)
-	edPubKey := make([]byte, 32)
-	curvePubKey := make([]byte, 32)
-	clientNonce := make([]byte, 32)
-
-	clientHello := &ClientHello{}
-	data, err := clientHello.Write(ipVersion, ip, edPubKey, &curvePubKey, &clientNonce)
-	if err != nil {
-		t.Fatalf("Expected no error, got: %v", err)
-	}
-
-	parsed := &ClientHello{}
-	_, err = parsed.Read(*data)
-	if err != nil {
-		t.Fatalf("Expected no error during Read, got: %v", err)
-	}
-
-	if parsed.IpAddress != ip {
-		t.Errorf("Expected IP %s, got %s", ip, parsed.IpAddress)
-	}
-	if !bytes.Equal(parsed.EdPublicKey, edPubKey) {
-		t.Errorf("EdPublicKey mismatch")
-	}
-	if !bytes.Equal(parsed.CurvePublicKey, curvePubKey) {
-		t.Errorf("CurvePublicKey mismatch")
-	}
-	if !bytes.Equal(parsed.ClientNonce, clientNonce) {
-		t.Errorf("ClientNonce mismatch")
-	}
-}
-
-func TestClientHelloWriteInvalidIPVersion(t *testing.T) {
-	clientHello := &ClientHello{}
-	_, err := clientHello.Write(7, "127.0.0.1", nil, nil, nil) // Invalid IP version
-	if err == nil {
-		t.Fatal("Expected error for invalid IP version, got nil")
-	}
-}
-
-func TestClientHelloWriteInvalidIPv4Address(t *testing.T) {
-	clientHello := &ClientHello{}
-	_, err := clientHello.Write(4, "12345", nil, nil, nil) // Invalid IPv4 address
-	if err == nil {
-		t.Fatal("Expected error for invalid IPv4 address, got nil")
-	}
-}
-
-func TestClientHelloWriteInvalidIPv6Address(t *testing.T) {
-	clientHello := &ClientHello{}
-	_, err := clientHello.Write(6, "1", nil, nil, nil) // Invalid IPv6 address
-	if err == nil {
-		t.Fatal("Expected error for invalid IPv6 address, got nil")
+func TestWriteClientSignature_WriteError(t *testing.T) {
+	client, _ := net.Pipe()
+	io := NewDefaultClientIO(&failWriteConn{client}, settings.ConnectionSettings{}, nil, nil, nil)
+	sig := make([]byte, signatureLength)
+	rand.Read(sig)
+	err := io.WriteClientSignature(sig)
+	if err == nil || !strings.Contains(err.Error(), "failed to send client signature message") {
+		t.Errorf("expected send error, got %v", err)
 	}
 }

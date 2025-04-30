@@ -72,9 +72,10 @@ func (h *HandshakeImpl) ServerSideHandshake(conn application.ConnectionAdapter) 
 	}
 
 	//Read client hello
-	clientHello, err := (&ClientHello{}).Read(buf)
-	if err != nil {
-		return nil, fmt.Errorf("invalid client hello: %s", err)
+	var clientHello ClientHello
+	unmarshalErr := clientHello.UnmarshalBinary(buf)
+	if unmarshalErr != nil {
+		return nil, unmarshalErr
 	}
 
 	// Generate server hello response
@@ -112,12 +113,12 @@ func (h *HandshakeImpl) ServerSideHandshake(conn application.ConnectionAdapter) 
 	}
 
 	// Verify client signature
-	if !ed25519.Verify(clientHello.EdPublicKey, append(append(clientHello.CurvePublicKey, clientHello.ClientNonce...), serverNonce...), clientSignature.ClientSignature) {
+	if !ed25519.Verify(clientHello.Ed25519PubKey, append(append(clientHello.CurvePubKey, clientHello.ClientNonce...), serverNonce...), clientSignature.ClientSignature) {
 		return nil, fmt.Errorf("client signature verification failed")
 	}
 
 	// Generate shared secret and salt
-	sharedSecret, _ := curve25519.X25519(curvePrivate[:], clientHello.CurvePublicKey)
+	sharedSecret, _ := curve25519.X25519(curvePrivate[:], clientHello.CurvePubKey)
 	salt := sha256.Sum256(append(serverNonce, clientHello.ClientNonce...))
 
 	infoSC := []byte("server-to-client") // server-key info

@@ -1,98 +1,93 @@
 package handshake
 
 import (
-	"crypto/ed25519"
+	"bytes"
+	"errors"
 	"testing"
 )
 
-func TestClientHello_WriteAndRead(t *testing.T) {
-	ipVersion := uint8(4)
-	ipAddress := "192.168.1.1"
-	edPublicKey := ed25519.PublicKey(make([]byte, curvePublicKeyLength)) // Example public key
-	curvePublicKey := make([]byte, curvePublicKeyLength)                 // Example curve public key
-	clientNonce := make([]byte, nonceLength)                             // Example nonce
-
-	// Fill keys and nonce with some example data
-	for i := 0; i < 32; i++ {
-		edPublicKey[i] = byte(i)
-		curvePublicKey[i] = byte(i + 32)
+func makeValidClientHello() *ClientHello {
+	ed := make([]byte, curvePublicKeyLength)
+	curve := make([]byte, curvePublicKeyLength)
+	nonce := make([]byte, nonceLength)
+	for i := range ed {
+		ed[i] = byte(i)
+		curve[i] = byte(i + 16)
 	}
-	for i := 0; i < 24; i++ {
-		clientNonce[i] = byte(i + 64)
+	for i := range nonce {
+		nonce[i] = byte(i + 32)
 	}
+	ch, _ := NewClientHello(4, "192.168.0.1", ed, curve, nonce)
+	return ch
+}
 
-	clientHello := &ClientHello{}
-
-	// Test Write
-	data, err := clientHello.Write(ipVersion, ipAddress, edPublicKey, &curvePublicKey, &clientNonce)
+func TestMarshalUnmarshal_Success(t *testing.T) {
+	ch := makeValidClientHello()
+	data, err := ch.MarshalBinary()
 	if err != nil {
-		t.Fatalf("unexpected error during Write: %v", err)
+		t.Fatalf("MarshalBinary failed: %v", err)
 	}
-
-	// Validate the output length
-	expectedLength := lengthHeaderLength + len(ipAddress) + curvePublicKeyLength*2 + nonceLength
-	if len(*data) != expectedLength {
-		t.Errorf("expected length %d, got %d", expectedLength, len(*data))
-	}
-
-	// Test Read
-	decodedHello, err := clientHello.Read(*data)
+	var other ClientHello
+	err = other.UnmarshalBinary(data)
 	if err != nil {
-		t.Fatalf("unexpected error during Read: %v", err)
+		t.Fatalf("UnmarshalBinary failed: %v", err)
 	}
-
-	// Validate IP version
-	if decodedHello.IpVersion != ipVersion {
-		t.Errorf("expected IP version %d, got %d", ipVersion, decodedHello.IpVersion)
+	if other.IpVersion != ch.IpVersion || other.IpAddress != ch.IpAddress {
+		t.Errorf("decoded header mismatch: got %v %v, want %v %v", other.IpVersion, other.IpAddress, ch.IpVersion, ch.IpAddress)
 	}
-
-	// Validate IP address
-	if decodedHello.IpAddress != ipAddress {
-		t.Errorf("expected IP address %s, got %s", ipAddress, decodedHello.IpAddress)
+	if !bytes.Equal(other.Ed25519PubKey, ch.Ed25519PubKey) {
+		t.Error("Ed25519PubKey mismatch")
 	}
-
-	// Validate Ed25519 public key
-	if string(decodedHello.EdPublicKey) != string(edPublicKey) {
-		t.Errorf("EdPublicKey mismatch: expected %v, got %v", edPublicKey, decodedHello.EdPublicKey)
+	if !bytes.Equal(other.CurvePubKey, ch.CurvePubKey) {
+		t.Error("CurvePubKey mismatch")
 	}
-
-	// Validate Curve public key
-	if string(decodedHello.CurvePublicKey) != string(curvePublicKey) {
-		t.Errorf("CurvePublicKey mismatch: expected %v, got %v", curvePublicKey, decodedHello.CurvePublicKey)
-	}
-
-	// Validate nonce
-	if string(decodedHello.ClientNonce) != string(clientNonce) {
-		t.Errorf("ClientNonce mismatch: expected %v, got %v", clientNonce, decodedHello.ClientNonce)
+	if !bytes.Equal(other.ClientNonce, ch.ClientNonce) {
+		t.Error("ClientNonce mismatch")
 	}
 }
 
-func TestClientHello_InvalidInput(t *testing.T) {
-	clientHello := &ClientHello{}
-
-	// Test Write with invalid IP version
-	_, err := clientHello.Write(10, "192.168.1.1", nil, nil, nil)
-	if err == nil {
-		t.Error("expected error for invalid IP version, got nil")
+func TestMarshal_ErrorVersion(t *testing.T) {
+	ch := &ClientHello{IpVersion: 7, IpAddress: "any", Ed25519PubKey: make([]byte, curvePublicKeyLength), CurvePubKey: make([]byte, curvePublicKeyLength), ClientNonce: make([]byte, nonceLength)}
+	_, err := ch.MarshalBinary()
+	if !errors.Is(err, ErrInvalidIPVersion) {
+		t.Errorf("expected ErrInvalidIPVersion, got %v", err)
 	}
+}
 
-	// Test Write with invalid IP address
-	_, err = clientHello.Write(4, "1.1", nil, nil, nil)
-	if err == nil {
-		t.Error("expected error for invalid IPv4 address, got nil")
+func TestMarshal_ErrorIPLength(t *testing.T) {
+	ch := &ClientHello{IpVersion: 4, IpAddress: "1.1", Ed25519PubKey: make([]byte, curvePublicKeyLength), CurvePubKey: make([]byte, curvePublicKeyLength), ClientNonce: make([]byte, nonceLength)}
+	_, err := ch.MarshalBinary()
+	if !errors.Is(err, ErrInvalidIPAddrLength) {
+		t.Errorf("expected ErrInvalidIPAddrLength, got %v", err)
 	}
+}
 
-	// Test Read with invalid data length
-	_, err = clientHello.Read([]byte{1, 2, 3})
-	if err == nil {
-		t.Error("expected error for invalid data length, got nil")
+func TestUnmarshal_ErrorLength(t *testing.T) {
+	var ch ClientHello
+	err := ch.UnmarshalBinary(make([]byte, minClientHelloSizeBytes-1))
+	if !errors.Is(err, ErrInvalidMessageLength) {
+		t.Errorf("expected ErrInvalidMessageLength, got %v", err)
 	}
+}
 
+func TestUnmarshal_ErrorVersion(t *testing.T) {
+	// construct minimal-length with bad version
+	data := make([]byte, minClientHelloSizeBytes)
+	data[0] = 9
+	data[1] = 0
+	err := new(ClientHello).UnmarshalBinary(data)
+	if !errors.Is(err, ErrInvalidIPVersion) {
+		t.Errorf("expected ErrInvalidIPVersion, got %v", err)
+	}
+}
+
+func TestUnmarshal_ErrorIPLenField(t *testing.T) {
+	// valid version, but length too large
 	data := make([]byte, minClientHelloSizeBytes)
 	data[0] = 4
 	data[1] = uint8(len(data))
-	_, err = clientHello.Read(data)
-	if err == nil || err.Error() != "invalid IP address length" {
-		t.Errorf("expected \"invalid IP address length\" error, got %v", err)
+	err := new(ClientHello).UnmarshalBinary(data)
+	if !errors.Is(err, ErrInvalidIPAddrLength) {
+		t.Errorf("expected ErrInvalidIPAddrLength, got %v", err)
 	}
 }
