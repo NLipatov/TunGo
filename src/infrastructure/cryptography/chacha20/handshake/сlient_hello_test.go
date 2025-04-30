@@ -87,4 +87,12 @@ func TestClientHello_InvalidInput(t *testing.T) {
 	if err == nil {
 		t.Error("expected error for invalid data length, got nil")
 	}
+
+	data := make([]byte, minClientHelloSizeBytes)
+	data[0] = 4
+	data[1] = uint8(len(data))
+	_, err = clientHello.Read(data)
+	if err == nil || err.Error() != "invalid IP address length" {
+		t.Errorf("expected \"invalid IP address length\" error, got %v", err)
+	}
 }
