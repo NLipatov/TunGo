@@ -1,19 +1,12 @@
 package handshake
 
 import (
-	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
-	"io"
 	"net"
 	"tungo/application"
 	"tungo/settings"
 	"tungo/settings/server_configuration"
-
-	"golang.org/x/crypto/chacha20poly1305"
-	"golang.org/x/crypto/curve25519"
-	"golang.org/x/crypto/ed25519"
-	"golang.org/x/crypto/hkdf"
 )
 
 const (
@@ -64,77 +57,42 @@ func (h *HandshakeImpl) ServerSideHandshake(conn application.ConnectionAdapter) 
 		return nil, fmt.Errorf("failed to read server configuration: %s", err)
 	}
 
-	buf := make([]byte, MaxClientHelloSizeBytes)
-	_, err = conn.Read(buf)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read from client: %v", err)
+	serverCrypto := NewDefaultServerCrypto()
+
+	serverIo := NewDefaultServerIO(conn)
+	clientHello, clientHelloErr := serverIo.ReceiveClientHello()
+	if clientHelloErr != nil {
+		return nil, clientHelloErr
 	}
 
-	//Read client hello
-	var clientHello ClientHello
-	unmarshalErr := clientHello.UnmarshalBinary(buf)
-	if unmarshalErr != nil {
-		return nil, unmarshalErr
+	sessionPublicKey, sessionPrivateKey, sessionKeyErr := serverCrypto.NewX25519SessionKeyPair()
+	if sessionKeyErr != nil {
+		return nil, sessionKeyErr
 	}
 
-	// Generate server hello response
-	var curvePrivate [32]byte
-	_, _ = io.ReadFull(rand.Reader, curvePrivate[:])
-	curvePublic, _ := curve25519.X25519(curvePrivate[:], curve25519.Basepoint)
-	serverNonce := make([]byte, 32)
-	_, _ = io.ReadFull(rand.Reader, serverNonce)
-	serverDataToSign := append(append(curvePublic, serverNonce...), clientHello.ClientNonce...)
-	privateEd := conf.Ed25519PrivateKey
-	serverSignature := ed25519.Sign(privateEd, serverDataToSign)
+	serverNonce := serverCrypto.GenerateNonce()
+	serverSignature := serverCrypto.Sign(conf.Ed25519PrivateKey, append(append(sessionPublicKey, serverNonce...), clientHello.ClientNonce...))
 
-	serverHello, serverHelloErr := NewServerHello(serverSignature, serverNonce, curvePublic)
+	serverHello, serverHelloErr := NewServerHello(serverSignature, serverNonce, sessionPublicKey)
 	if serverHelloErr != nil {
 		return nil, fmt.Errorf("failed to create server hello: %s", serverHelloErr)
 	}
 
-	serverHelloBytes, serverHelloBytesErr := serverHello.MarshalBinary()
-	if serverHelloBytesErr != nil {
-		return nil, fmt.Errorf("failed to marshal server hello: %s", serverHelloBytesErr)
+	serverIo.SendServerHello(serverHello)
+	clientSignature, clientSignatureErr := serverIo.ReceiveClientSignature()
+	if clientSignatureErr != nil {
+		return nil, clientSignatureErr
 	}
 
-	// Send server hello
-	_, err = conn.Write(serverHelloBytes)
-	clientSignatureBuf := make([]byte, 64)
-
-	// Read client signature
-	_, err = conn.Read(clientSignatureBuf)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read client signature: %s\n", err)
-	}
-
-	var clientSignature ClientSignature
-	unmarshalErr = clientSignature.UnmarshalBinary(clientSignatureBuf)
-	if unmarshalErr != nil {
-		return nil, unmarshalErr
-	}
-
-	// Verify client signature
-	if !ed25519.Verify(clientHello.Ed25519PubKey, append(append(clientHello.CurvePubKey, clientHello.ClientNonce...), serverNonce...), clientSignature.Signature) {
-		return nil, fmt.Errorf("client signature verification failed")
-	}
+	serverCrypto.Verify(clientHello.Ed25519PubKey, append(append(clientHello.CurvePubKey, clientHello.ClientNonce...), serverNonce...), clientSignature.Signature)
 
 	// Generate shared secret and salt
-	sharedSecret, _ := curve25519.X25519(curvePrivate[:], clientHello.CurvePubKey)
+	sharedSecret, _ := serverCrypto.GenerateSharedSecret(sessionPrivateKey[:], clientHello.CurvePubKey)
 	salt := sha256.Sum256(append(serverNonce, clientHello.ClientNonce...))
-
-	infoSC := []byte("server-to-client") // server-key info
-	infoCS := []byte("client-to-server") // client-key info
-
-	// Generate HKDF for both encryption directions
-	serverToClientHKDF := hkdf.New(sha256.New, sharedSecret, salt[:], infoSC)
-	clientToServerHKDF := hkdf.New(sha256.New, sharedSecret, salt[:], infoCS)
-	keySize := chacha20poly1305.KeySize
-
-	// Generate keys for both encryption directions
-	serverToClientKey := make([]byte, keySize)
-	_, _ = io.ReadFull(serverToClientHKDF, serverToClientKey)
-	clientToServerKey := make([]byte, keySize)
-	_, _ = io.ReadFull(clientToServerHKDF, clientToServerKey)
+	serverToClientKey, clientToServerKey, calculateKeysErr := serverCrypto.CalculateKeys(sessionPrivateKey[:], salt[:], serverNonce, clientHello.ClientNonce, clientHello.CurvePubKey, sharedSecret)
+	if calculateKeysErr != nil {
+		return nil, calculateKeysErr
+	}
 
 	sessionDeriver := NewDefaultSessionIdDeriver(sharedSecret, salt[:])
 
