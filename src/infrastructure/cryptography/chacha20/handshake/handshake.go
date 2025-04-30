@@ -157,12 +157,12 @@ func (h *HandshakeImpl) ClientSideHandshake(conn net.Conn, settings settings.Con
 	sessionSalt := clientCrypto.GenerateSalt()
 
 	clientIO := NewDefaultClientIO(conn, settings, edPublicKey, sessionPublicKey, sessionSalt)
-	clientHelloWriteErr := clientIO.WriteClientHello()
+	clientHelloWriteErr := clientIO.SendClientHello()
 	if clientHelloWriteErr != nil {
 		return clientHelloWriteErr
 	}
 
-	serverHello, readServerHelloErr := clientIO.ReadServerHello()
+	serverHello, readServerHelloErr := clientIO.ReceiveServerHello()
 	if readServerHelloErr != nil {
 		return readServerHelloErr
 	}
