@@ -53,7 +53,7 @@ func TestWriteClientHello_Success(t *testing.T) {
 		}
 		close(done)
 	}()
-	if err := io.WriteClientHello(); err != nil {
+	if err := io.SendClientHello(); err != nil {
 		t.Fatalf("WriteClientHello failed: %v", err)
 	}
 	select {
@@ -74,7 +74,7 @@ func TestWriteClientHello_WriteError(t *testing.T) {
 	bad := &ClientIOTestFailingWriteConn{clientConn}
 	io := NewDefaultClientIO(bad, cfg, pub, sessionPub, salt)
 
-	err := io.WriteClientHello()
+	err := io.SendClientHello()
 	if err == nil || !strings.Contains(err.Error(), "failed to write client hello") {
 		t.Errorf("expected write error, got %v", err)
 	}
@@ -97,7 +97,7 @@ func TestReadServerHello_Success(t *testing.T) {
 
 	go serverConn.Write(*shBytes)
 
-	sh, err := io.ReadServerHello()
+	sh, err := io.ReceiveServerHello()
 	if err != nil {
 		t.Fatalf("ReadServerHello failed: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestReadServerHello_ReadError(t *testing.T) {
 	bad := &ClientIOTestFailingReadConn{clientConn}
 	io := NewDefaultClientIO(bad, settings.ConnectionSettings{}, nil, nil, nil)
 
-	_, err := io.ReadServerHello()
+	_, err := io.ReceiveServerHello()
 	if err == nil || !strings.Contains(err.Error(), "failed to read server hello message") {
 		t.Errorf("expected read error, got %v", err)
 	}

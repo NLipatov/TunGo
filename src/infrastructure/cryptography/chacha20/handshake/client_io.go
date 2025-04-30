@@ -9,8 +9,8 @@ import (
 )
 
 type ClientIO interface {
-	WriteClientHello() error
-	ReadServerHello() (*ServerHello, error)
+	SendClientHello() error
+	ReceiveServerHello() (*ServerHello, error)
 	WriteClientSignature(signature []byte) error
 }
 
@@ -32,7 +32,7 @@ func NewDefaultClientIO(connection net.Conn, settings settings.ConnectionSetting
 	}
 }
 
-func (c *DefaultClientIO) WriteClientHello() error {
+func (c *DefaultClientIO) SendClientHello() error {
 	clientHelloBytes, generateKeyErr := (&ClientHello{}).Write(4, c.settings.InterfaceAddress, c.ed25519PublicKey, &c.sessionPublicKey, &c.randomSalt)
 	if generateKeyErr != nil {
 		return fmt.Errorf("failed to serialize client hello")
@@ -46,7 +46,7 @@ func (c *DefaultClientIO) WriteClientHello() error {
 	return nil
 }
 
-func (c *DefaultClientIO) ReadServerHello() (*ServerHello, error) {
+func (c *DefaultClientIO) ReceiveServerHello() (*ServerHello, error) {
 	serverHelloBuffer := make([]byte, 128)
 	_, shmErr := c.connection.Read(serverHelloBuffer)
 	if shmErr != nil {
