@@ -50,22 +50,31 @@ func signAndSendClientSignature(
 }
 
 func (h *HandshakeImpl) finishKeysAndID(
-	sessPriv [32]byte, salt []byte, sh ServerHello,
+	sessPriv [32]byte,
+	salt []byte, // this is the client‐salt you generated earlier
+	sh ServerHello,
 ) error {
-	crypto := NewDefaultCrypto()
 	cc := NewDefaultClientCrypto()
 	shared, err := cc.GenerateSharedSecret(sessPriv[:], sh.CurvePublicKey)
 	if err != nil {
 		return err
 	}
-	s2c, c2s, err := crypto.deriveTwoKeys(shared, salt, sh.Nonce)
+
+	// extNonce = server‐nonce, sessionSalt = client‐salt
+	s2c, c2s, err := NewDefaultCrypto().deriveTwoKeys(
+		shared,
+		sh.Nonce, // serverNonce
+		salt,     // clientSalt
+	)
 	if err != nil {
 		return err
 	}
+
 	id, err := NewDefaultSessionIdDeriver(shared, salt).Derive()
 	if err != nil {
 		return err
 	}
+
 	h.serverKey = s2c
 	h.clientKey = c2s
 	h.id = id
