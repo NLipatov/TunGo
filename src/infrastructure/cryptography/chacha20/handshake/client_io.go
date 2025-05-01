@@ -33,12 +33,13 @@ func NewDefaultClientIO(connection net.Conn, settings settings.ConnectionSetting
 }
 
 func (c *DefaultClientIO) WriteClientHello() error {
-	clientHelloBytes, generateKeyErr := (&ClientHello{}).Write(4, c.settings.InterfaceAddress, c.ed25519PublicKey, &c.sessionPublicKey, &c.randomSalt)
-	if generateKeyErr != nil {
-		return fmt.Errorf("failed to serialize client hello")
+	hello := NewClientHello(4, c.settings.InterfaceAddress, c.ed25519PublicKey, c.sessionPublicKey, c.randomSalt)
+	marshalledHello, marshalErr := hello.MarshalBinary()
+	if marshalErr != nil {
+		return marshalErr
 	}
 
-	_, clientHelloWriteErr := c.connection.Write(*clientHelloBytes)
+	_, clientHelloWriteErr := c.connection.Write(marshalledHello)
 	if clientHelloWriteErr != nil {
 		return fmt.Errorf("failed to write client hello: %s", clientHelloWriteErr)
 	}

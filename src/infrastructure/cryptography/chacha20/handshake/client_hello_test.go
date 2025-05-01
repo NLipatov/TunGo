@@ -23,8 +23,8 @@ func TestClientHelloReadValidIPv4(t *testing.T) {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
 
-	if parsed.IpAddress != ip {
-		t.Errorf("Expected IP %s, got %s", ip, parsed.IpAddress)
+	if parsed.ipAddress != ip {
+		t.Errorf("Expected IP %s, got %s", ip, parsed.ipAddress)
 	}
 	if !bytes.Equal(parsed.EdPublicKey, edPubKey) {
 		t.Errorf("EdPublicKey mismatch")
@@ -77,8 +77,8 @@ func TestClientHelloWriteValid(t *testing.T) {
 		t.Fatalf("Expected no error during Read, got: %v", err)
 	}
 
-	if parsed.IpAddress != ip {
-		t.Errorf("Expected IP %s, got %s", ip, parsed.IpAddress)
+	if parsed.ipAddress != ip {
+		t.Errorf("Expected IP %s, got %s", ip, parsed.ipAddress)
 	}
 	if !bytes.Equal(parsed.EdPublicKey, edPubKey) {
 		t.Errorf("EdPublicKey mismatch")

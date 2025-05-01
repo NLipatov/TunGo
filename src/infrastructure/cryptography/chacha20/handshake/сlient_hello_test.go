@@ -42,13 +42,13 @@ func TestClientHello_WriteAndRead(t *testing.T) {
 	}
 
 	// Validate IP version
-	if decodedHello.IpVersion != ipVersion {
-		t.Errorf("expected IP version %d, got %d", ipVersion, decodedHello.IpVersion)
+	if decodedHello.ipVersion != ipVersion {
+		t.Errorf("expected IP version %d, got %d", ipVersion, decodedHello.ipVersion)
 	}
 
 	// Validate IP address
-	if decodedHello.IpAddress != ipAddress {
-		t.Errorf("expected IP address %s, got %s", ipAddress, decodedHello.IpAddress)
+	if decodedHello.ipAddress != ipAddress {
+		t.Errorf("expected IP address %s, got %s", ipAddress, decodedHello.ipAddress)
 	}
 
 	// Validate Ed25519 public key

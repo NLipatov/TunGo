@@ -72,9 +72,10 @@ func (h *HandshakeImpl) ServerSideHandshake(conn application.ConnectionAdapter) 
 	}
 
 	//Read client hello
-	clientHello, err := (&ClientHello{}).Read(buf)
-	if err != nil {
-		return nil, fmt.Errorf("invalid client hello: %s", err)
+	var clientHello ClientHello
+	clientHelloErr := clientHello.UnmarshalBinary(buf)
+	if clientHelloErr != nil {
+		return nil, fmt.Errorf("invalid client hello: %s", clientHelloErr)
 	}
 
 	// Generate server hello response
@@ -85,7 +86,7 @@ func (h *HandshakeImpl) ServerSideHandshake(conn application.ConnectionAdapter) 
 
 	serverNonce := make([]byte, 32)
 	_, _ = io.ReadFull(rand.Reader, serverNonce)
-	serverDataToSign := append(append(curvePublic, serverNonce...), clientHello.ClientNonce...)
+	serverDataToSign := append(append(curvePublic, serverNonce...), clientHello.clientNonce...)
 	privateEd := conf.Ed25519PrivateKey
 	serverSignature := c.Sign(privateEd, serverDataToSign)
 	serverHello, err := (&ServerHello{}).Write(&serverSignature, &serverNonce, &curvePublic)
@@ -108,13 +109,13 @@ func (h *HandshakeImpl) ServerSideHandshake(conn application.ConnectionAdapter) 
 	}
 
 	// Verify client signature
-	if !c.Verify(clientHello.EdPublicKey, append(append(clientHello.CurvePublicKey, clientHello.ClientNonce...), serverNonce...), clientSignature.ClientSignature) {
+	if !c.Verify(clientHello.edPublicKey, append(append(clientHello.curvePublicKey, clientHello.clientNonce...), serverNonce...), clientSignature.ClientSignature) {
 		return nil, fmt.Errorf("client signature verification failed")
 	}
 
 	// Generate shared secret and salt
-	sharedSecret, _ := curve25519.X25519(curvePrivate[:], clientHello.CurvePublicKey)
-	salt := sha256.Sum256(append(serverNonce, clientHello.ClientNonce...))
+	sharedSecret, _ := curve25519.X25519(curvePrivate[:], clientHello.curvePublicKey)
+	salt := sha256.Sum256(append(serverNonce, clientHello.clientNonce...))
 
 	infoSC := []byte("server-to-client") // server-key info
 	infoCS := []byte("client-to-server") // client-key info
@@ -139,7 +140,7 @@ func (h *HandshakeImpl) ServerSideHandshake(conn application.ConnectionAdapter) 
 	h.clientKey = clientToServerKey
 	h.serverKey = serverToClientKey
 
-	return &clientHello.IpAddress, nil
+	return &clientHello.ipAddress, nil
 }
 
 func (h *HandshakeImpl) ClientSideHandshake(conn net.Conn, settings settings.ConnectionSettings) error {

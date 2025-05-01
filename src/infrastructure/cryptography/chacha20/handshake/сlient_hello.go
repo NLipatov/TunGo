@@ -6,60 +6,74 @@ import (
 )
 
 type ClientHello struct {
-	IpVersion       uint8
-	IpAddressLength uint8
-	IpAddress       string
-	EdPublicKey     ed25519.PublicKey
-	CurvePublicKey  []byte
-	ClientNonce     []byte
+	ipVersion      uint8
+	ipAddress      string
+	edPublicKey    ed25519.PublicKey
+	curvePublicKey []byte
+	clientNonce    []byte
 }
 
-func (m *ClientHello) Read(data []byte) (*ClientHello, error) {
-	if len(data) < minClientHelloSizeBytes || len(data) > MaxClientHelloSizeBytes {
-		return nil, fmt.Errorf("invalid message length")
+func NewClientHello(
+	IpVersion uint8,
+	IpAddress string,
+	EdPublicKey ed25519.PublicKey,
+	CurvePublicKey []byte,
+	ClientNonce []byte) ClientHello {
+	return ClientHello{
+		ipVersion:      IpVersion,
+		ipAddress:      IpAddress,
+		edPublicKey:    EdPublicKey,
+		curvePublicKey: CurvePublicKey,
+		clientNonce:    ClientNonce,
 	}
-
-	m.IpVersion = data[0]
-
-	if m.IpVersion != 4 && m.IpVersion != 6 {
-		return nil, fmt.Errorf("invalid IP version")
-	}
-
-	m.IpAddressLength = data[1]
-
-	if int(m.IpAddressLength+lengthHeaderLength) > len(data) {
-		return nil, fmt.Errorf("invalid IP address length")
-	}
-
-	m.IpAddress = string(data[lengthHeaderLength : lengthHeaderLength+m.IpAddressLength])
-
-	m.EdPublicKey = data[lengthHeaderLength+m.IpAddressLength : lengthHeaderLength+m.IpAddressLength+curvePublicKeyLength]
-
-	m.CurvePublicKey = data[lengthHeaderLength+m.IpAddressLength+curvePublicKeyLength : lengthHeaderLength+m.IpAddressLength+curvePublicKeyLength+curvePublicKeyLength]
-
-	m.ClientNonce = data[lengthHeaderLength+m.IpAddressLength+curvePublicKeyLength+curvePublicKeyLength : lengthHeaderLength+m.IpAddressLength+curvePublicKeyLength+curvePublicKeyLength+nonceLength]
-
-	return m, nil
 }
 
-func (m *ClientHello) Write(ipVersion uint8, ip string, EdPublicKey ed25519.PublicKey, curvePublic *[]byte, nonce *[]byte) (*[]byte, error) {
-	if ipVersion != 4 && ipVersion != 6 {
+func (c *ClientHello) MarshalBinary() ([]byte, error) {
+	if c.ipVersion != 4 && c.ipVersion != 6 {
 		return nil, fmt.Errorf("invalid ip version")
 	}
-	if ipVersion == 4 && len(ip) < 7 { //min IPv4 address length is 7 characters
+	if c.ipVersion == 4 && len(c.ipAddress) < 7 { //min IPv4 address length is 7 characters
 		return nil, fmt.Errorf("invalid ip address")
 	}
-	if ipVersion == 6 && len(ip) < 2 { //min IPv6 address length is 2 characters
+	if c.ipVersion == 6 && len(c.ipAddress) < 2 { //min IPv6 address length is 2 characters
 		return nil, fmt.Errorf("invalid ip address")
 	}
 
-	arr := make([]byte, lengthHeaderLength+len(ip)+curvePublicKeyLength+curvePublicKeyLength+nonceLength)
-	arr[0] = ipVersion
-	arr[1] = uint8(len(ip))
-	copy(arr[lengthHeaderLength:], ip)
-	copy(arr[lengthHeaderLength+len(ip):], EdPublicKey)
-	copy(arr[lengthHeaderLength+len(ip)+curvePublicKeyLength:], *curvePublic)
-	copy(arr[lengthHeaderLength+len(ip)+curvePublicKeyLength+curvePublicKeyLength:], *nonce)
+	arr := make([]byte, lengthHeaderLength+len(c.ipAddress)+curvePublicKeyLength+curvePublicKeyLength+nonceLength)
+	arr[0] = c.ipVersion
+	arr[1] = uint8(len(c.ipAddress))
+	copy(arr[lengthHeaderLength:], c.ipAddress)
+	copy(arr[lengthHeaderLength+len(c.ipAddress):], c.edPublicKey)
+	copy(arr[lengthHeaderLength+len(c.ipAddress)+curvePublicKeyLength:], c.curvePublicKey)
+	copy(arr[lengthHeaderLength+len(c.ipAddress)+curvePublicKeyLength+curvePublicKeyLength:], c.clientNonce)
 
-	return &arr, nil
+	return arr, nil
+}
+
+func (c *ClientHello) UnmarshalBinary(data []byte) error {
+	if len(data) < minClientHelloSizeBytes || len(data) > MaxClientHelloSizeBytes {
+		return fmt.Errorf("invalid message length")
+	}
+
+	c.ipVersion = data[0]
+
+	if c.ipVersion != 4 && c.ipVersion != 6 {
+		return fmt.Errorf("invalid IP version")
+	}
+
+	ipAddressLength := data[1]
+
+	if int(ipAddressLength+lengthHeaderLength) > len(data) {
+		return fmt.Errorf("invalid IP address length")
+	}
+
+	c.ipAddress = string(data[lengthHeaderLength : lengthHeaderLength+ipAddressLength])
+
+	c.edPublicKey = data[lengthHeaderLength+ipAddressLength : lengthHeaderLength+ipAddressLength+curvePublicKeyLength]
+
+	c.curvePublicKey = data[lengthHeaderLength+ipAddressLength+curvePublicKeyLength : lengthHeaderLength+ipAddressLength+curvePublicKeyLength+curvePublicKeyLength]
+
+	c.clientNonce = data[lengthHeaderLength+ipAddressLength+curvePublicKeyLength+curvePublicKeyLength : lengthHeaderLength+ipAddressLength+curvePublicKeyLength+curvePublicKeyLength+nonceLength]
+
+	return nil
 }
