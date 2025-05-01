@@ -8,34 +8,47 @@ type ServerHello struct {
 	CurvePublicKey []byte
 }
 
-func (s *ServerHello) Read(data []byte) (*ServerHello, error) {
-	if len(data) < signatureLength+nonceLength+curvePublicKeyLength {
-		return nil, fmt.Errorf("invalid data")
+func NewServerHello(signature, nonce, pubkey []byte) ServerHello {
+	return ServerHello{
+		Signature:      signature,
+		Nonce:          nonce,
+		CurvePublicKey: pubkey,
 	}
-
-	s.Signature = data[:signatureLength]
-	s.Nonce = data[signatureLength : signatureLength+nonceLength]
-	s.CurvePublicKey = data[signatureLength+nonceLength : signatureLength+nonceLength+curvePublicKeyLength]
-
-	return s, nil
 }
 
-func (s *ServerHello) Write(signature *[]byte, nonce *[]byte, curvePublicKey *[]byte) (*[]byte, error) {
-	if len(*signature) != signatureLength {
+func (h *ServerHello) MarshalBinary() ([]byte, error) {
+	if len(h.Signature) != signatureLength {
 		return nil, fmt.Errorf("invalid signature")
 	}
-	if len(*nonce) != nonceLength {
+	if len(h.Nonce) != nonceLength {
 		return nil, InvalidNonce
 	}
-	if len(*curvePublicKey) != curvePublicKeyLength {
+	if len(h.CurvePublicKey) != curvePublicKeyLength {
 		return nil, fmt.Errorf("invalid curve public key")
 	}
 
 	arr := make([]byte, signatureLength+nonceLength+curvePublicKeyLength)
 
-	copy(arr, *signature)
-	copy(arr[len(*signature):], *nonce)
-	copy(arr[len(*signature)+len(*nonce):], *curvePublicKey)
+	offset := 0
+	copy(arr, h.Signature)
+	offset += signatureLength
 
-	return &arr, nil
+	copy(arr[offset:], h.Nonce)
+	offset += nonceLength
+
+	copy(arr[offset:], h.CurvePublicKey)
+
+	return arr, nil
+}
+
+func (h *ServerHello) UnmarshalBinary(data []byte) error {
+	if len(data) < signatureLength+nonceLength+curvePublicKeyLength {
+		return fmt.Errorf("invalid data")
+	}
+
+	h.Signature = data[:signatureLength]
+	h.Nonce = data[signatureLength : signatureLength+nonceLength]
+	h.CurvePublicKey = data[signatureLength+nonceLength : signatureLength+nonceLength+curvePublicKeyLength]
+
+	return nil
 }
