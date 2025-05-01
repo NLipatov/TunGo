@@ -51,10 +51,10 @@ func (h *ServerHello) UnmarshalBinary(data []byte) error {
 	h.Signature = data[:signatureLength]
 	offset += signatureLength
 
-	h.Nonce = data[offset : signatureLength+nonceLength]
+	h.Nonce = data[offset : offset+nonceLength]
 	offset += nonceLength
 
-	h.CurvePublicKey = data[offset : signatureLength+nonceLength+curvePublicKeyLength]
+	h.CurvePublicKey = data[offset : offset+curvePublicKeyLength]
 
 	return nil
 }
