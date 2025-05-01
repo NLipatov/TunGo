@@ -88,7 +88,7 @@ func (h *HandshakeImpl) ServerSideHandshake(conn application.ConnectionAdapter) 
 		return nil, sessionKeysErr
 	}
 
-	h.id = [32]byte(sessionId)
+	h.id = sessionId
 	h.clientKey = clientToServerKey
 	h.serverKey = serverToClientKey
 

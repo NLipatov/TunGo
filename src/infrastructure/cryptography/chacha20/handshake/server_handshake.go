@@ -81,7 +81,7 @@ func (h *ServerHandshake) VerifyClientSignature(c crypto, hello ClientHello, ser
 func (h *ServerHandshake) CalculateKeys(
 	curvePrivate,
 	serverNonce []byte,
-	hello ClientHello) (sessionId, clientToServerKey, serverToClientKey []byte, err error) {
+	hello ClientHello) (sessionId [32]byte, clientToServerKey, serverToClientKey []byte, err error) {
 	// Generate shared secret and salt
 	sharedSecret, _ := curve25519.X25519(curvePrivate[:], hello.curvePublicKey)
 	salt := sha256.Sum256(append(serverNonce, hello.clientNonce...))
@@ -100,12 +100,12 @@ func (h *ServerHandshake) CalculateKeys(
 	clientToServerKey = make([]byte, keySize)
 	_, _ = io.ReadFull(clientToServerHKDF, clientToServerKey)
 
-	derivedSessionId, deriveSessionIdErr := deriveSessionId(sharedSecret, salt[:])
+	sessionId, deriveSessionIdErr := deriveSessionId(sharedSecret, salt[:])
 	if deriveSessionIdErr != nil {
-		return nil,
+		return [32]byte{},
 			nil,
 			nil,
-			fmt.Errorf("failed to derive session id: %s", derivedSessionId)
+			fmt.Errorf("failed to derive session id: %s", deriveSessionIdErr)
 	}
 
 	return sessionId, clientToServerKey, serverToClientKey, nil
