@@ -150,18 +150,18 @@ func (h *HandshakeImpl) ClientSideHandshake(conn net.Conn, settings settings.Con
 
 	clientCrypto := NewDefaultClientCrypto()
 
-	edPublicKey, edPrivateKey, generateKeyErr := clientCrypto.GenerateEd25519Keys()
+	edPublicKey, edPrivateKey, generateKeyErr := c.generateEd25519Keys()
 	if generateKeyErr != nil {
 		return fmt.Errorf("failed to generate ed25519 key pair: %s", generateKeyErr)
 	}
 
 	// create session key pair
-	sessionPublicKey, sessionPrivateKey, sessionKeyPairErr := clientCrypto.NewX25519SessionKeyPair()
+	sessionPublicKey, sessionPrivateKey, sessionKeyPairErr := c.newX25519SessionKeyPair()
 	if sessionKeyPairErr != nil {
 		return sessionKeyPairErr
 	}
 
-	sessionSalt := clientCrypto.GenerateSalt()
+	sessionSalt := c.randomBytesArray(32)
 
 	clientIO := NewDefaultClientIO(conn, settings, edPublicKey, sessionPublicKey, sessionSalt)
 	clientHelloWriteErr := clientIO.WriteClientHello()
