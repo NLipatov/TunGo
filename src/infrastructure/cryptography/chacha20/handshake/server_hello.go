@@ -8,11 +8,11 @@ type ServerHello struct {
 	CurvePublicKey []byte
 }
 
-func NewServerHello(signature, nonce, pubkey []byte) ServerHello {
+func NewServerHello(signature, nonce, pubKey []byte) ServerHello {
 	return ServerHello{
 		Signature:      signature,
 		Nonce:          nonce,
-		CurvePublicKey: pubkey,
+		CurvePublicKey: pubKey,
 	}
 }
 
