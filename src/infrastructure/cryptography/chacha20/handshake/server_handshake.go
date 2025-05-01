@@ -2,7 +2,12 @@ package handshake
 
 import (
 	"crypto/ed25519"
+	"crypto/sha256"
 	"fmt"
+	"golang.org/x/crypto/chacha20poly1305"
+	"golang.org/x/crypto/curve25519"
+	"golang.org/x/crypto/hkdf"
+	"io"
 	"tungo/application"
 )
 
@@ -71,4 +76,37 @@ func (h *ServerHandshake) VerifyClientSignature(c crypto, hello ClientHello, ser
 	}
 
 	return nil
+}
+
+func (h *ServerHandshake) CalculateKeys(
+	curvePrivate,
+	serverNonce []byte,
+	hello ClientHello) (sessionId [32]byte, clientToServerKey, serverToClientKey []byte, err error) {
+	// Generate shared secret and salt
+	sharedSecret, _ := curve25519.X25519(curvePrivate[:], hello.curvePublicKey)
+	salt := sha256.Sum256(append(serverNonce, hello.clientNonce...))
+
+	infoSC := []byte("server-to-client") // server-key info
+	infoCS := []byte("client-to-server") // client-key info
+
+	// Generate HKDF for both encryption directions
+	serverToClientHKDF := hkdf.New(sha256.New, sharedSecret, salt[:], infoSC)
+	clientToServerHKDF := hkdf.New(sha256.New, sharedSecret, salt[:], infoCS)
+	keySize := chacha20poly1305.KeySize
+
+	// Generate keys for both encryption directions
+	serverToClientKey = make([]byte, keySize)
+	_, _ = io.ReadFull(serverToClientHKDF, serverToClientKey)
+	clientToServerKey = make([]byte, keySize)
+	_, _ = io.ReadFull(clientToServerHKDF, clientToServerKey)
+
+	sessionId, deriveSessionIdErr := deriveSessionId(sharedSecret, salt[:])
+	if deriveSessionIdErr != nil {
+		return [32]byte{},
+			nil,
+			nil,
+			fmt.Errorf("failed to derive session id: %s", deriveSessionIdErr)
+	}
+
+	return sessionId, clientToServerKey, serverToClientKey, nil
 }
