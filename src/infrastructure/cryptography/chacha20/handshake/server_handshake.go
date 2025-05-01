@@ -1,6 +1,7 @@
 package handshake
 
 import (
+	"crypto/ed25519"
 	"tungo/application"
 )
 
@@ -31,4 +32,21 @@ func (h *ServerHandshake) ReceiveClientHello() (ClientHello, error) {
 	return clientHello, nil
 }
 
-func (h *ServerHandshake) SendServerHello() {}
+func (h *ServerHandshake) SendServerHello(
+	privateKey ed25519.PrivateKey,
+	curvePublic,
+	clientNonce []byte) error {
+	c := newDefaultCrypto()
+
+	serverNonce := c.GenerateRandomBytesArray(32)
+	serverDataToSign := append(append(curvePublic, serverNonce...), clientNonce...)
+	serverSignature := c.Sign(privateKey, serverDataToSign)
+	serverHello := NewServerHello(serverSignature, serverNonce, curvePublic)
+	marshalledServerHello, marshalErr := serverHello.MarshalBinary()
+	if marshalErr != nil {
+		return marshalErr
+	}
+
+	_, writeErr := h.conn.Write(marshalledServerHello)
+	return writeErr
+}

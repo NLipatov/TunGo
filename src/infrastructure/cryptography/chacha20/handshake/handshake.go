@@ -1,7 +1,6 @@
 package handshake
 
 import (
-	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
 	"golang.org/x/crypto/curve25519"
@@ -76,20 +75,13 @@ func (h *HandshakeImpl) ServerSideHandshake(conn application.ConnectionAdapter) 
 	if curveErr != nil {
 		return nil, curveErr
 	}
+	serverNonce := c.GenerateRandomBytesArray(32)
 
-	serverNonce := make([]byte, 32)
-	_, _ = io.ReadFull(rand.Reader, serverNonce)
-	serverDataToSign := append(append(curvePublic, serverNonce...), clientHello.clientNonce...)
-	privateEd := conf.Ed25519PrivateKey
-	serverSignature := c.Sign(privateEd, serverDataToSign)
-	serverHello := NewServerHello(serverSignature, serverNonce, curvePublic)
-	marshalledServerHello, marshalErr := serverHello.MarshalBinary()
-	if marshalErr != nil {
-		return nil, marshalErr
+	serverHelloErr := handshake.SendServerHello(conf.Ed25519PrivateKey, curvePublic, clientHello.clientNonce)
+	if serverHelloErr != nil {
+		return nil, serverHelloErr
 	}
 
-	// Send server hello
-	_, err = conn.Write(marshalledServerHello)
 	clientSignatureBuf := make([]byte, 64)
 
 	// Read client signature
