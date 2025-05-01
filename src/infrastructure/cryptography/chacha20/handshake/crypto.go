@@ -3,7 +3,6 @@ package handshake
 import (
 	"crypto/ed25519"
 	"crypto/rand"
-	"fmt"
 	"golang.org/x/crypto/curve25519"
 	"io"
 )
@@ -39,19 +38,12 @@ func (c *defaultCrypto) GenerateX25519KeyPair() ([]byte, [32]byte, error) {
 
 	_, privateErr := io.ReadFull(rand.Reader, private[:])
 	if privateErr != nil {
-		return make([]byte, 0), private, fmt.Errorf("private key generation err: %s", privateErr)
+		return nil, private, privateErr
 	}
 
 	public, publicErr := curve25519.X25519(private[:], curve25519.Basepoint)
-	if publicErr != nil {
-		return make([]byte, 0), private, fmt.Errorf("public key generation err: %s", publicErr)
-	}
 
-	if len(public) != 32 {
-		return make([]byte, 0), private, fmt.Errorf("public key generation err: invalid public key length")
-	}
-
-	return public, private, nil
+	return public, private, publicErr
 }
 
 func (c *defaultCrypto) GenerateRandomBytesArray(size int) []byte {
