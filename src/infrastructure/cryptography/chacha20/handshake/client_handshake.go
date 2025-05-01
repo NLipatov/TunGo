@@ -52,12 +52,13 @@ func signAndSendClientSignature(
 func (h *HandshakeImpl) finishKeysAndID(
 	sessPriv [32]byte, salt []byte, sh ServerHello,
 ) error {
+	crypto := NewDefaultCrypto()
 	cc := NewDefaultClientCrypto()
 	shared, err := cc.GenerateSharedSecret(sessPriv[:], sh.CurvePublicKey)
 	if err != nil {
 		return err
 	}
-	s2c, c2s, err := cc.CalculateKeys(sessPriv[:], salt, sh.Nonce, sh.CurvePublicKey, shared)
+	s2c, c2s, err := crypto.deriveTwoKeys(salt, sh.Nonce, shared)
 	if err != nil {
 		return err
 	}

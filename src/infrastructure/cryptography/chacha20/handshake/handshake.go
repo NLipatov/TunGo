@@ -89,7 +89,8 @@ func (h *HandshakeImpl) ServerSideHandshake(conn application.ConnectionAdapter) 
 	// Generate shared secret and salt
 	sharedSecret, _ := serverCrypto.GenerateSharedSecret(sessionPrivateKey[:], clientHello.CurvePubKey)
 	salt := sha256.Sum256(append(serverNonce, clientHello.ClientNonce...))
-	serverToClientKey, clientToServerKey, calculateKeysErr := serverCrypto.CalculateKeys(sessionPrivateKey[:], salt[:], serverNonce, clientHello.ClientNonce, clientHello.CurvePubKey, sharedSecret)
+	crypto := NewDefaultCrypto()
+	serverToClientKey, clientToServerKey, calculateKeysErr := crypto.deriveTwoKeys(clientHello.ClientNonce, clientHello.CurvePubKey, sharedSecret)
 	if calculateKeysErr != nil {
 		return nil, calculateKeysErr
 	}
