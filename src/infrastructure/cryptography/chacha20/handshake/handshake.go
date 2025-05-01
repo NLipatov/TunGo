@@ -85,7 +85,7 @@ func (h *HandshakeImpl) ServerSideHandshake(conn application.ConnectionAdapter) 
 	_, _ = io.ReadFull(rand.Reader, serverNonce)
 	serverDataToSign := append(append(curvePublic, serverNonce...), clientHello.ClientNonce...)
 	privateEd := conf.Ed25519PrivateKey
-	serverSignature := c.sign(privateEd, serverDataToSign)
+	serverSignature := c.Sign(privateEd, serverDataToSign)
 	serverHello, err := (&ServerHello{}).Write(&serverSignature, &serverNonce, &curvePublic)
 	if err != nil {
 		return nil, fmt.Errorf("failed to write server hello: %s\n", err)
@@ -106,7 +106,7 @@ func (h *HandshakeImpl) ServerSideHandshake(conn application.ConnectionAdapter) 
 	}
 
 	// Verify client signature
-	if !c.verify(clientHello.EdPublicKey, append(append(clientHello.CurvePublicKey, clientHello.ClientNonce...), serverNonce...), clientSignature.ClientSignature) {
+	if !c.Verify(clientHello.EdPublicKey, append(append(clientHello.CurvePublicKey, clientHello.ClientNonce...), serverNonce...), clientSignature.ClientSignature) {
 		return nil, fmt.Errorf("client signature verification failed")
 	}
 
@@ -150,7 +150,7 @@ func (h *HandshakeImpl) ClientSideHandshake(conn net.Conn, settings settings.Con
 
 	clientCrypto := NewDefaultClientCrypto()
 
-	edPublicKey, edPrivateKey, generateKeyErr := c.generateEd25519Keys()
+	edPublicKey, edPrivateKey, generateKeyErr := c.GenerateEd25519KeyPair()
 	if generateKeyErr != nil {
 		return fmt.Errorf("failed to generate ed25519 key pair: %s", generateKeyErr)
 	}
@@ -174,12 +174,12 @@ func (h *HandshakeImpl) ClientSideHandshake(conn net.Conn, settings settings.Con
 		return readServerHelloErr
 	}
 
-	if !c.verify(clientConf.Ed25519PublicKey, append(append(serverHello.CurvePublicKey, serverHello.Nonce...), sessionSalt...), serverHello.Signature) {
+	if !c.Verify(clientConf.Ed25519PublicKey, append(append(serverHello.CurvePublicKey, serverHello.Nonce...), sessionSalt...), serverHello.Signature) {
 		return fmt.Errorf("server failed signature check")
 	}
 
 	dataToSign := append(append(sessionPublicKey, sessionSalt...), serverHello.Nonce...)
-	signature := c.sign(edPrivateKey, dataToSign)
+	signature := c.Sign(edPrivateKey, dataToSign)
 	clientIO.WriteClientSignature(signature)
 
 	serverToClientKey, clientToServerKey, derivedSessionId, calculateKeysErr := clientCrypto.CalculateKeys(sessionPrivateKey[:], sessionSalt, serverHello.Nonce, serverHello.CurvePublicKey)

@@ -9,9 +9,9 @@ import (
 )
 
 type crypto interface {
-	sign(privateKey ed25519.PrivateKey, data []byte) []byte
-	verify(publicKey ed25519.PublicKey, data []byte, signature []byte) bool
-	generateEd25519Keys() (ed25519.PublicKey, ed25519.PrivateKey, error)
+	Sign(privateKey ed25519.PrivateKey, data []byte) []byte
+	Verify(publicKey ed25519.PublicKey, data []byte, signature []byte) bool
+	GenerateEd25519KeyPair() (ed25519.PublicKey, ed25519.PrivateKey, error)
 	GenerateX25519KeyPair() ([]byte, [32]byte, error)
 	GenerateRandomBytesArray(size int) []byte
 }
@@ -23,14 +23,14 @@ func newDefaultCrypto() crypto {
 	return &defaultCrypto{}
 }
 
-func (c *defaultCrypto) verify(publicKey ed25519.PublicKey, data []byte, signature []byte) bool {
+func (c *defaultCrypto) Verify(publicKey ed25519.PublicKey, data []byte, signature []byte) bool {
 	return ed25519.Verify(publicKey, data, signature)
 }
 
-func (c *defaultCrypto) sign(privateKey ed25519.PrivateKey, data []byte) []byte {
+func (c *defaultCrypto) Sign(privateKey ed25519.PrivateKey, data []byte) []byte {
 	return ed25519.Sign(privateKey, data)
 }
-func (c *defaultCrypto) generateEd25519Keys() (ed25519.PublicKey, ed25519.PrivateKey, error) {
+func (c *defaultCrypto) GenerateEd25519KeyPair() (ed25519.PublicKey, ed25519.PrivateKey, error) {
 	return ed25519.GenerateKey(rand.Reader)
 }
 
