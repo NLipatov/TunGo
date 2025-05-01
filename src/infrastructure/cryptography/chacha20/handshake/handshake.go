@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
+	"golang.org/x/crypto/curve25519"
 	"io"
 	"net"
 	"tungo/application"
@@ -12,7 +13,6 @@ import (
 	"tungo/settings/server_configuration"
 
 	"golang.org/x/crypto/chacha20poly1305"
-	"golang.org/x/crypto/curve25519"
 	"golang.org/x/crypto/hkdf"
 )
 
@@ -65,19 +65,11 @@ func (h *HandshakeImpl) ServerSideHandshake(conn application.ConnectionAdapter) 
 		return nil, fmt.Errorf("failed to read server configuration: %s", err)
 	}
 
-	buf := make([]byte, MaxClientHelloSizeBytes)
-	_, err = conn.Read(buf)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read from client: %v", err)
-	}
-
-	//Read client hello
-	var clientHello ClientHello
-	clientHelloErr := clientHello.UnmarshalBinary(buf)
+	handshake := NewServerHandshake(conn)
+	clientHello, clientHelloErr := handshake.ReadClientHello()
 	if clientHelloErr != nil {
-		return nil, fmt.Errorf("invalid client hello: %s", clientHelloErr)
+		return nil, clientHelloErr
 	}
-
 	// Generate server hello response
 	curvePublic, curvePrivate, curveErr := c.GenerateX25519KeyPair()
 	if curveErr != nil {
