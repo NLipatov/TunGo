@@ -33,14 +33,14 @@ func (h *ServerHandshake) ReceiveClientHello() (ClientHello, error) {
 }
 
 func (h *ServerHandshake) SendServerHello(
-	privateKey ed25519.PrivateKey,
+	serverPrivateKey ed25519.PrivateKey,
+	serverNonce []byte,
 	curvePublic,
 	clientNonce []byte) error {
 	c := newDefaultCrypto()
 
-	serverNonce := c.GenerateRandomBytesArray(32)
 	serverDataToSign := append(append(curvePublic, serverNonce...), clientNonce...)
-	serverSignature := c.Sign(privateKey, serverDataToSign)
+	serverSignature := c.Sign(serverPrivateKey, serverDataToSign)
 	serverHello := NewServerHello(serverSignature, serverNonce, curvePublic)
 	marshalledServerHello, marshalErr := serverHello.MarshalBinary()
 	if marshalErr != nil {
