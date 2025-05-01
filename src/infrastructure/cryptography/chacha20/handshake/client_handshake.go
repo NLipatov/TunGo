@@ -58,7 +58,7 @@ func (h *HandshakeImpl) finishKeysAndID(
 	if err != nil {
 		return err
 	}
-	s2c, c2s, err := crypto.deriveTwoKeys(shared, sh.Nonce, salt)
+	s2c, c2s, err := crypto.deriveTwoKeys(shared, salt, sh.Nonce)
 	if err != nil {
 		return err
 	}
