@@ -2,10 +2,7 @@ package handshake
 
 import (
 	"fmt"
-	"net"
-	"tungo/settings"
-
-	"golang.org/x/crypto/ed25519"
+	"tungo/application"
 )
 
 type ClientIO interface {
@@ -15,20 +12,12 @@ type ClientIO interface {
 }
 
 type DefaultClientIO struct {
-	connection       net.Conn
-	settings         settings.ConnectionSettings
-	ed25519PublicKey []byte
-	sessionPublicKey []byte
-	randomSalt       []byte
+	connection application.ConnectionAdapter
 }
 
-func NewDefaultClientIO(connection net.Conn, settings settings.ConnectionSettings, ed25519PublicKey ed25519.PublicKey, sessionPublicKey []byte, randomSalt []byte) ClientIO {
+func NewDefaultClientIO(connection application.ConnectionAdapter) ClientIO {
 	return &DefaultClientIO{
-		connection:       connection,
-		settings:         settings,
-		ed25519PublicKey: ed25519PublicKey,
-		sessionPublicKey: sessionPublicKey,
-		randomSalt:       randomSalt,
+		connection: connection,
 	}
 }
 
