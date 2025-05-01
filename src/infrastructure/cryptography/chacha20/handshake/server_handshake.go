@@ -3,6 +3,7 @@ package handshake
 import (
 	"crypto/ed25519"
 	"fmt"
+	"io"
 	"tungo/application"
 )
 
@@ -53,12 +54,10 @@ func (h *ServerHandshake) SendServerHello(
 
 func (h *ServerHandshake) VerifyClientSignature(c crypto, hello ClientHello, serverNonce []byte) error {
 	clientSignatureBuf := make([]byte, 64)
-
-	// Read client signature
-	_, readErr := h.conn.Read(clientSignatureBuf)
-	if readErr != nil {
-		return readErr
+	if _, err := io.ReadFull(h.conn, clientSignatureBuf); err != nil {
+		return err
 	}
+
 	var clientSignature Signature
 	unmarshalErr := clientSignature.UnmarshalBinary(clientSignatureBuf)
 	if unmarshalErr != nil {
