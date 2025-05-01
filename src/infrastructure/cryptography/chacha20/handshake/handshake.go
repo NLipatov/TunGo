@@ -77,7 +77,7 @@ func (h *HandshakeImpl) ServerSideHandshake(conn application.ConnectionAdapter) 
 	}
 	serverNonce := c.GenerateRandomBytesArray(32)
 
-	serverHelloErr := handshake.SendServerHello(conf.Ed25519PrivateKey, serverNonce, curvePublic, clientHello.clientNonce)
+	serverHelloErr := handshake.SendServerHello(c, conf.Ed25519PrivateKey, serverNonce, curvePublic, clientHello.clientNonce)
 	if serverHelloErr != nil {
 		return nil, serverHelloErr
 	}
