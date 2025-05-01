@@ -42,12 +42,16 @@ func (c *defaultCrypto) GenerateX25519KeyPair() ([]byte, [32]byte, error) {
 		return make([]byte, 0), private, fmt.Errorf("private key generation err: %s", privateErr)
 	}
 
-	curvePublic, _ := curve25519.X25519(private[:], curve25519.Basepoint)
-	if len(curvePublic) != 32 {
+	public, publicErr := curve25519.X25519(private[:], curve25519.Basepoint)
+	if publicErr != nil {
+		return make([]byte, 0), private, fmt.Errorf("public key generation err: %s", publicErr)
+	}
+
+	if len(public) != 32 {
 		return make([]byte, 0), private, fmt.Errorf("public key generation err: invalid public key length")
 	}
 
-	return curvePublic, private, nil
+	return public, private, nil
 }
 
 func (c *defaultCrypto) GenerateRandomBytesArray(size int) []byte {

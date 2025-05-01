@@ -78,9 +78,11 @@ func (h *HandshakeImpl) ServerSideHandshake(conn application.ConnectionAdapter) 
 	}
 
 	// Generate server hello response
-	var curvePrivate [32]byte
-	_, _ = io.ReadFull(rand.Reader, curvePrivate[:])
-	curvePublic, _ := curve25519.X25519(curvePrivate[:], curve25519.Basepoint)
+	curvePublic, curvePrivate, curveErr := c.GenerateX25519KeyPair()
+	if curveErr != nil {
+		return nil, curveErr
+	}
+
 	serverNonce := make([]byte, 32)
 	_, _ = io.ReadFull(rand.Reader, serverNonce)
 	serverDataToSign := append(append(curvePublic, serverNonce...), clientHello.ClientNonce...)
