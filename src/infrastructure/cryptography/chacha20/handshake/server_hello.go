@@ -29,6 +29,7 @@ func (h *ServerHello) MarshalBinary() ([]byte, error) {
 
 	arr := make([]byte, signatureLength+nonceLength+curvePublicKeyLength)
 
+	// copy signature into arr
 	offset := 0
 	copy(arr, h.Signature)
 	offset += signatureLength
@@ -42,13 +43,18 @@ func (h *ServerHello) MarshalBinary() ([]byte, error) {
 }
 
 func (h *ServerHello) UnmarshalBinary(data []byte) error {
-	if len(data) < signatureLength+nonceLength+curvePublicKeyLength {
+	if len(data) != signatureLength+nonceLength+curvePublicKeyLength {
 		return fmt.Errorf("invalid data")
 	}
 
+	offset := 0
 	h.Signature = data[:signatureLength]
-	h.Nonce = data[signatureLength : signatureLength+nonceLength]
-	h.CurvePublicKey = data[signatureLength+nonceLength : signatureLength+nonceLength+curvePublicKeyLength]
+	offset += signatureLength
+
+	h.Nonce = data[offset : signatureLength+nonceLength]
+	offset += nonceLength
+
+	h.CurvePublicKey = data[offset : signatureLength+nonceLength+curvePublicKeyLength]
 
 	return nil
 }
