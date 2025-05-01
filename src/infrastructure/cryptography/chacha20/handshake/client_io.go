@@ -9,7 +9,7 @@ import (
 )
 
 type ClientIO interface {
-	WriteClientHello() error
+	WriteClientHello(hello ClientHello) error
 	ReadServerHello() (ServerHello, error)
 	WriteClientSignature(signature []byte) error
 }
@@ -32,8 +32,7 @@ func NewDefaultClientIO(connection net.Conn, settings settings.ConnectionSetting
 	}
 }
 
-func (c *DefaultClientIO) WriteClientHello() error {
-	hello := NewClientHello(4, c.settings.InterfaceAddress, c.ed25519PublicKey, c.sessionPublicKey, c.randomSalt)
+func (c *DefaultClientIO) WriteClientHello(hello ClientHello) error {
 	marshalledHello, marshalErr := hello.MarshalBinary()
 	if marshalErr != nil {
 		return marshalErr
