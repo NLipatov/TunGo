@@ -14,7 +14,7 @@ func NewServerHandshake(conn application.ConnectionAdapter) ServerHandshake {
 	}
 }
 
-func (h *ServerHandshake) ReadClientHello() (ClientHello, error) {
+func (h *ServerHandshake) ReceiveClientHello() (ClientHello, error) {
 	buf := make([]byte, MaxClientHelloSizeBytes)
 	_, readErr := h.conn.Read(buf)
 	if readErr != nil {
@@ -30,3 +30,5 @@ func (h *ServerHandshake) ReadClientHello() (ClientHello, error) {
 
 	return clientHello, nil
 }
+
+func (h *ServerHandshake) SendServerHello() {}

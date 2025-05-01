@@ -66,10 +66,11 @@ func (h *HandshakeImpl) ServerSideHandshake(conn application.ConnectionAdapter) 
 	}
 
 	handshake := NewServerHandshake(conn)
-	clientHello, clientHelloErr := handshake.ReadClientHello()
+	clientHello, clientHelloErr := handshake.ReceiveClientHello()
 	if clientHelloErr != nil {
 		return nil, clientHelloErr
 	}
+
 	// Generate server hello response
 	curvePublic, curvePrivate, curveErr := c.GenerateX25519KeyPair()
 	if curveErr != nil {
