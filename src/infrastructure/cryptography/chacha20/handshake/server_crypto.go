@@ -24,7 +24,7 @@ func NewDefaultServerCrypto() ServerCrypto {
 }
 
 func (c *DefaultServerCrypto) Verify(publicKey ed25519.PublicKey, data []byte, signature []byte) bool {
-	return !ed25519.Verify(publicKey, data, signature)
+	return ed25519.Verify(publicKey, data, signature)
 }
 func (c *DefaultServerCrypto) NewX25519SessionKeyPair() ([]byte, [32]byte, error) {
 	var curvePrivate [32]byte
