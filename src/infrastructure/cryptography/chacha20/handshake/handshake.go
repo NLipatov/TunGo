@@ -156,12 +156,12 @@ func (h *HandshakeImpl) ClientSideHandshake(conn net.Conn, settings settings.Con
 	}
 
 	// create session key pair
-	sessionPublicKey, sessionPrivateKey, sessionKeyPairErr := c.newX25519SessionKeyPair()
+	sessionPublicKey, sessionPrivateKey, sessionKeyPairErr := c.GenerateX25519KeyPair()
 	if sessionKeyPairErr != nil {
 		return sessionKeyPairErr
 	}
 
-	sessionSalt := c.randomBytesArray(32)
+	sessionSalt := c.GenerateRandomBytesArray(32)
 
 	clientIO := NewDefaultClientIO(conn, settings, edPublicKey, sessionPublicKey, sessionSalt)
 	clientHelloWriteErr := clientIO.WriteClientHello()

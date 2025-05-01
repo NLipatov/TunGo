@@ -12,8 +12,8 @@ type crypto interface {
 	sign(privateKey ed25519.PrivateKey, data []byte) []byte
 	verify(publicKey ed25519.PublicKey, data []byte, signature []byte) bool
 	generateEd25519Keys() (ed25519.PublicKey, ed25519.PrivateKey, error)
-	newX25519SessionKeyPair() ([]byte, [32]byte, error)
-	randomBytesArray(size int) []byte
+	GenerateX25519KeyPair() ([]byte, [32]byte, error)
+	GenerateRandomBytesArray(size int) []byte
 }
 
 type defaultCrypto struct {
@@ -34,7 +34,7 @@ func (c *defaultCrypto) generateEd25519Keys() (ed25519.PublicKey, ed25519.Privat
 	return ed25519.GenerateKey(rand.Reader)
 }
 
-func (c *defaultCrypto) newX25519SessionKeyPair() ([]byte, [32]byte, error) {
+func (c *defaultCrypto) GenerateX25519KeyPair() ([]byte, [32]byte, error) {
 	var private [32]byte
 
 	_, privateErr := io.ReadFull(rand.Reader, private[:])
@@ -50,7 +50,7 @@ func (c *defaultCrypto) newX25519SessionKeyPair() ([]byte, [32]byte, error) {
 	return curvePublic, private, nil
 }
 
-func (c *defaultCrypto) randomBytesArray(size int) []byte {
+func (c *defaultCrypto) GenerateRandomBytesArray(size int) []byte {
 	randomSalt := make([]byte, size)
 	_, _ = io.ReadFull(rand.Reader, randomSalt)
 	return randomSalt
