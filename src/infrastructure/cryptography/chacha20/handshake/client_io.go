@@ -1,14 +1,13 @@
 package handshake
 
 import (
-	"fmt"
 	"tungo/application"
 )
 
 type ClientIO interface {
 	WriteClientHello(hello ClientHello) error
 	ReadServerHello() (ServerHello, error)
-	WriteClientSignature(signature []byte) error
+	WriteClientSignature(signature Signature) error
 }
 
 type DefaultClientIO struct {
@@ -22,44 +21,44 @@ func NewDefaultClientIO(connection application.ConnectionAdapter) ClientIO {
 }
 
 func (c *DefaultClientIO) WriteClientHello(hello ClientHello) error {
-	marshalledHello, marshalErr := hello.MarshalBinary()
+	data, marshalErr := hello.MarshalBinary()
 	if marshalErr != nil {
 		return marshalErr
 	}
 
-	_, clientHelloWriteErr := c.connection.Write(marshalledHello)
-	if clientHelloWriteErr != nil {
-		return fmt.Errorf("failed to write client hello: %s", clientHelloWriteErr)
+	_, writeErr := c.connection.Write(data)
+	if writeErr != nil {
+		return writeErr
 	}
 
 	return nil
 }
 
 func (c *DefaultClientIO) ReadServerHello() (ServerHello, error) {
-	serverHelloBuffer := make([]byte, 128)
-	_, shmErr := c.connection.Read(serverHelloBuffer)
-	if shmErr != nil {
-		return ServerHello{}, fmt.Errorf("failed to read server hello message")
+	buffer := make([]byte, 128)
+	_, readErr := c.connection.Read(buffer)
+	if readErr != nil {
+		return ServerHello{}, readErr
 	}
 
-	var serverHello ServerHello
-	unmarshalErr := serverHello.UnmarshalBinary(serverHelloBuffer)
+	var hello ServerHello
+	unmarshalErr := hello.UnmarshalBinary(buffer)
 	if unmarshalErr != nil {
 		return ServerHello{}, unmarshalErr
 	}
 
-	return serverHello, nil
+	return hello, nil
 }
 
-func (c *DefaultClientIO) WriteClientSignature(signature []byte) error {
-	cS, generateKeyErr := (&ClientSignature{}).Write(&signature)
-	if generateKeyErr != nil {
-		return fmt.Errorf("failed to create client signature message: %s", generateKeyErr)
+func (c *DefaultClientIO) WriteClientSignature(signature Signature) error {
+	data, marshalErr := signature.MarshalBinary()
+	if marshalErr != nil {
+		return marshalErr
 	}
 
-	_, csErr := c.connection.Write(*cS)
-	if csErr != nil {
-		return fmt.Errorf("failed to send client signature message: %s", csErr)
+	_, writeErr := c.connection.Write(data)
+	if writeErr != nil {
+		return writeErr
 	}
 
 	return nil

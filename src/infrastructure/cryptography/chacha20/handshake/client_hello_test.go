@@ -2,115 +2,101 @@ package handshake
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"testing"
 )
 
-func TestClientHelloReadValidIPv4(t *testing.T) {
-	ip := "127.0.0.1"
-	edPubKey := make([]byte, 32)
-	curvePubKey := make([]byte, 32)
-	clientNonce := make([]byte, 32)
+// helper to build a valid ClientHello buffer
+func buildValidHello(ipVersion uint8, ip string) ([]byte, *ClientHello) {
+	// generate dummy keys and nonce
+	edPub := ed25519.PublicKey(bytes.Repeat([]byte{0xAA}, curvePublicKeyLength))
+	curvePub := bytes.Repeat([]byte{0xBB}, curvePublicKeyLength)
+	nonce := bytes.Repeat([]byte{0xCC}, nonceLength)
+	ch := NewClientHello(ipVersion, ip, edPub, curvePub, nonce)
+	buf, _ := ch.MarshalBinary()
+	return buf, &ch
+}
 
-	data := append([]byte{4, byte(len(ip))}, ip...)
-	data = append(data, edPubKey...)
-	data = append(data, curvePubKey...)
-	data = append(data, clientNonce...)
-
-	clientHello := &ClientHello{}
-	parsed, err := clientHello.Read(data)
-
-	if err != nil {
-		t.Fatalf("Expected no error, got: %v", err)
-	}
-
-	if parsed.ipAddress != ip {
-		t.Errorf("Expected IP %s, got %s", ip, parsed.ipAddress)
-	}
-	if !bytes.Equal(parsed.EdPublicKey, edPubKey) {
-		t.Errorf("EdPublicKey mismatch")
-	}
-	if !bytes.Equal(parsed.CurvePublicKey, curvePubKey) {
-		t.Errorf("CurvePublicKey mismatch")
-	}
-	if !bytes.Equal(parsed.ClientNonce, clientNonce) {
-		t.Errorf("ClientNonce mismatch")
+func TestClientHello_MarshalUnmarshal_Success(t *testing.T) {
+	for _, tc := range []struct {
+		version uint8
+		ip      string
+	}{
+		{4, "192.168.0.1"},
+		{6, "fe80::1"},
+	} {
+		buf, orig := buildValidHello(tc.version, tc.ip)
+		// Unmarshal
+		var got ClientHello
+		if err := got.UnmarshalBinary(buf); err != nil {
+			t.Fatalf("Unmarshal failed for version %d ip %s: %v", tc.version, tc.ip, err)
+		}
+		if got.ipVersion != orig.ipVersion {
+			t.Errorf("version: got %d want %d", got.ipVersion, orig.ipVersion)
+		}
+		if got.ipAddress != orig.ipAddress {
+			t.Errorf("ip: got %s want %s", got.ipAddress, orig.ipAddress)
+		}
+		if !bytes.Equal(got.edPublicKey, orig.edPublicKey) {
+			t.Errorf("edPub mismatch")
+		}
+		if !bytes.Equal(got.curvePublicKey, orig.curvePublicKey) {
+			t.Errorf("curvePub mismatch")
+		}
+		if !bytes.Equal(got.clientNonce, orig.clientNonce) {
+			t.Errorf("nonce mismatch")
+		}
 	}
 }
 
-func TestClientHelloReadInvalidLength(t *testing.T) {
-	data := make([]byte, minClientHelloSizeBytes-1)
-	clientHello := &ClientHello{}
-
-	_, err := clientHello.Read(data)
-	if err == nil {
-		t.Fatal("Expected error for invalid message length, got nil")
+func TestClientHello_MarshalBinary_InvalidVersion(t *testing.T) {
+	ch := NewClientHello(0, "192.168.0.1", nil, nil, nil)
+	if _, err := ch.MarshalBinary(); err == nil {
+		t.Fatal("expected error for invalid ip version, got nil")
 	}
 }
 
-func TestClientHelloReadInvalidIPVersion(t *testing.T) {
-	data := make([]byte, minClientHelloSizeBytes)
-	data[0] = 7 // Invalid IP version
-
-	clientHello := &ClientHello{}
-	_, err := clientHello.Read(data)
-	if err == nil {
-		t.Fatal("Expected error for invalid IP version, got nil")
+func TestClientHello_MarshalBinary_InvalidIPv4(t *testing.T) {
+	ch := NewClientHello(4, "1.1", nil, nil, nil)
+	if _, err := ch.MarshalBinary(); err == nil {
+		t.Fatal("expected error for short IPv4, got nil")
 	}
 }
 
-func TestClientHelloWriteValid(t *testing.T) {
-	ip := "192.168.0.1"
-	ipVersion := uint8(4)
-	edPubKey := make([]byte, 32)
-	curvePubKey := make([]byte, 32)
-	clientNonce := make([]byte, 32)
-
-	clientHello := &ClientHello{}
-	data, err := clientHello.Write(ipVersion, ip, edPubKey, &curvePubKey, &clientNonce)
-	if err != nil {
-		t.Fatalf("Expected no error, got: %v", err)
-	}
-
-	parsed := &ClientHello{}
-	_, err = parsed.Read(*data)
-	if err != nil {
-		t.Fatalf("Expected no error during Read, got: %v", err)
-	}
-
-	if parsed.ipAddress != ip {
-		t.Errorf("Expected IP %s, got %s", ip, parsed.ipAddress)
-	}
-	if !bytes.Equal(parsed.EdPublicKey, edPubKey) {
-		t.Errorf("EdPublicKey mismatch")
-	}
-	if !bytes.Equal(parsed.CurvePublicKey, curvePubKey) {
-		t.Errorf("CurvePublicKey mismatch")
-	}
-	if !bytes.Equal(parsed.ClientNonce, clientNonce) {
-		t.Errorf("ClientNonce mismatch")
+func TestClientHello_MarshalBinary_InvalidIPv6(t *testing.T) {
+	ch := NewClientHello(6, "1", nil, nil, nil)
+	if _, err := ch.MarshalBinary(); err == nil {
+		t.Fatal("expected error for short IPv6, got nil")
 	}
 }
 
-func TestClientHelloWriteInvalidIPVersion(t *testing.T) {
-	clientHello := &ClientHello{}
-	_, err := clientHello.Write(7, "127.0.0.1", nil, nil, nil) // Invalid IP version
-	if err == nil {
-		t.Fatal("Expected error for invalid IP version, got nil")
+func TestClientHello_UnmarshalBinary_InvalidLength(t *testing.T) {
+	buf := make([]byte, minClientHelloSizeBytes-1)
+	var ch ClientHello
+	if err := ch.UnmarshalBinary(buf); err == nil {
+		t.Fatal("expected error for too short, got nil")
+	}
+	buf = make([]byte, MaxClientHelloSizeBytes+1)
+	if err := ch.UnmarshalBinary(buf); err == nil {
+		t.Fatal("expected error for too long, got nil")
 	}
 }
 
-func TestClientHelloWriteInvalidIPv4Address(t *testing.T) {
-	clientHello := &ClientHello{}
-	_, err := clientHello.Write(4, "12345", nil, nil, nil) // Invalid IPv4 address
-	if err == nil {
-		t.Fatal("Expected error for invalid IPv4 address, got nil")
+func TestClientHello_UnmarshalBinary_InvalidVersion(t *testing.T) {
+	buf, _ := buildValidHello(4, "192.168.0.1")
+	buf[0] = 7
+	var ch ClientHello
+	if err := ch.UnmarshalBinary(buf); err == nil {
+		t.Fatal("expected error for invalid version, got nil")
 	}
 }
 
-func TestClientHelloWriteInvalidIPv6Address(t *testing.T) {
-	clientHello := &ClientHello{}
-	_, err := clientHello.Write(6, "1", nil, nil, nil) // Invalid IPv6 address
-	if err == nil {
-		t.Fatal("Expected error for invalid IPv6 address, got nil")
+func TestClientHello_UnmarshalBinary_InvalidIPLength(t *testing.T) {
+	buf, _ := buildValidHello(4, "192.168.0.1")
+	// set length too large
+	buf[1] = 100
+	var ch ClientHello
+	if err := ch.UnmarshalBinary(buf); err == nil {
+		t.Fatal("expected error for invalid ip length, got nil")
 	}
 }
