@@ -13,7 +13,6 @@ import (
 
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/curve25519"
-	"golang.org/x/crypto/ed25519"
 	"golang.org/x/crypto/hkdf"
 )
 
@@ -59,6 +58,7 @@ func (h *HandshakeImpl) ServerKey() []byte {
 }
 
 func (h *HandshakeImpl) ServerSideHandshake(conn application.ConnectionAdapter) (*string, error) {
+	c := newDefaultCrypto()
 	serverConfigurationManager := server_configuration.NewManager(server_configuration.NewServerResolver())
 	conf, err := serverConfigurationManager.Configuration()
 	if err != nil {
@@ -85,7 +85,7 @@ func (h *HandshakeImpl) ServerSideHandshake(conn application.ConnectionAdapter) 
 	_, _ = io.ReadFull(rand.Reader, serverNonce)
 	serverDataToSign := append(append(curvePublic, serverNonce...), clientHello.ClientNonce...)
 	privateEd := conf.Ed25519PrivateKey
-	serverSignature := ed25519.Sign(privateEd, serverDataToSign)
+	serverSignature := c.sign(privateEd, serverDataToSign)
 	serverHello, err := (&ServerHello{}).Write(&serverSignature, &serverNonce, &curvePublic)
 	if err != nil {
 		return nil, fmt.Errorf("failed to write server hello: %s\n", err)
@@ -106,7 +106,7 @@ func (h *HandshakeImpl) ServerSideHandshake(conn application.ConnectionAdapter) 
 	}
 
 	// Verify client signature
-	if !ed25519.Verify(clientHello.EdPublicKey, append(append(clientHello.CurvePublicKey, clientHello.ClientNonce...), serverNonce...), clientSignature.ClientSignature) {
+	if !c.verify(clientHello.EdPublicKey, append(append(clientHello.CurvePublicKey, clientHello.ClientNonce...), serverNonce...), clientSignature.ClientSignature) {
 		return nil, fmt.Errorf("client signature verification failed")
 	}
 
@@ -141,6 +141,7 @@ func (h *HandshakeImpl) ServerSideHandshake(conn application.ConnectionAdapter) 
 }
 
 func (h *HandshakeImpl) ClientSideHandshake(conn net.Conn, settings settings.ConnectionSettings) error {
+	c := newDefaultCrypto()
 	configurationManager := client_configuration.NewManager()
 	clientConf, generateKeyErr := configurationManager.Configuration()
 	if generateKeyErr != nil {
@@ -173,12 +174,12 @@ func (h *HandshakeImpl) ClientSideHandshake(conn net.Conn, settings settings.Con
 		return readServerHelloErr
 	}
 
-	if !clientCrypto.Verify(clientConf.Ed25519PublicKey, append(append(serverHello.CurvePublicKey, serverHello.Nonce...), sessionSalt...), serverHello.Signature) {
+	if !c.verify(clientConf.Ed25519PublicKey, append(append(serverHello.CurvePublicKey, serverHello.Nonce...), sessionSalt...), serverHello.Signature) {
 		return fmt.Errorf("server failed signature check")
 	}
 
 	dataToSign := append(append(sessionPublicKey, sessionSalt...), serverHello.Nonce...)
-	signature := clientCrypto.Sign(edPrivateKey, dataToSign)
+	signature := c.sign(edPrivateKey, dataToSign)
 	clientIO.WriteClientSignature(signature)
 
 	serverToClientKey, clientToServerKey, derivedSessionId, calculateKeysErr := clientCrypto.CalculateKeys(sessionPrivateKey[:], sessionSalt, serverHello.Nonce, serverHello.CurvePublicKey)

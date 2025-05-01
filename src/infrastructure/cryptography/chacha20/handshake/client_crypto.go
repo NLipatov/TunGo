@@ -16,8 +16,6 @@ type ClientCrypto interface {
 	GenerateEd25519Keys() (ed25519.PublicKey, ed25519.PrivateKey, error)
 	NewX25519SessionKeyPair() ([]byte, [32]byte, error)
 	GenerateSalt() []byte
-	Sign(privateKey ed25519.PrivateKey, data []byte) []byte
-	Verify(publicKey ed25519.PublicKey, data []byte, signature []byte) bool
 	CalculateKeys(sessionPrivateKey, sessionSalt, serverHelloNonce, serverHelloCurvePublicKey []byte) ([]byte, []byte, [32]byte, error)
 }
 
@@ -52,14 +50,6 @@ func (c *DefaultClientCrypto) GenerateSalt() []byte {
 	randomSalt := make([]byte, 32)
 	_, _ = io.ReadFull(rand.Reader, randomSalt)
 	return randomSalt
-}
-
-func (c *DefaultClientCrypto) Verify(publicKey ed25519.PublicKey, data []byte, signature []byte) bool {
-	return ed25519.Verify(publicKey, data, signature)
-}
-
-func (c *DefaultClientCrypto) Sign(privateKey ed25519.PrivateKey, data []byte) []byte {
-	return ed25519.Sign(privateKey, data)
 }
 
 func (c *DefaultClientCrypto) CalculateKeys(sessionPrivateKey, sessionSalt, serverHelloNonce, serverHelloCurvePublicKey []byte) ([]byte, []byte, [32]byte, error) {
