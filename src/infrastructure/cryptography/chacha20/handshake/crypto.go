@@ -93,9 +93,9 @@ func (h *DefaultCrypto) GenerateChaCha20KeysServerside(
 
 	return sessionId, clientToServerKey, serverToClientKey, nil
 }
-func (h *DefaultCrypto) GenerateChaCha20KeysClientside(curvePrivate, sessionSalt []byte, hello Hello) ([]byte, []byte, [32]byte, error) {
+func (h *DefaultCrypto) GenerateChaCha20KeysClientside(curvePrivate, clientNonce []byte, hello Hello) ([]byte, []byte, [32]byte, error) {
 	sharedSecret, _ := curve25519.X25519(curvePrivate[:], hello.CurvePublicKey())
-	salt := sha256.Sum256(append(hello.Nonce(), sessionSalt...))
+	salt := sha256.Sum256(append(hello.Nonce(), clientNonce...))
 	infoSC := []byte("server-to-client") // server-key info
 	infoCS := []byte("client-to-server") // client-key info
 	serverToClientHKDF := hkdf.New(sha256.New, sharedSecret, salt[:], infoSC)

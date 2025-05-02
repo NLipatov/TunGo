@@ -114,11 +114,11 @@ func (h *DefaultHandshake) ClientSideHandshake(conn net.Conn, settings settings.
 		return sessionKeyPairErr
 	}
 
-	sessionSalt := c.GenerateRandomBytesArray(32)
+	clientNonce := c.GenerateRandomBytesArray(32)
 
 	clientIO := NewDefaultClientIO(conn)
 	handshake := NewClientHandshake(conn, clientIO, c)
-	helloErr := handshake.SendClientHello(settings, edPublicKey, sessionPublicKey, sessionSalt)
+	helloErr := handshake.SendClientHello(settings, edPublicKey, sessionPublicKey, clientNonce)
 	if helloErr != nil {
 		return helloErr
 	}
@@ -128,12 +128,12 @@ func (h *DefaultHandshake) ClientSideHandshake(conn net.Conn, settings settings.
 		return serverHelloErr
 	}
 
-	sendSignatureErr := handshake.SendSignature(clientConf.Ed25519PublicKey, edPrivateKey, sessionPublicKey, serverHello, sessionSalt)
+	sendSignatureErr := handshake.SendSignature(clientConf.Ed25519PublicKey, edPrivateKey, sessionPublicKey, serverHello, clientNonce)
 	if sendSignatureErr != nil {
 		return sendSignatureErr
 	}
 
-	serverToClientKey, clientToServerKey, derivedSessionId, calculateKeysErr := c.GenerateChaCha20KeysClientside(sessionPrivateKey[:], sessionSalt, &serverHello)
+	serverToClientKey, clientToServerKey, derivedSessionId, calculateKeysErr := c.GenerateChaCha20KeysClientside(sessionPrivateKey[:], clientNonce, &serverHello)
 	if calculateKeysErr != nil {
 		return calculateKeysErr
 	}
