@@ -24,14 +24,11 @@ func NewDefaultClientCrypto() ClientCrypto {
 func (c *DefaultClientCrypto) CalculateKeys(sessionPrivateKey, sessionSalt, serverHelloNonce, serverHelloCurvePublicKey []byte) ([]byte, []byte, [32]byte, error) {
 	sharedSecret, _ := curve25519.X25519(sessionPrivateKey[:], serverHelloCurvePublicKey)
 	salt := sha256.Sum256(append(serverHelloNonce, sessionSalt...))
-
 	infoSC := []byte("server-to-client") // server-key info
 	infoCS := []byte("client-to-server") // client-key info
-
 	serverToClientHKDF := hkdf.New(sha256.New, sharedSecret, salt[:], infoSC)
 	clientToServerHKDF := hkdf.New(sha256.New, sharedSecret, salt[:], infoCS)
 	keySize := chacha20poly1305.KeySize
-
 	serverToClientKey := make([]byte, keySize)
 	_, _ = io.ReadFull(serverToClientHKDF, serverToClientKey)
 	clientToServerKey := make([]byte, keySize)
