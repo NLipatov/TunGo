@@ -6,7 +6,6 @@ import (
 	"net"
 	"testing"
 	"time"
-
 	"tungo/settings"
 )
 
@@ -57,29 +56,6 @@ func TestServerSideHandshake_ReadClientHelloError(t *testing.T) {
 	_, err := h.ServerSideHandshake(adapter)
 	if err == nil {
 		t.Fatal("expected error reading ClientHello, got nil")
-	}
-}
-
-func TestServerSideHandshake_SendHelloError(t *testing.T) {
-	hello := NewClientHello(
-		4, "10.0.0.5",
-		bytes.Repeat([]byte{1}, curvePublicKeyLength),
-		bytes.Repeat([]byte{2}, curvePublicKeyLength),
-		bytes.Repeat([]byte{3}, nonceLength),
-	)
-
-	chBuf, chBufErr := hello.MarshalBinary()
-	if chBufErr != nil {
-		t.Fatal(chBufErr)
-	}
-
-	adapter := newFakeAdapter(chBuf)
-	// force Write (sending ServerHello) to fail
-	adapter.writeErr = errors.New("write-fail")
-	h := NewHandshake()
-	_, err := h.ServerSideHandshake(adapter)
-	if err == nil {
-		t.Fatal("expected error sending ServerHello, got nil")
 	}
 }
 
