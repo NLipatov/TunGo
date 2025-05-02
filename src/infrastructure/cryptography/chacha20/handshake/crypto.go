@@ -65,7 +65,7 @@ func (h *DefaultCrypto) GenerateChaCha20KeysServerside(
 	hello ClientHello) (sessionId [32]byte, clientToServerKey, serverToClientKey []byte, err error) {
 	// Generate shared secret and salt
 	sharedSecret, _ := curve25519.X25519(curvePrivate[:], hello.curvePublicKey)
-	salt := sha256.Sum256(append(serverNonce, hello.clientNonce...))
+	salt := sha256.Sum256(append(serverNonce, hello.nonce...))
 
 	infoSC := []byte("server-to-client") // server-key info
 	infoCS := []byte("client-to-server") // client-key info

@@ -54,8 +54,8 @@ func TestMarshalUnmarshal_Success(t *testing.T) {
 		if !bytes.Equal(got.curvePublicKey, orig.curvePublicKey) {
 			t.Errorf("curvePublicKey mismatch")
 		}
-		if !bytes.Equal(got.clientNonce, orig.clientNonce) {
-			t.Errorf("clientNonce mismatch")
+		if !bytes.Equal(got.nonce, orig.nonce) {
+			t.Errorf("nonce mismatch")
 		}
 	}
 }

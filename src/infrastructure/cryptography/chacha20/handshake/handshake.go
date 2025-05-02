@@ -73,7 +73,7 @@ func (h *DefaultHandshake) ServerSideHandshake(conn application.ConnectionAdapte
 		return nil, clientHelloErr
 	}
 
-	serverHelloErr := handshake.SendServerHello(c, conf.Ed25519PrivateKey, serverNonce, curvePublic, clientHello.clientNonce)
+	serverHelloErr := handshake.SendServerHello(c, conf.Ed25519PrivateKey, serverNonce, curvePublic, clientHello.nonce)
 	if serverHelloErr != nil {
 		return nil, serverHelloErr
 	}
@@ -135,7 +135,7 @@ func (h *DefaultHandshake) ClientSideHandshake(conn net.Conn, settings settings.
 		return sendSignatureErr
 	}
 
-	serverToClientKey, clientToServerKey, derivedSessionId, calculateKeysErr := clientCrypto.CalculateKeys(sessionPrivateKey[:], sessionSalt, serverHello.Nonce, serverHello.CurvePublicKey)
+	serverToClientKey, clientToServerKey, derivedSessionId, calculateKeysErr := clientCrypto.CalculateKeys(sessionPrivateKey[:], sessionSalt, serverHello.nonce, serverHello.curvePublicKey)
 	if calculateKeysErr != nil {
 		return calculateKeysErr
 	}

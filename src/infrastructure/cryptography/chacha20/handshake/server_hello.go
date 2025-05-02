@@ -3,27 +3,35 @@ package handshake
 import "fmt"
 
 type ServerHello struct {
-	Signature      []byte
-	Nonce          []byte
-	CurvePublicKey []byte
+	signature      []byte
+	nonce          []byte
+	curvePublicKey []byte
 }
 
 func NewServerHello(signature, nonce, pubKey []byte) ServerHello {
 	return ServerHello{
-		Signature:      signature,
-		Nonce:          nonce,
-		CurvePublicKey: pubKey,
+		signature:      signature,
+		nonce:          nonce,
+		curvePublicKey: pubKey,
 	}
 }
 
+func (h *ServerHello) Nonce() []byte {
+	return h.nonce
+}
+
+func (h *ServerHello) CurvePublicKey() []byte {
+	return h.curvePublicKey
+}
+
 func (h *ServerHello) MarshalBinary() ([]byte, error) {
-	if len(h.Signature) != signatureLength {
+	if len(h.signature) != signatureLength {
 		return nil, fmt.Errorf("invalid signature")
 	}
-	if len(h.Nonce) != nonceLength {
+	if len(h.nonce) != nonceLength {
 		return nil, InvalidNonce
 	}
-	if len(h.CurvePublicKey) != curvePublicKeyLength {
+	if len(h.curvePublicKey) != curvePublicKeyLength {
 		return nil, fmt.Errorf("invalid curve public key")
 	}
 
@@ -31,13 +39,13 @@ func (h *ServerHello) MarshalBinary() ([]byte, error) {
 
 	// copy signature into arr
 	offset := 0
-	copy(arr, h.Signature)
+	copy(arr, h.signature)
 	offset += signatureLength
 
-	copy(arr[offset:], h.Nonce)
+	copy(arr[offset:], h.nonce)
 	offset += nonceLength
 
-	copy(arr[offset:], h.CurvePublicKey)
+	copy(arr[offset:], h.curvePublicKey)
 
 	return arr, nil
 }
@@ -48,13 +56,13 @@ func (h *ServerHello) UnmarshalBinary(data []byte) error {
 	}
 
 	offset := 0
-	h.Signature = data[:signatureLength]
+	h.signature = data[:signatureLength]
 	offset += signatureLength
 
-	h.Nonce = data[offset : offset+nonceLength]
+	h.nonce = data[offset : offset+nonceLength]
 	offset += nonceLength
 
-	h.CurvePublicKey = data[offset : offset+curvePublicKeyLength]
+	h.curvePublicKey = data[offset : offset+curvePublicKeyLength]
 
 	return nil
 }

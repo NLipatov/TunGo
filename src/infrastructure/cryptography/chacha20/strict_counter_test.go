@@ -87,7 +87,7 @@ func TestSliding64WindowBehavior(t *testing.T) {
 
 func TestSliding64SeparateHighs(t *testing.T) {
 	s := NewSliding64()
-	// Nonce with high=1
+	// nonce with high=1
 	if err := s.Validate(makeNonce(1, 50)); err != nil {
 		t.Fatalf("high=1 advance failed: %v", err)
 	}

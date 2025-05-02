@@ -140,8 +140,8 @@ func TestSendServerHello_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unmarshal of sent ServerHello failed: %v", err)
 	}
-	if !bytes.Equal(sh.Signature, sig) {
-		t.Errorf("Signature = %v; want %v", sh.Signature, sig)
+	if !bytes.Equal(sh.signature, sig) {
+		t.Errorf("signature = %v; want %v", sh.signature, sig)
 	}
 }
 
@@ -169,7 +169,7 @@ func TestVerifyClientSignature_Success(t *testing.T) {
 	rand.Read(curvePub)
 	nonce := make([]byte, nonceLength)
 	rand.Read(nonce)
-	hello := ClientHello{ipVersion: 4, ipAddress: "", edPublicKey: edPub, curvePublicKey: curvePub, clientNonce: nonce}
+	hello := ClientHello{ipVersion: 4, ipAddress: "", edPublicKey: edPub, curvePublicKey: curvePub, nonce: nonce}
 	serverNonce := []byte("server-nonce-0123456789abcdef0123456")[:nonceLength]
 	data := append(append(curvePub, nonce...), serverNonce...)
 	sig := ed25519.Sign(edPriv, data)
@@ -206,7 +206,7 @@ func TestVerifyClientSignature_UnmarshalError(t *testing.T) {
 func TestVerifyClientSignature_VerifyFail(t *testing.T) {
 	sig := make([]byte, signatureLength)
 	conn := newFakeConn(sig)
-	hello := ClientHello{edPublicKey: nil, curvePublicKey: nil, clientNonce: nil}
+	hello := ClientHello{edPublicKey: nil, curvePublicKey: nil, nonce: nil}
 	hs := NewServerHandshake(conn)
 	c := &stubCrypto{verifyOK: false}
 	err := hs.VerifyClientSignature(c, hello, []byte{0})

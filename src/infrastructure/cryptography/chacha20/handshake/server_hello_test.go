@@ -17,14 +17,14 @@ func TestServerHello_UnmarshalBinary_Success(t *testing.T) {
 		t.Fatalf("Expected no error, got %v", err)
 	}
 
-	if !bytes.Equal(sH.Signature, data[:signatureLength]) {
-		t.Errorf("Signature does not match. Expected %v, got %v", data[:signatureLength], sH.Signature)
+	if !bytes.Equal(sH.signature, data[:signatureLength]) {
+		t.Errorf("signature does not match. Expected %v, got %v", data[:signatureLength], sH.signature)
 	}
-	if !bytes.Equal(sH.Nonce, data[signatureLength:signatureLength+nonceLength]) {
-		t.Errorf("Nonce does not match. Expected %v, got %v", data[signatureLength:signatureLength+nonceLength], sH.Nonce)
+	if !bytes.Equal(sH.nonce, data[signatureLength:signatureLength+nonceLength]) {
+		t.Errorf("nonce does not match. Expected %v, got %v", data[signatureLength:signatureLength+nonceLength], sH.nonce)
 	}
-	if !bytes.Equal(sH.CurvePublicKey, data[signatureLength+nonceLength:]) {
-		t.Errorf("CurvePublicKey does not match. Expected %v, got %v", data[signatureLength+nonceLength:], sH.CurvePublicKey)
+	if !bytes.Equal(sH.curvePublicKey, data[signatureLength+nonceLength:]) {
+		t.Errorf("curvePublicKey does not match. Expected %v, got %v", data[signatureLength+nonceLength:], sH.curvePublicKey)
 	}
 }
 
@@ -43,7 +43,7 @@ func TestServerHello_MarshalBinary_Success(t *testing.T) {
 	nonce := bytes.Repeat([]byte{0x02}, nonceLength)
 	curvePub := bytes.Repeat([]byte{0x03}, curvePublicKeyLength)
 
-	sH := &ServerHello{Signature: sig, Nonce: nonce, CurvePublicKey: curvePub}
+	sH := &ServerHello{signature: sig, nonce: nonce, curvePublicKey: curvePub}
 	buf, err := sH.MarshalBinary()
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
@@ -57,7 +57,7 @@ func TestServerHello_MarshalBinary_Success(t *testing.T) {
 
 func TestServerHello_MarshalBinary_InvalidSignature(t *testing.T) {
 	// signature wrong length
-	sH := &ServerHello{Signature: make([]byte, signatureLength-1), Nonce: make([]byte, nonceLength), CurvePublicKey: make([]byte, curvePublicKeyLength)}
+	sH := &ServerHello{signature: make([]byte, signatureLength-1), nonce: make([]byte, nonceLength), curvePublicKey: make([]byte, curvePublicKeyLength)}
 	if _, err := sH.MarshalBinary(); err == nil {
 		t.Fatal("Expected error for invalid signature length, got nil")
 	}
@@ -65,7 +65,7 @@ func TestServerHello_MarshalBinary_InvalidSignature(t *testing.T) {
 
 func TestServerHello_MarshalBinary_InvalidNonce(t *testing.T) {
 	// nonce wrong length
-	sH := &ServerHello{Signature: make([]byte, signatureLength), Nonce: make([]byte, nonceLength-1), CurvePublicKey: make([]byte, curvePublicKeyLength)}
+	sH := &ServerHello{signature: make([]byte, signatureLength), nonce: make([]byte, nonceLength-1), curvePublicKey: make([]byte, curvePublicKeyLength)}
 	if _, err := sH.MarshalBinary(); err == nil {
 		t.Fatal("Expected error for invalid nonce length, got nil")
 	}
@@ -73,7 +73,7 @@ func TestServerHello_MarshalBinary_InvalidNonce(t *testing.T) {
 
 func TestServerHello_MarshalBinary_InvalidCurvePublicKey(t *testing.T) {
 	// curve key wrong length
-	sH := &ServerHello{Signature: make([]byte, signatureLength), Nonce: make([]byte, nonceLength), CurvePublicKey: make([]byte, curvePublicKeyLength-1)}
+	sH := &ServerHello{signature: make([]byte, signatureLength), nonce: make([]byte, nonceLength), curvePublicKey: make([]byte, curvePublicKeyLength-1)}
 	if _, err := sH.MarshalBinary(); err == nil {
 		t.Fatal("Expected error for invalid curve public key length, got nil")
 	}

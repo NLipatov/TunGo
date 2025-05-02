@@ -59,24 +59,24 @@ func (c *ClientHandshake) SendSignature(
 	}
 
 	offset := 0
-	dataToVerify := make([]byte, len(hello.CurvePublicKey)+len(hello.Nonce)+len(sessionSalt))
-	copy(dataToVerify[offset:], hello.CurvePublicKey)
-	offset += len(hello.CurvePublicKey)
-	copy(dataToVerify[offset:], hello.Nonce)
-	offset += len(hello.Nonce)
+	dataToVerify := make([]byte, len(hello.curvePublicKey)+len(hello.nonce)+len(sessionSalt))
+	copy(dataToVerify[offset:], hello.curvePublicKey)
+	offset += len(hello.curvePublicKey)
+	copy(dataToVerify[offset:], hello.nonce)
+	offset += len(hello.nonce)
 	copy(dataToVerify[offset:], sessionSalt)
 
-	if !c.crypto.Verify(ed25519PublicKey, dataToVerify, hello.Signature) {
+	if !c.crypto.Verify(ed25519PublicKey, dataToVerify, hello.signature) {
 		return fmt.Errorf("client handshake: server failed signature check")
 	}
 
 	offset = 0
-	dataToSign := make([]byte, len(sessionPublicKey)+len(sessionSalt)+len(hello.Nonce))
+	dataToSign := make([]byte, len(sessionPublicKey)+len(sessionSalt)+len(hello.nonce))
 	copy(dataToSign[offset:], sessionPublicKey)
 	offset += len(sessionPublicKey)
 	copy(dataToSign[offset:], sessionSalt)
 	offset += len(sessionSalt)
-	copy(dataToSign[offset:], hello.Nonce)
+	copy(dataToSign[offset:], hello.nonce)
 
 	signature := NewSignature(c.crypto.Sign(ed25519PrivateKey, dataToSign))
 	err := c.clientIO.WriteClientSignature(signature)

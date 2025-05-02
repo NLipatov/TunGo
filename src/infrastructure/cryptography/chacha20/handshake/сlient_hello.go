@@ -10,7 +10,7 @@ type ClientHello struct {
 	ipAddress      string
 	edPublicKey    ed25519.PublicKey
 	curvePublicKey []byte
-	clientNonce    []byte
+	nonce          []byte
 }
 
 func NewClientHello(
@@ -24,8 +24,16 @@ func NewClientHello(
 		ipAddress:      IpAddress,
 		edPublicKey:    EdPublicKey,
 		curvePublicKey: CurvePublicKey,
-		clientNonce:    ClientNonce,
+		nonce:          ClientNonce,
 	}
+}
+
+func (c *ClientHello) Nonce() []byte {
+	return c.nonce
+}
+
+func (c *ClientHello) CurvePublicKey() []byte {
+	return c.curvePublicKey
 }
 
 func (c *ClientHello) MarshalBinary() ([]byte, error) {
@@ -45,7 +53,7 @@ func (c *ClientHello) MarshalBinary() ([]byte, error) {
 	copy(arr[lengthHeaderLength:], c.ipAddress)
 	copy(arr[lengthHeaderLength+len(c.ipAddress):], c.edPublicKey)
 	copy(arr[lengthHeaderLength+len(c.ipAddress)+curvePublicKeyLength:], c.curvePublicKey)
-	copy(arr[lengthHeaderLength+len(c.ipAddress)+curvePublicKeyLength+curvePublicKeyLength:], c.clientNonce)
+	copy(arr[lengthHeaderLength+len(c.ipAddress)+curvePublicKeyLength+curvePublicKeyLength:], c.nonce)
 
 	return arr, nil
 }
@@ -73,7 +81,7 @@ func (c *ClientHello) UnmarshalBinary(data []byte) error {
 
 	c.curvePublicKey = data[lengthHeaderLength+ipAddressLength+curvePublicKeyLength : lengthHeaderLength+ipAddressLength+curvePublicKeyLength+curvePublicKeyLength]
 
-	c.clientNonce = data[lengthHeaderLength+ipAddressLength+curvePublicKeyLength+curvePublicKeyLength : lengthHeaderLength+ipAddressLength+curvePublicKeyLength+curvePublicKeyLength+nonceLength]
+	c.nonce = data[lengthHeaderLength+ipAddressLength+curvePublicKeyLength+curvePublicKeyLength : lengthHeaderLength+ipAddressLength+curvePublicKeyLength+curvePublicKeyLength+nonceLength]
 
 	return nil
 }
