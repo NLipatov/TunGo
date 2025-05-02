@@ -19,10 +19,6 @@ type fakeAdapter struct {
 	writeErr error
 }
 
-func newFakeAdapter(input []byte) *fakeAdapter {
-	return &fakeAdapter{in: bytes.NewBuffer(input)}
-}
-
 func (f *fakeAdapter) Read(p []byte) (int, error) {
 	if f.readErr != nil {
 		return 0, f.readErr
