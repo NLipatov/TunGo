@@ -48,6 +48,20 @@ func (c *ClientHandshake) SendSignature(
 	sessionPublicKey []byte,
 	hello ServerHello,
 	sessionSalt []byte) error {
+	if len(sessionPublicKey) != ed25519.PublicKeySize {
+		return fmt.
+			Errorf("client handshake: "+
+				"invalid ed25519 Public Key - expected size is %d bytes, got %d bytes",
+				ed25519.PublicKeySize, len(sessionPublicKey))
+	}
+
+	if len(sessionPublicKey) != 32 {
+		return fmt.
+			Errorf("client handshake: "+
+				"invalid ed25519 Public Key - expected size is %d bytes, got %d bytes",
+				32, len(sessionPublicKey))
+	}
+
 	if !c.crypto.Verify(ed25519PublicKey,
 		append(append(hello.CurvePublicKey, hello.Nonce...), sessionSalt...), hello.Signature) {
 		return fmt.Errorf("client handshake: server failed signature check")
