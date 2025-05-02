@@ -119,26 +119,20 @@ func (h *HandshakeImpl) ClientSideHandshake(conn net.Conn, settings settings.Con
 	sessionSalt := c.GenerateRandomBytesArray(32)
 
 	clientIO := NewDefaultClientIO(conn)
-	handshake := NewClientHandshake(conn, clientIO)
+	handshake := NewClientHandshake(conn, clientIO, c)
 	helloErr := handshake.SendClientHello(settings, edPublicKey, sessionPublicKey, sessionSalt)
 	if helloErr != nil {
 		return helloErr
 	}
 
-	serverHello, readServerHelloErr := clientIO.ReadServerHello()
-	if readServerHelloErr != nil {
-		return readServerHelloErr
+	serverHello, serverHelloErr := handshake.ReceiveServerHello()
+	if serverHelloErr != nil {
+		return serverHelloErr
 	}
 
-	if !c.Verify(clientConf.Ed25519PublicKey, append(append(serverHello.CurvePublicKey, serverHello.Nonce...), sessionSalt...), serverHello.Signature) {
-		return fmt.Errorf("server failed signature check")
-	}
-
-	dataToSign := append(append(sessionPublicKey, sessionSalt...), serverHello.Nonce...)
-	signature := NewSignature(c.Sign(edPrivateKey, dataToSign))
-	writeSignatureErr := clientIO.WriteClientSignature(signature)
-	if writeSignatureErr != nil {
-		return writeSignatureErr
+	sendSignatureErr := handshake.SendSignature(clientConf.Ed25519PublicKey, edPrivateKey, sessionPublicKey, serverHello, sessionSalt)
+	if sendSignatureErr != nil {
+		return sendSignatureErr
 	}
 
 	serverToClientKey, clientToServerKey, derivedSessionId, calculateKeysErr := clientCrypto.CalculateKeys(sessionPrivateKey[:], sessionSalt, serverHello.Nonce, serverHello.CurvePublicKey)
