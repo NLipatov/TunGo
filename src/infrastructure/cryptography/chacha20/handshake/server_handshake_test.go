@@ -38,7 +38,7 @@ func (f *fakeConn) Close() error {
 	return nil
 }
 
-// stubCrypto implements full crypto interface
+// stubCrypto implements full Crypto interface
 // for signing, verification and ChaCha20 key derivation.
 type stubCrypto struct {
 	signature []byte

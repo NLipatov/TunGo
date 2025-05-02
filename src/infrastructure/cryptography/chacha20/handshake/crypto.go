@@ -11,7 +11,7 @@ import (
 	"io"
 )
 
-type crypto interface {
+type Crypto interface {
 	Sign(privateKey ed25519.PrivateKey, data []byte) []byte
 	Verify(publicKey ed25519.PublicKey, data []byte, signature []byte) bool
 	GenerateEd25519KeyPair() (ed25519.PublicKey, ed25519.PrivateKey, error)
@@ -23,25 +23,25 @@ type crypto interface {
 		hello ClientHello) (sessionId [32]byte, clientToServerKey, serverToClientKey []byte, err error)
 }
 
-type defaultCrypto struct {
+type DefaultCrypto struct {
 }
 
-func newDefaultCrypto() crypto {
-	return &defaultCrypto{}
+func newDefaultCrypto() Crypto {
+	return &DefaultCrypto{}
 }
 
-func (c *defaultCrypto) Verify(publicKey ed25519.PublicKey, data []byte, signature []byte) bool {
+func (c *DefaultCrypto) Verify(publicKey ed25519.PublicKey, data []byte, signature []byte) bool {
 	return ed25519.Verify(publicKey, data, signature)
 }
 
-func (c *defaultCrypto) Sign(privateKey ed25519.PrivateKey, data []byte) []byte {
+func (c *DefaultCrypto) Sign(privateKey ed25519.PrivateKey, data []byte) []byte {
 	return ed25519.Sign(privateKey, data)
 }
-func (c *defaultCrypto) GenerateEd25519KeyPair() (ed25519.PublicKey, ed25519.PrivateKey, error) {
+func (c *DefaultCrypto) GenerateEd25519KeyPair() (ed25519.PublicKey, ed25519.PrivateKey, error) {
 	return ed25519.GenerateKey(rand.Reader)
 }
 
-func (c *defaultCrypto) GenerateX25519KeyPair() ([]byte, [32]byte, error) {
+func (c *DefaultCrypto) GenerateX25519KeyPair() ([]byte, [32]byte, error) {
 	var private [32]byte
 
 	_, privateErr := io.ReadFull(rand.Reader, private[:])
@@ -54,12 +54,12 @@ func (c *defaultCrypto) GenerateX25519KeyPair() ([]byte, [32]byte, error) {
 	return public, private, publicErr
 }
 
-func (c *defaultCrypto) GenerateRandomBytesArray(size int) []byte {
+func (c *DefaultCrypto) GenerateRandomBytesArray(size int) []byte {
 	randomSalt := make([]byte, size)
 	_, _ = io.ReadFull(rand.Reader, randomSalt)
 	return randomSalt
 }
-func (h *defaultCrypto) GenerateChaCha20KeysServerside(
+func (h *DefaultCrypto) GenerateChaCha20KeysServerside(
 	curvePrivate,
 	serverNonce []byte,
 	hello ClientHello) (sessionId [32]byte, clientToServerKey, serverToClientKey []byte, err error) {

@@ -35,7 +35,7 @@ func (h *ServerHandshake) ReceiveClientHello() (ClientHello, error) {
 }
 
 func (h *ServerHandshake) SendServerHello(
-	c crypto,
+	c Crypto,
 	serverPrivateKey ed25519.PrivateKey,
 	serverNonce []byte,
 	curvePublic,
@@ -52,7 +52,7 @@ func (h *ServerHandshake) SendServerHello(
 	return writeErr
 }
 
-func (h *ServerHandshake) VerifyClientSignature(c crypto, hello ClientHello, serverNonce []byte) error {
+func (h *ServerHandshake) VerifyClientSignature(c Crypto, hello ClientHello, serverNonce []byte) error {
 	clientSignatureBuf := make([]byte, 64)
 	if _, err := io.ReadFull(h.conn, clientSignatureBuf); err != nil {
 		return err

@@ -12,14 +12,14 @@ import (
 // 1. send ClientHello
 // 2. receive and verify ServerHello
 // 3. send signed Signature
-// It drives its I/O through a ClientIO and crypto through the crypto interface.
+// It drives its I/O through a ClientIO and Crypto through the Crypto interface.
 type ClientHandshake struct {
 	conn     application.ConnectionAdapter
-	crypto   crypto
+	crypto   Crypto
 	clientIO ClientIO
 }
 
-func NewClientHandshake(conn application.ConnectionAdapter, io ClientIO, crypto crypto) ClientHandshake {
+func NewClientHandshake(conn application.ConnectionAdapter, io ClientIO, crypto Crypto) ClientHandshake {
 	return ClientHandshake{
 		conn:     conn,
 		clientIO: io,
