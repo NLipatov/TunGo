@@ -18,9 +18,10 @@ type Crypto interface {
 	GenerateX25519KeyPair() ([]byte, [32]byte, error)
 	GenerateRandomBytesArray(size int) []byte
 	GenerateChaCha20KeysServerside(
-		curvePrivate,
-		serverNonce []byte,
+		curvePrivate, serverNonce []byte,
 		hello Hello) (sessionId [32]byte, clientToServerKey, serverToClientKey []byte, err error)
+	GenerateChaCha20KeysClientside(curvePrivate, sessionSalt []byte,
+		hello Hello) ([]byte, []byte, [32]byte, error)
 }
 
 type DefaultCrypto struct {
@@ -91,4 +92,25 @@ func (h *DefaultCrypto) GenerateChaCha20KeysServerside(
 	}
 
 	return sessionId, clientToServerKey, serverToClientKey, nil
+}
+func (h *DefaultCrypto) GenerateChaCha20KeysClientside(curvePrivate, sessionSalt []byte, hello Hello) ([]byte, []byte, [32]byte, error) {
+	sharedSecret, _ := curve25519.X25519(curvePrivate[:], hello.CurvePublicKey())
+	salt := sha256.Sum256(append(hello.Nonce(), sessionSalt...))
+	infoSC := []byte("server-to-client") // server-key info
+	infoCS := []byte("client-to-server") // client-key info
+	serverToClientHKDF := hkdf.New(sha256.New, sharedSecret, salt[:], infoSC)
+	clientToServerHKDF := hkdf.New(sha256.New, sharedSecret, salt[:], infoCS)
+	keySize := chacha20poly1305.KeySize
+	serverToClientKey := make([]byte, keySize)
+	_, _ = io.ReadFull(serverToClientHKDF, serverToClientKey)
+	clientToServerKey := make([]byte, keySize)
+	_, _ = io.ReadFull(clientToServerHKDF, clientToServerKey)
+
+	identifier := NewSessionIdentifier(sharedSecret, salt[:])
+	derivedSessionId, deriveSessionIdErr := identifier.Identify()
+	if deriveSessionIdErr != nil {
+		return nil, nil, [32]byte{}, fmt.Errorf("failed to derive session id: %s", derivedSessionId)
+	}
+
+	return serverToClientKey, clientToServerKey, derivedSessionId, nil
 }
