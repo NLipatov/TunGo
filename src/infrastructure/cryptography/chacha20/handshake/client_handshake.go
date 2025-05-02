@@ -8,10 +8,11 @@ import (
 	"tungo/settings"
 )
 
-// ClientHandshake performs the three‑step handshake with the server.
-// 1 - Send Client Hello;
-// 2 - Receive Server Hello;
-// 3 - Send signed Server Hello.
+// ClientHandshake performs the three‑step authenticated key‑exchange:
+// 1. send ClientHello
+// 2. receive and verify ServerHello
+// 3. send signed Signature
+// It drives its I/O through a ClientIO and crypto through the crypto interface.
 type ClientHandshake struct {
 	conn     application.ConnectionAdapter
 	crypto   crypto
@@ -57,13 +58,20 @@ func (c *ClientHandshake) SendSignature(
 		return fmt.Errorf("client handshake: invalid X25519 session public key length: %d", len(sessionPublicKey))
 	}
 
-	if !c.crypto.Verify(ed25519PublicKey,
-		append(append(hello.CurvePublicKey, hello.Nonce...), sessionSalt...), hello.Signature) {
+	offset := 0
+	dataToVerify := make([]byte, len(hello.CurvePublicKey)+len(hello.Nonce)+len(sessionSalt))
+	copy(dataToVerify[offset:], hello.CurvePublicKey)
+	offset += len(hello.CurvePublicKey)
+	copy(dataToVerify[offset:], hello.Nonce)
+	offset += len(hello.Nonce)
+	copy(dataToVerify[offset:], sessionSalt)
+
+	if !c.crypto.Verify(ed25519PublicKey, dataToVerify, hello.Signature) {
 		return fmt.Errorf("client handshake: server failed signature check")
 	}
 
+	offset = 0
 	dataToSign := make([]byte, len(sessionPublicKey)+len(sessionSalt)+len(hello.Nonce))
-	offset := 0
 	copy(dataToSign[offset:], sessionPublicKey)
 	offset += len(sessionPublicKey)
 	copy(dataToSign[offset:], sessionSalt)
