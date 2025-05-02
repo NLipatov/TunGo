@@ -28,29 +28,29 @@ type Handshake interface {
 	ClientSideHandshake(conn net.Conn, settings settings.ConnectionSettings) error
 }
 
-type HandshakeImpl struct {
+type DefaultHandshake struct {
 	id        [32]byte
 	clientKey []byte
 	serverKey []byte
 }
 
-func NewHandshake() *HandshakeImpl {
-	return &HandshakeImpl{}
+func NewHandshake() *DefaultHandshake {
+	return &DefaultHandshake{}
 }
 
-func (h *HandshakeImpl) Id() [32]byte {
+func (h *DefaultHandshake) Id() [32]byte {
 	return h.id
 }
 
-func (h *HandshakeImpl) ClientKey() []byte {
+func (h *DefaultHandshake) ClientKey() []byte {
 	return h.clientKey
 }
 
-func (h *HandshakeImpl) ServerKey() []byte {
+func (h *DefaultHandshake) ServerKey() []byte {
 	return h.serverKey
 }
 
-func (h *HandshakeImpl) ServerSideHandshake(conn application.ConnectionAdapter) (*string, error) {
+func (h *DefaultHandshake) ServerSideHandshake(conn application.ConnectionAdapter) (*string, error) {
 	c := newDefaultCrypto()
 
 	// Generate server hello response
@@ -95,7 +95,7 @@ func (h *HandshakeImpl) ServerSideHandshake(conn application.ConnectionAdapter) 
 	return &clientHello.ipAddress, nil
 }
 
-func (h *HandshakeImpl) ClientSideHandshake(conn net.Conn, settings settings.ConnectionSettings) error {
+func (h *DefaultHandshake) ClientSideHandshake(conn net.Conn, settings settings.ConnectionSettings) error {
 	c := newDefaultCrypto()
 	configurationManager := client_configuration.NewManager()
 	clientConf, generateKeyErr := configurationManager.Configuration()
