@@ -81,7 +81,8 @@ func (h *DefaultCrypto) GenerateChaCha20KeysServerside(
 	clientToServerKey = make([]byte, keySize)
 	_, _ = io.ReadFull(clientToServerHKDF, clientToServerKey)
 
-	sessionId, deriveSessionIdErr := deriveSessionId(sharedSecret, salt[:])
+	identifier := NewSessionIdentifier(sharedSecret, salt[:])
+	sessionId, deriveSessionIdErr := identifier.Identify()
 	if deriveSessionIdErr != nil {
 		return [32]byte{},
 			nil,

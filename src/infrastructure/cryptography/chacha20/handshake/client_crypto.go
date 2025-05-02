@@ -34,21 +34,11 @@ func (c *DefaultClientCrypto) CalculateKeys(sessionPrivateKey, sessionSalt, serv
 	clientToServerKey := make([]byte, keySize)
 	_, _ = io.ReadFull(clientToServerHKDF, clientToServerKey)
 
-	derivedSessionId, deriveSessionIdErr := deriveSessionId(sharedSecret, salt[:])
+	identifier := NewSessionIdentifier(sharedSecret, salt[:])
+	derivedSessionId, deriveSessionIdErr := identifier.Identify()
 	if deriveSessionIdErr != nil {
 		return nil, nil, [32]byte{}, fmt.Errorf("failed to derive session id: %s", derivedSessionId)
 	}
 
 	return serverToClientKey, clientToServerKey, derivedSessionId, nil
-}
-
-func deriveSessionId(sharedSecret []byte, salt []byte) ([32]byte, error) {
-	var sessionID [32]byte
-
-	hkdfReader := hkdf.New(sha256.New, sharedSecret, salt, []byte("session-id-derivation"))
-	if _, err := io.ReadFull(hkdfReader, sessionID[:]); err != nil {
-		return [32]byte{}, fmt.Errorf("failed to derive session ID: %w", err)
-	}
-
-	return sessionID, nil
 }
