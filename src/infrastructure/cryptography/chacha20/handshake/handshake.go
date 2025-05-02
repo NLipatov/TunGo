@@ -135,7 +135,7 @@ func (h *DefaultHandshake) ClientSideHandshake(conn net.Conn, settings settings.
 		return sendSignatureErr
 	}
 
-	serverToClientKey, clientToServerKey, derivedSessionId, calculateKeysErr := clientCrypto.CalculateKeys(sessionPrivateKey[:], sessionSalt, serverHello.nonce, serverHello.curvePublicKey)
+	serverToClientKey, clientToServerKey, derivedSessionId, calculateKeysErr := clientCrypto.CalculateKeys(sessionPrivateKey[:], sessionSalt, &serverHello)
 	if calculateKeysErr != nil {
 		return calculateKeysErr
 	}
