@@ -3,30 +3,32 @@ package handshake
 import "fmt"
 
 type Signature struct {
-	Signature []byte
+	data []byte
 }
 
 func NewSignature(signature []byte) Signature {
-	return Signature{signature}
+	return Signature{
+		data: signature,
+	}
 }
 
 func (c *Signature) MarshalBinary() ([]byte, error) {
-	if len(c.Signature) != 64 {
+	if len(c.data) != 64 {
 		return nil, fmt.Errorf("invalid signature")
 	}
 
-	arr := make([]byte, len(c.Signature))
-	copy(arr, c.Signature)
+	out := make([]byte, len(c.data))
+	copy(out, c.data)
 
-	return arr, nil
+	return out, nil
 }
 
 func (c *Signature) UnmarshalBinary(data []byte) error {
-	if len(data) < 64 {
+	if len(data) != 64 {
 		return fmt.Errorf("invalid signature")
 	}
 
-	c.Signature = data[:64]
+	c.data = data[:64]
 
 	return nil
 }
