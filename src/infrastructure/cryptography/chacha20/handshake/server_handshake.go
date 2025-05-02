@@ -65,7 +65,7 @@ func (h *ServerHandshake) VerifyClientSignature(c Crypto, hello ClientHello, ser
 	}
 
 	// Verify client signature
-	if !c.Verify(hello.edPublicKey, append(append(hello.curvePublicKey, hello.nonce...), serverNonce...), clientSignature.Signature) {
+	if !c.Verify(hello.edPublicKey, append(append(hello.curvePublicKey, hello.nonce...), serverNonce...), clientSignature.data) {
 		return fmt.Errorf("client failed signature verification")
 	}
 
