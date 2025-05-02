@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// clientIOFakeConn — мок для application.ConnectionAdapter
+// clientIOFakeConn — mock for application.ConnectionAdapter
 type clientIOFakeConn struct {
 	readBuf  *bytes.Buffer
 	writeBuf *bytes.Buffer

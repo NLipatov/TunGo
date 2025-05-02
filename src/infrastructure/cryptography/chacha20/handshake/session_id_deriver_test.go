@@ -14,12 +14,10 @@ func TestIdentify_SameOutputOnRepeatedCalls(t *testing.T) {
 
 	ident := NewSessionIdentifier(secret, salt)
 
-	// первый вызов
 	id1, err := ident.Identify()
 	if err != nil {
 		t.Fatalf("Identify() failed: %v", err)
 	}
-	// второй вызов
 	id2, err := ident.Identify()
 	if err != nil {
 		t.Fatalf("second Identify() failed: %v", err)
@@ -55,7 +53,6 @@ func TestIdentify_MatchesDirectHKDF(t *testing.T) {
 	secret := []byte("another-secret")
 	salt := []byte("another-salt")
 
-	// вручную через hkdf
 	var expected [32]byte
 	h := hkdf.New(sha256.New, secret, salt, []byte("session-id-derivation"))
 	if _, err := io.ReadFull(h, expected[:]); err != nil {
