@@ -3,6 +3,7 @@ package handshake
 import (
 	"crypto/ed25519"
 	"fmt"
+	"golang.org/x/crypto/curve25519"
 	"tungo/application"
 	"tungo/settings"
 )
@@ -48,18 +49,12 @@ func (c *ClientHandshake) SendSignature(
 	sessionPublicKey []byte,
 	hello ServerHello,
 	sessionSalt []byte) error {
-	if len(sessionPublicKey) != ed25519.PublicKeySize {
-		return fmt.
-			Errorf("client handshake: "+
-				"invalid ed25519 Public Key - expected size is %d bytes, got %d bytes",
-				ed25519.PublicKeySize, len(sessionPublicKey))
+	if len(ed25519PublicKey) != ed25519.PublicKeySize {
+		return fmt.Errorf("client handshake: invalid Ed25519 public key length: %d", len(ed25519PublicKey))
 	}
 
-	if len(sessionPublicKey) != 32 {
-		return fmt.
-			Errorf("client handshake: "+
-				"invalid ed25519 Public Key - expected size is %d bytes, got %d bytes",
-				32, len(sessionPublicKey))
+	if len(sessionPublicKey) != curve25519.ScalarSize {
+		return fmt.Errorf("client handshake: invalid X25519 session public key length: %d", len(sessionPublicKey))
 	}
 
 	if !c.crypto.Verify(ed25519PublicKey,
@@ -67,7 +62,14 @@ func (c *ClientHandshake) SendSignature(
 		return fmt.Errorf("client handshake: server failed signature check")
 	}
 
-	dataToSign := append(append(sessionPublicKey, sessionSalt...), hello.Nonce...)
+	dataToSign := make([]byte, len(sessionPublicKey)+len(sessionSalt)+len(hello.Nonce))
+	offset := 0
+	copy(dataToSign[offset:], sessionPublicKey)
+	offset += len(sessionPublicKey)
+	copy(dataToSign[offset:], sessionSalt)
+	offset += len(sessionSalt)
+	copy(dataToSign[offset:], hello.Nonce)
+
 	signature := NewSignature(c.crypto.Sign(ed25519PrivateKey, dataToSign))
 	err := c.clientIO.WriteClientSignature(signature)
 	if err != nil {
