@@ -8,16 +8,16 @@ import (
 )
 
 type ClientHandshake struct {
-	conn   application.ConnectionAdapter
-	crypto crypto
-	io     ClientIO
+	conn     application.ConnectionAdapter
+	crypto   crypto
+	clientIO ClientIO
 }
 
 func NewClientHandshake(conn application.ConnectionAdapter, io ClientIO, crypto crypto) ClientHandshake {
 	return ClientHandshake{
-		conn:   conn,
-		io:     io,
-		crypto: crypto,
+		conn:     conn,
+		clientIO: io,
+		crypto:   crypto,
 	}
 }
 
@@ -26,21 +26,16 @@ func (c *ClientHandshake) SendClientHello(
 	edPublicKey ed25519.PublicKey,
 	sessionPublicKey, sessionSalt []byte) error {
 	hello := NewClientHello(4, settings.InterfaceAddress, edPublicKey, sessionPublicKey, sessionSalt)
-	writeErr := c.io.WriteClientHello(hello)
-	if writeErr != nil {
-		return writeErr
-	}
-
-	return writeErr
+	return c.clientIO.WriteClientHello(hello)
 }
 
 func (c *ClientHandshake) ReceiveServerHello() (ServerHello, error) {
-	serverHello, readServerHelloErr := c.io.ReadServerHello()
-	if readServerHelloErr != nil {
-		return ServerHello{}, readServerHelloErr
+	hello, err := c.clientIO.ReadServerHello()
+	if err != nil {
+		return ServerHello{}, fmt.Errorf("could not receive hello from server: %w", err)
 	}
 
-	return serverHello, nil
+	return hello, nil
 }
 
 func (c *ClientHandshake) SendSignature(
@@ -49,15 +44,16 @@ func (c *ClientHandshake) SendSignature(
 	sessionPublicKey []byte,
 	hello ServerHello,
 	sessionSalt []byte) error {
-	if !c.crypto.Verify(ed25519PublicKey, append(append(hello.CurvePublicKey, hello.Nonce...), sessionSalt...), hello.Signature) {
+	if !c.crypto.Verify(ed25519PublicKey,
+		append(append(hello.CurvePublicKey, hello.Nonce...), sessionSalt...), hello.Signature) {
 		return fmt.Errorf("server failed signature check")
 	}
 
 	dataToSign := append(append(sessionPublicKey, sessionSalt...), hello.Nonce...)
 	signature := NewSignature(c.crypto.Sign(ed25519PrivateKey, dataToSign))
-	writeSignatureErr := c.io.WriteClientSignature(signature)
-	if writeSignatureErr != nil {
-		return writeSignatureErr
+	err := c.clientIO.WriteClientSignature(signature)
+	if err != nil {
+		return fmt.Errorf("could not send signature to server: %w", err)
 	}
 
 	return nil
