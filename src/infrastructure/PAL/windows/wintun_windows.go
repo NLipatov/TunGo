@@ -56,7 +56,7 @@ func (d *wintunTun) reopenSession() error {
 		d.session.End()
 	}
 
-	newSession, err := d.adapter.StartSession(0x800000) // 8MB кольцевой буфер
+	newSession, err := d.adapter.StartSession(0x800000) // 8MB ring buffer
 	if err != nil {
 		return err
 	}

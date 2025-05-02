@@ -2,115 +2,116 @@ package handshake
 
 import (
 	"bytes"
+	"crypto/rand"
 	"testing"
 )
 
-func TestClientHelloReadValidIPv4(t *testing.T) {
-	ip := "127.0.0.1"
-	edPubKey := make([]byte, 32)
-	curvePubKey := make([]byte, 32)
-	clientNonce := make([]byte, 32)
+// helper builds a valid ClientHello and its serialized form
+func buildValidHello(t *testing.T, version uint8, ip string) ([]byte, ClientHello) {
+	t.Helper()
 
-	data := append([]byte{4, byte(len(ip))}, ip...)
-	data = append(data, edPubKey...)
-	data = append(data, curvePubKey...)
-	data = append(data, clientNonce...)
+	// dummy keys and nonce
+	edPub := make([]byte, curvePublicKeyLength)
+	rand.Read(edPub)
+	curvePub := make([]byte, curvePublicKeyLength)
+	rand.Read(curvePub)
+	nonce := make([]byte, nonceLength)
+	rand.Read(nonce)
 
-	clientHello := &ClientHello{}
-	parsed, err := clientHello.Read(data)
-
+	ch := NewClientHello(version, ip, edPub, curvePub, nonce)
+	buf, err := ch.MarshalBinary()
 	if err != nil {
-		t.Fatalf("Expected no error, got: %v", err)
+		t.Fatalf("failed to marshal valid ClientHello: %v", err)
 	}
+	return buf, ch
+}
 
-	if parsed.IpAddress != ip {
-		t.Errorf("Expected IP %s, got %s", ip, parsed.IpAddress)
+func TestMarshalUnmarshal_Success(t *testing.T) {
+	cases := []struct {
+		version uint8
+		ip      string
+	}{
+		{4, "192.168.1.100"},
+		{6, "fe80::1"},
 	}
-	if !bytes.Equal(parsed.EdPublicKey, edPubKey) {
-		t.Errorf("EdPublicKey mismatch")
-	}
-	if !bytes.Equal(parsed.CurvePublicKey, curvePubKey) {
-		t.Errorf("CurvePublicKey mismatch")
-	}
-	if !bytes.Equal(parsed.ClientNonce, clientNonce) {
-		t.Errorf("ClientNonce mismatch")
+	for _, tc := range cases {
+		buf, orig := buildValidHello(t, tc.version, tc.ip)
+
+		var got ClientHello
+		if err := got.UnmarshalBinary(buf); err != nil {
+			t.Errorf("UnmarshalBinary failed for version=%d ip=%q: %v", tc.version, tc.ip, err)
+			continue
+		}
+		if got.ipVersion != orig.ipVersion {
+			t.Errorf("ipVersion: got %d want %d", got.ipVersion, orig.ipVersion)
+		}
+		if got.ipAddress != orig.ipAddress {
+			t.Errorf("ipAddress: got %q want %q", got.ipAddress, orig.ipAddress)
+		}
+		if !bytes.Equal(got.edPublicKey, orig.edPublicKey) {
+			t.Errorf("edPublicKey mismatch")
+		}
+		if !bytes.Equal(got.curvePublicKey, orig.curvePublicKey) {
+			t.Errorf("curvePublicKey mismatch")
+		}
+		if !bytes.Equal(got.nonce, orig.nonce) {
+			t.Errorf("nonce mismatch")
+		}
 	}
 }
 
-func TestClientHelloReadInvalidLength(t *testing.T) {
-	data := make([]byte, minClientHelloSizeBytes-1)
-	clientHello := &ClientHello{}
-
-	_, err := clientHello.Read(data)
-	if err == nil {
-		t.Fatal("Expected error for invalid message length, got nil")
+func TestMarshalBinary_InvalidVersion(t *testing.T) {
+	ch := NewClientHello(0, "192.168.0.1", nil, nil, nil)
+	if _, err := ch.MarshalBinary(); err == nil {
+		t.Fatal("expected error for invalid IP version, got nil")
 	}
 }
 
-func TestClientHelloReadInvalidIPVersion(t *testing.T) {
-	data := make([]byte, minClientHelloSizeBytes)
-	data[0] = 7 // Invalid IP version
-
-	clientHello := &ClientHello{}
-	_, err := clientHello.Read(data)
-	if err == nil {
-		t.Fatal("Expected error for invalid IP version, got nil")
+func TestMarshalBinary_ShortIPv4(t *testing.T) {
+	ch := NewClientHello(4, "1.1", nil, nil, nil)
+	if _, err := ch.MarshalBinary(); err == nil {
+		t.Fatal("expected error for too short IPv4, got nil")
 	}
 }
 
-func TestClientHelloWriteValid(t *testing.T) {
-	ip := "192.168.0.1"
-	ipVersion := uint8(4)
-	edPubKey := make([]byte, 32)
-	curvePubKey := make([]byte, 32)
-	clientNonce := make([]byte, 32)
-
-	clientHello := &ClientHello{}
-	data, err := clientHello.Write(ipVersion, ip, edPubKey, &curvePubKey, &clientNonce)
-	if err != nil {
-		t.Fatalf("Expected no error, got: %v", err)
-	}
-
-	parsed := &ClientHello{}
-	_, err = parsed.Read(*data)
-	if err != nil {
-		t.Fatalf("Expected no error during Read, got: %v", err)
-	}
-
-	if parsed.IpAddress != ip {
-		t.Errorf("Expected IP %s, got %s", ip, parsed.IpAddress)
-	}
-	if !bytes.Equal(parsed.EdPublicKey, edPubKey) {
-		t.Errorf("EdPublicKey mismatch")
-	}
-	if !bytes.Equal(parsed.CurvePublicKey, curvePubKey) {
-		t.Errorf("CurvePublicKey mismatch")
-	}
-	if !bytes.Equal(parsed.ClientNonce, clientNonce) {
-		t.Errorf("ClientNonce mismatch")
+func TestMarshalBinary_ShortIPv6(t *testing.T) {
+	ch := NewClientHello(6, "1", nil, nil, nil)
+	if _, err := ch.MarshalBinary(); err == nil {
+		t.Fatal("expected error for too short IPv6, got nil")
 	}
 }
 
-func TestClientHelloWriteInvalidIPVersion(t *testing.T) {
-	clientHello := &ClientHello{}
-	_, err := clientHello.Write(7, "127.0.0.1", nil, nil, nil) // Invalid IP version
-	if err == nil {
-		t.Fatal("Expected error for invalid IP version, got nil")
+func TestUnmarshalBinary_TooShort(t *testing.T) {
+	var ch ClientHello
+	buf := make([]byte, minClientHelloSizeBytes-1)
+	if err := ch.UnmarshalBinary(buf); err == nil {
+		t.Fatal("expected error for buffer too short, got nil")
 	}
 }
 
-func TestClientHelloWriteInvalidIPv4Address(t *testing.T) {
-	clientHello := &ClientHello{}
-	_, err := clientHello.Write(4, "12345", nil, nil, nil) // Invalid IPv4 address
-	if err == nil {
-		t.Fatal("Expected error for invalid IPv4 address, got nil")
+func TestUnmarshalBinary_TooLong(t *testing.T) {
+	var ch ClientHello
+	buf := make([]byte, MaxClientHelloSizeBytes+1)
+	if err := ch.UnmarshalBinary(buf); err == nil {
+		t.Fatal("expected error for buffer too long, got nil")
 	}
 }
 
-func TestClientHelloWriteInvalidIPv6Address(t *testing.T) {
-	clientHello := &ClientHello{}
-	_, err := clientHello.Write(6, "1", nil, nil, nil) // Invalid IPv6 address
-	if err == nil {
-		t.Fatal("Expected error for invalid IPv6 address, got nil")
+func TestUnmarshalBinary_InvalidVersion(t *testing.T) {
+	buf, _ := buildValidHello(t, 4, "192.168.0.1")
+	buf[0] = 9
+	var ch ClientHello
+	if err := ch.UnmarshalBinary(buf); err == nil {
+		t.Fatal("expected error for invalid IP version, got nil")
+	}
+}
+
+func TestUnmarshalBinary_InvalidIPLength(t *testing.T) {
+	buf, _ := buildValidHello(t, 4, "10.0.0.5")
+	// set IP length byte too large
+	buf[1] = byte(len(buf)) // definitely > actual length
+	var ch ClientHello
+	if err := ch.UnmarshalBinary(buf); err == nil {
+		t.Fatal("expected error for invalid IP length, got nil")
 	}
 }

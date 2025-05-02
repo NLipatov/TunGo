@@ -3,163 +3,152 @@ package handshake
 import (
 	"bytes"
 	"crypto/ed25519"
-	"crypto/rand"
-	"fmt"
-	"net"
-	"strings"
+	"errors"
+	"io"
 	"testing"
-	"time"
-
-	"tungo/settings"
 )
 
-// ClientIOTestFailingWriteConn simulates a Write error.
-type ClientIOTestFailingWriteConn struct{ net.Conn }
-
-func (c *ClientIOTestFailingWriteConn) Write(b []byte) (int, error) {
-	return 0, fmt.Errorf("write failure")
+// clientIOFakeConn — mock for application.ConnectionAdapter
+type clientIOFakeConn struct {
+	readBuf  *bytes.Buffer
+	writeBuf *bytes.Buffer
+	readErr  error
+	writeErr error
 }
 
-// ClientIOTestFailingReadConn simulates a Read error.
-type ClientIOTestFailingReadConn struct{ net.Conn }
-
-func (c *ClientIOTestFailingReadConn) Read(b []byte) (int, error) {
-	return 0, fmt.Errorf("read failure")
+func newClientIOFakeConn(readData []byte) *clientIOFakeConn {
+	return &clientIOFakeConn{
+		readBuf:  bytes.NewBuffer(readData),
+		writeBuf: &bytes.Buffer{},
+	}
 }
+
+func (f *clientIOFakeConn) Read(p []byte) (int, error) {
+	if f.readErr != nil {
+		return 0, f.readErr
+	}
+	return f.readBuf.Read(p)
+}
+
+func (f *clientIOFakeConn) Write(p []byte) (int, error) {
+	if f.writeErr != nil {
+		return 0, f.writeErr
+	}
+	return f.writeBuf.Write(p)
+}
+
+func (f *clientIOFakeConn) Close() error { return nil }
 
 func TestWriteClientHello_Success(t *testing.T) {
-	clientConn, serverConn := net.Pipe()
-	defer clientConn.Close()
-	defer serverConn.Close()
-
-	pub, _, _ := ed25519.GenerateKey(rand.Reader)
-	sessionPub := make([]byte, 32)
-	rand.Read(sessionPub)
-	salt := make([]byte, 32)
-	rand.Read(salt)
-	cfg := settings.ConnectionSettings{InterfaceAddress: "10.0.0.5"}
-
-	io := NewDefaultClientIO(clientConn, cfg, pub, sessionPub, salt)
-
-	done := make(chan struct{})
-	go func() {
-		buf := make([]byte, 512)
-		n, err := serverConn.Read(buf)
-		if err != nil {
-			t.Errorf("server read error: %v", err)
-		}
-		if n == 0 {
-			t.Errorf("expected some bytes, got 0")
-		}
-		close(done)
-	}()
-	if err := io.WriteClientHello(); err != nil {
+	ch := NewClientHello(4, "10.0.0.1",
+		bytes.Repeat([]byte{1}, ed25519.PublicKeySize),
+		bytes.Repeat([]byte{2}, curvePublicKeyLength),
+		bytes.Repeat([]byte{3}, nonceLength),
+	)
+	conn := newClientIOFakeConn(nil)
+	io := NewDefaultClientIO(conn)
+	if err := io.WriteClientHello(ch); err != nil {
 		t.Fatalf("WriteClientHello failed: %v", err)
 	}
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("timeout waiting for server read")
+	want, _ := ch.MarshalBinary()
+	if !bytes.Equal(conn.writeBuf.Bytes(), want) {
+		t.Errorf("written = %x; want %x", conn.writeBuf.Bytes(), want)
+	}
+}
+
+func TestWriteClientHello_MarshalError(t *testing.T) {
+	// invalid version → MarshalBinary error
+	ch := NewClientHello(0, "x", nil, nil, nil)
+	conn := newClientIOFakeConn(nil)
+	io := NewDefaultClientIO(conn)
+	if err := io.WriteClientHello(ch); err == nil {
+		t.Error("expected Marshal error, got nil")
 	}
 }
 
 func TestWriteClientHello_WriteError(t *testing.T) {
-	clientConn, _ := net.Pipe()
-	pub, _, _ := ed25519.GenerateKey(rand.Reader)
-	sessionPub := make([]byte, 32)
-	rand.Read(sessionPub)
-	salt := make([]byte, 32)
-	rand.Read(salt)
-	cfg := settings.ConnectionSettings{InterfaceAddress: "10.0.0.1"}
-	bad := &ClientIOTestFailingWriteConn{clientConn}
-	io := NewDefaultClientIO(bad, cfg, pub, sessionPub, salt)
-
-	err := io.WriteClientHello()
-	if err == nil || !strings.Contains(err.Error(), "failed to write client hello") {
-		t.Errorf("expected write error, got %v", err)
+	ch := NewClientHello(4, "10.0.0.1",
+		bytes.Repeat([]byte{1}, ed25519.PublicKeySize),
+		bytes.Repeat([]byte{2}, curvePublicKeyLength),
+		bytes.Repeat([]byte{3}, nonceLength),
+	)
+	conn := newClientIOFakeConn(nil)
+	conn.writeErr = errors.New("write failure")
+	io := NewDefaultClientIO(conn)
+	if err := io.WriteClientHello(ch); err == nil {
+		t.Error("expected write error, got nil")
 	}
 }
 
 func TestReadServerHello_Success(t *testing.T) {
-	clientConn, serverConn := net.Pipe()
-	defer clientConn.Close()
-	defer serverConn.Close()
+	sig := bytes.Repeat([]byte{0xCC}, signatureLength)
+	nonce := bytes.Repeat([]byte{0xDD}, nonceLength)
+	curve := bytes.Repeat([]byte{0xEE}, curvePublicKeyLength)
+	sh := NewServerHello(sig, nonce, curve)
+	data, _ := sh.MarshalBinary()
 
-	sig := make([]byte, 64)
-	rand.Read(sig)
-	nonce := make([]byte, 32)
-	rand.Read(nonce)
-	curvePub := make([]byte, 32)
-	rand.Read(curvePub)
-	shBytes, _ := (&ServerHello{}).Write(&sig, &nonce, &curvePub)
-
-	io := NewDefaultClientIO(clientConn, settings.ConnectionSettings{}, nil, nil, nil)
-
-	go serverConn.Write(*shBytes)
-
-	sh, err := io.ReadServerHello()
+	conn := newClientIOFakeConn(data)
+	io := NewDefaultClientIO(conn)
+	got, err := io.ReadServerHello()
 	if err != nil {
 		t.Fatalf("ReadServerHello failed: %v", err)
 	}
-	if !bytes.Equal(sh.Signature, sig) {
-		t.Errorf("signature mismatch")
+	if !bytes.Equal(got.signature, sig) {
+		t.Error("Signature mismatch")
 	}
-	if !bytes.Equal(sh.Nonce, nonce) {
-		t.Errorf("nonce mismatch")
+	if !bytes.Equal(got.Nonce(), nonce) {
+		t.Error("Nonce mismatch")
 	}
-	if !bytes.Equal(sh.CurvePublicKey, curvePub) {
-		t.Errorf("curvePub mismatch")
+	if !bytes.Equal(got.CurvePublicKey(), curve) {
+		t.Error("CurvePublicKey mismatch")
 	}
 }
 
 func TestReadServerHello_ReadError(t *testing.T) {
-	clientConn, _ := net.Pipe()
-	bad := &ClientIOTestFailingReadConn{clientConn}
-	io := NewDefaultClientIO(bad, settings.ConnectionSettings{}, nil, nil, nil)
+	conn := newClientIOFakeConn(nil)
+	conn.readErr = io.ErrUnexpectedEOF
+	io := NewDefaultClientIO(conn)
+	if _, err := io.ReadServerHello(); err == nil {
+		t.Error("expected read error, got nil")
+	}
+}
 
-	_, err := io.ReadServerHello()
-	if err == nil || !strings.Contains(err.Error(), "failed to read server hello message") {
-		t.Errorf("expected read error, got %v", err)
+func TestReadServerHello_UnmarshalError(t *testing.T) {
+	// too short → UnmarshalBinary error
+	conn := newClientIOFakeConn([]byte{1, 2, 3})
+	io := NewDefaultClientIO(conn)
+	if _, err := io.ReadServerHello(); err == nil {
+		t.Error("expected unmarshal error, got nil")
 	}
 }
 
 func TestWriteClientSignature_Success(t *testing.T) {
-	clientConn, serverConn := net.Pipe()
-	defer clientConn.Close()
-	defer serverConn.Close()
-
-	io := NewDefaultClientIO(clientConn, settings.ConnectionSettings{}, nil, nil, nil)
-	sig := make([]byte, 64)
-	rand.Read(sig)
-
-	done := make(chan struct{})
-	go func() {
-		buf := make([]byte, 128)
-		n, err := serverConn.Read(buf)
-		if err != nil {
-			t.Errorf("server read error: %v", err)
-		}
-		if n == 0 {
-			t.Errorf("expected some bytes, got 0")
-		}
-		close(done)
-	}()
-	if err := io.WriteClientSignature(sig); err != nil {
+	sig := bytes.Repeat([]byte{0xAB}, 64)
+	conn := newClientIOFakeConn(nil)
+	io := NewDefaultClientIO(conn)
+	if err := io.WriteClientSignature(NewSignature(sig)); err != nil {
 		t.Fatalf("WriteClientSignature failed: %v", err)
 	}
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("timeout waiting for server read")
+	if !bytes.Equal(conn.writeBuf.Bytes(), sig) {
+		t.Errorf("written signature = %x; want %x", conn.writeBuf.Bytes(), sig)
 	}
 }
 
-func TestWriteClientSignature_SerializeError(t *testing.T) {
-	clientConn, _ := net.Pipe()
-	io := NewDefaultClientIO(clientConn, settings.ConnectionSettings{}, nil, nil, nil)
-	sig := []byte{1, 2, 3}
-	err := io.WriteClientSignature(sig)
-	if err == nil || !strings.Contains(err.Error(), "failed to create client signature message") {
-		t.Errorf("expected serialize error, got %v", err)
+func TestWriteClientSignature_MarshalError(t *testing.T) {
+	sig := bytes.Repeat([]byte{0xAB}, 10)
+	conn := newClientIOFakeConn(nil)
+	io := NewDefaultClientIO(conn)
+	if err := io.WriteClientSignature(NewSignature(sig)); err == nil {
+		t.Error("expected marshal error, got nil")
+	}
+}
+
+func TestWriteClientSignature_WriteError(t *testing.T) {
+	sig := bytes.Repeat([]byte{0xAB}, 64)
+	conn := newClientIOFakeConn(nil)
+	conn.writeErr = errors.New("write fail")
+	io := NewDefaultClientIO(conn)
+	if err := io.WriteClientSignature(NewSignature(sig)); err == nil {
+		t.Error("expected write error, got nil")
 	}
 }

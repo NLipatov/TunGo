@@ -5,88 +5,76 @@ import (
 	"testing"
 )
 
-func TestServerHello_Read(t *testing.T) {
+func TestServerHello_UnmarshalBinary_Success(t *testing.T) {
 	data := make([]byte, signatureLength+nonceLength+curvePublicKeyLength)
 	copy(data[:signatureLength], bytes.Repeat([]byte{0x01}, signatureLength))
 	copy(data[signatureLength:signatureLength+nonceLength], bytes.Repeat([]byte{0x02}, nonceLength))
 	copy(data[signatureLength+nonceLength:], bytes.Repeat([]byte{0x03}, curvePublicKeyLength))
 
 	sH := &ServerHello{}
-	result, err := sH.Read(data)
+	err := sH.UnmarshalBinary(data)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
 
-	if !bytes.Equal(result.Signature, data[:signatureLength]) {
-		t.Errorf("Signature does not match. Expected %v, got %v", data[:signatureLength], result.Signature)
+	if !bytes.Equal(sH.signature, data[:signatureLength]) {
+		t.Errorf("signature does not match. Expected %v, got %v", data[:signatureLength], sH.signature)
 	}
-	if !bytes.Equal(result.Nonce, data[signatureLength:signatureLength+nonceLength]) {
-		t.Errorf("Nonce does not match. Expected %v, got %v", data[signatureLength:signatureLength+nonceLength], result.Nonce)
+	if !bytes.Equal(sH.nonce, data[signatureLength:signatureLength+nonceLength]) {
+		t.Errorf("nonce does not match. Expected %v, got %v", data[signatureLength:signatureLength+nonceLength], sH.nonce)
 	}
-	if !bytes.Equal(result.CurvePublicKey, data[signatureLength+nonceLength:]) {
-		t.Errorf("CurvePublicKey does not match. Expected %v, got %v", data[signatureLength+nonceLength:], result.CurvePublicKey)
+	if !bytes.Equal(sH.curvePublicKey, data[signatureLength+nonceLength:]) {
+		t.Errorf("curvePublicKey does not match. Expected %v, got %v", data[signatureLength+nonceLength:], sH.curvePublicKey)
 	}
 }
 
-func TestServerHello_Read_InvalidData(t *testing.T) {
-	data := make([]byte, signatureLength+nonceLength+10) // Invalid length
+func TestServerHello_UnmarshalBinary_InvalidLength(t *testing.T) {
+	data := make([]byte, signatureLength+nonceLength+10) // wrong length
 
 	sH := &ServerHello{}
-	_, err := sH.Read(data)
+	err := sH.UnmarshalBinary(data)
 	if err == nil {
 		t.Fatalf("Expected error for invalid data length, got nil")
 	}
 }
 
-func TestServerHello_Write(t *testing.T) {
-	signature := bytes.Repeat([]byte{0x01}, signatureLength)
+func TestServerHello_MarshalBinary_Success(t *testing.T) {
+	sig := bytes.Repeat([]byte{0x01}, signatureLength)
 	nonce := bytes.Repeat([]byte{0x02}, nonceLength)
-	curvePublicKey := bytes.Repeat([]byte{0x03}, curvePublicKeyLength)
+	curvePub := bytes.Repeat([]byte{0x03}, curvePublicKeyLength)
 
-	sH := &ServerHello{}
-	result, err := sH.Write(&signature, &nonce, &curvePublicKey)
+	sH := &ServerHello{signature: sig, nonce: nonce, curvePublicKey: curvePub}
+	buf, err := sH.MarshalBinary()
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
 
-	expected := append(append(signature, nonce...), curvePublicKey...)
-	if !bytes.Equal(*result, expected) {
-		t.Errorf("Result does not match. Expected %v, got %v", expected, *result)
+	expected := append(append(sig, nonce...), curvePub...)
+	if !bytes.Equal(buf, expected) {
+		t.Errorf("Result does not match. Expected %v, got %v", expected, buf)
 	}
 }
 
-func TestServerHello_Write_InvalidSignature(t *testing.T) {
-	signature := bytes.Repeat([]byte{0x01}, signatureLength-1) // Invalid length
-	nonce := bytes.Repeat([]byte{0x02}, nonceLength)
-	curvePublicKey := bytes.Repeat([]byte{0x03}, curvePublicKeyLength)
-
-	sH := &ServerHello{}
-	_, err := sH.Write(&signature, &nonce, &curvePublicKey)
-	if err == nil {
-		t.Fatalf("Expected error for invalid signature length, got nil")
+func TestServerHello_MarshalBinary_InvalidSignature(t *testing.T) {
+	// signature wrong length
+	sH := &ServerHello{signature: make([]byte, signatureLength-1), nonce: make([]byte, nonceLength), curvePublicKey: make([]byte, curvePublicKeyLength)}
+	if _, err := sH.MarshalBinary(); err == nil {
+		t.Fatal("Expected error for invalid signature length, got nil")
 	}
 }
 
-func TestServerHello_Write_InvalidNonce(t *testing.T) {
-	signature := bytes.Repeat([]byte{0x01}, signatureLength)
-	nonce := bytes.Repeat([]byte{0x02}, nonceLength-1) // Invalid length
-	curvePublicKey := bytes.Repeat([]byte{0x03}, curvePublicKeyLength)
-
-	sH := &ServerHello{}
-	_, err := sH.Write(&signature, &nonce, &curvePublicKey)
-	if err == nil {
-		t.Fatalf("Expected error for invalid nonce length, got nil")
+func TestServerHello_MarshalBinary_InvalidNonce(t *testing.T) {
+	// nonce wrong length
+	sH := &ServerHello{signature: make([]byte, signatureLength), nonce: make([]byte, nonceLength-1), curvePublicKey: make([]byte, curvePublicKeyLength)}
+	if _, err := sH.MarshalBinary(); err == nil {
+		t.Fatal("Expected error for invalid nonce length, got nil")
 	}
 }
 
-func TestServerHello_Write_InvalidCurvePublicKey(t *testing.T) {
-	signature := bytes.Repeat([]byte{0x01}, signatureLength)
-	nonce := bytes.Repeat([]byte{0x02}, nonceLength)
-	curvePublicKey := bytes.Repeat([]byte{0x03}, curvePublicKeyLength-1) // Invalid length
-
-	sH := &ServerHello{}
-	_, err := sH.Write(&signature, &nonce, &curvePublicKey)
-	if err == nil {
-		t.Fatalf("Expected error for invalid curve public key length, got nil")
+func TestServerHello_MarshalBinary_InvalidCurvePublicKey(t *testing.T) {
+	// curve key wrong length
+	sH := &ServerHello{signature: make([]byte, signatureLength), nonce: make([]byte, nonceLength), curvePublicKey: make([]byte, curvePublicKeyLength-1)}
+	if _, err := sH.MarshalBinary(); err == nil {
+		t.Fatal("Expected error for invalid curve public key length, got nil")
 	}
 }

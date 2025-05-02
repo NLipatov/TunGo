@@ -3,39 +3,66 @@ package handshake
 import "fmt"
 
 type ServerHello struct {
-	Signature      []byte
-	Nonce          []byte
-	CurvePublicKey []byte
+	signature      []byte
+	nonce          []byte
+	curvePublicKey []byte
 }
 
-func (s *ServerHello) Read(data []byte) (*ServerHello, error) {
-	if len(data) < signatureLength+nonceLength+curvePublicKeyLength {
-		return nil, fmt.Errorf("invalid data")
+func NewServerHello(signature, nonce, pubKey []byte) ServerHello {
+	return ServerHello{
+		signature:      signature,
+		nonce:          nonce,
+		curvePublicKey: pubKey,
 	}
-
-	s.Signature = data[:signatureLength]
-	s.Nonce = data[signatureLength : signatureLength+nonceLength]
-	s.CurvePublicKey = data[signatureLength+nonceLength : signatureLength+nonceLength+curvePublicKeyLength]
-
-	return s, nil
 }
 
-func (s *ServerHello) Write(signature *[]byte, nonce *[]byte, curvePublicKey *[]byte) (*[]byte, error) {
-	if len(*signature) != signatureLength {
+func (h *ServerHello) Nonce() []byte {
+	return h.nonce
+}
+
+func (h *ServerHello) CurvePublicKey() []byte {
+	return h.curvePublicKey
+}
+
+func (h *ServerHello) MarshalBinary() ([]byte, error) {
+	if len(h.signature) != signatureLength {
 		return nil, fmt.Errorf("invalid signature")
 	}
-	if len(*nonce) != nonceLength {
+	if len(h.nonce) != nonceLength {
 		return nil, InvalidNonce
 	}
-	if len(*curvePublicKey) != curvePublicKeyLength {
+	if len(h.curvePublicKey) != curvePublicKeyLength {
 		return nil, fmt.Errorf("invalid curve public key")
 	}
 
 	arr := make([]byte, signatureLength+nonceLength+curvePublicKeyLength)
 
-	copy(arr, *signature)
-	copy(arr[len(*signature):], *nonce)
-	copy(arr[len(*signature)+len(*nonce):], *curvePublicKey)
+	// copy signature into arr
+	offset := 0
+	copy(arr, h.signature)
+	offset += signatureLength
 
-	return &arr, nil
+	copy(arr[offset:], h.nonce)
+	offset += nonceLength
+
+	copy(arr[offset:], h.curvePublicKey)
+
+	return arr, nil
+}
+
+func (h *ServerHello) UnmarshalBinary(data []byte) error {
+	if len(data) != signatureLength+nonceLength+curvePublicKeyLength {
+		return fmt.Errorf("invalid data")
+	}
+
+	offset := 0
+	h.signature = data[:signatureLength]
+	offset += signatureLength
+
+	h.nonce = data[offset : offset+nonceLength]
+	offset += nonceLength
+
+	h.curvePublicKey = data[offset : offset+curvePublicKeyLength]
+
+	return nil
 }

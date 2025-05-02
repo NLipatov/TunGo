@@ -2,74 +2,64 @@ package handshake
 
 import (
 	"fmt"
-	"net"
-	"tungo/settings"
-
-	"golang.org/x/crypto/ed25519"
+	"io"
+	"tungo/application"
 )
 
 type ClientIO interface {
-	WriteClientHello() error
-	ReadServerHello() (*ServerHello, error)
-	WriteClientSignature(signature []byte) error
+	WriteClientHello(hello ClientHello) error
+	ReadServerHello() (ServerHello, error)
+	WriteClientSignature(signature Signature) error
 }
 
 type DefaultClientIO struct {
-	connection       net.Conn
-	settings         settings.ConnectionSettings
-	ed25519PublicKey []byte
-	sessionPublicKey []byte
-	randomSalt       []byte
+	connection application.ConnectionAdapter
 }
 
-func NewDefaultClientIO(connection net.Conn, settings settings.ConnectionSettings, ed25519PublicKey ed25519.PublicKey, sessionPublicKey []byte, randomSalt []byte) ClientIO {
+func NewDefaultClientIO(connection application.ConnectionAdapter) ClientIO {
 	return &DefaultClientIO{
-		connection:       connection,
-		settings:         settings,
-		ed25519PublicKey: ed25519PublicKey,
-		sessionPublicKey: sessionPublicKey,
-		randomSalt:       randomSalt,
+		connection: connection,
 	}
 }
 
-func (c *DefaultClientIO) WriteClientHello() error {
-	clientHelloBytes, generateKeyErr := (&ClientHello{}).Write(4, c.settings.InterfaceAddress, c.ed25519PublicKey, &c.sessionPublicKey, &c.randomSalt)
-	if generateKeyErr != nil {
-		return fmt.Errorf("failed to serialize client hello")
+func (c *DefaultClientIO) WriteClientHello(hello ClientHello) error {
+	data, marshalErr := hello.MarshalBinary()
+	if marshalErr != nil {
+		return marshalErr
 	}
 
-	_, clientHelloWriteErr := c.connection.Write(*clientHelloBytes)
-	if clientHelloWriteErr != nil {
-		return fmt.Errorf("failed to write client hello: %s", clientHelloWriteErr)
+	_, writeErr := c.connection.Write(data)
+	if writeErr != nil {
+		return writeErr
 	}
 
 	return nil
 }
 
-func (c *DefaultClientIO) ReadServerHello() (*ServerHello, error) {
-	serverHelloBuffer := make([]byte, 128)
-	_, shmErr := c.connection.Read(serverHelloBuffer)
-	if shmErr != nil {
-		return nil, fmt.Errorf("failed to read server hello message")
+func (c *DefaultClientIO) ReadServerHello() (ServerHello, error) {
+	buffer := make([]byte, signatureLength+nonceLength+curvePublicKeyLength)
+	if _, err := io.ReadFull(c.connection, buffer); err != nil {
+		return ServerHello{}, fmt.Errorf("failed to read server hello message: %w", err)
 	}
 
-	serverHello, generateKeyErr := (&ServerHello{}).Read(serverHelloBuffer)
-	if generateKeyErr != nil {
-		return nil, fmt.Errorf("failed to read server hello message")
+	var hello ServerHello
+	unmarshalErr := hello.UnmarshalBinary(buffer)
+	if unmarshalErr != nil {
+		return ServerHello{}, unmarshalErr
 	}
 
-	return serverHello, nil
+	return hello, nil
 }
 
-func (c *DefaultClientIO) WriteClientSignature(signature []byte) error {
-	cS, generateKeyErr := (&ClientSignature{}).Write(&signature)
-	if generateKeyErr != nil {
-		return fmt.Errorf("failed to create client signature message: %s", generateKeyErr)
+func (c *DefaultClientIO) WriteClientSignature(signature Signature) error {
+	data, marshalErr := signature.MarshalBinary()
+	if marshalErr != nil {
+		return marshalErr
 	}
 
-	_, csErr := c.connection.Write(*cS)
-	if csErr != nil {
-		return fmt.Errorf("failed to send client signature message: %s", csErr)
+	_, writeErr := c.connection.Write(data)
+	if writeErr != nil {
+		return writeErr
 	}
 
 	return nil
