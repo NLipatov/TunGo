@@ -11,7 +11,7 @@ import (
 )
 
 type ClientCrypto interface {
-	CalculateKeys(sessionPrivateKey, sessionSalt, serverHelloNonce, serverHelloCurvePublicKey []byte) ([]byte, []byte, [32]byte, error)
+	CalculateKeys(sessionPrivateKey, sessionSalt []byte, hello Hello) ([]byte, []byte, [32]byte, error)
 }
 
 type DefaultClientCrypto struct {
@@ -21,9 +21,9 @@ func NewDefaultClientCrypto() ClientCrypto {
 	return &DefaultClientCrypto{}
 }
 
-func (c *DefaultClientCrypto) CalculateKeys(sessionPrivateKey, sessionSalt, serverHelloNonce, serverHelloCurvePublicKey []byte) ([]byte, []byte, [32]byte, error) {
-	sharedSecret, _ := curve25519.X25519(sessionPrivateKey[:], serverHelloCurvePublicKey)
-	salt := sha256.Sum256(append(serverHelloNonce, sessionSalt...))
+func (c *DefaultClientCrypto) CalculateKeys(sessionPrivateKey, sessionSalt []byte, hello Hello) ([]byte, []byte, [32]byte, error) {
+	sharedSecret, _ := curve25519.X25519(sessionPrivateKey[:], hello.CurvePublicKey())
+	salt := sha256.Sum256(append(hello.Nonce(), sessionSalt...))
 	infoSC := []byte("server-to-client") // server-key info
 	infoCS := []byte("client-to-server") // client-key info
 	serverToClientHKDF := hkdf.New(sha256.New, sharedSecret, salt[:], infoSC)
