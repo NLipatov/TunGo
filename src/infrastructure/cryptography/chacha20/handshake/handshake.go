@@ -83,7 +83,7 @@ func (h *DefaultHandshake) ServerSideHandshake(conn application.ConnectionAdapte
 		return nil, signatureErr
 	}
 
-	sessionId, clientToServerKey, serverToClientKey, sessionKeysErr := c.GenerateChaCha20KeysServerside(curvePrivate[:], serverNonce, &clientHello)
+	sessionId, clientToServerKey, serverToClientKey, sessionKeysErr := c.GenerateChaCha20Keys(curvePrivate[:], serverNonce, &clientHello)
 	if sessionKeysErr != nil {
 		return nil, sessionKeysErr
 	}
@@ -102,8 +102,6 @@ func (h *DefaultHandshake) ClientSideHandshake(conn net.Conn, settings settings.
 	if generateKeyErr != nil {
 		return fmt.Errorf("failed to read client configuration: %s", generateKeyErr)
 	}
-
-	clientCrypto := NewDefaultClientCrypto()
 
 	edPublicKey, edPrivateKey, generateKeyErr := c.GenerateEd25519KeyPair()
 	if generateKeyErr != nil {
@@ -135,7 +133,7 @@ func (h *DefaultHandshake) ClientSideHandshake(conn net.Conn, settings settings.
 		return sendSignatureErr
 	}
 
-	serverToClientKey, clientToServerKey, derivedSessionId, calculateKeysErr := clientCrypto.CalculateKeys(sessionPrivateKey[:], sessionSalt, serverHello.nonce, serverHello.curvePublicKey)
+	derivedSessionId, clientToServerKey, serverToClientKey, calculateKeysErr := c.GenerateChaCha20Keys(sessionPrivateKey[:], sessionSalt, &serverHello)
 	if calculateKeysErr != nil {
 		return calculateKeysErr
 	}

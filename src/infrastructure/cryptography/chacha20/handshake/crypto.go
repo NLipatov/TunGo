@@ -17,7 +17,7 @@ type Crypto interface {
 	GenerateEd25519KeyPair() (ed25519.PublicKey, ed25519.PrivateKey, error)
 	GenerateX25519KeyPair() ([]byte, [32]byte, error)
 	GenerateRandomBytesArray(size int) []byte
-	GenerateChaCha20KeysServerside(
+	GenerateChaCha20Keys(
 		curvePrivate,
 		serverNonce []byte,
 		hello Hello) (sessionId [32]byte, clientToServerKey, serverToClientKey []byte, err error)
@@ -59,7 +59,7 @@ func (c *DefaultCrypto) GenerateRandomBytesArray(size int) []byte {
 	_, _ = io.ReadFull(rand.Reader, randomSalt)
 	return randomSalt
 }
-func (h *DefaultCrypto) GenerateChaCha20KeysServerside(
+func (h *DefaultCrypto) GenerateChaCha20Keys(
 	curvePrivate,
 	serverNonce []byte,
 	hello Hello) (sessionId [32]byte, clientToServerKey, serverToClientKey []byte, err error) {
