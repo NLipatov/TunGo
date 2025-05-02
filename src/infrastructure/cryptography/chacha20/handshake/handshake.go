@@ -119,10 +119,10 @@ func (h *HandshakeImpl) ClientSideHandshake(conn net.Conn, settings settings.Con
 	sessionSalt := c.GenerateRandomBytesArray(32)
 
 	clientIO := NewDefaultClientIO(conn)
-	clientHello := NewClientHello(4, settings.InterfaceAddress, edPublicKey, sessionPublicKey, sessionSalt)
-	clientHelloWriteErr := clientIO.WriteClientHello(clientHello)
-	if clientHelloWriteErr != nil {
-		return clientHelloWriteErr
+	handshake := NewClientHandshake(conn, clientIO)
+	helloErr := handshake.SendClientHello(settings, edPublicKey, sessionPublicKey, sessionSalt)
+	if helloErr != nil {
+		return helloErr
 	}
 
 	serverHello, readServerHelloErr := clientIO.ReadServerHello()
