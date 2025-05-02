@@ -83,7 +83,7 @@ func (h *DefaultHandshake) ServerSideHandshake(conn application.ConnectionAdapte
 		return nil, signatureErr
 	}
 
-	sessionId, clientToServerKey, serverToClientKey, sessionKeysErr := c.GenerateChaCha20KeysServerside(curvePrivate[:], serverNonce, clientHello)
+	sessionId, clientToServerKey, serverToClientKey, sessionKeysErr := c.GenerateChaCha20KeysServerside(curvePrivate[:], serverNonce, &clientHello)
 	if sessionKeysErr != nil {
 		return nil, sessionKeysErr
 	}

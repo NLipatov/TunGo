@@ -20,7 +20,7 @@ type Crypto interface {
 	GenerateChaCha20KeysServerside(
 		curvePrivate,
 		serverNonce []byte,
-		hello ClientHello) (sessionId [32]byte, clientToServerKey, serverToClientKey []byte, err error)
+		hello Hello) (sessionId [32]byte, clientToServerKey, serverToClientKey []byte, err error)
 }
 
 type DefaultCrypto struct {
@@ -62,10 +62,10 @@ func (c *DefaultCrypto) GenerateRandomBytesArray(size int) []byte {
 func (h *DefaultCrypto) GenerateChaCha20KeysServerside(
 	curvePrivate,
 	serverNonce []byte,
-	hello ClientHello) (sessionId [32]byte, clientToServerKey, serverToClientKey []byte, err error) {
+	hello Hello) (sessionId [32]byte, clientToServerKey, serverToClientKey []byte, err error) {
 	// Generate shared secret and salt
-	sharedSecret, _ := curve25519.X25519(curvePrivate[:], hello.curvePublicKey)
-	salt := sha256.Sum256(append(serverNonce, hello.nonce...))
+	sharedSecret, _ := curve25519.X25519(curvePrivate[:], hello.CurvePublicKey())
+	salt := sha256.Sum256(append(serverNonce, hello.Nonce()...))
 
 	infoSC := []byte("server-to-client") // server-key info
 	infoCS := []byte("client-to-server") // client-key info

@@ -1,6 +1,6 @@
 package handshake
 
-type Nonce interface {
+type Hello interface {
 	Nonce() []byte
 	CurvePublicKey() []byte
 }
