@@ -7,6 +7,10 @@ import (
 	"tungo/settings"
 )
 
+// ClientHandshake performs the three‑step handshake with the server.
+// 1 - Send Client Hello;
+// 2 - Receive Server Hello;
+// 3 - Send signed Server Hello.
 type ClientHandshake struct {
 	conn     application.ConnectionAdapter
 	crypto   crypto
@@ -32,7 +36,7 @@ func (c *ClientHandshake) SendClientHello(
 func (c *ClientHandshake) ReceiveServerHello() (ServerHello, error) {
 	hello, err := c.clientIO.ReadServerHello()
 	if err != nil {
-		return ServerHello{}, fmt.Errorf("could not receive hello from server: %w", err)
+		return ServerHello{}, fmt.Errorf("client handshake: could not receive hello from server: %w", err)
 	}
 
 	return hello, nil
@@ -46,14 +50,14 @@ func (c *ClientHandshake) SendSignature(
 	sessionSalt []byte) error {
 	if !c.crypto.Verify(ed25519PublicKey,
 		append(append(hello.CurvePublicKey, hello.Nonce...), sessionSalt...), hello.Signature) {
-		return fmt.Errorf("server failed signature check")
+		return fmt.Errorf("client handshake: server failed signature check")
 	}
 
 	dataToSign := append(append(sessionPublicKey, sessionSalt...), hello.Nonce...)
 	signature := NewSignature(c.crypto.Sign(ed25519PrivateKey, dataToSign))
 	err := c.clientIO.WriteClientSignature(signature)
 	if err != nil {
-		return fmt.Errorf("could not send signature to server: %w", err)
+		return fmt.Errorf("client handshake: could not send signature to server: %w", err)
 	}
 
 	return nil
