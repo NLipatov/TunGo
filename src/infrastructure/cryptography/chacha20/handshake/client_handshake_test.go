@@ -43,10 +43,10 @@ type ClientHandshakeFakeCrypto struct {
 	signOut  []byte
 }
 
-func (c *ClientHandshakeFakeCrypto) Verify(pub ed25519.PublicKey, data, sig []byte) bool {
+func (c *ClientHandshakeFakeCrypto) Verify(_ ed25519.PublicKey, _, _ []byte) bool {
 	return c.verifyOK
 }
-func (c *ClientHandshakeFakeCrypto) Sign(priv ed25519.PrivateKey, data []byte) []byte {
+func (c *ClientHandshakeFakeCrypto) Sign(_ ed25519.PrivateKey, _ []byte) []byte {
 	return c.signOut
 }
 func (c *ClientHandshakeFakeCrypto) GenerateEd25519KeyPair() (ed25519.PublicKey, ed25519.PrivateKey, error) {
@@ -55,7 +55,7 @@ func (c *ClientHandshakeFakeCrypto) GenerateEd25519KeyPair() (ed25519.PublicKey,
 func (c *ClientHandshakeFakeCrypto) GenerateX25519KeyPair() ([]byte, [32]byte, error) {
 	return nil, [32]byte{}, nil
 }
-func (c *ClientHandshakeFakeCrypto) GenerateRandomBytesArray(n int) []byte { return nil }
+func (c *ClientHandshakeFakeCrypto) GenerateRandomBytesArray(_ int) []byte { return nil }
 func (c *ClientHandshakeFakeCrypto) GenerateChaCha20KeysServerside(_, _ []byte, _ Hello) ([32]byte, []byte, []byte, error) {
 	return [32]byte{}, nil, nil, nil
 }
@@ -66,26 +66,26 @@ func (c *ClientHandshakeFakeCrypto) GenerateChaCha20KeysClientside(_, _ []byte, 
 func TestSendClientHello(t *testing.T) {
 	io := &ClientHandshakeFakeIO{}
 	ch := NewClientHandshake(nil, io, nil)
-	settings := settings.ConnectionSettings{InterfaceAddress: "1.2.3.4"}
+	s := settings.ConnectionSettings{InterfaceAddress: "1.2.3.4"}
 	edPub := make([]byte, ed25519.PublicKeySize)
 	sessPub := make([]byte, curve25519.ScalarSize)
 	salt := make([]byte, nonceLength)
 
 	// success
-	if err := ch.SendClientHello(settings, edPub, sessPub, salt); err != nil {
+	if err := ch.SendClientHello(s, edPub, sessPub, salt); err != nil {
 		t.Fatalf("SendClientHello failed: %v", err)
 	}
 	if !io.wroteHello {
 		t.Fatal("WriteClientHello was not called")
 	}
-	if io.helloArg.ipVersion != 4 || io.helloArg.ipAddress != settings.InterfaceAddress {
+	if io.helloArg.ipVersion != 4 || io.helloArg.ipAddress != s.InterfaceAddress {
 		t.Errorf("unexpected helloArg %+v", io.helloArg)
 	}
 
 	// write error
 	io = &ClientHandshakeFakeIO{writeHelloErr: errors.New("boom")}
 	ch = NewClientHandshake(nil, io, nil)
-	if err := ch.SendClientHello(settings, edPub, sessPub, salt); err == nil {
+	if err := ch.SendClientHello(s, edPub, sessPub, salt); err == nil {
 		t.Error("expected error, got nil")
 	}
 }
