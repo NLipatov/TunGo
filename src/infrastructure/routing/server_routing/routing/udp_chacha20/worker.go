@@ -100,9 +100,9 @@ func (u *UdpTunWorker) HandleTun() error {
 				continue
 			}
 
-			_, writeToUDPErr := udpClientSession.Conn().WriteToUDP(encryptedPacket, udpClientSession.Addr())
+			_, writeToUDPErr := udpClientSession.Conn().WriteToUDP(encryptedPacket, udpClientSession.RemoteAddr())
 			if writeToUDPErr != nil {
-				log.Printf("failed to send packet to %s: %v", udpClientSession.Addr(), writeToUDPErr)
+				log.Printf("failed to send packet to %s: %v", udpClientSession.RemoteAddr(), writeToUDPErr)
 			}
 		}
 	}

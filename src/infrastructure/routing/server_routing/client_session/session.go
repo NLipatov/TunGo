@@ -8,6 +8,6 @@ import (
 type Session[Conn net.Conn, Addr net.Addr] interface {
 	Conn() Conn
 	InternalIP() string
-	Addr() Addr
+	RemoteAddr() Addr
 	Session() application.CryptographyService
 }

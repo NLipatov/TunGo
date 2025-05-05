@@ -31,7 +31,7 @@ func (s *SessionImpl[Conn, Addr]) InternalIP() string {
 	return s.internalIP
 }
 
-func (s *SessionImpl[Conn, Addr]) Addr() Addr {
+func (s *SessionImpl[Conn, Addr]) RemoteAddr() Addr {
 	return s.udpAddr
 }
 

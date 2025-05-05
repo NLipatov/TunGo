@@ -15,7 +15,7 @@ func NewManager[Conn net.Conn, Addr net.Addr]() *Manager[Conn, Addr] {
 
 func (u *Manager[Conn, Addr]) Store(session Session[Conn, Addr]) {
 	u.m.Store(session.InternalIP(), session)
-	u.m.Store(session.Addr().String(), session)
+	u.m.Store(session.RemoteAddr().String(), session)
 }
 
 func (u *Manager[Conn, Addr]) Load(ip string) (Session[Conn, Addr], bool) {
@@ -32,6 +32,6 @@ func (u *Manager[Conn, Addr]) Delete(ip string) {
 	if ok {
 		session := v.(Session[Conn, Addr])
 		u.m.Delete(session.InternalIP())
-		u.m.Delete(session.Addr().String())
+		u.m.Delete(session.RemoteAddr().String())
 	}
 }
