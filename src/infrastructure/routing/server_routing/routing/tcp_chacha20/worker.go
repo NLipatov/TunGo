@@ -158,20 +158,20 @@ func (w *TcpTunWorker) registerClient(conn net.Conn, tunFile io.ReadWriteCloser,
 	}
 
 	// Prevent IP spoofing
-	_, ipCollision := w.sessionManager.Load(*internalIP)
+	_, ipCollision := w.sessionManager.Load(internalIP)
 	if ipCollision {
-		log.Printf("connection closed: %s (internal ip %s already in use)\n", conn.RemoteAddr(), *internalIP)
+		log.Printf("connection closed: %s (internal ip %s already in use)\n", conn.RemoteAddr(), internalIP)
 		_ = conn.Close()
 	}
 
-	w.sessionManager.Store(client_session.NewSessionImpl(conn, *internalIP, conn.RemoteAddr(), cryptographyService))
+	w.sessionManager.Store(client_session.NewSessionImpl(conn, internalIP, conn.RemoteAddr(), cryptographyService))
 
 	w.handleClient(conn, tunFile, internalIP, ctx)
 }
 
-func (w *TcpTunWorker) handleClient(conn net.Conn, tunFile io.ReadWriteCloser, internalIP *string, ctx context.Context) {
+func (w *TcpTunWorker) handleClient(conn net.Conn, tunFile io.ReadWriteCloser, internalIP string, ctx context.Context) {
 	defer func() {
-		w.sessionManager.Delete(*internalIP)
+		w.sessionManager.Delete(internalIP)
 		w.sessionManager.Delete(conn.RemoteAddr().String())
 		_ = conn.Close()
 		log.Printf("disconnected: %s", conn.RemoteAddr())
@@ -193,9 +193,9 @@ func (w *TcpTunWorker) handleClient(conn net.Conn, tunFile io.ReadWriteCloser, i
 			}
 
 			// Retrieve the session for this client
-			sessionValue, sessionExists := w.sessionManager.Load(*internalIP)
+			sessionValue, sessionExists := w.sessionManager.Load(internalIP)
 			if !sessionExists {
-				log.Printf("failed to load session for IP %s", *internalIP)
+				log.Printf("failed to load session for IP %s", internalIP)
 				continue
 			}
 

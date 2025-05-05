@@ -24,7 +24,7 @@ type Handshake interface {
 	Id() [32]byte
 	ClientKey() []byte
 	ServerKey() []byte
-	ServerSideHandshake(conn application.ConnectionAdapter) (*string, error)
+	ServerSideHandshake(conn application.ConnectionAdapter) (string, error)
 	ClientSideHandshake(conn net.Conn, settings settings.ConnectionSettings) error
 }
 
@@ -50,49 +50,49 @@ func (h *DefaultHandshake) ServerKey() []byte {
 	return h.serverKey
 }
 
-func (h *DefaultHandshake) ServerSideHandshake(conn application.ConnectionAdapter) (*string, error) {
+func (h *DefaultHandshake) ServerSideHandshake(conn application.ConnectionAdapter) (string, error) {
 	c := newDefaultCrypto()
 
 	// Generate server hello response
 	curvePublic, curvePrivate, curveErr := c.GenerateX25519KeyPair()
 	if curveErr != nil {
-		return nil, curveErr
+		return "", curveErr
 	}
 	serverNonce := c.GenerateRandomBytesArray(32)
 
 	serverConfigurationManager := server_configuration.NewManager(server_configuration.NewServerResolver())
 	conf, err := serverConfigurationManager.Configuration()
 	if err != nil {
-		return nil, fmt.Errorf("failed to read server configuration: %s", err)
+		return "", fmt.Errorf("failed to read server configuration: %s", err)
 	}
 
 	//handshake process starts here
 	handshake := NewServerHandshake(conn)
 	clientHello, clientHelloErr := handshake.ReceiveClientHello()
 	if clientHelloErr != nil {
-		return nil, clientHelloErr
+		return "", clientHelloErr
 	}
 
 	serverHelloErr := handshake.SendServerHello(c, conf.Ed25519PrivateKey, serverNonce, curvePublic, clientHello.nonce)
 	if serverHelloErr != nil {
-		return nil, serverHelloErr
+		return "", serverHelloErr
 	}
 
 	signatureErr := handshake.VerifyClientSignature(c, clientHello, serverNonce)
 	if signatureErr != nil {
-		return nil, signatureErr
+		return "", signatureErr
 	}
 
 	sessionId, clientToServerKey, serverToClientKey, sessionKeysErr := c.GenerateChaCha20KeysServerside(curvePrivate[:], serverNonce, &clientHello)
 	if sessionKeysErr != nil {
-		return nil, sessionKeysErr
+		return "", sessionKeysErr
 	}
 
 	h.id = sessionId
 	h.clientKey = clientToServerKey
 	h.serverKey = serverToClientKey
 
-	return &clientHello.ipAddress, nil
+	return clientHello.ipAddress, nil
 }
 
 func (h *DefaultHandshake) ClientSideHandshake(conn net.Conn, settings settings.ConnectionSettings) error {

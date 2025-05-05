@@ -187,7 +187,7 @@ func (u *UdpTunWorker) udpRegisterClient(conn *net.UDPConn, clientAddr *net.UDPA
 	if handshakeErr != nil {
 		return handshakeErr
 	}
-	log.Printf("%s registered as: %s", clientAddr.String(), *internalIpAddr)
+	log.Printf("%s registered as: %s", clientAddr.String(), internalIpAddr)
 
 	serverConfigurationManager := server_configuration.NewManager(server_configuration.NewServerResolver())
 	_, err := serverConfigurationManager.Configuration()
@@ -200,7 +200,7 @@ func (u *UdpTunWorker) udpRegisterClient(conn *net.UDPConn, clientAddr *net.UDPA
 		return udpSessionErr
 	}
 
-	u.sessionManager.Store(client_session.NewSessionImpl(conn, *internalIpAddr, clientAddr, udpSession))
+	u.sessionManager.Store(client_session.NewSessionImpl(conn, internalIpAddr, clientAddr, udpSession))
 
 	return nil
 }
