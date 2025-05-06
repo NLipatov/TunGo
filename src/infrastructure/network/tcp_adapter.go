@@ -1,6 +1,9 @@
 package network
 
-import "net"
+import (
+	"net"
+	"time"
+)
 
 type TcpAdapter struct {
 	Conn net.Conn
@@ -17,4 +20,12 @@ func (ta *TcpAdapter) Read(buffer []byte) (int, error) {
 
 func (ta *TcpAdapter) Close() error {
 	return ta.Conn.Close()
+}
+
+func (ta *TcpAdapter) SetReadDeadline(t time.Time) error {
+	return ta.Conn.SetReadDeadline(t)
+}
+
+func (ta *TcpAdapter) SetWriteDeadline(t time.Time) error {
+	return ta.Conn.SetWriteDeadline(t)
 }
