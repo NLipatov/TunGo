@@ -78,7 +78,7 @@ func (u *UdpTunWorker) HandleTun() error {
 				continue
 			}
 
-			session, ok := u.sessionManager.internalIpToSession[destinationAddressBytes]
+			session, ok := u.sessionManager.getByInternalIP(destinationAddressBytes[:])
 			if !ok {
 				log.Printf("packet dropped: no session with destination ip %v", destinationAddressBytes)
 				continue
