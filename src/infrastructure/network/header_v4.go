@@ -38,6 +38,7 @@ func (h *headerV4) ReadDestinationAddressBytes(buffer []byte) error {
 
 	// 16, 17, 18, 19 - destination address bytes
 	copy(buffer[:4], h.data[16:20])
+	buffer = buffer[:4]
 
 	return nil
 }
