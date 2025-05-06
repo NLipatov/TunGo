@@ -10,7 +10,7 @@ type HeaderParser interface {
 }
 
 type BaseHeaderParser struct {
-	preAllocatedIPHeaderV4 headerV4
+	preAllocatedIPHeaderV4 HeaderV4
 	preAllocatedIPHeaderV6 headerV6
 }
 

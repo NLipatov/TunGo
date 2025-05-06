@@ -8,7 +8,7 @@ import (
 
 // https://en.wikipedia.org/wiki/IPv4#Packet_structure
 
-type headerV4 struct {
+type HeaderV4 struct {
 	data           []byte
 	version        uint8
 	Ihl            uint8 // Internet Header Length in 32-bit words (1 word = 4 bytes)
@@ -24,14 +24,14 @@ type headerV4 struct {
 	destinationIP  net.IP
 }
 
-func NewHeaderV4(data []byte) headerV4 {
-	return headerV4{
+func FromIPPacket(data []byte) HeaderV4 {
+	return HeaderV4{
 		data: data,
 	}
 }
 
 // ReadDestinationAddressBytes reads 32 bits of 'Destination Address' into given buffer
-func (h *headerV4) ReadDestinationAddressBytes(buffer []byte) error {
+func (h *HeaderV4) ReadDestinationAddressBytes(buffer []byte) error {
 	if len(buffer) < 4 {
 		return fmt.Errorf("invalid buffer size, expected 4 bytes, got %d", len(buffer))
 	}
@@ -43,15 +43,15 @@ func (h *headerV4) ReadDestinationAddressBytes(buffer []byte) error {
 	return nil
 }
 
-func (h *headerV4) GetDestinationIP() net.IP {
+func (h *HeaderV4) GetDestinationIP() net.IP {
 	return h.destinationIP
 }
 
-func (h *headerV4) GetSourceIP() net.IP {
+func (h *HeaderV4) GetSourceIP() net.IP {
 	return h.sourceIP
 }
 
-func ParseIPv4Header(packet []byte, header *headerV4) error {
+func ParseIPv4Header(packet []byte, header *HeaderV4) error {
 	if len(packet) < 20 {
 		return fmt.Errorf("invalid packet length")
 	}

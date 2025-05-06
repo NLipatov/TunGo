@@ -15,30 +15,21 @@ import (
 	"tungo/settings/server_configuration"
 )
 
-type udpClientSession struct {
-	conn                   *net.UDPConn
-	remoteUdpAddr          *net.UDPAddr
-	Session                application.CryptographyService
-	internalIP, externalIP []byte
-}
-
 type UdpTunWorker struct {
-	ctx                   context.Context
-	tun                   io.ReadWriteCloser
-	settings              settings.ConnectionSettings
-	internalIpToSession   map[[4]byte]udpClientSession
-	externalAddrToSession map[[4]byte]udpClientSession
+	ctx            context.Context
+	tun            io.ReadWriteCloser
+	settings       settings.ConnectionSettings
+	sessionManager sessionManager
 }
 
 func NewUdpTunWorker(
 	ctx context.Context, tun io.ReadWriteCloser, settings settings.ConnectionSettings,
 ) application.TunWorker {
 	return &UdpTunWorker{
-		tun:                   tun,
-		ctx:                   ctx,
-		settings:              settings,
-		internalIpToSession:   make(map[[4]byte]udpClientSession),
-		externalAddrToSession: make(map[[4]byte]udpClientSession),
+		tun:            tun,
+		ctx:            ctx,
+		settings:       settings,
+		sessionManager: newSessionManager(),
 	}
 }
 
@@ -80,28 +71,28 @@ func (u *UdpTunWorker) HandleTun() error {
 
 			// see udp_reader.go. It's putting payload length into first 12 bytes.
 			payload := packetBuffer[12 : n+12]
-			parser := network.NewHeaderV4(payload)
+			parser := network.FromIPPacket(payload)
 			destinationBytesErr := parser.ReadDestinationAddressBytes(destinationAddressBytes[:])
 			if destinationBytesErr != nil {
 				log.Printf("packet dropped: failed to read destination address bytes: %v", destinationBytesErr)
 				continue
 			}
 
-			session, ok := u.internalIpToSession[destinationAddressBytes]
+			session, ok := u.sessionManager.internalIpToSession[destinationAddressBytes]
 			if !ok {
 				log.Printf("packet dropped: non-IPv4 dest %v", destinationAddressBytes)
 				continue
 			}
 
-			encryptedPacket, encryptErr := session.Session.Encrypt(packetBuffer)
+			encryptedPacket, encryptErr := session.CryptographyService.Encrypt(packetBuffer)
 			if encryptErr != nil {
 				log.Printf("failed to encrypt packet: %s", encryptErr)
 				continue
 			}
 
-			_, writeToUDPErr := session.conn.WriteToUDP(encryptedPacket, session.remoteUdpAddr)
+			_, writeToUDPErr := session.udpConn.WriteToUDP(encryptedPacket, session.udpAddr)
 			if writeToUDPErr != nil {
-				log.Printf("failed to send packet to %s: %v", session.remoteUdpAddr, writeToUDPErr)
+				log.Printf("failed to send packet to %s: %v", session.udpAddr, writeToUDPErr)
 			}
 		}
 	}
@@ -131,7 +122,6 @@ func (u *UdpTunWorker) HandleTransport() error {
 
 	dataBuf := make([]byte, network.MaxPacketLengthBytes+12)
 	oobBuf := make([]byte, 1024)
-	destinationAddressBytes := [4]byte{}
 
 	for {
 		select {
@@ -148,13 +138,12 @@ func (u *UdpTunWorker) HandleTransport() error {
 				continue
 			}
 
-			copy(destinationAddressBytes[:], clientAddr.IP.To4())
-			session, ok := u.externalAddrToSession[destinationAddressBytes]
+			s, ok := u.sessionManager.getByExternalIP(clientAddr.IP.To4())
 			if !ok {
 				// Pass initial data to registration function
 				regErr := u.udpRegisterClient(conn, clientAddr, dataBuf[:n])
 				if regErr != nil {
-					log.Printf("%s failed registration: %s\n", clientAddr.IP, regErr)
+					log.Printf("host %s failed registration: %s", clientAddr.IP, regErr)
 					_, _ = conn.WriteToUDP([]byte{
 						byte(network.SessionReset),
 					}, clientAddr)
@@ -163,10 +152,9 @@ func (u *UdpTunWorker) HandleTransport() error {
 			}
 
 			// Handle client data
-			decrypted, decryptionErr := session.Session.Decrypt(dataBuf[:n])
+			decrypted, decryptionErr := s.CryptographyService.Decrypt(dataBuf[:n])
 			if decryptionErr != nil {
-				delete(u.externalAddrToSession, [4]byte(session.externalIP))
-				delete(u.internalIpToSession, [4]byte(session.internalIP))
+				u.sessionManager.delete(s)
 				log.Printf("failed to decrypt data: %s", decryptionErr)
 				_, _ = conn.WriteToUDP([]byte{
 					byte(network.SessionReset),
@@ -208,16 +196,13 @@ func (u *UdpTunWorker) udpRegisterClient(conn *net.UDPConn, clientAddr *net.UDPA
 	}
 
 	ip := net.ParseIP(internalIpAddr)
-	session := udpClientSession{
-		conn:          conn,
-		remoteUdpAddr: clientAddr,
-		Session:       udpSession,
-		internalIP:    ip.To4(),
-		externalIP:    clientAddr.IP.To4(),
-	}
-
-	u.internalIpToSession[[4]byte(session.internalIP)] = session
-	u.externalAddrToSession[[4]byte(session.externalIP)] = session
+	u.sessionManager.add(clientSession{
+		udpConn:             conn,
+		udpAddr:             clientAddr,
+		CryptographyService: udpSession,
+		internalIP:          ip.To4(),
+		externalIP:          clientAddr.IP.To4(),
+	})
 
 	return nil
 }
