@@ -82,8 +82,12 @@ func (u *UdpTunWorker) HandleTun() error {
 				log.Printf("packet dropped: not IPv4")
 				continue
 			}
-			// 16-19 bytes representing a destination IP
-			copy(key[:], data[16:20])
+			parser := network.NewHeaderV4(data)
+			destinationBytesErr := parser.ReadDestinationAddressBytes(key[:])
+			if destinationBytesErr != nil {
+				log.Printf("packet dropped: failed to read destination address bytes: %v", destinationBytesErr)
+				continue
+			}
 
 			session, ok := u.internalIpToSession[key]
 			if !ok {

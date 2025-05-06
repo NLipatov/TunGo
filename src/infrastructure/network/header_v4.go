@@ -9,6 +9,7 @@ import (
 // https://en.wikipedia.org/wiki/IPv4#Packet_structure
 
 type headerV4 struct {
+	data           []byte
 	version        uint8
 	Ihl            uint8 // Internet Header Length in 32-bit words (1 word = 4 bytes)
 	dscp           uint8 // Differentiated Services Code Point (QoS field)
@@ -21,6 +22,24 @@ type headerV4 struct {
 	headerChecksum uint16
 	sourceIP       net.IP
 	destinationIP  net.IP
+}
+
+func NewHeaderV4(data []byte) headerV4 {
+	return headerV4{
+		data: data,
+	}
+}
+
+// ReadDestinationAddressBytes reads 32 bits of 'Destination Address' into given buffer
+func (h *headerV4) ReadDestinationAddressBytes(buffer []byte) error {
+	if len(buffer) < 4 {
+		return fmt.Errorf("invalid buffer size, expected 4 bytes, got %d", len(buffer))
+	}
+
+	// 16, 17, 18, 19 - destination address bytes
+	copy(buffer[:4], h.data[16:20])
+
+	return nil
 }
 
 func (h *headerV4) GetDestinationIP() net.IP {
