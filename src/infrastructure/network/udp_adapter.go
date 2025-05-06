@@ -2,7 +2,6 @@ package network
 
 import (
 	"net"
-	"time"
 )
 
 type UdpAdapter struct {
@@ -28,12 +27,4 @@ func (ua *UdpAdapter) Read(buffer []byte) (int, error) {
 
 func (ua *UdpAdapter) Close() error {
 	return ua.Conn.Close()
-}
-
-func (ua *UdpAdapter) SetReadDeadline(t time.Time) error {
-	return ua.Conn.SetReadDeadline(t)
-}
-
-func (ua *UdpAdapter) SetWriteDeadline(t time.Time) error {
-	return ua.Conn.SetWriteDeadline(t)
 }
