@@ -44,6 +44,7 @@ func NewUdpTunWorker(
 func (u *UdpTunWorker) HandleTun() error {
 	buf := make([]byte, network.MaxPacketLengthBytes+12)
 	udpReader := chacha20.NewUdpReader(u.tun)
+	key := [4]byte{}
 
 	for {
 		select {
@@ -82,7 +83,6 @@ func (u *UdpTunWorker) HandleTun() error {
 				continue
 			}
 			// 16-19 bytes representing a destination IP
-			var key [4]byte
 			copy(key[:], data[16:20])
 
 			session, ok := u.internalIpToSession[key]
@@ -129,6 +129,8 @@ func (u *UdpTunWorker) HandleTransport() error {
 
 	dataBuf := make([]byte, network.MaxPacketLengthBytes+12)
 	oobBuf := make([]byte, 1024)
+	key := [4]byte{}
+
 	for {
 		select {
 		case <-u.ctx.Done():
@@ -144,7 +146,6 @@ func (u *UdpTunWorker) HandleTransport() error {
 				continue
 			}
 
-			var key [4]byte
 			copy(key[:], clientAddr.IP.To4())
 			session, ok := u.externalAddrToSession[key]
 			if !ok {
