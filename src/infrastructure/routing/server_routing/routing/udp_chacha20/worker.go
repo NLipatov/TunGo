@@ -16,11 +16,6 @@ import (
 	"tungo/settings/server_configuration"
 )
 
-type UDPClient struct {
-	conn *net.UDPConn
-	addr *net.UDPAddr
-}
-
 type UdpTunWorker struct {
 	ctx            context.Context
 	tun            io.ReadWriteCloser
