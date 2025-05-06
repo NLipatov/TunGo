@@ -139,12 +139,14 @@ func (u *UdpTunWorker) HandleTransport() error {
 			}
 
 			s, ok := u.sessionManager.getByExternalIP(clientAddr.IP.To4())
-			if !ok {
+			if !ok || s.udpAddr.Port != clientAddr.Port {
 				// Pass initial data to registration function
 				regErr := u.registerClient(conn, clientAddr, dataBuf[:n])
 				if regErr != nil {
 					log.Printf("host %s failed registration: %s", clientAddr.IP, regErr)
-					u.resetSession(s)
+					_, _ = conn.WriteToUDP([]byte{
+						byte(network.SessionReset),
+					}, clientAddr)
 				}
 				continue
 			}
@@ -153,7 +155,6 @@ func (u *UdpTunWorker) HandleTransport() error {
 			decrypted, decryptionErr := s.CryptographyService.Decrypt(dataBuf[:n])
 			if decryptionErr != nil {
 				log.Printf("failed to decrypt data: %s", decryptionErr)
-				u.resetSession(s)
 				continue
 			}
 
@@ -177,7 +178,6 @@ func (u *UdpTunWorker) registerClient(conn *net.UDPConn, clientAddr *net.UDPAddr
 	if handshakeErr != nil {
 		return handshakeErr
 	}
-	log.Printf("%s registered as: %s", clientAddr.IP, internalIpAddr)
 
 	serverConfigurationManager := server_configuration.NewManager(server_configuration.NewServerResolver())
 	_, err := serverConfigurationManager.Configuration()
@@ -199,12 +199,7 @@ func (u *UdpTunWorker) registerClient(conn *net.UDPConn, clientAddr *net.UDPAddr
 		externalIP:          clientAddr.IP.To4(),
 	})
 
-	return nil
-}
+	log.Printf("%s registered as: %s", clientAddr.IP, internalIpAddr)
 
-func (u *UdpTunWorker) resetSession(session clientSession) {
-	u.sessionManager.delete(session)
-	_, _ = session.udpConn.WriteToUDP([]byte{
-		byte(network.SessionReset),
-	}, session.udpAddr)
+	return nil
 }
