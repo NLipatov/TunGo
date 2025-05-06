@@ -80,7 +80,7 @@ func (u *UdpTunWorker) HandleTun() error {
 
 			session, ok := u.sessionManager.internalIpToSession[destinationAddressBytes]
 			if !ok {
-				log.Printf("packet dropped: non-IPv4 dest %v", destinationAddressBytes)
+				log.Printf("packet dropped: no session with destination ip %v", destinationAddressBytes)
 				continue
 			}
 
