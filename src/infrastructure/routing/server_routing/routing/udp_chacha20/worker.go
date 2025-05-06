@@ -6,31 +6,39 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/netip"
 	"os"
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/network"
-	"tungo/infrastructure/routing/server_routing/client_session"
 	"tungo/settings"
 	"tungo/settings/server_configuration"
 )
 
+type udpClientSession struct {
+	conn    *net.UDPConn
+	udpAddr *net.UDPAddr
+	Session application.CryptographyService
+}
+
 type UdpTunWorker struct {
-	ctx            context.Context
-	tun            io.ReadWriteCloser
-	settings       settings.ConnectionSettings
-	sessionManager *client_session.Manager[*net.UDPConn, *net.UDPAddr]
+	ctx                   context.Context
+	tun                   io.ReadWriteCloser
+	settings              settings.ConnectionSettings
+	internalIpToSession   map[netip.Addr]udpClientSession
+	externalAddrToSession map[netip.Addr]udpClientSession
 }
 
 func NewUdpTunWorker(
 	ctx context.Context, tun io.ReadWriteCloser, settings settings.ConnectionSettings,
 ) application.TunWorker {
 	return &UdpTunWorker{
-		tun:            tun,
-		ctx:            ctx,
-		settings:       settings,
-		sessionManager: client_session.NewManager[*net.UDPConn, *net.UDPAddr](),
+		tun:                   tun,
+		ctx:                   ctx,
+		settings:              settings,
+		internalIpToSession:   make(map[netip.Addr]udpClientSession),
+		externalAddrToSession: make(map[netip.Addr]udpClientSession),
 	}
 }
 
@@ -76,28 +84,26 @@ func (u *UdpTunWorker) HandleTun() error {
 				continue
 			}
 
-			destinationIP := header.GetDestinationIP().String()
-			sourceIP := header.GetSourceIP().String()
-			udpClientSession, ok := u.sessionManager.Load(destinationIP)
+			nip, nipOk := netip.AddrFromSlice(header.GetDestinationIP())
+			if !nipOk {
+				log.Printf("packet dropped: invalid destination address: %s", header.GetDestinationIP())
+			}
+			nip = nip.Unmap() // <- remove IPv6‑mapping
+			session, ok := u.internalIpToSession[nip]
 			if !ok {
-				if destinationIP == "" || destinationIP == "<nil>" {
-					log.Printf("packet dropped: no dest. IP specified in IP packet header")
-					continue
-				}
-
-				log.Printf("packet dropped: no connection with destination (source IP: %s, dest. IP:%s)", sourceIP, destinationIP)
+				log.Printf("packet dropped: no connection with destination (source IP: %s, dest. IP:%s)", header.GetSourceIP(), header.GetDestinationIP())
 				continue
 			}
 
-			encryptedPacket, encryptErr := udpClientSession.Session().Encrypt(buf)
+			encryptedPacket, encryptErr := session.Session.Encrypt(buf)
 			if encryptErr != nil {
 				log.Printf("failed to encrypt packet: %s", encryptErr)
 				continue
 			}
 
-			_, writeToUDPErr := udpClientSession.Conn().WriteToUDP(encryptedPacket, udpClientSession.RemoteAddr())
+			_, writeToUDPErr := session.conn.WriteToUDP(encryptedPacket, session.udpAddr)
 			if writeToUDPErr != nil {
-				log.Printf("failed to send packet to %s: %v", udpClientSession.RemoteAddr(), writeToUDPErr)
+				log.Printf("failed to send packet to %s: %v", session.udpAddr, writeToUDPErr)
 			}
 		}
 	}
@@ -142,12 +148,17 @@ func (u *UdpTunWorker) HandleTransport() error {
 				continue
 			}
 
-			udpClientSession, exists := u.sessionManager.Load(clientAddr.String())
-			if !exists {
+			nip, nipOk := netip.AddrFromSlice(clientAddr.IP)
+			if !nipOk {
+				log.Printf("failed to parse IP address: %s", clientAddr.IP)
+				continue
+			}
+			session, ok := u.externalAddrToSession[nip]
+			if !ok {
 				// Pass initial data to registration function
 				regErr := u.udpRegisterClient(conn, clientAddr, dataBuf[:n])
 				if regErr != nil {
-					log.Printf("%s failed registration: %s\n", clientAddr.String(), regErr)
+					log.Printf("%s failed registration: %s\n", clientAddr.IP, regErr)
 					_, _ = conn.WriteToUDP([]byte{
 						byte(network.SessionReset),
 					}, clientAddr)
@@ -156,7 +167,7 @@ func (u *UdpTunWorker) HandleTransport() error {
 			}
 
 			// Handle client data
-			decrypted, decryptionErr := udpClientSession.Session().Decrypt(dataBuf[:n])
+			decrypted, decryptionErr := session.Session.Decrypt(dataBuf[:n])
 			if decryptionErr != nil {
 				log.Printf("failed to decrypt data: %s", decryptionErr)
 				continue
@@ -182,7 +193,7 @@ func (u *UdpTunWorker) udpRegisterClient(conn *net.UDPConn, clientAddr *net.UDPA
 	if handshakeErr != nil {
 		return handshakeErr
 	}
-	log.Printf("%s registered as: %s", clientAddr.String(), internalIpAddr)
+	log.Printf("%s registered as: %s", clientAddr.IP, internalIpAddr)
 
 	serverConfigurationManager := server_configuration.NewManager(server_configuration.NewServerResolver())
 	_, err := serverConfigurationManager.Configuration()
@@ -195,7 +206,21 @@ func (u *UdpTunWorker) udpRegisterClient(conn *net.UDPConn, clientAddr *net.UDPA
 		return udpSessionErr
 	}
 
-	u.sessionManager.Store(client_session.NewSessionImpl(conn, internalIpAddr, clientAddr, udpSession))
+	session := udpClientSession{
+		conn:    conn,
+		udpAddr: clientAddr,
+		Session: udpSession,
+	}
+
+	nip, _ := netip.ParseAddr(internalIpAddr)
+	nip = nip.Unmap()
+	u.internalIpToSession[nip] = session
+
+	externalNip, externalNipOk := netip.AddrFromSlice(clientAddr.IP)
+	if !externalNipOk {
+		return fmt.Errorf("failed to parse IP address: %s", clientAddr.IP)
+	}
+	u.externalAddrToSession[externalNip] = session
 
 	return nil
 }
