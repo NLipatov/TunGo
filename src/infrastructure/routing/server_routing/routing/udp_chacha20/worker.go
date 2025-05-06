@@ -42,8 +42,6 @@ func NewUdpTunWorker(
 }
 
 func (u *UdpTunWorker) HandleTun() error {
-	headerParser := network.NewBaseHeaderParser()
-
 	buf := make([]byte, network.MaxPacketLengthBytes+12)
 	udpReader := chacha20.NewUdpReader(u.tun)
 
@@ -77,21 +75,19 @@ func (u *UdpTunWorker) HandleTun() error {
 				continue
 			}
 
-			header, headerErr := headerParser.Parse(buf[12 : n+12])
-			if headerErr != nil {
-				log.Printf("failed to parse IP header: %v", headerErr)
+			// manually check if it's a IPv4 packet and get 4-byte destination IP from it
+			data := buf[12 : n+12]
+			if data[0]>>4 != 4 {
+				log.Printf("packet dropped: not IPv4")
 				continue
 			}
+			// 16-19 bytes representing a destination IP
+			var key [4]byte
+			copy(key[:], data[16:20])
 
-			destination := buf[12 : n+12][16:20]
-			key, ok := ip4key(destination)
-			if !ok {
-				log.Printf("packet dropped: non-IPv4 dest %v", header.GetDestinationIP())
-				continue
-			}
 			session, ok := u.internalIpToSession[key]
 			if !ok {
-				log.Printf("packet dropped: no connection with destination (dest. IP: %v)", header.GetDestinationIP())
+				log.Printf("packet dropped: non-IPv4 dest %v", key)
 				continue
 			}
 
