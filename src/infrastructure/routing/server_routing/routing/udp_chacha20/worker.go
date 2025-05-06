@@ -26,7 +26,7 @@ type UdpTunWorker struct {
 	ctx                   context.Context
 	tun                   io.ReadWriteCloser
 	settings              settings.ConnectionSettings
-	internalIpToSession   map[netip.Addr]udpClientSession
+	internalIpToSession   map[[4]byte]udpClientSession
 	externalAddrToSession map[netip.Addr]udpClientSession
 }
 
@@ -37,7 +37,7 @@ func NewUdpTunWorker(
 		tun:                   tun,
 		ctx:                   ctx,
 		settings:              settings,
-		internalIpToSession:   make(map[netip.Addr]udpClientSession),
+		internalIpToSession:   make(map[[4]byte]udpClientSession),
 		externalAddrToSession: make(map[netip.Addr]udpClientSession),
 	}
 }
@@ -84,12 +84,12 @@ func (u *UdpTunWorker) HandleTun() error {
 				continue
 			}
 
-			nip, nipOk := netip.AddrFromSlice(header.GetDestinationIP())
-			if !nipOk {
-				log.Printf("packet dropped: invalid destination address: %s", header.GetDestinationIP())
+			key, ok := ip4key(header.GetDestinationIP())
+			if !ok {
+				log.Printf("packet dropped: non-IPv4 dest %v", header.GetDestinationIP())
+				continue
 			}
-			nip = nip.Unmap() // <- remove IPv6‑mapping
-			session, ok := u.internalIpToSession[nip]
+			session, ok := u.internalIpToSession[key]
 			if !ok {
 				log.Printf("packet dropped: no connection with destination (source IP: %s, dest. IP:%s)", header.GetSourceIP(), header.GetDestinationIP())
 				continue
@@ -212,9 +212,12 @@ func (u *UdpTunWorker) udpRegisterClient(conn *net.UDPConn, clientAddr *net.UDPA
 		Session: udpSession,
 	}
 
-	nip, _ := netip.ParseAddr(internalIpAddr)
-	nip = nip.Unmap()
-	u.internalIpToSession[nip] = session
+	ip := net.ParseIP(internalIpAddr)
+	key, ok := ip4key(ip)
+	if !ok {
+		return fmt.Errorf("invalid internal IPv4: %s", internalIpAddr)
+	}
+	u.internalIpToSession[key] = session
 
 	externalNip, externalNipOk := netip.AddrFromSlice(clientAddr.IP)
 	if !externalNipOk {
@@ -223,4 +226,13 @@ func (u *UdpTunWorker) udpRegisterClient(conn *net.UDPConn, clientAddr *net.UDPA
 	u.externalAddrToSession[externalNip] = session
 
 	return nil
+}
+
+func ip4key(ip net.IP) (k [4]byte, ok bool) {
+	ip4 := ip.To4()
+	if ip4 == nil {
+		return
+	}
+	copy(k[:], ip4)
+	return k, true
 }
