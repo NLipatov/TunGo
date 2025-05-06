@@ -6,7 +6,6 @@ import (
 	"io"
 	"log"
 	"net"
-	"net/netip"
 	"os"
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
@@ -27,7 +26,7 @@ type UdpTunWorker struct {
 	tun                   io.ReadWriteCloser
 	settings              settings.ConnectionSettings
 	internalIpToSession   map[[4]byte]udpClientSession
-	externalAddrToSession map[netip.Addr]udpClientSession
+	externalAddrToSession map[[4]byte]udpClientSession
 }
 
 func NewUdpTunWorker(
@@ -38,7 +37,7 @@ func NewUdpTunWorker(
 		ctx:                   ctx,
 		settings:              settings,
 		internalIpToSession:   make(map[[4]byte]udpClientSession),
-		externalAddrToSession: make(map[netip.Addr]udpClientSession),
+		externalAddrToSession: make(map[[4]byte]udpClientSession),
 	}
 }
 
@@ -84,14 +83,15 @@ func (u *UdpTunWorker) HandleTun() error {
 				continue
 			}
 
-			key, ok := ip4key(header.GetDestinationIP())
+			destination := buf[12 : n+12][16:20]
+			key, ok := ip4key(destination)
 			if !ok {
 				log.Printf("packet dropped: non-IPv4 dest %v", header.GetDestinationIP())
 				continue
 			}
 			session, ok := u.internalIpToSession[key]
 			if !ok {
-				log.Printf("packet dropped: no connection with destination (source IP: %s, dest. IP:%s)", header.GetSourceIP(), header.GetDestinationIP())
+				log.Printf("packet dropped: no connection with destination (dest. IP: %v)", header.GetDestinationIP())
 				continue
 			}
 
@@ -148,12 +148,9 @@ func (u *UdpTunWorker) HandleTransport() error {
 				continue
 			}
 
-			nip, nipOk := netip.AddrFromSlice(clientAddr.IP)
-			if !nipOk {
-				log.Printf("failed to parse IP address: %s", clientAddr.IP)
-				continue
-			}
-			session, ok := u.externalAddrToSession[nip]
+			var key [4]byte
+			copy(key[:], clientAddr.IP.To4())
+			session, ok := u.externalAddrToSession[key]
 			if !ok {
 				// Pass initial data to registration function
 				regErr := u.udpRegisterClient(conn, clientAddr, dataBuf[:n])
@@ -219,11 +216,11 @@ func (u *UdpTunWorker) udpRegisterClient(conn *net.UDPConn, clientAddr *net.UDPA
 	}
 	u.internalIpToSession[key] = session
 
-	externalNip, externalNipOk := netip.AddrFromSlice(clientAddr.IP)
-	if !externalNipOk {
-		return fmt.Errorf("failed to parse IP address: %s", clientAddr.IP)
+	key, ok = ip4key(clientAddr.IP)
+	if !ok {
+		return fmt.Errorf("invalid IPv4: %v", clientAddr.IP)
 	}
-	u.externalAddrToSession[externalNip] = session
+	u.externalAddrToSession[key] = session
 
 	return nil
 }
