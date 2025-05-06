@@ -141,12 +141,10 @@ func (u *UdpTunWorker) HandleTransport() error {
 			s, ok := u.sessionManager.getByExternalIP(clientAddr.IP.To4())
 			if !ok {
 				// Pass initial data to registration function
-				regErr := u.udpRegisterClient(conn, clientAddr, dataBuf[:n])
+				regErr := u.registerClient(conn, clientAddr, dataBuf[:n])
 				if regErr != nil {
 					log.Printf("host %s failed registration: %s", clientAddr.IP, regErr)
-					_, _ = conn.WriteToUDP([]byte{
-						byte(network.SessionReset),
-					}, clientAddr)
+					u.resetSession(s)
 				}
 				continue
 			}
@@ -154,11 +152,8 @@ func (u *UdpTunWorker) HandleTransport() error {
 			// Handle client data
 			decrypted, decryptionErr := s.CryptographyService.Decrypt(dataBuf[:n])
 			if decryptionErr != nil {
-				u.sessionManager.delete(s)
 				log.Printf("failed to decrypt data: %s", decryptionErr)
-				_, _ = conn.WriteToUDP([]byte{
-					byte(network.SessionReset),
-				}, clientAddr)
+				u.resetSession(s)
 				continue
 			}
 
@@ -171,7 +166,7 @@ func (u *UdpTunWorker) HandleTransport() error {
 	}
 }
 
-func (u *UdpTunWorker) udpRegisterClient(conn *net.UDPConn, clientAddr *net.UDPAddr, initialData []byte) error {
+func (u *UdpTunWorker) registerClient(conn *net.UDPConn, clientAddr *net.UDPAddr, initialData []byte) error {
 	// Pass initialData and clientAddr to the crypto function
 	h := handshake.NewHandshake()
 	internalIpAddr, handshakeErr := h.ServerSideHandshake(&network.UdpAdapter{
@@ -205,4 +200,11 @@ func (u *UdpTunWorker) udpRegisterClient(conn *net.UDPConn, clientAddr *net.UDPA
 	})
 
 	return nil
+}
+
+func (u *UdpTunWorker) resetSession(session clientSession) {
+	u.sessionManager.delete(session)
+	_, _ = session.udpConn.WriteToUDP([]byte{
+		byte(network.SessionReset),
+	}, session.udpAddr)
 }
