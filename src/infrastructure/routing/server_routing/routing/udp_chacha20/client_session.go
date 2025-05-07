@@ -5,7 +5,7 @@ import (
 	"tungo/application"
 )
 
-type clientSession struct {
+type ClientSession struct {
 	udpConn                *net.UDPConn
 	udpAddr                *net.UDPAddr
 	CryptographyService    application.CryptographyService

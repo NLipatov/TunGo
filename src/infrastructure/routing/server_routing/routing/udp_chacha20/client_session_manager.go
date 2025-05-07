@@ -1,39 +1,39 @@
 package udp_chacha20
 
-type sessionManager struct {
-	internalIpToSession map[[4]byte]clientSession
-	externalIPToSession map[[4]byte]clientSession
+type UdpWorkerSessionManager struct {
+	internalIpToSession map[[4]byte]ClientSession
+	externalIPToSession map[[4]byte]ClientSession
 }
 
-func newSessionManager() sessionManager {
-	return sessionManager{
-		internalIpToSession: make(map[[4]byte]clientSession),
-		externalIPToSession: make(map[[4]byte]clientSession),
+func NewUdpWorkerSessionManager() UdpWorkerSessionManager {
+	return UdpWorkerSessionManager{
+		internalIpToSession: make(map[[4]byte]ClientSession),
+		externalIPToSession: make(map[[4]byte]ClientSession),
 	}
 }
 
-func (s *sessionManager) add(session clientSession) {
+func (s *UdpWorkerSessionManager) Add(session ClientSession) {
 	s.internalIpToSession[[4]byte(session.internalIP)] = session
 	s.externalIPToSession[[4]byte(session.externalIP)] = session
 }
 
-func (s *sessionManager) delete(session clientSession) {
+func (s *UdpWorkerSessionManager) Delete(session ClientSession) {
 	delete(s.externalIPToSession, [4]byte(session.externalIP))
 	delete(s.internalIpToSession, [4]byte(session.internalIP))
 }
 
-func (s *sessionManager) getByInternalIP(ip []byte) (clientSession, bool) {
+func (s *UdpWorkerSessionManager) GetByInternalIP(ip []byte) (ClientSession, bool) {
 	if len(ip) != 4 {
-		return clientSession{}, false
+		return ClientSession{}, false
 	}
 
 	value, found := s.internalIpToSession[[4]byte(ip)]
 	return value, found
 }
 
-func (s *sessionManager) getByExternalIP(ip []byte) (clientSession, bool) {
+func (s *UdpWorkerSessionManager) GetByExternalIP(ip []byte) (ClientSession, bool) {
 	if len(ip) != 4 {
-		return clientSession{}, false
+		return ClientSession{}, false
 	}
 
 	value, found := s.externalIPToSession[[4]byte(ip)]

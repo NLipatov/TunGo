@@ -19,7 +19,7 @@ type UdpTunWorker struct {
 	ctx            context.Context
 	tun            io.ReadWriteCloser
 	settings       settings.ConnectionSettings
-	sessionManager sessionManager
+	sessionManager UdpWorkerSessionManager
 }
 
 func NewUdpTunWorker(
@@ -29,7 +29,7 @@ func NewUdpTunWorker(
 		tun:            tun,
 		ctx:            ctx,
 		settings:       settings,
-		sessionManager: newSessionManager(),
+		sessionManager: NewUdpWorkerSessionManager(),
 	}
 }
 
@@ -78,7 +78,7 @@ func (u *UdpTunWorker) HandleTun() error {
 				continue
 			}
 
-			session, ok := u.sessionManager.getByInternalIP(destinationAddressBytes[:])
+			session, ok := u.sessionManager.GetByInternalIP(destinationAddressBytes[:])
 			if !ok {
 				log.Printf("packet dropped: no session with destination ip %v", destinationAddressBytes)
 				continue
@@ -138,7 +138,7 @@ func (u *UdpTunWorker) HandleTransport() error {
 				continue
 			}
 
-			s, ok := u.sessionManager.getByExternalIP(clientAddr.IP.To4())
+			s, ok := u.sessionManager.GetByExternalIP(clientAddr.IP.To4())
 			if !ok || s.udpAddr.Port != clientAddr.Port {
 				// Pass initial data to registration function
 				regErr := u.registerClient(conn, clientAddr, dataBuf[:n])
@@ -191,7 +191,7 @@ func (u *UdpTunWorker) registerClient(conn *net.UDPConn, clientAddr *net.UDPAddr
 	}
 
 	ip := net.ParseIP(internalIpAddr)
-	u.sessionManager.add(clientSession{
+	u.sessionManager.Add(ClientSession{
 		udpConn:             conn,
 		udpAddr:             clientAddr,
 		CryptographyService: udpSession,
