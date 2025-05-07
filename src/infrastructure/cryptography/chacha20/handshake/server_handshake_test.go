@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"io"
+	"net"
 	"testing"
 )
 
@@ -46,35 +47,30 @@ type stubCrypto struct {
 }
 
 func (s *stubCrypto) GenerateEd25519KeyPair() (ed25519.PublicKey, ed25519.PrivateKey, error) {
-	//TODO implement me
-	panic("implement me")
+	panic("not implemented")
 }
 
 func (s *stubCrypto) GenerateX25519KeyPair() ([]byte, [32]byte, error) {
-	//TODO implement me
-	panic("implement me")
+	panic("not implemented")
 }
 
-func (s *stubCrypto) GenerateRandomBytesArray(size int) []byte {
-	//TODO implement me
-	panic("implement me")
+func (s *stubCrypto) GenerateRandomBytesArray(_ int) []byte {
+	panic("not implemented")
 }
 
-func (s *stubCrypto) GenerateChaCha20KeysServerside(curvePrivate, serverNonce []byte, hello Hello) (sessionId [32]byte, clientToServerKey, serverToClientKey []byte, err error) {
-	//TODO implement me
-	panic("implement me")
+func (s *stubCrypto) GenerateChaCha20KeysServerside(_, _ []byte, _ Hello) (sessionId [32]byte, clientToServerKey, serverToClientKey []byte, err error) {
+	panic("not implemented")
 }
 
-func (s *stubCrypto) GenerateChaCha20KeysClientside(curvePrivate, sessionSalt []byte, hello Hello) ([]byte, []byte, [32]byte, error) {
-	//TODO implement me
-	panic("implement me")
+func (s *stubCrypto) GenerateChaCha20KeysClientside(_, _ []byte, _ Hello) ([]byte, []byte, [32]byte, error) {
+	panic("not implemented")
 }
 
-func (s *stubCrypto) Sign(privateKey ed25519.PrivateKey, data []byte) []byte {
+func (s *stubCrypto) Sign(_ ed25519.PrivateKey, _ []byte) []byte {
 	return s.signature
 }
 
-func (s *stubCrypto) Verify(publicKey ed25519.PublicKey, data, sig []byte) bool {
+func (s *stubCrypto) Verify(_ ed25519.PublicKey, _, _ []byte) bool {
 	return s.verifyOK
 }
 
@@ -82,7 +78,7 @@ func (s *stubCrypto) Verify(publicKey ed25519.PublicKey, data, sig []byte) bool 
 func buildHello(t *testing.T) []byte {
 	t.Helper()
 	edPub, _, _ := ed25519.GenerateKey(rand.Reader)
-	ch := NewClientHello(4, "1.2.3.4", edPub, make([]byte, curvePublicKeyLength), make([]byte, nonceLength))
+	ch := NewClientHello(4, net.ParseIP("1.2.3.4"), edPub, make([]byte, curvePublicKeyLength), make([]byte, nonceLength))
 	buf, err := ch.MarshalBinary()
 	if err != nil {
 		t.Fatalf("buildHello.MarshalBinary: %v", err)
@@ -99,7 +95,7 @@ func TestReceiveClientHello_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReceiveClientHello error: %v", err)
 	}
-	if ch.ipVersion != 4 || ch.ipAddress != "1.2.3.4" {
+	if ch.ipVersion != 4 || !bytes.Equal(ch.ipAddress, net.ParseIP("1.2.3.4")) {
 		t.Errorf("unexpected clientHello: %+v", ch)
 	}
 }
@@ -130,11 +126,11 @@ func TestSendServerHello_Success(t *testing.T) {
 	c := &stubCrypto{signature: sig}
 
 	curvePub := make([]byte, curvePublicKeyLength)
-	rand.Read(curvePub)
+	_, _ = rand.Read(curvePub)
 	nonce := make([]byte, nonceLength)
-	rand.Read(nonce)
+	_, _ = rand.Read(nonce)
 	clientNonce := make([]byte, nonceLength)
-	rand.Read(clientNonce)
+	_, _ = rand.Read(clientNonce)
 
 	conn := newFakeConn(nil)
 	hs := NewServerHandshake(conn)
@@ -180,16 +176,16 @@ func TestVerifyClientSignature_Success(t *testing.T) {
 	edPub, edPriv, _ := ed25519.GenerateKey(rand.Reader)
 	hello := ClientHello{
 		ipVersion:      4,
-		ipAddress:      "1.2.3.4",
+		ipAddress:      net.ParseIP("1.2.3.4"),
 		edPublicKey:    edPub,
 		curvePublicKey: make([]byte, curvePublicKeyLength),
 		nonce:          make([]byte, nonceLength),
 	}
-	rand.Read(hello.curvePublicKey)
-	rand.Read(hello.Nonce())
+	_, _ = rand.Read(hello.curvePublicKey)
+	_, _ = rand.Read(hello.Nonce())
 
 	serverNonce := make([]byte, nonceLength)
-	rand.Read(serverNonce)
+	_, _ = rand.Read(serverNonce)
 
 	// compute a real Ed25519 signature over the concatenation
 	data := append(append(hello.curvePublicKey, hello.Nonce()...), serverNonce...)

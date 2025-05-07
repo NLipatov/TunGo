@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
+	"net"
 	"testing"
 
 	"golang.org/x/crypto/curve25519"
@@ -78,7 +79,7 @@ func TestSendClientHello(t *testing.T) {
 	if !io.wroteHello {
 		t.Fatal("WriteClientHello was not called")
 	}
-	if io.helloArg.ipVersion != 4 || io.helloArg.ipAddress != s.InterfaceAddress {
+	if io.helloArg.ipVersion != 4 || !bytes.Equal(io.helloArg.ipAddress, net.ParseIP(s.InterfaceAddress)) {
 		t.Errorf("unexpected helloArg %+v", io.helloArg)
 	}
 
