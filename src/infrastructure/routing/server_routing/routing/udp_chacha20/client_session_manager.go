@@ -1,7 +1,6 @@
 package udp_chacha20
 
 import (
-	"fmt"
 	"tungo/infrastructure/routing/server_routing/session_management"
 )
 
@@ -31,27 +30,32 @@ func (s *workerSessionManager) Delete(session session) {
 }
 
 func (s *workerSessionManager) GetByInternalIP(ip []byte) (session, error) {
-	if len(ip) != 4 {
-		return session{}, fmt.Errorf("invalid ipv4 length (got %d bytes, expected 4 bytes)", len(ip))
+	if !s.validKeyLength(ip) {
+		return session{}, ErrInvalidIPLength
 	}
 
 	value, found := s.internalIpToSession[ipv4Key(ip)]
 	if !found {
-		return session{}, fmt.Errorf("session not found")
+		return session{}, ErrSessionNotFound
 	}
 
 	return value, nil
 }
 
 func (s *workerSessionManager) GetByExternalIP(ip []byte) (session, error) {
-	if len(ip) != 4 {
-		return session{}, fmt.Errorf("invalid ipv4 length (got %d bytes, expected 4 bytes)", len(ip))
+	if !s.validKeyLength(ip) {
+		return session{}, ErrInvalidIPLength
 	}
 
 	value, found := s.externalIPToSession[ipv4Key(ip)]
 	if !found {
-		return session{}, fmt.Errorf("session not found")
+		return session{}, ErrSessionNotFound
 	}
 
 	return value, nil
+}
+
+func (s *workerSessionManager) validKeyLength(key []byte) bool {
+	// it's expected that IPv4 IP-address is exactly 4 bytes long
+	return len(key) == 4
 }
