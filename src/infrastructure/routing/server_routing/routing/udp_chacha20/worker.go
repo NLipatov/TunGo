@@ -79,21 +79,21 @@ func (u *UdpTunWorker) HandleTun() error {
 				continue
 			}
 
-			session, ok := u.sessionManager.GetByInternalIP(destinationAddressBytes[:])
-			if !ok {
-				log.Printf("packet dropped: no session with destination ip %v", destinationAddressBytes)
+			clientSession, getErr := u.sessionManager.GetByInternalIP(destinationAddressBytes[:])
+			if getErr != nil {
+				log.Printf("packet dropped: %s, destination host: %v", getErr, destinationAddressBytes)
 				continue
 			}
 
-			encryptedPacket, encryptErr := session.CryptographyService.Encrypt(packetBuffer)
+			encryptedPacket, encryptErr := clientSession.CryptographyService.Encrypt(packetBuffer)
 			if encryptErr != nil {
 				log.Printf("failed to encrypt packet: %s", encryptErr)
 				continue
 			}
 
-			_, writeToUDPErr := session.udpConn.WriteToUDP(encryptedPacket, session.udpAddr)
+			_, writeToUDPErr := clientSession.udpConn.WriteToUDP(encryptedPacket, clientSession.udpAddr)
 			if writeToUDPErr != nil {
-				log.Printf("failed to send packet to %s: %v", session.udpAddr, writeToUDPErr)
+				log.Printf("failed to send packet to %s: %v", clientSession.udpAddr, writeToUDPErr)
 			}
 		}
 	}
@@ -139,12 +139,12 @@ func (u *UdpTunWorker) HandleTransport() error {
 				continue
 			}
 
-			s, ok := u.sessionManager.GetByExternalIP(clientAddr.IP.To4())
-			if !ok || s.udpAddr.Port != clientAddr.Port {
+			clientSession, getErr := u.sessionManager.GetByExternalIP(clientAddr.IP.To4())
+			if getErr != nil || clientSession.udpAddr.Port != clientAddr.Port {
 				// Pass initial data to registration function
 				regErr := u.registerClient(conn, clientAddr, dataBuf[:n])
 				if regErr != nil {
-					log.Printf("host %s failed registration: %s", clientAddr.IP, regErr)
+					log.Printf("host %v failed registration: %v", clientAddr.IP, regErr)
 					_, _ = conn.WriteToUDP([]byte{
 						byte(network.SessionReset),
 					}, clientAddr)
@@ -153,9 +153,9 @@ func (u *UdpTunWorker) HandleTransport() error {
 			}
 
 			// Handle client data
-			decrypted, decryptionErr := s.CryptographyService.Decrypt(dataBuf[:n])
+			decrypted, decryptionErr := clientSession.CryptographyService.Decrypt(dataBuf[:n])
 			if decryptionErr != nil {
-				log.Printf("failed to decrypt data: %s", decryptionErr)
+				log.Printf("failed to decrypt data: %v", decryptionErr)
 				continue
 			}
 
