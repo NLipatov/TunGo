@@ -1,4 +1,4 @@
-package udp_chacha20
+package session_management
 
 import "errors"
 

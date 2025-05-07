@@ -17,3 +17,11 @@ type session struct {
 	// externalIP is the client's real-world IPv4 address (e.g. 51.195.101.45).
 	internalIP, externalIP []byte
 }
+
+func (s session) InternalIP() []byte {
+	return s.internalIP
+}
+
+func (s session) ExternalIP() []byte {
+	return s.externalIP
+}

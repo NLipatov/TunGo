@@ -30,7 +30,7 @@ func NewUdpTunWorker(
 		tun:            tun,
 		ctx:            ctx,
 		settings:       settings,
-		sessionManager: NewUdpWorkerSessionManager(),
+		sessionManager: session_management.NewDefaultWorkerSessionManager[session](),
 	}
 }
 
