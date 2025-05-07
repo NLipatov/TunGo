@@ -11,6 +11,7 @@ import (
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/network"
+	"tungo/infrastructure/routing/server_routing/session_management"
 	"tungo/settings"
 	"tungo/settings/server_configuration"
 )
@@ -19,7 +20,7 @@ type UdpTunWorker struct {
 	ctx            context.Context
 	tun            io.ReadWriteCloser
 	settings       settings.ConnectionSettings
-	sessionManager UdpWorkerSessionManager
+	sessionManager session_management.WorkerSessionManager[UdpSession]
 }
 
 func NewUdpTunWorker(
@@ -185,16 +186,16 @@ func (u *UdpTunWorker) registerClient(conn *net.UDPConn, clientAddr *net.UDPAddr
 		return fmt.Errorf("failed to read server configuration: %s", err)
 	}
 
-	udpSession, udpSessionErr := chacha20.NewUdpSession(h.Id(), h.ServerKey(), h.ClientKey(), true)
-	if udpSessionErr != nil {
-		return udpSessionErr
+	cryptoSession, cryptoSessionErr := chacha20.NewUdpSession(h.Id(), h.ServerKey(), h.ClientKey(), true)
+	if cryptoSessionErr != nil {
+		return cryptoSessionErr
 	}
 
 	ip := net.ParseIP(internalIpAddr)
-	u.sessionManager.Add(ClientSession{
+	u.sessionManager.Add(UdpSession{
 		udpConn:             conn,
 		udpAddr:             clientAddr,
-		CryptographyService: udpSession,
+		CryptographyService: cryptoSession,
 		internalIP:          ip.To4(),
 		externalIP:          clientAddr.IP.To4(),
 	})
