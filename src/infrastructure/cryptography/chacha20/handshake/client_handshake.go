@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"fmt"
 	"golang.org/x/crypto/curve25519"
+	"net"
 	"tungo/application"
 	"tungo/settings"
 )
@@ -31,7 +32,7 @@ func (c *ClientHandshake) SendClientHello(
 	settings settings.ConnectionSettings,
 	edPublicKey ed25519.PublicKey,
 	sessionPublicKey, sessionSalt []byte) error {
-	hello := NewClientHello(4, settings.InterfaceAddress, edPublicKey, sessionPublicKey, sessionSalt)
+	hello := NewClientHello(4, net.ParseIP(settings.InterfaceAddress), edPublicKey, sessionPublicKey, sessionSalt)
 	return c.clientIO.WriteClientHello(hello)
 }
 

@@ -92,8 +92,7 @@ func (h *DefaultHandshake) ServerSideHandshake(conn application.ConnectionAdapte
 	h.clientKey = clientToServerKey
 	h.serverKey = serverToClientKey
 
-	internalIP := net.ParseIP(clientHello.ipAddress).To4()
-	return internalIP, nil
+	return clientHello.ipAddress, nil
 }
 
 func (h *DefaultHandshake) ClientSideHandshake(conn application.ConnectionAdapter, settings settings.ConnectionSettings) error {
