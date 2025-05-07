@@ -20,7 +20,7 @@ type UdpTunWorker struct {
 	ctx            context.Context
 	tun            io.ReadWriteCloser
 	settings       settings.ConnectionSettings
-	sessionManager session_management.WorkerSessionManager[UdpSession]
+	sessionManager session_management.WorkerSessionManager[session]
 }
 
 func NewUdpTunWorker(
@@ -192,7 +192,7 @@ func (u *UdpTunWorker) registerClient(conn *net.UDPConn, clientAddr *net.UDPAddr
 	}
 
 	ip := net.ParseIP(internalIpAddr)
-	u.sessionManager.Add(UdpSession{
+	u.sessionManager.Add(session{
 		udpConn:             conn,
 		udpAddr:             clientAddr,
 		CryptographyService: cryptoSession,

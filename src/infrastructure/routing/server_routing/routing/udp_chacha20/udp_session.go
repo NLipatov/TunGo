@@ -5,8 +5,8 @@ import (
 	"tungo/application"
 )
 
-// UdpSession represents a single encrypted session between a VPN client and server.
-type UdpSession struct {
+// session represents a single encrypted session between a VPN client and server.
+type session struct {
 	// udpConn is the underlying UDP connection used for sending and receiving packets.
 	udpConn *net.UDPConn
 	// udpAddr is the remote client's UDP address (IP and port).
