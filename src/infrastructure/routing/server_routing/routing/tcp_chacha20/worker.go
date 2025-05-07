@@ -141,7 +141,7 @@ func (w *TcpTunWorker) HandleTransport() error {
 func (w *TcpTunWorker) registerClient(conn net.Conn, tunFile io.ReadWriteCloser, ctx context.Context) {
 	log.Printf("connected: %s", conn.RemoteAddr())
 	h := handshake.NewHandshake()
-	internalIPString, handshakeErr := h.ServerSideHandshake(&network.TcpAdapter{
+	internalIP, handshakeErr := h.ServerSideHandshake(&network.TcpAdapter{
 		Conn: conn,
 	})
 	if handshakeErr != nil {
@@ -159,13 +159,13 @@ func (w *TcpTunWorker) registerClient(conn net.Conn, tunFile io.ReadWriteCloser,
 
 	tcpConn := conn.(*net.TCPConn)
 	addr := tcpConn.RemoteAddr().(*net.TCPAddr)
-	internalIP := net.ParseIP(internalIPString).To4()
+	internalIP = internalIP.To4()
 	externalIP := addr.IP.To4()
 
 	// Prevent IP spoofing
 	_, getErr := w.sessionManager.GetByInternalIP(internalIP)
 	if !errors.Is(getErr, session_management.ErrSessionNotFound) {
-		log.Printf("connection closed: %s (internal internalIP %s already in use)\n", conn.RemoteAddr(), internalIPString)
+		log.Printf("connection closed: %s (internal internalIP %s already in use)\n", conn.RemoteAddr(), internalIP)
 		_ = conn.Close()
 	}
 

@@ -171,7 +171,7 @@ func (u *UdpTunWorker) HandleTransport() error {
 func (u *UdpTunWorker) registerClient(conn *net.UDPConn, clientAddr *net.UDPAddr, initialData []byte) error {
 	// Pass initialData and clientAddr to the crypto function
 	h := handshake.NewHandshake()
-	internalIpAddr, handshakeErr := h.ServerSideHandshake(&network.UdpAdapter{
+	internalIP, handshakeErr := h.ServerSideHandshake(&network.UdpAdapter{
 		Conn:        *conn,
 		Addr:        *clientAddr,
 		InitialData: initialData,
@@ -191,16 +191,15 @@ func (u *UdpTunWorker) registerClient(conn *net.UDPConn, clientAddr *net.UDPAddr
 		return cryptoSessionErr
 	}
 
-	ip := net.ParseIP(internalIpAddr)
 	u.sessionManager.Add(session{
 		udpConn:             conn,
 		udpAddr:             clientAddr,
 		CryptographyService: cryptoSession,
-		internalIP:          ip.To4(),
+		internalIP:          internalIP.To4(),
 		externalIP:          clientAddr.IP.To4(),
 	})
 
-	log.Printf("%s registered as: %s", clientAddr.IP, internalIpAddr)
+	log.Printf("%s registered as: %s", clientAddr.IP, internalIP)
 
 	return nil
 }
