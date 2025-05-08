@@ -1,15 +1,22 @@
 package network
 
-import "net"
+import (
+	"net"
+	"net/netip"
+)
 
 type UdpAdapter struct {
-	Conn        net.UDPConn
-	Addr        net.UDPAddr
+	UdpConn     *net.UDPConn
+	AddrPort    netip.AddrPort
 	InitialData []byte
+
+	//read buffers
+	buf [65_547]byte
+	oob [1024]byte
 }
 
 func (ua *UdpAdapter) Write(data []byte) (int, error) {
-	return ua.Conn.WriteToUDP(data, &ua.Addr)
+	return ua.UdpConn.WriteToUDPAddrPort(data, ua.AddrPort)
 }
 
 func (ua *UdpAdapter) Read(buffer []byte) (int, error) {
@@ -19,10 +26,14 @@ func (ua *UdpAdapter) Read(buffer []byte) (int, error) {
 		return n, nil
 	}
 
-	n, _, err := ua.Conn.ReadFromUDP(buffer)
-	return n, err
+	n, _, _, _, err := ua.UdpConn.ReadMsgUDPAddrPort(ua.buf[:], ua.oob[:])
+	if err != nil {
+		return 0, err
+	}
+	copy(buffer[:n], ua.buf[:n])
+	return n, nil
 }
 
 func (ua *UdpAdapter) Close() error {
-	return ua.Conn.Close()
+	return ua.UdpConn.Close()
 }

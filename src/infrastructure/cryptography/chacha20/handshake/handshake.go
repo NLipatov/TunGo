@@ -24,8 +24,8 @@ type Handshake interface {
 	Id() [32]byte
 	ClientKey() []byte
 	ServerKey() []byte
-	ServerSideHandshake(conn application.ConnectionAdapter) (*string, error)
-	ClientSideHandshake(conn net.Conn, settings settings.ConnectionSettings) error
+	ServerSideHandshake(conn application.ConnectionAdapter) (net.IP, error)
+	ClientSideHandshake(conn application.ConnectionAdapter, settings settings.ConnectionSettings) error
 }
 
 type DefaultHandshake struct {
@@ -50,7 +50,7 @@ func (h *DefaultHandshake) ServerKey() []byte {
 	return h.serverKey
 }
 
-func (h *DefaultHandshake) ServerSideHandshake(conn application.ConnectionAdapter) (*string, error) {
+func (h *DefaultHandshake) ServerSideHandshake(conn application.ConnectionAdapter) (net.IP, error) {
 	c := newDefaultCrypto()
 
 	// Generate server hello response
@@ -92,10 +92,10 @@ func (h *DefaultHandshake) ServerSideHandshake(conn application.ConnectionAdapte
 	h.clientKey = clientToServerKey
 	h.serverKey = serverToClientKey
 
-	return &clientHello.ipAddress, nil
+	return clientHello.ipAddress, nil
 }
 
-func (h *DefaultHandshake) ClientSideHandshake(conn net.Conn, settings settings.ConnectionSettings) error {
+func (h *DefaultHandshake) ClientSideHandshake(conn application.ConnectionAdapter, settings settings.ConnectionSettings) error {
 	c := newDefaultCrypto()
 	configurationManager := client_configuration.NewManager()
 	clientConf, generateKeyErr := configurationManager.Configuration()

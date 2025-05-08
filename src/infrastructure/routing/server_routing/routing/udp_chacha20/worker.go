@@ -6,26 +6,22 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/netip"
 	"os"
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/network"
-	"tungo/infrastructure/routing/server_routing/client_session"
+	"tungo/infrastructure/routing/server_routing/session_management"
 	"tungo/settings"
 	"tungo/settings/server_configuration"
 )
-
-type UDPClient struct {
-	conn *net.UDPConn
-	addr *net.UDPAddr
-}
 
 type UdpTunWorker struct {
 	ctx            context.Context
 	tun            io.ReadWriteCloser
 	settings       settings.ConnectionSettings
-	sessionManager *client_session.Manager[*net.UDPConn, *net.UDPAddr]
+	sessionManager session_management.WorkerSessionManager[session]
 }
 
 func NewUdpTunWorker(
@@ -35,22 +31,22 @@ func NewUdpTunWorker(
 		tun:            tun,
 		ctx:            ctx,
 		settings:       settings,
-		sessionManager: client_session.NewManager[*net.UDPConn, *net.UDPAddr](),
+		sessionManager: session_management.NewDefaultWorkerSessionManager[session](),
 	}
 }
 
 func (u *UdpTunWorker) HandleTun() error {
-	headerParser := network.NewBaseHeaderParser()
-
-	buf := make([]byte, network.MaxPacketLengthBytes+12)
+	packetBuffer := make([]byte, network.MaxPacketLengthBytes+12)
 	udpReader := chacha20.NewUdpReader(u.tun)
+
+	destinationAddressBytes := [4]byte{}
 
 	for {
 		select {
 		case <-u.ctx.Done():
 			return nil
 		default:
-			n, err := udpReader.Read(buf)
+			n, err := udpReader.Read(packetBuffer)
 			if err != nil {
 				if u.ctx.Done() != nil {
 					return nil
@@ -75,34 +71,30 @@ func (u *UdpTunWorker) HandleTun() error {
 				continue
 			}
 
-			header, headerErr := headerParser.Parse(buf[12 : n+12])
-			if headerErr != nil {
-				log.Printf("failed to parse IP header: %v", headerErr)
+			// see udp_reader.go. It's putting payload length into first 12 bytes.
+			payload := packetBuffer[12 : n+12]
+			parser := network.FromIPPacket(payload)
+			destinationBytesErr := parser.ReadDestinationAddressBytes(destinationAddressBytes[:])
+			if destinationBytesErr != nil {
+				log.Printf("packet dropped: failed to read destination address bytes: %v", destinationBytesErr)
 				continue
 			}
 
-			destinationIP := header.GetDestinationIP().String()
-			sourceIP := header.GetSourceIP().String()
-			udpClientSession, ok := u.sessionManager.Load(destinationIP)
-			if !ok {
-				if destinationIP == "" || destinationIP == "<nil>" {
-					log.Printf("packet dropped: no dest. IP specified in IP packet header")
-					continue
-				}
-
-				log.Printf("packet dropped: no connection with destination (source IP: %s, dest. IP:%s)", sourceIP, destinationIP)
+			clientSession, getErr := u.sessionManager.GetByInternalIP(destinationAddressBytes[:])
+			if getErr != nil {
+				log.Printf("packet dropped: %s, destination host: %v", getErr, destinationAddressBytes)
 				continue
 			}
 
-			encryptedPacket, encryptErr := udpClientSession.Session().Encrypt(buf)
+			encryptedPacket, encryptErr := clientSession.CryptographyService.Encrypt(packetBuffer)
 			if encryptErr != nil {
 				log.Printf("failed to encrypt packet: %s", encryptErr)
 				continue
 			}
 
-			_, writeToUDPErr := udpClientSession.Conn().WriteToUDP(encryptedPacket, udpClientSession.Addr())
+			_, writeToUDPErr := clientSession.connectionAdapter.Write(encryptedPacket)
 			if writeToUDPErr != nil {
-				log.Printf("failed to send packet to %s: %v", udpClientSession.Addr(), writeToUDPErr)
+				log.Printf("failed to send packet to %v: %v", clientSession.remoteAddrPort, writeToUDPErr)
 			}
 		}
 	}
@@ -132,12 +124,14 @@ func (u *UdpTunWorker) HandleTransport() error {
 
 	dataBuf := make([]byte, network.MaxPacketLengthBytes+12)
 	oobBuf := make([]byte, 1024)
+	destinationAddressBuf := [4]byte{}
+
 	for {
 		select {
 		case <-u.ctx.Done():
 			return nil
 		default:
-			n, _, _, clientAddr, readFromUdpErr := conn.ReadMsgUDP(dataBuf, oobBuf)
+			n, _, _, clientAddr, readFromUdpErr := conn.ReadMsgUDPAddrPort(dataBuf, oobBuf)
 			if readFromUdpErr != nil {
 				if u.ctx.Done() != nil {
 					return nil
@@ -147,13 +141,14 @@ func (u *UdpTunWorker) HandleTransport() error {
 				continue
 			}
 
-			udpClientSession, exists := u.sessionManager.Load(clientAddr.String())
-			if !exists {
+			destinationAddressBuf = clientAddr.Addr().Unmap().As4()
+			clientSession, getErr := u.sessionManager.GetByExternalIP(destinationAddressBuf[:])
+			if getErr != nil || clientSession.remoteAddrPort.Port() != clientAddr.Port() {
 				// Pass initial data to registration function
-				regErr := u.udpRegisterClient(conn, clientAddr, dataBuf[:n])
+				regErr := u.registerClient(conn, clientAddr, dataBuf[:n])
 				if regErr != nil {
-					log.Printf("%s failed registration: %s\n", clientAddr.String(), regErr)
-					_, _ = conn.WriteToUDP([]byte{
+					log.Printf("host %v failed registration: %v", clientAddr.Addr().AsSlice(), regErr)
+					_, _ = conn.WriteToUDPAddrPort([]byte{
 						byte(network.SessionReset),
 					}, clientAddr)
 				}
@@ -161,9 +156,9 @@ func (u *UdpTunWorker) HandleTransport() error {
 			}
 
 			// Handle client data
-			decrypted, decryptionErr := udpClientSession.Session().Decrypt(dataBuf[:n])
+			decrypted, decryptionErr := clientSession.CryptographyService.Decrypt(dataBuf[:n])
 			if decryptionErr != nil {
-				log.Printf("failed to decrypt data: %s", decryptionErr)
+				log.Printf("failed to decrypt data: %v", decryptionErr)
 				continue
 			}
 
@@ -176,18 +171,20 @@ func (u *UdpTunWorker) HandleTransport() error {
 	}
 }
 
-func (u *UdpTunWorker) udpRegisterClient(conn *net.UDPConn, clientAddr *net.UDPAddr, initialData []byte) error {
+func (u *UdpTunWorker) registerClient(conn *net.UDPConn, clientAddr netip.AddrPort, initialData []byte) error {
+	_ = conn.SetReadBuffer(65536)
+	_ = conn.SetWriteBuffer(65536)
+
 	// Pass initialData and clientAddr to the crypto function
 	h := handshake.NewHandshake()
-	internalIpAddr, handshakeErr := h.ServerSideHandshake(&network.UdpAdapter{
-		Conn:        *conn,
-		Addr:        *clientAddr,
+	internalIP, handshakeErr := h.ServerSideHandshake(&network.UdpAdapter{
+		UdpConn:     conn,
+		AddrPort:    clientAddr,
 		InitialData: initialData,
 	})
 	if handshakeErr != nil {
 		return handshakeErr
 	}
-	log.Printf("%s registered as: %s", clientAddr.String(), *internalIpAddr)
 
 	serverConfigurationManager := server_configuration.NewManager(server_configuration.NewServerResolver())
 	_, err := serverConfigurationManager.Configuration()
@@ -195,12 +192,46 @@ func (u *UdpTunWorker) udpRegisterClient(conn *net.UDPConn, clientAddr *net.UDPA
 		return fmt.Errorf("failed to read server configuration: %s", err)
 	}
 
-	udpSession, udpSessionErr := chacha20.NewUdpSession(h.Id(), h.ServerKey(), h.ClientKey(), true)
-	if udpSessionErr != nil {
-		return udpSessionErr
+	cryptoSession, cryptoSessionErr := chacha20.NewUdpSession(h.Id(), h.ServerKey(), h.ClientKey(), true)
+	if cryptoSessionErr != nil {
+		return cryptoSessionErr
 	}
 
-	u.sessionManager.Store(client_session.NewSessionImpl(conn, *internalIpAddr, clientAddr, udpSession))
+	remoteAddr, remoteParseErr := netip.ParseAddrPort(clientAddr.String())
+	if remoteParseErr != nil {
+		return fmt.Errorf("invalid client address: %v", clientAddr)
+	}
 
+	u.sessionManager.Add(session{
+		connectionAdapter: &network.UdpAdapter{
+			UdpConn:  conn,
+			AddrPort: clientAddr,
+		},
+		remoteAddrPort:      remoteAddr,
+		CryptographyService: cryptoSession,
+		internalIP:          extractIPv4(internalIP),
+		externalIP:          extractIPv4(clientAddr.Addr().Unmap().AsSlice()),
+	})
+
+	log.Printf("%s registered as: %s", clientAddr.Addr().AsSlice(), internalIP)
+
+	return nil
+}
+
+func isIPv4Mapped(ip net.IP) bool {
+	// check for ::ffff:0:0/96 prefix
+	return ip[0] == 0 && ip[1] == 0 && ip[2] == 0 &&
+		ip[3] == 0 && ip[4] == 0 && ip[5] == 0 &&
+		ip[6] == 0 && ip[7] == 0 && ip[8] == 0 &&
+		ip[9] == 0 && ip[10] == 0xff && ip[11] == 0xff
+}
+
+func extractIPv4(ip net.IP) []byte {
+	if len(ip) == 16 && isIPv4Mapped(ip) {
+		return ip[12:16]
+	}
+	if len(ip) == 4 {
+		return ip
+	}
 	return nil
 }

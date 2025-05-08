@@ -54,7 +54,7 @@ func TestCreateAAD(t *testing.T) {
 	for i := range id {
 		id[i] = byte(i)
 	}
-	svc := &TcpCryptographyService{SessionId: id}
+	svc := &DefaultTcpSession{SessionId: id}
 	nonce := make([]byte, 12)
 	for i := range nonce {
 		nonce[i] = byte(i + 1)

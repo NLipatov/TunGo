@@ -3,11 +3,12 @@ package handshake
 import (
 	"crypto/ed25519"
 	"fmt"
+	"net"
 )
 
 type ClientHello struct {
 	ipVersion      uint8
-	ipAddress      string
+	ipAddress      net.IP
 	edPublicKey    ed25519.PublicKey
 	curvePublicKey []byte
 	nonce          []byte
@@ -15,7 +16,7 @@ type ClientHello struct {
 
 func NewClientHello(
 	IpVersion uint8,
-	IpAddress string,
+	IpAddress net.IP,
 	EdPublicKey ed25519.PublicKey,
 	CurvePublicKey []byte,
 	ClientNonce []byte) ClientHello {
@@ -75,7 +76,7 @@ func (c *ClientHello) UnmarshalBinary(data []byte) error {
 		return fmt.Errorf("invalid IP address length")
 	}
 
-	c.ipAddress = string(data[lengthHeaderLength : lengthHeaderLength+ipAddressLength])
+	c.ipAddress = data[lengthHeaderLength : lengthHeaderLength+ipAddressLength]
 
 	c.edPublicKey = data[lengthHeaderLength+ipAddressLength : lengthHeaderLength+ipAddressLength+curvePublicKeyLength]
 

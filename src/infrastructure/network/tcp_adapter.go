@@ -1,6 +1,8 @@
 package network
 
-import "net"
+import (
+	"net"
+)
 
 type TcpAdapter struct {
 	Conn net.Conn

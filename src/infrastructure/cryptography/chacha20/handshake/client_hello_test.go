@@ -3,25 +3,31 @@ package handshake
 import (
 	"bytes"
 	"crypto/rand"
+	"net"
 	"testing"
 )
 
-// helper builds a valid ClientHello and its serialized form
-func buildValidHello(t *testing.T, version uint8, ip string) ([]byte, ClientHello) {
+func buildValidHello(t *testing.T, version uint8, ipStr string) ([]byte, ClientHello) {
 	t.Helper()
 
-	// dummy keys and nonce
 	edPub := make([]byte, curvePublicKeyLength)
-	rand.Read(edPub)
+	if _, err := rand.Read(edPub); err != nil {
+		t.Fatalf("failed to generate ed25519 public key: %v", err)
+	}
 	curvePub := make([]byte, curvePublicKeyLength)
-	rand.Read(curvePub)
+	if _, err := rand.Read(curvePub); err != nil {
+		t.Fatalf("failed to generate curve public key: %v", err)
+	}
 	nonce := make([]byte, nonceLength)
-	rand.Read(nonce)
+	if _, err := rand.Read(nonce); err != nil {
+		t.Fatalf("failed to generate nonce: %v", err)
+	}
 
+	ip := net.ParseIP(ipStr)
 	ch := NewClientHello(version, ip, edPub, curvePub, nonce)
 	buf, err := ch.MarshalBinary()
 	if err != nil {
-		t.Fatalf("failed to marshal valid ClientHello: %v", err)
+		t.Fatalf("MarshalBinary failed for valid ClientHello: %v", err)
 	}
 	return buf, ch
 }
@@ -45,37 +51,37 @@ func TestMarshalUnmarshal_Success(t *testing.T) {
 		if got.ipVersion != orig.ipVersion {
 			t.Errorf("ipVersion: got %d want %d", got.ipVersion, orig.ipVersion)
 		}
-		if got.ipAddress != orig.ipAddress {
+		if !got.ipAddress.Equal(orig.ipAddress) {
 			t.Errorf("ipAddress: got %q want %q", got.ipAddress, orig.ipAddress)
 		}
 		if !bytes.Equal(got.edPublicKey, orig.edPublicKey) {
-			t.Errorf("edPublicKey mismatch")
+			t.Error("edPublicKey mismatch")
 		}
 		if !bytes.Equal(got.curvePublicKey, orig.curvePublicKey) {
-			t.Errorf("curvePublicKey mismatch")
+			t.Error("curvePublicKey mismatch")
 		}
 		if !bytes.Equal(got.nonce, orig.nonce) {
-			t.Errorf("nonce mismatch")
+			t.Error("nonce mismatch")
 		}
 	}
 }
 
 func TestMarshalBinary_InvalidVersion(t *testing.T) {
-	ch := NewClientHello(0, "192.168.0.1", nil, nil, nil)
+	ch := NewClientHello(0, net.ParseIP("192.168.0.1"), nil, nil, nil)
 	if _, err := ch.MarshalBinary(); err == nil {
 		t.Fatal("expected error for invalid IP version, got nil")
 	}
 }
 
 func TestMarshalBinary_ShortIPv4(t *testing.T) {
-	ch := NewClientHello(4, "1.1", nil, nil, nil)
+	ch := NewClientHello(4, net.ParseIP("1.1"), nil, nil, nil)
 	if _, err := ch.MarshalBinary(); err == nil {
 		t.Fatal("expected error for too short IPv4, got nil")
 	}
 }
 
 func TestMarshalBinary_ShortIPv6(t *testing.T) {
-	ch := NewClientHello(6, "1", nil, nil, nil)
+	ch := NewClientHello(6, net.ParseIP("1"), nil, nil, nil)
 	if _, err := ch.MarshalBinary(); err == nil {
 		t.Fatal("expected error for too short IPv6, got nil")
 	}
@@ -108,8 +114,7 @@ func TestUnmarshalBinary_InvalidVersion(t *testing.T) {
 
 func TestUnmarshalBinary_InvalidIPLength(t *testing.T) {
 	buf, _ := buildValidHello(t, 4, "10.0.0.5")
-	// set IP length byte too large
-	buf[1] = byte(len(buf)) // definitely > actual length
+	buf[1] = byte(len(buf)) // deliberately too large
 	var ch ClientHello
 	if err := ch.UnmarshalBinary(buf); err == nil {
 		t.Fatal("expected error for invalid IP length, got nil")
