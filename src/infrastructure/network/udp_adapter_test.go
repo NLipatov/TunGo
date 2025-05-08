@@ -3,12 +3,12 @@ package network
 import (
 	"bytes"
 	"net"
+	"net/netip"
 	"testing"
 	"time"
 )
 
 func TestUdpAdapterWrite(t *testing.T) {
-	// Create a UDP server listening on a random port.
 	serverAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("ResolveUDPAddr error: %v", err)
@@ -17,11 +17,8 @@ func TestUdpAdapterWrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListenUDP error: %v", err)
 	}
-	defer func(serverConn *net.UDPConn) {
-		_ = serverConn.Close()
-	}(serverConn)
+	defer serverConn.Close()
 
-	// Create a UDP client for sending data.
 	clientAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("ResolveUDPAddr error: %v", err)
@@ -30,16 +27,14 @@ func TestUdpAdapterWrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListenUDP error: %v", err)
 	}
-	defer func(clientConn *net.UDPConn) {
-		_ = clientConn.Close()
-	}(clientConn)
+	defer clientConn.Close()
 
-	// Use the server's address for sending.
 	serverUDPAddr := serverConn.LocalAddr().(*net.UDPAddr)
+	addrPort := netip.MustParseAddrPort(serverUDPAddr.String())
 
 	adapter := UdpAdapter{
-		Conn: *clientConn,    // Convert *net.UDPConn to net.UDPConn
-		Addr: *serverUDPAddr, // Server address
+		UdpConn:  clientConn,
+		AddrPort: addrPort,
 	}
 
 	data := []byte("udp test")
@@ -52,7 +47,6 @@ func TestUdpAdapterWrite(t *testing.T) {
 	}
 
 	buf := make([]byte, 1024)
-	// Set a short deadline to prevent blocking.
 	_ = serverConn.SetReadDeadline(time.Now().Add(1 * time.Second))
 	n, _, err = serverConn.ReadFromUDP(buf)
 	if err != nil {
@@ -64,7 +58,6 @@ func TestUdpAdapterWrite(t *testing.T) {
 }
 
 func TestUdpAdapterRead_InitialData(t *testing.T) {
-	// Create a dummy UDP connection to fill the Conn field.
 	addr, err := net.ResolveUDPAddr("udp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("ResolveUDPAddr error: %v", err)
@@ -73,18 +66,15 @@ func TestUdpAdapterRead_InitialData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListenUDP error: %v", err)
 	}
-	defer func(conn *net.UDPConn) {
-		_ = conn.Close()
-	}(conn)
+	defer conn.Close()
 
 	initData := []byte("initial")
 	adapter := UdpAdapter{
-		Conn:        *conn,
+		UdpConn:     conn,
 		InitialData: initData,
 	}
 
 	buf := make([]byte, 1024)
-	// First read should return the InitialData.
 	n, err := adapter.Read(buf)
 	if err != nil {
 		t.Fatalf("UdpAdapter Read error: %v", err)
@@ -93,17 +83,14 @@ func TestUdpAdapterRead_InitialData(t *testing.T) {
 		t.Errorf("Expected %q, got %q", initData, buf[:n])
 	}
 
-	// Subsequent call should attempt to read from the socket.
 	_ = conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
 	_, err = adapter.Read(buf)
-	// Expect a timeout error or zero bytes read.
 	if err == nil {
-		t.Errorf("Expected an error due to no data after InitialData was consumed")
+		t.Errorf("Expected timeout error due to no data after InitialData was consumed")
 	}
 }
 
 func TestUdpAdapterRead_Normal(t *testing.T) {
-	// Create a UDP client to read data through the adapter.
 	clientAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("ResolveUDPAddr error: %v", err)
@@ -112,24 +99,18 @@ func TestUdpAdapterRead_Normal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListenUDP error: %v", err)
 	}
-	defer func(clientConn *net.UDPConn) {
-		_ = clientConn.Close()
-	}(clientConn)
+	defer clientConn.Close()
 
 	adapter := UdpAdapter{
-		Conn: *clientConn,
-		// No InitialData provided.
+		UdpConn: clientConn,
 	}
 
-	// Simulate a server sending data to the client.
 	clientUDPAddr := clientConn.LocalAddr().(*net.UDPAddr)
 	serverConn, err := net.DialUDP("udp", nil, clientUDPAddr)
 	if err != nil {
 		t.Fatalf("DialUDP error: %v", err)
 	}
-	defer func(serverConn *net.UDPConn) {
-		_ = serverConn.Close()
-	}(serverConn)
+	defer serverConn.Close()
 
 	data := []byte("normal read")
 	n, err := serverConn.Write(data)
@@ -141,7 +122,6 @@ func TestUdpAdapterRead_Normal(t *testing.T) {
 	}
 
 	buf := make([]byte, 1024)
-	// Set a deadline to prevent blocking.
 	_ = clientConn.SetReadDeadline(time.Now().Add(1 * time.Second))
 	n, err = adapter.Read(buf)
 	if err != nil {

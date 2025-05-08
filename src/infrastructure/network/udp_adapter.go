@@ -27,8 +27,11 @@ func (ua *UdpAdapter) Read(buffer []byte) (int, error) {
 	}
 
 	n, _, _, _, err := ua.UdpConn.ReadMsgUDPAddrPort(ua.buf[:], ua.oob[:])
+	if err != nil {
+		return 0, err
+	}
 	copy(buffer[:n], ua.buf[:n])
-	return n, err
+	return n, nil
 }
 
 func (ua *UdpAdapter) Close() error {
