@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"errors"
 	"io"
+	"net"
 	"testing"
 )
 
@@ -40,14 +41,14 @@ func (f *clientIOFakeConn) Write(p []byte) (int, error) {
 func (f *clientIOFakeConn) Close() error { return nil }
 
 func TestWriteClientHello_Success(t *testing.T) {
-	ch := NewClientHello(4, "10.0.0.1",
+	ch := NewClientHello(4, net.ParseIP("10.0.0.1"),
 		bytes.Repeat([]byte{1}, ed25519.PublicKeySize),
 		bytes.Repeat([]byte{2}, curvePublicKeyLength),
 		bytes.Repeat([]byte{3}, nonceLength),
 	)
 	conn := newClientIOFakeConn(nil)
-	io := NewDefaultClientIO(conn)
-	if err := io.WriteClientHello(ch); err != nil {
+	clientIO := NewDefaultClientIO(conn)
+	if err := clientIO.WriteClientHello(ch); err != nil {
 		t.Fatalf("WriteClientHello failed: %v", err)
 	}
 	want, _ := ch.MarshalBinary()
@@ -58,24 +59,24 @@ func TestWriteClientHello_Success(t *testing.T) {
 
 func TestWriteClientHello_MarshalError(t *testing.T) {
 	// invalid version → MarshalBinary error
-	ch := NewClientHello(0, "x", nil, nil, nil)
+	ch := NewClientHello(0, net.ParseIP("x"), nil, nil, nil)
 	conn := newClientIOFakeConn(nil)
-	io := NewDefaultClientIO(conn)
-	if err := io.WriteClientHello(ch); err == nil {
+	clientIO := NewDefaultClientIO(conn)
+	if err := clientIO.WriteClientHello(ch); err == nil {
 		t.Error("expected Marshal error, got nil")
 	}
 }
 
 func TestWriteClientHello_WriteError(t *testing.T) {
-	ch := NewClientHello(4, "10.0.0.1",
+	ch := NewClientHello(4, net.ParseIP("10.0.0.1"),
 		bytes.Repeat([]byte{1}, ed25519.PublicKeySize),
 		bytes.Repeat([]byte{2}, curvePublicKeyLength),
 		bytes.Repeat([]byte{3}, nonceLength),
 	)
 	conn := newClientIOFakeConn(nil)
 	conn.writeErr = errors.New("write failure")
-	io := NewDefaultClientIO(conn)
-	if err := io.WriteClientHello(ch); err == nil {
+	clientIO := NewDefaultClientIO(conn)
+	if err := clientIO.WriteClientHello(ch); err == nil {
 		t.Error("expected write error, got nil")
 	}
 }
@@ -88,8 +89,8 @@ func TestReadServerHello_Success(t *testing.T) {
 	data, _ := sh.MarshalBinary()
 
 	conn := newClientIOFakeConn(data)
-	io := NewDefaultClientIO(conn)
-	got, err := io.ReadServerHello()
+	clientIO := NewDefaultClientIO(conn)
+	got, err := clientIO.ReadServerHello()
 	if err != nil {
 		t.Fatalf("ReadServerHello failed: %v", err)
 	}
@@ -107,8 +108,8 @@ func TestReadServerHello_Success(t *testing.T) {
 func TestReadServerHello_ReadError(t *testing.T) {
 	conn := newClientIOFakeConn(nil)
 	conn.readErr = io.ErrUnexpectedEOF
-	io := NewDefaultClientIO(conn)
-	if _, err := io.ReadServerHello(); err == nil {
+	clientIO := NewDefaultClientIO(conn)
+	if _, err := clientIO.ReadServerHello(); err == nil {
 		t.Error("expected read error, got nil")
 	}
 }
@@ -116,8 +117,8 @@ func TestReadServerHello_ReadError(t *testing.T) {
 func TestReadServerHello_UnmarshalError(t *testing.T) {
 	// too short → UnmarshalBinary error
 	conn := newClientIOFakeConn([]byte{1, 2, 3})
-	io := NewDefaultClientIO(conn)
-	if _, err := io.ReadServerHello(); err == nil {
+	clientIO := NewDefaultClientIO(conn)
+	if _, err := clientIO.ReadServerHello(); err == nil {
 		t.Error("expected unmarshal error, got nil")
 	}
 }
@@ -125,8 +126,8 @@ func TestReadServerHello_UnmarshalError(t *testing.T) {
 func TestWriteClientSignature_Success(t *testing.T) {
 	sig := bytes.Repeat([]byte{0xAB}, 64)
 	conn := newClientIOFakeConn(nil)
-	io := NewDefaultClientIO(conn)
-	if err := io.WriteClientSignature(NewSignature(sig)); err != nil {
+	clientIO := NewDefaultClientIO(conn)
+	if err := clientIO.WriteClientSignature(NewSignature(sig)); err != nil {
 		t.Fatalf("WriteClientSignature failed: %v", err)
 	}
 	if !bytes.Equal(conn.writeBuf.Bytes(), sig) {
@@ -137,8 +138,8 @@ func TestWriteClientSignature_Success(t *testing.T) {
 func TestWriteClientSignature_MarshalError(t *testing.T) {
 	sig := bytes.Repeat([]byte{0xAB}, 10)
 	conn := newClientIOFakeConn(nil)
-	io := NewDefaultClientIO(conn)
-	if err := io.WriteClientSignature(NewSignature(sig)); err == nil {
+	clientIO := NewDefaultClientIO(conn)
+	if err := clientIO.WriteClientSignature(NewSignature(sig)); err == nil {
 		t.Error("expected marshal error, got nil")
 	}
 }
@@ -147,8 +148,8 @@ func TestWriteClientSignature_WriteError(t *testing.T) {
 	sig := bytes.Repeat([]byte{0xAB}, 64)
 	conn := newClientIOFakeConn(nil)
 	conn.writeErr = errors.New("write fail")
-	io := NewDefaultClientIO(conn)
-	if err := io.WriteClientSignature(NewSignature(sig)); err == nil {
+	clientIO := NewDefaultClientIO(conn)
+	if err := clientIO.WriteClientSignature(NewSignature(sig)); err == nil {
 		t.Error("expected write error, got nil")
 	}
 }
