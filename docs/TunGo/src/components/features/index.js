@@ -8,7 +8,7 @@ const FeatureList = [
         Svg: require('@site/static/svg/racing-car.svg').default,
         description: (
             <>
-                <strong>No allocations</strong> during runtime. <br/>
+                <strong>No runtime allocations</strong><br/>
                 <strong>Negligible</strong> CPU usage under load.
             </>
         ),
@@ -17,10 +17,10 @@ const FeatureList = [
         title: 'RAM-Efficient',
         Svg: require('@site/static/svg/raspberry-pi.svg').default,
         description: (
-            <>
-                ~8 MB idle, ~14 MB under load. <br/>
-                Great for <strong>IoT and embedded systems</strong>
-            </>
+            <div style={{display: "flex", flexDirection: "column"}}>
+                Server: ~8MB<br/>
+                Client: ~4MB
+            </div>
         ),
     },
     {
@@ -44,29 +44,29 @@ const FeatureList = [
 ];
 
 function Feature({Svg, title, description}) {
-  return (
-    <div className={clsx('col col--3')}>
-      <div className="text--center">
-        <Svg className={styles.featureSvg} role="img" />
-      </div>
-      <div className="text--center padding-horiz--md">
-        <Heading as="h3">{title}</Heading>
-        <p>{description}</p>
-      </div>
-    </div>
-  );
+    return (
+        <div className={clsx('col col--3')}>
+            <div className="text--center">
+                <Svg className={styles.featureSvg} role="img" />
+            </div>
+            <div className="text--center padding-horiz--md">
+                <Heading as="h3">{title}</Heading>
+                <p>{description}</p>
+            </div>
+        </div>
+    );
 }
 
 export default function HomepageFeatures() {
-  return (
-    <section className={styles.features}>
-      <div className="container">
-        <div className="row">
-          {FeatureList.map((props, idx) => (
-            <Feature key={idx} {...props} />
-          ))}
-        </div>
-      </div>
-    </section>
-  );
+    return (
+        <section className={styles.features}>
+            <div className="container">
+                <div className="row">
+                    {FeatureList.map((props, idx) => (
+                        <Feature key={idx} {...props} />
+                    ))}
+                </div>
+            </div>
+        </section>
+    );
 }
