@@ -5,13 +5,17 @@ import (
 )
 
 type UdpAdapter struct {
-	Conn        net.UDPConn
-	Addr        net.UDPAddr
+	Conn        *net.UDPConn
+	Addr        *net.UDPAddr
 	InitialData []byte
+
+	//read buffers
+	buf [65_547]byte
+	oob [1024]byte
 }
 
 func (ua *UdpAdapter) Write(data []byte) (int, error) {
-	return ua.Conn.WriteToUDP(data, &ua.Addr)
+	return ua.Conn.WriteTo(data, ua.Addr)
 }
 
 func (ua *UdpAdapter) Read(buffer []byte) (int, error) {
@@ -21,7 +25,8 @@ func (ua *UdpAdapter) Read(buffer []byte) (int, error) {
 		return n, nil
 	}
 
-	n, _, err := ua.Conn.ReadFromUDP(buffer)
+	n, _, _, _, err := ua.Conn.ReadMsgUDPAddrPort(ua.buf[:], ua.oob[:])
+	copy(buffer[:n], ua.buf[:n])
 	return n, err
 }
 

@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/netip"
 	"os"
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
@@ -91,9 +92,9 @@ func (u *UdpTunWorker) HandleTun() error {
 				continue
 			}
 
-			_, writeToUDPErr := clientSession.udpConn.WriteToUDP(encryptedPacket, clientSession.udpAddr)
+			_, writeToUDPErr := clientSession.udpConn.WriteToUDPAddrPort(encryptedPacket, clientSession.remoteAddrPort)
 			if writeToUDPErr != nil {
-				log.Printf("failed to send packet to %s: %v", clientSession.udpAddr, writeToUDPErr)
+				log.Printf("failed to send packet to %v: %v", clientSession.remoteAddrPort, writeToUDPErr)
 			}
 		}
 	}
@@ -123,13 +124,14 @@ func (u *UdpTunWorker) HandleTransport() error {
 
 	dataBuf := make([]byte, network.MaxPacketLengthBytes+12)
 	oobBuf := make([]byte, 1024)
+	destinationAddressBuf := [4]byte{}
 
 	for {
 		select {
 		case <-u.ctx.Done():
 			return nil
 		default:
-			n, _, _, clientAddr, readFromUdpErr := conn.ReadMsgUDP(dataBuf, oobBuf)
+			n, _, _, clientAddr, readFromUdpErr := conn.ReadMsgUDPAddrPort(dataBuf, oobBuf)
 			if readFromUdpErr != nil {
 				if u.ctx.Done() != nil {
 					return nil
@@ -139,13 +141,14 @@ func (u *UdpTunWorker) HandleTransport() error {
 				continue
 			}
 
-			clientSession, getErr := u.sessionManager.GetByExternalIP(clientAddr.IP.To4())
-			if getErr != nil || clientSession.udpAddr.Port != clientAddr.Port {
+			destinationAddressBuf = clientAddr.Addr().Unmap().As4()
+			clientSession, getErr := u.sessionManager.GetByExternalIP(destinationAddressBuf[:])
+			if getErr != nil || clientSession.remoteAddrPort.Port() != clientAddr.Port() {
 				// Pass initial data to registration function
 				regErr := u.registerClient(conn, clientAddr, dataBuf[:n])
 				if regErr != nil {
-					log.Printf("host %v failed registration: %v", clientAddr.IP, regErr)
-					_, _ = conn.WriteToUDP([]byte{
+					log.Printf("host %v failed registration: %v", clientAddr.Addr().AsSlice(), regErr)
+					_, _ = conn.WriteToUDPAddrPort([]byte{
 						byte(network.SessionReset),
 					}, clientAddr)
 				}
@@ -168,12 +171,16 @@ func (u *UdpTunWorker) HandleTransport() error {
 	}
 }
 
-func (u *UdpTunWorker) registerClient(conn *net.UDPConn, clientAddr *net.UDPAddr, initialData []byte) error {
+func (u *UdpTunWorker) registerClient(conn *net.UDPConn, clientAddr netip.AddrPort, initialData []byte) error {
+	_ = conn.SetReadBuffer(65536)
+	_ = conn.SetWriteBuffer(65536)
+
+	udpAddr := net.UDPAddrFromAddrPort(clientAddr)
 	// Pass initialData and clientAddr to the crypto function
 	h := handshake.NewHandshake()
 	internalIP, handshakeErr := h.ServerSideHandshake(&network.UdpAdapter{
-		Conn:        *conn,
-		Addr:        *clientAddr,
+		Conn:        conn,
+		Addr:        udpAddr,
 		InitialData: initialData,
 	})
 	if handshakeErr != nil {
@@ -191,15 +198,38 @@ func (u *UdpTunWorker) registerClient(conn *net.UDPConn, clientAddr *net.UDPAddr
 		return cryptoSessionErr
 	}
 
+	remoteAddr, remoteParseErr := netip.ParseAddrPort(clientAddr.String())
+	if remoteParseErr != nil {
+		return fmt.Errorf("invalid client address: %v", clientAddr)
+	}
+
 	u.sessionManager.Add(session{
 		udpConn:             conn,
-		udpAddr:             clientAddr,
+		remoteAddrPort:      remoteAddr,
 		CryptographyService: cryptoSession,
-		internalIP:          internalIP.To4(),
-		externalIP:          clientAddr.IP.To4(),
+		internalIP:          extractIPv4(internalIP),
+		externalIP:          extractIPv4(clientAddr.Addr().Unmap().AsSlice()),
 	})
 
-	log.Printf("%s registered as: %s", clientAddr.IP, internalIP)
+	log.Printf("%s registered as: %s", clientAddr.Addr().AsSlice(), internalIP)
 
+	return nil
+}
+
+func isIPv4Mapped(ip net.IP) bool {
+	// check for ::ffff:0:0/96 prefix
+	return ip[0] == 0 && ip[1] == 0 && ip[2] == 0 &&
+		ip[3] == 0 && ip[4] == 0 && ip[5] == 0 &&
+		ip[6] == 0 && ip[7] == 0 && ip[8] == 0 &&
+		ip[9] == 0 && ip[10] == 0xff && ip[11] == 0xff
+}
+
+func extractIPv4(ip net.IP) []byte {
+	if len(ip) == 16 && isIPv4Mapped(ip) {
+		return ip[12:16]
+	}
+	if len(ip) == 4 {
+		return ip
+	}
 	return nil
 }
