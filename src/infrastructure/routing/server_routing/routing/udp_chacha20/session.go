@@ -1,17 +1,14 @@
 package udp_chacha20
 
 import (
-	"net"
 	"net/netip"
 	"tungo/application"
 )
 
 // session represents a single encrypted session between a VPN client and server.
 type session struct {
-	// udpConn is the underlying UDP connection used for sending and receiving packets.
-	udpConn *net.UDPConn
-	// remoteAddrPort is a representation of client's IP and a port number
-	remoteAddrPort netip.AddrPort
+	connectionAdapter application.ConnectionAdapter
+	remoteAddrPort    netip.AddrPort
 	// CryptographyService handles packet encryption and decryption.
 	CryptographyService application.CryptographyService
 	// internalIP is the client's VPN-assigned IPv4 address (e.g. 10.0.1.3).

@@ -92,7 +92,7 @@ func (u *UdpTunWorker) HandleTun() error {
 				continue
 			}
 
-			_, writeToUDPErr := clientSession.udpConn.WriteToUDPAddrPort(encryptedPacket, clientSession.remoteAddrPort)
+			_, writeToUDPErr := clientSession.connectionAdapter.Write(encryptedPacket)
 			if writeToUDPErr != nil {
 				log.Printf("failed to send packet to %v: %v", clientSession.remoteAddrPort, writeToUDPErr)
 			}
@@ -175,12 +175,11 @@ func (u *UdpTunWorker) registerClient(conn *net.UDPConn, clientAddr netip.AddrPo
 	_ = conn.SetReadBuffer(65536)
 	_ = conn.SetWriteBuffer(65536)
 
-	udpAddr := net.UDPAddrFromAddrPort(clientAddr)
 	// Pass initialData and clientAddr to the crypto function
 	h := handshake.NewHandshake()
 	internalIP, handshakeErr := h.ServerSideHandshake(&network.UdpAdapter{
-		Conn:        conn,
-		Addr:        udpAddr,
+		UdpConn:     conn,
+		AddrPort:    clientAddr,
 		InitialData: initialData,
 	})
 	if handshakeErr != nil {
@@ -204,7 +203,10 @@ func (u *UdpTunWorker) registerClient(conn *net.UDPConn, clientAddr netip.AddrPo
 	}
 
 	u.sessionManager.Add(session{
-		udpConn:             conn,
+		connectionAdapter: &network.UdpAdapter{
+			UdpConn:  conn,
+			AddrPort: clientAddr,
+		},
 		remoteAddrPort:      remoteAddr,
 		CryptographyService: cryptoSession,
 		internalIP:          extractIPv4(internalIP),
