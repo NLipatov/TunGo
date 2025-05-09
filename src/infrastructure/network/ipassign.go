@@ -3,88 +3,69 @@ package network
 import (
 	"encoding/binary"
 	"fmt"
-	"net"
+	"net/netip"
 )
 
-func ipToUint32(ip net.IP) (uint32, error) {
-	ip4 := ip.To4()
-	if ip4 == nil {
-		return 0, fmt.Errorf("invalid IPv4 address")
-	}
-	return binary.BigEndian.Uint32(ip4), nil
-}
-
-func uint32ToIP(ip uint32) net.IP {
-	result := make(net.IP, 4)
-	binary.BigEndian.PutUint32(result, ip)
-	return result
-}
-
+// AllocateServerIp returns the first usable IPv4 address in the given subnet.
 func AllocateServerIp(subnetCIDR string) (string, error) {
-	ip, _, err := net.ParseCIDR(subnetCIDR)
+	pref, err := netip.ParsePrefix(subnetCIDR)
 	if err != nil {
-		return "", fmt.Errorf("invalid subnet: %v", err)
+		return "", fmt.Errorf("invalid subnet: %w", err)
 	}
-
-	ipUint, err := ipToUint32(ip)
-	if err != nil {
-		return "", fmt.Errorf("invalid subnet: %v", err)
+	addr := pref.Addr()
+	if !addr.Is4() {
+		return "", fmt.Errorf("only IPv4 supported: %s", subnetCIDR)
 	}
-	serverIp := uint32ToIP(ipUint + 1) //server ip is always a first ip of subnetwork range
-
-	return fmt.Sprintf("%s", serverIp.String()), nil
+	// convert base network address to uint32 and add 1
+	arr := addr.As4() // [4]byte
+	base := binary.BigEndian.Uint32(arr[:])
+	// construct server IP as AddrFrom4
+	var b [4]byte
+	binary.BigEndian.PutUint32(b[:], base+1)
+	server := netip.AddrFrom4(b)
+	return server.String(), nil
 }
 
+// AllocateClientIp returns the IPv4 address for the given client index (0-based)
+// within the subnet, skipping network and broadcast addresses.
 func AllocateClientIp(subnetCIDR string, clientCounter int) (string, error) {
-	ip, network, err := net.ParseCIDR(subnetCIDR)
+	pref, err := netip.ParsePrefix(subnetCIDR)
 	if err != nil {
-		return "", fmt.Errorf("invalid subnet: %v", err)
+		return "", fmt.Errorf("invalid subnet: %w", err)
 	}
-
-	ipUint, err := ipToUint32(ip)
-	if err != nil {
-		return "", fmt.Errorf("invalid subnet: %v", err)
+	addr := pref.Addr()
+	if !addr.Is4() {
+		return "", fmt.Errorf("only IPv4 supported: %s", subnetCIDR)
 	}
-
-	maskSize, bits := network.Mask.Size()
-	availableAddresses := 1 << (bits - maskSize)
-
-	// minus 2 because we don't want to use network address and broadcasting address
-	if clientCounter >= availableAddresses-2 {
-		return "", fmt.Errorf("client counter exceeds available addresses in the subnet")
+	arr := addr.As4()
+	base := binary.BigEndian.Uint32(arr[:])
+	ones, bits := pref.Bits(), 32
+	total := 1 << (bits - ones)
+	if clientCounter < 0 || clientCounter >= total-2 {
+		return "", fmt.Errorf("client counter exceeds available addresses in the subnet: %d", clientCounter)
 	}
-
-	nextIPUint := ipUint + uint32(clientCounter) + 1
-
-	nextIP := uint32ToIP(nextIPUint)
-
-	if nextIP.Equal(network.IP) || isBroadcastAddress(nextIP, network.Mask) {
-		return "", fmt.Errorf("generated IP is invalid (network or broadcast address)")
+	// calculate client IP
+	next := base + 1 + uint32(clientCounter)
+	var b [4]byte
+	binary.BigEndian.PutUint32(b[:], next)
+	clientIP := netip.AddrFrom4(b)
+	// ensure not network or broadcast
+	if clientIP == addr || next == base+uint32(total-1) {
+		return "", fmt.Errorf("generated IP is invalid (network or broadcast address): %s", clientIP)
 	}
-
-	return nextIP.String(), nil
+	return clientIP.String(), nil
 }
 
+// ToCIDR combines an IP address with the mask length from the given subnet.
 func ToCIDR(subnetCIDR string, addressInSubnet string) (string, error) {
-	ip := net.ParseIP(addressInSubnet)
-	if ip == nil {
-		return "", fmt.Errorf("invalid IP address: %s", addressInSubnet)
-	}
-
-	_, network, err := net.ParseCIDR(subnetCIDR)
+	pref, err := netip.ParsePrefix(subnetCIDR)
 	if err != nil {
-		return "", fmt.Errorf("invalid subnet: %v", err)
+		return "", fmt.Errorf("invalid subnet: %w", err)
 	}
-	ones, _ := network.Mask.Size()
-
-	return fmt.Sprintf("%s/%d", ip.String(), ones), nil
-}
-
-func isBroadcastAddress(ip net.IP, mask net.IPMask) bool {
-	network := ip.Mask(mask)
-	broadcast := make(net.IP, len(network))
-	for i := range network {
-		broadcast[i] = network[i] | ^mask[i]
+	rip, err := netip.ParseAddr(addressInSubnet)
+	if err != nil {
+		return "", fmt.Errorf("invalid IP address: %w", err)
 	}
-	return ip.Equal(broadcast)
+	// preserve mask bits
+	return fmt.Sprintf("%s/%d", rip.String(), pref.Bits()), nil
 }
