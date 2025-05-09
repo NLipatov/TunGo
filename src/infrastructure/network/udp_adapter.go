@@ -3,16 +3,23 @@ package network
 import (
 	"net"
 	"net/netip"
+	"tungo/application"
 )
 
 type UdpAdapter struct {
-	UdpConn     *net.UDPConn
-	AddrPort    netip.AddrPort
-	InitialData []byte
+	UdpConn  *net.UDPConn
+	AddrPort netip.AddrPort
 
 	//read buffers
 	buf [65_547]byte
 	oob [1024]byte
+}
+
+func NewUdpAdapter(UdpConn *net.UDPConn, AddrPort netip.AddrPort) application.ConnectionAdapter {
+	return &UdpAdapter{
+		UdpConn:  UdpConn,
+		AddrPort: AddrPort,
+	}
 }
 
 func (ua *UdpAdapter) Write(data []byte) (int, error) {
@@ -20,12 +27,6 @@ func (ua *UdpAdapter) Write(data []byte) (int, error) {
 }
 
 func (ua *UdpAdapter) Read(buffer []byte) (int, error) {
-	if ua.InitialData != nil {
-		n := copy(buffer, ua.InitialData)
-		ua.InitialData = nil
-		return n, nil
-	}
-
 	n, _, _, _, err := ua.UdpConn.ReadMsgUDPAddrPort(ua.buf[:], ua.oob[:])
 	if err != nil {
 		return 0, err
