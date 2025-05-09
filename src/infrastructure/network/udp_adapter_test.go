@@ -5,36 +5,41 @@ import (
 	"net/netip"
 	"testing"
 	"time"
+	"tungo/application"
 )
 
-// Test that UdpAdapter implements ConnectionAdapter and performs I/O correctly.
-func TestUdpAdapter_ReadWriteClose(t *testing.T) {
-	// prepare server socket
+// setupConns creates a server and client UDPConns and returns them plus a ConnectionAdapter.
+func setupConns(t *testing.T) (serverConn *net.UDPConn, clientConn *net.UDPConn, clientAdapter application.ConnectionAdapter) {
 	serverConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
 	if err != nil {
 		t.Fatalf("setup server: %v", err)
 	}
-	defer func(serverConn *net.UDPConn) {
-		_ = serverConn.Close()
-	}(serverConn)
 
-	// prepare client socket
-	clientConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
+	clientConn, err = net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
 	if err != nil {
+		_ = serverConn.Close()
 		t.Fatalf("setup client: %v", err)
 	}
-	defer func(clientConn *net.UDPConn) {
-		_ = clientConn.Close()
-	}(clientConn)
 
-	// wrap client socket in UdpAdapter targeting server address
-	serverAddrPort, err := netip.ParseAddrPort(serverConn.LocalAddr().String())
+	addrPort, err := netip.ParseAddrPort(serverConn.LocalAddr().String())
 	if err != nil {
+		_ = serverConn.Close()
+		_ = clientConn.Close()
 		t.Fatalf("parse server addrport: %v", err)
 	}
-	clientAdapter := NewUdpAdapter(clientConn, serverAddrPort)
+	clientAdapter = NewUdpAdapter(clientConn, addrPort)
+	return serverConn, clientConn, clientAdapter
+}
 
-	// Write should send to serverConn
+func teardownConns(serverConn, clientConn *net.UDPConn) {
+	_ = serverConn.Close()
+	_ = clientConn.Close()
+}
+
+func TestUdpAdapter_Write(t *testing.T) {
+	serverConn, clientConn, clientAdapter := setupConns(t)
+	defer teardownConns(serverConn, clientConn)
+
 	msg := []byte("ping")
 	n, err := clientAdapter.Write(msg)
 	if err != nil {
@@ -44,7 +49,6 @@ func TestUdpAdapter_ReadWriteClose(t *testing.T) {
 		t.Errorf("Write wrote %d, want %d", n, len(msg))
 	}
 
-	// server receives via ReadMsgUDPAddrPort
 	buf := make([]byte, 16)
 	n2, _, _, _, err := serverConn.ReadMsgUDPAddrPort(buf, nil)
 	if err != nil {
@@ -53,39 +57,46 @@ func TestUdpAdapter_ReadWriteClose(t *testing.T) {
 	if string(buf[:n2]) != string(msg) {
 		t.Errorf("server got %q, want %q", buf[:n2], msg)
 	}
+}
 
-	// server sends back response to client
+func TestUdpAdapter_Read(t *testing.T) {
+	serverConn, clientConn, clientAdapter := setupConns(t)
+	defer teardownConns(serverConn, clientConn)
+
 	resp := []byte("pong")
 	clientAddrPort, err := netip.ParseAddrPort(clientConn.LocalAddr().String())
 	if err != nil {
 		t.Fatalf("parse client addrport: %v", err)
 	}
-	n3, err := serverConn.WriteToUDPAddrPort(resp, clientAddrPort)
+	n, err := serverConn.WriteToUDPAddrPort(resp, clientAddrPort)
 	if err != nil {
 		t.Fatalf("server WriteToUDPAddrPort: %v", err)
 	}
-	if n3 != len(resp) {
-		t.Errorf("server wrote %d, want %d", n3, len(resp))
+	if n != len(resp) {
+		t.Errorf("server wrote %d, want %d", n, len(resp))
 	}
 
-	// Read should get response
-	buf2 := make([]byte, 16)
+	buf := make([]byte, 16)
 	_ = clientConn.SetReadDeadline(time.Now().Add(time.Second))
-	n4, err := clientAdapter.Read(buf2)
+	n2, err := clientAdapter.Read(buf)
 	if err != nil {
 		t.Fatalf("Read error: %v", err)
 	}
-	if string(buf2[:n4]) != string(resp) {
-		t.Errorf("adapter.Read got %q, want %q", buf2[:n4], resp)
+	if string(buf[:n2]) != string(resp) {
+		t.Errorf("adapter.Read got %q, want %q", buf[:n2], resp)
 	}
+}
 
-	// Close underlying and ensure adapter.Close propagates
+func TestUdpAdapter_Close(t *testing.T) {
+	serverConn, clientConn, clientAdapter := setupConns(t)
+	defer teardownConns(serverConn, clientConn)
+
 	if err := clientAdapter.Close(); err != nil {
 		t.Errorf("Close error: %v", err)
 	}
 
-	// After close, Read should error
-	_, err = clientAdapter.Read(buf2)
+	buf := make([]byte, 4)
+	_, err := clientAdapter.Read(buf)
 	if err == nil {
 		t.Error("expected error after Close, got nil")
 	}
