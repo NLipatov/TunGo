@@ -177,11 +177,9 @@ func (u *UdpTunWorker) registerClient(conn *net.UDPConn, clientAddr netip.AddrPo
 
 	// Pass initialData and clientAddr to the crypto function
 	h := handshake.NewHandshake()
-	internalIP, handshakeErr := h.ServerSideHandshake(&network.UdpAdapter{
-		UdpConn:     conn,
-		AddrPort:    clientAddr,
-		InitialData: initialData,
-	})
+	adapter := network.NewInitialDataAdapter(
+		network.NewUdpAdapter(conn, clientAddr), initialData)
+	internalIP, handshakeErr := h.ServerSideHandshake(adapter)
 	if handshakeErr != nil {
 		return handshakeErr
 	}

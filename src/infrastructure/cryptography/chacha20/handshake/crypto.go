@@ -82,7 +82,8 @@ func (h *DefaultCrypto) GenerateChaCha20KeysServerside(
 	clientToServerKey = make([]byte, keySize)
 	_, _ = io.ReadFull(clientToServerHKDF, clientToServerKey)
 
-	identifier := NewSessionIdentifier(sharedSecret, salt[:])
+	readerFactory := NewDefaultSessionIdReader([]byte("session-id-derivation"), sharedSecret, salt[:])
+	identifier := NewSessionIdentifier(readerFactory.NewReader())
 	sessionId, deriveSessionIdErr := identifier.Identify()
 	if deriveSessionIdErr != nil {
 		return [32]byte{},
@@ -106,7 +107,8 @@ func (h *DefaultCrypto) GenerateChaCha20KeysClientside(curvePrivate, clientNonce
 	clientToServerKey := make([]byte, keySize)
 	_, _ = io.ReadFull(clientToServerHKDF, clientToServerKey)
 
-	identifier := NewSessionIdentifier(sharedSecret, salt[:])
+	readerFactory := NewDefaultSessionIdReader([]byte("session-id-derivation"), sharedSecret, salt[:])
+	identifier := NewSessionIdentifier(readerFactory.NewReader())
 	derivedSessionId, deriveSessionIdErr := identifier.Identify()
 	if deriveSessionIdErr != nil {
 		return nil, nil, [32]byte{}, fmt.Errorf("failed to derive session id: %s", derivedSessionId)

@@ -79,3 +79,27 @@ func TestTcpAdapterRead(t *testing.T) {
 
 	<-done
 }
+
+func TestTcpAdapterClose(t *testing.T) {
+	c1, c2 := net.Pipe()
+	defer func(c2 net.Conn) {
+		_ = c2.Close()
+	}(c2)
+	adapter := TcpAdapter{Conn: c1}
+
+	// Close the adapter
+	if err := adapter.Close(); err != nil {
+		t.Fatalf("Close error: %v", err)
+	}
+
+	// Subsequent Write should fail
+	if n, err := adapter.Write([]byte("x")); err == nil {
+		t.Errorf("expected error on Write after Close, got n=%d, err=nil", n)
+	}
+
+	// Subsequent Read should fail
+	buf := make([]byte, 1)
+	if n, err := adapter.Read(buf); err == nil {
+		t.Errorf("expected error on Read after Close, got n=%d, err=nil", n)
+	}
+}

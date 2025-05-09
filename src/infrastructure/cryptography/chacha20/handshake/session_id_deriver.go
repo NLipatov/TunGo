@@ -1,9 +1,7 @@
 package handshake
 
 import (
-	"crypto/sha256"
 	"fmt"
-	"golang.org/x/crypto/hkdf"
 	"io"
 )
 
@@ -12,21 +10,19 @@ type SessionIdentifier interface {
 }
 
 type DefaultSessionIdentifier struct {
-	secret, salt []byte
+	reader io.Reader
 }
 
-func NewSessionIdentifier(sharedSecret, salt []byte) SessionIdentifier {
+func NewSessionIdentifier(reader io.Reader) SessionIdentifier {
 	return &DefaultSessionIdentifier{
-		secret: sharedSecret,
-		salt:   salt,
+		reader: reader,
 	}
 }
 
 func (s *DefaultSessionIdentifier) Identify() ([32]byte, error) {
 	var sessionID [32]byte
 
-	hkdfReader := hkdf.New(sha256.New, s.secret, s.salt, []byte("session-id-derivation"))
-	if _, err := io.ReadFull(hkdfReader, sessionID[:]); err != nil {
+	if _, err := io.ReadFull(s.reader, sessionID[:]); err != nil {
 		return [32]byte{}, fmt.Errorf("failed to derive session ID: %w", err)
 	}
 

@@ -1,69 +1,103 @@
+// handshake/defaultsessionidentifier_test.go
 package handshake
 
 import (
-	"bytes"
-	"crypto/sha256"
-	"golang.org/x/crypto/hkdf"
+	"errors"
+	"fmt"
 	"io"
+	"strings"
 	"testing"
 )
 
-func TestIdentify_SameOutputOnRepeatedCalls(t *testing.T) {
-	secret := []byte("some-secret-value")
-	salt := []byte("some-salt-value")
+// mockDefaultSessionIdentifierReader simulates io.Reader for DefaultSessionIdentifier tests.
+type mockDefaultSessionIdentifierReader struct {
+	data []byte
+	err  error
+}
 
-	ident := NewSessionIdentifier(secret, salt)
+func (m *mockDefaultSessionIdentifierReader) Read(p []byte) (int, error) {
+	if m.err != nil {
+		return 0, m.err
+	}
+	n := copy(p, m.data)
+	// if not enough data, simulate EOF after copying
+	if len(m.data) > n {
+		m.data = m.data[n:]
+		return n, nil
+	}
+	m.data = nil
+	return n, io.EOF
+}
 
-	id1, err := ident.Identify()
+func TestDefaultSessionIdentifier_SuccessExact32(t *testing.T) {
+	// Prepare exactly 32 bytes
+	input := make([]byte, 32)
+	for i := range input {
+		input[i] = byte(i + 1)
+	}
+	rdr := &mockDefaultSessionIdentifierReader{data: append([]byte(nil), input...)}
+	id := NewSessionIdentifier(rdr)
+
+	got, err := id.Identify()
 	if err != nil {
-		t.Fatalf("Identify() failed: %v", err)
-	}
-	id2, err := ident.Identify()
-	if err != nil {
-		t.Fatalf("second Identify() failed: %v", err)
+		t.Fatalf("Identify() returned unexpected error: %v", err)
 	}
 
-	if !bytes.Equal(id1[:], id2[:]) {
-		t.Errorf("Identify() not deterministic: first=%x second=%x", id1, id2)
-	}
-	if len(id1) != 32 {
-		t.Errorf("expected 32‑byte session ID, got %d bytes", len(id1))
+	var want [32]byte
+	copy(want[:], input)
+	if got != want {
+		t.Errorf("Identify() = %v, want %v", got, want)
 	}
 }
 
-func TestIdentify_DifferentSecretOrSalt(t *testing.T) {
-	secret1 := []byte("secret1")
-	secret2 := []byte("secret2")
-	salt1 := []byte("salt1")
-	salt2 := []byte("salt2")
+func TestDefaultSessionIdentifier_SuccessMoreThan32(t *testing.T) {
+	// Provide more than 32 bytes; only first 32 should be used
+	full := make([]byte, 40)
+	for i := range full {
+		full[i] = byte(i + 10)
+	}
+	rdr := &mockDefaultSessionIdentifierReader{data: append([]byte(nil), full...)}
+	id := NewSessionIdentifier(rdr)
 
-	idA, _ := NewSessionIdentifier(secret1, salt1).Identify()
-	idB, _ := NewSessionIdentifier(secret1, salt2).Identify()
-	if bytes.Equal(idA[:], idB[:]) {
-		t.Errorf("IDs should differ when salt differs: %x vs %x", idA, idB)
+	got, err := id.Identify()
+	if err != nil {
+		t.Fatalf("Identify() with extra data error: %v", err)
 	}
 
-	idC, _ := NewSessionIdentifier(secret2, salt1).Identify()
-	if bytes.Equal(idA[:], idC[:]) {
-		t.Errorf("IDs should differ when secret differs: %x vs %x", idA, idC)
+	var want [32]byte
+	copy(want[:], full[:32])
+	if got != want {
+		t.Errorf("Identify() with extra data = %v, want %v", got, want)
 	}
 }
 
-func TestIdentify_MatchesDirectHKDF(t *testing.T) {
-	secret := []byte("another-secret")
-	salt := []byte("another-salt")
+func TestDefaultSessionIdentifier_ErrorShortRead(t *testing.T) {
+	// Provide fewer than 32 bytes and no error until EOF
+	short := make([]byte, 10)
+	rdr := &mockDefaultSessionIdentifierReader{data: short}
+	id := NewSessionIdentifier(rdr)
 
-	var expected [32]byte
-	h := hkdf.New(sha256.New, secret, salt, []byte("session-id-derivation"))
-	if _, err := io.ReadFull(h, expected[:]); err != nil {
-		t.Fatalf("manual HKDF read failed: %v", err)
+	_, err := id.Identify()
+	if err == nil {
+		t.Fatal("Identify() expected error on short read, got nil")
 	}
+	// ensure wrapped error message
+	if !strings.Contains(err.Error(), "failed to derive session ID") {
+		t.Errorf("error message = %q, want contain %q", err.Error(), "failed to derive session ID")
+	}
+}
 
-	got, err := NewSessionIdentifier(secret, salt).Identify()
-	if err != nil {
-		t.Fatalf("Identify() error: %v", err)
+func TestDefaultSessionIdentifier_ErrorReaderErr(t *testing.T) {
+	// Reader returns explicit error
+	expErr := fmt.Errorf("read failure")
+	rdr := &mockDefaultSessionIdentifierReader{err: expErr}
+	id := NewSessionIdentifier(rdr)
+
+	_, err := id.Identify()
+	if err == nil {
+		t.Fatal("Identify() expected reader error, got nil")
 	}
-	if !bytes.Equal(got[:], expected[:]) {
-		t.Errorf("Identify() = %x; want %x", got, expected)
+	if !errors.Is(err, expErr) {
+		t.Errorf("Identify() error = %v, want wrapped %v", err, expErr)
 	}
 }

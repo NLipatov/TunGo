@@ -1,133 +1,103 @@
 package network
 
 import (
-	"bytes"
 	"net"
 	"net/netip"
 	"testing"
 	"time"
+	"tungo/application"
 )
 
-func TestUdpAdapterWrite(t *testing.T) {
-	serverAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:0")
+// setupConns creates a server and client UDPConns and returns them plus a ConnectionAdapter.
+func setupConns(t *testing.T) (serverConn *net.UDPConn, clientConn *net.UDPConn, clientAdapter application.ConnectionAdapter) {
+	serverConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
 	if err != nil {
-		t.Fatalf("ResolveUDPAddr error: %v", err)
-	}
-	serverConn, err := net.ListenUDP("udp", serverAddr)
-	if err != nil {
-		t.Fatalf("ListenUDP error: %v", err)
-	}
-	defer serverConn.Close()
-
-	clientAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("ResolveUDPAddr error: %v", err)
-	}
-	clientConn, err := net.ListenUDP("udp", clientAddr)
-	if err != nil {
-		t.Fatalf("ListenUDP error: %v", err)
-	}
-	defer clientConn.Close()
-
-	serverUDPAddr := serverConn.LocalAddr().(*net.UDPAddr)
-	addrPort := netip.MustParseAddrPort(serverUDPAddr.String())
-
-	adapter := UdpAdapter{
-		UdpConn:  clientConn,
-		AddrPort: addrPort,
+		t.Fatalf("setup server: %v", err)
 	}
 
-	data := []byte("udp test")
-	n, err := adapter.Write(data)
+	clientConn, err = net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
 	if err != nil {
-		t.Fatalf("UdpAdapter Write error: %v", err)
-	}
-	if n != len(data) {
-		t.Fatalf("Write: expected %d bytes, got %d", len(data), n)
+		_ = serverConn.Close()
+		t.Fatalf("setup client: %v", err)
 	}
 
-	buf := make([]byte, 1024)
-	_ = serverConn.SetReadDeadline(time.Now().Add(1 * time.Second))
-	n, _, err = serverConn.ReadFromUDP(buf)
+	addrPort, err := netip.ParseAddrPort(serverConn.LocalAddr().String())
 	if err != nil {
-		t.Fatalf("ReadFromUDP error on server: %v", err)
+		_ = serverConn.Close()
+		_ = clientConn.Close()
+		t.Fatalf("parse server addrport: %v", err)
 	}
-	if !bytes.Equal(buf[:n], data) {
-		t.Errorf("Server received %q, expected %q", buf[:n], data)
+	clientAdapter = NewUdpAdapter(clientConn, addrPort)
+	return serverConn, clientConn, clientAdapter
+}
+
+func teardownConns(serverConn, clientConn *net.UDPConn) {
+	_ = serverConn.Close()
+	_ = clientConn.Close()
+}
+
+func TestUdpAdapter_Write(t *testing.T) {
+	serverConn, clientConn, clientAdapter := setupConns(t)
+	defer teardownConns(serverConn, clientConn)
+
+	msg := []byte("ping")
+	n, err := clientAdapter.Write(msg)
+	if err != nil {
+		t.Fatalf("Write error: %v", err)
+	}
+	if n != len(msg) {
+		t.Errorf("Write wrote %d, want %d", n, len(msg))
+	}
+
+	buf := make([]byte, 16)
+	n2, _, _, _, err := serverConn.ReadMsgUDPAddrPort(buf, nil)
+	if err != nil {
+		t.Fatalf("server ReadMsgUDPAddrPort: %v", err)
+	}
+	if string(buf[:n2]) != string(msg) {
+		t.Errorf("server got %q, want %q", buf[:n2], msg)
 	}
 }
 
-func TestUdpAdapterRead_InitialData(t *testing.T) {
-	addr, err := net.ResolveUDPAddr("udp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("ResolveUDPAddr error: %v", err)
-	}
-	conn, err := net.ListenUDP("udp", addr)
-	if err != nil {
-		t.Fatalf("ListenUDP error: %v", err)
-	}
-	defer conn.Close()
+func TestUdpAdapter_Read(t *testing.T) {
+	serverConn, clientConn, clientAdapter := setupConns(t)
+	defer teardownConns(serverConn, clientConn)
 
-	initData := []byte("initial")
-	adapter := UdpAdapter{
-		UdpConn:     conn,
-		InitialData: initData,
-	}
-
-	buf := make([]byte, 1024)
-	n, err := adapter.Read(buf)
+	resp := []byte("pong")
+	clientAddrPort, err := netip.ParseAddrPort(clientConn.LocalAddr().String())
 	if err != nil {
-		t.Fatalf("UdpAdapter Read error: %v", err)
+		t.Fatalf("parse client addrport: %v", err)
 	}
-	if !bytes.Equal(buf[:n], initData) {
-		t.Errorf("Expected %q, got %q", initData, buf[:n])
+	n, err := serverConn.WriteToUDPAddrPort(resp, clientAddrPort)
+	if err != nil {
+		t.Fatalf("server WriteToUDPAddrPort: %v", err)
+	}
+	if n != len(resp) {
+		t.Errorf("server wrote %d, want %d", n, len(resp))
 	}
 
-	_ = conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
-	_, err = adapter.Read(buf)
+	buf := make([]byte, 16)
+	_ = clientConn.SetReadDeadline(time.Now().Add(time.Second))
+	n2, err := clientAdapter.Read(buf)
+	if err != nil {
+		t.Fatalf("Read error: %v", err)
+	}
+	if string(buf[:n2]) != string(resp) {
+		t.Errorf("adapter.Read got %q, want %q", buf[:n2], resp)
+	}
+}
+
+func TestUdpAdapter_Close(t *testing.T) {
+	serverConn, clientConn, clientAdapter := setupConns(t)
+	defer teardownConns(serverConn, clientConn)
+
+	if err := clientAdapter.Close(); err != nil {
+		t.Errorf("Close error: %v", err)
+	}
+
+	buf := make([]byte, 4)
+	_, err := clientAdapter.Read(buf)
 	if err == nil {
-		t.Errorf("Expected timeout error due to no data after InitialData was consumed")
-	}
-}
-
-func TestUdpAdapterRead_Normal(t *testing.T) {
-	clientAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("ResolveUDPAddr error: %v", err)
-	}
-	clientConn, err := net.ListenUDP("udp", clientAddr)
-	if err != nil {
-		t.Fatalf("ListenUDP error: %v", err)
-	}
-	defer clientConn.Close()
-
-	adapter := UdpAdapter{
-		UdpConn: clientConn,
-	}
-
-	clientUDPAddr := clientConn.LocalAddr().(*net.UDPAddr)
-	serverConn, err := net.DialUDP("udp", nil, clientUDPAddr)
-	if err != nil {
-		t.Fatalf("DialUDP error: %v", err)
-	}
-	defer serverConn.Close()
-
-	data := []byte("normal read")
-	n, err := serverConn.Write(data)
-	if err != nil {
-		t.Fatalf("Server Write error: %v", err)
-	}
-	if n != len(data) {
-		t.Fatalf("Write: expected %d bytes, got %d", len(data), n)
-	}
-
-	buf := make([]byte, 1024)
-	_ = clientConn.SetReadDeadline(time.Now().Add(1 * time.Second))
-	n, err = adapter.Read(buf)
-	if err != nil {
-		t.Fatalf("UdpAdapter Read error: %v", err)
-	}
-	if !bytes.Equal(buf[:n], data) {
-		t.Errorf("Adapter Read: got %q, expected %q", buf[:n], data)
+		t.Error("expected error after Close, got nil")
 	}
 }
