@@ -131,7 +131,7 @@ jobs:
           @"
           [Setup]
           AppName=TunGo
-          AppVersion=$VER
+          AppVersion=1.0
           DefaultDirName={pf}\TunGo
           DefaultGroupName=TunGo
           OutputBaseFilename=tungo-windows-x64
