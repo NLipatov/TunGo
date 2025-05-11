@@ -170,14 +170,14 @@ jobs:
           end;
           "@ | Out-File setup.iss -Encoding utf8
       
-            - name: Build installer with Inno Setup
-              run: ISCC.exe setup.iss
-      
-            - name: Upload Windows installer artifact
-              uses: actions/upload-artifact@v4
-              with:
-                name: tungo-windows-x64
-                path: Output/tungo-windows-x64.exe
+      - name: Build installer with Inno Setup
+        run: ISCC.exe setup.iss
+
+      - name: Upload Windows installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tungo-windows-x64
+          path: Output/tungo-windows-x64.exe
 
   create-release:
     runs-on: ubuntu-latest
