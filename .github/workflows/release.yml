@@ -106,8 +106,7 @@ jobs:
         run: |
           cd src
           go mod tidy
-          go build -ldflags="-X tungo/presentation/runners/version.VersionTag=${VER}" \
-            -o ../tungo-windows-x64.exe .
+          go build -ldflags="-X tungo/presentation/runners/version.VersionTag=$env:VER" -o ../tungo-windows-x64.exe .
 
       - name: Create RunWithAdmin.ps1
         run: |
