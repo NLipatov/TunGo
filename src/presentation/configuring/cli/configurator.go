@@ -12,6 +12,7 @@ const (
 	ServerMode        = "s"
 	ServerConfGenMode = "s gen"
 	ClientMode        = "c"
+	Version           = "version"
 )
 
 type Configurator struct {
@@ -34,6 +35,8 @@ func (c *Configurator) Configure() (mode.Mode, error) {
 		return mode.Server, nil
 	case ServerConfGenMode:
 		return mode.ServerConfGen, nil
+	case Version:
+		return mode.Version, nil
 	default:
 		c.printUsage()
 		return mode.Unknown, fmt.Errorf("invalid arguments")

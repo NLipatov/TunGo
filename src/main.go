@@ -16,6 +16,7 @@ import (
 	"tungo/presentation/interactive_commands/handlers"
 	"tungo/presentation/runners/client"
 	"tungo/presentation/runners/server"
+	"tungo/presentation/runners/version"
 	"tungo/settings/client_configuration"
 	"tungo/settings/server_configuration"
 )
@@ -59,6 +60,8 @@ func main() {
 	case mode.Client:
 		fmt.Printf("Starting client...\n")
 		startClient(appCtx)
+	case mode.Version:
+		printVersion(appCtx)
 	default:
 		log.Printf("invalid app mode: %v", appMode)
 		os.Exit(1)
@@ -89,5 +92,10 @@ func startServer(appCtx context.Context) {
 	deps := server.NewDependencies(tunFactory, *conf, server_configuration.NewEd25519KeyManager(conf, configurationManager))
 
 	runner := server.NewRunner(deps)
+	runner.Run(appCtx)
+}
+
+func printVersion(appCtx context.Context) {
+	runner := version.NewRunner()
 	runner.Run(appCtx)
 }
