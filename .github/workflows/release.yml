@@ -129,46 +129,46 @@ jobs:
       - name: Create Inno Setup Script
         shell: pwsh
         run: |
-@"
-[Setup]
-AppName=TunGo
-AppVersion=$VER
-DefaultDirName={pf}\TunGo
-DefaultGroupName=TunGo
-OutputBaseFilename=tungo-windows-x64
-PrivilegesRequired=admin
-ArchitecturesAllowed=x64
-ArchitecturesInstallIn64BitMode=x64
-
-[Files]
-Source: "wintun.dll"; Flags: dontcopy
-Source: "tungo-windows-x64.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "TunGo.ico"; DestDir: "{app}"; Flags: ignoreversion
-
-[Icons]
-Name: "{group}\TunGo"; Filename: "{app}\tungo-windows-x64.exe"; WorkingDir: "{app}"; IconFilename: "{app}\TunGo.ico"
-
-[Code]
-procedure CopyWintunDll;
-var
-  sysDir, targetFile, tempFile: string;
-begin
-  sysDir := ExpandConstant('{sys}');
-  targetFile := sysDir + '\wintun.dll';
-  if not FileExists(targetFile) then begin
-    ExtractTemporaryFile('wintun.dll');
-    tempFile := ExpandConstant('{tmp}\wintun.dll');
-    if not FileCopy(tempFile, targetFile, False) then
-      MsgBox('Failed to copy wintun.dll to ' + sysDir, mbError, MB_OK);
-  end;
-end;
-
-procedure CurStepChanged(CurStep: TSetupStep);
-begin
-  if CurStep = ssPostInstall then
-    CopyWintunDll;
-end;
-"@ | Out-File setup.iss -Encoding utf8
+          @"
+          [Setup]
+          AppName=TunGo
+          AppVersion=$VER
+          DefaultDirName={pf}\TunGo
+          DefaultGroupName=TunGo
+          OutputBaseFilename=tungo-windows-x64
+          PrivilegesRequired=admin
+          ArchitecturesAllowed=x64
+          ArchitecturesInstallIn64BitMode=x64
+          
+          [Files]
+          Source: "wintun.dll"; Flags: dontcopy
+          Source: "tungo-windows-x64.exe"; DestDir: "{app}"; Flags: ignoreversion
+          Source: "TunGo.ico"; DestDir: "{app}"; Flags: ignoreversion
+          
+          [Icons]
+          Name: "{group}\TunGo"; Filename: "{app}\tungo-windows-x64.exe"; WorkingDir: "{app}"; IconFilename: "{app}\TunGo.ico"
+          
+          [Code]
+          procedure CopyWintunDll;
+          var
+            sysDir, targetFile, tempFile: string;
+          begin
+            sysDir := ExpandConstant('{sys}');
+            targetFile := sysDir + '\wintun.dll';
+            if not FileExists(targetFile) then begin
+              ExtractTemporaryFile('wintun.dll');
+              tempFile := ExpandConstant('{tmp}\wintun.dll');
+              if not FileCopy(tempFile, targetFile, False) then
+                MsgBox('Failed to copy wintun.dll to ' + sysDir, mbError, MB_OK);
+            end;
+          end;
+          
+          procedure CurStepChanged(CurStep: TSetupStep);
+          begin
+            if CurStep = ssPostInstall then
+              CopyWintunDll;
+          end;
+          "@ | Out-File setup.iss -Encoding utf8
       
             - name: Build installer with Inno Setup
               run: ISCC.exe setup.iss
