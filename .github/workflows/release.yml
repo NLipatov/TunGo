@@ -7,8 +7,25 @@ env:
   GO_VERSION: '1.24.0'
   
 jobs:
-  build-linux:
+  version-and-tag:
     runs-on: ubuntu-latest
+    outputs:
+      tag_name: ${{ steps.get_tag.outputs.tag_name }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get the latest git tag
+        id: get_tag
+        run: echo "tag_name=$(git describe --tags --abbrev=0)" >> $GITHUB_OUTPUT
+
+  build-linux:
+    needs: version-and-tag
+    runs-on: ubuntu-latest
+    env:
+     VER: ${{ needs.version-and-tag.outputs.tag_name }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -22,7 +39,8 @@ jobs:
         run: |
           cd src
           go mod tidy
-          go build -o ../tungo-linux-amd64
+          go build -ldflags="-X tungo/presentation/runners/version.VersionTag=${VER}" \
+            -o ../tungo-linux-amd64
 
       - name: Upload Linux binary artifact
         uses: actions/upload-artifact@v4
@@ -31,11 +49,14 @@ jobs:
           path: tungo-linux-amd64
 
   build-macos:
+    needs: version-and-tag
     runs-on: macos-latest
+    env:
+     VER: ${{ needs.version-and-tag.outputs.tag_name }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-  
+
       - name: Setup Go
         uses: actions/setup-go@v4
         with:
@@ -45,7 +66,8 @@ jobs:
         run: |
           cd src
           go mod tidy
-          GOOS=darwin GOARCH=amd64 go build -o ../tungo-darwin-amd64
+          GOOS=darwin GOARCH=amd64 go build -ldflags="-X tungo/presentation/runners/version.VersionTag=${VER}" \
+            -o ../tungo-darwin-amd64
   
       - name: Upload darwin-amd64
         uses: actions/upload-artifact@v4
@@ -57,7 +79,8 @@ jobs:
         run: |
           cd src
           go mod tidy
-          GOOS=darwin GOARCH=arm64 go build -o ../tungo-darwin-arm64
+          GOOS=darwin GOARCH=arm64 go build -ldflags="-X tungo/presentation/runners/version.VersionTag=${VER}" \
+            -o ../tungo-darwin-arm64
   
       - name: Upload darwin-arm64
         uses: actions/upload-artifact@v4
@@ -66,7 +89,10 @@ jobs:
           path: tungo-darwin-arm64
 
   build-windows:
+    needs: version-and-tag
     runs-on: windows-latest
+    env:
+     VER: ${{ needs.version-and-tag.outputs.tag_name }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -76,15 +102,12 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
 
-      - name: Install dependencies
-        run: |
-          cd src
-          go mod tidy
-
       - name: Build Windows x64 binary
         run: |
           cd src
-          go build -o ../tungo-windows-x64.exe .
+          go mod tidy
+          go build -ldflags="-X tungo/presentation/runners/version.VersionTag=${VER}" \
+            -o ../tungo-windows-x64.exe .
 
       - name: Create RunWithAdmin.ps1
         run: |
@@ -109,7 +132,7 @@ jobs:
           @"
           [Setup]
           AppName=TunGo
-          AppVersion=1.0
+          AppVersion=$VER
           DefaultDirName={pf}\TunGo
           DefaultGroupName=TunGo
           OutputBaseFilename=tungo-windows-x64
@@ -128,22 +151,22 @@ jobs:
           [Code]
           procedure CopyWintunDll;
           var
-          sysDir, targetFile, tempFile: string;
+            sysDir, targetFile, tempFile: string;
           begin
-          sysDir := ExpandConstant('{sys}');
-          targetFile := sysDir + '\wintun.dll';
-          if not FileExists(targetFile) then begin
-          ExtractTemporaryFile('wintun.dll');
-          tempFile := ExpandConstant('{tmp}\wintun.dll');
-          if not FileCopy(tempFile, targetFile, False) then
-          MsgBox('Failed to copy wintun.dll to ' + sysDir, mbError, MB_OK);
-          end;
+            sysDir := ExpandConstant('{sys}');
+            targetFile := sysDir + '\wintun.dll';
+            if not FileExists(targetFile) then begin
+              ExtractTemporaryFile('wintun.dll');
+              tempFile := ExpandConstant('{tmp}\wintun.dll');
+              if not FileCopy(tempFile, targetFile, False) then
+                MsgBox('Failed to copy wintun.dll to ' + sysDir, mbError, MB_OK);
+            end;
           end;
 
           procedure CurStepChanged(CurStep: TSetupStep);
           begin
-          if CurStep = ssPostInstall then
-          CopyWintunDll;
+            if CurStep = ssPostInstall then
+              CopyWintunDll;
           end;
           "@ | Out-File setup.iss -Encoding utf8
 
@@ -155,20 +178,6 @@ jobs:
         with:
           name: tungo-windows-x64
           path: Output/tungo-windows-x64.exe
-
-  version-and-tag:
-    runs-on: ubuntu-latest
-    outputs:
-      tag_name: ${{ steps.get_tag.outputs.tag_name }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Get the latest git tag
-        id: get_tag
-        run: echo "tag_name=$(git describe --tags --abbrev=0)" >> $GITHUB_OUTPUT
 
   create-release:
     runs-on: ubuntu-latest
