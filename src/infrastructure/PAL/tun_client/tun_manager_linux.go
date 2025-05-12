@@ -6,6 +6,7 @@ import (
 	"tungo/application"
 	"tungo/infrastructure/PAL/linux/ip"
 	"tungo/infrastructure/PAL/linux/iptables"
+	"tungo/infrastructure/PAL/linux/syscall"
 	"tungo/settings"
 	"tungo/settings/client_configuration"
 )
@@ -38,7 +39,7 @@ func (t *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 	}
 
 	// opens the TUN device
-	tunFile, openTunErr := ip.OpenTunByName(s.InterfaceName)
+	tunFile, openTunErr := syscall.CreateTunInterface(s.InterfaceName)
 	if openTunErr != nil {
 		return nil, fmt.Errorf("failed to open TUN interface: %v", openTunErr)
 	}

@@ -6,6 +6,7 @@ import (
 	"tungo/application"
 	"tungo/infrastructure/PAL/linux"
 	"tungo/infrastructure/PAL/linux/ip"
+	"tungo/infrastructure/PAL/linux/syscall"
 	"tungo/settings"
 )
 
@@ -31,7 +32,7 @@ func (s ServerTunFactory) CreateTunDevice(connSettings settings.ConnectionSettin
 }
 
 func (s ServerTunFactory) DisposeTunDevices(connSettings settings.ConnectionSettings) error {
-	tun, openErr := ip.OpenTunByName(connSettings.InterfaceName)
+	tun, openErr := syscall.CreateTunInterface(connSettings.InterfaceName)
 	if openErr != nil {
 		log.Fatalf("failed to open TUN interface by name: %v", openErr)
 	}

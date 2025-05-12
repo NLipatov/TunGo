@@ -1,4 +1,4 @@
-package ip
+package syscall
 
 type IfReq struct {
 	Name  [ifNamSiz]byte

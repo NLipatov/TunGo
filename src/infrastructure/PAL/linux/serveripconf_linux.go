@@ -6,6 +6,7 @@ import (
 	"os"
 	"tungo/infrastructure/PAL/linux/ip"
 	"tungo/infrastructure/PAL/linux/iptables"
+	"tungo/infrastructure/PAL/linux/syscall"
 	"tungo/infrastructure/network"
 	"tungo/settings"
 )
@@ -39,7 +40,7 @@ func SetupServerTun(settings settings.ConnectionSettings) (*os.File, error) {
 		log.Fatalf("failed to set MTU: %s", setMtuErr)
 	}
 
-	tunFile, err := ip.OpenTunByName(settings.InterfaceName)
+	tunFile, err := syscall.CreateTunInterface(settings.InterfaceName)
 	if err != nil {
 		log.Fatalf("failed to open TUN interface: %v", err)
 	}
@@ -73,7 +74,7 @@ func Configure(tunFile *os.File) error {
 }
 
 func Unconfigure(tunFile *os.File) {
-	tunName, err := ip.GetIfName(tunFile)
+	tunName, err := syscall.DetectTunNameFromFd(tunFile)
 	if err != nil {
 		log.Printf("failed to determing tunnel ifName: %s\n", err)
 	}
@@ -93,7 +94,7 @@ func Unconfigure(tunFile *os.File) {
 
 func setupForwarding(tunFile *os.File, extIface string) error {
 	// Get the name of the TUN interface
-	tunName, err := ip.GetIfName(tunFile)
+	tunName, err := syscall.DetectTunNameFromFd(tunFile)
 	if err != nil {
 		return fmt.Errorf("failed to determing tunnel ifName: %s\n", err)
 	}
@@ -116,7 +117,7 @@ func setupForwarding(tunFile *os.File, extIface string) error {
 }
 
 func clearForwarding(tunFile *os.File, extIface string) error {
-	tunName, err := ip.GetIfName(tunFile)
+	tunName, err := syscall.DetectTunNameFromFd(tunFile)
 	if err != nil {
 		return fmt.Errorf("failed to determing tunnel ifName: %s\n", err)
 	}
