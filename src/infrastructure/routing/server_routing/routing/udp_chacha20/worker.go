@@ -211,7 +211,7 @@ func (u *UdpTunWorker) registerClient(conn *net.UDPConn, clientAddr netip.AddrPo
 		externalIP:          extractIPv4(clientAddr.Addr().Unmap().AsSlice()),
 	})
 
-	log.Printf("%s registered as: %s", clientAddr.Addr().AsSlice(), internalIP)
+	log.Printf("%v registered as: %v", clientAddr.Addr().As4(), internalIP)
 
 	return nil
 }
