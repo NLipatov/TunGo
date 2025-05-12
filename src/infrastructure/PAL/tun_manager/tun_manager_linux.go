@@ -33,13 +33,8 @@ func (t *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 	}
 
 	// configureTUN client
-	if udpConfigurationErr := configureTUN(s); udpConfigurationErr != nil {
+	if udpConfigurationErr := t.configureTUN(s); udpConfigurationErr != nil {
 		return nil, fmt.Errorf("failed to configure client: %v", udpConfigurationErr)
-	}
-
-	// sets client's TUN device maximum transmission unit (MTU)
-	if setMtuErr := ip.SetMtu(s.InterfaceName, s.MTU); setMtuErr != nil {
-		return nil, fmt.Errorf("failed to set %d MTU for %s: %s", s.MTU, s.InterfaceName, setMtuErr)
 	}
 
 	// opens the TUN device
@@ -52,7 +47,7 @@ func (t *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 }
 
 // configureTUN Configures client's TUN device (creates the TUN device, assigns an IP to it, etc)
-func configureTUN(connSettings settings.ConnectionSettings) error {
+func (t *PlatformTunManager) configureTUN(connSettings settings.ConnectionSettings) error {
 	name, err := ip.UpNewTun(connSettings.InterfaceName)
 	if err != nil {
 		return fmt.Errorf("failed to create interface %v: %v", connSettings.InterfaceName, err)
@@ -106,6 +101,11 @@ func configureTUN(connSettings settings.ConnectionSettings) error {
 	configureClampingErr := iptables.ConfigureMssClamping()
 	if configureClampingErr != nil {
 		return configureClampingErr
+	}
+
+	// sets client's TUN device maximum transmission unit (MTU)
+	if setMtuErr := ip.SetMtu(connSettings.InterfaceName, connSettings.MTU); setMtuErr != nil {
+		return fmt.Errorf("failed to set %d MTU for %s: %s", connSettings.MTU, connSettings.InterfaceName, setMtuErr)
 	}
 
 	return nil
