@@ -3,7 +3,7 @@ package client
 import (
 	"fmt"
 	"tungo/application"
-	"tungo/infrastructure/PAL/tun_manager"
+	"tungo/infrastructure/PAL/tun_client"
 	"tungo/infrastructure/routing/client_routing/client_factory"
 	"tungo/settings/client_configuration"
 )
@@ -36,7 +36,7 @@ func (c *Dependencies) Initialize() error {
 
 	c.conn = client_factory.NewConnectionFactory(*conf)
 	c.worker = client_factory.NewWorkerFactory(*conf)
-	c.tun, err = tun_manager.NewPlatformTunManager(*conf)
+	c.tun, err = tun_client.NewPlatformTunManager(*conf)
 	if err != nil {
 		return fmt.Errorf("failed to configure tun: %w", err)
 	}
