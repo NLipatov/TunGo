@@ -46,8 +46,8 @@ func (i *Wrapper) LinkSetDevUp(devName string) error {
 }
 
 // AddrAddDev Assigns an IP to a network device
-func (i *Wrapper) AddrAddDev(devName string, ip string) error {
-	output, assignIPErr := i.commander.CombinedOutput("ip", "addr", "add", ip, "dev", devName)
+func (i *Wrapper) AddrAddDev(devName string, cidr string) error {
+	output, assignIPErr := i.commander.CombinedOutput("ip", "addr", "add", cidr, "dev", devName)
 	if assignIPErr != nil {
 		return fmt.Errorf("failed to assign IP to TUN %v: %v, output: %s", devName, assignIPErr, output)
 	}

@@ -6,7 +6,7 @@ type Contract interface {
 	LinkDelete(devName string) error
 	LinkSetDevUp(devName string) error
 	LinkSetDevMTU(devName string, mtu int) error
-	AddrAddDev(devName string, ip string) error
+	AddrAddDev(devName string, cidr string) error
 	AddrShowDev(ipV int, ifName string) (string, error)
 	RouteDefault() (string, error)
 	RouteAddDefaultDev(devName string) error
