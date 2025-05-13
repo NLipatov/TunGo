@@ -43,7 +43,7 @@ func (s ServerTunFactory) DisposeTunDevices(connSettings settings.ConnectionSett
 		log.Fatalf("failed to close TUN device: %v", closeErr)
 	}
 
-	_, delErr := ip.LinkDel(connSettings.InterfaceName)
+	_, delErr := ip.LinkDelete(connSettings.InterfaceName)
 	if delErr != nil {
 		return fmt.Errorf("error deleting TUN device: %v", delErr)
 	}

@@ -39,7 +39,7 @@ func generate() (*client_configuration.Configuration, error) {
 		return nil, err
 	}
 
-	defaultIfIpV4, addressResolutionError := ip.InterfaceIpAddr(4, defaultIf)
+	defaultIfIpV4, addressResolutionError := ip.AddrShowDev(4, defaultIf)
 	if addressResolutionError != nil {
 		if serverConf.FallbackServerAddress == "" {
 			return nil, fmt.Errorf("failed to resolve server IP and no fallback address provided in server configuration: %s", addressResolutionError)

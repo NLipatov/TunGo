@@ -13,19 +13,26 @@ import (
 )
 
 func SetupServerTun(settings settings.ConnectionSettings) (*os.File, error) {
-	_, _ = ip.LinkDel(settings.InterfaceName)
+	_, _ = ip.LinkDelete(settings.InterfaceName)
 
-	err := enableIPv4Forwarding()
+	output, err := sysctl.NetIpv4IpForward()
+	if err != nil {
+		return nil, fmt.Errorf("failed to enable IPv4 packet forwarding: %v, output: %s", err, output)
+	}
+
+	if string(output) != "net.ipv4.ip_forward = 1\n" {
+		output, err = sysctl.WNetIpv4IpForward()
+		if err != nil {
+			return nil, fmt.Errorf("failed to enable IPv4 packet forwarding: %v, output: %s", err, output)
+		}
+	}
+
+	_, err = ip.TunTapAddDevTun(settings.InterfaceName)
 	if err != nil {
 		return nil, err
 	}
 
-	_, err = ip.LinkAdd(settings.InterfaceName)
-	if err != nil {
-		return nil, err
-	}
-
-	_, err = ip.LinkSetUp(settings.InterfaceName)
+	_, err = ip.LinkSetDevUp(settings.InterfaceName)
 	if err != nil {
 		return nil, err
 	}
@@ -41,13 +48,13 @@ func SetupServerTun(settings settings.ConnectionSettings) (*os.File, error) {
 	if err != nil {
 		log.Fatalf("failed to conver server ip to CIDR format: %s", err)
 	}
-	_, err = ip.LinkAddrAdd(settings.InterfaceName, cidrServerIp)
+	_, err = ip.AddrAddDev(settings.InterfaceName, cidrServerIp)
 	if err != nil {
 		log.Fatalf("failed to conver server ip to CIDR format: %s", err)
 	}
 	fmt.Printf("assigned IP %s to interface %s\n", settings.Port, settings.InterfaceName)
 
-	setMtuErr := ip.SetMtu(settings.InterfaceName, settings.MTU)
+	setMtuErr := ip.LinkSetDevMTU(settings.InterfaceName, settings.MTU)
 	if setMtuErr != nil {
 		log.Fatalf("failed to set MTU: %s", setMtuErr)
 	}
@@ -145,23 +152,6 @@ func clearForwarding(tunFile *os.File, extIface string) error {
 	err = iptables.DropForwardFromDevToTun(tunName, extIface)
 	if err != nil {
 		return fmt.Errorf("failed to execute iptables command: %s", err)
-	}
-	return nil
-}
-
-func enableIPv4Forwarding() error {
-	output, err := sysctl.NetIpv4IpForward()
-	if err != nil {
-		return fmt.Errorf("failed to enable IPv4 packet forwarding: %v, output: %s", err, output)
-	}
-
-	if string(output) == "net.ipv4.ip_forward = 1\n" {
-		return nil
-	}
-
-	output, err = sysctl.WNetIpv4IpForward()
-	if err != nil {
-		return fmt.Errorf("failed to enable IPv4 packet forwarding: %v, output: %s", err, output)
 	}
 	return nil
 }

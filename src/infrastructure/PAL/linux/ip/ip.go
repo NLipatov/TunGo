@@ -8,8 +8,8 @@ import (
 	"strings"
 )
 
-// LinkAdd Adds new TUN device
-func LinkAdd(devName string) (string, error) {
+// TunTapAddDevTun Adds new TUN device
+func TunTapAddDevTun(devName string) (string, error) {
 	createTun := exec.Command("ip", "tuntap", "add", "dev", devName, "mode", "tun")
 	createTunOutput, err := createTun.CombinedOutput()
 	if err != nil {
@@ -19,8 +19,8 @@ func LinkAdd(devName string) (string, error) {
 	return devName, nil
 }
 
-// LinkDel Deletes network device by name
-func LinkDel(devName string) (string, error) {
+// LinkDelete Deletes network device by name
+func LinkDelete(devName string) (string, error) {
 	cmd := exec.Command("ip", "link", "delete", devName)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -30,8 +30,8 @@ func LinkDel(devName string) (string, error) {
 	return devName, nil
 }
 
-// LinkSetUp Sets network device status as UP
-func LinkSetUp(devName string) (string, error) {
+// LinkSetDevUp Sets network device status as UP
+func LinkSetDevUp(devName string) (string, error) {
 	startTun := exec.Command("ip", "link", "set", "dev", devName, "up")
 	startTunOutput, err := startTun.CombinedOutput()
 	if err != nil {
@@ -41,8 +41,8 @@ func LinkSetUp(devName string) (string, error) {
 	return devName, nil
 }
 
-// LinkAddrAdd Assigns an IP to a network device
-func LinkAddrAdd(devName string, ip string) (string, error) {
+// AddrAddDev Assigns an IP to a network device
+func AddrAddDev(devName string, ip string) (string, error) {
 	assignIP := exec.Command("ip", "addr", "add", ip, "dev", devName)
 	output, assignIPErr := assignIP.CombinedOutput()
 	if assignIPErr != nil {
@@ -93,8 +93,8 @@ func RouteGet(hostIp string) (string, error) {
 	return string(routeBytes), nil
 }
 
-// RouteAdd adds a route to host via device
-func RouteAdd(hostIp string, ifName string) error {
+// RouteAddDev adds a route to host via device
+func RouteAddDev(hostIp string, ifName string) error {
 	cmd := exec.Command("ip", "route", "add", hostIp, "dev", ifName)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -103,8 +103,8 @@ func RouteAdd(hostIp string, ifName string) error {
 	return err
 }
 
-// RouteAddViaGateway adds a route to host via device via gateway
-func RouteAddViaGateway(hostIp string, ifName string, gateway string) error {
+// RouteAddViaDev adds a route to host via device via gateway
+func RouteAddViaDev(hostIp string, ifName string, gateway string) error {
 	cmd := exec.Command("ip", "route", "add", hostIp, "via", gateway, "dev", ifName)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -123,8 +123,8 @@ func RouteDel(hostIp string) error {
 	return err
 }
 
-// SetMtu sets device mtu
-func SetMtu(devName string, mtu int) error {
+// LinkSetDevMTU sets device MTU
+func LinkSetDevMTU(devName string, mtu int) error {
 	cmd := exec.Command("ip", "link", "set", "dev", devName, "mtu", fmt.Sprintf("%d", mtu))
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -133,8 +133,8 @@ func SetMtu(devName string, mtu int) error {
 	return err
 }
 
-// InterfaceIpAddr resolves an IP address (IPv4 or IPv6) assigned to interface
-func InterfaceIpAddr(ipV int, ifName string) (string, error) {
+// AddrShowDev resolves an IP address (IPv4 or IPv6) assigned to interface
+func AddrShowDev(ipV int, ifName string) (string, error) {
 	cmd := exec.Command("sh", "-c", fmt.Sprintf(
 		`ip -%v -o addr show dev %v | awk '{print $4}' | cut -d'/' -f1`, ipV, ifName))
 
