@@ -2,180 +2,234 @@ package ip
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 	"testing"
 )
 
 type mockCommander struct {
-	commands []string
-	Stdout   []byte
-	Stderr   []byte
-	Err      error
-}
-
-func (m *mockCommander) CombinedOutput(name string, args ...string) ([]byte, error) {
-	m.commands = append(m.commands, fmt.Sprintf("%s %s", name, strings.Join(args, " ")))
-	return m.Stderr, m.Err
+	OutputFunc         func(name string, args ...string) ([]byte, error)
+	CombinedOutputFunc func(name string, args ...string) ([]byte, error)
 }
 
 func (m *mockCommander) Output(name string, args ...string) ([]byte, error) {
-	m.commands = append(m.commands, fmt.Sprintf("%s %s", name, strings.Join(args, " ")))
-	return m.Stdout, m.Err
+	return m.OutputFunc(name, args...)
+}
+
+func (m *mockCommander) CombinedOutput(name string, args ...string) ([]byte, error) {
+	return m.CombinedOutputFunc(name, args...)
+}
+
+func newWrapper(success bool, output string, err error) Contract {
+	return NewWrapper(&mockCommander{
+		OutputFunc: func(name string, args ...string) ([]byte, error) {
+			if success {
+				return []byte(output), nil
+			}
+			return []byte(output), err
+		},
+		CombinedOutputFunc: func(name string, args ...string) ([]byte, error) {
+			if success {
+				return []byte(output), nil
+			}
+			return []byte(output), err
+		},
+	})
 }
 
 func TestTunTapAddDevTun(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
-		mock := &mockCommander{}
-		w := NewWrapper(mock)
-
-		err := w.TunTapAddDevTun("tun0")
+		err := newWrapper(true, "", nil).TunTapAddDevTun("tun0")
 		if err != nil {
-			t.Errorf("unexpected error: %v", err)
+			t.Fatal(err)
 		}
 	})
-
 	t.Run("error", func(t *testing.T) {
-		mock := &mockCommander{Stderr: []byte("fail"), Err: errors.New("exec error")}
-		w := NewWrapper(mock)
-
-		err := w.TunTapAddDevTun("tun0")
+		err := newWrapper(false, "error", errors.New("fail")).TunTapAddDevTun("tun0")
 		if err == nil || !strings.Contains(err.Error(), "failed to create TUN") {
-			t.Errorf("expected error, got: %v", err)
+			t.Fatal("expected failure")
 		}
 	})
 }
 
 func TestLinkDelete(t *testing.T) {
-	mock := &mockCommander{}
-	w := NewWrapper(mock)
-
-	err := w.LinkDelete("tun0")
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
+	t.Run("success", func(t *testing.T) {
+		err := newWrapper(true, "", nil).LinkDelete("tun0")
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Run("error", func(t *testing.T) {
+		err := newWrapper(false, "error", errors.New("fail")).LinkDelete("tun0")
+		if err == nil || !strings.Contains(err.Error(), "failed to delete interface") {
+			t.Fatal("expected failure")
+		}
+	})
 }
 
 func TestLinkSetDevUp(t *testing.T) {
-	mock := &mockCommander{}
-	w := NewWrapper(mock)
-
-	err := w.LinkSetDevUp("tun0")
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
+	t.Run("success", func(t *testing.T) {
+		err := newWrapper(true, "", nil).LinkSetDevUp("tun0")
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Run("error", func(t *testing.T) {
+		err := newWrapper(false, "output", errors.New("fail")).LinkSetDevUp("tun0")
+		if err == nil {
+			t.Fatal("expected error")
+		}
+	})
 }
 
 func TestAddrAddDev(t *testing.T) {
-	mock := &mockCommander{}
-	w := NewWrapper(mock)
-
-	err := w.AddrAddDev("tun0", "10.0.0.1/24")
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
+	t.Run("success", func(t *testing.T) {
+		err := newWrapper(true, "", nil).AddrAddDev("tun0", "10.0.0.1/24")
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Run("error", func(t *testing.T) {
+		err := newWrapper(false, "output", errors.New("fail")).AddrAddDev("tun0", "10.0.0.1/24")
+		if err == nil {
+			t.Fatal("expected error")
+		}
+	})
 }
 
 func TestRouteDefault(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
-		mock := &mockCommander{Stdout: []byte("default via 10.0.0.1 dev eth0")}
-		w := NewWrapper(mock)
-
+		w := newWrapper(true, "default via 10.0.0.1 dev eth0\n", nil)
 		iface, err := w.RouteDefault()
 		if err != nil || iface != "eth0" {
-			t.Errorf("unexpected: iface=%s, err=%v", iface, err)
+			t.Fatal("failed to parse default route")
 		}
 	})
-
-	t.Run("no default route", func(t *testing.T) {
-		mock := &mockCommander{Stdout: []byte("no default route")}
-		w := NewWrapper(mock)
-
+	t.Run("no default", func(t *testing.T) {
+		w := newWrapper(true, "link-local route only", nil)
 		_, err := w.RouteDefault()
 		if err == nil {
-			t.Errorf("expected error")
+			t.Fatal("expected error")
+		}
+	})
+	t.Run("command error", func(t *testing.T) {
+		w := newWrapper(false, "output", errors.New("fail"))
+		_, err := w.RouteDefault()
+		if err == nil {
+			t.Fatal("expected error")
 		}
 	})
 }
 
 func TestRouteAddDefaultDev(t *testing.T) {
-	mock := &mockCommander{}
-	w := NewWrapper(mock)
-
-	err := w.RouteAddDefaultDev("tun0")
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
+	t.Run("success", func(t *testing.T) {
+		err := newWrapper(true, "", nil).RouteAddDefaultDev("tun0")
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Run("error", func(t *testing.T) {
+		err := newWrapper(false, "output", errors.New("fail")).RouteAddDefaultDev("tun0")
+		if err == nil {
+			t.Fatal("expected error")
+		}
+	})
 }
 
 func TestRouteGet(t *testing.T) {
-	mock := &mockCommander{Stdout: []byte("10.0.0.1 via dev eth0")}
-	w := NewWrapper(mock)
-
-	route, err := w.RouteGet("1.1.1.1")
-	if err != nil || route != "10.0.0.1 via dev eth0" {
-		t.Errorf("unexpected route or error: %v %v", route, err)
-	}
+	t.Run("success", func(t *testing.T) {
+		route, err := newWrapper(true, "10.0.0.1 dev eth0", nil).RouteGet("1.1.1.1")
+		if err != nil || !strings.Contains(route, "10.0.0.1") {
+			t.Fatal("unexpected result", err, route)
+		}
+	})
+	t.Run("error", func(t *testing.T) {
+		_, err := newWrapper(false, "output", errors.New("fail")).RouteGet("1.1.1.1")
+		if err == nil {
+			t.Fatal("expected error")
+		}
+	})
 }
 
 func TestRouteAddDev(t *testing.T) {
-	mock := &mockCommander{}
-	w := NewWrapper(mock)
-
-	err := w.RouteAddDev("1.1.1.1", "tun0")
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
+	t.Run("success", func(t *testing.T) {
+		err := newWrapper(true, "", nil).RouteAddDev("1.1.1.1", "tun0")
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Run("error", func(t *testing.T) {
+		err := newWrapper(false, "output", errors.New("fail")).RouteAddDev("1.1.1.1", "tun0")
+		if err == nil {
+			t.Fatal("expected error")
+		}
+	})
 }
 
 func TestRouteAddViaDev(t *testing.T) {
-	mock := &mockCommander{}
-	w := NewWrapper(mock)
-
-	err := w.RouteAddViaDev("1.1.1.1", "tun0", "10.0.0.1")
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
+	t.Run("success", func(t *testing.T) {
+		err := newWrapper(true, "", nil).RouteAddViaDev("1.1.1.1", "tun0", "10.0.0.1")
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Run("error", func(t *testing.T) {
+		err := newWrapper(false, "output", errors.New("fail")).RouteAddViaDev("1.1.1.1", "tun0", "10.0.0.1")
+		if err == nil {
+			t.Fatal("expected error")
+		}
+	})
 }
 
 func TestRouteDel(t *testing.T) {
-	mock := &mockCommander{}
-	w := NewWrapper(mock)
-
-	err := w.RouteDel("1.1.1.1")
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
+	t.Run("success", func(t *testing.T) {
+		err := newWrapper(true, "", nil).RouteDel("1.1.1.1")
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Run("error", func(t *testing.T) {
+		err := newWrapper(false, "output", errors.New("fail")).RouteDel("1.1.1.1")
+		if err == nil {
+			t.Fatal("expected error")
+		}
+	})
 }
 
 func TestLinkSetDevMTU(t *testing.T) {
-	mock := &mockCommander{}
-	w := NewWrapper(mock)
-
-	err := w.LinkSetDevMTU("tun0", 1400)
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
+	t.Run("success", func(t *testing.T) {
+		err := newWrapper(true, "", nil).LinkSetDevMTU("tun0", 1400)
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Run("error", func(t *testing.T) {
+		err := newWrapper(false, "output", errors.New("fail")).LinkSetDevMTU("tun0", 1400)
+		if err == nil {
+			t.Fatal("expected error")
+		}
+	})
 }
 
 func TestAddrShowDev(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
-		mock := &mockCommander{Stderr: []byte("10.0.0.1\n")}
-		w := NewWrapper(mock)
-
+		w := newWrapper(false, "10.0.0.1\n", nil)
 		ipStr, err := w.AddrShowDev(4, "tun0")
 		if err != nil || ipStr != "10.0.0.1" {
-			t.Errorf("unexpected result: %v, %v", ipStr, err)
+			t.Fatal("unexpected ip:", ipStr, err)
 		}
 	})
-
-	t.Run("empty", func(t *testing.T) {
-		mock := &mockCommander{Stderr: []byte("\n")}
-		w := NewWrapper(mock)
-
+	t.Run("empty ip", func(t *testing.T) {
+		w := newWrapper(false, "\n", nil)
 		_, err := w.AddrShowDev(4, "tun0")
 		if err == nil {
-			t.Errorf("expected error for empty output")
+			t.Fatal("expected error on empty IP")
+		}
+	})
+	t.Run("command error", func(t *testing.T) {
+		w := newWrapper(false, "error", errors.New("fail"))
+		_, err := w.AddrShowDev(4, "tun0")
+		if err == nil {
+			t.Fatal("expected error")
 		}
 	})
 }
