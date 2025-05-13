@@ -1,11 +1,11 @@
 package iptables
 
 type Contract interface {
-	EnableMasquerade(devName string) error
-	DisableMasquerade(devName string) error
-	AcceptForwardFromTunToDev(tunName, devName string) error
-	DropForwardFromTunToDev(tunName, devName string) error
-	AcceptForwardFromDevToTun(tunName, devName string) error
-	DropForwardFromDevToTun(tunName, devName string) error
+	EnableDevMasquerade(devName string) error
+	DisableDevMasquerade(devName string) error
+	EnableForwardingFromTunToDev(tunName, devName string) error
+	DisableForwardingFromTunToDev(tunName, devName string) error
+	EnableForwardingFromDevToTun(tunName, devName string) error
+	DisableForwardingFromDevToTun(tunName, devName string) error
 	ConfigureMssClamping() error
 }

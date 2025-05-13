@@ -128,7 +128,7 @@ func (s ServerTunFactory) configure(tunFile *os.File) error {
 		return err
 	}
 
-	err = s.iptables.EnableMasquerade(externalIfName)
+	err = s.iptables.EnableDevMasquerade(externalIfName)
 	if err != nil {
 		return fmt.Errorf("failed enabling NAT: %v", err)
 	}
@@ -153,7 +153,7 @@ func (s ServerTunFactory) Unconfigure(tunFile *os.File) {
 		log.Printf("failed to determing tunnel ifName: %s\n", err)
 	}
 
-	err = s.iptables.DisableMasquerade(tunName)
+	err = s.iptables.DisableDevMasquerade(tunName)
 	if err != nil {
 		log.Printf("failed to disbale NAT: %s\n", err)
 	}
@@ -177,12 +177,12 @@ func (s ServerTunFactory) setupForwarding(tunFile *os.File, extIface string) err
 	}
 
 	// Set up iptables rules
-	err = s.iptables.AcceptForwardFromTunToDev(tunName, extIface)
+	err = s.iptables.EnableForwardingFromTunToDev(tunName, extIface)
 	if err != nil {
 		return fmt.Errorf("failed to setup forwarding rule: %s", err)
 	}
 
-	err = s.iptables.AcceptForwardFromDevToTun(tunName, extIface)
+	err = s.iptables.EnableForwardingFromDevToTun(tunName, extIface)
 	if err != nil {
 		return fmt.Errorf("failed to setup forwarding rule: %s", err)
 	}
@@ -199,12 +199,12 @@ func (s ServerTunFactory) clearForwarding(tunFile *os.File, extIface string) err
 		return fmt.Errorf("failed to get TUN interface name")
 	}
 
-	err = s.iptables.DropForwardFromTunToDev(tunName, extIface)
+	err = s.iptables.DisableForwardingFromTunToDev(tunName, extIface)
 	if err != nil {
 		return fmt.Errorf("failed to execute iptables command: %s", err)
 	}
 
-	err = s.iptables.DropForwardFromDevToTun(tunName, extIface)
+	err = s.iptables.DisableForwardingFromDevToTun(tunName, extIface)
 	if err != nil {
 		return fmt.Errorf("failed to execute iptables command: %s", err)
 	}

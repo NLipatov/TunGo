@@ -13,7 +13,7 @@ func NewWrapper(commander PAL.Commander) *Wrapper {
 	return &Wrapper{commander: commander}
 }
 
-func (w *Wrapper) EnableMasquerade(devName string) error {
+func (w *Wrapper) EnableDevMasquerade(devName string) error {
 	output, err := w.commander.CombinedOutput("iptables", "-t", "nat",
 		"-A", "POSTROUTING", "-o", devName, "-j", "MASQUERADE")
 	if err != nil {
@@ -22,7 +22,7 @@ func (w *Wrapper) EnableMasquerade(devName string) error {
 	return nil
 }
 
-func (w *Wrapper) DisableMasquerade(devName string) error {
+func (w *Wrapper) DisableDevMasquerade(devName string) error {
 	output, err := w.commander.CombinedOutput("iptables", "-t", "nat",
 		"-D", "POSTROUTING", "-o", devName, "-j", "MASQUERADE")
 	if err != nil {
@@ -31,7 +31,7 @@ func (w *Wrapper) DisableMasquerade(devName string) error {
 	return nil
 }
 
-func (w *Wrapper) AcceptForwardFromTunToDev(tunName string, devName string) error {
+func (w *Wrapper) EnableForwardingFromTunToDev(tunName string, devName string) error {
 	output, err := w.commander.CombinedOutput("iptables", "-A", "FORWARD",
 		"-i", tunName, "-o", devName, "-j", "ACCEPT")
 	if err != nil {
@@ -42,7 +42,7 @@ func (w *Wrapper) AcceptForwardFromTunToDev(tunName string, devName string) erro
 	return nil
 }
 
-func (w *Wrapper) DropForwardFromTunToDev(tunName string, devName string) error {
+func (w *Wrapper) DisableForwardingFromTunToDev(tunName string, devName string) error {
 	output, err := w.commander.CombinedOutput("iptables", "-D", "FORWARD",
 		"-i", tunName, "-o", devName, "-j", "ACCEPT")
 	if err != nil {
@@ -54,7 +54,7 @@ func (w *Wrapper) DropForwardFromTunToDev(tunName string, devName string) error 
 	return nil
 }
 
-func (w *Wrapper) AcceptForwardFromDevToTun(tunName string, devName string) error {
+func (w *Wrapper) EnableForwardingFromDevToTun(tunName string, devName string) error {
 	output, err := w.commander.CombinedOutput("iptables", "-A", "FORWARD",
 		"-i", devName, "-o", tunName, "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT")
 	if err != nil {
@@ -65,7 +65,7 @@ func (w *Wrapper) AcceptForwardFromDevToTun(tunName string, devName string) erro
 	return nil
 }
 
-func (w *Wrapper) DropForwardFromDevToTun(tunName string, devName string) error {
+func (w *Wrapper) DisableForwardingFromDevToTun(tunName string, devName string) error {
 	output, err := w.commander.CombinedOutput("iptables", "-D", "FORWARD",
 		"-i", devName, "-o", tunName, "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT")
 	if err != nil {
