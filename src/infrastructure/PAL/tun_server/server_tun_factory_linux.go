@@ -55,7 +55,7 @@ func (s ServerTunFactory) DisposeTunDevices(connSettings settings.ConnectionSett
 		return fmt.Errorf("failed to close TUN interface: %w", closeErr)
 	}
 
-	_, delErr := s.ip.LinkDelete(connSettings.InterfaceName)
+	delErr := s.ip.LinkDelete(connSettings.InterfaceName)
 	if delErr != nil {
 		return fmt.Errorf("error deleting TUN device: %v", delErr)
 	}
@@ -65,14 +65,14 @@ func (s ServerTunFactory) DisposeTunDevices(connSettings settings.ConnectionSett
 
 func (s ServerTunFactory) createTun(settings settings.ConnectionSettings) (*os.File, error) {
 	// delete previous tun if any exist
-	_, _ = s.ip.LinkDelete(settings.InterfaceName)
+	_ = s.ip.LinkDelete(settings.InterfaceName)
 
-	_, devErr := s.ip.TunTapAddDevTun(settings.InterfaceName)
+	devErr := s.ip.TunTapAddDevTun(settings.InterfaceName)
 	if devErr != nil {
 		return nil, fmt.Errorf("could not create tuntap dev: %s", devErr)
 	}
 
-	_, upErr := s.ip.LinkSetDevUp(settings.InterfaceName)
+	upErr := s.ip.LinkSetDevUp(settings.InterfaceName)
 	if upErr != nil {
 		return nil, fmt.Errorf("could not set tuntap dev up: %s", upErr)
 	}
@@ -91,7 +91,7 @@ func (s ServerTunFactory) createTun(settings settings.ConnectionSettings) (*os.F
 	if cidrServerIpErr != nil {
 		return nil, fmt.Errorf("could not conver server IP(%s) to CIDR: %s", serverIp, cidrServerIpErr)
 	}
-	_, addrAddDev := s.ip.AddrAddDev(settings.InterfaceName, cidrServerIp)
+	addrAddDev := s.ip.AddrAddDev(settings.InterfaceName, cidrServerIp)
 	if addrAddDev != nil {
 		return nil, fmt.Errorf("failed to convert server ip to CIDR format: %s", addrAddDev)
 	}

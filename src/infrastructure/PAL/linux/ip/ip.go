@@ -1,13 +1,12 @@
 package ip
 
-// Contains wrapper-functions on ip-command
-
 import (
 	"fmt"
 	"strings"
 	"tungo/infrastructure/PAL"
 )
 
+// Wrapper is a wrapper around ip command from the iproute2 tool collection
 type Wrapper struct {
 	commander PAL.Commander
 }
@@ -17,43 +16,43 @@ func NewWrapper(commander PAL.Commander) Contract {
 }
 
 // TunTapAddDevTun Adds new TUN device
-func (i *Wrapper) TunTapAddDevTun(devName string) (string, error) {
+func (i *Wrapper) TunTapAddDevTun(devName string) error {
 	createTunOutput, err := i.commander.CombinedOutput("ip", "tuntap", "add", "dev", devName, "mode", "tun")
 	if err != nil {
-		return "", fmt.Errorf("failed to create TUN %v: %v, output: %s", devName, err, createTunOutput)
+		return fmt.Errorf("failed to create TUN %v: %v, output: %s", devName, err, createTunOutput)
 	}
 
-	return devName, nil
+	return nil
 }
 
 // LinkDelete Deletes network device by name
-func (i *Wrapper) LinkDelete(devName string) (string, error) {
+func (i *Wrapper) LinkDelete(devName string) error {
 	output, err := i.commander.CombinedOutput("ip", "link", "delete", devName)
 	if err != nil {
-		return "", fmt.Errorf("failed to delete interface: %v, output: %s", err, output)
+		return fmt.Errorf("failed to delete interface: %v, output: %s", err, output)
 	}
 
-	return devName, nil
+	return nil
 }
 
 // LinkSetDevUp Sets network device status as UP
-func (i *Wrapper) LinkSetDevUp(devName string) (string, error) {
+func (i *Wrapper) LinkSetDevUp(devName string) error {
 	startTunOutput, err := i.commander.CombinedOutput("ip", "link", "set", "dev", devName, "up")
 	if err != nil {
-		return "", fmt.Errorf("failed to start TUN %v: %v, output: %s", devName, err, startTunOutput)
+		return fmt.Errorf("failed to start TUN %v: %v, output: %s", devName, err, startTunOutput)
 	}
 
-	return devName, nil
+	return nil
 }
 
 // AddrAddDev Assigns an IP to a network device
-func (i *Wrapper) AddrAddDev(devName string, ip string) (string, error) {
+func (i *Wrapper) AddrAddDev(devName string, ip string) error {
 	output, assignIPErr := i.commander.CombinedOutput("ip", "addr", "add", ip, "dev", devName)
 	if assignIPErr != nil {
-		return "", fmt.Errorf("failed to assign IP to TUN %v: %v, output: %s", devName, assignIPErr, output)
+		return fmt.Errorf("failed to assign IP to TUN %v: %v, output: %s", devName, assignIPErr, output)
 	}
 
-	return devName, nil
+	return nil
 }
 
 // RouteDefault Gets a default network device name
@@ -76,13 +75,13 @@ func (i *Wrapper) RouteDefault() (string, error) {
 }
 
 // RouteAddDefaultDev Sets a default network device
-func (i *Wrapper) RouteAddDefaultDev(devName string) (string, error) {
+func (i *Wrapper) RouteAddDefaultDev(devName string) error {
 	output, setAsDefaultGatewayErr := i.commander.CombinedOutput("ip", "route", "add", "default", "dev", devName)
 	if setAsDefaultGatewayErr != nil {
-		return "", fmt.Errorf("failed to set TUN as default gateway %v: %v, output: %s", devName, setAsDefaultGatewayErr, output)
+		return fmt.Errorf("failed to set TUN as default gateway %v: %v, output: %s", devName, setAsDefaultGatewayErr, output)
 	}
 
-	return devName, nil
+	return nil
 }
 
 // RouteGet gets route to host by host ip
@@ -126,7 +125,7 @@ func (i *Wrapper) RouteDel(hostIp string) error {
 func (i *Wrapper) LinkSetDevMTU(devName string, mtu int) error {
 	output, err := i.commander.CombinedOutput("ip", "link", "set", "dev", devName, "mtu", fmt.Sprintf("%d", mtu))
 	if err != nil {
-		return fmt.Errorf("failed to del route: %s, output: %s", err, output)
+		return fmt.Errorf("failed to set mtu: %s, output: %s", err, output)
 	}
 	return err
 }
