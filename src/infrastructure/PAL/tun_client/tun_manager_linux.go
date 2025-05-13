@@ -49,19 +49,19 @@ func (t *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 
 // configureTUN Configures client's TUN device (creates the TUN device, assigns an IP to it, etc)
 func (t *PlatformTunManager) configureTUN(connSettings settings.ConnectionSettings) error {
-	_, err := ip.LinkAdd(connSettings.InterfaceName)
+	_, err := ip.TunTapAddDevTun(connSettings.InterfaceName)
 	if err != nil {
 		return err
 	}
 
-	_, err = ip.LinkSetUp(connSettings.InterfaceName)
+	_, err = ip.LinkSetDevUp(connSettings.InterfaceName)
 	if err != nil {
 		return err
 	}
 	fmt.Printf("created TUN interface: %v\n", connSettings.InterfaceName)
 
 	// Assign IP address to the TUN interface
-	_, err = ip.LinkAddrAdd(connSettings.InterfaceName, connSettings.InterfaceAddress)
+	_, err = ip.AddrAddDev(connSettings.InterfaceName, connSettings.InterfaceAddress)
 	if err != nil {
 		return err
 	}
@@ -88,9 +88,9 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.ConnectionSettin
 
 	// Add route to server IP
 	if viaGateway == "" {
-		err = ip.RouteAdd(serverIP, devInterface)
+		err = ip.RouteAddDev(serverIP, devInterface)
 	} else {
-		err = ip.RouteAddViaGateway(serverIP, devInterface, viaGateway)
+		err = ip.RouteAddViaDev(serverIP, devInterface, viaGateway)
 	}
 	if err != nil {
 		return fmt.Errorf("failed to add route to server IP: %v", err)
@@ -110,7 +110,7 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.ConnectionSettin
 	}
 
 	// sets client's TUN device maximum transmission unit (MTU)
-	if setMtuErr := ip.SetMtu(connSettings.InterfaceName, connSettings.MTU); setMtuErr != nil {
+	if setMtuErr := ip.LinkSetDevMTU(connSettings.InterfaceName, connSettings.MTU); setMtuErr != nil {
 		return fmt.Errorf("failed to set %d MTU for %s: %s", connSettings.MTU, connSettings.InterfaceName, setMtuErr)
 	}
 
@@ -119,10 +119,10 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.ConnectionSettin
 
 func (t *PlatformTunManager) DisposeTunDevices() error {
 	_ = ip.RouteDel(t.conf.UDPSettings.ConnectionIP)
-	_, _ = ip.LinkDel(t.conf.UDPSettings.InterfaceName)
+	_, _ = ip.LinkDelete(t.conf.UDPSettings.InterfaceName)
 
 	_ = ip.RouteDel(t.conf.TCPSettings.ConnectionIP)
-	_, _ = ip.LinkDel(t.conf.TCPSettings.InterfaceName)
+	_, _ = ip.LinkDelete(t.conf.TCPSettings.InterfaceName)
 
 	return nil
 }
