@@ -15,12 +15,14 @@ import (
 )
 
 type ServerTunFactory struct {
-	ip ip.Contract
+	ip       ip.Contract
+	iptables iptables.Contract
 }
 
 func NewServerTunFactory() application.ServerTunManager {
 	return &ServerTunFactory{
-		ip: ip.NewWrapper(linux.NewCommander()),
+		ip:       ip.NewWrapper(linux.NewCommander()),
+		iptables: iptables.NewWrapper(linux.NewCommander()),
 	}
 }
 
@@ -126,7 +128,7 @@ func (s ServerTunFactory) configure(tunFile *os.File) error {
 		return err
 	}
 
-	err = iptables.EnableMasquerade(externalIfName)
+	err = s.iptables.EnableMasquerade(externalIfName)
 	if err != nil {
 		return fmt.Errorf("failed enabling NAT: %v", err)
 	}
@@ -136,7 +138,7 @@ func (s ServerTunFactory) configure(tunFile *os.File) error {
 		return fmt.Errorf("failed to set up forwarding: %v", err)
 	}
 
-	configureClampingErr := iptables.ConfigureMssClamping()
+	configureClampingErr := s.iptables.ConfigureMssClamping()
 	if configureClampingErr != nil {
 		return configureClampingErr
 	}
@@ -151,7 +153,7 @@ func (s ServerTunFactory) Unconfigure(tunFile *os.File) {
 		log.Printf("failed to determing tunnel ifName: %s\n", err)
 	}
 
-	err = iptables.DisableMasquerade(tunName)
+	err = s.iptables.DisableMasquerade(tunName)
 	if err != nil {
 		log.Printf("failed to disbale NAT: %s\n", err)
 	}
@@ -175,12 +177,12 @@ func (s ServerTunFactory) setupForwarding(tunFile *os.File, extIface string) err
 	}
 
 	// Set up iptables rules
-	err = iptables.AcceptForwardFromTunToDev(tunName, extIface)
+	err = s.iptables.AcceptForwardFromTunToDev(tunName, extIface)
 	if err != nil {
 		return fmt.Errorf("failed to setup forwarding rule: %s", err)
 	}
 
-	err = iptables.AcceptForwardFromDevToTun(tunName, extIface)
+	err = s.iptables.AcceptForwardFromDevToTun(tunName, extIface)
 	if err != nil {
 		return fmt.Errorf("failed to setup forwarding rule: %s", err)
 	}
@@ -197,12 +199,12 @@ func (s ServerTunFactory) clearForwarding(tunFile *os.File, extIface string) err
 		return fmt.Errorf("failed to get TUN interface name")
 	}
 
-	err = iptables.DropForwardFromTunToDev(tunName, extIface)
+	err = s.iptables.DropForwardFromTunToDev(tunName, extIface)
 	if err != nil {
 		return fmt.Errorf("failed to execute iptables command: %s", err)
 	}
 
-	err = iptables.DropForwardFromDevToTun(tunName, extIface)
+	err = s.iptables.DropForwardFromDevToTun(tunName, extIface)
 	if err != nil {
 		return fmt.Errorf("failed to execute iptables command: %s", err)
 	}

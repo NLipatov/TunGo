@@ -14,14 +14,16 @@ import (
 
 // PlatformTunManager Linux-specific TunDevice manager
 type PlatformTunManager struct {
-	conf client_configuration.Configuration
-	ip   ip.Contract
+	conf     client_configuration.Configuration
+	ip       ip.Contract
+	iptables iptables.Contract
 }
 
 func NewPlatformTunManager(conf client_configuration.Configuration) (application.ClientTunManager, error) {
 	return &PlatformTunManager{
-		conf: conf,
-		ip:   ip.NewWrapper(linux.NewCommander()),
+		conf:     conf,
+		ip:       ip.NewWrapper(linux.NewCommander()),
+		iptables: iptables.NewWrapper(linux.NewCommander()),
 	}, nil
 }
 
@@ -107,7 +109,7 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.ConnectionSettin
 	}
 	fmt.Printf("set %s as default gateway\n", connSettings.InterfaceName)
 
-	configureClampingErr := iptables.ConfigureMssClamping()
+	configureClampingErr := t.iptables.ConfigureMssClamping()
 	if configureClampingErr != nil {
 		return configureClampingErr
 	}
