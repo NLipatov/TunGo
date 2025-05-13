@@ -21,17 +21,17 @@ func NewServerTunFactory() application.ServerTunManager {
 }
 
 func (s ServerTunFactory) CreateTunDevice(connSettings settings.ConnectionSettings) (application.TunDevice, error) {
-	forwardingErr := enableForwarding()
+	forwardingErr := s.enableForwarding()
 	if forwardingErr != nil {
 		return nil, forwardingErr
 	}
 
-	tunFile, err := createTun(connSettings)
+	tunFile, err := s.createTun(connSettings)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open TUN interface: %w", err)
 	}
 
-	configureErr := Configure(tunFile)
+	configureErr := s.configure(tunFile)
 	if configureErr != nil {
 		return nil, fmt.Errorf("failed to configure a server: %s\n", configureErr)
 	}
@@ -44,7 +44,7 @@ func (s ServerTunFactory) DisposeTunDevices(connSettings settings.ConnectionSett
 	if openErr != nil {
 		return fmt.Errorf("failed to open TUN interface: %w", openErr)
 	}
-	Unconfigure(tun)
+	s.Unconfigure(tun)
 
 	closeErr := tun.Close()
 	if closeErr != nil {
@@ -59,7 +59,7 @@ func (s ServerTunFactory) DisposeTunDevices(connSettings settings.ConnectionSett
 	return nil
 }
 
-func createTun(settings settings.ConnectionSettings) (*os.File, error) {
+func (s ServerTunFactory) createTun(settings settings.ConnectionSettings) (*os.File, error) {
 	// delete previous tun if any exist
 	_, _ = ip.LinkDelete(settings.InterfaceName)
 
@@ -100,7 +100,7 @@ func createTun(settings settings.ConnectionSettings) (*os.File, error) {
 	return tunFile, nil
 }
 
-func enableForwarding() error {
+func (s ServerTunFactory) enableForwarding() error {
 	output, err := sysctl.NetIpv4IpForward()
 	if err != nil {
 		return fmt.Errorf("failed to enable IPv4 packet forwarding: %v, output: %s", err, output)
@@ -116,7 +116,7 @@ func enableForwarding() error {
 	return nil
 }
 
-func Configure(tunFile *os.File) error {
+func (s ServerTunFactory) configure(tunFile *os.File) error {
 	externalIfName, err := ip.RouteDefault()
 	if err != nil {
 		return err
@@ -127,7 +127,7 @@ func Configure(tunFile *os.File) error {
 		return fmt.Errorf("failed enabling NAT: %v", err)
 	}
 
-	err = setupForwarding(tunFile, externalIfName)
+	err = s.setupForwarding(tunFile, externalIfName)
 	if err != nil {
 		return fmt.Errorf("failed to set up forwarding: %v", err)
 	}
@@ -141,7 +141,7 @@ func Configure(tunFile *os.File) error {
 	return nil
 }
 
-func Unconfigure(tunFile *os.File) {
+func (s ServerTunFactory) Unconfigure(tunFile *os.File) {
 	tunName, err := syscall.DetectTunNameFromFd(tunFile)
 	if err != nil {
 		log.Printf("failed to determing tunnel ifName: %s\n", err)
@@ -152,7 +152,7 @@ func Unconfigure(tunFile *os.File) {
 		log.Printf("failed to disbale NAT: %s\n", err)
 	}
 
-	err = clearForwarding(tunFile, tunName)
+	err = s.clearForwarding(tunFile, tunName)
 	if err != nil {
 		log.Printf("failed to disable forwarding: %s\n", err)
 	}
@@ -160,7 +160,7 @@ func Unconfigure(tunFile *os.File) {
 	log.Printf("server unconfigured\n")
 }
 
-func setupForwarding(tunFile *os.File, extIface string) error {
+func (s ServerTunFactory) setupForwarding(tunFile *os.File, extIface string) error {
 	// Get the name of the TUN interface
 	tunName, err := syscall.DetectTunNameFromFd(tunFile)
 	if err != nil {
@@ -184,7 +184,7 @@ func setupForwarding(tunFile *os.File, extIface string) error {
 	return nil
 }
 
-func clearForwarding(tunFile *os.File, extIface string) error {
+func (s ServerTunFactory) clearForwarding(tunFile *os.File, extIface string) error {
 	tunName, err := syscall.DetectTunNameFromFd(tunFile)
 	if err != nil {
 		return fmt.Errorf("failed to determing tunnel ifName: %s\n", err)
