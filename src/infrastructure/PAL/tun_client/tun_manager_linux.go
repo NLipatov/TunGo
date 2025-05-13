@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"tungo/application"
+	"tungo/infrastructure/PAL/linux"
 	"tungo/infrastructure/PAL/linux/ip"
 	"tungo/infrastructure/PAL/linux/iptables"
 	"tungo/infrastructure/PAL/linux/syscall"
@@ -14,11 +15,13 @@ import (
 // PlatformTunManager Linux-specific TunDevice manager
 type PlatformTunManager struct {
 	conf client_configuration.Configuration
+	ip   ip.Contract
 }
 
 func NewPlatformTunManager(conf client_configuration.Configuration) (application.ClientTunManager, error) {
 	return &PlatformTunManager{
 		conf: conf,
+		ip:   ip.NewWrapper(linux.NewCommander()),
 	}, nil
 }
 
@@ -49,19 +52,19 @@ func (t *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 
 // configureTUN Configures client's TUN device (creates the TUN device, assigns an IP to it, etc)
 func (t *PlatformTunManager) configureTUN(connSettings settings.ConnectionSettings) error {
-	_, err := ip.TunTapAddDevTun(connSettings.InterfaceName)
+	_, err := t.ip.TunTapAddDevTun(connSettings.InterfaceName)
 	if err != nil {
 		return err
 	}
 
-	_, err = ip.LinkSetDevUp(connSettings.InterfaceName)
+	_, err = t.ip.LinkSetDevUp(connSettings.InterfaceName)
 	if err != nil {
 		return err
 	}
 	fmt.Printf("created TUN interface: %v\n", connSettings.InterfaceName)
 
 	// Assign IP address to the TUN interface
-	_, err = ip.AddrAddDev(connSettings.InterfaceName, connSettings.InterfaceAddress)
+	_, err = t.ip.AddrAddDev(connSettings.InterfaceName, connSettings.InterfaceAddress)
 	if err != nil {
 		return err
 	}
@@ -71,7 +74,7 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.ConnectionSettin
 	serverIP := connSettings.ConnectionIP
 
 	// Get routing information
-	routeInfo, err := ip.RouteGet(serverIP)
+	routeInfo, err := t.ip.RouteGet(serverIP)
 	var viaGateway, devInterface string
 	fields := strings.Fields(routeInfo)
 	for i, field := range fields {
@@ -88,9 +91,9 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.ConnectionSettin
 
 	// Add route to server IP
 	if viaGateway == "" {
-		err = ip.RouteAddDev(serverIP, devInterface)
+		err = t.ip.RouteAddDev(serverIP, devInterface)
 	} else {
-		err = ip.RouteAddViaDev(serverIP, devInterface, viaGateway)
+		err = t.ip.RouteAddViaDev(serverIP, devInterface, viaGateway)
 	}
 	if err != nil {
 		return fmt.Errorf("failed to add route to server IP: %v", err)
@@ -98,7 +101,7 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.ConnectionSettin
 	fmt.Printf("added route to server %s via %s dev %s\n", serverIP, viaGateway, devInterface)
 
 	// Set the TUN interface as the default gateway
-	_, err = ip.RouteAddDefaultDev(connSettings.InterfaceName)
+	_, err = t.ip.RouteAddDefaultDev(connSettings.InterfaceName)
 	if err != nil {
 		return err
 	}
@@ -110,7 +113,7 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.ConnectionSettin
 	}
 
 	// sets client's TUN device maximum transmission unit (MTU)
-	if setMtuErr := ip.LinkSetDevMTU(connSettings.InterfaceName, connSettings.MTU); setMtuErr != nil {
+	if setMtuErr := t.ip.LinkSetDevMTU(connSettings.InterfaceName, connSettings.MTU); setMtuErr != nil {
 		return fmt.Errorf("failed to set %d MTU for %s: %s", connSettings.MTU, connSettings.InterfaceName, setMtuErr)
 	}
 
@@ -118,11 +121,11 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.ConnectionSettin
 }
 
 func (t *PlatformTunManager) DisposeTunDevices() error {
-	_ = ip.RouteDel(t.conf.UDPSettings.ConnectionIP)
-	_, _ = ip.LinkDelete(t.conf.UDPSettings.InterfaceName)
+	_ = t.ip.RouteDel(t.conf.UDPSettings.ConnectionIP)
+	_, _ = t.ip.LinkDelete(t.conf.UDPSettings.InterfaceName)
 
-	_ = ip.RouteDel(t.conf.TCPSettings.ConnectionIP)
-	_, _ = ip.LinkDelete(t.conf.TCPSettings.InterfaceName)
+	_ = t.ip.RouteDel(t.conf.TCPSettings.ConnectionIP)
+	_, _ = t.ip.LinkDelete(t.conf.TCPSettings.InterfaceName)
 
 	return nil
 }

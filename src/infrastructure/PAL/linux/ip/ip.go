@@ -4,14 +4,21 @@ package ip
 
 import (
 	"fmt"
-	"os/exec"
 	"strings"
+	"tungo/infrastructure/PAL"
 )
 
+type Wrapper struct {
+	commander PAL.Commander
+}
+
+func NewWrapper(commander PAL.Commander) Contract {
+	return &Wrapper{commander: commander}
+}
+
 // TunTapAddDevTun Adds new TUN device
-func TunTapAddDevTun(devName string) (string, error) {
-	createTun := exec.Command("ip", "tuntap", "add", "dev", devName, "mode", "tun")
-	createTunOutput, err := createTun.CombinedOutput()
+func (i *Wrapper) TunTapAddDevTun(devName string) (string, error) {
+	createTunOutput, err := i.commander.CombinedOutput("ip", "tuntap", "add", "dev", devName, "mode", "tun")
 	if err != nil {
 		return "", fmt.Errorf("failed to create TUN %v: %v, output: %s", devName, err, createTunOutput)
 	}
@@ -20,9 +27,8 @@ func TunTapAddDevTun(devName string) (string, error) {
 }
 
 // LinkDelete Deletes network device by name
-func LinkDelete(devName string) (string, error) {
-	cmd := exec.Command("ip", "link", "delete", devName)
-	output, err := cmd.CombinedOutput()
+func (i *Wrapper) LinkDelete(devName string) (string, error) {
+	output, err := i.commander.CombinedOutput("ip", "link", "delete", devName)
 	if err != nil {
 		return "", fmt.Errorf("failed to delete interface: %v, output: %s", err, output)
 	}
@@ -31,9 +37,8 @@ func LinkDelete(devName string) (string, error) {
 }
 
 // LinkSetDevUp Sets network device status as UP
-func LinkSetDevUp(devName string) (string, error) {
-	startTun := exec.Command("ip", "link", "set", "dev", devName, "up")
-	startTunOutput, err := startTun.CombinedOutput()
+func (i *Wrapper) LinkSetDevUp(devName string) (string, error) {
+	startTunOutput, err := i.commander.CombinedOutput("ip", "link", "set", "dev", devName, "up")
 	if err != nil {
 		return "", fmt.Errorf("failed to start TUN %v: %v, output: %s", devName, err, startTunOutput)
 	}
@@ -42,9 +47,8 @@ func LinkSetDevUp(devName string) (string, error) {
 }
 
 // AddrAddDev Assigns an IP to a network device
-func AddrAddDev(devName string, ip string) (string, error) {
-	assignIP := exec.Command("ip", "addr", "add", ip, "dev", devName)
-	output, assignIPErr := assignIP.CombinedOutput()
+func (i *Wrapper) AddrAddDev(devName string, ip string) (string, error) {
+	output, assignIPErr := i.commander.CombinedOutput("ip", "addr", "add", ip, "dev", devName)
 	if assignIPErr != nil {
 		return "", fmt.Errorf("failed to assign IP to TUN %v: %v, output: %s", devName, assignIPErr, output)
 	}
@@ -53,8 +57,8 @@ func AddrAddDev(devName string, ip string) (string, error) {
 }
 
 // RouteDefault Gets a default network device name
-func RouteDefault() (string, error) {
-	out, err := exec.Command("ip", "route").Output()
+func (i *Wrapper) RouteDefault() (string, error) {
+	out, err := i.commander.Output("ip", "route")
 	if err != nil {
 		return "", err
 	}
@@ -72,9 +76,8 @@ func RouteDefault() (string, error) {
 }
 
 // RouteAddDefaultDev Sets a default network device
-func RouteAddDefaultDev(devName string) (string, error) {
-	setAsDefaultGateway := exec.Command("ip", "route", "add", "default", "dev", devName)
-	output, setAsDefaultGatewayErr := setAsDefaultGateway.CombinedOutput()
+func (i *Wrapper) RouteAddDefaultDev(devName string) (string, error) {
+	output, setAsDefaultGatewayErr := i.commander.CombinedOutput("ip", "route", "add", "default", "dev", devName)
 	if setAsDefaultGatewayErr != nil {
 		return "", fmt.Errorf("failed to set TUN as default gateway %v: %v, output: %s", devName, setAsDefaultGatewayErr, output)
 	}
@@ -83,9 +86,8 @@ func RouteAddDefaultDev(devName string) (string, error) {
 }
 
 // RouteGet gets route to host by host ip
-func RouteGet(hostIp string) (string, error) {
-	cmd := exec.Command("ip", "route", "get", hostIp)
-	routeBytes, err := cmd.Output()
+func (i *Wrapper) RouteGet(hostIp string) (string, error) {
+	routeBytes, err := i.commander.Output("ip", "route", "get", hostIp)
 	if err != nil {
 		return "", fmt.Errorf("failed to get route to server IP: %v", err)
 	}
@@ -94,9 +96,8 @@ func RouteGet(hostIp string) (string, error) {
 }
 
 // RouteAddDev adds a route to host via device
-func RouteAddDev(hostIp string, ifName string) error {
-	cmd := exec.Command("ip", "route", "add", hostIp, "dev", ifName)
-	output, err := cmd.CombinedOutput()
+func (i *Wrapper) RouteAddDev(hostIp string, ifName string) error {
+	output, err := i.commander.CombinedOutput("ip", "route", "add", hostIp, "dev", ifName)
 	if err != nil {
 		return fmt.Errorf("failed to add route: %s, output: %s", err, output)
 	}
@@ -104,9 +105,8 @@ func RouteAddDev(hostIp string, ifName string) error {
 }
 
 // RouteAddViaDev adds a route to host via device via gateway
-func RouteAddViaDev(hostIp string, ifName string, gateway string) error {
-	cmd := exec.Command("ip", "route", "add", hostIp, "via", gateway, "dev", ifName)
-	output, err := cmd.CombinedOutput()
+func (i *Wrapper) RouteAddViaDev(hostIp string, ifName string, gateway string) error {
+	output, err := i.commander.CombinedOutput("ip", "route", "add", hostIp, "via", gateway, "dev", ifName)
 	if err != nil {
 		return fmt.Errorf("failed to add route: %s, output: %s", err, output)
 	}
@@ -114,9 +114,8 @@ func RouteAddViaDev(hostIp string, ifName string, gateway string) error {
 }
 
 // RouteDel deletes a route to host
-func RouteDel(hostIp string) error {
-	cmd := exec.Command("ip", "route", "del", hostIp)
-	output, err := cmd.CombinedOutput()
+func (i *Wrapper) RouteDel(hostIp string) error {
+	output, err := i.commander.CombinedOutput("ip", "route", "del", hostIp)
 	if err != nil {
 		return fmt.Errorf("failed to del route: %s, output: %s", err, output)
 	}
@@ -124,9 +123,8 @@ func RouteDel(hostIp string) error {
 }
 
 // LinkSetDevMTU sets device MTU
-func LinkSetDevMTU(devName string, mtu int) error {
-	cmd := exec.Command("ip", "link", "set", "dev", devName, "mtu", fmt.Sprintf("%d", mtu))
-	output, err := cmd.CombinedOutput()
+func (i *Wrapper) LinkSetDevMTU(devName string, mtu int) error {
+	output, err := i.commander.CombinedOutput("ip", "link", "set", "dev", devName, "mtu", fmt.Sprintf("%d", mtu))
 	if err != nil {
 		return fmt.Errorf("failed to del route: %s, output: %s", err, output)
 	}
@@ -134,11 +132,9 @@ func LinkSetDevMTU(devName string, mtu int) error {
 }
 
 // AddrShowDev resolves an IP address (IPv4 or IPv6) assigned to interface
-func AddrShowDev(ipV int, ifName string) (string, error) {
-	cmd := exec.Command("sh", "-c", fmt.Sprintf(
+func (i *Wrapper) AddrShowDev(ipV int, ifName string) (string, error) {
+	output, err := i.commander.CombinedOutput("sh", "-c", fmt.Sprintf(
 		`ip -%v -o addr show dev %v | awk '{print $4}' | cut -d'/' -f1`, ipV, ifName))
-
-	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf(
 			"failed to get IP for interface %s: %v (%s)", ifName, err, strings.TrimSpace(string(output)))

@@ -52,7 +52,8 @@ func main() {
 		fmt.Printf("Starting server...\n")
 		startServer(appCtx)
 	case mode.ServerConfGen:
-		err := handlers.GenerateNewClientConf()
+		handler := handlers.NewConfgenHandler()
+		err := handler.GenerateNewClientConf()
 		if err != nil {
 			log.Printf("failed to generate new client conf: %v", err)
 		}

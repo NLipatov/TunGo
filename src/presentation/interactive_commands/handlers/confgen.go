@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"tungo/infrastructure/PAL/linux"
 	"tungo/infrastructure/PAL/linux/ip"
 	"tungo/infrastructure/network"
 	"tungo/settings"
@@ -11,8 +12,18 @@ import (
 	"tungo/settings/server_configuration"
 )
 
-func GenerateNewClientConf() error {
-	newConf, err := generate()
+type ConfgenHandler struct {
+	ipWrapper ip.Contract
+}
+
+func NewConfgenHandler() *ConfgenHandler {
+	return &ConfgenHandler{
+		ipWrapper: ip.NewWrapper(linux.NewCommander()),
+	}
+}
+
+func (c *ConfgenHandler) GenerateNewClientConf() error {
+	newConf, err := c.generate()
 	if err != nil {
 		log.Fatalf("failed to generate client conf: %s\n", err)
 	}
@@ -27,19 +38,19 @@ func GenerateNewClientConf() error {
 }
 
 // generate generates new client configuration
-func generate() (*client_configuration.Configuration, error) {
+func (c *ConfgenHandler) generate() (*client_configuration.Configuration, error) {
 	serverConfigurationManager := server_configuration.NewManager(server_configuration.NewServerResolver())
 	serverConf, err := serverConfigurationManager.Configuration()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read server configuration: %s", err)
 	}
 
-	defaultIf, err := ip.RouteDefault()
+	defaultIf, err := c.ipWrapper.RouteDefault()
 	if err != nil {
 		return nil, err
 	}
 
-	defaultIfIpV4, addressResolutionError := ip.AddrShowDev(4, defaultIf)
+	defaultIfIpV4, addressResolutionError := c.ipWrapper.AddrShowDev(4, defaultIf)
 	if addressResolutionError != nil {
 		if serverConf.FallbackServerAddress == "" {
 			return nil, fmt.Errorf("failed to resolve server IP and no fallback address provided in server configuration: %s", addressResolutionError)
@@ -87,13 +98,13 @@ func generate() (*client_configuration.Configuration, error) {
 			DialTimeoutMs:    serverConf.UDPSettings.DialTimeoutMs,
 		},
 		Ed25519PublicKey: serverConf.Ed25519PublicKey,
-		Protocol:         getDefaultProtocol(serverConf),
+		Protocol:         c.getDefaultProtocol(serverConf),
 	}
 
 	return &conf, nil
 }
 
-func getDefaultProtocol(conf *server_configuration.Configuration) settings.Protocol {
+func (c *ConfgenHandler) getDefaultProtocol(conf *server_configuration.Configuration) settings.Protocol {
 	if conf.EnableUDP {
 		return settings.UDP
 	}

@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"tungo/application"
+	"tungo/infrastructure/PAL/linux"
 	"tungo/infrastructure/PAL/linux/ip"
 	"tungo/infrastructure/PAL/linux/iptables"
 	"tungo/infrastructure/PAL/linux/syscall"
@@ -14,10 +15,13 @@ import (
 )
 
 type ServerTunFactory struct {
+	ip ip.Contract
 }
 
 func NewServerTunFactory() application.ServerTunManager {
-	return &ServerTunFactory{}
+	return &ServerTunFactory{
+		ip: ip.NewWrapper(linux.NewCommander()),
+	}
 }
 
 func (s ServerTunFactory) CreateTunDevice(connSettings settings.ConnectionSettings) (application.TunDevice, error) {
@@ -51,7 +55,7 @@ func (s ServerTunFactory) DisposeTunDevices(connSettings settings.ConnectionSett
 		return fmt.Errorf("failed to close TUN interface: %w", closeErr)
 	}
 
-	_, delErr := ip.LinkDelete(connSettings.InterfaceName)
+	_, delErr := s.ip.LinkDelete(connSettings.InterfaceName)
 	if delErr != nil {
 		return fmt.Errorf("error deleting TUN device: %v", delErr)
 	}
@@ -61,19 +65,19 @@ func (s ServerTunFactory) DisposeTunDevices(connSettings settings.ConnectionSett
 
 func (s ServerTunFactory) createTun(settings settings.ConnectionSettings) (*os.File, error) {
 	// delete previous tun if any exist
-	_, _ = ip.LinkDelete(settings.InterfaceName)
+	_, _ = s.ip.LinkDelete(settings.InterfaceName)
 
-	_, devErr := ip.TunTapAddDevTun(settings.InterfaceName)
+	_, devErr := s.ip.TunTapAddDevTun(settings.InterfaceName)
 	if devErr != nil {
 		return nil, fmt.Errorf("could not create tuntap dev: %s", devErr)
 	}
 
-	_, upErr := ip.LinkSetDevUp(settings.InterfaceName)
+	_, upErr := s.ip.LinkSetDevUp(settings.InterfaceName)
 	if upErr != nil {
 		return nil, fmt.Errorf("could not set tuntap dev up: %s", upErr)
 	}
 
-	mtuErr := ip.LinkSetDevMTU(settings.InterfaceName, settings.MTU)
+	mtuErr := s.ip.LinkSetDevMTU(settings.InterfaceName, settings.MTU)
 	if mtuErr != nil {
 		return nil, fmt.Errorf("could not set mtu on tuntap dev: %s", mtuErr)
 	}
@@ -87,7 +91,7 @@ func (s ServerTunFactory) createTun(settings settings.ConnectionSettings) (*os.F
 	if cidrServerIpErr != nil {
 		return nil, fmt.Errorf("could not conver server IP(%s) to CIDR: %s", serverIp, cidrServerIpErr)
 	}
-	_, addrAddDev := ip.AddrAddDev(settings.InterfaceName, cidrServerIp)
+	_, addrAddDev := s.ip.AddrAddDev(settings.InterfaceName, cidrServerIp)
 	if addrAddDev != nil {
 		return nil, fmt.Errorf("failed to convert server ip to CIDR format: %s", addrAddDev)
 	}
@@ -117,7 +121,7 @@ func (s ServerTunFactory) enableForwarding() error {
 }
 
 func (s ServerTunFactory) configure(tunFile *os.File) error {
-	externalIfName, err := ip.RouteDefault()
+	externalIfName, err := s.ip.RouteDefault()
 	if err != nil {
 		return err
 	}
