@@ -50,11 +50,21 @@ func (t *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 
 // configureTUN Configures client's TUN device (creates the TUN device, assigns an IP to it, etc)
 func (t *PlatformTunManager) configureTUN(connSettings settings.ConnectionSettings) error {
-	name, err := UpNewTun(connSettings.InterfaceName)
+	err := enableIPv4Forwarding()
 	if err != nil {
-		return fmt.Errorf("failed to create interface %v: %v", connSettings.InterfaceName, err)
+		return err
 	}
-	fmt.Printf("created TUN interface: %v\n", name)
+
+	_, err = ip.LinkAdd(connSettings.InterfaceName)
+	if err != nil {
+		return err
+	}
+
+	_, err = ip.LinkSetUp(connSettings.InterfaceName)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("created TUN interface: %v\n", connSettings.InterfaceName)
 
 	// Assign IP address to the TUN interface
 	_, err = ip.LinkAddrAdd(connSettings.InterfaceName, connSettings.InterfaceAddress)
@@ -121,24 +131,6 @@ func (t *PlatformTunManager) DisposeTunDevices() error {
 	_, _ = ip.LinkDel(t.conf.TCPSettings.InterfaceName)
 
 	return nil
-}
-func UpNewTun(ifName string) (string, error) {
-	err := enableIPv4Forwarding()
-	if err != nil {
-		return "", err
-	}
-
-	_, err = ip.LinkAdd(ifName)
-	if err != nil {
-		return "", err
-	}
-
-	_, err = ip.LinkSetUp(ifName)
-	if err != nil {
-		return "", err
-	}
-
-	return ifName, nil
 }
 
 func enableIPv4Forwarding() error {

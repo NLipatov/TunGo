@@ -15,11 +15,22 @@ import (
 func SetupServerTun(settings settings.ConnectionSettings) (*os.File, error) {
 	_, _ = ip.LinkDel(settings.InterfaceName)
 
-	name, err := UpNewTun(settings.InterfaceName)
+	err := enableIPv4Forwarding()
 	if err != nil {
-		log.Fatalf("failed to create interface %v: %v", settings.InterfaceName, err)
+		return nil, err
 	}
-	fmt.Printf("created TUN interface: %v\n", name)
+
+	_, err = ip.LinkAdd(settings.InterfaceName)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = ip.LinkSetUp(settings.InterfaceName)
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Printf("created TUN interface: %v\n", settings.InterfaceName)
 
 	serverIp, err := network.AllocateServerIp(settings.InterfaceIPCIDR)
 	if err != nil {
@@ -136,24 +147,6 @@ func clearForwarding(tunFile *os.File, extIface string) error {
 		return fmt.Errorf("failed to execute iptables command: %s", err)
 	}
 	return nil
-}
-func UpNewTun(ifName string) (string, error) {
-	err := enableIPv4Forwarding()
-	if err != nil {
-		return "", err
-	}
-
-	_, err = ip.LinkAdd(ifName)
-	if err != nil {
-		return "", err
-	}
-
-	_, err = ip.LinkSetUp(ifName)
-	if err != nil {
-		return "", err
-	}
-
-	return ifName, nil
 }
 
 func enableIPv4Forwarding() error {
