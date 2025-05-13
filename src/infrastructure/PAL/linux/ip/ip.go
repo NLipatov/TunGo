@@ -17,7 +17,8 @@ func NewWrapper(commander PAL.Commander) Contract {
 
 // TunTapAddDevTun Adds new TUN device
 func (i *Wrapper) TunTapAddDevTun(devName string) error {
-	createTunOutput, err := i.commander.CombinedOutput("ip", "tuntap", "add", "dev", devName, "mode", "tun")
+	createTunOutput, err := i.commander.CombinedOutput("ip", "tuntap",
+		"add", "dev", devName, "mode", "tun")
 	if err != nil {
 		return fmt.Errorf("failed to create TUN %v: %v, output: %s", devName, err, createTunOutput)
 	}
@@ -76,9 +77,11 @@ func (i *Wrapper) RouteDefault() (string, error) {
 
 // RouteAddDefaultDev Sets a default network device
 func (i *Wrapper) RouteAddDefaultDev(devName string) error {
-	output, setAsDefaultGatewayErr := i.commander.CombinedOutput("ip", "route", "add", "default", "dev", devName)
+	output, setAsDefaultGatewayErr := i.commander.CombinedOutput("ip", "route",
+		"add", "default", "dev", devName)
 	if setAsDefaultGatewayErr != nil {
-		return fmt.Errorf("failed to set TUN as default gateway %v: %v, output: %s", devName, setAsDefaultGatewayErr, output)
+		return fmt.Errorf("failed to set TUN as default gateway %v: %v, output: %s",
+			devName, setAsDefaultGatewayErr, output)
 	}
 
 	return nil
@@ -123,7 +126,8 @@ func (i *Wrapper) RouteDel(hostIp string) error {
 
 // LinkSetDevMTU sets device MTU
 func (i *Wrapper) LinkSetDevMTU(devName string, mtu int) error {
-	output, err := i.commander.CombinedOutput("ip", "link", "set", "dev", devName, "mtu", fmt.Sprintf("%d", mtu))
+	output, err := i.commander.CombinedOutput("ip", "link",
+		"set", "dev", devName, "mtu", fmt.Sprintf("%d", mtu))
 	if err != nil {
 		return fmt.Errorf("failed to set mtu: %s, output: %s", err, output)
 	}
