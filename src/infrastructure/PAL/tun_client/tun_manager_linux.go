@@ -7,6 +7,7 @@ import (
 	"tungo/infrastructure/PAL/linux/ip"
 	"tungo/infrastructure/PAL/linux/iptables"
 	"tungo/infrastructure/PAL/linux/syscall"
+	"tungo/infrastructure/PAL/linux/sysctl"
 	"tungo/settings"
 	"tungo/settings/client_configuration"
 )
@@ -49,7 +50,7 @@ func (t *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 
 // configureTUN Configures client's TUN device (creates the TUN device, assigns an IP to it, etc)
 func (t *PlatformTunManager) configureTUN(connSettings settings.ConnectionSettings) error {
-	name, err := ip.UpNewTun(connSettings.InterfaceName)
+	name, err := UpNewTun(connSettings.InterfaceName)
 	if err != nil {
 		return fmt.Errorf("failed to create interface %v: %v", connSettings.InterfaceName, err)
 	}
@@ -119,5 +120,40 @@ func (t *PlatformTunManager) DisposeTunDevices() error {
 	_ = ip.RouteDel(t.conf.TCPSettings.ConnectionIP)
 	_, _ = ip.LinkDel(t.conf.TCPSettings.InterfaceName)
 
+	return nil
+}
+func UpNewTun(ifName string) (string, error) {
+	err := enableIPv4Forwarding()
+	if err != nil {
+		return "", err
+	}
+
+	_, err = ip.LinkAdd(ifName)
+	if err != nil {
+		return "", err
+	}
+
+	_, err = ip.LinkSetUp(ifName)
+	if err != nil {
+		return "", err
+	}
+
+	return ifName, nil
+}
+
+func enableIPv4Forwarding() error {
+	output, err := sysctl.NetIpv4IpForward()
+	if err != nil {
+		return fmt.Errorf("failed to enable IPv4 packet forwarding: %v, output: %s", err, output)
+	}
+
+	if string(output) == "net.ipv4.ip_forward = 1\n" {
+		return nil
+	}
+
+	output, err = sysctl.WNetIpv4IpForward()
+	if err != nil {
+		return fmt.Errorf("failed to enable IPv4 packet forwarding: %v, output: %s", err, output)
+	}
 	return nil
 }
