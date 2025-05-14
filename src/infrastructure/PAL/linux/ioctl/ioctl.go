@@ -5,7 +5,6 @@ import (
 	"golang.org/x/sys/unix"
 	"os"
 	"strings"
-	"unsafe"
 )
 
 type Wrapper struct {
@@ -26,7 +25,7 @@ func (w *Wrapper) DetectTunNameFromFd(fd *os.File) (string, error) {
 	_, _, errno := w.commander.Ioctl(
 		fd.Fd(),
 		uintptr(unix.TUNGETIFF),
-		uintptr(unsafe.Pointer(&ifr)),
+		&ifr,
 	)
 	if errno != 0 {
 		return "", errno
@@ -53,7 +52,7 @@ func (w *Wrapper) CreateTunInterface(name string) (*os.File, error) {
 	copy(req.Name[:], name)
 	req.Flags = iffTun | IffNoPi
 
-	_, _, errno := w.commander.Ioctl(tun.Fd(), uintptr(tunSetIff), uintptr(unsafe.Pointer(&req)))
+	_, _, errno := w.commander.Ioctl(tun.Fd(), uintptr(tunSetIff), &req)
 	if errno != 0 {
 		return nil, fmt.Errorf("ioctl TUNSETIFF failed for %s: %v", name, errno)
 	}
