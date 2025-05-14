@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"tungo/domain/app"
 	"tungo/domain/mode"
-	"tungo/infrastructure/PAL/pal_factory"
+	"tungo/infrastructure/PAL/tun_server"
 	"tungo/infrastructure/routing/client_routing/client_factory"
 	"tungo/presentation/configuring"
 	"tungo/presentation/elevation"
@@ -52,7 +52,8 @@ func main() {
 		fmt.Printf("Starting server...\n")
 		startServer(appCtx)
 	case mode.ServerConfGen:
-		err := handlers.GenerateNewClientConf()
+		handler := handlers.NewConfgenHandler()
+		err := handler.GenerateNewClientConf()
 		if err != nil {
 			log.Printf("failed to generate new client conf: %v", err)
 		}
@@ -82,7 +83,7 @@ func startClient(appCtx context.Context) {
 }
 
 func startServer(appCtx context.Context) {
-	tunFactory := pal_factory.NewServerTunFactory()
+	tunFactory := tun_server.NewServerTunFactory()
 	configurationManager := server_configuration.NewManager(server_configuration.NewServerResolver())
 	conf, confErr := configurationManager.Configuration()
 	if confErr != nil {

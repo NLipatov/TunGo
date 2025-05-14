@@ -1,4 +1,4 @@
-package ip
+package ioctl
 
 type IfReq struct {
 	Name  [ifNamSiz]byte

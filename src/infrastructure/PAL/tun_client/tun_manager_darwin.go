@@ -1,4 +1,4 @@
-package tun_manager
+package tun_client
 
 import (
 	"fmt"
@@ -6,6 +6,7 @@ import (
 	"log"
 	"strings"
 	"tungo/application"
+	"tungo/infrastructure/PAL"
 	"tungo/infrastructure/PAL/darwin"
 	"tungo/infrastructure/PAL/darwin/ip"
 	"tungo/infrastructure/PAL/darwin/route"
@@ -15,13 +16,19 @@ import (
 
 // PlatformTunManager is the macOS-specific implementation of ClientTunManager.
 type PlatformTunManager struct {
-	conf client_configuration.Configuration
-	dev  *tun.Device
+	conf  client_configuration.Configuration
+	dev   *tun.Device
+	route route.Contract
+	ip    ip.Contract
 }
 
 // NewPlatformTunManager constructs a new PlatformTunManager.
 func NewPlatformTunManager(conf client_configuration.Configuration) (application.ClientTunManager, error) {
-	return &PlatformTunManager{conf: conf}, nil
+	return &PlatformTunManager{
+		conf:  conf,
+		route: route.NewWrapper(PAL.NewExecCommander()),
+		ip:    ip.NewWrapper(PAL.NewExecCommander()),
+	}, nil
 }
 
 // CreateTunDevice creates, configures and returns a TUN interface wrapped in wgTunAdapter.
@@ -53,16 +60,16 @@ func (t *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 	cidrPrefix := strings.Split(s.InterfaceIPCIDR, "/")[1]
 	addrCIDR := fmt.Sprintf("%s/%s", s.InterfaceAddress, cidrPrefix)
 
-	if linkAddrAddErr := ip.LinkAddrAdd(name, addrCIDR); linkAddrAddErr != nil {
+	if linkAddrAddErr := t.ip.LinkAddrAdd(name, addrCIDR); linkAddrAddErr != nil {
 		return nil, fmt.Errorf("failed to assign IP to %s: %w", name, linkAddrAddErr)
 	}
 	fmt.Printf("assigned IP %s to %s\n", addrCIDR, name)
 
-	if getErr := route.Get(s.ConnectionIP); getErr != nil {
+	if getErr := t.route.Get(s.ConnectionIP); getErr != nil {
 		return nil, fmt.Errorf("failed to route to server: %w", getErr)
 	}
 
-	if addSplitErr := route.AddSplit(name); addSplitErr != nil {
+	if addSplitErr := t.route.AddSplit(name); addSplitErr != nil {
 		return nil, fmt.Errorf("failed to add split default routes: %w", addSplitErr)
 	}
 	fmt.Printf("added split default routes via %s\n", name)
@@ -84,7 +91,7 @@ func (t *PlatformTunManager) DisposeTunDevices() error {
 
 		devName, devNameErr := dev.Name()
 		if devNameErr != nil {
-			delSplitErr := route.DelSplit(devName)
+			delSplitErr := t.route.DelSplit(devName)
 			if delSplitErr != nil {
 				log.Printf(delSplitErr.Error())
 			}
@@ -92,22 +99,22 @@ func (t *PlatformTunManager) DisposeTunDevices() error {
 	}
 
 	// Delete explicit routes to servers
-	deleteRoute("UDP", t.conf.UDPSettings.ConnectionIP)
-	deleteRoute("TCP", t.conf.TCPSettings.ConnectionIP)
+	t.deleteRoute("UDP", t.conf.UDPSettings.ConnectionIP)
+	t.deleteRoute("TCP", t.conf.TCPSettings.ConnectionIP)
 
 	// Delete default gateway route if present
-	if gw, err := route.DefaultGateway(); err == nil {
-		deleteRoute("default gateway", gw)
+	if gw, err := t.route.DefaultGateway(); err == nil {
+		t.deleteRoute("default gateway", gw)
 	}
 
 	return nil
 }
 
-func deleteRoute(label, dest string) {
+func (t *PlatformTunManager) deleteRoute(label, dest string) {
 	if dest == "" {
 		return
 	}
-	if err := route.Del(dest); err != nil {
+	if err := t.route.Del(dest); err != nil {
 		log.Printf("tun_manager failed to delete route (%s - %s): %v", label, dest, err)
 	}
 }

@@ -36,7 +36,8 @@ func (s *serverConfigurator) Configure() error {
 	case startServerOption:
 		return nil
 	case addClientOption:
-		generateNewClientConfErr := handlers.GenerateNewClientConf()
+		handler := handlers.NewConfgenHandler()
+		generateNewClientConfErr := handler.GenerateNewClientConf()
 		if generateNewClientConfErr != nil {
 			return generateNewClientConfErr
 		}

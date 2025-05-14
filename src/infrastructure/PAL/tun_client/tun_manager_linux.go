@@ -1,10 +1,12 @@
-package tun_manager
+package tun_client
 
 import (
 	"fmt"
 	"strings"
 	"tungo/application"
-	ip2 "tungo/infrastructure/PAL/linux/ip"
+	"tungo/infrastructure/PAL"
+	"tungo/infrastructure/PAL/linux/ioctl"
+	"tungo/infrastructure/PAL/linux/ip"
 	"tungo/infrastructure/PAL/linux/iptables"
 	"tungo/settings"
 	"tungo/settings/client_configuration"
@@ -12,12 +14,18 @@ import (
 
 // PlatformTunManager Linux-specific TunDevice manager
 type PlatformTunManager struct {
-	conf client_configuration.Configuration
+	conf     client_configuration.Configuration
+	ip       ip.Contract
+	iptables iptables.Contract
+	ioctl    ioctl.Contract
 }
 
 func NewPlatformTunManager(conf client_configuration.Configuration) (application.ClientTunManager, error) {
 	return &PlatformTunManager{
-		conf: conf,
+		conf:     conf,
+		ip:       ip.NewWrapper(PAL.NewExecCommander()),
+		iptables: iptables.NewWrapper(PAL.NewExecCommander()),
+		ioctl:    ioctl.NewWrapper(ioctl.NewLinuxIoctlCommander(), "/dev/net/tun"),
 	}, nil
 }
 
@@ -33,17 +41,12 @@ func (t *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 	}
 
 	// configureTUN client
-	if udpConfigurationErr := configureTUN(s); udpConfigurationErr != nil {
+	if udpConfigurationErr := t.configureTUN(s); udpConfigurationErr != nil {
 		return nil, fmt.Errorf("failed to configure client: %v", udpConfigurationErr)
 	}
 
-	// sets client's TUN device maximum transmission unit (MTU)
-	if setMtuErr := ip2.SetMtu(s.InterfaceName, s.MTU); setMtuErr != nil {
-		return nil, fmt.Errorf("failed to set %d MTU for %s: %s", s.MTU, s.InterfaceName, setMtuErr)
-	}
-
 	// opens the TUN device
-	tunFile, openTunErr := ip2.OpenTunByName(s.InterfaceName)
+	tunFile, openTunErr := t.ioctl.CreateTunInterface(s.InterfaceName)
 	if openTunErr != nil {
 		return nil, fmt.Errorf("failed to open TUN interface: %v", openTunErr)
 	}
@@ -52,15 +55,20 @@ func (t *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 }
 
 // configureTUN Configures client's TUN device (creates the TUN device, assigns an IP to it, etc)
-func configureTUN(connSettings settings.ConnectionSettings) error {
-	name, err := ip2.UpNewTun(connSettings.InterfaceName)
+func (t *PlatformTunManager) configureTUN(connSettings settings.ConnectionSettings) error {
+	err := t.ip.TunTapAddDevTun(connSettings.InterfaceName)
 	if err != nil {
-		return fmt.Errorf("failed to create interface %v: %v", connSettings.InterfaceName, err)
+		return err
 	}
-	fmt.Printf("created TUN interface: %v\n", name)
+
+	err = t.ip.LinkSetDevUp(connSettings.InterfaceName)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("created TUN interface: %v\n", connSettings.InterfaceName)
 
 	// Assign IP address to the TUN interface
-	_, err = ip2.LinkAddrAdd(connSettings.InterfaceName, connSettings.InterfaceAddress)
+	err = t.ip.AddrAddDev(connSettings.InterfaceName, connSettings.InterfaceAddress)
 	if err != nil {
 		return err
 	}
@@ -70,7 +78,7 @@ func configureTUN(connSettings settings.ConnectionSettings) error {
 	serverIP := connSettings.ConnectionIP
 
 	// Get routing information
-	routeInfo, err := ip2.RouteGet(serverIP)
+	routeInfo, err := t.ip.RouteGet(serverIP)
 	var viaGateway, devInterface string
 	fields := strings.Fields(routeInfo)
 	for i, field := range fields {
@@ -87,9 +95,9 @@ func configureTUN(connSettings settings.ConnectionSettings) error {
 
 	// Add route to server IP
 	if viaGateway == "" {
-		err = ip2.RouteAdd(serverIP, devInterface)
+		err = t.ip.RouteAddDev(serverIP, devInterface)
 	} else {
-		err = ip2.RouteAddViaGateway(serverIP, devInterface, viaGateway)
+		err = t.ip.RouteAddViaDev(serverIP, devInterface, viaGateway)
 	}
 	if err != nil {
 		return fmt.Errorf("failed to add route to server IP: %v", err)
@@ -97,26 +105,31 @@ func configureTUN(connSettings settings.ConnectionSettings) error {
 	fmt.Printf("added route to server %s via %s dev %s\n", serverIP, viaGateway, devInterface)
 
 	// Set the TUN interface as the default gateway
-	_, err = ip2.RouteAddDefaultDev(connSettings.InterfaceName)
+	err = t.ip.RouteAddDefaultDev(connSettings.InterfaceName)
 	if err != nil {
 		return err
 	}
 	fmt.Printf("set %s as default gateway\n", connSettings.InterfaceName)
 
-	configureClampingErr := iptables.ConfigureMssClamping()
+	configureClampingErr := t.iptables.ConfigureMssClamping()
 	if configureClampingErr != nil {
 		return configureClampingErr
+	}
+
+	// sets client's TUN device maximum transmission unit (MTU)
+	if setMtuErr := t.ip.LinkSetDevMTU(connSettings.InterfaceName, connSettings.MTU); setMtuErr != nil {
+		return fmt.Errorf("failed to set %d MTU for %s: %s", connSettings.MTU, connSettings.InterfaceName, setMtuErr)
 	}
 
 	return nil
 }
 
 func (t *PlatformTunManager) DisposeTunDevices() error {
-	_ = ip2.RouteDel(t.conf.UDPSettings.ConnectionIP)
-	_, _ = ip2.LinkDel(t.conf.UDPSettings.InterfaceName)
+	_ = t.ip.RouteDel(t.conf.UDPSettings.ConnectionIP)
+	_ = t.ip.LinkDelete(t.conf.UDPSettings.InterfaceName)
 
-	_ = ip2.RouteDel(t.conf.TCPSettings.ConnectionIP)
-	_, _ = ip2.LinkDel(t.conf.TCPSettings.InterfaceName)
+	_ = t.ip.RouteDel(t.conf.TCPSettings.ConnectionIP)
+	_ = t.ip.LinkDelete(t.conf.TCPSettings.InterfaceName)
 
 	return nil
 }
