@@ -5,7 +5,7 @@ import (
 	"log"
 	"os"
 	"tungo/application"
-	"tungo/infrastructure/PAL/linux"
+	"tungo/infrastructure/PAL"
 	"tungo/infrastructure/PAL/linux/ip"
 	"tungo/infrastructure/PAL/linux/iptables"
 	"tungo/infrastructure/PAL/linux/syscall"
@@ -21,8 +21,8 @@ type ServerTunFactory struct {
 
 func NewServerTunFactory() application.ServerTunManager {
 	return &ServerTunFactory{
-		ip:       ip.NewWrapper(linux.NewCommander()),
-		iptables: iptables.NewWrapper(linux.NewCommander()),
+		ip:       ip.NewWrapper(PAL.NewExecCommander()),
+		iptables: iptables.NewWrapper(PAL.NewExecCommander()),
 	}
 }
 

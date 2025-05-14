@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"tungo/infrastructure/PAL/linux"
+	"tungo/infrastructure/PAL"
 	"tungo/infrastructure/PAL/linux/ip"
 	"tungo/infrastructure/network"
 	"tungo/settings"
@@ -18,7 +18,7 @@ type ConfgenHandler struct {
 
 func NewConfgenHandler() *ConfgenHandler {
 	return &ConfgenHandler{
-		ipWrapper: ip.NewWrapper(linux.NewCommander()),
+		ipWrapper: ip.NewWrapper(PAL.NewExecCommander()),
 	}
 }
 

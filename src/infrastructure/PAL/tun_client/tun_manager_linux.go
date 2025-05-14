@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"tungo/application"
-	"tungo/infrastructure/PAL/linux"
+	"tungo/infrastructure/PAL"
 	"tungo/infrastructure/PAL/linux/ip"
 	"tungo/infrastructure/PAL/linux/iptables"
 	"tungo/infrastructure/PAL/linux/syscall"
@@ -22,8 +22,8 @@ type PlatformTunManager struct {
 func NewPlatformTunManager(conf client_configuration.Configuration) (application.ClientTunManager, error) {
 	return &PlatformTunManager{
 		conf:     conf,
-		ip:       ip.NewWrapper(linux.NewCommander()),
-		iptables: iptables.NewWrapper(linux.NewCommander()),
+		ip:       ip.NewWrapper(PAL.NewExecCommander()),
+		iptables: iptables.NewWrapper(PAL.NewExecCommander()),
 	}, nil
 }
 
