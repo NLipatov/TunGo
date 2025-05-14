@@ -3,6 +3,7 @@ package tun_client
 import (
 	"errors"
 	"fmt"
+	"golang.zx2c4.com/wintun"
 	"log"
 	"net"
 	"os/exec"
@@ -10,7 +11,7 @@ import (
 	"strings"
 	"syscall"
 	"tungo/infrastructure/PAL"
-	tools_windows "tungo/infrastructure/PAL/windows"
+	tools "tungo/infrastructure/PAL/windows"
 	"tungo/infrastructure/PAL/windows/netsh"
 	"unsafe"
 
@@ -45,7 +46,7 @@ func (m *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 		return nil, errors.New("unsupported protocol")
 	}
 
-	origPhysGateway, origPhysIP, err := getOriginalPhysicalGatewayAndInterface()
+	origPhysGateway, origPhysIP, err := m.getOriginalPhysicalGatewayAndInterface()
 	if err != nil {
 		return nil, fmt.Errorf("original route error: %w", err)
 	}
@@ -60,7 +61,7 @@ func (m *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 		mtu = 1420
 	}
 
-	device, err := tools_windows.NewWinTun(adapter)
+	device, err := tools.NewWinTun(adapter)
 	if err != nil {
 		_ = adapter.Close()
 		return nil, err
@@ -72,7 +73,7 @@ func (m *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 		return nil, err
 	}
 
-	if err = configureWindowsTunNetsh(s.InterfaceName, s.InterfaceAddress, s.InterfaceIPCIDR, tunGateway); err != nil {
+	if err = m.configureWindowsTunNetsh(s.InterfaceName, s.InterfaceAddress, s.InterfaceIPCIDR, tunGateway); err != nil {
 		_ = device.Close()
 		return nil, err
 	}
@@ -104,7 +105,7 @@ func (m *PlatformTunManager) DisposeTunDevices() error {
 	return nil
 }
 
-func configureWindowsTunNetsh(interfaceName, hostIP, ipCIDR, gateway string) error {
+func (m *PlatformTunManager) configureWindowsTunNetsh(interfaceName, hostIP, ipCIDR, gateway string) error {
 	parts := strings.Split(ipCIDR, "/")
 	if len(parts) != 2 {
 		return fmt.Errorf("invalid CIDR: %s", ipCIDR)
@@ -136,7 +137,7 @@ func configureWindowsTunNetsh(interfaceName, hostIP, ipCIDR, gateway string) err
 	return m.netsh.SetInterfaceMetric(interfaceName, newMetric)
 }
 
-func getOriginalPhysicalGatewayAndInterface() (gateway, ifaceIP string, err error) {
+func (m *PlatformTunManager) getOriginalPhysicalGatewayAndInterface() (gateway, ifaceIP string, err error) {
 	out, err := exec.Command("route", "print", "0.0.0.0").CombinedOutput()
 	if err != nil {
 		return
