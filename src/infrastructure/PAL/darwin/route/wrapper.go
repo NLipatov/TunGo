@@ -12,6 +12,12 @@ type Wrapper struct {
 	commander PAL.Commander
 }
 
+func NewWrapper(commander PAL.Commander) Contract {
+	return &Wrapper{
+		commander: commander,
+	}
+}
+
 func (w *Wrapper) Get(destIP string) error {
 	parseRoute := func(target string) (gw, iface string, err error) {
 		out, err := exec.Command("route", "-n", "get", target).CombinedOutput()
