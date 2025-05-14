@@ -12,6 +12,10 @@ type sysctlMockCommander struct {
 	err    error
 }
 
+func (m *sysctlMockCommander) Run(_ string, _ ...string) error {
+	panic("not implemented")
+}
+
 func (m *sysctlMockCommander) Output(_ string, _ ...string) ([]byte, error) {
 	return m.output, m.err
 }

@@ -11,6 +11,10 @@ type mockCommander struct {
 	errMap    map[string]error
 }
 
+func (m *mockCommander) Run(_ string, _ ...string) error {
+	panic("not implemented")
+}
+
 func (m *mockCommander) CombinedOutput(name string, args ...string) ([]byte, error) {
 	cmd := strings.Join(append([]string{name}, args...), " ")
 	return m.outputMap[cmd], m.errMap[cmd]

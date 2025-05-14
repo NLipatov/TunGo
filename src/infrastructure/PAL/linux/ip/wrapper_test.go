@@ -11,6 +11,10 @@ type mockCommander struct {
 	CombinedOutputFunc func(name string, args ...string) ([]byte, error)
 }
 
+func (m *mockCommander) Run(_ string, _ ...string) error {
+	panic("not implemented")
+}
+
 func (m *mockCommander) Output(name string, args ...string) ([]byte, error) {
 	return m.OutputFunc(name, args...)
 }
