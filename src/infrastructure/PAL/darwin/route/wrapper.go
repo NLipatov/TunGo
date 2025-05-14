@@ -5,9 +5,14 @@ import (
 	"golang.org/x/sync/errgroup"
 	"os/exec"
 	"strings"
+	"tungo/infrastructure/PAL"
 )
 
-func Get(destIP string) error {
+type Wrapper struct {
+	commander PAL.Commander
+}
+
+func (w *Wrapper) Get(destIP string) error {
 	parseRoute := func(target string) (gw, iface string, err error) {
 		out, err := exec.Command("route", "-n", "get", target).CombinedOutput()
 		if err != nil {
@@ -41,20 +46,20 @@ func Get(destIP string) error {
 
 	switch {
 	case gateway != "":
-		if addErr := Add(gateway, iface); addErr != nil {
+		if addErr := w.Add(gateway, iface); addErr != nil {
 			return fmt.Errorf("route keep gw %s: %w", gateway, addErr)
 		}
-		return AddViaGateway(destIP, gateway)
+		return w.AddViaGateway(destIP, gateway)
 
 	case iface != "":
-		return Add(destIP, iface)
+		return w.Add(destIP, iface)
 
 	default:
 		return fmt.Errorf("no route found for %s", destIP)
 	}
 }
 
-func Add(ip, iface string) error {
+func (w *Wrapper) Add(ip, iface string) error {
 	cmd := exec.Command("route", "add", ip, "-interface", iface)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("route add %s via interface %s failed: %v (%s)", ip, iface, err, out)
@@ -62,7 +67,7 @@ func Add(ip, iface string) error {
 	return nil
 }
 
-func AddViaGateway(ip, gw string) error {
+func (w *Wrapper) AddViaGateway(ip, gw string) error {
 	cmd := exec.Command("route", "add", ip, gw)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("route add %s via %s failed: %v (%s)", ip, gw, err, out)
@@ -70,7 +75,7 @@ func AddViaGateway(ip, gw string) error {
 	return nil
 }
 
-func AddSplit(dev string) error {
+func (w *Wrapper) AddSplit(dev string) error {
 	if out, err := exec.Command("route", "-q", "add", "-net", "0.0.0.0/1", "-interface", dev).CombinedOutput(); err != nil {
 		return fmt.Errorf("route add 0.0.0.0/1 failed: %v (%s)", err, out)
 	}
@@ -80,7 +85,7 @@ func AddSplit(dev string) error {
 	return nil
 }
 
-func DelSplit(dev string) error {
+func (w *Wrapper) DelSplit(dev string) error {
 	var errGroup errgroup.Group
 
 	errGroup.Go(func() error {
@@ -94,7 +99,7 @@ func DelSplit(dev string) error {
 	return errGroup.Wait()
 }
 
-func Del(destIP string) error {
+func (w *Wrapper) Del(destIP string) error {
 	cmd := exec.Command("route", "delete", destIP)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("route delete %s failed: %v (%s)", destIP, err, out)
@@ -103,7 +108,7 @@ func Del(destIP string) error {
 }
 
 // DefaultGateway queries `route -n get default` to find the LAN gateway IP.
-func DefaultGateway() (string, error) {
+func (w *Wrapper) DefaultGateway() (string, error) {
 	out, err := exec.Command("route", "-n", "get", "default").CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("defaultGateway: %v (%s)", err, out)
