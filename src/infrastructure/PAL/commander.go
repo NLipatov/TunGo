@@ -6,6 +6,7 @@ import "os/exec"
 type Commander interface {
 	CombinedOutput(name string, args ...string) ([]byte, error)
 	Output(name string, args ...string) ([]byte, error)
+	Run(name string, args ...string) error
 }
 
 type ExecCommander struct {
@@ -21,4 +22,8 @@ func (r *ExecCommander) CombinedOutput(name string, args ...string) ([]byte, err
 
 func (r *ExecCommander) Output(name string, args ...string) ([]byte, error) {
 	return exec.Command(name, args...).Output()
+}
+
+func (r *ExecCommander) Run(name string, args ...string) error {
+	return exec.Command(name, args...).Run()
 }
