@@ -6,33 +6,38 @@ import (
 	"testing"
 )
 
-// fakeCommander implements PAL.Commander for tests.
+// wrapperTestCommander implements PAL.Commander for tests.
 type wrapperTestCommander struct {
 	out map[string][]byte
 	err map[string]error
 	run map[string]error
 }
 
-func (f *wrapperTestCommander) Output(name string, _ ...string) ([]byte, error) {
-	return f.out[name], f.err[name]
+func (f *wrapperTestCommander) Output(_ string, _ ...string) ([]byte, error) {
+	// Not used by this wrapper
+	return nil, nil
 }
 
 func (f *wrapperTestCommander) CombinedOutput(name string, args ...string) ([]byte, error) {
-	key := name + "|" + strings.Join(args, " ")
+	key := makeKey(name, args...)
 	return f.out[key], f.err[key]
 }
 
 func (f *wrapperTestCommander) Run(name string, args ...string) error {
-	key := name + "|" + strings.Join(args, " ")
+	key := makeKey(name, args...)
 	return f.run[key]
 }
 
-func newWrapper(out map[string][]byte, err map[string]error, run map[string]error) *Wrapper {
-	return &Wrapper{commander: &wrapperTestCommander{out: out, err: err, run: run}}
+func makeKey(name string, args ...string) string {
+	return name + "|" + strings.Join(args, " ")
+}
+
+func newWrapper(out map[string][]byte, cmdErr map[string]error, runErr map[string]error) *Wrapper {
+	return &Wrapper{commander: &wrapperTestCommander{out: out, err: cmdErr, run: runErr}}
 }
 
 func TestAdd(t *testing.T) {
-	key := "route|add|1.2.3.4|-interface|eth0"
+	key := makeKey("route", "add", "1.2.3.4", "-interface", "eth0")
 
 	// success
 	w := newWrapper(map[string][]byte{key: nil}, nil, nil)
@@ -42,13 +47,14 @@ func TestAdd(t *testing.T) {
 
 	// failure
 	w = newWrapper(nil, map[string]error{key: errors.New("boom")}, nil)
-	if err := w.Add("1.2.3.4", "eth0"); err == nil || !strings.Contains(err.Error(), "route add 1.2.3.4 via interface eth0 failed") {
+	err := w.Add("1.2.3.4", "eth0")
+	if err == nil || !strings.Contains(err.Error(), "route add 1.2.3.4 via interface eth0 failed") {
 		t.Errorf("unexpected Add error: %v", err)
 	}
 }
 
 func TestAddViaGateway(t *testing.T) {
-	key := "route|add|5.6.7.8|9.9.9.9"
+	key := makeKey("route", "add", "5.6.7.8", "9.9.9.9")
 
 	// success
 	w := newWrapper(map[string][]byte{key: nil}, nil, nil)
@@ -58,57 +64,54 @@ func TestAddViaGateway(t *testing.T) {
 
 	// failure
 	w = newWrapper(nil, map[string]error{key: errors.New("fail")}, nil)
-	if err := w.AddViaGateway("5.6.7.8", "9.9.9.9"); err == nil || !strings.Contains(err.Error(), "route add 5.6.7.8 via 9.9.9.9 failed") {
+	err := w.AddViaGateway("5.6.7.8", "9.9.9.9")
+	if err == nil || !strings.Contains(err.Error(), "route add 5.6.7.8 via 9.9.9.9 failed") {
 		t.Errorf("unexpected AddViaGateway error: %v", err)
 	}
 }
 
 func TestAddSplit(t *testing.T) {
-	successOut := map[string][]byte{
-		"route|-q|add|-net|0.0.0.0/1|-interface|tun0":   nil,
-		"route|-q|add|-net|128.0.0.0/1|-interface|tun0": nil,
-	}
+	k1 := makeKey("route", "-q", "add", "-net", "0.0.0.0/1", "-interface", "tun0")
+	k2 := makeKey("route", "-q", "add", "-net", "128.0.0.0/1", "-interface", "tun0")
 
 	// success
-	w := newWrapper(successOut, nil, nil)
+	w := newWrapper(map[string][]byte{k1: nil, k2: nil}, nil, nil)
 	if err := w.AddSplit("tun0"); err != nil {
 		t.Fatalf("expected AddSplit to succeed, got %v", err)
 	}
 
 	// fail first
-	w = newWrapper(successOut, map[string]error{"route|-q|add|-net|0.0.0.0/1|-interface|tun0": errors.New("f1")}, nil)
+	w = newWrapper(nil, map[string]error{k1: errors.New("e1")}, nil)
 	if err := w.AddSplit("tun0"); err == nil || !strings.Contains(err.Error(), "route add 0.0.0.0/1 failed") {
-		t.Errorf("unexpected AddSplit error: %v", err)
+		t.Errorf("unexpected AddSplit error for first: %v", err)
 	}
 
 	// fail second
-	w = newWrapper(successOut, map[string]error{"route|-q|add|-net|128.0.0.0/1|-interface|tun0": errors.New("f2")}, nil)
+	w = newWrapper(map[string][]byte{k1: nil}, map[string]error{k2: errors.New("e2")}, nil)
 	if err := w.AddSplit("tun0"); err == nil || !strings.Contains(err.Error(), "route add 128.0.0.0/1 failed") {
-		t.Errorf("unexpected AddSplit error: %v", err)
+		t.Errorf("unexpected AddSplit error for second: %v", err)
 	}
 }
 
 func TestDelSplit(t *testing.T) {
+	k1 := makeKey("route", "-q", "delete", "-net", "0.0.0.0/1", "-interface", "tun0")
+	k2 := makeKey("route", "-q", "delete", "-net", "128.0.0.0/1", "-interface", "tun0")
+
 	// both succeed
-	runOK := map[string]error{
-		"route|-q|delete|-net|0.0.0.0/1|-interface|tun0":   nil,
-		"route|-q|delete|-net|128.0.0.0/1|-interface|tun0": nil,
-	}
-	w := newWrapper(nil, nil, runOK)
+	w := newWrapper(nil, nil, map[string]error{k1: nil, k2: nil})
 	if err := w.DelSplit("tun0"); err != nil {
 		t.Fatalf("expected DelSplit to succeed, got %v", err)
 	}
 
 	// one fails
-	runFail := map[string]error{"route|-q|delete|-net|0.0.0.0/1|-interface|tun0": errors.New("boom")}
-	w = newWrapper(nil, nil, runFail)
+	w = newWrapper(nil, nil, map[string]error{k1: errors.New("boom")})
 	if err := w.DelSplit("tun0"); err == nil {
 		t.Errorf("expected DelSplit to fail, got nil")
 	}
 }
 
 func TestDel(t *testing.T) {
-	key := "route|delete|9.9.9.9"
+	key := makeKey("route", "delete", "9.9.9.9")
 
 	// success
 	w := newWrapper(map[string][]byte{key: nil}, nil, nil)
@@ -118,13 +121,14 @@ func TestDel(t *testing.T) {
 
 	// failure
 	w = newWrapper(nil, map[string]error{key: errors.New("err")}, nil)
-	if err := w.Del("9.9.9.9"); err == nil || !strings.Contains(err.Error(), "route delete 9.9.9.9 failed") {
+	err := w.Del("9.9.9.9")
+	if err == nil || !strings.Contains(err.Error(), "route delete 9.9.9.9 failed") {
 		t.Errorf("unexpected Del error: %v", err)
 	}
 }
 
 func TestDefaultGateway(t *testing.T) {
-	key := "route|-n|get|default"
+	key := makeKey("route", "-n", "get", "default")
 
 	// found
 	out := []byte("gateway: 1.2.3.4\nfoo")
@@ -152,54 +156,64 @@ func TestDefaultGateway(t *testing.T) {
 
 func TestGetAllBranches(t *testing.T) {
 	// 1) parseRoute(destIP) fails
-	w := newWrapper(nil, map[string]error{"route|-n|get|10.0.0.1": errors.New("x")}, nil)
+	kBad := makeKey("route", "-n", "get", "10.0.0.1")
+	w := newWrapper(nil, map[string]error{kBad: errors.New("fail")}, nil)
 	if err := w.Get("10.0.0.1"); err == nil || !strings.Contains(err.Error(), "route get 10.0.0.1") {
-		t.Errorf("expected Get parseRoute error, got %v", err)
+		t.Errorf("expected parseRoute error, got %v", err)
 	}
 
 	// 2) gateway non-empty
-	out2 := map[string][]byte{
-		"route|-n|get|1.1.1.1":              []byte("gateway: 8.8.8.8\ninterface: eth0\n"),
-		"route|add|8.8.8.8|-interface|eth0": nil,
-		"route|add|1.1.1.1|8.8.8.8":         nil,
-	}
-	w = newWrapper(out2, nil, nil)
+	kGet := makeKey("route", "-n", "get", "1.1.1.1")
+	kAddIf := makeKey("route", "add", "8.8.8.8", "-interface", "eth0")
+	kVia := makeKey("route", "add", "1.1.1.1", "8.8.8.8")
+	w = newWrapper(map[string][]byte{
+		kGet:   []byte("gateway: 8.8.8.8\ninterface: eth0\n"),
+		kAddIf: nil,
+		kVia:   nil,
+	}, nil, nil)
 	if err := w.Get("1.1.1.1"); err != nil {
 		t.Errorf("expected Get to succeed, got %v", err)
 	}
 
-	// 3) loopback gateway => fallback to default
-	out3 := map[string][]byte{
-		"route|-n|get|127.0.0.1":          []byte("gateway: 127.0.0.1\ninterface: e0\n"),
-		"route|-n|get|default":            []byte("gateway: 2.2.2.2\ninterface: e1\n"),
-		"route|add|2.2.2.2|-interface|e1": nil,
-		"route|add|9.9.9.9|2.2.2.2":       nil,
-	}
-	w = newWrapper(out3, nil, nil)
+	// 3) loopback gateway → fallback to default
+	kLB := makeKey("route", "-n", "get", "127.0.0.1")
+	kDef := makeKey("route", "-n", "get", "default")
+	kAddDefIf := makeKey("route", "add", "2.2.2.2", "-interface", "e1")
+	kViaDef := makeKey("route", "add", "9.9.9.9", "2.2.2.2")
+	w = newWrapper(map[string][]byte{
+		kLB:       []byte("gateway: 127.0.0.1\ninterface: e0\n"),
+		kDef:      []byte("gateway: 2.2.2.2\ninterface: e1\n"),
+		kAddDefIf: nil,
+		kViaDef:   nil,
+	}, nil, nil)
 	if err := w.Get("127.0.0.1"); err != nil {
 		t.Errorf("expected fallback Get to succeed, got %v", err)
 	}
 
-	// 4) iface-only
-	out4 := map[string][]byte{"route|-n|get|5.5.5.5": []byte("interface: e2\n")}
-	w = newWrapper(out4, nil, nil)
+	// 4) iface-only (must supply Add key too)
+	kIO := makeKey("route", "-n", "get", "5.5.5.5")
+	kAddIO := makeKey("route", "add", "5.5.5.5", "-interface", "e2")
+	w = newWrapper(map[string][]byte{
+		kIO:    []byte("interface: e2\n"),
+		kAddIO: nil,
+	}, nil, nil)
 	if err := w.Get("5.5.5.5"); err != nil {
 		t.Errorf("expected iface-only Get to succeed, got %v", err)
 	}
 
 	// 5) neither gw nor iface
-	out5 := map[string][]byte{"route|-n|get|9.9.9.9": []byte("foo")}
-	w = newWrapper(out5, nil, nil)
+	kNR := makeKey("route", "-n", "get", "9.9.9.9")
+	w = newWrapper(map[string][]byte{kNR: []byte("foo")}, nil, nil)
 	if err := w.Get("9.9.9.9"); err == nil || !strings.Contains(err.Error(), "no route found") {
 		t.Errorf("expected no-route error, got %v", err)
 	}
 
 	// 6) Add(...) fails
-	out6 := map[string][]byte{
-		"route|-n|get|3.3.3.3":            []byte("gateway: 3.3.3.1\ninterface: e3\n"),
-		"route|add|3.3.3.1|-interface|e3": nil,
-	}
-	w = newWrapper(out6, map[string]error{"route|add|3.3.3.1|-interface|e3": errors.New("boom")}, nil)
+	kG6 := makeKey("route", "-n", "get", "3.3.3.3")
+	kAdd6 := makeKey("route", "add", "3.3.3.1", "-interface", "e3")
+	w = newWrapper(map[string][]byte{
+		kG6: []byte("gateway: 3.3.3.1\ninterface: e3\n"),
+	}, map[string]error{kAdd6: errors.New("boom")}, nil)
 	if err := w.Get("3.3.3.3"); err == nil || !strings.Contains(err.Error(), "route keep gw 3.3.3.1") {
 		t.Errorf("expected keep-gw error, got %v", err)
 	}

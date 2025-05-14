@@ -16,7 +16,6 @@ func NewWrapper(commander PAL.Commander) Contract {
 }
 
 func (w *Wrapper) Get(destIP string) error {
-	// inner parseRoute now uses w.commander.CombinedOutput instead of exec.Command
 	parseRoute := func(target string) (gw, iface string, err error) {
 		out, err := w.commander.CombinedOutput("route", "-n", "get", target)
 		if err != nil {
@@ -42,7 +41,8 @@ func (w *Wrapper) Get(destIP string) error {
 		return err
 	}
 
-	if strings.HasPrefix(gateway, "127.") || gateway == "" {
+	// Only fall back to `default` if we got a loopback gateway _or_ we got _neither_ a gateway nor an interface.
+	if strings.HasPrefix(gateway, "127.") || (gateway == "" && iface == "") {
 		if gwDef, ifDef, err2 := parseRoute("default"); err2 == nil {
 			gateway, iface = gwDef, ifDef
 		}
