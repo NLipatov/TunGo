@@ -5,9 +5,9 @@ import (
 	"strings"
 	"tungo/application"
 	"tungo/infrastructure/PAL"
+	"tungo/infrastructure/PAL/linux/ioctl"
 	"tungo/infrastructure/PAL/linux/ip"
 	"tungo/infrastructure/PAL/linux/iptables"
-	"tungo/infrastructure/PAL/linux/syscall"
 	"tungo/settings"
 	"tungo/settings/client_configuration"
 )
@@ -17,6 +17,7 @@ type PlatformTunManager struct {
 	conf     client_configuration.Configuration
 	ip       ip.Contract
 	iptables iptables.Contract
+	ioctl    ioctl.Contract
 }
 
 func NewPlatformTunManager(conf client_configuration.Configuration) (application.ClientTunManager, error) {
@@ -24,6 +25,7 @@ func NewPlatformTunManager(conf client_configuration.Configuration) (application
 		conf:     conf,
 		ip:       ip.NewWrapper(PAL.NewExecCommander()),
 		iptables: iptables.NewWrapper(PAL.NewExecCommander()),
+		ioctl:    ioctl.NewWrapper(ioctl.NewLinuxIoctlCommander(), "/dev/net/tun"),
 	}, nil
 }
 
@@ -44,7 +46,7 @@ func (t *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 	}
 
 	// opens the TUN device
-	tunFile, openTunErr := syscall.CreateTunInterface(s.InterfaceName)
+	tunFile, openTunErr := t.ioctl.CreateTunInterface(s.InterfaceName)
 	if openTunErr != nil {
 		return nil, fmt.Errorf("failed to open TUN interface: %v", openTunErr)
 	}

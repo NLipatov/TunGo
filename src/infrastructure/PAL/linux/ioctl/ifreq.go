@@ -1,4 +1,4 @@
-package syscall
+package ioctl
 
 type IfReq struct {
 	Name  [ifNamSiz]byte

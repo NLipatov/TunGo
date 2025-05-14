@@ -6,9 +6,9 @@ import (
 	"os"
 	"tungo/application"
 	"tungo/infrastructure/PAL"
+	"tungo/infrastructure/PAL/linux/ioctl"
 	"tungo/infrastructure/PAL/linux/ip"
 	"tungo/infrastructure/PAL/linux/iptables"
-	"tungo/infrastructure/PAL/linux/syscall"
 	"tungo/infrastructure/PAL/linux/sysctl"
 	"tungo/infrastructure/network"
 	"tungo/settings"
@@ -17,12 +17,14 @@ import (
 type ServerTunFactory struct {
 	ip       ip.Contract
 	iptables iptables.Contract
+	ioctl    ioctl.Contract
 }
 
 func NewServerTunFactory() application.ServerTunManager {
 	return &ServerTunFactory{
 		ip:       ip.NewWrapper(PAL.NewExecCommander()),
 		iptables: iptables.NewWrapper(PAL.NewExecCommander()),
+		ioctl:    ioctl.NewWrapper(ioctl.NewLinuxIoctlCommander(), "/dev/net/tun"),
 	}
 }
 
@@ -46,7 +48,7 @@ func (s ServerTunFactory) CreateTunDevice(connSettings settings.ConnectionSettin
 }
 
 func (s ServerTunFactory) DisposeTunDevices(connSettings settings.ConnectionSettings) error {
-	tun, openErr := syscall.CreateTunInterface(connSettings.InterfaceName)
+	tun, openErr := s.ioctl.CreateTunInterface(connSettings.InterfaceName)
 	if openErr != nil {
 		return fmt.Errorf("failed to open TUN interface: %w", openErr)
 	}
@@ -98,7 +100,7 @@ func (s ServerTunFactory) createTun(settings settings.ConnectionSettings) (*os.F
 		return nil, fmt.Errorf("failed to convert server ip to CIDR format: %s", addrAddDev)
 	}
 
-	tunFile, tunFileErr := syscall.CreateTunInterface(settings.InterfaceName)
+	tunFile, tunFileErr := s.ioctl.CreateTunInterface(settings.InterfaceName)
 	if tunFileErr != nil {
 		return nil, fmt.Errorf("failed to open TUN interface: %v", tunFileErr)
 	}
@@ -148,7 +150,7 @@ func (s ServerTunFactory) configure(tunFile *os.File) error {
 }
 
 func (s ServerTunFactory) Unconfigure(tunFile *os.File) {
-	tunName, err := syscall.DetectTunNameFromFd(tunFile)
+	tunName, err := s.ioctl.DetectTunNameFromFd(tunFile)
 	if err != nil {
 		log.Printf("failed to determing tunnel ifName: %s\n", err)
 	}
@@ -168,7 +170,7 @@ func (s ServerTunFactory) Unconfigure(tunFile *os.File) {
 
 func (s ServerTunFactory) setupForwarding(tunFile *os.File, extIface string) error {
 	// Get the name of the TUN interface
-	tunName, err := syscall.DetectTunNameFromFd(tunFile)
+	tunName, err := s.ioctl.DetectTunNameFromFd(tunFile)
 	if err != nil {
 		return fmt.Errorf("failed to determing tunnel ifName: %s\n", err)
 	}
@@ -191,7 +193,7 @@ func (s ServerTunFactory) setupForwarding(tunFile *os.File, extIface string) err
 }
 
 func (s ServerTunFactory) clearForwarding(tunFile *os.File, extIface string) error {
-	tunName, err := syscall.DetectTunNameFromFd(tunFile)
+	tunName, err := s.ioctl.DetectTunNameFromFd(tunFile)
 	if err != nil {
 		return fmt.Errorf("failed to determing tunnel ifName: %s\n", err)
 	}

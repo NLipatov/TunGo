@@ -1,4 +1,4 @@
-package syscall
+package ioctl
 
 import (
 	"fmt"
@@ -8,11 +8,22 @@ import (
 	"unsafe"
 )
 
-func DetectTunNameFromFd(fd *os.File) (string, error) {
+type Wrapper struct {
+	commander Commander
+	tunPath   string
+}
+
+func NewWrapper(commander Commander, tunPath string) Contract {
+	return &Wrapper{
+		commander: commander,
+		tunPath:   tunPath,
+	}
+}
+
+func (w *Wrapper) DetectTunNameFromFd(fd *os.File) (string, error) {
 	var ifr IfReq
 
-	_, _, errno := unix.Syscall(
-		unix.SYS_IOCTL,
+	_, _, errno := w.commander.Ioctl(
 		fd.Fd(),
 		uintptr(unix.TUNGETIFF),
 		uintptr(unsafe.Pointer(&ifr)),
@@ -25,10 +36,10 @@ func DetectTunNameFromFd(fd *os.File) (string, error) {
 	return name, nil
 }
 
-func CreateTunInterface(name string) (*os.File, error) {
-	tun, err := os.OpenFile(tunPath, os.O_RDWR, 0)
+func (w *Wrapper) CreateTunInterface(name string) (*os.File, error) {
+	tun, err := os.OpenFile(w.tunPath, os.O_RDWR, 0)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open %v: %v", tunPath, err)
+		return nil, fmt.Errorf("failed to open %v: %v", w.tunPath, err)
 	}
 
 	shouldCloseTun := true
@@ -42,7 +53,7 @@ func CreateTunInterface(name string) (*os.File, error) {
 	copy(req.Name[:], name)
 	req.Flags = iffTun | IffNoPi
 
-	_, _, errno := unix.Syscall(unix.SYS_IOCTL, tun.Fd(), uintptr(tunSetIff), uintptr(unsafe.Pointer(&req)))
+	_, _, errno := w.commander.Ioctl(tun.Fd(), uintptr(tunSetIff), uintptr(unsafe.Pointer(&req)))
 	if errno != 0 {
 		return nil, fmt.Errorf("ioctl TUNSETIFF failed for %s: %v", name, errno)
 	}
