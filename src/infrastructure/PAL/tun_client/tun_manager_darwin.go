@@ -19,6 +19,7 @@ type PlatformTunManager struct {
 	conf  client_configuration.Configuration
 	dev   *tun.Device
 	route route.Contract
+	ip    ip.Contract
 }
 
 // NewPlatformTunManager constructs a new PlatformTunManager.
@@ -26,6 +27,7 @@ func NewPlatformTunManager(conf client_configuration.Configuration) (application
 	return &PlatformTunManager{
 		conf:  conf,
 		route: route.NewWrapper(PAL.NewExecCommander()),
+		ip:    ip.NewWrapper(PAL.NewExecCommander()),
 	}, nil
 }
 
@@ -58,7 +60,7 @@ func (t *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 	cidrPrefix := strings.Split(s.InterfaceIPCIDR, "/")[1]
 	addrCIDR := fmt.Sprintf("%s/%s", s.InterfaceAddress, cidrPrefix)
 
-	if linkAddrAddErr := ip.LinkAddrAdd(name, addrCIDR); linkAddrAddErr != nil {
+	if linkAddrAddErr := t.ip.LinkAddrAdd(name, addrCIDR); linkAddrAddErr != nil {
 		return nil, fmt.Errorf("failed to assign IP to %s: %w", name, linkAddrAddErr)
 	}
 	fmt.Printf("assigned IP %s to %s\n", addrCIDR, name)
