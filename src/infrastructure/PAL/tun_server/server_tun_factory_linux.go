@@ -18,6 +18,7 @@ type ServerTunFactory struct {
 	ip       ip.Contract
 	iptables iptables.Contract
 	ioctl    ioctl.Contract
+	sysctl   sysctl.Contract
 }
 
 func NewServerTunFactory() application.ServerTunManager {
@@ -25,6 +26,7 @@ func NewServerTunFactory() application.ServerTunManager {
 		ip:       ip.NewWrapper(PAL.NewExecCommander()),
 		iptables: iptables.NewWrapper(PAL.NewExecCommander()),
 		ioctl:    ioctl.NewWrapper(ioctl.NewLinuxIoctlCommander(), "/dev/net/tun"),
+		sysctl:   sysctl.NewWrapper(PAL.NewExecCommander()),
 	}
 }
 
@@ -109,13 +111,13 @@ func (s ServerTunFactory) createTun(settings settings.ConnectionSettings) (*os.F
 }
 
 func (s ServerTunFactory) enableForwarding() error {
-	output, err := sysctl.NetIpv4IpForward()
+	output, err := s.sysctl.NetIpv4IpForward()
 	if err != nil {
 		return fmt.Errorf("failed to enable IPv4 packet forwarding: %v, output: %s", err, output)
 	}
 
 	if string(output) != "net.ipv4.ip_forward = 1\n" {
-		output, err = sysctl.WNetIpv4IpForward()
+		output, err = s.sysctl.WNetIpv4IpForward()
 		if err != nil {
 			return fmt.Errorf("failed to enable IPv4 packet forwarding: %v, output: %s", err, output)
 		}
