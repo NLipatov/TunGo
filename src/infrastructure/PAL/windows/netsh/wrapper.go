@@ -4,9 +4,18 @@ import (
 	"fmt"
 	"os/exec"
 	"strconv"
+	"tungo/infrastructure/PAL"
 )
 
-func RouteDelete(hostIP string) error {
+type Wrapper struct {
+	commander PAL.Commander
+}
+
+func NewWrapper(commander PAL.Commander) Contract {
+	return &Wrapper{commander: commander}
+}
+
+func (w *Wrapper) RouteDelete(hostIP string) error {
 	output, err := exec.Command("route", "delete", hostIP).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("RouteDelete error: %v, output: %s", err, output)
@@ -14,7 +23,7 @@ func RouteDelete(hostIP string) error {
 	return nil
 }
 
-func InterfaceIPSetAddressStatic(interfaceName, hostIP, mask, gateway string) error {
+func (w *Wrapper) InterfaceIPSetAddressStatic(interfaceName, hostIP, mask, gateway string) error {
 	output, err := exec.Command("netsh", "interface", "ip", "set", "address",
 		"name="+interfaceName, "static", hostIP, mask, gateway, "1").CombinedOutput()
 	if err != nil {
@@ -23,7 +32,7 @@ func InterfaceIPSetAddressStatic(interfaceName, hostIP, mask, gateway string) er
 	return nil
 }
 
-func InterfaceIPV4AddRouteDefault(interfaceName, gateway string) error {
+func (w *Wrapper) InterfaceIPV4AddRouteDefault(interfaceName, gateway string) error {
 	output, err := exec.Command("netsh", "interface", "ipv4", "add", "route", "0.0.0.0/0",
 		"name="+interfaceName, gateway, "metric=1").CombinedOutput()
 	if err != nil {
@@ -32,7 +41,7 @@ func InterfaceIPV4AddRouteDefault(interfaceName, gateway string) error {
 	return nil
 }
 
-func InterfaceIPV4DeleteAddress(IfName string) error {
+func (w *Wrapper) InterfaceIPV4DeleteAddress(IfName string) error {
 	output, err := exec.Command("netsh", "interface", "ipv4", "delete", "route", "0.0.0.0/0",
 		"name="+IfName).CombinedOutput()
 	if err != nil {
@@ -41,7 +50,7 @@ func InterfaceIPV4DeleteAddress(IfName string) error {
 	return nil
 }
 
-func InterfaceIPDeleteAddress(IfName, IfAddr string) error {
+func (w *Wrapper) InterfaceIPDeleteAddress(IfName, IfAddr string) error {
 	output, err := exec.Command("netsh", "interface", "ip", "delete", "address",
 		"name="+IfName, "addr="+IfAddr).CombinedOutput()
 	if err != nil {
@@ -50,7 +59,7 @@ func InterfaceIPDeleteAddress(IfName, IfAddr string) error {
 	return nil
 }
 
-func SetInterfaceMetric(interfaceName string, metric int) error {
+func (w *Wrapper) SetInterfaceMetric(interfaceName string, metric int) error {
 	output, err := exec.Command("netsh", "interface", "ipv4", "set", "interface",
 		interfaceName, "metric="+strconv.Itoa(metric)).CombinedOutput()
 	if err != nil {

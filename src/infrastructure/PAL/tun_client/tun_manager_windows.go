@@ -3,13 +3,13 @@ package tun_client
 import (
 	"errors"
 	"fmt"
-	"golang.zx2c4.com/wintun"
 	"log"
 	"net"
 	"os/exec"
 	"strconv"
 	"strings"
 	"syscall"
+	"tungo/infrastructure/PAL"
 	tools_windows "tungo/infrastructure/PAL/windows"
 	"tungo/infrastructure/PAL/windows/netsh"
 	"unsafe"
@@ -21,13 +21,17 @@ import (
 )
 
 type PlatformTunManager struct {
-	conf client_configuration.Configuration
+	conf  client_configuration.Configuration
+	netsh netsh.Contract
 }
 
 func NewPlatformTunManager(
 	conf client_configuration.Configuration,
 ) (application.ClientTunManager, error) {
-	return &PlatformTunManager{conf: conf}, nil
+	return &PlatformTunManager{
+		conf:  conf,
+		netsh: netsh.NewWrapper(PAL.NewExecCommander()),
+	}, nil
 }
 
 func (m *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
@@ -73,7 +77,7 @@ func (m *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 		return nil, err
 	}
 
-	_ = netsh.RouteDelete(s.ConnectionIP)
+	_ = m.netsh.RouteDelete(s.ConnectionIP)
 	if err = addStaticRouteToServer(s.ConnectionIP, origPhysIP, origPhysGateway); err != nil {
 		_ = device.Close()
 		return nil, err
@@ -89,13 +93,13 @@ func (m *PlatformTunManager) DisposeTunDevices() error {
 	_ = disposeExistingTunDevices(m.conf.UDPSettings.InterfaceName)
 
 	// net configuration cleanup
-	_ = netsh.InterfaceIPDeleteAddress(m.conf.TCPSettings.InterfaceName, m.conf.TCPSettings.InterfaceAddress)
-	_ = netsh.InterfaceIPV4DeleteAddress(m.conf.TCPSettings.InterfaceName)
-	_ = netsh.RouteDelete(m.conf.TCPSettings.ConnectionIP)
+	_ = m.netsh.InterfaceIPDeleteAddress(m.conf.TCPSettings.InterfaceName, m.conf.TCPSettings.InterfaceAddress)
+	_ = m.netsh.InterfaceIPV4DeleteAddress(m.conf.TCPSettings.InterfaceName)
+	_ = m.netsh.RouteDelete(m.conf.TCPSettings.ConnectionIP)
 
-	_ = netsh.InterfaceIPDeleteAddress(m.conf.UDPSettings.InterfaceName, m.conf.UDPSettings.InterfaceAddress)
-	_ = netsh.InterfaceIPV4DeleteAddress(m.conf.UDPSettings.InterfaceName)
-	_ = netsh.RouteDelete(m.conf.UDPSettings.ConnectionIP)
+	_ = m.netsh.InterfaceIPDeleteAddress(m.conf.UDPSettings.InterfaceName, m.conf.UDPSettings.InterfaceAddress)
+	_ = m.netsh.InterfaceIPV4DeleteAddress(m.conf.UDPSettings.InterfaceName)
+	_ = m.netsh.RouteDelete(m.conf.UDPSettings.ConnectionIP)
 
 	return nil
 }
@@ -109,11 +113,11 @@ func configureWindowsTunNetsh(interfaceName, hostIP, ipCIDR, gateway string) err
 	mask := net.CIDRMask(prefix, 32)
 	maskStr := net.IP(mask).String()
 
-	if err := netsh.InterfaceIPSetAddressStatic(interfaceName, hostIP, maskStr, gateway); err != nil {
+	if err := m.netsh.InterfaceIPSetAddressStatic(interfaceName, hostIP, maskStr, gateway); err != nil {
 		return err
 	}
 
-	if err := netsh.InterfaceIPV4AddRouteDefault(interfaceName, gateway); err != nil {
+	if err := m.netsh.InterfaceIPV4AddRouteDefault(interfaceName, gateway); err != nil {
 		return err
 	}
 
@@ -129,7 +133,7 @@ func configureWindowsTunNetsh(interfaceName, hostIP, ipCIDR, gateway string) err
 	}
 
 	log.Printf("setting interface %s metric to %d", interfaceName, newMetric)
-	return netsh.SetInterfaceMetric(interfaceName, newMetric)
+	return m.netsh.SetInterfaceMetric(interfaceName, newMetric)
 }
 
 func getOriginalPhysicalGatewayAndInterface() (gateway, ifaceIP string, err error) {
