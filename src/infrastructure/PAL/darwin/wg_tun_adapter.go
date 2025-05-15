@@ -9,10 +9,10 @@ import (
 	"tungo/infrastructure/network"
 )
 
-// DarwinWgTunAdapter wraps a wireguard/tun Device and is **allocation‑free**
+// WgTunAdapter wraps a wireguard/tun Device and is **allocation‑free**
 // in the steady state: all required buffers and slice headers are created
 // once in NewWgTunAdapter and then reused.
-type DarwinWgTunAdapter struct {
+type WgTunAdapter struct {
 	device tun.Device
 
 	readBuffer  []byte // backing array for incoming packets (+4 bytes hdr)
@@ -29,7 +29,7 @@ type DarwinWgTunAdapter struct {
 func NewWgTunAdapter(dev tun.Device) application.TunDevice {
 	rb := make([]byte, network.MaxPacketLengthBytes)
 	wb := make([]byte, network.MaxPacketLengthBytes)
-	return &DarwinWgTunAdapter{
+	return &WgTunAdapter{
 		device:      dev,
 		readBuffer:  rb,
 		writeBuffer: wb,
@@ -41,7 +41,7 @@ func NewWgTunAdapter(dev tun.Device) application.TunDevice {
 
 // Read copies a clean IP packet (without the 4‑byte utun header) into p.
 // No heap allocations occur.
-func (a *DarwinWgTunAdapter) Read(p []byte) (int, error) {
+func (a *WgTunAdapter) Read(p []byte) (int, error) {
 	a.sizes[0] = 0 // reset size slot
 
 	// offset=4: driver writes after utun header
@@ -57,7 +57,7 @@ func (a *DarwinWgTunAdapter) Read(p []byte) (int, error) {
 }
 
 // Write prepends utun header and transmits p without allocations.
-func (a *DarwinWgTunAdapter) Write(p []byte) (int, error) {
+func (a *WgTunAdapter) Write(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, errors.New("empty packet")
 	}
@@ -85,4 +85,4 @@ func (a *DarwinWgTunAdapter) Write(p []byte) (int, error) {
 }
 
 // Close closes the underlying utun device.
-func (a *DarwinWgTunAdapter) Close() error { return a.device.Close() }
+func (a *WgTunAdapter) Close() error { return a.device.Close() }
