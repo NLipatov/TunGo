@@ -6,7 +6,7 @@ import (
 	"tungo/application"
 )
 
-type UdpAdapter struct {
+type ServerUdpAdapter struct {
 	UdpConn  *net.UDPConn
 	AddrPort netip.AddrPort
 
@@ -16,17 +16,17 @@ type UdpAdapter struct {
 }
 
 func NewUdpAdapter(UdpConn *net.UDPConn, AddrPort netip.AddrPort) application.ConnectionAdapter {
-	return &UdpAdapter{
+	return &ServerUdpAdapter{
 		UdpConn:  UdpConn,
 		AddrPort: AddrPort,
 	}
 }
 
-func (ua *UdpAdapter) Write(data []byte) (int, error) {
+func (ua *ServerUdpAdapter) Write(data []byte) (int, error) {
 	return ua.UdpConn.WriteToUDPAddrPort(data, ua.AddrPort)
 }
 
-func (ua *UdpAdapter) Read(buffer []byte) (int, error) {
+func (ua *ServerUdpAdapter) Read(buffer []byte) (int, error) {
 	n, _, _, _, err := ua.UdpConn.ReadMsgUDPAddrPort(ua.buf[:], ua.oob[:])
 	if err != nil {
 		return 0, err
@@ -35,6 +35,6 @@ func (ua *UdpAdapter) Read(buffer []byte) (int, error) {
 	return n, nil
 }
 
-func (ua *UdpAdapter) Close() error {
+func (ua *ServerUdpAdapter) Close() error {
 	return ua.UdpConn.Close()
 }
