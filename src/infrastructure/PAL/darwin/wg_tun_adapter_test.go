@@ -36,7 +36,7 @@ func (f *fakeTun) Read(bufs [][]byte, sizes []int, offset int) (int, error) {
 		return 0, f.readErr
 	}
 	// copy payload after 4-byte utun header
-	copy(bufs[0][offset:], f.readPayload[:f.readSize])
+	copy(bufs[0][offset:], f.readPayload[offset:offset+f.readSize])
 	sizes[0] = f.readSize
 	return f.readSize, nil
 }
