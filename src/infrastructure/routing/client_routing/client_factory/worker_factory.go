@@ -29,7 +29,11 @@ func (w *WorkerFactory) CreateWorker(
 ) (application.TunWorker, error) {
 	switch w.conf.Protocol {
 	case settings.UDP:
-		adapter := network.NewClientUDPAdapter(conn.(*net.UDPConn), time.Second*2)
+		deadline, deadlineErr := network.NewDeadline(time.Second * 1)
+		if deadlineErr != nil {
+			return nil, deadlineErr
+		}
+		adapter := network.NewClientUDPAdapter(conn.(*net.UDPConn), deadline, deadline)
 		return udp_chacha20.NewUdpWorker(ctx, adapter, tun, cryptographyService), nil
 	case settings.TCP:
 		return tcp_chacha20.NewTcpTunWorker(ctx, conn, tun, cryptographyService), nil

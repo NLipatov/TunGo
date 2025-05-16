@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network"
@@ -75,6 +76,10 @@ func (w *UdpWorker) HandleTransport() error {
 		default:
 			n, readErr := w.adapter.Read(dataBuf)
 			if readErr != nil {
+				if errors.Is(readErr, os.ErrDeadlineExceeded) {
+					continue
+				}
+
 				if w.ctx.Err() != nil {
 					return nil
 				}

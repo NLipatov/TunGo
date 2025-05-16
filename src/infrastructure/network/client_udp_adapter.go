@@ -3,28 +3,28 @@ package network
 import (
 	"io"
 	"net"
-	"time"
 	"tungo/application"
 )
 
 // ClientUDPAdapter - single goroutine only client udp adapter
 type ClientUDPAdapter struct {
-	conn          *net.UDPConn
-	buf           [MaxPacketLengthBytes]byte
-	oob           [1024]byte
-	writeDeadline time.Duration
+	conn                        *net.UDPConn
+	buf                         [MaxPacketLengthBytes]byte
+	readDeadline, writeDeadline Deadline
 }
 
-func NewClientUDPAdapter(conn *net.UDPConn, writeDeadline time.Duration) application.ConnectionAdapter {
+func NewClientUDPAdapter(
+	conn *net.UDPConn,
+	readDeadline, writeDeadline Deadline) application.ConnectionAdapter {
 	return &ClientUDPAdapter{
 		conn:          conn,
 		writeDeadline: writeDeadline,
+		readDeadline:  readDeadline,
 	}
 }
 
 func (c *ClientUDPAdapter) Write(buffer []byte) (int, error) {
-	deadline := time.Now().Add(c.writeDeadline)
-	if err := c.conn.SetWriteDeadline(deadline); err != nil {
+	if err := c.conn.SetWriteDeadline(c.writeDeadline.Time()); err != nil {
 		return 0, err
 	}
 
@@ -32,7 +32,11 @@ func (c *ClientUDPAdapter) Write(buffer []byte) (int, error) {
 }
 
 func (c *ClientUDPAdapter) Read(buffer []byte) (int, error) {
-	n, _, _, _, err := c.conn.ReadMsgUDPAddrPort(c.buf[:], c.oob[:])
+	if err := c.conn.SetReadDeadline(c.readDeadline.Time()); err != nil {
+		return 0, err
+	}
+
+	n, _, _, _, err := c.conn.ReadMsgUDPAddrPort(c.buf[:], nil)
 	if err != nil {
 		return 0, err
 	}
