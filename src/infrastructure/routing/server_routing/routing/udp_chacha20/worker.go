@@ -201,7 +201,7 @@ func (u *UdpTunWorker) registerClient(conn *net.UDPConn, clientAddr netip.AddrPo
 	}
 
 	u.sessionManager.Add(session{
-		connectionAdapter: &network.UdpAdapter{
+		connectionAdapter: &network.ServerUdpAdapter{
 			UdpConn:  conn,
 			AddrPort: clientAddr,
 		},

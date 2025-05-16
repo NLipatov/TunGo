@@ -5,8 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
-	"time"
+	"os"
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network"
@@ -14,17 +13,17 @@ import (
 
 type UdpWorker struct {
 	ctx                 context.Context
-	conn                net.UDPConn
+	adapter             application.ConnectionAdapter
 	tun                 io.ReadWriteCloser
 	cryptographyService application.CryptographyService
 }
 
 func NewUdpWorker(
-	ctx context.Context, conn net.Conn, tun io.ReadWriteCloser, cryptographyService application.CryptographyService,
+	ctx context.Context, adapter application.ConnectionAdapter, tun io.ReadWriteCloser, cryptographyService application.CryptographyService,
 ) *UdpWorker {
 	return &UdpWorker{
 		ctx:                 ctx,
-		conn:                *conn.(*net.UDPConn),
+		adapter:             adapter,
 		tun:                 tun,
 		cryptographyService: cryptographyService,
 	}
@@ -33,7 +32,6 @@ func NewUdpWorker(
 func (w *UdpWorker) HandleTun() error {
 	buf := make([]byte, network.MaxPacketLengthBytes+12)
 	udpReader := chacha20.NewUdpReader(w.tun)
-	_ = w.conn.SetWriteBuffer(len(buf))
 
 	// Main loop to read from TUN and send data
 	for {
@@ -57,13 +55,12 @@ func (w *UdpWorker) HandleTun() error {
 				return fmt.Errorf("could not encrypt packet: %v", encryptErr)
 			}
 
-			_ = w.conn.SetWriteDeadline(time.Now().Add(time.Second * 2))
-			_, writeErr := w.conn.Write(encryptedPacket)
+			_, writeErr := w.adapter.Write(encryptedPacket)
 			if writeErr != nil {
 				if w.ctx.Err() != nil {
 					return nil
 				}
-				return fmt.Errorf("could not write packet to conn: %v", writeErr)
+				return fmt.Errorf("could not write packet to adapter: %v", writeErr)
 			}
 		}
 	}
@@ -71,20 +68,22 @@ func (w *UdpWorker) HandleTun() error {
 
 func (w *UdpWorker) HandleTransport() error {
 	dataBuf := make([]byte, network.MaxPacketLengthBytes+12)
-	oobBuf := make([]byte, 1024)
-	_ = w.conn.SetReadBuffer(len(dataBuf))
 
 	for {
 		select {
 		case <-w.ctx.Done():
 			return nil
 		default:
-			n, _, _, _, readErr := w.conn.ReadMsgUDPAddrPort(dataBuf, oobBuf)
+			n, readErr := w.adapter.Read(dataBuf)
 			if readErr != nil {
+				if errors.Is(readErr, os.ErrDeadlineExceeded) {
+					continue
+				}
+
 				if w.ctx.Err() != nil {
 					return nil
 				}
-				return fmt.Errorf("could not read a packet from conn: %v", readErr)
+				return fmt.Errorf("could not read a packet from adapter: %v", readErr)
 			}
 
 			if n == 1 && network.SignalIs(dataBuf[0], network.SessionReset) {

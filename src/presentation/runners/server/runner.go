@@ -65,10 +65,9 @@ func (r *Runner) Run(ctx context.Context) {
 
 func (r *Runner) route(ctx context.Context, settings settings.ConnectionSettings) error {
 	workerFactory := tun_server.NewServerWorkerFactory(settings)
-	tunFactory := tun_server.NewServerTunFactory()
 	routerFactory := factory.NewServerRouterFactory()
 
-	tun, tunErr := tunFactory.CreateTunDevice(settings)
+	tun, tunErr := r.deps.TunManager().CreateTunDevice(settings)
 	if tunErr != nil {
 		log.Fatalf("error creating tun device: %s", tunErr)
 	}
