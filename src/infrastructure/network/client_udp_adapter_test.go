@@ -1,76 +1,105 @@
 package network
 
 import (
+	"io"
 	"net"
 	"testing"
 	"time"
-	"tungo/application"
 )
 
-func TestClientUdpAdapter(t *testing.T) {
-	// setup server
-	srvAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("ResolveUDPAddr: %v", err)
-	}
-	srv, err := net.ListenUDP("udp", srvAddr)
-	if err != nil {
-		t.Fatalf("ListenUDP: %v", err)
-	}
-	defer func(srv *net.UDPConn) {
-		_ = srv.Close()
-	}(srv)
+// helper: returns adapter + server side of the pair
+func newAdapterPair(tb testing.TB) (*ClientUDPAdapter, *net.UDPConn) {
+	tb.Helper()
 
-	// setup client adapter
-	cliConn, err := net.DialUDP("udp", nil, srv.LocalAddr().(*net.UDPAddr))
+	server, err := net.ListenUDP("udp", nil)
 	if err != nil {
-		t.Fatalf("DialUDP: %v", err)
+		tb.Fatalf("listen: %v", err)
 	}
-	adapter := NewClientUdpAdapter(cliConn)
-	defer func(adapter application.ConnectionAdapter) {
-		_ = adapter.Close()
-	}(adapter)
+
+	client, err := net.DialUDP("udp", nil, server.LocalAddr().(*net.UDPAddr))
+	if err != nil {
+		tb.Fatalf("dial: %v", err)
+	}
+
+	ad := NewClientUDPAdapter(client, time.Second, time.Second).(*ClientUDPAdapter)
+	return ad, server
+}
+
+func TestWriteReadHappyPath(t *testing.T) {
+	ad, server := newAdapterPair(t)
+	defer func(ad *ClientUDPAdapter) {
+		_ = ad.Close()
+	}(ad)
+	defer func(server *net.UDPConn) {
+		_ = server.Close()
+	}(server)
+
+	payload := []byte("hello-udp")
 
 	// Write
-	msg := []byte("hello")
-	if n, err := adapter.Write(msg); err != nil || n != len(msg) {
-		t.Fatalf("Write: n=%d err=%v", n, err)
+	if n, err := ad.Write(payload); err != nil || n != len(payload) {
+		t.Fatalf("Write() = (%d, %v), want (%d, nil)", n, err, len(payload))
 	}
 
-	// server reads
-	buf := make([]byte, 1024)
-	_ = srv.SetReadDeadline(time.Now().Add(time.Second))
-	n, addr, err := srv.ReadFromUDP(buf)
-	if err != nil {
-		t.Fatalf("ReadFromUDP: %v", err)
-	}
-	if string(buf[:n]) != string(msg) {
-		t.Fatalf("got %q want %q", buf[:n], msg)
-	}
-
-	// server replies
-	reply := []byte("world")
-	_ = srv.SetWriteDeadline(time.Now().Add(time.Second))
-	if _, err := srv.WriteToUDP(reply, addr); err != nil {
-		t.Fatalf("WriteToUDP: %v", err)
+	// Server receives
+	recv := make([]byte, len(payload))
+	_ = server.SetReadDeadline(time.Now().Add(time.Second))
+	if n, _, err := server.ReadFromUDP(recv); err != nil || string(recv[:n]) != string(payload) {
+		t.Fatalf("server got (%q, %v), want %q", recv[:n], err, payload)
 	}
 
 	// Read
-	readBuf := make([]byte, 1024)
-	_ = cliConn.SetReadDeadline(time.Now().Add(time.Second))
-	n2, err := adapter.Read(readBuf)
-	if err != nil {
-		t.Fatalf("Read: %v", err)
-	}
-	if string(readBuf[:n2]) != string(reply) {
-		t.Fatalf("got %q want %q", readBuf[:n2], reply)
-	}
+	go func() {
+		_, _ = server.WriteToUDP(payload, ad.conn.LocalAddr().(*net.UDPAddr))
+	}()
 
-	// Close
-	if err := adapter.Close(); err != nil {
-		t.Fatalf("Close: %v", err)
+	buf := make([]byte, len(payload))
+	if n, err := ad.Read(buf); err != nil || string(buf[:n]) != string(payload) {
+		t.Fatalf("Read() = (%q, %v), want %q", buf[:n], err, payload)
 	}
-	if _, err := adapter.Write([]byte("x")); err == nil {
-		t.Fatal("expected error after Close")
+}
+
+func TestReadShortBuffer(t *testing.T) {
+	ad, server := newAdapterPair(t)
+	defer func(ad *ClientUDPAdapter) {
+		_ = ad.Close()
+	}(ad)
+	defer func(server *net.UDPConn) {
+		_ = server.Close()
+	}(server)
+
+	msg := []byte("oversize")
+	go func() {
+		_, _ = server.WriteToUDP(msg, ad.conn.LocalAddr().(*net.UDPAddr))
+	}()
+
+	small := make([]byte, 1)
+	if n, err := ad.Read(small); err != io.ErrShortBuffer || n != 0 {
+		t.Fatalf("Read() = (%d, %v), want (0, io.ErrShortBuffer)", n, err)
+	}
+}
+
+func TestWriteAfterClose(t *testing.T) {
+	ad, _ := newAdapterPair(t)
+	_ = ad.Close()
+
+	if _, err := ad.Write([]byte("x")); err == nil {
+		t.Fatalf("expected error after Close")
+	}
+}
+
+func TestReadTimeout(t *testing.T) {
+	ad, _ := newAdapterPair(t)
+	defer func(ad *ClientUDPAdapter) {
+		_ = ad.Close()
+	}(ad)
+
+	ad.readDeadline = 10 * time.Millisecond
+	start := time.Now()
+	if _, err := ad.Read(make([]byte, 1)); err == nil {
+		t.Fatalf("expected timeout error")
+	}
+	if time.Since(start) < ad.readDeadline {
+		t.Fatalf("deadline not enforced")
 	}
 }

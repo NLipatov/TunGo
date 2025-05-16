@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"time"
 	"tungo/application"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/routing/client_routing/routing/tcp_chacha20"
@@ -28,7 +29,7 @@ func (w *WorkerFactory) CreateWorker(
 ) (application.TunWorker, error) {
 	switch w.conf.Protocol {
 	case settings.UDP:
-		adapter := network.NewClientUdpAdapter(conn.(*net.UDPConn))
+		adapter := network.NewClientUDPAdapter(conn.(*net.UDPConn), time.Second*2, time.Second*2)
 		return udp_chacha20.NewUdpWorker(ctx, adapter, tun, cryptographyService), nil
 	case settings.TCP:
 		return tcp_chacha20.NewTcpTunWorker(ctx, conn, tun, cryptographyService), nil
