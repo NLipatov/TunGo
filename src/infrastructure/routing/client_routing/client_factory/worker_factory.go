@@ -29,7 +29,7 @@ func (w *WorkerFactory) CreateWorker(
 ) (application.TunWorker, error) {
 	switch w.conf.Protocol {
 	case settings.UDP:
-		adapter := network.NewClientUDPAdapter(conn.(*net.UDPConn), time.Second*2, time.Second*2)
+		adapter := network.NewClientUDPAdapter(conn.(*net.UDPConn), time.Second*2)
 		return udp_chacha20.NewUdpWorker(ctx, adapter, tun, cryptographyService), nil
 	case settings.TCP:
 		return tcp_chacha20.NewTcpTunWorker(ctx, conn, tun, cryptographyService), nil

@@ -12,14 +12,12 @@ type ClientUDPAdapter struct {
 	conn          *net.UDPConn
 	buf           [MaxPacketLengthBytes]byte
 	oob           [1024]byte
-	readDeadline  time.Duration
 	writeDeadline time.Duration
 }
 
-func NewClientUDPAdapter(conn *net.UDPConn, readDeadline, writeDeadline time.Duration) application.ConnectionAdapter {
+func NewClientUDPAdapter(conn *net.UDPConn, writeDeadline time.Duration) application.ConnectionAdapter {
 	return &ClientUDPAdapter{
 		conn:          conn,
-		readDeadline:  readDeadline,
 		writeDeadline: writeDeadline,
 	}
 }
@@ -34,11 +32,6 @@ func (c *ClientUDPAdapter) Write(buffer []byte) (int, error) {
 }
 
 func (c *ClientUDPAdapter) Read(buffer []byte) (int, error) {
-	deadline := time.Now().Add(c.readDeadline)
-	if err := c.conn.SetReadDeadline(deadline); err != nil {
-		return 0, err
-	}
-
 	n, _, _, _, err := c.conn.ReadMsgUDPAddrPort(c.buf[:], c.oob[:])
 	if err != nil {
 		return 0, err
