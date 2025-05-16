@@ -1,6 +1,7 @@
 package network
 
 import (
+	"errors"
 	"io"
 	"net"
 	"os"
@@ -23,18 +24,18 @@ func newPair(tb testing.TB) (*ClientUDPAdapter, *net.UDPConn) {
 	}
 
 	// 1-second deadlines for tests
-	ad := &ClientUDPAdapter{
-		conn:          client,
-		readDeadline:  Deadline(time.Second),
-		writeDeadline: Deadline(time.Second),
-	}
-	return ad, server
+	ad := NewClientUDPAdapter(client, Deadline(time.Second), Deadline(time.Second))
+	return ad.(*ClientUDPAdapter), server
 }
 
 func TestWriteReadHappy(t *testing.T) {
 	ad, srv := newPair(t)
-	defer ad.Close()
-	defer srv.Close()
+	defer func(ad *ClientUDPAdapter) {
+		_ = ad.Close()
+	}(ad)
+	defer func(srv *net.UDPConn) {
+		_ = srv.Close()
+	}(srv)
 
 	msg := []byte("hello")
 
@@ -45,13 +46,15 @@ func TestWriteReadHappy(t *testing.T) {
 
 	// server receives the packet
 	buf := make([]byte, 10)
-	srv.SetReadDeadline(time.Now().Add(time.Second))
+	_ = srv.SetReadDeadline(time.Now().Add(time.Second))
 	if n, _, err := srv.ReadFromUDP(buf); err != nil || string(buf[:n]) != "hello" {
 		t.Fatalf("server got (%q,%v)", buf[:n], err)
 	}
 
 	// echo back to client
-	go srv.WriteToUDP(msg, ad.conn.LocalAddr().(*net.UDPAddr))
+	go func() {
+		_, _ = srv.WriteToUDP(msg, ad.conn.LocalAddr().(*net.UDPAddr))
+	}()
 
 	readBuf := make([]byte, 10)
 	if n, err := ad.Read(readBuf); err != nil || string(readBuf[:n]) != "hello" {
@@ -61,20 +64,24 @@ func TestWriteReadHappy(t *testing.T) {
 
 func TestReadShortBuffer(t *testing.T) {
 	ad, srv := newPair(t)
-	defer ad.Close()
-	defer srv.Close()
+	defer func(ad *ClientUDPAdapter) {
+		_ = ad.Close()
+	}(ad)
+	defer func(srv *net.UDPConn) {
+		_ = srv.Close()
+	}(srv)
 
-	srv.WriteToUDP([]byte("oversize"), ad.conn.LocalAddr().(*net.UDPAddr))
+	_, _ = srv.WriteToUDP([]byte("oversize"), ad.conn.LocalAddr().(*net.UDPAddr))
 
 	tiny := make([]byte, 1)
-	if n, err := ad.Read(tiny); err != io.ErrShortBuffer || n != 0 {
+	if n, err := ad.Read(tiny); !errors.Is(err, io.ErrShortBuffer) || n != 0 {
 		t.Fatalf("want io.ErrShortBuffer, got (%d,%v)", n, err)
 	}
 }
 
 func TestWriteAfterClose(t *testing.T) {
 	ad, _ := newPair(t)
-	ad.Close()
+	_ = ad.Close()
 
 	if _, err := ad.Write([]byte("x")); err == nil {
 		t.Fatalf("expected error after Close")
@@ -83,7 +90,9 @@ func TestWriteAfterClose(t *testing.T) {
 
 func TestReadTimeout(t *testing.T) {
 	ad, _ := newPair(t)
-	defer ad.Close()
+	defer func(ad *ClientUDPAdapter) {
+		_ = ad.Close()
+	}(ad)
 
 	ad.readDeadline = Deadline(5 * time.Millisecond)
 
