@@ -96,8 +96,8 @@ func (d *wintunTun) Read(dst []byte) (int, error) {
 		sess := d.session
 		d.sessionMu.RUnlock()
 
-		ptr, sz, err := recvPacketPtr(sess)
-		if err == nil {
+		ptr, sz, errno := recvPacketPtr(sess)
+		if errno == 0 {
 			// Pointer received from external DLL; safe to cast to unsafe.Pointer.
 			//noinspection GoVetUnsafePointer
 			bytePointer := (*byte)(unsafe.Pointer(ptr))
@@ -107,22 +107,24 @@ func (d *wintunTun) Read(dst []byte) (int, error) {
 			return n, nil
 		}
 
-		switch {
-		case errors.Is(err, windows.ERROR_NO_MORE_ITEMS):
-			if ret, werr := windows.WaitForSingleObject(sess.ReadWaitEvent(), 250); ret == windows.WAIT_FAILED || werr != nil {
+		switch //goland:noinspection GoDirectComparisonOfErrors
+		errno {
+		case windows.ERROR_NO_MORE_ITEMS:
+			ret, werr := windows.WaitForSingleObject(sess.ReadWaitEvent(), 250)
+			if ret == windows.WAIT_FAILED || werr != nil {
 				return 0, fmt.Errorf("session closed")
 			}
-		case errors.Is(err, windows.ERROR_HANDLE_EOF):
+		case windows.ERROR_HANDLE_EOF:
 			if err := d.reopenSession(); err != nil {
 				return 0, err
 			}
 		default:
-			return 0, err
+			return 0, errno
 		}
 	}
 }
 
-func recvPacketPtr(s *wintun.Session) (ptr uintptr, size uint32, err error) {
+func recvPacketPtr(s *wintun.Session) (ptr uintptr, size uint32, errno syscall.Errno) {
 	h := *(*uintptr)(unsafe.Pointer(s))
 	r1, _, e1 := syscall.SyscallN(
 		addrRecvPacket,
@@ -130,7 +132,7 @@ func recvPacketPtr(s *wintun.Session) (ptr uintptr, size uint32, err error) {
 		uintptr(unsafe.Pointer(&size)),
 	)
 	if r1 == 0 {
-		err = e1
+		errno = e1
 		return
 	}
 	ptr = r1
