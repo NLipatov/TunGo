@@ -8,8 +8,29 @@ import (
 	"log"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"tungo/application"
+	"unsafe"
 )
+
+var (
+	// modWintun is the handle to wintun.dll loaded lazily
+	modWintun = windows.NewLazySystemDLL("wintun.dll")
+
+	// addrRecvPacket and addrRelPacket store addresses of WintunReceivePacket and WintunReleaseReceivePacket
+	addrRecvPacket, addrRelPacket uintptr
+)
+
+const ringSize = 0x800000 // 8 MiB
+
+// init loads wintun.dll and initializes function pointers
+func init() {
+	if err := modWintun.Load(); err != nil {
+		log.Fatalf("load wintun.dll: %v", err)
+	}
+	addrRecvPacket = modWintun.NewProc("WintunReceivePacket").Addr()
+	addrRelPacket = modWintun.NewProc("WintunReleaseReceivePacket").Addr()
+}
 
 type wintunTun struct {
 	adapter     *wintun.Adapter
@@ -21,24 +42,24 @@ type wintunTun struct {
 }
 
 func NewWinTun(adapter *wintun.Adapter) (application.TunDevice, error) {
-	handle, err := windows.CreateEvent(nil, 0, 0, nil)
+	ev, err := windows.CreateEvent(nil, 0, 0, nil)
 	if err != nil {
-		return nil, fmt.Errorf("error creating winTun handle: %w", err)
+		return nil, fmt.Errorf("create event: %w", err)
 	}
 
-	session, err := adapter.StartSession(0x800000)
+	sess, err := adapter.StartSession(ringSize)
 	if err != nil {
-		_ = windows.CloseHandle(handle)
-		return nil, fmt.Errorf("session start error: %w", err)
+		_ = windows.CloseHandle(ev)
+		return nil, fmt.Errorf("start session: %w", err)
 	}
 
-	sessionPtr := new(wintun.Session)
-	*sessionPtr = session
+	sp := new(wintun.Session)
+	*sp = sess
 
 	return &wintunTun{
 		adapter:    adapter,
-		session:    sessionPtr,
-		closeEvent: handle,
+		session:    sp,
+		closeEvent: ev,
 	}, nil
 }
 
@@ -47,88 +68,106 @@ func (d *wintunTun) reopenSession() error {
 	defer d.reopenMutex.Unlock()
 
 	if d.closed.Load() {
-		return fmt.Errorf("device already closed")
+		return fmt.Errorf("device closed")
 	}
 
 	d.sessionMu.Lock()
-	defer d.sessionMu.Unlock()
-
 	if d.session != nil {
 		d.session.End()
 	}
+	d.sessionMu.Unlock()
 
-	newSession, err := d.adapter.StartSession(0x800000) // 8MB ring buffer
+	newSess, err := d.adapter.StartSession(ringSize)
 	if err != nil {
 		return err
 	}
-	sessionPtr := new(wintun.Session)
-	*sessionPtr = newSession
-	d.session = sessionPtr
+
+	sp := new(wintun.Session)
+	*sp = newSess
+
+	d.sessionMu.Lock()
+	d.session = sp
+	d.sessionMu.Unlock()
 	return nil
 }
 
-func (d *wintunTun) Read(data []byte) (int, error) {
+func (d *wintunTun) Read(dst []byte) (int, error) {
 	for {
 		if d.closed.Load() {
 			return 0, fmt.Errorf("device closed")
 		}
 
 		d.sessionMu.RLock()
-		session := d.session
+		sess := d.session
 		d.sessionMu.RUnlock()
 
-		packet, err := session.ReceivePacket()
+		ptr, sz, err := recvPacketPtr(sess)
 		if err == nil {
-			n := copy(data, packet)
-			session.ReleaseReceivePacket(packet)
+			src := unsafe.Slice((*byte)(unsafe.Pointer(ptr)), sz)
+			n := copy(dst, src)
+			releasePacketPtr(sess, ptr)
 			return n, nil
 		}
 
-		if errors.Is(err, windows.ERROR_NO_MORE_ITEMS) {
-			event := session.ReadWaitEvent()
-			timeout := uint32(250)
-			ret, waitErr := windows.WaitForSingleObject(event, timeout)
-			if ret == windows.WAIT_FAILED || waitErr != nil {
+		switch {
+		case errors.Is(err, windows.ERROR_NO_MORE_ITEMS):
+			if ret, werr := windows.WaitForSingleObject(sess.ReadWaitEvent(), 250); ret == windows.WAIT_FAILED || werr != nil {
 				return 0, fmt.Errorf("session closed")
 			}
-			continue
-		}
-
-		if errors.Is(err, windows.ERROR_HANDLE_EOF) {
+		case errors.Is(err, windows.ERROR_HANDLE_EOF):
 			if err := d.reopenSession(); err != nil {
 				return 0, err
 			}
-			continue
+		default:
+			return 0, err
 		}
-
-		return 0, err
 	}
 }
 
-func (d *wintunTun) Write(data []byte) (int, error) {
+func recvPacketPtr(s *wintun.Session) (ptr uintptr, size uint32, err error) {
+	h := *(*uintptr)(unsafe.Pointer(s))
+	r1, _, e1 := syscall.SyscallN(
+		addrRecvPacket,
+		h,
+		uintptr(unsafe.Pointer(&size)),
+	)
+	if r1 == 0 {
+		err = e1
+		return
+	}
+	ptr = r1
+	return
+}
+
+func releasePacketPtr(s *wintun.Session, ptr uintptr) {
+	h := *(*uintptr)(unsafe.Pointer(s))
+	_, _, _ = syscall.SyscallN(addrRelPacket, h, ptr)
+}
+
+func (d *wintunTun) Write(p []byte) (int, error) {
 	for {
 		if d.closed.Load() {
 			return 0, fmt.Errorf("device closed")
 		}
 
 		d.sessionMu.RLock()
-		session := d.session
-		packet, err := session.AllocateSendPacket(len(data))
+		sess := d.session
+		buf, err := sess.AllocateSendPacket(len(p))
 		d.sessionMu.RUnlock()
 
 		if err != nil {
 			if errors.Is(err, windows.ERROR_HANDLE_EOF) {
-				if reopenErr := d.reopenSession(); reopenErr != nil {
-					return 0, reopenErr
+				if err := d.reopenSession(); err != nil {
+					return 0, err
 				}
 				continue
 			}
 			return 0, err
 		}
 
-		copy(packet, data)
-		session.SendPacket(packet)
-		return len(data), nil
+		copy(buf, p)
+		sess.SendPacket(buf)
+		return len(p), nil
 	}
 }
 
@@ -136,10 +175,7 @@ func (d *wintunTun) Close() error {
 	if !d.closed.CompareAndSwap(false, true) {
 		return nil
 	}
-
-	if err := windows.SetEvent(d.closeEvent); err != nil {
-		log.Printf("failed to signal close event: %v", err)
-	}
+	_ = windows.SetEvent(d.closeEvent)
 
 	d.sessionMu.Lock()
 	if d.session != nil {
@@ -148,11 +184,7 @@ func (d *wintunTun) Close() error {
 	}
 	d.sessionMu.Unlock()
 
-	if err := d.adapter.Close(); err != nil {
-		log.Printf("failed to close adapter: %v", err)
-	}
-	if err := windows.CloseHandle(d.closeEvent); err != nil {
-		log.Printf("failed to close event handle: %v", err)
-	}
+	_ = d.adapter.Close()
+	_ = windows.CloseHandle(d.closeEvent)
 	return nil
 }
