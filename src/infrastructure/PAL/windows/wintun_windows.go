@@ -54,12 +54,9 @@ func NewWinTun(adapter *wintun.Adapter) (application.TunDevice, error) {
 		return nil, fmt.Errorf("start session: %w", err)
 	}
 
-	sp := new(wintun.Session)
-	*sp = sess
-
 	return &wintunTun{
 		adapter:    adapter,
-		session:    sp,
+		session:    &sess,
 		closeEvent: ev,
 	}, nil
 }
@@ -83,11 +80,8 @@ func (d *wintunTun) reopenSession() error {
 		return err
 	}
 
-	sp := new(wintun.Session)
-	*sp = newSess
-
 	d.sessionMu.Lock()
-	d.session = sp
+	d.session = &newSess
 	d.sessionMu.Unlock()
 	return nil
 }
@@ -104,8 +98,8 @@ func (d *wintunTun) Read(dst []byte) (int, error) {
 
 		ptr, sz, err := recvPacketPtr(sess)
 		if err == nil {
-			// this unsafe pointer is from external DLL, safe to cast to unsafe.Pointer
-			//goland:noinspection GoVetUnsafePointer
+			// Pointer received from external DLL; safe to cast to unsafe.Pointer.
+			//noinspection GoVetUnsafePointer
 			bytePointer := (*byte)(unsafe.Pointer(ptr))
 			src := unsafe.Slice(bytePointer, sz)
 			n := copy(dst, src)
