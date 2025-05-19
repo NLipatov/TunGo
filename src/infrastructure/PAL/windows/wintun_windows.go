@@ -104,7 +104,10 @@ func (d *wintunTun) Read(dst []byte) (int, error) {
 
 		ptr, sz, err := recvPacketPtr(sess)
 		if err == nil {
-			src := unsafe.Slice((*byte)(unsafe.Pointer(ptr)), sz)
+			// this unsafe pointer is from external DLL, safe to cast to unsafe.Pointer
+			//goland:noinspection GoVetUnsafePointer
+			bytePointer := (*byte)(unsafe.Pointer(ptr))
+			src := unsafe.Slice(bytePointer, sz)
 			n := copy(dst, src)
 			releasePacketPtr(sess, ptr)
 			return n, nil
