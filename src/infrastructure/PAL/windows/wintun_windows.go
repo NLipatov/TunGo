@@ -21,6 +21,7 @@ var (
 	addrRecvPacket, addrRelPacket uintptr
 )
 
+// ringSize (8 MiB) is the shared buffer size for Wintun; large enough for high throughput.
 const ringSize = 0x800000 // 8 MiB
 
 // init loads wintun.dll and initializes function pointers
