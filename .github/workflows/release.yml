@@ -139,7 +139,6 @@ jobs:
           ArchitecturesAllowed=x64
           ArchitecturesInstallIn64BitMode=x64
           AppId={54554E47-4F00-0000-0000-000000000000}
-          UninstallPreviousVersions=yes
           Uninstallable=yes
           UninstallDisplayName=TunGo $env:VER
           UninstallDisplayIcon={app}\TunGo.ico
@@ -156,6 +155,19 @@ jobs:
             WorkingDir: "{app}"
 
           [Code]
+          function InitializeSetup(): Boolean;
+          var
+            Uninstaller, Params: string;
+            ResultCode: Integer;
+          begin
+            Result := True;
+            Uninstaller := ExpandConstant('{app}\unins000.exe');
+            if FileExists(Uninstaller) then begin
+              Params := '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART';
+              Exec(Uninstaller, Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+            end;
+          end;
+    
           procedure CopyWintunDll;
           var
           sysDir, targetFile, tempFile: string;
