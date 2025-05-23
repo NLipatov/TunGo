@@ -3,7 +3,6 @@ package tun_client
 import (
 	"errors"
 	"fmt"
-	"golang.zx2c4.com/wintun"
 	"log"
 	"net"
 	"os/exec"
@@ -80,6 +79,12 @@ func (m *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 
 	_ = m.netsh.RouteDelete(s.ConnectionIP)
 	if err = addStaticRouteToServer(s.ConnectionIP, origPhysIP, origPhysGateway); err != nil {
+		_ = device.Close()
+		return nil, err
+	}
+
+	dnsServers := []string{"1.1.1.1", "8.8.8.8"}
+	if err = m.netsh.InterfaceSetDNSServers(s.InterfaceName, dnsServers); err != nil {
 		_ = device.Close()
 		return nil, err
 	}
