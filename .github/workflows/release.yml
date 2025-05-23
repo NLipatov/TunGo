@@ -138,7 +138,6 @@ jobs:
           PrivilegesRequired=admin
           ArchitecturesAllowed=x64
           ArchitecturesInstallIn64BitMode=x64
-          InstallScope=perMachine
           AppId={54554E47-4F00-0000-0000-000000000000}
           UninstallPreviousVersions=yes
           Uninstallable=yes
