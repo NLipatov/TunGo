@@ -7,4 +7,5 @@ type Contract interface {
 	InterfaceIPV4DeleteAddress(IfName string) error
 	InterfaceIPDeleteAddress(IfName, IfAddr string) error
 	SetInterfaceMetric(interfaceName string, metric int) error
+	InterfaceSetDNSServers(interfaceName string, dnsServers []string) error
 }
