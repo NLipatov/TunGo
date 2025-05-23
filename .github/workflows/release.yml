@@ -138,6 +138,12 @@ jobs:
           PrivilegesRequired=admin
           ArchitecturesAllowed=x64
           ArchitecturesInstallIn64BitMode=x64
+          InstallScope=perMachine
+          AppId={54554E47-4F00-0000-0000-000000000000}
+          UninstallPreviousVersions=yes
+          Uninstallable=yes
+          UninstallDisplayName=TunGo $env:VER
+          UninstallDisplayIcon={app}\TunGo.ico
 
           [Files]
           Source: "wintun.dll"; Flags: dontcopy
@@ -145,7 +151,10 @@ jobs:
           Source: "TunGo.ico"; DestDir: "{app}"; Flags: ignoreversion
         
           [Icons]
-          Name: "{group}\TunGo"; Filename: "{app}\tungo-windows-x64.exe"; WorkingDir: "{app}"; IconFilename: "{app}\TunGo.ico"
+          Name: "{group}\TunGo"; \
+            Filename: "{app}\tungo-windows-x64.exe"; \
+            IconFilename: "{app}\TunGo.ico"; \
+            WorkingDir: "{app}"
 
           [Code]
           procedure CopyWintunDll;
