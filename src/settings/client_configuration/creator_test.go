@@ -106,3 +106,23 @@ func TestDefaultCreator_Create_WriteError(t *testing.T) {
 		t.Error("Expected write error, got nil")
 	}
 }
+
+func TestDefaultCreator_Create_MkdirAllError(t *testing.T) {
+	tmp := t.TempDir()
+
+	// Create a file where a directory should be
+	parentFile := filepath.Join(tmp, "parent")
+	if err := os.WriteFile(parentFile, []byte{}, 0600); err != nil {
+		t.Fatalf("setup failed: %v", err)
+	}
+
+	// Resolver returns a path under the file, so MkdirAll should fail
+	resolver := &creatorTestResolver{path: filepath.Join(parentFile, "conf"), err: nil}
+	creator := NewDefaultCreator(resolver)
+	cfg := (&creatorTestConfigProvider{}).mockedConfig()
+
+	err := creator.Create(cfg, "test")
+	if err == nil {
+		t.Fatal("Expected MkdirAll error, got nil")
+	}
+}
