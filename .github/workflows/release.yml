@@ -138,7 +138,7 @@ jobs:
           PrivilegesRequired=admin
           ArchitecturesAllowed=x64
           ArchitecturesInstallIn64BitMode=x64
-          AppId={54554E47-4F00-0000-0000-000000000000}
+          AppId={{54554E47-4F00-0000-0000-000000000000}}
           Uninstallable=yes
           UninstallDisplayName=TunGo $env:VER
           UninstallDisplayIcon={app}\TunGo.ico
