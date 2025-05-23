@@ -84,6 +84,7 @@ func (m *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 		return nil, err
 	}
 
+	// ToDo: use dns from configuration
 	dnsServers := []string{"1.1.1.1", "8.8.8.8"}
 	if err = m.netsh.InterfaceSetDNSServers(s.InterfaceName, dnsServers); err != nil {
 		_ = device.Close()
