@@ -97,13 +97,24 @@ func TestDefaultCreator_Create_ResolveError(t *testing.T) {
 
 func TestDefaultCreator_Create_WriteError(t *testing.T) {
 	tmp := t.TempDir()
-	readOnlyDir := filepath.Join(tmp, "dir_that_does_not_exist")
-	resolver := &creatorTestResolver{path: filepath.Join(readOnlyDir, "cfg"), err: nil}
+
+	// Create a real directory but remove write permissions
+	roDir := filepath.Join(tmp, "readonly")
+	if err := os.MkdirAll(roDir, 0o500); err != nil {
+		t.Fatalf("setup MkdirAll failed: %v", err)
+	}
+
+	// Resolver returns a path inside the read-only directory
+	resolver := &creatorTestResolver{
+		path: filepath.Join(roDir, "cfg"),
+		err:  nil,
+	}
 	creator := NewDefaultCreator(resolver)
 
+	// Attempting to write should fail due to insufficient permissions
 	err := creator.Create((&creatorTestConfigProvider{}).mockedConfig(), "y")
 	if err == nil {
-		t.Error("Expected write error, got nil")
+		t.Error("expected write error due to read-only directory, got nil")
 	}
 }
 
