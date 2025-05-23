@@ -96,6 +96,10 @@ func TestDefaultCreator_Create_ResolveError(t *testing.T) {
 }
 
 func TestDefaultCreator_Create_WriteError(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("skipping write-error test as root can write anywhere")
+	}
+
 	tmp := t.TempDir()
 
 	// Create a real directory but remove write permissions
