@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 )
 
 type Creator interface {
@@ -32,6 +33,11 @@ func (d *DefaultCreator) Create(configuration Configuration, name string) error 
 	}
 
 	confPath := fmt.Sprintf("%s.%s", defaultConfPath, name)
+	mkdirErr := os.MkdirAll(filepath.Dir(confPath), 0700)
+	if mkdirErr != nil {
+		return mkdirErr
+	}
+
 	writeErr := os.WriteFile(confPath, serialized, 0600)
 	if writeErr != nil {
 		return writeErr

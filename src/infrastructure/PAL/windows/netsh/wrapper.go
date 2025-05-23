@@ -66,3 +66,22 @@ func (w *Wrapper) SetInterfaceMetric(interfaceName string, metric int) error {
 	}
 	return nil
 }
+
+func (w *Wrapper) InterfaceSetDNSServers(interfaceName string, dnsServers []string) error {
+	// Cleanup current DNS settings
+	_, _ = w.commander.CombinedOutput("netsh", "interface", "ip", "set", "dns", interfaceName, "dhcp")
+
+	// Manually set DNS servers
+	for i, dns := range dnsServers {
+		var args []string
+		if i == 0 {
+			args = []string{"interface", "ip", "set", "dns", "name=" + interfaceName, "static", dns, "primary"}
+		} else {
+			args = []string{"interface", "ip", "add", "dns", "name=" + interfaceName, dns, "index=" + strconv.Itoa(i+1)}
+		}
+		if output, err := w.commander.CombinedOutput("netsh", args...); err != nil {
+			return fmt.Errorf("DNS setup error: %v, output: %s", err, output)
+		}
+	}
+	return nil
+}
