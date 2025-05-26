@@ -21,45 +21,10 @@ Email: 6stringsohei@gmail.com
 ## Quickstart
 See the Quickstart guide: https://tungo.ethacore.com/docs/quickstart
 
-## Support us ❤️
-[anon pay donation link](https://trocador.app/anonpay?ticker_to=xmr&network_to=Mainnet&address=46hGgYaPUPcaQ4Xk3UeSAaUSrGV5yHJJmEAafg92iSS28L9FwzGmuGsKqdURsbuVECVhF7bfSbEVzWL4ubDUW6jEFCGXcXh&ref=sqKNYGZbRl&direct=True&name=TunGo+developers)
-
-[anon pay donation onion link](https://tqzngtf2hybjbexznel6dhgsvbynjzezoybvtv6iofomx7gchqfssgqd.onion/anonpay?ticker_to=xmr&network_to=Mainnet&address=46hGgYaPUPcaQ4Xk3UeSAaUSrGV5yHJJmEAafg92iSS28L9FwzGmuGsKqdURsbuVECVhF7bfSbEVzWL4ubDUW6jEFCGXcXh&ref=sqKNYGZbRl&direct=True&name=TunGo+developers)
-
 ---
 
-## Using Docker
-Run the server in Docker:
-```bash
-docker run -d \
-  --name tungo \
-  --restart always \
-  --network host \
-  --device /dev/net/tun \
-  --cap-add NET_ADMIN \
-  -e EnableUDP=true \
-  -e EnableTCP=false \
-  -e UDPRingBufferSize=100_000 \
-  -e ED25519_PUBLIC_KEY="base64-encoded key" \
-  -e ED25519_PRIVATE_KEY="base64-encoded key" \
-  -v tungo_volume:/src \
-  nlipatov/tungo:tungo
-```
-if no `ED25519_PUBLIC_KEY` and `ED25519_PRIVATE_KEY` provided, server-app will generate it on startup.
-
-Continue with the same steps:
-1. Generate client config (`gen`).
-2. Save it as `client/conf.json`.
-3. Start the client.
-
----
-
-## 🔑 Regenerate Server Keys
-To reset the server’s Ed25519 keys:
-1. Remove the Ed25519 keys from `src/settings/settings/conf.json`.
-2. Restart the server.
-
-**Note**: Clients must update their configurations with the new server public key.
+## Use Docker to deploy server
+Refer to https://tungo.ethacore.com/docs/Advanced/Containerization/Docker/Server
 
 ---
 
@@ -132,3 +97,9 @@ sudo dlv debug --headless --listen=:2345 --api-version=2 --log --check-go-versio
 ```
 
 Start enjoying fast and secure tunneling with **TunGo**!
+
+---
+## Support us ❤️
+[anon pay donation link](https://trocador.app/anonpay?ticker_to=xmr&network_to=Mainnet&address=46hGgYaPUPcaQ4Xk3UeSAaUSrGV5yHJJmEAafg92iSS28L9FwzGmuGsKqdURsbuVECVhF7bfSbEVzWL4ubDUW6jEFCGXcXh&ref=sqKNYGZbRl&direct=True&name=TunGo+developers)
+
+[anon pay donation onion link](https://tqzngtf2hybjbexznel6dhgsvbynjzezoybvtv6iofomx7gchqfssgqd.onion/anonpay?ticker_to=xmr&network_to=Mainnet&address=46hGgYaPUPcaQ4Xk3UeSAaUSrGV5yHJJmEAafg92iSS28L9FwzGmuGsKqdURsbuVECVhF7bfSbEVzWL4ubDUW6jEFCGXcXh&ref=sqKNYGZbRl&direct=True&name=TunGo+developers)
