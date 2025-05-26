@@ -1,27 +1,23 @@
 :::info
-Use this systemd unit to start TunGo automatically on reboot.
+ℹ️ Use this systemd unit to start TunGo automatically on reboot.
 :::
 
-:::warning
-You can generate new client configurations by executing:
-```bash
-sudo tungo s gen
-```
-:::
+## ⚙️ Prerequisites
 
-## Setup
-1) Create the service file
+1) TunGo is installed as described in [Quickstart](../../../docs/quickstart#-server-setup).
+
+
+## 🛠️ Setup
+
+1️⃣ **Create the service file**
+
 ```bash
 sudo vim /etc/systemd/system/tungo.service
 ```
 
-:::info
-note 's' arg in `tungo s` command below.
-'s' stands for server mode and it will use default config - `/etc/tungo/server_configuration.json`
-:::
+2️⃣ **Paste in this configuration**
 
-2) Paste in following configuration:
-```text
+```ini
 [Unit]
 Description=TunGo VPN Service
 After=network-online.target
@@ -38,17 +34,20 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
-3) Enable the service:
+3️⃣ **Enable the service**
+
 ```bash
 sudo systemctl enable tungo.service
 ```
 
-4) Start the service:
+4️⃣ **Start the service**
+
 ```bash
 sudo systemctl start tungo.service
 ```
 
-5) Check status
+5️⃣ **Check its status**
+
 ```bash
 sudo systemctl status tungo.service
 ```
