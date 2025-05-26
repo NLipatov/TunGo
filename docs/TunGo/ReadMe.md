@@ -1,3 +1,6 @@
+# Module dedication
+The Docs module serves as a knowledge base for working with the TunGo project, whether you’re using it as a user or contributing as a developer.
+
 # Run Docs Project
 
 ## 1. Install Dependencies
