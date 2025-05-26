@@ -19,7 +19,7 @@ Email: 6stringsohei@gmail.com
 # Project Documentation
 
 ## Quickstart
-See the Quickstart guide: https://tungo.ethacore.com/docs/quickstart
+See the Quickstart guide: https://tungo.ethacore.com/docs/QuickStart
 
 ---
 
