@@ -138,7 +138,7 @@ jobs:
           PrivilegesRequired=admin
           ArchitecturesAllowed=x64
           ArchitecturesInstallIn64BitMode=x64
-          AppId={54554E47-4F00-0000-0000-000000000000}
+          AppId={{54554E47-4F00-0000-0000-000000000000}}
           Uninstallable=yes
           UninstallDisplayName=TunGo $env:VER
           UninstallDisplayIcon={app}\TunGo.ico
@@ -161,7 +161,7 @@ jobs:
             ResultCode: Integer;
           begin
             Result := True;
-            Uninstaller := ExpandConstant('{app}\unins000.exe');
+            Uninstaller := ExpandConstant('{pf}\TunGo\unins000.exe'); // исправлено здесь
             if FileExists(Uninstaller) then begin
               Params := '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART';
               Exec(Uninstaller, Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
@@ -170,16 +170,16 @@ jobs:
     
           procedure CopyWintunDll;
           var
-          sysDir, targetFile, tempFile: string;
+            sysDir, targetFile, tempFile: string;
           begin
-          sysDir := ExpandConstant('{sys}');
-          targetFile := sysDir + '\wintun.dll';
-          if not FileExists(targetFile) then begin
-          ExtractTemporaryFile('wintun.dll');
-          tempFile := ExpandConstant('{tmp}\wintun.dll');
-          if not FileCopy(tempFile, targetFile, False) then
-          MsgBox('Failed to copy wintun.dll to ' + sysDir, mbError, MB_OK);
-          end;
+            sysDir := ExpandConstant('{sys}');
+            targetFile := sysDir + '\wintun.dll';
+            if not FileExists(targetFile) then begin
+              ExtractTemporaryFile('wintun.dll');
+            tempFile := ExpandConstant('{tmp}\wintun.dll');
+            if not FileCopy(tempFile, targetFile, False) then
+              MsgBox('Failed to copy wintun.dll to ' + sysDir, mbError, MB_OK);
+            end;
           end;
 
           procedure CurStepChanged(CurStep: TSetupStep);
