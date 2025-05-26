@@ -16,83 +16,15 @@ Nikita Lipatov
 
 Email: 6stringsohei@gmail.com
 
-# TunGo: Fast & Secure VPN in Go
+# Project Documentation
 
-<p align="center">
-  <img alt="Two gophers dancing tango" src="https://i.ibb.co/K7yzDf6/DALL-E-2024-10-04-20-18-51-A-minimalist-logo-featuring-two-Go-language-mascots-dancing-tango-togethe.webp" width="40%"/>
-</p>
-
-**TunGo** is a lightweight and secure VPN built from scratch in Go, using **Ed25519** for key exchange and **ChaCha20** for encryption.
-
----
-
-Just a few quick notes before you continue:
-
-    1) Encountered an issue? Feel free to create an issue.
-    2) Spot something that could be improved? We'd really love to see your pull request!
-    3) If you find the project useful, consider giving it a ⭐.
-
----
+## Quickstart
+See the Quickstart guide: https://tungo.ethacore.com/docs/quickstart
 
 ## Support us ❤️
 [anon pay donation link](https://trocador.app/anonpay?ticker_to=xmr&network_to=Mainnet&address=46hGgYaPUPcaQ4Xk3UeSAaUSrGV5yHJJmEAafg92iSS28L9FwzGmuGsKqdURsbuVECVhF7bfSbEVzWL4ubDUW6jEFCGXcXh&ref=sqKNYGZbRl&direct=True&name=TunGo+developers)
 
 [anon pay donation onion link](https://tqzngtf2hybjbexznel6dhgsvbynjzezoybvtv6iofomx7gchqfssgqd.onion/anonpay?ticker_to=xmr&network_to=Mainnet&address=46hGgYaPUPcaQ4Xk3UeSAaUSrGV5yHJJmEAafg92iSS28L9FwzGmuGsKqdURsbuVECVhF7bfSbEVzWL4ubDUW6jEFCGXcXh&ref=sqKNYGZbRl&direct=True&name=TunGo+developers)
-
-## Usage
-Run:
-```bash
-main.go <mode>
-```
-- `<mode>`: `s` (server) or `c` (client).
-
----
-
-## 🚀 Quick Start
-1. Start the server.
-2. Generate client configuration (`gen` command).
-3. Start the client with the generated configuration.
-
-## Detailed Setup
-
-### Start the Server
-1. Launch the server:
-   ```bash
-   main.go s
-   ```
-2. Generate client configuration:
-   ```bash
-      gen #`gen` command
-      {
-        "TCPSettings": {
-          "...": "..."
-        },
-        "UDPSettings": {
-          "...": "..."
-        },
-        "Ed25519PublicKey": "someGeneratedPublicKey",
-        "Protocol": "udp"
-      }
-   ```
-
-3. Save the output as client conf (`settings/client/conf.json`)
-
-4. Start the client:
-   ```bash
-   main.go c
-   ```
-
-✅ VPN tunnel is now established!
-
-To stop and clean up:
-```bash
-exit  # from client terminal
-```
-OR stop client and reconfigure network
-```bash
-sudo ip link delete udptun0
-sudo ip link delete tcptun0
-```
 
 ---
 
