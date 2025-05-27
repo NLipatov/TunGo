@@ -9,6 +9,7 @@ import (
 	"tungo/infrastructure/PAL"
 	"tungo/infrastructure/PAL/darwin/network_tools/ip"
 	"tungo/infrastructure/PAL/darwin/network_tools/route"
+	"tungo/infrastructure/PAL/darwin/tun_adapters"
 	"tungo/settings"
 	"tungo/settings/client_configuration"
 )
@@ -73,7 +74,7 @@ func (t *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 	}
 	fmt.Printf("added split default routes via %s\n", name)
 
-	return tun2.NewWgTunAdapter(dev), nil
+	return tun_adapters.NewWgTunAdapter(dev), nil
 }
 
 // DisposeTunDevices removes routes and destroys TUN interfaces.
