@@ -4,16 +4,16 @@ import (
 	"errors"
 	"testing"
 	"tungo/application"
-	"tungo/settings"
-	"tungo/settings/server_configuration"
+	"tungo/infrastructure/PAL/server_configuration"
+	"tungo/infrastructure/settings"
 )
 
 type dummyTunMgr struct{}
 
-func (d *dummyTunMgr) CreateTunDevice(cs settings.ConnectionSettings) (application.TunDevice, error) {
+func (d *dummyTunMgr) CreateTunDevice(_ settings.Settings) (application.TunDevice, error) {
 	return nil, nil
 }
-func (d *dummyTunMgr) DisposeTunDevices(cs settings.ConnectionSettings) error {
+func (d *dummyTunMgr) DisposeTunDevices(_ settings.Settings) error {
 	return errors.New("not implemented")
 }
 
@@ -28,10 +28,10 @@ func TestNewDependenciesAndAccessors(t *testing.T) {
 	cfg := server_configuration.Configuration{
 		EnableTCP: true,
 		EnableUDP: false,
-		TCPSettings: settings.ConnectionSettings{
+		TCPSettings: settings.Settings{
 			Protocol: settings.TCP,
 		},
-		UDPSettings: settings.ConnectionSettings{
+		UDPSettings: settings.Settings{
 			Protocol: settings.UDP,
 		},
 	}

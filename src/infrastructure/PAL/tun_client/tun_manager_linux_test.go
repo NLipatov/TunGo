@@ -5,9 +5,8 @@ import (
 	"errors"
 	"os"
 	"testing"
-
-	"tungo/settings"
-	"tungo/settings/client_configuration"
+	"tungo/infrastructure/PAL/client_configuration"
+	settings2 "tungo/infrastructure/settings"
 )
 
 type mockIP struct {
@@ -59,16 +58,16 @@ func (mockIOCTL) CreateTunInterface(string) (*os.File, error) {
 	return f, nil
 }
 
-func mgr(proto settings.Protocol, ipMock *mockIP) *PlatformTunManager {
+func mgr(proto settings2.Protocol, ipMock *mockIP) *PlatformTunManager {
 	cfg := client_configuration.Configuration{
 		Protocol: proto,
-		UDPSettings: settings.ConnectionSettings{
+		UDPSettings: settings2.Settings{
 			InterfaceName:    "tun0",
 			InterfaceAddress: "10.0.0.2/30",
 			ConnectionIP:     "198.51.100.1",
 			MTU:              1400,
 		},
-		TCPSettings: settings.ConnectionSettings{
+		TCPSettings: settings2.Settings{
 			InterfaceName:    "tun1",
 			InterfaceAddress: "10.0.0.6/30",
 			ConnectionIP:     "203.0.113.1",
@@ -85,7 +84,7 @@ func mgr(proto settings.Protocol, ipMock *mockIP) *PlatformTunManager {
 
 func TestCreateTunDevice_UDP(t *testing.T) {
 	ipMock := &mockIP{routeReply: "198.51.100.1 via 192.0.2.1 dev eth0"}
-	m := mgr(settings.UDP, ipMock)
+	m := mgr(settings2.UDP, ipMock)
 
 	f, err := m.CreateTunDevice()
 	if err != nil {
@@ -102,7 +101,7 @@ func TestCreateTunDevice_UDP(t *testing.T) {
 
 func TestCreateTunDevice_TCP(t *testing.T) {
 	ipMock := &mockIP{routeReply: "203.0.113.1 dev eth0"} // no gateway
-	m := mgr(settings.TCP, ipMock)
+	m := mgr(settings2.TCP, ipMock)
 
 	if _, err := m.CreateTunDevice(); err != nil {
 		t.Fatalf("TCP path failed: %v", err)
@@ -113,7 +112,7 @@ func TestCreateTunDevice_TCP(t *testing.T) {
 }
 
 func TestCreateTunDevice_Unsupported(t *testing.T) {
-	m := mgr(settings.UDP, &mockIP{}) // fake proto
+	m := mgr(settings2.UDP, &mockIP{}) // fake proto
 	if _, err := m.CreateTunDevice(); err == nil {
 		t.Fatal("expected unsupported protocol error")
 	}
@@ -123,7 +122,7 @@ func TestConfigureTUN_ErrorsPropagate(t *testing.T) {
 	steps := []string{"add", "up", "addr", "radd", "def", "mtu"}
 	for _, step := range steps {
 		ipMock := &mockIP{routeReply: "198.51.100.1 dev eth0", failStep: step}
-		m := mgr(settings.UDP, ipMock)
+		m := mgr(settings2.UDP, ipMock)
 		if _, err := m.CreateTunDevice(); err == nil {
 			t.Fatalf("want error on step %s", step)
 		}
@@ -132,7 +131,7 @@ func TestConfigureTUN_ErrorsPropagate(t *testing.T) {
 
 func TestDisposeTunDevices(t *testing.T) {
 	ipMock := &mockIP{}
-	m := mgr(settings.UDP, ipMock)
+	m := mgr(settings2.UDP, ipMock)
 	if err := m.DisposeTunDevices(); err != nil {
 		t.Fatalf("DisposeTunDevices error: %v", err)
 	}

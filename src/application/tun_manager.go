@@ -1,6 +1,8 @@
 package application
 
-import "tungo/settings"
+import (
+	"tungo/infrastructure/settings"
+)
 
 type ClientTunManager interface {
 	CreateTunDevice() (TunDevice, error)
@@ -8,6 +10,6 @@ type ClientTunManager interface {
 }
 
 type ServerTunManager interface {
-	CreateTunDevice(settings settings.ConnectionSettings) (TunDevice, error)
-	DisposeTunDevices(settings settings.ConnectionSettings) error
+	CreateTunDevice(settings settings.Settings) (TunDevice, error)
+	DisposeTunDevices(settings settings.Settings) error
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 )
 
+// Encryption specifies the encryption algorithm
 type Encryption int
 
 const (

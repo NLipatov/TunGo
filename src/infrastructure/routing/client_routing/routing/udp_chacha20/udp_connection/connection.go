@@ -2,7 +2,7 @@ package udp_connection
 
 import (
 	"net"
-	"tungo/settings"
+	"tungo/infrastructure/settings"
 )
 
 type Connection interface {
@@ -10,10 +10,10 @@ type Connection interface {
 }
 
 type DefaultConnection struct {
-	settings settings.ConnectionSettings
+	settings settings.Settings
 }
 
-func NewConnection(settings settings.ConnectionSettings) *DefaultConnection {
+func NewConnection(settings settings.Settings) *DefaultConnection {
 	return &DefaultConnection{
 		settings: settings,
 	}

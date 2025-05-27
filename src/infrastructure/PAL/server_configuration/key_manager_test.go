@@ -45,10 +45,14 @@ func TestPrepareKeys_SkipsWhenConfigHasKeys(t *testing.T) {
 func TestPrepareKeys_UsesEnvKeys(t *testing.T) {
 	// generate a real key pair and set env
 	pub, priv, _ := ed25519.GenerateKey(nil)
-	os.Setenv(pubEnvVar, base64.StdEncoding.EncodeToString(pub))
-	os.Setenv(privEnvVar, base64.StdEncoding.EncodeToString(priv))
-	defer os.Unsetenv(pubEnvVar)
-	defer os.Unsetenv(privEnvVar)
+	_ = os.Setenv(pubEnvVar, base64.StdEncoding.EncodeToString(pub))
+	_ = os.Setenv(privEnvVar, base64.StdEncoding.EncodeToString(priv))
+	defer func() {
+		_ = os.Unsetenv(pubEnvVar)
+	}()
+	defer func() {
+		_ = os.Unsetenv(privEnvVar)
+	}()
 
 	cfg := &Configuration{} // empty config
 	store := &fakeStore{}
@@ -66,8 +70,8 @@ func TestPrepareKeys_UsesEnvKeys(t *testing.T) {
 }
 
 func TestPrepareKeys_GeneratesWhenEnvMissing(t *testing.T) {
-	os.Unsetenv(pubEnvVar)
-	os.Unsetenv(privEnvVar)
+	_ = os.Unsetenv(pubEnvVar)
+	_ = os.Unsetenv(privEnvVar)
 
 	cfg := &Configuration{}
 	store := &fakeStore{}
@@ -87,10 +91,14 @@ func TestPrepareKeys_GeneratesWhenEnvMissing(t *testing.T) {
 
 func TestTryEnvKeys_ErrorsOnInvalidBase64(t *testing.T) {
 	// set invalid base64 for public, valid for private
-	os.Setenv(pubEnvVar, "!!!not-base64!!!")
-	os.Setenv(privEnvVar, base64.StdEncoding.EncodeToString([]byte{1, 2, 3}))
-	defer os.Unsetenv(pubEnvVar)
-	defer os.Unsetenv(privEnvVar)
+	_ = os.Setenv(pubEnvVar, "!!!not-base64!!!")
+	_ = os.Setenv(privEnvVar, base64.StdEncoding.EncodeToString([]byte{1, 2, 3}))
+	defer func() {
+		_ = os.Unsetenv(pubEnvVar)
+	}()
+	defer func() {
+		_ = os.Unsetenv(privEnvVar)
+	}()
 
 	cfg := &Configuration{}
 	store := &fakeStore{}

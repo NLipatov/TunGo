@@ -6,8 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"tungo/settings"
+	settings2 "tungo/infrastructure/settings"
 )
 
 func createTempClientConfigFile(t *testing.T, data interface{}) string {
@@ -26,10 +25,10 @@ func createTempClientConfigFile(t *testing.T, data interface{}) string {
 
 func TestReaderReadSuccess(t *testing.T) {
 	expectedConfig := Configuration{
-		TCPSettings:      settings.ConnectionSettings{},
-		UDPSettings:      settings.ConnectionSettings{},
+		TCPSettings:      settings2.Settings{},
+		UDPSettings:      settings2.Settings{},
 		Ed25519PublicKey: nil,
-		Protocol:         settings.UDP,
+		Protocol:         settings2.UDP,
 	}
 	path := createTempClientConfigFile(t, expectedConfig)
 	r := newReader(path)

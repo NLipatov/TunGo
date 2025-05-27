@@ -6,6 +6,7 @@ import (
 	"strings"
 )
 
+// Protocol specifies the transport protocol
 type Protocol int
 
 const (

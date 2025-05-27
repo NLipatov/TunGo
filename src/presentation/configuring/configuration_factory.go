@@ -2,10 +2,10 @@ package configuring
 
 import (
 	"os"
+	client_configuration2 "tungo/infrastructure/PAL/client_configuration"
+	server_configuration2 "tungo/infrastructure/PAL/server_configuration"
 	"tungo/presentation/configuring/cli"
 	"tungo/presentation/configuring/tui"
-	"tungo/settings/client_configuration"
-	"tungo/settings/server_configuration"
 )
 
 type ConfigurationFactory struct{}
@@ -27,13 +27,13 @@ func (c *ConfigurationFactory) buildCLIConfigurator() Configurator {
 }
 
 func (c *ConfigurationFactory) buildTUIConfigurator() Configurator {
-	confResolver := client_configuration.NewDefaultResolver()
+	confResolver := client_configuration2.NewDefaultResolver()
 	tuiConfigurator := tui.NewConfigurator(
-		client_configuration.NewDefaultObserver(confResolver),
-		client_configuration.NewDefaultSelector(confResolver),
-		client_configuration.NewDefaultCreator(confResolver),
-		client_configuration.NewDefaultDeleter(confResolver),
-		server_configuration.NewManager(server_configuration.NewServerResolver()))
+		client_configuration2.NewDefaultObserver(confResolver),
+		client_configuration2.NewDefaultSelector(confResolver),
+		client_configuration2.NewDefaultCreator(confResolver),
+		client_configuration2.NewDefaultDeleter(confResolver),
+		server_configuration2.NewManager(server_configuration2.NewServerResolver()))
 
 	return tuiConfigurator
 }

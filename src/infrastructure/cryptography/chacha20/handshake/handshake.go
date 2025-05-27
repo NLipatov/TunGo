@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"net"
 	"tungo/application"
-	"tungo/settings"
-	"tungo/settings/client_configuration"
-	"tungo/settings/server_configuration"
+	"tungo/infrastructure/PAL/client_configuration"
+	"tungo/infrastructure/PAL/server_configuration"
+	"tungo/infrastructure/settings"
 )
 
 const (
@@ -25,7 +25,7 @@ type Handshake interface {
 	ClientKey() []byte
 	ServerKey() []byte
 	ServerSideHandshake(conn application.ConnectionAdapter) (net.IP, error)
-	ClientSideHandshake(conn application.ConnectionAdapter, settings settings.ConnectionSettings) error
+	ClientSideHandshake(conn application.ConnectionAdapter, settings settings.Settings) error
 }
 
 type DefaultHandshake struct {
@@ -95,7 +95,7 @@ func (h *DefaultHandshake) ServerSideHandshake(conn application.ConnectionAdapte
 	return clientHello.ipAddress, nil
 }
 
-func (h *DefaultHandshake) ClientSideHandshake(conn application.ConnectionAdapter, settings settings.ConnectionSettings) error {
+func (h *DefaultHandshake) ClientSideHandshake(conn application.ConnectionAdapter, settings settings.Settings) error {
 	c := newDefaultCrypto()
 	configurationManager := client_configuration.NewManager()
 	clientConf, generateKeyErr := configurationManager.Configuration()

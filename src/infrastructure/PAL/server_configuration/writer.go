@@ -4,13 +4,14 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"tungo/infrastructure/PAL/client_configuration"
 )
 
 type writer struct {
-	resolver linuxResolver
+	resolver client_configuration.Resolver
 }
 
-func newWriter(resolver linuxResolver) *writer {
+func newWriter(resolver client_configuration.Resolver) *writer {
 	return &writer{
 		resolver: resolver,
 	}
@@ -22,7 +23,7 @@ func (w *writer) Write(data interface{}) error {
 		return jsonContentErr
 	}
 
-	path, pathErr := w.resolver.resolve()
+	path, pathErr := w.resolver.Resolve()
 	if pathErr != nil {
 		return pathErr
 	}

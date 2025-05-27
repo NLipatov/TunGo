@@ -6,7 +6,7 @@ import (
 	"golang.org/x/crypto/curve25519"
 	"net"
 	"tungo/application"
-	"tungo/settings"
+	"tungo/infrastructure/settings"
 )
 
 // ClientHandshake performs the three‑step authenticated key‑exchange:
@@ -29,7 +29,7 @@ func NewClientHandshake(conn application.ConnectionAdapter, io ClientIO, crypto 
 }
 
 func (c *ClientHandshake) SendClientHello(
-	settings settings.ConnectionSettings,
+	settings settings.Settings,
 	edPublicKey ed25519.PublicKey,
 	sessionPublicKey, sessionSalt []byte) error {
 	hello := NewClientHello(4, net.ParseIP(settings.InterfaceAddress), edPublicKey, sessionPublicKey, sessionSalt)

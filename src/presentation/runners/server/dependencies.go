@@ -2,23 +2,23 @@ package server
 
 import (
 	"tungo/application"
-	"tungo/settings/server_configuration"
+	server_configuration2 "tungo/infrastructure/PAL/server_configuration"
 )
 
 type AppDependencies interface {
-	Configuration() server_configuration.Configuration
+	Configuration() server_configuration2.Configuration
 	TunManager() application.ServerTunManager
-	KeyManager() server_configuration.KeyManager
+	KeyManager() server_configuration2.KeyManager
 }
 
 type Dependencies struct {
-	configuration server_configuration.Configuration
+	configuration server_configuration2.Configuration
 	tunManager    application.ServerTunManager
-	keyManager    server_configuration.KeyManager
+	keyManager    server_configuration2.KeyManager
 }
 
 func NewDependencies(
-	tunManager application.ServerTunManager, configuration server_configuration.Configuration, keyManager server_configuration.KeyManager,
+	tunManager application.ServerTunManager, configuration server_configuration2.Configuration, keyManager server_configuration2.KeyManager,
 ) AppDependencies {
 	return &Dependencies{
 		configuration: configuration,
@@ -27,7 +27,7 @@ func NewDependencies(
 	}
 }
 
-func (s Dependencies) Configuration() server_configuration.Configuration {
+func (s Dependencies) Configuration() server_configuration2.Configuration {
 	return s.configuration
 }
 
@@ -35,6 +35,6 @@ func (s Dependencies) TunManager() application.ServerTunManager {
 	return s.tunManager
 }
 
-func (s Dependencies) KeyManager() server_configuration.KeyManager {
+func (s Dependencies) KeyManager() server_configuration2.KeyManager {
 	return s.keyManager
 }

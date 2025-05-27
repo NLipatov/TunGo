@@ -5,12 +5,12 @@ import (
 	"net"
 	"testing"
 	"time"
-	"tungo/settings"
+	"tungo/infrastructure/settings"
 )
 
 func TestDefaultConnection_Establish(t *testing.T) {
 	port := 3001
-	testSettings := settings.ConnectionSettings{
+	testSettings := settings.Settings{
 		ConnectionIP: "127.0.0.1",
 		Port:         fmt.Sprintf("%d", port),
 	}

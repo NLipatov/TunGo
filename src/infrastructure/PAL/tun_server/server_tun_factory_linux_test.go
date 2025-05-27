@@ -5,8 +5,7 @@ import (
 	"os"
 	"testing"
 	"time"
-
-	"tungo/settings"
+	"tungo/infrastructure/settings"
 )
 
 type mockIP struct{ log bytes.Buffer }
@@ -77,7 +76,7 @@ func newFactory() *ServerTunFactory {
 	}
 }
 
-var cfg = settings.ConnectionSettings{
+var cfg = settings.Settings{
 	InterfaceName:   "tun0",
 	InterfaceIPCIDR: "10.0.0.0/30",
 	MTU:             1420,

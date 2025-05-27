@@ -13,14 +13,14 @@ import (
 // managerTestMockErrorResolver returns an error from resolve().
 type managerTestMockErrorResolver struct{}
 
-func (r managerTestMockErrorResolver) resolve() (string, error) {
+func (r managerTestMockErrorResolver) Resolve() (string, error) {
 	return "", errors.New("resolve error")
 }
 
 // managerTestMockBadPathResolver returns an invalid path to simulate write error.
 type managerTestMockBadPathResolver struct{}
 
-func (r managerTestMockBadPathResolver) resolve() (string, error) {
+func (r managerTestMockBadPathResolver) Resolve() (string, error) {
 	// invalid path with null byte
 	return string([]byte{0}), nil
 }
@@ -30,7 +30,7 @@ type managerTestValidResolver struct {
 	path string
 }
 
-func (r managerTestValidResolver) resolve() (string, error) {
+func (r managerTestValidResolver) Resolve() (string, error) {
 	return r.path, nil
 }
 

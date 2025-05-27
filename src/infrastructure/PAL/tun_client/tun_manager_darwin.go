@@ -7,10 +7,10 @@ import (
 	"strings"
 	"tungo/application"
 	"tungo/infrastructure/PAL"
+	"tungo/infrastructure/PAL/client_configuration"
 	"tungo/infrastructure/PAL/darwin/network_tools/ip"
 	"tungo/infrastructure/PAL/darwin/network_tools/route"
-	"tungo/settings"
-	"tungo/settings/client_configuration"
+	"tungo/infrastructure/settings"
 )
 
 // PlatformTunManager is the macOS-specific implementation of ClientTunManager.
@@ -32,7 +32,7 @@ func NewPlatformTunManager(conf client_configuration.Configuration) (application
 
 // CreateTunDevice creates, configures and returns a TUN interface wrapped in wgTunAdapter.
 func (t *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
-	var s settings.ConnectionSettings
+	var s settings.Settings
 	switch t.conf.Protocol {
 	case settings.TCP:
 		s = t.conf.TCPSettings

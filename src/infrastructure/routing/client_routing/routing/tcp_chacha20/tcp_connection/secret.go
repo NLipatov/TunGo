@@ -6,7 +6,7 @@ import (
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/handshake"
-	"tungo/settings"
+	"tungo/infrastructure/settings"
 )
 
 type Secret interface {
@@ -14,11 +14,11 @@ type Secret interface {
 }
 
 type DefaultSecret struct {
-	settings  settings.ConnectionSettings
+	settings  settings.Settings
 	handshake handshake.Handshake
 }
 
-func NewDefaultSecret(settings settings.ConnectionSettings, handshake handshake.Handshake) Secret {
+func NewDefaultSecret(settings settings.Settings, handshake handshake.Handshake) Secret {
 	return &DefaultSecret{
 		settings:  settings,
 		handshake: handshake,

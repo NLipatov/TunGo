@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"golang.org/x/crypto/chacha20poly1305"
 	"io"
 	"log"
 	"net"
@@ -13,20 +14,18 @@ import (
 	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/routing/server_routing/session_management"
-	"tungo/settings"
-
-	"golang.org/x/crypto/chacha20poly1305"
+	"tungo/infrastructure/settings"
 )
 
 type TcpTunWorker struct {
 	ctx            context.Context
 	tunFile        io.ReadWriteCloser
-	settings       settings.ConnectionSettings
+	settings       settings.Settings
 	sessionManager session_management.WorkerSessionManager[session]
 }
 
 func NewTcpTunWorker(
-	ctx context.Context, tunFile io.ReadWriteCloser, settings settings.ConnectionSettings,
+	ctx context.Context, tunFile io.ReadWriteCloser, settings settings.Settings,
 ) application.TunWorker {
 	return &TcpTunWorker{
 		ctx:            ctx,

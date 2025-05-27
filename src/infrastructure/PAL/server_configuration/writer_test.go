@@ -14,7 +14,7 @@ type writerTestMockResolver struct {
 	err  error
 }
 
-func (f writerTestMockResolver) resolve() (string, error) {
+func (f writerTestMockResolver) Resolve() (string, error) {
 	if f.err != nil {
 		return "", f.err
 	}
@@ -87,7 +87,7 @@ func TestFileWriteError(t *testing.T) {
 func TestPathResolverSuccess(t *testing.T) {
 	// NewServerResolver returns a fixed absolute path.
 	resolver := NewServerResolver()
-	resolved, err := resolver.resolve()
+	resolved, err := resolver.Resolve()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

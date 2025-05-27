@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"fmt"
 	"os"
+	"tungo/infrastructure/PAL/client_configuration"
 )
 
 type ServerConfigurationManager interface {
@@ -13,17 +14,17 @@ type ServerConfigurationManager interface {
 }
 
 type Manager struct {
-	resolver linuxResolver
+	resolver client_configuration.Resolver
 }
 
-func NewManager(resolver linuxResolver) ServerConfigurationManager {
+func NewManager(resolver client_configuration.Resolver) ServerConfigurationManager {
 	return &Manager{
 		resolver: resolver,
 	}
 }
 
 func (c *Manager) Configuration() (*Configuration, error) {
-	path, pathErr := c.resolver.resolve()
+	path, pathErr := c.resolver.Resolve()
 	if pathErr != nil {
 		return nil, fmt.Errorf("failed to read configuration: %s", path)
 	}

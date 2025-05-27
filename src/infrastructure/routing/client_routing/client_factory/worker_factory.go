@@ -7,11 +7,11 @@ import (
 	"net"
 	"time"
 	"tungo/application"
+	"tungo/infrastructure/PAL/client_configuration"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/routing/client_routing/routing/tcp_chacha20"
 	"tungo/infrastructure/routing/client_routing/routing/udp_chacha20"
-	"tungo/settings"
-	"tungo/settings/client_configuration"
+	"tungo/infrastructure/settings"
 )
 
 type WorkerFactory struct {

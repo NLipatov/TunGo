@@ -9,11 +9,11 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"tungo/infrastructure/PAL/client_configuration"
 	"tungo/presentation/runners/client"
 	"unsafe"
 
 	"tungo/application"
-	"tungo/settings/client_configuration"
 )
 
 type dummyConnectionAdapter struct{}

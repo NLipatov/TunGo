@@ -1,6 +1,6 @@
 package settings
 
-type ConnectionSettings struct {
+type Settings struct {
 	InterfaceName    string `json:"InterfaceName"`
 	InterfaceIPCIDR  string `json:"InterfaceIPCIDR"`
 	InterfaceAddress string `json:"InterfaceAddress"`
