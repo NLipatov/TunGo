@@ -5,9 +5,9 @@ import (
 	"strings"
 	"tungo/application"
 	"tungo/infrastructure/PAL"
-	"tungo/infrastructure/PAL/linux/ioctl"
-	"tungo/infrastructure/PAL/linux/ip"
-	"tungo/infrastructure/PAL/linux/iptables"
+	"tungo/infrastructure/PAL/linux/network_tools/ioctl"
+	"tungo/infrastructure/PAL/linux/network_tools/ip"
+	"tungo/infrastructure/PAL/linux/network_tools/iptables"
 	"tungo/settings"
 	"tungo/settings/client_configuration"
 )

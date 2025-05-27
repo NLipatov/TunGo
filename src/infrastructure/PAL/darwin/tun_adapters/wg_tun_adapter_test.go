@@ -1,4 +1,4 @@
-package darwin
+package tun_adapters
 
 import (
 	"encoding/binary"
