@@ -11,6 +11,7 @@ import (
 	"tungo/infrastructure/PAL/darwin/network_tools/ip"
 	"tungo/infrastructure/PAL/darwin/network_tools/route"
 	"tungo/infrastructure/settings"
+	"tungo/infrastructure/PAL/darwin/tun_adapters"
 )
 
 // PlatformTunManager is the macOS-specific implementation of ClientTunManager.
@@ -73,7 +74,7 @@ func (t *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 	}
 	fmt.Printf("added split default routes via %s\n", name)
 
-	return tun2.NewWgTunAdapter(dev), nil
+	return tun_adapters.NewWgTunAdapter(dev), nil
 }
 
 // DisposeTunDevices removes routes and destroys TUN interfaces.
