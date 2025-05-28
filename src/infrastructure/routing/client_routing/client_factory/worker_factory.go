@@ -10,6 +10,7 @@ import (
 	"tungo/infrastructure/PAL/client_configuration"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network"
+	"tungo/infrastructure/routing/client_routing/routing"
 	"tungo/infrastructure/routing/client_routing/routing/tcp_chacha20"
 	"tungo/infrastructure/routing/client_routing/routing/udp_chacha20"
 	"tungo/infrastructure/settings"
@@ -35,8 +36,8 @@ func (w *WorkerFactory) CreateWorker(
 			return nil, deadlineErr
 		}
 		adapter := network.NewClientUDPAdapter(conn.(*net.UDPConn), deadline, deadline)
-		reader := chacha20.NewUdpReader(tun)
-		return udp_chacha20.NewUdpWorker(ctx, adapter, tun, cryptographyService, reader), nil
+		tunHandler := routing.NewTunHandler(ctx, chacha20.NewUdpReader(tun), adapter, cryptographyService)
+		return udp_chacha20.NewUdpWorker(tunHandler, ctx, adapter, tun, cryptographyService), nil
 	case settings.TCP:
 		return tcp_chacha20.NewTcpTunWorker(ctx, conn, tun, cryptographyService), nil
 	default:

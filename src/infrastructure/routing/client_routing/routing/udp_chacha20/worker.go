@@ -12,63 +12,31 @@ import (
 )
 
 type UdpWorker struct {
+	tunHandler          application.TunHandler
 	ctx                 context.Context
 	adapter             application.ConnectionAdapter
 	tun                 io.ReadWriteCloser
 	cryptographyService application.CryptographyService
-	reader              io.Reader
 }
 
 func NewUdpWorker(
+	TunHandler application.TunHandler,
 	ctx context.Context,
 	adapter application.ConnectionAdapter,
 	tun io.ReadWriteCloser,
 	cryptographyService application.CryptographyService,
-	udpReader io.Reader,
 ) *UdpWorker {
 	return &UdpWorker{
+		tunHandler:          TunHandler,
 		ctx:                 ctx,
 		adapter:             adapter,
 		tun:                 tun,
 		cryptographyService: cryptographyService,
-		reader:              udpReader,
 	}
 }
 
 func (w *UdpWorker) HandleTun() error {
-	buf := make([]byte, network.MaxPacketLengthBytes+12)
-
-	// Main loop to read from TUN and send data
-	for {
-		select {
-		case <-w.ctx.Done():
-			return nil
-		default:
-			n, readErr := w.reader.Read(buf)
-			if readErr != nil {
-				if w.ctx.Err() != nil {
-					return nil
-				}
-				return fmt.Errorf("could not read a packet from TUN: %v", readErr)
-			}
-
-			encryptedPacket, encryptErr := w.cryptographyService.Encrypt(buf[:n])
-			if encryptErr != nil {
-				if w.ctx.Err() != nil {
-					return nil
-				}
-				return fmt.Errorf("could not encrypt packet: %v", encryptErr)
-			}
-
-			_, writeErr := w.adapter.Write(encryptedPacket)
-			if writeErr != nil {
-				if w.ctx.Err() != nil {
-					return nil
-				}
-				return fmt.Errorf("could not write packet to adapter: %v", writeErr)
-			}
-		}
-	}
+	return w.tunHandler.HandleTun()
 }
 
 func (w *UdpWorker) HandleTransport() error {
