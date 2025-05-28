@@ -16,22 +16,27 @@ type UdpWorker struct {
 	adapter             application.ConnectionAdapter
 	tun                 io.ReadWriteCloser
 	cryptographyService application.CryptographyService
+	reader              io.Reader
 }
 
 func NewUdpWorker(
-	ctx context.Context, adapter application.ConnectionAdapter, tun io.ReadWriteCloser, cryptographyService application.CryptographyService,
+	ctx context.Context,
+	adapter application.ConnectionAdapter,
+	tun io.ReadWriteCloser,
+	cryptographyService application.CryptographyService,
+	udpReader io.Reader,
 ) *UdpWorker {
 	return &UdpWorker{
 		ctx:                 ctx,
 		adapter:             adapter,
 		tun:                 tun,
 		cryptographyService: cryptographyService,
+		reader:              udpReader,
 	}
 }
 
 func (w *UdpWorker) HandleTun() error {
 	buf := make([]byte, network.MaxPacketLengthBytes+12)
-	udpReader := chacha20.NewUdpReader(w.tun)
 
 	// Main loop to read from TUN and send data
 	for {
@@ -39,7 +44,7 @@ func (w *UdpWorker) HandleTun() error {
 		case <-w.ctx.Done():
 			return nil
 		default:
-			n, readErr := udpReader.Read(buf)
+			n, readErr := w.reader.Read(buf)
 			if readErr != nil {
 				if w.ctx.Err() != nil {
 					return nil
