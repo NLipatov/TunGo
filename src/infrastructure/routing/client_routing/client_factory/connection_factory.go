@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"net"
 	"time"
 	"tungo/application"
 	"tungo/infrastructure/PAL/client_configuration"
@@ -27,7 +26,7 @@ func NewConnectionFactory(conf client_configuration.Configuration) application.C
 
 func (f *ConnectionFactory) EstablishConnection(
 	ctx context.Context,
-) (net.Conn, application.CryptographyService, error) {
+) (application.ConnectionAdapter, application.CryptographyService, error) {
 	connSettings, connSettingsErr := f.connectionSettings()
 	if connSettingsErr != nil {
 		return nil, nil, connSettingsErr
@@ -56,7 +55,7 @@ func (f *ConnectionFactory) EstablishConnection(
 		secret := tcp_connection.NewDefaultSecret(connSettings, handshake.NewHandshake())
 		cancellableSecret := tcp_connection.NewSecretWithDeadline(handshakeCtx, secret)
 
-		session := tcp_connection.NewDefaultSecureSession(tcp_connection.NewDefaultConnection(socket), cancellableSecret)
+		session := tcp_connection.NewDefaultSecureSession(network.NewDefaultConnection(socket), cancellableSecret)
 		cancellableSession := tcp_connection.NewSecureSessionWithDeadline(handshakeCtx, session)
 		return cancellableSession.Establish()
 	default:

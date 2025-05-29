@@ -2,7 +2,6 @@ package tcp_connection
 
 import (
 	"context"
-	"net"
 	"tungo/application"
 )
 
@@ -19,9 +18,9 @@ func NewSecureSessionWithDeadline(ctx context.Context, secureConnection SecureSe
 	}
 }
 
-func (c *SecureSessionWithDeadline) Establish() (net.Conn, application.CryptographyService, error) {
+func (c *SecureSessionWithDeadline) Establish() (application.ConnectionAdapter, application.CryptographyService, error) {
 	type result struct {
-		conn net.Conn
+		conn application.ConnectionAdapter
 		sess application.CryptographyService
 		err  error
 	}
