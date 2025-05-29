@@ -2,6 +2,7 @@ package tcp_connection
 
 import (
 	"fmt"
+	"net"
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/handshake"
@@ -9,7 +10,7 @@ import (
 )
 
 type Secret interface {
-	Exchange(conn application.ConnectionAdapter) (application.CryptographyService, error)
+	Exchange(conn net.Conn) (application.CryptographyService, error)
 }
 
 type DefaultSecret struct {
@@ -24,7 +25,7 @@ func NewDefaultSecret(settings settings.Settings, handshake handshake.Handshake)
 	}
 }
 
-func (s *DefaultSecret) Exchange(conn application.ConnectionAdapter) (application.CryptographyService, error) {
+func (s *DefaultSecret) Exchange(conn net.Conn) (application.CryptographyService, error) {
 	handshakeErr := s.handshake.ClientSideHandshake(conn, s.settings)
 	if handshakeErr != nil {
 		return nil, handshakeErr

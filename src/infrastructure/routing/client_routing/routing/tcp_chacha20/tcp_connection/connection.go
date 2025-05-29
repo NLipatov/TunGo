@@ -1,9 +1,13 @@
-package network
+package tcp_connection
 
 import (
 	"net"
 	"tungo/application"
 )
+
+type Connection interface {
+	Establish() (net.Conn, error)
+}
 
 type DefaultConnection struct {
 	socket application.Socket
@@ -15,7 +19,7 @@ func NewDefaultConnection(socket application.Socket) *DefaultConnection {
 	}
 }
 
-func (u *DefaultConnection) Establish() (application.ConnectionAdapter, error) {
+func (u *DefaultConnection) Establish() (net.Conn, error) {
 	dialer := net.Dialer{}
 	conn, connErr := dialer.Dial("tcp", u.socket.StringAddr())
 	if connErr != nil {

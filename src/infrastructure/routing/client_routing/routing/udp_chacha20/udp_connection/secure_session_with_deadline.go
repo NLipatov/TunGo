@@ -2,6 +2,7 @@ package udp_connection
 
 import (
 	"context"
+	"net"
 	"tungo/application"
 )
 
@@ -18,9 +19,9 @@ func NewSecureSessionWithDeadline(ctx context.Context, secureConnection SecureSe
 	}
 }
 
-func (c *SecureSessionWithDeadline) Establish() (application.ConnectionAdapter, application.CryptographyService, error) {
+func (c *SecureSessionWithDeadline) Establish() (*net.UDPConn, application.CryptographyService, error) {
 	type result struct {
-		conn application.ConnectionAdapter
+		conn *net.UDPConn
 		sess application.CryptographyService
 		err  error
 	}

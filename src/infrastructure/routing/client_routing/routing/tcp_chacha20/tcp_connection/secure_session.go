@@ -1,26 +1,27 @@
 package tcp_connection
 
 import (
+	"net"
 	"tungo/application"
 )
 
 type SecureSession interface {
-	Establish() (application.ConnectionAdapter, application.CryptographyService, error)
+	Establish() (net.Conn, application.CryptographyService, error)
 }
 
 type DefaultSecureSession struct {
-	connection application.Connection
+	connection Connection
 	secret     Secret
 }
 
-func NewDefaultSecureSession(connection application.Connection, secret Secret) *DefaultSecureSession {
+func NewDefaultSecureSession(connection Connection, secret Secret) *DefaultSecureSession {
 	return &DefaultSecureSession{
 		connection: connection,
 		secret:     secret,
 	}
 }
 
-func (c *DefaultSecureSession) Establish() (application.ConnectionAdapter, application.CryptographyService, error) {
+func (c *DefaultSecureSession) Establish() (net.Conn, application.CryptographyService, error) {
 	conn, connErr := c.connection.Establish()
 	if connErr != nil {
 		return nil, nil, connErr

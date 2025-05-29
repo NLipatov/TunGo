@@ -5,7 +5,6 @@ import (
 	"net"
 	"testing"
 	"time"
-	"tungo/application"
 )
 
 // udpConnectionTestSocketMock implements application.Socket for error and success scenarios.
@@ -53,7 +52,7 @@ func TestEstablish_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Establish() error: %v", err)
 	}
-	defer func(clientConn application.ConnectionAdapter) {
+	defer func(clientConn *net.UDPConn) {
 		_ = clientConn.Close()
 	}(clientConn)
 

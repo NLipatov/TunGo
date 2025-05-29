@@ -1,4 +1,4 @@
-package network
+package tcp_connection
 
 import (
 	"fmt"
@@ -41,11 +41,7 @@ func TestDefaultConnection_Establish(t *testing.T) {
 		}
 	}()
 
-	socket, socketErr := NewSocket(testSettings.ConnectionIP, testSettings.Port)
-	if socketErr != nil {
-		t.Fatal(socketErr)
-	}
-	connection := NewDefaultConnection(socket)
+	connection := NewDefaultConnection(testSettings)
 	_, connErr := connection.Establish()
 	if connErr != nil {
 		t.Fatal(connErr)

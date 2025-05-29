@@ -2,6 +2,7 @@ package tcp_connection
 
 import (
 	"context"
+	"net"
 	"tungo/application"
 )
 
@@ -18,7 +19,7 @@ func NewSecretWithDeadline(ctx context.Context, secret Secret) SecretWithDeadlin
 	}
 }
 
-func (s SecretWithDeadline) Exchange(conn application.ConnectionAdapter) (application.CryptographyService, error) {
+func (s SecretWithDeadline) Exchange(conn net.Conn) (application.CryptographyService, error) {
 	type result struct {
 		cryptographyService application.CryptographyService
 		err                 error

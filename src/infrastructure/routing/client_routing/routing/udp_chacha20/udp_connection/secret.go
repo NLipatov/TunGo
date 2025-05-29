@@ -2,6 +2,7 @@ package udp_connection
 
 import (
 	"fmt"
+	"net"
 	"tungo/application"
 	"tungo/infrastructure/PAL/client_configuration"
 	"tungo/infrastructure/cryptography/chacha20"
@@ -10,7 +11,7 @@ import (
 )
 
 type Secret interface {
-	Exchange(conn application.ConnectionAdapter) (application.CryptographyService, error)
+	Exchange(conn *net.UDPConn) (application.CryptographyService, error)
 }
 
 type DefaultSecret struct {
@@ -25,7 +26,7 @@ func NewDefaultSecret(settings settings.Settings, handshake handshake.Handshake)
 	}
 }
 
-func (s *DefaultSecret) Exchange(conn application.ConnectionAdapter) (application.CryptographyService, error) {
+func (s *DefaultSecret) Exchange(conn *net.UDPConn) (application.CryptographyService, error) {
 	handshakeErr := s.handshake.ClientSideHandshake(conn, s.settings)
 	if handshakeErr != nil {
 		return nil, handshakeErr

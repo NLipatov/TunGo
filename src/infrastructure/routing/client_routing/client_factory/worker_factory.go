@@ -26,7 +26,7 @@ func NewWorkerFactory(configuration client_configuration.Configuration) applicat
 }
 
 func (w *WorkerFactory) CreateWorker(
-	ctx context.Context, conn application.ConnectionAdapter, tun io.ReadWriteCloser, crypto application.CryptographyService,
+	ctx context.Context, conn net.Conn, tun io.ReadWriteCloser, crypto application.CryptographyService,
 ) (application.TunWorker, error) {
 	switch w.conf.Protocol {
 	case settings.UDP:

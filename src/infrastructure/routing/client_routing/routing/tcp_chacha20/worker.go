@@ -6,6 +6,7 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 	"io"
 	"log"
+	"net"
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network"
@@ -13,13 +14,13 @@ import (
 
 type TcpTunWorker struct {
 	ctx                 context.Context
-	conn                application.ConnectionAdapter
+	conn                net.Conn
 	tun                 io.ReadWriteCloser
 	cryptographyService application.CryptographyService
 }
 
 func NewTcpTunWorker(
-	ctx context.Context, conn application.ConnectionAdapter, tun io.ReadWriteCloser, cryptographyService application.CryptographyService,
+	ctx context.Context, conn net.Conn, tun io.ReadWriteCloser, cryptographyService application.CryptographyService,
 ) application.TunWorker {
 	return &TcpTunWorker{
 		ctx:                 ctx,

@@ -1,5 +1,7 @@
 package application
 
-type Connection interface {
-	Establish() (ConnectionAdapter, error)
+import "net"
+
+type Connection[T net.Conn] interface {
+	Establish() (T, error)
 }

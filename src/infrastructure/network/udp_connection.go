@@ -15,7 +15,7 @@ func NewUdpConnection(socket application.Socket) *UdpConnection {
 	}
 }
 
-func (u *UdpConnection) Establish() (application.ConnectionAdapter, error) {
+func (u *UdpConnection) Establish() (*net.UDPConn, error) {
 	serverAddr, serverAddrErr := u.socket.UdpAddr()
 	if serverAddrErr != nil {
 		return nil, serverAddrErr
