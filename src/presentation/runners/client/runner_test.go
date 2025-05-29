@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"net"
 	"reflect"
 	"sync"
 	"testing"
@@ -63,7 +62,7 @@ func (d *mockTunManager) DisposeTunDevices() error {
 type mockConnectionFactory struct{}
 
 func (d *mockConnectionFactory) EstablishConnection(_ context.Context,
-) (net.Conn, application.CryptographyService, error) {
+) (application.ConnectionAdapter, application.CryptographyService, error) {
 	return nil, nil, nil
 }
 
@@ -71,7 +70,7 @@ func (d *mockConnectionFactory) EstablishConnection(_ context.Context,
 type mockWorkerFactory struct{}
 
 func (d *mockWorkerFactory) CreateWorker(
-	_ context.Context, _ net.Conn, _ io.ReadWriteCloser, _ application.CryptographyService,
+	_ context.Context, _ application.ConnectionAdapter, _ io.ReadWriteCloser, _ application.CryptographyService,
 ) (application.TunWorker, error) {
 	return nil, nil
 }

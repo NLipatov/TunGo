@@ -1,27 +1,26 @@
 package udp_connection
 
 import (
-	"net"
 	"tungo/application"
 )
 
 type SecureSession interface {
-	Establish() (*net.UDPConn, application.CryptographyService, error)
+	Establish() (application.ConnectionAdapter, application.CryptographyService, error)
 }
 
 type DefaultSecureSession struct {
-	connection application.Connection[*net.UDPConn]
+	connection application.Connection
 	secret     Secret
 }
 
-func NewDefaultSecureSession(connection application.Connection[*net.UDPConn], secret Secret) *DefaultSecureSession {
+func NewDefaultSecureSession(connection application.Connection, secret Secret) *DefaultSecureSession {
 	return &DefaultSecureSession{
 		connection: connection,
 		secret:     secret,
 	}
 }
 
-func (c *DefaultSecureSession) Establish() (*net.UDPConn, application.CryptographyService, error) {
+func (c *DefaultSecureSession) Establish() (application.ConnectionAdapter, application.CryptographyService, error) {
 	conn, connErr := c.connection.Establish()
 	if connErr != nil {
 		return nil, nil, connErr
