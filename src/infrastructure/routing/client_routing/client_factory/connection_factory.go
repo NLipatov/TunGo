@@ -48,7 +48,7 @@ func (f *ConnectionFactory) EstablishConnection(
 		secret := udp_connection.NewDefaultSecret(connSettings, handshake.NewHandshake())
 		cancellableSecret := udp_connection.NewSecretWithDeadline(handshakeCtx, secret)
 
-		session := udp_connection.NewDefaultSecureSession(udp_connection.NewConnection(socket), cancellableSecret)
+		session := udp_connection.NewDefaultSecureSession(network.NewUdpConnection(socket), cancellableSecret)
 		cancellableSession := udp_connection.NewSecureSessionWithDeadline(handshakeCtx, session)
 		return cancellableSession.Establish()
 	case settings.TCP:

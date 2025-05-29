@@ -10,11 +10,11 @@ type SecureSession interface {
 }
 
 type DefaultSecureSession struct {
-	connection Connection
+	connection application.Connection[*net.UDPConn]
 	secret     Secret
 }
 
-func NewDefaultSecureSession(connection Connection, secret Secret) *DefaultSecureSession {
+func NewDefaultSecureSession(connection application.Connection[*net.UDPConn], secret Secret) *DefaultSecureSession {
 	return &DefaultSecureSession{
 		connection: connection,
 		secret:     secret,

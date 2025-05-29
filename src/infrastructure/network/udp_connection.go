@@ -1,25 +1,21 @@
-package udp_connection
+package network
 
 import (
 	"net"
 	"tungo/application"
 )
 
-type Connection interface {
-	Establish() (*net.UDPConn, error)
-}
-
-type DefaultConnection struct {
+type UdpConnection struct {
 	socket application.Socket
 }
 
-func NewConnection(socket application.Socket) *DefaultConnection {
-	return &DefaultConnection{
+func NewUdpConnection(socket application.Socket) *UdpConnection {
+	return &UdpConnection{
 		socket: socket,
 	}
 }
 
-func (u *DefaultConnection) Establish() (*net.UDPConn, error) {
+func (u *UdpConnection) Establish() (*net.UDPConn, error) {
 	serverAddr, serverAddrErr := u.socket.UdpAddr()
 	if serverAddrErr != nil {
 		return nil, serverAddrErr
