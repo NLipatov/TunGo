@@ -13,7 +13,7 @@ import (
 	"tungo/infrastructure/PAL/client_configuration"
 	tools "tungo/infrastructure/PAL/windows"
 	"tungo/infrastructure/PAL/windows/netsh"
-	settings2 "tungo/infrastructure/settings"
+	settings "tungo/infrastructure/settings"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -35,11 +35,11 @@ func NewPlatformTunManager(
 }
 
 func (m *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
-	var s settings2.Settings
+	var s settings.Settings
 	switch m.conf.Protocol {
-	case settings2.UDP:
+	case settings.UDP:
 		s = m.conf.UDPSettings
-	case settings2.TCP:
+	case settings.TCP:
 		s = m.conf.TCPSettings
 	default:
 		return nil, errors.New("unsupported protocol")

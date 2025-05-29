@@ -2,7 +2,7 @@ package udp_connection
 
 import (
 	"net"
-	"tungo/infrastructure/settings"
+	"tungo/application"
 )
 
 type Connection interface {
@@ -10,17 +10,17 @@ type Connection interface {
 }
 
 type DefaultConnection struct {
-	settings settings.Settings
+	socket application.Socket
 }
 
-func NewConnection(settings settings.Settings) *DefaultConnection {
+func NewConnection(socket application.Socket) *DefaultConnection {
 	return &DefaultConnection{
-		settings: settings,
+		socket: socket,
 	}
 }
 
 func (u *DefaultConnection) Establish() (*net.UDPConn, error) {
-	serverAddr, serverAddrErr := u.resolveServerAddr()
+	serverAddr, serverAddrErr := u.socket.UdpAddr()
 	if serverAddrErr != nil {
 		return nil, serverAddrErr
 	}
@@ -31,14 +31,4 @@ func (u *DefaultConnection) Establish() (*net.UDPConn, error) {
 	}
 
 	return conn, nil
-}
-
-func (u *DefaultConnection) resolveServerAddr() (*net.UDPAddr, error) {
-	serverAddr := net.JoinHostPort(u.settings.ConnectionIP, u.settings.Port)
-	udpAddr, err := net.ResolveUDPAddr("udp", serverAddr)
-	if err != nil {
-		return nil, err
-	}
-
-	return udpAddr, nil
 }

@@ -6,7 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"os"
 	"strings"
-	client_configuration2 "tungo/infrastructure/PAL/client_configuration"
+	"tungo/infrastructure/PAL/client_configuration"
 	"tungo/presentation/configuring/tui/components"
 )
 
@@ -16,16 +16,16 @@ const (
 )
 
 type clientConfigurator struct {
-	observer client_configuration2.Observer
-	selector client_configuration2.Selector
-	deleter  client_configuration2.Deleter
-	creator  client_configuration2.Creator
+	observer client_configuration.Observer
+	selector client_configuration.Selector
+	deleter  client_configuration.Deleter
+	creator  client_configuration.Creator
 }
 
-func newClientConfigurator(observer client_configuration2.Observer,
-	selector client_configuration2.Selector,
-	deleter client_configuration2.Deleter,
-	creator client_configuration2.Creator) *clientConfigurator {
+func newClientConfigurator(observer client_configuration.Observer,
+	selector client_configuration.Selector,
+	deleter client_configuration.Deleter,
+	creator client_configuration.Creator) *clientConfigurator {
 	return &clientConfigurator{
 		observer: observer,
 		selector: selector,
@@ -135,7 +135,7 @@ func (c *clientConfigurator) createConf() error {
 	}
 
 	jsonText := textAreaResult.Value()
-	var configuration client_configuration2.Configuration
+	var configuration client_configuration.Configuration
 	if configurationErr := json.
 		Unmarshal([]byte(strings.TrimSpace(jsonText)), &configuration); configurationErr != nil {
 		return configurationErr

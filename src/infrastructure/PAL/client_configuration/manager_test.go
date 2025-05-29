@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	settings2 "tungo/infrastructure/settings"
+	"tungo/infrastructure/settings"
 )
 
 type managerTestMockResolver struct {
@@ -78,10 +78,10 @@ func TestManagerConfigurationInvalidJSON(t *testing.T) {
 func TestManagerConfigurationSuccess(t *testing.T) {
 	// Create a valid configuration file.
 	defaultConfig := Configuration{
-		TCPSettings:      settings2.Settings{},
-		UDPSettings:      settings2.Settings{},
+		TCPSettings:      settings.Settings{},
+		UDPSettings:      settings.Settings{},
 		Ed25519PublicKey: nil,
-		Protocol:         settings2.TCP,
+		Protocol:         settings.TCP,
 	}
 	path := createTempConfigFile(t, defaultConfig)
 	manager := NewManager()
@@ -90,7 +90,7 @@ func TestManagerConfigurationSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected success, got error: %v", err)
 	}
-	if config.Protocol != settings2.TCP {
-		t.Errorf("expected Protocol %q, got %d", settings2.TCP, config.Protocol)
+	if config.Protocol != settings.TCP {
+		t.Errorf("expected Protocol %q, got %d", settings.TCP, config.Protocol)
 	}
 }

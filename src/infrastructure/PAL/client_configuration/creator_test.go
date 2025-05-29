@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	settings2 "tungo/infrastructure/settings"
+	"tungo/infrastructure/settings"
 )
 
 type creatorTestResolver struct {
@@ -29,30 +29,30 @@ func (c *creatorTestConfigProvider) mockedConfig() Configuration {
 	}
 
 	return Configuration{
-		TCPSettings: settings2.Settings{
+		TCPSettings: settings.Settings{
 			InterfaceName:    "tcptun0",
 			InterfaceIPCIDR:  "10.0.0.0/24",
 			InterfaceAddress: "10.0.0.10",
 			ConnectionIP:     "192.168.122.194",
 			Port:             "8080",
 			MTU:              1472,
-			Protocol:         settings2.TCP,
-			Encryption:       settings2.ChaCha20Poly1305,
+			Protocol:         settings.TCP,
+			Encryption:       settings.ChaCha20Poly1305,
 			DialTimeoutMs:    5000,
 		},
-		UDPSettings: settings2.Settings{
+		UDPSettings: settings.Settings{
 			InterfaceName:    "udptun0",
 			InterfaceIPCIDR:  "10.0.1.0/24",
 			InterfaceAddress: "10.0.1.10",
 			ConnectionIP:     "192.168.122.194",
 			Port:             "9090",
 			MTU:              1416,
-			Protocol:         settings2.UDP,
-			Encryption:       settings2.ChaCha20Poly1305,
+			Protocol:         settings.UDP,
+			Encryption:       settings.ChaCha20Poly1305,
 			DialTimeoutMs:    5000,
 		},
 		Ed25519PublicKey: publicKey,
-		Protocol:         settings2.UDP,
+		Protocol:         settings.UDP,
 	}
 }
 

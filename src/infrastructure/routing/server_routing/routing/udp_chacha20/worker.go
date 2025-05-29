@@ -9,7 +9,7 @@ import (
 	"net/netip"
 	"os"
 	"tungo/application"
-	server_configuration2 "tungo/infrastructure/PAL/server_configuration"
+	"tungo/infrastructure/PAL/server_configuration"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/network"
@@ -184,7 +184,7 @@ func (u *UdpTunWorker) registerClient(conn *net.UDPConn, clientAddr netip.AddrPo
 		return handshakeErr
 	}
 
-	serverConfigurationManager := server_configuration2.NewManager(server_configuration2.NewServerResolver())
+	serverConfigurationManager := server_configuration.NewManager(server_configuration.NewServerResolver())
 	_, err := serverConfigurationManager.Configuration()
 	if err != nil {
 		return fmt.Errorf("failed to read server configuration: %s", err)

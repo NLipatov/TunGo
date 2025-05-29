@@ -7,14 +7,14 @@ import (
 	"tungo/application"
 	"tungo/infrastructure/routing/server_routing/routing/tcp_chacha20"
 	"tungo/infrastructure/routing/server_routing/routing/udp_chacha20"
-	settings2 "tungo/infrastructure/settings"
+	"tungo/infrastructure/settings"
 )
 
 type ServerWorkerFactory struct {
-	settings settings2.Settings
+	settings settings.Settings
 }
 
-func NewServerWorkerFactory(settings settings2.Settings) application.ServerWorkerFactory {
+func NewServerWorkerFactory(settings settings.Settings) application.ServerWorkerFactory {
 	return &ServerWorkerFactory{
 		settings: settings,
 	}
@@ -22,9 +22,9 @@ func NewServerWorkerFactory(settings settings2.Settings) application.ServerWorke
 
 func (s ServerWorkerFactory) CreateWorker(ctx context.Context, tun io.ReadWriteCloser) (application.TunWorker, error) {
 	switch s.settings.Protocol {
-	case settings2.TCP:
+	case settings.TCP:
 		return tcp_chacha20.NewTcpTunWorker(ctx, tun, s.settings), nil
-	case settings2.UDP:
+	case settings.UDP:
 		return udp_chacha20.NewUdpTunWorker(ctx, tun, s.settings), nil
 	default:
 		return nil, fmt.Errorf("protocol %v not supported", s.settings.Protocol)

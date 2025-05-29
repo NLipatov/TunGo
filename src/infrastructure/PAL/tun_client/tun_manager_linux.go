@@ -9,7 +9,7 @@ import (
 	"tungo/infrastructure/PAL/linux/network_tools/ioctl"
 	"tungo/infrastructure/PAL/linux/network_tools/ip"
 	"tungo/infrastructure/PAL/linux/network_tools/iptables"
-	settings2 "tungo/infrastructure/settings"
+	"tungo/infrastructure/settings"
 )
 
 // PlatformTunManager Linux-specific TunDevice manager
@@ -30,11 +30,11 @@ func NewPlatformTunManager(conf client_configuration.Configuration) (application
 }
 
 func (t *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
-	var s settings2.Settings
+	var s settings.Settings
 	switch t.conf.Protocol {
-	case settings2.UDP:
+	case settings.UDP:
 		s = t.conf.UDPSettings
-	case settings2.TCP:
+	case settings.TCP:
 		s = t.conf.TCPSettings
 	default:
 		return nil, fmt.Errorf("unsupported protocol")
@@ -55,7 +55,7 @@ func (t *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 }
 
 // configureTUN Configures client's TUN device (creates the TUN device, assigns an IP to it, etc)
-func (t *PlatformTunManager) configureTUN(connSettings settings2.Settings) error {
+func (t *PlatformTunManager) configureTUN(connSettings settings.Settings) error {
 	err := t.ip.TunTapAddDevTun(connSettings.InterfaceName)
 	if err != nil {
 		return err

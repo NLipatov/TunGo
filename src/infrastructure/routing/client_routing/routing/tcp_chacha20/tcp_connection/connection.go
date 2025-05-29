@@ -2,7 +2,7 @@ package tcp_connection
 
 import (
 	"net"
-	"tungo/infrastructure/settings"
+	"tungo/application"
 )
 
 type Connection interface {
@@ -10,18 +10,18 @@ type Connection interface {
 }
 
 type DefaultConnection struct {
-	settings settings.Settings
+	socket application.Socket
 }
 
-func NewDefaultConnection(settings settings.Settings) *DefaultConnection {
+func NewDefaultConnection(socket application.Socket) *DefaultConnection {
 	return &DefaultConnection{
-		settings: settings,
+		socket: socket,
 	}
 }
 
 func (u *DefaultConnection) Establish() (net.Conn, error) {
 	dialer := net.Dialer{}
-	conn, connErr := dialer.Dial("tcp", net.JoinHostPort(u.settings.ConnectionIP, u.settings.Port))
+	conn, connErr := dialer.Dial("tcp", u.socket.StringAddr())
 	if connErr != nil {
 		return nil, connErr
 	}
