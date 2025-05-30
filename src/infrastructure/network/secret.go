@@ -38,7 +38,11 @@ func (s *DefaultSecret) Exchange(
 	cryptographyService, cryptographyServiceErr := s.cryptographyServiceFactory.
 		FromHandshake(s.handshake, false)
 	if cryptographyServiceErr != nil {
-		return nil, fmt.Errorf("failed to create client cryptographyService: %s\n", cryptographyServiceErr)
+		return nil, fmt.Errorf(
+			"failed to create client cryptographyService: %w",
+			cryptographyServiceErr,
+		)
+
 	}
 
 	return cryptographyService, nil
