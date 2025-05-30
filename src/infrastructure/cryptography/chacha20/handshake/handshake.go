@@ -20,14 +20,6 @@ const (
 	minClientHelloSizeBytes = minIpLength + lengthHeaderLength + curvePublicKeyLength + curvePublicKeyLength + nonceLength
 )
 
-type Handshake interface {
-	Id() [32]byte
-	ClientKey() []byte
-	ServerKey() []byte
-	ServerSideHandshake(conn application.ConnectionAdapter) (net.IP, error)
-	ClientSideHandshake(conn application.ConnectionAdapter, settings settings.Settings) error
-}
-
 type DefaultHandshake struct {
 	id        [32]byte
 	clientKey []byte
