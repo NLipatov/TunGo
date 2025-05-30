@@ -1,4 +1,4 @@
-package udp_connection
+package network
 
 import (
 	"tungo/application"
@@ -26,10 +26,10 @@ func (c *DefaultSecureSession) Establish() (application.ConnectionAdapter, appli
 		return nil, nil, connErr
 	}
 
-	session, sessionErr := c.secret.Exchange(conn)
-	if sessionErr != nil {
-		return nil, nil, sessionErr
+	cryptographyService, cryptographyServiceErr := c.secret.Exchange(conn)
+	if cryptographyServiceErr != nil {
+		return nil, nil, cryptographyServiceErr
 	}
 
-	return conn, session, nil
+	return conn, cryptographyService, nil
 }
