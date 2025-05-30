@@ -3,9 +3,9 @@ package client
 import (
 	"fmt"
 	"tungo/application"
+	"tungo/infrastructure/PAL/client_configuration"
 	"tungo/infrastructure/PAL/tun_client"
 	"tungo/infrastructure/routing/client_routing/client_factory"
-	"tungo/settings/client_configuration"
 )
 
 type AppDependencies interface {

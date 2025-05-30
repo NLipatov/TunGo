@@ -7,11 +7,12 @@ import (
 	"net"
 	"time"
 	"tungo/application"
+	"tungo/infrastructure/PAL/client_configuration"
+	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/routing/client_routing/routing/tcp_chacha20"
 	"tungo/infrastructure/routing/client_routing/routing/udp_chacha20"
-	"tungo/settings"
-	"tungo/settings/client_configuration"
+	"tungo/infrastructure/settings"
 )
 
 type WorkerFactory struct {
@@ -25,7 +26,7 @@ func NewWorkerFactory(configuration client_configuration.Configuration) applicat
 }
 
 func (w *WorkerFactory) CreateWorker(
-	ctx context.Context, conn net.Conn, tun io.ReadWriteCloser, cryptographyService application.CryptographyService,
+	ctx context.Context, conn application.ConnectionAdapter, tun io.ReadWriteCloser, crypto application.CryptographyService,
 ) (application.TunWorker, error) {
 	switch w.conf.Protocol {
 	case settings.UDP:
@@ -33,10 +34,14 @@ func (w *WorkerFactory) CreateWorker(
 		if deadlineErr != nil {
 			return nil, deadlineErr
 		}
-		adapter := network.NewClientUDPAdapter(conn.(*net.UDPConn), deadline, deadline)
-		return udp_chacha20.NewUdpWorker(ctx, adapter, tun, cryptographyService), nil
+		transport := network.NewClientUDPAdapter(conn.(*net.UDPConn), deadline, deadline)
+		// tunHandler reads from tun and writes to transport
+		tunHandler := udp_chacha20.NewTunHandler(ctx, chacha20.NewUdpReader(tun), transport, crypto)
+		// transportHandler reads from transport and writes to tun
+		transportHandler := udp_chacha20.NewTransportHandler(ctx, transport, tun, crypto)
+		return udp_chacha20.NewUdpWorker(transportHandler, tunHandler), nil
 	case settings.TCP:
-		return tcp_chacha20.NewTcpTunWorker(ctx, conn, tun, cryptographyService), nil
+		return tcp_chacha20.NewTcpTunWorker(ctx, conn, tun, crypto), nil
 	default:
 		return nil, fmt.Errorf("unsupported protocol")
 	}

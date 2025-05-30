@@ -7,9 +7,9 @@ import (
 	"errors"
 	"net"
 	"testing"
+	"tungo/infrastructure/settings"
 
 	"golang.org/x/crypto/curve25519"
-	"tungo/settings"
 )
 
 // ClientHandshakeFakeIO implements ClientIO for ClientHandshake tests.
@@ -67,7 +67,7 @@ func (c *ClientHandshakeFakeCrypto) GenerateChaCha20KeysClientside(_, _ []byte, 
 func TestSendClientHello(t *testing.T) {
 	io := &ClientHandshakeFakeIO{}
 	ch := NewClientHandshake(nil, io, nil)
-	s := settings.ConnectionSettings{InterfaceAddress: "1.2.3.4"}
+	s := settings.Settings{InterfaceAddress: "1.2.3.4"}
 	edPub := make([]byte, ed25519.PublicKeySize)
 	sessPub := make([]byte, curve25519.ScalarSize)
 	salt := make([]byte, nonceLength)

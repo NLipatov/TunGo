@@ -2,10 +2,10 @@ package configuring
 
 import (
 	"os"
+	"tungo/infrastructure/PAL/client_configuration"
+	"tungo/infrastructure/PAL/server_configuration"
 	"tungo/presentation/configuring/cli"
 	"tungo/presentation/configuring/tui"
-	"tungo/settings/client_configuration"
-	"tungo/settings/server_configuration"
 )
 
 type ConfigurationFactory struct{}

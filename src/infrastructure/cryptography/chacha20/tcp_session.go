@@ -47,10 +47,6 @@ func NewTcpCryptographyService(id [32]byte, sendKey, recvKey []byte, isServer bo
 	}, nil
 }
 
-func (s *DefaultTcpSession) UseNonceRingBuffer() *DefaultTcpSession {
-	return s
-}
-
 func (s *DefaultTcpSession) Encrypt(plaintext []byte) ([]byte, error) {
 	err := s.SendNonce.incrementNonce()
 	if err != nil {

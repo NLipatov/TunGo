@@ -3,8 +3,8 @@ package tui
 import (
 	"fmt"
 	"tungo/domain/mode"
-	"tungo/settings/client_configuration"
-	"tungo/settings/server_configuration"
+	"tungo/infrastructure/PAL/client_configuration"
+	"tungo/infrastructure/PAL/server_configuration"
 )
 
 type Configurator struct {

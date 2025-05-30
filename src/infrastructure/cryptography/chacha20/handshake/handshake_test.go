@@ -6,7 +6,7 @@ import (
 	"net"
 	"testing"
 	"time"
-	"tungo/settings"
+	"tungo/infrastructure/settings"
 )
 
 // --- fake connections ---
@@ -61,7 +61,7 @@ func TestClientSideHandshake_WriteHelloError(t *testing.T) {
 	h := NewHandshake()
 	// a net.Conn whose Write always fails
 	bad := &badNetConn{&fakeAdapter{writeErr: errors.New("boom")}}
-	err := h.ClientSideHandshake(bad, settings.ConnectionSettings{
+	err := h.ClientSideHandshake(bad, settings.Settings{
 		InterfaceAddress: "10.0.0.2", ConnectionIP: "127.0.0.1", Port: "9999",
 	})
 	if err == nil {
@@ -75,7 +75,7 @@ func TestClientSideHandshake_ReadServerHelloError(t *testing.T) {
 	// then ReadServerHello (Read) will fail
 	buf := bytes.Repeat([]byte{0}, MaxClientHelloSizeBytes)
 	conn := &badNetConn{&fakeAdapter{in: bytes.NewBuffer(buf), readErr: errors.New("recv-fail")}}
-	err := h.ClientSideHandshake(conn, settings.ConnectionSettings{
+	err := h.ClientSideHandshake(conn, settings.Settings{
 		InterfaceAddress: "10.0.0.2", ConnectionIP: "127.0.0.1", Port: "9999",
 	})
 	if err == nil {

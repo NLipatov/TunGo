@@ -6,12 +6,12 @@ import (
 	"os"
 	"tungo/application"
 	"tungo/infrastructure/PAL"
-	"tungo/infrastructure/PAL/linux/ioctl"
-	"tungo/infrastructure/PAL/linux/ip"
-	"tungo/infrastructure/PAL/linux/iptables"
-	"tungo/infrastructure/PAL/linux/sysctl"
+	"tungo/infrastructure/PAL/linux/network_tools/ioctl"
+	"tungo/infrastructure/PAL/linux/network_tools/ip"
+	"tungo/infrastructure/PAL/linux/network_tools/iptables"
+	"tungo/infrastructure/PAL/linux/network_tools/sysctl"
 	"tungo/infrastructure/network"
-	"tungo/settings"
+	"tungo/infrastructure/settings"
 )
 
 type ServerTunFactory struct {
@@ -30,7 +30,7 @@ func NewServerTunFactory() application.ServerTunManager {
 	}
 }
 
-func (s ServerTunFactory) CreateTunDevice(connSettings settings.ConnectionSettings) (application.TunDevice, error) {
+func (s ServerTunFactory) CreateTunDevice(connSettings settings.Settings) (application.TunDevice, error) {
 	forwardingErr := s.enableForwarding()
 	if forwardingErr != nil {
 		return nil, forwardingErr
@@ -49,7 +49,7 @@ func (s ServerTunFactory) CreateTunDevice(connSettings settings.ConnectionSettin
 	return tunFile, nil
 }
 
-func (s ServerTunFactory) DisposeTunDevices(connSettings settings.ConnectionSettings) error {
+func (s ServerTunFactory) DisposeTunDevices(connSettings settings.Settings) error {
 	tun, openErr := s.ioctl.CreateTunInterface(connSettings.InterfaceName)
 	if openErr != nil {
 		return fmt.Errorf("failed to open TUN interface: %w", openErr)
@@ -69,7 +69,7 @@ func (s ServerTunFactory) DisposeTunDevices(connSettings settings.ConnectionSett
 	return nil
 }
 
-func (s ServerTunFactory) createTun(settings settings.ConnectionSettings) (*os.File, error) {
+func (s ServerTunFactory) createTun(settings settings.Settings) (*os.File, error) {
 	// delete previous tun if any exist
 	_ = s.ip.LinkDelete(settings.InterfaceName)
 

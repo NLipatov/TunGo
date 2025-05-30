@@ -6,7 +6,7 @@ import (
 	"sync"
 	"tungo/infrastructure/PAL/tun_server"
 	"tungo/infrastructure/routing/server_routing/factory"
-	"tungo/settings"
+	"tungo/infrastructure/settings"
 )
 
 type Runner struct {
@@ -63,7 +63,7 @@ func (r *Runner) Run(ctx context.Context) {
 	wg.Wait()
 }
 
-func (r *Runner) route(ctx context.Context, settings settings.ConnectionSettings) error {
+func (r *Runner) route(ctx context.Context, settings settings.Settings) error {
 	workerFactory := tun_server.NewServerWorkerFactory(settings)
 	routerFactory := factory.NewServerRouterFactory()
 

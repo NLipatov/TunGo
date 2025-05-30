@@ -6,8 +6,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"os"
 	"strings"
+	"tungo/infrastructure/PAL/client_configuration"
 	"tungo/presentation/configuring/tui/components"
-	"tungo/settings/client_configuration"
 )
 
 const (

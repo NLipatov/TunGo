@@ -9,6 +9,8 @@ import (
 	"syscall"
 	"tungo/domain/app"
 	"tungo/domain/mode"
+	"tungo/infrastructure/PAL/client_configuration"
+	"tungo/infrastructure/PAL/server_configuration"
 	"tungo/infrastructure/PAL/tun_server"
 	"tungo/infrastructure/routing/client_routing/client_factory"
 	"tungo/presentation/configuring"
@@ -17,8 +19,6 @@ import (
 	"tungo/presentation/runners/client"
 	"tungo/presentation/runners/server"
 	"tungo/presentation/runners/version"
-	"tungo/settings/client_configuration"
-	"tungo/settings/server_configuration"
 )
 
 func main() {

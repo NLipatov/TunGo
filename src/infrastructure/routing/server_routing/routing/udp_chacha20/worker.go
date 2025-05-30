@@ -9,23 +9,23 @@ import (
 	"net/netip"
 	"os"
 	"tungo/application"
+	"tungo/infrastructure/PAL/server_configuration"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/routing/server_routing/session_management"
-	"tungo/settings"
-	"tungo/settings/server_configuration"
+	"tungo/infrastructure/settings"
 )
 
 type UdpTunWorker struct {
 	ctx            context.Context
 	tun            io.ReadWriteCloser
-	settings       settings.ConnectionSettings
+	settings       settings.Settings
 	sessionManager session_management.WorkerSessionManager[session]
 }
 
 func NewUdpTunWorker(
-	ctx context.Context, tun io.ReadWriteCloser, settings settings.ConnectionSettings,
+	ctx context.Context, tun io.ReadWriteCloser, settings settings.Settings,
 ) application.TunWorker {
 	return &UdpTunWorker{
 		tun:            tun,

@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"log"
 	"tungo/infrastructure/PAL"
-	"tungo/infrastructure/PAL/linux/ip"
+	"tungo/infrastructure/PAL/client_configuration"
+	"tungo/infrastructure/PAL/linux/network_tools/ip"
+	"tungo/infrastructure/PAL/server_configuration"
 	"tungo/infrastructure/network"
-	"tungo/settings"
-	"tungo/settings/client_configuration"
-	"tungo/settings/server_configuration"
+	"tungo/infrastructure/settings"
 )
 
 type ConfgenHandler struct {
@@ -75,7 +75,7 @@ func (c *ConfgenHandler) generate() (*client_configuration.Configuration, error)
 	}
 
 	conf := client_configuration.Configuration{
-		TCPSettings: settings.ConnectionSettings{
+		TCPSettings: settings.Settings{
 			InterfaceName:    serverConf.TCPSettings.InterfaceName,
 			InterfaceIPCIDR:  serverConf.TCPSettings.InterfaceIPCIDR,
 			InterfaceAddress: clientTCPIfIp,
@@ -86,7 +86,7 @@ func (c *ConfgenHandler) generate() (*client_configuration.Configuration, error)
 			Encryption:       serverConf.TCPSettings.Encryption,
 			DialTimeoutMs:    serverConf.TCPSettings.DialTimeoutMs,
 		},
-		UDPSettings: settings.ConnectionSettings{
+		UDPSettings: settings.Settings{
 			InterfaceName:    serverConf.UDPSettings.InterfaceName,
 			InterfaceIPCIDR:  serverConf.UDPSettings.InterfaceIPCIDR,
 			InterfaceAddress: clientUIDPIfIp,

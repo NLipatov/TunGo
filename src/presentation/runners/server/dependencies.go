@@ -2,7 +2,7 @@ package server
 
 import (
 	"tungo/application"
-	"tungo/settings/server_configuration"
+	"tungo/infrastructure/PAL/server_configuration"
 )
 
 type AppDependencies interface {

@@ -5,9 +5,8 @@ import (
 	"errors"
 	"os"
 	"testing"
-
-	"tungo/settings"
-	"tungo/settings/client_configuration"
+	"tungo/infrastructure/PAL/client_configuration"
+	"tungo/infrastructure/settings"
 )
 
 type mockIP struct {
@@ -62,13 +61,13 @@ func (mockIOCTL) CreateTunInterface(string) (*os.File, error) {
 func mgr(proto settings.Protocol, ipMock *mockIP) *PlatformTunManager {
 	cfg := client_configuration.Configuration{
 		Protocol: proto,
-		UDPSettings: settings.ConnectionSettings{
+		UDPSettings: settings.Settings{
 			InterfaceName:    "tun0",
 			InterfaceAddress: "10.0.0.2/30",
 			ConnectionIP:     "198.51.100.1",
 			MTU:              1400,
 		},
-		TCPSettings: settings.ConnectionSettings{
+		TCPSettings: settings.Settings{
 			InterfaceName:    "tun1",
 			InterfaceAddress: "10.0.0.6/30",
 			ConnectionIP:     "203.0.113.1",

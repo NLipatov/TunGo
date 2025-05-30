@@ -4,9 +4,9 @@ import (
 	"errors"
 	"fmt"
 	tea "github.com/charmbracelet/bubbletea"
+	"tungo/infrastructure/PAL/server_configuration"
 	"tungo/presentation/configuring/tui/components"
 	"tungo/presentation/interactive_commands/handlers"
-	"tungo/settings/server_configuration"
 )
 
 const (

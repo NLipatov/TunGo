@@ -4,9 +4,8 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+	"tungo/infrastructure/PAL/client_configuration"
 	"tungo/presentation/runners/client"
-
-	"tungo/settings/client_configuration"
 )
 
 type mockConfigurationManager struct {
