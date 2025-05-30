@@ -4,7 +4,6 @@ import (
 	"crypto/cipher"
 	"encoding/binary"
 	"fmt"
-	"tungo/application"
 	"unsafe"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -38,29 +37,6 @@ func NewUdpSession(id [32]byte, sendKey, recvKey []byte, isServer bool) (*Defaul
 
 	return &DefaultUdpSession{
 		SessionId:      id,
-		sendCipher:     sendCipher,
-		recvCipher:     recvCipher,
-		RecvNonce:      NewNonce(),
-		SendNonce:      NewNonce(),
-		isServer:       isServer,
-		nonceValidator: NewSliding64(),
-		encoder:        DefaultUDPEncoder{},
-	}, nil
-}
-
-func (s *DefaultUdpSession) FromHandshake(handshake application.Handshake, isServer bool) (application.CryptographyService, error) {
-	sendCipher, err := chacha20poly1305.New(handshake.ClientKey())
-	if err != nil {
-		return nil, err
-	}
-
-	recvCipher, err := chacha20poly1305.New(handshake.ServerKey())
-	if err != nil {
-		return nil, err
-	}
-
-	return &DefaultUdpSession{
-		SessionId:      handshake.Id(),
 		sendCipher:     sendCipher,
 		recvCipher:     recvCipher,
 		RecvNonce:      NewNonce(),

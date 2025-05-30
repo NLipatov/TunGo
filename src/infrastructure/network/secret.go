@@ -13,10 +13,13 @@ type Secret interface {
 type DefaultSecret struct {
 	settings                   settings.Settings
 	handshake                  application.Handshake
-	cryptographyServiceFactory application.CryptographyServiceFactory
+	cryptographyServiceFactory application.CryptographyServiceBuilder
 }
 
-func NewDefaultSecret(settings settings.Settings, handshake application.Handshake, cryptographyServiceFactory application.CryptographyServiceFactory) Secret {
+func NewDefaultSecret(settings settings.Settings,
+	handshake application.Handshake,
+	cryptographyServiceFactory application.CryptographyServiceBuilder,
+) Secret {
 	return &DefaultSecret{
 		settings:                   settings,
 		handshake:                  handshake,
@@ -24,7 +27,9 @@ func NewDefaultSecret(settings settings.Settings, handshake application.Handshak
 	}
 }
 
-func (s *DefaultSecret) Exchange(conn application.ConnectionAdapter) (application.CryptographyService, error) {
+func (s *DefaultSecret) Exchange(
+	conn application.ConnectionAdapter,
+) (application.CryptographyService, error) {
 	handshakeErr := s.handshake.ClientSideHandshake(conn, s.settings)
 	if handshakeErr != nil {
 		return nil, handshakeErr
