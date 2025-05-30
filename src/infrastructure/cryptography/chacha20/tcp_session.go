@@ -2,6 +2,7 @@ package chacha20
 
 import (
 	"crypto/cipher"
+	"tungo/application"
 	"unsafe"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -47,8 +48,30 @@ func NewTcpCryptographyService(id [32]byte, sendKey, recvKey []byte, isServer bo
 	}, nil
 }
 
-func (s *DefaultTcpSession) UseNonceRingBuffer() *DefaultTcpSession {
-	return s
+func (s *DefaultTcpSession) FromHandshake(handshake application.Handshake, isServer bool) (application.CryptographyService, error) {
+	sendCipher, err := chacha20poly1305.New(handshake.ClientKey())
+	if err != nil {
+		return nil, err
+	}
+
+	recvCipher, err := chacha20poly1305.New(handshake.ServerKey())
+	if err != nil {
+		return nil, err
+	}
+
+	return &DefaultTcpSession{
+		SessionId:          handshake.Id(),
+		sendCipher:         sendCipher,
+		recvCipher:         recvCipher,
+		RecvNonce:          NewNonce(),
+		SendNonce:          NewNonce(),
+		isServer:           isServer,
+		nonceValidator:     NewStrictCounter(),
+		encryptionNonceBuf: [12]byte{},
+		decryptionNonceBuf: [12]byte{},
+		encryptionAadBuf:   make([]byte, 80),
+		decryptionAadBuf:   make([]byte, 80),
+	}, nil
 }
 
 func (s *DefaultTcpSession) Encrypt(plaintext []byte) ([]byte, error) {

@@ -3,7 +3,6 @@ package tcp_connection
 import (
 	"fmt"
 	"tungo/application"
-	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/settings"
 )
 
@@ -12,14 +11,16 @@ type Secret interface {
 }
 
 type DefaultSecret struct {
-	settings  settings.Settings
-	handshake application.Handshake
+	settings                   settings.Settings
+	handshake                  application.Handshake
+	cryptographyServiceFactory application.CryptographyServiceFactory
 }
 
-func NewDefaultSecret(settings settings.Settings, handshake application.Handshake) Secret {
+func NewDefaultSecret(settings settings.Settings, handshake application.Handshake, cryptographyServiceFactory application.CryptographyServiceFactory) Secret {
 	return &DefaultSecret{
-		settings:  settings,
-		handshake: handshake,
+		settings:                   settings,
+		handshake:                  handshake,
+		cryptographyServiceFactory: cryptographyServiceFactory,
 	}
 }
 
@@ -29,12 +30,10 @@ func (s *DefaultSecret) Exchange(conn application.ConnectionAdapter) (applicatio
 		return nil, handshakeErr
 	}
 
-	cryptographyService, cryptographyServiceErr := chacha20.NewTcpCryptographyService(s.handshake.Id(), s.handshake.ClientKey(), s.handshake.ServerKey(), false)
+	cryptographyService, cryptographyServiceErr := s.cryptographyServiceFactory.FromHandshake(s.handshake, false)
 	if cryptographyServiceErr != nil {
 		return nil, fmt.Errorf("failed to create client cryptographyService: %s\n", cryptographyServiceErr)
 	}
-
-	cryptographyService.UseNonceRingBuffer()
 
 	return cryptographyService, nil
 }

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"tungo/application"
 	"tungo/infrastructure/PAL/client_configuration"
-	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/settings"
 )
 
@@ -13,14 +12,16 @@ type Secret interface {
 }
 
 type DefaultSecret struct {
-	settings  settings.Settings
-	handshake application.Handshake
+	settings                   settings.Settings
+	handshake                  application.Handshake
+	cryptographyServiceFactory application.CryptographyServiceFactory
 }
 
-func NewDefaultSecret(settings settings.Settings, handshake application.Handshake) Secret {
+func NewDefaultSecret(settings settings.Settings, handshake application.Handshake, cryptographyServiceFactory application.CryptographyServiceFactory) Secret {
 	return &DefaultSecret{
-		settings:  settings,
-		handshake: handshake,
+		settings:                   settings,
+		handshake:                  handshake,
+		cryptographyServiceFactory: cryptographyServiceFactory,
 	}
 }
 
@@ -36,7 +37,7 @@ func (s *DefaultSecret) Exchange(conn application.ConnectionAdapter) (applicatio
 		return nil, fmt.Errorf("failed to read client configuration: %s", clientConfErr)
 	}
 
-	session, sessionErr := chacha20.NewUdpSession(s.handshake.Id(), s.handshake.ClientKey(), s.handshake.ServerKey(), false)
+	session, sessionErr := s.cryptographyServiceFactory.FromHandshake(s.handshake, false)
 	if sessionErr != nil {
 		return nil, fmt.Errorf("failed to create client session: %s\n", sessionErr)
 	}
