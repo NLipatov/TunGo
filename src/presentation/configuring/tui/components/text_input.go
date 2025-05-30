@@ -5,6 +5,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// TextInput - is a single line text input
 type TextInput struct {
 	ti textinput.Model
 }

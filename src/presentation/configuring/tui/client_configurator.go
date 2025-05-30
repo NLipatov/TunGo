@@ -1,11 +1,9 @@
 package tui
 
 import (
-	"encoding/json"
 	"errors"
 	tea "github.com/charmbracelet/bubbletea"
 	"os"
-	"strings"
 	"tungo/infrastructure/PAL/client_configuration"
 	"tungo/presentation/configuring/tui/components"
 )
@@ -134,10 +132,9 @@ func (c *clientConfigurator) createConf() error {
 		return errors.New("unexpected textArea type")
 	}
 
-	jsonText := textAreaResult.Value()
-	var configuration client_configuration.Configuration
-	if configurationErr := json.
-		Unmarshal([]byte(strings.TrimSpace(jsonText)), &configuration); configurationErr != nil {
+	configurationParser := NewConfigurationParser()
+	configuration, configurationErr := configurationParser.FromJson(textAreaResult.Value())
+	if configurationErr != nil {
 		return configurationErr
 	}
 

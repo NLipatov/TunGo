@@ -5,6 +5,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// TextArea - is a multiline text input
 type TextArea struct {
 	ta   *textarea.Model
 	done bool
