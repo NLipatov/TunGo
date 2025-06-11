@@ -9,108 +9,101 @@ import (
 	"testing"
 )
 
-// transportHandlerTestMockCrypt allows injecting cryptography behavior
-type transportHandlerTestMockCrypt struct {
-	decryptFunc func([]byte) ([]byte, error)
+/* ─── mocks ──────────────────────────────────────────────────────────────── */
+
+type TransportHandlerTestMockCrypt struct {
+	decryptOutput []byte
+	decryptErr    error
 }
 
-func (m *transportHandlerTestMockCrypt) Encrypt(b []byte) ([]byte, error) {
-	return b, nil
+func (m *TransportHandlerTestMockCrypt) Encrypt(b []byte) ([]byte, error) { return b, nil }
+func (m *TransportHandlerTestMockCrypt) Decrypt(b []byte) ([]byte, error) {
+	return m.decryptOutput, m.decryptErr
 }
 
-func (m *transportHandlerTestMockCrypt) Decrypt(b []byte) ([]byte, error) {
-	return m.decryptFunc(b)
-}
+type TransportHandlerTestWriteCounter struct{ n int }
 
-// transportHandlerTestErrWriter always returns an error on Write
-type transportHandlerTestErrWriter struct{ err error }
+func (w *TransportHandlerTestWriteCounter) Write(p []byte) (int, error) { w.n++; return len(p), nil }
 
-func (e *transportHandlerTestErrWriter) Write(_ []byte) (int, error) {
-	return 0, e.err
-}
+type TransportHandlerTestErrWriter struct{ err error }
 
-func TestHandleTransport_SuccessEOF(t *testing.T) {
-	// after successful packet, next read returns ErrUnexpectedEOF
-	encrypted := []byte{1, 2, 3, 4}
-	plaintext := []byte("OK")
+func (e *TransportHandlerTestErrWriter) Write([]byte) (int, error) { return 0, e.err }
 
-	crypt := &transportHandlerTestMockCrypt{decryptFunc: func(b []byte) ([]byte, error) {
-		if !bytes.Equal(b, encrypted) {
-			t.Fatalf("unexpected data: %v", b)
-		}
-		return plaintext, nil
-	}}
-
+func TransportHandlerTestBuildPacket(payload []byte) *bytes.Buffer {
 	buf := new(bytes.Buffer)
-	_ = binary.Write(buf, binary.BigEndian, uint32(len(encrypted)))
-	buf.Write(encrypted)
+	binary.Write(buf, binary.BigEndian, uint32(len(payload)))
+	buf.Write(payload)
+	return buf
+}
 
-	h := NewTransportHandler(context.Background(), buf, buf, crypt)
-	err := h.HandleTransport()
-	if !errors.Is(err, io.ErrUnexpectedEOF) {
-		t.Fatalf("expected ErrUnexpectedEOF, got %v", err)
+/* ─── tests ──────────────────────────────────────────────────────────────── */
+
+func TestTransportHandler_ContextDone(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	h := NewTransportHandler(ctx, bytes.NewReader(nil), io.Discard, &TransportHandlerTestMockCrypt{})
+	if err := h.HandleTransport(); err != nil {
+		t.Fatalf("expected nil, got %v", err)
 	}
 }
 
-func TestHandleTransport_PrefixReadError(t *testing.T) {
-	// reader shorter than prefix
-	r := bytes.NewReader([]byte{0, 1})
-	h := NewTransportHandler(context.Background(), r, io.Discard, &transportHandlerTestMockCrypt{})
-
-	err := h.HandleTransport()
-	if !errors.Is(err, io.ErrUnexpectedEOF) {
-		t.Fatalf("expected ErrUnexpectedEOF, got %v", err)
+func TestTransportHandler_PrefixReadError(t *testing.T) {
+	r := bytes.NewReader([]byte{1, 2}) // <4 → ErrUnexpectedEOF
+	h := NewTransportHandler(context.Background(), r, io.Discard, &TransportHandlerTestMockCrypt{})
+	if err := h.HandleTransport(); !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("want ErrUnexpectedEOF, got %v", err)
 	}
 }
 
-func TestHandleTransport_InvalidLength(t *testing.T) {
-	// length < 4 is invalid, then next prefix read returns EOF
+func TestTransportHandler_InvalidLength(t *testing.T) {
 	buf := new(bytes.Buffer)
-	_ = binary.Write(buf, binary.BigEndian, uint32(2))
-	h := NewTransportHandler(context.Background(), buf, io.Discard, &transportHandlerTestMockCrypt{})
-
-	err := h.HandleTransport()
-	if !errors.Is(err, io.EOF) {
-		t.Fatalf("expected io.EOF after invalid length, got %v", err)
+	binary.Write(buf, binary.BigEndian, uint32(3)) // invalid length
+	h := NewTransportHandler(context.Background(), buf, io.Discard, &TransportHandlerTestMockCrypt{})
+	if err := h.HandleTransport(); !errors.Is(err, io.EOF) {
+		t.Fatalf("want EOF after invalid length, got %v", err)
 	}
 }
 
-func TestHandleTransport_DecryptError(t *testing.T) {
-	// decryption fails
-	encrypted := []byte{9, 9, 9, 9}
-	cryptErr := errors.New("decrypt failed")
-	crypt := &transportHandlerTestMockCrypt{decryptFunc: func([]byte) ([]byte, error) {
-		return nil, cryptErr
-	}}
-
+func TestTransportHandler_ReadPayloadError(t *testing.T) {
 	buf := new(bytes.Buffer)
-	_ = binary.Write(buf, binary.BigEndian, uint32(len(encrypted)))
-	buf.Write(encrypted)
-
-	h := NewTransportHandler(context.Background(), buf, io.Discard, crypt)
-	err := h.HandleTransport()
-	if !errors.Is(err, cryptErr) {
-		t.Fatalf("expected decrypt error, got %v", err)
+	binary.Write(buf, binary.BigEndian, uint32(6))
+	buf.Write([]byte{1, 2, 3}) // short payload
+	h := NewTransportHandler(context.Background(), buf, io.Discard, &TransportHandlerTestMockCrypt{})
+	if err := h.HandleTransport(); !errors.Is(err, io.EOF) {
+		t.Fatalf("want EOF after short read, got %v", err)
 	}
 }
 
-func TestHandleTransport_WriteError(t *testing.T) {
-	// write to TUN fails
-	encrypted := []byte{7, 7, 7, 7}
-	plaintext := []byte("DATA")
-	crypt := &transportHandlerTestMockCrypt{decryptFunc: func([]byte) ([]byte, error) {
-		return plaintext, nil
-	}}
+func TestTransportHandler_DecryptError(t *testing.T) {
+	payload := []byte{9, 9, 9, 9}
+	decErr := errors.New("decrypt fail")
+	crypt := &TransportHandlerTestMockCrypt{decryptErr: decErr}
+	h := NewTransportHandler(context.Background(), TransportHandlerTestBuildPacket(payload), io.Discard, crypt)
+	if err := h.HandleTransport(); !errors.Is(err, decErr) {
+		t.Fatalf("want decrypt error, got %v", err)
+	}
+}
 
-	buf := new(bytes.Buffer)
-	_ = binary.Write(buf, binary.BigEndian, uint32(len(encrypted)))
-	buf.Write(encrypted)
+func TestTransportHandler_WriteError(t *testing.T) {
+	payload := []byte{7, 7, 7, 7}
+	wErr := errors.New("write fail")
+	w := &TransportHandlerTestErrWriter{err: wErr}
+	crypt := &TransportHandlerTestMockCrypt{decryptOutput: payload}
+	h := NewTransportHandler(context.Background(), TransportHandlerTestBuildPacket(payload), w, crypt)
+	if err := h.HandleTransport(); !errors.Is(err, wErr) {
+		t.Fatalf("want write error, got %v", err)
+	}
+}
 
-	werr := errors.New("write failed")
-	h := NewTransportHandler(context.Background(), buf, &transportHandlerTestErrWriter{err: werr}, crypt)
-
-	err := h.HandleTransport()
-	if !errors.Is(err, werr) {
-		t.Fatalf("expected write error, got %v", err)
+func TestTransportHandler_SuccessEOF(t *testing.T) {
+	payload := []byte{0xAA, 0xBB, 0xCC, 0xDD}
+	w := &TransportHandlerTestWriteCounter{}
+	crypt := &TransportHandlerTestMockCrypt{decryptOutput: payload}
+	h := NewTransportHandler(context.Background(), TransportHandlerTestBuildPacket(payload), w, crypt)
+	if err := h.HandleTransport(); !errors.Is(err, io.EOF) {
+		t.Fatalf("want io.EOF at end, got %v", err)
+	}
+	if w.n != 1 {
+		t.Fatalf("want 1 write, got %d", w.n)
 	}
 }
