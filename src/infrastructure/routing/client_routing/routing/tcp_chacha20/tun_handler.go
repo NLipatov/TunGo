@@ -15,14 +15,17 @@ type TunHandler struct {
 	reader              io.Reader // abstraction over TUN device
 	writer              io.Writer // abstraction over transport
 	cryptographyService application.CryptographyService
+	encoder             chacha20.TCPEncoder
 }
 
 func NewTunHandler(ctx context.Context,
+	encoder chacha20.TCPEncoder,
 	reader io.Reader,
 	writer io.Writer,
 	cryptographyService application.CryptographyService) application.TunHandler {
 	return &TunHandler{
 		ctx:                 ctx,
+		encoder:             encoder,
 		reader:              reader,
 		writer:              writer,
 		cryptographyService: cryptographyService,
@@ -32,7 +35,6 @@ func NewTunHandler(ctx context.Context,
 func (t *TunHandler) HandleTun() error {
 	reader := chacha20.NewTcpReader(t.reader)
 	buffer := make([]byte, network.MaxPacketLengthBytes+4+chacha20poly1305.Overhead)
-	tcpEncoder := chacha20.NewDefaultTCPEncoder()
 
 	//passes anything from tun to chan
 	for {
@@ -55,7 +57,7 @@ func (t *TunHandler) HandleTun() error {
 				return encryptErr
 			}
 
-			encodingErr := tcpEncoder.Encode(buffer[:n+4+chacha20poly1305.Overhead])
+			encodingErr := t.encoder.Encode(buffer[:n+4+chacha20poly1305.Overhead])
 			if encodingErr != nil {
 				log.Printf("failed to encode packet: %v", encodingErr)
 				continue
