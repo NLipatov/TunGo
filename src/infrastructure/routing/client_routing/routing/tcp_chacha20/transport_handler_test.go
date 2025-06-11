@@ -17,7 +17,7 @@ type TransportHandlerTestMockCrypt struct {
 }
 
 func (m *TransportHandlerTestMockCrypt) Encrypt(b []byte) ([]byte, error) { return b, nil }
-func (m *TransportHandlerTestMockCrypt) Decrypt(b []byte) ([]byte, error) {
+func (m *TransportHandlerTestMockCrypt) Decrypt(_ []byte) ([]byte, error) {
 	return m.decryptOutput, m.decryptErr
 }
 
@@ -31,7 +31,7 @@ func (e *TransportHandlerTestErrWriter) Write([]byte) (int, error) { return 0, e
 
 func TransportHandlerTestBuildPacket(payload []byte) *bytes.Buffer {
 	buf := new(bytes.Buffer)
-	binary.Write(buf, binary.BigEndian, uint32(len(payload)))
+	_ = binary.Write(buf, binary.BigEndian, uint32(len(payload)))
 	buf.Write(payload)
 	return buf
 }
@@ -57,7 +57,7 @@ func TestTransportHandler_PrefixReadError(t *testing.T) {
 
 func TestTransportHandler_InvalidLength(t *testing.T) {
 	buf := new(bytes.Buffer)
-	binary.Write(buf, binary.BigEndian, uint32(3)) // invalid length
+	_ = binary.Write(buf, binary.BigEndian, uint32(3)) // invalid length
 	h := NewTransportHandler(context.Background(), buf, io.Discard, &TransportHandlerTestMockCrypt{})
 	if err := h.HandleTransport(); !errors.Is(err, io.EOF) {
 		t.Fatalf("want EOF after invalid length, got %v", err)
@@ -66,7 +66,7 @@ func TestTransportHandler_InvalidLength(t *testing.T) {
 
 func TestTransportHandler_ReadPayloadError(t *testing.T) {
 	buf := new(bytes.Buffer)
-	binary.Write(buf, binary.BigEndian, uint32(6))
+	_ = binary.Write(buf, binary.BigEndian, uint32(6))
 	buf.Write([]byte{1, 2, 3}) // short payload
 	h := NewTransportHandler(context.Background(), buf, io.Discard, &TransportHandlerTestMockCrypt{})
 	if err := h.HandleTransport(); !errors.Is(err, io.EOF) {
