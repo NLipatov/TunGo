@@ -22,10 +22,10 @@ func (m *transportHandlerTestMockCrypt) Decrypt(b []byte) ([]byte, error) {
 	return m.decryptFunc(b)
 }
 
-// errWriter always returns an error on Write
-type errWriter struct{ err error }
+// transportHandlerTestErrWriter always returns an error on Write
+type transportHandlerTestErrWriter struct{ err error }
 
-func (e *errWriter) Write(_ []byte) (int, error) {
+func (e *transportHandlerTestErrWriter) Write(_ []byte) (int, error) {
 	return 0, e.err
 }
 
@@ -107,7 +107,7 @@ func TestHandleTransport_WriteError(t *testing.T) {
 	buf.Write(encrypted)
 
 	werr := errors.New("write failed")
-	h := NewTransportHandler(context.Background(), buf, &errWriter{err: werr}, crypt)
+	h := NewTransportHandler(context.Background(), buf, &transportHandlerTestErrWriter{err: werr}, crypt)
 
 	err := h.HandleTransport()
 	if !errors.Is(err, werr) {
