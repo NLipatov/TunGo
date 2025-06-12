@@ -54,7 +54,7 @@ func (f *ConnectionFactory) EstablishConnection(
 		secret := network.NewDefaultSecret(connSettings, handshake.NewHandshake(), chacha20.NewTcpSessionBuilder())
 		cancellableSecret := network.NewSecretWithDeadline(handshakeCtx, secret)
 
-		session := network.NewDefaultSecureSession(network.NewDefaultConnection(socket), cancellableSecret)
+		session := network.NewDefaultSecureSession(network.NewTcpConnection(socket), cancellableSecret)
 		cancellableSession := network.NewSecureSessionWithDeadline(handshakeCtx, session)
 		return cancellableSession.Establish()
 	default:

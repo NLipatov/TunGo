@@ -5,17 +5,17 @@ import (
 	"tungo/application"
 )
 
-type DefaultConnection struct {
+type TcpConnection struct {
 	socket application.Socket
 }
 
-func NewDefaultConnection(socket application.Socket) *DefaultConnection {
-	return &DefaultConnection{
+func NewTcpConnection(socket application.Socket) *TcpConnection {
+	return &TcpConnection{
 		socket: socket,
 	}
 }
 
-func (u *DefaultConnection) Establish() (application.ConnectionAdapter, error) {
+func (u *TcpConnection) Establish() (application.ConnectionAdapter, error) {
 	dialer := net.Dialer{}
 	conn, connErr := dialer.Dial("tcp", u.socket.StringAddr())
 	if connErr != nil {

@@ -45,7 +45,7 @@ func TestDefaultConnection_Establish(t *testing.T) {
 	if socketErr != nil {
 		t.Fatal(socketErr)
 	}
-	connection := NewDefaultConnection(socket)
+	connection := NewTcpConnection(socket)
 	_, connErr := connection.Establish()
 	if connErr != nil {
 		t.Fatal(connErr)
