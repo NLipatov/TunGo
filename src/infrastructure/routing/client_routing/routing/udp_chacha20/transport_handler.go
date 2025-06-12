@@ -32,7 +32,6 @@ func NewTransportHandler(
 }
 
 func (t *TransportHandler) HandleTransport() error {
-
 	dataBuf := make([]byte, network.MaxPacketLengthBytes+12)
 
 	for {

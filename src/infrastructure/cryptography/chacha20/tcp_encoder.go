@@ -18,8 +18,8 @@ type (
 	}
 )
 
-func NewDefaultTCPEncoder() DefaultTCPEncoder {
-	return DefaultTCPEncoder{}
+func NewDefaultTCPEncoder() TCPEncoder {
+	return &DefaultTCPEncoder{}
 }
 
 func (p *DefaultTCPEncoder) Decode(data []byte, packet *TCPPacket) error {
