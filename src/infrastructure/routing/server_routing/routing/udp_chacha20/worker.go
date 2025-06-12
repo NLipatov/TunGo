@@ -18,9 +18,10 @@ func NewUdpTunWorker(
 	ctx context.Context, tun io.ReadWriteCloser, settings settings.Settings,
 ) application.TunWorker {
 	sessionManager := session_management.NewDefaultWorkerSessionManager[session]()
+	concurrentSessionManager := session_management.NewConcurrentManager(sessionManager)
 	return &UdpTunWorker{
-		tunHandler:       NewTunHandler(ctx, tun, sessionManager),
-		transportHandler: NewTransportHandler(ctx, settings, tun, sessionManager),
+		tunHandler:       NewTunHandler(ctx, tun, concurrentSessionManager),
+		transportHandler: NewTransportHandler(ctx, settings, tun, concurrentSessionManager),
 	}
 }
 
