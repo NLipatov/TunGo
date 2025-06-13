@@ -1,21 +1,21 @@
-package components
+package bubble_tea
 
 import (
 	"errors"
 	tea "github.com/charmbracelet/bubbletea"
 	"os"
-	"tungo/presentation/configuring/tui"
+	"tungo/presentation/configuring/tui/components"
 )
 
 type TextAreaAdapter struct {
 	textArea TextArea
 }
 
-func NewTextAreaAdapter() tui.TextAreaFactory {
+func NewTextAreaAdapter() components.TextAreaFactory {
 	return &TextAreaAdapter{}
 }
 
-func (t *TextAreaAdapter) NewTextArea(placeholder string) (tui.TextArea, error) {
+func (t *TextAreaAdapter) NewTextArea(placeholder string) (components.TextArea, error) {
 	textArea := NewTextArea(placeholder)
 	textAreaProgram, textAreaProgramErr := tea.
 		NewProgram(textArea, tea.WithInput(os.Stdin), tea.WithOutput(os.Stdout)).Run()

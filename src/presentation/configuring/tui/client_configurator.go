@@ -2,6 +2,7 @@ package tui
 
 import (
 	"tungo/infrastructure/PAL/client_configuration"
+	"tungo/presentation/configuring/tui/components"
 )
 
 const (
@@ -14,18 +15,18 @@ type clientConfigurator struct {
 	selector         client_configuration.Selector
 	deleter          client_configuration.Deleter
 	creator          client_configuration.Creator
-	selectorFactory  SelectorFactory
-	textInputFactory TextInputFactory
-	textAreaFactory  TextAreaFactory
+	selectorFactory  components.SelectorFactory
+	textInputFactory components.TextInputFactory
+	textAreaFactory  components.TextAreaFactory
 }
 
 func newClientConfigurator(observer client_configuration.Observer,
 	selector client_configuration.Selector,
 	deleter client_configuration.Deleter,
 	creator client_configuration.Creator,
-	selectorFactory SelectorFactory,
-	textInputFactory TextInputFactory,
-	textAreaFactory TextAreaFactory) *clientConfigurator {
+	selectorFactory components.SelectorFactory,
+	textInputFactory components.TextInputFactory,
+	textAreaFactory components.TextAreaFactory) *clientConfigurator {
 	return &clientConfigurator{
 		observer:         observer,
 		selector:         selector,

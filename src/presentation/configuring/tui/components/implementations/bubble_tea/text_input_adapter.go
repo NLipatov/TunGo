@@ -1,20 +1,20 @@
-package components
+package bubble_tea
 
 import (
 	"errors"
 	tea "github.com/charmbracelet/bubbletea"
-	"tungo/presentation/configuring/tui"
+	"tungo/presentation/configuring/tui/components"
 )
 
 type TextInputAdapter struct {
 	input TextInput
 }
 
-func NewTextInputAdapter() tui.TextInputFactory {
+func NewTextInputAdapter() components.TextInputFactory {
 	return &TextInputAdapter{}
 }
 
-func (t *TextInputAdapter) NewTextInput(placeholder string) (tui.TextInput, error) {
+func (t *TextInputAdapter) NewTextInput(placeholder string) (components.TextInput, error) {
 	textInput := NewTextInput(placeholder)
 	textInputProgram, textInputProgramErr := tea.NewProgram(textInput).Run()
 	if textInputProgramErr != nil {

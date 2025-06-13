@@ -1,20 +1,20 @@
-package components
+package bubble_tea
 
 import (
 	"errors"
 	tea "github.com/charmbracelet/bubbletea"
-	"tungo/presentation/configuring/tui"
+	"tungo/presentation/configuring/tui/components"
 )
 
 type SelectorAdapter struct {
 	selector Selector
 }
 
-func NewSelectorAdapter() tui.SelectorFactory {
+func NewSelectorAdapter() components.SelectorFactory {
 	return &SelectorAdapter{}
 }
 
-func (s *SelectorAdapter) NewTuiSelector(placeholder string, options []string) (tui.Selector, error) {
+func (s *SelectorAdapter) NewTuiSelector(placeholder string, options []string) (components.Selector, error) {
 	selector := NewSelector(placeholder, options)
 	selectorProgram, selectorProgramErr := tea.NewProgram(selector).Run()
 	if selectorProgramErr != nil {

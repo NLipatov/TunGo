@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"tungo/infrastructure/PAL/server_configuration"
+	"tungo/presentation/configuring/tui/components"
 	"tungo/presentation/interactive_commands/handlers"
 )
 
@@ -14,10 +15,10 @@ const (
 type serverConfigurator struct {
 	manager         server_configuration.ServerConfigurationManager
 	optionsSet      [2]string
-	selectorFactory SelectorFactory
+	selectorFactory components.SelectorFactory
 }
 
-func newServerConfigurator(manager server_configuration.ServerConfigurationManager, selectorFactory SelectorFactory) *serverConfigurator {
+func newServerConfigurator(manager server_configuration.ServerConfigurationManager, selectorFactory components.SelectorFactory) *serverConfigurator {
 	return &serverConfigurator{
 		manager:         manager,
 		optionsSet:      [2]string{startServerOption, addClientOption},

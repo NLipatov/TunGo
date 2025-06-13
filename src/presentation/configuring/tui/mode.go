@@ -3,13 +3,14 @@ package tui
 import (
 	"fmt"
 	"tungo/domain/mode"
+	"tungo/presentation/configuring/tui/components"
 )
 
 type AppMode struct {
-	selectorFactory SelectorFactory
+	selectorFactory components.SelectorFactory
 }
 
-func NewAppMode(selectorFactory SelectorFactory) AppMode {
+func NewAppMode(selectorFactory components.SelectorFactory) AppMode {
 	return AppMode{
 		selectorFactory: selectorFactory,
 	}
