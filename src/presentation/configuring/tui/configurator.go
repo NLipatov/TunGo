@@ -5,6 +5,7 @@ import (
 	"tungo/domain/mode"
 	"tungo/infrastructure/PAL/client_configuration"
 	"tungo/infrastructure/PAL/server_configuration"
+	"tungo/presentation/configuring/tui/components"
 )
 
 type Configurator struct {
@@ -19,11 +20,14 @@ func NewConfigurator(
 	creator client_configuration.Creator,
 	deleter client_configuration.Deleter,
 	serverConfigurationManager server_configuration.ServerConfigurationManager,
+	selectorFactory components.SelectorFactory,
+	textInputFactory components.TextInputFactory,
+	textAreaFactory components.TextAreaFactory,
 ) *Configurator {
 	return &Configurator{
-		clientConfigurator: newClientConfigurator(observer, selector, deleter, creator),
-		serverConfigurator: newServerConfigurator(serverConfigurationManager),
-		appMode:            NewAppMode(),
+		clientConfigurator: newClientConfigurator(observer, selector, deleter, creator, selectorFactory, textInputFactory, textAreaFactory),
+		serverConfigurator: newServerConfigurator(serverConfigurationManager, selectorFactory),
+		appMode:            NewAppMode(selectorFactory),
 	}
 }
 

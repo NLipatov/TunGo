@@ -1,9 +1,6 @@
 package tui
 
 import (
-	"errors"
-	tea "github.com/charmbracelet/bubbletea"
-	"os"
 	"tungo/infrastructure/PAL/client_configuration"
 	"tungo/presentation/configuring/tui/components"
 )
@@ -14,21 +11,30 @@ const (
 )
 
 type clientConfigurator struct {
-	observer client_configuration.Observer
-	selector client_configuration.Selector
-	deleter  client_configuration.Deleter
-	creator  client_configuration.Creator
+	observer         client_configuration.Observer
+	selector         client_configuration.Selector
+	deleter          client_configuration.Deleter
+	creator          client_configuration.Creator
+	selectorFactory  components.SelectorFactory
+	textInputFactory components.TextInputFactory
+	textAreaFactory  components.TextAreaFactory
 }
 
 func newClientConfigurator(observer client_configuration.Observer,
 	selector client_configuration.Selector,
 	deleter client_configuration.Deleter,
-	creator client_configuration.Creator) *clientConfigurator {
+	creator client_configuration.Creator,
+	selectorFactory components.SelectorFactory,
+	textInputFactory components.TextInputFactory,
+	textAreaFactory components.TextAreaFactory) *clientConfigurator {
 	return &clientConfigurator{
-		observer: observer,
-		selector: selector,
-		deleter:  deleter,
-		creator:  creator,
+		observer:         observer,
+		selector:         selector,
+		deleter:          deleter,
+		creator:          creator,
+		selectorFactory:  selectorFactory,
+		textInputFactory: textInputFactory,
+		textAreaFactory:  textAreaFactory,
 	}
 }
 
@@ -94,49 +100,45 @@ func (c *clientConfigurator) selectConf(configurationNames []string, placeholder
 	}
 	options = options[:optionsIndex]
 
-	selector := components.NewSelector(placeholder, options)
-	selectorProgram, selectorProgramErr := tea.NewProgram(selector).Run()
-	if selectorProgramErr != nil {
-		return "", selectorProgramErr
+	selector, selectorErr := c.selectorFactory.NewTuiSelector(placeholder, options)
+	if selectorErr != nil {
+		return "", selectorErr
 	}
 
-	selectorResult, ok := selectorProgram.(components.Selector)
-	if !ok {
-		return "", errors.New("invalid selector format")
+	selectedOption, selectOneErr := selector.SelectOne()
+	if selectOneErr != nil {
+		return "", selectOneErr
 	}
 
-	return selectorResult.Choice(), nil
+	return selectedOption, nil
 }
 
 func (c *clientConfigurator) createConf() error {
-	textInput := components.NewTextInput("Give it a name")
-	textInputProgram, textInputProgramErr := tea.NewProgram(textInput).Run()
-	if textInputProgramErr != nil {
-		return textInputProgramErr
+	textInput, valueErr := c.textInputFactory.NewTextInput("Give it a name")
+	if valueErr != nil {
+		return valueErr
 	}
 
-	textInputResult, textInputResulOk := textInputProgram.(*components.TextInput)
-	if !textInputResulOk {
-		return errors.New("invalid textInput format")
+	textInputValue, textInputValueErr := textInput.Value()
+	if textInputValueErr != nil {
+		return textInputValueErr
 	}
 
-	textArea := components.NewTextArea("Paste it here")
-	textAreaProgram, textAreaProgramErr := tea.
-		NewProgram(textArea, tea.WithInput(os.Stdin), tea.WithOutput(os.Stdout)).Run()
-	if textAreaProgramErr != nil {
-		return textAreaProgramErr
+	textArea, textAreaErr := c.textAreaFactory.NewTextArea("Paste it here")
+	if textAreaErr != nil {
+		return textAreaErr
 	}
 
-	textAreaResult, ok := textAreaProgram.(*components.TextArea)
-	if !ok {
-		return errors.New("unexpected textArea type")
+	textAreaValue, textAreaValueErr := textArea.Value()
+	if textAreaValueErr != nil {
+		return textAreaValueErr
 	}
 
 	configurationParser := NewConfigurationParser()
-	configuration, configurationErr := configurationParser.FromJson(textAreaResult.Value())
+	configuration, configurationErr := configurationParser.FromJson(textAreaValue)
 	if configurationErr != nil {
 		return configurationErr
 	}
 
-	return c.creator.Create(configuration, textInputResult.Value())
+	return c.creator.Create(configuration, textInputValue)
 }

@@ -6,6 +6,7 @@ import (
 	"tungo/infrastructure/PAL/server_configuration"
 	"tungo/presentation/configuring/cli"
 	"tungo/presentation/configuring/tui"
+	"tungo/presentation/configuring/tui/components/implementations/bubble_tea"
 )
 
 type ConfigurationFactory struct{}
@@ -33,7 +34,11 @@ func (c *ConfigurationFactory) buildTUIConfigurator() Configurator {
 		client_configuration.NewDefaultSelector(confResolver),
 		client_configuration.NewDefaultCreator(confResolver),
 		client_configuration.NewDefaultDeleter(confResolver),
-		server_configuration.NewManager(server_configuration.NewServerResolver()))
+		server_configuration.NewManager(server_configuration.NewServerResolver()),
+		bubble_tea.NewSelectorAdapter(),
+		bubble_tea.NewTextInputAdapter(),
+		bubble_tea.NewTextAreaAdapter(),
+	)
 
 	return tuiConfigurator
 }
