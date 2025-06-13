@@ -1,11 +1,8 @@
 package tui
 
 import (
-	"errors"
 	"fmt"
-	tea "github.com/charmbracelet/bubbletea"
 	"tungo/infrastructure/PAL/server_configuration"
-	"tungo/presentation/configuring/tui/components"
 	"tungo/presentation/interactive_commands/handlers"
 )
 
@@ -15,14 +12,16 @@ const (
 )
 
 type serverConfigurator struct {
-	manager    server_configuration.ServerConfigurationManager
-	optionsSet [2]string
+	manager         server_configuration.ServerConfigurationManager
+	optionsSet      [2]string
+	selectorFactory SelectorFactory
 }
 
-func newServerConfigurator(manager server_configuration.ServerConfigurationManager) *serverConfigurator {
+func newServerConfigurator(manager server_configuration.ServerConfigurationManager, selectorFactory SelectorFactory) *serverConfigurator {
 	return &serverConfigurator{
-		manager:    manager,
-		optionsSet: [2]string{startServerOption, addClientOption},
+		manager:         manager,
+		optionsSet:      [2]string{startServerOption, addClientOption},
+		selectorFactory: selectorFactory,
 	}
 }
 
@@ -48,16 +47,14 @@ func (s *serverConfigurator) Configure() error {
 }
 
 func (s *serverConfigurator) selectOption() (string, error) {
-	selector := components.NewSelector("Choose an option", s.optionsSet[:])
-	selectorProgram, selectorProgramErr := tea.NewProgram(selector).Run()
-	if selectorProgramErr != nil {
-		return "", selectorProgramErr
+	selector, selectorErr := s.selectorFactory.NewTuiSelector("Choose an option", s.optionsSet[:])
+	if selectorErr != nil {
+		return "", selectorErr
 	}
 
-	selectorResult, ok := selectorProgram.(components.Selector)
-	if !ok {
-		return "", errors.New("invalid selector format")
+	selectedOption, selectedOptionErr := selector.SelectOne()
+	if selectedOptionErr != nil {
+		return "", selectedOptionErr
 	}
-
-	return selectorResult.Choice(), nil
+	return selectedOption, nil
 }

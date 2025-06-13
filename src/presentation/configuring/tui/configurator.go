@@ -19,11 +19,14 @@ func NewConfigurator(
 	creator client_configuration.Creator,
 	deleter client_configuration.Deleter,
 	serverConfigurationManager server_configuration.ServerConfigurationManager,
+	selectorFactory SelectorFactory,
+	textInputFactory TextInputFactory,
+	textAreaFactory TextAreaFactory,
 ) *Configurator {
 	return &Configurator{
-		clientConfigurator: newClientConfigurator(observer, selector, deleter, creator),
-		serverConfigurator: newServerConfigurator(serverConfigurationManager),
-		appMode:            NewAppMode(),
+		clientConfigurator: newClientConfigurator(observer, selector, deleter, creator, selectorFactory, textInputFactory, textAreaFactory),
+		serverConfigurator: newServerConfigurator(serverConfigurationManager, selectorFactory),
+		appMode:            NewAppMode(selectorFactory),
 	}
 }
 

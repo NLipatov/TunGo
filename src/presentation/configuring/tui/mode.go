@@ -2,34 +2,32 @@ package tui
 
 import (
 	"fmt"
-	tea "github.com/charmbracelet/bubbletea"
 	"tungo/domain/mode"
-	"tungo/presentation/configuring/tui/components"
 )
 
 type AppMode struct {
+	selectorFactory SelectorFactory
 }
 
-func NewAppMode() AppMode {
-	return AppMode{}
+func NewAppMode(selectorFactory SelectorFactory) AppMode {
+	return AppMode{
+		selectorFactory: selectorFactory,
+	}
 }
 
 func (p *AppMode) Mode() (mode.Mode, error) {
 	clientMode := "client"
 	serverMode := "server"
-	selector := components.NewSelector("Mode selection:", []string{clientMode, serverMode})
-	selectorProgram, selectorProgramErr := tea.NewProgram(selector).Run()
-	if selectorProgramErr != nil {
-		return mode.Unknown, selectorProgramErr
+	selector, selectorErr := p.selectorFactory.NewTuiSelector("Mode selection:", []string{clientMode, serverMode})
+	if selectorErr != nil {
+		return mode.Unknown, selectorErr
 	}
 
-	selectorResult, ok := selectorProgram.(components.Selector)
-	if !ok {
-		return mode.Unknown, fmt.Errorf("could not cast selector")
+	selectedOption, selectOneErr := selector.SelectOne()
+	if selectOneErr != nil {
+		return mode.Unknown, selectOneErr
 	}
-
-	appMode := selectorResult.Choice()
-	switch appMode {
+	switch selectedOption {
 	case clientMode:
 		return mode.Client, nil
 	case serverMode:
