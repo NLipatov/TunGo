@@ -41,7 +41,7 @@ type mockLogger struct{ logs []string }
 
 func (l *mockLogger) Printf(f string, v ...any) { l.logs = append(l.logs, fmt.Sprintf(f, v...)) }
 
-type mockMgr struct { /* все методы no-op */
+type mockMgr struct {
 }
 
 func (m *mockMgr) Add(Session)                             {}

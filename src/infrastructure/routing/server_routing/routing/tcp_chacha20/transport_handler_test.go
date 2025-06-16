@@ -139,7 +139,6 @@ func TestTransportHandler_registerClient_handshakeFail(t *testing.T) {
 		sessionManager: mgr,
 		Logger:         logger,
 	}
-	// имитируем ошибку handshake вызовом пустого/битого коннекта
 	handler.registerClient(conn, writer, context.Background())
 	if len(logger.logs) == 0 {
 		t.Error("expected log for handshake fail")
