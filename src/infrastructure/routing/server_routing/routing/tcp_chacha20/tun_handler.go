@@ -60,6 +60,11 @@ func (t *TunHandler) HandleTun() error {
 				log.Printf("failed to read from TUN, retrying: %v", err)
 				continue
 			}
+			if n <= 4 {
+				log.Printf("invalid IP data (n=%d < 4)", n)
+				continue
+			}
+
 			data := buf[4 : n+4]
 			if len(data) < 1 {
 				log.Printf("invalid IP data")

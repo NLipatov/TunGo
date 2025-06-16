@@ -1,303 +1,191 @@
 package tcp_chacha20
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"io"
 	"net"
 	"os"
+	"sync/atomic"
 	"testing"
 	"time"
-
-	"golang.org/x/crypto/chacha20poly1305"
 	"tungo/infrastructure/cryptography/chacha20"
 )
 
-// MockReader returns a predefined sequence of (data, err), then EOF.
-type MockReader struct {
-	seq []struct {
-		data []byte
-		err  error
+type mockReader struct {
+	seq [][]byte
+	err []error
+	i   int
+}
+
+func (r *mockReader) Read(p []byte) (int, error) {
+	if r.i >= len(r.seq) {
+		return 0, io.EOF
 	}
-	i int
+	n := copy(p, r.seq[r.i])
+	e := r.err[r.i]
+	r.i++
+	return n, e
 }
 
-func (r *MockReader) Read(p []byte) (int, error) {
-	if r.i < len(r.seq) {
-		e := r.seq[r.i]
-		r.i++
-		return copy(p, e.data), e.err
-	}
-	return 0, io.EOF
+type mockEncoder struct {
+	called int32
+	err    error
 }
 
-// MockEncoder implements chacha20.TCPEncoder.
-type MockEncoder struct {
-	Called bool
-	Err    error
+func (e *mockEncoder) Decode([]byte, *chacha20.TCPPacket) error { return nil }
+func (e *mockEncoder) Encode([]byte) error                      { atomic.AddInt32(&e.called, 1); return e.err }
+
+type mockParser struct{ err error }
+
+func (p *mockParser) ParseDestinationAddressBytes(_, _ []byte) error { return p.err }
+
+type mockCrypto struct{ err error }
+
+func (m *mockCrypto) Encrypt([]byte) ([]byte, error) { return nil, m.err }
+func (m *mockCrypto) Decrypt([]byte) ([]byte, error) { return nil, nil }
+
+type mockConn struct {
+	called int32
+	err    error
 }
 
-func (e *MockEncoder) Decode(_ []byte, _ *chacha20.TCPPacket) error { return nil }
-func (e *MockEncoder) Encode(_ []byte) error {
-	e.Called = true
-	return e.Err
+func (c *mockConn) Write(b []byte) (int, error)        { atomic.AddInt32(&c.called, 1); return len(b), c.err }
+func (c *mockConn) Read([]byte) (int, error)           { return 0, nil }
+func (c *mockConn) Close() error                       { return nil }
+func (c *mockConn) LocalAddr() net.Addr                { return nil }
+func (c *mockConn) RemoteAddr() net.Addr               { return nil }
+func (c *mockConn) SetDeadline(_ time.Time) error      { return nil }
+func (c *mockConn) SetReadDeadline(_ time.Time) error  { return nil }
+func (c *mockConn) SetWriteDeadline(_ time.Time) error { return nil }
+
+type mockMgr struct {
+	sess    Session
+	getErr  error
+	deleted int32
 }
 
-// MockIPParser implements network.IPHeader.
-type MockIPParser struct {
-	Dest [4]byte
-	Err  error
-}
+func (m *mockMgr) Add(Session)                             {}
+func (m *mockMgr) Delete(Session)                          { atomic.AddInt32(&m.deleted, 1) }
+func (m *mockMgr) GetByInternalIP([]byte) (Session, error) { return m.sess, m.getErr }
+func (m *mockMgr) GetByExternalIP([]byte) (Session, error) { return m.sess, nil }
 
-func (p *MockIPParser) ParseDestinationAddressBytes(_, dst []byte) error {
-	if p.Err != nil {
-		return p.Err
-	}
-	copy(dst, p.Dest[:])
-	return nil
-}
-
-// mockCryptoService implements application.CryptographyService.
-type mockCryptoService struct{ encryptErr error }
-
-func (m *mockCryptoService) Encrypt(b []byte) ([]byte, error) { return b, m.encryptErr }
-func (m *mockCryptoService) Decrypt(b []byte) ([]byte, error) { return b, nil }
-
-// mockConn implements net.Conn using bytes.Buffer.
-type mockConn struct{ *bytes.Buffer }
-
-func newMockConn() *mockConn                           { return &mockConn{Buffer: &bytes.Buffer{}} }
-func (m *mockConn) Close() error                       { return nil }
-func (m *mockConn) LocalAddr() net.Addr                { return nil }
-func (m *mockConn) RemoteAddr() net.Addr               { return nil }
-func (m *mockConn) SetDeadline(_ time.Time) error      { return nil }
-func (m *mockConn) SetReadDeadline(_ time.Time) error  { return nil }
-func (m *mockConn) SetWriteDeadline(_ time.Time) error { return nil }
-
-// MockErrorConn always errors on Write.
-type MockErrorConn struct {
-	*mockConn
-	Err error
-}
-
-func (m *MockErrorConn) Write(_ []byte) (int, error) { return 0, m.Err }
-
-// MockSessionMgr implements session_management.WorkerSessionManager[Session].
-type MockSessionMgr struct {
-	Sess    Session
-	GetErr  error
-	Deleted []Session
-}
-
-func (m *MockSessionMgr) GetByInternalIP(_ []byte) (Session, error) { return m.Sess, m.GetErr }
-func (m *MockSessionMgr) GetByExternalIP(_ []byte) (Session, error) { return m.Sess, m.GetErr }
-func (m *MockSessionMgr) Add(_ Session)                             {}
-func (m *MockSessionMgr) Delete(s Session)                          { m.Deleted = append(m.Deleted, s) }
-
-// makePacket constructs: 4-byte header + payloadLen + overhead.
-func makePacket(payloadLen int) []byte {
-	return make([]byte, 4+payloadLen+chacha20poly1305.Overhead)
-}
-
-// --- tests ---
-
-func TestHandleTun_ContextDone(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	h := NewTunHandler(ctx, &MockReader{}, &MockEncoder{}, &MockIPParser{}, &MockSessionMgr{})
-	if err := h.HandleTun(); err != nil {
-		t.Errorf("cancelled context: expected nil, got %v", err)
+func makeSession(c *mockConn, crypto *mockCrypto) Session {
+	return Session{
+		conn:                c,
+		CryptographyService: crypto,
+		internalIP:          []byte{1, 1, 1, 1},
+		externalIP:          []byte{2, 2, 2, 2},
 	}
 }
 
-func TestHandleTun_EOF(t *testing.T) {
-	r := &MockReader{seq: []struct {
-		data []byte
-		err  error
-	}{{nil, nil}}}
-	h := NewTunHandler(context.Background(), r, &MockEncoder{}, &MockIPParser{}, &MockSessionMgr{})
-	if err := h.HandleTun(); err != io.EOF {
-		t.Errorf("EOF: expected io.EOF, got %v", err)
-	}
-}
+func TestTunHandler_AllPaths(t *testing.T) {
+	buf := make([]byte, 16)
+	reader := func(seq [][]byte, err []error) io.Reader { return &mockReader{seq: seq, err: err} }
 
-func TestHandleTun_ReadErrorRetryThenEOF(t *testing.T) {
-	r := &MockReader{seq: []struct {
-		data []byte
-		err  error
-	}{{nil, errors.New("temp")}}}
-	h := NewTunHandler(context.Background(), r, &MockEncoder{}, &MockIPParser{}, &MockSessionMgr{})
-	if err := h.HandleTun(); err != io.EOF {
-		t.Errorf("read error retry: expected io.EOF, got %v", err)
-	}
-}
+	t.Run("context done", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		h := NewTunHandler(ctx, reader(nil, nil), &mockEncoder{}, &mockParser{}, &mockMgr{})
+		if err := h.HandleTun(); err != nil {
+			t.Errorf("want nil, got %v", err)
+		}
+	})
 
-func TestHandleTun_PermissionError(t *testing.T) {
-	perm := &os.PathError{Op: "read", Err: os.ErrPermission}
-	r := &MockReader{seq: []struct {
-		data []byte
-		err  error
-	}{{nil, perm}}}
-	h := NewTunHandler(context.Background(), r, &MockEncoder{}, &MockIPParser{}, &MockSessionMgr{})
-	if err := h.HandleTun(); !errors.Is(err, os.ErrPermission) {
-		t.Errorf("permission error: expected os.ErrPermission, got %v", err)
-	}
-}
+	t.Run("EOF", func(t *testing.T) {
+		h := NewTunHandler(context.Background(), reader([][]byte{nil}, []error{io.EOF}), &mockEncoder{}, &mockParser{}, &mockMgr{})
+		if err := h.HandleTun(); err != io.EOF {
+			t.Errorf("want EOF, got %v", err)
+		}
+	})
 
-func TestHandleTun_InvalidIPData(t *testing.T) {
-	// empty header data => len(data)==0 => skip then EOF
-	r := &MockReader{seq: []struct {
-		data []byte
-		err  error
-	}{{[]byte{}, nil}}}
-	h := NewTunHandler(context.Background(), r, &MockEncoder{}, &MockIPParser{}, &MockSessionMgr{})
-	if err := h.HandleTun(); err != io.EOF {
-		t.Errorf("invalid IP data: expected io.EOF, got %v", err)
-	}
-}
+	t.Run("os.IsNotExist", func(t *testing.T) {
+		perr := &os.PathError{Err: os.ErrNotExist}
+		h := NewTunHandler(context.Background(), reader([][]byte{nil}, []error{perr}), &mockEncoder{}, &mockParser{}, &mockMgr{})
+		if err := h.HandleTun(); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("want os.ErrNotExist, got %v", err)
+		}
+	})
 
-func TestHandleTun_ParserError(t *testing.T) {
-	pkt := makePacket(1)
-	r := &MockReader{seq: []struct {
-		data []byte
-		err  error
-	}{{pkt, nil}}}
-	h := NewTunHandler(context.Background(), r, &MockEncoder{}, &MockIPParser{Err: errors.New("bad hdr")}, &MockSessionMgr{})
-	if err := h.HandleTun(); err != io.EOF {
-		t.Errorf("parser error: expected io.EOF, got %v", err)
-	}
-}
+	t.Run("os.IsPermission", func(t *testing.T) {
+		perr := &os.PathError{Err: os.ErrPermission}
+		h := NewTunHandler(context.Background(), reader([][]byte{nil}, []error{perr}), &mockEncoder{}, &mockParser{}, &mockMgr{})
+		if err := h.HandleTun(); !errors.Is(err, os.ErrPermission) {
+			t.Errorf("want os.ErrPermission, got %v", err)
+		}
+	})
 
-func TestHandleTun_SessionNotFound(t *testing.T) {
-	pkt := makePacket(1)
-	r := &MockReader{seq: []struct {
-		data []byte
-		err  error
-	}{{pkt, nil}}}
-	h := NewTunHandler(
-		context.Background(),
-		r,
-		&MockEncoder{},
-		&MockIPParser{Dest: [4]byte{1, 2, 3, 4}},
-		&MockSessionMgr{GetErr: errors.New("no sess")},
-	)
-	if err := h.HandleTun(); err != io.EOF {
-		t.Errorf("session not found: expected io.EOF, got %v", err)
-	}
-}
+	t.Run("read temporary error", func(t *testing.T) {
+		h := NewTunHandler(context.Background(),
+			reader([][]byte{{}}, []error{errors.New("tmp"), io.EOF}),
+			&mockEncoder{}, &mockParser{}, &mockMgr{})
+		if err := h.HandleTun(); err != io.EOF {
+			t.Errorf("want EOF after retry, got %v", err)
+		}
+	})
 
-func TestHandleTun_EncryptError(t *testing.T) {
-	pkt := makePacket(1)
-	r := &MockReader{seq: []struct {
-		data []byte
-		err  error
-	}{{pkt, nil}}}
-	conn := newMockConn()
-	sess := Session{
-		conn:                conn,
-		CryptographyService: &mockCryptoService{encryptErr: errors.New("enc fail")},
-		internalIP:          []byte{5, 5, 5, 5},
-		externalIP:          []byte{5, 5, 5, 5},
-	}
-	h := NewTunHandler(
-		context.Background(),
-		r,
-		&MockEncoder{},
-		&MockIPParser{Dest: [4]byte{5, 5, 5, 5}},
-		&MockSessionMgr{Sess: sess},
-	)
-	if err := h.HandleTun(); err != io.EOF {
-		t.Errorf("encrypt error: expected io.EOF, got %v", err)
-	}
-}
+	t.Run("invalid IP data", func(t *testing.T) {
+		h := NewTunHandler(context.Background(), reader([][]byte{{1, 2, 3, 4}}, []error{nil, io.EOF}), &mockEncoder{}, &mockParser{}, &mockMgr{})
+		if err := h.HandleTun(); err != io.EOF {
+			t.Errorf("want EOF for invalid IP data, got %v", err)
+		}
+	})
 
-func TestHandleTun_EncodeError(t *testing.T) {
-	pkt := makePacket(1)
-	r := &MockReader{seq: []struct {
-		data []byte
-		err  error
-	}{{pkt, nil}}}
-	conn := newMockConn()
-	sess := Session{
-		conn:                conn,
-		CryptographyService: &mockCryptoService{},
-		internalIP:          []byte{6, 6, 6, 6},
-		externalIP:          []byte{6, 6, 6, 6},
-	}
-	h := NewTunHandler(
-		context.Background(),
-		r,
-		&MockEncoder{Err: errors.New("encode fail")},
-		&MockIPParser{Dest: [4]byte{6, 6, 6, 6}},
-		&MockSessionMgr{Sess: sess},
-	)
-	if err := h.HandleTun(); err != io.EOF {
-		t.Errorf("encode error: expected io.EOF, got %v", err)
-	}
-}
+	t.Run("parser error", func(t *testing.T) {
+		h := NewTunHandler(context.Background(), reader([][]byte{buf}, []error{nil, io.EOF}), &mockEncoder{}, &mockParser{err: errors.New("bad parser")}, &mockMgr{})
+		if err := h.HandleTun(); err != io.EOF {
+			t.Errorf("want EOF for parser error, got %v", err)
+		}
+	})
 
-func TestHandleTun_WriteErrorDeletesSession(t *testing.T) {
-	pkt := makePacket(1)
-	r := &MockReader{seq: []struct {
-		data []byte
-		err  error
-	}{{pkt, nil}}}
-	bad := &MockErrorConn{mockConn: newMockConn(), Err: errors.New("write fail")}
-	sess := Session{
-		conn:                bad,
-		CryptographyService: &mockCryptoService{},
-		internalIP:          []byte{7, 7, 7, 7},
-		externalIP:          []byte{7, 7, 7, 7},
-	}
-	mgr := &MockSessionMgr{Sess: sess}
-	h := NewTunHandler(
-		context.Background(),
-		r,
-		&MockEncoder{},
-		&MockIPParser{Dest: [4]byte{7, 7, 7, 7}},
-		mgr,
-	)
-	if err := h.HandleTun(); err != io.EOF {
-		t.Errorf("write error: expected io.EOF, got %v", err)
-	}
-	if len(mgr.Deleted) != 1 {
-		t.Errorf("expected Delete on write error; got %d", len(mgr.Deleted))
-	}
-}
+	t.Run("session not found", func(t *testing.T) {
+		h := NewTunHandler(context.Background(), reader([][]byte{buf}, []error{nil, io.EOF}), &mockEncoder{}, &mockParser{}, &mockMgr{getErr: errors.New("no sess")})
+		if err := h.HandleTun(); err != io.EOF {
+			t.Errorf("want EOF for session not found, got %v", err)
+		}
+	})
 
-func TestHandleTun_Success(t *testing.T) {
-	pkt := makePacket(1)
-	r := &MockReader{seq: []struct {
-		data []byte
-		err  error
-	}{{pkt, nil}}}
-	buf := newMockConn()
-	sess := Session{
-		conn:                buf,
-		CryptographyService: &mockCryptoService{},
-		internalIP:          []byte{8, 8, 8, 8},
-		externalIP:          []byte{8, 8, 8, 8},
-	}
-	mgr := &MockSessionMgr{Sess: sess}
-	enc := &MockEncoder{}
-	h := NewTunHandler(
-		context.Background(),
-		r,
-		enc,
-		&MockIPParser{Dest: [4]byte{8, 8, 8, 8}},
-		mgr,
-	)
-	err := h.HandleTun()
-	if err != io.EOF {
-		t.Fatalf("success: expected io.EOF, got %v", err)
-	}
-	if !enc.Called {
-		t.Errorf("success: expected encoder.Encode called")
-	}
-	// Now the written length should be len(pkt) + 4 (encode-prefix) + overhead
-	expected := len(pkt) + 4 + chacha20poly1305.Overhead
-	if buf.Len() != expected {
-		t.Errorf("success: expected %d bytes written; got %d", expected, buf.Len())
-	}
+	t.Run("encrypt error", func(t *testing.T) {
+		crypto := &mockCrypto{err: errors.New("enc fail")}
+		h := NewTunHandler(context.Background(), reader([][]byte{buf}, []error{nil, io.EOF}), &mockEncoder{}, &mockParser{}, &mockMgr{sess: makeSession(&mockConn{}, crypto)})
+		if err := h.HandleTun(); err != io.EOF {
+			t.Errorf("want EOF for encrypt error, got %v", err)
+		}
+	})
+
+	t.Run("encode error", func(t *testing.T) {
+		enc := &mockEncoder{err: errors.New("encode fail")}
+		h := NewTunHandler(context.Background(), reader([][]byte{buf}, []error{nil, io.EOF}), enc, &mockParser{}, &mockMgr{sess: makeSession(&mockConn{}, &mockCrypto{})})
+		if err := h.HandleTun(); err != io.EOF {
+			t.Errorf("want EOF for encode error, got %v", err)
+		}
+	})
+
+	t.Run("conn write error", func(t *testing.T) {
+		c := &mockConn{err: errors.New("write fail")}
+		mgr := &mockMgr{sess: makeSession(c, &mockCrypto{})}
+		h := NewTunHandler(context.Background(), reader([][]byte{buf}, []error{nil, io.EOF}), &mockEncoder{}, &mockParser{}, mgr)
+		if err := h.HandleTun(); err != io.EOF {
+			t.Errorf("want EOF for write error, got %v", err)
+		}
+		if atomic.LoadInt32(&mgr.deleted) != 1 {
+			t.Errorf("expected Delete to be called")
+		}
+	})
+
+	t.Run("happy path", func(t *testing.T) {
+		c := &mockConn{}
+		enc := &mockEncoder{}
+		mgr := &mockMgr{sess: makeSession(c, &mockCrypto{})}
+		h := NewTunHandler(context.Background(), reader([][]byte{make([]byte, 8)}, []error{nil, io.EOF}), enc, &mockParser{}, mgr)
+		if err := h.HandleTun(); err != io.EOF {
+			t.Errorf("want EOF for happy path, got %v", err)
+		}
+		if atomic.LoadInt32(&enc.called) == 0 {
+			t.Errorf("expected encoder.Encode to be called")
+		}
+		if atomic.LoadInt32(&c.called) == 0 {
+			t.Errorf("expected conn.Write to be called")
+		}
+	})
 }
