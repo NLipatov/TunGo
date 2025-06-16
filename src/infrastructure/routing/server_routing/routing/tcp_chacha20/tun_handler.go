@@ -16,6 +16,7 @@ type TunHandler struct {
 	ctx            context.Context
 	reader         io.Reader
 	encoder        chacha20.TCPEncoder
+	ipParser       network.IPHeader
 	sessionManager session_management.WorkerSessionManager[Session]
 }
 
@@ -23,12 +24,14 @@ func NewTunHandler(
 	ctx context.Context,
 	reader io.Reader,
 	encoder chacha20.TCPEncoder,
+	ipParser network.IPHeader,
 	sessionManager session_management.WorkerSessionManager[Session],
 ) application.TunHandler {
 	return &TunHandler{
 		ctx:            ctx,
 		reader:         reader,
 		encoder:        encoder,
+		ipParser:       ipParser,
 		sessionManager: sessionManager,
 	}
 }
@@ -63,8 +66,7 @@ func (t *TunHandler) HandleTun() error {
 				continue
 			}
 
-			parser := network.FromIPPacket(data)
-			destinationBytesErr := parser.ReadDestinationAddressBytes(destinationAddressBytes[:])
+			destinationBytesErr := t.ipParser.ParseDestinationAddressBytes(data, destinationAddressBytes[:])
 			if destinationBytesErr != nil {
 				log.Printf("packet dropped: failed to read destination address bytes: %v", destinationBytesErr)
 				continue

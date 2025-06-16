@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 	"tungo/application"
-	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/routing/server_routing/session_management"
 )
@@ -14,25 +13,26 @@ import (
 type TunHandler struct {
 	ctx            context.Context
 	reader         io.Reader
+	parser         network.IPHeader
 	sessionManager session_management.WorkerSessionManager[Session]
 }
 
 func NewTunHandler(
 	ctx context.Context,
 	reader io.Reader,
+	parser network.IPHeader,
 	sessionManager session_management.WorkerSessionManager[Session],
 ) application.TunHandler {
 	return &TunHandler{
 		ctx:            ctx,
 		reader:         reader,
+		parser:         parser,
 		sessionManager: sessionManager,
 	}
 }
 
 func (t *TunHandler) HandleTun() error {
 	packetBuffer := make([]byte, network.MaxPacketLengthBytes+12)
-	udpReader := chacha20.NewUdpReader(t.reader)
-
 	destinationAddressBytes := [4]byte{}
 
 	for {
@@ -40,7 +40,7 @@ func (t *TunHandler) HandleTun() error {
 		case <-t.ctx.Done():
 			return nil
 		default:
-			n, err := udpReader.Read(packetBuffer)
+			n, err := t.reader.Read(packetBuffer)
 			if err != nil {
 				if t.ctx.Done() != nil {
 					return nil
@@ -67,8 +67,7 @@ func (t *TunHandler) HandleTun() error {
 
 			// see udp_reader.go. It's putting payload length into first 12 bytes.
 			payload := packetBuffer[12 : n+12]
-			parser := network.FromIPPacket(payload)
-			destinationBytesErr := parser.ReadDestinationAddressBytes(destinationAddressBytes[:])
+			destinationBytesErr := t.parser.ParseDestinationAddressBytes(payload, destinationAddressBytes[:])
 			if destinationBytesErr != nil {
 				log.Printf("packet dropped: failed to read destination address bytes: %v", destinationBytesErr)
 				continue

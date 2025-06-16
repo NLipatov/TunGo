@@ -14,9 +14,9 @@ func TestReadDestinationAddressBytes_Success(t *testing.T) {
 	want := []byte{10, 20, 30, 40}
 	copy(data[16:20], want)
 
-	h := FromIPPacket(data)
+	h := NewIPV4HeaderParser()
 	buf := make([]byte, 4)
-	err := h.ReadDestinationAddressBytes(buf)
+	err := h.ParseDestinationAddressBytes(data, buf)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -27,11 +27,11 @@ func TestReadDestinationAddressBytes_Success(t *testing.T) {
 
 func TestReadDestinationAddressBytes_BufferTooSmall(t *testing.T) {
 	data := make([]byte, 20)
-	h := FromIPPacket(data)
+	h := NewIPV4HeaderParser()
 
 	for _, size := range []int{0, 1, 2, 3} {
 		buf := make([]byte, size)
-		err := h.ReadDestinationAddressBytes(buf)
+		err := h.ParseDestinationAddressBytes(data, buf)
 		if err == nil {
 			t.Errorf("expected error for buffer size %d, got nil", size)
 			continue
@@ -46,9 +46,9 @@ func TestReadDestinationAddressBytes_BufferTooSmall(t *testing.T) {
 func TestReadDestinationAddressBytes_PacketTooShort(t *testing.T) {
 	// data shorter than 20 bytes
 	data := make([]byte, 10)
-	h := FromIPPacket(data)
+	h := NewIPV4HeaderParser()
 	buf := make([]byte, 4)
-	err := h.ReadDestinationAddressBytes(buf)
+	err := h.ParseDestinationAddressBytes(data, buf)
 	if err == nil {
 		t.Fatal("expected packet size error, got nil")
 	}
@@ -62,9 +62,9 @@ func TestReadDestinationAddressBytes_InvalidVersion(t *testing.T) {
 	// data length ok but version !=4
 	data := make([]byte, 20)
 	data[0] = 6<<4 | 5 // version=6
-	h := FromIPPacket(data)
+	h := NewIPV4HeaderParser()
 	buf := make([]byte, 4)
-	err := h.ReadDestinationAddressBytes(buf)
+	err := h.ParseDestinationAddressBytes(data, buf)
 	if err == nil {
 		t.Fatal("expected version error, got nil")
 	}
@@ -75,5 +75,7 @@ func TestReadDestinationAddressBytes_InvalidVersion(t *testing.T) {
 }
 
 func TestIPHeaderV4_ImplementsInterface(t *testing.T) {
-	var _ interface{ ReadDestinationAddressBytes([]byte) error } = &IPHeaderV4{}
+	var _ interface {
+		ParseDestinationAddressBytes(header, resultBuffer []byte) error
+	} = &IPV4HeaderParser{}
 }

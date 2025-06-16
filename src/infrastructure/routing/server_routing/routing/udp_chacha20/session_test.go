@@ -8,9 +8,17 @@ import (
 
 type sessionTestAdapter struct{}
 
-func (d *sessionTestAdapter) Read([]byte) (int, error)  { return 0, nil }
-func (d *sessionTestAdapter) Write([]byte) (int, error) { return 0, nil }
-func (d *sessionTestAdapter) Close() error              { return nil }
+func (d *sessionTestAdapter) Write(_ []byte) (int, error) {
+	return 0, nil
+}
+
+func (d *sessionTestAdapter) Read(_ []byte) (int, error) {
+	return 0, nil
+}
+
+func (d *sessionTestAdapter) Close() error {
+	return nil
+}
 
 type sessionTestCryptoService struct{}
 
