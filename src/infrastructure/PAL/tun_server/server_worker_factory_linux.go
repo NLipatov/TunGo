@@ -4,8 +4,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
+	"net"
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
+	"tungo/infrastructure/logging"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/routing/server_routing/routing/tcp_chacha20"
 	"tungo/infrastructure/routing/server_routing/routing/udp_chacha20"
@@ -33,7 +36,11 @@ func (s ServerWorkerFactory) CreateWorker(ctx context.Context, tun io.ReadWriteC
 			chacha20.NewDefaultTCPEncoder(),
 			network.NewIPV4HeaderParser(),
 			concurrentSessionManager)
-		transportHandler := tcp_chacha20.NewTransportHandler(ctx, s.settings, tun, concurrentSessionManager)
+		listener, err := net.Listen("tcp", net.JoinHostPort("", s.settings.Port))
+		if err != nil {
+			log.Printf("failed to listen on port %s: %v", s.settings.Port, err)
+		}
+		transportHandler := tcp_chacha20.NewTransportHandler(ctx, s.settings, tun, listener, concurrentSessionManager, logging.NewLogLogger())
 		return tcp_chacha20.NewTcpTunWorker(tunHandler, transportHandler), nil
 	case settings.UDP:
 		sessionManager := session_management.NewDefaultWorkerSessionManager[udp_chacha20.Session]()
