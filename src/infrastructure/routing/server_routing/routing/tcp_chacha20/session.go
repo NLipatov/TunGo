@@ -5,7 +5,7 @@ import (
 	"tungo/application"
 )
 
-type session struct {
+type Session struct {
 	conn net.Conn
 	// CryptographyService handles packet encryption and decryption.
 	CryptographyService application.CryptographyService
@@ -14,10 +14,10 @@ type session struct {
 	internalIP, externalIP []byte
 }
 
-func (s session) InternalIP() []byte {
+func (s Session) InternalIP() []byte {
 	return s.internalIP
 }
 
-func (s session) ExternalIP() []byte {
+func (s Session) ExternalIP() []byte {
 	return s.externalIP
 }

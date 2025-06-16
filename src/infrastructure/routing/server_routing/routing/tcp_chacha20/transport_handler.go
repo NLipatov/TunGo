@@ -19,14 +19,14 @@ type TransportHandler struct {
 	ctx            context.Context
 	settings       settings.Settings
 	writer         io.ReadWriteCloser
-	sessionManager session_management.WorkerSessionManager[session]
+	sessionManager session_management.WorkerSessionManager[Session]
 }
 
 func NewTransportHandler(
 	ctx context.Context,
 	settings settings.Settings,
 	writer io.ReadWriteCloser,
-	sessionManager session_management.WorkerSessionManager[session],
+	sessionManager session_management.WorkerSessionManager[Session],
 ) application.TransportHandler {
 	return &TransportHandler{
 		ctx:            ctx,
@@ -102,7 +102,7 @@ func (t *TransportHandler) registerClient(conn net.Conn, tunFile io.ReadWriteClo
 		_ = conn.Close()
 	}
 
-	storedSession := session{
+	storedSession := Session{
 		conn:                conn,
 		CryptographyService: cryptographyService,
 		internalIP:          internalIP.To4(),
@@ -114,7 +114,7 @@ func (t *TransportHandler) registerClient(conn net.Conn, tunFile io.ReadWriteClo
 	t.handleClient(ctx, storedSession, tunFile)
 }
 
-func (t *TransportHandler) handleClient(ctx context.Context, session session, tunFile io.ReadWriteCloser) {
+func (t *TransportHandler) handleClient(ctx context.Context, session Session, tunFile io.ReadWriteCloser) {
 	defer func() {
 		t.sessionManager.Delete(session)
 		_ = session.conn.Close()

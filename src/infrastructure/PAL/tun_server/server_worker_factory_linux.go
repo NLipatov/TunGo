@@ -7,6 +7,7 @@ import (
 	"tungo/application"
 	"tungo/infrastructure/routing/server_routing/routing/tcp_chacha20"
 	"tungo/infrastructure/routing/server_routing/routing/udp_chacha20"
+	"tungo/infrastructure/routing/server_routing/session_management"
 	"tungo/infrastructure/settings"
 )
 
@@ -23,7 +24,10 @@ func NewServerWorkerFactory(settings settings.Settings) application.ServerWorker
 func (s ServerWorkerFactory) CreateWorker(ctx context.Context, tun io.ReadWriteCloser) (application.TunWorker, error) {
 	switch s.settings.Protocol {
 	case settings.TCP:
-		return tcp_chacha20.NewTcpTunWorker(ctx, tun, s.settings), nil
+		sessionManager := session_management.NewDefaultWorkerSessionManager[tcp_chacha20.Session]()
+		tunHandler := tcp_chacha20.NewTunHandler(ctx, tun, sessionManager)
+		transportHandler := tcp_chacha20.NewTransportHandler(ctx, s.settings, tun, sessionManager)
+		return tcp_chacha20.NewTcpTunWorker(ctx, tunHandler, transportHandler), nil
 	case settings.UDP:
 		return udp_chacha20.NewUdpTunWorker(ctx, tun, s.settings), nil
 	default:
