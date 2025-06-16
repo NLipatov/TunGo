@@ -25,17 +25,17 @@ func (*stubAdapter) Read([]byte) (int, error) { return 0, io.EOF }
 func (*stubAdapter) Close() error             { return nil }
 
 type stubMgr struct {
-	sess session
+	sess Session
 	err  error
 }
 
-func (m *stubMgr) Add(session)                             {}
-func (m *stubMgr) Delete(session)                          {}
-func (m *stubMgr) GetByInternalIP([]byte) (session, error) { return m.sess, m.err }
-func (m *stubMgr) GetByExternalIP([]byte) (session, error) { return m.sess, m.err }
+func (m *stubMgr) Add(Session)                             {}
+func (m *stubMgr) Delete(Session)                          {}
+func (m *stubMgr) GetByInternalIP([]byte) (Session, error) { return m.sess, m.err }
+func (m *stubMgr) GetByExternalIP([]byte) (Session, error) { return m.sess, m.err }
 
-func makeSession(a *stubAdapter) session {
-	return session{
+func makeSession(a *stubAdapter) Session {
+	return Session{
 		connectionAdapter:   a,
 		remoteAddrPort:      netip.AddrPort{},
 		CryptographyService: stubCrypto{},

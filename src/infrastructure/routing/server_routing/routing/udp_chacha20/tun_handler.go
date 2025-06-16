@@ -14,13 +14,13 @@ import (
 type TunHandler struct {
 	ctx            context.Context
 	reader         io.Reader
-	sessionManager session_management.WorkerSessionManager[session]
+	sessionManager session_management.WorkerSessionManager[Session]
 }
 
 func NewTunHandler(
 	ctx context.Context,
 	reader io.Reader,
-	sessionManager session_management.WorkerSessionManager[session],
+	sessionManager session_management.WorkerSessionManager[Session],
 ) application.TunHandler {
 	return &TunHandler{
 		ctx:            ctx,

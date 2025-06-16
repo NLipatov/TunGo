@@ -21,7 +21,7 @@ func TestSessionAccessors(t *testing.T) {
 	internal := []byte{10, 0, 1, 3}
 	external := []byte{93, 184, 216, 34}
 
-	s := session{
+	s := Session{
 		connectionAdapter:   &sessionTestAdapter{},
 		remoteAddrPort:      netip.AddrPort{},
 		CryptographyService: &sessionTestCryptoService{},

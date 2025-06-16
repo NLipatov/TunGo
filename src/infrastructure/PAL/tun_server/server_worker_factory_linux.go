@@ -25,11 +25,16 @@ func (s ServerWorkerFactory) CreateWorker(ctx context.Context, tun io.ReadWriteC
 	switch s.settings.Protocol {
 	case settings.TCP:
 		sessionManager := session_management.NewDefaultWorkerSessionManager[tcp_chacha20.Session]()
-		tunHandler := tcp_chacha20.NewTunHandler(ctx, tun, sessionManager)
-		transportHandler := tcp_chacha20.NewTransportHandler(ctx, s.settings, tun, sessionManager)
-		return tcp_chacha20.NewTcpTunWorker(ctx, tunHandler, transportHandler), nil
+		concurrentSessionManager := session_management.NewConcurrentManager(sessionManager)
+		tunHandler := tcp_chacha20.NewTunHandler(ctx, tun, concurrentSessionManager)
+		transportHandler := tcp_chacha20.NewTransportHandler(ctx, s.settings, tun, concurrentSessionManager)
+		return tcp_chacha20.NewTcpTunWorker(tunHandler, transportHandler), nil
 	case settings.UDP:
-		return udp_chacha20.NewUdpTunWorker(ctx, tun, s.settings), nil
+		sessionManager := session_management.NewDefaultWorkerSessionManager[udp_chacha20.Session]()
+		concurrentSessionManager := session_management.NewConcurrentManager(sessionManager)
+		tunHandler := udp_chacha20.NewTunHandler(ctx, tun, concurrentSessionManager)
+		transportHandler := udp_chacha20.NewTransportHandler(ctx, s.settings, tun, concurrentSessionManager)
+		return udp_chacha20.NewUdpTunWorker(tunHandler, transportHandler), nil
 	default:
 		return nil, fmt.Errorf("protocol %v not supported", s.settings.Protocol)
 	}

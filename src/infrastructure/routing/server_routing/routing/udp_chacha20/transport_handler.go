@@ -20,14 +20,14 @@ type TransportHandler struct {
 	ctx            context.Context
 	settings       settings.Settings
 	writer         io.Writer
-	sessionManager session_management.WorkerSessionManager[session]
+	sessionManager session_management.WorkerSessionManager[Session]
 }
 
 func NewTransportHandler(
 	ctx context.Context,
 	settings settings.Settings,
 	writer io.Writer,
-	sessionManager session_management.WorkerSessionManager[session],
+	sessionManager session_management.WorkerSessionManager[Session],
 ) application.TransportHandler {
 	return &TransportHandler{
 		ctx:            ctx,
@@ -137,7 +137,7 @@ func (t *TransportHandler) registerClient(conn *net.UDPConn, clientAddr netip.Ad
 		return fmt.Errorf("invalid client address: %v", clientAddr)
 	}
 
-	t.sessionManager.Add(session{
+	t.sessionManager.Add(Session{
 		connectionAdapter: &network.ServerUdpAdapter{
 			UdpConn:  conn,
 			AddrPort: clientAddr,
