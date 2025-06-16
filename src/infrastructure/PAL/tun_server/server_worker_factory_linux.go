@@ -8,6 +8,7 @@ import (
 	"net"
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
+	"tungo/infrastructure/listeners/udp_listener"
 	"tungo/infrastructure/logging"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/routing/server_routing/routing/tcp_chacha20"
@@ -27,6 +28,7 @@ func NewServerWorkerFactory(settings settings.Settings) application.ServerWorker
 }
 
 func (s ServerWorkerFactory) CreateWorker(ctx context.Context, tun io.ReadWriteCloser) (application.TunWorker, error) {
+	logger := logging.NewLogLogger()
 	switch s.settings.Protocol {
 	case settings.TCP:
 		sessionManager := session_management.NewDefaultWorkerSessionManager[tcp_chacha20.Session]()
@@ -40,7 +42,7 @@ func (s ServerWorkerFactory) CreateWorker(ctx context.Context, tun io.ReadWriteC
 		if err != nil {
 			log.Printf("failed to listen on port %s: %v", s.settings.Port, err)
 		}
-		transportHandler := tcp_chacha20.NewTransportHandler(ctx, s.settings, tun, listener, concurrentSessionManager, logging.NewLogLogger())
+		transportHandler := tcp_chacha20.NewTransportHandler(ctx, s.settings, tun, listener, concurrentSessionManager, logger)
 		return tcp_chacha20.NewTcpTunWorker(tunHandler, transportHandler), nil
 	case settings.UDP:
 		sessionManager := session_management.NewDefaultWorkerSessionManager[udp_chacha20.Session]()
@@ -49,7 +51,17 @@ func (s ServerWorkerFactory) CreateWorker(ctx context.Context, tun io.ReadWriteC
 			tun,
 			network.NewIPV4HeaderParser(),
 			concurrentSessionManager)
-		transportHandler := udp_chacha20.NewTransportHandler(ctx, s.settings, tun, concurrentSessionManager)
+		socket, socketErr := network.NewSocket(s.settings.ConnectionIP, s.settings.Port)
+		if socketErr != nil {
+			return nil, socketErr
+		}
+		transportHandler := udp_chacha20.NewTransportHandler(
+			ctx,
+			s.settings,
+			tun,
+			concurrentSessionManager,
+			logger,
+			udp_listener.NewUdpListener(socket))
 		return udp_chacha20.NewUdpTunWorker(tunHandler, transportHandler), nil
 	default:
 		return nil, fmt.Errorf("protocol %v not supported", s.settings.Protocol)

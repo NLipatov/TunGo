@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/netip"
 	"tungo/application"
 	"tungo/infrastructure/PAL/server_configuration"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/handshake"
+	"tungo/infrastructure/listeners/udp_listener"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/routing/server_routing/session_management"
 	"tungo/infrastructure/settings"
@@ -21,6 +21,8 @@ type TransportHandler struct {
 	settings       settings.Settings
 	writer         io.Writer
 	sessionManager session_management.WorkerSessionManager[Session]
+	logger         application.Logger
+	listener       udp_listener.Listener
 }
 
 func NewTransportHandler(
@@ -28,31 +30,29 @@ func NewTransportHandler(
 	settings settings.Settings,
 	writer io.Writer,
 	sessionManager session_management.WorkerSessionManager[Session],
+	logger application.Logger,
+	listener udp_listener.Listener,
 ) application.TransportHandler {
 	return &TransportHandler{
 		ctx:            ctx,
 		settings:       settings,
 		writer:         writer,
 		sessionManager: sessionManager,
+		logger:         logger,
+		listener:       listener,
 	}
 }
 
 func (t *TransportHandler) HandleTransport() error {
-	addr, err := net.ResolveUDPAddr("udp", net.JoinHostPort("", t.settings.Port))
+	conn, err := t.listener.ListenUDP()
 	if err != nil {
-		log.Fatalf("failed to resolve udp address: %s", err)
-		return err
-	}
-
-	conn, err := net.ListenUDP("udp", addr)
-	if err != nil {
-		log.Fatalf("failed to listen on port: %s", err)
+		t.logger.Printf("failed to listen on port: %s", err)
 	}
 	defer func(conn net.Conn) {
 		_ = conn.Close()
 	}(conn)
 
-	log.Printf("server listening on port %s (UDP)", t.settings.Port)
+	t.logger.Printf("server listening on port %s (UDP)", t.settings.Port)
 
 	go func() {
 		<-t.ctx.Done()
@@ -74,7 +74,7 @@ func (t *TransportHandler) HandleTransport() error {
 					return nil
 				}
 
-				log.Printf("failed to read from UDP: %s", readFromUdpErr)
+				t.logger.Printf("failed to read from UDP: %s", readFromUdpErr)
 				continue
 			}
 
@@ -84,7 +84,7 @@ func (t *TransportHandler) HandleTransport() error {
 				// Pass initial data to registration function
 				regErr := t.registerClient(conn, clientAddr, dataBuf[:n])
 				if regErr != nil {
-					log.Printf("host %v failed registration: %v", clientAddr.Addr().AsSlice(), regErr)
+					t.logger.Printf("host %v failed registration: %v", clientAddr.Addr().AsSlice(), regErr)
 					_, _ = conn.WriteToUDPAddrPort([]byte{
 						byte(network.SessionReset),
 					}, clientAddr)
@@ -95,14 +95,14 @@ func (t *TransportHandler) HandleTransport() error {
 			// Handle client data
 			decrypted, decryptionErr := clientSession.CryptographyService.Decrypt(dataBuf[:n])
 			if decryptionErr != nil {
-				log.Printf("failed to decrypt data: %v", decryptionErr)
+				t.logger.Printf("failed to decrypt data: %v", decryptionErr)
 				continue
 			}
 
 			// Write the decrypted packet to the TUN interface
 			_, err = t.writer.Write(decrypted)
 			if err != nil {
-				log.Printf("failed to write to TUN: %v", err)
+				t.logger.Printf("failed to write to TUN: %v", err)
 			}
 		}
 	}
@@ -148,7 +148,7 @@ func (t *TransportHandler) registerClient(conn *net.UDPConn, clientAddr netip.Ad
 		externalIP:          t.extractIPv4(clientAddr.Addr().Unmap().AsSlice()),
 	})
 
-	log.Printf("%v registered as: %v", clientAddr.Addr().As4(), internalIP)
+	t.logger.Printf("%v registered as: %v", clientAddr.Addr().As4(), internalIP)
 
 	return nil
 }
