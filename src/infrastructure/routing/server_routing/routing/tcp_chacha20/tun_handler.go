@@ -15,26 +15,26 @@ import (
 type TunHandler struct {
 	ctx            context.Context
 	reader         io.Reader
+	encoder        chacha20.TCPEncoder
 	sessionManager session_management.WorkerSessionManager[Session]
 }
 
 func NewTunHandler(
 	ctx context.Context,
 	reader io.Reader,
+	encoder chacha20.TCPEncoder,
 	sessionManager session_management.WorkerSessionManager[Session],
 ) application.TunHandler {
 	return &TunHandler{
 		ctx:            ctx,
 		reader:         reader,
+		encoder:        encoder,
 		sessionManager: sessionManager,
 	}
 }
 
 func (t *TunHandler) HandleTun() error {
 	buf := make([]byte, network.MaxPacketLengthBytes)
-	reader := chacha20.NewTcpReader(t.reader)
-	encoder := chacha20.NewDefaultTCPEncoder()
-
 	destinationAddressBytes := [4]byte{}
 
 	for {
@@ -42,7 +42,7 @@ func (t *TunHandler) HandleTun() error {
 		case <-t.ctx.Done():
 			return nil
 		default:
-			n, err := reader.Read(buf)
+			n, err := t.reader.Read(buf)
 			if err != nil {
 				if err == io.EOF {
 					log.Println("TUN interface closed, shutting down...")
@@ -82,7 +82,7 @@ func (t *TunHandler) HandleTun() error {
 				continue
 			}
 
-			encodingErr := encoder.Encode(buf[:n+4+chacha20poly1305.Overhead])
+			encodingErr := t.encoder.Encode(buf[:n+4+chacha20poly1305.Overhead])
 			if encodingErr != nil {
 				log.Printf("failed to encode packet: %v", encodingErr)
 				continue
