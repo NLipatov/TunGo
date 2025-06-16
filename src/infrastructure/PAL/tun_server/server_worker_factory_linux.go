@@ -48,7 +48,7 @@ func (s ServerWorkerFactory) CreateWorker(ctx context.Context, tun io.ReadWriteC
 		sessionManager := session_management.NewDefaultWorkerSessionManager[udp_chacha20.Session]()
 		concurrentSessionManager := session_management.NewConcurrentManager(sessionManager)
 		tunHandler := udp_chacha20.NewTunHandler(ctx,
-			tun,
+			chacha20.NewUdpReader(tun),
 			network.NewIPV4HeaderParser(),
 			concurrentSessionManager)
 		socket, socketErr := network.NewSocket(s.settings.ConnectionIP, s.settings.Port)
