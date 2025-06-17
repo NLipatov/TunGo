@@ -2,21 +2,29 @@ package bubble_tea
 
 import (
 	"errors"
-	tea "github.com/charmbracelet/bubbletea"
 	"tungo/presentation/configuring/tui/components"
 )
 
 type TextInputAdapter struct {
-	input TextInput
+	input     TextInput
+	teaRunner TeaRunner
 }
 
 func NewTextInputAdapter() components.TextInputFactory {
-	return &TextInputAdapter{}
+	return &TextInputAdapter{
+		teaRunner: &defaultTeaRunner{},
+	}
+}
+
+func NewCustomTeaRunnerTextInputAdapter(teaRunner TeaRunner) components.TextInputFactory {
+	return &TextInputAdapter{
+		teaRunner: teaRunner,
+	}
 }
 
 func (t *TextInputAdapter) NewTextInput(placeholder string) (components.TextInput, error) {
 	textInput := NewTextInput(placeholder)
-	textInputProgram, textInputProgramErr := tea.NewProgram(textInput).Run()
+	textInputProgram, textInputProgramErr := t.teaRunner.Run(textInput)
 	if textInputProgramErr != nil {
 		return nil, textInputProgramErr
 	}
