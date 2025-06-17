@@ -5,8 +5,8 @@ import (
 	"tungo/application"
 )
 
-// session represents a single encrypted session between a VPN client and server.
-type session struct {
+// Session represents a single encrypted Session between a VPN client and server.
+type Session struct {
 	connectionAdapter application.ConnectionAdapter
 	remoteAddrPort    netip.AddrPort
 	// CryptographyService handles packet encryption and decryption.
@@ -16,10 +16,10 @@ type session struct {
 	internalIP, externalIP []byte
 }
 
-func (s session) InternalIP() []byte {
+func (s Session) InternalIP() []byte {
 	return s.internalIP
 }
 
-func (s session) ExternalIP() []byte {
+func (s Session) ExternalIP() []byte {
 	return s.externalIP
 }

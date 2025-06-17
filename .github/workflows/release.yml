@@ -161,7 +161,7 @@ jobs:
             ResultCode: Integer;
           begin
             Result := True;
-            Uninstaller := ExpandConstant('{pf}\TunGo\unins000.exe'); // исправлено здесь
+            Uninstaller := ExpandConstant('{pf}\TunGo\unins000.exe');
             if FileExists(Uninstaller) then begin
               Params := '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART';
               Exec(Uninstaller, Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);

@@ -30,7 +30,6 @@ func (ua *InitialDataAdapter) Read(buffer []byte) (int, error) {
 		}
 		return n, nil
 	}
-	// как обычно проксируем к базовому адаптеру
 	return ua.adapter.Read(buffer)
 }
 

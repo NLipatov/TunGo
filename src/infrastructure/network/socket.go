@@ -42,14 +42,15 @@ func (s *Socket) StringAddr() string {
 }
 
 func (s *Socket) validate() error {
-	// Reject IPv6 zone specifiers, which netip.ParseAddr would accept.
-	if strings.Contains(s.ip, "%") {
-		return fmt.Errorf("invalid IP %q: zone specifiers are not supported", s.ip)
-	}
+	if s.ip != "" {
+		// Reject IPv6 zone specifiers, which netip.ParseAddr would accept.
+		if strings.Contains(s.ip, "%") {
+			return fmt.Errorf("invalid IP %q: zone specifiers are not supported", s.ip)
+		}
 
-	_, err := netip.ParseAddr(s.ip)
-	if err != nil {
-		return fmt.Errorf("invalid IP %q: %w", s.ip, err)
+		if _, err := netip.ParseAddr(s.ip); err != nil {
+			return fmt.Errorf("invalid IP %q: %w", s.ip, err)
+		}
 	}
 
 	port, err := strconv.ParseUint(s.port, 10, 16)
