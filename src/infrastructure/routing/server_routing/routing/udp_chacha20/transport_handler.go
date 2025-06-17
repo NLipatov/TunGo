@@ -29,9 +29,9 @@ func NewTransportHandler(
 	ctx context.Context,
 	settings settings.Settings,
 	writer io.Writer,
+	listener udp_listener.Listener,
 	sessionManager session_management.WorkerSessionManager[Session],
 	logger application.Logger,
-	listener udp_listener.Listener,
 ) application.TransportHandler {
 	return &TransportHandler{
 		ctx:            ctx,
