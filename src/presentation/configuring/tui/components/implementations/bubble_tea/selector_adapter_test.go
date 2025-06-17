@@ -21,19 +21,19 @@ func (f selectorAdapterMockModel) View() string {
 	return ""
 }
 
-type mockTeaRunner struct {
+type selectorAdapterMockTeaRunner struct {
 	returnModel tea.Model
 	returnErr   error
 }
 
-func (m *mockTeaRunner) Run(_ tea.Model, _ ...tea.ProgramOption) (tea.Model, error) {
+func (m *selectorAdapterMockTeaRunner) Run(_ tea.Model, _ ...tea.ProgramOption) (tea.Model, error) {
 	return m.returnModel, m.returnErr
 }
 
 func TestSelectorAdapter_NewTuiSelector_Success(t *testing.T) {
 	mockSel := NewSelector("placeholder", []string{"opt1", "opt2"})
 
-	mockRunner := &mockTeaRunner{returnModel: mockSel, returnErr: nil}
+	mockRunner := &selectorAdapterMockTeaRunner{returnModel: mockSel, returnErr: nil}
 	adapter := NewCustomTeaRunnerSelectorAdapter(mockRunner).(*SelectorAdapter)
 
 	sel, err := adapter.NewTuiSelector("placeholder", []string{"opt1", "opt2"})
@@ -53,7 +53,7 @@ func TestSelectorAdapter_NewTuiSelector_Success(t *testing.T) {
 }
 
 func TestSelectorAdapter_NewTuiSelector_RunError(t *testing.T) {
-	mockRunner := &mockTeaRunner{returnModel: nil, returnErr: errors.New("run error")}
+	mockRunner := &selectorAdapterMockTeaRunner{returnModel: nil, returnErr: errors.New("run error")}
 	adapter := NewCustomTeaRunnerSelectorAdapter(mockRunner).(*SelectorAdapter)
 
 	sel, err := adapter.NewTuiSelector("placeholder", []string{"opt1"})
@@ -66,7 +66,7 @@ func TestSelectorAdapter_NewTuiSelector_RunError(t *testing.T) {
 }
 
 func TestSelectorAdapter_NewTuiSelector_InvalidType(t *testing.T) {
-	mockRunner := &mockTeaRunner{returnModel: selectorAdapterMockModel{}, returnErr: nil} // invalid type
+	mockRunner := &selectorAdapterMockTeaRunner{returnModel: selectorAdapterMockModel{}, returnErr: nil} // invalid type
 	adapter := NewCustomTeaRunnerSelectorAdapter(mockRunner).(*SelectorAdapter)
 
 	sel, err := adapter.NewTuiSelector("placeholder", []string{"opt1"})
