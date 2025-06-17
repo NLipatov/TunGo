@@ -8,29 +8,31 @@ import (
 )
 
 type TextAreaAdapter struct {
-	textArea TextArea
+	textArea  interface{ Value() string }
+	teaRunner TeaRunner
 }
 
 func NewTextAreaAdapter() components.TextAreaFactory {
-	return &TextAreaAdapter{}
+	return &TextAreaAdapter{teaRunner: &defaultTeaRunner{}}
 }
 
-func (t *TextAreaAdapter) NewTextArea(placeholder string) (components.TextArea, error) {
-	textArea := NewTextArea(placeholder)
-	textAreaProgram, textAreaProgramErr := tea.
-		NewProgram(textArea, tea.WithInput(os.Stdin), tea.WithOutput(os.Stdout)).Run()
-	if textAreaProgramErr != nil {
-		return nil, textAreaProgramErr
+func NewCustomTeaRunnerTextAreaAdapter(teaRunner TeaRunner) components.TextAreaFactory {
+	return &TextAreaAdapter{teaRunner: teaRunner}
+}
+
+func (t *TextAreaAdapter) NewTextArea(ph string) (components.TextArea, error) {
+	ta := NewTextArea(ph)
+	res, err := t.teaRunner.Run(ta, tea.WithInput(os.Stdin), tea.WithOutput(os.Stdout))
+	if err != nil {
+		return nil, err
 	}
 
-	textAreaResult, ok := textAreaProgram.(*TextArea)
+	taLike, ok := res.(interface{ Value() string })
 	if !ok {
 		return nil, errors.New("unexpected textArea type")
 	}
-
-	t.textArea = *textAreaResult
-
-	return t, textAreaProgramErr
+	t.textArea = taLike
+	return t, nil
 }
 
 func (t *TextAreaAdapter) Value() (string, error) {
