@@ -13,17 +13,17 @@ func (f *fakeModel) Init() tea.Cmd                       { return nil }
 func (f *fakeModel) Update(tea.Msg) (tea.Model, tea.Cmd) { return f, nil }
 func (f *fakeModel) View() string                        { return "" }
 
-type fakeRunner struct {
+type textInputAdapterMockRunner struct {
 	result tea.Model
 	err    error
 }
 
-func (r *fakeRunner) Run(_ tea.Model, _ ...tea.ProgramOption) (tea.Model, error) {
+func (r *textInputAdapterMockRunner) Run(_ tea.Model, _ ...tea.ProgramOption) (tea.Model, error) {
 	return r.result, r.err
 }
 
 func TestNewTextInput_Success(t *testing.T) {
-	adapter := NewCustomTeaRunnerTextInputAdapter(&fakeRunner{
+	adapter := NewCustomTeaRunnerTextInputAdapter(&textInputAdapterMockRunner{
 		result: &TextInput{},
 		err:    nil,
 	}).(*TextInputAdapter)
@@ -43,7 +43,7 @@ func TestNewTextInput_Success(t *testing.T) {
 
 func TestNewTextInput_RunError(t *testing.T) {
 	want := errors.New("boom")
-	adapter := NewCustomTeaRunnerTextInputAdapter(&fakeRunner{
+	adapter := NewCustomTeaRunnerTextInputAdapter(&textInputAdapterMockRunner{
 		result: nil,
 		err:    want,
 	}).(*TextInputAdapter)
@@ -55,7 +55,7 @@ func TestNewTextInput_RunError(t *testing.T) {
 }
 
 func TestNewTextInput_InvalidFormat(t *testing.T) {
-	adapter := NewCustomTeaRunnerTextInputAdapter(&fakeRunner{
+	adapter := NewCustomTeaRunnerTextInputAdapter(&textInputAdapterMockRunner{
 		result: &fakeModel{},
 		err:    nil,
 	}).(*TextInputAdapter)
