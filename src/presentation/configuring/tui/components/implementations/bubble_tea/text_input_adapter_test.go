@@ -7,11 +7,11 @@ import (
 	"github.com/charmbracelet/bubbletea"
 )
 
-type fakeModel struct{}
+type TextInputAdapterMockModel struct{}
 
-func (f *fakeModel) Init() tea.Cmd                       { return nil }
-func (f *fakeModel) Update(tea.Msg) (tea.Model, tea.Cmd) { return f, nil }
-func (f *fakeModel) View() string                        { return "" }
+func (f *TextInputAdapterMockModel) Init() tea.Cmd                       { return nil }
+func (f *TextInputAdapterMockModel) Update(tea.Msg) (tea.Model, tea.Cmd) { return f, nil }
+func (f *TextInputAdapterMockModel) View() string                        { return "" }
 
 type textInputAdapterMockRunner struct {
 	result tea.Model
@@ -56,7 +56,7 @@ func TestNewTextInput_RunError(t *testing.T) {
 
 func TestNewTextInput_InvalidFormat(t *testing.T) {
 	adapter := NewCustomTeaRunnerTextInputAdapter(&textInputAdapterMockRunner{
-		result: &fakeModel{},
+		result: &TextInputAdapterMockModel{},
 		err:    nil,
 	}).(*TextInputAdapter)
 
