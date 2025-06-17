@@ -2,21 +2,29 @@ package bubble_tea
 
 import (
 	"errors"
-	tea "github.com/charmbracelet/bubbletea"
 	"tungo/presentation/configuring/tui/components"
 )
 
 type SelectorAdapter struct {
-	selector Selector
+	selector  Selector
+	teaRunner TeaRunner
 }
 
 func NewSelectorAdapter() components.SelectorFactory {
-	return &SelectorAdapter{}
+	return &SelectorAdapter{
+		teaRunner: &defaultTeaRunner{},
+	}
+}
+
+func NewCustomTeaRunnerSelectorAdapter(teaRunner TeaRunner) components.SelectorFactory {
+	return &SelectorAdapter{
+		teaRunner: teaRunner,
+	}
 }
 
 func (s *SelectorAdapter) NewTuiSelector(placeholder string, options []string) (components.Selector, error) {
 	selector := NewSelector(placeholder, options)
-	selectorProgram, selectorProgramErr := tea.NewProgram(selector).Run()
+	selectorProgram, selectorProgramErr := s.teaRunner.Run(selector)
 	if selectorProgramErr != nil {
 		return nil, selectorProgramErr
 	}
