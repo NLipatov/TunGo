@@ -9,6 +9,7 @@ import (
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/handshake"
+	"tungo/infrastructure/listeners/tcp_listener"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/routing/server_routing/session_management"
 	"tungo/infrastructure/settings"
@@ -18,7 +19,7 @@ type TransportHandler struct {
 	ctx            context.Context
 	settings       settings.Settings
 	writer         io.ReadWriteCloser
-	listener       net.Listener
+	listener       tcp_listener.Listener
 	sessionManager session_management.WorkerSessionManager[Session]
 	Logger         application.Logger
 }
@@ -27,7 +28,7 @@ func NewTransportHandler(
 	ctx context.Context,
 	settings settings.Settings,
 	writer io.ReadWriteCloser,
-	listener net.Listener,
+	listener tcp_listener.Listener,
 	sessionManager session_management.WorkerSessionManager[Session],
 	logger application.Logger,
 ) application.TransportHandler {
