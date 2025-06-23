@@ -1,10 +1,10 @@
 import React from 'react';
 import Link from '@docusaurus/Link';
-import styles from './footer.module.css';
+import Styles from './footer.module.css';
 
 export default function Footer() {
     return (
-        <footer className={styles.footer}>
+        <footer className={Styles.footer}>
             <p>
                 Icons by{' '}
                 <Link to="https://openmoji.org/" target="_blank" rel="noopener noreferrer">
