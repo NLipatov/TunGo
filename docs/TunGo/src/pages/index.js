@@ -20,7 +20,7 @@ function HomepageHeader() {
           <Link
             className="button button--secondary button--lg"
             to="/docs/QuickStart">
-              Set up your TunGo VPN tunnel in minutes ⏱️
+              Get started in minutes ⏱️
           </Link>
         </div>
       </div>
