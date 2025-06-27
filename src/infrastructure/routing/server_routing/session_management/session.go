@@ -1,6 +1,6 @@
 package session_management
 
 type ClientSession interface {
-	ExternalIP() []byte
-	InternalIP() []byte
+	ExternalIP() [4]byte
+	InternalIP() [4]byte
 }

@@ -77,7 +77,7 @@ func (t *TunHandler) HandleTun() error {
 				continue
 			}
 
-			clientSession, getErr := t.sessionManager.GetByInternalIP(destinationAddressBytes[:])
+			clientSession, getErr := t.sessionManager.GetByInternalIP(destinationAddressBytes)
 			if getErr != nil {
 				log.Printf("packet dropped: %s, destination host: %v", getErr, destinationAddressBytes)
 				continue

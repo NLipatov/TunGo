@@ -79,7 +79,7 @@ func (t *TransportHandler) HandleTransport() error {
 			}
 
 			destinationAddressBuf = clientAddr.Addr().Unmap().As4()
-			clientSession, getErr := t.sessionManager.GetByExternalIP(destinationAddressBuf[:])
+			clientSession, getErr := t.sessionManager.GetByExternalIP(destinationAddressBuf)
 			if getErr != nil || clientSession.remoteAddrPort.Port() != clientAddr.Port() {
 				// Pass initial data to registration function
 				regErr := t.registerClient(conn, clientAddr, dataBuf[:n])
@@ -137,6 +137,16 @@ func (t *TransportHandler) registerClient(conn *net.UDPConn, clientAddr netip.Ad
 		return fmt.Errorf("invalid client address: %v", clientAddr)
 	}
 
+	intIp, intIpErr := t.extractIPv4(internalIP)
+	if intIpErr != nil {
+		return intIpErr
+	}
+
+	extIp, extIpErr := t.extractIPv4(clientAddr.Addr().Unmap().AsSlice())
+	if extIpErr != nil {
+		return extIpErr
+	}
+
 	t.sessionManager.Add(Session{
 		connectionAdapter: &network.ServerUdpAdapter{
 			UdpConn:  conn,
@@ -144,8 +154,8 @@ func (t *TransportHandler) registerClient(conn *net.UDPConn, clientAddr netip.Ad
 		},
 		remoteAddrPort:      remoteAddr,
 		CryptographyService: cryptoSession,
-		internalIP:          t.extractIPv4(internalIP),
-		externalIP:          t.extractIPv4(clientAddr.Addr().Unmap().AsSlice()),
+		internalIP:          intIp,
+		externalIP:          extIp,
 	})
 
 	t.logger.Printf("%v registered as: %v", clientAddr.Addr().As4(), internalIP)
@@ -153,14 +163,14 @@ func (t *TransportHandler) registerClient(conn *net.UDPConn, clientAddr netip.Ad
 	return nil
 }
 
-func (t *TransportHandler) extractIPv4(ip net.IP) []byte {
+func (t *TransportHandler) extractIPv4(ip net.IP) ([4]byte, error) {
 	if len(ip) == 16 && t.isIPv4Mapped(ip) {
-		return ip[12:16]
+		return [4]byte(ip[12:16]), nil
 	}
 	if len(ip) == 4 {
-		return ip
+		return [4]byte(ip), nil
 	}
-	return nil
+	return [4]byte(make([]byte, 4)), nil
 }
 
 func (t *TransportHandler) isIPv4Mapped(ip net.IP) bool {

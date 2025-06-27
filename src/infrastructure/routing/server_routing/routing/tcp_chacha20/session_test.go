@@ -24,8 +24,8 @@ func (d *sessionTestCrypto) Encrypt(b []byte) ([]byte, error) { return b, nil }
 func (d *sessionTestCrypto) Decrypt(b []byte) ([]byte, error) { return b, nil }
 
 func TestSessionAccessors(t *testing.T) {
-	internal := []byte{10, 0, 1, 3}
-	external := []byte{93, 184, 216, 34}
+	internal := [4]byte{10, 0, 1, 3}
+	external := [4]byte{93, 184, 216, 34}
 
 	s := Session{
 		conn:                &sessionTestConn{},
@@ -34,10 +34,10 @@ func TestSessionAccessors(t *testing.T) {
 		externalIP:          external,
 	}
 
-	if got := s.InternalIP(); !bytes.Equal(got, internal) {
+	if got := s.InternalIP(); !bytes.Equal(got[:], internal[:]) {
 		t.Errorf("InternalIP() = %v, want %v", got, internal)
 	}
-	if got := s.ExternalIP(); !bytes.Equal(got, external) {
+	if got := s.ExternalIP(); !bytes.Equal(got[:], external[:]) {
 		t.Errorf("ExternalIP() = %v, want %v", got, external)
 	}
 }

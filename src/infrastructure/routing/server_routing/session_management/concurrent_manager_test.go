@@ -6,16 +6,16 @@ import (
 )
 
 type concurrentManagerMockSession struct {
-	ext, in []byte
+	ext, in [4]byte
 }
 
-func (s concurrentManagerMockSession) ExternalIP() []byte { return s.ext }
-func (s concurrentManagerMockSession) InternalIP() []byte { return s.in }
+func (s concurrentManagerMockSession) ExternalIP() [4]byte { return s.ext }
+func (s concurrentManagerMockSession) InternalIP() [4]byte { return s.in }
 
 type concurrentManagerMockManager struct {
 	add, del, getInt, getExt int
 	lastSession              concurrentManagerMockSession
-	lastIP                   []byte
+	lastIP                   [4]byte
 }
 
 func (m *concurrentManagerMockManager) Add(s concurrentManagerMockSession) {
@@ -26,12 +26,12 @@ func (m *concurrentManagerMockManager) Delete(s concurrentManagerMockSession) {
 	m.del++
 	m.lastSession = s
 }
-func (m *concurrentManagerMockManager) GetByInternalIP(b []byte) (concurrentManagerMockSession, error) {
+func (m *concurrentManagerMockManager) GetByInternalIP(b [4]byte) (concurrentManagerMockSession, error) {
 	m.getInt++
 	m.lastIP = b
 	return m.lastSession, nil
 }
-func (m *concurrentManagerMockManager) GetByExternalIP(b []byte) (concurrentManagerMockSession, error) {
+func (m *concurrentManagerMockManager) GetByExternalIP(b [4]byte) (concurrentManagerMockSession, error) {
 	m.getExt++
 	m.lastIP = b
 	return m.lastSession, nil
@@ -41,8 +41,8 @@ func TestConcurrentManager_Delegation(t *testing.T) {
 	base := &concurrentManagerMockManager{}
 	cm := NewConcurrentManager[concurrentManagerMockSession](base)
 
-	s := concurrentManagerMockSession{ext: []byte{1, 1, 1, 1}, in: []byte{2, 2, 2, 2}}
-	ip := []byte{3, 3, 3, 3}
+	s := concurrentManagerMockSession{ext: [4]byte{1, 1, 1, 1}, in: [4]byte{2, 2, 2, 2}}
+	ip := [4]byte{3, 3, 3, 3}
 
 	cm.Add(s)
 	cm.Delete(s)
@@ -52,7 +52,7 @@ func TestConcurrentManager_Delegation(t *testing.T) {
 	switch {
 	case base.add != 1, base.del != 1, base.getInt != 1, base.getExt != 1:
 		t.Fatalf("not all methods delegated: %+v", base)
-	case string(base.lastSession.in) != string(s.in), string(base.lastIP) != string(ip):
+	case string(base.lastSession.in[:]) != string(s.in[:]), string(base.lastIP[:]) != string(ip[:]):
 		t.Fatalf("wrong args forwarded")
 	}
 }
@@ -60,7 +60,7 @@ func TestConcurrentManager_Delegation(t *testing.T) {
 func TestConcurrentManager_Parallel_NoRace(t *testing.T) {
 	base := &concurrentManagerMockManager{}
 	cm := NewConcurrentManager[concurrentManagerMockSession](base)
-	s := concurrentManagerMockSession{ext: []byte{9, 9, 9, 9}, in: []byte{8, 8, 8, 8}}
+	s := concurrentManagerMockSession{ext: [4]byte{9, 9, 9, 9}, in: [4]byte{8, 8, 8, 8}}
 
 	const readers = 50
 	var wg sync.WaitGroup

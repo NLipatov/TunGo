@@ -65,17 +65,17 @@ type mockMgr struct {
 	deleted int32
 }
 
-func (m *mockMgr) Add(Session)                             {}
-func (m *mockMgr) Delete(Session)                          { atomic.AddInt32(&m.deleted, 1) }
-func (m *mockMgr) GetByInternalIP([]byte) (Session, error) { return m.sess, m.getErr }
-func (m *mockMgr) GetByExternalIP([]byte) (Session, error) { return m.sess, nil }
+func (m *mockMgr) Add(Session)                              {}
+func (m *mockMgr) Delete(Session)                           { atomic.AddInt32(&m.deleted, 1) }
+func (m *mockMgr) GetByInternalIP([4]byte) (Session, error) { return m.sess, m.getErr }
+func (m *mockMgr) GetByExternalIP([4]byte) (Session, error) { return m.sess, nil }
 
 func makeSession(c *mockConn, crypto *mockCrypto) Session {
 	return Session{
 		conn:                c,
 		CryptographyService: crypto,
-		internalIP:          []byte{1, 1, 1, 1},
-		externalIP:          []byte{2, 2, 2, 2},
+		internalIP:          [4]byte{1, 1, 1, 1},
+		externalIP:          [4]byte{2, 2, 2, 2},
 	}
 }
 
