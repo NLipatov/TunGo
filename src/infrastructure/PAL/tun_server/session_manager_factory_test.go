@@ -6,14 +6,14 @@ import (
 )
 
 type sessionManagerFactoryDummySession struct {
-	internalIP []byte
-	externalIP []byte
+	internalIP [4]byte
+	externalIP [4]byte
 }
 
-func (d sessionManagerFactoryDummySession) InternalIP() []byte {
+func (d sessionManagerFactoryDummySession) InternalIP() [4]byte {
 	return d.internalIP
 }
-func (d sessionManagerFactoryDummySession) ExternalIP() []byte {
+func (d sessionManagerFactoryDummySession) ExternalIP() [4]byte {
 	return d.externalIP
 }
 
@@ -22,8 +22,8 @@ func TestSessionManagerFactory_CreateManager(t *testing.T) {
 	mgr := f.createManager()
 
 	sess := sessionManagerFactoryDummySession{
-		internalIP: []byte{10, 0, 0, 1},
-		externalIP: []byte{1, 2, 3, 4},
+		internalIP: [4]byte{10, 0, 0, 1},
+		externalIP: [4]byte{1, 2, 3, 4},
 	}
 
 	mgr.Add(sess)
@@ -54,8 +54,8 @@ func TestSessionManagerFactory_CreateConcurrentManager(t *testing.T) {
 	cmgr := f.createConcurrentManager()
 
 	sess := sessionManagerFactoryDummySession{
-		internalIP: []byte{172, 16, 0, 2},
-		externalIP: []byte{8, 8, 8, 8},
+		internalIP: [4]byte{172, 16, 0, 2},
+		externalIP: [4]byte{8, 8, 8, 8},
 	}
 
 	cmgr.Add(sess)

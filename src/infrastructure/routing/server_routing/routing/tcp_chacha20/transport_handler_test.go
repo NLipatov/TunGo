@@ -71,10 +71,10 @@ type TransportHandlerMockSessionMgr struct {
 
 func (m *TransportHandlerMockSessionMgr) Add(_ Session)    { m.added = true }
 func (m *TransportHandlerMockSessionMgr) Delete(_ Session) { m.deleted = true }
-func (m *TransportHandlerMockSessionMgr) GetByInternalIP([]byte) (Session, error) {
+func (m *TransportHandlerMockSessionMgr) GetByInternalIP([4]byte) (Session, error) {
 	return Session{}, m.getErr
 }
-func (m *TransportHandlerMockSessionMgr) GetByExternalIP([]byte) (Session, error) {
+func (m *TransportHandlerMockSessionMgr) GetByExternalIP([4]byte) (Session, error) {
 	return Session{}, nil
 }
 

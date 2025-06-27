@@ -13,13 +13,13 @@ type Session struct {
 	CryptographyService application.CryptographyService
 	// internalIP is the client's VPN-assigned IPv4 address (e.g. 10.0.1.3).
 	// externalIP is the client's real-world IPv4 address (e.g. 51.195.101.45).
-	internalIP, externalIP []byte
+	internalIP, externalIP [4]byte
 }
 
-func (s Session) InternalIP() []byte {
+func (s Session) InternalIP() [4]byte {
 	return s.internalIP
 }
 
-func (s Session) ExternalIP() []byte {
+func (s Session) ExternalIP() [4]byte {
 	return s.externalIP
 }

@@ -98,7 +98,7 @@ func (t *TransportHandler) registerClient(conn net.Conn, tunFile io.ReadWriteClo
 	externalIP := addr.IP.To4()
 
 	// Prevent IP spoofing
-	_, getErr := t.sessionManager.GetByInternalIP(internalIP)
+	_, getErr := t.sessionManager.GetByInternalIP([4]byte(internalIP))
 	if !errors.Is(getErr, session_management.ErrSessionNotFound) {
 		t.Logger.Printf("connection closed: %s (internal internalIP %s already in use)\n", conn.RemoteAddr(), internalIP)
 		_ = conn.Close()
@@ -107,8 +107,8 @@ func (t *TransportHandler) registerClient(conn net.Conn, tunFile io.ReadWriteClo
 	storedSession := Session{
 		conn:                conn,
 		CryptographyService: cryptographyService,
-		internalIP:          internalIP.To4(),
-		externalIP:          externalIP.To4(),
+		internalIP:          [4]byte(internalIP.To4()),
+		externalIP:          [4]byte(externalIP.To4()),
 	}
 
 	t.sessionManager.Add(storedSession)

@@ -6,8 +6,8 @@ type ipv4Key [4]byte
 type WorkerSessionManager[session ClientSession] interface {
 	Add(session session)
 	Delete(session session)
-	GetByInternalIP(ip []byte) (session, error)
-	GetByExternalIP(ip []byte) (session, error)
+	GetByInternalIP(ip [4]byte) (session, error)
+	GetByExternalIP(ip [4]byte) (session, error)
 }
 
 type DefaultWorkerSessionManager[cs ClientSession] struct {
@@ -32,13 +32,10 @@ func (s *DefaultWorkerSessionManager[cs]) Delete(session cs) {
 	delete(s.externalIPToSession, ipv4Key(session.ExternalIP()))
 }
 
-func (s *DefaultWorkerSessionManager[cs]) GetByInternalIP(ip []byte) (cs, error) {
+func (s *DefaultWorkerSessionManager[cs]) GetByInternalIP(ip [4]byte) (cs, error) {
 	var zero cs
-	if !s.validKeyLength(ip) {
-		return zero, ErrInvalidIPLength
-	}
 
-	value, found := s.internalIpToSession[ipv4Key(ip)]
+	value, found := s.internalIpToSession[ip]
 	if !found {
 		return zero, ErrSessionNotFound
 	}
@@ -46,21 +43,13 @@ func (s *DefaultWorkerSessionManager[cs]) GetByInternalIP(ip []byte) (cs, error)
 	return value, nil
 }
 
-func (s *DefaultWorkerSessionManager[cs]) GetByExternalIP(ip []byte) (cs, error) {
+func (s *DefaultWorkerSessionManager[cs]) GetByExternalIP(ip [4]byte) (cs, error) {
 	var zero cs
-	if !s.validKeyLength(ip) {
-		return zero, ErrInvalidIPLength
-	}
 
-	value, found := s.externalIPToSession[ipv4Key(ip)]
+	value, found := s.externalIPToSession[ip]
 	if !found {
 		return zero, ErrSessionNotFound
 	}
 
 	return value, nil
-}
-
-func (s *DefaultWorkerSessionManager[cs]) validKeyLength(key []byte) bool {
-	// it's expected that IPv4 IP-address is exactly 4 bytes long
-	return len(key) == 4
 }
