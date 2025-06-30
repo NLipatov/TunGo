@@ -85,25 +85,3 @@ func TestTransportHandler_HandleTransport_ReadError(t *testing.T) {
 		t.Fatalf("unexpected logs: %v", lg.logs)
 	}
 }
-
-/* ---------- pure helpers ---------- */
-
-func TestTransportHandler_extractIPv4_and_isIPv4Mapped(t *testing.T) {
-	h := &TransportHandler{}
-	ipv6map := net.ParseIP("::ffff:192.168.0.1")
-	want := [4]byte{192, 168, 0, 1}
-	got, gotErr := h.extractIPv4(ipv6map)
-	if gotErr != nil {
-		t.Fatal(gotErr)
-	}
-
-	if got[0] != want[0] {
-		t.Fatalf("extractIPv4(%v) = %v, want %v", ipv6map, got, want)
-	}
-	if !h.isIPv4Mapped(ipv6map) {
-		t.Fatalf("isIPv4Mapped(%v) = false, want true", ipv6map)
-	}
-	if h.isIPv4Mapped(net.ParseIP("2001:db8::1")) {
-		t.Fatalf("isIPv4Mapped() falsely detected arbitrary IPv6 as IPv4-mapped")
-	}
-}

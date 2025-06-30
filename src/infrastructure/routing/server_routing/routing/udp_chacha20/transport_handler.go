@@ -150,21 +150,3 @@ func (t *TransportHandler) registerClient(conn *net.UDPConn, clientAddr netip.Ad
 
 	return nil
 }
-
-func (t *TransportHandler) extractIPv4(ip net.IP) ([4]byte, error) {
-	if len(ip) == 16 && t.isIPv4Mapped(ip) {
-		return [4]byte(ip[12:16]), nil
-	}
-	if len(ip) == 4 {
-		return [4]byte(ip), nil
-	}
-	return [4]byte(make([]byte, 4)), nil
-}
-
-func (t *TransportHandler) isIPv4Mapped(ip net.IP) bool {
-	// check for ::ffff:0:0/96 prefix
-	return ip[0] == 0 && ip[1] == 0 && ip[2] == 0 &&
-		ip[3] == 0 && ip[4] == 0 && ip[5] == 0 &&
-		ip[6] == 0 && ip[7] == 0 && ip[8] == 0 &&
-		ip[9] == 0 && ip[10] == 0xff && ip[11] == 0xff
-}
