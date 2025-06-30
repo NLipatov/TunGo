@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
 
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
@@ -12,6 +13,12 @@ import (
 	"tungo/infrastructure/routing/server_routing/routing/udp_chacha20"
 	"tungo/infrastructure/routing/server_routing/session_management"
 	"tungo/infrastructure/settings"
+)
+
+// ToDo: move those constants into more convenient place (like app configuration settings)
+const (
+	expTime          = time.Minute * 30
+	sanitizeInterval = time.Minute * 15
 )
 
 type ServerWorkerFactory struct {
@@ -61,15 +68,19 @@ func (s *ServerWorkerFactory) CreateWorker(ctx context.Context, tun io.ReadWrite
 
 func (s *ServerWorkerFactory) createTCPWorker(ctx context.Context, tun io.ReadWriteCloser) (application.TunWorker, error) {
 	// session managers, handlers…
-	sm := session_management.NewConcurrentManager(
-		session_management.NewDefaultWorkerSessionManager[tcp_chacha20.Session](),
-	)
+	sessionManager := session_management.
+		NewDefaultWorkerSessionManager[tcp_chacha20.Session]()
+	concurrentSessionManager := session_management.
+		NewConcurrentManager(sessionManager)
+	ttlConcurrentSessionManager := session_management.
+		NewTTLManager(ctx, concurrentSessionManager, expTime, sanitizeInterval)
+
 	th := tcp_chacha20.NewTunHandler(
 		ctx,
 		chacha20.NewTcpReader(tun),
 		chacha20.NewDefaultTCPEncoder(),
 		network.NewIPV4HeaderParser(),
-		sm,
+		ttlConcurrentSessionManager,
 	)
 
 	// now the injected factories:
@@ -87,21 +98,25 @@ func (s *ServerWorkerFactory) createTCPWorker(ctx context.Context, tun io.ReadWr
 		s.settings,
 		tun,
 		listener,
-		sm,
+		sessionManager,
 		s.loggerFactory.newLogger(),
 	)
 	return tcp_chacha20.NewTcpTunWorker(th, tr), nil
 }
 
 func (s *ServerWorkerFactory) createUDPWorker(ctx context.Context, tun io.ReadWriteCloser) (application.TunWorker, error) {
-	sm := session_management.NewConcurrentManager(
-		session_management.NewDefaultWorkerSessionManager[udp_chacha20.Session](),
-	)
+	sessionManager := session_management.
+		NewDefaultWorkerSessionManager[udp_chacha20.Session]()
+	concurrentSessionManager := session_management.
+		NewConcurrentManager(sessionManager)
+	ttlConcurrentSessionManager := session_management.
+		NewTTLManager(ctx, concurrentSessionManager, expTime, sanitizeInterval)
+
 	th := udp_chacha20.NewTunHandler(
 		ctx,
 		chacha20.NewUdpReader(tun),
 		network.NewIPV4HeaderParser(),
-		sm,
+		ttlConcurrentSessionManager,
 	)
 
 	sock, err := s.socketFactory.newSocket(s.settings.ConnectionIP, s.settings.Port)
@@ -115,7 +130,7 @@ func (s *ServerWorkerFactory) createUDPWorker(ctx context.Context, tun io.ReadWr
 		s.settings,
 		tun,
 		ul,
-		sm,
+		ttlConcurrentSessionManager,
 		s.loggerFactory.newLogger(),
 	)
 	return udp_chacha20.NewUdpTunWorker(th, tr), nil

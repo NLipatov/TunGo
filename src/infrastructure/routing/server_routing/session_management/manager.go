@@ -23,8 +23,8 @@ func NewDefaultWorkerSessionManager[cs ClientSession]() WorkerSessionManager[cs]
 }
 
 func (s *DefaultWorkerSessionManager[cs]) Add(session cs) {
-	s.internalIpToSession[ipv4Key(session.InternalIP())] = session
-	s.externalIPToSession[ipv4Key(session.ExternalIP())] = session
+	s.internalIpToSession[session.InternalIP()] = session
+	s.externalIPToSession[session.ExternalIP()] = session
 }
 
 func (s *DefaultWorkerSessionManager[cs]) Delete(session cs) {
