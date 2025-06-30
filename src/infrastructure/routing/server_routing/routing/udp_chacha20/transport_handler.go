@@ -61,7 +61,6 @@ func (t *TransportHandler) HandleTransport() error {
 
 	dataBuf := make([]byte, network.MaxPacketLengthBytes+12)
 	oobBuf := make([]byte, 1024)
-	destinationAddressBuf := [4]byte{}
 
 	for {
 		select {
@@ -78,8 +77,7 @@ func (t *TransportHandler) HandleTransport() error {
 				continue
 			}
 
-			destinationAddressBuf = clientAddr.Addr().Unmap().As4()
-			clientSession, getErr := t.sessionManager.GetByExternalIP(destinationAddressBuf)
+			clientSession, getErr := t.sessionManager.GetByExternalIP(clientAddr.Addr())
 			if getErr != nil || clientSession.remoteAddrPort.Port() != clientAddr.Port() {
 				// Pass initial data to registration function
 				regErr := t.registerClient(conn, clientAddr, dataBuf[:n])
@@ -132,19 +130,9 @@ func (t *TransportHandler) registerClient(conn *net.UDPConn, clientAddr netip.Ad
 		return cryptoSessionErr
 	}
 
-	remoteAddr, remoteParseErr := netip.ParseAddrPort(clientAddr.String())
-	if remoteParseErr != nil {
-		return fmt.Errorf("invalid client address: %v", clientAddr)
-	}
-
-	intIp, intIpErr := t.extractIPv4(internalIP)
-	if intIpErr != nil {
-		return intIpErr
-	}
-
-	extIp, extIpErr := t.extractIPv4(clientAddr.Addr().Unmap().AsSlice())
-	if extIpErr != nil {
-		return extIpErr
+	intIp, intIpOk := netip.AddrFromSlice(internalIP)
+	if !intIpOk {
+		return fmt.Errorf("failed to parse internal IP: %v", internalIP)
 	}
 
 	t.sessionManager.Add(Session{
@@ -152,13 +140,13 @@ func (t *TransportHandler) registerClient(conn *net.UDPConn, clientAddr netip.Ad
 			UdpConn:  conn,
 			AddrPort: clientAddr,
 		},
-		remoteAddrPort:      remoteAddr,
+		remoteAddrPort:      clientAddr,
 		CryptographyService: cryptoSession,
 		internalIP:          intIp,
-		externalIP:          extIp,
+		externalIP:          clientAddr.Addr(),
 	})
 
-	t.logger.Printf("%v registered as: %v", clientAddr.Addr().As4(), internalIP)
+	t.logger.Printf("%v registered as: %v", clientAddr.Addr(), internalIP)
 
 	return nil
 }

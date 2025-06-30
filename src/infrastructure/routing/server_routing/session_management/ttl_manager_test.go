@@ -2,6 +2,7 @@ package session_management
 
 import (
 	"context"
+	"net/netip"
 	"sync"
 	"testing"
 	"time"
@@ -9,25 +10,25 @@ import (
 
 // TestSession is a simple type implementing ClientSession and comparable.
 type TestSession struct {
-	internal, external [4]byte
+	internal, external netip.Addr
 }
 
-func (s TestSession) InternalIP() [4]byte { return s.internal }
-func (s TestSession) ExternalIP() [4]byte { return s.external }
+func (s TestSession) InternalIP() netip.Addr { return s.internal }
+func (s TestSession) ExternalIP() netip.Addr { return s.external }
 
 // FakeManager is a stub for WorkerSessionManager[TestSession].
 type FakeManager struct {
 	mu         sync.Mutex
 	added      []TestSession
 	deleted    []TestSession
-	byInternal map[[4]byte]TestSession
-	byExternal map[[4]byte]TestSession
+	byInternal map[netip.Addr]TestSession
+	byExternal map[netip.Addr]TestSession
 }
 
 func NewFakeManager() *FakeManager {
 	return &FakeManager{
-		byInternal: make(map[[4]byte]TestSession),
-		byExternal: make(map[[4]byte]TestSession),
+		byInternal: make(map[netip.Addr]TestSession),
+		byExternal: make(map[netip.Addr]TestSession),
 	}
 }
 
@@ -47,7 +48,7 @@ func (f *FakeManager) Delete(s TestSession) {
 	delete(f.byExternal, s.external)
 }
 
-func (f *FakeManager) GetByInternalIP(ip [4]byte) (TestSession, error) {
+func (f *FakeManager) GetByInternalIP(ip netip.Addr) (TestSession, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	s, ok := f.byInternal[ip]
@@ -57,7 +58,7 @@ func (f *FakeManager) GetByInternalIP(ip [4]byte) (TestSession, error) {
 	return s, nil
 }
 
-func (f *FakeManager) GetByExternalIP(ip [4]byte) (TestSession, error) {
+func (f *FakeManager) GetByExternalIP(ip netip.Addr) (TestSession, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	s, ok := f.byExternal[ip]
@@ -71,7 +72,9 @@ func TestAddAndGetResetsTTL(t *testing.T) {
 	fake := NewFakeManager()
 	m := NewTTLManager[TestSession](context.Background(), fake, 50*time.Millisecond, 20*time.Millisecond)
 
-	s := TestSession{internal: [4]byte{1, 2, 3, 4}, external: [4]byte{4, 3, 2, 1}}
+	in, _ := netip.ParseAddr("1.2.3.4")
+	ex, _ := netip.ParseAddr("4.3.2.1")
+	s := TestSession{internal: in, external: ex}
 	m.Add(s)
 
 	if len(fake.added) != 1 || fake.added[0] != s {
@@ -99,8 +102,13 @@ func TestExpirationAndSanitize(t *testing.T) {
 	fake := NewFakeManager()
 	m := NewTTLManager[TestSession](context.Background(), fake, 10*time.Millisecond, time.Millisecond)
 
-	s1 := TestSession{internal: [4]byte{1, 1, 1, 1}, external: [4]byte{2, 2, 2, 2}}
-	s2 := TestSession{internal: [4]byte{3, 3, 3, 3}, external: [4]byte{4, 4, 4, 4}}
+	s1In, _ := netip.ParseAddr("1.1.1.1")
+	s1Ex, _ := netip.ParseAddr("2.2.2.2")
+	s1 := TestSession{internal: s1In, external: s1Ex}
+
+	s2In, _ := netip.ParseAddr("3.3.3.3")
+	s2Ex, _ := netip.ParseAddr("4.4.4.4")
+	s2 := TestSession{internal: s2In, external: s2Ex}
 	m.Add(s1)
 	m.Add(s2)
 
@@ -136,7 +144,9 @@ func TestManualDelete(t *testing.T) {
 	fake := NewFakeManager()
 	m := NewTTLManager[TestSession](context.Background(), fake, 50*time.Millisecond, time.Hour)
 
-	s := TestSession{internal: [4]byte{9, 9, 9, 9}, external: [4]byte{8, 8, 8, 8}}
+	in, _ := netip.ParseAddr("9.9.9.9")
+	ex, _ := netip.ParseAddr("8.8.8.8")
+	s := TestSession{internal: in, external: ex}
 	m.Add(s)
 	m.Delete(s)
 

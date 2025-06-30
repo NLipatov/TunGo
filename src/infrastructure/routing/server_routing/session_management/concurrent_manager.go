@@ -1,6 +1,9 @@
 package session_management
 
-import "sync"
+import (
+	"net/netip"
+	"sync"
+)
 
 type ConcurrentManager[cs ClientSession] struct {
 	mu      sync.RWMutex
@@ -25,13 +28,13 @@ func (c *ConcurrentManager[cs]) Delete(session cs) {
 	c.manager.Delete(session)
 }
 
-func (c *ConcurrentManager[cs]) GetByInternalIP(ip [4]byte) (cs, error) {
+func (c *ConcurrentManager[cs]) GetByInternalIP(ip netip.Addr) (cs, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.manager.GetByInternalIP(ip)
 }
 
-func (c *ConcurrentManager[cs]) GetByExternalIP(ip [4]byte) (cs, error) {
+func (c *ConcurrentManager[cs]) GetByExternalIP(ip netip.Addr) (cs, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.manager.GetByExternalIP(ip)

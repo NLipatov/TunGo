@@ -2,27 +2,31 @@ package session_management
 
 import (
 	"errors"
+	"net/netip"
 	"testing"
 )
 
 type fakeSession struct {
-	internal, external [4]byte
+	internal, external netip.Addr
 }
 
-func (f *fakeSession) InternalIP() [4]byte { return f.internal }
-func (f *fakeSession) ExternalIP() [4]byte { return f.external }
+func (f *fakeSession) InternalIP() netip.Addr { return f.internal }
+func (f *fakeSession) ExternalIP() netip.Addr { return f.external }
 
 func TestDefaultWorkerSessionManager(t *testing.T) {
 	sm := NewDefaultWorkerSessionManager[*fakeSession]()
 
 	t.Run("NotFoundBeforeAdd", func(t *testing.T) {
-		if _, err := sm.GetByInternalIP([4]byte{1, 2, 3, 4}); !errors.Is(err, ErrSessionNotFound) {
+		addr, _ := netip.ParseAddr("1.2.3.4")
+		if _, err := sm.GetByInternalIP(addr); !errors.Is(err, ErrSessionNotFound) {
 			t.Fatalf("expected ErrSessionNotFound, got %v", err)
 		}
 	})
 
 	t.Run("AddAndGetInternal", func(t *testing.T) {
-		s := &fakeSession{internal: [4]byte{1, 2, 3, 4}, external: [4]byte{5, 6, 7, 8}}
+		internal, _ := netip.ParseAddr("1.2.3.4")
+		external, _ := netip.ParseAddr("5.6.7.8")
+		s := &fakeSession{internal: internal, external: external}
 		sm.Add(s)
 		got, err := sm.GetByInternalIP(s.internal)
 		if err != nil {
@@ -34,7 +38,9 @@ func TestDefaultWorkerSessionManager(t *testing.T) {
 	})
 
 	t.Run("AddAndGetExternal", func(t *testing.T) {
-		s := &fakeSession{internal: [4]byte{9, 9, 9, 9}, external: [4]byte{10, 10, 10, 10}}
+		internal, _ := netip.ParseAddr("9.9.9.9")
+		external, _ := netip.ParseAddr("10.10.10.10")
+		s := &fakeSession{internal: internal, external: external}
 		sm.Add(s)
 		got, err := sm.GetByExternalIP(s.external)
 		if err != nil {
@@ -46,7 +52,9 @@ func TestDefaultWorkerSessionManager(t *testing.T) {
 	})
 
 	t.Run("DeleteRemoves", func(t *testing.T) {
-		s := &fakeSession{internal: [4]byte{11, 11, 11, 11}, external: [4]byte{12, 12, 12, 12}}
+		internal, _ := netip.ParseAddr("11.11.11.11")
+		external, _ := netip.ParseAddr("12.12.12.12")
+		s := &fakeSession{internal: internal, external: external}
 		sm.Add(s)
 		sm.Delete(s)
 		if _, err := sm.GetByInternalIP(s.internal); !errors.Is(err, ErrSessionNotFound) {

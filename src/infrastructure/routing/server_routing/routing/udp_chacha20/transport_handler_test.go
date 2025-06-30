@@ -44,10 +44,10 @@ func (l *mockLogger) Printf(f string, v ...any) { l.logs = append(l.logs, fmt.Sp
 type mockMgr struct {
 }
 
-func (m *mockMgr) Add(Session)                              {}
-func (m *mockMgr) Delete(Session)                           {}
-func (m *mockMgr) GetByInternalIP([4]byte) (Session, error) { return Session{}, nil }
-func (m *mockMgr) GetByExternalIP([4]byte) (Session, error) {
+func (m *mockMgr) Add(Session)                                   {}
+func (m *mockMgr) Delete(Session)                                {}
+func (m *mockMgr) GetByInternalIP(_ netip.Addr) (Session, error) { return Session{}, nil }
+func (m *mockMgr) GetByExternalIP(_ netip.Addr) (Session, error) {
 	return Session{}, errors.New("not found")
 }
 

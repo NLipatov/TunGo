@@ -1,41 +1,40 @@
 package session_management
 
-// ipv4Key consist of 4 octets describing IPv4 address
-type ipv4Key [4]byte
+import "net/netip"
 
 type WorkerSessionManager[session ClientSession] interface {
 	Add(session session)
 	Delete(session session)
-	GetByInternalIP(ip [4]byte) (session, error)
-	GetByExternalIP(ip [4]byte) (session, error)
+	GetByInternalIP(ip netip.Addr) (session, error)
+	GetByExternalIP(ip netip.Addr) (session, error)
 }
 
 type DefaultWorkerSessionManager[cs ClientSession] struct {
-	internalIpToSession map[ipv4Key]cs
-	externalIPToSession map[ipv4Key]cs
+	internalIpToSession map[netip.Addr]cs
+	externalIPToSession map[netip.Addr]cs
 }
 
 func NewDefaultWorkerSessionManager[cs ClientSession]() WorkerSessionManager[cs] {
 	return &DefaultWorkerSessionManager[cs]{
-		internalIpToSession: make(map[ipv4Key]cs),
-		externalIPToSession: make(map[ipv4Key]cs),
+		internalIpToSession: make(map[netip.Addr]cs),
+		externalIPToSession: make(map[netip.Addr]cs),
 	}
 }
 
 func (s *DefaultWorkerSessionManager[cs]) Add(session cs) {
-	s.internalIpToSession[session.InternalIP()] = session
-	s.externalIPToSession[session.ExternalIP()] = session
+	s.internalIpToSession[session.InternalIP().Unmap()] = session
+	s.externalIPToSession[session.ExternalIP().Unmap()] = session
 }
 
 func (s *DefaultWorkerSessionManager[cs]) Delete(session cs) {
-	delete(s.internalIpToSession, ipv4Key(session.InternalIP()))
-	delete(s.externalIPToSession, ipv4Key(session.ExternalIP()))
+	delete(s.internalIpToSession, session.InternalIP().Unmap())
+	delete(s.externalIPToSession, session.ExternalIP().Unmap())
 }
 
-func (s *DefaultWorkerSessionManager[cs]) GetByInternalIP(ip [4]byte) (cs, error) {
+func (s *DefaultWorkerSessionManager[cs]) GetByInternalIP(addr netip.Addr) (cs, error) {
 	var zero cs
 
-	value, found := s.internalIpToSession[ip]
+	value, found := s.internalIpToSession[addr.Unmap()]
 	if !found {
 		return zero, ErrSessionNotFound
 	}
@@ -43,10 +42,10 @@ func (s *DefaultWorkerSessionManager[cs]) GetByInternalIP(ip [4]byte) (cs, error
 	return value, nil
 }
 
-func (s *DefaultWorkerSessionManager[cs]) GetByExternalIP(ip [4]byte) (cs, error) {
+func (s *DefaultWorkerSessionManager[cs]) GetByExternalIP(addr netip.Addr) (cs, error) {
 	var zero cs
 
-	value, found := s.externalIPToSession[ip]
+	value, found := s.externalIPToSession[addr.Unmap()]
 	if !found {
 		return zero, ErrSessionNotFound
 	}

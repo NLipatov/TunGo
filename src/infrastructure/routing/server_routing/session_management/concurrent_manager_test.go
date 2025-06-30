@@ -1,21 +1,22 @@
 package session_management
 
 import (
+	"net/netip"
 	"sync"
 	"testing"
 )
 
 type concurrentManagerMockSession struct {
-	ext, in [4]byte
+	ext, in netip.Addr
 }
 
-func (s concurrentManagerMockSession) ExternalIP() [4]byte { return s.ext }
-func (s concurrentManagerMockSession) InternalIP() [4]byte { return s.in }
+func (s concurrentManagerMockSession) ExternalIP() netip.Addr { return s.ext }
+func (s concurrentManagerMockSession) InternalIP() netip.Addr { return s.in }
 
 type concurrentManagerMockManager struct {
 	add, del, getInt, getExt int
 	lastSession              concurrentManagerMockSession
-	lastIP                   [4]byte
+	lastIP                   netip.Addr
 }
 
 func (m *concurrentManagerMockManager) Add(s concurrentManagerMockSession) {
@@ -26,12 +27,12 @@ func (m *concurrentManagerMockManager) Delete(s concurrentManagerMockSession) {
 	m.del++
 	m.lastSession = s
 }
-func (m *concurrentManagerMockManager) GetByInternalIP(b [4]byte) (concurrentManagerMockSession, error) {
+func (m *concurrentManagerMockManager) GetByInternalIP(b netip.Addr) (concurrentManagerMockSession, error) {
 	m.getInt++
 	m.lastIP = b
 	return m.lastSession, nil
 }
-func (m *concurrentManagerMockManager) GetByExternalIP(b [4]byte) (concurrentManagerMockSession, error) {
+func (m *concurrentManagerMockManager) GetByExternalIP(b netip.Addr) (concurrentManagerMockSession, error) {
 	m.getExt++
 	m.lastIP = b
 	return m.lastSession, nil
@@ -41,8 +42,10 @@ func TestConcurrentManager_Delegation(t *testing.T) {
 	base := &concurrentManagerMockManager{}
 	cm := NewConcurrentManager[concurrentManagerMockSession](base)
 
-	s := concurrentManagerMockSession{ext: [4]byte{1, 1, 1, 1}, in: [4]byte{2, 2, 2, 2}}
-	ip := [4]byte{3, 3, 3, 3}
+	in, _ := netip.ParseAddr("1.1.1.1")
+	ex, _ := netip.ParseAddr("2.2.2.2")
+	s := concurrentManagerMockSession{ext: ex, in: in}
+	ip, _ := netip.ParseAddr("3.3.3.3")
 
 	cm.Add(s)
 	cm.Delete(s)
@@ -52,7 +55,7 @@ func TestConcurrentManager_Delegation(t *testing.T) {
 	switch {
 	case base.add != 1, base.del != 1, base.getInt != 1, base.getExt != 1:
 		t.Fatalf("not all methods delegated: %+v", base)
-	case string(base.lastSession.in[:]) != string(s.in[:]), string(base.lastIP[:]) != string(ip[:]):
+	case (base.lastSession.in) != s.in, base.lastIP != ip:
 		t.Fatalf("wrong args forwarded")
 	}
 }
@@ -60,7 +63,9 @@ func TestConcurrentManager_Delegation(t *testing.T) {
 func TestConcurrentManager_Parallel_NoRace(t *testing.T) {
 	base := &concurrentManagerMockManager{}
 	cm := NewConcurrentManager[concurrentManagerMockSession](base)
-	s := concurrentManagerMockSession{ext: [4]byte{9, 9, 9, 9}, in: [4]byte{8, 8, 8, 8}}
+	ex, _ := netip.ParseAddr("9.9.9.9")
+	in, _ := netip.ParseAddr("8.8.8.8")
+	s := concurrentManagerMockSession{ext: ex, in: in}
 
 	const readers = 50
 	var wg sync.WaitGroup

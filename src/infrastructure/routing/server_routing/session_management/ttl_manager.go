@@ -2,6 +2,7 @@ package session_management
 
 import (
 	"context"
+	"net/netip"
 	"sync"
 	"time"
 )
@@ -50,7 +51,7 @@ func (t *TTLManager[cs]) Delete(session cs) {
 	delete(t.expMap, session)
 	t.mu.Unlock()
 }
-func (t *TTLManager[cs]) GetByInternalIP(ip [4]byte) (cs, error) {
+func (t *TTLManager[cs]) GetByInternalIP(ip netip.Addr) (cs, error) {
 	var zero cs
 	session, sessionErr := t.manager.GetByInternalIP(ip)
 	if sessionErr != nil {
@@ -63,7 +64,7 @@ func (t *TTLManager[cs]) GetByInternalIP(ip [4]byte) (cs, error) {
 
 	return session, nil
 }
-func (t *TTLManager[cs]) GetByExternalIP(ip [4]byte) (cs, error) {
+func (t *TTLManager[cs]) GetByExternalIP(ip netip.Addr) (cs, error) {
 	var zero cs
 	session, sessionErr := t.manager.GetByExternalIP(ip)
 	if sessionErr != nil {

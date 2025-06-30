@@ -1,19 +1,20 @@
 package tun_server
 
 import (
+	"net/netip"
 	"reflect"
 	"testing"
 )
 
 type sessionManagerFactoryDummySession struct {
-	internalIP [4]byte
-	externalIP [4]byte
+	internalIP netip.Addr
+	externalIP netip.Addr
 }
 
-func (d sessionManagerFactoryDummySession) InternalIP() [4]byte {
+func (d sessionManagerFactoryDummySession) InternalIP() netip.Addr {
 	return d.internalIP
 }
-func (d sessionManagerFactoryDummySession) ExternalIP() [4]byte {
+func (d sessionManagerFactoryDummySession) ExternalIP() netip.Addr {
 	return d.externalIP
 }
 
@@ -21,9 +22,12 @@ func TestSessionManagerFactory_CreateManager(t *testing.T) {
 	f := newSessionManagerFactory[sessionManagerFactoryDummySession]()
 	mgr := f.createManager()
 
+	in, _ := netip.ParseAddr("10.0.0.1")
+	ex, _ := netip.ParseAddr("1.2.3,4")
+
 	sess := sessionManagerFactoryDummySession{
-		internalIP: [4]byte{10, 0, 0, 1},
-		externalIP: [4]byte{1, 2, 3, 4},
+		internalIP: in,
+		externalIP: ex,
 	}
 
 	mgr.Add(sess)
@@ -53,9 +57,12 @@ func TestSessionManagerFactory_CreateConcurrentManager(t *testing.T) {
 	f := newSessionManagerFactory[sessionManagerFactoryDummySession]()
 	cmgr := f.createConcurrentManager()
 
+	in, _ := netip.ParseAddr("172.16.0.2")
+	ex, _ := netip.ParseAddr("8.8.8.8")
+
 	sess := sessionManagerFactoryDummySession{
-		internalIP: [4]byte{172, 16, 0, 2},
-		externalIP: [4]byte{8, 8, 8, 8},
+		internalIP: in,
+		externalIP: ex,
 	}
 
 	cmgr.Add(sess)

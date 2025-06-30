@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"net/netip"
 	"os"
 	"sync/atomic"
 	"testing"
@@ -65,17 +66,19 @@ type mockMgr struct {
 	deleted int32
 }
 
-func (m *mockMgr) Add(Session)                              {}
-func (m *mockMgr) Delete(Session)                           { atomic.AddInt32(&m.deleted, 1) }
-func (m *mockMgr) GetByInternalIP([4]byte) (Session, error) { return m.sess, m.getErr }
-func (m *mockMgr) GetByExternalIP([4]byte) (Session, error) { return m.sess, nil }
+func (m *mockMgr) Add(Session)                                   {}
+func (m *mockMgr) Delete(Session)                                { atomic.AddInt32(&m.deleted, 1) }
+func (m *mockMgr) GetByInternalIP(_ netip.Addr) (Session, error) { return m.sess, m.getErr }
+func (m *mockMgr) GetByExternalIP(_ netip.Addr) (Session, error) { return m.sess, nil }
 
 func makeSession(c *mockConn, crypto *mockCrypto) Session {
+	in, _ := netip.ParseAddr("1.1.1.1")
+	ex, _ := netip.ParseAddr("2.2.2.2")
 	return Session{
 		conn:                c,
 		CryptographyService: crypto,
-		internalIP:          [4]byte{1, 1, 1, 1},
-		externalIP:          [4]byte{2, 2, 2, 2},
+		internalIP:          in,
+		externalIP:          ex,
 	}
 }
 

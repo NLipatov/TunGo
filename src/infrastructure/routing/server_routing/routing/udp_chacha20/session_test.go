@@ -1,7 +1,6 @@
 package udp_chacha20
 
 import (
-	"bytes"
 	"net/netip"
 	"testing"
 )
@@ -26,8 +25,8 @@ func (d *sessionTestCryptoService) Encrypt(b []byte) ([]byte, error) { return b,
 func (d *sessionTestCryptoService) Decrypt(b []byte) ([]byte, error) { return b, nil }
 
 func TestSessionAccessors(t *testing.T) {
-	internal := [4]byte{10, 0, 1, 3}
-	external := [4]byte{93, 184, 216, 34}
+	internal, _ := netip.ParseAddr("10.0.1.3")
+	external, _ := netip.ParseAddr("93.184.216.34")
 
 	s := Session{
 		connectionAdapter:   &sessionTestAdapter{},
@@ -37,11 +36,11 @@ func TestSessionAccessors(t *testing.T) {
 		externalIP:          external,
 	}
 
-	if got := s.InternalIP(); !bytes.Equal(got[:], internal[:]) {
+	if got := s.InternalIP(); got != internal {
 		t.Errorf("InternalIP() = %v, want %v", got, internal)
 	}
 
-	if got := s.ExternalIP(); !bytes.Equal(got[:], external[:]) {
+	if got := s.ExternalIP(); got != external {
 		t.Errorf("ExternalIP() = %v, want %v", got, external)
 	}
 }

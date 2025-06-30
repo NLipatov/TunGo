@@ -65,18 +65,21 @@ type testMgr struct {
 	err  error
 }
 
-func (m *testMgr) Add(Session)                              {}
-func (m *testMgr) Delete(Session)                           {}
-func (m *testMgr) GetByInternalIP([4]byte) (Session, error) { return m.sess, m.err }
-func (m *testMgr) GetByExternalIP([4]byte) (Session, error) { return m.sess, m.err }
+func (m *testMgr) Add(Session)                                   {}
+func (m *testMgr) Delete(Session)                                {}
+func (m *testMgr) GetByInternalIP(_ netip.Addr) (Session, error) { return m.sess, m.err }
+func (m *testMgr) GetByExternalIP(_ netip.Addr) (Session, error) { return m.sess, m.err }
 
 func makeSession(a *testAdapter, c *testCrypto) Session {
+	in, _ := netip.ParseAddr("10.0.0.1")
+	ex, _ := netip.ParseAddr("1.1.1.1")
+
 	return Session{
 		connectionAdapter:   a,
 		remoteAddrPort:      netip.AddrPort{},
 		CryptographyService: c,
-		internalIP:          [4]byte{10, 0, 0, 1},
-		externalIP:          [4]byte{1, 1, 1, 1},
+		internalIP:          in,
+		externalIP:          ex,
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 	"io"
 	"log"
+	"net/netip"
 	"os"
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
@@ -77,7 +78,14 @@ func (t *TunHandler) HandleTun() error {
 				continue
 			}
 
-			clientSession, getErr := t.sessionManager.GetByInternalIP(destinationAddressBytes)
+			destAddr, destAddrOk := netip.AddrFromSlice(destinationAddressBytes[:])
+			if !destAddrOk {
+				log.Printf(
+					"packet dropped: failed to parse destination address bytes: %v", destinationAddressBytes[:])
+				continue
+			}
+
+			clientSession, getErr := t.sessionManager.GetByInternalIP(destAddr)
 			if getErr != nil {
 				log.Printf("packet dropped: %s, destination host: %v", getErr, destinationAddressBytes)
 				continue
