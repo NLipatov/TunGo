@@ -75,7 +75,7 @@ func (m *TransportHandlerMockSessionMgr) Delete(_ Session) { m.deleted = true }
 func (m *TransportHandlerMockSessionMgr) GetByInternalIP(_ netip.Addr) (Session, error) {
 	return Session{}, m.getErr
 }
-func (m *TransportHandlerMockSessionMgr) GetByExternalIP(_ netip.Addr) (Session, error) {
+func (m *TransportHandlerMockSessionMgr) GetByExternalIP(_ netip.AddrPort) (Session, error) {
 	return Session{}, nil
 }
 

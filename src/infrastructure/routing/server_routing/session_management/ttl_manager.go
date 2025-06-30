@@ -51,9 +51,9 @@ func (t *TTLManager[cs]) Delete(session cs) {
 	delete(t.expMap, session)
 	t.mu.Unlock()
 }
-func (t *TTLManager[cs]) GetByInternalIP(ip netip.Addr) (cs, error) {
+func (t *TTLManager[cs]) GetByInternalIP(addr netip.Addr) (cs, error) {
 	var zero cs
-	session, sessionErr := t.manager.GetByInternalIP(ip)
+	session, sessionErr := t.manager.GetByInternalIP(addr)
 	if sessionErr != nil {
 		return zero, sessionErr
 	}
@@ -64,9 +64,9 @@ func (t *TTLManager[cs]) GetByInternalIP(ip netip.Addr) (cs, error) {
 
 	return session, nil
 }
-func (t *TTLManager[cs]) GetByExternalIP(ip netip.Addr) (cs, error) {
+func (t *TTLManager[cs]) GetByExternalIP(addrPort netip.AddrPort) (cs, error) {
 	var zero cs
-	session, sessionErr := t.manager.GetByExternalIP(ip)
+	session, sessionErr := t.manager.GetByExternalIP(addrPort)
 	if sessionErr != nil {
 		return zero, sessionErr
 	}

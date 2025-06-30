@@ -66,14 +66,14 @@ type mockMgr struct {
 	deleted int32
 }
 
-func (m *mockMgr) Add(Session)                                   {}
-func (m *mockMgr) Delete(Session)                                { atomic.AddInt32(&m.deleted, 1) }
-func (m *mockMgr) GetByInternalIP(_ netip.Addr) (Session, error) { return m.sess, m.getErr }
-func (m *mockMgr) GetByExternalIP(_ netip.Addr) (Session, error) { return m.sess, nil }
+func (m *mockMgr) Add(Session)                                       {}
+func (m *mockMgr) Delete(Session)                                    { atomic.AddInt32(&m.deleted, 1) }
+func (m *mockMgr) GetByInternalIP(_ netip.Addr) (Session, error)     { return m.sess, m.getErr }
+func (m *mockMgr) GetByExternalIP(_ netip.AddrPort) (Session, error) { return m.sess, nil }
 
 func makeSession(c *mockConn, crypto *mockCrypto) Session {
 	in, _ := netip.ParseAddr("1.1.1.1")
-	ex, _ := netip.ParseAddr("2.2.2.2")
+	ex, _ := netip.ParseAddrPort("2.2.2.2:9000")
 	return Session{
 		conn:                c,
 		CryptographyService: crypto,

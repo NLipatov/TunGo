@@ -7,11 +7,12 @@ import (
 )
 
 type fakeSession struct {
-	internal, external netip.Addr
+	internal netip.Addr
+	external netip.AddrPort
 }
 
-func (f *fakeSession) InternalIP() netip.Addr { return f.internal }
-func (f *fakeSession) ExternalIP() netip.Addr { return f.external }
+func (f *fakeSession) InternalIP() netip.Addr     { return f.internal }
+func (f *fakeSession) ExternalIP() netip.AddrPort { return f.external }
 
 func TestDefaultWorkerSessionManager(t *testing.T) {
 	sm := NewDefaultWorkerSessionManager[*fakeSession]()
@@ -25,7 +26,7 @@ func TestDefaultWorkerSessionManager(t *testing.T) {
 
 	t.Run("AddAndGetInternal", func(t *testing.T) {
 		internal, _ := netip.ParseAddr("1.2.3.4")
-		external, _ := netip.ParseAddr("5.6.7.8")
+		external, _ := netip.ParseAddrPort("5.6.7.8:9000")
 		s := &fakeSession{internal: internal, external: external}
 		sm.Add(s)
 		got, err := sm.GetByInternalIP(s.internal)
@@ -39,7 +40,7 @@ func TestDefaultWorkerSessionManager(t *testing.T) {
 
 	t.Run("AddAndGetExternal", func(t *testing.T) {
 		internal, _ := netip.ParseAddr("9.9.9.9")
-		external, _ := netip.ParseAddr("10.10.10.10")
+		external, _ := netip.ParseAddrPort("10.10.10.10:9000")
 		s := &fakeSession{internal: internal, external: external}
 		sm.Add(s)
 		got, err := sm.GetByExternalIP(s.external)
@@ -53,7 +54,7 @@ func TestDefaultWorkerSessionManager(t *testing.T) {
 
 	t.Run("DeleteRemoves", func(t *testing.T) {
 		internal, _ := netip.ParseAddr("11.11.11.11")
-		external, _ := netip.ParseAddr("12.12.12.12")
+		external, _ := netip.ParseAddrPort("12.12.12.12:9000")
 		s := &fakeSession{internal: internal, external: external}
 		sm.Add(s)
 		sm.Delete(s)

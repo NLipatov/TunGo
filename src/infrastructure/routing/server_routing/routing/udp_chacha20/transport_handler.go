@@ -77,7 +77,7 @@ func (t *TransportHandler) HandleTransport() error {
 				continue
 			}
 
-			clientSession, getErr := t.sessionManager.GetByExternalIP(clientAddr.Addr())
+			clientSession, getErr := t.sessionManager.GetByExternalIP(clientAddr)
 			if getErr != nil || clientSession.remoteAddrPort.Port() != clientAddr.Port() {
 				// Pass initial data to registration function
 				regErr := t.registerClient(conn, clientAddr, dataBuf[:n])
@@ -143,7 +143,7 @@ func (t *TransportHandler) registerClient(conn *net.UDPConn, clientAddr netip.Ad
 		remoteAddrPort:      clientAddr,
 		CryptographyService: cryptoSession,
 		internalIP:          intIp,
-		externalIP:          clientAddr.Addr(),
+		externalIP:          clientAddr,
 	})
 
 	t.logger.Printf("%v registered as: %v", clientAddr.Addr(), internalIP)

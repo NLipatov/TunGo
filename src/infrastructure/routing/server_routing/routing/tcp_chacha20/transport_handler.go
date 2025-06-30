@@ -91,6 +91,7 @@ func (t *TransportHandler) registerClient(conn net.Conn, tunFile io.ReadWriteClo
 	if cryptographyServiceErr != nil {
 		_ = conn.Close()
 		t.Logger.Printf("connection closed: %s (regfail: %s)\n", conn.RemoteAddr(), cryptographyServiceErr)
+		return
 	}
 
 	tcpConn := conn.(*net.TCPConn)
@@ -101,24 +102,19 @@ func (t *TransportHandler) registerClient(conn net.Conn, tunFile io.ReadWriteClo
 		return
 	}
 
-	extIP, extIpOk := netip.AddrFromSlice(addr.IP)
-	if !extIpOk {
-		_ = tcpConn.Close()
-		return
-	}
-
 	// Prevent IP spoofing
 	_, getErr := t.sessionManager.GetByInternalIP(intIP)
 	if !errors.Is(getErr, session_management.ErrSessionNotFound) {
 		t.Logger.Printf("connection closed: %s (internal internalIP %s already in use)\n", conn.RemoteAddr(), internalIP)
 		_ = conn.Close()
+		return
 	}
 
 	storedSession := Session{
 		conn:                conn,
 		CryptographyService: cryptographyService,
 		internalIP:          intIP,
-		externalIP:          extIP,
+		externalIP:          addr.AddrPort(),
 	}
 
 	t.sessionManager.Add(storedSession)

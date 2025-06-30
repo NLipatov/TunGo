@@ -25,7 +25,7 @@ func (d *sessionTestCrypto) Decrypt(b []byte) ([]byte, error) { return b, nil }
 
 func TestSessionAccessors(t *testing.T) {
 	internal, _ := netip.ParseAddr("10.0.1.3")
-	external, _ := netip.ParseAddr("93.184.216.34")
+	external, _ := netip.ParseAddrPort("93.184.216.34:9000")
 
 	s := Session{
 		conn:                &sessionTestConn{},

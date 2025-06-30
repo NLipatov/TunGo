@@ -47,7 +47,7 @@ type mockMgr struct {
 func (m *mockMgr) Add(Session)                                   {}
 func (m *mockMgr) Delete(Session)                                {}
 func (m *mockMgr) GetByInternalIP(_ netip.Addr) (Session, error) { return Session{}, nil }
-func (m *mockMgr) GetByExternalIP(_ netip.Addr) (Session, error) {
+func (m *mockMgr) GetByExternalIP(_ netip.AddrPort) (Session, error) {
 	return Session{}, errors.New("not found")
 }
 

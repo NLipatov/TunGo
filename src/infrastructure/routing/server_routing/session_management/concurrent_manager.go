@@ -28,14 +28,14 @@ func (c *ConcurrentManager[cs]) Delete(session cs) {
 	c.manager.Delete(session)
 }
 
-func (c *ConcurrentManager[cs]) GetByInternalIP(ip netip.Addr) (cs, error) {
+func (c *ConcurrentManager[cs]) GetByInternalIP(addr netip.Addr) (cs, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.manager.GetByInternalIP(ip)
+	return c.manager.GetByInternalIP(addr)
 }
 
-func (c *ConcurrentManager[cs]) GetByExternalIP(ip netip.Addr) (cs, error) {
+func (c *ConcurrentManager[cs]) GetByExternalIP(addrPort netip.AddrPort) (cs, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.manager.GetByExternalIP(ip)
+	return c.manager.GetByExternalIP(addrPort)
 }

@@ -8,13 +8,13 @@ import (
 
 type sessionManagerFactoryDummySession struct {
 	internalIP netip.Addr
-	externalIP netip.Addr
+	externalIP netip.AddrPort
 }
 
 func (d sessionManagerFactoryDummySession) InternalIP() netip.Addr {
 	return d.internalIP
 }
-func (d sessionManagerFactoryDummySession) ExternalIP() netip.Addr {
+func (d sessionManagerFactoryDummySession) ExternalIP() netip.AddrPort {
 	return d.externalIP
 }
 
@@ -23,7 +23,7 @@ func TestSessionManagerFactory_CreateManager(t *testing.T) {
 	mgr := f.createManager()
 
 	in, _ := netip.ParseAddr("10.0.0.1")
-	ex, _ := netip.ParseAddr("1.2.3,4")
+	ex, _ := netip.ParseAddrPort("1.2.3.4:9000")
 
 	sess := sessionManagerFactoryDummySession{
 		internalIP: in,
@@ -58,7 +58,7 @@ func TestSessionManagerFactory_CreateConcurrentManager(t *testing.T) {
 	cmgr := f.createConcurrentManager()
 
 	in, _ := netip.ParseAddr("172.16.0.2")
-	ex, _ := netip.ParseAddr("8.8.8.8")
+	ex, _ := netip.ParseAddrPort("8.8.8.8:9000")
 
 	sess := sessionManagerFactoryDummySession{
 		internalIP: in,

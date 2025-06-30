@@ -7,11 +7,12 @@ import (
 )
 
 type concurrentManagerMockSession struct {
-	ext, in netip.Addr
+	ext netip.AddrPort
+	in  netip.Addr
 }
 
-func (s concurrentManagerMockSession) ExternalIP() netip.Addr { return s.ext }
-func (s concurrentManagerMockSession) InternalIP() netip.Addr { return s.in }
+func (s concurrentManagerMockSession) ExternalIP() netip.AddrPort { return s.ext }
+func (s concurrentManagerMockSession) InternalIP() netip.Addr     { return s.in }
 
 type concurrentManagerMockManager struct {
 	add, del, getInt, getExt int
@@ -32,9 +33,9 @@ func (m *concurrentManagerMockManager) GetByInternalIP(b netip.Addr) (concurrent
 	m.lastIP = b
 	return m.lastSession, nil
 }
-func (m *concurrentManagerMockManager) GetByExternalIP(b netip.Addr) (concurrentManagerMockSession, error) {
+func (m *concurrentManagerMockManager) GetByExternalIP(b netip.AddrPort) (concurrentManagerMockSession, error) {
 	m.getExt++
-	m.lastIP = b
+	m.lastIP = b.Addr()
 	return m.lastSession, nil
 }
 
@@ -43,19 +44,20 @@ func TestConcurrentManager_Delegation(t *testing.T) {
 	cm := NewConcurrentManager[concurrentManagerMockSession](base)
 
 	in, _ := netip.ParseAddr("1.1.1.1")
-	ex, _ := netip.ParseAddr("2.2.2.2")
+	ex, _ := netip.ParseAddrPort("2.2.2.2:9000")
 	s := concurrentManagerMockSession{ext: ex, in: in}
-	ip, _ := netip.ParseAddr("3.3.3.3")
+	addr, _ := netip.ParseAddr("3.3.3.3")
+	addrPort, _ := netip.ParseAddrPort("3.3.3.3:9000")
 
 	cm.Add(s)
 	cm.Delete(s)
-	_, _ = cm.GetByInternalIP(ip)
-	_, _ = cm.GetByExternalIP(ip)
+	_, _ = cm.GetByExternalIP(addrPort)
+	_, _ = cm.GetByInternalIP(addr)
 
 	switch {
 	case base.add != 1, base.del != 1, base.getInt != 1, base.getExt != 1:
 		t.Fatalf("not all methods delegated: %+v", base)
-	case (base.lastSession.in) != s.in, base.lastIP != ip:
+	case (base.lastSession.in) != s.in, base.lastIP != addr:
 		t.Fatalf("wrong args forwarded")
 	}
 }
@@ -63,8 +65,8 @@ func TestConcurrentManager_Delegation(t *testing.T) {
 func TestConcurrentManager_Parallel_NoRace(t *testing.T) {
 	base := &concurrentManagerMockManager{}
 	cm := NewConcurrentManager[concurrentManagerMockSession](base)
-	ex, _ := netip.ParseAddr("9.9.9.9")
 	in, _ := netip.ParseAddr("8.8.8.8")
+	ex, _ := netip.ParseAddrPort("9.9.9.9:9000")
 	s := concurrentManagerMockSession{ext: ex, in: in}
 
 	const readers = 50
