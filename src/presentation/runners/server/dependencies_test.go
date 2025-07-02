@@ -26,7 +26,7 @@ func (d *dummyKeyMgr) PrepareKeys() error {
 
 type dummySessionLifetimeMgr struct{ called bool }
 
-func (d dummySessionLifetimeMgr) PrepareSessionLifetime() error {
+func (d *dummySessionLifetimeMgr) PrepareSessionLifetime() error {
 	d.called = true
 	return nil
 }
@@ -77,5 +77,17 @@ func TestNewDependenciesAndAccessors(t *testing.T) {
 	}
 	if !km.called {
 		t.Error("KeyManager().PrepareKeys() was not invoked on underlying manager")
+	}
+
+	gotSm := deps.SessionLifetimeManager()
+	if gotSm != sm {
+		t.Errorf("SessionLifetimeManager() = %v; want %v", gotSm, sm)
+	}
+
+	if err := deps.SessionLifetimeManager().PrepareSessionLifetime(); err != nil {
+		t.Errorf("SessionLifetimeManager().PrepareSessionLifetime() returned error: %v", err)
+	}
+	if !sm.called {
+		t.Error("SessionLifetimeManager().PrepareSessionLifetime() was not invoked on underlying manager")
 	}
 }
