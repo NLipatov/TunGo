@@ -168,3 +168,61 @@ func TestManualDelete(t *testing.T) {
 		t.Errorf("expected no additional deletes after sanitize, got %d total", again)
 	}
 }
+
+func TestSanitizeStopsOnContextCancel(t *testing.T) {
+	fake := NewFakeManager()
+	ctx, cancel := context.WithCancel(context.Background())
+	mIface := NewTTLManager[TestSession](ctx, fake, 10*time.Millisecond, 5*time.Millisecond)
+
+	// Assert interface to concrete type
+	_, ok := mIface.(*TTLManager[TestSession])
+	if !ok {
+		t.Fatal("failed to cast WorkerSessionManager to *TTLManager")
+	}
+
+	cancel() // cancel context
+
+	// Wait a bit for goroutine to finish
+	time.Sleep(10 * time.Millisecond)
+
+	// No explicit asserts here, just checking no panic or deadlock
+}
+
+func TestSanitizeWithExpiration(t *testing.T) {
+	fake := NewFakeManager()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	mIface := NewTTLManager[TestSession](ctx, fake, 10*time.Millisecond, 5*time.Millisecond)
+
+	m, ok := mIface.(*TTLManager[TestSession])
+	if !ok {
+		t.Fatal("failed to cast WorkerSessionManager to *TTLManager")
+	}
+
+	in, _ := netip.ParseAddr("1.1.1.1")
+	ex, _ := netip.ParseAddrPort("2.2.2.2:9000")
+	s := TestSession{internal: in, external: ex}
+	m.Add(s)
+
+	m.mu.Lock()
+	m.expMap[s] = time.Now().Add(-time.Millisecond)
+	m.mu.Unlock()
+
+	time.Sleep(20 * time.Millisecond)
+
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+
+	foundDeleted := false
+	for _, d := range fake.deleted {
+		if d == s {
+			foundDeleted = true
+			break
+		}
+	}
+
+	if !foundDeleted {
+		t.Errorf("expected session to be deleted by sanitize after expiration")
+	}
+}
