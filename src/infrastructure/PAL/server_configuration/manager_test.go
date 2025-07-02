@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
+	"tungo/infrastructure/settings"
 )
 
 // managerTestMockErrorResolver returns an error from resolve().
@@ -181,5 +183,70 @@ func TestInjectEdKeysConfigError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "failed to read configuration") {
 		t.Errorf("expected error to mention 'failed to read configuration', got %v", err)
+	}
+}
+func TestInjectSessionTtlIntervals_Success(t *testing.T) {
+	path := createTestConfigPath(t)
+	manager := NewManager(managerTestValidResolver{path: path})
+
+	_, err := manager.Configuration()
+	if err != nil {
+		t.Fatalf("Configuration() error: %v", err)
+	}
+
+	newTTL := settings.HumanReadableDuration(30 * time.Minute)
+	newCleanup := settings.HumanReadableDuration(15 * time.Minute)
+
+	err = manager.InjectSessionTtlIntervals(newTTL, newCleanup)
+	if err != nil {
+		t.Fatalf("InjectSessionTtlIntervals() error: %v", err)
+	}
+
+	conf, err := manager.Configuration()
+	if err != nil {
+		t.Fatalf("Configuration() error after inject: %v", err)
+	}
+
+	if conf.TCPSettings.SessionLifetime.Ttl != newTTL {
+		t.Errorf("expected TCP TTL %v, got %v", newTTL, conf.TCPSettings.SessionLifetime.Ttl)
+	}
+	if conf.TCPSettings.SessionLifetime.CleanupInterval != newCleanup {
+		t.Errorf("expected TCP CleanupInterval %v, got %v", newCleanup, conf.TCPSettings.SessionLifetime.CleanupInterval)
+	}
+	if conf.UDPSettings.SessionLifetime.Ttl != newTTL {
+		t.Errorf("expected UDP TTL %v, got %v", newTTL, conf.UDPSettings.SessionLifetime.Ttl)
+	}
+	if conf.UDPSettings.SessionLifetime.CleanupInterval != newCleanup {
+		t.Errorf("expected UDP CleanupInterval %v, got %v", newCleanup, conf.UDPSettings.SessionLifetime.CleanupInterval)
+	}
+}
+
+func TestInjectSessionTtlIntervals_ConfigurationError(t *testing.T) {
+	manager := NewManager(managerTestMockErrorResolver{})
+
+	err := manager.InjectSessionTtlIntervals(
+		settings.HumanReadableDuration(10*time.Minute),
+		settings.HumanReadableDuration(5*time.Minute),
+	)
+	if err == nil {
+		t.Fatal("expected error due to configuration resolution failure, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to read configuration") {
+		t.Errorf("expected error mentioning 'failed to read configuration', got %v", err)
+	}
+}
+
+func TestInjectSessionTtlIntervals_WriteError(t *testing.T) {
+	manager := NewManager(managerTestMockBadPathResolver{})
+
+	err := manager.InjectSessionTtlIntervals(
+		settings.HumanReadableDuration(10*time.Minute),
+		settings.HumanReadableDuration(5*time.Minute),
+	)
+	if err == nil {
+		t.Fatal("expected error due to write failure, got nil")
+	}
+	if !strings.Contains(err.Error(), "could not write default configuration") {
+		t.Errorf("expected error mentioning 'could not write default configuration', got %v", err)
 	}
 }
