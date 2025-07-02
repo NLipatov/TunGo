@@ -7,11 +7,6 @@ import (
 	"time"
 )
 
-const (
-	defaultSessionTTL       = 12 * time.Hour
-	defaultSanitizeInterval = 6 * time.Hour
-)
-
 type TTLManager[cs interface {
 	ClientSession
 	comparable
@@ -31,14 +26,6 @@ func NewTTLManager[cs interface {
 	manager WorkerSessionManager[cs],
 	expDuration, sanitizeInterval time.Duration,
 ) WorkerSessionManager[cs] {
-	if expDuration <= 0 {
-		expDuration = defaultSessionTTL
-	}
-
-	if sanitizeInterval <= 0 {
-		sanitizeInterval = defaultSanitizeInterval
-	}
-
 	tm := &TTLManager[cs]{
 		ctx:              ctx,
 		manager:          manager,

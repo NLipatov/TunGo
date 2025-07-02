@@ -7,8 +7,8 @@ import (
 )
 
 const (
-	defaultTtl      = time.Hour * 12
-	defaultInterval = time.Minute * 6
+	DefaultSessionTtl             = settings.HumanReadableDuration(time.Hour * 12)
+	DefaultSessionCleanupInterval = settings.HumanReadableDuration(time.Hour * 6)
 )
 
 type Configuration struct {
@@ -35,8 +35,8 @@ func NewDefaultConfiguration() *Configuration {
 			Encryption:       settings.ChaCha20Poly1305,
 			DialTimeoutMs:    5000,
 			SessionLifetime: settings.SessionLifetime{
-				Ttl:             defaultTtl,
-				CleanupInterval: defaultInterval,
+				Ttl:             DefaultSessionTtl,
+				CleanupInterval: DefaultSessionCleanupInterval,
 			},
 		},
 		UDPSettings: settings.Settings{
@@ -50,8 +50,8 @@ func NewDefaultConfiguration() *Configuration {
 			Encryption:       settings.ChaCha20Poly1305,
 			DialTimeoutMs:    5000,
 			SessionLifetime: settings.SessionLifetime{
-				Ttl:             defaultTtl,
-				CleanupInterval: defaultInterval,
+				Ttl:             DefaultSessionTtl,
+				CleanupInterval: DefaultSessionCleanupInterval,
 			},
 		},
 		FallbackServerAddress: "",

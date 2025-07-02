@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network"
@@ -67,8 +68,8 @@ func (s *ServerWorkerFactory) createTCPWorker(ctx context.Context, tun io.ReadWr
 	ttlConcurrentSessionManager := session_management.
 		NewTTLManager(
 			ctx, concurrentSessionManager,
-			s.settings.SessionLifetime.Ttl,
-			s.settings.SessionLifetime.CleanupInterval,
+			time.Duration(s.settings.SessionLifetime.Ttl),
+			time.Duration(s.settings.SessionLifetime.CleanupInterval),
 		)
 
 	th := tcp_chacha20.NewTunHandler(
@@ -108,8 +109,8 @@ func (s *ServerWorkerFactory) createUDPWorker(ctx context.Context, tun io.ReadWr
 	ttlConcurrentSessionManager := session_management.
 		NewTTLManager(
 			ctx, concurrentSessionManager,
-			s.settings.SessionLifetime.Ttl,
-			s.settings.SessionLifetime.CleanupInterval,
+			time.Duration(s.settings.SessionLifetime.Ttl),
+			time.Duration(s.settings.SessionLifetime.CleanupInterval),
 		)
 
 	th := udp_chacha20.NewTunHandler(

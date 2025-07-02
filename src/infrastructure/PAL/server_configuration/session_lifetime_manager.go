@@ -24,7 +24,7 @@ func (d *DefaultSessionLifetimeManager) PrepareSessionLifetime() error {
 		return nil
 	}
 
-	return d.manager.InjectSessionTtlIntervals(defaultTtl, defaultInterval)
+	return d.manager.InjectSessionTtlIntervals(DefaultSessionTtl, DefaultSessionCleanupInterval)
 }
 
 func (d *DefaultSessionLifetimeManager) hasValidSessionLifetime() bool {

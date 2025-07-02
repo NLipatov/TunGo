@@ -5,12 +5,17 @@ import (
 	"encoding/base64"
 	"os"
 	"testing"
+	"tungo/infrastructure/settings"
 )
 
 type fakeStore struct {
 	injectCalls int
 	lastPub     ed25519.PublicKey
 	lastPriv    ed25519.PrivateKey
+}
+
+func (f *fakeStore) InjectSessionTtlIntervals(_, _ settings.HumanReadableDuration) error {
+	panic("not implemented")
 }
 
 func (f *fakeStore) Configuration() (*Configuration, error) {

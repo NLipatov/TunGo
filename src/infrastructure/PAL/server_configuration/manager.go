@@ -4,15 +4,15 @@ import (
 	"crypto/ed25519"
 	"fmt"
 	"os"
-	"time"
 	"tungo/infrastructure/PAL/client_configuration"
+	"tungo/infrastructure/settings"
 )
 
 type ServerConfigurationManager interface {
 	Configuration() (*Configuration, error)
 	IncrementClientCounter() error
 	InjectEdKeys(public ed25519.PublicKey, private ed25519.PrivateKey) error
-	InjectSessionTtlIntervals(ttl, interval time.Duration) error
+	InjectSessionTtlIntervals(ttl, interval settings.HumanReadableDuration) error
 }
 
 type Manager struct {
@@ -68,7 +68,7 @@ func (c *Manager) InjectEdKeys(public ed25519.PublicKey, private ed25519.Private
 	return w.Write(*configuration)
 }
 
-func (c *Manager) InjectSessionTtlIntervals(ttl, interval time.Duration) error {
+func (c *Manager) InjectSessionTtlIntervals(ttl, interval settings.HumanReadableDuration) error {
 	configuration, configurationErr := c.Configuration()
 	if configurationErr != nil {
 		return configurationErr
