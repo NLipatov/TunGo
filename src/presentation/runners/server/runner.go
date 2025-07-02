@@ -25,6 +25,11 @@ func (r *Runner) Run(ctx context.Context) {
 		log.Fatalf("failed to generate ed25519 keys: %s", err)
 	}
 
+	prepareSessionLifetimeErr := r.deps.SessionLifetimeManager().PrepareSessionLifetime()
+	if prepareSessionLifetimeErr != nil {
+		log.Fatalf("failed to generate session lifetime: %s", prepareSessionLifetimeErr)
+	}
+
 	var wg sync.WaitGroup
 	if r.deps.Configuration().EnableTCP {
 		wg.Add(1)

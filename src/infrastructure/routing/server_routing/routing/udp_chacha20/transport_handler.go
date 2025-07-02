@@ -61,7 +61,6 @@ func (t *TransportHandler) HandleTransport() error {
 
 	dataBuf := make([]byte, network.MaxPacketLengthBytes+12)
 	oobBuf := make([]byte, 1024)
-	destinationAddressBuf := [4]byte{}
 
 	for {
 		select {
@@ -78,8 +77,7 @@ func (t *TransportHandler) HandleTransport() error {
 				continue
 			}
 
-			destinationAddressBuf = clientAddr.Addr().Unmap().As4()
-			clientSession, getErr := t.sessionManager.GetByExternalIP(destinationAddressBuf[:])
+			clientSession, getErr := t.sessionManager.GetByExternalIP(clientAddr)
 			if getErr != nil || clientSession.remoteAddrPort.Port() != clientAddr.Port() {
 				// Pass initial data to registration function
 				regErr := t.registerClient(conn, clientAddr, dataBuf[:n])
@@ -132,9 +130,9 @@ func (t *TransportHandler) registerClient(conn *net.UDPConn, clientAddr netip.Ad
 		return cryptoSessionErr
 	}
 
-	remoteAddr, remoteParseErr := netip.ParseAddrPort(clientAddr.String())
-	if remoteParseErr != nil {
-		return fmt.Errorf("invalid client address: %v", clientAddr)
+	intIp, intIpOk := netip.AddrFromSlice(internalIP)
+	if !intIpOk {
+		return fmt.Errorf("failed to parse internal IP: %v", internalIP)
 	}
 
 	t.sessionManager.Add(Session{
@@ -142,31 +140,13 @@ func (t *TransportHandler) registerClient(conn *net.UDPConn, clientAddr netip.Ad
 			UdpConn:  conn,
 			AddrPort: clientAddr,
 		},
-		remoteAddrPort:      remoteAddr,
+		remoteAddrPort:      clientAddr,
 		CryptographyService: cryptoSession,
-		internalIP:          t.extractIPv4(internalIP),
-		externalIP:          t.extractIPv4(clientAddr.Addr().Unmap().AsSlice()),
+		internalIP:          intIp,
+		externalIP:          clientAddr,
 	})
 
-	t.logger.Printf("%v registered as: %v", clientAddr.Addr().As4(), internalIP)
+	t.logger.Printf("%v registered as: %v", clientAddr.Addr(), internalIP)
 
 	return nil
-}
-
-func (t *TransportHandler) extractIPv4(ip net.IP) []byte {
-	if len(ip) == 16 && t.isIPv4Mapped(ip) {
-		return ip[12:16]
-	}
-	if len(ip) == 4 {
-		return ip
-	}
-	return nil
-}
-
-func (t *TransportHandler) isIPv4Mapped(ip net.IP) bool {
-	// check for ::ffff:0:0/96 prefix
-	return ip[0] == 0 && ip[1] == 0 && ip[2] == 0 &&
-		ip[3] == 0 && ip[4] == 0 && ip[5] == 0 &&
-		ip[6] == 0 && ip[7] == 0 && ip[8] == 0 &&
-		ip[9] == 0 && ip[10] == 0xff && ip[11] == 0xff
 }

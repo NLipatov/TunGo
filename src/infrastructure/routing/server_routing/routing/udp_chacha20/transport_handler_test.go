@@ -44,10 +44,12 @@ func (l *mockLogger) Printf(f string, v ...any) { l.logs = append(l.logs, fmt.Sp
 type mockMgr struct {
 }
 
-func (m *mockMgr) Add(Session)                             {}
-func (m *mockMgr) Delete(Session)                          {}
-func (m *mockMgr) GetByInternalIP([]byte) (Session, error) { return Session{}, nil }
-func (m *mockMgr) GetByExternalIP([]byte) (Session, error) { return Session{}, errors.New("not found") }
+func (m *mockMgr) Add(Session)                                   {}
+func (m *mockMgr) Delete(Session)                                {}
+func (m *mockMgr) GetByInternalIP(_ netip.Addr) (Session, error) { return Session{}, nil }
+func (m *mockMgr) GetByExternalIP(_ netip.AddrPort) (Session, error) {
+	return Session{}, errors.New("not found")
+}
 
 /* ---------- tests ---------- */
 
@@ -81,23 +83,5 @@ func TestTransportHandler_HandleTransport_ReadError(t *testing.T) {
 
 	if len(lg.logs) == 0 || lg.logs[0] != "server listening on port 4242 (UDP)" {
 		t.Fatalf("unexpected logs: %v", lg.logs)
-	}
-}
-
-/* ---------- pure helpers ---------- */
-
-func TestTransportHandler_extractIPv4_and_isIPv4Mapped(t *testing.T) {
-	h := &TransportHandler{}
-	ipv6map := net.ParseIP("::ffff:192.168.0.1")
-	want := []byte{192, 168, 0, 1}
-	got := h.extractIPv4(ipv6map)
-	if len(got) != 4 || got[0] != want[0] {
-		t.Fatalf("extractIPv4(%v) = %v, want %v", ipv6map, got, want)
-	}
-	if !h.isIPv4Mapped(ipv6map) {
-		t.Fatalf("isIPv4Mapped(%v) = false, want true", ipv6map)
-	}
-	if h.isIPv4Mapped(net.ParseIP("2001:db8::1")) {
-		t.Fatalf("isIPv4Mapped() falsely detected arbitrary IPv6 as IPv4-mapped")
 	}
 }

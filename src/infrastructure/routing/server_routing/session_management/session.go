@@ -1,6 +1,8 @@
 package session_management
 
+import "net/netip"
+
 type ClientSession interface {
-	ExternalIP() []byte
-	InternalIP() []byte
+	ExternalIP() netip.AddrPort
+	InternalIP() netip.Addr
 }

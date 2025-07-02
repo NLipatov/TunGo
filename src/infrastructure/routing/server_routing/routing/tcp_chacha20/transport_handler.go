@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"net/netip"
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/handshake"
@@ -90,25 +91,30 @@ func (t *TransportHandler) registerClient(conn net.Conn, tunFile io.ReadWriteClo
 	if cryptographyServiceErr != nil {
 		_ = conn.Close()
 		t.Logger.Printf("connection closed: %s (regfail: %s)\n", conn.RemoteAddr(), cryptographyServiceErr)
+		return
 	}
 
 	tcpConn := conn.(*net.TCPConn)
 	addr := tcpConn.RemoteAddr().(*net.TCPAddr)
-	internalIP = internalIP.To4()
-	externalIP := addr.IP.To4()
+	intIP, intIPOk := netip.AddrFromSlice(internalIP)
+	if !intIPOk {
+		_ = tcpConn.Close()
+		return
+	}
 
 	// Prevent IP spoofing
-	_, getErr := t.sessionManager.GetByInternalIP(internalIP)
+	_, getErr := t.sessionManager.GetByInternalIP(intIP)
 	if !errors.Is(getErr, session_management.ErrSessionNotFound) {
 		t.Logger.Printf("connection closed: %s (internal internalIP %s already in use)\n", conn.RemoteAddr(), internalIP)
 		_ = conn.Close()
+		return
 	}
 
 	storedSession := Session{
 		conn:                conn,
 		CryptographyService: cryptographyService,
-		internalIP:          internalIP.To4(),
-		externalIP:          externalIP.To4(),
+		internalIP:          intIP,
+		externalIP:          addr.AddrPort(),
 	}
 
 	t.sessionManager.Add(storedSession)

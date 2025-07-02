@@ -9,5 +9,6 @@ type Settings struct {
 	MTU              int    `json:"MTU"`
 	Protocol         Protocol
 	Encryption       Encryption
-	DialTimeoutMs    int `json:"DialTimeoutMs"`
+	DialTimeoutMs    int             `json:"DialTimeoutMs"`
+	SessionLifetime  SessionLifetime `json:"SessionLifetime"`
 }

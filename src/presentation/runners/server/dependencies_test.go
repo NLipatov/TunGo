@@ -24,6 +24,13 @@ func (d *dummyKeyMgr) PrepareKeys() error {
 	return nil
 }
 
+type dummySessionLifetimeMgr struct{ called bool }
+
+func (d *dummySessionLifetimeMgr) PrepareSessionLifetime() error {
+	d.called = true
+	return nil
+}
+
 func TestNewDependenciesAndAccessors(t *testing.T) {
 	cfg := server_configuration.Configuration{
 		EnableTCP: true,
@@ -37,8 +44,9 @@ func TestNewDependenciesAndAccessors(t *testing.T) {
 	}
 	tm := &dummyTunMgr{}
 	km := &dummyKeyMgr{}
+	sm := &dummySessionLifetimeMgr{}
 
-	deps := NewDependencies(tm, cfg, km)
+	deps := NewDependencies(tm, cfg, km, sm)
 
 	gotCfg := deps.Configuration()
 	if gotCfg.EnableTCP != cfg.EnableTCP {
@@ -69,5 +77,17 @@ func TestNewDependenciesAndAccessors(t *testing.T) {
 	}
 	if !km.called {
 		t.Error("KeyManager().PrepareKeys() was not invoked on underlying manager")
+	}
+
+	gotSm := deps.SessionLifetimeManager()
+	if gotSm != sm {
+		t.Errorf("SessionLifetimeManager() = %v; want %v", gotSm, sm)
+	}
+
+	if err := deps.SessionLifetimeManager().PrepareSessionLifetime(); err != nil {
+		t.Errorf("SessionLifetimeManager().PrepareSessionLifetime() returned error: %v", err)
+	}
+	if !sm.called {
+		t.Error("SessionLifetimeManager().PrepareSessionLifetime() was not invoked on underlying manager")
 	}
 }

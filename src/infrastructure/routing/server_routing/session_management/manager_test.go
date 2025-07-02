@@ -2,36 +2,32 @@ package session_management
 
 import (
 	"errors"
+	"net/netip"
 	"testing"
 )
 
 type fakeSession struct {
-	internal, external []byte
+	internal netip.Addr
+	external netip.AddrPort
 }
 
-func (f *fakeSession) InternalIP() []byte { return f.internal }
-func (f *fakeSession) ExternalIP() []byte { return f.external }
+func (f *fakeSession) InternalIP() netip.Addr     { return f.internal }
+func (f *fakeSession) ExternalIP() netip.AddrPort { return f.external }
 
 func TestDefaultWorkerSessionManager(t *testing.T) {
 	sm := NewDefaultWorkerSessionManager[*fakeSession]()
 
 	t.Run("NotFoundBeforeAdd", func(t *testing.T) {
-		if _, err := sm.GetByInternalIP([]byte{1, 2, 3, 4}); !errors.Is(err, ErrSessionNotFound) {
+		addr, _ := netip.ParseAddr("1.2.3.4")
+		if _, err := sm.GetByInternalIP(addr); !errors.Is(err, ErrSessionNotFound) {
 			t.Fatalf("expected ErrSessionNotFound, got %v", err)
 		}
 	})
 
-	t.Run("InvalidKeyLength", func(t *testing.T) {
-		if _, err := sm.GetByInternalIP([]byte{1, 2, 3}); !errors.Is(err, ErrInvalidIPLength) {
-			t.Errorf("expected ErrInvalidIPLength for internal, got %v", err)
-		}
-		if _, err := sm.GetByExternalIP([]byte{1, 2, 3, 4, 5}); !errors.Is(err, ErrInvalidIPLength) {
-			t.Errorf("expected ErrInvalidIPLength for external, got %v", err)
-		}
-	})
-
 	t.Run("AddAndGetInternal", func(t *testing.T) {
-		s := &fakeSession{internal: []byte{1, 2, 3, 4}, external: []byte{5, 6, 7, 8}}
+		internal, _ := netip.ParseAddr("1.2.3.4")
+		external, _ := netip.ParseAddrPort("5.6.7.8:9000")
+		s := &fakeSession{internal: internal, external: external}
 		sm.Add(s)
 		got, err := sm.GetByInternalIP(s.internal)
 		if err != nil {
@@ -43,7 +39,9 @@ func TestDefaultWorkerSessionManager(t *testing.T) {
 	})
 
 	t.Run("AddAndGetExternal", func(t *testing.T) {
-		s := &fakeSession{internal: []byte{9, 9, 9, 9}, external: []byte{10, 10, 10, 10}}
+		internal, _ := netip.ParseAddr("9.9.9.9")
+		external, _ := netip.ParseAddrPort("10.10.10.10:9000")
+		s := &fakeSession{internal: internal, external: external}
 		sm.Add(s)
 		got, err := sm.GetByExternalIP(s.external)
 		if err != nil {
@@ -55,7 +53,9 @@ func TestDefaultWorkerSessionManager(t *testing.T) {
 	})
 
 	t.Run("DeleteRemoves", func(t *testing.T) {
-		s := &fakeSession{internal: []byte{11, 11, 11, 11}, external: []byte{12, 12, 12, 12}}
+		internal, _ := netip.ParseAddr("11.11.11.11")
+		external, _ := netip.ParseAddrPort("12.12.12.12:9000")
+		s := &fakeSession{internal: internal, external: external}
 		sm.Add(s)
 		sm.Delete(s)
 		if _, err := sm.GetByInternalIP(s.internal); !errors.Is(err, ErrSessionNotFound) {

@@ -2,7 +2,13 @@ package server_configuration
 
 import (
 	"crypto/ed25519"
+	"time"
 	"tungo/infrastructure/settings"
+)
+
+const (
+	DefaultSessionTtl             = settings.HumanReadableDuration(time.Hour * 12)
+	DefaultSessionCleanupInterval = settings.HumanReadableDuration(time.Hour * 6)
 )
 
 type Configuration struct {
@@ -28,6 +34,10 @@ func NewDefaultConfiguration() *Configuration {
 			Protocol:         settings.TCP,
 			Encryption:       settings.ChaCha20Poly1305,
 			DialTimeoutMs:    5000,
+			SessionLifetime: settings.SessionLifetime{
+				Ttl:             DefaultSessionTtl,
+				CleanupInterval: DefaultSessionCleanupInterval,
+			},
 		},
 		UDPSettings: settings.Settings{
 			InterfaceName:    "udptun0",
@@ -39,6 +49,10 @@ func NewDefaultConfiguration() *Configuration {
 			Protocol:         settings.UDP,
 			Encryption:       settings.ChaCha20Poly1305,
 			DialTimeoutMs:    5000,
+			SessionLifetime: settings.SessionLifetime{
+				Ttl:             DefaultSessionTtl,
+				CleanupInterval: DefaultSessionCleanupInterval,
+			},
 		},
 		FallbackServerAddress: "",
 		Ed25519PublicKey:      nil,

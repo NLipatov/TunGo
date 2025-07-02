@@ -1,8 +1,8 @@
 package tcp_chacha20
 
 import (
-	"bytes"
 	"net"
+	"net/netip"
 	"testing"
 	"time"
 )
@@ -24,8 +24,8 @@ func (d *sessionTestCrypto) Encrypt(b []byte) ([]byte, error) { return b, nil }
 func (d *sessionTestCrypto) Decrypt(b []byte) ([]byte, error) { return b, nil }
 
 func TestSessionAccessors(t *testing.T) {
-	internal := []byte{10, 0, 1, 3}
-	external := []byte{93, 184, 216, 34}
+	internal, _ := netip.ParseAddr("10.0.1.3")
+	external, _ := netip.ParseAddrPort("93.184.216.34:9000")
 
 	s := Session{
 		conn:                &sessionTestConn{},
@@ -34,10 +34,10 @@ func TestSessionAccessors(t *testing.T) {
 		externalIP:          external,
 	}
 
-	if got := s.InternalIP(); !bytes.Equal(got, internal) {
+	if got := s.InternalIP(); got != internal {
 		t.Errorf("InternalIP() = %v, want %v", got, internal)
 	}
-	if got := s.ExternalIP(); !bytes.Equal(got, external) {
+	if got := s.ExternalIP(); got != external {
 		t.Errorf("ExternalIP() = %v, want %v", got, external)
 	}
 }

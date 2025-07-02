@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"net/netip"
 	"sync"
 	"testing"
 	"tungo/infrastructure/settings"
@@ -71,10 +72,10 @@ type TransportHandlerMockSessionMgr struct {
 
 func (m *TransportHandlerMockSessionMgr) Add(_ Session)    { m.added = true }
 func (m *TransportHandlerMockSessionMgr) Delete(_ Session) { m.deleted = true }
-func (m *TransportHandlerMockSessionMgr) GetByInternalIP([]byte) (Session, error) {
+func (m *TransportHandlerMockSessionMgr) GetByInternalIP(_ netip.Addr) (Session, error) {
 	return Session{}, m.getErr
 }
-func (m *TransportHandlerMockSessionMgr) GetByExternalIP([]byte) (Session, error) {
+func (m *TransportHandlerMockSessionMgr) GetByExternalIP(_ netip.AddrPort) (Session, error) {
 	return Session{}, nil
 }
 
