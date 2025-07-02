@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"time"
-
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network"
@@ -13,12 +11,6 @@ import (
 	"tungo/infrastructure/routing/server_routing/routing/udp_chacha20"
 	"tungo/infrastructure/routing/server_routing/session_management"
 	"tungo/infrastructure/settings"
-)
-
-// ToDo: move those constants into more convenient place (like app configuration settings)
-const (
-	expTime          = time.Minute * 30
-	sanitizeInterval = time.Minute * 15
 )
 
 type ServerWorkerFactory struct {
@@ -73,7 +65,11 @@ func (s *ServerWorkerFactory) createTCPWorker(ctx context.Context, tun io.ReadWr
 	concurrentSessionManager := session_management.
 		NewConcurrentManager(sessionManager)
 	ttlConcurrentSessionManager := session_management.
-		NewTTLManager(ctx, concurrentSessionManager, expTime, sanitizeInterval)
+		NewTTLManager(
+			ctx, concurrentSessionManager,
+			s.settings.SessionLifetime.Ttl,
+			s.settings.SessionLifetime.CleanupInterval,
+		)
 
 	th := tcp_chacha20.NewTunHandler(
 		ctx,
@@ -110,7 +106,11 @@ func (s *ServerWorkerFactory) createUDPWorker(ctx context.Context, tun io.ReadWr
 	concurrentSessionManager := session_management.
 		NewConcurrentManager(sessionManager)
 	ttlConcurrentSessionManager := session_management.
-		NewTTLManager(ctx, concurrentSessionManager, expTime, sanitizeInterval)
+		NewTTLManager(
+			ctx, concurrentSessionManager,
+			s.settings.SessionLifetime.Ttl,
+			s.settings.SessionLifetime.CleanupInterval,
+		)
 
 	th := udp_chacha20.NewTunHandler(
 		ctx,

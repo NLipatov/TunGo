@@ -90,7 +90,12 @@ func startServer(appCtx context.Context) {
 		log.Fatal(confErr)
 	}
 
-	deps := server.NewDependencies(tunFactory, *conf, server_configuration.NewEd25519KeyManager(conf, configurationManager))
+	deps := server.NewDependencies(
+		tunFactory,
+		*conf,
+		server_configuration.NewEd25519KeyManager(conf, configurationManager),
+		server_configuration.NewDefaultSessionLifetimeManager(conf, configurationManager),
+	)
 
 	runner := server.NewRunner(deps)
 	runner.Run(appCtx)
