@@ -5,17 +5,18 @@ import (
 	"net/netip"
 	"sync"
 	"time"
+	"tungo/infrastructure/PAL/server_configuration"
 )
 
 type TTLManager[cs interface {
 	ClientSession
 	comparable
 }] struct {
-	ctx                           context.Context
-	manager                       WorkerSessionManager[cs]
-	mu                            sync.RWMutex
-	expMap                        map[cs]time.Time
-	expDuration, sanitizeInterval time.Duration
+	ctx                         context.Context
+	manager                     WorkerSessionManager[cs]
+	mu                          sync.RWMutex
+	expMap                      map[cs]time.Time
+	sessionTtl, cleanupInterval time.Duration
 }
 
 func NewTTLManager[cs interface {
@@ -27,11 +28,11 @@ func NewTTLManager[cs interface {
 	expDuration, sanitizeInterval time.Duration,
 ) WorkerSessionManager[cs] {
 	tm := &TTLManager[cs]{
-		ctx:              ctx,
-		manager:          manager,
-		expMap:           make(map[cs]time.Time),
-		expDuration:      expDuration,
-		sanitizeInterval: sanitizeInterval,
+		ctx:             ctx,
+		manager:         manager,
+		expMap:          make(map[cs]time.Time),
+		sessionTtl:      expDuration,
+		cleanupInterval: sanitizeInterval,
 	}
 	go tm.sanitize()
 	return tm
@@ -41,7 +42,7 @@ func (t *TTLManager[cs]) Add(session cs) {
 	t.manager.Add(session)
 
 	t.mu.Lock()
-	t.expMap[session] = time.Now().Add(t.expDuration)
+	t.expMap[session] = time.Now().Add(t.sessionTtl)
 	t.mu.Unlock()
 }
 func (t *TTLManager[cs]) Delete(session cs) {
@@ -59,7 +60,7 @@ func (t *TTLManager[cs]) GetByInternalIP(addr netip.Addr) (cs, error) {
 	}
 
 	t.mu.Lock()
-	t.expMap[session] = time.Now().Add(t.expDuration)
+	t.expMap[session] = time.Now().Add(t.sessionTtl)
 	t.mu.Unlock()
 
 	return session, nil
@@ -72,14 +73,22 @@ func (t *TTLManager[cs]) GetByExternalIP(addrPort netip.AddrPort) (cs, error) {
 	}
 
 	t.mu.Lock()
-	t.expMap[session] = time.Now().Add(t.expDuration)
+	t.expMap[session] = time.Now().Add(t.sessionTtl)
 	t.mu.Unlock()
 
 	return session, nil
 }
 
 func (t *TTLManager[cs]) sanitize() {
-	ticker := time.NewTicker(t.sanitizeInterval)
+	if t.cleanupInterval == 0 {
+		t.cleanupInterval = time.Duration(server_configuration.DefaultSessionCleanupInterval)
+	}
+
+	if t.sessionTtl == 0 {
+		t.sessionTtl = time.Duration(server_configuration.DefaultSessionTtl)
+	}
+
+	ticker := time.NewTicker(t.cleanupInterval)
 	defer ticker.Stop()
 	for {
 		select {
