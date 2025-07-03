@@ -42,20 +42,11 @@ func createTestConfigPath(t *testing.T) string {
 	return filepath.Join(dir, "conf.json")
 }
 
-func TestManagerConfigurationResolverError(t *testing.T) {
-	manager := NewManager(managerTestMockErrorResolver{})
-
-	_, err := manager.Configuration()
-	if err == nil {
-		t.Fatal("expected error from Configuration() due to resolver error, got nil")
-	}
-	if !strings.Contains(err.Error(), "failed to read configuration") {
-		t.Errorf("expected error to mention 'failed to read configuration', got %v", err)
-	}
-}
-
 func TestManagerConfigurationWriteDefaultError(t *testing.T) {
-	manager := NewManager(managerTestMockBadPathResolver{})
+	manager, managerErr := NewManager(managerTestMockBadPathResolver{})
+	if managerErr != nil {
+		t.Error(managerErr)
+	}
 
 	_, err := manager.Configuration()
 	if err == nil {
@@ -68,7 +59,10 @@ func TestManagerConfigurationWriteDefaultError(t *testing.T) {
 
 func TestManagerConfigurationReadSuccess(t *testing.T) {
 	path := createTestConfigPath(t)
-	manager := NewManager(managerTestValidResolver{path: path})
+	manager, managerErr := NewManager(managerTestValidResolver{path: path})
+	if managerErr != nil {
+		t.Error(managerErr)
+	}
 
 	// Ensure file does not exist initially.
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
@@ -94,7 +88,10 @@ func TestManagerConfigurationReadSuccess(t *testing.T) {
 
 func TestIncrementClientCounterSuccess(t *testing.T) {
 	path := createTestConfigPath(t)
-	manager := NewManager(managerTestValidResolver{path: path})
+	manager, managerErr := NewManager(managerTestValidResolver{path: path})
+	if managerErr != nil {
+		t.Error(managerErr)
+	}
 
 	// Create initial configuration.
 	conf, err := manager.Configuration()
@@ -123,7 +120,10 @@ func TestIncrementClientCounterSuccess(t *testing.T) {
 
 func TestInjectEdKeysSuccess(t *testing.T) {
 	path := createTestConfigPath(t)
-	manager := NewManager(managerTestValidResolver{path: path})
+	manager, managerErr := NewManager(managerTestValidResolver{path: path})
+	if managerErr != nil {
+		t.Error(managerErr)
+	}
 
 	// Initialize configuration.
 	if _, err := manager.Configuration(); err != nil {
@@ -158,36 +158,31 @@ func TestInjectEdKeysSuccess(t *testing.T) {
 }
 
 func TestIncrementClientCounterConfigError(t *testing.T) {
-	manager := NewManager(managerTestMockErrorResolver{})
-
-	err := manager.IncrementClientCounter()
+	_, err := NewManager(managerTestMockErrorResolver{})
 	if err == nil {
-		t.Fatal("expected error from IncrementClientCounter() due to configuration failure, got nil")
+		t.Fatal("expected error from NewManager() due to configuration path resolve failure, got nil")
 	}
-	if !strings.Contains(err.Error(), "failed to read configuration") {
-		t.Errorf("expected error to mention 'failed to read configuration', got %v", err)
+
+	if !strings.Contains(err.Error(), "failed to resolve server configuration path") {
+		t.Errorf("expected error to mention 'failed to resolve server configuration path', got %v", err)
 	}
 }
 
 func TestInjectEdKeysConfigError(t *testing.T) {
-	manager := NewManager(managerTestMockErrorResolver{})
-
-	public, private, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatalf("failed to generate keys: %v", err)
-	}
-
-	err = manager.InjectEdKeys(public, private)
+	_, err := NewManager(managerTestMockErrorResolver{})
 	if err == nil {
 		t.Fatal("expected error from InjectEdKeys() due to configuration failure, got nil")
 	}
-	if !strings.Contains(err.Error(), "failed to read configuration") {
-		t.Errorf("expected error to mention 'failed to read configuration', got %v", err)
+	if !strings.Contains(err.Error(), "failed to resolve server configuration path") {
+		t.Errorf("expected error to mention 'failed to resolve server configuration path', got %v", err)
 	}
 }
 func TestInjectSessionTtlIntervals_Success(t *testing.T) {
 	path := createTestConfigPath(t)
-	manager := NewManager(managerTestValidResolver{path: path})
+	manager, managerErr := NewManager(managerTestValidResolver{path: path})
+	if managerErr != nil {
+		t.Error(managerErr)
+	}
 
 	_, err := manager.Configuration()
 	if err != nil {
@@ -222,22 +217,20 @@ func TestInjectSessionTtlIntervals_Success(t *testing.T) {
 }
 
 func TestInjectSessionTtlIntervals_ConfigurationError(t *testing.T) {
-	manager := NewManager(managerTestMockErrorResolver{})
-
-	err := manager.InjectSessionTtlIntervals(
-		settings.HumanReadableDuration(10*time.Minute),
-		settings.HumanReadableDuration(5*time.Minute),
-	)
+	_, err := NewManager(managerTestMockErrorResolver{})
 	if err == nil {
 		t.Fatal("expected error due to configuration resolution failure, got nil")
 	}
-	if !strings.Contains(err.Error(), "failed to read configuration") {
-		t.Errorf("expected error mentioning 'failed to read configuration', got %v", err)
+	if !strings.Contains(err.Error(), "failed to resolve server configuration path") {
+		t.Errorf("expected error mentioning 'failed to resolve server configuration path', got %v", err)
 	}
 }
 
 func TestInjectSessionTtlIntervals_WriteError(t *testing.T) {
-	manager := NewManager(managerTestMockBadPathResolver{})
+	manager, managerErr := NewManager(managerTestMockBadPathResolver{})
+	if managerErr != nil {
+		t.Error(managerErr)
+	}
 
 	err := manager.InjectSessionTtlIntervals(
 		settings.HumanReadableDuration(10*time.Minute),
