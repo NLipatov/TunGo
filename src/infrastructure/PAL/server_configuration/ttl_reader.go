@@ -3,13 +3,13 @@ package server_configuration
 import "time"
 
 type ttlReader struct {
-	reader         reader
+	reader         Reader
 	ttl            time.Duration
 	cache          *Configuration
 	cacheExpiresAt time.Time
 }
 
-func NewTTLReader(reader reader, ttl time.Duration) *ttlReader {
+func NewTTLReader(reader Reader, ttl time.Duration) *ttlReader {
 	return &ttlReader{
 		reader: reader,
 		ttl:    ttl,

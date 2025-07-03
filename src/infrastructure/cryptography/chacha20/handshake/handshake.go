@@ -52,7 +52,11 @@ func (h *DefaultHandshake) ServerSideHandshake(conn application.ConnectionAdapte
 	}
 	serverNonce := c.GenerateRandomBytesArray(32)
 
-	serverConfigurationManager := server_configuration.NewManager(server_configuration.NewServerResolver())
+	serverConfigurationManager, serverConfigurationManagerErr := server_configuration.NewManager(server_configuration.NewServerResolver())
+	if serverConfigurationManagerErr != nil {
+		return nil, serverConfigurationManagerErr
+	}
+
 	conf, err := serverConfigurationManager.Configuration()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read server configuration: %s", err)

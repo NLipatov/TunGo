@@ -84,7 +84,12 @@ func startClient(appCtx context.Context) {
 
 func startServer(appCtx context.Context) {
 	tunFactory := tun_server.NewServerTunFactory()
-	configurationManager := server_configuration.NewManager(server_configuration.NewServerResolver())
+	configurationManager, configurationManagerErr := server_configuration.
+		NewManager(server_configuration.NewServerResolver())
+	if configurationManagerErr != nil {
+		log.Fatalf("could not instantiate server configuration manager: %s", configurationManagerErr)
+	}
+
 	conf, confErr := configurationManager.Configuration()
 	if confErr != nil {
 		log.Fatal(confErr)

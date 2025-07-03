@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"fmt"
 	"os"
+	"time"
 	"tungo/infrastructure/PAL/client_configuration"
 	"tungo/infrastructure/settings"
 )
@@ -17,12 +18,23 @@ type ServerConfigurationManager interface {
 
 type Manager struct {
 	resolver client_configuration.Resolver
+	reader   Reader
+	writer   *writer
 }
 
-func NewManager(resolver client_configuration.Resolver) ServerConfigurationManager {
+func NewManager(resolver client_configuration.Resolver) (ServerConfigurationManager, error) {
+	path, pathErr := resolver.Resolve()
+	if pathErr != nil {
+		return nil, fmt.Errorf("failed to resolve server configuration path: %w", pathErr)
+	}
+
 	return &Manager{
 		resolver: resolver,
-	}
+		writer:   newWriter(path),
+		reader: NewTTLReader(
+			newDefaultReader(path), time.Minute*15,
+		),
+	}, nil
 }
 
 func (c *Manager) Configuration() (*Configuration, error) {
@@ -34,14 +46,13 @@ func (c *Manager) Configuration() (*Configuration, error) {
 	_, statErr := os.Stat(path)
 	if statErr != nil {
 		configuration := NewDefaultConfiguration()
-		w := newWriter(c.resolver)
-		writeErr := w.Write(*configuration)
+		writeErr := c.writer.Write(*configuration)
 		if writeErr != nil {
 			return nil, fmt.Errorf("could not write default configuration: %s", writeErr)
 		}
 	}
 
-	return newReader(path).read()
+	return newDefaultReader(path).read()
 }
 
 func (c *Manager) IncrementClientCounter() error {
@@ -51,8 +62,7 @@ func (c *Manager) IncrementClientCounter() error {
 	}
 
 	configuration.ClientCounter += 1
-	w := newWriter(c.resolver)
-	return w.Write(*configuration)
+	return c.writer.Write(*configuration)
 }
 
 func (c *Manager) InjectEdKeys(public ed25519.PublicKey, private ed25519.PrivateKey) error {
@@ -64,8 +74,7 @@ func (c *Manager) InjectEdKeys(public ed25519.PublicKey, private ed25519.Private
 	configuration.Ed25519PublicKey = public
 	configuration.Ed25519PrivateKey = private
 
-	w := newWriter(c.resolver)
-	return w.Write(*configuration)
+	return c.writer.Write(*configuration)
 }
 
 func (c *Manager) InjectSessionTtlIntervals(ttl, interval settings.HumanReadableDuration) error {
@@ -80,6 +89,5 @@ func (c *Manager) InjectSessionTtlIntervals(ttl, interval settings.HumanReadable
 	configuration.TCPSettings.SessionLifetime.Ttl = ttl
 	configuration.TCPSettings.SessionLifetime.CleanupInterval = interval
 
-	w := newWriter(c.resolver)
-	return w.Write(*configuration)
+	return c.writer.Write(*configuration)
 }

@@ -8,17 +8,21 @@ import (
 	"strconv"
 )
 
-type reader struct {
+type Reader interface {
+	read() (*Configuration, error)
+}
+
+type defaultReader struct {
 	path string
 }
 
-func newReader(path string) *reader {
-	return &reader{
+func newDefaultReader(path string) *defaultReader {
+	return &defaultReader{
 		path: path,
 	}
 }
 
-func (c *reader) read() (*Configuration, error) {
+func (c *defaultReader) read() (*Configuration, error) {
 	if _, statErr := os.Stat(c.path); statErr != nil {
 		if errors.Is(statErr, os.ErrNotExist) {
 			return nil, fmt.Errorf("configuration file does not exist: %s", c.path)
@@ -44,14 +48,14 @@ func (c *reader) read() (*Configuration, error) {
 	return &configuration, nil
 }
 
-func (c *reader) setEnvServerAddress(conf *Configuration) {
+func (c *defaultReader) setEnvServerAddress(conf *Configuration) {
 	sIP := os.Getenv("ServerIP")
 	if sIP != "" {
 		conf.FallbackServerAddress = sIP
 	}
 }
 
-func (c *reader) setEnvEnabledProtocols(conf *Configuration) {
+func (c *defaultReader) setEnvEnabledProtocols(conf *Configuration) {
 	envUdp := os.Getenv("EnableUDP")
 	envTCP := os.Getenv("EnableTCP")
 

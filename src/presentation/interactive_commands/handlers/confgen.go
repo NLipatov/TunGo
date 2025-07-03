@@ -39,7 +39,11 @@ func (c *ConfgenHandler) GenerateNewClientConf() error {
 
 // generate generates new client configuration
 func (c *ConfgenHandler) generate() (*client_configuration.Configuration, error) {
-	serverConfigurationManager := server_configuration.NewManager(server_configuration.NewServerResolver())
+	serverConfigurationManager, serverConfigurationManagerErr := server_configuration.NewManager(server_configuration.NewServerResolver())
+	if serverConfigurationManagerErr != nil {
+		return nil, serverConfigurationManagerErr
+	}
+
 	serverConf, err := serverConfigurationManager.Configuration()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read server configuration: %s", err)

@@ -119,7 +119,11 @@ func (t *TransportHandler) registerClient(conn *net.UDPConn, clientAddr netip.Ad
 		return handshakeErr
 	}
 
-	serverConfigurationManager := server_configuration.NewManager(server_configuration.NewServerResolver())
+	serverConfigurationManager, serverConfigurationManagerErr := server_configuration.NewManager(server_configuration.NewServerResolver())
+	if serverConfigurationManagerErr != nil {
+		return serverConfigurationManagerErr
+	}
+
 	_, err := serverConfigurationManager.Configuration()
 	if err != nil {
 		return fmt.Errorf("failed to read server configuration: %s", err)
