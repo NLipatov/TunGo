@@ -100,6 +100,7 @@ func startServer(appCtx context.Context) {
 		*conf,
 		server_configuration.NewEd25519KeyManager(conf, configurationManager),
 		server_configuration.NewDefaultSessionLifetimeManager(conf, configurationManager),
+		configurationManager,
 	)
 
 	runner := server.NewRunner(deps)

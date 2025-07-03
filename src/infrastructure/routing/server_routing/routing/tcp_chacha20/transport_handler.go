@@ -19,13 +19,14 @@ import (
 )
 
 type TransportHandler struct {
-	ctx            context.Context
-	settings       settings.Settings
-	writer         io.ReadWriteCloser
-	listener       tcp_listener.Listener
-	sessionManager session_management.WorkerSessionManager[Session]
-	Logger         application.Logger
-	configuration  *server_configuration.Configuration
+	ctx                  context.Context
+	settings             settings.Settings
+	writer               io.ReadWriteCloser
+	listener             tcp_listener.Listener
+	sessionManager       session_management.WorkerSessionManager[Session]
+	Logger               application.Logger
+	configuration        *server_configuration.Configuration
+	configurationManager server_configuration.ServerConfigurationManager
 }
 
 func NewTransportHandler(
@@ -35,14 +36,16 @@ func NewTransportHandler(
 	listener tcp_listener.Listener,
 	sessionManager session_management.WorkerSessionManager[Session],
 	logger application.Logger,
+	manager server_configuration.ServerConfigurationManager,
 ) application.TransportHandler {
 	return &TransportHandler{
-		ctx:            ctx,
-		settings:       settings,
-		writer:         writer,
-		listener:       listener,
-		sessionManager: sessionManager,
-		Logger:         logger,
+		ctx:                  ctx,
+		settings:             settings,
+		writer:               writer,
+		listener:             listener,
+		sessionManager:       sessionManager,
+		Logger:               logger,
+		configurationManager: manager,
 	}
 }
 
@@ -85,20 +88,11 @@ func (t *TransportHandler) HandleTransport() error {
 func (t *TransportHandler) registerClient(conn net.Conn, tunFile io.ReadWriteCloser, ctx context.Context) error {
 	t.Logger.Printf("connected: %s", conn.RemoteAddr())
 
-	// ToDo: if configuration is updated, it will not load updates. Implement a ttl reader.
-	if t.configuration == nil {
-		resolver := server_configuration.NewServerResolver()
-		manager, managerErr := server_configuration.NewManager(resolver)
-		if managerErr != nil {
-			return managerErr
-		}
-		conf, confErr := manager.Configuration()
-		if confErr != nil {
-			return confErr
-		}
-
-		t.configuration = conf
+	conf, confErr := t.configurationManager.Configuration()
+	if confErr != nil {
+		return confErr
 	}
+	t.configuration = conf
 
 	h := handshake.NewHandshake(t.configuration.Ed25519PublicKey, t.configuration.Ed25519PrivateKey)
 	internalIP, handshakeErr := h.ServerSideHandshake(&network.TcpAdapter{

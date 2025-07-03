@@ -3,11 +3,13 @@ package tcp_chacha20
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"errors"
 	"net"
 	"net/netip"
 	"sync"
 	"testing"
+	"tungo/infrastructure/PAL/server_configuration"
 	"tungo/infrastructure/settings"
 )
 
@@ -79,6 +81,20 @@ func (m *TransportHandlerMockSessionMgr) GetByExternalIP(_ netip.AddrPort) (Sess
 	return Session{}, nil
 }
 
+type mockCfgManager struct{}
+
+func (mockCfgManager) Configuration() (*server_configuration.Configuration, error) {
+	return &server_configuration.Configuration{}, nil
+}
+
+func (mockCfgManager) IncrementClientCounter() error { return nil }
+
+func (mockCfgManager) InjectEdKeys(ed25519.PublicKey, ed25519.PrivateKey) error { return nil }
+
+func (mockCfgManager) InjectSessionTtlIntervals(settings.HumanReadableDuration, settings.HumanReadableDuration) error {
+	return nil
+}
+
 // --- Tests ---
 
 func TestTransportHandler_HandleTransport_acceptFail(t *testing.T) {
@@ -133,12 +149,13 @@ func TestTransportHandler_registerClient_handshakeFail(t *testing.T) {
 	logger := &TransportHandlerMockLogger{}
 	mgr := &TransportHandlerMockSessionMgr{}
 	handler := &TransportHandler{
-		ctx:            context.Background(),
-		settings:       settings.Settings{Port: "1234"},
-		writer:         writer,
-		listener:       nil,
-		sessionManager: mgr,
-		Logger:         logger,
+		ctx:                  context.Background(),
+		settings:             settings.Settings{Port: "1234"},
+		writer:               writer,
+		listener:             nil,
+		sessionManager:       mgr,
+		Logger:               logger,
+		configurationManager: mockCfgManager{},
 	}
 	handler.registerClient(conn, writer, context.Background())
 	if len(logger.logs) == 0 {
@@ -152,12 +169,13 @@ func TestTransportHandler_handleClient_sessionNotFound(t *testing.T) {
 	logger := &TransportHandlerMockLogger{}
 	mgr := &TransportHandlerMockSessionMgr{getErr: errors.New("no sess")}
 	handler := &TransportHandler{
-		ctx:            context.Background(),
-		settings:       settings.Settings{Port: "1234"},
-		writer:         writer,
-		listener:       nil,
-		sessionManager: mgr,
-		Logger:         logger,
+		ctx:                  context.Background(),
+		settings:             settings.Settings{Port: "1234"},
+		writer:               writer,
+		listener:             nil,
+		sessionManager:       mgr,
+		Logger:               logger,
+		configurationManager: mockCfgManager{},
 	}
 	go func() {
 		_, _ = conn.r.Write([]byte{0, 0, 0, 8, 1, 2, 3, 4, 5, 6, 7, 8})

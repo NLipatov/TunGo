@@ -99,7 +99,7 @@ func (f *ServerWorkerFactoryMockLoggerFactory) newLogger() application.Logger {
 // --- tests ---
 func TestCreateWorker_UnsupportedProtocol(t *testing.T) {
 	s := settings.Settings{Protocol: 42}
-	factory := NewServerWorkerFactory(s)
+	factory := NewServerWorkerFactory(s, nil)
 	_, err := factory.CreateWorker(context.Background(), nopReadWriteCloser{})
 	if err == nil {
 		t.Fatal("expected unsupported-protocol error")
@@ -116,7 +116,7 @@ func TestCreateWorker_TCP_SocketError(t *testing.T) {
 	tcpF := &ServerWorkerFactoryMockTcpListenerFactory{}
 	udpF := &ServerWorkerFactoryMockUdpListenerFactory{}
 	logF := &ServerWorkerFactoryMockLoggerFactory{}
-	factory := NewTestServerWorkerFactory(s, sockF, tcpF, udpF, logF)
+	factory := NewTestServerWorkerFactory(s, sockF, tcpF, udpF, logF, nil)
 
 	_, err := factory.CreateWorker(context.Background(), nopReadWriteCloser{})
 	if err == nil || err.Error() != "bad socket" {
@@ -134,7 +134,7 @@ func TestCreateWorker_TCP_ListenerError(t *testing.T) {
 	tcpF := &ServerWorkerFactoryMockTcpListenerFactory{Err: errors.New("listen fail")}
 	udpF := &ServerWorkerFactoryMockUdpListenerFactory{}
 	logF := &ServerWorkerFactoryMockLoggerFactory{}
-	factory := NewTestServerWorkerFactory(s, sockF, tcpF, udpF, logF)
+	factory := NewTestServerWorkerFactory(s, sockF, tcpF, udpF, logF, nil)
 
 	_, err := factory.CreateWorker(context.Background(), nopReadWriteCloser{})
 	if err == nil || err.Error() != "failed to listen TCP: listen fail" {
@@ -152,7 +152,7 @@ func TestCreateWorker_TCP_Success(t *testing.T) {
 	tcpF := &ServerWorkerFactoryMockTcpListenerFactory{}
 	udpF := &ServerWorkerFactoryMockUdpListenerFactory{}
 	logF := &ServerWorkerFactoryMockLoggerFactory{}
-	factory := NewTestServerWorkerFactory(s, sockF, tcpF, udpF, logF)
+	factory := NewTestServerWorkerFactory(s, sockF, tcpF, udpF, logF, nil)
 
 	w, err := factory.CreateWorker(context.Background(), nopReadWriteCloser{})
 	if err != nil {
@@ -178,7 +178,7 @@ func TestCreateWorker_UDP_Success(t *testing.T) {
 	tcpF := &ServerWorkerFactoryMockTcpListenerFactory{}
 	udpF := &ServerWorkerFactoryMockUdpListenerFactory{}
 	logF := &ServerWorkerFactoryMockLoggerFactory{}
-	factory := NewTestServerWorkerFactory(s, sockF, tcpF, udpF, logF)
+	factory := NewTestServerWorkerFactory(s, sockF, tcpF, udpF, logF, nil)
 
 	w, err := factory.CreateWorker(context.Background(), nopReadWriteCloser{})
 	if err != nil {

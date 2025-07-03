@@ -17,13 +17,14 @@ import (
 )
 
 type TransportHandler struct {
-	ctx            context.Context
-	settings       settings.Settings
-	writer         io.Writer
-	sessionManager session_management.WorkerSessionManager[Session]
-	logger         application.Logger
-	listener       udp_listener.Listener
-	configuration  *server_configuration.Configuration
+	ctx                  context.Context
+	settings             settings.Settings
+	writer               io.Writer
+	sessionManager       session_management.WorkerSessionManager[Session]
+	logger               application.Logger
+	listener             udp_listener.Listener
+	configuration        *server_configuration.Configuration
+	configurationManager server_configuration.ServerConfigurationManager
 }
 
 func NewTransportHandler(
@@ -33,14 +34,16 @@ func NewTransportHandler(
 	listener udp_listener.Listener,
 	sessionManager session_management.WorkerSessionManager[Session],
 	logger application.Logger,
+	manager server_configuration.ServerConfigurationManager,
 ) application.TransportHandler {
 	return &TransportHandler{
-		ctx:            ctx,
-		settings:       settings,
-		writer:         writer,
-		sessionManager: sessionManager,
-		logger:         logger,
-		listener:       listener,
+		ctx:                  ctx,
+		settings:             settings,
+		writer:               writer,
+		sessionManager:       sessionManager,
+		logger:               logger,
+		listener:             listener,
+		configurationManager: manager,
 	}
 }
 
@@ -112,19 +115,11 @@ func (t *TransportHandler) registerClient(conn *net.UDPConn, clientAddr netip.Ad
 	_ = conn.SetWriteBuffer(65536)
 
 	// ToDo: if configuration is updated, it will not load updates. Implement a ttl reader.
-	if t.configuration == nil {
-		serverConfigurationManager, serverConfigurationManagerErr := server_configuration.NewManager(server_configuration.NewServerResolver())
-		if serverConfigurationManagerErr != nil {
-			return serverConfigurationManagerErr
-		}
-
-		conf, err := serverConfigurationManager.Configuration()
-		if err != nil {
-			return fmt.Errorf("failed to read server configuration: %s", err)
-		}
-
-		t.configuration = conf
+	conf, err := t.configurationManager.Configuration()
+	if err != nil {
+		return fmt.Errorf("failed to read server configuration: %s", err)
 	}
+	t.configuration = conf
 
 	// Pass initialData and clientAddr to the crypto function
 	h := handshake.NewHandshake(t.configuration.Ed25519PublicKey, t.configuration.Ed25519PrivateKey)
