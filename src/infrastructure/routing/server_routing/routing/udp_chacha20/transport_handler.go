@@ -23,6 +23,7 @@ type TransportHandler struct {
 	sessionManager session_management.WorkerSessionManager[Session]
 	logger         application.Logger
 	listener       udp_listener.Listener
+	configuration  *server_configuration.Configuration
 }
 
 func NewTransportHandler(
@@ -110,23 +111,28 @@ func (t *TransportHandler) registerClient(conn *net.UDPConn, clientAddr netip.Ad
 	_ = conn.SetReadBuffer(65536)
 	_ = conn.SetWriteBuffer(65536)
 
+	// ToDo: if configuration is updated, it will not load updates. Implement a ttl reader.
+	if t.configuration == nil {
+		serverConfigurationManager, serverConfigurationManagerErr := server_configuration.NewManager(server_configuration.NewServerResolver())
+		if serverConfigurationManagerErr != nil {
+			return serverConfigurationManagerErr
+		}
+
+		conf, err := serverConfigurationManager.Configuration()
+		if err != nil {
+			return fmt.Errorf("failed to read server configuration: %s", err)
+		}
+
+		t.configuration = conf
+	}
+
 	// Pass initialData and clientAddr to the crypto function
-	h := handshake.NewHandshake()
+	h := handshake.NewHandshake(t.configuration.Ed25519PublicKey, t.configuration.Ed25519PrivateKey)
 	adapter := network.NewInitialDataAdapter(
 		network.NewUdpAdapter(conn, clientAddr), initialData)
 	internalIP, handshakeErr := h.ServerSideHandshake(adapter)
 	if handshakeErr != nil {
 		return handshakeErr
-	}
-
-	serverConfigurationManager, serverConfigurationManagerErr := server_configuration.NewManager(server_configuration.NewServerResolver())
-	if serverConfigurationManagerErr != nil {
-		return serverConfigurationManagerErr
-	}
-
-	_, err := serverConfigurationManager.Configuration()
-	if err != nil {
-		return fmt.Errorf("failed to read server configuration: %s", err)
 	}
 
 	cryptoSession, cryptoSessionErr := chacha20.NewUdpSession(h.Id(), h.ServerKey(), h.ClientKey(), true)

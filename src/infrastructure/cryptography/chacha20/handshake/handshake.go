@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"net"
 	"tungo/application"
-	"tungo/infrastructure/PAL/client_configuration"
-	"tungo/infrastructure/PAL/server_configuration"
 	"tungo/infrastructure/settings"
 )
 
@@ -21,13 +19,19 @@ const (
 )
 
 type DefaultHandshake struct {
-	id        [32]byte
-	clientKey []byte
-	serverKey []byte
+	id                                  [32]byte
+	clientKey                           []byte
+	serverKey                           []byte
+	Ed25519PublicKey, Ed25519PrivateKey []byte // client will only have public key
 }
 
-func NewHandshake() *DefaultHandshake {
-	return &DefaultHandshake{}
+func NewHandshake(
+	Ed25519PublicKey, Ed25519PrivateKey []byte,
+) *DefaultHandshake {
+	return &DefaultHandshake{
+		Ed25519PublicKey:  Ed25519PublicKey,
+		Ed25519PrivateKey: Ed25519PrivateKey,
+	}
 }
 
 func (h *DefaultHandshake) Id() [32]byte {
@@ -52,16 +56,6 @@ func (h *DefaultHandshake) ServerSideHandshake(conn application.ConnectionAdapte
 	}
 	serverNonce := c.GenerateRandomBytesArray(32)
 
-	serverConfigurationManager, serverConfigurationManagerErr := server_configuration.NewManager(server_configuration.NewServerResolver())
-	if serverConfigurationManagerErr != nil {
-		return nil, serverConfigurationManagerErr
-	}
-
-	conf, err := serverConfigurationManager.Configuration()
-	if err != nil {
-		return nil, fmt.Errorf("failed to read server configuration: %s", err)
-	}
-
 	//handshake process starts here
 	handshake := NewServerHandshake(conn)
 	clientHello, clientHelloErr := handshake.ReceiveClientHello()
@@ -69,7 +63,7 @@ func (h *DefaultHandshake) ServerSideHandshake(conn application.ConnectionAdapte
 		return nil, clientHelloErr
 	}
 
-	serverHelloErr := handshake.SendServerHello(c, conf.Ed25519PrivateKey, serverNonce, curvePublic, clientHello.nonce)
+	serverHelloErr := handshake.SendServerHello(c, h.Ed25519PrivateKey, serverNonce, curvePublic, clientHello.nonce)
 	if serverHelloErr != nil {
 		return nil, serverHelloErr
 	}
@@ -93,11 +87,6 @@ func (h *DefaultHandshake) ServerSideHandshake(conn application.ConnectionAdapte
 
 func (h *DefaultHandshake) ClientSideHandshake(conn application.ConnectionAdapter, settings settings.Settings) error {
 	c := newDefaultCrypto()
-	configurationManager := client_configuration.NewManager()
-	clientConf, generateKeyErr := configurationManager.Configuration()
-	if generateKeyErr != nil {
-		return fmt.Errorf("failed to read client configuration: %s", generateKeyErr)
-	}
 
 	edPublicKey, edPrivateKey, generateKeyErr := c.GenerateEd25519KeyPair()
 	if generateKeyErr != nil {
@@ -124,7 +113,7 @@ func (h *DefaultHandshake) ClientSideHandshake(conn application.ConnectionAdapte
 		return serverHelloErr
 	}
 
-	sendSignatureErr := handshake.SendSignature(clientConf.Ed25519PublicKey, edPrivateKey, sessionPublicKey, serverHello, clientNonce)
+	sendSignatureErr := handshake.SendSignature(h.Ed25519PublicKey, edPrivateKey, sessionPublicKey, serverHello, clientNonce)
 	if sendSignatureErr != nil {
 		return sendSignatureErr
 	}

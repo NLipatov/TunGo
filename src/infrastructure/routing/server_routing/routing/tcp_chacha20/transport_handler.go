@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/netip"
 	"tungo/application"
+	"tungo/infrastructure/PAL/server_configuration"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/listeners/tcp_listener"
@@ -23,6 +25,7 @@ type TransportHandler struct {
 	listener       tcp_listener.Listener
 	sessionManager session_management.WorkerSessionManager[Session]
 	Logger         application.Logger
+	configuration  *server_configuration.Configuration
 }
 
 func NewTransportHandler(
@@ -70,28 +73,52 @@ func (t *TransportHandler) HandleTransport() error {
 				t.Logger.Printf("failed to accept connection: %v", listenErr)
 				continue
 			}
-			go t.registerClient(conn, t.writer, t.ctx)
+			go func() {
+				err := t.registerClient(conn, t.writer, t.ctx)
+				if err != nil {
+					t.Logger.Printf("failed to register client: %v", err)
+				}
+			}()
 		}
 	}
 }
-func (t *TransportHandler) registerClient(conn net.Conn, tunFile io.ReadWriteCloser, ctx context.Context) {
+func (t *TransportHandler) registerClient(conn net.Conn, tunFile io.ReadWriteCloser, ctx context.Context) error {
 	t.Logger.Printf("connected: %s", conn.RemoteAddr())
-	h := handshake.NewHandshake()
+
+	// ToDo: if configuration is updated, it will not load updates. Implement a ttl reader.
+	if t.configuration == nil {
+		resolver := server_configuration.NewServerResolver()
+		manager, managerErr := server_configuration.NewManager(resolver)
+		if managerErr != nil {
+			return managerErr
+		}
+		conf, confErr := manager.Configuration()
+		if confErr != nil {
+			return confErr
+		}
+
+		t.configuration = conf
+	}
+
+	h := handshake.NewHandshake(t.configuration.Ed25519PublicKey, t.configuration.Ed25519PrivateKey)
 	internalIP, handshakeErr := h.ServerSideHandshake(&network.TcpAdapter{
 		Conn: conn,
 	})
 	if handshakeErr != nil {
 		_ = conn.Close()
-		t.Logger.Printf("connection closed: %s (regfail: %s)\n", conn.RemoteAddr(), handshakeErr)
-		return
+		return fmt.Errorf("client %s failed registration: %w", conn.RemoteAddr(), handshakeErr)
 	}
 	t.Logger.Printf("registered: %s", conn.RemoteAddr())
 
-	cryptographyService, cryptographyServiceErr := chacha20.NewTcpCryptographyService(h.Id(), h.ServerKey(), h.ClientKey(), true)
+	cryptographyService, cryptographyServiceErr := chacha20.NewTcpCryptographyService(
+		h.Id(),
+		h.ServerKey(),
+		h.ClientKey(),
+		true,
+	)
 	if cryptographyServiceErr != nil {
 		_ = conn.Close()
-		t.Logger.Printf("connection closed: %s (regfail: %s)\n", conn.RemoteAddr(), cryptographyServiceErr)
-		return
+		return fmt.Errorf("client %s failed registration: %w", conn.RemoteAddr(), cryptographyServiceErr)
 	}
 
 	tcpConn := conn.(*net.TCPConn)
@@ -99,15 +126,18 @@ func (t *TransportHandler) registerClient(conn net.Conn, tunFile io.ReadWriteClo
 	intIP, intIPOk := netip.AddrFromSlice(internalIP)
 	if !intIPOk {
 		_ = tcpConn.Close()
-		return
+		return fmt.Errorf("invalid internal IP from handshake")
 	}
 
 	// Prevent IP spoofing
 	_, getErr := t.sessionManager.GetByInternalIP(intIP)
 	if !errors.Is(getErr, session_management.ErrSessionNotFound) {
-		t.Logger.Printf("connection closed: %s (internal internalIP %s already in use)\n", conn.RemoteAddr(), internalIP)
 		_ = conn.Close()
-		return
+		return fmt.Errorf(
+			"connection closed: %s (internal internalIP %s already in use)\n",
+			conn.RemoteAddr(),
+			internalIP,
+		)
 	}
 
 	storedSession := Session{
@@ -120,6 +150,8 @@ func (t *TransportHandler) registerClient(conn net.Conn, tunFile io.ReadWriteClo
 	t.sessionManager.Add(storedSession)
 
 	t.handleClient(ctx, storedSession, tunFile)
+
+	return nil
 }
 
 func (t *TransportHandler) handleClient(ctx context.Context, session Session, tunFile io.ReadWriteCloser) {
@@ -144,13 +176,6 @@ func (t *TransportHandler) handleClient(ctx context.Context, session Session, tu
 				return
 			}
 
-			// Retrieve the session for this client
-			sessionValue, getErr := t.sessionManager.GetByInternalIP(session.InternalIP())
-			if getErr != nil {
-				t.Logger.Printf("failed to load session for IP %s", sessionValue.InternalIP())
-				continue
-			}
-
 			//read packet length from 4-byte length prefix
 			var length = binary.BigEndian.Uint32(buf[:4])
 			if length < 4 || length > network.MaxPacketLengthBytes {
@@ -165,7 +190,7 @@ func (t *TransportHandler) handleClient(ctx context.Context, session Session, tu
 				continue
 			}
 
-			decrypted, decryptionErr := sessionValue.CryptographyService.Decrypt(buf[:length])
+			decrypted, decryptionErr := session.CryptographyService.Decrypt(buf[:length])
 			if decryptionErr != nil {
 				t.Logger.Printf("failed to decrypt data: %s", decryptionErr)
 				continue
