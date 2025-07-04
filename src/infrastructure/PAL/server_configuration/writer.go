@@ -6,17 +6,21 @@ import (
 	"path/filepath"
 )
 
-type writer struct {
+type Writer interface {
+	Write(data interface{}) error
+}
+
+type defaultWriter struct {
 	path string
 }
 
-func newWriter(path string) *writer {
-	return &writer{
+func newDefaultWriter(path string) *defaultWriter {
+	return &defaultWriter{
 		path: path,
 	}
 }
 
-func (w *writer) Write(data interface{}) error {
+func (w *defaultWriter) Write(data interface{}) error {
 	jsonContent, jsonContentErr := json.MarshalIndent(data, "", "\t")
 	if jsonContentErr != nil {
 		return jsonContentErr

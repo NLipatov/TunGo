@@ -19,7 +19,7 @@ type ServerConfigurationManager interface {
 type Manager struct {
 	resolver client_configuration.Resolver
 	reader   Reader
-	writer   *writer
+	writer   Writer
 }
 
 func NewManager(resolver client_configuration.Resolver) (ServerConfigurationManager, error) {
@@ -45,7 +45,7 @@ func NewManagerWithReader(
 
 	return &Manager{
 		resolver: resolver,
-		writer:   newWriter(path),
+		writer:   newDefaultWriter(path),
 		reader:   reader,
 	}, nil
 }

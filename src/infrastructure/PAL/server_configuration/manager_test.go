@@ -102,7 +102,7 @@ func TestIncrementClientCounterSuccess(t *testing.T) {
 
 	// This call covers:
 	// configuration.ClientCounter += 1
-	// w := newWriter(c.resolver)
+	// w := newDefaultWriter(c.resolver)
 	// return w.Write(*configuration)
 	if err := manager.IncrementClientCounter(); err != nil {
 		t.Fatalf("IncrementClientCounter() error: %v", err)
@@ -138,7 +138,7 @@ func TestInjectEdKeysSuccess(t *testing.T) {
 	// This call covers:
 	// configuration.Ed25519PublicKey = public
 	// configuration.Ed25519PrivateKey = private
-	// w := newWriter(c.resolver)
+	// w := newDefaultWriter(c.resolver)
 	// return w.Write(*configuration)
 	if err := manager.InjectEdKeys(public, private); err != nil {
 		t.Fatalf("InjectEdKeys() error: %v", err)
@@ -254,7 +254,7 @@ func TestManagerConfigurationCaching(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	w := newWriter(path)
+	w := newDefaultWriter(path)
 
 	// Initial read will create default config
 	conf, err := manager.Configuration()
