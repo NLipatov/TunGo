@@ -5,100 +5,130 @@
 ![Forks](https://img.shields.io/github/forks/NLipatov/TunGo.svg)
 ![Issues](https://img.shields.io/github/issues/NLipatov/TunGo.svg)
 
-# License
+# TunGo: What's It All About?
 
-This project is licensed under the GNU Affero General Public License v3.0 (AGPLv3).  
-See [LICENSE](./LICENSE) for details.
+<p align="center">
+  <img alt="Two gophers dancing tango" src="https://i.ibb.co/K7yzDf6/DALL-E-2024-10-04-20-18-51-A-minimalist-logo-featuring-two-Go-language-mascots-dancing-tango-togethe.webp" width="40%"/>
+</p>
 
-Free for non-commercial use.
-For commercial use, please contact:
-Nikita Lipatov
-Email: 6stringsohei@gmail.com
+**TunGo** is a lightweight VPN designed for modern needs: **fast**, **secure**, and **easy to understand**.
 
-# Project Documentation
-
-## Quickstart
-See the Quickstart guide: https://tungo.ethacore.com/docs/QuickStart
-
----
-
-## Use Docker to deploy server
-Refer to https://tungo.ethacore.com/docs/Advanced/Containerization/Docker/Server
+### Key features:
+- 🚀 **High Performance** — negligible CPU usage and no allocations under load.
+- 📦 **Tiny Memory Footprint** — ~8 MB idle, ~14 MB under traffic.
+- 🔒 **End-to-End Encryption** — Ed25519 for key exchange, ChaCha20 for traffic encryption.
+- ⚡ **Built from Scratch** — no legacy, no bloat. Clean, readable Go code.
+- 🌐 **IoT and Embedded Ready** — optimized for small devices and constrained environments.
+- 🛡️ **Open Source** — AGPLv3 licensed, free for community use, commercial licenses available.
 
 ---
 
-## 📊 Performance Benchmarking
-
-### iperf2
-
-#### TCP
-**Server**:
-```bash
-iperf -s -B 10.0.0.1
-```
-
-**Client**:
-```bash
-iperf -c 10.0.0.1
-```
-
-For parallel connections:
-```bash
-iperf -c 10.0.0.1 -P 100 -t 600
-```
-
-#### UDP
-**Server**:
-```bash
-iperf -s -u
-```
-
-**Client** (1GB bandwidth):
-```bash
-iperf -c 10.0.1.1 -u -b 1G
-```
-
-### iperf3
-
-#### TCP
-**Server**:
-```bash
-iperf3 -s -B 10.0.0.1
-```
-
-**Client**:
-```bash
-iperf3 -c 10.0.0.1
-```
-
-For parallel connections:
-```bash
-iperf3 -c 10.0.0.1 -P 100 -t 600
-```
-
-#### UDP
-**Server**:
-```bash
-iperf3 -s -u
-```
-
-**Client** (1GB bandwidth):
-```bash
-iperf3 -c 10.0.1.1 -u -b 1G
-```
+TunGo is engineered for developers who value **transparency**, **efficiency**, and **freedom**.  
+Simple to deploy, easy to audit, ready to adapt.
 
 ---
 
-## Debugging with bubble tea
-see: https://github.com/charmbracelet/bubbletea?tab=readme-ov-file#debugging-with-delve
-```bash
-sudo dlv debug --headless --listen=:2345 --api-version=2 --log --check-go-version=false
-```
 
-Start enjoying fast and secure tunneling with **TunGo**!
+## 📑 Table of Contents
+
+* [License](#-license)
+* [QuickStart](#-quickstart)
+
+    * [Server Setup](#%EF%B8%8F-server-setup-linux-only)
+    * [Client Setup](#%EF%B8%8F-client-setup)
+* [Advanced Use Cases](#-advanced-use-cases)
 
 ---
-## Support us ❤️
-[anon pay donation link](https://trocador.app/anonpay?ticker_to=xmr&network_to=Mainnet&address=46hGgYaPUPcaQ4Xk3UeSAaUSrGV5yHJJmEAafg92iSS28L9FwzGmuGsKqdURsbuVECVhF7bfSbEVzWL4ubDUW6jEFCGXcXh&ref=sqKNYGZbRl&direct=True&name=TunGo+developers)
 
-[anon pay donation onion link](https://tqzngtf2hybjbexznel6dhgsvbynjzezoybvtv6iofomx7gchqfssgqd.onion/anonpay?ticker_to=xmr&network_to=Mainnet&address=46hGgYaPUPcaQ4Xk3UeSAaUSrGV5yHJJmEAafg92iSS28L9FwzGmuGsKqdURsbuVECVhF7bfSbEVzWL4ubDUW6jEFCGXcXh&ref=sqKNYGZbRl&direct=True&name=TunGo+developers)
+## 📜 License
+
+**Free for non-commercial use**
+
+Use for personal privacy, censorship bypassing, and educational purposes.
+
+**Commercial licensing**
+
+This project is licensed under the [GNU AGPLv3](./LICENSE).
+For commercial use, contact Nikita Lipatov at [6stringsohei@gmail.com](mailto:6stringsohei@gmail.com).
+
+---
+
+## 🚀 QuickStart
+
+Get TunGo server and client up and running in minutes!
+
+### 🖥️ Server Setup (Linux only)
+
+1. **Install TunGo**
+
+   ```bash
+   wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-amd64 -O tungo  
+   chmod +x tungo  
+   sudo mv tungo /usr/local/bin/
+   ```
+
+2. **Generate Client Config**
+
+   ```bash
+   sudo tungo s gen
+   ```
+
+   > Copy the displayed configuration for your client.
+
+3. **Start Server**
+
+   ```bash
+   sudo tungo
+   ```
+
+   > In the TUI menu, select **server → start server**.
+
+---
+
+### 🖥️ Client Setup
+
+#### Linux (x64)
+
+```bash
+wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-amd64 -O tungo && \
+chmod +x tungo && \
+sudo mv tungo /usr/local/bin/
+```
+
+#### macOS (Apple Silicon)
+
+```bash
+wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-darwin-arm64 -O tungo && \
+chmod +x tungo && \
+sudo mv tungo /usr/local/bin/
+```
+
+#### macOS (x64)
+
+```bash
+wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-darwin-amd64 -O tungo
+chmod +x tungo
+sudo mv tungo /usr/local/bin/
+```
+
+#### Windows (x64)
+
+Download the installer from the [release page](https://github.com/NLipatov/TunGo/releases).
+
+---
+
+**Launch Tunnel:**
+
+* **Linux/macOS:** `sudo tungo`
+* **Windows:** Run as Administrator.
+
+🎉 You're all set!
+
+---
+
+## 🔧 Advanced Use Cases
+
+See https://tungo.ethacore.com for more use cases, like:
+1) [How to run server in docker container](https://tungo.ethacore.com/docs/Advanced/Containerization/Docker/Server)
+2) [How to setup server systemd daemon (for automated start on system startup)](https://tungo.ethacore.com/docs/Advanced/Linux/Setup%20server%20systemd%20unit)
+3) [How to setup client systemd daemon (for automated start on system startup)](https://tungo.ethacore.com/docs/Advanced/Linux/Setup%20client%20systemd%20unit)
