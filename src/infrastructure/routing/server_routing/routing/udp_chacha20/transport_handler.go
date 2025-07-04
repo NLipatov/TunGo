@@ -7,9 +7,7 @@ import (
 	"net"
 	"net/netip"
 	"tungo/application"
-	"tungo/infrastructure/PAL/server_configuration"
 	"tungo/infrastructure/cryptography/chacha20"
-	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/listeners/udp_listener"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/routing/server_routing/session_management"
@@ -17,14 +15,13 @@ import (
 )
 
 type TransportHandler struct {
-	ctx                  context.Context
-	settings             settings.Settings
-	writer               io.Writer
-	sessionManager       session_management.WorkerSessionManager[Session]
-	logger               application.Logger
-	listener             udp_listener.Listener
-	configuration        *server_configuration.Configuration
-	configurationManager server_configuration.ServerConfigurationManager
+	ctx              context.Context
+	settings         settings.Settings
+	writer           io.Writer
+	sessionManager   session_management.WorkerSessionManager[Session]
+	logger           application.Logger
+	listener         udp_listener.Listener
+	handshakeFactory application.HandshakeFactory
 }
 
 func NewTransportHandler(
@@ -34,16 +31,16 @@ func NewTransportHandler(
 	listener udp_listener.Listener,
 	sessionManager session_management.WorkerSessionManager[Session],
 	logger application.Logger,
-	manager server_configuration.ServerConfigurationManager,
+	handshakeFactory application.HandshakeFactory,
 ) application.TransportHandler {
 	return &TransportHandler{
-		ctx:                  ctx,
-		settings:             settings,
-		writer:               writer,
-		sessionManager:       sessionManager,
-		logger:               logger,
-		listener:             listener,
-		configurationManager: manager,
+		ctx:              ctx,
+		settings:         settings,
+		writer:           writer,
+		sessionManager:   sessionManager,
+		logger:           logger,
+		listener:         listener,
+		handshakeFactory: handshakeFactory,
 	}
 }
 
@@ -114,15 +111,8 @@ func (t *TransportHandler) registerClient(conn *net.UDPConn, clientAddr netip.Ad
 	_ = conn.SetReadBuffer(65536)
 	_ = conn.SetWriteBuffer(65536)
 
-	// ToDo: if configuration is updated, it will not load updates. Implement a ttl reader.
-	conf, err := t.configurationManager.Configuration()
-	if err != nil {
-		return fmt.Errorf("failed to read server configuration: %s", err)
-	}
-	t.configuration = conf
-
 	// Pass initialData and clientAddr to the crypto function
-	h := handshake.NewHandshake(t.configuration.Ed25519PublicKey, t.configuration.Ed25519PrivateKey)
+	h := t.handshakeFactory.NewHandshake()
 	adapter := network.NewInitialDataAdapter(
 		network.NewUdpAdapter(conn, clientAddr), initialData)
 	internalIP, handshakeErr := h.ServerSideHandshake(adapter)

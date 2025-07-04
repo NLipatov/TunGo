@@ -95,6 +95,11 @@ func (s *ServerWorkerFactory) createTCPWorker(ctx context.Context, tun io.ReadWr
 		return nil, fmt.Errorf("failed to listen TCP: %w", err)
 	}
 
+	conf, confErr := s.configurationManager.Configuration()
+	if confErr != nil {
+		return nil, confErr
+	}
+
 	tr := tcp_chacha20.NewTransportHandler(
 		ctx,
 		s.settings,
@@ -102,7 +107,7 @@ func (s *ServerWorkerFactory) createTCPWorker(ctx context.Context, tun io.ReadWr
 		listener,
 		sessionManager,
 		s.loggerFactory.newLogger(),
-		s.configurationManager,
+		NewHandshakeFactory(*conf),
 	)
 	return tcp_chacha20.NewTcpTunWorker(th, tr), nil
 }
@@ -132,6 +137,11 @@ func (s *ServerWorkerFactory) createUDPWorker(ctx context.Context, tun io.ReadWr
 	}
 	ul := s.udpFactory.listenUDP(sock)
 
+	conf, confErr := s.configurationManager.Configuration()
+	if confErr != nil {
+		return nil, confErr
+	}
+
 	tr := udp_chacha20.NewTransportHandler(
 		ctx,
 		s.settings,
@@ -139,7 +149,7 @@ func (s *ServerWorkerFactory) createUDPWorker(ctx context.Context, tun io.ReadWr
 		ul,
 		ttlConcurrentSessionManager,
 		s.loggerFactory.newLogger(),
-		s.configurationManager,
+		NewHandshakeFactory(*conf),
 	)
 	return udp_chacha20.NewUdpTunWorker(th, tr), nil
 }

@@ -11,7 +11,6 @@ import (
 	"tungo/application"
 	"tungo/infrastructure/PAL/server_configuration"
 	"tungo/infrastructure/cryptography/chacha20"
-	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/listeners/tcp_listener"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/routing/server_routing/session_management"
@@ -19,14 +18,14 @@ import (
 )
 
 type TransportHandler struct {
-	ctx                  context.Context
-	settings             settings.Settings
-	writer               io.ReadWriteCloser
-	listener             tcp_listener.Listener
-	sessionManager       session_management.WorkerSessionManager[Session]
-	Logger               application.Logger
-	configuration        *server_configuration.Configuration
-	configurationManager server_configuration.ServerConfigurationManager
+	ctx              context.Context
+	settings         settings.Settings
+	writer           io.ReadWriteCloser
+	listener         tcp_listener.Listener
+	sessionManager   session_management.WorkerSessionManager[Session]
+	Logger           application.Logger
+	configuration    *server_configuration.Configuration
+	handshakeFactory application.HandshakeFactory
 }
 
 func NewTransportHandler(
@@ -36,16 +35,16 @@ func NewTransportHandler(
 	listener tcp_listener.Listener,
 	sessionManager session_management.WorkerSessionManager[Session],
 	logger application.Logger,
-	manager server_configuration.ServerConfigurationManager,
+	handshakeFactory application.HandshakeFactory,
 ) application.TransportHandler {
 	return &TransportHandler{
-		ctx:                  ctx,
-		settings:             settings,
-		writer:               writer,
-		listener:             listener,
-		sessionManager:       sessionManager,
-		Logger:               logger,
-		configurationManager: manager,
+		ctx:              ctx,
+		settings:         settings,
+		writer:           writer,
+		listener:         listener,
+		sessionManager:   sessionManager,
+		Logger:           logger,
+		handshakeFactory: handshakeFactory,
 	}
 }
 
@@ -85,16 +84,11 @@ func (t *TransportHandler) HandleTransport() error {
 		}
 	}
 }
+
 func (t *TransportHandler) registerClient(conn net.Conn, tunFile io.ReadWriteCloser, ctx context.Context) error {
 	t.Logger.Printf("connected: %s", conn.RemoteAddr())
 
-	conf, confErr := t.configurationManager.Configuration()
-	if confErr != nil {
-		return confErr
-	}
-	t.configuration = conf
-
-	h := handshake.NewHandshake(t.configuration.Ed25519PublicKey, t.configuration.Ed25519PrivateKey)
+	h := t.handshakeFactory.NewHandshake()
 	internalIP, handshakeErr := h.ServerSideHandshake(&network.TcpAdapter{
 		Conn: conn,
 	})
@@ -115,11 +109,16 @@ func (t *TransportHandler) registerClient(conn net.Conn, tunFile io.ReadWriteClo
 		return fmt.Errorf("client %s failed registration: %w", conn.RemoteAddr(), cryptographyServiceErr)
 	}
 
-	tcpConn := conn.(*net.TCPConn)
-	addr := tcpConn.RemoteAddr().(*net.TCPAddr)
+	addr := conn.RemoteAddr()
+	tcpAddr, ok := addr.(*net.TCPAddr)
+	if !ok {
+		_ = conn.Close()
+		return fmt.Errorf("invalid remote address type: %T", addr)
+	}
+
 	intIP, intIPOk := netip.AddrFromSlice(internalIP)
 	if !intIPOk {
-		_ = tcpConn.Close()
+		_ = conn.Close()
 		return fmt.Errorf("invalid internal IP from handshake")
 	}
 
@@ -138,7 +137,7 @@ func (t *TransportHandler) registerClient(conn net.Conn, tunFile io.ReadWriteClo
 		conn:                conn,
 		CryptographyService: cryptographyService,
 		internalIP:          intIP,
-		externalIP:          addr.AddrPort(),
+		externalIP:          tcpAddr.AddrPort(),
 	}
 
 	t.sessionManager.Add(storedSession)
