@@ -9,7 +9,6 @@ import (
 	"net"
 	"net/netip"
 	"tungo/application"
-	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/listeners/tcp_listener"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/routing/server_routing/session_management"
@@ -24,6 +23,7 @@ type TransportHandler struct {
 	sessionManager   session_management.WorkerSessionManager[Session]
 	Logger           application.Logger
 	handshakeFactory application.HandshakeFactory
+	cryptoBuilder    application.CryptographyServiceBuilder
 }
 
 func NewTransportHandler(
@@ -34,6 +34,7 @@ func NewTransportHandler(
 	sessionManager session_management.WorkerSessionManager[Session],
 	logger application.Logger,
 	handshakeFactory application.HandshakeFactory,
+	cryptoBuilder application.CryptographyServiceBuilder,
 ) application.TransportHandler {
 	return &TransportHandler{
 		ctx:              ctx,
@@ -43,6 +44,7 @@ func NewTransportHandler(
 		sessionManager:   sessionManager,
 		Logger:           logger,
 		handshakeFactory: handshakeFactory,
+		cryptoBuilder:    cryptoBuilder,
 	}
 }
 
@@ -96,12 +98,7 @@ func (t *TransportHandler) registerClient(conn net.Conn, tunFile io.ReadWriteClo
 	}
 	t.Logger.Printf("registered: %s", conn.RemoteAddr())
 
-	cryptographyService, cryptographyServiceErr := chacha20.NewTcpCryptographyService(
-		h.Id(),
-		h.ServerKey(),
-		h.ClientKey(),
-		true,
-	)
+	cryptographyService, cryptographyServiceErr := t.cryptoBuilder.FromHandshake(h, true)
 	if cryptographyServiceErr != nil {
 		_ = conn.Close()
 		return fmt.Errorf("client %s failed registration: %w", conn.RemoteAddr(), cryptographyServiceErr)
