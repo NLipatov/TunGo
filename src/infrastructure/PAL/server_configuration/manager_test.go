@@ -243,3 +243,58 @@ func TestInjectSessionTtlIntervals_WriteError(t *testing.T) {
 		t.Errorf("expected error mentioning 'could not write default configuration', got %v", err)
 	}
 }
+
+func TestManagerConfigurationCaching(t *testing.T) {
+	path := createTestConfigPath(t)
+	manager, err := NewManagerWithReader(
+		managerTestValidResolver{path: path},
+		NewTTLReader(newDefaultReader(path), time.Second),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w := newWriter(path)
+
+	// Initial read will create default config
+	conf, err := manager.Configuration()
+	if err != nil {
+		t.Fatalf("initial Configuration error: %v", err)
+	}
+	modified := *conf
+	modified.ClientCounter = 42
+	if err := w.Write(modified); err != nil {
+		t.Fatalf("failed writing config: %v", err)
+	}
+
+	cached, err := manager.Configuration()
+	if err != nil {
+		t.Fatalf("cached Configuration error: %v", err)
+	}
+	if cached.ClientCounter != conf.ClientCounter {
+		t.Fatalf("expected cached client counter %d, got %d", conf.ClientCounter, cached.ClientCounter)
+	}
+
+	modified.ClientCounter = 100
+	if err := w.Write(modified); err != nil {
+		t.Fatalf("failed rewriting config: %v", err)
+	}
+
+	stillCached, err := manager.Configuration()
+	if err != nil {
+		t.Fatalf("second cached Configuration error: %v", err)
+	}
+	if stillCached.ClientCounter != conf.ClientCounter {
+		t.Fatalf("expected cached value %d, got %d", conf.ClientCounter, stillCached.ClientCounter)
+	}
+
+	// after TTL expires, new value should be read
+	time.Sleep(1100 * time.Millisecond)
+	updated, err := manager.Configuration()
+	if err != nil {
+		t.Fatalf("after TTL Configuration error: %v", err)
+	}
+	if updated.ClientCounter != 100 {
+		t.Fatalf("expected updated counter 100, got %d", updated.ClientCounter)
+	}
+}

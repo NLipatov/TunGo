@@ -6,6 +6,7 @@ import (
 	"io"
 	"time"
 	"tungo/application"
+	"tungo/infrastructure/PAL/server_configuration"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/routing/server_routing/routing/tcp_chacha20"
@@ -15,20 +16,22 @@ import (
 )
 
 type ServerWorkerFactory struct {
-	settings      settings.Settings
-	socketFactory socketFactory
-	tcpFactory    tcpListenerFactory
-	udpFactory    udpListenerFactory
-	loggerFactory loggerFactory
+	settings             settings.Settings
+	socketFactory        socketFactory
+	tcpFactory           tcpListenerFactory
+	udpFactory           udpListenerFactory
+	loggerFactory        loggerFactory
+	configurationManager server_configuration.ServerConfigurationManager
 }
 
-func NewServerWorkerFactory(settings settings.Settings) application.ServerWorkerFactory {
+func NewServerWorkerFactory(settings settings.Settings, manager server_configuration.ServerConfigurationManager) application.ServerWorkerFactory {
 	return &ServerWorkerFactory{
-		settings:      settings,
-		socketFactory: newDefaultSocketFactory(),
-		tcpFactory:    newDefaultTcpListenerFactory(),
-		udpFactory:    newDefaultUdpListenerFactory(),
-		loggerFactory: newDefaultLoggerFactory(),
+		settings:             settings,
+		socketFactory:        newDefaultSocketFactory(),
+		tcpFactory:           newDefaultTcpListenerFactory(),
+		udpFactory:           newDefaultUdpListenerFactory(),
+		loggerFactory:        newDefaultLoggerFactory(),
+		configurationManager: manager,
 	}
 }
 
@@ -38,13 +41,15 @@ func NewTestServerWorkerFactory(
 	tcpFactory tcpListenerFactory,
 	udpFactory udpListenerFactory,
 	loggerFactory loggerFactory,
+	manager server_configuration.ServerConfigurationManager,
 ) application.ServerWorkerFactory {
 	return &ServerWorkerFactory{
-		settings:      settings,
-		socketFactory: socketFactory,
-		tcpFactory:    tcpFactory,
-		udpFactory:    udpFactory,
-		loggerFactory: loggerFactory,
+		settings:             settings,
+		socketFactory:        socketFactory,
+		tcpFactory:           tcpFactory,
+		udpFactory:           udpFactory,
+		loggerFactory:        loggerFactory,
+		configurationManager: manager,
 	}
 }
 
@@ -97,6 +102,7 @@ func (s *ServerWorkerFactory) createTCPWorker(ctx context.Context, tun io.ReadWr
 		listener,
 		sessionManager,
 		s.loggerFactory.newLogger(),
+		s.configurationManager,
 	)
 	return tcp_chacha20.NewTcpTunWorker(th, tr), nil
 }
@@ -133,6 +139,7 @@ func (s *ServerWorkerFactory) createUDPWorker(ctx context.Context, tun io.ReadWr
 		ul,
 		ttlConcurrentSessionManager,
 		s.loggerFactory.newLogger(),
+		s.configurationManager,
 	)
 	return udp_chacha20.NewUdpTunWorker(th, tr), nil
 }

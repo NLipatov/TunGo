@@ -28,12 +28,25 @@ func NewManager(resolver client_configuration.Resolver) (ServerConfigurationMana
 		return nil, fmt.Errorf("failed to resolve server configuration path: %w", pathErr)
 	}
 
+	return NewManagerWithReader(
+		resolver,
+		NewTTLReader(newDefaultReader(path), time.Minute*15),
+	)
+}
+
+func NewManagerWithReader(
+	resolver client_configuration.Resolver,
+	reader Reader,
+) (ServerConfigurationManager, error) {
+	path, pathErr := resolver.Resolve()
+	if pathErr != nil {
+		return nil, fmt.Errorf("failed to resolve server configuration path: %w", pathErr)
+	}
+
 	return &Manager{
 		resolver: resolver,
 		writer:   newWriter(path),
-		reader: NewTTLReader(
-			newDefaultReader(path), time.Minute*15,
-		),
+		reader:   reader,
 	}, nil
 }
 
@@ -52,7 +65,7 @@ func (c *Manager) Configuration() (*Configuration, error) {
 		}
 	}
 
-	return newDefaultReader(path).read()
+	return c.reader.read()
 }
 
 func (c *Manager) IncrementClientCounter() error {

@@ -9,10 +9,12 @@ import (
 	"tungo/presentation/configuring/tui/components/implementations/bubble_tea"
 )
 
-type ConfigurationFactory struct{}
+type ConfigurationFactory struct {
+	serverConfManager server_configuration.ServerConfigurationManager
+}
 
-func NewConfigurationFactory() *ConfigurationFactory {
-	return &ConfigurationFactory{}
+func NewConfigurationFactory(manager server_configuration.ServerConfigurationManager) *ConfigurationFactory {
+	return &ConfigurationFactory{serverConfManager: manager}
 }
 
 func (c *ConfigurationFactory) Configurator() Configurator {
@@ -29,10 +31,7 @@ func (c *ConfigurationFactory) buildCLIConfigurator() Configurator {
 
 func (c *ConfigurationFactory) buildTUIConfigurator() Configurator {
 	clientConfResolver := client_configuration.NewDefaultResolver()
-	serverConfManager, serverConfManagerErr := server_configuration.NewManager(server_configuration.NewServerResolver())
-	if serverConfManagerErr != nil {
-		panic(serverConfManagerErr)
-	}
+	serverConfManager := c.serverConfManager
 
 	tuiConfigurator := tui.NewConfigurator(
 		client_configuration.NewDefaultObserver(clientConfResolver),

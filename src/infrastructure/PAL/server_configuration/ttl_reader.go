@@ -2,21 +2,21 @@ package server_configuration
 
 import "time"
 
-type ttlReader struct {
+type TTLReader struct {
 	reader         Reader
 	ttl            time.Duration
 	cache          *Configuration
 	cacheExpiresAt time.Time
 }
 
-func NewTTLReader(reader Reader, ttl time.Duration) *ttlReader {
-	return &ttlReader{
+func NewTTLReader(reader Reader, ttl time.Duration) *TTLReader {
+	return &TTLReader{
 		reader: reader,
 		ttl:    ttl,
 	}
 }
 
-func (t *ttlReader) read() (*Configuration, error) {
+func (t *TTLReader) read() (*Configuration, error) {
 	if t.cache != nil && time.Now().Before(t.cacheExpiresAt) {
 		return t.cache, nil
 	}
