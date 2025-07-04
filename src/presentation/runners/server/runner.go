@@ -69,7 +69,7 @@ func (r *Runner) Run(ctx context.Context) {
 }
 
 func (r *Runner) route(ctx context.Context, settings settings.Settings) error {
-	workerFactory := tun_server.NewServerWorkerFactory(settings)
+	workerFactory := tun_server.NewServerWorkerFactory(settings, r.deps.ConfigurationManager())
 	routerFactory := factory.NewServerRouterFactory()
 
 	tun, tunErr := r.deps.TunManager().CreateTunDevice(settings)

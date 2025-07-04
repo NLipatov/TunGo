@@ -6,20 +6,30 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"tungo/infrastructure/PAL/stat"
 )
 
-type reader struct {
-	path string
+type Reader interface {
+	read() (*Configuration, error)
 }
 
-func newReader(path string) *reader {
-	return &reader{
+type defaultReader struct {
+	path string
+	stat stat.Stat
+}
+
+func newDefaultReader(
+	path string,
+	stat stat.Stat,
+) *defaultReader {
+	return &defaultReader{
 		path: path,
+		stat: stat,
 	}
 }
 
-func (c *reader) read() (*Configuration, error) {
-	if _, statErr := os.Stat(c.path); statErr != nil {
+func (c *defaultReader) read() (*Configuration, error) {
+	if _, statErr := c.stat.Stat(c.path); statErr != nil {
 		if errors.Is(statErr, os.ErrNotExist) {
 			return nil, fmt.Errorf("configuration file does not exist: %s", c.path)
 		}
@@ -44,14 +54,14 @@ func (c *reader) read() (*Configuration, error) {
 	return &configuration, nil
 }
 
-func (c *reader) setEnvServerAddress(conf *Configuration) {
+func (c *defaultReader) setEnvServerAddress(conf *Configuration) {
 	sIP := os.Getenv("ServerIP")
 	if sIP != "" {
 		conf.FallbackServerAddress = sIP
 	}
 }
 
-func (c *reader) setEnvEnabledProtocols(conf *Configuration) {
+func (c *defaultReader) setEnvEnabledProtocols(conf *Configuration) {
 	envUdp := os.Getenv("EnableUDP")
 	envTCP := os.Getenv("EnableTCP")
 

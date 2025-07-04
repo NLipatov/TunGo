@@ -7,9 +7,7 @@ import (
 	"net"
 	"net/netip"
 	"tungo/application"
-	"tungo/infrastructure/PAL/server_configuration"
 	"tungo/infrastructure/cryptography/chacha20"
-	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/listeners/udp_listener"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/routing/server_routing/session_management"
@@ -17,12 +15,13 @@ import (
 )
 
 type TransportHandler struct {
-	ctx            context.Context
-	settings       settings.Settings
-	writer         io.Writer
-	sessionManager session_management.WorkerSessionManager[Session]
-	logger         application.Logger
-	listener       udp_listener.Listener
+	ctx              context.Context
+	settings         settings.Settings
+	writer           io.Writer
+	sessionManager   session_management.WorkerSessionManager[Session]
+	logger           application.Logger
+	listener         udp_listener.Listener
+	handshakeFactory application.HandshakeFactory
 }
 
 func NewTransportHandler(
@@ -32,14 +31,16 @@ func NewTransportHandler(
 	listener udp_listener.Listener,
 	sessionManager session_management.WorkerSessionManager[Session],
 	logger application.Logger,
+	handshakeFactory application.HandshakeFactory,
 ) application.TransportHandler {
 	return &TransportHandler{
-		ctx:            ctx,
-		settings:       settings,
-		writer:         writer,
-		sessionManager: sessionManager,
-		logger:         logger,
-		listener:       listener,
+		ctx:              ctx,
+		settings:         settings,
+		writer:           writer,
+		sessionManager:   sessionManager,
+		logger:           logger,
+		listener:         listener,
+		handshakeFactory: handshakeFactory,
 	}
 }
 
@@ -111,18 +112,12 @@ func (t *TransportHandler) registerClient(conn *net.UDPConn, clientAddr netip.Ad
 	_ = conn.SetWriteBuffer(65536)
 
 	// Pass initialData and clientAddr to the crypto function
-	h := handshake.NewHandshake()
+	h := t.handshakeFactory.NewHandshake()
 	adapter := network.NewInitialDataAdapter(
 		network.NewUdpAdapter(conn, clientAddr), initialData)
 	internalIP, handshakeErr := h.ServerSideHandshake(adapter)
 	if handshakeErr != nil {
 		return handshakeErr
-	}
-
-	serverConfigurationManager := server_configuration.NewManager(server_configuration.NewServerResolver())
-	_, err := serverConfigurationManager.Configuration()
-	if err != nil {
-		return fmt.Errorf("failed to read server configuration: %s", err)
 	}
 
 	cryptoSession, cryptoSessionErr := chacha20.NewUdpSession(h.Id(), h.ServerKey(), h.ClientKey(), true)

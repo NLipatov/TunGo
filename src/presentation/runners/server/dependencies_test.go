@@ -46,7 +46,7 @@ func TestNewDependenciesAndAccessors(t *testing.T) {
 	km := &dummyKeyMgr{}
 	sm := &dummySessionLifetimeMgr{}
 
-	deps := NewDependencies(tm, cfg, km, sm)
+	deps := NewDependencies(tm, cfg, km, sm, nil)
 
 	gotCfg := deps.Configuration()
 	if gotCfg.EnableTCP != cfg.EnableTCP {
@@ -89,5 +89,9 @@ func TestNewDependenciesAndAccessors(t *testing.T) {
 	}
 	if !sm.called {
 		t.Error("SessionLifetimeManager().PrepareSessionLifetime() was not invoked on underlying manager")
+	}
+
+	if deps.ConfigurationManager() != nil {
+		t.Error("expected nil ConfigurationManager")
 	}
 }

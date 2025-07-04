@@ -11,6 +11,7 @@ import (
 	"tungo/domain/mode"
 	"tungo/infrastructure/PAL/client_configuration"
 	"tungo/infrastructure/PAL/server_configuration"
+	"tungo/infrastructure/PAL/stat"
 	"tungo/infrastructure/PAL/tun_server"
 	"tungo/infrastructure/routing/client_routing/client_factory"
 	"tungo/presentation/configuring"
@@ -39,7 +40,15 @@ func main() {
 		appCtxCancel()
 	}()
 
-	configuratorFactory := configuring.NewConfigurationFactory()
+	configurationManager, configurationManagerErr := server_configuration.NewManager(
+		server_configuration.NewServerResolver(),
+		stat.NewDefaultStat(),
+	)
+	if configurationManagerErr != nil {
+		log.Fatalf("could not instantiate server configuration manager: %s", configurationManagerErr)
+	}
+
+	configuratorFactory := configuring.NewConfigurationFactory(configurationManager)
 	configurator := configuratorFactory.Configurator()
 	appMode, appModeErr := configurator.Configure()
 	if appModeErr != nil {
@@ -50,9 +59,9 @@ func main() {
 	switch appMode {
 	case mode.Server:
 		fmt.Printf("Starting server...\n")
-		startServer(appCtx)
+		startServer(appCtx, configurationManager)
 	case mode.ServerConfGen:
-		handler := handlers.NewConfgenHandler()
+		handler := handlers.NewConfgenHandler(configurationManager)
 		err := handler.GenerateNewClientConf()
 		if err != nil {
 			log.Printf("failed to generate new client conf: %v", err)
@@ -82,9 +91,9 @@ func startClient(appCtx context.Context) {
 	runner.Run(appCtx)
 }
 
-func startServer(appCtx context.Context) {
+func startServer(appCtx context.Context, configurationManager server_configuration.ServerConfigurationManager) {
 	tunFactory := tun_server.NewServerTunFactory()
-	configurationManager := server_configuration.NewManager(server_configuration.NewServerResolver())
+
 	conf, confErr := configurationManager.Configuration()
 	if confErr != nil {
 		log.Fatal(confErr)
@@ -95,6 +104,7 @@ func startServer(appCtx context.Context) {
 		*conf,
 		server_configuration.NewEd25519KeyManager(conf, configurationManager),
 		server_configuration.NewDefaultSessionLifetimeManager(conf, configurationManager),
+		configurationManager,
 	)
 
 	runner := server.NewRunner(deps)

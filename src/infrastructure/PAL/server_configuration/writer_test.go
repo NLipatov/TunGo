@@ -2,29 +2,16 @@ package server_configuration
 
 import (
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-type writerTestMockResolver struct {
-	path string
-	err  error
-}
-
-func (f writerTestMockResolver) Resolve() (string, error) {
-	if f.err != nil {
-		return "", f.err
-	}
-	return f.path, nil
-}
-
 func TestWriteSuccess(t *testing.T) {
 	tmpDir := t.TempDir()
 	tmpFile := filepath.Join(tmpDir, "conf.json")
-	w := newWriter(writerTestMockResolver{path: tmpFile})
+	w := newDefaultWriter(tmpFile)
 	data := map[string]string{"key": "value"}
 
 	if err := w.Write(data); err != nil {
@@ -45,7 +32,7 @@ func TestWriteSuccess(t *testing.T) {
 func TestJSONMarshalError(t *testing.T) {
 	tmpDir := t.TempDir()
 	tmpFile := filepath.Join(tmpDir, "conf.json")
-	w := newWriter(writerTestMockResolver{path: tmpFile})
+	w := newDefaultWriter(tmpFile)
 	// Channels cannot be JSON-marshaled.
 	ch := make(chan int)
 	if err := w.Write(ch); err == nil {
@@ -53,21 +40,10 @@ func TestJSONMarshalError(t *testing.T) {
 	}
 }
 
-func TestResolverError(t *testing.T) {
-	expectedErr := errors.New("resolver error")
-	w := newWriter(writerTestMockResolver{err: expectedErr})
-	err := w.Write(map[string]string{"key": "value"})
-	if err == nil {
-		t.Error("expected resolver error, got nil")
-	} else if err.Error() != expectedErr.Error() {
-		t.Errorf("expected error %v, got %v", expectedErr, err)
-	}
-}
-
 func TestFileCreateError(t *testing.T) {
 	// Passing an invalid path (contains a null byte) should trigger a file creation error.
 	invalidPath := string([]byte{0})
-	w := newWriter(writerTestMockResolver{path: invalidPath})
+	w := newDefaultWriter(invalidPath)
 	if err := w.Write(map[string]string{"key": "value"}); err == nil {
 		t.Error("expected file creation error, got nil")
 	}
@@ -78,7 +54,7 @@ func TestFileWriteError(t *testing.T) {
 	if _, err := os.Stat("/dev/full"); err != nil {
 		t.Skip("/dev/full not available, skipping test")
 	}
-	w := newWriter(writerTestMockResolver{path: "/dev/full"})
+	w := newDefaultWriter("/dev/full")
 	if err := w.Write(map[string]string{"key": "value"}); err == nil {
 		t.Error("expected file write error, got nil")
 	}
@@ -107,7 +83,7 @@ func TestMkdirAllError(t *testing.T) {
 	}
 	// Use a path inside fakeDir so that MkdirAll fails because fakeDir is not a directory.
 	filePath := filepath.Join(fakeDir, "conf.json")
-	w := newWriter(writerTestMockResolver{path: filePath})
+	w := newDefaultWriter(filePath)
 	err := w.Write(map[string]string{"key": "value"})
 	if err == nil {
 		t.Fatal("expected error from MkdirAll, got nil")
