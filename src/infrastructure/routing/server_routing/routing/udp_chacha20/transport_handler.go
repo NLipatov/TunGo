@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/netip"
 	"tungo/application"
-	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/listeners/udp_listener"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/routing/server_routing/session_management"
@@ -22,6 +21,7 @@ type TransportHandler struct {
 	logger           application.Logger
 	listener         udp_listener.Listener
 	handshakeFactory application.HandshakeFactory
+	cryptoBuilder    application.CryptographyServiceBuilder
 }
 
 func NewTransportHandler(
@@ -32,6 +32,7 @@ func NewTransportHandler(
 	sessionManager session_management.WorkerSessionManager[Session],
 	logger application.Logger,
 	handshakeFactory application.HandshakeFactory,
+	cryptoBuilder application.CryptographyServiceBuilder,
 ) application.TransportHandler {
 	return &TransportHandler{
 		ctx:              ctx,
@@ -41,6 +42,7 @@ func NewTransportHandler(
 		logger:           logger,
 		listener:         listener,
 		handshakeFactory: handshakeFactory,
+		cryptoBuilder:    cryptoBuilder,
 	}
 }
 
@@ -120,7 +122,7 @@ func (t *TransportHandler) registerClient(conn *net.UDPConn, clientAddr netip.Ad
 		return handshakeErr
 	}
 
-	cryptoSession, cryptoSessionErr := chacha20.NewUdpSession(h.Id(), h.ServerKey(), h.ClientKey(), true)
+	cryptoSession, cryptoSessionErr := t.cryptoBuilder.FromHandshake(h, true)
 	if cryptoSessionErr != nil {
 		return cryptoSessionErr
 	}

@@ -7,8 +7,10 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"strings"
 	"sync"
 	"testing"
+	"tungo/application"
 	"tungo/infrastructure/listeners/udp_listener"
 	"tungo/infrastructure/settings"
 	"unsafe"
@@ -51,6 +53,42 @@ func (m *mockMgr) GetByExternalIP(_ netip.AddrPort) (Session, error) {
 	return Session{}, errors.New("not found")
 }
 
+type testHandshake struct {
+	ip  []byte
+	err error
+}
+
+func (h *testHandshake) Id() [32]byte      { return [32]byte{} }
+func (h *testHandshake) ClientKey() []byte { return make([]byte, 32) }
+func (h *testHandshake) ServerKey() []byte { return make([]byte, 32) }
+func (h *testHandshake) ServerSideHandshake(application.ConnectionAdapter) (net.IP, error) {
+	return h.ip, h.err
+}
+func (h *testHandshake) ClientSideHandshake(application.ConnectionAdapter, settings.Settings) error {
+	return nil
+}
+
+type testHandshakeFactory struct{ h application.Handshake }
+
+func (f testHandshakeFactory) NewHandshake() application.Handshake { return f.h }
+
+type mockBuilder struct{}
+
+func (mockBuilder) FromHandshake(application.Handshake, bool) (application.CryptographyService, error) {
+	return &mockCryptoService{}, nil
+}
+
+type mockCryptoService struct{}
+
+func (mockCryptoService) Encrypt(b []byte) ([]byte, error) { return b, nil }
+func (mockCryptoService) Decrypt(b []byte) ([]byte, error) { return b, nil }
+
+type errBuilder struct{ err error }
+
+func (e errBuilder) FromHandshake(application.Handshake, bool) (application.CryptographyService, error) {
+	return nil, e.err
+}
+
 /* ---------- tests ---------- */
 
 func TestTransportHandler_HandleTransport_ReadError(t *testing.T) {
@@ -75,6 +113,7 @@ func TestTransportHandler_HandleTransport_ReadError(t *testing.T) {
 		sessionManager: &mockMgr{},
 		logger:         lg,
 		listener:       c,
+		cryptoBuilder:  mockBuilder{},
 	}
 
 	done := make(chan struct{})
@@ -83,5 +122,66 @@ func TestTransportHandler_HandleTransport_ReadError(t *testing.T) {
 
 	if len(lg.logs) == 0 || lg.logs[0] != "server listening on port 4242 (UDP)" {
 		t.Fatalf("unexpected logs: %v", lg.logs)
+	}
+}
+
+func TestRegisterClient_ErrHandshake(t *testing.T) {
+	conn := &mockConn{}
+	factory := testHandshakeFactory{h: &testHandshake{err: errors.New("boom")}}
+	h := &TransportHandler{
+		ctx:              context.Background(),
+		settings:         settings.Settings{},
+		writer:           io.Discard,
+		sessionManager:   &mockMgr{},
+		logger:           &mockLogger{},
+		listener:         conn,
+		handshakeFactory: factory,
+		cryptoBuilder:    mockBuilder{},
+	}
+	udpConn, _ := conn.ListenUDP()
+	err := h.registerClient(udpConn, netip.AddrPortFrom(netip.AddrFrom4([4]byte{1, 2, 3, 4}), 5555), nil)
+	if err == nil || err.Error() != "boom" {
+		t.Fatalf("expected handshake error, got %v", err)
+	}
+}
+
+func TestRegisterClient_ErrCrypto(t *testing.T) {
+	conn := &mockConn{}
+	factory := testHandshakeFactory{h: &testHandshake{ip: net.IPv4(10, 0, 0, 2)}}
+	cryptoErr := errors.New("crypt")
+	h := &TransportHandler{
+		ctx:              context.Background(),
+		settings:         settings.Settings{},
+		writer:           io.Discard,
+		sessionManager:   &mockMgr{},
+		logger:           &mockLogger{},
+		listener:         conn,
+		handshakeFactory: factory,
+		cryptoBuilder:    errBuilder{err: cryptoErr},
+	}
+	udpConn, _ := conn.ListenUDP()
+	err := h.registerClient(udpConn, netip.AddrPortFrom(netip.AddrFrom4([4]byte{1, 1, 1, 1}), 4444), nil)
+	if err == nil || err.Error() != "crypt" {
+		t.Fatalf("expected crypto error, got %v", err)
+	}
+}
+
+func TestRegisterClient_BadIP(t *testing.T) {
+	conn := &mockConn{}
+	factory := testHandshakeFactory{h: &testHandshake{ip: []byte{1, 2}}}
+	h := &TransportHandler{
+		ctx:              context.Background(),
+		settings:         settings.Settings{},
+		writer:           io.Discard,
+		sessionManager:   &mockMgr{},
+		logger:           &mockLogger{},
+		listener:         conn,
+		handshakeFactory: factory,
+		cryptoBuilder:    mockBuilder{},
+	}
+	udpConn, _ := conn.ListenUDP()
+	err := h.registerClient(udpConn, netip.AddrPortFrom(netip.AddrFrom4([4]byte{1, 1, 1, 1}), 2222), nil)
+	if err == nil || !strings.Contains(err.Error(), "failed to parse internal IP") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

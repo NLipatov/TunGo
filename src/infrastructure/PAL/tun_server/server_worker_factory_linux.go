@@ -109,6 +109,7 @@ func (s *ServerWorkerFactory) createTCPWorker(ctx context.Context, tun io.ReadWr
 		sessionManager,
 		s.loggerFactory.newLogger(),
 		NewHandshakeFactory(*conf),
+		chacha20.NewTcpSessionBuilder(),
 	)
 	return tcp_chacha20.NewTcpTunWorker(th, tr), nil
 }
@@ -151,6 +152,7 @@ func (s *ServerWorkerFactory) createUDPWorker(ctx context.Context, tun io.ReadWr
 		ttlConcurrentSessionManager,
 		s.loggerFactory.newLogger(),
 		NewHandshakeFactory(*conf),
+		chacha20.NewUdpSessionBuilder(),
 	)
 	return udp_chacha20.NewUdpTunWorker(th, tr), nil
 }
