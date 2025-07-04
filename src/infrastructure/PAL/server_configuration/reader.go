@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"tungo/infrastructure/PAL/stat"
 )
 
 type Reader interface {
@@ -14,16 +15,21 @@ type Reader interface {
 
 type defaultReader struct {
 	path string
+	stat stat.Stat
 }
 
-func newDefaultReader(path string) *defaultReader {
+func newDefaultReader(
+	path string,
+	stat stat.Stat,
+) *defaultReader {
 	return &defaultReader{
 		path: path,
+		stat: stat,
 	}
 }
 
 func (c *defaultReader) read() (*Configuration, error) {
-	if _, statErr := os.Stat(c.path); statErr != nil {
+	if _, statErr := c.stat.Stat(c.path); statErr != nil {
 		if errors.Is(statErr, os.ErrNotExist) {
 			return nil, fmt.Errorf("configuration file does not exist: %s", c.path)
 		}

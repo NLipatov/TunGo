@@ -11,6 +11,7 @@ import (
 	"tungo/domain/mode"
 	"tungo/infrastructure/PAL/client_configuration"
 	"tungo/infrastructure/PAL/server_configuration"
+	"tungo/infrastructure/PAL/stat"
 	"tungo/infrastructure/PAL/tun_server"
 	"tungo/infrastructure/routing/client_routing/client_factory"
 	"tungo/presentation/configuring"
@@ -39,7 +40,10 @@ func main() {
 		appCtxCancel()
 	}()
 
-	configurationManager, configurationManagerErr := server_configuration.NewManager(server_configuration.NewServerResolver())
+	configurationManager, configurationManagerErr := server_configuration.NewManager(
+		server_configuration.NewServerResolver(),
+		stat.NewDefaultStat(),
+	)
 	if configurationManagerErr != nil {
 		log.Fatalf("could not instantiate server configuration manager: %s", configurationManagerErr)
 	}

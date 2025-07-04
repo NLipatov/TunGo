@@ -2,10 +2,12 @@ package server_configuration
 
 import (
 	"crypto/ed25519"
+	"errors"
 	"fmt"
 	"os"
 	"time"
 	"tungo/infrastructure/PAL/client_configuration"
+	"tungo/infrastructure/PAL/stat"
 	"tungo/infrastructure/settings"
 )
 
@@ -20,9 +22,10 @@ type Manager struct {
 	resolver client_configuration.Resolver
 	reader   Reader
 	writer   Writer
+	stat     stat.Stat
 }
 
-func NewManager(resolver client_configuration.Resolver) (ServerConfigurationManager, error) {
+func NewManager(resolver client_configuration.Resolver, stat stat.Stat) (ServerConfigurationManager, error) {
 	path, pathErr := resolver.Resolve()
 	if pathErr != nil {
 		return nil, fmt.Errorf("failed to resolve server configuration path: %w", pathErr)
@@ -30,13 +33,15 @@ func NewManager(resolver client_configuration.Resolver) (ServerConfigurationMana
 
 	return NewManagerWithReader(
 		resolver,
-		NewTTLReader(newDefaultReader(path), time.Minute*15),
+		NewTTLReader(newDefaultReader(path, stat), time.Minute*15),
+		stat,
 	)
 }
 
 func NewManagerWithReader(
 	resolver client_configuration.Resolver,
 	reader Reader,
+	stat stat.Stat,
 ) (ServerConfigurationManager, error) {
 	path, pathErr := resolver.Resolve()
 	if pathErr != nil {
@@ -47,21 +52,26 @@ func NewManagerWithReader(
 		resolver: resolver,
 		writer:   newDefaultWriter(path),
 		reader:   reader,
+		stat:     stat,
 	}, nil
 }
 
 func (c *Manager) Configuration() (*Configuration, error) {
 	path, pathErr := c.resolver.Resolve()
 	if pathErr != nil {
-		return nil, fmt.Errorf("failed to read configuration: %s", path)
+		return nil, fmt.Errorf("failed to read configuration: %w", pathErr)
 	}
 
-	_, statErr := os.Stat(path)
+	_, statErr := c.stat.Stat(path)
 	if statErr != nil {
-		configuration := NewDefaultConfiguration()
-		writeErr := c.writer.Write(*configuration)
-		if writeErr != nil {
-			return nil, fmt.Errorf("could not write default configuration: %s", writeErr)
+		if errors.Is(statErr, os.ErrNotExist) {
+			configuration := NewDefaultConfiguration()
+			writeErr := c.writer.Write(*configuration)
+			if writeErr != nil {
+				return nil, fmt.Errorf("could not write default configuration: %w", writeErr)
+			}
+		} else {
+			return nil, statErr
 		}
 	}
 
