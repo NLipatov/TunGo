@@ -9,7 +9,6 @@ import (
 	"net"
 	"net/netip"
 	"tungo/application"
-	"tungo/infrastructure/PAL/server_configuration"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/listeners/tcp_listener"
 	"tungo/infrastructure/network"
@@ -24,7 +23,6 @@ type TransportHandler struct {
 	listener         tcp_listener.Listener
 	sessionManager   session_management.WorkerSessionManager[Session]
 	Logger           application.Logger
-	configuration    *server_configuration.Configuration
 	handshakeFactory application.HandshakeFactory
 }
 
