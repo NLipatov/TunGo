@@ -72,7 +72,8 @@ func (s *ServerWorkerFactory) createTCPWorker(ctx context.Context, tun io.ReadWr
 		NewConcurrentManager(sessionManager)
 	ttlConcurrentSessionManager := session_management.
 		NewTTLManager(
-			ctx, concurrentSessionManager,
+			ctx,
+			concurrentSessionManager,
 			time.Duration(s.settings.SessionLifetime.Ttl),
 			time.Duration(s.settings.SessionLifetime.CleanupInterval),
 		)
