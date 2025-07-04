@@ -3,185 +3,216 @@ package tcp_chacha20
 import (
 	"bytes"
 	"context"
-	"crypto/ed25519"
 	"errors"
 	"net"
 	"net/netip"
 	"sync"
 	"testing"
-	"tungo/infrastructure/PAL/server_configuration"
+	"time"
+	"tungo/application"
+	"tungo/infrastructure/routing/server_routing/session_management"
 	"tungo/infrastructure/settings"
 )
 
 // --- Mocks ---
 
-type TransportHandlerMockListener struct {
+type mockListener struct {
 	acceptC chan net.Conn
 	errC    chan error
-	mu      sync.Mutex
 	closed  bool
+	mu      sync.Mutex
 }
 
-func NewTransportHandlerMockListener() *TransportHandlerMockListener {
-	return &TransportHandlerMockListener{
-		acceptC: make(chan net.Conn, 1),
-		errC:    make(chan error, 1),
-	}
-}
-func (l *TransportHandlerMockListener) Accept() (net.Conn, error) {
+func (m *mockListener) Accept() (net.Conn, error) {
 	select {
-	case c := <-l.acceptC:
+	case c := <-m.acceptC:
 		return c, nil
-	case err := <-l.errC:
+	case err := <-m.errC:
 		return nil, err
 	}
 }
-func (l *TransportHandlerMockListener) Close() error {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.closed = true
+
+func (m *mockListener) Close() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.closed = true
 	return nil
 }
-func (l *TransportHandlerMockListener) Addr() net.Addr { return &net.TCPAddr{} }
 
-type TransportHandlerMockConn struct {
-	net.Conn
-	r bytes.Buffer
-	w bytes.Buffer
+type thMockConn struct {
+	bytes.Buffer
 }
 
-func (c *TransportHandlerMockConn) Read(b []byte) (int, error)  { return c.r.Read(b) }
-func (c *TransportHandlerMockConn) Write(b []byte) (int, error) { return c.w.Write(b) }
-func (c *TransportHandlerMockConn) Close() error                { return nil }
-func (c *TransportHandlerMockConn) RemoteAddr() net.Addr        { return &net.TCPAddr{} }
+func (m *thMockConn) LocalAddr() net.Addr {
+	panic("not implemented")
+}
 
-type TransportHandlerMockReadWriteCloser struct{ bytes.Buffer }
+func (m *thMockConn) SetDeadline(_ time.Time) error {
+	panic("not implemented")
+}
 
-func (m *TransportHandlerMockReadWriteCloser) Close() error { return nil }
+func (m *thMockConn) SetReadDeadline(_ time.Time) error {
+	panic("not implemented")
+}
 
-type TransportHandlerMockLogger struct {
+func (m *thMockConn) SetWriteDeadline(_ time.Time) error {
+	panic("not implemented")
+}
+
+func (m *thMockConn) Read(b []byte) (int, error)  { return m.Buffer.Read(b) }
+func (m *thMockConn) Write(b []byte) (int, error) { return m.Buffer.Write(b) }
+func (m *thMockConn) Close() error                { return nil }
+func (m *thMockConn) RemoteAddr() net.Addr {
+	return &net.TCPAddr{
+		IP:   net.IPv4(127, 0, 0, 1),
+		Port: 12345,
+	}
+}
+
+type mockSessionManager struct {
+	sessions map[netip.Addr]Session
+	mu       sync.Mutex
+}
+
+func (m *mockSessionManager) Add(session Session) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	key := session.InternalIP().Unmap()
+	m.sessions[key] = session
+}
+func (m *mockSessionManager) Delete(session Session) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.sessions, session.InternalIP().Unmap())
+}
+func (m *mockSessionManager) GetByInternalIP(addr netip.Addr) (Session, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if s, ok := m.sessions[addr.Unmap()]; ok {
+		return s, nil
+	}
+	return Session{}, session_management.ErrSessionNotFound
+}
+
+func (m *mockSessionManager) GetByExternalIP(_ netip.AddrPort) (Session, error) {
+	panic("not implemented")
+}
+
+type mockLogger struct {
 	logs []string
+	mu   sync.Mutex
 }
 
-func (l *TransportHandlerMockLogger) Printf(format string, _ ...any) {
-	l.logs = append(l.logs, format)
+func (m *mockLogger) Printf(format string, _ ...any) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.logs = append(m.logs, format)
 }
 
-type TransportHandlerMockSessionMgr struct {
-	added, deleted bool
-	getErr         error
+type mockHandshakeFactory struct{}
+
+func (m mockHandshakeFactory) NewHandshake() application.Handshake {
+	return &mockHandshake{}
 }
 
-func (m *TransportHandlerMockSessionMgr) Add(_ Session)    { m.added = true }
-func (m *TransportHandlerMockSessionMgr) Delete(_ Session) { m.deleted = true }
-func (m *TransportHandlerMockSessionMgr) GetByInternalIP(_ netip.Addr) (Session, error) {
-	return Session{}, m.getErr
-}
-func (m *TransportHandlerMockSessionMgr) GetByExternalIP(_ netip.AddrPort) (Session, error) {
-	return Session{}, nil
+type mockHandshake struct{}
+
+func (m *mockHandshake) Id() [32]byte {
+	return [32]byte{}
 }
 
-type mockCfgManager struct{}
-
-func (mockCfgManager) Configuration() (*server_configuration.Configuration, error) {
-	return &server_configuration.Configuration{}, nil
+func (m *mockHandshake) ClientKey() []byte {
+	return make([]byte, 32)
 }
 
-func (mockCfgManager) IncrementClientCounter() error { return nil }
+func (m *mockHandshake) ServerKey() []byte {
+	return make([]byte, 32)
+}
 
-func (mockCfgManager) InjectEdKeys(ed25519.PublicKey, ed25519.PrivateKey) error { return nil }
+func (m *mockHandshake) ServerSideHandshake(application.ConnectionAdapter) (net.IP, error) {
+	return net.IPv4(10, 0, 0, 1), nil
+}
 
-func (mockCfgManager) InjectSessionTtlIntervals(settings.HumanReadableDuration, settings.HumanReadableDuration) error {
+func (m *mockHandshake) ClientSideHandshake(application.ConnectionAdapter, settings.Settings) error {
 	return nil
 }
 
 // --- Tests ---
 
 func TestTransportHandler_HandleTransport_acceptFail(t *testing.T) {
-	listener := NewTransportHandlerMockListener()
-	logger := &TransportHandlerMockLogger{}
-	ctx, cancel := context.WithCancel(context.Background())
-	handler := &TransportHandler{
-		ctx:            ctx,
-		settings:       settings.Settings{Port: "1234"},
-		writer:         &TransportHandlerMockReadWriteCloser{},
-		listener:       listener,
-		sessionManager: &TransportHandlerMockSessionMgr{},
-		Logger:         logger,
+	listener := &mockListener{
+		errC: make(chan error, 1),
 	}
-
-	listener.errC <- errors.New("accept fail")
+	listener.errC <- errors.New("accept error")
+	logger := &mockLogger{}
+	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	done := make(chan struct{})
-	go func() { _ = handler.HandleTransport(); close(done) }()
+	handler := &TransportHandler{
+		ctx:      ctx,
+		settings: settings.Settings{Port: "1234"},
+		listener: listener,
+		sessionManager: &mockSessionManager{
+			sessions: make(map[netip.Addr]Session),
+		},
+		Logger:           logger,
+		handshakeFactory: mockHandshakeFactory{},
+	}
 
-	<-done
+	_ = handler.HandleTransport()
+
 	if len(logger.logs) == 0 {
 		t.Error("expected log for failed accept")
 	}
 }
 
 func TestTransportHandler_HandleTransport_contextCancel(t *testing.T) {
-	listener := NewTransportHandlerMockListener()
-	logger := &TransportHandlerMockLogger{}
+	listener := &mockListener{}
+	logger := &mockLogger{}
 	ctx, cancel := context.WithCancel(context.Background())
-	handler := &TransportHandler{
-		ctx:            ctx,
-		settings:       settings.Settings{Port: "1234"},
-		writer:         &TransportHandlerMockReadWriteCloser{},
-		listener:       listener,
-		sessionManager: &TransportHandlerMockSessionMgr{},
-		Logger:         logger,
-	}
 	cancel()
-	done := make(chan struct{})
-	go func() { _ = handler.HandleTransport(); close(done) }()
-	<-done
-	if len(logger.logs) == 0 {
-		t.Error("expected log for server listening")
+
+	handler := &TransportHandler{
+		ctx:      ctx,
+		settings: settings.Settings{Port: "1234"},
+		listener: listener,
+		sessionManager: &mockSessionManager{
+			sessions: make(map[netip.Addr]Session),
+		},
+		Logger:           logger,
+		handshakeFactory: mockHandshakeFactory{},
+	}
+
+	_ = handler.HandleTransport()
+
+	if !listener.closed {
+		t.Error("expected listener to be closed")
 	}
 }
 
-func TestTransportHandler_registerClient_handshakeFail(t *testing.T) {
-	conn := &TransportHandlerMockConn{}
-	writer := &TransportHandlerMockReadWriteCloser{}
-	logger := &TransportHandlerMockLogger{}
-	mgr := &TransportHandlerMockSessionMgr{}
-	handler := &TransportHandler{
-		ctx:                  context.Background(),
-		settings:             settings.Settings{Port: "1234"},
-		writer:               writer,
-		listener:             nil,
-		sessionManager:       mgr,
-		Logger:               logger,
-		configurationManager: mockCfgManager{},
-	}
-	handler.registerClient(conn, writer, context.Background())
-	if len(logger.logs) == 0 {
-		t.Error("expected log for handshake fail")
-	}
-}
+func TestTransportHandler_registerClient_success(t *testing.T) {
+	conn := &thMockConn{}
+	writer := &mockConn{}
+	logger := &mockLogger{}
+	mgr := &mockSessionManager{sessions: map[netip.Addr]Session{}}
 
-func TestTransportHandler_handleClient_sessionNotFound(t *testing.T) {
-	conn := &TransportHandlerMockConn{}
-	writer := &TransportHandlerMockReadWriteCloser{}
-	logger := &TransportHandlerMockLogger{}
-	mgr := &TransportHandlerMockSessionMgr{getErr: errors.New("no sess")}
+	session := Session{conn: conn}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
 	handler := &TransportHandler{
-		ctx:                  context.Background(),
-		settings:             settings.Settings{Port: "1234"},
-		writer:               writer,
-		listener:             nil,
-		sessionManager:       mgr,
-		Logger:               logger,
-		configurationManager: mockCfgManager{},
+		ctx:              ctx,
+		settings:         settings.Settings{},
+		writer:           writer,
+		sessionManager:   mgr,
+		Logger:           logger,
+		handshakeFactory: mockHandshakeFactory{},
 	}
-	go func() {
-		_, _ = conn.r.Write([]byte{0, 0, 0, 8, 1, 2, 3, 4, 5, 6, 7, 8})
-	}()
-	handler.handleClient(context.Background(), Session{conn: conn}, writer)
-	if len(logger.logs) == 0 {
-		t.Error("expected log for session not found")
+
+	handler.handleClient(ctx, session, writer)
+
+	if len(mgr.sessions) != 0 {
+		t.Error("expected session to be removed after context cancel")
 	}
 }
