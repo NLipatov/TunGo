@@ -10,7 +10,7 @@ import (
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network"
-	"tungo/infrastructure/routing/server_routing/session_management"
+	"tungo/infrastructure/routing/server_routing/session_management/repository"
 )
 
 type TunHandler struct {
@@ -18,7 +18,7 @@ type TunHandler struct {
 	reader         io.Reader
 	encoder        chacha20.TCPEncoder
 	ipParser       network.IPHeader
-	sessionManager session_management.WorkerSessionManager[Session]
+	sessionManager repository.SessionRepository[Session]
 }
 
 func NewTunHandler(
@@ -26,7 +26,7 @@ func NewTunHandler(
 	reader io.Reader,
 	encoder chacha20.TCPEncoder,
 	ipParser network.IPHeader,
-	sessionManager session_management.WorkerSessionManager[Session],
+	sessionManager repository.SessionRepository[Session],
 ) application.TunHandler {
 	return &TunHandler{
 		ctx:            ctx,
@@ -85,7 +85,7 @@ func (t *TunHandler) HandleTun() error {
 				continue
 			}
 
-			clientSession, getErr := t.sessionManager.GetByInternalIP(destAddr)
+			clientSession, getErr := t.sessionManager.GetByInternalAddrPort(destAddr)
 			if getErr != nil {
 				log.Printf("packet dropped: %s, destination host: %v", getErr, destinationAddressBytes)
 				continue

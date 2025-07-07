@@ -16,10 +16,10 @@ type Session struct {
 	externalIP netip.AddrPort
 }
 
-func (s Session) InternalIP() netip.Addr {
+func (s Session) InternalAddr() netip.Addr {
 	return s.internalIP
 }
 
-func (s Session) ExternalIP() netip.AddrPort {
+func (s Session) ExternalAddrPort() netip.AddrPort {
 	return s.externalIP
 }

@@ -11,7 +11,8 @@ import (
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/routing/server_routing/routing/tcp_chacha20"
 	"tungo/infrastructure/routing/server_routing/routing/udp_chacha20"
-	"tungo/infrastructure/routing/server_routing/session_management"
+	"tungo/infrastructure/routing/server_routing/session_management/repository"
+	"tungo/infrastructure/routing/server_routing/session_management/repository/wrappers"
 	"tungo/infrastructure/settings"
 )
 
@@ -66,17 +67,14 @@ func (s *ServerWorkerFactory) CreateWorker(ctx context.Context, tun io.ReadWrite
 
 func (s *ServerWorkerFactory) createTCPWorker(ctx context.Context, tun io.ReadWriteCloser) (application.TunWorker, error) {
 	// session managers, handlers…
-	sessionManager := session_management.
-		NewDefaultWorkerSessionManager[tcp_chacha20.Session]()
-	concurrentSessionManager := session_management.
-		NewConcurrentManager(sessionManager)
-	ttlConcurrentSessionManager := session_management.
-		NewTTLManager(
-			ctx,
-			concurrentSessionManager,
-			time.Duration(s.settings.SessionLifetime.Ttl),
-			time.Duration(s.settings.SessionLifetime.CleanupInterval),
-		)
+	sessionManager := repository.NewDefaultWorkerSessionManager[tcp_chacha20.Session]()
+	concurrentSessionManager := wrappers.NewConcurrentManager(sessionManager)
+	ttlConcurrentSessionManager := wrappers.NewTTLManager(
+		ctx,
+		concurrentSessionManager,
+		time.Duration(s.settings.SessionLifetime.Ttl),
+		time.Duration(s.settings.SessionLifetime.CleanupInterval),
+	)
 
 	th := tcp_chacha20.NewTunHandler(
 		ctx,
@@ -114,16 +112,13 @@ func (s *ServerWorkerFactory) createTCPWorker(ctx context.Context, tun io.ReadWr
 }
 
 func (s *ServerWorkerFactory) createUDPWorker(ctx context.Context, tun io.ReadWriteCloser) (application.TunWorker, error) {
-	sessionManager := session_management.
-		NewDefaultWorkerSessionManager[udp_chacha20.Session]()
-	concurrentSessionManager := session_management.
-		NewConcurrentManager(sessionManager)
-	ttlConcurrentSessionManager := session_management.
-		NewTTLManager(
-			ctx, concurrentSessionManager,
-			time.Duration(s.settings.SessionLifetime.Ttl),
-			time.Duration(s.settings.SessionLifetime.CleanupInterval),
-		)
+	sessionManager := repository.NewDefaultWorkerSessionManager[udp_chacha20.Session]()
+	concurrentSessionManager := wrappers.NewConcurrentManager(sessionManager)
+	ttlConcurrentSessionManager := wrappers.NewTTLManager(
+		ctx, concurrentSessionManager,
+		time.Duration(s.settings.SessionLifetime.Ttl),
+		time.Duration(s.settings.SessionLifetime.CleanupInterval),
+	)
 
 	th := udp_chacha20.NewTunHandler(
 		ctx,

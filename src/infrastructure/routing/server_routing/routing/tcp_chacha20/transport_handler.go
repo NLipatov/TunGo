@@ -12,7 +12,7 @@ import (
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/listeners/tcp_listener"
 	"tungo/infrastructure/network"
-	"tungo/infrastructure/routing/server_routing/session_management"
+	"tungo/infrastructure/routing/server_routing/session_management/repository"
 	"tungo/infrastructure/settings"
 )
 
@@ -21,7 +21,7 @@ type TransportHandler struct {
 	settings         settings.Settings
 	writer           io.ReadWriteCloser
 	listener         tcp_listener.Listener
-	sessionManager   session_management.WorkerSessionManager[Session]
+	sessionManager   repository.SessionRepository[Session]
 	Logger           application.Logger
 	handshakeFactory application.HandshakeFactory
 }
@@ -31,7 +31,7 @@ func NewTransportHandler(
 	settings settings.Settings,
 	writer io.ReadWriteCloser,
 	listener tcp_listener.Listener,
-	sessionManager session_management.WorkerSessionManager[Session],
+	sessionManager repository.SessionRepository[Session],
 	logger application.Logger,
 	handshakeFactory application.HandshakeFactory,
 ) application.TransportHandler {
@@ -121,8 +121,8 @@ func (t *TransportHandler) registerClient(conn net.Conn, tunFile io.ReadWriteClo
 	}
 
 	// Prevent IP spoofing
-	_, getErr := t.sessionManager.GetByInternalIP(intIP)
-	if !errors.Is(getErr, session_management.ErrSessionNotFound) {
+	_, getErr := t.sessionManager.GetByInternalAddrPort(intIP)
+	if !errors.Is(getErr, repository.ErrSessionNotFound) {
 		_ = conn.Close()
 		return fmt.Errorf(
 			"connection closed: %s (internal internalIP %s already in use)\n",

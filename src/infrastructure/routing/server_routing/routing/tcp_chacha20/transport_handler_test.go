@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 	"tungo/application"
-	"tungo/infrastructure/routing/server_routing/session_management"
+	"tungo/infrastructure/routing/server_routing/session_management/repository"
 	"tungo/infrastructure/settings"
 )
 
@@ -77,24 +77,24 @@ type mockSessionManager struct {
 func (m *mockSessionManager) Add(session Session) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	key := session.InternalIP().Unmap()
+	key := session.InternalAddr().Unmap()
 	m.sessions[key] = session
 }
 func (m *mockSessionManager) Delete(session Session) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	delete(m.sessions, session.InternalIP().Unmap())
+	delete(m.sessions, session.InternalAddr().Unmap())
 }
-func (m *mockSessionManager) GetByInternalIP(addr netip.Addr) (Session, error) {
+func (m *mockSessionManager) GetByInternalAddrPort(addr netip.Addr) (Session, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if s, ok := m.sessions[addr.Unmap()]; ok {
 		return s, nil
 	}
-	return Session{}, session_management.ErrSessionNotFound
+	return Session{}, repository.ErrSessionNotFound
 }
 
-func (m *mockSessionManager) GetByExternalIP(_ netip.AddrPort) (Session, error) {
+func (m *mockSessionManager) GetByExternalAddrPort(_ netip.AddrPort) (Session, error) {
 	panic("not implemented")
 }
 

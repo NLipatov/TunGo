@@ -34,10 +34,10 @@ func TestSessionAccessors(t *testing.T) {
 		externalIP:          external,
 	}
 
-	if got := s.InternalIP(); got != internal {
-		t.Errorf("InternalIP() = %v, want %v", got, internal)
+	if got := s.InternalAddr(); got != internal {
+		t.Errorf("InternalAddr() = %v, want %v", got, internal)
 	}
-	if got := s.ExternalIP(); got != external {
-		t.Errorf("ExternalIP() = %v, want %v", got, external)
+	if got := s.ExternalAddrPort(); got != external {
+		t.Errorf("ExternalAddrPort() = %v, want %v", got, external)
 	}
 }

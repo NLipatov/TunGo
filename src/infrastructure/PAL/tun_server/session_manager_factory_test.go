@@ -11,10 +11,10 @@ type sessionManagerFactoryDummySession struct {
 	externalIP netip.AddrPort
 }
 
-func (d sessionManagerFactoryDummySession) InternalIP() netip.Addr {
+func (d sessionManagerFactoryDummySession) InternalAddr() netip.Addr {
 	return d.internalIP
 }
-func (d sessionManagerFactoryDummySession) ExternalIP() netip.AddrPort {
+func (d sessionManagerFactoryDummySession) ExternalAddrPort() netip.AddrPort {
 	return d.externalIP
 }
 
@@ -31,25 +31,25 @@ func TestSessionManagerFactory_CreateManager(t *testing.T) {
 	}
 
 	mgr.Add(sess)
-	gotByInt, err := mgr.GetByInternalIP(sess.InternalIP())
+	gotByInt, err := mgr.GetByInternalAddrPort(sess.InternalAddr())
 	if err != nil {
-		t.Fatalf("GetByInternalIP: unexpected error: %v", err)
+		t.Fatalf("GetByInternalAddrPort: unexpected error: %v", err)
 	}
-	if !reflect.DeepEqual(gotByInt.InternalIP(), sess.InternalIP()) {
-		t.Errorf("InternalIP: got %v, want %v", gotByInt.InternalIP(), sess.InternalIP())
+	if !reflect.DeepEqual(gotByInt.InternalAddr(), sess.InternalAddr()) {
+		t.Errorf("InternalAddr: got %v, want %v", gotByInt.InternalAddr(), sess.InternalAddr())
 	}
 
-	gotByExt, err := mgr.GetByExternalIP(sess.ExternalIP())
+	gotByExt, err := mgr.GetByExternalAddrPort(sess.ExternalAddrPort())
 	if err != nil {
-		t.Fatalf("GetByExternalIP: unexpected error: %v", err)
+		t.Fatalf("GetByExternalAddrPort: unexpected error: %v", err)
 	}
-	if !reflect.DeepEqual(gotByExt.ExternalIP(), sess.ExternalIP()) {
-		t.Errorf("ExternalIP: got %v, want %v", gotByExt.ExternalIP(), sess.ExternalIP())
+	if !reflect.DeepEqual(gotByExt.ExternalAddrPort(), sess.ExternalAddrPort()) {
+		t.Errorf("ExternalAddrPort: got %v, want %v", gotByExt.ExternalAddrPort(), sess.ExternalAddrPort())
 	}
 
 	mgr.Delete(sess)
-	if _, err := mgr.GetByInternalIP(sess.InternalIP()); err == nil {
-		t.Error("after Delete, GetByInternalIP should return error, got nil")
+	if _, err := mgr.GetByInternalAddrPort(sess.InternalAddr()); err == nil {
+		t.Error("after Delete, GetByInternalAddrPort should return error, got nil")
 	}
 }
 
@@ -67,24 +67,24 @@ func TestSessionManagerFactory_CreateConcurrentManager(t *testing.T) {
 
 	cmgr.Add(sess)
 
-	gotByInt, err := cmgr.GetByInternalIP(sess.InternalIP())
+	gotByInt, err := cmgr.GetByInternalAddrPort(sess.InternalAddr())
 	if err != nil {
-		t.Fatalf("concurrent GetByInternalIP: unexpected error: %v", err)
+		t.Fatalf("concurrent GetByInternalAddrPort: unexpected error: %v", err)
 	}
-	if !reflect.DeepEqual(gotByInt.InternalIP(), sess.InternalIP()) {
-		t.Errorf("concurrent InternalIP: got %v, want %v", gotByInt.InternalIP(), sess.InternalIP())
+	if !reflect.DeepEqual(gotByInt.InternalAddr(), sess.InternalAddr()) {
+		t.Errorf("concurrent InternalAddr: got %v, want %v", gotByInt.InternalAddr(), sess.InternalAddr())
 	}
 
-	gotByExt, err := cmgr.GetByExternalIP(sess.ExternalIP())
+	gotByExt, err := cmgr.GetByExternalAddrPort(sess.ExternalAddrPort())
 	if err != nil {
-		t.Fatalf("concurrent GetByExternalIP: unexpected error: %v", err)
+		t.Fatalf("concurrent GetByExternalAddrPort: unexpected error: %v", err)
 	}
-	if !reflect.DeepEqual(gotByExt.ExternalIP(), sess.ExternalIP()) {
-		t.Errorf("concurrent ExternalIP: got %v, want %v", gotByExt.ExternalIP(), sess.ExternalIP())
+	if !reflect.DeepEqual(gotByExt.ExternalAddrPort(), sess.ExternalAddrPort()) {
+		t.Errorf("concurrent ExternalAddrPort: got %v, want %v", gotByExt.ExternalAddrPort(), sess.ExternalAddrPort())
 	}
 
 	cmgr.Delete(sess)
-	if _, err := cmgr.GetByInternalIP(sess.InternalIP()); err == nil {
-		t.Error("after concurrent Delete, GetByInternalIP should return error, got nil")
+	if _, err := cmgr.GetByInternalAddrPort(sess.InternalAddr()); err == nil {
+		t.Error("after concurrent Delete, GetByInternalAddrPort should return error, got nil")
 	}
 }

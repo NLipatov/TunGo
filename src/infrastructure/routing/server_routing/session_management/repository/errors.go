@@ -1,4 +1,4 @@
-package session_management
+package repository
 
 import "errors"
 
