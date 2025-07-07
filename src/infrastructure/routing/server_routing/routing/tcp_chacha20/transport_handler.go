@@ -10,7 +10,6 @@ import (
 	"net/netip"
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
-	"tungo/infrastructure/listeners/tcp_listener"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
 	"tungo/infrastructure/settings"
@@ -20,7 +19,7 @@ type TransportHandler struct {
 	ctx              context.Context
 	settings         settings.Settings
 	writer           io.ReadWriteCloser
-	listener         tcp_listener.Listener
+	listener         application.TcpListener
 	sessionManager   repository.SessionRepository[Session]
 	Logger           application.Logger
 	handshakeFactory application.HandshakeFactory
@@ -30,7 +29,7 @@ func NewTransportHandler(
 	ctx context.Context,
 	settings settings.Settings,
 	writer io.ReadWriteCloser,
-	listener tcp_listener.Listener,
+	listener application.TcpListener,
 	sessionManager repository.SessionRepository[Session],
 	logger application.Logger,
 	handshakeFactory application.HandshakeFactory,
@@ -52,7 +51,7 @@ func (t *TransportHandler) HandleTransport() error {
 	}()
 	t.Logger.Printf("server listening on port %s (TCP)", t.settings.Port)
 
-	//using this goroutine to 'unblock' Listener.Accept blocking-call
+	//using this goroutine to 'unblock' TcpListener.Accept blocking-call
 	go func() {
 		<-t.ctx.Done() //blocks till ctx.Done signal comes in
 		_ = t.listener.Close()

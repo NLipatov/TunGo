@@ -52,7 +52,7 @@ func TestUdpAdapter_Write(t *testing.T) {
 	buf := make([]byte, 16)
 	n2, _, _, _, err := serverConn.ReadMsgUDPAddrPort(buf, nil)
 	if err != nil {
-		t.Fatalf("server ReadMsgUDPAddrPort: %v", err)
+		t.Fatalf("server Read: %v", err)
 	}
 	if string(buf[:n2]) != string(msg) {
 		t.Errorf("server got %q, want %q", buf[:n2], msg)

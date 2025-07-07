@@ -11,7 +11,6 @@ import (
 	"tungo/infrastructure/PAL/server_configuration"
 
 	"tungo/application"
-	"tungo/infrastructure/listeners/udp_listener"
 	"tungo/infrastructure/settings"
 )
 
@@ -63,8 +62,8 @@ func (m *ServerWorkerFactoryMockTcpListenerFactory) listenTCP(addr string) (net.
 // --- udpListenerFactory mock ---
 type fakeUDPListener struct{}
 
-func (*fakeUDPListener) ListenUDP() (*net.UDPConn, error) { return nil, io.EOF }
-func (*fakeUDPListener) ReadMsgUDPAddrPort(_ []byte, _ []byte) (int, int, int, netip.AddrPort, error) {
+func (*fakeUDPListener) Listen() (application.UdpListenerConn, error) { return nil, io.EOF }
+func (*fakeUDPListener) Read(_ []byte, _ []byte) (int, int, int, netip.AddrPort, error) {
 	return 0, 0, 0, netip.AddrPort{}, io.EOF
 }
 
@@ -72,7 +71,7 @@ type ServerWorkerFactoryMockUdpListenerFactory struct {
 	Called bool
 }
 
-func (m *ServerWorkerFactoryMockUdpListenerFactory) listenUDP(_ application.Socket) udp_listener.Listener {
+func (m *ServerWorkerFactoryMockUdpListenerFactory) listenUDP(_ application.Socket) application.Listener {
 	m.Called = true
 	return &fakeUDPListener{}
 }
@@ -117,7 +116,6 @@ func (m *swflServerConfigurationManager) InjectEdKeys(_ ed25519.PublicKey, _ ed2
 // --- tests ---
 func TestCreateWorker_UnsupportedProtocol(t *testing.T) {
 	s := settings.Settings{Protocol: 42}
-	// Даже тут нужен мок (иначе panic, если будет обращение)
 	cfgMgr := &swflServerConfigurationManager{}
 	factory := NewTestServerWorkerFactory(s, nil, nil, nil, nil, cfgMgr)
 	_, err := factory.CreateWorker(context.Background(), nopReadWriteCloser{})

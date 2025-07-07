@@ -4,11 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net"
 	"net/netip"
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
-	"tungo/infrastructure/listeners/udp_listener"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
 	"tungo/infrastructure/settings"
@@ -20,7 +18,7 @@ type TransportHandler struct {
 	writer           io.Writer
 	sessionManager   repository.SessionRepository[Session]
 	logger           application.Logger
-	listener         udp_listener.Listener
+	listener         application.Listener
 	handshakeFactory application.HandshakeFactory
 }
 
@@ -28,7 +26,7 @@ func NewTransportHandler(
 	ctx context.Context,
 	settings settings.Settings,
 	writer io.Writer,
-	listener udp_listener.Listener,
+	listener application.Listener,
 	sessionManager repository.SessionRepository[Session],
 	logger application.Logger,
 	handshakeFactory application.HandshakeFactory,
@@ -45,12 +43,12 @@ func NewTransportHandler(
 }
 
 func (t *TransportHandler) HandleTransport() error {
-	conn, err := t.listener.ListenUDP()
+	conn, err := t.listener.Listen()
 	if err != nil {
 		t.logger.Printf("failed to listen on port: %s", err)
 		return err
 	}
-	defer func(conn net.Conn) {
+	defer func(conn application.UdpListenerConn) {
 		_ = conn.Close()
 	}(conn)
 
@@ -87,7 +85,7 @@ func (t *TransportHandler) HandleTransport() error {
 // handlePacket processes a UDP packet from addrPort.
 // Registers the client if needed, or decrypts and forwards the packet for an existing session.
 func (t *TransportHandler) handlePacket(
-	conn *net.UDPConn,
+	conn application.UdpListenerConn,
 	addrPort netip.AddrPort,
 	packet []byte) error {
 	session, sessionLookupErr := t.sessionManager.GetByExternalAddrPort(addrPort)
@@ -124,7 +122,7 @@ func (t *TransportHandler) handlePacket(
 }
 
 func (t *TransportHandler) registerClient(
-	conn *net.UDPConn,
+	conn application.UdpListenerConn,
 	addrPort netip.AddrPort,
 	initialData []byte) error {
 	_ = conn.SetReadBuffer(65536)
@@ -150,10 +148,7 @@ func (t *TransportHandler) registerClient(
 	}
 
 	t.sessionManager.Add(Session{
-		connectionAdapter: &network.ServerUdpAdapter{
-			UdpConn:  conn,
-			AddrPort: addrPort,
-		},
+		connectionAdapter:   network.NewUdpAdapter(conn, addrPort),
 		remoteAddrPort:      addrPort,
 		CryptographyService: cryptoSession,
 		internalIP:          intIp,

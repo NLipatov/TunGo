@@ -1,8 +1,8 @@
-package tcp_listener
+package application
 
 import "net"
 
-type Listener interface {
+type TcpListener interface {
 	Accept() (net.Conn, error)
 	Close() error
 }

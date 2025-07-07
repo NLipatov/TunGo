@@ -1,13 +1,12 @@
 package network
 
 import (
-	"net"
 	"net/netip"
 	"tungo/application"
 )
 
 type ServerUdpAdapter struct {
-	UdpConn  *net.UDPConn
+	Conn     application.UdpListenerConn
 	AddrPort netip.AddrPort
 
 	//read buffers
@@ -15,19 +14,19 @@ type ServerUdpAdapter struct {
 	oob [1024]byte
 }
 
-func NewUdpAdapter(UdpConn *net.UDPConn, AddrPort netip.AddrPort) application.ConnectionAdapter {
+func NewUdpAdapter(UdpConn application.UdpListenerConn, AddrPort netip.AddrPort) application.ConnectionAdapter {
 	return &ServerUdpAdapter{
-		UdpConn:  UdpConn,
+		Conn:     UdpConn,
 		AddrPort: AddrPort,
 	}
 }
 
 func (ua *ServerUdpAdapter) Write(data []byte) (int, error) {
-	return ua.UdpConn.WriteToUDPAddrPort(data, ua.AddrPort)
+	return ua.Conn.WriteToUDPAddrPort(data, ua.AddrPort)
 }
 
 func (ua *ServerUdpAdapter) Read(buffer []byte) (int, error) {
-	n, _, _, _, err := ua.UdpConn.ReadMsgUDPAddrPort(ua.buf[:], ua.oob[:])
+	n, _, _, _, err := ua.Conn.ReadMsgUDPAddrPort(ua.buf[:], ua.oob[:])
 	if err != nil {
 		return 0, err
 	}
@@ -36,5 +35,5 @@ func (ua *ServerUdpAdapter) Read(buffer []byte) (int, error) {
 }
 
 func (ua *ServerUdpAdapter) Close() error {
-	return ua.UdpConn.Close()
+	return ua.Conn.Close()
 }
