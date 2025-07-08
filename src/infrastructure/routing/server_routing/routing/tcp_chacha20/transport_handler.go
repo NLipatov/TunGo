@@ -116,14 +116,19 @@ func (t *TransportHandler) registerClient(conn net.Conn, tunFile io.ReadWriteClo
 		return fmt.Errorf("invalid internal IP from handshake")
 	}
 
-	// Prevent IP spoofing
-	_, getErr := t.sessionManager.GetByInternalAddrPort(intIP)
-	if !errors.Is(getErr, repository.ErrSessionNotFound) {
+	// If session not found, or client is using a new (IP, port) address (e.g., after NAT rebinding), re-register the client.
+	existingSession, getErr := t.sessionManager.GetByInternalAddrPort(intIP)
+	if getErr == nil {
+		_ = conn.Close()
+		t.sessionManager.Delete(existingSession)
+		t.Logger.Printf("Replacing existing session for %s", intIP)
+	} else if !errors.Is(getErr, repository.ErrSessionNotFound) {
 		_ = conn.Close()
 		return fmt.Errorf(
-			"connection closed: %s (internal internalIP %s already in use)\n",
+			"connection closed: %s (internal IP %s lookup failed: %v)",
 			conn.RemoteAddr(),
 			internalIP,
+			getErr,
 		)
 	}
 
