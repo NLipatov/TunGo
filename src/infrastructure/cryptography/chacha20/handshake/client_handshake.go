@@ -2,6 +2,8 @@ package handshake
 
 import (
 	"crypto/ed25519"
+	"crypto/hmac"
+	"crypto/sha256"
 	"fmt"
 	"golang.org/x/crypto/curve25519"
 	"net"
@@ -18,6 +20,38 @@ type ClientHandshake struct {
 	conn     application.ConnectionAdapter
 	crypto   Crypto
 	clientIO ClientIO
+}
+
+func (c *ClientHandshake) SendObfuscatedClientHello(
+	settings settings.Settings,
+	edPublicKey ed25519.PublicKey,
+	sessionPublicKey, sessionSalt, sharedKey []byte) error {
+	hello := NewClientHello(4, net.ParseIP(settings.InterfaceAddress), edPublicKey, sessionPublicKey, sessionSalt)
+	payload, err := hello.MarshalBinary()
+	if err != nil {
+		return err
+	}
+
+	pad := c.crypto.GenerateRandomBytesArray(1)[0] % (maxPadding + 1)
+	padding := c.crypto.GenerateRandomBytesArray(int(pad))
+
+	mac := hmac.New(sha256.New, sharedKey)
+	mac.Write(padding)
+	mac.Write(payload)
+	digest := mac.Sum(nil)
+
+	buf := make([]byte, 2+len(padding)+len(payload)+len(digest))
+	buf[0] = obfsHelloType
+	buf[1] = byte(pad)
+	off := 2
+	copy(buf[off:], padding)
+	off += len(padding)
+	copy(buf[off:], payload)
+	off += len(payload)
+	copy(buf[off:], digest)
+
+	_, err = c.conn.Write(buf)
+	return err
 }
 
 func NewClientHandshake(conn application.ConnectionAdapter, io ClientIO, crypto Crypto) ClientHandshake {

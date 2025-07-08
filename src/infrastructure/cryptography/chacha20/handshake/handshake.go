@@ -16,6 +16,9 @@ const (
 	maxIpLength             = 39
 	MaxClientHelloSizeBytes = maxIpLength + lengthHeaderLength + curvePublicKeyLength + curvePublicKeyLength + nonceLength
 	minClientHelloSizeBytes = minIpLength + lengthHeaderLength + curvePublicKeyLength + curvePublicKeyLength + nonceLength
+	hmacLength              = 32
+	maxPadding              = 32
+	obfsHelloType           = 1
 )
 
 type DefaultHandshake struct {
@@ -57,7 +60,7 @@ func (h *DefaultHandshake) ServerSideHandshake(conn application.ConnectionAdapte
 	serverNonce := c.GenerateRandomBytesArray(32)
 
 	//handshake process starts here
-	handshake := NewServerHandshake(conn)
+	handshake := NewServerHandshake(conn, h.Ed25519PublicKey)
 	clientHello, clientHelloErr := handshake.ReceiveClientHello()
 	if clientHelloErr != nil {
 		return nil, clientHelloErr
@@ -103,7 +106,7 @@ func (h *DefaultHandshake) ClientSideHandshake(conn application.ConnectionAdapte
 
 	clientIO := NewDefaultClientIO(conn)
 	handshake := NewClientHandshake(conn, clientIO, c)
-	helloErr := handshake.SendClientHello(settings, edPublicKey, sessionPublicKey, clientNonce)
+	helloErr := handshake.SendObfuscatedClientHello(settings, edPublicKey, sessionPublicKey, clientNonce, h.Ed25519PublicKey)
 	if helloErr != nil {
 		return helloErr
 	}
