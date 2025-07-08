@@ -102,8 +102,11 @@ func (h *DefaultHandshake) ClientSideHandshake(conn application.ConnectionAdapte
 
 	clientNonce := c.GenerateRandomBytesArray(32)
 
-	clientIO := NewDefaultClientIO(conn)
-	handshake := NewClientHandshake(conn, clientIO, c)
+	obfuscatedClientIO := NewObfuscatedClientIO(
+		NewDefaultClientIO(conn),
+		conn,
+	)
+	handshake := NewClientHandshake(conn, obfuscatedClientIO, c)
 	helloErr := handshake.SendClientHello(settings, edPublicKey, sessionPublicKey, clientNonce)
 	if helloErr != nil {
 		return helloErr
