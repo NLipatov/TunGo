@@ -12,14 +12,14 @@ import (
 )
 
 type TransportHandler struct {
-	ctx                        context.Context
-	settings                   settings.Settings
-	writer                     io.Writer
-	sessionManager             repository.SessionRepository[Session]
-	logger                     application.Logger
-	listener                   application.Listener
-	handshakeFactory           application.HandshakeFactory
-	cryptographyServiceBuilder application.CryptographyServiceFactory
+	ctx                 context.Context
+	settings            settings.Settings
+	writer              io.Writer
+	sessionManager      repository.SessionRepository[Session]
+	logger              application.Logger
+	listener            application.Listener
+	handshakeFactory    application.HandshakeFactory
+	cryptographyFactory application.CryptographyServiceFactory
 }
 
 func NewTransportHandler(
@@ -30,17 +30,17 @@ func NewTransportHandler(
 	sessionManager repository.SessionRepository[Session],
 	logger application.Logger,
 	handshakeFactory application.HandshakeFactory,
-	cryptographyServiceBuilder application.CryptographyServiceFactory,
+	cryptographyFactory application.CryptographyServiceFactory,
 ) application.TransportHandler {
 	return &TransportHandler{
-		ctx:                        ctx,
-		settings:                   settings,
-		writer:                     writer,
-		sessionManager:             sessionManager,
-		logger:                     logger,
-		listener:                   listener,
-		handshakeFactory:           handshakeFactory,
-		cryptographyServiceBuilder: cryptographyServiceBuilder,
+		ctx:                 ctx,
+		settings:            settings,
+		writer:              writer,
+		sessionManager:      sessionManager,
+		logger:              logger,
+		listener:            listener,
+		handshakeFactory:    handshakeFactory,
+		cryptographyFactory: cryptographyFactory,
 	}
 }
 
@@ -139,7 +139,7 @@ func (t *TransportHandler) registerClient(
 		return handshakeErr
 	}
 
-	cryptoSession, cryptoSessionErr := t.cryptographyServiceBuilder.FromHandshake(h, true)
+	cryptoSession, cryptoSessionErr := t.cryptographyFactory.FromHandshake(h, true)
 	if cryptoSessionErr != nil {
 		return cryptoSessionErr
 	}
