@@ -1,4 +1,4 @@
-package session_management
+package repository
 
 import (
 	"errors"
@@ -11,15 +11,15 @@ type fakeSession struct {
 	external netip.AddrPort
 }
 
-func (f *fakeSession) InternalIP() netip.Addr     { return f.internal }
-func (f *fakeSession) ExternalIP() netip.AddrPort { return f.external }
+func (f *fakeSession) InternalAddr() netip.Addr         { return f.internal }
+func (f *fakeSession) ExternalAddrPort() netip.AddrPort { return f.external }
 
 func TestDefaultWorkerSessionManager(t *testing.T) {
 	sm := NewDefaultWorkerSessionManager[*fakeSession]()
 
 	t.Run("NotFoundBeforeAdd", func(t *testing.T) {
 		addr, _ := netip.ParseAddr("1.2.3.4")
-		if _, err := sm.GetByInternalIP(addr); !errors.Is(err, ErrSessionNotFound) {
+		if _, err := sm.GetByInternalAddrPort(addr); !errors.Is(err, ErrSessionNotFound) {
 			t.Fatalf("expected ErrSessionNotFound, got %v", err)
 		}
 	})
@@ -29,7 +29,7 @@ func TestDefaultWorkerSessionManager(t *testing.T) {
 		external, _ := netip.ParseAddrPort("5.6.7.8:9000")
 		s := &fakeSession{internal: internal, external: external}
 		sm.Add(s)
-		got, err := sm.GetByInternalIP(s.internal)
+		got, err := sm.GetByInternalAddrPort(s.internal)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -43,7 +43,7 @@ func TestDefaultWorkerSessionManager(t *testing.T) {
 		external, _ := netip.ParseAddrPort("10.10.10.10:9000")
 		s := &fakeSession{internal: internal, external: external}
 		sm.Add(s)
-		got, err := sm.GetByExternalIP(s.external)
+		got, err := sm.GetByExternalAddrPort(s.external)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -58,7 +58,7 @@ func TestDefaultWorkerSessionManager(t *testing.T) {
 		s := &fakeSession{internal: internal, external: external}
 		sm.Add(s)
 		sm.Delete(s)
-		if _, err := sm.GetByInternalIP(s.internal); !errors.Is(err, ErrSessionNotFound) {
+		if _, err := sm.GetByInternalAddrPort(s.internal); !errors.Is(err, ErrSessionNotFound) {
 			t.Errorf("expected ErrSessionNotFound after delete, got %v", err)
 		}
 	})

@@ -65,10 +65,10 @@ type testMgr struct {
 	err  error
 }
 
-func (m *testMgr) Add(Session)                                       {}
-func (m *testMgr) Delete(Session)                                    {}
-func (m *testMgr) GetByInternalIP(_ netip.Addr) (Session, error)     { return m.sess, m.err }
-func (m *testMgr) GetByExternalIP(_ netip.AddrPort) (Session, error) { return m.sess, m.err }
+func (m *testMgr) Add(Session)                                             {}
+func (m *testMgr) Delete(Session)                                          {}
+func (m *testMgr) GetByInternalAddrPort(_ netip.Addr) (Session, error)     { return m.sess, m.err }
+func (m *testMgr) GetByExternalAddrPort(_ netip.AddrPort) (Session, error) { return m.sess, m.err }
 
 func makeSession(a *testAdapter, c *testCrypto) Session {
 	in, _ := netip.ParseAddr("10.0.0.1")

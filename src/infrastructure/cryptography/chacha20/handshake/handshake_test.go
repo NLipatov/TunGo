@@ -47,7 +47,7 @@ func (b *badNetConn) SetWriteDeadline(_ time.Time) error { return nil }
 // --- tests for ServerSideHandshake ---
 
 func TestServerSideHandshake_ReadClientHelloError(t *testing.T) {
-	h := NewHandshake()
+	h := NewHandshake(make([]byte, 0), make([]byte, 0))
 	adapter := &fakeAdapter{readErr: errors.New("read-fail")}
 	_, err := h.ServerSideHandshake(adapter)
 	if err == nil {
@@ -58,7 +58,7 @@ func TestServerSideHandshake_ReadClientHelloError(t *testing.T) {
 // --- tests for ClientSideHandshake ---
 
 func TestClientSideHandshake_WriteHelloError(t *testing.T) {
-	h := NewHandshake()
+	h := NewHandshake(make([]byte, 0), make([]byte, 0))
 	// a net.Conn whose Write always fails
 	bad := &badNetConn{&fakeAdapter{writeErr: errors.New("boom")}}
 	err := h.ClientSideHandshake(bad, settings.Settings{
@@ -70,7 +70,7 @@ func TestClientSideHandshake_WriteHelloError(t *testing.T) {
 }
 
 func TestClientSideHandshake_ReadServerHelloError(t *testing.T) {
-	h := NewHandshake()
+	h := NewHandshake(make([]byte, 0), make([]byte, 0))
 	// first WriteClientHello will succeed (no writeErr),
 	// then ReadServerHello (Read) will fail
 	buf := bytes.Repeat([]byte{0}, MaxClientHelloSizeBytes)

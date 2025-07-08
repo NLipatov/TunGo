@@ -13,12 +13,14 @@ import (
 )
 
 type ConfgenHandler struct {
-	ipWrapper ip.Contract
+	ipWrapper  ip.Contract
+	cfgManager server_configuration.ServerConfigurationManager
 }
 
-func NewConfgenHandler() *ConfgenHandler {
+func NewConfgenHandler(manager server_configuration.ServerConfigurationManager) *ConfgenHandler {
 	return &ConfgenHandler{
-		ipWrapper: ip.NewWrapper(PAL.NewExecCommander()),
+		ipWrapper:  ip.NewWrapper(PAL.NewExecCommander()),
+		cfgManager: manager,
 	}
 }
 
@@ -39,8 +41,7 @@ func (c *ConfgenHandler) GenerateNewClientConf() error {
 
 // generate generates new client configuration
 func (c *ConfgenHandler) generate() (*client_configuration.Configuration, error) {
-	serverConfigurationManager := server_configuration.NewManager(server_configuration.NewServerResolver())
-	serverConf, err := serverConfigurationManager.Configuration()
+	serverConf, err := c.cfgManager.Configuration()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read server configuration: %s", err)
 	}
@@ -69,7 +70,7 @@ func (c *ConfgenHandler) generate() (*client_configuration.Configuration, error)
 		return nil, fmt.Errorf("failed to allocate client's TCP IP address: %s", err)
 	}
 
-	err = serverConfigurationManager.IncrementClientCounter()
+	err = c.cfgManager.IncrementClientCounter()
 	if err != nil {
 		return nil, err
 	}

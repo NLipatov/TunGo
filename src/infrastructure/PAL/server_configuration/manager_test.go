@@ -1,252 +1,456 @@
 package server_configuration
 
 import (
+	"bytes"
 	"crypto/ed25519"
+	"encoding/json"
 	"errors"
+	"io/fs"
 	"os"
-	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
+
 	"tungo/infrastructure/settings"
 )
 
-// managerTestMockErrorResolver returns an error from resolve().
-type managerTestMockErrorResolver struct{}
+// --- Mocks ---
 
-func (r managerTestMockErrorResolver) Resolve() (string, error) {
-	return "", errors.New("resolve error")
+type ManagerMockResolver struct {
+	Path string
+	Err  error
 }
 
-// managerTestMockBadPathResolver returns an invalid path to simulate write error.
-type managerTestMockBadPathResolver struct{}
-
-func (r managerTestMockBadPathResolver) Resolve() (string, error) {
-	// invalid path with null byte
-	return string([]byte{0}), nil
+func (m *ManagerMockResolver) Resolve() (string, error) {
+	return m.Path, m.Err
 }
 
-// managerTestValidResolver returns a valid file path.
-type managerTestValidResolver struct {
-	path string
+type ManagerMockStat struct {
+	Err error
 }
 
-func (r managerTestValidResolver) Resolve() (string, error) {
-	return r.path, nil
+func (m *ManagerMockStat) Stat(_ string) (os.FileInfo, error) {
+	return nil, m.Err
 }
 
-func createTestConfigPath(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
-	return filepath.Join(dir, "conf.json")
+type ManagerMockWriter struct {
+	WrittenData interface{}
+	Err         error
+	WriteCalls  int
 }
 
-func TestManagerConfigurationResolverError(t *testing.T) {
-	manager := NewManager(managerTestMockErrorResolver{})
-
-	_, err := manager.Configuration()
-	if err == nil {
-		t.Fatal("expected error from Configuration() due to resolver error, got nil")
-	}
-	if !strings.Contains(err.Error(), "failed to read configuration") {
-		t.Errorf("expected error to mention 'failed to read configuration', got %v", err)
-	}
+func (m *ManagerMockWriter) Write(data interface{}) error {
+	m.WriteCalls++
+	m.WrittenData = data
+	return m.Err
 }
 
-func TestManagerConfigurationWriteDefaultError(t *testing.T) {
-	manager := NewManager(managerTestMockBadPathResolver{})
-
-	_, err := manager.Configuration()
-	if err == nil {
-		t.Fatal("expected error from Configuration() due to write default configuration failure, got nil")
-	}
-	if !strings.Contains(err.Error(), "could not write default configuration") {
-		t.Errorf("expected error to mention 'could not write default configuration', got %v", err)
-	}
+type ManagerMockReader struct {
+	Config    *Configuration
+	Err       error
+	ReadCalls int
 }
 
-func TestManagerConfigurationReadSuccess(t *testing.T) {
-	path := createTestConfigPath(t)
-	manager := NewManager(managerTestValidResolver{path: path})
+func (m *ManagerMockReader) read() (*Configuration, error) {
+	m.ReadCalls++
+	return m.Config, m.Err
+}
 
-	// Ensure file does not exist initially.
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatalf("expected file not to exist, but it does")
-	}
+// --- Tests ---
 
-	conf, err := manager.Configuration()
-	if err != nil {
-		t.Fatalf("Configuration() error: %v", err)
-	}
-
-	// At this point, the default configuration should have been written.
+func TestManager_Configuration_FileNotExists_WritesDefault(t *testing.T) {
+	resolver := &ManagerMockResolver{Path: "/fake/path"}
+	statMock := &ManagerMockStat{Err: fs.ErrNotExist}
+	writer := &ManagerMockWriter{}
 	defaultConf := NewDefaultConfiguration()
-	if !reflect.DeepEqual(conf, defaultConf) {
-		t.Errorf("expected default configuration %v, got %v", defaultConf, conf)
-	}
+	reader := &ManagerMockReader{Config: defaultConf}
 
-	// File should now exist.
-	if _, err := os.Stat(path); err != nil {
-		t.Errorf("expected file to exist after default configuration creation, got error: %v", err)
-	}
-}
-
-func TestIncrementClientCounterSuccess(t *testing.T) {
-	path := createTestConfigPath(t)
-	manager := NewManager(managerTestValidResolver{path: path})
-
-	// Create initial configuration.
-	conf, err := manager.Configuration()
-	if err != nil {
-		t.Fatalf("Configuration() error: %v", err)
-	}
-	initialCounter := conf.ClientCounter
-
-	// This call covers:
-	// configuration.ClientCounter += 1
-	// w := newWriter(c.resolver)
-	// return w.Write(*configuration)
-	if err := manager.IncrementClientCounter(); err != nil {
-		t.Fatalf("IncrementClientCounter() error: %v", err)
-	}
-
-	updatedConf, err := manager.Configuration()
-	if err != nil {
-		t.Fatalf("Configuration() error after increment: %v", err)
-	}
-
-	if updatedConf.ClientCounter != initialCounter+1 {
-		t.Errorf("expected ClientCounter %d, got %d", initialCounter+1, updatedConf.ClientCounter)
-	}
-}
-
-func TestInjectEdKeysSuccess(t *testing.T) {
-	path := createTestConfigPath(t)
-	manager := NewManager(managerTestValidResolver{path: path})
-
-	// Initialize configuration.
-	if _, err := manager.Configuration(); err != nil {
-		t.Fatalf("Configuration() error: %v", err)
-	}
-
-	public, private, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatalf("failed to generate keys: %v", err)
-	}
-
-	// This call covers:
-	// configuration.Ed25519PublicKey = public
-	// configuration.Ed25519PrivateKey = private
-	// w := newWriter(c.resolver)
-	// return w.Write(*configuration)
-	if err := manager.InjectEdKeys(public, private); err != nil {
-		t.Fatalf("InjectEdKeys() error: %v", err)
+	manager := &Manager{
+		resolver: resolver,
+		stat:     statMock,
+		writer:   writer,
+		reader:   reader,
 	}
 
 	conf, err := manager.Configuration()
 	if err != nil {
-		t.Fatalf("Configuration() error after key injection: %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !reflect.DeepEqual(conf.Ed25519PublicKey, public) {
-		t.Errorf("expected public key %v, got %v", public, conf.Ed25519PublicKey)
+	if writer.WriteCalls != 1 {
+		t.Errorf("expected Write to be called once, got %d", writer.WriteCalls)
 	}
-	if !reflect.DeepEqual(conf.Ed25519PrivateKey, private) {
-		t.Errorf("expected private key %v, got %v", private, conf.Ed25519PrivateKey)
+
+	confWritten, ok := writer.WrittenData.(Configuration)
+	if !ok {
+		t.Fatalf("written data is not Configuration")
+	}
+
+	defaultConfData, defaultConfErr := json.Marshal(defaultConf)
+	if defaultConfErr != nil {
+		t.Fatalf("unexpected error: %v", defaultConfErr)
+	}
+
+	confData, confErr := json.Marshal(confWritten)
+	if confErr != nil {
+		t.Fatalf("unexpected error: %v", confErr)
+	}
+
+	if !bytes.Equal(confData, defaultConfData) {
+		t.Errorf("expected written config to equal defaultConfig")
+	}
+
+	if conf != defaultConf {
+		t.Errorf("expected returned config to be defaultConf pointer")
 	}
 }
 
-func TestIncrementClientCounterConfigError(t *testing.T) {
-	manager := NewManager(managerTestMockErrorResolver{})
+func TestManager_Configuration_WriteDefaultError(t *testing.T) {
+	resolver := &ManagerMockResolver{Path: "/fake/path"}
+	statMock := &ManagerMockStat{Err: fs.ErrNotExist}
+	writer := &ManagerMockWriter{Err: errors.New("write fail")}
+	reader := &ManagerMockReader{Config: NewDefaultConfiguration()}
+
+	manager := &Manager{
+		resolver: resolver,
+		stat:     statMock,
+		writer:   writer,
+		reader:   reader,
+	}
+
+	_, err := manager.Configuration()
+	if err == nil || !strings.Contains(err.Error(), "could not write default configuration") {
+		t.Fatalf("expected write default error, got: %v", err)
+	}
+}
+
+func TestManager_Configuration_StatError_ReturnsError(t *testing.T) {
+	resolver := &ManagerMockResolver{Path: "/fake/path"}
+	statMock := &ManagerMockStat{Err: errors.New("permission denied")}
+	writer := &ManagerMockWriter{}
+	reader := &ManagerMockReader{}
+
+	manager := &Manager{
+		resolver: resolver,
+		stat:     statMock,
+		writer:   writer,
+		reader:   reader,
+	}
+
+	_, err := manager.Configuration()
+	if err == nil {
+		t.Fatal("expected error due to stat error, got nil")
+	}
+	if !strings.Contains(err.Error(), "permission denied") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestManager_Configuration_ResolverError_ReturnsError(t *testing.T) {
+	resolver := &ManagerMockResolver{Err: errors.New("resolve error")}
+	statMock := &ManagerMockStat{}
+	writer := &ManagerMockWriter{}
+	reader := &ManagerMockReader{}
+
+	manager := &Manager{
+		resolver: resolver,
+		stat:     statMock,
+		writer:   writer,
+		reader:   reader,
+	}
+
+	_, err := manager.Configuration()
+	if err == nil {
+		t.Fatal("expected error due to resolver error, got nil")
+	}
+	if !strings.Contains(err.Error(), "resolve error") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestManager_Configuration_ReaderError_ReturnsError(t *testing.T) {
+	resolver := &ManagerMockResolver{Path: "/fake/path"}
+	statMock := &ManagerMockStat{Err: nil}
+	writer := &ManagerMockWriter{}
+	reader := &ManagerMockReader{Err: errors.New("read error")}
+
+	manager := &Manager{
+		resolver: resolver,
+		stat:     statMock,
+		writer:   writer,
+		reader:   reader,
+	}
+
+	_, err := manager.Configuration()
+	if err == nil {
+		t.Fatal("expected error due to reader error, got nil")
+	}
+	if !strings.Contains(err.Error(), "read error") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestManager_IncrementClientCounter_Success(t *testing.T) {
+	initialConf := NewDefaultConfiguration()
+	initialValue := initialConf.ClientCounter
+
+	resolver := &ManagerMockResolver{Path: "/fake/path"}
+	statMock := &ManagerMockStat{Err: nil}
+	writer := &ManagerMockWriter{}
+	reader := &ManagerMockReader{Config: initialConf}
+
+	manager := &Manager{
+		resolver: resolver,
+		stat:     statMock,
+		writer:   writer,
+		reader:   reader,
+	}
+
+	err := manager.IncrementClientCounter()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if writer.WriteCalls != 1 {
+		t.Errorf("expected writer.Write called once, got %d", writer.WriteCalls)
+	}
+
+	confWritten, ok := writer.WrittenData.(Configuration)
+	if !ok {
+		t.Fatalf("written data is not Configuration")
+	}
+
+	expected := initialValue + 1
+	if confWritten.ClientCounter != expected {
+		t.Errorf("expected ClientCounter %d, got %d", expected, confWritten.ClientCounter)
+	}
+}
+
+func TestManager_IncrementClientCounter_ConfigError(t *testing.T) {
+	resolver := &ManagerMockResolver{Path: "/fake/path"}
+	statMock := &ManagerMockStat{Err: nil}
+	writer := &ManagerMockWriter{}
+	reader := &ManagerMockReader{Err: errors.New("read error")}
+
+	manager := &Manager{
+		resolver: resolver,
+		stat:     statMock,
+		writer:   writer,
+		reader:   reader,
+	}
 
 	err := manager.IncrementClientCounter()
 	if err == nil {
-		t.Fatal("expected error from IncrementClientCounter() due to configuration failure, got nil")
+		t.Fatal("expected error due to config read failure, got nil")
 	}
-	if !strings.Contains(err.Error(), "failed to read configuration") {
-		t.Errorf("expected error to mention 'failed to read configuration', got %v", err)
+	if !strings.Contains(err.Error(), "read error") {
+		t.Errorf("unexpected error message: %v", err)
 	}
 }
 
-func TestInjectEdKeysConfigError(t *testing.T) {
-	manager := NewManager(managerTestMockErrorResolver{})
+func TestManager_IncrementClientCounter_WriteError(t *testing.T) {
+	initialConf := NewDefaultConfiguration()
+	resolver := &ManagerMockResolver{Path: "/fake/path"}
+	statMock := &ManagerMockStat{Err: nil}
+	writer := &ManagerMockWriter{Err: errors.New("write fail")}
+	reader := &ManagerMockReader{Config: initialConf}
 
-	public, private, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatalf("failed to generate keys: %v", err)
+	manager := &Manager{
+		resolver: resolver,
+		stat:     statMock,
+		writer:   writer,
+		reader:   reader,
 	}
 
-	err = manager.InjectEdKeys(public, private)
+	err := manager.IncrementClientCounter()
+	if err == nil || !strings.Contains(err.Error(), "write fail") {
+		t.Fatalf("expected writer error, got: %v", err)
+	}
+}
+
+func TestManager_InjectEdKeys_Success(t *testing.T) {
+	initialConf := NewDefaultConfiguration()
+	resolver := &ManagerMockResolver{Path: "/fake/path"}
+	statMock := &ManagerMockStat{Err: nil}
+	writer := &ManagerMockWriter{}
+	reader := &ManagerMockReader{Config: initialConf}
+
+	manager := &Manager{
+		resolver: resolver,
+		stat:     statMock,
+		writer:   writer,
+		reader:   reader,
+	}
+
+	pub, priv, _ := ed25519.GenerateKey(nil)
+
+	err := manager.InjectEdKeys(pub, priv)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if writer.WriteCalls != 1 {
+		t.Errorf("expected writer.Write called once, got %d", writer.WriteCalls)
+	}
+
+	confWritten, ok := writer.WrittenData.(Configuration)
+	if !ok {
+		t.Fatalf("written data is not Configuration")
+	}
+
+	if !pub.Equal(confWritten.Ed25519PublicKey) {
+		t.Errorf("public key mismatch")
+	}
+	if !priv.Equal(confWritten.Ed25519PrivateKey) {
+		t.Errorf("private key mismatch")
+	}
+}
+
+func TestManager_InjectEdKeys_ConfigError(t *testing.T) {
+	resolver := &ManagerMockResolver{Path: "/fake/path"}
+	statMock := &ManagerMockStat{Err: nil}
+	writer := &ManagerMockWriter{}
+	reader := &ManagerMockReader{Err: errors.New("read error")}
+
+	manager := &Manager{
+		resolver: resolver,
+		stat:     statMock,
+		writer:   writer,
+		reader:   reader,
+	}
+
+	err := manager.InjectEdKeys(nil, nil)
 	if err == nil {
-		t.Fatal("expected error from InjectEdKeys() due to configuration failure, got nil")
+		t.Fatal("expected error due to config read failure, got nil")
 	}
-	if !strings.Contains(err.Error(), "failed to read configuration") {
-		t.Errorf("expected error to mention 'failed to read configuration', got %v", err)
-	}
-}
-func TestInjectSessionTtlIntervals_Success(t *testing.T) {
-	path := createTestConfigPath(t)
-	manager := NewManager(managerTestValidResolver{path: path})
-
-	_, err := manager.Configuration()
-	if err != nil {
-		t.Fatalf("Configuration() error: %v", err)
-	}
-
-	newTTL := settings.HumanReadableDuration(30 * time.Minute)
-	newCleanup := settings.HumanReadableDuration(15 * time.Minute)
-
-	err = manager.InjectSessionTtlIntervals(newTTL, newCleanup)
-	if err != nil {
-		t.Fatalf("InjectSessionTtlIntervals() error: %v", err)
-	}
-
-	conf, err := manager.Configuration()
-	if err != nil {
-		t.Fatalf("Configuration() error after inject: %v", err)
-	}
-
-	if conf.TCPSettings.SessionLifetime.Ttl != newTTL {
-		t.Errorf("expected TCP TTL %v, got %v", newTTL, conf.TCPSettings.SessionLifetime.Ttl)
-	}
-	if conf.TCPSettings.SessionLifetime.CleanupInterval != newCleanup {
-		t.Errorf("expected TCP CleanupInterval %v, got %v", newCleanup, conf.TCPSettings.SessionLifetime.CleanupInterval)
-	}
-	if conf.UDPSettings.SessionLifetime.Ttl != newTTL {
-		t.Errorf("expected UDP TTL %v, got %v", newTTL, conf.UDPSettings.SessionLifetime.Ttl)
-	}
-	if conf.UDPSettings.SessionLifetime.CleanupInterval != newCleanup {
-		t.Errorf("expected UDP CleanupInterval %v, got %v", newCleanup, conf.UDPSettings.SessionLifetime.CleanupInterval)
+	if !strings.Contains(err.Error(), "read error") {
+		t.Errorf("unexpected error message: %v", err)
 	}
 }
 
-func TestInjectSessionTtlIntervals_ConfigurationError(t *testing.T) {
-	manager := NewManager(managerTestMockErrorResolver{})
+func TestManager_InjectEdKeys_WriteError(t *testing.T) {
+	initialConf := NewDefaultConfiguration()
+	resolver := &ManagerMockResolver{Path: "/fake/path"}
+	statMock := &ManagerMockStat{Err: nil}
+	writer := &ManagerMockWriter{Err: errors.New("write fail")}
+	reader := &ManagerMockReader{Config: initialConf}
 
-	err := manager.InjectSessionTtlIntervals(
-		settings.HumanReadableDuration(10*time.Minute),
-		settings.HumanReadableDuration(5*time.Minute),
-	)
+	manager := &Manager{
+		resolver: resolver,
+		stat:     statMock,
+		writer:   writer,
+		reader:   reader,
+	}
+
+	pub, priv, _ := ed25519.GenerateKey(nil)
+
+	err := manager.InjectEdKeys(pub, priv)
+	if err == nil || !strings.Contains(err.Error(), "write fail") {
+		t.Fatalf("expected writer error, got: %v", err)
+	}
+}
+
+func TestManager_InjectSessionTtlIntervals_Success(t *testing.T) {
+	initialConf := NewDefaultConfiguration()
+	resolver := &ManagerMockResolver{Path: "/fake/path"}
+	statMock := &ManagerMockStat{Err: nil}
+	writer := &ManagerMockWriter{}
+	reader := &ManagerMockReader{Config: initialConf}
+
+	manager := &Manager{
+		resolver: resolver,
+		stat:     statMock,
+		writer:   writer,
+		reader:   reader,
+	}
+
+	ttl := settings.HumanReadableDuration(10 * time.Minute)
+	interval := settings.HumanReadableDuration(5 * time.Minute)
+
+	err := manager.InjectSessionTtlIntervals(ttl, interval)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if writer.WriteCalls != 1 {
+		t.Errorf("expected writer.Write called once, got %d", writer.WriteCalls)
+	}
+
+	confWritten, ok := writer.WrittenData.(Configuration)
+	if !ok {
+		t.Fatalf("written data is not Configuration")
+	}
+
+	if confWritten.TCPSettings.SessionLifetime.Ttl != ttl ||
+		confWritten.TCPSettings.SessionLifetime.CleanupInterval != interval {
+		t.Errorf("TCP SessionLifetime not updated")
+	}
+
+	if confWritten.UDPSettings.SessionLifetime.Ttl != ttl ||
+		confWritten.UDPSettings.SessionLifetime.CleanupInterval != interval {
+		t.Errorf("UDP SessionLifetime not updated")
+	}
+}
+
+func TestManager_InjectSessionTtlIntervals_ConfigError(t *testing.T) {
+	resolver := &ManagerMockResolver{Path: "/fake/path"}
+	statMock := &ManagerMockStat{Err: nil}
+	writer := &ManagerMockWriter{}
+	reader := &ManagerMockReader{Err: errors.New("read error")}
+
+	manager := &Manager{
+		resolver: resolver,
+		stat:     statMock,
+		writer:   writer,
+		reader:   reader,
+	}
+
+	err := manager.InjectSessionTtlIntervals(0, 0)
 	if err == nil {
-		t.Fatal("expected error due to configuration resolution failure, got nil")
+		t.Fatal("expected error due to config read failure, got nil")
 	}
-	if !strings.Contains(err.Error(), "failed to read configuration") {
-		t.Errorf("expected error mentioning 'failed to read configuration', got %v", err)
+	if !strings.Contains(err.Error(), "read error") {
+		t.Errorf("unexpected error message: %v", err)
 	}
 }
 
-func TestInjectSessionTtlIntervals_WriteError(t *testing.T) {
-	manager := NewManager(managerTestMockBadPathResolver{})
+func TestManager_InjectSessionTtlIntervals_WriteError(t *testing.T) {
+	initialConf := NewDefaultConfiguration()
+	resolver := &ManagerMockResolver{Path: "/fake/path"}
+	statMock := &ManagerMockStat{Err: nil}
+	writer := &ManagerMockWriter{Err: errors.New("write fail")}
+	reader := &ManagerMockReader{Config: initialConf}
 
-	err := manager.InjectSessionTtlIntervals(
-		settings.HumanReadableDuration(10*time.Minute),
-		settings.HumanReadableDuration(5*time.Minute),
-	)
-	if err == nil {
-		t.Fatal("expected error due to write failure, got nil")
+	manager := &Manager{
+		resolver: resolver,
+		stat:     statMock,
+		writer:   writer,
+		reader:   reader,
 	}
-	if !strings.Contains(err.Error(), "could not write default configuration") {
-		t.Errorf("expected error mentioning 'could not write default configuration', got %v", err)
+
+	ttl := settings.HumanReadableDuration(1 * time.Minute)
+	interval := settings.HumanReadableDuration(2 * time.Minute)
+
+	err := manager.InjectSessionTtlIntervals(ttl, interval)
+	if err == nil || !strings.Contains(err.Error(), "write fail") {
+		t.Fatalf("expected writer error, got: %v", err)
+	}
+}
+
+// --- NewManager / NewManagerWithReader constructors
+
+func TestNewManager_ErrorFromResolver(t *testing.T) {
+	resolver := &ManagerMockResolver{Err: errors.New("resolve error")}
+	_, err := NewManager(resolver, nil)
+	if err == nil || !strings.Contains(err.Error(), "failed to resolve server configuration path") {
+		t.Fatalf("expected resolve error, got %v", err)
+	}
+}
+
+func TestNewManagerWithReader_ErrorFromResolver(t *testing.T) {
+	resolver := &ManagerMockResolver{Err: errors.New("resolve error")}
+	_, err := NewManagerWithReader(resolver, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "failed to resolve server configuration path") {
+		t.Fatalf("expected resolve error, got %v", err)
 	}
 }

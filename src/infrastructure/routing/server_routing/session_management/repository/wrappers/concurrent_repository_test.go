@@ -1,4 +1,4 @@
-package session_management
+package wrappers
 
 import (
 	"net/netip"
@@ -11,8 +11,8 @@ type concurrentManagerMockSession struct {
 	in  netip.Addr
 }
 
-func (s concurrentManagerMockSession) ExternalIP() netip.AddrPort { return s.ext }
-func (s concurrentManagerMockSession) InternalIP() netip.Addr     { return s.in }
+func (s concurrentManagerMockSession) ExternalAddrPort() netip.AddrPort { return s.ext }
+func (s concurrentManagerMockSession) InternalAddr() netip.Addr         { return s.in }
 
 type concurrentManagerMockManager struct {
 	add, del, getInt, getExt int
@@ -28,12 +28,12 @@ func (m *concurrentManagerMockManager) Delete(s concurrentManagerMockSession) {
 	m.del++
 	m.lastSession = s
 }
-func (m *concurrentManagerMockManager) GetByInternalIP(b netip.Addr) (concurrentManagerMockSession, error) {
+func (m *concurrentManagerMockManager) GetByInternalAddrPort(b netip.Addr) (concurrentManagerMockSession, error) {
 	m.getInt++
 	m.lastIP = b
 	return m.lastSession, nil
 }
-func (m *concurrentManagerMockManager) GetByExternalIP(b netip.AddrPort) (concurrentManagerMockSession, error) {
+func (m *concurrentManagerMockManager) GetByExternalAddrPort(b netip.AddrPort) (concurrentManagerMockSession, error) {
 	m.getExt++
 	m.lastIP = b.Addr()
 	return m.lastSession, nil
@@ -51,8 +51,8 @@ func TestConcurrentManager_Delegation(t *testing.T) {
 
 	cm.Add(s)
 	cm.Delete(s)
-	_, _ = cm.GetByExternalIP(addrPort)
-	_, _ = cm.GetByInternalIP(addr)
+	_, _ = cm.GetByExternalAddrPort(addrPort)
+	_, _ = cm.GetByInternalAddrPort(addr)
 
 	switch {
 	case base.add != 1, base.del != 1, base.getInt != 1, base.getExt != 1:
@@ -84,7 +84,7 @@ func TestConcurrentManager_Parallel_NoRace(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for i := 0; i < 2_000; i++ {
-				_, _ = cm.GetByInternalIP(s.in)
+				_, _ = cm.GetByInternalAddrPort(s.in)
 			}
 		}()
 	}

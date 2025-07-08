@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"tungo/infrastructure/PAL/stat"
 )
 
 func TestReadSuccess(t *testing.T) {
@@ -22,7 +23,7 @@ func TestReadSuccess(t *testing.T) {
 	_ = os.Setenv("EnableUDP", "true")
 	_ = os.Setenv("EnableTCP", "false")
 
-	r := newReader(filePath)
+	r := newDefaultReader(filePath, stat.NewDefaultStat())
 	conf, err := r.read()
 	if err != nil {
 		t.Fatalf("read() returned error: %v", err)
@@ -41,7 +42,7 @@ func TestReadSuccess(t *testing.T) {
 
 func TestReadFileDoesNotExist(t *testing.T) {
 	nonExistentPath := "/non/existent/conf.json"
-	r := newReader(nonExistentPath)
+	r := newDefaultReader(nonExistentPath, stat.NewDefaultStat())
 	_, err := r.read()
 	if err == nil {
 		t.Fatal("Expected error for non-existent file, got nil")
@@ -59,7 +60,7 @@ func TestReadInvalidJSON(t *testing.T) {
 		t.Fatalf("Failed to write invalid JSON file: %v", err)
 	}
 
-	r := newReader(filePath)
+	r := newDefaultReader(filePath, stat.NewDefaultStat())
 	_, err := r.read()
 	if err == nil {
 		t.Fatal("Expected error for invalid JSON, got nil")
@@ -73,7 +74,7 @@ func TestReadInvalidJSON(t *testing.T) {
 // Uses an invalid path (null byte) which causes os.Stat to error with a non-ErrNotExist error.
 func TestReadStatOtherError(t *testing.T) {
 	invalidPath := string([]byte{0})
-	r := newReader(invalidPath)
+	r := newDefaultReader(invalidPath, stat.NewDefaultStat())
 	_, err := r.read()
 	if err == nil {
 		t.Fatal("Expected error for invalid file path, got nil")
@@ -92,7 +93,7 @@ func TestReadFileUnreadable(t *testing.T) {
 		t.Fatalf("failed to create directory: %v", err)
 	}
 
-	r := newReader(unreadablePath)
+	r := newDefaultReader(unreadablePath, stat.NewDefaultStat())
 	_, err := r.read()
 	if err == nil {
 		t.Fatal("expected error for unreadable file, got nil")

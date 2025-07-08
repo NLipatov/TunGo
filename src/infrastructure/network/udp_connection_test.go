@@ -37,7 +37,7 @@ func TestEstablish_Success(t *testing.T) {
 	// Start a UDP listener on a random port.
 	listener, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0})
 	if err != nil {
-		t.Fatalf("ListenUDP failed: %v", err)
+		t.Fatalf("Listen failed: %v", err)
 	}
 	defer func(listener *net.UDPConn) {
 		_ = listener.Close()

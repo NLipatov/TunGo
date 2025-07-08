@@ -1,4 +1,4 @@
-package session_management
+package wrappers
 
 import (
 	"context"
@@ -6,18 +6,19 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"tungo/infrastructure/routing/server_routing/session_management/repository"
 )
 
-// TestSession is a simple type implementing ClientSession and comparable.
+// TestSession is a simple type implementing Session and comparable.
 type TestSession struct {
 	internal netip.Addr
 	external netip.AddrPort
 }
 
-func (s TestSession) InternalIP() netip.Addr     { return s.internal }
-func (s TestSession) ExternalIP() netip.AddrPort { return s.external }
+func (s TestSession) InternalAddr() netip.Addr         { return s.internal }
+func (s TestSession) ExternalAddrPort() netip.AddrPort { return s.external }
 
-// FakeManager is a stub for WorkerSessionManager[TestSession].
+// FakeManager is a stub for SessionRepository[TestSession].
 type FakeManager struct {
 	mu         sync.Mutex
 	added      []TestSession
@@ -49,22 +50,22 @@ func (f *FakeManager) Delete(s TestSession) {
 	delete(f.byExternal, s.external)
 }
 
-func (f *FakeManager) GetByInternalIP(ip netip.Addr) (TestSession, error) {
+func (f *FakeManager) GetByInternalAddrPort(ip netip.Addr) (TestSession, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	s, ok := f.byInternal[ip]
 	if !ok {
-		return TestSession{}, ErrSessionNotFound
+		return TestSession{}, repository.ErrSessionNotFound
 	}
 	return s, nil
 }
 
-func (f *FakeManager) GetByExternalIP(ip netip.AddrPort) (TestSession, error) {
+func (f *FakeManager) GetByExternalAddrPort(ip netip.AddrPort) (TestSession, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	s, ok := f.byExternal[ip]
 	if !ok {
-		return TestSession{}, ErrSessionNotFound
+		return TestSession{}, repository.ErrSessionNotFound
 	}
 	return s, nil
 }
@@ -82,20 +83,20 @@ func TestAddAndGetResetsTTL(t *testing.T) {
 		t.Fatalf("expected Add call with %v, got %v", s, fake.added)
 	}
 
-	s2, err := m.GetByInternalIP(s.internal)
+	s2, err := m.GetByInternalAddrPort(s.internal)
 	if err != nil {
-		t.Fatalf("GetByInternalIP returned error: %v", err)
+		t.Fatalf("GetByInternalAddrPort returned error: %v", err)
 	}
 	if s2 != s {
-		t.Fatalf("GetByInternalIP: expected %v, got %v", s, s2)
+		t.Fatalf("GetByInternalAddrPort: expected %v, got %v", s, s2)
 	}
 
-	s3, err := m.GetByExternalIP(s.external)
+	s3, err := m.GetByExternalAddrPort(s.external)
 	if err != nil {
-		t.Fatalf("GetByExternalIP returned error: %v", err)
+		t.Fatalf("GetByExternalAddrPort returned error: %v", err)
 	}
 	if s3 != s {
-		t.Fatalf("GetByExternalIP: expected %v, got %v", s, s3)
+		t.Fatalf("GetByExternalAddrPort: expected %v, got %v", s, s3)
 	}
 }
 
@@ -114,7 +115,7 @@ func TestExpirationAndSanitize(t *testing.T) {
 	m.Add(s2)
 
 	time.Sleep(7 * time.Millisecond)
-	_, getByExternalIPErr := m.GetByExternalIP(s2.external)
+	_, getByExternalIPErr := m.GetByExternalAddrPort(s2.external)
 	if getByExternalIPErr != nil {
 		t.Fatal(getByExternalIPErr)
 	}
@@ -177,7 +178,7 @@ func TestSanitizeStopsOnContextCancel(t *testing.T) {
 	// Assert interface to concrete type
 	_, ok := mIface.(*TTLManager[TestSession])
 	if !ok {
-		t.Fatal("failed to cast WorkerSessionManager to *TTLManager")
+		t.Fatal("failed to cast SessionRepository to *TTLManager")
 	}
 
 	cancel() // cancel context
@@ -197,7 +198,7 @@ func TestSanitizeWithExpiration(t *testing.T) {
 
 	m, ok := mIface.(*TTLManager[TestSession])
 	if !ok {
-		t.Fatal("failed to cast WorkerSessionManager to *TTLManager")
+		t.Fatal("failed to cast SessionRepository to *TTLManager")
 	}
 
 	in, _ := netip.ParseAddr("1.1.1.1")

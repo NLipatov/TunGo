@@ -6,29 +6,33 @@ import (
 	"io"
 	"time"
 	"tungo/application"
+	"tungo/infrastructure/PAL/server_configuration"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/routing/server_routing/routing/tcp_chacha20"
 	"tungo/infrastructure/routing/server_routing/routing/udp_chacha20"
-	"tungo/infrastructure/routing/server_routing/session_management"
+	"tungo/infrastructure/routing/server_routing/session_management/repository"
+	"tungo/infrastructure/routing/server_routing/session_management/repository/wrappers"
 	"tungo/infrastructure/settings"
 )
 
 type ServerWorkerFactory struct {
-	settings      settings.Settings
-	socketFactory socketFactory
-	tcpFactory    tcpListenerFactory
-	udpFactory    udpListenerFactory
-	loggerFactory loggerFactory
+	settings             settings.Settings
+	socketFactory        socketFactory
+	tcpFactory           tcpListenerFactory
+	udpFactory           udpListenerFactory
+	loggerFactory        loggerFactory
+	configurationManager server_configuration.ServerConfigurationManager
 }
 
-func NewServerWorkerFactory(settings settings.Settings) application.ServerWorkerFactory {
+func NewServerWorkerFactory(settings settings.Settings, manager server_configuration.ServerConfigurationManager) application.ServerWorkerFactory {
 	return &ServerWorkerFactory{
-		settings:      settings,
-		socketFactory: newDefaultSocketFactory(),
-		tcpFactory:    newDefaultTcpListenerFactory(),
-		udpFactory:    newDefaultUdpListenerFactory(),
-		loggerFactory: newDefaultLoggerFactory(),
+		settings:             settings,
+		socketFactory:        newDefaultSocketFactory(),
+		tcpFactory:           newDefaultTcpListenerFactory(),
+		udpFactory:           newDefaultUdpListenerFactory(),
+		loggerFactory:        newDefaultLoggerFactory(),
+		configurationManager: manager,
 	}
 }
 
@@ -38,13 +42,15 @@ func NewTestServerWorkerFactory(
 	tcpFactory tcpListenerFactory,
 	udpFactory udpListenerFactory,
 	loggerFactory loggerFactory,
+	manager server_configuration.ServerConfigurationManager,
 ) application.ServerWorkerFactory {
 	return &ServerWorkerFactory{
-		settings:      settings,
-		socketFactory: socketFactory,
-		tcpFactory:    tcpFactory,
-		udpFactory:    udpFactory,
-		loggerFactory: loggerFactory,
+		settings:             settings,
+		socketFactory:        socketFactory,
+		tcpFactory:           tcpFactory,
+		udpFactory:           udpFactory,
+		loggerFactory:        loggerFactory,
+		configurationManager: manager,
 	}
 }
 
@@ -61,16 +67,14 @@ func (s *ServerWorkerFactory) CreateWorker(ctx context.Context, tun io.ReadWrite
 
 func (s *ServerWorkerFactory) createTCPWorker(ctx context.Context, tun io.ReadWriteCloser) (application.TunWorker, error) {
 	// session managers, handlers…
-	sessionManager := session_management.
-		NewDefaultWorkerSessionManager[tcp_chacha20.Session]()
-	concurrentSessionManager := session_management.
-		NewConcurrentManager(sessionManager)
-	ttlConcurrentSessionManager := session_management.
-		NewTTLManager(
-			ctx, concurrentSessionManager,
-			time.Duration(s.settings.SessionLifetime.Ttl),
-			time.Duration(s.settings.SessionLifetime.CleanupInterval),
-		)
+	sessionManager := repository.NewDefaultWorkerSessionManager[tcp_chacha20.Session]()
+	concurrentSessionManager := wrappers.NewConcurrentManager(sessionManager)
+	ttlConcurrentSessionManager := wrappers.NewTTLManager(
+		ctx,
+		concurrentSessionManager,
+		time.Duration(s.settings.SessionLifetime.Ttl),
+		time.Duration(s.settings.SessionLifetime.CleanupInterval),
+	)
 
 	th := tcp_chacha20.NewTunHandler(
 		ctx,
@@ -90,6 +94,11 @@ func (s *ServerWorkerFactory) createTCPWorker(ctx context.Context, tun io.ReadWr
 		return nil, fmt.Errorf("failed to listen TCP: %w", err)
 	}
 
+	conf, confErr := s.configurationManager.Configuration()
+	if confErr != nil {
+		return nil, confErr
+	}
+
 	tr := tcp_chacha20.NewTransportHandler(
 		ctx,
 		s.settings,
@@ -97,21 +106,20 @@ func (s *ServerWorkerFactory) createTCPWorker(ctx context.Context, tun io.ReadWr
 		listener,
 		sessionManager,
 		s.loggerFactory.newLogger(),
+		NewHandshakeFactory(*conf),
+		chacha20.NewTcpSessionBuilder(),
 	)
 	return tcp_chacha20.NewTcpTunWorker(th, tr), nil
 }
 
 func (s *ServerWorkerFactory) createUDPWorker(ctx context.Context, tun io.ReadWriteCloser) (application.TunWorker, error) {
-	sessionManager := session_management.
-		NewDefaultWorkerSessionManager[udp_chacha20.Session]()
-	concurrentSessionManager := session_management.
-		NewConcurrentManager(sessionManager)
-	ttlConcurrentSessionManager := session_management.
-		NewTTLManager(
-			ctx, concurrentSessionManager,
-			time.Duration(s.settings.SessionLifetime.Ttl),
-			time.Duration(s.settings.SessionLifetime.CleanupInterval),
-		)
+	sessionManager := repository.NewDefaultWorkerSessionManager[udp_chacha20.Session]()
+	concurrentSessionManager := wrappers.NewConcurrentManager(sessionManager)
+	ttlConcurrentSessionManager := wrappers.NewTTLManager(
+		ctx, concurrentSessionManager,
+		time.Duration(s.settings.SessionLifetime.Ttl),
+		time.Duration(s.settings.SessionLifetime.CleanupInterval),
+	)
 
 	th := udp_chacha20.NewTunHandler(
 		ctx,
@@ -126,6 +134,11 @@ func (s *ServerWorkerFactory) createUDPWorker(ctx context.Context, tun io.ReadWr
 	}
 	ul := s.udpFactory.listenUDP(sock)
 
+	conf, confErr := s.configurationManager.Configuration()
+	if confErr != nil {
+		return nil, confErr
+	}
+
 	tr := udp_chacha20.NewTransportHandler(
 		ctx,
 		s.settings,
@@ -133,6 +146,8 @@ func (s *ServerWorkerFactory) createUDPWorker(ctx context.Context, tun io.ReadWr
 		ul,
 		ttlConcurrentSessionManager,
 		s.loggerFactory.newLogger(),
+		NewHandshakeFactory(*conf),
+		chacha20.NewUdpSessionBuilder(),
 	)
 	return udp_chacha20.NewUdpTunWorker(th, tr), nil
 }

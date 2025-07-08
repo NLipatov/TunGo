@@ -1,4 +1,4 @@
-package session_management
+package wrappers
 
 import (
 	"context"
@@ -6,27 +6,29 @@ import (
 	"sync"
 	"time"
 	"tungo/infrastructure/PAL/server_configuration"
+	"tungo/infrastructure/routing/server_routing/session_management"
+	"tungo/infrastructure/routing/server_routing/session_management/repository"
 )
 
 type TTLManager[cs interface {
-	ClientSession
+	session_management.SessionContract
 	comparable
 }] struct {
 	ctx                         context.Context
-	manager                     WorkerSessionManager[cs]
+	manager                     repository.SessionRepository[cs]
 	mu                          sync.RWMutex
 	expMap                      map[cs]time.Time
 	sessionTtl, cleanupInterval time.Duration
 }
 
 func NewTTLManager[cs interface {
-	ClientSession
+	session_management.SessionContract
 	comparable
 }](
 	ctx context.Context,
-	manager WorkerSessionManager[cs],
+	manager repository.SessionRepository[cs],
 	expDuration, sanitizeInterval time.Duration,
-) WorkerSessionManager[cs] {
+) repository.SessionRepository[cs] {
 	tm := &TTLManager[cs]{
 		ctx:             ctx,
 		manager:         manager,
@@ -52,9 +54,9 @@ func (t *TTLManager[cs]) Delete(session cs) {
 	delete(t.expMap, session)
 	t.mu.Unlock()
 }
-func (t *TTLManager[cs]) GetByInternalIP(addr netip.Addr) (cs, error) {
+func (t *TTLManager[cs]) GetByInternalAddrPort(addr netip.Addr) (cs, error) {
 	var zero cs
-	session, sessionErr := t.manager.GetByInternalIP(addr)
+	session, sessionErr := t.manager.GetByInternalAddrPort(addr)
 	if sessionErr != nil {
 		return zero, sessionErr
 	}
@@ -65,9 +67,9 @@ func (t *TTLManager[cs]) GetByInternalIP(addr netip.Addr) (cs, error) {
 
 	return session, nil
 }
-func (t *TTLManager[cs]) GetByExternalIP(addrPort netip.AddrPort) (cs, error) {
+func (t *TTLManager[cs]) GetByExternalAddrPort(addrPort netip.AddrPort) (cs, error) {
 	var zero cs
-	session, sessionErr := t.manager.GetByExternalIP(addrPort)
+	session, sessionErr := t.manager.GetByExternalAddrPort(addrPort)
 	if sessionErr != nil {
 		return zero, sessionErr
 	}

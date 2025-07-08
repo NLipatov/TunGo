@@ -10,6 +10,7 @@ type AppDependencies interface {
 	TunManager() application.ServerTunManager
 	KeyManager() server_configuration.KeyManager
 	SessionLifetimeManager() server_configuration.SessionLifetimeManager
+	ConfigurationManager() server_configuration.ServerConfigurationManager
 }
 
 type Dependencies struct {
@@ -17,6 +18,7 @@ type Dependencies struct {
 	tunManager             application.ServerTunManager
 	keyManager             server_configuration.KeyManager
 	sessionLifetimeManager server_configuration.SessionLifetimeManager
+	configurationManager   server_configuration.ServerConfigurationManager
 }
 
 func NewDependencies(
@@ -24,12 +26,14 @@ func NewDependencies(
 	configuration server_configuration.Configuration,
 	keyManager server_configuration.KeyManager,
 	sessionLifetimeManager server_configuration.SessionLifetimeManager,
+	configurationManager server_configuration.ServerConfigurationManager,
 ) AppDependencies {
 	return &Dependencies{
 		configuration:          configuration,
 		tunManager:             tunManager,
 		keyManager:             keyManager,
 		sessionLifetimeManager: sessionLifetimeManager,
+		configurationManager:   configurationManager,
 	}
 }
 
@@ -47,4 +51,8 @@ func (s Dependencies) KeyManager() server_configuration.KeyManager {
 
 func (s Dependencies) SessionLifetimeManager() server_configuration.SessionLifetimeManager {
 	return s.sessionLifetimeManager
+}
+
+func (s Dependencies) ConfigurationManager() server_configuration.ServerConfigurationManager {
+	return s.configurationManager
 }

@@ -1,4 +1,4 @@
-package udp_listener
+package udp_chacha20
 
 import (
 	"fmt"
@@ -7,18 +7,18 @@ import (
 	"tungo/application"
 )
 
-type UdpListener struct {
+type Listener struct {
 	socket application.Socket
 	udp    *net.UDPConn
 }
 
-func NewUdpListener(socket application.Socket) Listener {
-	return &UdpListener{
+func NewListener(socket application.Socket) application.Listener {
+	return &Listener{
 		socket: socket,
 	}
 }
 
-func (u *UdpListener) ListenUDP() (*net.UDPConn, error) {
+func (u *Listener) Listen() (application.UdpListenerConn, error) {
 	addr, err := net.ResolveUDPAddr("udp", u.socket.StringAddr())
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve udp addr: %s", err)
@@ -34,6 +34,6 @@ func (u *UdpListener) ListenUDP() (*net.UDPConn, error) {
 	return conn, nil
 }
 
-func (u *UdpListener) ReadMsgUDPAddrPort(b, oob []byte) (n, oobn, flags int, addr netip.AddrPort, err error) {
+func (u *Listener) Read(b, oob []byte) (n, oobn, flags int, addr netip.AddrPort, err error) {
 	return u.udp.ReadMsgUDPAddrPort(b, oob)
 }

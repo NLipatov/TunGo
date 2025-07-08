@@ -13,12 +13,12 @@ type Secret interface {
 type DefaultSecret struct {
 	settings                   settings.Settings
 	handshake                  application.Handshake
-	cryptographyServiceFactory application.CryptographyServiceBuilder
+	cryptographyServiceFactory application.CryptographyServiceFactory
 }
 
 func NewDefaultSecret(settings settings.Settings,
 	handshake application.Handshake,
-	cryptographyServiceFactory application.CryptographyServiceBuilder,
+	cryptographyServiceFactory application.CryptographyServiceFactory,
 ) Secret {
 	return &DefaultSecret{
 		settings:                   settings,

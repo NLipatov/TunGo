@@ -8,21 +8,21 @@ import (
 	"os"
 	"tungo/application"
 	"tungo/infrastructure/network"
-	"tungo/infrastructure/routing/server_routing/session_management"
+	"tungo/infrastructure/routing/server_routing/session_management/repository"
 )
 
 type TunHandler struct {
 	ctx            context.Context
 	reader         io.Reader
 	parser         network.IPHeader
-	sessionManager session_management.WorkerSessionManager[Session]
+	sessionManager repository.SessionRepository[Session]
 }
 
 func NewTunHandler(
 	ctx context.Context,
 	reader io.Reader,
 	parser network.IPHeader,
-	sessionManager session_management.WorkerSessionManager[Session],
+	sessionManager repository.SessionRepository[Session],
 ) application.TunHandler {
 	return &TunHandler{
 		ctx:            ctx,
@@ -81,7 +81,7 @@ func (t *TunHandler) HandleTun() error {
 				continue
 			}
 
-			clientSession, getErr := t.sessionManager.GetByInternalIP(destAddr)
+			clientSession, getErr := t.sessionManager.GetByInternalAddrPort(destAddr)
 			if getErr != nil {
 				log.Printf("packet dropped: %s, destination host: %v", getErr, destinationAddressBytes)
 				continue

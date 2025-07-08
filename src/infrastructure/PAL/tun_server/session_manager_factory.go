@@ -1,19 +1,23 @@
 package tun_server
 
-import "tungo/infrastructure/routing/server_routing/session_management"
+import (
+	"tungo/infrastructure/routing/server_routing/session_management"
+	"tungo/infrastructure/routing/server_routing/session_management/repository"
+	"tungo/infrastructure/routing/server_routing/session_management/repository/wrappers"
+)
 
-type sessionManagerFactory[T session_management.ClientSession] struct {
+type sessionManagerFactory[T session_management.SessionContract] struct {
 }
 
-func newSessionManagerFactory[T session_management.ClientSession]() sessionManagerFactory[T] {
+func newSessionManagerFactory[T session_management.SessionContract]() sessionManagerFactory[T] {
 	return sessionManagerFactory[T]{}
 }
 
-func (c *sessionManagerFactory[T]) createManager() session_management.WorkerSessionManager[T] {
-	return session_management.NewDefaultWorkerSessionManager[T]()
+func (c *sessionManagerFactory[T]) createManager() repository.SessionRepository[T] {
+	return repository.NewDefaultWorkerSessionManager[T]()
 }
 
-func (c *sessionManagerFactory[T]) createConcurrentManager() session_management.WorkerSessionManager[T] {
+func (c *sessionManagerFactory[T]) createConcurrentManager() repository.SessionRepository[T] {
 	sessionManager := c.createManager()
-	return session_management.NewConcurrentManager(sessionManager)
+	return wrappers.NewConcurrentManager(sessionManager)
 }

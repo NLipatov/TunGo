@@ -43,7 +43,11 @@ func (f *ConnectionFactory) EstablishConnection(
 	switch connSettings.Protocol {
 	case settings.UDP:
 		//connect to server and exchange secret
-		secret := network.NewDefaultSecret(connSettings, handshake.NewHandshake(), chacha20.NewUdpSessionBuilder())
+		secret := network.NewDefaultSecret(
+			connSettings,
+			handshake.NewHandshake(f.conf.Ed25519PublicKey, make([]byte, 0)),
+			chacha20.NewUdpSessionBuilder(),
+		)
 		cancellableSecret := network.NewSecretWithDeadline(handshakeCtx, secret)
 
 		session := network.NewDefaultSecureSession(network.NewUdpConnection(socket), cancellableSecret)
@@ -51,7 +55,11 @@ func (f *ConnectionFactory) EstablishConnection(
 		return cancellableSession.Establish()
 	case settings.TCP:
 		//connect to server and exchange secret
-		secret := network.NewDefaultSecret(connSettings, handshake.NewHandshake(), chacha20.NewTcpSessionBuilder())
+		secret := network.NewDefaultSecret(
+			connSettings,
+			handshake.NewHandshake(f.conf.Ed25519PublicKey, make([]byte, 0)),
+			chacha20.NewTcpSessionBuilder(),
+		)
 		cancellableSecret := network.NewSecretWithDeadline(handshakeCtx, secret)
 
 		session := network.NewDefaultSecureSession(network.NewTcpConnection(socket), cancellableSecret)

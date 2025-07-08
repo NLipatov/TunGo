@@ -4,51 +4,53 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net"
 	"net/netip"
 	"tungo/application"
-	"tungo/infrastructure/PAL/server_configuration"
-	"tungo/infrastructure/cryptography/chacha20"
-	"tungo/infrastructure/cryptography/chacha20/handshake"
-	"tungo/infrastructure/listeners/udp_listener"
 	"tungo/infrastructure/network"
-	"tungo/infrastructure/routing/server_routing/session_management"
+	"tungo/infrastructure/routing/server_routing/session_management/repository"
 	"tungo/infrastructure/settings"
 )
 
 type TransportHandler struct {
-	ctx            context.Context
-	settings       settings.Settings
-	writer         io.Writer
-	sessionManager session_management.WorkerSessionManager[Session]
-	logger         application.Logger
-	listener       udp_listener.Listener
+	ctx                 context.Context
+	settings            settings.Settings
+	writer              io.Writer
+	sessionManager      repository.SessionRepository[Session]
+	logger              application.Logger
+	listener            application.Listener
+	handshakeFactory    application.HandshakeFactory
+	cryptographyFactory application.CryptographyServiceFactory
 }
 
 func NewTransportHandler(
 	ctx context.Context,
 	settings settings.Settings,
 	writer io.Writer,
-	listener udp_listener.Listener,
-	sessionManager session_management.WorkerSessionManager[Session],
+	listener application.Listener,
+	sessionManager repository.SessionRepository[Session],
 	logger application.Logger,
+	handshakeFactory application.HandshakeFactory,
+	cryptographyFactory application.CryptographyServiceFactory,
 ) application.TransportHandler {
 	return &TransportHandler{
-		ctx:            ctx,
-		settings:       settings,
-		writer:         writer,
-		sessionManager: sessionManager,
-		logger:         logger,
-		listener:       listener,
+		ctx:                 ctx,
+		settings:            settings,
+		writer:              writer,
+		sessionManager:      sessionManager,
+		logger:              logger,
+		listener:            listener,
+		handshakeFactory:    handshakeFactory,
+		cryptographyFactory: cryptographyFactory,
 	}
 }
 
 func (t *TransportHandler) HandleTransport() error {
-	conn, err := t.listener.ListenUDP()
+	conn, err := t.listener.Listen()
 	if err != nil {
 		t.logger.Printf("failed to listen on port: %s", err)
+		return err
 	}
-	defer func(conn net.Conn) {
+	defer func(conn application.UdpListenerConn) {
 		_ = conn.Close()
 	}(conn)
 
@@ -77,55 +79,67 @@ func (t *TransportHandler) HandleTransport() error {
 				continue
 			}
 
-			clientSession, getErr := t.sessionManager.GetByExternalIP(clientAddr)
-			if getErr != nil || clientSession.remoteAddrPort.Port() != clientAddr.Port() {
-				// Pass initial data to registration function
-				regErr := t.registerClient(conn, clientAddr, dataBuf[:n])
-				if regErr != nil {
-					t.logger.Printf("host %v failed registration: %v", clientAddr.Addr().AsSlice(), regErr)
-					_, _ = conn.WriteToUDPAddrPort([]byte{
-						byte(network.SessionReset),
-					}, clientAddr)
-				}
-				continue
-			}
-
-			// Handle client data
-			decrypted, decryptionErr := clientSession.CryptographyService.Decrypt(dataBuf[:n])
-			if decryptionErr != nil {
-				t.logger.Printf("failed to decrypt data: %v", decryptionErr)
-				continue
-			}
-
-			// Write the decrypted packet to the TUN interface
-			_, err = t.writer.Write(decrypted)
-			if err != nil {
-				t.logger.Printf("failed to write to TUN: %v", err)
-			}
+			_ = t.handlePacket(conn, clientAddr, dataBuf[:n])
 		}
 	}
 }
 
-func (t *TransportHandler) registerClient(conn *net.UDPConn, clientAddr netip.AddrPort, initialData []byte) error {
+// handlePacket processes a UDP packet from addrPort.
+// Registers the client if needed, or decrypts and forwards the packet for an existing session.
+func (t *TransportHandler) handlePacket(
+	conn application.UdpListenerConn,
+	addrPort netip.AddrPort,
+	packet []byte) error {
+	session, sessionLookupErr := t.sessionManager.GetByExternalAddrPort(addrPort)
+	// If session not found, or client is using a new (IP, port) address (e.g., after NAT rebinding), re-register the client.
+	if sessionLookupErr != nil ||
+		session.remoteAddrPort != addrPort {
+		// Pass initial data to registration function
+		regErr := t.registerClient(conn, addrPort, packet)
+		if regErr != nil {
+			t.logger.Printf("host %v failed registration: %v", addrPort.Addr().AsSlice(), regErr)
+			_, _ = conn.WriteToUDPAddrPort([]byte{
+				byte(network.SessionReset),
+			}, addrPort)
+			return regErr
+		}
+		return nil
+	}
+
+	// Handle client data
+	decrypted, decryptionErr := session.CryptographyService.Decrypt(packet)
+	if decryptionErr != nil {
+		t.logger.Printf("failed to decrypt data: %v", decryptionErr)
+		return decryptionErr
+	}
+
+	// Write the decrypted packet to the TUN interface
+	_, err := t.writer.Write(decrypted)
+	if err != nil {
+		t.logger.Printf("failed to write to TUN: %v", err)
+		return err
+	}
+
+	return nil
+}
+
+func (t *TransportHandler) registerClient(
+	conn application.UdpListenerConn,
+	addrPort netip.AddrPort,
+	initialData []byte) error {
 	_ = conn.SetReadBuffer(65536)
 	_ = conn.SetWriteBuffer(65536)
 
-	// Pass initialData and clientAddr to the crypto function
-	h := handshake.NewHandshake()
+	// Pass initialData and addrPort to the crypto function
+	h := t.handshakeFactory.NewHandshake()
 	adapter := network.NewInitialDataAdapter(
-		network.NewUdpAdapter(conn, clientAddr), initialData)
+		network.NewUdpAdapter(conn, addrPort), initialData)
 	internalIP, handshakeErr := h.ServerSideHandshake(adapter)
 	if handshakeErr != nil {
 		return handshakeErr
 	}
 
-	serverConfigurationManager := server_configuration.NewManager(server_configuration.NewServerResolver())
-	_, err := serverConfigurationManager.Configuration()
-	if err != nil {
-		return fmt.Errorf("failed to read server configuration: %s", err)
-	}
-
-	cryptoSession, cryptoSessionErr := chacha20.NewUdpSession(h.Id(), h.ServerKey(), h.ClientKey(), true)
+	cryptoSession, cryptoSessionErr := t.cryptographyFactory.FromHandshake(h, true)
 	if cryptoSessionErr != nil {
 		return cryptoSessionErr
 	}
@@ -136,17 +150,14 @@ func (t *TransportHandler) registerClient(conn *net.UDPConn, clientAddr netip.Ad
 	}
 
 	t.sessionManager.Add(Session{
-		connectionAdapter: &network.ServerUdpAdapter{
-			UdpConn:  conn,
-			AddrPort: clientAddr,
-		},
-		remoteAddrPort:      clientAddr,
+		connectionAdapter:   network.NewUdpAdapter(conn, addrPort),
+		remoteAddrPort:      addrPort,
 		CryptographyService: cryptoSession,
 		internalIP:          intIp,
-		externalIP:          clientAddr,
+		externalIP:          addrPort,
 	})
 
-	t.logger.Printf("%v registered as: %v", clientAddr.Addr(), internalIP)
+	t.logger.Printf("%v registered as: %v", addrPort.Addr(), internalIP)
 
 	return nil
 }

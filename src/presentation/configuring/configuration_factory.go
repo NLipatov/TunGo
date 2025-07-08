@@ -9,10 +9,12 @@ import (
 	"tungo/presentation/configuring/tui/components/implementations/bubble_tea"
 )
 
-type ConfigurationFactory struct{}
+type ConfigurationFactory struct {
+	serverConfManager server_configuration.ServerConfigurationManager
+}
 
-func NewConfigurationFactory() *ConfigurationFactory {
-	return &ConfigurationFactory{}
+func NewConfigurationFactory(manager server_configuration.ServerConfigurationManager) *ConfigurationFactory {
+	return &ConfigurationFactory{serverConfManager: manager}
 }
 
 func (c *ConfigurationFactory) Configurator() Configurator {
@@ -28,13 +30,15 @@ func (c *ConfigurationFactory) buildCLIConfigurator() Configurator {
 }
 
 func (c *ConfigurationFactory) buildTUIConfigurator() Configurator {
-	confResolver := client_configuration.NewDefaultResolver()
+	clientConfResolver := client_configuration.NewDefaultResolver()
+	serverConfManager := c.serverConfManager
+
 	tuiConfigurator := tui.NewConfigurator(
-		client_configuration.NewDefaultObserver(confResolver),
-		client_configuration.NewDefaultSelector(confResolver),
-		client_configuration.NewDefaultCreator(confResolver),
-		client_configuration.NewDefaultDeleter(confResolver),
-		server_configuration.NewManager(server_configuration.NewServerResolver()),
+		client_configuration.NewDefaultObserver(clientConfResolver),
+		client_configuration.NewDefaultSelector(clientConfResolver),
+		client_configuration.NewDefaultCreator(clientConfResolver),
+		client_configuration.NewDefaultDeleter(clientConfResolver),
+		serverConfManager,
 		bubble_tea.NewSelectorAdapter(),
 		bubble_tea.NewTextInputAdapter(),
 		bubble_tea.NewTextAreaAdapter(),
