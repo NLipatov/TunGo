@@ -15,6 +15,13 @@ import (
 	"tungo/infrastructure/settings"
 )
 
+type errorBufferConn struct {
+	fakeUdpListenerConn
+}
+
+func (e *errorBufferConn) SetReadBuffer(_ int) error  { return errors.New("fail set read buf") }
+func (e *errorBufferConn) SetWriteBuffer(_ int) error { return errors.New("fail set write buf") }
+
 type alwaysWriteCrypto struct{}
 
 func (d *alwaysWriteCrypto) Encrypt(in []byte) ([]byte, error) { return in, nil }
@@ -564,4 +571,40 @@ func TestTransportHandler_RegisterClient_BadInternalIP(t *testing.T) {
 	if len(sessionRepo.adds) != 0 {
 		t.Errorf("expected no session registered due to bad internalIP, got %d", len(sessionRepo.adds))
 	}
+}
+
+func TestTransportHandler_ErrorSetBuffer(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	writer := &fakeWriter{}
+	logger := &fakeLogger{}
+	sessionRepo := &testSessionRepo{}
+	clientAddr := netip.MustParseAddrPort("192.168.1.70:7000")
+	internalIP := net.ParseIP("10.0.0.70")
+	fakeHS := &fakeHandshake{ip: internalIP}
+	handshakeFactory := &fakeHandshakeFactory{hs: fakeHS}
+
+	conn := &errorBufferConn{
+		fakeUdpListenerConn{
+			readBufs:  [][]byte{{0x77, 0x88}},
+			readAddrs: []netip.AddrPort{clientAddr},
+		},
+	}
+	listener := &fakeListener{conn: conn}
+	handler := NewTransportHandler(
+		ctx,
+		settings.Settings{Port: "7000"},
+		writer,
+		listener,
+		sessionRepo,
+		logger,
+		handshakeFactory,
+		chacha20.NewUdpSessionBuilder(),
+	)
+	done := make(chan struct{})
+	go func() { _ = handler.HandleTransport(); close(done) }()
+	time.Sleep(10 * time.Millisecond)
+	cancel()
+	<-done
 }
