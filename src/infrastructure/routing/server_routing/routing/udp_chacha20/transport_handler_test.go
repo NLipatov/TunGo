@@ -469,3 +469,59 @@ func TestTransportHandler_HappyPath(t *testing.T) {
 		t.Fatalf("expected 1 packet to be written to TUN, got %d", len(writer.wrote))
 	}
 }
+
+func TestTransportHandler_NATRebinding(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	writer := &fakeWriter{}
+	logger := &fakeLogger{}
+
+	// Old address
+	oldAddr := netip.MustParseAddrPort("192.168.1.51:5050")
+	// New address
+	newAddr := netip.MustParseAddrPort("192.168.1.51:6060")
+	internalIP := netip.MustParseAddr("10.0.0.51")
+
+	sessionRepo := &testSessionRepo{
+		sessions: map[netip.AddrPort]Session{},
+	}
+	fakeCrypto := &alwaysWriteCrypto{}
+	// Existing session, old address
+	sessionRepo.sessions[oldAddr] = Session{
+		remoteAddrPort:      oldAddr,
+		CryptographyService: fakeCrypto,
+		internalIP:          internalIP,
+		externalIP:          oldAddr,
+	}
+	// Tracking new session registration
+	sessionRegistered := make(chan struct{})
+	sessionRepo.afterAdd = func() { close(sessionRegistered) }
+
+	fakeHS := &fakeHandshake{ip: internalIP.AsSlice()}
+	handshakeFactory := &fakeHandshakeFactory{hs: fakeHS}
+	conn := &fakeUdpListenerConn{
+		readBufs:  [][]byte{{0x01, 0x02, 0x03}},
+		readAddrs: []netip.AddrPort{newAddr},
+	}
+	listener := &fakeListener{conn: conn}
+	handler := NewTransportHandler(
+		ctx,
+		settings.Settings{Port: "6060"},
+		writer,
+		listener,
+		sessionRepo,
+		logger,
+		handshakeFactory,
+		chacha20.NewUdpSessionBuilder(),
+	)
+	done := make(chan struct{})
+	go func() { _ = handler.HandleTransport(); close(done) }()
+	select {
+	case <-sessionRegistered:
+		cancel()
+	case <-time.After(time.Second):
+		t.Fatal("Timeout: session was not re-registered")
+	}
+	<-done
+}
