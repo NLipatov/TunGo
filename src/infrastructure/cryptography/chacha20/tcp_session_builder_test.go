@@ -27,20 +27,24 @@ func (m *mockHandshake) ClientSideHandshake(_ application.ConnectionAdapter, _ s
 	return nil
 }
 
-func validKey() []byte {
+type tcpSessionTestKeyGenerator struct {
+}
+
+func (k *tcpSessionTestKeyGenerator) validKey() []byte {
 	return bytes.Repeat([]byte{1}, chacha20poly1305.KeySize)
 }
 
-func invalidKey() []byte {
+func (k *tcpSessionTestKeyGenerator) invalidKey() []byte {
 	return []byte("short")
 }
 
 func TestTcpSessionBuilder_FromHandshake_Server_Success(t *testing.T) {
 	b := NewTcpSessionBuilder()
+	keyGen := tcpSessionTestKeyGenerator{}
 	hs := &mockHandshake{
 		id:     [32]byte{1, 2, 3},
-		server: validKey(),
-		client: validKey(),
+		server: keyGen.validKey(),
+		client: keyGen.validKey(),
 	}
 	svc, err := b.FromHandshake(hs, true)
 	if err != nil {
@@ -53,10 +57,11 @@ func TestTcpSessionBuilder_FromHandshake_Server_Success(t *testing.T) {
 
 func TestTcpSessionBuilder_FromHandshake_Client_Success(t *testing.T) {
 	b := NewTcpSessionBuilder()
+	keyGen := tcpSessionTestKeyGenerator{}
 	hs := &mockHandshake{
 		id:     [32]byte{1, 2, 3},
-		server: validKey(),
-		client: validKey(),
+		server: keyGen.validKey(),
+		client: keyGen.validKey(),
 	}
 	svc, err := b.FromHandshake(hs, false)
 	if err != nil {
@@ -69,10 +74,11 @@ func TestTcpSessionBuilder_FromHandshake_Client_Success(t *testing.T) {
 
 func TestTcpSessionBuilder_FromHandshake_Server_InvalidServerKey(t *testing.T) {
 	b := NewTcpSessionBuilder()
+	keyGen := tcpSessionTestKeyGenerator{}
 	hs := &mockHandshake{
 		id:     [32]byte{1, 2, 3},
-		server: invalidKey(),
-		client: validKey(),
+		server: keyGen.invalidKey(),
+		client: keyGen.validKey(),
 	}
 	svc, err := b.FromHandshake(hs, true)
 	if err == nil {
@@ -85,10 +91,11 @@ func TestTcpSessionBuilder_FromHandshake_Server_InvalidServerKey(t *testing.T) {
 
 func TestTcpSessionBuilder_FromHandshake_Server_InvalidClientKey(t *testing.T) {
 	b := NewTcpSessionBuilder()
+	keyGen := tcpSessionTestKeyGenerator{}
 	hs := &mockHandshake{
 		id:     [32]byte{1, 2, 3},
-		server: validKey(),
-		client: invalidKey(),
+		server: keyGen.validKey(),
+		client: keyGen.invalidKey(),
 	}
 	svc, err := b.FromHandshake(hs, true)
 	if err == nil {
@@ -101,10 +108,11 @@ func TestTcpSessionBuilder_FromHandshake_Server_InvalidClientKey(t *testing.T) {
 
 func TestTcpSessionBuilder_FromHandshake_Client_InvalidClientKey(t *testing.T) {
 	b := NewTcpSessionBuilder()
+	keyGen := tcpSessionTestKeyGenerator{}
 	hs := &mockHandshake{
 		id:     [32]byte{1, 2, 3},
-		server: validKey(),
-		client: invalidKey(),
+		server: keyGen.validKey(),
+		client: keyGen.invalidKey(),
 	}
 	svc, err := b.FromHandshake(hs, false)
 	if err == nil {
@@ -117,10 +125,11 @@ func TestTcpSessionBuilder_FromHandshake_Client_InvalidClientKey(t *testing.T) {
 
 func TestTcpSessionBuilder_FromHandshake_Client_InvalidServerKey(t *testing.T) {
 	b := NewTcpSessionBuilder()
+	keyGen := tcpSessionTestKeyGenerator{}
 	hs := &mockHandshake{
 		id:     [32]byte{1, 2, 3},
-		server: invalidKey(),
-		client: validKey(),
+		server: keyGen.invalidKey(),
+		client: keyGen.validKey(),
 	}
 	svc, err := b.FromHandshake(hs, false)
 	if err == nil {
