@@ -60,9 +60,16 @@ func (c *ClientHello) MarshalBinary() ([]byte, error) {
 }
 
 func (c *ClientHello) UnmarshalBinary(data []byte) error {
-	if len(data) < minClientHelloSizeBytes || len(data) > MaxClientHelloSizeBytes {
+	if len(data) < minClientHelloSizeBytes {
 		return fmt.Errorf("invalid message length")
 	}
+	c.ipVersion = data[0]
+	ipLen := int(data[1])
+	expectedLen := lengthHeaderLength + ipLen + curvePublicKeyLength + curvePublicKeyLength + nonceLength
+	if len(data) < expectedLen {
+		return fmt.Errorf("invalid message length")
+	}
+	data = data[:expectedLen]
 
 	c.ipVersion = data[0]
 
