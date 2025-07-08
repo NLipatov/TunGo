@@ -18,19 +18,16 @@ func NewServerHandshake(conn application.ConnectionAdapter) ServerHandshake {
 }
 
 func (h *ServerHandshake) ReceiveClientHello() (ClientHello, error) {
-	buf := make([]byte, MaxClientHelloSizeBytes)
-	_, readErr := h.conn.Read(buf)
-	if readErr != nil {
-		return ClientHello{}, readErr
+	buf := make([]byte, ObfuscatedHelloPacketSize)
+	_, err := io.ReadFull(h.conn, buf)
+	if err != nil {
+		return ClientHello{}, err
 	}
 
-	//Read client hello
 	var clientHello ClientHello
-	unmarshalErr := clientHello.UnmarshalBinary(buf)
-	if unmarshalErr != nil {
-		return ClientHello{}, unmarshalErr
+	if err := clientHello.UnmarshalBinary(buf); err != nil {
+		return ClientHello{}, err
 	}
-
 	return clientHello, nil
 }
 
