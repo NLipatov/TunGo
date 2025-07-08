@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 	"tungo/application"
+	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/settings"
 )
 
@@ -217,6 +218,7 @@ func TestTransportHandler_RegistrationPacket(t *testing.T) {
 		sessionRepo,
 		logger,
 		handshakeFactory,
+		chacha20.NewUdpSessionBuilder(),
 	)
 
 	go func() {
@@ -263,6 +265,7 @@ func TestTransportHandler_HandshakeError(t *testing.T) {
 		sessionRepo,
 		logger,
 		handshakeFactory,
+		chacha20.NewUdpSessionBuilder(),
 	)
 	done := make(chan struct{})
 	go func() {
@@ -314,6 +317,7 @@ func TestTransportHandler_DecryptError(t *testing.T) {
 		sessionRepo,
 		logger,
 		handshakeFactory,
+		chacha20.NewUdpSessionBuilder(),
 	)
 	done := make(chan struct{})
 	go func() {
@@ -351,6 +355,7 @@ func TestTransportHandler_ReadMsgUDPAddrPortError(t *testing.T) {
 		sessionRepo,
 		logger,
 		handshakeFactory,
+		chacha20.NewUdpSessionBuilder(),
 	)
 	done := make(chan struct{})
 	go func() {
@@ -396,6 +401,7 @@ func TestTransportHandler_WriteError(t *testing.T) {
 		sessionRepo,
 		logger,
 		handshakeFactory,
+		chacha20.NewUdpSessionBuilder(),
 	)
 
 	done := make(chan struct{})
@@ -414,4 +420,52 @@ func TestTransportHandler_WriteError(t *testing.T) {
 		t.Fatal("expected write to be attempted")
 	}
 	<-done
+}
+
+func TestTransportHandler_HappyPath(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	writer := &fakeWriter{}
+	logger := &fakeLogger{}
+
+	clientAddr := netip.MustParseAddrPort("192.168.1.50:5050")
+	internalIP := netip.MustParseAddr("10.0.0.50")
+	sessionRepo := &testSessionRepo{
+		sessions: map[netip.AddrPort]Session{},
+	}
+	fakeCrypto := &alwaysWriteCrypto{}
+	sessionRepo.sessions[clientAddr] = Session{
+		remoteAddrPort:      clientAddr,
+		CryptographyService: fakeCrypto,
+		internalIP:          internalIP,
+		externalIP:          clientAddr,
+	}
+
+	fakeHS := &fakeHandshake{ip: internalIP.AsSlice()}
+	handshakeFactory := &fakeHandshakeFactory{hs: fakeHS}
+	conn := &fakeUdpListenerConn{
+		readBufs:  [][]byte{{0x01, 0x02, 0x03}},
+		readAddrs: []netip.AddrPort{clientAddr},
+	}
+	listener := &fakeListener{conn: conn}
+	handler := NewTransportHandler(
+		ctx,
+		settings.Settings{Port: "5050"},
+		writer,
+		listener,
+		sessionRepo,
+		logger,
+		handshakeFactory,
+		chacha20.NewUdpSessionBuilder(),
+	)
+	done := make(chan struct{})
+	go func() { _ = handler.HandleTransport(); close(done) }()
+	time.Sleep(10 * time.Millisecond)
+	cancel()
+	<-done
+
+	if len(writer.wrote) != 1 {
+		t.Fatalf("expected 1 packet to be written to TUN, got %d", len(writer.wrote))
+	}
 }
