@@ -9,20 +9,20 @@ import (
 	"net"
 	"net/netip"
 	"tungo/application"
-	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
 	"tungo/infrastructure/settings"
 )
 
 type TransportHandler struct {
-	ctx              context.Context
-	settings         settings.Settings
-	writer           io.ReadWriteCloser
-	listener         application.TcpListener
-	sessionManager   repository.SessionRepository[Session]
-	Logger           application.Logger
-	handshakeFactory application.HandshakeFactory
+	ctx                 context.Context
+	settings            settings.Settings
+	writer              io.ReadWriteCloser
+	listener            application.TcpListener
+	sessionManager      repository.SessionRepository[Session]
+	Logger              application.Logger
+	handshakeFactory    application.HandshakeFactory
+	cryptographyFactory application.CryptographyServiceFactory
 }
 
 func NewTransportHandler(
@@ -33,15 +33,17 @@ func NewTransportHandler(
 	sessionManager repository.SessionRepository[Session],
 	logger application.Logger,
 	handshakeFactory application.HandshakeFactory,
+	cryptographyFactory application.CryptographyServiceFactory,
 ) application.TransportHandler {
 	return &TransportHandler{
-		ctx:              ctx,
-		settings:         settings,
-		writer:           writer,
-		listener:         listener,
-		sessionManager:   sessionManager,
-		Logger:           logger,
-		handshakeFactory: handshakeFactory,
+		ctx:                 ctx,
+		settings:            settings,
+		writer:              writer,
+		listener:            listener,
+		sessionManager:      sessionManager,
+		Logger:              logger,
+		handshakeFactory:    handshakeFactory,
+		cryptographyFactory: cryptographyFactory,
 	}
 }
 
@@ -95,12 +97,7 @@ func (t *TransportHandler) registerClient(conn net.Conn, tunFile io.ReadWriteClo
 	}
 	t.Logger.Printf("registered: %s", conn.RemoteAddr())
 
-	cryptographyService, cryptographyServiceErr := chacha20.NewTcpCryptographyService(
-		h.Id(),
-		h.ServerKey(),
-		h.ClientKey(),
-		true,
-	)
+	cryptographyService, cryptographyServiceErr := t.cryptographyFactory.FromHandshake(h, true)
 	if cryptographyServiceErr != nil {
 		_ = conn.Close()
 		return fmt.Errorf("client %s failed registration: %w", conn.RemoteAddr(), cryptographyServiceErr)

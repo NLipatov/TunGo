@@ -107,6 +107,7 @@ func (s *ServerWorkerFactory) createTCPWorker(ctx context.Context, tun io.ReadWr
 		sessionManager,
 		s.loggerFactory.newLogger(),
 		NewHandshakeFactory(*conf),
+		chacha20.NewTcpSessionBuilder(),
 	)
 	return tcp_chacha20.NewTcpTunWorker(th, tr), nil
 }
