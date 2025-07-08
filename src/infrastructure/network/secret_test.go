@@ -16,10 +16,10 @@ type secretTestMockHandshake struct {
 func (m *secretTestMockHandshake) Id() [32]byte      { return [32]byte{} }
 func (m *secretTestMockHandshake) ClientKey() []byte { return nil }
 func (m *secretTestMockHandshake) ServerKey() []byte { return nil }
-func (m *secretTestMockHandshake) ServerSideHandshake(conn application.ConnectionAdapter) (net.IP, error) {
+func (m *secretTestMockHandshake) ServerSideHandshake(_ application.ConnectionAdapter) (net.IP, error) {
 	return nil, nil
 }
-func (m *secretTestMockHandshake) ClientSideHandshake(conn application.ConnectionAdapter, settings settings.Settings) error {
+func (m *secretTestMockHandshake) ClientSideHandshake(_ application.ConnectionAdapter, _ settings.Settings) error {
 	return m.err
 }
 
@@ -29,15 +29,15 @@ type secretTestMockBuilder struct {
 	err error
 }
 
-func (m *secretTestMockBuilder) FromHandshake(h application.Handshake, isServer bool) (application.CryptographyService, error) {
+func (m *secretTestMockBuilder) FromHandshake(_ application.Handshake, _ bool) (application.CryptographyService, error) {
 	return m.svc, m.err
 }
 
 // mockCryptoService implements application.CryptographyService as a dummy.
 type mockCryptoService struct{}
 
-func (m *mockCryptoService) Encrypt(p []byte) ([]byte, error) { return nil, nil }
-func (m *mockCryptoService) Decrypt(p []byte) ([]byte, error) { return nil, nil }
+func (m *mockCryptoService) Encrypt(_ []byte) ([]byte, error) { return nil, nil }
+func (m *mockCryptoService) Decrypt(_ []byte) ([]byte, error) { return nil, nil }
 
 // mockConn is a no-op ConnectionAdapter stub.
 type mockConn struct{}
