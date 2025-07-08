@@ -6,20 +6,20 @@ import (
 	"io"
 	"net/netip"
 	"tungo/application"
-	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
 	"tungo/infrastructure/settings"
 )
 
 type TransportHandler struct {
-	ctx              context.Context
-	settings         settings.Settings
-	writer           io.Writer
-	sessionManager   repository.SessionRepository[Session]
-	logger           application.Logger
-	listener         application.Listener
-	handshakeFactory application.HandshakeFactory
+	ctx                        context.Context
+	settings                   settings.Settings
+	writer                     io.Writer
+	sessionManager             repository.SessionRepository[Session]
+	logger                     application.Logger
+	listener                   application.Listener
+	handshakeFactory           application.HandshakeFactory
+	cryptographyServiceBuilder application.CryptographyServiceFactory
 }
 
 func NewTransportHandler(
@@ -30,15 +30,17 @@ func NewTransportHandler(
 	sessionManager repository.SessionRepository[Session],
 	logger application.Logger,
 	handshakeFactory application.HandshakeFactory,
+	cryptographyServiceBuilder application.CryptographyServiceFactory,
 ) application.TransportHandler {
 	return &TransportHandler{
-		ctx:              ctx,
-		settings:         settings,
-		writer:           writer,
-		sessionManager:   sessionManager,
-		logger:           logger,
-		listener:         listener,
-		handshakeFactory: handshakeFactory,
+		ctx:                        ctx,
+		settings:                   settings,
+		writer:                     writer,
+		sessionManager:             sessionManager,
+		logger:                     logger,
+		listener:                   listener,
+		handshakeFactory:           handshakeFactory,
+		cryptographyServiceBuilder: cryptographyServiceBuilder,
 	}
 }
 
@@ -137,7 +139,7 @@ func (t *TransportHandler) registerClient(
 		return handshakeErr
 	}
 
-	cryptoSession, cryptoSessionErr := chacha20.NewUdpSession(h.Id(), h.ServerKey(), h.ClientKey(), true)
+	cryptoSession, cryptoSessionErr := t.cryptographyServiceBuilder.FromHandshake(h, true)
 	if cryptoSessionErr != nil {
 		return cryptoSessionErr
 	}

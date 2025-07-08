@@ -23,7 +23,7 @@ func (m *secretTestMockHandshake) ClientSideHandshake(conn application.Connectio
 	return m.err
 }
 
-// secretTestMockBuilder implements application.CryptographyServiceBuilder for testing DefaultSecret.Exchange.
+// secretTestMockBuilder implements application.CryptographyServiceFactory for testing DefaultSecret.Exchange.
 type secretTestMockBuilder struct {
 	svc application.CryptographyService
 	err error

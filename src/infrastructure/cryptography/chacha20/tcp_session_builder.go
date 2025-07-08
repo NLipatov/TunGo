@@ -8,7 +8,7 @@ import (
 type TcpSessionBuilder struct {
 }
 
-func NewTcpSessionBuilder() application.CryptographyServiceBuilder {
+func NewTcpSessionBuilder() application.CryptographyServiceFactory {
 	return &TcpSessionBuilder{}
 }
 

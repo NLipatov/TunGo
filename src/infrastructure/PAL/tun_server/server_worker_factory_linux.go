@@ -146,6 +146,7 @@ func (s *ServerWorkerFactory) createUDPWorker(ctx context.Context, tun io.ReadWr
 		ttlConcurrentSessionManager,
 		s.loggerFactory.newLogger(),
 		NewHandshakeFactory(*conf),
+		chacha20.NewUdpSessionBuilder(),
 	)
 	return udp_chacha20.NewUdpTunWorker(th, tr), nil
 }
