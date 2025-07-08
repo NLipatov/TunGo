@@ -525,3 +525,43 @@ func TestTransportHandler_NATRebinding(t *testing.T) {
 	}
 	<-done
 }
+
+func TestTransportHandler_RegisterClient_BadInternalIP(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	writer := &fakeWriter{}
+	logger := &fakeLogger{}
+	sessionRepo := &testSessionRepo{}
+	clientAddr := netip.MustParseAddrPort("192.168.1.60:6000")
+
+	// Handshake returns invalid data (incorrect IP address)
+	badIP := []byte{1, 2, 3}
+	fakeHS := &fakeHandshake{ip: badIP}
+	handshakeFactory := &fakeHandshakeFactory{hs: fakeHS}
+	conn := &fakeUdpListenerConn{
+		readBufs:  [][]byte{{0x01}},
+		readAddrs: []netip.AddrPort{clientAddr},
+	}
+	listener := &fakeListener{conn: conn}
+	handler := NewTransportHandler(
+		ctx,
+		settings.Settings{Port: "6000"},
+		writer,
+		listener,
+		sessionRepo,
+		logger,
+		handshakeFactory,
+		chacha20.NewUdpSessionBuilder(),
+	)
+	done := make(chan struct{})
+	go func() { _ = handler.HandleTransport(); close(done) }()
+	time.Sleep(10 * time.Millisecond)
+	cancel()
+	<-done
+
+	// Check that invalid session was not added
+	if len(sessionRepo.adds) != 0 {
+		t.Errorf("expected no session registered due to bad internalIP, got %d", len(sessionRepo.adds))
+	}
+}
