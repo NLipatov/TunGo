@@ -8,14 +8,15 @@ import (
 )
 
 const (
-	lengthHeaderLength      = 2
-	signatureLength         = 64
-	nonceLength             = 32
-	curvePublicKeyLength    = 32
-	minIpLength             = 4
-	maxIpLength             = 39
-	MaxClientHelloSizeBytes = maxIpLength + lengthHeaderLength + curvePublicKeyLength + curvePublicKeyLength + nonceLength
-	minClientHelloSizeBytes = minIpLength + lengthHeaderLength + curvePublicKeyLength + curvePublicKeyLength + nonceLength
+	lengthHeaderLength        = 2
+	signatureLength           = 64
+	nonceLength               = 32
+	curvePublicKeyLength      = 32
+	minIpLength               = 4
+	maxIpLength               = 39
+	MaxClientHelloSizeBytes   = maxIpLength + lengthHeaderLength + curvePublicKeyLength + curvePublicKeyLength + nonceLength
+	minClientHelloSizeBytes   = minIpLength + lengthHeaderLength + curvePublicKeyLength + curvePublicKeyLength + nonceLength
+	ObfuscatedHelloPacketSize = 1200
 )
 
 type DefaultHandshake struct {
