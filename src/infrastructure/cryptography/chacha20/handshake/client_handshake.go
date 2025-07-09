@@ -33,7 +33,7 @@ func (c *ClientHandshake) SendClientHello(
 	edPublicKey ed25519.PublicKey,
 	sessionPublicKey, sessionSalt []byte) error {
 	hello := NewClientHello(4, net.ParseIP(settings.InterfaceAddress), edPublicKey, sessionPublicKey, sessionSalt)
-	return c.clientIO.WriteClientHello(hello)
+	return c.clientIO.WriteClientHello(&hello)
 }
 
 func (c *ClientHandshake) ReceiveServerHello() (ServerHello, error) {

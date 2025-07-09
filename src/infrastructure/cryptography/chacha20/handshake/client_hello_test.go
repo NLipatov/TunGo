@@ -32,6 +32,31 @@ func buildValidHello(t *testing.T, version uint8, ipStr string) ([]byte, ClientH
 	return buf, ch
 }
 
+func buildLegacyHello(t *testing.T, version uint8, ipStr string) ([]byte, ClientHello) {
+	t.Helper()
+
+	edPub := make([]byte, curvePublicKeyLength)
+	if _, err := rand.Read(edPub); err != nil {
+		t.Fatalf("failed to generate ed25519 public key: %v", err)
+	}
+	curvePub := make([]byte, curvePublicKeyLength)
+	if _, err := rand.Read(curvePub); err != nil {
+		t.Fatalf("failed to generate curve public key: %v", err)
+	}
+	nonce := make([]byte, nonceLength)
+	if _, err := rand.Read(nonce); err != nil {
+		t.Fatalf("failed to generate nonce: %v", err)
+	}
+
+	ip := net.ParseIP(ipStr)
+	ch := NewClientHello(version, ip, edPub, curvePub, nonce)
+	buf, err := ch.MarshalBinary()
+	if err != nil {
+		t.Fatalf("MarshalBinary failed: %v", err)
+	}
+	return buf, ch
+}
+
 func TestMarshalUnmarshal_Success(t *testing.T) {
 	cases := []struct {
 		version uint8
@@ -118,5 +143,16 @@ func TestUnmarshalBinary_InvalidIPLength(t *testing.T) {
 	var ch ClientHello
 	if err := ch.UnmarshalBinary(buf); err == nil {
 		t.Fatal("expected error for invalid IP length, got nil")
+	}
+}
+
+func TestMarshalUnmarshalLegacy(t *testing.T) {
+	buf, orig := buildLegacyHello(t, 4, "192.168.1.1")
+	var got ClientHello
+	if err := got.UnmarshalBinary(buf); err != nil {
+		t.Fatalf("unmarshal legacy failed: %v", err)
+	}
+	if !bytes.Equal(got.nonce, orig.nonce) {
+		t.Errorf("nonce mismatch")
 	}
 }

@@ -83,13 +83,28 @@ func buildHello(t *testing.T) []byte {
 	if err != nil {
 		t.Fatalf("buildHello.MarshalBinary: %v", err)
 	}
+	out, err := Obfuscator{}.Obfuscate(buf)
+	if err != nil {
+		t.Fatalf("obfuscate: %v", err)
+	}
+	return out
+}
+
+func buildLegacyHelloSH(t *testing.T) []byte {
+	t.Helper()
+	edPub, _, _ := ed25519.GenerateKey(rand.Reader)
+	ch := NewClientHello(4, net.ParseIP("1.2.3.4"), edPub, make([]byte, curvePublicKeyLength), make([]byte, nonceLength))
+	buf, err := ch.MarshalBinary()
+	if err != nil {
+		t.Fatalf("buildLegacyHello.MarshalBinary: %v", err)
+	}
 	return buf
 }
 
 func TestReceiveClientHello_Success(t *testing.T) {
 	buf := buildHello(t)
 	conn := newFakeConn(buf)
-	hs := NewServerHandshake(conn)
+	hs := NewServerHandshake(conn, NewEncrypter(nil, nil))
 
 	ch, err := hs.ReceiveClientHello()
 	if err != nil {
@@ -100,9 +115,23 @@ func TestReceiveClientHello_Success(t *testing.T) {
 	}
 }
 
+func TestReceiveClientHello_Legacy(t *testing.T) {
+	buf := buildLegacyHelloSH(t)
+	conn := newFakeConn(buf)
+	hs := NewServerHandshake(conn, NewEncrypter(nil, nil))
+
+	ch, err := hs.ReceiveClientHello()
+	if err != nil {
+		t.Fatalf("ReceiveClientHello legacy error: %v", err)
+	}
+	if ch.ipVersion != 4 {
+		t.Errorf("unexpected ipVersion %d", ch.ipVersion)
+	}
+}
+
 func TestReceiveClientHello_ReadError(t *testing.T) {
 	conn := &fakeConn{in: nil, out: &bytes.Buffer{}}
-	hs := NewServerHandshake(conn)
+	hs := NewServerHandshake(conn, NewEncrypter(nil, nil))
 
 	_, err := hs.ReceiveClientHello()
 	if err == nil {
@@ -112,7 +141,7 @@ func TestReceiveClientHello_ReadError(t *testing.T) {
 
 func TestReceiveClientHello_UnmarshalError(t *testing.T) {
 	conn := newFakeConn([]byte{0, 1, 2})
-	hs := NewServerHandshake(conn)
+	hs := NewServerHandshake(conn, NewEncrypter(nil, nil))
 
 	_, err := hs.ReceiveClientHello()
 	if err == nil {
@@ -133,7 +162,7 @@ func TestSendServerHello_Success(t *testing.T) {
 	_, _ = rand.Read(clientNonce)
 
 	conn := newFakeConn(nil)
-	hs := NewServerHandshake(conn)
+	hs := NewServerHandshake(conn, NewEncrypter(nil, nil))
 
 	err := hs.SendServerHello(c, nil, nonce, curvePub, clientNonce)
 	if err != nil {
@@ -157,13 +186,45 @@ func TestSendServerHello_Success(t *testing.T) {
 	}
 }
 
+func TestSendServerHello_AfterLegacyHello(t *testing.T) {
+	buf := buildLegacyHelloSH(t)
+	conn := newFakeConn(buf)
+	hs := NewServerHandshake(conn, NewEncrypter(nil, nil))
+	if _, err := hs.ReceiveClientHello(); err != nil {
+		t.Fatalf("ReceiveClientHello legacy failed: %v", err)
+	}
+
+	sig := bytes.Repeat([]byte{0xAA}, signatureLength)
+	c := &stubCrypto{signature: sig}
+	curvePub := make([]byte, curvePublicKeyLength)
+	_, _ = rand.Read(curvePub)
+	nonce := make([]byte, nonceLength)
+	_, _ = rand.Read(nonce)
+	clientNonce := make([]byte, nonceLength)
+	_, _ = rand.Read(clientNonce)
+
+	conn.out.Reset()
+	if err := hs.SendServerHello(c, nil, nonce, curvePub, clientNonce); err != nil {
+		t.Fatalf("SendServerHello error: %v", err)
+	}
+
+	out := conn.out.Bytes()
+	var sh ServerHello
+	if err := sh.UnmarshalBinary(out); err != nil {
+		t.Fatalf("unmarshal server hello: %v", err)
+	}
+	if !bytes.Equal(sh.signature, sig) {
+		t.Errorf("signature mismatch")
+	}
+}
+
 func TestSendServerHello_MarshalError(t *testing.T) {
 	// make stubCrypto return wrong‑size signature
 	sig := bytes.Repeat([]byte{0x00}, signatureLength-1)
 	c := &stubCrypto{signature: sig}
 
 	conn := newFakeConn(nil)
-	hs := NewServerHandshake(conn)
+	hs := NewServerHandshake(conn, NewEncrypter(nil, nil))
 
 	err := hs.SendServerHello(c, nil, make([]byte, nonceLength), make([]byte, curvePublicKeyLength), make([]byte, nonceLength))
 	if err == nil {
@@ -196,7 +257,7 @@ func TestVerifyClientSignature_Success(t *testing.T) {
 	// stubCrypto.Verify not used because we’re using real ed25519.Verify
 	c := &stubCrypto{verifyOK: true}
 
-	hs := NewServerHandshake(conn)
+	hs := NewServerHandshake(conn, NewEncrypter(nil, nil))
 	if err := hs.VerifyClientSignature(c, hello, serverNonce); err != nil {
 		t.Fatalf("VerifyClientSignature error: %v", err)
 	}
@@ -204,7 +265,7 @@ func TestVerifyClientSignature_Success(t *testing.T) {
 
 func TestVerifyClientSignature_ReadError(t *testing.T) {
 	conn := &fakeConn{in: nil, out: &bytes.Buffer{}}
-	hs := NewServerHandshake(conn)
+	hs := NewServerHandshake(conn, NewEncrypter(nil, nil))
 	err := hs.VerifyClientSignature(&stubCrypto{verifyOK: true}, ClientHello{}, nil)
 	if err == nil {
 		t.Fatal("expected read error, got nil")
@@ -214,7 +275,7 @@ func TestVerifyClientSignature_ReadError(t *testing.T) {
 func TestVerifyClientSignature_UnmarshalError(t *testing.T) {
 	// supply fewer than 64 bytes
 	conn := newFakeConn([]byte{1, 2, 3})
-	hs := NewServerHandshake(conn)
+	hs := NewServerHandshake(conn, NewEncrypter(nil, nil))
 	err := hs.VerifyClientSignature(&stubCrypto{verifyOK: true}, ClientHello{}, nil)
 	if err == nil {
 		t.Fatal("expected unmarshal error, got nil")
@@ -224,7 +285,7 @@ func TestVerifyClientSignature_UnmarshalError(t *testing.T) {
 func TestVerifyClientSignature_VerifyFail(t *testing.T) {
 	// supply correct‑length data but stubCrypto.Verify=false
 	conn := newFakeConn(bytes.Repeat([]byte{0xFF}, signatureLength))
-	hs := NewServerHandshake(conn)
+	hs := NewServerHandshake(conn, NewEncrypter(nil, nil))
 	err := hs.VerifyClientSignature(&stubCrypto{verifyOK: false}, ClientHello{}, nil)
 	if err == nil {
 		t.Fatal("expected verification failure, got nil")

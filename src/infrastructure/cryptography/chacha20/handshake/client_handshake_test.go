@@ -24,9 +24,9 @@ type ClientHandshakeFakeIO struct {
 	writeSigErr    error
 }
 
-func (f *ClientHandshakeFakeIO) WriteClientHello(h ClientHello) error {
+func (f *ClientHandshakeFakeIO) WriteClientHello(h *ClientHello) error {
 	f.wroteHello = true
-	f.helloArg = h
+	f.helloArg = *h
 	return f.writeHelloErr
 }
 func (f *ClientHandshakeFakeIO) ReadServerHello() (ServerHello, error) {

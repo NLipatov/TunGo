@@ -8,29 +8,46 @@ import (
 )
 
 type ServerHandshake struct {
-	conn application.ConnectionAdapter
+	conn                  application.ConnectionAdapter
+	clientHelloObfuscated bool
+	clientHelloEncrypted  bool
+	enc                   Encrypter
 }
 
-func NewServerHandshake(conn application.ConnectionAdapter) ServerHandshake {
+func NewServerHandshake(conn application.ConnectionAdapter, enc Encrypter) ServerHandshake {
 	return ServerHandshake{
 		conn: conn,
+		enc:  enc,
 	}
 }
 
 func (h *ServerHandshake) ReceiveClientHello() (ClientHello, error) {
-	buf := make([]byte, MaxClientHelloSizeBytes)
-	_, readErr := h.conn.Read(buf)
-	if readErr != nil {
+	buf := make([]byte, MaxClientHelloSizeBytes+paddingLengthHeaderBytes+maxPaddingLength+hmacLength)
+	n, readErr := h.conn.Read(buf)
+	if readErr != nil && readErr != io.EOF {
 		return ClientHello{}, readErr
 	}
+	buf = buf[:n]
 
-	//Read client hello
+	plainEnc, encrypted, err := h.enc.Decrypt(buf)
+	if err != nil {
+		return ClientHello{}, err
+	}
+
+	obfs := Obfuscator{}
+	plain, obfuscated, err := obfs.Deobfuscate(plainEnc)
+	if err != nil {
+		return ClientHello{}, err
+	}
+
 	var clientHello ClientHello
-	unmarshalErr := clientHello.UnmarshalBinary(buf)
+	unmarshalErr := clientHello.UnmarshalBinary(plain)
 	if unmarshalErr != nil {
 		return ClientHello{}, unmarshalErr
 	}
 
+	h.clientHelloObfuscated = obfuscated
+	h.clientHelloEncrypted = encrypted
 	return clientHello, nil
 }
 
@@ -46,6 +63,20 @@ func (h *ServerHandshake) SendServerHello(
 	marshalledServerHello, marshalErr := serverHello.MarshalBinary()
 	if marshalErr != nil {
 		return marshalErr
+	}
+
+	if h.clientHelloObfuscated {
+		marshalledServerHello, marshalErr = (Obfuscator{}).Obfuscate(marshalledServerHello)
+		if marshalErr != nil {
+			return marshalErr
+		}
+	}
+
+	if h.clientHelloEncrypted {
+		marshalledServerHello, marshalErr = h.enc.Encrypt(marshalledServerHello)
+		if marshalErr != nil {
+			return marshalErr
+		}
 	}
 
 	_, writeErr := h.conn.Write(marshalledServerHello)

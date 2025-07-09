@@ -37,7 +37,6 @@ func (h *ServerHello) MarshalBinary() ([]byte, error) {
 
 	arr := make([]byte, signatureLength+nonceLength+curvePublicKeyLength)
 
-	// copy signature into arr
 	offset := 0
 	copy(arr, h.signature)
 	offset += signatureLength
@@ -63,6 +62,5 @@ func (h *ServerHello) UnmarshalBinary(data []byte) error {
 	offset += nonceLength
 
 	h.curvePublicKey = data[offset : offset+curvePublicKeyLength]
-
 	return nil
 }

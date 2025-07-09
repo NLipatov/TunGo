@@ -72,17 +72,22 @@ func (c *ClientHello) UnmarshalBinary(data []byte) error {
 
 	ipAddressLength := data[1]
 
-	if int(ipAddressLength+lengthHeaderLength) > len(data) {
+	if int(ipAddressLength)+lengthHeaderLength > len(data) {
 		return fmt.Errorf("invalid IP address length")
 	}
 
-	c.ipAddress = data[lengthHeaderLength : lengthHeaderLength+ipAddressLength]
+	offset := lengthHeaderLength
+	c.ipAddress = data[offset : offset+int(ipAddressLength)]
+	offset += int(ipAddressLength)
 
-	c.edPublicKey = data[lengthHeaderLength+ipAddressLength : lengthHeaderLength+ipAddressLength+curvePublicKeyLength]
+	c.edPublicKey = data[offset : offset+curvePublicKeyLength]
+	offset += curvePublicKeyLength
 
-	c.curvePublicKey = data[lengthHeaderLength+ipAddressLength+curvePublicKeyLength : lengthHeaderLength+ipAddressLength+curvePublicKeyLength+curvePublicKeyLength]
+	c.curvePublicKey = data[offset : offset+curvePublicKeyLength]
+	offset += curvePublicKeyLength
 
-	c.nonce = data[lengthHeaderLength+ipAddressLength+curvePublicKeyLength+curvePublicKeyLength : lengthHeaderLength+ipAddressLength+curvePublicKeyLength+curvePublicKeyLength+nonceLength]
+	c.nonce = data[offset : offset+nonceLength]
+	offset += nonceLength
 
 	return nil
 }

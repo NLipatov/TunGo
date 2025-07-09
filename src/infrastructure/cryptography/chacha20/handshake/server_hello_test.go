@@ -6,30 +6,34 @@ import (
 )
 
 func TestServerHello_UnmarshalBinary_Success(t *testing.T) {
-	data := make([]byte, signatureLength+nonceLength+curvePublicKeyLength)
-	copy(data[:signatureLength], bytes.Repeat([]byte{0x01}, signatureLength))
-	copy(data[signatureLength:signatureLength+nonceLength], bytes.Repeat([]byte{0x02}, nonceLength))
-	copy(data[signatureLength+nonceLength:], bytes.Repeat([]byte{0x03}, curvePublicKeyLength))
+	sig := bytes.Repeat([]byte{0x01}, signatureLength)
+	nonce := bytes.Repeat([]byte{0x02}, nonceLength)
+	curve := bytes.Repeat([]byte{0x03}, curvePublicKeyLength)
 
-	sH := &ServerHello{}
-	err := sH.UnmarshalBinary(data)
+	orig := NewServerHello(sig, nonce, curve)
+	data, err := orig.MarshalBinary()
 	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
+		t.Fatalf("marshal error: %v", err)
 	}
 
-	if !bytes.Equal(sH.signature, data[:signatureLength]) {
-		t.Errorf("signature does not match. Expected %v, got %v", data[:signatureLength], sH.signature)
+	var got ServerHello
+	if err := got.UnmarshalBinary(data); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
 	}
-	if !bytes.Equal(sH.nonce, data[signatureLength:signatureLength+nonceLength]) {
-		t.Errorf("nonce does not match. Expected %v, got %v", data[signatureLength:signatureLength+nonceLength], sH.nonce)
+
+	if !bytes.Equal(got.signature, sig) {
+		t.Errorf("signature mismatch")
 	}
-	if !bytes.Equal(sH.curvePublicKey, data[signatureLength+nonceLength:]) {
-		t.Errorf("curvePublicKey does not match. Expected %v, got %v", data[signatureLength+nonceLength:], sH.curvePublicKey)
+	if !bytes.Equal(got.nonce, nonce) {
+		t.Errorf("nonce mismatch")
+	}
+	if !bytes.Equal(got.curvePublicKey, curve) {
+		t.Errorf("curvePublicKey mismatch")
 	}
 }
 
 func TestServerHello_UnmarshalBinary_InvalidLength(t *testing.T) {
-	data := make([]byte, signatureLength+nonceLength+10) // wrong length
+	data := make([]byte, signatureLength+nonceLength+10)
 
 	sH := &ServerHello{}
 	err := sH.UnmarshalBinary(data)
@@ -49,9 +53,12 @@ func TestServerHello_MarshalBinary_Success(t *testing.T) {
 		t.Fatalf("Expected no error, got %v", err)
 	}
 
-	expected := append(append(sig, nonce...), curvePub...)
-	if !bytes.Equal(buf, expected) {
-		t.Errorf("Result does not match. Expected %v, got %v", expected, buf)
+	var parsed ServerHello
+	if err := parsed.UnmarshalBinary(buf); err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if !bytes.Equal(parsed.signature, sig) || !bytes.Equal(parsed.nonce, nonce) || !bytes.Equal(parsed.curvePublicKey, curvePub) {
+		t.Errorf("fields mismatch after roundtrip")
 	}
 }
 

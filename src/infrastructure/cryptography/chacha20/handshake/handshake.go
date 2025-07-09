@@ -1,19 +1,24 @@
 package handshake
 
 import (
+	"crypto/ed25519"
 	"fmt"
 	"net"
+
+	"golang.org/x/crypto/curve25519"
+
 	"tungo/application"
 	"tungo/infrastructure/settings"
 )
 
 const (
-	lengthHeaderLength      = 2
-	signatureLength         = 64
-	nonceLength             = 32
-	curvePublicKeyLength    = 32
-	minIpLength             = 4
-	maxIpLength             = 39
+	lengthHeaderLength   = 2
+	signatureLength      = 64
+	nonceLength          = 32
+	curvePublicKeyLength = 32
+	minIpLength          = 4
+	maxIpLength          = 39
+
 	MaxClientHelloSizeBytes = maxIpLength + lengthHeaderLength + curvePublicKeyLength + curvePublicKeyLength + nonceLength
 	minClientHelloSizeBytes = minIpLength + lengthHeaderLength + curvePublicKeyLength + curvePublicKeyLength + nonceLength
 )
@@ -23,14 +28,35 @@ type DefaultHandshake struct {
 	clientKey                           []byte
 	serverKey                           []byte
 	Ed25519PublicKey, Ed25519PrivateKey []byte // client will only have public key
+	boxPublicKey, boxPrivateKey         *[32]byte
 }
 
 func NewHandshake(
 	Ed25519PublicKey, Ed25519PrivateKey []byte,
 ) *DefaultHandshake {
-	return &DefaultHandshake{
+	h := &DefaultHandshake{
 		Ed25519PublicKey:  Ed25519PublicKey,
 		Ed25519PrivateKey: Ed25519PrivateKey,
+	}
+	h.initBoxKeys()
+	return h
+}
+
+func (h *DefaultHandshake) initBoxKeys() {
+	if len(h.Ed25519PublicKey) == ed25519.PublicKeySize {
+		if pub, err := ed25519PublicKeyToCurve25519(h.Ed25519PublicKey); err == nil {
+			h.boxPublicKey = &pub
+		}
+	}
+	if len(h.Ed25519PrivateKey) == ed25519.PrivateKeySize {
+		priv := ed25519PrivateKeyToCurve25519(h.Ed25519PrivateKey)
+		h.boxPrivateKey = &priv
+		if h.boxPublicKey == nil {
+			pub, _ := curve25519.X25519(priv[:], curve25519.Basepoint)
+			var arr [32]byte
+			copy(arr[:], pub)
+			h.boxPublicKey = &arr
+		}
 	}
 }
 
@@ -57,7 +83,7 @@ func (h *DefaultHandshake) ServerSideHandshake(conn application.ConnectionAdapte
 	serverNonce := c.GenerateRandomBytesArray(32)
 
 	//handshake process starts here
-	handshake := NewServerHandshake(conn)
+	handshake := NewServerHandshake(conn, NewEncrypter(h.boxPublicKey, h.boxPrivateKey))
 	clientHello, clientHelloErr := handshake.ReceiveClientHello()
 	if clientHelloErr != nil {
 		return nil, clientHelloErr
@@ -101,7 +127,7 @@ func (h *DefaultHandshake) ClientSideHandshake(conn application.ConnectionAdapte
 
 	clientNonce := c.GenerateRandomBytesArray(32)
 
-	clientIO := NewDefaultClientIO(conn)
+	clientIO := NewDefaultClientIO(conn, NewEncrypter(h.boxPublicKey, nil))
 	handshake := NewClientHandshake(conn, clientIO, c)
 	helloErr := handshake.SendClientHello(settings, edPublicKey, sessionPublicKey, clientNonce)
 	if helloErr != nil {
