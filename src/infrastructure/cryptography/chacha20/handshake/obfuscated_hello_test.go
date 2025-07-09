@@ -76,7 +76,7 @@ func TestFloatingObfuscatedClientHello_Roundtrip(t *testing.T) {
 	if err := recv.UnmarshalBinary(packet); err != nil {
 		t.Fatalf("UnmarshalBinary failed: %v", err)
 	}
-	decoded := recv.(*ObfuscatedHello).hello.(*obfHelloStub)
+	decoded := recv.hello.(*obfHelloStub)
 	if !bytes.Equal(plain.Data, decoded.Data) {
 		t.Errorf("Decoded hello does not match original")
 	}

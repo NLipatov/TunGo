@@ -28,8 +28,8 @@ func NewFloatingObfuscatedClientHello(
 	key []byte,
 	psk []byte,
 	hmac application.HMAC,
-) Hello {
-	return &ObfuscatedHello{
+) ObfuscatedHello {
+	return ObfuscatedHello{
 		hello: hello,
 		key:   key,
 		psk:   psk,
