@@ -14,6 +14,14 @@ type helloStub struct {
 	curvePub, nonce []byte
 }
 
+func (h *helloStub) MarshalBinary() ([]byte, error) {
+	panic("not implemented")
+}
+
+func (h *helloStub) UnmarshalBinary(_ []byte) error {
+	panic("not implemented")
+}
+
 func (h *helloStub) CurvePublicKey() []byte { return h.curvePub }
 func (h *helloStub) Nonce() []byte          { return h.nonce }
 
