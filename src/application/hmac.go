@@ -5,4 +5,5 @@ type HMAC interface {
 	Generate(data []byte) ([]byte, error)
 	// Verify is used to verify HMAC
 	Verify(data, signature []byte) error
+	ResultSize() int
 }

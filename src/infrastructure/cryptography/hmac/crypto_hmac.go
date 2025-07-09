@@ -42,3 +42,7 @@ func (d *CryptoHMAC) Verify(data, signature []byte) error {
 
 	return nil
 }
+
+func (d *CryptoHMAC) ResultSize() int {
+	return sha256.Size
+}

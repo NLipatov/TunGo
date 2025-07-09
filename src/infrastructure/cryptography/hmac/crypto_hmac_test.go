@@ -2,6 +2,7 @@ package hmac
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"testing"
 )
 
@@ -183,5 +184,13 @@ func TestCryptoHMAC_BulkVerify(t *testing.T) {
 		if verifyErr := verifier.Verify(s.data, s.mac); verifyErr != nil {
 			t.Errorf("Verify failed for sample %d (%q): %v", j, s.data, verifyErr)
 		}
+	}
+}
+
+func TestCryptoHMAC_ResultSize(t *testing.T) {
+	key := []byte("result-size-key")
+	h := NewHMAC(key)
+	if h.ResultSize() != sha256.Size {
+		t.Fatalf("Result size should be %d, got %d", sha256.Size, h.ResultSize())
 	}
 }
