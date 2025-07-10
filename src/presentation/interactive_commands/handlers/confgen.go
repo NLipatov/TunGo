@@ -86,6 +86,7 @@ func (c *ConfgenHandler) generate() (*client_configuration.Configuration, error)
 			Protocol:         settings.TCP,
 			Encryption:       serverConf.TCPSettings.Encryption,
 			DialTimeoutMs:    serverConf.TCPSettings.DialTimeoutMs,
+			HelloMasking:     serverConf.TCPSettings.HelloMasking,
 		},
 		UDPSettings: settings.Settings{
 			InterfaceName:    serverConf.UDPSettings.InterfaceName,
@@ -97,6 +98,7 @@ func (c *ConfgenHandler) generate() (*client_configuration.Configuration, error)
 			Protocol:         settings.UDP,
 			Encryption:       serverConf.UDPSettings.Encryption,
 			DialTimeoutMs:    serverConf.UDPSettings.DialTimeoutMs,
+			HelloMasking:     serverConf.UDPSettings.HelloMasking,
 		},
 		Ed25519PublicKey: serverConf.Ed25519PublicKey,
 		Protocol:         c.getDefaultProtocol(serverConf),

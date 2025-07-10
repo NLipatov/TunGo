@@ -38,6 +38,7 @@ func NewDefaultConfiguration() *Configuration {
 				Ttl:             DefaultSessionTtl,
 				CleanupInterval: DefaultSessionCleanupInterval,
 			},
+			HelloMasking: settings.NewHelloMasking(),
 		},
 		UDPSettings: settings.Settings{
 			InterfaceName:    "udptun0",
@@ -53,6 +54,7 @@ func NewDefaultConfiguration() *Configuration {
 				Ttl:             DefaultSessionTtl,
 				CleanupInterval: DefaultSessionCleanupInterval,
 			},
+			HelloMasking: settings.NewHelloMasking(),
 		},
 		FallbackServerAddress: "",
 		Ed25519PublicKey:      nil,
