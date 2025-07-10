@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"testing"
+	"tungo/infrastructure/cryptography/chacha20"
 
 	"tungo/infrastructure/cryptography/hmac"
 )
@@ -49,8 +50,8 @@ func newTestObfuscator(bufLen int) (*ChaCha20Obfuscator[*unstrictMarshaller], *u
 	hmacKey := sha256.Sum256([]byte("test-hmac-key"))
 	hmacImpl := hmac.NewHMAC(hmacKey[:])
 	plain := &unstrictMarshaller{Data: make([]byte, bufLen)}
-	rand.Read(plain.Data)
-	obf := NewChaCha20Obfuscator(plain, key[:], psk, hmacImpl)
+	_, _ = rand.Read(plain.Data)
+	obf := NewChaCha20Obfuscator(plain, key[:], psk, hmacImpl, chacha20.NewSliding64())
 	return &obf, plain
 }
 
@@ -62,7 +63,7 @@ func TestChaCha20Obfuscator_Roundtrip(t *testing.T) {
 	}
 
 	recv := &unstrictMarshaller{Data: make([]byte, 64)}
-	obfRecv := NewChaCha20Obfuscator(recv, obf.key, obf.psk, obf.hmac)
+	obfRecv := NewChaCha20Obfuscator(recv, obf.key, obf.psk, obf.hmac, chacha20.NewSliding64())
 	if err := obfRecv.UnmarshalObfuscatedBinary(enc); err != nil {
 		t.Fatalf("UnmarshalObfuscatedBinary: %v", err)
 	}
@@ -81,7 +82,7 @@ func TestChaCha20Obfuscator_Corrupted(t *testing.T) {
 		enc[i] ^= 0x77
 	}
 	recv := &strictMarshaller{Data: make([]byte, 32)}
-	obfRecv := NewChaCha20Obfuscator(recv, obf.key, obf.psk, obf.hmac)
+	obfRecv := NewChaCha20Obfuscator(recv, obf.key, obf.psk, obf.hmac, chacha20.NewSliding64())
 	if err := obfRecv.UnmarshalObfuscatedBinary(enc); err == nil {
 		t.Error("Corrupted packet should not decode successfully")
 	}
@@ -89,13 +90,13 @@ func TestChaCha20Obfuscator_Corrupted(t *testing.T) {
 
 func TestChaCha20Obfuscator_InvalidInput(t *testing.T) {
 	buf := make([]byte, 100)
-	rand.Read(buf)
+	_, _ = rand.Read(buf)
 	recv := &unstrictMarshaller{Data: make([]byte, 32)}
 	key := sha256.Sum256([]byte("test-key"))
 	psk := []byte("psk-test-xyz123456789")
 	hmacKey := sha256.Sum256([]byte("test-hmac-key"))
 	hmacImpl := hmac.NewHMAC(hmacKey[:])
-	obfRecv := NewChaCha20Obfuscator(recv, key[:], psk, hmacImpl)
+	obfRecv := NewChaCha20Obfuscator(recv, key[:], psk, hmacImpl, chacha20.NewSliding64())
 	if err := obfRecv.UnmarshalObfuscatedBinary(buf); err == nil {
 		t.Error("Garbage input should not decode successfully")
 	}
