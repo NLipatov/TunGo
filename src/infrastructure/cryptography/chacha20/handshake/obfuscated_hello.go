@@ -23,7 +23,7 @@ type ObfuscatedHello struct {
 	hmac  application.HMAC // implementation with reusable buf (CryptoHMAC)
 }
 
-func NewFloatingObfuscatedClientHello(
+func NewObfuscatedClientHello(
 	hello Hello,
 	key []byte,
 	psk []byte,

@@ -65,14 +65,14 @@ func TestFloatingObfuscatedClientHello_Roundtrip(t *testing.T) {
 	hmacKey := sha256.Sum256([]byte("hmac-key-xyz"))
 	hmacImpl := hmac.NewHMAC(hmacKey[:])
 
-	hello := NewFloatingObfuscatedClientHello(plain, key[:], psk, hmacImpl)
+	hello := NewObfuscatedClientHello(plain, key[:], psk, hmacImpl)
 
 	packet, err := hello.MarshalBinary()
 	if err != nil {
 		t.Fatalf("MarshalBinary failed: %v", err)
 	}
 	recvPlain := &obfHelloStub{Data: make([]byte, 64)}
-	recv := NewFloatingObfuscatedClientHello(recvPlain, key[:], psk, hmacImpl)
+	recv := NewObfuscatedClientHello(recvPlain, key[:], psk, hmacImpl)
 	if err := recv.UnmarshalBinary(packet); err != nil {
 		t.Fatalf("UnmarshalBinary failed: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestFloatingObfuscatedClientHello_Corrupt(t *testing.T) {
 	hmacKey := sha256.Sum256([]byte("hmac-key-abc"))
 	hmacImpl := hmac.NewHMAC(hmacKey[:])
 
-	hello := NewFloatingObfuscatedClientHello(plain, key[:], psk, hmacImpl)
+	hello := NewObfuscatedClientHello(plain, key[:], psk, hmacImpl)
 	packet, err := hello.MarshalBinary()
 	if err != nil {
 		t.Fatalf("MarshalBinary failed: %v", err)
@@ -103,7 +103,7 @@ func TestFloatingObfuscatedClientHello_Corrupt(t *testing.T) {
 	for i := 10; i < 15 && i < len(packet); i++ {
 		packet[i] ^= 0xFF
 	}
-	recv := NewFloatingObfuscatedClientHello(&obfHelloStub{Data: make([]byte, 64)}, key[:], psk, hmacImpl)
+	recv := NewObfuscatedClientHello(&obfHelloStub{Data: make([]byte, 64)}, key[:], psk, hmacImpl)
 	if err := recv.UnmarshalBinary(packet); err == nil {
 		t.Error("Corrupted packet should not decode")
 	}
@@ -123,7 +123,7 @@ func TestFloatingObfuscatedClientHello_OffsetsDiffer(t *testing.T) {
 
 	offsets := make(map[int]struct{})
 	for i := 0; i < 20; i++ {
-		hello := NewFloatingObfuscatedClientHello(plain, key[:], psk, hmacImpl)
+		hello := NewObfuscatedClientHello(plain, key[:], psk, hmacImpl)
 		packet, err := hello.MarshalBinary()
 		if err != nil {
 			t.Fatalf("MarshalBinary failed: %v", err)
