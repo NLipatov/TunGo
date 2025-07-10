@@ -54,7 +54,7 @@ func (m *Ed25519KeyManager) tryEnvKeys() error {
 	if err != nil {
 		return fmt.Errorf("decode private key: %w", err)
 	}
-	return m.store.InjectEdKeys(ed25519.PublicKey(pub), ed25519.PrivateKey(priv))
+	return m.store.InjectEdKeys(pub, priv)
 }
 
 func (m *Ed25519KeyManager) generateAndStore() error {

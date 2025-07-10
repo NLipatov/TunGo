@@ -11,14 +11,16 @@ type AppDependencies interface {
 	KeyManager() server_configuration.KeyManager
 	SessionLifetimeManager() server_configuration.SessionLifetimeManager
 	ConfigurationManager() server_configuration.ServerConfigurationManager
+	HelloObfuscationManager() server_configuration.HelloObfuscationManager
 }
 
 type Dependencies struct {
-	configuration          server_configuration.Configuration
-	tunManager             application.ServerTunManager
-	keyManager             server_configuration.KeyManager
-	sessionLifetimeManager server_configuration.SessionLifetimeManager
-	configurationManager   server_configuration.ServerConfigurationManager
+	configuration           server_configuration.Configuration
+	tunManager              application.ServerTunManager
+	keyManager              server_configuration.KeyManager
+	sessionLifetimeManager  server_configuration.SessionLifetimeManager
+	configurationManager    server_configuration.ServerConfigurationManager
+	helloObfuscationManager server_configuration.HelloObfuscationManager
 }
 
 func NewDependencies(
@@ -27,13 +29,15 @@ func NewDependencies(
 	keyManager server_configuration.KeyManager,
 	sessionLifetimeManager server_configuration.SessionLifetimeManager,
 	configurationManager server_configuration.ServerConfigurationManager,
+	helloObfuscationManager server_configuration.HelloObfuscationManager,
 ) AppDependencies {
 	return &Dependencies{
-		configuration:          configuration,
-		tunManager:             tunManager,
-		keyManager:             keyManager,
-		sessionLifetimeManager: sessionLifetimeManager,
-		configurationManager:   configurationManager,
+		configuration:           configuration,
+		tunManager:              tunManager,
+		keyManager:              keyManager,
+		sessionLifetimeManager:  sessionLifetimeManager,
+		configurationManager:    configurationManager,
+		helloObfuscationManager: helloObfuscationManager,
 	}
 }
 
@@ -55,4 +59,8 @@ func (s Dependencies) SessionLifetimeManager() server_configuration.SessionLifet
 
 func (s Dependencies) ConfigurationManager() server_configuration.ServerConfigurationManager {
 	return s.configurationManager
+}
+
+func (s Dependencies) HelloObfuscationManager() server_configuration.HelloObfuscationManager {
+	return s.helloObfuscationManager
 }

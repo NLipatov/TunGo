@@ -14,6 +14,10 @@ type fakeStore struct {
 	lastPriv    ed25519.PrivateKey
 }
 
+func (f *fakeStore) InjectHelloObfuscationKeys() error {
+	return nil
+}
+
 func (f *fakeStore) InjectSessionTtlIntervals(_, _ settings.HumanReadableDuration) error {
 	panic("not implemented")
 }

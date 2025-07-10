@@ -16,6 +16,7 @@ type ServerConfigurationManager interface {
 	IncrementClientCounter() error
 	InjectEdKeys(public ed25519.PublicKey, private ed25519.PrivateKey) error
 	InjectSessionTtlIntervals(ttl, interval settings.HumanReadableDuration) error
+	InjectHelloObfuscationKeys() error
 }
 
 type Manager struct {
@@ -111,6 +112,18 @@ func (c *Manager) InjectSessionTtlIntervals(ttl, interval settings.HumanReadable
 
 	configuration.TCPSettings.SessionLifetime.Ttl = ttl
 	configuration.TCPSettings.SessionLifetime.CleanupInterval = interval
+
+	return c.writer.Write(*configuration)
+}
+
+func (c *Manager) InjectHelloObfuscationKeys() error {
+	configuration, configurationErr := c.Configuration()
+	if configurationErr != nil {
+		return configurationErr
+	}
+
+	configuration.UDPSettings.HelloMasking = settings.NewHelloMasking()
+	configuration.TCPSettings.HelloMasking = settings.NewHelloMasking()
 
 	return c.writer.Write(*configuration)
 }

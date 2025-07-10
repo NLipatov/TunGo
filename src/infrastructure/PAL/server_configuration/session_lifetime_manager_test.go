@@ -16,6 +16,10 @@ type mockServerConfigManager struct {
 	err          error
 }
 
+func (m *mockServerConfigManager) InjectHelloObfuscationKeys() error {
+	return nil
+}
+
 func (m *mockServerConfigManager) Configuration() (*Configuration, error) {
 	panic("not implemented")
 }

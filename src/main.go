@@ -105,6 +105,7 @@ func startServer(appCtx context.Context, configurationManager server_configurati
 		server_configuration.NewEd25519KeyManager(conf, configurationManager),
 		server_configuration.NewDefaultSessionLifetimeManager(conf, configurationManager),
 		configurationManager,
+		server_configuration.NewDefaultHelloObfuscationManager(conf, configurationManager),
 	)
 
 	runner := server.NewRunner(deps)

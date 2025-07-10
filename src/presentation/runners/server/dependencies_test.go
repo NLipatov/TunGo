@@ -8,6 +8,13 @@ import (
 	"tungo/infrastructure/settings"
 )
 
+type dummyHelloObfuscationManager struct {
+}
+
+func (d *dummyHelloObfuscationManager) PrepareHelloObfuscationKeys() error {
+	return nil
+}
+
 type dummyTunMgr struct{}
 
 func (d *dummyTunMgr) CreateTunDevice(_ settings.Settings) (application.TunDevice, error) {
@@ -45,8 +52,9 @@ func TestNewDependenciesAndAccessors(t *testing.T) {
 	tm := &dummyTunMgr{}
 	km := &dummyKeyMgr{}
 	sm := &dummySessionLifetimeMgr{}
+	hm := &dummyHelloObfuscationManager{}
 
-	deps := NewDependencies(tm, cfg, km, sm, nil)
+	deps := NewDependencies(tm, cfg, km, sm, nil, hm)
 
 	gotCfg := deps.Configuration()
 	if gotCfg.EnableTCP != cfg.EnableTCP {

@@ -30,6 +30,11 @@ func (r *Runner) Run(ctx context.Context) {
 		log.Fatalf("failed to generate session lifetime: %s", prepareSessionLifetimeErr)
 	}
 
+	prepareHelloObfuscationErr := r.deps.HelloObfuscationManager().PrepareHelloObfuscationKeys()
+	if prepareHelloObfuscationErr != nil {
+		log.Fatalf("failed to generate obfuscation keys: %s", prepareHelloObfuscationErr)
+	}
+
 	var wg sync.WaitGroup
 	if r.deps.Configuration().EnableTCP {
 		wg.Add(1)

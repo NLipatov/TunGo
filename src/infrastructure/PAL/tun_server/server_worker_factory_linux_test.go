@@ -100,6 +100,10 @@ func (f *ServerWorkerFactoryMockLoggerFactory) newLogger() application.Logger {
 // --- mock ServerConfigurationManager ---
 type swflServerConfigurationManager struct{}
 
+func (m *swflServerConfigurationManager) InjectHelloObfuscationKeys() error {
+	return nil
+}
+
 func (m *swflServerConfigurationManager) InjectSessionTtlIntervals(_, _ settings.HumanReadableDuration) error {
 	return nil
 }
@@ -114,6 +118,10 @@ func (m *swflServerConfigurationManager) InjectEdKeys(_ ed25519.PublicKey, _ ed2
 }
 
 type swflServerConfigurationManagerWithErr struct{}
+
+func (m *swflServerConfigurationManagerWithErr) InjectHelloObfuscationKeys() error {
+	return nil
+}
 
 func (m *swflServerConfigurationManagerWithErr) InjectSessionTtlIntervals(_, _ settings.HumanReadableDuration) error {
 	return nil
