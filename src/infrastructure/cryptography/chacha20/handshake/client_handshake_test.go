@@ -66,7 +66,7 @@ func (c *ClientHandshakeFakeCrypto) GenerateChaCha20KeysClientside(_, _ []byte, 
 
 func TestSendClientHello(t *testing.T) {
 	io := &ClientHandshakeFakeIO{}
-	ch := NewClientHandshake(nil, io, nil)
+	ch := NewClientHandshake(io, nil)
 	s := settings.Settings{InterfaceAddress: "1.2.3.4"}
 	edPub := make([]byte, ed25519.PublicKeySize)
 	sessPub := make([]byte, curve25519.ScalarSize)
@@ -85,7 +85,7 @@ func TestSendClientHello(t *testing.T) {
 
 	// write error
 	io = &ClientHandshakeFakeIO{writeHelloErr: errors.New("boom")}
-	ch = NewClientHandshake(nil, io, nil)
+	ch = NewClientHandshake(io, nil)
 	if err := ch.SendClientHello(s, edPub, sessPub, salt); err == nil {
 		t.Error("expected error, got nil")
 	}
@@ -94,7 +94,7 @@ func TestSendClientHello(t *testing.T) {
 func TestReceiveServerHello(t *testing.T) {
 	want := ServerHello{signature: []byte{1, 2, 3}, nonce: []byte{9}, curvePublicKey: []byte{8}}
 	io := &ClientHandshakeFakeIO{readHello: want}
-	ch := NewClientHandshake(nil, io, nil)
+	ch := NewClientHandshake(io, nil)
 
 	// success
 	got, err := ch.ReceiveServerHello()
@@ -110,7 +110,7 @@ func TestReceiveServerHello(t *testing.T) {
 
 	// read error
 	io = &ClientHandshakeFakeIO{readHelloErr: errors.New("rfail")}
-	ch = NewClientHandshake(nil, io, nil)
+	ch = NewClientHandshake(io, nil)
 	if _, err := ch.ReceiveServerHello(); err == nil {
 		t.Error("expected read error, got nil")
 	}
@@ -128,21 +128,21 @@ func TestSendSignature(t *testing.T) {
 
 	// 1) invalid Ed25519 key length
 	io1 := &ClientHandshakeFakeIO{}
-	ch1 := NewClientHandshake(nil, io1, &ClientHandshakeFakeCrypto{})
+	ch1 := NewClientHandshake(io1, &ClientHandshakeFakeCrypto{})
 	if err := ch1.SendSignature(edPub[:1], edPriv, sessPub, hello, salt); err == nil {
 		t.Error("expected invalid Ed25519 key length error")
 	}
 
 	// 2) invalid X25519 session public key length
 	io2 := &ClientHandshakeFakeIO{}
-	ch2 := NewClientHandshake(nil, io2, &ClientHandshakeFakeCrypto{})
+	ch2 := NewClientHandshake(io2, &ClientHandshakeFakeCrypto{})
 	if err := ch2.SendSignature(edPub, edPriv, []byte{1, 2}, hello, salt); err == nil {
 		t.Error("expected invalid X25519 session public key length error")
 	}
 
 	// 3) verify fails
 	io3 := &ClientHandshakeFakeIO{}
-	ch3 := NewClientHandshake(nil, io3, &ClientHandshakeFakeCrypto{verifyOK: false})
+	ch3 := NewClientHandshake(io3, &ClientHandshakeFakeCrypto{verifyOK: false})
 	if err := ch3.SendSignature(edPub, edPriv, sessPub, hello, salt); err == nil {
 		t.Error("expected server failed signature check")
 	}
@@ -150,7 +150,7 @@ func TestSendSignature(t *testing.T) {
 	// 4) write signature error
 	io4 := &ClientHandshakeFakeIO{writeSigErr: errors.New("wfail")}
 	crypto4 := &ClientHandshakeFakeCrypto{verifyOK: true, signOut: []byte("clientsig-012345678901234567890123456789012345678901234567")}
-	ch4 := NewClientHandshake(nil, io4, crypto4)
+	ch4 := NewClientHandshake(io4, crypto4)
 	if err := ch4.SendSignature(edPub, edPriv, sessPub, hello, salt); err == nil {
 		t.Error("expected write signature error")
 	}
@@ -158,7 +158,7 @@ func TestSendSignature(t *testing.T) {
 	// 5) success
 	io5 := &ClientHandshakeFakeIO{}
 	crypto5 := &ClientHandshakeFakeCrypto{verifyOK: true, signOut: []byte("clientsig-012345678901234567890123456789012345678901234567")}
-	ch5 := NewClientHandshake(nil, io5, crypto5)
+	ch5 := NewClientHandshake(io5, crypto5)
 	if err := ch5.SendSignature(edPub, edPriv, sessPub, hello, salt); err != nil {
 		t.Fatalf("SendSignature failed: %v", err)
 	}
