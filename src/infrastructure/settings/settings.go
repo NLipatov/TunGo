@@ -11,4 +11,5 @@ type Settings struct {
 	Encryption       Encryption
 	DialTimeoutMs    int             `json:"DialTimeoutMs"`
 	SessionLifetime  SessionLifetime `json:"SessionLifetime"`
+	HelloMasking     HelloMasking    `json:"HelloMasking"`
 }
