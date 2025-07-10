@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	minPacketLen = 512
-	maxPacketLen = 4096
+	minPacketLen = 50
+	maxPacketLen = 1200
 )
 
 type ObfuscatedMarshaler interface {
