@@ -23,14 +23,14 @@ func NewDefaultServerIO(conn application.ConnectionAdapter) ServerIO {
 
 func (d *DefaultServerIO) ReceiveClientHello() (ClientHello, error) {
 	buf := make([]byte, MaxClientHelloSizeBytes)
-	_, readErr := d.conn.Read(buf)
+	n, readErr := d.conn.Read(buf)
 	if readErr != nil {
 		return ClientHello{}, readErr
 	}
 
 	//Read client hello
 	var clientHello ClientHello
-	unmarshalErr := clientHello.UnmarshalBinary(buf)
+	unmarshalErr := clientHello.UnmarshalBinary(buf[:n])
 	if unmarshalErr != nil {
 		return ClientHello{}, unmarshalErr
 	}
