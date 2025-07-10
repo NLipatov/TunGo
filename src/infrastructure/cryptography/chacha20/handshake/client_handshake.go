@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"golang.org/x/crypto/curve25519"
 	"net"
-	"tungo/application"
 	"tungo/infrastructure/settings"
 )
 
@@ -15,14 +14,12 @@ import (
 // 3. send signed Signature
 // It drives its I/O through a ClientIO and Crypto through the Crypto interface.
 type ClientHandshake struct {
-	conn   application.ConnectionAdapter
 	crypto Crypto
 	io     ClientIO
 }
 
-func NewClientHandshake(conn application.ConnectionAdapter, io ClientIO, crypto Crypto) ClientHandshake {
+func NewClientHandshake(io ClientIO, crypto Crypto) ClientHandshake {
 	return ClientHandshake{
-		conn:   conn,
 		io:     io,
 		crypto: crypto,
 	}
