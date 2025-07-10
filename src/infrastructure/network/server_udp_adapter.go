@@ -1,6 +1,7 @@
 package network
 
 import (
+	"io"
 	"net/netip"
 	"tungo/application"
 )
@@ -30,6 +31,11 @@ func (ua *ServerUdpAdapter) Read(buffer []byte) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+
+	if len(buffer) < n {
+		return 0, io.ErrShortBuffer
+	}
+
 	copy(buffer[:n], ua.buf[:n])
 	return n, nil
 }
