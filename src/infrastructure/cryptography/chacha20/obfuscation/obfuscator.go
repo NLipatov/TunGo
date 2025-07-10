@@ -8,6 +8,8 @@ import (
 	"errors"
 	"golang.org/x/crypto/chacha20poly1305"
 	"tungo/application"
+	"tungo/infrastructure/cryptography/chacha20"
+	"unsafe"
 )
 
 const (
@@ -21,10 +23,11 @@ type ObfuscatedMarshaler interface {
 }
 
 type ChaCha20Obfuscator[T ObfuscatedMarshaler] struct {
-	plain T
-	key   []byte           // AEAD key
-	psk   []byte           // shared PSK for offset obfuscation
-	hmac  application.HMAC // implementation with reusable buf (CryptoHMAC)
+	plain          T
+	key            []byte           // AEAD key
+	psk            []byte           // shared PSK for offset obfuscation
+	hmac           application.HMAC // implementation with reusable buf (CryptoHMAC)
+	nonceValidator *chacha20.Sliding64
 }
 
 func NewChaCha20Obfuscator[T ObfuscatedMarshaler](
@@ -32,12 +35,14 @@ func NewChaCha20Obfuscator[T ObfuscatedMarshaler](
 	key []byte,
 	psk []byte,
 	hmac application.HMAC,
+	nonceValidator *chacha20.Sliding64,
 ) ChaCha20Obfuscator[T] {
 	return ChaCha20Obfuscator[T]{
-		plain: plain,
-		key:   key,
-		psk:   psk,
-		hmac:  hmac,
+		plain:          plain,
+		key:            key,
+		psk:            psk,
+		hmac:           hmac,
+		nonceValidator: nonceValidator,
 	}
 }
 
@@ -59,6 +64,11 @@ func (f *ChaCha20Obfuscator[T]) MarshalObfuscatedBinary() ([]byte, error) {
 	if _, err := rand.Read(nonce[:]); err != nil {
 		return nil, err
 	}
+
+	if nonceValidationErr := f.nonceValidator.Validate(nonce); nonceValidationErr != nil {
+		return nil, nonceValidationErr
+	}
+
 	cipher := aead.Seal(nil, nonce[:], plainData, nil)
 
 	// Write ciphertext length as uint16
@@ -110,6 +120,12 @@ func (f *ChaCha20Obfuscator[T]) UnmarshalObfuscatedBinary(data []byte) error {
 	for offset := 0; offset <= len(data)-hdrLen; offset++ {
 		marker := data[offset : offset+2]
 		nonce := data[offset+2 : offset+2+chacha20poly1305.NonceSize]
+		if len(nonce) != chacha20poly1305.NonceSize {
+			return errors.New("invalid chacha20poly1305.NonceSize")
+		}
+		if nonceValidationErr := f.nonceValidator.Validate(*(*[12]byte)(unsafe.Pointer(&nonce[0]))); nonceValidationErr != nil {
+			return nonceValidationErr
+		}
 		cipherLen := int(binary.BigEndian.Uint16(data[offset+2+chacha20poly1305.NonceSize : offset+2+chacha20poly1305.NonceSize+2]))
 
 		hmacInput := append([]byte{}, f.psk...)
