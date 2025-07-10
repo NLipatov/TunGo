@@ -57,7 +57,8 @@ func (h *DefaultHandshake) ServerSideHandshake(conn application.ConnectionAdapte
 	serverNonce := c.GenerateRandomBytesArray(32)
 
 	//handshake process starts here
-	handshake := NewServerHandshake(conn)
+	io := NewDefaultServerIO(conn)
+	handshake := NewServerHandshake(io)
 	clientHello, clientHelloErr := handshake.ReceiveClientHello()
 	if clientHelloErr != nil {
 		return nil, clientHelloErr

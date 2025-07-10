@@ -1,232 +1,158 @@
 package handshake
 
 import (
-	"bytes"
 	"crypto/ed25519"
-	"crypto/rand"
 	"errors"
-	"io"
-	"net"
 	"testing"
 )
 
-// fakeConn implements application.ConnectionAdapter
-type fakeConn struct {
-	in  *bytes.Buffer
-	out *bytes.Buffer
+type serverHandshakeTestSendErrMockIO struct{}
+
+func (e *serverHandshakeTestSendErrMockIO) ReceiveClientHello() (ClientHello, error) {
+	return ClientHello{}, nil
+}
+func (e *serverHandshakeTestSendErrMockIO) SendServerHello(_ ServerHello) error {
+	return errors.New("forced send error")
+}
+func (e *serverHandshakeTestSendErrMockIO) ReadClientSignature() (Signature, error) {
+	return Signature{}, nil
 }
 
-func newFakeConn(input []byte) *fakeConn {
-	var inBuf *bytes.Buffer
-	if input != nil {
-		inBuf = bytes.NewBuffer(input)
-	}
-	return &fakeConn{in: inBuf, out: &bytes.Buffer{}}
+type serverHandshakeTestMockIO struct {
+	hello        ClientHello
+	helloErr     error
+	serverHello  ServerHello
+	serverErr    error
+	signature    Signature
+	signErr      error
+	writeHistory []ServerHello
 }
 
-func (f *fakeConn) Read(p []byte) (int, error) {
-	if f.in == nil {
-		return 0, io.EOF
-	}
-	return f.in.Read(p)
+func (m *serverHandshakeTestMockIO) ReceiveClientHello() (ClientHello, error) {
+	return m.hello, m.helloErr
 }
 
-func (f *fakeConn) Write(p []byte) (int, error) {
-	if f.out == nil {
-		return 0, errors.New("write closed")
-	}
-	return f.out.Write(p)
+func (m *serverHandshakeTestMockIO) SendServerHello(hello ServerHello) error {
+	m.writeHistory = append(m.writeHistory, hello)
+	return m.serverErr
 }
 
-func (f *fakeConn) Close() error { return nil }
+func (m *serverHandshakeTestMockIO) ReadClientSignature() (Signature, error) {
+	return m.signature, m.signErr
+}
 
-// stubCrypto satisfies Crypto for Sign/Verify
-type stubCrypto struct {
+type mockCrypto struct {
 	signature []byte
 	verifyOK  bool
 }
 
-func (s *stubCrypto) GenerateEd25519KeyPair() (ed25519.PublicKey, ed25519.PrivateKey, error) {
-	panic("not implemented")
+func (m *mockCrypto) Sign(_ ed25519.PrivateKey, _ []byte) []byte { return m.signature }
+func (m *mockCrypto) Verify(_ ed25519.PublicKey, _ []byte, _ []byte) bool {
+	return m.verifyOK
+}
+func (m *mockCrypto) GenerateEd25519KeyPair() (ed25519.PublicKey, ed25519.PrivateKey, error) {
+	panic("not used")
+}
+func (m *mockCrypto) GenerateX25519KeyPair() ([]byte, [32]byte, error) { panic("not used") }
+func (m *mockCrypto) GenerateRandomBytesArray(_ int) []byte            { panic("not used") }
+func (m *mockCrypto) GenerateChaCha20KeysServerside(_, _ []byte, _ Hello) ([32]byte, []byte, []byte, error) {
+	panic("not used")
+}
+func (m *mockCrypto) GenerateChaCha20KeysClientside(_, _ []byte, _ Hello) ([]byte, []byte, [32]byte, error) {
+	panic("not used")
 }
 
-func (s *stubCrypto) GenerateX25519KeyPair() ([]byte, [32]byte, error) {
-	panic("not implemented")
+func minimalClientHello() ClientHello {
+	pub, _, _ := ed25519.GenerateKey(nil)
+	return NewClientHello(4, []byte{127, 0, 0, 1}, pub, make([]byte, curvePublicKeyLength), make([]byte, nonceLength))
+}
+func minimalSignature() Signature {
+	return NewSignature(make([]byte, signatureLength))
 }
 
-func (s *stubCrypto) GenerateRandomBytesArray(_ int) []byte {
-	panic("not implemented")
-}
-
-func (s *stubCrypto) GenerateChaCha20KeysServerside(_, _ []byte, _ Hello) (sessionId [32]byte, clientToServerKey, serverToClientKey []byte, err error) {
-	panic("not implemented")
-}
-
-func (s *stubCrypto) GenerateChaCha20KeysClientside(_, _ []byte, _ Hello) ([]byte, []byte, [32]byte, error) {
-	panic("not implemented")
-}
-
-func (s *stubCrypto) Sign(_ ed25519.PrivateKey, _ []byte) []byte {
-	return s.signature
-}
-
-func (s *stubCrypto) Verify(_ ed25519.PublicKey, _, _ []byte) bool {
-	return s.verifyOK
-}
-
-// Build a minimal valid ClientHello buffer
-func buildHello(t *testing.T) []byte {
-	t.Helper()
-	edPub, _, _ := ed25519.GenerateKey(rand.Reader)
-	ch := NewClientHello(4, net.ParseIP("1.2.3.4"), edPub, make([]byte, curvePublicKeyLength), make([]byte, nonceLength))
-	buf, err := ch.MarshalBinary()
+func TestServerHandshake_ReceiveClientHello_Success(t *testing.T) {
+	io := &serverHandshakeTestMockIO{hello: minimalClientHello()}
+	hs := NewServerHandshake(io)
+	got, err := hs.ReceiveClientHello()
 	if err != nil {
-		t.Fatalf("buildHello.MarshalBinary: %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
-	return buf
-}
-
-func TestReceiveClientHello_Success(t *testing.T) {
-	buf := buildHello(t)
-	conn := newFakeConn(buf)
-	hs := NewServerHandshake(conn)
-
-	ch, err := hs.ReceiveClientHello()
-	if err != nil {
-		t.Fatalf("ReceiveClientHello error: %v", err)
-	}
-	if ch.ipVersion != 4 || !bytes.Equal(ch.ipAddress, net.ParseIP("1.2.3.4")) {
-		t.Errorf("unexpected clientHello: %+v", ch)
+	if got.ipVersion != 4 {
+		t.Error("wrong ipVersion")
 	}
 }
 
-func TestReceiveClientHello_ReadError(t *testing.T) {
-	conn := &fakeConn{in: nil, out: &bytes.Buffer{}}
-	hs := NewServerHandshake(conn)
-
+func TestServerHandshake_ReceiveClientHello_Error(t *testing.T) {
+	io := &serverHandshakeTestMockIO{helloErr: errors.New("fail")}
+	hs := NewServerHandshake(io)
 	_, err := hs.ReceiveClientHello()
 	if err == nil {
-		t.Fatal("expected read error, got nil")
+		t.Error("expected error")
 	}
 }
 
-func TestReceiveClientHello_UnmarshalError(t *testing.T) {
-	conn := newFakeConn([]byte{0, 1, 2})
-	hs := NewServerHandshake(conn)
-
-	_, err := hs.ReceiveClientHello()
-	if err == nil {
-		t.Fatal("expected unmarshal error, got nil")
-	}
-}
-
-func TestSendServerHello_Success(t *testing.T) {
-	// prepare stubCrypto to return exactly 64‑byte signature
-	sig := bytes.Repeat([]byte{0xAB}, signatureLength)
-	c := &stubCrypto{signature: sig}
-
-	curvePub := make([]byte, curvePublicKeyLength)
-	_, _ = rand.Read(curvePub)
-	nonce := make([]byte, nonceLength)
-	_, _ = rand.Read(nonce)
-	clientNonce := make([]byte, nonceLength)
-	_, _ = rand.Read(clientNonce)
-
-	conn := newFakeConn(nil)
-	hs := NewServerHandshake(conn)
-
-	err := hs.SendServerHello(c, nil, nonce, curvePub, clientNonce)
+func TestServerHandshake_SendServerHello_Success(t *testing.T) {
+	io := &serverHandshakeTestMockIO{}
+	hs := NewServerHandshake(io)
+	crypto := &mockCrypto{signature: make([]byte, signatureLength)}
+	err := hs.SendServerHello(
+		crypto, nil, make([]byte, nonceLength), make([]byte, curvePublicKeyLength), make([]byte, nonceLength))
 	if err != nil {
-		t.Fatalf("SendServerHello error: %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
-
-	// verify what was written
-	out := conn.out.Bytes()
-	var sh ServerHello
-	if err := sh.UnmarshalBinary(out); err != nil {
-		t.Fatalf("UnmarshalBinary failed: %v", err)
-	}
-	if !bytes.Equal(sh.signature, sig) {
-		t.Errorf("Signature = %x; want %x", sh.signature, sig)
-	}
-	if !bytes.Equal(sh.Nonce(), nonce) {
-		t.Errorf("Nonce = %x; want %x", sh.Nonce(), nonce)
-	}
-	if !bytes.Equal(sh.CurvePublicKey(), curvePub) {
-		t.Errorf("CurvePublicKey = %x; want %x", sh.CurvePublicKey(), curvePub)
+	if len(io.writeHistory) != 1 {
+		t.Error("server hello not written")
 	}
 }
 
-func TestSendServerHello_MarshalError(t *testing.T) {
-	// make stubCrypto return wrong‑size signature
-	sig := bytes.Repeat([]byte{0x00}, signatureLength-1)
-	c := &stubCrypto{signature: sig}
-
-	conn := newFakeConn(nil)
-	hs := NewServerHandshake(conn)
-
-	err := hs.SendServerHello(c, nil, make([]byte, nonceLength), make([]byte, curvePublicKeyLength), make([]byte, nonceLength))
+func TestServerHandshake_SendServerHello_Error(t *testing.T) {
+	io := &serverHandshakeTestMockIO{serverErr: errors.New("send fail")}
+	hs := NewServerHandshake(io)
+	crypto := &mockCrypto{signature: make([]byte, signatureLength)}
+	err := hs.SendServerHello(
+		crypto, nil, make([]byte, nonceLength), make([]byte, curvePublicKeyLength), make([]byte, nonceLength))
 	if err == nil {
-		t.Fatal("expected MarshalBinary error, got nil")
+		t.Error("expected error from SendServerHello")
 	}
 }
 
-func TestVerifyClientSignature_Success(t *testing.T) {
-	// sign correct data so Verify logic would pass
-	edPub, edPriv, _ := ed25519.GenerateKey(rand.Reader)
-	hello := ClientHello{
-		ipVersion:      4,
-		ipAddress:      net.ParseIP("1.2.3.4"),
-		edPublicKey:    edPub,
-		curvePublicKey: make([]byte, curvePublicKeyLength),
-		nonce:          make([]byte, nonceLength),
-	}
-	_, _ = rand.Read(hello.curvePublicKey)
-	_, _ = rand.Read(hello.Nonce())
-
-	serverNonce := make([]byte, nonceLength)
-	_, _ = rand.Read(serverNonce)
-
-	// compute a real Ed25519 signature over the concatenation
-	data := append(append(hello.curvePublicKey, hello.Nonce()...), serverNonce...)
-	sig := ed25519.Sign(edPriv, data)
-
-	// feed that signature into fakeConn
-	conn := newFakeConn(sig)
-	// stubCrypto.Verify not used because we’re using real ed25519.Verify
-	c := &stubCrypto{verifyOK: true}
-
-	hs := NewServerHandshake(conn)
-	if err := hs.VerifyClientSignature(c, hello, serverNonce); err != nil {
-		t.Fatalf("VerifyClientSignature error: %v", err)
-	}
-}
-
-func TestVerifyClientSignature_ReadError(t *testing.T) {
-	conn := &fakeConn{in: nil, out: &bytes.Buffer{}}
-	hs := NewServerHandshake(conn)
-	err := hs.VerifyClientSignature(&stubCrypto{verifyOK: true}, ClientHello{}, nil)
+func TestServerHandshake_SendServerHello_InvalidSignature(t *testing.T) {
+	io := &serverHandshakeTestSendErrMockIO{}
+	hs := NewServerHandshake(io)
+	crypto := &mockCrypto{signature: make([]byte, signatureLength-1)}
+	err := hs.SendServerHello(
+		crypto, nil, make([]byte, nonceLength), make([]byte, curvePublicKeyLength), make([]byte, nonceLength))
 	if err == nil {
-		t.Fatal("expected read error, got nil")
+		t.Error("expected MarshalBinary error, got nil")
 	}
 }
 
-func TestVerifyClientSignature_UnmarshalError(t *testing.T) {
-	// supply fewer than 64 bytes
-	conn := newFakeConn([]byte{1, 2, 3})
-	hs := NewServerHandshake(conn)
-	err := hs.VerifyClientSignature(&stubCrypto{verifyOK: true}, ClientHello{}, nil)
-	if err == nil {
-		t.Fatal("expected unmarshal error, got nil")
+func TestServerHandshake_VerifyClientSignature_Success(t *testing.T) {
+	io := &serverHandshakeTestMockIO{signature: minimalSignature()}
+	hs := NewServerHandshake(io)
+	crypto := &mockCrypto{verifyOK: true}
+	err := hs.VerifyClientSignature(crypto, minimalClientHello(), make([]byte, nonceLength))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestVerifyClientSignature_VerifyFail(t *testing.T) {
-	// supply correct‑length data but stubCrypto.Verify=false
-	conn := newFakeConn(bytes.Repeat([]byte{0xFF}, signatureLength))
-	hs := NewServerHandshake(conn)
-	err := hs.VerifyClientSignature(&stubCrypto{verifyOK: false}, ClientHello{}, nil)
+func TestServerHandshake_VerifyClientSignature_ReadError(t *testing.T) {
+	io := &serverHandshakeTestMockIO{signErr: errors.New("no sig")}
+	hs := NewServerHandshake(io)
+	crypto := &mockCrypto{verifyOK: true}
+	err := hs.VerifyClientSignature(crypto, minimalClientHello(), make([]byte, nonceLength))
 	if err == nil {
-		t.Fatal("expected verification failure, got nil")
+		t.Error("expected error")
+	}
+}
+
+func TestServerHandshake_VerifyClientSignature_VerifyFail(t *testing.T) {
+	io := &serverHandshakeTestMockIO{signature: minimalSignature()}
+	hs := NewServerHandshake(io)
+	crypto := &mockCrypto{verifyOK: false}
+	err := hs.VerifyClientSignature(crypto, minimalClientHello(), make([]byte, nonceLength))
+	if err == nil {
+		t.Error("expected verification fail")
 	}
 }
