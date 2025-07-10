@@ -15,16 +15,16 @@ import (
 // 3. send signed Signature
 // It drives its I/O through a ClientIO and Crypto through the Crypto interface.
 type ClientHandshake struct {
-	conn     application.ConnectionAdapter
-	crypto   Crypto
-	clientIO ClientIO
+	conn   application.ConnectionAdapter
+	crypto Crypto
+	io     ClientIO
 }
 
 func NewClientHandshake(conn application.ConnectionAdapter, io ClientIO, crypto Crypto) ClientHandshake {
 	return ClientHandshake{
-		conn:     conn,
-		clientIO: io,
-		crypto:   crypto,
+		conn:   conn,
+		io:     io,
+		crypto: crypto,
 	}
 }
 
@@ -33,11 +33,11 @@ func (c *ClientHandshake) SendClientHello(
 	edPublicKey ed25519.PublicKey,
 	sessionPublicKey, sessionSalt []byte) error {
 	hello := NewClientHello(4, net.ParseIP(settings.InterfaceAddress), edPublicKey, sessionPublicKey, sessionSalt)
-	return c.clientIO.WriteClientHello(hello)
+	return c.io.WriteClientHello(hello)
 }
 
 func (c *ClientHandshake) ReceiveServerHello() (ServerHello, error) {
-	hello, err := c.clientIO.ReadServerHello()
+	hello, err := c.io.ReadServerHello()
 	if err != nil {
 		return ServerHello{}, fmt.Errorf("client handshake: could not receive hello from server: %w", err)
 	}
@@ -80,7 +80,7 @@ func (c *ClientHandshake) SendSignature(
 	copy(dataToSign[offset:], hello.nonce)
 
 	signature := NewSignature(c.crypto.Sign(ed25519PrivateKey, dataToSign))
-	err := c.clientIO.WriteClientSignature(signature)
+	err := c.io.WriteClientSignature(signature)
 	if err != nil {
 		return fmt.Errorf("client handshake: could not send signature to server: %w", err)
 	}
