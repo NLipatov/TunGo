@@ -6,33 +6,32 @@ import (
 	"encoding/binary"
 	"errors"
 	"golang.org/x/crypto/chacha20poly1305"
-	"reflect"
+	"math/big"
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
 	"unsafe"
 )
 
-type ChaCha20Obfuscator[T application.ObfuscatableData] struct {
+// ChaCha20Obfuscator implements application.Obfuscator for byte slices.
+type ChaCha20Obfuscator struct {
 	key            []byte           // AEAD key
-	psk            []byte           // shared PSK for offset obfuscation
-	hmac           application.HMAC // implementation with reusable buf (CryptoHMAC)
+	psk            []byte           // PSK for handshake offset/padding
+	hmac           application.HMAC // HMAC for marker and offset
 	nonceValidator *chacha20.Sliding64
 
-	// minObfuscatedPacketLen is the minimum allowed size of the resulting obfuscated packet (including handshake and random padding).
-	minObfuscatedPacketLen int
-	// maxObfuscatedPacketLen is the maximum size for random padding.
-	//If the handshake is larger, the packet will exceed this value.
-	maxObfuscatedPacketLen int
+	minObfuscatedPacketLen int // min final packet len (for padding)
+	maxObfuscatedPacketLen int // max final packet len (for padding)
 }
 
-func NewChaCha20Obfuscator[T application.ObfuscatableData](
+// NewChaCha20Obfuscator creates a new ChaCha20-based obfuscator.
+func NewChaCha20Obfuscator(
 	key []byte,
 	psk []byte,
 	hmac application.HMAC,
 	nonceValidator *chacha20.Sliding64,
 	minObfuscatedPacketLen, maxObfuscatedPacketLen int,
-) application.Obfuscator[T] {
-	return &ChaCha20Obfuscator[T]{
+) application.Obfuscator {
+	return &ChaCha20Obfuscator{
 		key:                    key,
 		psk:                    psk,
 		hmac:                   hmac,
@@ -42,12 +41,9 @@ func NewChaCha20Obfuscator[T application.ObfuscatableData](
 	}
 }
 
-func (f *ChaCha20Obfuscator[T]) Obfuscate(value T) ([]byte, error) {
-	plainData, err := value.MarshalBinary()
-	if err != nil {
-		return nil, err
-	}
-	aead, err := chacha20poly1305.New(f.key)
+// Obfuscate encrypts and pads data.
+func (c *ChaCha20Obfuscator) Obfuscate(plainData []byte) ([]byte, error) {
+	aead, err := chacha20poly1305.New(c.key)
 	if err != nil {
 		return nil, err
 	}
@@ -56,81 +52,101 @@ func (f *ChaCha20Obfuscator[T]) Obfuscate(value T) ([]byte, error) {
 	if _, err := rand.Read(nonce[:]); err != nil {
 		return nil, err
 	}
-
-	if nonceValidationErr := f.nonceValidator.Validate(nonce); nonceValidationErr != nil {
-		return nil, nonceValidationErr
-	}
-
-	cipher := aead.Seal(nil, nonce[:], plainData, nil)
-
-	// Write ciphertext length as uint16
-	cipherLen := uint16(len(cipher))
-
-	// Generate marker and copy first 2 bytes (protect from buf overwrite)
-	hmacInput := append(f.psk, nonce[:]...)
-	markerFull, hmacErr := f.hmac.Generate(hmacInput)
-	if hmacErr != nil {
-		return nil, hmacErr
-	}
-	marker := make([]byte, 2)
-	copy(marker, markerFull[:2]) // copy to prevent overwrite
-
-	// Make prefix: [marker][nonce][cipherLen][cipher]
-	prefixedCipher := make([]byte, 0, 2+chacha20poly1305.NonceSize+2+len(cipher))
-	prefixedCipher = append(prefixedCipher, marker...)
-	prefixedCipher = append(prefixedCipher, nonce[:]...)
-	prefixedCipher = append(prefixedCipher, byte(cipherLen>>8), byte(cipherLen&0xff))
-	prefixedCipher = append(prefixedCipher, cipher...)
-
-	// Calc total packet length
-	mod := f.maxObfuscatedPacketLen - f.minObfuscatedPacketLen
-	var totalLen int
-	if mod > 0 {
-		totalLen = f.minObfuscatedPacketLen + int(binary.BigEndian.Uint16(nonce[:2]))%mod
-	} else {
-		totalLen = f.minObfuscatedPacketLen
-	}
-	if totalLen < len(prefixedCipher)+32 {
-		totalLen = len(prefixedCipher) + 32
-	}
-	packet := make([]byte, totalLen)
-	if _, err := rand.Read(packet); err != nil {
+	if err := c.nonceValidator.Validate(nonce); err != nil {
 		return nil, err
 	}
 
-	offset := deterministicOffset(f.hmac, f.psk, nonce[:], totalLen-len(prefixedCipher))
-	copy(packet[offset:], prefixedCipher)
-	return packet, nil
+	cipher := aead.Seal(nil, nonce[:], plainData, nil)
+	cipherLen := uint16(len(cipher))
+
+	// Marker for fast search
+	hmacInput := append(c.psk, nonce[:]...)
+	markerFull, err := c.hmac.Generate(hmacInput)
+	if err != nil {
+		return nil, err
+	}
+	marker := markerFull[:2]
+
+	// Format: [marker][nonce][len][cipher]
+	prefix := make([]byte, 0, 2+chacha20poly1305.NonceSize+2+len(cipher))
+	prefix = append(prefix, marker...)
+	prefix = append(prefix, nonce[:]...)
+	prefix = append(prefix, byte(cipherLen>>8), byte(cipherLen))
+	prefix = append(prefix, cipher...)
+
+	// Add random padding (and fill the whole result with random data)
+	padded, err := c.addPadding(prefix)
+	if err != nil {
+		return nil, err
+	}
+
+	// Deterministic offset (for DPI resistance)
+	maxOffset := len(padded) - len(prefix)
+	offset := c.deterministicOffset(nonce[:], maxOffset)
+	copy(padded[offset:], prefix)
+	return padded, nil
 }
 
-// deterministicOffset: derive offset for handshake from PSK and nonce.
-// Returns offset in range [0, maxOffset)
-func deterministicOffset(hmac application.HMAC, psk, nonce []byte, maxOffset int) int {
-	buf := append([]byte{}, psk...) // explicit copy
-	buf = append(buf, nonce...)     // explicit copy
-	sum, _ := hmac.Generate(buf)    // safe: used once
-	return int(binary.BigEndian.Uint32(sum[0:4]) % uint32(maxOffset))
+// addPadding pads prefix to randomized length in [min,max] (using crypto/rand).
+func (c *ChaCha20Obfuscator) addPadding(data []byte) ([]byte, error) {
+	if c.minObfuscatedPacketLen > c.maxObfuscatedPacketLen {
+		return nil, errors.New("minLen > maxLen")
+	}
+	n := len(data)
+	switch {
+	case n >= c.maxObfuscatedPacketLen:
+		return data, nil
+	case c.maxObfuscatedPacketLen == c.minObfuscatedPacketLen:
+		padLen := max(c.minObfuscatedPacketLen, n)
+		out := make([]byte, padLen)
+		copy(out, data)
+		_, _ = rand.Read(out[n:])
+		return out, nil
+	default:
+		diff := c.maxObfuscatedPacketLen - c.minObfuscatedPacketLen + 1
+		nBig, err := rand.Int(rand.Reader, big.NewInt(int64(diff)))
+		if err != nil {
+			return nil, err
+		}
+		padLen := c.minObfuscatedPacketLen + int(nBig.Int64())
+		if padLen < n {
+			padLen = n
+		}
+		out := make([]byte, padLen)
+		copy(out, data)
+		_, _ = rand.Read(out[n:])
+		return out, nil
+	}
 }
 
-func (f *ChaCha20Obfuscator[T]) Deobfuscate(data []byte) (T, error) {
-	result := f.newResultInstance()
+// deterministicOffset returns deterministic offset in [0, maxOffset) using HMAC.
+func (c *ChaCha20Obfuscator) deterministicOffset(nonce []byte, maxOffset int) int {
+	if maxOffset <= 0 {
+		return 0
+	}
+	buf := append([]byte{}, c.psk...)
+	buf = append(buf, nonce...)
+	sum, _ := c.hmac.Generate(buf)
+	return int(binary.BigEndian.Uint32(sum[:4]) % uint32(maxOffset))
+}
 
-	// 2(marker) + N(nonce) + 2(len) — minimal data len
+// Deobfuscate finds and decrypts the payload in data.
+func (c *ChaCha20Obfuscator) Deobfuscate(data []byte) ([]byte, error) {
 	const hdrLen = 2 + chacha20poly1305.NonceSize + 2
 	for offset := 0; offset <= len(data)-hdrLen; offset++ {
 		marker := data[offset : offset+2]
 		nonce := data[offset+2 : offset+2+chacha20poly1305.NonceSize]
 		if len(nonce) != chacha20poly1305.NonceSize {
-			return result, errors.New("invalid chacha20poly1305.NonceSize")
+			return nil, errors.New("invalid nonce size")
 		}
-		if nonceValidationErr := f.nonceValidator.Validate(*(*[12]byte)(unsafe.Pointer(&nonce[0]))); nonceValidationErr != nil {
-			return result, nonceValidationErr
+		if err := c.nonceValidator.Validate(*(*[12]byte)(unsafe.Pointer(&nonce[0]))); err != nil {
+			return nil, err
 		}
 		cipherLen := int(binary.BigEndian.Uint16(data[offset+2+chacha20poly1305.NonceSize : offset+2+chacha20poly1305.NonceSize+2]))
 
-		hmacInput := append([]byte{}, f.psk...)
+		hmacInput := append([]byte{}, c.psk...)
 		hmacInput = append(hmacInput, nonce...)
-		expectedMarkerFull, err := f.hmac.Generate(hmacInput)
+		expectedMarkerFull, err := c.hmac.Generate(hmacInput)
 		if err != nil {
 			continue
 		}
@@ -143,7 +159,7 @@ func (f *ChaCha20Obfuscator[T]) Deobfuscate(data []byte) (T, error) {
 			continue
 		}
 		cipher := encData[:cipherLen]
-		aead, err := chacha20poly1305.New(f.key)
+		aead, err := chacha20poly1305.New(c.key)
 		if err != nil {
 			continue
 		}
@@ -151,18 +167,7 @@ func (f *ChaCha20Obfuscator[T]) Deobfuscate(data []byte) (T, error) {
 		if err != nil {
 			continue
 		}
-		if err := result.UnmarshalBinary(plain); err == nil {
-			return result, nil
-		}
+		return plain, nil
 	}
-	return result, errors.New("could not find/parse obfuscated handshake")
-}
-
-func (f *ChaCha20Obfuscator[T]) newResultInstance() T {
-	var t T
-	typ := reflect.TypeOf(t)
-	if typ != nil && typ.Kind() == reflect.Ptr {
-		return reflect.New(typ.Elem()).Interface().(T)
-	}
-	return t
+	return nil, errors.New("could not find/parse obfuscated handshake")
 }

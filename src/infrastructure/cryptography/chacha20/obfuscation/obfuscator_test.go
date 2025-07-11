@@ -6,200 +6,225 @@ import (
 	"crypto/sha256"
 	"errors"
 	"testing"
-	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/hmac"
 )
 
-// --- Mock types for testing ---
+type badHMACImpl struct{}
 
-var testMagic = []byte{0x13, 0x37, 0x42, 0x00}
-
-type strictMarshaller struct {
-	Data []byte
+func (b *badHMACImpl) Verify(_, _ []byte) error {
+	panic("not implemented")
 }
 
-func (s *strictMarshaller) MarshalBinary() ([]byte, error) {
-	return append(append([]byte{}, testMagic...), s.Data...), nil
+func (b *badHMACImpl) ResultSize() int {
+	panic("not implemented")
 }
 
-func (s *strictMarshaller) UnmarshalBinary(b []byte) error {
-	if len(b) < len(testMagic) || !bytes.Equal(b[:len(testMagic)], testMagic) {
-		return errors.New("bad magic prefix")
+func (b *badHMACImpl) Generate(_ []byte) ([]byte, error) { return nil, errors.New("fail") }
+
+func mustRandBytes(n int) []byte {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
 	}
-	if len(b[len(testMagic):]) != len(s.Data) {
-		return errors.New("wrong data size")
-	}
-	copy(s.Data, b[len(testMagic):])
-	return nil
+	return b
 }
 
-type unstrictMarshaller struct {
-	Data []byte
-}
-
-func (d *unstrictMarshaller) MarshalBinary() ([]byte, error) {
-	return d.Data, nil
-}
-func (d *unstrictMarshaller) UnmarshalBinary(b []byte) error {
-	d.Data = make([]byte, len(b))
-	copy(d.Data, b)
-	return nil
-}
-
-type failingMarshaller struct{}
-
-func (f *failingMarshaller) MarshalBinary() ([]byte, error) { return nil, errors.New("fail") }
-func (f *failingMarshaller) UnmarshalBinary([]byte) error   { return errors.New("fail") }
-
-// --- Helper ---
-
-func newTestObfuscator[T application.ObfuscatableData](minLen, maxLen int) application.Obfuscator[T] {
+func testObfuscator(min, max int) *ChaCha20Obfuscator {
 	key := sha256.Sum256([]byte("test-key"))
-	psk := []byte("psk-test-xyz123456789")
-	hmacKey := sha256.Sum256([]byte("test-hmac-key"))
-	hmacImpl := hmac.NewHMAC(hmacKey[:])
-	return NewChaCha20Obfuscator[T](
-		key[:], psk, hmacImpl, chacha20.NewSliding64(), minLen, maxLen,
-	)
+	psk := []byte("test-psk")
+	hmacKey := sha256.Sum256([]byte("test-hmac"))
+	hmacInst := hmac.NewHMAC(hmacKey[:])
+	return NewChaCha20Obfuscator(
+		key[:], psk, hmacInst, chacha20.NewSliding64(), min, max,
+	).(*ChaCha20Obfuscator)
 }
-
-// --- Tests ---
 
 func TestChaCha20Obfuscator_Roundtrip(t *testing.T) {
-	orig := &unstrictMarshaller{Data: make([]byte, 64)}
-	_, _ = rand.Read(orig.Data)
-	obf := newTestObfuscator[*unstrictMarshaller](60, 120)
+	obf := testObfuscator(60, 120)
+	plain := mustRandBytes(40)
 
-	enc, err := obf.Obfuscate(orig)
+	obfData, err := obf.Obfuscate(plain)
 	if err != nil {
 		t.Fatalf("Obfuscate: %v", err)
 	}
-
-	// ВАЖНО: размер должен совпадать
-	_ = &unstrictMarshaller{Data: make([]byte, 64)}
-	obfRecv := newTestObfuscator[*unstrictMarshaller](60, 120)
-	got, err := obfRecv.Deobfuscate(enc)
+	dec, err := obf.Deobfuscate(obfData)
 	if err != nil {
 		t.Fatalf("Deobfuscate: %v", err)
 	}
-	if !bytes.Equal(orig.Data, got.Data) {
-		t.Error("Obfuscator did not roundtrip the data")
+	if !bytes.Equal(plain, dec) {
+		t.Error("Decoded data mismatch")
 	}
 }
 
 func TestChaCha20Obfuscator_Corrupted(t *testing.T) {
-	orig := &strictMarshaller{Data: make([]byte, 32)}
-	_, _ = rand.Read(orig.Data)
-	obf := newTestObfuscator[*strictMarshaller](40, 100)
-
-	enc, err := obf.Obfuscate(orig)
+	obf := testObfuscator(80, 120)
+	plain := mustRandBytes(30)
+	obfData, err := obf.Obfuscate(plain)
 	if err != nil {
 		t.Fatalf("Obfuscate: %v", err)
 	}
-	enc[10] ^= 0x55 // портили пакет
+	obfData[10] ^= 0x77 // corrupt a bite
 
-	_ = &strictMarshaller{Data: make([]byte, 32)}
-	obfRecv := newTestObfuscator[*strictMarshaller](40, 100)
-	_, err = obfRecv.Deobfuscate(enc)
+	dec, err := obf.Deobfuscate(obfData)
 	if err == nil {
-		t.Error("Corrupted packet should not decode successfully")
+		t.Error("Corrupted data should not decrypt")
+	}
+	if dec != nil {
+		t.Error("Decrypted data on corruption should be nil")
 	}
 }
 
-func TestChaCha20Obfuscator_RandomInput(t *testing.T) {
-	buf := make([]byte, 120)
-	_, _ = rand.Read(buf)
-	_ = &unstrictMarshaller{Data: make([]byte, 32)}
-	obf := newTestObfuscator[*unstrictMarshaller](30, 200)
-	_, err := obf.Deobfuscate(buf)
+func TestChaCha20Obfuscator_GarbageInput(t *testing.T) {
+	obf := testObfuscator(32, 64)
+	garbage := mustRandBytes(90)
+	dec, err := obf.Deobfuscate(garbage)
 	if err == nil {
-		t.Error("Garbage input should not decode successfully")
+		t.Error("Random input should not decrypt")
+	}
+	if dec != nil {
+		t.Error("Decrypted data on garbage should be nil")
 	}
 }
 
-func TestChaCha20Obfuscator_HandshakeBiggerThanMaxLen(t *testing.T) {
-	orig := &unstrictMarshaller{Data: make([]byte, 300)}
-	_, _ = rand.Read(orig.Data)
-	obf := newTestObfuscator[*unstrictMarshaller](90, 100)
-	enc, err := obf.Obfuscate(orig)
+func TestChaCha20Obfuscator_MinGreaterThanMax(t *testing.T) {
+	obf := testObfuscator(100, 80)
+	plain := mustRandBytes(10)
+	_, err := obf.Obfuscate(plain)
+	if err == nil {
+		t.Error("Expected error when minLen > maxLen")
+	}
+}
+
+func TestChaCha20Obfuscator_NoPaddingNeeded(t *testing.T) {
+	obf := testObfuscator(10, 10)
+	plain := mustRandBytes(15)
+	obfData, err := obf.Obfuscate(plain)
 	if err != nil {
 		t.Fatalf("Obfuscate: %v", err)
 	}
-	if len(enc) < 300 {
-		t.Errorf("Packet must be at least handshake size: got %d", len(enc))
-	}
-	_ = &unstrictMarshaller{Data: make([]byte, 300)}
-	obfRecv := newTestObfuscator[*unstrictMarshaller](90, 100)
-	got, err := obfRecv.Deobfuscate(enc)
-	if err != nil {
-		t.Fatalf("Deobfuscate: %v", err)
-	}
-	if !bytes.Equal(orig.Data, got.Data) {
-		t.Error("Data mismatch on long handshake")
+	if len(obfData) < 15 {
+		t.Errorf("No padding should be needed, but got %d bytes", len(obfData))
 	}
 }
 
-func TestChaCha20Obfuscator_MinEqualsMax(t *testing.T) {
-	orig := &unstrictMarshaller{Data: make([]byte, 24)}
-	_, _ = rand.Read(orig.Data)
-	obf := newTestObfuscator[*unstrictMarshaller](64, 64)
-	enc, err := obf.Obfuscate(orig)
-	if err != nil {
-		t.Fatalf("Obfuscate: %v", err)
-	}
-	if len(enc) < 24 {
-		t.Error("Packet shorter than handshake data")
-	}
-	enc2, _ := obf.Obfuscate(orig)
-	if len(enc) != len(enc2) {
-		t.Error("Packet length should be same when min==max")
-	}
-}
-
-func TestChaCha20Obfuscator_MarshalBinaryFail(t *testing.T) {
-	mar := &failingMarshaller{}
-	obf := newTestObfuscator[*failingMarshaller](32, 100)
-	_, err := obf.Obfuscate(mar)
-	if err == nil {
-		t.Error("MarshalBinary error must propagate")
-	}
-}
-
-func TestChaCha20Obfuscator_UnmarshalBinaryFail(t *testing.T) {
-	orig := &unstrictMarshaller{Data: make([]byte, 16)}
-	_, _ = rand.Read(orig.Data)
-	obf := newTestObfuscator[*unstrictMarshaller](20, 50)
-	enc, err := obf.Obfuscate(orig)
-	if err != nil {
-		t.Fatalf("Obfuscate: %v", err)
-	}
-	// Use a marshaller which always fails on Unmarshal
-	_ = &failingMarshaller{}
-	obfRecv := newTestObfuscator[*failingMarshaller](20, 50)
-	_, err = obfRecv.Deobfuscate(enc)
-	if err == nil {
-		t.Error("UnmarshalBinary error must propagate")
-	}
-}
-
-func TestChaCha20Obfuscator_LengthPaddingAndRandomization(t *testing.T) {
-	orig := &unstrictMarshaller{Data: make([]byte, 8)}
-	_, _ = rand.Read(orig.Data)
-	obf := newTestObfuscator[*unstrictMarshaller](64, 256)
-	foundDifferent := false
-	var prevLen int
-	for i := 0; i < 20; i++ {
-		enc, err := obf.Obfuscate(orig)
+func TestChaCha20Obfuscator_PaddingRandomizesLength(t *testing.T) {
+	obf := testObfuscator(64, 128)
+	plain := mustRandBytes(16)
+	lengths := make(map[int]struct{})
+	for i := 0; i < 8; i++ {
+		obfData, err := obf.Obfuscate(plain)
 		if err != nil {
 			t.Fatalf("Obfuscate: %v", err)
 		}
-		if i > 0 && prevLen != len(enc) {
-			foundDifferent = true
-		}
-		prevLen = len(enc)
+		lengths[len(obfData)] = struct{}{}
 	}
-	if !foundDifferent {
-		t.Error("Packet length is not randomized")
+	if len(lengths) < 2 {
+		t.Error("Packet length is not randomized with padding")
+	}
+}
+
+func TestChaCha20Obfuscator_LargeData(t *testing.T) {
+	obf := testObfuscator(50, 100)
+	plain := mustRandBytes(200)
+	obfData, err := obf.Obfuscate(plain)
+	if err != nil {
+		t.Fatalf("Obfuscate: %v", err)
+	}
+	dec, err := obf.Deobfuscate(obfData)
+	if err != nil {
+		t.Fatalf("Deobfuscate: %v", err)
+	}
+	if !bytes.Equal(plain, dec) {
+		t.Error("Decoded data mismatch on large input")
+	}
+}
+
+func TestChaCha20Obfuscator_PaddingEdgeCases(t *testing.T) {
+	// Case: n == max
+	obf := testObfuscator(32, 64)
+	data := mustRandBytes(64)
+	out, err := obf.addPadding(data)
+	if err != nil {
+		t.Fatalf("addPadding: %v", err)
+	}
+	if !bytes.Equal(data, out) {
+		t.Error("addPadding should not alter if n == max")
+	}
+	// Case: min==max, n < min
+	obf2 := testObfuscator(40, 40)
+	data2 := mustRandBytes(16)
+	out2, err := obf2.addPadding(data2)
+	if err != nil {
+		t.Fatalf("addPadding: %v", err)
+	}
+	if len(out2) != 40 {
+		t.Error("addPadding wrong output length when min==max")
+	}
+}
+
+func TestChaCha20Obfuscator_deterministicOffsetZero(t *testing.T) {
+	obf := testObfuscator(32, 64)
+	nonce := mustRandBytes(12)
+	offset := obf.deterministicOffset(nonce, 0)
+	if offset != 0 {
+		t.Error("deterministicOffset should be 0 when maxOffset=0")
+	}
+}
+
+func TestChaCha20Obfuscator_addPadding_InvalidRange(t *testing.T) {
+	obf := testObfuscator(40, 30)
+	data := mustRandBytes(10)
+	_, err := obf.addPadding(data)
+	if err == nil {
+		t.Error("Expected error for addPadding when min > max")
+	}
+}
+
+func TestChaCha20Obfuscator_addPadding_MaxLenReached(t *testing.T) {
+	obf := testObfuscator(8, 8)
+	data := mustRandBytes(8)
+	out, err := obf.addPadding(data)
+	if err != nil {
+		t.Fatalf("addPadding: %v", err)
+	}
+	if len(out) != 8 || !bytes.Equal(data, out) {
+		t.Error("Should return the same slice for n == maxLen")
+	}
+}
+
+func TestDeobfuscate_EdgeCases(t *testing.T) {
+	obf := testObfuscator(60, 120)
+	// too short input
+	_, err := obf.Deobfuscate([]byte{1, 2, 3})
+	if err == nil {
+		t.Error("Should fail on too short input")
+	}
+}
+
+func TestObfuscate_EmptyData(t *testing.T) {
+	obf := testObfuscator(8, 16)
+	obfData, err := obf.Obfuscate(nil)
+	if err != nil {
+		t.Fatalf("Obfuscate: %v", err)
+	}
+	dec, err := obf.Deobfuscate(obfData)
+	if err != nil {
+		t.Fatalf("Deobfuscate: %v", err)
+	}
+	if len(dec) != 0 {
+		t.Error("Decoded empty data should be empty")
+	}
+}
+
+func TestObfuscate_BadHMAC(t *testing.T) {
+	// HMAC implementation that always fails
+	badHMAC := &badHMACImpl{}
+	obf := NewChaCha20Obfuscator(
+		bytes.Repeat([]byte{1}, 32), []byte("psk"), badHMAC, chacha20.NewSliding64(), 16, 32,
+	).(*ChaCha20Obfuscator)
+	_, err := obf.Obfuscate([]byte("test"))
+	if err == nil {
+		t.Error("Expected error from bad HMAC")
 	}
 }
