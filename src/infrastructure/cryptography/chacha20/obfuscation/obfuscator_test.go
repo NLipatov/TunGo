@@ -6,10 +6,12 @@ import (
 	"crypto/sha256"
 	"errors"
 	"testing"
+	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
-
 	"tungo/infrastructure/cryptography/hmac"
 )
+
+// --- Mock types for testing ---
 
 var testMagic = []byte{0x13, 0x37, 0x42, 0x00}
 
@@ -25,6 +27,9 @@ func (s *strictMarshaller) UnmarshalBinary(b []byte) error {
 	if len(b) < len(testMagic) || !bytes.Equal(b[:len(testMagic)], testMagic) {
 		return errors.New("bad magic prefix")
 	}
+	if len(b[len(testMagic):]) != len(s.Data) {
+		return errors.New("wrong data size")
+	}
 	copy(s.Data, b[len(testMagic):])
 	return nil
 }
@@ -37,74 +42,164 @@ func (d *unstrictMarshaller) MarshalBinary() ([]byte, error) {
 	return d.Data, nil
 }
 func (d *unstrictMarshaller) UnmarshalBinary(b []byte) error {
-	if len(b) != len(d.Data) {
-		return errors.New("wrong length")
-	}
+	d.Data = make([]byte, len(b))
 	copy(d.Data, b)
 	return nil
 }
 
-func newTestObfuscator(bufLen int) (*ChaCha20Obfuscator[*unstrictMarshaller], *unstrictMarshaller) {
+type failingMarshaller struct{}
+
+func (f *failingMarshaller) MarshalBinary() ([]byte, error) { return nil, errors.New("fail") }
+func (f *failingMarshaller) UnmarshalBinary([]byte) error   { return errors.New("fail") }
+
+// --- Helper ---
+
+func newTestObfuscator[T application.ObfuscatableData](minLen, maxLen int) application.Obfuscator[T] {
 	key := sha256.Sum256([]byte("test-key"))
 	psk := []byte("psk-test-xyz123456789")
 	hmacKey := sha256.Sum256([]byte("test-hmac-key"))
 	hmacImpl := hmac.NewHMAC(hmacKey[:])
-	plain := &unstrictMarshaller{Data: make([]byte, bufLen)}
-	_, _ = rand.Read(plain.Data)
-	obf := NewChaCha20Obfuscator(plain, key[:], psk, hmacImpl, chacha20.NewSliding64())
-	return &obf, plain
+	return NewChaCha20Obfuscator[T](
+		key[:], psk, hmacImpl, chacha20.NewSliding64(), minLen, maxLen,
+	)
 }
 
+// --- Tests ---
+
 func TestChaCha20Obfuscator_Roundtrip(t *testing.T) {
-	obf, orig := newTestObfuscator(64)
-	enc, err := obf.MarshalObfuscatedBinary()
+	orig := &unstrictMarshaller{Data: make([]byte, 64)}
+	_, _ = rand.Read(orig.Data)
+	obf := newTestObfuscator[*unstrictMarshaller](60, 120)
+
+	enc, err := obf.Obfuscate(orig)
 	if err != nil {
-		t.Fatalf("MarshalObfuscatedBinary: %v", err)
+		t.Fatalf("Obfuscate: %v", err)
 	}
 
-	recv := &unstrictMarshaller{Data: make([]byte, 64)}
-	obfRecv := NewChaCha20Obfuscator(recv, obf.key, obf.psk, obf.hmac, chacha20.NewSliding64())
-	if err := obfRecv.UnmarshalObfuscatedBinary(enc); err != nil {
-		t.Fatalf("UnmarshalObfuscatedBinary: %v", err)
+	// ВАЖНО: размер должен совпадать
+	_ = &unstrictMarshaller{Data: make([]byte, 64)}
+	obfRecv := newTestObfuscator[*unstrictMarshaller](60, 120)
+	got, err := obfRecv.Deobfuscate(enc)
+	if err != nil {
+		t.Fatalf("Deobfuscate: %v", err)
 	}
-	if !bytes.Equal(orig.Data, recv.Data) {
+	if !bytes.Equal(orig.Data, got.Data) {
 		t.Error("Obfuscator did not roundtrip the data")
 	}
 }
 
 func TestChaCha20Obfuscator_Corrupted(t *testing.T) {
-	obf, _ := newTestObfuscator(32)
-	enc, err := obf.MarshalObfuscatedBinary()
+	orig := &strictMarshaller{Data: make([]byte, 32)}
+	_, _ = rand.Read(orig.Data)
+	obf := newTestObfuscator[*strictMarshaller](40, 100)
+
+	enc, err := obf.Obfuscate(orig)
 	if err != nil {
-		t.Fatalf("MarshalObfuscatedBinary: %v", err)
+		t.Fatalf("Obfuscate: %v", err)
 	}
-	for i := 10; i < 20 && i < len(enc); i++ {
-		enc[i] ^= 0x77
-	}
-	recv := &strictMarshaller{Data: make([]byte, 32)}
-	obfRecv := NewChaCha20Obfuscator(recv, obf.key, obf.psk, obf.hmac, chacha20.NewSliding64())
-	if err := obfRecv.UnmarshalObfuscatedBinary(enc); err == nil {
+	enc[10] ^= 0x55 // портили пакет
+
+	_ = &strictMarshaller{Data: make([]byte, 32)}
+	obfRecv := newTestObfuscator[*strictMarshaller](40, 100)
+	_, err = obfRecv.Deobfuscate(enc)
+	if err == nil {
 		t.Error("Corrupted packet should not decode successfully")
 	}
 }
 
-func TestChaCha20Obfuscator_InvalidInput(t *testing.T) {
-	buf := make([]byte, 100)
+func TestChaCha20Obfuscator_RandomInput(t *testing.T) {
+	buf := make([]byte, 120)
 	_, _ = rand.Read(buf)
-	recv := &unstrictMarshaller{Data: make([]byte, 32)}
-	key := sha256.Sum256([]byte("test-key"))
-	psk := []byte("psk-test-xyz123456789")
-	hmacKey := sha256.Sum256([]byte("test-hmac-key"))
-	hmacImpl := hmac.NewHMAC(hmacKey[:])
-	obfRecv := NewChaCha20Obfuscator(recv, key[:], psk, hmacImpl, chacha20.NewSliding64())
-	if err := obfRecv.UnmarshalObfuscatedBinary(buf); err == nil {
+	_ = &unstrictMarshaller{Data: make([]byte, 32)}
+	obf := newTestObfuscator[*unstrictMarshaller](30, 200)
+	_, err := obf.Deobfuscate(buf)
+	if err == nil {
 		t.Error("Garbage input should not decode successfully")
 	}
 }
 
-func TestChaCha20Obfuscator_PlainGetter(t *testing.T) {
-	obf, orig := newTestObfuscator(8)
-	if obf.Plain() != orig {
-		t.Error("Plain getter did not return the original instance")
+func TestChaCha20Obfuscator_HandshakeBiggerThanMaxLen(t *testing.T) {
+	orig := &unstrictMarshaller{Data: make([]byte, 300)}
+	_, _ = rand.Read(orig.Data)
+	obf := newTestObfuscator[*unstrictMarshaller](90, 100)
+	enc, err := obf.Obfuscate(orig)
+	if err != nil {
+		t.Fatalf("Obfuscate: %v", err)
+	}
+	if len(enc) < 300 {
+		t.Errorf("Packet must be at least handshake size: got %d", len(enc))
+	}
+	_ = &unstrictMarshaller{Data: make([]byte, 300)}
+	obfRecv := newTestObfuscator[*unstrictMarshaller](90, 100)
+	got, err := obfRecv.Deobfuscate(enc)
+	if err != nil {
+		t.Fatalf("Deobfuscate: %v", err)
+	}
+	if !bytes.Equal(orig.Data, got.Data) {
+		t.Error("Data mismatch on long handshake")
+	}
+}
+
+func TestChaCha20Obfuscator_MinEqualsMax(t *testing.T) {
+	orig := &unstrictMarshaller{Data: make([]byte, 24)}
+	_, _ = rand.Read(orig.Data)
+	obf := newTestObfuscator[*unstrictMarshaller](64, 64)
+	enc, err := obf.Obfuscate(orig)
+	if err != nil {
+		t.Fatalf("Obfuscate: %v", err)
+	}
+	if len(enc) < 24 {
+		t.Error("Packet shorter than handshake data")
+	}
+	enc2, _ := obf.Obfuscate(orig)
+	if len(enc) != len(enc2) {
+		t.Error("Packet length should be same when min==max")
+	}
+}
+
+func TestChaCha20Obfuscator_MarshalBinaryFail(t *testing.T) {
+	mar := &failingMarshaller{}
+	obf := newTestObfuscator[*failingMarshaller](32, 100)
+	_, err := obf.Obfuscate(mar)
+	if err == nil {
+		t.Error("MarshalBinary error must propagate")
+	}
+}
+
+func TestChaCha20Obfuscator_UnmarshalBinaryFail(t *testing.T) {
+	orig := &unstrictMarshaller{Data: make([]byte, 16)}
+	_, _ = rand.Read(orig.Data)
+	obf := newTestObfuscator[*unstrictMarshaller](20, 50)
+	enc, err := obf.Obfuscate(orig)
+	if err != nil {
+		t.Fatalf("Obfuscate: %v", err)
+	}
+	// Use a marshaller which always fails on Unmarshal
+	_ = &failingMarshaller{}
+	obfRecv := newTestObfuscator[*failingMarshaller](20, 50)
+	_, err = obfRecv.Deobfuscate(enc)
+	if err == nil {
+		t.Error("UnmarshalBinary error must propagate")
+	}
+}
+
+func TestChaCha20Obfuscator_LengthPaddingAndRandomization(t *testing.T) {
+	orig := &unstrictMarshaller{Data: make([]byte, 8)}
+	_, _ = rand.Read(orig.Data)
+	obf := newTestObfuscator[*unstrictMarshaller](64, 256)
+	foundDifferent := false
+	var prevLen int
+	for i := 0; i < 20; i++ {
+		enc, err := obf.Obfuscate(orig)
+		if err != nil {
+			t.Fatalf("Obfuscate: %v", err)
+		}
+		if i > 0 && prevLen != len(enc) {
+			foundDifferent = true
+		}
+		prevLen = len(enc)
+	}
+	if !foundDifferent {
+		t.Error("Packet length is not randomized")
 	}
 }
