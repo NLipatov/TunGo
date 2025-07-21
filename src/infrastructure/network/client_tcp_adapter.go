@@ -10,9 +10,13 @@ type ClientTCPAdapter struct {
 	encoder chacha20.TCPEncoder
 }
 
-func NewClientTCPAdapter(conn application.ConnectionAdapter) *ClientTCPAdapter {
+func NewClientTCPAdapter(
+	conn application.ConnectionAdapter,
+	encoder chacha20.TCPEncoder,
+) *ClientTCPAdapter {
 	return &ClientTCPAdapter{
-		conn: conn,
+		conn:    conn,
+		encoder: encoder,
 	}
 }
 
