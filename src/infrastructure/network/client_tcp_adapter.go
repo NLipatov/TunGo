@@ -1,12 +1,13 @@
 package network
 
 import (
-	"encoding/binary"
 	"tungo/application"
+	"tungo/infrastructure/cryptography/chacha20"
 )
 
 type ClientTCPAdapter struct {
-	conn application.ConnectionAdapter
+	conn    application.ConnectionAdapter
+	encoder chacha20.TCPEncoder
 }
 
 func NewClientTCPAdapter(conn application.ConnectionAdapter) *ClientTCPAdapter {
@@ -15,11 +16,13 @@ func NewClientTCPAdapter(conn application.ConnectionAdapter) *ClientTCPAdapter {
 	}
 }
 
-func (c *ClientTCPAdapter) Write(p []byte) (n int, err error) {
-	length := uint32(len(p[4:]))
-	binary.BigEndian.PutUint32(p[:4], length)
+func (c *ClientTCPAdapter) Write(buffer []byte) (n int, err error) {
+	encodingErr := c.encoder.Encode(buffer)
+	if encodingErr != nil {
+		return 0, encodingErr
+	}
 
-	return c.conn.Write(p)
+	return c.conn.Write(buffer)
 }
 
 func (c *ClientTCPAdapter) Read(buffer []byte) (int, error) {

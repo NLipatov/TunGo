@@ -57,12 +57,6 @@ func (t *TunHandler) HandleTun() error {
 				return encryptErr
 			}
 
-			encodingErr := t.encoder.Encode(buffer[:n+4+chacha20poly1305.Overhead])
-			if encodingErr != nil {
-				log.Printf("failed to encode packet: %v", encodingErr)
-				continue
-			}
-
 			_, err = t.writer.Write(buffer[:n+4+chacha20poly1305.Overhead])
 			if err != nil {
 				log.Printf("write to TCP failed: %s", err)

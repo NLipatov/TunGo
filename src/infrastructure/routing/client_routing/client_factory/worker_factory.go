@@ -41,8 +41,9 @@ func (w *WorkerFactory) CreateWorker(
 		transportHandler := udp_chacha20.NewTransportHandler(ctx, transport, tun, crypto)
 		return udp_chacha20.NewUdpWorker(transportHandler, tunHandler), nil
 	case settings.TCP:
+		transport := network.NewClientTCPAdapter(conn)
 		encoder := chacha20.NewDefaultTCPEncoder()
-		tunHandler := tcp_chacha20.NewTunHandler(ctx, encoder, tun, conn, crypto)
+		tunHandler := tcp_chacha20.NewTunHandler(ctx, encoder, tun, transport, crypto)
 		transportHandler := tcp_chacha20.NewTransportHandler(ctx, conn, tun, crypto)
 		return tcp_chacha20.NewTcpTunWorker(ctx, tunHandler, transportHandler, crypto), nil
 	default:
