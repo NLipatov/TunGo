@@ -22,7 +22,8 @@ func NewTransportHandler(
 	ctx context.Context,
 	reader io.Reader,
 	writer io.Writer,
-	cryptographyService application.CryptographyService) application.TransportHandler {
+	cryptographyService application.CryptographyService,
+) application.TransportHandler {
 	return &TransportHandler{
 		ctx:                 ctx,
 		reader:              reader,

@@ -34,7 +34,11 @@ func (w *WorkerFactory) CreateWorker(
 		if deadlineErr != nil {
 			return nil, deadlineErr
 		}
-		transport := network.NewClientUDPAdapter(conn.(*net.UDPConn), deadline, deadline)
+		transport := network.NewClientUDPAdapter(
+			conn.(*net.UDPConn),
+			deadline,
+			deadline,
+		)
 		// tunHandler reads from tun and writes to transport
 		tunHandler := udp_chacha20.NewTunHandler(ctx, chacha20.NewUdpReader(tun), transport, crypto)
 		// transportHandler reads from transport and writes to tun
