@@ -50,6 +50,5 @@ func (u UdpSessionBuilder) FromHandshake(
 		SendNonce:      NewNonce(),
 		isServer:       isServer,
 		nonceValidator: NewSliding64(),
-		encoder:        DefaultUDPEncoder{},
 	}, nil
 }

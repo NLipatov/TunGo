@@ -12,7 +12,6 @@ import (
 type (
 	DefaultUdpSession struct {
 		SessionId        [32]byte
-		encoder          DefaultUDPEncoder
 		sendCipher       cipher.AEAD
 		recvCipher       cipher.AEAD
 		SendNonce        *Nonce
@@ -43,7 +42,6 @@ func NewUdpSession(id [32]byte, sendKey, recvKey []byte, isServer bool) (*Defaul
 		SendNonce:      NewNonce(),
 		isServer:       isServer,
 		nonceValidator: NewSliding64(),
-		encoder:        DefaultUDPEncoder{},
 	}, nil
 }
 
