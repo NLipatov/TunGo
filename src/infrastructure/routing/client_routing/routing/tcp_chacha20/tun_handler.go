@@ -6,7 +6,6 @@ import (
 	"io"
 	"log"
 	"tungo/application"
-	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network"
 )
 
@@ -30,7 +29,6 @@ func NewTunHandler(ctx context.Context,
 }
 
 func (t *TunHandler) HandleTun() error {
-	reader := chacha20.NewTcpReader(t.reader)
 	buffer := make([]byte, network.MaxPacketLengthBytes+4+chacha20poly1305.Overhead)
 
 	//passes anything from tun to chan
@@ -39,7 +37,7 @@ func (t *TunHandler) HandleTun() error {
 		case <-t.ctx.Done():
 			return nil
 		default:
-			n, err := reader.Read(buffer)
+			n, err := t.reader.Read(buffer)
 			if err != nil {
 				if t.ctx.Err() != nil {
 					return nil
