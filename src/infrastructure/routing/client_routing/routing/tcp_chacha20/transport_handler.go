@@ -2,7 +2,6 @@ package tcp_chacha20
 
 import (
 	"context"
-	"encoding/binary"
 	"io"
 	"log"
 	"tungo/application"
@@ -37,30 +36,13 @@ func (t *TransportHandler) HandleTransport() error {
 		case <-t.ctx.Done():
 			return nil
 		default:
-			_, err := io.ReadFull(t.reader, buffer[:4])
+			n, err := t.reader.Read(buffer)
 			if err != nil {
-				if t.ctx.Err() != nil {
-					return nil
-				}
 				log.Printf("read from TCP failed: %v", err)
 				return err
 			}
 
-			//read packet length from 4-byte length prefix
-			var length = binary.BigEndian.Uint32(buffer[:4])
-			if length < 4 || length > network.MaxPacketLengthBytes {
-				log.Printf("invalid packet Length: %d", length)
-				continue
-			}
-
-			//read n-bytes from connection
-			_, err = io.ReadFull(t.reader, buffer[:length])
-			if err != nil {
-				log.Printf("failed to read packet from connection: %s", err)
-				continue
-			}
-
-			decrypted, decryptionErr := t.cryptographyService.Decrypt(buffer[:length])
+			decrypted, decryptionErr := t.cryptographyService.Decrypt(buffer[:n])
 			if decryptionErr != nil {
 				log.Printf("failed to decrypt data: %s", decryptionErr)
 				return decryptionErr

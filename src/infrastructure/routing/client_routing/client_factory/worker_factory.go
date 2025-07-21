@@ -46,7 +46,7 @@ func (w *WorkerFactory) CreateWorker(
 			chacha20.NewDefaultTCPEncoder(),
 		)
 		tunHandler := tcp_chacha20.NewTunHandler(ctx, tun, transport, crypto)
-		transportHandler := tcp_chacha20.NewTransportHandler(ctx, conn, tun, crypto)
+		transportHandler := tcp_chacha20.NewTransportHandler(ctx, transport, tun, crypto)
 		return tcp_chacha20.NewTcpTunWorker(ctx, tunHandler, transportHandler, crypto), nil
 	default:
 		return nil, fmt.Errorf("unsupported protocol")
