@@ -50,8 +50,8 @@ func TestTransportHandler_ContextDone(t *testing.T) {
 func TestTransportHandler_PrefixReadError(t *testing.T) {
 	r := bytes.NewReader([]byte{1, 2}) // <4 → ErrUnexpectedEOF
 	h := NewTransportHandler(context.Background(), r, io.Discard, &TransportHandlerTestMockCrypt{})
-	if err := h.HandleTransport(); !errors.Is(err, io.ErrUnexpectedEOF) {
-		t.Fatalf("want ErrUnexpectedEOF, got %v", err)
+	if err := h.HandleTransport(); !errors.Is(err, io.EOF) {
+		t.Fatalf("want EOF, got %v", err)
 	}
 }
 

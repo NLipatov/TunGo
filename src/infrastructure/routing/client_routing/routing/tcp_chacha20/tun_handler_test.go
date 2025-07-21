@@ -3,16 +3,12 @@ package tcp_chacha20
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
 	"errors"
 	"io"
 	"testing"
-	"tungo/infrastructure/cryptography/chacha20"
-
-	"golang.org/x/crypto/chacha20poly1305"
 )
 
-/* ─── mocks ──────────────────────────────────────────────────────────────── */
+// --- mocks ---
 
 type TunHandlerTestMockCrypt struct{ encryptErr error }
 
@@ -30,109 +26,78 @@ func (r *TunHandlerTestReader) Read(b []byte) (int, error) {
 		return 0, io.EOF
 	}
 	r.count++
-	total := len(r.payload) + 4 + chacha20poly1305.Overhead
-	binary.BigEndian.PutUint32(b, uint32(len(r.payload)))
-	copy(b[4:], r.payload)
-	return total, nil
+	copy(b, r.payload)
+	return len(r.payload), nil
 }
 
-type TunHandlerTestFakeEncoder struct{ failOnce bool }
-
-func (e *TunHandlerTestFakeEncoder) Decode(data []byte, packet *chacha20.TCPPacket) error {
-	return nil
+type TunHandlerTestWriter struct {
+	buf *bytes.Buffer
+	err error
 }
 
-func (e *TunHandlerTestFakeEncoder) Encode([]byte) error {
-	if !e.failOnce {
-		e.failOnce = true
-		return errors.New("encode fail")
+func (w *TunHandlerTestWriter) Write(p []byte) (int, error) {
+	if w.err != nil {
+		return 0, w.err
 	}
-	return nil
+	return w.buf.Write(p)
 }
 
-type TunHandlerTestOKEncoder struct{}
+type alwaysErrReader struct{}
 
-func (e TunHandlerTestOKEncoder) Decode(data []byte, packet *chacha20.TCPPacket) error {
-	return nil
-}
+func (alwaysErrReader) Read([]byte) (int, error) { return 0, io.ErrUnexpectedEOF }
 
-func (TunHandlerTestOKEncoder) Encode([]byte) error { return nil }
-
-type TunHandlerTestWriteCounter struct{ n int }
-
-func (w *TunHandlerTestWriteCounter) Write(p []byte) (int, error) { w.n++; return len(p), nil }
-
-type TunHandlerTestErrWriter struct{ err error }
-
-func (e *TunHandlerTestErrWriter) Write([]byte) (int, error) { return 0, e.err }
-
-/* ─── tests ──────────────────────────────────────────────────────────────── */
+// --- tests ---
 
 func TestTunHandler_ContextDone(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	th := NewTunHandler(ctx,
-		&TunHandlerTestFakeEncoder{},
-		&TunHandlerTestReader{},
-		io.Discard,
-		&TunHandlerTestMockCrypt{},
-	)
+
+	th := NewTunHandler(ctx, &bytes.Buffer{}, &bytes.Buffer{}, &TunHandlerTestMockCrypt{})
 	if err := th.HandleTun(); err != nil {
 		t.Fatalf("expect nil, got %v", err)
 	}
 }
 
 func TestTunHandler_ReadError(t *testing.T) {
-	bad := &struct{ io.Reader }{Reader: &bytes.Reader{}}
-	th := NewTunHandler(context.Background(),
-		&TunHandlerTestFakeEncoder{},
-		bad,
-		io.Discard,
-		&TunHandlerTestMockCrypt{},
-	)
+	bad := alwaysErrReader{}
+	th := NewTunHandler(context.Background(), bad, &bytes.Buffer{}, &TunHandlerTestMockCrypt{})
 	if err := th.HandleTun(); err == nil {
 		t.Fatalf("expected read error, got nil")
 	}
 }
 
 func TestTunHandler_EncryptError(t *testing.T) {
-	r := &TunHandlerTestReader{payload: []byte{1, 2}, max: 1}
-	encErr := errors.New("enc fail")
-	th := NewTunHandler(context.Background(),
-		&TunHandlerTestFakeEncoder{},
-		r,
-		io.Discard,
-		&TunHandlerTestMockCrypt{encryptErr: encErr},
-	)
-	if err := th.HandleTun(); !errors.Is(err, encErr) {
+	payload := make([]byte, 10)
+	r := &TunHandlerTestReader{payload: payload, max: 1}
+	th := NewTunHandler(context.Background(), r, &bytes.Buffer{}, &TunHandlerTestMockCrypt{encryptErr: errors.New("enc fail")})
+	err := th.HandleTun()
+	if !errors.Is(err, errors.New("enc fail")) && (err == nil || err.Error() != "enc fail") {
 		t.Fatalf("want encrypt error, got %v", err)
 	}
 }
 
-func TestTunHandler_EncodeContinueAndSuccess(t *testing.T) {
-	r := &TunHandlerTestReader{payload: []byte{0xAA}, max: 2}
-	w := &TunHandlerTestWriteCounter{}
-	enc := &TunHandlerTestFakeEncoder{}
-	th := NewTunHandler(context.Background(), enc, r, w, &TunHandlerTestMockCrypt{})
+func TestTunHandler_WriteError(t *testing.T) {
+	payload := make([]byte, 10)
+	r := &TunHandlerTestReader{payload: payload, max: 1}
+	w := &TunHandlerTestWriter{buf: &bytes.Buffer{}, err: errors.New("write fail")}
+	th := NewTunHandler(context.Background(), r, w, &TunHandlerTestMockCrypt{})
 	err := th.HandleTun()
-	if !errors.Is(err, io.EOF) {
-		t.Fatalf("want EOF, got %v", err)
-	}
-	if w.n != 1 {
-		t.Fatalf("expect 1 write, got %d", w.n)
+	if !errors.Is(err, w.err) && (err == nil || err.Error() != "write fail") {
+		t.Fatalf("want write error, got %v", err)
 	}
 }
 
-func TestTunHandler_WriteError(t *testing.T) {
-	r := &TunHandlerTestReader{payload: []byte{1, 2, 3}, max: 1}
-
-	wErr := errors.New("write fail")
-	w := &TunHandlerTestErrWriter{err: wErr}
-
-	enc := TunHandlerTestOKEncoder{}
-
-	th := NewTunHandler(context.Background(), enc, r, w, &TunHandlerTestMockCrypt{})
-	if err := th.HandleTun(); !errors.Is(err, wErr) {
-		t.Fatalf("want write error, got %v", err)
+func TestTunHandler_SuccessfulFlow(t *testing.T) {
+	payload := []byte("testdata")
+	r := &TunHandlerTestReader{payload: payload, max: 1}
+	buf := &bytes.Buffer{}
+	w := &TunHandlerTestWriter{buf: buf}
+	th := NewTunHandler(context.Background(), r, w, &TunHandlerTestMockCrypt{})
+	err := th.HandleTun()
+	if err != io.EOF && err != nil {
+		t.Fatalf("expect EOF or nil, got %v", err)
+	}
+	if buf.Len() == 0 {
+		t.Fatal("no data written")
 	}
 }
