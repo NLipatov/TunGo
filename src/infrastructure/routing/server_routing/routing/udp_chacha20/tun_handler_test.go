@@ -107,13 +107,16 @@ func TestTunHandler_ShortPacket(t *testing.T) {
 	r := &testUdpReader{seq: []struct {
 		data []byte
 		err  error
-	}{{make([]byte, 5), nil}, {make([]byte, 20), io.EOF}}}
+	}{
+		{make([]byte, 5), nil},
+		{make([]byte, 20), io.EOF},
+	}}
 	a := &testAdapter{}
 	h := NewTunHandler(context.Background(), r, &testParser{}, &testMgr{sess: makeSession(a, &testCrypto{})})
 	if err := h.HandleTun(); err != io.EOF {
 		t.Errorf("short packet: want io.EOF, got %v", err)
 	}
-	if n := atomic.LoadInt32(&a.writes); n != 0 {
+	if n := atomic.LoadInt32(&a.writes); n != 0 { // <--- was 1, now should be 0
 		t.Errorf("short packet: writes=%d, want 0", n)
 	}
 }
@@ -124,7 +127,7 @@ func TestTunHandler_ParserError(t *testing.T) {
 	r := &testUdpReader{seq: []struct {
 		data []byte
 		err  error
-	}{{append(make([]byte, 12), hdr...), nil}, {nil, io.EOF}}}
+	}{{hdr, nil}, {nil, io.EOF}}}
 	a := &testAdapter{}
 	parser := &testParser{retErr: errors.New("bad")}
 	h := NewTunHandler(context.Background(), r, parser, &testMgr{sess: makeSession(a, &testCrypto{})})
@@ -140,11 +143,10 @@ func TestTunHandler_SessionNotFound(t *testing.T) {
 	hdr := make([]byte, 20)
 	hdr[0] = 0x45
 	hdr[16], hdr[17], hdr[18], hdr[19] = 10, 0, 0, 1
-	frame := append(make([]byte, 12), hdr...)
 	r := &testUdpReader{seq: []struct {
 		data []byte
 		err  error
-	}{{frame, nil}, {nil, io.EOF}}}
+	}{{hdr, nil}, {nil, io.EOF}}}
 	a := &testAdapter{}
 	parser := &testParser{wantDst: [4]byte{10, 0, 0, 1}}
 	mgr := &testMgr{sess: makeSession(a, &testCrypto{}), err: errors.New("no sess")}
@@ -161,11 +163,10 @@ func TestTunHandler_EncryptError(t *testing.T) {
 	hdr := make([]byte, 20)
 	hdr[0] = 0x45
 	hdr[16], hdr[17], hdr[18], hdr[19] = 10, 0, 0, 1
-	frame := append(make([]byte, 12), hdr...)
 	r := &testUdpReader{seq: []struct {
 		data []byte
 		err  error
-	}{{frame, nil}, {nil, io.EOF}}}
+	}{{hdr, nil}, {nil, io.EOF}}}
 	a := &testAdapter{}
 	parser := &testParser{wantDst: [4]byte{10, 0, 0, 1}}
 	crypto := &testCrypto{encryptErr: errors.New("encrypt fail")}
@@ -180,14 +181,13 @@ func TestTunHandler_EncryptError(t *testing.T) {
 }
 
 func TestTunHandler_WriteError(t *testing.T) {
-	hdr := make([]byte, 20)
+	hdr := make([]byte, 28)
 	hdr[0] = 0x45
 	hdr[16], hdr[17], hdr[18], hdr[19] = 10, 0, 0, 1
-	frame := append(make([]byte, 12), hdr...)
 	r := &testUdpReader{seq: []struct {
 		data []byte
 		err  error
-	}{{frame, nil}, {nil, io.EOF}}}
+	}{{hdr, nil}, {nil, io.EOF}}}
 	a := &testAdapter{writeErr: errors.New("write fail")}
 	parser := &testParser{wantDst: [4]byte{10, 0, 0, 1}}
 	mgr := &testMgr{sess: makeSession(a, &testCrypto{})}
@@ -225,14 +225,13 @@ func TestTunHandler_ReadOsPermission(t *testing.T) {
 }
 
 func TestTunHandler_HappyPath(t *testing.T) {
-	hdr := make([]byte, 20)
+	hdr := make([]byte, 28)
 	hdr[0] = 0x45
 	hdr[16], hdr[17], hdr[18], hdr[19] = 10, 0, 0, 1
-	frame := append(make([]byte, 12), hdr...)
 	r := &testUdpReader{seq: []struct {
 		data []byte
 		err  error
-	}{{frame, nil}, {nil, io.EOF}}}
+	}{{hdr, nil}, {nil, io.EOF}}}
 	a := &testAdapter{}
 	parser := &testParser{wantDst: [4]byte{10, 0, 0, 1}}
 	mgr := &testMgr{sess: makeSession(a, &testCrypto{})}

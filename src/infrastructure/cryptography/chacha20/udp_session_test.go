@@ -3,7 +3,6 @@ package chacha20
 import (
 	"bytes"
 	"crypto/rand"
-	"encoding/binary"
 	"testing"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -27,42 +26,57 @@ func TestEncryptDecrypt_RoundTrip(t *testing.T) {
 	var id [32]byte
 	copy(id[:], bytes.Repeat([]byte{0x7F}, 32))
 
-	// use same key for send and recv
 	key := make([]byte, chacha20poly1305.KeySize)
 	if _, err := rand.Read(key); err != nil {
 		t.Fatalf("rand.Read: %v", err)
 	}
 
-	// client session encrypts client→server
+	// client and server use the same key in test
 	clientSess, err := NewUdpSession(id, key, key, false)
 	if err != nil {
 		t.Fatalf("NewUdpSession(client): %v", err)
 	}
-
-	// craft packet: 12-byte header + payload, with extra cap for tag
-	payload := []byte("hello world")
-	aead, _ := chacha20poly1305.New(key)
-	overhead := aead.Overhead() // 16
-	packet := make([]byte, 12+len(payload), 12+len(payload)+overhead)
-	binary.BigEndian.PutUint32(packet[:4], uint32(len(payload)))
-	copy(packet[12:], payload)
-
-	ct, err := clientSess.Encrypt(packet)
-	if err != nil {
-		t.Fatalf("Encrypt: %v", err)
-	}
-
-	// server session decrypts server→client
 	serverSess, err := NewUdpSession(id, key, key, true)
 	if err != nil {
 		t.Fatalf("NewUdpSession(server): %v", err)
 	}
-	pt, err := serverSess.Decrypt(ct)
+
+	payload := []byte("hello world. this is a UDP packet test 123")
+	ciphertext, err := clientSess.Encrypt(payload)
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+
+	plaintext, err := serverSess.Decrypt(ciphertext)
 	if err != nil {
 		t.Fatalf("Decrypt: %v", err)
 	}
-	if !bytes.Equal(pt, payload) {
-		t.Errorf("plaintext mismatch: got %q, want %q", pt, payload)
+
+	if !bytes.Equal(plaintext, payload) {
+		t.Errorf("plaintext mismatch: got %q, want %q", plaintext, payload)
+	}
+}
+
+func TestEncrypt_UniqueNonce(t *testing.T) {
+	var id [32]byte
+	key := make([]byte, chacha20poly1305.KeySize)
+	clientSess, err := NewUdpSession(id, key, key, false)
+	if err != nil {
+		t.Fatalf("NewUdpSession(client): %v", err)
+	}
+	payload := []byte("x")
+	ct1, err := clientSess.Encrypt(payload)
+	ct1copy := make([]byte, len(ct1))
+	copy(ct1copy, ct1)
+
+	ct2, err := clientSess.Encrypt(payload)
+	ct2copy := make([]byte, len(ct2))
+	copy(ct2copy, ct2)
+
+	if bytes.Equal(ct1copy, ct2copy) {
+		t.Logf("ct1: %x", ct1copy)
+		t.Logf("ct2: %x", ct2copy)
+		t.Error("ciphertexts with different nonces should not be equal")
 	}
 }
 
@@ -70,10 +84,32 @@ func TestDecrypt_TooShort(t *testing.T) {
 	var id [32]byte
 	key := make([]byte, chacha20poly1305.KeySize)
 	sess, _ := NewUdpSession(id, key, key, false)
-
 	_, err := sess.Decrypt([]byte("short"))
 	if err == nil || !bytes.Contains([]byte(err.Error()), []byte("too short")) {
 		t.Errorf("expected 'too short' error, got %v", err)
+	}
+}
+
+func TestDecrypt_InvalidNonce(t *testing.T) {
+	var id [32]byte
+	key := make([]byte, chacha20poly1305.KeySize)
+	// Encrypt
+	sender, _ := NewUdpSession(id, key, key, false)
+	payload := []byte("test packet")
+	ct, err := sender.Encrypt(payload)
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+	// first Decrypt call on new sliding window
+	receiver, _ := NewUdpSession(id, key, key, true)
+	_, err = receiver.Decrypt(ct)
+	if err != nil {
+		t.Fatalf("first Decrypt: %v", err)
+	}
+	// second Decrypt call (replay attack)
+	_, err = receiver.Decrypt(ct)
+	if err == nil {
+		t.Error("expected error on nonce reuse, got nil")
 	}
 }
 
@@ -83,7 +119,6 @@ func TestCreateAAD_ContentAndLength(t *testing.T) {
 		id[i] = byte(i)
 	}
 	sess := &DefaultUdpSession{SessionId: id}
-
 	nonce := make([]byte, 12)
 	for i := range nonce {
 		nonce[i] = byte(100 + i)

@@ -2,6 +2,7 @@ package udp_chacha20
 
 import (
 	"context"
+	"golang.org/x/crypto/chacha20poly1305"
 	"io"
 	"log"
 	"net/netip"
@@ -61,8 +62,8 @@ func (t *TunHandler) HandleTun() error {
 				continue
 			}
 
-			if n == 0 {
-				log.Printf("empty packet from TUN")
+			if n < chacha20poly1305.Overhead+chacha20poly1305.NonceSize {
+				log.Printf("packet dropped: too short")
 				continue
 			}
 
