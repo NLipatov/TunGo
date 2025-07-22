@@ -33,7 +33,7 @@ func NewTunHandler(
 }
 
 func (t *TunHandler) HandleTun() error {
-	packetBuffer := make([]byte, network.MaxPacketLengthBytes+12)
+	packetBuffer := make([]byte, network.MaxPacketLengthBytes)
 	destinationAddressBytes := [4]byte{}
 
 	for {
@@ -61,13 +61,12 @@ func (t *TunHandler) HandleTun() error {
 				continue
 			}
 
-			if n < 12 {
-				log.Printf("invalid packet length (%d < 12)", n)
+			if n == 0 {
+				log.Printf("empty packet from TUN")
 				continue
 			}
 
-			// see udp_reader.go. It's putting payload length into first 12 bytes.
-			payload := packetBuffer[12 : n+12]
+			payload := packetBuffer[:n]
 			destinationBytesErr := t.parser.ParseDestinationAddressBytes(payload, destinationAddressBytes[:])
 			if destinationBytesErr != nil {
 				log.Printf("packet dropped: failed to read destination address bytes: %v", destinationBytesErr)
@@ -76,8 +75,7 @@ func (t *TunHandler) HandleTun() error {
 
 			destAddr, destAddrOk := netip.AddrFromSlice(destinationAddressBytes[:])
 			if !destAddrOk {
-				log.Printf(
-					"packet dropped: failed to parse destination address bytes: %v", destinationAddressBytes[:])
+				log.Printf("packet dropped: failed to parse destination address bytes: %v", destinationAddressBytes[:])
 				continue
 			}
 
@@ -87,7 +85,7 @@ func (t *TunHandler) HandleTun() error {
 				continue
 			}
 
-			encryptedPacket, encryptErr := clientSession.CryptographyService.Encrypt(packetBuffer)
+			encryptedPacket, encryptErr := clientSession.CryptographyService.Encrypt(payload)
 			if encryptErr != nil {
 				log.Printf("failed to encrypt packet: %s", encryptErr)
 				continue
