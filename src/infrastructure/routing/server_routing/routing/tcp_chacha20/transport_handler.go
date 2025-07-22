@@ -154,7 +154,7 @@ func (t *TransportHandler) handleClient(ctx context.Context, session Session, tu
 	}()
 
 	buf := make([]byte, network.MaxPacketLengthBytes)
-	adapter := chacha20.NewClientTCPAdapter(session.conn)
+	adapter := chacha20.NewTCPFramingAdapter(session.conn)
 
 	for {
 		select {

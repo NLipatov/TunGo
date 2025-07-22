@@ -14,8 +14,8 @@ type TCPFramingAdapter struct {
 	framingBuffer [4]byte // static buffer for framing, no allocations
 }
 
-// NewClientTCPAdapter constructs a new TCP adapter with internal framing.
-func NewClientTCPAdapter(conn application.ConnectionAdapter) *TCPFramingAdapter {
+// NewTCPFramingAdapter constructs a new TCP adapter with internal framing.
+func NewTCPFramingAdapter(conn application.ConnectionAdapter) *TCPFramingAdapter {
 	return &TCPFramingAdapter{conn: conn}
 }
 

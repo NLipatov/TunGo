@@ -89,7 +89,7 @@ func (t *TunHandler) HandleTun() error {
 				continue
 			}
 
-			adapter := chacha20.NewClientTCPAdapter(clientSession.conn)
+			adapter := chacha20.NewTCPFramingAdapter(clientSession.conn)
 			_, connWriteErr := adapter.Write(encrypted)
 			if connWriteErr != nil {
 				log.Printf("failed to write to TCP: %v", connWriteErr)
