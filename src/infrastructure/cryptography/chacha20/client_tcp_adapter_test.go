@@ -1,11 +1,10 @@
-package network
+package chacha20
 
 import (
 	"encoding/binary"
 	"errors"
 	"reflect"
 	"testing"
-	"tungo/infrastructure/cryptography/chacha20"
 )
 
 type FrameConnMock struct {
@@ -60,7 +59,7 @@ func (m *ClientTCPAdapterMockConn) Close() error {
 
 func TestClientTCPAdapter_Write_SetsLengthAndCallsWrite(t *testing.T) {
 	mock := &ClientTCPAdapterMockConn{}
-	enc := chacha20.NewDefaultTCPEncoder()
+	enc := NewDefaultTCPEncoder()
 	adapter := NewClientTCPAdapter(mock, enc)
 
 	data := []byte{0, 0, 0, 0, 10, 20, 30, 40, 50}
@@ -89,7 +88,7 @@ func TestClientTCPAdapter_Write_SetsLengthAndCallsWrite(t *testing.T) {
 
 func TestClientTCPAdapter_Write_PropagatesError(t *testing.T) {
 	mock := &ClientTCPAdapterMockConn{writeReturnN: 0, writeReturnE: errors.New("fail")}
-	enc := chacha20.NewDefaultTCPEncoder()
+	enc := NewDefaultTCPEncoder()
 	adapter := NewClientTCPAdapter(mock, enc)
 
 	data := make([]byte, 8)
@@ -101,7 +100,7 @@ func TestClientTCPAdapter_Write_PropagatesError(t *testing.T) {
 
 func TestClientTCPAdapter_Write_PanicsOnShortSlice(t *testing.T) {
 	mock := &ClientTCPAdapterMockConn{}
-	enc := chacha20.NewDefaultTCPEncoder()
+	enc := NewDefaultTCPEncoder()
 	adapter := NewClientTCPAdapter(mock, enc)
 
 	defer func() {
@@ -117,7 +116,7 @@ func TestClientTCPAdapter_Write_PanicsOnShortSlice(t *testing.T) {
 func TestClientTCPAdapter_Read_CallsUnderlying(t *testing.T) {
 	payload := []byte{1, 2, 3, 4, 5, 6}
 	frameMockConn := NewFrameConnMock(payload)
-	enc := chacha20.NewDefaultTCPEncoder()
+	enc := NewDefaultTCPEncoder()
 	adapter := NewClientTCPAdapter(frameMockConn, enc)
 
 	buf := make([]byte, 32)
@@ -135,7 +134,7 @@ func TestClientTCPAdapter_Read_CallsUnderlying(t *testing.T) {
 
 func TestClientTCPAdapter_Read_PropagatesError(t *testing.T) {
 	mock := &ClientTCPAdapterMockConn{readReturnN: 0, readReturnE: errors.New("readfail")}
-	enc := chacha20.NewDefaultTCPEncoder()
+	enc := NewDefaultTCPEncoder()
 	adapter := NewClientTCPAdapter(mock, enc)
 	_, err := adapter.Read(make([]byte, 8))
 	if err == nil || err.Error() != "failed to read length prefix: readfail" {
@@ -145,7 +144,7 @@ func TestClientTCPAdapter_Read_PropagatesError(t *testing.T) {
 
 func TestClientTCPAdapter_Close_CallsUnderlying(t *testing.T) {
 	mock := &ClientTCPAdapterMockConn{}
-	enc := chacha20.NewDefaultTCPEncoder()
+	enc := NewDefaultTCPEncoder()
 	adapter := NewClientTCPAdapter(mock, enc)
 	err := adapter.Close()
 	if err != nil {
@@ -158,7 +157,7 @@ func TestClientTCPAdapter_Close_CallsUnderlying(t *testing.T) {
 
 func TestClientTCPAdapter_Close_PropagatesError(t *testing.T) {
 	mock := &ClientTCPAdapterMockConn{closeReturnE: errors.New("closefail")}
-	enc := chacha20.NewDefaultTCPEncoder()
+	enc := NewDefaultTCPEncoder()
 	adapter := NewClientTCPAdapter(mock, enc)
 	err := adapter.Close()
 	if err == nil || err.Error() != "closefail" {
