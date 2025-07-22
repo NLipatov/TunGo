@@ -2,7 +2,6 @@ package tcp_chacha20
 
 import (
 	"context"
-	"golang.org/x/crypto/chacha20poly1305"
 	"io"
 	"log"
 	"net/netip"
@@ -52,12 +51,10 @@ func (t *TunHandler) HandleTun() error {
 					log.Println("TUN interface closed, shutting down...")
 					return err
 				}
-
 				if os.IsNotExist(err) || os.IsPermission(err) {
 					log.Printf("TUN interface error (closed or permission issue): %v", err)
 					return err
 				}
-
 				log.Printf("failed to read from TUN, retrying: %v", err)
 				continue
 			}
@@ -66,12 +63,7 @@ func (t *TunHandler) HandleTun() error {
 				continue
 			}
 
-			data := buf[4 : n+4]
-			if len(data) < 1 {
-				log.Printf("invalid IP data")
-				continue
-			}
-
+			data := buf[:n]
 			destinationBytesErr := t.ipParser.ParseDestinationAddressBytes(data, destinationAddressBytes[:])
 			if destinationBytesErr != nil {
 				log.Printf("packet dropped: failed to read destination address bytes: %v", destinationBytesErr)
@@ -91,19 +83,14 @@ func (t *TunHandler) HandleTun() error {
 				continue
 			}
 
-			_, encryptErr := clientSession.CryptographyService.Encrypt(buf[4 : n+4])
+			encrypted, encryptErr := clientSession.CryptographyService.Encrypt(data)
 			if encryptErr != nil {
 				log.Printf("failed to encrypt packet: %s", encryptErr)
 				continue
 			}
 
-			encodingErr := t.encoder.Encode(buf[:n+4+chacha20poly1305.Overhead])
-			if encodingErr != nil {
-				log.Printf("failed to encode packet: %v", encodingErr)
-				continue
-			}
-
-			_, connWriteErr := clientSession.conn.Write(buf[:n+4+chacha20poly1305.Overhead])
+			adapter := chacha20.NewClientTCPAdapter(clientSession.conn)
+			_, connWriteErr := adapter.Write(encrypted)
 			if connWriteErr != nil {
 				log.Printf("failed to write to TCP: %v", connWriteErr)
 				t.sessionManager.Delete(clientSession)

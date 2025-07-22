@@ -78,7 +78,7 @@ func (s *ServerWorkerFactory) createTCPWorker(ctx context.Context, tun io.ReadWr
 
 	th := tcp_chacha20.NewTunHandler(
 		ctx,
-		chacha20.NewTcpReader(tun),
+		tun,
 		chacha20.NewDefaultTCPEncoder(),
 		network.NewIPV4HeaderParser(),
 		ttlConcurrentSessionManager,

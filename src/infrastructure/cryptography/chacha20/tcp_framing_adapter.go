@@ -7,21 +7,21 @@ import (
 	"tungo/application"
 )
 
-// ClientTCPAdapter handles TCP framing using a 4-byte length prefix.
+// TCPFramingAdapter handles TCP framing using a 4-byte length prefix.
 // All framing is internal; the caller deals only with pure payload bytes.
-type ClientTCPAdapter struct {
+type TCPFramingAdapter struct {
 	conn          application.ConnectionAdapter
 	framingBuffer [4]byte // static buffer for framing, no allocations
 }
 
 // NewClientTCPAdapter constructs a new TCP adapter with internal framing.
-func NewClientTCPAdapter(conn application.ConnectionAdapter) *ClientTCPAdapter {
-	return &ClientTCPAdapter{conn: conn}
+func NewClientTCPAdapter(conn application.ConnectionAdapter) *TCPFramingAdapter {
+	return &TCPFramingAdapter{conn: conn}
 }
 
 // Write sends a payload, automatically prepending a 4-byte length prefix.
 // The input slice must contain only payload data, not a prefix.
-func (c *ClientTCPAdapter) Write(payload []byte) (int, error) {
+func (c *TCPFramingAdapter) Write(payload []byte) (int, error) {
 	binary.BigEndian.PutUint32(c.framingBuffer[:], uint32(len(payload)))
 
 	// Write the length prefix first.
@@ -35,7 +35,7 @@ func (c *ClientTCPAdapter) Write(payload []byte) (int, error) {
 // Read reads a single framed packet into buffer.
 // Returns the number of payload bytes read (without the prefix).
 // If the buffer is too small, returns io.ErrShortBuffer.
-func (c *ClientTCPAdapter) Read(buffer []byte) (int, error) {
+func (c *TCPFramingAdapter) Read(buffer []byte) (int, error) {
 	// Read the 4-byte length prefix.
 	if _, err := io.ReadFull(c.conn, c.framingBuffer[:]); err != nil {
 		return 0, fmt.Errorf("failed to read length prefix: %w", err)
@@ -52,6 +52,6 @@ func (c *ClientTCPAdapter) Read(buffer []byte) (int, error) {
 }
 
 // Close closes the underlying connection.
-func (c *ClientTCPAdapter) Close() error {
+func (c *TCPFramingAdapter) Close() error {
 	return c.conn.Close()
 }

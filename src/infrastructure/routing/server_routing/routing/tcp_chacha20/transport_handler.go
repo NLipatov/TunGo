@@ -2,13 +2,13 @@ package tcp_chacha20
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/netip"
 	"tungo/application"
+	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
 	"tungo/infrastructure/settings"
@@ -154,13 +154,14 @@ func (t *TransportHandler) handleClient(ctx context.Context, session Session, tu
 	}()
 
 	buf := make([]byte, network.MaxPacketLengthBytes)
+	adapter := chacha20.NewClientTCPAdapter(session.conn)
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		default:
-			// Read the length of the encrypted packet (4 bytes)
-			_, err := io.ReadFull(session.conn, buf[:4])
+			n, err := adapter.Read(buf)
 			if err != nil {
 				if err != io.EOF {
 					t.Logger.Printf("failed to read from client: %v", err)
@@ -168,27 +169,12 @@ func (t *TransportHandler) handleClient(ctx context.Context, session Session, tu
 				return
 			}
 
-			//read packet length from 4-byte length prefix
-			var length = binary.BigEndian.Uint32(buf[:4])
-			if length < 4 || length > network.MaxPacketLengthBytes {
-				t.Logger.Printf("invalid packet Length: %d", length)
-				continue
-			}
-
-			//read n-bytes from connection
-			_, err = io.ReadFull(session.conn, buf[:length])
-			if err != nil {
-				t.Logger.Printf("failed to read packet from connection: %s", err)
-				continue
-			}
-
-			decrypted, decryptionErr := session.CryptographyService.Decrypt(buf[:length])
+			decrypted, decryptionErr := session.CryptographyService.Decrypt(buf[:n])
 			if decryptionErr != nil {
 				t.Logger.Printf("failed to decrypt data: %s", decryptionErr)
 				continue
 			}
 
-			// Write the decrypted packet to the TUN interface
 			_, err = tunFile.Write(decrypted)
 			if err != nil {
 				t.Logger.Printf("failed to write to TUN: %v", err)
