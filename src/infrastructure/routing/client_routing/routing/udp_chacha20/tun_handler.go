@@ -15,10 +15,12 @@ type TunHandler struct {
 	cryptographyService application.CryptographyService
 }
 
-func NewTunHandler(ctx context.Context,
+func NewTunHandler(
+	ctx context.Context,
 	reader io.Reader,
 	writer io.Writer,
-	cryptographyService application.CryptographyService) application.TunHandler {
+	cryptographyService application.CryptographyService,
+) application.TunHandler {
 	return &TunHandler{
 		ctx:                 ctx,
 		reader:              reader,

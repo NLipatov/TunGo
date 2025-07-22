@@ -2,8 +2,8 @@ package chacha20
 
 import (
 	"crypto/cipher"
-	"encoding/binary"
 	"fmt"
+	"tungo/infrastructure/network"
 	"unsafe"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -20,6 +20,7 @@ type (
 		nonceValidator   *Sliding64
 		encryptionAadBuf [60]byte //32 bytes for sessionId, 16 bytes for direction, 12 bytes for nonce. 60 bytes total.
 		decryptionAadBuf [60]byte //32 bytes for sessionId, 16 bytes for direction, 12 bytes for nonce. 60 bytes total.
+		encryptionBuffer [network.MaxPacketLengthBytes]byte
 	}
 )
 
@@ -46,23 +47,25 @@ func NewUdpSession(id [32]byte, sendKey, recvKey []byte, isServer bool) (*Defaul
 }
 
 func (s *DefaultUdpSession) Encrypt(data []byte) ([]byte, error) {
-	// see udp_reader.go. It's putting payload length into first 12 bytes.
-	plainDataLen := binary.BigEndian.Uint32(data[:12])
+	// make 12 bytes space for nonce
+	copy(s.encryptionBuffer[12:], data)
 
-	// plainData - is data without header
-	plainData := data[12 : 12+plainDataLen]
+	// place data right after nonce bytes
+	payload := s.encryptionBuffer[12 : 12+len(data)]
+
+	// increment nonce (it must be unique, i.e. used only one time)
 	err := s.SendNonce.incrementNonce()
 	if err != nil {
 		return nil, err
 	}
+	// put new nonce into buffer
+	_ = s.SendNonce.Encode(s.encryptionBuffer[:12])
 
-	// header will now be used to write nonce into it
-	_ = s.SendNonce.Encode(data[:12])
+	// encrypt data
+	aad := s.CreateAAD(s.isServer, s.encryptionBuffer[:12], s.encryptionAadBuf[:])
+	ciphertext := s.sendCipher.Seal(payload[:0], s.encryptionBuffer[:12], payload, aad)
 
-	aad := s.CreateAAD(s.isServer, data[:12], s.encryptionAadBuf[:])
-	ciphertext := s.sendCipher.Seal(plainData[:0], data[:12], plainData, aad)
-
-	return data[:len(ciphertext)+12], nil
+	return s.encryptionBuffer[:len(ciphertext)+12], nil
 }
 
 func (s *DefaultUdpSession) Decrypt(ciphertext []byte) ([]byte, error) {
