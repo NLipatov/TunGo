@@ -2,7 +2,6 @@ package tcp_chacha20
 
 import (
 	"context"
-	"golang.org/x/crypto/chacha20poly1305"
 	"io"
 	"log"
 	"tungo/application"
@@ -16,22 +15,19 @@ type TunHandler struct {
 	cryptographyService application.CryptographyService
 }
 
-func NewTunHandler(ctx context.Context,
+func NewTunHandler(
+	ctx context.Context,
 	reader io.Reader,
 	writer io.Writer,
-	cryptographyService application.CryptographyService) application.TunHandler {
+	cryptographyService application.CryptographyService,
+) application.TunHandler {
 	return &TunHandler{
-		ctx:                 ctx,
-		reader:              reader,
-		writer:              writer,
-		cryptographyService: cryptographyService,
+		ctx: ctx, reader: reader, writer: writer, cryptographyService: cryptographyService,
 	}
 }
 
 func (t *TunHandler) HandleTun() error {
-	buffer := make([]byte, network.MaxPacketLengthBytes+4+chacha20poly1305.Overhead)
-
-	//passes anything from tun to chan
+	buffer := make([]byte, network.MaxPacketLengthBytes)
 	for {
 		select {
 		case <-t.ctx.Done():
@@ -45,14 +41,12 @@ func (t *TunHandler) HandleTun() error {
 				log.Printf("failed to read from TUN: %v", err)
 				return err
 			}
-
-			_, encryptErr := t.cryptographyService.Encrypt(buffer[4 : n+4])
+			encrypted, encryptErr := t.cryptographyService.Encrypt(buffer[:n])
 			if encryptErr != nil {
 				log.Printf("failed to encrypt packet: %v", encryptErr)
 				return encryptErr
 			}
-
-			_, err = t.writer.Write(buffer[:n+4+chacha20poly1305.Overhead])
+			_, err = t.writer.Write(encrypted)
 			if err != nil {
 				log.Printf("write to TCP failed: %s", err)
 				return err

@@ -5,56 +5,42 @@ import (
 	"fmt"
 	"io"
 	"tungo/application"
-	"tungo/infrastructure/network"
 )
 
 type ClientTCPAdapter struct {
-	conn    application.ConnectionAdapter
-	encoder TCPEncoder
+	conn application.ConnectionAdapter
 }
 
-func NewClientTCPAdapter(
-	conn application.ConnectionAdapter,
-	encoder TCPEncoder,
-) *ClientTCPAdapter {
-	return &ClientTCPAdapter{
-		conn:    conn,
-		encoder: encoder,
+func NewClientTCPAdapter(conn application.ConnectionAdapter) *ClientTCPAdapter {
+	return &ClientTCPAdapter{conn: conn}
+}
+
+// Write writes payload with 4-byte length prefix
+func (c *ClientTCPAdapter) Write(payload []byte) (int, error) {
+	length := uint32(len(payload))
+	header := make([]byte, 4)
+	binary.BigEndian.PutUint32(header, length)
+
+	if _, err := c.conn.Write(header); err != nil {
+		return 0, err
 	}
+	return c.conn.Write(payload)
 }
 
-func (c *ClientTCPAdapter) Write(buffer []byte) (n int, err error) {
-	length := uint32(len(buffer[4:]))
-	binary.BigEndian.PutUint32(buffer[:4], length)
-
-	return c.conn.Write(buffer)
-}
-
+// Read reads payload framed with 4-byte length prefix
 func (c *ClientTCPAdapter) Read(buffer []byte) (int, error) {
-	// read length prefix (it's stored in first 4 bytes and contains information about payload length in bytes)
-	_, lenPrefixErr := io.ReadFull(c.conn, buffer[:4])
-	if lenPrefixErr != nil {
-		return 0, fmt.Errorf("failed to read length prefix: %v", lenPrefixErr)
+	header := make([]byte, 4)
+	if _, err := io.ReadFull(c.conn, header); err != nil {
+		return 0, fmt.Errorf("failed to read length prefix: %v", err)
 	}
-
-	//read packet length from 4-byte length prefix
-	var payloadSizeBytesUint32 = binary.BigEndian.Uint32(buffer[:4])
-	if payloadSizeBytesUint32 > uint32(network.MaxPacketLengthBytes) {
-		return 0, fmt.Errorf("length prefix is invalid")
-	}
-
-	payloadLength := int(payloadSizeBytesUint32)
-	if payloadLength > len(buffer) {
+	length := int(binary.BigEndian.Uint32(header))
+	if length > len(buffer) {
 		return 0, io.ErrShortBuffer
 	}
-
-	//read n-bytes from connection
-	_, lenPrefixErr = io.ReadFull(c.conn, buffer[:payloadLength])
-	if lenPrefixErr != nil {
-		return 0, fmt.Errorf("failed to read packet from connection: %s", lenPrefixErr)
+	if _, err := io.ReadFull(c.conn, buffer[:length]); err != nil {
+		return 0, fmt.Errorf("failed to read payload: %v", err)
 	}
-
-	return payloadLength, nil
+	return length, nil
 }
 
 func (c *ClientTCPAdapter) Close() error {
