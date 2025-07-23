@@ -11,6 +11,10 @@ type sessionManagerFactoryDummySession struct {
 	externalIP netip.AddrPort
 }
 
+func (d sessionManagerFactoryDummySession) Close() error {
+	return nil
+}
+
 func (d sessionManagerFactoryDummySession) InternalAddr() netip.Addr {
 	return d.internalIP
 }

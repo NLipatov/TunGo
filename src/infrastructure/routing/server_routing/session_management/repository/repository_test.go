@@ -11,6 +11,10 @@ type fakeSession struct {
 	external netip.AddrPort
 }
 
+func (f *fakeSession) Close() error {
+	return nil
+}
+
 func (f *fakeSession) InternalAddr() netip.Addr         { return f.internal }
 func (f *fakeSession) ExternalAddrPort() netip.AddrPort { return f.external }
 
