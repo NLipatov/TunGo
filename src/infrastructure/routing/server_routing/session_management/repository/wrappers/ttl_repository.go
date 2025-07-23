@@ -68,16 +68,11 @@ func (t *TTLManager[cs]) Add(session cs) {
 func (t *TTLManager[cs]) Delete(session cs) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-
-	// close previous session
 	if entry, ok := t.ipToSession[session.InternalAddr()]; ok {
-		_ = entry.session.Close()
+		t.manager.Delete(entry.session)
+		delete(t.externalToSession, entry.session.ExternalAddrPort())
+		delete(t.ipToSession, session.InternalAddr())
 	}
-
-	// delete session from manager
-	t.manager.Delete(session)
-	delete(t.ipToSession, session.InternalAddr())
-	delete(t.externalToSession, session.ExternalAddrPort())
 }
 
 // GetByInternalAddrPort gets a session by internal address and resets its TTL.
