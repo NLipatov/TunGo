@@ -40,11 +40,15 @@ func (m *mockCrypto) Decrypt([]byte) ([]byte, error) { return nil, nil }
 type mockConn struct {
 	called int32
 	err    error
+	closed bool
 }
 
-func (c *mockConn) Write(b []byte) (int, error)        { atomic.AddInt32(&c.called, 1); return len(b), c.err }
-func (c *mockConn) Read([]byte) (int, error)           { return 0, nil }
-func (c *mockConn) Close() error                       { return nil }
+func (c *mockConn) Write(b []byte) (int, error) { atomic.AddInt32(&c.called, 1); return len(b), c.err }
+func (c *mockConn) Read([]byte) (int, error)    { return 0, nil }
+func (c *mockConn) Close() error {
+	c.closed = true
+	return nil
+}
 func (c *mockConn) LocalAddr() net.Addr                { return nil }
 func (c *mockConn) RemoteAddr() net.Addr               { return nil }
 func (c *mockConn) SetDeadline(_ time.Time) error      { return nil }

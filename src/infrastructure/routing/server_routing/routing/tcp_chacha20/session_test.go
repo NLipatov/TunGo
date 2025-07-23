@@ -41,3 +41,24 @@ func TestSessionAccessors(t *testing.T) {
 		t.Errorf("ExternalAddrPort() = %v, want %v", got, external)
 	}
 }
+
+func TestSession_Close(t *testing.T) {
+	internal, _ := netip.ParseAddr("10.0.1.3")
+	external, _ := netip.ParseAddrPort("93.184.216.34:9000")
+
+	s := Session{
+		conn: &mockConn{
+			closed: false,
+		},
+		CryptographyService: &sessionTestCrypto{},
+		internalIP:          internal,
+		externalIP:          external,
+	}
+
+	if err := s.Close(); err != nil {
+		t.Errorf("Close() returned error: %v", err)
+	}
+	if !s.conn.(*mockConn).closed {
+		t.Errorf("Close() did not call conn.Close()")
+	}
+}
