@@ -21,7 +21,6 @@ const (
 type TestSession struct {
 	internal netip.Addr
 	external netip.AddrPort
-	closed   *bool
 }
 
 // InternalAddr returns the internal address of the session.
@@ -29,14 +28,6 @@ func (s TestSession) InternalAddr() netip.Addr { return s.internal }
 
 // ExternalAddrPort returns the external address and port of the session.
 func (s TestSession) ExternalAddrPort() netip.AddrPort { return s.external }
-
-// Close marks the session as closed (for test verification).
-func (s TestSession) Close() error {
-	if s.closed != nil {
-		*s.closed = true
-	}
-	return nil
-}
 
 // FakeManager is a mock implementation of SessionRepository for unit tests.
 type FakeManager struct {
@@ -149,8 +140,7 @@ func TestManualDelete(t *testing.T) {
 	m := NewTTLManager[TestSession](context.Background(), fake, testTTL, time.Hour)
 	in, _ := netip.ParseAddr("9.9.9.9")
 	ex, _ := netip.ParseAddrPort("8.8.8.8:9000")
-	closed := false
-	s := TestSession{internal: in, external: ex, closed: &closed}
+	s := TestSession{internal: in, external: ex}
 	m.Add(s)
 	m.Delete(s)
 	// double delete should be allowed
@@ -160,9 +150,6 @@ func TestManualDelete(t *testing.T) {
 
 	if len(fake.deleted) < 1 || fake.deleted[0] != s {
 		t.Fatalf("expected Delete call with %v, got %v", s, fake.deleted)
-	}
-	if !closed {
-		t.Fatalf("expected Close() to be called on session deletion")
 	}
 }
 
@@ -182,11 +169,10 @@ func TestSanitizeWithExpiration(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	closed := false
 	m := NewTTLManager[TestSession](ctx, fake, testTTL, testCleanup)
 	in, _ := netip.ParseAddr("1.1.1.1")
 	ex, _ := netip.ParseAddrPort("2.2.2.2:9000")
-	s := TestSession{internal: in, external: ex, closed: &closed}
+	s := TestSession{internal: in, external: ex}
 	m.Add(s)
 
 	time.Sleep(testWait)
@@ -201,9 +187,6 @@ func TestSanitizeWithExpiration(t *testing.T) {
 	}
 	if !foundDeleted {
 		t.Errorf("expected session to be deleted by sanitize after expiration")
-	}
-	if !closed {
-		t.Fatalf("expected Close() to be called by sanitize")
 	}
 }
 
@@ -277,12 +260,11 @@ func TestNATRebinding_ReplacesSessionAndTTL(t *testing.T) {
 // TestSessionExpiresAfterTTL checks that a session is deleted after its TTL expires and Close() is called.
 func TestSessionExpiresAfterTTL(t *testing.T) {
 	fake := NewFakeManager()
-	closed := false
 	m := NewTTLManager[TestSession](context.Background(), fake, testTTL, testCleanup)
 
 	in, _ := netip.ParseAddr("1.1.1.1")
 	ex, _ := netip.ParseAddrPort("2.2.2.2:9000")
-	s := TestSession{internal: in, external: ex, closed: &closed}
+	s := TestSession{internal: in, external: ex}
 	m.Add(s)
 
 	time.Sleep(testWait)
@@ -297,9 +279,6 @@ func TestSessionExpiresAfterTTL(t *testing.T) {
 	fake.mu.Unlock()
 	if !deleted {
 		t.Fatalf("expected session to be deleted by TTL expiration")
-	}
-	if !closed {
-		t.Fatalf("expected Close() to be called on session TTL expiration")
 	}
 }
 
@@ -387,36 +366,13 @@ func TestNewTTLManager_Defaults(t *testing.T) {
 	m.Add(s)
 }
 
-func TestAdd_CallsCloseOnOverwrite(t *testing.T) {
-	fake := NewFakeManager()
-	m := NewTTLManager[TestSession](context.Background(), fake, testTTL, testCleanup)
-	in, _ := netip.ParseAddr("50.50.50.50")
-	ex1, _ := netip.ParseAddrPort("60.60.60.60:9000")
-	ex2, _ := netip.ParseAddrPort("70.70.70.70:9000")
-	closed1 := false
-	s1 := TestSession{internal: in, external: ex1, closed: &closed1}
-	s2 := TestSession{internal: in, external: ex2}
-
-	m.Add(s1)
-	m.Add(s2)
-
-	if !closed1 {
-		t.Fatalf("Close() should be called on s1 when overwritten by Add(s2)")
-	}
-}
-
 func TestDelete_DoesNotCallCloseIfSessionNotInMap(t *testing.T) {
 	fake := NewFakeManager()
 	m := NewTTLManager[TestSession](context.Background(), fake, testTTL, testCleanup)
 
-	closed := false
 	in, _ := netip.ParseAddr("12.34.56.78")
 	ex, _ := netip.ParseAddrPort("87.65.43.21:9000")
-	s := TestSession{internal: in, external: ex, closed: &closed}
+	s := TestSession{internal: in, external: ex}
 
 	m.Delete(s)
-
-	if closed {
-		t.Fatalf("Close() should NOT be called if session not in ipToSession")
-	}
 }
