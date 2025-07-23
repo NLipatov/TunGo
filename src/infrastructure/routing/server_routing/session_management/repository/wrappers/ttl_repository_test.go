@@ -405,15 +405,18 @@ func TestAdd_CallsCloseOnOverwrite(t *testing.T) {
 	}
 }
 
-func TestDelete_CallsCloseOnMissingSession(t *testing.T) {
+func TestDelete_DoesNotCallCloseIfSessionNotInMap(t *testing.T) {
 	fake := NewFakeManager()
 	m := NewTTLManager[TestSession](context.Background(), fake, testTTL, testCleanup)
+
 	closed := false
-	in, _ := netip.ParseAddr("99.99.99.99")
-	ex, _ := netip.ParseAddrPort("111.111.111.111:9000")
+	in, _ := netip.ParseAddr("12.34.56.78")
+	ex, _ := netip.ParseAddrPort("87.65.43.21:9000")
 	s := TestSession{internal: in, external: ex, closed: &closed}
+
 	m.Delete(s)
-	if !closed {
-		t.Fatalf("Close() should be called even if session is not found in maps")
+
+	if closed {
+		t.Fatalf("Close() should NOT be called if session not in ipToSession")
 	}
 }
