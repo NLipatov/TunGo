@@ -66,7 +66,8 @@ func TestSession_Close(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Close() returned error: %v", err)
 	}
-	if !s.connectionAdapter.(*sessionTestAdapter).closed {
-		t.Errorf("Close() did not call connectionAdapter.Close()")
+	if s.connectionAdapter.(*sessionTestAdapter).closed {
+		t.Errorf("Close() closed connection, while it's expected to not. " +
+			"(All udp clients are using this connection).")
 	}
 }
