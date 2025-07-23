@@ -9,6 +9,7 @@ import (
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network"
+	"tungo/infrastructure/network/framing"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
 )
 
@@ -89,7 +90,7 @@ func (t *TunHandler) HandleTun() error {
 				continue
 			}
 
-			adapter := chacha20.NewTCPFramingAdapter(clientSession.conn)
+			adapter := framing.NewTCPFramingAdapter(clientSession.conn)
 			_, connWriteErr := adapter.Write(encrypted)
 			if connWriteErr != nil {
 				log.Printf("failed to write to TCP: %v", connWriteErr)

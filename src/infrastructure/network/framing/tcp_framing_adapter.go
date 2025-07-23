@@ -1,4 +1,4 @@
-package chacha20
+package framing
 
 import (
 	"encoding/binary"

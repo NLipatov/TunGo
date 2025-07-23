@@ -8,8 +8,8 @@ import (
 	"net"
 	"net/netip"
 	"tungo/application"
-	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network"
+	"tungo/infrastructure/network/framing"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
 	"tungo/infrastructure/settings"
 )
@@ -154,7 +154,7 @@ func (t *TransportHandler) handleClient(ctx context.Context, session Session, tu
 	}()
 
 	buf := make([]byte, network.MaxPacketLengthBytes)
-	adapter := chacha20.NewTCPFramingAdapter(session.conn)
+	adapter := framing.NewTCPFramingAdapter(session.conn)
 
 	for {
 		select {
