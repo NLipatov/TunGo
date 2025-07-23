@@ -25,6 +25,8 @@ func (s Session) ExternalAddrPort() netip.AddrPort {
 	return s.externalIP
 }
 
+// Close on UDP session does nothing, because all clients are using same connection.
+// Closing of this single connection will be equal to close server side listener.
 func (s Session) Close() error {
-	return s.connectionAdapter.Close()
+	return nil
 }
