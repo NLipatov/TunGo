@@ -364,3 +364,56 @@ func TestSessionNotDeletedWhenAccessed(t *testing.T) {
 		t.Fatalf("session should not have been deleted, but was: %v", s)
 	}
 }
+
+func TestNewTTLManager_Defaults(t *testing.T) {
+	fake := NewFakeManager()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Create TTLManager with 0-valued TTL and cleanupInterval
+	mIface := NewTTLManager[TestSession](ctx, fake, 0, 0)
+	m, ok := mIface.(*TTLManager[TestSession])
+	if !ok {
+		t.Fatalf("failed to cast SessionRepository to *TTLManager")
+	}
+
+	if m.sessionTtl != 0 || m.cleanupInterval != 0 {
+		t.Fatalf("TTLManager should have 0 TTL/cleanupInterval initially")
+	}
+
+	in, _ := netip.ParseAddr("10.0.0.1")
+	ex, _ := netip.ParseAddrPort("20.0.0.1:9000")
+	s := TestSession{internal: in, external: ex}
+	m.Add(s)
+}
+
+func TestAdd_CallsCloseOnOverwrite(t *testing.T) {
+	fake := NewFakeManager()
+	m := NewTTLManager[TestSession](context.Background(), fake, testTTL, testCleanup)
+	in, _ := netip.ParseAddr("50.50.50.50")
+	ex1, _ := netip.ParseAddrPort("60.60.60.60:9000")
+	ex2, _ := netip.ParseAddrPort("70.70.70.70:9000")
+	closed1 := false
+	s1 := TestSession{internal: in, external: ex1, closed: &closed1}
+	s2 := TestSession{internal: in, external: ex2}
+
+	m.Add(s1)
+	m.Add(s2)
+
+	if !closed1 {
+		t.Fatalf("Close() should be called on s1 when overwritten by Add(s2)")
+	}
+}
+
+func TestDelete_CallsCloseOnMissingSession(t *testing.T) {
+	fake := NewFakeManager()
+	m := NewTTLManager[TestSession](context.Background(), fake, testTTL, testCleanup)
+	closed := false
+	in, _ := netip.ParseAddr("99.99.99.99")
+	ex, _ := netip.ParseAddrPort("111.111.111.111:9000")
+	s := TestSession{internal: in, external: ex, closed: &closed}
+	m.Delete(s)
+	if !closed {
+		t.Fatalf("Close() should be called even if session is not found in maps")
+	}
+}
