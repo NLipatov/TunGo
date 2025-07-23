@@ -9,6 +9,7 @@ import (
 	"tungo/infrastructure/PAL/server_configuration"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network"
+	"tungo/infrastructure/network/framing"
 	"tungo/infrastructure/routing/server_routing/routing/tcp_chacha20"
 	"tungo/infrastructure/routing/server_routing/routing/udp_chacha20"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
@@ -78,8 +79,8 @@ func (s *ServerWorkerFactory) createTCPWorker(ctx context.Context, tun io.ReadWr
 
 	th := tcp_chacha20.NewTunHandler(
 		ctx,
-		chacha20.NewTcpReader(tun),
-		chacha20.NewDefaultTCPEncoder(),
+		tun,
+		framing.NewDefaultTCPEncoder(),
 		network.NewIPV4HeaderParser(),
 		ttlConcurrentSessionManager,
 	)
@@ -123,7 +124,7 @@ func (s *ServerWorkerFactory) createUDPWorker(ctx context.Context, tun io.ReadWr
 
 	th := udp_chacha20.NewTunHandler(
 		ctx,
-		chacha20.NewUdpReader(tun),
+		tun,
 		network.NewIPV4HeaderParser(),
 		ttlConcurrentSessionManager,
 	)

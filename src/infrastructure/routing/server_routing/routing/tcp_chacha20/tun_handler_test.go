@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-	"tungo/infrastructure/cryptography/chacha20"
+	"tungo/infrastructure/network/framing"
 )
 
 type mockReader struct {
@@ -34,8 +34,8 @@ type mockEncoder struct {
 	err    error
 }
 
-func (e *mockEncoder) Decode([]byte, *chacha20.TCPPacket) error { return nil }
-func (e *mockEncoder) Encode([]byte) error                      { atomic.AddInt32(&e.called, 1); return e.err }
+func (e *mockEncoder) Decode([]byte, *framing.TCPPacket) error { return nil }
+func (e *mockEncoder) Encode([]byte) error                     { atomic.AddInt32(&e.called, 1); return e.err }
 
 type mockParser struct{ err error }
 

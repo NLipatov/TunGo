@@ -8,15 +8,15 @@ import (
 	"net/netip"
 	"os"
 	"tungo/application"
-	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network"
+	"tungo/infrastructure/network/framing"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
 )
 
 type TunHandler struct {
 	ctx            context.Context
 	reader         io.Reader
-	encoder        chacha20.TCPEncoder
+	encoder        framing.TCPEncoder
 	ipParser       network.IPHeader
 	sessionManager repository.SessionRepository[Session]
 }
@@ -24,7 +24,7 @@ type TunHandler struct {
 func NewTunHandler(
 	ctx context.Context,
 	reader io.Reader,
-	encoder chacha20.TCPEncoder,
+	encoder framing.TCPEncoder,
 	ipParser network.IPHeader,
 	sessionManager repository.SessionRepository[Session],
 ) application.TunHandler {

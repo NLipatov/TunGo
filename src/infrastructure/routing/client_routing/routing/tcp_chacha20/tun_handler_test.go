@@ -7,7 +7,7 @@ import (
 	"errors"
 	"io"
 	"testing"
-	"tungo/infrastructure/cryptography/chacha20"
+	"tungo/infrastructure/network/framing"
 
 	"golang.org/x/crypto/chacha20poly1305"
 )
@@ -38,7 +38,7 @@ func (r *TunHandlerTestReader) Read(b []byte) (int, error) {
 
 type TunHandlerTestFakeEncoder struct{ failOnce bool }
 
-func (e *TunHandlerTestFakeEncoder) Decode(data []byte, packet *chacha20.TCPPacket) error {
+func (e *TunHandlerTestFakeEncoder) Decode(data []byte, packet *framing.TCPPacket) error {
 	return nil
 }
 
@@ -52,7 +52,7 @@ func (e *TunHandlerTestFakeEncoder) Encode([]byte) error {
 
 type TunHandlerTestOKEncoder struct{}
 
-func (e TunHandlerTestOKEncoder) Decode(data []byte, packet *chacha20.TCPPacket) error {
+func (e TunHandlerTestOKEncoder) Decode(data []byte, packet *framing.TCPPacket) error {
 	return nil
 }
 
