@@ -68,6 +68,7 @@ func (t *TTLManager[cs]) Add(session cs) {
 func (t *TTLManager[cs]) Delete(session cs) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	_ = session.Close()
 	t.manager.Delete(session)
 	delete(t.ipToSession, session.InternalAddr())
 	delete(t.externalToSession, session.ExternalAddrPort())

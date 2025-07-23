@@ -10,4 +10,7 @@ type SessionContract interface {
 	// InternalAddr returns the internal (inside VPN) IP address of the client.
 	// Each client has a unique internal address in the virtual private network.
 	InternalAddr() netip.Addr
+
+	// Close closes underlying session
+	Close() error
 }

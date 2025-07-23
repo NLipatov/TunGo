@@ -24,3 +24,7 @@ func (s Session) InternalAddr() netip.Addr {
 func (s Session) ExternalAddrPort() netip.AddrPort {
 	return s.externalIP
 }
+
+func (s Session) Close() error {
+	return s.connectionAdapter.Close()
+}

@@ -11,6 +11,10 @@ type concurrentManagerMockSession struct {
 	in  netip.Addr
 }
 
+func (s concurrentManagerMockSession) Close() error {
+	return nil
+}
+
 func (s concurrentManagerMockSession) ExternalAddrPort() netip.AddrPort { return s.ext }
 func (s concurrentManagerMockSession) InternalAddr() netip.Addr         { return s.in }
 

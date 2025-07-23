@@ -10,10 +10,18 @@ import (
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
 )
 
+// === Test timing configuration ===
+const (
+	testTTL     = 2 * time.Millisecond
+	testCleanup = 1 * time.Millisecond
+	testWait    = 4 * time.Millisecond // testWait > testTTL+testCleanup
+)
+
 // TestSession is a dummy implementation of SessionContract for testing purposes.
 type TestSession struct {
 	internal netip.Addr
 	external netip.AddrPort
+	closed   *bool
 }
 
 // InternalAddr returns the internal address of the session.
@@ -21,6 +29,14 @@ func (s TestSession) InternalAddr() netip.Addr { return s.internal }
 
 // ExternalAddrPort returns the external address and port of the session.
 func (s TestSession) ExternalAddrPort() netip.AddrPort { return s.external }
+
+// Close marks the session as closed (for test verification).
+func (s TestSession) Close() error {
+	if s.closed != nil {
+		*s.closed = true
+	}
+	return nil
+}
 
 // FakeManager is a mock implementation of SessionRepository for unit tests.
 type FakeManager struct {
@@ -84,7 +100,7 @@ func (f *FakeManager) GetByExternalAddrPort(ip netip.AddrPort) (TestSession, err
 // TestAddAndGetResetsTTL verifies that session is added and TTL is reset on each Get.
 func TestAddAndGetResetsTTL(t *testing.T) {
 	fake := NewFakeManager()
-	m := NewTTLManager[TestSession](context.Background(), fake, 50*time.Millisecond, 20*time.Millisecond)
+	m := NewTTLManager[TestSession](context.Background(), fake, testTTL, testCleanup)
 
 	in, _ := netip.ParseAddr("1.2.3.4")
 	ex, _ := netip.ParseAddrPort("4.3.2.1:9000")
@@ -104,7 +120,7 @@ func TestAddAndGetResetsTTL(t *testing.T) {
 // TestAdd_OverwriteSession checks that adding a session with same internal address deletes the old session.
 func TestAdd_OverwriteSession(t *testing.T) {
 	fake := NewFakeManager()
-	m := NewTTLManager[TestSession](context.Background(), fake, time.Second, time.Second)
+	m := NewTTLManager[TestSession](context.Background(), fake, testTTL, testCleanup)
 	in, _ := netip.ParseAddr("5.5.5.5")
 	ex1, _ := netip.ParseAddrPort("6.6.6.6:9000")
 	ex2, _ := netip.ParseAddrPort("7.7.7.7:9000")
@@ -130,44 +146,50 @@ func TestAdd_OverwriteSession(t *testing.T) {
 // TestManualDelete checks that sessions can be deleted manually and double delete is a no-op.
 func TestManualDelete(t *testing.T) {
 	fake := NewFakeManager()
-	m := NewTTLManager[TestSession](context.Background(), fake, 50*time.Millisecond, time.Hour)
+	m := NewTTLManager[TestSession](context.Background(), fake, testTTL, time.Hour)
 	in, _ := netip.ParseAddr("9.9.9.9")
 	ex, _ := netip.ParseAddrPort("8.8.8.8:9000")
-	s := TestSession{internal: in, external: ex}
+	closed := false
+	s := TestSession{internal: in, external: ex, closed: &closed}
 	m.Add(s)
 	m.Delete(s)
 	// double delete should be allowed
 	m.Delete(s)
 	fake.mu.Lock()
 	defer fake.mu.Unlock()
+
 	if len(fake.deleted) < 1 || fake.deleted[0] != s {
 		t.Fatalf("expected Delete call with %v, got %v", s, fake.deleted)
+	}
+	if !closed {
+		t.Fatalf("expected Close() to be called on session deletion")
 	}
 }
 
 // TestDelete_NotExistingSession checks that deleting a non-existing session is safe.
 func TestDelete_NotExistingSession(t *testing.T) {
 	fake := NewFakeManager()
-	m := NewTTLManager[TestSession](context.Background(), fake, time.Second, time.Second)
+	m := NewTTLManager[TestSession](context.Background(), fake, testTTL, testCleanup)
 	in, _ := netip.ParseAddr("11.11.11.11")
 	ex, _ := netip.ParseAddrPort("22.22.22.22:9000")
 	s := TestSession{internal: in, external: ex}
 	m.Delete(s)
 }
 
-// TestSanitizeWithExpiration checks that a session is deleted after TTL expiration.
+// TestSanitizeWithExpiration checks that a session is deleted after TTL expiration and Close() is called.
 func TestSanitizeWithExpiration(t *testing.T) {
 	fake := NewFakeManager()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	m := NewTTLManager[TestSession](ctx, fake, 10*time.Millisecond, 5*time.Millisecond)
+	closed := false
+	m := NewTTLManager[TestSession](ctx, fake, testTTL, testCleanup)
 	in, _ := netip.ParseAddr("1.1.1.1")
 	ex, _ := netip.ParseAddrPort("2.2.2.2:9000")
-	s := TestSession{internal: in, external: ex}
+	s := TestSession{internal: in, external: ex, closed: &closed}
 	m.Add(s)
 
-	time.Sleep(20 * time.Millisecond)
+	time.Sleep(testWait)
 	fake.mu.Lock()
 	defer fake.mu.Unlock()
 	foundDeleted := false
@@ -180,26 +202,29 @@ func TestSanitizeWithExpiration(t *testing.T) {
 	if !foundDeleted {
 		t.Errorf("expected session to be deleted by sanitize after expiration")
 	}
+	if !closed {
+		t.Fatalf("expected Close() to be called by sanitize")
+	}
 }
 
 // TestSanitizeStopsOnContextCancel ensures that sanitize goroutine stops after context is cancelled.
 func TestSanitizeStopsOnContextCancel(t *testing.T) {
 	fake := NewFakeManager()
 	ctx, cancel := context.WithCancel(context.Background())
-	mIface := NewTTLManager[TestSession](ctx, fake, 10*time.Millisecond, 5*time.Millisecond)
+	mIface := NewTTLManager[TestSession](ctx, fake, testTTL, testCleanup)
 	_, ok := mIface.(*TTLManager[TestSession])
 	if !ok {
 		t.Fatal("failed to cast SessionRepository to *TTLManager")
 	}
 	cancel()
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(testWait)
 	// No assertion: just check for deadlock/panic
 }
 
 // TestDoubleDelete checks that deleting a session twice does not panic or error.
 func TestDoubleDelete(t *testing.T) {
 	fake := NewFakeManager()
-	m := NewTTLManager[TestSession](context.Background(), fake, time.Second, time.Second)
+	m := NewTTLManager[TestSession](context.Background(), fake, testTTL, testCleanup)
 	in, _ := netip.ParseAddr("101.101.101.101")
 	ex, _ := netip.ParseAddrPort("202.202.202.202:9000")
 	s := TestSession{internal: in, external: ex}
@@ -211,7 +236,7 @@ func TestDoubleDelete(t *testing.T) {
 // TestNATRebinding_ReplacesSessionAndTTL tests that NAT rebinding is handled: old session is deleted and only the new one expires by TTL.
 func TestNATRebinding_ReplacesSessionAndTTL(t *testing.T) {
 	fake := NewFakeManager()
-	m := NewTTLManager[TestSession](context.Background(), fake, 100*time.Millisecond, 10*time.Millisecond)
+	m := NewTTLManager[TestSession](context.Background(), fake, testTTL, testCleanup)
 
 	in, _ := netip.ParseAddr("42.42.42.42")
 	ex1, _ := netip.ParseAddrPort("1.1.1.1:1")
@@ -222,7 +247,6 @@ func TestNATRebinding_ReplacesSessionAndTTL(t *testing.T) {
 	m.Add(s1)
 	m.Add(s2) // NAT rebinding: new session, same IP, different external
 
-	// s1 should be deleted (overwritten)
 	fake.mu.Lock()
 	var deletedS1 bool
 	for _, d := range fake.deleted {
@@ -236,7 +260,7 @@ func TestNATRebinding_ReplacesSessionAndTTL(t *testing.T) {
 	}
 
 	// Wait for TTL expiration (only s2 should expire, not s1)
-	time.Sleep(120 * time.Millisecond)
+	time.Sleep(testWait)
 	fake.mu.Lock()
 	var deletedS2 bool
 	for _, d := range fake.deleted {
@@ -250,19 +274,18 @@ func TestNATRebinding_ReplacesSessionAndTTL(t *testing.T) {
 	}
 }
 
-// TestSessionExpiresAfterTTL checks that a session is deleted after its TTL expires.
+// TestSessionExpiresAfterTTL checks that a session is deleted after its TTL expires and Close() is called.
 func TestSessionExpiresAfterTTL(t *testing.T) {
 	fake := NewFakeManager()
-	m := NewTTLManager[TestSession](context.Background(), fake, 15*time.Millisecond, 2*time.Millisecond)
+	closed := false
+	m := NewTTLManager[TestSession](context.Background(), fake, testTTL, testCleanup)
 
 	in, _ := netip.ParseAddr("1.1.1.1")
 	ex, _ := netip.ParseAddrPort("2.2.2.2:9000")
-	s := TestSession{internal: in, external: ex}
+	s := TestSession{internal: in, external: ex, closed: &closed}
 	m.Add(s)
 
-	// Wait for the TTL to expire
-	time.Sleep(30 * time.Millisecond)
-
+	time.Sleep(testWait)
 	fake.mu.Lock()
 	var deleted bool
 	for _, d := range fake.deleted {
@@ -275,13 +298,16 @@ func TestSessionExpiresAfterTTL(t *testing.T) {
 	if !deleted {
 		t.Fatalf("expected session to be deleted by TTL expiration")
 	}
+	if !closed {
+		t.Fatalf("expected Close() to be called on session TTL expiration")
+	}
 }
 
 // TestSessionNotDeletedWhenAccessed checks that session is not deleted if accessed before TTL expiration.
 func TestSessionNotDeletedWhenAccessed(t *testing.T) {
 	fake := NewFakeManager()
-	ttl := 100 * time.Millisecond
-	cleanup := 5 * time.Millisecond
+	ttl := testTTL
+	cleanup := testCleanup
 	mIface := NewTTLManager[TestSession](context.Background(), fake, ttl, cleanup)
 
 	// Cast interface to TTLManager struct
@@ -316,13 +342,12 @@ func TestSessionNotDeletedWhenAccessed(t *testing.T) {
 				if err != nil {
 					t.Errorf("unexpected error: %v", err)
 				}
-				time.Sleep(ttl / 4)
+				time.Sleep(ttl / 3)
 			}
 		}
 	}()
 
-	time.Sleep(5 * ttl)
-
+	time.Sleep(4 * ttl)
 	close(stop)
 	wg.Wait()
 
