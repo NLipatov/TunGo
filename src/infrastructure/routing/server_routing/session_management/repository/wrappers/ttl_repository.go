@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/netip"
 	"time"
+	"tungo/infrastructure/PAL/server_configuration"
 	"tungo/infrastructure/routing/server_routing/session_management"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
 
@@ -27,6 +28,13 @@ func NewTTLRepository[cs interface {
 	manager repository.SessionRepository[cs],
 	expDuration, sanitizeInterval time.Duration,
 ) repository.SessionRepository[cs] {
+	if expDuration <= 0 {
+		expDuration = time.Duration(server_configuration.DefaultSessionTtl)
+	}
+	if sanitizeInterval <= 0 {
+		sanitizeInterval = time.Duration(server_configuration.DefaultSessionCleanupInterval)
+	}
+
 	ttlMgr := &TTLRepository[cs]{
 		ctx:     ctx,
 		manager: manager,
