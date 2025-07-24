@@ -30,7 +30,7 @@ func (m *secretWithDeadlineTestMockConn) Write([]byte) (int, error) { return 0, 
 func (m *secretWithDeadlineTestMockConn) Read([]byte) (int, error)  { return 0, nil }
 func (m *secretWithDeadlineTestMockConn) Close() error              { return nil }
 
-// secretWithDeadlineTestMockCrypto is a dummy CryptographyService.
+// secretWithDeadlineTestMockCrypto is a dummy cryptographyService.
 type secretWithDeadlineTestMockCrypto struct{}
 
 func (m *secretWithDeadlineTestMockCrypto) Encrypt(p []byte) ([]byte, error) { return p, nil }

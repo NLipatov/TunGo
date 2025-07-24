@@ -8,6 +8,7 @@ import (
 	"os"
 	"sync/atomic"
 	"testing"
+	"tungo/application"
 )
 
 type testUdpReader struct {
@@ -61,23 +62,26 @@ func (a *testAdapter) Read([]byte) (int, error) { return 0, io.EOF }
 func (a *testAdapter) Close() error             { return nil }
 
 type testMgr struct {
-	sess Session
+	sess application.Session
 	err  error
 }
 
-func (m *testMgr) Add(Session)                                             {}
-func (m *testMgr) Delete(Session)                                          {}
-func (m *testMgr) GetByInternalAddrPort(_ netip.Addr) (Session, error)     { return m.sess, m.err }
-func (m *testMgr) GetByExternalAddrPort(_ netip.AddrPort) (Session, error) { return m.sess, m.err }
+func (m *testMgr) Add(_ application.Session)    {}
+func (m *testMgr) Delete(_ application.Session) {}
+func (m *testMgr) GetByInternalAddrPort(_ netip.Addr) (application.Session, error) {
+	return m.sess, m.err
+}
+func (m *testMgr) GetByExternalAddrPort(_ netip.AddrPort) (application.Session, error) {
+	return m.sess, m.err
+}
 
-func makeSession(a *testAdapter, c *testCrypto) Session {
+func makeSession(a *testAdapter, c *testCrypto) application.Session {
 	in, _ := netip.ParseAddr("10.0.0.1")
 	ex, _ := netip.ParseAddrPort("1.1.1.1:9000")
 
 	return Session{
 		connectionAdapter:   a,
-		remoteAddrPort:      netip.AddrPort{},
-		CryptographyService: c,
+		cryptographyService: c,
 		internalIP:          in,
 		externalIP:          ex,
 	}

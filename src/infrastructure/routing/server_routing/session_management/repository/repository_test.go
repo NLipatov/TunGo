@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/netip"
 	"testing"
+	"tungo/application"
 )
 
 type fakeSession struct {
@@ -13,6 +14,12 @@ type fakeSession struct {
 
 func (f *fakeSession) InternalAddr() netip.Addr         { return f.internal }
 func (f *fakeSession) ExternalAddrPort() netip.AddrPort { return f.external }
+func (f *fakeSession) ConnectionAdapter() application.ConnectionAdapter {
+	return nil
+}
+func (f *fakeSession) CryptographyService() application.CryptographyService {
+	return nil
+}
 
 func TestDefaultWorkerSessionManager(t *testing.T) {
 	sm := NewDefaultWorkerSessionManager[*fakeSession]()

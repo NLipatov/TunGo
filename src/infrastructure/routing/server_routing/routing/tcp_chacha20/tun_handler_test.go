@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
 )
 
@@ -66,17 +67,21 @@ type mockMgr struct {
 	deleted int32
 }
 
-func (m *mockMgr) Add(Session)                                             {}
-func (m *mockMgr) Delete(Session)                                          { atomic.AddInt32(&m.deleted, 1) }
-func (m *mockMgr) GetByInternalAddrPort(_ netip.Addr) (Session, error)     { return m.sess, m.getErr }
-func (m *mockMgr) GetByExternalAddrPort(_ netip.AddrPort) (Session, error) { return m.sess, nil }
+func (m *mockMgr) Add(_ application.Session)    {}
+func (m *mockMgr) Delete(_ application.Session) { atomic.AddInt32(&m.deleted, 1) }
+func (m *mockMgr) GetByInternalAddrPort(_ netip.Addr) (application.Session, error) {
+	return m.sess, m.getErr
+}
+func (m *mockMgr) GetByExternalAddrPort(_ netip.AddrPort) (application.Session, error) {
+	return m.sess, nil
+}
 
 func makeSession(c *mockConn, crypto *mockCrypto) Session {
 	in, _ := netip.ParseAddr("1.1.1.1")
 	ex, _ := netip.ParseAddrPort("2.2.2.2:9000")
 	return Session{
-		conn:                c,
-		CryptographyService: crypto,
+		connectionAdapter:   c,
+		cryptographyService: crypto,
 		internalIP:          in,
 		externalIP:          ex,
 	}
@@ -164,7 +169,7 @@ func TestTunHandler_AllPaths(t *testing.T) {
 		}
 	})
 
-	t.Run("conn write error", func(t *testing.T) {
+	t.Run("connectionAdapter write error", func(t *testing.T) {
 		c := &mockConn{err: errors.New("write fail")}
 		mgr := &mockMgr{sess: makeSession(c, &mockCrypto{})}
 		h := NewTunHandler(context.Background(), reader([][]byte{buf}, []error{nil, io.EOF}), &mockEncoder{}, &mockParser{}, mgr)
@@ -188,7 +193,7 @@ func TestTunHandler_AllPaths(t *testing.T) {
 			t.Errorf("expected encoder.Encode to be called")
 		}
 		if atomic.LoadInt32(&c.called) == 0 {
-			t.Errorf("expected conn.Write to be called")
+			t.Errorf("expected connectionAdapter.Write to be called")
 		}
 	})
 }

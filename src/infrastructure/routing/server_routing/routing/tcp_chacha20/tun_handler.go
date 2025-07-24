@@ -18,7 +18,7 @@ type TunHandler struct {
 	reader         io.Reader
 	encoder        chacha20.TCPEncoder
 	ipParser       network.IPHeader
-	sessionManager repository.SessionRepository[Session]
+	sessionManager repository.SessionRepository[application.Session]
 }
 
 func NewTunHandler(
@@ -26,7 +26,7 @@ func NewTunHandler(
 	reader io.Reader,
 	encoder chacha20.TCPEncoder,
 	ipParser network.IPHeader,
-	sessionManager repository.SessionRepository[Session],
+	sessionManager repository.SessionRepository[application.Session],
 ) application.TunHandler {
 	return &TunHandler{
 		ctx:            ctx,
@@ -91,7 +91,7 @@ func (t *TunHandler) HandleTun() error {
 				continue
 			}
 
-			_, encryptErr := clientSession.CryptographyService.Encrypt(buf[4 : n+4])
+			_, encryptErr := clientSession.CryptographyService().Encrypt(buf[4 : n+4])
 			if encryptErr != nil {
 				log.Printf("failed to encrypt packet: %s", encryptErr)
 				continue
@@ -103,7 +103,7 @@ func (t *TunHandler) HandleTun() error {
 				continue
 			}
 
-			_, connWriteErr := clientSession.conn.Write(buf[:n+4+chacha20poly1305.Overhead])
+			_, connWriteErr := clientSession.ConnectionAdapter().Write(buf[:n+4+chacha20poly1305.Overhead])
 			if connWriteErr != nil {
 				log.Printf("failed to write to TCP: %v", connWriteErr)
 				t.sessionManager.Delete(clientSession)

@@ -66,7 +66,7 @@ func (s *ServerWorkerFactory) CreateWorker(ctx context.Context, tun io.ReadWrite
 
 func (s *ServerWorkerFactory) createTCPWorker(ctx context.Context, tun io.ReadWriteCloser) (application.TunWorker, error) {
 	// session managers, handlers…
-	sessionManager := repository.NewDefaultWorkerSessionManager[tcp_chacha20.Session]()
+	sessionManager := repository.NewDefaultWorkerSessionManager[application.Session]()
 	concurrentSessionManager := wrappers.NewConcurrentManager(sessionManager)
 
 	th := tcp_chacha20.NewTunHandler(
@@ -106,7 +106,7 @@ func (s *ServerWorkerFactory) createTCPWorker(ctx context.Context, tun io.ReadWr
 }
 
 func (s *ServerWorkerFactory) createUDPWorker(ctx context.Context, tun io.ReadWriteCloser) (application.TunWorker, error) {
-	sessionManager := repository.NewDefaultWorkerSessionManager[udp_chacha20.Session]()
+	sessionManager := repository.NewDefaultWorkerSessionManager[application.Session]()
 	concurrentSessionManager := wrappers.NewConcurrentManager(sessionManager)
 
 	th := udp_chacha20.NewTunHandler(

@@ -27,30 +27,6 @@ type alwaysWriteCrypto struct{}
 func (d *alwaysWriteCrypto) Encrypt(in []byte) ([]byte, error) { return in, nil }
 func (d *alwaysWriteCrypto) Decrypt(in []byte) ([]byte, error) { return in, nil }
 
-type fakeCryptographyService struct {
-	encErr, decErr error
-	enc, dec       []byte
-}
-
-func (f *fakeCryptographyService) Encrypt(in []byte) ([]byte, error) {
-	if f.encErr != nil {
-		return nil, f.encErr
-	}
-	if f.enc != nil {
-		return f.enc, nil
-	}
-	return in, nil
-}
-func (f *fakeCryptographyService) Decrypt(in []byte) ([]byte, error) {
-	if f.decErr != nil {
-		return nil, f.decErr
-	}
-	if f.dec != nil {
-		return f.dec, nil
-	}
-	return in, nil
-}
-
 type fakeUdpListenerConn struct {
 	readMu    sync.Mutex
 	readIdx   int
@@ -116,7 +92,6 @@ type fakeWriter struct {
 }
 
 func (f *fakeWriter) Write(p []byte) (int, error) {
-	f.wrote = append(f.wrote, append([]byte(nil), p...))
 	if f.writeCh != nil {
 		select {
 		case f.writeCh <- struct{}{}:
@@ -124,8 +99,10 @@ func (f *fakeWriter) Write(p []byte) (int, error) {
 		}
 	}
 	if f.err != nil {
+		// Do not store data on write failure
 		return 0, f.err
 	}
+	f.wrote = append(f.wrote, append([]byte(nil), p...))
 	return f.buf.Write(p)
 }
 
@@ -165,29 +142,29 @@ type fakeHandshakeFactory struct {
 func (f *fakeHandshakeFactory) NewHandshake() application.Handshake { return f.hs }
 
 type testSessionRepo struct {
-	sessions map[netip.AddrPort]Session
-	adds     []Session
+	sessions map[netip.AddrPort]application.Session
+	adds     []application.Session
 	afterAdd func()
 }
 
-func (r *testSessionRepo) Add(s Session) {
+func (r *testSessionRepo) Add(s application.Session) {
 	if r.sessions == nil {
-		r.sessions = map[netip.AddrPort]Session{}
+		r.sessions = map[netip.AddrPort]application.Session{}
 	}
-	r.sessions[s.remoteAddrPort] = s
+	r.sessions[s.ExternalAddrPort()] = s
 	r.adds = append(r.adds, s)
 	if r.afterAdd != nil {
 		r.afterAdd()
 	}
 }
-func (r *testSessionRepo) Delete(_ Session) {}
-func (r *testSessionRepo) GetByInternalAddrPort(_ netip.Addr) (Session, error) {
+func (r *testSessionRepo) Delete(_ application.Session) {}
+func (r *testSessionRepo) GetByInternalAddrPort(_ netip.Addr) (application.Session, error) {
 	return Session{}, errors.New("not implemented")
 }
-func (r *testSessionRepo) GetByExternalAddrPort(addr netip.AddrPort) (Session, error) {
+func (r *testSessionRepo) GetByExternalAddrPort(addr netip.AddrPort) (application.Session, error) {
 	s, ok := r.sessions[addr]
 	if !ok {
-		return Session{}, errors.New("no session")
+		return nil, errors.New("no session")
 	}
 	return s, nil
 }
@@ -307,11 +284,9 @@ func TestTransportHandler_DecryptError(t *testing.T) {
 		readBufs:  [][]byte{{0x01, 0x02}, {0x03, 0x04}},
 		readAddrs: []netip.AddrPort{clientAddr, clientAddr},
 	}
-	fakeCrypto := &struct{ fakeCryptographyService }{fakeCryptographyService{decErr: errors.New("fail decrypt")}}
 	sessionRegistered := make(chan struct{})
 	sessionRepo.afterAdd = func() {
 		s := sessionRepo.adds[0]
-		s.CryptographyService = fakeCrypto
 		sessionRepo.sessions[clientAddr] = s
 		close(sessionRegistered)
 	}
@@ -378,28 +353,40 @@ func TestTransportHandler_WriteError(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	writeCh := make(chan struct{}, 1)
-	writer := &fakeWriter{err: errors.New("write fail"), writeCh: writeCh}
+	writeAttempted := make(chan struct{}, 1)
+	writer := &fakeWriter{
+		err:     errors.New("write fail"),
+		writeCh: writeAttempted,
+	}
+
 	logger := &fakeLogger{}
 	clientAddr := netip.MustParseAddrPort("192.168.1.40:6000")
 	internalIP := net.ParseIP("10.0.0.40")
+
 	fakeHS := &fakeHandshake{ip: internalIP}
 	handshakeFactory := &fakeHandshakeFactory{hs: fakeHS}
 
-	sessionRepo := &testSessionRepo{}
+	sessionRepo := &testSessionRepo{
+		sessions: make(map[netip.AddrPort]application.Session),
+	}
 	sessionRegistered := make(chan struct{})
+
 	sessionRepo.afterAdd = func() {
 		s := sessionRepo.adds[0]
-		s.CryptographyService = &alwaysWriteCrypto{}
-		sessionRepo.sessions[clientAddr] = s
+		sessionRepo.sessions[clientAddr] = Session{
+			internalIP:          s.InternalAddr(),
+			externalIP:          s.ExternalAddrPort(),
+			cryptographyService: &alwaysWriteCrypto{},
+		}
 		close(sessionRegistered)
 	}
 
 	conn := &fakeUdpListenerConn{
-		readBufs:  [][]byte{{0xaa, 0xbb}, {0xcc, 0xdd}},
+		readBufs:  [][]byte{{0xaa, 0xbb}, {0xcc, 0xdd}}, // handshake + data
 		readAddrs: []netip.AddrPort{clientAddr, clientAddr},
 	}
 	listener := &fakeListener{conn: conn}
+
 	handler := NewTransportHandler(
 		ctx,
 		settings.Settings{Port: "3333"},
@@ -417,16 +404,26 @@ func TestTransportHandler_WriteError(t *testing.T) {
 		close(done)
 	}()
 
-	<-sessionRegistered
+	select {
+	case <-sessionRegistered:
+	case <-time.After(time.Second):
+		cancel()
+		t.Fatal("Timeout: session was not registered")
+	}
 
 	select {
-	case <-writeCh:
+	case <-writeAttempted:
 		cancel()
 	case <-time.After(time.Second):
 		cancel()
-		t.Fatal("expected write to be attempted")
+		t.Fatal("Timeout: expected write to be attempted")
 	}
+
 	<-done
+
+	if len(writer.wrote) != 0 {
+		t.Errorf("expected write to fail and no data to be written, but got: %x", writer.wrote)
+	}
 }
 
 func TestTransportHandler_HappyPath(t *testing.T) {
@@ -439,12 +436,11 @@ func TestTransportHandler_HappyPath(t *testing.T) {
 	clientAddr := netip.MustParseAddrPort("192.168.1.50:5050")
 	internalIP := netip.MustParseAddr("10.0.0.50")
 	sessionRepo := &testSessionRepo{
-		sessions: map[netip.AddrPort]Session{},
+		sessions: map[netip.AddrPort]application.Session{},
 	}
 	fakeCrypto := &alwaysWriteCrypto{}
 	sessionRepo.sessions[clientAddr] = Session{
-		remoteAddrPort:      clientAddr,
-		CryptographyService: fakeCrypto,
+		cryptographyService: fakeCrypto,
 		internalIP:          internalIP,
 		externalIP:          clientAddr,
 	}
@@ -491,13 +487,12 @@ func TestTransportHandler_NATRebinding(t *testing.T) {
 	internalIP := netip.MustParseAddr("10.0.0.51")
 
 	sessionRepo := &testSessionRepo{
-		sessions: map[netip.AddrPort]Session{},
+		sessions: map[netip.AddrPort]application.Session{},
 	}
 	fakeCrypto := &alwaysWriteCrypto{}
 	// Existing session, old address
 	sessionRepo.sessions[oldAddr] = Session{
-		remoteAddrPort:      oldAddr,
-		CryptographyService: fakeCrypto,
+		cryptographyService: fakeCrypto,
 		internalIP:          internalIP,
 		externalIP:          oldAddr,
 	}

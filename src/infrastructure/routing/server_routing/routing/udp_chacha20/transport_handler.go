@@ -15,7 +15,7 @@ type TransportHandler struct {
 	ctx                 context.Context
 	settings            settings.Settings
 	writer              io.Writer
-	sessionManager      repository.SessionRepository[Session]
+	sessionManager      repository.SessionRepository[application.Session]
 	logger              application.Logger
 	listener            application.Listener
 	handshakeFactory    application.HandshakeFactory
@@ -27,7 +27,7 @@ func NewTransportHandler(
 	settings settings.Settings,
 	writer io.Writer,
 	listener application.Listener,
-	sessionManager repository.SessionRepository[Session],
+	sessionManager repository.SessionRepository[application.Session],
 	logger application.Logger,
 	handshakeFactory application.HandshakeFactory,
 	cryptographyFactory application.CryptographyServiceFactory,
@@ -93,7 +93,7 @@ func (t *TransportHandler) handlePacket(
 	session, sessionLookupErr := t.sessionManager.GetByExternalAddrPort(addrPort)
 	// If session not found, or client is using a new (IP, port) address (e.g., after NAT rebinding), re-register the client.
 	if sessionLookupErr != nil ||
-		session.remoteAddrPort != addrPort {
+		session.ExternalAddrPort() != addrPort {
 		// Pass initial data to registration function
 		regErr := t.registerClient(conn, addrPort, packet)
 		if regErr != nil {
@@ -107,7 +107,7 @@ func (t *TransportHandler) handlePacket(
 	}
 
 	// Handle client data
-	decrypted, decryptionErr := session.CryptographyService.Decrypt(packet)
+	decrypted, decryptionErr := session.CryptographyService().Decrypt(packet)
 	if decryptionErr != nil {
 		t.logger.Printf("failed to decrypt data: %v", decryptionErr)
 		return decryptionErr
@@ -149,13 +149,7 @@ func (t *TransportHandler) registerClient(
 		return fmt.Errorf("failed to parse internal IP: %v", internalIP)
 	}
 
-	t.sessionManager.Add(Session{
-		connectionAdapter:   network.NewUdpAdapter(conn, addrPort),
-		remoteAddrPort:      addrPort,
-		CryptographyService: cryptoSession,
-		internalIP:          intIp,
-		externalIP:          addrPort,
-	})
+	t.sessionManager.Add(NewSession(adapter, cryptoSession, intIp, addrPort))
 
 	t.logger.Printf("%v registered as: %v", addrPort.Addr(), internalIP)
 

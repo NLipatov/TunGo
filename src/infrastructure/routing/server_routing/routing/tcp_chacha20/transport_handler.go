@@ -19,7 +19,7 @@ type TransportHandler struct {
 	settings            settings.Settings
 	writer              io.ReadWriteCloser
 	listener            application.TcpListener
-	sessionManager      repository.SessionRepository[Session]
+	sessionManager      repository.SessionRepository[application.Session]
 	Logger              application.Logger
 	handshakeFactory    application.HandshakeFactory
 	cryptographyFactory application.CryptographyServiceFactory
@@ -30,7 +30,7 @@ func NewTransportHandler(
 	settings settings.Settings,
 	writer io.ReadWriteCloser,
 	listener application.TcpListener,
-	sessionManager repository.SessionRepository[Session],
+	sessionManager repository.SessionRepository[application.Session],
 	logger application.Logger,
 	handshakeFactory application.HandshakeFactory,
 	cryptographyFactory application.CryptographyServiceFactory,
@@ -132,12 +132,7 @@ func (t *TransportHandler) registerClient(conn net.Conn, tunFile io.ReadWriteClo
 		)
 	}
 
-	storedSession := Session{
-		conn:                conn,
-		CryptographyService: cryptographyService,
-		internalIP:          intIP,
-		externalIP:          tcpAddr.AddrPort(),
-	}
+	storedSession := NewSession(conn, cryptographyService, intIP, tcpAddr.AddrPort())
 
 	t.sessionManager.Add(storedSession)
 
@@ -146,11 +141,11 @@ func (t *TransportHandler) registerClient(conn net.Conn, tunFile io.ReadWriteClo
 	return nil
 }
 
-func (t *TransportHandler) handleClient(ctx context.Context, session Session, tunFile io.ReadWriteCloser) {
+func (t *TransportHandler) handleClient(ctx context.Context, session application.Session, tunFile io.ReadWriteCloser) {
 	defer func() {
 		t.sessionManager.Delete(session)
-		_ = session.conn.Close()
-		t.Logger.Printf("disconnected: %s", session.conn.RemoteAddr())
+		_ = session.ConnectionAdapter().Close()
+		t.Logger.Printf("disconnected: %s", session.ExternalAddrPort())
 	}()
 
 	buf := make([]byte, network.MaxPacketLengthBytes)
@@ -160,7 +155,7 @@ func (t *TransportHandler) handleClient(ctx context.Context, session Session, tu
 			return
 		default:
 			// Read the length of the encrypted packet (4 bytes)
-			_, err := io.ReadFull(session.conn, buf[:4])
+			_, err := io.ReadFull(session.ConnectionAdapter(), buf[:4])
 			if err != nil {
 				if err != io.EOF {
 					t.Logger.Printf("failed to read from client: %v", err)
@@ -176,13 +171,13 @@ func (t *TransportHandler) handleClient(ctx context.Context, session Session, tu
 			}
 
 			//read n-bytes from connection
-			_, err = io.ReadFull(session.conn, buf[:length])
+			_, err = io.ReadFull(session.ConnectionAdapter(), buf[:length])
 			if err != nil {
 				t.Logger.Printf("failed to read packet from connection: %s", err)
 				continue
 			}
 
-			decrypted, decryptionErr := session.CryptographyService.Decrypt(buf[:length])
+			decrypted, decryptionErr := session.CryptographyService().Decrypt(buf[:length])
 			if decryptionErr != nil {
 				t.Logger.Printf("failed to decrypt data: %s", decryptionErr)
 				continue

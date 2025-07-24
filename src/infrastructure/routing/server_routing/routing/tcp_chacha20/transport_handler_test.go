@@ -131,27 +131,27 @@ func (f *fakeCryptoFactory) FromHandshake(_ application.Handshake, _ bool) (appl
 }
 
 type fakeSessionRepo struct {
-	sessions       map[netip.AddrPort]Session
-	added, deleted []Session
+	sessions       map[netip.AddrPort]application.Session
+	added, deleted []application.Session
 	getErr         error
-	returnSession  Session
+	returnSession  application.Session
 }
 
-func (r *fakeSessionRepo) Add(s Session) {
+func (r *fakeSessionRepo) Add(s application.Session) {
 	if r.sessions == nil {
-		r.sessions = make(map[netip.AddrPort]Session)
+		r.sessions = make(map[netip.AddrPort]application.Session)
 	}
-	r.sessions[s.externalIP] = s
+	r.sessions[s.ExternalAddrPort()] = s
 	r.added = append(r.added, s)
 }
-func (r *fakeSessionRepo) Delete(s Session) { r.deleted = append(r.deleted, s) }
-func (r *fakeSessionRepo) GetByInternalAddrPort(_ netip.Addr) (Session, error) {
+func (r *fakeSessionRepo) Delete(s application.Session) { r.deleted = append(r.deleted, s) }
+func (r *fakeSessionRepo) GetByInternalAddrPort(_ netip.Addr) (application.Session, error) {
 	if r.getErr != nil {
-		return Session{}, r.getErr
+		return nil, r.getErr
 	}
 	return r.returnSession, nil
 }
-func (r *fakeSessionRepo) GetByExternalAddrPort(addr netip.AddrPort) (Session, error) {
+func (r *fakeSessionRepo) GetByExternalAddrPort(addr netip.AddrPort) (application.Session, error) {
 	s, ok := r.sessions[addr]
 	if !ok {
 		return Session{}, errors.New("no session")
@@ -326,9 +326,9 @@ func TestRegisterClient_ReplaceSession(t *testing.T) {
 		t.Fatalf("expected 2 Delete calls (one for old, one for new session), got %d: %+v", len(srepo.deleted), srepo.deleted)
 	}
 	for i, del := range srepo.deleted {
-		if del.externalIP.Addr().Unmap() != oldSession.externalIP.Addr().Unmap() ||
-			del.externalIP.Port() != oldSession.externalIP.Port() {
-			t.Errorf("deleted session #%d has wrong externalIP: %v, want %v", i+1, del.externalIP, oldSession.externalIP)
+		if del.ExternalAddrPort().Addr().Unmap() != oldSession.ExternalAddrPort().Addr().Unmap() ||
+			del.ExternalAddrPort().Port() != oldSession.ExternalAddrPort().Port() {
+			t.Errorf("deleted session #%d has wrong externalIP: %v, want %v", i+1, del.ExternalAddrPort(), oldSession.externalIP)
 		}
 	}
 	/*
@@ -363,7 +363,7 @@ func TestHandleClient_CtxDone(t *testing.T) {
 	conn := &fakeConn{addr: tcpAddr("1.2.3.4", 5555)}
 	writer := &fakeWriter{}
 	logger := &fakeLogger{}
-	sess := Session{conn: conn, CryptographyService: &fakeCrypto{}, internalIP: netip.MustParseAddr("10.0.0.5")}
+	sess := Session{connectionAdapter: conn, cryptographyService: &fakeCrypto{}, internalIP: netip.MustParseAddr("10.0.0.5")}
 	repo := &fakeSessionRepo{}
 	handler := NewTransportHandler(context.Background(), settings.Settings{}, writer, &fakeTcpListener{}, repo, logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{})
 	handler.(*TransportHandler).handleClient(ctx, sess, writer)
@@ -375,7 +375,7 @@ func TestHandleClient_ReadFullError(t *testing.T) {
 	conn := &fakeConn{addr: tcpAddr("1.2.3.4", 5556), readErr: errors.New("fail read")}
 	writer := &fakeWriter{}
 	logger := &fakeLogger{}
-	sess := Session{conn: conn, CryptographyService: &fakeCrypto{}, internalIP: netip.MustParseAddr("10.0.0.6")}
+	sess := Session{connectionAdapter: conn, cryptographyService: &fakeCrypto{}, internalIP: netip.MustParseAddr("10.0.0.6")}
 	repo := &fakeSessionRepo{}
 	handler := NewTransportHandler(context.Background(), settings.Settings{}, writer, &fakeTcpListener{}, repo, logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{})
 	handler.(*TransportHandler).handleClient(ctx, sess, writer)
@@ -387,7 +387,7 @@ func TestHandleClient_EOF(t *testing.T) {
 	conn := &fakeConn{addr: tcpAddr("1.2.3.4", 5557)}
 	writer := &fakeWriter{}
 	logger := &fakeLogger{}
-	sess := Session{conn: conn, CryptographyService: &fakeCrypto{}, internalIP: netip.MustParseAddr("10.0.0.7")}
+	sess := Session{connectionAdapter: conn, cryptographyService: &fakeCrypto{}, internalIP: netip.MustParseAddr("10.0.0.7")}
 	repo := &fakeSessionRepo{}
 	handler := NewTransportHandler(context.Background(), settings.Settings{}, writer, &fakeTcpListener{}, repo, logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{})
 	handler.(*TransportHandler).handleClient(ctx, sess, writer)
@@ -402,7 +402,7 @@ func TestHandleClient_BadLength(t *testing.T) {
 	}
 	writer := &fakeWriter{}
 	logger := &fakeLogger{}
-	sess := Session{conn: conn, CryptographyService: &fakeCrypto{}, internalIP: netip.MustParseAddr("10.0.0.8")}
+	sess := Session{connectionAdapter: conn, cryptographyService: &fakeCrypto{}, internalIP: netip.MustParseAddr("10.0.0.8")}
 	repo := &fakeSessionRepo{}
 	handler := NewTransportHandler(context.Background(), settings.Settings{}, writer, &fakeTcpListener{}, repo, logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{})
 	handler.(*TransportHandler).handleClient(ctx, sess, writer)
@@ -418,7 +418,7 @@ func TestHandleClient_ReadPacketError(t *testing.T) {
 	}
 	writer := &fakeWriter{}
 	logger := &fakeLogger{}
-	sess := Session{conn: conn, CryptographyService: &fakeCrypto{}, internalIP: netip.MustParseAddr("10.0.0.9")}
+	sess := Session{connectionAdapter: conn, cryptographyService: &fakeCrypto{}, internalIP: netip.MustParseAddr("10.0.0.9")}
 	repo := &fakeSessionRepo{}
 	handler := NewTransportHandler(context.Background(), settings.Settings{}, writer, &fakeTcpListener{}, repo, logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{})
 	handler.(*TransportHandler).handleClient(ctx, sess, writer)
@@ -433,7 +433,7 @@ func TestHandleClient_DecryptError(t *testing.T) {
 	}
 	writer := &fakeWriter{}
 	logger := &fakeLogger{}
-	sess := Session{conn: conn, CryptographyService: &fakeCrypto{decErr: errors.New("bad decrypt")}, internalIP: netip.MustParseAddr("10.0.0.10")}
+	sess := Session{connectionAdapter: conn, cryptographyService: &fakeCrypto{decErr: errors.New("bad decrypt")}, internalIP: netip.MustParseAddr("10.0.0.10")}
 	repo := &fakeSessionRepo{}
 	handler := NewTransportHandler(context.Background(), settings.Settings{}, writer, &fakeTcpListener{}, repo, logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{})
 	handler.(*TransportHandler).handleClient(ctx, sess, writer)
@@ -448,7 +448,7 @@ func TestHandleClient_WriteTunError(t *testing.T) {
 	}
 	writer := &fakeWriter{err: errors.New("fail tun")}
 	logger := &fakeLogger{}
-	sess := Session{conn: conn, CryptographyService: &fakeCrypto{}, internalIP: netip.MustParseAddr("10.0.0.11")}
+	sess := Session{connectionAdapter: conn, cryptographyService: &fakeCrypto{}, internalIP: netip.MustParseAddr("10.0.0.11")}
 	repo := &fakeSessionRepo{}
 	handler := NewTransportHandler(context.Background(), settings.Settings{}, writer, &fakeTcpListener{}, repo, logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{})
 	handler.(*TransportHandler).handleClient(ctx, sess, writer)

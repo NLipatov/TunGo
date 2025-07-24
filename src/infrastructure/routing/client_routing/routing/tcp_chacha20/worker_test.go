@@ -30,7 +30,7 @@ func (m *TcpTunWorkerTestMockTransportHandler) HandleTransport() error {
 	return m.err
 }
 
-// TcpTunWorkerTestMockCrypt just satisfies CryptographyService; logic is irrelevant here
+// TcpTunWorkerTestMockCrypt just satisfies cryptographyService; logic is irrelevant here
 type TcpTunWorkerTestMockCrypt struct{}
 
 func (TcpTunWorkerTestMockCrypt) Encrypt(b []byte) ([]byte, error) { return b, nil }
