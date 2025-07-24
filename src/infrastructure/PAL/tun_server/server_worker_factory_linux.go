@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"time"
 	"tungo/application"
 	"tungo/infrastructure/PAL/server_configuration"
 	"tungo/infrastructure/cryptography/chacha20"
@@ -69,19 +68,13 @@ func (s *ServerWorkerFactory) createTCPWorker(ctx context.Context, tun io.ReadWr
 	// session managers, handlers…
 	sessionManager := repository.NewDefaultWorkerSessionManager[tcp_chacha20.Session]()
 	concurrentSessionManager := wrappers.NewConcurrentManager(sessionManager)
-	ttlConcurrentSessionManager := wrappers.NewTTLManager(
-		ctx,
-		concurrentSessionManager,
-		time.Duration(s.settings.SessionLifetime.Ttl),
-		time.Duration(s.settings.SessionLifetime.CleanupInterval),
-	)
 
 	th := tcp_chacha20.NewTunHandler(
 		ctx,
 		chacha20.NewTcpReader(tun),
 		chacha20.NewDefaultTCPEncoder(),
 		network.NewIPV4HeaderParser(),
-		ttlConcurrentSessionManager,
+		concurrentSessionManager,
 	)
 
 	// now the injected factories:
@@ -115,17 +108,12 @@ func (s *ServerWorkerFactory) createTCPWorker(ctx context.Context, tun io.ReadWr
 func (s *ServerWorkerFactory) createUDPWorker(ctx context.Context, tun io.ReadWriteCloser) (application.TunWorker, error) {
 	sessionManager := repository.NewDefaultWorkerSessionManager[udp_chacha20.Session]()
 	concurrentSessionManager := wrappers.NewConcurrentManager(sessionManager)
-	ttlConcurrentSessionManager := wrappers.NewTTLManager(
-		ctx, concurrentSessionManager,
-		time.Duration(s.settings.SessionLifetime.Ttl),
-		time.Duration(s.settings.SessionLifetime.CleanupInterval),
-	)
 
 	th := udp_chacha20.NewTunHandler(
 		ctx,
 		chacha20.NewUdpReader(tun),
 		network.NewIPV4HeaderParser(),
-		ttlConcurrentSessionManager,
+		concurrentSessionManager,
 	)
 
 	sock, err := s.socketFactory.newSocket(s.settings.ConnectionIP, s.settings.Port)
@@ -144,7 +132,7 @@ func (s *ServerWorkerFactory) createUDPWorker(ctx context.Context, tun io.ReadWr
 		s.settings,
 		tun,
 		ul,
-		ttlConcurrentSessionManager,
+		concurrentSessionManager,
 		s.loggerFactory.newLogger(),
 		NewHandshakeFactory(*conf),
 		chacha20.NewUdpSessionBuilder(),
