@@ -4,6 +4,7 @@ import (
 	"net/netip"
 	"reflect"
 	"testing"
+	"tungo/application"
 )
 
 type sessionManagerFactoryDummySession struct {
@@ -16,6 +17,12 @@ func (d sessionManagerFactoryDummySession) InternalAddr() netip.Addr {
 }
 func (d sessionManagerFactoryDummySession) ExternalAddrPort() netip.AddrPort {
 	return d.externalIP
+}
+func (d sessionManagerFactoryDummySession) ConnectionAdapter() application.ConnectionAdapter {
+	return nil
+}
+func (d sessionManagerFactoryDummySession) CryptographyService() application.CryptographyService {
+	return nil
 }
 
 func TestSessionManagerFactory_CreateManager(t *testing.T) {

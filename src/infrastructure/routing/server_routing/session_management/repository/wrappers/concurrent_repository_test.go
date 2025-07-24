@@ -4,6 +4,7 @@ import (
 	"net/netip"
 	"sync"
 	"testing"
+	"tungo/application"
 )
 
 type concurrentManagerMockSession struct {
@@ -13,6 +14,12 @@ type concurrentManagerMockSession struct {
 
 func (s concurrentManagerMockSession) ExternalAddrPort() netip.AddrPort { return s.ext }
 func (s concurrentManagerMockSession) InternalAddr() netip.Addr         { return s.in }
+func (s concurrentManagerMockSession) ConnectionAdapter() application.ConnectionAdapter {
+	return nil
+}
+func (s concurrentManagerMockSession) CryptographyService() application.CryptographyService {
+	return nil
+}
 
 type concurrentManagerMockManager struct {
 	add, del, getInt, getExt int

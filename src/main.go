@@ -103,7 +103,6 @@ func startServer(appCtx context.Context, configurationManager server_configurati
 		tunFactory,
 		*conf,
 		server_configuration.NewEd25519KeyManager(conf, configurationManager),
-		server_configuration.NewDefaultSessionLifetimeManager(conf, configurationManager),
 		configurationManager,
 	)
 

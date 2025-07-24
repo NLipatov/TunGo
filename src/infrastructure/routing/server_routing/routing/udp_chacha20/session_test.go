@@ -30,8 +30,7 @@ func TestSessionAccessors(t *testing.T) {
 
 	s := Session{
 		connectionAdapter:   &sessionTestAdapter{},
-		remoteAddrPort:      netip.AddrPort{},
-		CryptographyService: &sessionTestCryptoService{},
+		cryptographyService: &sessionTestCryptoService{},
 		internalIP:          internal,
 		externalIP:          external,
 	}

@@ -31,7 +31,7 @@ func (m *secureSessionWithDeadlineTestMockAdapter) Write([]byte) (int, error) { 
 func (m *secureSessionWithDeadlineTestMockAdapter) Read([]byte) (int, error)  { return 0, nil }
 func (m *secureSessionWithDeadlineTestMockAdapter) Close() error              { return nil }
 
-// secureSessionWithDeadlineTestMockCrypto is a dummy CryptographyService.
+// secureSessionWithDeadlineTestMockCrypto is a dummy cryptographyService.
 type secureSessionWithDeadlineTestMockCrypto struct{}
 
 func (m *secureSessionWithDeadlineTestMockCrypto) Encrypt(p []byte) ([]byte, error) { return p, nil }

@@ -36,7 +36,7 @@ func (m *defaultSecureSessionTestMockSecretErr) Exchange(_ application.Connectio
 	return nil, errors.New("exchange failed")
 }
 
-// defaultSecureSessionTestMockCryptoService is a dummy CryptographyService.
+// defaultSecureSessionTestMockCryptoService is a dummy cryptographyService.
 type defaultSecureSessionTestMockCryptoService struct{}
 
 func (m *defaultSecureSessionTestMockCryptoService) Encrypt(p []byte) ([]byte, error) { return p, nil }

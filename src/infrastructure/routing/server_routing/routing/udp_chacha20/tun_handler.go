@@ -15,14 +15,14 @@ type TunHandler struct {
 	ctx            context.Context
 	reader         io.Reader
 	parser         network.IPHeader
-	sessionManager repository.SessionRepository[Session]
+	sessionManager repository.SessionRepository[application.Session]
 }
 
 func NewTunHandler(
 	ctx context.Context,
 	reader io.Reader,
 	parser network.IPHeader,
-	sessionManager repository.SessionRepository[Session],
+	sessionManager repository.SessionRepository[application.Session],
 ) application.TunHandler {
 	return &TunHandler{
 		ctx:            ctx,
@@ -87,15 +87,15 @@ func (t *TunHandler) HandleTun() error {
 				continue
 			}
 
-			encryptedPacket, encryptErr := clientSession.CryptographyService.Encrypt(packetBuffer)
+			encryptedPacket, encryptErr := clientSession.CryptographyService().Encrypt(packetBuffer)
 			if encryptErr != nil {
 				log.Printf("failed to encrypt packet: %s", encryptErr)
 				continue
 			}
 
-			_, writeToUDPErr := clientSession.connectionAdapter.Write(encryptedPacket)
+			_, writeToUDPErr := clientSession.ConnectionAdapter().Write(encryptedPacket)
 			if writeToUDPErr != nil {
-				log.Printf("failed to send packet to %v: %v", clientSession.remoteAddrPort, writeToUDPErr)
+				log.Printf("failed to send packet to %v: %v", clientSession.ExternalAddrPort(), writeToUDPErr)
 			}
 		}
 	}

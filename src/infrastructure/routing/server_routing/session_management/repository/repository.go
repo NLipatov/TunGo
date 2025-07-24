@@ -2,10 +2,10 @@ package repository
 
 import (
 	"net/netip"
-	"tungo/infrastructure/routing/server_routing/session_management"
+	"tungo/application"
 )
 
-type SessionRepository[session session_management.SessionContract] interface {
+type SessionRepository[session application.Session] interface {
 	// Add adds session to session manager
 	Add(session session)
 	// Delete deletes session from session manager
@@ -16,12 +16,12 @@ type SessionRepository[session session_management.SessionContract] interface {
 	GetByExternalAddrPort(addrPort netip.AddrPort) (session, error)
 }
 
-type DefaultSessionRepository[cs session_management.SessionContract] struct {
+type DefaultSessionRepository[cs application.Session] struct {
 	internalIpToSession map[netip.Addr]cs
 	externalIPToSession map[netip.AddrPort]cs
 }
 
-func NewDefaultWorkerSessionManager[cs session_management.SessionContract]() SessionRepository[cs] {
+func NewDefaultWorkerSessionManager[cs application.Session]() SessionRepository[cs] {
 	return &DefaultSessionRepository[cs]{
 		internalIpToSession: make(map[netip.Addr]cs),
 		externalIPToSession: make(map[netip.AddrPort]cs),
