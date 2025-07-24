@@ -3,25 +3,23 @@ package wrappers
 import (
 	"context"
 	"net/netip"
-	"sync"
 	"time"
-	"tungo/infrastructure/PAL/server_configuration"
 	"tungo/infrastructure/routing/server_routing/session_management"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
+
+	"github.com/NLipatov/goutils/maps"
 )
 
-type TTLManager[cs interface {
+type TTLRepository[cs interface {
 	session_management.SessionContract
 	comparable
 }] struct {
-	ctx                         context.Context
-	manager                     repository.SessionRepository[cs]
-	mu                          sync.RWMutex
-	expMap                      map[cs]time.Time
-	sessionTtl, cleanupInterval time.Duration
+	ctx     context.Context
+	manager repository.SessionRepository[cs]
+	ttl     *maps.TtlTypedSyncMap[netip.Addr, cs]
 }
 
-func NewTTLManager[cs interface {
+func NewTTLRepository[cs interface {
 	session_management.SessionContract
 	comparable
 }](
@@ -29,91 +27,88 @@ func NewTTLManager[cs interface {
 	manager repository.SessionRepository[cs],
 	expDuration, sanitizeInterval time.Duration,
 ) repository.SessionRepository[cs] {
-	tm := &TTLManager[cs]{
-		ctx:             ctx,
-		manager:         manager,
-		expMap:          make(map[cs]time.Time),
-		sessionTtl:      expDuration,
-		cleanupInterval: sanitizeInterval,
+	ttlMgr := &TTLRepository[cs]{
+		ctx:     ctx,
+		manager: manager,
+		ttl:     maps.NewTtlTypedSyncMap[netip.Addr, cs](ctx, expDuration, sanitizeInterval),
 	}
-	go tm.sanitize()
-	return tm
+
+	go ttlMgr.syncExpiredSessions(sanitizeInterval)
+
+	return ttlMgr
 }
 
-func (t *TTLManager[cs]) Add(session cs) {
+func (t *TTLRepository[cs]) Add(session cs) {
 	t.manager.Add(session)
-
-	t.mu.Lock()
-	t.expMap[session] = time.Now().Add(t.sessionTtl)
-	t.mu.Unlock()
+	t.ttl.Store(session.InternalAddr(), session)
 }
-func (t *TTLManager[cs]) Delete(session cs) {
+
+func (t *TTLRepository[cs]) Delete(session cs) {
 	t.manager.Delete(session)
-
-	t.mu.Lock()
-	delete(t.expMap, session)
-	t.mu.Unlock()
+	t.ttl.Delete(session.InternalAddr())
 }
-func (t *TTLManager[cs]) GetByInternalAddrPort(addr netip.Addr) (cs, error) {
-	var zero cs
-	session, sessionErr := t.manager.GetByInternalAddrPort(addr)
-	if sessionErr != nil {
-		return zero, sessionErr
+
+func (t *TTLRepository[cs]) GetByInternalAddrPort(addr netip.Addr) (cs, error) {
+	session, ok := t.ttl.Load(addr)
+	if !ok {
+		var zero cs
+		return zero, repository.ErrSessionNotFound
 	}
-
-	t.mu.Lock()
-	t.expMap[session] = time.Now().Add(t.sessionTtl)
-	t.mu.Unlock()
-
-	return session, nil
-}
-func (t *TTLManager[cs]) GetByExternalAddrPort(addrPort netip.AddrPort) (cs, error) {
-	var zero cs
-	session, sessionErr := t.manager.GetByExternalAddrPort(addrPort)
-	if sessionErr != nil {
-		return zero, sessionErr
-	}
-
-	t.mu.Lock()
-	t.expMap[session] = time.Now().Add(t.sessionTtl)
-	t.mu.Unlock()
-
 	return session, nil
 }
 
-func (t *TTLManager[cs]) sanitize() {
-	if t.cleanupInterval == 0 {
-		t.cleanupInterval = time.Duration(server_configuration.DefaultSessionCleanupInterval)
+func (t *TTLRepository[cs]) GetByExternalAddrPort(addrPort netip.AddrPort) (cs, error) {
+	session, err := t.manager.GetByExternalAddrPort(addrPort)
+	if err != nil {
+		var zero cs
+		return zero, repository.ErrSessionNotFound
 	}
 
-	if t.sessionTtl == 0 {
-		t.sessionTtl = time.Duration(server_configuration.DefaultSessionTtl)
-	}
+	// extend TTL upon external access
+	t.ttl.Store(session.InternalAddr(), session)
+	return session, nil
+}
 
-	ticker := time.NewTicker(t.cleanupInterval)
+func (c *TTLRepository[cs]) Range(f func(session cs) bool) {
+	c.manager.Range(f)
+}
+
+// syncExpiredSessions sync expired session removal from manager
+func (t *TTLRepository[cs]) syncExpiredSessions(interval time.Duration) {
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
+
 	for {
 		select {
 		case <-t.ctx.Done():
 			return
 		case <-ticker.C:
-			expired := make([]cs, 0, len(t.expMap))
-			t.mu.RLock()
-			for session, expiresAt := range t.expMap {
-				if time.Now().After(expiresAt) {
-					expired = append(expired, session)
-				}
-			}
-			t.mu.RUnlock()
+			var activeSessions = make(map[netip.Addr]struct{})
 
-			if len(expired) > 0 {
-				t.mu.Lock()
-				for _, session := range expired {
-					t.manager.Delete(session)
-					delete(t.expMap, session)
-				}
-				t.mu.Unlock()
-			}
+			t.ttl.Range(func(key netip.Addr, _ cs) bool {
+				activeSessions[key] = struct{}{}
+				return true
+			})
+
+			t.removeExpiredSessionsFromManager(activeSessions)
 		}
+	}
+}
+
+// removeExpiredSessionsFromManager removes sessions from the manager that are no longer present in the TTL map
+func (t *TTLRepository[cs]) removeExpiredSessionsFromManager(active map[netip.Addr]struct{}) {
+	var toDelete []cs
+
+	// collect sessions not present in the TTL map
+	t.manager.Range(func(session cs) bool {
+		if _, exists := active[session.InternalAddr()]; !exists {
+			toDelete = append(toDelete, session)
+		}
+		return true
+	})
+
+	// delete expired sessions from the manager
+	for _, session := range toDelete {
+		t.manager.Delete(session)
 	}
 }

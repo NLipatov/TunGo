@@ -159,6 +159,14 @@ func (r *fakeSessionRepo) GetByExternalAddrPort(addr netip.AddrPort) (Session, e
 	return s, nil
 }
 
+func (r *fakeSessionRepo) Range(f func(s Session) bool) {
+	for _, s := range r.sessions {
+		if !f(s) {
+			break
+		}
+	}
+}
+
 type fakeWriter struct {
 	buf   bytes.Buffer
 	err   error

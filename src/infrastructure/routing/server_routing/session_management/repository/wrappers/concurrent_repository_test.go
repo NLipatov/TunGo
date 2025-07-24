@@ -15,9 +15,9 @@ func (s concurrentManagerMockSession) ExternalAddrPort() netip.AddrPort { return
 func (s concurrentManagerMockSession) InternalAddr() netip.Addr         { return s.in }
 
 type concurrentManagerMockManager struct {
-	add, del, getInt, getExt int
-	lastSession              concurrentManagerMockSession
-	lastIP                   netip.Addr
+	add, del, getInt, getExt, rangeCount int
+	lastSession                          concurrentManagerMockSession
+	lastIP                               netip.Addr
 }
 
 func (m *concurrentManagerMockManager) Add(s concurrentManagerMockSession) {
@@ -38,6 +38,10 @@ func (m *concurrentManagerMockManager) GetByExternalAddrPort(b netip.AddrPort) (
 	m.lastIP = b.Addr()
 	return m.lastSession, nil
 }
+func (m *concurrentManagerMockManager) Range(f func(session concurrentManagerMockSession) bool) {
+	m.rangeCount++
+	f(m.lastSession)
+}
 
 func TestConcurrentManager_Delegation(t *testing.T) {
 	base := &concurrentManagerMockManager{}
@@ -54,11 +58,19 @@ func TestConcurrentManager_Delegation(t *testing.T) {
 	_, _ = cm.GetByExternalAddrPort(addrPort)
 	_, _ = cm.GetByInternalAddrPort(addr)
 
+	visited := false
+	cm.Range(func(session concurrentManagerMockSession) bool {
+		visited = true
+		return true
+	})
+
 	switch {
-	case base.add != 1, base.del != 1, base.getInt != 1, base.getExt != 1:
+	case base.add != 1, base.del != 1, base.getInt != 1, base.getExt != 1, base.rangeCount != 1:
 		t.Fatalf("not all methods delegated: %+v", base)
-	case (base.lastSession.in) != s.in, base.lastIP != addr:
+	case base.lastSession.in != s.in, base.lastIP != addr:
 		t.Fatalf("wrong args forwarded")
+	case !visited:
+		t.Fatalf("Range method not invoked properly")
 	}
 }
 

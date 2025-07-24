@@ -192,6 +192,14 @@ func (r *testSessionRepo) GetByExternalAddrPort(addr netip.AddrPort) (Session, e
 	return s, nil
 }
 
+func (r *testSessionRepo) Range(f func(s Session) bool) {
+	for _, session := range r.sessions {
+		if !f(session) {
+			break
+		}
+	}
+}
+
 func TestTransportHandler_RegistrationPacket(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

@@ -41,3 +41,9 @@ func (c *ConcurrentManager[cs]) GetByExternalAddrPort(addrPort netip.AddrPort) (
 	defer c.mu.RUnlock()
 	return c.manager.GetByExternalAddrPort(addrPort)
 }
+
+func (c *ConcurrentManager[cs]) Range(f func(session cs) bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	c.manager.Range(f)
+}

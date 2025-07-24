@@ -14,6 +14,7 @@ type SessionRepository[session session_management.SessionContract] interface {
 	GetByInternalAddrPort(addr netip.Addr) (session, error)
 	// GetByExternalAddrPort tries to retrieve client session by external(outside of vpn) ip and port combination
 	GetByExternalAddrPort(addrPort netip.AddrPort) (session, error)
+	Range(func(session session) bool)
 }
 
 type DefaultSessionRepository[cs session_management.SessionContract] struct {
@@ -58,6 +59,14 @@ func (s *DefaultSessionRepository[cs]) GetByExternalAddrPort(addr netip.AddrPort
 	}
 
 	return value, nil
+}
+
+func (s *DefaultSessionRepository[cs]) Range(f func(session cs) bool) {
+	for _, session := range s.internalIpToSession {
+		if !f(session) {
+			break
+		}
+	}
 }
 
 func (s *DefaultSessionRepository[cs]) canonicalAP(ap netip.AddrPort) netip.AddrPort {

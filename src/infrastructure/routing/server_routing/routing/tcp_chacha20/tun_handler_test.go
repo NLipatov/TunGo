@@ -70,6 +70,9 @@ func (m *mockMgr) Add(Session)                                             {}
 func (m *mockMgr) Delete(Session)                                          { atomic.AddInt32(&m.deleted, 1) }
 func (m *mockMgr) GetByInternalAddrPort(_ netip.Addr) (Session, error)     { return m.sess, m.getErr }
 func (m *mockMgr) GetByExternalAddrPort(_ netip.AddrPort) (Session, error) { return m.sess, nil }
+func (m *mockMgr) Range(f func(Session) bool) {
+	panic("not implemented")
+}
 
 func makeSession(c *mockConn, crypto *mockCrypto) Session {
 	in, _ := netip.ParseAddr("1.1.1.1")
