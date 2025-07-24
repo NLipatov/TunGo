@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"tungo/application"
 	"tungo/infrastructure/PAL/server_configuration"
 	"tungo/infrastructure/cryptography/chacha20"
@@ -18,18 +19,17 @@ import (
 type ServerWorkerFactory struct {
 	settings             settings.Settings
 	socketFactory        socketFactory
-	tcpFactory           tcpListenerFactory
-	udpFactory           udpListenerFactory
 	loggerFactory        loggerFactory
 	configurationManager server_configuration.ServerConfigurationManager
 }
 
-func NewServerWorkerFactory(settings settings.Settings, manager server_configuration.ServerConfigurationManager) application.ServerWorkerFactory {
+func NewServerWorkerFactory(
+	settings settings.Settings,
+	manager server_configuration.ServerConfigurationManager,
+) application.ServerWorkerFactory {
 	return &ServerWorkerFactory{
 		settings:             settings,
 		socketFactory:        newDefaultSocketFactory(),
-		tcpFactory:           newDefaultTcpListenerFactory(),
-		udpFactory:           newDefaultUdpListenerFactory(),
 		loggerFactory:        newDefaultLoggerFactory(),
 		configurationManager: manager,
 	}
@@ -38,16 +38,12 @@ func NewServerWorkerFactory(settings settings.Settings, manager server_configura
 func NewTestServerWorkerFactory(
 	settings settings.Settings,
 	socketFactory socketFactory,
-	tcpFactory tcpListenerFactory,
-	udpFactory udpListenerFactory,
 	loggerFactory loggerFactory,
 	manager server_configuration.ServerConfigurationManager,
 ) application.ServerWorkerFactory {
 	return &ServerWorkerFactory{
 		settings:             settings,
 		socketFactory:        socketFactory,
-		tcpFactory:           tcpFactory,
-		udpFactory:           udpFactory,
 		loggerFactory:        loggerFactory,
 		configurationManager: manager,
 	}
@@ -77,19 +73,19 @@ func (s *ServerWorkerFactory) createTCPWorker(ctx context.Context, tun io.ReadWr
 		concurrentSessionManager,
 	)
 
+	conf, confErr := s.configurationManager.Configuration()
+	if confErr != nil {
+		return nil, confErr
+	}
+
 	// now the injected factories:
 	sock, err := s.socketFactory.newSocket(s.settings.ConnectionIP, s.settings.Port)
 	if err != nil {
 		return nil, err
 	}
-	listener, err := s.tcpFactory.listenTCP(sock.StringAddr())
+	listener, err := net.Listen("tcp", sock.StringAddr())
 	if err != nil {
 		return nil, fmt.Errorf("failed to listen TCP: %w", err)
-	}
-
-	conf, confErr := s.configurationManager.Configuration()
-	if confErr != nil {
-		return nil, confErr
 	}
 
 	tr := tcp_chacha20.NewTransportHandler(
@@ -116,22 +112,31 @@ func (s *ServerWorkerFactory) createUDPWorker(ctx context.Context, tun io.ReadWr
 		concurrentSessionManager,
 	)
 
+	conf, confErr := s.configurationManager.Configuration()
+	if confErr != nil {
+		return nil, confErr
+	}
+
 	sock, err := s.socketFactory.newSocket(s.settings.ConnectionIP, s.settings.Port)
 	if err != nil {
 		return nil, err
 	}
-	ul := s.udpFactory.listenUDP(sock)
 
-	conf, confErr := s.configurationManager.Configuration()
-	if confErr != nil {
-		return nil, confErr
+	addr, err := net.ResolveUDPAddr("udp", sock.StringAddr())
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve udp addr: %s", err)
+	}
+
+	conn, err := net.ListenUDP("udp", addr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to listen on port: %s", err)
 	}
 
 	tr := udp_chacha20.NewTransportHandler(
 		ctx,
 		s.settings,
 		tun,
-		ul,
+		conn,
 		concurrentSessionManager,
 		s.loggerFactory.newLogger(),
 		NewHandshakeFactory(*conf),

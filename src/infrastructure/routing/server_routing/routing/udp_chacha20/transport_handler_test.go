@@ -15,13 +15,6 @@ import (
 	"tungo/infrastructure/settings"
 )
 
-type errorBufferConn struct {
-	fakeUdpListenerConn
-}
-
-func (e *errorBufferConn) SetReadBuffer(_ int) error  { return errors.New("fail set read buf") }
-func (e *errorBufferConn) SetWriteBuffer(_ int) error { return errors.New("fail set write buf") }
-
 type alwaysWriteCrypto struct{}
 
 func (d *alwaysWriteCrypto) Encrypt(in []byte) ([]byte, error) { return in, nil }
@@ -72,16 +65,6 @@ func (f *fakeUdpListenerConn) ReadMsgUDPAddrPort(b, _ []byte) (int, int, int, ne
 	f.readIdx++
 	copy(b, data)
 	return len(data), 0, 0, addr, nil
-}
-
-type fakeListener struct {
-	conn application.UdpListenerConn
-	err  error
-}
-
-func (f *fakeListener) Listen() (application.UdpListenerConn, error) { return f.conn, f.err }
-func (f *fakeListener) Read(_, _ []byte) (int, int, int, netip.AddrPort, error) {
-	return 0, 0, 0, netip.AddrPort{}, nil
 }
 
 type fakeWriter struct {
@@ -189,16 +172,15 @@ func TestTransportHandler_RegistrationPacket(t *testing.T) {
 	handshakeFactory := &fakeHandshakeFactory{hs: fakeHS}
 
 	conn := &fakeUdpListenerConn{
-		readBufs:  [][]byte{{0xde, 0xad}},
+		readBufs:  [][]byte{{0xde, 0xad, 0xbe, 0xef}}, // test data
 		readAddrs: []netip.AddrPort{clientAddr},
 	}
-	listener := &fakeListener{conn: conn}
 
 	handler := NewTransportHandler(
 		ctx,
 		settings.Settings{Port: "9999"},
 		writer,
-		listener,
+		conn,
 		sessionRepo,
 		logger,
 		handshakeFactory,
@@ -233,19 +215,18 @@ func TestTransportHandler_HandshakeError(t *testing.T) {
 		ip:  nil,
 		err: errors.New("hs fail"),
 	}
-	handshakeFactory := &fakeHandshakeFactory{hs: fakeHS}
 	writeCh := make(chan struct{}, 1)
 	conn := &fakeUdpListenerConn{
 		readBufs:  [][]byte{{0xab, 0xcd}},
 		readAddrs: []netip.AddrPort{clientAddr},
 		writeCh:   writeCh,
 	}
-	listener := &fakeListener{conn: conn}
+	handshakeFactory := &fakeHandshakeFactory{hs: fakeHS}
 	handler := NewTransportHandler(
 		ctx,
 		settings.Settings{Port: "1111"},
 		writer,
-		listener,
+		conn,
 		sessionRepo,
 		logger,
 		handshakeFactory,
@@ -281,8 +262,8 @@ func TestTransportHandler_DecryptError(t *testing.T) {
 	handshakeFactory := &fakeHandshakeFactory{hs: fakeHS}
 
 	conn := &fakeUdpListenerConn{
-		readBufs:  [][]byte{{0x01, 0x02}, {0x03, 0x04}},
-		readAddrs: []netip.AddrPort{clientAddr, clientAddr},
+		readBufs:  [][]byte{{0xde, 0xad, 0xbe, 0xef}},
+		readAddrs: []netip.AddrPort{clientAddr},
 	}
 	sessionRegistered := make(chan struct{})
 	sessionRepo.afterAdd = func() {
@@ -290,12 +271,11 @@ func TestTransportHandler_DecryptError(t *testing.T) {
 		sessionRepo.sessions[clientAddr] = s
 		close(sessionRegistered)
 	}
-	listener := &fakeListener{conn: conn}
 	handler := NewTransportHandler(
 		ctx,
 		settings.Settings{Port: "2222"},
 		writer,
-		listener,
+		conn,
 		sessionRepo,
 		logger,
 		handshakeFactory,
@@ -324,16 +304,16 @@ func TestTransportHandler_ReadMsgUDPAddrPortError(t *testing.T) {
 	sessionRepo := &testSessionRepo{}
 	handshakeFactory := &fakeHandshakeFactory{hs: &fakeHandshake{}}
 
+	// Передаем пустой readBufs, чтобы получить io.EOF сразу
 	conn := &fakeUdpListenerConn{
 		readBufs:  [][]byte{},
 		readAddrs: []netip.AddrPort{},
 	}
-	listener := &fakeListener{conn: conn}
 	handler := NewTransportHandler(
 		ctx,
 		settings.Settings{Port: "4444"},
 		writer,
-		listener,
+		conn,
 		sessionRepo,
 		logger,
 		handshakeFactory,
@@ -382,16 +362,21 @@ func TestTransportHandler_WriteError(t *testing.T) {
 	}
 
 	conn := &fakeUdpListenerConn{
-		readBufs:  [][]byte{{0xaa, 0xbb}, {0xcc, 0xdd}}, // handshake + data
-		readAddrs: []netip.AddrPort{clientAddr, clientAddr},
+		readBufs: [][]byte{
+			{0xde, 0xad, 0xbe, 0xef},
+			{0xba, 0xad, 0xf0, 0x0d},
+		},
+		readAddrs: []netip.AddrPort{
+			clientAddr,
+			clientAddr,
+		},
 	}
-	listener := &fakeListener{conn: conn}
 
 	handler := NewTransportHandler(
 		ctx,
 		settings.Settings{Port: "3333"},
 		writer,
-		listener,
+		conn,
 		sessionRepo,
 		logger,
 		handshakeFactory,
@@ -447,16 +432,16 @@ func TestTransportHandler_HappyPath(t *testing.T) {
 
 	fakeHS := &fakeHandshake{ip: internalIP.AsSlice()}
 	handshakeFactory := &fakeHandshakeFactory{hs: fakeHS}
+
 	conn := &fakeUdpListenerConn{
-		readBufs:  [][]byte{{0x01, 0x02, 0x03}},
+		readBufs:  [][]byte{{0xde, 0xad, 0xbe, 0xef}},
 		readAddrs: []netip.AddrPort{clientAddr},
 	}
-	listener := &fakeListener{conn: conn}
 	handler := NewTransportHandler(
 		ctx,
 		settings.Settings{Port: "5050"},
 		writer,
-		listener,
+		conn,
 		sessionRepo,
 		logger,
 		handshakeFactory,
@@ -502,16 +487,16 @@ func TestTransportHandler_NATRebinding(t *testing.T) {
 
 	fakeHS := &fakeHandshake{ip: internalIP.AsSlice()}
 	handshakeFactory := &fakeHandshakeFactory{hs: fakeHS}
+
 	conn := &fakeUdpListenerConn{
-		readBufs:  [][]byte{{0x01, 0x02, 0x03}},
+		readBufs:  [][]byte{{0xca, 0xfe}},
 		readAddrs: []netip.AddrPort{newAddr},
 	}
-	listener := &fakeListener{conn: conn}
 	handler := NewTransportHandler(
 		ctx,
 		settings.Settings{Port: "6060"},
 		writer,
-		listener,
+		conn,
 		sessionRepo,
 		logger,
 		handshakeFactory,
@@ -545,12 +530,11 @@ func TestTransportHandler_RegisterClient_BadInternalIP(t *testing.T) {
 		readBufs:  [][]byte{{0x01}},
 		readAddrs: []netip.AddrPort{clientAddr},
 	}
-	listener := &fakeListener{conn: conn}
 	handler := NewTransportHandler(
 		ctx,
 		settings.Settings{Port: "6000"},
 		writer,
-		listener,
+		conn,
 		sessionRepo,
 		logger,
 		handshakeFactory,
@@ -580,18 +564,15 @@ func TestTransportHandler_ErrorSetBuffer(t *testing.T) {
 	fakeHS := &fakeHandshake{ip: internalIP}
 	handshakeFactory := &fakeHandshakeFactory{hs: fakeHS}
 
-	conn := &errorBufferConn{
-		fakeUdpListenerConn{
-			readBufs:  [][]byte{{0x77, 0x88}},
-			readAddrs: []netip.AddrPort{clientAddr},
-		},
+	conn := &fakeUdpListenerConn{
+		readBufs:  [][]byte{{0xbe, 0xef}},
+		readAddrs: []netip.AddrPort{clientAddr},
 	}
-	listener := &fakeListener{conn: conn}
 	handler := NewTransportHandler(
 		ctx,
 		settings.Settings{Port: "7000"},
 		writer,
-		listener,
+		conn,
 		sessionRepo,
 		logger,
 		handshakeFactory,

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"net"
-	"net/netip"
 	"testing"
 
 	"tungo/application"
@@ -22,12 +21,10 @@ func (nopReadWriteCloser) Write(p []byte) (int, error) { return len(p), nil }
 func (nopReadWriteCloser) Close() error                { return nil }
 
 // --- fake application.Socket ---
-type fakeSocket struct{ addr string }
+type fakeSocket struct{ addr *net.UDPAddr }
 
-func (f fakeSocket) StringAddr() string { return f.addr }
-func (f fakeSocket) UdpAddr() (*net.UDPAddr, error) {
-	return net.ResolveUDPAddr("udp", f.addr)
-}
+func (f fakeSocket) StringAddr() string             { return f.addr.String() }
+func (f fakeSocket) UdpAddr() (*net.UDPAddr, error) { return f.addr, nil } // Not used
 
 // --- socketFactory mock ---
 type ServerWorkerFactoryMockSocketFactory struct {
@@ -37,43 +34,6 @@ type ServerWorkerFactoryMockSocketFactory struct {
 
 func (m *ServerWorkerFactoryMockSocketFactory) newSocket(_, _ string) (application.Socket, error) {
 	return m.Socket, m.Err
-}
-
-// --- tcpListenerFactory mock ---
-type fakeTCPListener struct{}
-
-func (*fakeTCPListener) Accept() (net.Conn, error) { return nil, io.EOF }
-func (*fakeTCPListener) Close() error              { return nil }
-func (*fakeTCPListener) Addr() net.Addr            { return &net.TCPAddr{} }
-
-type ServerWorkerFactoryMockTcpListenerFactory struct {
-	AddrCalled string
-	Err        error
-}
-
-func (m *ServerWorkerFactoryMockTcpListenerFactory) listenTCP(addr string) (net.Listener, error) {
-	m.AddrCalled = addr
-	if m.Err != nil {
-		return nil, m.Err
-	}
-	return &fakeTCPListener{}, nil
-}
-
-// --- udpListenerFactory mock ---
-type fakeUDPListener struct{}
-
-func (*fakeUDPListener) Listen() (application.UdpListenerConn, error) { return nil, io.EOF }
-func (*fakeUDPListener) Read(_ []byte, _ []byte) (int, int, int, netip.AddrPort, error) {
-	return 0, 0, 0, netip.AddrPort{}, io.EOF
-}
-
-type ServerWorkerFactoryMockUdpListenerFactory struct {
-	Called bool
-}
-
-func (m *ServerWorkerFactoryMockUdpListenerFactory) listenUDP(_ application.Socket) application.Listener {
-	m.Called = true
-	return &fakeUDPListener{}
 }
 
 // --- loggerFactory mock ---
@@ -131,7 +91,9 @@ func (m *swflServerConfigurationManagerWithErr) InjectEdKeys(_ ed25519.PublicKey
 func TestCreateWorker_UnsupportedProtocol(t *testing.T) {
 	s := settings.Settings{Protocol: 42}
 	cfgMgr := &swflServerConfigurationManager{}
-	factory := NewTestServerWorkerFactory(s, nil, nil, nil, nil, cfgMgr)
+	logF := &ServerWorkerFactoryMockLoggerFactory{}
+	sockF := &ServerWorkerFactoryMockSocketFactory{}
+	factory := NewTestServerWorkerFactory(s, sockF, logF, cfgMgr)
 	_, err := factory.CreateWorker(context.Background(), nopReadWriteCloser{})
 	if err == nil {
 		t.Fatal("expected unsupported-protocol error")
@@ -145,34 +107,13 @@ func TestCreateWorker_TCP_SocketError(t *testing.T) {
 		Port:         "9999",
 	}
 	sockF := &ServerWorkerFactoryMockSocketFactory{Err: errors.New("bad socket")}
-	tcpF := &ServerWorkerFactoryMockTcpListenerFactory{}
-	udpF := &ServerWorkerFactoryMockUdpListenerFactory{}
 	logF := &ServerWorkerFactoryMockLoggerFactory{}
 	cfgMgr := &swflServerConfigurationManager{}
-	factory := NewTestServerWorkerFactory(s, sockF, tcpF, udpF, logF, cfgMgr)
+	factory := NewTestServerWorkerFactory(s, sockF, logF, cfgMgr)
 
 	_, err := factory.CreateWorker(context.Background(), nopReadWriteCloser{})
 	if err == nil || err.Error() != "bad socket" {
 		t.Fatalf("expected socket error, got %v", err)
-	}
-}
-
-func TestCreateWorker_TCP_ListenerError(t *testing.T) {
-	s := settings.Settings{
-		Protocol:     settings.TCP,
-		ConnectionIP: "1.2.3.4",
-		Port:         "9999",
-	}
-	sockF := &ServerWorkerFactoryMockSocketFactory{Socket: fakeSocket{"1.2.3.4:9999"}}
-	tcpF := &ServerWorkerFactoryMockTcpListenerFactory{Err: errors.New("listen fail")}
-	udpF := &ServerWorkerFactoryMockUdpListenerFactory{}
-	logF := &ServerWorkerFactoryMockLoggerFactory{}
-	cfgMgr := &swflServerConfigurationManager{}
-	factory := NewTestServerWorkerFactory(s, sockF, tcpF, udpF, logF, cfgMgr)
-
-	_, err := factory.CreateWorker(context.Background(), nopReadWriteCloser{})
-	if err == nil || err.Error() != "failed to listen TCP: listen fail" {
-		t.Fatalf("expected listener error, got %v", err)
 	}
 }
 
@@ -182,12 +123,14 @@ func TestCreateWorker_TCP_ConfigError(t *testing.T) {
 		ConnectionIP: "9.9.9.9",
 		Port:         "8080",
 	}
-	sockF := &ServerWorkerFactoryMockSocketFactory{Socket: fakeSocket{"9.9.9.9:8080"}}
-	tcpF := &ServerWorkerFactoryMockTcpListenerFactory{}
-	udpF := &ServerWorkerFactoryMockUdpListenerFactory{}
+	udpAddr, udpAddrErr := net.ResolveUDPAddr("udp", "9.9.9.9:8080")
+	if udpAddrErr != nil {
+		t.Fatal("failed to parse address")
+	}
+	sockF := &ServerWorkerFactoryMockSocketFactory{Socket: fakeSocket{udpAddr}}
 	logF := &ServerWorkerFactoryMockLoggerFactory{}
 	cfgMgr := &swflServerConfigurationManagerWithErr{}
-	factory := NewTestServerWorkerFactory(s, sockF, tcpF, udpF, logF, cfgMgr)
+	factory := NewTestServerWorkerFactory(s, sockF, logF, cfgMgr)
 
 	_, err := factory.CreateWorker(context.Background(), nopReadWriteCloser{})
 	if err == nil || err.Error() != "config fail" {
@@ -201,12 +144,14 @@ func TestCreateWorker_TCP_Success(t *testing.T) {
 		ConnectionIP: "127.0.0.1",
 		Port:         "0",
 	}
-	sockF := &ServerWorkerFactoryMockSocketFactory{Socket: fakeSocket{"127.0.0.1:0"}}
-	tcpF := &ServerWorkerFactoryMockTcpListenerFactory{}
-	udpF := &ServerWorkerFactoryMockUdpListenerFactory{}
+	udpAddr, udpAddrErr := net.ResolveUDPAddr("udp", "127.0.0.1:0")
+	if udpAddrErr != nil {
+		t.Fatal("failed to parse address")
+	}
+	sockF := &ServerWorkerFactoryMockSocketFactory{Socket: fakeSocket{udpAddr}}
 	logF := &ServerWorkerFactoryMockLoggerFactory{}
 	cfgMgr := &swflServerConfigurationManager{}
-	factory := NewTestServerWorkerFactory(s, sockF, tcpF, udpF, logF, cfgMgr)
+	factory := NewTestServerWorkerFactory(s, sockF, logF, cfgMgr)
 
 	w, err := factory.CreateWorker(context.Background(), nopReadWriteCloser{})
 	if err != nil {
@@ -215,6 +160,7 @@ func TestCreateWorker_TCP_Success(t *testing.T) {
 	if logF.Count != 1 {
 		t.Errorf("expected 1 logger, got %d", logF.Count)
 	}
+	// worker.HandleTun обычно вернёт io.EOF из nopReadWriteCloser
 	if err := w.HandleTun(); err != io.EOF {
 		t.Errorf("expected EOF, got %v", err)
 	}
@@ -227,11 +173,9 @@ func TestCreateWorker_UDP_SocketError(t *testing.T) {
 		Port:         "5678",
 	}
 	sockF := &ServerWorkerFactoryMockSocketFactory{Err: errors.New("udp socket fail")}
-	tcpF := &ServerWorkerFactoryMockTcpListenerFactory{}
-	udpF := &ServerWorkerFactoryMockUdpListenerFactory{}
 	logF := &ServerWorkerFactoryMockLoggerFactory{}
 	cfgMgr := &swflServerConfigurationManager{}
-	factory := NewTestServerWorkerFactory(s, sockF, tcpF, udpF, logF, cfgMgr)
+	factory := NewTestServerWorkerFactory(s, sockF, logF, cfgMgr)
 
 	_, err := factory.CreateWorker(context.Background(), nopReadWriteCloser{})
 	if err == nil || err.Error() != "udp socket fail" {
@@ -245,12 +189,14 @@ func TestCreateWorker_UDP_ConfigError(t *testing.T) {
 		ConnectionIP: "10.20.30.40",
 		Port:         "10000",
 	}
-	sockF := &ServerWorkerFactoryMockSocketFactory{Socket: fakeSocket{"10.20.30.40:10000"}}
-	tcpF := &ServerWorkerFactoryMockTcpListenerFactory{}
-	udpF := &ServerWorkerFactoryMockUdpListenerFactory{}
+	udpAddr, udpAddrErr := net.ResolveUDPAddr("udp", "10.20.30.40:10000")
+	if udpAddrErr != nil {
+		t.Fatal("failed to parse address")
+	}
+	sockF := &ServerWorkerFactoryMockSocketFactory{Socket: fakeSocket{udpAddr}}
 	logF := &ServerWorkerFactoryMockLoggerFactory{}
 	cfgMgr := &swflServerConfigurationManagerWithErr{}
-	factory := NewTestServerWorkerFactory(s, sockF, tcpF, udpF, logF, cfgMgr)
+	factory := NewTestServerWorkerFactory(s, sockF, logF, cfgMgr)
 
 	_, err := factory.CreateWorker(context.Background(), nopReadWriteCloser{})
 	if err == nil || err.Error() != "config fail" {
@@ -261,22 +207,21 @@ func TestCreateWorker_UDP_ConfigError(t *testing.T) {
 func TestCreateWorker_UDP_Success(t *testing.T) {
 	s := settings.Settings{
 		Protocol:     settings.UDP,
-		ConnectionIP: "5.6.7.8",
-		Port:         "4242",
+		ConnectionIP: "127.0.0.1",
+		Port:         "0",
 	}
-	sockF := &ServerWorkerFactoryMockSocketFactory{Socket: fakeSocket{"5.6.7.8:4242"}}
-	tcpF := &ServerWorkerFactoryMockTcpListenerFactory{}
-	udpF := &ServerWorkerFactoryMockUdpListenerFactory{}
+	udpAddr, udpAddrErr := net.ResolveUDPAddr("udp", "127.0.0.1:0")
+	if udpAddrErr != nil {
+		t.Fatal("failed to parse address")
+	}
+	sockF := &ServerWorkerFactoryMockSocketFactory{Socket: fakeSocket{udpAddr}}
 	logF := &ServerWorkerFactoryMockLoggerFactory{}
 	cfgMgr := &swflServerConfigurationManager{}
-	factory := NewTestServerWorkerFactory(s, sockF, tcpF, udpF, logF, cfgMgr)
+	factory := NewTestServerWorkerFactory(s, sockF, logF, cfgMgr)
 
 	w, err := factory.CreateWorker(context.Background(), nopReadWriteCloser{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
-	}
-	if !udpF.Called {
-		t.Error("expected UDP factory to be called")
 	}
 	if logF.Count != 1 {
 		t.Errorf("expected 1 logger, got %d", logF.Count)

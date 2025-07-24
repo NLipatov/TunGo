@@ -17,7 +17,7 @@ type TransportHandler struct {
 	writer              io.Writer
 	sessionManager      repository.SessionRepository[application.Session]
 	logger              application.Logger
-	listener            application.Listener
+	listenerConn        application.UdpListenerConn
 	handshakeFactory    application.HandshakeFactory
 	cryptographyFactory application.CryptographyServiceFactory
 }
@@ -26,7 +26,7 @@ func NewTransportHandler(
 	ctx context.Context,
 	settings settings.Settings,
 	writer io.Writer,
-	listener application.Listener,
+	listenerConn application.UdpListenerConn,
 	sessionManager repository.SessionRepository[application.Session],
 	logger application.Logger,
 	handshakeFactory application.HandshakeFactory,
@@ -38,27 +38,22 @@ func NewTransportHandler(
 		writer:              writer,
 		sessionManager:      sessionManager,
 		logger:              logger,
-		listener:            listener,
+		listenerConn:        listenerConn,
 		handshakeFactory:    handshakeFactory,
 		cryptographyFactory: cryptographyFactory,
 	}
 }
 
 func (t *TransportHandler) HandleTransport() error {
-	conn, err := t.listener.Listen()
-	if err != nil {
-		t.logger.Printf("failed to listen on port: %s", err)
-		return err
-	}
 	defer func(conn application.UdpListenerConn) {
 		_ = conn.Close()
-	}(conn)
+	}(t.listenerConn)
 
 	t.logger.Printf("server listening on port %s (UDP)", t.settings.Port)
 
 	go func() {
 		<-t.ctx.Done()
-		_ = conn.Close()
+		_ = t.listenerConn.Close()
 	}()
 
 	dataBuf := make([]byte, network.MaxPacketLengthBytes+12)
@@ -69,7 +64,7 @@ func (t *TransportHandler) HandleTransport() error {
 		case <-t.ctx.Done():
 			return nil
 		default:
-			n, _, _, clientAddr, readFromUdpErr := conn.ReadMsgUDPAddrPort(dataBuf, oobBuf)
+			n, _, _, clientAddr, readFromUdpErr := t.listenerConn.ReadMsgUDPAddrPort(dataBuf, oobBuf)
 			if readFromUdpErr != nil {
 				if t.ctx.Done() != nil {
 					return nil
@@ -79,7 +74,7 @@ func (t *TransportHandler) HandleTransport() error {
 				continue
 			}
 
-			_ = t.handlePacket(conn, clientAddr, dataBuf[:n])
+			_ = t.handlePacket(t.listenerConn, clientAddr, dataBuf[:n])
 		}
 	}
 }
