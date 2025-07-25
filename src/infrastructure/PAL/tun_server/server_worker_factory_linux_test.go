@@ -179,3 +179,19 @@ func Test_NewServerWorkerFactory_Coverage(t *testing.T) {
 		t.Error("nil factory (test)")
 	}
 }
+
+func Test_ServerWorkerFactory_addrPortToListen_InvalidIP(t *testing.T) {
+	f := &ServerWorkerFactory{}
+	_, err := f.addrPortToListen("invalid_ip", "1234")
+	if err == nil {
+		t.Error("expected error for invalid IP")
+	}
+}
+
+func Test_ServerWorkerFactory_addrPortToListen_InvalidPort(t *testing.T) {
+	f := &ServerWorkerFactory{}
+	_, err := f.addrPortToListen("127.0.0.1", "99999") // > 65535
+	if err == nil {
+		t.Error("expected error for invalid port number")
+	}
+}
