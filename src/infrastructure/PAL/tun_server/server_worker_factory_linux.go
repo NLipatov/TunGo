@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"tungo/application"
 	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/cryptography/chacha20"
@@ -18,7 +19,6 @@ import (
 
 type ServerWorkerFactory struct {
 	settings             settings.Settings
-	socketFactory        socketFactory
 	loggerFactory        loggerFactory
 	configurationManager server.ServerConfigurationManager
 }
@@ -29,7 +29,6 @@ func NewServerWorkerFactory(
 ) application.ServerWorkerFactory {
 	return &ServerWorkerFactory{
 		settings:             settings,
-		socketFactory:        newDefaultSocketFactory(),
 		loggerFactory:        newDefaultLoggerFactory(),
 		configurationManager: manager,
 	}
@@ -37,13 +36,11 @@ func NewServerWorkerFactory(
 
 func NewTestServerWorkerFactory(
 	settings settings.Settings,
-	socketFactory socketFactory,
 	loggerFactory loggerFactory,
 	manager server.ServerConfigurationManager,
 ) application.ServerWorkerFactory {
 	return &ServerWorkerFactory{
 		settings:             settings,
-		socketFactory:        socketFactory,
 		loggerFactory:        loggerFactory,
 		configurationManager: manager,
 	}
@@ -78,12 +75,12 @@ func (s *ServerWorkerFactory) createTCPWorker(ctx context.Context, tun io.ReadWr
 		return nil, confErr
 	}
 
-	// now the injected factories:
-	sock, err := s.socketFactory.newSocket(s.settings.ConnectionIP, s.settings.Port)
-	if err != nil {
-		return nil, err
+	addrPort, addrPortErr := s.addrPortToListen(s.settings.ConnectionIP, s.settings.Port)
+	if addrPortErr != nil {
+		return nil, addrPortErr
 	}
-	listener, err := net.Listen("tcp", sock.StringAddr())
+
+	listener, err := net.Listen("tcp", addrPort.String())
 	if err != nil {
 		return nil, fmt.Errorf("failed to listen TCP: %w", err)
 	}
@@ -117,17 +114,12 @@ func (s *ServerWorkerFactory) createUDPWorker(ctx context.Context, tun io.ReadWr
 		return nil, confErr
 	}
 
-	sock, err := s.socketFactory.newSocket(s.settings.ConnectionIP, s.settings.Port)
-	if err != nil {
-		return nil, err
+	addrPort, addrPortErr := s.addrPortToListen(s.settings.ConnectionIP, s.settings.Port)
+	if addrPortErr != nil {
+		return nil, addrPortErr
 	}
 
-	addr, err := net.ResolveUDPAddr("udp", sock.StringAddr())
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve udp addr: %s", err)
-	}
-
-	conn, err := net.ListenUDP("udp", addr)
+	conn, err := net.ListenUDP("udp", net.UDPAddrFromAddrPort(addrPort))
 	if err != nil {
 		return nil, fmt.Errorf("failed to listen on port: %s", err)
 	}
@@ -143,4 +135,11 @@ func (s *ServerWorkerFactory) createUDPWorker(ctx context.Context, tun io.ReadWr
 		chacha20.NewUdpSessionBuilder(),
 	)
 	return udp_chacha20.NewUdpTunWorker(th, tr), nil
+}
+
+func (s *ServerWorkerFactory) addrPortToListen(ip, port string) (netip.AddrPort, error) {
+	if ip == "" {
+		ip = "::" // dual-stack listen - both ipv4 and ipv6
+	}
+	return netip.ParseAddrPort(net.JoinHostPort(ip, port))
 }

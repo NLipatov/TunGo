@@ -2,22 +2,40 @@ package network
 
 import (
 	"net"
+	"net/netip"
 	"tungo/application"
 )
 
-type TcpConnection struct {
-	socket application.Socket
+type TCPDialer interface {
+	Dial(network, address string) (net.Conn, error)
 }
 
-func NewTcpConnection(socket application.Socket) *TcpConnection {
-	return &TcpConnection{
-		socket: socket,
+type TCPConnection struct {
+	addrPort netip.AddrPort
+	dialer   TCPDialer
+}
+
+func NewTCPConnection(
+	addrPort netip.AddrPort,
+) application.Connection {
+	return &TCPConnection{
+		addrPort: addrPort,
+		dialer:   &net.Dialer{},
 	}
 }
 
-func (u *TcpConnection) Establish() (application.ConnectionAdapter, error) {
-	dialer := net.Dialer{}
-	conn, connErr := dialer.Dial("tcp", u.socket.StringAddr())
+func NewTCPConnectionWithDialer(
+	addrPort netip.AddrPort,
+	dialer TCPDialer,
+) application.Connection {
+	return &TCPConnection{
+		addrPort: addrPort,
+		dialer:   dialer,
+	}
+}
+
+func (u *TCPConnection) Establish() (application.ConnectionAdapter, error) {
+	conn, connErr := u.dialer.Dial("tcp", u.addrPort.String())
 	if connErr != nil {
 		return nil, connErr
 	}
