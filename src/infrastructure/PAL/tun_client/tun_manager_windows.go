@@ -3,6 +3,7 @@ package tun_client
 import (
 	"errors"
 	"fmt"
+	"golang.zx2c4.com/wintun"
 	"log"
 	"net"
 	"os/exec"
