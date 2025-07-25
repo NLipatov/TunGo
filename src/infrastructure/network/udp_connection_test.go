@@ -53,3 +53,24 @@ func TestNewUDPConnection_DefaultDialer(t *testing.T) {
 		t.Fatal("expected not nil")
 	}
 }
+
+func TestDefaultUDPDialer_Dial(t *testing.T) {
+	l, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0})
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	defer func(l *net.UDPConn) {
+		_ = l.Close()
+	}(l)
+	addr := l.LocalAddr().(*net.UDPAddr)
+
+	dialer := &DefaultUDPDialer{}
+	conn, err := dialer.Dial(addr)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if conn == nil {
+		t.Fatal("expected not nil connection")
+	}
+	_ = conn.Close()
+}
