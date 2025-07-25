@@ -1,18 +1,13 @@
-package application
+package listeners
 
 import (
 	"net/netip"
 )
 
-type UdpListenerConn interface {
+type UdpListener interface {
 	Close() error
 	ReadMsgUDPAddrPort(b, oob []byte) (n, oobn, flags int, addr netip.AddrPort, err error)
 	SetReadBuffer(size int) error
 	SetWriteBuffer(size int) error
 	WriteToUDPAddrPort(data []byte, addr netip.AddrPort) (int, error)
-}
-
-type Listener interface {
-	Listen() (UdpListenerConn, error)
-	Read(b, oob []byte) (n, oobn, flags int, addr netip.AddrPort, err error)
 }

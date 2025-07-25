@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/netip"
 	"tungo/application"
+	"tungo/application/listeners"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
 	"tungo/infrastructure/settings"
@@ -17,7 +18,7 @@ type TransportHandler struct {
 	writer              io.Writer
 	sessionManager      repository.SessionRepository[application.Session]
 	logger              application.Logger
-	listenerConn        application.UdpListenerConn
+	listenerConn        listeners.UdpListener
 	handshakeFactory    application.HandshakeFactory
 	cryptographyFactory application.CryptographyServiceFactory
 }
@@ -26,7 +27,7 @@ func NewTransportHandler(
 	ctx context.Context,
 	settings settings.Settings,
 	writer io.Writer,
-	listenerConn application.UdpListenerConn,
+	listenerConn listeners.UdpListener,
 	sessionManager repository.SessionRepository[application.Session],
 	logger application.Logger,
 	handshakeFactory application.HandshakeFactory,
@@ -45,7 +46,7 @@ func NewTransportHandler(
 }
 
 func (t *TransportHandler) HandleTransport() error {
-	defer func(conn application.UdpListenerConn) {
+	defer func(conn listeners.UdpListener) {
 		_ = conn.Close()
 	}(t.listenerConn)
 
@@ -82,7 +83,7 @@ func (t *TransportHandler) HandleTransport() error {
 // handlePacket processes a UDP packet from addrPort.
 // Registers the client if needed, or decrypts and forwards the packet for an existing session.
 func (t *TransportHandler) handlePacket(
-	conn application.UdpListenerConn,
+	conn listeners.UdpListener,
 	addrPort netip.AddrPort,
 	packet []byte) error {
 	session, sessionLookupErr := t.sessionManager.GetByExternalAddrPort(addrPort)
@@ -119,7 +120,7 @@ func (t *TransportHandler) handlePacket(
 }
 
 func (t *TransportHandler) registerClient(
-	conn application.UdpListenerConn,
+	conn listeners.UdpListener,
 	addrPort netip.AddrPort,
 	initialData []byte) error {
 	_ = conn.SetReadBuffer(65536)
