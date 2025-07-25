@@ -17,6 +17,24 @@ import (
 	"tungo/infrastructure/settings"
 )
 
+type fakeTcpListenerCtxDone struct {
+	t      *testing.T
+	ctx    context.Context
+	closed bool
+	called bool
+}
+
+func (f *fakeTcpListenerCtxDone) Accept() (net.Conn, error) {
+	if !f.called {
+		f.called = true
+		<-f.ctx.Done()
+		return nil, errors.New("ctx canceled")
+	}
+	return nil, errors.New("done")
+}
+
+func (f *fakeTcpListenerCtxDone) Close() error { f.closed = true; return nil }
+
 type fakeConn struct {
 	readBufs [][]byte
 	writeBuf bytes.Buffer
@@ -182,8 +200,7 @@ func tcpAddr(ip string, port int) *net.TCPAddr {
 
 func TestHandleTransport_CtxDoneBeforeAccept(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	listener := &fakeTcpListener{}
+	listener := &fakeTcpListenerCtxDone{ctx: ctx, t: t}
 	logger := &fakeLogger{}
 	handler := NewTransportHandler(
 		ctx,
@@ -195,9 +212,27 @@ func TestHandleTransport_CtxDoneBeforeAccept(t *testing.T) {
 		&fakeHandshakeFactory{},
 		&fakeCryptoFactory{},
 	)
-	_ = handler.HandleTransport()
+	done := make(chan struct{})
+	go func() {
+		_ = handler.HandleTransport()
+		close(done)
+	}()
+	time.Sleep(10 * time.Millisecond)
+	cancel()
+	<-done
+
 	if !listener.closed {
 		t.Error("listener should be closed on ctx done")
+	}
+	found := false
+	for _, log := range logger.logs {
+		if strings.Contains(log, "exiting Accept loop") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("exiting Accept loop log missing: logs=%v", logger.logs)
 	}
 }
 
@@ -207,9 +242,25 @@ func TestHandleTransport_AcceptError(t *testing.T) {
 	listener := &fakeTcpListener{err: errors.New("accept fail")}
 	logger := &fakeLogger{}
 	handler := NewTransportHandler(ctx, settings.Settings{Port: "1111"}, &fakeWriter{}, listener, &fakeSessionRepo{}, logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{})
-	go func() { _ = handler.HandleTransport() }()
+	done := make(chan struct{})
+	go func() {
+		_ = handler.HandleTransport()
+		close(done)
+	}()
 	time.Sleep(15 * time.Millisecond)
 	cancel()
+	<-done
+
+	found := false
+	for _, log := range logger.logs {
+		if strings.Contains(log, "failed to accept connection: accept fail") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("log about accept error missing: logs=%v", logger.logs)
+	}
 }
 
 func TestHandleTransport_RegisterClientError(t *testing.T) {
