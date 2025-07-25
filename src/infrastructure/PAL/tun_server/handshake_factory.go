@@ -2,15 +2,15 @@ package tun_server
 
 import (
 	"tungo/application"
-	"tungo/infrastructure/PAL/server_configuration"
+	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/cryptography/chacha20/handshake"
 )
 
 type HandshakeFactory struct {
-	configuration server_configuration.Configuration
+	configuration server.Configuration
 }
 
-func NewHandshakeFactory(configuration server_configuration.Configuration) *HandshakeFactory {
+func NewHandshakeFactory(configuration server.Configuration) *HandshakeFactory {
 	return &HandshakeFactory{
 		configuration: configuration,
 	}

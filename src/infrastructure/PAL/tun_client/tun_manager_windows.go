@@ -3,7 +3,6 @@ package tun_client
 import (
 	"errors"
 	"fmt"
-	"golang.zx2c4.com/wintun"
 	"log"
 	"net"
 	"os/exec"
@@ -11,7 +10,7 @@ import (
 	"strings"
 	"syscall"
 	"tungo/infrastructure/PAL"
-	"tungo/infrastructure/PAL/client_configuration"
+	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/PAL/windows/network_tools/netsh"
 	"tungo/infrastructure/PAL/windows/tun_adapters"
 	"tungo/infrastructure/settings"
@@ -22,12 +21,12 @@ import (
 )
 
 type PlatformTunManager struct {
-	conf  client_configuration.Configuration
+	conf  client.Configuration
 	netsh netsh.Contract
 }
 
 func NewPlatformTunManager(
-	conf client_configuration.Configuration,
+	conf client.Configuration,
 ) (application.ClientTunManager, error) {
 	return &PlatformTunManager{
 		conf:  conf,

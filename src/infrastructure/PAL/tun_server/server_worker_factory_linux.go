@@ -6,7 +6,7 @@ import (
 	"io"
 	"net"
 	"tungo/application"
-	"tungo/infrastructure/PAL/server_configuration"
+	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/routing/server_routing/routing/tcp_chacha20"
@@ -20,12 +20,12 @@ type ServerWorkerFactory struct {
 	settings             settings.Settings
 	socketFactory        socketFactory
 	loggerFactory        loggerFactory
-	configurationManager server_configuration.ServerConfigurationManager
+	configurationManager server.ServerConfigurationManager
 }
 
 func NewServerWorkerFactory(
 	settings settings.Settings,
-	manager server_configuration.ServerConfigurationManager,
+	manager server.ServerConfigurationManager,
 ) application.ServerWorkerFactory {
 	return &ServerWorkerFactory{
 		settings:             settings,
@@ -39,7 +39,7 @@ func NewTestServerWorkerFactory(
 	settings settings.Settings,
 	socketFactory socketFactory,
 	loggerFactory loggerFactory,
-	manager server_configuration.ServerConfigurationManager,
+	manager server.ServerConfigurationManager,
 ) application.ServerWorkerFactory {
 	return &ServerWorkerFactory{
 		settings:             settings,

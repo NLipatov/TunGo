@@ -7,23 +7,23 @@ import (
 	"strings"
 	"tungo/application"
 	"tungo/infrastructure/PAL"
-	"tungo/infrastructure/PAL/client_configuration"
+	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/PAL/darwin/network_tools/ip"
 	"tungo/infrastructure/PAL/darwin/network_tools/route"
-	"tungo/infrastructure/settings"
 	"tungo/infrastructure/PAL/darwin/tun_adapters"
+	"tungo/infrastructure/settings"
 )
 
 // PlatformTunManager is the macOS-specific implementation of ClientTunManager.
 type PlatformTunManager struct {
-	conf  client_configuration.Configuration
+	conf  client.Configuration
 	dev   *tun.Device
 	route route.Contract
 	ip    ip.Contract
 }
 
 // NewPlatformTunManager constructs a new PlatformTunManager.
-func NewPlatformTunManager(conf client_configuration.Configuration) (application.ClientTunManager, error) {
+func NewPlatformTunManager(conf client.Configuration) (application.ClientTunManager, error) {
 	return &PlatformTunManager{
 		conf:  conf,
 		route: route.NewWrapper(PAL.NewExecCommander()),

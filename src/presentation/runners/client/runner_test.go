@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 	"time"
-	"tungo/infrastructure/PAL/client_configuration"
+	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/presentation/runners/client"
 	"unsafe"
 
@@ -114,9 +114,9 @@ type mockDeps struct {
 }
 
 func (d *mockDeps) Initialize() error { return nil }
-func (d *mockDeps) Configuration() client_configuration.Configuration {
+func (d *mockDeps) Configuration() client.Configuration {
 	// Not used in ClientRunner.
-	return client_configuration.Configuration{}
+	return client.Configuration{}
 }
 func (d *mockDeps) ConnectionFactory() application.ConnectionFactory { return d.conn }
 func (d *mockDeps) WorkerFactory() application.ClientWorkerFactory   { return d.worker }

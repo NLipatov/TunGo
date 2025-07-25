@@ -4,21 +4,21 @@ import (
 	"errors"
 	"reflect"
 	"testing"
-	"tungo/infrastructure/PAL/client_configuration"
+	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/presentation/runners/client"
 )
 
 type mockConfigurationManager struct {
-	conf *client_configuration.Configuration
+	conf *client.Configuration
 	err  error
 }
 
-func (d *mockConfigurationManager) Configuration() (*client_configuration.Configuration, error) {
+func (d *mockConfigurationManager) Configuration() (*client.Configuration, error) {
 	return d.conf, d.err
 }
 
-func newDummyConfig() *client_configuration.Configuration {
-	return &client_configuration.Configuration{}
+func newDummyConfig() *client.Configuration {
+	return &client.Configuration{}
 }
 
 func TestClientDependencies_InitializeSuccess(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	"math"
 	"time"
 	"tungo/application"
-	"tungo/infrastructure/PAL/client_configuration"
+	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/network"
@@ -14,10 +14,10 @@ import (
 )
 
 type ConnectionFactory struct {
-	conf client_configuration.Configuration
+	conf client.Configuration
 }
 
-func NewConnectionFactory(conf client_configuration.Configuration) application.ConnectionFactory {
+func NewConnectionFactory(conf client.Configuration) application.ConnectionFactory {
 	return &ConnectionFactory{
 		conf: conf,
 	}

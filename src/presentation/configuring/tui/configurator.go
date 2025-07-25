@@ -3,8 +3,8 @@ package tui
 import (
 	"fmt"
 	"tungo/domain/mode"
-	"tungo/infrastructure/PAL/client_configuration"
-	"tungo/infrastructure/PAL/server_configuration"
+	client_configuration2 "tungo/infrastructure/PAL/configuration/client"
+	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/presentation/configuring/tui/components"
 )
 
@@ -15,11 +15,11 @@ type Configurator struct {
 }
 
 func NewConfigurator(
-	observer client_configuration.Observer,
-	selector client_configuration.Selector,
-	creator client_configuration.Creator,
-	deleter client_configuration.Deleter,
-	serverConfigurationManager server_configuration.ServerConfigurationManager,
+	observer client_configuration2.Observer,
+	selector client_configuration2.Selector,
+	creator client_configuration2.Creator,
+	deleter client_configuration2.Deleter,
+	serverConfigurationManager server.ServerConfigurationManager,
 	selectorFactory components.SelectorFactory,
 	textInputFactory components.TextInputFactory,
 	textAreaFactory components.TextAreaFactory,

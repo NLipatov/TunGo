@@ -5,7 +5,7 @@ import (
 	"strings"
 	"tungo/application"
 	"tungo/infrastructure/PAL"
-	"tungo/infrastructure/PAL/client_configuration"
+	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/PAL/linux/network_tools/ioctl"
 	"tungo/infrastructure/PAL/linux/network_tools/ip"
 	"tungo/infrastructure/PAL/linux/network_tools/iptables"
@@ -14,13 +14,13 @@ import (
 
 // PlatformTunManager Linux-specific TunDevice manager
 type PlatformTunManager struct {
-	conf     client_configuration.Configuration
+	conf     client.Configuration
 	ip       ip.Contract
 	iptables iptables.Contract
 	ioctl    ioctl.Contract
 }
 
-func NewPlatformTunManager(conf client_configuration.Configuration) (application.ClientTunManager, error) {
+func NewPlatformTunManager(conf client.Configuration) (application.ClientTunManager, error) {
 	return &PlatformTunManager{
 		conf:     conf,
 		ip:       ip.NewWrapper(PAL.NewExecCommander()),

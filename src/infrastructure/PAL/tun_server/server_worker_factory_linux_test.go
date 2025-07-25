@@ -7,9 +7,9 @@ import (
 	"io"
 	"net"
 	"testing"
+	"tungo/infrastructure/PAL/configuration/server"
 
 	"tungo/application"
-	"tungo/infrastructure/PAL/server_configuration"
 	"tungo/infrastructure/settings"
 )
 
@@ -63,8 +63,8 @@ type swflServerConfigurationManager struct{}
 func (m *swflServerConfigurationManager) InjectSessionTtlIntervals(_, _ settings.HumanReadableDuration) error {
 	return nil
 }
-func (m *swflServerConfigurationManager) Configuration() (*server_configuration.Configuration, error) {
-	return &server_configuration.Configuration{}, nil
+func (m *swflServerConfigurationManager) Configuration() (*server.Configuration, error) {
+	return &server.Configuration{}, nil
 }
 func (m *swflServerConfigurationManager) IncrementClientCounter() error {
 	return nil
@@ -78,7 +78,7 @@ type swflServerConfigurationManagerWithErr struct{}
 func (m *swflServerConfigurationManagerWithErr) InjectSessionTtlIntervals(_, _ settings.HumanReadableDuration) error {
 	return nil
 }
-func (m *swflServerConfigurationManagerWithErr) Configuration() (*server_configuration.Configuration, error) {
+func (m *swflServerConfigurationManagerWithErr) Configuration() (*server.Configuration, error) {
 	return nil, errors.New("config fail")
 }
 func (m *swflServerConfigurationManagerWithErr) IncrementClientCounter() error { return nil }
