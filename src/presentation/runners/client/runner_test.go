@@ -8,8 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
-	"tungo/infrastructure/PAL/client_configuration"
-	"tungo/presentation/runners/client"
+	"tungo/infrastructure/PAL/configuration/client"
+	clientRunners "tungo/presentation/runners/client"
 	"unsafe"
 
 	"tungo/application"
@@ -114,16 +114,16 @@ type mockDeps struct {
 }
 
 func (d *mockDeps) Initialize() error { return nil }
-func (d *mockDeps) Configuration() client_configuration.Configuration {
+func (d *mockDeps) Configuration() client.Configuration {
 	// Not used in ClientRunner.
-	return client_configuration.Configuration{}
+	return client.Configuration{}
 }
 func (d *mockDeps) ConnectionFactory() application.ConnectionFactory { return d.conn }
 func (d *mockDeps) WorkerFactory() application.ClientWorkerFactory   { return d.worker }
 func (d *mockDeps) TunManager() application.ClientTunManager         { return d.tun }
 
 // setRouterBuilder sets the unexported routerBuilder field using unsafe.
-func setRouterBuilder(runner *client.Runner, factory application.TrafficRouterFactory) {
+func setRouterBuilder(runner *clientRunners.Runner, factory application.TrafficRouterFactory) {
 	v := reflect.ValueOf(runner).Elem().FieldByName("routerFactory")
 	if !v.IsValid() {
 		panic("routerFactory field not found")
@@ -141,7 +141,7 @@ func TestClientRunner_Run_RouteTrafficCanceled(t *testing.T) {
 	}
 	router := &mockRouter{routeErr: context.Canceled}
 	routerFactory := &mockRouterFactory{router: router}
-	runner := client.NewRunner(deps, routerFactory)
+	runner := clientRunners.NewRunner(deps, routerFactory)
 	setRouterBuilder(runner, routerFactory)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -174,7 +174,7 @@ func TestClientRunner_Run_CreateRouterError(t *testing.T) {
 	routerFactory := &mockRouterFactory{
 		err: errors.New("create router error"),
 	}
-	runner := client.NewRunner(deps, routerFactory)
+	runner := clientRunners.NewRunner(deps, routerFactory)
 	setRouterBuilder(runner, routerFactory)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)

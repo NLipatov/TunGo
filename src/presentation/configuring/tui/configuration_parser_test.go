@@ -3,13 +3,13 @@ package tui
 import (
 	"encoding/json"
 	"testing"
-	"tungo/infrastructure/PAL/client_configuration"
+	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/settings"
 )
 
 // makeTestConfig returns a minimal Configuration for tests.
-func makeTestConfig() client_configuration.Configuration {
-	return client_configuration.Configuration{
+func makeTestConfig() client.Configuration {
+	return client.Configuration{
 		TCPSettings: settings.Settings{
 			ConnectionIP: "127.0.0.1",
 			Port:         "8080",

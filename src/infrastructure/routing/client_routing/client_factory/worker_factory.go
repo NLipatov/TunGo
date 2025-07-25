@@ -7,7 +7,7 @@ import (
 	"net"
 	"time"
 	"tungo/application"
-	"tungo/infrastructure/PAL/client_configuration"
+	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/routing/client_routing/routing/tcp_chacha20"
@@ -16,10 +16,10 @@ import (
 )
 
 type WorkerFactory struct {
-	conf client_configuration.Configuration
+	conf client.Configuration
 }
 
-func NewWorkerFactory(configuration client_configuration.Configuration) application.ClientWorkerFactory {
+func NewWorkerFactory(configuration client.Configuration) application.ClientWorkerFactory {
 	return &WorkerFactory{
 		conf: configuration,
 	}

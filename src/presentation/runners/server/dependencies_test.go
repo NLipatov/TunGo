@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 	"tungo/application"
-	"tungo/infrastructure/PAL/server_configuration"
+	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/settings"
 )
 
@@ -25,7 +25,7 @@ func (d *dummyKeyMgr) PrepareKeys() error {
 }
 
 func TestNewDependenciesAndAccessors(t *testing.T) {
-	cfg := server_configuration.Configuration{
+	cfg := server.Configuration{
 		EnableTCP: true,
 		EnableUDP: false,
 		TCPSettings: settings.Settings{

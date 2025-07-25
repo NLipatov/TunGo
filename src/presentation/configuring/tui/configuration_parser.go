@@ -3,7 +3,7 @@ package tui
 import (
 	"encoding/json"
 	"strings"
-	"tungo/infrastructure/PAL/client_configuration"
+	"tungo/infrastructure/PAL/configuration/client"
 	"unicode"
 )
 
@@ -16,12 +16,12 @@ func NewConfigurationParser() *ConfigurationParser {
 }
 
 // FromJson cleans the input and unmarshals it into a Configuration.
-func (c *ConfigurationParser) FromJson(input string) (client_configuration.Configuration, error) {
+func (c *ConfigurationParser) FromJson(input string) (client.Configuration, error) {
 	clean := strings.TrimSpace(c.sanitize(input))
 
-	var cfg client_configuration.Configuration
+	var cfg client.Configuration
 	if err := json.Unmarshal([]byte(clean), &cfg); err != nil {
-		return client_configuration.Configuration{}, err
+		return client.Configuration{}, err
 	}
 	return cfg, nil
 }

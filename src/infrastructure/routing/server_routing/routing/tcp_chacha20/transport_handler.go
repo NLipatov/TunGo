@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/netip"
 	"tungo/application"
+	"tungo/application/listeners"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
 	"tungo/infrastructure/settings"
@@ -18,9 +19,9 @@ type TransportHandler struct {
 	ctx                 context.Context
 	settings            settings.Settings
 	writer              io.ReadWriteCloser
-	listener            application.TcpListener
+	listener            listeners.TcpListener
 	sessionManager      repository.SessionRepository[application.Session]
-	Logger              application.Logger
+	logger              application.Logger
 	handshakeFactory    application.HandshakeFactory
 	cryptographyFactory application.CryptographyServiceFactory
 }
@@ -29,7 +30,7 @@ func NewTransportHandler(
 	ctx context.Context,
 	settings settings.Settings,
 	writer io.ReadWriteCloser,
-	listener application.TcpListener,
+	listener listeners.TcpListener,
 	sessionManager repository.SessionRepository[application.Session],
 	logger application.Logger,
 	handshakeFactory application.HandshakeFactory,
@@ -41,7 +42,7 @@ func NewTransportHandler(
 		writer:              writer,
 		listener:            listener,
 		sessionManager:      sessionManager,
-		Logger:              logger,
+		logger:              logger,
 		handshakeFactory:    handshakeFactory,
 		cryptographyFactory: cryptographyFactory,
 	}
@@ -51,7 +52,7 @@ func (t *TransportHandler) HandleTransport() error {
 	defer func() {
 		_ = t.listener.Close()
 	}()
-	t.Logger.Printf("server listening on port %s (TCP)", t.settings.Port)
+	t.logger.Printf("server listening on port %s (TCP)", t.settings.Port)
 
 	//using this goroutine to 'unblock' TcpListener.Accept blocking-call
 	go func() {
@@ -67,17 +68,17 @@ func (t *TransportHandler) HandleTransport() error {
 		default:
 			conn, listenErr := t.listener.Accept()
 			if t.ctx.Err() != nil {
-				t.Logger.Printf("exiting Accept loop: %s", t.ctx.Err())
+				t.logger.Printf("exiting Accept loop: %s", t.ctx.Err())
 				return nil
 			}
 			if listenErr != nil {
-				t.Logger.Printf("failed to accept connection: %v", listenErr)
+				t.logger.Printf("failed to accept connection: %v", listenErr)
 				continue
 			}
 			go func() {
 				err := t.registerClient(conn, t.writer, t.ctx)
 				if err != nil {
-					t.Logger.Printf("failed to register client: %v", err)
+					t.logger.Printf("failed to register client: %v", err)
 				}
 			}()
 		}
@@ -85,7 +86,7 @@ func (t *TransportHandler) HandleTransport() error {
 }
 
 func (t *TransportHandler) registerClient(conn net.Conn, tunFile io.ReadWriteCloser, ctx context.Context) error {
-	t.Logger.Printf("connected: %s", conn.RemoteAddr())
+	t.logger.Printf("connected: %s", conn.RemoteAddr())
 
 	h := t.handshakeFactory.NewHandshake()
 	internalIP, handshakeErr := h.ServerSideHandshake(&network.TcpAdapter{
@@ -95,7 +96,7 @@ func (t *TransportHandler) registerClient(conn net.Conn, tunFile io.ReadWriteClo
 		_ = conn.Close()
 		return fmt.Errorf("client %s failed registration: %w", conn.RemoteAddr(), handshakeErr)
 	}
-	t.Logger.Printf("registered: %s", conn.RemoteAddr())
+	t.logger.Printf("registered: %s", conn.RemoteAddr())
 
 	cryptographyService, cryptographyServiceErr := t.cryptographyFactory.FromHandshake(h, true)
 	if cryptographyServiceErr != nil {
@@ -121,7 +122,7 @@ func (t *TransportHandler) registerClient(conn net.Conn, tunFile io.ReadWriteClo
 	if getErr == nil {
 		_ = conn.Close()
 		t.sessionManager.Delete(existingSession)
-		t.Logger.Printf("Replacing existing session for %s", intIP)
+		t.logger.Printf("Replacing existing session for %s", intIP)
 	} else if !errors.Is(getErr, repository.ErrSessionNotFound) {
 		_ = conn.Close()
 		return fmt.Errorf(
@@ -145,7 +146,7 @@ func (t *TransportHandler) handleClient(ctx context.Context, session application
 	defer func() {
 		t.sessionManager.Delete(session)
 		_ = session.ConnectionAdapter().Close()
-		t.Logger.Printf("disconnected: %s", session.ExternalAddrPort())
+		t.logger.Printf("disconnected: %s", session.ExternalAddrPort())
 	}()
 
 	buf := make([]byte, network.MaxPacketLengthBytes)
@@ -158,7 +159,7 @@ func (t *TransportHandler) handleClient(ctx context.Context, session application
 			_, err := io.ReadFull(session.ConnectionAdapter(), buf[:4])
 			if err != nil {
 				if err != io.EOF {
-					t.Logger.Printf("failed to read from client: %v", err)
+					t.logger.Printf("failed to read from client: %v", err)
 				}
 				return
 			}
@@ -166,27 +167,27 @@ func (t *TransportHandler) handleClient(ctx context.Context, session application
 			//read packet length from 4-byte length prefix
 			var length = binary.BigEndian.Uint32(buf[:4])
 			if length < 4 || length > network.MaxPacketLengthBytes {
-				t.Logger.Printf("invalid packet Length: %d", length)
+				t.logger.Printf("invalid packet Length: %d", length)
 				continue
 			}
 
 			//read n-bytes from connection
 			_, err = io.ReadFull(session.ConnectionAdapter(), buf[:length])
 			if err != nil {
-				t.Logger.Printf("failed to read packet from connection: %s", err)
+				t.logger.Printf("failed to read packet from connection: %s", err)
 				continue
 			}
 
 			decrypted, decryptionErr := session.CryptographyService().Decrypt(buf[:length])
 			if decryptionErr != nil {
-				t.Logger.Printf("failed to decrypt data: %s", decryptionErr)
+				t.logger.Printf("failed to decrypt data: %s", decryptionErr)
 				continue
 			}
 
 			// Write the decrypted packet to the TUN interface
 			_, err = tunFile.Write(decrypted)
 			if err != nil {
-				t.Logger.Printf("failed to write to TUN: %v", err)
+				t.logger.Printf("failed to write to TUN: %v", err)
 				return
 			}
 		}

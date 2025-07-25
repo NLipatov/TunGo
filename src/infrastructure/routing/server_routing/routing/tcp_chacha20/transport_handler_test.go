@@ -17,6 +17,24 @@ import (
 	"tungo/infrastructure/settings"
 )
 
+type fakeTcpListenerCtxDone struct {
+	t      *testing.T
+	ctx    context.Context
+	closed bool
+	called bool
+}
+
+func (f *fakeTcpListenerCtxDone) Accept() (net.Conn, error) {
+	if !f.called {
+		f.called = true
+		<-f.ctx.Done()
+		return nil, errors.New("ctx canceled")
+	}
+	return nil, errors.New("done")
+}
+
+func (f *fakeTcpListenerCtxDone) Close() error { f.closed = true; return nil }
+
 type fakeConn struct {
 	readBufs [][]byte
 	writeBuf bytes.Buffer
@@ -56,14 +74,20 @@ func (f *fakeConn) SetReadDeadline(_ time.Time) error  { return nil }
 func (f *fakeConn) SetWriteDeadline(_ time.Time) error { return nil }
 
 type fakeTcpListener struct {
-	conns    []net.Conn
-	acceptIx int
-	err      error
-	closed   bool
+	conns       []net.Conn
+	acceptIx    int
+	err         error
+	closed      bool
+	errCount    int
+	maxErrCount int
 }
 
 func (f *fakeTcpListener) Accept() (net.Conn, error) {
 	if f.err != nil {
+		f.errCount++
+		if f.errCount >= f.maxErrCount {
+			time.Sleep(30 * time.Millisecond)
+		}
 		return nil, f.err
 	}
 	if f.acceptIx >= len(f.conns) {
@@ -74,6 +98,7 @@ func (f *fakeTcpListener) Accept() (net.Conn, error) {
 	f.acceptIx++
 	return c, nil
 }
+
 func (f *fakeTcpListener) Close() error { f.closed = true; return nil }
 
 type fakeLogger struct {
@@ -81,10 +106,10 @@ type fakeLogger struct {
 	mu   sync.Mutex
 }
 
-func (l *fakeLogger) Printf(format string, _ ...interface{}) {
+func (l *fakeLogger) Printf(format string, args ...interface{}) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.logs = append(l.logs, format)
+	l.logs = append(l.logs, fmt.Sprintf(format, args...))
 }
 
 type fakeHandshake struct {
@@ -182,8 +207,7 @@ func tcpAddr(ip string, port int) *net.TCPAddr {
 
 func TestHandleTransport_CtxDoneBeforeAccept(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	listener := &fakeTcpListener{}
+	listener := &fakeTcpListenerCtxDone{ctx: ctx, t: t}
 	logger := &fakeLogger{}
 	handler := NewTransportHandler(
 		ctx,
@@ -195,21 +219,66 @@ func TestHandleTransport_CtxDoneBeforeAccept(t *testing.T) {
 		&fakeHandshakeFactory{},
 		&fakeCryptoFactory{},
 	)
-	_ = handler.HandleTransport()
+	done := make(chan struct{})
+	go func() {
+		_ = handler.HandleTransport()
+		close(done)
+	}()
+	time.Sleep(10 * time.Millisecond)
+	cancel()
+	<-done
+
 	if !listener.closed {
 		t.Error("listener should be closed on ctx done")
+	}
+	found := false
+	for _, log := range logger.logs {
+		if strings.Contains(log, "exiting Accept loop") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("exiting Accept loop log missing: logs=%v", logger.logs)
 	}
 }
 
 func TestHandleTransport_AcceptError(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	listener := &fakeTcpListener{err: errors.New("accept fail")}
+	maxErrs := 3
+
+	listener := &fakeTcpListener{err: errors.New("accept fail"), maxErrCount: maxErrs}
 	logger := &fakeLogger{}
-	handler := NewTransportHandler(ctx, settings.Settings{Port: "1111"}, &fakeWriter{}, listener, &fakeSessionRepo{}, logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{})
-	go func() { _ = handler.HandleTransport() }()
-	time.Sleep(15 * time.Millisecond)
+	handler := NewTransportHandler(
+		ctx,
+		settings.Settings{Port: "1111"},
+		&fakeWriter{},
+		listener,
+		&fakeSessionRepo{},
+		logger,
+		&fakeHandshakeFactory{},
+		&fakeCryptoFactory{},
+	)
+
+	done := make(chan struct{})
+	go func() {
+		_ = handler.HandleTransport()
+		close(done)
+	}()
+	time.Sleep(50 * time.Millisecond)
 	cancel()
+	<-done
+
+	count := 0
+	for _, log := range logger.logs {
+		if strings.Contains(log, "failed to accept connection: accept fail") {
+			count++
+		}
+	}
+	if count != maxErrs {
+		t.Errorf("expected %d error logs, got %d (logs=%v)", maxErrs, count, logger.logs)
+	}
 }
 
 func TestHandleTransport_RegisterClientError(t *testing.T) {

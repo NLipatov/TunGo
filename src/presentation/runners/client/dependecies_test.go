@@ -4,21 +4,21 @@ import (
 	"errors"
 	"reflect"
 	"testing"
-	"tungo/infrastructure/PAL/client_configuration"
-	"tungo/presentation/runners/client"
+	"tungo/infrastructure/PAL/configuration/client"
+	clientRunners "tungo/presentation/runners/client"
 )
 
 type mockConfigurationManager struct {
-	conf *client_configuration.Configuration
+	conf *client.Configuration
 	err  error
 }
 
-func (d *mockConfigurationManager) Configuration() (*client_configuration.Configuration, error) {
+func (d *mockConfigurationManager) Configuration() (*client.Configuration, error) {
 	return d.conf, d.err
 }
 
-func newDummyConfig() *client_configuration.Configuration {
-	return &client_configuration.Configuration{}
+func newDummyConfig() *client.Configuration {
+	return &client.Configuration{}
 }
 
 func TestClientDependencies_InitializeSuccess(t *testing.T) {
@@ -26,7 +26,7 @@ func TestClientDependencies_InitializeSuccess(t *testing.T) {
 		conf: newDummyConfig(),
 		err:  nil,
 	}
-	deps := client.NewDependencies(dcm)
+	deps := clientRunners.NewDependencies(dcm)
 	if err := deps.Initialize(); err != nil {
 		t.Fatalf("Initialize() returned error: %v", err)
 	}
@@ -53,7 +53,7 @@ func TestClientDependencies_InitializeError(t *testing.T) {
 		conf: nil,
 		err:  errors.New("dummy error"),
 	}
-	deps := client.NewDependencies(dcm)
+	deps := clientRunners.NewDependencies(dcm)
 	if err := deps.Initialize(); err == nil {
 		t.Error("Expected error from Initialize(), got nil")
 	}

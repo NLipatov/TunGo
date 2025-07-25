@@ -3,10 +3,11 @@ package network
 import (
 	"net/netip"
 	"tungo/application"
+	"tungo/application/listeners"
 )
 
 type ServerUdpAdapter struct {
-	Conn     application.UdpListenerConn
+	Conn     listeners.UdpListener
 	AddrPort netip.AddrPort
 
 	//read buffers
@@ -14,7 +15,7 @@ type ServerUdpAdapter struct {
 	oob [1024]byte
 }
 
-func NewUdpAdapter(UdpConn application.UdpListenerConn, AddrPort netip.AddrPort) application.ConnectionAdapter {
+func NewUdpAdapter(UdpConn listeners.UdpListener, AddrPort netip.AddrPort) application.ConnectionAdapter {
 	return &ServerUdpAdapter{
 		Conn:     UdpConn,
 		AddrPort: AddrPort,

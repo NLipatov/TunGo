@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"net"
+	"net/netip"
 	"time"
 	"tungo/application"
-	"tungo/infrastructure/PAL/client_configuration"
+	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/network"
@@ -14,10 +16,10 @@ import (
 )
 
 type ConnectionFactory struct {
-	conf client_configuration.Configuration
+	conf client.Configuration
 }
 
-func NewConnectionFactory(conf client_configuration.Configuration) application.ConnectionFactory {
+func NewConnectionFactory(conf client.Configuration) application.ConnectionFactory {
 	return &ConnectionFactory{
 		conf: conf,
 	}
@@ -31,9 +33,9 @@ func (f *ConnectionFactory) EstablishConnection(
 		return nil, nil, connSettingsErr
 	}
 
-	socket, socketErr := network.NewSocket(connSettings.ConnectionIP, connSettings.Port)
-	if socketErr != nil {
-		return nil, nil, socketErr
+	addrPort, addrPortErr := netip.ParseAddrPort(net.JoinHostPort(connSettings.ConnectionIP, connSettings.Port))
+	if addrPortErr != nil {
+		return nil, nil, addrPortErr
 	}
 
 	deadline := time.Now().Add(time.Duration(math.Max(float64(connSettings.DialTimeoutMs), 5000)) * time.Millisecond)
@@ -50,7 +52,7 @@ func (f *ConnectionFactory) EstablishConnection(
 		)
 		cancellableSecret := network.NewSecretWithDeadline(handshakeCtx, secret)
 
-		session := network.NewDefaultSecureSession(network.NewUdpConnection(socket), cancellableSecret)
+		session := network.NewDefaultSecureSession(network.NewUDPConnection(addrPort), cancellableSecret)
 		cancellableSession := network.NewSecureSessionWithDeadline(handshakeCtx, session)
 		return cancellableSession.Establish()
 	case settings.TCP:
@@ -62,7 +64,7 @@ func (f *ConnectionFactory) EstablishConnection(
 		)
 		cancellableSecret := network.NewSecretWithDeadline(handshakeCtx, secret)
 
-		session := network.NewDefaultSecureSession(network.NewTcpConnection(socket), cancellableSecret)
+		session := network.NewDefaultSecureSession(network.NewTCPConnection(addrPort), cancellableSecret)
 		cancellableSession := network.NewSecureSessionWithDeadline(handshakeCtx, session)
 		return cancellableSession.Establish()
 	default:

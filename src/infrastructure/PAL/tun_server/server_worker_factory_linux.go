@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
+	"net/netip"
 	"tungo/application"
-	"tungo/infrastructure/PAL/server_configuration"
+	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/routing/server_routing/routing/tcp_chacha20"
@@ -17,19 +19,16 @@ import (
 
 type ServerWorkerFactory struct {
 	settings             settings.Settings
-	socketFactory        socketFactory
-	tcpFactory           tcpListenerFactory
-	udpFactory           udpListenerFactory
 	loggerFactory        loggerFactory
-	configurationManager server_configuration.ServerConfigurationManager
+	configurationManager server.ServerConfigurationManager
 }
 
-func NewServerWorkerFactory(settings settings.Settings, manager server_configuration.ServerConfigurationManager) application.ServerWorkerFactory {
+func NewServerWorkerFactory(
+	settings settings.Settings,
+	manager server.ServerConfigurationManager,
+) application.ServerWorkerFactory {
 	return &ServerWorkerFactory{
 		settings:             settings,
-		socketFactory:        newDefaultSocketFactory(),
-		tcpFactory:           newDefaultTcpListenerFactory(),
-		udpFactory:           newDefaultUdpListenerFactory(),
 		loggerFactory:        newDefaultLoggerFactory(),
 		configurationManager: manager,
 	}
@@ -37,17 +36,11 @@ func NewServerWorkerFactory(settings settings.Settings, manager server_configura
 
 func NewTestServerWorkerFactory(
 	settings settings.Settings,
-	socketFactory socketFactory,
-	tcpFactory tcpListenerFactory,
-	udpFactory udpListenerFactory,
 	loggerFactory loggerFactory,
-	manager server_configuration.ServerConfigurationManager,
+	manager server.ServerConfigurationManager,
 ) application.ServerWorkerFactory {
 	return &ServerWorkerFactory{
 		settings:             settings,
-		socketFactory:        socketFactory,
-		tcpFactory:           tcpFactory,
-		udpFactory:           udpFactory,
 		loggerFactory:        loggerFactory,
 		configurationManager: manager,
 	}
@@ -77,19 +70,19 @@ func (s *ServerWorkerFactory) createTCPWorker(ctx context.Context, tun io.ReadWr
 		concurrentSessionManager,
 	)
 
-	// now the injected factories:
-	sock, err := s.socketFactory.newSocket(s.settings.ConnectionIP, s.settings.Port)
-	if err != nil {
-		return nil, err
-	}
-	listener, err := s.tcpFactory.listenTCP(sock.StringAddr())
-	if err != nil {
-		return nil, fmt.Errorf("failed to listen TCP: %w", err)
-	}
-
 	conf, confErr := s.configurationManager.Configuration()
 	if confErr != nil {
 		return nil, confErr
+	}
+
+	addrPort, addrPortErr := s.addrPortToListen(s.settings.ConnectionIP, s.settings.Port)
+	if addrPortErr != nil {
+		return nil, addrPortErr
+	}
+
+	listener, err := net.Listen("tcp", addrPort.String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to listen TCP: %w", err)
 	}
 
 	tr := tcp_chacha20.NewTransportHandler(
@@ -116,26 +109,37 @@ func (s *ServerWorkerFactory) createUDPWorker(ctx context.Context, tun io.ReadWr
 		concurrentSessionManager,
 	)
 
-	sock, err := s.socketFactory.newSocket(s.settings.ConnectionIP, s.settings.Port)
-	if err != nil {
-		return nil, err
-	}
-	ul := s.udpFactory.listenUDP(sock)
-
 	conf, confErr := s.configurationManager.Configuration()
 	if confErr != nil {
 		return nil, confErr
+	}
+
+	addrPort, addrPortErr := s.addrPortToListen(s.settings.ConnectionIP, s.settings.Port)
+	if addrPortErr != nil {
+		return nil, addrPortErr
+	}
+
+	conn, err := net.ListenUDP("udp", net.UDPAddrFromAddrPort(addrPort))
+	if err != nil {
+		return nil, fmt.Errorf("failed to listen on port: %s", err)
 	}
 
 	tr := udp_chacha20.NewTransportHandler(
 		ctx,
 		s.settings,
 		tun,
-		ul,
+		conn,
 		concurrentSessionManager,
 		s.loggerFactory.newLogger(),
 		NewHandshakeFactory(*conf),
 		chacha20.NewUdpSessionBuilder(),
 	)
 	return udp_chacha20.NewUdpTunWorker(th, tr), nil
+}
+
+func (s *ServerWorkerFactory) addrPortToListen(ip, port string) (netip.AddrPort, error) {
+	if ip == "" {
+		ip = "::" // dual-stack listen - both ipv4 and ipv6
+	}
+	return netip.ParseAddrPort(net.JoinHostPort(ip, port))
 }

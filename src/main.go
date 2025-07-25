@@ -9,15 +9,15 @@ import (
 	"syscall"
 	"tungo/domain/app"
 	"tungo/domain/mode"
-	"tungo/infrastructure/PAL/client_configuration"
-	"tungo/infrastructure/PAL/server_configuration"
+	"tungo/infrastructure/PAL/configuration/client"
+	serverConf "tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/PAL/stat"
 	"tungo/infrastructure/PAL/tun_server"
 	"tungo/infrastructure/routing/client_routing/client_factory"
 	"tungo/presentation/configuring"
 	"tungo/presentation/elevation"
 	"tungo/presentation/interactive_commands/handlers"
-	"tungo/presentation/runners/client"
+	clientConf "tungo/presentation/runners/client"
 	"tungo/presentation/runners/server"
 	"tungo/presentation/runners/version"
 )
@@ -40,8 +40,8 @@ func main() {
 		appCtxCancel()
 	}()
 
-	configurationManager, configurationManagerErr := server_configuration.NewManager(
-		server_configuration.NewServerResolver(),
+	configurationManager, configurationManagerErr := serverConf.NewManager(
+		serverConf.NewServerResolver(),
 		stat.NewDefaultStat(),
 	)
 	if configurationManagerErr != nil {
@@ -79,7 +79,7 @@ func main() {
 }
 
 func startClient(appCtx context.Context) {
-	deps := client.NewDependencies(client_configuration.NewManager())
+	deps := clientConf.NewDependencies(client.NewManager())
 	depsErr := deps.Initialize()
 	if depsErr != nil {
 		log.Fatalf("init error: %s", depsErr)
@@ -87,11 +87,11 @@ func startClient(appCtx context.Context) {
 
 	routerFactory := client_factory.NewRouterFactory()
 
-	runner := client.NewRunner(deps, routerFactory)
+	runner := clientConf.NewRunner(deps, routerFactory)
 	runner.Run(appCtx)
 }
 
-func startServer(appCtx context.Context, configurationManager server_configuration.ServerConfigurationManager) {
+func startServer(appCtx context.Context, configurationManager serverConf.ServerConfigurationManager) {
 	tunFactory := tun_server.NewServerTunFactory()
 
 	conf, confErr := configurationManager.Configuration()
@@ -102,7 +102,7 @@ func startServer(appCtx context.Context, configurationManager server_configurati
 	deps := server.NewDependencies(
 		tunFactory,
 		*conf,
-		server_configuration.NewEd25519KeyManager(conf, configurationManager),
+		serverConf.NewEd25519KeyManager(conf, configurationManager),
 		configurationManager,
 	)
 

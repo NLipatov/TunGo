@@ -4,16 +4,16 @@ import (
 	"context"
 	"io"
 	"tungo/application"
-	"tungo/infrastructure/PAL/server_configuration"
+	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/settings"
 )
 
 type ServerWorkerFactory struct {
 	settings             settings.Settings
-	configurationManager server_configuration.ServerConfigurationManager
+	configurationManager server.ServerConfigurationManager
 }
 
-func NewServerWorkerFactory(settings settings.Settings, manager server_configuration.ServerConfigurationManager) application.ServerWorkerFactory {
+func NewServerWorkerFactory(settings settings.Settings, manager server.ServerConfigurationManager) application.ServerWorkerFactory {
 	return &ServerWorkerFactory{
 		settings:             settings,
 		configurationManager: manager,

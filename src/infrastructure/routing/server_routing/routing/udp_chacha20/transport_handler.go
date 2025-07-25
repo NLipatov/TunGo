@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/netip"
 	"tungo/application"
+	"tungo/application/listeners"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
 	"tungo/infrastructure/settings"
@@ -17,7 +18,7 @@ type TransportHandler struct {
 	writer              io.Writer
 	sessionManager      repository.SessionRepository[application.Session]
 	logger              application.Logger
-	listener            application.Listener
+	listenerConn        listeners.UdpListener
 	handshakeFactory    application.HandshakeFactory
 	cryptographyFactory application.CryptographyServiceFactory
 }
@@ -26,7 +27,7 @@ func NewTransportHandler(
 	ctx context.Context,
 	settings settings.Settings,
 	writer io.Writer,
-	listener application.Listener,
+	listenerConn listeners.UdpListener,
 	sessionManager repository.SessionRepository[application.Session],
 	logger application.Logger,
 	handshakeFactory application.HandshakeFactory,
@@ -38,27 +39,22 @@ func NewTransportHandler(
 		writer:              writer,
 		sessionManager:      sessionManager,
 		logger:              logger,
-		listener:            listener,
+		listenerConn:        listenerConn,
 		handshakeFactory:    handshakeFactory,
 		cryptographyFactory: cryptographyFactory,
 	}
 }
 
 func (t *TransportHandler) HandleTransport() error {
-	conn, err := t.listener.Listen()
-	if err != nil {
-		t.logger.Printf("failed to listen on port: %s", err)
-		return err
-	}
-	defer func(conn application.UdpListenerConn) {
+	defer func(conn listeners.UdpListener) {
 		_ = conn.Close()
-	}(conn)
+	}(t.listenerConn)
 
 	t.logger.Printf("server listening on port %s (UDP)", t.settings.Port)
 
 	go func() {
 		<-t.ctx.Done()
-		_ = conn.Close()
+		_ = t.listenerConn.Close()
 	}()
 
 	dataBuf := make([]byte, network.MaxPacketLengthBytes+12)
@@ -69,7 +65,7 @@ func (t *TransportHandler) HandleTransport() error {
 		case <-t.ctx.Done():
 			return nil
 		default:
-			n, _, _, clientAddr, readFromUdpErr := conn.ReadMsgUDPAddrPort(dataBuf, oobBuf)
+			n, _, _, clientAddr, readFromUdpErr := t.listenerConn.ReadMsgUDPAddrPort(dataBuf, oobBuf)
 			if readFromUdpErr != nil {
 				if t.ctx.Done() != nil {
 					return nil
@@ -79,7 +75,7 @@ func (t *TransportHandler) HandleTransport() error {
 				continue
 			}
 
-			_ = t.handlePacket(conn, clientAddr, dataBuf[:n])
+			_ = t.handlePacket(t.listenerConn, clientAddr, dataBuf[:n])
 		}
 	}
 }
@@ -87,7 +83,7 @@ func (t *TransportHandler) HandleTransport() error {
 // handlePacket processes a UDP packet from addrPort.
 // Registers the client if needed, or decrypts and forwards the packet for an existing session.
 func (t *TransportHandler) handlePacket(
-	conn application.UdpListenerConn,
+	conn listeners.UdpListener,
 	addrPort netip.AddrPort,
 	packet []byte) error {
 	session, sessionLookupErr := t.sessionManager.GetByExternalAddrPort(addrPort)
@@ -124,7 +120,7 @@ func (t *TransportHandler) handlePacket(
 }
 
 func (t *TransportHandler) registerClient(
-	conn application.UdpListenerConn,
+	conn listeners.UdpListener,
 	addrPort netip.AddrPort,
 	initialData []byte) error {
 	_ = conn.SetReadBuffer(65536)

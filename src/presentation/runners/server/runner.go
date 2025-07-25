@@ -5,7 +5,7 @@ import (
 	"log"
 	"sync"
 	"tungo/infrastructure/PAL/tun_server"
-	"tungo/infrastructure/routing/server_routing/factory"
+	"tungo/infrastructure/routing"
 	"tungo/infrastructure/settings"
 )
 
@@ -65,7 +65,6 @@ func (r *Runner) Run(ctx context.Context) {
 
 func (r *Runner) route(ctx context.Context, settings settings.Settings) error {
 	workerFactory := tun_server.NewServerWorkerFactory(settings, r.deps.ConfigurationManager())
-	routerFactory := factory.NewServerRouterFactory()
 
 	tun, tunErr := r.deps.TunManager().CreateTunDevice(settings)
 	if tunErr != nil {
@@ -77,7 +76,7 @@ func (r *Runner) route(ctx context.Context, settings settings.Settings) error {
 		log.Fatalf("error creating worker: %s", workerErr)
 	}
 
-	router := routerFactory.CreateRouter(worker)
+	router := routing.NewRouter(worker)
 
 	routingErr := router.RouteTraffic(ctx)
 	if routingErr != nil {

@@ -1,62 +1,50 @@
 package network
 
 import (
-	"fmt"
+	"errors"
 	"net"
+	"net/netip"
 	"testing"
-	"time"
-	"tungo/infrastructure/settings"
 )
 
-func TestDefaultConnection_Establish(t *testing.T) {
-	port := 3001
-	testSettings := settings.Settings{
-		ConnectionIP: "127.0.0.1",
-		Port:         fmt.Sprintf("%d", port),
-	}
+type fakeConn struct{ net.Conn }
+type fakeDialer struct {
+	conn net.Conn
+	err  error
+}
 
-	serverAcceptChan := make(chan struct{}, 1)
-	serverErrChan := make(chan error, 1)
+func (d *fakeDialer) Dial(_, _ string) (net.Conn, error) {
+	return d.conn, d.err
+}
 
-	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+func TestTCPConnection_Establish_Success(t *testing.T) {
+	addr := netip.MustParseAddrPort("127.0.0.1:12345")
+	tc := NewTCPConnectionWithDialer(addr, &fakeDialer{conn: &fakeConn{}})
+	c, err := tc.Establish()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("expected no error, got %v", err)
 	}
-
-	defer func(listener net.Listener) {
-		_ = listener.Close()
-	}(listener)
-
-	go func() {
-
-		for {
-			conn, acceptErr := listener.Accept()
-			if acceptErr != nil {
-				serverErrChan <- acceptErr
-				return
-			}
-			_ = conn.Close()
-			serverAcceptChan <- struct{}{}
-			return
-		}
-	}()
-
-	socket, socketErr := NewSocket(testSettings.ConnectionIP, testSettings.Port)
-	if socketErr != nil {
-		t.Fatal(socketErr)
+	if c == nil {
+		t.Fatal("expected conn, got nil")
 	}
-	connection := NewTcpConnection(socket)
-	_, connErr := connection.Establish()
-	if connErr != nil {
-		t.Fatal(connErr)
-	}
+}
 
-	select {
-	case <-time.After(time.Duration(1) * time.Second):
-		t.Fatalf("timeout")
-	case serverErr := <-serverErrChan:
-		t.Fatalf("server error: %s", serverErr)
-	case <-serverAcceptChan:
-		return
+func TestTCPConnection_Establish_Error(t *testing.T) {
+	addr := netip.MustParseAddrPort("127.0.0.1:12345")
+	tc := NewTCPConnectionWithDialer(addr, &fakeDialer{err: errors.New("fail")})
+	c, err := tc.Establish()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if c != nil {
+		t.Fatal("expected nil connection")
+	}
+}
+
+func TestNewTCPConnection_DefaultDialer(t *testing.T) {
+	addr := netip.MustParseAddrPort("127.0.0.1:12345")
+	c := NewTCPConnection(addr)
+	if c == nil {
+		t.Fatal("expected not nil")
 	}
 }

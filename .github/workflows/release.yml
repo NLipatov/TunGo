@@ -39,7 +39,7 @@ jobs:
         run: |
           cd src
           go mod tidy
-          go build -ldflags="-X tungo/presentation/runners/version.VersionTag=${VER}" \
+          go build -ldflags="-s -w -X tungo/presentation/runners/version.VersionTag=${VER}" \
             -o ../tungo-linux-amd64
 
       - name: Upload Linux binary artifact
@@ -66,7 +66,7 @@ jobs:
         run: |
           cd src
           go mod tidy
-          GOOS=darwin GOARCH=amd64 go build -ldflags="-X tungo/presentation/runners/version.VersionTag=${VER}" \
+          GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w -X tungo/presentation/runners/version.VersionTag=${VER}" \
             -o ../tungo-darwin-amd64
   
       - name: Upload darwin-amd64
@@ -79,7 +79,7 @@ jobs:
         run: |
           cd src
           go mod tidy
-          GOOS=darwin GOARCH=arm64 go build -ldflags="-X tungo/presentation/runners/version.VersionTag=${VER}" \
+          GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w -X tungo/presentation/runners/version.VersionTag=${VER}" \
             -o ../tungo-darwin-arm64
   
       - name: Upload darwin-arm64
@@ -106,7 +106,7 @@ jobs:
         run: |
           cd src
           go mod tidy
-          go build -ldflags="-X tungo/presentation/runners/version.VersionTag=$env:VER" -o ../tungo-windows-x64.exe .
+          go build -ldflags="-s -w -X tungo/presentation/runners/version.VersionTag=$env:VER" -o ../tungo-windows-x64.exe .
 
       - name: Create RunWithAdmin.ps1
         run: |

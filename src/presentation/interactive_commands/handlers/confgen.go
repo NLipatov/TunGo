@@ -5,19 +5,19 @@ import (
 	"fmt"
 	"log"
 	"tungo/infrastructure/PAL"
-	"tungo/infrastructure/PAL/client_configuration"
+	"tungo/infrastructure/PAL/configuration/client"
+	serverСonfiguration "tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/PAL/linux/network_tools/ip"
-	"tungo/infrastructure/PAL/server_configuration"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/settings"
 )
 
 type ConfgenHandler struct {
 	ipWrapper  ip.Contract
-	cfgManager server_configuration.ServerConfigurationManager
+	cfgManager serverСonfiguration.ServerConfigurationManager
 }
 
-func NewConfgenHandler(manager server_configuration.ServerConfigurationManager) *ConfgenHandler {
+func NewConfgenHandler(manager serverСonfiguration.ServerConfigurationManager) *ConfgenHandler {
 	return &ConfgenHandler{
 		ipWrapper:  ip.NewWrapper(PAL.NewExecCommander()),
 		cfgManager: manager,
@@ -40,7 +40,7 @@ func (c *ConfgenHandler) GenerateNewClientConf() error {
 }
 
 // generate generates new client configuration
-func (c *ConfgenHandler) generate() (*client_configuration.Configuration, error) {
+func (c *ConfgenHandler) generate() (*client.Configuration, error) {
 	serverConf, err := c.cfgManager.Configuration()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read server configuration: %s", err)
@@ -75,7 +75,7 @@ func (c *ConfgenHandler) generate() (*client_configuration.Configuration, error)
 		return nil, err
 	}
 
-	conf := client_configuration.Configuration{
+	conf := client.Configuration{
 		TCPSettings: settings.Settings{
 			InterfaceName:    serverConf.TCPSettings.InterfaceName,
 			InterfaceIPCIDR:  serverConf.TCPSettings.InterfaceIPCIDR,
@@ -105,7 +105,7 @@ func (c *ConfgenHandler) generate() (*client_configuration.Configuration, error)
 	return &conf, nil
 }
 
-func (c *ConfgenHandler) getDefaultProtocol(conf *server_configuration.Configuration) settings.Protocol {
+func (c *ConfgenHandler) getDefaultProtocol(conf *serverСonfiguration.Configuration) settings.Protocol {
 	if conf.EnableUDP {
 		return settings.UDP
 	}

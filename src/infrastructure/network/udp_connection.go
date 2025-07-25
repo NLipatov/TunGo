@@ -2,26 +2,35 @@ package network
 
 import (
 	"net"
+	"net/netip"
 	"tungo/application"
 )
 
-type UdpConnection struct {
-	socket application.Socket
+type UDPDialer interface {
+	Dial(addr *net.UDPAddr) (*net.UDPConn, error)
 }
 
-func NewUdpConnection(socket application.Socket) *UdpConnection {
-	return &UdpConnection{
-		socket: socket,
+type DefaultUDPDialer struct {
+}
+
+func (d *DefaultUDPDialer) Dial(addr *net.UDPAddr) (*net.UDPConn, error) {
+	return net.DialUDP("udp", nil, addr)
+}
+
+type UDPConnection struct {
+	addrPort netip.AddrPort
+	dialer   UDPDialer
+}
+
+func NewUDPConnection(addrPort netip.AddrPort) application.Connection {
+	return &UDPConnection{
+		addrPort: addrPort,
+		dialer:   &DefaultUDPDialer{},
 	}
 }
 
-func (u *UdpConnection) Establish() (application.ConnectionAdapter, error) {
-	serverAddr, serverAddrErr := u.socket.UdpAddr()
-	if serverAddrErr != nil {
-		return nil, serverAddrErr
-	}
-
-	conn, err := net.DialUDP("udp", nil, serverAddr)
+func (u *UDPConnection) Establish() (application.ConnectionAdapter, error) {
+	conn, err := u.dialer.Dial(net.UDPAddrFromAddrPort(u.addrPort))
 	if err != nil {
 		return nil, err
 	}
