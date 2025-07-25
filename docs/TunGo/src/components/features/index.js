@@ -46,11 +46,15 @@ const FeatureList = [
         Svg: require('@site/static/svg/monitor.svg').default,
         description: (
             <div className={Styles.featureDescriptionList}>
-                <ul>
-                    <li><strong>Linux</strong> (client and server mode)</li>
-                    <li><strong>macOS</strong> (client mode)</li>
-                    <li><strong>Windows</strong> (client mode)</li>
-                </ul>
+                <div>
+                    <strong>Linux</strong> (client and server mode)
+                </div>
+                <div>
+                    <strong>macOS</strong> (client mode)    
+                </div>
+                <div>
+                    <strong>Windows</strong> (client mode)
+                </div>
             </div>
         ),
     },
