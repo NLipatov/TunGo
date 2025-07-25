@@ -3,7 +3,7 @@ package tui
 import (
 	"errors"
 	"testing"
-	client_configuration2 "tungo/infrastructure/PAL/configuration/client"
+	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
 
 	"tungo/presentation/configuring/tui/components"
 )
@@ -66,7 +66,7 @@ type clientConfiguratorMockCreator struct {
 	err error
 }
 
-func (m *clientConfiguratorMockCreator) Create(_ client_configuration2.Configuration, _ string) error {
+func (m *clientConfiguratorMockCreator) Create(_ clientConfiguration.Configuration, _ string) error {
 	return m.err
 }
 
@@ -74,7 +74,7 @@ func makeCC(
 	selectorFactory components.SelectorFactory,
 	textInputFactory components.TextInputFactory,
 	textAreaFactory components.TextAreaFactory,
-	creator client_configuration2.Creator,
+	creator clientConfiguration.Creator,
 ) *clientConfigurator {
 	return newClientConfigurator(nil, nil, nil, creator, selectorFactory, textInputFactory, textAreaFactory)
 }

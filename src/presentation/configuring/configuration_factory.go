@@ -2,7 +2,7 @@ package configuring
 
 import (
 	"os"
-	client_configuration2 "tungo/infrastructure/PAL/configuration/client"
+	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/presentation/configuring/cli"
 	"tungo/presentation/configuring/tui"
@@ -30,14 +30,14 @@ func (c *ConfigurationFactory) buildCLIConfigurator() Configurator {
 }
 
 func (c *ConfigurationFactory) buildTUIConfigurator() Configurator {
-	clientConfResolver := client_configuration2.NewDefaultResolver()
+	clientConfResolver := clientConfiguration.NewDefaultResolver()
 	serverConfManager := c.serverConfManager
 
 	tuiConfigurator := tui.NewConfigurator(
-		client_configuration2.NewDefaultObserver(clientConfResolver),
-		client_configuration2.NewDefaultSelector(clientConfResolver),
-		client_configuration2.NewDefaultCreator(clientConfResolver),
-		client_configuration2.NewDefaultDeleter(clientConfResolver),
+		clientConfiguration.NewDefaultObserver(clientConfResolver),
+		clientConfiguration.NewDefaultSelector(clientConfResolver),
+		clientConfiguration.NewDefaultCreator(clientConfResolver),
+		clientConfiguration.NewDefaultDeleter(clientConfResolver),
 		serverConfManager,
 		bubble_tea.NewSelectorAdapter(),
 		bubble_tea.NewTextInputAdapter(),

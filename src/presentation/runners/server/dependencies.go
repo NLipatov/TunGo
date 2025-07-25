@@ -2,28 +2,28 @@ package server
 
 import (
 	"tungo/application"
-	server_configuration2 "tungo/infrastructure/PAL/configuration/server"
+	serverConfiguration "tungo/infrastructure/PAL/configuration/server"
 )
 
 type AppDependencies interface {
-	Configuration() server_configuration2.Configuration
+	Configuration() serverConfiguration.Configuration
 	TunManager() application.ServerTunManager
-	KeyManager() server_configuration2.KeyManager
-	ConfigurationManager() server_configuration2.ServerConfigurationManager
+	KeyManager() serverConfiguration.KeyManager
+	ConfigurationManager() serverConfiguration.ServerConfigurationManager
 }
 
 type Dependencies struct {
-	configuration        server_configuration2.Configuration
+	configuration        serverConfiguration.Configuration
 	tunManager           application.ServerTunManager
-	keyManager           server_configuration2.KeyManager
-	configurationManager server_configuration2.ServerConfigurationManager
+	keyManager           serverConfiguration.KeyManager
+	configurationManager serverConfiguration.ServerConfigurationManager
 }
 
 func NewDependencies(
 	tunManager application.ServerTunManager,
-	configuration server_configuration2.Configuration,
-	keyManager server_configuration2.KeyManager,
-	configurationManager server_configuration2.ServerConfigurationManager,
+	configuration serverConfiguration.Configuration,
+	keyManager serverConfiguration.KeyManager,
+	configurationManager serverConfiguration.ServerConfigurationManager,
 ) AppDependencies {
 	return &Dependencies{
 		configuration:        configuration,
@@ -33,7 +33,7 @@ func NewDependencies(
 	}
 }
 
-func (s Dependencies) Configuration() server_configuration2.Configuration {
+func (s Dependencies) Configuration() serverConfiguration.Configuration {
 	return s.configuration
 }
 
@@ -41,10 +41,10 @@ func (s Dependencies) TunManager() application.ServerTunManager {
 	return s.tunManager
 }
 
-func (s Dependencies) KeyManager() server_configuration2.KeyManager {
+func (s Dependencies) KeyManager() serverConfiguration.KeyManager {
 	return s.keyManager
 }
 
-func (s Dependencies) ConfigurationManager() server_configuration2.ServerConfigurationManager {
+func (s Dependencies) ConfigurationManager() serverConfiguration.ServerConfigurationManager {
 	return s.configurationManager
 }

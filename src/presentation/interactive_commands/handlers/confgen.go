@@ -6,7 +6,7 @@ import (
 	"log"
 	"tungo/infrastructure/PAL"
 	"tungo/infrastructure/PAL/configuration/client"
-	server_configuration2 "tungo/infrastructure/PAL/configuration/server"
+	serverСonfiguration "tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/PAL/linux/network_tools/ip"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/settings"
@@ -14,10 +14,10 @@ import (
 
 type ConfgenHandler struct {
 	ipWrapper  ip.Contract
-	cfgManager server_configuration2.ServerConfigurationManager
+	cfgManager serverСonfiguration.ServerConfigurationManager
 }
 
-func NewConfgenHandler(manager server_configuration2.ServerConfigurationManager) *ConfgenHandler {
+func NewConfgenHandler(manager serverСonfiguration.ServerConfigurationManager) *ConfgenHandler {
 	return &ConfgenHandler{
 		ipWrapper:  ip.NewWrapper(PAL.NewExecCommander()),
 		cfgManager: manager,
@@ -105,7 +105,7 @@ func (c *ConfgenHandler) generate() (*client.Configuration, error) {
 	return &conf, nil
 }
 
-func (c *ConfgenHandler) getDefaultProtocol(conf *server_configuration2.Configuration) settings.Protocol {
+func (c *ConfgenHandler) getDefaultProtocol(conf *serverСonfiguration.Configuration) settings.Protocol {
 	if conf.EnableUDP {
 		return settings.UDP
 	}
