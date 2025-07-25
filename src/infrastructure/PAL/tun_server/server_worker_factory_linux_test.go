@@ -167,3 +167,15 @@ func Test_ServerWorkerFactory_CreateWorker_TCP_UDP_Success(t *testing.T) {
 		}
 	}
 }
+
+func Test_NewServerWorkerFactory_Coverage(t *testing.T) {
+	dcm := &dummyConfigManager{}
+	f1 := NewServerWorkerFactory(settings.Settings{}, dcm)
+	if f1 == nil {
+		t.Error("nil factory")
+	}
+	f2 := NewTestServerWorkerFactory(settings.Settings{}, newDefaultLoggerFactory(), dcm)
+	if f2 == nil {
+		t.Error("nil factory (test)")
+	}
+}
