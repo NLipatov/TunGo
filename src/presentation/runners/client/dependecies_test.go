@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 	"tungo/infrastructure/PAL/configuration/client"
-	"tungo/presentation/runners/client"
+	clientRunners "tungo/presentation/runners/client"
 )
 
 type mockConfigurationManager struct {
@@ -26,7 +26,7 @@ func TestClientDependencies_InitializeSuccess(t *testing.T) {
 		conf: newDummyConfig(),
 		err:  nil,
 	}
-	deps := client.NewDependencies(dcm)
+	deps := clientRunners.NewDependencies(dcm)
 	if err := deps.Initialize(); err != nil {
 		t.Fatalf("Initialize() returned error: %v", err)
 	}
@@ -53,7 +53,7 @@ func TestClientDependencies_InitializeError(t *testing.T) {
 		conf: nil,
 		err:  errors.New("dummy error"),
 	}
-	deps := client.NewDependencies(dcm)
+	deps := clientRunners.NewDependencies(dcm)
 	if err := deps.Initialize(); err == nil {
 		t.Error("Expected error from Initialize(), got nil")
 	}

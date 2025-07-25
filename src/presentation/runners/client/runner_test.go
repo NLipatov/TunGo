@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 	"tungo/infrastructure/PAL/configuration/client"
-	"tungo/presentation/runners/client"
+	clientRunners "tungo/presentation/runners/client"
 	"unsafe"
 
 	"tungo/application"
@@ -123,7 +123,7 @@ func (d *mockDeps) WorkerFactory() application.ClientWorkerFactory   { return d.
 func (d *mockDeps) TunManager() application.ClientTunManager         { return d.tun }
 
 // setRouterBuilder sets the unexported routerBuilder field using unsafe.
-func setRouterBuilder(runner *client.Runner, factory application.TrafficRouterFactory) {
+func setRouterBuilder(runner *clientRunners.Runner, factory application.TrafficRouterFactory) {
 	v := reflect.ValueOf(runner).Elem().FieldByName("routerFactory")
 	if !v.IsValid() {
 		panic("routerFactory field not found")
@@ -141,7 +141,7 @@ func TestClientRunner_Run_RouteTrafficCanceled(t *testing.T) {
 	}
 	router := &mockRouter{routeErr: context.Canceled}
 	routerFactory := &mockRouterFactory{router: router}
-	runner := client.NewRunner(deps, routerFactory)
+	runner := clientRunners.NewRunner(deps, routerFactory)
 	setRouterBuilder(runner, routerFactory)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -174,7 +174,7 @@ func TestClientRunner_Run_CreateRouterError(t *testing.T) {
 	routerFactory := &mockRouterFactory{
 		err: errors.New("create router error"),
 	}
-	runner := client.NewRunner(deps, routerFactory)
+	runner := clientRunners.NewRunner(deps, routerFactory)
 	setRouterBuilder(runner, routerFactory)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)

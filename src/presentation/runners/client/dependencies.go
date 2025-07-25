@@ -3,28 +3,28 @@ package client
 import (
 	"fmt"
 	"tungo/application"
-	client_configuration2 "tungo/infrastructure/PAL/configuration/client"
+	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/PAL/tun_client"
 	"tungo/infrastructure/routing/client_routing/client_factory"
 )
 
 type AppDependencies interface {
 	Initialize() error
-	Configuration() client_configuration2.Configuration
+	Configuration() clientConfiguration.Configuration
 	ConnectionFactory() application.ConnectionFactory
 	WorkerFactory() application.ClientWorkerFactory
 	TunManager() application.ClientTunManager
 }
 
 type Dependencies struct {
-	conf       client_configuration2.Configuration
+	conf       clientConfiguration.Configuration
 	conn       application.ConnectionFactory
 	worker     application.ClientWorkerFactory
 	tun        application.ClientTunManager
-	cfgManager client_configuration2.ClientConfigurationManager
+	cfgManager clientConfiguration.ClientConfigurationManager
 }
 
-func NewDependencies(cfgManager client_configuration2.ClientConfigurationManager) AppDependencies {
+func NewDependencies(cfgManager clientConfiguration.ClientConfigurationManager) AppDependencies {
 	return &Dependencies{cfgManager: cfgManager}
 }
 
@@ -45,7 +45,7 @@ func (c *Dependencies) Initialize() error {
 	return nil
 }
 
-func (c *Dependencies) Configuration() client_configuration2.Configuration {
+func (c *Dependencies) Configuration() clientConfiguration.Configuration {
 	return c.conf
 }
 

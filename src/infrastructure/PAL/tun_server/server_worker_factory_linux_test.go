@@ -8,225 +8,162 @@ import (
 	"net"
 	"testing"
 	"tungo/infrastructure/PAL/configuration/server"
-
-	"tungo/application"
 	"tungo/infrastructure/settings"
 )
 
-// --- stub for ReadWriteCloser ---
+// --- Дамми конфиг-менеджеры для разных веток ---
+type dummyConfigManager struct{}
+
+func (d *dummyConfigManager) Configuration() (*server.Configuration, error) {
+	return &server.Configuration{}, nil
+}
+func (d *dummyConfigManager) InjectSessionTtlIntervals(_, _ settings.HumanReadableDuration) error {
+	return nil
+}
+func (d *dummyConfigManager) IncrementClientCounter() error { return nil }
+func (d *dummyConfigManager) InjectEdKeys(_ ed25519.PublicKey, _ ed25519.PrivateKey) error {
+	return nil
+}
+
+type errorConfigManager struct{}
+
+func (e *errorConfigManager) Configuration() (*server.Configuration, error) {
+	return nil, errors.New("config error")
+}
+func (e *errorConfigManager) InjectSessionTtlIntervals(_, _ settings.HumanReadableDuration) error {
+	return nil
+}
+func (e *errorConfigManager) IncrementClientCounter() error { return nil }
+func (e *errorConfigManager) InjectEdKeys(_ ed25519.PublicKey, _ ed25519.PrivateKey) error {
+	return nil
+}
+
+// --- Ноп-ридер для TUN ---
 type nopReadWriteCloser struct{}
 
 func (nopReadWriteCloser) Read(_ []byte) (int, error)  { return 0, io.EOF }
 func (nopReadWriteCloser) Write(p []byte) (int, error) { return len(p), nil }
 func (nopReadWriteCloser) Close() error                { return nil }
 
-// --- fake application.Socket ---
-type fakeSocket struct{ addr *net.UDPAddr }
+// --- Юнит-тесты фабрики ---
+func Test_ServerWorkerFactory_addrPortToListen_Errors(t *testing.T) {
+	f := &ServerWorkerFactory{}
 
-func (f fakeSocket) StringAddr() string             { return f.addr.String() }
-func (f fakeSocket) UdpAddr() (*net.UDPAddr, error) { return f.addr, nil } // Not used
-
-// --- socketFactory mock ---
-type ServerWorkerFactoryMockSocketFactory struct {
-	Socket application.Socket
-	Err    error
-}
-
-func (m *ServerWorkerFactoryMockSocketFactory) newSocket(_, _ string) (application.Socket, error) {
-	return m.Socket, m.Err
-}
-
-// --- loggerFactory mock ---
-type ServerWorkerFactoryMockLogger struct {
-	Logs []string
-}
-
-func (l *ServerWorkerFactoryMockLogger) Printf(format string, _ ...any) {
-	l.Logs = append(l.Logs, format)
-}
-
-type ServerWorkerFactoryMockLoggerFactory struct {
-	Count    int
-	LastInst *ServerWorkerFactoryMockLogger
-}
-
-func (f *ServerWorkerFactoryMockLoggerFactory) newLogger() application.Logger {
-	f.Count++
-	inst := &ServerWorkerFactoryMockLogger{}
-	f.LastInst = inst
-	return inst
-}
-
-// --- mock ServerConfigurationManager ---
-type swflServerConfigurationManager struct{}
-
-func (m *swflServerConfigurationManager) InjectSessionTtlIntervals(_, _ settings.HumanReadableDuration) error {
-	return nil
-}
-func (m *swflServerConfigurationManager) Configuration() (*server.Configuration, error) {
-	return &server.Configuration{}, nil
-}
-func (m *swflServerConfigurationManager) IncrementClientCounter() error {
-	return nil
-}
-func (m *swflServerConfigurationManager) InjectEdKeys(_ ed25519.PublicKey, _ ed25519.PrivateKey) error {
-	return nil
-}
-
-type swflServerConfigurationManagerWithErr struct{}
-
-func (m *swflServerConfigurationManagerWithErr) InjectSessionTtlIntervals(_, _ settings.HumanReadableDuration) error {
-	return nil
-}
-func (m *swflServerConfigurationManagerWithErr) Configuration() (*server.Configuration, error) {
-	return nil, errors.New("config fail")
-}
-func (m *swflServerConfigurationManagerWithErr) IncrementClientCounter() error { return nil }
-func (m *swflServerConfigurationManagerWithErr) InjectEdKeys(_ ed25519.PublicKey, _ ed25519.PrivateKey) error {
-	return nil
-}
-
-// --- TESTS ---
-
-func TestCreateWorker_UnsupportedProtocol(t *testing.T) {
-	s := settings.Settings{Protocol: 42}
-	cfgMgr := &swflServerConfigurationManager{}
-	logF := &ServerWorkerFactoryMockLoggerFactory{}
-	sockF := &ServerWorkerFactoryMockSocketFactory{}
-	factory := NewTestServerWorkerFactory(s, sockF, logF, cfgMgr)
-	_, err := factory.CreateWorker(context.Background(), nopReadWriteCloser{})
+	// Некорректный порт
+	_, err := f.addrPortToListen("127.0.0.1", "notaport")
 	if err == nil {
-		t.Fatal("expected unsupported-protocol error")
+		t.Fatal("expected error for invalid port")
+	}
+
+	// Пустой IP -> dualstack (::)
+	addr, err := f.addrPortToListen("", "1234")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if addr.Addr().String() != "::" {
+		t.Errorf("expected ::, got %v", addr.Addr())
 	}
 }
 
-func TestCreateWorker_TCP_SocketError(t *testing.T) {
-	s := settings.Settings{
-		Protocol:     settings.TCP,
-		ConnectionIP: "1.2.3.4",
-		Port:         "9999",
+func Test_ServerWorkerFactory_CreateWorker_UnsupportedProtocol(t *testing.T) {
+	factory := &ServerWorkerFactory{
+		settings:             settings.Settings{Protocol: 42},
+		configurationManager: &dummyConfigManager{},
+		loggerFactory:        newDefaultLoggerFactory(),
 	}
-	sockF := &ServerWorkerFactoryMockSocketFactory{Err: errors.New("bad socket")}
-	logF := &ServerWorkerFactoryMockLoggerFactory{}
-	cfgMgr := &swflServerConfigurationManager{}
-	factory := NewTestServerWorkerFactory(s, sockF, logF, cfgMgr)
-
 	_, err := factory.CreateWorker(context.Background(), nopReadWriteCloser{})
-	if err == nil || err.Error() != "bad socket" {
-		t.Fatalf("expected socket error, got %v", err)
+	if err == nil || err.Error() != "protocol 42 not supported" {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestCreateWorker_TCP_ConfigError(t *testing.T) {
-	s := settings.Settings{
-		Protocol:     settings.TCP,
-		ConnectionIP: "9.9.9.9",
-		Port:         "8080",
+func Test_ServerWorkerFactory_CreateWorker_TCP_ConfigError(t *testing.T) {
+	factory := &ServerWorkerFactory{
+		settings:             settings.Settings{Protocol: settings.TCP, ConnectionIP: "127.0.0.1", Port: "0"},
+		configurationManager: &errorConfigManager{},
+		loggerFactory:        newDefaultLoggerFactory(),
 	}
-	udpAddr, udpAddrErr := net.ResolveUDPAddr("udp", "9.9.9.9:8080")
-	if udpAddrErr != nil {
-		t.Fatal("failed to parse address")
-	}
-	sockF := &ServerWorkerFactoryMockSocketFactory{Socket: fakeSocket{udpAddr}}
-	logF := &ServerWorkerFactoryMockLoggerFactory{}
-	cfgMgr := &swflServerConfigurationManagerWithErr{}
-	factory := NewTestServerWorkerFactory(s, sockF, logF, cfgMgr)
-
 	_, err := factory.CreateWorker(context.Background(), nopReadWriteCloser{})
-	if err == nil || err.Error() != "config fail" {
+	if err == nil || err.Error() != "config error" {
 		t.Fatalf("expected config error, got %v", err)
 	}
 }
 
-func TestCreateWorker_TCP_Success(t *testing.T) {
-	s := settings.Settings{
-		Protocol:     settings.TCP,
-		ConnectionIP: "127.0.0.1",
-		Port:         "0",
+func Test_ServerWorkerFactory_CreateWorker_UDP_ConfigError(t *testing.T) {
+	factory := &ServerWorkerFactory{
+		settings:             settings.Settings{Protocol: settings.UDP, ConnectionIP: "127.0.0.1", Port: "0"},
+		configurationManager: &errorConfigManager{},
+		loggerFactory:        newDefaultLoggerFactory(),
 	}
-	udpAddr, udpAddrErr := net.ResolveUDPAddr("udp", "127.0.0.1:0")
-	if udpAddrErr != nil {
-		t.Fatal("failed to parse address")
-	}
-	sockF := &ServerWorkerFactoryMockSocketFactory{Socket: fakeSocket{udpAddr}}
-	logF := &ServerWorkerFactoryMockLoggerFactory{}
-	cfgMgr := &swflServerConfigurationManager{}
-	factory := NewTestServerWorkerFactory(s, sockF, logF, cfgMgr)
-
-	w, err := factory.CreateWorker(context.Background(), nopReadWriteCloser{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if logF.Count != 1 {
-		t.Errorf("expected 1 logger, got %d", logF.Count)
-	}
-	// worker.HandleTun обычно вернёт io.EOF из nopReadWriteCloser
-	if err := w.HandleTun(); err != io.EOF {
-		t.Errorf("expected EOF, got %v", err)
-	}
-}
-
-func TestCreateWorker_UDP_SocketError(t *testing.T) {
-	s := settings.Settings{
-		Protocol:     settings.UDP,
-		ConnectionIP: "1.2.3.4",
-		Port:         "5678",
-	}
-	sockF := &ServerWorkerFactoryMockSocketFactory{Err: errors.New("udp socket fail")}
-	logF := &ServerWorkerFactoryMockLoggerFactory{}
-	cfgMgr := &swflServerConfigurationManager{}
-	factory := NewTestServerWorkerFactory(s, sockF, logF, cfgMgr)
-
 	_, err := factory.CreateWorker(context.Background(), nopReadWriteCloser{})
-	if err == nil || err.Error() != "udp socket fail" {
-		t.Fatalf("expected udp socket error, got %v", err)
-	}
-}
-
-func TestCreateWorker_UDP_ConfigError(t *testing.T) {
-	s := settings.Settings{
-		Protocol:     settings.UDP,
-		ConnectionIP: "10.20.30.40",
-		Port:         "10000",
-	}
-	udpAddr, udpAddrErr := net.ResolveUDPAddr("udp", "10.20.30.40:10000")
-	if udpAddrErr != nil {
-		t.Fatal("failed to parse address")
-	}
-	sockF := &ServerWorkerFactoryMockSocketFactory{Socket: fakeSocket{udpAddr}}
-	logF := &ServerWorkerFactoryMockLoggerFactory{}
-	cfgMgr := &swflServerConfigurationManagerWithErr{}
-	factory := NewTestServerWorkerFactory(s, sockF, logF, cfgMgr)
-
-	_, err := factory.CreateWorker(context.Background(), nopReadWriteCloser{})
-	if err == nil || err.Error() != "config fail" {
+	if err == nil || err.Error() != "config error" {
 		t.Fatalf("expected config error, got %v", err)
 	}
 }
 
-func TestCreateWorker_UDP_Success(t *testing.T) {
-	s := settings.Settings{
-		Protocol:     settings.UDP,
-		ConnectionIP: "127.0.0.1",
-		Port:         "0",
-	}
-	udpAddr, udpAddrErr := net.ResolveUDPAddr("udp", "127.0.0.1:0")
-	if udpAddrErr != nil {
-		t.Fatal("failed to parse address")
-	}
-	sockF := &ServerWorkerFactoryMockSocketFactory{Socket: fakeSocket{udpAddr}}
-	logF := &ServerWorkerFactoryMockLoggerFactory{}
-	cfgMgr := &swflServerConfigurationManager{}
-	factory := NewTestServerWorkerFactory(s, sockF, logF, cfgMgr)
-
-	w, err := factory.CreateWorker(context.Background(), nopReadWriteCloser{})
+func Test_ServerWorkerFactory_CreateWorker_TCP_ListenError(t *testing.T) {
+	// Открываем TCP-порт, чтобы занять его и вызвать ошибку в фабрике
+	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatal(err)
 	}
-	if logF.Count != 1 {
-		t.Errorf("expected 1 logger, got %d", logF.Count)
+	defer func(l net.Listener) {
+		_ = l.Close()
+	}(l)
+	_, port, _ := net.SplitHostPort(l.Addr().String())
+
+	factory := &ServerWorkerFactory{
+		settings:             settings.Settings{Protocol: settings.TCP, ConnectionIP: "127.0.0.1", Port: port},
+		configurationManager: &dummyConfigManager{},
+		loggerFactory:        newDefaultLoggerFactory(),
 	}
-	if err := w.HandleTun(); err != io.EOF {
-		t.Errorf("expected EOF, got %v", err)
+	_, err = factory.CreateWorker(context.Background(), nopReadWriteCloser{})
+	if err == nil {
+		t.Fatal("expected listen error due to port in use")
+	}
+}
+
+func Test_ServerWorkerFactory_CreateWorker_UDP_ListenError(t *testing.T) {
+	addr, err := net.ResolveUDPAddr("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	l, err := net.ListenUDP("udp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func(l *net.UDPConn) {
+		_ = l.Close()
+	}(l)
+	_, port, _ := net.SplitHostPort(l.LocalAddr().String())
+
+	factory := &ServerWorkerFactory{
+		settings:             settings.Settings{Protocol: settings.UDP, ConnectionIP: "127.0.0.1", Port: port},
+		configurationManager: &dummyConfigManager{},
+		loggerFactory:        newDefaultLoggerFactory(),
+	}
+	_, err = factory.CreateWorker(context.Background(), nopReadWriteCloser{})
+	if err == nil {
+		t.Fatal("expected listen error due to port in use")
+	}
+}
+
+func Test_ServerWorkerFactory_CreateWorker_TCP_UDP_Success(t *testing.T) {
+	for _, proto := range []int{settings.TCP, settings.UDP} {
+		factory := &ServerWorkerFactory{
+			settings:             settings.Settings{Protocol: settings.Protocol(proto), ConnectionIP: "127.0.0.1", Port: "0"},
+			configurationManager: &dummyConfigManager{},
+			loggerFactory:        newDefaultLoggerFactory(),
+		}
+		w, err := factory.CreateWorker(context.Background(), nopReadWriteCloser{})
+		if err != nil {
+			t.Fatalf("unexpected error (%d): %v", proto, err)
+		}
+		if w == nil {
+			t.Fatalf("expected worker, got nil")
+		}
+		if err := w.HandleTun(); err != io.EOF {
+			t.Errorf("expected EOF, got %v", err)
+		}
 	}
 }
