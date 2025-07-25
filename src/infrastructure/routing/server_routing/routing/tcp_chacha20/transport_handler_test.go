@@ -74,14 +74,20 @@ func (f *fakeConn) SetReadDeadline(_ time.Time) error  { return nil }
 func (f *fakeConn) SetWriteDeadline(_ time.Time) error { return nil }
 
 type fakeTcpListener struct {
-	conns    []net.Conn
-	acceptIx int
-	err      error
-	closed   bool
+	conns       []net.Conn
+	acceptIx    int
+	err         error
+	closed      bool
+	errCount    int
+	maxErrCount int
 }
 
 func (f *fakeTcpListener) Accept() (net.Conn, error) {
 	if f.err != nil {
+		f.errCount++
+		if f.errCount >= f.maxErrCount {
+			time.Sleep(30 * time.Millisecond)
+		}
 		return nil, f.err
 	}
 	if f.acceptIx >= len(f.conns) {
@@ -92,6 +98,7 @@ func (f *fakeTcpListener) Accept() (net.Conn, error) {
 	f.acceptIx++
 	return c, nil
 }
+
 func (f *fakeTcpListener) Close() error { f.closed = true; return nil }
 
 type fakeLogger struct {
@@ -99,10 +106,10 @@ type fakeLogger struct {
 	mu   sync.Mutex
 }
 
-func (l *fakeLogger) Printf(format string, _ ...interface{}) {
+func (l *fakeLogger) Printf(format string, args ...interface{}) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.logs = append(l.logs, format)
+	l.logs = append(l.logs, fmt.Sprintf(format, args...))
 }
 
 type fakeHandshake struct {
@@ -239,27 +246,38 @@ func TestHandleTransport_CtxDoneBeforeAccept(t *testing.T) {
 func TestHandleTransport_AcceptError(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	listener := &fakeTcpListener{err: errors.New("accept fail")}
+	maxErrs := 3
+
+	listener := &fakeTcpListener{err: errors.New("accept fail"), maxErrCount: maxErrs}
 	logger := &fakeLogger{}
-	handler := NewTransportHandler(ctx, settings.Settings{Port: "1111"}, &fakeWriter{}, listener, &fakeSessionRepo{}, logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{})
+	handler := NewTransportHandler(
+		ctx,
+		settings.Settings{Port: "1111"},
+		&fakeWriter{},
+		listener,
+		&fakeSessionRepo{},
+		logger,
+		&fakeHandshakeFactory{},
+		&fakeCryptoFactory{},
+	)
+
 	done := make(chan struct{})
 	go func() {
 		_ = handler.HandleTransport()
 		close(done)
 	}()
-	time.Sleep(15 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
 	cancel()
 	<-done
 
-	found := false
+	count := 0
 	for _, log := range logger.logs {
 		if strings.Contains(log, "failed to accept connection: accept fail") {
-			found = true
-			break
+			count++
 		}
 	}
-	if !found {
-		t.Errorf("log about accept error missing: logs=%v", logger.logs)
+	if count != maxErrs {
+		t.Errorf("expected %d error logs, got %d (logs=%v)", maxErrs, count, logger.logs)
 	}
 }
 
