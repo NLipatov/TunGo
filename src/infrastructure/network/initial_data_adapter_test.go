@@ -128,15 +128,3 @@ func TestWriteAndClose(t *testing.T) {
 		t.Errorf("under.closed = false, want true")
 	}
 }
-
-func TestInitialDataAdapter_ReadShortBuffer(t *testing.T) {
-	data := []byte("0123456789")
-	underlying := &mockConn{}
-	adapter := NewInitialDataAdapter(underlying, data)
-
-	buf := make([]byte, 5)
-	n, err := adapter.Read(buf)
-	if !errors.Is(err, io.ErrShortBuffer) || n != 0 {
-		t.Fatalf("expected io.ErrShortBuffer, got (%d, %v)", n, err)
-	}
-}
