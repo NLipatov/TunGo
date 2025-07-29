@@ -1,16 +1,21 @@
 package network
 
-import "tungo/application"
+import (
+	"tungo/application"
+)
 
-// InitialDataAdapter is a decorator on application.ConnectionAdapter type, which has some initial data that will be returned on first Read operation
 type InitialDataAdapter struct {
 	adapter     application.ConnectionAdapter
 	initialData []byte
 }
 
-func NewInitialDataAdapter(adapter application.ConnectionAdapter, initialData []byte) *InitialDataAdapter {
+func NewInitialDataAdapter(
+	adapter application.ConnectionAdapter,
+	initialData []byte,
+) *InitialDataAdapter {
 	return &InitialDataAdapter{
-		adapter: adapter, initialData: initialData,
+		adapter:     adapter,
+		initialData: initialData,
 	}
 }
 
@@ -19,13 +24,10 @@ func (ua *InitialDataAdapter) Write(data []byte) (int, error) {
 }
 
 func (ua *InitialDataAdapter) Read(buffer []byte) (int, error) {
-	if ua.initialData != nil && len(ua.initialData) > 0 {
+	if len(ua.initialData) > 0 {
 		n := copy(buffer, ua.initialData)
-		if n < len(ua.initialData) {
-			// if it's a partial read(initial data still has something to read)
-			ua.initialData = ua.initialData[n:]
-		} else {
-			// allow GC to collect ua.initialData
+		ua.initialData = ua.initialData[n:]
+		if len(ua.initialData) == 0 {
 			ua.initialData = nil
 		}
 		return n, nil

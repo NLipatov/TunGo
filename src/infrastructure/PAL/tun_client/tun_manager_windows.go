@@ -3,7 +3,6 @@ package tun_client
 import (
 	"errors"
 	"fmt"
-	"golang.zx2c4.com/wintun"
 	"log"
 	"net"
 	"os/exec"
@@ -58,7 +57,7 @@ func (m *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 
 	mtu := s.MTU
 	if mtu == 0 {
-		mtu = 1420
+		mtu = settings.DefaultMTU
 	}
 
 	device, err := tun_adapters.NewWinTun(adapter)
