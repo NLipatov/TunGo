@@ -75,6 +75,11 @@ func (t *TransportHandler) HandleTransport() error {
 				continue
 			}
 
+			if n == 0 {
+				t.logger.Printf("packet dropped: empty packet from %v", clientAddr.String())
+				continue
+			}
+
 			_ = t.handlePacket(t.listenerConn, clientAddr, dataBuf[:n])
 		}
 	}
