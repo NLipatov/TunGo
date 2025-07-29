@@ -1,6 +1,8 @@
 package network
 
 import (
+	"errors"
+	"io"
 	"net"
 	"net/netip"
 	"testing"
@@ -99,5 +101,25 @@ func TestUdpAdapter_Close(t *testing.T) {
 	_, err := clientAdapter.Read(buf)
 	if err == nil {
 		t.Error("expected error after Close, got nil")
+	}
+}
+
+func TestUdpAdapter_ReadShortBuffer(t *testing.T) {
+	serverConn, clientConn, clientAdapter := setupConns(t)
+	defer teardownConns(serverConn, clientConn)
+
+	resp := []byte("too big")
+	clientAddrPort, err := netip.ParseAddrPort(clientConn.LocalAddr().String())
+	if err != nil {
+		t.Fatalf("parse client addrport: %v", err)
+	}
+	if _, err := serverConn.WriteToUDPAddrPort(resp, clientAddrPort); err != nil {
+		t.Fatalf("server WriteToUDPAddrPort: %v", err)
+	}
+
+	buf := make([]byte, 4)
+	_ = clientConn.SetReadDeadline(time.Now().Add(time.Second))
+	if n, err := clientAdapter.Read(buf); !errors.Is(err, io.ErrShortBuffer) || n != 0 {
+		t.Fatalf("want io.ErrShortBuffer, got (%d,%v)", n, err)
 	}
 }
