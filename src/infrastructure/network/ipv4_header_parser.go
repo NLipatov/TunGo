@@ -2,6 +2,7 @@ package network
 
 import (
 	"fmt"
+	"golang.org/x/net/ipv4"
 )
 
 type IPV4HeaderParser struct {
@@ -16,13 +17,12 @@ func (h *IPV4HeaderParser) ParseDestinationAddressBytes(header, resultBuffer []b
 		return fmt.Errorf("invalid buffer size, expected 4 bytes, got %d", len(resultBuffer))
 	}
 
-	if len(header) < 20 {
-		return fmt.Errorf("invalid packet size: %d", len(header))
+	if len(header) < ipv4.HeaderLen {
+		return fmt.Errorf("invalid packet size: too small (%d bytes)", len(header))
 	}
 
-	ipVersion := header[0] >> 4
-	if ipVersion != 4 {
-		return fmt.Errorf("invalid packet version: %d", header[0])
+	if ipVersion := header[0] >> 4; ipVersion != 4 {
+		return fmt.Errorf("invalid packet version: got version%d, expected version 4(ipv4)", ipVersion)
 	}
 
 	// 16, 17, 18, 19 - destination address bytes
