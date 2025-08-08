@@ -3,6 +3,7 @@ package udp_chacha20
 import (
 	"context"
 	"fmt"
+	"golang.org/x/crypto/chacha20poly1305"
 	"io"
 	"tungo/application"
 	"tungo/infrastructure/network"
@@ -29,7 +30,8 @@ func NewTunHandler(ctx context.Context,
 
 // HandleTun reads packages from TUN-device, encrypts them and writes encrypted packages to a transport
 func (w *TunHandler) HandleTun() error {
-	buffer := make([]byte, network.MaxPacketLengthBytes+12)
+	// +12 nonce +16 AEAD tag headroom
+	buffer := make([]byte, network.MaxPacketLengthBytes+chacha20poly1305.NonceSize+chacha20poly1305.Overhead)
 
 	// Main loop to read from TUN and send data
 	for {
@@ -37,28 +39,28 @@ func (w *TunHandler) HandleTun() error {
 		case <-w.ctx.Done():
 			return nil
 		default:
-			n, readErr := w.reader.Read(buffer[12:])
-			if readErr != nil {
-				if w.ctx.Err() != nil {
-					return nil
+			n, err := w.reader.Read(buffer[chacha20poly1305.NonceSize:])
+			if n > 0 {
+				// Encrypt expects header+payload (12+n)
+				enc, encErr := w.cryptographyService.Encrypt(buffer[:chacha20poly1305.NonceSize+n])
+				if encErr != nil {
+					if w.ctx.Err() != nil {
+						return nil
+					}
+					return fmt.Errorf("could not encrypt packet: %v", encErr)
 				}
-				return fmt.Errorf("could not read a packet from TUN: %v", readErr)
+				if _, wErr := w.writer.Write(enc); wErr != nil {
+					if w.ctx.Err() != nil {
+						return nil
+					}
+					return fmt.Errorf("could not write packet to transport: %v", wErr)
+				}
 			}
-
-			encryptedPacket, encryptErr := w.cryptographyService.Encrypt(buffer[:n])
-			if encryptErr != nil {
+			if err != nil {
 				if w.ctx.Err() != nil {
 					return nil
 				}
-				return fmt.Errorf("could not encrypt packet: %v", encryptErr)
-			}
-
-			_, writeErr := w.writer.Write(encryptedPacket)
-			if writeErr != nil {
-				if w.ctx.Err() != nil {
-					return nil
-				}
-				return fmt.Errorf("could not write packet to adapter: %v", writeErr)
+				return fmt.Errorf("could not read a packet from TUN: %v", err)
 			}
 		}
 	}

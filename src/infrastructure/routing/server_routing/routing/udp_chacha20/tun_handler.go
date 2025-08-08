@@ -45,7 +45,7 @@ func (t *TunHandler) HandleTun() error {
 			// reserve first 12 bytes for encryption overhead (12 bytes nonce)
 			n, err := t.reader.Read(buffer[12:])
 			if err != nil {
-				if t.ctx.Done() != nil {
+				if t.ctx.Err() != nil {
 					return nil
 				}
 

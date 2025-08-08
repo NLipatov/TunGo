@@ -46,33 +46,44 @@ func NewUdpSession(id [32]byte, sendKey, recvKey []byte, isServer bool) (*Defaul
 	}, nil
 }
 
-func (s *DefaultUdpSession) Encrypt(data []byte) ([]byte, error) {
-	// plainData - is data without header
-	plainData := data[12 : 12+len(data)]
-	err := s.SendNonce.incrementNonce()
-	if err != nil {
+func (s *DefaultUdpSession) Encrypt(buf []byte) ([]byte, error) {
+	// buf: [12B nonce space | payload ...]
+	if len(buf) < chacha20poly1305.NonceSize {
+		return nil, fmt.Errorf("encrypt: buffer too short: %d", len(buf))
+	}
+
+	if err := s.SendNonce.incrementNonce(); err != nil {
 		return nil, err
 	}
 
-	// header will now be used to write nonce into it
-	_ = s.SendNonce.Encode(data[:12])
+	// 1) write nonce into the first 12 bytes
+	nonce := buf[:chacha20poly1305.NonceSize]
+	_ = s.SendNonce.Encode(nonce)
 
-	aad := s.CreateAAD(s.isServer, data[:12], s.encryptionAadBuf[:])
-	ciphertext := s.sendCipher.Seal(plainData[:0], data[:12], plainData, aad)
+	// 2) build AAD = sessionId || direction || nonce
+	aad := s.CreateAAD(s.isServer, nonce, s.encryptionAadBuf[:])
 
-	return data[:len(ciphertext)+12], nil
+	// 3) plaintext is everything after the 12B header
+	plain := buf[chacha20poly1305.NonceSize:]
+
+	// 4) in-place encrypt: ciphertext overwrites plaintext region
+	//    requires caller to allocate +Overhead capacity
+	ct := s.sendCipher.Seal(plain[:0], nonce, plain, aad)
+
+	// 5) return header + ciphertext view
+	return buf[:chacha20poly1305.NonceSize+len(ct)], nil
 }
 
 func (s *DefaultUdpSession) Decrypt(ciphertext []byte) ([]byte, error) {
-	if len(ciphertext) < 12 {
+	if len(ciphertext) < chacha20poly1305.NonceSize {
 		return nil, fmt.Errorf("invalid ciphertext: too short (%d bytes long)", len(ciphertext))
 	}
 
-	nonceBytes := ciphertext[:12]
-	payloadBytes := ciphertext[12:]
+	nonceBytes := ciphertext[:chacha20poly1305.NonceSize]
+	payloadBytes := ciphertext[chacha20poly1305.NonceSize:]
 
 	//converts nonceBytes to [12]byte with no allocations
-	nBErr := s.nonceValidator.Validate(*(*[12]byte)(unsafe.Pointer(&nonceBytes[0])))
+	nBErr := s.nonceValidator.Validate(*(*[chacha20poly1305.NonceSize]byte)(unsafe.Pointer(&nonceBytes[0])))
 	if nBErr != nil {
 		return nil, nBErr
 	}
