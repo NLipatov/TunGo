@@ -22,7 +22,7 @@ func (h *IPV4HeaderParser) ParseDestinationAddressBytes(header, resultBuffer []b
 	}
 
 	if ipVersion := header[0] >> 4; ipVersion != 4 {
-		return fmt.Errorf("invalid packet version: got version%d, expected version 4(ipv4)", ipVersion)
+		return fmt.Errorf("invalid packet version: got version %d, expected version 4(ipv4)", ipVersion)
 	}
 
 	// 16, 17, 18, 19 - destination address bytes
