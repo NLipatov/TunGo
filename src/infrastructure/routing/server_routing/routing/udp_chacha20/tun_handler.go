@@ -42,55 +42,55 @@ func (t *TunHandler) HandleTun() error {
 		case <-t.ctx.Done():
 			return nil
 		default:
-			// reserve first 12 bytes for encryption overhead (12 bytes nonce)
-			n, err := t.reader.Read(buffer[12:])
-			if err != nil {
+			// reserve first x bytes for nonce
+			n, rErr := t.reader.Read(buffer[chacha20poly1305.NonceSize:])
+			if rErr != nil {
 				if t.ctx.Err() != nil {
 					return nil
 				}
 
-				if err == io.EOF {
+				if rErr == io.EOF {
 					log.Println("TUN interface closed, shutting down...")
-					return err
+					return rErr
 				}
 
-				if os.IsNotExist(err) || os.IsPermission(err) {
-					log.Printf("TUN interface error (closed or permission issue): %v", err)
-					return err
+				if os.IsNotExist(rErr) || os.IsPermission(rErr) {
+					log.Printf("TUN interface error (closed or permission issue): %v", rErr)
+					return rErr
 				}
 
-				log.Printf("failed to read from TUN, retrying: %v", err)
+				log.Printf("failed to read from TUN, retrying: %v", rErr)
 				continue
 			}
 
-			destinationBytesErr := t.parser.ParseDestinationAddressBytes(buffer[12:n+12], destinationAddressBytes[:])
-			if destinationBytesErr != nil {
-				log.Printf("packet dropped: header parsing error: %v", destinationBytesErr)
+			if pErr := t.parser.ParseDestinationAddressBytes(
+				buffer[chacha20poly1305.NonceSize:n+chacha20poly1305.NonceSize], destinationAddressBytes[:],
+			); pErr != nil {
+				log.Printf("packet dropped: header parsing error: %v", pErr)
 				continue
 			}
 
-			destAddr, destAddrOk := netip.AddrFromSlice(destinationAddressBytes[:])
-			if !destAddrOk {
+			addr, addrOk := netip.AddrFromSlice(destinationAddressBytes[:])
+			if !addrOk {
 				log.Printf(
 					"packet dropped: failed to parse destination address bytes: %v", destinationAddressBytes[:])
 				continue
 			}
 
-			clientSession, getErr := t.sessionManager.GetByInternalAddrPort(destAddr)
-			if getErr != nil {
-				log.Printf("packet dropped: %s, destination host: %v", getErr, destinationAddressBytes)
+			session, sErr := t.sessionManager.GetByInternalAddrPort(addr)
+			if sErr != nil {
+				log.Printf("packet dropped: %s, destination host: %v", sErr, destinationAddressBytes)
 				continue
 			}
 
-			encryptedPacket, encryptErr := clientSession.CryptographyService().Encrypt(buffer[:n+12])
-			if encryptErr != nil {
-				log.Printf("failed to encrypt packet: %s", encryptErr)
+			encrypted, eErr := session.CryptographyService().Encrypt(buffer[:n+chacha20poly1305.NonceSize])
+			if eErr != nil {
+				log.Printf("failed to encrypt packet: %s", eErr)
 				continue
 			}
 
-			_, writeToUDPErr := clientSession.ConnectionAdapter().Write(encryptedPacket)
-			if writeToUDPErr != nil {
-				log.Printf("failed to send packet to %v: %v", clientSession.ExternalAddrPort(), writeToUDPErr)
+			if _, wErr := session.ConnectionAdapter().Write(encrypted); wErr != nil {
+				log.Printf("failed to send packet to %v: %v", session.ExternalAddrPort(), wErr)
 			}
 		}
 	}
