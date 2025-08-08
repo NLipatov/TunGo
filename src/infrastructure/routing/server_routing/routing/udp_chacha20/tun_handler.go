@@ -2,6 +2,7 @@ package udp_chacha20
 
 import (
 	"context"
+	"golang.org/x/crypto/chacha20poly1305"
 	"io"
 	"log"
 	"net/netip"
@@ -33,7 +34,7 @@ func NewTunHandler(
 }
 
 func (t *TunHandler) HandleTun() error {
-	buffer := make([]byte, network.MaxPacketLengthBytes+12)
+	buffer := make([]byte, network.MaxPacketLengthBytes+chacha20poly1305.NonceSize+chacha20poly1305.Overhead)
 	destinationAddressBytes := [4]byte{}
 
 	for {
@@ -62,15 +63,9 @@ func (t *TunHandler) HandleTun() error {
 				continue
 			}
 
-			if n < 12 {
-				log.Printf("invalid packet length (%d < 12)", n)
-				continue
-			}
-
-			// see udp_reader.go. It's putting payload length into first 12 bytes.
-			destinationBytesErr := t.parser.ParseDestinationAddressBytes(buffer[12:n], destinationAddressBytes[:])
+			destinationBytesErr := t.parser.ParseDestinationAddressBytes(buffer[12:n+12], destinationAddressBytes[:])
 			if destinationBytesErr != nil {
-				log.Printf("packet dropped: failed to read destination address bytes: %v", destinationBytesErr)
+				log.Printf("packet dropped: header parsing error: %v", destinationBytesErr)
 				continue
 			}
 
@@ -87,7 +82,7 @@ func (t *TunHandler) HandleTun() error {
 				continue
 			}
 
-			encryptedPacket, encryptErr := clientSession.CryptographyService().Encrypt(buffer[:n])
+			encryptedPacket, encryptErr := clientSession.CryptographyService().Encrypt(buffer[:n+12])
 			if encryptErr != nil {
 				log.Printf("failed to encrypt packet: %s", encryptErr)
 				continue
