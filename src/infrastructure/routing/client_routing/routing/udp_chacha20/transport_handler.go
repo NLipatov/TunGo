@@ -33,7 +33,7 @@ func NewTransportHandler(
 }
 
 func (t *TransportHandler) HandleTransport() error {
-	buffer := make([]byte, network.MaxPacketLengthBytes+chacha20poly1305.NonceSize)
+	buffer := make([]byte, network.MaxPacketLengthBytes+chacha20poly1305.NonceSize+chacha20poly1305.Overhead)
 
 	for {
 		select {
