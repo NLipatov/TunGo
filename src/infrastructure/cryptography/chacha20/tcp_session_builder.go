@@ -51,7 +51,5 @@ func (T TcpSessionBuilder) FromHandshake(handshake application.Handshake,
 		nonceValidator:     NewStrictCounter(),
 		encryptionNonceBuf: [12]byte{},
 		decryptionNonceBuf: [12]byte{},
-		encryptionAadBuf:   make([]byte, 80),
-		decryptionAadBuf:   make([]byte, 80),
 	}, nil
 }

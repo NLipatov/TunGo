@@ -3,6 +3,7 @@ package tcp_chacha20
 import (
 	"context"
 	"encoding/binary"
+	"golang.org/x/crypto/chacha20poly1305"
 	"io"
 	"log"
 	"tungo/application"
@@ -30,7 +31,7 @@ func NewTransportHandler(
 }
 
 func (t *TransportHandler) HandleTransport() error {
-	buffer := make([]byte, network.MaxPacketLengthBytes+4)
+	buffer := make([]byte, 4+network.MaxPacketLengthBytes+chacha20poly1305.Overhead)
 
 	for {
 		select {
@@ -48,8 +49,9 @@ func (t *TransportHandler) HandleTransport() error {
 
 			//read packet length from 4-byte length prefix
 			var length = binary.BigEndian.Uint32(buffer[:4])
-			if length < 4 || length > network.MaxPacketLengthBytes {
-				log.Printf("invalid packet Length: %d", length)
+			if length < chacha20poly1305.Overhead ||
+				length > network.MaxPacketLengthBytes+chacha20poly1305.Overhead {
+				log.Printf("invalid ciphertext length: %d", length)
 				continue
 			}
 

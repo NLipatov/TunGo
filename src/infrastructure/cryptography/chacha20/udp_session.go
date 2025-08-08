@@ -3,8 +3,6 @@ package chacha20
 import (
 	"crypto/cipher"
 	"fmt"
-	"unsafe"
-
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
@@ -46,10 +44,16 @@ func NewUdpSession(id [32]byte, sendKey, recvKey []byte, isServer bool) (*Defaul
 	}, nil
 }
 
-func (s *DefaultUdpSession) Encrypt(buf []byte) ([]byte, error) {
+func (s *DefaultUdpSession) Encrypt(plaintext []byte) ([]byte, error) {
+	// guarantee inplace encryption
+	if cap(plaintext) < len(plaintext)+chacha20poly1305.Overhead {
+		return nil, fmt.Errorf("insufficient capacity for in-place encryption: len=%d, cap=%d",
+			len(plaintext), cap(plaintext))
+	}
+
 	// buf: [12B nonce space | payload ...]
-	if len(buf) < chacha20poly1305.NonceSize {
-		return nil, fmt.Errorf("encrypt: buffer too short: %d", len(buf))
+	if len(plaintext) < chacha20poly1305.NonceSize {
+		return nil, fmt.Errorf("encrypt: buffer too short: %d", len(plaintext))
 	}
 
 	if err := s.SendNonce.incrementNonce(); err != nil {
@@ -57,55 +61,54 @@ func (s *DefaultUdpSession) Encrypt(buf []byte) ([]byte, error) {
 	}
 
 	// 1) write nonce into the first 12 bytes
-	nonce := buf[:chacha20poly1305.NonceSize]
+	nonce := plaintext[:chacha20poly1305.NonceSize]
 	_ = s.SendNonce.Encode(nonce)
 
 	// 2) build AAD = sessionId || direction || nonce
 	aad := s.CreateAAD(s.isServer, nonce, s.encryptionAadBuf[:])
 
 	// 3) plaintext is everything after the 12B header
-	plain := buf[chacha20poly1305.NonceSize:]
+	plain := plaintext[chacha20poly1305.NonceSize:]
 
 	// 4) in-place encrypt: ciphertext overwrites plaintext region
 	//    requires caller to allocate +Overhead capacity
 	ct := s.sendCipher.Seal(plain[:0], nonce, plain, aad)
 
 	// 5) return header + ciphertext view
-	return buf[:chacha20poly1305.NonceSize+len(ct)], nil
+	return plaintext[:chacha20poly1305.NonceSize+len(ct)], nil
 }
 
 func (s *DefaultUdpSession) Decrypt(ciphertext []byte) ([]byte, error) {
-	if len(ciphertext) < chacha20poly1305.NonceSize {
-		return nil, fmt.Errorf("invalid ciphertext: too short (%d bytes long)", len(ciphertext))
+	if len(ciphertext) < chacha20poly1305.NonceSize+chacha20poly1305.Overhead {
+		return nil, fmt.Errorf("cipher too short: %d", len(ciphertext))
 	}
-
 	nonceBytes := ciphertext[:chacha20poly1305.NonceSize]
 	payloadBytes := ciphertext[chacha20poly1305.NonceSize:]
 
-	//converts nonceBytes to [12]byte with no allocations
-	nBErr := s.nonceValidator.Validate(*(*[chacha20poly1305.NonceSize]byte)(unsafe.Pointer(&nonceBytes[0])))
-	if nBErr != nil {
-		return nil, nBErr
+	// 1) validate nonce
+	var n12 [chacha20poly1305.NonceSize]byte
+	copy(n12[:], nonceBytes)
+	if err := s.nonceValidator.Validate(n12); err != nil {
+		return nil, err
 	}
 
-	aad := s.CreateAAD(!s.isServer, nonceBytes[:], s.decryptionAadBuf[:])
-	plaintext, err := s.recvCipher.Open(payloadBytes[:0], nonceBytes, payloadBytes, aad)
+	// 2) decrypt
+	aad := s.CreateAAD(!s.isServer, nonceBytes, s.decryptionAadBuf[:])
+	pt, err := s.recvCipher.Open(payloadBytes[:0], nonceBytes, payloadBytes, aad)
 	if err != nil {
-		// Properly handle failed decryption attempt to avoid reuse of any state
 		return nil, fmt.Errorf("failed to decrypt: %w", err)
 	}
-
-	return plaintext, nil
+	return pt, nil
 }
 
 func (s *DefaultUdpSession) CreateAAD(isServerToClient bool, nonce, aad []byte) []byte {
-	direction := []byte("client-to-server")
+	// aad must have len >= aadLen (60)
+	copy(aad[:sessionIdentifierLength], s.SessionId[:])
 	if isServerToClient {
-		direction = []byte("server-to-client")
+		copy(aad[sessionIdentifierLength:sessionIdentifierLength+directionLength], dirS2C[:]) // 32..48
+	} else {
+		copy(aad[sessionIdentifierLength:sessionIdentifierLength+directionLength], dirC2S[:]) // 32..48
 	}
-
-	copy(aad[:32], s.SessionId[:])
-	copy(aad[len(s.SessionId[:]):], direction)
-	copy(aad[len(s.SessionId[:])+len(direction):], nonce)
-	return aad[:len(s.SessionId[:])+len(direction)+len(nonce)]
+	copy(aad[sessionIdentifierLength+directionLength:aadLength], nonce) // 48..60
+	return aad[:aadLength]
 }

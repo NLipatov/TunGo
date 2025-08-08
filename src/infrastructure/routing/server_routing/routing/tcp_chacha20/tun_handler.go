@@ -38,7 +38,7 @@ func NewTunHandler(
 }
 
 func (t *TunHandler) HandleTun() error {
-	buf := make([]byte, network.MaxPacketLengthBytes)
+	buffer := make([]byte, 4+network.MaxPacketLengthBytes+chacha20poly1305.Overhead)
 	destinationAddressBytes := [4]byte{}
 
 	for {
@@ -46,7 +46,8 @@ func (t *TunHandler) HandleTun() error {
 		case <-t.ctx.Done():
 			return nil
 		default:
-			n, err := t.reader.Read(buf)
+			// reserve 4 bytes for length prefix
+			n, err := t.reader.Read(buffer[4:])
 			if err != nil {
 				if err == io.EOF {
 					log.Println("TUN interface closed, shutting down...")
@@ -61,18 +62,10 @@ func (t *TunHandler) HandleTun() error {
 				log.Printf("failed to read from TUN, retrying: %v", err)
 				continue
 			}
-			if n <= 4 {
-				log.Printf("invalid IP data (n=%d < 4)", n)
-				continue
-			}
 
-			data := buf[4 : n+4]
-			if len(data) < 1 {
-				log.Printf("invalid IP data")
-				continue
-			}
+			payload := buffer[4 : n+4]
 
-			destinationBytesErr := t.ipParser.ParseDestinationAddressBytes(data, destinationAddressBytes[:])
+			destinationBytesErr := t.ipParser.ParseDestinationAddressBytes(payload, destinationAddressBytes[:])
 			if destinationBytesErr != nil {
 				log.Printf("packet dropped: failed to read destination address bytes: %v", destinationBytesErr)
 				continue
@@ -91,19 +84,21 @@ func (t *TunHandler) HandleTun() error {
 				continue
 			}
 
-			_, encryptErr := clientSession.CryptographyService().Encrypt(buf[4 : n+4])
+			ct, encryptErr := clientSession.CryptographyService().Encrypt(payload)
 			if encryptErr != nil {
 				log.Printf("failed to encrypt packet: %s", encryptErr)
 				continue
 			}
 
-			encodingErr := t.encoder.Encode(buf[:n+4+chacha20poly1305.Overhead])
+			frame := buffer[:4+len(ct)]
+
+			encodingErr := t.encoder.Encode(frame)
 			if encodingErr != nil {
 				log.Printf("failed to encode packet: %v", encodingErr)
 				continue
 			}
 
-			_, connWriteErr := clientSession.ConnectionAdapter().Write(buf[:n+4+chacha20poly1305.Overhead])
+			_, connWriteErr := clientSession.ConnectionAdapter().Write(frame)
 			if connWriteErr != nil {
 				log.Printf("failed to write to TCP: %v", connWriteErr)
 				t.sessionManager.Delete(clientSession)
