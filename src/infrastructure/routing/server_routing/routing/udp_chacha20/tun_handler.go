@@ -2,7 +2,6 @@ package udp_chacha20
 
 import (
 	"context"
-	"encoding/binary"
 	"io"
 	"log"
 	"net/netip"
@@ -62,7 +61,6 @@ func (t *TunHandler) HandleTun() error {
 				log.Printf("failed to read from TUN, retrying: %v", err)
 				continue
 			}
-			binary.BigEndian.PutUint32(buffer[:12], uint32(n+12))
 
 			if n < 12 {
 				log.Printf("invalid packet length (%d < 12)", n)
@@ -70,8 +68,7 @@ func (t *TunHandler) HandleTun() error {
 			}
 
 			// see udp_reader.go. It's putting payload length into first 12 bytes.
-			payload := buffer[12 : n+12]
-			destinationBytesErr := t.parser.ParseDestinationAddressBytes(payload, destinationAddressBytes[:])
+			destinationBytesErr := t.parser.ParseDestinationAddressBytes(buffer[12:n], destinationAddressBytes[:])
 			if destinationBytesErr != nil {
 				log.Printf("packet dropped: failed to read destination address bytes: %v", destinationBytesErr)
 				continue
@@ -90,7 +87,7 @@ func (t *TunHandler) HandleTun() error {
 				continue
 			}
 
-			encryptedPacket, encryptErr := clientSession.CryptographyService().Encrypt(buffer)
+			encryptedPacket, encryptErr := clientSession.CryptographyService().Encrypt(buffer[:n])
 			if encryptErr != nil {
 				log.Printf("failed to encrypt packet: %s", encryptErr)
 				continue

@@ -2,7 +2,6 @@ package chacha20
 
 import (
 	"crypto/cipher"
-	"encoding/binary"
 	"fmt"
 	"unsafe"
 
@@ -48,11 +47,8 @@ func NewUdpSession(id [32]byte, sendKey, recvKey []byte, isServer bool) (*Defaul
 }
 
 func (s *DefaultUdpSession) Encrypt(data []byte) ([]byte, error) {
-	// see udp_reader.go. It's putting payload length into first 12 bytes.
-	plainDataLen := binary.BigEndian.Uint32(data[:12])
-
 	// plainData - is data without header
-	plainData := data[12 : 12+plainDataLen]
+	plainData := data[12 : 12+len(data)]
 	err := s.SendNonce.incrementNonce()
 	if err != nil {
 		return nil, err

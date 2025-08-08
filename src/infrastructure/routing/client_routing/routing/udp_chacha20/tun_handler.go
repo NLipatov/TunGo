@@ -29,7 +29,7 @@ func NewTunHandler(ctx context.Context,
 
 // HandleTun reads packages from TUN-device, encrypts them and writes encrypted packages to a transport
 func (w *TunHandler) HandleTun() error {
-	buf := make([]byte, network.MaxPacketLengthBytes+12)
+	buffer := make([]byte, network.MaxPacketLengthBytes+12)
 
 	// Main loop to read from TUN and send data
 	for {
@@ -37,7 +37,7 @@ func (w *TunHandler) HandleTun() error {
 		case <-w.ctx.Done():
 			return nil
 		default:
-			n, readErr := w.reader.Read(buf)
+			n, readErr := w.reader.Read(buffer[12:])
 			if readErr != nil {
 				if w.ctx.Err() != nil {
 					return nil
@@ -45,7 +45,7 @@ func (w *TunHandler) HandleTun() error {
 				return fmt.Errorf("could not read a packet from TUN: %v", readErr)
 			}
 
-			encryptedPacket, encryptErr := w.cryptographyService.Encrypt(buf[:n])
+			encryptedPacket, encryptErr := w.cryptographyService.Encrypt(buffer[:n])
 			if encryptErr != nil {
 				if w.ctx.Err() != nil {
 					return nil
