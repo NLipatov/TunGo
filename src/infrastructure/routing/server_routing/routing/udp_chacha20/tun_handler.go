@@ -2,6 +2,7 @@ package udp_chacha20
 
 import (
 	"context"
+	"encoding/binary"
 	"io"
 	"log"
 	"net/netip"
@@ -33,7 +34,7 @@ func NewTunHandler(
 }
 
 func (t *TunHandler) HandleTun() error {
-	packetBuffer := make([]byte, network.MaxPacketLengthBytes+12)
+	buffer := make([]byte, network.MaxPacketLengthBytes+12)
 	destinationAddressBytes := [4]byte{}
 
 	for {
@@ -41,7 +42,8 @@ func (t *TunHandler) HandleTun() error {
 		case <-t.ctx.Done():
 			return nil
 		default:
-			n, err := t.reader.Read(packetBuffer)
+			// reserve first 12 bytes for encryption overhead (12 bytes nonce)
+			n, err := t.reader.Read(buffer[12:])
 			if err != nil {
 				if t.ctx.Done() != nil {
 					return nil
@@ -60,6 +62,7 @@ func (t *TunHandler) HandleTun() error {
 				log.Printf("failed to read from TUN, retrying: %v", err)
 				continue
 			}
+			binary.BigEndian.PutUint32(buffer[:12], uint32(n+12))
 
 			if n < 12 {
 				log.Printf("invalid packet length (%d < 12)", n)
@@ -67,7 +70,7 @@ func (t *TunHandler) HandleTun() error {
 			}
 
 			// see udp_reader.go. It's putting payload length into first 12 bytes.
-			payload := packetBuffer[12 : n+12]
+			payload := buffer[12 : n+12]
 			destinationBytesErr := t.parser.ParseDestinationAddressBytes(payload, destinationAddressBytes[:])
 			if destinationBytesErr != nil {
 				log.Printf("packet dropped: failed to read destination address bytes: %v", destinationBytesErr)
@@ -87,7 +90,7 @@ func (t *TunHandler) HandleTun() error {
 				continue
 			}
 
-			encryptedPacket, encryptErr := clientSession.CryptographyService().Encrypt(packetBuffer)
+			encryptedPacket, encryptErr := clientSession.CryptographyService().Encrypt(buffer)
 			if encryptErr != nil {
 				log.Printf("failed to encrypt packet: %s", encryptErr)
 				continue

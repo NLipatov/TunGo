@@ -104,7 +104,7 @@ func (s *ServerWorkerFactory) createUDPWorker(ctx context.Context, tun io.ReadWr
 
 	th := udp_chacha20.NewTunHandler(
 		ctx,
-		chacha20.NewUdpReader(tun),
+		tun,
 		network.NewIPV4HeaderParser(),
 		concurrentSessionManager,
 	)
