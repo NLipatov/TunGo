@@ -2,6 +2,7 @@ package chacha20
 
 import (
 	"encoding/binary"
+	"golang.org/x/crypto/chacha20poly1305"
 	"sync"
 )
 
@@ -13,9 +14,9 @@ type StrictCounter struct {
 
 func NewStrictCounter() *StrictCounter { return &StrictCounter{} }
 
-func (c *StrictCounter) Validate(nonce [12]byte) error {
+func (c *StrictCounter) Validate(nonce [chacha20poly1305.NonceSize]byte) error {
 	low := binary.BigEndian.Uint64(nonce[0:8])
-	high := binary.BigEndian.Uint32(nonce[8:12])
+	high := binary.BigEndian.Uint32(nonce[8:chacha20poly1305.NonceSize])
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -43,9 +44,9 @@ func NewSliding64() *Sliding64 {
 	return &Sliding64{win: make(map[uint32]*sliding64, 1)}
 }
 
-func (s *Sliding64) Validate(nonce [12]byte) error {
+func (s *Sliding64) Validate(nonce [chacha20poly1305.NonceSize]byte) error {
 	low := binary.BigEndian.Uint64(nonce[0:8])
-	high := binary.BigEndian.Uint32(nonce[8:12])
+	high := binary.BigEndian.Uint32(nonce[8:chacha20poly1305.NonceSize])
 
 	s.mu.Lock()
 	defer s.mu.Unlock()

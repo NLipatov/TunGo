@@ -17,8 +17,8 @@ type DefaultTcpSession struct {
 	nonceValidator     *StrictCounter
 	encryptionAadBuf   []byte
 	decryptionAadBuf   []byte
-	encryptionNonceBuf [12]byte
-	decryptionNonceBuf [12]byte
+	encryptionNonceBuf [chacha20poly1305.NonceSize]byte
+	decryptionNonceBuf [chacha20poly1305.NonceSize]byte
 }
 
 func NewTcpCryptographyService(id [32]byte, sendKey, recvKey []byte, isServer bool) (*DefaultTcpSession, error) {
