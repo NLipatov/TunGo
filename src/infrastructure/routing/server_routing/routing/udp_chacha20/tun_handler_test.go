@@ -288,3 +288,31 @@ func TestTunHandler_ReadErrorAfterCancel_ReturnsNil(t *testing.T) {
 		t.Fatalf("expected nil because ctx canceled, got %v", err)
 	}
 }
+
+func TestTunHandler_ReadTemporaryError_ThenHappyThenEOF(t *testing.T) {
+	hdr := make([]byte, 20)
+	hdr[0] = 0x45
+	copy(hdr[16:20], []byte{10, 0, 0, 1})
+	frame := append(make([]byte, 12), hdr...)
+
+	r := &testUdpReader{seq: []struct {
+		data []byte
+		err  error
+	}{
+		{nil, errors.New("tmp read error")}, // retry branch
+		{frame, nil},                        // happy write
+		{nil, io.EOF},                       // exit
+	}}
+
+	a := &testAdapter{}
+	parser := &testParser{wantDst: [4]byte{10, 0, 0, 1}}
+	mgr := &testMgr{sess: makeSession(a, &testCrypto{})}
+	h := NewTunHandler(context.Background(), r, parser, mgr)
+
+	if err := h.HandleTun(); err != io.EOF {
+		t.Fatalf("want io.EOF, got %v", err)
+	}
+	if got := atomic.LoadInt32(&a.writes); got != 1 {
+		t.Fatalf("writes=%d, want 1", got)
+	}
+}
