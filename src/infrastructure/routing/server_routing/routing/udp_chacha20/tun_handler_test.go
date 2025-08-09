@@ -253,3 +253,38 @@ func TestTunHandler_HappyPath(t *testing.T) {
 		t.Errorf("happy: writes=%d, want 1", n)
 	}
 }
+
+func TestTunHandler_ReadTemporaryError_RetryThenEOF(t *testing.T) {
+	// 1) first read returns a temporary/non-os error -> handler should log and continue
+	// 2) second read returns EOF -> handler should exit with EOF
+	r := &testUdpReader{seq: []struct {
+		data []byte
+		err  error
+	}{
+		{nil, errors.New("tmp read error")}, // triggers "retry" branch
+		{nil, io.EOF},                       // then exit
+	}}
+	h := NewTunHandler(context.Background(), r, &testParser{}, &testMgr{sess: makeSession(&testAdapter{}, &testCrypto{})})
+
+	if err := h.HandleTun(); err != io.EOF {
+		t.Fatalf("want io.EOF after retry path, got %v", err)
+	}
+}
+
+func TestTunHandler_ReadErrorAfterCancel_ReturnsNil(t *testing.T) {
+	// reader returns an error, but context is already canceled -> handler returns nil
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	r := &testUdpReader{seq: []struct {
+		data []byte
+		err  error
+	}{
+		{nil, errors.New("any read error")},
+	}}
+	h := NewTunHandler(ctx, r, &testParser{}, &testMgr{sess: makeSession(&testAdapter{}, &testCrypto{})})
+
+	if err := h.HandleTun(); err != nil {
+		t.Fatalf("expected nil because ctx canceled, got %v", err)
+	}
+}
