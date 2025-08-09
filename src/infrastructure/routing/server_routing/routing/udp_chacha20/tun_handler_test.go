@@ -3,6 +3,8 @@ package udp_chacha20
 import (
 	"context"
 	"errors"
+	"fmt"
+	"golang.org/x/net/ipv4"
 	"io"
 	"net/netip"
 	"os"
@@ -34,7 +36,10 @@ type testParser struct {
 	retErr  error
 }
 
-func (p *testParser) ParseDestinationAddressBytes(_, dst []byte) error {
+func (p *testParser) ParseDestinationAddressBytes(header, dst []byte) error {
+	if len(header) < ipv4.HeaderLen {
+		return fmt.Errorf("invalid packet size: too small (%d bytes)", len(header))
+	}
 	if p.retErr != nil {
 		return p.retErr
 	}

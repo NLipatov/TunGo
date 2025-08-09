@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"golang.org/x/crypto/chacha20poly1305"
 	"testing"
 	"time"
 )
@@ -105,7 +106,7 @@ func TestHandleTun_WriteError(t *testing.T) {
 	writer := &fakeWriter{err: errWrite}
 	h := NewTunHandler(ctx, reader, writer, &tunhandlerTestRakeCrypto{prefix: []byte("x:")})
 
-	if err := h.HandleTun(); err == nil || err.Error() != fmt.Sprintf("could not write packet to adapter: %v", errWrite) {
+	if err := h.HandleTun(); err == nil || err.Error() != fmt.Sprintf("could not write packet to transport: %v", errWrite) {
 		t.Fatalf("expected write error wrapped, got %v", err)
 	}
 }
@@ -147,7 +148,8 @@ func TestHandleTun_SuccessThenCancel(t *testing.T) {
 	}
 
 	// verify written
-	want := append([]byte("pre-"), dummyData...)
+	zeros := make([]byte, chacha20poly1305.NonceSize)
+	want := append([]byte("pre-"), append(zeros, dummyData...)...)
 	if len(writer.data) != 1 || !bytes.Equal(writer.data[0], want) {
 		t.Errorf("expected written %v, got %v", want, writer.data)
 	}
