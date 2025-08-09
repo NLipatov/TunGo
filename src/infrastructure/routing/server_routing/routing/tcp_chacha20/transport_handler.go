@@ -5,7 +5,9 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"golang.org/x/crypto/chacha20poly1305"
 	"io"
+	"log"
 	"net"
 	"net/netip"
 	"tungo/application"
@@ -149,14 +151,14 @@ func (t *TransportHandler) handleClient(ctx context.Context, session application
 		t.logger.Printf("disconnected: %s", session.ExternalAddrPort())
 	}()
 
-	buf := make([]byte, network.MaxPacketLengthBytes)
+	buffer := make([]byte, 4+network.MaxPacketLengthBytes+chacha20poly1305.Overhead)
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		default:
 			// Read the length of the encrypted packet (4 bytes)
-			_, err := io.ReadFull(session.ConnectionAdapter(), buf[:4])
+			_, err := io.ReadFull(session.ConnectionAdapter(), buffer[:4])
 			if err != nil {
 				if err != io.EOF {
 					t.logger.Printf("failed to read from client: %v", err)
@@ -165,20 +167,21 @@ func (t *TransportHandler) handleClient(ctx context.Context, session application
 			}
 
 			//read packet length from 4-byte length prefix
-			var length = binary.BigEndian.Uint32(buf[:4])
-			if length < 4 || length > network.MaxPacketLengthBytes {
-				t.logger.Printf("invalid packet Length: %d", length)
+			var length = binary.BigEndian.Uint32(buffer[:4])
+			if length < chacha20poly1305.Overhead ||
+				length > network.MaxPacketLengthBytes+chacha20poly1305.Overhead {
+				log.Printf("invalid ciphertext length: %d", length)
 				continue
 			}
 
 			//read n-bytes from connection
-			_, err = io.ReadFull(session.ConnectionAdapter(), buf[:length])
+			_, err = io.ReadFull(session.ConnectionAdapter(), buffer[:length])
 			if err != nil {
 				t.logger.Printf("failed to read packet from connection: %s", err)
 				continue
 			}
 
-			decrypted, decryptionErr := session.CryptographyService().Decrypt(buf[:length])
+			decrypted, decryptionErr := session.CryptographyService().Decrypt(buffer[:length])
 			if decryptionErr != nil {
 				t.logger.Printf("failed to decrypt data: %s", decryptionErr)
 				continue

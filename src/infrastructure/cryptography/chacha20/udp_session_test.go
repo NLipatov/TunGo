@@ -2,8 +2,6 @@ package chacha20
 
 import (
 	"bytes"
-	"crypto/rand"
-	"encoding/binary"
 	"testing"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -11,104 +9,220 @@ import (
 
 func TestNewUdpSession_KeyLengthError(t *testing.T) {
 	var id [32]byte
-	// too-short sendKey
-	_, err := NewUdpSession(id, []byte("short"), make([]byte, chacha20poly1305.KeySize), false)
-	if err == nil {
+	short := []byte("short")
+	ok := randKey()
+
+	if _, err := NewUdpSession(id, short, ok, false); err == nil {
 		t.Fatal("expected error for invalid sendKey length")
 	}
-	// too-short recvKey
-	_, err = NewUdpSession(id, make([]byte, chacha20poly1305.KeySize), []byte("short"), false)
-	if err == nil {
+	if _, err := NewUdpSession(id, ok, short, false); err == nil {
 		t.Fatal("expected error for invalid recvKey length")
 	}
 }
 
-func TestEncryptDecrypt_RoundTrip(t *testing.T) {
-	var id [32]byte
-	copy(id[:], bytes.Repeat([]byte{0x7F}, 32))
-
-	// use same key for send and recv
-	key := make([]byte, chacha20poly1305.KeySize)
-	if _, err := rand.Read(key); err != nil {
-		t.Fatalf("rand.Read: %v", err)
-	}
-
-	// client session encrypts client→server
-	clientSess, err := NewUdpSession(id, key, key, false)
+func TestUdpEncrypt_InPlaceCapacityError(t *testing.T) {
+	id := randID()
+	key := randKey()
+	sess, err := NewUdpSession(id, key, key, false)
 	if err != nil {
-		t.Fatalf("NewUdpSession(client): %v", err)
+		t.Fatalf("NewUdpSession: %v", err)
 	}
 
-	// craft packet: 12-byte header + payload, with extra cap for tag
-	payload := []byte("hello world")
-	aead, _ := chacha20poly1305.New(key)
-	overhead := aead.Overhead() // 16
-	packet := make([]byte, 12+len(payload), 12+len(payload)+overhead)
-	binary.BigEndian.PutUint32(packet[:4], uint32(len(payload)))
-	copy(packet[12:], payload)
+	// Need cap >= len + Overhead; here cap == len, should error.
+	plain := make([]byte, 12+8) // 12 bytes header space + 8 bytes payload
+	if _, err := sess.Encrypt(plain); err == nil {
+		t.Fatal("expected insufficient capacity error")
+	}
+}
 
-	ct, err := clientSess.Encrypt(packet)
+func TestUdpEncrypt_BufferTooShort(t *testing.T) {
+	id := randID()
+	key := randKey()
+	sess, err := NewUdpSession(id, key, key, false)
+	if err != nil {
+		t.Fatalf("NewUdpSession: %v", err)
+	}
+
+	// Less than 12 bytes total → should error "buffer too short"
+	tooShort := make([]byte, 11, 11+chacha20poly1305.Overhead)
+	if _, err := sess.Encrypt(tooShort); err == nil {
+		t.Fatal("expected buffer too short error")
+	}
+}
+
+func TestUdpEncrypt_Success_LengthAndLayout(t *testing.T) {
+	id := randID()
+	key := randKey()
+	sess, err := NewUdpSession(id, key, key, false)
+	if err != nil {
+		t.Fatalf("NewUdpSession: %v", err)
+	}
+
+	payload := []byte("hello-udp")
+	buf := make([]byte, 12+len(payload), 12+len(payload)+chacha20poly1305.Overhead)
+	copy(buf[12:], payload)
+
+	out, err := sess.Encrypt(buf)
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+	wantLen := 12 + len(payload) + chacha20poly1305.Overhead
+	if len(out) != wantLen {
+		t.Fatalf("cipher len=%d; want %d", len(out), wantLen)
+	}
+	// Nonce (first 12 bytes) should be non-zero with very high probability
+	if bytes.Equal(out[:12], make([]byte, 12)) {
+		t.Fatal("nonce appears to be all zeros (unexpected)")
+	}
+}
+
+func TestUdpDecrypt_TooShort(t *testing.T) {
+	id := randID()
+	key := randKey()
+	sess, err := NewUdpSession(id, key, key, true)
+	if err != nil {
+		t.Fatalf("NewUdpSession: %v", err)
+	}
+
+	if _, err := sess.Decrypt([]byte("short")); err == nil {
+		t.Fatal("expected 'too short' error")
+	}
+}
+
+func TestUdp_Decrypt_OpenFail_AADMismatch(t *testing.T) {
+	idClient := randID()
+	idServer := randID() // different → AAD mismatch
+	key := randKey()
+
+	cli, err := NewUdpSession(idClient, key, key, false)
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	srv, err := NewUdpSession(idServer, key, key, true)
+	if err != nil {
+		t.Fatalf("server: %v", err)
+	}
+
+	payload := []byte("payload-udp")
+	buf := make([]byte, 12+len(payload), 12+len(payload)+chacha20poly1305.Overhead)
+	copy(buf[12:], payload)
+
+	ct, err := cli.Encrypt(buf)
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+	if _, err := srv.Decrypt(ct); err == nil {
+		t.Fatal("expected decrypt error due to AAD mismatch (different SessionId)")
+	}
+}
+
+func TestUdpDecrypt_ReplayRejected_ByNonceValidator(t *testing.T) {
+	id := randID()
+	key := randKey()
+
+	// client (encrypt) → server (decrypt)
+	cli, err := NewUdpSession(id, key, key, false)
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	srv, err := NewUdpSession(id, key, key, true)
+	if err != nil {
+		t.Fatalf("server: %v", err)
+	}
+
+	payload := []byte("once-only")
+	buf := make([]byte, 12+len(payload), 12+len(payload)+chacha20poly1305.Overhead)
+	copy(buf[12:], payload)
+
+	ct, err := cli.Encrypt(buf)
 	if err != nil {
 		t.Fatalf("Encrypt: %v", err)
 	}
 
-	// server session decrypts server→client
-	serverSess, err := NewUdpSession(id, key, key, true)
-	if err != nil {
-		t.Fatalf("NewUdpSession(server): %v", err)
+	// First decrypt succeeds
+	if _, err := srv.Decrypt(ct); err != nil {
+		t.Fatalf("first decrypt failed: %v", err)
 	}
-	pt, err := serverSess.Decrypt(ct)
+	// Replay must be rejected by Sliding64 validator (nonce reuse)
+	if _, err := srv.Decrypt(ct); err == nil {
+		t.Fatal("expected nonce validator error on replay, got nil")
+	}
+}
+
+func TestUdp_RoundTrip_OK(t *testing.T) {
+	id := randID()
+	key := randKey()
+
+	cli, err := NewUdpSession(id, key, key, false)
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	srv, err := NewUdpSession(id, key, key, true)
+	if err != nil {
+		t.Fatalf("server: %v", err)
+	}
+
+	payload := []byte("round-trip-ok")
+	buf := make([]byte, 12+len(payload), 12+len(payload)+chacha20poly1305.Overhead)
+	copy(buf[12:], payload)
+
+	ct, err := cli.Encrypt(buf)
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+	pt, err := srv.Decrypt(ct)
 	if err != nil {
 		t.Fatalf("Decrypt: %v", err)
 	}
 	if !bytes.Equal(pt, payload) {
-		t.Errorf("plaintext mismatch: got %q, want %q", pt, payload)
+		t.Fatalf("plaintext mismatch: got %q want %q", pt, payload)
 	}
 }
 
-func TestDecrypt_TooShort(t *testing.T) {
-	var id [32]byte
-	key := make([]byte, chacha20poly1305.KeySize)
-	sess, _ := NewUdpSession(id, key, key, false)
+func TestUdp_CreateAAD_BothDirections(t *testing.T) {
+	id := randID()
+	s := &DefaultUdpSession{SessionId: id}
 
-	_, err := sess.Decrypt([]byte("short"))
-	if err == nil || !bytes.Contains([]byte(err.Error()), []byte("too short")) {
-		t.Errorf("expected 'too short' error, got %v", err)
-	}
-}
-
-func TestCreateAAD_ContentAndLength(t *testing.T) {
-	var id [32]byte
-	for i := range id {
-		id[i] = byte(i)
-	}
-	sess := &DefaultUdpSession{SessionId: id}
-
-	nonce := make([]byte, 12)
+	nonce := make([]byte, chacha20poly1305.NonceSize)
 	for i := range nonce {
-		nonce[i] = byte(100 + i)
+		nonce[i] = byte(i + 1)
 	}
 
-	for _, isSrv := range []bool{false, true} {
-		aad := sess.CreateAAD(isSrv, nonce, make([]byte, 60))
-		var dir []byte
-		if isSrv {
-			dir = []byte("server-to-client")
-		} else {
-			dir = []byte("client-to-server")
-		}
-		expLen := 32 + len(dir) + len(nonce)
-		if len(aad) != expLen {
-			t.Errorf("AAD length = %d; want %d", len(aad), expLen)
-		}
-		if !bytes.Equal(aad[:32], id[:]) {
-			t.Error("AAD session ID mismatch")
-		}
-		if !bytes.Equal(aad[32:32+len(dir)], dir) {
-			t.Error("AAD direction mismatch")
-		}
-		if !bytes.Equal(aad[32+len(dir):], nonce) {
-			t.Error("AAD nonce mismatch")
-		}
+	// Client->Server
+	aadC2S := s.CreateAAD(false, nonce, make([]byte, aadLength))
+	if len(aadC2S) != aadLength {
+		t.Fatalf("aad len=%d, want %d", len(aadC2S), aadLength)
+	}
+	if !bytes.Equal(aadC2S[:sessionIdentifierLength], id[:]) {
+		t.Fatal("session id part mismatch (C2S)")
+	}
+	if !bytes.Equal(aadC2S[sessionIdentifierLength:sessionIdentifierLength+directionLength], dirC2S[:]) {
+		t.Fatal("direction bytes mismatch (C2S)")
+	}
+	if !bytes.Equal(aadC2S[sessionIdentifierLength+directionLength:aadLength], nonce) {
+		t.Fatal("nonce bytes mismatch (C2S)")
+	}
+
+	// Server->Client
+	aadS2C := s.CreateAAD(true, nonce, make([]byte, aadLength))
+	if len(aadS2C) != aadLength {
+		t.Fatalf("aad len=%d, want %d", len(aadS2C), aadLength)
+	}
+	if !bytes.Equal(aadS2C[:sessionIdentifierLength], id[:]) {
+		t.Fatal("session id part mismatch (S2C)")
+	}
+	if !bytes.Equal(aadS2C[sessionIdentifierLength:sessionIdentifierLength+directionLength], dirS2C[:]) {
+		t.Fatal("direction bytes mismatch (S2C)")
+	}
+	if !bytes.Equal(aadS2C[sessionIdentifierLength+directionLength:aadLength], nonce) {
+		t.Fatal("nonce bytes mismatch (S2C)")
+	}
+
+	// Direction segments must differ
+	if bytes.Equal(
+		aadC2S[sessionIdentifierLength:sessionIdentifierLength+directionLength],
+		aadS2C[sessionIdentifierLength:sessionIdentifierLength+directionLength],
+	) {
+		t.Fatal("C2S and S2C direction segments must differ")
 	}
 }

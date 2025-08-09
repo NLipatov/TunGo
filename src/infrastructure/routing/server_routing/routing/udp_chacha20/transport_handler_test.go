@@ -304,7 +304,6 @@ func TestTransportHandler_ReadMsgUDPAddrPortError(t *testing.T) {
 	sessionRepo := &testSessionRepo{}
 	handshakeFactory := &fakeHandshakeFactory{hs: &fakeHandshake{}}
 
-	// Передаем пустой readBufs, чтобы получить io.EOF сразу
 	conn := &fakeUdpListenerConn{
 		readBufs:  [][]byte{},
 		readAddrs: []netip.AddrPort{},

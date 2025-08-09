@@ -133,7 +133,13 @@ func TestTunHandler_AllPaths(t *testing.T) {
 	})
 
 	t.Run("invalid IP data", func(t *testing.T) {
-		h := NewTunHandler(context.Background(), reader([][]byte{{1, 2, 3, 4}}, []error{nil, io.EOF}), &mockEncoder{}, &mockParser{}, &mockMgr{})
+		h := NewTunHandler(
+			context.Background(),
+			reader([][]byte{{1, 2, 3, 4}}, []error{nil, io.EOF}),
+			&mockEncoder{},
+			&mockParser{err: errors.New("invalid ip data")},
+			&mockMgr{},
+		)
 		if err := h.HandleTun(); err != io.EOF {
 			t.Errorf("want EOF for invalid IP data, got %v", err)
 		}

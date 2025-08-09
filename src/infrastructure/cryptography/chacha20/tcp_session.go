@@ -2,9 +2,9 @@ package chacha20
 
 import (
 	"crypto/cipher"
-	"unsafe"
-
+	"fmt"
 	"golang.org/x/crypto/chacha20poly1305"
+	"unsafe"
 )
 
 type DefaultTcpSession struct {
@@ -15,10 +15,10 @@ type DefaultTcpSession struct {
 	isServer           bool
 	SessionId          [32]byte
 	nonceValidator     *StrictCounter
-	encryptionAadBuf   []byte
-	decryptionAadBuf   []byte
-	encryptionNonceBuf [12]byte
-	decryptionNonceBuf [12]byte
+	encryptionAadBuf   [aadLength]byte
+	decryptionAadBuf   [aadLength]byte
+	encryptionNonceBuf [chacha20poly1305.NonceSize]byte
+	decryptionNonceBuf [chacha20poly1305.NonceSize]byte
 }
 
 func NewTcpCryptographyService(id [32]byte, sendKey, recvKey []byte, isServer bool) (*DefaultTcpSession, error) {
@@ -40,14 +40,18 @@ func NewTcpCryptographyService(id [32]byte, sendKey, recvKey []byte, isServer bo
 		SendNonce:          NewNonce(),
 		isServer:           isServer,
 		nonceValidator:     NewStrictCounter(),
-		encryptionNonceBuf: [12]byte{},
-		decryptionNonceBuf: [12]byte{},
-		encryptionAadBuf:   make([]byte, 80),
-		decryptionAadBuf:   make([]byte, 80),
+		encryptionNonceBuf: [chacha20poly1305.NonceSize]byte{},
+		decryptionNonceBuf: [chacha20poly1305.NonceSize]byte{},
 	}, nil
 }
 
 func (s *DefaultTcpSession) Encrypt(plaintext []byte) ([]byte, error) {
+	// guarantee inplace encryption
+	if cap(plaintext) < len(plaintext)+chacha20poly1305.Overhead {
+		return nil, fmt.Errorf("insufficient capacity for in-place encryption: len=%d, cap=%d",
+			len(plaintext), cap(plaintext))
+	}
+
 	err := s.SendNonce.incrementNonce()
 	if err != nil {
 		return nil, err
@@ -55,7 +59,7 @@ func (s *DefaultTcpSession) Encrypt(plaintext []byte) ([]byte, error) {
 
 	nonceBytes := s.SendNonce.Encode(s.encryptionNonceBuf[:])
 
-	aad := s.CreateAAD(s.isServer, nonceBytes, s.encryptionAadBuf)
+	aad := s.CreateAAD(s.isServer, nonceBytes, s.encryptionAadBuf[:])
 	ciphertext := s.sendCipher.Seal(plaintext[:0], nonceBytes, plaintext, aad)
 
 	return ciphertext, nil
@@ -75,7 +79,7 @@ func (s *DefaultTcpSession) Decrypt(ciphertext []byte) ([]byte, error) {
 		return nil, nBErr
 	}
 
-	aad := s.CreateAAD(!s.isServer, nonceBytes, s.decryptionAadBuf)
+	aad := s.CreateAAD(!s.isServer, nonceBytes, s.decryptionAadBuf[:])
 	plaintext, err := s.recvCipher.Open(ciphertext[:0], nonceBytes, ciphertext, aad)
 	if err != nil {
 		// Properly handle failed decryption attempt to avoid reuse of any state
@@ -86,13 +90,13 @@ func (s *DefaultTcpSession) Decrypt(ciphertext []byte) ([]byte, error) {
 }
 
 func (s *DefaultTcpSession) CreateAAD(isServerToClient bool, nonce, aad []byte) []byte {
-	direction := []byte("client-to-server")
+	// aad must have len >= aadLen (60)
+	copy(aad[:sessionIdentifierLength], s.SessionId[:])
 	if isServerToClient {
-		direction = []byte("server-to-client")
+		copy(aad[sessionIdentifierLength:sessionIdentifierLength+directionLength], dirS2C[:]) // 32..48
+	} else {
+		copy(aad[sessionIdentifierLength:sessionIdentifierLength+directionLength], dirC2S[:]) // 32..48
 	}
-
-	copy(aad, s.SessionId[:])
-	copy(aad[len(s.SessionId):], direction)
-	copy(aad[len(s.SessionId)+len(direction):], nonce)
-	return aad[:len(s.SessionId)+len(direction)+len(nonce)]
+	copy(aad[sessionIdentifierLength+directionLength:aadLength], nonce) // 48..60
+	return aad[:aadLength]
 }

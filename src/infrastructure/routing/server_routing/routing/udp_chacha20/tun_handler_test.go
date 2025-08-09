@@ -3,6 +3,8 @@ package udp_chacha20
 import (
 	"context"
 	"errors"
+	"fmt"
+	"golang.org/x/net/ipv4"
 	"io"
 	"net/netip"
 	"os"
@@ -34,7 +36,10 @@ type testParser struct {
 	retErr  error
 }
 
-func (p *testParser) ParseDestinationAddressBytes(_, dst []byte) error {
+func (p *testParser) ParseDestinationAddressBytes(header, dst []byte) error {
+	if len(header) < ipv4.HeaderLen {
+		return fmt.Errorf("invalid packet size: too small (%d bytes)", len(header))
+	}
 	if p.retErr != nil {
 		return p.retErr
 	}
@@ -246,5 +251,68 @@ func TestTunHandler_HappyPath(t *testing.T) {
 	}
 	if n := atomic.LoadInt32(&a.writes); n != 1 {
 		t.Errorf("happy: writes=%d, want 1", n)
+	}
+}
+
+func TestTunHandler_ReadTemporaryError_RetryThenEOF(t *testing.T) {
+	// 1) first read returns a temporary/non-os error -> handler should log and continue
+	// 2) second read returns EOF -> handler should exit with EOF
+	r := &testUdpReader{seq: []struct {
+		data []byte
+		err  error
+	}{
+		{nil, errors.New("tmp read error")}, // triggers "retry" branch
+		{nil, io.EOF},                       // then exit
+	}}
+	h := NewTunHandler(context.Background(), r, &testParser{}, &testMgr{sess: makeSession(&testAdapter{}, &testCrypto{})})
+
+	if err := h.HandleTun(); err != io.EOF {
+		t.Fatalf("want io.EOF after retry path, got %v", err)
+	}
+}
+
+func TestTunHandler_ReadErrorAfterCancel_ReturnsNil(t *testing.T) {
+	// reader returns an error, but context is already canceled -> handler returns nil
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	r := &testUdpReader{seq: []struct {
+		data []byte
+		err  error
+	}{
+		{nil, errors.New("any read error")},
+	}}
+	h := NewTunHandler(ctx, r, &testParser{}, &testMgr{sess: makeSession(&testAdapter{}, &testCrypto{})})
+
+	if err := h.HandleTun(); err != nil {
+		t.Fatalf("expected nil because ctx canceled, got %v", err)
+	}
+}
+
+func TestTunHandler_ReadTemporaryError_ThenHappyThenEOF(t *testing.T) {
+	hdr := make([]byte, 20)
+	hdr[0] = 0x45
+	copy(hdr[16:20], []byte{10, 0, 0, 1})
+	frame := append(make([]byte, 12), hdr...)
+
+	r := &testUdpReader{seq: []struct {
+		data []byte
+		err  error
+	}{
+		{nil, errors.New("tmp read error")}, // retry branch
+		{frame, nil},                        // happy write
+		{nil, io.EOF},                       // exit
+	}}
+
+	a := &testAdapter{}
+	parser := &testParser{wantDst: [4]byte{10, 0, 0, 1}}
+	mgr := &testMgr{sess: makeSession(a, &testCrypto{})}
+	h := NewTunHandler(context.Background(), r, parser, mgr)
+
+	if err := h.HandleTun(); err != io.EOF {
+		t.Fatalf("want io.EOF, got %v", err)
+	}
+	if got := atomic.LoadInt32(&a.writes); got != 1 {
+		t.Fatalf("writes=%d, want 1", got)
 	}
 }

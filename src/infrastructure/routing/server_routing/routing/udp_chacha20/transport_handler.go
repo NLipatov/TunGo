@@ -3,6 +3,7 @@ package udp_chacha20
 import (
 	"context"
 	"fmt"
+	"golang.org/x/crypto/chacha20poly1305"
 	"io"
 	"net/netip"
 	"tungo/application"
@@ -57,7 +58,7 @@ func (t *TransportHandler) HandleTransport() error {
 		_ = t.listenerConn.Close()
 	}()
 
-	dataBuf := make([]byte, network.MaxPacketLengthBytes+12)
+	buffer := make([]byte, network.MaxPacketLengthBytes+chacha20poly1305.NonceSize+chacha20poly1305.Overhead)
 	oobBuf := make([]byte, 1024)
 
 	for {
@@ -65,9 +66,9 @@ func (t *TransportHandler) HandleTransport() error {
 		case <-t.ctx.Done():
 			return nil
 		default:
-			n, _, _, clientAddr, readFromUdpErr := t.listenerConn.ReadMsgUDPAddrPort(dataBuf, oobBuf)
+			n, _, _, clientAddr, readFromUdpErr := t.listenerConn.ReadMsgUDPAddrPort(buffer, oobBuf)
 			if readFromUdpErr != nil {
-				if t.ctx.Done() != nil {
+				if t.ctx.Err() != nil {
 					return nil
 				}
 
@@ -80,7 +81,7 @@ func (t *TransportHandler) HandleTransport() error {
 				continue
 			}
 
-			_ = t.handlePacket(t.listenerConn, clientAddr, dataBuf[:n])
+			_ = t.handlePacket(t.listenerConn, clientAddr, buffer[:n])
 		}
 	}
 }
