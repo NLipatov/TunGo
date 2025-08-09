@@ -522,3 +522,65 @@ func TestHandleClient_WriteTunError(t *testing.T) {
 	handler := NewTransportHandler(context.Background(), settings.Settings{}, writer, &fakeTcpListener{}, repo, logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{})
 	handler.(*TransportHandler).handleClient(ctx, sess, writer)
 }
+
+func TestHandleClient_HappyDataPath_WritesToTun(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// length >= chacha20poly1305.Overhead (16)
+	const clen = 16
+	prefix := []byte{0, 0, 0, clen}
+	payload := make([]byte, clen)
+
+	conn := &fakeConn{
+		addr:     tcpAddr("1.2.3.4", 6001),
+		readBufs: [][]byte{prefix, payload},
+	}
+	writer := &fakeWriter{}
+	logger := &fakeLogger{}
+	sess := Session{
+		connectionAdapter:   conn,
+		cryptographyService: &fakeCrypto{},
+		internalIP:          netip.MustParseAddr("10.0.0.12"),
+		externalIP:          netip.MustParseAddrPort("1.2.3.4:6001"),
+	}
+	repo := &fakeSessionRepo{}
+	h := NewTransportHandler(context.Background(), settings.Settings{}, writer, &fakeTcpListener{}, repo, logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{})
+
+	h.(*TransportHandler).handleClient(ctx, sess, writer)
+
+	if len(writer.wrote) != 1 {
+		t.Fatalf("expected 1 write to TUN, got %d", len(writer.wrote))
+	}
+	if !bytes.Equal(writer.wrote[0], payload) {
+		t.Fatalf("written payload mismatch: got %v, want %v", writer.wrote[0], payload)
+	}
+}
+
+func TestRegisterClient_AddsSessionOnNotFound(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	addr := tcpAddr("127.0.0.1", 6010)
+	fconn := &fakeConn{addr: addr}
+	writer := &fakeWriter{}
+	logger := &fakeLogger{}
+	handshake := &fakeHandshake{ip: []byte{127, 0, 0, 1}}
+	handshakeFactory := &fakeHandshakeFactory{hs: handshake}
+	repo := &fakeSessionRepo{
+		getErr: repository.ErrSessionNotFound,
+	}
+
+	h := NewTransportHandler(ctx, settings.Settings{}, writer, &fakeTcpListener{}, repo, logger, handshakeFactory, &fakeCryptoFactory{})
+	if err := h.(*TransportHandler).registerClient(fconn, writer, ctx); err != nil {
+		t.Fatalf("registerClient returned error: %v", err)
+	}
+
+	if len(repo.added) != 1 {
+		t.Fatalf("expected 1 added session, got %d", len(repo.added))
+	}
+	added := repo.added[0]
+	if added.ExternalAddrPort().Addr().Unmap().String() != "127.0.0.1" {
+		t.Errorf("added session addr mismatch: %v", added.ExternalAddrPort())
+	}
+}
