@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"golang.org/x/crypto/curve25519"
 	"net"
+	"net/netip"
 	"tungo/application"
-	"tungo/domain/network/ip"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/settings"
 )
@@ -34,24 +34,26 @@ func (c *ClientHandshake) SendClientHello(
 	settings settings.Settings,
 	edPublicKey ed25519.PublicKey,
 	sessionPublicKey, sessionSalt []byte) error {
+	netIpAddr, netIpAddrErr := netip.ParseAddr(settings.ConnectionIP)
+	if netIpAddrErr != nil {
+		return netIpAddrErr
+	}
+	var netIpAddrVersion uint8
+	if netIpAddr.Is6() {
+		netIpAddrVersion = 6
+	} else if netIpAddr.Is4() {
+		netIpAddrVersion = 4
+	} else {
+		return fmt.Errorf("invalid IP(%s) version", settings.ConnectionIP)
+	}
+
 	hello := NewClientHello(
-		4,
+		netIpAddrVersion,
 		net.ParseIP(settings.InterfaceAddress),
 		edPublicKey,
 		sessionPublicKey,
 		sessionSalt,
-		network.NewIPValidator(
-			ip.ValidationPolicy{
-				AllowV4:           true,
-				AllowV6:           true,
-				RequirePrivate:    true,
-				ForbidLoopback:    true,
-				ForbidMulticast:   true,
-				ForbidUnspecified: true,
-				ForbidLinkLocal:   true,
-				ForbidBroadcastV4: true,
-			},
-		),
+		network.NewDefaultPolicyNewIPValidator(),
 	)
 	return c.clientIO.WriteClientHello(hello)
 }

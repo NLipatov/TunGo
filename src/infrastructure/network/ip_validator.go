@@ -17,6 +17,21 @@ func NewIPValidator(policy ip.ValidationPolicy) application.IPValidator {
 	}
 }
 
+func NewDefaultPolicyNewIPValidator() application.IPValidator {
+	return &IPValidator{
+		policy: ip.ValidationPolicy{
+			AllowV4:           true,
+			AllowV6:           true,
+			RequirePrivate:    true,
+			ForbidLoopback:    true,
+			ForbidMulticast:   true,
+			ForbidUnspecified: true,
+			ForbidLinkLocal:   true,
+			ForbidBroadcastV4: true,
+		},
+	}
+}
+
 // NormalizeIP returns the IP version and raw bytes in canonical form.
 // IPv4 addresses are 4 bytes, IPv6 addresses are 16 bytes. No mapped forms are allowed.
 func (i *IPValidator) NormalizeIP(netIp net.IP) (ver ip.Version, raw []byte, err error) {

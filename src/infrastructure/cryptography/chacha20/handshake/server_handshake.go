@@ -25,7 +25,7 @@ func (h *ServerHandshake) ReceiveClientHello() (ClientHello, error) {
 	}
 
 	//Read client hello
-	var clientHello ClientHello
+	clientHello := NewEmptyClientHelloWithDefaultIPValidator()
 	unmarshalErr := clientHello.UnmarshalBinary(buf)
 	if unmarshalErr != nil {
 		return ClientHello{}, unmarshalErr

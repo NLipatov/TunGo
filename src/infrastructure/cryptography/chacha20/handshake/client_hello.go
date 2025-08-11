@@ -6,6 +6,7 @@ import (
 	"net"
 	"tungo/application"
 	"tungo/domain/network/ip"
+	"tungo/infrastructure/network"
 )
 
 type ClientHello struct {
@@ -32,6 +33,23 @@ func NewClientHello(
 		curvePublicKey: CurvePublicKey,
 		nonce:          ClientNonce,
 		ipValidator:    ipValidator,
+	}
+}
+
+func NewEmptyClientHelloWithDefaultIPValidator() ClientHello {
+	return ClientHello{
+		ipValidator: network.NewIPValidator(
+			ip.ValidationPolicy{
+				AllowV4:           true,
+				AllowV6:           true,
+				RequirePrivate:    true,
+				ForbidLoopback:    true,
+				ForbidMulticast:   true,
+				ForbidUnspecified: true,
+				ForbidLinkLocal:   true,
+				ForbidBroadcastV4: true,
+			},
+		),
 	}
 }
 
