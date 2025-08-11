@@ -15,8 +15,16 @@ const (
 	curvePublicKeyLength    = 32
 	minIpLength             = 4
 	maxIpLength             = 39
-	MaxClientHelloSizeBytes = maxIpLength + lengthHeaderLength + curvePublicKeyLength + curvePublicKeyLength + nonceLength
-	minClientHelloSizeBytes = minIpLength + lengthHeaderLength + curvePublicKeyLength + curvePublicKeyLength + nonceLength
+	MaxClientHelloSizeBytes = maxIpLength +
+		lengthHeaderLength +
+		curvePublicKeyLength +
+		curvePublicKeyLength +
+		nonceLength
+	minClientHelloSizeBytes = minIpLength +
+		lengthHeaderLength +
+		curvePublicKeyLength +
+		curvePublicKeyLength +
+		nonceLength
 )
 
 type DefaultHandshake struct {
@@ -47,7 +55,9 @@ func (h *DefaultHandshake) ServerKey() []byte {
 	return h.serverKey
 }
 
-func (h *DefaultHandshake) ServerSideHandshake(conn application.ConnectionAdapter) (net.IP, error) {
+func (h *DefaultHandshake) ServerSideHandshake(
+	conn application.ConnectionAdapter,
+) (net.IP, error) {
 	c := newDefaultCrypto()
 
 	// Generate server hello response
@@ -66,7 +76,8 @@ func (h *DefaultHandshake) ServerSideHandshake(conn application.ConnectionAdapte
 		return nil, clientHelloErr
 	}
 
-	serverHelloErr := handshake.SendServerHello(c, h.Ed25519PrivateKey, serverNonce, curvePublic, clientHello.nonce)
+	serverHelloErr := handshake.
+		SendServerHello(c, h.Ed25519PrivateKey, serverNonce, curvePublic, clientHello.nonce)
 	if serverHelloErr != nil {
 		return nil, serverHelloErr
 	}
@@ -76,7 +87,8 @@ func (h *DefaultHandshake) ServerSideHandshake(conn application.ConnectionAdapte
 		return nil, signatureErr
 	}
 
-	sessionId, clientToServerKey, serverToClientKey, sessionKeysErr := c.GenerateChaCha20KeysServerside(curvePrivate[:], serverNonce, &clientHello)
+	sessionId, clientToServerKey, serverToClientKey, sessionKeysErr := c.
+		GenerateChaCha20KeysServerside(curvePrivate[:], serverNonce, &clientHello)
 	if sessionKeysErr != nil {
 		return nil, sessionKeysErr
 	}
@@ -88,7 +100,10 @@ func (h *DefaultHandshake) ServerSideHandshake(conn application.ConnectionAdapte
 	return clientHello.ipAddress, nil
 }
 
-func (h *DefaultHandshake) ClientSideHandshake(conn application.ConnectionAdapter, settings settings.Settings) error {
+func (h *DefaultHandshake) ClientSideHandshake(
+	conn application.ConnectionAdapter,
+	settings settings.Settings,
+) error {
 	c := newDefaultCrypto()
 
 	edPublicKey, edPrivateKey, generateKeyErr := c.GenerateEd25519KeyPair()
@@ -118,12 +133,14 @@ func (h *DefaultHandshake) ClientSideHandshake(conn application.ConnectionAdapte
 		return serverHelloErr
 	}
 
-	sendSignatureErr := handshake.SendSignature(h.Ed25519PublicKey, edPrivateKey, sessionPublicKey, serverHello, clientNonce)
+	sendSignatureErr := handshake.
+		SendSignature(h.Ed25519PublicKey, edPrivateKey, sessionPublicKey, serverHello, clientNonce)
 	if sendSignatureErr != nil {
 		return sendSignatureErr
 	}
 
-	serverToClientKey, clientToServerKey, derivedSessionId, calculateKeysErr := c.GenerateChaCha20KeysClientside(sessionPrivateKey[:], clientNonce, &serverHello)
+	serverToClientKey, clientToServerKey, derivedSessionId, calculateKeysErr := c.
+		GenerateChaCha20KeysClientside(sessionPrivateKey[:], clientNonce, &serverHello)
 	if calculateKeysErr != nil {
 		return calculateKeysErr
 	}
