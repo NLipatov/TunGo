@@ -67,7 +67,10 @@ func (c *ClientHandshakeFakeCrypto) GenerateChaCha20KeysClientside(_, _ []byte, 
 func TestSendClientHello(t *testing.T) {
 	io := &ClientHandshakeFakeIO{}
 	ch := NewClientHandshake(nil, io, nil)
-	s := settings.Settings{InterfaceAddress: "1.2.3.4"}
+	s := settings.Settings{
+		InterfaceAddress: "1.2.3.4",
+		ConnectionIP:     "4.3.2.1",
+	}
 	edPub := make([]byte, ed25519.PublicKeySize)
 	sessPub := make([]byte, curve25519.ScalarSize)
 	salt := make([]byte, nonceLength)
