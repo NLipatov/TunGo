@@ -6,6 +6,8 @@ import (
 	"golang.org/x/crypto/curve25519"
 	"net"
 	"tungo/application"
+	"tungo/domain/network/ip"
+	"tungo/infrastructure/network"
 	"tungo/infrastructure/settings"
 )
 
@@ -32,7 +34,25 @@ func (c *ClientHandshake) SendClientHello(
 	settings settings.Settings,
 	edPublicKey ed25519.PublicKey,
 	sessionPublicKey, sessionSalt []byte) error {
-	hello := NewClientHello(4, net.ParseIP(settings.InterfaceAddress), edPublicKey, sessionPublicKey, sessionSalt)
+	hello := NewClientHello(
+		4,
+		net.ParseIP(settings.InterfaceAddress),
+		edPublicKey,
+		sessionPublicKey,
+		sessionSalt,
+		network.NewIPValidator(
+			ip.ValidationPolicy{
+				AllowV4:           true,
+				AllowV6:           true,
+				RequirePrivate:    true,
+				ForbidLoopback:    true,
+				ForbidMulticast:   true,
+				ForbidUnspecified: true,
+				ForbidLinkLocal:   true,
+				ForbidBroadcastV4: true,
+			},
+		),
+	)
 	return c.clientIO.WriteClientHello(hello)
 }
 

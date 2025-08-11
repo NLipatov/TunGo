@@ -4,11 +4,14 @@ import (
 	"crypto/ed25519"
 	"fmt"
 	"net"
+	"tungo/application"
+	"tungo/domain/network/ip"
 )
 
 type ClientHello struct {
 	ipVersion      uint8
 	ipAddress      net.IP
+	ipValidator    application.IPValidator
 	edPublicKey    ed25519.PublicKey
 	curvePublicKey []byte
 	nonce          []byte
@@ -19,13 +22,16 @@ func NewClientHello(
 	IpAddress net.IP,
 	EdPublicKey ed25519.PublicKey,
 	CurvePublicKey []byte,
-	ClientNonce []byte) ClientHello {
+	ClientNonce []byte,
+	ipValidator application.IPValidator,
+) ClientHello {
 	return ClientHello{
 		ipVersion:      IpVersion,
 		ipAddress:      IpAddress,
 		edPublicKey:    EdPublicKey,
 		curvePublicKey: CurvePublicKey,
 		nonce:          ClientNonce,
+		ipValidator:    ipValidator,
 	}
 }
 
@@ -38,14 +44,8 @@ func (c *ClientHello) CurvePublicKey() []byte {
 }
 
 func (c *ClientHello) MarshalBinary() ([]byte, error) {
-	if c.ipVersion != 4 && c.ipVersion != 6 {
-		return nil, fmt.Errorf("invalid ip version")
-	}
-	if c.ipVersion == 4 && len(c.ipAddress) < 7 { //min IPv4 address length is 7 characters
-		return nil, fmt.Errorf("invalid ip address")
-	}
-	if c.ipVersion == 6 && len(c.ipAddress) < 2 { //min IPv6 address length is 2 characters
-		return nil, fmt.Errorf("invalid ip address")
+	if err := c.validateIP(); err != nil {
+		return nil, err
 	}
 
 	arr := make([]byte, lengthHeaderLength+len(c.ipAddress)+curvePublicKeyLength+curvePublicKeyLength+nonceLength)
@@ -66,14 +66,9 @@ func (c *ClientHello) UnmarshalBinary(data []byte) error {
 
 	c.ipVersion = data[0]
 
-	if c.ipVersion != 4 && c.ipVersion != 6 {
-		return fmt.Errorf("invalid IP version")
-	}
-
 	ipAddressLength := data[1]
-
 	if int(ipAddressLength+lengthHeaderLength) > len(data) {
-		return fmt.Errorf("invalid IP address length")
+		return fmt.Errorf("invalid Client Hello size: %d", len(data))
 	}
 
 	c.ipAddress = data[lengthHeaderLength : lengthHeaderLength+ipAddressLength]
@@ -84,5 +79,21 @@ func (c *ClientHello) UnmarshalBinary(data []byte) error {
 
 	c.nonce = data[lengthHeaderLength+ipAddressLength+curvePublicKeyLength+curvePublicKeyLength : lengthHeaderLength+ipAddressLength+curvePublicKeyLength+curvePublicKeyLength+nonceLength]
 
+	return c.validateIP()
+}
+
+func (c *ClientHello) validateIP() error {
+	switch c.ipVersion {
+	case 4:
+		if vErr := c.ipValidator.ValidateIP(ip.V4, c.ipAddress); vErr != nil {
+			return vErr
+		}
+	case 6:
+		if vErr := c.ipValidator.ValidateIP(ip.V6, c.ipAddress); vErr != nil {
+			return vErr
+		}
+	default:
+		return fmt.Errorf("invalid ip version: %d", c.ipVersion)
+	}
 	return nil
 }
