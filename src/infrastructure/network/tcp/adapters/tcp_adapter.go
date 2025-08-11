@@ -1,3 +1,4 @@
+// adapters/adapter.go
 package adapters
 
 import (
@@ -11,22 +12,33 @@ import (
 
 type Adapter struct {
 	adapter application.ConnectionAdapter
+	maxLen  int // protocol payload limit (test-injectable)
 }
 
 func NewTcpAdapter(under application.ConnectionAdapter) application.ConnectionAdapter {
 	return &Adapter{
 		adapter: under,
+		maxLen:  network.MaxPacketLengthBytes,
+	}
+}
+
+// NewTcpAdapterWithLimit is for tests and special cases.
+func NewTcpAdapterWithLimit(under application.ConnectionAdapter, limit int) *Adapter {
+	return &Adapter{
+		adapter: under,
+		maxLen:  limit,
 	}
 }
 
 // Write writes one u16-BE length-prefixed frame. Returns len(data) on success.
 func (a *Adapter) Write(data []byte) (int, error) {
-	// check u16 bound first, so branch is reachable in tests
+	// Check protocol limit first to make this branch reachable regardless of the u16 ceiling.
+	if len(data) > a.maxLen {
+		return 0, fmt.Errorf("frame too large: %d > %d (protocol limit)", len(data), a.maxLen)
+	}
+	// Then the physical u16 prefix bound.
 	if len(data) > math.MaxUint16 {
 		return 0, fmt.Errorf("frame too large for u16 prefix: %d > %d", len(data), math.MaxUint16)
-	}
-	if len(data) > network.MaxPacketLengthBytes {
-		return 0, fmt.Errorf("frame too large: %d > %d (protocol limit)", len(data), network.MaxPacketLengthBytes)
 	}
 
 	var hdr [2]byte
@@ -67,8 +79,8 @@ func (a *Adapter) Read(buffer []byte) (int, error) {
 	if length == 0 {
 		return 0, fmt.Errorf("invalid frame length: 0")
 	}
-	if length > network.MaxPacketLengthBytes {
-		return 0, fmt.Errorf("frame length exceeds protocol limit: %d > %d", length, network.MaxPacketLengthBytes)
+	if length > a.maxLen {
+		return 0, fmt.Errorf("frame length exceeds protocol limit: %d > %d", length, a.maxLen)
 	}
 	if length > len(buffer) {
 		// Drain to keep the stream aligned; caller can retry with a bigger buffer.

@@ -323,3 +323,37 @@ func TestAdapter_Close_Err(t *testing.T) {
 		t.Fatalf("expected io.ErrClosedPipe, got %v", err)
 	}
 }
+
+func TestAdapter_Write_TooLarge_Protocol_Reachable(t *testing.T) {
+	payload := make([]byte, 11)
+	mock := &AdapterMockConn{}
+	a := NewTcpAdapterWithLimit(mock, 10)
+
+	if _, err := a.Write(payload); err == nil {
+		t.Fatal("expected protocol limit error")
+	}
+}
+
+func TestAdapter_Write_TooLarge_U16_FirstAfterReorder(t *testing.T) {
+	// 70k > 65535 but <= big protocol limit
+	payload := make([]byte, 70000)
+	mock := &AdapterMockConn{}
+	a := NewTcpAdapterWithLimit(mock, 1<<20) // 1 MiB
+
+	if _, err := a.Write(payload); err == nil {
+		t.Fatal("expected u16 bound error")
+	}
+}
+
+func TestAdapter_Read_TooLargeProtocol_Reachable(t *testing.T) {
+	limit := 10
+	length := uint16(limit + 1)
+
+	hdr := []byte{byte(length >> 8), byte(length)}
+	mock := &AdapterMockConn{readData: hdr}
+	a := NewTcpAdapterWithLimit(mock, limit)
+
+	if _, err := a.Read(make([]byte, 100)); err == nil {
+		t.Fatal("expected protocol limit error on Read")
+	}
+}
