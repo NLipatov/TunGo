@@ -8,18 +8,18 @@ import (
 )
 
 type ServerHandshake struct {
-	conn application.ConnectionAdapter
+	adapter application.ConnectionAdapter
 }
 
-func NewServerHandshake(conn application.ConnectionAdapter) ServerHandshake {
+func NewServerHandshake(adapter application.ConnectionAdapter) ServerHandshake {
 	return ServerHandshake{
-		conn: conn,
+		adapter: adapter,
 	}
 }
 
 func (h *ServerHandshake) ReceiveClientHello() (ClientHello, error) {
 	buf := make([]byte, MaxClientHelloSizeBytes)
-	_, readErr := h.conn.Read(buf)
+	_, readErr := h.adapter.Read(buf)
 	if readErr != nil {
 		return ClientHello{}, readErr
 	}
@@ -48,13 +48,13 @@ func (h *ServerHandshake) SendServerHello(
 		return marshalErr
 	}
 
-	_, writeErr := h.conn.Write(marshalledServerHello)
+	_, writeErr := h.adapter.Write(marshalledServerHello)
 	return writeErr
 }
 
 func (h *ServerHandshake) VerifyClientSignature(c Crypto, hello ClientHello, serverNonce []byte) error {
 	clientSignatureBuf := make([]byte, 64)
-	if _, err := io.ReadFull(h.conn, clientSignatureBuf); err != nil {
+	if _, err := io.ReadFull(h.adapter, clientSignatureBuf); err != nil {
 		return err
 	}
 
