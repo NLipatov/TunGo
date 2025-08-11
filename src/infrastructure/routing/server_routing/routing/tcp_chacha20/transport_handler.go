@@ -13,6 +13,7 @@ import (
 	"tungo/application"
 	"tungo/application/listeners"
 	"tungo/infrastructure/network"
+	"tungo/infrastructure/network/tcp/adapters"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
 	"tungo/infrastructure/settings"
 )
@@ -91,9 +92,7 @@ func (t *TransportHandler) registerClient(conn net.Conn, tunFile io.ReadWriteClo
 	t.logger.Printf("connected: %s", conn.RemoteAddr())
 
 	h := t.handshakeFactory.NewHandshake()
-	internalIP, handshakeErr := h.ServerSideHandshake(&network.TcpAdapter{
-		Conn: conn,
-	})
+	internalIP, handshakeErr := h.ServerSideHandshake(adapters.NewTcpAdapter(conn))
 	if handshakeErr != nil {
 		_ = conn.Close()
 		return fmt.Errorf("client %s failed registration: %w", conn.RemoteAddr(), handshakeErr)
