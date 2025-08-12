@@ -82,6 +82,10 @@ func (c *ClientHello) UnmarshalBinary(data []byte) error {
 		return fmt.Errorf("invalid message length")
 	}
 
+	ipV := ip.Version(data[0])
+	if ipV != ip.V4 && ipV != ip.V6 {
+		return fmt.Errorf("invalid IP version: %d", c.ipVersion)
+	}
 	c.ipVersion = data[0]
 
 	ipAddressLength := data[1]
