@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net"
 	"tungo/application"
-	"tungo/infrastructure/network/tcp/adapters"
 	"tungo/infrastructure/settings"
 )
 
@@ -120,7 +119,7 @@ func (h *DefaultHandshake) ClientSideHandshake(
 	clientNonce := c.GenerateRandomBytesArray(32)
 
 	clientIO := NewDefaultClientIO(
-		adapters.NewTcpAdapter(conn),
+		conn,
 	)
 	handshake := NewClientHandshake(conn, clientIO, c)
 	helloErr := handshake.SendClientHello(settings, edPublicKey, sessionPublicKey, clientNonce)

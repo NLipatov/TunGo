@@ -20,14 +20,14 @@ func NewServerHandshake(adapter application.ConnectionAdapter) ServerHandshake {
 func (h *ServerHandshake) ReceiveClientHello() (ClientHello, error) {
 	// read client hello to buf
 	buf := make([]byte, MaxClientHelloSizeBytes)
-	_, rErr := h.adapter.Read(buf)
+	n, rErr := h.adapter.Read(buf)
 	if rErr != nil {
 		return ClientHello{}, rErr
 	}
 
 	// deserialize client hello from buf
 	hello := NewEmptyClientHelloWithDefaultIPValidator()
-	uErr := hello.UnmarshalBinary(buf)
+	uErr := hello.UnmarshalBinary(buf[:n])
 	if uErr != nil {
 		return ClientHello{}, uErr
 	}
