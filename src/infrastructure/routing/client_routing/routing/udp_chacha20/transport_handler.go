@@ -10,6 +10,7 @@ import (
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network"
+	"tungo/infrastructure/network/signaling"
 )
 
 type TransportHandler struct {
@@ -52,7 +53,7 @@ func (t *TransportHandler) HandleTransport() error {
 				return fmt.Errorf("could not read a packet from adapter: %v", readErr)
 			}
 
-			if n == 1 && network.SignalIs(buffer[0], network.SessionReset) {
+			if n == 1 && signaling.SignalIs(buffer[0], signaling.SessionReset) {
 				return fmt.Errorf("server requested cryptographyService reset")
 			}
 

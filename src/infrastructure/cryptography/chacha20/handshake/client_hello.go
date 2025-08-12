@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"net"
 	"tungo/application"
-	"tungo/domain/network/ip"
-	"tungo/infrastructure/network"
+	"tungo/domain/network/ip/packet_validation"
+	"tungo/infrastructure/network/ip"
 )
 
 type ClientHello struct {
-	ipVersion      uint8
+	ipVersion      ip.Version
 	ipAddress      net.IP
 	ipValidator    application.IPValidator
 	edPublicKey    ed25519.PublicKey
@@ -19,7 +19,7 @@ type ClientHello struct {
 }
 
 func NewClientHello(
-	IpVersion uint8,
+	IpVersion ip.Version,
 	IpAddress net.IP,
 	EdPublicKey ed25519.PublicKey,
 	CurvePublicKey []byte,
@@ -38,8 +38,8 @@ func NewClientHello(
 
 func NewEmptyClientHelloWithDefaultIPValidator() ClientHello {
 	return ClientHello{
-		ipValidator: network.NewIPValidator(
-			ip.ValidationPolicy{
+		ipValidator: packet_validation.NewIPValidator(
+			packet_validation.Policy{
 				AllowV4:           true,
 				AllowV6:           true,
 				RequirePrivate:    true,
@@ -67,7 +67,7 @@ func (c *ClientHello) MarshalBinary() ([]byte, error) {
 	}
 
 	arr := make([]byte, lengthHeaderLength+len(c.ipAddress)+curvePublicKeyLength+curvePublicKeyLength+nonceLength)
-	arr[0] = c.ipVersion
+	arr[0] = c.ipVersion.Byte()
 	arr[1] = uint8(len(c.ipAddress))
 	copy(arr[lengthHeaderLength:], c.ipAddress)
 	copy(arr[lengthHeaderLength+len(c.ipAddress):], c.edPublicKey)
@@ -82,11 +82,10 @@ func (c *ClientHello) UnmarshalBinary(data []byte) error {
 		return fmt.Errorf("invalid message length")
 	}
 
-	ipV := ip.Version(data[0])
-	if ipV != ip.V4 && ipV != ip.V6 {
+	c.ipVersion = ip.Version(data[0])
+	if !c.ipVersion.Valid() {
 		return fmt.Errorf("invalid IP version: %d", c.ipVersion)
 	}
-	c.ipVersion = data[0]
 
 	ipAddressLength := data[1]
 	if int(ipAddressLength+lengthHeaderLength) > len(data) {

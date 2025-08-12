@@ -1,4 +1,4 @@
-package network
+package adapters
 
 import (
 	"io"

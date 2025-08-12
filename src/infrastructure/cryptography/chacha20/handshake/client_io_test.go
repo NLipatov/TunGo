@@ -9,9 +9,8 @@ import (
 	"net"
 	"strings"
 	"testing"
+	"tungo/domain/network/ip/packet_validation"
 	"tungo/infrastructure/network/tcp/adapters"
-
-	"tungo/infrastructure/network"
 )
 
 // DefaultClientIOMockConnShortRW simulates an underlying transport that can short-write/short-read
@@ -104,7 +103,7 @@ func TestWriteClientHello_Success_ViaAdapterWithShortWrites(t *testing.T) {
 		bytes.Repeat([]byte{1}, ed25519.PublicKeySize),
 		bytes.Repeat([]byte{2}, curvePublicKeyLength),
 		bytes.Repeat([]byte{3}, nonceLength),
-		network.NewDefaultPolicyNewIPValidator(),
+		packet_validation.NewDefaultPolicyNewIPValidator(),
 	)
 	wantPayload := mustMarshalClientHello(t, ch)
 
@@ -132,7 +131,7 @@ func TestWriteClientHello_MarshalError(t *testing.T) {
 		0,
 		net.ParseIP("10.0.0.1"),
 		nil, nil, nil,
-		network.NewDefaultPolicyNewIPValidator(),
+		packet_validation.NewDefaultPolicyNewIPValidator(),
 	)
 	under := newDefaultClientIOMockConnShortRW(nil, 0, 0)
 	conn := adapters.NewTcpAdapter(under)
@@ -153,7 +152,7 @@ func TestWriteClientHello_WriteError_OnHeader(t *testing.T) {
 		bytes.Repeat([]byte{1}, ed25519.PublicKeySize),
 		bytes.Repeat([]byte{2}, curvePublicKeyLength),
 		bytes.Repeat([]byte{3}, nonceLength),
-		network.NewDefaultPolicyNewIPValidator(),
+		packet_validation.NewDefaultPolicyNewIPValidator(),
 	)
 	under := newDefaultClientIOMockConnShortRW(nil, 5, 0)
 	under.writeErrAtCall = 1 // fail when adapter writes the 2-byte header
@@ -176,7 +175,7 @@ func TestWriteClientHello_WriteError_OnPayload(t *testing.T) {
 		bytes.Repeat([]byte{1}, ed25519.PublicKeySize),
 		bytes.Repeat([]byte{2}, curvePublicKeyLength),
 		bytes.Repeat([]byte{3}, nonceLength),
-		network.NewDefaultPolicyNewIPValidator(),
+		packet_validation.NewDefaultPolicyNewIPValidator(),
 	)
 	under := newDefaultClientIOMockConnShortRW(nil, 5, 0)
 	under.writeErrAtCall = 3 // 1: header, 2+: payload attempts → fail during payload

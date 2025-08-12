@@ -1,4 +1,4 @@
-package network
+package adapters
 
 import (
 	"errors"
@@ -7,6 +7,7 @@ import (
 	"os"
 	"testing"
 	"time"
+	"tungo/infrastructure/network"
 )
 
 // helper: returns client-side adapter and matching UDP server socket
@@ -24,7 +25,7 @@ func newPair(tb testing.TB) (*ClientUDPAdapter, *net.UDPConn) {
 	}
 
 	// 1-second deadlines for tests
-	ad := NewClientUDPAdapter(client, Deadline(time.Second), Deadline(time.Second))
+	ad := NewClientUDPAdapter(client, network.Deadline(time.Second), network.Deadline(time.Second))
 	return ad.(*ClientUDPAdapter), server
 }
 
@@ -94,7 +95,7 @@ func TestReadTimeout(t *testing.T) {
 		_ = ad.Close()
 	}(ad)
 
-	ad.readDeadline = Deadline(5 * time.Millisecond)
+	ad.readDeadline = network.Deadline(5 * time.Millisecond)
 
 	start := time.Now()
 	if _, err := ad.Read(make([]byte, 1)); err == nil {

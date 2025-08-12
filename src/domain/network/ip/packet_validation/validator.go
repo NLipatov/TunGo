@@ -1,17 +1,17 @@
-package network
+package packet_validation
 
 import (
 	"fmt"
 	"net"
 	"tungo/application"
-	"tungo/domain/network/ip"
+	"tungo/infrastructure/network/ip"
 )
 
 type IPValidator struct {
-	policy ip.ValidationPolicy
+	policy Policy
 }
 
-func NewIPValidator(policy ip.ValidationPolicy) application.IPValidator {
+func NewIPValidator(policy Policy) application.IPValidator {
 	return &IPValidator{
 		policy: policy,
 	}
@@ -19,7 +19,7 @@ func NewIPValidator(policy ip.ValidationPolicy) application.IPValidator {
 
 func NewDefaultPolicyNewIPValidator() application.IPValidator {
 	return &IPValidator{
-		policy: ip.ValidationPolicy{
+		policy: Policy{
 			AllowV4:           true,
 			AllowV6:           true,
 			RequirePrivate:    true,

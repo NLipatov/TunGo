@@ -3,17 +3,19 @@ package udp_chacha20
 import (
 	"context"
 	"errors"
-	"fmt"
-	"golang.org/x/net/ipv4"
 	"io"
+	"net"
 	"net/netip"
 	"os"
 	"sync/atomic"
 	"testing"
+	"time"
 	"tungo/application"
 )
 
-type testUdpReader struct {
+// ---------- Mocks (prefixed with the struct under test: TunHandler*) ----------
+
+type TunHandlerMockReader struct {
 	seq []struct {
 		data []byte
 		err  error
@@ -21,298 +23,306 @@ type testUdpReader struct {
 	i int
 }
 
-func (r *testUdpReader) Read(p []byte) (int, error) {
-	if r.i < len(r.seq) {
-		rec := r.seq[r.i]
-		r.i++
-		n := copy(p, rec.data)
-		return n, rec.err
+func (r *TunHandlerMockReader) Read(p []byte) (int, error) {
+	if r.i >= len(r.seq) {
+		return 0, io.EOF
 	}
-	return 0, io.EOF
+	rec := r.seq[r.i]
+	r.i++
+	n := copy(p, rec.data)
+	return n, rec.err
 }
 
-type testParser struct {
-	wantDst [4]byte
-	retErr  error
-}
-
-func (p *testParser) ParseDestinationAddressBytes(header, dst []byte) error {
-	if len(header) < ipv4.HeaderLen {
-		return fmt.Errorf("invalid packet size: too small (%d bytes)", len(header))
-	}
-	if p.retErr != nil {
-		return p.retErr
-	}
-	copy(dst, p.wantDst[:])
-	return nil
-}
-
-type testCrypto struct {
-	encryptErr error
-}
-
-func (c *testCrypto) Encrypt(b []byte) ([]byte, error) { return b, c.encryptErr }
-func (c *testCrypto) Decrypt(b []byte) ([]byte, error) { return b, nil }
-
-type testAdapter struct {
-	writes   int32
-	writeErr error
-}
-
-func (a *testAdapter) Write(_ []byte) (int, error) {
-	atomic.AddInt32(&a.writes, 1)
-	return 1, a.writeErr
-}
-func (a *testAdapter) Read([]byte) (int, error) { return 0, io.EOF }
-func (a *testAdapter) Close() error             { return nil }
-
-type testMgr struct {
-	sess application.Session
+// HeaderParser mock for the new interface.
+type TunHandlerMockParser struct {
+	addr netip.Addr
 	err  error
 }
 
-func (m *testMgr) Add(_ application.Session)    {}
-func (m *testMgr) Delete(_ application.Session) {}
-func (m *testMgr) GetByInternalAddrPort(_ netip.Addr) (application.Session, error) {
-	return m.sess, m.err
-}
-func (m *testMgr) GetByExternalAddrPort(_ netip.AddrPort) (application.Session, error) {
-	return m.sess, m.err
+func (p *TunHandlerMockParser) DestinationAddress(_ []byte) (netip.Addr, error) {
+	return p.addr, p.err
 }
 
-func makeSession(a *testAdapter, c *testCrypto) application.Session {
-	in, _ := netip.ParseAddr("10.0.0.1")
-	ex, _ := netip.ParseAddrPort("1.1.1.1:9000")
+// Crypto mock.
+type TunHandlerMockCrypto struct{ err error }
 
+func (m *TunHandlerMockCrypto) Encrypt(b []byte) ([]byte, error) {
+	return append([]byte(nil), b...), m.err
+}
+func (m *TunHandlerMockCrypto) Decrypt(b []byte) ([]byte, error) { return b, nil }
+
+// net.Conn mock (only Write is observed).
+type TunHandlerMockConn struct {
+	writes int32
+	err    error
+}
+
+func (c *TunHandlerMockConn) Write(b []byte) (int, error) {
+	atomic.AddInt32(&c.writes, 1)
+	return len(b), c.err
+}
+func (c *TunHandlerMockConn) Read([]byte) (int, error)           { return 0, io.EOF }
+func (c *TunHandlerMockConn) Close() error                       { return nil }
+func (c *TunHandlerMockConn) LocalAddr() net.Addr                { return nil }
+func (c *TunHandlerMockConn) RemoteAddr() net.Addr               { return nil }
+func (c *TunHandlerMockConn) SetDeadline(_ time.Time) error      { return nil }
+func (c *TunHandlerMockConn) SetReadDeadline(_ time.Time) error  { return nil }
+func (c *TunHandlerMockConn) SetWriteDeadline(_ time.Time) error { return nil }
+
+// Session repo mock.
+type TunHandlerMockMgr struct {
+	sess    application.Session
+	getErr  error
+	deleted int32
+}
+
+func (m *TunHandlerMockMgr) Add(_ application.Session)    {}
+func (m *TunHandlerMockMgr) Delete(_ application.Session) { atomic.AddInt32(&m.deleted, 1) }
+func (m *TunHandlerMockMgr) GetByInternalAddrPort(_ netip.Addr) (application.Session, error) {
+	return m.sess, m.getErr
+}
+func (m *TunHandlerMockMgr) GetByExternalAddrPort(_ netip.AddrPort) (application.Session, error) {
+	return m.sess, nil
+}
+
+func mkSession(c *TunHandlerMockConn, crypto *TunHandlerMockCrypto) Session {
+	in := netip.MustParseAddr("10.0.0.1")
+	ex := netip.MustParseAddrPort("203.0.113.1:9000")
 	return Session{
-		connectionAdapter:   a,
-		cryptographyService: c,
+		connectionAdapter:   c,
+		cryptographyService: crypto,
 		internalIP:          in,
 		externalIP:          ex,
 	}
 }
 
-func TestTunHandler_ContextCancel(t *testing.T) {
+func rdr(seq ...struct {
+	data []byte
+	err  error
+}) io.Reader {
+	return &TunHandlerMockReader{seq: seq}
+}
+
+// ------------------------------- Tests ---------------------------------------
+
+func TestTunHandler_ContextDone(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	h := NewTunHandler(ctx, &testUdpReader{}, &testParser{}, &testMgr{sess: makeSession(&testAdapter{}, &testCrypto{})})
+	h := NewTunHandler(ctx, rdr(), &TunHandlerMockParser{}, &TunHandlerMockMgr{})
 	if err := h.HandleTun(); err != nil {
-		t.Errorf("context cancel: want nil, got %v", err)
+		t.Fatalf("want nil, got %v", err)
 	}
 }
 
 func TestTunHandler_EOF(t *testing.T) {
-	r := &testUdpReader{seq: []struct {
+	r := rdr(struct {
 		data []byte
 		err  error
-	}{{make([]byte, 20), io.EOF}}}
-	h := NewTunHandler(context.Background(), r, &testParser{}, &testMgr{sess: makeSession(&testAdapter{}, &testCrypto{})})
+	}{data: make([]byte, 20), err: io.EOF})
+	h := NewTunHandler(context.Background(), r, &TunHandlerMockParser{}, &TunHandlerMockMgr{})
 	if err := h.HandleTun(); err != io.EOF {
-		t.Errorf("EOF: want io.EOF, got %v", err)
+		t.Fatalf("want io.EOF, got %v", err)
 	}
 }
 
-func TestTunHandler_ShortPacket(t *testing.T) {
-	r := &testUdpReader{seq: []struct {
-		data []byte
-		err  error
-	}{{make([]byte, 5), nil}, {make([]byte, 20), io.EOF}}}
-	a := &testAdapter{}
-	h := NewTunHandler(context.Background(), r, &testParser{}, &testMgr{sess: makeSession(a, &testCrypto{})})
+func TestTunHandler_ReadOsErrors(t *testing.T) {
+	t.Run("not exist", func(t *testing.T) {
+		perr := &os.PathError{Op: "read", Path: "/dev/net/tun", Err: os.ErrNotExist}
+		h := NewTunHandler(context.Background(), rdr(struct {
+			data []byte
+			err  error
+		}{nil, perr}), &TunHandlerMockParser{}, &TunHandlerMockMgr{})
+		if err := h.HandleTun(); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("want os.ErrNotExist, got %v", err)
+		}
+	})
+	t.Run("permission", func(t *testing.T) {
+		perr := &os.PathError{Op: "read", Path: "/dev/net/tun", Err: os.ErrPermission}
+		h := NewTunHandler(context.Background(), rdr(struct {
+			data []byte
+			err  error
+		}{nil, perr}), &TunHandlerMockParser{}, &TunHandlerMockMgr{})
+		if err := h.HandleTun(); !errors.Is(err, os.ErrPermission) {
+			t.Fatalf("want os.ErrPermission, got %v", err)
+		}
+	})
+}
+
+func TestTunHandler_TemporaryThenEOF(t *testing.T) {
+	r := rdr(
+		struct {
+			data []byte
+			err  error
+		}{nil, errors.New("tmp read")},
+		struct {
+			data []byte
+			err  error
+		}{nil, io.EOF},
+	)
+	h := NewTunHandler(context.Background(), r, &TunHandlerMockParser{}, &TunHandlerMockMgr{})
 	if err := h.HandleTun(); err != io.EOF {
-		t.Errorf("short packet: want io.EOF, got %v", err)
+		t.Fatalf("want io.EOF after retry, got %v", err)
 	}
-	if n := atomic.LoadInt32(&a.writes); n != 0 {
-		t.Errorf("short packet: writes=%d, want 0", n)
+}
+
+func TestTunHandler_ZeroLengthRead_Skips(t *testing.T) {
+	r := rdr(
+		struct {
+			data []byte
+			err  error
+		}{[]byte{}, nil}, // n==0 path
+		struct {
+			data []byte
+			err  error
+		}{nil, io.EOF},
+	)
+	h := NewTunHandler(context.Background(), r, &TunHandlerMockParser{}, &TunHandlerMockMgr{})
+	if err := h.HandleTun(); err != io.EOF {
+		t.Fatalf("want io.EOF, got %v", err)
 	}
 }
 
 func TestTunHandler_ParserError(t *testing.T) {
-	hdr := make([]byte, 20)
-	hdr[0] = 0x45
-	r := &testUdpReader{seq: []struct {
-		data []byte
-		err  error
-	}{{append(make([]byte, 12), hdr...), nil}, {nil, io.EOF}}}
-	a := &testAdapter{}
-	parser := &testParser{retErr: errors.New("bad")}
-	h := NewTunHandler(context.Background(), r, parser, &testMgr{sess: makeSession(a, &testCrypto{})})
+	ip4 := make([]byte, 20)
+	ip4[0] = 0x45
+	p := &TunHandlerMockParser{err: errors.New("bad header")}
+	r := rdr(
+		struct {
+			data []byte
+			err  error
+		}{ip4, nil}, // give pure IP header (no nonce)
+		struct {
+			data []byte
+			err  error
+		}{nil, io.EOF},
+	)
+	a := &TunHandlerMockConn{}
+	mgr := &TunHandlerMockMgr{sess: mkSession(a, &TunHandlerMockCrypto{})}
+	h := NewTunHandler(context.Background(), r, p, mgr)
 	if err := h.HandleTun(); err != io.EOF {
-		t.Errorf("parser error: want io.EOF, got %v", err)
+		t.Fatalf("want io.EOF, got %v", err)
 	}
 	if n := atomic.LoadInt32(&a.writes); n != 0 {
-		t.Errorf("parser error: writes=%d, want 0", n)
+		t.Fatalf("writes=%d, want 0", n)
 	}
 }
 
 func TestTunHandler_SessionNotFound(t *testing.T) {
-	hdr := make([]byte, 20)
-	hdr[0] = 0x45
-	hdr[16], hdr[17], hdr[18], hdr[19] = 10, 0, 0, 1
-	frame := append(make([]byte, 12), hdr...)
-	r := &testUdpReader{seq: []struct {
+	ip4 := make([]byte, 20)
+	ip4[0] = 0x45
+	dst := netip.MustParseAddr("10.0.0.1")
+	p := &TunHandlerMockParser{addr: dst}
+	r := rdr(struct {
 		data []byte
 		err  error
-	}{{frame, nil}, {nil, io.EOF}}}
-	a := &testAdapter{}
-	parser := &testParser{wantDst: [4]byte{10, 0, 0, 1}}
-	mgr := &testMgr{sess: makeSession(a, &testCrypto{}), err: errors.New("no sess")}
-	h := NewTunHandler(context.Background(), r, parser, mgr)
+	}{ip4, nil}, struct {
+		data []byte
+		err  error
+	}{nil, io.EOF})
+	a := &TunHandlerMockConn{}
+	mgr := &TunHandlerMockMgr{sess: mkSession(a, &TunHandlerMockCrypto{}), getErr: errors.New("no sess")}
+	h := NewTunHandler(context.Background(), r, p, mgr)
 	if err := h.HandleTun(); err != io.EOF {
-		t.Errorf("session not found: want io.EOF, got %v", err)
+		t.Fatalf("want io.EOF, got %v", err)
 	}
 	if n := atomic.LoadInt32(&a.writes); n != 0 {
-		t.Errorf("session not found: writes=%d, want 0", n)
+		t.Fatalf("writes=%d, want 0", n)
 	}
 }
 
 func TestTunHandler_EncryptError(t *testing.T) {
-	hdr := make([]byte, 20)
-	hdr[0] = 0x45
-	hdr[16], hdr[17], hdr[18], hdr[19] = 10, 0, 0, 1
-	frame := append(make([]byte, 12), hdr...)
-	r := &testUdpReader{seq: []struct {
+	ip4 := make([]byte, 20)
+	ip4[0] = 0x45
+	dst := netip.MustParseAddr("10.0.0.2")
+	p := &TunHandlerMockParser{addr: dst}
+	r := rdr(struct {
 		data []byte
 		err  error
-	}{{frame, nil}, {nil, io.EOF}}}
-	a := &testAdapter{}
-	parser := &testParser{wantDst: [4]byte{10, 0, 0, 1}}
-	crypto := &testCrypto{encryptErr: errors.New("encrypt fail")}
-	mgr := &testMgr{sess: makeSession(a, crypto)}
-	h := NewTunHandler(context.Background(), r, parser, mgr)
-	if err := h.HandleTun(); err != io.EOF {
-		t.Errorf("encrypt error: want io.EOF, got %v", err)
-	}
-	if n := atomic.LoadInt32(&a.writes); n != 0 {
-		t.Errorf("encrypt error: writes=%d, want 0", n)
-	}
-}
-
-func TestTunHandler_WriteError(t *testing.T) {
-	hdr := make([]byte, 20)
-	hdr[0] = 0x45
-	hdr[16], hdr[17], hdr[18], hdr[19] = 10, 0, 0, 1
-	frame := append(make([]byte, 12), hdr...)
-	r := &testUdpReader{seq: []struct {
+	}{ip4, nil}, struct {
 		data []byte
 		err  error
-	}{{frame, nil}, {nil, io.EOF}}}
-	a := &testAdapter{writeErr: errors.New("write fail")}
-	parser := &testParser{wantDst: [4]byte{10, 0, 0, 1}}
-	mgr := &testMgr{sess: makeSession(a, &testCrypto{})}
-	h := NewTunHandler(context.Background(), r, parser, mgr)
-	if err := h.HandleTun(); err != io.EOF {
-		t.Errorf("write error: want io.EOF, got %v", err)
-	}
-	if n := atomic.LoadInt32(&a.writes); n != 1 {
-		t.Errorf("write error: writes=%d, want 1", n)
-	}
-}
-
-func TestTunHandler_ReadOsNotExist(t *testing.T) {
-	notExist := &os.PathError{Op: "read", Path: "/dev/net/tun", Err: os.ErrNotExist}
-	r := &testUdpReader{seq: []struct {
-		data []byte
-		err  error
-	}{{nil, notExist}}}
-	h := NewTunHandler(context.Background(), r, &testParser{}, &testMgr{sess: makeSession(&testAdapter{}, &testCrypto{})})
-	if err := h.HandleTun(); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("os.IsNotExist: want os.ErrNotExist, got %v", err)
-	}
-}
-
-func TestTunHandler_ReadOsPermission(t *testing.T) {
-	perm := &os.PathError{Op: "read", Path: "/dev/net/tun", Err: os.ErrPermission}
-	r := &testUdpReader{seq: []struct {
-		data []byte
-		err  error
-	}{{nil, perm}}}
-	h := NewTunHandler(context.Background(), r, &testParser{}, &testMgr{sess: makeSession(&testAdapter{}, &testCrypto{})})
-	if err := h.HandleTun(); !errors.Is(err, os.ErrPermission) {
-		t.Errorf("os.IsPermission: want os.ErrPermission, got %v", err)
-	}
-}
-
-func TestTunHandler_HappyPath(t *testing.T) {
-	hdr := make([]byte, 20)
-	hdr[0] = 0x45
-	hdr[16], hdr[17], hdr[18], hdr[19] = 10, 0, 0, 1
-	frame := append(make([]byte, 12), hdr...)
-	r := &testUdpReader{seq: []struct {
-		data []byte
-		err  error
-	}{{frame, nil}, {nil, io.EOF}}}
-	a := &testAdapter{}
-	parser := &testParser{wantDst: [4]byte{10, 0, 0, 1}}
-	mgr := &testMgr{sess: makeSession(a, &testCrypto{})}
-	h := NewTunHandler(context.Background(), r, parser, mgr)
-	if err := h.HandleTun(); err != io.EOF {
-		t.Errorf("happy: want io.EOF, got %v", err)
-	}
-	if n := atomic.LoadInt32(&a.writes); n != 1 {
-		t.Errorf("happy: writes=%d, want 1", n)
-	}
-}
-
-func TestTunHandler_ReadTemporaryError_RetryThenEOF(t *testing.T) {
-	// 1) first read returns a temporary/non-os error -> handler should log and continue
-	// 2) second read returns EOF -> handler should exit with EOF
-	r := &testUdpReader{seq: []struct {
-		data []byte
-		err  error
-	}{
-		{nil, errors.New("tmp read error")}, // triggers "retry" branch
-		{nil, io.EOF},                       // then exit
-	}}
-	h := NewTunHandler(context.Background(), r, &testParser{}, &testMgr{sess: makeSession(&testAdapter{}, &testCrypto{})})
-
-	if err := h.HandleTun(); err != io.EOF {
-		t.Fatalf("want io.EOF after retry path, got %v", err)
-	}
-}
-
-func TestTunHandler_ReadErrorAfterCancel_ReturnsNil(t *testing.T) {
-	// reader returns an error, but context is already canceled -> handler returns nil
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	r := &testUdpReader{seq: []struct {
-		data []byte
-		err  error
-	}{
-		{nil, errors.New("any read error")},
-	}}
-	h := NewTunHandler(ctx, r, &testParser{}, &testMgr{sess: makeSession(&testAdapter{}, &testCrypto{})})
-
-	if err := h.HandleTun(); err != nil {
-		t.Fatalf("expected nil because ctx canceled, got %v", err)
-	}
-}
-
-func TestTunHandler_ReadTemporaryError_ThenHappyThenEOF(t *testing.T) {
-	hdr := make([]byte, 20)
-	hdr[0] = 0x45
-	copy(hdr[16:20], []byte{10, 0, 0, 1})
-	frame := append(make([]byte, 12), hdr...)
-
-	r := &testUdpReader{seq: []struct {
-		data []byte
-		err  error
-	}{
-		{nil, errors.New("tmp read error")}, // retry branch
-		{frame, nil},                        // happy write
-		{nil, io.EOF},                       // exit
-	}}
-
-	a := &testAdapter{}
-	parser := &testParser{wantDst: [4]byte{10, 0, 0, 1}}
-	mgr := &testMgr{sess: makeSession(a, &testCrypto{})}
-	h := NewTunHandler(context.Background(), r, parser, mgr)
-
+	}{nil, io.EOF})
+	a := &TunHandlerMockConn{}
+	crypto := &TunHandlerMockCrypto{err: errors.New("enc fail")}
+	mgr := &TunHandlerMockMgr{sess: mkSession(a, crypto)}
+	h := NewTunHandler(context.Background(), r, p, mgr)
 	if err := h.HandleTun(); err != io.EOF {
 		t.Fatalf("want io.EOF, got %v", err)
 	}
-	if got := atomic.LoadInt32(&a.writes); got != 1 {
-		t.Fatalf("writes=%d, want 1", got)
+	if n := atomic.LoadInt32(&a.writes); n != 0 {
+		t.Fatalf("writes=%d, want 0", n)
+	}
+}
+
+func TestTunHandler_WriteError_NoDelete(t *testing.T) {
+	ip4 := make([]byte, 20)
+	ip4[0] = 0x45
+	dst := netip.MustParseAddr("10.0.0.3")
+	p := &TunHandlerMockParser{addr: dst}
+	r := rdr(struct {
+		data []byte
+		err  error
+	}{ip4, nil}, struct {
+		data []byte
+		err  error
+	}{nil, io.EOF})
+	a := &TunHandlerMockConn{err: errors.New("write fail")}
+	mgr := &TunHandlerMockMgr{sess: mkSession(a, &TunHandlerMockCrypto{})}
+	h := NewTunHandler(context.Background(), r, p, mgr)
+	if err := h.HandleTun(); err != io.EOF {
+		t.Fatalf("want io.EOF, got %v", err)
+	}
+	if n := atomic.LoadInt32(&a.writes); n != 1 {
+		t.Fatalf("writes=%d, want 1", n)
+	}
+	// UDP branch: no Delete() on single write error
+	if atomic.LoadInt32(&mgr.deleted) != 0 {
+		t.Fatalf("Delete() should not be called for UDP write error")
+	}
+}
+
+func TestTunHandler_Happy_V4(t *testing.T) {
+	ip4 := make([]byte, 20)
+	ip4[0] = 0x45
+	dst := netip.MustParseAddr("10.0.0.4")
+	p := &TunHandlerMockParser{addr: dst}
+	r := rdr(struct {
+		data []byte
+		err  error
+	}{ip4, nil}, struct {
+		data []byte
+		err  error
+	}{nil, io.EOF})
+	a := &TunHandlerMockConn{}
+	mgr := &TunHandlerMockMgr{sess: mkSession(a, &TunHandlerMockCrypto{})}
+	h := NewTunHandler(context.Background(), r, p, mgr)
+	if err := h.HandleTun(); err != io.EOF {
+		t.Fatalf("want io.EOF, got %v", err)
+	}
+	if n := atomic.LoadInt32(&a.writes); n != 1 {
+		t.Fatalf("writes=%d, want 1", n)
+	}
+}
+
+func TestTunHandler_Happy_V6(t *testing.T) {
+	ip6 := make([]byte, 40)
+	ip6[0] = 0x60
+	dst := netip.MustParseAddr("2001:db8::1")
+	p := &TunHandlerMockParser{addr: dst}
+	r := rdr(struct {
+		data []byte
+		err  error
+	}{ip6, nil}, struct {
+		data []byte
+		err  error
+	}{nil, io.EOF})
+	a := &TunHandlerMockConn{}
+	mgr := &TunHandlerMockMgr{sess: mkSession(a, &TunHandlerMockCrypto{})}
+	h := NewTunHandler(context.Background(), r, p, mgr)
+	if err := h.HandleTun(); err != io.EOF {
+		t.Fatalf("want io.EOF, got %v", err)
+	}
+	if n := atomic.LoadInt32(&a.writes); n != 1 {
+		t.Fatalf("writes=%d, want 1", n)
 	}
 }

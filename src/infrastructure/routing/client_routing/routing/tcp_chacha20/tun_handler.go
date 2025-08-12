@@ -6,7 +6,6 @@ import (
 	"io"
 	"log"
 	"tungo/application"
-	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network"
 )
 
@@ -15,17 +14,14 @@ type TunHandler struct {
 	reader              io.Reader // abstraction over TUN device
 	writer              io.Writer // abstraction over transport
 	cryptographyService application.CryptographyService
-	encoder             chacha20.TCPEncoder
 }
 
 func NewTunHandler(ctx context.Context,
-	encoder chacha20.TCPEncoder,
 	reader io.Reader,
 	writer io.Writer,
 	cryptographyService application.CryptographyService) application.TunHandler {
 	return &TunHandler{
 		ctx:                 ctx,
-		encoder:             encoder,
 		reader:              reader,
 		writer:              writer,
 		cryptographyService: cryptographyService,

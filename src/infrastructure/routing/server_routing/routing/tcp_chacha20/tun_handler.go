@@ -5,10 +5,9 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 	"io"
 	"log"
-	"net/netip"
 	"os"
 	"tungo/application"
-	"tungo/infrastructure/cryptography/chacha20"
+	appip "tungo/application/network/ip"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
 )
@@ -16,37 +15,32 @@ import (
 type TunHandler struct {
 	ctx            context.Context
 	reader         io.Reader
-	encoder        chacha20.TCPEncoder
-	ipParser       network.IPHeader
+	ipHeaderParser appip.HeaderParser
 	sessionManager repository.SessionRepository[application.Session]
 }
 
 func NewTunHandler(
 	ctx context.Context,
 	reader io.Reader,
-	encoder chacha20.TCPEncoder,
-	ipParser network.IPHeader,
+	ipParser appip.HeaderParser,
 	sessionManager repository.SessionRepository[application.Session],
 ) application.TunHandler {
 	return &TunHandler{
 		ctx:            ctx,
 		reader:         reader,
-		encoder:        encoder,
-		ipParser:       ipParser,
+		ipHeaderParser: ipParser,
 		sessionManager: sessionManager,
 	}
 }
 
 func (t *TunHandler) HandleTun() error {
 	buffer := make([]byte, network.MaxPacketLengthBytes+chacha20poly1305.Overhead)
-	destinationAddressBytes := [4]byte{}
 
 	for {
 		select {
 		case <-t.ctx.Done():
 			return nil
 		default:
-			// reserve 4 bytes for length prefix
 			n, err := t.reader.Read(buffer)
 			if err != nil {
 				if err == io.EOF {
@@ -62,23 +56,20 @@ func (t *TunHandler) HandleTun() error {
 				log.Printf("failed to read from TUN, retrying: %v", err)
 				continue
 			}
-
-			destinationBytesErr := t.ipParser.ParseDestinationAddressBytes(buffer[:n], destinationAddressBytes[:])
-			if destinationBytesErr != nil {
-				log.Printf("packet dropped: failed to read destination address bytes: %v", destinationBytesErr)
+			if n == 0 {
+				// Defensive: spurious zero-length read; skip.
 				continue
 			}
 
-			destAddr, destAddrOk := netip.AddrFromSlice(destinationAddressBytes[:])
-			if !destAddrOk {
-				log.Printf(
-					"packet dropped: failed to parse destination address bytes: %v", destinationAddressBytes[:])
+			addr, addrErr := t.ipHeaderParser.DestinationAddress(buffer[:n])
+			if addrErr != nil {
+				log.Printf("packet dropped: failed to parse destination address: %v", addrErr)
 				continue
 			}
 
-			clientSession, getErr := t.sessionManager.GetByInternalAddrPort(destAddr)
+			clientSession, getErr := t.sessionManager.GetByInternalAddrPort(addr)
 			if getErr != nil {
-				log.Printf("packet dropped: %s, destination host: %v", getErr, destinationAddressBytes)
+				log.Printf("packet dropped: %s, destination host: %v", getErr, addr)
 				continue
 			}
 

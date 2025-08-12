@@ -5,14 +5,13 @@ import (
 	"crypto/rand"
 	"net"
 	"testing"
-
-	"tungo/domain/network/ip"
-	"tungo/infrastructure/network"
+	"tungo/domain/network/ip/packet_validation"
+	"tungo/infrastructure/network/ip"
 )
 
-func testPolicy() ip.ValidationPolicy {
+func testPolicy() packet_validation.Policy {
 	// Match the production default unless a test needs otherwise
-	return ip.ValidationPolicy{
+	return packet_validation.Policy{
 		AllowV4:           true,
 		AllowV6:           true,
 		RequirePrivate:    true,
@@ -24,7 +23,7 @@ func testPolicy() ip.ValidationPolicy {
 	}
 }
 
-func buildValidHello(t *testing.T, version uint8, ipStr string) ([]byte, ClientHello) {
+func buildValidHello(t *testing.T, version ip.Version, ipStr string) ([]byte, ClientHello) {
 	t.Helper()
 
 	edPubRaw := make([]byte, curvePublicKeyLength)
@@ -40,7 +39,7 @@ func buildValidHello(t *testing.T, version uint8, ipStr string) ([]byte, ClientH
 		t.Fatalf("failed to generate nonce: %v", err)
 	}
 
-	v := network.NewIPValidator(testPolicy())
+	v := packet_validation.NewIPValidator(testPolicy())
 
 	ipAddr := net.ParseIP(ipStr)
 	ch := NewClientHello(version, ipAddr, edPubRaw, curvePub, nonce, v)
@@ -63,7 +62,8 @@ func TestMarshalUnmarshal_Success(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			buf, orig := buildValidHello(t, tc.version, tc.ip)
+			ipVersion := ip.Version(tc.version)
+			buf, orig := buildValidHello(t, ipVersion, tc.ip)
 
 			// Ensure the instance has a validator before UnmarshalBinary.
 			got := NewEmptyClientHelloWithDefaultIPValidator()
@@ -90,7 +90,7 @@ func TestMarshalUnmarshal_Success(t *testing.T) {
 }
 
 func TestMarshalBinary_InvalidVersion(t *testing.T) {
-	v := network.NewIPValidator(testPolicy())
+	v := packet_validation.NewIPValidator(testPolicy())
 	ch := NewClientHello(0, net.ParseIP("192.168.0.1"), nil, nil, nil, v)
 	if _, err := ch.MarshalBinary(); err == nil {
 		t.Fatal("expected error for invalid IP version, got nil")
@@ -98,7 +98,7 @@ func TestMarshalBinary_InvalidVersion(t *testing.T) {
 }
 
 func TestMarshalBinary_ShortIPv4(t *testing.T) {
-	v := network.NewIPValidator(testPolicy())
+	v := packet_validation.NewIPValidator(testPolicy())
 	// Explicitly short IPv4 (2 bytes) instead of nil from net.ParseIP("1.1")
 	shortIPv4 := net.IP{1, 1}
 	ch := NewClientHello(4, shortIPv4, nil, nil, nil, v)
@@ -108,7 +108,7 @@ func TestMarshalBinary_ShortIPv4(t *testing.T) {
 }
 
 func TestMarshalBinary_ShortIPv6(t *testing.T) {
-	v := network.NewIPValidator(testPolicy())
+	v := packet_validation.NewIPValidator(testPolicy())
 	// Explicitly short IPv6 (8 bytes < 16)
 	shortIPv6 := net.IP{1, 2, 3, 4, 5, 6, 7, 8}
 	ch := NewClientHello(6, shortIPv6, nil, nil, nil, v)

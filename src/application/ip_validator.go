@@ -2,7 +2,7 @@ package application
 
 import (
 	"net"
-	"tungo/domain/network/ip"
+	"tungo/infrastructure/network/ip"
 )
 
 type IPValidator interface {

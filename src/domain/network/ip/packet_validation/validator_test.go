@@ -1,9 +1,9 @@
-package network
+package packet_validation
 
 import (
 	"net"
 	"testing"
-	"tungo/domain/network/ip"
+	"tungo/infrastructure/network/ip"
 )
 
 // --- Helpers ---
@@ -68,7 +68,7 @@ func TestNewDefaultPolicyNewIPValidator_Behavior(t *testing.T) {
 func TestValidateIP_BroadcastV4Allowed_WhenNotForbidden(t *testing.T) {
 	// When ForbidBroadcastV4=false AND RequirePrivate=false,
 	// 255.255.255.255 should be allowed.
-	val := NewIPValidator(ip.ValidationPolicy{
+	val := NewIPValidator(Policy{
 		AllowV4:           true,
 		RequirePrivate:    false,
 		ForbidLoopback:    false,
@@ -87,7 +87,7 @@ func TestValidateIP_BroadcastV4Allowed_WhenNotForbidden(t *testing.T) {
 func TestValidateIP_MulticastAllowed_WhenNotForbidden(t *testing.T) {
 	// When ForbidMulticast=false AND RequirePrivate=false,
 	// multicast should pass.
-	val := NewIPValidator(ip.ValidationPolicy{
+	val := NewIPValidator(Policy{
 		AllowV4:           true,
 		RequirePrivate:    false,
 		ForbidLoopback:    false,
@@ -106,7 +106,7 @@ func TestValidateIP_MulticastAllowed_WhenNotForbidden(t *testing.T) {
 func TestValidateIP_LinkLocalAllowed_WhenNotForbidden(t *testing.T) {
 	// When ForbidLinkLocal=false AND RequirePrivate=false,
 	// IPv4 link-local 169.254.0.0/16 should pass.
-	val := NewIPValidator(ip.ValidationPolicy{
+	val := NewIPValidator(Policy{
 		AllowV4:           true,
 		RequirePrivate:    false, // link-local is not "private" per net.IP.IsPrivate()
 		ForbidLoopback:    false,

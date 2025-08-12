@@ -1,6 +1,6 @@
-package ip
+package packet_validation
 
-type ValidationPolicy struct {
+type Policy struct {
 	AllowV4           bool
 	AllowV6           bool
 	RequirePrivate    bool // RFC1918 for v4, ULA fc00::/7 for v6

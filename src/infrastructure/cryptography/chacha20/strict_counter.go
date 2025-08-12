@@ -61,7 +61,7 @@ func (s *Sliding64) Validate(nonce [chacha20poly1305.NonceSize]byte) error {
 	case low > w.max:
 		shift := low - w.max
 		if shift >= 64 {
-			w.bitmap = 0
+			w.bitmap = 1
 		} else {
 			w.bitmap = (w.bitmap << shift) | 1
 		}

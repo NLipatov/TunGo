@@ -7,7 +7,8 @@ import (
 	"net"
 	"net/netip"
 	"tungo/application"
-	"tungo/infrastructure/network"
+	ip2 "tungo/domain/network/ip/packet_validation"
+	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/settings"
 )
 
@@ -38,22 +39,22 @@ func (c *ClientHandshake) SendClientHello(
 	if netIpAddrErr != nil {
 		return netIpAddrErr
 	}
-	var netIpAddrVersion uint8
+	var ipVersion ip.Version
 	if netIpAddr.Is6() {
-		netIpAddrVersion = 6
+		ipVersion = ip.V6
 	} else if netIpAddr.Is4() {
-		netIpAddrVersion = 4
+		ipVersion = ip.V4
 	} else {
 		return fmt.Errorf("invalid IP(%s) version", settings.ConnectionIP)
 	}
 
 	hello := NewClientHello(
-		netIpAddrVersion,
+		ipVersion,
 		net.ParseIP(settings.InterfaceAddress),
 		edPublicKey,
 		sessionPublicKey,
 		sessionSalt,
-		network.NewDefaultPolicyNewIPValidator(),
+		ip2.NewDefaultPolicyNewIPValidator(),
 	)
 	return c.clientIO.WriteClientHello(hello)
 }

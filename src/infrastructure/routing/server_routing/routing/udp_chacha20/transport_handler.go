@@ -9,6 +9,8 @@ import (
 	"tungo/application"
 	"tungo/application/listeners"
 	"tungo/infrastructure/network"
+	"tungo/infrastructure/network/signaling"
+	"tungo/infrastructure/network/udp/adapters"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
 	"tungo/infrastructure/settings"
 )
@@ -101,7 +103,7 @@ func (t *TransportHandler) handlePacket(
 		if regErr != nil {
 			t.logger.Printf("host %v failed registration: %v", addrPort.Addr().AsSlice(), regErr)
 			_, _ = conn.WriteToUDPAddrPort([]byte{
-				byte(network.SessionReset),
+				byte(signaling.SessionReset),
 			}, addrPort)
 			return regErr
 		}
@@ -134,8 +136,8 @@ func (t *TransportHandler) registerClient(
 
 	// Pass initialData and addrPort to the crypto function
 	h := t.handshakeFactory.NewHandshake()
-	adapter := network.NewInitialDataAdapter(
-		network.NewUdpAdapter(conn, addrPort), initialData)
+	adapter := adapters.NewInitialDataAdapter(
+		adapters.NewUdpAdapter(conn, addrPort), initialData)
 	internalIP, handshakeErr := h.ServerSideHandshake(adapter)
 	if handshakeErr != nil {
 		return handshakeErr
