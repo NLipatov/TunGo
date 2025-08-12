@@ -1,4 +1,3 @@
-// adapters/adapter.go
 package adapters
 
 import (

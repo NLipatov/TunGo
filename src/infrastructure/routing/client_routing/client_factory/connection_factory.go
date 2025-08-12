@@ -12,6 +12,7 @@ import (
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/network"
+	"tungo/infrastructure/network/tcp"
 	"tungo/infrastructure/settings"
 )
 
@@ -64,7 +65,7 @@ func (f *ConnectionFactory) EstablishConnection(
 		)
 		cancellableSecret := network.NewSecretWithDeadline(handshakeCtx, secret)
 
-		session := network.NewDefaultSecureSession(network.NewTCPConnection(addrPort), cancellableSecret)
+		session := network.NewDefaultSecureSession(tcp.NewTCPConnection(addrPort), cancellableSecret)
 		cancellableSession := network.NewSecureSessionWithDeadline(handshakeCtx, session)
 		return cancellableSession.Establish()
 	default:

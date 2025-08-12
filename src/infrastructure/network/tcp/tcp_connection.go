@@ -1,9 +1,10 @@
-package network
+package tcp
 
 import (
 	"net"
 	"net/netip"
 	"tungo/application"
+	"tungo/infrastructure/network/tcp/adapters"
 )
 
 type TCPDialer interface {
@@ -40,5 +41,8 @@ func (u *TCPConnection) Establish() (application.ConnectionAdapter, error) {
 		return nil, connErr
 	}
 
-	return conn, nil
+	// NewTcpAdapter is used to handle framing specific of tcp transport
+	framingAdapter := adapters.NewTcpAdapter(conn)
+
+	return framingAdapter, nil
 }
