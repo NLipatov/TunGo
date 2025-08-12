@@ -38,7 +38,7 @@ func NewTunHandler(
 }
 
 func (t *TunHandler) HandleTun() error {
-	buffer := make([]byte, 4+network.MaxPacketLengthBytes+chacha20poly1305.Overhead)
+	buffer := make([]byte, network.MaxPacketLengthBytes+chacha20poly1305.Overhead)
 	destinationAddressBytes := [4]byte{}
 
 	for {
@@ -47,7 +47,7 @@ func (t *TunHandler) HandleTun() error {
 			return nil
 		default:
 			// reserve 4 bytes for length prefix
-			n, err := t.reader.Read(buffer[4:])
+			n, err := t.reader.Read(buffer)
 			if err != nil {
 				if err == io.EOF {
 					log.Println("TUN interface closed, shutting down...")
@@ -63,9 +63,7 @@ func (t *TunHandler) HandleTun() error {
 				continue
 			}
 
-			payload := buffer[4 : n+4]
-
-			destinationBytesErr := t.ipParser.ParseDestinationAddressBytes(payload, destinationAddressBytes[:])
+			destinationBytesErr := t.ipParser.ParseDestinationAddressBytes(buffer[:n], destinationAddressBytes[:])
 			if destinationBytesErr != nil {
 				log.Printf("packet dropped: failed to read destination address bytes: %v", destinationBytesErr)
 				continue
@@ -84,21 +82,13 @@ func (t *TunHandler) HandleTun() error {
 				continue
 			}
 
-			ct, encryptErr := clientSession.CryptographyService().Encrypt(payload)
+			ct, encryptErr := clientSession.CryptographyService().Encrypt(buffer[:n])
 			if encryptErr != nil {
 				log.Printf("failed to encrypt packet: %s", encryptErr)
 				continue
 			}
 
-			frame := buffer[:4+len(ct)]
-
-			encodingErr := t.encoder.Encode(frame)
-			if encodingErr != nil {
-				log.Printf("failed to encode packet: %v", encodingErr)
-				continue
-			}
-
-			_, connWriteErr := clientSession.ConnectionAdapter().Write(frame)
+			_, connWriteErr := clientSession.ConnectionAdapter().Write(ct)
 			if connWriteErr != nil {
 				log.Printf("failed to write to TCP: %v", connWriteErr)
 				t.sessionManager.Delete(clientSession)

@@ -2,7 +2,6 @@ package tcp_chacha20
 
 import (
 	"context"
-	"encoding/binary"
 	"golang.org/x/crypto/chacha20poly1305"
 	"io"
 	"log"
@@ -31,14 +30,13 @@ func NewTransportHandler(
 }
 
 func (t *TransportHandler) HandleTransport() error {
-	buffer := make([]byte, 4+network.MaxPacketLengthBytes+chacha20poly1305.Overhead)
-
+	buf := make([]byte, network.MaxPacketLengthBytes+chacha20poly1305.Overhead)
 	for {
 		select {
 		case <-t.ctx.Done():
 			return nil
 		default:
-			_, err := io.ReadFull(t.reader, buffer[:4])
+			n, err := t.reader.Read(buf)
 			if err != nil {
 				if t.ctx.Err() != nil {
 					return nil
@@ -47,30 +45,17 @@ func (t *TransportHandler) HandleTransport() error {
 				return err
 			}
 
-			//read packet length from 4-byte length prefix
-			var length = binary.BigEndian.Uint32(buffer[:4])
-			if length < chacha20poly1305.Overhead ||
-				length > network.MaxPacketLengthBytes+chacha20poly1305.Overhead {
-				log.Printf("invalid ciphertext length: %d", length)
+			if n < chacha20poly1305.Overhead || n > network.MaxPacketLengthBytes+chacha20poly1305.Overhead {
+				log.Printf("invalid ciphertext length: %d", n)
 				continue
 			}
 
-			//read n-bytes from connection
-			_, err = io.ReadFull(t.reader, buffer[:length])
+			pt, err := t.cryptographyService.Decrypt(buf[:n])
 			if err != nil {
-				log.Printf("failed to read packet from connection: %s", err)
-				continue
+				log.Printf("failed to decrypt data: %s", err)
+				return err
 			}
-
-			decrypted, decryptionErr := t.cryptographyService.Decrypt(buffer[:length])
-			if decryptionErr != nil {
-				log.Printf("failed to decrypt data: %s", decryptionErr)
-				return decryptionErr
-			}
-
-			// Write the decrypted packet to the TUN interface
-			_, err = t.writer.Write(decrypted)
-			if err != nil {
+			if _, err = t.writer.Write(pt); err != nil {
 				log.Printf("failed to write to TUN: %v", err)
 				return err
 			}
