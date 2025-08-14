@@ -21,9 +21,9 @@ func mustIP(s string) net.IP {
 func TestNewDefaultPolicyNewIPValidator_Behavior(t *testing.T) {
 	// Ensures constructor is executed and its policy is enforced.
 	raw := NewDefaultPolicyNewIPValidator()
-	v, ok := raw.(*IPValidator)
+	v, ok := raw.(*DefaultIPValidator)
 	if !ok || v == nil {
-		t.Fatalf("expected *IPValidator, got %T", raw)
+		t.Fatalf("expected *DefaultIPValidator, got %T", raw)
 	}
 
 	type tc struct {
@@ -68,7 +68,7 @@ func TestNewDefaultPolicyNewIPValidator_Behavior(t *testing.T) {
 func TestValidateIP_BroadcastV4Allowed_WhenNotForbidden(t *testing.T) {
 	// When ForbidBroadcastV4=false AND RequirePrivate=false,
 	// 255.255.255.255 should be allowed.
-	val := NewIPValidator(Policy{
+	val := NewDefaultIPValidator(Policy{
 		AllowV4:           true,
 		RequirePrivate:    false,
 		ForbidLoopback:    false,
@@ -76,7 +76,7 @@ func TestValidateIP_BroadcastV4Allowed_WhenNotForbidden(t *testing.T) {
 		ForbidUnspecified: false,
 		ForbidLinkLocal:   false,
 		ForbidBroadcastV4: false, // key difference
-	}).(*IPValidator)
+	}).(*DefaultIPValidator)
 
 	bcast := net.IPv4(255, 255, 255, 255).To4()
 	if err := val.ValidateIP(ip.V4, bcast); err != nil {
@@ -87,7 +87,7 @@ func TestValidateIP_BroadcastV4Allowed_WhenNotForbidden(t *testing.T) {
 func TestValidateIP_MulticastAllowed_WhenNotForbidden(t *testing.T) {
 	// When ForbidMulticast=false AND RequirePrivate=false,
 	// multicast should pass.
-	val := NewIPValidator(Policy{
+	val := NewDefaultIPValidator(Policy{
 		AllowV4:           true,
 		RequirePrivate:    false,
 		ForbidLoopback:    false,
@@ -95,7 +95,7 @@ func TestValidateIP_MulticastAllowed_WhenNotForbidden(t *testing.T) {
 		ForbidUnspecified: false,
 		ForbidLinkLocal:   false,
 		ForbidBroadcastV4: false,
-	}).(*IPValidator)
+	}).(*DefaultIPValidator)
 
 	mc := net.IPv4(239, 1, 2, 3).To4()
 	if err := val.ValidateIP(ip.V4, mc); err != nil {
@@ -106,7 +106,7 @@ func TestValidateIP_MulticastAllowed_WhenNotForbidden(t *testing.T) {
 func TestValidateIP_LinkLocalAllowed_WhenNotForbidden(t *testing.T) {
 	// When ForbidLinkLocal=false AND RequirePrivate=false,
 	// IPv4 link-local 169.254.0.0/16 should pass.
-	val := NewIPValidator(Policy{
+	val := NewDefaultIPValidator(Policy{
 		AllowV4:           true,
 		RequirePrivate:    false, // link-local is not "private" per net.IP.IsPrivate()
 		ForbidLoopback:    false,
@@ -114,7 +114,7 @@ func TestValidateIP_LinkLocalAllowed_WhenNotForbidden(t *testing.T) {
 		ForbidUnspecified: false,
 		ForbidLinkLocal:   false, // key difference
 		ForbidBroadcastV4: false,
-	}).(*IPValidator)
+	}).(*DefaultIPValidator)
 
 	ll := net.IPv4(169, 254, 10, 10).To4()
 	if err := val.ValidateIP(ip.V4, ll); err != nil {

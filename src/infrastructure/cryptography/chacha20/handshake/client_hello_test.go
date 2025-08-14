@@ -39,7 +39,7 @@ func buildValidHello(t *testing.T, version ip.Version, ipStr string) ([]byte, Cl
 		t.Fatalf("failed to generate nonce: %v", err)
 	}
 
-	v := packet_validation.NewIPValidator(testPolicy())
+	v := packet_validation.NewDefaultIPValidator(testPolicy())
 
 	ipAddr := net.ParseIP(ipStr)
 	ch := NewClientHello(version, ipAddr, edPubRaw, curvePub, nonce, v)
@@ -90,7 +90,7 @@ func TestMarshalUnmarshal_Success(t *testing.T) {
 }
 
 func TestMarshalBinary_InvalidVersion(t *testing.T) {
-	v := packet_validation.NewIPValidator(testPolicy())
+	v := packet_validation.NewDefaultIPValidator(testPolicy())
 	ch := NewClientHello(0, net.ParseIP("192.168.0.1"), nil, nil, nil, v)
 	if _, err := ch.MarshalBinary(); err == nil {
 		t.Fatal("expected error for invalid IP version, got nil")
@@ -98,7 +98,7 @@ func TestMarshalBinary_InvalidVersion(t *testing.T) {
 }
 
 func TestMarshalBinary_ShortIPv4(t *testing.T) {
-	v := packet_validation.NewIPValidator(testPolicy())
+	v := packet_validation.NewDefaultIPValidator(testPolicy())
 	// Explicitly short IPv4 (2 bytes) instead of nil from net.ParseIP("1.1")
 	shortIPv4 := net.IP{1, 1}
 	ch := NewClientHello(4, shortIPv4, nil, nil, nil, v)
@@ -108,7 +108,7 @@ func TestMarshalBinary_ShortIPv4(t *testing.T) {
 }
 
 func TestMarshalBinary_ShortIPv6(t *testing.T) {
-	v := packet_validation.NewIPValidator(testPolicy())
+	v := packet_validation.NewDefaultIPValidator(testPolicy())
 	// Explicitly short IPv6 (8 bytes < 16)
 	shortIPv6 := net.IP{1, 2, 3, 4, 5, 6, 7, 8}
 	ch := NewClientHello(6, shortIPv6, nil, nil, nil, v)

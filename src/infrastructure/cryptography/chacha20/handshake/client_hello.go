@@ -4,7 +4,6 @@ import (
 	"crypto/ed25519"
 	"fmt"
 	"net"
-	"tungo/application"
 	"tungo/domain/network/ip/packet_validation"
 	"tungo/infrastructure/network/ip"
 )
@@ -12,7 +11,7 @@ import (
 type ClientHello struct {
 	ipVersion      ip.Version
 	ipAddress      net.IP
-	ipValidator    application.IPValidator
+	ipValidator    packet_validation.IPValidator
 	edPublicKey    ed25519.PublicKey
 	curvePublicKey []byte
 	nonce          []byte
@@ -24,7 +23,7 @@ func NewClientHello(
 	EdPublicKey ed25519.PublicKey,
 	CurvePublicKey []byte,
 	ClientNonce []byte,
-	ipValidator application.IPValidator,
+	ipValidator packet_validation.IPValidator,
 ) ClientHello {
 	return ClientHello{
 		ipVersion:      IpVersion,
@@ -38,7 +37,7 @@ func NewClientHello(
 
 func NewEmptyClientHelloWithDefaultIPValidator() ClientHello {
 	return ClientHello{
-		ipValidator: packet_validation.NewIPValidator(
+		ipValidator: packet_validation.NewDefaultIPValidator(
 			packet_validation.Policy{
 				AllowV4:           true,
 				AllowV6:           true,

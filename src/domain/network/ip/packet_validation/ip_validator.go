@@ -1,4 +1,4 @@
-package application
+package packet_validation
 
 import (
 	"net"

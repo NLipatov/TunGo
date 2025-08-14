@@ -3,22 +3,21 @@ package packet_validation
 import (
 	"fmt"
 	"net"
-	"tungo/application"
 	"tungo/infrastructure/network/ip"
 )
 
-type IPValidator struct {
+type DefaultIPValidator struct {
 	policy Policy
 }
 
-func NewIPValidator(policy Policy) application.IPValidator {
-	return &IPValidator{
+func NewDefaultIPValidator(policy Policy) IPValidator {
+	return &DefaultIPValidator{
 		policy: policy,
 	}
 }
 
-func NewDefaultPolicyNewIPValidator() application.IPValidator {
-	return &IPValidator{
+func NewDefaultPolicyNewIPValidator() IPValidator {
+	return &DefaultIPValidator{
 		policy: Policy{
 			AllowV4:           true,
 			AllowV6:           true,
@@ -34,7 +33,7 @@ func NewDefaultPolicyNewIPValidator() application.IPValidator {
 
 // NormalizeIP returns the IP version and raw bytes in canonical form.
 // IPv4 addresses are 4 bytes, IPv6 addresses are 16 bytes. No mapped forms are allowed.
-func (i *IPValidator) NormalizeIP(netIp net.IP) (ver ip.Version, raw []byte, err error) {
+func (i *DefaultIPValidator) NormalizeIP(netIp net.IP) (ver ip.Version, raw []byte, err error) {
 	if netIp == nil {
 		return 0, nil, fmt.Errorf("ip is nil")
 	}
@@ -49,7 +48,7 @@ func (i *IPValidator) NormalizeIP(netIp net.IP) (ver ip.Version, raw []byte, err
 }
 
 // ValidateIP checks if the normalized IP matches the provided validation policy.
-func (i *IPValidator) ValidateIP(ver ip.Version, netIP net.IP) error {
+func (i *DefaultIPValidator) ValidateIP(ver ip.Version, netIP net.IP) error {
 	// Version check
 	if ver == ip.V4 && !i.policy.AllowV4 {
 		return fmt.Errorf("ipv4 not allowed")
