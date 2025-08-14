@@ -1,4 +1,4 @@
-package network
+package signaling
 
 type Signal int
 

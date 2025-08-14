@@ -13,12 +13,12 @@ type ClientIO interface {
 }
 
 type DefaultClientIO struct {
-	connection application.ConnectionAdapter
+	adapter application.ConnectionAdapter
 }
 
-func NewDefaultClientIO(connection application.ConnectionAdapter) ClientIO {
+func NewDefaultClientIO(adapter application.ConnectionAdapter) ClientIO {
 	return &DefaultClientIO{
-		connection: connection,
+		adapter: adapter,
 	}
 }
 
@@ -28,7 +28,7 @@ func (c *DefaultClientIO) WriteClientHello(hello ClientHello) error {
 		return marshalErr
 	}
 
-	_, writeErr := c.connection.Write(data)
+	_, writeErr := c.adapter.Write(data)
 	if writeErr != nil {
 		return writeErr
 	}
@@ -38,7 +38,7 @@ func (c *DefaultClientIO) WriteClientHello(hello ClientHello) error {
 
 func (c *DefaultClientIO) ReadServerHello() (ServerHello, error) {
 	buffer := make([]byte, signatureLength+nonceLength+curvePublicKeyLength)
-	if _, err := io.ReadFull(c.connection, buffer); err != nil {
+	if _, err := io.ReadFull(c.adapter, buffer); err != nil {
 		return ServerHello{}, fmt.Errorf("failed to read server hello message: %w", err)
 	}
 
@@ -57,7 +57,7 @@ func (c *DefaultClientIO) WriteClientSignature(signature Signature) error {
 		return marshalErr
 	}
 
-	_, writeErr := c.connection.Write(data)
+	_, writeErr := c.adapter.Write(data)
 	if writeErr != nil {
 		return writeErr
 	}

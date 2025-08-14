@@ -9,27 +9,22 @@ type SecureSession interface {
 }
 
 type DefaultSecureSession struct {
-	connection application.Connection
-	secret     Secret
+	adapter application.ConnectionAdapter
+	secret  Secret
 }
 
-func NewDefaultSecureSession(connection application.Connection, secret Secret) *DefaultSecureSession {
+func NewDefaultSecureSession(adapter application.ConnectionAdapter, secret Secret) *DefaultSecureSession {
 	return &DefaultSecureSession{
-		connection: connection,
-		secret:     secret,
+		adapter: adapter,
+		secret:  secret,
 	}
 }
 
 func (c *DefaultSecureSession) Establish() (application.ConnectionAdapter, application.CryptographyService, error) {
-	conn, connErr := c.connection.Establish()
-	if connErr != nil {
-		return nil, nil, connErr
-	}
-
-	cryptographyService, cryptographyServiceErr := c.secret.Exchange(conn)
+	cryptographyService, cryptographyServiceErr := c.secret.Exchange(c.adapter)
 	if cryptographyServiceErr != nil {
 		return nil, nil, cryptographyServiceErr
 	}
 
-	return conn, cryptographyService, nil
+	return c.adapter, cryptographyService, nil
 }

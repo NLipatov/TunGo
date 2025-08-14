@@ -5,10 +5,9 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 	"io"
 	"log"
-	"net/netip"
 	"os"
 	"tungo/application"
-	"tungo/infrastructure/cryptography/chacha20"
+	appip "tungo/application/network/ip"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
 )
@@ -16,37 +15,33 @@ import (
 type TunHandler struct {
 	ctx            context.Context
 	reader         io.Reader
-	encoder        chacha20.TCPEncoder
-	ipParser       network.IPHeader
+	ipHeaderParser appip.HeaderParser
 	sessionManager repository.SessionRepository[application.Session]
 }
 
 func NewTunHandler(
 	ctx context.Context,
 	reader io.Reader,
-	encoder chacha20.TCPEncoder,
-	ipParser network.IPHeader,
+	ipParser appip.HeaderParser,
 	sessionManager repository.SessionRepository[application.Session],
 ) application.TunHandler {
 	return &TunHandler{
 		ctx:            ctx,
 		reader:         reader,
-		encoder:        encoder,
-		ipParser:       ipParser,
+		ipHeaderParser: ipParser,
 		sessionManager: sessionManager,
 	}
 }
 
 func (t *TunHandler) HandleTun() error {
-	buf := make([]byte, network.MaxPacketLengthBytes)
-	destinationAddressBytes := [4]byte{}
+	buffer := make([]byte, network.MaxPacketLengthBytes+chacha20poly1305.Overhead)
 
 	for {
 		select {
 		case <-t.ctx.Done():
 			return nil
 		default:
-			n, err := t.reader.Read(buf)
+			n, err := t.reader.Read(buffer)
 			if err != nil {
 				if err == io.EOF {
 					log.Println("TUN interface closed, shutting down...")
@@ -61,49 +56,30 @@ func (t *TunHandler) HandleTun() error {
 				log.Printf("failed to read from TUN, retrying: %v", err)
 				continue
 			}
-			if n <= 4 {
-				log.Printf("invalid IP data (n=%d < 4)", n)
+			if n == 0 {
+				// Defensive: spurious zero-length read; skip.
 				continue
 			}
 
-			data := buf[4 : n+4]
-			if len(data) < 1 {
-				log.Printf("invalid IP data")
+			addr, addrErr := t.ipHeaderParser.DestinationAddress(buffer[:n])
+			if addrErr != nil {
+				log.Printf("packet dropped: failed to parse destination address: %v", addrErr)
 				continue
 			}
 
-			destinationBytesErr := t.ipParser.ParseDestinationAddressBytes(data, destinationAddressBytes[:])
-			if destinationBytesErr != nil {
-				log.Printf("packet dropped: failed to read destination address bytes: %v", destinationBytesErr)
-				continue
-			}
-
-			destAddr, destAddrOk := netip.AddrFromSlice(destinationAddressBytes[:])
-			if !destAddrOk {
-				log.Printf(
-					"packet dropped: failed to parse destination address bytes: %v", destinationAddressBytes[:])
-				continue
-			}
-
-			clientSession, getErr := t.sessionManager.GetByInternalAddrPort(destAddr)
+			clientSession, getErr := t.sessionManager.GetByInternalAddrPort(addr)
 			if getErr != nil {
-				log.Printf("packet dropped: %s, destination host: %v", getErr, destinationAddressBytes)
+				log.Printf("packet dropped: %s, destination host: %v", getErr, addr)
 				continue
 			}
 
-			_, encryptErr := clientSession.CryptographyService().Encrypt(buf[4 : n+4])
+			ct, encryptErr := clientSession.CryptographyService().Encrypt(buffer[:n])
 			if encryptErr != nil {
 				log.Printf("failed to encrypt packet: %s", encryptErr)
 				continue
 			}
 
-			encodingErr := t.encoder.Encode(buf[:n+4+chacha20poly1305.Overhead])
-			if encodingErr != nil {
-				log.Printf("failed to encode packet: %v", encodingErr)
-				continue
-			}
-
-			_, connWriteErr := clientSession.ConnectionAdapter().Write(buf[:n+4+chacha20poly1305.Overhead])
+			_, connWriteErr := clientSession.ConnectionAdapter().Write(ct)
 			if connWriteErr != nil {
 				log.Printf("failed to write to TCP: %v", connWriteErr)
 				t.sessionManager.Delete(clientSession)

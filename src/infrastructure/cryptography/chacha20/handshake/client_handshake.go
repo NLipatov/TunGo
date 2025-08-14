@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"golang.org/x/crypto/curve25519"
 	"net"
+	"net/netip"
 	"tungo/application"
+	"tungo/domain/network/ip/packet_validation"
+	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/settings"
 )
 
@@ -15,14 +18,14 @@ import (
 // 3. send signed Signature
 // It drives its I/O through a ClientIO and Crypto through the Crypto interface.
 type ClientHandshake struct {
-	conn     application.ConnectionAdapter
+	adapter  application.ConnectionAdapter
 	crypto   Crypto
 	clientIO ClientIO
 }
 
-func NewClientHandshake(conn application.ConnectionAdapter, io ClientIO, crypto Crypto) ClientHandshake {
+func NewClientHandshake(adapter application.ConnectionAdapter, io ClientIO, crypto Crypto) ClientHandshake {
 	return ClientHandshake{
-		conn:     conn,
+		adapter:  adapter,
 		clientIO: io,
 		crypto:   crypto,
 	}
@@ -32,7 +35,27 @@ func (c *ClientHandshake) SendClientHello(
 	settings settings.Settings,
 	edPublicKey ed25519.PublicKey,
 	sessionPublicKey, sessionSalt []byte) error {
-	hello := NewClientHello(4, net.ParseIP(settings.InterfaceAddress), edPublicKey, sessionPublicKey, sessionSalt)
+	netIpAddr, netIpAddrErr := netip.ParseAddr(settings.ConnectionIP)
+	if netIpAddrErr != nil {
+		return netIpAddrErr
+	}
+	var ipVersion ip.Version
+	if netIpAddr.Is6() {
+		ipVersion = ip.V6
+	} else if netIpAddr.Is4() {
+		ipVersion = ip.V4
+	} else {
+		return fmt.Errorf("invalid IP(%s) version", settings.ConnectionIP)
+	}
+
+	hello := NewClientHello(
+		ipVersion,
+		net.ParseIP(settings.InterfaceAddress),
+		edPublicKey,
+		sessionPublicKey,
+		sessionSalt,
+		packet_validation.NewDefaultPolicyNewIPValidator(),
+	)
 	return c.clientIO.WriteClientHello(hello)
 }
 

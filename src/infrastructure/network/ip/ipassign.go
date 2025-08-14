@@ -1,4 +1,4 @@
-package network
+package ip
 
 import (
 	"encoding/binary"

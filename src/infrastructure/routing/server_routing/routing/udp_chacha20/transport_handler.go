@@ -3,11 +3,14 @@ package udp_chacha20
 import (
 	"context"
 	"fmt"
+	"golang.org/x/crypto/chacha20poly1305"
 	"io"
 	"net/netip"
 	"tungo/application"
 	"tungo/application/listeners"
 	"tungo/infrastructure/network"
+	"tungo/infrastructure/network/signaling"
+	"tungo/infrastructure/network/udp/adapters"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
 	"tungo/infrastructure/settings"
 )
@@ -57,7 +60,7 @@ func (t *TransportHandler) HandleTransport() error {
 		_ = t.listenerConn.Close()
 	}()
 
-	dataBuf := make([]byte, network.MaxPacketLengthBytes+12)
+	buffer := make([]byte, network.MaxPacketLengthBytes+chacha20poly1305.NonceSize+chacha20poly1305.Overhead)
 	oobBuf := make([]byte, 1024)
 
 	for {
@@ -65,9 +68,9 @@ func (t *TransportHandler) HandleTransport() error {
 		case <-t.ctx.Done():
 			return nil
 		default:
-			n, _, _, clientAddr, readFromUdpErr := t.listenerConn.ReadMsgUDPAddrPort(dataBuf, oobBuf)
+			n, _, _, clientAddr, readFromUdpErr := t.listenerConn.ReadMsgUDPAddrPort(buffer, oobBuf)
 			if readFromUdpErr != nil {
-				if t.ctx.Done() != nil {
+				if t.ctx.Err() != nil {
 					return nil
 				}
 
@@ -80,7 +83,7 @@ func (t *TransportHandler) HandleTransport() error {
 				continue
 			}
 
-			_ = t.handlePacket(t.listenerConn, clientAddr, dataBuf[:n])
+			_ = t.handlePacket(t.listenerConn, clientAddr, buffer[:n])
 		}
 	}
 }
@@ -100,7 +103,7 @@ func (t *TransportHandler) handlePacket(
 		if regErr != nil {
 			t.logger.Printf("host %v failed registration: %v", addrPort.Addr().AsSlice(), regErr)
 			_, _ = conn.WriteToUDPAddrPort([]byte{
-				byte(network.SessionReset),
+				byte(signaling.SessionReset),
 			}, addrPort)
 			return regErr
 		}
@@ -133,8 +136,8 @@ func (t *TransportHandler) registerClient(
 
 	// Pass initialData and addrPort to the crypto function
 	h := t.handshakeFactory.NewHandshake()
-	adapter := network.NewInitialDataAdapter(
-		network.NewUdpAdapter(conn, addrPort), initialData)
+	adapter := adapters.NewInitialDataAdapter(
+		adapters.NewUdpAdapter(conn, addrPort), initialData)
 	internalIP, handshakeErr := h.ServerSideHandshake(adapter)
 	if handshakeErr != nil {
 		return handshakeErr

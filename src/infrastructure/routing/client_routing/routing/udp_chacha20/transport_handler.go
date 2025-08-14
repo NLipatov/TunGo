@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"golang.org/x/crypto/chacha20poly1305"
 	"io"
 	"os"
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network"
+	"tungo/infrastructure/network/signaling"
 )
 
 type TransportHandler struct {
@@ -32,14 +34,14 @@ func NewTransportHandler(
 }
 
 func (t *TransportHandler) HandleTransport() error {
-	dataBuf := make([]byte, network.MaxPacketLengthBytes+12)
+	buffer := make([]byte, network.MaxPacketLengthBytes+chacha20poly1305.NonceSize+chacha20poly1305.Overhead)
 
 	for {
 		select {
 		case <-t.ctx.Done():
 			return nil
 		default:
-			n, readErr := t.reader.Read(dataBuf)
+			n, readErr := t.reader.Read(buffer)
 			if readErr != nil {
 				if errors.Is(readErr, os.ErrDeadlineExceeded) {
 					continue
@@ -51,11 +53,11 @@ func (t *TransportHandler) HandleTransport() error {
 				return fmt.Errorf("could not read a packet from adapter: %v", readErr)
 			}
 
-			if n == 1 && network.SignalIs(dataBuf[0], network.SessionReset) {
+			if n == 1 && signaling.SignalIs(buffer[0], signaling.SessionReset) {
 				return fmt.Errorf("server requested cryptographyService reset")
 			}
 
-			decrypted, decryptionErr := t.cryptographyService.Decrypt(dataBuf[:n])
+			decrypted, decryptionErr := t.cryptographyService.Decrypt(buffer[:n])
 			if decryptionErr != nil {
 				if t.ctx.Err() != nil {
 					return nil

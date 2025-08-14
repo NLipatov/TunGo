@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"golang.org/x/crypto/chacha20poly1305"
+	"io"
 	"testing"
 	"time"
 )
@@ -50,6 +52,36 @@ func (w *fakeWriter) Write(p []byte) (int, error) {
 	copy(buf, p)
 	w.data = append(w.data, buf)
 	return len(p), nil
+}
+
+type tunHandlerTestCancelOnEncrypt struct {
+	cancel context.CancelFunc
+	err    error
+	prefix []byte
+}
+
+func (c *tunHandlerTestCancelOnEncrypt) Encrypt(p []byte) ([]byte, error) {
+	if c.cancel != nil {
+		c.cancel()
+	}
+	if c.err != nil {
+		return nil, c.err
+	}
+	return append(c.prefix, p...), nil
+}
+func (c *tunHandlerTestCancelOnEncrypt) Decrypt(_ []byte) ([]byte, error) {
+	return nil, fmt.Errorf("unused")
+}
+
+type tunHandlerTestCancelWriter struct {
+	cancel context.CancelFunc
+}
+
+func (w *tunHandlerTestCancelWriter) Write(_ []byte) (int, error) {
+	if w.cancel != nil {
+		w.cancel()
+	}
+	return 0, errors.New("write fail")
 }
 
 func TestHandleTun_ImmediateCancel(t *testing.T) {
@@ -105,7 +137,7 @@ func TestHandleTun_WriteError(t *testing.T) {
 	writer := &fakeWriter{err: errWrite}
 	h := NewTunHandler(ctx, reader, writer, &tunhandlerTestRakeCrypto{prefix: []byte("x:")})
 
-	if err := h.HandleTun(); err == nil || err.Error() != fmt.Sprintf("could not write packet to adapter: %v", errWrite) {
+	if err := h.HandleTun(); err == nil || err.Error() != fmt.Sprintf("could not write packet to transport: %v", errWrite) {
 		t.Fatalf("expected write error wrapped, got %v", err)
 	}
 }
@@ -147,8 +179,90 @@ func TestHandleTun_SuccessThenCancel(t *testing.T) {
 	}
 
 	// verify written
-	want := append([]byte("pre-"), dummyData...)
+	zeros := make([]byte, chacha20poly1305.NonceSize)
+	want := append([]byte("pre-"), append(zeros, dummyData...)...)
 	if len(writer.data) != 1 || !bytes.Equal(writer.data[0], want) {
 		t.Errorf("expected written %v, got %v", want, writer.data)
+	}
+}
+func TestHandleTun_ReadErrorAfterCancel_ReturnsNil(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// reader cancels context inside Read, then returns an error
+	r := &fakeReader{readFunc: func(p []byte) (int, error) {
+		cancel()
+		return 0, errors.New("read fail")
+	}}
+	h := NewTunHandler(ctx, r, &fakeWriter{}, &tunhandlerTestRakeCrypto{})
+
+	if err := h.HandleTun(); err != nil {
+		t.Fatalf("expected nil because ctx canceled, got %v", err)
+	}
+}
+
+func TestHandleTun_EncryptErrorAfterCancel_ReturnsNil(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// first read yields data; Encrypt will cancel ctx and then return error
+	r := &fakeReader{readFunc: func(p []byte) (int, error) {
+		copy(p, []byte{1, 2, 3})
+		return 3, nil
+	}}
+	crypt := &tunHandlerTestCancelOnEncrypt{cancel: cancel, err: errors.New("enc fail")}
+	h := NewTunHandler(ctx, r, &fakeWriter{}, crypt)
+
+	if err := h.HandleTun(); err != nil {
+		t.Fatalf("expected nil because ctx canceled before encrypt error handling, got %v", err)
+	}
+}
+
+func TestHandleTun_WriteErrorAfterCancel_ReturnsNil(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	r := &fakeReader{readFunc: func(p []byte) (int, error) {
+		copy(p, []byte{4, 5, 6})
+		return 3, nil
+	}}
+	w := &tunHandlerTestCancelWriter{cancel: cancel}
+	h := NewTunHandler(ctx, r, w, &tunhandlerTestRakeCrypto{prefix: []byte("x:")})
+
+	if err := h.HandleTun(); err != nil {
+		t.Fatalf("expected nil because ctx canceled before write error handling, got %v", err)
+	}
+}
+
+func TestHandleTun_ReadReturnsNAndEOF_OneWriteThenEOF(t *testing.T) {
+	// First call: n>0 and io.EOF. Handler must:
+	//  - process n>0 (encrypt+write)
+	//  - then see err!=nil and return wrapped read error.
+	ctx := context.Background()
+
+	first := true
+	r := &fakeReader{readFunc: func(p []byte) (int, error) {
+		if first {
+			first = false
+			copy(p, []byte{7, 8, 9})
+			return 3, io.EOF
+		}
+		return 0, io.EOF
+	}}
+	w := &fakeWriter{}
+	h := NewTunHandler(ctx, r, w, &tunhandlerTestRakeCrypto{prefix: []byte("pre-")})
+
+	err := h.HandleTun()
+	if err == nil || err.Error() != "could not read a packet from TUN: EOF" {
+		t.Fatalf("expected wrapped EOF, got %v", err)
+	}
+	if len(w.data) != 1 {
+		t.Fatalf("expected exactly one write, got %d", len(w.data))
+	}
+	// payload layout: prefix || 12B nonce || [7,8,9]
+	zeros := make([]byte, chacha20poly1305.NonceSize)
+	want := append([]byte("pre-"), append(zeros, []byte{7, 8, 9}...)...)
+	if !bytes.Equal(w.data[0], want) {
+		t.Fatalf("written mismatch: got %v, want %v", w.data[0], want)
 	}
 }

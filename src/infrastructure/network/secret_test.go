@@ -13,9 +13,9 @@ type secretTestMockHandshake struct {
 	err error
 }
 
-func (m *secretTestMockHandshake) Id() [32]byte      { return [32]byte{} }
-func (m *secretTestMockHandshake) ClientKey() []byte { return nil }
-func (m *secretTestMockHandshake) ServerKey() []byte { return nil }
+func (m *secretTestMockHandshake) Id() [32]byte              { return [32]byte{} }
+func (m *secretTestMockHandshake) KeyClientToServer() []byte { return nil }
+func (m *secretTestMockHandshake) KeyServerToClient() []byte { return nil }
 func (m *secretTestMockHandshake) ServerSideHandshake(_ application.ConnectionAdapter) (net.IP, error) {
 	return nil, nil
 }

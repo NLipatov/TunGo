@@ -6,18 +6,18 @@ import (
 	"log"
 	"tungo/infrastructure/PAL"
 	"tungo/infrastructure/PAL/configuration/client"
-	serverСonfiguration "tungo/infrastructure/PAL/configuration/server"
+	serverConfiguration "tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/PAL/linux/network_tools/ip"
-	"tungo/infrastructure/network"
+	n_ip "tungo/infrastructure/network/ip"
 	"tungo/infrastructure/settings"
 )
 
 type ConfgenHandler struct {
 	ipWrapper  ip.Contract
-	cfgManager serverСonfiguration.ServerConfigurationManager
+	cfgManager serverConfiguration.ServerConfigurationManager
 }
 
-func NewConfgenHandler(manager serverСonfiguration.ServerConfigurationManager) *ConfgenHandler {
+func NewConfgenHandler(manager serverConfiguration.ServerConfigurationManager) *ConfgenHandler {
 	return &ConfgenHandler{
 		ipWrapper:  ip.NewWrapper(PAL.NewExecCommander()),
 		cfgManager: manager,
@@ -60,12 +60,12 @@ func (c *ConfgenHandler) generate() (*client.Configuration, error) {
 	}
 
 	IncrementedClientCounter := serverConf.ClientCounter + 1
-	clientTCPIfIp, err := network.AllocateClientIp(serverConf.TCPSettings.InterfaceIPCIDR, IncrementedClientCounter)
+	clientTCPIfIp, err := n_ip.AllocateClientIp(serverConf.TCPSettings.InterfaceIPCIDR, IncrementedClientCounter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to allocate client's TCP IP address: %s", err)
 	}
 
-	clientUIDPIfIp, err := network.AllocateClientIp(serverConf.UDPSettings.InterfaceIPCIDR, IncrementedClientCounter)
+	clientUIDPIfIp, err := n_ip.AllocateClientIp(serverConf.UDPSettings.InterfaceIPCIDR, IncrementedClientCounter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to allocate client's TCP IP address: %s", err)
 	}
@@ -105,7 +105,7 @@ func (c *ConfgenHandler) generate() (*client.Configuration, error) {
 	return &conf, nil
 }
 
-func (c *ConfgenHandler) getDefaultProtocol(conf *serverСonfiguration.Configuration) settings.Protocol {
+func (c *ConfgenHandler) getDefaultProtocol(conf *serverConfiguration.Configuration) settings.Protocol {
 	if conf.EnableUDP {
 		return settings.UDP
 	}

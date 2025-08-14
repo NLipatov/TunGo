@@ -2,15 +2,16 @@ package tcp_chacha20
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
+	"golang.org/x/crypto/chacha20poly1305"
 	"io"
 	"net"
 	"net/netip"
 	"tungo/application"
 	"tungo/application/listeners"
 	"tungo/infrastructure/network"
+	"tungo/infrastructure/network/tcp/adapters"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
 	"tungo/infrastructure/settings"
 )
@@ -88,10 +89,9 @@ func (t *TransportHandler) HandleTransport() error {
 func (t *TransportHandler) registerClient(conn net.Conn, tunFile io.ReadWriteCloser, ctx context.Context) error {
 	t.logger.Printf("connected: %s", conn.RemoteAddr())
 
+	framingAdapter := adapters.NewTcpAdapter(conn)
 	h := t.handshakeFactory.NewHandshake()
-	internalIP, handshakeErr := h.ServerSideHandshake(&network.TcpAdapter{
-		Conn: conn,
-	})
+	internalIP, handshakeErr := h.ServerSideHandshake(framingAdapter)
 	if handshakeErr != nil {
 		_ = conn.Close()
 		return fmt.Errorf("client %s failed registration: %w", conn.RemoteAddr(), handshakeErr)
@@ -133,7 +133,7 @@ func (t *TransportHandler) registerClient(conn net.Conn, tunFile io.ReadWriteClo
 		)
 	}
 
-	storedSession := NewSession(conn, cryptographyService, intIP, tcpAddr.AddrPort())
+	storedSession := NewSession(framingAdapter, cryptographyService, intIP, tcpAddr.AddrPort())
 
 	t.sessionManager.Add(storedSession)
 
@@ -149,44 +149,29 @@ func (t *TransportHandler) handleClient(ctx context.Context, session application
 		t.logger.Printf("disconnected: %s", session.ExternalAddrPort())
 	}()
 
-	buf := make([]byte, network.MaxPacketLengthBytes)
+	buffer := make([]byte, network.MaxPacketLengthBytes+chacha20poly1305.Overhead)
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		default:
-			// Read the length of the encrypted packet (4 bytes)
-			_, err := io.ReadFull(session.ConnectionAdapter(), buf[:4])
+			n, err := session.ConnectionAdapter().Read(buffer)
 			if err != nil {
 				if err != io.EOF {
 					t.logger.Printf("failed to read from client: %v", err)
 				}
 				return
 			}
-
-			//read packet length from 4-byte length prefix
-			var length = binary.BigEndian.Uint32(buf[:4])
-			if length < 4 || length > network.MaxPacketLengthBytes {
-				t.logger.Printf("invalid packet Length: %d", length)
+			if n < chacha20poly1305.Overhead || n > network.MaxPacketLengthBytes+chacha20poly1305.Overhead {
+				t.logger.Printf("invalid ciphertext length: %d", n)
 				continue
 			}
-
-			//read n-bytes from connection
-			_, err = io.ReadFull(session.ConnectionAdapter(), buf[:length])
+			pt, err := session.CryptographyService().Decrypt(buffer[:n])
 			if err != nil {
-				t.logger.Printf("failed to read packet from connection: %s", err)
+				t.logger.Printf("failed to decrypt data: %s", err)
 				continue
 			}
-
-			decrypted, decryptionErr := session.CryptographyService().Decrypt(buf[:length])
-			if decryptionErr != nil {
-				t.logger.Printf("failed to decrypt data: %s", decryptionErr)
-				continue
-			}
-
-			// Write the decrypted packet to the TUN interface
-			_, err = tunFile.Write(decrypted)
-			if err != nil {
+			if _, err = tunFile.Write(pt); err != nil {
 				t.logger.Printf("failed to write to TUN: %v", err)
 				return
 			}

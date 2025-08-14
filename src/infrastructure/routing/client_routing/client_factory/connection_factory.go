@@ -12,6 +12,7 @@ import (
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/network"
+	"tungo/infrastructure/network/tcp/adapters"
 	"tungo/infrastructure/settings"
 )
 
@@ -39,34 +40,28 @@ func (f *ConnectionFactory) EstablishConnection(
 	}
 
 	deadline := time.Now().Add(time.Duration(math.Max(float64(connSettings.DialTimeoutMs), 5000)) * time.Millisecond)
-	handshakeCtx, handshakeCtxCancel := context.WithDeadline(ctx, deadline)
-	defer handshakeCtxCancel()
+	establishCtx, establishCancel := context.WithDeadline(ctx, deadline)
+	defer establishCancel()
 
 	switch connSettings.Protocol {
 	case settings.UDP:
-		//connect to server and exchange secret
-		secret := network.NewDefaultSecret(
-			connSettings,
-			handshake.NewHandshake(f.conf.Ed25519PublicKey, make([]byte, 0)),
-			chacha20.NewUdpSessionBuilder(),
-		)
-		cancellableSecret := network.NewSecretWithDeadline(handshakeCtx, secret)
+		adapter, err := f.dialUDP(establishCtx, addrPort)
+		if err != nil {
+			return nil, nil, fmt.Errorf("unable to establish UDP connection: %w", err)
+		}
 
-		session := network.NewDefaultSecureSession(network.NewUDPConnection(addrPort), cancellableSecret)
-		cancellableSession := network.NewSecureSessionWithDeadline(handshakeCtx, session)
-		return cancellableSession.Establish()
+		return f.establishSecuredConnection(establishCtx, connSettings, adapter, chacha20.NewUdpSessionBuilder(
+			chacha20.NewDefaultAEADBuilder()),
+		)
 	case settings.TCP:
-		//connect to server and exchange secret
-		secret := network.NewDefaultSecret(
-			connSettings,
-			handshake.NewHandshake(f.conf.Ed25519PublicKey, make([]byte, 0)),
-			chacha20.NewTcpSessionBuilder(),
-		)
-		cancellableSecret := network.NewSecretWithDeadline(handshakeCtx, secret)
+		adapter, err := f.dialTCP(establishCtx, addrPort)
+		if err != nil {
+			return nil, nil, fmt.Errorf("unable to establish TCP connection: %w", err)
+		}
 
-		session := network.NewDefaultSecureSession(network.NewTCPConnection(addrPort), cancellableSecret)
-		cancellableSession := network.NewSecureSessionWithDeadline(handshakeCtx, session)
-		return cancellableSession.Establish()
+		return f.establishSecuredConnection(establishCtx, connSettings, adapter, chacha20.NewTcpSessionBuilder(
+			chacha20.NewDefaultAEADBuilder()),
+		)
 	default:
 		return nil, nil, fmt.Errorf("unsupported protocol: %v", connSettings.Protocol)
 	}
@@ -81,4 +76,53 @@ func (f *ConnectionFactory) connectionSettings() (settings.Settings, error) {
 	default:
 		return settings.Settings{}, fmt.Errorf("unsupported protocol: %v", f.conf.Protocol)
 	}
+}
+
+func (f *ConnectionFactory) establishSecuredConnection(
+	ctx context.Context,
+	s settings.Settings,
+	adapter application.ConnectionAdapter,
+	cryptoFactory application.CryptographyServiceFactory,
+) (application.ConnectionAdapter, application.CryptographyService, error) {
+	//connect to server and exchange secret
+	secret := network.NewDefaultSecret(
+		s,
+		handshake.NewHandshake(f.conf.Ed25519PublicKey, nil),
+		cryptoFactory,
+	)
+	cancellableSecret := network.NewSecretWithDeadline(ctx, secret)
+
+	session := network.NewDefaultSecureSession(adapter, cancellableSecret)
+	cancellableSession := network.NewSecureSessionWithDeadline(ctx, session)
+	ad, cr, err := cancellableSession.Establish()
+	if err != nil {
+		_ = adapter.Close()
+		return nil, nil, err
+	}
+	return ad, cr, nil
+}
+
+func (f *ConnectionFactory) dialTCP(ctx context.Context, ap netip.AddrPort) (application.ConnectionAdapter, error) {
+	dialer := &net.Dialer{}
+	conn, err := dialer.DialContext(ctx, "tcp", ap.String())
+	if err != nil {
+		return nil, err
+	}
+
+	if tcp, ok := conn.(*net.TCPConn); ok {
+		_ = tcp.SetNoDelay(true)
+		_ = tcp.SetKeepAlive(true)
+		_ = tcp.SetKeepAlivePeriod(30 * time.Second)
+	}
+
+	return adapters.NewTcpAdapter(conn), nil
+}
+
+func (f *ConnectionFactory) dialUDP(ctx context.Context, ap netip.AddrPort) (application.ConnectionAdapter, error) {
+	dialer := &net.Dialer{}
+	conn, err := dialer.DialContext(ctx, "udp", ap.String())
+	if err != nil {
+		return nil, err
+	}
+	return conn, nil
 }

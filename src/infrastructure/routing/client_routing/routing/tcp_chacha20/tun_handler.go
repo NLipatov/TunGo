@@ -6,7 +6,6 @@ import (
 	"io"
 	"log"
 	"tungo/application"
-	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network"
 )
 
@@ -15,17 +14,14 @@ type TunHandler struct {
 	reader              io.Reader // abstraction over TUN device
 	writer              io.Writer // abstraction over transport
 	cryptographyService application.CryptographyService
-	encoder             chacha20.TCPEncoder
 }
 
 func NewTunHandler(ctx context.Context,
-	encoder chacha20.TCPEncoder,
 	reader io.Reader,
 	writer io.Writer,
 	cryptographyService application.CryptographyService) application.TunHandler {
 	return &TunHandler{
 		ctx:                 ctx,
-		encoder:             encoder,
 		reader:              reader,
 		writer:              writer,
 		cryptographyService: cryptographyService,
@@ -33,8 +29,7 @@ func NewTunHandler(ctx context.Context,
 }
 
 func (t *TunHandler) HandleTun() error {
-	reader := chacha20.NewTcpReader(t.reader)
-	buffer := make([]byte, network.MaxPacketLengthBytes+4+chacha20poly1305.Overhead)
+	buffer := make([]byte, network.MaxPacketLengthBytes+chacha20poly1305.Overhead)
 
 	//passes anything from tun to chan
 	for {
@@ -42,7 +37,7 @@ func (t *TunHandler) HandleTun() error {
 		case <-t.ctx.Done():
 			return nil
 		default:
-			n, err := reader.Read(buffer)
+			n, err := t.reader.Read(buffer)
 			if err != nil {
 				if t.ctx.Err() != nil {
 					return nil
@@ -51,19 +46,13 @@ func (t *TunHandler) HandleTun() error {
 				return err
 			}
 
-			_, encryptErr := t.cryptographyService.Encrypt(buffer[4 : n+4])
+			ct, encryptErr := t.cryptographyService.Encrypt(buffer[:n])
 			if encryptErr != nil {
 				log.Printf("failed to encrypt packet: %v", encryptErr)
 				return encryptErr
 			}
 
-			encodingErr := t.encoder.Encode(buffer[:n+4+chacha20poly1305.Overhead])
-			if encodingErr != nil {
-				log.Printf("failed to encode packet: %v", encodingErr)
-				continue
-			}
-
-			_, err = t.writer.Write(buffer[:n+4+chacha20poly1305.Overhead])
+			_, err = t.writer.Write(ct)
 			if err != nil {
 				log.Printf("write to TCP failed: %s", err)
 				return err

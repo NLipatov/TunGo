@@ -96,3 +96,25 @@ func TestSliding64SeparateHighs(t *testing.T) {
 		t.Fatalf("high=2 advance failed: %v", err)
 	}
 }
+
+func TestSliding64_BigJumpMarksCurrent(t *testing.T) {
+	v := NewSliding64()
+	var n [12]byte
+
+	// low = 1
+	binary.BigEndian.PutUint64(n[0:8], 1)
+	if err := v.Validate(n); err != nil {
+		t.Fatalf("unexpected: %v", err)
+	}
+
+	// big jump: low = 1 + 100
+	binary.BigEndian.PutUint64(n[0:8], 101)
+	if err := v.Validate(n); err != nil {
+		t.Fatalf("unexpected: %v", err)
+	}
+
+	// replay the same 101 must be rejected
+	if err := v.Validate(n); err == nil {
+		t.Fatalf("expected ErrNonUniqueNonce after big jump replay")
+	}
+}

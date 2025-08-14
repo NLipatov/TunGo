@@ -8,30 +8,31 @@ import (
 )
 
 type ServerHandshake struct {
-	conn application.ConnectionAdapter
+	adapter application.ConnectionAdapter
 }
 
-func NewServerHandshake(conn application.ConnectionAdapter) ServerHandshake {
+func NewServerHandshake(adapter application.ConnectionAdapter) ServerHandshake {
 	return ServerHandshake{
-		conn: conn,
+		adapter: adapter,
 	}
 }
 
 func (h *ServerHandshake) ReceiveClientHello() (ClientHello, error) {
+	// read client hello to buf
 	buf := make([]byte, MaxClientHelloSizeBytes)
-	_, readErr := h.conn.Read(buf)
-	if readErr != nil {
-		return ClientHello{}, readErr
+	n, rErr := h.adapter.Read(buf)
+	if rErr != nil {
+		return ClientHello{}, rErr
 	}
 
-	//Read client hello
-	var clientHello ClientHello
-	unmarshalErr := clientHello.UnmarshalBinary(buf)
-	if unmarshalErr != nil {
-		return ClientHello{}, unmarshalErr
+	// deserialize client hello from buf
+	hello := NewEmptyClientHelloWithDefaultIPValidator()
+	uErr := hello.UnmarshalBinary(buf[:n])
+	if uErr != nil {
+		return ClientHello{}, uErr
 	}
 
-	return clientHello, nil
+	return hello, nil
 }
 
 func (h *ServerHandshake) SendServerHello(
@@ -48,13 +49,13 @@ func (h *ServerHandshake) SendServerHello(
 		return marshalErr
 	}
 
-	_, writeErr := h.conn.Write(marshalledServerHello)
+	_, writeErr := h.adapter.Write(marshalledServerHello)
 	return writeErr
 }
 
 func (h *ServerHandshake) VerifyClientSignature(c Crypto, hello ClientHello, serverNonce []byte) error {
 	clientSignatureBuf := make([]byte, 64)
-	if _, err := io.ReadFull(h.conn, clientSignatureBuf); err != nil {
+	if _, err := io.ReadFull(h.adapter, clientSignatureBuf); err != nil {
 		return err
 	}
 

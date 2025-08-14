@@ -11,7 +11,6 @@ import (
 	"tungo/infrastructure/settings"
 )
 
-// --- Дамми конфиг-менеджеры для разных веток ---
 type dummyConfigManager struct{}
 
 func (d *dummyConfigManager) Configuration() (*server.Configuration, error) {
@@ -38,24 +37,20 @@ func (e *errorConfigManager) InjectEdKeys(_ ed25519.PublicKey, _ ed25519.Private
 	return nil
 }
 
-// --- Ноп-ридер для TUN ---
 type nopReadWriteCloser struct{}
 
 func (nopReadWriteCloser) Read(_ []byte) (int, error)  { return 0, io.EOF }
 func (nopReadWriteCloser) Write(p []byte) (int, error) { return len(p), nil }
 func (nopReadWriteCloser) Close() error                { return nil }
 
-// --- Юнит-тесты фабрики ---
 func Test_ServerWorkerFactory_addrPortToListen_Errors(t *testing.T) {
 	f := &ServerWorkerFactory{}
 
-	// Некорректный порт
 	_, err := f.addrPortToListen("127.0.0.1", "notaport")
 	if err == nil {
 		t.Fatal("expected error for invalid port")
 	}
 
-	// Пустой IP -> dualstack (::)
 	addr, err := f.addrPortToListen("", "1234")
 	if err != nil {
 		t.Fatal(err)
@@ -102,7 +97,6 @@ func Test_ServerWorkerFactory_CreateWorker_UDP_ConfigError(t *testing.T) {
 }
 
 func Test_ServerWorkerFactory_CreateWorker_TCP_ListenError(t *testing.T) {
-	// Открываем TCP-порт, чтобы занять его и вызвать ошибку в фабрике
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
