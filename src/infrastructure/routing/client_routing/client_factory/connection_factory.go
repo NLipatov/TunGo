@@ -12,8 +12,7 @@ import (
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/network"
-	"tungo/infrastructure/network/tcp"
-	"tungo/infrastructure/network/udp"
+	"tungo/infrastructure/network/tcp/adapters"
 	"tungo/infrastructure/settings"
 )
 
@@ -54,7 +53,11 @@ func (f *ConnectionFactory) EstablishConnection(
 		)
 		cancellableSecret := network.NewSecretWithDeadline(handshakeCtx, secret)
 
-		session := network.NewDefaultSecureSession(udp.NewUDPConnection(addrPort), cancellableSecret)
+		udpConn, udpConnErr := net.DialUDP("udp", nil, net.UDPAddrFromAddrPort(addrPort))
+		if udpConnErr != nil {
+			return nil, nil, udpConnErr
+		}
+		session := network.NewDefaultSecureSession(udpConn, cancellableSecret)
 		cancellableSession := network.NewSecureSessionWithDeadline(handshakeCtx, session)
 		return cancellableSession.Establish()
 	case settings.TCP:
@@ -66,7 +69,15 @@ func (f *ConnectionFactory) EstablishConnection(
 		)
 		cancellableSecret := network.NewSecretWithDeadline(handshakeCtx, secret)
 
-		session := network.NewDefaultSecureSession(tcp.NewTCPConnection(addrPort), cancellableSecret)
+		tcpConn, tcpConnErr := net.Dial("tcp", addrPort.String())
+		if tcpConnErr != nil {
+			return nil, nil, tcpConnErr
+		}
+
+		// NewTcpAdapter is used to handle framing specific of tcp transport
+		framingAdapter := adapters.NewTcpAdapter(tcpConn)
+
+		session := network.NewDefaultSecureSession(framingAdapter, cancellableSecret)
 		cancellableSession := network.NewSecureSessionWithDeadline(handshakeCtx, session)
 		return cancellableSession.Establish()
 	default:

@@ -6,101 +6,60 @@ import (
 	"tungo/application"
 )
 
-// defaultSecureSessionTestMockConnectionErr returns an error on Establish.
-type defaultSecureSessionTestMockConnectionErr struct{}
+type stubAdapter struct{}
 
-func (m *defaultSecureSessionTestMockConnectionErr) Establish() (application.ConnectionAdapter, error) {
-	return nil, errors.New("connection failed")
-}
+func (s *stubAdapter) Write(p []byte) (int, error) { return len(p), nil }
+func (s *stubAdapter) Read(_ []byte) (int, error)  { return 0, nil }
+func (s *stubAdapter) Close() error                { return nil }
 
-// defaultSecureSessionTestMockAdapter is a stub ConnectionAdapter.
-type defaultSecureSessionTestMockAdapter struct{}
+type stubCrypto struct{}
 
-func (m *defaultSecureSessionTestMockAdapter) Write(b []byte) (int, error) { return len(b), nil }
-func (m *defaultSecureSessionTestMockAdapter) Read(_ []byte) (int, error)  { return 0, nil }
-func (m *defaultSecureSessionTestMockAdapter) Close() error                { return nil }
+func (s *stubCrypto) Encrypt(p []byte) ([]byte, error) { return p, nil }
+func (s *stubCrypto) Decrypt(p []byte) ([]byte, error) { return p, nil }
 
-// defaultSecureSessionTestMockConnectionOK returns a stub adapter.
-type defaultSecureSessionTestMockConnectionOK struct {
-	adapter application.ConnectionAdapter
-}
+type secretErr struct{}
 
-func (m *defaultSecureSessionTestMockConnectionOK) Establish() (application.ConnectionAdapter, error) {
-	return m.adapter, nil
-}
-
-// defaultSecureSessionTestMockSecretErr returns an error on Exchange.
-type defaultSecureSessionTestMockSecretErr struct{}
-
-func (m *defaultSecureSessionTestMockSecretErr) Exchange(_ application.ConnectionAdapter) (application.CryptographyService, error) {
+func (s *secretErr) Exchange(_ application.ConnectionAdapter) (application.CryptographyService, error) {
 	return nil, errors.New("exchange failed")
 }
 
-// defaultSecureSessionTestMockCryptoService is a dummy cryptographyService.
-type defaultSecureSessionTestMockCryptoService struct{}
-
-func (m *defaultSecureSessionTestMockCryptoService) Encrypt(p []byte) ([]byte, error) { return p, nil }
-func (m *defaultSecureSessionTestMockCryptoService) Decrypt(p []byte) ([]byte, error) { return p, nil }
-
-// defaultSecureSessionTestMockSecretOK returns a dummy service.
-type defaultSecureSessionTestMockSecretOK struct {
+type secretOK struct {
 	svc application.CryptographyService
 }
 
-func (m *defaultSecureSessionTestMockSecretOK) Exchange(_ application.ConnectionAdapter) (application.CryptographyService, error) {
-	return m.svc, nil
-}
-
-func TestDefaultSecureSession_Establish_ConnectionError(t *testing.T) {
-	secret := NewDefaultSecureSession(
-		&defaultSecureSessionTestMockConnectionErr{},
-		&defaultSecureSessionTestMockSecretOK{},
-	)
-	conn, svc, err := secret.Establish()
-	if conn != nil {
-		t.Errorf("expected nil connection, got %v", conn)
-	}
-	if svc != nil {
-		t.Errorf("expected nil service, got %v", svc)
-	}
-	if err == nil || err.Error() != "connection failed" {
-		t.Errorf("expected connection failed error, got %v", err)
-	}
+func (s *secretOK) Exchange(_ application.ConnectionAdapter) (application.CryptographyService, error) {
+	return s.svc, nil
 }
 
 func TestDefaultSecureSession_Establish_SecretError(t *testing.T) {
-	adapter := &defaultSecureSessionTestMockAdapter{}
-	secret := NewDefaultSecureSession(
-		&defaultSecureSessionTestMockConnectionOK{adapter: adapter},
-		&defaultSecureSessionTestMockSecretErr{},
-	)
-	conn, svc, err := secret.Establish()
-	if conn != nil {
-		t.Errorf("expected nil connection on secret error, got %v", conn)
-	}
-	if svc != nil {
-		t.Errorf("expected nil service on secret error, got %v", svc)
-	}
+	adapter := &stubAdapter{}
+	s := NewDefaultSecureSession(adapter, &secretErr{})
+
+	gotAdapter, gotSvc, err := s.Establish()
 	if err == nil || err.Error() != "exchange failed" {
-		t.Errorf("expected exchange failed error, got %v", err)
+		t.Fatalf("want error 'exchange failed', got %v", err)
+	}
+	if gotAdapter != nil {
+		t.Errorf("want adapter=nil on error, got %v", gotAdapter)
+	}
+	if gotSvc != nil {
+		t.Errorf("want service=nil on error, got %v", gotSvc)
 	}
 }
 
 func TestDefaultSecureSession_Establish_Success(t *testing.T) {
-	adapter := &defaultSecureSessionTestMockAdapter{}
-	fakeSvc := &defaultSecureSessionTestMockCryptoService{}
-	secret := NewDefaultSecureSession(
-		&defaultSecureSessionTestMockConnectionOK{adapter: adapter},
-		&defaultSecureSessionTestMockSecretOK{svc: fakeSvc},
-	)
-	conn, svc, err := secret.Establish()
+	adapter := &stubAdapter{}
+	svc := &stubCrypto{}
+	s := NewDefaultSecureSession(adapter, &secretOK{svc: svc})
+
+	gotAdapter, gotSvc, err := s.Establish()
 	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if conn != adapter {
-		t.Errorf("expected adapter %v, got %v", adapter, conn)
+	if gotAdapter != adapter {
+		t.Errorf("want adapter=%v, got %v", adapter, gotAdapter)
 	}
-	if svc != fakeSvc {
-		t.Errorf("expected service %v, got %v", fakeSvc, svc)
+	if gotSvc != svc {
+		t.Errorf("want service=%v, got %v", svc, gotSvc)
 	}
 }
