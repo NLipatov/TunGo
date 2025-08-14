@@ -1,5 +1,5 @@
 package settings
 
 const (
-	DefaultMTU = 1420
+	DefaultMTU = 1380
 )
