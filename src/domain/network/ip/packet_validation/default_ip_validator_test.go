@@ -3,121 +3,276 @@ package packet_validation
 import (
 	"net"
 	"testing"
+
 	"tungo/infrastructure/network/ip"
 )
 
-// --- Helpers ---
+// --- NormalizeIP ---
 
-func mustIP(s string) net.IP {
-	p := net.ParseIP(s)
-	if p == nil {
-		panic("invalid test IP: " + s)
-	}
-	return p
-}
-
-// --- Coverage boosters ---
-
-func TestNewDefaultPolicyNewIPValidator_Behavior(t *testing.T) {
-	// Ensures constructor is executed and its policy is enforced.
-	raw := NewDefaultPolicyNewIPValidator()
-	v, ok := raw.(*DefaultIPValidator)
-	if !ok || v == nil {
-		t.Fatalf("expected *DefaultIPValidator, got %T", raw)
-	}
-
-	type tc struct {
-		name string
-		ver  ip.Version
-		ip   net.IP
-		ok   bool
-	}
-	cases := []tc{
-		// Allowed by default (RequirePrivate=true, various forbids=true)
-		{"allow private v4", ip.V4, net.IPv4(10, 0, 0, 1).To4(), true},
-		{"allow ULA v6", ip.V6, mustIP("fd00::1"), true},
-
-		// Must be rejected by default policy
-		{"reject public v4", ip.V4, net.IPv4(8, 8, 8, 8).To4(), false},
-		{"reject loopback v4", ip.V4, net.IPv4(127, 0, 0, 1).To4(), false},
-		{"reject unspecified v4", ip.V4, net.IPv4(0, 0, 0, 0).To4(), false},
-		{"reject linklocal v4", ip.V4, net.IPv4(169, 254, 1, 1).To4(), false},
-		{"reject broadcast v4", ip.V4, net.IPv4(255, 255, 255, 255).To4(), false},
-		{"reject multicast v4", ip.V4, net.IPv4(224, 0, 0, 1).To4(), false},
-
-		{"reject public v6", ip.V6, mustIP("2001:db8::1"), false},
-		{"reject loopback v6", ip.V6, mustIP("::1"), false},
-		{"reject unspecified v6", ip.V6, mustIP("::"), false},
-		{"reject linklocal v6", ip.V6, mustIP("fe80::1"), false},
-		{"reject linklocal multicast v6", ip.V6, mustIP("ff02::fb"), false},
-	}
-
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			err := v.ValidateIP(c.ver, c.ip)
-			if c.ok && err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if !c.ok && err == nil {
-				t.Fatalf("expected error, got nil")
-			}
-		})
+func TestNormalizeIP_Nil(t *testing.T) {
+	v := NewDefaultPolicyNewIPValidator().(*DefaultIPValidator)
+	_, _, err := v.NormalizeIP(nil)
+	if err == nil {
+		t.Fatalf("expected error for nil IP")
 	}
 }
 
-func TestValidateIP_BroadcastV4Allowed_WhenNotForbidden(t *testing.T) {
-	// When ForbidBroadcastV4=false AND RequirePrivate=false,
-	// 255.255.255.255 should be allowed.
-	val := NewDefaultIPValidator(Policy{
+func TestNormalizeIP_IPv4(t *testing.T) {
+	v := NewDefaultPolicyNewIPValidator().(*DefaultIPValidator)
+	in := net.ParseIP("192.168.1.10")
+	ver, raw, err := v.NormalizeIP(in)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ver != ip.V4 {
+		t.Fatalf("version = %v, want V4", ver)
+	}
+	if len(raw) != 4 {
+		t.Fatalf("raw length = %d, want 4", len(raw))
+	}
+	if raw[0] != 192 || raw[1] != 168 || raw[2] != 1 || raw[3] != 10 {
+		t.Fatalf("raw bytes = %v, want 192.168.1.10", raw)
+	}
+}
+
+func TestNormalizeIP_IPv6(t *testing.T) {
+	v := NewDefaultPolicyNewIPValidator().(*DefaultIPValidator)
+	in := net.ParseIP("fd00::1")
+	ver, raw, err := v.NormalizeIP(in)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ver != ip.V6 {
+		t.Fatalf("version = %v, want V6", ver)
+	}
+	if len(raw) != 16 {
+		t.Fatalf("raw length = %d, want 16", len(raw))
+	}
+	// quick sanity: first byte of fd00::/8 is 0xfd
+	if raw[0] != 0xfd {
+		t.Fatalf("raw[0] = 0x%x, want 0xfd", raw[0])
+	}
+}
+
+func TestNormalizeIP_Invalid(t *testing.T) {
+	v := NewDefaultPolicyNewIPValidator().(*DefaultIPValidator)
+	// an invalid-length net.IP (neither 4 nor 16 bytes)
+	bad := net.IP{1, 2, 3}
+	_, _, err := v.NormalizeIP(bad)
+	if err == nil {
+		t.Fatalf("expected error for invalid IP")
+	}
+}
+
+// --- Constructors coverage ---
+
+func TestConstructors(t *testing.T) {
+	// Custom policy via NewDefaultIPValidator
+	p := Policy{
 		AllowV4:           true,
+		AllowV6:           false,
 		RequirePrivate:    false,
 		ForbidLoopback:    false,
 		ForbidMulticast:   false,
 		ForbidUnspecified: false,
 		ForbidLinkLocal:   false,
-		ForbidBroadcastV4: false, // key difference
-	}).(*DefaultIPValidator)
-
-	bcast := net.IPv4(255, 255, 255, 255).To4()
-	if err := val.ValidateIP(ip.V4, bcast); err != nil {
-		t.Fatalf("broadcast should be allowed when not forbidden: %v", err)
-	}
-}
-
-func TestValidateIP_MulticastAllowed_WhenNotForbidden(t *testing.T) {
-	// When ForbidMulticast=false AND RequirePrivate=false,
-	// multicast should pass.
-	val := NewDefaultIPValidator(Policy{
-		AllowV4:           true,
-		RequirePrivate:    false,
-		ForbidLoopback:    false,
-		ForbidMulticast:   false, // key difference
-		ForbidUnspecified: false,
-		ForbidLinkLocal:   false,
 		ForbidBroadcastV4: false,
-	}).(*DefaultIPValidator)
+	}
+	v1 := NewDefaultIPValidator(p)
+	if v1 == nil {
+		t.Fatalf("NewDefaultIPValidator returned nil")
+	}
 
-	mc := net.IPv4(239, 1, 2, 3).To4()
-	if err := val.ValidateIP(ip.V4, mc); err != nil {
-		t.Fatalf("multicast should be allowed when not forbidden: %v", err)
+	// Default policy via NewDefaultPolicyNewIPValidator must allow private v4/v6
+	v2 := NewDefaultPolicyNewIPValidator()
+	if v2 == nil {
+		t.Fatalf("NewDefaultPolicyNewIPValidator returned nil")
+	}
+	if err := v2.ValidateIP(ip.V4, net.ParseIP("10.0.0.1")); err != nil {
+		t.Fatalf("default policy should allow private v4: %v", err)
+	}
+	if err := v2.ValidateIP(ip.V6, net.ParseIP("fd00::1")); err != nil {
+		t.Fatalf("default policy should allow ULA v6: %v", err)
 	}
 }
 
-func TestValidateIP_LinkLocalAllowed_WhenNotForbidden(t *testing.T) {
-	// When ForbidLinkLocal=false AND RequirePrivate=false,
-	// IPv4 link-local 169.254.0.0/16 should pass.
-	val := NewDefaultIPValidator(Policy{
+// --- ValidateIP: policy branches ---
+
+func TestValidateIP_VersionNotAllowed(t *testing.T) {
+	v4Only := NewDefaultIPValidator(Policy{
 		AllowV4:           true,
-		RequirePrivate:    false, // link-local is not "private" per net.IP.IsPrivate()
+		AllowV6:           false,
+		RequirePrivate:    false,
 		ForbidLoopback:    false,
 		ForbidMulticast:   false,
 		ForbidUnspecified: false,
-		ForbidLinkLocal:   false, // key difference
+		ForbidLinkLocal:   false,
 		ForbidBroadcastV4: false,
-	}).(*DefaultIPValidator)
+	})
+	if err := v4Only.ValidateIP(ip.V4, net.ParseIP("8.8.8.8")); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := v4Only.ValidateIP(ip.V6, net.ParseIP("::1")); err == nil {
+		t.Fatalf("expected error: ipv6 not allowed")
+	}
 
-	ll := net.IPv4(169, 254, 10, 10).To4()
-	if err := val.ValidateIP(ip.V4, ll); err != nil {
-		t.Fatalf("link-local should be allowed when not forbidden: %v", err)
+	v6Only := NewDefaultIPValidator(Policy{
+		AllowV4:           false,
+		AllowV6:           true,
+		RequirePrivate:    false,
+		ForbidLoopback:    false,
+		ForbidMulticast:   false,
+		ForbidUnspecified: false,
+		ForbidLinkLocal:   false,
+		ForbidBroadcastV4: false,
+	})
+	if err := v6Only.ValidateIP(ip.V6, net.ParseIP("2001:4860:4860::8888")); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := v6Only.ValidateIP(ip.V4, net.ParseIP("1.1.1.1")); err == nil {
+		t.Fatalf("expected error: ipv4 not allowed")
+	}
+}
+
+func TestValidateIP_LoopbackRejected(t *testing.T) {
+	v := NewDefaultIPValidator(Policy{
+		AllowV4:           true,
+		AllowV6:           true,
+		RequirePrivate:    false,
+		ForbidLoopback:    true,
+		ForbidMulticast:   false,
+		ForbidUnspecified: false,
+		ForbidLinkLocal:   false,
+		ForbidBroadcastV4: false,
+	})
+	if err := v.ValidateIP(ip.V4, net.ParseIP("127.0.0.1")); err == nil {
+		t.Fatalf("expected loopback rejection for 127.0.0.1")
+	}
+	if err := v.ValidateIP(ip.V6, net.ParseIP("::1")); err == nil {
+		t.Fatalf("expected loopback rejection for ::1")
+	}
+}
+
+func TestValidateIP_MulticastRejected(t *testing.T) {
+	v := NewDefaultIPValidator(Policy{
+		AllowV4:           true,
+		AllowV6:           true,
+		RequirePrivate:    false,
+		ForbidLoopback:    false,
+		ForbidMulticast:   true,
+		ForbidUnspecified: false,
+		ForbidLinkLocal:   false,
+		ForbidBroadcastV4: false,
+	})
+	if err := v.ValidateIP(ip.V4, net.ParseIP("224.0.0.1")); err == nil {
+		t.Fatalf("expected multicast rejection (v4)")
+	}
+	if err := v.ValidateIP(ip.V6, net.ParseIP("ff02::1")); err == nil {
+		t.Fatalf("expected multicast rejection (v6)")
+	}
+}
+
+func TestValidateIP_UnspecifiedRejected(t *testing.T) {
+	v := NewDefaultIPValidator(Policy{
+		AllowV4:           true,
+		AllowV6:           true,
+		RequirePrivate:    false,
+		ForbidLoopback:    false,
+		ForbidMulticast:   false,
+		ForbidUnspecified: true,
+		ForbidLinkLocal:   false,
+		ForbidBroadcastV4: false,
+	})
+	if err := v.ValidateIP(ip.V4, net.ParseIP("0.0.0.0")); err == nil {
+		t.Fatalf("expected unspecified rejection (v4)")
+	}
+	if err := v.ValidateIP(ip.V6, net.ParseIP("::")); err == nil {
+		t.Fatalf("expected unspecified rejection (v6)")
+	}
+}
+
+func TestValidateIP_LinkLocalRejected(t *testing.T) {
+	v := NewDefaultIPValidator(Policy{
+		AllowV4:           true,
+		AllowV6:           true,
+		RequirePrivate:    false,
+		ForbidLoopback:    false,
+		ForbidMulticast:   false,
+		ForbidUnspecified: false,
+		ForbidLinkLocal:   true,
+		ForbidBroadcastV4: false,
+	})
+	if err := v.ValidateIP(ip.V4, net.ParseIP("169.254.1.1")); err == nil {
+		t.Fatalf("expected link-local rejection (v4)")
+	}
+	if err := v.ValidateIP(ip.V6, net.ParseIP("fe80::1")); err == nil {
+		t.Fatalf("expected link-local rejection (v6)")
+	}
+}
+
+func TestValidateIP_BroadcastV4Rejected(t *testing.T) {
+	v := NewDefaultIPValidator(Policy{
+		AllowV4:           true,
+		AllowV6:           true,
+		RequirePrivate:    false,
+		ForbidLoopback:    false,
+		ForbidMulticast:   false,
+		ForbidUnspecified: false,
+		ForbidLinkLocal:   false,
+		ForbidBroadcastV4: true,
+	})
+	if err := v.ValidateIP(ip.V4, net.IPv4bcast); err == nil {
+		t.Fatalf("expected broadcast v4 rejection")
+	}
+}
+
+func TestValidateIP_RequirePrivateRejectsPublic(t *testing.T) {
+	v := NewDefaultIPValidator(Policy{
+		AllowV4:           true,
+		AllowV6:           true,
+		RequirePrivate:    true,
+		ForbidLoopback:    false,
+		ForbidMulticast:   false,
+		ForbidUnspecified: false,
+		ForbidLinkLocal:   false,
+		ForbidBroadcastV4: false,
+	})
+	if err := v.ValidateIP(ip.V4, net.ParseIP("8.8.8.8")); err == nil {
+		t.Fatalf("expected rejection for non-private v4")
+	}
+	if err := v.ValidateIP(ip.V6, net.ParseIP("2001:4860:4860::8888")); err == nil {
+		t.Fatalf("expected rejection for non-private v6")
+	}
+}
+
+func TestValidateIP_AllAllowed_PublicOK(t *testing.T) {
+	// Everything allowed, privacy not required: public IPs should pass.
+	v := NewDefaultIPValidator(Policy{
+		AllowV4:           true,
+		AllowV6:           true,
+		RequirePrivate:    false,
+		ForbidLoopback:    false,
+		ForbidMulticast:   false,
+		ForbidUnspecified: false,
+		ForbidLinkLocal:   false,
+		ForbidBroadcastV4: false,
+	})
+	if err := v.ValidateIP(ip.V4, net.ParseIP("8.8.8.8")); err != nil {
+		t.Fatalf("unexpected error for public v4: %v", err)
+	}
+	if err := v.ValidateIP(ip.V6, net.ParseIP("2001:4860:4860::8888")); err != nil {
+		t.Fatalf("unexpected error for public v6: %v", err)
+	}
+}
+
+func TestValidateIP_DefaultPolicy_SaneFailures(t *testing.T) {
+	v := NewDefaultPolicyNewIPValidator()
+	// Loopback must be rejected first (before private check).
+	if err := v.ValidateIP(ip.V4, net.ParseIP("127.0.0.1")); err == nil {
+		t.Fatalf("expected loopback rejection for default policy")
+	}
+	// Public should be rejected because RequirePrivate = true.
+	if err := v.ValidateIP(ip.V4, net.ParseIP("1.1.1.1")); err == nil {
+		t.Fatalf("expected public v4 rejection for default policy")
 	}
 }
