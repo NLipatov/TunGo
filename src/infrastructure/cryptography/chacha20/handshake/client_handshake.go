@@ -7,7 +7,7 @@ import (
 	"net"
 	"net/netip"
 	"tungo/application"
-	ip2 "tungo/domain/network/ip/packet_validation"
+	"tungo/domain/network/ip/packet_validation"
 	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/settings"
 )
@@ -54,7 +54,7 @@ func (c *ClientHandshake) SendClientHello(
 		edPublicKey,
 		sessionPublicKey,
 		sessionSalt,
-		ip2.NewDefaultPolicyNewIPValidator(),
+		packet_validation.NewDefaultPolicyNewIPValidator(),
 	)
 	return c.clientIO.WriteClientHello(hello)
 }

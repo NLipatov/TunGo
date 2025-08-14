@@ -8,7 +8,7 @@ import (
 	"tungo/infrastructure/PAL/configuration/client"
 	serverConfiguration "tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/PAL/linux/network_tools/ip"
-	ip2 "tungo/infrastructure/network/ip"
+	n_ip "tungo/infrastructure/network/ip"
 	"tungo/infrastructure/settings"
 )
 
@@ -60,12 +60,12 @@ func (c *ConfgenHandler) generate() (*client.Configuration, error) {
 	}
 
 	IncrementedClientCounter := serverConf.ClientCounter + 1
-	clientTCPIfIp, err := ip2.AllocateClientIp(serverConf.TCPSettings.InterfaceIPCIDR, IncrementedClientCounter)
+	clientTCPIfIp, err := n_ip.AllocateClientIp(serverConf.TCPSettings.InterfaceIPCIDR, IncrementedClientCounter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to allocate client's TCP IP address: %s", err)
 	}
 
-	clientUIDPIfIp, err := ip2.AllocateClientIp(serverConf.UDPSettings.InterfaceIPCIDR, IncrementedClientCounter)
+	clientUIDPIfIp, err := n_ip.AllocateClientIp(serverConf.UDPSettings.InterfaceIPCIDR, IncrementedClientCounter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to allocate client's TCP IP address: %s", err)
 	}

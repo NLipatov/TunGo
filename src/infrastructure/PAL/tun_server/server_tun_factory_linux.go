@@ -10,7 +10,7 @@ import (
 	"tungo/infrastructure/PAL/linux/network_tools/ip"
 	"tungo/infrastructure/PAL/linux/network_tools/iptables"
 	"tungo/infrastructure/PAL/linux/network_tools/sysctl"
-	ip2 "tungo/infrastructure/network/ip"
+	n_ip "tungo/infrastructure/network/ip"
 	"tungo/infrastructure/settings"
 )
 
@@ -88,12 +88,12 @@ func (s ServerTunFactory) createTun(settings settings.Settings) (*os.File, error
 		return nil, fmt.Errorf("could not set mtu on tuntap dev: %s", mtuErr)
 	}
 
-	serverIp, serverIpErr := ip2.AllocateServerIp(settings.InterfaceIPCIDR)
+	serverIp, serverIpErr := n_ip.AllocateServerIp(settings.InterfaceIPCIDR)
 	if serverIpErr != nil {
 		return nil, fmt.Errorf("could not allocate server IP (%s): %s", serverIp, serverIpErr)
 	}
 
-	cidrServerIp, cidrServerIpErr := ip2.ToCIDR(settings.InterfaceIPCIDR, serverIp)
+	cidrServerIp, cidrServerIpErr := n_ip.ToCIDR(settings.InterfaceIPCIDR, serverIp)
 	if cidrServerIpErr != nil {
 		return nil, fmt.Errorf("could not conver server IP(%s) to CIDR: %s", serverIp, cidrServerIpErr)
 	}
