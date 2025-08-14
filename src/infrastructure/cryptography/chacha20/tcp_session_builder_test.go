@@ -2,6 +2,8 @@ package chacha20
 
 import (
 	"bytes"
+	"crypto/cipher"
+	"fmt"
 	"net"
 	"testing"
 	"tungo/infrastructure/settings"
@@ -9,6 +11,54 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 	"tungo/application"
 )
+
+// mock aead builder
+type fakeAEADBuilder struct{}
+
+func (fakeAEADBuilder) FromHandshake(h application.Handshake, isServer bool) (cipher.AEAD, cipher.AEAD, error) {
+	// Choose correct key directions based on isServer flag
+	var sendKey, recvKey []byte
+	if isServer {
+		sendKey = h.KeyServerToClient()
+		recvKey = h.KeyClientToServer()
+	} else {
+		sendKey = h.KeyClientToServer()
+		recvKey = h.KeyServerToClient()
+	}
+
+	// Simulate real key length validation
+	if len(sendKey) != chacha20poly1305.KeySize || len(recvKey) != chacha20poly1305.KeySize {
+		return nil, nil, fmt.Errorf("invalid key length: send=%d recv=%d", len(sendKey), len(recvKey))
+	}
+
+	// Return our fake AEAD instances
+	return fakeAEAD{}, fakeAEAD{}, nil
+}
+
+type fakeAEAD struct{}
+
+func (f fakeAEAD) FromHandshake(_ application.Handshake, _ bool) (send cipher.AEAD, recv cipher.AEAD, err error) {
+	return fakeAEAD{}, fakeAEAD{}, nil
+}
+
+func (f fakeAEAD) NonceSize() int { return 12 }
+func (f fakeAEAD) Overhead() int  { return 0 }
+func (f fakeAEAD) Seal(dst, nonce, plaintext, ad []byte) []byte {
+	_ = nonce
+	_ = ad
+	out := make([]byte, len(dst)+len(plaintext))
+	copy(out, dst)
+	copy(out[len(dst):], plaintext)
+	return out
+}
+func (f fakeAEAD) Open(dst, nonce, ciphertext, ad []byte) ([]byte, error) {
+	_ = nonce
+	_ = ad
+	out := make([]byte, len(dst)+len(ciphertext))
+	copy(out, dst)
+	copy(out[len(dst):], ciphertext)
+	return out, nil
+}
 
 // --- mock handshake ---
 type mockHandshake struct {
@@ -39,7 +89,7 @@ func (k *tcpSessionTestKeyGenerator) invalidKey() []byte {
 }
 
 func TestTcpSessionBuilder_FromHandshake_Server_Success(t *testing.T) {
-	b := NewTcpSessionBuilder()
+	b := NewTcpSessionBuilder(&fakeAEADBuilder{})
 	keyGen := tcpSessionTestKeyGenerator{}
 	hs := &mockHandshake{
 		id:     [32]byte{1, 2, 3},
@@ -56,7 +106,7 @@ func TestTcpSessionBuilder_FromHandshake_Server_Success(t *testing.T) {
 }
 
 func TestTcpSessionBuilder_FromHandshake_Client_Success(t *testing.T) {
-	b := NewTcpSessionBuilder()
+	b := NewTcpSessionBuilder(&fakeAEADBuilder{})
 	keyGen := tcpSessionTestKeyGenerator{}
 	hs := &mockHandshake{
 		id:     [32]byte{1, 2, 3},
@@ -73,7 +123,7 @@ func TestTcpSessionBuilder_FromHandshake_Client_Success(t *testing.T) {
 }
 
 func TestTcpSessionBuilder_FromHandshake_Server_InvalidServerKey(t *testing.T) {
-	b := NewTcpSessionBuilder()
+	b := NewTcpSessionBuilder(&fakeAEADBuilder{})
 	keyGen := tcpSessionTestKeyGenerator{}
 	hs := &mockHandshake{
 		id:     [32]byte{1, 2, 3},
@@ -90,7 +140,7 @@ func TestTcpSessionBuilder_FromHandshake_Server_InvalidServerKey(t *testing.T) {
 }
 
 func TestTcpSessionBuilder_FromHandshake_Server_InvalidClientKey(t *testing.T) {
-	b := NewTcpSessionBuilder()
+	b := NewTcpSessionBuilder(&fakeAEADBuilder{})
 	keyGen := tcpSessionTestKeyGenerator{}
 	hs := &mockHandshake{
 		id:     [32]byte{1, 2, 3},
@@ -107,7 +157,7 @@ func TestTcpSessionBuilder_FromHandshake_Server_InvalidClientKey(t *testing.T) {
 }
 
 func TestTcpSessionBuilder_FromHandshake_Client_InvalidClientKey(t *testing.T) {
-	b := NewTcpSessionBuilder()
+	b := NewTcpSessionBuilder(&fakeAEADBuilder{})
 	keyGen := tcpSessionTestKeyGenerator{}
 	hs := &mockHandshake{
 		id:     [32]byte{1, 2, 3},
@@ -124,7 +174,7 @@ func TestTcpSessionBuilder_FromHandshake_Client_InvalidClientKey(t *testing.T) {
 }
 
 func TestTcpSessionBuilder_FromHandshake_Client_InvalidServerKey(t *testing.T) {
-	b := NewTcpSessionBuilder()
+	b := NewTcpSessionBuilder(&fakeAEADBuilder{})
 	keyGen := tcpSessionTestKeyGenerator{}
 	hs := &mockHandshake{
 		id:     [32]byte{1, 2, 3},

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"net/netip"
+	"strings"
 	"testing"
 	"time"
 
@@ -92,16 +93,13 @@ func TestDialTCP_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to listen tcp: %v", err)
 	}
-	defer func(ln net.Listener) {
-		_ = ln.Close()
-	}(ln)
+	defer func(ln net.Listener) { _ = ln.Close() }(ln)
 
 	// Accept one connection in the background
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		conn, err := ln.Accept()
-		if err == nil {
+		if conn, err := ln.Accept(); err == nil {
 			_ = conn.Close()
 		}
 	}()
@@ -154,12 +152,28 @@ func TestDialUDP_Success_NoServerNeeded(t *testing.T) {
 }
 
 func TestEstablishConnection_UnsupportedProtocol(t *testing.T) {
-	conf := client.Configuration{
-		Protocol: 999,
-	}
+	conf := client.Configuration{Protocol: 999}
 	f := &ConnectionFactory{conf: conf}
 	_, _, err := f.EstablishConnection(context.Background())
 	if err == nil {
 		t.Fatalf("expected error for unsupported protocol")
+	}
+}
+
+// NEW: full path error on TCP dial (checks error wrapping message branch)
+func TestEstablishConnection_TCP_DialError_IsWrapped(t *testing.T) {
+	conf := client.Configuration{
+		Protocol:    settings.TCP,
+		TCPSettings: mkTCPSettings("1"), // likely closed → Dial error
+	}
+	f := &ConnectionFactory{conf: conf}
+
+	_, _, err := f.EstablishConnection(context.Background())
+	if err == nil {
+		t.Fatalf("expected dial error")
+	}
+	// Optional: verify our wrapping message prefix
+	if !strings.Contains(err.Error(), "unable to establish TCP connection") {
+		t.Fatalf("expected wrapped TCP dial error, got: %v", err)
 	}
 }

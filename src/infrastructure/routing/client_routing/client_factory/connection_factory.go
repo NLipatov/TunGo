@@ -50,14 +50,18 @@ func (f *ConnectionFactory) EstablishConnection(
 			return nil, nil, fmt.Errorf("unable to establish UDP connection: %w", err)
 		}
 
-		return f.establishSecuredConnection(establishCtx, connSettings, adapter, chacha20.NewUdpSessionBuilder())
+		return f.establishSecuredConnection(establishCtx, connSettings, adapter, chacha20.NewUdpSessionBuilder(
+			chacha20.NewDefaultAEADBuilder()),
+		)
 	case settings.TCP:
 		adapter, err := f.dialTCP(establishCtx, addrPort)
 		if err != nil {
 			return nil, nil, fmt.Errorf("unable to establish TCP connection: %w", err)
 		}
 
-		return f.establishSecuredConnection(establishCtx, connSettings, adapter, chacha20.NewTcpSessionBuilder())
+		return f.establishSecuredConnection(establishCtx, connSettings, adapter, chacha20.NewTcpSessionBuilder(
+			chacha20.NewDefaultAEADBuilder()),
+		)
 	default:
 		return nil, nil, fmt.Errorf("unsupported protocol: %v", connSettings.Protocol)
 	}

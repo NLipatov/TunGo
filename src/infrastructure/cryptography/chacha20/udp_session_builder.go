@@ -1,45 +1,26 @@
 package chacha20
 
 import (
-	"crypto/cipher"
-	"golang.org/x/crypto/chacha20poly1305"
 	"tungo/application"
 )
 
 type UdpSessionBuilder struct {
+	aeadBuilder application.AEADBuilder
 }
 
-func NewUdpSessionBuilder() application.CryptographyServiceFactory {
-	return &UdpSessionBuilder{}
+func NewUdpSessionBuilder(aeadBuilder application.AEADBuilder) application.CryptographyServiceFactory {
+	return &UdpSessionBuilder{
+		aeadBuilder: aeadBuilder,
+	}
 }
 
 func (u UdpSessionBuilder) FromHandshake(
 	handshake application.Handshake,
 	isServer bool,
 ) (application.CryptographyService, error) {
-	var sendCipher cipher.AEAD
-	var recvCipher cipher.AEAD
-	var err error
-	if isServer {
-		sendCipher, err = chacha20poly1305.New(handshake.KeyServerToClient())
-		if err != nil {
-			return nil, err
-		}
-
-		recvCipher, err = chacha20poly1305.New(handshake.KeyClientToServer())
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		sendCipher, err = chacha20poly1305.New(handshake.KeyClientToServer())
-		if err != nil {
-			return nil, err
-		}
-
-		recvCipher, err = chacha20poly1305.New(handshake.KeyServerToClient())
-		if err != nil {
-			return nil, err
-		}
+	sendCipher, recvCipher, err := u.aeadBuilder.FromHandshake(handshake, isServer)
+	if err != nil {
+		return nil, err
 	}
 
 	return &DefaultUdpSession{

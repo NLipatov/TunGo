@@ -3,6 +3,8 @@ package udp_chacha20
 import (
 	"bytes"
 	"context"
+	"crypto/cipher"
+	"crypto/rand"
 	"errors"
 	"io"
 	"net"
@@ -10,6 +12,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/settings"
@@ -19,6 +22,35 @@ type alwaysWriteCrypto struct{}
 
 func (d *alwaysWriteCrypto) Encrypt(in []byte) ([]byte, error) { return in, nil }
 func (d *alwaysWriteCrypto) Decrypt(in []byte) ([]byte, error) { return in, nil }
+
+type fakeAEAD struct{}
+
+func (f fakeAEAD) NonceSize() int { return 12 }
+func (f fakeAEAD) Overhead() int  { return 0 }
+func (f fakeAEAD) Seal(dst, nonce, plaintext, ad []byte) []byte {
+	_ = nonce
+	_ = ad
+	out := make([]byte, len(dst)+len(plaintext))
+	copy(out, dst)
+	copy(out[len(dst):], plaintext)
+	return out
+}
+func (f fakeAEAD) Open(dst, nonce, ciphertext, ad []byte) ([]byte, error) {
+	_ = nonce
+	_ = ad
+	out := make([]byte, len(dst)+len(ciphertext))
+	copy(out, dst)
+	copy(out[len(dst):], ciphertext)
+	return out, nil
+}
+
+type mockAEADBuilder struct{}
+
+func (mockAEADBuilder) FromHandshake(h application.Handshake, isServer bool) (cipher.AEAD, cipher.AEAD, error) {
+	_ = h
+	_ = isServer
+	return fakeAEAD{}, fakeAEAD{}, nil
+}
 
 type fakeUdpListenerConn struct {
 	readMu    sync.Mutex
@@ -82,7 +114,6 @@ func (f *fakeWriter) Write(p []byte) (int, error) {
 		}
 	}
 	if f.err != nil {
-		// Do not store data on write failure
 		return 0, f.err
 	}
 	f.wrote = append(f.wrote, append([]byte(nil), p...))
@@ -118,9 +149,7 @@ func (f *fakeHandshake) ClientSideHandshake(_ application.ConnectionAdapter, _ s
 	return nil
 }
 
-type fakeHandshakeFactory struct {
-	hs application.Handshake
-}
+type fakeHandshakeFactory struct{ hs application.Handshake }
 
 func (f *fakeHandshakeFactory) NewHandshake() application.Handshake { return f.hs }
 
@@ -161,9 +190,7 @@ func TestTransportHandler_RegistrationPacket(t *testing.T) {
 	sessionRegistered := make(chan struct{})
 
 	sessionRepo := &testSessionRepo{
-		afterAdd: func() {
-			close(sessionRegistered)
-		},
+		afterAdd: func() { close(sessionRegistered) },
 	}
 
 	clientAddr := netip.MustParseAddrPort("192.168.1.10:5555")
@@ -184,12 +211,10 @@ func TestTransportHandler_RegistrationPacket(t *testing.T) {
 		sessionRepo,
 		logger,
 		handshakeFactory,
-		chacha20.NewUdpSessionBuilder(),
+		chacha20.NewUdpSessionBuilder(mockAEADBuilder{}),
 	)
 
-	go func() {
-		_ = handler.HandleTransport()
-	}()
+	go func() { _ = handler.HandleTransport() }()
 
 	select {
 	case <-sessionRegistered:
@@ -230,13 +255,10 @@ func TestTransportHandler_HandshakeError(t *testing.T) {
 		sessionRepo,
 		logger,
 		handshakeFactory,
-		chacha20.NewUdpSessionBuilder(),
+		chacha20.NewUdpSessionBuilder(mockAEADBuilder{}),
 	)
 	done := make(chan struct{})
-	go func() {
-		_ = handler.HandleTransport()
-		close(done)
-	}()
+	go func() { _ = handler.HandleTransport(); close(done) }()
 	select {
 	case <-writeCh:
 	case <-time.After(time.Second):
@@ -279,13 +301,10 @@ func TestTransportHandler_DecryptError(t *testing.T) {
 		sessionRepo,
 		logger,
 		handshakeFactory,
-		chacha20.NewUdpSessionBuilder(),
+		chacha20.NewUdpSessionBuilder(mockAEADBuilder{}),
 	)
 	done := make(chan struct{})
-	go func() {
-		_ = handler.HandleTransport()
-		close(done)
-	}()
+	go func() { _ = handler.HandleTransport(); close(done) }()
 	<-sessionRegistered
 	cancel()
 	<-done
@@ -316,13 +335,10 @@ func TestTransportHandler_ReadMsgUDPAddrPortError(t *testing.T) {
 		sessionRepo,
 		logger,
 		handshakeFactory,
-		chacha20.NewUdpSessionBuilder(),
+		chacha20.NewUdpSessionBuilder(mockAEADBuilder{}),
 	)
 	done := make(chan struct{})
-	go func() {
-		_ = handler.HandleTransport()
-		close(done)
-	}()
+	go func() { _ = handler.HandleTransport(); close(done) }()
 	time.Sleep(10 * time.Millisecond)
 	cancel()
 	<-done
@@ -379,14 +395,11 @@ func TestTransportHandler_WriteError(t *testing.T) {
 		sessionRepo,
 		logger,
 		handshakeFactory,
-		chacha20.NewUdpSessionBuilder(),
+		chacha20.NewUdpSessionBuilder(mockAEADBuilder{}),
 	)
 
 	done := make(chan struct{})
-	go func() {
-		_ = handler.HandleTransport()
-		close(done)
-	}()
+	go func() { _ = handler.HandleTransport(); close(done) }()
 
 	select {
 	case <-sessionRegistered:
@@ -444,7 +457,7 @@ func TestTransportHandler_HappyPath(t *testing.T) {
 		sessionRepo,
 		logger,
 		handshakeFactory,
-		chacha20.NewUdpSessionBuilder(),
+		chacha20.NewUdpSessionBuilder(mockAEADBuilder{}),
 	)
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
@@ -464,23 +477,18 @@ func TestTransportHandler_NATRebinding(t *testing.T) {
 	writer := &fakeWriter{}
 	logger := &fakeLogger{}
 
-	// Old address
 	oldAddr := netip.MustParseAddrPort("192.168.1.51:5050")
-	// New address
 	newAddr := netip.MustParseAddrPort("192.168.1.51:6060")
 	internalIP := netip.MustParseAddr("10.0.0.51")
 
-	sessionRepo := &testSessionRepo{
-		sessions: map[netip.AddrPort]application.Session{},
-	}
+	sessionRepo := &testSessionRepo{sessions: map[netip.AddrPort]application.Session{}}
 	fakeCrypto := &alwaysWriteCrypto{}
-	// Existing session, old address
 	sessionRepo.sessions[oldAddr] = Session{
 		cryptographyService: fakeCrypto,
 		internalIP:          internalIP,
 		externalIP:          oldAddr,
 	}
-	// Tracking new session registration
+
 	sessionRegistered := make(chan struct{})
 	sessionRepo.afterAdd = func() { close(sessionRegistered) }
 
@@ -499,7 +507,7 @@ func TestTransportHandler_NATRebinding(t *testing.T) {
 		sessionRepo,
 		logger,
 		handshakeFactory,
-		chacha20.NewUdpSessionBuilder(),
+		chacha20.NewUdpSessionBuilder(mockAEADBuilder{}),
 	)
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
@@ -537,7 +545,7 @@ func TestTransportHandler_RegisterClient_BadInternalIP(t *testing.T) {
 		sessionRepo,
 		logger,
 		handshakeFactory,
-		chacha20.NewUdpSessionBuilder(),
+		chacha20.NewUdpSessionBuilder(mockAEADBuilder{}),
 	)
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
@@ -545,7 +553,6 @@ func TestTransportHandler_RegisterClient_BadInternalIP(t *testing.T) {
 	cancel()
 	<-done
 
-	// Check that invalid session was not added
 	if len(sessionRepo.adds) != 0 {
 		t.Errorf("expected no session registered due to bad internalIP, got %d", len(sessionRepo.adds))
 	}
@@ -575,11 +582,26 @@ func TestTransportHandler_ErrorSetBuffer(t *testing.T) {
 		sessionRepo,
 		logger,
 		handshakeFactory,
-		chacha20.NewUdpSessionBuilder(),
+		chacha20.NewUdpSessionBuilder(mockAEADBuilder{}),
 	)
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
 	time.Sleep(10 * time.Millisecond)
 	cancel()
 	<-done
+}
+
+func Test_fakeAEAD_DoesNotUseRand(t *testing.T) {
+	var f fakeAEAD
+	nonce := make([]byte, f.NonceSize())
+	_, _ = rand.Read(nonce)
+	pt := []byte("ping")
+	ct := f.Seal(nil, nonce, pt, nil)
+	got, err := f.Open(nil, nonce, ct, nil)
+	if err != nil {
+		t.Fatalf("Open err: %v", err)
+	}
+	if !bytes.Equal(got, pt) {
+		t.Fatalf("roundtrip mismatch: %q vs %q", got, pt)
+	}
 }
