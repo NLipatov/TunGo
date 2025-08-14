@@ -89,7 +89,7 @@ func (h *DefaultCrypto) GenerateChaCha20KeysServerside(
 		return [32]byte{},
 			nil,
 			nil,
-			fmt.Errorf("failed to derive session id: %s", sessionIdErr)
+			fmt.Errorf("failed to derive session id: %s", sessionId)
 	}
 
 	return sessionId, clientToServerKey, serverToClientKey, nil
@@ -111,7 +111,7 @@ func (h *DefaultCrypto) GenerateChaCha20KeysClientside(curvePrivate, clientNonce
 	identifier := NewSessionIdentifier(readerFactory.NewReader())
 	sessionId, sessionIdErr := identifier.Identify()
 	if sessionIdErr != nil {
-		return nil, nil, [32]byte{}, fmt.Errorf("failed to derive session id: %s", sessionId)
+		return nil, nil, [32]byte{}, fmt.Errorf("failed to derive session id: %w", sessionIdErr)
 	}
 
 	return serverToClientKey, clientToServerKey, sessionId, nil
