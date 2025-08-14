@@ -21,22 +21,22 @@ func (u UdpSessionBuilder) FromHandshake(
 	var recvCipher cipher.AEAD
 	var err error
 	if isServer {
-		sendCipher, err = chacha20poly1305.New(handshake.ServerKey())
+		sendCipher, err = chacha20poly1305.New(handshake.KeyServerToClient())
 		if err != nil {
 			return nil, err
 		}
 
-		recvCipher, err = chacha20poly1305.New(handshake.ClientKey())
+		recvCipher, err = chacha20poly1305.New(handshake.KeyClientToServer())
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		sendCipher, err = chacha20poly1305.New(handshake.ClientKey())
+		sendCipher, err = chacha20poly1305.New(handshake.KeyClientToServer())
 		if err != nil {
 			return nil, err
 		}
 
-		recvCipher, err = chacha20poly1305.New(handshake.ServerKey())
+		recvCipher, err = chacha20poly1305.New(handshake.KeyServerToClient())
 		if err != nil {
 			return nil, err
 		}

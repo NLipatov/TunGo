@@ -17,9 +17,9 @@ type mockHandshake struct {
 	client []byte
 }
 
-func (m *mockHandshake) Id() [32]byte      { return m.id }
-func (m *mockHandshake) ServerKey() []byte { return m.server }
-func (m *mockHandshake) ClientKey() []byte { return m.client }
+func (m *mockHandshake) Id() [32]byte              { return m.id }
+func (m *mockHandshake) KeyServerToClient() []byte { return m.server }
+func (m *mockHandshake) KeyClientToServer() []byte { return m.client }
 func (m *mockHandshake) ServerSideHandshake(_ application.ConnectionAdapter) (net.IP, error) {
 	return m.server, nil
 }

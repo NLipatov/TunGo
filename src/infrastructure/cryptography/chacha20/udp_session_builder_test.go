@@ -17,9 +17,9 @@ type mockUdpHandshake struct {
 	client []byte
 }
 
-func (m *mockUdpHandshake) Id() [32]byte      { return m.id }
-func (m *mockUdpHandshake) ServerKey() []byte { return m.server }
-func (m *mockUdpHandshake) ClientKey() []byte { return m.client }
+func (m *mockUdpHandshake) Id() [32]byte              { return m.id }
+func (m *mockUdpHandshake) KeyServerToClient() []byte { return m.server }
+func (m *mockUdpHandshake) KeyClientToServer() []byte { return m.client }
 func (m *mockUdpHandshake) ServerSideHandshake(_ application.ConnectionAdapter) (net.IP, error) {
 	return m.server, nil
 }

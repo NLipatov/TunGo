@@ -108,9 +108,9 @@ type fakeHandshake struct {
 	server [32]byte
 }
 
-func (f *fakeHandshake) Id() [32]byte      { return f.id }
-func (f *fakeHandshake) ClientKey() []byte { return f.client[:] }
-func (f *fakeHandshake) ServerKey() []byte { return f.server[:] }
+func (f *fakeHandshake) Id() [32]byte              { return f.id }
+func (f *fakeHandshake) KeyClientToServer() []byte { return f.client[:] }
+func (f *fakeHandshake) KeyServerToClient() []byte { return f.server[:] }
 func (f *fakeHandshake) ServerSideHandshake(_ application.ConnectionAdapter) (net.IP, error) {
 	return f.ip, f.err
 }

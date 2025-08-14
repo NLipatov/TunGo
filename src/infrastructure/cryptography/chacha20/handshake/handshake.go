@@ -46,11 +46,11 @@ func (h *DefaultHandshake) Id() [32]byte {
 	return h.id
 }
 
-func (h *DefaultHandshake) ClientKey() []byte {
+func (h *DefaultHandshake) KeyClientToServer() []byte {
 	return h.clientKey
 }
 
-func (h *DefaultHandshake) ServerKey() []byte {
+func (h *DefaultHandshake) KeyServerToClient() []byte {
 	return h.serverKey
 }
 
