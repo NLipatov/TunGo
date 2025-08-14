@@ -5,9 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
-	"math"
 	"testing"
-	"tungo/infrastructure/network"
 )
 
 // AdapterMockConn is a controllable mock for application.ConnectionAdapter.
@@ -75,7 +73,7 @@ func (m *AdapterMockConn) Write(p []byte) (int, error) {
 		}
 	}
 	if n > 0 {
-		m.writeBuf.Write(p[:n])
+		_, _ = m.writeBuf.Write(p[:n])
 	}
 	return n, nil
 }
@@ -111,6 +109,15 @@ func TestAdapter_Write_Success_PartialPrefixAndPayload(t *testing.T) {
 	got := mock.writeBuf.Bytes()
 	if !bytes.Equal(want, got) {
 		t.Fatalf("written mismatch:\nwant=%x\ngot =%x", want, got)
+	}
+}
+
+func TestAdapter_Write_ZeroLength(t *testing.T) {
+	mock := &AdapterMockConn{}
+	a := NewTcpAdapter(mock)
+
+	if _, err := a.Write(nil); err == nil {
+		t.Fatal("expected error on zero-length frame")
 	}
 }
 
@@ -172,24 +179,24 @@ func TestAdapter_Write_PayloadWriteSomeAndError(t *testing.T) {
 	}
 }
 
-func TestAdapter_Write_TooLarge_U16First(t *testing.T) {
-	// u16 bound is checked first; always reachable
-	payload := make([]byte, math.MaxUint16+1)
+func TestAdapter_Write_TooLarge_U16_FirstAfterReorder(t *testing.T) {
+	// 70k > 65535 but <= big protocol limit
+	payload := make([]byte, 70000)
 	mock := &AdapterMockConn{}
-	a := NewTcpAdapter(mock)
+	a := NewTcpAdapterWithLimit(mock, 1<<20) // 1 MiB
 
 	if _, err := a.Write(payload); err == nil {
-		t.Fatal("expected error for u16 bound")
+		t.Fatal("expected u16 bound error")
 	}
 }
 
-func TestAdapter_Write_TooLarge_Protocol(t *testing.T) {
-	payload := make([]byte, network.MaxPacketLengthBytes+1)
+func TestAdapter_Write_TooLarge_Protocol_Reachable(t *testing.T) {
+	payload := make([]byte, 11)
 	mock := &AdapterMockConn{}
-	a := NewTcpAdapter(mock)
+	a := NewTcpAdapterWithLimit(mock, 10)
 
 	if _, err := a.Write(payload); err == nil {
-		t.Fatal("expected error for protocol limit")
+		t.Fatal("expected protocol limit error")
 	}
 }
 
@@ -239,15 +246,17 @@ func TestAdapter_Read_ZeroLength(t *testing.T) {
 	}
 }
 
-func TestAdapter_Read_TooLargeProtocol(t *testing.T) {
-	t.Skip("protocol limit >= u16 max; cannot exceed on read path")
-	ln := network.MaxPacketLengthBytes + 1
-	hdr := []byte{byte(ln >> 8), byte(ln)}
-	mock := &AdapterMockConn{readData: hdr}
-	a := NewTcpAdapter(mock)
+func TestAdapter_Read_TooLargeProtocol_Reachable(t *testing.T) {
+	limit := 10
+	length := uint16(limit + 1)
 
-	if _, err := a.Read(make([]byte, ln)); err == nil {
-		t.Fatal("expected error for frame length > protocol limit")
+	// Only header provided; drain will attempt to read 'length' bytes and hit EOF (best-effort).
+	hdr := []byte{byte(length >> 8), byte(length)}
+	mock := &AdapterMockConn{readData: hdr}
+	a := NewTcpAdapterWithLimit(mock, limit)
+
+	if _, err := a.Read(make([]byte, 100)); err == nil {
+		t.Fatal("expected protocol limit error on Read")
 	}
 }
 
@@ -285,9 +294,8 @@ func TestAdapter_Read_PayloadEOF(t *testing.T) {
 
 // ---------------- drainN tests ----------------
 
-// Test drainN drains big amount (> chunk) and returns nil.
 func TestAdapter_drainN_OK(t *testing.T) {
-	// Build a reader with 5000 bytes to exercise both branches inside drainN
+	// Build a reader with 5000 bytes to exercise both branches inside drainN.
 	big := make([]byte, 5000)
 	r := bytes.NewReader(big)
 	a := NewTcpAdapter(&AdapterMockConn{}).(*Adapter)
@@ -296,7 +304,6 @@ func TestAdapter_drainN_OK(t *testing.T) {
 	}
 }
 
-// Test drainN error (not enough bytes to drain).
 func TestAdapter_drainN_Err(t *testing.T) {
 	small := make([]byte, 1000)
 	r := bytes.NewReader(small)
@@ -321,39 +328,5 @@ func TestAdapter_Close_Err(t *testing.T) {
 	a := NewTcpAdapter(mock)
 	if err := a.Close(); !errors.Is(err, io.ErrClosedPipe) {
 		t.Fatalf("expected io.ErrClosedPipe, got %v", err)
-	}
-}
-
-func TestAdapter_Write_TooLarge_Protocol_Reachable(t *testing.T) {
-	payload := make([]byte, 11)
-	mock := &AdapterMockConn{}
-	a := NewTcpAdapterWithLimit(mock, 10)
-
-	if _, err := a.Write(payload); err == nil {
-		t.Fatal("expected protocol limit error")
-	}
-}
-
-func TestAdapter_Write_TooLarge_U16_FirstAfterReorder(t *testing.T) {
-	// 70k > 65535 but <= big protocol limit
-	payload := make([]byte, 70000)
-	mock := &AdapterMockConn{}
-	a := NewTcpAdapterWithLimit(mock, 1<<20) // 1 MiB
-
-	if _, err := a.Write(payload); err == nil {
-		t.Fatal("expected u16 bound error")
-	}
-}
-
-func TestAdapter_Read_TooLargeProtocol_Reachable(t *testing.T) {
-	limit := 10
-	length := uint16(limit + 1)
-
-	hdr := []byte{byte(length >> 8), byte(length)}
-	mock := &AdapterMockConn{readData: hdr}
-	a := NewTcpAdapterWithLimit(mock, limit)
-
-	if _, err := a.Read(make([]byte, 100)); err == nil {
-		t.Fatal("expected protocol limit error on Read")
 	}
 }
