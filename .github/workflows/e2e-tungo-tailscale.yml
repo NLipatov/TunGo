@@ -12,7 +12,7 @@ jobs:
     outputs:
       ts_ip: ${{ steps.tsip.outputs.ts_ip }}
     steps:
-      - name:
+      - name: check tailscale key presence
         run: |
           if [ -z "${{ secrets.TAILSCALE_KEY }}" ]; then
             echo "::error::TAILSCALE_KEY secret is missing or not accessible."; exit 1;
@@ -70,7 +70,7 @@ jobs:
     needs: server
     runs-on: ubuntu-latest
     steps:
-      - name: Preflight: ensure TAILSCALE_KEY is present
+      - name: check tailscale key presence
         run: |
           if [ -z "${{ secrets.TAILSCALE_KEY }}" ]; then
             echo "::error::TAILSCALE_KEY secret is missing or not accessible."; exit 1;
@@ -115,7 +115,7 @@ jobs:
           sleep 5
           pgrep -a tungo || (echo "client not started" && exit 1)
 
-      - name: Sanity: tunnel interface and route exist
+      - name: tunnel interface and route exist
         run: |
           echo "Interfaces:"
           ip addr show | sed -n '1,200p'
@@ -126,7 +126,7 @@ jobs:
             echo "Expected TunGo interface or route not found"; exit 1;
           }
 
-      - name: Sanity: ping server tunnel IP
+      - name: ping server tunnel IP
         run: |
           ping -c 3 "${SERVER_TUN_IP}" || {
             echo "Ping to ${SERVER_TUN_IP} failed — adjust SERVER_TUN_IP if your generator uses another address."; exit 1;
