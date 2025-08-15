@@ -1,0 +1,88 @@
+name: e2e-tungo-tailscale
+on:
+  workflow_dispatch:
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Tailscale
+        run: curl -fsSL https://tailscale.com/install.sh | sh
+
+      - name: Tailscale up (ephemeral)
+        run: sudo tailscale up --authkey "${{ secrets.TS_KEY }}" --hostname tungo-ci-server --accept-routes
+
+      - name: Download TunGo (Linux amd64)
+        run: |
+          curl -L "https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-amd64" -o tungo
+          chmod +x tungo
+          sudo mv tungo /usr/local/bin/tungo
+          which tungo && tungo --version || true
+
+      - name: Generate client config (before starting server)
+        run: |
+          # Prints client config to stdout -> save it
+          sudo tungo s gen > client_linux.json
+          ls -l client_linux.json
+          head -c 512 client_linux.json || true
+
+      - name: Upload client config (artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-config-linux
+          path: client_linux.json
+
+      - name: Start server (sudo tungo s; uses /etc/tungo/server_configuration.json)
+        run: |
+          sudo tungo s &
+          sleep 3
+          pgrep -a tungo || (echo "server not started" && exit 1)
+
+  client:
+    needs: server
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Tailscale
+        run: curl -fsSL https://tailscale.com/install.sh | sh
+
+      - name: Tailscale up (ephemeral)
+        run: sudo tailscale up --authkey "${{ secrets.TS_KEY }}" --hostname tungo-ci-client --accept-routes
+
+      - name: Download TunGo (Linux amd64)
+        run: |
+          curl -L "https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-amd64" -o tungo
+          chmod +x tungo
+          sudo mv tungo /usr/local/bin/tungo
+          which tungo && tungo --version || true
+
+      - name: Download client config
+        uses: actions/download-artifact@v4
+        with:
+          name: client-config-linux
+          path: .
+
+      - name: Install client config
+        run: |
+          sudo mkdir -p /etc/tungo
+          sudo mv client_linux.json /etc/tungo/client_configuration.json
+          ls -l /etc/tungo
+          sudo sed -n '1,40p' /etc/tungo/client_configuration.json || true
+
+      - name: Start client (sudo tungo c; reads /etc/tungo/client_configuration.json)
+        run: |
+          sudo tungo c &
+          sleep 5
+          pgrep -a tungo || (echo "client not started" && exit 1)
+
+      - name: Traceroute to 1.1.1.1 (first hop must be 10.0.x.x)
+        run: |
+          sudo apt-get update -y >/dev/null
+          sudo apt-get install -y traceroute >/dev/null
+          HOP=$(traceroute -m 1 -n 1.1.1.1 | awk 'NR==2 {print $2}')
+          echo "First hop: $HOP"
+          [[ "$HOP" =~ ^10\.0\.[0-9]+\.[0-9]+$ ]] || { echo "Unexpected first hop (want 10.0.x.x)"; exit 1; }
+
+      - name: Internet reachability
+        run: |
+          (curl -fsS --max-time 10 https://1.1.1.1 >/dev/null) || (curl -fsS --max-time 10 https://cloudflare.com >/dev/null)
+          echo "Internet OK"
