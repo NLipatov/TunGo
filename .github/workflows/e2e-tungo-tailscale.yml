@@ -3,8 +3,7 @@ on:
   workflow_dispatch:
 
 env:
-  # Tunnel address of the server inside the /24 used by TunGo
-  SERVER_TUN_IP: 10.0.0.1
+  SERVER_TUN_IP: 10.0.0.1   # поменяй при необходимости под адрес из генератора
 
 jobs:
   server:
@@ -12,24 +11,25 @@ jobs:
     outputs:
       ts_ip: ${{ steps.tsip.outputs.ts_ip }}
     steps:
-      - name: check tailscale key presence
+      - name: Preflight: ensure TAILSCALE_KEY (Reusable + Ephemeral)
         run: |
           if [ -z "${{ secrets.TAILSCALE_KEY }}" ]; then
-            echo "::error::TAILSCALE_KEY secret is missing or not accessible."; exit 1;
+            echo "::error::TAILSCALE_KEY is missing. Create a Reusable + Ephemeral auth key in Tailscale."; exit 1;
           fi
 
       - name: Install Tailscale
         run: curl -fsSL https://tailscale.com/install.sh | sh
 
-      - name: Tailscale up (ephemeral)
+      - name: Tailscale up (server)
         run: |
           sudo tailscale up \
             --authkey "${{ secrets.TAILSCALE_KEY }}" \
             --hostname tungo-ci-server \
-            --accept-routes \
             --timeout 30s
+          tailscale status || true
+          tailscale ip -4
 
-      - name: Get server Tailscale IPv4
+      - name: Get server TS IPv4
         id: tsip
         run: echo "ts_ip=$(tailscale ip -4 | head -n1)" >> $GITHUB_OUTPUT
 
@@ -43,9 +43,7 @@ jobs:
       - name: Generate client config and set ConnectionIP to server TS-IP
         run: |
           sudo apt-get update -y >/dev/null && sudo apt-get install -y jq >/dev/null
-          # Generate client configuration (stdout) → file
           sudo tungo s gen > client_linux.json
-          # Patch ConnectionIP to server's TS address for both TCP and UDP sections
           jq --arg ip "${{ steps.tsip.outputs.ts_ip }}" \
              '.TCPSettings.ConnectionIP=$ip | .UDPSettings.ConnectionIP=$ip' \
              client_linux.json > client_linux.json.tmp && mv client_linux.json.tmp client_linux.json
@@ -60,32 +58,50 @@ jobs:
 
       - name: Start server (sudo tungo s)
         run: |
-          sudo tungo s &
-          sleep 3
-          pgrep -a tungo || (echo "server not started" && exit 1)
-          # Optional quick UDP port probe (adjust if your server listens elsewhere)
-          sudo ss -lun | grep -E ':9090' || true
+          sudo tungo s > server.log 2>&1 &
+          # wait until UDP 9090 is listening
+          for i in {1..10}; do
+            sudo ss -lun | grep -q ':9090' && break; sleep 1;
+          done
+          sudo ss -lun | grep -E ':9090' || (echo "UDP 9090 not listening"; cat server.log || true; exit 1)
+          pgrep -a tungo || (echo "server not running"; cat server.log || true; exit 1)
+
+      - name: Upload server log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server.log
+          path: server.log
 
   client:
     needs: server
     runs-on: ubuntu-latest
     steps:
-      - name: check tailscale key presence
+      - name: Preflight: ensure TAILSCALE_KEY present
         run: |
           if [ -z "${{ secrets.TAILSCALE_KEY }}" ]; then
-            echo "::error::TAILSCALE_KEY secret is missing or not accessible."; exit 1;
+            echo "::error::TAILSCALE_KEY is missing."; exit 1;
           fi
 
       - name: Install Tailscale
         run: curl -fsSL https://tailscale.com/install.sh | sh
 
-      - name: Tailscale up (ephemeral)
+      - name: Tailscale up (client)
         run: |
           sudo tailscale up \
             --authkey "${{ secrets.TAILSCALE_KEY }}" \
             --hostname tungo-ci-client \
-            --accept-routes \
             --timeout 30s
+          tailscale status || true
+          tailscale ip -4
+
+      - name: Verify tailnet reachability to server TS-IP
+        env:
+          SRV_TS: ${{ needs.server.outputs.ts_ip }}
+        run: |
+          echo "Server TS-IP: ${SRV_TS}"
+          # This must succeed; if it fails, keys/tailnet/ACLs are wrong
+          tailscale ping -c 5 "${SRV_TS}"
 
       - name: Download TunGo (Linux amd64)
         run: |
@@ -105,29 +121,45 @@ jobs:
           sudo mkdir -p /etc/tungo
           sudo mv client_linux.json /etc/tungo/client_configuration.json
           ls -l /etc/tungo
-          # Show which server IP is configured (for debug)
           command -v jq >/dev/null || (sudo apt-get update -y && sudo apt-get install -y jq -y)
           jq '.UDPSettings.ConnectionIP, .TCPSettings.ConnectionIP' /etc/tungo/client_configuration.json || true
 
+      - name: Optional capture: UDP 9090 traffic (best-effort)
+        continue-on-error: true
+        run: |
+          sudo apt-get update -y >/dev/null && sudo apt-get install -y tcpdump >/dev/null
+          sudo tcpdump -i any udp port 9090 -w udp9090.pcap -G 15 -W 1 >/dev/null 2>&1 &
+          echo $! > tcpdump.pid
+
       - name: Start client (sudo tungo c)
         run: |
-          sudo tungo c &
-          sleep 5
-          pgrep -a tungo || (echo "client not started" && exit 1)
+          sudo tungo c > client.log 2>&1 &
+          sleep 8
+          pgrep -a tungo || (echo "client not started" && cat client.log && exit 1)
 
-      - name: tunnel interface and route exist
+      - name: Sanity: tunnel interface/route exist
         run: |
-          echo "Interfaces:"
-          ip addr show | sed -n '1,200p'
-          echo "Routes:"
-          ip route show table main | sed -n '1,200p'
-          # Accept either udptun0/tcptun0 presence or a 10.0.0.0/24 route (generator-dependent)
           ip addr show | grep -E 'udptun0|tcptun0' || ip route | grep -E '10\.0\.0\.0/24' || {
-            echo "Expected TunGo interface or route not found"; exit 1;
+            echo "Expected TunGo interface or route not found"; cat client.log || true; exit 1;
           }
 
-      - name: ping server tunnel IP
+      - name: Sanity: ping server tunnel IP
         run: |
           ping -c 3 "${SERVER_TUN_IP}" || {
-            echo "Ping to ${SERVER_TUN_IP} failed — adjust SERVER_TUN_IP if your generator uses another address."; exit 1;
+            echo "Ping to ${SERVER_TUN_IP} failed — adjust SERVER_TUN_IP if needed."; cat client.log || true; exit 1;
           }
+
+      - name: Stop capture & upload logs on failure
+        if: failure()
+        run: |
+          [ -f tcpdump.pid ] && sudo kill "$(cat tcpdump.pid)" || true
+        shell: bash
+
+      - name: Upload diagnostics (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostics
+          path: |
+            client.log
+            udp9090.pcap
