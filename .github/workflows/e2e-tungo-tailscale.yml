@@ -3,132 +3,75 @@ on:
   workflow_dispatch:
 
 env:
-  # Server tunnel IP inside the /24 used by TunGo
   SERVER_TUN_IP: 10.0.0.1
 
 jobs:
   e2e:
     runs-on: ubuntu-latest
     steps:
-      - name: ensure TAILSCALE_KEY (Reusable + Ephemeral)
+      - name: ensure TAILSCALE_KEY
         run: |
-          if [ -z "${{ secrets.TAILSCALE_KEY }}" ]; then
-            echo "::error::TAILSCALE_KEY is missing. Create a Reusable + Ephemeral auth key in Tailscale."; exit 1;
-          fi
+          [ -n "${{ secrets.TAILSCALE_KEY }}" ] || { echo "::error:: missing TAILSCALE_KEY"; exit 1; }
 
-      - name: Install Tailscale
+      - name: install tailscale
         run: curl -fsSL https://tailscale.com/install.sh | sh
 
-      - name: Tailscale up
+      - name: tailscale up
         run: |
-          sudo tailscale up \
-            --authkey "${{ secrets.TAILSCALE_KEY }}" \
-            --hostname tungo-ci-combined \
-            --timeout 30s
-          tailscale status || true
+          sudo tailscale up --authkey "${{ secrets.TAILSCALE_KEY }}" --hostname tungo-ci-combined --accept-routes --timeout 30s
           tailscale ip -4
 
-      - name: Get this runner's Tailscale IPv4
+      - name: get ts ip
         id: tsip
         run: echo "ts_ip=$(tailscale ip -4 | head -n1)" >> $GITHUB_OUTPUT
 
-      - name: Download TunGo (Linux amd64)
+      - name: fetch tungo
         run: |
-          curl -L "https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-amd64" -o tungo
+          curl -fsSL "https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-amd64" -o tungo
           chmod +x tungo
           sudo mv tungo /usr/local/bin/tungo
-          which tungo && tungo --version || true
 
-      - name: Ensure server keys exist, generate client config, and set ConnectionIP to TS-IP
+      - name: gen client cfg + ensure keys + patch ip
         run: |
           set -euo pipefail
-          sudo apt-get update -y >/dev/null
-          sudo apt-get install -y jq >/dev/null
-
-          gen_once() {
-            sudo tungo s gen > client_linux.json
-            echo "Generated client config:"
-            head -n 40 client_linux.json || true
-          }
-
-          key_ok() {
-            # returns 0 if Ed25519PublicKey is non-null and non-empty string
-            local v
-            v=$(jq -r '.Ed25519PublicKey // empty' client_linux.json)
-            [ -n "$v" ]
-          }
-
-          echo "First attempt to generate client config…"
-          gen_once
-
-          if ! key_ok; then
-            echo "Ed25519PublicKey is empty — initializing server once to create keys…"
-            # Short server start to trigger key generation
-            sudo tungo s > /tmp/tungo-init.log 2>&1 &
-            srvpid=$!
-            sleep 2
-            sudo kill "$srvpid" 2>/dev/null || true
-            sleep 1
-
-            echo "Regenerating client config after key initialization…"
-            gen_once
-
-            if ! key_ok; then
-              echo "::error:: Ed25519PublicKey is still empty after initialization. Dumping init log:"
-              cat /tmp/tungo-init.log || true
-              exit 1
-            fi
+          export DEBIAN_FRONTEND=noninteractive
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq --no-install-recommends jq
           fi
-
-          # Patch ConnectionIP (both TCP/UDP) to this runner's Tailscale IP
-          jq --arg ip "${{ steps.tsip.outputs.ts_ip }}" \
-             '.TCPSettings.ConnectionIP=$ip | .UDPSettings.ConnectionIP=$ip' \
-             client_linux.json > client_linux.json.tmp && mv client_linux.json.tmp client_linux.json
-          echo "Patched ConnectionIP to ${{ steps.tsip.outputs.ts_ip }}"
-          head -n 40 client_linux.json || true
-
-          # Put client config to default location
+          gen() { sudo tungo s gen > client_linux.json; }
+          key_ok() { v=$(jq -r '.Ed25519PublicKey // empty' client_linux.json); [ -n "$v" ]; }
+          gen
+          if ! key_ok; then
+            timeout 2s sudo tungo s >/tmp/tungo-init.log 2>&1 || true
+            gen
+            key_ok || { echo "::error:: Ed25519PublicKey empty"; exit 1; }
+          fi
+          jq --arg ip "${{ steps.tsip.outputs.ts_ip }}" '.TCPSettings.ConnectionIP=$ip | .UDPSettings.ConnectionIP=$ip' client_linux.json > tmp && mv tmp client_linux.json
           sudo install -d -m 0755 /etc/tungo
           sudo install -m 0644 client_linux.json /etc/tungo/client_configuration.json
-          sudo ls -ld /etc/tungo
-          sudo ls -l /etc/tungo
 
-      - name: Start server (sudo tungo s)
+      - name: start server
         run: |
           sudo tungo s > server.log 2>&1 &
-          # wait until UDP 9090 is listening (adjust if your server listens elsewhere)
-          for i in {1..20}; do
-            sudo ss -lun | grep -q ':9090' && break; sleep 1;
-          done
-          sudo ss -lun | grep -q ':9090' || (echo "UDP 9090 not listening"; cat server.log || true; exit 1)
-          pgrep -a tungo || (echo "server not running"; cat server.log || true; exit 1)
+          for i in {1..10}; do sudo ss -lun | grep -q ':9090' && break; sleep 1; done
+          sudo ss -lun | grep -q ':9090' || (cat server.log; exit 1)
 
-      - name: Start client (sudo tungo c)
+      - name: start client
         run: |
           sudo tungo c > client.log 2>&1 &
-          # Give it a moment to establish session
-          for i in {1..15}; do
-            pgrep -a tungo >/dev/null && break; sleep 1;
-          done
-          pgrep -a tungo || (echo "client not started"; cat client.log || true; exit 1)
+          for i in {1..30}; do pgrep -a tungo >/dev/null && break; sleep 1; done
+          pgrep -a tungo >/dev/null || (cat client.log; exit 1)
 
-      - name: tunnel interface/route exist
+      - name: check tunnel up
         run: |
-          ip addr show | grep -E 'udptun0|tcptun0' || ip route | grep -E '10\.0\.0\.0/24' || {
-            echo "Expected TunGo interface or route not found";
-            echo "--- client.log ---"; cat client.log || true;
-            echo "--- server.log ---"; cat server.log || true; exit 1;
-          }
+          ip addr show | grep -E 'udptun0|tcptun0' || ip route | grep -E '10\.0\.0\.0/24' || { cat client.log server.log || true; exit 1; }
 
-      - name: ping server tunnel IP
+      - name: ping server tun ip
         run: |
-          ping -c 3 "${SERVER_TUN_IP}" || {
-            echo "Ping to ${SERVER_TUN_IP} failed — adjust SERVER_TUN_IP if needed.";
-            echo "--- client.log ---"; cat client.log || true;
-            echo "--- server.log ---"; cat server.log || true; exit 1;
-          }
+          ping -c 3 "${SERVER_TUN_IP}" || { cat client.log server.log || true; exit 1; }
 
-      - name: Upload logs on failure
+      - name: upload logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
