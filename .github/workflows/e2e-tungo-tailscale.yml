@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
 
 env:
-  SERVER_TUN_IP: 10.0.0.1   # поменяй при необходимости под адрес из генератора
+  SERVER_TUN_IP: 10.0.0.1 
 
 jobs:
   server:
@@ -11,7 +11,7 @@ jobs:
     outputs:
       ts_ip: ${{ steps.tsip.outputs.ts_ip }}
     steps:
-      - name: Preflight: ensure TAILSCALE_KEY (Reusable + Ephemeral)
+      - name: ensure TAILSCALE_KEY (Reusable + Ephemeral)
         run: |
           if [ -z "${{ secrets.TAILSCALE_KEY }}" ]; then
             echo "::error::TAILSCALE_KEY is missing. Create a Reusable + Ephemeral auth key in Tailscale."; exit 1;
@@ -77,7 +77,7 @@ jobs:
     needs: server
     runs-on: ubuntu-latest
     steps:
-      - name: Preflight: ensure TAILSCALE_KEY present
+      - name: ensure TAILSCALE_KEY present
         run: |
           if [ -z "${{ secrets.TAILSCALE_KEY }}" ]; then
             echo "::error::TAILSCALE_KEY is missing."; exit 1;
@@ -124,8 +124,7 @@ jobs:
           command -v jq >/dev/null || (sudo apt-get update -y && sudo apt-get install -y jq -y)
           jq '.UDPSettings.ConnectionIP, .TCPSettings.ConnectionIP' /etc/tungo/client_configuration.json || true
 
-      - name: Optional capture: UDP 9090 traffic (best-effort)
-        continue-on-error: true
+      - name: UDP 9090 traffic (best-effort)
         run: |
           sudo apt-get update -y >/dev/null && sudo apt-get install -y tcpdump >/dev/null
           sudo tcpdump -i any udp port 9090 -w udp9090.pcap -G 15 -W 1 >/dev/null 2>&1 &
@@ -137,13 +136,13 @@ jobs:
           sleep 8
           pgrep -a tungo || (echo "client not started" && cat client.log && exit 1)
 
-      - name: Sanity: tunnel interface/route exist
+      - name: tunnel interface/route exist
         run: |
           ip addr show | grep -E 'udptun0|tcptun0' || ip route | grep -E '10\.0\.0\.0/24' || {
             echo "Expected TunGo interface or route not found"; cat client.log || true; exit 1;
           }
 
-      - name: Sanity: ping server tunnel IP
+      - name: ping server tunnel IP
         run: |
           ping -c 3 "${SERVER_TUN_IP}" || {
             echo "Ping to ${SERVER_TUN_IP} failed — adjust SERVER_TUN_IP if needed."; cat client.log || true; exit 1;
