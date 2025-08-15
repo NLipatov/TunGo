@@ -10,7 +10,7 @@ jobs:
         run: curl -fsSL https://tailscale.com/install.sh | sh
 
       - name: Tailscale up (ephemeral)
-        run: sudo tailscale up --authkey "${{ secrets.TS_KEY }}" --hostname tungo-ci-server --accept-routes
+        run: sudo tailscale up --authkey "${{ secrets.TAILSCALE_KEY }}" --hostname tungo-ci-server --accept-routes
 
       - name: Download TunGo (Linux amd64)
         run: |
@@ -46,7 +46,7 @@ jobs:
         run: curl -fsSL https://tailscale.com/install.sh | sh
 
       - name: Tailscale up (ephemeral)
-        run: sudo tailscale up --authkey "${{ secrets.TS_KEY }}" --hostname tungo-ci-client --accept-routes
+        run: sudo tailscale up --authkey "${{ secrets.TAILSCALE_KEY }}" --hostname tungo-ci-client --accept-routes
 
       - name: Download TunGo (Linux amd64)
         run: |
