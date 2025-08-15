@@ -103,12 +103,6 @@ jobs:
           sudo ss -lun | grep -q ':9090' || (echo "UDP 9090 not listening"; cat server.log || true; exit 1)
           pgrep -a tungo || (echo "server not running"; cat server.log || true; exit 1)
 
-      - name: UDP 9090 traffic (best-effort)
-        run: |
-          sudo apt-get update -y >/dev/null && sudo apt-get install -y tcpdump >/dev/null
-          sudo tcpdump -i any udp port 9090 -w udp9090.pcap -G 20 -W 1 >/dev/null 2>&1 &
-          echo $! > tcpdump.pid
-
       - name: Start client (sudo tungo c)
         run: |
           sudo tungo c > client.log 2>&1 &
@@ -134,11 +128,6 @@ jobs:
             echo "--- server.log ---"; cat server.log || true; exit 1;
           }
 
-      - name: Stop capture (best-effort)
-        if: always()
-        run: |
-          [ -f tcpdump.pid ] && sudo kill "$(cat tcpdump.pid)" || true
-
       - name: Upload logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -147,4 +136,3 @@ jobs:
           path: |
             server.log
             client.log
-            udp9090.pcap
