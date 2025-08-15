@@ -43,18 +43,16 @@ jobs:
       - name: Generate client config and set ConnectionIP to TS-IP
         run: |
           sudo apt-get update -y >/dev/null && sudo apt-get install -y jq >/dev/null
-          # Generate client config (stdout) → file
           sudo tungo s gen > client_linux.json
-          # Patch ConnectionIP (both TCP/UDP) to this runner's Tailscale IP
           jq --arg ip "${{ steps.tsip.outputs.ts_ip }}" \
              '.TCPSettings.ConnectionIP=$ip | .UDPSettings.ConnectionIP=$ip' \
              client_linux.json > client_linux.json.tmp && mv client_linux.json.tmp client_linux.json
           echo "Patched ConnectionIP to ${{ steps.tsip.outputs.ts_ip }}"
           head -n 40 client_linux.json || true
           # Put client config to default location
-          sudo mkdir -p /etc/tungo
-          sudo cp client_linux.json /etc/tungo/client_configuration.json
-          ls -l /etc/tungo
+          sudo install -d -m 0755 /etc/tungo
+          sudo install -m 0644 client_linux.json /etc/tungo/client_configuration.json
+          sudo ls -l /etc/tungo
 
       # --- Start server & client in the SAME job ---
       - name: Start server (sudo tungo s)
