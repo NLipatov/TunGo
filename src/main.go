@@ -61,20 +61,11 @@ func main() {
 		fmt.Printf("Starting server...\n")
 		startServer(appCtx, configurationManager)
 	case mode.ServerConfGen:
-		conf, confErr := configurationManager.Configuration()
-		if confErr != nil {
-			log.Fatal(confErr)
-		}
-		keyPrepErr := serverConf.NewEd25519KeyManager(conf, configurationManager).PrepareKeys()
-		if keyPrepErr != nil {
-			log.Fatal(keyPrepErr)
-		}
-		handler := handlers.NewConfgenHandler(configurationManager)
-		err := handler.GenerateNewClientConf()
+		err := generateClientConfiguration(configurationManager)
 		if err != nil {
-			log.Printf("failed to generate new client conf: %v", err)
+			log.Fatalf("failed to generate client configuration: %w", err)
 		}
-		return
+		os.Exit(0)
 	case mode.Client:
 		fmt.Printf("Starting client...\n")
 		startClient(appCtx)
@@ -84,6 +75,27 @@ func main() {
 		log.Printf("invalid app mode: %v", appMode)
 		os.Exit(1)
 	}
+}
+
+func generateClientConfiguration(configurationManager serverConf.ServerConfigurationManager) error {
+	configuration, configurationErr := configurationManager.Configuration()
+	if configurationErr != nil {
+		return configurationErr
+	}
+
+	keyManager := serverConf.NewEd25519KeyManager(configuration, configurationManager)
+	keyErr := keyManager.PrepareKeys()
+	if keyErr != nil {
+		return keyErr
+	}
+
+	handler := handlers.NewConfgenHandler(configurationManager)
+	handlerErr := handler.GenerateNewClientConf()
+	if handlerErr != nil {
+		return handlerErr
+	}
+
+	return nil
 }
 
 func startClient(appCtx context.Context) {
