@@ -29,15 +29,6 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-          cache: true
-          
-      - name: Ensure covdata tool is available
-        # Pre-install covdata to avoid "no such tool covdata" on Go 1.25
-        run: |
-          set -euo pipefail
-          ROOT=$(go env GOROOT)
-          (cd "$ROOT/src" && go tool dist install -v cmd/covdata)
-          go tool covdata -h >/dev/null
 
       - name: Install dependencies
         run: |
@@ -47,8 +38,11 @@ jobs:
       - name: Run tests with coverage
         run: |
           cd src
-          sudo go test -coverprofile=coverage.txt ./...
-          
+          # preserve env so sudo uses the same Go toolchain
+          sudo --preserve-env=PATH,GOROOT,GOTOOLCHAIN \
+            env GOTOOLCHAIN=local \
+            go test -coverprofile=coverage.txt ./...
+
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v5
         with:
