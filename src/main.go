@@ -63,7 +63,7 @@ func main() {
 	case mode.ServerConfGen:
 		err := generateClientConfiguration(configurationManager)
 		if err != nil {
-			log.Fatalf("failed to generate client configuration: %w", err)
+			log.Fatalf("failed to generate client configuration: %s", err)
 		}
 		os.Exit(0)
 	case mode.Client:
