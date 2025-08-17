@@ -10,7 +10,10 @@ on:
       - main
     paths:
       - 'src/**'   # Only if src directory files changed
-      
+
+env:
+  GO_VERSION: '1.25.0'
+
 jobs:
   run-tests:
     runs-on: ubuntu-latest
@@ -24,7 +27,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.x'
+          go-version: ${{ env.GO_VERSION }}
 
       - name: Install dependencies
         run: |
