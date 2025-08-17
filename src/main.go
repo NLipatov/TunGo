@@ -61,6 +61,14 @@ func main() {
 		fmt.Printf("Starting server...\n")
 		startServer(appCtx, configurationManager)
 	case mode.ServerConfGen:
+		conf, confErr := configurationManager.Configuration()
+		if confErr != nil {
+			log.Fatal(confErr)
+		}
+		keyPrepErr := serverConf.NewEd25519KeyManager(conf, configurationManager).PrepareKeys()
+		if keyPrepErr != nil {
+			log.Fatal(keyPrepErr)
+		}
 		handler := handlers.NewConfgenHandler(configurationManager)
 		err := handler.GenerateNewClientConf()
 		if err != nil {
