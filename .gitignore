@@ -1,3 +1,6 @@
+# IDE related files
+.idea/
 /qodana.yaml
 /.idea/forwardedPorts.xml
 /.idea/inspectionProfiles/Project_Default.xml
+.vscode/
