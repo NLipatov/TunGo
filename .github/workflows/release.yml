@@ -41,7 +41,10 @@ jobs:
         run: |
           cd src
           go mod tidy
-          go build -ldflags="-s -w -X tungo/presentation/runners/version.VersionTag=${VER}" \
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 \
+          go build -trimpath -buildvcs=false \
+            -tags "netgo,osusergo" \
+            -ldflags="-s -w -X tungo/presentation/runners/version.VersionTag=${VER}" \
             -o ../tungo-linux-amd64
 
       - name: Upload Linux binary artifact
@@ -49,6 +52,22 @@ jobs:
         with:
           name: tungo-linux-amd64
           path: tungo-linux-amd64
+
+      - name: Build Linux arm64 binary
+        run: |
+          cd src
+          go mod tidy
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 \
+          go build -trimpath -buildvcs=false \
+            -tags "netgo,osusergo" \
+            -ldflags="-s -w -X tungo/presentation/runners/version.VersionTag=${VER}" \
+            -o ../tungo-linux-arm64
+
+      - name: Upload Linux arm64 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tungo-linux-arm64
+          path: tungo-linux-arm64
 
   build-macos:
     needs: version-and-tag
@@ -69,7 +88,10 @@ jobs:
         run: |
           cd src
           go mod tidy
-          GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w -X tungo/presentation/runners/version.VersionTag=${VER}" \
+          GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 \
+          go build -trimpath -buildvcs=false \
+            -tags "netgo,osusergo" \
+            -ldflags="-s -w -X tungo/presentation/runners/version.VersionTag=${VER}" \
             -o ../tungo-darwin-amd64
   
       - name: Upload darwin-amd64
@@ -82,7 +104,10 @@ jobs:
         run: |
           cd src
           go mod tidy
-          GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w -X tungo/presentation/runners/version.VersionTag=${VER}" \
+          GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 \
+          go build -trimpath -buildvcs=false \
+            -tags "netgo,osusergo" \
+            -ldflags="-s -w -X tungo/presentation/runners/version.VersionTag=${VER}" \
             -o ../tungo-darwin-arm64
   
       - name: Upload darwin-arm64
@@ -110,7 +135,11 @@ jobs:
         run: |
           cd src
           go mod tidy
-          go build -ldflags="-s -w -X tungo/presentation/runners/version.VersionTag=$env:VER" -o ../tungo-windows-x64.exe .
+          $env:GOOS="windows"; $env:GOARCH="amd64"; $env:CGO_ENABLED="0"
+          go build -trimpath -buildvcs=false `
+            -tags "netgo,osusergo" `
+            -ldflags "-s -w -X tungo/presentation/runners/version.VersionTag=$env:VER" `
+            -o ../tungo-windows-x64.exe .
 
       - name: Create RunWithAdmin.ps1
         run: |
@@ -257,11 +286,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Download Linux binary artifact
+      - name: Download Linux amd64 artifact
         uses: actions/download-artifact@v4
         with:
           name: tungo-linux-amd64
           path: linux
+            
+      - name: Download Linux arm64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tungo-linux-arm64
+          path: linux-arm64
 
       - name: Download darwin-amd64 artifact
         uses: actions/download-artifact@v4
@@ -293,7 +328,7 @@ jobs:
           draft: false
           prerelease: false
 
-      - name: Upload Linux x64 binary to Release
+      - name: Upload Linux amd64 binary to Release
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -301,6 +336,16 @@ jobs:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: linux/tungo-linux-amd64
           asset_name: tungo-linux-amd64
+          asset_content_type: application/octet-stream
+          
+      - name: Upload Linux arm64 binary to Release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: linux-arm64/tungo-linux-arm64
+          asset_name: tungo-linux-arm64
           asset_content_type: application/octet-stream
           
       - name: Upload darwin-amd64 to Release
