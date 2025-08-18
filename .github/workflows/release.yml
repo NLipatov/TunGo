@@ -42,7 +42,9 @@ jobs:
           cd src
           go mod tidy
           GOOS=linux GOARCH=amd64 CGO_ENABLED=0 \
-          go build -ldflags="-s -w -X tungo/presentation/runners/version.VersionTag=${VER}" \
+          go build -trimpath -buildvcs=false \
+            -tags "netgo,osusergo" \
+            -ldflags="-s -w -X tungo/presentation/runners/version.VersionTag=${VER}" \
             -o ../tungo-linux-amd64
 
       - name: Upload Linux binary artifact
