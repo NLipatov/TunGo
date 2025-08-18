@@ -41,32 +41,43 @@ See <a href="/docs/Advanced/Linux/Setup server systemd unit">this guide</a> to r
 
 1️⃣ Download & install
    <Tabs>
-     <TabItem value="linux" label="Linux amd64" default>
-     ```bash
-     wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-amd64 -O tungo
-     chmod +x tungo
-     sudo mv tungo /usr/local/bin/
-     ```
-         
-     :::tip Systemd client daemon (Linux)
-     See <a href="/docs/Advanced/Linux/Setup client systemd unit">this guide</a> to run TunGo as a systemd service (autostart/restart on boot).
-     :::
+     <TabItem value="linux-amd64" label="Linux amd64" default>
+         ```bash
+         wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-amd64 -O tungo
+         chmod +x tungo
+         sudo mv tungo /usr/local/bin/
+         ```
+             
+         :::tip Systemd client daemon (Linux)
+         See <a href="/docs/Advanced/Linux/Setup client systemd unit">this guide</a> to run TunGo as a systemd service (autostart/restart on boot).
+         :::
      </TabItem>
-     <TabItem value="macos-arm" label="macOS arm64">
-     ```bash
-     wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-darwin-arm64 -O tungo
-     chmod +x tungo
-     sudo mv tungo /usr/local/bin/
-     ```
+       <TabItem value="linux-arm64" label="Linux arm64" default>
+           ```bash
+           wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-arm64 -O tungo
+           chmod +x tungo
+           sudo mv tungo /usr/local/bin/
+           ```
+
+           :::tip Systemd client daemon (Linux)
+           See <a href="/docs/Advanced/Linux/Setup client systemd unit">this guide</a> to run TunGo as a systemd service (autostart/restart on boot).
+           :::
+       </TabItem>
+     <TabItem value="macos-arm64" label="macOS arm64">
+         ```bash
+         wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-darwin-arm64 -O tungo
+         chmod +x tungo
+         sudo mv tungo /usr/local/bin/
+         ```
      </TabItem>
-     <TabItem value="macos-intel" label="macOS amd64">
-     ```bash
-     wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-darwin-amd64 -O tungo
-     chmod +x tungo
-     sudo mv tungo /usr/local/bin/
-     ```
+     <TabItem value="macos-amd64" label="macOS amd64">
+         ```bash
+         wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-darwin-amd64 -O tungo
+         chmod +x tungo
+         sudo mv tungo /usr/local/bin/
+         ```
      </TabItem>
-     <TabItem value="windows" label="Windows amd64">
+     <TabItem value="windows amd64" label="Windows amd64">
      Download and install from the [release page](https://github.com/NLipatov/TunGo/releases).
      </TabItem>
    </Tabs>
