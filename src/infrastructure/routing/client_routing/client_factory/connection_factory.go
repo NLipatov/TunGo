@@ -3,6 +3,7 @@ package client_factory
 import (
 	"context"
 	"fmt"
+	"github.com/coder/websocket"
 	"math"
 	"net"
 	"net/netip"
@@ -13,6 +14,7 @@ import (
 	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/network/tcp/adapters"
+	"tungo/infrastructure/network/ws"
 	"tungo/infrastructure/settings"
 )
 
@@ -125,4 +127,15 @@ func (f *ConnectionFactory) dialUDP(ctx context.Context, ap netip.AddrPort) (app
 		return nil, err
 	}
 	return conn, nil
+}
+
+func (f *ConnectionFactory) dialWS(ctx context.Context, ap netip.AddrPort) (application.ConnectionAdapter, error) {
+	wsAP := fmt.Sprintf("ws://%s", ap.String())
+	conn, _, err := websocket.Dial(ctx, wsAP, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	wsAdapter := ws.NewWebsocketAdapter(ctx, conn)
+	return adapters.NewLengthPrefixFramingAdapter(wsAdapter), nil
 }
