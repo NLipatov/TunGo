@@ -9,28 +9,28 @@ import (
 	"tungo/infrastructure/network"
 )
 
-type Adapter struct {
+type LengthPrefixFramingAdapter struct {
 	adapter application.ConnectionAdapter
 	maxLen  int // protocol payload limit (test-injectable)
 }
 
-func NewTcpAdapter(under application.ConnectionAdapter) application.ConnectionAdapter {
-	return &Adapter{
+func NewLengthPrefixFramingAdapter(under application.ConnectionAdapter) application.ConnectionAdapter {
+	return &LengthPrefixFramingAdapter{
 		adapter: under,
 		maxLen:  network.MaxPacketLengthBytes,
 	}
 }
 
 // NewTcpAdapterWithLimit is for tests and special cases.
-func NewTcpAdapterWithLimit(under application.ConnectionAdapter, limit int) *Adapter {
-	return &Adapter{
+func NewTcpAdapterWithLimit(under application.ConnectionAdapter, limit int) *LengthPrefixFramingAdapter {
+	return &LengthPrefixFramingAdapter{
 		adapter: under,
 		maxLen:  limit,
 	}
 }
 
 // Write writes one u16-BE length-prefixed frame. Returns len(data) on success.
-func (a *Adapter) Write(data []byte) (int, error) {
+func (a *LengthPrefixFramingAdapter) Write(data []byte) (int, error) {
 	// zero frames are not allowed by Read method
 	if len(data) == 0 {
 		return 0, fmt.Errorf("invalid data length: 0")
@@ -55,7 +55,7 @@ func (a *Adapter) Write(data []byte) (int, error) {
 	return len(data), nil
 }
 
-func (a *Adapter) writeFull(w io.Writer, p []byte) error {
+func (a *LengthPrefixFramingAdapter) writeFull(w io.Writer, p []byte) error {
 	for len(p) > 0 {
 		n, err := w.Write(p)
 		if n > 0 {
@@ -74,7 +74,7 @@ func (a *Adapter) writeFull(w io.Writer, p []byte) error {
 // Read reads exactly one u16-BE length-prefixed frame into buffer and returns payload size.
 // If the buffer is too small (io.ErrShortBuffer) or the frame exceeds protocol limit,
 // the payload is drained to keep the stream aligned.
-func (a *Adapter) Read(buffer []byte) (int, error) {
+func (a *LengthPrefixFramingAdapter) Read(buffer []byte) (int, error) {
 	var hdr [2]byte
 	if _, err := io.ReadFull(a.adapter, hdr[:2]); err != nil {
 		return 0, fmt.Errorf("read length prefix: %w", err)
@@ -102,7 +102,7 @@ func (a *Adapter) Read(buffer []byte) (int, error) {
 }
 
 // drainN discards exactly n bytes from r; used to keep stream in sync on short buffer.
-func (a *Adapter) drainN(r io.Reader, n int) error {
+func (a *LengthPrefixFramingAdapter) drainN(r io.Reader, n int) error {
 	const chunk = 4096
 	var trash [chunk]byte
 	for n > 0 {
@@ -118,4 +118,4 @@ func (a *Adapter) drainN(r io.Reader, n int) error {
 	return nil
 }
 
-func (a *Adapter) Close() error { return a.adapter.Close() }
+func (a *LengthPrefixFramingAdapter) Close() error { return a.adapter.Close() }

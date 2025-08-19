@@ -109,7 +109,7 @@ func TestWriteClientHello_Success_ViaAdapterWithShortWrites(t *testing.T) {
 
 	// Underlying transport short-writes in chunks of 5 bytes.
 	under := newDefaultClientIOMockConnShortRW(nil, 5, 0)
-	conn := adapters.NewTcpAdapter(under) // guarantees full frame write
+	conn := adapters.NewLengthPrefixFramingAdapter(under) // guarantees full frame write
 	clientIO := NewDefaultClientIO(conn)
 
 	if err := clientIO.WriteClientHello(ch); err != nil {
@@ -134,7 +134,7 @@ func TestWriteClientHello_MarshalError(t *testing.T) {
 		packet_validation.NewDefaultPolicyNewIPValidator(),
 	)
 	under := newDefaultClientIOMockConnShortRW(nil, 0, 0)
-	conn := adapters.NewTcpAdapter(under)
+	conn := adapters.NewLengthPrefixFramingAdapter(under)
 	clientIO := NewDefaultClientIO(conn)
 
 	if err := clientIO.WriteClientHello(ch); err == nil {
@@ -156,7 +156,7 @@ func TestWriteClientHello_WriteError_OnHeader(t *testing.T) {
 	)
 	under := newDefaultClientIOMockConnShortRW(nil, 5, 0)
 	under.writeErrAtCall = 1 // fail when adapter writes the 2-byte header
-	conn := adapters.NewTcpAdapter(under)
+	conn := adapters.NewLengthPrefixFramingAdapter(under)
 	clientIO := NewDefaultClientIO(conn)
 
 	err := clientIO.WriteClientHello(ch)
@@ -179,7 +179,7 @@ func TestWriteClientHello_WriteError_OnPayload(t *testing.T) {
 	)
 	under := newDefaultClientIOMockConnShortRW(nil, 5, 0)
 	under.writeErrAtCall = 3 // 1: header, 2+: payload attempts → fail during payload
-	conn := adapters.NewTcpAdapter(under)
+	conn := adapters.NewLengthPrefixFramingAdapter(under)
 	clientIO := NewDefaultClientIO(conn)
 
 	if err := clientIO.WriteClientHello(ch); err == nil {
@@ -205,7 +205,7 @@ func TestReadServerHello_Success_ViaAdapterWithShortReads(t *testing.T) {
 
 	// Underlying transport short-reads (e.g., 3 bytes at a time).
 	under := newDefaultClientIOMockConnShortRW(framed.Bytes(), 0, 3)
-	conn := adapters.NewTcpAdapter(under)
+	conn := adapters.NewLengthPrefixFramingAdapter(under)
 	clientIO := NewDefaultClientIO(conn)
 
 	got, err := clientIO.ReadServerHello()
@@ -226,7 +226,7 @@ func TestReadServerHello_Success_ViaAdapterWithShortReads(t *testing.T) {
 func TestReadServerHello_ReadError_OnHeader(t *testing.T) {
 	// Provide less than 2 bytes so adapter fails on reading length prefix.
 	under := newDefaultClientIOMockConnShortRW([]byte{0x01}, 0, 0)
-	conn := adapters.NewTcpAdapter(under)
+	conn := adapters.NewLengthPrefixFramingAdapter(under)
 	clientIO := NewDefaultClientIO(conn)
 
 	_, err := clientIO.ReadServerHello()
@@ -248,7 +248,7 @@ func TestReadServerHello_ReadError_OnPayload(t *testing.T) {
 	framed.Write(bytes.Repeat([]byte{0xAA}, N-1)) // one byte short
 
 	under := newDefaultClientIOMockConnShortRW(framed.Bytes(), 0, 0)
-	conn := adapters.NewTcpAdapter(under)
+	conn := adapters.NewLengthPrefixFramingAdapter(under)
 	clientIO := NewDefaultClientIO(conn)
 
 	_, err := clientIO.ReadServerHello()
@@ -263,7 +263,7 @@ func TestReadServerHello_ReadError_OnPayload(t *testing.T) {
 func TestWriteClientSignature_Success_ViaAdapterWithShortWrites(t *testing.T) {
 	s := bytes.Repeat([]byte{0xAB}, signatureLength)
 	under := newDefaultClientIOMockConnShortRW(nil, 7, 0) // short-write in chunks of 7
-	conn := adapters.NewTcpAdapter(under)
+	conn := adapters.NewLengthPrefixFramingAdapter(under)
 	clientIO := NewDefaultClientIO(conn)
 
 	if err := clientIO.WriteClientSignature(NewSignature(s)); err != nil {
@@ -282,7 +282,7 @@ func TestWriteClientSignature_MarshalError(t *testing.T) {
 	// Wrong signature size → MarshalBinary error.
 	s := bytes.Repeat([]byte{0xAB}, 10)
 	under := newDefaultClientIOMockConnShortRW(nil, 0, 0)
-	conn := adapters.NewTcpAdapter(under)
+	conn := adapters.NewLengthPrefixFramingAdapter(under)
 	clientIO := NewDefaultClientIO(conn)
 
 	if err := clientIO.WriteClientSignature(NewSignature(s)); err == nil {
@@ -297,7 +297,7 @@ func TestWriteClientSignature_WriteError_OnHeader(t *testing.T) {
 	s := bytes.Repeat([]byte{0xAB}, signatureLength)
 	under := newDefaultClientIOMockConnShortRW(nil, 10, 0)
 	under.writeErrAtCall = 1 // fail on header write
-	conn := adapters.NewTcpAdapter(under)
+	conn := adapters.NewLengthPrefixFramingAdapter(under)
 	clientIO := NewDefaultClientIO(conn)
 
 	err := clientIO.WriteClientSignature(NewSignature(s))
@@ -313,7 +313,7 @@ func TestWriteClientSignature_WriteError_OnPayload(t *testing.T) {
 	s := bytes.Repeat([]byte{0xAB}, signatureLength)
 	under := newDefaultClientIOMockConnShortRW(nil, 10, 0)
 	under.writeErrAtCall = 3 // fail during payload write
-	conn := adapters.NewTcpAdapter(under)
+	conn := adapters.NewLengthPrefixFramingAdapter(under)
 	clientIO := NewDefaultClientIO(conn)
 
 	if err := clientIO.WriteClientSignature(NewSignature(s)); err == nil {

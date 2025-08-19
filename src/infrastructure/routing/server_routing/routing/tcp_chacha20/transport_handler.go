@@ -89,7 +89,7 @@ func (t *TransportHandler) HandleTransport() error {
 func (t *TransportHandler) registerClient(conn net.Conn, tunFile io.ReadWriteCloser, ctx context.Context) error {
 	t.logger.Printf("connected: %s", conn.RemoteAddr())
 
-	framingAdapter := adapters.NewTcpAdapter(conn)
+	framingAdapter := adapters.NewLengthPrefixFramingAdapter(conn)
 	h := t.handshakeFactory.NewHandshake()
 	internalIP, handshakeErr := h.ServerSideHandshake(framingAdapter)
 	if handshakeErr != nil {

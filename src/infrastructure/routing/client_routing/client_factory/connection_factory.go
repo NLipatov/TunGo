@@ -115,7 +115,7 @@ func (f *ConnectionFactory) dialTCP(ctx context.Context, ap netip.AddrPort) (app
 		_ = tcp.SetKeepAlivePeriod(30 * time.Second)
 	}
 
-	return adapters.NewTcpAdapter(conn), nil
+	return adapters.NewLengthPrefixFramingAdapter(conn), nil
 }
 
 func (f *ConnectionFactory) dialUDP(ctx context.Context, ap netip.AddrPort) (application.ConnectionAdapter, error) {
