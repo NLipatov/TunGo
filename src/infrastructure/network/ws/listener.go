@@ -48,7 +48,7 @@ func NewListener(ctx context.Context, ap netip.AddrPort) (listeners.TcpListener,
 
 		local := ln.Addr()
 		remote := parseTCPAddr(r.RemoteAddr)
-		conn := NewAdapter(r.Context(), c).WithAddrs(local, remote)
+		conn := NewAdapter(ctx, c).WithAddrs(local, remote)
 
 		select {
 		case q <- conn:
