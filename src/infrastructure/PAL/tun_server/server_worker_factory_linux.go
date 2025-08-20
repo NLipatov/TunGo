@@ -47,7 +47,10 @@ func NewTestServerWorkerFactory(
 	}
 }
 
-func (s *ServerWorkerFactory) CreateWorker(ctx context.Context, tun io.ReadWriteCloser) (application.TunWorker, error) {
+func (s *ServerWorkerFactory) CreateWorker(
+	ctx context.Context,
+	tun io.ReadWriteCloser,
+) (application.TunWorker, error) {
 	switch s.settings.Protocol {
 	case settings.TCP:
 		return s.createTCPWorker(ctx, tun)
@@ -60,7 +63,10 @@ func (s *ServerWorkerFactory) CreateWorker(ctx context.Context, tun io.ReadWrite
 	}
 }
 
-func (s *ServerWorkerFactory) createTCPWorker(ctx context.Context, tun io.ReadWriteCloser) (application.TunWorker, error) {
+func (s *ServerWorkerFactory) createTCPWorker(
+	ctx context.Context,
+	tun io.ReadWriteCloser,
+) (application.TunWorker, error) {
 	sessionManager := wrappers.NewConcurrentManager(
 		repository.NewDefaultWorkerSessionManager[application.Session](),
 	)
@@ -100,7 +106,10 @@ func (s *ServerWorkerFactory) createTCPWorker(ctx context.Context, tun io.ReadWr
 	return tcp_chacha20.NewTcpTunWorker(th, tr), nil
 }
 
-func (s *ServerWorkerFactory) createWSWorker(ctx context.Context, tun io.ReadWriteCloser) (application.TunWorker, error) {
+func (s *ServerWorkerFactory) createWSWorker(
+	ctx context.Context,
+	tun io.ReadWriteCloser,
+) (application.TunWorker, error) {
 	sessionManager := wrappers.NewConcurrentManager(
 		repository.NewDefaultWorkerSessionManager[application.Session](),
 	)
@@ -140,7 +149,10 @@ func (s *ServerWorkerFactory) createWSWorker(ctx context.Context, tun io.ReadWri
 	return tcp_chacha20.NewTcpTunWorker(th, tr), nil
 }
 
-func (s *ServerWorkerFactory) createUDPWorker(ctx context.Context, tun io.ReadWriteCloser) (application.TunWorker, error) {
+func (s *ServerWorkerFactory) createUDPWorker(
+	ctx context.Context,
+	tun io.ReadWriteCloser,
+) (application.TunWorker, error) {
 	sessionManager := wrappers.NewConcurrentManager(
 		repository.NewDefaultWorkerSessionManager[application.Session](),
 	)
@@ -180,7 +192,9 @@ func (s *ServerWorkerFactory) createUDPWorker(ctx context.Context, tun io.ReadWr
 	return udp_chacha20.NewUdpTunWorker(th, tr), nil
 }
 
-func (s *ServerWorkerFactory) addrPortToListen(ip, port string) (netip.AddrPort, error) {
+func (s *ServerWorkerFactory) addrPortToListen(
+	ip, port string,
+) (netip.AddrPort, error) {
 	if ip == "" {
 		ip = "::" // dual-stack listen - both ipv4 and ipv6
 	}
