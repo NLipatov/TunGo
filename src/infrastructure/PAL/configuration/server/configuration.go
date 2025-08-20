@@ -8,6 +8,7 @@ import (
 type Configuration struct {
 	TCPSettings           settings.Settings  `json:"TCPSettings"`
 	UDPSettings           settings.Settings  `json:"UDPSettings"`
+	WSSettings            settings.Settings  `json:"WSSettings"`
 	FallbackServerAddress string             `json:"FallbackServerAddress"`
 	Ed25519PublicKey      ed25519.PublicKey  `json:"Ed25519PublicKey"`
 	Ed25519PrivateKey     ed25519.PrivateKey `json:"Ed25519PrivateKey"`
@@ -37,6 +38,17 @@ func NewDefaultConfiguration() *Configuration {
 			Port:             "9090",
 			MTU:              settings.DefaultMTU,
 			Protocol:         settings.UDP,
+			Encryption:       settings.ChaCha20Poly1305,
+			DialTimeoutMs:    5000,
+		},
+		WSSettings: settings.Settings{
+			InterfaceName:    "wstun0",
+			InterfaceIPCIDR:  "10.0.2.0/24",
+			InterfaceAddress: "10.0.2.1",
+			ConnectionIP:     "",
+			Port:             "1010",
+			MTU:              settings.DefaultMTU,
+			Protocol:         settings.WS,
 			Encryption:       settings.ChaCha20Poly1305,
 			DialTimeoutMs:    5000,
 		},

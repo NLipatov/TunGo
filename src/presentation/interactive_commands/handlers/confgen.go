@@ -65,7 +65,12 @@ func (c *ConfgenHandler) generate() (*client.Configuration, error) {
 		return nil, fmt.Errorf("failed to allocate client's TCP IP address: %s", err)
 	}
 
-	clientUIDPIfIp, err := nip.AllocateClientIp(serverConf.UDPSettings.InterfaceIPCIDR, IncrementedClientCounter)
+	clientUDPIfIp, err := nip.AllocateClientIp(serverConf.UDPSettings.InterfaceIPCIDR, IncrementedClientCounter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to allocate client's TCP IP address: %s", err)
+	}
+
+	clientWSIfIp, err := nip.AllocateClientIp(serverConf.UDPSettings.InterfaceIPCIDR, IncrementedClientCounter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to allocate client's TCP IP address: %s", err)
 	}
@@ -90,13 +95,24 @@ func (c *ConfgenHandler) generate() (*client.Configuration, error) {
 		UDPSettings: settings.Settings{
 			InterfaceName:    serverConf.UDPSettings.InterfaceName,
 			InterfaceIPCIDR:  serverConf.UDPSettings.InterfaceIPCIDR,
-			InterfaceAddress: clientUIDPIfIp,
+			InterfaceAddress: clientUDPIfIp,
 			ConnectionIP:     defaultIfIpV4,
 			Port:             serverConf.UDPSettings.Port,
 			MTU:              serverConf.UDPSettings.MTU,
 			Protocol:         settings.UDP,
 			Encryption:       serverConf.UDPSettings.Encryption,
 			DialTimeoutMs:    serverConf.UDPSettings.DialTimeoutMs,
+		},
+		WSSettings: settings.Settings{
+			InterfaceName:    serverConf.WSSettings.InterfaceName,
+			InterfaceIPCIDR:  serverConf.WSSettings.InterfaceIPCIDR,
+			InterfaceAddress: clientWSIfIp,
+			ConnectionIP:     defaultIfIpV4,
+			Port:             serverConf.WSSettings.Port,
+			MTU:              serverConf.WSSettings.MTU,
+			Protocol:         settings.WS,
+			Encryption:       serverConf.WSSettings.Encryption,
+			DialTimeoutMs:    serverConf.WSSettings.DialTimeoutMs,
 		},
 		Ed25519PublicKey: serverConf.Ed25519PublicKey,
 		Protocol:         c.getDefaultProtocol(serverConf),
