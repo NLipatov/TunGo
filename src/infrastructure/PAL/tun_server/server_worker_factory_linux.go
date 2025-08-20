@@ -10,6 +10,7 @@ import (
 	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network/ip"
+	"tungo/infrastructure/network/ws"
 	"tungo/infrastructure/routing/server_routing/routing/tcp_chacha20"
 	"tungo/infrastructure/routing/server_routing/routing/udp_chacha20"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
@@ -52,21 +53,23 @@ func (s *ServerWorkerFactory) CreateWorker(ctx context.Context, tun io.ReadWrite
 		return s.createTCPWorker(ctx, tun)
 	case settings.UDP:
 		return s.createUDPWorker(ctx, tun)
+	case settings.WS:
+		return s.createWSWorker(ctx, tun)
 	default:
 		return nil, fmt.Errorf("protocol %v not supported", s.settings.Protocol)
 	}
 }
 
 func (s *ServerWorkerFactory) createTCPWorker(ctx context.Context, tun io.ReadWriteCloser) (application.TunWorker, error) {
-	// session managers, handlers…
-	sessionManager := repository.NewDefaultWorkerSessionManager[application.Session]()
-	concurrentSessionManager := wrappers.NewConcurrentManager(sessionManager)
+	sessionManager := wrappers.NewConcurrentManager(
+		repository.NewDefaultWorkerSessionManager[application.Session](),
+	)
 
 	th := tcp_chacha20.NewTunHandler(
 		ctx,
 		tun,
 		ip.NewHeaderParser(),
-		concurrentSessionManager,
+		sessionManager,
 	)
 
 	conf, confErr := s.configurationManager.Configuration()
@@ -97,15 +100,56 @@ func (s *ServerWorkerFactory) createTCPWorker(ctx context.Context, tun io.ReadWr
 	return tcp_chacha20.NewTcpTunWorker(th, tr), nil
 }
 
+func (s *ServerWorkerFactory) createWSWorker(ctx context.Context, tun io.ReadWriteCloser) (application.TunWorker, error) {
+	sessionManager := wrappers.NewConcurrentManager(
+		repository.NewDefaultWorkerSessionManager[application.Session](),
+	)
+
+	th := tcp_chacha20.NewTunHandler(
+		ctx,
+		tun,
+		ip.NewHeaderParser(),
+		sessionManager,
+	)
+
+	conf, confErr := s.configurationManager.Configuration()
+	if confErr != nil {
+		return nil, confErr
+	}
+
+	addrPort, addrPortErr := s.addrPortToListen(s.settings.ConnectionIP, s.settings.Port)
+	if addrPortErr != nil {
+		return nil, addrPortErr
+	}
+
+	listener, err := ws.NewListener(ctx, addrPort)
+	if err != nil {
+		return nil, fmt.Errorf("failed to listen WS: %w", err)
+	}
+
+	tr := tcp_chacha20.NewTransportHandler(
+		ctx,
+		s.settings,
+		tun,
+		listener,
+		sessionManager,
+		s.loggerFactory.newLogger(),
+		NewHandshakeFactory(*conf),
+		chacha20.NewTcpSessionBuilder(chacha20.NewDefaultAEADBuilder()),
+	)
+	return tcp_chacha20.NewTcpTunWorker(th, tr), nil
+}
+
 func (s *ServerWorkerFactory) createUDPWorker(ctx context.Context, tun io.ReadWriteCloser) (application.TunWorker, error) {
-	sessionManager := repository.NewDefaultWorkerSessionManager[application.Session]()
-	concurrentSessionManager := wrappers.NewConcurrentManager(sessionManager)
+	sessionManager := wrappers.NewConcurrentManager(
+		repository.NewDefaultWorkerSessionManager[application.Session](),
+	)
 
 	th := udp_chacha20.NewTunHandler(
 		ctx,
 		tun,
 		ip.NewHeaderParser(),
-		concurrentSessionManager,
+		sessionManager,
 	)
 
 	conf, confErr := s.configurationManager.Configuration()
@@ -128,7 +172,7 @@ func (s *ServerWorkerFactory) createUDPWorker(ctx context.Context, tun io.ReadWr
 		s.settings,
 		tun,
 		conn,
-		concurrentSessionManager,
+		sessionManager,
 		s.loggerFactory.newLogger(),
 		NewHandshakeFactory(*conf),
 		chacha20.NewUdpSessionBuilder(chacha20.NewDefaultAEADBuilder()),
