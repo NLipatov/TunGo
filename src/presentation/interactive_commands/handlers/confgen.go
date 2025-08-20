@@ -70,7 +70,7 @@ func (c *ConfgenHandler) generate() (*client.Configuration, error) {
 		return nil, fmt.Errorf("failed to allocate client's TCP IP address: %s", err)
 	}
 
-	clientWSIfIp, err := nip.AllocateClientIp(serverConf.UDPSettings.InterfaceIPCIDR, IncrementedClientCounter)
+	clientWSIfIp, err := nip.AllocateClientIp(serverConf.WSSettings.InterfaceIPCIDR, IncrementedClientCounter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to allocate client's TCP IP address: %s", err)
 	}
