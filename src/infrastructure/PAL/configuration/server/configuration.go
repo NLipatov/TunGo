@@ -15,6 +15,7 @@ type Configuration struct {
 	ClientCounter         int                `json:"ClientCounter"`
 	EnableTCP             bool               `json:"EnableTCP"`
 	EnableUDP             bool               `json:"EnableUDP"`
+	EnableWS              bool               `json:"EnableWS"`
 }
 
 func NewDefaultConfiguration() *Configuration {
@@ -58,5 +59,6 @@ func NewDefaultConfiguration() *Configuration {
 		ClientCounter:         0,
 		EnableTCP:             false,
 		EnableUDP:             true,
+		EnableWS:              false,
 	}
 }
