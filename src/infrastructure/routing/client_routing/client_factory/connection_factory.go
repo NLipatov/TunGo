@@ -150,12 +150,12 @@ func (f *ConnectionFactory) dialWS(
 	ctx context.Context,
 	ap netip.AddrPort,
 ) (application.ConnectionAdapter, error) {
-	url := fmt.Sprintf("ws://%s", ap.String())
+	url := fmt.Sprintf("ws://%s/ws", ap.String())
 	conn, _, err := websocket.Dial(ctx, url, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	wsAdapter := ws.NewWebsocketAdapter(ctx, conn)
+	wsAdapter := ws.NewAdapter(ctx, conn)
 	return adapters.NewLengthPrefixFramingAdapter(wsAdapter), nil
 }
