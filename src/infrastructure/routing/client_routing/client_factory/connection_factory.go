@@ -64,6 +64,15 @@ func (f *ConnectionFactory) EstablishConnection(
 		return f.establishSecuredConnection(establishCtx, connSettings, adapter, chacha20.NewTcpSessionBuilder(
 			chacha20.NewDefaultAEADBuilder()),
 		)
+	case settings.WS:
+		adapter, err := f.dialWS(establishCtx, addrPort)
+		if err != nil {
+			return nil, nil, fmt.Errorf("unable to establish WebSocket connection: %w", err)
+		}
+
+		return f.establishSecuredConnection(establishCtx, connSettings, adapter, chacha20.NewTcpSessionBuilder(
+			chacha20.NewDefaultAEADBuilder()),
+		)
 	default:
 		return nil, nil, fmt.Errorf("unsupported protocol: %v", connSettings.Protocol)
 	}
@@ -104,7 +113,10 @@ func (f *ConnectionFactory) establishSecuredConnection(
 	return ad, cr, nil
 }
 
-func (f *ConnectionFactory) dialTCP(ctx context.Context, ap netip.AddrPort) (application.ConnectionAdapter, error) {
+func (f *ConnectionFactory) dialTCP(
+	ctx context.Context,
+	ap netip.AddrPort,
+) (application.ConnectionAdapter, error) {
 	dialer := &net.Dialer{}
 	conn, err := dialer.DialContext(ctx, "tcp", ap.String())
 	if err != nil {
@@ -120,7 +132,10 @@ func (f *ConnectionFactory) dialTCP(ctx context.Context, ap netip.AddrPort) (app
 	return adapters.NewLengthPrefixFramingAdapter(conn), nil
 }
 
-func (f *ConnectionFactory) dialUDP(ctx context.Context, ap netip.AddrPort) (application.ConnectionAdapter, error) {
+func (f *ConnectionFactory) dialUDP(
+	ctx context.Context,
+	ap netip.AddrPort,
+) (application.ConnectionAdapter, error) {
 	dialer := &net.Dialer{}
 	conn, err := dialer.DialContext(ctx, "udp", ap.String())
 	if err != nil {
@@ -129,7 +144,10 @@ func (f *ConnectionFactory) dialUDP(ctx context.Context, ap netip.AddrPort) (app
 	return conn, nil
 }
 
-func (f *ConnectionFactory) dialWS(ctx context.Context, ap netip.AddrPort) (application.ConnectionAdapter, error) {
+func (f *ConnectionFactory) dialWS(
+	ctx context.Context,
+	ap netip.AddrPort,
+) (application.ConnectionAdapter, error) {
 	wsAP := fmt.Sprintf("ws://%s", ap.String())
 	conn, _, err := websocket.Dial(ctx, wsAP, nil)
 	if err != nil {
