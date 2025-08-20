@@ -36,6 +36,8 @@ func (t *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 		s = t.conf.UDPSettings
 	case settings.TCP:
 		s = t.conf.TCPSettings
+	case settings.WS:
+		s = t.conf.WSSettings
 	default:
 		return nil, fmt.Errorf("unsupported protocol")
 	}
@@ -130,6 +132,9 @@ func (t *PlatformTunManager) DisposeTunDevices() error {
 
 	_ = t.ip.RouteDel(t.conf.TCPSettings.ConnectionIP)
 	_ = t.ip.LinkDelete(t.conf.TCPSettings.InterfaceName)
+
+	_ = t.ip.RouteDel(t.conf.WSSettings.ConnectionIP)
+	_ = t.ip.LinkDelete(t.conf.WSSettings.InterfaceName)
 
 	return nil
 }
