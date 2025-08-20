@@ -84,6 +84,8 @@ func (f *ConnectionFactory) connectionSettings() (settings.Settings, error) {
 		return f.conf.TCPSettings, nil
 	case settings.UDP:
 		return f.conf.UDPSettings, nil
+	case settings.WS:
+		return f.conf.WSSettings, nil
 	default:
 		return settings.Settings{}, fmt.Errorf("unsupported protocol: %v", f.conf.Protocol)
 	}
@@ -148,8 +150,8 @@ func (f *ConnectionFactory) dialWS(
 	ctx context.Context,
 	ap netip.AddrPort,
 ) (application.ConnectionAdapter, error) {
-	wsAP := fmt.Sprintf("ws://%s", ap.String())
-	conn, _, err := websocket.Dial(ctx, wsAP, nil)
+	url := fmt.Sprintf("ws://%s", ap.String())
+	conn, _, err := websocket.Dial(ctx, url, nil)
 	if err != nil {
 		return nil, err
 	}
