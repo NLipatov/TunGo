@@ -126,5 +126,9 @@ func (c *ConfgenHandler) getDefaultProtocol(conf *serverConfiguration.Configurat
 		return settings.UDP
 	}
 
+	if conf.EnableWS {
+		return settings.WS
+	}
+
 	return settings.TCP
 }
