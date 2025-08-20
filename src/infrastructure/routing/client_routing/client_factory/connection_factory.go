@@ -65,7 +65,7 @@ func (f *ConnectionFactory) EstablishConnection(
 			chacha20.NewDefaultAEADBuilder()),
 		)
 	case settings.WS:
-		adapter, err := f.dialWS(establishCtx, addrPort)
+		adapter, err := f.dialWS(establishCtx, ctx, addrPort)
 		if err != nil {
 			return nil, nil, fmt.Errorf("unable to establish WebSocket connection: %w", err)
 		}
@@ -147,15 +147,15 @@ func (f *ConnectionFactory) dialUDP(
 }
 
 func (f *ConnectionFactory) dialWS(
-	ctx context.Context,
+	establishCtx, connCtx context.Context,
 	ap netip.AddrPort,
 ) (application.ConnectionAdapter, error) {
 	url := fmt.Sprintf("ws://%s/ws", ap.String())
-	conn, _, err := websocket.Dial(ctx, url, nil)
+	conn, _, err := websocket.Dial(establishCtx, url, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	wsAdapter := ws.NewAdapter(ctx, conn)
+	wsAdapter := ws.NewAdapter(connCtx, conn)
 	return adapters.NewLengthPrefixFramingAdapter(wsAdapter), nil
 }
