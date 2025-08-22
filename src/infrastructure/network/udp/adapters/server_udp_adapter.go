@@ -5,6 +5,7 @@ import (
 	"net/netip"
 	"tungo/application"
 	"tungo/application/listeners"
+	"tungo/infrastructure/settings"
 )
 
 type ServerUdpAdapter struct {
@@ -12,7 +13,7 @@ type ServerUdpAdapter struct {
 	AddrPort netip.AddrPort
 
 	//read buffers
-	buf [65_547]byte
+	buf [settings.MTU + settings.UDPChacha20Overhead]byte
 	oob [1024]byte
 }
 
@@ -28,14 +29,13 @@ func (ua *ServerUdpAdapter) Write(data []byte) (int, error) {
 }
 
 func (ua *ServerUdpAdapter) Read(buffer []byte) (int, error) {
-	n, _, _, _, err := ua.Conn.ReadMsgUDPAddrPort(ua.buf[:], ua.oob[:])
+	n, _, _, _, err := ua.Conn.ReadMsgUDPAddrPort(buffer[:], ua.oob[:])
 	if err != nil {
 		return 0, err
 	}
 	if len(buffer) < n {
 		return 0, io.ErrShortBuffer
 	}
-	copy(buffer[:n], ua.buf[:n])
 	return n, nil
 }
 
