@@ -29,13 +29,14 @@ func (ua *ServerUdpAdapter) Write(data []byte) (int, error) {
 }
 
 func (ua *ServerUdpAdapter) Read(buffer []byte) (int, error) {
-	n, _, _, _, err := ua.Conn.ReadMsgUDPAddrPort(buffer[:], ua.oob[:])
+	n, _, _, _, err := ua.Conn.ReadMsgUDPAddrPort(ua.buf[:], ua.oob[:])
 	if err != nil {
 		return 0, err
 	}
 	if len(buffer) < n {
 		return 0, io.ErrShortBuffer
 	}
+	copy(buffer, ua.buf[:n])
 	return n, nil
 }
 
