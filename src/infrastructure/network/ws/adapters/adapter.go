@@ -1,4 +1,4 @@
-package ws
+package adapters
 
 import (
 	"context"
@@ -18,7 +18,7 @@ var _ net.Conn = (*Adapter)(nil)
 var _ application.ConnectionAdapter = (*Adapter)(nil)
 
 type Adapter struct {
-	conn  *websocket.Conn
+	conn  WSConn
 	ctx   context.Context
 	cur   io.Reader
 	wmu   sync.Mutex
@@ -28,7 +28,10 @@ type Adapter struct {
 	raddr net.Addr
 }
 
-func NewAdapter(ctx context.Context, conn *websocket.Conn) *Adapter {
+func NewAdapter(
+	ctx context.Context,
+	conn WSConn,
+) *Adapter {
 	if ctx == nil {
 		ctx = context.Background()
 	}
