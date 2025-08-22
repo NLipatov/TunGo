@@ -8,12 +8,14 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"tungo/application"
 
 	"github.com/coder/websocket"
 )
 
-// compile-time check (adapter should implement net.Conn)
+// compile-time check (adapter should implement net.Conn, application.ConnectionAdapter)
 var _ net.Conn = (*Adapter)(nil)
+var _ application.ConnectionAdapter = (*Adapter)(nil)
 
 type Adapter struct {
 	conn  *websocket.Conn
