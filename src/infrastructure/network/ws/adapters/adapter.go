@@ -137,12 +137,13 @@ func (a *Adapter) mapErr(err error) error {
 	if err == nil {
 		return nil
 	}
-	switch websocket.CloseStatus(err) {
-	case websocket.StatusNormalClosure, websocket.StatusGoingAway:
-		return io.EOF
-	}
-	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-		return err
+
+	var ce *websocket.CloseError
+	if errors.As(err, &ce) {
+		if ce.Code == websocket.StatusNormalClosure ||
+			ce.Code == websocket.StatusGoingAway {
+			return io.EOF
+		}
 	}
 	return err
 }
