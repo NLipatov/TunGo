@@ -2,14 +2,13 @@ package tcp_chacha20
 
 import (
 	"context"
-	"golang.org/x/crypto/chacha20poly1305"
 	"io"
 	"log"
 	"os"
 	"tungo/application"
 	appip "tungo/application/network/ip"
-	"tungo/infrastructure/network"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
+	"tungo/infrastructure/settings"
 )
 
 type TunHandler struct {
@@ -34,14 +33,15 @@ func NewTunHandler(
 }
 
 func (t *TunHandler) HandleTun() error {
-	buffer := make([]byte, network.MaxPacketLengthBytes+chacha20poly1305.Overhead)
+	backing := make([]byte, settings.MTU+settings.TCPChacha20Overhead)
+	pt := backing[:settings.MTU]
 
 	for {
 		select {
 		case <-t.ctx.Done():
 			return nil
 		default:
-			n, err := t.reader.Read(buffer)
+			n, err := t.reader.Read(pt)
 			if err != nil {
 				if err == io.EOF {
 					log.Println("TUN interface closed, shutting down...")
@@ -61,7 +61,7 @@ func (t *TunHandler) HandleTun() error {
 				continue
 			}
 
-			addr, addrErr := t.ipHeaderParser.DestinationAddress(buffer[:n])
+			addr, addrErr := t.ipHeaderParser.DestinationAddress(pt[:n])
 			if addrErr != nil {
 				log.Printf("packet dropped: failed to parse destination address: %v", addrErr)
 				continue
@@ -73,7 +73,7 @@ func (t *TunHandler) HandleTun() error {
 				continue
 			}
 
-			ct, encryptErr := clientSession.CryptographyService().Encrypt(buffer[:n])
+			ct, encryptErr := clientSession.CryptographyService().Encrypt(pt[:n])
 			if encryptErr != nil {
 				log.Printf("failed to encrypt packet: %s", encryptErr)
 				continue

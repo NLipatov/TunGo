@@ -5,12 +5,13 @@ import (
 	"net"
 	"tungo/application"
 	"tungo/infrastructure/network"
+	"tungo/infrastructure/settings"
 )
 
 // ClientUDPAdapter - single goroutine only client udp adapter
 type ClientUDPAdapter struct {
 	conn                        *net.UDPConn
-	buf                         [network.MaxPacketLengthBytes]byte
+	buf                         [settings.MTU + settings.UDPChacha20Overhead]byte
 	readDeadline, writeDeadline network.Deadline
 }
 

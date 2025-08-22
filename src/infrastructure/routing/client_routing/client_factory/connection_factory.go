@@ -3,7 +3,6 @@ package client_factory
 import (
 	"context"
 	"fmt"
-	"github.com/coder/websocket"
 	"math"
 	"net"
 	"net/netip"
@@ -16,6 +15,8 @@ import (
 	"tungo/infrastructure/network/tcp/adapters"
 	"tungo/infrastructure/network/ws"
 	"tungo/infrastructure/settings"
+
+	"github.com/coder/websocket"
 )
 
 type ConnectionFactory struct {
@@ -131,7 +132,7 @@ func (f *ConnectionFactory) dialTCP(
 		_ = tcp.SetKeepAlivePeriod(30 * time.Second)
 	}
 
-	return adapters.NewLengthPrefixFramingAdapter(conn), nil
+	return adapters.NewLengthPrefixFramingAdapter(conn, settings.MTU+settings.TCPChacha20Overhead), nil
 }
 
 func (f *ConnectionFactory) dialUDP(
@@ -157,5 +158,5 @@ func (f *ConnectionFactory) dialWS(
 	}
 
 	wsAdapter := ws.NewAdapter(connCtx, conn)
-	return adapters.NewLengthPrefixFramingAdapter(wsAdapter), nil
+	return adapters.NewLengthPrefixFramingAdapter(wsAdapter, settings.MTU+settings.TCPChacha20Overhead), nil
 }

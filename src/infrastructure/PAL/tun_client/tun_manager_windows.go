@@ -58,7 +58,7 @@ func (m *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 
 	mtu := s.MTU
 	if mtu == 0 {
-		mtu = settings.DefaultMTU
+		mtu = settings.MTU
 	}
 
 	device, err := tun_adapters.NewWinTun(adapter)

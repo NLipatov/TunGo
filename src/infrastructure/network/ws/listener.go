@@ -10,12 +10,11 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"tungo/infrastructure/settings"
 
 	"tungo/application/listeners"
-	"tungo/infrastructure/network"
 
 	"github.com/coder/websocket"
-	"golang.org/x/crypto/chacha20poly1305"
 )
 
 // compile-time check (Listener must implement listeners.TcpListener)
@@ -46,7 +45,7 @@ func NewListener(ctx context.Context, ap netip.AddrPort) (listeners.TcpListener,
 		if err != nil {
 			return
 		}
-		c.SetReadLimit(int64(network.MaxPacketLengthBytes + chacha20poly1305.Overhead + 2))
+		c.SetReadLimit(int64(settings.MTU + settings.TCPChacha20Overhead))
 
 		local := ln.Addr()
 		remote := parseTCPAddr(r.RemoteAddr)

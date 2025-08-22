@@ -4,16 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"golang.org/x/crypto/chacha20poly1305"
 	"io"
 	"net"
 	"net/netip"
 	"tungo/application"
 	"tungo/application/listeners"
-	"tungo/infrastructure/network"
 	"tungo/infrastructure/network/tcp/adapters"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
 	"tungo/infrastructure/settings"
+
+	"golang.org/x/crypto/chacha20poly1305"
 )
 
 type TransportHandler struct {
@@ -89,7 +89,7 @@ func (t *TransportHandler) HandleTransport() error {
 func (t *TransportHandler) registerClient(conn net.Conn, tunFile io.ReadWriteCloser, ctx context.Context) error {
 	t.logger.Printf("connected: %s", conn.RemoteAddr())
 
-	framingAdapter := adapters.NewLengthPrefixFramingAdapter(conn)
+	framingAdapter := adapters.NewLengthPrefixFramingAdapter(conn, settings.MTU+settings.TCPChacha20Overhead)
 	h := t.handshakeFactory.NewHandshake()
 	internalIP, handshakeErr := h.ServerSideHandshake(framingAdapter)
 	if handshakeErr != nil {
@@ -149,7 +149,7 @@ func (t *TransportHandler) handleClient(ctx context.Context, session application
 		t.logger.Printf("disconnected: %s", session.ExternalAddrPort())
 	}()
 
-	buffer := make([]byte, network.MaxPacketLengthBytes+chacha20poly1305.Overhead)
+	buffer := make([]byte, settings.MTU+settings.TCPChacha20Overhead)
 	for {
 		select {
 		case <-ctx.Done():
@@ -162,7 +162,7 @@ func (t *TransportHandler) handleClient(ctx context.Context, session application
 				}
 				return
 			}
-			if n < chacha20poly1305.Overhead || n > network.MaxPacketLengthBytes+chacha20poly1305.Overhead {
+			if n < chacha20poly1305.Overhead || n > settings.MTU+settings.TCPChacha20Overhead {
 				t.logger.Printf("invalid ciphertext length: %d", n)
 				continue
 			}
