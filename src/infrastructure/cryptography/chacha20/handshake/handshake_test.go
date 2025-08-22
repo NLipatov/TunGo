@@ -59,7 +59,7 @@ func TestServerSideHandshake_ReadClientHelloError(t *testing.T) {
 
 func TestClientSideHandshake_WriteHelloError(t *testing.T) {
 	h := NewHandshake(make([]byte, 0), make([]byte, 0))
-	// a net.Conn whose Write always fails
+	// a net.conn whose Write always fails
 	bad := &badNetConn{&fakeAdapter{writeErr: errors.New("boom")}}
 	err := h.ClientSideHandshake(bad, settings.Settings{
 		InterfaceAddress: "10.0.0.2", ConnectionIP: "127.0.0.1", Port: "9999",
