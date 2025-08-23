@@ -10,35 +10,49 @@ import (
 
 	"tungo/application"
 	"tungo/infrastructure/PAL"
-
-	nftlib "github.com/google/nftables"
 )
 
-// Factory builds a concrete application.Netfilter implementation in OOP style.
 type Factory struct {
-	cmd PAL.Commander
-
-	// Injected constructors (test-friendly).
-	newNFT func() (application.Netfilter, error)
-	// v4bin is required, v6bin may be empty if missing.
-	newIPT func(v4bin, v6bin string) application.Netfilter
+	cmd        PAL.Commander
+	nftFactory nftables.Factory
+	iptFactory iptables.Factory
+	probe      nftables.Probe
 }
 
 func NewFactory(cmd PAL.Commander) *Factory {
 	return &Factory{
-		cmd:    cmd,
-		newNFT: func() (application.Netfilter, error) { return nftables.NewBackend() },
-		newIPT: func(v4bin, v6bin string) application.Netfilter {
-			return iptables.NewDriverWithBinaries(cmd, v4bin, v6bin)
-		},
+		cmd:        cmd,
+		nftFactory: nftables.DefaultFactory{},
+		iptFactory: iptables.NewDefaultFactory(cmd),
+		probe:      nftables.DefaultProbe{},
 	}
 }
 
-// Build picks the best backend: nftables → iptables-legacy → (reject nf_tables iptables if nft unusable).
+// DI hooks (handy for tests)
+func (f *Factory) WithNFTFactory(n nftables.Factory) *Factory {
+	if n != nil {
+		f.nftFactory = n
+	}
+	return f
+}
+func (f *Factory) WithIPTablesFactory(i iptables.Factory) *Factory {
+	if i != nil {
+		f.iptFactory = i
+	}
+	return f
+}
+func (f *Factory) WithProbe(p nftables.Probe) *Factory {
+	if p != nil {
+		f.probe = p
+	}
+	return f
+}
+
+// Build picks the best backend: nftables → iptables-legacy → accept iptables(legacy) but reject iptables(nf_tables) if nft is unusable.
 func (f *Factory) Build() (application.Netfilter, error) {
-	// 1) nftables via netlink
-	if ok, _ := f.kernelSupportsNFT(); ok {
-		if b, err := f.newNFT(); err == nil {
+	// 1) nftables via netlink (through probe object)
+	if ok, _ := f.probe.Supports(); ok {
+		if b, err := f.nftFactory.New(); err == nil {
 			return b, nil
 		}
 	}
@@ -46,13 +60,13 @@ func (f *Factory) Build() (application.Netfilter, error) {
 	// 2) iptables-legacy
 	if v4bin, ok := f.hasBinaryWorks("iptables-legacy"); ok {
 		v6bin, _ := f.detectIP6Companion(v4bin) // optional
-		return f.newIPT(v4bin, v6bin), nil
+		return f.iptFactory.New(v4bin, v6bin), nil
 	}
 
 	// 3) plain "iptables": accept only legacy build
 	if mode, out, err := f.iptablesMode("iptables"); err == nil && mode == "legacy" {
 		v6bin, _ := f.detectIP6Companion("iptables")
-		return f.newIPT("iptables", v6bin), nil
+		return f.iptFactory.New("iptables", v6bin), nil
 	} else if err == nil && mode == "nf_tables" {
 		return nil, errors.New("iptables is (nf_tables) but nftables is unavailable; install iptables-legacy or enable nf_tables in the kernel")
 	} else if err != nil && f.looksLikeNFTButKernelLacksSupport(err, out) {
@@ -64,20 +78,8 @@ func (f *Factory) Build() (application.Netfilter, error) {
 
 // ---------- helpers (instance methods) ----------
 
-func (f *Factory) kernelSupportsNFT() (bool, error) {
-	c, err := nftlib.New()
-	if err != nil {
-		return false, err
-	}
-	_ = c.CloseLasting()
-	if _, err := c.ListTables(); err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
 func (f *Factory) hasBinaryWorks(bin string) (string, bool) {
-	if out, err := f.cmd.CombinedOutput(bin, "-V"); err == nil && len(out) > 0 {
+	if out, err := f.cmd.CombinedOutput(bin, "-V"); err == nil && len(bytes.TrimSpace(out)) > 0 {
 		return bin, true
 	}
 	return "", false
@@ -94,10 +96,10 @@ func (f *Factory) detectIP6Companion(v4bin string) (string, bool) {
 	default:
 		return "", false
 	}
-	if out, err := f.cmd.CombinedOutput(v6cand, "-V"); err == nil && len(out) > 0 {
-		return v6cand, true
+	if _, ok := f.hasBinaryWorks(v6cand); !ok {
+		return "", false
 	}
-	return "", false
+	return v6cand, true
 }
 
 // iptablesMode returns "legacy", "nf_tables", or "" with raw output for diagnostics.
@@ -121,5 +123,6 @@ func (f *Factory) looksLikeNFTButKernelLacksSupport(err error, out []byte) bool 
 	return strings.Contains(msg, "failed to initialize nft") &&
 		(strings.Contains(msg, "protocol not supported") ||
 			strings.Contains(msg, "operation not supported") ||
-			errors.Is(err, syscall.EOPNOTSUPP))
+			errors.Is(err, syscall.EOPNOTSUPP) ||
+			errors.Is(err, syscall.EAFNOSUPPORT))
 }
