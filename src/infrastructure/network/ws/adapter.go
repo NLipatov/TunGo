@@ -1,4 +1,4 @@
-package adapters
+package ws
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"tungo/infrastructure/network/ws/adapters/internal"
+	internal "tungo/infrastructure/network/ws/internal"
 
 	"tungo/application"
 

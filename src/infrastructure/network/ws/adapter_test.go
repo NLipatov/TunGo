@@ -1,4 +1,4 @@
-package adapters
+package ws
 
 import (
 	"bytes"
@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 	"time"
-	"tungo/infrastructure/network/ws/adapters/internal"
+	"tungo/infrastructure/network/ws/internal"
 
 	"github.com/coder/websocket"
 )

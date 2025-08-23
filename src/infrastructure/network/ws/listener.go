@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"sync"
 	"time"
-	"tungo/infrastructure/network/ws/adapters"
 	"tungo/infrastructure/settings"
 
 	"tungo/application/listeners"
@@ -50,7 +49,7 @@ func NewListener(ctx context.Context, ap netip.AddrPort) (listeners.TcpListener,
 
 		local := ln.Addr()
 		remote := parseTCPAddr(r.RemoteAddr)
-		conn := adapters.NewAdapter(context.Background(), c).WithAddrs(local, remote)
+		conn := NewAdapter(context.Background(), c, nil).WithAddrs(local, remote)
 
 		select {
 		case q <- conn:

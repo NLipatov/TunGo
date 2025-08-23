@@ -13,7 +13,7 @@ import (
 	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/network/tcp/adapters"
-	wsAdapters "tungo/infrastructure/network/ws/adapters"
+	wsAdapters "tungo/infrastructure/network/ws"
 	"tungo/infrastructure/settings"
 
 	"github.com/coder/websocket"
@@ -158,7 +158,7 @@ func (f *ConnectionFactory) dialWS(
 	}
 
 	return adapters.NewLengthPrefixFramingAdapter(
-		wsAdapters.NewAdapter(connCtx, conn),
+		wsAdapters.NewAdapter(connCtx, conn, nil),
 		settings.MTU+settings.TCPChacha20Overhead,
 	)
 }
