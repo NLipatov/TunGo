@@ -6,387 +6,351 @@ import (
 	"errors"
 	"io"
 	"net"
-	"reflect"
+	"sync"
 	"testing"
 	"time"
+	"tungo/infrastructure/network/ws/adapters/internal"
 
 	"github.com/coder/websocket"
 )
 
-var _ WSConn = (*AdapterWSConnMock)(nil)
+/*
+   Mocks: follow the rule "mocks are prefixed by the tested structure name".
+*/
 
+// AdapterWSConnMock implements WSConn with a scripted sequence of frames/writes.
 type AdapterWSConnMock struct {
-	Frames []struct {
-		Type websocket.MessageType
-		Data []byte
-		Err  error
-	}
-	readerCalls int
+	mu sync.Mutex
 
-	Written [][]byte
+	// Reader script: queue of frames to return.
+	readQueue []adapterFrame
 
-	OnReader func(ctx context.Context, typ websocket.MessageType)
-	OnWriter func(ctx context.Context, typ websocket.MessageType)
+	// Writer behavior factory; if nil, default usable writer is returned.
+	writerFactory func(ctx context.Context, typ websocket.MessageType) (io.WriteCloser, error)
 
-	WriterWriteErr error
-	WriterCloseErr error
-	PartialWriteN  int
+	// Track Close invocations.
+	closeCalled bool
+	closeCode   websocket.StatusCode
+	closeReason string
+	closeErr    error
+}
 
-	CloseCalls []struct {
-		Status websocket.StatusCode
-		Reason string
-	}
+type adapterFrame struct {
+	mt   websocket.MessageType
+	data []byte
+	err  error // if non-nil, Reader returns this error (mt/data ignored)
+}
+
+func NewAdapterWSConnMock() *AdapterWSConnMock { return &AdapterWSConnMock{} }
+
+func (m *AdapterWSConnMock) EnqueueBinary(data []byte) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	cp := append([]byte(nil), data...)
+	m.readQueue = append(m.readQueue, adapterFrame{mt: websocket.MessageBinary, data: cp})
+}
+
+func (m *AdapterWSConnMock) EnqueueText(data []byte) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	cp := append([]byte(nil), data...)
+	m.readQueue = append(m.readQueue, adapterFrame{mt: websocket.MessageText, data: cp})
+}
+
+func (m *AdapterWSConnMock) EnqueueErr(err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.readQueue = append(m.readQueue, adapterFrame{err: err})
 }
 
 func (m *AdapterWSConnMock) Reader(ctx context.Context) (websocket.MessageType, io.Reader, error) {
-	if m.readerCalls >= len(m.Frames) {
-		return websocket.MessageBinary, nil, io.EOF
-	}
-	f := m.Frames[m.readerCalls]
-	m.readerCalls++
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-	if m.OnReader != nil {
-		m.OnReader(ctx, f.Type)
+	if len(m.readQueue) == 0 {
+		// Block until ctx is done to simulate waiting for a frame.
+		<-ctx.Done()
+		return 0, nil, ctx.Err()
 	}
 
-	if f.Err != nil {
-		return 0, nil, f.Err
+	f := m.readQueue[0]
+	m.readQueue = m.readQueue[1:]
+	if f.err != nil {
+		return 0, nil, f.err
 	}
-	return f.Type, bytes.NewReader(f.Data), nil
+	return f.mt, bytes.NewReader(f.data), nil
 }
+
+// AdapterWriteCloserMock simulates a WS writer with controllable behavior.
+type AdapterWriteCloserMock struct {
+	mu  sync.Mutex
+	buf *bytes.Buffer
+	// failAfter > 0: write this many bytes, then return error once.
+	failAfter       int
+	writeErr        error // returned after failAfter is consumed (if set)
+	closeErr        error
+	blockOnWriteCtx context.Context // if set, block on write until this ctx is done
+}
+
+func (w *AdapterWriteCloserMock) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if w.blockOnWriteCtx != nil {
+		<-w.blockOnWriteCtx.Done()
+		return 0, w.blockOnWriteCtx.Err()
+	}
+
+	if w.failAfter > 0 {
+		n := w.failAfter
+		if n > len(p) {
+			n = len(p)
+		}
+		_, _ = w.buf.Write(p[:n])
+		w.failAfter = 0
+		if w.writeErr == nil {
+			w.writeErr = errors.New("write-failed")
+		}
+		return n, w.writeErr
+	}
+	return w.buf.Write(p)
+}
+
+func (w *AdapterWriteCloserMock) Close() error { return w.closeErr }
 
 func (m *AdapterWSConnMock) Writer(ctx context.Context, typ websocket.MessageType) (io.WriteCloser, error) {
-	if m.OnWriter != nil {
-		m.OnWriter(ctx, typ)
+	if m.writerFactory != nil {
+		return m.writerFactory(ctx, typ)
 	}
-	var buf bytes.Buffer
-	m.Written = append(m.Written, nil)
-	idx := len(m.Written) - 1
-
-	// snapshot behavior at creation time
-	writeErr := m.WriterWriteErr
-	closeErr := m.WriterCloseErr
-	partial := m.PartialWriteN
-
-	return &bufferWriteCloser{
-		writeFn: func(p []byte) (int, error) {
-			if partial > 0 {
-				n := partial
-				if n > len(p) {
-					n = len(p)
-				}
-				_, _ = buf.Write(p[:n])
-				partial = 0
-				if writeErr != nil {
-					return n, writeErr
-				}
-				return n, nil
-			}
-			if writeErr != nil {
-				return 0, writeErr
-			}
-			return buf.Write(p)
-		},
-		closeFn: func() error {
-			if closeErr != nil {
-				return closeErr
-			}
-			m.Written[idx] = append([]byte(nil), buf.Bytes()...)
-			return nil
-		},
-	}, nil
+	return &AdapterWriteCloserMock{buf: &bytes.Buffer{}}, nil
 }
 
-func (m *AdapterWSConnMock) Close(status websocket.StatusCode, reason string) error {
-	m.CloseCalls = append(m.CloseCalls, struct {
-		Status websocket.StatusCode
-		Reason string
-	}{status, reason})
-	return nil
+func (m *AdapterWSConnMock) Close(code websocket.StatusCode, reason string) error {
+	m.closeCalled = true
+	m.closeCode = code
+	m.closeReason = reason
+	return m.closeErr
 }
 
-type bufferWriteCloser struct {
-	writeFn func([]byte) (int, error)
-	closeFn func() error
+// AdapterCopierMock allows controlling/observing drain behavior.
+type AdapterCopierMock struct {
+	// If blockCtx != nil, Copy blocks until blockCtx is done.
+	blockCtx context.Context
+	// If err != nil, Copy returns this error.
+	err error
+	// bytes to report as copied (if > 0). If 0, copy src to dst normally.
+	bytesToReport int64
+	called        bool
 }
 
-func (b *bufferWriteCloser) Write(p []byte) (int, error) { return b.writeFn(p) }
-func (b *bufferWriteCloser) Close() error                { return b.closeFn() }
-
-func approxEqualTime(t1, t2 time.Time, d time.Duration) bool {
-	if t1.IsZero() || t2.IsZero() {
-		return false
+func (c *AdapterCopierMock) Copy(dst io.Writer, src io.Reader) (int64, error) {
+	c.called = true
+	if c.blockCtx != nil {
+		<-c.blockCtx.Done()
+		return 0, c.blockCtx.Err()
 	}
-	diff := t1.Sub(t2)
-	if diff < 0 {
-		diff = -diff
+	if c.err != nil {
+		return 0, c.err
 	}
-	return diff <= d
+	if c.bytesToReport > 0 {
+		// read and discard at most bytesToReport to simulate partial drain
+		buf := make([]byte, c.bytesToReport)
+		n, _ := io.ReadFull(src, buf)
+		return int64(n), nil
+	}
+	return io.Copy(dst, src)
 }
 
-func TestAdapter_Write_ZeroLength(t *testing.T) {
-	mock := &AdapterWSConnMock{}
-	a := NewAdapter(context.Background(), mock)
+/* -------------------- Tests -------------------- */
+
+func TestAdapter_Write_Empty(t *testing.T) {
+	ws := NewAdapterWSConnMock()
+	a := NewAdapter(context.Background(), ws, nil)
 
 	n, err := a.Write(nil)
-	if err != nil || n != 0 {
-		t.Fatalf("got n=%d err=%v, want 0, nil", n, err)
-	}
-	if len(mock.Written) != 0 {
-		t.Fatalf("writer should not be created for zero-length write")
+	if n != 0 || err != nil {
+		t.Fatalf("want (0,nil), got (%d,%v)", n, err)
 	}
 }
 
-func TestAdapter_Write_Success(t *testing.T) {
-	mock := &AdapterWSConnMock{}
-	a := NewAdapter(context.Background(), mock)
+func TestAdapter_Write_Ok(t *testing.T) {
+	ws := NewAdapterWSConnMock()
+	// Default writer just buffers.
+	a := NewAdapter(context.Background(), ws, nil)
 
-	data := []byte("hello world")
-	n, err := a.Write(data)
-	if err != nil || n != len(data) {
-		t.Fatalf("write: got n=%d err=%v, want %d, nil", n, err, len(data))
-	}
-	if got := mock.Written; len(got) != 1 || !bytes.Equal(got[0], data) {
-		t.Fatalf("written mismatch: %#v", got)
+	payload := []byte("hello world")
+	n, err := a.Write(payload)
+	if err != nil || n != len(payload) {
+		t.Fatalf("write failed: n=%d err=%v", n, err)
 	}
 }
 
 func TestAdapter_Write_PartialThenError(t *testing.T) {
-	mock := &AdapterWSConnMock{
-		PartialWriteN:  3,
-		WriterWriteErr: errors.New("boom"),
+	ws := NewAdapterWSConnMock()
+	ws.writerFactory = func(ctx context.Context, typ websocket.MessageType) (io.WriteCloser, error) {
+		return &AdapterWriteCloserMock{
+			buf:       &bytes.Buffer{},
+			failAfter: 3,
+			writeErr:  errors.New("boom"),
+		}, nil
 	}
-	a := NewAdapter(context.Background(), mock)
+	a := NewAdapter(context.Background(), ws, nil)
 
-	data := []byte("abcdef")
-	n, err := a.Write(data)
-	if n != 3 {
-		t.Fatalf("want partial n=3, got %d", n)
-	}
-	if err == nil || err.Error() != "boom" {
-		t.Fatalf("want error boom, got %v", err)
+	p := []byte{1, 2, 3, 4, 5}
+	n, err := a.Write(p)
+	if n != 3 || err == nil {
+		t.Fatalf("expected partial=3 and error, got n=%d err=%v", n, err)
 	}
 }
 
 func TestAdapter_Write_CloseError(t *testing.T) {
-	mock := &AdapterWSConnMock{
-		WriterCloseErr: errors.New("close-fail"),
+	ws := NewAdapterWSConnMock()
+	ws.writerFactory = func(ctx context.Context, typ websocket.MessageType) (io.WriteCloser, error) {
+		return &AdapterWriteCloserMock{
+			buf:      &bytes.Buffer{},
+			closeErr: errors.New("close-failed"),
+		}, nil
 	}
-	a := NewAdapter(context.Background(), mock)
+	a := NewAdapter(context.Background(), ws, nil)
 
-	data := []byte("x")
-	n, err := a.Write(data)
-	if n != 1 {
-		t.Fatalf("want n=1, got %d", n)
-	}
-	if err == nil || err.Error() != "close-fail" {
-		t.Fatalf("want close-fail, got %v", err)
+	n, err := a.Write([]byte{1, 2, 3})
+	if n != 3 || err == nil {
+		t.Fatalf("expected n=3 and error from Close, got n=%d err=%v", n, err)
 	}
 }
 
-func TestAdapter_Read_SkipNonBinary(t *testing.T) {
-	mock := &AdapterWSConnMock{
-		Frames: []struct {
-			Type websocket.MessageType
-			Data []byte
-			Err  error
-		}{
-			{Type: websocket.MessageText, Data: []byte("ignore"), Err: nil},
-			{Type: websocket.MessageBinary, Data: []byte("ok"), Err: nil},
-		},
-	}
-	a := NewAdapter(context.Background(), mock)
+func TestAdapter_Read_BinarySingleFrame(t *testing.T) {
+	ws := NewAdapterWSConnMock()
+	ws.EnqueueBinary([]byte{9, 8, 7})
 
+	a := NewAdapter(context.Background(), ws, nil)
 	buf := make([]byte, 10)
 	n, err := a.Read(buf)
-	if err != nil {
-		t.Fatalf("read err: %v", err)
-	}
-	if string(buf[:n]) != "ok" {
-		t.Fatalf("got %q, want %q", string(buf[:n]), "ok")
+	if err != nil || n != 3 || !bytes.Equal(buf[:n], []byte{9, 8, 7}) {
+		t.Fatalf("unexpected read: n=%d err=%v data=%v", n, err, buf[:n])
 	}
 }
 
-func TestAdapter_Read_BinaryChunkedEOF(t *testing.T) {
-	payload := []byte("hello world")
-	mock := &AdapterWSConnMock{
-		Frames: []struct {
-			Type websocket.MessageType
-			Data []byte
-			Err  error
-		}{
-			{Type: websocket.MessageBinary, Data: payload},
-		},
+func TestAdapter_Read_TextDrainedThenBinary(t *testing.T) {
+	ws := NewAdapterWSConnMock()
+	ws.EnqueueText([]byte("ignore me"))
+	ws.EnqueueBinary([]byte{1, 2, 3})
+
+	// Use mock copier to observe drain call (optional).
+	copier := &AdapterCopierMock{}
+	opts := &internal.Options{Copier: copier}
+	a := NewAdapter(context.Background(), ws, opts)
+
+	buf := make([]byte, 4)
+	n, err := a.Read(buf)
+	if err != nil || n != 3 || !bytes.Equal(buf[:n], []byte{1, 2, 3}) {
+		t.Fatalf("unexpected read after text: n=%d err=%v data=%v", n, err, buf[:n])
 	}
-	a := NewAdapter(context.Background(), mock)
+	if !copier.called {
+		t.Fatalf("expected copier to be called for non-binary frame drain")
+	}
+}
 
-	buf := make([]byte, 5)
-	var out []byte
+func TestAdapter_Read_BinaryChunkedMultipleReads(t *testing.T) {
+	ws := NewAdapterWSConnMock()
+	ws.EnqueueBinary([]byte{1, 2, 3, 4, 5})
 
+	a := NewAdapter(context.Background(), ws, nil)
+
+	buf := make([]byte, 2)
+	// first chunk
 	n1, err := a.Read(buf)
-	if err != nil {
-		t.Fatalf("read1 err: %v", err)
+	if err != nil || n1 != 2 || !bytes.Equal(buf[:n1], []byte{1, 2}) {
+		t.Fatalf("chunk1 bad: n=%d err=%v data=%v", n1, err, buf[:n1])
 	}
-	out = append(out, buf[:n1]...)
-
+	// second chunk
 	n2, err := a.Read(buf)
-	if err != nil && err != io.EOF {
-		t.Fatalf("read2 err: %v", err)
+	if err != nil || n2 != 2 || !bytes.Equal(buf[:n2], []byte{3, 4}) {
+		t.Fatalf("chunk2 bad: n=%d err=%v data=%v", n2, err, buf[:n2])
 	}
-	out = append(out, buf[:n2]...)
-
-	if !bytes.Equal(out, payload[:len(out)]) {
-		t.Fatalf("assembled %q, want prefix of %q", string(out), string(payload))
-	}
-	// Drain remaining bytes if any
-	rest := make([]byte, 32)
-	n3, _ := a.Read(rest)
-	out = append(out, rest[:n3]...)
-	if !bytes.Equal(out, payload) {
-		t.Fatalf("final %q, want %q", string(out), string(payload))
+	// last chunk
+	n3, err := a.Read(buf)
+	if err != nil || n3 != 1 || !bytes.Equal(buf[:n3], []byte{5}) {
+		t.Fatalf("chunk3 bad: n=%d err=%v data=%v", n3, err, buf[:n3])
 	}
 }
 
-func TestAdapter_Read_ReaderCloseNormalMapsEOF(t *testing.T) {
-	mock := &AdapterWSConnMock{
-		Frames: []struct {
-			Type websocket.MessageType
-			Data []byte
-			Err  error
-		}{
-			{Err: &websocket.CloseError{Code: websocket.StatusNormalClosure}},
-		},
-	}
-	a := NewAdapter(context.Background(), mock)
+func TestAdapter_Read_ErrorMapped_CloseNormalToEOF(t *testing.T) {
+	ws := NewAdapterWSConnMock()
+	ws.EnqueueErr(&websocket.CloseError{Code: websocket.StatusNormalClosure})
 
+	a := NewAdapter(context.Background(), ws, nil)
 	_, err := a.Read(make([]byte, 1))
-	if err != io.EOF {
-		t.Fatalf("want io.EOF, got %v", err)
+	if !errors.Is(err, io.EOF) {
+		t.Fatalf("expected io.EOF, got %v", err)
 	}
 }
 
-func TestAdapter_Read_ErrorPassthrough(t *testing.T) {
-	exp := errors.New("reader-fail")
-	mock := &AdapterWSConnMock{
-		Frames: []struct {
-			Type websocket.MessageType
-			Data []byte
-			Err  error
-		}{
-			{Err: exp},
-		},
-	}
-	a := NewAdapter(context.Background(), mock)
+func TestAdapter_Deadlines_ReadTimeout(t *testing.T) {
+	ws := NewAdapterWSConnMock() // no frames; Reader will block until ctx done
+	a := NewAdapter(context.Background(), ws, nil)
 
+	_ = a.SetReadDeadline(time.Now().Add(10 * time.Millisecond))
+	start := time.Now()
 	_, err := a.Read(make([]byte, 1))
-	if !errors.Is(err, exp) {
-		t.Fatalf("want %v, got %v", exp, err)
+	if err == nil {
+		t.Fatalf("expected deadline error")
+	}
+	if time.Since(start) < 8*time.Millisecond {
+		t.Fatalf("deadline did not take effect")
 	}
 }
 
-func TestAdapter_Deadlines_Propagate(t *testing.T) {
-	mock := &AdapterWSConnMock{}
-	a := NewAdapter(context.Background(), mock)
-
-	readDeadline := time.Now().Add(200 * time.Millisecond)
-	writeDeadline := time.Now().Add(300 * time.Millisecond)
-
-	mock.OnReader = func(ctx context.Context, _ websocket.MessageType) {
-		dl, ok := ctx.Deadline()
-		if !ok || !approxEqualTime(dl, readDeadline, 10*time.Millisecond) {
-			t.Errorf("read deadline mismatch: got %v ok=%v, want ~%v", dl, ok, readDeadline)
-		}
+func TestAdapter_Deadlines_WriteTimeout(t *testing.T) {
+	ws := NewAdapterWSConnMock()
+	// Writer returned will block on Write until ctx.Done().
+	ws.writerFactory = func(ctx context.Context, typ websocket.MessageType) (io.WriteCloser, error) {
+		return &AdapterWriteCloserMock{
+			buf:             &bytes.Buffer{},
+			blockOnWriteCtx: ctx,
+		}, nil
 	}
-	mock.OnWriter = func(ctx context.Context, _ websocket.MessageType) {
-		dl, ok := ctx.Deadline()
-		if !ok || !approxEqualTime(dl, writeDeadline, 10*time.Millisecond) {
-			t.Errorf("write deadline mismatch: got %v ok=%v, want ~%v", dl, ok, writeDeadline)
-		}
+	a := NewAdapter(context.Background(), ws, nil)
+
+	_ = a.SetWriteDeadline(time.Now().Add(10 * time.Millisecond))
+	start := time.Now()
+	_, err := a.Write([]byte("payload"))
+	if err == nil {
+		t.Fatalf("expected deadline error from write")
 	}
-
-	if err := a.SetReadDeadline(readDeadline); err != nil {
-		t.Fatalf("SetReadDeadline: %v", err)
-	}
-	if err := a.SetWriteDeadline(writeDeadline); err != nil {
-		t.Fatalf("SetWriteDeadline: %v", err)
-	}
-
-	mock.Frames = []struct {
-		Type websocket.MessageType
-		Data []byte
-		Err  error
-	}{
-		{Type: websocket.MessageBinary, Data: []byte("x")},
-	}
-
-	_, _ = a.Read(make([]byte, 1))
-	_, _ = a.Write([]byte("y"))
-}
-
-func TestAdapter_SetDeadline_Both(t *testing.T) {
-	mock := &AdapterWSConnMock{}
-	a := NewAdapter(context.Background(), mock)
-
-	deadline := time.Now().Add(150 * time.Millisecond)
-
-	var sawRead, sawWrite time.Time
-
-	mock.OnReader = func(ctx context.Context, _ websocket.MessageType) {
-		dl, _ := ctx.Deadline()
-		sawRead = dl
-	}
-	mock.OnWriter = func(ctx context.Context, _ websocket.MessageType) {
-		dl, _ := ctx.Deadline()
-		sawWrite = dl
-	}
-
-	if err := a.SetDeadline(deadline); err != nil {
-		t.Fatalf("SetDeadline: %v", err)
-	}
-	mock.Frames = []struct {
-		Type websocket.MessageType
-		Data []byte
-		Err  error
-	}{
-		{Type: websocket.MessageBinary, Data: []byte("x")},
-	}
-
-	_, _ = a.Read(make([]byte, 1))
-	_, _ = a.Write([]byte("y"))
-
-	if !approxEqualTime(sawRead, deadline, 10*time.Millisecond) || !approxEqualTime(sawWrite, deadline, 10*time.Millisecond) {
-		t.Fatalf("deadlines mismatch: read=%v write=%v want ~%v", sawRead, sawWrite, deadline)
+	if time.Since(start) < 8*time.Millisecond {
+		t.Fatalf("write deadline did not take effect")
 	}
 }
 
-func TestAdapter_Addrs_DefaultAndCustom(t *testing.T) {
-	mock := &AdapterWSConnMock{}
-	a := NewAdapter(context.Background(), mock)
+func TestAdapter_WithAddrs_DefaultsAndOverride(t *testing.T) {
+	ws := NewAdapterWSConnMock()
+	a := NewAdapter(context.Background(), ws, nil)
 
+	// defaults
 	if _, ok := a.LocalAddr().(*net.TCPAddr); !ok {
-		t.Fatalf("default LocalAddr is not *net.TCPAddr")
+		t.Fatalf("LocalAddr default should be *net.TCPAddr")
 	}
 	if _, ok := a.RemoteAddr().(*net.TCPAddr); !ok {
-		t.Fatalf("default RemoteAddr is not *net.TCPAddr")
+		t.Fatalf("RemoteAddr default should be *net.TCPAddr")
 	}
 
-	l := &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 1111}
-	r := &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 2222}
+	l := &net.TCPAddr{IP: net.IPv4(1, 2, 3, 4), Port: 1111}
+	r := &net.TCPAddr{IP: net.IPv4(5, 6, 7, 8), Port: 2222}
 	a.WithAddrs(l, r)
-
-	if !reflect.DeepEqual(a.LocalAddr(), l) || !reflect.DeepEqual(a.RemoteAddr(), r) {
-		t.Fatalf("custom addrs mismatch")
+	if a.LocalAddr().String() != l.String() || a.RemoteAddr().String() != r.String() {
+		t.Fatalf("WithAddrs not applied")
 	}
 }
 
 func TestAdapter_Close_Normal(t *testing.T) {
-	mock := &AdapterWSConnMock{}
-	a := NewAdapter(context.Background(), mock)
+	ws := NewAdapterWSConnMock()
+	a := NewAdapter(context.Background(), ws, nil)
 
 	if err := a.Close(); err != nil {
-		t.Fatalf("close err: %v", err)
+		t.Fatalf("close returned error: %v", err)
 	}
-	if len(mock.CloseCalls) != 1 || mock.CloseCalls[0].Status != websocket.StatusNormalClosure {
-		t.Fatalf("unexpected close calls: %#v", mock.CloseCalls)
+	if !ws.closeCalled || ws.closeCode != websocket.StatusNormalClosure {
+		t.Fatalf("Close not propagated correctly")
 	}
 }

@@ -1,4 +1,4 @@
-package adapters
+package internal
 
 import (
 	"context"
@@ -7,11 +7,11 @@ import (
 	"github.com/coder/websocket"
 )
 
-// compile-time assertion that *websocket.Conn implements WSConn
-var _ WSConn = (*websocket.Conn)(nil)
+// compile-time assertion that *websocket.Conn implements Conn
+var _ Conn = (*websocket.Conn)(nil)
 
-// WSConn abstracts github.com/coder/websocket.Conn used by Adapter.
-type WSConn interface {
+// Conn abstracts github.com/coder/websocket.Conn used by Adapter.
+type Conn interface {
 	Reader(ctx context.Context) (websocket.MessageType, io.Reader, error)
 	Writer(ctx context.Context, typ websocket.MessageType) (io.WriteCloser, error)
 	Close(status websocket.StatusCode, reason string) error
