@@ -8,25 +8,24 @@ import (
 	"tungo/infrastructure/PAL"
 	"tungo/infrastructure/PAL/linux/network_tools/ioctl"
 	"tungo/infrastructure/PAL/linux/network_tools/ip"
-	"tungo/infrastructure/PAL/linux/network_tools/iptables"
 	"tungo/infrastructure/PAL/linux/network_tools/sysctl"
-	n_ip "tungo/infrastructure/network/ip"
+	nip "tungo/infrastructure/network/ip"
 	"tungo/infrastructure/settings"
 )
 
 type ServerTunFactory struct {
-	ip       ip.Contract
-	iptables iptables.Contract
-	ioctl    ioctl.Contract
-	sysctl   sysctl.Contract
+	ip        ip.Contract
+	netfilter application.Netfilter
+	ioctl     ioctl.Contract
+	sysctl    sysctl.Contract
 }
 
-func NewServerTunFactory() application.ServerTunManager {
+func NewServerTunFactory(netfilter application.Netfilter) application.ServerTunManager {
 	return &ServerTunFactory{
-		ip:       ip.NewWrapper(PAL.NewExecCommander()),
-		iptables: iptables.NewWrapper(PAL.NewExecCommander()),
-		ioctl:    ioctl.NewWrapper(ioctl.NewLinuxIoctlCommander(), "/dev/net/tun"),
-		sysctl:   sysctl.NewWrapper(PAL.NewExecCommander()),
+		ip:        ip.NewWrapper(PAL.NewExecCommander()),
+		netfilter: netfilter,
+		ioctl:     ioctl.NewWrapper(ioctl.NewLinuxIoctlCommander(), "/dev/net/tun"),
+		sysctl:    sysctl.NewWrapper(PAL.NewExecCommander()),
 	}
 }
 
@@ -88,12 +87,12 @@ func (s ServerTunFactory) createTun(settings settings.Settings) (*os.File, error
 		return nil, fmt.Errorf("could not set mtu on tuntap dev: %s", mtuErr)
 	}
 
-	serverIp, serverIpErr := n_ip.AllocateServerIp(settings.InterfaceIPCIDR)
+	serverIp, serverIpErr := nip.AllocateServerIp(settings.InterfaceIPCIDR)
 	if serverIpErr != nil {
 		return nil, fmt.Errorf("could not allocate server IP (%s): %s", serverIp, serverIpErr)
 	}
 
-	cidrServerIp, cidrServerIpErr := n_ip.ToCIDR(settings.InterfaceIPCIDR, serverIp)
+	cidrServerIp, cidrServerIpErr := nip.ToCIDR(settings.InterfaceIPCIDR, serverIp)
 	if cidrServerIpErr != nil {
 		return nil, fmt.Errorf("could not conver server IP(%s) to CIDR: %s", serverIp, cidrServerIpErr)
 	}
@@ -132,7 +131,7 @@ func (s ServerTunFactory) configure(tunFile *os.File) error {
 		return err
 	}
 
-	err = s.iptables.EnableDevMasquerade(externalIfName)
+	err = s.netfilter.EnableDevMasquerade(externalIfName)
 	if err != nil {
 		return fmt.Errorf("failed enabling NAT: %v", err)
 	}
@@ -140,11 +139,6 @@ func (s ServerTunFactory) configure(tunFile *os.File) error {
 	err = s.setupForwarding(tunFile, externalIfName)
 	if err != nil {
 		return fmt.Errorf("failed to set up forwarding: %v", err)
-	}
-
-	configureClampingErr := s.iptables.ConfigureMssClamping()
-	if configureClampingErr != nil {
-		return configureClampingErr
 	}
 
 	log.Printf("server configured\n")
@@ -157,7 +151,7 @@ func (s ServerTunFactory) Unconfigure(tunFile *os.File) {
 		log.Printf("failed to determing tunnel ifName: %s\n", err)
 	}
 
-	err = s.iptables.DisableDevMasquerade(tunName)
+	err = s.netfilter.DisableDevMasquerade(tunName)
 	if err != nil {
 		log.Printf("failed to disbale NAT: %s\n", err)
 	}
@@ -181,12 +175,12 @@ func (s ServerTunFactory) setupForwarding(tunFile *os.File, extIface string) err
 	}
 
 	// Set up iptables rules
-	err = s.iptables.EnableForwardingFromTunToDev(tunName, extIface)
+	err = s.netfilter.EnableForwardingFromTunToDev(tunName, extIface)
 	if err != nil {
 		return fmt.Errorf("failed to setup forwarding rule: %s", err)
 	}
 
-	err = s.iptables.EnableForwardingFromDevToTun(tunName, extIface)
+	err = s.netfilter.EnableForwardingFromDevToTun(tunName, extIface)
 	if err != nil {
 		return fmt.Errorf("failed to setup forwarding rule: %s", err)
 	}
@@ -203,12 +197,12 @@ func (s ServerTunFactory) clearForwarding(tunFile *os.File, extIface string) err
 		return fmt.Errorf("failed to get TUN interface name")
 	}
 
-	err = s.iptables.DisableForwardingFromTunToDev(tunName, extIface)
+	err = s.netfilter.DisableForwardingFromTunToDev(tunName, extIface)
 	if err != nil {
 		return fmt.Errorf("failed to execute iptables command: %s", err)
 	}
 
-	err = s.iptables.DisableForwardingFromDevToTun(tunName, extIface)
+	err = s.netfilter.DisableForwardingFromDevToTun(tunName, extIface)
 	if err != nil {
 		return fmt.Errorf("failed to execute iptables command: %s", err)
 	}

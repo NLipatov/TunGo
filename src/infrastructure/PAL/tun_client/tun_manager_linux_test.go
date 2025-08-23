@@ -75,10 +75,9 @@ func mgr(proto settings.Protocol, ipMock *mockIP) *PlatformTunManager {
 		},
 	}
 	return &PlatformTunManager{
-		conf:     cfg,
-		ip:       ipMock,
-		iptables: &mockIPT{},
-		ioctl:    &mockIOCTL{},
+		conf:  cfg,
+		ip:    ipMock,
+		ioctl: &mockIOCTL{},
 	}
 }
 
@@ -105,9 +104,6 @@ func TestCreateTunDevice_TCP(t *testing.T) {
 
 	if _, err := m.CreateTunDevice(); err != nil {
 		t.Fatalf("TCP path failed: %v", err)
-	}
-	if !m.iptables.(*mockIPT).called {
-		t.Fatal("ConfigureMssClamping not invoked")
 	}
 }
 

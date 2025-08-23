@@ -1,4 +1,4 @@
-package iptables
+package netfilter
 
 import (
 	"errors"
@@ -25,8 +25,8 @@ func (m *mockCommander) Output(name string, args ...string) ([]byte, error) {
 	return m.outputMap[cmd], m.errMap[cmd]
 }
 
-func newWrapperWithMocks(out map[string][]byte, errs map[string]error) *Wrapper {
-	return NewWrapper(&mockCommander{
+func newWrapperWithMocks(out map[string][]byte, errs map[string]error) *Iptables {
+	return NewIptables(&mockCommander{
 		outputMap: out,
 		errMap:    errs,
 	})
@@ -52,7 +52,7 @@ func TestWrapper_AllCommands(t *testing.T) {
 		{"EnableForwardingFromDevToTun", func() error { return w.EnableForwardingFromDevToTun(tun, dev) }},
 		{"DisableForwardingFromDevToTun", func() error { return w.DisableForwardingFromDevToTun(tun, dev) }},
 		{"ConfigureMssClamping", func() error {
-			return NewWrapper(&mockCommander{
+			return NewIptables(&mockCommander{
 				outputMap: map[string][]byte{
 					"iptables -t mangle -A FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu":  {},
 					"iptables -t mangle -A OUTPUT -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu":   {},

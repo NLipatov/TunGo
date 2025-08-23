@@ -1,19 +1,19 @@
-package iptables
+package netfilter
 
 import (
 	"fmt"
 	"tungo/infrastructure/PAL"
 )
 
-type Wrapper struct {
+type Iptables struct {
 	commander PAL.Commander
 }
 
-func NewWrapper(commander PAL.Commander) *Wrapper {
-	return &Wrapper{commander: commander}
+func NewIptables(commander PAL.Commander) *Iptables {
+	return &Iptables{commander: commander}
 }
 
-func (w *Wrapper) EnableDevMasquerade(devName string) error {
+func (w *Iptables) EnableDevMasquerade(devName string) error {
 	output, err := w.commander.CombinedOutput("iptables", "-t", "nat",
 		"-A", "POSTROUTING", "-o", devName, "-j", "MASQUERADE")
 	if err != nil {
@@ -22,7 +22,7 @@ func (w *Wrapper) EnableDevMasquerade(devName string) error {
 	return nil
 }
 
-func (w *Wrapper) DisableDevMasquerade(devName string) error {
+func (w *Iptables) DisableDevMasquerade(devName string) error {
 	output, err := w.commander.CombinedOutput("iptables", "-t", "nat",
 		"-D", "POSTROUTING", "-o", devName, "-j", "MASQUERADE")
 	if err != nil {
@@ -31,7 +31,7 @@ func (w *Wrapper) DisableDevMasquerade(devName string) error {
 	return nil
 }
 
-func (w *Wrapper) EnableForwardingFromTunToDev(tunName string, devName string) error {
+func (w *Iptables) EnableForwardingFromTunToDev(tunName string, devName string) error {
 	output, err := w.commander.CombinedOutput("iptables", "-A", "FORWARD",
 		"-i", tunName, "-o", devName, "-j", "ACCEPT")
 	if err != nil {
@@ -42,7 +42,7 @@ func (w *Wrapper) EnableForwardingFromTunToDev(tunName string, devName string) e
 	return nil
 }
 
-func (w *Wrapper) DisableForwardingFromTunToDev(tunName string, devName string) error {
+func (w *Iptables) DisableForwardingFromTunToDev(tunName string, devName string) error {
 	output, err := w.commander.CombinedOutput("iptables", "-D", "FORWARD",
 		"-i", tunName, "-o", devName, "-j", "ACCEPT")
 	if err != nil {
@@ -54,7 +54,7 @@ func (w *Wrapper) DisableForwardingFromTunToDev(tunName string, devName string) 
 	return nil
 }
 
-func (w *Wrapper) EnableForwardingFromDevToTun(tunName string, devName string) error {
+func (w *Iptables) EnableForwardingFromDevToTun(tunName string, devName string) error {
 	output, err := w.commander.CombinedOutput("iptables", "-A", "FORWARD",
 		"-i", devName, "-o", tunName, "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT")
 	if err != nil {
@@ -65,7 +65,7 @@ func (w *Wrapper) EnableForwardingFromDevToTun(tunName string, devName string) e
 	return nil
 }
 
-func (w *Wrapper) DisableForwardingFromDevToTun(tunName string, devName string) error {
+func (w *Iptables) DisableForwardingFromDevToTun(tunName string, devName string) error {
 	output, err := w.commander.CombinedOutput("iptables", "-D", "FORWARD",
 		"-i", devName, "-o", tunName, "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT")
 	if err != nil {
@@ -76,7 +76,7 @@ func (w *Wrapper) DisableForwardingFromDevToTun(tunName string, devName string) 
 	return nil
 }
 
-func (w *Wrapper) ConfigureMssClamping() error {
+func (w *Iptables) ConfigureMssClamping() error {
 	// Configuration for IPv4, chain FORWARD
 	outputForward, errForward := w.commander.CombinedOutput("iptables", "-t", "mangle",
 		"-A", "FORWARD", "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu")

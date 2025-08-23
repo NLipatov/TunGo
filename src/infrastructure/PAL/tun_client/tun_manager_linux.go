@@ -8,24 +8,23 @@ import (
 	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/PAL/linux/network_tools/ioctl"
 	"tungo/infrastructure/PAL/linux/network_tools/ip"
-	"tungo/infrastructure/PAL/linux/network_tools/iptables"
 	"tungo/infrastructure/settings"
 )
 
 // PlatformTunManager Linux-specific TunDevice manager
 type PlatformTunManager struct {
-	conf     client.Configuration
-	ip       ip.Contract
-	iptables iptables.Contract
-	ioctl    ioctl.Contract
+	conf  client.Configuration
+	ip    ip.Contract
+	ioctl ioctl.Contract
 }
 
-func NewPlatformTunManager(conf client.Configuration) (application.ClientTunManager, error) {
+func NewPlatformTunManager(
+	conf client.Configuration,
+) (application.ClientTunManager, error) {
 	return &PlatformTunManager{
-		conf:     conf,
-		ip:       ip.NewWrapper(PAL.NewExecCommander()),
-		iptables: iptables.NewWrapper(PAL.NewExecCommander()),
-		ioctl:    ioctl.NewWrapper(ioctl.NewLinuxIoctlCommander(), "/dev/net/tun"),
+		conf:  conf,
+		ip:    ip.NewWrapper(PAL.NewExecCommander()),
+		ioctl: ioctl.NewWrapper(ioctl.NewLinuxIoctlCommander(), "/dev/net/tun"),
 	}, nil
 }
 
@@ -112,11 +111,6 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.Settings) error 
 		return err
 	}
 	fmt.Printf("set %s as default gateway\n", connSettings.InterfaceName)
-
-	configureClampingErr := t.iptables.ConfigureMssClamping()
-	if configureClampingErr != nil {
-		return configureClampingErr
-	}
 
 	// sets client's TUN device maximum transmission unit (MTU)
 	if setMtuErr := t.ip.LinkSetDevMTU(connSettings.InterfaceName, connSettings.MTU); setMtuErr != nil {
