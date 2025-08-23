@@ -6,21 +6,22 @@ import (
 	"fmt"
 	"tungo/application"
 	"tungo/infrastructure/PAL"
-	"tungo/infrastructure/PAL/linux/network_tools/netfilter/interfaces/nftables"
+	"tungo/infrastructure/PAL/linux/network_tools/netfilter/internal/interfaces/iptables"
+	"tungo/infrastructure/PAL/linux/network_tools/netfilter/internal/interfaces/nftables"
 
 	gnft "github.com/google/nftables"
 )
 
-type BackendKind int
+type DriverKind int
 
 const (
-	FWUnknown        BackendKind = iota
-	FWNftables                   // native nft via netlink (github.com/google/nftables)
-	FWIptablesLegacy             // classic xtables (iptables-legacy)
+	FWUnknown        DriverKind = iota
+	FWNftables                  // native nft via netlink (github.com/google/nftables)
+	FWIptablesLegacy            // classic xtables (iptables-legacy)
 )
 
 // String for logs
-func (k BackendKind) String() string {
+func (k DriverKind) String() string {
 	switch k {
 	case FWNftables:
 		return "nftables"
@@ -33,7 +34,7 @@ func (k BackendKind) String() string {
 
 // DetectResult tells which backend to use, and which iptables binaries (if legacy).
 type DetectResult struct {
-	Kind    BackendKind
+	Kind    DriverKind
 	Reason  string // human-friendly explanation of the decision
 	IPTBin  string // "iptables-legacy" or "iptables" (when compiled in legacy mode); empty for nft
 	IP6Bin  string // "ip6tables-legacy" or "ip6tables" (legacy mode) if available; empty if not found
@@ -69,7 +70,7 @@ func NewAutoNetfilter(cmd PAL.Commander) (application.Netfilter, DetectResult, e
 
 		// Your current iptables backend constructor takes only IPv4 bin; it calls ip6tables directly.
 		// If you later add a separate IPv6 binary field — pass dr.IP6Bin there as well.
-		return NewIptables(cmd), dr, nil
+		return iptables.NewIptables(cmd), dr, nil
 	}
 
 	// 3) Fallback to plain "iptables". Must ensure it's actually legacy, not nf_tables.
@@ -80,7 +81,7 @@ func NewAutoNetfilter(cmd PAL.Commander) (application.Netfilter, DetectResult, e
 			if out6, err6 := cmd.CombinedOutput("ip6tables", "-V"); err6 == nil && bytes.Contains(out6, []byte("(legacy)")) {
 				dr.IP6Bin = "ip6tables"
 			}
-			return NewIptables(cmd), dr, nil
+			return iptables.NewIptables(cmd), dr, nil
 		}
 		// Compiled as nf_tables. If nft usable — мы бы выбрали его выше; раз нет — это тупик.
 		if bytes.Contains(out, []byte("(nf_tables)")) {
