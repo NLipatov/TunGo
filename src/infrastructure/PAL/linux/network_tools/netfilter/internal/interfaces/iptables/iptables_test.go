@@ -1,126 +1,289 @@
 package iptables
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 )
 
-type mockCommander struct {
-	outputMap map[string][]byte
-	errMap    map[string]error
-}
+// ---- PAL.Commander mock -----------------------------------------------------
 
-func (m *mockCommander) Run(_ string, _ ...string) error {
-	panic("not implemented")
-}
-
-func (m *mockCommander) CombinedOutput(name string, args ...string) ([]byte, error) {
-	cmd := strings.Join(append([]string{name}, args...), " ")
-	return m.outputMap[cmd], m.errMap[cmd]
-}
-
-func (m *mockCommander) Output(name string, args ...string) ([]byte, error) {
-	cmd := strings.Join(append([]string{name}, args...), " ")
-	return m.outputMap[cmd], m.errMap[cmd]
-}
-
-func newWrapperWithMocks(out map[string][]byte, errs map[string]error) *Iptables {
-	return NewIptables(&mockCommander{
-		outputMap: out,
-		errMap:    errs,
-	})
-}
-
-func TestWrapper_AllCommands(t *testing.T) {
-	const dev = "eth0"
-	const tun = "tun0"
-
-	successOut := map[string][]byte{}
-	noErr := map[string]error{}
-
-	w := newWrapperWithMocks(successOut, noErr)
-
-	tests := []struct {
-		name string
-		call func() error
-	}{
-		{"EnableDevMasquerade", func() error { return w.EnableDevMasquerade(dev) }},
-		{"DisableDevMasquerade", func() error { return w.DisableDevMasquerade(dev) }},
-		{"EnableForwardingFromTunToDev", func() error { return w.EnableForwardingFromTunToDev(tun, dev) }},
-		{"DisableForwardingFromTunToDev", func() error { return w.DisableForwardingFromTunToDev(tun, dev) }},
-		{"EnableForwardingFromDevToTun", func() error { return w.EnableForwardingFromDevToTun(tun, dev) }},
-		{"DisableForwardingFromDevToTun", func() error { return w.DisableForwardingFromDevToTun(tun, dev) }},
-		{"ConfigureMssClamping", func() error {
-			return NewIptables(&mockCommander{
-				outputMap: map[string][]byte{
-					"iptables -t mangle -A FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu":  {},
-					"iptables -t mangle -A OUTPUT -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu":   {},
-					"ip6tables -t mangle -A FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu": {},
-					"ip6tables -t mangle -A OUTPUT -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu":  {},
-				},
-				errMap: map[string]error{},
-			}).ConfigureMssClamping()
-		}},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if err := tt.call(); err != nil {
-				t.Errorf("unexpected error: %v", err)
-			}
-		})
+// fakeCmd is a table-driven mock for PAL.Commander.
+// It satisfies CombinedOutput, Output, and Run.
+type fakeCmd struct {
+	// key: "bin arg1 arg2 ..."
+	M map[string]struct {
+		out []byte
+		err error
 	}
 }
 
-func TestWrapper_ConfigureMssClamping_ErrorCases(t *testing.T) {
-	errorCases := []struct {
-		name   string
-		errMap map[string]error
-		errMsg string
-	}{
-		{
-			name: "FORWARD IPv4 error",
-			errMap: map[string]error{
-				"iptables -t mangle -A FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu": errors.New("fail1"),
-			},
-			errMsg: "FORWARD chain",
-		},
-		{
-			name: "OUTPUT IPv4 error",
-			errMap: map[string]error{
-				"iptables -t mangle -A OUTPUT -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu": errors.New("fail2"),
-			},
-			errMsg: "OUTPUT chain",
-		},
-		{
-			name: "FORWARD IPv6 error",
-			errMap: map[string]error{
-				"ip6tables -t mangle -A FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu": errors.New("fail3"),
-			},
-			errMsg: "IPv6 MSS clamping on FORWARD",
-		},
-		{
-			name: "OUTPUT IPv6 error",
-			errMap: map[string]error{
-				"ip6tables -t mangle -A OUTPUT -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu": errors.New("fail4"),
-			},
-			errMsg: "IPv6 MSS clamping on OUTPUT",
-		},
+func newFake() *fakeCmd {
+	return &fakeCmd{M: map[string]struct {
+		out []byte
+		err error
+	}{}}
+}
+
+func (f *fakeCmd) key(bin string, args ...string) string {
+	return strings.TrimSpace(bin + " " + strings.Join(args, " "))
+}
+
+func (f *fakeCmd) set(bin string, args []string, out []byte, err error) {
+	f.M[f.key(bin, args...)] = struct {
+		out []byte
+		err error
+	}{out: out, err: err}
+}
+
+// --- PAL.Commander impl ---
+
+func (f *fakeCmd) CombinedOutput(name string, args ...string) ([]byte, error) {
+	k := f.key(name, args...)
+	if r, ok := f.M[k]; ok {
+		return r.out, r.err
 	}
+	return nil, fmt.Errorf("no mock for: %s", k)
+}
 
-	for _, tc := range errorCases {
-		t.Run(tc.name, func(t *testing.T) {
-			out := map[string][]byte{}
-			for cmd := range tc.errMap {
-				out[cmd] = []byte{}
-			}
-			w := newWrapperWithMocks(out, tc.errMap)
+func (f *fakeCmd) Output(name string, args ...string) ([]byte, error) {
+	// For tests we route to the same table as CombinedOutput.
+	return f.CombinedOutput(name, args...)
+}
 
-			err := w.ConfigureMssClamping()
-			if err == nil || !strings.Contains(err.Error(), tc.errMsg) {
-				t.Errorf("expected error containing '%s', got: %v", tc.errMsg, err)
-			}
-		})
+func (f *fakeCmd) Run(name string, args ...string) error {
+	_, err := f.CombinedOutput(name, args...)
+	return err
+}
+
+// ---- small spec builders -----------------------------------------------------
+
+func masqSpec(dev string) []string {
+	return []string{"-o", dev, "-j", "MASQUERADE"}
+}
+
+func fwdSpec(iif, oif string) []string {
+	return []string{"-i", iif, "-o", oif, "-j", "ACCEPT"}
+}
+
+func estConntrackSpec(iif, oif string) []string {
+	return []string{"-i", iif, "-o", oif, "-m", "conntrack", "--ctstate", "RELATED,ESTABLISHED", "-j", "ACCEPT"}
+}
+
+func estStateSpec(iif, oif string) []string {
+	return []string{"-i", iif, "-o", oif, "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT"}
+}
+
+// ---- tests ------------------------------------------------------------------
+
+func TestEnableDevMasquerade_V4V6_Success(t *testing.T) {
+	f := newFake()
+	d := NewWrapperWithBinaries(f, "iptables", "ip6tables")
+
+	// v4: not present -> add
+	f.set("iptables", append([]string{"-t", "nat", "-C", "POSTROUTING"}, masqSpec("eth0")...), nil, errors.New("nope"))
+	f.set("iptables", append([]string{"-t", "nat", "-A", "POSTROUTING"}, masqSpec("eth0")...), []byte(""), nil)
+
+	// v6: not present -> add
+	f.set("ip6tables", append([]string{"-t", "nat", "-C", "POSTROUTING"}, masqSpec("eth0")...), nil, errors.New("nope"))
+	f.set("ip6tables", append([]string{"-t", "nat", "-A", "POSTROUTING"}, masqSpec("eth0")...), []byte(""), nil)
+
+	if err := d.EnableDevMasquerade("eth0"); err != nil {
+		t.Fatalf("EnableDevMasquerade err: %v", err)
+	}
+}
+
+func TestEnableDevMasquerade_EmptyDev_Err(t *testing.T) {
+	d := NewWrapperWithBinaries(newFake(), "iptables", "ip6tables")
+	if err := d.EnableDevMasquerade(""); err == nil {
+		t.Fatal("want error on empty dev, got nil")
+	}
+}
+
+func TestEnableDevMasquerade_RuleExists_NoAdd(t *testing.T) {
+	f := newFake()
+	d := NewWrapperWithBinaries(f, "iptables", "")
+	f.set("iptables", append([]string{"-t", "nat", "-C", "POSTROUTING"}, masqSpec("eth0")...), []byte("ok"), nil)
+	if err := d.EnableDevMasquerade("eth0"); err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+}
+
+func TestDisableDevMasquerade_V4_V6(t *testing.T) {
+	f := newFake()
+	d := NewWrapperWithBinaries(f, "iptables", "ip6tables")
+
+	// v4 present -> delete
+	f.set("iptables", append([]string{"-t", "nat", "-C", "POSTROUTING"}, masqSpec("eth0")...), []byte("ok"), nil)
+	f.set("iptables", append([]string{"-t", "nat", "-D", "POSTROUTING"}, masqSpec("eth0")...), []byte(""), nil)
+
+	// v6 present -> delete
+	f.set("ip6tables", append([]string{"-t", "nat", "-C", "POSTROUTING"}, masqSpec("eth0")...), []byte("ok"), nil)
+	f.set("ip6tables", append([]string{"-t", "nat", "-D", "POSTROUTING"}, masqSpec("eth0")...), []byte(""), nil)
+
+	if err := d.DisableDevMasquerade("eth0"); err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+}
+
+func TestDisableDevMasquerade_NotPresent_NoDelete(t *testing.T) {
+	f := newFake()
+	d := NewWrapperWithBinaries(f, "iptables", "")
+	// not present -> -C errors => no -D expected
+	f.set("iptables", append([]string{"-t", "nat", "-C", "POSTROUTING"}, masqSpec("eth0")...), nil, errors.New("nope"))
+
+	if err := d.DisableDevMasquerade("eth0"); err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+}
+
+func TestEnableForwardingFromTunToDev_DockerUser_FallbackConntrackToState(t *testing.T) {
+	f := newFake()
+	d := NewWrapperWithBinaries(f, "iptables", "")
+
+	// DOCKER-USER exists
+	f.set("iptables", []string{"-t", "filter", "-nL", "DOCKER-USER"}, []byte("chain"), nil)
+
+	// tun->dev: not exist -> add
+	f.set("iptables", append([]string{"-t", "filter", "-C", "DOCKER-USER"}, fwdSpec("tun0", "eth0")...), nil, errors.New("nope"))
+	f.set("iptables", append([]string{"-t", "filter", "-A", "DOCKER-USER"}, fwdSpec("tun0", "eth0")...), []byte(""), nil)
+
+	// dev->tun: conntrack add fails -> fallback to state
+	f.set("iptables", append([]string{"-t", "filter", "-C", "DOCKER-USER"}, estConntrackSpec("eth0", "tun0")...), nil, errors.New("nope"))
+	f.set("iptables", append([]string{"-t", "filter", "-A", "DOCKER-USER"}, estConntrackSpec("eth0", "tun0")...), nil, errors.New("boom"))
+
+	f.set("iptables", append([]string{"-t", "filter", "-C", "DOCKER-USER"}, estStateSpec("eth0", "tun0")...), nil, errors.New("nope"))
+	f.set("iptables", append([]string{"-t", "filter", "-A", "DOCKER-USER"}, estStateSpec("eth0", "tun0")...), []byte(""), nil)
+
+	if err := d.EnableForwardingFromTunToDev("tun0", "eth0"); err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+}
+
+func TestEnableForwardingFromTunToDev_Forward_NoDockerUser(t *testing.T) {
+	f := newFake()
+	d := NewWrapperWithBinaries(f, "iptables", "")
+
+	// DOCKER-USER missing -> FORWARD
+	f.set("iptables", []string{"-t", "filter", "-nL", "DOCKER-USER"}, nil, errors.New("no chain"))
+
+	// tun->dev: not exist -> add
+	f.set("iptables", append([]string{"-t", "filter", "-C", "FORWARD"}, fwdSpec("tun0", "eth0")...), nil, errors.New("nope"))
+	f.set("iptables", append([]string{"-t", "filter", "-A", "FORWARD"}, fwdSpec("tun0", "eth0")...), []byte(""), nil)
+
+	// dev->tun: conntrack OK (no fallback)
+	f.set("iptables", append([]string{"-t", "filter", "-C", "FORWARD"}, estConntrackSpec("eth0", "tun0")...), nil, errors.New("nope"))
+	f.set("iptables", append([]string{"-t", "filter", "-A", "FORWARD"}, estConntrackSpec("eth0", "tun0")...), []byte(""), nil)
+
+	if err := d.EnableForwardingFromTunToDev("tun0", "eth0"); err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+}
+
+func TestDisableForwardingFromTunToDev_DeletePaths(t *testing.T) {
+	f := newFake()
+	d := NewWrapperWithBinaries(f, "iptables", "")
+
+	// Use FORWARD
+	f.set("iptables", []string{"-t", "filter", "-nL", "DOCKER-USER"}, nil, errors.New("no chain"))
+
+	// direct rule present -> delete ok
+	f.set("iptables", append([]string{"-t", "filter", "-C", "FORWARD"}, fwdSpec("tun0", "eth0")...), []byte("ok"), nil)
+	f.set("iptables", append([]string{"-t", "filter", "-D", "FORWARD"}, fwdSpec("tun0", "eth0")...), []byte(""), nil)
+
+	// established: try conntrack delete, force error to trigger fallback to state
+	f.set("iptables", append([]string{"-t", "filter", "-C", "FORWARD"}, estConntrackSpec("eth0", "tun0")...), []byte("ok"), nil)
+	f.set("iptables", append([]string{"-t", "filter", "-D", "FORWARD"}, estConntrackSpec("eth0", "tun0")...), nil, errors.New("boom"))
+	// fallback state delete: present -> delete ok
+	f.set("iptables", append([]string{"-t", "filter", "-C", "FORWARD"}, estStateSpec("eth0", "tun0")...), []byte("ok"), nil)
+	f.set("iptables", append([]string{"-t", "filter", "-D", "FORWARD"}, estStateSpec("eth0", "tun0")...), []byte(""), nil)
+
+	if err := d.DisableForwardingFromTunToDev("tun0", "eth0"); err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+}
+
+func TestEnableForwardingFromDevToTun_Delegates(t *testing.T) {
+	f := newFake()
+	d := NewWrapperWithBinaries(f, "iptables", "")
+
+	// No DOCKER-USER -> FORWARD
+	f.set("iptables", []string{"-t", "filter", "-nL", "DOCKER-USER"}, nil, errors.New("no chain"))
+	f.set("iptables", append([]string{"-t", "filter", "-C", "FORWARD"}, fwdSpec("tun0", "eth0")...), nil, errors.New("nope"))
+	f.set("iptables", append([]string{"-t", "filter", "-A", "FORWARD"}, fwdSpec("tun0", "eth0")...), []byte(""), nil)
+	f.set("iptables", append([]string{"-t", "filter", "-C", "FORWARD"}, estConntrackSpec("eth0", "tun0")...), nil, errors.New("nope"))
+	f.set("iptables", append([]string{"-t", "filter", "-A", "FORWARD"}, estConntrackSpec("eth0", "tun0")...), []byte(""), nil)
+
+	if err := d.EnableForwardingFromDevToTun("tun0", "eth0"); err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+}
+
+func TestConfigureMssClamping_V4Only(t *testing.T) {
+	f := newFake()
+	d := NewWrapperWithBinaries(f, "iptables", "")
+
+	// FORWARD
+	f.set("iptables", []string{"-t", "mangle", "-C", "FORWARD", "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"}, nil, errors.New("nope"))
+	f.set("iptables", []string{"-t", "mangle", "-A", "FORWARD", "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"}, []byte(""), nil)
+
+	// OUTPUT
+	f.set("iptables", []string{"-t", "mangle", "-C", "OUTPUT", "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"}, nil, errors.New("nope"))
+	f.set("iptables", []string{"-t", "mangle", "-A", "OUTPUT", "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"}, []byte(""), nil)
+
+	if err := d.ConfigureMssClamping(); err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+}
+
+func TestConfigureMssClamping_V6Also(t *testing.T) {
+	f := newFake()
+	d := NewWrapperWithBinaries(f, "iptables", "ip6tables")
+
+	// v4
+	f.set("iptables", []string{"-t", "mangle", "-C", "FORWARD", "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"}, nil, errors.New("nope"))
+	f.set("iptables", []string{"-t", "mangle", "-A", "FORWARD", "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"}, []byte(""), nil)
+	f.set("iptables", []string{"-t", "mangle", "-C", "OUTPUT", "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"}, nil, errors.New("nope"))
+	f.set("iptables", []string{"-t", "mangle", "-A", "OUTPUT", "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"}, []byte(""), nil)
+
+	// v6
+	f.set("ip6tables", []string{"-t", "mangle", "-C", "FORWARD", "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"}, nil, errors.New("nope"))
+	f.set("ip6tables", []string{"-t", "mangle", "-A", "FORWARD", "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"}, []byte(""), nil)
+	f.set("ip6tables", []string{"-t", "mangle", "-C", "OUTPUT", "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"}, nil, errors.New("nope"))
+	f.set("ip6tables", []string{"-t", "mangle", "-A", "OUTPUT", "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"}, []byte(""), nil)
+
+	if err := d.ConfigureMssClamping(); err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+}
+
+func TestExec_ErrorIncludesTrimmedOutput(t *testing.T) {
+	f := newFake()
+	d := NewWrapperWithBinaries(f, "iptables", "")
+
+	spec := fwdSpec("tun0", "eth0")
+	f.set("iptables", append([]string{"-t", "filter", "-C", "FORWARD"}, spec...), nil, errors.New("nope"))
+	f.set("iptables", append([]string{"-t", "filter", "-A", "FORWARD"}, spec...), []byte(" some stderr text \n"), errors.New("boom"))
+
+	err := d.addIfMissing("iptables", "filter", "FORWARD", spec...)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "out: "+string(bytes.TrimSpace([]byte(" some stderr text \n")))) {
+		t.Fatalf("error should include trimmed output, got: %q", err.Error())
+	}
+}
+
+func TestDelIfPresent_NoRule_NoDelete(t *testing.T) {
+	f := newFake()
+	d := NewWrapperWithBinaries(f, "iptables", "")
+
+	spec := masqSpec("eth0")
+	f.set("iptables", append([]string{"-t", "nat", "-C", "POSTROUTING"}, spec...), nil, errors.New("nope"))
+
+	if err := d.delIfPresent("iptables", "nat", "POSTROUTING", spec...); err != nil {
+		t.Fatalf("unexpected err: %v", err)
 	}
 }

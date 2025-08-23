@@ -114,12 +114,17 @@ func startClient(appCtx context.Context) {
 }
 
 func startServer(appCtx context.Context, configurationManager serverConf.ServerConfigurationManager) {
-	nf, _, nfErr := netfilter.NewAutoNetfilter(PAL.NewExecCommander())
+	nfFactory := netfilter.NewFactory(
+		PAL.NewExecCommander(),
+	)
+	nf, nfErr := nfFactory.Build()
 	if nfErr != nil {
-		log.Fatalf("failed to initialize netfilter: %v", nfErr)
+		log.Fatalf("netfilter init error: %s", nfErr)
 	}
 
-	tunFactory := tun_server.NewServerTunFactory(nf)
+	tunFactory := tun_server.NewServerTunFactory(
+		nf,
+	)
 
 	conf, confErr := configurationManager.Configuration()
 	if confErr != nil {

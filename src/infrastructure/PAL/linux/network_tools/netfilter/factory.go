@@ -3,120 +3,137 @@ package netfilter
 import (
 	"bytes"
 	"errors"
-	"fmt"
+	"strings"
+	"syscall"
+
 	"tungo/application"
 	"tungo/infrastructure/PAL"
 	"tungo/infrastructure/PAL/linux/network_tools/netfilter/internal/interfaces/iptables"
 	"tungo/infrastructure/PAL/linux/network_tools/netfilter/internal/interfaces/nftables"
 
-	gnft "github.com/google/nftables"
+	nftlib "github.com/google/nftables"
 )
 
-type DriverKind int
+// Factory builds a concrete application.Netfilter implementation in OOP style.
+type Factory struct {
+	cmd PAL.Commander
 
-const (
-	FWUnknown        DriverKind = iota
-	FWNftables                  // native nft via netlink (github.com/google/nftables)
-	FWIptablesLegacy            // classic xtables (iptables-legacy)
-)
+	// Injected constructors (test-friendly).
+	newNFT func() (application.Netfilter, error)
+	// v4bin is required, v6bin may be empty if missing.
+	newIPT func(v4bin, v6bin string) application.Netfilter
+}
 
-// String for logs
-func (k DriverKind) String() string {
-	switch k {
-	case FWNftables:
-		return "nftables"
-	case FWIptablesLegacy:
-		return "iptables(legacy)"
-	default:
-		return "unknown"
+func NewFactory(cmd PAL.Commander) *Factory {
+	return &Factory{
+		cmd:    cmd,
+		newNFT: func() (application.Netfilter, error) { return nftables.NewBackend() },
+		newIPT: func(v4bin, v6bin string) application.Netfilter {
+			return iptables.NewWrapperWithBinaries(cmd, v4bin, v6bin)
+		},
 	}
 }
 
-// DetectResult tells which backend to use, and which iptables binaries (if legacy).
-type DetectResult struct {
-	Kind    DriverKind
-	Reason  string // human-friendly explanation of the decision
-	IPTBin  string // "iptables-legacy" or "iptables" (when compiled in legacy mode); empty for nft
-	IP6Bin  string // "ip6tables-legacy" or "ip6tables" (legacy mode) if available; empty if not found
-	ErrHint error  // optional extra hint error (e.g., nft shim present but kernel lacks nf_tables)
+func (f *Factory) WithNFTConstructor(fn func() (application.Netfilter, error)) *Factory {
+	if fn != nil {
+		f.newNFT = fn
+	}
+	return f
 }
 
-// NewAutoNetfilter detects the best available backend and returns a ready Netfilter.
-// Preference order: nftables (netlink) → iptables-legacy → iptables(legacy).
-// It never picks iptables(nf_tables) if nftables is unusable (common on Alpine
-// kernels without nf_tables).
-func NewAutoNetfilter(cmd PAL.Commander) (application.Netfilter, DetectResult, error) {
-	// 1) Try nftables via netlink.
-	if ok, reason, err := kernelSupportsNFT(); ok {
-		b, err := nftables.NewBackend() // uses github.com/google/nftables
-		if err != nil {
-			// Extremely rare: netlink available but open failed.
-			return nil, DetectResult{}, fmt.Errorf("nftables backend init failed: %w", err)
-		}
-		return b, DetectResult{Kind: FWNftables}, nil
-	} else if err != nil {
-		// keep going, but remember why nft failed (useful for final error)
-		_ = reason
+func (f *Factory) WithIPTablesConstructor(fn func(v4bin, v6bin string) application.Netfilter) *Factory {
+	if fn != nil {
+		f.newIPT = fn
 	}
-
-	// 2) Try iptables-legacy explicitly.
-	if bin, ok := hasBinaryVersionOK(cmd, "iptables-legacy"); ok {
-		dr := DetectResult{Kind: FWIptablesLegacy, IPTBin: bin}
-
-		// Optional IPv6 companion — if missing, IPv6 features in iptables backend may fail.
-		if bin6, ok6 := hasBinaryVersionOK(cmd, "ip6tables-legacy"); ok6 {
-			dr.IP6Bin = bin6
-		}
-
-		// Your current iptables backend constructor takes only IPv4 bin; it calls ip6tables directly.
-		// If you later add a separate IPv6 binary field — pass dr.IP6Bin there as well.
-		return iptables.NewIptables(cmd), dr, nil
-	}
-
-	// 3) Fallback to plain "iptables". Must ensure it's actually legacy, not nf_tables.
-	if out, err := cmd.CombinedOutput("iptables", "-V"); err == nil {
-		if bytes.Contains(out, []byte("(legacy)")) {
-			dr := DetectResult{Kind: FWNftables, IPTBin: "iptables"}
-			// Optional IPv6 check
-			if out6, err6 := cmd.CombinedOutput("ip6tables", "-V"); err6 == nil && bytes.Contains(out6, []byte("(legacy)")) {
-				dr.IP6Bin = "ip6tables"
-			}
-			return iptables.NewIptables(cmd), dr, nil
-		}
-		// Compiled as nf_tables. If nft usable — мы бы выбрали его выше; раз нет — это тупик.
-		if bytes.Contains(out, []byte("(nf_tables)")) {
-			return nil, DetectResult{}, errors.New(
-				"iptables is (nf_tables) but nftables is unavailable; install iptables-legacy or enable nf_tables in kernel",
-			)
-		}
-	}
-
-	// Nothing usable found.
-	return nil, DetectResult{}, errors.New(
-		"no firewall backend available: install nftables (kernel+userspace) or iptables-legacy",
-	)
+	return f
 }
 
-// hasBinaryVersionOK checks that a binary exists in PATH and returns its name if `-V` works.
-// We don't strictly parse the version output here except existence/success.
-func hasBinaryVersionOK(cmd PAL.Commander, bin string) (string, bool) {
-	if out, err := cmd.CombinedOutput(bin, "-V"); err == nil && len(out) > 0 {
+// Build picks the best backend: nftables → iptables-legacy → (reject nf_tables iptables if nft unusable).
+func (f *Factory) Build() (application.Netfilter, error) {
+	// 1) nftables via netlink
+	if ok, _ := f.kernelSupportsNFT(); ok {
+		if b, err := f.newNFT(); err == nil {
+			return b, nil
+		}
+	}
+
+	// 2) iptables-legacy
+	if v4bin, ok := f.hasBinaryWorks("iptables-legacy"); ok {
+		v6bin, _ := f.detectIP6Companion(v4bin) // optional
+		return f.newIPT(v4bin, v6bin), nil
+	}
+
+	// 3) plain "iptables": accept only legacy build
+	if mode, out, err := f.iptablesMode("iptables"); err == nil && mode == "legacy" {
+		v6bin, _ := f.detectIP6Companion("iptables")
+		return f.newIPT("iptables", v6bin), nil
+	} else if err == nil && mode == "nf_tables" {
+		return nil, errors.New("iptables is (nf_tables) but nftables is unavailable; install iptables-legacy or enable nf_tables in the kernel")
+	} else if err != nil && f.looksLikeNFTButKernelLacksSupport(err, out) {
+		return nil, errors.New("iptables uses nft shim but kernel reports 'Protocol not supported'; install iptables-legacy or enable nf_tables")
+	}
+
+	return nil, errors.New("no netfilter backend available: install nftables (kernel+userspace) or iptables-legacy")
+}
+
+// ---------- helpers (instance methods) ----------
+
+func (f *Factory) kernelSupportsNFT() (bool, error) {
+	c, err := nftlib.New()
+	if err != nil {
+		return false, err
+	}
+	_ = c.CloseLasting()
+	if _, err := c.ListTables(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (f *Factory) hasBinaryWorks(bin string) (string, bool) {
+	if out, err := f.cmd.CombinedOutput(bin, "-V"); err == nil && len(out) > 0 {
 		return bin, true
 	}
 	return "", false
 }
-func kernelSupportsNFT() (ok bool, reason string, errHint error) {
-	c, err := gnft.New() // not lasting by default
-	if err != nil {
-		return false, "nftables netlink init failed", err
-	}
-	// CloseLasting is safe even for non-lasting conns (no-op).
-	defer func(c *gnft.Conn) {
-		_ = c.CloseLasting()
-	}(c)
 
-	if _, err := c.ListTables(); err != nil {
-		return false, "nftables list tables failed", err
+// detectIP6Companion tries to find matching ip6 binary for the given v4 binary.
+func (f *Factory) detectIP6Companion(v4bin string) (string, bool) {
+	var v6cand string
+	switch v4bin {
+	case "iptables-legacy":
+		v6cand = "ip6tables-legacy"
+	case "iptables":
+		v6cand = "ip6tables"
+	default:
+		return "", false
 	}
-	return true, "nftables available via netlink", nil
+	if out, err := f.cmd.CombinedOutput(v6cand, "-V"); err == nil && len(out) > 0 {
+		return v6cand, true
+	}
+	return "", false
+}
+
+// iptablesMode returns "legacy", "nf_tables", or "" with raw output for diagnostics.
+func (f *Factory) iptablesMode(bin string) (string, []byte, error) {
+	out, err := f.cmd.CombinedOutput(bin, "-V")
+	if err != nil {
+		return "", out, err
+	}
+	switch {
+	case bytes.Contains(out, []byte("(legacy)")):
+		return "legacy", out, nil
+	case bytes.Contains(out, []byte("(nf_tables)")):
+		return "nf_tables", out, nil
+	default:
+		return "", out, nil
+	}
+}
+
+func (f *Factory) looksLikeNFTButKernelLacksSupport(err error, out []byte) bool {
+	msg := strings.ToLower(err.Error() + " " + string(out))
+	return strings.Contains(msg, "failed to initialize nft") &&
+		(strings.Contains(msg, "protocol not supported") ||
+			strings.Contains(msg, "operation not supported") ||
+			errors.Is(err, syscall.EOPNOTSUPP))
 }
