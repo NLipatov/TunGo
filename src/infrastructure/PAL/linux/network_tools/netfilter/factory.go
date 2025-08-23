@@ -5,11 +5,11 @@ import (
 	"errors"
 	"strings"
 	"syscall"
+	"tungo/infrastructure/PAL/linux/network_tools/netfilter/internal/iptables"
+	"tungo/infrastructure/PAL/linux/network_tools/netfilter/internal/nftables"
 
 	"tungo/application"
 	"tungo/infrastructure/PAL"
-	"tungo/infrastructure/PAL/linux/network_tools/netfilter/internal/interfaces/iptables"
-	"tungo/infrastructure/PAL/linux/network_tools/netfilter/internal/interfaces/nftables"
 
 	nftlib "github.com/google/nftables"
 )
