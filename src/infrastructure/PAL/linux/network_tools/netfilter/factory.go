@@ -34,20 +34,6 @@ func NewFactory(cmd PAL.Commander) *Factory {
 	}
 }
 
-func (f *Factory) WithNFTConstructor(fn func() (application.Netfilter, error)) *Factory {
-	if fn != nil {
-		f.newNFT = fn
-	}
-	return f
-}
-
-func (f *Factory) WithIPTablesConstructor(fn func(v4bin, v6bin string) application.Netfilter) *Factory {
-	if fn != nil {
-		f.newIPT = fn
-	}
-	return f
-}
-
 // Build picks the best backend: nftables → iptables-legacy → (reject nf_tables iptables if nft unusable).
 func (f *Factory) Build() (application.Netfilter, error) {
 	// 1) nftables via netlink
