@@ -6,9 +6,9 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"tungo/application"
 	"tungo/infrastructure/PAL/linux/network_tools/ioctl"
 	"tungo/infrastructure/PAL/linux/network_tools/ip"
-	"tungo/infrastructure/PAL/linux/network_tools/iptables"
 	"tungo/infrastructure/PAL/linux/network_tools/sysctl"
 	"tungo/infrastructure/settings"
 )
@@ -189,15 +189,15 @@ func (m *mockIPErrDel) LinkDelete(_ string) error { return m.err }
 // newFactory helper
 func newFactory(
 	ipC ip.Contract,
-	iptC iptables.Contract,
+	iptC application.Netfilter,
 	ioC ioctl.Contract,
 	sysC sysctl.Contract,
 ) *ServerTunFactory {
 	return &ServerTunFactory{
-		ip:       ipC,
-		iptables: iptC,
-		ioctl:    ioC,
-		sysctl:   sysC,
+		ip:        ipC,
+		netfilter: iptC,
+		ioctl:     ioC,
+		sysctl:    sysC,
 	}
 }
 
@@ -303,16 +303,6 @@ func TestCreateTunDevice_ConfigureStepErrors(t *testing.T) {
 				)
 			},
 			want: "failed to set up forwarding",
-		},
-		{
-			setup: func() *ServerTunFactory {
-				return newFactory(
-					&mockIP{},
-					&mockIPTErr{&mockIPT{}, "ConfigureMssClamping", errors.New("clamp_err")},
-					&mockIOCTL{}, &mockSys{},
-				)
-			},
-			want: "clamp_err",
 		},
 	}
 	for _, c := range cases {
