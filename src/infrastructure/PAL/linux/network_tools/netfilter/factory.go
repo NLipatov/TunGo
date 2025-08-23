@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"tungo/application"
 	"tungo/infrastructure/PAL"
+	"tungo/infrastructure/PAL/linux/network_tools/netfilter/interfaces/nftables"
 
 	gnft "github.com/google/nftables"
 )
@@ -46,7 +47,7 @@ type DetectResult struct {
 func NewAutoNetfilter(cmd PAL.Commander) (application.Netfilter, DetectResult, error) {
 	// 1) Try nftables via netlink.
 	if ok, reason, err := kernelSupportsNFT(); ok {
-		b, err := NewBackend() // uses github.com/google/nftables
+		b, err := nftables.NewBackend() // uses github.com/google/nftables
 		if err != nil {
 			// Extremely rare: netlink available but open failed.
 			return nil, DetectResult{}, fmt.Errorf("nftables backend init failed: %w", err)

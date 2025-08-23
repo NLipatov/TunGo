@@ -12,7 +12,7 @@
 // NOTE: MSS clamping is intentionally not implemented here. Prefer sysctl
 // net.ipv4.tcp_mtu_probing=1; nft exprs for clamping are non-trivial and brittle.
 
-package netfilter
+package nftables
 
 import (
 	"errors"
@@ -30,7 +30,7 @@ import (
 )
 
 // Compile-time check against your domain contract.
-var _ application.Netfilter = (*Backend)(nil)
+var _ application.Netfilter = (*Nftables)(nil)
 
 // Config controls backend behavior. Zero value is sane.
 type Config struct {
@@ -70,33 +70,34 @@ func DefaultConfig() Config {
 	}
 }
 
-// Backend is a stateful nftables-backed netfilter implementation.
-type Backend struct {
-	c   *nft.Conn
-	cfg Config
+// Nftables is a stateful nftables-backed netfilter implementation.
+type Nftables struct {
+	conn conn
+	cfg  Config
 }
 
 // NewBackend creates a lasting netlink connection. Requires CAP_NET_ADMIN.
-func NewBackend() (*Backend, error) { return NewBackendWithConfig(DefaultConfig()) }
+func NewBackend() (*Nftables, error) { return NewBackendWithConfig(DefaultConfig()) }
 
-// NewBackendWithConfig allows fine tuning behavior.
-func NewBackendWithConfig(cfg Config) (*Backend, error) {
+// NewBackendWithConfig allows fine-tuning behavior.
+func NewBackendWithConfig(cfg Config) (*Nftables, error) {
 	c, err := nft.New(nft.AsLasting())
 	if err != nil {
 		return nil, fmt.Errorf("nftables conn: %w", err)
 	}
-	return &Backend{c: c, cfg: cfg}, nil
+	return &Nftables{conn: c, cfg: cfg}, nil
 }
 
-// NewBackendFromConn is handy for tests/injected connections.
-func NewBackendFromConn(c *nft.Conn, cfg Config) *Backend { return &Backend{c: c, cfg: cfg} }
+func NewBackendWithConfigAndConn(conn conn, cfg Config) (*Nftables, error) {
+	return &Nftables{conn: conn, cfg: cfg}, nil
+}
 
 // Close shuts down the lasting netlink connection.
-func (b *Backend) Close() error {
-	if b == nil || b.c == nil {
+func (b *Nftables) Close() error {
+	if b == nil || b.conn == nil {
 		return nil
 	}
-	return b.c.CloseLasting()
+	return b.conn.CloseLasting()
 }
 
 // ---------- internal helpers: sysctl / feature detection ----------
@@ -124,8 +125,8 @@ func isConntrackMissing(err error) bool {
 
 // ---------- internal helpers: ensure tables/chains (idempotent) ----------
 
-func (b *Backend) ensureTableFlushed(fam nft.TableFamily, name string) (*nft.Table, bool, error) {
-	tables, err := b.c.ListTables()
+func (b *Nftables) ensureTableFlushed(fam nft.TableFamily, name string) (*nft.Table, bool, error) {
+	tables, err := b.conn.ListTables()
 	if err != nil {
 		return nil, false, fmt.Errorf("list tables: %w", err)
 	}
@@ -135,25 +136,25 @@ func (b *Backend) ensureTableFlushed(fam nft.TableFamily, name string) (*nft.Tab
 		}
 	}
 	t := &nft.Table{Family: fam, Name: name}
-	b.c.AddTable(t)
-	if err := b.c.Flush(); err != nil {
+	b.conn.AddTable(t)
+	if err := b.conn.Flush(); err != nil {
 		if isAFNotSupported(err) {
 			// Let caller decide how to handle (e.g., skip IPv6 quietly).
 			return nil, false, err
 		}
-		return nil, false, fmt.Errorf("add table %s/%s: %w", fam, name, err)
+		return nil, false, fmt.Errorf("add table %v/%s: %w", fam, name, err)
 	}
 	return t, true, nil
 }
 
-func (b *Backend) ensureBaseChainFlushed(
+func (b *Nftables) ensureBaseChainFlushed(
 	t *nft.Table,
 	name string,
 	ctype nft.ChainType,
 	hook nft.ChainHook,
 	prio int,
 ) (*nft.Chain, bool, error) {
-	chains, err := b.c.ListChains()
+	chains, err := b.conn.ListChains()
 	if err != nil {
 		return nil, false, fmt.Errorf("list chains: %w", err)
 	}
@@ -177,16 +178,16 @@ func (b *Backend) ensureBaseChainFlushed(
 		pol := nft.ChainPolicyAccept
 		ch.Policy = &pol
 	}
-	b.c.AddChain(ch)
-	if err := b.c.Flush(); err != nil {
+	b.conn.AddChain(ch)
+	if err := b.conn.Flush(); err != nil {
 		return nil, false, fmt.Errorf("add chain %s/%s: %w", t.Name, name, err)
 	}
 	return ch, true, nil
 }
 
 // getChain looks up an existing table/chain without creating anything.
-func (b *Backend) getChain(fam nft.TableFamily, tableName, chainName string) (*nft.Table, *nft.Chain, error) {
-	tables, err := b.c.ListTables()
+func (b *Nftables) getChain(fam nft.TableFamily, tableName, chainName string) (*nft.Table, *nft.Chain, error) {
+	tables, err := b.conn.ListTables()
 	if err != nil {
 		return nil, nil, fmt.Errorf("list tables: %w", err)
 	}
@@ -200,7 +201,7 @@ func (b *Backend) getChain(fam nft.TableFamily, tableName, chainName string) (*n
 	if tbl == nil {
 		return nil, nil, os.ErrNotExist
 	}
-	chains, err := b.c.ListChains()
+	chains, err := b.conn.ListChains()
 	if err != nil {
 		return nil, nil, fmt.Errorf("list chains: %w", err)
 	}
@@ -252,8 +253,8 @@ func exprForwardAcceptEstablished(iif, oif string) []expr.Any {
 
 // ---------- internal helpers: idempotent add/del by UserData tag ----------
 
-func (b *Backend) addIfMissingByTag(t *nft.Table, ch *nft.Chain, e []expr.Any, tag []byte) error {
-	rules, err := b.c.GetRules(t, ch)
+func (b *Nftables) addIfMissingByTag(t *nft.Table, ch *nft.Chain, e []expr.Any, tag []byte) error {
+	rules, err := b.conn.GetRules(t, ch)
 	if err != nil {
 		return fmt.Errorf("get rules %s/%s: %w", t.Name, ch.Name, err)
 	}
@@ -262,18 +263,18 @@ func (b *Backend) addIfMissingByTag(t *nft.Table, ch *nft.Chain, e []expr.Any, t
 			return nil
 		}
 	}
-	b.c.AddRule(&nft.Rule{Table: t, Chain: ch, Exprs: e, UserData: tag})
+	b.conn.AddRule(&nft.Rule{Table: t, Chain: ch, Exprs: e, UserData: tag})
 	return nil
 }
 
-func (b *Backend) delIfPresentByTag(t *nft.Table, ch *nft.Chain, tag []byte) error {
-	rules, err := b.c.GetRules(t, ch)
+func (b *Nftables) delIfPresentByTag(t *nft.Table, ch *nft.Chain, tag []byte) error {
+	rules, err := b.conn.GetRules(t, ch)
 	if err != nil {
 		return fmt.Errorf("get rules %s/%s: %w", t.Name, ch.Name, err)
 	}
 	for _, r := range rules {
 		if reflect.DeepEqual(r.UserData, tag) {
-			b.c.DelRule(r)
+			_ = b.conn.DelRule(r)
 			break
 		}
 	}
@@ -282,7 +283,7 @@ func (b *Backend) delIfPresentByTag(t *nft.Table, ch *nft.Chain, tag []byte) err
 
 // ---------- Docker integration: DOCKER-USER (if present) ----------
 
-func (b *Backend) addDockerUserForwardRules(fam nft.TableFamily, famName, tun, dev string) (bool, error) {
+func (b *Nftables) addDockerUserForwardRules(fam nft.TableFamily, famName, tun, dev string) (bool, error) {
 	tbl, ch, err := b.getChain(fam, "filter", "DOCKER-USER")
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -301,7 +302,7 @@ func (b *Backend) addDockerUserForwardRules(fam nft.TableFamily, famName, tun, d
 	return true, nil
 }
 
-func (b *Backend) delDockerUserForwardRules(fam nft.TableFamily, famName, tun, dev string) (bool, error) {
+func (b *Nftables) delDockerUserForwardRules(fam nft.TableFamily, famName, tun, dev string) (bool, error) {
 	tbl, ch, err := b.getChain(fam, "filter", "DOCKER-USER")
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -316,7 +317,7 @@ func (b *Backend) delDockerUserForwardRules(fam nft.TableFamily, famName, tun, d
 
 // ========================= application.Netfilter ==============================
 
-func (b *Backend) EnableDevMasquerade(devName string) error {
+func (b *Nftables) EnableDevMasquerade(devName string) error {
 	if devName == "" {
 		return errors.New("dev name is empty")
 	}
@@ -343,13 +344,13 @@ func (b *Backend) EnableDevMasquerade(devName string) error {
 		}
 	}
 
-	if err := b.c.Flush(); err != nil {
+	if err := b.conn.Flush(); err != nil {
 		return fmt.Errorf("flush nat masquerade: %w", err)
 	}
 	return nil
 }
 
-func (b *Backend) DisableDevMasquerade(devName string) error {
+func (b *Nftables) DisableDevMasquerade(devName string) error {
 	if devName == "" {
 		return errors.New("dev name is empty")
 	}
@@ -368,13 +369,13 @@ func (b *Backend) DisableDevMasquerade(devName string) error {
 		}
 	}
 
-	if err := b.c.Flush(); err != nil {
+	if err := b.conn.Flush(); err != nil {
 		return fmt.Errorf("flush nat unmasq: %w", err)
 	}
 	return nil
 }
 
-func (b *Backend) EnableForwardingFromTunToDev(tunName, devName string) error {
+func (b *Nftables) EnableForwardingFromTunToDev(tunName, devName string) error {
 	if tunName == "" || devName == "" {
 		return errors.New("iface name is empty")
 	}
@@ -397,7 +398,7 @@ func (b *Backend) EnableForwardingFromTunToDev(tunName, devName string) error {
 			return err
 		}
 		if ok4 || ok6 {
-			if err := b.c.Flush(); err != nil {
+			if err := b.conn.Flush(); err != nil {
 				if isConntrackMissing(err) {
 					return fmt.Errorf("flush docker-user: %w (conntrack likely missing; load nf_conntrack)", err)
 				}
@@ -423,7 +424,7 @@ func (b *Backend) EnableForwardingFromTunToDev(tunName, devName string) error {
 		return err
 	}
 
-	if err := b.c.Flush(); err != nil {
+	if err := b.conn.Flush(); err != nil {
 		if isConntrackMissing(err) {
 			return fmt.Errorf("flush inet forward: %w (conntrack likely missing; load nf_conntrack)", err)
 		}
@@ -432,7 +433,7 @@ func (b *Backend) EnableForwardingFromTunToDev(tunName, devName string) error {
 	return nil
 }
 
-func (b *Backend) DisableForwardingFromTunToDev(tunName, devName string) error {
+func (b *Nftables) DisableForwardingFromTunToDev(tunName, devName string) error {
 	if tunName == "" || devName == "" {
 		return errors.New("iface name is empty")
 	}
@@ -451,22 +452,21 @@ func (b *Backend) DisableForwardingFromTunToDev(tunName, devName string) error {
 		}
 	}
 
-	if err := b.c.Flush(); err != nil {
+	if err := b.conn.Flush(); err != nil {
 		return fmt.Errorf("flush forward cleanup: %w", err)
 	}
 	return nil
 }
 
-// These two delegate to the same logic; the EST/REL rule is installed/removed alongside.
-func (b *Backend) EnableForwardingFromDevToTun(tunName, devName string) error {
+func (b *Nftables) EnableForwardingFromDevToTun(tunName, devName string) error {
 	return b.EnableForwardingFromTunToDev(tunName, devName)
 }
-func (b *Backend) DisableForwardingFromDevToTun(tunName, devName string) error {
+func (b *Nftables) DisableForwardingFromDevToTun(tunName, devName string) error {
 	return b.DisableForwardingFromTunToDev(tunName, devName)
 }
 
 // ConfigureMssClamping is intentionally not implemented here.
 // Prefer: sysctl net.ipv4.tcp_mtu_probing=1 (system-wide, simpler, less brittle).
-func (b *Backend) ConfigureMssClamping() error {
+func (b *Nftables) ConfigureMssClamping() error {
 	return errors.New("MSS clamping via nftables expressions is not implemented; prefer sysctl net.ipv4.tcp_mtu_probing=1")
 }
