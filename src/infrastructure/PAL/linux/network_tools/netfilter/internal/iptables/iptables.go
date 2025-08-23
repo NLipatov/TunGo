@@ -9,7 +9,7 @@ import (
 	"tungo/infrastructure/PAL"
 )
 
-// Driver is a thin, idempotent wrapper over iptables/ip6tables binaries.
+// Driver is a thin, idempotent driver for iptables/ip6tables binaries.
 // It prefers DOCKER-USER chain when present and falls back to FORWARD.
 type Driver struct {
 	cmd  PAL.Commander
@@ -17,8 +17,8 @@ type Driver struct {
 	ipt6 string // e.g. "ip6tables-legacy" or "ip6tables" (can be empty if not available)
 }
 
-// NewWrapperWithBinaries lets the factory inject explicit binaries (recommended).
-func NewWrapperWithBinaries(cmd PAL.Commander, ipt4, ipt6 string) *Driver {
+// NewDriverWithBinaries lets the factory inject explicit binaries (recommended).
+func NewDriverWithBinaries(cmd PAL.Commander, ipt4, ipt6 string) *Driver {
 	if ipt4 == "" {
 		ipt4 = "iptables"
 	}

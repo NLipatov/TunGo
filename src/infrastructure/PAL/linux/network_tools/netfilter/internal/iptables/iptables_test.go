@@ -80,7 +80,7 @@ func estStateSpec(iif, oif string) []string {
 
 func TestEnableDevMasquerade_V4V6_Success(t *testing.T) {
 	f := newFake()
-	d := NewWrapperWithBinaries(f, "iptables", "ip6tables")
+	d := NewDriverWithBinaries(f, "iptables", "ip6tables")
 
 	// v4: not present -> add
 	f.set("iptables", append([]string{"-t", "nat", "-C", "POSTROUTING"}, masqSpec("eth0")...), nil, errors.New("nope"))
@@ -96,7 +96,7 @@ func TestEnableDevMasquerade_V4V6_Success(t *testing.T) {
 }
 
 func TestEnableDevMasquerade_EmptyDev_Err(t *testing.T) {
-	d := NewWrapperWithBinaries(newFake(), "iptables", "ip6tables")
+	d := NewDriverWithBinaries(newFake(), "iptables", "ip6tables")
 	if err := d.EnableDevMasquerade(""); err == nil {
 		t.Fatal("want error on empty dev, got nil")
 	}
@@ -104,7 +104,7 @@ func TestEnableDevMasquerade_EmptyDev_Err(t *testing.T) {
 
 func TestEnableDevMasquerade_RuleExists_NoAdd(t *testing.T) {
 	f := newFake()
-	d := NewWrapperWithBinaries(f, "iptables", "")
+	d := NewDriverWithBinaries(f, "iptables", "")
 	f.set("iptables", append([]string{"-t", "nat", "-C", "POSTROUTING"}, masqSpec("eth0")...), []byte("ok"), nil)
 	if err := d.EnableDevMasquerade("eth0"); err != nil {
 		t.Fatalf("unexpected err: %v", err)
@@ -113,7 +113,7 @@ func TestEnableDevMasquerade_RuleExists_NoAdd(t *testing.T) {
 
 func TestDisableDevMasquerade_V4_V6(t *testing.T) {
 	f := newFake()
-	d := NewWrapperWithBinaries(f, "iptables", "ip6tables")
+	d := NewDriverWithBinaries(f, "iptables", "ip6tables")
 
 	// v4 present -> delete
 	f.set("iptables", append([]string{"-t", "nat", "-C", "POSTROUTING"}, masqSpec("eth0")...), []byte("ok"), nil)
@@ -130,7 +130,7 @@ func TestDisableDevMasquerade_V4_V6(t *testing.T) {
 
 func TestDisableDevMasquerade_NotPresent_NoDelete(t *testing.T) {
 	f := newFake()
-	d := NewWrapperWithBinaries(f, "iptables", "")
+	d := NewDriverWithBinaries(f, "iptables", "")
 	// not present -> -C errors => no -D expected
 	f.set("iptables", append([]string{"-t", "nat", "-C", "POSTROUTING"}, masqSpec("eth0")...), nil, errors.New("nope"))
 
@@ -141,7 +141,7 @@ func TestDisableDevMasquerade_NotPresent_NoDelete(t *testing.T) {
 
 func TestEnableForwardingFromTunToDev_DockerUser_FallbackConntrackToState(t *testing.T) {
 	f := newFake()
-	d := NewWrapperWithBinaries(f, "iptables", "")
+	d := NewDriverWithBinaries(f, "iptables", "")
 
 	// DOCKER-USER exists
 	f.set("iptables", []string{"-t", "filter", "-nL", "DOCKER-USER"}, []byte("chain"), nil)
@@ -164,7 +164,7 @@ func TestEnableForwardingFromTunToDev_DockerUser_FallbackConntrackToState(t *tes
 
 func TestEnableForwardingFromTunToDev_Forward_NoDockerUser(t *testing.T) {
 	f := newFake()
-	d := NewWrapperWithBinaries(f, "iptables", "")
+	d := NewDriverWithBinaries(f, "iptables", "")
 
 	// DOCKER-USER missing -> FORWARD
 	f.set("iptables", []string{"-t", "filter", "-nL", "DOCKER-USER"}, nil, errors.New("no chain"))
@@ -184,7 +184,7 @@ func TestEnableForwardingFromTunToDev_Forward_NoDockerUser(t *testing.T) {
 
 func TestDisableForwardingFromTunToDev_DeletePaths(t *testing.T) {
 	f := newFake()
-	d := NewWrapperWithBinaries(f, "iptables", "")
+	d := NewDriverWithBinaries(f, "iptables", "")
 
 	// Use FORWARD
 	f.set("iptables", []string{"-t", "filter", "-nL", "DOCKER-USER"}, nil, errors.New("no chain"))
@@ -207,7 +207,7 @@ func TestDisableForwardingFromTunToDev_DeletePaths(t *testing.T) {
 
 func TestEnableForwardingFromDevToTun_Delegates(t *testing.T) {
 	f := newFake()
-	d := NewWrapperWithBinaries(f, "iptables", "")
+	d := NewDriverWithBinaries(f, "iptables", "")
 
 	// No DOCKER-USER -> FORWARD
 	f.set("iptables", []string{"-t", "filter", "-nL", "DOCKER-USER"}, nil, errors.New("no chain"))
@@ -223,7 +223,7 @@ func TestEnableForwardingFromDevToTun_Delegates(t *testing.T) {
 
 func TestConfigureMssClamping_V4Only(t *testing.T) {
 	f := newFake()
-	d := NewWrapperWithBinaries(f, "iptables", "")
+	d := NewDriverWithBinaries(f, "iptables", "")
 
 	// FORWARD
 	f.set("iptables", []string{"-t", "mangle", "-C", "FORWARD", "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"}, nil, errors.New("nope"))
@@ -240,7 +240,7 @@ func TestConfigureMssClamping_V4Only(t *testing.T) {
 
 func TestConfigureMssClamping_V6Also(t *testing.T) {
 	f := newFake()
-	d := NewWrapperWithBinaries(f, "iptables", "ip6tables")
+	d := NewDriverWithBinaries(f, "iptables", "ip6tables")
 
 	// v4
 	f.set("iptables", []string{"-t", "mangle", "-C", "FORWARD", "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"}, nil, errors.New("nope"))
@@ -261,7 +261,7 @@ func TestConfigureMssClamping_V6Also(t *testing.T) {
 
 func TestExec_ErrorIncludesTrimmedOutput(t *testing.T) {
 	f := newFake()
-	d := NewWrapperWithBinaries(f, "iptables", "")
+	d := NewDriverWithBinaries(f, "iptables", "")
 
 	spec := fwdSpec("tun0", "eth0")
 	f.set("iptables", append([]string{"-t", "filter", "-C", "FORWARD"}, spec...), nil, errors.New("nope"))
@@ -278,7 +278,7 @@ func TestExec_ErrorIncludesTrimmedOutput(t *testing.T) {
 
 func TestDelIfPresent_NoRule_NoDelete(t *testing.T) {
 	f := newFake()
-	d := NewWrapperWithBinaries(f, "iptables", "")
+	d := NewDriverWithBinaries(f, "iptables", "")
 
 	spec := masqSpec("eth0")
 	f.set("iptables", append([]string{"-t", "nat", "-C", "POSTROUTING"}, spec...), nil, errors.New("nope"))

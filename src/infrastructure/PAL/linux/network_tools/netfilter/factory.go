@@ -29,7 +29,7 @@ func NewFactory(cmd PAL.Commander) *Factory {
 		cmd:    cmd,
 		newNFT: func() (application.Netfilter, error) { return nftables.NewBackend() },
 		newIPT: func(v4bin, v6bin string) application.Netfilter {
-			return iptables.NewWrapperWithBinaries(cmd, v4bin, v6bin)
+			return iptables.NewDriverWithBinaries(cmd, v4bin, v6bin)
 		},
 	}
 }
