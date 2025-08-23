@@ -89,7 +89,10 @@ func (t *TransportHandler) HandleTransport() error {
 func (t *TransportHandler) registerClient(conn net.Conn, tunFile io.ReadWriteCloser, ctx context.Context) error {
 	t.logger.Printf("connected: %s", conn.RemoteAddr())
 
-	framingAdapter := adapters.NewLengthPrefixFramingAdapter(conn, settings.MTU+settings.TCPChacha20Overhead)
+	framingAdapter, fErr := adapters.NewLengthPrefixFramingAdapter(conn, settings.MTU+settings.TCPChacha20Overhead)
+	if fErr != nil {
+		return fErr
+	}
 	h := t.handshakeFactory.NewHandshake()
 	internalIP, handshakeErr := h.ServerSideHandshake(framingAdapter)
 	if handshakeErr != nil {
