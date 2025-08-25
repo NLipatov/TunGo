@@ -331,3 +331,205 @@ func TestExprBuilders_Sanity(t *testing.T) {
 	rs3 := exprForwardAcceptEstablished("i", "o")
 	_ = []expr.Any{rs2[0], rs3[0]} // just ensure non-empty and types OK
 }
+func TestEnableDevMasquerade_EmptyName(t *testing.T) {
+	fc := &fakeConn{}
+	b, _ := NewBackendWithConfigAndConn(fc, DefaultConfig())
+	if err := b.EnableDevMasquerade(""); err == nil {
+		t.Fatalf("want error on empty dev name")
+	}
+}
+
+func TestDisableDevMasquerade_EmptyName(t *testing.T) {
+	fc := &fakeConn{}
+	b, _ := NewBackendWithConfigAndConn(fc, DefaultConfig())
+	if err := b.DisableDevMasquerade(""); err == nil {
+		t.Fatalf("want error on empty dev name")
+	}
+}
+
+func TestForward_EmptyNames(t *testing.T) {
+	fc := &fakeConn{}
+	b, _ := NewBackendWithConfigAndConn(fc, DefaultConfig())
+	if err := b.EnableForwardingFromTunToDev("", "eth0"); err == nil {
+		t.Fatalf("want error on empty iface")
+	}
+	if err := b.EnableForwardingFromTunToDev("tun0", ""); err == nil {
+		t.Fatalf("want error on empty iface")
+	}
+}
+
+func TestClose_NilReceiver(t *testing.T) {
+	// Calling method on a nil receiver should be a no-op.
+	var b *Nftables
+	if err := b.Close(); err != nil {
+		t.Fatalf("nil receiver Close should not error: %v", err)
+	}
+}
+
+func TestEnableDevMasquerade_FlushError_AddTableV4(t *testing.T) {
+	fc := &fakeConn{nextFlushErr: errors.New("add-table-fail")}
+	b, _ := NewBackendWithConfigAndConn(fc, DefaultConfig())
+
+	err := b.EnableDevMasquerade("eth0")
+	if err == nil {
+		t.Fatalf("expected add-table error")
+	}
+	s := err.Error()
+	// family may be printed as "2" or "ip"
+	if !strings.Contains(s, "add table ") ||
+		!strings.Contains(s, "/tungo_nat: add-table-fail") {
+		t.Fatalf("expected add-table v4 error, got: %v", err)
+	}
+}
+
+func TestEnableDevMasquerade_FlushError_AddChainV4(t *testing.T) {
+	// Pre-create v4 table to force chain creation flush to fail.
+	cfg := DefaultConfig()
+	fc := &fakeConn{}
+	tbl4 := &nft.Table{Family: nft.TableFamilyIPv4, Name: cfg.TableNat4Name}
+	fc.AddTable(tbl4)
+	fc.nextFlushErr = errors.New("add-chain-fail")
+
+	b, _ := NewBackendWithConfigAndConn(fc, cfg)
+	err := b.EnableDevMasquerade("eth0")
+	if err == nil || !strings.Contains(err.Error(), "add chain tungo_nat/postrouting: add-chain-fail") {
+		t.Fatalf("expected add-chain error, got %v", err)
+	}
+}
+
+func TestEnableDevMasquerade_FinalFlushError(t *testing.T) {
+	cfg := DefaultConfig()
+	fc := &fakeConn{}
+
+	// Pre-create BOTH v4 and v6 NAT tables and postrouting chains,
+	// so ensureTableFlushed/ensureBaseChainFlushed do NOT call Flush().
+	tbl4 := &nft.Table{Family: nft.TableFamilyIPv4, Name: cfg.TableNat4Name}
+	ch4 := &nft.Chain{Table: tbl4, Name: cfg.PostroutingChainName}
+	fc.AddTable(tbl4)
+	fc.AddChain(ch4)
+
+	tbl6 := &nft.Table{Family: nft.TableFamilyIPv6, Name: cfg.TableNat6Name}
+	ch6 := &nft.Chain{Table: tbl6, Name: cfg.PostroutingChainName}
+	fc.AddTable(tbl6)
+	fc.AddChain(ch6)
+
+	// Now make the ONLY remaining Flush (the final one) fail.
+	fc.nextFlushErr = errors.New("final-flush-fail")
+
+	b, _ := NewBackendWithConfigAndConn(fc, cfg)
+	err := b.EnableDevMasquerade("eth0")
+	if err == nil || !strings.Contains(err.Error(), "flush nat masquerade: final-flush-fail") {
+		t.Fatalf("expected final flush error, got %v", err)
+	}
+}
+
+func TestDisableDevMasquerade_FinalFlushError(t *testing.T) {
+	cfg := DefaultConfig()
+	fc := &fakeConn{}
+
+	// Pre-create BOTH v4 and v6 NAT tables and postrouting chains
+	// so helper ensure* functions don't call Flush().
+	tbl4 := &nft.Table{Family: nft.TableFamilyIPv4, Name: cfg.TableNat4Name}
+	ch4 := &nft.Chain{Table: tbl4, Name: cfg.PostroutingChainName}
+	fc.AddTable(tbl4)
+	fc.AddChain(ch4)
+
+	tbl6 := &nft.Table{Family: nft.TableFamilyIPv6, Name: cfg.TableNat6Name}
+	ch6 := &nft.Chain{Table: tbl6, Name: cfg.PostroutingChainName}
+	fc.AddTable(tbl6)
+	fc.AddChain(ch6)
+
+	// Now fail the ONLY remaining Flush() (the final one).
+	fc.nextFlushErr = errors.New("unmasq-flush-fail")
+
+	b, _ := NewBackendWithConfigAndConn(fc, cfg)
+	err := b.DisableDevMasquerade("eth0")
+	if err == nil || !strings.Contains(err.Error(), "flush nat unmasq: unmasq-flush-fail") {
+		t.Fatalf("expected unmasq flush error, got %v", err)
+	}
+}
+
+func TestForward_DockerUser_GenericFlushError(t *testing.T) {
+	// Docker path present; generic error (not EOPNOTSUPP) should bubble with docker-user prefix.
+	cfg := DefaultConfig()
+	cfg.PreferDockerUser = true
+	fc := &fakeConn{}
+	tbl4 := &nft.Table{Family: nft.TableFamilyIPv4, Name: "filter"}
+	chUsr4 := &nft.Chain{Table: tbl4, Name: "DOCKER-USER"}
+	fc.AddTable(tbl4)
+	fc.AddChain(chUsr4)
+	fc.nextFlushErr = errors.New("boom")
+
+	b, _ := NewBackendWithConfigAndConn(fc, cfg)
+	err := b.EnableForwardingFromTunToDev("tun0", "eth0")
+	if err == nil || !strings.Contains(err.Error(), "flush docker-user: boom") {
+		t.Fatalf("expected docker-user flush error, got %v", err)
+	}
+}
+
+func TestForward_InetFallback_ConntrackMissingAnnotated(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.PreferDockerUser = false
+	fc := &fakeConn{}
+
+	// Pre-create inet table and forward chain so ensureTableFlushed/ensureBaseChainFlushed
+	// do NOT call Flush() (they will find existing objects and return).
+	tbl := &nft.Table{Family: nft.TableFamilyINet, Name: cfg.TableInetName}
+	ch := &nft.Chain{Table: tbl, Name: cfg.ForwardChainName}
+	fc.AddTable(tbl)
+	fc.AddChain(ch)
+
+	// Make the *final* Flush() fail like missing conntrack.
+	fc.nextFlushErr = syscall.EOPNOTSUPP
+
+	b, _ := NewBackendWithConfigAndConn(fc, cfg)
+	err := b.EnableForwardingFromTunToDev("tun0", "eth0")
+	if err == nil {
+		t.Fatalf("expected annotated inet flush error")
+	}
+	s := strings.ToLower(err.Error())
+	if !strings.Contains(s, "flush inet forward") || !strings.Contains(s, "conntrack") {
+		t.Fatalf("expected annotated inet flush error, got: %v", err)
+	}
+}
+
+func TestEnableDisableForwarding_Aliases(t *testing.T) {
+	// Cover the Dev<->Tun alias methods explicitly.
+	cfg := DefaultConfig()
+	cfg.PreferDockerUser = false
+	fc := &fakeConn{}
+	b, _ := NewBackendWithConfigAndConn(fc, cfg)
+
+	if err := b.EnableForwardingFromDevToTun("tunX", "ethX"); err != nil {
+		t.Fatalf("EnableForwardingFromDevToTun: %v", err)
+	}
+	ch := findChain(t, fc, nft.TableFamilyINet, cfg.TableInetName, cfg.ForwardChainName)
+	if !hasRuleWithTag(fc, ch, "tungo:fwd iif=tunX oif=ethX") ||
+		!hasRuleWithTag(fc, ch, "tungo:fwdret iif=ethX oif=tunX") {
+		t.Fatalf("alias enable did not install rules")
+	}
+	if err := b.DisableForwardingFromDevToTun("tunX", "ethX"); err != nil {
+		t.Fatalf("DisableForwardingFromDevToTun: %v", err)
+	}
+	if rulesCount(fc, ch) != 0 {
+		t.Fatalf("alias disable did not remove rules")
+	}
+}
+
+func TestZstr_NULTerminated(t *testing.T) {
+	b := zstr("abc")
+	if len(b) != 4 || b[3] != 0x00 {
+		t.Fatalf("zstr must be NUL-terminated, got %v", b)
+	}
+}
+
+func TestNewBackendAndWithConfig_Smoke(t *testing.T) {
+	// Calling those constructors at least executes their lines.
+	// They may fail on unusual environments; either result is acceptable.
+	if b, err := NewBackendWithConfig(DefaultConfig()); err == nil {
+		_ = b.Close()
+	}
+	if b, err := NewBackend(); err == nil {
+		_ = b.Close()
+	}
+}
