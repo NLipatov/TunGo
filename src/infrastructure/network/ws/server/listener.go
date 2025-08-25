@@ -1,20 +1,16 @@
 //go:build !js
 
-package ws
+package server
 
 import (
 	"context"
 	"net"
 	"net/http"
 	"net/netip"
-	"strconv"
 	"sync"
 	"time"
-	"tungo/infrastructure/settings"
-
 	"tungo/application/listeners"
-
-	"github.com/coder/websocket"
+	"tungo/infrastructure/logging"
 )
 
 // compile-time check (Listener must implement listeners.TcpListener)
@@ -34,29 +30,13 @@ func NewListener(ctx context.Context, ap netip.AddrPort) (listeners.TcpListener,
 	if err != nil {
 		return nil, err
 	}
-	q := make(chan net.Conn, 1024)
+	queue := make(chan net.Conn, 1024)
 	closed := make(chan struct{})
 
+	handler := NewDefaultHandler(NewDefaultUpgrader(), queue, logging.NewLogLogger())
+
 	mux := http.NewServeMux()
-	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-		c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-			CompressionMode: websocket.CompressionDisabled,
-		})
-		if err != nil {
-			return
-		}
-		c.SetReadLimit(int64(settings.MTU + settings.TCPChacha20Overhead))
-
-		local := ln.Addr()
-		remote := parseTCPAddr(r.RemoteAddr)
-		conn := NewAdapter(context.Background(), c, nil).WithAddrs(local, remote)
-
-		select {
-		case q <- conn:
-		default:
-			_ = c.Close(websocket.StatusPolicyViolation, "queue full")
-		}
-	})
+	mux.HandleFunc("/ws", handler.Handle)
 
 	srv := &http.Server{Handler: mux}
 	go func() {
@@ -70,7 +50,7 @@ func NewListener(ctx context.Context, ap netip.AddrPort) (listeners.TcpListener,
 		_ = srv.Shutdown(shCtx)
 	}()
 
-	return &Listener{ctx: ctx, ln: ln, srv: srv, queue: q, closed: closed}, nil
+	return &Listener{ctx: ctx, ln: ln, srv: srv, queue: queue, closed: closed}, nil
 }
 
 func (l *Listener) Accept() (net.Conn, error) {
@@ -90,10 +70,4 @@ func (l *Listener) Close() error {
 		_ = l.ln.Close()
 	})
 	return nil
-}
-
-func parseTCPAddr(s string) net.Addr {
-	host, port, _ := net.SplitHostPort(s)
-	p, _ := strconv.Atoi(port)
-	return &net.TCPAddr{IP: net.ParseIP(host), Port: p}
 }

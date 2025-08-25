@@ -1,4 +1,4 @@
-package ws
+package adapter
 
 import (
 	"context"
@@ -7,9 +7,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	internal "tungo/infrastructure/network/ws/internal"
-
 	"tungo/application"
+	"tungo/infrastructure/network/ws"
 
 	"github.com/coder/websocket"
 )
@@ -18,7 +17,7 @@ var (
 	// Compile-time checks
 	_ net.Conn                      = &Adapter{}
 	_ application.ConnectionAdapter = &Adapter{}
-	_ internal.Conn                 = &websocket.Conn{}
+	_ ws.Conn                       = &websocket.Conn{}
 )
 
 // Adapter bridges coder/websocket.Conn to net.Conn semantics for binary messages.
@@ -35,13 +34,13 @@ var (
 // Framing:
 //   - Only binary frames are exposed to callers. Non-binary frames are drained and ignored.
 type Adapter struct {
-	conn internal.Conn
+	conn ws.Conn
 	ctx  context.Context
 
 	// Dependencies
-	ctxf  internal.CtxFactory
-	copyr internal.Copier
-	em    internal.ErrorMapper
+	ctxf  CtxFactory
+	copyr Copier
+	em    ErrorMapper
 
 	// read state
 	rmu sync.Mutex // serialize Read() callers
@@ -60,7 +59,7 @@ type Adapter struct {
 
 // NewAdapter creates a new Adapter with injected dependencies.
 // Pass nil ctx to use context.Background(). Options may be nil (defaults used).
-func NewAdapter(ctx context.Context, conn internal.Conn, opts *internal.Options) *Adapter {
+func NewAdapter(ctx context.Context, conn ws.Conn, opts *Options) *Adapter {
 	if ctx == nil {
 		ctx = context.Background()
 	}

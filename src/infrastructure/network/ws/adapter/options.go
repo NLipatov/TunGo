@@ -1,4 +1,4 @@
-package internal
+package adapter
 
 type Options struct {
 	CtxFactory  CtxFactory

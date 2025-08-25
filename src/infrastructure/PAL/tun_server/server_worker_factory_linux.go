@@ -10,7 +10,7 @@ import (
 	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network/ip"
-	"tungo/infrastructure/network/ws"
+	server2 "tungo/infrastructure/network/ws/server"
 	"tungo/infrastructure/routing/server_routing/routing/tcp_chacha20"
 	"tungo/infrastructure/routing/server_routing/routing/udp_chacha20"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
@@ -131,7 +131,7 @@ func (s *ServerWorkerFactory) createWSWorker(
 		return nil, addrPortErr
 	}
 
-	listener, err := ws.NewListener(ctx, addrPort)
+	listener, err := server2.NewListener(ctx, addrPort)
 	if err != nil {
 		return nil, fmt.Errorf("failed to listen WS: %w", err)
 	}

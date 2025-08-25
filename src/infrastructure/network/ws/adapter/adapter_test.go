@@ -1,4 +1,4 @@
-package ws
+package adapter
 
 import (
 	"bytes"
@@ -9,7 +9,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-	"tungo/infrastructure/network/ws/internal"
 
 	"github.com/coder/websocket"
 )
@@ -238,7 +237,7 @@ func TestAdapter_Read_TextDrainedThenBinary(t *testing.T) {
 
 	// Use mock copier to observe drain call (optional).
 	copier := &AdapterCopierMock{}
-	opts := &internal.Options{Copier: copier}
+	opts := &Options{Copier: copier}
 	a := NewAdapter(context.Background(), ws, opts)
 
 	buf := make([]byte, 4)

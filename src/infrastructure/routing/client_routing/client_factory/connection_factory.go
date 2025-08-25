@@ -13,7 +13,7 @@ import (
 	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/network/tcp/adapters"
-	wsAdapters "tungo/infrastructure/network/ws"
+	wsAdapters "tungo/infrastructure/network/ws/adapter"
 	"tungo/infrastructure/settings"
 
 	"github.com/coder/websocket"
