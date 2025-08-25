@@ -146,17 +146,17 @@ func (s ServerTunFactory) configure(tunFile *os.File) error {
 }
 
 func (s ServerTunFactory) Unconfigure(tunFile *os.File) {
-	tunName, err := s.ioctl.DetectTunNameFromFd(tunFile)
-	if err != nil {
-		log.Printf("failed to determing tunnel ifName: %s\n", err)
+	externalIfName, extErr := s.ip.RouteDefault()
+	if extErr != nil {
+		log.Printf("failed to detect default route iface: %v\n", extErr)
 	}
 
-	err = s.netfilter.DisableDevMasquerade(tunName)
+	err := s.netfilter.DisableDevMasquerade(externalIfName)
 	if err != nil {
 		log.Printf("failed to disbale NAT: %s\n", err)
 	}
 
-	err = s.clearForwarding(tunFile, tunName)
+	err = s.clearForwarding(tunFile, externalIfName)
 	if err != nil {
 		log.Printf("failed to disable forwarding: %s\n", err)
 	}
