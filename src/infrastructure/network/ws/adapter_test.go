@@ -354,3 +354,109 @@ func TestAdapter_Close_Normal(t *testing.T) {
 		t.Fatalf("Close not propagated correctly")
 	}
 }
+func TestAdapter_Write_WriterCreationError(t *testing.T) {
+	ws := NewAdapterWSConnMock()
+	ws.writerFactory = func(ctx context.Context, typ websocket.MessageType) (io.WriteCloser, error) {
+		return nil, errors.New("make-writer-failed")
+	}
+	a := NewAdapter(context.Background(), ws, nil)
+
+	n, err := a.Write([]byte("x"))
+	if n != 0 || err == nil {
+		t.Fatalf("expected (0, err), got (%d, %v)", n, err)
+	}
+}
+
+// errReader returns a fixed error on Read.
+type errReader struct{ e error }
+
+func (e errReader) Read(_ []byte) (int, error) { return 0, e.e }
+
+// Read: non-EOF error from the current in-progress frame (a.cur.Read).
+func TestAdapter_Read_CurrentReaderNonEOFError(t *testing.T) {
+	ws := NewAdapterWSConnMock()
+	ws.EnqueueBinary([]byte{1, 2, 3})
+	a := NewAdapter(context.Background(), ws, nil)
+
+	// Prime a.cur by reading one byte from the first binary frame.
+	buf := make([]byte, 1)
+	if n, err := a.Read(buf); err != nil || n != 1 {
+		t.Fatalf("prep read failed: n=%d err=%v", n, err)
+	}
+
+	// Replace a.cur with a reader that fails with a non-EOF error.
+	a.cur = errReader{e: errors.New("cur-read-failed")}
+
+	_, err := a.Read(buf)
+	if err == nil || err.Error() != "cur-read-failed" {
+		t.Fatalf("expected cur-read-failed, got %v", err)
+	}
+}
+
+// Read: conn.Reader returns a generic error (not a CloseNormal).
+func TestAdapter_Read_ReaderReturnsGenericError(t *testing.T) {
+	ws := NewAdapterWSConnMock()
+	ws.EnqueueErr(errors.New("some-io-error"))
+
+	a := NewAdapter(context.Background(), ws, nil)
+	_, err := a.Read(make([]byte, 1))
+	if err == nil || err.Error() != "some-io-error" {
+		t.Fatalf("expected passthrough error, got %v", err)
+	}
+}
+
+// SetDeadline with zero time should clear both read/write deadlines.
+func TestAdapter_SetDeadline_ClearBoth(t *testing.T) {
+	ws := NewAdapterWSConnMock()
+	a := NewAdapter(context.Background(), ws, nil)
+
+	// Set a non-zero deadline first…
+	if err := a.SetDeadline(time.Now().Add(50 * time.Millisecond)); err != nil {
+		t.Fatal(err)
+	}
+	// …then clear it.
+	if err := a.SetDeadline(time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Read should not time out (enqueue data so it returns immediately).
+	ws.EnqueueBinary([]byte{7, 7})
+	buf := make([]byte, 2)
+	start := time.Now()
+	n, err := a.Read(buf)
+	if err != nil || n != 2 {
+		t.Fatalf("unexpected read result: n=%d err=%v", n, err)
+	}
+	// Sanity check: it shouldn't have been delayed by a deadline.
+	if time.Since(start) > 20*time.Millisecond {
+		t.Fatalf("deadline should have been cleared")
+	}
+
+	// Write should also proceed without a deadline. Default writer is non-blocking.
+	if _, err := a.Write([]byte("ok")); err != nil {
+		t.Fatalf("write should succeed without deadline: %v", err)
+	}
+}
+
+// SetReadDeadline: set an expired deadline, then clear it and confirm reads work.
+func TestAdapter_ReadDeadline_ClearAfterSet(t *testing.T) {
+	ws := NewAdapterWSConnMock()
+	a := NewAdapter(context.Background(), ws, nil)
+
+	// Set an already-expired read deadline.
+	_ = a.SetReadDeadline(time.Now().Add(-10 * time.Millisecond))
+	// Immediately clear it.
+	_ = a.SetReadDeadline(time.Time{})
+
+	// Provide data; read should succeed (no deadline in effect).
+	ws.EnqueueBinary([]byte{1})
+	buf := make([]byte, 1)
+	start := time.Now()
+	n, err := a.Read(buf)
+	if err != nil || n != 1 {
+		t.Fatalf("expected successful read after clearing deadline, got n=%d err=%v", n, err)
+	}
+	if time.Since(start) > 20*time.Millisecond {
+		t.Fatalf("cleared read deadline should not delay the read")
+	}
+}
