@@ -1,6 +1,6 @@
-package iptables
+package application
 
-type Contract interface {
+type Netfilter interface {
 	EnableDevMasquerade(devName string) error
 	DisableDevMasquerade(devName string) error
 	EnableForwardingFromTunToDev(tunName, devName string) error

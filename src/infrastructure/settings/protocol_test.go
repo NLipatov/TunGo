@@ -14,6 +14,7 @@ func TestProtocol_MarshalJSON(t *testing.T) {
 	}{
 		{"TCP", TCP, `"TCP"`, false},
 		{"UDP", UDP, `"UDP"`, false},
+		{"WS", WS, `"WS"`, false},
 		{"invalid", Protocol(42), ``, true},
 	}
 
@@ -40,6 +41,9 @@ func TestProtocol_UnmarshalJSON(t *testing.T) {
 		{"tcp lowercase", `"tcp"`, TCP, false},
 		{"TCP uppercase", `"TCP"`, TCP, false},
 		{"Udp mixed", `"uDp"`, UDP, false},
+		{"ws lowercase", `"ws"`, WS, false},
+		{"WS uppercase", `"WS"`, WS, false},
+		{"Ws mixed", `"wS"`, WS, false},
 		{"invalid value", `"SCTP"`, 0, true},
 		{"non-string", `123`, 0, true},
 	}
@@ -59,14 +63,14 @@ func TestProtocol_UnmarshalJSON(t *testing.T) {
 }
 
 func TestProtocolJSON_RoundTrip(t *testing.T) {
-	for _, orig := range []Protocol{TCP, UDP} {
+	for _, orig := range []Protocol{TCP, UDP, WS} {
 		data, err := json.Marshal(orig)
 		if err != nil {
 			t.Fatalf("Marshal %v: %v", orig, err)
 		}
 		var p Protocol
 		if err := json.Unmarshal(data, &p); err != nil {
-			t.Fatalf("Unmarshal %v: %v", data, err)
+			t.Fatalf("Unmarshal %s: %v", data, err)
 		}
 		if p != orig {
 			t.Errorf("round-trip %v -> %v", orig, p)

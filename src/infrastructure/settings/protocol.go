@@ -12,6 +12,7 @@ type Protocol int
 const (
 	TCP = iota
 	UDP
+	WS
 )
 
 func (p Protocol) MarshalJSON() ([]byte, error) {
@@ -21,6 +22,8 @@ func (p Protocol) MarshalJSON() ([]byte, error) {
 		protocolStr = "TCP"
 	case UDP:
 		protocolStr = "UDP"
+	case WS:
+		protocolStr = "WS"
 	default:
 		return nil, errors.New("invalid protocol")
 	}
@@ -37,6 +40,8 @@ func (p *Protocol) UnmarshalJSON(data []byte) error {
 		*p = TCP
 	case "UDP":
 		*p = UDP
+	case "WS":
+		*p = WS
 	default:
 		return errors.New("invalid protocol")
 	}

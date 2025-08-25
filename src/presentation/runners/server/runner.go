@@ -59,6 +59,22 @@ func (r *Runner) Run(ctx context.Context) {
 			}
 		}()
 	}
+	if r.deps.Configuration().EnableWS {
+		wg.Add(1)
+
+		connSettings := r.deps.Configuration().WSSettings
+		if err := r.deps.TunManager().DisposeTunDevices(connSettings); err != nil {
+			log.Printf("error disposing tun devices: %s", err)
+		}
+
+		go func() {
+			defer wg.Done()
+			routeErr := r.route(ctx, connSettings)
+			if routeErr != nil {
+				log.Println(routeErr)
+			}
+		}()
+	}
 
 	wg.Wait()
 }
