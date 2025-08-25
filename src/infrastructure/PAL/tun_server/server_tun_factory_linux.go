@@ -62,7 +62,7 @@ func (s ServerTunFactory) DisposeTunDevices(connSettings settings.Settings) erro
 
 	delErr := s.ip.LinkDelete(connSettings.InterfaceName)
 	if delErr != nil {
-		return fmt.Errorf("error deleting TUN device: %v", delErr)
+		log.Printf("error deleting TUN device: %v", delErr)
 	}
 
 	return nil
