@@ -2,9 +2,8 @@
 //
 // Design highlights:
 //   - Pure netlink (no shell-out), locale-agnostic.
-//   - Own tables/namespaces to avoid clobbering distro/iptables-nft tables.
+//   - Own tables/namespaces (tungo_nat/tungo_filter) to avoid clobbering system rules.
 //   - Idempotency via Rule.UserData tags (stable, not handle- or text-based).
-//   - Docker-aware: prefers DOCKER-USER (ip/ip6) with fallback to our inet table.
 //   - Forward base chain priority -100 to precede typical filter(0)/policy drop.
 //   - IPv6 is attempted and silently skipped if the address family is unsupported.
 //   - Clear diagnostics for ip_forward=0 and missing nf_conntrack.
@@ -281,40 +280,6 @@ func (b *Nftables) delIfPresentByTag(t *nft.Table, ch *nft.Chain, tag []byte) er
 	return nil
 }
 
-// ---------- Docker integration: DOCKER-USER (if present) ----------
-
-func (b *Nftables) addDockerUserForwardRules(fam nft.TableFamily, famName, tun, dev string) (bool, error) {
-	tbl, ch, err := b.getChain(fam, "filter", "DOCKER-USER")
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return false, nil
-		}
-		return false, err
-	}
-	// tun -> dev
-	if err := b.addIfMissingByTag(tbl, ch, exprForwardAcceptIIFtoOIF(tun, dev), []byte("tungo:docker fwd "+famName+" iif="+tun+" oif="+dev)); err != nil {
-		return true, err
-	}
-	// dev -> tun (ESTABLISHED,RELATED)
-	if err := b.addIfMissingByTag(tbl, ch, exprForwardAcceptEstablished(dev, tun), []byte("tungo:docker fwdret "+famName+" iif="+dev+" oif="+tun)); err != nil {
-		return true, err
-	}
-	return true, nil
-}
-
-func (b *Nftables) delDockerUserForwardRules(fam nft.TableFamily, famName, tun, dev string) (bool, error) {
-	tbl, ch, err := b.getChain(fam, "filter", "DOCKER-USER")
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return false, nil
-		}
-		return false, err
-	}
-	_ = b.delIfPresentByTag(tbl, ch, []byte("tungo:docker fwd "+famName+" iif="+tun+" oif="+dev))
-	_ = b.delIfPresentByTag(tbl, ch, []byte("tungo:docker fwdret "+famName+" iif="+dev+" oif="+tun))
-	return true, nil
-}
-
 // ========================= application.Netfilter ==============================
 
 func (b *Nftables) EnableDevMasquerade(devName string) error {
@@ -387,28 +352,6 @@ func (b *Nftables) EnableForwardingFromTunToDev(tunName, devName string) error {
 		}
 	}
 
-	// 1) Try Docker DOCKER-USER (ip/ip6), if configured.
-	if b.cfg.PreferDockerUser {
-		ok4, err := b.addDockerUserForwardRules(nft.TableFamilyIPv4, "ip", tunName, devName)
-		if err != nil {
-			return err
-		}
-		ok6, err := b.addDockerUserForwardRules(nft.TableFamilyIPv6, "ip6", tunName, devName)
-		if err != nil && !isAFNotSupported(err) {
-			return err
-		}
-		if ok4 || ok6 {
-			if err := b.conn.Flush(); err != nil {
-				if isConntrackMissing(err) {
-					return fmt.Errorf("flush docker-user: %w (conntrack likely missing; load nf_conntrack)", err)
-				}
-				return fmt.Errorf("flush docker-user: %w", err)
-			}
-			return nil
-		}
-	}
-
-	// 2) Fallback: our own inet table/forward base chain with high priority.
 	t, _, err := b.ensureTableFlushed(nft.TableFamilyINet, b.cfg.TableInetName)
 	if err != nil {
 		return err
@@ -438,13 +381,6 @@ func (b *Nftables) DisableForwardingFromTunToDev(tunName, devName string) error 
 		return errors.New("iface name is empty")
 	}
 
-	// Docker cleanup (if present).
-	if b.cfg.PreferDockerUser {
-		_, _ = b.delDockerUserForwardRules(nft.TableFamilyIPv4, "ip", tunName, devName)
-		_, _ = b.delDockerUserForwardRules(nft.TableFamilyIPv6, "ip6", tunName, devName)
-	}
-
-	// Our inet fallback cleanup.
 	if t, _, err := b.ensureTableFlushed(nft.TableFamilyINet, b.cfg.TableInetName); err == nil {
 		if ch, _, err := b.ensureBaseChainFlushed(t, b.cfg.ForwardChainName, nft.ChainTypeFilter, *nft.ChainHookForward, b.cfg.PriorityForward); err == nil {
 			_ = b.delIfPresentByTag(t, ch, []byte("tungo:fwd iif="+tunName+" oif="+devName))
