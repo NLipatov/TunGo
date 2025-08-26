@@ -237,3 +237,40 @@ func TestAddrShowDev(t *testing.T) {
 		}
 	})
 }
+
+func TestLinkExists(t *testing.T) {
+	t.Run("exists (err=nil)", func(t *testing.T) {
+		w := newWrapper(true, "", nil)
+		ok, err := w.LinkExists("tun0")
+		if !ok || err != nil {
+			t.Fatalf("want ok=true, err=nil; got ok=%v err=%v", ok, err)
+		}
+	})
+
+	t.Run("missing - 'does not exist' in output", func(t *testing.T) {
+		out := `Device "tun0" does not exist`
+		w := newWrapper(false, out, errors.New("exit status 1"))
+		ok, err := w.LinkExists("tun0")
+		if ok || err != nil {
+			t.Fatalf("want ok=false, err=nil; got ok=%v err=%v", ok, err)
+		}
+	})
+
+	t.Run("missing - 'cannot find device' in output", func(t *testing.T) {
+		out := `Cannot find device "tun0"`
+		w := newWrapper(false, out, errors.New("exit status 1"))
+		ok, err := w.LinkExists("tun0")
+		if ok || err != nil {
+			t.Fatalf("want ok=false, err=nil; got ok=%v err=%v", ok, err)
+		}
+	})
+
+	t.Run("other error is propagated", func(t *testing.T) {
+		out := "some stderr"
+		w := newWrapper(false, out, errors.New("operation not permitted"))
+		ok, err := w.LinkExists("tun0")
+		if ok || err == nil || !strings.Contains(err.Error(), "operation not permitted") {
+			t.Fatalf("want ok=false and propagated error; got ok=%v err=%v", ok, err)
+		}
+	})
+}
