@@ -40,7 +40,7 @@ func NewDefaultHandler(
 
 func (h *DefaultHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	// Try parse remote address.
-	rAddr, err := h.requestRemoteAddr(r)
+	rAddr, err := h.addrFromRequest(r)
 	if err != nil {
 		if h.logger != nil {
 			h.logger.Printf("bad remote addr: %v", err)
@@ -73,7 +73,7 @@ func (h *DefaultHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *DefaultHandler) requestRemoteAddr(r *http.Request) (*net.TCPAddr, error) {
+func (h *DefaultHandler) addrFromRequest(r *http.Request) (*net.TCPAddr, error) {
 	host, port, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return nil, err
