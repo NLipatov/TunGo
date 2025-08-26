@@ -12,7 +12,6 @@ import (
 )
 
 // Handler — HTTP-handlers of incoming connections.
-// UseLocalAddr устанавливается Listener'ом после net.Listen.
 type Handler interface {
 	Handle(w http.ResponseWriter, r *http.Request)
 }
