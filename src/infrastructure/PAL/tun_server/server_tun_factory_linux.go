@@ -62,6 +62,15 @@ func (s ServerTunFactory) DisposeTunDevices(settings settings.Settings) error {
 	return nil
 }
 
+func (s ServerTunFactory) DisableDevMasquerade() error {
+	extInterface, err := s.ip.RouteDefault()
+	if err != nil {
+		return fmt.Errorf("failed to detect default route iface: %s", err)
+	}
+
+	return s.netfilter.DisableDevMasquerade(extInterface)
+}
+
 func (s ServerTunFactory) createTun(settings settings.Settings) (*os.File, error) {
 	// delete previous tun if any exist
 	_ = s.attemptToRemoveTunDevByName(settings.InterfaceName)
@@ -173,16 +182,12 @@ func (s ServerTunFactory) unconfigureByTunDevName(name string) {
 		log.Printf("failed to detect default route iface: %s", err)
 		return
 	}
-	if err := s.netfilter.DisableDevMasquerade(ext); err != nil {
-		log.Printf("failed to disable NAT: %s", err)
-	}
 	if err := s.netfilter.DisableForwardingFromTunToDev(name, ext); err != nil {
 		log.Printf("failed to disable fwd tun->dev: %s", err)
 	}
 	if err := s.netfilter.DisableForwardingFromDevToTun(name, ext); err != nil {
 		log.Printf("failed to disable fwd dev->tun: %s", err)
 	}
-	log.Printf("server unconfigured")
 }
 
 func (s ServerTunFactory) setupForwarding(tunFile *os.File, extIface string) error {

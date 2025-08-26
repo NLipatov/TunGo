@@ -15,6 +15,10 @@ type mockIP struct {
 	failStep   string
 }
 
+func (m *mockIP) LinkExists(_ string) (bool, error) {
+	panic("not implemented")
+}
+
 func (m *mockIP) mark(s string) error {
 	m.log.WriteString(s + ";")
 	if m.failStep == s {
@@ -35,20 +39,6 @@ func (m *mockIP) RouteGet(string) (string, error)             { return m.routeRe
 func (m *mockIP) RouteAddDev(string, string) error            { return m.mark("radd") }
 func (m *mockIP) RouteAddViaDev(string, string, string) error { return m.mark("raddvia") }
 func (m *mockIP) RouteDel(string) error                       { return nil }
-
-type mockIPT struct{ called bool }
-
-func (m *mockIPT) EnableDevMasquerade(string) error                  { return nil }
-func (m *mockIPT) DisableDevMasquerade(string) error                 { return nil }
-func (m *mockIPT) EnableForwardingFromTunToDev(string, string) error { return nil }
-func (m *mockIPT) DisableForwardingFromTunToDev(string, string) error {
-	return nil
-}
-func (m *mockIPT) EnableForwardingFromDevToTun(string, string) error { return nil }
-func (m *mockIPT) DisableForwardingFromDevToTun(string, string) error {
-	return nil
-}
-func (m *mockIPT) ConfigureMssClamping() error { m.called = true; return nil }
 
 type mockIOCTL struct{}
 

@@ -17,6 +17,10 @@ func (d *dummyTunMgr) DisposeTunDevices(_ settings.Settings) error {
 	return errors.New("not implemented")
 }
 
+func (d *dummyTunMgr) DisableDevMasquerade() error {
+	return nil
+}
+
 type dummyKeyMgr struct{ called bool }
 
 func (d *dummyKeyMgr) PrepareKeys() error {

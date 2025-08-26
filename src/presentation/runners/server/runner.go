@@ -2,11 +2,14 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"sync"
 	"tungo/infrastructure/PAL/tun_server"
 	"tungo/infrastructure/routing"
 	"tungo/infrastructure/settings"
+
+	"golang.org/x/sync/errgroup"
 )
 
 type Runner struct {
@@ -25,58 +28,62 @@ func (r *Runner) Run(ctx context.Context) {
 		log.Fatalf("failed to generate ed25519 keys: %s", err)
 	}
 
+	// Pre-flight cleanup (if anything to clean up)
+	if preflightCleanupErr := r.cleanup(); preflightCleanupErr != nil {
+		log.Printf("preflight cleanup error: %v", preflightCleanupErr)
+	}
+	// Post-flight cleanup
+	defer func() {
+		if postflightCleanupErr := r.cleanup(); postflightCleanupErr != nil {
+			log.Printf("postflight cleanup error: %v", postflightCleanupErr)
+		}
+	}()
+
+	r.runWorkers(ctx)
+}
+
+func (r *Runner) runWorkers(ctx context.Context) {
+	// runCtx is a shared context for all workers.
+	// Fail-fast: the first worker returning an error calls cancel(),
+	// causing all other workers to stop via ctx.Done().
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	errCh := make(chan error, 3)
 	var wg sync.WaitGroup
 	if r.deps.Configuration().EnableTCP {
-		wg.Add(1)
-
-		connSettings := r.deps.Configuration().TCPSettings
-		if err := r.deps.TunManager().DisposeTunDevices(connSettings); err != nil {
-			log.Printf("error disposing tun devices: %s", err)
-		}
-
-		go func() {
-			defer wg.Done()
-			routeErr := r.route(ctx, connSettings)
-			if routeErr != nil {
-				log.Println(routeErr)
+		wg.Go(func() {
+			if rErr := r.route(runCtx, r.deps.Configuration().TCPSettings); rErr != nil {
+				cancel()
+				errCh <- rErr
 			}
-		}()
+		})
 	}
 
 	if r.deps.Configuration().EnableUDP {
-		wg.Add(1)
-
-		connSettings := r.deps.Configuration().UDPSettings
-		if err := r.deps.TunManager().DisposeTunDevices(connSettings); err != nil {
-			log.Printf("error disposing tun devices: %s", err)
-		}
-
-		go func() {
-			defer wg.Done()
-			routeErr := r.route(ctx, connSettings)
-			if routeErr != nil {
-				log.Println(routeErr)
+		wg.Go(func() {
+			if rErr := r.route(runCtx, r.deps.Configuration().UDPSettings); rErr != nil {
+				cancel()
+				errCh <- rErr
 			}
-		}()
+		})
 	}
+
 	if r.deps.Configuration().EnableWS {
-		wg.Add(1)
-
-		connSettings := r.deps.Configuration().WSSettings
-		if err := r.deps.TunManager().DisposeTunDevices(connSettings); err != nil {
-			log.Printf("error disposing tun devices: %s", err)
-		}
-
-		go func() {
-			defer wg.Done()
-			routeErr := r.route(ctx, connSettings)
-			if routeErr != nil {
-				log.Println(routeErr)
+		wg.Go(func() {
+			if rErr := r.route(runCtx, r.deps.Configuration().WSSettings); rErr != nil {
+				cancel()
+				errCh <- rErr
 			}
-		}()
+		})
 	}
 
 	wg.Wait()
+	close(errCh)
+	for workerErr := range errCh {
+		if workerErr != nil {
+			log.Printf("worker err: %s", workerErr)
+		}
+	}
 }
 
 func (r *Runner) route(ctx context.Context, settings settings.Settings) error {
@@ -84,20 +91,44 @@ func (r *Runner) route(ctx context.Context, settings settings.Settings) error {
 
 	tun, tunErr := r.deps.TunManager().CreateTunDevice(settings)
 	if tunErr != nil {
-		log.Fatalf("error creating tun device: %s", tunErr)
+		return fmt.Errorf("error creating tun device: %s", tunErr)
 	}
 
 	worker, workerErr := workerFactory.CreateWorker(ctx, tun)
 	if workerErr != nil {
-		log.Fatalf("error creating worker: %s", workerErr)
+		return fmt.Errorf("error creating worker: %s", workerErr)
 	}
 
 	router := routing.NewRouter(worker)
 
 	routingErr := router.RouteTraffic(ctx)
 	if routingErr != nil {
-		log.Fatalf("error routing traffic: %s", routingErr)
+		return fmt.Errorf("error routing traffic: %s", routingErr)
 	}
 
 	return nil
+}
+
+func (r *Runner) cleanup() error {
+	// 1) Dispose all worker TUN-devices and flush its settings
+	var eg errgroup.Group
+	for _, workerSettings := range r.workerSettings() {
+		eg.Go(func() error {
+			return r.deps.TunManager().DisposeTunDevices(workerSettings)
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return err
+	}
+
+	// 2) turn off masquerading globally
+	return r.deps.TunManager().DisableDevMasquerade()
+}
+
+func (r *Runner) workerSettings() []settings.Settings {
+	return []settings.Settings{
+		r.deps.Configuration().TCPSettings,
+		r.deps.Configuration().UDPSettings,
+		r.deps.Configuration().WSSettings,
+	}
 }
