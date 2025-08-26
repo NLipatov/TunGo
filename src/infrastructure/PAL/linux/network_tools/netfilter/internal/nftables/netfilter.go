@@ -76,11 +76,11 @@ type Nftables struct {
 	cfg  Config
 }
 
-// NewBackend creates a lasting netlink connection. Requires CAP_NET_ADMIN.
-func NewBackend() (*Nftables, error) { return NewBackendWithConfig(DefaultConfig()) }
+// NewNetfilter creates a lasting netlink connection. Requires CAP_NET_ADMIN.
+func NewNetfilter() (*Nftables, error) { return NewNetfilterWithConfig(DefaultConfig()) }
 
-// NewBackendWithConfig allows fine-tuning behavior.
-func NewBackendWithConfig(cfg Config) (*Nftables, error) {
+// NewNetfilterWithConfig allows fine-tuning behavior.
+func NewNetfilterWithConfig(cfg Config) (*Nftables, error) {
 	c, err := nft.New(nft.AsLasting())
 	if err != nil {
 		return nil, fmt.Errorf("nftables conn: %w", err)
@@ -88,7 +88,7 @@ func NewBackendWithConfig(cfg Config) (*Nftables, error) {
 	return &Nftables{conn: c, cfg: cfg}, nil
 }
 
-func NewBackendWithConfigAndConn(conn conn, cfg Config) (*Nftables, error) {
+func NewNetfilterWithConfigAndConn(conn conn, cfg Config) (*Nftables, error) {
 	return &Nftables{conn: conn, cfg: cfg}, nil
 }
 

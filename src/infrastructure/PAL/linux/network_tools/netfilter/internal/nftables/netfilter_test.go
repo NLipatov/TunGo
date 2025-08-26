@@ -114,7 +114,7 @@ func rulesCount(f *fakeConn, ch *nft.Chain) int { return len(f.rules[ch]) }
 func TestEnableDisableMasquerade_V4Only_SkipsIPv6Unsupported(t *testing.T) {
 	fc := &fakeConn{failIPv6OnAddTable: true}
 	cfg := DefaultConfig()
-	b, _ := NewBackendWithConfigAndConn(fc, cfg)
+	b, _ := NewNetfilterWithConfigAndConn(fc, cfg)
 
 	if err := b.EnableDevMasquerade("eth0"); err != nil {
 		t.Fatalf("EnableDevMasquerade error: %v", err)
@@ -142,7 +142,7 @@ func TestEnableDisableMasquerade_V4Only_SkipsIPv6Unsupported(t *testing.T) {
 func TestEnableDisableMasquerade_V4V6_Success(t *testing.T) {
 	fc := &fakeConn{} // IPv6 supported
 	cfg := DefaultConfig()
-	b, _ := NewBackendWithConfigAndConn(fc, cfg)
+	b, _ := NewNetfilterWithConfigAndConn(fc, cfg)
 
 	if err := b.EnableDevMasquerade("eth0"); err != nil {
 		t.Fatalf("EnableDevMasquerade error: %v", err)
@@ -175,7 +175,7 @@ func TestForward_DockerUser_AddRemove_Idempotent(t *testing.T) {
 	fc.AddChain(chUsr4)
 	fc.AddChain(chUsr6)
 
-	b, _ := NewBackendWithConfigAndConn(fc, cfg)
+	b, _ := NewNetfilterWithConfigAndConn(fc, cfg)
 
 	// first apply
 	if err := b.EnableForwardingFromTunToDev("tun0", "eth0"); err != nil {
@@ -211,7 +211,7 @@ func TestForward_FallbackInet_AddRemove_NoDockerUser(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.PreferDockerUser = true // will try, not found, fallback to inet
 	fc := &fakeConn{}
-	b, _ := NewBackendWithConfigAndConn(fc, cfg)
+	b, _ := NewNetfilterWithConfigAndConn(fc, cfg)
 
 	if err := b.EnableForwardingFromTunToDev("wstun0", "enp1s0"); err != nil {
 		t.Fatalf("EnableForwardingFromTunToDev error: %v", err)
@@ -249,7 +249,7 @@ func TestForward_DockerUser_ConntrackMissingAnnotated(t *testing.T) {
 	// simulate missing conntrack
 	fc.nextFlushErr = syscall.EOPNOTSUPP
 
-	b, _ := NewBackendWithConfigAndConn(fc, cfg)
+	b, _ := NewNetfilterWithConfigAndConn(fc, cfg)
 	err := b.EnableForwardingFromTunToDev("tun0", "eth0")
 	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "conntrack") {
 		t.Fatalf("expected annotated conntrack error, got: %v", err)
@@ -258,7 +258,7 @@ func TestForward_DockerUser_ConntrackMissingAnnotated(t *testing.T) {
 
 func TestEnsureTable_ListTablesErrorPropagates(t *testing.T) {
 	fc := &fakeConn{listTablesErr: errors.New("boom")}
-	b, _ := NewBackendWithConfigAndConn(fc, DefaultConfig())
+	b, _ := NewNetfilterWithConfigAndConn(fc, DefaultConfig())
 
 	err := b.EnableDevMasquerade("eth0")
 	if err == nil || !strings.Contains(err.Error(), "list tables") {
@@ -268,7 +268,7 @@ func TestEnsureTable_ListTablesErrorPropagates(t *testing.T) {
 
 func TestEnsureBaseChain_ListChainsErrorPropagates(t *testing.T) {
 	fc := &fakeConn{listChainsErr: errors.New("whoops")}
-	b, _ := NewBackendWithConfigAndConn(fc, DefaultConfig())
+	b, _ := NewNetfilterWithConfigAndConn(fc, DefaultConfig())
 
 	err := b.EnableDevMasquerade("eth0")
 	if err == nil || !strings.Contains(err.Error(), "list chains") {
@@ -315,7 +315,7 @@ func TestHelpers_readSysctl_isAFNotSupported_isConntrackMissing(t *testing.T) {
 
 func TestClose_NoPanic(t *testing.T) {
 	fc := &fakeConn{}
-	b, _ := NewBackendWithConfigAndConn(fc, DefaultConfig())
+	b, _ := NewNetfilterWithConfigAndConn(fc, DefaultConfig())
 	if err := b.Close(); err != nil {
 		t.Fatalf("Close error: %v", err)
 	}
@@ -333,7 +333,7 @@ func TestExprBuilders_Sanity(t *testing.T) {
 }
 func TestEnableDevMasquerade_EmptyName(t *testing.T) {
 	fc := &fakeConn{}
-	b, _ := NewBackendWithConfigAndConn(fc, DefaultConfig())
+	b, _ := NewNetfilterWithConfigAndConn(fc, DefaultConfig())
 	if err := b.EnableDevMasquerade(""); err == nil {
 		t.Fatalf("want error on empty dev name")
 	}
@@ -341,7 +341,7 @@ func TestEnableDevMasquerade_EmptyName(t *testing.T) {
 
 func TestDisableDevMasquerade_EmptyName(t *testing.T) {
 	fc := &fakeConn{}
-	b, _ := NewBackendWithConfigAndConn(fc, DefaultConfig())
+	b, _ := NewNetfilterWithConfigAndConn(fc, DefaultConfig())
 	if err := b.DisableDevMasquerade(""); err == nil {
 		t.Fatalf("want error on empty dev name")
 	}
@@ -349,7 +349,7 @@ func TestDisableDevMasquerade_EmptyName(t *testing.T) {
 
 func TestForward_EmptyNames(t *testing.T) {
 	fc := &fakeConn{}
-	b, _ := NewBackendWithConfigAndConn(fc, DefaultConfig())
+	b, _ := NewNetfilterWithConfigAndConn(fc, DefaultConfig())
 	if err := b.EnableForwardingFromTunToDev("", "eth0"); err == nil {
 		t.Fatalf("want error on empty iface")
 	}
@@ -368,7 +368,7 @@ func TestClose_NilReceiver(t *testing.T) {
 
 func TestEnableDevMasquerade_FlushError_AddTableV4(t *testing.T) {
 	fc := &fakeConn{nextFlushErr: errors.New("add-table-fail")}
-	b, _ := NewBackendWithConfigAndConn(fc, DefaultConfig())
+	b, _ := NewNetfilterWithConfigAndConn(fc, DefaultConfig())
 
 	err := b.EnableDevMasquerade("eth0")
 	if err == nil {
@@ -390,7 +390,7 @@ func TestEnableDevMasquerade_FlushError_AddChainV4(t *testing.T) {
 	fc.AddTable(tbl4)
 	fc.nextFlushErr = errors.New("add-chain-fail")
 
-	b, _ := NewBackendWithConfigAndConn(fc, cfg)
+	b, _ := NewNetfilterWithConfigAndConn(fc, cfg)
 	err := b.EnableDevMasquerade("eth0")
 	if err == nil || !strings.Contains(err.Error(), "add chain tungo_nat/postrouting: add-chain-fail") {
 		t.Fatalf("expected add-chain error, got %v", err)
@@ -416,7 +416,7 @@ func TestEnableDevMasquerade_FinalFlushError(t *testing.T) {
 	// Now make the ONLY remaining Flush (the final one) fail.
 	fc.nextFlushErr = errors.New("final-flush-fail")
 
-	b, _ := NewBackendWithConfigAndConn(fc, cfg)
+	b, _ := NewNetfilterWithConfigAndConn(fc, cfg)
 	err := b.EnableDevMasquerade("eth0")
 	if err == nil || !strings.Contains(err.Error(), "flush nat masquerade: final-flush-fail") {
 		t.Fatalf("expected final flush error, got %v", err)
@@ -442,7 +442,7 @@ func TestDisableDevMasquerade_FinalFlushError(t *testing.T) {
 	// Now fail the ONLY remaining Flush() (the final one).
 	fc.nextFlushErr = errors.New("unmasq-flush-fail")
 
-	b, _ := NewBackendWithConfigAndConn(fc, cfg)
+	b, _ := NewNetfilterWithConfigAndConn(fc, cfg)
 	err := b.DisableDevMasquerade("eth0")
 	if err == nil || !strings.Contains(err.Error(), "flush nat unmasq: unmasq-flush-fail") {
 		t.Fatalf("expected unmasq flush error, got %v", err)
@@ -460,7 +460,7 @@ func TestForward_DockerUser_GenericFlushError(t *testing.T) {
 	fc.AddChain(chUsr4)
 	fc.nextFlushErr = errors.New("boom")
 
-	b, _ := NewBackendWithConfigAndConn(fc, cfg)
+	b, _ := NewNetfilterWithConfigAndConn(fc, cfg)
 	err := b.EnableForwardingFromTunToDev("tun0", "eth0")
 	if err == nil || !strings.Contains(err.Error(), "flush docker-user: boom") {
 		t.Fatalf("expected docker-user flush error, got %v", err)
@@ -482,7 +482,7 @@ func TestForward_InetFallback_ConntrackMissingAnnotated(t *testing.T) {
 	// Make the *final* Flush() fail like missing conntrack.
 	fc.nextFlushErr = syscall.EOPNOTSUPP
 
-	b, _ := NewBackendWithConfigAndConn(fc, cfg)
+	b, _ := NewNetfilterWithConfigAndConn(fc, cfg)
 	err := b.EnableForwardingFromTunToDev("tun0", "eth0")
 	if err == nil {
 		t.Fatalf("expected annotated inet flush error")
@@ -498,7 +498,7 @@ func TestEnableDisableForwarding_Aliases(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.PreferDockerUser = false
 	fc := &fakeConn{}
-	b, _ := NewBackendWithConfigAndConn(fc, cfg)
+	b, _ := NewNetfilterWithConfigAndConn(fc, cfg)
 
 	if err := b.EnableForwardingFromDevToTun("tunX", "ethX"); err != nil {
 		t.Fatalf("EnableForwardingFromDevToTun: %v", err)
@@ -526,10 +526,10 @@ func TestZstr_NULTerminated(t *testing.T) {
 func TestNewBackendAndWithConfig_Smoke(t *testing.T) {
 	// Calling those constructors at least executes their lines.
 	// They may fail on unusual environments; either result is acceptable.
-	if b, err := NewBackendWithConfig(DefaultConfig()); err == nil {
+	if b, err := NewNetfilterWithConfig(DefaultConfig()); err == nil {
 		_ = b.Close()
 	}
-	if b, err := NewBackend(); err == nil {
+	if b, err := NewNetfilter(); err == nil {
 		_ = b.Close()
 	}
 }

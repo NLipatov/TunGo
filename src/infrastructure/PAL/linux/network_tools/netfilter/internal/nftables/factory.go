@@ -11,5 +11,14 @@ type Factory interface {
 type DefaultFactory struct{}
 
 func (DefaultFactory) New() (application.Netfilter, error) {
-	return NewBackend()
+	//base netfilter
+	netfilter, nErr := NewNetfilter()
+	if nErr != nil {
+		return nil, nErr
+	}
+
+	// make base netfilter concurrent via wrapper
+	concurrentNetfilter := NewSynchronizedNetfilter(netfilter)
+
+	return concurrentNetfilter, nil
 }
