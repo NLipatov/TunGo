@@ -7,14 +7,14 @@ import (
 	"github.com/coder/websocket"
 )
 
-// ErrorMapper normalizes transport errors to net.Conn semantics.
-type ErrorMapper interface {
-	Map(err error) error
+// errorMapper normalizes transport errors to net.Conn semantics.
+type errorMapper interface {
+	mapErr(err error) error
 }
 
-type DefaultErrorMapper struct{}
+type defaultErrorMapper struct{}
 
-func (DefaultErrorMapper) Map(err error) error {
+func (defaultErrorMapper) mapErr(err error) error {
 	if err == nil {
 		return nil
 	}
