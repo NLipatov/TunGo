@@ -3,6 +3,7 @@ package tun_server
 import (
 	"bytes"
 	"errors"
+	"log"
 	"os"
 	"strings"
 	"testing"
@@ -13,9 +14,9 @@ import (
 	"tungo/infrastructure/settings"
 )
 
-// --- Mocks ---
+/* ============================ Mocks ============================ */
 
-// mockIP implements ip.Contract
+// mockIP implements ip.Contract (base “success” version).
 type mockIP struct{ log bytes.Buffer }
 
 func (m *mockIP) add(tag string)                              { m.log.WriteString(tag + ";") }
@@ -31,76 +32,32 @@ func (m *mockIP) RouteGet(_ string) (string, error)           { return "", nil }
 func (m *mockIP) RouteAddDev(_, _ string) error               { return nil }
 func (m *mockIP) RouteAddViaDev(_, _, _ string) error         { return nil }
 func (m *mockIP) RouteDel(_ string) error                     { return nil }
+func (m *mockIP) LinkExists(_ string) (bool, error)           { m.add("exists"); return true, nil }
 
-// mockIPT implements iptables.Contract
-type mockIPT struct{ log bytes.Buffer }
+// variants for branches
+type mockIPExistsFalse struct{ *mockIP }
 
-func (m *mockIPT) add(tag string)                      { m.log.WriteString(tag + ";") }
-func (m *mockIPT) EnableDevMasquerade(_ string) error  { m.add("masq_on"); return nil }
-func (m *mockIPT) DisableDevMasquerade(_ string) error { m.add("masq_off"); return nil }
-func (m *mockIPT) EnableForwardingFromTunToDev(_, _ string) error {
-	m.add("fwd_td")
-	return nil
-}
-func (m *mockIPT) DisableForwardingFromTunToDev(_, _ string) error {
-	m.add("fwd_td_off")
-	return nil
-}
-func (m *mockIPT) EnableForwardingFromDevToTun(_, _ string) error {
-	m.add("fwd_dt")
-	return nil
-}
-func (m *mockIPT) DisableForwardingFromDevToTun(_, _ string) error {
-	m.add("fwd_dt_off")
-	return nil
-}
-func (m *mockIPT) ConfigureMssClamping() error { m.add("clamp"); return nil }
+func (m *mockIPExistsFalse) LinkExists(string) (bool, error) { m.add("exists"); return false, nil }
 
-// mockIOCTL implements ioctl.Contract
-type mockIOCTL struct {
-	name                 string
-	createErr, detectErr error
+type mockIPExistsErr struct{ *mockIP }
+
+func (m *mockIPExistsErr) LinkExists(string) (bool, error) {
+	m.add("exists")
+	return false, errors.New("probe_err")
 }
 
-func (m *mockIOCTL) CreateTunInterface(name string) (*os.File, error) {
-	if m.createErr != nil {
-		return nil, m.createErr
-	}
-	// record but can be overridden in tests
-	m.name = name
-	return os.Open(os.DevNull)
-}
-func (m *mockIOCTL) DetectTunNameFromFd(_ *os.File) (string, error) {
-	if m.detectErr != nil {
-		return "", m.detectErr
-	}
-	return m.name, nil
+type mockIPDelNotFound struct{ *mockIP }
+
+func (m *mockIPDelNotFound) LinkDelete(string) error {
+	m.add("del")
+	return errors.New("device does not exist")
 }
 
-// mockSys implements sysctl.Contract
-type mockSys struct {
-	netErr    bool
-	wErr      bool
-	netOutput []byte
-}
+type mockIPDelOtherErr struct{ *mockIP }
 
-func (m *mockSys) NetIpv4IpForward() ([]byte, error) {
-	if m.netErr {
-		return nil, errors.New("net_err")
-	}
-	if m.netOutput != nil {
-		return m.netOutput, nil
-	}
-	return []byte("net.ipv4.ip_forward = 1\n"), nil
-}
-func (m *mockSys) WNetIpv4IpForward() ([]byte, error) {
-	if m.wErr {
-		return nil, errors.New("w_err")
-	}
-	return []byte("net.ipv4.ip_forward = 1\n"), nil
-}
+func (m *mockIPDelOtherErr) LinkDelete(string) error { m.add("del"); return errors.New("boom") }
 
-// mockIPErr wraps mockIP to inject errors in createTun steps
+// targeted errors inside createTun steps
 type mockIPErr struct {
 	*mockIP
 	errTag string
@@ -132,15 +89,30 @@ func (m *mockIPErr) AddrAddDev(devName, cidr string) error {
 	return m.mockIP.AddrAddDev(devName, cidr)
 }
 
-// mockIPRouteErr injects error into RouteDefault()
+// RouteDefault error (configure path)
 type mockIPRouteErr struct {
 	*mockIP
 	err error
 }
 
-func (m *mockIPRouteErr) RouteDefault() (string, error) { return "", m.err }
+func (m *mockIPRouteErr) RouteDefault() (string, error) {
+	m.add("route")
+	return "", m.err
+}
 
-// mockIPTErr wraps mockIPT to inject errors in configure & clear methods
+// mockIPT implements application.Netfilter (success version).
+type mockIPT struct{ log bytes.Buffer }
+
+func (m *mockIPT) add(tag string)                                  { m.log.WriteString(tag + ";") }
+func (m *mockIPT) EnableDevMasquerade(_ string) error              { m.add("masq_on"); return nil }
+func (m *mockIPT) DisableDevMasquerade(_ string) error             { m.add("masq_off"); return nil }
+func (m *mockIPT) EnableForwardingFromTunToDev(_, _ string) error  { m.add("fwd_td"); return nil }
+func (m *mockIPT) DisableForwardingFromTunToDev(_, _ string) error { m.add("fwd_td_off"); return nil }
+func (m *mockIPT) EnableForwardingFromDevToTun(_, _ string) error  { m.add("fwd_dt"); return nil }
+func (m *mockIPT) DisableForwardingFromDevToTun(_, _ string) error { m.add("fwd_dt_off"); return nil }
+func (m *mockIPT) ConfigureMssClamping() error                     { m.add("clamp"); return nil }
+
+// errors in Netfilter
 type mockIPTErr struct {
 	*mockIPT
 	errTag string
@@ -153,11 +125,23 @@ func (m *mockIPTErr) EnableDevMasquerade(devName string) error {
 	}
 	return m.mockIPT.EnableDevMasquerade(devName)
 }
-func (m *mockIPTErr) EnableForwardingFromTunToDev(tunName, devName string) error {
+func (m *mockIPTErr) EnableForwardingFromTunToDev(tun, dev string) error {
 	if m.errTag == "EnableForwardingFromTunToDev" {
 		return m.err
 	}
-	return m.mockIPT.EnableForwardingFromTunToDev(tunName, devName)
+	return m.mockIPT.EnableForwardingFromTunToDev(tun, dev)
+}
+func (m *mockIPTErr) DisableForwardingFromTunToDev(tun, dev string) error {
+	if m.errTag == "DisableForwardingFromTunToDev" {
+		return m.err
+	}
+	return m.mockIPT.DisableForwardingFromTunToDev(tun, dev)
+}
+func (m *mockIPTErr) DisableForwardingFromDevToTun(tun, dev string) error {
+	if m.errTag == "DisableForwardingFromDevToTun" {
+		return m.err
+	}
+	return m.mockIPT.DisableForwardingFromDevToTun(tun, dev)
 }
 func (m *mockIPTErr) ConfigureMssClamping() error {
 	if m.errTag == "ConfigureMssClamping" {
@@ -165,40 +149,53 @@ func (m *mockIPTErr) ConfigureMssClamping() error {
 	}
 	return m.mockIPT.ConfigureMssClamping()
 }
-func (m *mockIPTErr) DisableForwardingFromTunToDev(tunName, devName string) error {
-	if m.errTag == "DisableForwardingFromTunToDev" {
-		return m.err
-	}
-	return m.mockIPT.DisableForwardingFromTunToDev(tunName, devName)
-}
-func (m *mockIPTErr) DisableForwardingFromDevToTun(tunName, devName string) error {
-	if m.errTag == "DisableForwardingFromDevToTun" {
-		return m.err
-	}
-	return m.mockIPT.DisableForwardingFromDevToTun(tunName, devName)
+
+// mockIOCTL implements ioctl.Contract.
+type mockIOCTL struct {
+	name                 string
+	createErr, detectErr error
 }
 
-// mockIPErrDel injects error into LinkDelete()
-type mockIPErrDel struct {
-	*mockIP
-	err error
+func (m *mockIOCTL) CreateTunInterface(name string) (*os.File, error) {
+	if m.createErr != nil {
+		return nil, m.createErr
+	}
+	m.name = name
+	return os.Open(os.DevNull)
+}
+func (m *mockIOCTL) DetectTunNameFromFd(_ *os.File) (string, error) {
+	if m.detectErr != nil {
+		return "", m.detectErr
+	}
+	return m.name, nil
 }
 
-func (m *mockIPErrDel) LinkDelete(_ string) error { return m.err }
+// mockSys implements sysctl.Contract.
+type mockSys struct {
+	netErr    bool
+	wErr      bool
+	netOutput []byte
+}
 
-// newFactory helper
-func newFactory(
-	ipC ip.Contract,
-	iptC application.Netfilter,
-	ioC ioctl.Contract,
-	sysC sysctl.Contract,
-) *ServerTunFactory {
-	return &ServerTunFactory{
-		ip:        ipC,
-		netfilter: iptC,
-		ioctl:     ioC,
-		sysctl:    sysC,
+func (m *mockSys) NetIpv4IpForward() ([]byte, error) {
+	if m.netErr {
+		return nil, errors.New("net_err")
 	}
+	if m.netOutput != nil {
+		return m.netOutput, nil
+	}
+	return []byte("net.ipv4.ip_forward = 1\n"), nil
+}
+func (m *mockSys) WNetIpv4IpForward() ([]byte, error) {
+	if m.wErr {
+		return nil, errors.New("w_err")
+	}
+	return []byte("net.ipv4.ip_forward = 1\n"), nil
+}
+
+// helper factory
+func newFactory(ipC ip.Contract, iptC application.Netfilter, ioC ioctl.Contract, sysC sysctl.Contract) *ServerTunFactory {
+	return &ServerTunFactory{ip: ipC, netfilter: iptC, ioctl: ioC, sysctl: sysC}
 }
 
 var cfg = settings.Settings{
@@ -207,19 +204,19 @@ var cfg = settings.Settings{
 	MTU:             settings.MTU,
 }
 
-// --- Tests ---
+/* ============================ Tests ============================ */
 
-func TestCreateAndDispose(t *testing.T) {
+func TestCreateAndDispose_Success(t *testing.T) {
 	f := newFactory(&mockIP{}, &mockIPT{}, &mockIOCTL{}, &mockSys{})
 	tun, err := f.CreateTunDevice(cfg)
 	if err != nil {
-		t.Fatalf("CreateTunDevice: %v", err)
+		t.Fatalf("CreateTunDevice error: %v", err)
 	}
 	if tun == nil {
 		t.Fatal("expected non-nil tun file")
 	}
 	if err := f.DisposeTunDevices(cfg); err != nil {
-		t.Fatalf("DisposeTunDevices: %v", err)
+		t.Fatalf("DisposeTunDevices error: %v", err)
 	}
 }
 
@@ -227,7 +224,7 @@ func TestEnableForwarding_FirstCallError(t *testing.T) {
 	f := newFactory(&mockIP{}, &mockIPT{}, &mockIOCTL{}, &mockSys{netErr: true})
 	_, err := f.CreateTunDevice(cfg)
 	if err == nil || !strings.Contains(err.Error(), "failed to enable IPv4 packet forwarding") {
-		t.Errorf("expected forwarding error, got %v", err)
+		t.Errorf("want forwarding error, got %v", err)
 	}
 }
 
@@ -237,12 +234,15 @@ func TestEnableForwarding_SecondCallError(t *testing.T) {
 	})
 	_, err := f.CreateTunDevice(cfg)
 	if err == nil || !strings.Contains(err.Error(), "failed to enable IPv4 packet forwarding") {
-		t.Errorf("expected second-call forwarding error, got %v", err)
+		t.Errorf("want second-call forwarding error, got %v", err)
 	}
 }
 
 func TestCreateTunDevice_CreateTunStepErrors(t *testing.T) {
-	cases := []struct{ tag, want string }{
+	cases := []struct {
+		tag  string
+		want string
+	}{
 		{"TunTapAddDevTun", "could not create tuntap dev"},
 		{"LinkSetDevUp", "could not set tuntap dev up"},
 		{"LinkSetDevMTU", "could not set mtu on tuntap dev"},
@@ -250,11 +250,10 @@ func TestCreateTunDevice_CreateTunStepErrors(t *testing.T) {
 		{"CreateTunInterface", "failed to open TUN interface"},
 	}
 	for _, c := range cases {
-		var ipMock ip.Contract
+		var ipMock ip.Contract = &mockIP{}
 		ioMock := &mockIOCTL{}
 		if c.tag == "CreateTunInterface" {
 			ioMock.createErr = errors.New("io_err")
-			ipMock = &mockIP{}
 		} else {
 			ipMock = &mockIPErr{
 				mockIP: &mockIP{},
@@ -265,135 +264,204 @@ func TestCreateTunDevice_CreateTunStepErrors(t *testing.T) {
 		f := newFactory(ipMock, &mockIPT{}, ioMock, &mockSys{})
 		_, err := f.CreateTunDevice(cfg)
 		if err == nil || !strings.Contains(err.Error(), c.want) {
-			t.Errorf("case %s: expected error containing %q, got %v", c.tag, c.want, err)
+			t.Errorf("case %s: want error containing %q, got %v", c.tag, c.want, err)
 		}
 	}
 }
 
 func TestCreateTunDevice_ConfigureStepErrors(t *testing.T) {
 	cases := []struct {
-		setup func() *ServerTunFactory
+		setup func() (*ServerTunFactory, *mockIP)
 		want  string
 	}{
 		{
-			setup: func() *ServerTunFactory {
+			setup: func() (*ServerTunFactory, *mockIP) {
+				ipb := &mockIP{}
 				return newFactory(
-					&mockIPRouteErr{&mockIP{}, errors.New("route_err")},
+					&mockIPRouteErr{ipb, errors.New("route_err")},
 					&mockIPT{}, &mockIOCTL{}, &mockSys{},
-				)
+				), ipb
 			},
 			want: "route_err",
 		},
 		{
-			setup: func() *ServerTunFactory {
+			setup: func() (*ServerTunFactory, *mockIP) {
+				ipb := &mockIP{}
 				return newFactory(
-					&mockIP{},
+					ipb,
 					&mockIPTErr{&mockIPT{}, "EnableDevMasquerade", errors.New("masq_err")},
 					&mockIOCTL{}, &mockSys{},
-				)
+				), ipb
 			},
 			want: "failed enabling NAT",
 		},
 		{
-			setup: func() *ServerTunFactory {
+			setup: func() (*ServerTunFactory, *mockIP) {
+				ipb := &mockIP{}
 				return newFactory(
-					&mockIP{},
+					ipb,
 					&mockIPTErr{&mockIPT{}, "EnableForwardingFromTunToDev", errors.New("fwd_err")},
 					&mockIOCTL{}, &mockSys{},
-				)
+				), ipb
 			},
 			want: "failed to set up forwarding",
 		},
 	}
 	for _, c := range cases {
-		f := c.setup()
+		f, ipb := c.setup()
 		_, err := f.CreateTunDevice(cfg)
 		if err == nil || !strings.Contains(err.Error(), c.want) {
-			t.Errorf("expected configure error %q, got %v", c.want, err)
+			t.Fatalf("want configure error %q, got %v", c.want, err)
+		}
+		// verify cleanup executed: RouteDefault in unconfigure + attemptToRemove (exists+del)
+		logs := ipb.log.String()
+		if !strings.Contains(logs, "route;") || !strings.Contains(logs, "exists;") || !strings.Contains(logs, "del;") {
+			t.Fatalf("expected cleanup route+exists+del, got logs: %s", logs)
 		}
 	}
 }
 
-func TestDisposeTunDevices_ErrorPaths(t *testing.T) {
-	// open tun error
-	f1 := newFactory(&mockIP{}, &mockIPT{}, &mockIOCTL{createErr: errors.New("io_err")}, &mockSys{})
-	if err := f1.DisposeTunDevices(cfg); err == nil ||
-		!strings.Contains(err.Error(), "failed to open TUN interface") {
-		t.Errorf("expected open tun error, got %v", err)
+func TestSetupForwarding_ErrorPaths(t *testing.T) {
+	ipOK, iptOK := &mockIP{}, &mockIPT{}
+
+	// detect name error
+	ioDetErr := &mockIOCTL{detectErr: errors.New("det_err")}
+	tun1, _ := ioDetErr.CreateTunInterface("tunX")
+	f1 := newFactory(ipOK, iptOK, ioDetErr, &mockSys{})
+	if err := f1.setupForwarding(tun1, "eth0"); err == nil ||
+		!strings.Contains(err.Error(), "failed to determing tunnel ifName") {
+		t.Errorf("want detect error, got %v", err)
 	}
-	// delete link error
-	f2 := newFactory(&mockIPErrDel{&mockIP{}, errors.New("del_err")}, &mockIPT{}, &mockIOCTL{}, &mockSys{})
-	if err := f2.DisposeTunDevices(cfg); err == nil ||
-		!strings.Contains(err.Error(), "error deleting TUN device") {
-		t.Errorf("expected delete error, got %v", err)
+
+	// empty name
+	ioEmpty := &mockIOCTL{}
+	tun2, _ := ioEmpty.CreateTunInterface("tunY")
+	ioEmpty.name = ""
+	f2 := newFactory(ipOK, iptOK, ioEmpty, &mockSys{})
+	if err := f2.setupForwarding(tun2, "eth0"); err == nil ||
+		!strings.Contains(err.Error(), "failed to get TUN interface name") {
+		t.Errorf("want empty name error, got %v", err)
+	}
+
+	// iptables error on first rule
+	iptErr := &mockIPTErr{&mockIPT{}, "EnableForwardingFromTunToDev", errors.New("f_err")}
+	ioOK := &mockIOCTL{}
+	tun3, _ := ioOK.CreateTunInterface("tunZ")
+	f3 := newFactory(ipOK, iptErr, ioOK, &mockSys{})
+	if err := f3.setupForwarding(tun3, "eth0"); err == nil ||
+		!strings.Contains(err.Error(), "failed to setup forwarding rule") {
+		t.Errorf("want forwarding rule error, got %v", err)
 	}
 }
 
-func TestSetupAndClearForwarding_Errors(t *testing.T) {
-	defaultIP, defaultIPT, defaultIO := &mockIP{}, &mockIPT{}, &mockIOCTL{}
+func TestClearForwarding_ErrorPaths(t *testing.T) {
+	ipOK, iptOK := &mockIP{}, &mockIPT{}
 
-	// setup: detect error
-	ioErr := &mockIOCTL{detectErr: errors.New("det_err")}
-	tun1, _ := ioErr.CreateTunInterface("tunX")
-	f1 := newFactory(defaultIP, defaultIPT, ioErr, &mockSys{})
-	if err := f1.setupForwarding(tun1, "eth0"); err == nil ||
+	// detect name error
+	ioDetErr := &mockIOCTL{detectErr: errors.New("det_err")}
+	tun1, _ := ioDetErr.CreateTunInterface("tunA")
+	f1 := newFactory(ipOK, iptOK, ioDetErr, &mockSys{})
+	if err := f1.clearForwarding(tun1, "eth0"); err == nil ||
 		!strings.Contains(err.Error(), "failed to determing tunnel ifName") {
-		t.Errorf("expected detect name error, got %v", err)
+		t.Errorf("want detect error, got %v", err)
 	}
 
-	// setup: empty name
+	// empty name
 	ioEmpty := &mockIOCTL{}
-	tun2, _ := ioEmpty.CreateTunInterface("tunY")
-	ioEmpty.name = "" // override after CreateTunInterface
-	f2 := newFactory(defaultIP, defaultIPT, ioEmpty, &mockSys{})
-	if err := f2.setupForwarding(tun2, "eth0"); err == nil ||
+	tun2, _ := ioEmpty.CreateTunInterface("tunB")
+	ioEmpty.name = ""
+	f2 := newFactory(ipOK, iptOK, ioEmpty, &mockSys{})
+	if err := f2.clearForwarding(tun2, "eth0"); err == nil ||
 		!strings.Contains(err.Error(), "failed to get TUN interface name") {
-		t.Errorf("expected empty name error, got %v", err)
+		t.Errorf("want empty name error, got %v", err)
 	}
 
-	// setup: iptables error
-	iptErr := &mockIPTErr{&mockIPT{}, "EnableForwardingFromTunToDev", errors.New("f_err")}
-	tun3, _ := defaultIO.CreateTunInterface("tunZ")
-	f3 := newFactory(defaultIP, iptErr, defaultIO, &mockSys{})
-	if err := f3.setupForwarding(tun3, "eth0"); err == nil ||
-		!strings.Contains(err.Error(), "failed to setup forwarding rule") {
-		t.Errorf("expected forwarding rule error, got %v", err)
+	// disable tun->dev error
+	iptErr := &mockIPTErr{&mockIPT{}, "DisableForwardingFromTunToDev", errors.New("dtd_err")}
+	ioOK := &mockIOCTL{}
+	tun3, _ := ioOK.CreateTunInterface("tunC")
+	f3 := newFactory(ipOK, iptErr, ioOK, &mockSys{})
+	if err := f3.clearForwarding(tun3, "eth0"); err == nil ||
+		!strings.Contains(err.Error(), "failed to execute iptables command") {
+		t.Errorf("want tun->dev error, got %v", err)
 	}
 
-	// clear: detect error
-	ioErr2 := &mockIOCTL{detectErr: errors.New("det_err")}
-	tun4, _ := ioErr2.CreateTunInterface("tunA")
-	f4 := newFactory(defaultIP, defaultIPT, ioErr2, &mockSys{})
+	// disable dev->tun error (first disable passes, second fails)
+	iptErr2 := &mockIPTErr{&mockIPT{}, "DisableForwardingFromDevToTun", errors.New("ddt_err")}
+	tun4, _ := ioOK.CreateTunInterface("tunD")
+	f4 := newFactory(ipOK, iptErr2, ioOK, &mockSys{})
 	if err := f4.clearForwarding(tun4, "eth0"); err == nil ||
-		!strings.Contains(err.Error(), "failed to determing tunnel ifName") {
-		t.Errorf("expected detect name error, got %v", err)
-	}
-
-	// clear: empty name
-	ioEmpty2 := &mockIOCTL{}
-	tun5, _ := ioEmpty2.CreateTunInterface("tunB")
-	ioEmpty2.name = "" // override after CreateTunInterface
-	f5 := newFactory(defaultIP, defaultIPT, ioEmpty2, &mockSys{})
-	if err := f5.clearForwarding(tun5, "eth0"); err == nil ||
-		!strings.Contains(err.Error(), "failed to get TUN interface name") {
-		t.Errorf("expected empty name error, got %v", err)
-	}
-
-	// clear: disable tun->dev error
-	iptErr2 := &mockIPTErr{&mockIPT{}, "DisableForwardingFromTunToDev", errors.New("dtd_err")}
-	tun6, _ := defaultIO.CreateTunInterface("tunC")
-	f6 := newFactory(defaultIP, iptErr2, defaultIO, &mockSys{})
-	if err := f6.clearForwarding(tun6, "eth0"); err == nil ||
 		!strings.Contains(err.Error(), "failed to execute iptables command") {
-		t.Errorf("expected disable tun->dev error, got %v", err)
+		t.Errorf("want dev->tun error, got %v", err)
+	}
+}
+
+func TestDisposeTunDevices_Branches(t *testing.T) {
+	// 1) interface not exists -> early return
+	f1 := newFactory(&mockIPExistsFalse{&mockIP{}}, &mockIPT{}, &mockIOCTL{}, &mockSys{})
+	if err := f1.DisposeTunDevices(cfg); err != nil {
+		t.Fatalf("unexpected error for no-interface: %v", err)
 	}
 
-	// clear: disable dev->tun error
-	iptErr3 := &mockIPTErr{&mockIPT{}, "DisableForwardingFromDevToTun", errors.New("ddt_err")}
-	tun7, _ := defaultIO.CreateTunInterface("tunD")
-	f7 := newFactory(defaultIP, iptErr3, defaultIO, &mockSys{})
-	if err := f7.clearForwarding(tun7, "eth0"); err == nil ||
-		!strings.Contains(err.Error(), "failed to execute iptables command") {
-		t.Errorf("expected disable dev->tun error, got %v", err)
+	// 2) LinkExists error -> best-effort (logged, but no error)
+	buf := &bytes.Buffer{}
+	old := log.Writer()
+	log.SetOutput(buf)
+	defer log.SetOutput(old)
+
+	f2 := newFactory(&mockIPExistsErr{&mockIP{}}, &mockIPT{}, &mockIOCTL{}, &mockSys{})
+	if err := f2.DisposeTunDevices(cfg); err != nil {
+		t.Fatalf("unexpected error with LinkExists error path: %v", err)
+	}
+	if !strings.Contains(strings.ToLower(buf.String()), "link-exists check failed") {
+		t.Errorf("expected log about link-exists failure, got: %s", buf.String())
+	}
+
+	// 3) delete “not found” -> ok
+	f3 := newFactory(&mockIPDelNotFound{&mockIP{}}, &mockIPT{}, &mockIOCTL{}, &mockSys{})
+	if err := f3.DisposeTunDevices(cfg); err != nil {
+		t.Fatalf("unexpected error on not-found delete: %v", err)
+	}
+
+	// 4) delete “other error” -> attemptToRemoveTunDevByName returns error, Dispose logs it
+	buf.Reset()
+	f4 := newFactory(&mockIPDelOtherErr{&mockIP{}}, &mockIPT{}, &mockIOCTL{}, &mockSys{})
+	if err := f4.DisposeTunDevices(cfg); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(buf.String(), "attemptToRemoveTunDevByName failed") {
+		t.Errorf("expected log from DisposeTunDevices on delete error, got: %s", buf.String())
+	}
+}
+
+func Test_attemptToRemoveTunDevByName_StandaloneErrors(t *testing.T) {
+	// ensure function itself returns error on “other” delete error
+	f := newFactory(&mockIPDelOtherErr{&mockIP{}}, &mockIPT{}, &mockIOCTL{}, &mockSys{})
+	err := f.attemptToRemoveTunDevByName("tunX")
+	if err == nil || !strings.Contains(err.Error(), `delete "tunX":`) {
+		t.Fatalf("want delete error, got %v", err)
+	}
+}
+
+func Test_unconfigureByTunDevName_LogsBranches(t *testing.T) {
+	// 1) RouteDefault error -> early return
+	buf := &bytes.Buffer{}
+	old := log.Writer()
+	log.SetOutput(buf)
+	defer log.SetOutput(old)
+
+	f1 := newFactory(&mockIPRouteErr{&mockIP{}, errors.New("rd_err")}, &mockIPT{}, &mockIOCTL{}, &mockSys{})
+	f1.unconfigureByTunDevName("tun0")
+	if !strings.Contains(buf.String(), "failed to detect default route iface") {
+		t.Errorf("expected route error log, got: %s", buf.String())
+	}
+
+	// 2) other logged branches
+	buf.Reset()
+	f2 := newFactory(&mockIP{}, &mockIPTErr{&mockIPT{}, "DisableForwardingFromTunToDev", errors.New("x")}, &mockIOCTL{}, &mockSys{})
+	f2.unconfigureByTunDevName("tun0")
+	out := strings.ToLower(buf.String())
+	if !strings.Contains(out, "failed to disable nat") && !strings.Contains(out, "failed to disable fwd tun->dev") {
+		t.Errorf("expected logs from unconfigure, got: %s", out)
 	}
 }

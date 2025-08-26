@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"tungo/application"
 	"tungo/infrastructure/PAL"
 	"tungo/infrastructure/PAL/linux/network_tools/ioctl"
@@ -42,27 +43,20 @@ func (s ServerTunFactory) CreateTunDevice(connSettings settings.Settings) (appli
 
 	configureErr := s.configure(tunFile)
 	if configureErr != nil {
-		return nil, fmt.Errorf("failed to configure a server: %s\n", configureErr)
+		_ = tunFile.Close()
+		s.unconfigureByTunDevName(connSettings.InterfaceName)
+		_ = s.attemptToRemoveTunDevByName(connSettings.InterfaceName)
+		return nil, fmt.Errorf("failed to configure a server: %w", configureErr)
 	}
 
 	return tunFile, nil
 }
 
-func (s ServerTunFactory) DisposeTunDevices(connSettings settings.Settings) error {
-	tun, openErr := s.ioctl.CreateTunInterface(connSettings.InterfaceName)
-	if openErr != nil {
-		return fmt.Errorf("failed to open TUN interface: %w", openErr)
-	}
-	s.Unconfigure(tun)
+func (s ServerTunFactory) DisposeTunDevices(settings settings.Settings) error {
+	s.unconfigureByTunDevName(settings.InterfaceName)
 
-	closeErr := tun.Close()
-	if closeErr != nil {
-		return fmt.Errorf("failed to close TUN interface: %w", closeErr)
-	}
-
-	delErr := s.ip.LinkDelete(connSettings.InterfaceName)
-	if delErr != nil {
-		log.Printf("error deleting TUN device: %v", delErr)
+	if rErr := s.attemptToRemoveTunDevByName(settings.InterfaceName); rErr != nil {
+		log.Printf("attemptToRemoveTunDevByName failed: %v", rErr)
 	}
 
 	return nil
@@ -70,7 +64,7 @@ func (s ServerTunFactory) DisposeTunDevices(connSettings settings.Settings) erro
 
 func (s ServerTunFactory) createTun(settings settings.Settings) (*os.File, error) {
 	// delete previous tun if any exist
-	_ = s.ip.LinkDelete(settings.InterfaceName)
+	_ = s.attemptToRemoveTunDevByName(settings.InterfaceName)
 
 	devErr := s.ip.TunTapAddDevTun(settings.InterfaceName)
 	if devErr != nil {
@@ -79,34 +73,62 @@ func (s ServerTunFactory) createTun(settings settings.Settings) (*os.File, error
 
 	upErr := s.ip.LinkSetDevUp(settings.InterfaceName)
 	if upErr != nil {
+		_ = s.ip.LinkDelete(settings.InterfaceName)
 		return nil, fmt.Errorf("could not set tuntap dev up: %s", upErr)
 	}
 
 	mtuErr := s.ip.LinkSetDevMTU(settings.InterfaceName, settings.MTU)
 	if mtuErr != nil {
+		_ = s.ip.LinkDelete(settings.InterfaceName)
 		return nil, fmt.Errorf("could not set mtu on tuntap dev: %s", mtuErr)
 	}
 
 	serverIp, serverIpErr := nip.AllocateServerIp(settings.InterfaceIPCIDR)
 	if serverIpErr != nil {
+		_ = s.ip.LinkDelete(settings.InterfaceName)
 		return nil, fmt.Errorf("could not allocate server IP (%s): %s", serverIp, serverIpErr)
 	}
 
 	cidrServerIp, cidrServerIpErr := nip.ToCIDR(settings.InterfaceIPCIDR, serverIp)
 	if cidrServerIpErr != nil {
+		_ = s.ip.LinkDelete(settings.InterfaceName)
 		return nil, fmt.Errorf("could not conver server IP(%s) to CIDR: %s", serverIp, cidrServerIpErr)
 	}
 	addrAddDev := s.ip.AddrAddDev(settings.InterfaceName, cidrServerIp)
 	if addrAddDev != nil {
+		_ = s.ip.LinkDelete(settings.InterfaceName)
 		return nil, fmt.Errorf("failed to convert server ip to CIDR format: %s", addrAddDev)
 	}
 
 	tunFile, tunFileErr := s.ioctl.CreateTunInterface(settings.InterfaceName)
 	if tunFileErr != nil {
+		_ = s.ip.LinkDelete(settings.InterfaceName)
 		return nil, fmt.Errorf("failed to open TUN interface: %v", tunFileErr)
 	}
 
 	return tunFile, nil
+}
+
+func (s ServerTunFactory) attemptToRemoveTunDevByName(name string) error {
+	ok, exErr := s.ip.LinkExists(name)
+	if exErr == nil && !ok {
+		return nil
+	}
+	if exErr != nil {
+		log.Printf("link-exists check failed for %q: %v; attempting delete anyway", name, exErr)
+	}
+
+	if delErr := s.ip.LinkDelete(name); delErr != nil {
+		delErrMsg := strings.ToLower(delErr.Error())
+		if strings.Contains(delErrMsg, "does not exist") ||
+			strings.Contains(delErrMsg, "no such device") ||
+			strings.Contains(delErrMsg, "cannot find device") ||
+			strings.Contains(delErrMsg, "not found") {
+			return nil
+		}
+		return fmt.Errorf("delete %q: %w", name, delErr)
+	}
+	return nil
 }
 
 func (s ServerTunFactory) enableForwarding() error {
@@ -141,34 +163,33 @@ func (s ServerTunFactory) configure(tunFile *os.File) error {
 		return fmt.Errorf("failed to set up forwarding: %v", err)
 	}
 
-	log.Printf("server configured\n")
+	log.Printf("server configured")
 	return nil
 }
 
-func (s ServerTunFactory) Unconfigure(tunFile *os.File) {
-	externalIfName, extErr := s.ip.RouteDefault()
-	if extErr != nil {
-		log.Printf("failed to detect default route iface: %v\n", extErr)
-	}
-
-	err := s.netfilter.DisableDevMasquerade(externalIfName)
+func (s ServerTunFactory) unconfigureByTunDevName(name string) {
+	ext, err := s.ip.RouteDefault()
 	if err != nil {
-		log.Printf("failed to disbale NAT: %s\n", err)
+		log.Printf("failed to detect default route iface: %s", err)
+		return
 	}
-
-	err = s.clearForwarding(tunFile, externalIfName)
-	if err != nil {
-		log.Printf("failed to disable forwarding: %s\n", err)
+	if err := s.netfilter.DisableDevMasquerade(ext); err != nil {
+		log.Printf("failed to disable NAT: %s", err)
 	}
-
-	log.Printf("server unconfigured\n")
+	if err := s.netfilter.DisableForwardingFromTunToDev(name, ext); err != nil {
+		log.Printf("failed to disable fwd tun->dev: %s", err)
+	}
+	if err := s.netfilter.DisableForwardingFromDevToTun(name, ext); err != nil {
+		log.Printf("failed to disable fwd dev->tun: %s", err)
+	}
+	log.Printf("server unconfigured")
 }
 
 func (s ServerTunFactory) setupForwarding(tunFile *os.File, extIface string) error {
 	// Get the name of the TUN interface
 	tunName, err := s.ioctl.DetectTunNameFromFd(tunFile)
 	if err != nil {
-		return fmt.Errorf("failed to determing tunnel ifName: %s\n", err)
+		return fmt.Errorf("failed to determing tunnel ifName: %s", err)
 	}
 	if tunName == "" {
 		return fmt.Errorf("failed to get TUN interface name")
@@ -191,7 +212,7 @@ func (s ServerTunFactory) setupForwarding(tunFile *os.File, extIface string) err
 func (s ServerTunFactory) clearForwarding(tunFile *os.File, extIface string) error {
 	tunName, err := s.ioctl.DetectTunNameFromFd(tunFile)
 	if err != nil {
-		return fmt.Errorf("failed to determing tunnel ifName: %s\n", err)
+		return fmt.Errorf("failed to determing tunnel ifName: %w", err)
 	}
 	if tunName == "" {
 		return fmt.Errorf("failed to get TUN interface name")
