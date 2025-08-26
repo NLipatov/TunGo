@@ -3,6 +3,7 @@ package ip
 // Contract is a interface of a wrapper around ip command from the iproute2 tool collection
 type Contract interface {
 	TunTapAddDevTun(devName string) error
+	LinkExists(devName string) (bool, error)
 	LinkDelete(devName string) error
 	LinkSetDevUp(devName string) error
 	LinkSetDevMTU(devName string, mtu int) error
