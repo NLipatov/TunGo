@@ -33,9 +33,6 @@ var _ application.Netfilter = (*Nftables)(nil)
 
 // Config controls backend behavior. Zero value is sane.
 type Config struct {
-	// Prefer installing rules into Docker's DOCKER-USER chains if present.
-	PreferDockerUser bool
-
 	// Names and priorities. Change only if you need to integrate with
 	// existing rulesets in a controlled environment.
 	TableNat4Name        string // family ip
@@ -57,7 +54,6 @@ type Config struct {
 // DefaultConfig returns the tuned defaults.
 func DefaultConfig() Config {
 	return Config{
-		PreferDockerUser:      true,
 		TableNat4Name:         "tungo_nat",
 		TableNat6Name:         "tungo_nat",
 		TableInetName:         "tungo_filter",
