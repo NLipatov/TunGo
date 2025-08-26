@@ -6,9 +6,9 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"tungo/infrastructure/PAL/linux/network_tools/netfilter/nftables"
 
 	"tungo/application"
-	"tungo/infrastructure/PAL/linux/network_tools/netfilter/internal/nftables" // adjust if your path differs
 )
 
 // stubNF is a stand-in Netfilter implementation used by tests.

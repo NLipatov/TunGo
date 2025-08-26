@@ -5,8 +5,8 @@ import (
 	"errors"
 	"strings"
 	"syscall"
-	"tungo/infrastructure/PAL/linux/network_tools/netfilter/internal/iptables"
-	"tungo/infrastructure/PAL/linux/network_tools/netfilter/internal/nftables"
+	"tungo/infrastructure/PAL/linux/network_tools/netfilter/iptables"
+	"tungo/infrastructure/PAL/linux/network_tools/netfilter/nftables"
 
 	"tungo/application"
 	"tungo/infrastructure/PAL"
@@ -16,7 +16,7 @@ type Factory struct {
 	cmd        PAL.Commander
 	nftFactory nftables.Factory
 	iptFactory iptables.Factory
-	probe      nftables.Probe
+	probe      Probe
 }
 
 func NewFactory(cmd PAL.Commander) *Factory {
@@ -24,7 +24,7 @@ func NewFactory(cmd PAL.Commander) *Factory {
 		cmd:        cmd,
 		nftFactory: nftables.DefaultFactory{},
 		iptFactory: iptables.NewDefaultFactory(cmd),
-		probe:      nftables.DefaultProbe{},
+		probe:      DefaultProbe{},
 	}
 }
 
@@ -41,7 +41,7 @@ func (f *Factory) WithIPTablesFactory(i iptables.Factory) *Factory {
 	}
 	return f
 }
-func (f *Factory) WithProbe(p nftables.Probe) *Factory {
+func (f *Factory) WithProbe(p Probe) *Factory {
 	if p != nil {
 		f.probe = p
 	}

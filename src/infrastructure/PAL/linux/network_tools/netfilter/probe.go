@@ -1,4 +1,4 @@
-package nftables
+package netfilter
 
 import nftlib "github.com/google/nftables"
 
