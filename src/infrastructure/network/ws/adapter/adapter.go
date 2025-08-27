@@ -203,9 +203,9 @@ func (a *Adapter) storeNS(dst *atomic.Int64, t time.Time) {
 	dst.Store(t.UnixNano())
 }
 
-func (a *Adapter) nearestDeadline(firstNS, secondNs *atomic.Int64) (time.Time, bool) {
+func (a *Adapter) nearestDeadline(firstNS, secondNS *atomic.Int64) (time.Time, bool) {
 	first := a.nsToTime(firstNS)
-	second := a.nsToTime(secondNs)
+	second := a.nsToTime(secondNS)
 	firstIsZero := first.IsZero()
 	secondIsZero := second.IsZero()
 	if firstIsZero && secondIsZero {
