@@ -20,26 +20,34 @@ var (
 )
 
 type Adapter struct {
-	conn                        ws.Conn
-	ctx                         context.Context
-	errorMapper                 errorMapper
-	currentReader               io.Reader // current in-progress binary frame currentReader (wrapped)
-	readDeadline, writeDeadline atomic.Int64
-	lAddr                       net.Addr
-	rAddr                       net.Addr
+	conn          ws.Conn
+	ctx           context.Context
+	errorMapper   errorMapper
+	currentReader io.Reader // current in-progress binary frame currentReader (wrapped)
+	lAddr         net.Addr
+	rAddr         net.Addr
+
+	// 0 - no deadline
+	deadlineNS      atomic.Int64
+	readDeadlineNS  atomic.Int64
+	writeDeadlineNS atomic.Int64
 }
 
 func NewAdapter(ctx context.Context, conn ws.Conn, lAddr, rAddr net.Addr) *Adapter {
 	adapter := &Adapter{
-		ctx:         ctx,
-		conn:        conn,
-		errorMapper: defaultErrorMapper{},
-		lAddr:       lAddr,
-		rAddr:       rAddr,
+		ctx:             ctx,
+		conn:            conn,
+		errorMapper:     defaultErrorMapper{},
+		lAddr:           lAddr,
+		rAddr:           rAddr,
+		deadlineNS:      atomic.Int64{},
+		readDeadlineNS:  atomic.Int64{},
+		writeDeadlineNS: atomic.Int64{},
 	}
 
-	adapter.readDeadline.Store(0)
-	adapter.writeDeadline.Store(0)
+	adapter.deadlineNS.Store(0)
+	adapter.readDeadlineNS.Store(0)
+	adapter.writeDeadlineNS.Store(0)
 	return adapter
 }
 
@@ -48,7 +56,14 @@ func (a *Adapter) Write(p []byte) (int, error) {
 		return 0, nil
 	}
 
-	ctx, cancel := a.writeCtx()
+	var ctx context.Context
+	var cancel context.CancelFunc
+	deadline, deadlineOk := a.nearestDeadline(&a.deadlineNS, &a.writeDeadlineNS)
+	if deadlineOk {
+		ctx, cancel = context.WithDeadline(a.ctx, deadline)
+	} else {
+		ctx, cancel = context.WithCancel(a.ctx)
+	}
 	defer cancel()
 
 	w, err := a.conn.Writer(ctx, websocket.MessageBinary)
@@ -102,7 +117,14 @@ func (a *Adapter) Read(p []byte) (int, error) {
 			}
 		}
 
-		ctx, cancel := a.readCtx()
+		var ctx context.Context
+		var cancel context.CancelFunc
+		deadline, deadlineOk := a.nearestDeadline(&a.deadlineNS, &a.readDeadlineNS)
+		if deadlineOk {
+			ctx, cancel = context.WithDeadline(a.ctx, deadline)
+		} else {
+			ctx, cancel = context.WithCancel(a.ctx)
+		}
 		mt, r, err := a.conn.Reader(ctx)
 		if err != nil {
 			cancel() // failed to get frame; release ctx
@@ -119,6 +141,23 @@ func (a *Adapter) Read(p []byte) (int, error) {
 		// Keep the frame context alive until EOF/error via wrapper.
 		a.currentReader = &cancelOnEOF{r: r, cancel: cancel}
 	}
+}
+
+// cancelOnEOF wraps a currentReader and calls cancel() exactly once
+// when any non-nil error (including io.EOF) is returned.
+type cancelOnEOF struct {
+	r      io.Reader
+	cancel context.CancelFunc
+	done   bool
+}
+
+func (c *cancelOnEOF) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	if err != nil && !c.done {
+		c.cancel()
+		c.done = true
+	}
+	return n, err
 }
 
 func (a *Adapter) Close() error {
@@ -140,64 +179,54 @@ func (a *Adapter) RemoteAddr() net.Addr {
 }
 
 func (a *Adapter) SetDeadline(t time.Time) error {
-	a.storeDeadline(&a.readDeadline, t)
-	a.storeDeadline(&a.writeDeadline, t)
+	a.storeNS(&a.deadlineNS, t)     // 0 => снять
+	a.storeNS(&a.readDeadlineNS, t) // как у net.Conn: общий дедлайн задаёт оба
+	a.storeNS(&a.writeDeadlineNS, t)
 	return nil
 }
 
 func (a *Adapter) SetReadDeadline(t time.Time) error {
-	a.storeDeadline(&a.readDeadline, t)
+	a.storeNS(&a.readDeadlineNS, t) // 0 => снять
 	return nil
 }
 
 func (a *Adapter) SetWriteDeadline(t time.Time) error {
-	a.storeDeadline(&a.writeDeadline, t)
+	a.storeNS(&a.writeDeadlineNS, t) // 0 => снять
 	return nil
 }
 
-func (a *Adapter) storeDeadline(dst *atomic.Int64, t time.Time) {
+func (a *Adapter) storeNS(dst *atomic.Int64, t time.Time) {
 	if t.IsZero() {
-		dst.Store(0)
+		dst.Store(0) // снять дедлайн
 		return
 	}
 	dst.Store(t.UnixNano())
 }
 
-// cancelOnEOF wraps a currentReader and calls cancel() exactly once
-// when any non-nil error (including io.EOF) is returned.
-type cancelOnEOF struct {
-	r      io.Reader
-	cancel context.CancelFunc
-	done   bool
-}
-
-func (c *cancelOnEOF) Read(p []byte) (int, error) {
-	n, err := c.r.Read(p)
-	if err != nil && !c.done {
-		c.cancel()
-		c.done = true
-	}
-	return n, err
-}
-
-func (a *Adapter) readCtx() (context.Context, context.CancelFunc) {
-	if t, ok := a.loadDeadline(&a.readDeadline); ok {
-		return context.WithDeadline(a.ctx, t)
-	}
-	return a.ctx, func() {}
-}
-
-func (a *Adapter) writeCtx() (context.Context, context.CancelFunc) {
-	if t, ok := a.loadDeadline(&a.writeDeadline); ok {
-		return context.WithDeadline(a.ctx, t)
-	}
-	return a.ctx, func() {}
-}
-
-func (a *Adapter) loadDeadline(src *atomic.Int64) (time.Time, bool) {
-	ns := src.Load()
-	if ns == 0 {
+func (a *Adapter) nearestDeadline(firstNS, secondNs *atomic.Int64) (time.Time, bool) {
+	first := a.nsToTime(firstNS)
+	second := a.nsToTime(secondNs)
+	firstIsZero := first.IsZero()
+	secondIsZero := second.IsZero()
+	if firstIsZero && secondIsZero {
 		return time.Time{}, false
 	}
-	return time.Unix(0, ns), true
+	if firstIsZero {
+		return second, true
+	}
+	if secondIsZero {
+		return first, true
+	}
+	if second.Before(first) {
+		return second, true
+	}
+	return first, true
+}
+
+func (a *Adapter) nsToTime(src *atomic.Int64) time.Time {
+	ns := src.Load()
+	if ns == 0 {
+		return time.Time{}
+	}
+	return time.Unix(0, ns)
 }
