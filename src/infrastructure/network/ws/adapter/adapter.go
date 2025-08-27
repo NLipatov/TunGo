@@ -28,7 +28,6 @@ type Adapter struct {
 	rAddr         net.Addr
 
 	// 0 - no deadline
-	deadlineNS      atomic.Int64
 	readDeadlineNS  atomic.Int64
 	writeDeadlineNS atomic.Int64
 }
@@ -40,12 +39,10 @@ func NewAdapter(ctx context.Context, conn ws.Conn, lAddr, rAddr net.Addr) *Adapt
 		errorMapper:     defaultErrorMapper{},
 		lAddr:           lAddr,
 		rAddr:           rAddr,
-		deadlineNS:      atomic.Int64{},
 		readDeadlineNS:  atomic.Int64{},
 		writeDeadlineNS: atomic.Int64{},
 	}
 
-	adapter.deadlineNS.Store(0)
 	adapter.readDeadlineNS.Store(0)
 	adapter.writeDeadlineNS.Store(0)
 	return adapter
@@ -58,9 +55,8 @@ func (a *Adapter) Write(p []byte) (int, error) {
 
 	var ctx context.Context
 	var cancel context.CancelFunc
-	deadline, deadlineOk := a.nearestDeadline(&a.deadlineNS, &a.writeDeadlineNS)
-	if deadlineOk {
-		ctx, cancel = context.WithDeadline(a.ctx, deadline)
+	if t := a.nsToTime(&a.writeDeadlineNS); !t.IsZero() {
+		ctx, cancel = context.WithDeadline(a.ctx, t)
 	} else {
 		ctx, cancel = context.WithCancel(a.ctx)
 	}
@@ -119,9 +115,8 @@ func (a *Adapter) Read(p []byte) (int, error) {
 
 		var ctx context.Context
 		var cancel context.CancelFunc
-		deadline, deadlineOk := a.nearestDeadline(&a.deadlineNS, &a.readDeadlineNS)
-		if deadlineOk {
-			ctx, cancel = context.WithDeadline(a.ctx, deadline)
+		if t := a.nsToTime(&a.readDeadlineNS); !t.IsZero() {
+			ctx, cancel = context.WithDeadline(a.ctx, t)
 		} else {
 			ctx, cancel = context.WithCancel(a.ctx)
 		}
@@ -179,48 +174,27 @@ func (a *Adapter) RemoteAddr() net.Addr {
 }
 
 func (a *Adapter) SetDeadline(t time.Time) error {
-	a.storeNS(&a.deadlineNS, t)     // 0 => снять
-	a.storeNS(&a.readDeadlineNS, t) // как у net.Conn: общий дедлайн задаёт оба
+	a.storeNS(&a.readDeadlineNS, t)
 	a.storeNS(&a.writeDeadlineNS, t)
 	return nil
 }
 
 func (a *Adapter) SetReadDeadline(t time.Time) error {
-	a.storeNS(&a.readDeadlineNS, t) // 0 => снять
+	a.storeNS(&a.readDeadlineNS, t)
 	return nil
 }
 
 func (a *Adapter) SetWriteDeadline(t time.Time) error {
-	a.storeNS(&a.writeDeadlineNS, t) // 0 => снять
+	a.storeNS(&a.writeDeadlineNS, t)
 	return nil
 }
 
 func (a *Adapter) storeNS(dst *atomic.Int64, t time.Time) {
 	if t.IsZero() {
-		dst.Store(0) // снять дедлайн
+		dst.Store(0)
 		return
 	}
 	dst.Store(t.UnixNano())
-}
-
-func (a *Adapter) nearestDeadline(firstNS, secondNS *atomic.Int64) (time.Time, bool) {
-	first := a.nsToTime(firstNS)
-	second := a.nsToTime(secondNS)
-	firstIsZero := first.IsZero()
-	secondIsZero := second.IsZero()
-	if firstIsZero && secondIsZero {
-		return time.Time{}, false
-	}
-	if firstIsZero {
-		return second, true
-	}
-	if secondIsZero {
-		return first, true
-	}
-	if second.Before(first) {
-		return second, true
-	}
-	return first, true
 }
 
 func (a *Adapter) nsToTime(src *atomic.Int64) time.Time {
