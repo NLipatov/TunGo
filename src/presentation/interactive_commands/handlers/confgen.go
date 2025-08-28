@@ -25,6 +25,17 @@ func NewConfgenHandler(manager serverConfiguration.ServerConfigurationManager) *
 }
 
 func (c *ConfgenHandler) GenerateNewClientConf() error {
+	configuration, configurationErr := c.cfgManager.Configuration()
+	if configurationErr != nil {
+		return configurationErr
+	}
+
+	keyManager := serverConfiguration.NewEd25519KeyManager(configuration, c.cfgManager)
+	keyErr := keyManager.PrepareKeys()
+	if keyErr != nil {
+		return keyErr
+	}
+
 	newConf, err := c.generate()
 	if err != nil {
 		log.Fatalf("failed to generate client conf: %s\n", err)
