@@ -6,56 +6,56 @@ import (
 )
 
 // Ensure decorator implements the interface.
-var _ application.Netfilter = (*SynchronizedNetfilter)(nil)
+var _ application.Netfilter = (*SyncDriver)(nil)
 
-type SynchronizedNetfilter struct {
+type SyncDriver struct {
 	netfilter application.Netfilter
 	mu        sync.Mutex
 }
 
-func NewSynchronizedNetfilter(netfilter application.Netfilter) *SynchronizedNetfilter {
-	return &SynchronizedNetfilter{
+func NewSyncDriver(netfilter application.Netfilter) *SyncDriver {
+	return &SyncDriver{
 		netfilter: netfilter,
 	}
 }
 
-func (d *SynchronizedNetfilter) EnableDevMasquerade(devName string) error {
+func (d *SyncDriver) EnableDevMasquerade(devName string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	return d.netfilter.EnableDevMasquerade(devName)
 }
-func (d *SynchronizedNetfilter) DisableDevMasquerade(devName string) error {
+func (d *SyncDriver) DisableDevMasquerade(devName string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	return d.netfilter.DisableDevMasquerade(devName)
 }
-func (d *SynchronizedNetfilter) EnableForwardingFromTunToDev(tunName, devName string) error {
+func (d *SyncDriver) EnableForwardingFromTunToDev(tunName, devName string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	return d.netfilter.EnableForwardingFromTunToDev(tunName, devName)
 }
-func (d *SynchronizedNetfilter) DisableForwardingFromTunToDev(tunName, devName string) error {
+func (d *SyncDriver) DisableForwardingFromTunToDev(tunName, devName string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	return d.netfilter.DisableForwardingFromTunToDev(tunName, devName)
 }
-func (d *SynchronizedNetfilter) EnableForwardingFromDevToTun(tunName, devName string) error {
+func (d *SyncDriver) EnableForwardingFromDevToTun(tunName, devName string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	return d.netfilter.EnableForwardingFromDevToTun(tunName, devName)
 }
-func (d *SynchronizedNetfilter) DisableForwardingFromDevToTun(tunName, devName string) error {
+func (d *SyncDriver) DisableForwardingFromDevToTun(tunName, devName string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	return d.netfilter.DisableForwardingFromDevToTun(tunName, devName)
 }
-func (d *SynchronizedNetfilter) ConfigureMssClamping() error {
+func (d *SyncDriver) ConfigureMssClamping() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 

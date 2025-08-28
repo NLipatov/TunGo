@@ -1,211 +1,149 @@
 package iptables
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
-	"strings"
-
 	"tungo/infrastructure/PAL"
 )
 
-// Driver is a thin, idempotent driver for iptables/ip6tables binaries.
-// It prefers DOCKER-USER chain when present and falls back to FORWARD.
-type Driver struct {
-	cmd  PAL.Commander
-	ipt4 string // e.g. "iptables-legacy" or "iptables"
-	ipt6 string // e.g. "ip6tables-legacy" or "ip6tables" (can be empty if not available)
+type Wrapper struct {
+	commander          PAL.Commander
+	v4binary, v6binary string
 }
 
-// NewDriverWithBinaries lets the factory inject explicit binaries (recommended).
-func NewDriverWithBinaries(cmd PAL.Commander, ipt4, ipt6 string) *Driver {
-	if ipt4 == "" {
-		ipt4 = "iptables"
+func New(
+	v4binary, v6binary string,
+	commander PAL.Commander,
+) *Wrapper {
+	return &Wrapper{
+		commander: commander,
+		v4binary:  v4binary,
+		v6binary:  v6binary,
 	}
-	// ipt6 may be empty (IPv6 ops will be skipped).
-	return &Driver{cmd: cmd, ipt4: ipt4, ipt6: ipt6}
 }
 
-// -------------------- public API --------------------
+func (w *Wrapper) EnableDevMasquerade(devName string) error {
+	if _, err := w.execWithBinary("-t", "nat", "-A", "POSTROUTING", "-o", devName, "-j", "MASQUERADE"); err != nil {
+		return fmt.Errorf("failed to enable NAT on %s: %v", devName, err)
+	}
+	return nil
+}
 
-func (d *Driver) EnableDevMasquerade(devName string) error {
-	if devName == "" {
-		return errors.New("dev name is empty")
+func (w *Wrapper) DisableDevMasquerade(devName string) error {
+	if _, err := w.execWithBinary("-t", "nat", "-D", "POSTROUTING", "-o", devName, "-j", "MASQUERADE"); err != nil {
+		return fmt.Errorf("failed to disable NAT on %s: %v", devName, err)
 	}
-	// v4
-	if err := d.addIfMissing(d.ipt4, "nat", "POSTROUTING",
-		"-o", devName, "-j", "MASQUERADE"); err != nil {
-		return fmt.Errorf("enable v4 masquerade on %s: %w", devName, err)
+	return nil
+}
+
+func (w *Wrapper) EnableForwardingFromTunToDev(tunName string, devName string) error {
+	if _, err := w.execWithBinary("-A", "FORWARD", "-i", tunName, "-o", devName, "-j", "ACCEPT"); err != nil {
+		return fmt.Errorf("failed to set up forwarding rule for %s -> %s: %v",
+			tunName, devName, err)
 	}
-	// v6 (optional)
-	if d.ipt6 != "" {
-		if err := d.addIfMissing(d.ipt6, "nat", "POSTROUTING",
-			"-o", devName, "-j", "MASQUERADE"); err != nil {
-			return fmt.Errorf("enable v6 masquerade on %s: %w", devName, err)
+
+	return nil
+}
+
+func (w *Wrapper) DisableForwardingFromTunToDev(tunName string, devName string) error {
+	if _, err := w.execWithBinary("-D", "FORWARD", "-i", tunName, "-o", devName, "-j", "ACCEPT"); err != nil {
+		return fmt.Errorf(
+			"failed to remove forwarding rule for %s -> %s: %v",
+			tunName, devName, err)
+	}
+
+	return nil
+}
+
+func (w *Wrapper) EnableForwardingFromDevToTun(tunName string, devName string) error {
+	if _, err := w.execWithBinary("-A", "FORWARD", "-i", devName, "-o", tunName, "-m", "conntrack", "--ctstate", "RELATED,ESTABLISHED", "-j", "ACCEPT"); err != nil {
+		return fmt.Errorf("failed to set up forwarding rule for %s -> %s: %v",
+			devName, tunName, err)
+	}
+
+	return nil
+}
+
+func (w *Wrapper) DisableForwardingFromDevToTun(tunName string, devName string) error {
+	if _, err := w.execWithBinary("-D", "FORWARD", "-i", devName, "-o", tunName, "-m", "conntrack", "--ctstate", "RELATED,ESTABLISHED", "-j", "ACCEPT"); err != nil {
+		return fmt.Errorf("failed to remove forwarding rule for %s -> %s: %v",
+			devName, tunName, err)
+	}
+
+	return nil
+}
+
+func (w *Wrapper) ConfigureMssClamping() error {
+	// Configuration for chain FORWARD
+	if _, errForward := w.execWithBinary("-t", "mangle", "-A", "FORWARD", "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"); errForward != nil {
+		return fmt.Errorf("failed to configure MSS clamping on FORWARD chain: %s",
+			errForward)
+	}
+
+	// Configuration for chain OUTPUT
+	if _, errOutput := w.execWithBinary("-t", "mangle", "-A", "OUTPUT", "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"); errOutput != nil {
+		return fmt.Errorf("failed to configure MSS clamping on OUTPUT chain: %s",
+			errOutput)
+	}
+
+	return nil
+}
+
+func (w *Wrapper) execWithBinary(args ...string) ([]byte, error) {
+	var lastOut []byte
+	var errs []error
+
+	runOne := func(bin, label string) {
+		if bin == "" || w.canBeSkipped(bin, args...) {
+			return
+		}
+		out, err := w.commander.CombinedOutput(bin, args...)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("[%s] %s %v failed: %w; output: %s", label, bin, args, err, out))
+			return
+		}
+		if len(out) > 0 {
+			lastOut = out
 		}
 	}
-	return nil
-}
 
-func (d *Driver) DisableDevMasquerade(devName string) error {
-	if devName == "" {
-		return errors.New("dev name is empty")
-	}
-	_ = d.delIfPresent(d.ipt4, "nat", "POSTROUTING",
-		"-o", devName, "-j", "MASQUERADE")
-	if d.ipt6 != "" {
-		_ = d.delIfPresent(d.ipt6, "nat", "POSTROUTING",
-			"-o", devName, "-j", "MASQUERADE")
-	}
-	return nil
-}
+	runOne(w.v4binary, "IPv4")
+	runOne(w.v6binary, "IPv6")
 
-func (d *Driver) EnableForwardingFromTunToDev(tunName, devName string) error {
-	if tunName == "" || devName == "" {
-		return errors.New("iface name is empty")
-	}
-	chain := d.pickForwardChain(d.ipt4) // "DOCKER-USER" if exists, else "FORWARD"
-	// v4: tun -> dev accept
-	if err := d.addIfMissing(d.ipt4, "filter", chain,
-		"-i", tunName, "-o", devName, "-j", "ACCEPT"); err != nil {
-		return fmt.Errorf("v4 forward %s->%s: %w", tunName, devName, err)
-	}
-	// v4: dev -> tun ESTABLISHED,RELATED accept
-	if err := d.addEstablishedRule(d.ipt4, "filter", chain, devName, tunName); err != nil {
-		return fmt.Errorf("v4 reverse forward %s->%s: %w", devName, tunName, err)
-	}
-
-	// v6 (optional)
-	if d.ipt6 != "" {
-		chain6 := d.pickForwardChain(d.ipt6)
-		if err := d.addIfMissing(d.ipt6, "filter", chain6,
-			"-i", tunName, "-o", devName, "-j", "ACCEPT"); err != nil {
-			return fmt.Errorf("v6 forward %s->%s: %w", tunName, devName, err)
+	if len(errs) > 0 {
+		// простой join без errors.Join
+		msg := "multiple errors:"
+		for _, e := range errs {
+			msg += "\n - " + e.Error()
 		}
-		if err := d.addEstablishedRule(d.ipt6, "filter", chain6, devName, tunName); err != nil {
-			return fmt.Errorf("v6 reverse forward %s->%s: %w", devName, tunName, err)
+		return lastOut, errors.New(msg)
+	}
+	return lastOut, nil
+}
+
+func (w *Wrapper) canBeSkipped(binary string, args ...string) bool {
+	action := ""
+	checkArgs := make([]string, len(args))
+	for i, a := range args {
+		switch a {
+		case "-A", "-D":
+			action = a
+			checkArgs[i] = "-C"
+		default:
+			checkArgs[i] = a
 		}
 	}
-	return nil
-}
 
-func (d *Driver) DisableForwardingFromTunToDev(tunName, devName string) error {
-	if tunName == "" || devName == "" {
-		return errors.New("iface name is empty")
-	}
-	chain := d.pickForwardChain(d.ipt4)
-	_ = d.delIfPresent(d.ipt4, "filter", chain,
-		"-i", tunName, "-o", devName, "-j", "ACCEPT")
-	_ = d.delEstablishedRuleIfPresent(d.ipt4, "filter", chain, devName, tunName)
+	_, checkErr := w.commander.CombinedOutput(binary, checkArgs...)
 
-	if d.ipt6 != "" {
-		chain6 := d.pickForwardChain(d.ipt6)
-		_ = d.delIfPresent(d.ipt6, "filter", chain6,
-			"-i", tunName, "-o", devName, "-j", "ACCEPT")
-		_ = d.delEstablishedRuleIfPresent(d.ipt6, "filter", chain6, devName, tunName)
+	switch action {
+	case "-A":
+		// Rule present -> skip add
+		return checkErr == nil
+	case "-D":
+		// Rule absent -> skip delete
+		return checkErr != nil
+	default:
+		return false
 	}
-	return nil
-}
-
-func (d *Driver) EnableForwardingFromDevToTun(tunName, devName string) error {
-	// The pair rule is already installed in EnableForwardingFromTunToDev.
-	return d.EnableForwardingFromTunToDev(tunName, devName)
-}
-func (d *Driver) DisableForwardingFromDevToTun(tunName, devName string) error {
-	return d.DisableForwardingFromTunToDev(tunName, devName)
-}
-
-func (d *Driver) ConfigureMssClamping() error {
-	// IPv4
-	if err := d.addIfMissing(d.ipt4, "mangle", "FORWARD",
-		"-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"); err != nil {
-		return fmt.Errorf("v4 MSS clamp FORWARD: %w", err)
-	}
-	if err := d.addIfMissing(d.ipt4, "mangle", "OUTPUT",
-		"-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"); err != nil {
-		return fmt.Errorf("v4 MSS clamp OUTPUT: %w", err)
-	}
-	// IPv6 (optional)
-	if d.ipt6 != "" {
-		if err := d.addIfMissing(d.ipt6, "mangle", "FORWARD",
-			"-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"); err != nil {
-			return fmt.Errorf("v6 MSS clamp FORWARD: %w", err)
-		}
-		if err := d.addIfMissing(d.ipt6, "mangle", "OUTPUT",
-			"-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"); err != nil {
-			return fmt.Errorf("v6 MSS clamp OUTPUT: %w", err)
-		}
-	}
-	return nil
-}
-
-// -------------------- internals --------------------
-
-func (d *Driver) pickForwardChain(bin string) string {
-	if d.chainExists(bin, "filter", "DOCKER-USER") {
-		return "DOCKER-USER"
-	}
-	return "FORWARD"
-}
-
-func (d *Driver) addEstablishedRule(bin, table, chain, iif, oif string) error {
-	// Prefer -m conntrack --ctstate; if not supported, fall back to -m state --state.
-	specConntrack := []string{"-i", iif, "-o", oif, "-m", "conntrack", "--ctstate", "RELATED,ESTABLISHED", "-j", "ACCEPT"}
-	if err := d.addIfMissing(bin, table, chain, specConntrack...); err == nil {
-		return nil
-	}
-	// try legacy matcher
-	specState := []string{"-i", iif, "-o", oif, "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT"}
-	return d.addIfMissing(bin, table, chain, specState...)
-}
-
-func (d *Driver) delEstablishedRuleIfPresent(bin, table, chain, iif, oif string) error {
-	specConntrack := []string{"-i", iif, "-o", oif, "-m", "conntrack", "--ctstate", "RELATED,ESTABLISHED", "-j", "ACCEPT"}
-	if err := d.delIfPresent(bin, table, chain, specConntrack...); err == nil {
-		return nil
-	}
-	specState := []string{"-i", iif, "-o", oif, "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT"}
-	return d.delIfPresent(bin, table, chain, specState...)
-}
-
-func (d *Driver) chainExists(bin, table, chain string) bool {
-	_, err := d.exec(bin, "-t", table, "-nL", chain)
-	return err == nil
-}
-
-func (d *Driver) ruleExists(bin, table, chain string, spec ...string) bool {
-	args := append([]string{"-t", table, "-C", chain}, spec...)
-	_, err := d.exec(bin, args...)
-	return err == nil
-}
-
-func (d *Driver) addIfMissing(bin, table, chain string, spec ...string) error {
-	if d.ruleExists(bin, table, chain, spec...) {
-		return nil
-	}
-	args := append([]string{"-t", table, "-A", chain}, spec...)
-	if _, err := d.exec(bin, args...); err != nil {
-		return fmt.Errorf("%s %v: %w", bin, strings.Join(args, " "), err)
-	}
-	return nil
-}
-
-func (d *Driver) delIfPresent(bin, table, chain string, spec ...string) error {
-	if !d.ruleExists(bin, table, chain, spec...) {
-		return nil
-	}
-	args := append([]string{"-t", table, "-D", chain}, spec...)
-	if _, err := d.exec(bin, args...); err != nil {
-		return fmt.Errorf("%s %v: %w", bin, strings.Join(args, " "), err)
-	}
-	return nil
-}
-
-func (d *Driver) exec(bin string, args ...string) ([]byte, error) {
-	out, err := d.cmd.CombinedOutput(bin, args...)
-	// Hide noisy empty outputs; keep actual stderr text for diagnostics.
-	if err != nil {
-		return out, fmt.Errorf("%s %s: %v, out: %s", bin, strings.Join(args, " "), err, bytes.TrimSpace(out))
-	}
-	return out, nil
 }

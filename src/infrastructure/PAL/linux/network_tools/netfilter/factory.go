@@ -3,6 +3,7 @@ package netfilter
 import (
 	"bytes"
 	"errors"
+	"log"
 	"strings"
 	"syscall"
 	"tungo/infrastructure/PAL/linux/network_tools/netfilter/iptables"
@@ -13,34 +14,17 @@ import (
 )
 
 type Factory struct {
-	cmd        PAL.Commander
-	nftFactory nftables.Factory
-	iptFactory iptables.Factory
-	probe      Probe
+	cmd   PAL.Commander
+	probe Probe
 }
 
 func NewFactory(cmd PAL.Commander) *Factory {
 	return &Factory{
-		cmd:        cmd,
-		nftFactory: nftables.DefaultFactory{},
-		iptFactory: iptables.NewDefaultFactory(cmd),
-		probe:      DefaultProbe{},
+		cmd:   cmd,
+		probe: DefaultProbe{},
 	}
 }
 
-// DI hooks (handy for tests)
-func (f *Factory) WithNFTFactory(n nftables.Factory) *Factory {
-	if n != nil {
-		f.nftFactory = n
-	}
-	return f
-}
-func (f *Factory) WithIPTablesFactory(i iptables.Factory) *Factory {
-	if i != nil {
-		f.iptFactory = i
-	}
-	return f
-}
 func (f *Factory) WithProbe(p Probe) *Factory {
 	if p != nil {
 		f.probe = p
@@ -52,21 +36,24 @@ func (f *Factory) WithProbe(p Probe) *Factory {
 func (f *Factory) Build() (application.Netfilter, error) {
 	// 1) nftables via netlink (through probe object)
 	if ok, _ := f.probe.Supports(); ok {
-		if b, err := f.nftFactory.New(); err == nil {
-			return b, nil
+		log.Print("netfilter driver: nftables")
+		if b, err := nftables.New(); err == nil {
+			return nftables.NewSyncDriver(b), nil
 		}
 	}
 
 	// 2) iptables-legacy
 	if v4bin, ok := f.hasBinaryWorks("iptables-legacy"); ok {
+		log.Print("netfilter driver: iptables-legacy")
 		v6bin, _ := f.detectIP6Companion(v4bin) // optional
-		return f.iptFactory.New(v4bin, v6bin), nil
+		return iptables.New(v4bin, v6bin, f.cmd), nil
 	}
 
 	// 3) plain "iptables": accept only legacy build
 	if mode, out, err := f.iptablesMode("iptables"); err == nil && mode == "legacy" {
 		v6bin, _ := f.detectIP6Companion("iptables")
-		return f.iptFactory.New("iptables", v6bin), nil
+		log.Print("netfilter driver: iptables")
+		return iptables.New("iptables", v6bin, f.cmd), nil
 	} else if err == nil && mode == "nf_tables" {
 		return nil, errors.New("iptables is (nf_tables) but nftables is unavailable; install iptables-legacy or enable nf_tables in the kernel")
 	} else if err != nil && f.looksLikeNFTButKernelLacksSupport(err, out) {
