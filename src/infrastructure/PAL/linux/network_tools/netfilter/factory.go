@@ -6,11 +6,10 @@ import (
 	"log"
 	"strings"
 	"syscall"
-	"tungo/infrastructure/PAL/linux/network_tools/netfilter/iptables"
-	"tungo/infrastructure/PAL/linux/network_tools/netfilter/nftables"
-
 	"tungo/application"
 	"tungo/infrastructure/PAL"
+	"tungo/infrastructure/PAL/linux/network_tools/netfilter/iptables"
+	"tungo/infrastructure/PAL/linux/network_tools/netfilter/nftables"
 )
 
 type Factory struct {
