@@ -15,16 +15,19 @@ import (
 	"github.com/google/nftables/expr"
 )
 
-const fwdChainName = "IPTABLES-TUNGO-FWD"
-
-const ifNameMaxLen = 15 // IFNAMSIZ-1
+const (
+	fwdChainName = "IPTABLES-TUNGO-FWD"
+)
 
 type Driver struct {
-	tags   Tags
-	mu     sync.Mutex
-	conn   *nft.Conn
-	cfg    Config
-	closed bool
+	tags                   Tags
+	ruleSigHandler         RuleSigHandler
+	errInterpreter         ErrInterpreter
+	interfaceNameValidator InterfaceNameValidator
+	mu                     sync.Mutex
+	conn                   *nft.Conn
+	cfg                    Config
+	closed                 bool
 }
 
 type Config struct {
@@ -57,6 +60,9 @@ func New() (*Driver, error) {
 		return nil, err
 	}
 	d.tags = NewDefaultTags()
+	d.ruleSigHandler = NewDefaultRuleSigHandler()
+	d.errInterpreter = NewDefaultErrInterpreter()
+	d.interfaceNameValidator = NewDefaultInterfaceNameValidator()
 	return d, nil
 }
 
@@ -83,7 +89,7 @@ func (d *Driver) Close() error {
 // ip nat POSTROUTING -o <dev> -j MASQUERADE (append)
 // IPv6 — best-effort: errors "not supported" are ignored.
 func (d *Driver) EnableDevMasquerade(devName string) error {
-	if err := validateIfName(devName); err != nil {
+	if err := d.interfaceNameValidator.ValidateIfName(devName); err != nil {
 		return err
 	}
 	return d.withRetry(func() error {
@@ -92,8 +98,8 @@ func (d *Driver) EnableDevMasquerade(devName string) error {
 		} else {
 			if ok, err := d.appendIfMissingByTagOrSig(
 				t4, ch4,
-				sigMasq(devName),
-				exprMasqOIF(devName),
+				d.ruleSigHandler.sigMasq(devName),
+				d.exprMasqOIF(devName),
 				d.tags.tagMasq4(devName),
 			); err != nil {
 				return err
@@ -107,19 +113,19 @@ func (d *Driver) EnableDevMasquerade(devName string) error {
 		if t6, ch6, err := d.ensureSystemNatPostrouting(nft.TableFamilyIPv6); err == nil {
 			if ok, err := d.appendIfMissingByTagOrSig(
 				t6, ch6,
-				sigMasq(devName),
-				exprMasqOIF(devName),
+				d.ruleSigHandler.sigMasq(devName),
+				d.exprMasqOIF(devName),
 				d.tags.tagMasq6(devName),
 			); err != nil {
 				return err
 			} else if ok {
 				if err := d.conn.Flush(); err != nil {
-					if !isNatUnsupported(err) {
+					if !d.errInterpreter.isNatUnsupported(err) {
 						return err
 					}
 				}
 			}
-		} else if !(isAFNotSupported(err) || isNatUnsupported(err)) {
+		} else if !(d.errInterpreter.isAFNotSupported(err) || d.errInterpreter.isNatUnsupported(err)) {
 			return err
 		}
 
@@ -128,7 +134,7 @@ func (d *Driver) EnableDevMasquerade(devName string) error {
 }
 
 func (d *Driver) DisableDevMasquerade(devName string) error {
-	if err := validateIfName(devName); err != nil {
+	if err := d.interfaceNameValidator.ValidateIfName(devName); err != nil {
 		return err
 	}
 	return d.withRetry(func() error {
@@ -152,12 +158,12 @@ func (d *Driver) DisableDevMasquerade(devName string) error {
 				return err
 			}
 			needFlush = needFlush || ok
-		} else if !(isAFNotSupported(err) || isNatUnsupported(err)) {
+		} else if !(d.errInterpreter.isAFNotSupported(err) || d.errInterpreter.isNatUnsupported(err)) {
 			return err
 		}
 
 		if needFlush {
-			if err := d.conn.Flush(); err != nil && !isNatUnsupported(err) {
+			if err := d.conn.Flush(); err != nil && !d.errInterpreter.isNatUnsupported(err) {
 				return err
 			}
 		}
@@ -169,10 +175,10 @@ func (d *Driver) DisableDevMasquerade(devName string) error {
 //
 //	-i <tun> -o <dev> -j ACCEPT (append)
 func (d *Driver) EnableForwardingFromTunToDev(tunName, devName string) error {
-	if err := validateIfName(tunName); err != nil {
+	if err := d.interfaceNameValidator.ValidateIfName(tunName); err != nil {
 		return err
 	}
-	if err := validateIfName(devName); err != nil {
+	if err := d.interfaceNameValidator.ValidateIfName(devName); err != nil {
 		return err
 	}
 	return d.withRetry(func() error {
@@ -189,7 +195,7 @@ func (d *Driver) EnableForwardingFromTunToDev(tunName, devName string) error {
 			} else {
 				needFlush = needFlush || ok
 			}
-			ok, err := d.appendIfMissingByTagOrSig(t, chUser, sigFwd(tunName, devName, false), exprAcceptIIFtoOIF(tunName, devName), d.tags.tagV4Fwd(tunName, devName))
+			ok, err := d.appendIfMissingByTagOrSig(t, chUser, d.ruleSigHandler.sigFwd(tunName, devName, false), d.exprAcceptIIFtoOIF(tunName, devName), d.tags.tagV4Fwd(tunName, devName))
 			if err != nil {
 				return err
 			}
@@ -200,7 +206,7 @@ func (d *Driver) EnableForwardingFromTunToDev(tunName, devName string) error {
 		{
 			t6, chFwd6, chUser6, err := d.ensureFilterUserChain(nft.TableFamilyIPv6, fwdChainName)
 			if err != nil {
-				if isAFNotSupported(err) {
+				if d.errInterpreter.isAFNotSupported(err) {
 				} else {
 					return err
 				}
@@ -210,8 +216,8 @@ func (d *Driver) EnableForwardingFromTunToDev(tunName, devName string) error {
 				} else {
 					needFlush = needFlush || ok
 				}
-				ok, err := d.appendIfMissingByTagOrSig(t6, chUser6, sigFwd(tunName, devName, false),
-					exprAcceptIIFtoOIF(tunName, devName), d.tags.tagV6Fwd(tunName, devName))
+				ok, err := d.appendIfMissingByTagOrSig(t6, chUser6, d.ruleSigHandler.sigFwd(tunName, devName, false),
+					d.exprAcceptIIFtoOIF(tunName, devName), d.tags.tagV6Fwd(tunName, devName))
 				if err != nil {
 					return err
 				}
@@ -229,10 +235,10 @@ func (d *Driver) EnableForwardingFromTunToDev(tunName, devName string) error {
 }
 
 func (d *Driver) DisableForwardingFromTunToDev(tunName, devName string) error {
-	if err := validateIfName(tunName); err != nil {
+	if err := d.interfaceNameValidator.ValidateIfName(tunName); err != nil {
 		return err
 	}
-	if err := validateIfName(devName); err != nil {
+	if err := d.interfaceNameValidator.ValidateIfName(devName); err != nil {
 		return err
 	}
 	return d.withRetry(func() error {
@@ -269,7 +275,7 @@ func (d *Driver) DisableForwardingFromTunToDev(tunName, devName string) error {
 					return err
 				}
 				needFlush = needFlush || ok2
-			} else if err != nil && !isAFNotSupported(err) {
+			} else if err != nil && !d.errInterpreter.isAFNotSupported(err) {
 				return err
 			}
 		}
@@ -287,10 +293,10 @@ func (d *Driver) DisableForwardingFromTunToDev(tunName, devName string) error {
 //
 //	-i <dev> -o <tun> -m state --state RELATED,ESTABLISHED -j ACCEPT
 func (d *Driver) EnableForwardingFromDevToTun(tunName, devName string) error {
-	if err := validateIfName(tunName); err != nil {
+	if err := d.interfaceNameValidator.ValidateIfName(tunName); err != nil {
 		return err
 	}
-	if err := validateIfName(devName); err != nil {
+	if err := d.interfaceNameValidator.ValidateIfName(devName); err != nil {
 		return err
 	}
 	return d.withRetry(func() error {
@@ -307,7 +313,7 @@ func (d *Driver) EnableForwardingFromDevToTun(tunName, devName string) error {
 			} else {
 				needFlush = needFlush || ok
 			}
-			ok, err := d.appendIfMissingByTagOrSig(t, chUser, sigFwd(devName, tunName, true), exprAcceptEstablished(devName, tunName), d.tags.tagV4FwdRet(devName, tunName))
+			ok, err := d.appendIfMissingByTagOrSig(t, chUser, d.ruleSigHandler.sigFwd(devName, tunName, true), d.exprAcceptEstablished(devName, tunName), d.tags.tagV4FwdRet(devName, tunName))
 			if err != nil {
 				return err
 			}
@@ -318,7 +324,7 @@ func (d *Driver) EnableForwardingFromDevToTun(tunName, devName string) error {
 		{
 			t6, chFwd6, chUser6, err := d.ensureFilterUserChain(nft.TableFamilyIPv6, fwdChainName)
 			if err != nil {
-				if isAFNotSupported(err) {
+				if d.errInterpreter.isAFNotSupported(err) {
 				} else {
 					return err
 				}
@@ -330,8 +336,8 @@ func (d *Driver) EnableForwardingFromDevToTun(tunName, devName string) error {
 				}
 				ok, err := d.appendIfMissingByTagOrSig(
 					t6, chUser6,
-					sigFwd(devName, tunName, true),
-					exprAcceptEstablished(devName, tunName),
+					d.ruleSigHandler.sigFwd(devName, tunName, true),
+					d.exprAcceptEstablished(devName, tunName),
 					d.tags.tagV6FwdRet(devName, tunName),
 				)
 				if err != nil {
@@ -351,10 +357,10 @@ func (d *Driver) EnableForwardingFromDevToTun(tunName, devName string) error {
 }
 
 func (d *Driver) DisableForwardingFromDevToTun(tunName, devName string) error {
-	if err := validateIfName(tunName); err != nil {
+	if err := d.interfaceNameValidator.ValidateIfName(tunName); err != nil {
 		return err
 	}
-	if err := validateIfName(devName); err != nil {
+	if err := d.interfaceNameValidator.ValidateIfName(devName); err != nil {
 		return err
 	}
 	return d.withRetry(func() error {
@@ -391,7 +397,7 @@ func (d *Driver) DisableForwardingFromDevToTun(tunName, devName string) error {
 					return err
 				}
 				needFlush = needFlush || ok2
-			} else if err != nil && !isAFNotSupported(err) {
+			} else if err != nil && !d.errInterpreter.isAFNotSupported(err) {
 				return err
 			}
 		}
@@ -437,30 +443,12 @@ func (d *Driver) withRetry(op func() error) error {
 			return nil
 		}
 		last = err
-		if isSeqMismatch(err) || isTransientNetlink(err) {
+		if d.errInterpreter.isSeqMismatch(err) || d.errInterpreter.isTransientNetlink(err) {
 			continue
 		}
 		return err
 	}
 	return last
-}
-
-func isTransientNetlink(err error) bool {
-	if err == nil {
-		return false
-	}
-	return errors.Is(err, syscall.EAGAIN) ||
-		errors.Is(err, syscall.EBUSY) ||
-		errors.Is(err, syscall.ETIMEDOUT) ||
-		errors.Is(err, syscall.ENOBUFS) ||
-		errors.Is(err, syscall.EINTR) ||
-		errors.Is(err, syscall.ECONNRESET) ||
-		errors.Is(err, syscall.ENETDOWN) ||
-		errors.Is(err, syscall.ECONNREFUSED) ||
-		strings.Contains(strings.ToLower(err.Error()), "resource busy") ||
-		strings.Contains(strings.ToLower(err.Error()), "try again") ||
-		strings.Contains(strings.ToLower(err.Error()), "timed out") ||
-		strings.Contains(strings.ToLower(err.Error()), "no buffer space")
 }
 
 func (d *Driver) resetConnLocked() error {
@@ -480,7 +468,7 @@ func (d *Driver) ensureSystemNatPostrouting(fam nft.TableFamily) (*nft.Table, *n
 	if err == nil && chainIsBase(ch, nft.ChainTypeNAT, *nft.ChainHookPostrouting) {
 		return t, ch, nil
 	}
-	if isAFNotSupported(err) {
+	if d.errInterpreter.isAFNotSupported(err) {
 		return nil, nil, err
 	}
 	if err == nil && ch != nil {
@@ -493,12 +481,12 @@ func (d *Driver) ensureSystemNatPostrouting(fam nft.TableFamily) (*nft.Table, *n
 		t = &nft.Table{Family: fam, Name: "nat"}
 		d.conn.AddTable(t)
 		if e := d.conn.Flush(); e != nil {
-			if isAlreadyExists(e) {
+			if d.errInterpreter.isAlreadyExists(e) {
 				if tt, cc, ge := d.getChain(fam, "nat", "POSTROUTING"); ge == nil && cc != nil {
 					return tt, cc, nil
 				}
 			}
-			if isNatUnsupported(e) {
+			if d.errInterpreter.isNatUnsupported(e) {
 				return nil, nil, e
 			}
 			return nil, nil, fmt.Errorf("add table %v/nat: %w", fam, e)
@@ -516,12 +504,12 @@ func (d *Driver) ensureSystemNatPostrouting(fam nft.TableFamily) (*nft.Table, *n
 			d.conn.DelTable(t)
 			_ = d.conn.Flush()
 		}
-		if isAlreadyExists(e) {
+		if d.errInterpreter.isAlreadyExists(e) {
 			if tt, cc, ge := d.getChain(fam, "nat", "POSTROUTING"); ge == nil && cc != nil {
 				return tt, cc, nil
 			}
 		}
-		if isNatUnsupported(e) {
+		if d.errInterpreter.isNatUnsupported(e) {
 			return nil, nil, e
 		}
 		return nil, nil, fmt.Errorf("add chain nat/POSTROUTING: %w", e)
@@ -539,7 +527,7 @@ func (d *Driver) ensureFilterUserChain(fam nft.TableFamily, childName string) (t
 	// ensure filter table
 	tbl, ch, err := d.getChain(fam, "filter", "FORWARD")
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		if isAFNotSupported(err) {
+		if d.errInterpreter.isAFNotSupported(err) {
 			return nil, nil, nil, err
 		}
 		return nil, nil, nil, err
@@ -551,10 +539,10 @@ func (d *Driver) ensureFilterUserChain(fam nft.TableFamily, childName string) (t
 		tbl = &nft.Table{Family: fam, Name: "filter"}
 		d.conn.AddTable(tbl)
 		if e := d.conn.Flush(); e != nil {
-			if isAFNotSupported(e) {
+			if d.errInterpreter.isAFNotSupported(e) {
 				return nil, nil, nil, e
 			}
-			if isAlreadyExists(e) {
+			if d.errInterpreter.isAlreadyExists(e) {
 				if tbl == nil {
 					tbl = &nft.Table{Family: fam, Name: "filter"}
 				}
@@ -578,10 +566,10 @@ func (d *Driver) ensureFilterUserChain(fam nft.TableFamily, childName string) (t
 		}
 		d.conn.AddChain(fwd)
 		if e := d.conn.Flush(); e != nil {
-			if isAFNotSupported(e) {
+			if d.errInterpreter.isAFNotSupported(e) {
 				return nil, nil, nil, e
 			}
-			if isAlreadyExists(e) {
+			if d.errInterpreter.isAlreadyExists(e) {
 				if _, ff, ge := d.getChain(fam, "filter", "FORWARD"); ge == nil && ff != nil {
 					fwd = ff
 				} else {
@@ -599,10 +587,10 @@ func (d *Driver) ensureFilterUserChain(fam nft.TableFamily, childName string) (t
 		child = &nft.Chain{Table: tbl, Name: childName}
 		d.conn.AddChain(child)
 		if e := d.conn.Flush(); e != nil {
-			if isAFNotSupported(e) {
+			if d.errInterpreter.isAFNotSupported(e) {
 				return nil, nil, nil, e
 			}
-			if isAlreadyExists(e) {
+			if d.errInterpreter.isAlreadyExists(e) {
 				if _, cc, ge := d.getChain(fam, "filter", childName); ge == nil && cc != nil {
 					child = cc
 				} else {
@@ -618,171 +606,80 @@ func (d *Driver) ensureFilterUserChain(fam nft.TableFamily, childName string) (t
 
 func (d *Driver) ensureJumpAppend(t *nft.Table, chFwd *nft.Chain, childName string) (bool, error) {
 	tag := d.tags.tagHookJump(childName)
-	wantSig := sigJump(childName)
+	want := d.ruleSigHandler.sigJump(childName)
 
 	rs, err := d.conn.GetRules(t, chFwd)
 	if err != nil {
 		return false, fmt.Errorf("get rules %s/%s: %w", t.Name, chFwd.Name, err)
 	}
 
-	var ours []*nft.Rule
-	lastIsMatch := false
+	lastMatchIdx := -1
+	lastOurIdx := -1
+	var ourIdxs []int
 
 	for i, r := range rs {
-		isOur := hasTag(r, tag)
+		isOur := d.tags.hasTag(r, tag)
+
 		isMatch := isOur
 		if !isMatch {
-			if sig, ok := sigFromExprs(r.Exprs); ok && sigEqual(sig, wantSig) {
+			if sig, ok := d.ruleSigHandler.sigFromExprs(r.Exprs); ok && d.ruleSigHandler.sigEqual(sig, want) {
 				isMatch = true
 			}
 		}
+
 		if isOur {
-			ours = append(ours, r)
+			ourIdxs = append(ourIdxs, i)
+			lastOurIdx = i
 		}
-		if isMatch && i == len(rs)-1 {
-			lastIsMatch = true
+		if isMatch {
+			lastMatchIdx = i
 		}
 	}
 
 	changed := false
 
-	if lastIsMatch {
-		for _, r := range ours[:len(ours)-1] {
-			_ = d.conn.DelRule(r)
+	switch {
+	case lastMatchIdx >= 0 && lastMatchIdx == lastOurIdx:
+		for _, idx := range ourIdxs {
+			if idx != lastOurIdx {
+				_ = d.conn.DelRule(rs[idx])
+				changed = true
+			}
+		}
+		return changed, nil
+
+	case lastMatchIdx >= 0 && lastMatchIdx != lastOurIdx:
+		for _, idx := range ourIdxs {
+			_ = d.conn.DelRule(rs[idx])
 			changed = true
 		}
 		return changed, nil
-	}
 
-	for _, r := range ours {
-		_ = d.conn.DelRule(r)
-		changed = true
-	}
-	d.conn.AddRule(&nft.Rule{
-		Table:    t,
-		Chain:    chFwd,
-		Exprs:    exprJumpTo(childName),
-		UserData: tag,
-	})
-	return true, nil
-}
-
-type ruleSig struct {
-	kind        string // "masq" | "fwd" | "jump"
-	iif, oif    string
-	established bool
-	jumpChain   string
-}
-
-func sigMasq(oif string) ruleSig { return ruleSig{kind: "masq", oif: oif} }
-func sigFwd(iif, oif string, established bool) ruleSig {
-	return ruleSig{kind: "fwd", iif: iif, oif: oif, established: established}
-}
-func sigJump(chain string) ruleSig { return ruleSig{kind: "jump", jumpChain: chain} }
-
-func sigEqual(a, b ruleSig) bool {
-	return a.kind == b.kind &&
-		a.iif == b.iif &&
-		a.oif == b.oif &&
-		a.established == b.established &&
-		a.jumpChain == b.jumpChain
-}
-
-func hasTag(r *nft.Rule, tag []byte) bool {
-	if r == nil || r.UserData == nil || tag == nil {
-		return false
-	}
-	if len(r.UserData) != len(tag) {
-		return false
-	}
-	for i := range tag {
-		if r.UserData[i] != tag[i] {
-			return false
+	default:
+		for _, idx := range ourIdxs {
+			_ = d.conn.DelRule(rs[idx])
+			changed = true
 		}
+		d.conn.AddRule(&nft.Rule{
+			Table:    t,
+			Chain:    chFwd,
+			Exprs:    d.exprJumpTo(childName),
+			UserData: tag,
+		})
+		return true, nil
 	}
-	return true
 }
 
-func sigFromExprs(exprs []expr.Any) (ruleSig, bool) {
-	var iif, oif string
-	var lastMeta string
-	var sawCT, sawBitMask, sawCmpNonZero, sawMasq, accept bool
-	var jumpTo string
-
-	for _, e := range exprs {
-		switch x := e.(type) {
-		case *expr.Meta:
-			if x.Register == 1 {
-				switch x.Key {
-				case expr.MetaKeyIIFNAME:
-					lastMeta = "iif"
-				case expr.MetaKeyOIFNAME:
-					lastMeta = "oif"
-				default:
-					lastMeta = ""
-				}
-			}
-		case *expr.Cmp:
-			if x.Register == 1 && x.Op == expr.CmpOpEq &&
-				len(x.Data) > 0 && x.Data[len(x.Data)-1] == 0x00 {
-				name := string(x.Data[:len(x.Data)-1])
-				if lastMeta == "iif" {
-					iif = name
-				} else if lastMeta == "oif" {
-					oif = name
-				}
-				lastMeta = ""
-			}
-			if x.Register == 1 && x.Op == expr.CmpOpNeq &&
-				len(x.Data) == 4 &&
-				x.Data[0] == 0 && x.Data[1] == 0 && x.Data[2] == 0 && x.Data[3] == 0 {
-				sawCmpNonZero = true
-			}
-		case *expr.Ct:
-			if x.Register == 1 && x.Key == expr.CtKeySTATE {
-				sawCT = true
-			}
-		case *expr.Bitwise:
-			if x.DestRegister == 1 && x.Len == 4 && len(x.Mask) == 4 {
-				sawBitMask = true
-			}
-		case *expr.Masq:
-			sawMasq = true
-		case *expr.Verdict:
-			if x.Kind == expr.VerdictAccept {
-				accept = true
-			}
-			if x.Kind == expr.VerdictJump {
-				jumpTo = x.Chain
-			}
-		}
-	}
-
-	if jumpTo != "" {
-		return ruleSig{kind: "jump", jumpChain: jumpTo}, true
-	}
-	if iif == "" && oif != "" && sawMasq {
-		return ruleSig{kind: "masq", oif: oif}, true
-	}
-	if iif != "" && oif != "" && accept {
-		est := sawCT && sawBitMask && sawCmpNonZero
-		return ruleSig{kind: "fwd", iif: iif, oif: oif, established: est}, true
-	}
-	return ruleSig{}, false
-}
-
-// -------- add/del (append semantics) --------
-
-func (d *Driver) appendIfMissingByTagOrSig(t *nft.Table, ch *nft.Chain, want ruleSig, e []expr.Any, tag []byte) (changed bool, err error) {
+func (d *Driver) appendIfMissingByTagOrSig(t *nft.Table, ch *nft.Chain, want RuleSig, e []expr.Any, tag []byte) (changed bool, err error) {
 	rules, err := d.conn.GetRules(t, ch)
 	if err != nil {
 		return false, fmt.Errorf("get rules %s/%s: %w", t.Name, ch.Name, err)
 	}
 	for _, r := range rules {
-		if hasTag(r, tag) {
+		if d.tags.hasTag(r, tag) {
 			return false, nil
 		}
-		if sig, ok := sigFromExprs(r.Exprs); ok && sigEqual(sig, want) {
+		if sig, ok := d.ruleSigHandler.sigFromExprs(r.Exprs); ok && d.ruleSigHandler.sigEqual(sig, want) {
 			return false, nil
 		}
 	}
@@ -797,7 +694,7 @@ func (d *Driver) delByTag(t *nft.Table, ch *nft.Chain, tag []byte) (bool, error)
 	}
 	changed := false
 	for _, r := range rules {
-		if hasTag(r, tag) {
+		if d.tags.hasTag(r, tag) {
 			_ = d.conn.DelRule(r)
 			changed = true
 		}
@@ -807,19 +704,19 @@ func (d *Driver) delByTag(t *nft.Table, ch *nft.Chain, tag []byte) (bool, error)
 
 func (d *Driver) delJumpIfPresent(t *nft.Table, chFwd *nft.Chain, childName string) (bool, error) {
 	tag := d.tags.tagHookJump(childName)
-	wantSig := sigJump(childName)
+	wantSig := d.ruleSigHandler.sigJump(childName)
 	rules, err := d.conn.GetRules(t, chFwd)
 	if err != nil {
 		return false, fmt.Errorf("get rules %s/%s: %w", t.Name, chFwd.Name, err)
 	}
 	changed := false
 	for _, r := range rules {
-		if hasTag(r, tag) {
+		if d.tags.hasTag(r, tag) {
 			_ = d.conn.DelRule(r)
 			changed = true
 			continue
 		}
-		if sig, ok := sigFromExprs(r.Exprs); ok && sigEqual(sig, wantSig) {
+		if sig, ok := d.ruleSigHandler.sigFromExprs(r.Exprs); ok && d.ruleSigHandler.sigEqual(sig, wantSig) {
 			_ = d.conn.DelRule(r)
 			changed = true
 		}
@@ -885,38 +782,36 @@ func (d *Driver) getChain(fam nft.TableFamily, tableName, chainName string) (*nf
 	return tbl, nil, os.ErrNotExist
 }
 
-// -------- expr helpers --------
-
-func zstr(s string) []byte { return append([]byte(s), 0x00) }
+func (d *Driver) zstr(s string) []byte { return append([]byte(s), 0x00) }
 
 // -o dev -j MASQUERADE
-func exprMasqOIF(dev string) []expr.Any {
+func (d *Driver) exprMasqOIF(dev string) []expr.Any {
 	return []expr.Any{
 		&expr.Meta{Key: expr.MetaKeyOIFNAME, Register: 1},
-		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: zstr(dev)},
+		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: d.zstr(dev)},
 		&expr.Masq{},
 	}
 }
 
 // -i X -o Y -j ACCEPT
-func exprAcceptIIFtoOIF(iif, oif string) []expr.Any {
+func (d *Driver) exprAcceptIIFtoOIF(iif, oif string) []expr.Any {
 	return []expr.Any{
 		&expr.Meta{Key: expr.MetaKeyIIFNAME, Register: 1},
-		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: zstr(iif)},
+		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: d.zstr(iif)},
 		&expr.Meta{Key: expr.MetaKeyOIFNAME, Register: 1},
-		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: zstr(oif)},
+		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: d.zstr(oif)},
 		&expr.Verdict{Kind: expr.VerdictAccept},
 	}
 }
 
 // -i dev -o tun -m state --state RELATED,ESTABLISHED -j ACCEPT
-func exprAcceptEstablished(iif, oif string) []expr.Any {
+func (d *Driver) exprAcceptEstablished(iif, oif string) []expr.Any {
 	mask := binaryutil.BigEndian.PutUint32(expr.CtStateBitESTABLISHED | expr.CtStateBitRELATED)
 	return []expr.Any{
 		&expr.Meta{Key: expr.MetaKeyIIFNAME, Register: 1},
-		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: zstr(iif)},
+		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: d.zstr(iif)},
 		&expr.Meta{Key: expr.MetaKeyOIFNAME, Register: 1},
-		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: zstr(oif)},
+		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: d.zstr(oif)},
 		&expr.Ct{Register: 1, Key: expr.CtKeySTATE},
 		&expr.Bitwise{SourceRegister: 1, DestRegister: 1, Len: 4, Mask: mask, Xor: []byte{0, 0, 0, 0}},
 		&expr.Cmp{Op: expr.CmpOpNeq, Register: 1, Data: []byte{0, 0, 0, 0}},
@@ -924,69 +819,10 @@ func exprAcceptEstablished(iif, oif string) []expr.Any {
 	}
 }
 
-func exprJumpTo(chain string) []expr.Any {
+func (d *Driver) exprJumpTo(chain string) []expr.Any {
 	return []expr.Any{
 		&expr.Verdict{Kind: expr.VerdictJump, Chain: chain},
 	}
-}
-
-// -------- helpers --------
-
-func validateIfName(s string) error {
-	if s == "" {
-		return errors.New("iface name is empty")
-	}
-	if strings.ContainsRune(s, '/') {
-		return fmt.Errorf("iface name contains '/': %q", s)
-	}
-	if strings.IndexByte(s, 0x00) >= 0 {
-		return fmt.Errorf("iface name contains NUL byte: %q", s)
-	}
-	if len(s) > ifNameMaxLen {
-		return fmt.Errorf("iface name too long (max %d): %q", ifNameMaxLen, s)
-	}
-	return nil
-}
-
-func isAFNotSupported(err error) bool {
-	if err == nil {
-		return false
-	}
-	s := strings.ToLower(err.Error())
-	return errors.Is(err, syscall.EAFNOSUPPORT) ||
-		strings.Contains(s, "address family not supported")
-}
-
-func isNatUnsupported(err error) bool {
-	if err == nil {
-		return false
-	}
-	s := strings.ToLower(err.Error())
-	return isAFNotSupported(err) ||
-		errors.Is(err, syscall.EOPNOTSUPP) ||
-		errors.Is(err, syscall.EPROTONOSUPPORT) ||
-		strings.Contains(s, "operation not supported") ||
-		strings.Contains(s, "not supported by protocol")
-}
-
-func isSeqMismatch(err error) bool {
-	if err == nil {
-		return false
-	}
-	s := strings.ToLower(err.Error())
-	return strings.Contains(s, "mismatched sequence") ||
-		strings.Contains(s, "sequence mismatch") ||
-		strings.Contains(s, "wrong sequence")
-}
-
-func isAlreadyExists(err error) bool {
-	if err == nil {
-		return false
-	}
-	s := strings.ToLower(err.Error())
-	return errors.Is(err, syscall.EEXIST) ||
-		strings.Contains(s, "file exists") ||
-		strings.Contains(s, "already exists")
 }
 
 func (d *Driver) getSystemNatPostroutingIfExists(fam nft.TableFamily) (*nft.Table, *nft.Chain, error) {
@@ -997,7 +833,7 @@ func (d *Driver) getSystemNatPostroutingIfExists(fam nft.TableFamily) (*nft.Tabl
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil, nil
 	}
-	if isAFNotSupported(err) || isNatUnsupported(err) {
+	if d.errInterpreter.isAFNotSupported(err) || d.errInterpreter.isNatUnsupported(err) {
 		return nil, nil, nil
 	}
 	return nil, nil, err
@@ -1009,7 +845,7 @@ func (d *Driver) getFilterUserChainIfExists(fam nft.TableFamily, childName strin
 		return nil, nil, nil, nil
 	}
 	if err != nil {
-		if isAFNotSupported(err) {
+		if d.errInterpreter.isAFNotSupported(err) {
 			return nil, nil, nil, err
 		}
 		return nil, nil, nil, err

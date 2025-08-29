@@ -1,5 +1,7 @@
 package nftables
 
+import nft "github.com/google/nftables"
+
 type Tags interface {
 	tagMasq4(dev string) []byte
 	tagMasq6(dev string) []byte
@@ -8,6 +10,7 @@ type Tags interface {
 	tagV6Fwd(iif, oif string) []byte
 	tagV6FwdRet(iif, oif string) []byte
 	tagHookJump(child string) []byte
+	hasTag(r *nft.Rule, tag []byte) bool
 }
 
 type DefaultTags struct {
@@ -34,3 +37,18 @@ func (t DefaultTags) tagV6FwdRet(iif, oif string) []byte {
 }
 
 func (t DefaultTags) tagHookJump(child string) []byte { return []byte("tungo:hook FORWARD->" + child) }
+
+func (t DefaultTags) hasTag(r *nft.Rule, tag []byte) bool {
+	if r == nil || r.UserData == nil || tag == nil {
+		return false
+	}
+	if len(r.UserData) != len(tag) {
+		return false
+	}
+	for i := range tag {
+		if r.UserData[i] != tag[i] {
+			return false
+		}
+	}
+	return true
+}
