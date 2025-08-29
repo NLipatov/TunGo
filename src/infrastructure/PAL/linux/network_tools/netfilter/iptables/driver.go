@@ -1,149 +1,113 @@
 package iptables
 
 import (
-	"errors"
 	"fmt"
+	"sync"
+	"sync/atomic"
 	"tungo/infrastructure/PAL"
 )
 
-type Wrapper struct {
-	commander          PAL.Commander
-	v4binary, v6binary string
+const (
+	fwdChain    = "IPTABLES-TUNGO-FWD"
+	mangleChain = "IPTABLES-TUNGO-MANGLE"
+)
+
+type Driver struct {
+	commander PAL.Commander
+	v4bin     string
+	v6bin     string
+
+	chainsReady atomic.Bool
+	initMu      sync.Mutex
+
+	wait   *DefaultWaitPolicy
+	skip   *DefaultSkipper
+	exec   *FamilyExec
+	chains *Chains
 }
 
-func New(
-	v4binary, v6binary string,
-	commander PAL.Commander,
-) *Wrapper {
-	return &Wrapper{
-		commander: commander,
-		v4binary:  v4binary,
-		v6binary:  v6binary,
+func New(v4bin, v6bin string, cmd PAL.Commander) *Driver {
+	wait := NewWaitPolicy(v4bin, v6bin, cmd)
+	skip := NewSkipper(v6bin, wait, cmd)
+	exec := NewFamilyExec(v4bin, v6bin, cmd, wait, skip)
+	chains := NewChains(v4bin, v6bin, cmd, wait)
+
+	return &Driver{
+		commander: cmd, v4bin: v4bin, v6bin: v6bin,
+		wait: wait, skip: skip, exec: exec, chains: chains,
 	}
 }
 
-func (w *Wrapper) EnableDevMasquerade(devName string) error {
-	if _, err := w.execWithBinary("-t", "nat", "-A", "POSTROUTING", "-o", devName, "-j", "MASQUERADE"); err != nil {
-		return fmt.Errorf("failed to enable NAT on %s: %v", devName, err)
-	}
-	return nil
+// ----- public API -----
+
+func (w *Driver) EnableDevMasquerade(dev string) error {
+	args := []string{"-t", "nat", "-A", "POSTROUTING", "-o", dev, "-m", "comment", "--comment", "tungo", "-j", "MASQUERADE"}
+	return w.execute(args...)
 }
 
-func (w *Wrapper) DisableDevMasquerade(devName string) error {
-	if _, err := w.execWithBinary("-t", "nat", "-D", "POSTROUTING", "-o", devName, "-j", "MASQUERADE"); err != nil {
-		return fmt.Errorf("failed to disable NAT on %s: %v", devName, err)
-	}
-	return nil
+func (w *Driver) DisableDevMasquerade(dev string) error {
+	args := []string{"-t", "nat", "-D", "POSTROUTING", "-o", dev, "-m", "comment", "--comment", "tungo", "-j", "MASQUERADE"}
+	return w.execute(args...)
 }
 
-func (w *Wrapper) EnableForwardingFromTunToDev(tunName string, devName string) error {
-	if _, err := w.execWithBinary("-A", "FORWARD", "-i", tunName, "-o", devName, "-j", "ACCEPT"); err != nil {
-		return fmt.Errorf("failed to set up forwarding rule for %s -> %s: %v",
-			tunName, devName, err)
-	}
-
-	return nil
+func (w *Driver) EnableForwardingFromTunToDev(tun, dev string) error {
+	args := []string{"-t", "filter", "-A", fwdChain, "-i", tun, "-o", dev, "-m", "comment", "--comment", "tungo", "-j", "ACCEPT"}
+	return w.execute(args...)
 }
 
-func (w *Wrapper) DisableForwardingFromTunToDev(tunName string, devName string) error {
-	if _, err := w.execWithBinary("-D", "FORWARD", "-i", tunName, "-o", devName, "-j", "ACCEPT"); err != nil {
-		return fmt.Errorf(
-			"failed to remove forwarding rule for %s -> %s: %v",
-			tunName, devName, err)
-	}
-
-	return nil
+func (w *Driver) DisableForwardingFromTunToDev(tun, dev string) error {
+	args := []string{"-t", "filter", "-D", fwdChain, "-i", tun, "-o", dev, "-m", "comment", "--comment", "tungo", "-j", "ACCEPT"}
+	return w.execute(args...)
 }
 
-func (w *Wrapper) EnableForwardingFromDevToTun(tunName string, devName string) error {
-	if _, err := w.execWithBinary("-A", "FORWARD", "-i", devName, "-o", tunName, "-m", "conntrack", "--ctstate", "RELATED,ESTABLISHED", "-j", "ACCEPT"); err != nil {
-		return fmt.Errorf("failed to set up forwarding rule for %s -> %s: %v",
-			devName, tunName, err)
-	}
-
-	return nil
+func (w *Driver) EnableForwardingFromDevToTun(tun, dev string) error {
+	args := []string{"-t", "filter", "-A", fwdChain, "-i", dev, "-o", tun,
+		"-m", "conntrack", "--ctstate", "RELATED,ESTABLISHED",
+		"-m", "comment", "--comment", "tungo", "-j", "ACCEPT"}
+	return w.execute(args...)
 }
 
-func (w *Wrapper) DisableForwardingFromDevToTun(tunName string, devName string) error {
-	if _, err := w.execWithBinary("-D", "FORWARD", "-i", devName, "-o", tunName, "-m", "conntrack", "--ctstate", "RELATED,ESTABLISHED", "-j", "ACCEPT"); err != nil {
-		return fmt.Errorf("failed to remove forwarding rule for %s -> %s: %v",
-			devName, tunName, err)
-	}
-
-	return nil
+func (w *Driver) DisableForwardingFromDevToTun(tun, dev string) error {
+	args := []string{"-t", "filter", "-D", fwdChain, "-i", dev, "-o", tun,
+		"-m", "conntrack", "--ctstate", "RELATED,ESTABLISHED",
+		"-m", "comment", "--comment", "tungo", "-j", "ACCEPT"}
+	return w.execute(args...)
 }
 
-func (w *Wrapper) ConfigureMssClamping() error {
-	// Configuration for chain FORWARD
-	if _, errForward := w.execWithBinary("-t", "mangle", "-A", "FORWARD", "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"); errForward != nil {
-		return fmt.Errorf("failed to configure MSS clamping on FORWARD chain: %s",
-			errForward)
+func (w *Driver) ConfigureMssClamping(dev string) error {
+	out := []string{"-t", "mangle", "-A", mangleChain, "-o", dev, "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN",
+		"-m", "comment", "--comment", "tungo", "-j", "TCPMSS", "--clamp-mss-to-pmtu"}
+	if err := w.execute(out...); err != nil {
+		return err
 	}
-
-	// Configuration for chain OUTPUT
-	if _, errOutput := w.execWithBinary("-t", "mangle", "-A", "OUTPUT", "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"); errOutput != nil {
-		return fmt.Errorf("failed to configure MSS clamping on OUTPUT chain: %s",
-			errOutput)
-	}
-
-	return nil
+	in := []string{"-t", "mangle", "-A", mangleChain, "-i", dev, "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN",
+		"-m", "comment", "--comment", "tungo", "-j", "TCPMSS", "--clamp-mss-to-pmtu"}
+	return w.execute(in...)
 }
 
-func (w *Wrapper) execWithBinary(args ...string) ([]byte, error) {
-	var lastOut []byte
-	var errs []error
+func (w *Driver) TeardownChains() error { return w.chains.Teardown() }
 
-	runOne := func(bin, label string) {
-		if bin == "" || w.canBeSkipped(bin, args...) {
-			return
+func (w *Driver) execute(base ...string) error {
+	if !w.chainsReady.Load() {
+		w.initMu.Lock()
+		if !w.chainsReady.Load() {
+			if err := w.chains.EnsureAll(fwdChain, mangleChain); err != nil {
+				w.initMu.Unlock()
+				return fmt.Errorf("ensure chains: %w", err)
+			}
+			w.chainsReady.Store(true)
 		}
-		out, err := w.commander.CombinedOutput(bin, args...)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("[%s] %s %v failed: %w; output: %s", label, bin, args, err, out))
-			return
-		}
-		if len(out) > 0 {
-			lastOut = out
-		}
+		w.initMu.Unlock()
 	}
-
-	runOne(w.v4binary, "IPv4")
-	runOne(w.v6binary, "IPv6")
-
-	if len(errs) > 0 {
-		// простой join без errors.Join
-		msg := "multiple errors:"
-		for _, e := range errs {
-			msg += "\n - " + e.Error()
-		}
-		return lastOut, errors.New(msg)
-	}
-	return lastOut, nil
+	table := w.getTableFromArgs(base)
+	return w.exec.ExecBothFamilies(base, table, table == "nat")
 }
 
-func (w *Wrapper) canBeSkipped(binary string, args ...string) bool {
-	action := ""
-	checkArgs := make([]string, len(args))
-	for i, a := range args {
-		switch a {
-		case "-A", "-D":
-			action = a
-			checkArgs[i] = "-C"
-		default:
-			checkArgs[i] = a
+func (w *Driver) getTableFromArgs(args []string) string {
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == "-t" {
+			return args[i+1]
 		}
 	}
-
-	_, checkErr := w.commander.CombinedOutput(binary, checkArgs...)
-
-	switch action {
-	case "-A":
-		// Rule present -> skip add
-		return checkErr == nil
-	case "-D":
-		// Rule absent -> skip delete
-		return checkErr != nil
-	default:
-		return false
-	}
+	return "filter"
 }

@@ -55,9 +55,9 @@ func (d *SyncDriver) DisableForwardingFromDevToTun(tunName, devName string) erro
 
 	return d.netfilter.DisableForwardingFromDevToTun(tunName, devName)
 }
-func (d *SyncDriver) ConfigureMssClamping() error {
+func (d *SyncDriver) ConfigureMssClamping(devName string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	return d.netfilter.ConfigureMssClamping()
+	return d.netfilter.ConfigureMssClamping(devName)
 }

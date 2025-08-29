@@ -110,7 +110,7 @@ func (m *mockIPT) EnableForwardingFromTunToDev(_, _ string) error  { m.add("fwd_
 func (m *mockIPT) DisableForwardingFromTunToDev(_, _ string) error { m.add("fwd_td_off"); return nil }
 func (m *mockIPT) EnableForwardingFromDevToTun(_, _ string) error  { m.add("fwd_dt"); return nil }
 func (m *mockIPT) DisableForwardingFromDevToTun(_, _ string) error { m.add("fwd_dt_off"); return nil }
-func (m *mockIPT) ConfigureMssClamping() error                     { m.add("clamp"); return nil }
+func (m *mockIPT) ConfigureMssClamping(_ string) error             { m.add("clamp"); return nil }
 
 // errors in Netfilter
 type mockIPTErr struct {
@@ -143,11 +143,11 @@ func (m *mockIPTErr) DisableForwardingFromDevToTun(tun, dev string) error {
 	}
 	return m.mockIPT.DisableForwardingFromDevToTun(tun, dev)
 }
-func (m *mockIPTErr) ConfigureMssClamping() error {
+func (m *mockIPTErr) ConfigureMssClamping(dev string) error {
 	if m.errTag == "ConfigureMssClamping" {
 		return m.err
 	}
-	return m.mockIPT.ConfigureMssClamping()
+	return m.mockIPT.ConfigureMssClamping(dev)
 }
 
 // mockIOCTL implements ioctl.Contract.

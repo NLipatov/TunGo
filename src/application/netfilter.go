@@ -7,5 +7,5 @@ type Netfilter interface {
 	DisableForwardingFromTunToDev(tunName, devName string) error
 	EnableForwardingFromDevToTun(tunName, devName string) error
 	DisableForwardingFromDevToTun(tunName, devName string) error
-	ConfigureMssClamping() error
+	ConfigureMssClamping(devName string) error
 }

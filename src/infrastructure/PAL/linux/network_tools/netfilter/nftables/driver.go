@@ -240,7 +240,7 @@ func (d *Driver) DisableForwardingFromDevToTun(tunName, devName string) error {
 
 // 1:1 parity note: iptables wrapper adds MSS clamping rules here.
 // nft equivalent is intentionally not implemented (prefer sysctl probing).
-func (d *Driver) ConfigureMssClamping() error {
+func (d *Driver) ConfigureMssClamping(_ string) error {
 	return errors.New("MSS clamping via nft is not implemented; prefer sysctl net.ipv4.tcp_mtu_probing=1")
 }
 
