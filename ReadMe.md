@@ -16,7 +16,7 @@
 ### Key features:
 - 🚀 **High Performance** — negligible CPU usage and no allocations under load.
 - 📦 **Tiny Memory Footprint** — ~8 MB idle, ~14 MB under traffic.
-- 🔒 **End-to-End Encryption** — Ed25519 for key exchange, ChaCha20 for traffic encryption.
+- 🔒 **End-to-End Encryption** — X25519 (Curve25519 ECDH) for key agreement; ChaCha20-Poly1305 (AEAD) for traffic encryption; Ed25519 for authentication.
 - ⚡ **Built from Scratch** — no legacy, no bloat. Clean, readable Go code.
 - 🌐 **IoT and Embedded Ready** — optimized for small devices and constrained environments.
 - 🛡️ **Open Source** — AGPLv3 licensed, free for community use, commercial licenses available.
