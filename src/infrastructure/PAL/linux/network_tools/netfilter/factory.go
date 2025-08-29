@@ -36,9 +36,7 @@ func (f *Factory) Build() (application.Netfilter, error) {
 	// 1) nftables via netlink (through probe object)
 	if ok, _ := f.probe.Supports(); ok {
 		log.Print("netfilter driver: nftables")
-		if b, err := nftables.New(); err == nil {
-			return nftables.NewSyncDriver(b), nil
-		}
+		return nftables.New()
 	}
 
 	// 2) iptables-legacy

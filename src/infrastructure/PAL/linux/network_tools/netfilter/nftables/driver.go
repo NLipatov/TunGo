@@ -20,6 +20,7 @@ const fwdChainName = "IPTABLES-TUNGO-FWD"
 const ifNameMaxLen = 15 // IFNAMSIZ-1
 
 type Driver struct {
+	tags   Tags
 	mu     sync.Mutex
 	conn   *nft.Conn
 	cfg    Config
@@ -37,7 +38,6 @@ type Config struct {
 
 	AllowCreateForwardBase     bool // default true
 	SetForwardBasePolicyAccept bool // default false
-	Debugf                     func(format string, args ...interface{})
 }
 
 func DefaultConfig() Config {
@@ -48,12 +48,16 @@ func DefaultConfig() Config {
 		FilterForwardPrio:          0,
 		AllowCreateForwardBase:     true,
 		SetForwardBasePolicyAccept: false,
-		Debugf:                     nil,
 	}
 }
 
 func New() (*Driver, error) {
-	return NewWithConfig(DefaultConfig())
+	d, err := NewWithConfig(DefaultConfig())
+	if err != nil {
+		return nil, err
+	}
+	d.tags = NewDefaultTags()
+	return d, nil
 }
 
 func NewWithConfig(cfg Config) (*Driver, error) {
@@ -90,7 +94,7 @@ func (d *Driver) EnableDevMasquerade(devName string) error {
 				t4, ch4,
 				sigMasq(devName),
 				exprMasqOIF(devName),
-				tagMasq4(devName),
+				d.tags.tagMasq4(devName),
 			); err != nil {
 				return err
 			} else if ok {
@@ -105,14 +109,12 @@ func (d *Driver) EnableDevMasquerade(devName string) error {
 				t6, ch6,
 				sigMasq(devName),
 				exprMasqOIF(devName),
-				tagMasq6(devName),
+				d.tags.tagMasq6(devName),
 			); err != nil {
 				return err
 			} else if ok {
 				if err := d.conn.Flush(); err != nil {
-					if isNatUnsupported(err) {
-						d.debugf("EnableDevMasquerade(v6): flush ignored: %v", err)
-					} else {
+					if !isNatUnsupported(err) {
 						return err
 					}
 				}
@@ -134,7 +136,7 @@ func (d *Driver) DisableDevMasquerade(devName string) error {
 
 		// v4
 		if t, ch, err := d.getSystemNatPostroutingIfExists(nft.TableFamilyIPv4); err == nil && ch != nil {
-			ok, err := d.delByTag(t, ch, tagMasq4(devName))
+			ok, err := d.delByTag(t, ch, d.tags.tagMasq4(devName))
 			if err != nil {
 				return err
 			}
@@ -145,7 +147,7 @@ func (d *Driver) DisableDevMasquerade(devName string) error {
 
 		// v6: best-effort
 		if t6, ch6, err := d.getSystemNatPostroutingIfExists(nft.TableFamilyIPv6); err == nil && ch6 != nil {
-			ok, err := d.delByTag(t6, ch6, tagMasq6(devName))
+			ok, err := d.delByTag(t6, ch6, d.tags.tagMasq6(devName))
 			if err != nil {
 				return err
 			}
@@ -187,7 +189,7 @@ func (d *Driver) EnableForwardingFromTunToDev(tunName, devName string) error {
 			} else {
 				needFlush = needFlush || ok
 			}
-			ok, err := d.appendIfMissingByTagOrSig(t, chUser, sigFwd(tunName, devName, false), exprAcceptIIFtoOIF(tunName, devName), tagV4Fwd(tunName, devName))
+			ok, err := d.appendIfMissingByTagOrSig(t, chUser, sigFwd(tunName, devName, false), exprAcceptIIFtoOIF(tunName, devName), d.tags.tagV4Fwd(tunName, devName))
 			if err != nil {
 				return err
 			}
@@ -209,7 +211,7 @@ func (d *Driver) EnableForwardingFromTunToDev(tunName, devName string) error {
 					needFlush = needFlush || ok
 				}
 				ok, err := d.appendIfMissingByTagOrSig(t6, chUser6, sigFwd(tunName, devName, false),
-					exprAcceptIIFtoOIF(tunName, devName), tagV6Fwd(tunName, devName))
+					exprAcceptIIFtoOIF(tunName, devName), d.tags.tagV6Fwd(tunName, devName))
 				if err != nil {
 					return err
 				}
@@ -239,7 +241,7 @@ func (d *Driver) DisableForwardingFromTunToDev(tunName, devName string) error {
 		// v4
 		{
 			if t, chFwd, chUser, err := d.getFilterUserChainIfExists(nft.TableFamilyIPv4, fwdChainName); err == nil && chUser != nil {
-				ok, err := d.delByTag(t, chUser, tagV4Fwd(tunName, devName))
+				ok, err := d.delByTag(t, chUser, d.tags.tagV4Fwd(tunName, devName))
 				if err != nil {
 					return err
 				}
@@ -257,7 +259,7 @@ func (d *Driver) DisableForwardingFromTunToDev(tunName, devName string) error {
 		// v6
 		{
 			if t6, chFwd6, chUser6, err := d.getFilterUserChainIfExists(nft.TableFamilyIPv6, fwdChainName); err == nil && chUser6 != nil {
-				ok, err := d.delByTag(t6, chUser6, tagV6Fwd(tunName, devName))
+				ok, err := d.delByTag(t6, chUser6, d.tags.tagV6Fwd(tunName, devName))
 				if err != nil {
 					return err
 				}
@@ -305,7 +307,7 @@ func (d *Driver) EnableForwardingFromDevToTun(tunName, devName string) error {
 			} else {
 				needFlush = needFlush || ok
 			}
-			ok, err := d.appendIfMissingByTagOrSig(t, chUser, sigFwd(devName, tunName, true), exprAcceptEstablished(devName, tunName), tagV4FwdRet(devName, tunName))
+			ok, err := d.appendIfMissingByTagOrSig(t, chUser, sigFwd(devName, tunName, true), exprAcceptEstablished(devName, tunName), d.tags.tagV4FwdRet(devName, tunName))
 			if err != nil {
 				return err
 			}
@@ -330,7 +332,7 @@ func (d *Driver) EnableForwardingFromDevToTun(tunName, devName string) error {
 					t6, chUser6,
 					sigFwd(devName, tunName, true),
 					exprAcceptEstablished(devName, tunName),
-					tagV6FwdRet(devName, tunName),
+					d.tags.tagV6FwdRet(devName, tunName),
 				)
 				if err != nil {
 					return err
@@ -361,7 +363,7 @@ func (d *Driver) DisableForwardingFromDevToTun(tunName, devName string) error {
 		// v4
 		{
 			if t, chFwd, chUser, err := d.getFilterUserChainIfExists(nft.TableFamilyIPv4, fwdChainName); err == nil && chUser != nil {
-				ok, err := d.delByTag(t, chUser, tagV4FwdRet(devName, tunName))
+				ok, err := d.delByTag(t, chUser, d.tags.tagV4FwdRet(devName, tunName))
 				if err != nil {
 					return err
 				}
@@ -379,7 +381,7 @@ func (d *Driver) DisableForwardingFromDevToTun(tunName, devName string) error {
 		// v6
 		{
 			if t6, chFwd6, chUser6, err := d.getFilterUserChainIfExists(nft.TableFamilyIPv6, fwdChainName); err == nil && chUser6 != nil {
-				ok, err := d.delByTag(t6, chUser6, tagV6FwdRet(devName, tunName))
+				ok, err := d.delByTag(t6, chUser6, d.tags.tagV6FwdRet(devName, tunName))
 				if err != nil {
 					return err
 				}
@@ -615,7 +617,7 @@ func (d *Driver) ensureFilterUserChain(fam nft.TableFamily, childName string) (t
 }
 
 func (d *Driver) ensureJumpAppend(t *nft.Table, chFwd *nft.Chain, childName string) (bool, error) {
-	tag := tagHookJump(childName)
+	tag := d.tags.tagHookJump(childName)
 	wantSig := sigJump(childName)
 
 	rs, err := d.conn.GetRules(t, chFwd)
@@ -804,7 +806,7 @@ func (d *Driver) delByTag(t *nft.Table, ch *nft.Chain, tag []byte) (bool, error)
 }
 
 func (d *Driver) delJumpIfPresent(t *nft.Table, chFwd *nft.Chain, childName string) (bool, error) {
-	tag := tagHookJump(childName)
+	tag := d.tags.tagHookJump(childName)
 	wantSig := sigJump(childName)
 	rules, err := d.conn.GetRules(t, chFwd)
 	if err != nil {
@@ -928,18 +930,6 @@ func exprJumpTo(chain string) []expr.Any {
 	}
 }
 
-// -------- tags --------
-
-func tagMasq4(dev string) []byte { return []byte("tungo:nat4 oif=" + dev) }
-func tagMasq6(dev string) []byte { return []byte("tungo:nat6 oif=" + dev) }
-
-func tagV4Fwd(iif, oif string) []byte    { return []byte("tungo:v4 fwd " + iif + "->" + oif) }
-func tagV4FwdRet(iif, oif string) []byte { return []byte("tungo:v4 fwdret " + iif + "->" + oif) }
-func tagV6Fwd(iif, oif string) []byte    { return []byte("tungo:v6 fwd " + iif + "->" + oif) }
-func tagV6FwdRet(iif, oif string) []byte { return []byte("tungo:v6 fwdret " + iif + "->" + oif) }
-
-func tagHookJump(child string) []byte { return []byte("tungo:hook FORWARD->" + child) }
-
 // -------- helpers --------
 
 func validateIfName(s string) error {
@@ -1032,10 +1022,4 @@ func (d *Driver) getFilterUserChainIfExists(fam nft.TableFamily, childName strin
 		return nil, nil, nil, err
 	}
 	return tbl, fwd, child, nil
-}
-
-func (d *Driver) debugf(format string, args ...interface{}) {
-	if d.cfg.Debugf != nil {
-		d.cfg.Debugf(format, args...)
-	}
 }
