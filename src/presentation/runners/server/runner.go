@@ -110,19 +110,14 @@ func (r *Runner) route(ctx context.Context, settings settings.Settings) error {
 }
 
 func (r *Runner) cleanup() error {
-	// 1) Dispose all worker TUN-devices and flush its settings
 	var eg errgroup.Group
 	for _, workerSettings := range r.workerSettings() {
 		eg.Go(func() error {
 			return r.deps.TunManager().DisposeTunDevices(workerSettings)
 		})
 	}
-	if err := eg.Wait(); err != nil {
-		return err
-	}
 
-	// 2) turn off masquerading globally
-	return r.deps.TunManager().DisableDevMasquerade()
+	return eg.Wait()
 }
 
 func (r *Runner) workerSettings() []settings.Settings {

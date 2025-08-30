@@ -12,5 +12,4 @@ type ClientTunManager interface {
 type ServerTunManager interface {
 	CreateTunDevice(settings settings.Settings) (TunDevice, error)
 	DisposeTunDevices(settings settings.Settings) error
-	DisableDevMasquerade() error
 }

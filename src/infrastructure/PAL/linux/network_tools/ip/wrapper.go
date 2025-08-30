@@ -150,26 +150,3 @@ func (i *Wrapper) AddrShowDev(ipV int, ifName string) (string, error) {
 
 	return ip, nil
 }
-
-func (i *Wrapper) LinkExists(devName string) (bool, error) {
-	out, err := i.commander.CombinedOutput("ip", "link", "show", "dev", devName)
-	if err == nil {
-		return true, nil
-	}
-
-	cmdResult := strings.Join(
-		[]string{
-			strings.ToLower(string(out)),
-			err.Error()},
-		"",
-	)
-
-	if strings.Contains(cmdResult, "does not exist") ||
-		strings.Contains(cmdResult, "no such device") ||
-		strings.Contains(cmdResult, "not found") ||
-		strings.Contains(cmdResult, "cannot find device") {
-		return false, nil
-	}
-
-	return false, err
-}

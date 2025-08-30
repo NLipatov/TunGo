@@ -9,10 +9,8 @@ import (
 	"syscall"
 	"tungo/domain/app"
 	"tungo/domain/mode"
-	"tungo/infrastructure/PAL"
 	"tungo/infrastructure/PAL/configuration/client"
 	serverConf "tungo/infrastructure/PAL/configuration/server"
-	"tungo/infrastructure/PAL/linux/network_tools/netfilter"
 	"tungo/infrastructure/PAL/stat"
 	"tungo/infrastructure/PAL/tun_server"
 	"tungo/infrastructure/routing/client_routing/client_factory"
@@ -94,17 +92,7 @@ func startClient(appCtx context.Context) {
 }
 
 func startServer(appCtx context.Context, configurationManager serverConf.ServerConfigurationManager) {
-	nfFactory := netfilter.NewFactory(
-		PAL.NewExecCommander(),
-	)
-	nf, nfErr := nfFactory.Build()
-	if nfErr != nil {
-		log.Fatalf("netfilter init error: %s", nfErr)
-	}
-
-	tunFactory := tun_server.NewServerTunFactory(
-		nf,
-	)
+	tunFactory := tun_server.NewServerTunFactory()
 
 	conf, confErr := configurationManager.Configuration()
 	if confErr != nil {
