@@ -4,13 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"golang.org/x/crypto/chacha20poly1305"
 	"io"
 	"os"
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
-	"tungo/infrastructure/network"
 	"tungo/infrastructure/network/signaling"
+	"tungo/infrastructure/settings"
 )
 
 type TransportHandler struct {
@@ -34,7 +33,7 @@ func NewTransportHandler(
 }
 
 func (t *TransportHandler) HandleTransport() error {
-	buffer := make([]byte, network.MaxPacketLengthBytes+chacha20poly1305.NonceSize+chacha20poly1305.Overhead)
+	buffer := make([]byte, settings.MTU+settings.UDPChacha20Overhead)
 
 	for {
 		select {

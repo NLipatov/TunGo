@@ -5,40 +5,40 @@ import (
 	"net/netip"
 	"tungo/application"
 	"tungo/application/listeners"
+	"tungo/infrastructure/settings"
 )
 
 type ServerUdpAdapter struct {
-	Conn     listeners.UdpListener
-	AddrPort netip.AddrPort
+	conn     listeners.UdpListener
+	addrPort netip.AddrPort
 
-	//read buffers
-	buf [65_547]byte
-	oob [1024]byte
+	readBuffer [settings.MTU + settings.UDPChacha20Overhead]byte
+	oob        [1024]byte
 }
 
 func NewUdpAdapter(UdpConn listeners.UdpListener, AddrPort netip.AddrPort) application.ConnectionAdapter {
 	return &ServerUdpAdapter{
-		Conn:     UdpConn,
-		AddrPort: AddrPort,
+		conn:     UdpConn,
+		addrPort: AddrPort,
 	}
 }
 
 func (ua *ServerUdpAdapter) Write(data []byte) (int, error) {
-	return ua.Conn.WriteToUDPAddrPort(data, ua.AddrPort)
+	return ua.conn.WriteToUDPAddrPort(data, ua.addrPort)
 }
 
 func (ua *ServerUdpAdapter) Read(buffer []byte) (int, error) {
-	n, _, _, _, err := ua.Conn.ReadMsgUDPAddrPort(ua.buf[:], ua.oob[:])
+	n, _, _, _, err := ua.conn.ReadMsgUDPAddrPort(ua.readBuffer[:], ua.oob[:])
 	if err != nil {
 		return 0, err
 	}
 	if len(buffer) < n {
 		return 0, io.ErrShortBuffer
 	}
-	copy(buffer[:n], ua.buf[:n])
+	copy(buffer, ua.readBuffer[:n])
 	return n, nil
 }
 
 func (ua *ServerUdpAdapter) Close() error {
-	return ua.Conn.Close()
+	return ua.conn.Close()
 }

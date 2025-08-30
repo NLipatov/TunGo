@@ -13,7 +13,10 @@ import (
 	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/network/tcp/adapters"
+	wsAdapters "tungo/infrastructure/network/ws/adapter"
 	"tungo/infrastructure/settings"
+
+	"github.com/coder/websocket"
 )
 
 type ConnectionFactory struct {
@@ -62,6 +65,15 @@ func (f *ConnectionFactory) EstablishConnection(
 		return f.establishSecuredConnection(establishCtx, connSettings, adapter, chacha20.NewTcpSessionBuilder(
 			chacha20.NewDefaultAEADBuilder()),
 		)
+	case settings.WS:
+		adapter, err := f.dialWS(establishCtx, ctx, addrPort)
+		if err != nil {
+			return nil, nil, fmt.Errorf("unable to establish WebSocket connection: %w", err)
+		}
+
+		return f.establishSecuredConnection(establishCtx, connSettings, adapter, chacha20.NewTcpSessionBuilder(
+			chacha20.NewDefaultAEADBuilder()),
+		)
 	default:
 		return nil, nil, fmt.Errorf("unsupported protocol: %v", connSettings.Protocol)
 	}
@@ -73,6 +85,8 @@ func (f *ConnectionFactory) connectionSettings() (settings.Settings, error) {
 		return f.conf.TCPSettings, nil
 	case settings.UDP:
 		return f.conf.UDPSettings, nil
+	case settings.WS:
+		return f.conf.WSSettings, nil
 	default:
 		return settings.Settings{}, fmt.Errorf("unsupported protocol: %v", f.conf.Protocol)
 	}
@@ -102,7 +116,10 @@ func (f *ConnectionFactory) establishSecuredConnection(
 	return ad, cr, nil
 }
 
-func (f *ConnectionFactory) dialTCP(ctx context.Context, ap netip.AddrPort) (application.ConnectionAdapter, error) {
+func (f *ConnectionFactory) dialTCP(
+	ctx context.Context,
+	ap netip.AddrPort,
+) (application.ConnectionAdapter, error) {
 	dialer := &net.Dialer{}
 	conn, err := dialer.DialContext(ctx, "tcp", ap.String())
 	if err != nil {
@@ -115,14 +132,33 @@ func (f *ConnectionFactory) dialTCP(ctx context.Context, ap netip.AddrPort) (app
 		_ = tcp.SetKeepAlivePeriod(30 * time.Second)
 	}
 
-	return adapters.NewTcpAdapter(conn), nil
+	return adapters.NewLengthPrefixFramingAdapter(conn, settings.MTU+settings.TCPChacha20Overhead)
 }
 
-func (f *ConnectionFactory) dialUDP(ctx context.Context, ap netip.AddrPort) (application.ConnectionAdapter, error) {
+func (f *ConnectionFactory) dialUDP(
+	ctx context.Context,
+	ap netip.AddrPort,
+) (application.ConnectionAdapter, error) {
 	dialer := &net.Dialer{}
 	conn, err := dialer.DialContext(ctx, "udp", ap.String())
 	if err != nil {
 		return nil, err
 	}
 	return conn, nil
+}
+
+func (f *ConnectionFactory) dialWS(
+	establishCtx, connCtx context.Context,
+	ap netip.AddrPort,
+) (application.ConnectionAdapter, error) {
+	url := fmt.Sprintf("ws://%s/ws", ap.String())
+	conn, _, err := websocket.Dial(establishCtx, url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return adapters.NewLengthPrefixFramingAdapter(
+		wsAdapters.NewDefaultAdapter(connCtx, conn, nil, nil),
+		settings.MTU+settings.TCPChacha20Overhead,
+	)
 }

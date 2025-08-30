@@ -5,12 +5,12 @@ import (
 	"io"
 	"log"
 	"os"
+	"tungo/infrastructure/settings"
 
 	"golang.org/x/crypto/chacha20poly1305"
 
 	"tungo/application"
 	appip "tungo/application/network/ip"
-	"tungo/infrastructure/network"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
 )
 
@@ -37,7 +37,7 @@ func NewTunHandler(
 
 func (t *TunHandler) HandleTun() error {
 	// Reserve space for nonce + payload + AEAD tag (in-place encryption needs extra capacity).
-	buffer := make([]byte, chacha20poly1305.NonceSize+network.MaxPacketLengthBytes+chacha20poly1305.Overhead)
+	buffer := make([]byte, settings.MTU+settings.UDPChacha20Overhead)
 
 	for {
 		select {

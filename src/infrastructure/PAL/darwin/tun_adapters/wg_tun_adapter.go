@@ -3,11 +3,14 @@ package tun_adapters
 import (
 	"encoding/binary"
 	"errors"
-	"golang.zx2c4.com/wireguard/tun"
 	"syscall"
 	"tungo/application"
-	"tungo/infrastructure/network"
+	"tungo/infrastructure/settings"
+
+	"golang.zx2c4.com/wireguard/tun"
 )
+
+const UTUNHeaderSize = 4
 
 // WgTunAdapter wraps a wireguard/tun Device and is **allocation‑free**
 // in the steady state: all required buffers and slice headers are created
@@ -27,8 +30,8 @@ type WgTunAdapter struct {
 // NewWgTunAdapter allocates the buffers once and prepares reusable slice
 // headers. MaxPacketLengthBytes should already include the 4‑byte utun header.
 func NewWgTunAdapter(dev tun.Device) application.TunDevice {
-	rb := make([]byte, network.MaxPacketLengthBytes)
-	wb := make([]byte, network.MaxPacketLengthBytes)
+	rb := make([]byte, settings.MTU+UTUNHeaderSize)
+	wb := make([]byte, settings.MTU+UTUNHeaderSize)
 	return &WgTunAdapter{
 		device:      dev,
 		readBuffer:  rb,

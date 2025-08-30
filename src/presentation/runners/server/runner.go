@@ -2,85 +2,146 @@ package server
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log"
 	"sync"
-	"tungo/infrastructure/PAL/tun_server"
-	"tungo/infrastructure/routing"
+	"tungo/application"
 	"tungo/infrastructure/settings"
+
+	"golang.org/x/sync/errgroup"
 )
 
 type Runner struct {
-	deps AppDependencies
+	deps          AppDependencies
+	workerFactory application.ServerWorkerFactory
+	routerFactory application.ServerTrafficRouterFactory
 }
 
-func NewRunner(deps AppDependencies) *Runner {
+func NewRunner(
+	deps AppDependencies,
+	workerFactory application.ServerWorkerFactory,
+	routerFactory application.ServerTrafficRouterFactory,
+) *Runner {
 	return &Runner{
-		deps: deps,
+		deps:          deps,
+		workerFactory: workerFactory,
+		routerFactory: routerFactory,
 	}
 }
 
-func (r *Runner) Run(ctx context.Context) {
+func (r *Runner) Run(
+	ctx context.Context,
+) error {
 	err := r.deps.KeyManager().PrepareKeys()
 	if err != nil {
-		log.Fatalf("failed to generate ed25519 keys: %s", err)
+		return fmt.Errorf("failed to generate ed25519 keys: %s", err)
 	}
 
+	// Pre-flight cleanup (if anything to clean up)
+	if preflightCleanupErr := r.cleanup(); preflightCleanupErr != nil {
+		log.Printf("preflight cleanup error: %v", preflightCleanupErr)
+	}
+	// Post-flight cleanup
+	defer func() {
+		if postflightCleanupErr := r.cleanup(); postflightCleanupErr != nil {
+			log.Printf("postflight cleanup error: %v", postflightCleanupErr)
+		}
+	}()
+
+	return r.runWorkers(ctx)
+}
+
+func (r *Runner) cleanup() error {
+	var eg errgroup.Group
+	for _, workerSettings := range r.workerSettings() {
+		eg.Go(func() error {
+			return r.deps.TunManager().DisposeTunDevices(workerSettings)
+		})
+	}
+
+	return eg.Wait()
+}
+
+func (r *Runner) workerSettings() []settings.Settings {
+	return []settings.Settings{
+		r.deps.Configuration().TCPSettings,
+		r.deps.Configuration().UDPSettings,
+		r.deps.Configuration().WSSettings,
+	}
+}
+
+func (r *Runner) runWorkers(
+	ctx context.Context,
+) error {
+	// runCtx is a shared context for all workers.
+	// Fail-fast: the first worker returning an error calls cancel(),
+	// causing all other workers to stop via ctx.Done().
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	workerSettings := r.enabledProtocolSettings()
+	if len(workerSettings) == 0 {
+		return errors.New("no protocol is enabled in server configuration")
+	}
+	errCh := make(chan error, len(workerSettings))
 	var wg sync.WaitGroup
-	if r.deps.Configuration().EnableTCP {
-		wg.Add(1)
-
-		connSettings := r.deps.Configuration().TCPSettings
-		if err := r.deps.TunManager().DisposeTunDevices(connSettings); err != nil {
-			log.Printf("error disposing tun devices: %s", err)
-		}
-
-		go func() {
-			defer wg.Done()
-			routeErr := r.route(ctx, connSettings)
-			if routeErr != nil {
-				log.Println(routeErr)
+	for _, ws := range workerSettings {
+		wg.Go(func() {
+			if rErr := r.route(runCtx, ws); rErr != nil {
+				cancel()
+				errCh <- fmt.Errorf("%s worker failed: %w", ws.Protocol, rErr)
 			}
-		}()
-	}
-
-	if r.deps.Configuration().EnableUDP {
-		wg.Add(1)
-
-		connSettings := r.deps.Configuration().UDPSettings
-		if err := r.deps.TunManager().DisposeTunDevices(connSettings); err != nil {
-			log.Printf("error disposing tun devices: %s", err)
-		}
-
-		go func() {
-			defer wg.Done()
-			routeErr := r.route(ctx, connSettings)
-			if routeErr != nil {
-				log.Println(routeErr)
-			}
-		}()
+		})
 	}
 
 	wg.Wait()
+	close(errCh)
+
+	//aggregate errors into one error
+	errs := make([]error, 0)
+	for workerErr := range errCh {
+		if workerErr != nil {
+			errs = append(errs, fmt.Errorf("worker err: %w", workerErr))
+		}
+	}
+	return errors.Join(errs...)
 }
 
-func (r *Runner) route(ctx context.Context, settings settings.Settings) error {
-	workerFactory := tun_server.NewServerWorkerFactory(settings, r.deps.ConfigurationManager())
+func (r *Runner) enabledProtocolSettings() []settings.Settings {
+	enabledProtocolSettings := make([]settings.Settings, 0)
+	cfg := r.deps.Configuration()
+	if cfg.EnableTCP {
+		enabledProtocolSettings = append(enabledProtocolSettings, cfg.TCPSettings)
+	}
+	if cfg.EnableUDP {
+		enabledProtocolSettings = append(enabledProtocolSettings, cfg.UDPSettings)
+	}
+	if cfg.EnableWS {
+		enabledProtocolSettings = append(enabledProtocolSettings, cfg.WSSettings)
+	}
 
+	return enabledProtocolSettings
+}
+
+func (r *Runner) route(
+	ctx context.Context,
+	settings settings.Settings,
+) error {
 	tun, tunErr := r.deps.TunManager().CreateTunDevice(settings)
 	if tunErr != nil {
-		log.Fatalf("error creating tun device: %s", tunErr)
+		return fmt.Errorf("error creating tun device: %w", tunErr)
 	}
 
-	worker, workerErr := workerFactory.CreateWorker(ctx, tun)
+	worker, workerErr := r.workerFactory.CreateWorker(ctx, tun, settings)
 	if workerErr != nil {
-		log.Fatalf("error creating worker: %s", workerErr)
+		return fmt.Errorf("error creating worker: %w", workerErr)
 	}
 
-	router := routing.NewRouter(worker)
-
+	router := r.routerFactory.CreateRouter(worker)
 	routingErr := router.RouteTraffic(ctx)
 	if routingErr != nil {
-		log.Fatalf("error routing traffic: %s", routingErr)
+		return fmt.Errorf("error routing traffic: %w", routingErr)
 	}
 
 	return nil

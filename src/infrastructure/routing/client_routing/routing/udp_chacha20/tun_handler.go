@@ -3,10 +3,11 @@ package udp_chacha20
 import (
 	"context"
 	"fmt"
-	"golang.org/x/crypto/chacha20poly1305"
 	"io"
 	"tungo/application"
-	"tungo/infrastructure/network"
+	"tungo/infrastructure/settings"
+
+	"golang.org/x/crypto/chacha20poly1305"
 )
 
 type TunHandler struct {
@@ -31,7 +32,7 @@ func NewTunHandler(ctx context.Context,
 // HandleTun reads packages from TUN-device, encrypts them and writes encrypted packages to a transport
 func (w *TunHandler) HandleTun() error {
 	// +12 nonce +16 AEAD tag headroom
-	buffer := make([]byte, network.MaxPacketLengthBytes+chacha20poly1305.NonceSize+chacha20poly1305.Overhead)
+	buffer := make([]byte, settings.MTU+settings.UDPChacha20Overhead)
 
 	// Main loop to read from TUN and send data
 	for {

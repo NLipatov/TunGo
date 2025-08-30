@@ -25,6 +25,17 @@ func NewConfgenHandler(manager serverConfiguration.ServerConfigurationManager) *
 }
 
 func (c *ConfgenHandler) GenerateNewClientConf() error {
+	configuration, configurationErr := c.cfgManager.Configuration()
+	if configurationErr != nil {
+		return configurationErr
+	}
+
+	keyManager := serverConfiguration.NewEd25519KeyManager(configuration, c.cfgManager)
+	keyErr := keyManager.PrepareKeys()
+	if keyErr != nil {
+		return keyErr
+	}
+
 	newConf, err := c.generate()
 	if err != nil {
 		log.Fatalf("failed to generate client conf: %s\n", err)
@@ -65,7 +76,12 @@ func (c *ConfgenHandler) generate() (*client.Configuration, error) {
 		return nil, fmt.Errorf("failed to allocate client's TCP IP address: %s", err)
 	}
 
-	clientUIDPIfIp, err := nip.AllocateClientIp(serverConf.UDPSettings.InterfaceIPCIDR, IncrementedClientCounter)
+	clientUDPIfIp, err := nip.AllocateClientIp(serverConf.UDPSettings.InterfaceIPCIDR, IncrementedClientCounter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to allocate client's TCP IP address: %s", err)
+	}
+
+	clientWSIfIp, err := nip.AllocateClientIp(serverConf.WSSettings.InterfaceIPCIDR, IncrementedClientCounter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to allocate client's TCP IP address: %s", err)
 	}
@@ -90,13 +106,24 @@ func (c *ConfgenHandler) generate() (*client.Configuration, error) {
 		UDPSettings: settings.Settings{
 			InterfaceName:    serverConf.UDPSettings.InterfaceName,
 			InterfaceIPCIDR:  serverConf.UDPSettings.InterfaceIPCIDR,
-			InterfaceAddress: clientUIDPIfIp,
+			InterfaceAddress: clientUDPIfIp,
 			ConnectionIP:     defaultIfIpV4,
 			Port:             serverConf.UDPSettings.Port,
 			MTU:              serverConf.UDPSettings.MTU,
 			Protocol:         settings.UDP,
 			Encryption:       serverConf.UDPSettings.Encryption,
 			DialTimeoutMs:    serverConf.UDPSettings.DialTimeoutMs,
+		},
+		WSSettings: settings.Settings{
+			InterfaceName:    serverConf.WSSettings.InterfaceName,
+			InterfaceIPCIDR:  serverConf.WSSettings.InterfaceIPCIDR,
+			InterfaceAddress: clientWSIfIp,
+			ConnectionIP:     defaultIfIpV4,
+			Port:             serverConf.WSSettings.Port,
+			MTU:              serverConf.WSSettings.MTU,
+			Protocol:         settings.WS,
+			Encryption:       serverConf.WSSettings.Encryption,
+			DialTimeoutMs:    serverConf.WSSettings.DialTimeoutMs,
 		},
 		Ed25519PublicKey: serverConf.Ed25519PublicKey,
 		Protocol:         c.getDefaultProtocol(serverConf),
@@ -108,6 +135,10 @@ func (c *ConfgenHandler) generate() (*client.Configuration, error) {
 func (c *ConfgenHandler) getDefaultProtocol(conf *serverConfiguration.Configuration) settings.Protocol {
 	if conf.EnableUDP {
 		return settings.UDP
+	}
+
+	if conf.EnableWS {
+		return settings.WS
 	}
 
 	return settings.TCP

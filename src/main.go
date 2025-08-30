@@ -59,9 +59,14 @@ func main() {
 	switch appMode {
 	case mode.Server:
 		fmt.Printf("Starting server...\n")
-		startServer(appCtx, configurationManager)
+		if err := startServer(appCtx, configurationManager); err != nil {
+			log.Print(err)
+			os.Exit(2)
+		}
+		os.Exit(0)
 	case mode.ServerConfGen:
-		err := generateClientConfiguration(configurationManager)
+		handler := handlers.NewConfgenHandler(configurationManager)
+		err := handler.GenerateNewClientConf()
 		if err != nil {
 			log.Fatalf("failed to generate client configuration: %s", err)
 		}
@@ -77,27 +82,6 @@ func main() {
 	}
 }
 
-func generateClientConfiguration(configurationManager serverConf.ServerConfigurationManager) error {
-	configuration, configurationErr := configurationManager.Configuration()
-	if configurationErr != nil {
-		return configurationErr
-	}
-
-	keyManager := serverConf.NewEd25519KeyManager(configuration, configurationManager)
-	keyErr := keyManager.PrepareKeys()
-	if keyErr != nil {
-		return keyErr
-	}
-
-	handler := handlers.NewConfgenHandler(configurationManager)
-	handlerErr := handler.GenerateNewClientConf()
-	if handlerErr != nil {
-		return handlerErr
-	}
-
-	return nil
-}
-
 func startClient(appCtx context.Context) {
 	deps := clientConf.NewDependencies(client.NewManager())
 	depsErr := deps.Initialize()
@@ -111,7 +95,10 @@ func startClient(appCtx context.Context) {
 	runner.Run(appCtx)
 }
 
-func startServer(appCtx context.Context, configurationManager serverConf.ServerConfigurationManager) {
+func startServer(
+	ctx context.Context,
+	configurationManager serverConf.ServerConfigurationManager,
+) error {
 	tunFactory := tun_server.NewServerTunFactory()
 
 	conf, confErr := configurationManager.Configuration()
@@ -126,8 +113,12 @@ func startServer(appCtx context.Context, configurationManager serverConf.ServerC
 		configurationManager,
 	)
 
-	runner := server.NewRunner(deps)
-	runner.Run(appCtx)
+	runner := server.NewRunner(
+		deps,
+		tun_server.NewServerWorkerFactory(configurationManager),
+		tun_server.NewServerTrafficRouterFactory(),
+	)
+	return runner.Run(ctx)
 }
 
 func printVersion(appCtx context.Context) {

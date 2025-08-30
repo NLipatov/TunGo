@@ -3,8 +3,9 @@ package chacha20
 import (
 	"crypto/cipher"
 	"fmt"
-	"golang.org/x/crypto/chacha20poly1305"
 	"unsafe"
+
+	"golang.org/x/crypto/chacha20poly1305"
 )
 
 type DefaultTcpSession struct {
@@ -48,8 +49,8 @@ func NewTcpCryptographyService(id [32]byte, sendKey, recvKey []byte, isServer bo
 func (s *DefaultTcpSession) Encrypt(plaintext []byte) ([]byte, error) {
 	// guarantee inplace encryption
 	if cap(plaintext) < len(plaintext)+chacha20poly1305.Overhead {
-		return nil, fmt.Errorf("insufficient capacity for in-place encryption: len=%d, cap=%d",
-			len(plaintext), cap(plaintext))
+		return nil, fmt.Errorf("insufficient capacity for in-place encryption: len=%d, cap=%d, need>=%d",
+			len(plaintext), cap(plaintext), len(plaintext)+chacha20poly1305.Overhead)
 	}
 
 	err := s.SendNonce.incrementNonce()

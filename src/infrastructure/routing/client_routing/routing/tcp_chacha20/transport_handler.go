@@ -2,11 +2,12 @@ package tcp_chacha20
 
 import (
 	"context"
-	"golang.org/x/crypto/chacha20poly1305"
 	"io"
 	"log"
 	"tungo/application"
-	"tungo/infrastructure/network"
+	"tungo/infrastructure/settings"
+
+	"golang.org/x/crypto/chacha20poly1305"
 )
 
 type TransportHandler struct {
@@ -20,7 +21,8 @@ func NewTransportHandler(
 	ctx context.Context,
 	reader io.Reader,
 	writer io.Writer,
-	cryptographyService application.CryptographyService) application.TransportHandler {
+	cryptographyService application.CryptographyService,
+) application.TransportHandler {
 	return &TransportHandler{
 		ctx:                 ctx,
 		reader:              reader,
@@ -30,7 +32,7 @@ func NewTransportHandler(
 }
 
 func (t *TransportHandler) HandleTransport() error {
-	buf := make([]byte, network.MaxPacketLengthBytes+chacha20poly1305.Overhead)
+	buf := make([]byte, settings.MTU+settings.TCPChacha20Overhead)
 	for {
 		select {
 		case <-t.ctx.Done():
@@ -45,7 +47,7 @@ func (t *TransportHandler) HandleTransport() error {
 				return err
 			}
 
-			if n < chacha20poly1305.Overhead || n > network.MaxPacketLengthBytes+chacha20poly1305.Overhead {
+			if n < chacha20poly1305.Overhead || n > settings.MTU+settings.TCPChacha20Overhead {
 				log.Printf("invalid ciphertext length: %d", n)
 				continue
 			}
