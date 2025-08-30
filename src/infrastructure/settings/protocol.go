@@ -6,6 +6,10 @@ import (
 	"strings"
 )
 
+var (
+	ErrInvalidProtocol = errors.New("invalid protocol")
+)
+
 // Protocol specifies the transport protocol
 type Protocol int
 
@@ -26,7 +30,7 @@ func (p Protocol) MarshalJSON() ([]byte, error) {
 	case WS:
 		protocolStr = "WS"
 	default:
-		return nil, errors.New("invalid protocol")
+		return nil, ErrInvalidProtocol
 	}
 	return json.Marshal(protocolStr)
 }
@@ -44,7 +48,7 @@ func (p *Protocol) UnmarshalJSON(data []byte) error {
 	case "WS":
 		*p = WS
 	default:
-		return errors.New("invalid protocol")
+		return ErrInvalidProtocol
 	}
 	return nil
 }
@@ -60,6 +64,6 @@ func (p Protocol) String() string {
 	case WS:
 		return "WS"
 	default:
-		return "invalid protocol"
+		return ErrInvalidProtocol.Error()
 	}
 }
