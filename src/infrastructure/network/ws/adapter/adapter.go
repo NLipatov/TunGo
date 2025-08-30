@@ -4,142 +4,155 @@ import (
 	"context"
 	"io"
 	"net"
-	"sync/atomic"
 	"time"
-	"tungo/application"
+	"tungo/domain/network"
 	"tungo/infrastructure/network/ws"
 
 	"github.com/coder/websocket"
 )
 
-var (
-	// Compile-time checks
-	_ net.Conn                      = &Adapter{}
-	_ application.ConnectionAdapter = &Adapter{}
-	_ ws.Conn                       = &websocket.Conn{}
-)
-
+// Adapter is a ws.Conn adaptation to net.Conn
 type Adapter struct {
-	conn          ws.Conn
-	ctx           context.Context
-	errorMapper   errorMapper
-	currentReader io.Reader // current in-progress binary frame currentReader (wrapped)
-	lAddr         net.Addr
-	rAddr         net.Addr
-
-	// 0 - no deadline
-	readDeadlineNS  atomic.Int64
-	writeDeadlineNS atomic.Int64
+	conn                        ws.Conn
+	ctx                         context.Context
+	errorMapper                 errorMapper
+	reader                      io.Reader
+	lAddr                       net.Addr
+	rAddr                       net.Addr
+	readDeadline, writeDeadline network.Deadline
 }
 
-func NewAdapter(ctx context.Context, conn ws.Conn, lAddr, rAddr net.Addr) *Adapter {
-	adapter := &Adapter{
-		ctx:             ctx,
-		conn:            conn,
-		errorMapper:     defaultErrorMapper{},
-		lAddr:           lAddr,
-		rAddr:           rAddr,
-		readDeadlineNS:  atomic.Int64{},
-		writeDeadlineNS: atomic.Int64{},
+func NewDefaultAdapter(ctx context.Context, conn ws.Conn, lAddr, rAddr net.Addr) *Adapter {
+	deadline, _ := network.DeadlineFromTime(time.Time{})
+	return &Adapter{
+		ctx:           ctx,
+		conn:          conn,
+		errorMapper:   defaultErrorMapper{},
+		lAddr:         lAddr,
+		rAddr:         rAddr,
+		readDeadline:  deadline,
+		writeDeadline: deadline,
 	}
-
-	adapter.readDeadlineNS.Store(0)
-	adapter.writeDeadlineNS.Store(0)
-	return adapter
 }
 
-func (a *Adapter) Write(p []byte) (int, error) {
-	if len(p) == 0 {
+func NewAdapter(
+	conn ws.Conn,
+	ctx context.Context,
+	errorMapper errorMapper,
+	reader io.Reader,
+	lAddr net.Addr,
+	rAddr net.Addr,
+
+	readDeadline, writeDeadline network.Deadline,
+) *Adapter {
+	return &Adapter{
+		ctx:           ctx,
+		conn:          conn,
+		errorMapper:   errorMapper,
+		reader:        reader,
+		lAddr:         lAddr,
+		rAddr:         rAddr,
+		readDeadline:  readDeadline,
+		writeDeadline: writeDeadline,
+	}
+}
+
+func (a *Adapter) Write(data []byte) (int, error) {
+	if len(data) == 0 {
 		return 0, nil
 	}
 
 	var ctx context.Context
 	var cancel context.CancelFunc
-	if t := a.nsToTime(&a.writeDeadlineNS); !t.IsZero() {
-		ctx, cancel = context.WithDeadline(a.ctx, t)
+	if !a.writeDeadline.ExpiresAt().IsZero() {
+		ctx, cancel = context.WithDeadline(a.ctx, a.writeDeadline.ExpiresAt())
 	} else {
-		ctx, cancel = context.WithCancel(a.ctx)
+		ctx, cancel = a.ctx, func() {}
 	}
 	defer cancel()
 
-	w, err := a.conn.Writer(ctx, websocket.MessageBinary)
-	if err != nil {
-		return 0, a.errorMapper.mapErr(err)
+	writer, writerErr := a.conn.Writer(ctx, websocket.MessageBinary)
+	if writerErr != nil {
+		return 0, a.errorMapper.mapErr(writerErr)
 	}
 
 	closed := false
 	defer func() {
 		if !closed {
-			_ = w.Close()
+			_ = writer.Close()
 		}
 	}()
 
-	var n int
-	for n < len(p) {
-		m, wErr := w.Write(p[n:])
-		n += m
+	var written int
+	for written < len(data) {
+		n, wErr := writer.Write(data[written:])
+		written += n
 		if wErr != nil {
-			return n, a.errorMapper.mapErr(wErr)
+			return written, a.errorMapper.mapErr(wErr)
 		}
 	}
 
-	if cErr := w.Close(); cErr != nil {
-		return n, a.errorMapper.mapErr(cErr)
+	if cErr := writer.Close(); cErr != nil {
+		return written, a.errorMapper.mapErr(cErr)
 	}
 	closed = true
-	return n, nil
+	return written, nil
 }
 
-func (a *Adapter) Read(p []byte) (int, error) {
-	if len(p) == 0 {
+// Read reads from the current binary WebSocket frame (or fetches the next one).
+// Non-binary frames are drained. EOF at frame boundary does not bubble up.
+func (a *Adapter) Read(buf []byte) (int, error) {
+	if len(buf) == 0 {
 		return 0, nil
 	}
+
 	for {
-		if a.currentReader != nil {
-			n, err := a.currentReader.Read(p)
+		if a.reader != nil {
+			n, err := a.reader.Read(buf)
 			switch err {
 			case nil:
 				return n, nil
 			case io.EOF:
-				// frame fully consumed
-				a.currentReader = nil
+				a.reader = nil
 				if n > 0 {
 					return n, nil
 				}
-				continue // fetch next frame
+				continue // next frame
 			default:
-				a.currentReader = nil
+				a.reader = nil
 				return n, a.errorMapper.mapErr(err)
 			}
 		}
 
+		// per-frame context; DO NOT defer cancel here
 		var ctx context.Context
 		var cancel context.CancelFunc
-		if t := a.nsToTime(&a.readDeadlineNS); !t.IsZero() {
-			ctx, cancel = context.WithDeadline(a.ctx, t)
+		if !a.readDeadline.ExpiresAt().IsZero() {
+			ctx, cancel = context.WithDeadline(a.ctx, a.readDeadline.ExpiresAt())
 		} else {
-			ctx, cancel = context.WithCancel(a.ctx)
+			ctx, cancel = a.ctx, func() {}
 		}
+
 		mt, r, err := a.conn.Reader(ctx)
 		if err != nil {
-			cancel() // failed to get frame; release ctx
+			cancel()
 			return 0, a.errorMapper.mapErr(err)
 		}
 
 		if mt != websocket.MessageBinary {
-			// Drain non-binary frames to keep the protocol healthy.
+			// drain non-binary under the same ctx
 			_, _ = io.Copy(io.Discard, r)
 			cancel()
 			continue
 		}
 
-		// Keep the frame context alive until EOF/error via wrapper.
-		a.currentReader = &cancelOnEOF{r: r, cancel: cancel}
+		// keep cancel with the reader; it will be called exactly once on EOF/error
+		a.reader = &cancelOnEOF{r: r, cancel: cancel}
 	}
 }
 
-// cancelOnEOF wraps a currentReader and calls cancel() exactly once
-// when any non-nil error (including io.EOF) is returned.
+// cancelOnEOF wraps a frame reader and calls cancel() once when any non-nil error
+// (including io.EOF) is returned. This ties the frameCtx lifetime to the frame itself.
 type cancelOnEOF struct {
 	r      io.Reader
 	cancel context.CancelFunc
@@ -173,34 +186,30 @@ func (a *Adapter) RemoteAddr() net.Addr {
 	return &net.TCPAddr{}
 }
 
-func (a *Adapter) SetDeadline(t time.Time) error {
-	a.storeNS(&a.readDeadlineNS, t)
-	a.storeNS(&a.writeDeadlineNS, t)
-	return nil
-}
-
-func (a *Adapter) SetReadDeadline(t time.Time) error {
-	a.storeNS(&a.readDeadlineNS, t)
-	return nil
-}
-
-func (a *Adapter) SetWriteDeadline(t time.Time) error {
-	a.storeNS(&a.writeDeadlineNS, t)
-	return nil
-}
-
-func (a *Adapter) storeNS(dst *atomic.Int64, t time.Time) {
-	if t.IsZero() {
-		dst.Store(0)
-		return
+func (a *Adapter) SetDeadline(deadline time.Time) error {
+	d, err := network.DeadlineFromTime(deadline)
+	if err != nil {
+		return err
 	}
-	dst.Store(t.UnixNano())
+	a.readDeadline = d
+	a.writeDeadline = d
+	return nil
 }
 
-func (a *Adapter) nsToTime(src *atomic.Int64) time.Time {
-	ns := src.Load()
-	if ns == 0 {
-		return time.Time{}
+func (a *Adapter) SetReadDeadline(deadline time.Time) error {
+	d, err := network.DeadlineFromTime(deadline)
+	if err != nil {
+		return err
 	}
-	return time.Unix(0, ns)
+	a.readDeadline = d
+	return nil
+}
+
+func (a *Adapter) SetWriteDeadline(deadline time.Time) error {
+	d, err := network.DeadlineFromTime(deadline)
+	if err != nil {
+		return err
+	}
+	a.writeDeadline = d
+	return nil
 }

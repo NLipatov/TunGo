@@ -67,7 +67,7 @@ func (h *DefaultHandler) Handle(w http.ResponseWriter, r *http.Request) {
 
 	// Enqueue the adapted net.Conn, or reject on overflow.
 	select {
-	case h.queue <- adapter.NewAdapter(context.Background(), wsConn, local, rAddr):
+	case h.queue <- adapter.NewDefaultAdapter(context.Background(), wsConn, local, rAddr):
 	default:
 		_ = wsConn.Close(CloseCodeQueueFull, "could not accept new connection")
 	}

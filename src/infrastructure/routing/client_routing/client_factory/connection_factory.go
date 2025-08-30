@@ -158,7 +158,7 @@ func (f *ConnectionFactory) dialWS(
 	}
 
 	return adapters.NewLengthPrefixFramingAdapter(
-		wsAdapters.NewAdapter(connCtx, conn, nil, nil),
+		wsAdapters.NewDefaultAdapter(connCtx, conn, nil, nil),
 		settings.MTU+settings.TCPChacha20Overhead,
 	)
 }
