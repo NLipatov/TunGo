@@ -15,7 +15,8 @@ func TestProtocol_MarshalJSON(t *testing.T) {
 		{"TCP", TCP, `"TCP"`, false},
 		{"UDP", UDP, `"UDP"`, false},
 		{"WS", WS, `"WS"`, false},
-		{"invalid", Protocol(42), ``, true},
+		{"UNKNOWN is invalid for marshal", UNKNOWN, ``, true},
+		{"invalid enum", Protocol(42), ``, true},
 	}
 
 	for _, tt := range tests {
@@ -44,18 +45,25 @@ func TestProtocol_UnmarshalJSON(t *testing.T) {
 		{"ws lowercase", `"ws"`, WS, false},
 		{"WS uppercase", `"WS"`, WS, false},
 		{"Ws mixed", `"wS"`, WS, false},
-		{"invalid value", `"SCTP"`, 0, true},
-		{"non-string", `123`, 0, true},
+		{"invalid value", `"SCTP"`, UNKNOWN, true},
+		{"non-string", `123`, UNKNOWN, true},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			var p Protocol
+			var p Protocol // zero value is UNKNOWN
 			err := p.UnmarshalJSON([]byte(tc.input))
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("UnmarshalJSON() error = %v, wantErr %v", err, tc.wantErr)
 			}
-			if !tc.wantErr && p != tc.want {
+			if tc.wantErr {
+				// On error, value should remain unchanged (UNKNOWN).
+				if p != UNKNOWN {
+					t.Fatalf("on error, protocol must remain UNKNOWN, got %v", p)
+				}
+				return
+			}
+			if p != tc.want {
 				t.Errorf("got %v, want %v", p, tc.want)
 			}
 		})
@@ -74,6 +82,24 @@ func TestProtocolJSON_RoundTrip(t *testing.T) {
 		}
 		if p != orig {
 			t.Errorf("round-trip %v -> %v", orig, p)
+		}
+	}
+}
+
+func TestProtocol_String(t *testing.T) {
+	tests := []struct {
+		val  Protocol
+		want string
+	}{
+		{UNKNOWN, "UNKNOWN"},
+		{TCP, "TCP"},
+		{UDP, "UDP"},
+		{WS, "WS"},
+		{Protocol(99), "invalid protocol"},
+	}
+	for _, tt := range tests {
+		if got := tt.val.String(); got != tt.want {
+			t.Errorf("String(%d)=%q, want %q", tt.val, got, tt.want)
 		}
 	}
 }

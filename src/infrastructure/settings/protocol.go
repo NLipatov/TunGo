@@ -10,7 +10,8 @@ import (
 type Protocol int
 
 const (
-	TCP = iota
+	UNKNOWN = iota
+	TCP
 	UDP
 	WS
 )
@@ -46,4 +47,19 @@ func (p *Protocol) UnmarshalJSON(data []byte) error {
 		return errors.New("invalid protocol")
 	}
 	return nil
+}
+
+func (p Protocol) String() string {
+	switch p {
+	case UNKNOWN:
+		return "UNKNOWN"
+	case TCP:
+		return "TCP"
+	case UDP:
+		return "UDP"
+	case WS:
+		return "WS"
+	default:
+		return "invalid protocol"
+	}
 }

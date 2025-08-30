@@ -19,29 +19,24 @@ import (
 )
 
 type ServerWorkerFactory struct {
-	settings             settings.Settings
 	loggerFactory        loggerFactory
 	configurationManager server.ServerConfigurationManager
 }
 
 func NewServerWorkerFactory(
-	settings settings.Settings,
 	manager server.ServerConfigurationManager,
 ) application.ServerWorkerFactory {
 	return &ServerWorkerFactory{
-		settings:             settings,
 		loggerFactory:        newDefaultLoggerFactory(),
 		configurationManager: manager,
 	}
 }
 
 func NewTestServerWorkerFactory(
-	settings settings.Settings,
 	loggerFactory loggerFactory,
 	manager server.ServerConfigurationManager,
 ) application.ServerWorkerFactory {
 	return &ServerWorkerFactory{
-		settings:             settings,
 		loggerFactory:        loggerFactory,
 		configurationManager: manager,
 	}
@@ -50,22 +45,24 @@ func NewTestServerWorkerFactory(
 func (s *ServerWorkerFactory) CreateWorker(
 	ctx context.Context,
 	tun io.ReadWriteCloser,
+	workerSettings settings.Settings,
 ) (application.TunWorker, error) {
-	switch s.settings.Protocol {
+	switch workerSettings.Protocol {
 	case settings.TCP:
-		return s.createTCPWorker(ctx, tun)
+		return s.createTCPWorker(ctx, tun, workerSettings)
 	case settings.UDP:
-		return s.createUDPWorker(ctx, tun)
+		return s.createUDPWorker(ctx, tun, workerSettings)
 	case settings.WS:
-		return s.createWSWorker(ctx, tun)
+		return s.createWSWorker(ctx, tun, workerSettings)
 	default:
-		return nil, fmt.Errorf("protocol %v not supported", s.settings.Protocol)
+		return nil, fmt.Errorf("protocol %v not supported", workerSettings.Protocol)
 	}
 }
 
 func (s *ServerWorkerFactory) createTCPWorker(
 	ctx context.Context,
 	tun io.ReadWriteCloser,
+	workerSettings settings.Settings,
 ) (application.TunWorker, error) {
 	sessionManager := wrappers.NewConcurrentManager(
 		repository.NewDefaultWorkerSessionManager[application.Session](),
@@ -83,7 +80,7 @@ func (s *ServerWorkerFactory) createTCPWorker(
 		return nil, confErr
 	}
 
-	addrPort, addrPortErr := s.addrPortToListen(s.settings.ConnectionIP, s.settings.Port)
+	addrPort, addrPortErr := s.addrPortToListen(workerSettings.ConnectionIP, workerSettings.Port)
 	if addrPortErr != nil {
 		return nil, addrPortErr
 	}
@@ -95,7 +92,7 @@ func (s *ServerWorkerFactory) createTCPWorker(
 
 	tr := tcp_chacha20.NewTransportHandler(
 		ctx,
-		s.settings,
+		workerSettings,
 		tun,
 		listener,
 		sessionManager,
@@ -109,6 +106,7 @@ func (s *ServerWorkerFactory) createTCPWorker(
 func (s *ServerWorkerFactory) createWSWorker(
 	ctx context.Context,
 	tun io.ReadWriteCloser,
+	workerSettings settings.Settings,
 ) (application.TunWorker, error) {
 	sessionManager := wrappers.NewConcurrentManager(
 		repository.NewDefaultWorkerSessionManager[application.Session](),
@@ -126,7 +124,7 @@ func (s *ServerWorkerFactory) createWSWorker(
 		return nil, confErr
 	}
 
-	addrPort, addrPortErr := s.addrPortToListen(s.settings.ConnectionIP, s.settings.Port)
+	addrPort, addrPortErr := s.addrPortToListen(workerSettings.ConnectionIP, workerSettings.Port)
 	if addrPortErr != nil {
 		return nil, addrPortErr
 	}
@@ -138,7 +136,7 @@ func (s *ServerWorkerFactory) createWSWorker(
 
 	tr := tcp_chacha20.NewTransportHandler(
 		ctx,
-		s.settings,
+		workerSettings,
 		tun,
 		listener,
 		sessionManager,
@@ -152,6 +150,7 @@ func (s *ServerWorkerFactory) createWSWorker(
 func (s *ServerWorkerFactory) createUDPWorker(
 	ctx context.Context,
 	tun io.ReadWriteCloser,
+	workerSettings settings.Settings,
 ) (application.TunWorker, error) {
 	sessionManager := wrappers.NewConcurrentManager(
 		repository.NewDefaultWorkerSessionManager[application.Session](),
@@ -169,7 +168,7 @@ func (s *ServerWorkerFactory) createUDPWorker(
 		return nil, confErr
 	}
 
-	addrPort, addrPortErr := s.addrPortToListen(s.settings.ConnectionIP, s.settings.Port)
+	addrPort, addrPortErr := s.addrPortToListen(workerSettings.ConnectionIP, workerSettings.Port)
 	if addrPortErr != nil {
 		return nil, addrPortErr
 	}
@@ -181,7 +180,7 @@ func (s *ServerWorkerFactory) createUDPWorker(
 
 	tr := udp_chacha20.NewTransportHandler(
 		ctx,
-		s.settings,
+		workerSettings,
 		tun,
 		conn,
 		sessionManager,
