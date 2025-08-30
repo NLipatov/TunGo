@@ -23,6 +23,8 @@ const (
 func (p Protocol) MarshalJSON() ([]byte, error) {
 	var protocolStr string
 	switch p {
+	case UNKNOWN:
+		return json.Marshal("UNKNOWN")
 	case TCP:
 		protocolStr = "TCP"
 	case UDP:
@@ -41,6 +43,8 @@ func (p *Protocol) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	switch strings.ToUpper(s) {
+	case "UNKNOWN":
+		*p = UNKNOWN
 	case "TCP":
 		*p = TCP
 	case "UDP":
