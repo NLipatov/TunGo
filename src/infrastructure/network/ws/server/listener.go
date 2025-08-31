@@ -13,9 +13,6 @@ import (
 	"tungo/infrastructure/logging"
 )
 
-// compile-time check (Listener must implement listeners.TcpListener)
-var _ listeners.TcpListener = (*Listener)(nil)
-
 type Listener struct {
 	ctx    context.Context
 	ln     net.Listener
