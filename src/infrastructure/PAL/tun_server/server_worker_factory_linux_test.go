@@ -186,16 +186,17 @@ func Test_CreateWorker_WS_ListenError(t *testing.T) {
 
 func Test_CreateWorker_TCP_UDP_WS_Success(t *testing.T) {
 	for _, proto := range []settings.Protocol{settings.TCP, settings.UDP, settings.WS} {
+		ctx, cancel := context.WithCancel(context.Background())
 		factory := NewTestServerWorkerFactory(newDefaultLoggerFactory(), &dummyConfigManager{})
 		ws := settings.Settings{Protocol: proto, ConnectionIP: "127.0.0.1", Port: "0"}
-
-		w, err := factory.CreateWorker(context.Background(), nopReadWriteCloser{}, ws)
+		w, err := factory.CreateWorker(ctx, nopReadWriteCloser{}, ws)
 		if err != nil {
 			t.Fatalf("unexpected error for %s: %v", proto, err)
 		}
 		if w == nil {
 			t.Fatalf("expected worker for %s, got nil", proto)
 		}
+		cancel()
 	}
 }
 

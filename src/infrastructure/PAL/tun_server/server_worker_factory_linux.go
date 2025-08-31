@@ -10,7 +10,7 @@ import (
 	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network/ip"
-	server2 "tungo/infrastructure/network/ws/server"
+	wsServer "tungo/infrastructure/network/ws/server"
 	"tungo/infrastructure/routing/server_routing/routing/tcp_chacha20"
 	"tungo/infrastructure/routing/server_routing/routing/udp_chacha20"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
@@ -129,16 +129,21 @@ func (s *ServerWorkerFactory) createWSWorker(
 		return nil, addrPortErr
 	}
 
-	listener, err := server2.NewListener(ctx, addrPort)
-	if err != nil {
-		return nil, fmt.Errorf("failed to listen WS: %w", err)
+	tcpListener, tcpListenerErr := net.Listen("tcp", addrPort.String())
+	if tcpListenerErr != nil {
+		return nil, fmt.Errorf("failed to listen TCP: %w", tcpListenerErr)
+	}
+
+	wsListener, wsListenerErr := wsServer.NewDefaultListener(ctx, tcpListener)
+	if wsListenerErr != nil {
+		return nil, fmt.Errorf("failed to listen WebSocket: %w", wsListenerErr)
 	}
 
 	tr := tcp_chacha20.NewTransportHandler(
 		ctx,
 		workerSettings,
 		tun,
-		listener,
+		wsListener,
 		sessionManager,
 		s.loggerFactory.newLogger(),
 		NewHandshakeFactory(*conf),

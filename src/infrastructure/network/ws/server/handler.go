@@ -16,9 +16,6 @@ type Handler interface {
 	Handle(w http.ResponseWriter, r *http.Request)
 }
 
-// Ensure Handler implements contracts.Handler.
-var _ Handler = (*DefaultHandler)(nil)
-
 // DefaultHandler upgrades HTTP connections to WebSocket and enqueues them as net.Conn adapters.
 type DefaultHandler struct {
 	upgrader ws.Upgrader
