@@ -2,10 +2,10 @@ package adapter
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net"
 	"time"
-	"tungo/domain/network"
 	"tungo/infrastructure/network/ws"
 
 	"github.com/coder/websocket"
@@ -15,38 +15,37 @@ import (
 type Adapter struct {
 	conn                        ws.Conn
 	ctx                         context.Context
-	errorMapper                 defaultErrorMapper
 	reader                      io.Reader
 	lAddr                       net.Addr
 	rAddr                       net.Addr
-	readDeadline, writeDeadline network.Deadline
+	readDeadline, writeDeadline time.Time
 }
 
-func NewDefaultAdapter(ctx context.Context, conn ws.Conn, lAddr, rAddr net.Addr) *Adapter {
-	deadline, _ := network.DeadlineFromTime(time.Time{})
+func NewDefaultAdapter(
+	ctx context.Context,
+	conn ws.Conn,
+	lAddr, rAddr net.Addr,
+) *Adapter {
 	return &Adapter{
 		ctx:           ctx,
 		conn:          conn,
-		errorMapper:   defaultErrorMapper{},
 		lAddr:         lAddr,
 		rAddr:         rAddr,
-		readDeadline:  deadline,
-		writeDeadline: deadline,
+		readDeadline:  time.Time{},
+		writeDeadline: time.Time{},
 	}
 }
 
 func NewAdapter(
 	ctx context.Context,
 	conn ws.Conn,
-	errorMapper defaultErrorMapper,
 	reader io.Reader,
 	lAddr, rAddr net.Addr,
-	readDeadline, writeDeadline network.Deadline,
+	readDeadline, writeDeadline time.Time,
 ) *Adapter {
 	return &Adapter{
 		ctx:           ctx,
 		conn:          conn,
-		errorMapper:   errorMapper,
 		reader:        reader,
 		lAddr:         lAddr,
 		rAddr:         rAddr,
@@ -62,8 +61,8 @@ func (a *Adapter) Write(data []byte) (int, error) {
 
 	var ctx context.Context
 	var cancel context.CancelFunc
-	if !a.writeDeadline.ExpiresAt().IsZero() {
-		ctx, cancel = context.WithDeadline(a.ctx, a.writeDeadline.ExpiresAt())
+	if !a.writeDeadline.IsZero() {
+		ctx, cancel = context.WithDeadline(a.ctx, a.writeDeadline)
 	} else {
 		ctx, cancel = a.ctx, func() {}
 	}
@@ -71,7 +70,7 @@ func (a *Adapter) Write(data []byte) (int, error) {
 
 	writer, writerErr := a.conn.Writer(ctx, websocket.MessageBinary)
 	if writerErr != nil {
-		return 0, a.errorMapper.mapErr(writerErr)
+		return 0, a.mapWriteErr(writerErr)
 	}
 
 	closed := false
@@ -84,14 +83,17 @@ func (a *Adapter) Write(data []byte) (int, error) {
 	var written int
 	for written < len(data) {
 		n, wErr := writer.Write(data[written:])
+		if n == 0 && wErr == nil {
+			return written, io.ErrNoProgress
+		}
 		written += n
 		if wErr != nil {
-			return written, a.errorMapper.mapErr(wErr)
+			return written, a.mapWriteErr(wErr)
 		}
 	}
 
 	if cErr := writer.Close(); cErr != nil {
-		return written, a.errorMapper.mapErr(cErr)
+		return written, a.mapWriteErr(cErr)
 	}
 	closed = true
 	return written, nil
@@ -109,6 +111,9 @@ func (a *Adapter) Read(buf []byte) (int, error) {
 			n, err := a.reader.Read(buf)
 			switch err {
 			case nil:
+				if n == 0 {
+					return 0, io.ErrNoProgress
+				}
 				return n, nil
 			case io.EOF:
 				a.reader = nil
@@ -118,15 +123,15 @@ func (a *Adapter) Read(buf []byte) (int, error) {
 				continue // next frame
 			default:
 				a.reader = nil
-				return n, a.errorMapper.mapErr(err)
+				return n, a.mapReadErr(err)
 			}
 		}
 
 		// per-frame context; DO NOT defer cancel here
 		var ctx context.Context
 		var cancel context.CancelFunc
-		if !a.readDeadline.ExpiresAt().IsZero() {
-			ctx, cancel = context.WithDeadline(a.ctx, a.readDeadline.ExpiresAt())
+		if !a.readDeadline.IsZero() {
+			ctx, cancel = context.WithDeadline(a.ctx, a.readDeadline)
 		} else {
 			ctx, cancel = a.ctx, func() {}
 		}
@@ -134,7 +139,7 @@ func (a *Adapter) Read(buf []byte) (int, error) {
 		mt, r, err := a.conn.Reader(ctx)
 		if err != nil {
 			cancel()
-			return 0, a.errorMapper.mapErr(err)
+			return 0, a.mapReadErr(err)
 		}
 
 		if mt != websocket.MessageBinary {
@@ -185,29 +190,57 @@ func (a *Adapter) RemoteAddr() net.Addr {
 }
 
 func (a *Adapter) SetDeadline(deadline time.Time) error {
-	d, err := network.DeadlineFromTime(deadline)
-	if err != nil {
-		return err
-	}
-	a.readDeadline = d
-	a.writeDeadline = d
+	a.readDeadline = deadline
+	a.writeDeadline = deadline
 	return nil
 }
 
 func (a *Adapter) SetReadDeadline(deadline time.Time) error {
-	d, err := network.DeadlineFromTime(deadline)
-	if err != nil {
-		return err
-	}
-	a.readDeadline = d
+	a.readDeadline = deadline
 	return nil
 }
 
 func (a *Adapter) SetWriteDeadline(deadline time.Time) error {
-	d, err := network.DeadlineFromTime(deadline)
-	if err != nil {
+	a.writeDeadline = deadline
+	return nil
+}
+
+// mapReadErr normalizes read-side errors to net.Conn semantics.
+func (a *Adapter) mapReadErr(err error) error {
+	if err == nil {
+		return nil
+	}
+	// Map graceful WS close to io.EOF (as net.Conn Read would do).
+	var ce *websocket.CloseError
+	if errors.As(err, &ce) {
+		switch ce.Code {
+		case websocket.StatusNormalClosure, websocket.StatusGoingAway:
+			return io.EOF
+		case websocket.StatusAbnormalClosure, websocket.StatusNoStatusRcvd:
+			return io.ErrUnexpectedEOF
+		}
+		// other close codes: return as-is for caller to diagnose
 		return err
 	}
-	a.writeDeadline = d
-	return nil
+	// Translate context deadline into net.Error timeout.
+	if errors.Is(err, context.DeadlineExceeded) {
+		return errTimeout{cause: err}
+	}
+	return err
+}
+
+// mapWriteErr normalizes write-side errors to net.Conn semantics.
+func (a *Adapter) mapWriteErr(err error) error {
+	if err == nil {
+		return nil
+	}
+	var ce *websocket.CloseError
+	if errors.As(err, &ce) {
+		// For writes after close, most net.Conn impls return net.ErrClosed.
+		return net.ErrClosed
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return errTimeout{cause: err}
+	}
+	return err
 }
