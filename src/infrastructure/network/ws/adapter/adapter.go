@@ -42,7 +42,6 @@ func NewAdapter(
 	reader io.Reader,
 	lAddr net.Addr,
 	rAddr net.Addr,
-
 	readDeadline, writeDeadline network.Deadline,
 ) *Adapter {
 	return &Adapter{

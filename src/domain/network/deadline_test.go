@@ -5,68 +5,61 @@ import (
 	"time"
 )
 
-// Test zero time -> "no deadline" (nil/disabled), no error, ExpiresAt is zero.
-func TestDeadlineFromTime_ZeroMeansNoDeadline(t *testing.T) {
-	d, err := DeadlineFromTime(time.Time{})
-	if err != nil {
-		t.Fatalf("expected nil error for zero deadline, got %v", err)
-	}
+func TestInfiniteDeadline(t *testing.T) {
+	d := InfiniteDeadline()
 	if !d.ExpiresAt().IsZero() {
-		t.Fatalf("expected zero ExpiresAt for disabled deadline, got %v", d.ExpiresAt())
+		t.Fatalf("InfiniteDeadline must have zero time; got %v", d.ExpiresAt())
 	}
-}
 
-// Test past time -> ErrDeadlineInPast.
-func TestDeadlineFromTime_Past(t *testing.T) {
-	past := time.Now().Add(-1 * time.Millisecond)
-	_, err := DeadlineFromTime(past)
-	if err == nil {
-		t.Fatalf("expected error for past deadline, got nil")
-	}
-	if err != ErrDeadlineInPast {
-		t.Fatalf("expected ErrDeadlineInPast, got %v", err)
-	}
-}
-
-// Test "now" (or effectively <= now) -> ErrDeadlineInPast.
-// We pass time.Now(), and inside function 'now' is captured after our call,
-// so the deadline is not strictly in the future.
-func TestDeadlineFromTime_NowOrEqual(t *testing.T) {
-	atCall := time.Now()
-	_, err := DeadlineFromTime(atCall)
-	if err == nil {
-		t.Fatalf("expected error for deadline at now, got nil")
-	}
-	if err != ErrDeadlineInPast {
-		t.Fatalf("expected ErrDeadlineInPast, got %v", err)
-	}
-}
-
-// Test future time -> OK, ExpiresAt equals the provided moment.
-func TestDeadlineFromTime_Future(t *testing.T) {
-	fut := time.Now().Add(50 * time.Millisecond)
-	d, err := DeadlineFromTime(fut)
+	d2, err := DeadlineFromTime(time.Time{})
 	if err != nil {
-		t.Fatalf("expected nil error for future deadline, got %v", err)
+		t.Fatalf("DeadlineFromTime(zero) unexpected error: %v", err)
 	}
-	if !d.ExpiresAt().Equal(fut) {
-		t.Fatalf("ExpiresAt mismatch: got %v, want %v", d.ExpiresAt(), fut)
-	}
-	// Sanity: ExpiresAt is non-zero for enabled deadlines.
-	if d.ExpiresAt().IsZero() {
-		t.Fatalf("expected non-zero ExpiresAt for enabled deadline")
+	if !d.ExpiresAt().Equal(d2.ExpiresAt()) {
+		t.Fatalf("zero deadlines must be equal: %v vs %v", d.ExpiresAt(), d2.ExpiresAt())
 	}
 }
 
-// Explicit test for the getter; mostly redundant, but ensures method is covered.
-func TestDeadline_ExpiresAtGetter(t *testing.T) {
-	fut := time.Now().Add(10 * time.Millisecond)
-	d, err := DeadlineFromTime(fut)
+func TestDeadlineFromTime(t *testing.T) {
+	tests := []struct {
+		name string
+		in   time.Time
+	}{
+		{
+			name: "zero_is_infinite",
+			in:   time.Time{},
+		},
+		{
+			name: "non_zero_utc",
+			in:   time.Date(2030, 1, 2, 3, 4, 5, 6, time.UTC),
+		},
+		{
+			name: "past_time_allowed_immediate_timeout_semantics",
+			in:   time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC),
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := DeadlineFromTime(tt.in)
+			if err != nil {
+				t.Fatalf("DeadlineFromTime(%v) unexpected error: %v", tt.in, err)
+			}
+			if !got.ExpiresAt().Equal(tt.in) {
+				t.Fatalf("ExpiresAt mismatch: want %v, got %v", tt.in, got.ExpiresAt())
+			}
+		})
+	}
+}
+
+func TestExpiresAtReturnsExactValue(t *testing.T) {
+	ref := time.Date(2029, 12, 31, 23, 59, 59, 123, time.FixedZone("Z", 0))
+	d, err := DeadlineFromTime(ref)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	got := d.ExpiresAt()
-	if !got.Equal(fut) {
-		t.Fatalf("ExpiresAt() = %v, want %v", got, fut)
+	if !d.ExpiresAt().Equal(ref) {
+		t.Fatalf("ExpiresAt should return the exact value set; want %v, got %v", ref, d.ExpiresAt())
 	}
 }
