@@ -7,16 +7,16 @@ import (
 
 var ErrInvalidDuration = errors.New("invalid duration")
 
-type Deadline time.Duration
+type Timeout time.Duration
 
-func NewDeadline(d time.Duration) (Deadline, error) {
+func NewDeadline(d time.Duration) (Timeout, error) {
 	if d < 0 {
 		return 0, ErrInvalidDuration
 	}
-	return Deadline(d), nil
+	return Timeout(d), nil
 }
 
-func (d Deadline) Time() time.Time {
+func (d Timeout) Time() time.Time {
 	if d == 0 {
 		return time.Time{}
 	}
