@@ -15,7 +15,7 @@ import (
 type Adapter struct {
 	conn                        ws.Conn
 	ctx                         context.Context
-	errorMapper                 errorMapper
+	errorMapper                 defaultErrorMapper
 	reader                      io.Reader
 	lAddr                       net.Addr
 	rAddr                       net.Addr
@@ -36,12 +36,11 @@ func NewDefaultAdapter(ctx context.Context, conn ws.Conn, lAddr, rAddr net.Addr)
 }
 
 func NewAdapter(
-	conn ws.Conn,
 	ctx context.Context,
-	errorMapper errorMapper,
+	conn ws.Conn,
+	errorMapper defaultErrorMapper,
 	reader io.Reader,
-	lAddr net.Addr,
-	rAddr net.Addr,
+	lAddr, rAddr net.Addr,
 	readDeadline, writeDeadline network.Deadline,
 ) *Adapter {
 	return &Adapter{
