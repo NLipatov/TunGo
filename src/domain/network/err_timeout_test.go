@@ -1,4 +1,4 @@
-package adapter
+package network
 
 import (
 	"context"
@@ -7,17 +7,17 @@ import (
 	"testing"
 )
 
-// Compile-time check that errTimeout implements net.Error (via duck-typing).
+// Compile-time check that ErrTimeout implements net.Error (via duck-typing).
 type netError interface {
 	error
 	Timeout() bool
 	Temporary() bool
 }
 
-var _ netError = errTimeout{cause: context.DeadlineExceeded}
+var _ netError = ErrTimeout{cause: context.DeadlineExceeded}
 
 func TestErrTimeout_ErrorReturnsCauseMessage(t *testing.T) {
-	e := errTimeout{cause: context.DeadlineExceeded}
+	e := ErrTimeout{cause: context.DeadlineExceeded}
 	if e.Error() == "" {
 		t.Fatalf("Error() must return non-empty message")
 	}
@@ -28,7 +28,7 @@ func TestErrTimeout_ErrorReturnsCauseMessage(t *testing.T) {
 }
 
 func TestErrTimeout_UnwrapAndErrorsIs_As(t *testing.T) {
-	e := errTimeout{cause: context.DeadlineExceeded}
+	e := ErrTimeout{cause: context.DeadlineExceeded}
 
 	// Unwrap via errors.Is
 	if !errors.Is(e, context.DeadlineExceeded) {
@@ -41,9 +41,9 @@ func TestErrTimeout_UnwrapAndErrorsIs_As(t *testing.T) {
 	}
 
 	// errors.As to our type
-	var et errTimeout
+	var et ErrTimeout
 	if !errors.As(e, &et) {
-		t.Fatalf("errors.As must match errTimeout")
+		t.Fatalf("errors.As must match ErrTimeout")
 	}
 	if et.cause != context.DeadlineExceeded {
 		t.Fatalf("As must preserve cause")
@@ -56,7 +56,7 @@ func TestErrTimeout_UnwrapAndErrorsIs_As(t *testing.T) {
 }
 
 func TestErrTimeout_TimeoutAndTemporaryFlags(t *testing.T) {
-	e := errTimeout{cause: context.DeadlineExceeded}
+	e := ErrTimeout{cause: context.DeadlineExceeded}
 
 	// Satisfies net.Error semantics
 	var ne netError = e

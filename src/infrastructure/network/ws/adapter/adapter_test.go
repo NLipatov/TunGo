@@ -9,6 +9,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"tungo/domain/network"
 
 	"github.com/coder/websocket"
 )
@@ -579,7 +580,7 @@ func TestAdapter_mapWriteErr_Variants(t *testing.T) {
 
 func TestErrTimeout_ImplementsNetError(t *testing.T) {
 	cause := context.DeadlineExceeded
-	e := errTimeout{cause: cause}
+	e := network.NewErrTimeout(cause)
 	if e.Error() == "" {
 		t.Fatalf("empty Error string")
 	}
