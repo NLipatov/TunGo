@@ -75,7 +75,13 @@ func (m *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 		return nil, err
 	}
 
-	if err = m.configureWindowsTunNetsh(s.InterfaceName, s.InterfaceAddress, s.InterfaceIPCIDR, tunGateway); err != nil {
+	if err = m.configureWindowsTunNetsh(
+		s.InterfaceName,
+		s.InterfaceAddress,
+		s.InterfaceIPCIDR,
+		tunGateway,
+		mtu,
+	); err != nil {
 		_ = device.Close()
 		return nil, err
 	}
@@ -119,7 +125,10 @@ func (m *PlatformTunManager) DisposeTunDevices() error {
 	return nil
 }
 
-func (m *PlatformTunManager) configureWindowsTunNetsh(interfaceName, hostIP, ipCIDR, gateway string) error {
+func (m *PlatformTunManager) configureWindowsTunNetsh(
+	interfaceName, hostIP, ipCIDR, gateway string,
+	mtu int,
+) error {
 	parts := strings.Split(ipCIDR, "/")
 	if len(parts) != 2 {
 		return fmt.Errorf("invalid CIDR: %s", ipCIDR)
@@ -133,6 +142,10 @@ func (m *PlatformTunManager) configureWindowsTunNetsh(interfaceName, hostIP, ipC
 	}
 
 	if err := m.netsh.InterfaceIPV4AddRouteDefault(interfaceName, gateway); err != nil {
+		return err
+	}
+
+	if err := m.netsh.LinkSetDevMTU(interfaceName, mtu); err != nil {
 		return err
 	}
 

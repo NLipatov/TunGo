@@ -8,4 +8,5 @@ type Contract interface {
 	InterfaceIPDeleteAddress(IfName, IfAddr string) error
 	SetInterfaceMetric(interfaceName string, metric int) error
 	InterfaceSetDNSServers(interfaceName string, dnsServers []string) error
+	LinkSetDevMTU(interfaceName string, mtu int) error
 }
