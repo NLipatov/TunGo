@@ -6,6 +6,7 @@ import (
 	"math"
 	"net"
 	"net/netip"
+	"strconv"
 	"time"
 	"tungo/application"
 	"tungo/infrastructure/PAL/configuration/client"
@@ -152,6 +153,30 @@ func (f *ConnectionFactory) dialWS(
 	ap netip.AddrPort,
 ) (application.ConnectionAdapter, error) {
 	url := fmt.Sprintf("ws://%s/ws", ap.String())
+	conn, _, err := websocket.Dial(establishCtx, url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return adapters.NewLengthPrefixFramingAdapter(
+		wsAdapters.NewDefaultAdapter(connCtx, conn, nil, nil),
+		settings.MTU+settings.TCPChacha20Overhead,
+	)
+}
+
+func (f *ConnectionFactory) dialWSS(
+	establishCtx, connCtx context.Context,
+	host string,
+	port uint16,
+) (application.ConnectionAdapter, error) {
+	if host == "" {
+		return nil, fmt.Errorf("wss dial: empty host")
+	}
+	if port == 0 {
+		port = 443
+	}
+
+	url := fmt.Sprintf("wss://%s/ws", net.JoinHostPort(host, strconv.Itoa(int(port))))
 	conn, _, err := websocket.Dial(establishCtx, url, nil)
 	if err != nil {
 		return nil, err
