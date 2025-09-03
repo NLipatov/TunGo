@@ -9,13 +9,11 @@ import (
 )
 
 type ServerWorkerFactory struct {
-	settings             settings.Settings
 	configurationManager server.ServerConfigurationManager
 }
 
-func NewServerWorkerFactory(settings settings.Settings, manager server.ServerConfigurationManager) application.ServerWorkerFactory {
+func NewServerWorkerFactory(manager server.ServerConfigurationManager) application.ServerWorkerFactory {
 	return &ServerWorkerFactory{
-		settings:             settings,
 		configurationManager: manager,
 	}
 }
@@ -23,6 +21,7 @@ func NewServerWorkerFactory(settings settings.Settings, manager server.ServerCon
 func (s ServerWorkerFactory) CreateWorker(
 	_ context.Context,
 	_ io.ReadWriteCloser,
+	_ settings.Settings,
 ) (application.TunWorker, error) {
 	panic("not implemented")
 }
