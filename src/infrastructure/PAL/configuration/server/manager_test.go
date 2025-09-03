@@ -9,9 +9,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-	"time"
-
-	"tungo/infrastructure/settings"
 )
 
 // --- Mocks ---
@@ -345,93 +342,6 @@ func TestManager_InjectEdKeys_WriteError(t *testing.T) {
 	pub, priv, _ := ed25519.GenerateKey(nil)
 
 	err := manager.InjectEdKeys(pub, priv)
-	if err == nil || !strings.Contains(err.Error(), "write fail") {
-		t.Fatalf("expected writer error, got: %v", err)
-	}
-}
-
-func TestManager_InjectSessionTtlIntervals_Success(t *testing.T) {
-	initialConf := NewDefaultConfiguration()
-	resolver := &ManagerMockResolver{Path: "/fake/path"}
-	statMock := &ManagerMockStat{Err: nil}
-	writer := &ManagerMockWriter{}
-	reader := &ManagerMockReader{Config: initialConf}
-
-	manager := &Manager{
-		resolver: resolver,
-		stat:     statMock,
-		writer:   writer,
-		reader:   reader,
-	}
-
-	ttl := settings.HumanReadableDuration(10 * time.Minute)
-	interval := settings.HumanReadableDuration(5 * time.Minute)
-
-	err := manager.InjectSessionTtlIntervals(ttl, interval)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if writer.WriteCalls != 1 {
-		t.Errorf("expected writer.Write called once, got %d", writer.WriteCalls)
-	}
-
-	confWritten, ok := writer.WrittenData.(Configuration)
-	if !ok {
-		t.Fatalf("written data is not Configuration")
-	}
-
-	if confWritten.TCPSettings.SessionLifetime.Ttl != ttl ||
-		confWritten.TCPSettings.SessionLifetime.CleanupInterval != interval {
-		t.Errorf("TCP SessionLifetime not updated")
-	}
-
-	if confWritten.UDPSettings.SessionLifetime.Ttl != ttl ||
-		confWritten.UDPSettings.SessionLifetime.CleanupInterval != interval {
-		t.Errorf("UDP SessionLifetime not updated")
-	}
-}
-
-func TestManager_InjectSessionTtlIntervals_ConfigError(t *testing.T) {
-	resolver := &ManagerMockResolver{Path: "/fake/path"}
-	statMock := &ManagerMockStat{Err: nil}
-	writer := &ManagerMockWriter{}
-	reader := &ManagerMockReader{Err: errors.New("read error")}
-
-	manager := &Manager{
-		resolver: resolver,
-		stat:     statMock,
-		writer:   writer,
-		reader:   reader,
-	}
-
-	err := manager.InjectSessionTtlIntervals(0, 0)
-	if err == nil {
-		t.Fatal("expected error due to config read failure, got nil")
-	}
-	if !strings.Contains(err.Error(), "read error") {
-		t.Errorf("unexpected error message: %v", err)
-	}
-}
-
-func TestManager_InjectSessionTtlIntervals_WriteError(t *testing.T) {
-	initialConf := NewDefaultConfiguration()
-	resolver := &ManagerMockResolver{Path: "/fake/path"}
-	statMock := &ManagerMockStat{Err: nil}
-	writer := &ManagerMockWriter{Err: errors.New("write fail")}
-	reader := &ManagerMockReader{Config: initialConf}
-
-	manager := &Manager{
-		resolver: resolver,
-		stat:     statMock,
-		writer:   writer,
-		reader:   reader,
-	}
-
-	ttl := settings.HumanReadableDuration(1 * time.Minute)
-	interval := settings.HumanReadableDuration(2 * time.Minute)
-
-	err := manager.InjectSessionTtlIntervals(ttl, interval)
 	if err == nil || !strings.Contains(err.Error(), "write fail") {
 		t.Fatalf("expected writer error, got: %v", err)
 	}
