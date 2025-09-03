@@ -38,18 +38,18 @@ func (f *ConnectionFactory) EstablishConnection(
 		return nil, nil, connSettingsErr
 	}
 
-	addrPort, addrPortErr := netip.ParseAddrPort(net.JoinHostPort(connSettings.ConnectionIP, connSettings.Port))
-	if addrPortErr != nil {
-		return nil, nil, addrPortErr
-	}
-
 	deadline := time.Now().Add(time.Duration(math.Max(float64(connSettings.DialTimeoutMs), 5000)) * time.Millisecond)
 	establishCtx, establishCancel := context.WithDeadline(ctx, deadline)
 	defer establishCancel()
 
 	switch connSettings.Protocol {
 	case settings.UDP:
-		adapter, err := f.dialUDP(establishCtx, addrPort)
+		ap, apErr := netip.ParseAddrPort(net.JoinHostPort(connSettings.ConnectionIP, connSettings.Port))
+		if apErr != nil {
+			return nil, nil, apErr
+		}
+
+		adapter, err := f.dialUDP(establishCtx, ap)
 		if err != nil {
 			return nil, nil, fmt.Errorf("unable to establish UDP connection: %w", err)
 		}
@@ -58,7 +58,12 @@ func (f *ConnectionFactory) EstablishConnection(
 			chacha20.NewDefaultAEADBuilder()),
 		)
 	case settings.TCP:
-		adapter, err := f.dialTCP(establishCtx, addrPort)
+		ap, apErr := netip.ParseAddrPort(net.JoinHostPort(connSettings.ConnectionIP, connSettings.Port))
+		if apErr != nil {
+			return nil, nil, apErr
+		}
+
+		adapter, err := f.dialTCP(establishCtx, ap)
 		if err != nil {
 			return nil, nil, fmt.Errorf("unable to establish TCP connection: %w", err)
 		}
@@ -67,7 +72,45 @@ func (f *ConnectionFactory) EstablishConnection(
 			chacha20.NewDefaultAEADBuilder()),
 		)
 	case settings.WS:
-		adapter, err := f.dialWS(establishCtx, ctx, addrPort)
+		scheme := "ws"
+		host := connSettings.Host
+		if host == "" {
+			host = connSettings.ConnectionIP
+		}
+		if host == "" {
+			return nil, nil, fmt.Errorf("ws dial: empty host (neither Host nor ConnectionIP provided)")
+		}
+		port := connSettings.Port
+		if port == "" {
+			return nil, nil, fmt.Errorf("ws dial: empty port")
+		}
+		if pn, err := strconv.Atoi(port); err != nil || pn < 1 || pn > 65535 {
+			return nil, nil, fmt.Errorf("ws dial: invalid port: %q", port)
+		}
+		adapter, err := f.dialWS(establishCtx, ctx, scheme, host, port)
+		if err != nil {
+			return nil, nil, fmt.Errorf("unable to establish WebSocket connection: %w", err)
+		}
+
+		return f.establishSecuredConnection(establishCtx, connSettings, adapter, chacha20.NewTcpSessionBuilder(
+			chacha20.NewDefaultAEADBuilder()),
+		)
+	case settings.WSS:
+		scheme := "wss"
+		host := connSettings.Host
+		if host == "" {
+			return nil, nil, fmt.Errorf("wss dial: empty host")
+		}
+		port := connSettings.Port
+		if port == "" {
+			port = "443"
+		}
+		if portNumber, err := strconv.Atoi(port); err != nil {
+			return nil, nil, err
+		} else if portNumber < 1 || portNumber > 65535 {
+			return nil, nil, fmt.Errorf("wss dial: invalid port: %d", portNumber)
+		}
+		adapter, err := f.dialWS(establishCtx, ctx, scheme, host, port)
 		if err != nil {
 			return nil, nil, fmt.Errorf("unable to establish WebSocket connection: %w", err)
 		}
@@ -87,6 +130,8 @@ func (f *ConnectionFactory) connectionSettings() (settings.Settings, error) {
 	case settings.UDP:
 		return f.conf.UDPSettings, nil
 	case settings.WS:
+		return f.conf.WSSettings, nil
+	case settings.WSS:
 		return f.conf.WSSettings, nil
 	default:
 		return settings.Settings{}, fmt.Errorf("unsupported protocol: %v", f.conf.Protocol)
@@ -150,33 +195,9 @@ func (f *ConnectionFactory) dialUDP(
 
 func (f *ConnectionFactory) dialWS(
 	establishCtx, connCtx context.Context,
-	ap netip.AddrPort,
+	scheme, host, port string,
 ) (application.ConnectionAdapter, error) {
-	url := fmt.Sprintf("ws://%s/ws", ap.String())
-	conn, _, err := websocket.Dial(establishCtx, url, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return adapters.NewLengthPrefixFramingAdapter(
-		wsAdapters.NewDefaultAdapter(connCtx, conn, nil, nil),
-		settings.MTU+settings.TCPChacha20Overhead,
-	)
-}
-
-func (f *ConnectionFactory) dialWSS(
-	establishCtx, connCtx context.Context,
-	host string,
-	port uint16,
-) (application.ConnectionAdapter, error) {
-	if host == "" {
-		return nil, fmt.Errorf("wss dial: empty host")
-	}
-	if port == 0 {
-		port = 443
-	}
-
-	url := fmt.Sprintf("wss://%s/ws", net.JoinHostPort(host, strconv.Itoa(int(port))))
+	url := fmt.Sprintf("%s://%s/ws", scheme, net.JoinHostPort(host, port))
 	conn, _, err := websocket.Dial(establishCtx, url, nil)
 	if err != nil {
 		return nil, err
