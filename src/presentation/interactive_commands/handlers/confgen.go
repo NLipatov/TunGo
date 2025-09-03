@@ -3,7 +3,6 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"tungo/infrastructure/PAL"
 	"tungo/infrastructure/PAL/configuration/client"
 	serverConfiguration "tungo/infrastructure/PAL/configuration/server"
@@ -38,12 +37,12 @@ func (c *ConfgenHandler) GenerateNewClientConf() error {
 
 	newConf, err := c.generate()
 	if err != nil {
-		log.Fatalf("failed to generate client conf: %s\n", err)
+		return fmt.Errorf("failed to generate client conf: %s\n", err)
 	}
 
 	marshalled, err := json.MarshalIndent(newConf, "", "  ")
 	if err != nil {
-		log.Fatalf("failed to marshalize client conf: %s\n", err)
+		return fmt.Errorf("failed to marshalize client conf: %s\n", err)
 	}
 
 	fmt.Println(string(marshalled))
