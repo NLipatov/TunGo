@@ -39,6 +39,8 @@ func (t *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 		s = t.conf.TCPSettings
 	case settings.UDP:
 		s = t.conf.UDPSettings
+	case settings.WS, settings.WSS:
+		s = t.conf.WSSettings
 	default:
 		return nil, fmt.Errorf("unsupported protocol")
 	}
