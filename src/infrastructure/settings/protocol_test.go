@@ -16,6 +16,7 @@ func TestProtocol_MarshalJSON(t *testing.T) {
 		{"TCP", TCP, `"TCP"`, false},
 		{"UDP", UDP, `"UDP"`, false},
 		{"WS", WS, `"WS"`, false},
+		{"WSS", WSS, `"WSS"`, false},
 		{"invalid enum", Protocol(42), ``, true},
 	}
 
@@ -46,6 +47,8 @@ func TestProtocol_UnmarshalJSON(t *testing.T) {
 		{"Udp mixed", `"uDp"`, UDP, false},
 		{"ws lowercase", `"ws"`, WS, false},
 		{"WS uppercase", `"WS"`, WS, false},
+		{"wss lowercase", `"wss"`, WSS, false},
+		{"WSS uppercase", `"WSS"`, WSS, false},
 		{"invalid value", `"SCTP"`, UNKNOWN, true},
 		{"non-string", `123`, UNKNOWN, true},
 	}
@@ -68,7 +71,7 @@ func TestProtocol_UnmarshalJSON(t *testing.T) {
 }
 
 func TestProtocolJSON_RoundTrip(t *testing.T) {
-	for _, orig := range []Protocol{UNKNOWN, TCP, UDP, WS} {
+	for _, orig := range []Protocol{UNKNOWN, TCP, UDP, WS, WSS} {
 		data, err := json.Marshal(orig)
 		if err != nil {
 			t.Fatalf("Marshal %v: %v", orig, err)
@@ -92,6 +95,7 @@ func TestProtocol_String(t *testing.T) {
 		{TCP, "TCP"},
 		{UDP, "UDP"},
 		{WS, "WS"},
+		{WSS, "WSS"},
 		{Protocol(99), "invalid protocol"},
 	}
 	for _, tt := range tests {

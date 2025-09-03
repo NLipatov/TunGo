@@ -18,6 +18,7 @@ const (
 	TCP
 	UDP
 	WS
+	WSS
 )
 
 func (p Protocol) MarshalJSON() ([]byte, error) {
@@ -31,6 +32,8 @@ func (p Protocol) MarshalJSON() ([]byte, error) {
 		protocolStr = "UDP"
 	case WS:
 		protocolStr = "WS"
+	case WSS:
+		protocolStr = "WSS"
 	default:
 		return nil, ErrInvalidProtocol
 	}
@@ -51,6 +54,8 @@ func (p *Protocol) UnmarshalJSON(data []byte) error {
 		*p = UDP
 	case "WS":
 		*p = WS
+	case "WSS":
+		*p = WSS
 	default:
 		return ErrInvalidProtocol
 	}
@@ -67,6 +72,8 @@ func (p Protocol) String() string {
 		return "UDP"
 	case WS:
 		return "WS"
+	case WSS:
+		return "WSS"
 	default:
 		return ErrInvalidProtocol.Error()
 	}
