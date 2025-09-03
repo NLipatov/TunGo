@@ -553,7 +553,7 @@ func TestAdapter_mapReadErr_Variants(t *testing.T) {
 		t.Fatalf("DeadlineExceeded must map to net.Error Timeout")
 	}
 	other := errors.New("x")
-	if a.mapReadErr(other) != other {
+	if !errors.Is(other, a.mapReadErr(other)) {
 		t.Fatalf("other errors must remain unchanged")
 	}
 }
@@ -573,7 +573,7 @@ func TestAdapter_mapWriteErr_Variants(t *testing.T) {
 		t.Fatalf("DeadlineExceeded must map to net.Error Timeout")
 	}
 	other := errors.New("y")
-	if a.mapWriteErr(other) != other {
+	if !errors.Is(other, a.mapWriteErr(other)) {
 		t.Fatalf("other errors must remain unchanged")
 	}
 }
@@ -593,5 +593,99 @@ func TestErrTimeout_ImplementsNetError(t *testing.T) {
 	var ne timeoutIface
 	if !errors.As(e, &ne) || !ne.Timeout() {
 		t.Fatalf("errTimeout must satisfy net.Error Timeout()==true")
+	}
+}
+
+// ---------- Extra tests to reach 100% ----------
+
+func TestAdapter_Write_WriterFactoryError_Timeout(t *testing.T) {
+	// Writer(...) returns context.DeadlineExceeded -> must be mapped to net.Error timeout.
+	conn := &AdapterMockConn{
+		writerFactory: func(ctx context.Context, mt websocket.MessageType) (io.WriteCloser, error) {
+			return nil, context.DeadlineExceeded
+		},
+	}
+	a := NewDefaultAdapter(context.Background(), conn, nil, nil)
+	_ = a.SetWriteDeadline(time.Now().Add(50 * time.Millisecond))
+
+	n, err := a.Write([]byte("x"))
+	if n != 0 {
+		t.Fatalf("expected n=0, got %d", n)
+	}
+	var ne interface{ Timeout() bool }
+	if !errors.As(err, &ne) || !ne.Timeout() {
+		t.Fatalf("expected timeout net.Error, got %v", err)
+	}
+}
+
+func TestAdapter_Write_WriterFactoryError_Other(t *testing.T) {
+	// Writer(...) returns arbitrary error -> must bubble up unchanged.
+	want := errors.New("boom")
+	conn := &AdapterMockConn{
+		writerFactory: func(ctx context.Context, mt websocket.MessageType) (io.WriteCloser, error) {
+			return nil, want
+		},
+	}
+	a := NewDefaultAdapter(context.Background(), conn, nil, nil)
+	n, err := a.Write([]byte("x"))
+	if n != 0 || !errors.Is(err, want) {
+		t.Fatalf("expected (0, boom), got (%d, %v)", n, err)
+	}
+}
+
+func TestAdapter_Read_NoDeadlineOnFrameCtx(t *testing.T) {
+	// No read deadline set -> frame ctx must not have a deadline.
+	captured := make(chan context.Context, 1)
+	conn := &AdapterMockConn{
+		readerFactory: func(ctx context.Context) (websocket.MessageType, io.Reader, error) {
+			captured <- ctx
+			return 0, nil, context.DeadlineExceeded
+		},
+	}
+	a := NewDefaultAdapter(context.Background(), conn, nil, nil)
+	_, _ = a.Read(make([]byte, 1))
+	select {
+	case ctx := <-captured:
+		mustNoDeadline(t, ctx)
+	default:
+		t.Fatalf("readerFactory wasn't invoked")
+	}
+}
+
+func TestAdapter_Read_ExistingReader_EOFZero_ThenNextBinaryFrame(t *testing.T) {
+	// Existing reader returns (0, EOF) -> must NOT bubble up; adapter fetches next frame.
+	conn := &AdapterMockConn{
+		readerFactory: func(ctx context.Context) (websocket.MessageType, io.Reader, error) {
+			return websocket.MessageBinary, bytes.NewReader([]byte("ok")), nil
+		},
+	}
+	// Start with a reader that immediately returns EOF with n==0.
+	a := NewAdapter(context.Background(), conn, bytes.NewReader(nil), nil, nil, time.Time{}, time.Time{})
+	buf := make([]byte, 4)
+	n, err := a.Read(buf)
+	if err != nil || string(buf[:n]) != "ok" {
+		t.Fatalf("expected 'ok' after EOF boundary, got (%d,%v,%q)", n, err, string(buf[:n]))
+	}
+}
+
+func TestAdapter_Close_PropagatesUnderlyingError(t *testing.T) {
+	want := errors.New("close-fail")
+	conn := &AdapterMockConn{closeErr: want}
+	a := NewDefaultAdapter(context.Background(), conn, nil, nil)
+	if err := a.Close(); !errors.Is(err, want) {
+		t.Fatalf("expected %v, got %v", want, err)
+	}
+	if conn.closeCalls != 1 {
+		t.Fatalf("expected single Close call, got %d", conn.closeCalls)
+	}
+}
+
+func TestAdapter_mapReadErr_OtherCloseCode_BubblesAsIs(t *testing.T) {
+	a := NewDefaultAdapter(context.Background(), &AdapterMockConn{}, nil, nil)
+	orig := &websocket.CloseError{Code: websocket.StatusPolicyViolation}
+	got := a.mapReadErr(orig)
+	// Must return the same error instance (not wrapped/mapped).
+	if !errors.Is(got, orig) {
+		t.Fatalf("expected same error, got %T", got)
 	}
 }
