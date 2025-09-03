@@ -101,6 +101,7 @@ func (m *PlatformTunManager) DisposeTunDevices() error {
 	// dispose adapters by friendly names
 	_ = disposeExistingTunDevices(m.conf.TCPSettings.InterfaceName)
 	_ = disposeExistingTunDevices(m.conf.UDPSettings.InterfaceName)
+	_ = disposeExistingTunDevices(m.conf.WSSettings.InterfaceName)
 
 	// net configuration cleanup
 	_ = m.netsh.InterfaceIPDeleteAddress(m.conf.TCPSettings.InterfaceName, m.conf.TCPSettings.InterfaceAddress)
@@ -110,6 +111,10 @@ func (m *PlatformTunManager) DisposeTunDevices() error {
 	_ = m.netsh.InterfaceIPDeleteAddress(m.conf.UDPSettings.InterfaceName, m.conf.UDPSettings.InterfaceAddress)
 	_ = m.netsh.InterfaceIPV4DeleteAddress(m.conf.UDPSettings.InterfaceName)
 	_ = m.netsh.RouteDelete(m.conf.UDPSettings.ConnectionIP)
+
+	_ = m.netsh.InterfaceIPDeleteAddress(m.conf.WSSettings.InterfaceName, m.conf.WSSettings.InterfaceAddress)
+	_ = m.netsh.InterfaceIPV4DeleteAddress(m.conf.WSSettings.InterfaceName)
+	_ = m.netsh.RouteDelete(m.conf.WSSettings.ConnectionIP)
 
 	return nil
 }
