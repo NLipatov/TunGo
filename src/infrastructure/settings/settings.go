@@ -5,7 +5,7 @@ type Settings struct {
 	InterfaceIPCIDR  string `json:"InterfaceIPCIDR"`
 	InterfaceAddress string `json:"InterfaceAddress"`
 	ConnectionIP     string `json:"ConnectionIP"`
-	Host             string `json:"Host,omitempty"` //used by WSS
+	Host             string `json:"Host,omitempty"` //used by WS and WSS protocols
 	Port             string `json:"Port"`
 	MTU              int    `json:"MTU"`
 	Protocol         Protocol
