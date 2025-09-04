@@ -33,12 +33,14 @@ const FeatureList = [
         ),
     },
     {
-        title: 'Open Source',
-        Svg: require('@site/static/svg/github.svg').default,
+        title: 'Multi-Transport Support',
+        Svg: require('@site/static/svg/cable.svg').default,
         description: (
-            <>
-                License: <strong>AGPLv3</strong>
-            </>
+            <div className={Styles.featureDescriptionList}>
+                <div><strong>UDP</strong> — high performance</div>
+                <div><strong>TCP</strong> — reliable fallback</div>
+                <div><strong>WebSocket/WSS</strong> — stealth mode, DPI bypass</div>
+            </div>
         ),
     },
     {
@@ -56,6 +58,15 @@ const FeatureList = [
                     <strong>Windows</strong> (client mode)
                 </div>
             </div>
+        ),
+    },
+    {
+        title: 'Open Source',
+        Svg: require('@site/static/svg/github.svg').default,
+        description: (
+            <>
+                License: <strong>AGPLv3</strong>
+            </>
         ),
     },
 ];
