@@ -3,12 +3,13 @@ package tun_adapters
 import (
 	"encoding/binary"
 	"errors"
-	"golang.zx2c4.com/wireguard/tun"
 	"os"
 	"reflect"
 	"syscall"
 	"testing"
-	"tungo/infrastructure/network"
+	"tungo/infrastructure/settings"
+
+	"golang.zx2c4.com/wireguard/tun"
 )
 
 type fakeTun struct {
@@ -168,7 +169,7 @@ func TestWrite_EmptyPacket(t *testing.T) {
 
 func TestWrite_TooLargePacket(t *testing.T) {
 	// payload larger than MaxPacketLengthBytes-4
-	tooBig := make([]byte, network.MaxPacketLengthBytes)
+	tooBig := make([]byte, settings.MTU+UTUNHeaderSize)
 	ft := &fakeTun{}
 	adapter := NewWgTunAdapter(ft)
 

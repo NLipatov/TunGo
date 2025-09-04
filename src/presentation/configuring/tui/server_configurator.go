@@ -36,7 +36,7 @@ func (s *serverConfigurator) Configure() error {
 	case startServerOption:
 		return nil
 	case addClientOption:
-		handler := handlers.NewConfgenHandler(s.manager)
+		handler := handlers.NewConfgenHandler(s.manager, handlers.NewJsonMarshaller())
 		generateNewClientConfErr := handler.GenerateNewClientConf()
 		if generateNewClientConfErr != nil {
 			return generateNewClientConfErr

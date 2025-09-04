@@ -204,7 +204,7 @@ func newFactory(
 var cfg = settings.Settings{
 	InterfaceName:   "tun0",
 	InterfaceIPCIDR: "10.0.0.0/30",
-	MTU:             settings.DefaultMTU,
+	MTU:             settings.MTU,
 }
 
 // --- Tests ---

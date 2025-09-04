@@ -2,11 +2,10 @@ package tcp_chacha20
 
 import (
 	"context"
-	"golang.org/x/crypto/chacha20poly1305"
 	"io"
 	"log"
 	"tungo/application"
-	"tungo/infrastructure/network"
+	"tungo/infrastructure/settings"
 )
 
 type TunHandler struct {
@@ -29,7 +28,8 @@ func NewTunHandler(ctx context.Context,
 }
 
 func (t *TunHandler) HandleTun() error {
-	buffer := make([]byte, network.MaxPacketLengthBytes+chacha20poly1305.Overhead)
+	backing := make([]byte, settings.MTU+settings.TCPChacha20Overhead)
+	pt := backing[:settings.MTU] // len=MTU, cap=MTU+16
 
 	//passes anything from tun to chan
 	for {
@@ -37,7 +37,7 @@ func (t *TunHandler) HandleTun() error {
 		case <-t.ctx.Done():
 			return nil
 		default:
-			n, err := t.reader.Read(buffer)
+			n, err := t.reader.Read(pt)
 			if err != nil {
 				if t.ctx.Err() != nil {
 					return nil
@@ -46,7 +46,7 @@ func (t *TunHandler) HandleTun() error {
 				return err
 			}
 
-			ct, encryptErr := t.cryptographyService.Encrypt(buffer[:n])
+			ct, encryptErr := t.cryptographyService.Encrypt(pt[:n])
 			if encryptErr != nil {
 				log.Printf("failed to encrypt packet: %v", encryptErr)
 				return encryptErr

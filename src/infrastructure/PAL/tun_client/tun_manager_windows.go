@@ -42,6 +42,8 @@ func (m *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 		s = m.conf.UDPSettings
 	case settings.TCP:
 		s = m.conf.TCPSettings
+	case settings.WS, settings.WSS:
+		s = m.conf.WSSettings
 	default:
 		return nil, errors.New("unsupported protocol")
 	}
@@ -58,7 +60,7 @@ func (m *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 
 	mtu := s.MTU
 	if mtu == 0 {
-		mtu = settings.DefaultMTU
+		mtu = settings.MTU
 	}
 
 	device, err := tun_adapters.NewWinTun(adapter)
@@ -73,7 +75,13 @@ func (m *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 		return nil, err
 	}
 
-	if err = m.configureWindowsTunNetsh(s.InterfaceName, s.InterfaceAddress, s.InterfaceIPCIDR, tunGateway); err != nil {
+	if err = m.configureWindowsTunNetsh(
+		s.InterfaceName,
+		s.InterfaceAddress,
+		s.InterfaceIPCIDR,
+		tunGateway,
+		mtu,
+	); err != nil {
 		_ = device.Close()
 		return nil, err
 	}
@@ -99,6 +107,7 @@ func (m *PlatformTunManager) DisposeTunDevices() error {
 	// dispose adapters by friendly names
 	_ = disposeExistingTunDevices(m.conf.TCPSettings.InterfaceName)
 	_ = disposeExistingTunDevices(m.conf.UDPSettings.InterfaceName)
+	_ = disposeExistingTunDevices(m.conf.WSSettings.InterfaceName)
 
 	// net configuration cleanup
 	_ = m.netsh.InterfaceIPDeleteAddress(m.conf.TCPSettings.InterfaceName, m.conf.TCPSettings.InterfaceAddress)
@@ -109,10 +118,17 @@ func (m *PlatformTunManager) DisposeTunDevices() error {
 	_ = m.netsh.InterfaceIPV4DeleteAddress(m.conf.UDPSettings.InterfaceName)
 	_ = m.netsh.RouteDelete(m.conf.UDPSettings.ConnectionIP)
 
+	_ = m.netsh.InterfaceIPDeleteAddress(m.conf.WSSettings.InterfaceName, m.conf.WSSettings.InterfaceAddress)
+	_ = m.netsh.InterfaceIPV4DeleteAddress(m.conf.WSSettings.InterfaceName)
+	_ = m.netsh.RouteDelete(m.conf.WSSettings.ConnectionIP)
+
 	return nil
 }
 
-func (m *PlatformTunManager) configureWindowsTunNetsh(interfaceName, hostIP, ipCIDR, gateway string) error {
+func (m *PlatformTunManager) configureWindowsTunNetsh(
+	interfaceName, hostIP, ipCIDR, gateway string,
+	mtu int,
+) error {
 	parts := strings.Split(ipCIDR, "/")
 	if len(parts) != 2 {
 		return fmt.Errorf("invalid CIDR: %s", ipCIDR)
@@ -126,6 +142,10 @@ func (m *PlatformTunManager) configureWindowsTunNetsh(interfaceName, hostIP, ipC
 	}
 
 	if err := m.netsh.InterfaceIPV4AddRouteDefault(interfaceName, gateway); err != nil {
+		return err
+	}
+
+	if err := m.netsh.LinkSetDevMTU(interfaceName, mtu); err != nil {
 		return err
 	}
 

@@ -47,6 +47,10 @@ func main() {
 	if configurationManagerErr != nil {
 		log.Fatalf("could not instantiate server configuration manager: %s", configurationManagerErr)
 	}
+	keyManager := serverConf.NewEd25519KeyManager(configurationManager)
+	if pKeysErr := keyManager.PrepareKeys(); pKeysErr != nil {
+		log.Fatalf("could not prepare keys: %s", pKeysErr)
+	}
 
 	configuratorFactory := configuring.NewConfigurationFactory(configurationManager)
 	configurator := configuratorFactory.Configurator()
@@ -59,10 +63,17 @@ func main() {
 	switch appMode {
 	case mode.Server:
 		fmt.Printf("Starting server...\n")
-		startServer(appCtx, configurationManager)
+		if err := startServer(appCtx, configurationManager); err != nil {
+			log.Print(err)
+			os.Exit(2)
+		}
+		os.Exit(0)
 	case mode.ServerConfGen:
-		err := generateClientConfiguration(configurationManager)
-		if err != nil {
+		handler := handlers.NewConfgenHandler(
+			configurationManager,
+			handlers.NewJsonMarshaller(),
+		)
+		if err := handler.GenerateNewClientConf(); err != nil {
 			log.Fatalf("failed to generate client configuration: %s", err)
 		}
 		os.Exit(0)
@@ -75,27 +86,6 @@ func main() {
 		log.Printf("invalid app mode: %v", appMode)
 		os.Exit(1)
 	}
-}
-
-func generateClientConfiguration(configurationManager serverConf.ServerConfigurationManager) error {
-	configuration, configurationErr := configurationManager.Configuration()
-	if configurationErr != nil {
-		return configurationErr
-	}
-
-	keyManager := serverConf.NewEd25519KeyManager(configuration, configurationManager)
-	keyErr := keyManager.PrepareKeys()
-	if keyErr != nil {
-		return keyErr
-	}
-
-	handler := handlers.NewConfgenHandler(configurationManager)
-	handlerErr := handler.GenerateNewClientConf()
-	if handlerErr != nil {
-		return handlerErr
-	}
-
-	return nil
 }
 
 func startClient(appCtx context.Context) {
@@ -111,7 +101,10 @@ func startClient(appCtx context.Context) {
 	runner.Run(appCtx)
 }
 
-func startServer(appCtx context.Context, configurationManager serverConf.ServerConfigurationManager) {
+func startServer(
+	ctx context.Context,
+	configurationManager serverConf.ServerConfigurationManager,
+) error {
 	tunFactory := tun_server.NewServerTunFactory()
 
 	conf, confErr := configurationManager.Configuration()
@@ -122,12 +115,16 @@ func startServer(appCtx context.Context, configurationManager serverConf.ServerC
 	deps := server.NewDependencies(
 		tunFactory,
 		*conf,
-		serverConf.NewEd25519KeyManager(conf, configurationManager),
+		serverConf.NewEd25519KeyManager(configurationManager),
 		configurationManager,
 	)
 
-	runner := server.NewRunner(deps)
-	runner.Run(appCtx)
+	runner := server.NewRunner(
+		deps,
+		tun_server.NewServerWorkerFactory(configurationManager),
+		tun_server.NewServerTrafficRouterFactory(),
+	)
+	return runner.Run(ctx)
 }
 
 func printVersion(appCtx context.Context) {

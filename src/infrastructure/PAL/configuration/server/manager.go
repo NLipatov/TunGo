@@ -8,14 +8,12 @@ import (
 	"time"
 	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/PAL/stat"
-	"tungo/infrastructure/settings"
 )
 
 type ServerConfigurationManager interface {
 	Configuration() (*Configuration, error)
 	IncrementClientCounter() error
 	InjectEdKeys(public ed25519.PublicKey, private ed25519.PrivateKey) error
-	InjectSessionTtlIntervals(ttl, interval settings.HumanReadableDuration) error
 }
 
 type Manager struct {
@@ -89,6 +87,13 @@ func (c *Manager) IncrementClientCounter() error {
 }
 
 func (c *Manager) InjectEdKeys(public ed25519.PublicKey, private ed25519.PrivateKey) error {
+	if len(public) != ed25519.PublicKeySize {
+		return fmt.Errorf("invalid public key length: got %d, want %d", len(public), ed25519.PublicKeySize)
+	}
+	if len(private) != ed25519.PrivateKeySize {
+		return fmt.Errorf("invalid private key length: got %d, want %d", len(private), ed25519.PrivateKeySize)
+	}
+
 	configuration, configurationErr := c.Configuration()
 	if configurationErr != nil {
 		return configurationErr
@@ -96,21 +101,6 @@ func (c *Manager) InjectEdKeys(public ed25519.PublicKey, private ed25519.Private
 
 	configuration.Ed25519PublicKey = public
 	configuration.Ed25519PrivateKey = private
-
-	return c.writer.Write(*configuration)
-}
-
-func (c *Manager) InjectSessionTtlIntervals(ttl, interval settings.HumanReadableDuration) error {
-	configuration, configurationErr := c.Configuration()
-	if configurationErr != nil {
-		return configurationErr
-	}
-
-	configuration.UDPSettings.SessionLifetime.Ttl = ttl
-	configuration.UDPSettings.SessionLifetime.CleanupInterval = interval
-
-	configuration.TCPSettings.SessionLifetime.Ttl = ttl
-	configuration.TCPSettings.SessionLifetime.CleanupInterval = interval
 
 	return c.writer.Write(*configuration)
 }

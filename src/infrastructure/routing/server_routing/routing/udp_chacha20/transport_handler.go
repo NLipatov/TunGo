@@ -3,12 +3,10 @@ package udp_chacha20
 import (
 	"context"
 	"fmt"
-	"golang.org/x/crypto/chacha20poly1305"
 	"io"
 	"net/netip"
 	"tungo/application"
 	"tungo/application/listeners"
-	"tungo/infrastructure/network"
 	"tungo/infrastructure/network/signaling"
 	"tungo/infrastructure/network/udp/adapters"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
@@ -60,7 +58,7 @@ func (t *TransportHandler) HandleTransport() error {
 		_ = t.listenerConn.Close()
 	}()
 
-	buffer := make([]byte, network.MaxPacketLengthBytes+chacha20poly1305.NonceSize+chacha20poly1305.Overhead)
+	buffer := make([]byte, settings.MTU+settings.UDPChacha20Overhead)
 	oobBuf := make([]byte, 1024)
 
 	for {

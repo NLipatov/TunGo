@@ -22,13 +22,13 @@ func TestNewDeadline(t *testing.T) {
 
 func TestDeadline_Time(t *testing.T) {
 	// zero → no deadline
-	if got := Deadline(0).Time(); !got.IsZero() {
+	if got := Timeout(0).Time(); !got.IsZero() {
 		t.Fatalf("zero duration should return zero time, got %v", got)
 	}
 
 	// positive duration
 	const dur = 100 * time.Millisecond
-	dl := Deadline(dur)
+	dl := Timeout(dur)
 
 	before := time.Now().Add(dur - 5*time.Millisecond)
 	after := time.Now().Add(dur + 5*time.Millisecond)

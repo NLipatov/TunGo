@@ -5,10 +5,10 @@ type Settings struct {
 	InterfaceIPCIDR  string `json:"InterfaceIPCIDR"`
 	InterfaceAddress string `json:"InterfaceAddress"`
 	ConnectionIP     string `json:"ConnectionIP"`
+	Host             string `json:"Host,omitempty"` //used by WS and WSS protocols
 	Port             string `json:"Port"`
 	MTU              int    `json:"MTU"`
 	Protocol         Protocol
 	Encryption       Encryption
-	DialTimeoutMs    int             `json:"DialTimeoutMs"`
-	SessionLifetime  SessionLifetime `json:"SessionLifetime"`
+	DialTimeoutMs    int `json:"DialTimeoutMs"`
 }

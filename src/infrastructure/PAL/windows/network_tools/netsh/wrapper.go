@@ -85,3 +85,14 @@ func (w *Wrapper) InterfaceSetDNSServers(interfaceName string, dnsServers []stri
 	}
 	return nil
 }
+
+func (w *Wrapper) LinkSetDevMTU(interfaceName string, mtu int) error {
+	output, err := w.commander.CombinedOutput(
+		"netsh", "interface", "ipv4", "set", "subinterface",
+		interfaceName, "mtu="+strconv.Itoa(mtu), "store=active",
+	)
+	if err != nil {
+		return fmt.Errorf("SetInterfaceMTU error: %v, output: %s", err, output)
+	}
+	return nil
+}
