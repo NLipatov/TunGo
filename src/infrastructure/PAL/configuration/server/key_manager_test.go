@@ -14,8 +14,8 @@ var _ KeyManager = &Ed25519KeyManager{}
 
 // ---------- Mocks (prefixed with Ed25519KeyManager...) ----------
 
-// Ed25519KeyManagerMockStore fakes ServerConfigurationManager for tests.
-type Ed25519KeyManagerMockStore struct {
+// mockConfigurationManager fakes ServerConfigurationManager for tests.
+type mockConfigurationManager struct {
 	cfg         *Configuration
 	cfgErr      error
 	injectErr   error
@@ -24,15 +24,15 @@ type Ed25519KeyManagerMockStore struct {
 	lastPriv    []byte
 }
 
-func (m *Ed25519KeyManagerMockStore) Configuration() (*Configuration, error) {
+func (m *mockConfigurationManager) Configuration() (*Configuration, error) {
 	return m.cfg, m.cfgErr
 }
-func (m *Ed25519KeyManagerMockStore) IncrementClientCounter() error { return nil } // unused here
+func (m *mockConfigurationManager) IncrementClientCounter() error { return nil } // unused here
 
 // IMPORTANT:
 // This mock uses the ed25519.PublicKey/PrivateKey signature to mirror the usual
 // ServerConfigurationManager contract. If your real interface uses []byte, adjust here.
-func (m *Ed25519KeyManagerMockStore) InjectEdKeys(pub ed25519.PublicKey, priv ed25519.PrivateKey) error {
+func (m *mockConfigurationManager) InjectEdKeys(pub ed25519.PublicKey, priv ed25519.PrivateKey) error {
 	m.injectCalls++
 	m.lastPub = append([]byte(nil), pub...)
 	m.lastPriv = append([]byte(nil), priv...)
@@ -49,8 +49,8 @@ func (m *Ed25519KeyManagerMockStore) InjectEdKeys(pub ed25519.PublicKey, priv ed
 
 // ---------- Helpers ----------
 
-func newKM(store *Ed25519KeyManagerMockStore) *Ed25519KeyManager {
-	return &Ed25519KeyManager{configurationManager: store}
+func newKM(manager *mockConfigurationManager) *Ed25519KeyManager {
+	return &Ed25519KeyManager{configurationManager: manager}
 }
 
 func mustSetenv(t *testing.T, k, v string) {
@@ -66,25 +66,25 @@ func mustSetenv(t *testing.T, k, v string) {
 func TestPrepareKeys_ConfigAlreadyHasValidKeys_NoOp(t *testing.T) {
 	pub := make([]byte, ed25519.PublicKeySize)
 	priv := make([]byte, ed25519.PrivateKeySize)
-	store := &Ed25519KeyManagerMockStore{
+	manager := &mockConfigurationManager{
 		cfg: &Configuration{
 			Ed25519PublicKey:  pub,
 			Ed25519PrivateKey: priv,
 		},
 	}
-	km := newKM(store)
+	km := newKM(manager)
 
 	if err := km.PrepareKeys(); err != nil {
 		t.Fatalf("unexpected: %v", err)
 	}
-	if store.injectCalls != 0 {
+	if manager.injectCalls != 0 {
 		t.Fatalf("should not inject when config already has keys")
 	}
 }
 
 func TestPrepareKeys_EnvKeys_Valid_Injection(t *testing.T) {
-	store := &Ed25519KeyManagerMockStore{cfg: &Configuration{}}
-	km := newKM(store)
+	manager := &mockConfigurationManager{cfg: &Configuration{}}
+	km := newKM(manager)
 
 	pub := make([]byte, ed25519.PublicKeySize)
 	priv := make([]byte, ed25519.PrivateKeySize)
@@ -94,17 +94,17 @@ func TestPrepareKeys_EnvKeys_Valid_Injection(t *testing.T) {
 	if err := km.PrepareKeys(); err != nil {
 		t.Fatalf("unexpected: %v", err)
 	}
-	if store.injectCalls != 1 {
-		t.Fatalf("expected 1 inject call, got %d", store.injectCalls)
+	if manager.injectCalls != 1 {
+		t.Fatalf("expected 1 inject call, got %d", manager.injectCalls)
 	}
-	if len(store.lastPub) != ed25519.PublicKeySize || len(store.lastPriv) != ed25519.PrivateKeySize {
-		t.Fatalf("wrong sizes: pub=%d priv=%d", len(store.lastPub), len(store.lastPriv))
+	if len(manager.lastPub) != ed25519.PublicKeySize || len(manager.lastPriv) != ed25519.PrivateKeySize {
+		t.Fatalf("wrong sizes: pub=%d priv=%d", len(manager.lastPub), len(manager.lastPriv))
 	}
 }
 
 func TestPrepareKeys_EnvMissing_FallsBackToGenerate(t *testing.T) {
-	store := &Ed25519KeyManagerMockStore{cfg: &Configuration{}}
-	km := newKM(store)
+	manager := &mockConfigurationManager{cfg: &Configuration{}}
+	km := newKM(manager)
 
 	_ = os.Unsetenv(publicKeyEnvVar)
 	_ = os.Unsetenv(privateKeyEnvVar)
@@ -112,17 +112,17 @@ func TestPrepareKeys_EnvMissing_FallsBackToGenerate(t *testing.T) {
 	if err := km.PrepareKeys(); err != nil {
 		t.Fatalf("unexpected: %v", err)
 	}
-	if store.injectCalls != 1 {
-		t.Fatalf("generate path should inject once, got %d", store.injectCalls)
+	if manager.injectCalls != 1 {
+		t.Fatalf("generate path should inject once, got %d", manager.injectCalls)
 	}
-	if len(store.lastPub) != ed25519.PublicKeySize || len(store.lastPriv) != ed25519.PrivateKeySize {
+	if len(manager.lastPub) != ed25519.PublicKeySize || len(manager.lastPriv) != ed25519.PrivateKeySize {
 		t.Fatalf("generated sizes mismatch")
 	}
 }
 
 func TestPrepareKeys_EnvInvalidBase64_FallsBackToGenerate(t *testing.T) {
-	store := &Ed25519KeyManagerMockStore{cfg: &Configuration{}}
-	km := newKM(store)
+	manager := &mockConfigurationManager{cfg: &Configuration{}}
+	km := newKM(manager)
 
 	mustSetenv(t, publicKeyEnvVar, "!!!not-base64!!!")
 	mustSetenv(t, privateKeyEnvVar, "!!!still-not-base64!!!")
@@ -130,17 +130,17 @@ func TestPrepareKeys_EnvInvalidBase64_FallsBackToGenerate(t *testing.T) {
 	if err := km.PrepareKeys(); err != nil {
 		t.Fatalf("should still succeed by generating: %v", err)
 	}
-	if store.injectCalls != 1 {
-		t.Fatalf("expected 1 inject call (generate), got %d", store.injectCalls)
+	if manager.injectCalls != 1 {
+		t.Fatalf("expected 1 inject call (generate), got %d", manager.injectCalls)
 	}
 }
 
 func TestPrepareKeys_Generate_InjectError_Propagates(t *testing.T) {
-	store := &Ed25519KeyManagerMockStore{
+	manager := &mockConfigurationManager{
 		cfg:       &Configuration{},
 		injectErr: errors.New("inject-fail"),
 	}
-	km := newKM(store)
+	km := newKM(manager)
 
 	_ = os.Unsetenv(publicKeyEnvVar)
 	_ = os.Unsetenv(privateKeyEnvVar)
@@ -154,8 +154,8 @@ func TestPrepareKeys_Generate_InjectError_Propagates(t *testing.T) {
 // ---------- Tests: keysAreInConfiguration ----------
 
 func Test_keysAreInConfiguration_ReadError(t *testing.T) {
-	store := &Ed25519KeyManagerMockStore{cfgErr: errors.New("read-fail")}
-	km := newKM(store)
+	manager := &mockConfigurationManager{cfgErr: errors.New("read-fail")}
+	km := newKM(manager)
 
 	ok, err := km.keysAreInConfiguration()
 	if ok || err == nil {
@@ -165,22 +165,22 @@ func Test_keysAreInConfiguration_ReadError(t *testing.T) {
 
 func Test_keysAreInConfiguration_LengthValidation(t *testing.T) {
 	// wrong lengths -> false
-	store1 := &Ed25519KeyManagerMockStore{cfg: &Configuration{
+	manager1 := &mockConfigurationManager{cfg: &Configuration{
 		Ed25519PublicKey:  make([]byte, 10),
 		Ed25519PrivateKey: make([]byte, 20),
 	}}
-	km1 := newKM(store1)
+	km1 := newKM(manager1)
 	ok, err := km1.keysAreInConfiguration()
 	if ok || err != nil {
 		t.Fatalf("want (false,nil) for wrong lengths, got (%v,%v)", ok, err)
 	}
 
 	// correct lengths -> true
-	store2 := &Ed25519KeyManagerMockStore{cfg: &Configuration{
+	manager2 := &mockConfigurationManager{cfg: &Configuration{
 		Ed25519PublicKey:  make([]byte, ed25519.PublicKeySize),
 		Ed25519PrivateKey: make([]byte, ed25519.PrivateKeySize),
 	}}
-	km2 := newKM(store2)
+	km2 := newKM(manager2)
 	ok, err = km2.keysAreInConfiguration()
 	if !ok || err != nil {
 		t.Fatalf("want (true,nil), got (%v,%v)", ok, err)
@@ -190,8 +190,8 @@ func Test_keysAreInConfiguration_LengthValidation(t *testing.T) {
 // ---------- Tests: keysAreInEnvVariables ----------
 
 func Test_keysAreInEnvVariables_Empty_NoErrorFalse(t *testing.T) {
-	store := &Ed25519KeyManagerMockStore{cfg: &Configuration{}}
-	km := newKM(store)
+	manager := &mockConfigurationManager{cfg: &Configuration{}}
+	km := newKM(manager)
 
 	_ = os.Unsetenv(publicKeyEnvVar)
 	_ = os.Unsetenv(privateKeyEnvVar)
@@ -203,8 +203,8 @@ func Test_keysAreInEnvVariables_Empty_NoErrorFalse(t *testing.T) {
 }
 
 func Test_keysAreInEnvVariables_BadPublicBase64(t *testing.T) {
-	store := &Ed25519KeyManagerMockStore{cfg: &Configuration{}}
-	km := newKM(store)
+	manager := &mockConfigurationManager{cfg: &Configuration{}}
+	km := newKM(manager)
 
 	mustSetenv(t, publicKeyEnvVar, "!!!bad!!!")
 	mustSetenv(t, privateKeyEnvVar, base64.StdEncoding.EncodeToString(make([]byte, ed25519.PrivateKeySize)))
@@ -216,8 +216,8 @@ func Test_keysAreInEnvVariables_BadPublicBase64(t *testing.T) {
 }
 
 func Test_keysAreInEnvVariables_BadPrivateBase64(t *testing.T) {
-	store := &Ed25519KeyManagerMockStore{cfg: &Configuration{}}
-	km := newKM(store)
+	manager := &mockConfigurationManager{cfg: &Configuration{}}
+	km := newKM(manager)
 
 	mustSetenv(t, publicKeyEnvVar, base64.StdEncoding.EncodeToString(make([]byte, ed25519.PublicKeySize)))
 	mustSetenv(t, privateKeyEnvVar, "!!!bad!!!")
@@ -229,11 +229,11 @@ func Test_keysAreInEnvVariables_BadPrivateBase64(t *testing.T) {
 }
 
 func Test_keysAreInEnvVariables_InjectError(t *testing.T) {
-	store := &Ed25519KeyManagerMockStore{
+	manager := &mockConfigurationManager{
 		cfg:       &Configuration{},
 		injectErr: errors.New("inject-fail"),
 	}
-	km := newKM(store)
+	km := newKM(manager)
 
 	mustSetenv(t, publicKeyEnvVar, base64.StdEncoding.EncodeToString(make([]byte, ed25519.PublicKeySize)))
 	mustSetenv(t, privateKeyEnvVar, base64.StdEncoding.EncodeToString(make([]byte, ed25519.PrivateKeySize)))
@@ -245,8 +245,8 @@ func Test_keysAreInEnvVariables_InjectError(t *testing.T) {
 }
 
 func Test_keysAreInEnvVariables_Valid(t *testing.T) {
-	store := &Ed25519KeyManagerMockStore{cfg: &Configuration{}}
-	km := newKM(store)
+	manager := &mockConfigurationManager{cfg: &Configuration{}}
+	km := newKM(manager)
 
 	mustSetenv(t, publicKeyEnvVar, base64.StdEncoding.EncodeToString(make([]byte, ed25519.PublicKeySize)))
 	mustSetenv(t, privateKeyEnvVar, base64.StdEncoding.EncodeToString(make([]byte, ed25519.PrivateKeySize)))
@@ -255,7 +255,7 @@ func Test_keysAreInEnvVariables_Valid(t *testing.T) {
 	if !ok || err != nil {
 		t.Fatalf("want (true, nil), got (%v, %v)", ok, err)
 	}
-	if store.injectCalls != 1 {
-		t.Fatalf("expected inject once, got %d", store.injectCalls)
+	if manager.injectCalls != 1 {
+		t.Fatalf("expected inject once, got %d", manager.injectCalls)
 	}
 }
