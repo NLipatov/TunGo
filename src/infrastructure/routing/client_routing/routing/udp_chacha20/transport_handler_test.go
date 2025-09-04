@@ -8,7 +8,7 @@ import (
 	"os"
 	"testing"
 	"time"
-	"tungo/infrastructure/network/signaling"
+	"tungo/infrastructure/network/service"
 
 	"tungo/infrastructure/cryptography/chacha20"
 )
@@ -111,7 +111,7 @@ func TestHandleTransport_ReadDeadlineExceededSkip(t *testing.T) {
 
 func TestHandleTransport_ServerResetSignal(t *testing.T) {
 	r := &thTestReader{reads: []func(p []byte) (int, error){
-		func(p []byte) (int, error) { p[0] = byte(signaling.SessionReset); return 1, nil },
+		func(p []byte) (int, error) { p[0] = byte(service.SessionReset); return 1, nil },
 	}}
 	w := &thTestWriter{}
 	h := NewTransportHandler(context.Background(), r, w, &thTestCrypto{})

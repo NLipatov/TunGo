@@ -7,7 +7,7 @@ import (
 	"net/netip"
 	"tungo/application"
 	"tungo/application/listeners"
-	"tungo/infrastructure/network/signaling"
+	"tungo/infrastructure/network/service"
 	"tungo/infrastructure/network/udp/adapters"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
 	"tungo/infrastructure/settings"
@@ -101,7 +101,7 @@ func (t *TransportHandler) handlePacket(
 		if regErr != nil {
 			t.logger.Printf("host %v failed registration: %v", addrPort.Addr().AsSlice(), regErr)
 			_, _ = conn.WriteToUDPAddrPort([]byte{
-				byte(signaling.SessionReset),
+				byte(service.SessionReset),
 			}, addrPort)
 			return regErr
 		}

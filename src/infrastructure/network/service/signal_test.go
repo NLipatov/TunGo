@@ -1,4 +1,4 @@
-package signaling
+package service
 
 import "testing"
 

@@ -1,4 +1,4 @@
-package signaling
+package service
 
 type Signal int
 
