@@ -9,8 +9,8 @@ import (
 	"testing"
 )
 
-// Compile-time conformance to the KeyManager interface.
-var _ KeyManager = (*Ed25519KeyManager)(nil)
+// Compile-time check tath KeyManager implement KeyManager interface.
+var _ KeyManager = &Ed25519KeyManager{}
 
 // ---------- Mocks (prefixed with Ed25519KeyManager...) ----------
 
