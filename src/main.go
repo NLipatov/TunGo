@@ -47,11 +47,7 @@ func main() {
 	if configurationManagerErr != nil {
 		log.Fatalf("could not instantiate server configuration manager: %s", configurationManagerErr)
 	}
-	configuration, configurationErr := configurationManager.Configuration()
-	if configurationErr != nil {
-		log.Fatalf("failed to read configuration: %s", configurationErr)
-	}
-	keyManager := serverConf.NewEd25519KeyManager(configuration, configurationManager)
+	keyManager := serverConf.NewEd25519KeyManager(configurationManager)
 	if pKeysErr := keyManager.PrepareKeys(); pKeysErr != nil {
 		log.Fatalf("could not prepare keys: %s", pKeysErr)
 	}
@@ -77,8 +73,7 @@ func main() {
 			configurationManager,
 			handlers.NewJsonMarshaller(),
 		)
-		err := handler.GenerateNewClientConf()
-		if err != nil {
+		if err := handler.GenerateNewClientConf(); err != nil {
 			log.Fatalf("failed to generate client configuration: %s", err)
 		}
 		os.Exit(0)
@@ -120,7 +115,7 @@ func startServer(
 	deps := server.NewDependencies(
 		tunFactory,
 		*conf,
-		serverConf.NewEd25519KeyManager(conf, configurationManager),
+		serverConf.NewEd25519KeyManager(configurationManager),
 		configurationManager,
 	)
 

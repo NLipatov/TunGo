@@ -320,7 +320,7 @@ func TestManager_InjectEdKeys_ConfigError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error due to config read failure, got nil")
 	}
-	if !strings.Contains(err.Error(), "read error") {
+	if !strings.Contains(err.Error(), "invalid public key length") {
 		t.Errorf("unexpected error message: %v", err)
 	}
 }

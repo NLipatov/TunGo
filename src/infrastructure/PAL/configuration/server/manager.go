@@ -87,6 +87,13 @@ func (c *Manager) IncrementClientCounter() error {
 }
 
 func (c *Manager) InjectEdKeys(public ed25519.PublicKey, private ed25519.PrivateKey) error {
+	if len(public) != ed25519.PublicKeySize {
+		return fmt.Errorf("invalid public key length: got %d, want %d", len(public), ed25519.PublicKeySize)
+	}
+	if len(private) != ed25519.PrivateKeySize {
+		return fmt.Errorf("invalid private key length: got %d, want %d", len(private), ed25519.PrivateKeySize)
+	}
+
 	configuration, configurationErr := c.Configuration()
 	if configurationErr != nil {
 		return configurationErr
