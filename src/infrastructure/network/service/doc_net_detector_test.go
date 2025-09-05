@@ -6,7 +6,7 @@ import (
 )
 
 func TestFrameDetector_HostIsInServiceNetwork_Table(t *testing.T) {
-	fd := NewFrameDetector()
+	fd := NewDocNetDetector()
 
 	tests := []struct {
 		name     string
@@ -48,34 +48,34 @@ func TestFrameDetector_HostIsInServiceNetwork_Table(t *testing.T) {
 			if addrErr != nil {
 				t.Fatalf("failed to parse address %q", tc.addr)
 			}
-			got := fd.HostIsInServiceNetwork(addr)
+			got := fd.IsInDocNet(addr)
 			if got != tc.wantTrue {
-				t.Errorf("HostIsInServiceNetwork(%q) = %v, want %v", tc.addr, got, tc.wantTrue)
+				t.Errorf("IsInDocNet(%q) = %v, want %v", tc.addr, got, tc.wantTrue)
 			}
 		})
 	}
 }
 
 func TestFrameDetector_HostIsInServiceNetwork_IPv4MappedIPv6(t *testing.T) {
-	fd := NewFrameDetector()
+	fd := NewDocNetDetector()
 
 	// IPv4-mapped IPv6 should be recognized after Unmap()
 	addr := netip.MustParseAddr("::ffff:198.51.100.123")
-	got := fd.HostIsInServiceNetwork(addr)
+	got := fd.IsInDocNet(addr)
 	if !got {
 		t.Fatalf("expected true for IPv4-mapped TEST-NET address, got false")
 	}
 
 	// Non-test IPv4 mapped should be false
 	addr = netip.MustParseAddr("::ffff:203.0.114.1")
-	got = fd.HostIsInServiceNetwork(addr)
+	got = fd.IsInDocNet(addr)
 	if got {
 		t.Fatalf("expected false for IPv4-mapped non-TEST-NET address, got true")
 	}
 }
 
 func TestFrameDetector_PrefixesInitialized(t *testing.T) {
-	fd := NewFrameDetector()
+	fd := NewDocNetDetector()
 	// Spot-check one prefix
 	want := netip.MustParsePrefix(testNetTwo)
 	if fd.testNetPrefixes[1] != want {
@@ -84,7 +84,7 @@ func TestFrameDetector_PrefixesInitialized(t *testing.T) {
 }
 
 func BenchmarkFrameDetector_HostIsInServiceNetwork(b *testing.B) {
-	fd := NewFrameDetector()
+	fd := NewDocNetDetector()
 	addresses := []netip.Addr{
 		netip.MustParseAddr("192.0.2.1"),            // hit
 		netip.MustParseAddr("198.51.100.200"),       // hit
@@ -98,6 +98,6 @@ func BenchmarkFrameDetector_HostIsInServiceNetwork(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		addr := addresses[i%len(addresses)]
-		_ = fd.HostIsInServiceNetwork(addr)
+		_ = fd.IsInDocNet(addr)
 	}
 }

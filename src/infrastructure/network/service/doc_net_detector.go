@@ -12,15 +12,15 @@ const (
 	testNetFour  = "2001:db8::/32"   // https://datatracker.ietf.org/doc/html/rfc3849#section-2
 )
 
-type DefaultServiceFrameDetector struct {
+type DocNetDetector struct {
 	// testNetPrefixes is a list of RFC 5737 networks,
 	// which are non-routable address spaces, used for service purposes in TunGo.
 	// for more info see: https://datatracker.ietf.org/doc/html/rfc5737#section-3.
 	testNetPrefixes [4]netip.Prefix
 }
 
-func NewFrameDetector() *DefaultServiceFrameDetector {
-	return &DefaultServiceFrameDetector{
+func NewDocNetDetector() *DocNetDetector {
+	return &DocNetDetector{
 		testNetPrefixes: [4]netip.Prefix{
 			netip.MustParsePrefix(testNetOne),
 			netip.MustParsePrefix(testNetTwo),
@@ -30,7 +30,7 @@ func NewFrameDetector() *DefaultServiceFrameDetector {
 	}
 }
 
-func (d *DefaultServiceFrameDetector) HostIsInServiceNetwork(
+func (d *DocNetDetector) IsInDocNet(
 	addr netip.Addr,
 ) bool {
 	addr = addr.Unmap()

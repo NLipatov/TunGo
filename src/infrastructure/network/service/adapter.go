@@ -10,7 +10,7 @@ import (
 type Adapter struct {
 	adapter      application.ConnectionAdapter
 	headerParser ip.HeaderParser
-	detector     application.ServiceFrameDetector
+	detector     application.DocNetDetector
 }
 
 func NewDefaultAdapter(
@@ -19,14 +19,14 @@ func NewDefaultAdapter(
 	return &Adapter{
 		adapter:      adapter,
 		headerParser: nip.NewHeaderParser(),
-		detector:     NewFrameDetector(),
+		detector:     NewDocNetDetector(),
 	}
 }
 
 func NewAdapter(
 	adapter application.ConnectionAdapter,
 	headerParser ip.HeaderParser,
-	detector application.ServiceFrameDetector,
+	detector application.DocNetDetector,
 ) *Adapter {
 	return &Adapter{
 		adapter:      adapter,
@@ -48,7 +48,7 @@ func (a *Adapter) Read(buffer []byte) (int, error) {
 	if addrErr != nil {
 		return n, addrErr
 	}
-	if a.detector.HostIsInServiceNetwork(addr) {
+	if a.detector.IsInDocNet(addr) {
 		// handle service frame
 	}
 	return n, nil
