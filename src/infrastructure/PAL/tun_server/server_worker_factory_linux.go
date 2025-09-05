@@ -10,7 +10,6 @@ import (
 	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network/ip"
-	"tungo/infrastructure/network/service"
 	wsServer "tungo/infrastructure/network/ws/server"
 	"tungo/infrastructure/routing/server_routing/routing/tcp_chacha20"
 	"tungo/infrastructure/routing/server_routing/routing/udp_chacha20"
@@ -164,7 +163,7 @@ func (s *ServerWorkerFactory) createUDPWorker(
 
 	th := udp_chacha20.NewTunHandler(
 		ctx,
-		service.NewDefaultAdapter(tun), // adapter for detection and handling service frames
+		tun,
 		ip.NewHeaderParser(),
 		sessionManager,
 	)
