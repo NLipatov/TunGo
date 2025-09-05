@@ -38,6 +38,18 @@ type TunHandlerMockParser struct {
 	err  error
 }
 
+func (p *TunHandlerMockParser) Version(_ []byte) (uint8, error) {
+	panic("not implemented")
+}
+
+func (p *TunHandlerMockParser) Protocol(_ []byte) (uint8, error) {
+	panic("not implemented")
+}
+
+func (p *TunHandlerMockParser) SourceAddress(_ []byte) (netip.Addr, error) {
+	panic("not implemented")
+}
+
 func (p *TunHandlerMockParser) DestinationAddress(_ []byte) (netip.Addr, error) {
 	return p.addr, p.err
 }
