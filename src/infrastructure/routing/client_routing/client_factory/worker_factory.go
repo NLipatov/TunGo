@@ -9,6 +9,7 @@ import (
 	"tungo/application"
 	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/network"
+	"tungo/infrastructure/network/service"
 	"tungo/infrastructure/network/udp/adapters"
 	"tungo/infrastructure/routing/client_routing/routing/tcp_chacha20"
 	"tungo/infrastructure/routing/client_routing/routing/udp_chacha20"
@@ -36,7 +37,12 @@ func (w *WorkerFactory) CreateWorker(
 		}
 		transport := adapters.NewClientUDPAdapter(conn.(*net.UDPConn), deadline, deadline)
 		// tunHandler reads from tun and writes to transport
-		tunHandler := udp_chacha20.NewTunHandler(ctx, tun, transport, crypto)
+		tunHandler := udp_chacha20.NewTunHandler(
+			ctx,
+			service.NewDefaultAdapter(tun), // adapter for detection and handling service frames
+			transport,
+			crypto,
+		)
 		// transportHandler reads from transport and writes to tun
 		transportHandler := udp_chacha20.NewTransportHandler(ctx, transport, tun, crypto)
 		return udp_chacha20.NewUdpWorker(transportHandler, tunHandler), nil
