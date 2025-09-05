@@ -19,12 +19,18 @@ type Frame struct {
 	marshalBuffer []byte
 }
 
+func NewDefaultFrame() *Frame {
+	return &Frame{
+		marshalBuffer: make([]byte, 0, domain.HeaderSize+domain.MaxBody),
+	}
+}
+
 func NewFrame(
 	version domain.Version,
 	kind domain.Kind,
 	flags domain.Flags,
 	payload []byte,
-) (Frame, error) {
+) (*Frame, error) {
 	frame := Frame{
 		version:       version,
 		kind:          kind,
@@ -32,7 +38,7 @@ func NewFrame(
 		body:          payload,
 		marshalBuffer: make([]byte, 0, domain.MaxBody+domain.HeaderSize),
 	}
-	return frame, frame.Validate()
+	return &frame, frame.Validate()
 }
 
 func (f *Frame) Validate() error {
