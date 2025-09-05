@@ -164,7 +164,7 @@ func (s *ServerWorkerFactory) createUDPWorker(
 
 	th := udp_chacha20.NewTunHandler(
 		ctx,
-		service.NewDefaultAdapter(tun),
+		service.NewDefaultAdapter(tun), // adapter for detection and handling service frames
 		ip.NewHeaderParser(),
 		sessionManager,
 	)
