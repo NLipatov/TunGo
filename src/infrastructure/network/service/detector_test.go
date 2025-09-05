@@ -48,10 +48,7 @@ func TestFrameDetector_HostIsInServiceNetwork_Table(t *testing.T) {
 			if addrErr != nil {
 				t.Fatalf("failed to parse address %q", tc.addr)
 			}
-			got, err := fd.HostIsInServiceNetwork(addr)
-			if err != nil {
-				t.Fatalf("unexpected error for %q: %v", tc.addr, err)
-			}
+			got := fd.HostIsInServiceNetwork(addr)
 			if got != tc.wantTrue {
 				t.Errorf("HostIsInServiceNetwork(%q) = %v, want %v", tc.addr, got, tc.wantTrue)
 			}
@@ -64,20 +61,14 @@ func TestFrameDetector_HostIsInServiceNetwork_IPv4MappedIPv6(t *testing.T) {
 
 	// IPv4-mapped IPv6 should be recognized after Unmap()
 	addr := netip.MustParseAddr("::ffff:198.51.100.123")
-	got, err := fd.HostIsInServiceNetwork(addr)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	got := fd.HostIsInServiceNetwork(addr)
 	if !got {
 		t.Fatalf("expected true for IPv4-mapped TEST-NET address, got false")
 	}
 
 	// Non-test IPv4 mapped should be false
 	addr = netip.MustParseAddr("::ffff:203.0.114.1")
-	got, err = fd.HostIsInServiceNetwork(addr)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	got = fd.HostIsInServiceNetwork(addr)
 	if got {
 		t.Fatalf("expected false for IPv4-mapped non-TEST-NET address, got true")
 	}
@@ -94,7 +85,7 @@ func TestFrameDetector_PrefixesInitialized(t *testing.T) {
 
 func BenchmarkFrameDetector_HostIsInServiceNetwork(b *testing.B) {
 	fd := NewFrameDetector()
-	addrs := []netip.Addr{
+	addresses := []netip.Addr{
 		netip.MustParseAddr("192.0.2.1"),            // hit
 		netip.MustParseAddr("198.51.100.200"),       // hit
 		netip.MustParseAddr("203.0.113.7"),          // hit
@@ -106,9 +97,7 @@ func BenchmarkFrameDetector_HostIsInServiceNetwork(b *testing.B) {
 
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		addr := addrs[i%len(addrs)]
-		if _, err := fd.HostIsInServiceNetwork(addr); err != nil {
-			b.Fatalf("unexpected error: %v", err)
-		}
+		addr := addresses[i%len(addresses)]
+		_ = fd.HostIsInServiceNetwork(addr)
 	}
 }

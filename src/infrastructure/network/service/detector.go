@@ -12,16 +12,15 @@ const (
 	testNetFour  = "2001:db8::/32"   // https://datatracker.ietf.org/doc/html/rfc3849#section-2
 )
 
-// FrameDetector is used to distinct service frames(diagnostic frames) from regular frames.
-type FrameDetector struct {
+type DefaultServiceFrameDetector struct {
 	// testNetPrefixes is a list of RFC 5737 networks,
 	// which are non-routable address spaces, used for service purposes in TunGo.
 	// for more info see: https://datatracker.ietf.org/doc/html/rfc5737#section-3.
 	testNetPrefixes [4]netip.Prefix
 }
 
-func NewFrameDetector() *FrameDetector {
-	return &FrameDetector{
+func NewFrameDetector() *DefaultServiceFrameDetector {
+	return &DefaultServiceFrameDetector{
 		testNetPrefixes: [4]netip.Prefix{
 			netip.MustParsePrefix(testNetOne),
 			netip.MustParsePrefix(testNetTwo),
@@ -31,13 +30,14 @@ func NewFrameDetector() *FrameDetector {
 	}
 }
 
-func (f *FrameDetector) HostIsInServiceNetwork(addr netip.Addr) (bool, error) {
+func (d *DefaultServiceFrameDetector) HostIsInServiceNetwork(
+	addr netip.Addr,
+) bool {
 	addr = addr.Unmap()
-	for _, prefix := range f.testNetPrefixes {
+	for _, prefix := range d.testNetPrefixes {
 		if prefix.Contains(addr) {
-			return true, nil
+			return true
 		}
 	}
-
-	return false, nil
+	return false
 }
