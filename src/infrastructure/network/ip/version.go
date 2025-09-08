@@ -14,14 +14,26 @@ const (
 func (v Version) Valid() bool { return v == V4 || v == V6 }
 
 // FromByte constructs Version from a single byte.
-func FromByte(b byte) (Version, error) {
-	switch b {
+func FromByte(byte byte) (Version, error) {
+	switch byte {
 	case 4:
 		return V4, nil
 	case 6:
 		return V6, nil
 	default:
-		return 0, fmt.Errorf("invalid IP version: %d", b)
+		return 0, fmt.Errorf("invalid IP version: %d", byte)
+	}
+}
+
+// FromUint8 constructs Version from a uint8.
+func FromUint8(value uint8) (Version, error) {
+	switch value {
+	case 4:
+		return V4, nil
+	case 6:
+		return V6, nil
+	default:
+		return 0, fmt.Errorf("invalid IP version: %d", value)
 	}
 }
 
