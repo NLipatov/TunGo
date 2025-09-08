@@ -1,4 +1,4 @@
-package service
+package serviceframe
 
 import (
 	"bytes"
@@ -7,8 +7,6 @@ import (
 	"math"
 	"math/rand"
 	"testing"
-
-	domain "tungo/domain/network/serviceframe"
 )
 
 func makePayload(n int) []byte {
@@ -19,25 +17,25 @@ func makePayload(n int) []byte {
 	return p
 }
 
-func wireFrom(v domain.Version, k domain.Kind, fl domain.Flags, body []byte) []byte {
-	b := make([]byte, domain.HeaderSize+len(body))
-	b[0], b[1] = domain.MagicSF[0], domain.MagicSF[1]
+func wireFrom(v Version, k Kind, fl Flags, body []byte) []byte {
+	b := make([]byte, HeaderSize+len(body))
+	b[0], b[1] = MagicSF[0], MagicSF[1]
 	b[2] = byte(v)
 	b[3] = byte(k)
 	b[4] = byte(fl)
 	binary.BigEndian.PutUint16(b[5:7], uint16(len(body)))
-	copy(b[domain.HeaderSize:], body)
+	copy(b[HeaderSize:], body)
 	return b
 }
 
 func TestNewFrame_Validate_OK(t *testing.T) {
 	body := makePayload(8)
 	kind := randomKind()
-	f, err := NewFrame(domain.V1, kind, 0, body)
+	f, err := NewFrame(V1, kind, 0, body)
 	if err != nil {
 		t.Fatalf("NewFrame returned error: %v", err)
 	}
-	if f.version != domain.V1 || f.kind != kind || !bytes.Equal(f.body, body) {
+	if f.version != V1 || f.kind != kind || !bytes.Equal(f.body, body) {
 		t.Fatalf("unexpected frame fields")
 	}
 }
@@ -45,30 +43,30 @@ func TestNewFrame_Validate_OK(t *testing.T) {
 func TestNewFrame_Validate_Errors(t *testing.T) {
 	bodyOK := makePayload(1)
 
-	_, err := NewFrame(domain.V1-1, randomKind(), 0, bodyOK)
-	if !errors.Is(err, domain.ErrBadVersion) {
+	_, err := NewFrame(V1-1, randomKind(), 0, bodyOK)
+	if !errors.Is(err, ErrBadVersion) {
 		t.Fatalf("expected ErrBadVersion, got %v", err)
 	}
 
 	// invalid kind: pick the first value that IsValid() == false
-	var badK domain.Kind
+	var badK Kind
 	for i := 0; i < 256; i++ {
-		if !domain.Kind(uint8(i)).IsValid() {
-			badK = domain.Kind(uint8(i))
+		if !Kind(uint8(i)).IsValid() {
+			badK = Kind(uint8(i))
 			break
 		}
 	}
 	// if all kinds are valid, skip this check
 	if badK != 0 || !randomKind().IsValid() {
-		_, err = NewFrame(domain.V1, badK, 0, bodyOK)
-		if !errors.Is(err, domain.ErrBadKind) {
+		_, err = NewFrame(V1, badK, 0, bodyOK)
+		if !errors.Is(err, ErrBadKind) {
 			t.Fatalf("expected ErrBadKind, got %v", err)
 		}
 	}
 
-	tooBig := makePayload(int(domain.MaxBody) + 1)
-	_, err = NewFrame(domain.V1, randomKind(), 0, tooBig)
-	if !errors.Is(err, domain.ErrBodyTooLarge) {
+	tooBig := makePayload(int(MaxBody) + 1)
+	_, err = NewFrame(V1, randomKind(), 0, tooBig)
+	if !errors.Is(err, ErrBodyTooLarge) {
 		t.Fatalf("expected ErrBodyTooLarge, got %v", err)
 	}
 }
@@ -77,7 +75,7 @@ func TestMarshalUnmarshal_RoundTrip(t *testing.T) {
 	body := makePayload(32)
 
 	kind := randomKind()
-	frame, err := NewFrame(domain.V1, kind, 0, body)
+	frame, err := NewFrame(V1, kind, 0, body)
 	if err != nil {
 		t.Fatalf("NewFrame: %v", err)
 	}
@@ -91,7 +89,7 @@ func TestMarshalUnmarshal_RoundTrip(t *testing.T) {
 		t.Fatalf("UnmarshalBinary: %v", err)
 	}
 
-	if got.version != domain.V1 || got.kind != kind || got.flags != 0 {
+	if got.version != V1 || got.kind != kind || got.flags != 0 {
 		t.Fatalf("header mismatch after roundtrip")
 	}
 	if !bytes.Equal(got.body, body) {
@@ -102,33 +100,33 @@ func TestMarshalUnmarshal_RoundTrip(t *testing.T) {
 func TestUnmarshalBinary_ErrTooShort(t *testing.T) {
 	var f Frame
 	err := f.UnmarshalBinary([]byte{0})
-	if !errors.Is(err, domain.ErrTooShort) {
+	if !errors.Is(err, ErrTooShort) {
 		t.Fatalf("expected ErrTooShort, got %v", err)
 	}
 }
 
 func TestUnmarshalBinary_ErrBadMagic(t *testing.T) {
-	data := wireFrom(domain.V1, randomKind(), 0, makePayload(1))
+	data := wireFrom(V1, randomKind(), 0, makePayload(1))
 	data[0], data[1] = 'X', 'Y'
 	var f Frame
 	err := f.UnmarshalBinary(data)
-	if !errors.Is(err, domain.ErrBadMagic) {
+	if !errors.Is(err, ErrBadMagic) {
 		t.Fatalf("expected ErrBadMagic, got %v", err)
 	}
 }
 
 func TestUnmarshalBinary_ErrBadVersion(t *testing.T) {
-	data := wireFrom(domain.V1-1, randomKind(), 0, makePayload(1))
+	data := wireFrom(V1-1, randomKind(), 0, makePayload(1))
 	var f Frame
 	err := f.UnmarshalBinary(data)
-	if !errors.Is(err, domain.ErrBadVersion) {
+	if !errors.Is(err, ErrBadVersion) {
 		t.Fatalf("expected ErrBadVersion, got %v", err)
 	}
 }
 
 func TestUnmarshalBinary_ErrBadKind(t *testing.T) {
 	// find a value that IsValid()==false; if none, skip
-	var badK domain.Kind
+	var badK Kind
 	found := false
 	for i := 0; i < 256; i++ {
 		kind := randomKind()
@@ -141,40 +139,40 @@ func TestUnmarshalBinary_ErrBadKind(t *testing.T) {
 	if !found {
 		t.Skip("no invalid kind values (IsValid() true for all); skipping")
 	}
-	data := wireFrom(domain.V1, badK, 0, makePayload(1))
+	data := wireFrom(V1, badK, 0, makePayload(1))
 	var f Frame
 	err := f.UnmarshalBinary(data)
-	if !errors.Is(err, domain.ErrBadKind) {
+	if !errors.Is(err, ErrBadKind) {
 		t.Fatalf("expected ErrBadKind, got %v", err)
 	}
 }
 
 func TestUnmarshalBinary_ErrBodyTooLarge(t *testing.T) {
-	body := makePayload(int(domain.MaxBody) + 1)
+	body := makePayload(int(MaxBody) + 1)
 	// build header manually to bypass NewFrame validation
-	data := wireFrom(domain.V1, randomKind(), 0, body)
+	data := wireFrom(V1, randomKind(), 0, body)
 	var f Frame
 	err := f.UnmarshalBinary(data)
-	if !errors.Is(err, domain.ErrBodyTooLarge) {
+	if !errors.Is(err, ErrBodyTooLarge) {
 		t.Fatalf("expected ErrBodyTooLarge, got %v", err)
 	}
 }
 
 func TestUnmarshalBinary_ErrBodyTruncated(t *testing.T) {
 	body := makePayload(8)
-	data := wireFrom(domain.V1, randomKind(), 0, body)
+	data := wireFrom(V1, randomKind(), 0, body)
 	// cut off last bytes
 	data = data[:len(data)-3]
 	var f Frame
 	err := f.UnmarshalBinary(data)
-	if !errors.Is(err, domain.ErrBodyTruncated) {
+	if !errors.Is(err, ErrBodyTruncated) {
 		t.Fatalf("expected ErrBodyTruncated, got %v", err)
 	}
 }
 
 func TestUnmarshalBinary_ZeroCopyBehaviour(t *testing.T) {
 	body := makePayload(4)
-	data := wireFrom(domain.V1, randomKind(), 0, body)
+	data := wireFrom(V1, randomKind(), 0, body)
 
 	var frame Frame
 	if err := frame.UnmarshalBinary(data); err != nil {
@@ -182,25 +180,25 @@ func TestUnmarshalBinary_ZeroCopyBehaviour(t *testing.T) {
 	}
 
 	// mutate the backing buffer and ensure frame.body sees the change
-	data[domain.HeaderSize] ^= 0xFF
+	data[HeaderSize] ^= 0xFF
 	if frame.body[0] != (body[0] ^ 0xFF) {
 		t.Fatalf("expected zero-copy body to reflect mutations of input buffer")
 	}
 }
 
 func TestValidate_Errors(t *testing.T) {
-	f := Frame{version: domain.V1 - 1, kind: randomKind(), flags: 0, body: makePayload(1)}
-	if err := f.Validate(); !errors.Is(err, domain.ErrBadVersion) {
+	f := Frame{version: V1 - 1, kind: randomKind(), flags: 0, body: makePayload(1)}
+	if err := f.Validate(); !errors.Is(err, ErrBadVersion) {
 		t.Fatalf("expected ErrBadVersion")
 	}
-	f = Frame{version: domain.V1, kind: randomKind(), flags: 0, body: makePayload(int(domain.MaxBody) + 1)}
-	if err := f.Validate(); !errors.Is(err, domain.ErrBodyTooLarge) {
+	f = Frame{version: V1, kind: randomKind(), flags: 0, body: makePayload(int(MaxBody) + 1)}
+	if err := f.Validate(); !errors.Is(err, ErrBodyTooLarge) {
 		t.Fatalf("expected ErrBodyTooLarge")
 	}
 }
 
 func TestMarshalBinary_HeaderLayout(t *testing.T) {
-	f, err := NewFrame(domain.V1, domain.KindMTUAck, 0x42, []byte{1, 2})
+	f, err := NewFrame(V1, KindMTUAck, 0x42, []byte{1, 2})
 	if err != nil {
 		t.Fatalf("NewFrame: %v", err)
 	}
@@ -209,38 +207,38 @@ func TestMarshalBinary_HeaderLayout(t *testing.T) {
 		t.Fatalf("MarshalBinary: %v", err)
 	}
 
-	if data[0] != domain.MagicSF[0] || data[1] != domain.MagicSF[1] {
+	if data[0] != MagicSF[0] || data[1] != MagicSF[1] {
 		t.Fatalf("bad magic bytes: %v", data[:2])
 	}
-	if got := domain.Version(data[2]); got != domain.V1 {
+	if got := Version(data[2]); got != V1 {
 		t.Fatalf("bad version byte: %v", got)
 	}
-	if got := domain.Kind(data[3]); got != domain.KindMTUAck {
+	if got := Kind(data[3]); got != KindMTUAck {
 		t.Fatalf("bad kind byte: %v", got)
 	}
-	if got := domain.Flags(data[4]); got != 0x42 {
+	if got := Flags(data[4]); got != 0x42 {
 		t.Fatalf("bad flags byte: %#x", got)
 	}
 	if got := binary.BigEndian.Uint16(data[5:7]); got != 2 {
 		t.Fatalf("bad payload len: %d", got)
 	}
-	if !bytes.Equal(data[domain.HeaderSize:], []byte{1, 2}) {
+	if !bytes.Equal(data[HeaderSize:], []byte{1, 2}) {
 		t.Fatalf("bad payload content")
 	}
 }
 
 func TestAccessors(t *testing.T) {
 	body := makePayload(5)
-	const fl = domain.Flags(0x07)
-	f, err := NewFrame(domain.V1, domain.KindMTUProbe, fl, body)
+	const fl = Flags(0x07)
+	f, err := NewFrame(V1, KindMTUProbe, fl, body)
 	if err != nil {
 		t.Fatalf("NewFrame: %v", err)
 	}
 
-	if f.Version() != domain.V1 {
+	if f.Version() != V1 {
 		t.Fatalf("Version() mismatch: got %v", f.Version())
 	}
-	if f.Kind() != domain.KindMTUProbe {
+	if f.Kind() != KindMTUProbe {
 		t.Fatalf("Kind() mismatch: got %v", f.Kind())
 	}
 	if f.Flags() != fl {
@@ -251,8 +249,8 @@ func TestAccessors(t *testing.T) {
 	}
 }
 func TestUnmarshalBinary_PreservesFlags(t *testing.T) {
-	const fl = domain.Flags(0xA5)
-	wire := wireFrom(domain.V1, domain.KindMTUAck, fl, makePayload(3))
+	const fl = Flags(0xA5)
+	wire := wireFrom(V1, KindMTUAck, fl, makePayload(3))
 
 	var f Frame
 	if err := f.UnmarshalBinary(wire); err != nil {
@@ -264,7 +262,7 @@ func TestUnmarshalBinary_PreservesFlags(t *testing.T) {
 }
 
 func TestUnmarshalBinary_EmptyBody(t *testing.T) {
-	wire := wireFrom(domain.V1, domain.KindSessionReset, 0, nil)
+	wire := wireFrom(V1, KindSessionReset, 0, nil)
 
 	var f Frame
 	if err := f.UnmarshalBinary(wire); err != nil {
@@ -276,8 +274,8 @@ func TestUnmarshalBinary_EmptyBody(t *testing.T) {
 }
 
 func TestUnmarshalBinary_MaxBody_OK(t *testing.T) {
-	body := makePayload(int(domain.MaxBody))
-	wire := wireFrom(domain.V1, domain.KindSessionReset, 0, body)
+	body := makePayload(int(MaxBody))
+	wire := wireFrom(V1, KindSessionReset, 0, body)
 
 	var f Frame
 	if err := f.UnmarshalBinary(wire); err != nil {
@@ -289,7 +287,7 @@ func TestUnmarshalBinary_MaxBody_OK(t *testing.T) {
 }
 
 func TestMarshalBinary_BufferReuseAndInvalidation(t *testing.T) {
-	f, err := NewFrame(domain.V1, domain.KindSessionReset, 0, []byte{1, 2, 3})
+	f, err := NewFrame(V1, KindSessionReset, 0, []byte{1, 2, 3})
 	if err != nil {
 		t.Fatalf("NewFrame: %v", err)
 	}
@@ -323,7 +321,7 @@ func TestMarshalBinary_BufferReuseAndInvalidation(t *testing.T) {
 }
 
 func TestMarshalBinary_ReallocateWhenCapTooSmall(t *testing.T) {
-	f, err := NewFrame(domain.V1, domain.KindSessionReset, 0, makePayload(4))
+	f, err := NewFrame(V1, KindSessionReset, 0, makePayload(4))
 	if err != nil {
 		t.Fatalf("NewFrame: %v", err)
 	}
@@ -333,7 +331,7 @@ func TestMarshalBinary_ReallocateWhenCapTooSmall(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MarshalBinary: %v", err)
 	}
-	wantTotal := domain.HeaderSize + 4
+	wantTotal := HeaderSize + 4
 	if cap(f.marshalBuffer) < wantTotal {
 		t.Fatalf("expected reallocated cap >= %d, got %d", wantTotal, cap(f.marshalBuffer))
 	}
@@ -343,26 +341,26 @@ func TestMarshalBinary_ReallocateWhenCapTooSmall(t *testing.T) {
 }
 
 func TestMarshalBinary_ErrBadKind(t *testing.T) {
-	f, err := NewFrame(domain.V1, domain.KindSessionReset, 0, makePayload(1))
+	f, err := NewFrame(V1, KindSessionReset, 0, makePayload(1))
 	if err != nil {
 		t.Fatalf("NewFrame: %v", err)
 	}
 	// Corrupt kind after construction to trigger Validate() inside MarshalBinary.
-	f.kind = domain.Kind(math.MaxUint8)
-	if _, err := f.MarshalBinary(); !errors.Is(err, domain.ErrBadKind) {
+	f.kind = Kind(math.MaxUint8)
+	if _, err := f.MarshalBinary(); !errors.Is(err, ErrBadKind) {
 		t.Fatalf("expected ErrBadKind from MarshalBinary, got %v", err)
 	}
 }
 
 func TestValidate_ErrBadKind(t *testing.T) {
-	f := Frame{version: domain.V1, kind: domain.Kind(math.MaxUint8), flags: 0, body: makePayload(1)}
-	if err := f.Validate(); !errors.Is(err, domain.ErrBadKind) {
+	f := Frame{version: V1, kind: Kind(math.MaxUint8), flags: 0, body: makePayload(1)}
+	if err := f.Validate(); !errors.Is(err, ErrBadKind) {
 		t.Fatalf("expected ErrBadKind, got %v", err)
 	}
 }
 
 func BenchmarkMarshalBinary_Small(b *testing.B) {
-	frame, _ := NewFrame(domain.V1, randomKind(), 0, makePayload(32))
+	frame, _ := NewFrame(V1, randomKind(), 0, makePayload(32))
 
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -372,7 +370,7 @@ func BenchmarkMarshalBinary_Small(b *testing.B) {
 }
 
 func BenchmarkMarshalBinary_MaxBody(b *testing.B) {
-	frame, _ := NewFrame(domain.V1, randomKind(), 0, makePayload(int(domain.MaxBody)))
+	frame, _ := NewFrame(V1, randomKind(), 0, makePayload(int(MaxBody)))
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -382,7 +380,7 @@ func BenchmarkMarshalBinary_MaxBody(b *testing.B) {
 }
 
 func BenchmarkUnmarshalBinary_Small(b *testing.B) {
-	wire := wireFrom(domain.V1, randomKind(), 0, makePayload(32))
+	wire := wireFrom(V1, randomKind(), 0, makePayload(32))
 	var frame Frame
 
 	b.ReportAllocs()
@@ -393,7 +391,7 @@ func BenchmarkUnmarshalBinary_Small(b *testing.B) {
 }
 
 func BenchmarkUnmarshalBinary_MaxBody(b *testing.B) {
-	wire := wireFrom(domain.V1, randomKind(), 0, makePayload(int(domain.MaxBody)))
+	wire := wireFrom(V1, randomKind(), 0, makePayload(int(MaxBody)))
 	var frame Frame
 
 	b.ReportAllocs()
@@ -404,7 +402,7 @@ func BenchmarkUnmarshalBinary_MaxBody(b *testing.B) {
 }
 
 func BenchmarkMarshalBinary(b *testing.B) {
-	frame, _ := NewFrame(domain.V1, domain.Kind(rand.Intn(3)), 0, makePayload(16))
+	frame, _ := NewFrame(V1, Kind(rand.Intn(3)), 0, makePayload(16))
 
 	b.ReportAllocs()
 	for range b.N {
@@ -413,7 +411,7 @@ func BenchmarkMarshalBinary(b *testing.B) {
 }
 
 func BenchmarkUnmarshalBinary(b *testing.B) {
-	wire := wireFrom(domain.V1, randomKind(), 0, makePayload(16))
+	wire := wireFrom(V1, randomKind(), 0, makePayload(16))
 	var frame Frame
 
 	b.ReportAllocs()
@@ -422,14 +420,14 @@ func BenchmarkUnmarshalBinary(b *testing.B) {
 	}
 }
 
-func randomKind() domain.Kind {
+func randomKind() Kind {
 	idx := rand.Intn(3)
 	switch idx {
 	case 1:
-		return domain.KindMTUProbe
+		return KindMTUProbe
 	case 2:
-		return domain.KindMTUProbe
+		return KindMTUProbe
 	default:
-		return domain.KindSessionReset
+		return KindSessionReset
 	}
 }
