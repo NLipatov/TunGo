@@ -38,16 +38,16 @@ func NewTunHandler(
 // HandleTun reads packets from the TUN interface,
 // reserves space for AEAD overhead, encrypts them, and forwards them to the correct session.
 //
-// Buffer layout (total size = MTU + NonceSize + TagSize):
+// Buffer layout (total size = SafeMTU + NonceSize + TagSize):
 //
 //	[ 0 ........ 11 ][ 12 ........ 1511 ][ 1512 ........ 1527 ]
-//	|   Nonce    |      Payload (<= MTU) |       Tag (16B)    |
+//	|   Nonce    |      Payload (<= SafeMTU) |       Tag (16B)    |
 //
-// Example with settings.MTU = 1500, settings.UDPChacha20Overhead = 28:
+// Example with settings.SafeMTU = 1500, settings.UDPChacha20Overhead = 28:
 // - buffer length = 1500 + 28 = 1528
 //
 // Step 1 – read plaintext from TUN:
-// - reader.Read writes at most MTU bytes into buffer[12:1512].
+// - reader.Read writes at most SafeMTU bytes into buffer[12:1512].
 // - the first 12 bytes (buffer[0:12]) are reserved for the nonce
 // - the last 16 bytes (buffer[1512:1528]) are reserved for the Poly1305 tag
 //
@@ -58,7 +58,7 @@ func NewTunHandler(
 //     (nonce) and the suffix (tag) are already reserved in the buffer.
 func (t *TunHandler) HandleTun() error {
 	// Reserve space for nonce + payload + AEAD tag (in-place encryption needs extra capacity).
-	buffer := make([]byte, settings.MTU+settings.UDPChacha20Overhead)
+	buffer := make([]byte, settings.DefaultEthernetMTU+settings.UDPChacha20Overhead)
 
 	for {
 		select {
@@ -66,7 +66,7 @@ func (t *TunHandler) HandleTun() error {
 			return nil
 		default:
 			// Read payload right after the reserved nonce area.
-			n, rErr := t.reader.Read(buffer[chacha20poly1305.NonceSize : chacha20poly1305.NonceSize+settings.MTU])
+			n, rErr := t.reader.Read(buffer[chacha20poly1305.NonceSize : settings.DefaultEthernetMTU+chacha20poly1305.NonceSize])
 			if rErr != nil {
 				if rErr == io.EOF {
 					log.Println("TUN interface closed, shutting down...")

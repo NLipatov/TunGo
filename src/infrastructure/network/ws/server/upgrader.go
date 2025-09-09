@@ -22,6 +22,6 @@ func (a *DefaultUpgrader) Upgrade(w http.ResponseWriter, r *http.Request) (ws.Co
 	if err != nil {
 		return nil, err
 	}
-	wsConn.SetReadLimit(int64(settings.MTU + settings.TCPChacha20Overhead))
+	wsConn.SetReadLimit(int64(settings.DefaultEthernetMTU + settings.TCPChacha20Overhead))
 	return wsConn, nil
 }

@@ -169,7 +169,7 @@ func TestWrite_EmptyPacket(t *testing.T) {
 
 func TestWrite_TooLargePacket(t *testing.T) {
 	// payload larger than MaxPacketLengthBytes-4
-	tooBig := make([]byte, settings.MTU+UTUNHeaderSize)
+	tooBig := make([]byte, settings.DefaultEthernetMTU+UTUNHeaderSize)
 	ft := &fakeTun{}
 	adapter := NewWgTunAdapter(ft)
 

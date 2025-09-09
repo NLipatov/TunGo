@@ -89,7 +89,7 @@ func (t *TransportHandler) HandleTransport() error {
 func (t *TransportHandler) registerClient(conn net.Conn, tunFile io.ReadWriteCloser, ctx context.Context) error {
 	t.logger.Printf("connected: %s", conn.RemoteAddr())
 
-	framingAdapter, fErr := adapters.NewLengthPrefixFramingAdapter(conn, settings.MTU+settings.TCPChacha20Overhead)
+	framingAdapter, fErr := adapters.NewLengthPrefixFramingAdapter(conn, settings.DefaultEthernetMTU+settings.TCPChacha20Overhead)
 	if fErr != nil {
 		return fErr
 	}
@@ -152,7 +152,7 @@ func (t *TransportHandler) handleClient(ctx context.Context, session application
 		t.logger.Printf("disconnected: %s", session.ExternalAddrPort())
 	}()
 
-	buffer := make([]byte, settings.MTU+settings.TCPChacha20Overhead)
+	buffer := make([]byte, settings.DefaultEthernetMTU+settings.TCPChacha20Overhead)
 	for {
 		select {
 		case <-ctx.Done():
@@ -165,7 +165,7 @@ func (t *TransportHandler) handleClient(ctx context.Context, session application
 				}
 				return
 			}
-			if n < chacha20poly1305.Overhead || n > settings.MTU+settings.TCPChacha20Overhead {
+			if n < chacha20poly1305.Overhead || n > settings.DefaultEthernetMTU+settings.TCPChacha20Overhead {
 				t.logger.Printf("invalid ciphertext length: %d", n)
 				continue
 			}

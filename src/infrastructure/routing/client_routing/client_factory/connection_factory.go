@@ -178,7 +178,7 @@ func (f *ConnectionFactory) dialTCP(
 		_ = tcp.SetKeepAlivePeriod(30 * time.Second)
 	}
 
-	return adapters.NewLengthPrefixFramingAdapter(conn, settings.MTU+settings.TCPChacha20Overhead)
+	return adapters.NewLengthPrefixFramingAdapter(conn, settings.DefaultEthernetMTU+settings.TCPChacha20Overhead)
 }
 
 func (f *ConnectionFactory) dialUDP(
@@ -205,6 +205,6 @@ func (f *ConnectionFactory) dialWS(
 
 	return adapters.NewLengthPrefixFramingAdapter(
 		wsAdapters.NewDefaultAdapter(connCtx, conn, nil, nil),
-		settings.MTU+settings.TCPChacha20Overhead,
+		settings.DefaultEthernetMTU+settings.TCPChacha20Overhead,
 	)
 }
