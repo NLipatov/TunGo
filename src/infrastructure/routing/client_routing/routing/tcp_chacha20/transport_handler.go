@@ -32,7 +32,7 @@ func NewTransportHandler(
 }
 
 func (t *TransportHandler) HandleTransport() error {
-	buf := make([]byte, settings.MTU+settings.TCPChacha20Overhead)
+	buf := make([]byte, settings.DefaultEthernetMTU+settings.TCPChacha20Overhead)
 	for {
 		select {
 		case <-t.ctx.Done():
@@ -47,7 +47,7 @@ func (t *TransportHandler) HandleTransport() error {
 				return err
 			}
 
-			if n < chacha20poly1305.Overhead || n > settings.MTU+settings.TCPChacha20Overhead {
+			if n < chacha20poly1305.Overhead || n > settings.DefaultEthernetMTU+settings.TCPChacha20Overhead {
 				log.Printf("invalid ciphertext length: %d", n)
 				continue
 			}

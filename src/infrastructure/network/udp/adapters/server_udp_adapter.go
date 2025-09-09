@@ -12,7 +12,7 @@ type ServerUdpAdapter struct {
 	conn     listeners.UdpListener
 	addrPort netip.AddrPort
 
-	readBuffer [settings.MTU + settings.UDPChacha20Overhead]byte
+	readBuffer [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
 	oob        [1024]byte
 }
 

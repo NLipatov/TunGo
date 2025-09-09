@@ -37,7 +37,7 @@ func NewTunHandler(ctx context.Context,
 //	[ 0 ........ 11 ][ 12 ........ 1511 ][ 1512 ........ 1527 ]
 //	|   Nonce    |      Payload (<= MTU) |       Tag (16B)    |
 //
-// Example with settings.MTU = 1500, settings.UDPChacha20Overhead = 28:
+// Example with MTU = 1500, settings.UDPChacha20Overhead = 28:
 // - buffer length = 1500 + 28 = 1528
 //
 // Step 1 – read plaintext from TUN:
@@ -52,7 +52,7 @@ func NewTunHandler(ctx context.Context,
 //     (nonce) and the suffix (tag) are already reserved in the buffer.
 func (w *TunHandler) HandleTun() error {
 	// +12 nonce +16 AEAD tag headroom
-	buffer := make([]byte, settings.MTU+settings.UDPChacha20Overhead)
+	buffer := make([]byte, settings.DefaultEthernetMTU+settings.UDPChacha20Overhead)
 
 	// Main loop to read from TUN and send data
 	for {
@@ -60,7 +60,7 @@ func (w *TunHandler) HandleTun() error {
 		case <-w.ctx.Done():
 			return nil
 		default:
-			n, err := w.reader.Read(buffer[chacha20poly1305.NonceSize : chacha20poly1305.NonceSize+settings.MTU])
+			n, err := w.reader.Read(buffer[chacha20poly1305.NonceSize : settings.DefaultEthernetMTU+chacha20poly1305.NonceSize])
 			if n > 0 {
 				// Encrypt expects header+payload (12+n)
 				enc, encErr := w.cryptographyService.Encrypt(buffer[:chacha20poly1305.NonceSize+n])

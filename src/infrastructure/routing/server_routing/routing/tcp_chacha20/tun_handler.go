@@ -33,8 +33,8 @@ func NewTunHandler(
 }
 
 func (t *TunHandler) HandleTun() error {
-	backing := make([]byte, settings.MTU+settings.TCPChacha20Overhead)
-	pt := backing[:settings.MTU]
+	backing := make([]byte, settings.DefaultEthernetMTU+settings.TCPChacha20Overhead)
+	pt := backing[:settings.DefaultEthernetMTU]
 
 	for {
 		select {

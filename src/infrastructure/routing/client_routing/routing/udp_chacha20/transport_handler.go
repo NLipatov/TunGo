@@ -33,7 +33,7 @@ func NewTransportHandler(
 }
 
 func (t *TransportHandler) HandleTransport() error {
-	buffer := make([]byte, settings.MTU+settings.UDPChacha20Overhead)
+	buffer := make([]byte, settings.DefaultEthernetMTU+settings.UDPChacha20Overhead)
 
 	for {
 		select {

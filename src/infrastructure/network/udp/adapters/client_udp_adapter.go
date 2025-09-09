@@ -11,7 +11,7 @@ import (
 // ClientUDPAdapter - single goroutine only client UDP adapter
 type ClientUDPAdapter struct {
 	conn                        *net.UDPConn
-	buf                         [settings.MTU + settings.UDPChacha20Overhead]byte
+	buf                         [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
 	readDeadline, writeDeadline network.Timeout
 }
 

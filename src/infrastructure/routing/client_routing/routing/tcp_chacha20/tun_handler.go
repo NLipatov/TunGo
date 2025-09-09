@@ -28,8 +28,8 @@ func NewTunHandler(ctx context.Context,
 }
 
 func (t *TunHandler) HandleTun() error {
-	backing := make([]byte, settings.MTU+settings.TCPChacha20Overhead)
-	pt := backing[:settings.MTU] // len=MTU, cap=MTU+16
+	backing := make([]byte, settings.DefaultEthernetMTU+settings.TCPChacha20Overhead)
+	pt := backing[:settings.DefaultEthernetMTU] // len=MTU, cap=MTU+16
 
 	//passes anything from tun to chan
 	for {

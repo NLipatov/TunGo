@@ -58,7 +58,7 @@ func (t *TransportHandler) HandleTransport() error {
 		_ = t.listenerConn.Close()
 	}()
 
-	buffer := make([]byte, settings.MTU+settings.UDPChacha20Overhead)
+	buffer := make([]byte, settings.DefaultEthernetMTU+settings.UDPChacha20Overhead)
 	oobBuf := make([]byte, 1024)
 
 	for {

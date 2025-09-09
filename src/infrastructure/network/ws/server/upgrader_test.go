@@ -67,7 +67,7 @@ func TestUpgrader_Upgrade_Success_ReadLimitEnforced(t *testing.T) {
 	defer func() { _ = c.Close(websocket.StatusNormalClosure, "") }()
 
 	// Send a frame strictly larger than the server read limit.
-	limit := settings.MTU + settings.TCPChacha20Overhead
+	limit := settings.DefaultEthernetMTU + settings.TCPChacha20Overhead
 	payload := make([]byte, limit+8)
 
 	wr, err := c.Writer(ctx, websocket.MessageBinary)

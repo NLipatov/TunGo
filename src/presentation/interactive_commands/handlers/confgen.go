@@ -90,7 +90,7 @@ func (c *ConfgenHandler) generate() (*client.Configuration, error) {
 			InterfaceAddress: clientUDPIfIp,
 			ConnectionIP:     defaultIfIpV4,
 			Port:             serverConf.UDPSettings.Port,
-			MTU:              serverConf.UDPSettings.MTU,
+			MTU:              settings.SafeMTU,
 			Protocol:         settings.UDP,
 			Encryption:       serverConf.UDPSettings.Encryption,
 			DialTimeoutMs:    serverConf.UDPSettings.DialTimeoutMs,
