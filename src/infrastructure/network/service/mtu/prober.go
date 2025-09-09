@@ -18,7 +18,10 @@ type Prober struct {
 	probeReadBuffer, probeWriteBuffer [1500]byte
 }
 
-func NewProber(ctx context.Context, adapter application.ConnectionAdapter, minimum, maximum int) *Prober {
+func NewProber(
+	ctx context.Context,
+	adapter application.ConnectionAdapter,
+	minimum, maximum int) *Prober {
 	if minimum > maximum {
 		minimum, maximum = maximum, minimum
 	}
