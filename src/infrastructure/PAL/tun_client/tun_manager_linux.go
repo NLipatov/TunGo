@@ -112,9 +112,9 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.Settings) error 
 	}
 	fmt.Printf("set %s as default gateway\n", connSettings.InterfaceName)
 
-	// sets client's TUN device maximum transmission unit (SafeMTU)
+	// sets client's TUN device maximum transmission unit (MTU)
 	if setMtuErr := t.ip.LinkSetDevMTU(connSettings.InterfaceName, connSettings.MTU); setMtuErr != nil {
-		return fmt.Errorf("failed to set %d SafeMTU for %s: %s", connSettings.MTU, connSettings.InterfaceName, setMtuErr)
+		return fmt.Errorf("failed to set %d MTU for %s: %s", connSettings.MTU, connSettings.InterfaceName, setMtuErr)
 	}
 
 	return nil

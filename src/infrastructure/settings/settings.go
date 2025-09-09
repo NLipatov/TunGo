@@ -7,7 +7,7 @@ type Settings struct {
 	ConnectionIP     string `json:"ConnectionIP"`
 	Host             string `json:"Host,omitempty"` //used by WS and WSS protocols
 	Port             string `json:"Port"`
-	MTU              int    `json:"SafeMTU"`
+	MTU              int    `json:"MTU"`
 	Protocol         Protocol
 	Encryption       Encryption
 	DialTimeoutMs    int `json:"DialTimeoutMs"`

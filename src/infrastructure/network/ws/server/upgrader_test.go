@@ -20,7 +20,7 @@ const testTimeout = 2 * time.Second
 
 // TestUpgrader_Upgrade_Success_ReadLimitEnforced verifies that:
 // 1) Upgrade succeeds on a proper WS handshake;
-// 2) the connection enforces the read limit set by Upgrader (SafeMTU + overhead).
+// 2) the connection enforces the read limit set by Upgrader (MTU + overhead).
 func TestUpgrader_Upgrade_Success_ReadLimitEnforced(t *testing.T) {
 	u := NewDefaultUpgrader()
 
