@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"io"
 	"net/netip"
+
 	"tungo/application"
 	"tungo/application/listeners"
+	appip "tungo/application/network/ip"
+	ipimpl "tungo/infrastructure/network/ip"
 	"tungo/infrastructure/network/signaling"
 	"tungo/infrastructure/network/udp/adapters"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
@@ -22,6 +25,7 @@ type TransportHandler struct {
 	listenerConn        listeners.UdpListener
 	handshakeFactory    application.HandshakeFactory
 	cryptographyFactory application.CryptographyServiceFactory
+	ipParser            appip.HeaderParser
 }
 
 func NewTransportHandler(
@@ -43,6 +47,7 @@ func NewTransportHandler(
 		listenerConn:        listenerConn,
 		handshakeFactory:    handshakeFactory,
 		cryptographyFactory: cryptographyFactory,
+		ipParser:            ipimpl.NewHeaderParser(),
 	}
 }
 
@@ -113,6 +118,16 @@ func (t *TransportHandler) handlePacket(
 	if decryptionErr != nil {
 		t.logger.Printf("failed to decrypt data: %v", decryptionErr)
 		return decryptionErr
+	}
+
+	if addr, err := t.ipParser.DestinationAddress(decrypted); err == nil && addr == application.ServiceIP {
+		if len(decrypted) > 20 && decrypted[20] == application.MTUProbeType {
+			ackPkt := application.BuildMTUPacket(application.MTUAckType, len(decrypted))
+			if enc, err := session.CryptographyService().Encrypt(ackPkt); err == nil {
+				_, _ = session.ConnectionAdapter().Write(enc)
+			}
+		}
+		return nil
 	}
 
 	// Write the decrypted packet to the TUN interface

@@ -3,8 +3,11 @@ package client_factory
 import (
 	"context"
 	"log"
+	"time"
+
 	"tungo/application"
 	"tungo/infrastructure/routing"
+	"tungo/infrastructure/settings"
 )
 
 type RouterFactory struct {
@@ -23,6 +26,14 @@ func (u *RouterFactory) CreateRouter(
 	conn, cryptographyService, connErr := connectionFactory.EstablishConnection(ctx)
 	if connErr != nil {
 		return nil, nil, nil, connErr
+	}
+
+	// Run MTU discovery before creating the TUN device.
+	prober := application.NewConnMTUProber(conn, cryptographyService)
+	if mtu, err := application.DiscoverMTU(prober, settings.MTU, 1500, 200*time.Millisecond); err != nil {
+		log.Printf("mtu discovery failed: %v", err)
+	} else {
+		log.Printf("mtu discovered: %d", mtu)
 	}
 
 	tun, tunErr := tunFactory.CreateTunDevice()
