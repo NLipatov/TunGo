@@ -37,7 +37,7 @@ func NewTunHandler(ctx context.Context,
 //	[ 0 ........ 11 ][ 12 ........ 1511 ][ 1512 ........ 1527 ]
 //	|   Nonce    |      Payload (<= MTU) |       Tag (16B)    |
 //
-// Example with settings.MTU = 1500, settings.UDPChacha20Overhead = 28:
+// Example with MTU = 1500, settings.UDPChacha20Overhead = 28:
 // - buffer length = 1500 + 28 = 1528
 //
 // Step 1 – read plaintext from TUN:
