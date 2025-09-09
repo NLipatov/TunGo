@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"time"
+
 	"tungo/application"
 	framelimit "tungo/domain/network/ip/frame_limit"
 )
@@ -96,3 +98,24 @@ func (a *LengthPrefixFramingAdapter) Read(buffer []byte) (int, error) {
 }
 
 func (a *LengthPrefixFramingAdapter) Close() error { return a.adapter.Close() }
+
+func (a *LengthPrefixFramingAdapter) SetDeadline(t time.Time) error {
+	if d, ok := a.adapter.(interface{ SetDeadline(time.Time) error }); ok {
+		return d.SetDeadline(t)
+	}
+	return nil
+}
+
+func (a *LengthPrefixFramingAdapter) SetReadDeadline(t time.Time) error {
+	if d, ok := a.adapter.(interface{ SetReadDeadline(time.Time) error }); ok {
+		return d.SetReadDeadline(t)
+	}
+	return nil
+}
+
+func (a *LengthPrefixFramingAdapter) SetWriteDeadline(t time.Time) error {
+	if d, ok := a.adapter.(interface{ SetWriteDeadline(time.Time) error }); ok {
+		return d.SetWriteDeadline(t)
+	}
+	return nil
+}

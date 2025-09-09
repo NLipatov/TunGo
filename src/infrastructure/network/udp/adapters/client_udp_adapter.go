@@ -3,6 +3,8 @@ package adapters
 import (
 	"io"
 	"net"
+	"time"
+
 	"tungo/application"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/settings"
@@ -53,4 +55,45 @@ func (c *ClientUDPAdapter) Read(buffer []byte) (int, error) {
 
 func (c *ClientUDPAdapter) Close() error {
 	return c.conn.Close()
+}
+
+func (c *ClientUDPAdapter) SetDeadline(t time.Time) error {
+	if err := c.SetReadDeadline(t); err != nil {
+		return err
+	}
+	return c.SetWriteDeadline(t)
+}
+
+func (c *ClientUDPAdapter) SetReadDeadline(t time.Time) error {
+	if t.IsZero() {
+		c.readDeadline = 0
+		return nil
+	}
+	d := time.Until(t)
+	if d < 0 {
+		d = 0
+	}
+	dl, err := network.NewDeadline(d)
+	if err != nil {
+		return err
+	}
+	c.readDeadline = dl
+	return nil
+}
+
+func (c *ClientUDPAdapter) SetWriteDeadline(t time.Time) error {
+	if t.IsZero() {
+		c.writeDeadline = 0
+		return nil
+	}
+	d := time.Until(t)
+	if d < 0 {
+		d = 0
+	}
+	dl, err := network.NewDeadline(d)
+	if err != nil {
+		return err
+	}
+	c.writeDeadline = dl
+	return nil
 }

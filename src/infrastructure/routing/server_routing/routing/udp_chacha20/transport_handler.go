@@ -5,8 +5,12 @@ import (
 	"fmt"
 	"io"
 	"net/netip"
+
+	"golang.org/x/crypto/chacha20poly1305"
 	"tungo/application"
 	"tungo/application/listeners"
+	appip "tungo/application/network/ip"
+	ipimpl "tungo/infrastructure/network/ip"
 	"tungo/infrastructure/network/signaling"
 	"tungo/infrastructure/network/udp/adapters"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
@@ -22,6 +26,8 @@ type TransportHandler struct {
 	listenerConn        listeners.UdpListener
 	handshakeFactory    application.HandshakeFactory
 	cryptographyFactory application.CryptographyServiceFactory
+	ipParser            appip.HeaderParser
+	ackBuf              [settings.MTU + settings.UDPChacha20Overhead]byte
 }
 
 func NewTransportHandler(
@@ -43,6 +49,7 @@ func NewTransportHandler(
 		listenerConn:        listenerConn,
 		handshakeFactory:    handshakeFactory,
 		cryptographyFactory: cryptographyFactory,
+		ipParser:            ipimpl.NewHeaderParser(),
 	}
 }
 
@@ -113,6 +120,17 @@ func (t *TransportHandler) handlePacket(
 	if decryptionErr != nil {
 		t.logger.Printf("failed to decrypt data: %v", decryptionErr)
 		return decryptionErr
+	}
+
+	if addr, err := t.ipParser.DestinationAddress(decrypted); err == nil && addr == application.ServiceIP {
+		if len(decrypted) > 20 && decrypted[20] == application.MTUProbeType {
+			size := len(decrypted)
+			pkt := application.BuildMTUPacket(t.ackBuf[chacha20poly1305.NonceSize:], application.MTUAckType, size)
+			if enc, err := session.CryptographyService().Encrypt(t.ackBuf[:chacha20poly1305.NonceSize+len(pkt)]); err == nil {
+				_, _ = session.ConnectionAdapter().Write(enc)
+			}
+		}
+		return nil
 	}
 
 	// Write the decrypted packet to the TUN interface

@@ -6,8 +6,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+
+	"golang.org/x/crypto/chacha20poly1305"
 	"tungo/application"
+	appip "tungo/application/network/ip"
 	"tungo/infrastructure/cryptography/chacha20"
+	ipimpl "tungo/infrastructure/network/ip"
 	"tungo/infrastructure/network/signaling"
 	"tungo/infrastructure/settings"
 )
@@ -17,6 +21,8 @@ type TransportHandler struct {
 	reader              io.Reader
 	writer              io.Writer
 	cryptographyService application.CryptographyService
+	ipParser            appip.HeaderParser
+	ackBuf              [settings.MTU + settings.UDPChacha20Overhead]byte
 }
 
 func NewTransportHandler(
@@ -29,6 +35,7 @@ func NewTransportHandler(
 		reader:              reader,
 		writer:              writer,
 		cryptographyService: cryptographyService,
+		ipParser:            ipimpl.NewHeaderParser(),
 	}
 }
 
@@ -68,6 +75,24 @@ func (t *TransportHandler) HandleTransport() error {
 					continue
 				}
 				return fmt.Errorf("failed to decrypt data: %s", decryptionErr)
+			}
+
+			// Inspect destination address for service frames.
+			if addr, err := t.ipParser.DestinationAddress(decrypted); err == nil && addr == application.ServiceIP {
+				if len(decrypted) > 20 {
+					typ := decrypted[20]
+					if typ == application.MTUProbeType {
+						if conn, ok := t.reader.(application.ConnectionAdapter); ok {
+							size := len(decrypted)
+							pkt := application.BuildMTUPacket(t.ackBuf[chacha20poly1305.NonceSize:], application.MTUAckType, size)
+							if enc, err := t.cryptographyService.Encrypt(t.ackBuf[:chacha20poly1305.NonceSize+len(pkt)]); err == nil {
+								_, _ = conn.Write(enc)
+							}
+						}
+					}
+					// Drop service frames (probe or ack) from reaching TUN.
+					continue
+				}
 			}
 
 			_, writeErr := t.writer.Write(decrypted)

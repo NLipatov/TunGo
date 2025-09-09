@@ -1,6 +1,8 @@
 package adapters
 
 import (
+	"time"
+
 	"tungo/application"
 )
 
@@ -37,4 +39,25 @@ func (ua *InitialDataAdapter) Read(buffer []byte) (int, error) {
 
 func (ua *InitialDataAdapter) Close() error {
 	return ua.adapter.Close()
+}
+
+func (ua *InitialDataAdapter) SetDeadline(t time.Time) error {
+	if d, ok := ua.adapter.(interface{ SetDeadline(time.Time) error }); ok {
+		return d.SetDeadline(t)
+	}
+	return nil
+}
+
+func (ua *InitialDataAdapter) SetReadDeadline(t time.Time) error {
+	if d, ok := ua.adapter.(interface{ SetReadDeadline(time.Time) error }); ok {
+		return d.SetReadDeadline(t)
+	}
+	return nil
+}
+
+func (ua *InitialDataAdapter) SetWriteDeadline(t time.Time) error {
+	if d, ok := ua.adapter.(interface{ SetWriteDeadline(time.Time) error }); ok {
+		return d.SetWriteDeadline(t)
+	}
+	return nil
 }
