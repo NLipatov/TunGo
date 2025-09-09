@@ -14,6 +14,7 @@ type FrameInfo struct {
 	src, dst  netip.Addr
 	ipVersion nip.Version
 	protocol  uint8
+	bodySize  uint16
 }
 
 type FrameParser interface {
@@ -108,5 +109,6 @@ func (f *DefaultFrameParser) TryParse(data []byte) (FrameInfo, bool) {
 		dst:       dst,
 		ipVersion: ipVersion,
 		protocol:  protocol,
+		bodySize:  uint16(len(payload)),
 	}, true
 }
