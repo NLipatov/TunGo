@@ -2,6 +2,7 @@ package chacha20
 
 import (
 	"encoding/binary"
+	"errors"
 	"testing"
 )
 
@@ -20,11 +21,11 @@ func TestStrictCounterValidate(t *testing.T) {
 		t.Fatalf("expected first nonce unique, got %v", err)
 	}
 	// Duplicate nonce
-	if err := sc.Validate(makeNonce(0, 1)); err != ErrNonUniqueNonce {
+	if err := sc.Validate(makeNonce(0, 1)); !errors.Is(err, ErrNonUniqueNonce) {
 		t.Fatalf("expected duplicate nonce error, got %v", err)
 	}
 	// Lower nonce with same high
-	if err := sc.Validate(makeNonce(0, 0)); err != ErrNonUniqueNonce {
+	if err := sc.Validate(makeNonce(0, 0)); !errors.Is(err, ErrNonUniqueNonce) {
 		t.Fatalf("expected lower nonce error, got %v", err)
 	}
 	// Higher low with same high
@@ -36,7 +37,7 @@ func TestStrictCounterValidate(t *testing.T) {
 		t.Fatalf("expected higher high unique, got %v", err)
 	}
 	// Duplicate after reset
-	if err := sc.Validate(makeNonce(1, 0)); err != ErrNonUniqueNonce {
+	if err := sc.Validate(makeNonce(1, 0)); !errors.Is(err, ErrNonUniqueNonce) {
 		t.Fatalf("expected duplicate nonce error after reset, got %v", err)
 	}
 }
@@ -76,11 +77,11 @@ func TestSliding64WindowBehavior(t *testing.T) {
 		t.Fatalf("window accept failed: %v", err)
 	}
 	// Duplicate within window
-	if err := s.Validate(makeNonce(0, 99)); err != ErrNonUniqueNonce {
+	if err := s.Validate(makeNonce(0, 99)); !errors.Is(err, ErrNonUniqueNonce) {
 		t.Fatalf("expected duplicate nonce error in window, got %v", err)
 	}
 	// Too old (low = max - 64)
-	if err := s.Validate(makeNonce(0, 36)); err != ErrNonUniqueNonce {
+	if err := s.Validate(makeNonce(0, 36)); !errors.Is(err, ErrNonUniqueNonce) {
 		t.Fatalf("expected too old nonce error, got %v", err)
 	}
 }

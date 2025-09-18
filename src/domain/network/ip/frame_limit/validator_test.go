@@ -100,10 +100,10 @@ func TestValidateLen_ErrorWrapping(t *testing.T) {
 // 3) n > cap -> ErrCapExceeded
 func FuzzCapValidateLen(f *testing.F) {
 	// seeds
-	f.Add(int(0))
-	f.Add(int(1))
-	f.Add(int(-1))
-	f.Add(int(10000))
+	f.Add(0)
+	f.Add(1)
+	f.Add(-1)
+	f.Add(10000)
 
 	const capValue = 1024
 	c, _ := NewCap(capValue)

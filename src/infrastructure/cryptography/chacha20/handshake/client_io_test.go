@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 	"tungo/application"
-	packet_validation "tungo/domain/network/ip/packet_validation"
+	"tungo/domain/network/ip/packet_validation"
 )
 
 /***************
