@@ -75,9 +75,13 @@ func (h *DefaultHandler) addrFromRequest(r *http.Request) (*net.TCPAddr, error) 
 	if err != nil {
 		return nil, err
 	}
+	hostIP := net.ParseIP(host)
+	if hostIP == nil {
+		return nil, errors.New("invalid remote host IP")
+	}
 	p, pErr := strconv.Atoi(port)
 	if pErr != nil {
-		return nil, errors.New("invalid remote port number")
+		return nil, errors.New("invalid remote host port number")
 	}
-	return &net.TCPAddr{IP: net.ParseIP(host), Port: p}, nil
+	return &net.TCPAddr{IP: hostIP, Port: p}, nil
 }

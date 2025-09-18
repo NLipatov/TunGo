@@ -154,6 +154,40 @@ func TestHandler_Overflow_ClosesWsConn(t *testing.T) {
 	}
 }
 
+func TestHandler_BadRemoteAddr_InvalidIP_400_Body(t *testing.T) {
+	h := NewDefaultHandler(&fakeUpgrader{}, make(chan net.Conn, 1), nil)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "http://example/ws", nil)
+	req.RemoteAddr = "bad.ip.addr:1234" // invalid IP, can not be parsed
+
+	h.Handle(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", rr.Code)
+	}
+	if got := rr.Body.String(); !contains(got, "bad remote addr") {
+		t.Fatalf("expected body to mention bad remote addr, got %q", got)
+	}
+}
+
+func TestHandler_BadRemoteAddr_InvalidPort_400_Body(t *testing.T) {
+	h := NewDefaultHandler(&fakeUpgrader{}, make(chan net.Conn, 1), nil)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "http://example/ws", nil)
+	req.RemoteAddr = "127.0.0.1:notaport" // invalid port, can not be parsed
+
+	h.Handle(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", rr.Code)
+	}
+	if got := rr.Body.String(); !contains(got, "bad remote addr") {
+		t.Fatalf("expected body to mention bad remote addr, got %q", got)
+	}
+}
+
 // --- helpers -----------------------------------------------------------------
 
 func contains(s, sub string) bool {
