@@ -8,8 +8,9 @@ import (
 	"testing"
 	"tungo/infrastructure/settings"
 
-	"golang.org/x/crypto/chacha20poly1305"
 	"tungo/application"
+
+	"golang.org/x/crypto/chacha20poly1305"
 )
 
 // ---- test helpers ----

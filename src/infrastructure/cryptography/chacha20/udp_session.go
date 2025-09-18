@@ -3,6 +3,7 @@ package chacha20
 import (
 	"crypto/cipher"
 	"fmt"
+
 	"golang.org/x/crypto/chacha20poly1305"
 )
 

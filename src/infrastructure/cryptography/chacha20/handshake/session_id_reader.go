@@ -2,8 +2,9 @@ package handshake
 
 import (
 	"crypto/sha256"
-	"golang.org/x/crypto/hkdf"
 	"io"
+
+	"golang.org/x/crypto/hkdf"
 )
 
 type SessionIdReaderFactory interface {

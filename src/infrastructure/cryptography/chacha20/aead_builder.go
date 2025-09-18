@@ -4,8 +4,9 @@ import (
 	"crypto/cipher"
 	"fmt"
 
-	"golang.org/x/crypto/chacha20poly1305"
 	"tungo/application"
+
+	"golang.org/x/crypto/chacha20poly1305"
 )
 
 // DefaultAEADBuilder builds AEAD cipher pairs (send/recv) from a handshake.

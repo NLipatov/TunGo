@@ -2,10 +2,11 @@ package chacha20
 
 import (
 	"bytes"
-	"golang.org/x/crypto/chacha20poly1305"
 	"net"
 	"testing"
 	"tungo/infrastructure/settings"
+
+	"golang.org/x/crypto/chacha20poly1305"
 
 	"tungo/application"
 )
