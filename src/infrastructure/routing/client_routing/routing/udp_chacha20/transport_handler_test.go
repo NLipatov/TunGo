@@ -8,8 +8,7 @@ import (
 	"os"
 	"testing"
 	"time"
-	"tungo/infrastructure/network/signaling"
-
+	"tungo/domain/network/service"
 	"tungo/infrastructure/cryptography/chacha20"
 )
 
@@ -28,6 +27,32 @@ func (m *thTestCrypto) Decrypt([]byte) ([]byte, error) {
 		return nil, m.err
 	}
 	return m.output, nil
+}
+
+type servicePacketMock struct {
+}
+
+func (s *servicePacketMock) TryParseType(_ []byte) (service.PacketType, bool) {
+	return service.Unknown, false
+}
+func (s *servicePacketMock) EncodeLegacy(_ service.PacketType, buffer []byte) ([]byte, error) {
+	return buffer, nil
+}
+func (s *servicePacketMock) EncodeV1(_ service.PacketType, buffer []byte) ([]byte, error) {
+	return buffer, nil
+}
+
+type servicePacketSessionResetMock struct {
+}
+
+func (s *servicePacketSessionResetMock) TryParseType(_ []byte) (service.PacketType, bool) {
+	return service.SessionReset, true
+}
+func (s *servicePacketSessionResetMock) EncodeLegacy(_ service.PacketType, buffer []byte) ([]byte, error) {
+	return buffer, nil
+}
+func (s *servicePacketSessionResetMock) EncodeV1(_ service.PacketType, buffer []byte) ([]byte, error) {
+	return buffer, nil
 }
 
 // thTestReader simulates a sequence of Read calls for TransportHandler
@@ -69,7 +94,7 @@ func TestHandleTransport_ImmediateCancel(t *testing.T) {
 		func(p []byte) (int, error) { t.Fatal("Read called despite cancel"); return 0, nil },
 	}}
 	w := &thTestWriter{}
-	h := NewTransportHandler(ctx, r, w, &thTestCrypto{})
+	h := NewTransportHandler(ctx, r, w, &thTestCrypto{}, &servicePacketMock{})
 	if err := h.HandleTransport(); err != nil {
 		t.Errorf("expected nil on immediate cancel, got %v", err)
 	}
@@ -81,7 +106,7 @@ func TestHandleTransport_ReadErrorOther(t *testing.T) {
 		func(p []byte) (int, error) { return 0, errRead },
 	}}
 	w := &thTestWriter{}
-	h := NewTransportHandler(context.Background(), r, w, &thTestCrypto{})
+	h := NewTransportHandler(context.Background(), r, w, &thTestCrypto{}, &servicePacketMock{})
 	exp := fmt.Sprintf("could not read a packet from adapter: %v", errRead)
 	if err := h.HandleTransport(); err == nil || err.Error() != exp {
 		t.Errorf("expected %q, got %v", exp, err)
@@ -97,7 +122,7 @@ func TestHandleTransport_ReadDeadlineExceededSkip(t *testing.T) {
 		func(p []byte) (int, error) { <-ctx.Done(); return 0, errors.New("stop") },
 	}}
 	w := &thTestWriter{}
-	h := NewTransportHandler(ctx, r, w, &thTestCrypto{})
+	h := NewTransportHandler(ctx, r, w, &thTestCrypto{}, &servicePacketMock{})
 
 	done := make(chan error)
 	go func() { done <- h.HandleTransport() }()
@@ -111,10 +136,10 @@ func TestHandleTransport_ReadDeadlineExceededSkip(t *testing.T) {
 
 func TestHandleTransport_ServerResetSignal(t *testing.T) {
 	r := &thTestReader{reads: []func(p []byte) (int, error){
-		func(p []byte) (int, error) { p[0] = byte(signaling.SessionReset); return 1, nil },
+		func(p []byte) (int, error) { p[0] = byte(service.SessionReset); return 1, nil },
 	}}
 	w := &thTestWriter{}
-	h := NewTransportHandler(context.Background(), r, w, &thTestCrypto{})
+	h := NewTransportHandler(context.Background(), r, w, &thTestCrypto{}, &servicePacketSessionResetMock{})
 	exp := "server requested cryptographyService reset"
 	if err := h.HandleTransport(); err == nil || err.Error() != exp {
 		t.Errorf("expected %q, got %v", exp, err)
@@ -134,7 +159,7 @@ func TestHandleTransport_DecryptNonUniqueNonceSkip(t *testing.T) {
 	}}
 	w := &thTestWriter{}
 	crypto := &thTestCrypto{err: chacha20.ErrNonUniqueNonce}
-	h := NewTransportHandler(ctx, r, w, crypto)
+	h := NewTransportHandler(ctx, r, w, crypto, &servicePacketMock{})
 
 	done := make(chan error)
 	go func() { done <- h.HandleTransport() }()
@@ -154,7 +179,7 @@ func TestHandleTransport_DecryptErrorFatal(t *testing.T) {
 	}}
 	w := &thTestWriter{}
 	crypto := &thTestCrypto{err: errDec}
-	h := NewTransportHandler(context.Background(), r, w, crypto)
+	h := NewTransportHandler(context.Background(), r, w, crypto, &servicePacketMock{})
 	exp := fmt.Sprintf("failed to decrypt data: %v", errDec)
 	if err := h.HandleTransport(); err == nil || err.Error() != exp {
 		t.Errorf("expected %q, got %v", exp, err)
@@ -163,14 +188,14 @@ func TestHandleTransport_DecryptErrorFatal(t *testing.T) {
 
 func TestHandleTransport_WriteError(t *testing.T) {
 	d := []byte{9}
-	// reader returns data length>1
+	// reader returns data (non-service) -> decrypt -> writer error
 	r := &thTestReader{reads: []func(p []byte) (int, error){
 		func(p []byte) (int, error) { copy(p, d); return len(d), nil },
 	}}
 	errWrite := errors.New("write fail")
 	w := &thTestWriter{err: errWrite}
 	crypto := &thTestCrypto{output: d}
-	h := NewTransportHandler(context.Background(), r, w, crypto)
+	h := NewTransportHandler(context.Background(), r, w, crypto, &servicePacketMock{})
 	exp := fmt.Sprintf("failed to write to TUN: %v", errWrite)
 	if err := h.HandleTransport(); err == nil || err.Error() != exp {
 		t.Errorf("expected %q, got %v", exp, err)
@@ -189,7 +214,7 @@ func TestHandleTransport_SuccessThenCancel(t *testing.T) {
 	}}
 	w := &thTestWriter{}
 	crypto := &thTestCrypto{output: decrypted}
-	h := NewTransportHandler(ctx, r, w, crypto)
+	h := NewTransportHandler(ctx, r, w, crypto, &servicePacketMock{})
 
 	done := make(chan error)
 	go func() { done <- h.HandleTransport() }()

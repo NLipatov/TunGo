@@ -12,11 +12,26 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"tungo/domain/network/service"
 
 	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/settings"
 )
+
+type servicePacketMock struct {
+}
+
+func (s *servicePacketMock) TryParseType(_ []byte) (service.PacketType, bool) {
+	return service.Unknown, false
+}
+func (s *servicePacketMock) EncodeLegacy(_ service.PacketType, buffer []byte) ([]byte, error) {
+	buffer[0] = byte(service.SessionReset)
+	return buffer, nil
+}
+func (s *servicePacketMock) EncodeV1(_ service.PacketType, buffer []byte) ([]byte, error) {
+	return buffer, nil
+}
 
 type alwaysWriteCrypto struct{}
 
@@ -212,6 +227,7 @@ func TestTransportHandler_RegistrationPacket(t *testing.T) {
 		logger,
 		handshakeFactory,
 		chacha20.NewUdpSessionBuilder(mockAEADBuilder{}),
+		&servicePacketMock{},
 	)
 
 	go func() { _ = handler.HandleTransport() }()
@@ -256,6 +272,7 @@ func TestTransportHandler_HandshakeError(t *testing.T) {
 		logger,
 		handshakeFactory,
 		chacha20.NewUdpSessionBuilder(mockAEADBuilder{}),
+		&servicePacketMock{},
 	)
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
@@ -302,6 +319,7 @@ func TestTransportHandler_DecryptError(t *testing.T) {
 		logger,
 		handshakeFactory,
 		chacha20.NewUdpSessionBuilder(mockAEADBuilder{}),
+		&servicePacketMock{},
 	)
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
@@ -336,6 +354,7 @@ func TestTransportHandler_ReadMsgUDPAddrPortError(t *testing.T) {
 		logger,
 		handshakeFactory,
 		chacha20.NewUdpSessionBuilder(mockAEADBuilder{}),
+		&servicePacketMock{},
 	)
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
@@ -396,6 +415,7 @@ func TestTransportHandler_WriteError(t *testing.T) {
 		logger,
 		handshakeFactory,
 		chacha20.NewUdpSessionBuilder(mockAEADBuilder{}),
+		&servicePacketMock{},
 	)
 
 	done := make(chan struct{})
@@ -458,6 +478,7 @@ func TestTransportHandler_HappyPath(t *testing.T) {
 		logger,
 		handshakeFactory,
 		chacha20.NewUdpSessionBuilder(mockAEADBuilder{}),
+		&servicePacketMock{},
 	)
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
@@ -508,6 +529,7 @@ func TestTransportHandler_NATRebinding(t *testing.T) {
 		logger,
 		handshakeFactory,
 		chacha20.NewUdpSessionBuilder(mockAEADBuilder{}),
+		&servicePacketMock{},
 	)
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
@@ -546,6 +568,7 @@ func TestTransportHandler_RegisterClient_BadInternalIP(t *testing.T) {
 		logger,
 		handshakeFactory,
 		chacha20.NewUdpSessionBuilder(mockAEADBuilder{}),
+		&servicePacketMock{},
 	)
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
@@ -583,6 +606,7 @@ func TestTransportHandler_ErrorSetBuffer(t *testing.T) {
 		logger,
 		handshakeFactory,
 		chacha20.NewUdpSessionBuilder(mockAEADBuilder{}),
+		&servicePacketMock{},
 	)
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
