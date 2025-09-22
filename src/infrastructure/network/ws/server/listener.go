@@ -4,45 +4,56 @@ package server
 
 import (
 	"context"
+	"errors"
 	"net"
 	"sync"
-	"time"
 	"tungo/application/listeners"
-	"tungo/infrastructure/logging"
 )
 
-type server interface {
+type Server interface {
 	Serve() error
 	Shutdown() error
 	Done() <-chan struct{}
 	Err() error
 }
 
+var (
+	ErrNilFactory  = errors.New("http server factory is nil")
+	ErrNilListener = errors.New("net.Listener is nil")
+	ErrNilQueue    = errors.New("connection queue is nil")
+	ErrNilServer   = errors.New("server is nil")
+)
+
 type Listener struct {
 	ctx                  context.Context
-	server               server
+	server               Server
 	connectionQueue      chan net.Conn
 	startOnce, closeOnce sync.Once
 }
 
 func NewDefaultListener(
 	ctx context.Context,
-	listener net.Listener,
+	ln net.Listener,
 ) (listeners.TcpListener, error) {
+	return NewDefaultListenerWithFactory(ctx, ln, NewDefaultHTTPServerFactory())
+}
+
+func NewDefaultListenerWithFactory(
+	ctx context.Context,
+	listener net.Listener,
+	factory HTTPServerFactory,
+) (listeners.TcpListener, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if factory == nil {
+		return nil, ErrNilFactory
+	}
+	if listener == nil {
+		return nil, ErrNilListener
+	}
 	connectionQueue := make(chan net.Conn, 1024)
-	server, serverErr := newHttpServer(
-		ctx,
-		listener,
-		5*time.Second,
-		60*time.Second,
-		5*time.Second,
-		NewDefaultHandler(
-			NewDefaultUpgrader(),
-			connectionQueue,
-			logging.NewLogLogger(),
-		),
-		"/ws",
-	)
+	server, serverErr := factory.NewHTTPServer(ctx, listener, connectionQueue)
 	if serverErr != nil {
 		return nil, serverErr
 	}
@@ -58,8 +69,17 @@ func NewDefaultListener(
 func NewListener(
 	ctx context.Context,
 	queue chan net.Conn,
-	server server,
+	server Server,
 ) (listeners.TcpListener, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if queue == nil {
+		return nil, ErrNilQueue
+	}
+	if server == nil {
+		return nil, ErrNilServer
+	}
 	return &Listener{
 		ctx:             ctx,
 		connectionQueue: queue,
@@ -70,6 +90,10 @@ func NewListener(
 func (l *Listener) Start() {
 	l.startOnce.Do(func() {
 		go func() {
+			<-l.ctx.Done()
+			_ = l.Close()
+		}()
+		go func() {
 			_ = l.server.Serve()
 		}()
 	})
@@ -77,6 +101,8 @@ func (l *Listener) Start() {
 
 func (l *Listener) Accept() (net.Conn, error) {
 	select {
+	case <-l.ctx.Done():
+		return nil, net.ErrClosed
 	case conn := <-l.connectionQueue:
 		return conn, nil
 	case <-l.server.Done():

@@ -281,3 +281,115 @@ func TestListener_Close_PropagatesShutdownErrOnce(t *testing.T) {
 		t.Fatalf("second Close err=%v, want nil", err2)
 	}
 }
+
+// ---- Guards for NewListener ----
+func TestNewListener_Guards(t *testing.T) {
+	t.Parallel()
+
+	ms := NewListenerMockServer()
+
+	if l, err := NewListener(context.Background(), nil, ms); !errors.Is(err, ErrNilQueue) || l != nil {
+		t.Fatalf("nil queue: want %v, got err=%v, l=%v", ErrNilQueue, err, l)
+	}
+	if l, err := NewListener(context.Background(), make(chan net.Conn, 1), nil); !errors.Is(err, ErrNilServer) || l != nil {
+		t.Fatalf("nil server: want %v, got err=%v, l=%v", ErrNilServer, err, l)
+	}
+}
+
+func TestNewDefaultListenerWithFactory_Guards(t *testing.T) {
+	t.Parallel()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func(ln net.Listener) {
+		_ = ln.Close()
+	}(ln)
+
+	if l, err := NewDefaultListenerWithFactory(context.Background(), nil, NewDefaultHTTPServerFactory()); !errors.Is(err, ErrNilListener) || l != nil {
+		t.Fatalf("nil listener: want %v, got err=%v, l=%v", ErrNilListener, err, l)
+	}
+	if l, err := NewDefaultListenerWithFactory(context.Background(), ln, nil); !errors.Is(err, ErrNilFactory) || l != nil {
+		t.Fatalf("nil factory: want %v, got err=%v, l=%v", ErrNilFactory, err, l)
+	}
+}
+
+// ---- Accept() must return closed on ctx.Done() ----
+func TestListener_Accept_ContextDoneReturnsClosed(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ms := NewListenerMockServer()
+	queue := make(chan net.Conn, 1)
+	l, err := NewListener(ctx, queue, ms)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.(*Listener).Start()
+
+	done := make(chan error, 1)
+	go func() {
+		_, accErr := l.Accept()
+		done <- accErr
+	}()
+
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, net.ErrClosed) {
+			t.Fatalf("Accept err=%v, want net.ErrClosed", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for Accept to return after ctx cancel")
+	}
+
+	_ = l.Close()
+}
+
+// ---- Start() must hook ctx.Done() and call Shutdown() exactly once via Close() ----
+func TestListener_Start_ContextCancelTriggersSingleShutdown(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ms := NewListenerMockServer()
+	l, err := NewListener(ctx, make(chan net.Conn, 1), ms)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.(*Listener).Start()
+
+	cancel()
+	time.Sleep(30 * time.Millisecond)
+
+	if got := ms.shutdownCalled.Load(); got != 1 {
+		t.Fatalf("Shutdown called %d times, want 1", got)
+	}
+	if err := l.Close(); err != nil {
+		t.Fatalf("Close err: %v", err)
+	}
+	if got := ms.shutdownCalled.Load(); got != 1 {
+		t.Fatalf("Shutdown called %d times after Close(), want still 1", got)
+	}
+}
+
+// ---- Smoke test for NewDefaultListener (uses default factory) ----
+func TestNewDefaultListener_Smoke(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func(ln net.Listener) {
+		_ = ln.Close()
+	}(ln)
+
+	l, err := NewDefaultListener(context.Background(), ln)
+	if err != nil {
+		t.Fatalf("NewDefaultListener error: %v", err)
+	}
+	if err := l.Close(); err != nil {
+		t.Fatalf("Close error: %v", err)
+	}
+}
