@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"net"
 	"sync"
@@ -180,5 +181,103 @@ func TestListener_Close_IsIdempotent(t *testing.T) {
 
 	if got := ms.shutdownCalled.Load(); got != 1 {
 		t.Fatalf("Shutdown called %d times, want 1", got)
+	}
+}
+
+func TestListener_Accept_BlocksUntilConnArrives(t *testing.T) {
+	ms := NewListenerMockServer()
+	queue := make(chan net.Conn, 1)
+	l, err := NewListener(context.Background(), queue, ms)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.(*Listener).Start()
+
+	done := make(chan struct{})
+	var got net.Conn
+	var accErr error
+	go func() {
+		got, accErr = l.Accept()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		t.Fatal("Accept returned early; expected to block")
+	case <-time.After(30 * time.Millisecond):
+	}
+
+	c1, c2 := net.Pipe()
+	defer func(c2 net.Conn) {
+		_ = c2.Close()
+	}(c2)
+	queue <- c1
+
+	select {
+	case <-done:
+		if accErr != nil {
+			t.Fatalf("Accept err: %v", accErr)
+		}
+		if got != c1 {
+			t.Fatalf("unexpected conn returned")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for Accept to return after enqueue")
+	}
+
+	_ = l.Close()
+}
+
+func TestListener_Accept_FIFO(t *testing.T) {
+	ms := NewListenerMockServer()
+	queue := make(chan net.Conn, 2)
+	l, _ := NewListener(context.Background(), queue, ms)
+	l.(*Listener).Start()
+
+	a1, b1 := net.Pipe()
+	a2, b2 := net.Pipe()
+	defer func(b1 net.Conn) {
+		_ = b1.Close()
+	}(b1)
+	defer func(b2 net.Conn) {
+		_ = b2.Close()
+	}(b2)
+
+	queue <- a1
+	queue <- a2
+
+	cFirst, err := l.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cFirst != a1 {
+		t.Fatalf("want first=%p, got %p", a1, cFirst)
+	}
+	_ = cFirst.Close()
+
+	cSecond, err := l.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cSecond != a2 {
+		t.Fatalf("want second=%p, got %p", a2, cSecond)
+	}
+	_ = cSecond.Close()
+
+	_ = l.Close()
+}
+
+func TestListener_Close_PropagatesShutdownErrOnce(t *testing.T) {
+	ms := NewListenerMockServer()
+	ms.shutdownErr = errors.New("boom")
+	l, _ := NewListener(context.Background(), make(chan net.Conn, 1), ms)
+	l.(*Listener).Start()
+
+	err1 := l.Close()
+	if !errors.Is(err1, ms.shutdownErr) {
+		t.Fatalf("first Close err=%v, want %v", err1, ms.shutdownErr)
+	}
+	if err2 := l.Close(); err2 != nil {
+		t.Fatalf("second Close err=%v, want nil", err2)
 	}
 }
