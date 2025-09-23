@@ -7,24 +7,19 @@ import (
 	"net/http"
 	"strconv"
 	"tungo/application"
-	"tungo/infrastructure/network/ws"
 	"tungo/infrastructure/network/ws/adapter"
+	"tungo/infrastructure/network/ws/contracts"
 )
-
-// Handler — HTTP-handlers of incoming connections.
-type Handler interface {
-	Handle(w http.ResponseWriter, r *http.Request)
-}
 
 // DefaultHandler upgrades HTTP connections to WebSocket and enqueues them as net.Conn adapters.
 type DefaultHandler struct {
-	upgrader ws.Upgrader
+	upgrader contracts.Upgrader
 	queue    chan net.Conn
 	logger   application.Logger
 }
 
 func NewDefaultHandler(
-	upgrader ws.Upgrader,
+	upgrader contracts.Upgrader,
 	queue chan net.Conn,
 	logger application.Logger,
 ) *DefaultHandler {

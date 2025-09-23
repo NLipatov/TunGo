@@ -8,47 +8,48 @@ import (
 	"net/http"
 	"sync"
 	"time"
+	"tungo/infrastructure/network/ws/server/contracts"
 )
 
 var (
 	ErrAlreadyRunning = errors.New("http server is already running")
 )
 
-type httpServer struct {
+type DefaultServer struct {
 	ctx                                             context.Context
 	listener                                        net.Listener
 	server                                          *http.Server
 	readHeaderTimeout, idleTimeout, shutdownTimeout time.Duration
-	handler                                         Handler
+	handler                                         contracts.Handler
 	path                                            string
 	startOnce, closeOnce                            sync.Once
 	closed                                          chan struct{}
 	serveErrChan                                    chan error
 }
 
-func newHttpServer(
+func NewDefaultServer(
 	ctx context.Context,
 	listener net.Listener,
 	readHeaderTimeout, idleTimeout, shutdownTimeout time.Duration,
-	handler Handler,
+	handler contracts.Handler,
 	path string,
-) (*httpServer, error) {
+) (*DefaultServer, error) {
 	if ctx == nil {
-		return nil, fmt.Errorf("newHttpServer: nil context")
+		return nil, fmt.Errorf("NewDefaultServer: nil context")
 	}
 	if listener == nil {
-		return nil, fmt.Errorf("newHttpServer: nil net.Listener")
+		return nil, fmt.Errorf("NewDefaultServer: nil net.Listener")
 	}
 	if handler == nil {
-		return nil, fmt.Errorf("newHttpServer: nil Handler")
+		return nil, fmt.Errorf("NewDefaultServer: nil Handler")
 	}
 	if path == "" || path[0] != '/' {
-		return nil, fmt.Errorf("newHttpServer: invalid path")
+		return nil, fmt.Errorf("NewDefaultServer: invalid path")
 	}
 	if shutdownTimeout <= 0 {
-		return nil, fmt.Errorf("newHttpServer: shutdownTimeout must be > 0")
+		return nil, fmt.Errorf("NewDefaultServer: shutdownTimeout must be > 0")
 	}
-	return &httpServer{
+	return &DefaultServer{
 		ctx:               ctx,
 		listener:          listener,
 		readHeaderTimeout: readHeaderTimeout,
@@ -61,7 +62,7 @@ func newHttpServer(
 	}, nil
 }
 
-func (s *httpServer) Serve() error {
+func (s *DefaultServer) Serve() error {
 	var (
 		err     error
 		started bool
@@ -98,7 +99,7 @@ func (s *httpServer) Serve() error {
 }
 
 // Shutdown performs graceful shutdown with a bounded timeout.
-func (s *httpServer) Shutdown() error {
+func (s *DefaultServer) Shutdown() error {
 	var err error
 	s.closeOnce.Do(func() {
 		if s.server == nil {
@@ -114,9 +115,9 @@ func (s *httpServer) Shutdown() error {
 	return err
 }
 
-func (s *httpServer) Done() <-chan struct{} { return s.closed }
+func (s *DefaultServer) Done() <-chan struct{} { return s.closed }
 
-func (s *httpServer) Err() error {
+func (s *DefaultServer) Err() error {
 	select {
 	case err := <-s.serveErrChan:
 		return err

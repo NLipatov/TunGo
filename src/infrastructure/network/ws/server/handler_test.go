@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"tungo/infrastructure/network/ws"
+	"tungo/infrastructure/network/ws/contracts"
 
 	"github.com/coder/websocket"
 )
@@ -18,11 +18,11 @@ import (
 // --- fakes -------------------------------------------------------------------
 
 type fakeUpgrader struct {
-	conn ws.Conn
+	conn contracts.Conn
 	err  error
 }
 
-func (f *fakeUpgrader) Upgrade(_ http.ResponseWriter, _ *http.Request) (ws.Conn, error) {
+func (f *fakeUpgrader) Upgrade(_ http.ResponseWriter, _ *http.Request) (contracts.Conn, error) {
 	return f.conn, f.err
 }
 
@@ -57,7 +57,7 @@ func (l *fakeLogger) Printf(format string, v ...any) {
 }
 
 // make sure fakeConn satisfies the contract
-var _ ws.Conn = (*fakeConn)(nil)
+var _ contracts.Conn = (*fakeConn)(nil)
 
 // --- tests -------------------------------------------------------------------
 

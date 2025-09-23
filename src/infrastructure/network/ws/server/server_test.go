@@ -78,19 +78,19 @@ func TestNewHttpServer_ValidationErrors(t *testing.T) {
 	ln := NewHttpServerMockErrorListener(errors.New("x"))
 	h := &HttpServerMockHandler{}
 
-	if _, err := newHttpServer(nil, ln, time.Second, time.Second, time.Second, h, "/ws"); err == nil {
+	if _, err := NewDefaultServer(nil, ln, time.Second, time.Second, time.Second, h, "/ws"); err == nil {
 		t.Fatal("want error on nil context")
 	}
-	if _, err := newHttpServer(context.Background(), nil, time.Second, time.Second, time.Second, h, "/ws"); err == nil {
+	if _, err := NewDefaultServer(context.Background(), nil, time.Second, time.Second, time.Second, h, "/ws"); err == nil {
 		t.Fatal("want error on nil listener")
 	}
-	if _, err := newHttpServer(context.Background(), ln, time.Second, time.Second, time.Second, nil, "/ws"); err == nil {
+	if _, err := NewDefaultServer(context.Background(), ln, time.Second, time.Second, time.Second, nil, "/ws"); err == nil {
 		t.Fatal("want error on nil handler")
 	}
-	if _, err := newHttpServer(context.Background(), ln, time.Second, time.Second, time.Second, h, "ws"); err == nil {
+	if _, err := NewDefaultServer(context.Background(), ln, time.Second, time.Second, time.Second, h, "ws"); err == nil {
 		t.Fatal("want error on invalid path (no leading slash)")
 	}
-	if _, err := newHttpServer(context.Background(), ln, time.Second, time.Second, 0, h, "/ws"); err == nil {
+	if _, err := NewDefaultServer(context.Background(), ln, time.Second, time.Second, 0, h, "/ws"); err == nil {
 		t.Fatal("want error on non-positive shutdownTimeout")
 	}
 }
@@ -102,9 +102,9 @@ func TestHttpServer_Serve_FirstThenSecondCall(t *testing.T) {
 	ctx, cancel := mustCtx(t, 2*time.Second)
 	defer cancel()
 
-	s, err := newHttpServer(ctx, ln, 10*time.Millisecond, 10*time.Millisecond, 100*time.Millisecond, h, "/ws")
+	s, err := NewDefaultServer(ctx, ln, 10*time.Millisecond, 10*time.Millisecond, 100*time.Millisecond, h, "/ws")
 	if err != nil {
-		t.Fatalf("newHttpServer err: %v", err)
+		t.Fatalf("NewDefaultServer err: %v", err)
 	}
 
 	// Pre-fill error buffer so Serve's send takes the default branch.
@@ -138,9 +138,9 @@ func TestHttpServer_Shutdown_BeforeServe_ClosesListener(t *testing.T) {
 	h := &HttpServerMockHandler{}
 	ctx := context.Background()
 
-	s, err := newHttpServer(ctx, ln, time.Second, time.Second, 100*time.Millisecond, h, "/ws")
+	s, err := NewDefaultServer(ctx, ln, time.Second, time.Second, 100*time.Millisecond, h, "/ws")
 	if err != nil {
-		t.Fatalf("newHttpServer err: %v", err)
+		t.Fatalf("NewDefaultServer err: %v", err)
 	}
 	// server == nil branch in Shutdown: must close underlying listener.
 	if err := s.Shutdown(); err != nil {
@@ -156,9 +156,9 @@ func TestHttpServer_ContextCancel_TriggersShutdown(t *testing.T) {
 	h := &HttpServerMockHandler{}
 	ctx, cancel := context.WithCancel(context.Background())
 
-	s, err := newHttpServer(ctx, ln, 5*time.Millisecond, 5*time.Millisecond, 100*time.Millisecond, h, "/ws")
+	s, err := NewDefaultServer(ctx, ln, 5*time.Millisecond, 5*time.Millisecond, 100*time.Millisecond, h, "/ws")
 	if err != nil {
-		t.Fatalf("newHttpServer err: %v", err)
+		t.Fatalf("NewDefaultServer err: %v", err)
 	}
 
 	// Run Serve in a goroutine (it will block on Accept()).
@@ -193,5 +193,17 @@ func TestHttpServer_ContextCancel_TriggersShutdown(t *testing.T) {
 	case <-doneServe:
 	case <-time.After(200 * time.Millisecond):
 		t.Fatal("Serve did not exit after shutdown")
+	}
+}
+
+func TestHttpServer_Err_DefaultWhenEmpty(t *testing.T) {
+	ln := NewHttpServerMockErrorListener(errors.New("accept failed"))
+	h := &HttpServerMockHandler{}
+	s, err := NewDefaultServer(context.Background(), ln, time.Second, time.Second, 100*time.Millisecond, h, "/ws")
+	if err != nil {
+		t.Fatalf("NewDefaultServer err: %v", err)
+	}
+	if got := s.Err(); got != nil {
+		t.Fatalf("Err() on empty channel = %v, want nil", got)
 	}
 }

@@ -14,11 +14,6 @@ import (
 	"github.com/coder/websocket"
 )
 
-// Compile-time check that Adapter implements net.Conn.
-var _ net.Conn = &Adapter{}
-
-// ---------- Test doubles (prefixed with Adapter...) ----------
-
 // AdapterMockConn is a controllable mock for ws.Conn used by Adapter.
 type AdapterMockConn struct {
 	mu sync.Mutex

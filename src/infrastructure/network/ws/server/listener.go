@@ -8,83 +8,39 @@ import (
 	"net"
 	"sync"
 	"tungo/application/listeners"
+	"tungo/infrastructure/network/ws/server/contracts"
 )
 
-type Server interface {
-	Serve() error
-	Shutdown() error
-	Done() <-chan struct{}
-	Err() error
-}
-
-var (
-	ErrNilFactory  = errors.New("http server factory is nil")
-	ErrNilListener = errors.New("net.Listener is nil")
-	ErrNilQueue    = errors.New("connection queue is nil")
-	ErrNilServer   = errors.New("server is nil")
-)
-
+// Listener is a wrapper around Server to bring net.TCPListener semantics
 type Listener struct {
 	ctx                  context.Context
-	server               Server
+	server               contracts.Server
 	connectionQueue      chan net.Conn
 	startOnce, closeOnce sync.Once
 }
 
-func NewDefaultListener(
-	ctx context.Context,
-	ln net.Listener,
-) (listeners.TcpListener, error) {
-	return NewDefaultListenerWithFactory(ctx, ln, NewDefaultHTTPServerFactory())
-}
-
-func NewDefaultListenerWithFactory(
-	ctx context.Context,
-	listener net.Listener,
-	factory HTTPServerFactory,
-) (listeners.TcpListener, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	if factory == nil {
-		return nil, ErrNilFactory
-	}
-	if listener == nil {
-		return nil, ErrNilListener
-	}
-	connectionQueue := make(chan net.Conn, 1024)
-	server, serverErr := factory.NewHTTPServer(ctx, listener, connectionQueue)
-	if serverErr != nil {
-		return nil, serverErr
-	}
-	instance := &Listener{
-		ctx:             ctx,
-		server:          server,
-		connectionQueue: connectionQueue,
-	}
-	instance.Start()
-	return instance, nil
-}
-
+// NewListener wires Server and connection queue and starts Server.
 func NewListener(
 	ctx context.Context,
+	server contracts.Server,
 	queue chan net.Conn,
-	server Server,
 ) (listeners.TcpListener, error) {
 	if ctx == nil {
-		ctx = context.Background()
-	}
-	if queue == nil {
-		return nil, ErrNilQueue
+		return nil, errors.New("ctx must not be nil")
 	}
 	if server == nil {
-		return nil, ErrNilServer
+		return nil, errors.New("server must not be nil")
 	}
-	return &Listener{
+	if queue == nil {
+		return nil, errors.New("queue must not be nil")
+	}
+	ln := &Listener{
 		ctx:             ctx,
-		connectionQueue: queue,
 		server:          server,
-	}, nil
+		connectionQueue: queue,
+	}
+	ln.Start()
+	return ln, nil
 }
 
 func (l *Listener) Start() {
@@ -103,7 +59,10 @@ func (l *Listener) Accept() (net.Conn, error) {
 	select {
 	case <-l.ctx.Done():
 		return nil, net.ErrClosed
-	case conn := <-l.connectionQueue:
+	case conn, ok := <-l.connectionQueue:
+		if !ok || conn == nil {
+			return nil, net.ErrClosed
+		}
 		return conn, nil
 	case <-l.server.Done():
 		if err := l.server.Err(); err != nil {

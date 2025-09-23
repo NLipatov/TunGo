@@ -10,386 +10,289 @@ import (
 	"time"
 )
 
-// -------------------- Test doubles --------------------
+// --- test doubles ---
 
-// ListenerMockServer implements the `server` interface for tests.
-type ListenerMockServer struct {
-	serveCalled atomic.Int64
-	serveErr    error
-
+type mockServer struct {
+	doneCh         chan struct{}
+	serveCalled    atomic.Int64
 	shutdownCalled atomic.Int64
-	shutdownErr    error
 
-	doneCh chan struct{}
-
-	mu  sync.Mutex
-	err error // value for Err()
+	errMu sync.Mutex
+	err   error         // returned by Err()
+	shErr error         // returned by Shutdown()
+	sigCh chan struct{} // optional: signal that Serve() started
 }
 
-func NewListenerMockServer() *ListenerMockServer {
-	return &ListenerMockServer{
+func newMockServer() *mockServer {
+	return &mockServer{
 		doneCh: make(chan struct{}),
+		sigCh:  make(chan struct{}, 1),
 	}
 }
 
-func (m *ListenerMockServer) Serve() error {
+func (m *mockServer) Serve() error {
 	m.serveCalled.Add(1)
-	<-m.doneCh // block until Shutdown() closes doneCh
-	return m.serveErr
+	// signal that Serve started
+	select {
+	case m.sigCh <- struct{}{}:
+	default:
+	}
+	// block until Shutdown() closes doneCh
+	<-m.doneCh
+	return nil
 }
 
-func (m *ListenerMockServer) Shutdown() error {
+func (m *mockServer) Shutdown() error {
 	m.shutdownCalled.Add(1)
 	select {
-	case <-m.doneCh: // already closed
+	case <-m.doneCh:
+		// already closed
 	default:
 		close(m.doneCh)
 	}
-	return m.shutdownErr
+	return m.shErr
 }
 
-func (m *ListenerMockServer) Done() <-chan struct{} { return m.doneCh }
+func (m *mockServer) Done() <-chan struct{} { return m.doneCh }
 
-func (m *ListenerMockServer) Err() error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+func (m *mockServer) Err() error {
+	m.errMu.Lock()
+	defer m.errMu.Unlock()
 	return m.err
 }
 
-func (m *ListenerMockServer) setErr(err error) {
-	m.mu.Lock()
-	m.err = err
-	m.mu.Unlock()
+func (m *mockServer) setErr(e error) {
+	m.errMu.Lock()
+	m.err = e
+	m.errMu.Unlock()
 }
 
-// newPipeConn returns a pair of connected net.Conns.
-func newPipeConn(t *testing.T) (net.Conn, net.Conn) {
+// --- helpers ---
+
+func mustPipe(t *testing.T) (net.Conn, net.Conn) {
 	t.Helper()
 	c1, c2 := net.Pipe()
 	return c1, c2
 }
 
-// -------------------- Tests --------------------
+// --- tests ---
 
-// Start must be idempotent and call Serve only once even if Start() called multiple times.
-func TestListener_Start_IsIdempotent(t *testing.T) {
-	ms := NewListenerMockServer()
-	l, err := NewListener(nil, make(chan net.Conn, 1), ms)
+func TestNewListener_Guards(t *testing.T) {
+	t.Parallel()
+
+	s := newMockServer()
+	q := make(chan net.Conn, 1)
+
+	if _, err := NewListener(nil, s, q); err == nil || err.Error() != "ctx must not be nil" {
+		t.Fatalf("expected ctx guard error, got %v", err)
+	}
+	if _, err := NewListener(context.Background(), nil, q); err == nil || err.Error() != "server must not be nil" {
+		t.Fatalf("expected server guard error, got %v", err)
+	}
+	if _, err := NewListener(context.Background(), s, nil); err == nil || err.Error() != "queue must not be nil" {
+		t.Fatalf("expected queue guard error, got %v", err)
+	}
+}
+
+func TestNewListener_Happy_AutoStart(t *testing.T) {
+	s := newMockServer()
+	q := make(chan net.Conn, 1)
+
+	lst, err := NewListener(context.Background(), s, q)
 	if err != nil {
-		t.Fatalf("NewListener error: %v", err)
+		t.Fatalf("NewListener err=%v", err)
 	}
 
-	// Call Start twice; Serve should be invoked once.
-	l.(*Listener).Start()
-	l.(*Listener).Start()
+	// Wait for Serve() to have started
+	select {
+	case <-s.sigCh:
+	case <-time.After(time.Second):
+		t.Fatal("Serve() did not start")
+	}
 
-	// Let goroutine schedule.
-	time.Sleep(30 * time.Millisecond)
+	// Close to unblock Serve()
+	if err := lst.Close(); err != nil {
+		t.Fatalf("Close err=%v", err)
+	}
 
-	if got := ms.serveCalled.Load(); got != 1 {
+	if got := s.serveCalled.Load(); got != 1 {
 		t.Fatalf("Serve called %d times, want 1", got)
 	}
+}
 
-	// Close to unblock Serve.
-	if err := l.Close(); err != nil {
-		t.Fatalf("Close error: %v", err)
+func TestListener_Start_IsIdempotent(t *testing.T) {
+	s := newMockServer()
+	q := make(chan net.Conn, 1)
+	lst, err := NewListener(context.Background(), s, q)
+	if err != nil {
+		t.Fatalf("NewListener err=%v", err)
+	}
+
+	// Start already called by constructor; call again
+	lst.(*Listener).Start()
+	lst.(*Listener).Start()
+
+	// Let goroutines schedule
+	select {
+	case <-s.sigCh:
+	case <-time.After(time.Second):
+		t.Fatal("Serve() did not start")
+	}
+
+	_ = lst.Close()
+
+	if got := s.serveCalled.Load(); got != 1 {
+		t.Fatalf("Serve called %d times, want 1", got)
 	}
 }
 
-// Accept must return a queued connection (happy path).
-func TestListener_Accept_ReturnsQueuedConn(t *testing.T) {
-	ms := NewListenerMockServer()
-	queue := make(chan net.Conn, 1)
-	l, err := NewListener(nil, queue, ms)
+func TestListener_Close_IsIdempotent_PropagatesFirstError(t *testing.T) {
+	s := newMockServer()
+	s.shErr = errors.New("boom")
+	q := make(chan net.Conn, 1)
+	lst, err := NewListener(context.Background(), s, q)
 	if err != nil {
-		t.Fatalf("NewListener error: %v", err)
-	}
-	l.(*Listener).Start()
-
-	c1, c2 := newPipeConn(t)
-	defer func(c2 net.Conn) {
-		_ = c2.Close()
-	}(c2)
-	queue <- c1
-
-	got, err := l.Accept()
-	if err != nil {
-		t.Fatalf("Accept error: %v", err)
-	}
-	if got != c1 {
-		t.Fatalf("returned unexpected conn")
-	}
-	_ = got.Close()
-
-	_ = l.Close()
-}
-
-// If server.Done() is closed and server.Err() returns a non-nil error,
-// Accept must return that error (not net.ErrClosed).
-func TestListener_Accept_AfterServerDone_ReturnsServerErr(t *testing.T) {
-	ms := NewListenerMockServer()
-	l, err := NewListener(nil, make(chan net.Conn, 1), ms)
-	if err != nil {
-		t.Fatalf("NewListener error: %v", err)
-	}
-	l.(*Listener).Start()
-
-	want := errors.New("serve failed")
-	ms.setErr(want)
-	_ = ms.Shutdown() // signal Done()
-
-	_, accErr := l.Accept()
-	if !errors.Is(accErr, want) {
-		t.Fatalf("Accept err = %v, want %v", accErr, want)
-	}
-}
-
-// If server.Done() is closed and server.Err() == nil,
-// Accept must return net.ErrClosed.
-func TestListener_Accept_AfterServerDone_ReturnsNetErrClosed(t *testing.T) {
-	ms := NewListenerMockServer()
-	l, err := NewListener(nil, make(chan net.Conn, 1), ms)
-	if err != nil {
-		t.Fatalf("NewListener error: %v", err)
-	}
-	l.(*Listener).Start()
-
-	ms.setErr(nil)
-	_ = ms.Shutdown()
-
-	_, accErr := l.Accept()
-	if !errors.Is(accErr, net.ErrClosed) {
-		t.Fatalf("Accept err = %v, want net.ErrClosed", accErr)
-	}
-}
-
-// Close must be idempotent and call underlying Shutdown once (thanks to Listener.closeOnce).
-func TestListener_Close_IsIdempotent(t *testing.T) {
-	ms := NewListenerMockServer()
-	l, err := NewListener(nil, make(chan net.Conn, 1), ms)
-	if err != nil {
-		t.Fatalf("NewListener error: %v", err)
-	}
-	l.(*Listener).Start()
-
-	if err := l.Close(); err != nil {
-		t.Fatalf("Close error: %v", err)
-	}
-	if err := l.Close(); err != nil {
-		t.Fatalf("Close second error: %v", err)
+		t.Fatalf("NewListener err=%v", err)
 	}
 
-	if got := ms.shutdownCalled.Load(); got != 1 {
+	err1 := lst.Close()
+	if !errors.Is(err1, s.shErr) {
+		t.Fatalf("first Close err=%v, want %v", err1, s.shErr)
+	}
+	err2 := lst.Close()
+	if err2 != nil {
+		t.Fatalf("second Close err=%v, want nil", err2)
+	}
+	if got := s.shutdownCalled.Load(); got != 1 {
 		t.Fatalf("Shutdown called %d times, want 1", got)
 	}
 }
 
-func TestListener_Accept_BlocksUntilConnArrives(t *testing.T) {
-	ms := NewListenerMockServer()
-	queue := make(chan net.Conn, 1)
-	l, err := NewListener(context.Background(), queue, ms)
+func TestAccept_ReturnsQueuedConn(t *testing.T) {
+	s := newMockServer()
+	q := make(chan net.Conn, 1)
+	lst, err := NewListener(context.Background(), s, q)
 	if err != nil {
-		t.Fatal(err)
-	}
-	l.(*Listener).Start()
-
-	done := make(chan struct{})
-	var got net.Conn
-	var accErr error
-	go func() {
-		got, accErr = l.Accept()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		t.Fatal("Accept returned early; expected to block")
-	case <-time.After(30 * time.Millisecond):
+		t.Fatalf("NewListener err=%v", err)
 	}
 
-	c1, c2 := net.Pipe()
+	c1, c2 := mustPipe(t)
 	defer func(c2 net.Conn) {
 		_ = c2.Close()
 	}(c2)
-	queue <- c1
 
-	select {
-	case <-done:
-		if accErr != nil {
-			t.Fatalf("Accept err: %v", accErr)
-		}
-		if got != c1 {
-			t.Fatalf("unexpected conn returned")
-		}
-	case <-time.After(time.Second):
-		t.Fatal("timeout waiting for Accept to return after enqueue")
+	q <- c1
+
+	conn, accErr := lst.Accept()
+	if accErr != nil {
+		t.Fatalf("Accept err=%v", accErr)
 	}
-
-	_ = l.Close()
+	if conn != c1 {
+		t.Fatalf("Accept returned unexpected conn")
+	}
+	_ = conn.Close()
+	_ = lst.Close()
 }
 
-func TestListener_Accept_FIFO(t *testing.T) {
-	ms := NewListenerMockServer()
-	queue := make(chan net.Conn, 2)
-	l, _ := NewListener(context.Background(), queue, ms)
-	l.(*Listener).Start()
-
-	a1, b1 := net.Pipe()
-	a2, b2 := net.Pipe()
-	defer func(b1 net.Conn) {
-		_ = b1.Close()
-	}(b1)
-	defer func(b2 net.Conn) {
-		_ = b2.Close()
-	}(b2)
-
-	queue <- a1
-	queue <- a2
-
-	cFirst, err := l.Accept()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cFirst != a1 {
-		t.Fatalf("want first=%p, got %p", a1, cFirst)
-	}
-	_ = cFirst.Close()
-
-	cSecond, err := l.Accept()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cSecond != a2 {
-		t.Fatalf("want second=%p, got %p", a2, cSecond)
-	}
-	_ = cSecond.Close()
-
-	_ = l.Close()
-}
-
-func TestListener_Close_PropagatesShutdownErrOnce(t *testing.T) {
-	ms := NewListenerMockServer()
-	ms.shutdownErr = errors.New("boom")
-	l, _ := NewListener(context.Background(), make(chan net.Conn, 1), ms)
-	l.(*Listener).Start()
-
-	err1 := l.Close()
-	if !errors.Is(err1, ms.shutdownErr) {
-		t.Fatalf("first Close err=%v, want %v", err1, ms.shutdownErr)
-	}
-	if err2 := l.Close(); err2 != nil {
-		t.Fatalf("second Close err=%v, want nil", err2)
-	}
-}
-
-// ---- Guards for NewListener ----
-func TestNewListener_Guards(t *testing.T) {
-	t.Parallel()
-
-	ms := NewListenerMockServer()
-
-	if l, err := NewListener(context.Background(), nil, ms); !errors.Is(err, ErrNilQueue) || l != nil {
-		t.Fatalf("nil queue: want %v, got err=%v, l=%v", ErrNilQueue, err, l)
-	}
-	if l, err := NewListener(context.Background(), make(chan net.Conn, 1), nil); !errors.Is(err, ErrNilServer) || l != nil {
-		t.Fatalf("nil server: want %v, got err=%v, l=%v", ErrNilServer, err, l)
-	}
-}
-
-func TestNewDefaultListenerWithFactory_Guards(t *testing.T) {
-	t.Parallel()
-
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func(ln net.Listener) {
-		_ = ln.Close()
-	}(ln)
-
-	if l, err := NewDefaultListenerWithFactory(context.Background(), nil, NewDefaultHTTPServerFactory()); !errors.Is(err, ErrNilListener) || l != nil {
-		t.Fatalf("nil listener: want %v, got err=%v, l=%v", ErrNilListener, err, l)
-	}
-	if l, err := NewDefaultListenerWithFactory(context.Background(), ln, nil); !errors.Is(err, ErrNilFactory) || l != nil {
-		t.Fatalf("nil factory: want %v, got err=%v, l=%v", ErrNilFactory, err, l)
-	}
-}
-
-// ---- Accept() must return closed on ctx.Done() ----
-func TestListener_Accept_ContextDoneReturnsClosed(t *testing.T) {
+func TestAccept_ContextDone(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	ms := NewListenerMockServer()
-	queue := make(chan net.Conn, 1)
-	l, err := NewListener(ctx, queue, ms)
+	s := newMockServer()
+	q := make(chan net.Conn, 1)
+	lst, err := NewListener(ctx, s, q)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("NewListener err=%v", err)
 	}
-	l.(*Listener).Start()
 
 	done := make(chan error, 1)
 	go func() {
-		_, accErr := l.Accept()
-		done <- accErr
+		_, e := lst.Accept()
+		done <- e
 	}()
 
+	// Ensure Accept is blocking, then cancel context
 	time.Sleep(20 * time.Millisecond)
 	cancel()
 
 	select {
-	case err := <-done:
-		if !errors.Is(err, net.ErrClosed) {
-			t.Fatalf("Accept err=%v, want net.ErrClosed", err)
+	case e := <-done:
+		if !errors.Is(e, net.ErrClosed) {
+			t.Fatalf("Accept err=%v, want net.ErrClosed", e)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("timeout waiting for Accept to return after ctx cancel")
+		t.Fatal("timeout waiting for Accept after ctx cancel")
 	}
-
-	_ = l.Close()
+	_ = lst.Close()
 }
 
-// ---- Start() must hook ctx.Done() and call Shutdown() exactly once via Close() ----
-func TestListener_Start_ContextCancelTriggersSingleShutdown(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	ms := NewListenerMockServer()
-	l, err := NewListener(ctx, make(chan net.Conn, 1), ms)
+func TestAccept_ServerDone_WithErr(t *testing.T) {
+	s := newMockServer()
+	s.setErr(errors.New("serve failed"))
+	q := make(chan net.Conn, 1)
+	lst, err := NewListener(context.Background(), s, q)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("NewListener err=%v", err)
 	}
-	l.(*Listener).Start()
 
-	cancel()
-	time.Sleep(30 * time.Millisecond)
+	// Close server -> Done() readable, Err() non-nil
+	_ = s.Shutdown()
 
-	if got := ms.shutdownCalled.Load(); got != 1 {
-		t.Fatalf("Shutdown called %d times, want 1", got)
+	_, accErr := lst.Accept()
+	if !errors.Is(accErr, s.Err()) {
+		t.Fatalf("Accept err=%v, want %v", accErr, s.Err())
 	}
-	if err := l.Close(); err != nil {
-		t.Fatalf("Close err: %v", err)
-	}
-	if got := ms.shutdownCalled.Load(); got != 1 {
-		t.Fatalf("Shutdown called %d times after Close(), want still 1", got)
-	}
+	_ = lst.Close()
 }
 
-// ---- Smoke test for NewDefaultListener (uses default factory) ----
-func TestNewDefaultListener_Smoke(t *testing.T) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+func TestAccept_ServerDone_NoErr(t *testing.T) {
+	s := newMockServer()
+	// Err() returns nil by default
+	q := make(chan net.Conn, 1)
+	lst, err := NewListener(context.Background(), s, q)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("NewListener err=%v", err)
 	}
-	defer func(ln net.Listener) {
-		_ = ln.Close()
-	}(ln)
 
-	l, err := NewDefaultListener(context.Background(), ln)
+	_ = s.Shutdown() // Done() readable, Err()==nil
+
+	_, accErr := lst.Accept()
+	if !errors.Is(accErr, net.ErrClosed) {
+		t.Fatalf("Accept err=%v, want net.ErrClosed", accErr)
+	}
+	_ = lst.Close()
+}
+
+func TestAccept_ClosedQueue(t *testing.T) {
+	s := newMockServer()
+	q := make(chan net.Conn, 1)
+	lst, err := NewListener(context.Background(), s, q)
 	if err != nil {
-		t.Fatalf("NewDefaultListener error: %v", err)
+		t.Fatalf("NewListener err=%v", err)
 	}
-	if err := l.Close(); err != nil {
-		t.Fatalf("Close error: %v", err)
+
+	close(q) // reading from closed channel must return net.ErrClosed
+
+	_, accErr := lst.Accept()
+	if !errors.Is(accErr, net.ErrClosed) {
+		t.Fatalf("Accept err=%v, want net.ErrClosed", accErr)
 	}
+	_ = lst.Close()
+}
+
+func TestAccept_NilConnValue(t *testing.T) {
+	s := newMockServer()
+	q := make(chan net.Conn, 1)
+	lst, err := NewListener(context.Background(), s, q)
+	if err != nil {
+		t.Fatalf("NewListener err=%v", err)
+	}
+
+	q <- nil
+
+	_, accErr := lst.Accept()
+	if !errors.Is(accErr, net.ErrClosed) {
+		t.Fatalf("Accept err=%v, want net.ErrClosed", accErr)
+	}
+	_ = lst.Close()
 }
