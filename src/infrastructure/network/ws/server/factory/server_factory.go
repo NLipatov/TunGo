@@ -9,14 +9,35 @@ import (
 	"tungo/infrastructure/network/ws/server/contracts"
 )
 
-type DefaultServerFactory struct {
+const (
+	defaultReadHeaderTimeout = 5 * time.Second
+	defaultIdleTimeout       = 60 * time.Second
+	defaultShutdownTimeout   = 5 * time.Second
+	defaultPath              = "/ws"
+)
+
+type ServerFactory struct {
+	readHeaderTimeout, idleTimeout, shutdownTimeout time.Duration
+	path                                            string
 }
 
-func newDefaultServerFactory() *DefaultServerFactory {
-	return &DefaultServerFactory{}
+func newDefaultServerFactory() *ServerFactory {
+	return newServerFactory(defaultReadHeaderTimeout, defaultIdleTimeout, defaultShutdownTimeout, defaultPath)
 }
 
-func (h *DefaultServerFactory) NewServer(
+func newServerFactory(
+	readHeaderTimeout, idleTimeout, shutdownTimeout time.Duration,
+	path string,
+) *ServerFactory {
+	return &ServerFactory{
+		readHeaderTimeout: readHeaderTimeout,
+		idleTimeout:       idleTimeout,
+		shutdownTimeout:   shutdownTimeout,
+		path:              path,
+	}
+}
+
+func (h *ServerFactory) NewServer(
 	ctx context.Context,
 	listener net.Listener,
 	connectionQueue chan net.Conn,
@@ -24,14 +45,14 @@ func (h *DefaultServerFactory) NewServer(
 	return server.NewDefaultServer(
 		ctx,
 		listener,
-		5*time.Second,
-		60*time.Second,
-		5*time.Second,
+		h.readHeaderTimeout,
+		h.idleTimeout,
+		h.shutdownTimeout,
 		server.NewDefaultHandler(
 			server.NewDefaultUpgrader(),
 			connectionQueue,
 			logging.NewLogLogger(),
 		),
-		"/ws",
+		h.path,
 	)
 }
