@@ -16,20 +16,20 @@ const (
 	defaultPath              = "/ws"
 )
 
-type ServerFactory struct {
+type serverFactory struct {
 	readHeaderTimeout, idleTimeout, shutdownTimeout time.Duration
 	path                                            string
 }
 
-func newDefaultServerFactory() *ServerFactory {
+func newDefaultServerFactory() *serverFactory {
 	return newServerFactory(defaultReadHeaderTimeout, defaultIdleTimeout, defaultShutdownTimeout, defaultPath)
 }
 
 func newServerFactory(
 	readHeaderTimeout, idleTimeout, shutdownTimeout time.Duration,
 	path string,
-) *ServerFactory {
-	return &ServerFactory{
+) *serverFactory {
+	return &serverFactory{
 		readHeaderTimeout: readHeaderTimeout,
 		idleTimeout:       idleTimeout,
 		shutdownTimeout:   shutdownTimeout,
@@ -37,7 +37,7 @@ func newServerFactory(
 	}
 }
 
-func (h *ServerFactory) NewServer(
+func (h *serverFactory) NewServer(
 	ctx context.Context,
 	listener net.Listener,
 	connectionQueue chan net.Conn,

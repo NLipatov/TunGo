@@ -4,25 +4,34 @@ import (
 	"context"
 	"net"
 	"tungo/application/listeners"
-	server2 "tungo/infrastructure/network/ws/server"
+	wsServer "tungo/infrastructure/network/ws/server"
+	"tungo/infrastructure/network/ws/server/contracts"
 )
 
 type ListenerFactory struct {
+	serverFactory contracts.ServerFactory
 }
 
-func NewListenerFactory() *ListenerFactory {
-	return &ListenerFactory{}
+func NewDefaultListenerFactory() *ListenerFactory {
+	return &ListenerFactory{
+		serverFactory: newDefaultServerFactory(),
+	}
 }
 
-func (l *ListenerFactory) BuildDefaultListener(
+func NewListenerFactory(serverFactory contracts.ServerFactory) *ListenerFactory {
+	return &ListenerFactory{
+		serverFactory: serverFactory,
+	}
+}
+
+func (lf *ListenerFactory) NewListener(
 	ctx context.Context,
 	listener net.Listener,
 ) (listeners.TcpListener, error) {
 	queue := make(chan net.Conn, 1024)
-	serverFactory := newDefaultServerFactory()
-	server, srvErr := serverFactory.NewServer(ctx, listener, queue)
+	server, srvErr := lf.serverFactory.NewServer(ctx, listener, queue)
 	if srvErr != nil {
 		return nil, srvErr
 	}
-	return server2.NewListener(ctx, server, queue)
+	return wsServer.NewListener(ctx, server, queue)
 }

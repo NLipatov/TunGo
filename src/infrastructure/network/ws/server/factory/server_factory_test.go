@@ -58,7 +58,6 @@ func TestServerFactory_NewServer_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewServer error: %v", err)
 	}
-	// Сервер ещё не запущен (Serve не вызывали), Shutdown должен пройти по ветке server==nil.
 	if err := srv.Shutdown(); err != nil {
 		t.Fatalf("Shutdown error: %v", err)
 	}
