@@ -19,6 +19,24 @@ import (
 	"tungo/infrastructure/settings"
 )
 
+type servicePacketEncodeErrMock struct {
+	called chan struct{}
+}
+
+func (s *servicePacketEncodeErrMock) TryParseType(_ []byte) (service.PacketType, bool) {
+	return service.Unknown, false
+}
+func (s *servicePacketEncodeErrMock) EncodeLegacy(_ service.PacketType, _ []byte) ([]byte, error) {
+	select {
+	case s.called <- struct{}{}:
+	default:
+	}
+	return nil, errors.New("encode failed")
+}
+func (s *servicePacketEncodeErrMock) EncodeV1(_ service.PacketType, buffer []byte) ([]byte, error) {
+	return buffer, nil
+}
+
 type servicePacketMock struct {
 }
 
@@ -627,5 +645,58 @@ func Test_fakeAEAD_DoesNotUseRand(t *testing.T) {
 	}
 	if !bytes.Equal(got, pt) {
 		t.Fatalf("roundtrip mismatch: %q vs %q", got, pt)
+	}
+}
+
+func TestTransportHandler_HandshakeError_ServicePacketEncodeError_NoSleep(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	writer := &fakeWriter{}
+	logger := &fakeLogger{}
+	sessionRepo := &testSessionRepo{}
+	clientAddr := netip.MustParseAddrPort("192.168.1.99:5999")
+
+	fakeHS := &fakeHandshake{ip: nil, err: errors.New("hs fail")}
+	handshakeFactory := &fakeHandshakeFactory{hs: fakeHS}
+
+	conn := &fakeUdpListenerConn{
+		readBufs:  [][]byte{{0xab, 0xcd}},
+		readAddrs: []netip.AddrPort{clientAddr},
+	}
+
+	sp := &servicePacketEncodeErrMock{called: make(chan struct{}, 1)}
+
+	handler := NewTransportHandler(
+		ctx,
+		settings.Settings{Port: "5999"},
+		writer,
+		conn,
+		sessionRepo,
+		logger,
+		handshakeFactory,
+		chacha20.NewUdpSessionBuilder(mockAEADBuilder{}),
+		sp,
+	)
+
+	done := make(chan struct{})
+	go func() { _ = handler.HandleTransport(); close(done) }()
+
+	select {
+	case <-sp.called:
+		cancel()
+	case <-time.After(time.Second):
+		cancel()
+		t.Fatal("timeout waiting for EncodeLegacy to be called")
+	}
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("handler did not exit after cancel")
+	}
+
+	if got := len(conn.writes); got != 0 {
+		t.Fatalf("expected no UDP writes on EncodeLegacy error, got %d", got)
 	}
 }
