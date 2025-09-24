@@ -7,24 +7,19 @@ import (
 	"net/http"
 	"strconv"
 	"tungo/application"
-	"tungo/infrastructure/network/ws"
 	"tungo/infrastructure/network/ws/adapter"
+	"tungo/infrastructure/network/ws/contracts"
 )
-
-// Handler — HTTP-handlers of incoming connections.
-type Handler interface {
-	Handle(w http.ResponseWriter, r *http.Request)
-}
 
 // DefaultHandler upgrades HTTP connections to WebSocket and enqueues them as net.Conn adapters.
 type DefaultHandler struct {
-	upgrader ws.Upgrader
+	upgrader contracts.Upgrader
 	queue    chan net.Conn
 	logger   application.Logger
 }
 
 func NewDefaultHandler(
-	upgrader ws.Upgrader,
+	upgrader contracts.Upgrader,
 	queue chan net.Conn,
 	logger application.Logger,
 ) *DefaultHandler {
@@ -75,9 +70,13 @@ func (h *DefaultHandler) addrFromRequest(r *http.Request) (*net.TCPAddr, error) 
 	if err != nil {
 		return nil, err
 	}
+	hostIP := net.ParseIP(host)
+	if hostIP == nil {
+		return nil, errors.New("invalid remote host IP")
+	}
 	p, pErr := strconv.Atoi(port)
 	if pErr != nil {
-		return nil, errors.New("invalid remote port number")
+		return nil, errors.New("invalid remote host port number")
 	}
-	return &net.TCPAddr{IP: net.ParseIP(host), Port: p}, nil
+	return &net.TCPAddr{IP: hostIP, Port: p}, nil
 }

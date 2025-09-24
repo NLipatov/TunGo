@@ -2,8 +2,9 @@ package chacha20
 
 import (
 	"encoding/binary"
-	"golang.org/x/crypto/chacha20poly1305"
 	"sync"
+
+	"golang.org/x/crypto/chacha20poly1305"
 )
 
 type StrictCounter struct {

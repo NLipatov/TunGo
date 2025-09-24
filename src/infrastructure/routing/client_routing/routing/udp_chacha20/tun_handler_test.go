@@ -5,10 +5,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"golang.org/x/crypto/chacha20poly1305"
 	"io"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/chacha20poly1305"
 )
 
 // fakeCrypto implements application.CryptographyService for testing

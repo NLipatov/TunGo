@@ -7,8 +7,8 @@ import (
 	"io"
 	"os"
 	"tungo/application"
+	"tungo/domain/network/service"
 	"tungo/infrastructure/cryptography/chacha20"
-	"tungo/infrastructure/network/signaling"
 	"tungo/infrastructure/settings"
 )
 
@@ -17,18 +17,22 @@ type TransportHandler struct {
 	reader              io.Reader
 	writer              io.Writer
 	cryptographyService application.CryptographyService
+	servicePacket       service.PacketHandler
 }
 
 func NewTransportHandler(
 	ctx context.Context,
 	reader io.Reader,
 	writer io.Writer,
-	cryptographyService application.CryptographyService) application.TransportHandler {
+	cryptographyService application.CryptographyService,
+	servicePacket service.PacketHandler,
+) application.TransportHandler {
 	return &TransportHandler{
 		ctx:                 ctx,
 		reader:              reader,
 		writer:              writer,
 		cryptographyService: cryptographyService,
+		servicePacket:       servicePacket,
 	}
 }
 
@@ -52,8 +56,10 @@ func (t *TransportHandler) HandleTransport() error {
 				return fmt.Errorf("could not read a packet from adapter: %v", readErr)
 			}
 
-			if n == 1 && signaling.SignalIs(buffer[0], signaling.SessionReset) {
-				return fmt.Errorf("server requested cryptographyService reset")
+			if spType, spOk := t.servicePacket.TryParseType(buffer[:n]); spOk {
+				if spType == service.SessionReset {
+					return fmt.Errorf("server requested cryptographyService reset")
+				}
 			}
 
 			decrypted, decryptionErr := t.cryptographyService.Decrypt(buffer[:n])

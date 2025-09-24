@@ -7,14 +7,14 @@ import (
 	"net"
 	"time"
 	"tungo/domain/network"
-	"tungo/infrastructure/network/ws"
+	"tungo/infrastructure/network/ws/contracts"
 
 	"github.com/coder/websocket"
 )
 
 // Adapter is a ws.Conn adaptation to net.Conn
 type Adapter struct {
-	conn                        ws.Conn
+	conn                        contracts.Conn
 	ctx                         context.Context
 	reader                      io.Reader
 	lAddr                       net.Addr
@@ -24,7 +24,7 @@ type Adapter struct {
 
 func NewDefaultAdapter(
 	ctx context.Context,
-	conn ws.Conn,
+	conn contracts.Conn,
 	lAddr, rAddr net.Addr,
 ) *Adapter {
 	return &Adapter{
@@ -39,7 +39,7 @@ func NewDefaultAdapter(
 
 func NewAdapter(
 	ctx context.Context,
-	conn ws.Conn,
+	conn contracts.Conn,
 	reader io.Reader,
 	lAddr, rAddr net.Addr,
 	readDeadline, writeDeadline time.Time,

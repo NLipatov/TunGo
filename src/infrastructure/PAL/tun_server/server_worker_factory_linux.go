@@ -7,10 +7,11 @@ import (
 	"net"
 	"net/netip"
 	"tungo/application"
+	"tungo/domain/network/service"
 	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network/ip"
-	wsServer "tungo/infrastructure/network/ws/server"
+	wsServer "tungo/infrastructure/network/ws/server/factory"
 	"tungo/infrastructure/routing/server_routing/routing/tcp_chacha20"
 	"tungo/infrastructure/routing/server_routing/routing/udp_chacha20"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
@@ -134,7 +135,8 @@ func (s *ServerWorkerFactory) createWSWorker(
 		return nil, fmt.Errorf("failed to listen TCP: %w", tcpListenerErr)
 	}
 
-	wsListener, wsListenerErr := wsServer.NewDefaultListener(ctx, tcpListener)
+	wsListenerFactory := wsServer.NewDefaultListenerFactory()
+	wsListener, wsListenerErr := wsListenerFactory.NewListener(ctx, tcpListener)
 	if wsListenerErr != nil {
 		return nil, fmt.Errorf("failed to listen WebSocket: %w", wsListenerErr)
 	}
@@ -192,6 +194,7 @@ func (s *ServerWorkerFactory) createUDPWorker(
 		s.loggerFactory.newLogger(),
 		NewHandshakeFactory(*conf),
 		chacha20.NewUdpSessionBuilder(chacha20.NewDefaultAEADBuilder()),
+		service.NewDefaultPacketHandler(),
 	)
 	return udp_chacha20.NewUdpTunWorker(th, tr), nil
 }

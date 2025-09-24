@@ -7,7 +7,7 @@ import (
 	"net/netip"
 	"tungo/application"
 	"tungo/application/listeners"
-	"tungo/infrastructure/network/signaling"
+	"tungo/domain/network/service"
 	"tungo/infrastructure/network/udp/adapters"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
 	"tungo/infrastructure/settings"
@@ -22,6 +22,8 @@ type TransportHandler struct {
 	listenerConn        listeners.UdpListener
 	handshakeFactory    application.HandshakeFactory
 	cryptographyFactory application.CryptographyServiceFactory
+	servicePacket       service.PacketHandler
+	spBuffer            [3]byte
 }
 
 func NewTransportHandler(
@@ -33,6 +35,7 @@ func NewTransportHandler(
 	logger application.Logger,
 	handshakeFactory application.HandshakeFactory,
 	cryptographyFactory application.CryptographyServiceFactory,
+	servicePacket service.PacketHandler,
 ) application.TransportHandler {
 	return &TransportHandler{
 		ctx:                 ctx,
@@ -43,6 +46,7 @@ func NewTransportHandler(
 		listenerConn:        listenerConn,
 		handshakeFactory:    handshakeFactory,
 		cryptographyFactory: cryptographyFactory,
+		servicePacket:       servicePacket,
 	}
 }
 
@@ -100,9 +104,12 @@ func (t *TransportHandler) handlePacket(
 		regErr := t.registerClient(conn, addrPort, packet)
 		if regErr != nil {
 			t.logger.Printf("host %v failed registration: %v", addrPort.Addr().AsSlice(), regErr)
-			_, _ = conn.WriteToUDPAddrPort([]byte{
-				byte(signaling.SessionReset),
-			}, addrPort)
+			servicePacketPayload, servicePacketErr := t.servicePacket.EncodeLegacy(service.SessionReset, t.spBuffer[:])
+			if servicePacketErr != nil {
+				t.logger.Printf("failed to encode legacy session reset service packet: %v", servicePacketErr)
+				return regErr
+			}
+			_, _ = conn.WriteToUDPAddrPort(servicePacketPayload, addrPort)
 			return regErr
 		}
 		return nil

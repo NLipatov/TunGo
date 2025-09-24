@@ -1,6 +1,7 @@
 package chacha20
 
 import (
+	"errors"
 	"testing"
 )
 
@@ -12,7 +13,7 @@ func TestReplayWindowInitialAndDuplicate(t *testing.T) {
 		t.Fatalf("expected first seq unique, got %v", err)
 	}
 	// Duplicate sequence should be rejected
-	if err := w.Validate(5); err != ErrNonUniqueNonce {
+	if err := w.Validate(5); !errors.Is(err, ErrNonUniqueNonce) {
 		t.Fatalf("expected duplicate seq error, got %v", err)
 	}
 }
@@ -32,7 +33,7 @@ func TestReplayWindowSmallShiftAndWindow(t *testing.T) {
 		t.Fatalf("window accept failed: %v", err)
 	}
 	// Duplicate within window: seq=12 rejected
-	if err := w.Validate(12); err != ErrNonUniqueNonce {
+	if err := w.Validate(12); !errors.Is(err, ErrNonUniqueNonce) {
 		t.Fatalf("expected duplicate seq error in window, got %v", err)
 	}
 }
@@ -48,7 +49,7 @@ func TestReplayWindowLargeShiftReset(t *testing.T) {
 		t.Fatalf("large shift advance failed: %v", err)
 	}
 	// After reset, old seq=0 is too old (max-seq=64) and should be rejected
-	if err := w.Validate(0); err != ErrNonUniqueNonce {
+	if err := w.Validate(0); !errors.Is(err, ErrNonUniqueNonce) {
 		t.Fatalf("expected too old seq error after reset, got %v", err)
 	}
 }
@@ -60,7 +61,7 @@ func TestReplayWindowTooOld(t *testing.T) {
 		t.Fatalf("advance to 100 failed: %v", err)
 	}
 	// Too old (seq = max-64 = 36): rejected
-	if err := w.Validate(36); err != ErrNonUniqueNonce {
+	if err := w.Validate(36); !errors.Is(err, ErrNonUniqueNonce) {
 		t.Fatalf("expected too old seq error, got %v", err)
 	}
 }

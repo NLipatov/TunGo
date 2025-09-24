@@ -2,9 +2,10 @@ package ioctl
 
 import (
 	"fmt"
-	"golang.org/x/sys/unix"
 	"os"
 	"strings"
+
+	"golang.org/x/sys/unix"
 )
 
 type Wrapper struct {

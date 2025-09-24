@@ -6,154 +6,74 @@ import (
 	"context"
 	"errors"
 	"net"
-	"net/http"
 	"sync"
-	"time"
 	"tungo/application/listeners"
-	"tungo/infrastructure/logging"
+	"tungo/infrastructure/network/ws/server/contracts"
 )
 
+// Listener is a wrapper around Server to bring net.TCPListener semantics
 type Listener struct {
-	ctx                                                     context.Context
-	requestHandler                                          Handler
-	httpReadHeaderTimeout, httpIdleTimeout, shutdownTimeout time.Duration
-	listener                                                net.Listener
-	path                                                    string
-	httpServer                                              *http.Server
-	queue                                                   chan net.Conn
-	startOnce, closeOnce                                    sync.Once
-	httpServerServeErr                                      chan error
-	closed                                                  chan struct{}
+	ctx                  context.Context
+	server               contracts.Server
+	connectionQueue      chan net.Conn
+	startOnce, closeOnce sync.Once
 }
 
-func NewDefaultListener(
-	ctx context.Context,
-	listener net.Listener,
-) (listeners.TcpListener, error) {
-	queue := make(chan net.Conn, 1024)
-	instance := &Listener{
-		ctx: ctx,
-		requestHandler: NewDefaultHandler(
-			NewDefaultUpgrader(),
-			queue,
-			logging.NewLogLogger(),
-		),
-		shutdownTimeout:       time.Second * 5,
-		httpReadHeaderTimeout: 5 * time.Second,
-		httpIdleTimeout:       60 * time.Second,
-		listener:              listener,
-		path:                  "/ws",
-		queue:                 queue,
-		startOnce:             sync.Once{},
-		closeOnce:             sync.Once{},
-		httpServerServeErr:    make(chan error, 1),
-		closed:                make(chan struct{}),
-	}
-
-	return instance, instance.Start()
-}
-
+// NewListener wires Server and connection queue and starts Server.
 func NewListener(
 	ctx context.Context,
-	listener net.Listener,
-	path string,
-	requestHandler Handler,
+	server contracts.Server,
 	queue chan net.Conn,
-	httpReadHeaderTimeout, httpIdleTimeout, shutdownTimeout time.Duration,
 ) (listeners.TcpListener, error) {
-	return &Listener{
-		ctx:                   ctx,
-		requestHandler:        requestHandler,
-		shutdownTimeout:       shutdownTimeout,
-		httpReadHeaderTimeout: httpReadHeaderTimeout,
-		httpIdleTimeout:       httpIdleTimeout,
-		listener:              listener,
-		path:                  path,
-		startOnce:             sync.Once{},
-		closeOnce:             sync.Once{},
-		queue:                 queue,
-		httpServerServeErr:    make(chan error, 1),
-		closed:                make(chan struct{}),
-	}, nil
+	if ctx == nil {
+		return nil, errors.New("ctx must not be nil")
+	}
+	if server == nil {
+		return nil, errors.New("server must not be nil")
+	}
+	if queue == nil {
+		return nil, errors.New("queue must not be nil")
+	}
+	ln := &Listener{
+		ctx:             ctx,
+		server:          server,
+		connectionQueue: queue,
+	}
+	ln.Start()
+	return ln, nil
 }
 
-func (l *Listener) Start() error {
+func (l *Listener) Start() {
 	l.startOnce.Do(func() {
-		mux := http.NewServeMux()
-		mux.HandleFunc(l.path, l.requestHandler.Handle)
-
-		l.httpServer = &http.Server{
-			Handler: mux,
-			BaseContext: func(_ net.Listener) context.Context {
-				return l.ctx
-			},
-			ReadHeaderTimeout: l.httpReadHeaderTimeout,
-			IdleTimeout:       l.httpIdleTimeout,
-		}
-
-		go func() {
-			err := l.httpServer.Serve(l.listener)
-			if err != nil && !errors.Is(err, http.ErrServerClosed) {
-				select {
-				case l.httpServerServeErr <- err:
-				default: // drop subsequent errs if buffer is full
-				}
-			}
-			select {
-			case <-l.closed: // if closed already, do not close it second time
-			default:
-				close(l.closed) // if not yet closed, close it
-			}
-		}()
-
 		go func() {
 			<-l.ctx.Done()
-			_ = l.shutdown()
+			_ = l.Close()
+		}()
+		go func() {
+			_ = l.server.Serve()
 		}()
 	})
-	return nil
-}
-
-func (l *Listener) serveError() error {
-	select {
-	case err := <-l.httpServerServeErr:
-		return err
-	default:
-		return nil
-	}
 }
 
 func (l *Listener) Accept() (net.Conn, error) {
 	select {
-	case conn := <-l.queue:
+	case <-l.ctx.Done():
+		return nil, net.ErrClosed
+	case conn, ok := <-l.connectionQueue:
+		if !ok || conn == nil {
+			return nil, net.ErrClosed
+		}
 		return conn, nil
-	case <-l.closed:
+	case <-l.server.Done():
+		if err := l.server.Err(); err != nil {
+			return nil, err
+		}
 		return nil, net.ErrClosed
 	}
 }
 
 func (l *Listener) Close() error {
-	var shutdownErr error
-	l.closeOnce.Do(func() {
-		shutdownErr = l.shutdown()
-		select {
-		case <-l.closed:
-		default:
-			close(l.closed)
-		}
-	})
-	return shutdownErr
-}
-
-func (l *Listener) shutdown() error {
-	if l.httpServer == nil {
-		if l.listener != nil {
-			_ = l.listener.Close()
-		}
-		return nil
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), l.shutdownTimeout)
-	defer cancel()
-	_ = l.httpServer.Shutdown(ctx)
-	return l.listener.Close()
+	var err error
+	l.closeOnce.Do(func() { err = l.server.Shutdown() })
+	return err
 }

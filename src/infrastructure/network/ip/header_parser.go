@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"net/netip"
 
+	appip "tungo/application/network/ip"
+
 	"golang.org/x/net/ipv4"
 	"golang.org/x/net/ipv6"
-	appip "tungo/application/network/ip"
 )
 
 // Compile-time interface check.

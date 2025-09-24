@@ -3,9 +3,10 @@ package handshake
 import (
 	"bytes"
 	"crypto/sha256"
-	"golang.org/x/crypto/hkdf"
 	"io"
 	"testing"
+
+	"golang.org/x/crypto/hkdf"
 )
 
 // Ensure the factory implements the interface

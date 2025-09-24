@@ -45,7 +45,7 @@ func TestErrTimeout_UnwrapAndErrorsIs_As(t *testing.T) {
 	if !errors.As(e, &et) {
 		t.Fatalf("errors.As must match ErrTimeout")
 	}
-	if et.cause != context.DeadlineExceeded {
+	if !errors.Is(et.cause, context.DeadlineExceeded) {
 		t.Fatalf("As must preserve cause")
 	}
 

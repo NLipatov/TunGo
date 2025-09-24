@@ -3,13 +3,14 @@ package handshake
 import (
 	"crypto/ed25519"
 	"fmt"
-	"golang.org/x/crypto/curve25519"
 	"net"
 	"net/netip"
 	"tungo/application"
 	"tungo/domain/network/ip/packet_validation"
 	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/settings"
+
+	"golang.org/x/crypto/curve25519"
 )
 
 // ClientHandshake performs the three‑step authenticated key‑exchange:

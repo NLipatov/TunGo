@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
-	"tungo/infrastructure/network/ws"
+	"tungo/infrastructure/network/ws/contracts"
 
 	"tungo/infrastructure/settings"
 
@@ -108,4 +108,4 @@ func TestUpgrader_Upgrade_BadRequest_Error(t *testing.T) {
 }
 
 // compile-time sanity: returned type implements the expected interface in tests too.
-var _ ws.Conn = (*websocket.Conn)(nil)
+var _ contracts.Conn = (*websocket.Conn)(nil)

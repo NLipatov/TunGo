@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"tungo/infrastructure/network/ws"
+	"tungo/infrastructure/network/ws/contracts"
 
 	"github.com/coder/websocket"
 )
@@ -18,11 +18,11 @@ import (
 // --- fakes -------------------------------------------------------------------
 
 type fakeUpgrader struct {
-	conn ws.Conn
+	conn contracts.Conn
 	err  error
 }
 
-func (f *fakeUpgrader) Upgrade(_ http.ResponseWriter, _ *http.Request) (ws.Conn, error) {
+func (f *fakeUpgrader) Upgrade(_ http.ResponseWriter, _ *http.Request) (contracts.Conn, error) {
 	return f.conn, f.err
 }
 
@@ -57,7 +57,7 @@ func (l *fakeLogger) Printf(format string, v ...any) {
 }
 
 // make sure fakeConn satisfies the contract
-var _ ws.Conn = (*fakeConn)(nil)
+var _ contracts.Conn = (*fakeConn)(nil)
 
 // --- tests -------------------------------------------------------------------
 
@@ -151,6 +151,40 @@ func TestHandler_Overflow_ClosesWsConn(t *testing.T) {
 	}
 	if fc.reason == "" || !contains(fc.reason, "could not accept") {
 		t.Fatalf("close reason mismatch: %q", fc.reason)
+	}
+}
+
+func TestHandler_BadRemoteAddr_InvalidIP_400_Body(t *testing.T) {
+	h := NewDefaultHandler(&fakeUpgrader{}, make(chan net.Conn, 1), nil)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "http://example/ws", nil)
+	req.RemoteAddr = "bad.ip.addr:1234" // invalid IP, can not be parsed
+
+	h.Handle(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", rr.Code)
+	}
+	if got := rr.Body.String(); !contains(got, "bad remote addr") {
+		t.Fatalf("expected body to mention bad remote addr, got %q", got)
+	}
+}
+
+func TestHandler_BadRemoteAddr_InvalidPort_400_Body(t *testing.T) {
+	h := NewDefaultHandler(&fakeUpgrader{}, make(chan net.Conn, 1), nil)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "http://example/ws", nil)
+	req.RemoteAddr = "127.0.0.1:notaport" // invalid port, can not be parsed
+
+	h.Handle(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", rr.Code)
+	}
+	if got := rr.Body.String(); !contains(got, "bad remote addr") {
+		t.Fatalf("expected body to mention bad remote addr, got %q", got)
 	}
 }
 

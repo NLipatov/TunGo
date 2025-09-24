@@ -3,9 +3,10 @@ package ip
 import (
 	"testing"
 
+	"net/netip"
+
 	"golang.org/x/net/ipv4"
 	"golang.org/x/net/ipv6"
-	"net/netip"
 )
 
 func mkIPv4(ihlWords int, dst [4]byte) []byte {
