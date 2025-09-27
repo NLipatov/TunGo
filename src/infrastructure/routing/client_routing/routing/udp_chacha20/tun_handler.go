@@ -52,7 +52,7 @@ func NewTunHandler(ctx context.Context,
 //     (nonce) and the suffix (tag) are already reserved in the buffer.
 func (w *TunHandler) HandleTun() error {
 	// +12 nonce +16 AEAD tag headroom
-	buffer := make([]byte, settings.DefaultEthernetMTU+settings.UDPChacha20Overhead)
+	var buffer [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
 
 	// Main loop to read from TUN and send data
 	for {

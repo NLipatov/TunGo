@@ -62,15 +62,15 @@ func (t *TransportHandler) HandleTransport() error {
 		_ = t.listenerConn.Close()
 	}()
 
-	buffer := make([]byte, settings.DefaultEthernetMTU+settings.UDPChacha20Overhead)
-	oobBuf := make([]byte, 1024)
+	var buffer [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
+	var oobBuf [1024]byte
 
 	for {
 		select {
 		case <-t.ctx.Done():
 			return nil
 		default:
-			n, _, _, clientAddr, readFromUdpErr := t.listenerConn.ReadMsgUDPAddrPort(buffer, oobBuf)
+			n, _, _, clientAddr, readFromUdpErr := t.listenerConn.ReadMsgUDPAddrPort(buffer[:], oobBuf[:])
 			if readFromUdpErr != nil {
 				if t.ctx.Err() != nil {
 					return nil

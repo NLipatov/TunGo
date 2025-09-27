@@ -32,19 +32,20 @@ func NewTransportHandler(
 }
 
 func (t *TransportHandler) HandleTransport() error {
-	buf := make([]byte, settings.DefaultEthernetMTU+settings.TCPChacha20Overhead)
+	var buffer [settings.DefaultEthernetMTU + settings.TCPChacha20Overhead]byte
+
 	for {
 		select {
 		case <-t.ctx.Done():
 			return nil
 		default:
-			n, err := t.reader.Read(buf)
-			if err != nil {
+			n, readErr := t.reader.Read(buffer[:])
+			if readErr != nil {
 				if t.ctx.Err() != nil {
 					return nil
 				}
-				log.Printf("read from TCP failed: %v", err)
-				return err
+				log.Printf("read from TCP failed: %v", readErr)
+				return readErr
 			}
 
 			if n < chacha20poly1305.Overhead || n > settings.DefaultEthernetMTU+settings.TCPChacha20Overhead {
@@ -52,14 +53,14 @@ func (t *TransportHandler) HandleTransport() error {
 				continue
 			}
 
-			pt, err := t.cryptographyService.Decrypt(buf[:n])
-			if err != nil {
-				log.Printf("failed to decrypt data: %s", err)
-				return err
+			payload, payloadErr := t.cryptographyService.Decrypt(buffer[:n])
+			if payloadErr != nil {
+				log.Printf("failed to decrypt data: %s", payloadErr)
+				return payloadErr
 			}
-			if _, err = t.writer.Write(pt); err != nil {
-				log.Printf("failed to write to TUN: %v", err)
-				return err
+			if _, writeErr := t.writer.Write(payload); writeErr != nil {
+				log.Printf("failed to write to TUN: %v", writeErr)
+				return writeErr
 			}
 		}
 	}

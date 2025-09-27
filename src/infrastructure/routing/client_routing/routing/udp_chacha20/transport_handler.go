@@ -37,14 +37,14 @@ func NewTransportHandler(
 }
 
 func (t *TransportHandler) HandleTransport() error {
-	buffer := make([]byte, settings.DefaultEthernetMTU+settings.UDPChacha20Overhead)
+	var buffer [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
 
 	for {
 		select {
 		case <-t.ctx.Done():
 			return nil
 		default:
-			n, readErr := t.reader.Read(buffer)
+			n, readErr := t.reader.Read(buffer[:])
 			if readErr != nil {
 				if errors.Is(readErr, os.ErrDeadlineExceeded) {
 					continue
