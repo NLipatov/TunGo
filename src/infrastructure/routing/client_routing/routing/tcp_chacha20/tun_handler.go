@@ -28,8 +28,10 @@ func NewTunHandler(ctx context.Context,
 }
 
 func (t *TunHandler) HandleTun() error {
-	var backing [settings.DefaultEthernetMTU + settings.TCPChacha20Overhead]byte
-	pt := backing[:settings.DefaultEthernetMTU] // len=MTU, cap=MTU+16
+	// buffer has settings.TCPChacha20Overhead headroom for in-place encryption
+	// payload itself will take settings.DefaultEthernetMTU bytes
+	var buffer [settings.DefaultEthernetMTU + settings.TCPChacha20Overhead]byte
+	payload := buffer[:settings.DefaultEthernetMTU]
 
 	//passes anything from tun to chan
 	for {
@@ -37,7 +39,7 @@ func (t *TunHandler) HandleTun() error {
 		case <-t.ctx.Done():
 			return nil
 		default:
-			n, err := t.reader.Read(pt)
+			n, err := t.reader.Read(payload)
 			if err != nil {
 				if t.ctx.Err() != nil {
 					return nil
@@ -46,13 +48,13 @@ func (t *TunHandler) HandleTun() error {
 				return err
 			}
 
-			ct, encryptErr := t.cryptographyService.Encrypt(pt[:n])
-			if encryptErr != nil {
-				log.Printf("failed to encrypt packet: %v", encryptErr)
-				return encryptErr
+			ciphertext, ciphertextErr := t.cryptographyService.Encrypt(payload[:n])
+			if ciphertextErr != nil {
+				log.Printf("failed to encrypt packet: %v", ciphertextErr)
+				return ciphertextErr
 			}
 
-			_, err = t.writer.Write(ct)
+			_, err = t.writer.Write(ciphertext)
 			if err != nil {
 				log.Printf("write to TCP failed: %s", err)
 				return err
