@@ -32,13 +32,14 @@ func NewTransportHandler(
 }
 
 func (t *TransportHandler) HandleTransport() error {
-	buf := make([]byte, settings.DefaultEthernetMTU+settings.TCPChacha20Overhead)
+	var buf [settings.DefaultEthernetMTU + settings.TCPChacha20Overhead]byte
+
 	for {
 		select {
 		case <-t.ctx.Done():
 			return nil
 		default:
-			n, err := t.reader.Read(buf)
+			n, err := t.reader.Read(buf[:])
 			if err != nil {
 				if t.ctx.Err() != nil {
 					return nil

@@ -58,7 +58,7 @@ func NewTunHandler(
 //     (nonce) and the suffix (tag) are already reserved in the buffer.
 func (t *TunHandler) HandleTun() error {
 	// Reserve space for nonce + payload + AEAD tag (in-place encryption needs extra capacity).
-	buffer := make([]byte, settings.DefaultEthernetMTU+settings.UDPChacha20Overhead)
+	var buffer [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
 
 	for {
 		select {
