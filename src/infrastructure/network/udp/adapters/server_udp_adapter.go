@@ -1,7 +1,6 @@
 package adapters
 
 import (
-	"io"
 	"net/netip"
 	"tungo/application"
 	"tungo/application/listeners"
@@ -13,13 +12,13 @@ type ServerUdpAdapter struct {
 	addrPort netip.AddrPort
 
 	readBuffer [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
-	oob        [1024]byte
+	oob        [8 * 1024]byte
 }
 
-func NewUdpAdapter(UdpConn listeners.UdpListener, AddrPort netip.AddrPort) application.ConnectionAdapter {
+func NewUdpAdapter(udpConn listeners.UdpListener, addrPort netip.AddrPort) application.ConnectionAdapter {
 	return &ServerUdpAdapter{
-		conn:     UdpConn,
-		addrPort: AddrPort,
+		conn:     udpConn,
+		addrPort: addrPort,
 	}
 }
 
@@ -33,7 +32,8 @@ func (ua *ServerUdpAdapter) Read(buffer []byte) (int, error) {
 		return 0, err
 	}
 	if len(buffer) < n {
-		return 0, io.ErrShortBuffer
+		copy(buffer, ua.readBuffer[:len(buffer)])
+		return len(buffer), nil
 	}
 	copy(buffer, ua.readBuffer[:n])
 	return n, nil
