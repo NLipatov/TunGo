@@ -50,6 +50,10 @@ func (c *defaultReader) read() (*Configuration, error) {
 
 	c.setEnvServerAddress(&configuration)
 	c.setEnvEnabledProtocols(&configuration)
+	configuration.EnsureDefaults()
+	if configuration.Validate() != nil {
+		return nil, fmt.Errorf("configuration file (%s) is invalid: %s", c.path, configuration.Validate())
+	}
 
 	return &configuration, nil
 }

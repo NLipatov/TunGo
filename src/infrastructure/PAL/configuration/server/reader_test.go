@@ -7,87 +7,89 @@ import (
 	"strings"
 	"testing"
 	"tungo/infrastructure/PAL/stat"
+	"tungo/infrastructure/settings"
 )
 
-func TestReadSuccess(t *testing.T) {
-	// Create a valid configuration file.
-	initialConfig := Configuration{
-		FallbackServerAddress: "192.168.1.1",
-		EnableUDP:             false,
-		EnableTCP:             true,
+// createTempConfigFile writes JSON-serialized config to a temp file and returns its path.
+func createTempConfigFile(t *testing.T, data any) string {
+	t.Helper()
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "conf.json")
+	content, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		t.Fatalf("failed to marshal config: %v", err)
 	}
-	filePath := createTempConfigFile(t, initialConfig)
+	if err := os.WriteFile(filePath, content, 0644); err != nil {
+		t.Fatalf("failed to write temp config file: %v", err)
+	}
+	return filePath
+}
 
-	// Override environment variables.
-	_ = os.Setenv("ServerIP", "10.0.0.1")
-	_ = os.Setenv("EnableUDP", "true")
-	_ = os.Setenv("EnableTCP", "false")
+func TestRead_Success_WithEnvOverrides(t *testing.T) {
+	// Arrange: a minimal but valid config; defaults will fill missing fields.
+	initial := Configuration{
+		FallbackServerAddress: "192.168.1.1",
+		EnableUDP:             false, // will be overridden by env
+		EnableTCP:             true,  // will be overridden by env
+	}
+	path := createTempConfigFile(t, initial)
 
-	r := newDefaultReader(filePath, stat.NewDefaultStat())
+	// Use t.Setenv so values are restored after the test automatically.
+	t.Setenv("ServerIP", "10.0.0.1")
+	t.Setenv("EnableUDP", "true")
+	t.Setenv("EnableTCP", "false")
+	// Leave WS unset to test "no env" path.
+
+	// Act
+	r := newDefaultReader(path, stat.NewDefaultStat())
 	conf, err := r.read()
 	if err != nil {
 		t.Fatalf("read() returned error: %v", err)
 	}
 
+	// Assert
 	if conf.FallbackServerAddress != "10.0.0.1" {
-		t.Errorf("Expected FallbackServerAddress '10.0.0.1', got %s", conf.FallbackServerAddress)
+		t.Errorf("expected ServerIP override to be applied, got %q", conf.FallbackServerAddress)
 	}
 	if conf.EnableUDP != true {
-		t.Errorf("Expected EnableUDP true, got %v", conf.EnableUDP)
+		t.Errorf("expected EnableUDP true, got %v", conf.EnableUDP)
 	}
 	if conf.EnableTCP != false {
-		t.Errorf("Expected EnableTCP false, got %v", conf.EnableTCP)
+		t.Errorf("expected EnableTCP false, got %v", conf.EnableTCP)
+	}
+	// WS was not set via env; default from file (zero) stays false
+	if conf.EnableWS != false {
+		t.Errorf("expected EnableWS false by default, got %v", conf.EnableWS)
 	}
 }
 
-func TestReadFileDoesNotExist(t *testing.T) {
-	nonExistentPath := "/non/existent/conf.json"
-	r := newDefaultReader(nonExistentPath, stat.NewDefaultStat())
+func TestRead_FileDoesNotExist(t *testing.T) {
+	r := newDefaultReader("/non/existent/conf.json", stat.NewDefaultStat())
 	_, err := r.read()
 	if err == nil {
-		t.Fatal("Expected error for non-existent file, got nil")
+		t.Fatal("expected error for non-existent file, got nil")
 	}
 	if !strings.Contains(err.Error(), "does not exist") {
-		t.Errorf("Expected error to mention 'does not exist', got %v", err)
+		t.Errorf("expected 'does not exist' in error, got %v", err)
 	}
 }
 
-func TestReadInvalidJSON(t *testing.T) {
-	dir := t.TempDir()
-	filePath := filepath.Join(dir, "conf.json")
-	invalidJSON := []byte("{invalid json")
-	if err := os.WriteFile(filePath, invalidJSON, 0644); err != nil {
-		t.Fatalf("Failed to write invalid JSON file: %v", err)
-	}
-
-	r := newDefaultReader(filePath, stat.NewDefaultStat())
-	_, err := r.read()
-	if err == nil {
-		t.Fatal("Expected error for invalid JSON, got nil")
-	}
-	if !strings.Contains(err.Error(), "invalid") {
-		t.Errorf("Expected error to mention 'invalid', got %v", err)
-	}
-}
-
-// Test for branch: "configuration file not found: %s"
-// Uses an invalid path (null byte) which causes os.Stat to error with a non-ErrNotExist error.
-func TestReadStatOtherError(t *testing.T) {
+func TestRead_StatOtherError(t *testing.T) {
+	// Using a path with a null byte typically causes a non-ErrNotExist error from Stat.
 	invalidPath := string([]byte{0})
 	r := newDefaultReader(invalidPath, stat.NewDefaultStat())
 	_, err := r.read()
 	if err == nil {
-		t.Fatal("Expected error for invalid file path, got nil")
+		t.Fatal("expected error for invalid file path, got nil")
 	}
 	if !strings.Contains(err.Error(), "configuration file not found") {
-		t.Errorf("Expected error to mention 'configuration file not found', got %v", err)
+		t.Errorf("expected 'configuration file not found' in error, got %v", err)
 	}
 }
 
-// Test for branch: unreadable file (os.ReadFile error)
-func TestReadFileUnreadable(t *testing.T) {
+func TestRead_FileUnreadable(t *testing.T) {
+	// Create a directory instead of a file to trigger os.ReadFile error.
 	dir := t.TempDir()
-	// Create a directory instead of a file to simulate an unreadable file.
 	unreadablePath := filepath.Join(dir, "conf.json")
 	if err := os.Mkdir(unreadablePath, 0755); err != nil {
 		t.Fatalf("failed to create directory: %v", err)
@@ -99,20 +101,115 @@ func TestReadFileUnreadable(t *testing.T) {
 		t.Fatal("expected error for unreadable file, got nil")
 	}
 	if !strings.Contains(err.Error(), "is unreadable") {
-		t.Errorf("expected error to mention 'is unreadable', got %v", err)
+		t.Errorf("expected 'is unreadable' in error, got %v", err)
 	}
 }
 
-func createTempConfigFile(t *testing.T, data interface{}) string {
-	t.Helper()
+func TestRead_InvalidJSON(t *testing.T) {
 	dir := t.TempDir()
-	filePath := filepath.Join(dir, "conf.json")
-	content, err := json.MarshalIndent(data, "", "  ")
+	path := filepath.Join(dir, "conf.json")
+	if err := os.WriteFile(path, []byte("{invalid json"), 0644); err != nil {
+		t.Fatalf("failed to write invalid JSON file: %v", err)
+	}
+
+	r := newDefaultReader(path, stat.NewDefaultStat())
+	_, err := r.read()
+	if err == nil {
+		t.Fatal("expected error for invalid JSON, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid") {
+		t.Errorf("expected 'invalid' in error, got %v", err)
+	}
+}
+
+func TestRead_EnsureDefaultsAndValidate_PassWithEmptyConfig(t *testing.T) {
+	// Arrange: empty JSON object — EnsureDefaults must populate settings,
+	// Validate should pass because all protocols are disabled by default.
+	path := createTempConfigFile(t, struct{}{})
+	r := newDefaultReader(path, stat.NewDefaultStat())
+
+	// Act
+	conf, err := r.read()
 	if err != nil {
-		t.Fatalf("Failed to marshal config: %v", err)
+		t.Fatalf("expected success, got error: %v", err)
 	}
-	if err := os.WriteFile(filePath, content, 0644); err != nil {
-		t.Fatalf("Failed to write temp config file: %v", err)
+
+	// Assert defaults applied
+	if conf.TCPSettings.InterfaceName == "" || conf.UDPSettings.InterfaceName == "" || conf.WSSettings.InterfaceName == "" {
+		t.Fatalf("EnsureDefaults did not populate interface names: TCP=%q UDP=%q WS=%q",
+			conf.TCPSettings.InterfaceName, conf.UDPSettings.InterfaceName, conf.WSSettings.InterfaceName)
 	}
-	return filePath
+}
+
+func TestRead_ValidateFails_ReportsPathAndReason(t *testing.T) {
+	// Arrange: make UDP port equal TCP port to trigger duplicate-port validation error.
+	// We also enable both TCP and UDP to ensure they are validated.
+	initial := Configuration{
+		EnableTCP: true,
+		EnableUDP: true,
+		UDPSettings: settings.Settings{
+			Port: "8080", // same as TCP default port after EnsureDefaults
+		},
+	}
+	path := createTempConfigFile(t, initial)
+	r := newDefaultReader(path, stat.NewDefaultStat())
+
+	// Act
+	_, err := r.read()
+	if err == nil {
+		t.Fatal("expected validation error, got nil")
+	}
+
+	// Assert the error mentions both the path and validation reason (duplicate port).
+	if !strings.Contains(err.Error(), path) {
+		t.Errorf("expected error to contain file path %q, got: %v", path, err)
+	}
+	if !strings.Contains(err.Error(), "duplicate port") {
+		t.Errorf("expected error to contain validation reason 'duplicate port', got: %v", err)
+	}
+}
+
+func TestRead_EnvEnabledProtocols_InvalidValuesAreIgnored(t *testing.T) {
+	// Arrange: file sets EnableUDP=true; env tries to set invalid bool strings => ignored.
+	initial := Configuration{
+		EnableUDP: true,
+	}
+	path := createTempConfigFile(t, initial)
+	t.Setenv("EnableUDP", "maybe") // invalid -> should be ignored
+	t.Setenv("EnableTCP", "yea")   // invalid -> should be ignored
+	t.Setenv("EnableWS", "nope")   // invalid -> should be ignored
+
+	r := newDefaultReader(path, stat.NewDefaultStat())
+	conf, err := r.read()
+	if err != nil {
+		t.Fatalf("read() returned error: %v", err)
+	}
+
+	// Assert that invalid envs did not clobber the file values.
+	if conf.EnableUDP != true {
+		t.Errorf("expected EnableUDP to remain true, got %v", conf.EnableUDP)
+	}
+	if conf.EnableTCP != false {
+		t.Errorf("expected EnableTCP to remain false, got %v", conf.EnableTCP)
+	}
+	if conf.EnableWS != false {
+		t.Errorf("expected EnableWS to remain false, got %v", conf.EnableWS)
+	}
+}
+
+func TestRead_ServerIP_NotSet_DoesNotOverride(t *testing.T) {
+	initial := Configuration{
+		FallbackServerAddress: "1.2.3.4",
+	}
+	path := createTempConfigFile(t, initial)
+	// Do not set ServerIP env var.
+
+	r := newDefaultReader(path, stat.NewDefaultStat())
+	conf, err := r.read()
+	if err != nil {
+		t.Fatalf("read() returned error: %v", err)
+	}
+	if conf.FallbackServerAddress != "1.2.3.4" {
+		t.Errorf("expected FallbackServerAddress to be unchanged, got %q", conf.FallbackServerAddress)
+	}
 }
