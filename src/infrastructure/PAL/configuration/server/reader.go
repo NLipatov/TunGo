@@ -62,11 +62,12 @@ func (c *defaultReader) setEnvServerAddress(conf *Configuration) {
 }
 
 func (c *defaultReader) setEnvEnabledProtocols(conf *Configuration) {
-	envUdp := os.Getenv("EnableUDP")
+	envUDP := os.Getenv("EnableUDP")
 	envTCP := os.Getenv("EnableTCP")
+	envWS := os.Getenv("EnableWS")
 
-	if envUdp != "" {
-		eUDPBool, parseErr := strconv.ParseBool(envUdp)
+	if envUDP != "" {
+		eUDPBool, parseErr := strconv.ParseBool(envUDP)
 		if parseErr == nil {
 			conf.EnableUDP = eUDPBool
 		}
@@ -76,6 +77,13 @@ func (c *defaultReader) setEnvEnabledProtocols(conf *Configuration) {
 		eTCPBool, parseErr := strconv.ParseBool(envTCP)
 		if parseErr == nil {
 			conf.EnableTCP = eTCPBool
+		}
+	}
+
+	if envWS != "" {
+		eWSBool, parseErr := strconv.ParseBool(envWS)
+		if parseErr == nil {
+			conf.EnableWS = eWSBool
 		}
 	}
 }
