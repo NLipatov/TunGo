@@ -95,7 +95,7 @@ func (t *PlatformTunManager) DisposeTunDevices() error {
 		if devNameErr != nil {
 			delSplitErr := t.route.DelSplit(devName)
 			if delSplitErr != nil {
-				log.Printf(delSplitErr.Error())
+				log.Printf("%v", delSplitErr.Error())
 			}
 		}
 	}
