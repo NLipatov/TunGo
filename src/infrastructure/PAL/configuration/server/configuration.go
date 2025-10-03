@@ -158,9 +158,6 @@ func (c *Configuration) Validate() error {
 				config.Protocol,
 			)
 		}
-		if !c.EnableTCP && !c.EnableUDP && !c.EnableWS {
-			return fmt.Errorf("at least one protocol (TCP/UDP/WS) must be enabled")
-		}
 		// validate port number
 		portNumber, err := strconv.Atoi(config.Port)
 		if err != nil {

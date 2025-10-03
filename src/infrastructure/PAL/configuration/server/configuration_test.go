@@ -266,16 +266,6 @@ func TestConfiguration_Validate_UnsupportedProtocol(t *testing.T) {
 	}
 }
 
-func TestConfiguration_Validate_AllProtocolsDisabled(t *testing.T) {
-	cfg := mkValid()
-	cfg.EnableTCP = false
-	cfg.EnableUDP = false
-	cfg.EnableWS = false
-	if err := cfg.Validate(); err == nil {
-		t.Fatalf("expected error when all protocols disabled")
-	}
-}
-
 func TestConfiguration_OverlappingSubnets_NoOverlap(t *testing.T) {
 	cfg := mkValid()
 	subs := []netip.Prefix{
