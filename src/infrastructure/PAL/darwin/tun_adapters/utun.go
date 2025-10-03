@@ -1,3 +1,5 @@
+//go:build darwin
+
 package tun_adapters
 
 import (
