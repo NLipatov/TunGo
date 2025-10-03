@@ -7,7 +7,7 @@ import (
 	"tungo/application"
 	"tungo/infrastructure/PAL"
 	"tungo/infrastructure/PAL/configuration/client"
-	"tungo/infrastructure/PAL/darwin/network_tools/ip"
+	"tungo/infrastructure/PAL/darwin/network_tools/ifconfig"
 	"tungo/infrastructure/PAL/darwin/network_tools/route"
 	"tungo/infrastructure/PAL/darwin/tun_adapters"
 	"tungo/infrastructure/settings"
@@ -15,18 +15,18 @@ import (
 
 // PlatformTunManager is the macOS-specific implementation of ClientTunManager.
 type PlatformTunManager struct {
-	conf  client.Configuration
-	dev   tun_adapters.Adapter
-	route route.Contract
-	ip    ip.Contract
+	conf     client.Configuration
+	dev      tun_adapters.Adapter
+	route    route.Contract
+	ifConfig ifconfig.Contract
 }
 
 // NewPlatformTunManager constructs a new PlatformTunManager.
 func NewPlatformTunManager(conf client.Configuration) (application.ClientTunManager, error) {
 	return &PlatformTunManager{
-		conf:  conf,
-		route: route.NewWrapper(PAL.NewExecCommander()),
-		ip:    ip.NewWrapper(PAL.NewExecCommander()),
+		conf:     conf,
+		route:    route.NewWrapper(PAL.NewExecCommander()),
+		ifConfig: ifconfig.NewWrapper(PAL.NewExecCommander()),
 	}, nil
 }
 
@@ -44,7 +44,8 @@ func (t *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 		return nil, fmt.Errorf("unsupported protocol")
 	}
 
-	dev, err := tun_adapters.CreateTUN("utun", s.MTU)
+	tunFactory := tun_adapters.NewDefaultFactory(t.ifConfig)
+	dev, err := tunFactory.CreateTUN(s.MTU)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create TUN: %w", err)
 	}
@@ -61,7 +62,7 @@ func (t *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 	cidrPrefix := strings.Split(s.InterfaceIPCIDR, "/")[1]
 	addrCIDR := fmt.Sprintf("%s/%s", s.InterfaceAddress, cidrPrefix)
 
-	if linkAddrAddErr := t.ip.LinkAddrAdd(name, addrCIDR); linkAddrAddErr != nil {
+	if linkAddrAddErr := t.ifConfig.LinkAddrAdd(name, addrCIDR); linkAddrAddErr != nil {
 		return nil, fmt.Errorf("failed to assign IP to %s: %w", name, linkAddrAddErr)
 	}
 	fmt.Printf("assigned IP %s to %s\n", addrCIDR, name)

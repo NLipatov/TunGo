@@ -1,4 +1,4 @@
-package ip
+package ifconfig
 
 import (
 	"errors"
@@ -126,5 +126,51 @@ func TestPrefixMatchesCIDRMask(t *testing.T) {
 		if got != want {
 			t.Errorf("prefixToNetmask(%d) = %q; want %q", p, got, want)
 		}
+	}
+}
+func TestSetMTU_IgnoresNonPositive(t *testing.T) {
+	// When mtu <= 0 the method should be a no-op and not call commander.
+	w := NewWrapper(nil)
+	if err := w.SetMTU("eth0", 0); err != nil {
+		t.Fatalf("expected nil error for mtu<=0, got %v", err)
+	}
+	if err := w.SetMTU("eth0", -1500); err != nil {
+		t.Fatalf("expected nil error for mtu<=0, got %v", err)
+	}
+}
+
+func TestSetMTU_CommandFails(t *testing.T) {
+	fc := &fakeCommander{
+		wantName: "ifconfig",
+		wantArgs: []string{"eth0", "mtu", "1500"},
+		out:      []byte("denied"),
+		err:      errors.New("fail"),
+	}
+	w := NewWrapper(fc)
+	err := w.SetMTU("eth0", 1500)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "ifconfig set mtu failed: fail; output: denied") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+	if !fc.called {
+		t.Error("expected CombinedOutput to be called")
+	}
+}
+
+func TestSetMTU_Success(t *testing.T) {
+	fc := &fakeCommander{
+		wantName: "ifconfig",
+		wantArgs: []string{"tun0", "mtu", "9000"},
+		out:      []byte(""),
+		err:      nil,
+	}
+	w := NewWrapper(fc)
+	if err := w.SetMTU("tun0", 9000); err != nil {
+		t.Fatalf("expected success, got %v", err)
+	}
+	if !fc.called {
+		t.Error("expected CombinedOutput to be called")
 	}
 }
