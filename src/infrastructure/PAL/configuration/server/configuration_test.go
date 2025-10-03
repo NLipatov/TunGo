@@ -1,6 +1,8 @@
 package server
 
 import (
+	"net/netip"
+	"strings"
 	"testing"
 
 	"tungo/infrastructure/settings"
@@ -252,5 +254,35 @@ func TestConfiguration_Validate_SubnetOverlap(t *testing.T) {
 	cfg.UDPSettings.InterfaceAddress = "10.0.0.2"
 	if err := cfg.Validate(); err == nil {
 		t.Fatalf("expected error for overlapping subnets")
+	}
+}
+
+func TestConfiguration_Validate_UnsupportedProtocol(t *testing.T) {
+	cfg := mkValid()
+	cfg.TCPSettings.Protocol = settings.Protocol(99)
+	if err := cfg.Validate(); err == nil ||
+		!strings.Contains(err.Error(), "unsupported protocol") {
+		t.Fatalf("expected unsupported protocol error, got: %v", err)
+	}
+}
+
+func TestConfiguration_Validate_AllProtocolsDisabled(t *testing.T) {
+	cfg := mkValid()
+	cfg.EnableTCP = false
+	cfg.EnableUDP = false
+	cfg.EnableWS = false
+	if err := cfg.Validate(); err == nil {
+		t.Fatalf("expected error when all protocols disabled")
+	}
+}
+
+func TestConfiguration_OverlappingSubnets_NoOverlap(t *testing.T) {
+	cfg := mkValid()
+	subs := []netip.Prefix{
+		netip.MustParsePrefix("10.0.0.0/24"),
+		netip.MustParsePrefix("10.0.1.0/24"),
+	}
+	if cfg.overlappingSubnets(subs) {
+		t.Fatalf("expected no overlap, got true")
 	}
 }

@@ -116,88 +116,135 @@ func (c *Configuration) defaultSettings(
 }
 
 func (c *Configuration) Validate() error {
-	type named struct {
-		name string
-		s    settings.Settings
-	}
-	configs := []named{
-		{"TCP", c.TCPSettings},
-		{"UDP", c.UDPSettings},
-		{"WS", c.WSSettings},
-	}
-
-	names := map[string]struct{}{}
-	for _, n := range []string{c.TCPSettings.InterfaceName, c.UDPSettings.InterfaceName, c.WSSettings.InterfaceName} {
-		if n == "" {
+	configs := []settings.Settings{c.TCPSettings, c.UDPSettings, c.WSSettings}
+	// interface names (ifNames) should be unique
+	ifNames := map[string]struct{}{}
+	for _, ifName := range []string{c.TCPSettings.InterfaceName, c.UDPSettings.InterfaceName, c.WSSettings.InterfaceName} {
+		if ifName == "" {
 			return fmt.Errorf("interface name is empty")
 		}
-		if _, ok := names[n]; ok {
-			return fmt.Errorf("duplicate interface name: %s", n)
+		if _, ok := ifNames[ifName]; ok {
+			return fmt.Errorf("duplicate interface name: %s", ifName)
 		}
-		names[n] = struct{}{}
+		ifNames[ifName] = struct{}{}
 	}
-
+	// ports should be unique
 	ports := make(map[int]struct{}, len(configs))
+	// subnets must not overlap
 	subnets := make([]netip.Prefix, 0, len(configs))
 
-	for _, cfg := range configs {
-		switch cfg.name {
-		case "TCP":
+	for _, config := range configs {
+		switch config.Protocol {
+		// if protocol is turned off, its validation may be skipped
+		case settings.TCP:
 			if !c.EnableTCP {
 				continue
 			}
-		case "UDP":
+		case settings.UDP:
 			if !c.EnableUDP {
 				continue
 			}
-		case "WS":
+		case settings.WS:
 			if !c.EnableWS {
 				continue
 			}
+		case settings.UNKNOWN:
+			return fmt.Errorf("[%s] protocol is UNKNOWN", config.InterfaceName)
+		default:
+			return fmt.Errorf(
+				"[%s/%s] unsupported protocol %v",
+				config.Protocol,
+				config.InterfaceName,
+				config.Protocol,
+			)
 		}
-
-		if cfg.s.Protocol == settings.UNKNOWN {
-			return fmt.Errorf("[%s/%s] protocol is UNKNOWN", cfg.name, cfg.s.InterfaceName)
+		if !c.EnableTCP && !c.EnableUDP && !c.EnableWS {
+			return fmt.Errorf("at least one protocol (TCP/UDP/WS) must be enabled")
 		}
-
-		portNumber, err := strconv.Atoi(cfg.s.Port)
+		// validate port number
+		portNumber, err := strconv.Atoi(config.Port)
 		if err != nil {
-			return fmt.Errorf("[%s/%s] invalid port %q: not a number", cfg.name, cfg.s.InterfaceName, cfg.s.Port)
+			return fmt.Errorf(
+				"invalid 'Port': [%s/%s] invalid port %q: not a number",
+				config.Protocol,
+				config.InterfaceName,
+				config.Port,
+			)
 		}
 		if portNumber < 1 || portNumber > 65535 {
-			return fmt.Errorf("[%s/%s] invalid port %d: must be in 1..65535", cfg.name, cfg.s.InterfaceName, portNumber)
+			return fmt.Errorf(
+				"invalid 'Port': [%s/%s] invalid port %d: must be in 1..65535",
+				config.Protocol,
+				config.InterfaceName,
+				portNumber,
+			)
 		}
 		if _, dup := ports[portNumber]; dup {
-			return fmt.Errorf("[%s/%s] duplicate port %d", cfg.name, cfg.s.InterfaceName, portNumber)
+			return fmt.Errorf(
+				"invalid 'Port': [%s/%s] duplicate port %d",
+				config.Protocol,
+				config.InterfaceName,
+				portNumber,
+			)
 		}
 		ports[portNumber] = struct{}{}
-
-		if cfg.s.MTU < 576 || cfg.s.MTU > 9000 {
-			return fmt.Errorf("[%s/%s] invalid MTU %d: expected 576..9000", cfg.name, cfg.s.InterfaceName, cfg.s.MTU)
+		// validate MTU
+		if config.MTU < 576 || config.MTU > 9000 {
+			return fmt.Errorf(
+				"invalid 'MTU': [%s/%s] invalid MTU %d: expected 576..9000",
+				config.Protocol,
+				config.InterfaceName,
+				config.MTU,
+			)
 		}
-
-		pfx, err := netip.ParsePrefix(cfg.s.InterfaceIPCIDR)
+		// validate interface subnet (InterfaceIPCIDR)
+		pfx, err := netip.ParsePrefix(config.InterfaceIPCIDR)
 		if err != nil {
-			return fmt.Errorf("[%s/%s] invalid CIDR %q: %v", cfg.name, cfg.s.InterfaceName, cfg.s.InterfaceIPCIDR, err)
+			return fmt.Errorf(
+				"invalid 'InterfaceIPCIDR': [%s/%s] invalid CIDR %q: %v",
+				config.Protocol,
+				config.InterfaceName,
+				config.InterfaceIPCIDR,
+				err,
+			)
 		}
-		addr, err := netip.ParseAddr(cfg.s.InterfaceAddress)
+		addr, err := netip.ParseAddr(config.InterfaceAddress)
 		if err != nil {
-			return fmt.Errorf("[%s/%s] invalid address %q: %v", cfg.name, cfg.s.InterfaceName, cfg.s.InterfaceAddress, err)
+			return fmt.Errorf(
+				"invalid 'InterfaceAddress': [%s/%s] invalid address %q: %v",
+				config.Protocol,
+				config.InterfaceName,
+				config.InterfaceAddress,
+				err,
+			)
 		}
 		if !pfx.Contains(addr) {
-			return fmt.Errorf("[%s/%s] address %s not in CIDR %s", cfg.name, cfg.s.InterfaceName, cfg.s.InterfaceAddress, cfg.s.InterfaceIPCIDR)
+			return fmt.Errorf(
+				"invalid 'InterfaceAddress': [%s/%s] address %s not in 'InterfaceIPCIDR' subnet %s",
+				config.Protocol,
+				config.InterfaceName,
+				config.InterfaceAddress,
+				config.InterfaceIPCIDR,
+			)
 		}
 		subnets = append(subnets, pfx)
 	}
 
-	// overlap check
+	// interface subnets must not overlap
+	if c.overlappingSubnets(subnets) {
+		return fmt.Errorf("invalid 'InterfaceIPCIDR':  two or more interface subnets are overlapping.")
+	}
+	return nil
+}
+
+func (c *Configuration) overlappingSubnets(subnets []netip.Prefix) bool {
 	for i := 0; i < len(subnets); i++ {
 		for j := i + 1; j < len(subnets); j++ {
 			a, b := subnets[i], subnets[j]
-			if a.Contains(b.Addr()) || b.Contains(a.Addr()) {
-				return fmt.Errorf("subnet overlap: %s and %s", a, b)
+			if a.Overlaps(b) || b.Overlaps(a) {
+				return true
 			}
 		}
 	}
-	return nil
+	return false
 }
