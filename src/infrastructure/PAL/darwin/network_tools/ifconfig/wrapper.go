@@ -1,4 +1,4 @@
-package ip
+package ifconfig
 
 import (
 	"fmt"
@@ -39,4 +39,14 @@ func (w *Wrapper) prefixToNetmask(prefix string) string {
 	}
 	mask := net.CIDRMask(p, 32)
 	return fmt.Sprintf("%d.%d.%d.%d", mask[0], mask[1], mask[2], mask[3])
+}
+
+func (w *Wrapper) SetMTU(ifName string, mtu int) error {
+	if mtu <= 0 {
+		return nil
+	}
+	if out, err := w.commander.CombinedOutput("ifconfig", ifName, "mtu", fmt.Sprintf("%s", strconv.Itoa(mtu))); err != nil {
+		return fmt.Errorf("ifconfig set mtu failed: %w; output: %s", err, string(out))
+	}
+	return nil
 }
