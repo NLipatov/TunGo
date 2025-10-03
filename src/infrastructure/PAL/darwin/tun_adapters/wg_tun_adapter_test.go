@@ -3,13 +3,10 @@ package tun_adapters
 import (
 	"encoding/binary"
 	"errors"
-	"os"
 	"reflect"
 	"syscall"
 	"testing"
 	"tungo/infrastructure/settings"
-
-	"golang.zx2c4.com/wireguard/tun"
 )
 
 type fakeTun struct {
@@ -26,11 +23,7 @@ type fakeTun struct {
 	closed   bool
 }
 
-func (f *fakeTun) File() *os.File           { panic("not implemented") }
-func (f *fakeTun) MTU() (int, error)        { panic("not implemented") }
-func (f *fakeTun) Name() (string, error)    { panic("not implemented") }
-func (f *fakeTun) Events() <-chan tun.Event { panic("not implemented") }
-func (f *fakeTun) BatchSize() int           { panic("not implemented") }
+func (f *fakeTun) Name() (string, error) { panic("not implemented") }
 
 func (f *fakeTun) Read(bufs [][]byte, sizes []int, offset int) (int, error) {
 	if f.readErr != nil {

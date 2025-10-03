@@ -2,7 +2,6 @@ package tun_client
 
 import (
 	"fmt"
-	"golang.zx2c4.com/wireguard/tun"
 	"log"
 	"strings"
 	"tungo/application"
@@ -17,7 +16,7 @@ import (
 // PlatformTunManager is the macOS-specific implementation of ClientTunManager.
 type PlatformTunManager struct {
 	conf  client.Configuration
-	dev   *tun.Device
+	dev   tun_adapters.Adapter
 	route route.Contract
 	ip    ip.Contract
 }
@@ -45,7 +44,7 @@ func (t *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 		return nil, fmt.Errorf("unsupported protocol")
 	}
 
-	dev, err := tun.CreateTUN("utun", s.MTU)
+	dev, err := tun_adapters.CreateTUN("utun", s.MTU)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create TUN: %w", err)
 	}
@@ -55,7 +54,7 @@ func (t *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 		return nil, fmt.Errorf("could not resolve created tun name: %w", nameErr)
 	}
 
-	t.dev = &dev
+	t.dev = dev
 	fmt.Printf("created TUN interface: %s\n", name)
 
 	// Use host address (InterfaceAddress) + prefix from InterfaceIPCIDR
@@ -82,7 +81,7 @@ func (t *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 // DisposeTunDevices removes routes and destroys TUN interfaces.
 func (t *PlatformTunManager) DisposeTunDevices() error {
 	if t.dev != nil {
-		dev := *t.dev
+		dev := t.dev
 
 		if t.dev != nil {
 			devCloseErr := dev.Close()
