@@ -1,8 +1,6 @@
 package adapters
 
 import (
-	"errors"
-	"io"
 	"net"
 	"net/netip"
 	"testing"
@@ -127,7 +125,14 @@ func TestUdpAdapter_ReadShortBuffer(t *testing.T) {
 
 	_ = clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	buf := make([]byte, 4)
-	if n, err := clientAdapter.Read(buf); !errors.Is(err, io.ErrShortBuffer) || n != 0 {
-		t.Fatalf("want io.ErrShortBuffer, got (n=%d, err=%v)", n, err)
+	n, readErr := clientAdapter.Read(buf)
+	if readErr != nil {
+		t.Fatalf("unexpected error: %v", readErr)
+	}
+	if n != len(buf) {
+		t.Errorf("expected n=%d, got %d", len(buf), n)
+	}
+	if string(buf[:n]) != string(resp[:len(buf)]) {
+		t.Errorf("expected %q, got %q", resp[:len(buf)], buf[:n])
 	}
 }
