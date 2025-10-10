@@ -3,6 +3,7 @@ package tun_client
 import (
 	"errors"
 	"fmt"
+	"golang.zx2c4.com/wintun"
 	"log"
 	"net"
 	"os/exec"
@@ -34,7 +35,7 @@ func NewPlatformTunManager(
 	}, nil
 }
 
-func (m *PlatformTunManager) CreateTunDevice() (tun.Device, error) {
+func (m *PlatformTunManager) CreateDevice() (tun.Device, error) {
 	var s settings.Settings
 	switch m.conf.Protocol {
 	case settings.UDP:
@@ -102,7 +103,7 @@ func (m *PlatformTunManager) CreateTunDevice() (tun.Device, error) {
 	return device, nil
 }
 
-func (m *PlatformTunManager) DisposeTunDevices() error {
+func (m *PlatformTunManager) DisposeDevices() error {
 	// dispose adapters by friendly names
 	_ = disposeExistingTunDevices(m.conf.TCPSettings.InterfaceName)
 	_ = disposeExistingTunDevices(m.conf.UDPSettings.InterfaceName)

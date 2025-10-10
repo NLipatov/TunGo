@@ -3,6 +3,7 @@ package tun_adapters
 import (
 	"errors"
 	"fmt"
+	"golang.zx2c4.com/wintun"
 	"log"
 	"sync"
 	"sync/atomic"

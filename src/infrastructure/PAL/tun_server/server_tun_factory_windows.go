@@ -12,10 +12,10 @@ func NewServerTunFactory() tun.ServerManager {
 	return &ServerTunFactory{}
 }
 
-func (s ServerTunFactory) CreateTunDevice(_ settings.Settings) (tun.Device, error) {
+func (s ServerTunFactory) CreateDevice(_ settings.Settings) (tun.Device, error) {
 	panic("not implemented")
 }
 
-func (s ServerTunFactory) DisposeTunDevices(_ settings.Settings) error {
+func (s ServerTunFactory) DisposeDevices(_ settings.Settings) error {
 	panic("not implemented")
 }
