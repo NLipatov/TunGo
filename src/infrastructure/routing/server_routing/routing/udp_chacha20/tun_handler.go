@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"tungo/application/network/tun"
 	"tungo/infrastructure/settings"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -26,7 +27,7 @@ func NewTunHandler(
 	reader io.Reader,
 	parser appip.HeaderParser,
 	sessionManager repository.SessionRepository[application.Session],
-) application.TunHandler {
+) tun.Handler {
 	return &TunHandler{
 		ctx:            ctx,
 		reader:         reader,

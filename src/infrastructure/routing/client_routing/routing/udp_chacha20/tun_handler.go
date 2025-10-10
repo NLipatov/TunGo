@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"tungo/application"
+	"tungo/application/network/tun"
 	"tungo/infrastructure/settings"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -20,7 +21,7 @@ type TunHandler struct {
 func NewTunHandler(ctx context.Context,
 	reader io.Reader,
 	writer io.Writer,
-	cryptographyService application.CryptographyService) application.TunHandler {
+	cryptographyService application.CryptographyService) tun.Handler {
 	return &TunHandler{
 		ctx:                 ctx,
 		reader:              reader,

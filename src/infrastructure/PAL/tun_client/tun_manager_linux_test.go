@@ -75,7 +75,7 @@ func TestCreateTunDevice_UDP(t *testing.T) {
 	ipMock := &mockIP{routeReply: "198.51.100.1 via 192.0.2.1 dev eth0"}
 	m := mgr(settings.UDP, ipMock)
 
-	f, err := m.CreateTunDevice()
+	f, err := m.CreateDevice()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -92,14 +92,14 @@ func TestCreateTunDevice_TCP(t *testing.T) {
 	ipMock := &mockIP{routeReply: "203.0.113.1 dev eth0"} // no gateway
 	m := mgr(settings.TCP, ipMock)
 
-	if _, err := m.CreateTunDevice(); err != nil {
+	if _, err := m.CreateDevice(); err != nil {
 		t.Fatalf("TCP path failed: %v", err)
 	}
 }
 
 func TestCreateTunDevice_Unsupported(t *testing.T) {
 	m := mgr(settings.UDP, &mockIP{}) // fake proto
-	if _, err := m.CreateTunDevice(); err == nil {
+	if _, err := m.CreateDevice(); err == nil {
 		t.Fatal("expected unsupported protocol error")
 	}
 }
@@ -109,7 +109,7 @@ func TestConfigureTUN_ErrorsPropagate(t *testing.T) {
 	for _, step := range steps {
 		ipMock := &mockIP{routeReply: "198.51.100.1 dev eth0", failStep: step}
 		m := mgr(settings.UDP, ipMock)
-		if _, err := m.CreateTunDevice(); err == nil {
+		if _, err := m.CreateDevice(); err == nil {
 			t.Fatalf("want error on step %s", step)
 		}
 	}
@@ -118,7 +118,7 @@ func TestConfigureTUN_ErrorsPropagate(t *testing.T) {
 func TestDisposeTunDevices(t *testing.T) {
 	ipMock := &mockIP{}
 	m := mgr(settings.UDP, ipMock)
-	if err := m.DisposeTunDevices(); err != nil {
-		t.Fatalf("DisposeTunDevices error: %v", err)
+	if err := m.DisposeDevices(); err != nil {
+		t.Fatalf("DisposeDevices error: %v", err)
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"tungo/application/network/tun"
 	"tungo/infrastructure/PAL/configuration/client"
 	clientRunners "tungo/presentation/runners/client"
 	"unsafe"
@@ -43,17 +44,17 @@ func (t *dummyTun) Close() error {
 	return nil
 }
 
-// mockTunManager implements application.ClientTunManager.
+// mockTunManager implements application.ClientManager.
 type mockTunManager struct {
 	disposeCount int
 	disposeErr   error
 }
 
-func (d *mockTunManager) CreateTunDevice() (application.TunDevice, error) {
+func (d *mockTunManager) CreateDevice() (tun.Device, error) {
 	return nil, nil
 }
 
-func (d *mockTunManager) DisposeTunDevices() error {
+func (d *mockTunManager) DisposeDevices() error {
 	d.disposeCount++
 	return d.disposeErr
 }
@@ -71,7 +72,7 @@ type mockWorkerFactory struct{}
 
 func (d *mockWorkerFactory) CreateWorker(
 	_ context.Context, _ application.ConnectionAdapter, _ io.ReadWriteCloser, _ application.CryptographyService,
-) (application.TunWorker, error) {
+) (tun.Worker, error) {
 	return nil, nil
 }
 
@@ -100,9 +101,9 @@ type mockRouterFactory struct {
 func (d *mockRouterFactory) CreateRouter(
 	_ context.Context,
 	_ application.ConnectionFactory,
-	_ application.ClientTunManager,
+	_ tun.ClientManager,
 	_ application.ClientWorkerFactory,
-) (application.TrafficRouter, application.ConnectionAdapter, application.TunDevice, error) {
+) (application.TrafficRouter, application.ConnectionAdapter, tun.Device, error) {
 	return d.router, &dummyConnectionAdapter{}, &dummyTun{}, d.err
 }
 
@@ -120,7 +121,7 @@ func (d *mockDeps) Configuration() client.Configuration {
 }
 func (d *mockDeps) ConnectionFactory() application.ConnectionFactory { return d.conn }
 func (d *mockDeps) WorkerFactory() application.ClientWorkerFactory   { return d.worker }
-func (d *mockDeps) TunManager() application.ClientTunManager         { return d.tun }
+func (d *mockDeps) TunManager() tun.ClientManager                    { return d.tun }
 
 // setRouterBuilder sets the unexported routerBuilder field using unsafe.
 func setRouterBuilder(runner *clientRunners.Runner, factory application.TrafficRouterFactory) {
@@ -157,7 +158,7 @@ func TestClientRunner_Run_RouteTrafficCanceled(t *testing.T) {
 	wg.Wait()
 
 	if tunMgr.disposeCount == 0 {
-		t.Error("expected DisposeTunDevices to be called at least once")
+		t.Error("expected DisposeDevices to be called at least once")
 	}
 	if !router.routeCalled {
 		t.Error("expected RouteTraffic to be called")
@@ -182,6 +183,6 @@ func TestClientRunner_Run_CreateRouterError(t *testing.T) {
 	runner.Run(ctx)
 
 	if tunMgr.disposeCount == 0 {
-		t.Error("expected DisposeTunDevices to be called even on router creation error")
+		t.Error("expected DisposeDevices to be called even on router creation error")
 	}
 }

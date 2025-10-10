@@ -2,13 +2,13 @@ package logging
 
 import (
 	"log"
-	"tungo/application"
+	"tungo/application/logging"
 )
 
 type LogLogger struct {
 }
 
-func NewLogLogger() application.Logger {
+func NewLogLogger() logging.Logger {
 	return &LogLogger{}
 }
 

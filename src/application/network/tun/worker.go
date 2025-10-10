@@ -1,7 +1,7 @@
-package application
+package tun
 
-// TunWorker does the TUN->CONN and CONN->TUN operations
-type TunWorker interface {
+// Worker does the TUN->CONN and CONN->TUN operations
+type Worker interface {
 	// HandleTun handles packets from TUN-like interface
 	HandleTun() error
 	// HandleTransport handles packets from transport connection

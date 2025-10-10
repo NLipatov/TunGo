@@ -3,21 +3,22 @@ package tcp_chacha20
 import (
 	"context"
 	"tungo/application"
+	"tungo/application/network/tun"
 )
 
 type TcpTunWorker struct {
 	ctx                 context.Context
 	cryptographyService application.CryptographyService
-	tunHandler          application.TunHandler
+	tunHandler          tun.Handler
 	transportHandler    application.TransportHandler
 }
 
 func NewTcpTunWorker(
 	ctx context.Context,
-	tunHandler application.TunHandler,
+	tunHandler tun.Handler,
 	transportHandler application.TransportHandler,
 	cryptographyService application.CryptographyService,
-) application.TunWorker {
+) tun.Worker {
 	return &TcpTunWorker{
 		ctx:                 ctx,
 		cryptographyService: cryptographyService,

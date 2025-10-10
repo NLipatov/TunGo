@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"tungo/application"
+	"tungo/application/network/tun"
 	"tungo/infrastructure/PAL"
 	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/PAL/darwin/network_tools/ifconfig"
@@ -13,7 +13,7 @@ import (
 	"tungo/infrastructure/settings"
 )
 
-// PlatformTunManager is the macOS-specific implementation of ClientTunManager.
+// PlatformTunManager is the macOS-specific implementation of ClientManager.
 type PlatformTunManager struct {
 	conf     client.Configuration
 	dev      tun_adapters.Adapter
@@ -22,7 +22,7 @@ type PlatformTunManager struct {
 }
 
 // NewPlatformTunManager constructs a new PlatformTunManager.
-func NewPlatformTunManager(conf client.Configuration) (application.ClientTunManager, error) {
+func NewPlatformTunManager(conf client.Configuration) (tun.ClientManager, error) {
 	return &PlatformTunManager{
 		conf:     conf,
 		route:    route.NewWrapper(PAL.NewExecCommander()),
@@ -30,8 +30,8 @@ func NewPlatformTunManager(conf client.Configuration) (application.ClientTunMana
 	}, nil
 }
 
-// CreateTunDevice creates, configures and returns a TUN interface wrapped in wgTunAdapter.
-func (t *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
+// CreateDevice creates, configures and returns a TUN interface wrapped in wgTunAdapter.
+func (t *PlatformTunManager) CreateTunDevice() (tun.Device, error) {
 	var s settings.Settings
 	switch t.conf.Protocol {
 	case settings.TCP:
@@ -79,7 +79,7 @@ func (t *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 	return tun_adapters.NewWgTunAdapter(dev), nil
 }
 
-// DisposeTunDevices removes routes and destroys TUN interfaces.
+// DisposeDevices removes routes and destroys TUN interfaces.
 func (t *PlatformTunManager) DisposeTunDevices() error {
 	if t.dev != nil {
 		dev := t.dev

@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"tungo/application"
 	"tungo/application/listeners"
+	"tungo/application/logging"
 	"tungo/infrastructure/network/tcp/adapters"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
 	"tungo/infrastructure/settings"
@@ -22,7 +23,7 @@ type TransportHandler struct {
 	writer              io.ReadWriteCloser
 	listener            listeners.TcpListener
 	sessionManager      repository.SessionRepository[application.Session]
-	logger              application.Logger
+	logger              logging.Logger
 	handshakeFactory    application.HandshakeFactory
 	cryptographyFactory application.CryptographyServiceFactory
 }
@@ -33,7 +34,7 @@ func NewTransportHandler(
 	writer io.ReadWriteCloser,
 	listener listeners.TcpListener,
 	sessionManager repository.SessionRepository[application.Session],
-	logger application.Logger,
+	logger logging.Logger,
 	handshakeFactory application.HandshakeFactory,
 	cryptographyFactory application.CryptographyServiceFactory,
 ) application.TransportHandler {

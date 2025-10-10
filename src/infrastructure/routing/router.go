@@ -3,13 +3,14 @@ package routing
 import (
 	"context"
 	"tungo/application"
+	"tungo/application/network/tun"
 )
 
 type Router struct {
-	worker application.TunWorker
+	worker tun.Worker
 }
 
-func NewRouter(worker application.TunWorker) application.TrafficRouter {
+func NewRouter(worker tun.Worker) application.TrafficRouter {
 	return &Router{
 		worker: worker,
 	}

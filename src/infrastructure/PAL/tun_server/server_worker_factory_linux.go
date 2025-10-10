@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/netip"
 	"tungo/application"
+	"tungo/application/network/tun"
 	"tungo/domain/network/service"
 	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/cryptography/chacha20"
@@ -47,7 +48,7 @@ func (s *ServerWorkerFactory) CreateWorker(
 	ctx context.Context,
 	tun io.ReadWriteCloser,
 	workerSettings settings.Settings,
-) (application.TunWorker, error) {
+) (tun.Worker, error) {
 	switch workerSettings.Protocol {
 	case settings.TCP:
 		return s.createTCPWorker(ctx, tun, workerSettings)
@@ -64,7 +65,7 @@ func (s *ServerWorkerFactory) createTCPWorker(
 	ctx context.Context,
 	tun io.ReadWriteCloser,
 	workerSettings settings.Settings,
-) (application.TunWorker, error) {
+) (tun.Worker, error) {
 	sessionManager := wrappers.NewConcurrentManager(
 		repository.NewDefaultWorkerSessionManager[application.Session](),
 	)
@@ -108,7 +109,7 @@ func (s *ServerWorkerFactory) createWSWorker(
 	ctx context.Context,
 	tun io.ReadWriteCloser,
 	workerSettings settings.Settings,
-) (application.TunWorker, error) {
+) (tun.Worker, error) {
 	sessionManager := wrappers.NewConcurrentManager(
 		repository.NewDefaultWorkerSessionManager[application.Session](),
 	)
@@ -158,7 +159,7 @@ func (s *ServerWorkerFactory) createUDPWorker(
 	ctx context.Context,
 	tun io.ReadWriteCloser,
 	workerSettings settings.Settings,
-) (application.TunWorker, error) {
+) (tun.Worker, error) {
 	sessionManager := wrappers.NewConcurrentManager(
 		repository.NewDefaultWorkerSessionManager[application.Session](),
 	)

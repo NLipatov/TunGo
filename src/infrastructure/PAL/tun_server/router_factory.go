@@ -2,6 +2,7 @@ package tun_server
 
 import (
 	"tungo/application"
+	"tungo/application/network/tun"
 	"tungo/infrastructure/routing"
 )
 
@@ -13,7 +14,7 @@ func NewServerTrafficRouterFactory() *ServerTrafficRouterFactory {
 }
 
 func (s *ServerTrafficRouterFactory) CreateRouter(
-	worker application.TunWorker,
+	worker tun.Worker,
 ) application.TrafficRouter {
 	return routing.NewRouter(worker)
 }

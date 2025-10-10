@@ -6,7 +6,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
-	"tungo/application"
+	"tungo/application/logging"
 	"tungo/infrastructure/network/ws/adapter"
 	"tungo/infrastructure/network/ws/contracts"
 )
@@ -15,13 +15,13 @@ import (
 type DefaultHandler struct {
 	upgrader contracts.Upgrader
 	queue    chan net.Conn
-	logger   application.Logger
+	logger   logging.Logger
 }
 
 func NewDefaultHandler(
 	upgrader contracts.Upgrader,
 	queue chan net.Conn,
-	logger application.Logger,
+	logger logging.Logger,
 ) *DefaultHandler {
 	return &DefaultHandler{
 		upgrader: upgrader,

@@ -3,7 +3,7 @@ package tun_client
 import (
 	"fmt"
 	"strings"
-	"tungo/application"
+	"tungo/application/network/tun"
 	"tungo/infrastructure/PAL"
 	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/PAL/linux/network_tools/ioctl"
@@ -20,7 +20,7 @@ type PlatformTunManager struct {
 
 func NewPlatformTunManager(
 	conf client.Configuration,
-) (application.ClientTunManager, error) {
+) (tun.ClientManager, error) {
 	return &PlatformTunManager{
 		conf:  conf,
 		ip:    ip.NewWrapper(PAL.NewExecCommander()),
@@ -28,7 +28,7 @@ func NewPlatformTunManager(
 	}, nil
 }
 
-func (t *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
+func (t *PlatformTunManager) CreateDevice() (tun.Device, error) {
 	var s settings.Settings
 	switch t.conf.Protocol {
 	case settings.UDP:
@@ -120,7 +120,7 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.Settings) error 
 	return nil
 }
 
-func (t *PlatformTunManager) DisposeTunDevices() error {
+func (t *PlatformTunManager) DisposeDevices() error {
 	_ = t.ip.RouteDel(t.conf.UDPSettings.ConnectionIP)
 	_ = t.ip.LinkDelete(t.conf.UDPSettings.InterfaceName)
 

@@ -23,7 +23,7 @@ func NewRunner(deps AppDependencies, routerFactory application.TrafficRouterFact
 
 func (r *Runner) Run(ctx context.Context) {
 	defer func() {
-		if err := r.deps.TunManager().DisposeTunDevices(); err != nil {
+		if err := r.deps.TunManager().DisposeDevices(); err != nil {
 			log.Printf("error disposing tun devices on exit: %s", err)
 		}
 	}()
@@ -44,7 +44,7 @@ func (r *Runner) runSession(parentCtx context.Context) error {
 	ctx, cancel := context.WithCancel(parentCtx)
 	defer cancel()
 
-	if err := r.deps.TunManager().DisposeTunDevices(); err != nil {
+	if err := r.deps.TunManager().DisposeDevices(); err != nil {
 		log.Printf("error disposing tun devices: %v", err)
 	}
 

@@ -3,13 +3,13 @@ package tun_client
 import (
 	"errors"
 	"fmt"
-	"golang.zx2c4.com/wintun"
 	"log"
 	"net"
 	"os/exec"
 	"strconv"
 	"strings"
 	"syscall"
+	"tungo/application/network/tun"
 	"tungo/infrastructure/PAL"
 	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/PAL/windows/network_tools/netsh"
@@ -18,7 +18,6 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows"
-	"tungo/application"
 )
 
 type PlatformTunManager struct {
@@ -28,14 +27,14 @@ type PlatformTunManager struct {
 
 func NewPlatformTunManager(
 	conf client.Configuration,
-) (application.ClientTunManager, error) {
+) (tun.ClientManager, error) {
 	return &PlatformTunManager{
 		conf:  conf,
 		netsh: netsh.NewWrapper(PAL.NewExecCommander()),
 	}, nil
 }
 
-func (m *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
+func (m *PlatformTunManager) CreateTunDevice() (tun.Device, error) {
 	var s settings.Settings
 	switch m.conf.Protocol {
 	case settings.UDP:

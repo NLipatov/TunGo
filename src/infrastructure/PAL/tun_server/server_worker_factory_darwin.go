@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"tungo/application"
+	"tungo/application/network/tun"
 	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/settings"
 )
@@ -22,6 +23,6 @@ func (s ServerWorkerFactory) CreateWorker(
 	_ context.Context,
 	_ io.ReadWriteCloser,
 	_ settings.Settings,
-) (application.TunWorker, error) {
+) (tun.Worker, error) {
 	panic("not implemented")
 }

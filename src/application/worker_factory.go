@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"io"
+	"tungo/application/network/tun"
 	"tungo/infrastructure/settings"
 )
 
@@ -12,7 +13,7 @@ type ClientWorkerFactory interface {
 		conn ConnectionAdapter,
 		tun io.ReadWriteCloser,
 		cryptographyService CryptographyService,
-	) (TunWorker, error)
+	) (tun.Worker, error)
 }
 
 type ServerWorkerFactory interface {
@@ -20,5 +21,5 @@ type ServerWorkerFactory interface {
 		ctx context.Context,
 		tun io.ReadWriteCloser,
 		workerSettings settings.Settings,
-	) (TunWorker, error)
+	) (tun.Worker, error)
 }

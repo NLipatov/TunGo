@@ -7,6 +7,7 @@ import (
 	"net"
 	"time"
 	"tungo/application"
+	"tungo/application/network/tun"
 	"tungo/domain/network/service"
 	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/network"
@@ -28,7 +29,7 @@ func NewWorkerFactory(configuration client.Configuration) application.ClientWork
 
 func (w *WorkerFactory) CreateWorker(
 	ctx context.Context, conn application.ConnectionAdapter, tun io.ReadWriteCloser, crypto application.CryptographyService,
-) (application.TunWorker, error) {
+) (tun.Worker, error) {
 	switch w.conf.Protocol {
 	case settings.UDP:
 		deadline, deadlineErr := network.NewDeadline(time.Second * 1)

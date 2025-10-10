@@ -6,7 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"syscall"
-	"tungo/application"
+	"tungo/application/network/tun"
 	"tungo/infrastructure/settings"
 )
 
@@ -29,7 +29,7 @@ type WgTunAdapter struct {
 
 // NewWgTunAdapter allocates the buffers once and prepares reusable slice
 // headers. MaxPacketLengthBytes should already include the 4‑byte utun header.
-func NewWgTunAdapter(dev Adapter) application.TunDevice {
+func NewWgTunAdapter(dev Adapter) tun.Device {
 	rb := make([]byte, settings.DefaultEthernetMTU+UTUNHeaderSize)
 	wb := make([]byte, settings.DefaultEthernetMTU+UTUNHeaderSize)
 	return &WgTunAdapter{

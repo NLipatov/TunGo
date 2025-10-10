@@ -7,6 +7,7 @@ import (
 	"os"
 	"tungo/application"
 	appip "tungo/application/network/ip"
+	"tungo/application/network/tun"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
 	"tungo/infrastructure/settings"
 )
@@ -23,7 +24,7 @@ func NewTunHandler(
 	reader io.Reader,
 	ipParser appip.HeaderParser,
 	sessionManager repository.SessionRepository[application.Session],
-) application.TunHandler {
+) tun.Handler {
 	return &TunHandler{
 		ctx:            ctx,
 		reader:         reader,

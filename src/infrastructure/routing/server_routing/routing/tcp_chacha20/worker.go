@@ -2,17 +2,18 @@ package tcp_chacha20
 
 import (
 	"tungo/application"
+	"tungo/application/network/tun"
 )
 
 type TcpTunWorker struct {
-	tunHandler       application.TunHandler
+	tunHandler       tun.Handler
 	transportHandler application.TransportHandler
 }
 
 func NewTcpTunWorker(
-	tunHandler application.TunHandler,
+	tunHandler tun.Handler,
 	transportHandler application.TransportHandler,
-) application.TunWorker {
+) tun.Worker {
 	return &TcpTunWorker{
 		tunHandler:       tunHandler,
 		transportHandler: transportHandler,

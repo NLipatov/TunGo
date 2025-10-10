@@ -1,18 +1,18 @@
 package tun_server
 
 import (
-	"tungo/application"
+	"tungo/application/network/tun"
 	"tungo/infrastructure/settings"
 )
 
 type ServerTunFactory struct {
 }
 
-func NewServerTunFactory() application.ServerTunManager {
+func NewServerTunFactory() tun.ServerManager {
 	return &ServerTunFactory{}
 }
 
-func (s ServerTunFactory) CreateTunDevice(_ settings.Settings) (application.TunDevice, error) {
+func (s ServerTunFactory) CreateTunDevice(_ settings.Settings) (tun.Device, error) {
 	panic("not implemented")
 }
 
