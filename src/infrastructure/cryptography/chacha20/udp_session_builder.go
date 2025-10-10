@@ -1,23 +1,23 @@
 package chacha20
 
 import (
-	"tungo/application"
+	"tungo/application/network/connection"
 )
 
 type UdpSessionBuilder struct {
-	aeadBuilder application.AEADBuilder
+	aeadBuilder connection.AEADBuilder
 }
 
-func NewUdpSessionBuilder(aeadBuilder application.AEADBuilder) application.CryptographyServiceFactory {
+func NewUdpSessionBuilder(aeadBuilder connection.AEADBuilder) connection.CryptoFactory {
 	return &UdpSessionBuilder{
 		aeadBuilder: aeadBuilder,
 	}
 }
 
 func (u UdpSessionBuilder) FromHandshake(
-	handshake application.Handshake,
+	handshake connection.Handshake,
 	isServer bool,
-) (application.CryptographyService, error) {
+) (connection.Crypto, error) {
 	sendCipher, recvCipher, err := u.aeadBuilder.FromHandshake(handshake, isServer)
 	if err != nil {
 		return nil, err

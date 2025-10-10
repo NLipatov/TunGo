@@ -6,15 +6,15 @@ import (
 	"fmt"
 	"log"
 	"time"
-	"tungo/application"
+	"tungo/application/network/connection"
 )
 
 type Runner struct {
 	deps          AppDependencies
-	routerFactory application.TrafficRouterFactory
+	routerFactory connection.TrafficRouterFactory
 }
 
-func NewRunner(deps AppDependencies, routerFactory application.TrafficRouterFactory) *Runner {
+func NewRunner(deps AppDependencies, routerFactory connection.TrafficRouterFactory) *Runner {
 	return &Runner{
 		deps:          deps,
 		routerFactory: routerFactory,
@@ -23,7 +23,7 @@ func NewRunner(deps AppDependencies, routerFactory application.TrafficRouterFact
 
 func (r *Runner) Run(ctx context.Context) {
 	defer func() {
-		if err := r.deps.TunManager().DisposeTunDevices(); err != nil {
+		if err := r.deps.TunManager().DisposeDevices(); err != nil {
 			log.Printf("error disposing tun devices on exit: %s", err)
 		}
 	}()
@@ -44,7 +44,7 @@ func (r *Runner) runSession(parentCtx context.Context) error {
 	ctx, cancel := context.WithCancel(parentCtx)
 	defer cancel()
 
-	if err := r.deps.TunManager().DisposeTunDevices(); err != nil {
+	if err := r.deps.TunManager().DisposeDevices(); err != nil {
 		log.Printf("error disposing tun devices: %v", err)
 	}
 

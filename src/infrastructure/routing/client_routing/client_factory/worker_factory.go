@@ -6,7 +6,8 @@ import (
 	"io"
 	"net"
 	"time"
-	"tungo/application"
+	"tungo/application/network/connection"
+	"tungo/application/network/routing"
 	"tungo/domain/network/service"
 	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/network"
@@ -20,15 +21,15 @@ type WorkerFactory struct {
 	conf client.Configuration
 }
 
-func NewWorkerFactory(configuration client.Configuration) application.ClientWorkerFactory {
+func NewWorkerFactory(configuration client.Configuration) connection.ClientWorkerFactory {
 	return &WorkerFactory{
 		conf: configuration,
 	}
 }
 
 func (w *WorkerFactory) CreateWorker(
-	ctx context.Context, conn application.ConnectionAdapter, tun io.ReadWriteCloser, crypto application.CryptographyService,
-) (application.TunWorker, error) {
+	ctx context.Context, conn connection.Transport, tun io.ReadWriteCloser, crypto connection.Crypto,
+) (routing.Worker, error) {
 	switch w.conf.Protocol {
 	case settings.UDP:
 		deadline, deadlineErr := network.NewDeadline(time.Second * 1)

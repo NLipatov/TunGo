@@ -29,10 +29,10 @@ func TestSessionAccessors(t *testing.T) {
 	external, _ := netip.ParseAddrPort("93.184.216.34:9000")
 
 	s := Session{
-		connectionAdapter:   &sessionTestAdapter{},
-		cryptographyService: &sessionTestCryptoService{},
-		internalIP:          internal,
-		externalIP:          external,
+		transport:  &sessionTestAdapter{},
+		crypto:     &sessionTestCryptoService{},
+		internalIP: internal,
+		externalIP: external,
 	}
 
 	if got := s.InternalAddr(); got != internal {

@@ -6,7 +6,8 @@ import (
 	"io"
 	"net"
 	"net/netip"
-	"tungo/application"
+	"tungo/application/network/connection"
+	"tungo/application/network/routing"
 	"tungo/domain/network/service"
 	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/cryptography/chacha20"
@@ -26,7 +27,7 @@ type ServerWorkerFactory struct {
 
 func NewServerWorkerFactory(
 	manager server.ServerConfigurationManager,
-) application.ServerWorkerFactory {
+) connection.ServerWorkerFactory {
 	return &ServerWorkerFactory{
 		loggerFactory:        newDefaultLoggerFactory(),
 		configurationManager: manager,
@@ -36,7 +37,7 @@ func NewServerWorkerFactory(
 func NewTestServerWorkerFactory(
 	loggerFactory loggerFactory,
 	manager server.ServerConfigurationManager,
-) application.ServerWorkerFactory {
+) connection.ServerWorkerFactory {
 	return &ServerWorkerFactory{
 		loggerFactory:        loggerFactory,
 		configurationManager: manager,
@@ -47,7 +48,7 @@ func (s *ServerWorkerFactory) CreateWorker(
 	ctx context.Context,
 	tun io.ReadWriteCloser,
 	workerSettings settings.Settings,
-) (application.TunWorker, error) {
+) (routing.Worker, error) {
 	switch workerSettings.Protocol {
 	case settings.TCP:
 		return s.createTCPWorker(ctx, tun, workerSettings)
@@ -64,9 +65,9 @@ func (s *ServerWorkerFactory) createTCPWorker(
 	ctx context.Context,
 	tun io.ReadWriteCloser,
 	workerSettings settings.Settings,
-) (application.TunWorker, error) {
+) (routing.Worker, error) {
 	sessionManager := wrappers.NewConcurrentManager(
-		repository.NewDefaultWorkerSessionManager[application.Session](),
+		repository.NewDefaultWorkerSessionManager[connection.Session](),
 	)
 
 	th := tcp_chacha20.NewTunHandler(
@@ -108,9 +109,9 @@ func (s *ServerWorkerFactory) createWSWorker(
 	ctx context.Context,
 	tun io.ReadWriteCloser,
 	workerSettings settings.Settings,
-) (application.TunWorker, error) {
+) (routing.Worker, error) {
 	sessionManager := wrappers.NewConcurrentManager(
-		repository.NewDefaultWorkerSessionManager[application.Session](),
+		repository.NewDefaultWorkerSessionManager[connection.Session](),
 	)
 
 	th := tcp_chacha20.NewTunHandler(
@@ -158,9 +159,9 @@ func (s *ServerWorkerFactory) createUDPWorker(
 	ctx context.Context,
 	tun io.ReadWriteCloser,
 	workerSettings settings.Settings,
-) (application.TunWorker, error) {
+) (routing.Worker, error) {
 	sessionManager := wrappers.NewConcurrentManager(
-		repository.NewDefaultWorkerSessionManager[application.Session](),
+		repository.NewDefaultWorkerSessionManager[connection.Session](),
 	)
 
 	th := udp_chacha20.NewTunHandler(

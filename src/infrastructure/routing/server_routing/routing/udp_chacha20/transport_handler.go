@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"io"
 	"net/netip"
-	"tungo/application"
 	"tungo/application/listeners"
+	"tungo/application/logging"
+	"tungo/application/network/connection"
+	"tungo/application/network/routing/transport"
 	"tungo/domain/network/service"
 	"tungo/infrastructure/network/udp/adapters"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
@@ -17,11 +19,11 @@ type TransportHandler struct {
 	ctx                 context.Context
 	settings            settings.Settings
 	writer              io.Writer
-	sessionManager      repository.SessionRepository[application.Session]
-	logger              application.Logger
+	sessionManager      repository.SessionRepository[connection.Session]
+	logger              logging.Logger
 	listenerConn        listeners.UdpListener
-	handshakeFactory    application.HandshakeFactory
-	cryptographyFactory application.CryptographyServiceFactory
+	handshakeFactory    connection.HandshakeFactory
+	cryptographyFactory connection.CryptoFactory
 	servicePacket       service.PacketHandler
 	spBuffer            [3]byte
 }
@@ -31,12 +33,12 @@ func NewTransportHandler(
 	settings settings.Settings,
 	writer io.Writer,
 	listenerConn listeners.UdpListener,
-	sessionManager repository.SessionRepository[application.Session],
-	logger application.Logger,
-	handshakeFactory application.HandshakeFactory,
-	cryptographyFactory application.CryptographyServiceFactory,
+	sessionManager repository.SessionRepository[connection.Session],
+	logger logging.Logger,
+	handshakeFactory connection.HandshakeFactory,
+	cryptographyFactory connection.CryptoFactory,
 	servicePacket service.PacketHandler,
-) application.TransportHandler {
+) transport.Handler {
 	return &TransportHandler{
 		ctx:                 ctx,
 		settings:            settings,
@@ -116,7 +118,7 @@ func (t *TransportHandler) handlePacket(
 	}
 
 	// Handle client data
-	decrypted, decryptionErr := session.CryptographyService().Decrypt(packet)
+	decrypted, decryptionErr := session.Crypto().Decrypt(packet)
 	if decryptionErr != nil {
 		t.logger.Printf("failed to decrypt data: %v", decryptionErr)
 		return decryptionErr

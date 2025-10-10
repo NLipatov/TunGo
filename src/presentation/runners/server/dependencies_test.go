@@ -3,17 +3,17 @@ package server
 import (
 	"errors"
 	"testing"
-	"tungo/application"
+	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/settings"
 )
 
 type dummyTunMgr struct{}
 
-func (d *dummyTunMgr) CreateTunDevice(_ settings.Settings) (application.TunDevice, error) {
+func (d *dummyTunMgr) CreateDevice(_ settings.Settings) (tun.Device, error) {
 	return nil, nil
 }
-func (d *dummyTunMgr) DisposeTunDevices(_ settings.Settings) error {
+func (d *dummyTunMgr) DisposeDevices(_ settings.Settings) error {
 	return errors.New("not implemented")
 }
 

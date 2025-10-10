@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
-	"tungo/application"
+	"tungo/application/network/connection"
 	"tungo/infrastructure/settings"
 
 	"golang.org/x/sync/errgroup"
@@ -14,14 +14,14 @@ import (
 
 type Runner struct {
 	deps          AppDependencies
-	workerFactory application.ServerWorkerFactory
-	routerFactory application.ServerTrafficRouterFactory
+	workerFactory connection.ServerWorkerFactory
+	routerFactory connection.ServerTrafficRouterFactory
 }
 
 func NewRunner(
 	deps AppDependencies,
-	workerFactory application.ServerWorkerFactory,
-	routerFactory application.ServerTrafficRouterFactory,
+	workerFactory connection.ServerWorkerFactory,
+	routerFactory connection.ServerTrafficRouterFactory,
 ) *Runner {
 	return &Runner{
 		deps:          deps,
@@ -56,7 +56,7 @@ func (r *Runner) cleanup() error {
 	var eg errgroup.Group
 	for _, workerSettings := range r.workerSettings() {
 		eg.Go(func() error {
-			return r.deps.TunManager().DisposeTunDevices(workerSettings)
+			return r.deps.TunManager().DisposeDevices(workerSettings)
 		})
 	}
 
@@ -128,7 +128,7 @@ func (r *Runner) route(
 	ctx context.Context,
 	settings settings.Settings,
 ) error {
-	tun, tunErr := r.deps.TunManager().CreateTunDevice(settings)
+	tun, tunErr := r.deps.TunManager().CreateDevice(settings)
 	if tunErr != nil {
 		return fmt.Errorf("error creating tun device: %w", tunErr)
 	}

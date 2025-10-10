@@ -5,23 +5,23 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"tungo/application"
+	"tungo/application/network/connection"
 	framelimit "tungo/domain/network/ip/frame_limit"
 )
 
-// compile time check (LengthPrefixFramingAdapter must implement application.ConnectionAdapter)
+// compile time check (LengthPrefixFramingAdapter must implement application.Transport)
 var _ interface {
-	application.ConnectionAdapter
+	connection.Transport
 } = (*LengthPrefixFramingAdapter)(nil)
 
 // Not safe for concurrent Read/Write without external synchronization.
 type LengthPrefixFramingAdapter struct {
-	adapter  application.ConnectionAdapter
+	adapter  connection.Transport
 	frameCap framelimit.Cap
 }
 
 func NewLengthPrefixFramingAdapter(
-	adapter application.ConnectionAdapter,
+	adapter connection.Transport,
 	frameCap framelimit.Cap,
 ) (*LengthPrefixFramingAdapter, error) {
 	if adapter == nil {

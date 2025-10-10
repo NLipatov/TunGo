@@ -4,7 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"tungo/application"
+	"tungo/application/network/connection"
+	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/settings"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -14,13 +15,13 @@ type TunHandler struct {
 	ctx                 context.Context
 	reader              io.Reader // abstraction over TUN device
 	writer              io.Writer // abstraction over transport
-	cryptographyService application.CryptographyService
+	cryptographyService connection.Crypto
 }
 
 func NewTunHandler(ctx context.Context,
 	reader io.Reader,
 	writer io.Writer,
-	cryptographyService application.CryptographyService) application.TunHandler {
+	cryptographyService connection.Crypto) tun.Handler {
 	return &TunHandler{
 		ctx:                 ctx,
 		reader:              reader,

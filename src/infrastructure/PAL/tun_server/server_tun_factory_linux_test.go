@@ -211,21 +211,21 @@ var cfg = settings.Settings{
 
 func TestCreateAndDispose(t *testing.T) {
 	f := newFactory(&mockIP{}, &mockIPT{}, &mockIOCTL{}, &mockSys{})
-	tun, err := f.CreateTunDevice(cfg)
+	tun, err := f.CreateDevice(cfg)
 	if err != nil {
-		t.Fatalf("CreateTunDevice: %v", err)
+		t.Fatalf("CreateDevice: %v", err)
 	}
 	if tun == nil {
 		t.Fatal("expected non-nil tun file")
 	}
-	if err := f.DisposeTunDevices(cfg); err != nil {
-		t.Fatalf("DisposeTunDevices: %v", err)
+	if err := f.DisposeDevices(cfg); err != nil {
+		t.Fatalf("DisposeDevices: %v", err)
 	}
 }
 
 func TestEnableForwarding_FirstCallError(t *testing.T) {
 	f := newFactory(&mockIP{}, &mockIPT{}, &mockIOCTL{}, &mockSys{netErr: true})
-	_, err := f.CreateTunDevice(cfg)
+	_, err := f.CreateDevice(cfg)
 	if err == nil || !strings.Contains(err.Error(), "failed to enable IPv4 packet forwarding") {
 		t.Errorf("expected forwarding error, got %v", err)
 	}
@@ -235,7 +235,7 @@ func TestEnableForwarding_SecondCallError(t *testing.T) {
 	f := newFactory(&mockIP{}, &mockIPT{}, &mockIOCTL{}, &mockSys{
 		netOutput: []byte("net.ipv4.ip_forward = 0\n"), wErr: true,
 	})
-	_, err := f.CreateTunDevice(cfg)
+	_, err := f.CreateDevice(cfg)
 	if err == nil || !strings.Contains(err.Error(), "failed to enable IPv4 packet forwarding") {
 		t.Errorf("expected second-call forwarding error, got %v", err)
 	}
@@ -263,7 +263,7 @@ func TestCreateTunDevice_CreateTunStepErrors(t *testing.T) {
 			}
 		}
 		f := newFactory(ipMock, &mockIPT{}, ioMock, &mockSys{})
-		_, err := f.CreateTunDevice(cfg)
+		_, err := f.CreateDevice(cfg)
 		if err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("case %s: expected error containing %q, got %v", c.tag, c.want, err)
 		}
@@ -317,7 +317,7 @@ func TestCreateTunDevice_ConfigureStepErrors(t *testing.T) {
 	}
 	for _, c := range cases {
 		f := c.setup()
-		_, err := f.CreateTunDevice(cfg)
+		_, err := f.CreateDevice(cfg)
 		if err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("expected configure error %q, got %v", c.want, err)
 		}
@@ -327,13 +327,13 @@ func TestCreateTunDevice_ConfigureStepErrors(t *testing.T) {
 func TestDisposeTunDevices_ErrorPaths(t *testing.T) {
 	// open tun error
 	f1 := newFactory(&mockIP{}, &mockIPT{}, &mockIOCTL{createErr: errors.New("io_err")}, &mockSys{})
-	if err := f1.DisposeTunDevices(cfg); err == nil ||
+	if err := f1.DisposeDevices(cfg); err == nil ||
 		!strings.Contains(err.Error(), "failed to open TUN interface") {
 		t.Errorf("expected open tun error, got %v", err)
 	}
 	// delete link error
 	f2 := newFactory(&mockIPErrDel{&mockIP{}, errors.New("del_err")}, &mockIPT{}, &mockIOCTL{}, &mockSys{})
-	if err := f2.DisposeTunDevices(cfg); err == nil ||
+	if err := f2.DisposeDevices(cfg); err == nil ||
 		!strings.Contains(err.Error(), "error deleting TUN device") {
 		t.Errorf("expected delete error, got %v", err)
 	}

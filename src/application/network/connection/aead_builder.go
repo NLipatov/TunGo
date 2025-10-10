@@ -1,6 +1,8 @@
-package application
+package connection
 
-import "crypto/cipher"
+import (
+	"crypto/cipher"
+)
 
 type AEADBuilder interface {
 	FromHandshake(

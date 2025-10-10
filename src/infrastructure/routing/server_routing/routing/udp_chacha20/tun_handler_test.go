@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-	"tungo/application"
+	"tungo/application/network/connection"
 )
 
 // ---------- Mocks (prefixed with the struct under test: TunHandler*) ----------
@@ -71,17 +71,17 @@ func (c *TunHandlerMockConn) SetWriteDeadline(_ time.Time) error { return nil }
 
 // Session repo mock.
 type TunHandlerMockMgr struct {
-	sess    application.Session
+	sess    connection.Session
 	getErr  error
 	deleted int32
 }
 
-func (m *TunHandlerMockMgr) Add(_ application.Session)    {}
-func (m *TunHandlerMockMgr) Delete(_ application.Session) { atomic.AddInt32(&m.deleted, 1) }
-func (m *TunHandlerMockMgr) GetByInternalAddrPort(_ netip.Addr) (application.Session, error) {
+func (m *TunHandlerMockMgr) Add(_ connection.Session)    {}
+func (m *TunHandlerMockMgr) Delete(_ connection.Session) { atomic.AddInt32(&m.deleted, 1) }
+func (m *TunHandlerMockMgr) GetByInternalAddrPort(_ netip.Addr) (connection.Session, error) {
 	return m.sess, m.getErr
 }
-func (m *TunHandlerMockMgr) GetByExternalAddrPort(_ netip.AddrPort) (application.Session, error) {
+func (m *TunHandlerMockMgr) GetByExternalAddrPort(_ netip.AddrPort) (connection.Session, error) {
 	return m.sess, nil
 }
 
@@ -89,10 +89,10 @@ func mkSession(c *TunHandlerMockConn, crypto *TunHandlerMockCrypto) Session {
 	in := netip.MustParseAddr("10.0.0.1")
 	ex := netip.MustParseAddrPort("203.0.113.1:9000")
 	return Session{
-		connectionAdapter:   c,
-		cryptographyService: crypto,
-		internalIP:          in,
-		externalIP:          ex,
+		transport:  c,
+		crypto:     crypto,
+		internalIP: in,
+		externalIP: ex,
 	}
 }
 

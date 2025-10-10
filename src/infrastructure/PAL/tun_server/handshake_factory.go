@@ -1,7 +1,7 @@
 package tun_server
 
 import (
-	"tungo/application"
+	"tungo/application/network/connection"
 	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/cryptography/chacha20/handshake"
 )
@@ -16,7 +16,7 @@ func NewHandshakeFactory(configuration server.Configuration) *HandshakeFactory {
 	}
 }
 
-func (h *HandshakeFactory) NewHandshake() application.Handshake {
+func (h *HandshakeFactory) NewHandshake() connection.Handshake {
 	return handshake.NewHandshake(
 		h.configuration.Ed25519PublicKey,
 		h.configuration.Ed25519PrivateKey,

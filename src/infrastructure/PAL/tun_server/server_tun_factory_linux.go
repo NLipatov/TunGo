@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"tungo/application"
+	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL"
 	"tungo/infrastructure/PAL/linux/network_tools/ioctl"
 	"tungo/infrastructure/PAL/linux/network_tools/ip"
@@ -21,7 +21,7 @@ type ServerTunFactory struct {
 	sysctl   sysctl.Contract
 }
 
-func NewServerTunFactory() application.ServerTunManager {
+func NewServerTunFactory() tun.ServerManager {
 	return &ServerTunFactory{
 		ip:       ip.NewWrapper(PAL.NewExecCommander()),
 		iptables: iptables.NewWrapper(PAL.NewExecCommander()),
@@ -30,7 +30,7 @@ func NewServerTunFactory() application.ServerTunManager {
 	}
 }
 
-func (s ServerTunFactory) CreateTunDevice(connSettings settings.Settings) (application.TunDevice, error) {
+func (s ServerTunFactory) CreateDevice(connSettings settings.Settings) (tun.Device, error) {
 	forwardingErr := s.enableForwarding()
 	if forwardingErr != nil {
 		return nil, forwardingErr
@@ -49,14 +49,14 @@ func (s ServerTunFactory) CreateTunDevice(connSettings settings.Settings) (appli
 	return tunFile, nil
 }
 
-func (s ServerTunFactory) DisposeTunDevices(connSettings settings.Settings) error {
-	tun, openErr := s.ioctl.CreateTunInterface(connSettings.InterfaceName)
-	if openErr != nil {
-		return fmt.Errorf("failed to open TUN interface: %w", openErr)
+func (s ServerTunFactory) DisposeDevices(connSettings settings.Settings) error {
+	tunInterface, tunInterfaceCreationErr := s.ioctl.CreateTunInterface(connSettings.InterfaceName)
+	if tunInterfaceCreationErr != nil {
+		return fmt.Errorf("failed to open TUN interface: %w", tunInterfaceCreationErr)
 	}
-	s.Unconfigure(tun)
+	s.Unconfigure(tunInterface)
 
-	closeErr := tun.Close()
+	closeErr := tunInterface.Close()
 	if closeErr != nil {
 		return fmt.Errorf("failed to close TUN interface: %w", closeErr)
 	}

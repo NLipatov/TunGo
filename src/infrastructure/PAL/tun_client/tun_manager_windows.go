@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL"
 	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/PAL/windows/network_tools/netsh"
@@ -18,7 +19,6 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows"
-	"tungo/application"
 )
 
 type PlatformTunManager struct {
@@ -28,14 +28,14 @@ type PlatformTunManager struct {
 
 func NewPlatformTunManager(
 	conf client.Configuration,
-) (application.ClientTunManager, error) {
+) (tun.ClientManager, error) {
 	return &PlatformTunManager{
 		conf:  conf,
 		netsh: netsh.NewWrapper(PAL.NewExecCommander()),
 	}, nil
 }
 
-func (m *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
+func (m *PlatformTunManager) CreateDevice() (tun.Device, error) {
 	var s settings.Settings
 	switch m.conf.Protocol {
 	case settings.UDP:
@@ -103,7 +103,7 @@ func (m *PlatformTunManager) CreateTunDevice() (application.TunDevice, error) {
 	return device, nil
 }
 
-func (m *PlatformTunManager) DisposeTunDevices() error {
+func (m *PlatformTunManager) DisposeDevices() error {
 	// dispose adapters by friendly names
 	_ = disposeExistingTunDevices(m.conf.TCPSettings.InterfaceName)
 	_ = disposeExistingTunDevices(m.conf.UDPSettings.InterfaceName)

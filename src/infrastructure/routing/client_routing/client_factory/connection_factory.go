@@ -8,7 +8,7 @@ import (
 	"net/netip"
 	"strconv"
 	"time"
-	"tungo/application"
+	"tungo/application/network/connection"
 	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/handshake"
@@ -24,7 +24,7 @@ type ConnectionFactory struct {
 	conf client.Configuration
 }
 
-func NewConnectionFactory(conf client.Configuration) application.ConnectionFactory {
+func NewConnectionFactory(conf client.Configuration) connection.Factory {
 	return &ConnectionFactory{
 		conf: conf,
 	}
@@ -32,7 +32,7 @@ func NewConnectionFactory(conf client.Configuration) application.ConnectionFacto
 
 func (f *ConnectionFactory) EstablishConnection(
 	ctx context.Context,
-) (application.ConnectionAdapter, application.CryptographyService, error) {
+) (connection.Transport, connection.Crypto, error) {
 	connSettings, connSettingsErr := f.connectionSettings()
 	if connSettingsErr != nil {
 		return nil, nil, connSettingsErr
@@ -141,9 +141,9 @@ func (f *ConnectionFactory) connectionSettings() (settings.Settings, error) {
 func (f *ConnectionFactory) establishSecuredConnection(
 	ctx context.Context,
 	s settings.Settings,
-	adapter application.ConnectionAdapter,
-	cryptoFactory application.CryptographyServiceFactory,
-) (application.ConnectionAdapter, application.CryptographyService, error) {
+	adapter connection.Transport,
+	cryptoFactory connection.CryptoFactory,
+) (connection.Transport, connection.Crypto, error) {
 	//connect to server and exchange secret
 	secret := network.NewDefaultSecret(
 		s,
@@ -165,7 +165,7 @@ func (f *ConnectionFactory) establishSecuredConnection(
 func (f *ConnectionFactory) dialTCP(
 	ctx context.Context,
 	ap netip.AddrPort,
-) (application.ConnectionAdapter, error) {
+) (connection.Transport, error) {
 	dialer := &net.Dialer{}
 	conn, err := dialer.DialContext(ctx, "tcp", ap.String())
 	if err != nil {
@@ -184,7 +184,7 @@ func (f *ConnectionFactory) dialTCP(
 func (f *ConnectionFactory) dialUDP(
 	ctx context.Context,
 	ap netip.AddrPort,
-) (application.ConnectionAdapter, error) {
+) (connection.Transport, error) {
 	dialer := &net.Dialer{}
 	conn, err := dialer.DialContext(ctx, "udp", ap.String())
 	if err != nil {
@@ -196,7 +196,7 @@ func (f *ConnectionFactory) dialUDP(
 func (f *ConnectionFactory) dialWS(
 	establishCtx, connCtx context.Context,
 	scheme, host, port string,
-) (application.ConnectionAdapter, error) {
+) (connection.Transport, error) {
 	url := fmt.Sprintf("%s://%s/ws", scheme, net.JoinHostPort(host, port))
 	conn, _, err := websocket.Dial(establishCtx, url, nil)
 	if err != nil {

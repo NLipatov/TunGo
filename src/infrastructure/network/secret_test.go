@@ -4,7 +4,7 @@ import (
 	"errors"
 	"net"
 	"testing"
-	"tungo/application"
+	"tungo/application/network/connection"
 	"tungo/infrastructure/settings"
 )
 
@@ -16,30 +16,30 @@ type secretTestMockHandshake struct {
 func (m *secretTestMockHandshake) Id() [32]byte              { return [32]byte{} }
 func (m *secretTestMockHandshake) KeyClientToServer() []byte { return nil }
 func (m *secretTestMockHandshake) KeyServerToClient() []byte { return nil }
-func (m *secretTestMockHandshake) ServerSideHandshake(_ application.ConnectionAdapter) (net.IP, error) {
+func (m *secretTestMockHandshake) ServerSideHandshake(_ connection.Transport) (net.IP, error) {
 	return nil, nil
 }
-func (m *secretTestMockHandshake) ClientSideHandshake(_ application.ConnectionAdapter, _ settings.Settings) error {
+func (m *secretTestMockHandshake) ClientSideHandshake(_ connection.Transport, _ settings.Settings) error {
 	return m.err
 }
 
-// secretTestMockBuilder implements application.CryptographyServiceFactory for testing DefaultSecret.Exchange.
+// secretTestMockBuilder implements application.CryptoFactory for testing DefaultSecret.Exchange.
 type secretTestMockBuilder struct {
-	svc application.CryptographyService
+	svc connection.Crypto
 	err error
 }
 
-func (m *secretTestMockBuilder) FromHandshake(_ application.Handshake, _ bool) (application.CryptographyService, error) {
+func (m *secretTestMockBuilder) FromHandshake(_ connection.Handshake, _ bool) (connection.Crypto, error) {
 	return m.svc, m.err
 }
 
-// mockCryptoService implements application.CryptographyService as a dummy.
+// mockCryptoService implements application.Crypto as a dummy.
 type mockCryptoService struct{}
 
 func (m *mockCryptoService) Encrypt(_ []byte) ([]byte, error) { return nil, nil }
 func (m *mockCryptoService) Decrypt(_ []byte) ([]byte, error) { return nil, nil }
 
-// mockConn is a no-op ConnectionAdapter stub.
+// mockConn is a no-op Transport stub.
 type mockConn struct{}
 
 func (m *mockConn) Write([]byte) (int, error) { return 0, nil }
@@ -71,7 +71,7 @@ func TestExchange_BuilderError(t *testing.T) {
 	if svc != nil {
 		t.Errorf("expected nil service on builder error, got %v", svc)
 	}
-	wantPrefix := "failed to create client cryptographyService: "
+	wantPrefix := "failed to create client crypto: "
 	if err == nil || err.Error()[:len(wantPrefix)] != wantPrefix {
 		t.Errorf("expected error prefix %q, got %v", wantPrefix, err)
 	}

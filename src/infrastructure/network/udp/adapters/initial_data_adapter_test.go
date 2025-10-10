@@ -4,15 +4,15 @@ import (
 	"errors"
 	"io"
 	"testing"
-	"tungo/application"
+	"tungo/application/network/connection"
 )
 
-// InitialDataAdapter implements application.ConnectionAdapter
+// InitialDataAdapter implements application.Transport
 // and returns provided initialData on the first Read calls.
 // Afterwards it proxies to the underlying adapter.
 
 // mockInitialDataAdapter is a mock for testing InitialDataAdapter behavior
-// and implements application.ConnectionAdapter.
+// and implements application.Transport.
 type mockInitialDataAdapter struct {
 	readBuf   []byte
 	writeBuf  []byte
@@ -109,10 +109,10 @@ func TestRead_NoInitialData(t *testing.T) {
 
 func TestWriteAndClose(t *testing.T) {
 	under := &mockInitialDataAdapter{}
-	var conn application.ConnectionAdapter = NewInitialDataAdapter(under, nil)
+	var transport connection.Transport = NewInitialDataAdapter(under, nil)
 
 	// Write should delegate to the underlying adapter
-	n, err := conn.Write([]byte("abc"))
+	n, err := transport.Write([]byte("abc"))
 	if err != nil {
 		t.Fatalf("write error: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestWriteAndClose(t *testing.T) {
 	}
 
 	// Close should delegate to the underlying adapter
-	if err := conn.Close(); err != nil {
+	if err := transport.Close(); err != nil {
 		t.Fatalf("close error: %v", err)
 	}
 	if !under.closed {

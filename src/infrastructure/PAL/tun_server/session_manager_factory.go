@@ -1,15 +1,15 @@
 package tun_server
 
 import (
-	"tungo/application"
+	"tungo/application/network/connection"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
 	"tungo/infrastructure/routing/server_routing/session_management/repository/wrappers"
 )
 
-type sessionManagerFactory[T application.Session] struct {
+type sessionManagerFactory[T connection.Session] struct {
 }
 
-func newSessionManagerFactory[T application.Session]() sessionManagerFactory[T] {
+func newSessionManagerFactory[T connection.Session]() sessionManagerFactory[T] {
 	return sessionManagerFactory[T]{}
 }
 

@@ -2,7 +2,8 @@ package client
 
 import (
 	"fmt"
-	"tungo/application"
+	"tungo/application/network/connection"
+	"tungo/application/network/routing/tun"
 	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/PAL/tun_client"
 	"tungo/infrastructure/routing/client_routing/client_factory"
@@ -11,16 +12,16 @@ import (
 type AppDependencies interface {
 	Initialize() error
 	Configuration() clientConfiguration.Configuration
-	ConnectionFactory() application.ConnectionFactory
-	WorkerFactory() application.ClientWorkerFactory
-	TunManager() application.ClientTunManager
+	ConnectionFactory() connection.Factory
+	WorkerFactory() connection.ClientWorkerFactory
+	TunManager() tun.ClientManager
 }
 
 type Dependencies struct {
 	conf       clientConfiguration.Configuration
-	conn       application.ConnectionFactory
-	worker     application.ClientWorkerFactory
-	tun        application.ClientTunManager
+	conn       connection.Factory
+	worker     connection.ClientWorkerFactory
+	tun        tun.ClientManager
 	cfgManager clientConfiguration.ClientConfigurationManager
 }
 
@@ -49,14 +50,14 @@ func (c *Dependencies) Configuration() clientConfiguration.Configuration {
 	return c.conf
 }
 
-func (c *Dependencies) ConnectionFactory() application.ConnectionFactory {
+func (c *Dependencies) ConnectionFactory() connection.Factory {
 	return c.conn
 }
 
-func (c *Dependencies) WorkerFactory() application.ClientWorkerFactory {
+func (c *Dependencies) WorkerFactory() connection.ClientWorkerFactory {
 	return c.worker
 }
 
-func (c *Dependencies) TunManager() application.ClientTunManager {
+func (c *Dependencies) TunManager() tun.ClientManager {
 	return c.tun
 }

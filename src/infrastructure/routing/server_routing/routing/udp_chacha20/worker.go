@@ -1,18 +1,20 @@
 package udp_chacha20
 
 import (
-	"tungo/application"
+	"tungo/application/network/routing"
+	"tungo/application/network/routing/transport"
+	"tungo/application/network/routing/tun"
 )
 
 type UdpTunWorker struct {
-	tunHandler       application.TunHandler
-	transportHandler application.TransportHandler
+	tunHandler       tun.Handler
+	transportHandler transport.Handler
 }
 
 func NewUdpTunWorker(
-	tunHandler application.TunHandler,
-	transportHandler application.TransportHandler,
-) application.TunWorker {
+	tunHandler tun.Handler,
+	transportHandler transport.Handler,
+) routing.Worker {
 	return &UdpTunWorker{
 		tunHandler:       tunHandler,
 		transportHandler: transportHandler,

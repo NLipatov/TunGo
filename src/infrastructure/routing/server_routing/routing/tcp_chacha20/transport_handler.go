@@ -7,8 +7,10 @@ import (
 	"io"
 	"net"
 	"net/netip"
-	"tungo/application"
 	"tungo/application/listeners"
+	"tungo/application/logging"
+	"tungo/application/network/connection"
+	"tungo/application/network/routing/transport"
 	"tungo/infrastructure/network/tcp/adapters"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
 	"tungo/infrastructure/settings"
@@ -21,10 +23,10 @@ type TransportHandler struct {
 	settings            settings.Settings
 	writer              io.ReadWriteCloser
 	listener            listeners.TcpListener
-	sessionManager      repository.SessionRepository[application.Session]
-	logger              application.Logger
-	handshakeFactory    application.HandshakeFactory
-	cryptographyFactory application.CryptographyServiceFactory
+	sessionManager      repository.SessionRepository[connection.Session]
+	logger              logging.Logger
+	handshakeFactory    connection.HandshakeFactory
+	cryptographyFactory connection.CryptoFactory
 }
 
 func NewTransportHandler(
@@ -32,11 +34,11 @@ func NewTransportHandler(
 	settings settings.Settings,
 	writer io.ReadWriteCloser,
 	listener listeners.TcpListener,
-	sessionManager repository.SessionRepository[application.Session],
-	logger application.Logger,
-	handshakeFactory application.HandshakeFactory,
-	cryptographyFactory application.CryptographyServiceFactory,
-) application.TransportHandler {
+	sessionManager repository.SessionRepository[connection.Session],
+	logger logging.Logger,
+	handshakeFactory connection.HandshakeFactory,
+	cryptographyFactory connection.CryptoFactory,
+) transport.Handler {
 	return &TransportHandler{
 		ctx:                 ctx,
 		settings:            settings,
@@ -145,10 +147,10 @@ func (t *TransportHandler) registerClient(conn net.Conn, tunFile io.ReadWriteClo
 	return nil
 }
 
-func (t *TransportHandler) handleClient(ctx context.Context, session application.Session, tunFile io.ReadWriteCloser) {
+func (t *TransportHandler) handleClient(ctx context.Context, session connection.Session, tunFile io.ReadWriteCloser) {
 	defer func() {
 		t.sessionManager.Delete(session)
-		_ = session.ConnectionAdapter().Close()
+		_ = session.Transport().Close()
 		t.logger.Printf("disconnected: %s", session.ExternalAddrPort())
 	}()
 
@@ -158,7 +160,7 @@ func (t *TransportHandler) handleClient(ctx context.Context, session application
 		case <-ctx.Done():
 			return
 		default:
-			n, err := session.ConnectionAdapter().Read(buffer)
+			n, err := session.Transport().Read(buffer)
 			if err != nil {
 				if err != io.EOF {
 					t.logger.Printf("failed to read from client: %v", err)
@@ -169,7 +171,7 @@ func (t *TransportHandler) handleClient(ctx context.Context, session application
 				t.logger.Printf("invalid ciphertext length: %d", n)
 				continue
 			}
-			pt, err := session.CryptographyService().Decrypt(buffer[:n])
+			pt, err := session.Crypto().Decrypt(buffer[:n])
 			if err != nil {
 				t.logger.Printf("failed to decrypt data: %s", err)
 				continue

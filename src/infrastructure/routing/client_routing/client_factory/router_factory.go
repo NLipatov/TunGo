@@ -3,38 +3,40 @@ package client_factory
 import (
 	"context"
 	"log"
-	"tungo/application"
-	"tungo/infrastructure/routing"
+	"tungo/application/network/connection"
+	application "tungo/application/network/routing"
+	"tungo/application/network/routing/tun"
+	implementation "tungo/infrastructure/routing"
 )
 
 type RouterFactory struct {
 }
 
-func NewRouterFactory() application.TrafficRouterFactory {
+func NewRouterFactory() connection.TrafficRouterFactory {
 	return &RouterFactory{}
 }
 
 func (u *RouterFactory) CreateRouter(
 	ctx context.Context,
-	connectionFactory application.ConnectionFactory,
-	tunFactory application.ClientTunManager,
-	workerFactory application.ClientWorkerFactory,
-) (application.TrafficRouter, application.ConnectionAdapter, application.TunDevice, error) {
+	connectionFactory connection.Factory,
+	tunManager tun.ClientManager,
+	workerFactory connection.ClientWorkerFactory,
+) (application.Router, connection.Transport, tun.Device, error) {
 	conn, cryptographyService, connErr := connectionFactory.EstablishConnection(ctx)
 	if connErr != nil {
 		return nil, nil, nil, connErr
 	}
 
-	tun, tunErr := tunFactory.CreateTunDevice()
-	if tunErr != nil {
-		log.Printf("failed to create tun: %s", tunErr)
-		return nil, nil, nil, tunErr
+	device, deviceErr := tunManager.CreateDevice()
+	if deviceErr != nil {
+		log.Printf("failed to create TUN device: %s", deviceErr)
+		return nil, nil, nil, deviceErr
 	}
 
-	worker, workerErr := workerFactory.CreateWorker(ctx, conn, tun, cryptographyService)
+	worker, workerErr := workerFactory.CreateWorker(ctx, conn, device, cryptographyService)
 	if workerErr != nil {
 		return nil, nil, nil, workerErr
 	}
 
-	return routing.NewRouter(worker), conn, tun, nil
+	return implementation.NewRouter(worker), conn, device, nil
 }

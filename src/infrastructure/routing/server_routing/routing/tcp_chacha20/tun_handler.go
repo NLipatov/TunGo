@@ -5,8 +5,9 @@ import (
 	"io"
 	"log"
 	"os"
-	"tungo/application"
+	"tungo/application/network/connection"
 	appip "tungo/application/network/ip"
+	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
 	"tungo/infrastructure/settings"
 )
@@ -15,15 +16,15 @@ type TunHandler struct {
 	ctx            context.Context
 	reader         io.Reader
 	ipHeaderParser appip.HeaderParser
-	sessionManager repository.SessionRepository[application.Session]
+	sessionManager repository.SessionRepository[connection.Session]
 }
 
 func NewTunHandler(
 	ctx context.Context,
 	reader io.Reader,
 	ipParser appip.HeaderParser,
-	sessionManager repository.SessionRepository[application.Session],
-) application.TunHandler {
+	sessionManager repository.SessionRepository[connection.Session],
+) tun.Handler {
 	return &TunHandler{
 		ctx:            ctx,
 		reader:         reader,
@@ -73,13 +74,13 @@ func (t *TunHandler) HandleTun() error {
 				continue
 			}
 
-			ct, encryptErr := clientSession.CryptographyService().Encrypt(pt[:n])
+			ct, encryptErr := clientSession.Crypto().Encrypt(pt[:n])
 			if encryptErr != nil {
 				log.Printf("failed to encrypt packet: %s", encryptErr)
 				continue
 			}
 
-			_, connWriteErr := clientSession.ConnectionAdapter().Write(ct)
+			_, connWriteErr := clientSession.Transport().Write(ct)
 			if connWriteErr != nil {
 				log.Printf("failed to write to TCP: %v", connWriteErr)
 				t.sessionManager.Delete(clientSession)

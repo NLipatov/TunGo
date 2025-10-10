@@ -3,14 +3,15 @@ package tun_adapters
 import (
 	"errors"
 	"fmt"
-	"golang.org/x/sys/windows"
 	"golang.zx2c4.com/wintun"
 	"log"
 	"sync"
 	"sync/atomic"
 	"syscall"
-	"tungo/application"
+	"tungo/application/network/routing/tun"
 	"unsafe"
+
+	"golang.org/x/sys/windows"
 )
 
 var (
@@ -42,7 +43,7 @@ type wintunTun struct {
 	closed      atomic.Bool
 }
 
-func NewWinTun(adapter *wintun.Adapter) (application.TunDevice, error) {
+func NewWinTun(adapter *wintun.Adapter) (tun.Device, error) {
 	ev, err := windows.CreateEvent(nil, 0, 0, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create event: %w", err)

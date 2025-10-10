@@ -8,7 +8,7 @@ import (
 	"net"
 	"strings"
 	"testing"
-	"tungo/application"
+	"tungo/application/network/connection"
 	"tungo/domain/network/ip/packet_validation"
 )
 
@@ -16,7 +16,7 @@ import (
  * Test Mocks  *
  ***************/
 
-// mockConn implements application.ConnectionAdapter.
+// mockConn implements application.Transport.
 // It simulates controllable short writes/reads and injected errors.
 type mockConn struct {
 	readBuf        *bytes.Buffer
@@ -29,7 +29,7 @@ type mockConn struct {
 	readCalls      int
 }
 
-var _ application.ConnectionAdapter = (*mockConn)(nil)
+var _ connection.Transport = (*mockConn)(nil)
 
 func newMockConn(readData []byte, writeChunk, readChunk int) *mockConn {
 	return &mockConn{

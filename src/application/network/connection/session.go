@@ -1,9 +1,10 @@
-package application
+package connection
 
 import (
 	"net/netip"
 )
 
+// Session is abstraction over established secure session of data-transfer between 2 hosts.
 type Session interface {
 	// ExternalAddrPort returns the external (outside VPN) address of the client.
 	// Multiple clients may share the same external IP address (e.g., behind NAT).
@@ -13,9 +14,9 @@ type Session interface {
 	// Each client has a unique internal address in the virtual private network.
 	InternalAddr() netip.Addr
 
-	// ConnectionAdapter return ConnectionAdapter used to IO operations between client and server.
-	ConnectionAdapter() ConnectionAdapter
+	// Transport is getter for Transport, which is used to IO operations between client and server.
+	Transport() Transport
 
-	// CryptographyService returns CryptographyService used to crypto operations between client and server.
-	CryptographyService() CryptographyService
+	// Crypto is a getter for Crypto, which used for encryption/decryption operations.
+	Crypto() Crypto
 }

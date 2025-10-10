@@ -5,25 +5,25 @@ import (
 	"errors"
 	"testing"
 	"time"
-	"tungo/application"
+	"tungo/application/network/connection"
 )
 
 // secretWithDeadlineTestMockSecret implements Secret for testing.
 // If block==true, Exchange will hang forever; otherwise returns svc, err.
 type secretWithDeadlineTestMockSecret struct {
-	svc   application.CryptographyService
+	svc   connection.Crypto
 	err   error
 	block bool
 }
 
-func (m *secretWithDeadlineTestMockSecret) Exchange(_ application.ConnectionAdapter) (application.CryptographyService, error) {
+func (m *secretWithDeadlineTestMockSecret) Exchange(_ connection.Transport) (connection.Crypto, error) {
 	if m.block {
 		select {} // hang
 	}
 	return m.svc, m.err
 }
 
-// secretWithDeadlineTestMockConn is a no-op ConnectionAdapter.
+// secretWithDeadlineTestMockConn is a no-op Transport.
 type secretWithDeadlineTestMockConn struct{}
 
 func (m *secretWithDeadlineTestMockConn) Write([]byte) (int, error) { return 0, nil }
@@ -76,7 +76,7 @@ func TestSecretWithDeadline_Cancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	wrapper := NewSecretWithDeadline(ctx, underlying)
 
-	var svcRes application.CryptographyService
+	var svcRes connection.Crypto
 	var errRes error
 	done := make(chan struct{})
 

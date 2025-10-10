@@ -2,13 +2,13 @@ package tcp_chacha20
 
 import (
 	"net/netip"
-	"tungo/application"
+	"tungo/application/network/connection"
 )
 
 type Session struct {
-	connectionAdapter application.ConnectionAdapter
+	connectionAdapter connection.Transport
 	// cryptographyService handles packet encryption and decryption.
-	cryptographyService application.CryptographyService
+	cryptographyService connection.Crypto
 	// internalIP is the client's VPN-assigned IPv4 address (e.g. 10.0.1.3).
 	internalIP netip.Addr
 	// externalIP is the client's real-world IPv4 address (e.g. 51.195.101.45) and port (e.g. 1754).
@@ -16,11 +16,11 @@ type Session struct {
 }
 
 func NewSession(
-	connectionAdapter application.ConnectionAdapter,
-	cryptographyService application.CryptographyService,
+	connectionAdapter connection.Transport,
+	cryptographyService connection.Crypto,
 	internalIP netip.Addr,
 	externalIP netip.AddrPort,
-) application.Session {
+) connection.Session {
 	return &Session{
 		connectionAdapter:   connectionAdapter,
 		cryptographyService: cryptographyService,
@@ -37,10 +37,10 @@ func (s Session) ExternalAddrPort() netip.AddrPort {
 	return s.externalIP
 }
 
-func (s Session) CryptographyService() application.CryptographyService {
+func (s Session) Crypto() connection.Crypto {
 	return s.cryptographyService
 }
 
-func (s Session) ConnectionAdapter() application.ConnectionAdapter {
+func (s Session) Transport() connection.Transport {
 	return s.connectionAdapter
 }

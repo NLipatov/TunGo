@@ -1,26 +1,26 @@
 package server
 
 import (
-	"tungo/application"
+	"tungo/application/network/routing/tun"
 	serverConfiguration "tungo/infrastructure/PAL/configuration/server"
 )
 
 type AppDependencies interface {
 	Configuration() serverConfiguration.Configuration
-	TunManager() application.ServerTunManager
+	TunManager() tun.ServerManager
 	KeyManager() serverConfiguration.KeyManager
 	ConfigurationManager() serverConfiguration.ServerConfigurationManager
 }
 
 type Dependencies struct {
 	configuration        serverConfiguration.Configuration
-	tunManager           application.ServerTunManager
+	tunManager           tun.ServerManager
 	keyManager           serverConfiguration.KeyManager
 	configurationManager serverConfiguration.ServerConfigurationManager
 }
 
 func NewDependencies(
-	tunManager application.ServerTunManager,
+	tunManager tun.ServerManager,
 	configuration serverConfiguration.Configuration,
 	keyManager serverConfiguration.KeyManager,
 	configurationManager serverConfiguration.ServerConfigurationManager,
@@ -37,7 +37,7 @@ func (s Dependencies) Configuration() serverConfiguration.Configuration {
 	return s.configuration
 }
 
-func (s Dependencies) TunManager() application.ServerTunManager {
+func (s Dependencies) TunManager() tun.ServerManager {
 	return s.tunManager
 }
 

@@ -1,7 +1,7 @@
 package tun_server
 
 import (
-	"tungo/application"
+	application "tungo/application/logging"
 	"tungo/infrastructure/logging"
 )
 

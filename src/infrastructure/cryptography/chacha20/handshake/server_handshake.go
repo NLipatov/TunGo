@@ -4,23 +4,23 @@ import (
 	"crypto/ed25519"
 	"fmt"
 	"io"
-	"tungo/application"
+	"tungo/application/network/connection"
 )
 
 type ServerHandshake struct {
-	adapter application.ConnectionAdapter
+	transport connection.Transport
 }
 
-func NewServerHandshake(adapter application.ConnectionAdapter) ServerHandshake {
+func NewServerHandshake(transport connection.Transport) ServerHandshake {
 	return ServerHandshake{
-		adapter: adapter,
+		transport: transport,
 	}
 }
 
 func (h *ServerHandshake) ReceiveClientHello() (ClientHello, error) {
 	// read client hello to buf
 	buf := make([]byte, MaxClientHelloSizeBytes)
-	n, rErr := h.adapter.Read(buf)
+	n, rErr := h.transport.Read(buf)
 	if rErr != nil {
 		return ClientHello{}, rErr
 	}
@@ -49,13 +49,13 @@ func (h *ServerHandshake) SendServerHello(
 		return marshalErr
 	}
 
-	_, writeErr := h.adapter.Write(marshalledServerHello)
+	_, writeErr := h.transport.Write(marshalledServerHello)
 	return writeErr
 }
 
 func (h *ServerHandshake) VerifyClientSignature(c Crypto, hello ClientHello, serverNonce []byte) error {
 	clientSignatureBuf := make([]byte, 64)
-	if _, err := io.ReadFull(h.adapter, clientSignatureBuf); err != nil {
+	if _, err := io.ReadFull(h.transport, clientSignatureBuf); err != nil {
 		return err
 	}
 
