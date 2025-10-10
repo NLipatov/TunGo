@@ -2,7 +2,7 @@ package network
 
 import (
 	"context"
-	"tungo/application"
+	"tungo/application/network/connection"
 )
 
 // SecretWithDeadline is a decorator for Secret which allows cancellation via ctx
@@ -18,17 +18,17 @@ func NewSecretWithDeadline(ctx context.Context, secret Secret) SecretWithDeadlin
 	}
 }
 
-func (s SecretWithDeadline) Exchange(conn application.ConnectionAdapter) (application.CryptographyService, error) {
+func (s SecretWithDeadline) Exchange(transport connection.Transport) (connection.Crypto, error) {
 	type result struct {
-		cryptographyService application.CryptographyService
+		cryptographyService connection.Crypto
 		err                 error
 	}
 
 	resultChan := make(chan result, 1)
 
 	go func() {
-		cryptographyService, err := s.secret.Exchange(conn)
-		resultChan <- result{cryptographyService, err}
+		crypto, cryptoErr := s.secret.Exchange(transport)
+		resultChan <- result{crypto, cryptoErr}
 	}()
 
 	select {

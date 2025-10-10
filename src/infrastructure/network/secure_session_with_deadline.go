@@ -2,7 +2,7 @@ package network
 
 import (
 	"context"
-	"tungo/application"
+	"tungo/application/network/connection"
 )
 
 // SecureSessionWithDeadline is a decorator for SecureSession which allows cancellation via ctx
@@ -18,24 +18,24 @@ func NewSecureSessionWithDeadline(ctx context.Context, secureConnection SecureSe
 	}
 }
 
-func (c *SecureSessionWithDeadline) Establish() (application.ConnectionAdapter, application.CryptographyService, error) {
+func (c *SecureSessionWithDeadline) Establish() (connection.Transport, connection.Crypto, error) {
 	type result struct {
-		conn application.ConnectionAdapter
-		sess application.CryptographyService
-		err  error
+		transport connection.Transport
+		crypto    connection.Crypto
+		err       error
 	}
 
 	resultChan := make(chan result, 1)
 
 	go func() {
-		conn, cryptographyService, err := c.secureConnection.Establish()
-		resultChan <- result{conn: conn, sess: cryptographyService, err: err}
+		transport, crypto, err := c.secureConnection.Establish()
+		resultChan <- result{transport: transport, crypto: crypto, err: err}
 	}()
 
 	select {
 	case <-c.ctx.Done():
 		return nil, nil, c.ctx.Err()
 	case res := <-resultChan:
-		return res.conn, res.sess, res.err
+		return res.transport, res.crypto, res.err
 	}
 }

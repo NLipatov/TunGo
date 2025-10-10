@@ -13,7 +13,7 @@ import (
 
 // --- Test helpers / mock ---
 
-// LengthPrefixFramingAdapterMockConn is a controllable mock for application.ConnectionAdapter.
+// LengthPrefixFramingAdapterMockConn is a controllable mock for application.Transport.
 // It supports partial reads/writes, injected errors, and captures written bytes.
 type LengthPrefixFramingAdapterMockConn struct {
 	// Read side

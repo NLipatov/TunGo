@@ -6,7 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"syscall"
-	"tungo/application/network/tun"
+	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/settings"
 )
 

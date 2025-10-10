@@ -4,7 +4,7 @@ import (
 	"errors"
 	"net/netip"
 	"testing"
-	"tungo/application"
+	"tungo/application/network/connection"
 )
 
 type fakeSession struct {
@@ -14,10 +14,10 @@ type fakeSession struct {
 
 func (f *fakeSession) InternalAddr() netip.Addr         { return f.internal }
 func (f *fakeSession) ExternalAddrPort() netip.AddrPort { return f.external }
-func (f *fakeSession) ConnectionAdapter() application.ConnectionAdapter {
+func (f *fakeSession) Transport() connection.Transport {
 	return nil
 }
-func (f *fakeSession) CryptographyService() application.CryptographyService {
+func (f *fakeSession) Crypto() connection.Crypto {
 	return nil
 }
 

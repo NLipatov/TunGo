@@ -1,30 +1,30 @@
 package network
 
 import (
-	"tungo/application"
+	"tungo/application/network/connection"
 )
 
 type SecureSession interface {
-	Establish() (application.ConnectionAdapter, application.CryptographyService, error)
+	Establish() (connection.Transport, connection.Crypto, error)
 }
 
 type DefaultSecureSession struct {
-	adapter application.ConnectionAdapter
-	secret  Secret
+	transport connection.Transport
+	secret    Secret
 }
 
-func NewDefaultSecureSession(adapter application.ConnectionAdapter, secret Secret) *DefaultSecureSession {
+func NewDefaultSecureSession(transport connection.Transport, secret Secret) *DefaultSecureSession {
 	return &DefaultSecureSession{
-		adapter: adapter,
-		secret:  secret,
+		transport: transport,
+		secret:    secret,
 	}
 }
 
-func (c *DefaultSecureSession) Establish() (application.ConnectionAdapter, application.CryptographyService, error) {
-	cryptographyService, cryptographyServiceErr := c.secret.Exchange(c.adapter)
-	if cryptographyServiceErr != nil {
-		return nil, nil, cryptographyServiceErr
+func (c *DefaultSecureSession) Establish() (connection.Transport, connection.Crypto, error) {
+	crypto, err := c.secret.Exchange(c.transport)
+	if err != nil {
+		return nil, nil, err
 	}
 
-	return c.adapter, cryptographyService, nil
+	return c.transport, crypto, nil
 }

@@ -6,16 +6,16 @@ import (
 	"fmt"
 	"net"
 	"testing"
+	"tungo/application/network/connection"
 	"tungo/infrastructure/settings"
 
 	"golang.org/x/crypto/chacha20poly1305"
-	"tungo/application"
 )
 
 // mock aead builder
 type fakeAEADBuilder struct{}
 
-func (fakeAEADBuilder) FromHandshake(h application.Handshake, isServer bool) (cipher.AEAD, cipher.AEAD, error) {
+func (fakeAEADBuilder) FromHandshake(h connection.Handshake, isServer bool) (cipher.AEAD, cipher.AEAD, error) {
 	// Choose correct key directions based on isServer flag
 	var sendKey, recvKey []byte
 	if isServer {
@@ -37,7 +37,7 @@ func (fakeAEADBuilder) FromHandshake(h application.Handshake, isServer bool) (ci
 
 type fakeAEAD struct{}
 
-func (f fakeAEAD) FromHandshake(_ application.Handshake, _ bool) (send cipher.AEAD, recv cipher.AEAD, err error) {
+func (f fakeAEAD) FromHandshake(_ connection.Handshake, _ bool) (send cipher.AEAD, recv cipher.AEAD, err error) {
 	return fakeAEAD{}, fakeAEAD{}, nil
 }
 
@@ -70,10 +70,10 @@ type mockHandshake struct {
 func (m *mockHandshake) Id() [32]byte              { return m.id }
 func (m *mockHandshake) KeyServerToClient() []byte { return m.server }
 func (m *mockHandshake) KeyClientToServer() []byte { return m.client }
-func (m *mockHandshake) ServerSideHandshake(_ application.ConnectionAdapter) (net.IP, error) {
+func (m *mockHandshake) ServerSideHandshake(_ connection.Transport) (net.IP, error) {
 	return m.server, nil
 }
-func (m *mockHandshake) ClientSideHandshake(_ application.ConnectionAdapter, _ settings.Settings) error {
+func (m *mockHandshake) ClientSideHandshake(_ connection.Transport, _ settings.Settings) error {
 	return nil
 }
 

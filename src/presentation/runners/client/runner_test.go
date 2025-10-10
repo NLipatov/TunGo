@@ -8,12 +8,12 @@ import (
 	"sync"
 	"testing"
 	"time"
-	"tungo/application/network/tun"
+	"tungo/application/network/connection"
+	"tungo/application/network/routing"
+	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/configuration/client"
 	clientRunners "tungo/presentation/runners/client"
 	"unsafe"
-
-	"tungo/application"
 )
 
 type dummyConnectionAdapter struct{}
@@ -63,7 +63,7 @@ func (d *mockTunManager) DisposeDevices() error {
 type mockConnectionFactory struct{}
 
 func (d *mockConnectionFactory) EstablishConnection(_ context.Context,
-) (application.ConnectionAdapter, application.CryptographyService, error) {
+) (connection.Transport, connection.Crypto, error) {
 	return nil, nil, nil
 }
 
@@ -71,12 +71,12 @@ func (d *mockConnectionFactory) EstablishConnection(_ context.Context,
 type mockWorkerFactory struct{}
 
 func (d *mockWorkerFactory) CreateWorker(
-	_ context.Context, _ application.ConnectionAdapter, _ io.ReadWriteCloser, _ application.CryptographyService,
-) (tun.Worker, error) {
+	_ context.Context, _ connection.Transport, _ io.ReadWriteCloser, _ connection.Crypto,
+) (routing.Worker, error) {
 	return nil, nil
 }
 
-// mockRouter implements application.TrafficRouter.
+// mockRouter implements application.Router.
 type mockRouter struct {
 	routeCalled bool
 	routeErr    error
@@ -94,23 +94,23 @@ func (d *mockRouter) RouteTraffic(ctx context.Context) error {
 
 // mockRouterFactory implements application.TrafficRouterFactory.
 type mockRouterFactory struct {
-	router application.TrafficRouter
+	router routing.Router
 	err    error
 }
 
 func (d *mockRouterFactory) CreateRouter(
 	_ context.Context,
-	_ application.ConnectionFactory,
+	_ connection.Factory,
 	_ tun.ClientManager,
-	_ application.ClientWorkerFactory,
-) (application.TrafficRouter, application.ConnectionAdapter, tun.Device, error) {
+	_ connection.ClientWorkerFactory,
+) (routing.Router, connection.Transport, tun.Device, error) {
 	return d.router, &dummyConnectionAdapter{}, &dummyTun{}, d.err
 }
 
 // mockDeps implements presentation.ClientAppDependencies.
 type mockDeps struct {
-	conn   application.ConnectionFactory
-	worker application.ClientWorkerFactory
+	conn   connection.Factory
+	worker connection.ClientWorkerFactory
 	tun    *mockTunManager
 }
 
@@ -119,12 +119,12 @@ func (d *mockDeps) Configuration() client.Configuration {
 	// Not used in ClientRunner.
 	return client.Configuration{}
 }
-func (d *mockDeps) ConnectionFactory() application.ConnectionFactory { return d.conn }
-func (d *mockDeps) WorkerFactory() application.ClientWorkerFactory   { return d.worker }
-func (d *mockDeps) TunManager() tun.ClientManager                    { return d.tun }
+func (d *mockDeps) ConnectionFactory() connection.Factory         { return d.conn }
+func (d *mockDeps) WorkerFactory() connection.ClientWorkerFactory { return d.worker }
+func (d *mockDeps) TunManager() tun.ClientManager                 { return d.tun }
 
 // setRouterBuilder sets the unexported routerBuilder field using unsafe.
-func setRouterBuilder(runner *clientRunners.Runner, factory application.TrafficRouterFactory) {
+func setRouterBuilder(runner *clientRunners.Runner, factory connection.TrafficRouterFactory) {
 	v := reflect.ValueOf(runner).Elem().FieldByName("routerFactory")
 	if !v.IsValid() {
 		panic("routerFactory field not found")

@@ -3,24 +3,25 @@ package client_factory
 import (
 	"context"
 	"log"
-	"tungo/application"
-	"tungo/application/network/tun"
-	"tungo/infrastructure/routing"
+	"tungo/application/network/connection"
+	application "tungo/application/network/routing"
+	"tungo/application/network/routing/tun"
+	implementation "tungo/infrastructure/routing"
 )
 
 type RouterFactory struct {
 }
 
-func NewRouterFactory() application.TrafficRouterFactory {
+func NewRouterFactory() connection.TrafficRouterFactory {
 	return &RouterFactory{}
 }
 
 func (u *RouterFactory) CreateRouter(
 	ctx context.Context,
-	connectionFactory application.ConnectionFactory,
+	connectionFactory connection.Factory,
 	tunManager tun.ClientManager,
-	workerFactory application.ClientWorkerFactory,
-) (application.TrafficRouter, application.ConnectionAdapter, tun.Device, error) {
+	workerFactory connection.ClientWorkerFactory,
+) (application.Router, connection.Transport, tun.Device, error) {
 	conn, cryptographyService, connErr := connectionFactory.EstablishConnection(ctx)
 	if connErr != nil {
 		return nil, nil, nil, connErr
@@ -37,5 +38,5 @@ func (u *RouterFactory) CreateRouter(
 		return nil, nil, nil, workerErr
 	}
 
-	return routing.NewRouter(worker), conn, device, nil
+	return implementation.NewRouter(worker), conn, device, nil
 }

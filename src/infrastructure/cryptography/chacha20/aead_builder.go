@@ -3,8 +3,7 @@ package chacha20
 import (
 	"crypto/cipher"
 	"fmt"
-
-	"tungo/application"
+	"tungo/application/network/connection"
 
 	"golang.org/x/crypto/chacha20poly1305"
 )
@@ -19,12 +18,12 @@ import (
 //   - isServer == false → send=C→S, recv=S→C
 type DefaultAEADBuilder struct{}
 
-func NewDefaultAEADBuilder() application.AEADBuilder {
+func NewDefaultAEADBuilder() connection.AEADBuilder {
 	return &DefaultAEADBuilder{}
 }
 
 func (a *DefaultAEADBuilder) FromHandshake(
-	h application.Handshake,
+	h connection.Handshake,
 	isServer bool,
 ) (send cipher.AEAD, recv cipher.AEAD, err error) {
 	kS2C := h.KeyServerToClient()

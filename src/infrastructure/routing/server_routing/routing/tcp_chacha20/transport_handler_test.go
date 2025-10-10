@@ -12,7 +12,7 @@ import (
 	"sync"
 	"testing"
 	"time"
-	"tungo/application"
+	"tungo/application/network/connection"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
 	"tungo/infrastructure/settings"
 )
@@ -123,16 +123,16 @@ type fakeHandshake struct {
 func (f *fakeHandshake) Id() [32]byte              { return f.id }
 func (f *fakeHandshake) KeyClientToServer() []byte { return f.client[:] }
 func (f *fakeHandshake) KeyServerToClient() []byte { return f.server[:] }
-func (f *fakeHandshake) ServerSideHandshake(_ application.ConnectionAdapter) (net.IP, error) {
+func (f *fakeHandshake) ServerSideHandshake(_ connection.Transport) (net.IP, error) {
 	return f.ip, f.err
 }
-func (f *fakeHandshake) ClientSideHandshake(_ application.ConnectionAdapter, _ settings.Settings) error {
+func (f *fakeHandshake) ClientSideHandshake(_ connection.Transport, _ settings.Settings) error {
 	return nil
 }
 
-type fakeHandshakeFactory struct{ hs application.Handshake }
+type fakeHandshakeFactory struct{ hs connection.Handshake }
 
-func (f *fakeHandshakeFactory) NewHandshake() application.Handshake { return f.hs }
+func (f *fakeHandshakeFactory) NewHandshake() connection.Handshake { return f.hs }
 
 type fakeCrypto struct {
 	decErr error
@@ -148,7 +148,7 @@ func (f *fakeCrypto) Decrypt(in []byte) ([]byte, error) {
 
 type fakeCryptoFactory struct{ err error }
 
-func (f *fakeCryptoFactory) FromHandshake(_ application.Handshake, _ bool) (application.CryptographyService, error) {
+func (f *fakeCryptoFactory) FromHandshake(_ connection.Handshake, _ bool) (connection.Crypto, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -156,27 +156,27 @@ func (f *fakeCryptoFactory) FromHandshake(_ application.Handshake, _ bool) (appl
 }
 
 type fakeSessionRepo struct {
-	sessions       map[netip.AddrPort]application.Session
-	added, deleted []application.Session
+	sessions       map[netip.AddrPort]connection.Session
+	added, deleted []connection.Session
 	getErr         error
-	returnSession  application.Session
+	returnSession  connection.Session
 }
 
-func (r *fakeSessionRepo) Add(s application.Session) {
+func (r *fakeSessionRepo) Add(s connection.Session) {
 	if r.sessions == nil {
-		r.sessions = make(map[netip.AddrPort]application.Session)
+		r.sessions = make(map[netip.AddrPort]connection.Session)
 	}
 	r.sessions[s.ExternalAddrPort()] = s
 	r.added = append(r.added, s)
 }
-func (r *fakeSessionRepo) Delete(s application.Session) { r.deleted = append(r.deleted, s) }
-func (r *fakeSessionRepo) GetByInternalAddrPort(_ netip.Addr) (application.Session, error) {
+func (r *fakeSessionRepo) Delete(s connection.Session) { r.deleted = append(r.deleted, s) }
+func (r *fakeSessionRepo) GetByInternalAddrPort(_ netip.Addr) (connection.Session, error) {
 	if r.getErr != nil {
 		return nil, r.getErr
 	}
 	return r.returnSession, nil
 }
-func (r *fakeSessionRepo) GetByExternalAddrPort(addr netip.AddrPort) (application.Session, error) {
+func (r *fakeSessionRepo) GetByExternalAddrPort(addr netip.AddrPort) (connection.Session, error) {
 	s, ok := r.sessions[addr]
 	if !ok {
 		return Session{}, errors.New("no session")

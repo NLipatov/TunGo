@@ -6,7 +6,8 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"tungo/application"
+	"tungo/application/network/connection"
+	"tungo/application/network/routing/transport"
 	"tungo/domain/network/service"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/settings"
@@ -16,7 +17,7 @@ type TransportHandler struct {
 	ctx                 context.Context
 	reader              io.Reader
 	writer              io.Writer
-	cryptographyService application.CryptographyService
+	cryptographyService connection.Crypto
 	servicePacket       service.PacketHandler
 }
 
@@ -24,9 +25,9 @@ func NewTransportHandler(
 	ctx context.Context,
 	reader io.Reader,
 	writer io.Writer,
-	cryptographyService application.CryptographyService,
+	cryptographyService connection.Crypto,
 	servicePacket service.PacketHandler,
-) application.TransportHandler {
+) transport.Handler {
 	return &TransportHandler{
 		ctx:                 ctx,
 		reader:              reader,

@@ -6,15 +6,15 @@ import (
 	"fmt"
 	"log"
 	"time"
-	"tungo/application"
+	"tungo/application/network/connection"
 )
 
 type Runner struct {
 	deps          AppDependencies
-	routerFactory application.TrafficRouterFactory
+	routerFactory connection.TrafficRouterFactory
 }
 
-func NewRunner(deps AppDependencies, routerFactory application.TrafficRouterFactory) *Runner {
+func NewRunner(deps AppDependencies, routerFactory connection.TrafficRouterFactory) *Runner {
 	return &Runner{
 		deps:          deps,
 		routerFactory: routerFactory,

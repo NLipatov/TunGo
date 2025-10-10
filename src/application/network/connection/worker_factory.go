@@ -1,19 +1,19 @@
-package application
+package connection
 
 import (
 	"context"
 	"io"
-	"tungo/application/network/tun"
+	"tungo/application/network/routing"
 	"tungo/infrastructure/settings"
 )
 
 type ClientWorkerFactory interface {
 	CreateWorker(
 		ctx context.Context,
-		conn ConnectionAdapter,
+		conn Transport,
 		tun io.ReadWriteCloser,
-		cryptographyService CryptographyService,
-	) (tun.Worker, error)
+		cryptographyService Crypto,
+	) (routing.Worker, error)
 }
 
 type ServerWorkerFactory interface {
@@ -21,5 +21,5 @@ type ServerWorkerFactory interface {
 		ctx context.Context,
 		tun io.ReadWriteCloser,
 		workerSettings settings.Settings,
-	) (tun.Worker, error)
+	) (routing.Worker, error)
 }

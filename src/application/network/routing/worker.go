@@ -1,4 +1,4 @@
-package tun
+package routing
 
 // Worker does the TUN->CONN and CONN->TUN operations
 type Worker interface {

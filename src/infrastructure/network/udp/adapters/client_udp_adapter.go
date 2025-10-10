@@ -3,7 +3,7 @@ package adapters
 import (
 	"io"
 	"net"
-	"tungo/application"
+	"tungo/application/network/connection"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/settings"
 )
@@ -17,7 +17,7 @@ type ClientUDPAdapter struct {
 
 func NewClientUDPAdapter(
 	conn *net.UDPConn,
-	readDeadline, writeDeadline network.Timeout) application.ConnectionAdapter {
+	readDeadline, writeDeadline network.Timeout) connection.Transport {
 	return &ClientUDPAdapter{
 		conn:          conn,
 		writeDeadline: writeDeadline,

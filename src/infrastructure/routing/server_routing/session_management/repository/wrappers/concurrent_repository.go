@@ -3,16 +3,16 @@ package wrappers
 import (
 	"net/netip"
 	"sync"
-	"tungo/application"
+	"tungo/application/network/connection"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
 )
 
-type ConcurrentManager[cs application.Session] struct {
+type ConcurrentManager[cs connection.Session] struct {
 	mu      sync.RWMutex
 	manager repository.SessionRepository[cs]
 }
 
-func NewConcurrentManager[cs application.Session](manager repository.SessionRepository[cs]) repository.SessionRepository[cs] {
+func NewConcurrentManager[cs connection.Session](manager repository.SessionRepository[cs]) repository.SessionRepository[cs] {
 	return &ConcurrentManager[cs]{
 		manager: manager,
 	}

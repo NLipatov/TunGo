@@ -4,11 +4,10 @@ import (
 	"bytes"
 	"net"
 	"testing"
+	"tungo/application/network/connection"
 	"tungo/infrastructure/settings"
 
 	"golang.org/x/crypto/chacha20poly1305"
-
-	"tungo/application"
 )
 
 // --- mock handshake ---
@@ -21,10 +20,10 @@ type mockUdpHandshake struct {
 func (m *mockUdpHandshake) Id() [32]byte              { return m.id }
 func (m *mockUdpHandshake) KeyServerToClient() []byte { return m.server }
 func (m *mockUdpHandshake) KeyClientToServer() []byte { return m.client }
-func (m *mockUdpHandshake) ServerSideHandshake(_ application.ConnectionAdapter) (net.IP, error) {
+func (m *mockUdpHandshake) ServerSideHandshake(_ connection.Transport) (net.IP, error) {
 	return m.server, nil
 }
-func (m *mockUdpHandshake) ClientSideHandshake(_ application.ConnectionAdapter, _ settings.Settings) error {
+func (m *mockUdpHandshake) ClientSideHandshake(_ connection.Transport, _ settings.Settings) error {
 	return nil
 }
 

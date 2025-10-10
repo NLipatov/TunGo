@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
-	"tungo/application"
+	"tungo/application/network/connection"
 	"tungo/infrastructure/settings"
 
 	"golang.org/x/sync/errgroup"
@@ -14,14 +14,14 @@ import (
 
 type Runner struct {
 	deps          AppDependencies
-	workerFactory application.ServerWorkerFactory
-	routerFactory application.ServerTrafficRouterFactory
+	workerFactory connection.ServerWorkerFactory
+	routerFactory connection.ServerTrafficRouterFactory
 }
 
 func NewRunner(
 	deps AppDependencies,
-	workerFactory application.ServerWorkerFactory,
-	routerFactory application.ServerTrafficRouterFactory,
+	workerFactory connection.ServerWorkerFactory,
+	routerFactory connection.ServerTrafficRouterFactory,
 ) *Runner {
 	return &Runner{
 		deps:          deps,

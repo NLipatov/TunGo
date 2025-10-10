@@ -11,7 +11,7 @@ import (
 
 // --- fake connections ---
 
-// fakeAdapter implements application.ConnectionAdapter
+// fakeAdapter implements application.Transport
 type fakeAdapter struct {
 	in       *bytes.Buffer
 	out      bytes.Buffer

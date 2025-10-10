@@ -3,7 +3,7 @@ package tun_client
 import (
 	"fmt"
 	"strings"
-	"tungo/application/network/tun"
+	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL"
 	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/PAL/linux/network_tools/ioctl"

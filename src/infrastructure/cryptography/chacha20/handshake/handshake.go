@@ -3,7 +3,7 @@ package handshake
 import (
 	"fmt"
 	"net"
-	"tungo/application"
+	"tungo/application/network/connection"
 	"tungo/infrastructure/settings"
 )
 
@@ -55,7 +55,7 @@ func (h *DefaultHandshake) KeyServerToClient() []byte {
 }
 
 func (h *DefaultHandshake) ServerSideHandshake(
-	conn application.ConnectionAdapter,
+	transport connection.Transport,
 ) (net.IP, error) {
 	c := newDefaultCrypto()
 
@@ -68,7 +68,7 @@ func (h *DefaultHandshake) ServerSideHandshake(
 
 	//handshake process starts here
 	handshake := NewServerHandshake(
-		conn,
+		transport,
 	)
 	clientHello, clientHelloErr := handshake.ReceiveClientHello()
 	if clientHelloErr != nil {
@@ -100,7 +100,7 @@ func (h *DefaultHandshake) ServerSideHandshake(
 }
 
 func (h *DefaultHandshake) ClientSideHandshake(
-	conn application.ConnectionAdapter,
+	transport connection.Transport,
 	settings settings.Settings,
 ) error {
 	c := newDefaultCrypto()
@@ -119,9 +119,9 @@ func (h *DefaultHandshake) ClientSideHandshake(
 	clientNonce := c.GenerateRandomBytesArray(32)
 
 	clientIO := NewDefaultClientIO(
-		conn,
+		transport,
 	)
-	handshake := NewClientHandshake(conn, clientIO, c)
+	handshake := NewClientHandshake(transport, clientIO, c)
 	helloErr := handshake.SendClientHello(settings, edPublicKey, sessionPublicKey, clientNonce)
 	if helloErr != nil {
 		return helloErr

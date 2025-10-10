@@ -12,7 +12,7 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
-// fakeCrypto implements application.CryptographyService for testing
+// fakeCrypto implements application.Crypto for testing
 type tunhandlerTestRakeCrypto struct {
 	prefix []byte
 	err    error

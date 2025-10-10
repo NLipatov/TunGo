@@ -3,7 +3,7 @@ package server
 import (
 	"errors"
 	"testing"
-	"tungo/application/network/tun"
+	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/settings"
 )

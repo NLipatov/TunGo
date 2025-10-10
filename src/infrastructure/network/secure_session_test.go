@@ -3,7 +3,7 @@ package network
 import (
 	"errors"
 	"testing"
-	"tungo/application"
+	"tungo/application/network/connection"
 )
 
 type stubAdapter struct{}
@@ -19,15 +19,15 @@ func (s *stubCrypto) Decrypt(p []byte) ([]byte, error) { return p, nil }
 
 type secretErr struct{}
 
-func (s *secretErr) Exchange(_ application.ConnectionAdapter) (application.CryptographyService, error) {
+func (s *secretErr) Exchange(_ connection.Transport) (connection.Crypto, error) {
 	return nil, errors.New("exchange failed")
 }
 
 type secretOK struct {
-	svc application.CryptographyService
+	svc connection.Crypto
 }
 
-func (s *secretOK) Exchange(_ application.ConnectionAdapter) (application.CryptographyService, error) {
+func (s *secretOK) Exchange(_ connection.Transport) (connection.Crypto, error) {
 	return s.svc, nil
 }
 
@@ -40,7 +40,7 @@ func TestDefaultSecureSession_Establish_SecretError(t *testing.T) {
 		t.Fatalf("want error 'exchange failed', got %v", err)
 	}
 	if gotAdapter != nil {
-		t.Errorf("want adapter=nil on error, got %v", gotAdapter)
+		t.Errorf("want transport=nil on error, got %v", gotAdapter)
 	}
 	if gotSvc != nil {
 		t.Errorf("want service=nil on error, got %v", gotSvc)
@@ -57,7 +57,7 @@ func TestDefaultSecureSession_Establish_Success(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if gotAdapter != adapter {
-		t.Errorf("want adapter=%v, got %v", adapter, gotAdapter)
+		t.Errorf("want transport=%v, got %v", adapter, gotAdapter)
 	}
 	if gotSvc != svc {
 		t.Errorf("want service=%v, got %v", svc, gotSvc)

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"tungo/application/network/tun"
+	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL"
 	"tungo/infrastructure/PAL/linux/network_tools/ioctl"
 	"tungo/infrastructure/PAL/linux/network_tools/ip"

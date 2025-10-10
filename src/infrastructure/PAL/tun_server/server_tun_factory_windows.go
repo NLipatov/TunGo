@@ -1,7 +1,7 @@
 package tun_server
 
 import (
-	"tungo/application/network/tun"
+	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/settings"
 )
 

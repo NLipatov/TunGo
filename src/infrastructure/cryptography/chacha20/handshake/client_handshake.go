@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
-	"tungo/application"
+	"tungo/application/network/connection"
 	"tungo/domain/network/ip/packet_validation"
 	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/settings"
@@ -19,16 +19,16 @@ import (
 // 3. send signed Signature
 // It drives its I/O through a ClientIO and Crypto through the Crypto interface.
 type ClientHandshake struct {
-	adapter  application.ConnectionAdapter
-	crypto   Crypto
-	clientIO ClientIO
+	transport connection.Transport
+	crypto    Crypto
+	clientIO  ClientIO
 }
 
-func NewClientHandshake(adapter application.ConnectionAdapter, io ClientIO, crypto Crypto) ClientHandshake {
+func NewClientHandshake(transport connection.Transport, io ClientIO, crypto Crypto) ClientHandshake {
 	return ClientHandshake{
-		adapter:  adapter,
-		clientIO: io,
-		crypto:   crypto,
+		transport: transport,
+		clientIO:  io,
+		crypto:    crypto,
 	}
 }
 

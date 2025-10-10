@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
-	"tungo/application/network/tun"
+	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL"
 	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/PAL/windows/network_tools/netsh"

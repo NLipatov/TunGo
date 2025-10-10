@@ -5,12 +5,12 @@ import (
 	"io"
 	"log"
 	"os"
-	"tungo/application/network/tun"
+	"tungo/application/network/connection"
+	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/settings"
 
 	"golang.org/x/crypto/chacha20poly1305"
 
-	"tungo/application"
 	appip "tungo/application/network/ip"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
 )
@@ -19,14 +19,14 @@ type TunHandler struct {
 	ctx            context.Context
 	reader         io.Reader
 	ipHeaderParser appip.HeaderParser
-	sessionManager repository.SessionRepository[application.Session]
+	sessionManager repository.SessionRepository[connection.Session]
 }
 
 func NewTunHandler(
 	ctx context.Context,
 	reader io.Reader,
 	parser appip.HeaderParser,
-	sessionManager repository.SessionRepository[application.Session],
+	sessionManager repository.SessionRepository[connection.Session],
 ) tun.Handler {
 	return &TunHandler{
 		ctx:            ctx,
@@ -100,13 +100,13 @@ func (t *TunHandler) HandleTun() error {
 			}
 
 			// Encrypt "nonce || payload". The crypto service must treat the prefix as nonce.
-			ct, eErr := session.CryptographyService().Encrypt(buffer[:chacha20poly1305.NonceSize+n])
+			ct, eErr := session.Crypto().Encrypt(buffer[:chacha20poly1305.NonceSize+n])
 			if eErr != nil {
 				log.Printf("failed to encrypt packet: %s", eErr)
 				continue
 			}
 
-			if _, wErr := session.ConnectionAdapter().Write(ct); wErr != nil {
+			if _, wErr := session.Transport().Write(ct); wErr != nil {
 				log.Printf("failed to send packet to %v: %v", session.ExternalAddrPort(), wErr)
 				// Unlike TCP, we do not delete the session on a single UDP write error.
 			}

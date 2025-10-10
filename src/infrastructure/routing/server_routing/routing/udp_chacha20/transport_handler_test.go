@@ -12,9 +12,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"tungo/application/network/connection"
 	"tungo/domain/network/service"
 
-	"tungo/application"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/settings"
 )
@@ -79,7 +79,7 @@ func (f fakeAEAD) Open(dst, nonce, ciphertext, ad []byte) ([]byte, error) {
 
 type mockAEADBuilder struct{}
 
-func (mockAEADBuilder) FromHandshake(h application.Handshake, isServer bool) (cipher.AEAD, cipher.AEAD, error) {
+func (mockAEADBuilder) FromHandshake(h connection.Handshake, isServer bool) (cipher.AEAD, cipher.AEAD, error) {
 	_ = h
 	_ = isServer
 	return fakeAEAD{}, fakeAEAD{}, nil
@@ -175,26 +175,26 @@ type fakeHandshake struct {
 func (f *fakeHandshake) Id() [32]byte              { return f.id }
 func (f *fakeHandshake) KeyClientToServer() []byte { return f.client[:] }
 func (f *fakeHandshake) KeyServerToClient() []byte { return f.server[:] }
-func (f *fakeHandshake) ServerSideHandshake(_ application.ConnectionAdapter) (net.IP, error) {
+func (f *fakeHandshake) ServerSideHandshake(_ connection.Transport) (net.IP, error) {
 	return f.ip, f.err
 }
-func (f *fakeHandshake) ClientSideHandshake(_ application.ConnectionAdapter, _ settings.Settings) error {
+func (f *fakeHandshake) ClientSideHandshake(_ connection.Transport, _ settings.Settings) error {
 	return nil
 }
 
-type fakeHandshakeFactory struct{ hs application.Handshake }
+type fakeHandshakeFactory struct{ hs connection.Handshake }
 
-func (f *fakeHandshakeFactory) NewHandshake() application.Handshake { return f.hs }
+func (f *fakeHandshakeFactory) NewHandshake() connection.Handshake { return f.hs }
 
 type testSessionRepo struct {
-	sessions map[netip.AddrPort]application.Session
-	adds     []application.Session
+	sessions map[netip.AddrPort]connection.Session
+	adds     []connection.Session
 	afterAdd func()
 }
 
-func (r *testSessionRepo) Add(s application.Session) {
+func (r *testSessionRepo) Add(s connection.Session) {
 	if r.sessions == nil {
-		r.sessions = map[netip.AddrPort]application.Session{}
+		r.sessions = map[netip.AddrPort]connection.Session{}
 	}
 	r.sessions[s.ExternalAddrPort()] = s
 	r.adds = append(r.adds, s)
@@ -202,11 +202,11 @@ func (r *testSessionRepo) Add(s application.Session) {
 		r.afterAdd()
 	}
 }
-func (r *testSessionRepo) Delete(_ application.Session) {}
-func (r *testSessionRepo) GetByInternalAddrPort(_ netip.Addr) (application.Session, error) {
+func (r *testSessionRepo) Delete(_ connection.Session) {}
+func (r *testSessionRepo) GetByInternalAddrPort(_ netip.Addr) (connection.Session, error) {
 	return Session{}, errors.New("not implemented")
 }
-func (r *testSessionRepo) GetByExternalAddrPort(addr netip.AddrPort) (application.Session, error) {
+func (r *testSessionRepo) GetByExternalAddrPort(addr netip.AddrPort) (connection.Session, error) {
 	s, ok := r.sessions[addr]
 	if !ok {
 		return nil, errors.New("no session")
@@ -399,16 +399,16 @@ func TestTransportHandler_WriteError(t *testing.T) {
 	handshakeFactory := &fakeHandshakeFactory{hs: fakeHS}
 
 	sessionRepo := &testSessionRepo{
-		sessions: make(map[netip.AddrPort]application.Session),
+		sessions: make(map[netip.AddrPort]connection.Session),
 	}
 	sessionRegistered := make(chan struct{})
 
 	sessionRepo.afterAdd = func() {
 		s := sessionRepo.adds[0]
 		sessionRepo.sessions[clientAddr] = Session{
-			internalIP:          s.InternalAddr(),
-			externalIP:          s.ExternalAddrPort(),
-			cryptographyService: &alwaysWriteCrypto{},
+			internalIP: s.InternalAddr(),
+			externalIP: s.ExternalAddrPort(),
+			crypto:     &alwaysWriteCrypto{},
 		}
 		close(sessionRegistered)
 	}
@@ -471,13 +471,13 @@ func TestTransportHandler_HappyPath(t *testing.T) {
 	clientAddr := netip.MustParseAddrPort("192.168.1.50:5050")
 	internalIP := netip.MustParseAddr("10.0.0.50")
 	sessionRepo := &testSessionRepo{
-		sessions: map[netip.AddrPort]application.Session{},
+		sessions: map[netip.AddrPort]connection.Session{},
 	}
 	fakeCrypto := &alwaysWriteCrypto{}
 	sessionRepo.sessions[clientAddr] = Session{
-		cryptographyService: fakeCrypto,
-		internalIP:          internalIP,
-		externalIP:          clientAddr,
+		crypto:     fakeCrypto,
+		internalIP: internalIP,
+		externalIP: clientAddr,
 	}
 
 	fakeHS := &fakeHandshake{ip: internalIP.AsSlice()}
@@ -520,12 +520,12 @@ func TestTransportHandler_NATRebinding(t *testing.T) {
 	newAddr := netip.MustParseAddrPort("192.168.1.51:6060")
 	internalIP := netip.MustParseAddr("10.0.0.51")
 
-	sessionRepo := &testSessionRepo{sessions: map[netip.AddrPort]application.Session{}}
+	sessionRepo := &testSessionRepo{sessions: map[netip.AddrPort]connection.Session{}}
 	fakeCrypto := &alwaysWriteCrypto{}
 	sessionRepo.sessions[oldAddr] = Session{
-		cryptographyService: fakeCrypto,
-		internalIP:          internalIP,
-		externalIP:          oldAddr,
+		crypto:     fakeCrypto,
+		internalIP: internalIP,
+		externalIP: oldAddr,
 	}
 
 	sessionRegistered := make(chan struct{})

@@ -7,7 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
-	"tungo/application/network/tun"
+	"tungo/application/network/routing/tun"
 	"unsafe"
 
 	"golang.org/x/sys/windows"

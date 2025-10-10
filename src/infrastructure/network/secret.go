@@ -2,23 +2,23 @@ package network
 
 import (
 	"fmt"
-	"tungo/application"
+	"tungo/application/network/connection"
 	"tungo/infrastructure/settings"
 )
 
 type Secret interface {
-	Exchange(conn application.ConnectionAdapter) (application.CryptographyService, error)
+	Exchange(transport connection.Transport) (connection.Crypto, error)
 }
 
 type DefaultSecret struct {
 	settings                   settings.Settings
-	handshake                  application.Handshake
-	cryptographyServiceFactory application.CryptographyServiceFactory
+	handshake                  connection.Handshake
+	cryptographyServiceFactory connection.CryptoFactory
 }
 
 func NewDefaultSecret(settings settings.Settings,
-	handshake application.Handshake,
-	cryptographyServiceFactory application.CryptographyServiceFactory,
+	handshake connection.Handshake,
+	cryptographyServiceFactory connection.CryptoFactory,
 ) Secret {
 	return &DefaultSecret{
 		settings:                   settings,
@@ -28,22 +28,22 @@ func NewDefaultSecret(settings settings.Settings,
 }
 
 func (s *DefaultSecret) Exchange(
-	conn application.ConnectionAdapter,
-) (application.CryptographyService, error) {
-	handshakeErr := s.handshake.ClientSideHandshake(conn, s.settings)
+	transport connection.Transport,
+) (connection.Crypto, error) {
+	handshakeErr := s.handshake.ClientSideHandshake(transport, s.settings)
 	if handshakeErr != nil {
 		return nil, handshakeErr
 	}
 
-	cryptographyService, cryptographyServiceErr := s.cryptographyServiceFactory.
+	crypto, cryptoErr := s.cryptographyServiceFactory.
 		FromHandshake(s.handshake, false)
-	if cryptographyServiceErr != nil {
+	if cryptoErr != nil {
 		return nil, fmt.Errorf(
-			"failed to create client cryptographyService: %w",
-			cryptographyServiceErr,
+			"failed to create client crypto: %w",
+			cryptoErr,
 		)
 
 	}
 
-	return cryptographyService, nil
+	return crypto, nil
 }

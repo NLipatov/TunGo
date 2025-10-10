@@ -7,10 +7,9 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-	"tungo/application/network/tun"
-
-	"tungo/application"
-	serverConfiguration "tungo/infrastructure/PAL/configuration/server"
+	"tungo/application/network/routing"
+	"tungo/application/network/routing/tun"
+	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/settings"
 )
 
@@ -68,19 +67,19 @@ func (m *RunnerMockTunManager) DisposeDevices(_ settings.Settings) error {
 type RunnerMockDeps struct {
 	key  *RunnerMockKeyManager
 	tun  *RunnerMockTunManager
-	cfg  serverConfiguration.Configuration
+	cfg  server.Configuration
 	cmgr any
 }
 
-func (d *RunnerMockDeps) KeyManager() serverConfiguration.KeyManager { return d.key }
+func (d *RunnerMockDeps) KeyManager() server.KeyManager { return d.key }
 
 // IMPORTANT: return the named interface expected by AppDependencies.
 func (d *RunnerMockDeps) TunManager() tun.ServerManager { return d.tun }
 
 // IMPORTANT: return by value per AppDependencies.
-func (d *RunnerMockDeps) Configuration() serverConfiguration.Configuration { return d.cfg }
+func (d *RunnerMockDeps) Configuration() server.Configuration { return d.cfg }
 
-func (d *RunnerMockDeps) ConfigurationManager() serverConfiguration.ServerConfigurationManager {
+func (d *RunnerMockDeps) ConfigurationManager() server.ServerConfigurationManager {
 	panic("not implemented")
 }
 
@@ -97,14 +96,14 @@ func (w RunnerMockWorker) HandleTransport() error { return w.handleTransportErr 
 
 // ServerWorkerFactory mock.
 type RunnerMockWorkerFactory struct {
-	create func(ctx context.Context, tun io.ReadWriteCloser, s settings.Settings) (tun.Worker, error)
+	create func(ctx context.Context, tun io.ReadWriteCloser, s settings.Settings) (routing.Worker, error)
 }
 
-func (f RunnerMockWorkerFactory) CreateWorker(ctx context.Context, tun io.ReadWriteCloser, s settings.Settings) (tun.Worker, error) {
+func (f RunnerMockWorkerFactory) CreateWorker(ctx context.Context, tun io.ReadWriteCloser, s settings.Settings) (routing.Worker, error) {
 	return f.create(ctx, tun, s)
 }
 
-// TrafficRouter mock.
+// Router mock.
 type RunnerMockRouter struct {
 	route func(context.Context) error
 }
@@ -113,10 +112,10 @@ func (r RunnerMockRouter) RouteTraffic(ctx context.Context) error { return r.rou
 
 // ServerTrafficRouterFactory mock.
 type RunnerMockRouterFactory struct {
-	make func(tun.Worker) application.TrafficRouter
+	make func(routing.Worker) routing.Router
 }
 
-func (f RunnerMockRouterFactory) CreateRouter(w tun.Worker) application.TrafficRouter {
+func (f RunnerMockRouterFactory) CreateRouter(w routing.Worker) routing.Router {
 	return f.make(w)
 }
 
@@ -126,7 +125,7 @@ func TestRun_Happy_AllProtocols(t *testing.T) {
 	deps := &RunnerMockDeps{
 		key: &RunnerMockKeyManager{},
 		tun: &RunnerMockTunManager{},
-		cfg: serverConfiguration.Configuration{
+		cfg: server.Configuration{
 			EnableTCP:   true,
 			EnableUDP:   true,
 			EnableWS:    true,
@@ -136,12 +135,12 @@ func TestRun_Happy_AllProtocols(t *testing.T) {
 		},
 	}
 	wf := RunnerMockWorkerFactory{
-		create: func(context.Context, io.ReadWriteCloser, settings.Settings) (tun.Worker, error) {
+		create: func(context.Context, io.ReadWriteCloser, settings.Settings) (routing.Worker, error) {
 			return RunnerMockWorker{}, nil
 		},
 	}
 	rf := RunnerMockRouterFactory{
-		make: func(tun.Worker) application.TrafficRouter {
+		make: func(routing.Worker) routing.Router {
 			return RunnerMockRouter{
 				route: func(ctx context.Context) error {
 					select {
@@ -175,13 +174,13 @@ func TestRun_KeyManagerError(t *testing.T) {
 	deps := &RunnerMockDeps{
 		key: &RunnerMockKeyManager{err: errBoom},
 		tun: &RunnerMockTunManager{},
-		cfg: serverConfiguration.Configuration{},
+		cfg: server.Configuration{},
 	}
 	r := NewRunner(deps,
-		RunnerMockWorkerFactory{create: func(context.Context, io.ReadWriteCloser, settings.Settings) (tun.Worker, error) {
+		RunnerMockWorkerFactory{create: func(context.Context, io.ReadWriteCloser, settings.Settings) (routing.Worker, error) {
 			return RunnerMockWorker{}, nil
 		}},
-		RunnerMockRouterFactory{make: func(tun.Worker) application.TrafficRouter {
+		RunnerMockRouterFactory{make: func(routing.Worker) routing.Router {
 			return RunnerMockRouter{route: func(context.Context) error { return nil }}
 		}},
 	)
@@ -194,13 +193,13 @@ func TestRun_NoProtocolsEnabled(t *testing.T) {
 	deps := &RunnerMockDeps{
 		key: &RunnerMockKeyManager{},
 		tun: &RunnerMockTunManager{},
-		cfg: serverConfiguration.Configuration{}, // all disabled
+		cfg: server.Configuration{}, // all disabled
 	}
 	r := NewRunner(deps,
-		RunnerMockWorkerFactory{create: func(context.Context, io.ReadWriteCloser, settings.Settings) (tun.Worker, error) {
+		RunnerMockWorkerFactory{create: func(context.Context, io.ReadWriteCloser, settings.Settings) (routing.Worker, error) {
 			return RunnerMockWorker{}, nil
 		}},
-		RunnerMockRouterFactory{make: func(tun.Worker) application.TrafficRouter {
+		RunnerMockRouterFactory{make: func(routing.Worker) routing.Router {
 			return RunnerMockRouter{route: func(context.Context) error { return nil }}
 		}},
 	)
@@ -225,7 +224,7 @@ func TestRun_WorkerFlagsMatrix(t *testing.T) {
 			deps := &RunnerMockDeps{
 				key: &RunnerMockKeyManager{},
 				tun: &RunnerMockTunManager{},
-				cfg: serverConfiguration.Configuration{
+				cfg: server.Configuration{
 					EnableTCP:   tc.tcp,
 					EnableUDP:   tc.udp,
 					EnableWS:    tc.ws,
@@ -235,10 +234,10 @@ func TestRun_WorkerFlagsMatrix(t *testing.T) {
 				},
 			}
 			r := NewRunner(deps,
-				RunnerMockWorkerFactory{create: func(context.Context, io.ReadWriteCloser, settings.Settings) (tun.Worker, error) {
+				RunnerMockWorkerFactory{create: func(context.Context, io.ReadWriteCloser, settings.Settings) (routing.Worker, error) {
 					return RunnerMockWorker{}, nil
 				}},
-				RunnerMockRouterFactory{make: func(tun.Worker) application.TrafficRouter {
+				RunnerMockRouterFactory{make: func(routing.Worker) routing.Router {
 					return RunnerMockRouter{route: func(context.Context) error { return nil }}
 				}},
 			)
@@ -259,17 +258,17 @@ func TestCleanup_ErrorAggregates(t *testing.T) {
 	deps := &RunnerMockDeps{
 		key: &RunnerMockKeyManager{},
 		tun: &RunnerMockTunManager{disposeErr: errBoom},
-		cfg: serverConfiguration.Configuration{
+		cfg: server.Configuration{
 			TCPSettings: settings.Settings{Protocol: settings.TCP},
 			UDPSettings: settings.Settings{Protocol: settings.UDP},
 			WSSettings:  settings.Settings{Protocol: settings.WS},
 		},
 	}
 	r := NewRunner(deps,
-		RunnerMockWorkerFactory{create: func(context.Context, io.ReadWriteCloser, settings.Settings) (tun.Worker, error) {
+		RunnerMockWorkerFactory{create: func(context.Context, io.ReadWriteCloser, settings.Settings) (routing.Worker, error) {
 			return RunnerMockWorker{}, nil
 		}},
-		RunnerMockRouterFactory{make: func(tun.Worker) application.TrafficRouter {
+		RunnerMockRouterFactory{make: func(routing.Worker) routing.Router {
 			return RunnerMockRouter{route: func(context.Context) error { return nil }}
 		}},
 	)
@@ -284,13 +283,13 @@ func TestRoute_CreateTunError(t *testing.T) {
 		tun: &RunnerMockTunManager{
 			createErrByProto: map[settings.Protocol]error{settings.TCP: errBoom},
 		},
-		cfg: serverConfiguration.Configuration{},
+		cfg: server.Configuration{},
 	}
 	r := NewRunner(deps,
-		RunnerMockWorkerFactory{create: func(context.Context, io.ReadWriteCloser, settings.Settings) (tun.Worker, error) {
+		RunnerMockWorkerFactory{create: func(context.Context, io.ReadWriteCloser, settings.Settings) (routing.Worker, error) {
 			return RunnerMockWorker{}, nil
 		}},
-		RunnerMockRouterFactory{make: func(tun.Worker) application.TrafficRouter {
+		RunnerMockRouterFactory{make: func(routing.Worker) routing.Router {
 			return RunnerMockRouter{route: func(context.Context) error { return nil }}
 		}},
 	)
@@ -304,13 +303,13 @@ func TestRoute_CreateWorkerError(t *testing.T) {
 	deps := &RunnerMockDeps{
 		key: &RunnerMockKeyManager{},
 		tun: &RunnerMockTunManager{},
-		cfg: serverConfiguration.Configuration{},
+		cfg: server.Configuration{},
 	}
 	r := NewRunner(deps,
-		RunnerMockWorkerFactory{create: func(context.Context, io.ReadWriteCloser, settings.Settings) (tun.Worker, error) {
+		RunnerMockWorkerFactory{create: func(context.Context, io.ReadWriteCloser, settings.Settings) (routing.Worker, error) {
 			return nil, errBoom
 		}},
-		RunnerMockRouterFactory{make: func(tun.Worker) application.TrafficRouter {
+		RunnerMockRouterFactory{make: func(routing.Worker) routing.Router {
 			return RunnerMockRouter{route: func(context.Context) error { return nil }}
 		}},
 	)
@@ -324,13 +323,13 @@ func TestRoute_RouteTrafficError(t *testing.T) {
 	deps := &RunnerMockDeps{
 		key: &RunnerMockKeyManager{},
 		tun: &RunnerMockTunManager{},
-		cfg: serverConfiguration.Configuration{},
+		cfg: server.Configuration{},
 	}
 	r := NewRunner(deps,
-		RunnerMockWorkerFactory{create: func(context.Context, io.ReadWriteCloser, settings.Settings) (tun.Worker, error) {
+		RunnerMockWorkerFactory{create: func(context.Context, io.ReadWriteCloser, settings.Settings) (routing.Worker, error) {
 			return RunnerMockWorker{}, nil
 		}},
-		RunnerMockRouterFactory{make: func(tun.Worker) application.TrafficRouter {
+		RunnerMockRouterFactory{make: func(routing.Worker) routing.Router {
 			return RunnerMockRouter{route: func(context.Context) error { return errBoom }}
 		}},
 	)
@@ -344,7 +343,7 @@ func TestRunWorkers_AggregatesMultipleErrors(t *testing.T) {
 	deps := &RunnerMockDeps{
 		key: &RunnerMockKeyManager{},
 		tun: &RunnerMockTunManager{},
-		cfg: serverConfiguration.Configuration{
+		cfg: server.Configuration{
 			EnableTCP:   true,
 			EnableUDP:   true, // two workers fail
 			TCPSettings: settings.Settings{Protocol: settings.TCP},
@@ -352,12 +351,12 @@ func TestRunWorkers_AggregatesMultipleErrors(t *testing.T) {
 		},
 	}
 	wf := RunnerMockWorkerFactory{
-		create: func(context.Context, io.ReadWriteCloser, settings.Settings) (tun.Worker, error) {
+		create: func(context.Context, io.ReadWriteCloser, settings.Settings) (routing.Worker, error) {
 			return RunnerMockWorker{}, nil
 		},
 	}
 	rf := RunnerMockRouterFactory{
-		make: func(tun.Worker) application.TrafficRouter {
+		make: func(routing.Worker) routing.Router {
 			return RunnerMockRouter{route: func(context.Context) error { return errBoom }}
 		},
 	}

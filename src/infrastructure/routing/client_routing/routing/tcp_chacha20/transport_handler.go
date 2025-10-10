@@ -4,7 +4,8 @@ import (
 	"context"
 	"io"
 	"log"
-	"tungo/application"
+	"tungo/application/network/connection"
+	"tungo/application/network/routing/transport"
 	"tungo/infrastructure/settings"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -14,15 +15,15 @@ type TransportHandler struct {
 	ctx                 context.Context
 	reader              io.Reader
 	writer              io.Writer
-	cryptographyService application.CryptographyService
+	cryptographyService connection.Crypto
 }
 
 func NewTransportHandler(
 	ctx context.Context,
 	reader io.Reader,
 	writer io.Writer,
-	cryptographyService application.CryptographyService,
-) application.TransportHandler {
+	cryptographyService connection.Crypto,
+) transport.Handler {
 	return &TransportHandler{
 		ctx:                 ctx,
 		reader:              reader,

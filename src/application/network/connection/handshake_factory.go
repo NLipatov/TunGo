@@ -1,4 +1,4 @@
-package application
+package connection
 
 type HandshakeFactory interface {
 	NewHandshake() Handshake

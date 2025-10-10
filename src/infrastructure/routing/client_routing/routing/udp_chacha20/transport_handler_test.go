@@ -12,7 +12,7 @@ import (
 	"tungo/infrastructure/cryptography/chacha20"
 )
 
-// thTestCrypto implements application.CryptographyService for testing TransportHandler
+// thTestCrypto implements application.Crypto for testing TransportHandler
 // Only Decrypt is used in tests.
 type thTestCrypto struct {
 	output []byte
