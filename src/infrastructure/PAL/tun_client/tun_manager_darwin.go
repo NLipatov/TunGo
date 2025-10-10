@@ -31,7 +31,7 @@ func NewPlatformTunManager(conf client.Configuration) (tun.ClientManager, error)
 }
 
 // CreateDevice creates, configures and returns a TUN interface wrapped in wgTunAdapter.
-func (t *PlatformTunManager) CreateTunDevice() (tun.Device, error) {
+func (t *PlatformTunManager) CreateDevice() (tun.Device, error) {
 	var s settings.Settings
 	switch t.conf.Protocol {
 	case settings.TCP:
@@ -80,7 +80,7 @@ func (t *PlatformTunManager) CreateTunDevice() (tun.Device, error) {
 }
 
 // DisposeDevices removes routes and destroys TUN interfaces.
-func (t *PlatformTunManager) DisposeTunDevices() error {
+func (t *PlatformTunManager) DisposeDevices() error {
 	if t.dev != nil {
 		dev := t.dev
 
