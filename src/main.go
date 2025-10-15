@@ -25,7 +25,7 @@ import (
 func main() {
 	processElevation := elevation.NewProcessElevation()
 	if !processElevation.IsElevated() {
-		fmt.Printf("Warning: %s must be run with admin privileges", app.Name)
+		fmt.Printf("%s must be run with admin privileges", app.Name)
 		return
 	}
 

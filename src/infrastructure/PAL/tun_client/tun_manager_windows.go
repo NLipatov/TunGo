@@ -151,7 +151,7 @@ func (m *PlatformTunManager) configureWindowsTunNetsh(
 
 	minMetric, err := getMinInterfaceMetric()
 	if err != nil {
-		log.Printf("warning: can't get minimal metric: %v", err)
+		log.Printf("can't get minimal metric: %v", err)
 		return nil
 	}
 

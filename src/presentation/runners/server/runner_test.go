@@ -203,9 +203,17 @@ func TestRun_NoProtocolsEnabled(t *testing.T) {
 			return RunnerMockRouter{route: func(context.Context) error { return nil }}
 		}},
 	)
-	err := r.Run(context.Background())
-	if err == nil || err.Error() != "no protocol is enabled in server configuration" {
-		t.Fatalf("unexpected error: %v", err)
+	// Current implementation: no error when no protocols enabled.
+	if err := r.Run(context.Background()); err != nil {
+		t.Fatalf("Run unexpected error: %v", err)
+	}
+	// No CreateDevice calls because no protocols enabled
+	if got := atomic.LoadInt32(&deps.tun.createCalls); got != 0 {
+		t.Fatalf("CreateDevice calls=%d want=0", got)
+	}
+	// cleanup still runs pre + post over 3 settings => 6
+	if got := atomic.LoadInt32(&deps.tun.disposeCalls); got != 6 {
+		t.Fatalf("DisposeDevices calls=%d want=6", got)
 	}
 }
 
@@ -293,7 +301,7 @@ func TestRoute_CreateTunError(t *testing.T) {
 			return RunnerMockRouter{route: func(context.Context) error { return nil }}
 		}},
 	)
-	err := r.route(context.Background(), settings.Settings{Protocol: settings.TCP})
+	_, err := r.createRouter(context.Background(), settings.Settings{Protocol: settings.TCP})
 	if err == nil || err.Error() != "error creating tun device: boom" {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -313,29 +321,39 @@ func TestRoute_CreateWorkerError(t *testing.T) {
 			return RunnerMockRouter{route: func(context.Context) error { return nil }}
 		}},
 	)
-	err := r.route(context.Background(), settings.Settings{Protocol: settings.WS})
+	_, err := r.createRouter(context.Background(), settings.Settings{Protocol: settings.WS})
 	if err == nil || err.Error() != "error creating worker: boom" {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestRoute_RouteTrafficError(t *testing.T) {
+func TestRunWorkers_SingleRouteError(t *testing.T) {
 	deps := &RunnerMockDeps{
 		key: &RunnerMockKeyManager{},
 		tun: &RunnerMockTunManager{},
-		cfg: server.Configuration{},
+		cfg: server.Configuration{
+			EnableUDP:   true,
+			UDPSettings: settings.Settings{Protocol: settings.UDP},
+		},
 	}
-	r := NewRunner(deps,
-		RunnerMockWorkerFactory{create: func(context.Context, io.ReadWriteCloser, settings.Settings) (routing.Worker, error) {
+	wf := RunnerMockWorkerFactory{
+		create: func(context.Context, io.ReadWriteCloser, settings.Settings) (routing.Worker, error) {
 			return RunnerMockWorker{}, nil
-		}},
-		RunnerMockRouterFactory{make: func(routing.Worker) routing.Router {
+		},
+	}
+	rf := RunnerMockRouterFactory{
+		make: func(routing.Worker) routing.Router {
 			return RunnerMockRouter{route: func(context.Context) error { return errBoom }}
-		}},
-	)
-	err := r.route(context.Background(), settings.Settings{Protocol: settings.UDP})
-	if err == nil || err.Error() != "error routing traffic: boom" {
-		t.Fatalf("unexpected error: %v", err)
+		},
+	}
+	r := NewRunner(deps, wf, rf)
+	err := r.runWorkers(context.Background())
+	if err == nil {
+		t.Fatalf("expected error from runWorkers, got nil")
+	}
+	// error message should indicate worker failure and contain underlying error
+	if !contains(err.Error(), "worker failed") || !contains(err.Error(), "boom") {
+		t.Fatalf("unexpected error message: %v", err)
 	}
 }
 

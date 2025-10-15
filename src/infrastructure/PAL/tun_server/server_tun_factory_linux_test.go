@@ -218,6 +218,7 @@ func TestCreateAndDispose(t *testing.T) {
 	if tun == nil {
 		t.Fatal("expected non-nil tun file")
 	}
+	// DisposeDevices will early-return nil if interface doesn't exist on the host.
 	if err := f.DisposeDevices(cfg); err != nil {
 		t.Fatalf("DisposeDevices: %v", err)
 	}
@@ -325,15 +326,18 @@ func TestCreateTunDevice_ConfigureStepErrors(t *testing.T) {
 }
 
 func TestDisposeTunDevices_ErrorPaths(t *testing.T) {
-	// open tun error
+	// open tun error -> test CreateDevice behavior (was previously incorrectly calling DisposeDevices)
 	f1 := newFactory(&mockIP{}, &mockIPT{}, &mockIOCTL{createErr: errors.New("io_err")}, &mockSys{})
-	if err := f1.DisposeDevices(cfg); err == nil ||
-		!strings.Contains(err.Error(), "failed to open TUN interface") {
+	_, err := f1.CreateDevice(cfg)
+	if err == nil || !strings.Contains(err.Error(), "failed to open TUN interface") {
 		t.Errorf("expected open tun error, got %v", err)
 	}
-	// delete link error
+
+	// delete link error: ensure we pick an interface that exists on the host (loopback)
+	cfgDel := cfg
+	cfgDel.InterfaceName = "lo"
 	f2 := newFactory(&mockIPErrDel{&mockIP{}, errors.New("del_err")}, &mockIPT{}, &mockIOCTL{}, &mockSys{})
-	if err := f2.DisposeDevices(cfg); err == nil ||
+	if err := f2.DisposeDevices(cfgDel); err == nil ||
 		!strings.Contains(err.Error(), "error deleting TUN device") {
 		t.Errorf("expected delete error, got %v", err)
 	}

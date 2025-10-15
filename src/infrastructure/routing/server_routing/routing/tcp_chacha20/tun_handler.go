@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"log"
-	"os"
 	"tungo/application/network/connection"
 	appip "tungo/application/network/ip"
 	"tungo/application/network/routing/tun"
@@ -34,35 +33,27 @@ func NewTunHandler(
 }
 
 func (t *TunHandler) HandleTun() error {
-	backing := make([]byte, settings.DefaultEthernetMTU+settings.TCPChacha20Overhead)
-	pt := backing[:settings.DefaultEthernetMTU]
+	var buffer [settings.DefaultEthernetMTU + settings.TCPChacha20Overhead]byte
+	plaintext := buffer[:settings.DefaultEthernetMTU]
 
 	for {
 		select {
 		case <-t.ctx.Done():
 			return nil
 		default:
-			n, err := t.reader.Read(pt)
+			n, err := t.reader.Read(plaintext)
 			if err != nil {
-				if err == io.EOF {
-					log.Println("TUN interface closed, shutting down...")
-					return err
+				if ne, ok := err.(interface{ Temporary() bool }); ok && ne.Temporary() {
+					continue
 				}
-
-				if os.IsNotExist(err) || os.IsPermission(err) {
-					log.Printf("TUN interface error (closed or permission issue): %v", err)
-					return err
-				}
-
-				log.Printf("failed to read from TUN, retrying: %v", err)
-				continue
+				return err
 			}
 			if n == 0 {
 				// Defensive: spurious zero-length read; skip.
 				continue
 			}
 
-			addr, addrErr := t.ipHeaderParser.DestinationAddress(pt[:n])
+			addr, addrErr := t.ipHeaderParser.DestinationAddress(plaintext[:n])
 			if addrErr != nil {
 				log.Printf("packet dropped: failed to parse destination address: %v", addrErr)
 				continue
@@ -74,7 +65,7 @@ func (t *TunHandler) HandleTun() error {
 				continue
 			}
 
-			ct, encryptErr := clientSession.Crypto().Encrypt(pt[:n])
+			ct, encryptErr := clientSession.Crypto().Encrypt(plaintext[:n])
 			if encryptErr != nil {
 				log.Printf("failed to encrypt packet: %s", encryptErr)
 				continue

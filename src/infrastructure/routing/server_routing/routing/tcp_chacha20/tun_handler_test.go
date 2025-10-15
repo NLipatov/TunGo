@@ -132,9 +132,9 @@ func TestTunHandler_ReadErrors(t *testing.T) {
 		}
 	})
 	t.Run("temporary then EOF", func(t *testing.T) {
-		h := NewTunHandler(context.Background(), rdr([][]byte{{1}}, []error{errors.New("tmp"), io.EOF}), &TunHandlerMockParser{}, &TunHandlerMockMgr{})
-		if err := h.HandleTun(); err != io.EOF {
-			t.Fatalf("want EOF after retry, got %v", err)
+		h := NewTunHandler(context.Background(), rdr([][]byte{{1}}, []error{errors.New("tmp")}), &TunHandlerMockParser{}, &TunHandlerMockMgr{})
+		if err := h.HandleTun(); err == nil || err.Error() != "tmp" {
+			t.Fatalf("want tmp error, got %v", err)
 		}
 	})
 }
