@@ -12,10 +12,15 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/chacha20poly1305"
+
 	"tungo/application/network/connection"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
 	"tungo/infrastructure/settings"
 )
+
+/* ========= fakes / test doubles ========= */
 
 type fakeTcpListenerCtxDone struct {
 	t      *testing.T
@@ -32,7 +37,6 @@ func (f *fakeTcpListenerCtxDone) Accept() (net.Conn, error) {
 	}
 	return nil, errors.New("done")
 }
-
 func (f *fakeTcpListenerCtxDone) Close() error { f.closed = true; return nil }
 
 type fakeConn struct {
@@ -51,27 +55,26 @@ func (f *fakeConn) Read(b []byte) (int, error) {
 		}
 		return 0, io.EOF
 	}
-
 	n := copy(b, f.readBufs[f.readIdx])
-
 	if n < len(f.readBufs[f.readIdx]) {
 		f.readBufs[f.readIdx] = f.readBufs[f.readIdx][n:]
 	} else {
 		f.readIdx++
 	}
-
 	return n, nil
 }
-
-func (f *fakeConn) Write(b []byte) (int, error) {
-	return f.writeBuf.Write(b)
-}
+func (f *fakeConn) Write(b []byte) (int, error)        { return f.writeBuf.Write(b) }
 func (f *fakeConn) Close() error                       { f.closed = true; return nil }
 func (f *fakeConn) LocalAddr() net.Addr                { return f.addr }
 func (f *fakeConn) RemoteAddr() net.Addr               { return f.addr }
 func (f *fakeConn) SetDeadline(_ time.Time) error      { return nil }
 func (f *fakeConn) SetReadDeadline(_ time.Time) error  { return nil }
 func (f *fakeConn) SetWriteDeadline(_ time.Time) error { return nil }
+func tcpAddr(ip string, port int) *net.TCPAddr {
+	a, _ := net.ResolveTCPAddr("tcp", net.JoinHostPort(ip, fmt.Sprint(port)))
+	return a
+}
+func mustAddrPort(s string) netip.AddrPort { return netip.MustParseAddrPort(s) }
 
 type fakeTcpListener struct {
 	conns       []net.Conn
@@ -98,7 +101,6 @@ func (f *fakeTcpListener) Accept() (net.Conn, error) {
 	f.acceptIx++
 	return c, nil
 }
-
 func (f *fakeTcpListener) Close() error { f.closed = true; return nil }
 
 type fakeLogger struct {
@@ -110,6 +112,27 @@ func (l *fakeLogger) Printf(format string, args ...interface{}) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.logs = append(l.logs, fmt.Sprintf(format, args...))
+}
+func (l *fakeLogger) contains(sub string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for _, s := range l.logs {
+		if strings.Contains(s, sub) {
+			return true
+		}
+	}
+	return false
+}
+func (l *fakeLogger) count(sub string) int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	n := 0
+	for _, s := range l.logs {
+		if strings.Contains(s, sub) {
+			n++
+		}
+	}
+	return n
 }
 
 type fakeHandshake struct {
@@ -200,12 +223,9 @@ func (f *fakeWriter) Write(p []byte) (int, error) {
 func (f *fakeWriter) Read(_ []byte) (int, error) { return 0, io.EOF }
 func (f *fakeWriter) Close() error               { return nil }
 
-func tcpAddr(ip string, port int) *net.TCPAddr {
-	addr, _ := net.ResolveTCPAddr("tcp", net.JoinHostPort(ip, fmt.Sprint(port)))
-	return addr
-}
+/* ========= tests ========= */
 
-func TestHandleTransport_CtxDoneBeforeAccept(t *testing.T) {
+func TestHandleTransport_CtxDoneBeforeAccept_ReturnsNil(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	listener := &fakeTcpListenerCtxDone{ctx: ctx, t: t}
 	logger := &fakeLogger{}
@@ -219,27 +239,48 @@ func TestHandleTransport_CtxDoneBeforeAccept(t *testing.T) {
 		&fakeHandshakeFactory{},
 		&fakeCryptoFactory{},
 	)
-	done := make(chan struct{})
+
+	errCh := make(chan error, 1)
 	go func() {
-		_ = handler.HandleTransport()
-		close(done)
+		errCh <- handler.HandleTransport()
 	}()
+
 	time.Sleep(10 * time.Millisecond)
 	cancel()
-	<-done
+	err := <-errCh
 
+	if err != nil {
+		t.Fatalf("expected nil error on ctx cancel during Accept, got %v", err)
+	}
 	if !listener.closed {
 		t.Error("listener should be closed on ctx done")
 	}
-	found := false
-	for _, log := range logger.logs {
-		if strings.Contains(log, "exiting Accept loop") {
-			found = true
-			break
-		}
+}
+
+func TestHandleTransport_AlreadyCanceled_ReturnsCtxErr(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	// listener: Accept should NOT be called in this path
+	listener := &fakeTcpListener{conns: nil}
+	logger := &fakeLogger{}
+	handler := NewTransportHandler(
+		ctx,
+		settings.Settings{Port: "7777"},
+		&fakeWriter{},
+		listener,
+		&fakeSessionRepo{},
+		logger,
+		&fakeHandshakeFactory{},
+		&fakeCryptoFactory{},
+	)
+
+	err := handler.HandleTransport()
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got %v", err)
 	}
-	if !found {
-		t.Errorf("exiting Accept loop log missing: logs=%v", logger.logs)
+	if !listener.closed {
+		t.Error("listener should be closed by defer")
 	}
 }
 
@@ -270,30 +311,50 @@ func TestHandleTransport_AcceptError(t *testing.T) {
 	cancel()
 	<-done
 
-	count := 0
-	for _, log := range logger.logs {
-		if strings.Contains(log, "failed to accept connection: accept fail") {
-			count++
-		}
-	}
+	count := logger.count("failed to accept connection: accept fail")
 	if count != maxErrs {
 		t.Errorf("expected %d error logs, got %d (logs=%v)", maxErrs, count, logger.logs)
 	}
 }
 
-func TestHandleTransport_RegisterClientError(t *testing.T) {
+func TestHandleTransport_RegisterClientError_Logged(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
 	addr := tcpAddr("127.0.0.1", 8888)
 	fconn := &fakeConn{addr: addr}
 	listener := &fakeTcpListener{conns: []net.Conn{fconn}}
 	logger := &fakeLogger{}
 	handshake := &fakeHandshake{ip: []byte{127, 0, 0, 1}, err: errors.New("handshake fail")}
 	handshakeFactory := &fakeHandshakeFactory{hs: handshake}
+
 	handler := NewTransportHandler(ctx, settings.Settings{Port: "2222"}, &fakeWriter{}, listener, &fakeSessionRepo{}, logger, handshakeFactory, &fakeCryptoFactory{})
-	go func() { _ = handler.HandleTransport() }()
-	time.Sleep(10 * time.Millisecond)
+	done := make(chan struct{})
+	go func() { _ = handler.HandleTransport(); close(done) }()
+
+	time.Sleep(20 * time.Millisecond)
 	cancel()
+	<-done
+
+	if !logger.contains("failed to register client") {
+		t.Errorf("expected a 'failed to register client' log, got: %v", logger.logs)
+	}
+}
+
+func TestRegisterClient_HandshakeError(t *testing.T) {
+	ctx := context.Background()
+	addr := tcpAddr("127.0.0.1", 9991)
+	fconn := &fakeConn{addr: addr}
+	w := &fakeWriter{}
+	logger := &fakeLogger{}
+	hs := &fakeHandshake{ip: []byte{127, 0, 0, 1}, err: errors.New("boom")}
+	hf := &fakeHandshakeFactory{hs: hs}
+
+	h := NewTransportHandler(ctx, settings.Settings{}, w, &fakeTcpListener{}, &fakeSessionRepo{}, logger, hf, &fakeCryptoFactory{})
+	err := h.(*TransportHandler).registerClient(fconn, w, ctx)
+	if err == nil || !strings.Contains(err.Error(), "client 127.0.0.1:9991 failed registration: boom") {
+		t.Fatalf("expected handshake error, got %v", err)
+	}
 }
 
 func TestRegisterClient_CryptoFactoryError(t *testing.T) {
@@ -312,13 +373,9 @@ func TestRegisterClient_CryptoFactoryError(t *testing.T) {
 	}
 }
 
-type badAddrConn struct {
-	fakeConn
-}
+type badAddrConn struct{ fakeConn }
 
-func (c *badAddrConn) RemoteAddr() net.Addr {
-	return &struct{ net.Addr }{}
-}
+func (c *badAddrConn) RemoteAddr() net.Addr { return &struct{ net.Addr }{} }
 
 func TestRegisterClient_BadAddrType(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -378,182 +435,25 @@ func TestRegisterClient_ReplaceSession(t *testing.T) {
 	handshake := &fakeHandshake{ip: []byte{127, 0, 0, 1}}
 	handshakeFactory := &fakeHandshakeFactory{hs: handshake}
 
-	oldSession := Session{externalIP: netip.MustParseAddrPort("127.0.0.1:8070")}
+	oldSession := Session{externalIP: mustAddrPort("127.0.0.1:8070")}
 	srepo := &fakeSessionRepo{
 		getErr:        nil,
-		returnSession: oldSession, // will be returned as "existing session"
+		returnSession: oldSession, // existing session -> will be deleted
 	}
 	handler := NewTransportHandler(ctx, settings.Settings{}, writer, &fakeTcpListener{}, srepo, logger, handshakeFactory, &fakeCryptoFactory{})
 
 	_ = handler.(*TransportHandler).registerClient(fconn, writer, ctx)
 
-	// Strict check: we expect exactly two Delete calls, both for the same externalIP
-	// The first Delete is for the replaced (old) session,
-	// The second Delete is for the newly registered session when its goroutine finishes (via handleClient defer).
-	// This is correct, because both represent the same connection (rebind to the same IP/port).
+	// We expect exactly two Delete calls:
+	// 1) old replaced session, 2) new session in handleClient's defer
 	if len(srepo.deleted) != 2 {
-		t.Fatalf("expected 2 Delete calls (one for old, one for new session), got %d: %+v", len(srepo.deleted), srepo.deleted)
+		t.Fatalf("expected 2 Delete calls (old + new), got %d: %+v", len(srepo.deleted), srepo.deleted)
 	}
 	for i, del := range srepo.deleted {
 		if del.ExternalAddrPort().Addr().Unmap() != oldSession.ExternalAddrPort().Addr().Unmap() ||
 			del.ExternalAddrPort().Port() != oldSession.ExternalAddrPort().Port() {
 			t.Errorf("deleted session #%d has wrong externalIP: %v, want %v", i+1, del.ExternalAddrPort(), oldSession.externalIP)
 		}
-	}
-	/*
-		Why 2 deletes?
-		1. The first Delete is invoked when an existing session with the same internal IP is detected and replaced.
-		2. The second Delete is called in handleClient's defer, which always deletes the current session when the client is closed.
-		Both deletes refer to the same IP/port, which is expected when a client reconnects (for example, after NAT rebinding).
-	*/
-}
-
-func TestRegisterClient_HappyPath(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	addr := tcpAddr("127.0.0.1", 6070)
-	fconn := &fakeConn{addr: addr}
-	writer := &fakeWriter{}
-	logger := &fakeLogger{}
-	handshake := &fakeHandshake{ip: []byte{127, 0, 0, 1}}
-	handshakeFactory := &fakeHandshakeFactory{hs: handshake}
-	srepo := &fakeSessionRepo{getErr: repository.ErrSessionNotFound}
-	handler := NewTransportHandler(ctx, settings.Settings{}, writer, &fakeTcpListener{}, srepo, logger, handshakeFactory, &fakeCryptoFactory{})
-	go func() {
-		_ = handler.(*TransportHandler).registerClient(fconn, writer, ctx)
-	}()
-	time.Sleep(10 * time.Millisecond)
-	cancel()
-}
-
-func TestHandleClient_CtxDone(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	conn := &fakeConn{addr: tcpAddr("1.2.3.4", 5555)}
-	writer := &fakeWriter{}
-	logger := &fakeLogger{}
-	sess := Session{connectionAdapter: conn, cryptographyService: &fakeCrypto{}, internalIP: netip.MustParseAddr("10.0.0.5")}
-	repo := &fakeSessionRepo{}
-	handler := NewTransportHandler(context.Background(), settings.Settings{}, writer, &fakeTcpListener{}, repo, logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{})
-	handler.(*TransportHandler).handleClient(ctx, sess, writer)
-}
-
-func TestHandleClient_ReadFullError(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	conn := &fakeConn{addr: tcpAddr("1.2.3.4", 5556), readErr: errors.New("fail read")}
-	writer := &fakeWriter{}
-	logger := &fakeLogger{}
-	sess := Session{connectionAdapter: conn, cryptographyService: &fakeCrypto{}, internalIP: netip.MustParseAddr("10.0.0.6")}
-	repo := &fakeSessionRepo{}
-	handler := NewTransportHandler(context.Background(), settings.Settings{}, writer, &fakeTcpListener{}, repo, logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{})
-	handler.(*TransportHandler).handleClient(ctx, sess, writer)
-}
-
-func TestHandleClient_EOF(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	conn := &fakeConn{addr: tcpAddr("1.2.3.4", 5557)}
-	writer := &fakeWriter{}
-	logger := &fakeLogger{}
-	sess := Session{connectionAdapter: conn, cryptographyService: &fakeCrypto{}, internalIP: netip.MustParseAddr("10.0.0.7")}
-	repo := &fakeSessionRepo{}
-	handler := NewTransportHandler(context.Background(), settings.Settings{}, writer, &fakeTcpListener{}, repo, logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{})
-	handler.(*TransportHandler).handleClient(ctx, sess, writer)
-}
-
-func TestHandleClient_BadLength(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	conn := &fakeConn{
-		addr:     tcpAddr("1.2.3.4", 5558),
-		readBufs: [][]byte{{0, 0, 0, 3}}, // length < 4
-	}
-	writer := &fakeWriter{}
-	logger := &fakeLogger{}
-	sess := Session{connectionAdapter: conn, cryptographyService: &fakeCrypto{}, internalIP: netip.MustParseAddr("10.0.0.8")}
-	repo := &fakeSessionRepo{}
-	handler := NewTransportHandler(context.Background(), settings.Settings{}, writer, &fakeTcpListener{}, repo, logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{})
-	handler.(*TransportHandler).handleClient(ctx, sess, writer)
-}
-
-func TestHandleClient_ReadPacketError(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	conn := &fakeConn{
-		addr:     tcpAddr("1.2.3.4", 5559),
-		readBufs: [][]byte{{0, 0, 0, 8}},
-		readErr:  errors.New("fail to read packet"),
-	}
-	writer := &fakeWriter{}
-	logger := &fakeLogger{}
-	sess := Session{connectionAdapter: conn, cryptographyService: &fakeCrypto{}, internalIP: netip.MustParseAddr("10.0.0.9")}
-	repo := &fakeSessionRepo{}
-	handler := NewTransportHandler(context.Background(), settings.Settings{}, writer, &fakeTcpListener{}, repo, logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{})
-	handler.(*TransportHandler).handleClient(ctx, sess, writer)
-}
-
-func TestHandleClient_DecryptError(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	conn := &fakeConn{
-		addr:     tcpAddr("1.2.3.4", 5560),
-		readBufs: [][]byte{{0, 0, 0, 5}, {1, 2, 3, 4, 5}},
-	}
-	writer := &fakeWriter{}
-	logger := &fakeLogger{}
-	sess := Session{connectionAdapter: conn, cryptographyService: &fakeCrypto{decErr: errors.New("bad decrypt")}, internalIP: netip.MustParseAddr("10.0.0.10")}
-	repo := &fakeSessionRepo{}
-	handler := NewTransportHandler(context.Background(), settings.Settings{}, writer, &fakeTcpListener{}, repo, logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{})
-	handler.(*TransportHandler).handleClient(ctx, sess, writer)
-}
-
-func TestHandleClient_WriteTunError(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	conn := &fakeConn{
-		addr:     tcpAddr("1.2.3.4", 5561),
-		readBufs: [][]byte{{0, 0, 0, 5}, {1, 2, 3, 4, 5}},
-	}
-	writer := &fakeWriter{err: errors.New("fail tun")}
-	logger := &fakeLogger{}
-	sess := Session{connectionAdapter: conn, cryptographyService: &fakeCrypto{}, internalIP: netip.MustParseAddr("10.0.0.11")}
-	repo := &fakeSessionRepo{}
-	handler := NewTransportHandler(context.Background(), settings.Settings{}, writer, &fakeTcpListener{}, repo, logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{})
-	handler.(*TransportHandler).handleClient(ctx, sess, writer)
-}
-
-func TestHandleClient_HappyDataPath_WritesToTun(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// length >= chacha20poly1305.Overhead (16)
-	const clen = 16
-	prefix := []byte{0, 0, 0, clen}
-	payload := make([]byte, clen)
-
-	conn := &fakeConn{
-		addr:     tcpAddr("1.2.3.4", 6001),
-		readBufs: [][]byte{prefix, payload},
-	}
-	writer := &fakeWriter{}
-	logger := &fakeLogger{}
-	sess := Session{
-		connectionAdapter:   conn,
-		cryptographyService: &fakeCrypto{},
-		internalIP:          netip.MustParseAddr("10.0.0.12"),
-		externalIP:          netip.MustParseAddrPort("1.2.3.4:6001"),
-	}
-	repo := &fakeSessionRepo{}
-	h := NewTransportHandler(context.Background(), settings.Settings{}, writer, &fakeTcpListener{}, repo, logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{})
-
-	h.(*TransportHandler).handleClient(ctx, sess, writer)
-
-	if len(writer.wrote) != 1 {
-		t.Fatalf("expected 1 write to TUN, got %d", len(writer.wrote))
-	}
-	if !bytes.Equal(writer.wrote[0], payload) {
-		t.Fatalf("written payload mismatch: got %v, want %v", writer.wrote[0], payload)
 	}
 }
 
@@ -567,20 +467,173 @@ func TestRegisterClient_AddsSessionOnNotFound(t *testing.T) {
 	logger := &fakeLogger{}
 	handshake := &fakeHandshake{ip: []byte{127, 0, 0, 1}}
 	handshakeFactory := &fakeHandshakeFactory{hs: handshake}
-	repo := &fakeSessionRepo{
-		getErr: repository.ErrSessionNotFound,
-	}
+	repo := &fakeSessionRepo{getErr: repository.ErrSessionNotFound}
 
 	h := NewTransportHandler(ctx, settings.Settings{}, writer, &fakeTcpListener{}, repo, logger, handshakeFactory, &fakeCryptoFactory{})
 	if err := h.(*TransportHandler).registerClient(fconn, writer, ctx); err != nil {
 		t.Fatalf("registerClient returned error: %v", err)
 	}
-
 	if len(repo.added) != 1 {
 		t.Fatalf("expected 1 added session, got %d", len(repo.added))
 	}
 	added := repo.added[0]
 	if added.ExternalAddrPort().Addr().Unmap().String() != "127.0.0.1" {
 		t.Errorf("added session addr mismatch: %v", added.ExternalAddrPort())
+	}
+}
+
+func TestHandleClient_CtxDone(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	conn := &fakeConn{addr: tcpAddr("1.2.3.4", 5555)}
+	writer := &fakeWriter{}
+	logger := &fakeLogger{}
+	sess := Session{connectionAdapter: conn, cryptographyService: &fakeCrypto{}, internalIP: netip.MustParseAddr("10.0.0.5"), externalIP: mustAddrPort("1.2.3.4:5555")}
+	repo := &fakeSessionRepo{}
+
+	handler := NewTransportHandler(context.Background(), settings.Settings{}, writer, &fakeTcpListener{}, repo, logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{})
+	handler.(*TransportHandler).handleClient(ctx, sess, writer)
+
+	if len(repo.deleted) != 1 {
+		t.Fatalf("expected session deleted once on ctx cancel, got %d", len(repo.deleted))
+	}
+	if !conn.closed {
+		t.Fatalf("expected transport Close() to be called")
+	}
+}
+
+func TestHandleClient_ReadFullError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	conn := &fakeConn{addr: tcpAddr("1.2.3.4", 5556), readErr: errors.New("fail read")}
+	writer := &fakeWriter{}
+	logger := &fakeLogger{}
+	sess := Session{connectionAdapter: conn, cryptographyService: &fakeCrypto{}, internalIP: netip.MustParseAddr("10.0.0.6"), externalIP: mustAddrPort("1.2.3.4:5556")}
+	repo := &fakeSessionRepo{}
+	handler := NewTransportHandler(context.Background(), settings.Settings{}, writer, &fakeTcpListener{}, repo, logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{})
+	handler.(*TransportHandler).handleClient(ctx, sess, writer)
+
+	if !logger.contains("failed to read from client: fail read") {
+		t.Errorf("expected read error log, got %v", logger.logs)
+	}
+	if len(repo.deleted) != 1 {
+		t.Fatalf("expected session deleted once on read error, got %d", len(repo.deleted))
+	}
+	if !conn.closed {
+		t.Fatalf("expected transport Close() to be called")
+	}
+}
+
+func TestHandleClient_EOF(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	conn := &fakeConn{addr: tcpAddr("1.2.3.4", 5557)}
+	writer := &fakeWriter{}
+	logger := &fakeLogger{}
+	sess := Session{connectionAdapter: conn, cryptographyService: &fakeCrypto{}, internalIP: netip.MustParseAddr("10.0.0.7"), externalIP: mustAddrPort("1.2.3.4:5557")}
+	repo := &fakeSessionRepo{}
+	handler := NewTransportHandler(context.Background(), settings.Settings{}, writer, &fakeTcpListener{}, repo, logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{})
+	handler.(*TransportHandler).handleClient(ctx, sess, writer)
+
+	if len(repo.deleted) != 1 {
+		t.Fatalf("expected session deleted once on EOF, got %d", len(repo.deleted))
+	}
+	if !conn.closed {
+		t.Fatalf("expected transport Close() to be called")
+	}
+}
+
+func TestHandleClient_BadLength(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// shorter than AEAD overhead
+	conn := &fakeConn{
+		addr:     tcpAddr("1.2.3.4", 5558),
+		readBufs: [][]byte{make([]byte, chacha20poly1305.Overhead-1)},
+	}
+	writer := &fakeWriter{}
+	logger := &fakeLogger{}
+	sess := Session{connectionAdapter: conn, cryptographyService: &fakeCrypto{}, internalIP: netip.MustParseAddr("10.0.0.8"), externalIP: mustAddrPort("1.2.3.4:5558")}
+	repo := &fakeSessionRepo{}
+	handler := NewTransportHandler(context.Background(), settings.Settings{}, writer, &fakeTcpListener{}, repo, logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{})
+	handler.(*TransportHandler).handleClient(ctx, sess, writer)
+
+	if !logger.contains("invalid ciphertext length:") {
+		t.Errorf("expected invalid length log, got %v", logger.logs)
+	}
+}
+
+func TestHandleClient_DecryptError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	conn := &fakeConn{
+		addr:     tcpAddr("1.2.3.4", 5560),
+		readBufs: [][]byte{make([]byte, chacha20poly1305.Overhead)}, // valid length
+	}
+	writer := &fakeWriter{}
+	logger := &fakeLogger{}
+	sess := Session{connectionAdapter: conn, cryptographyService: &fakeCrypto{decErr: errors.New("bad decrypt")}, internalIP: netip.MustParseAddr("10.0.0.10"), externalIP: mustAddrPort("1.2.3.4:5560")}
+	repo := &fakeSessionRepo{}
+	handler := NewTransportHandler(context.Background(), settings.Settings{}, writer, &fakeTcpListener{}, repo, logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{})
+	handler.(*TransportHandler).handleClient(ctx, sess, writer)
+
+	if !logger.contains("failed to decrypt data: bad decrypt") {
+		t.Errorf("expected decrypt error log, got %v", logger.logs)
+	}
+}
+
+func TestHandleClient_WriteTunError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	conn := &fakeConn{
+		addr:     tcpAddr("1.2.3.4", 5561),
+		readBufs: [][]byte{make([]byte, chacha20poly1305.Overhead)}, // valid length
+	}
+	writer := &fakeWriter{err: errors.New("fail tun")}
+	logger := &fakeLogger{}
+	sess := Session{connectionAdapter: conn, cryptographyService: &fakeCrypto{}, internalIP: netip.MustParseAddr("10.0.0.11"), externalIP: mustAddrPort("1.2.3.4:5561")}
+	repo := &fakeSessionRepo{}
+	handler := NewTransportHandler(context.Background(), settings.Settings{}, writer, &fakeTcpListener{}, repo, logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{})
+	handler.(*TransportHandler).handleClient(ctx, sess, writer)
+
+	if !logger.contains("failed to write to TUN: fail tun") {
+		t.Errorf("expected write-to-tun error log, got %v", logger.logs)
+	}
+}
+
+func TestHandleClient_HappyDataPath_WritesToTun_AndCloses(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	payload := make([]byte, chacha20poly1305.Overhead) // minimal valid length
+
+	conn := &fakeConn{
+		addr:     tcpAddr("1.2.3.4", 6001),
+		readBufs: [][]byte{payload},
+	}
+	writer := &fakeWriter{}
+	logger := &fakeLogger{}
+	sess := Session{
+		connectionAdapter:   conn,
+		cryptographyService: &fakeCrypto{},
+		internalIP:          netip.MustParseAddr("10.0.0.12"),
+		externalIP:          mustAddrPort("1.2.3.4:6001"),
+	}
+	repo := &fakeSessionRepo{}
+	h := NewTransportHandler(context.Background(), settings.Settings{}, writer, &fakeTcpListener{}, repo, logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{})
+
+	h.(*TransportHandler).handleClient(ctx, sess, writer)
+
+	if len(writer.wrote) != 1 {
+		t.Fatalf("expected 1 write to TUN, got %d", len(writer.wrote))
+	}
+	if !bytes.Equal(writer.wrote[0], payload) {
+		t.Fatalf("written payload mismatch: got %v, want %v", writer.wrote[0], payload)
+	}
+	if len(repo.deleted) != 1 {
+		t.Fatalf("expected session deleted once on normal return, got %d", len(repo.deleted))
+	}
+	if !conn.closed {
+		t.Fatalf("expected transport Close() to be called")
 	}
 }
