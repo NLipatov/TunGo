@@ -98,6 +98,13 @@ func makeSession(c *TunHandlerMockConn, crypto *TunHandlerMockCrypto) Session {
 
 func rdr(seq [][]byte, err []error) io.Reader { return &TunHandlerMockReader{seq: seq, err: err} }
 
+// TunHandlerTempNetError simulates a temporary read error.
+type TunHandlerTempNetError struct{}
+
+func (TunHandlerTempNetError) Error() string   { return "temporary error" }
+func (TunHandlerTempNetError) Temporary() bool { return true }
+func (TunHandlerTempNetError) Timeout() bool   { return false }
+
 // --- Tests aiming for 100% coverage of HandleTun ---
 
 func TestTunHandler_ContextDone(t *testing.T) {
@@ -221,5 +228,42 @@ func TestTunHandler_ZeroLengthRead_SkipsThenEOF(t *testing.T) {
 	)
 	if err := h.HandleTun(); err != io.EOF {
 		t.Fatalf("want io.EOF after zero-length read, got %v", err)
+	}
+}
+
+func TestTunHandler_TemporaryReadError_RetriesThenEOF(t *testing.T) {
+	// First Read: returns any bytes + temporary error -> handler must 'continue'
+	// Second Read: mock returns EOF (because scripted seq is exhausted) -> handler returns EOF.
+	h := NewTunHandler(
+		context.Background(),
+		rdr([][]byte{{0xAA}}, []error{TunHandlerTempNetError{}}),
+		&TunHandlerMockParser{}, // not used
+		&TunHandlerMockMgr{},    // not used
+	)
+
+	if err := h.HandleTun(); err != io.EOF {
+		t.Fatalf("want io.EOF after temporary error retry, got %v", err)
+	}
+}
+
+func TestTunHandler_TemporaryReadError_ThenProcessesNextPacket(t *testing.T) {
+	addr := netip.MustParseAddr("10.0.0.42")
+	p := &TunHandlerMockParser{addr: addr}
+	conn := &TunHandlerMockConn{}
+	mgr := &TunHandlerMockMgr{sess: makeSession(conn, &TunHandlerMockCrypto{})}
+
+	// Read #1 -> temporary error; Read #2 -> valid payload; Read #3 -> EOF (seq исчерпан)
+	h := NewTunHandler(
+		context.Background(),
+		rdr([][]byte{{0x01}, {0xDE, 0xAD, 0xBE, 0xEF}}, []error{TunHandlerTempNetError{}, nil}),
+		p,
+		mgr,
+	)
+
+	if err := h.HandleTun(); err != io.EOF {
+		t.Fatalf("want io.EOF, got %v", err)
+	}
+	if got := atomic.LoadInt32(&conn.called); got == 0 {
+		t.Fatalf("expected connection Write to be called after temporary error, got %d", got)
 	}
 }
