@@ -198,7 +198,7 @@ func (s ServerTunFactory) configure(tunFile *os.File) error {
 	return nil
 }
 
-func (s ServerTunFactory) Unconfigure(tunFile *os.File) {
+func (s ServerTunFactory) Unconfigure(tunFile *os.File) error {
 	tunName, err := s.ioctl.DetectTunNameFromFd(tunFile)
 	if err != nil {
 		log.Printf("failed to determing tunnel ifName: %s\n", err)
@@ -209,12 +209,12 @@ func (s ServerTunFactory) Unconfigure(tunFile *os.File) {
 		log.Printf("failed to disbale NAT: %s\n", err)
 	}
 
-	err = s.clearForwarding(tunFile, tunName)
-	if err != nil {
-		log.Printf("failed to disable forwarding: %s\n", err)
+	defaultIfName, defaultIfNameErr := s.ip.RouteDefault()
+	if defaultIfNameErr != nil {
+		return fmt.Errorf("failed to resolve default interface: %v", defaultIfNameErr)
 	}
 
-	log.Printf("server unconfigured\n")
+	return s.clearForwarding(tunFile, defaultIfName)
 }
 
 func (s ServerTunFactory) setupForwarding(tunFile *os.File, extIface string) error {
