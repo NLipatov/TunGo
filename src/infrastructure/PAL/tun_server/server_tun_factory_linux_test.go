@@ -581,7 +581,7 @@ func TestServerTunFactoryMockIP_ExerciseAllStubs(t *testing.T) {
 		t.Fatalf("RouteDel: %v", err)
 	}
 
-	// Also tick the simple helpers (already covered в других тестах, но не повредит)
+	// Also tick the simple helpers
 	_ = m.TunTapAddDevTun("tunX")
 	_ = m.LinkDelete("tunX")
 	_ = m.LinkSetDevUp("tunX")
@@ -593,7 +593,6 @@ func TestServerTunFactoryMockIP_ExerciseAllStubs(t *testing.T) {
 		t.Fatalf("RouteDefault: iface=%q err=%v", iface, err)
 	}
 
-	// Optional: sanity-check that our tag logger отмечал вызовы
 	got := m.log.String()
 	for _, tag := range []string{"add", "del", "up", "mtu", "addr", "route"} {
 		if !strings.Contains(got, tag+";") {

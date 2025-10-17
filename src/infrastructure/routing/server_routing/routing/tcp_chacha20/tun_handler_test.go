@@ -252,7 +252,7 @@ func TestTunHandler_TemporaryReadError_ThenProcessesNextPacket(t *testing.T) {
 	conn := &TunHandlerMockConn{}
 	mgr := &TunHandlerMockMgr{sess: makeSession(conn, &TunHandlerMockCrypto{})}
 
-	// Read #1 -> temporary error; Read #2 -> valid payload; Read #3 -> EOF (seq исчерпан)
+	// Read #1 -> temporary error; Read #2 -> valid payload; Read #3 -> EOF
 	h := NewTunHandler(
 		context.Background(),
 		rdr([][]byte{{0x01}, {0xDE, 0xAD, 0xBE, 0xEF}}, []error{TunHandlerTempNetError{}, nil}),
