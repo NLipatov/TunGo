@@ -75,7 +75,7 @@ func (t *TransportHandler) HandleTransport() error {
 			n, _, _, clientAddr, readFromUdpErr := t.listenerConn.ReadMsgUDPAddrPort(buffer[:], oobBuf[:])
 			if readFromUdpErr != nil {
 				if t.ctx.Err() != nil {
-					return nil
+					return t.ctx.Err()
 				}
 				t.logger.Printf("failed to read from UDP: %s", readFromUdpErr)
 				continue
