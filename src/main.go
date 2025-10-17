@@ -32,6 +32,7 @@ func main() {
 	appCtx, appCtxCancel := context.WithCancel(context.Background())
 	defer appCtxCancel()
 
+	// Note: 1-sized buffer used as os/signal uses non-blocking sends and may drop signals if unbuffered.
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 	go func() {
