@@ -557,3 +557,47 @@ func TestIsBenignInterfaceError(t *testing.T) {
 		t.Errorf("unexpected benign for non-matching error")
 	}
 }
+
+func TestServerTunFactoryMockIP_ExerciseAllStubs(t *testing.T) {
+	m := &ServerTunFactoryMockIP{}
+
+	// Exercise previously uncovered stubs
+	if _, err := m.AddrShowDev(0, "dummy"); err != nil {
+		t.Fatalf("AddrShowDev: %v", err)
+	}
+	if err := m.RouteAddDefaultDev("eth0"); err != nil {
+		t.Fatalf("RouteAddDefaultDev: %v", err)
+	}
+	if _, err := m.RouteGet("1.2.3.4/32"); err != nil {
+		t.Fatalf("RouteGet: %v", err)
+	}
+	if err := m.RouteAddDev("dev0", "10.0.0.0/24"); err != nil {
+		t.Fatalf("RouteAddDev: %v", err)
+	}
+	if err := m.RouteAddViaDev("10.0.1.0/24", "10.0.0.1", "dev0"); err != nil {
+		t.Fatalf("RouteAddViaDev: %v", err)
+	}
+	if err := m.RouteDel("10.0.0.0/24"); err != nil {
+		t.Fatalf("RouteDel: %v", err)
+	}
+
+	// Also tick the simple helpers (already covered в других тестах, но не повредит)
+	_ = m.TunTapAddDevTun("tunX")
+	_ = m.LinkDelete("tunX")
+	_ = m.LinkSetDevUp("tunX")
+	_ = m.LinkSetDevMTU("tunX", 1500)
+	_ = m.AddrAddDev("tunX", "10.0.0.1/24")
+
+	iface, err := m.RouteDefault()
+	if err != nil || iface == "" {
+		t.Fatalf("RouteDefault: iface=%q err=%v", iface, err)
+	}
+
+	// Optional: sanity-check that our tag logger отмечал вызовы
+	got := m.log.String()
+	for _, tag := range []string{"add", "del", "up", "mtu", "addr", "route"} {
+		if !strings.Contains(got, tag+";") {
+			t.Errorf("expected tag %q in log, got: %q", tag, got)
+		}
+	}
+}
