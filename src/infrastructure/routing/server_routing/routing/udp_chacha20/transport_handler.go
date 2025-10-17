@@ -75,18 +75,15 @@ func (t *TransportHandler) HandleTransport() error {
 			n, _, _, clientAddr, readFromUdpErr := t.listenerConn.ReadMsgUDPAddrPort(buffer[:], oobBuf[:])
 			if readFromUdpErr != nil {
 				if t.ctx.Err() != nil {
-					return nil
+					return t.ctx.Err()
 				}
-
 				t.logger.Printf("failed to read from UDP: %s", readFromUdpErr)
 				continue
 			}
-
 			if n == 0 {
 				t.logger.Printf("packet dropped: empty packet from %v", clientAddr.String())
 				continue
 			}
-
 			_ = t.handlePacket(t.listenerConn, clientAddr, buffer[:n])
 		}
 	}

@@ -67,11 +67,10 @@ func (t *TransportHandler) HandleTransport() error {
 	for {
 		select {
 		case <-t.ctx.Done():
-			return nil
+			return t.ctx.Err()
 		default:
 			conn, listenErr := t.listener.Accept()
 			if t.ctx.Err() != nil {
-				t.logger.Printf("exiting Accept loop: %s", t.ctx.Err())
 				return nil
 			}
 			if listenErr != nil {

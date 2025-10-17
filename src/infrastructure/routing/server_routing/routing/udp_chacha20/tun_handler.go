@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"log"
-	"os"
 	"tungo/application/network/connection"
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/settings"
@@ -60,6 +59,7 @@ func NewTunHandler(
 func (t *TunHandler) HandleTun() error {
 	// Reserve space for nonce + payload + AEAD tag (in-place encryption needs extra capacity).
 	var buffer [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
+	plaintext := buffer[chacha20poly1305.NonceSize : settings.DefaultEthernetMTU+chacha20poly1305.NonceSize]
 
 	for {
 		select {
@@ -67,18 +67,12 @@ func (t *TunHandler) HandleTun() error {
 			return nil
 		default:
 			// Read payload right after the reserved nonce area.
-			n, rErr := t.reader.Read(buffer[chacha20poly1305.NonceSize : settings.DefaultEthernetMTU+chacha20poly1305.NonceSize])
-			if rErr != nil {
-				if rErr == io.EOF {
-					log.Println("TUN interface closed, shutting down...")
-					return rErr
+			n, err := t.reader.Read(plaintext)
+			if err != nil {
+				if ne, ok := err.(interface{ Temporary() bool }); ok && ne.Temporary() {
+					continue
 				}
-				if os.IsNotExist(rErr) || os.IsPermission(rErr) {
-					log.Printf("TUN interface error (closed or permission issue): %v", rErr)
-					return rErr
-				}
-				log.Printf("failed to read from TUN, retrying: %v", rErr)
-				continue
+				return err
 			}
 			if n == 0 {
 				// Defensive: spurious zero-length read; skip.
@@ -95,14 +89,14 @@ func (t *TunHandler) HandleTun() error {
 
 			session, sErr := t.sessionManager.GetByInternalAddrPort(addr)
 			if sErr != nil {
-				log.Printf("packet dropped: %s, destination host: %v", sErr, addr)
+				log.Printf("packet dropped: %v, destination host: %v", sErr, addr)
 				continue
 			}
 
 			// Encrypt "nonce || payload". The crypto service must treat the prefix as nonce.
 			ct, eErr := session.Crypto().Encrypt(buffer[:chacha20poly1305.NonceSize+n])
 			if eErr != nil {
-				log.Printf("failed to encrypt packet: %s", eErr)
+				log.Printf("failed to encrypt packet: %v", eErr)
 				continue
 			}
 
