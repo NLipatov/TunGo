@@ -71,7 +71,6 @@ func (t *TransportHandler) HandleTransport() error {
 		default:
 			conn, listenErr := t.listener.Accept()
 			if t.ctx.Err() != nil {
-				t.logger.Printf("exiting Accept loop: %s", t.ctx.Err())
 				return nil
 			}
 			if listenErr != nil {
