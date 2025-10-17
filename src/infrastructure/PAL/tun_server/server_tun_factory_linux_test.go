@@ -238,6 +238,46 @@ var baseCfg = settings.Settings{
 	MTU:             settings.SafeMTU,
 }
 
+// ServerTunFactoryMockIPTBenign simulates benign iptables errors that must be ignored.
+type ServerTunFactoryMockIPTBenign struct{ log bytes.Buffer }
+
+func (m *ServerTunFactoryMockIPTBenign) EnableDevMasquerade(_ string) error { return nil }
+func (m *ServerTunFactoryMockIPTBenign) DisableDevMasquerade(_ string) error {
+	return errors.New("rule does not exist")
+} // benign
+func (m *ServerTunFactoryMockIPTBenign) EnableForwardingFromTunToDev(_, _ string) error {
+	return nil
+}
+func (m *ServerTunFactoryMockIPTBenign) DisableForwardingFromTunToDev(_, _ string) error {
+	return errors.New("no chain/target/match") // benign
+}
+func (m *ServerTunFactoryMockIPTBenign) EnableForwardingFromDevToTun(_, _ string) error { return nil }
+func (m *ServerTunFactoryMockIPTBenign) DisableForwardingFromDevToTun(_, _ string) error {
+	return errors.New("rule does not exist") // benign
+}
+func (m *ServerTunFactoryMockIPTBenign) ConfigureMssClamping() error { return nil }
+
+// ServerTunFactoryMockIPTAlwaysErr simulates non-benign iptables errors that are logged but not fatal.
+type ServerTunFactoryMockIPTAlwaysErr struct{}
+
+func (m *ServerTunFactoryMockIPTAlwaysErr) EnableDevMasquerade(_ string) error { return nil }
+func (m *ServerTunFactoryMockIPTAlwaysErr) DisableDevMasquerade(_ string) error {
+	return errors.New("permission denied")
+}
+func (m *ServerTunFactoryMockIPTAlwaysErr) EnableForwardingFromTunToDev(_, _ string) error {
+	return nil
+}
+func (m *ServerTunFactoryMockIPTAlwaysErr) DisableForwardingFromTunToDev(_, _ string) error {
+	return errors.New("permission denied")
+}
+func (m *ServerTunFactoryMockIPTAlwaysErr) EnableForwardingFromDevToTun(_, _ string) error {
+	return nil
+}
+func (m *ServerTunFactoryMockIPTAlwaysErr) DisableForwardingFromDevToTun(_, _ string) error {
+	return errors.New("permission denied")
+}
+func (m *ServerTunFactoryMockIPTAlwaysErr) ConfigureMssClamping() error { return nil }
+
 /*
    ==============================
    Tests
@@ -599,4 +639,78 @@ func TestServerTunFactoryMockIP_ExerciseAllStubs(t *testing.T) {
 			t.Errorf("expected tag %q in log, got: %q", tag, got)
 		}
 	}
+}
+
+func TestIsBenignInterfaceError_NilIsFalse(t *testing.T) {
+	// nil must not be treated as benign
+	f := newFactory(nil, nil, nil, nil)
+	if f.isBenignInterfaceError(nil) {
+		t.Fatalf("nil must not be benign")
+	}
+}
+
+func TestDisposeDevices_BenignIptablesErrorsAreIgnored(t *testing.T) {
+	// Arrange: ext iface is non-empty, iptables returns benign errors ⇒ must be ignored
+	ipMock := &ServerTunFactoryMockIP{}
+	iptMock := &ServerTunFactoryMockIPTBenign{}
+	f := newFactory(ipMock, iptMock, &ServerTunFactoryMockIOCTL{}, &ServerTunFactoryMockSys{})
+
+	cfg := baseCfg
+	cfg.InterfaceName = pickLoopbackName() // ensure InterfaceByName(...) passes
+
+	// Act + Assert
+	if err := f.DisposeDevices(cfg); err != nil {
+		t.Fatalf("DisposeDevices should ignore benign iptables errors, got: %v", err)
+	}
+}
+
+func TestDisposeDevices_NonBenignIptablesErrorsAreLoggedButIgnored(t *testing.T) {
+	// Arrange: iptables returns non-benign errors; code should log them but still proceed
+	ipMock := &ServerTunFactoryMockIP{}
+	iptMock := &ServerTunFactoryMockIPTAlwaysErr{}
+	f := newFactory(ipMock, iptMock, &ServerTunFactoryMockIOCTL{}, &ServerTunFactoryMockSys{})
+
+	cfg := baseCfg
+	cfg.InterfaceName = pickLoopbackName()
+
+	// Act + Assert
+	if err := f.DisposeDevices(cfg); err != nil {
+		t.Fatalf("DisposeDevices should not fail on non-benign iptables errors (only log), got: %v", err)
+	}
+}
+
+func TestUnconfigure_DetectTunNameError_ContinuesToRouteDefault(t *testing.T) {
+	// If DetectTunNameFromFd fails, Unconfigure must continue and then surface RouteDefault error.
+	ioMock := &ServerTunFactoryMockIOCTL{detectErr: errors.New("detect_failed")}
+	tun, _ := ioMock.CreateTunInterface("tunX")
+	f := newFactory(
+		&ServerTunFactoryMockIPRouteErr{err: errors.New("route_err")},
+		&ServerTunFactoryMockIPT{},
+		ioMock,
+		&ServerTunFactoryMockSys{},
+	)
+
+	err := f.Unconfigure(tun)
+	if err == nil || !strings.Contains(err.Error(), "failed to resolve default interface") {
+		t.Fatalf("expected RouteDefault error after detect failure, got %v", err)
+	}
+}
+
+func TestEnableForwarding_WritesWhenDisabled_Succeeds(t *testing.T) {
+	// First sysctl returns 0 → we write 1 and proceed successfully.
+	f := newFactory(
+		&ServerTunFactoryMockIP{},
+		&ServerTunFactoryMockIPT{},
+		&ServerTunFactoryMockIOCTL{},
+		&ServerTunFactoryMockSys{netOutput: []byte("net.ipv4.ip_forward = 0\n")},
+	)
+
+	tun, err := f.CreateDevice(baseCfg)
+	if err != nil {
+		t.Fatalf("CreateDevice should succeed after enabling ip_forward, got: %v", err)
+	}
+	if tun == nil {
+		t.Fatal("expected non-nil tun file")
+	}
+	_ = tun.Close()
 }
