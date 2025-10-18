@@ -3,13 +3,12 @@ package chacha20
 import (
 	"encoding/binary"
 	"fmt"
-	"sync"
 )
 
+// Nonce is not concurrent-safe by design as it must be used from a single goroutine.
 type Nonce struct {
 	low  uint64
 	high uint32
-	mu   sync.Mutex
 }
 
 func NewNonce() *Nonce {
@@ -17,9 +16,6 @@ func NewNonce() *Nonce {
 }
 
 func (n *Nonce) incrementNonce() error {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-
 	// Ensure nonce does not overflow
 	if n.high == ^uint32(0) && n.low == ^uint64(0) {
 		return fmt.Errorf("nonce overflow: maximum number of messages reached")
