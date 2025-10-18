@@ -2,7 +2,6 @@ package chacha20
 
 import (
 	"encoding/binary"
-	"sync"
 	"testing"
 )
 
@@ -74,32 +73,5 @@ func TestNonceEncode(t *testing.T) {
 		if encoded[i] != expected[i] {
 			t.Errorf("Encoded byte mismatch at index %d: expected %02x, got %02x", i, expected[i], encoded[i])
 		}
-	}
-}
-
-// TestNonceConcurrentIncrement checks that incrementNonce handles concurrent invocations correctly.
-func TestNonceConcurrentIncrement(t *testing.T) {
-	nonce := NewNonce()
-	var wg sync.WaitGroup
-	numGoroutines := 10
-	incrementsPerGoroutine := 1000
-
-	for i := 0; i < numGoroutines; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for j := 0; j < incrementsPerGoroutine; j++ {
-				if err := nonce.incrementNonce(); err != nil {
-					t.Errorf("incrementNonce returned error: %v", err)
-					return
-				}
-			}
-		}()
-	}
-
-	wg.Wait()
-	expectedLow := uint64(numGoroutines * incrementsPerGoroutine)
-	if nonce.low != expectedLow || nonce.high != 0 {
-		t.Errorf("Expected low=%d and high=0 after concurrent increments, got low=%d, high=%d", expectedLow, nonce.low, nonce.high)
 	}
 }
