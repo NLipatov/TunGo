@@ -11,38 +11,58 @@ import (
 )
 
 // DarwinTunDevice adapts UTUN to the portable tun.Device API.
-// It always uses vectored I/O ([hdr(4), payload]) to avoid extra user-space copies.
-type DarwinTunDevice struct{ device UTUN }
+// It uses vectored I/O ([hdr(4), payload]) with preallocated iovecs to avoid heap allocs.
+type DarwinTunDevice struct {
+	device UTUN
 
-func NewDarwinTunDevice(dev UTUN) tun.Device { return &DarwinTunDevice{device: dev} }
+	// Preallocated scatter/gather vectors & scratch for READ path.
+	readHdr   [4]byte   // AF header sink for readv
+	readIOV   [2][]byte // [hdr, payload]
+	readSizes [1]int    // sizes scratch for UTUN.Read
+
+	// Preallocated scatter/gather vectors & scratch for WRITE path.
+	writeHdr   [4]byte   // AF header source for writev
+	writeIOV   [2][]byte // [hdr, payload]
+	writeSizes [1]int    // (not used by write, but kept symmetric)
+}
+
+func NewDarwinTunDevice(dev UTUN) tun.Device {
+	return &DarwinTunDevice{device: dev}
+}
 
 // Read fills p with a clean IP packet (without the 4-byte UTUN header).
-// It returns the payload length copied into p.
+// No heap allocations in the hot path.
 func (a *DarwinTunDevice) Read(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, errors.New("destination slice too small")
 	}
-	var hdr [4]byte
-	sizes := []int{0}
-	if _, err := a.device.Read([][]byte{hdr[:], p}, sizes, 0); err != nil {
+	a.readIOV[0] = a.readHdr[:]
+	a.readIOV[1] = p
+	a.readSizes[0] = 0
+
+	if _, err := a.device.Read(a.readIOV[:], a.readSizes[:], 0); err != nil {
 		return 0, err
 	}
-	return sizes[0], nil
+	return a.readSizes[0], nil
 }
 
 // Write sends p by prepending the 4-byte UTUN AF header (IPv4/IPv6).
-// It returns the payload length sent (header excluded).
+// No heap allocations in the hot path.
 func (a *DarwinTunDevice) Write(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, errors.New("empty packet")
 	}
-	var hdr [4]byte
+
 	af := unix.AF_INET
 	if p[0]>>4 == 6 {
 		af = unix.AF_INET6
 	}
-	binary.BigEndian.PutUint32(hdr[:], uint32(af))
-	if _, err := a.device.Write([][]byte{hdr[:], p}, 0); err != nil {
+	binary.BigEndian.PutUint32(a.writeHdr[:], uint32(af))
+
+	a.writeIOV[0] = a.writeHdr[:]
+	a.writeIOV[1] = p
+
+	if _, err := a.device.Write(a.writeIOV[:], 0); err != nil {
 		return 0, err
 	}
 	return len(p), nil
