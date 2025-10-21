@@ -2,6 +2,8 @@ package chacha20
 
 import (
 	"bytes"
+	"encoding/binary"
+	"strings"
 	"testing"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -224,5 +226,62 @@ func TestUdp_CreateAAD_BothDirections(t *testing.T) {
 		aadS2C[sessionIdentifierLength:sessionIdentifierLength+directionLength],
 	) {
 		t.Fatal("C2S and S2C direction segments must differ")
+	}
+}
+
+func TestUdpEncrypt_ErrOnNonceOverflow(t *testing.T) {
+	id := randID()
+	key := randKey()
+	sess, err := NewUdpSession(id, key, key, false)
+	if err != nil {
+		t.Fatalf("NewUdpSession: %v", err)
+	}
+
+	// Force overflow: high=max, low=max ⇒ incrementNonce() must return an error.
+	sess.nonce.high = ^uint32(0)
+	sess.nonce.low = ^uint64(0)
+
+	// Must satisfy pre-checks: len >= 12 and cap >= len + Overhead.
+	buf := make([]byte, chacha20poly1305.NonceSize, chacha20poly1305.NonceSize+chacha20poly1305.Overhead)
+
+	_, err = sess.Encrypt(buf)
+	if err == nil {
+		t.Fatal("expected nonce overflow error, got nil")
+	}
+	if !strings.Contains(err.Error(), "nonce overflow") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestUdpEncrypt_NonceRollover_WritesCorrectNonce(t *testing.T) {
+	id := randID()
+	key := randKey()
+	sess, err := NewUdpSession(id, key, key, false)
+	if err != nil {
+		t.Fatalf("NewUdpSession: %v", err)
+	}
+
+	// Set state to "just before rollover".
+	const startHigh = uint32(123)
+	sess.nonce.high = startHigh
+	sess.nonce.low = ^uint64(0)
+
+	// Empty payload (only 12-byte nonce header). Cap allows in-place tag append.
+	buf := make([]byte, chacha20poly1305.NonceSize, chacha20poly1305.NonceSize+chacha20poly1305.Overhead)
+
+	out, err := sess.Encrypt(buf)
+	if err != nil {
+		t.Fatalf("Encrypt (rollover): %v", err)
+	}
+
+	// Decode nonce: [0..7]=low (uint64 BE), [8..11]=high (uint32 BE).
+	encLow := binary.BigEndian.Uint64(out[:8])
+	encHigh := binary.BigEndian.Uint32(out[8:12])
+
+	if encLow != 0 {
+		t.Fatalf("nonce.low after rollover = %d; want 0", encLow)
+	}
+	if encHigh != startHigh+1 {
+		t.Fatalf("nonce.high after rollover = %d; want %d", encHigh, startHigh+1)
 	}
 }
