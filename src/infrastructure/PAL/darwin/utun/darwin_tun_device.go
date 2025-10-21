@@ -1,6 +1,6 @@
 //go:build darwin
 
-package tun_adapters
+package utun
 
 import (
 	"encoding/binary"
@@ -10,13 +10,11 @@ import (
 	"tungo/infrastructure/settings"
 )
 
-const UTUNHeaderSize = 4
+const headerSize = 4
 
-// WgTunAdapter wraps a wireguard/tun Device and is **allocation‑free**
-// in the steady state: all required buffers and slice headers are created
-// once in NewWgTunAdapter and then reused.
-type WgTunAdapter struct {
-	device Adapter
+// DarwinTunDevice is Darwin-specific implementation of tun.Device.
+type DarwinTunDevice struct {
+	device UTUN
 
 	readBuffer  []byte // backing array for incoming packets (+4 bytes hdr)
 	writeBuffer []byte // backing array for outgoing packets (+4 bytes hdr)
@@ -27,12 +25,12 @@ type WgTunAdapter struct {
 	sizes    []int    // len==1, scratch for Device.Read
 }
 
-// NewWgTunAdapter allocates the buffers once and prepares reusable slice
+// NewDarwinTunDevice allocates the buffers once and prepares reusable slice
 // headers. MaxPacketLengthBytes should already include the 4‑byte utun header.
-func NewWgTunAdapter(dev Adapter) tun.Device {
-	rb := make([]byte, settings.DefaultEthernetMTU+UTUNHeaderSize)
-	wb := make([]byte, settings.DefaultEthernetMTU+UTUNHeaderSize)
-	return &WgTunAdapter{
+func NewDarwinTunDevice(dev UTUN) tun.Device {
+	rb := make([]byte, settings.DefaultEthernetMTU+headerSize)
+	wb := make([]byte, settings.DefaultEthernetMTU+headerSize)
+	return &DarwinTunDevice{
 		device:      dev,
 		readBuffer:  rb,
 		writeBuffer: wb,
@@ -44,7 +42,7 @@ func NewWgTunAdapter(dev Adapter) tun.Device {
 
 // Read copies a clean IP packet (without the 4‑byte utun header) into p.
 // No heap allocations occur.
-func (a *WgTunAdapter) Read(p []byte) (int, error) {
+func (a *DarwinTunDevice) Read(p []byte) (int, error) {
 	a.sizes[0] = 0 // reset size slot
 
 	// offset=4: driver writes after utun header
@@ -60,7 +58,7 @@ func (a *WgTunAdapter) Read(p []byte) (int, error) {
 }
 
 // Write prepends utun header and transmits p without allocations.
-func (a *WgTunAdapter) Write(p []byte) (int, error) {
+func (a *DarwinTunDevice) Write(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, errors.New("empty packet")
 	}
@@ -88,4 +86,4 @@ func (a *WgTunAdapter) Write(p []byte) (int, error) {
 }
 
 // Close closes the underlying utun device.
-func (a *WgTunAdapter) Close() error { return a.device.Close() }
+func (a *DarwinTunDevice) Close() error { return a.device.Close() }

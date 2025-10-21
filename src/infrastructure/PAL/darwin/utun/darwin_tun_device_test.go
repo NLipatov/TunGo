@@ -1,6 +1,6 @@
 //go:build darwin
 
-package tun_adapters
+package utun
 
 import (
 	"encoding/binary"
@@ -59,7 +59,7 @@ func TestRead_Success(t *testing.T) {
 		readPayload: append(make([]byte, 4), payload...),
 		readSize:    len(payload),
 	}
-	adapter := NewWgTunAdapter(ft)
+	adapter := NewDarwinTunDevice(ft)
 
 	out := make([]byte, len(payload))
 	n, err := adapter.Read(out)
@@ -77,7 +77,7 @@ func TestRead_Success(t *testing.T) {
 func TestRead_ErrFromDevice(t *testing.T) {
 	wantErr := errors.New("read fail")
 	ft := &fakeTun{readErr: wantErr}
-	adapter := NewWgTunAdapter(ft)
+	adapter := NewDarwinTunDevice(ft)
 
 	_, err := adapter.Read(make([]byte, 10))
 	if !errors.Is(err, wantErr) {
@@ -91,7 +91,7 @@ func TestRead_DestinationTooSmall(t *testing.T) {
 		readPayload: append(make([]byte, 4), payload...),
 		readSize:    len(payload),
 	}
-	adapter := NewWgTunAdapter(ft)
+	adapter := NewDarwinTunDevice(ft)
 
 	_, err := adapter.Read(make([]byte, len(payload)-1))
 	if err == nil || err.Error() != "destination slice too small" {
@@ -103,7 +103,7 @@ func TestWrite_Success_IPv4(t *testing.T) {
 	// first nibble = 4 indicates IPv4
 	payload := []byte{0x45, 0xAA, 0xBB}
 	ft := &fakeTun{}
-	adapter := NewWgTunAdapter(ft)
+	adapter := NewDarwinTunDevice(ft)
 
 	n, err := adapter.Write(payload)
 	if err != nil {
@@ -136,7 +136,7 @@ func TestWrite_Success_IPv6(t *testing.T) {
 	// first nibble = 6 indicates IPv6
 	payload := []byte{0x60, 0xDE, 0xAD}
 	ft := &fakeTun{}
-	adapter := NewWgTunAdapter(ft)
+	adapter := NewDarwinTunDevice(ft)
 
 	_, err := adapter.Write(payload)
 	if err != nil {
@@ -154,7 +154,7 @@ func TestWrite_Success_IPv6(t *testing.T) {
 
 func TestWrite_EmptyPacket(t *testing.T) {
 	ft := &fakeTun{}
-	adapter := NewWgTunAdapter(ft)
+	adapter := NewDarwinTunDevice(ft)
 
 	_, err := adapter.Write(nil)
 	if err == nil || err.Error() != "empty packet" {
@@ -164,9 +164,9 @@ func TestWrite_EmptyPacket(t *testing.T) {
 
 func TestWrite_TooLargePacket(t *testing.T) {
 	// payload larger than MaxPacketLengthBytes-4
-	tooBig := make([]byte, settings.DefaultEthernetMTU+UTUNHeaderSize)
+	tooBig := make([]byte, settings.DefaultEthernetMTU+headerSize)
 	ft := &fakeTun{}
-	adapter := NewWgTunAdapter(ft)
+	adapter := NewDarwinTunDevice(ft)
 
 	_, err := adapter.Write(tooBig)
 	if err == nil || err.Error() != "packet exceeds max size" {
@@ -178,7 +178,7 @@ func TestWrite_DeviceError(t *testing.T) {
 	payload := []byte{0x45, 0xAA}
 	wantErr := errors.New("write fail")
 	ft := &fakeTun{writeErr: wantErr}
-	adapter := NewWgTunAdapter(ft)
+	adapter := NewDarwinTunDevice(ft)
 
 	_, err := adapter.Write(payload)
 	if !errors.Is(err, wantErr) {
@@ -188,7 +188,7 @@ func TestWrite_DeviceError(t *testing.T) {
 
 func TestClose(t *testing.T) {
 	ft := &fakeTun{}
-	adapter := NewWgTunAdapter(ft)
+	adapter := NewDarwinTunDevice(ft)
 	err := adapter.Close()
 	if err != nil {
 		t.Fatalf("Close error = %v, want nil", err)
@@ -201,7 +201,7 @@ func TestClose(t *testing.T) {
 func TestClose_Error(t *testing.T) {
 	wantErr := errors.New("close fail")
 	ft := &fakeTun{closeErr: wantErr}
-	adapter := NewWgTunAdapter(ft)
+	adapter := NewDarwinTunDevice(ft)
 	err := adapter.Close()
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("Close error = %v, want %v", err, wantErr)

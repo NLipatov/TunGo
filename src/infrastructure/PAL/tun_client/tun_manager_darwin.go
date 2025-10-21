@@ -9,14 +9,14 @@ import (
 	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/PAL/darwin/network_tools/ifconfig"
 	"tungo/infrastructure/PAL/darwin/network_tools/route"
-	"tungo/infrastructure/PAL/darwin/tun_adapters"
+	"tungo/infrastructure/PAL/darwin/utun"
 	"tungo/infrastructure/settings"
 )
 
 // PlatformTunManager is the macOS-specific implementation of ClientManager.
 type PlatformTunManager struct {
 	conf     client.Configuration
-	dev      tun_adapters.Adapter
+	dev      utun.UTUN
 	route    route.Contract
 	ifConfig ifconfig.Contract
 }
@@ -44,7 +44,7 @@ func (t *PlatformTunManager) CreateDevice() (tun.Device, error) {
 		return nil, fmt.Errorf("unsupported protocol")
 	}
 
-	tunFactory := tun_adapters.NewDefaultFactory(t.ifConfig)
+	tunFactory := utun.NewDefaultFactory(t.ifConfig)
 	dev, err := tunFactory.CreateTUN(s.MTU)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create TUN: %w", err)
@@ -76,7 +76,7 @@ func (t *PlatformTunManager) CreateDevice() (tun.Device, error) {
 	}
 	fmt.Printf("added split default routes via %s\n", name)
 
-	return tun_adapters.NewWgTunAdapter(dev), nil
+	return utun.NewDarwinTunDevice(dev), nil
 }
 
 // DisposeDevices removes routes and destroys TUN interfaces.

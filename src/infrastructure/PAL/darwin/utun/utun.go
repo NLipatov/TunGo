@@ -1,11 +1,19 @@
 //go:build darwin
 
-package tun_adapters
+package utun
 
 import (
 	"errors"
 	"golang.org/x/sys/unix"
 )
+
+// UTUN is low-level vector I/O interface used by DarwinTunDevice.
+type UTUN interface {
+	Read(frags [][]byte, sizes []int, offset int) (int, error)
+	Write(frags [][]byte, offset int) (int, error)
+	Close() error
+	Name() (string, error)
+}
 
 const (
 	uTunControlName = "com.apple.net.utun_control"
@@ -14,13 +22,13 @@ const (
 	uTunOptIfName   = 2 // getsockopt -> interface name like "utun3"
 )
 
-// uTun implements Adapter directly over the UTUN kernel control socket.
-type uTun struct {
+// rawUTUN implements UTUN directly over the UTUN kernel control socket.
+type rawUTUN struct {
 	fd   int
 	name string
 }
 
-func newUTun() (*uTun, error) {
+func newRawUTUN() (*rawUTUN, error) {
 	fd, err := unix.Socket(unix.AF_SYSTEM, unix.SOCK_DGRAM, sysProtoControl)
 	if err != nil {
 		return nil, err
@@ -46,12 +54,12 @@ func newUTun() (*uTun, error) {
 		return nil, err
 	}
 
-	return &uTun{fd: fd, name: ifName}, nil
+	return &rawUTUN{fd: fd, name: ifName}, nil
 }
 
-func (u *uTun) Name() (string, error) { return u.name, nil }
+func (u *rawUTUN) Name() (string, error) { return u.name, nil }
 
-func (u *uTun) Read(frags [][]byte, sizes []int, offset int) (int, error) {
+func (u *rawUTUN) Read(frags [][]byte, sizes []int, offset int) (int, error) {
 	if len(frags) == 0 || len(sizes) == 0 {
 		return 0, errors.New("invalid args")
 	}
@@ -77,7 +85,7 @@ func (u *uTun) Read(frags [][]byte, sizes []int, offset int) (int, error) {
 	return 1, nil // 1 fragment written
 }
 
-func (u *uTun) Write(frags [][]byte, _ int) (int, error) {
+func (u *rawUTUN) Write(frags [][]byte, _ int) (int, error) {
 	if len(frags) == 0 {
 		return 0, errors.New("no buffers")
 	}
@@ -92,4 +100,4 @@ func (u *uTun) Write(frags [][]byte, _ int) (int, error) {
 	return n - uTunHeaderSize, nil
 }
 
-func (u *uTun) Close() error { return unix.Close(u.fd) }
+func (u *rawUTUN) Close() error { return unix.Close(u.fd) }
