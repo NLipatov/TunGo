@@ -10,8 +10,6 @@ import (
 	"tungo/infrastructure/settings"
 )
 
-const headerSize = 4
-
 // DarwinTunDevice is Darwin-specific implementation of tun.Device.
 type DarwinTunDevice struct {
 	device UTUN
@@ -28,8 +26,8 @@ type DarwinTunDevice struct {
 // NewDarwinTunDevice allocates the buffers once and prepares reusable slice
 // headers. MaxPacketLengthBytes should already include the 4‑byte utun header.
 func NewDarwinTunDevice(dev UTUN) tun.Device {
-	rb := make([]byte, settings.DefaultEthernetMTU+headerSize)
-	wb := make([]byte, settings.DefaultEthernetMTU+headerSize)
+	rb := make([]byte, settings.DefaultEthernetMTU+uTunHeaderSize)
+	wb := make([]byte, settings.DefaultEthernetMTU+uTunHeaderSize)
 	return &DarwinTunDevice{
 		device:      dev,
 		readBuffer:  rb,
