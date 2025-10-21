@@ -1,8 +1,12 @@
 //go:build darwin
 
-package tun_adapters
+package utun
 
 import "tungo/infrastructure/PAL/darwin/network_tools/ifconfig"
+
+type Factory interface {
+	CreateTUN(mtu int) (UTUN, error)
+}
 
 type DefaultFactory struct {
 	ifConfig ifconfig.Contract
@@ -15,8 +19,8 @@ func NewDefaultFactory(ifConfig ifconfig.Contract) *DefaultFactory {
 }
 
 // CreateTUN mimics the API of wireguard/tun.CreateTUN on darwin.
-func (d *DefaultFactory) CreateTUN(mtu int) (Adapter, error) {
-	u, err := newUTun()
+func (d *DefaultFactory) CreateTUN(mtu int) (UTUN, error) {
+	u, err := newRawUTUN()
 	if err != nil {
 		return nil, err
 	}

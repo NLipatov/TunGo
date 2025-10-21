@@ -9,15 +9,13 @@ import (
 	framelimit "tungo/domain/network/ip/frame_limit"
 )
 
-// compile time check (LengthPrefixFramingAdapter must implement application.Transport)
-var _ interface {
-	connection.Transport
-} = (*LengthPrefixFramingAdapter)(nil)
-
-// Not safe for concurrent Read/Write without external synchronization.
+// LengthPrefixFramingAdapter is not safe for concurrent Read/Write without external synchronization.
 type LengthPrefixFramingAdapter struct {
 	adapter  connection.Transport
 	frameCap framelimit.Cap
+
+	// pre-allocated headers buffers (to avoid any chance of escape/allocation)
+	readHeaderBuffer, writeHeaderBuffer [2]byte
 }
 
 func NewLengthPrefixFramingAdapter(
@@ -45,9 +43,8 @@ func (a *LengthPrefixFramingAdapter) Write(data []byte) (int, error) {
 	if capErr := a.frameCap.ValidateLen(len(data)); capErr != nil {
 		return 0, capErr
 	}
-	var hdr [2]byte
-	binary.BigEndian.PutUint16(hdr[:], uint16(len(data)))
-	if err := a.writeFull(a.adapter, hdr[:]); err != nil {
+	binary.BigEndian.PutUint16(a.writeHeaderBuffer[:], uint16(len(data)))
+	if err := a.writeFull(a.adapter, a.writeHeaderBuffer[:]); err != nil {
 		return 0, err
 	}
 	if err := a.writeFull(a.adapter, data); err != nil {
@@ -75,11 +72,10 @@ func (a *LengthPrefixFramingAdapter) writeFull(w io.Writer, p []byte) error {
 // Read reads exactly one u16-BE length-prefixed frame into buffer and returns payload size.
 // NOTE: On errors adapter DOES NOT drain; the caller MUST close the connection.
 func (a *LengthPrefixFramingAdapter) Read(buffer []byte) (int, error) {
-	var hdr [2]byte
-	if _, err := io.ReadFull(a.adapter, hdr[:]); err != nil {
+	if _, err := io.ReadFull(a.adapter, a.readHeaderBuffer[:]); err != nil {
 		return 0, fmt.Errorf("%w: %w", ErrInvalidLengthPrefixHeader, err)
 	}
-	length := int(binary.BigEndian.Uint16(hdr[:]))
+	length := int(binary.BigEndian.Uint16(a.readHeaderBuffer[:]))
 	if length == 0 {
 		return 0, ErrZeroLengthFrame
 	}
