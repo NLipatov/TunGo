@@ -13,8 +13,7 @@ type (
 		encoder          DefaultUDPEncoder
 		sendCipher       cipher.AEAD
 		recvCipher       cipher.AEAD
-		SendNonce        *Nonce
-		RecvNonce        *Nonce
+		nonce            *Nonce
 		isServer         bool
 		nonceValidator   *Sliding64
 		encryptionAadBuf [60]byte //32 bytes for sessionId, 16 bytes for direction, 12 bytes for nonce. 60 bytes total.
@@ -37,8 +36,7 @@ func NewUdpSession(id [32]byte, sendKey, recvKey []byte, isServer bool) (*Defaul
 		SessionId:      id,
 		sendCipher:     sendCipher,
 		recvCipher:     recvCipher,
-		RecvNonce:      NewNonce(),
-		SendNonce:      NewNonce(),
+		nonce:          NewNonce(),
 		isServer:       isServer,
 		nonceValidator: NewSliding64(),
 		encoder:        DefaultUDPEncoder{},
@@ -57,13 +55,13 @@ func (s *DefaultUdpSession) Encrypt(plaintext []byte) ([]byte, error) {
 		return nil, fmt.Errorf("encrypt: buffer too short: %d", len(plaintext))
 	}
 
-	if err := s.SendNonce.incrementNonce(); err != nil {
+	if err := s.nonce.incrementNonce(); err != nil {
 		return nil, err
 	}
 
 	// 1) write nonce into the first 12 bytes
 	nonce := plaintext[:chacha20poly1305.NonceSize]
-	_ = s.SendNonce.Encode(nonce)
+	_ = s.nonce.Encode(nonce)
 
 	// 2) build AAD = sessionId || direction || nonce
 	aad := s.CreateAAD(s.isServer, nonce, s.encryptionAadBuf[:])
