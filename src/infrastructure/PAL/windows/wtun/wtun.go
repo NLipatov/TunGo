@@ -5,7 +5,6 @@ package wtun
 import (
 	"errors"
 	"fmt"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -17,37 +16,36 @@ import (
 )
 
 // ========================================================================================
-// High-compat Wintun adapter with per-session refcount RCU.
-// No mutexes on the hot path; official wintun-go API (no unsafe layout assumptions).
+// High-compat Wintun adapter with per-session refcount RCU and zero-spin drains.
+// Uses only official wintun-go API (no unsafe layout assumptions).
+// Hot path has no mutexes and no sleeps; reopen/close wait via OS events.
 // ========================================================================================
 
-const ringSize = 8 << 20 // 8 MiB (within RingCapacityMin..RingCapacityMax)
+const ringSize = 8 << 20 // 8 MiB (within wintun's RingCapacityMin..Max)
 
 // Ensure interface conformance at compile time.
 var _ tun.Device = (*TUN)(nil)
 
-// sessionRef pairs a Wintun session with an in-flight counter.
-// Readers/writers pin this exact session (no epoch ambiguity).
+// sessionRef pairs a Wintun session with an in-flight counter and an OS event
+// that is signaled when inflight becomes zero while draining is requested.
 type sessionRef struct {
-	s        *wintun.Session
-	inflight atomic.Int64
+	s         *wintun.Session
+	inflight  atomic.Int64   // pinned ops on this exact session
+	drainWait atomic.Uint32  // 0: normal, 1: reopen/close is waiting
+	zeroEvent windows.Handle // manual-reset event
 }
 
 // TUN is a high-performance Wintun adapter using per-session RCU swaps:
-//  1. New session is created and published into cur.
-//  2. Old session is ended only after its refcount drains to zero.
+//  1. Start new session and publish it.
+//  2. Arm old session for drain (drainWait=1).
+//  3. If inflight>0, wait on old.zeroEvent (OS-level, no spin).
+//  4. End() old session.
 type TUN struct {
 	adapter    *wintun.Adapter
-	closeEvent windows.Handle
-
-	// cur holds the currently active session ref.
-	cur atomic.Pointer[sessionRef]
-
-	// closed is set when Close() is called; prevents new operations.
-	closed atomic.Bool
-
-	// reopenMu serializes slow-path reopens/close. Hot path never takes it.
-	reopenMu sync.Mutex
+	closeEvent windows.Handle // manual-reset to wake all readers on Close()
+	cur        atomic.Pointer[sessionRef]
+	closed     atomic.Bool
+	reopenMu   sync.Mutex // serialize reopen/close (rare path)
 }
 
 // NewTUN creates the device and starts an initial Wintun session.
@@ -55,41 +53,52 @@ func NewTUN(adapter *wintun.Adapter) (tun.Device, error) {
 	// Manual-reset event to wake ALL potential waiters on Close().
 	ev, err := windows.CreateEvent(nil, 1, 0, nil)
 	if err != nil {
-		return nil, fmt.Errorf("create event: %w", err)
+		return nil, fmt.Errorf("create close event: %w", err)
 	}
-	// Optionally clamp to wintun.RingCapacityMin/Max; our value is within bounds.
 	sess, err := adapter.StartSession(ringSize)
 	if err != nil {
 		_ = windows.CloseHandle(ev)
 		return nil, fmt.Errorf("start session: %w", err)
 	}
-	ref := &sessionRef{s: &sess}
-	t := &TUN{
-		adapter:    adapter,
-		closeEvent: ev,
+	zero, err := windows.CreateEvent(nil, 1, 0, nil) // manual-reset; we'll ResetEvent before waiting
+	if err != nil {
+		sess.End()
+		_ = windows.CloseHandle(ev)
+		return nil, fmt.Errorf("create zeroEvent: %w", err)
 	}
+	ref := &sessionRef{s: &sess, zeroEvent: zero}
+	t := &TUN{adapter: adapter, closeEvent: ev}
 	t.cur.Store(ref)
 	return t, nil
 }
 
-// beginOp pins the current session with a refcount increment.
-// Returns the pinned ref and the session pointer to use.
+// beginOp pins the current session with a refcount increment, with RCU-safe retry.
 func (t *TUN) beginOp() (*sessionRef, *wintun.Session, error) {
-	if t.closed.Load() {
-		return nil, nil, windows.ERROR_OPERATION_ABORTED
+	for {
+		if t.closed.Load() {
+			return nil, nil, windows.ERROR_OPERATION_ABORTED
+		}
+		ref := t.cur.Load()
+		if ref == nil {
+			return nil, nil, windows.ERROR_INVALID_HANDLE
+		}
+		ref.inflight.Add(1)
+		// Validate that ref is still current and device not closed after the increment.
+		if ref == t.cur.Load() && !t.closed.Load() {
+			return ref, ref.s, nil
+		}
+		// Cur swapped or device closed — rollback and retry.
+		if ref.inflight.Add(-1) == 0 && ref.drainWait.Load() != 0 {
+			_ = windows.SetEvent(ref.zeroEvent)
+		}
 	}
-	ref := t.cur.Load()
-	if ref == nil {
-		return nil, nil, windows.ERROR_INVALID_HANDLE
-	}
-	ref.inflight.Add(1)
-	// After increment, ref is guaranteed to remain valid until endOp(ref).
-	return ref, ref.s, nil
 }
 
-// endOp decrements the in-flight counter for the given ref.
+// endOp decrements refcount and signals zeroEvent if a drain is armed.
 func (t *TUN) endOp(ref *sessionRef) {
-	ref.inflight.Add(-1)
+	if ref.inflight.Add(-1) == 0 && ref.drainWait.Load() != 0 {
+		_ = windows.SetEvent(ref.zeroEvent)
+	}
 }
 
 // waitReadOrClose waits for either the session's read event or the device close event.
@@ -112,11 +121,8 @@ func (t *TUN) waitReadOrClose(readEvent windows.Handle, timeoutMs uint32) (close
 	}
 }
 
-// reopenSession performs a per-session RCU swap:
-//  1. Start new session.
-//  2. Publish &cur to the new ref.
-//  3. Wait until old ref drains (inflight==0).
-//  4. End() the old session.
+// reopenSession performs a per-session RCU swap without spin:
+// publish new session; arm old for drain; wait on its zeroEvent if needed; End old.
 func (t *TUN) reopenSession() error {
 	t.reopenMu.Lock()
 	defer t.reopenMu.Unlock()
@@ -130,16 +136,29 @@ func (t *TUN) reopenSession() error {
 	if err != nil {
 		return err
 	}
-	newRef := &sessionRef{s: &newSess}
+	newZero, err := windows.CreateEvent(nil, 1, 0, nil)
+	if err != nil {
+		newSess.End()
+		return fmt.Errorf("create zeroEvent(new): %w", err)
+	}
+	newRef := &sessionRef{s: &newSess, zeroEvent: newZero}
 	t.cur.Store(newRef)
 
 	if oldRef != nil {
-		for oldRef.inflight.Load() != 0 {
-			// Yield to other goroutines and give up OS timeslice without fixed delay.
-			runtime.Gosched()
-			_ = windows.SleepEx(0, false)
+		oldRef.drainWait.Store(1)
+		// Fast path: if already zero, no wait; otherwise block in kernel.
+		if oldRef.inflight.Load() != 0 {
+			_ = windows.ResetEvent(oldRef.zeroEvent)
+			_, werr := windows.WaitForSingleObject(oldRef.zeroEvent, windows.INFINITE)
+			if werr != nil {
+				// Still try to End() to avoid leaks.
+				oldRef.s.End()
+				_ = windows.CloseHandle(oldRef.zeroEvent)
+				return werr
+			}
 		}
 		oldRef.s.End()
+		_ = windows.CloseHandle(oldRef.zeroEvent)
 	}
 	return nil
 }
@@ -172,9 +191,9 @@ func (t *TUN) Read(dst []byte) (int, error) {
 		}
 		t.endOp(ref)
 
-		switch {
-		case errors.Is(rerr, windows.ERROR_NO_MORE_ITEMS):
-			// RX ring empty: wait on the *current* session (not on the old ref),
+		switch rerr {
+		case windows.ERROR_NO_MORE_ITEMS:
+			// RX ring empty: wait on the *current* session (not on old ref),
 			// so reopen() cannot deadlock on us.
 			curRef := t.cur.Load()
 			if curRef == nil {
@@ -188,12 +207,14 @@ func (t *TUN) Read(dst []byte) (int, error) {
 				return 0, windows.ERROR_OPERATION_ABORTED
 			}
 			continue
-		case errors.Is(rerr, windows.ERROR_HANDLE_EOF), errors.Is(rerr, windows.ERROR_INVALID_DATA):
+
+		case windows.ERROR_HANDLE_EOF, windows.ERROR_INVALID_DATA:
 			// Session ended or ring corrupt: reopen and retry.
 			if err := t.reopenSession(); err != nil {
 				return 0, err
 			}
 			continue
+
 		default:
 			// Propagate unexpected kernel error to the caller.
 			return 0, rerr
@@ -202,14 +223,14 @@ func (t *TUN) Read(dst []byte) (int, error) {
 }
 
 // Write writes a single packet. On ring saturation it uses a light adaptive backoff
-// without taking global locks. The call returns only after the packet is queued or
-// a terminal error occurs (including Close()).
+// without global locks. The call returns only after the packet is queued or a
+// terminal error occurs (including Close()).
 func (t *TUN) Write(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
 	}
-	// Optional hard guard: avoid surprising errors if callers pass jumbo frames.
-	if len(p) > wintun.PacketSizeMax {
+	// Optional: fast guard if caller accidentally sends jumbo frames.
+	if len(p) > int(wintun.PacketSizeMax) {
 		return 0, syscall.EMSGSIZE
 	}
 
@@ -241,10 +262,9 @@ func (t *TUN) Write(p []byte) (int, error) {
 			continue
 
 		case errors.Is(aerr, windows.ERROR_BUFFER_OVERFLOW):
-			// TX ring full: light backoff (no write event is exposed by Wintun).
+			// TX ring full: short OS-yield; escalate to 1ms sleep under sustained pressure.
 			if backoff < 2 {
-				runtime.Gosched()
-				_ = windows.SleepEx(0, false)
+				_ = windows.SleepEx(0, false) // give up timeslice
 			} else {
 				_ = windows.SleepEx(1, false)
 			}
@@ -273,14 +293,16 @@ func (t *TUN) Close() error {
 	t.reopenMu.Lock()
 	defer t.reopenMu.Unlock()
 
-	// Unpublish current ref and drain exactly that session.
+	// Unpublish and drain exactly that session (no spin).
 	oldRef := t.cur.Swap(nil)
 	if oldRef != nil {
-		for oldRef.inflight.Load() != 0 {
-			runtime.Gosched()
-			_ = windows.SleepEx(0, false)
+		oldRef.drainWait.Store(1)
+		if oldRef.inflight.Load() != 0 {
+			_ = windows.ResetEvent(oldRef.zeroEvent)
+			_, _ = windows.WaitForSingleObject(oldRef.zeroEvent, windows.INFINITE)
 		}
 		oldRef.s.End()
+		_ = windows.CloseHandle(oldRef.zeroEvent)
 	}
 
 	_ = t.adapter.Close()
