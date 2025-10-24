@@ -146,9 +146,9 @@ func (t *TUN) reopenSession() error {
 
 	if oldRef != nil {
 		oldRef.drainWait.Store(1)
-		// Fast path: if already zero, no wait; otherwise block in kernel.
+		// Arm event first to avoid losing a signal between check and reset.
+		_ = windows.ResetEvent(oldRef.zeroEvent)
 		if oldRef.inflight.Load() != 0 {
-			_ = windows.ResetEvent(oldRef.zeroEvent)
 			_, werr := windows.WaitForSingleObject(oldRef.zeroEvent, windows.INFINITE)
 			if werr != nil {
 				// Still try to End() to avoid leaks.
