@@ -1,6 +1,6 @@
 //go:build windows
 
-package tun_adapters
+package wtun
 
 import (
 	"errors"
@@ -24,7 +24,7 @@ import (
 const ringSize = 8 << 20 // 8 MiB (within RingCapacityMin..RingCapacityMax)
 
 // Ensure interface conformance at compile time.
-var _ tun.Device = (*wintunTun)(nil)
+var _ tun.Device = (*TUN)(nil)
 
 // sessionRef pairs a Wintun session with an in-flight counter.
 // Readers/writers pin this exact session (no epoch ambiguity).
@@ -33,10 +33,10 @@ type sessionRef struct {
 	inflight atomic.Int64
 }
 
-// wintunTun is a high-performance Wintun adapter using per-session RCU swaps:
+// TUN is a high-performance Wintun adapter using per-session RCU swaps:
 //  1. New session is created and published into cur.
 //  2. Old session is ended only after its refcount drains to zero.
-type wintunTun struct {
+type TUN struct {
 	adapter    *wintun.Adapter
 	closeEvent windows.Handle
 
@@ -50,8 +50,8 @@ type wintunTun struct {
 	reopenMu sync.Mutex
 }
 
-// NewWinTun creates the device and starts an initial Wintun session.
-func NewWinTun(adapter *wintun.Adapter) (tun.Device, error) {
+// NewTUN creates the device and starts an initial Wintun session.
+func NewTUN(adapter *wintun.Adapter) (tun.Device, error) {
 	// Manual-reset event to wake ALL potential waiters on Close().
 	ev, err := windows.CreateEvent(nil, 1, 0, nil)
 	if err != nil {
@@ -64,7 +64,7 @@ func NewWinTun(adapter *wintun.Adapter) (tun.Device, error) {
 		return nil, fmt.Errorf("start session: %w", err)
 	}
 	ref := &sessionRef{s: &sess}
-	t := &wintunTun{
+	t := &TUN{
 		adapter:    adapter,
 		closeEvent: ev,
 	}
@@ -74,7 +74,7 @@ func NewWinTun(adapter *wintun.Adapter) (tun.Device, error) {
 
 // beginOp pins the current session with a refcount increment.
 // Returns the pinned ref and the session pointer to use.
-func (t *wintunTun) beginOp() (*sessionRef, *wintun.Session, error) {
+func (t *TUN) beginOp() (*sessionRef, *wintun.Session, error) {
 	if t.closed.Load() {
 		return nil, nil, windows.ERROR_OPERATION_ABORTED
 	}
@@ -88,13 +88,13 @@ func (t *wintunTun) beginOp() (*sessionRef, *wintun.Session, error) {
 }
 
 // endOp decrements the in-flight counter for the given ref.
-func (t *wintunTun) endOp(ref *sessionRef) {
+func (t *TUN) endOp(ref *sessionRef) {
 	ref.inflight.Add(-1)
 }
 
 // waitReadOrClose waits for either the session's read event or the device close event.
 // Returns (closed=true) if the close event was signaled.
-func (t *wintunTun) waitReadOrClose(readEvent windows.Handle, timeoutMs uint32) (closed bool, err error) {
+func (t *TUN) waitReadOrClose(readEvent windows.Handle, timeoutMs uint32) (closed bool, err error) {
 	handles := []windows.Handle{readEvent, t.closeEvent}
 	status, werr := windows.WaitForMultipleObjects(handles, false, timeoutMs)
 	if werr != nil {
@@ -117,7 +117,7 @@ func (t *wintunTun) waitReadOrClose(readEvent windows.Handle, timeoutMs uint32) 
 //  2. Publish &cur to the new ref.
 //  3. Wait until old ref drains (inflight==0).
 //  4. End() the old session.
-func (t *wintunTun) reopenSession() error {
+func (t *TUN) reopenSession() error {
 	t.reopenMu.Lock()
 	defer t.reopenMu.Unlock()
 
@@ -147,7 +147,7 @@ func (t *wintunTun) reopenSession() error {
 // Read reads a single packet into dst, blocking until one is available,
 // or until the device is closed. It never silently truncates: if dst is too
 // small, returns EMSGSIZE and drops the packet.
-func (t *wintunTun) Read(dst []byte) (int, error) {
+func (t *TUN) Read(dst []byte) (int, error) {
 	for {
 		if t.closed.Load() {
 			return 0, windows.ERROR_OPERATION_ABORTED
@@ -204,7 +204,7 @@ func (t *wintunTun) Read(dst []byte) (int, error) {
 // Write writes a single packet. On ring saturation it uses a light adaptive backoff
 // without taking global locks. The call returns only after the packet is queued or
 // a terminal error occurs (including Close()).
-func (t *wintunTun) Write(p []byte) (int, error) {
+func (t *TUN) Write(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
 	}
@@ -261,7 +261,7 @@ func (t *wintunTun) Write(p []byte) (int, error) {
 
 // Close closes the device, interrupts any blocked Read() immediately, and
 // drains the current session's in-flight operations before ending it.
-func (t *wintunTun) Close() error {
+func (t *TUN) Close() error {
 	// Idempotent fast-path.
 	if !t.closed.CompareAndSwap(false, true) {
 		return nil
