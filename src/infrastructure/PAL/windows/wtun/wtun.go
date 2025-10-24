@@ -191,8 +191,8 @@ func (t *TUN) Read(dst []byte) (int, error) {
 		}
 		t.endOp(ref)
 
-		switch rerr {
-		case windows.ERROR_NO_MORE_ITEMS:
+		switch {
+		case errors.Is(rerr, windows.ERROR_NO_MORE_ITEMS):
 			// RX ring empty: wait on the *current* session (not on old ref),
 			// so reopen() cannot deadlock on us.
 			curRef := t.cur.Load()
@@ -207,14 +207,12 @@ func (t *TUN) Read(dst []byte) (int, error) {
 				return 0, windows.ERROR_OPERATION_ABORTED
 			}
 			continue
-
-		case windows.ERROR_HANDLE_EOF, windows.ERROR_INVALID_DATA:
+		case errors.Is(rerr, windows.ERROR_HANDLE_EOF), errors.Is(rerr, windows.ERROR_INVALID_DATA):
 			// Session ended or ring corrupt: reopen and retry.
 			if err := t.reopenSession(); err != nil {
 				return 0, err
 			}
 			continue
-
 		default:
 			// Propagate unexpected kernel error to the caller.
 			return 0, rerr
@@ -230,7 +228,7 @@ func (t *TUN) Write(p []byte) (int, error) {
 		return 0, nil
 	}
 	// Optional: fast guard if caller accidentally sends jumbo frames.
-	if len(p) > int(wintun.PacketSizeMax) {
+	if len(p) > wintun.PacketSizeMax {
 		return 0, syscall.EMSGSIZE
 	}
 
