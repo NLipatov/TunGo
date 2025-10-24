@@ -3,7 +3,6 @@ package tun_client
 import (
 	"errors"
 	"fmt"
-	"golang.zx2c4.com/wintun"
 	"log"
 	"net"
 	"os/exec"
@@ -14,9 +13,11 @@ import (
 	"tungo/infrastructure/PAL"
 	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/PAL/windows/network_tools/netsh"
-	"tungo/infrastructure/PAL/windows/tun_adapters"
+	"tungo/infrastructure/PAL/windows/wtun"
 	"tungo/infrastructure/settings"
 	"unsafe"
+
+	"golang.zx2c4.com/wintun"
 
 	"golang.org/x/sys/windows"
 )
@@ -63,7 +64,7 @@ func (m *PlatformTunManager) CreateDevice() (tun.Device, error) {
 		mtu = settings.SafeMTU
 	}
 
-	device, err := tun_adapters.NewWinTun(adapter)
+	device, err := wtun.NewTUN(adapter)
 	if err != nil {
 		_ = adapter.Close()
 		return nil, err
