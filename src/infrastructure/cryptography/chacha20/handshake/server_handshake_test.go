@@ -42,6 +42,64 @@ func (f *fakeConn) Write(p []byte) (int, error) {
 
 func (f *fakeConn) Close() error { return nil }
 
+// chunkedConn splits the provided payload into chunks returned one-by-one on each Read call.
+type chunkedConn struct {
+	chunks [][]byte
+	idx    int
+	off    int
+	out    *bytes.Buffer
+}
+
+func newChunkedConn(payload []byte, chunkSizes ...int) *chunkedConn {
+	var chunks [][]byte
+	cursor := 0
+	for _, size := range chunkSizes {
+		if cursor >= len(payload) {
+			break
+		}
+		end := cursor + size
+		if end > len(payload) {
+			end = len(payload)
+		}
+		chunk := append([]byte(nil), payload[cursor:end]...)
+		chunks = append(chunks, chunk)
+		cursor = end
+	}
+	if cursor < len(payload) {
+		chunk := append([]byte(nil), payload[cursor:]...)
+		chunks = append(chunks, chunk)
+	}
+	return &chunkedConn{chunks: chunks, out: &bytes.Buffer{}}
+}
+
+func (c *chunkedConn) Read(p []byte) (int, error) {
+	for c.idx < len(c.chunks) {
+		chunk := c.chunks[c.idx]
+		if c.off >= len(chunk) {
+			c.idx++
+			c.off = 0
+			continue
+		}
+		n := copy(p, chunk[c.off:])
+		c.off += n
+		if c.off >= len(chunk) {
+			c.idx++
+			c.off = 0
+		}
+		return n, nil
+	}
+	return 0, io.EOF
+}
+
+func (c *chunkedConn) Write(p []byte) (int, error) {
+	if c.out == nil {
+		return 0, errors.New("write closed")
+	}
+	return c.out.Write(p)
+}
+
+func (c *chunkedConn) Close() error { return nil }
+
 // stubCrypto satisfies Crypto for Sign/Verify
 type stubCrypto struct {
 	signature []byte
@@ -108,6 +166,20 @@ func TestReceiveClientHello_Success(t *testing.T) {
 	}
 	if ch.ipVersion != 4 || !bytes.Equal(ch.ipAddress, net.ParseIP("10.0.0.4")) {
 		t.Errorf("unexpected clientHello: %+v", ch)
+	}
+}
+
+func TestReceiveClientHello_PartialReads(t *testing.T) {
+	buf := buildHello(t)
+	conn := newChunkedConn(buf, 1, 2, 3)
+	hs := NewServerHandshake(conn)
+
+	ch, err := hs.ReceiveClientHello()
+	if err != nil {
+		t.Fatalf("ReceiveClientHello partial read error: %v", err)
+	}
+	if ch.ipVersion != 4 || !bytes.Equal(ch.ipAddress, net.ParseIP("10.0.0.4")) {
+		t.Errorf("unexpected clientHello from partial read: %+v", ch)
 	}
 }
 

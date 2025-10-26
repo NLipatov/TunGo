@@ -18,18 +18,26 @@ func NewServerHandshake(transport connection.Transport) ServerHandshake {
 }
 
 func (h *ServerHandshake) ReceiveClientHello() (ClientHello, error) {
-	// read client hello to buf
-	buf := make([]byte, MaxClientHelloSizeBytes)
-	n, rErr := h.transport.Read(buf)
-	if rErr != nil {
-		return ClientHello{}, rErr
+	header := make([]byte, lengthHeaderLength)
+	if _, err := io.ReadFull(h.transport, header); err != nil {
+		return ClientHello{}, err
 	}
 
-	// deserialize client hello from buf
+	ipLength := int(header[1])
+	totalLength := lengthHeaderLength + ipLength + curvePublicKeyLength + curvePublicKeyLength + nonceLength
+	if totalLength > MaxClientHelloSizeBytes {
+		return ClientHello{}, fmt.Errorf("invalid Client Hello size: %d", totalLength)
+	}
+
+	buf := make([]byte, totalLength)
+	copy(buf, header)
+	if _, err := io.ReadFull(h.transport, buf[lengthHeaderLength:]); err != nil {
+		return ClientHello{}, err
+	}
+
 	hello := NewEmptyClientHelloWithDefaultIPValidator()
-	uErr := hello.UnmarshalBinary(buf[:n])
-	if uErr != nil {
-		return ClientHello{}, uErr
+	if err := hello.UnmarshalBinary(buf); err != nil {
+		return ClientHello{}, err
 	}
 
 	return hello, nil
