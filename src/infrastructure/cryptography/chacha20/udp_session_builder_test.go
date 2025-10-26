@@ -26,6 +26,7 @@ func (m *mockUdpHandshake) ServerSideHandshake(_ connection.Transport) (net.IP, 
 func (m *mockUdpHandshake) ClientSideHandshake(_ connection.Transport, _ settings.Settings) error {
 	return nil
 }
+func (m *mockUdpHandshake) PeerMTU() (int, bool) { return 0, false }
 
 type udpSessionTestKeyGenerator struct {
 }

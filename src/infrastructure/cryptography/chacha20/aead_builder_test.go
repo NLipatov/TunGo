@@ -33,6 +33,7 @@ func (f fakeHandshake) ClientSideHandshake(_ connection.Transport, _ settings.Se
 
 func (f fakeHandshake) KeyServerToClient() []byte { return f.s2c }
 func (f fakeHandshake) KeyClientToServer() []byte { return f.c2s }
+func (f fakeHandshake) PeerMTU() (int, bool)      { return 0, false }
 
 // If your application.Handshake has more methods, add no-op stubs here to satisfy the interface.
 // For these tests, only key methods are required by the AEADBuilder.

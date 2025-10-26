@@ -1,17 +1,17 @@
 package udp_chacha20
 
 import (
-        "context"
-        "errors"
-        "io"
-        "net"
-        "net/netip"
-        "os"
-        "sync/atomic"
-        "testing"
-        "time"
-        "tungo/application/network/connection"
-        "tungo/infrastructure/settings"
+	"context"
+	"errors"
+	"io"
+	"net"
+	"net/netip"
+	"os"
+	"sync/atomic"
+	"testing"
+	"time"
+	"tungo/application/network/connection"
+	"tungo/infrastructure/settings"
 )
 
 // ---------- Mocks (prefixed with the struct under test: TunHandler*) ----------
@@ -91,6 +91,7 @@ func (m *mockSession) Crypto() connection.Crypto        { return m.crypto }
 func (m *mockSession) Transport() connection.Transport  { return m.transport }
 func (m *mockSession) ExternalAddrPort() netip.AddrPort { return m.external }
 func (m *mockSession) InternalAddr() netip.Addr         { return m.internal }
+func (m *mockSession) MTU() int                         { return settings.DefaultEthernetMTU }
 
 // helper to build a session that matches the handler expectations
 func mkSession(c *TunHandlerMockConn, crypto *TunHandlerMockCrypto) connection.Session {
@@ -132,7 +133,7 @@ func rdr(seq ...struct {
 func TestTunHandler_ContextDone(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-        h := NewTunHandler(ctx, rdr(), &TunHandlerMockParser{}, &TunHandlerMockMgr{}, settings.DefaultEthernetMTU)
+	h := NewTunHandler(ctx, rdr(), &TunHandlerMockParser{}, &TunHandlerMockMgr{}, settings.DefaultEthernetMTU)
 	if err := h.HandleTun(); err != nil {
 		t.Fatalf("want nil, got %v", err)
 	}
@@ -143,7 +144,7 @@ func TestTunHandler_EOF(t *testing.T) {
 		data []byte
 		err  error
 	}{data: make([]byte, 20), err: io.EOF})
-        h := NewTunHandler(context.Background(), r, &TunHandlerMockParser{}, &TunHandlerMockMgr{}, settings.DefaultEthernetMTU)
+	h := NewTunHandler(context.Background(), r, &TunHandlerMockParser{}, &TunHandlerMockMgr{}, settings.DefaultEthernetMTU)
 	if err := h.HandleTun(); err != io.EOF {
 		t.Fatalf("want io.EOF, got %v", err)
 	}

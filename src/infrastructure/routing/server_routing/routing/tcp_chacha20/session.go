@@ -3,6 +3,7 @@ package tcp_chacha20
 import (
 	"net/netip"
 	"tungo/application/network/connection"
+	"tungo/infrastructure/settings"
 )
 
 type Session struct {
@@ -13,6 +14,7 @@ type Session struct {
 	internalIP netip.Addr
 	// externalIP is the client's real-world IPv4 address (e.g. 51.195.101.45) and port (e.g. 1754).
 	externalIP netip.AddrPort
+	mtu        int
 }
 
 func NewSession(
@@ -26,6 +28,7 @@ func NewSession(
 		cryptographyService: cryptographyService,
 		internalIP:          internalIP,
 		externalIP:          externalIP,
+		mtu:                 settings.DefaultEthernetMTU,
 	}
 }
 
@@ -43,4 +46,8 @@ func (s Session) Crypto() connection.Crypto {
 
 func (s Session) Transport() connection.Transport {
 	return s.connectionAdapter
+}
+
+func (s Session) MTU() int {
+	return s.mtu
 }

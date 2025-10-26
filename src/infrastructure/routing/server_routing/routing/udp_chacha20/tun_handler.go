@@ -100,6 +100,11 @@ func (t *TunHandler) HandleTun() error {
 				continue
 			}
 
+			if sessionMTU := session.MTU(); sessionMTU > 0 && n > sessionMTU {
+				log.Printf("packet dropped: size %d exceeds negotiated MTU %d for %v", n, sessionMTU, addr)
+				continue
+			}
+
 			// Encrypt "nonce || payload". The crypto service must treat the prefix as nonce.
 			ct, eErr := session.Crypto().Encrypt(t.buffer[:nonceOffset+n])
 			if eErr != nil {

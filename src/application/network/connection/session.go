@@ -19,4 +19,7 @@ type Session interface {
 
 	// Crypto is a getter for Crypto, which used for encryption/decryption operations.
 	Crypto() Crypto
+
+	// MTU returns the negotiated per-session MTU limit for payloads.
+	MTU() int
 }

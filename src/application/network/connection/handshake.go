@@ -11,4 +11,5 @@ type Handshake interface {
 	KeyServerToClient() []byte
 	ServerSideHandshake(transport Transport) (net.IP, error)
 	ClientSideHandshake(transport Transport, settings settings.Settings) error
+	PeerMTU() (int, bool)
 }

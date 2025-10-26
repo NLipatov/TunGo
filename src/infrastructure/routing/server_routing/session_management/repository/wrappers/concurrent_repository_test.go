@@ -21,6 +21,8 @@ func (s concurrentManagerMockSession) Crypto() connection.Crypto {
 	return nil
 }
 
+func (s concurrentManagerMockSession) MTU() int { return 0 }
+
 type concurrentManagerMockManager struct {
 	add, del, getInt, getExt int
 	lastSession              concurrentManagerMockSession

@@ -152,6 +152,7 @@ func (f *fakeHandshake) ServerSideHandshake(_ connection.Transport) (net.IP, err
 func (f *fakeHandshake) ClientSideHandshake(_ connection.Transport, _ settings.Settings) error {
 	return nil
 }
+func (f *fakeHandshake) PeerMTU() (int, bool) { return 0, false }
 
 type fakeHandshakeFactory struct{ hs connection.Handshake }
 

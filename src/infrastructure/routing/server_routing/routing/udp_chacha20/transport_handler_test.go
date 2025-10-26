@@ -234,6 +234,8 @@ type TransportHandlerFakeHandshake struct {
 	id     [32]byte
 	client [32]byte
 	server [32]byte
+	mtu    int
+	hasMTU bool
 }
 
 func (f *TransportHandlerFakeHandshake) Id() [32]byte              { return f.id }
@@ -244,6 +246,12 @@ func (f *TransportHandlerFakeHandshake) ServerSideHandshake(_ connection.Transpo
 }
 func (f *TransportHandlerFakeHandshake) ClientSideHandshake(_ connection.Transport, _ settings.Settings) error {
 	return nil
+}
+func (f *TransportHandlerFakeHandshake) PeerMTU() (int, bool) {
+	if !f.hasMTU {
+		return 0, false
+	}
+	return f.mtu, true
 }
 
 type TransportHandlerFakeHandshakeFactory struct{ hs connection.Handshake }
@@ -443,9 +451,10 @@ func TestTransportHandler_RegistrationPacket(t *testing.T) {
 		readAddrs: []netip.AddrPort{clientAddr},
 	}
 
+	serverSettings := settings.Settings{Port: "9999", MTU: settings.DefaultEthernetMTU}
 	handler := NewTransportHandler(
 		ctx,
-		settings.Settings{Port: "9999"},
+		serverSettings,
 		writer,
 		conn,
 		repo,
@@ -467,9 +476,64 @@ func TestTransportHandler_RegistrationPacket(t *testing.T) {
 	if len(repo.adds) != 1 {
 		t.Fatalf("expected 1 session registered, got %d", len(repo.adds))
 	}
+	if mtu := repo.adds[0].MTU(); mtu != serverSettings.MTU {
+		t.Fatalf("expected session MTU %d, got %d", serverSettings.MTU, mtu)
+	}
 	// Buffers should have been set
 	if conn.setReadBufferCnt == 0 || conn.setWriteBufferCnt == 0 {
 		t.Fatalf("expected SetReadBuffer/SetWriteBuffer to be called, got r=%d w=%d", conn.setReadBufferCnt, conn.setWriteBufferCnt)
+	}
+}
+
+func TestTransportHandler_RegistrationPacket_UsesPeerMTU(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	writer := &TransportHandlerFakeWriter{}
+	logger := &TransportHandlerFakeLogger{}
+	sessionRegistered := make(chan struct{})
+
+	repo := &TransportHandlerSessionRepo{
+		afterAdd: func() { close(sessionRegistered) },
+	}
+
+	clientAddr := netip.MustParseAddrPort("192.168.1.11:5556")
+	internalIP := net.ParseIP("10.0.0.6")
+	fakeHS := &TransportHandlerFakeHandshake{ip: internalIP, mtu: settings.SafeMTU, hasMTU: true}
+	handshakeFactory := &TransportHandlerFakeHandshakeFactory{hs: fakeHS}
+
+	conn := &TransportHandlerFakeUdpListener{
+		readBufs:  [][]byte{{0xaa, 0xbb, 0xcc, 0xdd}},
+		readAddrs: []netip.AddrPort{clientAddr},
+	}
+
+	serverSettings := settings.Settings{Port: "9998", MTU: settings.DefaultEthernetMTU}
+	handler := NewTransportHandler(
+		ctx,
+		serverSettings,
+		writer,
+		conn,
+		repo,
+		logger,
+		handshakeFactory,
+		chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
+		&TransportHandlerServicePacketMock{},
+	)
+
+	go func() { _ = handler.HandleTransport() }()
+
+	select {
+	case <-sessionRegistered:
+		cancel()
+	case <-time.After(time.Second):
+		t.Fatal("timeout: session was not registered")
+	}
+	time.Sleep(10 * time.Millisecond)
+	if len(repo.adds) != 1 {
+		t.Fatalf("expected 1 session registered, got %d", len(repo.adds))
+	}
+	if mtu := repo.adds[0].MTU(); mtu != settings.SafeMTU {
+		t.Fatalf("expected session MTU %d, got %d", settings.SafeMTU, mtu)
 	}
 }
 
@@ -597,6 +661,7 @@ func TestTransportHandler_DecryptError(t *testing.T) {
 			internalIP: s.InternalAddr(),
 			externalIP: s.ExternalAddrPort(),
 			crypto:     &transportHandlerFailingCrypto{}, // custom failing crypto
+			mtu:        settings.DefaultEthernetMTU,
 		}
 		close(sessionRegistered)
 	}
@@ -666,6 +731,7 @@ func TestTransportHandler_WriteError(t *testing.T) {
 			internalIP: s.InternalAddr(),
 			externalIP: s.ExternalAddrPort(),
 			crypto:     &TransportHandlerAlwaysWriteCrypto{},
+			mtu:        settings.DefaultEthernetMTU,
 		}
 		close(sessionRegistered)
 	}
@@ -729,6 +795,7 @@ func TestTransportHandler_HappyPath(t *testing.T) {
 		crypto:     &TransportHandlerAlwaysWriteCrypto{},
 		internalIP: internalIP,
 		externalIP: clientAddr,
+		mtu:        settings.DefaultEthernetMTU,
 	}
 
 	fakeHS := &TransportHandlerFakeHandshake{ip: internalIP.AsSlice()}
@@ -777,6 +844,7 @@ func TestTransportHandler_NATRebinding_ReRegister(t *testing.T) {
 		crypto:     &TransportHandlerAlwaysWriteCrypto{},
 		internalIP: internalIP,
 		externalIP: oldAddr,
+		mtu:        settings.DefaultEthernetMTU,
 	}
 
 	sessionRegistered := make(chan struct{})

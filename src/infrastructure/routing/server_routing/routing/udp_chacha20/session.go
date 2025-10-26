@@ -14,6 +14,7 @@ type Session struct {
 	internalIP netip.Addr
 	// externalIP is the client's real-world IPv4 address (e.g. 51.195.101.45) and port (e.g. 1754).
 	externalIP netip.AddrPort
+	mtu        int
 }
 
 func NewSession(
@@ -21,12 +22,14 @@ func NewSession(
 	crypto connection.Crypto,
 	internalIP netip.Addr,
 	externalIP netip.AddrPort,
+	mtu int,
 ) connection.Session {
 	return &Session{
 		transport:  transport,
 		crypto:     crypto,
 		internalIP: internalIP,
 		externalIP: externalIP,
+		mtu:        mtu,
 	}
 }
 
@@ -44,4 +47,8 @@ func (s Session) Crypto() connection.Crypto {
 
 func (s Session) Transport() connection.Transport {
 	return s.transport
+}
+
+func (s Session) MTU() int {
+	return s.mtu
 }

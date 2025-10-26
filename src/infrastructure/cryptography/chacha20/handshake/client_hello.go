@@ -2,6 +2,7 @@ package handshake
 
 import (
 	"crypto/ed25519"
+	"encoding/binary"
 	"fmt"
 	"net"
 	"tungo/domain/network/ip/packet_validation"
@@ -15,6 +16,8 @@ type ClientHello struct {
 	edPublicKey    ed25519.PublicKey
 	curvePublicKey []byte
 	nonce          []byte
+	mtu            uint16
+	hasMTU         bool
 }
 
 func NewClientHello(
@@ -24,6 +27,7 @@ func NewClientHello(
 	CurvePublicKey []byte,
 	ClientNonce []byte,
 	ipValidator packet_validation.IPValidator,
+	mtu uint16,
 ) ClientHello {
 	return ClientHello{
 		ipVersion:      IpVersion,
@@ -32,6 +36,8 @@ func NewClientHello(
 		curvePublicKey: CurvePublicKey,
 		nonce:          ClientNonce,
 		ipValidator:    ipValidator,
+		mtu:            mtu,
+		hasMTU:         true,
 	}
 }
 
@@ -60,12 +66,23 @@ func (c *ClientHello) CurvePublicKey() []byte {
 	return c.curvePublicKey
 }
 
+func (c *ClientHello) MTU() (uint16, bool) {
+	if !c.hasMTU {
+		return 0, false
+	}
+	return c.mtu, true
+}
+
 func (c *ClientHello) MarshalBinary() ([]byte, error) {
 	if err := c.validateIP(); err != nil {
 		return nil, err
 	}
 
 	arr := make([]byte, lengthHeaderLength+len(c.ipAddress)+curvePublicKeyLength+curvePublicKeyLength+nonceLength)
+	if c.hasMTU {
+		arr = append(arr, 0, 0)
+		binary.BigEndian.PutUint16(arr[len(arr)-2:], c.mtu)
+	}
 	arr[0] = c.ipVersion.Byte()
 	arr[1] = uint8(len(c.ipAddress))
 	copy(arr[lengthHeaderLength:], c.ipAddress)
@@ -86,8 +103,8 @@ func (c *ClientHello) UnmarshalBinary(data []byte) error {
 		return fmt.Errorf("invalid IP version: %d", c.ipVersion)
 	}
 
-	ipAddressLength := data[1]
-	if int(ipAddressLength+lengthHeaderLength) > len(data) {
+	ipAddressLength := int(data[1])
+	if ipAddressLength+lengthHeaderLength > len(data) {
 		return fmt.Errorf("invalid Client Hello size: %d", len(data))
 	}
 
@@ -97,7 +114,21 @@ func (c *ClientHello) UnmarshalBinary(data []byte) error {
 
 	c.curvePublicKey = data[lengthHeaderLength+ipAddressLength+curvePublicKeyLength : lengthHeaderLength+ipAddressLength+curvePublicKeyLength+curvePublicKeyLength]
 
-	c.nonce = data[lengthHeaderLength+ipAddressLength+curvePublicKeyLength+curvePublicKeyLength : lengthHeaderLength+ipAddressLength+curvePublicKeyLength+curvePublicKeyLength+nonceLength]
+	end := lengthHeaderLength + ipAddressLength + curvePublicKeyLength + curvePublicKeyLength + nonceLength
+	c.nonce = data[lengthHeaderLength+ipAddressLength+curvePublicKeyLength+curvePublicKeyLength : end]
+
+	if len(data) == end {
+		c.hasMTU = false
+		c.mtu = 0
+		return c.validateIP()
+	}
+
+	if len(data) != end+mtuFieldLength {
+		return fmt.Errorf("invalid Client Hello size: %d", len(data))
+	}
+
+	c.hasMTU = true
+	c.mtu = binary.BigEndian.Uint16(data[end:])
 
 	return c.validateIP()
 }

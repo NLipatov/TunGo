@@ -21,6 +21,8 @@ func (f *fakeSession) Crypto() connection.Crypto {
 	return nil
 }
 
+func (f *fakeSession) MTU() int { return 0 }
+
 func TestDefaultWorkerSessionManager(t *testing.T) {
 	sm := NewDefaultWorkerSessionManager[*fakeSession]()
 

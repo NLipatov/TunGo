@@ -25,6 +25,10 @@ func (d sessionManagerFactoryDummySession) Crypto() connection.Crypto {
 	return nil
 }
 
+func (d sessionManagerFactoryDummySession) MTU() int {
+	return 0
+}
+
 func TestSessionManagerFactory_CreateManager(t *testing.T) {
 	f := newSessionManagerFactory[sessionManagerFactoryDummySession]()
 	mgr := f.createManager()

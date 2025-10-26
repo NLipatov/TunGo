@@ -55,6 +55,13 @@ func TestServerSideHandshake_ReadClientHelloError(t *testing.T) {
 	}
 }
 
+func TestDefaultHandshake_PeerMTU_Default(t *testing.T) {
+	h := NewHandshake(make([]byte, 0), make([]byte, 0))
+	if _, ok := h.PeerMTU(); ok {
+		t.Fatal("expected no peer MTU before handshake")
+	}
+}
+
 // --- tests for ClientSideHandshake ---
 
 func TestClientSideHandshake_WriteHelloError(t *testing.T) {

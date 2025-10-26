@@ -170,7 +170,12 @@ func (t *TransportHandler) registerClient(
 		return fmt.Errorf("failed to parse internal IP: %v", internalIP)
 	}
 
-	t.sessionManager.Add(NewSession(adapter, cryptoSession, intIp, addrPort))
+	negotiatedMTU := t.mtu
+	if peerMTU, ok := h.PeerMTU(); ok && peerMTU > 0 && peerMTU < negotiatedMTU {
+		negotiatedMTU = peerMTU
+	}
+
+	t.sessionManager.Add(NewSession(adapter, cryptoSession, intIp, addrPort, negotiatedMTU))
 
 	t.logger.Printf("%v registered as: %v", addrPort.Addr(), internalIP)
 

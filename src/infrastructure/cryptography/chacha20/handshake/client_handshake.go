@@ -33,10 +33,10 @@ func NewClientHandshake(transport connection.Transport, io ClientIO, crypto Cryp
 }
 
 func (c *ClientHandshake) SendClientHello(
-	settings settings.Settings,
+	cfg settings.Settings,
 	edPublicKey ed25519.PublicKey,
 	sessionPublicKey, sessionSalt []byte) error {
-	netIpAddr, netIpAddrErr := netip.ParseAddr(settings.ConnectionIP)
+	netIpAddr, netIpAddrErr := netip.ParseAddr(cfg.ConnectionIP)
 	if netIpAddrErr != nil {
 		return netIpAddrErr
 	}
@@ -46,16 +46,18 @@ func (c *ClientHandshake) SendClientHello(
 	} else if netIpAddr.Is4() {
 		ipVersion = ip.V4
 	} else {
-		return fmt.Errorf("invalid IP(%s) version", settings.ConnectionIP)
+		return fmt.Errorf("invalid IP(%s) version", cfg.ConnectionIP)
 	}
 
+	mtu := uint16(settings.ResolveMTU(cfg.MTU))
 	hello := NewClientHello(
 		ipVersion,
-		net.ParseIP(settings.InterfaceAddress),
+		net.ParseIP(cfg.InterfaceAddress),
 		edPublicKey,
 		sessionPublicKey,
 		sessionSalt,
 		packet_validation.NewDefaultPolicyNewIPValidator(),
+		mtu,
 	)
 	return c.clientIO.WriteClientHello(hello)
 }

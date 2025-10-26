@@ -22,6 +22,7 @@ func (m *secretTestMockHandshake) ServerSideHandshake(_ connection.Transport) (n
 func (m *secretTestMockHandshake) ClientSideHandshake(_ connection.Transport, _ settings.Settings) error {
 	return m.err
 }
+func (m *secretTestMockHandshake) PeerMTU() (int, bool) { return 0, false }
 
 // secretTestMockBuilder implements application.CryptoFactory for testing DefaultSecret.Exchange.
 type secretTestMockBuilder struct {

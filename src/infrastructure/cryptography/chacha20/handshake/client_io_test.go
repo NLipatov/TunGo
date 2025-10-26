@@ -101,6 +101,7 @@ func TestWriteClientHello_Success(t *testing.T) {
 		bytes.Repeat([]byte{2}, curvePublicKeyLength),
 		bytes.Repeat([]byte{3}, nonceLength),
 		packet_validation.NewDefaultPolicyNewIPValidator(),
+		1400,
 	)
 	want := mustMarshalClientHello(t, ch)
 
@@ -118,7 +119,7 @@ func TestWriteClientHello_Success(t *testing.T) {
 
 func TestWriteClientHello_MarshalError(t *testing.T) {
 	// Invalid IP version → MarshalBinary must fail
-	ch := NewClientHello(0, net.ParseIP("10.0.0.1"), nil, nil, nil, packet_validation.NewDefaultPolicyNewIPValidator())
+	ch := NewClientHello(0, net.ParseIP("10.0.0.1"), nil, nil, nil, packet_validation.NewDefaultPolicyNewIPValidator(), 1400)
 	under := newMockConn(nil, 0, 0)
 	clientIO := NewDefaultClientIO(under)
 
@@ -138,6 +139,7 @@ func TestWriteClientHello_WriteError_Propagated(t *testing.T) {
 		bytes.Repeat([]byte{2}, curvePublicKeyLength),
 		bytes.Repeat([]byte{3}, nonceLength),
 		packet_validation.NewDefaultPolicyNewIPValidator(),
+		1400,
 	)
 	under := newMockConn(nil, 0, 0)
 	under.writeErrAtCall = 1 // fail on the first Write

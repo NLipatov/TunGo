@@ -76,6 +76,7 @@ func (m *mockHandshake) ServerSideHandshake(_ connection.Transport) (net.IP, err
 func (m *mockHandshake) ClientSideHandshake(_ connection.Transport, _ settings.Settings) error {
 	return nil
 }
+func (m *mockHandshake) PeerMTU() (int, bool) { return 0, false }
 
 type tcpSessionTestKeyGenerator struct {
 }

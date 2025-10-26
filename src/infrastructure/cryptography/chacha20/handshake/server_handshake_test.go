@@ -89,7 +89,7 @@ func buildHello(t *testing.T) []byte {
 		ForbidUnspecified: true,
 		ForbidLinkLocal:   true,
 		ForbidBroadcastV4: true,
-	}))
+	}), 1400)
 	buf, err := ch.MarshalBinary()
 	if err != nil {
 		t.Fatalf("buildHello.MarshalBinary: %v", err)

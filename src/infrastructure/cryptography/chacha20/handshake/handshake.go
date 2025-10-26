@@ -14,11 +14,13 @@ const (
 	curvePublicKeyLength    = 32
 	minIpLength             = 4
 	maxIpLength             = 39
+	mtuFieldLength          = 2
 	MaxClientHelloSizeBytes = maxIpLength +
 		lengthHeaderLength +
 		curvePublicKeyLength +
 		curvePublicKeyLength +
-		nonceLength
+		nonceLength +
+		mtuFieldLength
 	minClientHelloSizeBytes = minIpLength +
 		lengthHeaderLength +
 		curvePublicKeyLength +
@@ -31,6 +33,9 @@ type DefaultHandshake struct {
 	clientKey                           []byte
 	serverKey                           []byte
 	Ed25519PublicKey, Ed25519PrivateKey []byte // client will only have public key
+
+	peerMTU    uint16
+	hasPeerMTU bool
 }
 
 func NewHandshake(
@@ -54,6 +59,13 @@ func (h *DefaultHandshake) KeyServerToClient() []byte {
 	return h.serverKey
 }
 
+func (h *DefaultHandshake) PeerMTU() (int, bool) {
+	if !h.hasPeerMTU {
+		return 0, false
+	}
+	return int(h.peerMTU), true
+}
+
 func (h *DefaultHandshake) ServerSideHandshake(
 	transport connection.Transport,
 ) (net.IP, error) {
@@ -73,6 +85,14 @@ func (h *DefaultHandshake) ServerSideHandshake(
 	clientHello, clientHelloErr := handshake.ReceiveClientHello()
 	if clientHelloErr != nil {
 		return nil, clientHelloErr
+	}
+
+	if mtu, ok := clientHello.MTU(); ok {
+		h.peerMTU = mtu
+		h.hasPeerMTU = true
+	} else {
+		h.peerMTU = 0
+		h.hasPeerMTU = false
 	}
 
 	serverHelloErr := handshake.
@@ -101,7 +121,7 @@ func (h *DefaultHandshake) ServerSideHandshake(
 
 func (h *DefaultHandshake) ClientSideHandshake(
 	transport connection.Transport,
-	settings settings.Settings,
+	cfg settings.Settings,
 ) error {
 	c := newDefaultCrypto()
 
@@ -122,7 +142,7 @@ func (h *DefaultHandshake) ClientSideHandshake(
 		transport,
 	)
 	handshake := NewClientHandshake(transport, clientIO, c)
-	helloErr := handshake.SendClientHello(settings, edPublicKey, sessionPublicKey, clientNonce)
+	helloErr := handshake.SendClientHello(cfg, edPublicKey, sessionPublicKey, clientNonce)
 	if helloErr != nil {
 		return helloErr
 	}
