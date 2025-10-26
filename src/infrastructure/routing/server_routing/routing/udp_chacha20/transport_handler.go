@@ -134,6 +134,27 @@ func (t *TransportHandler) handlePacket(
 		return decryptionErr
 	}
 
+	payloadSize := len(decrypted)
+	sessionMTU := session.MTU()
+	if sessionMTU > 0 && payloadSize > sessionMTU {
+		t.logger.Printf(
+			"packet dropped: size %d exceeds negotiated MTU %d for %v",
+			payloadSize,
+			sessionMTU,
+			session.InternalAddr(),
+		)
+		return nil
+	}
+	if payloadSize > t.mtu {
+		t.logger.Printf(
+			"packet dropped: size %d exceeds server MTU %d for %v",
+			payloadSize,
+			t.mtu,
+			session.InternalAddr(),
+		)
+		return nil
+	}
+
 	// Write the decrypted packet to the TUN interface
 	_, err := t.writer.Write(decrypted)
 	if err != nil {

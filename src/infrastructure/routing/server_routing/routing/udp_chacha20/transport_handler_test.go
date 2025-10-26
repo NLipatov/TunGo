@@ -60,6 +60,15 @@ type TransportHandlerAlwaysWriteCrypto struct{}
 func (d *TransportHandlerAlwaysWriteCrypto) Encrypt(in []byte) ([]byte, error) { return in, nil }
 func (d *TransportHandlerAlwaysWriteCrypto) Decrypt(in []byte) ([]byte, error) { return in, nil }
 
+type transportHandlerFixedPlaintextCrypto struct {
+	plaintext []byte
+}
+
+func (c *transportHandlerFixedPlaintextCrypto) Encrypt(in []byte) ([]byte, error) { return in, nil }
+func (c *transportHandlerFixedPlaintextCrypto) Decrypt(_ []byte) ([]byte, error) {
+	return c.plaintext, nil
+}
+
 // TransportHandlerFakeAEAD is a trivial AEAD for chacha20 builder.
 type TransportHandlerFakeAEAD struct{}
 
@@ -702,6 +711,63 @@ type transportHandlerFailingCrypto struct{}
 func (t *transportHandlerFailingCrypto) Encrypt(in []byte) ([]byte, error) { return in, nil }
 func (t *transportHandlerFailingCrypto) Decrypt(_ []byte) ([]byte, error) {
 	return nil, errors.New("dec fail")
+}
+
+func TestTransportHandler_ClientPayloadExceedsSessionMTU_Dropped(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	writer := &TransportHandlerFakeWriter{}
+	logger := &TransportHandlerFakeLogger{}
+
+	clientAddr := netip.MustParseAddrPort("192.168.1.60:6060")
+	internalIP := netip.MustParseAddr("10.0.0.60")
+
+	repo := &TransportHandlerSessionRepo{sessions: map[netip.AddrPort]connection.Session{}}
+	repo.sessions[clientAddr] = Session{
+		crypto:     &transportHandlerFixedPlaintextCrypto{plaintext: make([]byte, settings.SafeMTU+16)},
+		internalIP: internalIP,
+		externalIP: clientAddr,
+		mtu:        settings.SafeMTU,
+	}
+	if got := repo.sessions[clientAddr].MTU(); got != settings.SafeMTU {
+		t.Fatalf("precondition failed: expected session MTU %d, got %d", settings.SafeMTU, got)
+	}
+
+	fakeHS := &TransportHandlerFakeHandshake{ip: internalIP.AsSlice()}
+	handshakeFactory := &TransportHandlerFakeHandshakeFactory{hs: fakeHS}
+
+	conn := &TransportHandlerFakeUdpListener{
+		readBufs:  [][]byte{{0xde, 0xad}},
+		readAddrs: []netip.AddrPort{clientAddr},
+	}
+
+	handler := NewTransportHandler(
+		ctx,
+		settings.Settings{Port: "6060", MTU: settings.DefaultEthernetMTU},
+		writer,
+		conn,
+		repo,
+		logger,
+		handshakeFactory,
+		chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
+		&TransportHandlerServicePacketMock{},
+	)
+
+	done := make(chan struct{})
+	go func() { _ = handler.HandleTransport(); close(done) }()
+
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+	<-done
+
+	if len(writer.wrote) != 0 {
+		t.Fatalf("expected packet to be dropped, got %d TUN writes (first size %d)",
+			len(writer.wrote), len(writer.wrote[0]))
+	}
+	if !logger.contains("packet dropped: size") {
+		t.Fatalf("expected MTU drop log, got %v", logger.logs)
+	}
 }
 
 // Writer error after successful decrypt.
