@@ -78,17 +78,29 @@ func (c *ClientHello) MarshalBinary() ([]byte, error) {
 		return nil, err
 	}
 
-	arr := make([]byte, lengthHeaderLength+len(c.ipAddress)+curvePublicKeyLength+curvePublicKeyLength+nonceLength)
+	ipLength := len(c.ipAddress)
+	totalLength := lengthHeaderLength + ipLength + curvePublicKeyLength + curvePublicKeyLength + nonceLength
 	if c.hasMTU {
-		arr = append(arr, 0, 0)
-		binary.BigEndian.PutUint16(arr[len(arr)-2:], c.mtu)
+		totalLength += mtuFieldLength
 	}
+
+	arr := make([]byte, totalLength)
 	arr[0] = c.ipVersion.Byte()
-	arr[1] = uint8(len(c.ipAddress))
-	copy(arr[lengthHeaderLength:], c.ipAddress)
-	copy(arr[lengthHeaderLength+len(c.ipAddress):], c.edPublicKey)
-	copy(arr[lengthHeaderLength+len(c.ipAddress)+curvePublicKeyLength:], c.curvePublicKey)
-	copy(arr[lengthHeaderLength+len(c.ipAddress)+curvePublicKeyLength+curvePublicKeyLength:], c.nonce)
+	arr[1] = uint8(ipLength)
+
+	offset := lengthHeaderLength
+	copy(arr[offset:], c.ipAddress)
+	offset += ipLength
+	copy(arr[offset:], c.edPublicKey)
+	offset += curvePublicKeyLength
+	copy(arr[offset:], c.curvePublicKey)
+	offset += curvePublicKeyLength
+	copy(arr[offset:], c.nonce)
+	offset += nonceLength
+
+	if c.hasMTU {
+		binary.BigEndian.PutUint16(arr[offset:], c.mtu)
+	}
 
 	return arr, nil
 }
