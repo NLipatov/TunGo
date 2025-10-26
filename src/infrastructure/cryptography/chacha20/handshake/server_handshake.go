@@ -18,25 +18,63 @@ func NewServerHandshake(transport connection.Transport) ServerHandshake {
 }
 
 func (h *ServerHandshake) ReceiveClientHello() (ClientHello, error) {
-	header := make([]byte, lengthHeaderLength)
-	if _, err := io.ReadFull(h.transport, header); err != nil {
-		return ClientHello{}, err
+	buf := make([]byte, MaxClientHelloSizeBytes)
+
+	var (
+		totalRead  int
+		targetSize = -1
+	)
+
+	for {
+		if targetSize != -1 && totalRead >= targetSize {
+			break
+		}
+
+		limit := MaxClientHelloSizeBytes - totalRead
+		if limit == 0 {
+			return ClientHello{}, fmt.Errorf("invalid Client Hello size: %d", MaxClientHelloSizeBytes)
+		}
+		if targetSize != -1 {
+			if remaining := targetSize - totalRead; remaining < limit {
+				limit = remaining
+			}
+		}
+
+		n, err := h.transport.Read(buf[totalRead : totalRead+limit])
+		if err != nil {
+			if err == io.EOF && totalRead > 0 {
+				err = io.ErrUnexpectedEOF
+			}
+			return ClientHello{}, err
+		}
+		if n == 0 {
+			continue
+		}
+
+		totalRead += n
+
+		if totalRead >= lengthHeaderLength && targetSize == -1 {
+			ipLength := int(buf[1])
+			targetSize = lengthHeaderLength + ipLength + curvePublicKeyLength + curvePublicKeyLength + nonceLength
+			if targetSize > MaxClientHelloSizeBytes {
+				return ClientHello{}, fmt.Errorf("invalid Client Hello size: %d", targetSize)
+			}
+		}
+
+		if targetSize != -1 && totalRead > targetSize {
+			return ClientHello{}, fmt.Errorf("invalid Client Hello size: %d", totalRead)
+		}
 	}
 
-	ipLength := int(header[1])
-	totalLength := lengthHeaderLength + ipLength + curvePublicKeyLength + curvePublicKeyLength + nonceLength
-	if totalLength > MaxClientHelloSizeBytes {
-		return ClientHello{}, fmt.Errorf("invalid Client Hello size: %d", totalLength)
+	if targetSize == -1 {
+		return ClientHello{}, fmt.Errorf("failed to determine Client Hello size")
 	}
 
-	buf := make([]byte, totalLength)
-	copy(buf, header)
-	if _, err := io.ReadFull(h.transport, buf[lengthHeaderLength:]); err != nil {
-		return ClientHello{}, err
-	}
+	helloBuf := make([]byte, targetSize)
+	copy(helloBuf, buf[:targetSize])
 
 	hello := NewEmptyClientHelloWithDefaultIPValidator()
-	if err := hello.UnmarshalBinary(buf); err != nil {
+	if err := hello.UnmarshalBinary(helloBuf); err != nil {
 		return ClientHello{}, err
 	}
 
