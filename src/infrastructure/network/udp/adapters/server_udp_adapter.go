@@ -11,14 +11,15 @@ type ServerUdpAdapter struct {
 	conn     listeners.UdpListener
 	addrPort netip.AddrPort
 
-	readBuffer [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
+	readBuffer []byte
 	oob        [8 * 1024]byte
 }
 
-func NewUdpAdapter(udpConn listeners.UdpListener, addrPort netip.AddrPort) connection.Transport {
+func NewUdpAdapter(udpConn listeners.UdpListener, addrPort netip.AddrPort, mtu int) connection.Transport {
 	return &ServerUdpAdapter{
-		conn:     udpConn,
-		addrPort: addrPort,
+		conn:       udpConn,
+		addrPort:   addrPort,
+		readBuffer: make([]byte, settings.UDPBufferSize(mtu)),
 	}
 }
 

@@ -19,6 +19,7 @@ type TransportHandler struct {
 	writer              io.Writer
 	cryptographyService connection.Crypto
 	servicePacket       service.PacketHandler
+	buffer              []byte
 }
 
 func NewTransportHandler(
@@ -27,25 +28,26 @@ func NewTransportHandler(
 	writer io.Writer,
 	cryptographyService connection.Crypto,
 	servicePacket service.PacketHandler,
+	mtu int,
 ) transport.Handler {
+	resolvedMTU := settings.ResolveMTU(mtu)
 	return &TransportHandler{
 		ctx:                 ctx,
 		reader:              reader,
 		writer:              writer,
 		cryptographyService: cryptographyService,
 		servicePacket:       servicePacket,
+		buffer:              make([]byte, settings.UDPBufferSize(resolvedMTU)),
 	}
 }
 
 func (t *TransportHandler) HandleTransport() error {
-	var buffer [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
-
 	for {
 		select {
 		case <-t.ctx.Done():
 			return nil
 		default:
-			n, readErr := t.reader.Read(buffer[:])
+			n, readErr := t.reader.Read(t.buffer[:])
 			if readErr != nil {
 				if errors.Is(readErr, os.ErrDeadlineExceeded) {
 					continue
@@ -57,13 +59,13 @@ func (t *TransportHandler) HandleTransport() error {
 				return fmt.Errorf("could not read a packet from adapter: %v", readErr)
 			}
 
-			if spType, spOk := t.servicePacket.TryParseType(buffer[:n]); spOk {
+			if spType, spOk := t.servicePacket.TryParseType(t.buffer[:n]); spOk {
 				if spType == service.SessionReset {
 					return fmt.Errorf("server requested cryptographyService reset")
 				}
 			}
 
-			decrypted, decryptionErr := t.cryptographyService.Decrypt(buffer[:n])
+			decrypted, decryptionErr := t.cryptographyService.Decrypt(t.buffer[:n])
 			if decryptionErr != nil {
 				if t.ctx.Err() != nil {
 					return nil

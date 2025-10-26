@@ -255,6 +255,7 @@ type TransportHandlerSessionRepo struct {
 	mu       sync.Mutex
 	sessions map[netip.AddrPort]connection.Session
 	adds     []connection.Session
+	deletes  []connection.Session
 	afterAdd func()
 }
 
@@ -270,7 +271,14 @@ func (r *TransportHandlerSessionRepo) Add(s connection.Session) {
 		r.afterAdd()
 	}
 }
-func (r *TransportHandlerSessionRepo) Delete(_ connection.Session) {}
+func (r *TransportHandlerSessionRepo) Delete(s connection.Session) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.deletes = append(r.deletes, s)
+	if r.sessions != nil {
+		delete(r.sessions, s.ExternalAddrPort())
+	}
+}
 func (r *TransportHandlerSessionRepo) GetByInternalAddrPort(_ netip.Addr) (connection.Session, error) {
 	return Session{}, errors.New("not implemented")
 }
@@ -575,8 +583,11 @@ func TestTransportHandler_DecryptError(t *testing.T) {
 
 	// First packet -> registration
 	conn := &TransportHandlerFakeUdpListener{
-		readBufs:  [][]byte{{0xde, 0xad, 0xbe, 0xef}},
-		readAddrs: []netip.AddrPort{clientAddr},
+		readBufs: [][]byte{
+			{0xde, 0xad, 0xbe, 0xef}, // registration packet
+			{0xca, 0xfe},             // triggers decrypt failure
+		},
+		readAddrs: []netip.AddrPort{clientAddr, clientAddr},
 	}
 	sessionRegistered := make(chan struct{})
 	repo.afterAdd = func() {
@@ -609,6 +620,15 @@ func TestTransportHandler_DecryptError(t *testing.T) {
 
 	if len(writer.wrote) != 0 {
 		t.Errorf("expected no writes to TUN if decrypt fails")
+	}
+	if len(repo.deletes) != 1 {
+		t.Fatalf("expected session to be deleted on decrypt failure, got %d deletions", len(repo.deletes))
+	}
+	if len(conn.writes) != 1 {
+		t.Fatalf("expected session reset to be sent, got %d writes", len(conn.writes))
+	}
+	if conn.writes[0].data[0] != byte(service.SessionReset) {
+		t.Errorf("expected session reset packet, got %v", conn.writes[0].data)
 	}
 }
 

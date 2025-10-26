@@ -169,6 +169,7 @@ func (s *ServerWorkerFactory) createUDPWorker(
 		tun,
 		ip.NewHeaderParser(),
 		sessionManager,
+		workerSettings.MTU,
 	)
 
 	conf, confErr := s.configurationManager.Configuration()

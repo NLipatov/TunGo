@@ -16,17 +16,23 @@ type TunHandler struct {
 	reader              io.Reader // abstraction over TUN device
 	writer              io.Writer // abstraction over transport
 	cryptographyService connection.Crypto
+	mtu                 int
+	buffer              []byte
 }
 
 func NewTunHandler(ctx context.Context,
 	reader io.Reader,
 	writer io.Writer,
-	cryptographyService connection.Crypto) tun.Handler {
+	cryptographyService connection.Crypto,
+	mtu int) tun.Handler {
+	resolvedMTU := settings.ResolveMTU(mtu)
 	return &TunHandler{
 		ctx:                 ctx,
 		reader:              reader,
 		writer:              writer,
 		cryptographyService: cryptographyService,
+		mtu:                 resolvedMTU,
+		buffer:              make([]byte, settings.UDPBufferSize(resolvedMTU)),
 	}
 }
 
@@ -53,18 +59,18 @@ func NewTunHandler(ctx context.Context,
 //     (nonce) and the suffix (tag) are already reserved in the buffer.
 func (w *TunHandler) HandleTun() error {
 	// +12 nonce +16 AEAD tag headroom
-	var buffer [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
-
+	nonceOffset := chacha20poly1305.NonceSize
+	payloadLimit := nonceOffset + w.mtu
 	// Main loop to read from TUN and send data
 	for {
 		select {
 		case <-w.ctx.Done():
 			return nil
 		default:
-			n, err := w.reader.Read(buffer[chacha20poly1305.NonceSize : settings.DefaultEthernetMTU+chacha20poly1305.NonceSize])
+			n, err := w.reader.Read(w.buffer[nonceOffset:payloadLimit])
 			if n > 0 {
 				// Encrypt expects header+payload (12+n)
-				enc, encErr := w.cryptographyService.Encrypt(buffer[:chacha20poly1305.NonceSize+n])
+				enc, encErr := w.cryptographyService.Encrypt(w.buffer[:nonceOffset+n])
 				if encErr != nil {
 					if w.ctx.Err() != nil {
 						return nil

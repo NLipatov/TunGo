@@ -26,11 +26,14 @@ type TransportHandler struct {
 	cryptographyFactory connection.CryptoFactory
 	servicePacket       service.PacketHandler
 	spBuffer            [3]byte
+	packetBuffer        []byte
+	oobBuffer           []byte
+	mtu                 int
 }
 
 func NewTransportHandler(
 	ctx context.Context,
-	settings settings.Settings,
+	workerSettings settings.Settings,
 	writer io.Writer,
 	listenerConn listeners.UdpListener,
 	sessionManager repository.SessionRepository[connection.Session],
@@ -39,9 +42,10 @@ func NewTransportHandler(
 	cryptographyFactory connection.CryptoFactory,
 	servicePacket service.PacketHandler,
 ) transport.Handler {
+	resolvedMTU := settings.ResolveMTU(workerSettings.MTU)
 	return &TransportHandler{
 		ctx:                 ctx,
-		settings:            settings,
+		settings:            workerSettings,
 		writer:              writer,
 		sessionManager:      sessionManager,
 		logger:              logger,
@@ -49,6 +53,9 @@ func NewTransportHandler(
 		handshakeFactory:    handshakeFactory,
 		cryptographyFactory: cryptographyFactory,
 		servicePacket:       servicePacket,
+		packetBuffer:        make([]byte, settings.UDPBufferSize(resolvedMTU)),
+		oobBuffer:           make([]byte, 1024),
+		mtu:                 resolvedMTU,
 	}
 }
 
@@ -64,15 +71,12 @@ func (t *TransportHandler) HandleTransport() error {
 		_ = t.listenerConn.Close()
 	}()
 
-	var buffer [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
-	var oobBuf [1024]byte
-
 	for {
 		select {
 		case <-t.ctx.Done():
 			return nil
 		default:
-			n, _, _, clientAddr, readFromUdpErr := t.listenerConn.ReadMsgUDPAddrPort(buffer[:], oobBuf[:])
+			n, _, _, clientAddr, readFromUdpErr := t.listenerConn.ReadMsgUDPAddrPort(t.packetBuffer[:], t.oobBuffer[:])
 			if readFromUdpErr != nil {
 				if t.ctx.Err() != nil {
 					return t.ctx.Err()
@@ -84,7 +88,7 @@ func (t *TransportHandler) HandleTransport() error {
 				t.logger.Printf("packet dropped: empty packet from %v", clientAddr.String())
 				continue
 			}
-			_ = t.handlePacket(t.listenerConn, clientAddr, buffer[:n])
+			_ = t.handlePacket(t.listenerConn, clientAddr, t.packetBuffer[:n])
 		}
 	}
 }
@@ -118,6 +122,15 @@ func (t *TransportHandler) handlePacket(
 	decrypted, decryptionErr := session.Crypto().Decrypt(packet)
 	if decryptionErr != nil {
 		t.logger.Printf("failed to decrypt data: %v", decryptionErr)
+		t.sessionManager.Delete(session)
+		servicePacketPayload, servicePacketErr := t.servicePacket.EncodeLegacy(service.SessionReset, t.spBuffer[:])
+		if servicePacketErr != nil {
+			t.logger.Printf("failed to encode legacy session reset service packet: %v", servicePacketErr)
+			return decryptionErr
+		}
+		if _, writeErr := conn.WriteToUDPAddrPort(servicePacketPayload, addrPort); writeErr != nil {
+			t.logger.Printf("failed to send session reset to %v: %v", addrPort, writeErr)
+		}
 		return decryptionErr
 	}
 
@@ -141,7 +154,7 @@ func (t *TransportHandler) registerClient(
 	// Pass initialData and addrPort to the crypto function
 	h := t.handshakeFactory.NewHandshake()
 	adapter := adapters.NewInitialDataAdapter(
-		adapters.NewUdpAdapter(conn, addrPort), initialData)
+		adapters.NewUdpAdapter(conn, addrPort, t.mtu), initialData)
 	internalIP, handshakeErr := h.ServerSideHandshake(adapter)
 	if handshakeErr != nil {
 		return handshakeErr

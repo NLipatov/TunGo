@@ -36,9 +36,10 @@ func (w *WorkerFactory) CreateWorker(
 		if deadlineErr != nil {
 			return nil, deadlineErr
 		}
-		transport := adapters.NewClientUDPAdapter(conn.(*net.UDPConn), deadline, deadline)
+		mtu := settings.ResolveMTU(w.conf.UDPSettings.MTU)
+		transport := adapters.NewClientUDPAdapter(conn.(*net.UDPConn), deadline, deadline, mtu)
 		// tunHandler reads from tun and writes to transport
-		tunHandler := udp_chacha20.NewTunHandler(ctx, tun, transport, crypto)
+		tunHandler := udp_chacha20.NewTunHandler(ctx, tun, transport, crypto, mtu)
 		// transportHandler reads from transport and writes to tun
 		transportHandler := udp_chacha20.NewTransportHandler(
 			ctx,
@@ -46,6 +47,7 @@ func (w *WorkerFactory) CreateWorker(
 			tun,
 			crypto,
 			service.NewDefaultPacketHandler(),
+			mtu,
 		)
 		return udp_chacha20.NewUdpWorker(transportHandler, tunHandler), nil
 	case settings.TCP:

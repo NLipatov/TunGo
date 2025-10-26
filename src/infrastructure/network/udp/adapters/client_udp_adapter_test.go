@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 	"tungo/infrastructure/network"
+	"tungo/infrastructure/settings"
 )
 
 // helper: returns client-side adapter and matching UDP server socket
@@ -25,7 +26,7 @@ func newPair(tb testing.TB) (*ClientUDPAdapter, *net.UDPConn) {
 	}
 
 	// 1-second deadlines for tests
-	ad := NewClientUDPAdapter(client, network.Timeout(time.Second), network.Timeout(time.Second))
+	ad := NewClientUDPAdapter(client, network.Timeout(time.Second), network.Timeout(time.Second), settings.DefaultEthernetMTU)
 	return ad.(*ClientUDPAdapter), server
 }
 

@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"golang.org/x/crypto/chacha20poly1305"
+
+	"tungo/infrastructure/settings"
 )
 
 // fakeCrypto implements application.Crypto for testing
@@ -93,7 +95,7 @@ func TestHandleTun_ImmediateCancel(t *testing.T) {
 		// should not be called
 		t.Fatal("Read called despite context cancelled")
 		return 0, nil
-	}}, &fakeWriter{}, &tunhandlerTestRakeCrypto{})
+	}}, &fakeWriter{}, &tunhandlerTestRakeCrypto{}, settings.DefaultEthernetMTU)
 
 	if err := h.HandleTun(); err != nil {
 		t.Fatalf("expected nil on immediate cancel, got %v", err)
@@ -105,7 +107,7 @@ func TestHandleTun_ReadError(t *testing.T) {
 	ctx := context.Background()
 	h := NewTunHandler(ctx, &fakeReader{readFunc: func(p []byte) (int, error) {
 		return 0, errRead
-	}}, &fakeWriter{}, &tunhandlerTestRakeCrypto{})
+	}}, &fakeWriter{}, &tunhandlerTestRakeCrypto{}, settings.DefaultEthernetMTU)
 
 	if err := h.HandleTun(); err == nil || err.Error() != fmt.Sprintf("could not read a packet from TUN: %v", errRead) {
 		t.Fatalf("expected read error wrapped, got %v", err)
@@ -120,7 +122,7 @@ func TestHandleTun_EncryptError(t *testing.T) {
 		return len(dummyData), nil
 	}}
 	errEnc := errors.New("encrypt fail")
-	h := NewTunHandler(ctx, reader, &fakeWriter{}, &tunhandlerTestRakeCrypto{err: errEnc})
+	h := NewTunHandler(ctx, reader, &fakeWriter{}, &tunhandlerTestRakeCrypto{err: errEnc}, settings.DefaultEthernetMTU)
 
 	if err := h.HandleTun(); err == nil || err.Error() != fmt.Sprintf("could not encrypt packet: %v", errEnc) {
 		t.Fatalf("expected encrypt error wrapped, got %v", err)
@@ -136,7 +138,7 @@ func TestHandleTun_WriteError(t *testing.T) {
 	}}
 	errWrite := errors.New("write fail")
 	writer := &fakeWriter{err: errWrite}
-	h := NewTunHandler(ctx, reader, writer, &tunhandlerTestRakeCrypto{prefix: []byte("x:")})
+	h := NewTunHandler(ctx, reader, writer, &tunhandlerTestRakeCrypto{prefix: []byte("x:")}, settings.DefaultEthernetMTU)
 
 	if err := h.HandleTun(); err == nil || err.Error() != fmt.Sprintf("could not write packet to transport: %v", errWrite) {
 		t.Fatalf("expected write error wrapped, got %v", err)
@@ -163,7 +165,7 @@ func TestHandleTun_SuccessThenCancel(t *testing.T) {
 	writer := &fakeWriter{}
 	crypto := &tunhandlerTestRakeCrypto{prefix: []byte("pre-")}
 
-	h := NewTunHandler(ctx, reader, writer, crypto)
+	h := NewTunHandler(ctx, reader, writer, crypto, settings.DefaultEthernetMTU)
 
 	done := make(chan error)
 	go func() {
@@ -195,7 +197,7 @@ func TestHandleTun_ReadErrorAfterCancel_ReturnsNil(t *testing.T) {
 		cancel()
 		return 0, errors.New("read fail")
 	}}
-	h := NewTunHandler(ctx, r, &fakeWriter{}, &tunhandlerTestRakeCrypto{})
+	h := NewTunHandler(ctx, r, &fakeWriter{}, &tunhandlerTestRakeCrypto{}, settings.DefaultEthernetMTU)
 
 	if err := h.HandleTun(); err != nil {
 		t.Fatalf("expected nil because ctx canceled, got %v", err)
@@ -212,7 +214,7 @@ func TestHandleTun_EncryptErrorAfterCancel_ReturnsNil(t *testing.T) {
 		return 3, nil
 	}}
 	crypt := &tunHandlerTestCancelOnEncrypt{cancel: cancel, err: errors.New("enc fail")}
-	h := NewTunHandler(ctx, r, &fakeWriter{}, crypt)
+	h := NewTunHandler(ctx, r, &fakeWriter{}, crypt, settings.DefaultEthernetMTU)
 
 	if err := h.HandleTun(); err != nil {
 		t.Fatalf("expected nil because ctx canceled before encrypt error handling, got %v", err)
@@ -228,7 +230,7 @@ func TestHandleTun_WriteErrorAfterCancel_ReturnsNil(t *testing.T) {
 		return 3, nil
 	}}
 	w := &tunHandlerTestCancelWriter{cancel: cancel}
-	h := NewTunHandler(ctx, r, w, &tunhandlerTestRakeCrypto{prefix: []byte("x:")})
+	h := NewTunHandler(ctx, r, w, &tunhandlerTestRakeCrypto{prefix: []byte("x:")}, settings.DefaultEthernetMTU)
 
 	if err := h.HandleTun(); err != nil {
 		t.Fatalf("expected nil because ctx canceled before write error handling, got %v", err)
@@ -251,7 +253,7 @@ func TestHandleTun_ReadReturnsNAndEOF_OneWriteThenEOF(t *testing.T) {
 		return 0, io.EOF
 	}}
 	w := &fakeWriter{}
-	h := NewTunHandler(ctx, r, w, &tunhandlerTestRakeCrypto{prefix: []byte("pre-")})
+	h := NewTunHandler(ctx, r, w, &tunhandlerTestRakeCrypto{prefix: []byte("pre-")}, settings.DefaultEthernetMTU)
 
 	err := h.HandleTun()
 	if err == nil || err.Error() != "could not read a packet from TUN: EOF" {

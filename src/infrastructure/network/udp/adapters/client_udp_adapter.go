@@ -11,15 +11,17 @@ import (
 // ClientUDPAdapter - single goroutine only client UDP adapter
 type ClientUDPAdapter struct {
 	conn                        *net.UDPConn
-	buf                         [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
+	buf                         []byte
 	readDeadline, writeDeadline network.Timeout
 }
 
 func NewClientUDPAdapter(
 	conn *net.UDPConn,
-	readDeadline, writeDeadline network.Timeout) connection.Transport {
+	readDeadline, writeDeadline network.Timeout,
+	mtu int) connection.Transport {
 	return &ClientUDPAdapter{
 		conn:          conn,
+		buf:           make([]byte, settings.UDPBufferSize(mtu)),
 		writeDeadline: writeDeadline,
 		readDeadline:  readDeadline,
 	}

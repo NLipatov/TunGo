@@ -19,6 +19,8 @@ type TunHandler struct {
 	reader         io.Reader
 	ipHeaderParser appip.HeaderParser
 	sessionManager repository.SessionRepository[connection.Session]
+	mtu            int
+	buffer         []byte
 }
 
 func NewTunHandler(
@@ -26,12 +28,16 @@ func NewTunHandler(
 	reader io.Reader,
 	parser appip.HeaderParser,
 	sessionManager repository.SessionRepository[connection.Session],
+	mtu int,
 ) tun.Handler {
+	resolvedMTU := settings.ResolveMTU(mtu)
 	return &TunHandler{
 		ctx:            ctx,
 		reader:         reader,
 		ipHeaderParser: parser,
 		sessionManager: sessionManager,
+		mtu:            resolvedMTU,
+		buffer:         make([]byte, settings.UDPBufferSize(resolvedMTU)),
 	}
 }
 
@@ -58,8 +64,9 @@ func NewTunHandler(
 //     (nonce) and the suffix (tag) are already reserved in the buffer.
 func (t *TunHandler) HandleTun() error {
 	// Reserve space for nonce + payload + AEAD tag (in-place encryption needs extra capacity).
-	var buffer [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
-	plaintext := buffer[chacha20poly1305.NonceSize : settings.DefaultEthernetMTU+chacha20poly1305.NonceSize]
+	nonceOffset := chacha20poly1305.NonceSize
+	payloadLimit := nonceOffset + t.mtu
+	plaintext := t.buffer[nonceOffset:payloadLimit]
 
 	for {
 		select {
@@ -80,7 +87,7 @@ func (t *TunHandler) HandleTun() error {
 			}
 
 			// Parse destination from the IP header (skip the nonce).
-			payload := buffer[chacha20poly1305.NonceSize : chacha20poly1305.NonceSize+n]
+			payload := t.buffer[nonceOffset : nonceOffset+n]
 			addr, addrErr := t.ipHeaderParser.DestinationAddress(payload)
 			if addrErr != nil {
 				log.Printf("packet dropped: failed to parse destination address: %v", addrErr)
@@ -94,7 +101,7 @@ func (t *TunHandler) HandleTun() error {
 			}
 
 			// Encrypt "nonce || payload". The crypto service must treat the prefix as nonce.
-			ct, eErr := session.Crypto().Encrypt(buffer[:chacha20poly1305.NonceSize+n])
+			ct, eErr := session.Crypto().Encrypt(t.buffer[:nonceOffset+n])
 			if eErr != nil {
 				log.Printf("failed to encrypt packet: %v", eErr)
 				continue

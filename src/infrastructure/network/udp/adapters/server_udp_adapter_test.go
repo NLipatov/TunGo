@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 	"tungo/application/network/connection"
+	"tungo/infrastructure/settings"
 )
 
 // setupConns creates a server and client UDPConns and returns them plus a Transport.
@@ -29,7 +30,7 @@ func setupConns(t testing.TB) (serverConn *net.UDPConn, clientConn *net.UDPConn,
 		t.Fatalf("parse server addrport: %v", err)
 	}
 
-	clientAdapter = NewUdpAdapter(clientConn, addrPort)
+	clientAdapter = NewUdpAdapter(clientConn, addrPort, settings.DefaultEthernetMTU)
 
 	t.Cleanup(func() {
 		_ = serverConn.Close()
