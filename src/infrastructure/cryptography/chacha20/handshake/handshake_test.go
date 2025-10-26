@@ -6,6 +6,7 @@ import (
 	"net"
 	"testing"
 	"time"
+	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/settings"
 )
 
@@ -52,6 +53,27 @@ func TestServerSideHandshake_ReadClientHelloError(t *testing.T) {
 	_, err := h.ServerSideHandshake(adapter)
 	if err == nil {
 		t.Fatal("expected error reading ClientHello, got nil")
+	}
+}
+
+func TestServerHandshakeReceiveClientHello_LegacyClient(t *testing.T) {
+	buf, orig := buildValidHello(t, ip.V4, "10.0.0.50")
+	legacyBuf := buf[:len(buf)-mtuFieldLength]
+
+	adapter := &fakeAdapter{in: bytes.NewBuffer(legacyBuf)}
+	server := NewServerHandshake(adapter)
+
+	hello, err := server.ReceiveClientHello()
+	if err != nil {
+		t.Fatalf("ReceiveClientHello failed for legacy payload: %v", err)
+	}
+
+	if !hello.ipAddress.Equal(orig.ipAddress) {
+		t.Fatalf("ipAddress mismatch: got %v want %v", hello.ipAddress, orig.ipAddress)
+	}
+
+	if _, ok := hello.MTU(); ok {
+		t.Fatal("expected legacy ClientHello to omit MTU extension")
 	}
 }
 
