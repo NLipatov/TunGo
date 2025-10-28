@@ -26,30 +26,31 @@ type tun struct {
 	events [1]unix.EpollEvent
 }
 
-// NewTUN takes ownership of the given *os.File by duplicating its
-// fd (so the caller can safely discard/close the original file). The wrapper
-// sets O_NONBLOCK and registers the fd in epoll for level-triggered I/O.
+// NewTUN takes ownership of f on success: it will close f before returning.
+// On error, ownership remains with the caller (f is not closed).
 func NewTUN(f *os.File) (application.Device, error) {
 	if f == nil {
 		return nil, errors.New("nil file")
 	}
 	orig := int(f.Fd())
 
-	// Duplicate fd so we fully control its lifetime, independent of f.
+	// 1) Duplicate fd so we own lifetime independently of f.
 	dup, err := unix.Dup(orig)
 	if err != nil {
-		return nil, err
+		return nil, err // caller still owns f
 	}
-	// The caller may still hold 'f'; duplicating prevents double-close hazards.
-	// We do NOT close 'f' here — caller decides. We only own 'dup'.
 
-	// Put the duplicated fd in non-blocking mode so read/write can return EAGAIN
-	// which we will bridge with epoll_wait.
+	// 2) Make dup non-blocking and close-on-exec.
 	if err := unix.SetNonblock(dup, true); err != nil {
 		_ = unix.Close(dup)
 		return nil, err
 	}
+	if _, err := unix.FcntlInt(uintptr(dup), unix.F_SETFD, unix.FD_CLOEXEC); err != nil {
+		_ = unix.Close(dup)
+		return nil, err
+	}
 
+	// 3) Create epoll instance (CLOEXEC) and register the dup fd.
 	ep, err := unix.EpollCreate1(unix.EPOLL_CLOEXEC)
 	if err != nil {
 		_ = unix.Close(dup)
@@ -57,6 +58,7 @@ func NewTUN(f *os.File) (application.Device, error) {
 	}
 
 	w := &tun{fd: dup, epollFd: ep}
+
 	ev := unix.EpollEvent{
 		Events: unix.EPOLLIN | unix.EPOLLOUT | unix.EPOLLERR | unix.EPOLLHUP,
 		Fd:     int32(w.fd),
@@ -67,7 +69,13 @@ func NewTUN(f *os.File) (application.Device, error) {
 		return nil, err
 	}
 
-	// Keep f alive across syscalls above (defensive; fd already dup'ed).
+	// 4) Success path: we now take ownership → close original file handle.
+	// This avoids having two fds to the same /dev/net/tun in the process.
+	if err := f.Close(); err != nil {
+		// If closing f fails (rare), still return w (we own dup + epoll).
+		// You might choose to log this error.
+	}
+	// Keep f alive across syscalls above (defensive).
 	runtime.KeepAlive(f)
 	return w, nil
 }
