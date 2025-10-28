@@ -1,5 +1,10 @@
 //go:build linux
 
+// Package epoll provides a TUN wrapper that uses epoll(7) to avoid goroutine-blocking
+// read(2)/write(2) calls. It splits readiness into two independent epoll instances:
+// one for readability and one for writability. This prevents noisy wake-ups where
+// EPOLLOUT is almost always "ready" and would otherwise cause a hot loop while
+// waiting for EPOLLIN.
 package epoll
 
 import (
@@ -8,25 +13,30 @@ import (
 	"os"
 	"runtime"
 	"sync/atomic"
+
 	application "tungo/application/network/routing/tun"
 
 	"golang.org/x/sys/unix"
 )
 
-// tun wraps a TUN file descriptor and performs blocking Read/Write
-// via epoll(7) instead of blocking read(2)/write(2) on the fd.
-// It keeps the same surface API: Read([]byte) (int, error), Write([]byte) (int, error), Close() error.
-// Optionally it exposes Fd() for cases where you need the raw fd (e.g., further ioctls).
+// tun wraps a duplicated non-blocking TUN fd and two epoll instances:
+// - epIn  watches for EPOLLIN|ERR|HUP (read readiness)
+// - epOut watches for EPOLLOUT|ERR|HUP (write readiness)
+//
+// Concurrency:
+// - Read and Write may be called concurrently from different goroutines.
+// - Multiple concurrent Reads (or Writes) on the same instance are not supported.
 type tun struct {
-	fd      int // duplicated and owned by this wrapper
-	epollFd int // epoll instance fd
-	closed  atomic.Bool
-
-	// single-entry events array to avoid allocations
-	events [1]unix.EpollEvent
+	fd     int
+	epIn   int
+	epOut  int
+	closed atomic.Bool
 }
 
-// NewTUN takes ownership of f on success: it will close f before returning.
+// Compile-time interface conformance (adjust if your interface differs).
+var _ application.Device = (*tun)(nil)
+
+// NewTUN takes ownership of f on success (it closes f before returning).
 // On error, ownership remains with the caller (f is not closed).
 func NewTUN(f *os.File) (application.Device, error) {
 	if f == nil {
@@ -34,10 +44,10 @@ func NewTUN(f *os.File) (application.Device, error) {
 	}
 	orig := int(f.Fd())
 
-	// 1) Duplicate fd so we own lifetime independently of f.
+	// 1) Duplicate fd so the wrapper owns lifetime independently of f.
 	dup, err := unix.Dup(orig)
 	if err != nil {
-		return nil, err // caller still owns f
+		return nil, err
 	}
 
 	// 2) Make dup non-blocking and close-on-exec.
@@ -50,38 +60,51 @@ func NewTUN(f *os.File) (application.Device, error) {
 		return nil, err
 	}
 
-	// 3) Create epoll instance (CLOEXEC) and register the dup fd.
-	ep, err := unix.EpollCreate1(unix.EPOLL_CLOEXEC)
+	// 3) Create two epoll instances (CLOEXEC).
+	epIn, err := unix.EpollCreate1(unix.EPOLL_CLOEXEC)
 	if err != nil {
 		_ = unix.Close(dup)
 		return nil, err
 	}
-
-	w := &tun{fd: dup, epollFd: ep}
-
-	ev := unix.EpollEvent{
-		Events: unix.EPOLLIN | unix.EPOLLOUT | unix.EPOLLERR | unix.EPOLLHUP,
-		Fd:     int32(w.fd),
-	}
-	if err := unix.EpollCtl(w.epollFd, unix.EPOLL_CTL_ADD, w.fd, &ev); err != nil {
-		_ = unix.Close(w.epollFd)
-		_ = unix.Close(w.fd)
+	epOut, err := unix.EpollCreate1(unix.EPOLL_CLOEXEC)
+	if err != nil {
+		_ = unix.Close(epIn)
+		_ = unix.Close(dup)
 		return nil, err
 	}
 
-	// 4) Success path: we now take ownership → close original file handle.
-	// This avoids having two fds to the same /dev/net/tun in the process.
-	if err := f.Close(); err != nil {
-		// If closing f fails (rare), still return w (we own dup + epoll).
-		// You might choose to log this error.
+	// 4) Register the same data fd in both epoll instances with *separate* masks.
+	inEv := unix.EpollEvent{
+		Events: unix.EPOLLIN | unix.EPOLLERR | unix.EPOLLHUP | unix.EPOLLHUP, // include both HUP bit names for safety
+		Fd:     int32(dup),
 	}
-	// Keep f alive across syscalls above (defensive).
-	runtime.KeepAlive(f)
-	return w, nil
+	if err := unix.EpollCtl(epIn, unix.EPOLL_CTL_ADD, dup, &inEv); err != nil {
+		_ = unix.Close(epOut)
+		_ = unix.Close(epIn)
+		_ = unix.Close(dup)
+		return nil, err
+	}
+
+	outEv := unix.EpollEvent{
+		Events: unix.EPOLLOUT | unix.EPOLLERR | unix.EPOLLHUP | unix.EPOLLHUP,
+		Fd:     int32(dup),
+	}
+	if err := unix.EpollCtl(epOut, unix.EPOLL_CTL_ADD, dup, &outEv); err != nil {
+		_ = unix.Close(epOut)
+		_ = unix.Close(epIn)
+		_ = unix.Close(dup)
+		return nil, err
+	}
+
+	// 5) Success path: close the original os.File handle; we own dup+epIn+epOut now.
+	_ = f.Close()
+	runtime.KeepAlive(f) // ensure f is alive across syscalls above
+
+	return &tun{fd: dup, epIn: epIn, epOut: epOut}, nil
 }
 
-// Read reads a single TUN packet (or less if buffer is smaller) using epoll
-// to avoid blocking the goroutine on read(2). On EAGAIN it waits for EPOLLIN.
+// Read reads a single TUN packet (or less if p is smaller). On EAGAIN it blocks
+// in epoll_wait for readable readiness. Returns io.ErrClosedPipe if closed.
 func (w *tun) Read(p []byte) (int, error) {
 	if w.closed.Load() {
 		return 0, io.ErrClosedPipe
@@ -94,22 +117,22 @@ func (w *tun) Read(p []byte) (int, error) {
 		switch {
 		case errors.Is(err, unix.EINTR):
 			continue
-		case errors.Is(err, unix.EAGAIN), errors.Is(err, unix.EWOULDBLOCK):
-			if waitErr := w.wait(unix.EPOLLIN); waitErr != nil {
-				return 0, waitErr
+		case errors.Is(err, unix.EAGAIN) || errors.Is(err, unix.EWOULDBLOCK):
+			if err := w.waitRead(); err != nil {
+				return 0, err
 			}
 			continue
 		case errors.Is(err, unix.EBADF):
 			return 0, io.ErrClosedPipe
 		default:
-			// EPOLLHUP/ERR are surfaced via wait(); direct read errors bubble up here.
 			return 0, err
 		}
 	}
 }
 
-// Write writes one TUN packet. TUN usually expects whole packets, but we still
-// handle partial writes conservatively. On EAGAIN it waits for EPOLLOUT.
+// Write writes one TUN packet. TUN generally expects whole frames, but we still
+// handle partial writes conservatively. On EAGAIN it blocks in epoll_wait for EPOLLOUT.
+// Returns io.ErrClosedPipe if closed.
 func (w *tun) Write(p []byte) (int, error) {
 	if w.closed.Load() {
 		return 0, io.ErrClosedPipe
@@ -119,9 +142,9 @@ func (w *tun) Write(p []byte) (int, error) {
 		n, err := unix.Write(w.fd, p[total:])
 		if err == nil {
 			if n == 0 {
-				// Shouldn't happen for non-zero p, treat as EAGAIN-ish spin to avoid tight loop.
-				if waitErr := w.wait(unix.EPOLLOUT); waitErr != nil {
-					return total, waitErr
+				// Treat as transient backpressure: wait for writable to avoid spinning.
+				if err := w.waitWrite(); err != nil {
+					return total, err
 				}
 				continue
 			}
@@ -131,8 +154,8 @@ func (w *tun) Write(p []byte) (int, error) {
 		switch {
 		case errors.Is(err, unix.EINTR):
 			continue
-		case errors.Is(err, unix.EAGAIN), errors.Is(err, unix.EWOULDBLOCK):
-			if err := w.wait(unix.EPOLLOUT); err != nil {
+		case errors.Is(err, unix.EAGAIN) || errors.Is(err, unix.EWOULDBLOCK):
+			if err := w.waitWrite(); err != nil {
 				return total, err
 			}
 			continue
@@ -145,43 +168,87 @@ func (w *tun) Write(p []byte) (int, error) {
 	return total, nil
 }
 
-// Close closes both the epoll instance and the owned duplicated fd.
+// Close closes the epoll instances first (to wake any waiters), then the data fd.
+// It is safe to call multiple times.
 func (w *tun) Close() error {
 	if !w.closed.CompareAndSwap(false, true) {
 		return nil
 	}
-	if err := unix.Close(w.epollFd); err != nil {
-		return err
+	// Close epolls first so blocked epoll_wait calls return with error.
+	var firstErr error
+	if err := unix.Close(w.epIn); err != nil {
+		firstErr = err
 	}
-	if err := unix.Close(w.fd); err != nil {
-		return err
+	if err := unix.Close(w.epOut); err != nil && firstErr == nil {
+		firstErr = err
 	}
-	return nil
+	if err := unix.Close(w.fd); err != nil && firstErr == nil {
+		firstErr = err
+	}
+	return firstErr
 }
 
-// Fd returns the underlying fd (owned by this wrapper). Use with care.
+// Fd exposes the underlying duplicated fd (owned by this wrapper). Use with care.
 func (w *tun) Fd() uintptr { return uintptr(w.fd) }
 
-// wait blocks in epoll_wait until the desired events occur, or returns EOF on HUP/ERR.
-func (w *tun) wait(mask uint32) error {
+// waitRead blocks until the fd is readable, or returns io.EOF on HUP/ERR,
+// or io.ErrClosedPipe if the wrapper is closed.
+func (w *tun) waitRead() error {
+	var evs [1]unix.EpollEvent
 	for {
-		n, err := unix.EpollWait(w.epollFd, w.events[:], -1)
+		n, err := unix.EpollWait(w.epIn, evs[:], -1)
 		if errors.Is(err, unix.EINTR) {
 			continue
 		}
 		if err != nil {
+			// If epoll fd is closed concurrently, translate EBADF to closed pipe.
+			if errors.Is(err, unix.EBADF) || w.closed.Load() {
+				return io.ErrClosedPipe
+			}
 			return err
 		}
-		if n == 0 {
+		if n <= 0 {
+			// With timeout -1 this should not happen; loop defensively.
 			continue
 		}
-		ev := w.events[0].Events
-		if (ev & (unix.EPOLLERR | unix.EPOLLHUP)) != 0 {
+		ev := evs[0].Events
+		if (ev & (unix.EPOLLERR | unix.EPOLLHUP | unix.EPOLLHUP)) != 0 {
 			return io.EOF
 		}
-		if (ev & mask) != 0 {
+		if (ev & unix.EPOLLIN) != 0 {
 			return nil
 		}
-		// Otherwise, loop again (level-triggered).
+		// Ignore unrelated events (shouldn't occur with split epoll), and loop.
+	}
+}
+
+// waitWrite blocks until the fd is writable, or returns io.EOF on HUP/ERR,
+// or io.ErrClosedPipe if the wrapper is closed.
+func (w *tun) waitWrite() error {
+	var evs [1]unix.EpollEvent
+	for {
+		n, err := unix.EpollWait(w.epOut, evs[:], -1)
+		if errors.Is(err, unix.EINTR) {
+			continue
+		}
+		if err != nil {
+			// If epoll fd is closed concurrently, translate EBADF to closed pipe.
+			if errors.Is(err, unix.EBADF) || w.closed.Load() {
+				return io.ErrClosedPipe
+			}
+			return err
+		}
+		if n <= 0 {
+			// With timeout -1 this should not happen; loop defensively.
+			continue
+		}
+		ev := evs[0].Events
+		if (ev & (unix.EPOLLERR | unix.EPOLLHUP | unix.EPOLLHUP)) != 0 {
+			return io.EOF
+		}
+		if (ev & unix.EPOLLOUT) != 0 {
+			return nil
+		}
+		// Ignore unrelated events (shouldn't occur with split epoll), and loop.
 	}
 }
