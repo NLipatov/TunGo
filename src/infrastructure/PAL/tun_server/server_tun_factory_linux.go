@@ -14,6 +14,7 @@ import (
 	"tungo/infrastructure/PAL/linux/network_tools/ip"
 	"tungo/infrastructure/PAL/linux/network_tools/iptables"
 	"tungo/infrastructure/PAL/linux/network_tools/sysctl"
+	"tungo/infrastructure/PAL/linux/tun/epoll"
 	nIp "tungo/infrastructure/network/ip"
 	"tungo/infrastructure/settings"
 )
@@ -50,7 +51,7 @@ func (s ServerTunFactory) CreateDevice(connSettings settings.Settings) (tun.Devi
 		return nil, fmt.Errorf("failed to configure a server: %s\n", configureErr)
 	}
 
-	return tunFile, nil
+	return epoll.NewTUN(tunFile)
 }
 
 func (s ServerTunFactory) DisposeDevices(connSettings settings.Settings) error {
