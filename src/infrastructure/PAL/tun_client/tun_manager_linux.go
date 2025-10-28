@@ -8,6 +8,7 @@ import (
 	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/PAL/linux/network_tools/ioctl"
 	"tungo/infrastructure/PAL/linux/network_tools/ip"
+	"tungo/infrastructure/PAL/linux/tun/epoll"
 	"tungo/infrastructure/settings"
 )
 
@@ -52,7 +53,7 @@ func (t *PlatformTunManager) CreateDevice() (tun.Device, error) {
 		return nil, fmt.Errorf("failed to open TUN interface: %v", openTunErr)
 	}
 
-	return tunFile, nil
+	return epoll.NewTUN(tunFile)
 }
 
 // configureTUN Configures client's TUN device (creates the TUN device, assigns an IP to it, etc)
