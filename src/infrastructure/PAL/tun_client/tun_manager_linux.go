@@ -14,18 +14,20 @@ import (
 
 // PlatformTunManager Linux-specific TunDevice manager
 type PlatformTunManager struct {
-	conf  client.Configuration
-	ip    ip.Contract
-	ioctl ioctl.Contract
+	conf    client.Configuration
+	ip      ip.Contract
+	ioctl   ioctl.Contract
+	wrapper tun.Wrapper
 }
 
 func NewPlatformTunManager(
 	conf client.Configuration,
 ) (tun.ClientManager, error) {
 	return &PlatformTunManager{
-		conf:  conf,
-		ip:    ip.NewWrapper(PAL.NewExecCommander()),
-		ioctl: ioctl.NewWrapper(ioctl.NewLinuxIoctlCommander(), "/dev/net/tun"),
+		conf:    conf,
+		ip:      ip.NewWrapper(PAL.NewExecCommander()),
+		ioctl:   ioctl.NewWrapper(ioctl.NewLinuxIoctlCommander(), "/dev/net/tun"),
+		wrapper: epoll.NewWrapper(),
 	}, nil
 }
 
@@ -53,7 +55,7 @@ func (t *PlatformTunManager) CreateDevice() (tun.Device, error) {
 		return nil, fmt.Errorf("failed to open TUN interface: %v", openTunErr)
 	}
 
-	return epoll.NewTUN(tunFile)
+	return t.wrapper.Wrap(tunFile)
 }
 
 // configureTUN Configures client's TUN device (creates the TUN device, assigns an IP to it, etc)

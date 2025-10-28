@@ -5,9 +5,26 @@ import (
 	"errors"
 	"os"
 	"testing"
+	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/settings"
 )
+
+// plain test wrapper that does NOT use epoll and just passes through *os.File.
+type testPlainWrapper struct{}
+
+type testPlainDev struct{ f *os.File }
+
+// Implement tun.Device on top of *os.File.
+func (d *testPlainDev) Read(p []byte) (int, error)  { return d.f.Read(p) }
+func (d *testPlainDev) Write(p []byte) (int, error) { return d.f.Write(p) }
+func (d *testPlainDev) Close() error                { return d.f.Close() }
+func (d *testPlainDev) Fd() uintptr                 { return d.f.Fd() }
+
+// testPlainWrapper implements tun.Wrapper.
+func (testPlainWrapper) Wrap(f *os.File) (tun.Device, error) {
+	return &testPlainDev{f: f}, nil
+}
 
 type mockIP struct {
 	log        bytes.Buffer
@@ -65,9 +82,10 @@ func mgr(proto settings.Protocol, ipMock *mockIP) *PlatformTunManager {
 		},
 	}
 	return &PlatformTunManager{
-		conf:  cfg,
-		ip:    ipMock,
-		ioctl: &mockIOCTL{},
+		conf:    cfg,
+		ip:      ipMock,
+		ioctl:   &mockIOCTL{},
+		wrapper: testPlainWrapper{},
 	}
 }
 

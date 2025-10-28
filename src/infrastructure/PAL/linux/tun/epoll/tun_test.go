@@ -14,7 +14,7 @@ import (
 )
 
 // makeSocketpair returns two connected bidirectional fds.
-// We keep them blocking initially; NewTUN will dup and set O_NONBLOCK on its side.
+// We keep them blocking initially; newTUN will dup and set O_NONBLOCK on its side.
 func makeSocketpair(t *testing.T) (left *os.File, rightFD int) {
 	t.Helper()
 	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM, 0)
@@ -32,9 +32,9 @@ func TestCloseMakesFutureOpsFail(t *testing.T) {
 		_ = unix.Close(fd)
 	}(rightFD)
 
-	dev, err := NewTUN(left)
+	dev, err := newTUN(left)
 	if err != nil {
-		t.Fatalf("NewTUN: %v", err)
+		t.Fatalf("newTUN: %v", err)
 	}
 	w := dev.(*tun)
 
@@ -57,9 +57,9 @@ func TestReadBlocksUntilDataThenReturns(t *testing.T) {
 		_ = unix.Close(fd)
 	}(rightFD)
 
-	dev, err := NewTUN(left) // NewTUN takes ownership and closes 'left'
+	dev, err := newTUN(left) // newTUN takes ownership and closes 'left'
 	if err != nil {
-		t.Fatalf("NewTUN: %v", err)
+		t.Fatalf("newTUN: %v", err)
 	}
 	t.Cleanup(func() { _ = dev.Close() })
 
@@ -114,9 +114,9 @@ func TestWriteBackpressureWaitsAndCompletes(t *testing.T) {
 
 	_ = unix.SetsockoptInt(rightFD, unix.SOL_SOCKET, unix.SO_RCVBUF, 4096)
 
-	dev, err := NewTUN(left)
+	dev, err := newTUN(left)
 	if err != nil {
-		t.Fatalf("NewTUN: %v", err)
+		t.Fatalf("newTUN: %v", err)
 	}
 	t.Cleanup(func() { _ = dev.Close() })
 
@@ -162,9 +162,9 @@ func TestZeroLengthWrite(t *testing.T) {
 		_ = unix.Close(fd)
 	}(rightFD)
 
-	dev, err := NewTUN(left)
+	dev, err := newTUN(left)
 	if err != nil {
-		t.Fatalf("NewTUN: %v", err)
+		t.Fatalf("newTUN: %v", err)
 	}
 	t.Cleanup(func() { _ = dev.Close() })
 
@@ -179,9 +179,9 @@ func TestZeroLengthWrite(t *testing.T) {
 func TestEOFOnPeerClose(t *testing.T) {
 	left, rightFD := makeSocketpair(t)
 
-	dev, err := NewTUN(left)
+	dev, err := newTUN(left)
 	if err != nil {
-		t.Fatalf("NewTUN: %v", err)
+		t.Fatalf("newTUN: %v", err)
 	}
 	t.Cleanup(func() { _ = dev.Close() })
 
@@ -200,9 +200,9 @@ func TestEOFOnPeerClose(t *testing.T) {
 func TestReadUnblocksOnPeerCloseWithEOF(t *testing.T) {
 	left, rightFD := makeSocketpair(t)
 
-	dev, err := NewTUN(left)
+	dev, err := newTUN(left)
 	if err != nil {
-		t.Fatalf("NewTUN: %v", err)
+		t.Fatalf("newTUN: %v", err)
 	}
 	t.Cleanup(func() { _ = dev.Close() })
 	w := dev.(*tun)
