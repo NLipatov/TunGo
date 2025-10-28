@@ -14,6 +14,7 @@ import (
 	"tungo/infrastructure/PAL/linux/network_tools/ip"
 	"tungo/infrastructure/PAL/linux/network_tools/iptables"
 	"tungo/infrastructure/PAL/linux/network_tools/sysctl"
+	"tungo/infrastructure/PAL/linux/tun/epoll"
 	nIp "tungo/infrastructure/network/ip"
 	"tungo/infrastructure/settings"
 )
@@ -23,6 +24,7 @@ type ServerTunFactory struct {
 	iptables iptables.Contract
 	ioctl    ioctl.Contract
 	sysctl   sysctl.Contract
+	wrapper  tun.Wrapper
 }
 
 func NewServerTunFactory() tun.ServerManager {
@@ -31,6 +33,7 @@ func NewServerTunFactory() tun.ServerManager {
 		iptables: iptables.NewWrapper(PAL.NewExecCommander()),
 		ioctl:    ioctl.NewWrapper(ioctl.NewLinuxIoctlCommander(), "/dev/net/tun"),
 		sysctl:   sysctl.NewWrapper(PAL.NewExecCommander()),
+		wrapper:  epoll.NewWrapper(),
 	}
 }
 
@@ -50,7 +53,7 @@ func (s ServerTunFactory) CreateDevice(connSettings settings.Settings) (tun.Devi
 		return nil, fmt.Errorf("failed to configure a server: %s\n", configureErr)
 	}
 
-	return tunFile, nil
+	return s.wrapper.Wrap(tunFile)
 }
 
 func (s ServerTunFactory) DisposeDevices(connSettings settings.Settings) error {

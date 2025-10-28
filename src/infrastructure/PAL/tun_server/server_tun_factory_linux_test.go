@@ -8,6 +8,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	application "tungo/application/network/routing/tun"
 
 	"tungo/infrastructure/PAL/linux/network_tools/ioctl"
 	"tungo/infrastructure/PAL/linux/network_tools/ip"
@@ -21,6 +22,22 @@ import (
    Test doubles (prefixed)
    ==============================
 */
+
+// plain test wrapper that does NOT use epoll and just passes through *os.File.
+type testPlainWrapper struct{}
+
+type testPlainDev struct{ f *os.File }
+
+// Implement tun.Device on top of *os.File.
+func (d *testPlainDev) Read(p []byte) (int, error)  { return d.f.Read(p) }
+func (d *testPlainDev) Write(p []byte) (int, error) { return d.f.Write(p) }
+func (d *testPlainDev) Close() error                { return d.f.Close() }
+func (d *testPlainDev) Fd() uintptr                 { return d.f.Fd() }
+
+// testPlainWrapper implements tun.Wrapper.
+func (testPlainWrapper) Wrap(f *os.File) (application.Device, error) {
+	return &testPlainDev{f: f}, nil
+}
 
 // ServerTunFactoryMockIP implements ip.Contract (only the methods we need in tests).
 type ServerTunFactoryMockIP struct{ log bytes.Buffer }
@@ -214,6 +231,7 @@ func newFactory(
 		iptables: iptC,
 		ioctl:    ioC,
 		sysctl:   sysC,
+		wrapper:  testPlainWrapper{},
 	}
 }
 
