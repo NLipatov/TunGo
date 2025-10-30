@@ -69,7 +69,9 @@ func (w *Wrapper) SetInterfaceMetric(interfaceName string, metric int) error {
 
 func (w *Wrapper) InterfaceSetDNSServers(interfaceName string, dnsServers []string) error {
 	// Cleanup current DNS settings
-	_, _ = w.commander.CombinedOutput("netsh", "interface", "ip", "set", "dns", interfaceName, "dhcp")
+	_, _ = w.commander.CombinedOutput(
+		"netsh", "interface", "ip", "set", "dns", "name="+interfaceName, "source=dhcp",
+	)
 
 	// Manually set DNS servers
 	for i, dns := range dnsServers {
