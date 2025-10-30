@@ -179,7 +179,7 @@ func (m *PlatformTunManager) getOriginalPhysicalGatewayAndInterface() (gateway, 
 }
 
 func addStaticRouteToServer(serverIP, physIP, physGateway string) error {
-	idx := getIfaceIndexByIP(physIP)
+	idx := getInterfaceIndexByIP(physIP)
 	if idx == 0 {
 		return fmt.Errorf("could not find interface index for %s", physIP)
 	}
@@ -197,7 +197,7 @@ func addStaticRouteToServer(serverIP, physIP, physGateway string) error {
 	return nil
 }
 
-func getIfaceIndexByIP(ip string) int {
+func getInterfaceIndexByIP(ip string) int {
 	want := net.ParseIP(ip)
 	if want == nil {
 		return 0
