@@ -76,6 +76,11 @@ func (m *PlatformTunManager) CreateDevice() (tun.Device, error) {
 		return nil, err
 	}
 
+	_ = m.netsh.RouteDelete(s.ConnectionIP) // best-effort
+	if err = addStaticRouteToServer(s.ConnectionIP, origPhysIP, origPhysGateway); err != nil {
+		_ = device.Close()
+		return nil, fmt.Errorf("could not add static route to server: %w", err)
+	}
 	if err = m.configureWindowsTunNetsh(
 		s.InterfaceName,
 		s.InterfaceAddress,
@@ -83,12 +88,6 @@ func (m *PlatformTunManager) CreateDevice() (tun.Device, error) {
 		tunGateway,
 		mtu,
 	); err != nil {
-		_ = device.Close()
-		return nil, err
-	}
-
-	_ = m.netsh.RouteDelete(s.ConnectionIP)
-	if err = addStaticRouteToServer(s.ConnectionIP, origPhysIP, origPhysGateway); err != nil {
 		_ = device.Close()
 		return nil, err
 	}
