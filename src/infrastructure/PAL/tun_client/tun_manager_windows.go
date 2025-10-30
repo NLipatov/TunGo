@@ -70,7 +70,7 @@ func (m *PlatformTunManager) CreateDevice() (tun.Device, error) {
 		return nil, err
 	}
 
-	tunGateway, err := computeGateway(s.InterfaceAddress)
+	tunGateway, err := computeGateway(s.InterfaceIPCIDR)
 	if err != nil {
 		_ = device.Close()
 		return nil, err
@@ -197,12 +197,23 @@ func addStaticRouteToServer(serverIP, physIP, physGateway string) error {
 }
 
 func computeGateway(ipAddr string) (string, error) {
-	ip := net.ParseIP(ipAddr).To4()
-	if ip == nil {
-		return "", errors.New("invalid IP")
+	ip, nw, err := net.ParseCIDR(ipAddr)
+	if err != nil {
+		return "", fmt.Errorf("bad CIDR: %w", err)
 	}
-	ip[3] = 1
-	return ip.String(), nil
+	if ip == nil || ip.To4() == nil {
+		return "", errors.New("only IPv4 supported")
+	}
+	// gateway = network+1
+	network := nw.IP.To4()
+	gateway := make(net.IP, 4)
+	copy(gateway, network)
+	gateway[3]++
+	// forbid gateway==network
+	if ip.Equal(gateway) {
+		gateway[3]++
+	}
+	return gateway.String(), nil
 }
 
 func getIfaceIndexByIP(ip string) int {
