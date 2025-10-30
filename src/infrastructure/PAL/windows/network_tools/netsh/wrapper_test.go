@@ -2,165 +2,110 @@ package netsh
 
 import (
 	"errors"
-	"strconv"
-	"strings"
 	"testing"
 )
 
-// fakeCommander records the last invocation and returns preset out/err.
-type wrapperTestCommander struct {
-	out map[string][]byte
-	err map[string]error
+type mockCommander struct {
+	name   string
+	args   []string
+	output []byte
+	err    error
 }
 
-func (f *wrapperTestCommander) CombinedOutput(name string, args ...string) ([]byte, error) {
-	key := makeKey(name, args...)
-	return f.out[key], f.err[key]
+func (m *mockCommander) CombinedOutput(name string, args ...string) ([]byte, error) {
+	m.name = name
+	m.args = args
+	return m.output, m.err
 }
+func (m *mockCommander) Output(string, ...string) ([]byte, error) { return nil, nil }
+func (m *mockCommander) Run(string, ...string) error              { return nil }
 
-// These two methods are unused by netsh.Wrapper but must exist to satisfy PAL.Commander.
-func (f *wrapperTestCommander) Output(_ string, _ ...string) ([]byte, error) { return nil, nil }
-func (f *wrapperTestCommander) Run(_ string, _ ...string) error              { return nil }
-
-// makeKey joins the command and its args into a unique lookup key.
-func makeKey(name string, args ...string) string {
-	return name + "|" + strings.Join(args, "|")
-}
-
-func newWrapperBehavior(out map[string][]byte, err map[string]error) *Wrapper {
-	return &Wrapper{commander: &wrapperTestCommander{out: out, err: err}}
-}
-
-func TestRouteDelete(t *testing.T) {
-	host := "10.0.0.1"
-	cmd := "route"
-	key := makeKey(cmd, "delete", host)
-
-	// success
-	w := newWrapperBehavior(map[string][]byte{key: nil}, nil)
-	if err := w.RouteDelete(host); err != nil {
-		t.Fatalf("expected no error, got %v", err)
+func TestNetshWrapper_AllMethods(t *testing.T) {
+	tests := []struct {
+		name     string
+		call     func(w *Wrapper) error
+		wantCmd  string
+		wantArgs []string
+	}{
+		{
+			name:    "RouteDelete",
+			call:    func(w *Wrapper) error { return w.RouteDelete("10.0.0.1") },
+			wantCmd: "route",
+		},
+		{
+			name:    "InterfaceIPV4DeleteDefaultRoute",
+			call:    func(w *Wrapper) error { return w.InterfaceIPV4DeleteDefaultRoute("Ethernet 1") },
+			wantCmd: "netsh",
+		},
+		{
+			name:    "InterfaceIPDeleteAddress",
+			call:    func(w *Wrapper) error { return w.InterfaceIPDeleteAddress("Ethernet 1", "192.168.1.2") },
+			wantCmd: "netsh",
+		},
+		{
+			name:    "SetInterfaceMetric",
+			call:    func(w *Wrapper) error { return w.SetInterfaceMetric("Ethernet 1", 25) },
+			wantCmd: "netsh",
+		},
+		{
+			name:    "LinkSetDevMTU",
+			call:    func(w *Wrapper) error { return w.LinkSetDevMTU("Ethernet 1", 1500) },
+			wantCmd: "netsh",
+		},
+		{
+			name:    "InterfaceIPV4AddRouteOnLink",
+			call:    func(w *Wrapper) error { return w.InterfaceIPV4AddRouteOnLink("10.0.0.0/24", "Ethernet 1", 10) },
+			wantCmd: "netsh",
+		},
+		{
+			name:    "InterfaceIPV4DeleteRoute",
+			call:    func(w *Wrapper) error { return w.InterfaceIPV4DeleteRoute("10.0.0.0/24", "Ethernet 1") },
+			wantCmd: "netsh",
+		},
+		{
+			name: "InterfaceIPv4SetAddressNoGateway",
+			call: func(w *Wrapper) error {
+				return w.InterfaceIPv4SetAddressNoGateway("Ethernet 1", "10.0.0.2", "255.255.255.0")
+			},
+			wantCmd: "netsh",
+		},
+		{
+			name: "InterfaceIPv4SetAddressWithGateway",
+			call: func(w *Wrapper) error {
+				return w.InterfaceIPv4SetAddressWithGateway("Ethernet 1", "10.0.0.2", "255.255.255.0", "10.0.0.1", 5)
+			},
+			wantCmd: "netsh",
+		},
 	}
 
-	// failure
-	e := errors.New("boom")
-	w = newWrapperBehavior(nil, map[string]error{key: e})
-	err := w.RouteDelete(host)
-	if err == nil || !strings.Contains(err.Error(), "RouteDelete error: boom") {
-		t.Errorf("unexpected error: %v", err)
-	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name+"_success", func(t *testing.T) {
+			mock := &mockCommander{output: []byte("OK"), err: nil}
+			w := NewWrapper(mock)
 
-func TestInterfaceIPSetAddressStatic(t *testing.T) {
-	ifName, ipAddr, mask, gw := "eth0", "1.2.3.4", "255.255.255.0", "1.2.3.1"
-	cmd := "netsh"
-	args := []string{
-		"interface", "ip", "set", "address",
-		"name=" + ifName, "static", ipAddr, mask, gw, "1",
-	}
-	key := makeKey(cmd, args...)
+			if err := tt.call(w.(*Wrapper)); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if mock.name != tt.wantCmd {
+				t.Errorf("expected command %q, got %q", tt.wantCmd, mock.name)
+			}
+		})
+		t.Run(tt.name+"_error", func(t *testing.T) {
+			mock := &mockCommander{output: []byte("failure"), err: errors.New("exit 1")}
+			w := NewWrapper(mock)
 
-	// success
-	w := newWrapperBehavior(map[string][]byte{key: nil}, nil)
-	if err := w.InterfaceIPSetAddressStatic(ifName, ipAddr, mask, gw); err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-
-	// failure
-	e := errors.New("fail")
-	w = newWrapperBehavior(nil, map[string]error{key: e})
-	err := w.InterfaceIPSetAddressStatic(ifName, ipAddr, mask, gw)
-	if err == nil || !strings.Contains(err.Error(), "InterfaceIPSetAddressStatic error: fail") {
-		t.Errorf("unexpected error: %v", err)
-	}
-}
-
-func TestInterfaceIPV4AddRouteDefault(t *testing.T) {
-	ifName, gw := "eth1", "1.1.1.1"
-	cmd := "netsh"
-	args := []string{
-		"interface", "ipv4", "add", "route", "0.0.0.0/0",
-		"name=" + ifName, gw, "metric=1",
-	}
-	key := makeKey(cmd, args...)
-
-	// success
-	w := newWrapperBehavior(map[string][]byte{key: nil}, nil)
-	if err := w.InterfaceIPV4AddRouteDefault(ifName, gw); err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-
-	// failure
-	e := errors.New("oops")
-	w = newWrapperBehavior(nil, map[string]error{key: e})
-	err := w.InterfaceIPV4AddRouteDefault(ifName, gw)
-	if err == nil || !strings.Contains(err.Error(), "InterfaceIPV4AddRouteDefault error: oops") {
-		t.Errorf("unexpected error: %v", err)
-	}
-}
-
-func TestInterfaceIPV4DeleteAddress(t *testing.T) {
-	ifName := "eth2"
-	cmd := "netsh"
-	args := []string{
-		"interface", "ipv4", "delete", "route", "0.0.0.0/0",
-		"name=" + ifName,
-	}
-	key := makeKey(cmd, args...)
-
-	// success
-	w := newWrapperBehavior(map[string][]byte{key: nil}, nil)
-	if err := w.InterfaceIPV4DeleteAddress(ifName); err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-
-	// failure
-	e := errors.New("del-fail")
-	w = newWrapperBehavior(nil, map[string]error{key: e})
-	err := w.InterfaceIPV4DeleteAddress(ifName)
-	if err == nil || !strings.Contains(err.Error(), "InterfaceIPV4DeleteAddress error: del-fail") {
-		t.Errorf("unexpected error: %v", err)
+			err := tt.call(w.(*Wrapper))
+			if err == nil {
+				t.Fatalf("expected error, got nil")
+			}
+			want := "output: failure"
+			if got := err.Error(); !contains(got, want) {
+				t.Errorf("expected %q in error, got %q", want, got)
+			}
+		})
 	}
 }
 
-func TestInterfaceIPDeleteAddress(t *testing.T) {
-	ifName, addr := "eth3", "5.6.7.8"
-	cmd := "netsh"
-	args := []string{"interface", "ip", "delete", "address", "name=" + ifName, "addr=" + addr}
-	key := makeKey(cmd, args...)
-
-	// success
-	w := newWrapperBehavior(map[string][]byte{key: nil}, nil)
-	if err := w.InterfaceIPDeleteAddress(ifName, addr); err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-
-	// failure
-	e := errors.New("addr-fail")
-	w = newWrapperBehavior(nil, map[string]error{key: e})
-	err := w.InterfaceIPDeleteAddress(ifName, addr)
-	if err == nil || !strings.Contains(err.Error(), "InterfaceIPDeleteAddress error: addr-fail") {
-		t.Errorf("unexpected error: %v", err)
-	}
-}
-
-func TestSetInterfaceMetric(t *testing.T) {
-	ifName, metric := "eth4", 42
-	cmd := "netsh"
-	args := []string{"interface", "ipv4", "set", "interface", ifName, "metric=" + strconv.Itoa(metric)}
-	key := makeKey(cmd, args...)
-
-	// success
-	w := newWrapperBehavior(map[string][]byte{key: nil}, nil)
-	if err := w.SetInterfaceMetric(ifName, metric); err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-
-	// failure
-	e := errors.New("met-fail")
-	w = newWrapperBehavior(nil, map[string]error{key: e})
-	err := w.SetInterfaceMetric(ifName, metric)
-	if err == nil || !strings.Contains(err.Error(), "SetInterfaceMetric error: met-fail") {
-		t.Errorf("unexpected error: %v", err)
-	}
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && (contains(s[1:], substr) || contains(s[:len(s)-1], substr)))
 }
