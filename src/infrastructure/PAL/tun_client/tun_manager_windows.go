@@ -86,18 +86,14 @@ func settingsToUse(configuration client.Configuration) (settings.Settings, error
 }
 
 func (m *PlatformTunManager) CreateDevice() (tun.Device, error) {
-	connectionSettings, connectionSettingsErr := settingsToUse(m.conf)
-	if connectionSettingsErr != nil {
-		return nil, connectionSettingsErr
-	}
-	adapter, err := wintun.OpenAdapter(connectionSettings.InterfaceName)
+	adapter, err := wintun.OpenAdapter(m.connectionSettings.InterfaceName)
 	if err != nil {
-		adapter, err = wintun.CreateAdapter(connectionSettings.InterfaceName, "TunGo", nil)
+		adapter, err = wintun.CreateAdapter(m.connectionSettings.InterfaceName, "TunGo", nil)
 		if err != nil {
 			return nil, fmt.Errorf("create/open adapter: %w", err)
 		}
 	}
-	mtu := connectionSettings.MTU
+	mtu := m.connectionSettings.MTU
 	if mtu == 0 {
 		mtu = settings.SafeMTU
 	}
@@ -111,9 +107,9 @@ func (m *PlatformTunManager) CreateDevice() (tun.Device, error) {
 		_ = adapter.Close()
 		return nil, err
 	}
-	_ = m.route.Delete(connectionSettings.ConnectionIP) // best-effort
+	_ = m.route.Delete(m.connectionSettings.ConnectionIP) // best-effort
 	if addRouteErr := m.netsh.AddHostRouteViaGateway(
-		connectionSettings.ConnectionIP,
+		m.connectionSettings.ConnectionIP,
 		physIfName,
 		origPhysGateway,
 		1,
@@ -122,33 +118,33 @@ func (m *PlatformTunManager) CreateDevice() (tun.Device, error) {
 		return nil, fmt.Errorf("could not add static route to server: %w", addRouteErr)
 	}
 	if err = m.configureWindowsTunNetsh(
-		connectionSettings.InterfaceName,
-		connectionSettings.InterfaceAddress,
-		connectionSettings.InterfaceIPCIDR,
+		m.connectionSettings.InterfaceName,
+		m.connectionSettings.InterfaceAddress,
+		m.connectionSettings.InterfaceIPCIDR,
 		mtu,
 	); err != nil {
-		_ = m.route.Delete(connectionSettings.ConnectionIP)
+		_ = m.route.Delete(m.connectionSettings.ConnectionIP)
 		_ = device.Close()
 		return nil, err
 	}
 	// ToDo: use dns from configuration
 	dnsV4 := []string{"1.1.1.1", "8.8.8.8"}
 	dnsV6 := []string{"2606:4700:4700::1111", "2001:4860:4860::8888"}
-	if ip := net.ParseIP(connectionSettings.InterfaceAddress); ip != nil && ip.To4() == nil {
+	if ip := net.ParseIP(m.connectionSettings.InterfaceAddress); ip != nil && ip.To4() == nil {
 		if len(dnsV6) > 0 {
-			_ = m.netsh.SetDNS(connectionSettings.InterfaceName, dnsV6)
+			_ = m.netsh.SetDNS(m.connectionSettings.InterfaceName, dnsV6)
 		} else {
-			_ = m.netsh.SetDNS(connectionSettings.InterfaceName, nil) // DHCP
+			_ = m.netsh.SetDNS(m.connectionSettings.InterfaceName, nil) // DHCP
 		}
 	} else {
 		if len(dnsV4) > 0 {
-			_ = m.netsh.SetDNS(connectionSettings.InterfaceName, dnsV4)
+			_ = m.netsh.SetDNS(m.connectionSettings.InterfaceName, dnsV4)
 		} else {
-			_ = m.netsh.SetDNS(connectionSettings.InterfaceName, nil) // DHCP
+			_ = m.netsh.SetDNS(m.connectionSettings.InterfaceName, nil) // DHCP
 		}
 	}
 	_ = m.ipConfig.FlushDNS()
-	log.Printf("tun device created, interface %s, mtu %d", connectionSettings.InterfaceName, mtu)
+	log.Printf("tun device created, interface %s, mtu %d", m.connectionSettings.InterfaceName, mtu)
 	return device, nil
 }
 
