@@ -30,7 +30,7 @@ func NewPlatformTunManager(
 ) (tun.ClientManager, error) {
 	return &PlatformTunManager{
 		conf:     conf,
-		netsh:    netsh.NewWrapper(PAL.NewExecCommander()),
+		netsh:    netsh.NewV4Wrapper(PAL.NewExecCommander()),
 		ipconfig: ipconfig.NewWrapper(PAL.NewExecCommander()),
 	}, nil
 }
