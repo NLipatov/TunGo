@@ -35,8 +35,8 @@ func TestNetshWrapper_AllMethods(t *testing.T) {
 			wantCmd: "route",
 		},
 		{
-			name:    "InterfaceIPV4DeleteDefaultRoute",
-			call:    func(w *Wrapper) error { return w.InterfaceIPV4DeleteDefaultRoute("Ethernet 1") },
+			name:    "InterfaceDeleteDefaultRoute",
+			call:    func(w *Wrapper) error { return w.InterfaceDeleteDefaultRoute("Ethernet 1") },
 			wantCmd: "netsh",
 		},
 		{
@@ -55,26 +55,26 @@ func TestNetshWrapper_AllMethods(t *testing.T) {
 			wantCmd: "netsh",
 		},
 		{
-			name:    "InterfaceIPV4AddRouteOnLink",
-			call:    func(w *Wrapper) error { return w.InterfaceIPV4AddRouteOnLink("10.0.0.0/24", "Ethernet 1", 10) },
+			name:    "InterfaceAddRouteOnLink",
+			call:    func(w *Wrapper) error { return w.InterfaceAddRouteOnLink("10.0.0.0/24", "Ethernet 1", 10) },
 			wantCmd: "netsh",
 		},
 		{
-			name:    "InterfaceIPV4DeleteRoute",
-			call:    func(w *Wrapper) error { return w.InterfaceIPV4DeleteRoute("10.0.0.0/24", "Ethernet 1") },
+			name:    "InterfaceDeleteRoute",
+			call:    func(w *Wrapper) error { return w.InterfaceDeleteRoute("10.0.0.0/24", "Ethernet 1") },
 			wantCmd: "netsh",
 		},
 		{
-			name: "InterfaceIPv4SetAddressNoGateway",
+			name: "InterfaceSetAddressNoGateway",
 			call: func(w *Wrapper) error {
-				return w.InterfaceIPv4SetAddressNoGateway("Ethernet 1", "10.0.0.2", "255.255.255.0")
+				return w.InterfaceSetAddressNoGateway("Ethernet 1", "10.0.0.2", "255.255.255.0")
 			},
 			wantCmd: "netsh",
 		},
 		{
-			name: "InterfaceIPv4SetAddressWithGateway",
+			name: "InterfaceSetAddressWithGateway",
 			call: func(w *Wrapper) error {
-				return w.InterfaceIPv4SetAddressWithGateway("Ethernet 1", "10.0.0.2", "255.255.255.0", "10.0.0.1", 5)
+				return w.InterfaceSetAddressWithGateway("Ethernet 1", "10.0.0.2", "255.255.255.0", "10.0.0.1", 5)
 			},
 			wantCmd: "netsh",
 		},

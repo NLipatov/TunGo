@@ -110,10 +110,10 @@ func (m *PlatformTunManager) DisposeDevices() error {
 }
 
 func (m *PlatformTunManager) disposeDevice(conf settings.Settings) {
-	_ = m.netsh.InterfaceIPV4DeleteDefaultRoute(conf.InterfaceName)
+	_ = m.netsh.InterfaceDeleteDefaultRoute(conf.InterfaceName)
 	_ = m.netsh.InterfaceIPDeleteAddress(conf.InterfaceName, conf.InterfaceAddress)
-	_ = m.netsh.InterfaceIPV4DeleteRoute("0.0.0.0/1", conf.InterfaceName)
-	_ = m.netsh.InterfaceIPV4DeleteRoute("128.0.0.0/1", conf.InterfaceName)
+	_ = m.netsh.InterfaceDeleteRoute("0.0.0.0/1", conf.InterfaceName)
+	_ = m.netsh.InterfaceDeleteRoute("128.0.0.0/1", conf.InterfaceName)
 	_ = m.netsh.RouteDelete(conf.ConnectionIP)
 	_ = m.netsh.InterfaceSetDNSServers(conf.InterfaceName, nil)
 }
@@ -136,16 +136,16 @@ func (m *PlatformTunManager) configureWindowsTunNetsh(
 	maskStr := net.IP(mask).String()
 
 	// Wintun: address on-link (no gateway)
-	if err := m.netsh.InterfaceIPv4SetAddressNoGateway(interfaceName, interfaceAddress, maskStr); err != nil {
+	if err := m.netsh.InterfaceSetAddressNoGateway(interfaceName, interfaceAddress, maskStr); err != nil {
 		return err
 	}
-	_ = m.netsh.InterfaceIPV4DeleteDefaultRoute(interfaceName)
-	_ = m.netsh.InterfaceIPV4DeleteRoute("0.0.0.0/1", interfaceName)
-	_ = m.netsh.InterfaceIPV4DeleteRoute("128.0.0.0/1", interfaceName)
-	if err := m.netsh.InterfaceIPV4AddRouteOnLink("0.0.0.0/1", interfaceName, 1); err != nil {
+	_ = m.netsh.InterfaceDeleteDefaultRoute(interfaceName)
+	_ = m.netsh.InterfaceDeleteRoute("0.0.0.0/1", interfaceName)
+	_ = m.netsh.InterfaceDeleteRoute("128.0.0.0/1", interfaceName)
+	if err := m.netsh.InterfaceAddRouteOnLink("0.0.0.0/1", interfaceName, 1); err != nil {
 		return err
 	}
-	if err := m.netsh.InterfaceIPV4AddRouteOnLink("128.0.0.0/1", interfaceName, 1); err != nil {
+	if err := m.netsh.InterfaceAddRouteOnLink("128.0.0.0/1", interfaceName, 1); err != nil {
 		return err
 	}
 	if err := m.netsh.LinkSetDevMTU(interfaceName, mtu); err != nil {
