@@ -30,18 +30,18 @@ func TestNetshWrapper_AllMethods(t *testing.T) {
 		wantArgs []string
 	}{
 		{
-			name:    "IPDeleteDefaultRoute",
-			call:    func(w *V4Wrapper) error { return w.IPDeleteDefaultRoute("Ethernet 1") },
+			name:    "DeleteDefaultRoute",
+			call:    func(w *V4Wrapper) error { return w.DeleteDefaultRoute("Ethernet 1") },
 			wantCmd: "netsh",
 		},
 		{
-			name:    "IPDeleteAddress",
-			call:    func(w *V4Wrapper) error { return w.IPDeleteAddress("Ethernet 1", "192.168.1.2") },
+			name:    "DeleteAddress",
+			call:    func(w *V4Wrapper) error { return w.DeleteAddress("Ethernet 1", "192.168.1.2") },
 			wantCmd: "netsh",
 		},
 		{
-			name:    "IPSetMTU",
-			call:    func(w *V4Wrapper) error { return w.IPSetMTU("Ethernet 1", 1500) },
+			name:    "SetMTU",
+			call:    func(w *V4Wrapper) error { return w.SetMTU("Ethernet 1", 1500) },
 			wantCmd: "netsh",
 		},
 		{
@@ -50,21 +50,21 @@ func TestNetshWrapper_AllMethods(t *testing.T) {
 			wantCmd: "netsh",
 		},
 		{
-			name:    "IPDeleteRoutePrefix",
-			call:    func(w *V4Wrapper) error { return w.IPDeleteRoutePrefix("10.0.0.0/24", "Ethernet 1") },
+			name:    "DeleteRoutePrefix",
+			call:    func(w *V4Wrapper) error { return w.DeleteRoutePrefix("10.0.0.0/24", "Ethernet 1") },
 			wantCmd: "netsh",
 		},
 		{
-			name: "IPSetAddressStatic",
+			name: "SetAddressStatic",
 			call: func(w *V4Wrapper) error {
-				return w.IPSetAddressStatic("Ethernet 1", "10.0.0.2", "255.255.255.0")
+				return w.SetAddressStatic("Ethernet 1", "10.0.0.2", "255.255.255.0")
 			},
 			wantCmd: "netsh",
 		},
 		{
-			name: "IPSetAddressWithGateway",
+			name: "SetAddressWithGateway",
 			call: func(w *V4Wrapper) error {
-				return w.IPSetAddressWithGateway("Ethernet 1", "10.0.0.2", "255.255.255.0", "10.0.0.1", 5)
+				return w.SetAddressWithGateway("Ethernet 1", "10.0.0.2", "255.255.255.0", "10.0.0.1", 5)
 			},
 			wantCmd: "netsh",
 		},

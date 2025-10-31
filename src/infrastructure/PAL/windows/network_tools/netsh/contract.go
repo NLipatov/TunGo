@@ -3,12 +3,12 @@
 package netsh
 
 type Contract interface {
-	IPSetAddressStatic(interfaceName, ip, mask string) error
-	IPSetAddressWithGateway(interfaceName, ip, mask, gateway string, metric int) error
-	IPDeleteAddress(interfaceName, interfaceAddress string) error
-	IPSetDNS(interfaceName string, dnsServers []string) error
-	IPSetMTU(interfaceName string, mtu int) error
-	AddRoutePrefix(prefix, interfaceName string, metric int) error
-	IPDeleteRoutePrefix(prefix, interfaceName string) error
-	IPDeleteDefaultRoute(interfaceName string) error
+	SetAddressStatic(ifName, ip, mask string) error
+	SetAddressWithGateway(ifName, ip, mask, gateway string, metric int) error
+	DeleteAddress(ifName, interfaceAddress string) error
+	SetDNS(ifName string, dnsServers []string) error
+	SetMTU(ifName string, mtu int) error
+	AddRoutePrefix(prefix, ifName string, metric int) error
+	DeleteRoutePrefix(prefix, ifName string) error
+	DeleteDefaultRoute(ifName string) error
 }

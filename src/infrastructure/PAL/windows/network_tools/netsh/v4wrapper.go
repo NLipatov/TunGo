@@ -17,28 +17,28 @@ func NewV4Wrapper(commander PAL.Commander) Contract {
 	return &V4Wrapper{commander: commander}
 }
 
-func (w *V4Wrapper) IPDeleteDefaultRoute(interfaceName string) error {
+func (w *V4Wrapper) DeleteDefaultRoute(ifName string) error {
 	output, err := w.commander.CombinedOutput("netsh", "interface", "ipv4", "delete", "route", "0.0.0.0/0",
-		"name="+`"`+interfaceName+`"`)
+		"name="+`"`+ifName+`"`)
 	if err != nil {
-		return fmt.Errorf("IPDeleteDefaultRoute error: %v, output: %s", err, output)
+		return fmt.Errorf("DeleteDefaultRoute error: %v, output: %s", err, output)
 	}
 	return nil
 }
 
-func (w *V4Wrapper) IPDeleteAddress(interfaceName, interfaceAddress string) error {
+func (w *V4Wrapper) DeleteAddress(ifName, interfaceAddress string) error {
 	output, err := w.commander.CombinedOutput("netsh", "interface", "ip", "delete", "address",
-		"name="+`"`+interfaceName+`"`, "addr="+interfaceAddress)
+		"name="+`"`+ifName+`"`, "addr="+interfaceAddress)
 	if err != nil {
-		return fmt.Errorf("IPDeleteAddress error: %v, output: %s", err, output)
+		return fmt.Errorf("DeleteAddress error: %v, output: %s", err, output)
 	}
 	return nil
 }
 
-func (w *V4Wrapper) IPSetDNS(interfaceName string, dnsServers []string) error {
+func (w *V4Wrapper) SetDNS(ifName string, dnsServers []string) error {
 	if len(dnsServers) == 0 {
 		output, err := w.commander.CombinedOutput(
-			"netsh", "interface", "ip", "set", "dns", "name="+`"`+interfaceName+`"`, "source=dhcp",
+			"netsh", "interface", "ip", "set", "dns", "name="+`"`+ifName+`"`, "source=dhcp",
 		)
 		if err != nil {
 			return fmt.Errorf("DNS set DHCP error: %v, output: %s", err, output)
@@ -47,16 +47,16 @@ func (w *V4Wrapper) IPSetDNS(interfaceName string, dnsServers []string) error {
 	}
 	// Otherwise: reset to DHCP first (best-effort)
 	_, _ = w.commander.CombinedOutput(
-		"netsh", "interface", "ip", "set", "dns", "name="+`"`+interfaceName+`"`, "source=dhcp",
+		"netsh", "interface", "ip", "set", "dns", "name="+`"`+ifName+`"`, "source=dhcp",
 	)
 
 	// Manually set DNS servers
 	for i, dns := range dnsServers {
 		var args []string
 		if i == 0 {
-			args = []string{"interface", "ip", "set", "dns", "name=" + `"` + interfaceName + `"`, "static", dns, "primary"}
+			args = []string{"interface", "ip", "set", "dns", "name=" + `"` + ifName + `"`, "static", dns, "primary"}
 		} else {
-			args = []string{"interface", "ip", "add", "dns", "name=" + `"` + interfaceName + `"`, dns, "index=" + strconv.Itoa(i+1)}
+			args = []string{"interface", "ip", "add", "dns", "name=" + `"` + ifName + `"`, dns, "index=" + strconv.Itoa(i+1)}
 		}
 		if output, err := w.commander.CombinedOutput("netsh", args...); err != nil {
 			return fmt.Errorf("DNS setup error: %v, output: %s", err, output)
@@ -65,10 +65,10 @@ func (w *V4Wrapper) IPSetDNS(interfaceName string, dnsServers []string) error {
 	return nil
 }
 
-func (w *V4Wrapper) IPSetMTU(interfaceName string, mtu int) error {
+func (w *V4Wrapper) SetMTU(ifName string, mtu int) error {
 	output, err := w.commander.CombinedOutput(
 		"netsh", "interface", "ipv4", "set", "subinterface",
-		`"`+interfaceName+`"`, "mtu="+strconv.Itoa(mtu), "store=active",
+		`"`+ifName+`"`, "mtu="+strconv.Itoa(mtu), "store=active",
 	)
 	if err != nil {
 		return fmt.Errorf("SetInterfaceMTU error: %v, output: %s", err, output)
@@ -76,42 +76,42 @@ func (w *V4Wrapper) IPSetMTU(interfaceName string, mtu int) error {
 	return nil
 }
 
-func (w *V4Wrapper) AddRoutePrefix(destinationPrefix, interfaceName string, metric int) error {
+func (w *V4Wrapper) AddRoutePrefix(destinationPrefix, ifName string, metric int) error {
 	output, err := w.commander.CombinedOutput("netsh", "interface", "ipv4", "add", "route",
-		destinationPrefix, "interface="+`"`+interfaceName+`"`, "metric="+strconv.Itoa(metric), "store=active")
+		destinationPrefix, "interface="+`"`+ifName+`"`, "metric="+strconv.Itoa(metric), "store=active")
 	if err != nil {
 		return fmt.Errorf("AddRoutePrefix(%s) error: %v, output: %s", destinationPrefix, err, output)
 	}
 	return nil
 }
 
-func (w *V4Wrapper) IPDeleteRoutePrefix(destinationPrefix, interfaceName string) error {
+func (w *V4Wrapper) DeleteRoutePrefix(destinationPrefix, ifName string) error {
 	output, err := w.commander.CombinedOutput("netsh", "interface", "ipv4", "delete", "route",
-		destinationPrefix, "name="+`"`+interfaceName+`"`)
+		destinationPrefix, "name="+`"`+ifName+`"`)
 	if err != nil {
-		return fmt.Errorf("IPDeleteRoutePrefix(%s) error: %v, output: %s", destinationPrefix, err, output)
+		return fmt.Errorf("DeleteRoutePrefix(%s) error: %v, output: %s", destinationPrefix, err, output)
 	}
 	return nil
 }
 
-func (w *V4Wrapper) IPSetAddressStatic(interfaceName, ip, mask string) error {
+func (w *V4Wrapper) SetAddressStatic(ifName, ip, mask string) error {
 	output, err := w.commander.CombinedOutput(
 		"netsh", "interface", "ip", "set", "address",
-		"name="+`"`+interfaceName+`"`, "static", ip, mask, "none",
+		"name="+`"`+ifName+`"`, "static", ip, mask, "none",
 	)
 	if err != nil {
-		return fmt.Errorf("IPSetAddressStatic error: %v, output: %s", err, output)
+		return fmt.Errorf("SetAddressStatic error: %v, output: %s", err, output)
 	}
 	return nil
 }
 
-func (w *V4Wrapper) IPSetAddressWithGateway(interfaceName, ip, mask, gw string, metric int) error {
+func (w *V4Wrapper) SetAddressWithGateway(ifName, ip, mask, gw string, metric int) error {
 	output, err := w.commander.CombinedOutput(
 		"netsh", "interface", "ip", "set", "address",
-		"name="+`"`+interfaceName+`"`, "static", ip, mask, gw, strconv.Itoa(metric),
+		"name="+`"`+ifName+`"`, "static", ip, mask, gw, strconv.Itoa(metric),
 	)
 	if err != nil {
-		return fmt.Errorf("IPSetAddressWithGateway error: %v, output: %s", err, output)
+		return fmt.Errorf("SetAddressWithGateway error: %v, output: %s", err, output)
 	}
 	return nil
 }

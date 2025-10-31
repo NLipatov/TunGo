@@ -89,7 +89,7 @@ func (m *ServerTunFactoryMockIPErr) LinkSetDevUp(devName string) error {
 	return m.ServerTunFactoryMockIP.LinkSetDevUp(devName)
 }
 func (m *ServerTunFactoryMockIPErr) LinkSetDevMTU(devName string, mtu int) error {
-	if m.errTag == "IPSetMTU" {
+	if m.errTag == "SetMTU" {
 		return m.err
 	}
 	return m.ServerTunFactoryMockIP.LinkSetDevMTU(devName, mtu)
@@ -359,7 +359,7 @@ func TestCreateTunDevice_CreateTunStepErrors(t *testing.T) {
 	cases := []struct{ tag, want string }{
 		{"TunTapAddDevTun", "could not create tuntap dev"},
 		{"LinkSetDevUp", "could not set tuntap dev up"},
-		{"IPSetMTU", "could not set mtu on tuntap dev"},
+		{"SetMTU", "could not set mtu on tuntap dev"},
 		{"AddrAddDev", "failed to convert server ip to CIDR format"},
 		{"CreateTunInterface", "failed to open TUN interface"},
 	}
