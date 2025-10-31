@@ -6,7 +6,6 @@ import (
 	"log"
 	"net"
 	"strconv"
-	"strings"
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL"
 	"tungo/infrastructure/PAL/configuration/client"
@@ -34,22 +33,22 @@ func NewPlatformTunManager(
 	if connectionSettingsErr != nil {
 		return nil, connectionSettingsErr
 	}
-	nsFactory := netsh.NewFactory(conf, PAL.NewExecCommander())
-	netshImpl, nsErr := nsFactory.CreateNetsh()
-	if nsErr != nil {
-		return nil, nsErr
+	netshFactory := netsh.NewFactory(conf, PAL.NewExecCommander())
+	netshHandle, netshHandleErr := netshFactory.CreateNetsh()
+	if netshHandleErr != nil {
+		return nil, netshHandleErr
 	}
-	rFactory := route.NewFactory(PAL.NewExecCommander(), connectionSettings)
-	routeImpl, rErr := rFactory.CreateRoute()
-	if rErr != nil {
-		return nil, rErr
+	routeFactory := route.NewFactory(PAL.NewExecCommander(), connectionSettings)
+	routeHandle, routeHandleErr := routeFactory.CreateRoute()
+	if routeHandleErr != nil {
+		return nil, routeHandleErr
 	}
 	return &PlatformTunManager{
 		conf:               conf,
 		connectionSettings: connectionSettings,
-		netsh:              netshImpl,
+		netsh:              netshHandle,
 		ipConfig:           ipconfig.NewWrapper(PAL.NewExecCommander()),
-		route:              routeImpl,
+		route:              routeHandle,
 	}, nil
 }
 
@@ -79,12 +78,10 @@ func (m *PlatformTunManager) CreateDevice() (tun.Device, error) {
 			return nil, fmt.Errorf("create/open adapter: %w", err)
 		}
 	}
-
 	mtu := connectionSettings.MTU
 	if mtu == 0 {
 		mtu = settings.SafeMTU
 	}
-
 	device, err := wtun.NewTUN(adapter)
 	if err != nil {
 		_ = adapter.Close()
@@ -115,7 +112,6 @@ func (m *PlatformTunManager) CreateDevice() (tun.Device, error) {
 		_ = device.Close()
 		return nil, err
 	}
-
 	// ToDo: use dns from configuration
 	dnsServers := []string{"1.1.1.1", "8.8.8.8"}
 	if len(dnsServers) > 0 {
@@ -127,15 +123,52 @@ func (m *PlatformTunManager) CreateDevice() (tun.Device, error) {
 	} else {
 		_ = m.netsh.SetDNS(connectionSettings.InterfaceName, nil) // DHCP
 	}
-
 	log.Printf("tun device created, interface %s, mtu %d", connectionSettings.InterfaceName, mtu)
 	return device, nil
 }
 
 func (m *PlatformTunManager) DisposeDevices() error {
-	m.disposeDevice(m.conf.TCPSettings)
-	m.disposeDevice(m.conf.UDPSettings)
-	m.disposeDevice(m.conf.WSSettings)
+	// Best-effort cleanup for BOTH families to avoid stale per-family state
+	// when the user switches between IPv4-only and IPv6-only configs.
+	cmd := PAL.NewExecCommander()
+	v4 := netsh.NewV4Wrapper(cmd)
+	v6 := netsh.NewV6Wrapper(cmd)
+	r4 := route.NewV4Wrapper(cmd)
+	r6 := route.NewV6Wrapper(cmd)
+	cleanup := func(conf settings.Settings) {
+		if conf.InterfaceName == "" {
+			return
+		}
+		// 1) Drop default & split routes for both families.
+		_ = v4.DeleteDefaultRoute(conf.InterfaceName)
+		_ = v4.DeleteDefaultSplitRoutes(conf.InterfaceName)
+		_ = v6.DeleteDefaultRoute(conf.InterfaceName)
+		_ = v6.DeleteDefaultSplitRoutes(conf.InterfaceName)
+		// 2) Remove address on the interface (family-aware for cleaner logs).
+		if ip := net.ParseIP(conf.InterfaceAddress); ip != nil {
+			if ip.To4() != nil {
+				_ = v4.DeleteAddress(conf.InterfaceName, conf.InterfaceAddress)
+			} else {
+				_ = v6.DeleteAddress(conf.InterfaceName, conf.InterfaceAddress)
+			}
+		} else {
+			// If the config carried a malformed or empty address, try both.
+			_ = v4.DeleteAddress(conf.InterfaceName, conf.InterfaceAddress)
+			_ = v6.DeleteAddress(conf.InterfaceName, conf.InterfaceAddress)
+		}
+		// 3) Remove host route to the server in both families (one will no-op).
+		if conf.ConnectionIP != "" {
+			_ = r4.Delete(conf.ConnectionIP)
+			_ = r6.Delete(conf.ConnectionIP)
+		}
+		// 4) Reset DNS for both families (IPv4 → DHCP, IPv6 → clear list).
+		_ = v4.SetDNS(conf.InterfaceName, nil)
+		_ = v6.SetDNS(conf.InterfaceName, nil)
+		// Note: MTU/metrics are not force-reset here intentionally to keep KISS.
+	}
+	cleanup(m.conf.TCPSettings)
+	cleanup(m.conf.UDPSettings)
+	cleanup(m.conf.WSSettings)
 	return nil
 }
 
@@ -147,35 +180,37 @@ func (m *PlatformTunManager) disposeDevice(conf settings.Settings) {
 	_ = m.netsh.SetDNS(conf.InterfaceName, nil)
 }
 
-func (m *PlatformTunManager) configureWindowsTunNetsh(
-	interfaceName, interfaceAddress, InterfaceIPCIDR string,
-	mtu int,
-) error {
-	ip := net.ParseIP(interfaceAddress)
-	_, nw, _ := net.ParseCIDR(InterfaceIPCIDR)
+func (m *PlatformTunManager) configureWindowsTunNetsh(ifName, ifAddr, ifCIDR string, mtu int) error {
+	ip := net.ParseIP(ifAddr)
+	_, nw, _ := net.ParseCIDR(ifCIDR)
 	if ip == nil || nw == nil || !nw.Contains(ip) {
-		return fmt.Errorf("address %s not in %s", interfaceAddress, InterfaceIPCIDR)
+		return fmt.Errorf("address %s not in %s", ifAddr, ifCIDR)
 	}
-	parts := strings.Split(InterfaceIPCIDR, "/")
-	if len(parts) != 2 {
-		return fmt.Errorf("invalid CIDR: %s", InterfaceIPCIDR)
+	prefix, _ := nw.Mask.Size()
+	if ip.To4() != nil { // IPv4
+		mask := net.CIDRMask(prefix, 32)
+		maskStr := net.IP(mask).String()
+		if err := m.netsh.SetAddressStatic(ifName, ifAddr, maskStr); err != nil {
+			return err
+		}
+		_ = m.netsh.DeleteDefaultRoute(ifName)
+		_ = m.netsh.DeleteDefaultSplitRoutes(ifName)
+		if err := m.netsh.AddDefaultSplitRoutes(ifName, 1); err != nil {
+			return err
+		}
+	} else { // IPv6
+		pfxStr := strconv.Itoa(prefix)
+		if err := m.netsh.SetAddressStatic(ifName, ifAddr, pfxStr); err != nil {
+			return err
+		}
+		_ = m.netsh.DeleteDefaultRoute(ifName)
+		_ = m.netsh.DeleteDefaultSplitRoutes(ifName)
+		if err := m.netsh.AddDefaultSplitRoutes(ifName, 1); err != nil {
+			return err
+		}
 	}
-	prefix, _ := strconv.Atoi(parts[1])
-	mask := net.CIDRMask(prefix, 32)
-	maskStr := net.IP(mask).String()
-
-	// Wintun: address on-link (no gateway)
-	if err := m.netsh.SetAddressStatic(interfaceName, interfaceAddress, maskStr); err != nil {
+	if err := m.netsh.SetMTU(ifName, mtu); err != nil {
 		return err
 	}
-	_ = m.netsh.DeleteDefaultRoute(interfaceName)
-	_ = m.netsh.DeleteDefaultSplitRoutes(interfaceName)
-	if err := m.netsh.AddDefaultSplitRoutes(interfaceName, 1); err != nil {
-		return err
-	}
-	if err := m.netsh.SetMTU(interfaceName, mtu); err != nil {
-		return err
-	}
-
 	return nil
 }
