@@ -17,42 +17,25 @@ func NewV4Wrapper(commander PAL.Commander) Contract {
 	return &V4Wrapper{commander: commander}
 }
 
-func (w *V4Wrapper) RouteDelete(hostIP string) error {
-	output, err := w.commander.CombinedOutput("route", "delete", hostIP)
-	if err != nil {
-		return fmt.Errorf("RouteDelete error: %v, output: %s", err, output)
-	}
-	return nil
-}
-
-func (w *V4Wrapper) InterfaceDeleteDefaultRoute(interfaceName string) error {
+func (w *V4Wrapper) IPDeleteDefaultRoute(interfaceName string) error {
 	output, err := w.commander.CombinedOutput("netsh", "interface", "ipv4", "delete", "route", "0.0.0.0/0",
 		"name="+`"`+interfaceName+`"`)
 	if err != nil {
-		return fmt.Errorf("InterfaceDeleteDefaultRoute error: %v, output: %s", err, output)
+		return fmt.Errorf("IPDeleteDefaultRoute error: %v, output: %s", err, output)
 	}
 	return nil
 }
 
-func (w *V4Wrapper) InterfaceIPDeleteAddress(interfaceName, interfaceAddress string) error {
+func (w *V4Wrapper) IPDeleteAddress(interfaceName, interfaceAddress string) error {
 	output, err := w.commander.CombinedOutput("netsh", "interface", "ip", "delete", "address",
 		"name="+`"`+interfaceName+`"`, "addr="+interfaceAddress)
 	if err != nil {
-		return fmt.Errorf("InterfaceIPDeleteAddress error: %v, output: %s", err, output)
+		return fmt.Errorf("IPDeleteAddress error: %v, output: %s", err, output)
 	}
 	return nil
 }
 
-func (w *V4Wrapper) SetInterfaceMetric(interfaceName string, metric int) error {
-	output, err := w.commander.CombinedOutput("netsh", "interface", "ipv4", "set", "interface",
-		"name="+`"`+interfaceName+`"`, "metric="+strconv.Itoa(metric))
-	if err != nil {
-		return fmt.Errorf("SetInterfaceMetric error: %v, output: %s", err, output)
-	}
-	return nil
-}
-
-func (w *V4Wrapper) InterfaceSetDNSServers(interfaceName string, dnsServers []string) error {
+func (w *V4Wrapper) IPSetDNS(interfaceName string, dnsServers []string) error {
 	if len(dnsServers) == 0 {
 		output, err := w.commander.CombinedOutput(
 			"netsh", "interface", "ip", "set", "dns", "name="+`"`+interfaceName+`"`, "source=dhcp",
@@ -82,7 +65,7 @@ func (w *V4Wrapper) InterfaceSetDNSServers(interfaceName string, dnsServers []st
 	return nil
 }
 
-func (w *V4Wrapper) LinkSetDevMTU(interfaceName string, mtu int) error {
+func (w *V4Wrapper) IPSetMTU(interfaceName string, mtu int) error {
 	output, err := w.commander.CombinedOutput(
 		"netsh", "interface", "ipv4", "set", "subinterface",
 		`"`+interfaceName+`"`, "mtu="+strconv.Itoa(mtu), "store=active",
@@ -93,42 +76,42 @@ func (w *V4Wrapper) LinkSetDevMTU(interfaceName string, mtu int) error {
 	return nil
 }
 
-func (w *V4Wrapper) InterfaceAddRouteOnLink(prefix, interfaceName string, metric int) error {
+func (w *V4Wrapper) AddRoutePrefix(destinationPrefix, interfaceName string, metric int) error {
 	output, err := w.commander.CombinedOutput("netsh", "interface", "ipv4", "add", "route",
-		prefix, "interface="+`"`+interfaceName+`"`, "metric="+strconv.Itoa(metric), "store=active")
+		destinationPrefix, "interface="+`"`+interfaceName+`"`, "metric="+strconv.Itoa(metric), "store=active")
 	if err != nil {
-		return fmt.Errorf("InterfaceAddRouteOnLink(%s) error: %v, output: %s", prefix, err, output)
+		return fmt.Errorf("AddRoutePrefix(%s) error: %v, output: %s", destinationPrefix, err, output)
 	}
 	return nil
 }
 
-func (w *V4Wrapper) InterfaceDeleteRoute(prefix, interfaceName string) error {
+func (w *V4Wrapper) IPDeleteRoutePrefix(destinationPrefix, interfaceName string) error {
 	output, err := w.commander.CombinedOutput("netsh", "interface", "ipv4", "delete", "route",
-		prefix, "name="+`"`+interfaceName+`"`)
+		destinationPrefix, "name="+`"`+interfaceName+`"`)
 	if err != nil {
-		return fmt.Errorf("InterfaceDeleteRoute(%s) error: %v, output: %s", prefix, err, output)
+		return fmt.Errorf("IPDeleteRoutePrefix(%s) error: %v, output: %s", destinationPrefix, err, output)
 	}
 	return nil
 }
 
-func (w *V4Wrapper) InterfaceSetAddressNoGateway(interfaceName, ip, mask string) error {
+func (w *V4Wrapper) IPSetAddressStatic(interfaceName, ip, mask string) error {
 	output, err := w.commander.CombinedOutput(
 		"netsh", "interface", "ip", "set", "address",
 		"name="+`"`+interfaceName+`"`, "static", ip, mask, "none",
 	)
 	if err != nil {
-		return fmt.Errorf("InterfaceSetAddressNoGateway error: %v, output: %s", err, output)
+		return fmt.Errorf("IPSetAddressStatic error: %v, output: %s", err, output)
 	}
 	return nil
 }
 
-func (w *V4Wrapper) InterfaceSetAddressWithGateway(interfaceName, ip, mask, gw string, metric int) error {
+func (w *V4Wrapper) IPSetAddressWithGateway(interfaceName, ip, mask, gw string, metric int) error {
 	output, err := w.commander.CombinedOutput(
 		"netsh", "interface", "ip", "set", "address",
 		"name="+`"`+interfaceName+`"`, "static", ip, mask, gw, strconv.Itoa(metric),
 	)
 	if err != nil {
-		return fmt.Errorf("InterfaceSetAddressWithGateway error: %v, output: %s", err, output)
+		return fmt.Errorf("IPSetAddressWithGateway error: %v, output: %s", err, output)
 	}
 	return nil
 }

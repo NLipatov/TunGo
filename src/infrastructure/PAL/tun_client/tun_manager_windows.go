@@ -13,6 +13,7 @@ import (
 	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/PAL/windows/network_tools/ipconfig"
 	"tungo/infrastructure/PAL/windows/network_tools/netsh"
+	"tungo/infrastructure/PAL/windows/network_tools/route"
 	"tungo/infrastructure/PAL/windows/wtun"
 	"tungo/infrastructure/settings"
 
@@ -23,6 +24,7 @@ type PlatformTunManager struct {
 	conf     client.Configuration
 	netsh    netsh.Contract
 	ipconfig ipconfig.Contract
+	route    route.Contract
 }
 
 func NewPlatformTunManager(
@@ -32,6 +34,7 @@ func NewPlatformTunManager(
 		conf:     conf,
 		netsh:    netsh.NewV4Wrapper(PAL.NewExecCommander()),
 		ipconfig: ipconfig.NewWrapper(PAL.NewExecCommander()),
+		route:    route.NewWrapper(PAL.NewExecCommander()),
 	}, nil
 }
 
@@ -70,7 +73,7 @@ func (m *PlatformTunManager) CreateDevice() (tun.Device, error) {
 		return nil, err
 	}
 
-	_ = m.netsh.RouteDelete(s.ConnectionIP) // best-effort
+	_ = m.route.RouteDelete(s.ConnectionIP) // best-effort
 	if err = addStaticRouteToServer(s.ConnectionIP, origPhysIP, origPhysGateway); err != nil {
 		_ = device.Close()
 		return nil, fmt.Errorf("could not add static route to server: %w", err)
@@ -81,7 +84,7 @@ func (m *PlatformTunManager) CreateDevice() (tun.Device, error) {
 		s.InterfaceIPCIDR,
 		mtu,
 	); err != nil {
-		_ = m.netsh.RouteDelete(s.ConnectionIP)
+		_ = m.route.RouteDelete(s.ConnectionIP)
 		_ = device.Close()
 		return nil, err
 	}
@@ -89,13 +92,13 @@ func (m *PlatformTunManager) CreateDevice() (tun.Device, error) {
 	// ToDo: use dns from configuration
 	dnsServers := []string{"1.1.1.1", "8.8.8.8"}
 	if len(dnsServers) > 0 {
-		if err = m.netsh.InterfaceSetDNSServers(s.InterfaceName, dnsServers); err != nil {
+		if err = m.netsh.IPSetDNS(s.InterfaceName, dnsServers); err != nil {
 			_ = device.Close()
 			return nil, err
 		}
 		_ = m.ipconfig.FlushDNS()
 	} else {
-		_ = m.netsh.InterfaceSetDNSServers(s.InterfaceName, nil) // DHCP
+		_ = m.netsh.IPSetDNS(s.InterfaceName, nil) // DHCP
 	}
 
 	log.Printf("tun device created, interface %s, mtu %d", s.InterfaceName, mtu)
@@ -110,12 +113,12 @@ func (m *PlatformTunManager) DisposeDevices() error {
 }
 
 func (m *PlatformTunManager) disposeDevice(conf settings.Settings) {
-	_ = m.netsh.InterfaceDeleteDefaultRoute(conf.InterfaceName)
-	_ = m.netsh.InterfaceIPDeleteAddress(conf.InterfaceName, conf.InterfaceAddress)
-	_ = m.netsh.InterfaceDeleteRoute("0.0.0.0/1", conf.InterfaceName)
-	_ = m.netsh.InterfaceDeleteRoute("128.0.0.0/1", conf.InterfaceName)
-	_ = m.netsh.RouteDelete(conf.ConnectionIP)
-	_ = m.netsh.InterfaceSetDNSServers(conf.InterfaceName, nil)
+	_ = m.netsh.IPDeleteDefaultRoute(conf.InterfaceName)
+	_ = m.netsh.IPDeleteAddress(conf.InterfaceName, conf.InterfaceAddress)
+	_ = m.netsh.IPDeleteRoutePrefix("0.0.0.0/1", conf.InterfaceName)
+	_ = m.netsh.IPDeleteRoutePrefix("128.0.0.0/1", conf.InterfaceName)
+	_ = m.route.RouteDelete(conf.ConnectionIP)
+	_ = m.netsh.IPSetDNS(conf.InterfaceName, nil)
 }
 
 func (m *PlatformTunManager) configureWindowsTunNetsh(
@@ -136,19 +139,19 @@ func (m *PlatformTunManager) configureWindowsTunNetsh(
 	maskStr := net.IP(mask).String()
 
 	// Wintun: address on-link (no gateway)
-	if err := m.netsh.InterfaceSetAddressNoGateway(interfaceName, interfaceAddress, maskStr); err != nil {
+	if err := m.netsh.IPSetAddressStatic(interfaceName, interfaceAddress, maskStr); err != nil {
 		return err
 	}
-	_ = m.netsh.InterfaceDeleteDefaultRoute(interfaceName)
-	_ = m.netsh.InterfaceDeleteRoute("0.0.0.0/1", interfaceName)
-	_ = m.netsh.InterfaceDeleteRoute("128.0.0.0/1", interfaceName)
-	if err := m.netsh.InterfaceAddRouteOnLink("0.0.0.0/1", interfaceName, 1); err != nil {
+	_ = m.netsh.IPDeleteDefaultRoute(interfaceName)
+	_ = m.netsh.IPDeleteRoutePrefix("0.0.0.0/1", interfaceName)
+	_ = m.netsh.IPDeleteRoutePrefix("128.0.0.0/1", interfaceName)
+	if err := m.netsh.AddRoutePrefix("0.0.0.0/1", interfaceName, 1); err != nil {
 		return err
 	}
-	if err := m.netsh.InterfaceAddRouteOnLink("128.0.0.0/1", interfaceName, 1); err != nil {
+	if err := m.netsh.AddRoutePrefix("128.0.0.0/1", interfaceName, 1); err != nil {
 		return err
 	}
-	if err := m.netsh.LinkSetDevMTU(interfaceName, mtu); err != nil {
+	if err := m.netsh.IPSetMTU(interfaceName, mtu); err != nil {
 		return err
 	}
 
