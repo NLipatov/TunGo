@@ -1,5 +1,7 @@
 package route
 
 type Contract interface {
-	RouteDelete(destinationIP string) error
+	Delete(destinationIP string) error
+	Print(destinationIP string) ([]byte, error)
+	DefaultRoute() (gateway string, ifName string, metric int, err error)
 }

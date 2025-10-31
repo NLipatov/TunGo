@@ -129,3 +129,47 @@ func (w *V6Wrapper) DeleteDefaultRoute(ifName string) error {
 	}
 	return nil
 }
+
+func (w *V6Wrapper) AddHostRouteViaGateway(hostIP, ifName, gateway string, metric int) error {
+	args := []string{
+		"interface", "ipv6", "add", "route",
+		hostIP + "/128",
+		"interface=" + `"` + ifName + `"`,
+		"nexthop=" + gateway,
+		"metric=" + strconv.Itoa(metric),
+		"store=active",
+	}
+	out, err := w.commander.CombinedOutput("netsh", args...)
+	if err != nil {
+		return fmt.Errorf("AddHostRouteViaGateway(v6) error: %v, output: %s", err, out)
+	}
+	return nil
+}
+
+func (w *V6Wrapper) AddDefaultSplitRoutes(ifName string, metric int) error {
+	halves := []string{"::/1", "8000::/1"}
+	for _, p := range halves {
+		out, err := w.commander.CombinedOutput(
+			"netsh", "interface", "ipv6", "add", "route",
+			p, "interface="+`"`+ifName+`"`, "metric="+strconv.Itoa(metric), "store=active",
+		)
+		if err != nil {
+			return fmt.Errorf("AddDefaultSplitRoutes(v6 %s) error: %v, output: %s", p, err, out)
+		}
+	}
+	return nil
+}
+
+func (w *V6Wrapper) DeleteDefaultSplitRoutes(ifName string) error {
+	halves := []string{"::/1", "8000::/1"}
+	var last error
+	for _, p := range halves {
+		if out, err := w.commander.CombinedOutput(
+			"netsh", "interface", "ipv6", "delete", "route",
+			p, "interface="+`"`+ifName+`"`,
+		); err != nil {
+			last = fmt.Errorf("DeleteDefaultSplitRoutes(v6 %s) error: %v, output: %s", p, err, out)
+		}
+	}
+	return last
+}

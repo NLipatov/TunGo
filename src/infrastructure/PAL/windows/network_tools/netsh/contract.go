@@ -11,4 +11,7 @@ type Contract interface {
 	AddRoutePrefix(prefix, ifName string, metric int) error
 	DeleteRoutePrefix(prefix, ifName string) error
 	DeleteDefaultRoute(ifName string) error
+	AddHostRouteViaGateway(hostIP, ifName, gateway string, metric int) error
+	AddDefaultSplitRoutes(ifName string, metric int) error
+	DeleteDefaultSplitRoutes(ifName string) error
 }
