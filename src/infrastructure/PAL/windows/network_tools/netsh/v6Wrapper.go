@@ -9,16 +9,18 @@ import (
 	"unicode"
 )
 
-// V6Wrapper is an IPv6 implementation of netsh.Contract.
-type V6Wrapper struct {
+// v6Wrapper is an IPv6 implementation of netsh.Contract.
+type v6Wrapper struct {
 	commander PAL.Commander
 }
 
-func NewV6Wrapper(commander PAL.Commander) Contract {
-	return &V6Wrapper{commander: commander}
+func newV6Wrapper(commander PAL.Commander) Contract {
+	return &v6Wrapper{
+		commander: commander,
+	}
 }
 
-func (w *V6Wrapper) SetAddressStatic(ifName, ip, mask string) error {
+func (w *v6Wrapper) SetAddressStatic(ifName, ip, mask string) error {
 	for _, r := range mask {
 		if !unicode.IsDigit(r) {
 			return fmt.Errorf("SetAddressStatic: IPv6 requires prefix length, got mask=%q", mask)
@@ -34,7 +36,7 @@ func (w *V6Wrapper) SetAddressStatic(ifName, ip, mask string) error {
 	return nil
 }
 
-func (w *V6Wrapper) SetAddressWithGateway(ifName, ip, mask, gateway string, metric int) error {
+func (w *v6Wrapper) SetAddressWithGateway(ifName, ip, mask, gateway string, metric int) error {
 	if err := w.SetAddressStatic(ifName, ip, mask); err != nil {
 		return err
 	}
@@ -51,7 +53,7 @@ func (w *V6Wrapper) SetAddressWithGateway(ifName, ip, mask, gateway string, metr
 	return nil
 }
 
-func (w *V6Wrapper) DeleteAddress(ifName, interfaceAddress string) error {
+func (w *v6Wrapper) DeleteAddress(ifName, interfaceAddress string) error {
 	if out, err := w.commander.CombinedOutput(
 		"netsh", "interface", "ipv6", "delete", "address",
 		"interface="+`"`+ifName+`"`,
@@ -62,7 +64,7 @@ func (w *V6Wrapper) DeleteAddress(ifName, interfaceAddress string) error {
 	return nil
 }
 
-func (w *V6Wrapper) SetDNS(ifName string, dnsServers []string) error {
+func (w *v6Wrapper) SetDNS(ifName string, dnsServers []string) error {
 	_, _ = w.commander.CombinedOutput(
 		"netsh", "interface", "ipv6", "delete", "dnsservers",
 		`"`+ifName+`"`, "all",
@@ -83,7 +85,7 @@ func (w *V6Wrapper) SetDNS(ifName string, dnsServers []string) error {
 	return nil
 }
 
-func (w *V6Wrapper) SetMTU(ifName string, mtu int) error {
+func (w *v6Wrapper) SetMTU(ifName string, mtu int) error {
 	if out, err := w.commander.CombinedOutput(
 		"netsh", "interface", "ipv6", "set", "interface",
 		`"`+ifName+`"`, "mtu="+strconv.Itoa(mtu), "store=active",
@@ -93,7 +95,7 @@ func (w *V6Wrapper) SetMTU(ifName string, mtu int) error {
 	return nil
 }
 
-func (w *V6Wrapper) AddRoutePrefix(prefix, ifName string, metric int) error {
+func (w *v6Wrapper) AddRoutePrefix(prefix, ifName string, metric int) error {
 	if out, err := w.commander.CombinedOutput(
 		"netsh", "interface", "ipv6", "add", "route",
 		prefix,
@@ -107,7 +109,7 @@ func (w *V6Wrapper) AddRoutePrefix(prefix, ifName string, metric int) error {
 	return nil
 }
 
-func (w *V6Wrapper) DeleteRoutePrefix(prefix, ifName string) error {
+func (w *v6Wrapper) DeleteRoutePrefix(prefix, ifName string) error {
 	if out, err := w.commander.CombinedOutput(
 		"netsh", "interface", "ipv6", "delete", "route",
 		prefix,
@@ -119,7 +121,7 @@ func (w *V6Wrapper) DeleteRoutePrefix(prefix, ifName string) error {
 	return nil
 }
 
-func (w *V6Wrapper) DeleteDefaultRoute(ifName string) error {
+func (w *v6Wrapper) DeleteDefaultRoute(ifName string) error {
 	if out, err := w.commander.CombinedOutput(
 		"netsh", "interface", "ipv6", "delete", "route",
 		"::/0",
@@ -130,7 +132,7 @@ func (w *V6Wrapper) DeleteDefaultRoute(ifName string) error {
 	return nil
 }
 
-func (w *V6Wrapper) AddHostRouteViaGateway(hostIP, ifName, gateway string, metric int) error {
+func (w *v6Wrapper) AddHostRouteViaGateway(hostIP, ifName, gateway string, metric int) error {
 	args := []string{
 		"interface", "ipv6", "add", "route",
 		hostIP + "/128",
@@ -146,7 +148,7 @@ func (w *V6Wrapper) AddHostRouteViaGateway(hostIP, ifName, gateway string, metri
 	return nil
 }
 
-func (w *V6Wrapper) AddDefaultSplitRoutes(ifName string, metric int) error {
+func (w *v6Wrapper) AddDefaultSplitRoutes(ifName string, metric int) error {
 	halves := []string{"::/1", "8000::/1"}
 	for _, p := range halves {
 		out, err := w.commander.CombinedOutput(
@@ -160,7 +162,7 @@ func (w *V6Wrapper) AddDefaultSplitRoutes(ifName string, metric int) error {
 	return nil
 }
 
-func (w *V6Wrapper) DeleteDefaultSplitRoutes(ifName string) error {
+func (w *v6Wrapper) DeleteDefaultSplitRoutes(ifName string) error {
 	halves := []string{"::/1", "8000::/1"}
 	var last error
 	for _, p := range halves {
@@ -174,7 +176,7 @@ func (w *V6Wrapper) DeleteDefaultSplitRoutes(ifName string) error {
 	return last
 }
 
-func (w *V6Wrapper) AddHostRouteOnLink(hostIP, ifName string, metric int) error {
+func (w *v6Wrapper) AddHostRouteOnLink(hostIP, ifName string, metric int) error {
 	args := []string{
 		"interface", "ipv6", "add", "route",
 		hostIP + "/128",
