@@ -25,56 +25,46 @@ func (m *mockCommander) Run(string, ...string) error              { return nil }
 func TestNetshWrapper_AllMethods(t *testing.T) {
 	tests := []struct {
 		name     string
-		call     func(w *Wrapper) error
+		call     func(w *v4Wrapper) error
 		wantCmd  string
 		wantArgs []string
 	}{
 		{
-			name:    "RouteDelete",
-			call:    func(w *Wrapper) error { return w.RouteDelete("10.0.0.1") },
-			wantCmd: "route",
-		},
-		{
-			name:    "InterfaceIPV4DeleteDefaultRoute",
-			call:    func(w *Wrapper) error { return w.InterfaceIPV4DeleteDefaultRoute("Ethernet 1") },
+			name:    "DeleteDefaultRoute",
+			call:    func(w *v4Wrapper) error { return w.DeleteDefaultRoute("Ethernet 1") },
 			wantCmd: "netsh",
 		},
 		{
-			name:    "InterfaceIPDeleteAddress",
-			call:    func(w *Wrapper) error { return w.InterfaceIPDeleteAddress("Ethernet 1", "192.168.1.2") },
+			name:    "DeleteAddress",
+			call:    func(w *v4Wrapper) error { return w.DeleteAddress("Ethernet 1", "192.168.1.2") },
 			wantCmd: "netsh",
 		},
 		{
-			name:    "SetInterfaceMetric",
-			call:    func(w *Wrapper) error { return w.SetInterfaceMetric("Ethernet 1", 25) },
+			name:    "SetMTU",
+			call:    func(w *v4Wrapper) error { return w.SetMTU("Ethernet 1", 1500) },
 			wantCmd: "netsh",
 		},
 		{
-			name:    "LinkSetDevMTU",
-			call:    func(w *Wrapper) error { return w.LinkSetDevMTU("Ethernet 1", 1500) },
+			name:    "AddRoutePrefix",
+			call:    func(w *v4Wrapper) error { return w.AddRoutePrefix("10.0.0.0/24", "Ethernet 1", 10) },
 			wantCmd: "netsh",
 		},
 		{
-			name:    "InterfaceIPV4AddRouteOnLink",
-			call:    func(w *Wrapper) error { return w.InterfaceIPV4AddRouteOnLink("10.0.0.0/24", "Ethernet 1", 10) },
+			name:    "DeleteRoutePrefix",
+			call:    func(w *v4Wrapper) error { return w.DeleteRoutePrefix("10.0.0.0/24", "Ethernet 1") },
 			wantCmd: "netsh",
 		},
 		{
-			name:    "InterfaceIPV4DeleteRoute",
-			call:    func(w *Wrapper) error { return w.InterfaceIPV4DeleteRoute("10.0.0.0/24", "Ethernet 1") },
-			wantCmd: "netsh",
-		},
-		{
-			name: "InterfaceIPv4SetAddressNoGateway",
-			call: func(w *Wrapper) error {
-				return w.InterfaceIPv4SetAddressNoGateway("Ethernet 1", "10.0.0.2", "255.255.255.0")
+			name: "SetAddressStatic",
+			call: func(w *v4Wrapper) error {
+				return w.SetAddressStatic("Ethernet 1", "10.0.0.2", "255.255.255.0")
 			},
 			wantCmd: "netsh",
 		},
 		{
-			name: "InterfaceIPv4SetAddressWithGateway",
-			call: func(w *Wrapper) error {
-				return w.InterfaceIPv4SetAddressWithGateway("Ethernet 1", "10.0.0.2", "255.255.255.0", "10.0.0.1", 5)
+			name: "SetAddressWithGateway",
+			call: func(w *v4Wrapper) error {
+				return w.SetAddressWithGateway("Ethernet 1", "10.0.0.2", "255.255.255.0", "10.0.0.1", 5)
 			},
 			wantCmd: "netsh",
 		},
@@ -83,9 +73,9 @@ func TestNetshWrapper_AllMethods(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name+"_success", func(t *testing.T) {
 			mock := &mockCommander{output: []byte("OK"), err: nil}
-			w := NewWrapper(mock)
+			w := newV4Wrapper(mock)
 
-			if err := tt.call(w.(*Wrapper)); err != nil {
+			if err := tt.call(w.(*v4Wrapper)); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
 			if mock.name != tt.wantCmd {
@@ -94,9 +84,9 @@ func TestNetshWrapper_AllMethods(t *testing.T) {
 		})
 		t.Run(tt.name+"_error", func(t *testing.T) {
 			mock := &mockCommander{output: []byte("failure"), err: errors.New("exit 1")}
-			w := NewWrapper(mock)
+			w := newV4Wrapper(mock)
 
-			err := tt.call(w.(*Wrapper))
+			err := tt.call(w.(*v4Wrapper))
 			if err == nil {
 				t.Fatalf("expected error, got nil")
 			}
