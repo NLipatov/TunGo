@@ -44,29 +44,34 @@ func (m *v4Manager) CreateDevice() (tun.Device, error) {
 	if net.ParseIP(m.s.ConnectionIP).To4() == nil {
 		return nil, fmt.Errorf("v4Manager requires IPv4 ConnectionIP, got %q", m.s.ConnectionIP)
 	}
-	tunDev, tunDevErr := m.createTunDevice()
-	if tunDevErr != nil {
-		return nil, tunDevErr
+	tunDev, err := m.createTunDevice()
+	if err != nil {
+		return nil, err
 	}
-	if serverRouteErr := m.addStaticRouteToServer(); serverRouteErr != nil {
+	defer func() {
+		if err != nil {
+			_ = m.DisposeDevices()
+		}
+	}()
+	if err := m.addStaticRouteToServer(); err != nil {
 		_ = tunDev.Close()
-		return nil, serverRouteErr
+		return nil, err
 	}
-	if tunDevIPErr := m.assignIPToTunDevice(); tunDevIPErr != nil {
+	if err := m.assignIPToTunDevice(); err != nil {
 		_ = tunDev.Close()
-		return nil, tunDevIPErr
+		return nil, err
 	}
-	if tunRouteErr := m.setRouteToTunDevice(); tunRouteErr != nil {
+	if err := m.setRouteToTunDevice(); err != nil {
 		_ = tunDev.Close()
-		return nil, tunRouteErr
+		return nil, err
 	}
-	if mtuErr := m.setMTUToTunDevice(); mtuErr != nil {
+	if err := m.setMTUToTunDevice(); err != nil {
 		_ = tunDev.Close()
-		return nil, mtuErr
+		return nil, err
 	}
-	if dnsErr := m.setDNSToTunDevice(); dnsErr != nil {
+	if err := m.setDNSToTunDevice(); err != nil {
 		_ = tunDev.Close()
-		return nil, dnsErr
+		return nil, err
 	}
 	m.tun = tunDev
 	return m.tun, nil

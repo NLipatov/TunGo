@@ -1,136 +1,50 @@
 package tun_client
 
 import (
-	"fmt"
-	"log"
 	"net"
-	"strconv"
-	"strings"
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL"
 	"tungo/infrastructure/PAL/configuration/client"
-	"tungo/infrastructure/PAL/windows/network_tools/ipconfig"
+	"tungo/infrastructure/PAL/windows/manager"
 	"tungo/infrastructure/PAL/windows/network_tools/netsh"
 	"tungo/infrastructure/PAL/windows/network_tools/route"
-	"tungo/infrastructure/PAL/windows/wtun"
 	"tungo/infrastructure/settings"
-
-	"golang.zx2c4.com/wintun"
 )
 
 type PlatformTunManager struct {
-	conf               client.Configuration
+	configuration      client.Configuration
 	connectionSettings settings.Settings
-	netsh              netsh.Contract
-	ipConfig           ipconfig.Contract
-	route              route.Contract
+	// manager is a backing tun.ClientManager implementation, which handles v4/v6 specific
+	manager tun.ClientManager
 }
 
 func NewPlatformTunManager(
-	conf client.Configuration,
+	configuration client.Configuration,
 ) (tun.ClientManager, error) {
-	connectionSettings, connectionSettingsErr := conf.ActiveSettings()
+	connectionSettings, connectionSettingsErr := configuration.ActiveSettings()
 	if connectionSettingsErr != nil {
 		return nil, connectionSettingsErr
 	}
-	netshFactory := netsh.NewFactory(connectionSettings, PAL.NewExecCommander())
-	netshHandle, netshHandleErr := netshFactory.CreateNetsh()
-	if netshHandleErr != nil {
-		return nil, netshHandleErr
+	commander := PAL.NewExecCommander()
+	factory := manager.NewFactory(
+		connectionSettings,
+		commander,
+		netsh.NewFactory(connectionSettings, commander),
+		route.NewFactory(commander, connectionSettings),
+	)
+	concreteManager, concreteManagerErr := factory.Create()
+	if concreteManagerErr != nil {
+		return nil, concreteManagerErr
 	}
-	routeFactory := route.NewFactory(PAL.NewExecCommander(), connectionSettings)
-	routeHandle, routeHandleErr := routeFactory.CreateRoute()
-	if routeHandleErr != nil {
-		return nil, routeHandleErr
-	}
-	iFaceV4 := net.ParseIP(connectionSettings.InterfaceAddress).To4() != nil
-	serverAddrV4 := net.ParseIP(connectionSettings.ConnectionIP).To4() != nil
-	if iFaceV4 != serverAddrV4 {
-		ifFam, serverFam := 4, 4
-		if !iFaceV4 {
-			ifFam = 6
-		}
-		if !serverAddrV4 {
-			serverFam = 6
-		}
-		return nil, fmt.Errorf("IP version mismatch: interface %s(IPv%d) vs server %s(IPv%d)",
-			connectionSettings.InterfaceAddress,
-			ifFam,
-			connectionSettings.ConnectionIP,
-			serverFam,
-		)
-	}
-
 	return &PlatformTunManager{
-		conf:               conf,
+		configuration:      configuration,
 		connectionSettings: connectionSettings,
-		netsh:              netshHandle,
-		ipConfig:           ipconfig.NewWrapper(PAL.NewExecCommander()),
-		route:              routeHandle,
+		manager:            concreteManager,
 	}, nil
 }
 
 func (m *PlatformTunManager) CreateDevice() (tun.Device, error) {
-	adapter, err := wintun.OpenAdapter(m.connectionSettings.InterfaceName)
-	if err != nil {
-		adapter, err = wintun.CreateAdapter(m.connectionSettings.InterfaceName, "TunGo", nil)
-		if err != nil {
-			return nil, fmt.Errorf("create/open adapter: %w", err)
-		}
-	}
-	mtu := m.connectionSettings.MTU
-	if mtu == 0 {
-		mtu = settings.SafeMTU
-	}
-	device, err := wtun.NewTUN(adapter)
-	if err != nil {
-		_ = adapter.Close()
-		return nil, err
-	}
-	origPhysGateway, physIfName, _, err := m.route.DefaultRoute()
-	if err != nil {
-		_ = adapter.Close()
-		return nil, err
-	}
-	_ = m.route.Delete(m.connectionSettings.ConnectionIP) // best-effort
-	if addRouteErr := m.netsh.AddHostRouteViaGateway(
-		m.connectionSettings.ConnectionIP,
-		physIfName,
-		origPhysGateway,
-		1,
-	); addRouteErr != nil {
-		_ = device.Close()
-		return nil, fmt.Errorf("could not add static route to server: %w", addRouteErr)
-	}
-	if err = m.configureWindowsTunNetsh(
-		m.connectionSettings.InterfaceName,
-		m.connectionSettings.InterfaceAddress,
-		m.connectionSettings.InterfaceIPCIDR,
-		mtu,
-	); err != nil {
-		_ = m.route.Delete(m.connectionSettings.ConnectionIP)
-		_ = device.Close()
-		return nil, err
-	}
-	// ToDo: use dns from configuration
-	dnsV4 := []string{"1.1.1.1", "8.8.8.8"}
-	dnsV6 := []string{"2606:4700:4700::1111", "2001:4860:4860::8888"}
-	if ip := net.ParseIP(m.connectionSettings.InterfaceAddress); ip != nil && ip.To4() == nil {
-		if len(dnsV6) > 0 {
-			_ = m.netsh.SetDNS(m.connectionSettings.InterfaceName, dnsV6)
-		} else {
-			_ = m.netsh.SetDNS(m.connectionSettings.InterfaceName, nil) // DHCP
-		}
-	} else {
-		if len(dnsV4) > 0 {
-			_ = m.netsh.SetDNS(m.connectionSettings.InterfaceName, dnsV4)
-		} else {
-			_ = m.netsh.SetDNS(m.connectionSettings.InterfaceName, nil) // DHCP
-		}
-	}
-	_ = m.ipConfig.FlushDNS()
-	log.Printf("tun device created, interface %s, mtu %d", m.connectionSettings.InterfaceName, mtu)
-	return device, nil
+	return m.manager.CreateDevice()
 }
 
 func (m *PlatformTunManager) DisposeDevices() error {
@@ -173,46 +87,8 @@ func (m *PlatformTunManager) DisposeDevices() error {
 		_ = v6Netsh.SetDNS(conf.InterfaceName, nil)
 		// Note: MTU/metrics are not force-reset here intentionally to keep KISS.
 	}
-	cleanup(m.conf.TCPSettings)
-	cleanup(m.conf.UDPSettings)
-	cleanup(m.conf.WSSettings)
-	return nil
-}
-
-func (m *PlatformTunManager) configureWindowsTunNetsh(
-	ifName, ifAddr, ifCIDR string,
-	mtu int,
-) error {
-	ip := net.ParseIP(ifAddr)
-	_, nw, _ := net.ParseCIDR(ifCIDR)
-	if ip == nil || nw == nil || !nw.Contains(ip) {
-		return fmt.Errorf("address %s not in %s", ifAddr, ifCIDR)
-	}
-	parts := strings.Split(ifCIDR, "/")
-	if len(parts) != 2 {
-		return fmt.Errorf("invalid CIDR: %s", ifCIDR)
-	}
-	prefStr := parts[1]
-	isV4 := ip.To4() != nil
-	if isV4 {
-		pfx, _ := strconv.Atoi(prefStr)
-		mask := net.IP(net.CIDRMask(pfx, 32)).String() // dotted mask for v4
-		if err := m.netsh.SetAddressStatic(ifName, ifAddr, mask); err != nil {
-			return err
-		}
-	} else {
-		// For v6 pass prefix length string, e.g. "64"
-		if err := m.netsh.SetAddressStatic(ifName, ifAddr, prefStr); err != nil {
-			return err
-		}
-	}
-	_ = m.netsh.DeleteDefaultRoute(ifName)
-	_ = m.netsh.DeleteDefaultSplitRoutes(ifName)
-	if err := m.netsh.AddDefaultSplitRoutes(ifName, 1); err != nil {
-		return err
-	}
-	if err := m.netsh.SetMTU(ifName, mtu); err != nil {
-		return err
-	}
+	cleanup(m.configuration.TCPSettings)
+	cleanup(m.configuration.UDPSettings)
+	cleanup(m.configuration.WSSettings)
 	return nil
 }

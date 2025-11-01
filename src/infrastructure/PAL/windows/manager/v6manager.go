@@ -51,6 +51,11 @@ func (m *v6Manager) CreateDevice() (tun.Device, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		if err != nil {
+			_ = m.DisposeDevices()
+		}
+	}()
 	// Ensure static host route to server (on-link vs via gateway).
 	if err := m.addStaticRouteToServer(); err != nil {
 		_ = tunDev.Close()

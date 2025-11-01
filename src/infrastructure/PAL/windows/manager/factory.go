@@ -29,9 +29,15 @@ type Factory struct {
 
 func NewFactory(
 	connectionSettings settings.Settings,
+	commander PAL.Commander,
+	netshFactory netsh.Factory,
+	routeFactory route.Factory,
 ) *Factory {
 	return &Factory{
 		connectionSettings: connectionSettings,
+		commander:          commander,
+		netshFactory:       netshFactory,
+		routeFactory:       routeFactory,
 	}
 }
 

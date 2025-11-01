@@ -112,7 +112,7 @@ func (w *v6Wrapper) DefaultRoute() (gw, ifName string, metric int, err error) {
 }
 
 func (w *v6Wrapper) Delete(dst string) error {
-	out, err := w.commander.CombinedOutput("route", "delete", dst)
+	out, err := w.commander.CombinedOutput("route", "-6", "delete", dst)
 	if err != nil {
 		return fmt.Errorf("route delete %s: %v, output: %s", dst, err, out)
 	}

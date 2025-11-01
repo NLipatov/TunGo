@@ -13,10 +13,11 @@ type Factory struct {
 	commander          PAL.Commander
 }
 
-func NewFactory(connectionSettings settings.Settings, commander PAL.Commander) *Factory {
-	return &Factory{
+func NewFactory(connectionSettings settings.Settings, commander PAL.Commander) Factory {
+	return Factory{
 		connectionSettings: connectionSettings,
-		commander:          commander}
+		commander:          commander,
+	}
 }
 
 func (f *Factory) CreateNetsh() (Contract, error) {

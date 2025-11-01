@@ -82,10 +82,10 @@ func mgr(proto settings.Protocol, ipMock *mockIP) *PlatformTunManager {
 		},
 	}
 	return &PlatformTunManager{
-		conf:    cfg,
-		ip:      ipMock,
-		ioctl:   &mockIOCTL{},
-		wrapper: testPlainWrapper{},
+		configuration: cfg,
+		ip:            ipMock,
+		ioctl:         &mockIOCTL{},
+		wrapper:       testPlainWrapper{},
 	}
 }
 

@@ -22,15 +22,18 @@ func newV4Wrapper(commander PAL.Commander) Contract {
 func (w *v4Wrapper) DeleteDefaultRoute(ifName string) error {
 	output, err := w.commander.CombinedOutput("netsh", "interface", "ipv4", "delete", "route", "0.0.0.0/0",
 		"interface="+`"`+ifName+`"`)
-	if err != nil {
-		return fmt.Errorf("DeleteDefaultRoute error: %v, output: %s", err, output)
+	if err == nil {
+		return nil
 	}
-	return nil
+	// best-effort fallback
+	_, _ = w.commander.CombinedOutput("netsh", "interface", "ipv4", "delete", "route", "0.0.0.0",
+		"interface="+`"`+ifName+`"`)
+	return fmt.Errorf("DeleteDefaultRoute error: %v, output: %s", err, output)
 }
 
 func (w *v4Wrapper) DeleteAddress(ifName, interfaceAddress string) error {
 	output, err := w.commander.CombinedOutput("netsh", "interface", "ip", "delete", "address",
-		"interface="+`"`+ifName+`"`, "addr="+interfaceAddress)
+		"name="+`"`+ifName+`"`, "addr="+interfaceAddress)
 	if err != nil {
 		return fmt.Errorf("DeleteAddress error: %v, output: %s", err, output)
 	}
@@ -40,7 +43,7 @@ func (w *v4Wrapper) DeleteAddress(ifName, interfaceAddress string) error {
 func (w *v4Wrapper) SetDNS(ifName string, dnsServers []string) error {
 	if len(dnsServers) == 0 {
 		output, err := w.commander.CombinedOutput(
-			"netsh", "interface", "ip", "set", "dns", "interface="+`"`+ifName+`"`, "source=dhcp",
+			"netsh", "interface", "ip", "set", "dns", "name="+`"`+ifName+`"`, "source=dhcp",
 		)
 		if err != nil {
 			return fmt.Errorf("DNS set DHCP error: %v, output: %s", err, output)
@@ -49,16 +52,16 @@ func (w *v4Wrapper) SetDNS(ifName string, dnsServers []string) error {
 	}
 	// Otherwise: reset to DHCP first (best-effort)
 	_, _ = w.commander.CombinedOutput(
-		"netsh", "interface", "ip", "set", "dns", "interface="+`"`+ifName+`"`, "source=dhcp",
+		"netsh", "interface", "ip", "set", "dns", "name="+`"`+ifName+`"`, "source=dhcp",
 	)
 
 	// Manually set DNS servers
 	for i, dns := range dnsServers {
 		var args []string
 		if i == 0 {
-			args = []string{"interface", "ip", "set", "dns", "interface=" + `"` + ifName + `"`, "static", dns, "primary"}
+			args = []string{"interface", "ip", "set", "dns", "name=" + `"` + ifName + `"`, "static", dns, "primary"}
 		} else {
-			args = []string{"interface", "ip", "add", "dns", "interface=" + `"` + ifName + `"`, dns, "index=" + strconv.Itoa(i+1)}
+			args = []string{"interface", "ip", "add", "dns", "name=" + `"` + ifName + `"`, dns, "index=" + strconv.Itoa(i+1)}
 		}
 		if output, err := w.commander.CombinedOutput("netsh", args...); err != nil {
 			return fmt.Errorf("DNS setup error: %v, output: %s", err, output)
@@ -99,7 +102,7 @@ func (w *v4Wrapper) DeleteRoutePrefix(destinationPrefix, ifName string) error {
 func (w *v4Wrapper) SetAddressStatic(ifName, ip, mask string) error {
 	output, err := w.commander.CombinedOutput(
 		"netsh", "interface", "ip", "set", "address",
-		"interface="+`"`+ifName+`"`, "static", ip, mask, "none",
+		"name="+`"`+ifName+`"`, "static", ip, mask, "none",
 	)
 	if err != nil {
 		return fmt.Errorf("SetAddressStatic error: %v, output: %s", err, output)
@@ -110,7 +113,7 @@ func (w *v4Wrapper) SetAddressStatic(ifName, ip, mask string) error {
 func (w *v4Wrapper) SetAddressWithGateway(ifName, ip, mask, gw string, metric int) error {
 	output, err := w.commander.CombinedOutput(
 		"netsh", "interface", "ip", "set", "address",
-		"interface="+`"`+ifName+`"`, "static", ip, mask, gw, strconv.Itoa(metric),
+		"name="+`"`+ifName+`"`, "static", ip, mask, gw, strconv.Itoa(metric),
 	)
 	if err != nil {
 		return fmt.Errorf("SetAddressWithGateway error: %v, output: %s", err, output)
