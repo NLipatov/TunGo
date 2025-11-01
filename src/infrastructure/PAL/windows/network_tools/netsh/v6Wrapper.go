@@ -173,3 +173,19 @@ func (w *V6Wrapper) DeleteDefaultSplitRoutes(ifName string) error {
 	}
 	return last
 }
+
+func (w *V6Wrapper) AddHostRouteOnLink(hostIP, ifName string, metric int) error {
+	args := []string{
+		"interface", "ipv6", "add", "route",
+		hostIP + "/128",
+		"interface=" + `"` + ifName + `"`,
+		"nexthop=::",
+		"metric=" + strconv.Itoa(metric),
+		"store=active",
+	}
+	out, err := w.commander.CombinedOutput("netsh", args...)
+	if err != nil {
+		return fmt.Errorf("AddHostRouteOnLink(v6) error: %v, output: %s", err, out)
+	}
+	return nil
+}

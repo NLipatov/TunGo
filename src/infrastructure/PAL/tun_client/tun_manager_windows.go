@@ -34,7 +34,7 @@ func NewPlatformTunManager(
 	if connectionSettingsErr != nil {
 		return nil, connectionSettingsErr
 	}
-	netshFactory := netsh.NewFactory(conf, PAL.NewExecCommander())
+	netshFactory := netsh.NewFactory(connectionSettings, PAL.NewExecCommander())
 	netshHandle, netshHandleErr := netshFactory.CreateNetsh()
 	if netshHandleErr != nil {
 		return nil, netshHandleErr

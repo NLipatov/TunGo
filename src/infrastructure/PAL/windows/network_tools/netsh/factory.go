@@ -1,54 +1,38 @@
 package netsh
 
 import (
-	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"tungo/infrastructure/PAL"
-	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/settings"
 )
 
 type Factory struct {
-	configuration client.Configuration
-	commander     PAL.Commander
+	connectionSettings settings.Settings
+	commander          PAL.Commander
 }
 
-func NewFactory(
-	configuration client.Configuration,
-	commander PAL.Commander,
-) *Factory {
+func NewFactory(connectionSettings settings.Settings, commander PAL.Commander) *Factory {
 	return &Factory{
-		configuration: configuration,
-		commander:     commander,
-	}
+		connectionSettings: connectionSettings,
+		commander:          commander}
 }
 
 func (f *Factory) CreateNetsh() (Contract, error) {
-	connectionSettings, connectionSettingsErr := f.settingsToUse()
-	if connectionSettingsErr != nil {
-		return nil, connectionSettingsErr
+	addr := strings.TrimSpace(f.connectionSettings.InterfaceAddress)
+	if i := strings.IndexByte(addr, '%'); i >= 0 {
+		addr = addr[:i]
 	}
-	ip := net.ParseIP(connectionSettings.ConnectionIP)
+	ip := net.ParseIP(addr)
 	if ip == nil {
-		return nil, fmt.Errorf("invalid IP: %q", connectionSettings.ConnectionIP)
+		return nil, fmt.Errorf("invalid InterfaceAddress: %q", f.connectionSettings.InterfaceAddress)
+	}
+	if ip.IsUnspecified() {
+		return nil, fmt.Errorf("unspecified InterfaceAddress not allowed: %q", f.connectionSettings.InterfaceAddress)
 	}
 	if ip.To4() != nil {
 		return NewV4Wrapper(f.commander), nil
 	}
 	return NewV6Wrapper(f.commander), nil
-}
-
-func (f *Factory) settingsToUse() (settings.Settings, error) {
-	var zero settings.Settings
-	switch f.configuration.Protocol {
-	case settings.UDP:
-		return f.configuration.UDPSettings, nil
-	case settings.TCP:
-		return f.configuration.TCPSettings, nil
-	case settings.WS, settings.WSS:
-		return f.configuration.WSSettings, nil
-	default:
-		return zero, errors.New("unsupported protocol")
-	}
 }
