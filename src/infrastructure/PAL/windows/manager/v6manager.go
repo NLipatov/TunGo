@@ -203,11 +203,7 @@ func (m *v6Manager) setDNSToTunDevice() error {
 
 // DisposeDevices reverses CreateDevice in safe order.
 func (m *v6Manager) DisposeDevices() error {
-	_ = m.netsh.DeleteDefaultSplitRoutes(m.s.InterfaceName)
-	_ = m.netsh.DeleteDefaultRoute(m.s.InterfaceName)
-	_ = m.netsh.DeleteAddress(m.s.InterfaceName, m.s.InterfaceAddress)
 	_ = m.route.Delete(m.s.ConnectionIP)
-	_ = m.netsh.SetDNS(m.s.InterfaceName, nil)
 	if m.tun != nil {
 		_ = m.tun.Close()
 	}
