@@ -48,10 +48,11 @@ func (m *PlatformTunManager) CreateDevice() (tun.Device, error) {
 }
 
 func (m *PlatformTunManager) DisposeDevices() error {
-	routeFactory := route.NewFactory(PAL.NewExecCommander(), m.connectionSettings)
+	commander := PAL.NewExecCommander()
+	routeFactory := route.NewFactory(commander, m.connectionSettings)
 	v4Route := routeFactory.CreateRouteV4()
 	v6Route := routeFactory.CreateRouteV6()
-	netshFactory := netsh.NewFactory(m.connectionSettings, PAL.NewExecCommander())
+	netshFactory := netsh.NewFactory(m.connectionSettings, commander)
 	v4Netsh := netshFactory.CreateNetshV4()
 	v6Netsh := netshFactory.CreateNetshV6()
 	// Best-effort cleanup for BOTH families to avoid stale per-family state
