@@ -12,19 +12,19 @@ import (
 	"tungo/infrastructure/PAL"
 )
 
-type V4Wrapper struct {
+type v4Wrapper struct {
 	commander PAL.Commander
 }
 
-func NewV4Wrapper(c PAL.Commander) Contract {
-	return &V4Wrapper{
+func newV4Wrapper(c PAL.Commander) Contract {
+	return &v4Wrapper{
 		commander: c,
 	}
 }
 
 // DefaultRoute parses `route print -4` and picks the row with the lowest Metric:
 // Columns (locale-agnostic tokens): Destination, Netmask, Gateway, Interface-IP, Metric.
-func (w *V4Wrapper) DefaultRoute() (gw, ifName string, metric int, err error) {
+func (w *v4Wrapper) DefaultRoute() (gw, ifName string, metric int, err error) {
 	out, execErr := w.commander.CombinedOutput("route", "print", "-4")
 	if execErr != nil {
 		return "", "", 0, fmt.Errorf("route print -4: %w", execErr)
@@ -60,7 +60,7 @@ func (w *V4Wrapper) DefaultRoute() (gw, ifName string, metric int, err error) {
 	return bestGW, ifName, best, nil
 }
 
-func (w *V4Wrapper) Delete(dst string) error {
+func (w *v4Wrapper) Delete(dst string) error {
 	out, err := w.commander.CombinedOutput("route", "delete", dst)
 	if err != nil {
 		return fmt.Errorf("route delete %s: %v, output: %s", dst, err, out)
@@ -68,7 +68,7 @@ func (w *V4Wrapper) Delete(dst string) error {
 	return nil
 }
 
-func (w *V4Wrapper) Print(t string) ([]byte, error) {
+func (w *v4Wrapper) Print(t string) ([]byte, error) {
 	args := []string{"print", "-4"}
 	if s := strings.TrimSpace(t); s != "" {
 		args = append(args, s)

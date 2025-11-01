@@ -149,13 +149,14 @@ func (m *PlatformTunManager) CreateDevice() (tun.Device, error) {
 }
 
 func (m *PlatformTunManager) DisposeDevices() error {
+	routeFactory := route.NewFactory(PAL.NewExecCommander(), m.connectionSettings)
+	v4Route := routeFactory.CreateV4Route()
+	v6Route := routeFactory.CreateV6Route()
 	// Best-effort cleanup for BOTH families to avoid stale per-family state
 	// when the user switches between IPv4-only and IPv6-only configs.
 	cmd := PAL.NewExecCommander()
 	v4 := netsh.NewV4Wrapper(cmd)
 	v6 := netsh.NewV6Wrapper(cmd)
-	r4 := route.NewV4Wrapper(cmd)
-	r6 := route.NewV6Wrapper(cmd)
 	cleanup := func(conf settings.Settings) {
 		if conf.InterfaceName == "" {
 			return
@@ -179,8 +180,8 @@ func (m *PlatformTunManager) DisposeDevices() error {
 		}
 		// 3) Remove host route to the server in both families (one will no-op).
 		if conf.ConnectionIP != "" {
-			_ = r4.Delete(conf.ConnectionIP)
-			_ = r6.Delete(conf.ConnectionIP)
+			_ = v4Route.Delete(conf.ConnectionIP)
+			_ = v6Route.Delete(conf.ConnectionIP)
 		}
 		// 4) Reset DNS for both families (IPv4 → DHCP, IPv6 → clear list).
 		_ = v4.SetDNS(conf.InterfaceName, nil)

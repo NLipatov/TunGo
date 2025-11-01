@@ -7,7 +7,6 @@ import (
 	"net"
 	"strings"
 	"tungo/application/network/routing/tun"
-	"tungo/infrastructure/PAL"
 	"tungo/infrastructure/PAL/windows/network_tools/ipconfig"
 	"tungo/infrastructure/PAL/windows/network_tools/netsh"
 	"tungo/infrastructure/PAL/windows/network_tools/route"
@@ -25,12 +24,17 @@ type V6Manager struct {
 	tun      tun.Device
 }
 
-func NewV6Manager(s settings.Settings, cmd PAL.Commander) *V6Manager {
+func NewV6Manager(
+	s settings.Settings,
+	netsh netsh.Contract,
+	route route.Contract,
+	ipConfig ipconfig.Contract,
+) *V6Manager {
 	return &V6Manager{
 		s:        s,
-		netsh:    netsh.NewV6Wrapper(cmd),
-		route:    route.NewV6Wrapper(cmd),
-		ipConfig: ipconfig.NewWrapper(cmd),
+		netsh:    netsh,
+		route:    route,
+		ipConfig: ipConfig,
 	}
 }
 

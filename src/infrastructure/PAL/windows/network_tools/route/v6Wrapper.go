@@ -12,12 +12,12 @@ import (
 	"tungo/infrastructure/PAL"
 )
 
-type V6Wrapper struct {
+type v6Wrapper struct {
 	commander PAL.Commander
 }
 
-func NewV6Wrapper(c PAL.Commander) Contract {
-	return &V6Wrapper{
+func newV6Wrapper(c PAL.Commander) Contract {
+	return &v6Wrapper{
 		commander: c,
 	}
 }
@@ -28,7 +28,7 @@ func NewV6Wrapper(c PAL.Commander) Contract {
 //   - idx    = first integer token *to the right* of "::/0"
 //   - gw     = first IPv6 literal token *to the right* of idx
 //   - ifName = rest of the line after gw (trimmed); if empty -> InterfaceByIndex(idx).Name
-func (w *V6Wrapper) DefaultRoute() (gw, ifName string, metric int, err error) {
+func (w *v6Wrapper) DefaultRoute() (gw, ifName string, metric int, err error) {
 	out, execErr := w.commander.CombinedOutput("route", "print", "-6")
 	if execErr != nil {
 		return "", "", 0, fmt.Errorf("route print -6: %w", execErr)
@@ -111,7 +111,7 @@ func (w *V6Wrapper) DefaultRoute() (gw, ifName string, metric int, err error) {
 	return bestGW, bestIf, best, nil
 }
 
-func (w *V6Wrapper) Delete(dst string) error {
+func (w *v6Wrapper) Delete(dst string) error {
 	out, err := w.commander.CombinedOutput("route", "delete", dst)
 	if err != nil {
 		return fmt.Errorf("route delete %s: %v, output: %s", dst, err, out)
@@ -119,7 +119,7 @@ func (w *V6Wrapper) Delete(dst string) error {
 	return nil
 }
 
-func (w *V6Wrapper) Print(t string) ([]byte, error) {
+func (w *v6Wrapper) Print(t string) ([]byte, error) {
 	args := []string{"print", "-6"}
 	if s := strings.TrimSpace(t); s != "" {
 		args = append(args, s)
@@ -131,7 +131,7 @@ func (w *V6Wrapper) Print(t string) ([]byte, error) {
 	return out, nil
 }
 
-func (w *V6Wrapper) parseIPv6(tok string) string {
+func (w *v6Wrapper) parseIPv6(tok string) string {
 	ip := net.ParseIP(tok)
 	if ip == nil || ip.To4() != nil {
 		return ""
@@ -139,7 +139,7 @@ func (w *V6Wrapper) parseIPv6(tok string) string {
 	return ip.String()
 }
 
-func (w *V6Wrapper) lastInt(s string) int {
+func (w *v6Wrapper) lastInt(s string) int {
 	best := -1
 	for _, t := range strings.Fields(s) {
 		if v, e := strconv.Atoi(t); e == nil {

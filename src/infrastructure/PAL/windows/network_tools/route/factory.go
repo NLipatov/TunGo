@@ -28,7 +28,15 @@ func (f *Factory) CreateRoute() (Contract, error) {
 		return nil, fmt.Errorf("serverIP is not IP literal: %q", f.connectionSettings.ConnectionIP)
 	}
 	if ip.To4() != nil {
-		return NewV4Wrapper(f.commander), nil
+		return newV4Wrapper(f.commander), nil
 	}
-	return NewV6Wrapper(f.commander), nil
+	return newV6Wrapper(f.commander), nil
+}
+
+func (f *Factory) CreateV4Route() Contract {
+	return newV4Wrapper(f.commander)
+}
+
+func (f *Factory) CreateV6Route() Contract {
+	return newV6Wrapper(f.commander)
 }

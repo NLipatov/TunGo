@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net"
 	"tungo/application/network/routing/tun"
-	"tungo/infrastructure/PAL"
 	"tungo/infrastructure/PAL/windows/network_tools/ipconfig"
 	"tungo/infrastructure/PAL/windows/network_tools/netsh"
 	"tungo/infrastructure/PAL/windows/network_tools/route"
@@ -24,12 +23,17 @@ type V4Manager struct {
 	tun      tun.Device
 }
 
-func NewV4Manager(s settings.Settings, cmd PAL.Commander) *V4Manager {
+func NewV4Manager(
+	s settings.Settings,
+	netsh netsh.Contract,
+	route route.Contract,
+	ipConfig ipconfig.Contract,
+) *V4Manager {
 	return &V4Manager{
 		s:        s,
-		netsh:    netsh.NewV4Wrapper(cmd),
-		route:    route.NewV4Wrapper(cmd),
-		ipConfig: ipconfig.NewWrapper(cmd),
+		netsh:    netsh,
+		route:    route,
+		ipConfig: ipConfig,
 	}
 }
 
