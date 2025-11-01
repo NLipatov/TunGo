@@ -7,6 +7,7 @@ import (
 	"net"
 	"strings"
 	"tungo/application/network/routing/tun"
+	"tungo/infrastructure/PAL/windows"
 	"tungo/infrastructure/PAL/windows/network_tools/ipconfig"
 	"tungo/infrastructure/PAL/windows/network_tools/netsh"
 	"tungo/infrastructure/PAL/windows/network_tools/route"
@@ -86,7 +87,7 @@ func (m *v6Manager) CreateDevice() (tun.Device, error) {
 }
 
 func (m *v6Manager) createTunDevice() (tun.Device, error) {
-	adapter, err := wintun.CreateAdapter(m.s.InterfaceName, "TunGo", nil)
+	adapter, err := wintun.CreateAdapter(m.s.InterfaceName, windows.TunGoTunnelType, nil)
 	if err != nil {
 		// If adapter already exists, fall back to open.
 		if existing, openErr := wintun.OpenAdapter(m.s.InterfaceName); openErr == nil {

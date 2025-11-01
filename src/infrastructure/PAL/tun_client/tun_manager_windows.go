@@ -1,10 +1,13 @@
 package tun_client
 
 import (
+	"fmt"
 	"net"
+	"strings"
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL"
 	"tungo/infrastructure/PAL/configuration/client"
+	"tungo/infrastructure/PAL/windows"
 	"tungo/infrastructure/PAL/windows/manager"
 	"tungo/infrastructure/PAL/windows/network_tools/netsh"
 	"tungo/infrastructure/PAL/windows/network_tools/route"
@@ -91,5 +94,49 @@ func (m *PlatformTunManager) DisposeDevices() error {
 	cleanup(m.configuration.TCPSettings)
 	cleanup(m.configuration.UDPSettings)
 	cleanup(m.configuration.WSSettings)
+	_ = removeOrphanTunGoAdapters(
+		commander,
+		m.configuration.TCPSettings.InterfaceName,
+		m.configuration.UDPSettings.InterfaceName,
+		m.configuration.WSSettings.InterfaceName,
+	)
+	return nil
+}
+
+// removeOrphanTunGoAdapters removes NICs with InterfaceDescription == "TunGo Tunnel"
+// that are not in the keep list, are not Up/Connected, and have no IPs assigned.
+// It does NOT uninstall the Wintun driver, only removes NIC instances.
+//
+// Requirements: PowerShell available, admin rights.
+// Best-effort: any error is swallowed (we don't want to block disposal).
+func removeOrphanTunGoAdapters(cmd PAL.Commander, keepNames ...string) error {
+	// Build a PowerShell array of names to keep.
+	q := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
+	var keep []string
+	for _, k := range keepNames {
+		k = strings.TrimSpace(k)
+		if k != "" {
+			keep = append(keep, q(k))
+		}
+	}
+	keepList := strings.Join(keep, ",")
+
+	ps := fmt.Sprintf(`
+$keep = @(%s)
+$desc = '%s Tunnel'
+Get-NetAdapter -IncludeHidden |
+  Where-Object {
+    $_.InterfaceDescription -eq $desc -and
+    ($keep -notcontains $_.Name) -and
+    $_.Status -ne 'Up' -and
+    $_.MediaConnectionState -ne 'Connected' -and
+    ( (Get-NetIPAddress -InterfaceAlias $_.Name -ErrorAction SilentlyContinue).Count -eq 0 )
+  } |
+  ForEach-Object {
+    Remove-NetAdapter -Name $_.Name -IncludeHidden -Confirm:$false -ErrorAction SilentlyContinue
+  }
+`, windows.TunGoTunnelType, keepList)
+
+	_, _ = cmd.CombinedOutput("powershell", "-NoProfile", "-NonInteractive", "-Command", ps)
 	return nil
 }
