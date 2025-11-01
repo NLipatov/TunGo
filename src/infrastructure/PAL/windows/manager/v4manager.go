@@ -49,32 +49,27 @@ func (m *v4Manager) CreateDevice() (tun.Device, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer func() {
-		if err != nil {
-			_ = m.DisposeDevices()
-		}
-	}()
+	m.tun = tunDev
 	if err := m.addStaticRouteToServer(); err != nil {
-		_ = tunDev.Close()
+		_ = m.DisposeDevices()
 		return nil, err
 	}
 	if err := m.assignIPToTunDevice(); err != nil {
-		_ = tunDev.Close()
+		_ = m.DisposeDevices()
 		return nil, err
 	}
 	if err := m.setRouteToTunDevice(); err != nil {
-		_ = tunDev.Close()
+		_ = m.DisposeDevices()
 		return nil, err
 	}
 	if err := m.setMTUToTunDevice(); err != nil {
-		_ = tunDev.Close()
+		_ = m.DisposeDevices()
 		return nil, err
 	}
 	if err := m.setDNSToTunDevice(); err != nil {
-		_ = tunDev.Close()
+		_ = m.DisposeDevices()
 		return nil, err
 	}
-	m.tun = tunDev
 	return m.tun, nil
 }
 
@@ -113,11 +108,13 @@ func (m *v4Manager) addStaticRouteToServer() error {
 		if err := m.netsh.AddHostRouteOnLink(m.s.ConnectionIP, routeInterface, 1); err != nil {
 			return fmt.Errorf("add on-link host route: %w", err)
 		}
-	} else {
+	} else if gateway != "" {
 		// use off-link route(via gateway)
 		if err := m.netsh.AddHostRouteViaGateway(m.s.ConnectionIP, routeInterface, gateway, 1); err != nil {
 			return fmt.Errorf("add host route via gw: %w", err)
 		}
+	} else {
+		return m.netsh.AddHostRouteOnLink(m.s.ConnectionIP, routeInterface, 1)
 	}
 	return nil
 }

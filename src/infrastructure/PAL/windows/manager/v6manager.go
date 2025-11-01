@@ -52,37 +52,32 @@ func (m *v6Manager) CreateDevice() (tun.Device, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer func() {
-		if err != nil {
-			_ = m.DisposeDevices()
-		}
-	}()
+	m.tun = tunDev
 	// Ensure static host route to server (on-link vs via gateway).
 	if err := m.addStaticRouteToServer(); err != nil {
-		_ = tunDev.Close()
+		_ = m.DisposeDevices()
 		return nil, err
 	}
 	// Assign IPv6 address to TUN.
 	if err := m.assignIPToTunDevice(); err != nil {
-		_ = tunDev.Close()
+		_ = m.DisposeDevices()
 		return nil, err
 	}
 	// Install split default (::/1, 8000::/1).
 	if err := m.setRouteToTunDevice(); err != nil {
-		_ = tunDev.Close()
+		_ = m.DisposeDevices()
 		return nil, err
 	}
 	// MTU.
 	if err := m.setMTUToTunDevice(); err != nil {
-		_ = tunDev.Close()
+		_ = m.DisposeDevices()
 		return nil, err
 	}
 	// DNS (IPv6 resolvers), with rollback on failure.
 	if err := m.setDNSToTunDevice(); err != nil {
-		_ = tunDev.Close()
+		_ = m.DisposeDevices()
 		return nil, err
 	}
-	m.tun = tunDev
 	return m.tun, nil
 }
 
