@@ -15,7 +15,7 @@ import (
 	"golang.zx2c4.com/wintun"
 )
 
-type V4Manager struct {
+type v4Manager struct {
 	s        settings.Settings
 	netsh    netsh.Contract
 	route    route.Contract
@@ -23,13 +23,13 @@ type V4Manager struct {
 	tun      tun.Device
 }
 
-func NewV4Manager(
+func newV4Manager(
 	s settings.Settings,
 	netsh netsh.Contract,
 	route route.Contract,
 	ipConfig ipconfig.Contract,
-) *V4Manager {
-	return &V4Manager{
+) *v4Manager {
+	return &v4Manager{
 		s:        s,
 		netsh:    netsh,
 		route:    route,
@@ -37,12 +37,12 @@ func NewV4Manager(
 	}
 }
 
-func (m *V4Manager) CreateDevice() (tun.Device, error) {
+func (m *v4Manager) CreateDevice() (tun.Device, error) {
 	if net.ParseIP(m.s.InterfaceAddress).To4() == nil {
-		return nil, fmt.Errorf("V4Manager requires IPv4 InterfaceAddress, got %q", m.s.InterfaceAddress)
+		return nil, fmt.Errorf("v4Manager requires IPv4 InterfaceAddress, got %q", m.s.InterfaceAddress)
 	}
 	if net.ParseIP(m.s.ConnectionIP).To4() == nil {
-		return nil, fmt.Errorf("V4Manager requires IPv4 ConnectionIP, got %q", m.s.ConnectionIP)
+		return nil, fmt.Errorf("v4Manager requires IPv4 ConnectionIP, got %q", m.s.ConnectionIP)
 	}
 	tunDev, tunDevErr := m.createTunDevice()
 	if tunDevErr != nil {
@@ -72,7 +72,7 @@ func (m *V4Manager) CreateDevice() (tun.Device, error) {
 	return m.tun, nil
 }
 
-func (m *V4Manager) createTunDevice() (tun.Device, error) {
+func (m *v4Manager) createTunDevice() (tun.Device, error) {
 	wintunAdapter, wintunAdapterErr := wintun.CreateAdapter(m.s.InterfaceName, "TunGo", nil)
 	if wintunAdapterErr != nil {
 		// if it already exists, fall back:
@@ -91,7 +91,7 @@ func (m *V4Manager) createTunDevice() (tun.Device, error) {
 	return tunDevice, nil
 }
 
-func (m *V4Manager) addStaticRouteToServer() error {
+func (m *v4Manager) addStaticRouteToServer() error {
 	// check what is default route and default interface
 	gateway, routeInterface, _, defaultRouteErr := m.route.DefaultRoute()
 	if defaultRouteErr != nil {
@@ -116,7 +116,7 @@ func (m *V4Manager) addStaticRouteToServer() error {
 	return nil
 }
 
-func (m *V4Manager) onLinkInterfaceName(server net.IP) (string, bool) {
+func (m *v4Manager) onLinkInterfaceName(server net.IP) (string, bool) {
 	srv4 := server.To4()
 	if srv4 == nil {
 		return "", false
@@ -133,7 +133,7 @@ func (m *V4Manager) onLinkInterfaceName(server net.IP) (string, bool) {
 	return "", false
 }
 
-func (m *V4Manager) assignIPToTunDevice() error {
+func (m *v4Manager) assignIPToTunDevice() error {
 	// check that m.s.InterfaceAddress is in m.s.InterfaceIPCIDR subnet
 	ip := net.ParseIP(m.s.InterfaceAddress)
 	_, nw, _ := net.ParseCIDR(m.s.InterfaceIPCIDR)
@@ -149,7 +149,7 @@ func (m *V4Manager) assignIPToTunDevice() error {
 	return nil
 }
 
-func (m *V4Manager) setRouteToTunDevice() error {
+func (m *v4Manager) setRouteToTunDevice() error {
 	// (re-)set route to TUN device
 	_ = m.netsh.DeleteDefaultRoute(m.s.InterfaceName)
 	_ = m.netsh.DeleteDefaultSplitRoutes(m.s.InterfaceName)
@@ -160,7 +160,7 @@ func (m *V4Manager) setRouteToTunDevice() error {
 	return nil
 }
 
-func (m *V4Manager) setMTUToTunDevice() error {
+func (m *v4Manager) setMTUToTunDevice() error {
 	mtu := m.s.MTU
 	if mtu == 0 {
 		mtu = settings.SafeMTU
@@ -172,7 +172,7 @@ func (m *V4Manager) setMTUToTunDevice() error {
 	return nil
 }
 
-func (m *V4Manager) setDNSToTunDevice() error {
+func (m *v4Manager) setDNSToTunDevice() error {
 	if err := m.netsh.SetDNS(m.s.InterfaceName, []string{"1.1.1.1", "8.8.8.8"}); err != nil {
 		return err
 	}
@@ -180,7 +180,7 @@ func (m *V4Manager) setDNSToTunDevice() error {
 	return nil
 }
 
-func (m *V4Manager) DisposeDevices() error {
+func (m *v4Manager) DisposeDevices() error {
 	_ = m.netsh.DeleteDefaultRoute(m.s.InterfaceName)
 	_ = m.netsh.DeleteDefaultSplitRoutes(m.s.InterfaceName)
 	_ = m.netsh.DeleteAddress(m.s.InterfaceName, m.s.InterfaceAddress)

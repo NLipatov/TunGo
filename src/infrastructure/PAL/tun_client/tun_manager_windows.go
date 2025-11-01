@@ -1,7 +1,6 @@
 package tun_client
 
 import (
-	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -30,7 +29,7 @@ type PlatformTunManager struct {
 func NewPlatformTunManager(
 	conf client.Configuration,
 ) (tun.ClientManager, error) {
-	connectionSettings, connectionSettingsErr := settingsToUse(conf)
+	connectionSettings, connectionSettingsErr := conf.ActiveSettings()
 	if connectionSettingsErr != nil {
 		return nil, connectionSettingsErr
 	}
@@ -69,20 +68,6 @@ func NewPlatformTunManager(
 		ipConfig:           ipconfig.NewWrapper(PAL.NewExecCommander()),
 		route:              routeHandle,
 	}, nil
-}
-
-func settingsToUse(configuration client.Configuration) (settings.Settings, error) {
-	var zero settings.Settings
-	switch configuration.Protocol {
-	case settings.UDP:
-		return configuration.UDPSettings, nil
-	case settings.TCP:
-		return configuration.TCPSettings, nil
-	case settings.WS, settings.WSS:
-		return configuration.WSSettings, nil
-	default:
-		return zero, errors.New("unsupported protocol")
-	}
 }
 
 func (m *PlatformTunManager) CreateDevice() (tun.Device, error) {
@@ -150,8 +135,8 @@ func (m *PlatformTunManager) CreateDevice() (tun.Device, error) {
 
 func (m *PlatformTunManager) DisposeDevices() error {
 	routeFactory := route.NewFactory(PAL.NewExecCommander(), m.connectionSettings)
-	v4Route := routeFactory.CreateV4Route()
-	v6Route := routeFactory.CreateV6Route()
+	v4Route := routeFactory.CreateRouteV4()
+	v6Route := routeFactory.CreateRouteV6()
 	netshFactory := netsh.NewFactory(m.connectionSettings, PAL.NewExecCommander())
 	v4Netsh := netshFactory.CreateNetshV4()
 	v6Netsh := netshFactory.CreateNetshV6()
