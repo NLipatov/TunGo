@@ -16,18 +16,14 @@ type v6Wrapper struct {
 	commander PAL.Commander
 }
 
-func newV6Wrapper(c PAL.Commander) Contract {
-	return &v6Wrapper{
-		commander: c,
-	}
-}
+func newV6Wrapper(c PAL.Commander) Contract { return &v6Wrapper{commander: c} }
 
 // DefaultRoute parses `route print -6` lines that contain `::/0`.
-// Heuristics (locale-agnostic):
+// Heuristic (locale-agnostic):
 //   - metric = last integer token *to the left* of "::/0"
 //   - idx    = first integer token *to the right* of "::/0"
 //   - gw     = first IPv6 literal token *to the right* of idx
-//   - ifName = rest of the line after gw (trimmed); if empty -> InterfaceByIndex(idx).Name
+//   - ifName = tail after gw; if empty, resolve via InterfaceByIndex(idx)
 func (w *v6Wrapper) DefaultRoute() (gw, ifName string, metric int, err error) {
 	out, execErr := w.commander.CombinedOutput("route", "print", "-6")
 	if execErr != nil {
@@ -46,25 +42,23 @@ func (w *v6Wrapper) DefaultRoute() (gw, ifName string, metric int, err error) {
 		left := strings.TrimSpace(line[:pos])
 		right := strings.TrimSpace(line[pos+len("::/0"):])
 
-		met := w.lastInt(left)
+		met := lastInt(left)
 		if met < 0 {
-			// If no metric detectable, treat as "large".
 			met = 1 << 30
 		}
-		// Right-side tokens:
 		rTokens := strings.Fields(right)
 		if len(rTokens) == 0 {
 			continue
 		}
-		// Idx = first int on the right.
 		idx := -1
 		gwTokPos := -1
+		// idx = first int on the right
 		for i, t := range rTokens {
 			if v, e := strconv.Atoi(t); e == nil {
 				idx = v
 				// gateway = first IPv6 after this index token
 				for j := i + 1; j < len(rTokens); j++ {
-					ip := w.parseIPv6(rTokens[j])
+					ip := parseIPv6(rTokens[j])
 					if ip != "" {
 						gwTokPos = j
 						gw = ip
@@ -75,9 +69,8 @@ func (w *v6Wrapper) DefaultRoute() (gw, ifName string, metric int, err error) {
 			}
 		}
 		if gwTokPos == -1 {
-			// Fallback: first IPv6 anywhere on the right.
 			for j := 0; j < len(rTokens); j++ {
-				ip := w.parseIPv6(rTokens[j])
+				ip := parseIPv6(rTokens[j])
 				if ip != "" {
 					gwTokPos = j
 					gw = ip
@@ -88,12 +81,12 @@ func (w *v6Wrapper) DefaultRoute() (gw, ifName string, metric int, err error) {
 		if gw == "" {
 			continue
 		}
-		// Interface name is the tail after gateway token (joined to keep spaces).
+		// Interface name is everything after gw token
 		ifName = strings.TrimSpace(strings.Join(rTokens[gwTokPos+1:], " "))
 		if ifName == "" && idx > 0 {
-			iFace, _ := net.InterfaceByIndex(idx)
-			if iFace != nil {
-				ifName = iFace.Name
+			iface, _ := net.InterfaceByIndex(idx)
+			if iface != nil {
+				ifName = iface.Name
 			}
 		}
 		if ifName == "" {
@@ -112,6 +105,10 @@ func (w *v6Wrapper) DefaultRoute() (gw, ifName string, metric int, err error) {
 }
 
 func (w *v6Wrapper) Delete(dst string) error {
+	dst = strings.TrimSpace(dropZone(dst))
+	if dst == "" {
+		return fmt.Errorf("route -6 delete: empty destination")
+	}
 	out, err := w.commander.CombinedOutput("route", "-6", "delete", dst)
 	if err != nil {
 		return fmt.Errorf("route delete %s: %v, output: %s", dst, err, out)
@@ -122,7 +119,7 @@ func (w *v6Wrapper) Delete(dst string) error {
 func (w *v6Wrapper) Print(t string) ([]byte, error) {
 	args := []string{"print", "-6"}
 	if s := strings.TrimSpace(t); s != "" {
-		args = append(args, s)
+		args = append(args, dropZone(s))
 	}
 	out, err := w.commander.CombinedOutput("route", args...)
 	if err != nil {
@@ -131,15 +128,17 @@ func (w *v6Wrapper) Print(t string) ([]byte, error) {
 	return out, nil
 }
 
-func (w *v6Wrapper) parseIPv6(tok string) string {
-	ip := net.ParseIP(tok)
+// helpers
+
+func parseIPv6(tok string) string {
+	ip := net.ParseIP(dropZone(tok))
 	if ip == nil || ip.To4() != nil {
 		return ""
 	}
 	return ip.String()
 }
 
-func (w *v6Wrapper) lastInt(s string) int {
+func lastInt(s string) int {
 	best := -1
 	for _, t := range strings.Fields(s) {
 		if v, e := strconv.Atoi(t); e == nil {
@@ -147,4 +146,11 @@ func (w *v6Wrapper) lastInt(s string) int {
 		}
 	}
 	return best
+}
+
+func dropZone(s string) string {
+	if i := strings.IndexByte(s, '%'); i >= 0 {
+		return s[:i]
+	}
+	return s
 }

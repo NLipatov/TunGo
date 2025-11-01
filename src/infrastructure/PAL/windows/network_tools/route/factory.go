@@ -35,10 +35,5 @@ func (f *Factory) CreateRoute() (Contract, error) {
 	return newV6Wrapper(f.commander), nil
 }
 
-func (f *Factory) CreateRouteV4() Contract {
-	return newV4Wrapper(f.commander)
-}
-
-func (f *Factory) CreateRouteV6() Contract {
-	return newV6Wrapper(f.commander)
-}
+func (f *Factory) CreateRouteV4() Contract { return newV4Wrapper(f.commander) }
+func (f *Factory) CreateRouteV6() Contract { return newV6Wrapper(f.commander) }

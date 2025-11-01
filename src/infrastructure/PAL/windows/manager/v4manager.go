@@ -5,6 +5,7 @@ package manager
 import (
 	"fmt"
 	"net"
+
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/windows"
 	"tungo/infrastructure/PAL/windows/network_tools/ipconfig"
@@ -16,6 +17,7 @@ import (
 	"golang.zx2c4.com/wintun"
 )
 
+// v4Manager configures a Wintun adapter and the host stack for IPv4.
 type v4Manager struct {
 	s        settings.Settings
 	netsh    netsh.Contract
@@ -38,6 +40,9 @@ func newV4Manager(
 	}
 }
 
+// CreateDevice creates/configures the TUN adapter and system routes/DNS for IPv4.
+// Safe order: create adapter → host route to server → assign IP → split default → MTU → DNS.
+// On any error after adapter creation we call DisposeDevices() to leave the host clean.
 func (m *v4Manager) CreateDevice() (tun.Device, error) {
 	if net.ParseIP(m.s.InterfaceAddress).To4() == nil {
 		return nil, fmt.Errorf("v4Manager requires IPv4 InterfaceAddress, got %q", m.s.InterfaceAddress)
@@ -45,11 +50,13 @@ func (m *v4Manager) CreateDevice() (tun.Device, error) {
 	if net.ParseIP(m.s.ConnectionIP).To4() == nil {
 		return nil, fmt.Errorf("v4Manager requires IPv4 ConnectionIP, got %q", m.s.ConnectionIP)
 	}
+
 	tunDev, err := m.createTunDevice()
 	if err != nil {
 		return nil, err
 	}
 	m.tun = tunDev
+
 	if err := m.addStaticRouteToServer(); err != nil {
 		_ = m.DisposeDevices()
 		return nil, err
@@ -74,70 +81,73 @@ func (m *v4Manager) CreateDevice() (tun.Device, error) {
 }
 
 func (m *v4Manager) createTunDevice() (tun.Device, error) {
-	wintunAdapter, wintunAdapterErr := wintun.CreateAdapter(m.s.InterfaceName, windows.TunGoTunnelType, nil)
-	if wintunAdapterErr != nil {
-		// if it already exists, fall back:
-		if existingWintunAdapter, existingWintunAdapterErr := wintun.OpenAdapter(
-			m.s.InterfaceName,
-		); existingWintunAdapterErr == nil {
-			return wtun.NewTUN(existingWintunAdapter)
+	// Create new; if name already taken, try opening existing (idempotent behavior).
+	adapter, err := wintun.CreateAdapter(m.s.InterfaceName, windows.TunGoTunnelType, nil)
+	if err != nil {
+		if existing, openErr := wintun.OpenAdapter(m.s.InterfaceName); openErr == nil {
+			return wtun.NewTUN(existing)
 		}
-		return nil, fmt.Errorf("create/open adapter: %w", wintunAdapterErr)
+		return nil, fmt.Errorf("create/open adapter: %w", err)
 	}
-	tunDevice, tunDeviceErr := wtun.NewTUN(wintunAdapter)
-	if tunDeviceErr != nil {
-		_ = wintunAdapter.Close()
-		return nil, tunDeviceErr
+	dev, devErr := wtun.NewTUN(adapter)
+	if devErr != nil {
+		_ = adapter.Close()
+		return nil, devErr
 	}
-	return tunDevice, nil
+	return dev, nil
 }
 
+// addStaticRouteToServer ensures a host route (/32) for the tunnel server exists,
+// choosing on-link if the server is in any local IPv4 subnet, otherwise via the
+// default IPv4 gateway/interface.
 func (m *v4Manager) addStaticRouteToServer() error {
-	// check what is default route and default interface
-	gateway, routeInterface, _, defaultRouteErr := m.route.DefaultRoute()
-	if defaultRouteErr != nil {
-		return defaultRouteErr
+	gateway, ifName, _, err := m.route.DefaultRoute()
+	if err != nil {
+		return err
 	}
-	// remove old route to server and assign new and actual one
+	// Refresh any stale host route.
 	_ = m.route.Delete(m.s.ConnectionIP)
+
 	serverIP := net.ParseIP(m.s.ConnectionIP)
-	// is server on the same network (on-link route)?
-	if altIFace, ok := m.onLinkInterfaceName(serverIP); ok {
-		routeInterface = altIFace
-		// use on-link route
-		if err := m.netsh.AddHostRouteOnLink(m.s.ConnectionIP, routeInterface, 1); err != nil {
+	if alt, ok := m.onLinkInterfaceName(serverIP); ok {
+		if err := m.netsh.AddHostRouteOnLink(m.s.ConnectionIP, alt, 1); err != nil {
 			return fmt.Errorf("add on-link host route: %w", err)
 		}
-	} else if gateway != "" {
-		// use off-link route(via gateway)
-		if err := m.netsh.AddHostRouteViaGateway(m.s.ConnectionIP, routeInterface, gateway, 1); err != nil {
+		return nil
+	}
+	if gateway != "" {
+		if err := m.netsh.AddHostRouteViaGateway(m.s.ConnectionIP, ifName, gateway, 1); err != nil {
 			return fmt.Errorf("add host route via gw: %w", err)
 		}
-	} else {
-		return m.netsh.AddHostRouteOnLink(m.s.ConnectionIP, routeInterface, 1)
+		return nil
+	}
+	// No explicit gateway (ICS/bridges cases) — best-effort on-link via default IF.
+	if err := m.netsh.AddHostRouteOnLink(m.s.ConnectionIP, ifName, 1); err != nil {
+		return fmt.Errorf("add on-link host route (fallback): %w", err)
 	}
 	return nil
 }
 
+// onLinkInterfaceName returns the name of an interface whose IPv4 prefix contains 'server'.
 func (m *v4Manager) onLinkInterfaceName(server net.IP) (string, bool) {
 	srv4 := server.To4()
 	if srv4 == nil {
 		return "", false
 	}
-	iFaces, _ := net.Interfaces()
-	for _, iFace := range iFaces {
-		addresses, _ := iFace.Addrs()
-		for _, a := range addresses {
+	ifaces, _ := net.Interfaces()
+	for _, it := range ifaces {
+		addrs, _ := it.Addrs()
+		for _, a := range addrs {
 			if ipn, ok := a.(*net.IPNet); ok && ipn.IP.To4() != nil && ipn.Contains(srv4) {
-				return iFace.Name, true
+				return it.Name, true
 			}
 		}
 	}
 	return "", false
 }
 
+// assignIPToTunDevice validates IPv4 address ∈ CIDR and applies it.
 func (m *v4Manager) assignIPToTunDevice() error {
-	// check that m.s.InterfaceAddress is in m.s.InterfaceIPCIDR subnet
 	ip := net.ParseIP(m.s.InterfaceAddress)
 	_, nw, _ := net.ParseCIDR(m.s.InterfaceIPCIDR)
 	if ip == nil || nw == nil || !nw.Contains(ip) {
@@ -152,8 +162,8 @@ func (m *v4Manager) assignIPToTunDevice() error {
 	return nil
 }
 
+// setRouteToTunDevice replaces any existing default with split default (0.0.0.0/1, 128.0.0.0/1).
 func (m *v4Manager) setRouteToTunDevice() error {
-	// (re-)set route to TUN device
 	_ = m.netsh.DeleteDefaultRoute(m.s.InterfaceName)
 	_ = m.netsh.DeleteDefaultSplitRoutes(m.s.InterfaceName)
 	if err := m.netsh.AddDefaultSplitRoutes(m.s.InterfaceName, 1); err != nil {
@@ -163,6 +173,7 @@ func (m *v4Manager) setRouteToTunDevice() error {
 	return nil
 }
 
+// setMTUToTunDevice sets MTU (or safe default).
 func (m *v4Manager) setMTUToTunDevice() error {
 	mtu := m.s.MTU
 	if mtu == 0 {
@@ -175,6 +186,7 @@ func (m *v4Manager) setMTUToTunDevice() error {
 	return nil
 }
 
+// setDNSToTunDevice applies v4 DNS resolvers and flushes system cache.
 func (m *v4Manager) setDNSToTunDevice() error {
 	if err := m.netsh.SetDNS(m.s.InterfaceName, []string{"1.1.1.1", "8.8.8.8"}); err != nil {
 		return err
@@ -183,9 +195,10 @@ func (m *v4Manager) setDNSToTunDevice() error {
 	return nil
 }
 
+// DisposeDevices reverses CreateDevice in safe order.
 func (m *v4Manager) DisposeDevices() error {
-	_ = m.netsh.DeleteDefaultRoute(m.s.InterfaceName)
 	_ = m.netsh.DeleteDefaultSplitRoutes(m.s.InterfaceName)
+	_ = m.netsh.DeleteDefaultRoute(m.s.InterfaceName)
 	_ = m.netsh.DeleteAddress(m.s.InterfaceName, m.s.InterfaceAddress)
 	_ = m.route.Delete(m.s.ConnectionIP)
 	_ = m.netsh.SetDNS(m.s.InterfaceName, nil)

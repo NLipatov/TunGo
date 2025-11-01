@@ -40,10 +40,5 @@ func (f *Factory) CreateNetsh() (Contract, error) {
 	return newV6Wrapper(f.commander), nil
 }
 
-func (f *Factory) CreateNetshV4() Contract {
-	return newV4Wrapper(f.commander)
-}
-
-func (f *Factory) CreateNetshV6() Contract {
-	return newV6Wrapper(f.commander)
-}
+func (f *Factory) CreateNetshV4() Contract { return newV4Wrapper(f.commander) }
+func (f *Factory) CreateNetshV6() Contract { return newV6Wrapper(f.commander) }

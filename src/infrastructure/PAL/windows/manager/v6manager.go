@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/windows"
 	"tungo/infrastructure/PAL/windows/network_tools/ipconfig"
@@ -17,6 +18,7 @@ import (
 	"golang.zx2c4.com/wintun"
 )
 
+// v6Manager configures a Wintun adapter and the host stack for IPv6.
 type v6Manager struct {
 	s        settings.Settings
 	netsh    netsh.Contract
@@ -39,41 +41,38 @@ func newV6Manager(
 	}
 }
 
+// CreateDevice creates/configures the TUN adapter and system routes/DNS for IPv6.
+// Safe order mirrors v4 with IPv6-specific details.
 func (m *v6Manager) CreateDevice() (tun.Device, error) {
-	// Guard: IPv6 only
 	if net.ParseIP(m.s.InterfaceAddress).To4() != nil {
 		return nil, fmt.Errorf("v6Manager requires IPv6 InterfaceAddress, got %q", m.s.InterfaceAddress)
 	}
 	if net.ParseIP(m.s.ConnectionIP).To4() != nil {
 		return nil, fmt.Errorf("v6Manager requires IPv6 ConnectionIP, got %q", m.s.ConnectionIP)
 	}
-	// Create adapter first; if it exists already — fallback to open.
+
 	tunDev, err := m.createTunDevice()
 	if err != nil {
 		return nil, err
 	}
 	m.tun = tunDev
-	// Ensure static host route to server (on-link vs via gateway).
+
 	if err := m.addStaticRouteToServer(); err != nil {
 		_ = m.DisposeDevices()
 		return nil, err
 	}
-	// Assign IPv6 address to TUN.
 	if err := m.assignIPToTunDevice(); err != nil {
 		_ = m.DisposeDevices()
 		return nil, err
 	}
-	// Install split default (::/1, 8000::/1).
 	if err := m.setRouteToTunDevice(); err != nil {
 		_ = m.DisposeDevices()
 		return nil, err
 	}
-	// MTU.
 	if err := m.setMTUToTunDevice(); err != nil {
 		_ = m.DisposeDevices()
 		return nil, err
 	}
-	// DNS (IPv6 resolvers), with rollback on failure.
 	if err := m.setDNSToTunDevice(); err != nil {
 		_ = m.DisposeDevices()
 		return nil, err
@@ -84,7 +83,6 @@ func (m *v6Manager) CreateDevice() (tun.Device, error) {
 func (m *v6Manager) createTunDevice() (tun.Device, error) {
 	adapter, err := wintun.CreateAdapter(m.s.InterfaceName, windows.TunGoTunnelType, nil)
 	if err != nil {
-		// If adapter already exists, fall back to open.
 		if existing, openErr := wintun.OpenAdapter(m.s.InterfaceName); openErr == nil {
 			return wtun.NewTUN(existing)
 		}
@@ -98,45 +96,48 @@ func (m *v6Manager) createTunDevice() (tun.Device, error) {
 	return dev, nil
 }
 
+// addStaticRouteToServer ensures a host route (/128) for the tunnel server exists,
+// choosing on-link if the server is in any local IPv6 prefix, otherwise via the
+// default IPv6 gateway/interface.
 func (m *v6Manager) addStaticRouteToServer() error {
-	gateway, defIF, _, err := m.route.DefaultRoute()
+	gateway, ifName, _, err := m.route.DefaultRoute()
 	if err != nil {
 		return err
 	}
-	// Refresh host route to server.
 	_ = m.route.Delete(m.s.ConnectionIP)
+
 	srvIP := net.ParseIP(m.s.ConnectionIP)
-	if altIF, ok := m.onLinkInterfaceName(srvIP); ok {
-		// On-link host route (no nexthop)
-		if err := m.netsh.AddHostRouteOnLink(m.s.ConnectionIP, altIF, 1); err != nil {
+	if alt, ok := m.onLinkInterfaceName(srvIP); ok {
+		if err := m.netsh.AddHostRouteOnLink(m.s.ConnectionIP, alt, 1); err != nil {
 			return fmt.Errorf("add on-link host route: %w", err)
 		}
-	} else if gateway != "" {
-		// Off-link via gateway
-		if err := m.netsh.AddHostRouteViaGateway(m.s.ConnectionIP, defIF, gateway, 1); err != nil {
+		return nil
+	}
+	if gateway != "" {
+		if err := m.netsh.AddHostRouteViaGateway(m.s.ConnectionIP, ifName, gateway, 1); err != nil {
 			return fmt.Errorf("add host route via gw: %w", err)
 		}
-	} else {
-		// Rare setups (ICS/bridges) may present empty gw; best-effort on-link via default IF.
-		if err := m.netsh.AddHostRouteOnLink(m.s.ConnectionIP, defIF, 1); err != nil {
-			return fmt.Errorf("add on-link host route (fallback): %w", err)
-		}
+		return nil
+	}
+	// No explicit gateway (ICS/bridges cases) — best-effort on-link via default IF.
+	if err := m.netsh.AddHostRouteOnLink(m.s.ConnectionIP, ifName, 1); err != nil {
+		return fmt.Errorf("add on-link host route (fallback): %w", err)
 	}
 	return nil
 }
 
+// onLinkInterfaceName returns the name of an interface whose IPv6 prefix contains 'server'.
 func (m *v6Manager) onLinkInterfaceName(server net.IP) (string, bool) {
 	if server == nil || server.To4() != nil {
 		return "", false
 	}
-	iFaces, _ := net.Interfaces()
-	for _, it := range iFaces {
-		// Prefer UP interfaces (cheap sanity)
+	ifaces, _ := net.Interfaces()
+	for _, it := range ifaces {
 		if (it.Flags & net.FlagUp) == 0 {
 			continue
 		}
-		addresses, _ := it.Addrs()
-		for _, a := range addresses {
+		addrs, _ := it.Addrs()
+		for _, a := range addrs {
 			if ipn, ok := a.(*net.IPNet); ok && ipn.IP.To4() == nil && ipn.Contains(server) {
 				return it.Name, true
 			}
@@ -145,6 +146,7 @@ func (m *v6Manager) onLinkInterfaceName(server net.IP) (string, bool) {
 	return "", false
 }
 
+// assignIPToTunDevice validates IPv6 address ∈ CIDR and applies it via prefix length.
 func (m *v6Manager) assignIPToTunDevice() error {
 	ip := net.ParseIP(m.s.InterfaceAddress)
 	_, nw, _ := net.ParseCIDR(m.s.InterfaceIPCIDR)
@@ -152,7 +154,6 @@ func (m *v6Manager) assignIPToTunDevice() error {
 		_ = m.route.Delete(m.s.ConnectionIP)
 		return fmt.Errorf("address %s not in %s", m.s.InterfaceAddress, m.s.InterfaceIPCIDR)
 	}
-	// For IPv6 netsh expects prefix length as digits (e.g., "64").
 	parts := strings.Split(m.s.InterfaceIPCIDR, "/")
 	if len(parts) != 2 {
 		_ = m.route.Delete(m.s.ConnectionIP)
@@ -166,6 +167,7 @@ func (m *v6Manager) assignIPToTunDevice() error {
 	return nil
 }
 
+// setRouteToTunDevice replaces any existing default with IPv6 split default (::/1, 8000::/1).
 func (m *v6Manager) setRouteToTunDevice() error {
 	_ = m.netsh.DeleteDefaultRoute(m.s.InterfaceName)
 	_ = m.netsh.DeleteDefaultSplitRoutes(m.s.InterfaceName)
@@ -189,7 +191,6 @@ func (m *v6Manager) setMTUToTunDevice() error {
 }
 
 func (m *v6Manager) setDNSToTunDevice() error {
-	// Roll back the /128 host route on failure to avoid crumbs.
 	if err := m.netsh.SetDNS(m.s.InterfaceName,
 		[]string{"2606:4700:4700::1111", "2001:4860:4860::8888"},
 	); err != nil {
@@ -200,9 +201,10 @@ func (m *v6Manager) setDNSToTunDevice() error {
 	return nil
 }
 
+// DisposeDevices reverses CreateDevice in safe order.
 func (m *v6Manager) DisposeDevices() error {
-	_ = m.netsh.DeleteDefaultRoute(m.s.InterfaceName)
 	_ = m.netsh.DeleteDefaultSplitRoutes(m.s.InterfaceName)
+	_ = m.netsh.DeleteDefaultRoute(m.s.InterfaceName)
 	_ = m.netsh.DeleteAddress(m.s.InterfaceName, m.s.InterfaceAddress)
 	_ = m.route.Delete(m.s.ConnectionIP)
 	_ = m.netsh.SetDNS(m.s.InterfaceName, nil)

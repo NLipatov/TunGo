@@ -16,14 +16,11 @@ type v4Wrapper struct {
 	commander PAL.Commander
 }
 
-func newV4Wrapper(c PAL.Commander) Contract {
-	return &v4Wrapper{
-		commander: c,
-	}
-}
+func newV4Wrapper(c PAL.Commander) Contract { return &v4Wrapper{commander: c} }
 
-// DefaultRoute parses `route print -4` and picks the row with the lowest Metric:
+// DefaultRoute parses `route print -4` and picks the row with the lowest Metric.
 // Columns (locale-agnostic tokens): Destination, Netmask, Gateway, Interface-IP, Metric.
+// We match only lines starting with "0.0.0.0 0.0.0.0".
 func (w *v4Wrapper) DefaultRoute() (gw, ifName string, metric int, err error) {
 	out, execErr := w.commander.CombinedOutput("route", "print", "-4")
 	if execErr != nil {
@@ -61,6 +58,10 @@ func (w *v4Wrapper) DefaultRoute() (gw, ifName string, metric int, err error) {
 }
 
 func (w *v4Wrapper) Delete(dst string) error {
+	dst = strings.TrimSpace(dst)
+	if dst == "" {
+		return fmt.Errorf("route delete: empty destination")
+	}
 	out, err := w.commander.CombinedOutput("route", "delete", dst)
 	if err != nil {
 		return fmt.Errorf("route delete %s: %v, output: %s", dst, err, out)
