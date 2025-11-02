@@ -4,6 +4,7 @@ package manager
 
 import (
 	"fmt"
+	"log"
 	"net"
 	"strings"
 
@@ -61,28 +62,34 @@ func (m *v4Manager) CreateDevice() (tun.Device, error) {
 		return nil, fmt.Errorf("v4Manager requires IPv4 ConnectionIP, got %q", m.s.ConnectionIP)
 	}
 
+	log.Println("m.createTunDevice()")
 	tunDev, err := m.createTunDevice()
 	if err != nil {
 		return nil, err
 	}
 	m.tun = tunDev
 
+	log.Println("m.addStaticRouteToServer()")
 	if err := m.addStaticRouteToServer(); err != nil {
 		_ = m.DisposeDevices()
 		return nil, err
 	}
+	log.Println("m.assignIPToTunDevice()")
 	if err := m.assignIPToTunDevice(); err != nil {
 		_ = m.DisposeDevices()
 		return nil, err
 	}
+	log.Println("m.setRouteToTunDevice()")
 	if err := m.setRouteToTunDevice(); err != nil {
 		_ = m.DisposeDevices()
 		return nil, err
 	}
+	log.Println("m.setMTUToTunDevice()")
 	if err := m.setMTUToTunDevice(); err != nil {
 		_ = m.DisposeDevices()
 		return nil, err
 	}
+	log.Println("m.setDNSToTunDevice()")
 	if err := m.setDNSToTunDevice(); err != nil {
 		_ = m.DisposeDevices()
 		return nil, err

@@ -3,12 +3,12 @@
 package route
 
 import (
-	"bufio"
-	"encoding/json"
-	"errors"
 	"fmt"
+	"golang.org/x/sys/windows"
+	"golang.zx2c4.com/wireguard/windows/tunnel/winipcfg"
+	"math"
 	"net"
-	"strconv"
+	"net/netip"
 	"strings"
 	"tungo/infrastructure/PAL"
 )
@@ -18,92 +18,6 @@ type v6Wrapper struct {
 }
 
 func newV6Wrapper(c PAL.Commander) Contract { return &v6Wrapper{commander: c} }
-
-// DefaultRoute parses `route print -6` lines that contain `::/0`.
-// Heuristic (locale-agnostic):
-//   - metric = last integer token *to the left* of "::/0"
-//   - idx    = first integer token *to the right* of "::/0"
-//   - gw     = first IPv6 literal token *to the right* of idx
-//   - ifName = tail after gw; if empty, resolve via InterfaceByIndex(idx)
-func (w *v6Wrapper) DefaultRoute() (gw, ifName string, metric int, err error) {
-	out, execErr := w.commander.CombinedOutput("route", "print", "-6")
-	if execErr != nil {
-		return "", "", 0, fmt.Errorf("route print -6: %w", execErr)
-	}
-	best := int(^uint(0) >> 1)
-	var bestGW, bestIf string
-
-	sc := bufio.NewScanner(strings.NewReader(string(out)))
-	for sc.Scan() {
-		line := sc.Text()
-		pos := strings.Index(line, "::/0")
-		if pos < 0 {
-			continue
-		}
-		left := strings.TrimSpace(line[:pos])
-		right := strings.TrimSpace(line[pos+len("::/0"):])
-
-		met := lastInt(left)
-		if met < 0 {
-			met = 1 << 30
-		}
-		rTokens := strings.Fields(right)
-		if len(rTokens) == 0 {
-			continue
-		}
-		idx := -1
-		gwTokPos := -1
-		// idx = first int on the right
-		for i, t := range rTokens {
-			if v, e := strconv.Atoi(t); e == nil {
-				idx = v
-				// gateway = first IPv6 after this index token
-				for j := i + 1; j < len(rTokens); j++ {
-					ip := parseIPv6(rTokens[j])
-					if ip != "" {
-						gwTokPos = j
-						gw = ip
-						break
-					}
-				}
-				break
-			}
-		}
-		if gwTokPos == -1 {
-			for j := 0; j < len(rTokens); j++ {
-				ip := parseIPv6(rTokens[j])
-				if ip != "" {
-					gwTokPos = j
-					gw = ip
-					break
-				}
-			}
-		}
-		if gw == "" {
-			continue
-		}
-		// Interface name is everything after gw token
-		ifName = strings.TrimSpace(strings.Join(rTokens[gwTokPos+1:], " "))
-		if ifName == "" && idx > 0 {
-			iface, _ := net.InterfaceByIndex(idx)
-			if iface != nil {
-				ifName = iface.Name
-			}
-		}
-		if ifName == "" {
-			continue
-		}
-		if met < best {
-			best = met
-			bestGW = gw
-			bestIf = ifName
-		}
-	}
-	if bestGW == "" || bestIf == "" {
-		return "", "", 0, errors.New("default v6 route not found")
-	}
-	return bestGW, bestIf, best, nil
-}
 
 func (w *v6Wrapper) Delete(dst string) error {
 	dst = strings.TrimSpace(dropZone(dst))
@@ -129,26 +43,6 @@ func (w *v6Wrapper) Print(t string) ([]byte, error) {
 	return out, nil
 }
 
-// helpers
-
-func parseIPv6(tok string) string {
-	ip := net.ParseIP(dropZone(tok))
-	if ip == nil || ip.To4() != nil {
-		return ""
-	}
-	return ip.String()
-}
-
-func lastInt(s string) int {
-	best := -1
-	for _, t := range strings.Fields(s) {
-		if v, e := strconv.Atoi(t); e == nil {
-			best = v
-		}
-	}
-	return best
-}
-
 func dropZone(s string) string {
 	if i := strings.IndexByte(s, '%'); i >= 0 {
 		return s[:i]
@@ -156,48 +50,106 @@ func dropZone(s string) string {
 	return s
 }
 
-// BestRoute resolves the effective IPv6 route using Find-NetRoute.
-// Compatible with older NetTCPIP (no -AddressFamily).
+// DefaultRoute returns (::/0) route info for IPv6.
+// Picks the ::/0 entry with the lowest metric.
+// Returns gateway (empty means on-link), interface alias (friendly name), and metric.
+func (w *v6Wrapper) DefaultRoute() (gw, ifName string, metric int, err error) {
+	rows, err := winipcfg.GetIPForwardTable2(winipcfg.AddressFamily(windows.AF_INET6))
+	if err != nil {
+		return "", "", 0, fmt.Errorf("GetIPForwardTable2(v6): %w", err)
+	}
+
+	var (
+		best       *winipcfg.MibIPforwardRow2
+		bestMetric uint32 = math.MaxUint32
+	)
+
+	for i := range rows {
+		pfx := rows[i].DestinationPrefix.Prefix()
+		// Only ::/0 (default) routes.
+		if !pfx.Addr().Is6() || pfx.Bits() != 0 {
+			continue
+		}
+		if best == nil || rows[i].Metric < bestMetric {
+			best = &rows[i]
+			bestMetric = rows[i].Metric
+		}
+	}
+
+	if best == nil {
+		return "", "", 0, fmt.Errorf("default v6 route not found")
+	}
+
+	// Next hop: empty/unspecified => on-link.
+	if nh := best.NextHop.Addr(); nh.IsValid() && nh.Is6() && !nh.IsUnspecified() {
+		gw = nh.String()
+	}
+
+	metric = int(best.Metric)
+
+	// Resolve interface alias (friendly name).
+	if ifRow, _ := best.InterfaceLUID.Interface(); ifRow != nil {
+		if a := ifRow.Alias(); a != "" {
+			ifName = a
+		}
+	}
+
+	return
+}
+
+// BestRoute returns (gateway, interfaceAlias, interfaceIndex, routeMetric) for IPv6.
+// Uses GetIPForwardTable2(AF_INET6) and picks the best entry by:
+// 1) longest prefix match, 2) lowest metric. No external processes.
 func (w *v6Wrapper) BestRoute(dest string) (string, string, int, int, error) {
 	raw := strings.TrimSpace(dest)
-	ip := dropZone(raw)
-	p := net.ParseIP(ip)
-	if p == nil || p.To4() != nil {
+	ipStr := dropZone(raw) // strip "%zone" if present, e.g., "fe80::1%12" -> "fe80::1"
+	ip := net.ParseIP(ipStr)
+	if ip == nil || ip.To4() != nil || ip.To16() == nil {
 		return "", "", 0, 0, fmt.Errorf("BestRoute(v6): not an IPv6 address: %q", dest)
 	}
 
-	script := fmt.Sprintf(`
-$ErrorActionPreference = 'Stop'
-$ip = '%s'
-$cmd = Get-Command -Name Find-NetRoute -ErrorAction SilentlyContinue
-if (-not $cmd) { exit 3 }
-try {
-    if ($cmd.Parameters.ContainsKey('AddressFamily')) {
-        $r = Find-NetRoute -RemoteIPAddress $ip -AddressFamily IPv6
-    } else {
-        $r = Find-NetRoute -RemoteIPAddress $ip
-    }
-} catch [System.Management.Automation.ParameterBindingException] {
-    $r = Find-NetRoute -RemoteIPAddress $ip
-}
-if (-not $r) { exit 2 }
-$r = $r | ForEach-Object {
-    $_ | Add-Member -NotePropertyName PL -NotePropertyValue ([int](($_.DestinationPrefix -split '/')[1])) -PassThru
-} | Sort-Object -Property @{Expression={-($_.PL)}}, RouteMetric | Select-Object -First 1
-$r | Select-Object NextHop,InterfaceAlias,InterfaceIndex,RouteMetric | ConvertTo-Json -Compress
-`, psQuote(ip))
+	var b16 [16]byte
+	copy(b16[:], ip.To16())
+	dst := netip.AddrFrom16(b16)
 
-	out, err := w.commander.CombinedOutput("powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script)
+	rows, err := winipcfg.GetIPForwardTable2(winipcfg.AddressFamily(windows.AF_INET6))
 	if err != nil {
-		return "", "", 0, 0, fmt.Errorf("BestRoute(v6): Find-NetRoute error: %v, output: %s", err, out)
+		return "", "", 0, 0, fmt.Errorf("GetIPForwardTable2(v6): %w", err)
 	}
-	var br psBestRoute
-	if uerr := json.Unmarshal(out, &br); uerr != nil {
-		return "", "", 0, 0, fmt.Errorf("BestRoute(v6): parse error: %v, output: %s", uerr, out)
+
+	var (
+		best       *winipcfg.MibIPforwardRow2
+		bestPL     = -1
+		bestMetric = uint32(math.MaxUint32)
+	)
+	for i := range rows {
+		pfx := rows[i].DestinationPrefix.Prefix()
+		if !pfx.Addr().Is6() || !pfx.Contains(dst) {
+			continue
+		}
+		pl := pfx.Bits()
+		m := rows[i].Metric
+		if pl > bestPL || (pl == bestPL && m < bestMetric) {
+			best, bestPL, bestMetric = &rows[i], pl, m
+		}
 	}
-	gw := strings.TrimSpace(dropZone(br.NextHop))
-	if gw == "" || gw == "::" {
-		gw = ""
+	if best == nil {
+		return "", "", 0, 0, fmt.Errorf("BestRoute(v6): no matching route for %s", dest)
 	}
-	return gw, br.InterfaceAlias, br.InterfaceIndex, br.RouteMetric, nil
+
+	// Gateway: empty/unspecified => on-link.
+	var gw string
+	if nh := best.NextHop.Addr(); nh.IsValid() && nh.Is6() && !nh.IsUnspecified() {
+		gw = nh.String()
+		// Note: for link-local gateways (fe80::/64) specify IF index when adding routes.
+	}
+
+	alias := ""
+	if ifRow, _ := best.InterfaceLUID.Interface(); ifRow != nil {
+		if a := ifRow.Alias(); a != "" {
+			alias = a
+		}
+	}
+
+	return gw, alias, int(best.InterfaceIndex), int(best.Metric), nil
 }

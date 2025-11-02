@@ -15,6 +15,7 @@ require (
 	github.com/coder/websocket v1.8.14
 	golang.org/x/net v0.46.0
 	golang.org/x/sync v0.17.0
+	golang.zx2c4.com/wireguard/windows v0.5.3
 )
 
 require (
