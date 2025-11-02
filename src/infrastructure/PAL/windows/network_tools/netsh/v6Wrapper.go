@@ -13,7 +13,6 @@ import (
 	wgwin "golang.zx2c4.com/wireguard/windows/tunnel/winipcfg"
 )
 
-// v6Wrapper — KISS-реализация IPv6 под тот же Contract.
 type v6Wrapper struct{}
 
 func newV6Wrapper() Contract { return &v6Wrapper{} }
@@ -48,7 +47,10 @@ func (w *v6Wrapper) SetAddressWithGateway(ifName, ip, mask, gateway string, metr
 	if gwErr != nil || !gw.Is6() {
 		return fmt.Errorf("SetAddressWithGateway(v6): gateway is not IPv6: %q", gateway)
 	}
-	// дефолт ::/0 через gw
+	gw, _ = netip.ParseAddr(strings.TrimSpace(gateway))
+	if !pfx.Contains(gw) && !gw.IsLinkLocalUnicast() {
+		return fmt.Errorf("gateway %s is not in interface subnet %s", gw, pfx)
+	}
 	return luid.AddRoute(netip.PrefixFrom(netip.IPv6Unspecified(), 0), gw, atLeast1(metric))
 }
 

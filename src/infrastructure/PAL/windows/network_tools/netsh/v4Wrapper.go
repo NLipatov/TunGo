@@ -76,9 +76,10 @@ func (w *v4Wrapper) SetDNS(ifName string, dnsServers []string) error {
 		// "DHCP-like": clear DNS list for IPv4
 		setDNSErr := luid.SetDNS(wgwin.AddressFamily(windows.AF_INET), nil, nil)
 		if setDNSErr != nil {
-			_ = luid.FlushDNS(wgwin.AddressFamily(windows.AF_INET))
 			return setDNSErr
 		}
+		_ = luid.FlushDNS(wgwin.AddressFamily(windows.AF_INET))
+		return nil
 	}
 	addresses := make([]netip.Addr, 0, len(dnsServers))
 	for _, s := range dnsServers {
