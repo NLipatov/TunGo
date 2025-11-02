@@ -4,23 +4,26 @@ package ipconfig
 
 import (
 	"fmt"
-	"tungo/infrastructure/PAL"
+	"golang.org/x/sys/windows"
 )
 
-type Wrapper struct {
-	commander PAL.Commander
+// Wrapper implements Contract using native Windows APIs (no shell commands).
+type Wrapper struct{}
+
+func NewWrapper() Contract {
+	return &Wrapper{}
 }
 
-func NewWrapper(commander PAL.Commander) Contract {
-	return &Wrapper{
-		commander: commander,
-	}
-}
-
+// FlushDNS clears the system resolver cache via DnsFlushResolverCache (dnsapi.dll).
 func (w *Wrapper) FlushDNS() error {
-	output, err := w.commander.CombinedOutput("ipconfig", "/flushdns")
-	if err != nil {
-		return fmt.Errorf("flushdns: %s", output)
+	dnsApi := windows.NewLazySystemDLL("dnsapi.dll")
+	proc := dnsApi.NewProc("DnsFlushResolverCache")
+	if err := dnsApi.Load(); err != nil {
+		return fmt.Errorf("failed to load dnsapi.dll: %w", err)
+	}
+	r, _, callErr := proc.Call()
+	if r == 0 {
+		return fmt.Errorf("DnsFlushResolverCache failed: %v", callErr)
 	}
 	return nil
 }

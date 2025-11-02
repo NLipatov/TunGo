@@ -27,9 +27,8 @@ func NewPlatformTunManager(
 	commander := PAL.NewExecCommander()
 	factory := manager.NewFactory(
 		connectionSettings,
-		commander,
 		netsh.NewFactory(connectionSettings, commander),
-		route.NewFactory(commander, connectionSettings),
+		route.NewFactory(connectionSettings),
 	)
 	concreteManager, concreteManagerErr := factory.Create()
 	if concreteManagerErr != nil {

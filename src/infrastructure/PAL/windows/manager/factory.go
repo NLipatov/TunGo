@@ -12,7 +12,6 @@ import (
 	"tungo/infrastructure/settings"
 
 	"tungo/application/network/routing/tun"
-	"tungo/infrastructure/PAL"
 )
 
 // Factory builds a family-specific TUN manager (IPv4 or IPv6) based on InterfaceAddress.
@@ -22,20 +21,17 @@ import (
 //   - Optional safety: ensure ConnectionIP family matches InterfaceAddress family.
 type Factory struct {
 	connectionSettings settings.Settings
-	commander          PAL.Commander
 	netshFactory       netsh.Factory
 	routeFactory       route.Factory
 }
 
 func NewFactory(
 	connectionSettings settings.Settings,
-	commander PAL.Commander,
 	netshFactory netsh.Factory,
 	routeFactory route.Factory,
 ) *Factory {
 	return &Factory{
 		connectionSettings: connectionSettings,
-		commander:          commander,
 		netshFactory:       netshFactory,
 		routeFactory:       routeFactory,
 	}
@@ -65,14 +61,14 @@ func (f *Factory) Create() (tun.ClientManager, error) {
 			f.connectionSettings,
 			f.netshFactory.CreateNetshV4(),
 			f.routeFactory.CreateRouteV4(),
-			ipconfig.NewWrapper(f.commander),
+			ipconfig.NewWrapper(),
 		), nil
 	} else {
 		return newV6Manager(
 			f.connectionSettings,
 			f.netshFactory.CreateNetshV6(),
 			f.routeFactory.CreateRouteV6(),
-			ipconfig.NewWrapper(f.commander),
+			ipconfig.NewWrapper(),
 		), nil
 	}
 }

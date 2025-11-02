@@ -5,21 +5,17 @@ package route
 import (
 	"fmt"
 	"net"
-	"tungo/infrastructure/PAL"
 	"tungo/infrastructure/settings"
 )
 
 type Factory struct {
-	commander          PAL.Commander
 	connectionSettings settings.Settings
 }
 
 func NewFactory(
-	commander PAL.Commander,
 	connectionSettings settings.Settings,
 ) Factory {
 	return Factory{
-		commander:          commander,
 		connectionSettings: connectionSettings,
 	}
 }
@@ -30,10 +26,10 @@ func (f *Factory) CreateRoute() (Contract, error) {
 		return nil, fmt.Errorf("serverIP is not IP literal: %q", f.connectionSettings.ConnectionIP)
 	}
 	if ip.To4() != nil {
-		return newV4Wrapper(f.commander), nil
+		return newV4Wrapper(), nil
 	}
-	return newV6Wrapper(f.commander), nil
+	return newV6Wrapper(), nil
 }
 
-func (f *Factory) CreateRouteV4() Contract { return newV4Wrapper(f.commander) }
-func (f *Factory) CreateRouteV6() Contract { return newV6Wrapper(f.commander) }
+func (f *Factory) CreateRouteV4() Contract { return newV4Wrapper() }
+func (f *Factory) CreateRouteV6() Contract { return newV6Wrapper() }
