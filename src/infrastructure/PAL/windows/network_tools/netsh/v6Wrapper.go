@@ -5,280 +5,257 @@ package netsh
 import (
 	"fmt"
 	"net"
+	"net/netip"
 	"strconv"
 	"strings"
-	"tungo/infrastructure/PAL"
+
+	"golang.org/x/sys/windows"
+	wgwin "golang.zx2c4.com/wireguard/windows/tunnel/winipcfg"
 )
 
-// v6Wrapper is an IPv6 implementation of netsh.Contract.
-type v6Wrapper struct {
-	commander PAL.Commander
-}
+// v6Wrapper — KISS-реализация IPv6 под тот же Contract.
+type v6Wrapper struct{}
 
-func newV6Wrapper(commander PAL.Commander) Contract { return &v6Wrapper{commander: commander} }
+func newV6Wrapper() Contract { return &v6Wrapper{} }
 
-func dropZone(s string) string {
-	if i := strings.IndexByte(s, '%'); i >= 0 {
-		return s[:i]
-	}
-	return s
-}
+// -------------------- Contract (IPv6) --------------------
 
 func (w *v6Wrapper) SetAddressStatic(ifName, ip, mask string) error {
-	pl, err := strconv.Atoi(mask)
-	if err != nil || pl < 0 || pl > 128 {
-		return fmt.Errorf("SetAddressStatic: bad IPv6 prefix length: %q", mask)
+	luid, err := luidByName(ifName)
+	if err != nil {
+		return err
 	}
-	p := net.ParseIP(dropZone(ip))
-	if p == nil || p.To4() != nil {
-		return fmt.Errorf("SetAddressStatic: ip is not IPv6: %q", ip)
+	pfx, err := ipv6PrefixFromIPMask(ip, mask)
+	if err != nil {
+		return fmt.Errorf("SetAddressStatic(v6): %w", err)
 	}
-	idx, idxErr := w.ifIndexOf(ifName)
-	if idxErr != nil {
-		return idxErr
-	}
-	address := dropZone(ip) + "/" + mask
-	if out, err := w.commander.CombinedOutput(
-		"netsh", "interface", "ipv6", "add", "address",
-		"interface="+strconv.Itoa(idx), address, "store=active",
-	); err != nil {
-		return fmt.Errorf("SetAddressStatic error: %v, output: %s", err, out)
-	}
-	return nil
+	return luid.SetIPAddressesForFamily(wgwin.AddressFamily(windows.AF_INET6), []netip.Prefix{pfx})
 }
 
 func (w *v6Wrapper) SetAddressWithGateway(ifName, ip, mask, gateway string, metric int) error {
-	gw := dropZone(strings.TrimSpace(gateway))
-	pgw := net.ParseIP(gw)
-	if pgw == nil || pgw.To4() != nil {
-		return fmt.Errorf("gateway is not IPv6: %q", gateway)
-	}
-	if err := w.SetAddressStatic(ifName, ip, mask); err != nil {
+	luid, err := luidByName(ifName)
+	if err != nil {
 		return err
 	}
-	idx, idxErr := w.ifIndexOf(ifName)
-	if idxErr != nil {
-		return idxErr
+	pfx, err := ipv6PrefixFromIPMask(ip, mask)
+	if err != nil {
+		return fmt.Errorf("SetAddressWithGateway(v6): %w", err)
 	}
-	if out, err := w.commander.CombinedOutput(
-		"netsh", "interface", "ipv6", "add", "route",
-		"::/0",
-		"interface="+strconv.Itoa(idx),
-		"nexthop="+gw,
-		"metric="+strconv.Itoa(max(metric, 1)),
-		"store=active",
-	); err != nil {
-		return fmt.Errorf("SetAddressWithGateway(add default route) error: %v, output: %s", err, out)
+	if err := luid.SetIPAddressesForFamily(wgwin.AddressFamily(windows.AF_INET6), []netip.Prefix{pfx}); err != nil {
+		return fmt.Errorf("SetAddressWithGateway(v6): set ip: %w", err)
 	}
-	return nil
+	gw, gwErr := netip.ParseAddr(strings.TrimSpace(gateway))
+	if gwErr != nil || !gw.Is6() {
+		return fmt.Errorf("SetAddressWithGateway(v6): gateway is not IPv6: %q", gateway)
+	}
+	// дефолт ::/0 через gw
+	return luid.AddRoute(netip.PrefixFrom(netip.IPv6Unspecified(), 0), gw, atLeast1(metric))
 }
 
 func (w *v6Wrapper) DeleteAddress(ifName, interfaceAddress string) error {
-	idx, idxErr := w.ifIndexOf(ifName)
-	if idxErr != nil {
-		return idxErr
+	luid, err := luidByName(ifName)
+	if err != nil {
+		return err
 	}
-	addr := dropZone(interfaceAddress)
-	if out, err := w.commander.CombinedOutput(
-		"netsh", "interface", "ipv6", "delete", "address",
-		"interface="+strconv.Itoa(idx),
-		"address="+addr,
-	); err != nil {
-		return fmt.Errorf("DeleteAddress error: %v, output: %s", err, out)
+	ip, ipErr := netip.ParseAddr(strings.TrimSpace(interfaceAddress))
+	if ipErr != nil || !ip.Is6() {
+		return fmt.Errorf("DeleteAddress(v6): not IPv6: %q", interfaceAddress)
 	}
-	return nil
+	row, err := luid.IPAddress(ip)
+	if err != nil {
+		return fmt.Errorf("DeleteAddress(v6): lookup failed: %w", err)
+	}
+	return row.Delete()
 }
 
 func (w *v6Wrapper) SetDNS(ifName string, dnsServers []string) error {
-	_, _ = w.commander.CombinedOutput(
-		"netsh", "interface", "ipv6", "delete", "dnsservers",
-		w.q(ifName), "all",
-	)
-	if len(dnsServers) == 0 {
+	luid, err := luidByName(ifName)
+	if err != nil {
+		return err
+	}
+	var addrs []netip.Addr
+	for _, s := range dnsServers {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		a, aErr := netip.ParseAddr(s)
+		if aErr != nil || !a.Is6() {
+			return fmt.Errorf("SetDNS(v6): bad IPv6 DNS %q", s)
+		}
+		addrs = append(addrs, a)
+	}
+	if len(addrs) == 0 {
+		if err := luid.SetDNS(wgwin.AddressFamily(windows.AF_INET6), nil, nil); err != nil {
+			return err
+		}
+		_ = luid.FlushDNS(wgwin.AddressFamily(windows.AF_INET6))
 		return nil
 	}
-	for i, raw := range dnsServers {
-		dns := dropZone(strings.TrimSpace(raw))
-		index := i + 1
-		if out, err := w.commander.CombinedOutput(
-			"netsh", "interface", "ipv6", "add", "dnsserver",
-			w.q(ifName), dns, "index="+strconv.Itoa(index), "validate=no",
-		); err != nil {
-			return fmt.Errorf("SetDNS(add %s) error: %v, output: %s", dns, err, out)
-		}
+	if err := luid.SetDNS(wgwin.AddressFamily(windows.AF_INET6), addrs, nil); err != nil {
+		return err
 	}
+	_ = luid.FlushDNS(wgwin.AddressFamily(windows.AF_INET6))
 	return nil
 }
 
 func (w *v6Wrapper) SetMTU(ifName string, mtu int) error {
-	idx, idxErr := w.ifIndexOf(ifName)
-	if idxErr != nil {
-		return idxErr
+	if mtu <= 0 {
+		return fmt.Errorf("SetMTU(v6): invalid mtu %d", mtu)
 	}
-	if out, err := w.commander.CombinedOutput(
-		"netsh", "interface", "ipv6", "set", "interface",
-		"interface="+strconv.Itoa(idx), "mtu="+strconv.Itoa(mtu), "store=active",
-	); err != nil {
-		return fmt.Errorf("SetMTU error: %v, output: %s", err, out)
+	luid, err := luidByName(ifName)
+	if err != nil {
+		return err
 	}
-	return nil
+	row, err := luid.IPInterface(wgwin.AddressFamily(windows.AF_INET6))
+	if err != nil {
+		return err
+	}
+	row.NLMTU = uint32(mtu)
+	row.UseAutomaticMetric = false
+	if row.Metric == 0 {
+		row.Metric = 1
+	}
+	return row.Set()
 }
 
-// ---------- routes ----------
-
 func (w *v6Wrapper) AddRoutePrefix(prefix, ifName string, metric int) error {
-	p := dropZone(strings.TrimSpace(prefix))
-	ip, _, err := net.ParseCIDR(p)
-	if err != nil || ip.To4() != nil {
-		return fmt.Errorf("bad IPv6 prefix: %q", p)
+	luid, err := luidByName(ifName)
+	if err != nil {
+		return err
 	}
-	idx, idxErr := w.ifIndexOf(ifName)
-	if idxErr != nil {
-		return idxErr
+	pfx, err := parseIPv6Prefix(prefix)
+	if err != nil {
+		return err
 	}
-	if out, err := w.commander.CombinedOutput(
-		"netsh", "interface", "ipv6", "add", "route",
-		p,
-		"interface="+strconv.Itoa(idx),
-		"nexthop=::",
-		"metric="+strconv.Itoa(max(metric, 1)),
-		"store=active",
-	); err != nil {
-		return fmt.Errorf("AddRoutePrefix(%s) error: %v, output: %s", p, err, out)
-	}
-	return nil
+	// on-link: nexthop = ::
+	return luid.AddRoute(pfx, netip.IPv6Unspecified(), atLeast1(metric))
 }
 
 func (w *v6Wrapper) DeleteRoutePrefix(prefix, ifName string) error {
-	idx, idxErr := w.ifIndexOf(ifName)
-	if idxErr != nil {
-		return idxErr
+	luid, err := luidByName(ifName)
+	if err != nil {
+		return err
 	}
-	p := dropZone(strings.TrimSpace(prefix))
-	if out, err := w.commander.CombinedOutput(
-		"netsh", "interface", "ipv6", "delete", "route",
-		p,
-		"interface="+strconv.Itoa(idx),
-		"nexthop=::",
-	); err != nil {
-		return fmt.Errorf("DeleteRoutePrefix(%s) error: %v, output: %s", p, err, out)
+	pfx, err := parseIPv6Prefix(prefix)
+	if err != nil {
+		return err
 	}
-	return nil
+	return luid.DeleteRoute(pfx, netip.IPv6Unspecified())
 }
 
 func (w *v6Wrapper) DeleteDefaultRoute(ifName string) error {
-	idx, idxErr := w.ifIndexOf(ifName)
-	if idxErr != nil {
-		return idxErr
+	luid, err := luidByName(ifName)
+	if err != nil {
+		return err
 	}
-	if out, err := w.commander.CombinedOutput(
-		"netsh", "interface", "ipv6", "delete", "route",
-		"::/0",
-		"interface="+strconv.Itoa(idx),
-	); err != nil {
-		return fmt.Errorf("DeleteDefaultRoute error: %v, output: %s", err, out)
+	tab, err := wgwin.GetIPForwardTable2(wgwin.AddressFamily(windows.AF_INET6))
+	if err != nil {
+		return err
 	}
-	return nil
+	var last error
+	for i := range tab {
+		r := &tab[i]
+		if r.InterfaceLUID == luid && r.DestinationPrefix.PrefixLength == 0 {
+			if err := r.Delete(); err != nil {
+				last = err
+			}
+		}
+	}
+	return last
 }
 
 func (w *v6Wrapper) AddHostRouteViaGateway(hostIP, ifName, gateway string, metric int) error {
-	gw := dropZone(strings.TrimSpace(gateway))
-	pgw := net.ParseIP(gw)
-	if pgw == nil || pgw.To4() != nil {
-		return fmt.Errorf("gateway is not IPv6: %q", gateway)
-	}
-	idx, idxErr := w.ifIndexOf(ifName)
-	if idxErr != nil {
-		return idxErr
-	}
-	host := dropZone(strings.TrimSpace(hostIP))
-	if net.ParseIP(host) == nil || net.ParseIP(host).To4() != nil {
-		return fmt.Errorf("AddHostRouteViaGateway(v6): not an IPv6: %q", hostIP)
-	}
-	args := []string{
-		"interface", "ipv6", "add", "route",
-		host + "/128",
-		"interface=" + strconv.Itoa(idx),
-		"nexthop=" + dropZone(gateway),
-		"metric=" + strconv.Itoa(max(metric, 1)),
-		"store=active",
-	}
-	out, err := w.commander.CombinedOutput("netsh", args...)
+	luid, err := luidByName(ifName)
 	if err != nil {
-		return fmt.Errorf("AddHostRouteViaGateway(v6) error: %v, output: %s", err, out)
+		return err
 	}
-	return nil
+	ip, ipErr := netip.ParseAddr(strings.TrimSpace(hostIP))
+	if ipErr != nil || !ip.Is6() {
+		return fmt.Errorf("AddHostRouteViaGateway(v6): not IPv6: %q", hostIP)
+	}
+	gw, gwErr := netip.ParseAddr(strings.TrimSpace(gateway))
+	if gwErr != nil || !gw.Is6() {
+		return fmt.Errorf("AddHostRouteViaGateway(v6): gateway not IPv6: %q", gateway)
+	}
+	return luid.AddRoute(netip.PrefixFrom(ip, 128), gw, atLeast1(metric))
 }
 
 func (w *v6Wrapper) AddHostRouteOnLink(hostIP, ifName string, metric int) error {
-	idx, idxErr := w.ifIndexOf(ifName)
-	if idxErr != nil {
-		return idxErr
-	}
-	host := dropZone(strings.TrimSpace(hostIP))
-	if net.ParseIP(host) == nil || net.ParseIP(host).To4() != nil {
-		return fmt.Errorf("AddHostRouteOnLink(v6): not an IPv6: %q", hostIP)
-	}
-	args := []string{
-		"interface", "ipv6", "add", "route",
-		host + "/128",
-		"interface=" + strconv.Itoa(idx),
-		"nexthop=::",
-		"metric=" + strconv.Itoa(max(metric, 1)),
-		"store=active",
-	}
-	out, err := w.commander.CombinedOutput("netsh", args...)
+	luid, err := luidByName(ifName)
 	if err != nil {
-		return fmt.Errorf("AddHostRouteOnLink(v6) error: %v, output: %s", err, out)
+		return err
 	}
-	return nil
+	ip, ipErr := netip.ParseAddr(strings.TrimSpace(hostIP))
+	if ipErr != nil || !ip.Is6() {
+		return fmt.Errorf("AddHostRouteOnLink(v6): not IPv6: %q", hostIP)
+	}
+	return luid.AddRoute(netip.PrefixFrom(ip, 128), netip.IPv6Unspecified(), atLeast1(metric))
 }
 
 func (w *v6Wrapper) AddDefaultSplitRoutes(ifName string, metric int) error {
-	idx, idxErr := w.ifIndexOf(ifName)
-	if idxErr != nil {
-		return idxErr
+	luid, err := luidByName(ifName)
+	if err != nil {
+		return err
 	}
-	halves := []string{"::/1", "8000::/1"}
-	for _, p := range halves {
-		out, err := w.commander.CombinedOutput(
-			"netsh", "interface", "ipv6", "add", "route",
-			p, "interface="+strconv.Itoa(idx), "nexthop=::", "metric="+strconv.Itoa(max(metric, 1)), "store=active",
-		)
-		if err != nil {
-			return fmt.Errorf("AddDefaultSplitRoutes(v6 %s) error: %v, output: %s", p, err, out)
+	for _, s := range []string{"::/1", "8000::/1"} {
+		pfx, _ := netip.ParsePrefix(s)
+		if err := luid.AddRoute(pfx, netip.IPv6Unspecified(), atLeast1(metric)); err != nil {
+			return fmt.Errorf("AddDefaultSplitRoutes(v6 %s): %w", s, err)
 		}
 	}
 	return nil
 }
 
 func (w *v6Wrapper) DeleteDefaultSplitRoutes(ifName string) error {
-	idx, idxErr := w.ifIndexOf(ifName)
-	if idxErr != nil {
-		return idxErr
+	luid, err := luidByName(ifName)
+	if err != nil {
+		return err
 	}
 	var last error
-	halves := []string{"::/1", "8000::/1"}
-	for _, p := range halves {
-		if out, err := w.commander.CombinedOutput(
-			"netsh", "interface", "ipv6", "delete", "route",
-			p, "interface="+strconv.Itoa(idx),
-		); err != nil {
-			last = fmt.Errorf("DeleteDefaultSplitRoutes(v6 %s) error: %v, output: %s", p, err, out)
+	for _, s := range []string{"::/1", "8000::/1"} {
+		pfx, _ := netip.ParsePrefix(s)
+		if err := luid.DeleteRoute(pfx, netip.IPv6Unspecified()); err != nil {
+			last = fmt.Errorf("DeleteDefaultSplitRoutes(v6 %s): %w", s, err)
 		}
 	}
 	return last
 }
 
-func (w *v6Wrapper) ifIndexOf(name string) (int, error) {
-	iface, err := net.InterfaceByName(name)
-	if err != nil {
-		return 0, fmt.Errorf("InterfaceByName(%q): %w", name, err)
+// -------------------- Helpers (IPv6) --------------------
+
+func ipv6PrefixFromIPMask(ipStr, maskStr string) (netip.Prefix, error) {
+	addr, addrErr := netip.ParseAddr(strings.TrimSpace(ipStr))
+	if addrErr != nil || !addr.Is6() {
+		return netip.Prefix{}, fmt.Errorf("ip is not IPv6: %q", ipStr)
 	}
-	if iface.Index <= 0 {
-		return 0, fmt.Errorf("interface %q has invalid index: %d", name, iface.Index)
+	maskStr = strings.TrimSpace(maskStr)
+	if maskStr == "" {
+		return netip.Prefix{}, fmt.Errorf("empty IPv6 mask")
 	}
-	return iface.Index, nil
+	// Case 1: numeric prefix length ("64")
+	if n, err := strconv.Atoi(maskStr); err == nil {
+		if n < 0 || n > 128 {
+			return netip.Prefix{}, fmt.Errorf("bad IPv6 prefix len: %d", n)
+		}
+		return netip.PrefixFrom(addr, n), nil
+	}
+	// Case 2: IPv6 mask ("ffff:ffff:...") — rare but supported
+	im := net.ParseIP(maskStr)
+	if im == nil || im.To16() == nil {
+		return netip.Prefix{}, fmt.Errorf("mask is not IPv6: %q", maskStr)
+	}
+	ones, bits := net.IPMask(im.To16()).Size()
+	if bits != 128 || ones < 0 || ones > 128 {
+		return netip.Prefix{}, fmt.Errorf("bad IPv6 mask: %q", maskStr)
+	}
+	return netip.PrefixFrom(addr, ones), nil
 }
 
-func (w *v6Wrapper) q(s string) string { return `"` + s + `"` }
+func parseIPv6Prefix(s string) (netip.Prefix, error) {
+	pfx, pfxErr := netip.ParsePrefix(strings.TrimSpace(s))
+	if pfxErr != nil || !pfx.Addr().Is6() {
+		return netip.Prefix{}, fmt.Errorf("bad IPv6 prefix: %q", s)
+	}
+	return pfx, nil
+}

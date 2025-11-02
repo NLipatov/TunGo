@@ -35,10 +35,10 @@ func (f *Factory) CreateNetsh() (Contract, error) {
 		return nil, fmt.Errorf("unspecified InterfaceAddress not allowed: %q", f.connectionSettings.InterfaceAddress)
 	}
 	if ip.To4() != nil {
-		return newV4Wrapper(f.commander), nil
+		return newV4Wrapper(), nil
 	}
-	return newV6Wrapper(f.commander), nil
+	return newV6Wrapper(), nil
 }
 
-func (f *Factory) CreateNetshV4() Contract { return newV4Wrapper(f.commander) }
-func (f *Factory) CreateNetshV6() Contract { return newV6Wrapper(f.commander) }
+func (f *Factory) CreateNetshV4() Contract { return newV4Wrapper() }
+func (f *Factory) CreateNetshV6() Contract { return newV6Wrapper() }
