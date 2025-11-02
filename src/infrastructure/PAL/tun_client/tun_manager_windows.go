@@ -2,11 +2,8 @@ package tun_client
 
 import (
 	"tungo/application/network/routing/tun"
-	"tungo/infrastructure/PAL"
 	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/PAL/windows/manager"
-	"tungo/infrastructure/PAL/windows/network_tools/netsh"
-	"tungo/infrastructure/PAL/windows/network_tools/route"
 	"tungo/infrastructure/settings"
 )
 
@@ -24,11 +21,8 @@ func NewPlatformTunManager(
 	if connectionSettingsErr != nil {
 		return nil, connectionSettingsErr
 	}
-	commander := PAL.NewExecCommander()
 	factory := manager.NewFactory(
 		connectionSettings,
-		netsh.NewFactory(connectionSettings, commander),
-		route.NewFactory(connectionSettings),
 	)
 	concreteManager, concreteManagerErr := factory.Create()
 	if concreteManagerErr != nil {

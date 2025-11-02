@@ -6,9 +6,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
-	"tungo/infrastructure/PAL/windows/network_tools/ipconfig"
-	"tungo/infrastructure/PAL/windows/network_tools/netsh"
-	"tungo/infrastructure/PAL/windows/network_tools/route"
+	"tungo/infrastructure/PAL/windows/ipcfg"
 	"tungo/infrastructure/settings"
 
 	"tungo/application/network/routing/tun"
@@ -21,19 +19,15 @@ import (
 //   - Optional safety: ensure ConnectionIP family matches InterfaceAddress family.
 type Factory struct {
 	connectionSettings settings.Settings
-	netshFactory       netsh.Factory
-	routeFactory       route.Factory
+	netConfigFactory   ipcfg.Factory
 }
 
 func NewFactory(
 	connectionSettings settings.Settings,
-	netshFactory netsh.Factory,
-	routeFactory route.Factory,
 ) *Factory {
 	return &Factory{
 		connectionSettings: connectionSettings,
-		netshFactory:       netshFactory,
-		routeFactory:       routeFactory,
+		netConfigFactory:   ipcfg.NewFactory(),
 	}
 }
 
@@ -59,16 +53,11 @@ func (f *Factory) Create() (tun.ClientManager, error) {
 	if ip.To4() != nil {
 		return newV4Manager(
 			f.connectionSettings,
-			f.netshFactory.CreateNetshV4(),
-			f.routeFactory.CreateRouteV4(),
-			ipconfig.NewWrapper(),
+			f.netConfigFactory.NewV4(),
 		), nil
 	} else {
 		return newV6Manager(
-			f.connectionSettings,
-			f.netshFactory.CreateNetshV6(),
-			f.routeFactory.CreateRouteV6(),
-			ipconfig.NewWrapper(),
+			f.connectionSettings, f.netConfigFactory.NewV6(),
 		), nil
 	}
 }

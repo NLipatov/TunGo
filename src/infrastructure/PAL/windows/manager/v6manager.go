@@ -9,9 +9,7 @@ import (
 	"strings"
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/windows"
-	"tungo/infrastructure/PAL/windows/network_tools/ipconfig"
-	"tungo/infrastructure/PAL/windows/network_tools/netsh"
-	"tungo/infrastructure/PAL/windows/network_tools/route"
+	"tungo/infrastructure/PAL/windows/ipcfg"
 	"tungo/infrastructure/PAL/windows/wtun"
 	"tungo/infrastructure/settings"
 
@@ -20,24 +18,18 @@ import (
 
 // v6Manager configures a Wintun adapter and the host stack for IPv6.
 type v6Manager struct {
-	s        settings.Settings
-	netsh    netsh.Contract
-	route    route.Contract
-	ipConfig ipconfig.Contract
-	tun      tun.Device
+	s         settings.Settings
+	tun       tun.Device
+	netConfig ipcfg.Contract
 }
 
 func newV6Manager(
 	s settings.Settings,
-	netsh netsh.Contract,
-	route route.Contract,
-	ipConfig ipconfig.Contract,
+	netConfig ipcfg.Contract,
 ) *v6Manager {
 	return &v6Manager{
-		s:        s,
-		netsh:    netsh,
-		route:    route,
-		ipConfig: ipConfig,
+		s:         s,
+		netConfig: netConfig,
 	}
 }
 
@@ -106,16 +98,16 @@ func (m *v6Manager) createTunDevice() (tun.Device, error) {
 }
 
 func (m *v6Manager) addStaticRouteToServer() error {
-	_ = m.route.Delete(m.s.ConnectionIP)
-	gw, ifName, _, _, err := m.route.BestRoute(m.s.ConnectionIP)
+	_ = m.netConfig.Delete(m.s.ConnectionIP)
+	gw, ifName, _, _, err := m.netConfig.BestRoute(m.s.ConnectionIP)
 	if err != nil {
 		return err
 	}
 	if gw == "" {
 		// on-link
-		return m.netsh.AddHostRouteOnLink(m.s.ConnectionIP, ifName, 1)
+		return m.netConfig.AddHostRouteOnLink(m.s.ConnectionIP, ifName, 1)
 	}
-	return m.netsh.AddHostRouteViaGateway(m.s.ConnectionIP, ifName, gw, 1)
+	return m.netConfig.AddHostRouteViaGateway(m.s.ConnectionIP, ifName, gw, 1)
 }
 
 // onLinkInterfaceName returns the name of an interface whose IPv6 prefix contains 'server'.
@@ -157,12 +149,12 @@ func (m *v6Manager) assignIPToTunDevice() error {
 	ip := net.ParseIP(m.s.InterfaceAddress)
 	_, nw, _ := net.ParseCIDR(m.s.InterfaceIPCIDR)
 	if ip == nil || ip.To4() != nil || nw == nil || !nw.Contains(ip) {
-		_ = m.route.Delete(m.s.ConnectionIP)
+		_ = m.netConfig.Delete(m.s.ConnectionIP)
 		return fmt.Errorf("address %s not in %s", m.s.InterfaceAddress, m.s.InterfaceIPCIDR)
 	}
 	prefix, _ := nw.Mask.Size()
-	if err := m.netsh.SetAddressStatic(m.s.InterfaceName, m.s.InterfaceAddress, strconv.Itoa(prefix)); err != nil {
-		_ = m.route.Delete(m.s.ConnectionIP)
+	if err := m.netConfig.SetAddressStatic(m.s.InterfaceName, m.s.InterfaceAddress, strconv.Itoa(prefix)); err != nil {
+		_ = m.netConfig.Delete(m.s.ConnectionIP)
 		return err
 	}
 	return nil
@@ -170,9 +162,9 @@ func (m *v6Manager) assignIPToTunDevice() error {
 
 // setRouteToTunDevice replaces any existing default with IPv6 split default (::/1, 8000::/1).
 func (m *v6Manager) setRouteToTunDevice() error {
-	_ = m.netsh.DeleteDefaultSplitRoutes(m.s.InterfaceName)
-	if err := m.netsh.AddDefaultSplitRoutes(m.s.InterfaceName, 1); err != nil {
-		_ = m.route.Delete(m.s.ConnectionIP)
+	_ = m.netConfig.DeleteDefaultSplitRoutes(m.s.InterfaceName)
+	if err := m.netConfig.AddDefaultSplitRoutes(m.s.InterfaceName, 1); err != nil {
+		_ = m.netConfig.Delete(m.s.ConnectionIP)
 		return err
 	}
 	return nil
@@ -186,27 +178,27 @@ func (m *v6Manager) setMTUToTunDevice() error {
 	if mtu < settings.MinimumIPv6MTU {
 		mtu = settings.MinimumIPv6MTU
 	}
-	if err := m.netsh.SetMTU(m.s.InterfaceName, mtu); err != nil {
-		_ = m.route.Delete(m.s.ConnectionIP)
+	if err := m.netConfig.SetMTU(m.s.InterfaceName, mtu); err != nil {
+		_ = m.netConfig.Delete(m.s.ConnectionIP)
 		return err
 	}
 	return nil
 }
 
 func (m *v6Manager) setDNSToTunDevice() error {
-	if err := m.netsh.SetDNS(m.s.InterfaceName,
+	if err := m.netConfig.SetDNS(m.s.InterfaceName,
 		[]string{"2606:4700:4700::1111", "2001:4860:4860::8888"},
 	); err != nil {
-		_ = m.route.Delete(m.s.ConnectionIP)
+		_ = m.netConfig.Delete(m.s.ConnectionIP)
 		return err
 	}
-	_ = m.ipConfig.FlushDNS()
+	_ = m.netConfig.FlushDNS()
 	return nil
 }
 
 // DisposeDevices reverses CreateDevice in safe order.
 func (m *v6Manager) DisposeDevices() error {
-	_ = m.route.Delete(m.s.ConnectionIP)
+	_ = m.netConfig.Delete(m.s.ConnectionIP)
 	if m.tun != nil {
 		_ = m.tun.Close()
 	}

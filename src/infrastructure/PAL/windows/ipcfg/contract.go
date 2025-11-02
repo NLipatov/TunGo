@@ -1,8 +1,7 @@
-//go:build windows
-
-package netsh
+package ipcfg
 
 type Contract interface {
+	FlushDNS() error
 	SetAddressStatic(ifName, ip, mask string) error
 	SetAddressWithGateway(ifName, ip, mask, gateway string, metric int) error
 	DeleteAddress(ifName, interfaceAddress string) error
@@ -15,4 +14,7 @@ type Contract interface {
 	AddHostRouteOnLink(hostIP, ifName string, metric int) error
 	AddDefaultSplitRoutes(ifName string, metric int) error
 	DeleteDefaultSplitRoutes(ifName string) error
+	Delete(destinationIP string) error
+	Print(destinationIP string) ([]byte, error)
+	BestRoute(dest string) (string, string, int, int, error)
 }
