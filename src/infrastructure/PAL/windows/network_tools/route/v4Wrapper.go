@@ -4,6 +4,7 @@ package route
 
 import (
 	"bufio"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -96,4 +97,61 @@ func iFaceNameByIP(ip string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("iface not found for %s", ip)
+}
+
+type psBestRoute struct {
+	NextHop        string `json:"NextHop"`
+	InterfaceAlias string `json:"InterfaceAlias"`
+	InterfaceIndex int    `json:"InterfaceIndex"`
+	RouteMetric    int    `json:"RouteMetric"`
+}
+
+// BestRoute resolves the effective IPv4 route using Find-NetRoute.
+// Compatible with older NetTCPIP (no -AddressFamily).
+func (w *v4Wrapper) BestRoute(dest string) (string, string, int, int, error) {
+	ip := strings.TrimSpace(dest)
+	p := net.ParseIP(ip)
+	if p == nil || p.To4() == nil {
+		return "", "", 0, 0, fmt.Errorf("BestRoute(v4): not an IPv4 address: %q", dest)
+	}
+
+	script := fmt.Sprintf(`
+$ErrorActionPreference = 'Stop'
+$ip = '%s'
+$cmd = Get-Command -Name Find-NetRoute -ErrorAction SilentlyContinue
+if (-not $cmd) { exit 3 }
+try {
+    if ($cmd.Parameters.ContainsKey('AddressFamily')) {
+        $r = Find-NetRoute -RemoteIPAddress $ip -AddressFamily IPv4
+    } else {
+        $r = Find-NetRoute -RemoteIPAddress $ip
+    }
+} catch [System.Management.Automation.ParameterBindingException] {
+    # старый синтаксис — без AddressFamily
+    $r = Find-NetRoute -RemoteIPAddress $ip
+}
+if (-not $r) { exit 2 }
+$r = $r | ForEach-Object {
+    $_ | Add-Member -NotePropertyName PL -NotePropertyValue ([int](($_.DestinationPrefix -split '/')[1])) -PassThru
+} | Sort-Object -Property @{Expression={-($_.PL)}}, RouteMetric | Select-Object -First 1
+$r | Select-Object NextHop,InterfaceAlias,InterfaceIndex,RouteMetric | ConvertTo-Json -Compress
+`, psQuote(ip))
+
+	out, err := w.commander.CombinedOutput("powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script)
+	if err != nil {
+		return "", "", 0, 0, fmt.Errorf("BestRoute(v4): Find-NetRoute error: %v, output: %s", err, out)
+	}
+	var br psBestRoute
+	if uerr := json.Unmarshal(out, &br); uerr != nil {
+		return "", "", 0, 0, fmt.Errorf("BestRoute(v4): parse error: %v, output: %s", uerr, out)
+	}
+	gw := strings.TrimSpace(br.NextHop)
+	if gw == "" || gw == "0.0.0.0" {
+		gw = ""
+	}
+	return gw, br.InterfaceAlias, br.InterfaceIndex, br.RouteMetric, nil
+}
+
+func psQuote(s string) string { // single-quote for PowerShell literal
+	return strings.ReplaceAll(s, `'`, `''`)
 }

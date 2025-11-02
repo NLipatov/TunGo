@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 	"tungo/infrastructure/PAL"
-	"unicode"
 )
 
 // v6Wrapper is an IPv6 implementation of netsh.Contract.
@@ -26,10 +25,13 @@ func dropZone(s string) string {
 }
 
 func (w *v6Wrapper) SetAddressStatic(ifName, ip, mask string) error {
-	for _, r := range mask {
-		if !unicode.IsDigit(r) {
-			return fmt.Errorf("SetAddressStatic: IPv6 requires prefix length, got mask=%q", mask)
-		}
+	pl, err := strconv.Atoi(mask)
+	if err != nil || pl < 0 || pl > 128 {
+		return fmt.Errorf("SetAddressStatic: bad IPv6 prefix length: %q", mask)
+	}
+	p := net.ParseIP(dropZone(ip))
+	if p == nil || p.To4() != nil {
+		return fmt.Errorf("SetAddressStatic: ip is not IPv6: %q", ip)
 	}
 	idx, idxErr := w.ifIndexOf(ifName)
 	if idxErr != nil {
@@ -46,6 +48,11 @@ func (w *v6Wrapper) SetAddressStatic(ifName, ip, mask string) error {
 }
 
 func (w *v6Wrapper) SetAddressWithGateway(ifName, ip, mask, gateway string, metric int) error {
+	gw := dropZone(strings.TrimSpace(gateway))
+	pgw := net.ParseIP(gw)
+	if pgw == nil || pgw.To4() != nil {
+		return fmt.Errorf("gateway is not IPv6: %q", gateway)
+	}
 	if err := w.SetAddressStatic(ifName, ip, mask); err != nil {
 		return err
 	}
@@ -53,13 +60,12 @@ func (w *v6Wrapper) SetAddressWithGateway(ifName, ip, mask, gateway string, metr
 	if idxErr != nil {
 		return idxErr
 	}
-	gw := dropZone(gateway)
 	if out, err := w.commander.CombinedOutput(
 		"netsh", "interface", "ipv6", "add", "route",
 		"::/0",
 		"interface="+strconv.Itoa(idx),
 		"nexthop="+gw,
-		"metric="+strconv.Itoa(metric),
+		"metric="+strconv.Itoa(max(metric, 1)),
 		"store=active",
 	); err != nil {
 		return fmt.Errorf("SetAddressWithGateway(add default route) error: %v, output: %s", err, out)
@@ -121,17 +127,21 @@ func (w *v6Wrapper) SetMTU(ifName string, mtu int) error {
 // ---------- routes ----------
 
 func (w *v6Wrapper) AddRoutePrefix(prefix, ifName string, metric int) error {
+	p := dropZone(strings.TrimSpace(prefix))
+	ip, _, err := net.ParseCIDR(p)
+	if err != nil || ip.To4() != nil {
+		return fmt.Errorf("bad IPv6 prefix: %q", p)
+	}
 	idx, idxErr := w.ifIndexOf(ifName)
 	if idxErr != nil {
 		return idxErr
 	}
-	p := dropZone(strings.TrimSpace(prefix))
 	if out, err := w.commander.CombinedOutput(
 		"netsh", "interface", "ipv6", "add", "route",
 		p,
 		"interface="+strconv.Itoa(idx),
 		"nexthop=::",
-		"metric="+strconv.Itoa(metric),
+		"metric="+strconv.Itoa(max(metric, 1)),
 		"store=active",
 	); err != nil {
 		return fmt.Errorf("AddRoutePrefix(%s) error: %v, output: %s", p, err, out)
@@ -172,6 +182,11 @@ func (w *v6Wrapper) DeleteDefaultRoute(ifName string) error {
 }
 
 func (w *v6Wrapper) AddHostRouteViaGateway(hostIP, ifName, gateway string, metric int) error {
+	gw := dropZone(strings.TrimSpace(gateway))
+	pgw := net.ParseIP(gw)
+	if pgw == nil || pgw.To4() != nil {
+		return fmt.Errorf("gateway is not IPv6: %q", gateway)
+	}
 	idx, idxErr := w.ifIndexOf(ifName)
 	if idxErr != nil {
 		return idxErr
@@ -185,7 +200,7 @@ func (w *v6Wrapper) AddHostRouteViaGateway(hostIP, ifName, gateway string, metri
 		host + "/128",
 		"interface=" + strconv.Itoa(idx),
 		"nexthop=" + dropZone(gateway),
-		"metric=" + strconv.Itoa(metric),
+		"metric=" + strconv.Itoa(max(metric, 1)),
 		"store=active",
 	}
 	out, err := w.commander.CombinedOutput("netsh", args...)
@@ -209,7 +224,7 @@ func (w *v6Wrapper) AddHostRouteOnLink(hostIP, ifName string, metric int) error 
 		host + "/128",
 		"interface=" + strconv.Itoa(idx),
 		"nexthop=::",
-		"metric=" + strconv.Itoa(metric),
+		"metric=" + strconv.Itoa(max(metric, 1)),
 		"store=active",
 	}
 	out, err := w.commander.CombinedOutput("netsh", args...)
@@ -228,7 +243,7 @@ func (w *v6Wrapper) AddDefaultSplitRoutes(ifName string, metric int) error {
 	for _, p := range halves {
 		out, err := w.commander.CombinedOutput(
 			"netsh", "interface", "ipv6", "add", "route",
-			p, "interface="+strconv.Itoa(idx), "metric="+strconv.Itoa(metric), "store=active",
+			p, "interface="+strconv.Itoa(idx), "nexthop=::", "metric="+strconv.Itoa(max(metric, 1)), "store=active",
 		)
 		if err != nil {
 			return fmt.Errorf("AddDefaultSplitRoutes(v6 %s) error: %v, output: %s", p, err, out)

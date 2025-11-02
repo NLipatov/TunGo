@@ -18,6 +18,13 @@ type v4Wrapper struct {
 func newV4Wrapper(commander PAL.Commander) Contract { return &v4Wrapper{commander: commander} }
 
 func (w *v4Wrapper) SetAddressStatic(ifName, ip, mask string) error {
+	p := net.ParseIP(ip)
+	if p == nil || p.To4() == nil {
+		return fmt.Errorf("SetAddressStatic: ip is not IPv4: %q", ip)
+	}
+	if m := net.ParseIP(mask); m == nil || m.To4() == nil {
+		return fmt.Errorf("SetAddressStatic: mask is not dotted IPv4: %q", mask)
+	}
 	out, err := w.commander.CombinedOutput(
 		"netsh", "interface", "ip", "set", "address",
 		"name="+w.q(ifName), "static", ip, mask, "none",
@@ -29,9 +36,20 @@ func (w *v4Wrapper) SetAddressStatic(ifName, ip, mask string) error {
 }
 
 func (w *v4Wrapper) SetAddressWithGateway(ifName, ip, mask, gw string, metric int) error {
+	p := net.ParseIP(ip)
+	if p == nil || p.To4() == nil {
+		return fmt.Errorf("SetAddressWithGateway: ip is not IPv4: %q", ip)
+	}
+	if m := net.ParseIP(mask); m == nil || m.To4() == nil {
+		return fmt.Errorf("SetAddressWithGateway: mask is not dotted IPv4: %q", mask)
+	}
+	g := net.ParseIP(gw)
+	if g == nil || g.To4() == nil {
+		return fmt.Errorf("SetAddressWithGateway: gateway is not IPv4: %q", gw)
+	}
 	out, err := w.commander.CombinedOutput(
 		"netsh", "interface", "ip", "set", "address",
-		"name="+w.q(ifName), "static", ip, mask, gw, strconv.Itoa(metric),
+		"name="+w.q(ifName), "static", ip, mask, gw, strconv.Itoa(max(metric, 1)),
 	)
 	if err != nil {
 		return fmt.Errorf("SetAddressWithGateway error: %v, output: %s", err, out)
@@ -92,6 +110,10 @@ func (w *v4Wrapper) SetMTU(ifName string, mtu int) error {
 }
 
 func (w *v4Wrapper) AddRoutePrefix(destinationPrefix, ifName string, metric int) error {
+	ip, _, err := net.ParseCIDR(destinationPrefix)
+	if err != nil || ip.To4() == nil {
+		return fmt.Errorf("bad IPv4 prefix: %q", destinationPrefix)
+	}
 	idx, idxErr := w.ifIndexOf(ifName)
 	if idxErr != nil {
 		return idxErr
@@ -100,7 +122,8 @@ func (w *v4Wrapper) AddRoutePrefix(destinationPrefix, ifName string, metric int)
 		"netsh", "interface", "ipv4", "add", "route",
 		destinationPrefix,
 		"interface="+strconv.Itoa(idx),
-		"metric="+strconv.Itoa(metric),
+		"nexthop=0.0.0.0",
+		"metric="+strconv.Itoa(max(metric, 1)),
 		"store=active",
 	)
 	if err != nil {
@@ -118,6 +141,7 @@ func (w *v4Wrapper) DeleteRoutePrefix(destinationPrefix, ifName string) error {
 		"netsh", "interface", "ipv4", "delete", "route",
 		destinationPrefix,
 		"interface="+strconv.Itoa(idx),
+		"nexthop=0.0.0.0",
 	)
 	if err != nil {
 		return fmt.Errorf("DeleteRoutePrefix(%s) error: %v, output: %s", destinationPrefix, err, out)
@@ -145,6 +169,10 @@ func (w *v4Wrapper) DeleteDefaultRoute(ifName string) error {
 }
 
 func (w *v4Wrapper) AddHostRouteViaGateway(hostIP, ifName, gateway string, metric int) error {
+	g := net.ParseIP(gateway)
+	if g == nil || g.To4() == nil {
+		return fmt.Errorf("AddHostRouteViaGateway: gateway is not IPv4: %q", gateway)
+	}
 	idx, idxErr := w.ifIndexOf(ifName)
 	if idxErr != nil {
 		return idxErr
@@ -158,7 +186,7 @@ func (w *v4Wrapper) AddHostRouteViaGateway(hostIP, ifName, gateway string, metri
 		host + "/32",
 		"interface=" + strconv.Itoa(idx),
 		"nexthop=" + gateway,
-		"metric=" + strconv.Itoa(metric),
+		"metric=" + strconv.Itoa(max(metric, 1)),
 		"store=active",
 	}
 	out, err := w.commander.CombinedOutput("netsh", args...)
@@ -182,7 +210,7 @@ func (w *v4Wrapper) AddHostRouteOnLink(hostIP, ifName string, metric int) error 
 		host + "/32",
 		"interface=" + strconv.Itoa(idx),
 		"nexthop=0.0.0.0",
-		"metric=" + strconv.Itoa(metric),
+		"metric=" + strconv.Itoa(max(metric, 1)),
 		"store=active",
 	}
 	out, err := w.commander.CombinedOutput("netsh", args...)
@@ -201,7 +229,10 @@ func (w *v4Wrapper) AddDefaultSplitRoutes(ifName string, metric int) error {
 	for _, p := range halves {
 		out, err := w.commander.CombinedOutput(
 			"netsh", "interface", "ipv4", "add", "route",
-			p, "interface="+strconv.Itoa(idx), "metric="+strconv.Itoa(metric), "store=active",
+			p, "interface="+strconv.Itoa(idx),
+			"nexthop=0.0.0.0",
+			"metric="+strconv.Itoa(max(metric, 1)),
+			"store=active",
 		)
 		if err != nil {
 			return fmt.Errorf("AddDefaultSplitRoutes(v4 %s) error: %v, output: %s", p, err, out)

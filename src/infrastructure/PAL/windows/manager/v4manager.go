@@ -5,6 +5,7 @@ package manager
 import (
 	"fmt"
 	"net"
+	"strings"
 
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/windows"
@@ -44,6 +45,15 @@ func newV4Manager(
 // Safe order: create adapter → host route to server → assign IP → split default → MTU → DNS.
 // On any error after adapter creation we call DisposeDevices() to leave the host clean.
 func (m *v4Manager) CreateDevice() (tun.Device, error) {
+	if strings.TrimSpace(m.s.InterfaceName) == "" {
+		return nil, fmt.Errorf("empty InterfaceName")
+	}
+	if net.ParseIP(m.s.ConnectionIP) == nil {
+		return nil, fmt.Errorf("invalid ConnectionIP: %q", m.s.ConnectionIP)
+	}
+	if _, _, err := net.ParseCIDR(m.s.InterfaceIPCIDR); err != nil {
+		return nil, fmt.Errorf("invalid InterfaceIPCIDR: %q", m.s.InterfaceIPCIDR)
+	}
 	if net.ParseIP(m.s.InterfaceAddress).To4() == nil {
 		return nil, fmt.Errorf("v4Manager requires IPv4 InterfaceAddress, got %q", m.s.InterfaceAddress)
 	}
@@ -97,35 +107,17 @@ func (m *v4Manager) createTunDevice() (tun.Device, error) {
 	return dev, nil
 }
 
-// addStaticRouteToServer ensures a host route (/32) for the tunnel server exists,
-// choosing on-link if the server is in any local IPv4 subnet, otherwise via the
-// default IPv4 gateway/interface.
 func (m *v4Manager) addStaticRouteToServer() error {
-	gateway, ifName, _, err := m.route.DefaultRoute()
+	_ = m.route.Delete(m.s.ConnectionIP)
+	gw, ifName, _, _, err := m.route.BestRoute(m.s.ConnectionIP)
 	if err != nil {
 		return err
 	}
-	// Refresh any stale host route.
-	_ = m.route.Delete(m.s.ConnectionIP)
-
-	serverIP := net.ParseIP(m.s.ConnectionIP)
-	if alt, ok := m.onLinkInterfaceName(serverIP); ok {
-		if err := m.netsh.AddHostRouteOnLink(m.s.ConnectionIP, alt, 1); err != nil {
-			return fmt.Errorf("add on-link host route: %w", err)
-		}
-		return nil
+	if gw == "" {
+		// on-link
+		return m.netsh.AddHostRouteOnLink(m.s.ConnectionIP, ifName, 1)
 	}
-	if gateway != "" {
-		if err := m.netsh.AddHostRouteViaGateway(m.s.ConnectionIP, ifName, gateway, 1); err != nil {
-			return fmt.Errorf("add host route via gw: %w", err)
-		}
-		return nil
-	}
-	// No explicit gateway (ICS/bridges cases) — best-effort on-link via default IF.
-	if err := m.netsh.AddHostRouteOnLink(m.s.ConnectionIP, ifName, 1); err != nil {
-		return fmt.Errorf("add on-link host route (fallback): %w", err)
-	}
-	return nil
+	return m.netsh.AddHostRouteViaGateway(m.s.ConnectionIP, ifName, gw, 1)
 }
 
 // onLinkInterfaceName returns the name of an interface whose IPv4 prefix contains 'server'.
@@ -134,16 +126,33 @@ func (m *v4Manager) onLinkInterfaceName(server net.IP) (string, bool) {
 	if srv4 == nil {
 		return "", false
 	}
-	ifaces, _ := net.Interfaces()
-	for _, it := range ifaces {
-		addrs, _ := it.Addrs()
-		for _, a := range addrs {
+	iFaces, _ := net.Interfaces()
+	for _, iFace := range iFaces {
+		if !m.isCandidateIF(iFace, m.s.InterfaceName) {
+			continue
+		}
+		addresses, _ := iFace.Addrs()
+		for _, a := range addresses {
 			if ipn, ok := a.(*net.IPNet); ok && ipn.IP.To4() != nil && ipn.Contains(srv4) {
-				return it.Name, true
+				return iFace.Name, true
 			}
 		}
 	}
 	return "", false
+}
+
+func (m *v4Manager) isCandidateIF(it net.Interface, selfName string) bool {
+	// Only UP, non-loopback, and not our own TUN
+	if (it.Flags & net.FlagUp) == 0 {
+		return false
+	}
+	if (it.Flags & net.FlagLoopback) != 0 {
+		return false
+	}
+	if it.Name == selfName {
+		return false
+	}
+	return true
 }
 
 // assignIPToTunDevice validates IPv4 address ∈ CIDR and applies it.
@@ -164,7 +173,6 @@ func (m *v4Manager) assignIPToTunDevice() error {
 
 // setRouteToTunDevice replaces any existing default with split default (0.0.0.0/1, 128.0.0.0/1).
 func (m *v4Manager) setRouteToTunDevice() error {
-	_ = m.netsh.DeleteDefaultRoute(m.s.InterfaceName)
 	_ = m.netsh.DeleteDefaultSplitRoutes(m.s.InterfaceName)
 	if err := m.netsh.AddDefaultSplitRoutes(m.s.InterfaceName, 1); err != nil {
 		_ = m.route.Delete(m.s.ConnectionIP)
@@ -178,6 +186,9 @@ func (m *v4Manager) setMTUToTunDevice() error {
 	mtu := m.s.MTU
 	if mtu == 0 {
 		mtu = settings.SafeMTU
+	}
+	if mtu < settings.MinimumIPv4MTU {
+		mtu = settings.MinimumIPv4MTU
 	}
 	if err := m.netsh.SetMTU(m.s.InterfaceName, mtu); err != nil {
 		_ = m.route.Delete(m.s.ConnectionIP)

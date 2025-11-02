@@ -5,8 +5,8 @@ package manager
 import (
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
-
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/windows"
 	"tungo/infrastructure/PAL/windows/network_tools/ipconfig"
@@ -44,6 +44,15 @@ func newV6Manager(
 // CreateDevice creates/configures the TUN adapter and system routes/DNS for IPv6.
 // Safe order mirrors v4 with IPv6-specific details.
 func (m *v6Manager) CreateDevice() (tun.Device, error) {
+	if strings.TrimSpace(m.s.InterfaceName) == "" {
+		return nil, fmt.Errorf("empty InterfaceName")
+	}
+	if net.ParseIP(m.s.ConnectionIP) == nil {
+		return nil, fmt.Errorf("invalid ConnectionIP: %q", m.s.ConnectionIP)
+	}
+	if _, _, err := net.ParseCIDR(m.s.InterfaceIPCIDR); err != nil {
+		return nil, fmt.Errorf("invalid InterfaceIPCIDR: %q", m.s.InterfaceIPCIDR)
+	}
 	if net.ParseIP(m.s.InterfaceAddress).To4() != nil {
 		return nil, fmt.Errorf("v6Manager requires IPv6 InterfaceAddress, got %q", m.s.InterfaceAddress)
 	}
@@ -96,34 +105,17 @@ func (m *v6Manager) createTunDevice() (tun.Device, error) {
 	return dev, nil
 }
 
-// addStaticRouteToServer ensures a host route (/128) for the tunnel server exists,
-// choosing on-link if the server is in any local IPv6 prefix, otherwise via the
-// default IPv6 gateway/interface.
 func (m *v6Manager) addStaticRouteToServer() error {
-	gateway, ifName, _, err := m.route.DefaultRoute()
+	_ = m.route.Delete(m.s.ConnectionIP)
+	gw, ifName, _, _, err := m.route.BestRoute(m.s.ConnectionIP)
 	if err != nil {
 		return err
 	}
-	_ = m.route.Delete(m.s.ConnectionIP)
-
-	srvIP := net.ParseIP(m.s.ConnectionIP)
-	if alt, ok := m.onLinkInterfaceName(srvIP); ok {
-		if err := m.netsh.AddHostRouteOnLink(m.s.ConnectionIP, alt, 1); err != nil {
-			return fmt.Errorf("add on-link host route: %w", err)
-		}
-		return nil
+	if gw == "" {
+		// on-link
+		return m.netsh.AddHostRouteOnLink(m.s.ConnectionIP, ifName, 1)
 	}
-	if gateway != "" {
-		if err := m.netsh.AddHostRouteViaGateway(m.s.ConnectionIP, ifName, gateway, 1); err != nil {
-			return fmt.Errorf("add host route via gw: %w", err)
-		}
-		return nil
-	}
-	// No explicit gateway (ICS/bridges cases) — best-effort on-link via default IF.
-	if err := m.netsh.AddHostRouteOnLink(m.s.ConnectionIP, ifName, 1); err != nil {
-		return fmt.Errorf("add on-link host route (fallback): %w", err)
-	}
-	return nil
+	return m.netsh.AddHostRouteViaGateway(m.s.ConnectionIP, ifName, gw, 1)
 }
 
 // onLinkInterfaceName returns the name of an interface whose IPv6 prefix contains 'server'.
@@ -131,19 +123,33 @@ func (m *v6Manager) onLinkInterfaceName(server net.IP) (string, bool) {
 	if server == nil || server.To4() != nil {
 		return "", false
 	}
-	ifaces, _ := net.Interfaces()
-	for _, it := range ifaces {
-		if (it.Flags & net.FlagUp) == 0 {
+	iFaces, _ := net.Interfaces()
+	for _, iFace := range iFaces {
+		if !m.isCandidateIF(iFace, m.s.InterfaceName) {
 			continue
 		}
-		addrs, _ := it.Addrs()
-		for _, a := range addrs {
+		addresses, _ := iFace.Addrs()
+		for _, a := range addresses {
 			if ipn, ok := a.(*net.IPNet); ok && ipn.IP.To4() == nil && ipn.Contains(server) {
-				return it.Name, true
+				return iFace.Name, true
 			}
 		}
 	}
 	return "", false
+}
+
+func (m *v6Manager) isCandidateIF(it net.Interface, selfName string) bool {
+	// Only UP, non-loopback, and not our own TUN
+	if (it.Flags & net.FlagUp) == 0 {
+		return false
+	}
+	if (it.Flags & net.FlagLoopback) != 0 {
+		return false
+	}
+	if it.Name == selfName {
+		return false
+	}
+	return true
 }
 
 // assignIPToTunDevice validates IPv6 address ∈ CIDR and applies it via prefix length.
@@ -154,13 +160,8 @@ func (m *v6Manager) assignIPToTunDevice() error {
 		_ = m.route.Delete(m.s.ConnectionIP)
 		return fmt.Errorf("address %s not in %s", m.s.InterfaceAddress, m.s.InterfaceIPCIDR)
 	}
-	parts := strings.Split(m.s.InterfaceIPCIDR, "/")
-	if len(parts) != 2 {
-		_ = m.route.Delete(m.s.ConnectionIP)
-		return fmt.Errorf("invalid IPv6 CIDR: %s", m.s.InterfaceIPCIDR)
-	}
-	prefix := parts[1]
-	if err := m.netsh.SetAddressStatic(m.s.InterfaceName, m.s.InterfaceAddress, prefix); err != nil {
+	prefix, _ := nw.Mask.Size()
+	if err := m.netsh.SetAddressStatic(m.s.InterfaceName, m.s.InterfaceAddress, strconv.Itoa(prefix)); err != nil {
 		_ = m.route.Delete(m.s.ConnectionIP)
 		return err
 	}
@@ -169,7 +170,6 @@ func (m *v6Manager) assignIPToTunDevice() error {
 
 // setRouteToTunDevice replaces any existing default with IPv6 split default (::/1, 8000::/1).
 func (m *v6Manager) setRouteToTunDevice() error {
-	_ = m.netsh.DeleteDefaultRoute(m.s.InterfaceName)
 	_ = m.netsh.DeleteDefaultSplitRoutes(m.s.InterfaceName)
 	if err := m.netsh.AddDefaultSplitRoutes(m.s.InterfaceName, 1); err != nil {
 		_ = m.route.Delete(m.s.ConnectionIP)
@@ -182,6 +182,9 @@ func (m *v6Manager) setMTUToTunDevice() error {
 	mtu := m.s.MTU
 	if mtu == 0 {
 		mtu = settings.SafeMTU
+	}
+	if mtu < settings.MinimumIPv6MTU {
+		mtu = settings.MinimumIPv6MTU
 	}
 	if err := m.netsh.SetMTU(m.s.InterfaceName, mtu); err != nil {
 		_ = m.route.Delete(m.s.ConnectionIP)
