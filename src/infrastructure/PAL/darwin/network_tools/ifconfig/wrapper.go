@@ -26,7 +26,7 @@ func (w *Wrapper) LinkAddrAdd(ifName, cidr string) error {
 	ipAddr, prefix := parts[0], parts[1]
 	netmask := w.prefixToNetmask(prefix)
 
-	if out, err := w.commander.CombinedOutput("ifconfig", ifName, "inet", ipAddr, ipAddr, "netmask", netmask); err != nil {
+	if out, err := w.commander.CombinedOutput("ifconfig", ifName, "inet", ipAddr, ipAddr, "netmask", netmask, "up"); err != nil {
 		return fmt.Errorf("failed to assign IP to %s: %v (%s)", ifName, err, out)
 	}
 	return nil
@@ -41,11 +41,30 @@ func (w *Wrapper) prefixToNetmask(prefix string) string {
 	return fmt.Sprintf("%d.%d.%d.%d", mask[0], mask[1], mask[2], mask[3])
 }
 
+// LinkAddrAddV6 assigns an IPv6 address to the interface and brings it UP.
+// For UTUN (p2p) /128 is the safest default.
+func (w *Wrapper) LinkAddrAddV6(ifName, cidr string) error {
+	parts := strings.Split(cidr, "/")
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid CIDR: %s", cidr)
+	}
+	ip := parts[0]
+	pfx := parts[1]
+	p, err := strconv.Atoi(pfx)
+	if err != nil || p < 0 || p > 128 {
+		p = 128
+	}
+	if out, err := w.commander.CombinedOutput("ifconfig", ifName, "inet6", ip, "prefixlen", strconv.Itoa(p), "up"); err != nil {
+		return fmt.Errorf("failed to assign IPv6 to %s: %v (%s)", ifName, err, out)
+	}
+	return nil
+}
+
 func (w *Wrapper) SetMTU(ifName string, mtu int) error {
 	if mtu <= 0 {
 		return nil
 	}
-	if out, err := w.commander.CombinedOutput("ifconfig", ifName, "mtu", fmt.Sprintf("%s", strconv.Itoa(mtu))); err != nil {
+	if out, err := w.commander.CombinedOutput("ifconfig", ifName, "mtu", strconv.Itoa(mtu)); err != nil {
 		return fmt.Errorf("ifconfig set mtu failed: %w; output: %s", err, string(out))
 	}
 	return nil

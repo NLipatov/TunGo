@@ -17,9 +17,18 @@ type Contract interface {
 	// DelSplit removes the two half-routes via dev.
 	DelSplit(dev string) error
 
+	// AddSplitV6 installs the two half-routes {::/1 and 8000::/1} via dev
+	AddSplitV6(dev string) error
+
+	// DelSplitV6 removes the two half-routes via dev.
+	DelSplitV6(dev string) error
+
 	// Del deletes any route pointing at destIP.
 	Del(destIP string) error
 
-	// DefaultGateway queries the system’s default gateway IP.
+	// DefaultGateway queries the system’s default IPv4 gateway IP.
 	DefaultGateway() (string, error)
+
+	// DefaultGatewayV6 queries the system’s default IPv6 gateway IP.
+	DefaultGatewayV6() (string, error)
 }
