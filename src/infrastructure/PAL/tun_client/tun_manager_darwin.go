@@ -20,8 +20,6 @@ type PlatformTunManager struct {
 	route       route.Contract
 	ifConfig    ifconfig.Contract
 	devName     string
-	pinnedGWv4  string
-	pinnedGWv6  string
 	installedV4 bool
 	installedV6 bool
 }
@@ -75,12 +73,6 @@ func (t *PlatformTunManager) CreateDevice() (tun.Device, error) {
 	name, nameErr := dev.Name()
 	if nameErr != nil {
 		return nil, fmt.Errorf("could not resolve created tun name: %w", nameErr)
-	}
-	if gw, _ := t.route.DefaultGateway(); gw != "" {
-		t.pinnedGWv4 = gw
-	}
-	if gw6, _ := t.route.DefaultGatewayV6(); gw6 != "" {
-		t.pinnedGWv6 = gw6
 	}
 	t.dev = dev
 	fmt.Printf("created TUN interface: %s\n", name)
@@ -156,12 +148,8 @@ func (t *PlatformTunManager) DisposeDevices() error {
 	// Remove split routes BEFORE closing the device.
 	devName, devNameErr := t.dev.Name()
 	if devNameErr == nil {
-		if t.installedV4 && devName != "" {
-			_ = t.route.DelSplit(devName)
-		}
-		if t.installedV6 && devName != "" {
-			_ = t.route.DelSplitV6(devName)
-		}
+		_ = t.route.DelSplit(devName)
+		_ = t.route.DelSplitV6(devName)
 	} else {
 		log.Printf("could not get tun name: %v", devNameErr)
 	}
@@ -171,13 +159,6 @@ func (t *PlatformTunManager) DisposeDevices() error {
 	t.deleteRoute("TCP", t.conf.TCPSettings.ConnectionIP)
 	t.deleteRoute("WS", t.conf.WSSettings.ConnectionIP)
 
-	// Delete pinned route to default gateway if present
-	if t.pinnedGWv4 != "" {
-		_ = t.route.Del(t.pinnedGWv4)
-	}
-	if t.pinnedGWv6 != "" {
-		_ = t.route.Del(t.pinnedGWv6)
-	}
 	_ = t.dev.Close()
 	t.dev = nil
 	return nil
