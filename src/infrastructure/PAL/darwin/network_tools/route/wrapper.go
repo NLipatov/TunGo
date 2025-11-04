@@ -46,33 +46,37 @@ func (w *Wrapper) Get(destIP string) error {
 		return err
 	}
 
+	// Decide whether we should fallback to default route.
 	isLoop := strings.HasPrefix(gateway, "127.") || gateway == "::1"
-	hasRealGW := gateway != "" && !isLoop && !strings.HasPrefix(gateway, "link#")
-	if !hasRealGW {
+	// Fallback ONLY if we truly have no usable route info:
+	// - both gateway and iface are empty, OR
+	// - gateway is loopback.
+	if (gateway == "" && iface == "") || isLoop {
 		if gwDef, ifDef, err2 := parseRoute("default", v6); err2 == nil {
 			isLoopDef := strings.HasPrefix(gwDef, "127.") || gwDef == "::1"
-			if gwDef != "" && !isLoopDef && !strings.HasPrefix(gwDef, "link#") {
+			if gwDef != "" && !isLoopDef {
 				gateway, iface = gwDef, ifDef
-				hasRealGW = true
 			}
 		}
 	}
 
-	if v6 && strings.HasPrefix(gateway, "fe80:") && !strings.Contains(gateway, "%") && iface != "" {
-		gateway = gateway + "%" + iface
+	// If we have a real gateway (NOT link#), route via it.
+	if gateway != "" && !strings.HasPrefix(gateway, "link#") {
+		// Ensure scope for link-local IPv6 gateways.
+		if v6 && strings.HasPrefix(gateway, "fe80:") && !strings.Contains(gateway, "%") && iface != "" {
+			gateway = gateway + "%" + iface
+		}
+		// IMPORTANT: we do NOT "pin" the GW (no host route to gw) – it's unnecessary and brittle.
+		return w.AddViaGateway(destIP, gateway)
 	}
 
-	switch {
-	case hasRealGW:
-		if err := w.Add(gateway, iface); err != nil {
-			return fmt.Errorf("pin gateway %s via %s failed: %w", gateway, iface, err)
-		}
-		return w.AddViaGateway(destIP, gateway)
-	case iface != "":
+	// If we don't have a usable gateway but we DO have an interface, this is an on-link host:
+	// add a route directly via the interface.
+	if iface != "" {
 		return w.Add(destIP, iface)
-	default:
-		return fmt.Errorf("no route found for %s", destIP)
 	}
+
+	return fmt.Errorf("no route found for %s", destIP)
 }
 
 func (w *Wrapper) Add(ip, iface string) error {
