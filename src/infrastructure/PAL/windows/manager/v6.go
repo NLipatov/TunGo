@@ -58,23 +58,23 @@ func (m *v6Manager) CreateDevice() (tun.Device, error) {
 	}
 	m.tun = tunDev
 
-	if err := m.addStaticRouteToServer(); err != nil {
+	if err = m.addStaticRouteToServer(); err != nil {
 		_ = m.DisposeDevices()
 		return nil, err
 	}
-	if err := m.assignIPToTunDevice(); err != nil {
+	if err = m.assignIPToTunDevice(); err != nil {
 		_ = m.DisposeDevices()
 		return nil, err
 	}
-	if err := m.setRouteToTunDevice(); err != nil {
+	if err = m.setRouteToTunDevice(); err != nil {
 		_ = m.DisposeDevices()
 		return nil, err
 	}
-	if err := m.setMTUToTunDevice(); err != nil {
+	if err = m.setMTUToTunDevice(); err != nil {
 		_ = m.DisposeDevices()
 		return nil, err
 	}
-	if err := m.setDNSToTunDevice(); err != nil {
+	if err = m.setDNSToTunDevice(); err != nil {
 		_ = m.DisposeDevices()
 		return nil, err
 	}
@@ -98,7 +98,7 @@ func (m *v6Manager) createTunDevice() (tun.Device, error) {
 }
 
 func (m *v6Manager) addStaticRouteToServer() error {
-	_ = m.netConfig.Delete(m.s.ConnectionIP)
+	_ = m.netConfig.DeleteRoute(m.s.ConnectionIP)
 	gw, ifName, _, _, err := m.netConfig.BestRoute(m.s.ConnectionIP)
 	if err != nil {
 		return err
@@ -149,12 +149,12 @@ func (m *v6Manager) assignIPToTunDevice() error {
 	ip := net.ParseIP(m.s.InterfaceAddress)
 	_, nw, _ := net.ParseCIDR(m.s.InterfaceIPCIDR)
 	if ip == nil || ip.To4() != nil || nw == nil || !nw.Contains(ip) {
-		_ = m.netConfig.Delete(m.s.ConnectionIP)
+		_ = m.netConfig.DeleteRoute(m.s.ConnectionIP)
 		return fmt.Errorf("address %s not in %s", m.s.InterfaceAddress, m.s.InterfaceIPCIDR)
 	}
 	prefix, _ := nw.Mask.Size()
 	if err := m.netConfig.SetAddressStatic(m.s.InterfaceName, m.s.InterfaceAddress, strconv.Itoa(prefix)); err != nil {
-		_ = m.netConfig.Delete(m.s.ConnectionIP)
+		_ = m.netConfig.DeleteRoute(m.s.ConnectionIP)
 		return err
 	}
 	return nil
@@ -164,7 +164,7 @@ func (m *v6Manager) assignIPToTunDevice() error {
 func (m *v6Manager) setRouteToTunDevice() error {
 	_ = m.netConfig.DeleteDefaultSplitRoutes(m.s.InterfaceName)
 	if err := m.netConfig.AddDefaultSplitRoutes(m.s.InterfaceName, 1); err != nil {
-		_ = m.netConfig.Delete(m.s.ConnectionIP)
+		_ = m.netConfig.DeleteRoute(m.s.ConnectionIP)
 		return err
 	}
 	return nil
@@ -179,17 +179,18 @@ func (m *v6Manager) setMTUToTunDevice() error {
 		mtu = settings.MinimumIPv6MTU
 	}
 	if err := m.netConfig.SetMTU(m.s.InterfaceName, mtu); err != nil {
-		_ = m.netConfig.Delete(m.s.ConnectionIP)
+		_ = m.netConfig.DeleteRoute(m.s.ConnectionIP)
 		return err
 	}
 	return nil
 }
 
 func (m *v6Manager) setDNSToTunDevice() error {
+	// ToDo: Move dns server addresses to configuration
 	if err := m.netConfig.SetDNS(m.s.InterfaceName,
 		[]string{"2606:4700:4700::1111", "2001:4860:4860::8888"},
 	); err != nil {
-		_ = m.netConfig.Delete(m.s.ConnectionIP)
+		_ = m.netConfig.DeleteRoute(m.s.ConnectionIP)
 		return err
 	}
 	_ = m.netConfig.FlushDNS()
@@ -198,7 +199,8 @@ func (m *v6Manager) setDNSToTunDevice() error {
 
 // DisposeDevices reverses CreateDevice in safe order.
 func (m *v6Manager) DisposeDevices() error {
-	_ = m.netConfig.Delete(m.s.ConnectionIP)
+	_ = m.netConfig.DeleteDefaultSplitRoutes(m.s.InterfaceName)
+	_ = m.netConfig.DeleteRoute(m.s.ConnectionIP)
 	if m.tun != nil {
 		_ = m.tun.Close()
 	}

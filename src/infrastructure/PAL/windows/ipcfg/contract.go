@@ -14,7 +14,7 @@ type Contract interface {
 	AddHostRouteOnLink(hostIP, ifName string, metric int) error
 	AddDefaultSplitRoutes(ifName string, metric int) error
 	DeleteDefaultSplitRoutes(ifName string) error
-	Delete(destinationIP string) error
+	DeleteRoute(destination string) error
 	Print(destinationIP string) ([]byte, error)
 	BestRoute(dest string) (string, string, int, int, error)
 }

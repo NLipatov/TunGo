@@ -9,13 +9,26 @@ import (
 	"net"
 	"net/netip"
 	"strings"
+	"tungo/infrastructure/PAL/windows/ipcfg/nif"
+)
+
+const (
+	// v4SplitOne covers half of IPv4 address space
+	// (addresses between 0.0.0.0 and 127.255.255.255)
+	v4SplitOne = "0.0.0.0/1"
+	// v4SplitTwo v4SplitOne covers half of IPv4 address space
+	// (addresses between 128.0.0.0 and 255.255.255.255)
+	v4SplitTwo = "128.0.0.0/1"
 )
 
 type v4 struct {
+	resolver nif.Contract
 }
 
-func newV4() Contract {
-	return &v4{}
+func newV4(resolver nif.Contract) Contract {
+	return &v4{
+		resolver: resolver,
+	}
 }
 
 func (v *v4) FlushDNS() error {
@@ -31,11 +44,11 @@ func (v *v4) FlushDNS() error {
 	return nil
 }
 func (v *v4) SetAddressStatic(ifName, ip, mask string) error {
-	luid, err := luidByName(ifName)
+	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
 	}
-	pfx, err := dottedMaskToPrefix(ip, mask)
+	pfx, err := v.dottedMaskToPrefix(ip, mask)
 	if err != nil {
 		return fmt.Errorf("SetAddressStatic: %w", err)
 	}
@@ -43,26 +56,55 @@ func (v *v4) SetAddressStatic(ifName, ip, mask string) error {
 }
 
 func (v *v4) SetAddressWithGateway(ifName, ip, mask, gw string, metric int) error {
-	luid, err := luidByName(ifName)
+	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
 	}
-	pfx, err := dottedMaskToPrefix(ip, mask)
+	pfx, err := v.dottedMaskToPrefix(ip, mask)
 	if err != nil {
 		return fmt.Errorf("SetAddressWithGateway: %w", err)
 	}
-	if err := luid.SetIPAddressesForFamily(winipcfg.AddressFamily(windows.AF_INET), []netip.Prefix{pfx}); err != nil {
+	if err = luid.SetIPAddressesForFamily(
+		winipcfg.AddressFamily(windows.AF_INET),
+		[]netip.Prefix{
+			pfx,
+		},
+	); err != nil {
 		return fmt.Errorf("SetAddressWithGateway: set ip: %w", err)
 	}
 	gwAddr, gwAddrErr := netip.ParseAddr(gw)
 	if gwAddrErr != nil || !gwAddr.Is4() {
 		return fmt.Errorf("SetAddressWithGateway: gateway is not IPv4: %q", gw)
 	}
-	return luid.AddRoute(netip.PrefixFrom(netip.IPv4Unspecified(), 0), gwAddr, uint32(min(1, metric)))
+	return luid.AddRoute(
+		netip.PrefixFrom(netip.IPv4Unspecified(), 0),
+		gwAddr,
+		uint32(min(1, metric)),
+	)
+}
+
+func (v *v4) dottedMaskToPrefix(ipStr, maskStr string) (netip.Prefix, error) {
+	ip := net.ParseIP(ipStr)
+	if ip == nil || ip.To4() == nil {
+		return netip.Prefix{}, fmt.Errorf("ip is not IPv4: %q", ipStr)
+	}
+	m := net.ParseIP(maskStr)
+	if m == nil || m.To4() == nil {
+		return netip.Prefix{}, fmt.Errorf("mask is not dotted IPv4: %q", maskStr)
+	}
+	ones, bits := net.IPMask(m.To4()).Size()
+	if bits != 32 || ones < 0 || ones > 32 {
+		return netip.Prefix{}, fmt.Errorf("bad mask: %q", maskStr)
+	}
+	addr, addrErr := netip.ParseAddr(ip.To4().String())
+	if addrErr != nil {
+		return netip.Prefix{}, fmt.Errorf("parse addr failed: %q", ipStr)
+	}
+	return netip.PrefixFrom(addr, ones), nil
 }
 
 func (v *v4) DeleteAddress(ifName, interfaceAddress string) error {
-	luid, err := luidByName(ifName)
+	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
 	}
@@ -78,7 +120,7 @@ func (v *v4) DeleteAddress(ifName, interfaceAddress string) error {
 }
 
 func (v *v4) SetDNS(ifName string, dnsServers []string) error {
-	luid, err := luidByName(ifName)
+	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
 	}
@@ -107,32 +149,32 @@ func (v *v4) SetDNS(ifName string, dnsServers []string) error {
 }
 
 func (v *v4) SetMTU(ifName string, mtu int) error {
-	luid, err := luidByName(ifName)
+	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
 	}
 	if mtu <= 0 {
 		return fmt.Errorf("SetMTU: invalid mtu %d", mtu)
 	}
-	iface, err := luid.IPInterface(winipcfg.AddressFamily(windows.AF_INET))
+	iFace, err := luid.IPInterface(winipcfg.AddressFamily(windows.AF_INET))
 	if err != nil {
 		return err
 	}
-	iface.NLMTU = uint32(mtu)
+	iFace.NLMTU = uint32(mtu)
 	// Make metric explicit & low-ish if not set, to avoid auto-metric surprises.
-	iface.UseAutomaticMetric = false
-	if iface.Metric == 0 {
-		iface.Metric = 1
+	iFace.UseAutomaticMetric = false
+	if iFace.Metric == 0 {
+		iFace.Metric = 1
 	}
-	return iface.Set()
+	return iFace.Set()
 }
 
 func (v *v4) AddRoutePrefix(destinationPrefix, ifName string, metric int) error {
-	luid, err := luidByName(ifName)
+	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
 	}
-	pfx, err := parseIPv4Prefix(destinationPrefix)
+	pfx, err := v.parseIPv4Prefix(destinationPrefix)
 	if err != nil {
 		return err
 	}
@@ -141,19 +183,27 @@ func (v *v4) AddRoutePrefix(destinationPrefix, ifName string, metric int) error 
 }
 
 func (v *v4) DeleteRoutePrefix(destinationPrefix, ifName string) error {
-	luid, err := luidByName(ifName)
+	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
 	}
-	pfx, err := parseIPv4Prefix(destinationPrefix)
+	pfx, err := v.parseIPv4Prefix(destinationPrefix)
 	if err != nil {
 		return err
 	}
 	return luid.DeleteRoute(pfx, netip.IPv4Unspecified())
 }
 
+func (v *v4) parseIPv4Prefix(cidr string) (netip.Prefix, error) {
+	pfx, pfxErr := netip.ParsePrefix(strings.TrimSpace(cidr))
+	if pfxErr != nil || !pfx.Addr().Is4() {
+		return netip.Prefix{}, fmt.Errorf("bad IPv4 prefix: %q", cidr)
+	}
+	return pfx, nil
+}
+
 func (v *v4) DeleteDefaultRoute(ifName string) error {
-	luid, err := luidByName(ifName)
+	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
 	}
@@ -174,7 +224,7 @@ func (v *v4) DeleteDefaultRoute(ifName string) error {
 }
 
 func (v *v4) AddHostRouteViaGateway(hostIP, ifName, gateway string, metric int) error {
-	luid, err := luidByName(ifName)
+	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
 	}
@@ -191,7 +241,7 @@ func (v *v4) AddHostRouteViaGateway(hostIP, ifName, gateway string, metric int) 
 }
 
 func (v *v4) AddHostRouteOnLink(hostIP, ifName string, metric int) error {
-	luid, err := luidByName(ifName)
+	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
 	}
@@ -204,30 +254,30 @@ func (v *v4) AddHostRouteOnLink(hostIP, ifName string, metric int) error {
 }
 
 func (v *v4) AddDefaultSplitRoutes(ifName string, metric int) error {
-	luid, err := luidByName(ifName)
+	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
 	}
-	const (
-		p1 = "0.0.0.0/1"
-		p2 = "128.0.0.0/1"
-	)
-	for _, s := range []string{p1, p2} {
+	for _, s := range []string{v4SplitOne, v4SplitTwo} {
 		pfx, _ := netip.ParsePrefix(s) // valid by const
-		if err := luid.AddRoute(pfx, netip.IPv4Unspecified(), uint32(min(1, metric))); err != nil {
-			return fmt.Errorf("AddDefaultSplitRoutes(%s): %w", s, err)
+		if roteErr := luid.AddRoute(
+			pfx,
+			netip.IPv4Unspecified(),
+			uint32(min(1, metric)),
+		); roteErr != nil {
+			return fmt.Errorf("AddDefaultSplitRoutes(%s): %w", s, roteErr)
 		}
 	}
 	return nil
 }
 
 func (v *v4) DeleteDefaultSplitRoutes(ifName string) error {
-	luid, err := luidByName(ifName)
+	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
 	}
 	var last error
-	for _, s := range []string{"0.0.0.0/1", "128.0.0.0/1"} {
+	for _, s := range []string{v4SplitOne, v4SplitTwo} {
 		pfx, _ := netip.ParsePrefix(s)
 		if err := luid.DeleteRoute(pfx, netip.IPv4Unspecified()); err != nil {
 			last = fmt.Errorf("DeleteDefaultSplitRoutes(%s): %w", s, err)
@@ -236,11 +286,11 @@ func (v *v4) DeleteDefaultSplitRoutes(ifName string) error {
 	return last
 }
 
-// Delete removes all IPv4 routes that exactly match dst (host "a.b.c.d" → /32, or CIDR).
-func (v *v4) Delete(dst string) error {
-	pfx, err := v.parseDestPrefixV4(dst)
+// DeleteRoute removes all IPv4 routes that exactly match dst (host "a.b.c.d" → /32, or CIDR).
+func (v *v4) DeleteRoute(destination string) error {
+	pfx, err := v.parseDestPrefixV4(destination)
 	if err != nil {
-		return fmt.Errorf("route delete: %w", err)
+		return fmt.Errorf("DeleteRoute: %w", err)
 	}
 	rows, err := winipcfg.GetIPForwardTable2(winipcfg.AddressFamily(windows.AF_INET))
 	if err != nil {
@@ -257,8 +307,8 @@ func (v *v4) Delete(dst string) error {
 			continue
 		}
 		if dp == pfx {
-			if err := r.Delete(); err != nil {
-				last = err
+			if delErr := r.Delete(); delErr != nil {
+				last = delErr
 				continue
 			}
 			found++
@@ -313,7 +363,7 @@ func (v *v4) Print(t string) ([]byte, error) {
 		if nh.IsValid() && nh.Is4() && !nh.IsUnspecified() {
 			nextHop = nh.String()
 		}
-		alias := displayNameFromLUID(r.InterfaceLUID, r.InterfaceIndex)
+		alias := v.resolver.NetworkInterfaceName(r.InterfaceLUID)
 		line := fmt.Sprintf("%s\t%s\t%s\t%d\t%d\n",
 			dp.String(), nextHop, alias, r.InterfaceIndex, r.Metric)
 		if t == "" || strings.Contains(line, t) {
@@ -370,6 +420,6 @@ func (v *v4) BestRoute(dest string) (string, string, int, int, error) {
 		gw = nh.String()
 	}
 
-	alias := displayNameFromLUID(best.InterfaceLUID, best.InterfaceIndex)
+	alias := v.resolver.NetworkInterfaceName(best.InterfaceLUID)
 	return gw, alias, int(best.InterfaceIndex), int(best.Metric), nil
 }

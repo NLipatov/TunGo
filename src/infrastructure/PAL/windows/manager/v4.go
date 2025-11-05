@@ -36,52 +36,58 @@ func newV4Manager(
 // Safe order: create adapter → host netCfg to server → assign IP → split default → MTU → DNS.
 // On any error after adapter creation we call DisposeDevices() to leave the host clean.
 func (m *v4Manager) CreateDevice() (tun.Device, error) {
-	if strings.TrimSpace(m.s.InterfaceName) == "" {
-		return nil, fmt.Errorf("empty InterfaceName")
+	if sErr := m.validateSettings(); sErr != nil {
+		return nil, sErr
 	}
-	if net.ParseIP(m.s.ConnectionIP) == nil {
-		return nil, fmt.Errorf("invalid ConnectionIP: %q", m.s.ConnectionIP)
-	}
-	if _, _, err := net.ParseCIDR(m.s.InterfaceIPCIDR); err != nil {
-		return nil, fmt.Errorf("invalid InterfaceIPCIDR: %q", m.s.InterfaceIPCIDR)
-	}
-	if net.ParseIP(m.s.InterfaceAddress).To4() == nil {
-		return nil, fmt.Errorf("v4Manager requires IPv4 InterfaceAddress, got %q", m.s.InterfaceAddress)
-	}
-	if net.ParseIP(m.s.ConnectionIP).To4() == nil {
-		return nil, fmt.Errorf("v4Manager requires IPv4 ConnectionIP, got %q", m.s.ConnectionIP)
-	}
-
-	tunDev, err := m.createTunDevice()
+	tunDev, err := m.createOrOpenTunDevice()
 	if err != nil {
 		return nil, err
 	}
 	m.tun = tunDev
-	if err := m.addStaticnetCfgToServer(); err != nil {
+	if err = m.addStaticRouteToServer(); err != nil {
 		_ = m.DisposeDevices()
 		return nil, err
 	}
-	if err := m.assignIPToTunDevice(); err != nil {
+	if err = m.assignIPToTunDevice(); err != nil {
 		_ = m.DisposeDevices()
 		return nil, err
 	}
-	if err := m.setnetCfgToTunDevice(); err != nil {
+	if err = m.setDefaultRouteToTunDevice(); err != nil {
 		_ = m.DisposeDevices()
 		return nil, err
 	}
-	if err := m.setMTUToTunDevice(); err != nil {
+	if err = m.setMTUToTunDevice(); err != nil {
 		_ = m.DisposeDevices()
 		return nil, err
 	}
-	if err := m.setDNSToTunDevice(); err != nil {
+	if err = m.setDNSToTunDevice(); err != nil {
 		_ = m.DisposeDevices()
 		return nil, err
 	}
 	return m.tun, nil
 }
 
-func (m *v4Manager) createTunDevice() (tun.Device, error) {
-	// Create new; if name already taken, try opening existing (idempotent behavior).
+func (m *v4Manager) validateSettings() error {
+	if strings.TrimSpace(m.s.InterfaceName) == "" {
+		return fmt.Errorf("empty InterfaceName")
+	}
+	if net.ParseIP(m.s.ConnectionIP) == nil {
+		return fmt.Errorf("invalid ConnectionIP: %q", m.s.ConnectionIP)
+	}
+	if _, _, err := net.ParseCIDR(m.s.InterfaceIPCIDR); err != nil {
+		return fmt.Errorf("invalid InterfaceIPCIDR: %q", m.s.InterfaceIPCIDR)
+	}
+	if net.ParseIP(m.s.InterfaceAddress).To4() == nil {
+		return fmt.Errorf("v4Manager requires IPv4 InterfaceAddress, got %q", m.s.InterfaceAddress)
+	}
+	if net.ParseIP(m.s.ConnectionIP).To4() == nil {
+		return fmt.Errorf("v4Manager requires IPv4 ConnectionIP, got %q", m.s.ConnectionIP)
+	}
+	return nil
+}
+
+// createOrOpenTunDevice creates or opening existing wintun adapter (idempotent behavior).
+func (m *v4Manager) createOrOpenTunDevice() (tun.Device, error) {
 	adapter, err := wintun.CreateAdapter(m.s.InterfaceName, windows.TunGoTunnelType, nil)
 	if err != nil {
 		if existing, openErr := wintun.OpenAdapter(m.s.InterfaceName); openErr == nil {
@@ -89,16 +95,16 @@ func (m *v4Manager) createTunDevice() (tun.Device, error) {
 		}
 		return nil, fmt.Errorf("create/open adapter: %w", err)
 	}
-	dev, devErr := wtun.NewTUN(adapter)
-	if devErr != nil {
+	tunDev, tunDevErr := wtun.NewTUN(adapter)
+	if tunDevErr != nil {
 		_ = adapter.Close()
-		return nil, devErr
+		return nil, tunDevErr
 	}
-	return dev, nil
+	return tunDev, nil
 }
 
-func (m *v4Manager) addStaticnetCfgToServer() error {
-	_ = m.netCfg.Delete(m.s.ConnectionIP)
+func (m *v4Manager) addStaticRouteToServer() error {
+	_ = m.netCfg.DeleteRoute(m.s.ConnectionIP)
 	gw, ifName, _, _, err := m.netCfg.BestRoute(m.s.ConnectionIP)
 	if err != nil {
 		return err
@@ -148,24 +154,24 @@ func (m *v4Manager) isCandidateIF(it net.Interface, selfName string) bool {
 // assignIPToTunDevice validates IPv4 address ∈ CIDR and applies it.
 func (m *v4Manager) assignIPToTunDevice() error {
 	ip := net.ParseIP(m.s.InterfaceAddress)
-	_, nw, _ := net.ParseCIDR(m.s.InterfaceIPCIDR)
-	if ip == nil || nw == nil || !nw.Contains(ip) {
-		_ = m.netCfg.Delete(m.s.ConnectionIP)
+	_, network, _ := net.ParseCIDR(m.s.InterfaceIPCIDR)
+	if ip == nil || network == nil || !network.Contains(ip) {
+		_ = m.netCfg.DeleteRoute(m.s.ConnectionIP)
 		return fmt.Errorf("address %s not in %s", m.s.InterfaceAddress, m.s.InterfaceIPCIDR)
 	}
-	mask := net.IP(nw.Mask).String() // dotted decimal mask
+	mask := net.IP(network.Mask).String() // dotted decimal mask
 	if err := m.netCfg.SetAddressStatic(m.s.InterfaceName, m.s.InterfaceAddress, mask); err != nil {
-		_ = m.netCfg.Delete(m.s.ConnectionIP)
+		_ = m.netCfg.DeleteRoute(m.s.ConnectionIP)
 		return err
 	}
 	return nil
 }
 
-// setnetCfgToTunDevice replaces any existing default with split default (0.0.0.0/1, 128.0.0.0/1).
-func (m *v4Manager) setnetCfgToTunDevice() error {
+// setDefaultRouteToTunDevice replaces any existing default route with split default route (0.0.0.0/1, 128.0.0.0/1).
+func (m *v4Manager) setDefaultRouteToTunDevice() error {
 	_ = m.netCfg.DeleteDefaultSplitRoutes(m.s.InterfaceName)
 	if err := m.netCfg.AddDefaultSplitRoutes(m.s.InterfaceName, 1); err != nil {
-		_ = m.netCfg.Delete(m.s.ConnectionIP)
+		_ = m.netCfg.DeleteRoute(m.s.ConnectionIP)
 		return err
 	}
 	return nil
@@ -181,7 +187,7 @@ func (m *v4Manager) setMTUToTunDevice() error {
 		mtu = settings.MinimumIPv4MTU
 	}
 	if err := m.netCfg.SetMTU(m.s.InterfaceName, mtu); err != nil {
-		_ = m.netCfg.Delete(m.s.ConnectionIP)
+		_ = m.netCfg.DeleteRoute(m.s.ConnectionIP)
 		return err
 	}
 	return nil
@@ -189,6 +195,7 @@ func (m *v4Manager) setMTUToTunDevice() error {
 
 // setDNSToTunDevice applies v4 DNS resolvers and flushes system cache.
 func (m *v4Manager) setDNSToTunDevice() error {
+	//ToDo: move dns server addresses to configuration
 	if err := m.netCfg.SetDNS(m.s.InterfaceName, []string{"1.1.1.1", "8.8.8.8"}); err != nil {
 		return err
 	}
@@ -198,7 +205,8 @@ func (m *v4Manager) setDNSToTunDevice() error {
 
 // DisposeDevices reverses CreateDevice in safe order.
 func (m *v4Manager) DisposeDevices() error {
-	_ = m.netCfg.Delete(m.s.ConnectionIP)
+	_ = m.netCfg.DeleteDefaultSplitRoutes(m.s.InterfaceName)
+	_ = m.netCfg.DeleteRoute(m.s.ConnectionIP)
 	if m.tun != nil {
 		_ = m.tun.Close()
 	}

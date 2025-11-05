@@ -10,13 +10,24 @@ import (
 	"net/netip"
 	"strconv"
 	"strings"
+	"tungo/infrastructure/PAL/windows/ipcfg/nif"
+)
+
+const (
+	// v6SplitOne covers addresses between :: (0000:0000:0000:0000:0000:0000:0000:0000) and 7fff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+	v6SplitOne = "::/1"
+	// v6SplitTwo covers addresses between 8000:: (8000:0000:0000:0000:0000:0000:0000:0000) and ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+	v6SplitTwo = "8000::/1"
 )
 
 type v6 struct {
+	resolver nif.Contract
 }
 
-func newV6() Contract {
-	return &v6{}
+func newV6(resolver nif.Contract) Contract {
+	return &v6{
+		resolver: resolver,
+	}
 }
 
 func (v *v6) FlushDNS() error {
@@ -33,7 +44,7 @@ func (v *v6) FlushDNS() error {
 }
 
 func (v *v6) SetAddressStatic(ifName, ip, mask string) error {
-	luid, err := luidByName(ifName)
+	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
 	}
@@ -45,7 +56,7 @@ func (v *v6) SetAddressStatic(ifName, ip, mask string) error {
 }
 
 func (v *v6) SetAddressWithGateway(ifName, ip, mask, gateway string, metric int) error {
-	luid, err := luidByName(ifName)
+	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
 	}
@@ -53,7 +64,7 @@ func (v *v6) SetAddressWithGateway(ifName, ip, mask, gateway string, metric int)
 	if err != nil {
 		return fmt.Errorf("SetAddressWithGateway(v6): %w", err)
 	}
-	if err := luid.SetIPAddressesForFamily(winipcfg.AddressFamily(windows.AF_INET6), []netip.Prefix{pfx}); err != nil {
+	if err = luid.SetIPAddressesForFamily(winipcfg.AddressFamily(windows.AF_INET6), []netip.Prefix{pfx}); err != nil {
 		return fmt.Errorf("SetAddressWithGateway(v6): set ip: %w", err)
 	}
 	gw, gwErr := netip.ParseAddr(strings.TrimSpace(gateway))
@@ -68,7 +79,7 @@ func (v *v6) SetAddressWithGateway(ifName, ip, mask, gateway string, metric int)
 }
 
 func (v *v6) DeleteAddress(ifName, interfaceAddress string) error {
-	luid, err := luidByName(ifName)
+	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
 	}
@@ -84,7 +95,7 @@ func (v *v6) DeleteAddress(ifName, interfaceAddress string) error {
 }
 
 func (v *v6) SetDNS(ifName string, dnsServers []string) error {
-	luid, err := luidByName(ifName)
+	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
 	}
@@ -107,7 +118,7 @@ func (v *v6) SetDNS(ifName string, dnsServers []string) error {
 		_ = luid.FlushDNS(winipcfg.AddressFamily(windows.AF_INET6))
 		return nil
 	}
-	if err := luid.SetDNS(winipcfg.AddressFamily(windows.AF_INET6), addrs, nil); err != nil {
+	if err = luid.SetDNS(winipcfg.AddressFamily(windows.AF_INET6), addrs, nil); err != nil {
 		return err
 	}
 	_ = luid.FlushDNS(winipcfg.AddressFamily(windows.AF_INET6))
@@ -118,7 +129,7 @@ func (v *v6) SetMTU(ifName string, mtu int) error {
 	if mtu <= 0 {
 		return fmt.Errorf("SetMTU(v6): invalid mtu %d", mtu)
 	}
-	luid, err := luidByName(ifName)
+	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
 	}
@@ -135,7 +146,7 @@ func (v *v6) SetMTU(ifName string, mtu int) error {
 }
 
 func (v *v6) AddRoutePrefix(prefix, ifName string, metric int) error {
-	luid, err := luidByName(ifName)
+	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
 	}
@@ -148,7 +159,7 @@ func (v *v6) AddRoutePrefix(prefix, ifName string, metric int) error {
 }
 
 func (v *v6) DeleteRoutePrefix(prefix, ifName string) error {
-	luid, err := luidByName(ifName)
+	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
 	}
@@ -160,7 +171,7 @@ func (v *v6) DeleteRoutePrefix(prefix, ifName string) error {
 }
 
 func (v *v6) DeleteDefaultRoute(ifName string) error {
-	luid, err := luidByName(ifName)
+	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
 	}
@@ -181,7 +192,7 @@ func (v *v6) DeleteDefaultRoute(ifName string) error {
 }
 
 func (v *v6) AddHostRouteViaGateway(hostIP, ifName, gateway string, metric int) error {
-	luid, err := luidByName(ifName)
+	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
 	}
@@ -197,7 +208,7 @@ func (v *v6) AddHostRouteViaGateway(hostIP, ifName, gateway string, metric int) 
 }
 
 func (v *v6) AddHostRouteOnLink(hostIP, ifName string, metric int) error {
-	luid, err := luidByName(ifName)
+	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
 	}
@@ -209,13 +220,13 @@ func (v *v6) AddHostRouteOnLink(hostIP, ifName string, metric int) error {
 }
 
 func (v *v6) AddDefaultSplitRoutes(ifName string, metric int) error {
-	luid, err := luidByName(ifName)
+	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
 	}
-	for _, s := range []string{"::/1", "8000::/1"} {
+	for _, s := range []string{v6SplitOne, v6SplitTwo} {
 		pfx, _ := netip.ParsePrefix(s)
-		if err := luid.AddRoute(pfx, netip.IPv6Unspecified(), uint32(min(1, metric))); err != nil {
+		if err = luid.AddRoute(pfx, netip.IPv6Unspecified(), uint32(min(1, metric))); err != nil {
 			return fmt.Errorf("AddDefaultSplitRoutes(v6 %s): %w", s, err)
 		}
 	}
@@ -223,12 +234,12 @@ func (v *v6) AddDefaultSplitRoutes(ifName string, metric int) error {
 }
 
 func (v *v6) DeleteDefaultSplitRoutes(ifName string) error {
-	luid, err := luidByName(ifName)
+	luid, err := v.resolver.NetworkInterfaceByName(ifName)
 	if err != nil {
 		return err
 	}
 	var last error
-	for _, s := range []string{"::/1", "8000::/1"} {
+	for _, s := range []string{v6SplitOne, v6SplitTwo} {
 		pfx, _ := netip.ParsePrefix(s)
 		if err := luid.DeleteRoute(pfx, netip.IPv6Unspecified()); err != nil {
 			last = fmt.Errorf("DeleteDefaultSplitRoutes(v6 %s): %w", s, err)
@@ -237,11 +248,11 @@ func (v *v6) DeleteDefaultSplitRoutes(ifName string) error {
 	return last
 }
 
-// Delete removes all IPv6 routes that exactly match dst (host "::1" → /128, or CIDR).
-func (v *v6) Delete(dst string) error {
+// DeleteRoute removes all IPv6 routes that exactly match dst (host "::1" → /128, or CIDR).
+func (v *v6) DeleteRoute(dst string) error {
 	pfx, err := v.parseDestPrefixV6(dst)
 	if err != nil {
-		return fmt.Errorf("route delete(v6): %w", err)
+		return fmt.Errorf("DeleteRoute(v6): %w", err)
 	}
 	rows, err := winipcfg.GetIPForwardTable2(winipcfg.AddressFamily(windows.AF_INET6))
 	if err != nil {
@@ -258,8 +269,8 @@ func (v *v6) Delete(dst string) error {
 			continue
 		}
 		if dp == pfx {
-			if err := r.Delete(); err != nil {
-				last = err
+			if routeErr := r.Delete(); routeErr != nil {
+				last = routeErr
 				continue
 			}
 			found++
@@ -292,7 +303,7 @@ func (v *v6) Print(t string) ([]byte, error) {
 		if nh.IsValid() && nh.Is6() && !nh.IsUnspecified() {
 			nextHop = nh.String()
 		}
-		alias := displayNameFromLUID(r.InterfaceLUID, r.InterfaceIndex)
+		alias := v.resolver.NetworkInterfaceName(r.InterfaceLUID)
 		line := fmt.Sprintf("%s\t%s\t%s\t%d\t%d\n",
 			dp.String(), nextHop, alias, r.InterfaceIndex, r.Metric)
 		if t == "" || strings.Contains(line, t) {
@@ -349,7 +360,7 @@ func (v *v6) BestRoute(dest string) (string, string, int, int, error) {
 		gw = nh.String()
 	}
 
-	alias := displayNameFromLUID(best.InterfaceLUID, best.InterfaceIndex)
+	alias := v.resolver.NetworkInterfaceName(best.InterfaceLUID)
 	return gw, alias, int(best.InterfaceIndex), int(best.Metric), nil
 }
 
