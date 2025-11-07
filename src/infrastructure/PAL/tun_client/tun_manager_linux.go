@@ -76,6 +76,9 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.Settings) error 
 
 	// Get routing information
 	routeInfo, err := t.ip.RouteGet(serverIP)
+	if err != nil {
+		return err
+	}
 	var viaGateway, devInterface string
 	fields := strings.Fields(routeInfo)
 	for i, field := range fields {

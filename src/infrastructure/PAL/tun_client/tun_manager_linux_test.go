@@ -66,7 +66,7 @@ func (m *platformTunManagerIPMock) RouteDel(string) error { m.log.WriteString("r
 type platformTunManagerIPGetErr struct{ platformTunManagerIPMock }
 
 func (m *platformTunManagerIPGetErr) RouteGet(string) (string, error) {
-	return "", errors.New("geterr")
+	return "", fmt.Errorf("failed to get route to server IP: %w", errors.New("geterr"))
 }
 
 // platformTunManagerIOCTLMock returns /dev/null or injected error.
@@ -218,8 +218,8 @@ func TestCreateDevice_RouteGetError_LeadsToParseError(t *testing.T) {
 	m := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerPlainWrapper{})
 
 	if _, err := m.CreateDevice(); err == nil {
-		t.Fatal("expected parse error after RouteGet error")
-	} else if !strings.Contains(err.Error(), "failed to parse route to server IP") {
+		t.Fatal("expected RouteGet error")
+	} else if !strings.Contains(err.Error(), "failed to get route to server IP") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
