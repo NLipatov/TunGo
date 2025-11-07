@@ -3,6 +3,7 @@ package tun_client
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
