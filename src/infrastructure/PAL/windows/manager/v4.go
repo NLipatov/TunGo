@@ -7,7 +7,6 @@ import (
 	"net"
 	"strings"
 	"tungo/application/network/routing/tun"
-	"tungo/infrastructure/PAL/windows"
 	"tungo/infrastructure/PAL/windows/ipcfg"
 	"tungo/infrastructure/PAL/windows/wtun"
 	"tungo/infrastructure/settings"
@@ -88,7 +87,7 @@ func (m *v4Manager) validateSettings() error {
 
 // createOrOpenTunDevice creates or opening existing wintun adapter (idempotent behavior).
 func (m *v4Manager) createOrOpenTunDevice() (tun.Device, error) {
-	adapter, err := wintun.CreateAdapter(m.s.InterfaceName, windows.TunGoTunnelType, nil)
+	adapter, err := wintun.CreateAdapter(m.s.InterfaceName, tunnelType, nil)
 	if err != nil {
 		if existing, openErr := wintun.OpenAdapter(m.s.InterfaceName); openErr == nil {
 			return wtun.NewTUN(existing)

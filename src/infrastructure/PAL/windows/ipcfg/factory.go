@@ -1,3 +1,5 @@
+//go:build windows
+
 package ipcfg
 
 import "tungo/infrastructure/PAL/windows/ipcfg/nif"

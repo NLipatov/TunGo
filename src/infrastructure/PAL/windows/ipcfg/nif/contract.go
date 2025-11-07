@@ -1,3 +1,5 @@
+//go:build windows
+
 package nif
 
 import "golang.zx2c4.com/wireguard/windows/tunnel/winipcfg"
