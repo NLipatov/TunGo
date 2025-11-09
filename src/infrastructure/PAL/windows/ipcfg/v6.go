@@ -5,14 +5,15 @@ package ipcfg
 import (
 	"bytes"
 	"fmt"
-	"golang.org/x/sys/windows"
-	"golang.zx2c4.com/wireguard/windows/tunnel/winipcfg"
 	"math"
 	"net"
 	"net/netip"
 	"strconv"
 	"strings"
 	"tungo/infrastructure/PAL/windows/ipcfg/nif"
+
+	"golang.org/x/sys/windows"
+	"golang.zx2c4.com/wireguard/windows/tunnel/winipcfg"
 )
 
 const (

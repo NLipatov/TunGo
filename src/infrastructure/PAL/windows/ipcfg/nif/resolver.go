@@ -4,10 +4,11 @@ package nif
 
 import (
 	"fmt"
-	"golang.org/x/sys/windows"
-	"golang.zx2c4.com/wireguard/windows/tunnel/winipcfg"
 	"strings"
 	"sync"
+
+	"golang.org/x/sys/windows"
+	"golang.zx2c4.com/wireguard/windows/tunnel/winipcfg"
 )
 
 type resolver struct {
