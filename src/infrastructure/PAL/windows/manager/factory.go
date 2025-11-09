@@ -57,7 +57,8 @@ func (f *Factory) Create() (tun.ClientManager, error) {
 		), nil
 	} else {
 		return newV6Manager(
-			f.connectionSettings, f.netConfigFactory.NewV6(),
+			f.connectionSettings,
+			f.netConfigFactory.NewV6(),
 		), nil
 	}
 }

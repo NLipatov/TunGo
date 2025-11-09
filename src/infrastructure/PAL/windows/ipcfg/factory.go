@@ -2,7 +2,9 @@
 
 package ipcfg
 
-import "tungo/infrastructure/PAL/windows/ipcfg/nif"
+import (
+	"tungo/infrastructure/PAL/windows/ipcfg/network_interface/resolver"
+)
 
 type Factory struct {
 }
@@ -13,12 +15,12 @@ func NewFactory() Factory {
 
 func (f *Factory) NewV4() Contract {
 	return newV4(
-		nif.NewResolver(),
+		resolver.NewResolver(),
 	)
 }
 
 func (f *Factory) NewV6() Contract {
 	return newV6(
-		nif.NewResolver(),
+		resolver.NewResolver(),
 	)
 }

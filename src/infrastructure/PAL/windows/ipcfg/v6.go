@@ -10,7 +10,7 @@ import (
 	"net/netip"
 	"strconv"
 	"strings"
-	"tungo/infrastructure/PAL/windows/ipcfg/nif"
+	"tungo/infrastructure/PAL/windows/ipcfg/network_interface/resolver"
 
 	"golang.org/x/sys/windows"
 	"golang.zx2c4.com/wireguard/windows/tunnel/winipcfg"
@@ -24,10 +24,10 @@ const (
 )
 
 type v6 struct {
-	resolver nif.Contract
+	resolver resolver.Contract
 }
 
-func newV6(resolver nif.Contract) Contract {
+func newV6(resolver resolver.Contract) Contract {
 	return &v6{
 		resolver: resolver,
 	}

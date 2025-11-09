@@ -1,6 +1,6 @@
 //go:build windows
 
-package nif
+package resolver
 
 import (
 	"fmt"
