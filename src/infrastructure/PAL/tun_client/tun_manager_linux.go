@@ -14,43 +14,36 @@ import (
 
 // PlatformTunManager Linux-specific TunDevice manager
 type PlatformTunManager struct {
-	conf    client.Configuration
-	ip      ip.Contract
-	ioctl   ioctl.Contract
-	wrapper tun.Wrapper
+	configuration client.Configuration
+	ip            ip.Contract
+	ioctl         ioctl.Contract
+	wrapper       tun.Wrapper
 }
 
 func NewPlatformTunManager(
-	conf client.Configuration,
+	configuration client.Configuration,
 ) (tun.ClientManager, error) {
 	return &PlatformTunManager{
-		conf:    conf,
-		ip:      ip.NewWrapper(PAL.NewExecCommander()),
-		ioctl:   ioctl.NewWrapper(ioctl.NewLinuxIoctlCommander(), "/dev/net/tun"),
-		wrapper: epoll.NewWrapper(),
+		configuration: configuration,
+		ip:            ip.NewWrapper(PAL.NewExecCommander()),
+		ioctl:         ioctl.NewWrapper(ioctl.NewLinuxIoctlCommander(), "/dev/net/tun"),
+		wrapper:       epoll.NewWrapper(),
 	}, nil
 }
 
 func (t *PlatformTunManager) CreateDevice() (tun.Device, error) {
-	var s settings.Settings
-	switch t.conf.Protocol {
-	case settings.UDP:
-		s = t.conf.UDPSettings
-	case settings.TCP:
-		s = t.conf.TCPSettings
-	case settings.WS, settings.WSS:
-		s = t.conf.WSSettings
-	default:
-		return nil, fmt.Errorf("unsupported protocol")
+	connectionSettings, connectionSettingsErr := t.configuration.ActiveSettings()
+	if connectionSettingsErr != nil {
+		return nil, connectionSettingsErr
 	}
 
 	// configureTUN client
-	if udpConfigurationErr := t.configureTUN(s); udpConfigurationErr != nil {
+	if udpConfigurationErr := t.configureTUN(connectionSettings); udpConfigurationErr != nil {
 		return nil, fmt.Errorf("failed to configure client: %v", udpConfigurationErr)
 	}
 
 	// opens the TUN device
-	tunFile, openTunErr := t.ioctl.CreateTunInterface(s.InterfaceName)
+	tunFile, openTunErr := t.ioctl.CreateTunInterface(connectionSettings.InterfaceName)
 	if openTunErr != nil {
 		return nil, fmt.Errorf("failed to open TUN interface: %v", openTunErr)
 	}
@@ -83,6 +76,9 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.Settings) error 
 
 	// Get routing information
 	routeInfo, err := t.ip.RouteGet(serverIP)
+	if err != nil {
+		return err
+	}
 	var viaGateway, devInterface string
 	fields := strings.Fields(routeInfo)
 	for i, field := range fields {
@@ -117,21 +113,23 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.Settings) error 
 
 	// sets client's TUN device maximum transmission unit (MTU)
 	if setMtuErr := t.ip.LinkSetDevMTU(connSettings.InterfaceName, connSettings.MTU); setMtuErr != nil {
-		return fmt.Errorf("failed to set %d MTU for %s: %s", connSettings.MTU, connSettings.InterfaceName, setMtuErr)
+		return fmt.Errorf(
+			"failed to set %d MTU for %s: %s", connSettings.MTU, connSettings.InterfaceName, setMtuErr,
+		)
 	}
 
 	return nil
 }
 
 func (t *PlatformTunManager) DisposeDevices() error {
-	_ = t.ip.RouteDel(t.conf.UDPSettings.ConnectionIP)
-	_ = t.ip.LinkDelete(t.conf.UDPSettings.InterfaceName)
+	_ = t.ip.RouteDel(t.configuration.UDPSettings.ConnectionIP)
+	_ = t.ip.LinkDelete(t.configuration.UDPSettings.InterfaceName)
 
-	_ = t.ip.RouteDel(t.conf.TCPSettings.ConnectionIP)
-	_ = t.ip.LinkDelete(t.conf.TCPSettings.InterfaceName)
+	_ = t.ip.RouteDel(t.configuration.TCPSettings.ConnectionIP)
+	_ = t.ip.LinkDelete(t.configuration.TCPSettings.InterfaceName)
 
-	_ = t.ip.RouteDel(t.conf.WSSettings.ConnectionIP)
-	_ = t.ip.LinkDelete(t.conf.WSSettings.InterfaceName)
+	_ = t.ip.RouteDel(t.configuration.WSSettings.ConnectionIP)
+	_ = t.ip.LinkDelete(t.configuration.WSSettings.InterfaceName)
 
 	return nil
 }
