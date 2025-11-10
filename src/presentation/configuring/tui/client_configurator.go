@@ -51,14 +51,22 @@ func (c *clientConfigurator) Configure() error {
 	//add option is always shown
 	options = append(options, addOption)
 
-	selectedOption, selectedOptionErr := c.selectConf(options, "Select configuration – or add/remove one:")
+	selectedOption, selectedOptionErr := c.selectConf(
+		options,
+		"Select configuration – or add/remove one:",
+		components.NewDefaultColor(), components.NewTransparentColor(),
+	)
 	if selectedOptionErr != nil {
 		return selectedOptionErr
 	}
 
 	if selectedOption == removeOption {
 		optionsWithoutAddAndRemove := options[:len(options)-2]
-		confToDelete, confToDeleteErr := c.selectConf(optionsWithoutAddAndRemove, "Choose a configuration to remove:")
+		confToDelete, confToDeleteErr := c.selectConf(
+			optionsWithoutAddAndRemove,
+			"Choose a configuration to remove:",
+			components.NewColor(255, 0, 0, true), components.NewTransparentColor(),
+		)
 		if confToDeleteErr != nil {
 			return confToDeleteErr
 		}
@@ -91,7 +99,11 @@ func (c *clientConfigurator) Configure() error {
 	return selectErr
 }
 
-func (c *clientConfigurator) selectConf(configurationNames []string, placeholder string) (string, error) {
+func (c *clientConfigurator) selectConf(
+	configurationNames []string,
+	placeholder string,
+	foreground, background components.Color,
+) (string, error) {
 	options := make([]string, len(configurationNames))
 	optionsIndex := 0
 	for _, confName := range configurationNames {
@@ -100,7 +112,11 @@ func (c *clientConfigurator) selectConf(configurationNames []string, placeholder
 	}
 	options = options[:optionsIndex]
 
-	selector, selectorErr := c.selectorFactory.NewTuiSelector(placeholder, options)
+	selector, selectorErr := c.selectorFactory.NewTuiSelector(
+		placeholder,
+		options,
+		foreground, background,
+	)
 	if selectorErr != nil {
 		return "", selectorErr
 	}

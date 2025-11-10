@@ -48,7 +48,12 @@ func (s *serverConfigurator) Configure() error {
 }
 
 func (s *serverConfigurator) selectOption() (string, error) {
-	selector, selectorErr := s.selectorFactory.NewTuiSelector("Choose an option", s.optionsSet[:])
+	selector, selectorErr := s.selectorFactory.NewTuiSelector(
+		"Choose an option",
+		s.optionsSet[:],
+		components.NewDefaultColor(),
+		components.NewTransparentColor(),
+	)
 	if selectorErr != nil {
 		return "", selectorErr
 	}

@@ -22,8 +22,12 @@ func NewCustomTeaRunnerSelectorAdapter(teaRunner TeaRunner) components.SelectorF
 	}
 }
 
-func (s *SelectorAdapter) NewTuiSelector(placeholder string, options []string) (components.Selector, error) {
-	selector := NewSelector(placeholder, options)
+func (s *SelectorAdapter) NewTuiSelector(
+	placeholder string,
+	options []string,
+	foregroundColor, backgroundColor components.Color,
+) (components.Selector, error) {
+	selector := NewSelector(placeholder, options, NewColorizer(), foregroundColor, backgroundColor)
 	selectorProgram, selectorProgramErr := s.teaRunner.Run(selector)
 	if selectorProgramErr != nil {
 		return nil, selectorProgramErr

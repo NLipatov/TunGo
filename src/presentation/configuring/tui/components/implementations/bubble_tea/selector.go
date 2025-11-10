@@ -2,23 +2,35 @@ package bubble_tea
 
 import (
 	"fmt"
+	"tungo/presentation/configuring/tui/components"
+
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 type Selector struct {
-	placeholder string
-	options     []string
-	cursor      int
-	choice      string
-	checked     int
-	done        bool
+	colorizer                        components.Colorizer
+	foregroundColor, backgroundColor components.Color
+	placeholder                      string
+	options                          []string
+	cursor                           int
+	choice                           string
+	checked                          int
+	done                             bool
 }
 
-func NewSelector(placeholder string, choices []string) Selector {
+func NewSelector(
+	placeholder string,
+	choices []string,
+	colorizer components.Colorizer,
+	foregroundColor, backgroundColor components.Color,
+) Selector {
 	return Selector{
-		placeholder: placeholder,
-		options:     choices,
-		checked:     -1,
+		placeholder:     placeholder,
+		options:         choices,
+		checked:         -1,
+		colorizer:       colorizer,
+		foregroundColor: foregroundColor,
+		backgroundColor: backgroundColor,
 	}
 }
 
@@ -69,7 +81,7 @@ func (m Selector) View() string {
 		}
 		line := fmt.Sprintf("%s %s", checked, choice)
 		if m.cursor == i {
-			line = "\033[1;32m" + line + "\033[0m"
+			line = m.colorizer.ColorizeString(line, m.backgroundColor, m.foregroundColor)
 		}
 		s += line + "\n"
 	}

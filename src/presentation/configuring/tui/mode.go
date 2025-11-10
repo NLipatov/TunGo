@@ -19,7 +19,12 @@ func NewAppMode(selectorFactory components.SelectorFactory) AppMode {
 func (p *AppMode) Mode() (mode.Mode, error) {
 	clientMode := "client"
 	serverMode := "server"
-	selector, selectorErr := p.selectorFactory.NewTuiSelector("Mode selection:", []string{clientMode, serverMode})
+	selector, selectorErr := p.selectorFactory.NewTuiSelector(
+		"Mode selection:",
+		[]string{clientMode, serverMode},
+		components.NewDefaultColor(),
+		components.NewTransparentColor(),
+	)
 	if selectorErr != nil {
 		return mode.Unknown, selectorErr
 	}

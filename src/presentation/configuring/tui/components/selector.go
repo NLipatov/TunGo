@@ -6,6 +6,18 @@ type (
 	}
 
 	SelectorFactory interface {
-		NewTuiSelector(placeholder string, options []string) (Selector, error)
+		NewTuiSelector(
+			placeholder string,
+			options []string,
+			foregroundColor Color,
+			backgroundColor Color,
+		) (Selector, error)
+	}
+
+	Colorizer interface {
+		ColorizeString(
+			s string,
+			foreground, background Color,
+		) string
 	}
 )
