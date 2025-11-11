@@ -17,9 +17,9 @@ const FeatureList = [
         title: 'RAM-Efficient',
         Svg: require('@site/static/svg/raspberry-pi.svg').default,
         description: (
-            <div style={{display: "flex", flexDirection: "column"}}>
-                Server: ~8MB<br/>
-                Client: ~4MB
+            <div style={{display: "flex", flexDirection: "column", gap: 2}}>
+                <span>≈5–15&nbsp;MB <abbr title="Resident Set Size">RSS</abbr> under load</span>
+                <span>≈5–8&nbsp;MB idle</span>
             </div>
         ),
     },
