@@ -10,7 +10,7 @@ type Color struct {
 
 // NewDefaultColor returns a default TunGo-styled green color.
 func NewDefaultColor() Color {
-	return NewColor(0, 255, 0, true)
+	return NewColor(0, 200, 0, true)
 }
 
 // NewTransparentColor returns a disabled color instance.
