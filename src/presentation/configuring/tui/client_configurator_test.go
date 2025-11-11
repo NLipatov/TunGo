@@ -3,215 +3,280 @@ package tui
 import (
 	"errors"
 	"testing"
-	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
 
-	"tungo/presentation/configuring/tui/components"
+	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
+	"tungo/presentation/configuring/tui/components/domain/contracts/selector"
+	"tungo/presentation/configuring/tui/components/domain/contracts/text_area"
+	"tungo/presentation/configuring/tui/components/domain/contracts/text_input"
+	"tungo/presentation/configuring/tui/components/domain/value_objects"
 )
 
-type clientConfiguratorMockSelector struct {
-	selected string
-	err      error
+type cfgObserverMock struct {
+	results [][]string
+	errs    []error
+	call    int
 }
 
-func (m *clientConfiguratorMockSelector) SelectOne() (string, error) {
-	return m.selected, m.err
+func (m *cfgObserverMock) Observe() ([]string, error) {
+	var res []string
+	var err error
+	if m.call < len(m.results) {
+		res = m.results[m.call]
+	}
+	if m.call < len(m.errs) {
+		err = m.errs[m.call]
+	}
+	m.call++
+	return res, err
 }
 
-type clientConfiguratorMockSelectorFactory struct {
-	selector components.Selector
-	err      error
+type cfgSelectorMock struct {
+	lastSelected string
+	err          error
 }
 
-func (m *clientConfiguratorMockSelectorFactory) NewTuiSelector(_ string, _ []string) (components.Selector, error) {
-	return m.selector, m.err
-}
-
-type clientConfiguratorMockTextInput struct {
-	value string
-	err   error
-}
-
-func (m *clientConfiguratorMockTextInput) Value() (string, error) {
-	return m.value, m.err
-}
-
-type clientConfiguratorMockTextInputFactory struct {
-	textInput components.TextInput
-	err       error
-}
-
-func (m *clientConfiguratorMockTextInputFactory) NewTextInput(_ string) (components.TextInput, error) {
-	return m.textInput, m.err
-}
-
-type clientConfiguratorMockTextArea struct {
-	value string
-	err   error
-}
-
-func (m *clientConfiguratorMockTextArea) Value() (string, error) {
-	return m.value, m.err
-}
-
-type clientConfiguratorMockTextAreaFactory struct {
-	textArea components.TextArea
-	err      error
-}
-
-func (m *clientConfiguratorMockTextAreaFactory) NewTextArea(_ string) (components.TextArea, error) {
-	return m.textArea, m.err
-}
-
-type clientConfiguratorMockCreator struct {
-	err error
-}
-
-func (m *clientConfiguratorMockCreator) Create(_ clientConfiguration.Configuration, _ string) error {
+func (m *cfgSelectorMock) Select(confPath string) error {
+	m.lastSelected = confPath
 	return m.err
 }
 
-func makeCC(
-	selectorFactory components.SelectorFactory,
-	textInputFactory components.TextInputFactory,
-	textAreaFactory components.TextAreaFactory,
-	creator clientConfiguration.Creator,
-) *clientConfigurator {
-	return newClientConfigurator(nil, nil, nil, creator, selectorFactory, textInputFactory, textAreaFactory)
+type cfgDeleterMock struct {
+	deleted []string
+	err     error
 }
 
-func Test_selectConf_Success(t *testing.T) {
-	sf := &clientConfiguratorMockSelectorFactory{
-		selector: &clientConfiguratorMockSelector{selected: "opt1", err: nil},
-		err:      nil,
-	}
-	cc := makeCC(sf, nil, nil, nil)
+func (m *cfgDeleterMock) Delete(p string) error {
+	m.deleted = append(m.deleted, p)
+	return m.err
+}
 
-	got, err := cc.selectConf([]string{"opt1", "opt2"}, "prompt")
-	if err != nil {
+type cfgCreatorMock struct {
+	createdName string
+	err         error
+}
+
+func (m *cfgCreatorMock) Create(_ clientConfiguration.Configuration, name string) error {
+	m.createdName = name
+	return m.err
+}
+
+type queuedSelector struct {
+	options []string
+	errs    []error
+	i       int
+}
+
+func (m *queuedSelector) SelectOne() (string, error) {
+	if m.i >= len(m.options) {
+		if len(m.options) == 0 {
+			return "", errors.New("queue empty")
+		}
+		return m.options[len(m.options)-1], nil
+	}
+	opt := m.options[m.i]
+	var err error
+	if m.i < len(m.errs) {
+		err = m.errs[m.i]
+	}
+	m.i++
+	return opt, err
+}
+
+type queuedSelectorFactory struct {
+	selector selector.Selector
+	errs     []error
+	call     int
+}
+
+func (f *queuedSelectorFactory) NewTuiSelector(
+	_ string, _ []string,
+	_ value_objects.Color, _ value_objects.Color,
+) (selector.Selector, error) {
+	var err error
+	if f.call < len(f.errs) {
+		err = f.errs[f.call]
+	}
+	f.call++
+	return f.selector, err
+}
+
+type textInputMock struct {
+	val string
+	err error
+}
+
+func (m *textInputMock) Value() (string, error) { return m.val, m.err }
+
+type textInputFactoryMock struct {
+	ti  text_input.TextInput
+	err error
+}
+
+func (m *textInputFactoryMock) NewTextInput(_ string) (text_input.TextInput, error) {
+	return m.ti, m.err
+}
+
+type textAreaMock struct {
+	val string
+	err error
+}
+
+func (m *textAreaMock) Value() (string, error) { return m.val, m.err }
+
+type textAreaFactoryMock struct {
+	ta  text_area.TextArea
+	err error
+}
+
+func (m *textAreaFactoryMock) NewTextArea(_ string) (text_area.TextArea, error) {
+	return m.ta, m.err
+}
+
+func Test_Configure_ObserveError(t *testing.T) {
+	obs := &cfgObserverMock{
+		errs: []error{errors.New("observe fail")},
+	}
+	cc := newClientConfigurator(obs, nil, nil, nil, nil, nil, nil)
+
+	err := cc.Configure()
+	if err == nil || err.Error() != "observe fail" {
+		t.Fatalf("expected observe fail, got %v", err)
+	}
+}
+
+func Test_Configure_SelectConf_FactoryError(t *testing.T) {
+	obs := &cfgObserverMock{results: [][]string{{"conf1"}}}
+	sf := &queuedSelectorFactory{
+		selector: &queuedSelector{},
+		errs:     []error{errors.New("factory fail")},
+	}
+	cc := newClientConfigurator(obs, nil, nil, nil, sf, nil, nil)
+
+	err := cc.Configure()
+	if err == nil || err.Error() != "factory fail" {
+		t.Fatalf("expected factory fail, got %v", err)
+	}
+}
+
+func Test_Configure_SelectConf_SelectOneError(t *testing.T) {
+	obs := &cfgObserverMock{results: [][]string{{"conf1"}}}
+	sf := &queuedSelectorFactory{
+		selector: &queuedSelector{
+			options: []string{""},
+			errs:    []error{errors.New("select fail")},
+		},
+	}
+	cc := newClientConfigurator(obs, nil, nil, nil, sf, nil, nil)
+
+	err := cc.Configure()
+	if err == nil || err.Error() != "select fail" {
+		t.Fatalf("expected select fail, got %v", err)
+	}
+}
+
+func Test_Configure_DefaultSelection_Success(t *testing.T) {
+	obs := &cfgObserverMock{results: [][]string{{"conf1"}}}
+	sf := &queuedSelectorFactory{
+		selector: &queuedSelector{options: []string{"conf1"}},
+	}
+	clientSel := &cfgSelectorMock{}
+
+	cc := newClientConfigurator(obs, clientSel, nil, nil, sf, nil, nil)
+
+	if err := cc.Configure(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got != "opt1" {
-		t.Fatalf("expected %q, got %q", "opt1", got)
+	if clientSel.lastSelected != "conf1" {
+		t.Fatalf("expected Select called with %q, got %q", "conf1", clientSel.lastSelected)
 	}
 }
 
-func Test_selectConf_FactoryError(t *testing.T) {
-	sf := &clientConfiguratorMockSelectorFactory{selector: nil, err: errors.New("factory fail")}
-	cc := makeCC(sf, nil, nil, nil)
+func Test_Configure_DefaultSelection_SelectorError(t *testing.T) {
+	obs := &cfgObserverMock{results: [][]string{{"confX"}}}
+	sf := &queuedSelectorFactory{
+		selector: &queuedSelector{options: []string{"confX"}},
+	}
+	clientSel := &cfgSelectorMock{err: errors.New("apply fail")}
 
-	if _, err := cc.selectConf([]string{"x"}, "prompt"); err == nil {
-		t.Fatal("expected factory error, got nil")
+	cc := newClientConfigurator(obs, clientSel, nil, nil, sf, nil, nil)
+
+	err := cc.Configure()
+	if err == nil || err.Error() != "apply fail" {
+		t.Fatalf("expected apply fail, got %v", err)
 	}
 }
 
-func Test_selectConf_SelectOneError(t *testing.T) {
-	sf := &clientConfiguratorMockSelectorFactory{
-		selector: &clientConfiguratorMockSelector{selected: "", err: errors.New("select fail")},
-		err:      nil,
+func Test_Configure_AddOption_Flow_Success(t *testing.T) {
+	obs := &cfgObserverMock{
+		results: [][]string{
+			{},
+			{"newconf.json"},
+		},
 	}
-	cc := makeCC(sf, nil, nil, nil)
+	sf := &queuedSelectorFactory{
+		selector: &queuedSelector{options: []string{addOption, "newconf.json"}},
+	}
+	tif := &textInputFactoryMock{ti: &textInputMock{val: "newconf"}}
+	taf := &textAreaFactoryMock{ta: &textAreaMock{val: `{}`}}
+	creator := &cfgCreatorMock{}
+	clientSel := &cfgSelectorMock{}
 
-	if _, err := cc.selectConf([]string{"x"}, "prompt"); err == nil {
-		t.Fatal("expected select-one error, got nil")
-	}
-}
+	cc := newClientConfigurator(obs, clientSel, nil, creator, sf, tif, taf)
 
-func Test_createConf_Success(t *testing.T) {
-	tif := &clientConfiguratorMockTextInputFactory{
-		textInput: &clientConfiguratorMockTextInput{value: "name", err: nil},
-		err:       nil,
-	}
-	taf := &clientConfiguratorMockTextAreaFactory{
-		textArea: &clientConfiguratorMockTextArea{value: `{}`, err: nil},
-		err:      nil,
-	}
-	creator := &clientConfiguratorMockCreator{err: nil}
-
-	cc := makeCC(nil, tif, taf, creator)
-	if err := cc.createConf(); err != nil {
+	if err := cc.Configure(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-}
-
-func Test_createConf_TextInputFactoryError(t *testing.T) {
-	tif := &clientConfiguratorMockTextInputFactory{nil, errors.New("input-factory fail")}
-	cc := makeCC(nil, tif, nil, nil)
-
-	if err := cc.createConf(); err == nil {
-		t.Fatal("expected text-input-factory error, got nil")
+	if creator.createdName != "newconf" {
+		t.Fatalf("expected creator to be called with name %q, got %q", "newconf", creator.createdName)
+	}
+	if clientSel.lastSelected != "newconf.json" {
+		t.Fatalf("expected final selection %q, got %q", "newconf.json", clientSel.lastSelected)
 	}
 }
 
-func Test_createConf_TextInputValueError(t *testing.T) {
-	tif := &clientConfiguratorMockTextInputFactory{
-		textInput: &clientConfiguratorMockTextInput{value: "", err: errors.New("value fail")},
-		err:       nil,
+func Test_Configure_RemoveOption_Flow_Success(t *testing.T) {
+	obs := &cfgObserverMock{
+		results: [][]string{
+			{"a.json", "b.json"},
+			{"b.json"},
+		},
 	}
-	cc := makeCC(nil, tif, nil, nil)
+	sf := &queuedSelectorFactory{
+		selector: &queuedSelector{options: []string{removeOption, "a.json", "b.json"}},
+	}
 
-	if err := cc.createConf(); err == nil {
-		t.Fatal("expected text-input-value error, got nil")
+	del := &cfgDeleterMock{}
+	clientSel := &cfgSelectorMock{}
+
+	cc := newClientConfigurator(obs, clientSel, del, nil, sf, nil, nil)
+
+	if err := cc.Configure(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(del.deleted) != 1 || del.deleted[0] != "a.json" {
+		t.Fatalf("expected deleted [a.json], got %v", del.deleted)
+	}
+	if clientSel.lastSelected != "b.json" {
+		t.Fatalf("expected final selection %q, got %q", "b.json", clientSel.lastSelected)
 	}
 }
 
-func Test_createConf_TextAreaFactoryError(t *testing.T) {
-	tif := &clientConfiguratorMockTextInputFactory{
-		textInput: &clientConfiguratorMockTextInput{value: "n", err: nil},
-		err:       nil,
+func Test_Configure_RemoveOption_SecondSelect_Error(t *testing.T) {
+	obs := &cfgObserverMock{
+		results: [][]string{
+			{"only.json"},
+		},
 	}
-	taf := &clientConfiguratorMockTextAreaFactory{nil, errors.New("area-factory fail")}
-	cc := makeCC(nil, tif, taf, nil)
+	sf := &queuedSelectorFactory{
+		selector: &queuedSelector{
+			options: []string{removeOption, ""},
+			errs:    []error{nil, errors.New("remove select fail")},
+		},
+	}
+	cc := newClientConfigurator(obs, nil, &cfgDeleterMock{}, nil, sf, nil, nil)
 
-	if err := cc.createConf(); err == nil {
-		t.Fatal("expected text-area-factory error, got nil")
-	}
-}
-
-func Test_createConf_TextAreaValueError(t *testing.T) {
-	tif := &clientConfiguratorMockTextInputFactory{
-		textInput: &clientConfiguratorMockTextInput{value: "n", err: nil},
-		err:       nil,
-	}
-	taf := &clientConfiguratorMockTextAreaFactory{
-		textArea: &clientConfiguratorMockTextArea{value: "", err: errors.New("area-value fail")},
-		err:      nil,
-	}
-	cc := makeCC(nil, tif, taf, nil)
-
-	if err := cc.createConf(); err == nil {
-		t.Fatal("expected text-area-value error, got nil")
-	}
-}
-
-func Test_createConf_ParseError(t *testing.T) {
-	tif := &clientConfiguratorMockTextInputFactory{
-		textInput: &clientConfiguratorMockTextInput{value: "n", err: nil},
-		err:       nil,
-	}
-	taf := &clientConfiguratorMockTextAreaFactory{
-		textArea: &clientConfiguratorMockTextArea{value: "{bad}", err: nil},
-		err:      nil,
-	}
-	cc := makeCC(nil, tif, taf, &clientConfiguratorMockCreator{})
-
-	if err := cc.createConf(); err == nil {
-		t.Fatal("expected parse error, got nil")
-	}
-}
-
-func Test_createConf_CreatorError(t *testing.T) {
-	tif := &clientConfiguratorMockTextInputFactory{
-		textInput: &clientConfiguratorMockTextInput{value: "n", err: nil},
-		err:       nil,
-	}
-	taf := &clientConfiguratorMockTextAreaFactory{
-		textArea: &clientConfiguratorMockTextArea{value: `{}`, err: nil},
-		err:      nil,
-	}
-	creator := &clientConfiguratorMockCreator{err: errors.New("create fail")}
-	cc := makeCC(nil, tif, taf, creator)
-
-	if err := cc.createConf(); err == nil {
-		t.Fatal("expected creator error, got nil")
+	err := cc.Configure()
+	if err == nil || err.Error() != "remove select fail" {
+		t.Fatalf("expected remove select fail, got %v", err)
 	}
 }

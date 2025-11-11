@@ -2,7 +2,7 @@ package bubble_tea
 
 import (
 	"errors"
-	"tungo/presentation/configuring/tui/components"
+	"tungo/presentation/configuring/tui/components/domain/contracts/text_input"
 )
 
 type TextInputAdapter struct {
@@ -10,19 +10,19 @@ type TextInputAdapter struct {
 	teaRunner TeaRunner
 }
 
-func NewTextInputAdapter() components.TextInputFactory {
+func NewTextInputAdapter() text_input.TextInputFactory {
 	return &TextInputAdapter{
 		teaRunner: &defaultTeaRunner{},
 	}
 }
 
-func NewCustomTeaRunnerTextInputAdapter(teaRunner TeaRunner) components.TextInputFactory {
+func NewCustomTeaRunnerTextInputAdapter(teaRunner TeaRunner) text_input.TextInputFactory {
 	return &TextInputAdapter{
 		teaRunner: teaRunner,
 	}
 }
 
-func (t *TextInputAdapter) NewTextInput(placeholder string) (components.TextInput, error) {
+func (t *TextInputAdapter) NewTextInput(placeholder string) (text_input.TextInput, error) {
 	textInput := NewTextInput(placeholder)
 	textInputProgram, textInputProgramErr := t.teaRunner.Run(textInput)
 	if textInputProgramErr != nil {

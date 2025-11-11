@@ -3,14 +3,15 @@ package tui
 import (
 	"fmt"
 	"tungo/domain/mode"
-	"tungo/presentation/configuring/tui/components"
+	"tungo/presentation/configuring/tui/components/domain/contracts/selector"
+	"tungo/presentation/configuring/tui/components/domain/value_objects"
 )
 
 type AppMode struct {
-	selectorFactory components.SelectorFactory
+	selectorFactory selector.Factory
 }
 
-func NewAppMode(selectorFactory components.SelectorFactory) AppMode {
+func NewAppMode(selectorFactory selector.Factory) AppMode {
 	return AppMode{
 		selectorFactory: selectorFactory,
 	}
@@ -19,12 +20,17 @@ func NewAppMode(selectorFactory components.SelectorFactory) AppMode {
 func (p *AppMode) Mode() (mode.Mode, error) {
 	clientMode := "client"
 	serverMode := "server"
-	selector, selectorErr := p.selectorFactory.NewTuiSelector("Mode selection:", []string{clientMode, serverMode})
+	tuiSelector, selectorErr := p.selectorFactory.NewTuiSelector(
+		"Mode selection:",
+		[]string{clientMode, serverMode},
+		value_objects.NewDefaultColor(),
+		value_objects.NewTransparentColor(),
+	)
 	if selectorErr != nil {
 		return mode.Unknown, selectorErr
 	}
 
-	selectedOption, selectOneErr := selector.SelectOne()
+	selectedOption, selectOneErr := tuiSelector.SelectOne()
 	if selectOneErr != nil {
 		return mode.Unknown, selectOneErr
 	}
