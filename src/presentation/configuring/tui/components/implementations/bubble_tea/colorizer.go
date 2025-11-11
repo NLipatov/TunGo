@@ -2,19 +2,20 @@ package bubble_tea
 
 import (
 	"fmt"
-	"tungo/presentation/configuring/tui/components"
+	"tungo/presentation/configuring/tui/components/domain/contracts/colorization"
+	"tungo/presentation/configuring/tui/components/domain/value_objects"
 )
 
 type Colorizer struct {
 }
 
-func NewColorizer() components.Colorizer {
+func NewColorizer() colorization.Colorizer {
 	return &Colorizer{}
 }
 
 func (c *Colorizer) ColorizeString(
 	s string,
-	background, foreground components.Color,
+	background, foreground value_objects.Color,
 ) string {
 	out := ""
 

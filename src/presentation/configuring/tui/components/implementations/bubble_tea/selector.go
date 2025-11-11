@@ -2,14 +2,15 @@ package bubble_tea
 
 import (
 	"fmt"
-	"tungo/presentation/configuring/tui/components"
+	"tungo/presentation/configuring/tui/components/domain/contracts/colorization"
+	"tungo/presentation/configuring/tui/components/domain/value_objects"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 type Selector struct {
-	colorizer                        components.Colorizer
-	foregroundColor, backgroundColor components.Color
+	colorizer                        colorization.Colorizer
+	foregroundColor, backgroundColor value_objects.Color
 	placeholder                      string
 	options                          []string
 	cursor                           int
@@ -21,8 +22,8 @@ type Selector struct {
 func NewSelector(
 	placeholder string,
 	choices []string,
-	colorizer components.Colorizer,
-	foregroundColor, backgroundColor components.Color,
+	colorizer colorization.Colorizer,
+	foregroundColor, backgroundColor value_objects.Color,
 ) Selector {
 	return Selector{
 		placeholder:     placeholder,

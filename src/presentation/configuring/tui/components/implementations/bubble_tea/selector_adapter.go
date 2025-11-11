@@ -2,7 +2,8 @@ package bubble_tea
 
 import (
 	"errors"
-	"tungo/presentation/configuring/tui/components"
+	"tungo/presentation/configuring/tui/components/domain/contracts/selector"
+	"tungo/presentation/configuring/tui/components/domain/value_objects"
 )
 
 type SelectorAdapter struct {
@@ -10,13 +11,13 @@ type SelectorAdapter struct {
 	teaRunner TeaRunner
 }
 
-func NewSelectorAdapter() components.SelectorFactory {
+func NewSelectorAdapter() selector.Factory {
 	return &SelectorAdapter{
 		teaRunner: &defaultTeaRunner{},
 	}
 }
 
-func NewCustomTeaRunnerSelectorAdapter(teaRunner TeaRunner) components.SelectorFactory {
+func NewCustomTeaRunnerSelectorAdapter(teaRunner TeaRunner) selector.Factory {
 	return &SelectorAdapter{
 		teaRunner: teaRunner,
 	}
@@ -25,10 +26,10 @@ func NewCustomTeaRunnerSelectorAdapter(teaRunner TeaRunner) components.SelectorF
 func (s *SelectorAdapter) NewTuiSelector(
 	placeholder string,
 	options []string,
-	foregroundColor, backgroundColor components.Color,
-) (components.Selector, error) {
-	selector := NewSelector(placeholder, options, NewColorizer(), foregroundColor, backgroundColor)
-	selectorProgram, selectorProgramErr := s.teaRunner.Run(selector)
+	foregroundColor, backgroundColor value_objects.Color,
+) (selector.Selector, error) {
+	newSelector := NewSelector(placeholder, options, NewColorizer(), foregroundColor, backgroundColor)
+	selectorProgram, selectorProgramErr := s.teaRunner.Run(newSelector)
 	if selectorProgramErr != nil {
 		return nil, selectorProgramErr
 	}

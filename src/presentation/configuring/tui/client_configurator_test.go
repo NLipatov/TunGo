@@ -3,9 +3,12 @@ package tui
 import (
 	"errors"
 	"testing"
-	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
 
-	"tungo/presentation/configuring/tui/components"
+	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
+	"tungo/presentation/configuring/tui/components/domain/contracts/selector"
+	"tungo/presentation/configuring/tui/components/domain/contracts/text_area"
+	"tungo/presentation/configuring/tui/components/domain/contracts/text_input"
+	"tungo/presentation/configuring/tui/components/domain/value_objects"
 )
 
 type clientConfiguratorMockSelector struct {
@@ -18,11 +21,14 @@ func (m *clientConfiguratorMockSelector) SelectOne() (string, error) {
 }
 
 type clientConfiguratorMockSelectorFactory struct {
-	selector components.Selector
+	selector selector.Selector
 	err      error
 }
 
-func (m *clientConfiguratorMockSelectorFactory) NewTuiSelector(_ string, _ []string) (components.Selector, error) {
+func (m *clientConfiguratorMockSelectorFactory) NewTuiSelector(
+	_ string, _ []string,
+	_ value_objects.Color, _ value_objects.Color,
+) (selector.Selector, error) {
 	return m.selector, m.err
 }
 
@@ -36,11 +42,11 @@ func (m *clientConfiguratorMockTextInput) Value() (string, error) {
 }
 
 type clientConfiguratorMockTextInputFactory struct {
-	textInput components.TextInput
+	textInput text_input.TextInput
 	err       error
 }
 
-func (m *clientConfiguratorMockTextInputFactory) NewTextInput(_ string) (components.TextInput, error) {
+func (m *clientConfiguratorMockTextInputFactory) NewTextInput(_ string) (text_input.TextInput, error) {
 	return m.textInput, m.err
 }
 
@@ -54,11 +60,11 @@ func (m *clientConfiguratorMockTextArea) Value() (string, error) {
 }
 
 type clientConfiguratorMockTextAreaFactory struct {
-	textArea components.TextArea
+	textArea text_area.TextArea
 	err      error
 }
 
-func (m *clientConfiguratorMockTextAreaFactory) NewTextArea(_ string) (components.TextArea, error) {
+func (m *clientConfiguratorMockTextAreaFactory) NewTextArea(_ string) (text_area.TextArea, error) {
 	return m.textArea, m.err
 }
 
@@ -71,9 +77,9 @@ func (m *clientConfiguratorMockCreator) Create(_ clientConfiguration.Configurati
 }
 
 func makeCC(
-	selectorFactory components.SelectorFactory,
-	textInputFactory components.TextInputFactory,
-	textAreaFactory components.TextAreaFactory,
+	selectorFactory selector.Factory,
+	textInputFactory text_input.TextInputFactory,
+	textAreaFactory text_area.TextAreaFactory,
 	creator clientConfiguration.Creator,
 ) *clientConfigurator {
 	return newClientConfigurator(nil, nil, nil, creator, selectorFactory, textInputFactory, textAreaFactory)
@@ -81,12 +87,16 @@ func makeCC(
 
 func Test_selectConf_Success(t *testing.T) {
 	sf := &clientConfiguratorMockSelectorFactory{
-		selector: &clientConfiguratorMockSelector{selected: "opt1", err: nil},
-		err:      nil,
+		selector: &clientConfiguratorMockSelector{selected: "opt1"},
 	}
 	cc := makeCC(sf, nil, nil, nil)
 
-	got, err := cc.selectConf([]string{"opt1", "opt2"}, "prompt")
+	got, err := cc.selectConf(
+		[]string{"opt1", "opt2"},
+		"prompt",
+		value_objects.NewDefaultColor(),
+		value_objects.NewTransparentColor(),
+	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -96,36 +106,45 @@ func Test_selectConf_Success(t *testing.T) {
 }
 
 func Test_selectConf_FactoryError(t *testing.T) {
-	sf := &clientConfiguratorMockSelectorFactory{selector: nil, err: errors.New("factory fail")}
+	sf := &clientConfiguratorMockSelectorFactory{err: errors.New("factory fail")}
 	cc := makeCC(sf, nil, nil, nil)
 
-	if _, err := cc.selectConf([]string{"x"}, "prompt"); err == nil {
-		t.Fatal("expected factory error, got nil")
+	_, err := cc.selectConf(
+		[]string{"x"},
+		"prompt",
+		value_objects.NewDefaultColor(),
+		value_objects.NewDefaultColor(),
+	)
+	if err == nil || err.Error() != "factory fail" {
+		t.Fatalf("expected factory fail, got %v", err)
 	}
 }
 
 func Test_selectConf_SelectOneError(t *testing.T) {
 	sf := &clientConfiguratorMockSelectorFactory{
-		selector: &clientConfiguratorMockSelector{selected: "", err: errors.New("select fail")},
-		err:      nil,
+		selector: &clientConfiguratorMockSelector{err: errors.New("select fail")},
 	}
 	cc := makeCC(sf, nil, nil, nil)
 
-	if _, err := cc.selectConf([]string{"x"}, "prompt"); err == nil {
-		t.Fatal("expected select-one error, got nil")
+	_, err := cc.selectConf(
+		[]string{"x"},
+		"prompt",
+		value_objects.NewDefaultColor(),
+		value_objects.NewDefaultColor(),
+	)
+	if err == nil || err.Error() != "select fail" {
+		t.Fatalf("expected select fail, got %v", err)
 	}
 }
 
 func Test_createConf_Success(t *testing.T) {
 	tif := &clientConfiguratorMockTextInputFactory{
-		textInput: &clientConfiguratorMockTextInput{value: "name", err: nil},
-		err:       nil,
+		textInput: &clientConfiguratorMockTextInput{value: "name"},
 	}
 	taf := &clientConfiguratorMockTextAreaFactory{
-		textArea: &clientConfiguratorMockTextArea{value: `{}`, err: nil},
-		err:      nil,
+		textArea: &clientConfiguratorMockTextArea{value: `{}`},
 	}
-	creator := &clientConfiguratorMockCreator{err: nil}
+	creator := &clientConfiguratorMockCreator{}
 
 	cc := makeCC(nil, tif, taf, creator)
 	if err := cc.createConf(); err != nil {
@@ -134,7 +153,7 @@ func Test_createConf_Success(t *testing.T) {
 }
 
 func Test_createConf_TextInputFactoryError(t *testing.T) {
-	tif := &clientConfiguratorMockTextInputFactory{nil, errors.New("input-factory fail")}
+	tif := &clientConfiguratorMockTextInputFactory{err: errors.New("input-factory fail")}
 	cc := makeCC(nil, tif, nil, nil)
 
 	if err := cc.createConf(); err == nil {
@@ -144,8 +163,7 @@ func Test_createConf_TextInputFactoryError(t *testing.T) {
 
 func Test_createConf_TextInputValueError(t *testing.T) {
 	tif := &clientConfiguratorMockTextInputFactory{
-		textInput: &clientConfiguratorMockTextInput{value: "", err: errors.New("value fail")},
-		err:       nil,
+		textInput: &clientConfiguratorMockTextInput{err: errors.New("value fail")},
 	}
 	cc := makeCC(nil, tif, nil, nil)
 
@@ -156,10 +174,9 @@ func Test_createConf_TextInputValueError(t *testing.T) {
 
 func Test_createConf_TextAreaFactoryError(t *testing.T) {
 	tif := &clientConfiguratorMockTextInputFactory{
-		textInput: &clientConfiguratorMockTextInput{value: "n", err: nil},
-		err:       nil,
+		textInput: &clientConfiguratorMockTextInput{value: "n"},
 	}
-	taf := &clientConfiguratorMockTextAreaFactory{nil, errors.New("area-factory fail")}
+	taf := &clientConfiguratorMockTextAreaFactory{err: errors.New("area-factory fail")}
 	cc := makeCC(nil, tif, taf, nil)
 
 	if err := cc.createConf(); err == nil {
@@ -169,12 +186,10 @@ func Test_createConf_TextAreaFactoryError(t *testing.T) {
 
 func Test_createConf_TextAreaValueError(t *testing.T) {
 	tif := &clientConfiguratorMockTextInputFactory{
-		textInput: &clientConfiguratorMockTextInput{value: "n", err: nil},
-		err:       nil,
+		textInput: &clientConfiguratorMockTextInput{value: "n"},
 	}
 	taf := &clientConfiguratorMockTextAreaFactory{
-		textArea: &clientConfiguratorMockTextArea{value: "", err: errors.New("area-value fail")},
-		err:      nil,
+		textArea: &clientConfiguratorMockTextArea{err: errors.New("area-value fail")},
 	}
 	cc := makeCC(nil, tif, taf, nil)
 
@@ -185,12 +200,10 @@ func Test_createConf_TextAreaValueError(t *testing.T) {
 
 func Test_createConf_ParseError(t *testing.T) {
 	tif := &clientConfiguratorMockTextInputFactory{
-		textInput: &clientConfiguratorMockTextInput{value: "n", err: nil},
-		err:       nil,
+		textInput: &clientConfiguratorMockTextInput{value: "n"},
 	}
 	taf := &clientConfiguratorMockTextAreaFactory{
-		textArea: &clientConfiguratorMockTextArea{value: "{bad}", err: nil},
-		err:      nil,
+		textArea: &clientConfiguratorMockTextArea{value: "{bad}"},
 	}
 	cc := makeCC(nil, tif, taf, &clientConfiguratorMockCreator{})
 
@@ -201,12 +214,10 @@ func Test_createConf_ParseError(t *testing.T) {
 
 func Test_createConf_CreatorError(t *testing.T) {
 	tif := &clientConfiguratorMockTextInputFactory{
-		textInput: &clientConfiguratorMockTextInput{value: "n", err: nil},
-		err:       nil,
+		textInput: &clientConfiguratorMockTextInput{value: "n"},
 	}
 	taf := &clientConfiguratorMockTextAreaFactory{
-		textArea: &clientConfiguratorMockTextArea{value: `{}`, err: nil},
-		err:      nil,
+		textArea: &clientConfiguratorMockTextArea{value: `{}`},
 	}
 	creator := &clientConfiguratorMockCreator{err: errors.New("create fail")}
 	cc := makeCC(nil, tif, taf, creator)
