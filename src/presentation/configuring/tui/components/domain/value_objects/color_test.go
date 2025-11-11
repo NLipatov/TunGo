@@ -22,7 +22,7 @@ func TestNewColor(t *testing.T) {
 func TestNewDefaultColor(t *testing.T) {
 	c := NewDefaultColor()
 
-	if c.Red() != 0 || c.Green() != 255 || c.Blue() != 0 {
+	if c.Red() != 0 || c.Green() != 200 || c.Blue() != 0 {
 		t.Errorf("unexpected default color RGB: (%d,%d,%d)", c.Red(), c.Green(), c.Blue())
 	}
 	if !c.Enabled() {
