@@ -1,3 +1,5 @@
+//go:build darwin
+
 package ifconfig
 
 type Contract interface {
