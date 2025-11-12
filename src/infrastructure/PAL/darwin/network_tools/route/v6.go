@@ -3,6 +3,7 @@
 package route
 
 import (
+	"bytes"
 	"fmt"
 	"net"
 	"strings"
@@ -64,60 +65,58 @@ func (v *v6) Get(destIP string) error {
 			}
 		}
 	}
-
+	_ = v.deleteQuiet(destIP)
 	if strings.HasPrefix(gw, "fe80:") && !strings.Contains(gw, "%") && iface != "" {
 		gw = gw + "%" + iface
 	}
 
 	switch {
 	case gw != "" && !strings.HasPrefix(gw, "link#"):
-		return v.AddViaGateway(destIP, gw)
+		return v.addViaGatewayQuiet(destIP, gw)
 	case iface != "":
-		return v.Add(destIP, iface)
+		return v.addOnLinkQuiet(destIP, iface)
 	default:
 		return fmt.Errorf("no route found for %s", destIP)
 	}
 }
 
 func (v *v6) Add(ip, iface string) error {
-	if _, err := v.commander.CombinedOutput("route", "-q", "-n", "add", "-inet6", ip, "-interface", iface); err != nil {
-		return fmt.Errorf("route add %s via interface %s failed: %v", ip, iface, err)
-	}
-	return nil
+	_ = v.deleteQuiet(ip)
+	return v.addOnLinkQuiet(ip, iface)
 }
 
 func (v *v6) AddViaGateway(ip, gw string) error {
-	if _, err := v.commander.CombinedOutput("route", "-q", "-n", "add", "-inet6", ip, gw); err != nil {
-		return fmt.Errorf("route add %s via %s failed: %v", ip, gw, err)
-	}
-	return nil
+	_ = v.deleteQuiet(ip)
+	return v.addViaGatewayQuiet(ip, gw)
 }
 
 func (v *v6) Del(destIP string) error {
-	if _, err := v.commander.CombinedOutput("route", "-q", "-n", "delete", "-inet6", destIP); err != nil {
-		return fmt.Errorf("route delete %s failed: %v", destIP, err)
+	out, err := v.commander.CombinedOutput("route", "-q", "-n", "delete", "-inet6", destIP)
+	if err != nil && !bytes.Contains(bytes.ToLower(out), []byte("not in table")) {
+		return fmt.Errorf("route delete %s failed: %v (%s)", destIP, err, out)
 	}
 	return nil
 }
 
 func (v *v6) AddSplit(dev string) error {
-	if _, err := v.commander.CombinedOutput("route", "-q", "-n", "add", "-inet6", v6SplitOne, "-interface", dev); err != nil {
-		return fmt.Errorf("route add ::/1 failed: %v", err)
+	_ = v.runDeleteSplit("-inet6", v6SplitOne, "-interface", dev)
+	_ = v.runDeleteSplit("-inet6", v6SplitTwo, "-interface", dev)
+
+	if out, err := v.commander.CombinedOutput("route", "-q", "-n", "add", "-inet6", v6SplitOne, "-interface", dev); err != nil &&
+		!bytes.Contains(out, []byte("File exists")) {
+		return fmt.Errorf("route add %s failed: %v (%s)", v6SplitOne, err, out)
 	}
-	if _, err := v.commander.CombinedOutput("route", "-q", "-n", "add", "-inet6", v6SplitTwo, "-interface", dev); err != nil {
-		return fmt.Errorf("route add 8000::/1 failed: %v", err)
+	if out, err := v.commander.CombinedOutput("route", "-q", "-n", "add", "-inet6", v6SplitTwo, "-interface", dev); err != nil &&
+		!bytes.Contains(out, []byte("File exists")) {
+		return fmt.Errorf("route add %s failed: %v (%s)", v6SplitTwo, err, out)
 	}
 	return nil
 }
 
 func (v *v6) DelSplit(dev string) error {
 	var eg errgroup.Group
-	eg.Go(func() error {
-		return v.commander.Run("route", "-q", "-n", "delete", "-inet6", v6SplitOne, "-interface", dev)
-	})
-	eg.Go(func() error {
-		return v.commander.Run("route", "-q", "-n", "delete", "-inet6", v6SplitTwo, "-interface", dev)
-	})
+	eg.Go(func() error { return v.runDeleteSplit("-inet6", v6SplitOne, "-interface", dev) })
+	eg.Go(func() error { return v.runDeleteSplit("-inet6", v6SplitTwo, "-interface", dev) })
 	return eg.Wait()
 }
 
@@ -133,4 +132,37 @@ func (v *v6) DefaultGateway() (string, error) {
 		}
 	}
 	return "", fmt.Errorf("defaultGateway(v6): no gateway found")
+}
+
+func (v *v6) deleteQuiet(ip string) error {
+	out, err := v.commander.CombinedOutput("route", "-q", "-n", "delete", "-inet6", ip)
+	if err != nil && !bytes.Contains(bytes.ToLower(out), []byte("not in table")) {
+		return fmt.Errorf("route delete %s failed: %v (%s)", ip, err, out)
+	}
+	return nil
+}
+
+func (v *v6) addOnLinkQuiet(ip, iface string) error {
+	out, err := v.commander.CombinedOutput("route", "-q", "-n", "add", "-inet6", ip, "-interface", iface)
+	if err != nil && !bytes.Contains(out, []byte("File exists")) {
+		return fmt.Errorf("route add %s via interface %s failed: %v (%s)", ip, iface, err, out)
+	}
+	return nil
+}
+
+func (v *v6) addViaGatewayQuiet(ip, gw string) error {
+	out, err := v.commander.CombinedOutput("route", "-q", "-n", "add", "-inet6", ip, gw)
+	if err != nil && !bytes.Contains(out, []byte("File exists")) {
+		return fmt.Errorf("route add %s via %s failed: %v (%s)", ip, gw, err, out)
+	}
+	return nil
+}
+
+func (v *v6) runDeleteSplit(protoFlag string, cidr string, extra ...string) error {
+	args := append([]string{"-q", "-n", "delete", protoFlag, cidr}, extra...)
+	out, err := v.commander.CombinedOutput("route", args...)
+	if err != nil && !bytes.Contains(bytes.ToLower(out), []byte("not in table")) {
+		return fmt.Errorf("route delete %s failed: %v (%s)", cidr, err, out)
+	}
+	return nil
 }

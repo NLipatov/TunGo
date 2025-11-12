@@ -24,12 +24,12 @@ type v4 struct {
 	addedSplit bool
 }
 
-func newV4(
-	s settings.Settings,
-	ifc ifconfig.Contract, // from ifconfig.NewFactory(...).NewV4()
-	rt route.Contract, // from route.NewFactory(...).NewV4()
-) *v4 {
-	return &v4{s: s, ifc: ifc, rtc: rt}
+func newV4(s settings.Settings, ifc ifconfig.Contract, rt route.Contract) *v4 {
+	return &v4{
+		s:   s,
+		ifc: ifc,
+		rtc: rt,
+	}
 }
 
 func (m *v4) CreateDevice() (tun.Device, error) {
@@ -57,6 +57,7 @@ func (m *v4) CreateDevice() (tun.Device, error) {
 		_ = m.DisposeDevices()
 		return nil, err
 	}
+	_ = m.rtc.DelSplit(m.ifName)
 	if err := m.rtc.AddSplit(m.ifName); err != nil {
 		_ = m.DisposeDevices()
 		return nil, fmt.Errorf("add v4 split default: %w", err)
@@ -67,9 +68,7 @@ func (m *v4) CreateDevice() (tun.Device, error) {
 }
 
 func (m *v4) DisposeDevices() error {
-	if m.addedSplit && m.ifName != "" {
-		_ = m.rtc.DelSplit(m.ifName)
-	}
+	_ = m.rtc.DelSplit(m.ifName)
 	if m.s.ConnectionIP != "" {
 		_ = m.rtc.Del(m.s.ConnectionIP)
 	}
@@ -100,13 +99,11 @@ func (m *v4) validateSettings() error {
 }
 
 func (m *v4) assignIPv4() error {
-	ip := net.ParseIP(m.s.InterfaceAddress)
-	_, nw, _ := net.ParseCIDR(m.s.InterfaceIPCIDR)
-	if ip == nil || nw == nil || !nw.Contains(ip) {
-		return fmt.Errorf("v4: address %s not in %s", m.s.InterfaceAddress, m.s.InterfaceIPCIDR)
+	pfx := "32"
+	if parts := strings.Split(m.s.InterfaceIPCIDR, "/"); len(parts) == 2 && parts[1] == "32" {
+		pfx = "32"
 	}
-	parts := strings.Split(m.s.InterfaceIPCIDR, "/")
-	cidr := fmt.Sprintf("%s/%s", m.s.InterfaceAddress, parts[1])
+	cidr := fmt.Sprintf("%s/%s", m.s.InterfaceAddress, pfx)
 	if err := m.ifc.LinkAddrAdd(m.ifName, cidr); err != nil {
 		return fmt.Errorf("v4: set addr %s on %s: %w", cidr, m.ifName, err)
 	}

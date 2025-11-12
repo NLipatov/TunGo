@@ -24,12 +24,12 @@ type v6 struct {
 	addedSplit bool
 }
 
-func newV6(
-	s settings.Settings,
-	ifc ifconfig.Contract, // from ifconfig.NewFactory(...).NewV6()
-	rt route.Contract, // from route.NewFactory(...).NewV6()
-) *v6 {
-	return &v6{s: s, ifc: ifc, rt: rt}
+func newV6(s settings.Settings, ifc ifconfig.Contract, rt route.Contract) *v6 {
+	return &v6{
+		s:   s,
+		ifc: ifc,
+		rt:  rt,
+	}
 }
 
 func (m *v6) CreateDevice() (tun.Device, error) {
@@ -58,6 +58,7 @@ func (m *v6) CreateDevice() (tun.Device, error) {
 		_ = m.DisposeDevices()
 		return nil, err
 	}
+	_ = m.rt.DelSplit(m.ifName)
 	if err := m.rt.AddSplit(m.ifName); err != nil {
 		_ = m.DisposeDevices()
 		return nil, fmt.Errorf("add v6 split default: %w", err)
@@ -69,9 +70,7 @@ func (m *v6) CreateDevice() (tun.Device, error) {
 }
 
 func (m *v6) DisposeDevices() error {
-	if m.addedSplit && m.ifName != "" {
-		_ = m.rt.DelSplit(m.ifName)
-	}
+	_ = m.rt.DelSplit(m.ifName)
 	if m.s.ConnectionIP != "" {
 		_ = m.rt.Del(m.s.ConnectionIP)
 	}
@@ -126,6 +125,9 @@ func (m *v6) effectiveMTU() int {
 	mtu := m.s.MTU
 	if mtu <= 0 {
 		mtu = settings.SafeMTU
+	}
+	if mtu < 1280 {
+		mtu = 1280
 	}
 	return mtu
 }
