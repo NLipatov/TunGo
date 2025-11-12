@@ -3,7 +3,8 @@ package tui
 import (
 	"fmt"
 	"tungo/infrastructure/PAL/configuration/server"
-	"tungo/presentation/configuring/tui/components"
+	"tungo/presentation/configuring/tui/components/domain/contracts/selector"
+	"tungo/presentation/configuring/tui/components/domain/value_objects"
 	"tungo/presentation/interactive_commands/handlers"
 )
 
@@ -15,10 +16,10 @@ const (
 type serverConfigurator struct {
 	manager         server.ServerConfigurationManager
 	optionsSet      [2]string
-	selectorFactory components.SelectorFactory
+	selectorFactory selector.Factory
 }
 
-func newServerConfigurator(manager server.ServerConfigurationManager, selectorFactory components.SelectorFactory) *serverConfigurator {
+func newServerConfigurator(manager server.ServerConfigurationManager, selectorFactory selector.Factory) *serverConfigurator {
 	return &serverConfigurator{
 		manager:         manager,
 		optionsSet:      [2]string{startServerOption, addClientOption},
@@ -48,12 +49,17 @@ func (s *serverConfigurator) Configure() error {
 }
 
 func (s *serverConfigurator) selectOption() (string, error) {
-	selector, selectorErr := s.selectorFactory.NewTuiSelector("Choose an option", s.optionsSet[:])
+	tuiSelector, selectorErr := s.selectorFactory.NewTuiSelector(
+		"Choose an option",
+		s.optionsSet[:],
+		value_objects.NewDefaultColor(),
+		value_objects.NewTransparentColor(),
+	)
 	if selectorErr != nil {
 		return "", selectorErr
 	}
 
-	selectedOption, selectedOptionErr := selector.SelectOne()
+	selectedOption, selectedOptionErr := tuiSelector.SelectOne()
 	if selectedOptionErr != nil {
 		return "", selectedOptionErr
 	}

@@ -2,9 +2,10 @@ package bubble_tea
 
 import (
 	"errors"
-	tea "github.com/charmbracelet/bubbletea"
 	"os"
-	"tungo/presentation/configuring/tui/components"
+	"tungo/presentation/configuring/tui/components/domain/contracts/text_area"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 type TextAreaAdapter struct {
@@ -12,15 +13,15 @@ type TextAreaAdapter struct {
 	teaRunner TeaRunner
 }
 
-func NewTextAreaAdapter() components.TextAreaFactory {
+func NewTextAreaAdapter() text_area.TextAreaFactory {
 	return &TextAreaAdapter{teaRunner: &defaultTeaRunner{}}
 }
 
-func NewCustomTeaRunnerTextAreaAdapter(teaRunner TeaRunner) components.TextAreaFactory {
+func NewCustomTeaRunnerTextAreaAdapter(teaRunner TeaRunner) text_area.TextAreaFactory {
 	return &TextAreaAdapter{teaRunner: teaRunner}
 }
 
-func (t *TextAreaAdapter) NewTextArea(ph string) (components.TextArea, error) {
+func (t *TextAreaAdapter) NewTextArea(ph string) (text_area.TextArea, error) {
 	ta := NewTextArea(ph)
 	res, err := t.teaRunner.Run(ta, tea.WithInput(os.Stdin), tea.WithOutput(os.Stdout))
 	if err != nil {
