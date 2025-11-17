@@ -17,9 +17,9 @@ const (
 	v4SplitOne = "0.0.0.0/1"
 	// v4SplitTwo covers half of IPv4 address space
 	// (addresses between 128.0.0.0 and 255.255.255.255)
-	v4SplitTwo        = "128.0.0.0/1"
-	loopbackIFaceName = "lo0"
-	loopbackPrefix    = "127."
+	v4SplitTwo          = "128.0.0.0/1"
+	loopbackIFaceNameV4 = "lo0"
+	loopbackPrefixV4    = "127."
 )
 
 type v4 struct {
@@ -44,17 +44,21 @@ func (v *v4) Get(destIP string) error {
 	if err != nil {
 		return err
 	}
+	// If route is empty or goes via loopback, try default route.
 	if (gateway == "" && iFace == "") || v.isLoop(gateway, iFace) {
 		if gwDef, ifDef, defErr := v.parseRoute("default"); defErr == nil {
-			if gwDef != "" && !strings.HasPrefix(gwDef, loopbackPrefix) {
+			if gwDef != "" && !strings.HasPrefix(gwDef, loopbackPrefixV4) {
 				gateway, iFace = gwDef, ifDef
 			}
 		}
 	}
+	// If still loopback after fallback – treat as an error.
 	if v.isLoop(gateway, iFace) {
 		return fmt.Errorf("v4.Get: no non-loopback route found for destination: %q", destIP)
 	}
+	// Delete old route to destIP, ignore possible errors.
 	_ = v.deleteQuiet(destIP)
+	// For link-local gateways add interface scope if missing.
 	if gateway != "" && !strings.HasPrefix(gateway, "link#") {
 		return v.addViaGatewayQuiet(destIP, gateway)
 	}
@@ -65,7 +69,7 @@ func (v *v4) Get(destIP string) error {
 }
 
 func (v *v4) isLoop(gateway, iFace string) bool {
-	return iFace == loopbackIFaceName || strings.HasPrefix(gateway, loopbackPrefix)
+	return iFace == loopbackIFaceNameV4 || strings.HasPrefix(gateway, loopbackPrefixV4)
 }
 
 func (v *v4) parseRoute(target string) (gw, iFace string, err error) {
