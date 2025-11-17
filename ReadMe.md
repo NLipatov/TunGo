@@ -8,7 +8,7 @@
 # TunGo: What's It All About?
 
 <p align="center">
-  <img alt="Two gophers dancing tango" src="https://i.ibb.co/K7yzDf6/DALL-E-2024-10-04-20-18-51-A-minimalist-logo-featuring-two-Go-language-mascots-dancing-tango-togethe.webp" width="40%"/>
+  <img alt="Two gophers dancing tango" src="https://i.ibb.co/GvSCJ01n/Tun-Go-logo.png" width="40%"/>
 </p>
 
 **TunGo** is a lightweight VPN designed for modern needs: **fast**, **secure**, and **open-source**.
