@@ -32,34 +32,13 @@ func (v *v6) Get(destIP string) error {
 	if ip == nil || ip.To4() != nil {
 		return fmt.Errorf("v6.Get: non-IPv6 dest %q", destIP)
 	}
-
-	parseRoute := func(target string) (gw, iface string, err error) {
-		out, err := v.commander.CombinedOutput("route", "-n", "-inet6", "get", target)
-		if err != nil {
-			return "", "", fmt.Errorf("route get %s: %w (%s)", target, err, out)
-		}
-		for _, ln := range strings.Split(string(out), "\n") {
-			f := strings.Fields(strings.TrimSpace(ln))
-			if len(f) < 2 {
-				continue
-			}
-			switch f[0] {
-			case "gateway:":
-				gw = f[1]
-			case "interface:":
-				iface = f[1]
-			}
-		}
-		return
-	}
-
-	gw, iface, err := parseRoute(destIP)
+	gw, iface, err := v.parseRoute(destIP)
 	if err != nil {
 		return err
 	}
 	isLoop := gw == "::1"
 	if (gw == "" && iface == "") || isLoop {
-		if gwDef, ifDef, err2 := parseRoute("default"); err2 == nil {
+		if gwDef, ifDef, err2 := v.parseRoute("default"); err2 == nil {
 			if gwDef != "" && gwDef != "::1" {
 				gw, iface = gwDef, ifDef
 			}
@@ -78,6 +57,26 @@ func (v *v6) Get(destIP string) error {
 	default:
 		return fmt.Errorf("no route found for %s", destIP)
 	}
+}
+
+func (v *v6) parseRoute(target string) (gw, iface string, err error) {
+	out, err := v.commander.CombinedOutput("route", "-n", "-inet6", "get", target)
+	if err != nil {
+		return "", "", fmt.Errorf("route get %s: %w (%s)", target, err, out)
+	}
+	for _, ln := range strings.Split(string(out), "\n") {
+		f := strings.Fields(strings.TrimSpace(ln))
+		if len(f) < 2 {
+			continue
+		}
+		switch f[0] {
+		case "gateway:":
+			gw = f[1]
+		case "interface:":
+			iface = f[1]
+		}
+	}
+	return gw, iface, nil
 }
 
 func (v *v6) Add(ip, iface string) error {
