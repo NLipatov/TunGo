@@ -4,40 +4,30 @@ package value_objects
 // Two Color instances are considered equal if all their components match.
 // The Enabled flag indicates whether the color is active or visually applied.
 type Color struct {
-	r, g, b uint8 // RGB color components
-	enabled bool  // indicates whether the color is enabled
+	code    ColorCode
+	enabled bool // indicates whether the color is enabled
 }
 
 // NewDefaultColor returns a default TunGo-styled green color.
 func NewDefaultColor() Color {
-	return NewColor(0, 200, 0, true)
+	return NewColor(ColorGreen, true)
 }
 
 // NewTransparentColor returns a disabled color instance.
 func NewTransparentColor() Color {
-	return NewColor(0, 0, 0, false)
+	return NewColor(ColorGreen, false)
 }
 
-// NewColor returns a new Color with the given RGB components and enabled flag.
-func NewColor(r, g, b uint8, enabled bool) Color {
+// NewColor creates a new color with the given ANSI code.
+func NewColor(code ColorCode, enabled bool) Color {
 	return Color{
+		code:    code,
 		enabled: enabled,
-		r:       r,
-		g:       g,
-		b:       b,
 	}
 }
 
-func (c Color) Red() uint8 {
-	return c.r
-}
-
-func (c Color) Green() uint8 {
-	return c.g
-}
-
-func (c Color) Blue() uint8 {
-	return c.b
+func (c Color) Code() ColorCode {
+	return c.code
 }
 
 func (c Color) Enabled() bool {

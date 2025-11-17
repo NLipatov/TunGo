@@ -68,7 +68,7 @@ func (c *clientConfigurator) Configure() error {
 		confToDelete, confToDeleteErr := c.selectConf(
 			optionsWithoutAddAndRemove,
 			"Choose a configuration to remove:",
-			value_objects.NewColor(255, 0, 0, true), value_objects.NewTransparentColor(),
+			value_objects.NewColor(value_objects.ColorGreen, true), value_objects.NewTransparentColor(),
 		)
 		if confToDeleteErr != nil {
 			return confToDeleteErr

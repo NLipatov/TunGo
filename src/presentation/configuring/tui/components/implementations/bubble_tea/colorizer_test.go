@@ -12,51 +12,84 @@ func TestNewColorizer_ImplementsInterface(t *testing.T) {
 	}
 }
 
+func TestColorizeString_ForegroundNormal(t *testing.T) {
+	cz := NewColorizer()
+
+	text := "test"
+	// Foreground normal range: 0..7 → 30..37
+	fg := value_objects.NewColor(value_objects.ColorBlue, true) // 4 → 34
+	bg := value_objects.NewTransparentColor()                   // disabled
+
+	got := cz.ColorizeString(text, bg, fg)
+	want := "\033[34m" + "test" + "\033[0m"
+
+	if got != want {
+		t.Fatalf("unexpected output:\n got: %q\nwant: %q", got, want)
+	}
+}
+
+func TestColorizeString_ForegroundBright(t *testing.T) {
+	cz := NewColorizer()
+
+	text := "test"
+	// Bright FG: 8..15 → 90..97
+	fg := value_objects.NewColor(value_objects.ColorBrightYellow, true) // 11 → 90 + (11-8)=93
+	bg := value_objects.NewTransparentColor()
+
+	got := cz.ColorizeString(text, bg, fg)
+	want := "\033[93m" + "test" + "\033[0m"
+
+	if got != want {
+		t.Fatalf("unexpected bright FG output:\n got: %q\nwant: %q", got, want)
+	}
+}
+
+func TestColorizeString_BackgroundNormal(t *testing.T) {
+	cz := NewColorizer()
+
+	text := "bg"
+	// BG normal: 0..7 → 40..47
+	bg := value_objects.NewColor(value_objects.ColorMagenta, true) // 5 → 45
+	fg := value_objects.NewTransparentColor()
+
+	got := cz.ColorizeString(text, bg, fg)
+	want := "\033[45m" + "bg" + "\033[0m"
+
+	if got != want {
+		t.Fatalf("unexpected normal BG output:\n got: %q\nwant: %q", got, want)
+	}
+}
+
+func TestColorizeString_BackgroundBright(t *testing.T) {
+	cz := NewColorizer()
+
+	text := "bg"
+	// Bright BG: 8..15 → 100..107
+	bg := value_objects.NewColor(value_objects.ColorBrightCyan, true) // 14 → 100 + (14-8)=106
+	fg := value_objects.NewTransparentColor()
+
+	got := cz.ColorizeString(text, bg, fg)
+	want := "\033[106m" + "bg" + "\033[0m"
+
+	if got != want {
+		t.Fatalf("unexpected bright BG output:\n got: %q\nwant: %q", got, want)
+	}
+}
+
 func TestColorizeString_BothEnabled(t *testing.T) {
 	cz := NewColorizer()
 
 	text := "hello"
-	bg := value_objects.NewColor(255, 0, 0, true) // red
-	fg := value_objects.NewColor(0, 255, 0, true) // green
+	// fg normal: 2 → 32
+	fg := value_objects.NewColor(value_objects.ColorGreen, true)
+	// bg bright: 8 → 100
+	bg := value_objects.NewColor(value_objects.ColorBrightBlack, true)
 
 	got := cz.ColorizeString(text, bg, fg)
-
-	want := "\033[38;2;0;255;0m" + // foreground first
-		"\033[48;2;255;0;0m" + // background second
-		"hello\033[0m"
+	want := "\033[32m" + "\033[100m" + "hello" + "\033[0m"
 
 	if got != want {
-		t.Fatalf("unexpected output:\n got: %q\nwant: %q", got, want)
-	}
-}
-
-func TestColorizeString_ForegroundOnly(t *testing.T) {
-	cz := NewColorizer()
-
-	text := "hi"
-	bg := value_objects.NewTransparentColor()   // disabled bg
-	fg := value_objects.NewColor(1, 2, 3, true) // enabled fg
-
-	got := cz.ColorizeString(text, bg, fg)
-	want := "\033[38;2;1;2;3m" + "hi" + "\033[0m"
-
-	if got != want {
-		t.Fatalf("unexpected output:\n got: %q\nwant: %q", got, want)
-	}
-}
-
-func TestColorizeString_BackgroundOnly(t *testing.T) {
-	cz := NewColorizer()
-
-	text := "bg"
-	bg := value_objects.NewColor(9, 8, 7, true) // enabled bg
-	fg := value_objects.NewTransparentColor()   // disabled fg
-
-	got := cz.ColorizeString(text, bg, fg)
-	want := "\033[48;2;9;8;7m" + "bg" + "\033[0m"
-
-	if got != want {
-		t.Fatalf("unexpected output:\n got: %q\nwant: %q", got, want)
+		t.Fatalf("unexpected combined output:\n got: %q\nwant: %q", got, want)
 	}
 }
 
@@ -71,6 +104,6 @@ func TestColorizeString_NoneEnabled(t *testing.T) {
 	want := "plain\033[0m"
 
 	if got != want {
-		t.Fatalf("unexpected output:\n got: %q\nwant: %q", got, want)
+		t.Fatalf("unexpected output with no colors:\n got: %q\nwant: %q", got, want)
 	}
 }
