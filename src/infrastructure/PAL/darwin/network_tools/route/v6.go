@@ -31,6 +31,8 @@ func (v *v6) Get(destIP string) error {
 	ip := net.ParseIP(destIP)
 	if ip == nil || ip.To4() != nil {
 		return fmt.Errorf("v6.Get: non-IPv6 dest %q", destIP)
+	} else if ip.IsLoopback() {
+		return fmt.Errorf("v6.Get: invalid IP: loopbackßßß %q", destIP)
 	}
 	gw, iFace, err := v.parseRoute(destIP)
 	if err != nil {

@@ -33,6 +33,8 @@ func newV4(commander PAL.Commander) Contract {
 func (v *v4) Get(destIP string) error {
 	if ip := net.ParseIP(destIP); ip == nil || ip.To4() == nil {
 		return fmt.Errorf("v4.Get: non-IPv4 dest %q", destIP)
+	} else if ip.IsLoopback() {
+		return fmt.Errorf("v4.Get: invalid IP: loopback %q", destIP)
 	}
 	gw, iFace, err := v.parseRoute(destIP)
 	if err != nil {
