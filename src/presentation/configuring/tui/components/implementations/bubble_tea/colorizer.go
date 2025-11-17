@@ -20,11 +20,21 @@ func (c *Colorizer) ColorizeString(
 	out := ""
 
 	if foreground.Enabled() {
-		out += fmt.Sprintf("\033[38;2;%d;%d;%dm", foreground.Red(), foreground.Green(), foreground.Blue())
+		code := foreground.Code()
+		if code <= 7 {
+			out += fmt.Sprintf("\033[%dm", 30+code)
+		} else {
+			out += fmt.Sprintf("\033[%dm", 90+(code-8))
+		}
 	}
 
 	if background.Enabled() {
-		out += fmt.Sprintf("\033[48;2;%d;%d;%dm", background.Red(), background.Green(), background.Blue())
+		code := background.Code()
+		if code <= 7 {
+			out += fmt.Sprintf("\033[%dm", 40+code)
+		} else {
+			out += fmt.Sprintf("\033[%dm", 100+(code-8))
+		}
 	}
 
 	out += s + "\033[0m"
