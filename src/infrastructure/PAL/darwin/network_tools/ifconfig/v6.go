@@ -25,7 +25,6 @@ func (v v6) LinkAddrAdd(ifName, cidr string) error {
 		return fmt.Errorf("invalid CIDR: %s", cidr)
 	}
 	ipStr, pfxStr := parts[0], parts[1]
-
 	ip := net.ParseIP(ipStr)
 	if ip == nil || ip.To4() != nil {
 		return fmt.Errorf("not an IPv6 CIDR: %s", cidr)
@@ -34,9 +33,8 @@ func (v v6) LinkAddrAdd(ifName, cidr string) error {
 	if err != nil || p < 0 || p > 128 {
 		p = 128
 	}
-
-	if out, err := v.commander.CombinedOutput("ifconfig", ifName, "inet6", ipStr, "prefixlen", strconv.Itoa(p), "up"); err != nil {
-		return fmt.Errorf("failed to assign IPv6 to %s: %v (%s)", ifName, err, out)
+	if out, outErr := v.commander.CombinedOutput("ifconfig", ifName, "inet6", ipStr, "prefixlen", strconv.Itoa(p), "up"); outErr != nil {
+		return fmt.Errorf("failed to assign IPv6 to %s: %v (%s)", ifName, outErr, out)
 	}
 	return nil
 }

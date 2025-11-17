@@ -25,7 +25,6 @@ func (v v4) LinkAddrAdd(ifName, cidr string) error {
 		return fmt.Errorf("invalid CIDR: %s", cidr)
 	}
 	ipStr, pfxStr := parts[0], parts[1]
-
 	ip := net.ParseIP(ipStr)
 	if ip == nil || ip.To4() == nil {
 		return fmt.Errorf("not an IPv4 CIDR: %s", cidr)
@@ -36,9 +35,8 @@ func (v v4) LinkAddrAdd(ifName, cidr string) error {
 	}
 	mask := net.CIDRMask(p, 32)
 	netmask := fmt.Sprintf("%d.%d.%d.%d", mask[0], mask[1], mask[2], mask[3])
-
-	if out, err := v.commander.CombinedOutput("ifconfig", ifName, "inet", ipStr, ipStr, "netmask", netmask, "up"); err != nil {
-		return fmt.Errorf("failed to assign IPv4 to %s: %v (%s)", ifName, err, out)
+	if out, outErr := v.commander.CombinedOutput("ifconfig", ifName, "inet", ipStr, ipStr, "netmask", netmask, "up"); outErr != nil {
+		return fmt.Errorf("failed to assign IPv4 to %s: %v (%s)", ifName, outErr, out)
 	}
 	return nil
 }
