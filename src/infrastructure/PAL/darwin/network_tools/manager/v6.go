@@ -18,8 +18,8 @@ type v6 struct {
 	s          settings.Settings
 	tunDev     tun.Device
 	rawUTUN    utun.UTUN
-	ifc        ifconfig.Contract // v6 impl
-	rt         route.Contract    // v6 impl
+	ifc        ifconfig.Contract // v6 ifconfig.Contract implementation
+	rt         route.Contract    // v6 route.Contract implementation
 	ifName     string
 	addedSplit bool
 }

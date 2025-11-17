@@ -18,8 +18,8 @@ type v4 struct {
 	s          settings.Settings
 	tunDev     tun.Device
 	rawUTUN    utun.UTUN
-	ifc        ifconfig.Contract // v4 impl
-	rtc        route.Contract    // v4 impl
+	ifc        ifconfig.Contract // v4 ifconfig.Contract implementation
+	rtc        route.Contract    // v4 route.Contract implementation
 	ifName     string
 	addedSplit bool
 }
@@ -36,31 +36,29 @@ func (m *v4) CreateDevice() (tun.Device, error) {
 	if err := m.validateSettings(); err != nil {
 		return nil, err
 	}
-
 	raw, err := utun.NewDefaultFactory(m.ifc).CreateTUN(m.effectiveMTU())
 	if err != nil {
 		return nil, fmt.Errorf("create utun: %w", err)
 	}
 	m.rawUTUN = raw
-
 	name, err := raw.Name()
 	if err != nil {
 		_ = m.DisposeDevices()
 		return nil, fmt.Errorf("get utun name: %w", err)
 	}
 	m.ifName = name
-	if err := m.rtc.Get(m.s.ConnectionIP); err != nil {
+	if getErr := m.rtc.Get(m.s.ConnectionIP); getErr != nil {
 		_ = m.DisposeDevices()
-		return nil, fmt.Errorf("route to server %s: %w", m.s.ConnectionIP, err)
+		return nil, fmt.Errorf("route to server %s: %w", m.s.ConnectionIP, getErr)
 	}
-	if err := m.assignIPv4(); err != nil {
+	if assignErr := m.assignIPv4(); assignErr != nil {
 		_ = m.DisposeDevices()
-		return nil, err
+		return nil, assignErr
 	}
 	_ = m.rtc.DelSplit(m.ifName)
-	if err := m.rtc.AddSplit(m.ifName); err != nil {
+	if addErr := m.rtc.AddSplit(m.ifName); addErr != nil {
 		_ = m.DisposeDevices()
-		return nil, fmt.Errorf("add v4 split default: %w", err)
+		return nil, fmt.Errorf("add v4 split default: %w", addErr)
 	}
 	m.addedSplit = true
 	m.tunDev = utun.NewDarwinTunDevice(raw)
