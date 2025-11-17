@@ -34,35 +34,13 @@ func (v *v4) Get(destIP string) error {
 	if ip := net.ParseIP(destIP); ip == nil || ip.To4() == nil {
 		return fmt.Errorf("v4.Get: non-IPv4 dest %q", destIP)
 	}
-
-	parseRoute := func(target string) (gw, iFace string, err error) {
-		out, err := v.commander.CombinedOutput("route", "-n", "get", target)
-		if err != nil {
-			return "", "", fmt.Errorf("route get %s: %w (%s)", target, err, out)
-		}
-		for _, ln := range strings.Split(string(out), "\n") {
-			f := strings.Fields(strings.TrimSpace(ln))
-			if len(f) < 2 {
-				continue
-			}
-			switch f[0] {
-			case "gateway:":
-				gw = f[1]
-			case "interface:":
-				iFace = f[1]
-			}
-		}
-		return
-	}
-
-	gw, iFace, err := parseRoute(destIP)
+	gw, iFace, err := v.parseRoute(destIP)
 	if err != nil {
 		return err
 	}
-
 	isLoop := strings.HasPrefix(gw, "127.")
 	if (gw == "" && iFace == "") || isLoop {
-		if gwDef, ifDef, err2 := parseRoute("default"); err2 == nil {
+		if gwDef, ifDef, err2 := v.parseRoute("default"); err2 == nil {
 			if gwDef != "" && !strings.HasPrefix(gwDef, "127.") {
 				gw, iFace = gwDef, ifDef
 			}
@@ -76,6 +54,26 @@ func (v *v4) Get(destIP string) error {
 		return v.addOnLinkQuiet(destIP, iFace)
 	}
 	return fmt.Errorf("no route found for %s", destIP)
+}
+
+func (v *v4) parseRoute(target string) (gw, iFace string, err error) {
+	out, err := v.commander.CombinedOutput("route", "-n", "get", target)
+	if err != nil {
+		return "", "", fmt.Errorf("route get %s: %w (%s)", target, err, out)
+	}
+	for _, ln := range strings.Split(string(out), "\n") {
+		f := strings.Fields(strings.TrimSpace(ln))
+		if len(f) < 2 {
+			continue
+		}
+		switch f[0] {
+		case "gateway:":
+			gw = f[1]
+		case "interface:":
+			iFace = f[1]
+		}
+	}
+	return gw, iFace, nil
 }
 
 func (v *v4) Add(ip, iFace string) error {
