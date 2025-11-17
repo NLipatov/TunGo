@@ -6,7 +6,7 @@ import (
 	"bytes"
 	"fmt"
 	"golang.org/x/sync/errgroup"
-	"net"
+	"net/netip"
 	"strings"
 	"tungo/infrastructure/PAL"
 )
@@ -15,9 +15,11 @@ const (
 	// v4SplitOne covers half of IPv4 address space
 	// (addresses between 0.0.0.0 and 127.255.255.255)
 	v4SplitOne = "0.0.0.0/1"
-	// v4SplitTwo v4SplitOne covers half of IPv4 address space
+	// v4SplitTwo covers half of IPv4 address space
 	// (addresses between 128.0.0.0 and 255.255.255.255)
-	v4SplitTwo = "128.0.0.0/1"
+	v4SplitTwo        = "128.0.0.0/1"
+	loopbackIFaceName = "lo0"
+	loopbackPrefix    = "127."
 )
 
 type v4 struct {
@@ -31,31 +33,39 @@ func newV4(commander PAL.Commander) Contract {
 }
 
 func (v *v4) Get(destIP string) error {
-	if ip := net.ParseIP(destIP); ip == nil || ip.To4() == nil {
+	if ip, ipErr := netip.ParseAddr(destIP); ipErr != nil {
+		return fmt.Errorf("v4.Get: invalid IP %q: %w", destIP, ipErr)
+	} else if !ip.Is4() {
 		return fmt.Errorf("v4.Get: non-IPv4 dest %q", destIP)
 	} else if ip.IsLoopback() {
 		return fmt.Errorf("v4.Get: invalid IP: loopback %q", destIP)
 	}
-	gw, iFace, err := v.parseRoute(destIP)
+	gateway, iFace, err := v.parseRoute(destIP)
 	if err != nil {
 		return err
 	}
-	isLoop := strings.HasPrefix(gw, "127.")
-	if (gw == "" && iFace == "") || isLoop {
-		if gwDef, ifDef, err2 := v.parseRoute("default"); err2 == nil {
-			if gwDef != "" && !strings.HasPrefix(gwDef, "127.") {
-				gw, iFace = gwDef, ifDef
+	if (gateway == "" && iFace == "") || v.isLoop(gateway, iFace) {
+		if gwDef, ifDef, defErr := v.parseRoute("default"); defErr == nil {
+			if gwDef != "" && !strings.HasPrefix(gwDef, loopbackPrefix) {
+				gateway, iFace = gwDef, ifDef
 			}
 		}
 	}
+	if v.isLoop(gateway, iFace) {
+		return fmt.Errorf("v4.Get: no non-loopback route found for destination: %q", destIP)
+	}
 	_ = v.deleteQuiet(destIP)
-	if gw != "" && !strings.HasPrefix(gw, "link#") {
-		return v.addViaGatewayQuiet(destIP, gw)
+	if gateway != "" && !strings.HasPrefix(gateway, "link#") {
+		return v.addViaGatewayQuiet(destIP, gateway)
 	}
 	if iFace != "" {
 		return v.addOnLinkQuiet(destIP, iFace)
 	}
 	return fmt.Errorf("no route found for %s", destIP)
+}
+
+func (v *v4) isLoop(gateway, iFace string) bool {
+	return iFace == loopbackIFaceName || strings.HasPrefix(gateway, loopbackPrefix)
 }
 
 func (v *v4) parseRoute(target string) (gw, iFace string, err error) {
@@ -121,7 +131,7 @@ func (v *v4) DelSplit(dev string) error {
 func (v *v4) DefaultGateway() (string, error) {
 	out, err := v.commander.CombinedOutput("route", "-n", "get", "default")
 	if err != nil {
-		return "", fmt.Errorf("defaultGateway: %v", err)
+		return "", fmt.Errorf("defaultGateway: %v (%s)", err, out)
 	}
 	for _, line := range strings.Split(string(out), "\n") {
 		f := strings.Fields(line)

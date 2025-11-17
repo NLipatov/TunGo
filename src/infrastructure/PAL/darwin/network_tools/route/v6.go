@@ -5,7 +5,7 @@ package route
 import (
 	"bytes"
 	"fmt"
-	"net"
+	"net/netip"
 	"strings"
 
 	"golang.org/x/sync/errgroup"
@@ -28,11 +28,12 @@ func newV6(commander PAL.Commander) Contract {
 }
 
 func (v *v6) Get(destIP string) error {
-	ip := net.ParseIP(destIP)
-	if ip == nil || ip.To4() != nil {
+	if ip, ipErr := netip.ParseAddr(destIP); ipErr != nil {
+		return ipErr
+	} else if !ip.Is6() {
 		return fmt.Errorf("v6.Get: non-IPv6 dest %q", destIP)
 	} else if ip.IsLoopback() {
-		return fmt.Errorf("v6.Get: invalid IP: loopbackßßß %q", destIP)
+		return fmt.Errorf("v6.Get: invalid IP: loopback %q", destIP)
 	}
 	gw, iFace, err := v.parseRoute(destIP)
 	if err != nil {
@@ -61,7 +62,7 @@ func (v *v6) Get(destIP string) error {
 	}
 }
 
-func (v *v6) parseRoute(target string) (gw, iface string, err error) {
+func (v *v6) parseRoute(target string) (gw, iFace string, err error) {
 	out, err := v.commander.CombinedOutput("route", "-n", "-inet6", "get", target)
 	if err != nil {
 		return "", "", fmt.Errorf("route get %s: %w (%s)", target, err, out)
@@ -75,10 +76,10 @@ func (v *v6) parseRoute(target string) (gw, iface string, err error) {
 		case "gateway:":
 			gw = f[1]
 		case "interface:":
-			iface = f[1]
+			iFace = f[1]
 		}
 	}
-	return gw, iface, nil
+	return gw, iFace, nil
 }
 
 func (v *v6) Add(ip, iface string) error {
