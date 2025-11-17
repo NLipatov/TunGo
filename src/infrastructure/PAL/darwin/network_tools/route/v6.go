@@ -32,28 +32,28 @@ func (v *v6) Get(destIP string) error {
 	if ip == nil || ip.To4() != nil {
 		return fmt.Errorf("v6.Get: non-IPv6 dest %q", destIP)
 	}
-	gw, iface, err := v.parseRoute(destIP)
+	gw, iFace, err := v.parseRoute(destIP)
 	if err != nil {
 		return err
 	}
 	isLoop := gw == "::1"
-	if (gw == "" && iface == "") || isLoop {
+	if (gw == "" && iFace == "") || isLoop {
 		if gwDef, ifDef, err2 := v.parseRoute("default"); err2 == nil {
 			if gwDef != "" && gwDef != "::1" {
-				gw, iface = gwDef, ifDef
+				gw, iFace = gwDef, ifDef
 			}
 		}
 	}
 	_ = v.deleteQuiet(destIP)
-	if strings.HasPrefix(gw, "fe80:") && !strings.Contains(gw, "%") && iface != "" {
-		gw = gw + "%" + iface
+	if strings.HasPrefix(gw, "fe80:") && !strings.Contains(gw, "%") && iFace != "" {
+		gw = gw + "%" + iFace
 	}
 
 	switch {
 	case gw != "" && !strings.HasPrefix(gw, "link#"):
 		return v.addViaGatewayQuiet(destIP, gw)
-	case iface != "":
-		return v.addOnLinkQuiet(destIP, iface)
+	case iFace != "":
+		return v.addOnLinkQuiet(destIP, iFace)
 	default:
 		return fmt.Errorf("no route found for %s", destIP)
 	}
