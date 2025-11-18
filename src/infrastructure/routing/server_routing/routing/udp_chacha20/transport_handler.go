@@ -159,7 +159,7 @@ func (t *TransportHandler) registerClient(
 
 	t.sessionManager.Add(NewSession(adapter, cryptoSession, intIp, addrPort))
 
-	t.logger.Printf("%v registered as: %v", addrPort.Addr(), internalIP)
+	t.logger.Printf("UDP: %v registered as: %v", addrPort.Addr(), internalIP)
 
 	return nil
 }
