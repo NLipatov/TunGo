@@ -88,7 +88,7 @@ func (t *TransportHandler) HandleTransport() error {
 }
 
 func (t *TransportHandler) registerClient(conn net.Conn, tunFile io.ReadWriteCloser, ctx context.Context) error {
-	t.logger.Printf("connected: %s", conn.RemoteAddr())
+	t.logger.Printf("tcp: %s connected", conn.RemoteAddr())
 
 	framingAdapter, fErr := adapters.NewLengthPrefixFramingAdapter(conn, settings.DefaultEthernetMTU+settings.TCPChacha20Overhead)
 	if fErr != nil {
@@ -100,7 +100,7 @@ func (t *TransportHandler) registerClient(conn net.Conn, tunFile io.ReadWriteClo
 		_ = conn.Close()
 		return fmt.Errorf("client %s failed registration: %w", conn.RemoteAddr(), handshakeErr)
 	}
-	t.logger.Printf("registered: %s", conn.RemoteAddr())
+	t.logger.Printf("tcp: %s registered as %s", conn.RemoteAddr(), internalIP)
 
 	cryptographyService, cryptographyServiceErr := t.cryptographyFactory.FromHandshake(h, true)
 	if cryptographyServiceErr != nil {
