@@ -6,12 +6,11 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/signal"
 	"tungo/domain/app"
 	"tungo/domain/mode"
 	"tungo/infrastructure/PAL/configuration/client"
 	serverConf "tungo/infrastructure/PAL/configuration/server"
-	palSignal "tungo/infrastructure/PAL/signal"
+	"tungo/infrastructure/PAL/signal"
 	"tungo/infrastructure/PAL/stat"
 	"tungo/infrastructure/PAL/tun_server"
 	"tungo/infrastructure/routing/client_routing/client_factory"
@@ -21,30 +20,24 @@ import (
 	clientConf "tungo/presentation/runners/client"
 	"tungo/presentation/runners/server"
 	"tungo/presentation/runners/version"
+	"tungo/presentation/signals/shutdown"
 )
 
 func main() {
 	exitCode := 0
 	appCtx, appCtxCancel := context.WithCancel(context.Background())
-	sigChan := make(chan os.Signal, 1)
 	defer func() {
-		if sigChan != nil {
-			signal.Stop(sigChan) // stop delivery before exiting
-		}
 		os.Exit(exitCode)
 	}()
 	defer appCtxCancel()
-	sp := palSignal.NewDefaultProvider()
-	// Note: 1-sized buffer used as os/signal uses non-blocking sends and may drop signals if unbuffered.
-	signal.Notify(sigChan, sp.ShutdownSignals()...)
-	go func() {
-		select {
-		case <-sigChan:
-			log.Printf("Interrupt received. Shutting down...")
-			appCtxCancel()
-		case <-appCtx.Done():
-		}
-	}()
+	// handle shutdown signals
+	shutdownSignalHandler := shutdown.NewHandler(
+		appCtx,
+		appCtxCancel,
+		signal.NewDefaultProvider(),
+		shutdown.NewNotifier(),
+	)
+	shutdownSignalHandler.Handle()
 
 	processElevation := elevation.NewProcessElevation()
 	if !processElevation.IsElevated() {
