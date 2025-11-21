@@ -5,10 +5,19 @@ import (
 	"testing"
 )
 
-func TestShutdownNotifier_NotifyAndStop(t *testing.T) {
+func TestNewNotifier(t *testing.T) {
 	t.Parallel()
 
-	notifier := &Notifier{}
+	n := NewNotifier()
+	if n == nil {
+		t.Fatalf("NewNotifier must not return nil")
+	}
+}
+
+func TestNotifier_NotifyAndStop(t *testing.T) {
+	t.Parallel()
+
+	notifier := NewNotifier()
 	ch := make(chan os.Signal, 1)
 
 	// This ensures that calls are wired to os/signal without panicking.
