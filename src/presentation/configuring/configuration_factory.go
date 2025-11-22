@@ -10,10 +10,10 @@ import (
 )
 
 type ConfigurationFactory struct {
-	serverConfManager server.ServerConfigurationManager
+	serverConfManager server.ConfigurationManager
 }
 
-func NewConfigurationFactory(manager server.ServerConfigurationManager) *ConfigurationFactory {
+func NewConfigurationFactory(manager server.ConfigurationManager) *ConfigurationFactory {
 	return &ConfigurationFactory{serverConfManager: manager}
 }
 

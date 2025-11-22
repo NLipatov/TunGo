@@ -21,7 +21,7 @@ func NewConfigurator(
 	selector clientConfiguration.Selector,
 	creator clientConfiguration.Creator,
 	deleter clientConfiguration.Deleter,
-	serverConfigurationManager server.ServerConfigurationManager,
+	serverConfigurationManager server.ConfigurationManager,
 	selectorFactory selector.Factory,
 	textInputFactory text_input.TextInputFactory,
 	textAreaFactory text_area.TextAreaFactory,

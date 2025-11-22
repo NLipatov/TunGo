@@ -128,7 +128,7 @@ func startClient(appCtx context.Context) error {
 
 func startServer(
 	ctx context.Context,
-	configurationManager serverConf.ServerConfigurationManager,
+	configurationManager serverConf.ConfigurationManager,
 ) error {
 	tunFactory := tun_server.NewServerTunFactory()
 

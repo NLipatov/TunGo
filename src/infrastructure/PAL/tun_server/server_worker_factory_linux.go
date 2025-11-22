@@ -22,11 +22,11 @@ import (
 
 type ServerWorkerFactory struct {
 	loggerFactory        loggerFactory
-	configurationManager server.ServerConfigurationManager
+	configurationManager server.ConfigurationManager
 }
 
 func NewServerWorkerFactory(
-	manager server.ServerConfigurationManager,
+	manager server.ConfigurationManager,
 ) connection.ServerWorkerFactory {
 	return &ServerWorkerFactory{
 		loggerFactory:        newDefaultLoggerFactory(),
@@ -36,7 +36,7 @@ func NewServerWorkerFactory(
 
 func NewTestServerWorkerFactory(
 	loggerFactory loggerFactory,
-	manager server.ServerConfigurationManager,
+	manager server.ConfigurationManager,
 ) connection.ServerWorkerFactory {
 	return &ServerWorkerFactory{
 		loggerFactory:        loggerFactory,
