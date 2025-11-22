@@ -10,10 +10,10 @@ import (
 )
 
 type ServerWorkerFactory struct {
-	configurationManager server.ServerConfigurationManager
+	configurationManager server.ConfigurationManager
 }
 
-func NewServerWorkerFactory(manager server.ServerConfigurationManager) connection.ServerWorkerFactory {
+func NewServerWorkerFactory(manager server.ConfigurationManager) connection.ServerWorkerFactory {
 	return &ServerWorkerFactory{
 		configurationManager: manager,
 	}

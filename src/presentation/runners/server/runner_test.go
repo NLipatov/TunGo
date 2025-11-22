@@ -79,7 +79,7 @@ func (d *RunnerMockDeps) TunManager() tun.ServerManager { return d.tun }
 // IMPORTANT: return by value per AppDependencies.
 func (d *RunnerMockDeps) Configuration() server.Configuration { return d.cfg }
 
-func (d *RunnerMockDeps) ConfigurationManager() server.ServerConfigurationManager {
+func (d *RunnerMockDeps) ConfigurationManager() server.ConfigurationManager {
 	panic("not implemented")
 }
 

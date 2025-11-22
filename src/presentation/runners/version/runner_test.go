@@ -26,7 +26,7 @@ func capture(f func()) string {
 
 func TestRunner_Run_PrintsVersion(t *testing.T) {
 	wantTag := "v1.2.3-test"
-	VersionTag = wantTag // imitate ldflags injection
+	Tag = wantTag // imitate ldflags injection
 
 	got := capture(func() { NewRunner().Run(context.Background()) })
 

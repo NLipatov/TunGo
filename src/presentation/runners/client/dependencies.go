@@ -22,10 +22,10 @@ type Dependencies struct {
 	conn       connection.Factory
 	worker     connection.ClientWorkerFactory
 	tun        tun.ClientManager
-	cfgManager clientConfiguration.ClientConfigurationManager
+	cfgManager clientConfiguration.ConfigurationManager
 }
 
-func NewDependencies(cfgManager clientConfiguration.ClientConfigurationManager) AppDependencies {
+func NewDependencies(cfgManager clientConfiguration.ConfigurationManager) AppDependencies {
 	return &Dependencies{cfgManager: cfgManager}
 }
 

@@ -12,12 +12,12 @@ import (
 
 type ConfgenHandler struct {
 	ip                         ip.Contract
-	serverConfigurationManager serverConfiguration.ServerConfigurationManager
+	serverConfigurationManager serverConfiguration.ConfigurationManager
 	marshaller                 JsonMarshaller
 }
 
 func NewConfgenHandler(
-	serverConfigurationManager serverConfiguration.ServerConfigurationManager,
+	serverConfigurationManager serverConfiguration.ConfigurationManager,
 	marshaller JsonMarshaller,
 ) *ConfgenHandler {
 	return &ConfgenHandler{

@@ -19,10 +19,10 @@ const (
 )
 
 type Ed25519KeyManager struct {
-	configurationManager ServerConfigurationManager
+	configurationManager ConfigurationManager
 }
 
-func NewEd25519KeyManager(store ServerConfigurationManager) KeyManager {
+func NewEd25519KeyManager(store ConfigurationManager) KeyManager {
 	return &Ed25519KeyManager{
 		configurationManager: store,
 	}

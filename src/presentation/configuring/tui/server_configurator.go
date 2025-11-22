@@ -14,12 +14,12 @@ const (
 )
 
 type serverConfigurator struct {
-	manager         server.ServerConfigurationManager
+	manager         server.ConfigurationManager
 	optionsSet      [2]string
 	selectorFactory selector.Factory
 }
 
-func newServerConfigurator(manager server.ServerConfigurationManager, selectorFactory selector.Factory) *serverConfigurator {
+func newServerConfigurator(manager server.ConfigurationManager, selectorFactory selector.Factory) *serverConfigurator {
 	return &serverConfigurator{
 		manager:         manager,
 		optionsSet:      [2]string{startServerOption, addClientOption},

@@ -10,7 +10,7 @@ import (
 	"tungo/infrastructure/PAL/stat"
 )
 
-type ServerConfigurationManager interface {
+type ConfigurationManager interface {
 	Configuration() (*Configuration, error)
 	IncrementClientCounter() error
 	InjectEdKeys(public ed25519.PublicKey, private ed25519.PrivateKey) error
@@ -23,7 +23,7 @@ type Manager struct {
 	stat     stat.Stat
 }
 
-func NewManager(resolver client.Resolver, stat stat.Stat) (ServerConfigurationManager, error) {
+func NewManager(resolver client.Resolver, stat stat.Stat) (ConfigurationManager, error) {
 	path, pathErr := resolver.Resolve()
 	if pathErr != nil {
 		return nil, fmt.Errorf("failed to resolve server configuration path: %w", pathErr)
@@ -40,7 +40,7 @@ func NewManagerWithReader(
 	resolver client.Resolver,
 	reader Reader,
 	stat stat.Stat,
-) (ServerConfigurationManager, error) {
+) (ConfigurationManager, error) {
 	path, pathErr := resolver.Resolve()
 	if pathErr != nil {
 		return nil, fmt.Errorf("failed to resolve server configuration path: %w", pathErr)

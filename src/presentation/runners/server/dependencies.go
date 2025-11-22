@@ -9,21 +9,21 @@ type AppDependencies interface {
 	Configuration() serverConfiguration.Configuration
 	TunManager() tun.ServerManager
 	KeyManager() serverConfiguration.KeyManager
-	ConfigurationManager() serverConfiguration.ServerConfigurationManager
+	ConfigurationManager() serverConfiguration.ConfigurationManager
 }
 
 type Dependencies struct {
 	configuration        serverConfiguration.Configuration
 	tunManager           tun.ServerManager
 	keyManager           serverConfiguration.KeyManager
-	configurationManager serverConfiguration.ServerConfigurationManager
+	configurationManager serverConfiguration.ConfigurationManager
 }
 
 func NewDependencies(
 	tunManager tun.ServerManager,
 	configuration serverConfiguration.Configuration,
 	keyManager serverConfiguration.KeyManager,
-	configurationManager serverConfiguration.ServerConfigurationManager,
+	configurationManager serverConfiguration.ConfigurationManager,
 ) AppDependencies {
 	return &Dependencies{
 		configuration:        configuration,
@@ -45,6 +45,6 @@ func (s Dependencies) KeyManager() serverConfiguration.KeyManager {
 	return s.keyManager
 }
 
-func (s Dependencies) ConfigurationManager() serverConfiguration.ServerConfigurationManager {
+func (s Dependencies) ConfigurationManager() serverConfiguration.ConfigurationManager {
 	return s.configurationManager
 }

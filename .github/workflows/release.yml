@@ -44,7 +44,7 @@ jobs:
           GOOS=linux GOARCH=amd64 CGO_ENABLED=0 \
           go build -trimpath -buildvcs=false \
             -tags "netgo,osusergo" \
-            -ldflags="-s -w -X tungo/presentation/runners/version.VersionTag=${VER}" \
+            -ldflags="-s -w -X tungo/presentation/runners/version.Tag=${VER}" \
             -o ../tungo-linux-amd64
 
       - name: Upload Linux binary artifact
@@ -60,7 +60,7 @@ jobs:
           GOOS=linux GOARCH=arm64 CGO_ENABLED=0 \
           go build -trimpath -buildvcs=false \
             -tags "netgo,osusergo" \
-            -ldflags="-s -w -X tungo/presentation/runners/version.VersionTag=${VER}" \
+            -ldflags="-s -w -X tungo/presentation/runners/version.Tag=${VER}" \
             -o ../tungo-linux-arm64
 
       - name: Upload Linux arm64 artifact
@@ -91,7 +91,7 @@ jobs:
           GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 \
           go build -trimpath -buildvcs=false \
             -tags "netgo,osusergo" \
-            -ldflags="-s -w -X tungo/presentation/runners/version.VersionTag=${VER}" \
+            -ldflags="-s -w -X tungo/presentation/runners/version.Tag=${VER}" \
             -o ../tungo-darwin-amd64
   
       - name: Upload darwin-amd64
@@ -107,7 +107,7 @@ jobs:
           GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 \
           go build -trimpath -buildvcs=false \
             -tags "netgo,osusergo" \
-            -ldflags="-s -w -X tungo/presentation/runners/version.VersionTag=${VER}" \
+            -ldflags="-s -w -X tungo/presentation/runners/version.Tag=${VER}" \
             -o ../tungo-darwin-arm64
   
       - name: Upload darwin-arm64
@@ -138,7 +138,7 @@ jobs:
           $env:GOOS="windows"; $env:GOARCH="amd64"; $env:CGO_ENABLED="0"
           go build -trimpath -buildvcs=false `
             -tags "netgo,osusergo" `
-            -ldflags "-s -w -X tungo/presentation/runners/version.VersionTag=$env:VER" `
+            -ldflags "-s -w -X tungo/presentation/runners/version.Tag=$env:VER" `
             -o ../tungo-windows-x64.exe .
 
       - name: Create RunWithAdmin.ps1
