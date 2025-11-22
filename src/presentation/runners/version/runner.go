@@ -6,8 +6,8 @@ import (
 	"tungo/domain/app"
 )
 
-// CI release workflow is setting this variable via ldflags
-var VersionTag = "version not set"
+// Tag will be set via ldflags by CI release workflow
+var Tag = "version not set"
 
 type Runner struct{}
 
@@ -16,6 +16,6 @@ func NewRunner() *Runner { return &Runner{} }
 func (r *Runner) Run(_ context.Context) {
 	fmt.Printf("%s %s\n",
 		app.Name,
-		VersionTag,
+		Tag,
 	)
 }
