@@ -2,9 +2,11 @@ package udp_chacha20
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net/netip"
+	"sync"
+	"tungo/infrastructure/network/udp/queue"
+
 	"tungo/application/listeners"
 	"tungo/application/logging"
 	"tungo/application/network/connection"
@@ -15,6 +17,11 @@ import (
 	"tungo/infrastructure/settings"
 )
 
+const RegistrationQueueCapacity = 16
+
+// TransportHandler handles incoming UDP packets, routes them either to
+// existing sessions or to the registration pipeline, and writes decrypted
+// payloads into the TUN device.
 type TransportHandler struct {
 	ctx                 context.Context
 	settings            settings.Settings
@@ -26,8 +33,14 @@ type TransportHandler struct {
 	cryptographyFactory connection.CryptoFactory
 	servicePacket       service.PacketHandler
 	spBuffer            [3]byte
+
+	// registrations holds per-client registration queues for clients that are
+	// currently performing a handshake.
+	regMu         sync.Mutex
+	registrations map[netip.AddrPort]*queue.RegistrationQueue
 }
 
+// NewTransportHandler constructs a new UDP transport handler.
 func NewTransportHandler(
 	ctx context.Context,
 	settings settings.Settings,
@@ -49,15 +62,22 @@ func NewTransportHandler(
 		handshakeFactory:    handshakeFactory,
 		cryptographyFactory: cryptographyFactory,
 		servicePacket:       servicePacket,
+		registrations:       make(map[netip.AddrPort]*queue.RegistrationQueue),
 	}
 }
 
+// HandleTransport runs the main UDP read loop and dispatches packets either
+// to existing sessions or to the registration pipeline.
 func (t *TransportHandler) HandleTransport() error {
 	defer func(conn listeners.UdpListener) {
 		_ = conn.Close()
 	}(t.listenerConn)
 
 	t.logger.Printf("server listening on port %s (UDP)", t.settings.Port)
+
+	// Ensure buffers are reasonably sized for high throughput.
+	_ = t.listenerConn.SetReadBuffer(65536)
+	_ = t.listenerConn.SetWriteBuffer(65536)
 
 	go func() {
 		<-t.ctx.Done()
@@ -84,82 +104,131 @@ func (t *TransportHandler) HandleTransport() error {
 				t.logger.Printf("packet dropped: empty packet from %v", clientAddr.String())
 				continue
 			}
-			_ = t.handlePacket(t.listenerConn, clientAddr, buffer[:n])
+
+			// Pass the slice view into the handler. The handler will copy it
+			// only when needed (for registration).
+			_ = t.handlePacket(clientAddr, buffer[:n])
 		}
 	}
 }
 
 // handlePacket processes a UDP packet from addrPort.
-// Registers the client if needed, or decrypts and forwards the packet for an existing session.
+// - If a session exists, decrypts and forwards the packet to the TUN device.
+// - Otherwise, enqueues the packet into the registration pipeline.
 func (t *TransportHandler) handlePacket(
-	conn listeners.UdpListener,
 	addrPort netip.AddrPort,
-	packet []byte) error {
+	packet []byte,
+) error {
+	// Fast path: existing session.
 	session, sessionLookupErr := t.sessionManager.GetByExternalAddrPort(addrPort)
-	// If session not found, or client is using a new (IP, port) address (e.g., after NAT rebinding), re-register the client.
-	if sessionLookupErr != nil ||
-		session.ExternalAddrPort() != addrPort {
-		// Pass initial data to registration function
-		regErr := t.registerClient(conn, addrPort, packet)
-		if regErr != nil {
-			t.logger.Printf("host %v failed registration: %v", addrPort.Addr().AsSlice(), regErr)
-			servicePacketPayload, servicePacketErr := t.servicePacket.EncodeLegacy(service.SessionReset, t.spBuffer[:])
-			if servicePacketErr != nil {
-				t.logger.Printf("failed to encode legacy session reset service packet: %v", servicePacketErr)
-				return regErr
-			}
-			_, _ = conn.WriteToUDPAddrPort(servicePacketPayload, addrPort)
-			return regErr
+	if sessionLookupErr == nil && session.ExternalAddrPort() == addrPort {
+		decrypted, decryptionErr := session.Crypto().Decrypt(packet)
+		if decryptionErr != nil {
+			t.logger.Printf("failed to decrypt data: %v", decryptionErr)
+			return decryptionErr
 		}
+
+		_, err := t.writer.Write(decrypted)
+		if err != nil {
+			t.logger.Printf("failed to write to TUN: %v", err)
+			return err
+		}
+
 		return nil
 	}
 
-	// Handle client data
-	decrypted, decryptionErr := session.Crypto().Decrypt(packet)
-	if decryptionErr != nil {
-		t.logger.Printf("failed to decrypt data: %v", decryptionErr)
-		return decryptionErr
-	}
+	// No existing session: route into registration queue.
+	q, isNew := t.getOrCreateRegistrationQueue(addrPort)
+	q.Enqueue(packet)
 
-	// Write the decrypted packet to the TUN interface
-	_, err := t.writer.Write(decrypted)
-	if err != nil {
-		t.logger.Printf("failed to write to TUN: %v", err)
-		return err
+	if isNew {
+		// Run handshake in a separate goroutine so HandleTransport keeps
+		// serving traffic for already registered clients.
+		go t.registerClient(addrPort, q)
 	}
 
 	return nil
 }
 
-func (t *TransportHandler) registerClient(
-	conn listeners.UdpListener,
+// getOrCreateRegistrationQueue returns an existing RegistrationQueue for
+// addrPort or creates a new one. The boolean indicates whether it was newly
+// created.
+func (t *TransportHandler) getOrCreateRegistrationQueue(
 	addrPort netip.AddrPort,
-	initialData []byte) error {
-	_ = conn.SetReadBuffer(65536)
-	_ = conn.SetWriteBuffer(65536)
+) (*queue.RegistrationQueue, bool) {
+	t.regMu.Lock()
+	defer t.regMu.Unlock()
 
-	// Pass initialData and addrPort to the crypto function
+	if q, ok := t.registrations[addrPort]; ok {
+		return q, false
+	}
+
+	q := queue.NewRegistrationQueue(RegistrationQueueCapacity)
+	t.registrations[addrPort] = q
+	return q, true
+}
+
+// removeRegistrationQueue removes and closes the RegistrationQueue for addrPort
+// if it exists.
+func (t *TransportHandler) removeRegistrationQueue(addrPort netip.AddrPort) {
+	t.regMu.Lock()
+	q, ok := t.registrations[addrPort]
+	if ok {
+		delete(t.registrations, addrPort)
+	}
+	t.regMu.Unlock()
+
+	if ok {
+		q.Close()
+	}
+}
+
+// registerClient performs server-side handshake for a single client using
+// a per-client RegistrationQueue as the source of incoming packets.
+func (t *TransportHandler) registerClient(
+	addrPort netip.AddrPort,
+	queue *queue.RegistrationQueue,
+) {
+	defer t.removeRegistrationQueue(addrPort)
+
 	h := t.handshakeFactory.NewHandshake()
-	adapter := adapters.NewInitialDataAdapter(
-		adapters.NewUdpAdapter(conn, addrPort), initialData)
+
+	// Transport reads from client's RegistrationQueue (fed by handlePacket)
+	// and writes responses to the shared UDP socket.
+	regTransport := adapters.NewRegistrationTransport(t.listenerConn, addrPort, queue)
+	adapter := adapters.NewInitialDataAdapter(regTransport, nil)
+
 	internalIP, handshakeErr := h.ServerSideHandshake(adapter)
 	if handshakeErr != nil {
-		return handshakeErr
+		t.logger.Printf("host %v failed registration: %v", addrPort.Addr().AsSlice(), handshakeErr)
+		t.sendSessionReset(addrPort)
+		return
 	}
 
 	cryptoSession, cryptoSessionErr := t.cryptographyFactory.FromHandshake(h, true)
 	if cryptoSessionErr != nil {
-		return cryptoSessionErr
+		t.logger.Printf("failed to init crypto session for %v: %v", addrPort.Addr().AsSlice(), cryptoSessionErr)
+		t.sendSessionReset(addrPort)
+		return
 	}
 
 	intIp, intIpOk := netip.AddrFromSlice(internalIP)
 	if !intIpOk {
-		return fmt.Errorf("failed to parse internal IP: %v", internalIP)
+		t.logger.Printf("failed to parse internal IP: %v", internalIP)
+		t.sendSessionReset(addrPort)
+		return
 	}
 
 	t.sessionManager.Add(NewSession(adapter, cryptoSession, intIp, addrPort))
-
 	t.logger.Printf("UDP: %v registered as: %v", addrPort.Addr(), internalIP)
+}
 
-	return nil
+// sendSessionReset sends a SessionReset service packet to the given client.
+func (t *TransportHandler) sendSessionReset(addrPort netip.AddrPort) {
+	servicePacketPayload, err := t.servicePacket.EncodeLegacy(service.SessionReset, t.spBuffer[:])
+	if err != nil {
+		t.logger.Printf("failed to encode legacy session reset service packet: %v", err)
+		return
+	}
+	_, _ = t.listenerConn.WriteToUDPAddrPort(servicePacketPayload, addrPort)
 }
