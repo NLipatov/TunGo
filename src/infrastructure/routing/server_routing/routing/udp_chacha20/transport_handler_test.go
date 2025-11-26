@@ -21,6 +21,29 @@ import (
 )
 
 /* ===================== Test doubles (prefixed with TransportHandler...) ===================== */
+
+// TransportHandlerBlockingHandshake waits for transport.Read to return (typically
+// when the registration queue is closed) and exposes the resulting error.
+type TransportHandlerBlockingHandshake struct {
+	errCh chan error
+}
+
+func (b *TransportHandlerBlockingHandshake) Id() [32]byte              { return [32]byte{} }
+func (b *TransportHandlerBlockingHandshake) KeyClientToServer() []byte { return nil }
+func (b *TransportHandlerBlockingHandshake) KeyServerToClient() []byte { return nil }
+func (b *TransportHandlerBlockingHandshake) ServerSideHandshake(t connection.Transport) (net.IP, error) {
+	buf := make([]byte, 1)
+	_, err := t.Read(buf)
+	if b.errCh != nil {
+		b.errCh <- err
+		close(b.errCh)
+	}
+	return nil, err
+}
+func (b *TransportHandlerBlockingHandshake) ClientSideHandshake(_ connection.Transport, _ settings.Settings) error {
+	return nil
+}
+
 // TransportHandlerQueueReader consumes a queue and reports when Unblocked.
 type TransportHandlerQueueReader struct {
 	q  *udp.RegistrationQueue
@@ -1179,5 +1202,58 @@ func TestTransportHandler_RegistrationQueue_CloseUnblocksRead(t *testing.T) {
 	err := <-reader.ch
 	if !errors.Is(err, io.EOF) {
 		t.Fatalf("expected EOF from unblocked ReadInto, got %v", err)
+	}
+}
+
+// registerClient should terminate when the handler context is canceled and the
+// registration queue is closed.
+func TestRegisterClient_CanceledContextClosesQueue(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	addr := netip.MustParseAddrPort("1.2.3.4:1234")
+	queue := udp.NewRegistrationQueue(1)
+
+	errCh := make(chan error, 1)
+	hs := &TransportHandlerBlockingHandshake{errCh: errCh}
+
+	handler := &TransportHandler{
+		ctx:                 ctx,
+		settings:            settings.Settings{},
+		registrations:       map[netip.AddrPort]*udp.RegistrationQueue{addr: queue},
+		listenerConn:        &TransportHandlerFakeUdpListener{},
+		sessionManager:      &TransportHandlerSessionRepo{},
+		logger:              &TransportHandlerFakeLogger{},
+		handshakeFactory:    &TransportHandlerFakeHandshakeFactory{hs: hs},
+		cryptographyFactory: failingCryptoFactory{},
+		servicePacket:       &TransportHandlerServicePacketMock{},
+	}
+
+	done := make(chan struct{})
+	go func() {
+		handler.registerClient(addr, queue)
+		close(done)
+	}()
+
+	// Allow registerClient to start and block on handshake read.
+	time.Sleep(10 * time.Millisecond)
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("registerClient did not exit after context cancel")
+	}
+
+	if _, err := queue.ReadInto(make([]byte, 1)); !errors.Is(err, io.EOF) {
+		t.Fatalf("expected closed queue after cancel, got %v", err)
+	}
+
+	if _, ok := handler.registrations[addr]; ok {
+		t.Fatalf("registration entry for %v was not removed", addr)
+	}
+
+	if err := <-errCh; !errors.Is(err, io.EOF) {
+		t.Fatalf("handshake did not observe queue closure: %v", err)
 	}
 }
