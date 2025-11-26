@@ -5,7 +5,7 @@ import (
 	"io"
 	"net/netip"
 	"sync"
-	"tungo/infrastructure/network/udp/queue"
+	"tungo/infrastructure/network/udp/queue/udp"
 
 	"tungo/application/listeners"
 	"tungo/application/logging"
@@ -37,7 +37,7 @@ type TransportHandler struct {
 	// registrations holds per-client registration queues for clients that are
 	// currently performing a handshake.
 	regMu         sync.Mutex
-	registrations map[netip.AddrPort]*queue.RegistrationQueue
+	registrations map[netip.AddrPort]*udp.RegistrationQueue
 }
 
 // NewTransportHandler constructs a new UDP transport handler.
@@ -62,7 +62,7 @@ func NewTransportHandler(
 		handshakeFactory:    handshakeFactory,
 		cryptographyFactory: cryptographyFactory,
 		servicePacket:       servicePacket,
-		registrations:       make(map[netip.AddrPort]*queue.RegistrationQueue),
+		registrations:       make(map[netip.AddrPort]*udp.RegistrationQueue),
 	}
 }
 
@@ -150,12 +150,12 @@ func (t *TransportHandler) handlePacket(
 	return nil
 }
 
-// getOrCreateRegistrationQueue returns an existing RegistrationQueue for
+// getOrCreateRegistrationQueue returns an existing UDPRegistrationQueue for
 // addrPort or creates a new one. The boolean indicates whether it was newly
 // created.
 func (t *TransportHandler) getOrCreateRegistrationQueue(
 	addrPort netip.AddrPort,
-) (*queue.RegistrationQueue, bool) {
+) (*udp.RegistrationQueue, bool) {
 	t.regMu.Lock()
 	defer t.regMu.Unlock()
 
@@ -163,12 +163,12 @@ func (t *TransportHandler) getOrCreateRegistrationQueue(
 		return q, false
 	}
 
-	q := queue.NewRegistrationQueue(RegistrationQueueCapacity)
+	q := udp.NewRegistrationQueue(RegistrationQueueCapacity)
 	t.registrations[addrPort] = q
 	return q, true
 }
 
-// removeRegistrationQueue removes and closes the RegistrationQueue for addrPort
+// removeRegistrationQueue removes and closes the UDPRegistrationQueue for addrPort
 // if it exists.
 func (t *TransportHandler) removeRegistrationQueue(addrPort netip.AddrPort) {
 	t.regMu.Lock()
@@ -184,16 +184,16 @@ func (t *TransportHandler) removeRegistrationQueue(addrPort netip.AddrPort) {
 }
 
 // registerClient performs server-side handshake for a single client using
-// a per-client RegistrationQueue as the source of incoming packets.
+// a per-client UDPRegistrationQueue as the source of incoming packets.
 func (t *TransportHandler) registerClient(
 	addrPort netip.AddrPort,
-	queue *queue.RegistrationQueue,
+	queue *udp.RegistrationQueue,
 ) {
 	defer t.removeRegistrationQueue(addrPort)
 
 	h := t.handshakeFactory.NewHandshake()
 
-	// Transport reads from client's RegistrationQueue (fed by handlePacket)
+	// Transport reads from client's UDPRegistrationQueue (fed by handlePacket)
 	// and writes responses to the shared UDP socket.
 	regTransport := adapters.NewRegistrationTransport(t.listenerConn, addrPort, queue)
 	adapter := adapters.NewInitialDataAdapter(regTransport, nil)
