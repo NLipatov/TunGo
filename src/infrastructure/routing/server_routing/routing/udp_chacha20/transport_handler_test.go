@@ -12,6 +12,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"tungo/infrastructure/network/udp/queue/udp"
 
 	"tungo/application/network/connection"
 	"tungo/domain/network/service"
@@ -20,6 +21,19 @@ import (
 )
 
 /* ===================== Test doubles (prefixed with TransportHandler...) ===================== */
+
+// Slow handshake mock: simulates long-running ServerSideHandshake
+type TransportHandlerSlowHandshake struct {
+	delay                         time.Duration
+	ip                            net.IP
+	err                           error
+	TransportHandlerFakeHandshake // embed
+}
+
+func (s *TransportHandlerSlowHandshake) ServerSideHandshake(_ connection.Transport) (net.IP, error) {
+	time.Sleep(s.delay)
+	return s.ip, s.err
+}
 
 // TransportHandlerServicePacketEncodeErrMock forces EncodeLegacy to fail.
 type TransportHandlerServicePacketEncodeErrMock struct {
@@ -639,7 +653,7 @@ func TestTransportHandler_WriteError(t *testing.T) {
 
 	repo := &TransportHandlerSessionRepo{sessions: make(map[netip.AddrPort]connection.Session)}
 	sessionRegistered := make(chan struct{})
-	// After registration, replace stored session with identity-crypto for data path.
+	// After registration -> replace crypto for decrypted path
 	repo.afterAdd = func() {
 		s := repo.adds[0]
 		repo.sessions[clientAddr] = Session{
@@ -650,12 +664,10 @@ func TestTransportHandler_WriteError(t *testing.T) {
 		close(sessionRegistered)
 	}
 
+	// custom UDP listener: feeds packets one by one on demand
 	conn := &TransportHandlerFakeUdpListener{
-		readBufs: [][]byte{
-			{0xde, 0xad, 0xbe, 0xef}, // registration packet
-			{0xba, 0xad, 0xf0, 0x0d}, // data -> write error
-		},
-		readAddrs: []netip.AddrPort{clientAddr, clientAddr},
+		readBufs:  [][]byte{{0xde, 0xad, 0xbe, 0xef}}, // first: registration
+		readAddrs: []netip.AddrPort{clientAddr},
 	}
 
 	handler := NewTransportHandler(
@@ -673,13 +685,20 @@ func TestTransportHandler_WriteError(t *testing.T) {
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
 
+	// 1) Wait for registration to complete
 	select {
 	case <-sessionRegistered:
 	case <-time.After(time.Second):
-		cancel()
-		t.Fatal("timeout: session was not registered")
+		t.Fatal("timeout: session not registered")
 	}
 
+	// 2) Now inject second packet dynamically
+	conn.readMu.Lock()
+	conn.readBufs = append(conn.readBufs, []byte{0xba, 0xad, 0xf0, 0x0d})
+	conn.readAddrs = append(conn.readAddrs, clientAddr)
+	conn.readMu.Unlock()
+
+	// 3) Now writer should be called
 	select {
 	case <-writeAttempted:
 		cancel()
@@ -690,7 +709,7 @@ func TestTransportHandler_WriteError(t *testing.T) {
 	<-done
 
 	if len(writer.wrote) != 0 {
-		t.Errorf("expected write to fail and no data to be written, but got: %x", writer.wrote)
+		t.Errorf("expected no stored writes on error, but got %x", writer.wrote)
 	}
 }
 
@@ -844,5 +863,92 @@ func TestTransportHandlerFakeAEAD_Roundtrip(t *testing.T) {
 	}
 	if !bytes.Equal(got, pt) {
 		t.Fatalf("roundtrip mismatch: %q vs %q", got, pt)
+	}
+}
+
+func TestTransportHandler_getOrCreateRegistrationQueue_ExistingQueue(t *testing.T) {
+	ctx := context.Background()
+	h := &TransportHandler{
+		ctx:           ctx,
+		registrations: make(map[netip.AddrPort]*udp.RegistrationQueue),
+	}
+
+	addr := netip.MustParseAddrPort("1.2.3.4:9999")
+
+	original := udp.NewRegistrationQueue(RegistrationQueueCapacity)
+	h.registrations[addr] = original
+
+	q, isNew := h.getOrCreateRegistrationQueue(addr)
+
+	if isNew {
+		t.Fatalf("expected existing queue, got new=true")
+	}
+	if q != original {
+		t.Fatalf("expected same queue instance")
+	}
+}
+
+func TestTransportHandler_SecondPacketGoesToExistingRegistrationQueue_NoNewGoroutine(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	writer := &TransportHandlerFakeWriter{}
+	logger := &TransportHandlerFakeLogger{}
+	repo := &TransportHandlerSessionRepo{}
+
+	clientAddr := netip.MustParseAddrPort("192.168.1.70:7000")
+
+	// Two packets from same client before handshake finishes
+	conn := &TransportHandlerFakeUdpListener{
+		readBufs: [][]byte{
+			{0xaa},
+			{0xbb},
+		},
+		readAddrs: []netip.AddrPort{clientAddr, clientAddr},
+	}
+
+	fakeHS := &TransportHandlerSlowHandshake{
+		delay: 100 * time.Millisecond, // handshake runs slow, queue remains alive
+		ip:    net.ParseIP("10.0.0.70"),
+	}
+
+	handshakeFactory := &TransportHandlerFakeHandshakeFactory{hs: fakeHS}
+
+	handler := NewTransportHandler(
+		ctx,
+		settings.Settings{Port: "7000"},
+		writer,
+		conn,
+		repo,
+		logger,
+		handshakeFactory,
+		chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
+		&TransportHandlerServicePacketMock{},
+	)
+
+	go handler.HandleTransport()
+
+	// allow both packets to be queued before handshake finishes
+	time.Sleep(50 * time.Millisecond)
+
+	impl := handler.(*TransportHandler)
+	impl.regMu.Lock()
+	q := impl.registrations[clientAddr]
+	impl.regMu.Unlock()
+
+	if q == nil {
+		t.Fatalf("expected registration queue to exist (handshake has not finished yet)")
+	}
+
+	dst := make([]byte, 8)
+
+	n1, err1 := q.ReadInto(dst)
+	if err1 != nil || dst[:n1][0] != 0xaa {
+		t.Fatalf("first packet mismatch: %x err=%v", dst[:n1], err1)
+	}
+
+	n2, err2 := q.ReadInto(dst)
+	if err2 != nil || dst[:n2][0] != 0xbb {
+		t.Fatalf("second packet mismatch: %x err=%v", dst[:n2], err2)
 	}
 }
