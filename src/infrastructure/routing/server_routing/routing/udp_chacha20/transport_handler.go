@@ -38,8 +38,6 @@ type TransportHandler struct {
 	handshakeFactory    connection.HandshakeFactory
 	cryptographyFactory connection.CryptoFactory
 	servicePacket       service.PacketHandler
-	spBuffer            [3]byte
-
 	// registrations holds per-client registration queues for clients that are
 	// currently performing a handshake.
 	regMu         sync.Mutex
@@ -267,7 +265,8 @@ func (t *TransportHandler) registerClient(
 
 // sendSessionReset sends a SessionReset service packet to the given client.
 func (t *TransportHandler) sendSessionReset(addrPort netip.AddrPort) {
-	servicePacketPayload, err := t.servicePacket.EncodeLegacy(service.SessionReset, t.spBuffer[:])
+	servicePacketBuffer := make([]byte, 3)
+	servicePacketPayload, err := t.servicePacket.EncodeLegacy(service.SessionReset, servicePacketBuffer)
 	if err != nil {
 		t.logger.Printf("failed to encode legacy session reset service packet: %v", err)
 		return
