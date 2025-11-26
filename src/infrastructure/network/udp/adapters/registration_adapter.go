@@ -4,7 +4,7 @@ import (
 	"net/netip"
 	"tungo/application/listeners"
 	"tungo/application/network/connection"
-	"tungo/infrastructure/network/udp/queue/udp"
+	"tungo/infrastructure/network/udp/queue"
 )
 
 // RegistrationAdapter adapts registrationQueue to connection.Transport
@@ -12,13 +12,13 @@ import (
 type RegistrationAdapter struct {
 	conn     listeners.UdpListener
 	addrPort netip.AddrPort
-	queue    *udp.RegistrationQueue
+	queue    queue.RegistrationQueue
 }
 
 func NewRegistrationTransport(
 	conn listeners.UdpListener,
 	addrPort netip.AddrPort,
-	queue *udp.RegistrationQueue,
+	queue queue.RegistrationQueue,
 ) connection.Transport {
 	return &RegistrationAdapter{
 		conn:     conn,

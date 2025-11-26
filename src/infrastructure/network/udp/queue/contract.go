@@ -1,6 +1,6 @@
 package queue
 
-type RegQueue interface {
+type RegistrationQueue interface {
 	Enqueue(pkt []byte)
 	ReadInto(dst []byte) (int, error)
 	Close()
