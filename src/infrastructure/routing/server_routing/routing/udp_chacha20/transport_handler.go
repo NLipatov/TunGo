@@ -5,7 +5,7 @@ import (
 	"io"
 	"net/netip"
 	"sync"
-	"tungo/infrastructure/network/udp/queue/udp"
+	"time"
 
 	"tungo/application/listeners"
 	"tungo/application/logging"
@@ -13,11 +13,17 @@ import (
 	"tungo/application/network/routing/transport"
 	"tungo/domain/network/service"
 	"tungo/infrastructure/network/udp/adapters"
+	"tungo/infrastructure/network/udp/queue/udp"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
 	"tungo/infrastructure/settings"
 )
 
-const RegistrationQueueCapacity = 16
+const (
+	RegistrationQueueCapacity = 16
+	// HandshakeTimeout bounds how long we keep a registration goroutine alive
+	// in case the client stalls or disappears.
+	HandshakeTimeout = 10 * time.Second
+)
 
 // TransportHandler handles incoming UDP packets, routes them either to
 // existing sessions or to the registration pipeline, and writes decrypted
@@ -90,11 +96,15 @@ func (t *TransportHandler) HandleTransport() error {
 	for {
 		select {
 		case <-t.ctx.Done():
+			// Optionally, aggressively close all registration queues here as
+			// an extra safety net:
+			t.closeAllRegistrations()
 			return nil
 		default:
 			n, _, _, clientAddr, readFromUdpErr := t.listenerConn.ReadMsgUDPAddrPort(buffer[:], oobBuf[:])
 			if readFromUdpErr != nil {
 				if t.ctx.Err() != nil {
+					t.closeAllRegistrations()
 					return t.ctx.Err()
 				}
 				t.logger.Printf("failed to read from UDP: %s", readFromUdpErr)
@@ -150,7 +160,7 @@ func (t *TransportHandler) handlePacket(
 	return nil
 }
 
-// getOrCreateRegistrationQueue returns an existing UDPRegistrationQueue for
+// getOrCreateRegistrationQueue returns an existing RegistrationQueue for
 // addrPort or creates a new one. The boolean indicates whether it was newly
 // created.
 func (t *TransportHandler) getOrCreateRegistrationQueue(
@@ -168,7 +178,7 @@ func (t *TransportHandler) getOrCreateRegistrationQueue(
 	return q, true
 }
 
-// removeRegistrationQueue removes and closes the UDPRegistrationQueue for addrPort
+// removeRegistrationQueue removes and closes the RegistrationQueue for addrPort
 // if it exists.
 func (t *TransportHandler) removeRegistrationQueue(addrPort netip.AddrPort) {
 	t.regMu.Lock()
@@ -183,17 +193,49 @@ func (t *TransportHandler) removeRegistrationQueue(addrPort netip.AddrPort) {
 	}
 }
 
+// closeAllRegistrations force-closes all active registration queues.
+// This is useful on handler shutdown to unblock any pending handshakes.
+func (t *TransportHandler) closeAllRegistrations() {
+	t.regMu.Lock()
+	queues := make([]*udp.RegistrationQueue, 0, len(t.registrations))
+	for _, q := range t.registrations {
+		queues = append(queues, q)
+	}
+	t.registrations = make(map[netip.AddrPort]*udp.RegistrationQueue)
+	t.regMu.Unlock()
+	for _, q := range queues {
+		q.Close()
+	}
+}
+
 // registerClient performs server-side handshake for a single client using
-// a per-client UDPRegistrationQueue as the source of incoming packets.
+// a per-client RegistrationQueue as the source of incoming packets.
+//
+// The lifetime of this goroutine is bounded by a context derived from
+// TransportHandler.ctx with a timeout. On ctx cancellation/timeout, the queue
+// is closed, which unblocks ReadInto and allows this goroutine to exit.
 func (t *TransportHandler) registerClient(
 	addrPort netip.AddrPort,
 	queue *udp.RegistrationQueue,
 ) {
+	// Ensure we always remove the registration entry and close the queue.
 	defer t.removeRegistrationQueue(addrPort)
+
+	// Derive a context that bounds handshake lifetime. It reacts both to
+	// server shutdown (t.ctx.Done) and to registration timeout.
+	ctx, cancel := context.WithTimeout(t.ctx, HandshakeTimeout)
+	defer cancel()
+
+	// Watch for context cancellation and close the queue to unblock any
+	// pending ReadInto calls.
+	go func() {
+		<-ctx.Done()
+		queue.Close()
+	}()
 
 	h := t.handshakeFactory.NewHandshake()
 
-	// Transport reads from client's UDPRegistrationQueue (fed by handlePacket)
+	// Transport reads from client's RegistrationQueue (fed by handlePacket)
 	// and writes responses to the shared UDP socket.
 	regTransport := adapters.NewRegistrationTransport(t.listenerConn, addrPort, queue)
 	adapter := adapters.NewInitialDataAdapter(regTransport, nil)

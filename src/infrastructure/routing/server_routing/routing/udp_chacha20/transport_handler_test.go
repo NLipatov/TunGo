@@ -21,6 +21,24 @@ import (
 )
 
 /* ===================== Test doubles (prefixed with TransportHandler...) ===================== */
+// TransportHandlerQueueReader consumes a queue and reports when Unblocked.
+type TransportHandlerQueueReader struct {
+	q  *udp.RegistrationQueue
+	ch chan error
+}
+
+func (r *TransportHandlerQueueReader) Run() {
+	dst := make([]byte, 32)
+	_, err := r.q.ReadInto(dst)
+	r.ch <- err
+	close(r.ch)
+}
+
+type failingCryptoFactory struct{}
+
+func (f failingCryptoFactory) FromHandshake(_ connection.Handshake, _ bool) (connection.Crypto, error) {
+	return nil, errors.New("crypto init fail")
+}
 
 // Slow handshake mock: simulates long-running ServerSideHandshake
 type TransportHandlerSlowHandshake struct {
@@ -181,7 +199,7 @@ func (b *TransportHandlerBlockingUdpListener) SetWriteBuffer(_ int) error { retu
 func (b *TransportHandlerBlockingUdpListener) WriteToUDPAddrPort(_ []byte, _ netip.AddrPort) (int, error) {
 	return 0, nil
 }
-func (b *TransportHandlerBlockingUdpListener) ReadMsgUDPAddrPort(bbuf, _ []byte) (int, int, int, netip.AddrPort, error) {
+func (b *TransportHandlerBlockingUdpListener) ReadMsgUDPAddrPort(_, _ []byte) (int, int, int, netip.AddrPort, error) {
 	<-b.ch // unblock when Close is called
 	return 0, 0, 0, b.addr, io.ErrClosedPipe
 }
@@ -926,7 +944,9 @@ func TestTransportHandler_SecondPacketGoesToExistingRegistrationQueue_NoNewGorou
 		&TransportHandlerServicePacketMock{},
 	)
 
-	go handler.HandleTransport()
+	go func() {
+		_ = handler.HandleTransport()
+	}()
 
 	// allow both packets to be queued before handshake finishes
 	time.Sleep(50 * time.Millisecond)
@@ -950,5 +970,214 @@ func TestTransportHandler_SecondPacketGoesToExistingRegistrationQueue_NoNewGorou
 	n2, err2 := q.ReadInto(dst)
 	if err2 != nil || dst[:n2][0] != 0xbb {
 		t.Fatalf("second packet mismatch: %x err=%v", dst[:n2], err2)
+	}
+}
+
+func TestHandleTransport_IgnoreHandlePacketError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	writer := &TransportHandlerFakeWriter{
+		err: errors.New("write fail"),
+	}
+	logger := &TransportHandlerFakeLogger{}
+	repo := &TransportHandlerSessionRepo{}
+
+	clientAddr := netip.MustParseAddrPort("1.2.3.4:9999")
+
+	// Existing session → decrypt OK → writer.Write returns error
+	repo.sessions = map[netip.AddrPort]connection.Session{
+		clientAddr: Session{
+			crypto:     &TransportHandlerAlwaysWriteCrypto{},
+			internalIP: netip.MustParseAddr("10.0.0.1"),
+			externalIP: clientAddr,
+		},
+	}
+
+	conn := &TransportHandlerFakeUdpListener{
+		readBufs:  [][]byte{{0x01, 0x02}},
+		readAddrs: []netip.AddrPort{clientAddr},
+	}
+
+	handler := NewTransportHandler(
+		ctx, settings.Settings{Port: "9999"}, writer, conn, repo, logger,
+		&TransportHandlerFakeHandshakeFactory{}, // unused
+		chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
+		&TransportHandlerServicePacketMock{},
+	)
+
+	done := make(chan struct{})
+	go func() { _ = handler.HandleTransport(); close(done) }()
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+	<-done
+
+	// no crash → test passed
+}
+
+func TestRemoveRegistrationQueue_RemovesAndCloses(t *testing.T) {
+	ctx := context.Background()
+	h := &TransportHandler{
+		ctx:           ctx,
+		registrations: make(map[netip.AddrPort]*udp.RegistrationQueue),
+	}
+
+	addr := netip.MustParseAddrPort("1.2.3.4:9999")
+	q := udp.NewRegistrationQueue(1)
+	h.registrations[addr] = q
+
+	h.removeRegistrationQueue(addr)
+
+	if _, ok := h.registrations[addr]; ok {
+		t.Fatal("expected queue removed")
+	}
+
+	dst := make([]byte, 10)
+	_, err := q.ReadInto(dst)
+	if !errors.Is(err, io.EOF) {
+		t.Fatalf("expected EOF after Close, got %v", err)
+	}
+}
+
+func TestCloseAllRegistrations(t *testing.T) {
+	ctx := context.Background()
+	h := &TransportHandler{
+		ctx:           ctx,
+		registrations: make(map[netip.AddrPort]*udp.RegistrationQueue),
+	}
+
+	a1 := netip.MustParseAddrPort("1.1.1.1:1000")
+	a2 := netip.MustParseAddrPort("2.2.2.2:2000")
+
+	q1 := udp.NewRegistrationQueue(1)
+	q2 := udp.NewRegistrationQueue(1)
+
+	h.registrations[a1] = q1
+	h.registrations[a2] = q2
+
+	h.closeAllRegistrations()
+
+	for _, q := range []*udp.RegistrationQueue{q1, q2} {
+		dst := make([]byte, 10)
+		_, err := q.ReadInto(dst)
+		if !errors.Is(err, io.EOF) {
+			t.Fatalf("queue not closed: %v", err)
+		}
+	}
+
+	if len(h.registrations) != 0 {
+		t.Fatalf("expected empty registrations map")
+	}
+}
+
+func TestGetOrCreateRegistrationQueue_NewQueue(t *testing.T) {
+	ctx := context.Background()
+	h := &TransportHandler{
+		ctx:           ctx,
+		registrations: make(map[netip.AddrPort]*udp.RegistrationQueue),
+	}
+
+	addr := netip.MustParseAddrPort("8.8.8.8:53")
+
+	q, isNew := h.getOrCreateRegistrationQueue(addr)
+	if !isNew {
+		t.Fatal("expected new queue")
+	}
+	if q == nil {
+		t.Fatal("nil queue returned")
+	}
+
+	if h.registrations[addr] != q {
+		t.Fatal("queue not stored")
+	}
+}
+
+func TestRegisterClient_CryptoError_SendsReset(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	writer := &TransportHandlerFakeWriter{}
+	logger := &TransportHandlerFakeLogger{}
+	repo := &TransportHandlerSessionRepo{}
+	client := netip.MustParseAddrPort("5.5.5.5:5555")
+
+	hs := &TransportHandlerFakeHandshake{ip: net.ParseIP("10.0.0.5")}
+	hsf := &TransportHandlerFakeHandshakeFactory{hs: hs}
+
+	writeCh := make(chan struct{}, 1)
+	conn := &TransportHandlerFakeUdpListener{
+		readBufs:  [][]byte{{0x01}},
+		readAddrs: []netip.AddrPort{client},
+		writeCh:   writeCh,
+	}
+
+	handler := NewTransportHandler(
+		ctx,
+		settings.Settings{Port: "5555"},
+		writer,
+		conn,
+		repo,
+		logger,
+		hsf,
+		failingCryptoFactory{},
+		&TransportHandlerServicePacketMock{},
+	)
+
+	go func() {
+		_ = handler.HandleTransport()
+	}()
+
+	select {
+	case <-writeCh:
+		cancel()
+	case <-time.After(time.Second):
+		cancel()
+		t.Fatal("SessionReset not sent on crypto error")
+	}
+}
+func TestTransportHandler_RegistrationQueueOverflow(t *testing.T) {
+	q := udp.NewRegistrationQueue(1)
+
+	// capacity=1 → first enqueue OK, second dropped
+	q.Enqueue([]byte{0x01})
+	q.Enqueue([]byte{0x02}) // overflow
+
+	dst := make([]byte, 5)
+
+	// First ReadInto returns first packet
+	n, err := q.ReadInto(dst)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if n != 1 || dst[0] != 0x01 {
+		t.Fatalf("expected only first packet, got %x", dst[:n])
+	}
+
+	// Now queue is empty → next ReadInto would block.
+	// So we must close it.
+	q.Close()
+
+	// After Close → ReadInto returns EOF immediately.
+	_, err = q.ReadInto(dst)
+	if !errors.Is(err, io.EOF) {
+		t.Fatalf("expected EOF after Close, got %v", err)
+	}
+}
+
+func TestTransportHandler_RegistrationQueue_CloseUnblocksRead(t *testing.T) {
+	q := udp.NewRegistrationQueue(2)
+
+	reader := &TransportHandlerQueueReader{
+		q:  q,
+		ch: make(chan error, 1),
+	}
+	go reader.Run()
+
+	time.Sleep(20 * time.Millisecond)
+	q.Close()
+
+	err := <-reader.ch
+	if !errors.Is(err, io.EOF) {
+		t.Fatalf("expected EOF from unblocked ReadInto, got %v", err)
 	}
 }
