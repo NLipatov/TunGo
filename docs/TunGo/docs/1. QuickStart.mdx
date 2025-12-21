@@ -62,16 +62,16 @@ See <a href="/docs/Advanced/Linux/Setup server systemd unit">this guide</a> to r
            See <a href="/docs/Advanced/Linux/Setup client systemd unit">this guide</a> to run TunGo as a systemd service (autostart/restart on boot).
            :::
        </TabItem>
-     <TabItem value="macos-arm64" label="macOS arm64">
+     <TabItem value="macos-arm64" label="macOS Apple Silicon">
          ```bash
-         wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-darwin-arm64 -O tungo
+         curl -L -o tungo https://github.com/NLipatov/TunGo/releases/latest/download/tungo-darwin-arm64
          chmod +x tungo
          sudo mv tungo /usr/local/bin/
          ```
      </TabItem>
-     <TabItem value="macos-amd64" label="macOS amd64">
+     <TabItem value="macos-amd64" label="macOS Intel">
          ```bash
-         wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-darwin-amd64 -O tungo
+         curl -L -o tungo https://github.com/NLipatov/TunGo/releases/latest/download/tungo-darwin-amd64
          chmod +x tungo
          sudo mv tungo /usr/local/bin/
          ```
