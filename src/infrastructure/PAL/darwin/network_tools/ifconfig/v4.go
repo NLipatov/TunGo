@@ -7,15 +7,14 @@ import (
 	"net"
 	"strconv"
 	"strings"
-
-	"tungo/infrastructure/PAL"
+	"tungo/infrastructure/PAL/exec_commander"
 )
 
 type v4 struct {
-	commander PAL.Commander
+	commander exec_commander.Commander
 }
 
-func newV4(commander PAL.Commander) Contract {
+func newV4(commander exec_commander.Commander) Contract {
 	return &v4{commander: commander}
 }
 

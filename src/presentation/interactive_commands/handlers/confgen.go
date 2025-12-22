@@ -2,9 +2,9 @@ package handlers
 
 import (
 	"fmt"
-	"tungo/infrastructure/PAL"
 	"tungo/infrastructure/PAL/configuration/client"
 	serverConfiguration "tungo/infrastructure/PAL/configuration/server"
+	"tungo/infrastructure/PAL/exec_commander"
 	"tungo/infrastructure/PAL/linux/network_tools/ip"
 	nip "tungo/infrastructure/network/ip"
 	"tungo/infrastructure/settings"
@@ -22,7 +22,7 @@ func NewConfgenHandler(
 ) *ConfgenHandler {
 	return &ConfgenHandler{
 		ip: ip.NewWrapper(
-			PAL.NewExecCommander(),
+			exec_commander.NewExecCommander(),
 		),
 		serverConfigurationManager: serverConfigurationManager,
 		marshaller:                 marshaller,

@@ -5,10 +5,11 @@ package route
 import (
 	"bytes"
 	"fmt"
-	"golang.org/x/sync/errgroup"
 	"net/netip"
 	"strings"
-	"tungo/infrastructure/PAL"
+	"tungo/infrastructure/PAL/exec_commander"
+
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -23,10 +24,10 @@ const (
 )
 
 type v4 struct {
-	commander PAL.Commander
+	commander exec_commander.Commander
 }
 
-func newV4(commander PAL.Commander) Contract {
+func newV4(commander exec_commander.Commander) Contract {
 	return &v4{
 		commander: commander,
 	}

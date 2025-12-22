@@ -1,14 +1,14 @@
 package sysctl
 
 import (
-	"tungo/infrastructure/PAL"
+	"tungo/infrastructure/PAL/exec_commander"
 )
 
 type Wrapper struct {
-	commander PAL.Commander
+	commander exec_commander.Commander
 }
 
-func NewWrapper(commander PAL.Commander) *Wrapper {
+func NewWrapper(commander exec_commander.Commander) *Wrapper {
 	return &Wrapper{commander: commander}
 }
 

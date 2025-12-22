@@ -2,13 +2,15 @@
 
 package ifconfig
 
-import "tungo/infrastructure/PAL"
+import (
+	"tungo/infrastructure/PAL/exec_commander"
+)
 
 type Factory struct {
-	commander PAL.Commander
+	commander exec_commander.Commander
 }
 
-func NewFactory(commander PAL.Commander) *Factory {
+func NewFactory(commander exec_commander.Commander) *Factory {
 	return &Factory{commander: commander}
 }
 

@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"net/netip"
 	"strings"
+	"tungo/infrastructure/PAL/exec_commander"
 
 	"golang.org/x/sync/errgroup"
-	"tungo/infrastructure/PAL"
 )
 
 const (
@@ -25,10 +25,10 @@ const (
 )
 
 type v6 struct {
-	commander PAL.Commander
+	commander exec_commander.Commander
 }
 
-func newV6(commander PAL.Commander) Contract {
+func newV6(commander exec_commander.Commander) Contract {
 	return &v6{commander: commander}
 }
 

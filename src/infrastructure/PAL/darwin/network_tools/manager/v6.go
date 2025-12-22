@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"tungo/infrastructure/PAL/darwin/network_tools/scutil"
 
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/darwin/network_tools/ifconfig"
@@ -15,20 +16,26 @@ import (
 )
 
 type v6 struct {
-	s          settings.Settings
-	tunDev     tun.Device
-	rawUTUN    utun.UTUN
-	ifc        ifconfig.Contract // v6 ifconfig.Contract implementation
-	rt         route.Contract    // v6 route.Contract implementation
-	ifName     string
-	addedSplit bool
+	s       settings.Settings
+	tunDev  tun.Device
+	rawUTUN utun.UTUN
+	ifc     ifconfig.Contract // v6 ifconfig.Contract implementation
+	rt      route.Contract    // v6 route.Contract implementation
+	scc     scutil.Contract   // v6 scutil.Contract implementation
+	ifName  string
 }
 
-func newV6(s settings.Settings, ifc ifconfig.Contract, rt route.Contract) *v6 {
+func newV6(
+	s settings.Settings,
+	ifc ifconfig.Contract,
+	rt route.Contract,
+	scc scutil.Contract,
+) *v6 {
 	return &v6{
 		s:   s,
 		ifc: ifc,
 		rt:  rt,
+		scc: scc,
 	}
 }
 
@@ -63,13 +70,25 @@ func (m *v6) CreateDevice() (tun.Device, error) {
 		_ = m.DisposeDevices()
 		return nil, fmt.Errorf("add v6 split default: %w", err)
 	}
-	m.addedSplit = true
+
+	// Configure DNS after interface and route are all set
+	if scopedDNSResolverErr := m.scc.AddScopedDNSResolver(
+		m.ifName,
+		// ToDo: move dns servers to configurations
+		[]string{"2606:4700:4700::1111", "2001:4860:4860::8888"},
+		nil); scopedDNSResolverErr != nil {
+		_ = m.DisposeDevices()
+		return nil, fmt.Errorf("add v4 scoped dns resolver: %w", scopedDNSResolverErr)
+	}
 
 	m.tunDev = utun.NewDarwinTunDevice(raw)
 	return m.tunDev, nil
 }
 
 func (m *v6) DisposeDevices() error {
+	if m.ifName != "" {
+		_ = m.scc.RemoveScopedDNSResolver(m.ifName)
+	}
 	_ = m.rt.DelSplit(m.ifName)
 	if m.s.ConnectionIP != "" {
 		_ = m.rt.Del(m.s.ConnectionIP)
@@ -80,7 +99,6 @@ func (m *v6) DisposeDevices() error {
 	}
 	m.rawUTUN = nil
 	m.ifName = ""
-	m.addedSplit = false
 	return nil
 }
 
