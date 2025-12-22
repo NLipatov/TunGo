@@ -3,15 +3,15 @@ package ip
 import (
 	"fmt"
 	"strings"
-	"tungo/infrastructure/PAL"
+	"tungo/infrastructure/PAL/exec_commander"
 )
 
 // Wrapper is a wrapper around ip command from the iproute2 tool collection
 type Wrapper struct {
-	commander PAL.Commander
+	commander exec_commander.Commander
 }
 
-func NewWrapper(commander PAL.Commander) Contract {
+func NewWrapper(commander exec_commander.Commander) Contract {
 	return &Wrapper{commander: commander}
 }
 

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"syscall"
 	"tungo/application/network/routing/tun"
-	"tungo/infrastructure/PAL"
+	"tungo/infrastructure/PAL/exec_commander"
 	"tungo/infrastructure/PAL/linux/network_tools/ioctl"
 	"tungo/infrastructure/PAL/linux/network_tools/ip"
 	"tungo/infrastructure/PAL/linux/network_tools/iptables"
@@ -29,10 +29,10 @@ type ServerTunFactory struct {
 
 func NewServerTunFactory() tun.ServerManager {
 	return &ServerTunFactory{
-		ip:       ip.NewWrapper(PAL.NewExecCommander()),
-		iptables: iptables.NewWrapper(PAL.NewExecCommander()),
+		ip:       ip.NewWrapper(exec_commander.NewExecCommander()),
+		iptables: iptables.NewWrapper(exec_commander.NewExecCommander()),
 		ioctl:    ioctl.NewWrapper(ioctl.NewLinuxIoctlCommander(), "/dev/net/tun"),
-		sysctl:   sysctl.NewWrapper(PAL.NewExecCommander()),
+		sysctl:   sysctl.NewWrapper(exec_commander.NewExecCommander()),
 		wrapper:  epoll.NewWrapper(),
 	}
 }

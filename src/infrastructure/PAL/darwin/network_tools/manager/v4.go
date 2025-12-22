@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"tungo/infrastructure/PAL/darwin/network_tools/scutil"
 
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/darwin/network_tools/ifconfig"
@@ -15,20 +16,26 @@ import (
 )
 
 type v4 struct {
-	s          settings.Settings
-	tunDev     tun.Device
-	rawUTUN    utun.UTUN
-	ifc        ifconfig.Contract // v4 ifconfig.Contract implementation
-	rtc        route.Contract    // v4 route.Contract implementation
-	ifName     string
-	addedSplit bool
+	s       settings.Settings
+	tunDev  tun.Device
+	rawUTUN utun.UTUN
+	ifc     ifconfig.Contract // v4 ifconfig.Contract implementation
+	rtc     route.Contract    // v4 route.Contract implementation
+	scc     scutil.Contract   // v4 scutil.Contract implementation
+	ifName  string
 }
 
-func newV4(s settings.Settings, ifc ifconfig.Contract, rt route.Contract) *v4 {
+func newV4(
+	s settings.Settings,
+	ifc ifconfig.Contract,
+	rt route.Contract,
+	scc scutil.Contract,
+) *v4 {
 	return &v4{
 		s:   s,
 		ifc: ifc,
 		rtc: rt,
+		scc: scc,
 	}
 }
 
@@ -60,12 +67,25 @@ func (m *v4) CreateDevice() (tun.Device, error) {
 		_ = m.DisposeDevices()
 		return nil, fmt.Errorf("add v4 split default: %w", addErr)
 	}
-	m.addedSplit = true
+
+	// Configure DNS after interface and route are all set
+	if scopedDNSResolverErr := m.scc.AddScopedDNSResolver(
+		m.ifName,
+		// ToDo: move dns servers to configurations
+		[]string{"1.1.1.1", "8.8.8.8"},
+		nil); scopedDNSResolverErr != nil {
+		_ = m.DisposeDevices()
+		return nil, fmt.Errorf("add v4 scoped dns resolver: %w", scopedDNSResolverErr)
+	}
+
 	m.tunDev = utun.NewDarwinTunDevice(raw)
 	return m.tunDev, nil
 }
 
 func (m *v4) DisposeDevices() error {
+	if m.ifName != "" {
+		_ = m.scc.RemoveScopedDNSResolver(m.ifName)
+	}
 	_ = m.rtc.DelSplit(m.ifName)
 	if m.s.ConnectionIP != "" {
 		_ = m.rtc.Del(m.s.ConnectionIP)
@@ -76,7 +96,6 @@ func (m *v4) DisposeDevices() error {
 	}
 	m.rawUTUN = nil
 	m.ifName = ""
-	m.addedSplit = false
 	return nil
 }
 

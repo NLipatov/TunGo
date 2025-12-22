@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"tungo/application/network/routing/tun"
-	"tungo/infrastructure/PAL"
 	"tungo/infrastructure/PAL/configuration/client"
+	"tungo/infrastructure/PAL/exec_commander"
 	"tungo/infrastructure/PAL/linux/network_tools/ioctl"
 	"tungo/infrastructure/PAL/linux/network_tools/ip"
 	"tungo/infrastructure/PAL/linux/tun/epoll"
@@ -25,7 +25,7 @@ func NewPlatformTunManager(
 ) (tun.ClientManager, error) {
 	return &PlatformTunManager{
 		configuration: configuration,
-		ip:            ip.NewWrapper(PAL.NewExecCommander()),
+		ip:            ip.NewWrapper(exec_commander.NewExecCommander()),
 		ioctl:         ioctl.NewWrapper(ioctl.NewLinuxIoctlCommander(), "/dev/net/tun"),
 		wrapper:       epoll.NewWrapper(),
 	}, nil
