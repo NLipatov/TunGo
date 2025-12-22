@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net"
 	"strings"
-	"tungo/infrastructure/PAL/darwin/network_tools/scutil"
 	"tungo/infrastructure/PAL/exec_commander"
 
 	"tungo/application/network/routing/tun"
@@ -20,7 +19,6 @@ type Factory struct {
 	s          settings.Settings
 	ifcFactory *ifcfg.Factory
 	rtFactory  *rtpkg.Factory
-	scFactory  *scutil.Factory
 }
 
 func NewFactory(s settings.Settings) *Factory {
@@ -29,7 +27,6 @@ func NewFactory(s settings.Settings) *Factory {
 		s:          s,
 		ifcFactory: ifcfg.NewFactory(cmd),
 		rtFactory:  rtpkg.NewFactory(cmd),
-		scFactory:  scutil.NewFactory(),
 	}
 }
 
@@ -59,14 +56,12 @@ func (f *Factory) Create() (tun.ClientManager, error) {
 			f.s,
 			f.ifcFactory.NewV4(),
 			f.rtFactory.NewV4(),
-			f.scFactory.NewV4(),
 		), nil
 	}
 	return newV6(
 		f.s,
 		f.ifcFactory.NewV6(),
 		f.rtFactory.NewV6(),
-		f.scFactory.NewV6(),
 	), nil
 }
 
