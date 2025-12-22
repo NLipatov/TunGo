@@ -6,33 +6,43 @@
 
 /* You can override the default Infima variables here. */
 :root {
-  --ifm-color-primary: #6299a1;
-  --ifm-color-primary-dark: #29784c;
-  --ifm-color-primary-darker: #277148;
-  --ifm-color-primary-darkest: #205d3b;
-  --ifm-color-primary-light: #33925d;
-  --ifm-color-primary-lighter: #359962;
-  --ifm-color-primary-lightest: #3cad6e;
-  --ifm-code-font-size: 95%;
-  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+  /* Primary color — cyan / Go-like, calm and technical */
+  --ifm-color-primary: #009fc9;
+  --ifm-color-primary-dark: #008ab0;
+  --ifm-color-primary-darker: #007a9d;
+  --ifm-color-primary-light: #33bfe2;
+  --ifm-color-primary-lighter: #66d1ec;
+  --ifm-color-primary-lightest: #a6eaf9;
+
+  /* Slightly smaller code font for density */
+  --ifm-code-font-size: 0.95em;
+
+  /* Code highlight — tied to primary for harmony */
+  --docusaurus-highlighted-code-line-bg: rgba(0, 159, 201, 0.08);
 }
 
-/* For readability concerns, you should choose a lighter palette in dark mode. */
+/* Dark mode — same palette, softer contrast */
 [data-theme='dark'] {
-  --ifm-color-primary: #6299a1;
-  --ifm-color-primary-dark: #21af90;
-  --ifm-color-primary-darker: #1fa588;
-  --ifm-color-primary-darkest: #1a8870;
-  --ifm-color-primary-light: #29d5b0;
-  --ifm-color-primary-lighter: #32d8b4;
-  --ifm-color-primary-lightest: #4fddbf;
-  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+  --ifm-color-primary: #4fc3e3;
+  --ifm-color-primary-dark: #2fb6dc;
+  --ifm-color-primary-darker: #1aa7cf;
+  --ifm-color-primary-light: #78d6ee;
+  --ifm-color-primary-lighter: #9ae3f4;
+  --ifm-color-primary-lightest: #c7f4fc;
+
+  --docusaurus-highlighted-code-line-bg: rgba(0, 159, 201, 0.12);
 }
 
+/* Footer — explicit, neutral background */
 footer.footer {
-  background-color: #6299a1 !important;
+  background-color: #f7f9fb;
 }
 
 [data-theme='dark'] footer.footer {
-  background-color: #6299a1 !important;
+  background-color: #0f172a;
+}
+
+/* Small UX polish (relative, typography-friendly) */
+a:hover {
+  text-decoration-thickness: 0.125em;
 }
