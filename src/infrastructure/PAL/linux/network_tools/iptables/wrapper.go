@@ -76,6 +76,28 @@ func (w *Wrapper) DisableForwardingFromDevToTun(tunName string, devName string) 
 	return nil
 }
 
+func (w *Wrapper) EnableForwardingTunToTun(tunName string) error {
+	output, err := w.commander.CombinedOutput("iptables", "-A", "FORWARD",
+		"-i", tunName, "-o", tunName, "-j", "ACCEPT")
+	if err != nil {
+		return fmt.Errorf("failed to set up client-to-client forwarding rule for %s: %v, output: %s",
+			tunName, err, output)
+	}
+
+	return nil
+}
+
+func (w *Wrapper) DisableForwardingTunToTun(tunName string) error {
+	output, err := w.commander.CombinedOutput("iptables", "-D", "FORWARD",
+		"-i", tunName, "-o", tunName, "-j", "ACCEPT")
+	if err != nil {
+		return fmt.Errorf("failed to remove client-to-client forwarding rule for %s: %v, output: %s",
+			tunName, err, output)
+	}
+
+	return nil
+}
+
 func (w *Wrapper) ConfigureMssClamping() error {
 	// Configuration for IPv4, chain FORWARD
 	outputForward, errForward := w.commander.CombinedOutput("iptables", "-t", "mangle",

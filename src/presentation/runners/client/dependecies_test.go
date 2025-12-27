@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"testing"
 	"tungo/infrastructure/PAL/configuration/client"
+	"tungo/infrastructure/settings"
 	clientRunners "tungo/presentation/runners/client"
 )
 
@@ -18,7 +19,20 @@ func (d *mockConfigurationManager) Configuration() (*client.Configuration, error
 }
 
 func newDummyConfig() *client.Configuration {
-	return &client.Configuration{}
+	return &client.Configuration{
+		UDPSettings: settings.Settings{
+			InterfaceName:    "udp_dependencies_test_0",
+			InterfaceIPCIDR:  "10.0.1.0/24",
+			InterfaceAddress: "10.0.1.1",
+			ConnectionIP:     "1.2.3.4",
+			Port:             "1010",
+			MTU:              1000,
+			Protocol:         settings.UDP,
+			Encryption:       settings.ChaCha20Poly1305,
+			DialTimeoutMs:    5000,
+		},
+		Protocol: settings.UDP,
+	}
 }
 
 func TestClientDependencies_InitializeSuccess(t *testing.T) {

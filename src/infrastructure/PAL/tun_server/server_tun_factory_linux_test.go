@@ -123,6 +123,14 @@ func (m *ServerTunFactoryMockIPT) DisableForwardingFromDevToTun(_, _ string) err
 	m.add("fwd_dt_off")
 	return nil
 }
+func (m *ServerTunFactoryMockIPT) EnableForwardingTunToTun(_ string) error {
+	m.add("fwd_tt")
+	return nil
+}
+func (m *ServerTunFactoryMockIPT) DisableForwardingTunToTun(_ string) error {
+	m.add("fwd_tt_off")
+	return nil
+}
 func (m *ServerTunFactoryMockIPT) ConfigureMssClamping() error { m.add("clamp"); return nil }
 
 // Error injector for iptables paths.
@@ -161,6 +169,18 @@ func (m *ServerTunFactoryMockIPTErr) ConfigureMssClamping() error {
 		return m.err
 	}
 	return m.ServerTunFactoryMockIPT.ConfigureMssClamping()
+}
+func (m *ServerTunFactoryMockIPTErr) EnableForwardingTunToTun(tunName string) error {
+	if m.errTag == "EnableForwardingTunToTun" {
+		return m.err
+	}
+	return m.ServerTunFactoryMockIPT.EnableForwardingTunToTun(tunName)
+}
+func (m *ServerTunFactoryMockIPTErr) DisableForwardingTunToTun(tunName string) error {
+	if m.errTag == "DisableForwardingTunToTun" {
+		return m.err
+	}
+	return m.ServerTunFactoryMockIPT.DisableForwardingTunToTun(tunName)
 }
 
 // ServerTunFactoryMockIOCTL implements ioctl.Contract.
@@ -273,7 +293,9 @@ func (m *ServerTunFactoryMockIPTBenign) EnableForwardingFromDevToTun(_, _ string
 func (m *ServerTunFactoryMockIPTBenign) DisableForwardingFromDevToTun(_, _ string) error {
 	return errors.New("rule does not exist") // benign
 }
-func (m *ServerTunFactoryMockIPTBenign) ConfigureMssClamping() error { return nil }
+func (m *ServerTunFactoryMockIPTBenign) EnableForwardingTunToTun(_ string) error  { return nil }
+func (m *ServerTunFactoryMockIPTBenign) DisableForwardingTunToTun(_ string) error { return nil }
+func (m *ServerTunFactoryMockIPTBenign) ConfigureMssClamping() error              { return nil }
 
 // ServerTunFactoryMockIPTAlwaysErr simulates non-benign iptables errors that are logged but not fatal.
 type ServerTunFactoryMockIPTAlwaysErr struct{}
@@ -292,6 +314,10 @@ func (m *ServerTunFactoryMockIPTAlwaysErr) EnableForwardingFromDevToTun(_, _ str
 	return nil
 }
 func (m *ServerTunFactoryMockIPTAlwaysErr) DisableForwardingFromDevToTun(_, _ string) error {
+	return errors.New("permission denied")
+}
+func (m *ServerTunFactoryMockIPTAlwaysErr) EnableForwardingTunToTun(_ string) error { return nil }
+func (m *ServerTunFactoryMockIPTAlwaysErr) DisableForwardingTunToTun(_ string) error {
 	return errors.New("permission denied")
 }
 func (m *ServerTunFactoryMockIPTAlwaysErr) ConfigureMssClamping() error { return nil }
