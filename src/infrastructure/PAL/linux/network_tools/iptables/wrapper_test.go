@@ -51,6 +51,8 @@ func TestWrapper_AllCommands(t *testing.T) {
 		{"DisableForwardingFromTunToDev", func() error { return w.DisableForwardingFromTunToDev(tun, dev) }},
 		{"EnableForwardingFromDevToTun", func() error { return w.EnableForwardingFromDevToTun(tun, dev) }},
 		{"DisableForwardingFromDevToTun", func() error { return w.DisableForwardingFromDevToTun(tun, dev) }},
+		{"EnableForwardingTunToTun", func() error { return w.EnableForwardingTunToTun(tun) }},
+		{"DisableForwardingTunToTun", func() error { return w.DisableForwardingTunToTun(tun) }},
 		{"ConfigureMssClamping", func() error {
 			return NewWrapper(&mockCommander{
 				outputMap: map[string][]byte{

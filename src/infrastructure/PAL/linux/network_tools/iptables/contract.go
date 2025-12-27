@@ -7,5 +7,7 @@ type Contract interface {
 	DisableForwardingFromTunToDev(tunName, devName string) error
 	EnableForwardingFromDevToTun(tunName, devName string) error
 	DisableForwardingFromDevToTun(tunName, devName string) error
+	EnableForwardingTunToTun(tunName string) error
+	DisableForwardingTunToTun(tunName string) error
 	ConfigureMssClamping() error
 }

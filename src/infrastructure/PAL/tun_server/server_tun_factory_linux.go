@@ -88,6 +88,12 @@ func (s ServerTunFactory) DisposeDevices(connSettings settings.Settings) error {
 		log.Printf("skipping iptables forwarding disable for %s: external interface unknown", ifName)
 	}
 
+	if err := s.iptables.DisableForwardingTunToTun(ifName); err != nil {
+		if !s.isBenignIptablesError(err) {
+			log.Printf("disabling client-to-client forwarding for %s: %v", ifName, err)
+		}
+	}
+
 	if err := s.iptables.DisableDevMasquerade(ifName); err != nil {
 		if !s.isBenignIptablesError(err) {
 			log.Printf("disabling masquerade %s: %v", ifName, err)
@@ -241,6 +247,12 @@ func (s ServerTunFactory) setupForwarding(tunFile *os.File, extIface string) err
 		return fmt.Errorf("failed to setup forwarding rule: %s", err)
 	}
 
+	// Enable client-to-client forwarding
+	err = s.iptables.EnableForwardingTunToTun(tunName)
+	if err != nil {
+		return fmt.Errorf("failed to setup client-to-client forwarding rule: %s", err)
+	}
+
 	return nil
 }
 
@@ -262,6 +274,12 @@ func (s ServerTunFactory) clearForwarding(tunFile *os.File, extIface string) err
 	if err != nil {
 		return fmt.Errorf("failed to execute iptables command: %s", err)
 	}
+
+	err = s.iptables.DisableForwardingTunToTun(tunName)
+	if err != nil {
+		return fmt.Errorf("failed to execute iptables command: %s", err)
+	}
+
 	return nil
 }
 func (s ServerTunFactory) isBenignInterfaceError(err error) bool {
