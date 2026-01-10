@@ -1,0 +1,47 @@
+{
+  "homepage.cta": {
+    "message": "几分钟内开始使用"
+  },
+  "homepage.title": {
+    "message": "简约、快速、安全的开源 VPN"
+  },
+  "homepage.description": {
+    "message": "使用 TunGo 保护您的连接：基于现代加密技术用 Go 构建的轻量级、快速、开源 VPN。"
+  },
+  "feature.cpuFast.title": {
+    "message": "CPU 高效"
+  },
+  "feature.cpuFast.description": {
+    "message": "零运行时内存分配。负载下 CPU 使用率可忽略不计。"
+  },
+  "feature.ramEfficient.title": {
+    "message": "内存高效"
+  },
+  "feature.ramEfficient.description": {
+    "message": "负载下约 5–15 MB RSS，空闲时约 5–8 MB"
+  },
+  "feature.secure.title": {
+    "message": "安全"
+  },
+  "feature.secure.description": {
+    "message": "端到端隧道，使用 ChaCha20 加密"
+  },
+  "feature.multiTransport.title": {
+    "message": "多传输协议支持"
+  },
+  "feature.multiTransport.description": {
+    "message": "UDP — 高性能，TCP — 可靠备选，WebSocket/WSS — 隐身模式"
+  },
+  "feature.platforms.title": {
+    "message": "支持的平台"
+  },
+  "feature.platforms.description": {
+    "message": "Linux（客户端和服务器），macOS（客户端），Windows（客户端）"
+  },
+  "feature.openSource.title": {
+    "message": "开源"
+  },
+  "feature.openSource.description": {
+    "message": "许可证：AGPLv3"
+  }
+}

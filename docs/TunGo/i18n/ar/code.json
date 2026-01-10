@@ -1,0 +1,47 @@
+{
+  "homepage.cta": {
+    "message": "ابدأ في دقائق"
+  },
+  "homepage.title": {
+    "message": "VPN مفتوح المصدر بسيط وسريع وآمن"
+  },
+  "homepage.description": {
+    "message": "أمّن اتصالك مع TunGo: VPN خفيف وسريع ومفتوح المصدر مبني بـ Go باستخدام تشفير حديث."
+  },
+  "feature.cpuFast.title": {
+    "message": "سريع المعالجة"
+  },
+  "feature.cpuFast.description": {
+    "message": "بدون تخصيصات ذاكرة وقت التشغيل. استخدام CPU ضئيل تحت الحمل."
+  },
+  "feature.ramEfficient.title": {
+    "message": "فعال الذاكرة"
+  },
+  "feature.ramEfficient.description": {
+    "message": "≈5–15 ميجابايت RSS تحت الحمل، ≈5–8 ميجابايت في الخمول"
+  },
+  "feature.secure.title": {
+    "message": "آمن"
+  },
+  "feature.secure.description": {
+    "message": "نفق من طرف إلى طرف مع تشفير ChaCha20"
+  },
+  "feature.multiTransport.title": {
+    "message": "دعم النقل المتعدد"
+  },
+  "feature.multiTransport.description": {
+    "message": "UDP — أداء عالي، TCP — بديل موثوق، WebSocket/WSS — وضع التخفي"
+  },
+  "feature.platforms.title": {
+    "message": "المنصات المدعومة"
+  },
+  "feature.platforms.description": {
+    "message": "Linux (عميل وخادم)، macOS (عميل)، Windows (عميل)"
+  },
+  "feature.openSource.title": {
+    "message": "مفتوح المصدر"
+  },
+  "feature.openSource.description": {
+    "message": "الرخصة: AGPLv3"
+  }
+}

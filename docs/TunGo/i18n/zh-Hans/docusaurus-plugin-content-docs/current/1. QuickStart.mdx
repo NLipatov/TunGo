@@ -1,15 +1,15 @@
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# 🚀 QuickStart
+# 🚀 快速开始
 
-Get your TunGo server and client up and running in minutes. 🎉
+几分钟内启动您的 TunGo 服务器和客户端。
 
 ---
 
-## 🖥️ Server Setup
+## 🖥️ 服务器设置
 
-1️⃣ **Download & install**
+1️⃣ **下载并安装**
    <Tabs>
      <TabItem value="linux" label="Linux amd64" default>
      ```bash
@@ -20,25 +20,25 @@ Get your TunGo server and client up and running in minutes. 🎉
      </TabItem>
    </Tabs>
 
-2️⃣ **Generate client config**
+2️⃣ **生成客户端配置**
    ```bash
    sudo tungo s gen
    ```
-   > 📋 Copy the printed config for your client.
+   > 复制打印出的配置用于您的客户端。
 
-3️⃣ **Start server**
+3️⃣ **启动服务器**
    ```bash
    sudo tungo
    ```
 
-:::tip Systemd server daemon (Linux)
-See <a href="/docs/Advanced/Linux/Setup server systemd unit">this guide</a> to run TunGo as a systemd service (autostart/restart on boot).
+:::tip Systemd 服务守护进程 (Linux)
+请参阅<a href="/docs/Advanced/Linux/Setup server systemd unit">此指南</a>将 TunGo 作为 systemd 服务运行（开机自启/崩溃重启）。
 :::
 ---
 
-## 🖥️ Client Setup
+## 🖥️ 客户端设置
 
-1️⃣ Download & install
+1️⃣ 下载并安装
    <Tabs>
      <TabItem value="linux-amd64" label="Linux amd64" default>
          ```bash
@@ -46,9 +46,9 @@ See <a href="/docs/Advanced/Linux/Setup server systemd unit">this guide</a> to r
          chmod +x tungo
          sudo mv tungo /usr/local/bin/
          ```
-             
-         :::tip Systemd client daemon (Linux)
-         See <a href="/docs/Advanced/Linux/Setup client systemd unit">this guide</a> to run TunGo as a systemd service (autostart/restart on boot).
+
+         :::tip Systemd 客户端守护进程 (Linux)
+         请参阅<a href="/docs/Advanced/Linux/Setup client systemd unit">此指南</a>将 TunGo 作为 systemd 服务运行（开机自启/崩溃重启）。
          :::
      </TabItem>
        <TabItem value="linux-arm64" label="Linux arm64" default>
@@ -58,8 +58,8 @@ See <a href="/docs/Advanced/Linux/Setup server systemd unit">this guide</a> to r
            sudo mv tungo /usr/local/bin/
            ```
 
-           :::tip Systemd client daemon (Linux)
-           See <a href="/docs/Advanced/Linux/Setup client systemd unit">this guide</a> to run TunGo as a systemd service (autostart/restart on boot).
+           :::tip Systemd 客户端守护进程 (Linux)
+           请参阅<a href="/docs/Advanced/Linux/Setup client systemd unit">此指南</a>将 TunGo 作为 systemd 服务运行（开机自启/崩溃重启）。
            :::
        </TabItem>
      <TabItem value="macos-arm64" label="macOS Apple Silicon">
@@ -79,11 +79,11 @@ See <a href="/docs/Advanced/Linux/Setup server systemd unit">this guide</a> to r
          ```
      </TabItem>
      <TabItem value="windows amd64" label="Windows amd64">
-     Download and install from the [release page](https://github.com/NLipatov/TunGo/releases).
+     从[发布页面](https://github.com/NLipatov/TunGo/releases)下载并安装。
      </TabItem>
    </Tabs>
 
-2️⃣ Launch tunnel
+2️⃣ 启动隧道
    <Tabs>
      <TabItem value="unix" label="Linux/macOS" default>
      ```bash
@@ -91,11 +91,11 @@ See <a href="/docs/Advanced/Linux/Setup server systemd unit">this guide</a> to r
      ```
      </TabItem>
      <TabItem value="windows" label="Windows">
-     Run TunGo as Administrator.
+     以管理员身份运行 TunGo。
      </TabItem>
    </Tabs>
 
 ---
 
-🎉 **Congrats! Your secure tunnel is up and running.**
+恭喜！您的安全隧道已启动并运行。
 

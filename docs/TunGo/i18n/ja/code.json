@@ -1,0 +1,47 @@
+{
+  "homepage.cta": {
+    "message": "数分で始める"
+  },
+  "homepage.title": {
+    "message": "ミニマル、高速、セキュアなオープンソース VPN"
+  },
+  "homepage.description": {
+    "message": "TunGo で接続を保護：最新の暗号技術を使用し Go で構築された軽量、高速、オープンソース VPN。"
+  },
+  "feature.cpuFast.title": {
+    "message": "CPU 高速"
+  },
+  "feature.cpuFast.description": {
+    "message": "ランタイムアロケーションなし。負荷時の CPU 使用率はごくわずか。"
+  },
+  "feature.ramEfficient.title": {
+    "message": "RAM 効率的"
+  },
+  "feature.ramEfficient.description": {
+    "message": "負荷時 ≈5–15 MB RSS、アイドル時 ≈5–8 MB"
+  },
+  "feature.secure.title": {
+    "message": "セキュア"
+  },
+  "feature.secure.description": {
+    "message": "ChaCha20 暗号化によるエンドツーエンドトンネル"
+  },
+  "feature.multiTransport.title": {
+    "message": "マルチトランスポート対応"
+  },
+  "feature.multiTransport.description": {
+    "message": "UDP — 高性能、TCP — 信頼性の高いフォールバック、WebSocket/WSS — ステルスモード"
+  },
+  "feature.platforms.title": {
+    "message": "対応プラットフォーム"
+  },
+  "feature.platforms.description": {
+    "message": "Linux（クライアント＆サーバー）、macOS（クライアント）、Windows（クライアント）"
+  },
+  "feature.openSource.title": {
+    "message": "オープンソース"
+  },
+  "feature.openSource.description": {
+    "message": "ライセンス：AGPLv3"
+  }
+}

@@ -33,7 +33,19 @@ const config = {
   // may want to replace "en" with "zh-Hans".
   i18n: {
     defaultLocale: 'en',
-    locales: ['en'],
+    locales: ['en', 'zh-Hans', 'es', 'ar', 'pt', 'id', 'fr', 'ja', 'ru', 'de'],
+    localeConfigs: {
+      en: { label: 'English', direction: 'ltr' },
+      'zh-Hans': { label: '简体中文', direction: 'ltr' },
+      es: { label: 'Español', direction: 'ltr' },
+      ar: { label: 'العربية', direction: 'rtl' },
+      pt: { label: 'Português', direction: 'ltr' },
+      id: { label: 'Bahasa Indonesia', direction: 'ltr' },
+      fr: { label: 'Français', direction: 'ltr' },
+      ja: { label: '日本語', direction: 'ltr' },
+      ru: { label: 'Русский', direction: 'ltr' },
+      de: { label: 'Deutsch', direction: 'ltr' },
+    },
   },
 
   presets: [
@@ -72,6 +84,10 @@ const config = {
             sidebarId: 'tutorialSidebar',
             position: 'left',
             label: 'Tutorial',
+          },
+          {
+            type: 'localeDropdown',
+            position: 'right',
           },
           {
             href: 'https://github.com/NLipatov/TunGo',

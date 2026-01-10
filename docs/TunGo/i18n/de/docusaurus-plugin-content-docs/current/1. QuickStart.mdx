@@ -1,15 +1,15 @@
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# 🚀 QuickStart
+# 🚀 Schnellstart
 
-Get your TunGo server and client up and running in minutes. 🎉
+Bringen Sie Ihren TunGo-Server und -Client in wenigen Minuten zum Laufen.
 
 ---
 
-## 🖥️ Server Setup
+## 🖥️ Server-Einrichtung
 
-1️⃣ **Download & install**
+1️⃣ **Herunterladen und installieren**
    <Tabs>
      <TabItem value="linux" label="Linux amd64" default>
      ```bash
@@ -20,25 +20,25 @@ Get your TunGo server and client up and running in minutes. 🎉
      </TabItem>
    </Tabs>
 
-2️⃣ **Generate client config**
+2️⃣ **Client-Konfiguration generieren**
    ```bash
    sudo tungo s gen
    ```
-   > 📋 Copy the printed config for your client.
+   > Kopieren Sie die ausgegebene Konfiguration für Ihren Client.
 
-3️⃣ **Start server**
+3️⃣ **Server starten**
    ```bash
    sudo tungo
    ```
 
-:::tip Systemd server daemon (Linux)
-See <a href="/docs/Advanced/Linux/Setup server systemd unit">this guide</a> to run TunGo as a systemd service (autostart/restart on boot).
+:::tip Systemd-Server-Daemon (Linux)
+Siehe <a href="/docs/Advanced/Linux/Setup server systemd unit">diese Anleitung</a>, um TunGo als systemd-Dienst auszuführen (automatischer Start/Neustart beim Booten).
 :::
 ---
 
-## 🖥️ Client Setup
+## 🖥️ Client-Einrichtung
 
-1️⃣ Download & install
+1️⃣ Herunterladen und installieren
    <Tabs>
      <TabItem value="linux-amd64" label="Linux amd64" default>
          ```bash
@@ -46,9 +46,9 @@ See <a href="/docs/Advanced/Linux/Setup server systemd unit">this guide</a> to r
          chmod +x tungo
          sudo mv tungo /usr/local/bin/
          ```
-             
-         :::tip Systemd client daemon (Linux)
-         See <a href="/docs/Advanced/Linux/Setup client systemd unit">this guide</a> to run TunGo as a systemd service (autostart/restart on boot).
+
+         :::tip Systemd-Client-Daemon (Linux)
+         Siehe <a href="/docs/Advanced/Linux/Setup client systemd unit">diese Anleitung</a>, um TunGo als systemd-Dienst auszuführen (automatischer Start/Neustart beim Booten).
          :::
      </TabItem>
        <TabItem value="linux-arm64" label="Linux arm64" default>
@@ -58,8 +58,8 @@ See <a href="/docs/Advanced/Linux/Setup server systemd unit">this guide</a> to r
            sudo mv tungo /usr/local/bin/
            ```
 
-           :::tip Systemd client daemon (Linux)
-           See <a href="/docs/Advanced/Linux/Setup client systemd unit">this guide</a> to run TunGo as a systemd service (autostart/restart on boot).
+           :::tip Systemd-Client-Daemon (Linux)
+           Siehe <a href="/docs/Advanced/Linux/Setup client systemd unit">diese Anleitung</a>, um TunGo als systemd-Dienst auszuführen (automatischer Start/Neustart beim Booten).
            :::
        </TabItem>
      <TabItem value="macos-arm64" label="macOS Apple Silicon">
@@ -79,11 +79,11 @@ See <a href="/docs/Advanced/Linux/Setup server systemd unit">this guide</a> to r
          ```
      </TabItem>
      <TabItem value="windows amd64" label="Windows amd64">
-     Download and install from the [release page](https://github.com/NLipatov/TunGo/releases).
+     Laden Sie von der [Release-Seite](https://github.com/NLipatov/TunGo/releases) herunter und installieren Sie.
      </TabItem>
    </Tabs>
 
-2️⃣ Launch tunnel
+2️⃣ Tunnel starten
    <Tabs>
      <TabItem value="unix" label="Linux/macOS" default>
      ```bash
@@ -91,11 +91,11 @@ See <a href="/docs/Advanced/Linux/Setup server systemd unit">this guide</a> to r
      ```
      </TabItem>
      <TabItem value="windows" label="Windows">
-     Run TunGo as Administrator.
+     Führen Sie TunGo als Administrator aus.
      </TabItem>
    </Tabs>
 
 ---
 
-🎉 **Congrats! Your secure tunnel is up and running.**
+Herzlichen Glückwunsch! Ihr sicherer Tunnel läuft.
 
