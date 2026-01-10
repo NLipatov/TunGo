@@ -1,0 +1,101 @@
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# 🚀 快速开始
+
+几分钟内启动您的 TunGo 服务器和客户端。
+
+---
+
+## 🖥️ 服务器设置
+
+1️⃣ **下载并安装**
+   <Tabs>
+     <TabItem value="linux" label="Linux amd64" default>
+     ```bash
+     wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-amd64 -O tungo
+     chmod +x tungo
+     sudo mv tungo /usr/local/bin/
+     ```
+     </TabItem>
+   </Tabs>
+
+2️⃣ **生成客户端配置**
+   ```bash
+   sudo tungo s gen
+   ```
+   > 复制打印出的配置用于您的客户端。
+
+3️⃣ **启动服务器**
+   ```bash
+   sudo tungo
+   ```
+
+:::tip Systemd 服务守护进程 (Linux)
+请参阅<a href="/docs/Advanced/Linux/Setup server systemd unit">此指南</a>将 TunGo 作为 systemd 服务运行（开机自启/崩溃重启）。
+:::
+---
+
+## 🖥️ 客户端设置
+
+1️⃣ 下载并安装
+   <Tabs>
+     <TabItem value="linux-amd64" label="Linux amd64" default>
+         ```bash
+         wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-amd64 -O tungo
+         chmod +x tungo
+         sudo mv tungo /usr/local/bin/
+         ```
+
+         :::tip Systemd 客户端守护进程 (Linux)
+         请参阅<a href="/docs/Advanced/Linux/Setup client systemd unit">此指南</a>将 TunGo 作为 systemd 服务运行（开机自启/崩溃重启）。
+         :::
+     </TabItem>
+       <TabItem value="linux-arm64" label="Linux arm64" default>
+           ```bash
+           wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-arm64 -O tungo
+           chmod +x tungo
+           sudo mv tungo /usr/local/bin/
+           ```
+
+           :::tip Systemd 客户端守护进程 (Linux)
+           请参阅<a href="/docs/Advanced/Linux/Setup client systemd unit">此指南</a>将 TunGo 作为 systemd 服务运行（开机自启/崩溃重启）。
+           :::
+       </TabItem>
+     <TabItem value="macos-arm64" label="macOS Apple Silicon">
+         ```bash
+         curl -L -o tungo https://github.com/NLipatov/TunGo/releases/latest/download/tungo-darwin-arm64
+         sudo mkdir -p /usr/local/bin
+         chmod +x tungo
+         sudo mv tungo /usr/local/bin/
+         ```
+     </TabItem>
+     <TabItem value="macos-amd64" label="macOS Intel">
+         ```bash
+         curl -L -o tungo https://github.com/NLipatov/TunGo/releases/latest/download/tungo-darwin-amd64
+         sudo mkdir -p /usr/local/bin
+         chmod +x tungo
+         sudo mv tungo /usr/local/bin/
+         ```
+     </TabItem>
+     <TabItem value="windows amd64" label="Windows amd64">
+     从[发布页面](https://github.com/NLipatov/TunGo/releases)下载并安装。
+     </TabItem>
+   </Tabs>
+
+2️⃣ 启动隧道
+   <Tabs>
+     <TabItem value="unix" label="Linux/macOS" default>
+     ```bash
+     sudo tungo
+     ```
+     </TabItem>
+     <TabItem value="windows" label="Windows">
+     以管理员身份运行 TunGo。
+     </TabItem>
+   </Tabs>
+
+---
+
+恭喜！您的安全隧道已启动并运行。
+

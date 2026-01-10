@@ -1,0 +1,101 @@
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# 🚀 Schnellstart
+
+Bringen Sie Ihren TunGo-Server und -Client in wenigen Minuten zum Laufen.
+
+---
+
+## 🖥️ Server-Einrichtung
+
+1️⃣ **Herunterladen und installieren**
+   <Tabs>
+     <TabItem value="linux" label="Linux amd64" default>
+     ```bash
+     wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-amd64 -O tungo
+     chmod +x tungo
+     sudo mv tungo /usr/local/bin/
+     ```
+     </TabItem>
+   </Tabs>
+
+2️⃣ **Client-Konfiguration generieren**
+   ```bash
+   sudo tungo s gen
+   ```
+   > Kopieren Sie die ausgegebene Konfiguration für Ihren Client.
+
+3️⃣ **Server starten**
+   ```bash
+   sudo tungo
+   ```
+
+:::tip Systemd-Server-Daemon (Linux)
+Siehe <a href="/docs/Advanced/Linux/Setup server systemd unit">diese Anleitung</a>, um TunGo als systemd-Dienst auszuführen (automatischer Start/Neustart beim Booten).
+:::
+---
+
+## 🖥️ Client-Einrichtung
+
+1️⃣ Herunterladen und installieren
+   <Tabs>
+     <TabItem value="linux-amd64" label="Linux amd64" default>
+         ```bash
+         wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-amd64 -O tungo
+         chmod +x tungo
+         sudo mv tungo /usr/local/bin/
+         ```
+
+         :::tip Systemd-Client-Daemon (Linux)
+         Siehe <a href="/docs/Advanced/Linux/Setup client systemd unit">diese Anleitung</a>, um TunGo als systemd-Dienst auszuführen (automatischer Start/Neustart beim Booten).
+         :::
+     </TabItem>
+       <TabItem value="linux-arm64" label="Linux arm64" default>
+           ```bash
+           wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-arm64 -O tungo
+           chmod +x tungo
+           sudo mv tungo /usr/local/bin/
+           ```
+
+           :::tip Systemd-Client-Daemon (Linux)
+           Siehe <a href="/docs/Advanced/Linux/Setup client systemd unit">diese Anleitung</a>, um TunGo als systemd-Dienst auszuführen (automatischer Start/Neustart beim Booten).
+           :::
+       </TabItem>
+     <TabItem value="macos-arm64" label="macOS Apple Silicon">
+         ```bash
+         curl -L -o tungo https://github.com/NLipatov/TunGo/releases/latest/download/tungo-darwin-arm64
+         sudo mkdir -p /usr/local/bin
+         chmod +x tungo
+         sudo mv tungo /usr/local/bin/
+         ```
+     </TabItem>
+     <TabItem value="macos-amd64" label="macOS Intel">
+         ```bash
+         curl -L -o tungo https://github.com/NLipatov/TunGo/releases/latest/download/tungo-darwin-amd64
+         sudo mkdir -p /usr/local/bin
+         chmod +x tungo
+         sudo mv tungo /usr/local/bin/
+         ```
+     </TabItem>
+     <TabItem value="windows amd64" label="Windows amd64">
+     Laden Sie von der [Release-Seite](https://github.com/NLipatov/TunGo/releases) herunter und installieren Sie.
+     </TabItem>
+   </Tabs>
+
+2️⃣ Tunnel starten
+   <Tabs>
+     <TabItem value="unix" label="Linux/macOS" default>
+     ```bash
+     sudo tungo
+     ```
+     </TabItem>
+     <TabItem value="windows" label="Windows">
+     Führen Sie TunGo als Administrator aus.
+     </TabItem>
+   </Tabs>
+
+---
+
+Herzlichen Glückwunsch! Ihr sicherer Tunnel läuft.
+

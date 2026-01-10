@@ -1,0 +1,47 @@
+{
+  "homepage.cta": {
+    "message": "Comienza en minutos"
+  },
+  "homepage.title": {
+    "message": "VPN de código abierto minimalista, rápido y seguro"
+  },
+  "homepage.description": {
+    "message": "Asegura tu conexión con TunGo: VPN ligera, rápida y de código abierto construida en Go con criptografía moderna."
+  },
+  "feature.cpuFast.title": {
+    "message": "CPU-Rápido"
+  },
+  "feature.cpuFast.description": {
+    "message": "Sin asignaciones en tiempo de ejecución. Uso de CPU insignificante bajo carga."
+  },
+  "feature.ramEfficient.title": {
+    "message": "RAM-Eficiente"
+  },
+  "feature.ramEfficient.description": {
+    "message": "≈5–15 MB RSS bajo carga, ≈5–8 MB en reposo"
+  },
+  "feature.secure.title": {
+    "message": "Seguro"
+  },
+  "feature.secure.description": {
+    "message": "Túnel de extremo a extremo con cifrado ChaCha20"
+  },
+  "feature.multiTransport.title": {
+    "message": "Soporte Multi-Transporte"
+  },
+  "feature.multiTransport.description": {
+    "message": "UDP — alto rendimiento, TCP — respaldo confiable, WebSocket/WSS — modo sigiloso"
+  },
+  "feature.platforms.title": {
+    "message": "Plataformas Soportadas"
+  },
+  "feature.platforms.description": {
+    "message": "Linux (cliente y servidor), macOS (cliente), Windows (cliente)"
+  },
+  "feature.openSource.title": {
+    "message": "Código Abierto"
+  },
+  "feature.openSource.description": {
+    "message": "Licencia: AGPLv3"
+  }
+}

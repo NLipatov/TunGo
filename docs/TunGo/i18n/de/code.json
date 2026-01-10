@@ -1,0 +1,47 @@
+{
+  "homepage.cta": {
+    "message": "In Minuten starten"
+  },
+  "homepage.title": {
+    "message": "Minimalistisches, schnelles & sicheres Open-Source-VPN"
+  },
+  "homepage.description": {
+    "message": "Sichern Sie Ihre Verbindung mit TunGo: leichtgewichtiges, schnelles, Open-Source-VPN, gebaut in Go mit moderner Kryptographie."
+  },
+  "feature.cpuFast.title": {
+    "message": "CPU-Schnell"
+  },
+  "feature.cpuFast.description": {
+    "message": "Keine Laufzeit-Allokationen. Vernachlässigbare CPU-Nutzung unter Last."
+  },
+  "feature.ramEfficient.title": {
+    "message": "RAM-Effizient"
+  },
+  "feature.ramEfficient.description": {
+    "message": "≈5–15 MB RSS unter Last, ≈5–8 MB im Leerlauf"
+  },
+  "feature.secure.title": {
+    "message": "Sicher"
+  },
+  "feature.secure.description": {
+    "message": "End-to-End-Tunnel mit ChaCha20-Verschlüsselung"
+  },
+  "feature.multiTransport.title": {
+    "message": "Multi-Transport-Unterstützung"
+  },
+  "feature.multiTransport.description": {
+    "message": "UDP — hohe Leistung, TCP — zuverlässiger Fallback, WebSocket/WSS — Stealth-Modus"
+  },
+  "feature.platforms.title": {
+    "message": "Unterstützte Plattformen"
+  },
+  "feature.platforms.description": {
+    "message": "Linux (Client und Server), macOS (Client), Windows (Client)"
+  },
+  "feature.openSource.title": {
+    "message": "Open Source"
+  },
+  "feature.openSource.description": {
+    "message": "Lizenz: AGPLv3"
+  }
+}

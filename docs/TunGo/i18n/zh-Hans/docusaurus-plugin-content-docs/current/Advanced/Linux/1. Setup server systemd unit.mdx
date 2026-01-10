@@ -1,0 +1,53 @@
+:::info
+ℹ️ 使用此 systemd 单元在重启时自动启动 TunGo。
+:::
+
+## ⚙️ 前提条件
+
+1) TunGo 已按照[快速开始](/docs/QuickStart#%EF%B8%8F-server-setup)中的说明安装。
+
+
+## 🛠️ 设置
+
+1️⃣ **创建服务文件**
+
+```bash
+sudo vim /etc/systemd/system/tungo.service
+```
+
+2️⃣ **粘贴此配置**
+
+```ini
+[Unit]
+Description=TunGo VPN Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=tungo s
+User=root
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+3️⃣ **启用服务**
+
+```bash
+sudo systemctl enable tungo.service
+```
+
+4️⃣ **启动服务**
+
+```bash
+sudo systemctl start tungo.service
+```
+
+5️⃣ **检查状态**
+
+```bash
+sudo systemctl status tungo.service
+```

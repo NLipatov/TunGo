@@ -1,0 +1,55 @@
+:::info
+ℹ️ Use esta unidade systemd para iniciar o TunGo automaticamente na reinicialização.
+:::
+
+:::warning
+⚠️ A unidade systemd do TunGo requer a configuração padrão (última usada).
+:::
+
+## ⚙️ Pré-requisitos
+
+1) TunGo está instalado conforme descrito em [Início Rápido](/docs/QuickStart#%EF%B8%8F-client-setup).
+
+## 🛠️ Configuração
+
+1️⃣ **Criar o arquivo de serviço**
+```bash
+sudo vim /etc/systemd/system/tungo.service
+````
+
+2️⃣ **Colar esta configuração**
+
+```ini
+[Unit]
+Description=TunGo VPN Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=tungo c
+User=root
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+3️⃣ **Habilitar o serviço**
+
+```bash
+sudo systemctl enable tungo.service
+```
+
+4️⃣ **Iniciar o serviço**
+
+```bash
+sudo systemctl start tungo.service
+```
+
+5️⃣ **Verificar o status**
+
+```bash
+sudo systemctl status tungo.service
+```

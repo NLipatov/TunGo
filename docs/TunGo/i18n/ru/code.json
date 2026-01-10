@@ -1,0 +1,47 @@
+{
+  "homepage.cta": {
+    "message": "Начните за несколько минут"
+  },
+  "homepage.title": {
+    "message": "Минималистичный, быстрый и безопасный VPN с открытым исходным кодом"
+  },
+  "homepage.description": {
+    "message": "Защитите своё соединение с TunGo: лёгкий, быстрый VPN с открытым исходным кодом, написанный на Go с использованием современной криптографии."
+  },
+  "feature.cpuFast.title": {
+    "message": "Быстрый CPU"
+  },
+  "feature.cpuFast.description": {
+    "message": "Нет аллокаций во время выполнения. Незначительное использование CPU под нагрузкой."
+  },
+  "feature.ramEfficient.title": {
+    "message": "Эффективная RAM"
+  },
+  "feature.ramEfficient.description": {
+    "message": "≈5–15 МБ RSS под нагрузкой, ≈5–8 МБ в покое"
+  },
+  "feature.secure.title": {
+    "message": "Безопасный"
+  },
+  "feature.secure.description": {
+    "message": "Сквозной туннель с шифрованием ChaCha20"
+  },
+  "feature.multiTransport.title": {
+    "message": "Поддержка нескольких транспортов"
+  },
+  "feature.multiTransport.description": {
+    "message": "UDP — высокая производительность, TCP — надёжный резерв, WebSocket/WSS — режим скрытности"
+  },
+  "feature.platforms.title": {
+    "message": "Поддерживаемые платформы"
+  },
+  "feature.platforms.description": {
+    "message": "Linux (клиент и сервер), macOS (клиент), Windows (клиент)"
+  },
+  "feature.openSource.title": {
+    "message": "Открытый исходный код"
+  },
+  "feature.openSource.description": {
+    "message": "Лицензия: AGPLv3"
+  }
+}

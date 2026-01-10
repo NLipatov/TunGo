@@ -1,0 +1,101 @@
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# 🚀 クイックスタート
+
+TunGoサーバーとクライアントを数分で起動しましょう。
+
+---
+
+## 🖥️ サーバーセットアップ
+
+1️⃣ **ダウンロードとインストール**
+   <Tabs>
+     <TabItem value="linux" label="Linux amd64" default>
+     ```bash
+     wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-amd64 -O tungo
+     chmod +x tungo
+     sudo mv tungo /usr/local/bin/
+     ```
+     </TabItem>
+   </Tabs>
+
+2️⃣ **クライアント設定を生成**
+   ```bash
+   sudo tungo s gen
+   ```
+   > 表示された設定をクライアント用にコピーしてください。
+
+3️⃣ **サーバーを起動**
+   ```bash
+   sudo tungo
+   ```
+
+:::tip Systemdサーバーデーモン (Linux)
+TunGoをsystemdサービスとして実行する方法（起動時の自動起動/再起動）については、<a href="/docs/Advanced/Linux/Setup server systemd unit">このガイド</a>を参照してください。
+:::
+---
+
+## 🖥️ クライアントセットアップ
+
+1️⃣ ダウンロードとインストール
+   <Tabs>
+     <TabItem value="linux-amd64" label="Linux amd64" default>
+         ```bash
+         wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-amd64 -O tungo
+         chmod +x tungo
+         sudo mv tungo /usr/local/bin/
+         ```
+
+         :::tip Systemdクライアントデーモン (Linux)
+         TunGoをsystemdサービスとして実行する方法（起動時の自動起動/再起動）については、<a href="/docs/Advanced/Linux/Setup client systemd unit">このガイド</a>を参照してください。
+         :::
+     </TabItem>
+       <TabItem value="linux-arm64" label="Linux arm64" default>
+           ```bash
+           wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-arm64 -O tungo
+           chmod +x tungo
+           sudo mv tungo /usr/local/bin/
+           ```
+
+           :::tip Systemdクライアントデーモン (Linux)
+           TunGoをsystemdサービスとして実行する方法（起動時の自動起動/再起動）については、<a href="/docs/Advanced/Linux/Setup client systemd unit">このガイド</a>を参照してください。
+           :::
+       </TabItem>
+     <TabItem value="macos-arm64" label="macOS Apple Silicon">
+         ```bash
+         curl -L -o tungo https://github.com/NLipatov/TunGo/releases/latest/download/tungo-darwin-arm64
+         sudo mkdir -p /usr/local/bin
+         chmod +x tungo
+         sudo mv tungo /usr/local/bin/
+         ```
+     </TabItem>
+     <TabItem value="macos-amd64" label="macOS Intel">
+         ```bash
+         curl -L -o tungo https://github.com/NLipatov/TunGo/releases/latest/download/tungo-darwin-amd64
+         sudo mkdir -p /usr/local/bin
+         chmod +x tungo
+         sudo mv tungo /usr/local/bin/
+         ```
+     </TabItem>
+     <TabItem value="windows amd64" label="Windows amd64">
+     [リリースページ](https://github.com/NLipatov/TunGo/releases)からダウンロードしてインストールしてください。
+     </TabItem>
+   </Tabs>
+
+2️⃣ トンネルを起動
+   <Tabs>
+     <TabItem value="unix" label="Linux/macOS" default>
+     ```bash
+     sudo tungo
+     ```
+     </TabItem>
+     <TabItem value="windows" label="Windows">
+     TunGoを管理者として実行してください。
+     </TabItem>
+   </Tabs>
+
+---
+
+おめでとうございます！セキュアなトンネルが稼働しています。
+

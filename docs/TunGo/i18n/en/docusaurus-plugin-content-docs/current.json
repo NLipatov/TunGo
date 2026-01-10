@@ -1,0 +1,30 @@
+{
+  "version.label": {
+    "message": "Next",
+    "description": "The label for version current"
+  },
+  "sidebar.tutorialSidebar.category.Advanced": {
+    "message": "Advanced",
+    "description": "The label for category Advanced in sidebar tutorialSidebar"
+  },
+  "sidebar.tutorialSidebar.category.Containerization": {
+    "message": "Containerization",
+    "description": "The label for category Containerization in sidebar tutorialSidebar"
+  },
+  "sidebar.tutorialSidebar.category.Docker": {
+    "message": "Docker",
+    "description": "The label for category Docker in sidebar tutorialSidebar"
+  },
+  "sidebar.tutorialSidebar.category.Linux": {
+    "message": "Linux",
+    "description": "The label for category Linux in sidebar tutorialSidebar"
+  },
+  "sidebar.tutorialSidebar.category.Architecture": {
+    "message": "Architecture",
+    "description": "The label for category Architecture in sidebar tutorialSidebar"
+  },
+  "sidebar.tutorialSidebar.category.ADR": {
+    "message": "ADR",
+    "description": "The label for category ADR in sidebar tutorialSidebar"
+  }
+}

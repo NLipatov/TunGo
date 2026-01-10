@@ -1,6 +1,7 @@
 import Clsx from 'clsx';
 import Link from '@docusaurus/Link';
 import UseDocusaurusContext from '@docusaurus/useDocusaurusContext';
+import Translate, {translate} from '@docusaurus/Translate';
 import Layout from '@theme/Layout';
 import Features from '@site/src/components/features';
 import Heading from '@theme/Heading';
@@ -20,7 +21,7 @@ function HomepageHeader() {
           <Link
             className="button button--secondary button--lg"
             to="/docs/QuickStart">
-              Get started in minutes ⏱️
+              <Translate id="homepage.cta">Get started in minutes</Translate> ⏱️
           </Link>
         </div>
       </div>
@@ -33,8 +34,8 @@ export default function Home() {
   const {siteConfig} = UseDocusaurusContext();
   return (
     <Layout
-        title={`${siteConfig.title} — Minimalistic, Fast & Secure Open Source VPN`}
-        description={`Secure your connection with ${siteConfig.title}: lightweight, fast, open-source VPN built in Go using modern cryptography.`}>
+        title={translate({id: 'homepage.title', message: 'Minimalistic, Fast & Secure Open Source VPN'})}
+        description={translate({id: 'homepage.description', message: 'Secure your connection with TunGo: lightweight, fast, open-source VPN built in Go using modern cryptography.'})}>
       <HomepageHeader />
       <main>
         <Features />

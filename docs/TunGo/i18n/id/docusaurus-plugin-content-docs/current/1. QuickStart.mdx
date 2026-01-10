@@ -1,0 +1,101 @@
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# 🚀 Mulai Cepat
+
+Jalankan server dan klien TunGo Anda dalam hitungan menit.
+
+---
+
+## 🖥️ Pengaturan Server
+
+1️⃣ **Unduh & instal**
+   <Tabs>
+     <TabItem value="linux" label="Linux amd64" default>
+     ```bash
+     wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-amd64 -O tungo
+     chmod +x tungo
+     sudo mv tungo /usr/local/bin/
+     ```
+     </TabItem>
+   </Tabs>
+
+2️⃣ **Buat konfigurasi klien**
+   ```bash
+   sudo tungo s gen
+   ```
+   > Salin konfigurasi yang tercetak untuk klien Anda.
+
+3️⃣ **Jalankan server**
+   ```bash
+   sudo tungo
+   ```
+
+:::tip Daemon systemd server (Linux)
+Lihat <a href="/docs/Advanced/Linux/Setup server systemd unit">panduan ini</a> untuk menjalankan TunGo sebagai layanan systemd (mulai otomatis/restart saat boot).
+:::
+---
+
+## 🖥️ Pengaturan Klien
+
+1️⃣ Unduh & instal
+   <Tabs>
+     <TabItem value="linux-amd64" label="Linux amd64" default>
+         ```bash
+         wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-amd64 -O tungo
+         chmod +x tungo
+         sudo mv tungo /usr/local/bin/
+         ```
+
+         :::tip Daemon systemd klien (Linux)
+         Lihat <a href="/docs/Advanced/Linux/Setup client systemd unit">panduan ini</a> untuk menjalankan TunGo sebagai layanan systemd (mulai otomatis/restart saat boot).
+         :::
+     </TabItem>
+       <TabItem value="linux-arm64" label="Linux arm64" default>
+           ```bash
+           wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-arm64 -O tungo
+           chmod +x tungo
+           sudo mv tungo /usr/local/bin/
+           ```
+
+           :::tip Daemon systemd klien (Linux)
+           Lihat <a href="/docs/Advanced/Linux/Setup client systemd unit">panduan ini</a> untuk menjalankan TunGo sebagai layanan systemd (mulai otomatis/restart saat boot).
+           :::
+       </TabItem>
+     <TabItem value="macos-arm64" label="macOS Apple Silicon">
+         ```bash
+         curl -L -o tungo https://github.com/NLipatov/TunGo/releases/latest/download/tungo-darwin-arm64
+         sudo mkdir -p /usr/local/bin
+         chmod +x tungo
+         sudo mv tungo /usr/local/bin/
+         ```
+     </TabItem>
+     <TabItem value="macos-amd64" label="macOS Intel">
+         ```bash
+         curl -L -o tungo https://github.com/NLipatov/TunGo/releases/latest/download/tungo-darwin-amd64
+         sudo mkdir -p /usr/local/bin
+         chmod +x tungo
+         sudo mv tungo /usr/local/bin/
+         ```
+     </TabItem>
+     <TabItem value="windows amd64" label="Windows amd64">
+     Unduh dan instal dari [halaman rilis](https://github.com/NLipatov/TunGo/releases).
+     </TabItem>
+   </Tabs>
+
+2️⃣ Jalankan tunnel
+   <Tabs>
+     <TabItem value="unix" label="Linux/macOS" default>
+     ```bash
+     sudo tungo
+     ```
+     </TabItem>
+     <TabItem value="windows" label="Windows">
+     Jalankan TunGo sebagai Administrator.
+     </TabItem>
+   </Tabs>
+
+---
+
+Selamat! Tunnel aman Anda sudah berjalan.
+

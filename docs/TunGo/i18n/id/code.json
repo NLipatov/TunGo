@@ -1,0 +1,47 @@
+{
+  "homepage.cta": {
+    "message": "Mulai dalam hitungan menit"
+  },
+  "homepage.title": {
+    "message": "VPN Open Source yang Minimalis, Cepat & Aman"
+  },
+  "homepage.description": {
+    "message": "Amankan koneksi Anda dengan TunGo: VPN ringan, cepat, open-source yang dibangun dengan Go menggunakan kriptografi modern."
+  },
+  "feature.cpuFast.title": {
+    "message": "CPU-Cepat"
+  },
+  "feature.cpuFast.description": {
+    "message": "Tanpa alokasi runtime. Penggunaan CPU dapat diabaikan saat beban."
+  },
+  "feature.ramEfficient.title": {
+    "message": "RAM-Efisien"
+  },
+  "feature.ramEfficient.description": {
+    "message": "≈5–15 MB RSS saat beban, ≈5–8 MB saat idle"
+  },
+  "feature.secure.title": {
+    "message": "Aman"
+  },
+  "feature.secure.description": {
+    "message": "Tunnel end-to-end dengan enkripsi ChaCha20"
+  },
+  "feature.multiTransport.title": {
+    "message": "Dukungan Multi-Transport"
+  },
+  "feature.multiTransport.description": {
+    "message": "UDP — performa tinggi, TCP — fallback andal, WebSocket/WSS — mode siluman"
+  },
+  "feature.platforms.title": {
+    "message": "Platform yang Didukung"
+  },
+  "feature.platforms.description": {
+    "message": "Linux (klien dan server), macOS (klien), Windows (klien)"
+  },
+  "feature.openSource.title": {
+    "message": "Open Source"
+  },
+  "feature.openSource.description": {
+    "message": "Lisensi: AGPLv3"
+  }
+}
