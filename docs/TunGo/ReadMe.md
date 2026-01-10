@@ -1,5 +1,5 @@
 # Module dedication
-The Docs module serves as a knowledge base for working with the TunGo project, whether you’re using it as a user or contributing as a developer.
+The Docs module serves as a knowledge base for working with the TunGo project, whether you're using it as a user or contributing as a developer.
 
 # Run Docs Project
 
@@ -9,16 +9,24 @@ npm install
 ```
 
 ## 2. Start the Server
+
+**Development (single locale):**
 ```bash
-npm run start
+npm start
+npm start -- --locale de  # specific locale
+```
+
+**Production preview (all locales):**
+```bash
+npm run build && npm run serve
 ```
 
 ## 3. Open the Web UI
 
 The project will be available at [http://localhost:3000](http://localhost:3000).
 
-# Update deps
+# Update Dependencies
 
 ```bash
-npm  update
+npx npm-check-updates -u && npm install
 ```
