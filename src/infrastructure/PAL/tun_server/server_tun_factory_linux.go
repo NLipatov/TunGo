@@ -13,6 +13,7 @@ import (
 	"tungo/infrastructure/PAL/linux/network_tools/ioctl"
 	"tungo/infrastructure/PAL/linux/network_tools/ip"
 	"tungo/infrastructure/PAL/linux/network_tools/iptables"
+	"tungo/infrastructure/PAL/linux/network_tools/mssclamp"
 	"tungo/infrastructure/PAL/linux/network_tools/sysctl"
 	"tungo/infrastructure/PAL/linux/tun/epoll"
 	nIp "tungo/infrastructure/network/ip"
@@ -24,6 +25,7 @@ type ServerTunFactory struct {
 	iptables iptables.Contract
 	ioctl    ioctl.Contract
 	sysctl   sysctl.Contract
+	mss      mssclamp.Contract
 	wrapper  tun.Wrapper
 }
 
@@ -33,6 +35,7 @@ func NewServerTunFactory() tun.ServerManager {
 		iptables: iptables.NewWrapper(exec_commander.NewExecCommander()),
 		ioctl:    ioctl.NewWrapper(ioctl.NewLinuxIoctlCommander(), "/dev/net/tun"),
 		sysctl:   sysctl.NewWrapper(exec_commander.NewExecCommander()),
+		mss:      mssclamp.NewManager(exec_commander.NewExecCommander()),
 		wrapper:  epoll.NewWrapper(),
 	}
 }
@@ -74,12 +77,12 @@ func (s ServerTunFactory) DisposeDevices(connSettings settings.Settings) error {
 	extIface, _ := s.ip.RouteDefault()
 	if extIface != "" {
 		if err := s.iptables.DisableForwardingFromTunToDev(ifName, extIface); err != nil {
-			if !s.isBenignIptablesError(err) {
+			if !s.isBenignNetfilterError(err) {
 				log.Printf("disabling forwarding from %s -> %s: %v", ifName, extIface, err)
 			}
 		}
 		if err := s.iptables.DisableForwardingFromDevToTun(ifName, extIface); err != nil {
-			if !s.isBenignIptablesError(err) {
+			if !s.isBenignNetfilterError(err) {
 				log.Printf("disabling forwarding to %s <- %s: %v", ifName, extIface, err)
 			}
 		}
@@ -89,25 +92,31 @@ func (s ServerTunFactory) DisposeDevices(connSettings settings.Settings) error {
 	}
 
 	if err := s.iptables.DisableForwardingTunToTun(ifName); err != nil {
-		if !s.isBenignIptablesError(err) {
+		if !s.isBenignNetfilterError(err) {
 			log.Printf("disabling client-to-client forwarding for %s: %v", ifName, err)
 		}
 	}
 
 	if err := s.iptables.DisableDevMasquerade(ifName); err != nil {
-		if !s.isBenignIptablesError(err) {
+		if !s.isBenignNetfilterError(err) {
 			log.Printf("disabling masquerade %s: %v", ifName, err)
 		}
 	}
 
-	// For LinkDelete errors — DO NOT use isBenignIptablesError; treat as real error.
+	if err := s.mss.Remove(ifName); err != nil {
+		if !s.isBenignNetfilterError(err) {
+			log.Printf("removing MSS clamping for %s: %v", ifName, err)
+		}
+	}
+
+	// For LinkDelete errors — DO NOT use isBenignNetfilterError; treat as real error.
 	if err := s.ip.LinkDelete(ifName); err != nil {
 		return fmt.Errorf("error deleting TUN device: %v", err)
 	}
 	return nil
 }
 
-func (s ServerTunFactory) isBenignIptablesError(err error) bool {
+func (s ServerTunFactory) isBenignNetfilterError(err error) bool {
 	if err == nil {
 		return false
 	}
@@ -183,24 +192,29 @@ func (s ServerTunFactory) enableForwarding() error {
 }
 
 func (s ServerTunFactory) configure(tunFile *os.File) error {
+	tunName, err := s.ioctl.DetectTunNameFromFd(tunFile)
+	if err != nil {
+		return fmt.Errorf("failed to determing tunnel ifName: %s\n", err)
+	}
+	if tunName == "" {
+		return fmt.Errorf("failed to get TUN interface name")
+	}
+
 	externalIfName, err := s.ip.RouteDefault()
 	if err != nil {
 		return err
 	}
 
-	err = s.iptables.EnableDevMasquerade(externalIfName)
-	if err != nil {
+	if err := s.iptables.EnableDevMasquerade(externalIfName); err != nil {
 		return fmt.Errorf("failed enabling NAT: %v", err)
 	}
 
-	err = s.setupForwarding(tunFile, externalIfName)
-	if err != nil {
+	if err := s.setupForwarding(tunName, externalIfName); err != nil {
 		return fmt.Errorf("failed to set up forwarding: %v", err)
 	}
 
-	configureClampingErr := s.iptables.ConfigureMssClamping()
-	if configureClampingErr != nil {
-		return configureClampingErr
+	if err := s.mss.Install(tunName); err != nil {
+		return fmt.Errorf("failed to install MSS clamping for %s: %v", tunName, err)
 	}
 
 	log.Printf("server configured\n")
@@ -223,60 +237,54 @@ func (s ServerTunFactory) Unconfigure(tunFile *os.File) error {
 		return fmt.Errorf("failed to resolve default interface: %v", defaultIfNameErr)
 	}
 
-	return s.clearForwarding(tunFile, defaultIfName)
+	if tunName != "" {
+		if err := s.mss.Remove(tunName); err != nil {
+			log.Printf("failed to remove MSS clamping for %s: %v\n", tunName, err)
+		}
+		if err := s.clearForwarding(tunName, defaultIfName); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
-func (s ServerTunFactory) setupForwarding(tunFile *os.File, extIface string) error {
-	// Get the name of the TUN interface
-	tunName, err := s.ioctl.DetectTunNameFromFd(tunFile)
-	if err != nil {
-		return fmt.Errorf("failed to determing tunnel ifName: %s\n", err)
-	}
+func (s ServerTunFactory) setupForwarding(tunName string, extIface string) error {
 	if tunName == "" {
 		return fmt.Errorf("failed to get TUN interface name")
 	}
 
 	// Set up iptables rules
-	err = s.iptables.EnableForwardingFromTunToDev(tunName, extIface)
-	if err != nil {
+	if err := s.iptables.EnableForwardingFromTunToDev(tunName, extIface); err != nil {
 		return fmt.Errorf("failed to setup forwarding rule: %s", err)
 	}
 
-	err = s.iptables.EnableForwardingFromDevToTun(tunName, extIface)
-	if err != nil {
+	if err := s.iptables.EnableForwardingFromDevToTun(tunName, extIface); err != nil {
 		return fmt.Errorf("failed to setup forwarding rule: %s", err)
 	}
 
 	// Enable client-to-client forwarding
-	err = s.iptables.EnableForwardingTunToTun(tunName)
-	if err != nil {
+	if err := s.iptables.EnableForwardingTunToTun(tunName); err != nil {
 		return fmt.Errorf("failed to setup client-to-client forwarding rule: %s", err)
 	}
 
 	return nil
 }
 
-func (s ServerTunFactory) clearForwarding(tunFile *os.File, extIface string) error {
-	tunName, err := s.ioctl.DetectTunNameFromFd(tunFile)
-	if err != nil {
-		return fmt.Errorf("failed to determing tunnel ifName: %s\n", err)
-	}
+func (s ServerTunFactory) clearForwarding(tunName string, extIface string) error {
 	if tunName == "" {
 		return fmt.Errorf("failed to get TUN interface name")
 	}
 
-	err = s.iptables.DisableForwardingFromTunToDev(tunName, extIface)
-	if err != nil {
+	if err := s.iptables.DisableForwardingFromTunToDev(tunName, extIface); err != nil {
 		return fmt.Errorf("failed to execute iptables command: %s", err)
 	}
 
-	err = s.iptables.DisableForwardingFromDevToTun(tunName, extIface)
-	if err != nil {
+	if err := s.iptables.DisableForwardingFromDevToTun(tunName, extIface); err != nil {
 		return fmt.Errorf("failed to execute iptables command: %s", err)
 	}
 
-	err = s.iptables.DisableForwardingTunToTun(tunName)
-	if err != nil {
+	if err := s.iptables.DisableForwardingTunToTun(tunName); err != nil {
 		return fmt.Errorf("failed to execute iptables command: %s", err)
 	}
 
