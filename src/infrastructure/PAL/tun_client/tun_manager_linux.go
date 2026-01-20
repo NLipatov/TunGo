@@ -2,12 +2,14 @@ package tun_client
 
 import (
 	"fmt"
+	"log"
 	"strings"
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/PAL/exec_commander"
 	"tungo/infrastructure/PAL/linux/network_tools/ioctl"
 	"tungo/infrastructure/PAL/linux/network_tools/ip"
+	"tungo/infrastructure/PAL/linux/network_tools/mssclamp"
 	"tungo/infrastructure/PAL/linux/tun/epoll"
 	"tungo/infrastructure/settings"
 )
@@ -17,6 +19,7 @@ type PlatformTunManager struct {
 	configuration client.Configuration
 	ip            ip.Contract
 	ioctl         ioctl.Contract
+	mss           mssclamp.Contract
 	wrapper       tun.Wrapper
 }
 
@@ -27,6 +30,7 @@ func NewPlatformTunManager(
 		configuration: configuration,
 		ip:            ip.NewWrapper(exec_commander.NewExecCommander()),
 		ioctl:         ioctl.NewWrapper(ioctl.NewLinuxIoctlCommander(), "/dev/net/tun"),
+		mss:           mssclamp.NewManager(exec_commander.NewExecCommander()),
 		wrapper:       epoll.NewWrapper(),
 	}, nil
 }
@@ -118,16 +122,30 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.Settings) error 
 		)
 	}
 
+	// install MSS clamping to prevent PMTU blackholes when forwarding traffic
+	if err := t.mss.Install(connSettings.InterfaceName); err != nil {
+		return fmt.Errorf("failed to install MSS clamping for %s: %v", connSettings.InterfaceName, err)
+	}
+
 	return nil
 }
 
 func (t *PlatformTunManager) DisposeDevices() error {
+	if err := t.mss.Remove(t.configuration.UDPSettings.InterfaceName); err != nil {
+		log.Printf("failed to remove MSS clamping for %s: %v", t.configuration.UDPSettings.InterfaceName, err)
+	}
 	_ = t.ip.RouteDel(t.configuration.UDPSettings.ConnectionIP)
 	_ = t.ip.LinkDelete(t.configuration.UDPSettings.InterfaceName)
 
+	if err := t.mss.Remove(t.configuration.TCPSettings.InterfaceName); err != nil {
+		log.Printf("failed to remove MSS clamping for %s: %v", t.configuration.TCPSettings.InterfaceName, err)
+	}
 	_ = t.ip.RouteDel(t.configuration.TCPSettings.ConnectionIP)
 	_ = t.ip.LinkDelete(t.configuration.TCPSettings.InterfaceName)
 
+	if err := t.mss.Remove(t.configuration.WSSettings.InterfaceName); err != nil {
+		log.Printf("failed to remove MSS clamping for %s: %v", t.configuration.WSSettings.InterfaceName, err)
+	}
 	_ = t.ip.RouteDel(t.configuration.WSSettings.ConnectionIP)
 	_ = t.ip.LinkDelete(t.configuration.WSSettings.InterfaceName)
 

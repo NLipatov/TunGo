@@ -75,6 +75,15 @@ type platformTunManagerIOCTLMock struct {
 	openErr error
 }
 
+// platformTunManagerMSSMock simulates mssclamp.Contract.
+type platformTunManagerMSSMock struct {
+	installErr error
+	removeErr  error
+}
+
+func (m platformTunManagerMSSMock) Install(string) error { return m.installErr }
+func (m platformTunManagerMSSMock) Remove(string) error  { return m.removeErr }
+
 func (platformTunManagerIOCTLMock) DetectTunNameFromFd(*os.File) (string, error) { return "tun0", nil }
 func (m platformTunManagerIOCTLMock) CreateTunInterface(string) (*os.File, error) {
 	if m.openErr != nil {
@@ -104,6 +113,10 @@ func newMgr(
 		DetectTunNameFromFd(*os.File) (string, error)
 		CreateTunInterface(string) (*os.File, error)
 	},
+	mssMock interface {
+		Install(string) error
+		Remove(string) error
+	},
 	wrap tun.Wrapper,
 ) *PlatformTunManager {
 	cfg := client.Configuration{
@@ -131,6 +144,7 @@ func newMgr(
 		configuration: cfg,
 		ip:            ipMock,
 		ioctl:         ioctlMock,
+		mss:           mssMock,
 		wrapper:       wrap,
 	}
 }
@@ -141,7 +155,7 @@ func newMgr(
 
 func TestCreateDevice_UDP_WithGateway(t *testing.T) {
 	ipMock := &platformTunManagerIPMock{routeReply: "198.51.100.1 via 192.0.2.1 dev eth0"}
-	m := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerPlainWrapper{})
+	m := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{})
 
 	dev, err := m.CreateDevice()
 	if err != nil {
@@ -160,7 +174,7 @@ func TestCreateDevice_UDP_WithGateway(t *testing.T) {
 
 func TestCreateDevice_TCP_NoGateway(t *testing.T) {
 	ipMock := &platformTunManagerIPMock{routeReply: "203.0.113.1 dev eth0"} // no "via"
-	m := newMgr(settings.TCP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerPlainWrapper{})
+	m := newMgr(settings.TCP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{})
 
 	dev, err := m.CreateDevice()
 	if err != nil {
@@ -179,7 +193,7 @@ func TestCreateDevice_TCP_NoGateway(t *testing.T) {
 
 func TestCreateDevice_WS_Path(t *testing.T) {
 	ipMock := &platformTunManagerIPMock{routeReply: "203.0.113.2 dev eth0"}
-	m := newMgr(settings.WS, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerPlainWrapper{})
+	m := newMgr(settings.WS, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{})
 
 	dev, err := m.CreateDevice()
 	if err != nil {
@@ -193,7 +207,7 @@ func TestCreateDevice_WS_Path(t *testing.T) {
 
 func TestCreateDevice_UnsupportedProtocol(t *testing.T) {
 	ipMock := &platformTunManagerIPMock{routeReply: "198.51.100.1 dev eth0"}
-	m := newMgr(settings.Protocol(255), ipMock, platformTunManagerIOCTLMock{}, platformTunManagerPlainWrapper{})
+	m := newMgr(settings.Protocol(255), ipMock, platformTunManagerIOCTLMock{}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{})
 
 	if _, err := m.CreateDevice(); err == nil {
 		t.Fatal("expected unsupported protocol error")
@@ -205,7 +219,7 @@ func TestCreateDevice_UnsupportedProtocol(t *testing.T) {
 func TestCreateDevice_ParseRouteError_NoDev(t *testing.T) {
 	// Missing "dev" -> parse must fail.
 	ipMock := &platformTunManagerIPMock{routeReply: "198.51.100.1 via 192.0.2.1"}
-	m := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerPlainWrapper{})
+	m := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{})
 
 	if _, err := m.CreateDevice(); err == nil {
 		t.Fatal("expected parse error (no dev)")
@@ -216,7 +230,7 @@ func TestCreateDevice_ParseRouteError_NoDev(t *testing.T) {
 
 func TestCreateDevice_RouteGetError_LeadsToParseError(t *testing.T) {
 	ipMock := &platformTunManagerIPGetErr{}
-	m := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerPlainWrapper{})
+	m := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{})
 
 	if _, err := m.CreateDevice(); err == nil {
 		t.Fatal("expected RouteGet error")
@@ -227,7 +241,7 @@ func TestCreateDevice_RouteGetError_LeadsToParseError(t *testing.T) {
 
 func TestCreateDevice_OpenTunError(t *testing.T) {
 	ipMock := &platformTunManagerIPMock{routeReply: "198.51.100.1 dev eth0"}
-	m := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{openErr: errors.New("open fail")}, platformTunManagerPlainWrapper{})
+	m := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{openErr: errors.New("open fail")}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{})
 
 	if _, err := m.CreateDevice(); err == nil {
 		t.Fatal("expected open TUN error")
@@ -238,7 +252,7 @@ func TestCreateDevice_OpenTunError(t *testing.T) {
 
 func TestCreateDevice_WrapError(t *testing.T) {
 	ipMock := &platformTunManagerIPMock{routeReply: "198.51.100.1 dev eth0"}
-	m := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerPlainWrapper{err: errors.New("wrap fail")})
+	m := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{err: errors.New("wrap fail")})
 
 	if _, err := m.CreateDevice(); err == nil {
 		t.Fatal("expected wrapper.Wrap error")
@@ -249,7 +263,7 @@ func TestConfigureTUN_ErrorPropagation_NoGatewayPath(t *testing.T) {
 	steps := []string{"add", "up", "addr", "radd", "def", "mtu"}
 	for _, step := range steps {
 		ipMock := &platformTunManagerIPMock{routeReply: "198.51.100.1 dev eth0", failStep: step}
-		m := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerPlainWrapper{})
+		m := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{})
 		if _, err := m.CreateDevice(); err == nil {
 			t.Fatalf("expected error on step %s", step)
 		}
@@ -260,7 +274,7 @@ func TestConfigureTUN_ErrorPropagation_WithGatewayPath(t *testing.T) {
 	steps := []string{"add", "up", "addr", "raddvia", "def", "mtu"}
 	for _, step := range steps {
 		ipMock := &platformTunManagerIPMock{routeReply: "198.51.100.1 via 192.0.2.1 dev eth0", failStep: step}
-		m := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerPlainWrapper{})
+		m := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{})
 		if _, err := m.CreateDevice(); err == nil {
 			t.Fatalf("expected error on step %s", step)
 		}
@@ -269,7 +283,7 @@ func TestConfigureTUN_ErrorPropagation_WithGatewayPath(t *testing.T) {
 
 func TestDisposeDevices(t *testing.T) {
 	ipMock := &platformTunManagerIPMock{}
-	m := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerPlainWrapper{})
+	m := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{})
 
 	if err := m.DisposeDevices(); err != nil {
 		t.Fatalf("DisposeDevices error: %v", err)
