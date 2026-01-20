@@ -5,3 +5,4 @@
 /.idea/inspectionProfiles/Project_Default.xml
 .vscode/
 src/tungo
+.tool-versions
