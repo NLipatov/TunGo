@@ -1,0 +1,17 @@
+#!/usr/bin/make -f
+
+export DH_VERBOSE = 1
+export GOCACHE = $(CURDIR)/.gocache
+export GOFLAGS = -trimpath
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	cd src && go build -ldflags="-s -w" -o ../tungo .
+
+override_dh_auto_install:
+	install -D -m 0755 tungo $(CURDIR)/debian/tungo/usr/bin/tungo
+
+override_dh_auto_test:
+	# Skip tests during package build

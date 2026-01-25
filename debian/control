@@ -1,0 +1,17 @@
+Source: tungo
+Section: net
+Priority: optional
+Maintainer: Nikita Lipatov <6stringsohei@gmail.com>
+Build-Depends: debhelper-compat (= 13), golang-go (>= 2:1.21~)
+Standards-Version: 4.6.2
+Homepage: https://github.com/NLipatov/TunGo
+Vcs-Browser: https://github.com/NLipatov/TunGo
+Vcs-Git: https://github.com/NLipatov/TunGo.git
+Rules-Requires-Root: no
+
+Package: tungo
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: Fast and secure VPN tunnel
+ TunGo is a simple, fast, and secure VPN solution written in Go.
+ It provides encrypted tunneling for secure network communication.
