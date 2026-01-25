@@ -381,9 +381,13 @@ jobs:
   upload-ppa:
     runs-on: ubuntu-latest
     needs: [create-release, version-and-tag]
+    env:
+      VERSION: ${{ needs.version-and-tag.outputs.tag_name }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          path: repo
 
       - name: Install packaging tools
         run: |
@@ -397,27 +401,23 @@ jobs:
           echo "$GPG_PRIVATE_KEY" | gpg --batch --import
 
       - name: Download pre-built binary
-        env:
-          VERSION: ${{ needs.version-and-tag.outputs.tag_name }}
         run: |
           curl -fsSL -o tungo-linux-amd64 \
             "https://github.com/NLipatov/TunGo/releases/download/${VERSION}/tungo-linux-amd64"
           chmod +x tungo-linux-amd64
 
-      - name: Create orig tarball
-        env:
-          VERSION: ${{ needs.version-and-tag.outputs.tag_name }}
+      - name: Prepare build directory
         run: |
+          # Create orig tarball with binary
           mkdir -p tungo-${VERSION}
           cp tungo-linux-amd64 tungo-${VERSION}/
           tar czf tungo_${VERSION}.orig.tar.gz tungo-${VERSION}
-          rm -rf tungo-${VERSION}
 
-      - name: Update changelog version
-        env:
-          VERSION: ${{ needs.version-and-tag.outputs.tag_name }}
-        run: |
-          cat > debian/changelog << EOF
+          # Add debian/ to build directory
+          cp -r repo/debian tungo-${VERSION}/
+
+          # Update changelog
+          cat > tungo-${VERSION}/debian/changelog << EOF
           tungo (${VERSION}-1) noble; urgency=medium
 
             * Release ${VERSION}
@@ -426,7 +426,8 @@ jobs:
           EOF
 
       - name: Build source package
+        working-directory: tungo-${{ env.VERSION }}
         run: debuild -S -sa -k6stringsohei@gmail.com
 
       - name: Upload to PPA
-        run: dput ppa:nlipatov/tungo ../tungo_*.changes
+        run: dput ppa:nlipatov/tungo tungo_*.changes
