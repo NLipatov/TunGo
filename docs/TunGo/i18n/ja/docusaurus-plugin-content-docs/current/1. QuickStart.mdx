@@ -51,37 +51,42 @@ TunGoをsystemdサービスとして実行する方法（起動時の自動起�
          TunGoをsystemdサービスとして実行する方法（起動時の自動起動/再起動）については、<a href="/docs/Advanced/Linux/Setup client systemd unit">このガイド</a>を参照してください。
          :::
      </TabItem>
-       <TabItem value="linux-arm64" label="Linux arm64" default>
-           ```bash
-           wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-arm64 -O tungo
-           chmod +x tungo
-           sudo mv tungo /usr/local/bin/
-           ```
+     <TabItem value="linux-arm64" label="Linux arm64">
+         ```bash
+         wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-arm64 -O tungo
+         chmod +x tungo
+         sudo mv tungo /usr/local/bin/
+         ```
 
-           :::tip Systemdクライアントデーモン (Linux)
-           TunGoをsystemdサービスとして実行する方法（起動時の自動起動/再起動）については、<a href="/docs/Advanced/Linux/Setup client systemd unit">このガイド</a>を参照してください。
-           :::
-       </TabItem>
-     <TabItem value="macos-arm64" label="macOS Apple Silicon">
-         ```bash
-         curl -L -o tungo https://github.com/NLipatov/TunGo/releases/latest/download/tungo-darwin-arm64
-         sudo mkdir -p /usr/local/bin
-         chmod +x tungo
-         sudo mv tungo /usr/local/bin/
-         ```
+         :::tip Systemdクライアントデーモン (Linux)
+         TunGoをsystemdサービスとして実行する方法（起動時の自動起動/再起動）については、<a href="/docs/Advanced/Linux/Setup client systemd unit">このガイド</a>を参照してください。
+         :::
      </TabItem>
-     <TabItem value="macos-amd64" label="macOS Intel">
-         ```bash
-         curl -L -o tungo https://github.com/NLipatov/TunGo/releases/latest/download/tungo-darwin-amd64
-         sudo mkdir -p /usr/local/bin
-         chmod +x tungo
-         sudo mv tungo /usr/local/bin/
-         ```
-     </TabItem>
-     <TabItem value="windows amd64" label="Windows amd64">
-     [リリースページ](https://github.com/NLipatov/TunGo/releases)からダウンロードしてインストールしてください。
-     </TabItem>
-   </Tabs>
+    <TabItem value="macos-brew" label="macOS (Homebrew)">
+        ```bash
+        brew install NLipatov/tungo/tungo
+        ```
+    </TabItem>
+    <TabItem value="macos-arm64" label="macOS Apple Silicon">
+        ```bash
+        curl -L -o tungo https://github.com/NLipatov/TunGo/releases/latest/download/tungo-darwin-arm64
+        sudo mkdir -p /usr/local/bin
+        chmod +x tungo
+        sudo mv tungo /usr/local/bin/
+        ```
+    </TabItem>
+    <TabItem value="macos-amd64" label="macOS Intel">
+        ```bash
+        curl -L -o tungo https://github.com/NLipatov/TunGo/releases/latest/download/tungo-darwin-amd64
+        sudo mkdir -p /usr/local/bin
+        chmod +x tungo
+        sudo mv tungo /usr/local/bin/
+        ```
+    </TabItem>
+    <TabItem value="windows amd64" label="Windows amd64">
+    [リリースページ](https://github.com/NLipatov/TunGo/releases)からダウンロードしてインストールしてください。
+    </TabItem>
+  </Tabs>
 
 2️⃣ トンネルを起動
    <Tabs>
