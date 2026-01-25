@@ -399,6 +399,7 @@ jobs:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
         run: |
           echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          echo -e "5\ny\n" | gpg --batch --command-fd 0 --edit-key 6stringsohei@gmail.com trust
 
       - name: Download pre-built binary
         run: |
