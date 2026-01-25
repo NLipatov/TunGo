@@ -409,26 +409,32 @@ jobs:
 
       - name: Prepare build directory
         run: |
+          # Strip leading 'v' from version for Debian compatibility
+          DEB_VERSION="${VERSION#v}"
+
           # Create orig tarball with binary
-          mkdir -p tungo-${VERSION}
-          cp tungo-linux-amd64 tungo-${VERSION}/
-          tar czf tungo_${VERSION}.orig.tar.gz tungo-${VERSION}
+          mkdir -p tungo-${DEB_VERSION}
+          cp tungo-linux-amd64 tungo-${DEB_VERSION}/
+          tar czf tungo_${DEB_VERSION}.orig.tar.gz tungo-${DEB_VERSION}
 
           # Add debian/ to build directory
-          cp -r repo/debian tungo-${VERSION}/
+          cp -r repo/debian tungo-${DEB_VERSION}/
 
           # Update changelog (format is strict about whitespace)
           printf '%s\n' \
-            "tungo (${VERSION}-1) noble; urgency=medium" \
+            "tungo (${DEB_VERSION}-1) noble; urgency=medium" \
             "" \
             "  * New upstream release" \
             "" \
             " -- Nikita Lipatov <6stringsohei@gmail.com>  $(date -R)" \
-            > tungo-${VERSION}/debian/changelog
+            > tungo-${DEB_VERSION}/debian/changelog
+
+          # Save for next step
+          echo "DEB_VERSION=${DEB_VERSION}" >> $GITHUB_ENV
 
       - name: Build source package
-        working-directory: tungo-${{ env.VERSION }}
         run: debuild -S -sa -k6stringsohei@gmail.com
+        working-directory: tungo-${{ env.DEB_VERSION }}
 
       - name: Upload to PPA
         run: dput ppa:nlipatov/tungo tungo_*.changes
