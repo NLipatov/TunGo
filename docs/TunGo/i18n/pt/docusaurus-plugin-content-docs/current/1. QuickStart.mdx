@@ -51,37 +51,42 @@ Consulte <a href="/docs/Advanced/Linux/Setup server systemd unit">este guia</a> 
          Consulte <a href="/docs/Advanced/Linux/Setup client systemd unit">este guia</a> para executar o TunGo como serviço systemd (iniciar/reiniciar automaticamente na inicialização).
          :::
      </TabItem>
-       <TabItem value="linux-arm64" label="Linux arm64" default>
-           ```bash
-           wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-arm64 -O tungo
-           chmod +x tungo
-           sudo mv tungo /usr/local/bin/
-           ```
+     <TabItem value="linux-arm64" label="Linux arm64">
+         ```bash
+         wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-arm64 -O tungo
+         chmod +x tungo
+         sudo mv tungo /usr/local/bin/
+         ```
 
-           :::tip Daemon systemd do cliente (Linux)
-           Consulte <a href="/docs/Advanced/Linux/Setup client systemd unit">este guia</a> para executar o TunGo como serviço systemd (iniciar/reiniciar automaticamente na inicialização).
-           :::
-       </TabItem>
-     <TabItem value="macos-arm64" label="macOS Apple Silicon">
-         ```bash
-         curl -L -o tungo https://github.com/NLipatov/TunGo/releases/latest/download/tungo-darwin-arm64
-         sudo mkdir -p /usr/local/bin
-         chmod +x tungo
-         sudo mv tungo /usr/local/bin/
-         ```
+         :::tip Daemon systemd do cliente (Linux)
+         Consulte <a href="/docs/Advanced/Linux/Setup client systemd unit">este guia</a> para executar o TunGo como serviço systemd (iniciar/reiniciar automaticamente na inicialização).
+         :::
      </TabItem>
-     <TabItem value="macos-amd64" label="macOS Intel">
-         ```bash
-         curl -L -o tungo https://github.com/NLipatov/TunGo/releases/latest/download/tungo-darwin-amd64
-         sudo mkdir -p /usr/local/bin
-         chmod +x tungo
-         sudo mv tungo /usr/local/bin/
-         ```
-     </TabItem>
-     <TabItem value="windows amd64" label="Windows amd64">
-     Baixe e instale a partir da [página de releases](https://github.com/NLipatov/TunGo/releases).
-     </TabItem>
-   </Tabs>
+    <TabItem value="macos-brew" label="macOS brew">
+        ```bash
+        brew install NLipatov/tungo/tungo
+        ```
+    </TabItem>
+    <TabItem value="macos-arm64" label="macOS arm manual">
+        ```bash
+        curl -L -o tungo https://github.com/NLipatov/TunGo/releases/latest/download/tungo-darwin-arm64
+        sudo mkdir -p /usr/local/bin
+        chmod +x tungo
+        sudo mv tungo /usr/local/bin/
+        ```
+    </TabItem>
+    <TabItem value="macos-amd64" label="macOS x86 manual">
+        ```bash
+        curl -L -o tungo https://github.com/NLipatov/TunGo/releases/latest/download/tungo-darwin-amd64
+        sudo mkdir -p /usr/local/bin
+        chmod +x tungo
+        sudo mv tungo /usr/local/bin/
+        ```
+    </TabItem>
+    <TabItem value="windows amd64" label="Windows amd64">
+    Baixe e instale a partir da [página de releases](https://github.com/NLipatov/TunGo/releases).
+    </TabItem>
+  </Tabs>
 
 2️⃣ Iniciar túnel
    <Tabs>
