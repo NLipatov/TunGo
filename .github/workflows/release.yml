@@ -416,14 +416,14 @@ jobs:
           # Add debian/ to build directory
           cp -r repo/debian tungo-${VERSION}/
 
-          # Update changelog
-          cat > tungo-${VERSION}/debian/changelog << EOF
-          tungo (${VERSION}-1) noble; urgency=medium
-
-            * Release ${VERSION}
-
-           -- Nikita Lipatov <6stringsohei@gmail.com>  $(date -R)
-          EOF
+          # Update changelog (format is strict about whitespace)
+          printf '%s\n' \
+            "tungo (${VERSION}-1) noble; urgency=medium" \
+            "" \
+            "  * New upstream release" \
+            "" \
+            " -- Nikita Lipatov <6stringsohei@gmail.com>  $(date -R)" \
+            > tungo-${VERSION}/debian/changelog
 
       - name: Build source package
         working-directory: tungo-${{ env.VERSION }}

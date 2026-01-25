@@ -13,3 +13,9 @@ override_dh_auto_install:
 
 override_dh_auto_test:
 	# Skip tests during package build
+
+override_dh_shlibdeps:
+	# Go binary is statically linked, skip shared lib deps
+
+override_dh_strip:
+	# Don't strip Go binaries, it can corrupt them
