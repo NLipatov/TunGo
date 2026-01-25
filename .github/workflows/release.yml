@@ -328,8 +328,8 @@ jobs:
         env:
           VERSION: ${{ needs.version-and-tag.outputs.tag_name }}
         run: |
-          curl -sL -o darwin-arm64 "https://github.com/NLipatov/TunGo/releases/download/${VERSION}/tungo-darwin-arm64"
-          curl -sL -o darwin-amd64 "https://github.com/NLipatov/TunGo/releases/download/${VERSION}/tungo-darwin-amd64"
+          curl -fsSL -o darwin-arm64 "https://github.com/NLipatov/TunGo/releases/download/${VERSION}/tungo-darwin-arm64"
+          curl -fsSL -o darwin-amd64 "https://github.com/NLipatov/TunGo/releases/download/${VERSION}/tungo-darwin-amd64"
 
           SHA_ARM64=$(sha256sum darwin-arm64 | cut -d' ' -f1)
           SHA_AMD64=$(sha256sum darwin-amd64 | cut -d' ' -f1)
