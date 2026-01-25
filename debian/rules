@@ -1,0 +1,21 @@
+#!/usr/bin/make -f
+
+export DH_VERBOSE = 1
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	# Binary is pre-built, skip build
+
+override_dh_auto_install:
+	install -D -m 0755 tungo-linux-amd64 $(CURDIR)/debian/tungo/usr/bin/tungo
+
+override_dh_auto_test:
+	# Skip tests during package build
+
+override_dh_shlibdeps:
+	# Go binary is statically linked, skip shared lib deps
+
+override_dh_strip:
+	# Don't strip Go binaries, it can corrupt them
