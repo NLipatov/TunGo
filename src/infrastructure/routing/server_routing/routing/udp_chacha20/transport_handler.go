@@ -2,6 +2,7 @@ package udp_chacha20
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/netip"
 	"sync"
@@ -134,6 +135,15 @@ func (t *TransportHandler) handlePacket(
 		if decryptionErr != nil {
 			t.logger.Printf("failed to decrypt data: %v", decryptionErr)
 			return decryptionErr
+		}
+
+		if spType, spOk := t.servicePacket.TryParseType(decrypted); spOk {
+			switch spType {
+			case service.RekeyInit:
+				fmt.Println("rekey init detected")
+			default:
+				panic("unknown service packet type")
+			}
 		}
 
 		_, err := t.writer.Write(decrypted)

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 	"tungo/application/network/connection"
 	"tungo/application/network/routing/transport"
 	"tungo/domain/network/service"
@@ -19,6 +20,8 @@ type TransportHandler struct {
 	writer              io.Writer
 	cryptographyService connection.Crypto
 	servicePacket       service.PacketHandler
+	controlPacketBuffer [3]byte
+	rotatedAt           time.Time
 }
 
 func NewTransportHandler(
@@ -34,6 +37,7 @@ func NewTransportHandler(
 		writer:              writer,
 		cryptographyService: cryptographyService,
 		servicePacket:       servicePacket,
+		rotatedAt:           time.Now().UTC(),
 	}
 }
 
@@ -83,6 +87,15 @@ func (t *TransportHandler) HandleTransport() error {
 					return nil
 				}
 				return fmt.Errorf("failed to write to TUN: %s", writeErr)
+			}
+
+			if t.rotatedAt.After(t.rotatedAt) {
+				if pkt, err := t.servicePacket.EncodeV1(service.RekeyInit, t.controlPacketBuffer[:]); err != nil {
+					fmt.Println("failed to encode rekeyInit packet")
+				} else {
+					_, _ = t.writer.Write(pkt)
+					t.rotatedAt = time.Now().UTC()
+				}
 			}
 		}
 	}
