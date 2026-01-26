@@ -45,6 +45,24 @@ func TestDefaultPacketHandler_TryParseType(t *testing.T) {
 			wantOK: true,
 		},
 		{
+			name:   "v1: valid framed rekey ack",
+			in:     []byte{Prefix, VersionV1, byte(RekeyAck)},
+			wantT:  RekeyAck,
+			wantOK: true,
+		},
+		{
+			name:   "v1: rekey init with payload",
+			in:     append([]byte{Prefix, VersionV1, byte(RekeyInit)}, make([]byte, RekeyPublicKeyLen)...),
+			wantT:  RekeyInit,
+			wantOK: true,
+		},
+		{
+			name:   "v1: rekey ack with payload",
+			in:     append([]byte{Prefix, VersionV1, byte(RekeyAck)}, make([]byte, RekeyPublicKeyLen)...),
+			wantT:  RekeyAck,
+			wantOK: true,
+		},
+		{
 			name:   "v1: wrong prefix",
 			in:     []byte{0xFE, VersionV1, byte(SessionReset)},
 			wantT:  Unknown,
@@ -147,6 +165,22 @@ func TestDefaultPacketHandler_EncodeV1(t *testing.T) {
 		}
 	})
 
+	t.Run("short buffer rekey init", func(t *testing.T) {
+		t.Parallel()
+		_, err := h.EncodeV1(RekeyInit, make([]byte, 3))
+		if !errors.Is(err, io.ErrShortBuffer) {
+			t.Fatalf("err=%v, want io.ErrShortBuffer", err)
+		}
+	})
+
+	t.Run("short buffer rekey ack", func(t *testing.T) {
+		t.Parallel()
+		_, err := h.EncodeV1(RekeyAck, make([]byte, 3))
+		if !errors.Is(err, io.ErrShortBuffer) {
+			t.Fatalf("err=%v, want io.ErrShortBuffer", err)
+		}
+	})
+
 	t.Run("invalid type", func(t *testing.T) {
 		t.Parallel()
 		_, err := h.EncodeV1(Unknown, make([]byte, 3))
@@ -167,6 +201,36 @@ func TestDefaultPacketHandler_EncodeV1(t *testing.T) {
 		}
 		if out[0] != Prefix || out[1] != VersionV1 || out[2] != byte(SessionReset) {
 			t.Fatalf("out=%v, want [%#x %#x %#x]", out, Prefix, VersionV1, byte(SessionReset))
+		}
+	})
+
+	t.Run("success rekey init", func(t *testing.T) {
+		t.Parallel()
+		buf := make([]byte, RekeyPacketLen)
+		out, err := h.EncodeV1(RekeyInit, buf)
+		if err != nil {
+			t.Fatalf("unexpected err: %v", err)
+		}
+		if len(out) != RekeyPacketLen {
+			t.Fatalf("len(out)=%d, want %d", len(out), RekeyPacketLen)
+		}
+		if out[0] != Prefix || out[1] != VersionV1 || out[2] != byte(RekeyInit) {
+			t.Fatalf("out=%v, want [%#x %#x %#x ...]", out[:3], Prefix, VersionV1, byte(RekeyInit))
+		}
+	})
+
+	t.Run("success rekey ack", func(t *testing.T) {
+		t.Parallel()
+		buf := make([]byte, RekeyPacketLen)
+		out, err := h.EncodeV1(RekeyAck, buf)
+		if err != nil {
+			t.Fatalf("unexpected err: %v", err)
+		}
+		if len(out) != RekeyPacketLen {
+			t.Fatalf("len(out)=%d, want %d", len(out), RekeyPacketLen)
+		}
+		if out[0] != Prefix || out[1] != VersionV1 || out[2] != byte(RekeyAck) {
+			t.Fatalf("out=%v, want [%#x %#x %#x ...]", out[:3], Prefix, VersionV1, byte(RekeyAck))
 		}
 	})
 }

@@ -6,8 +6,10 @@ import (
 )
 
 const (
-	Prefix    byte = 0xFF
-	VersionV1 byte = 1
+	Prefix            byte = 0xFF
+	VersionV1         byte = 1
+	RekeyPublicKeyLen      = 32
+	RekeyPacketLen         = 3 + RekeyPublicKeyLen
 )
 
 var (
@@ -33,21 +35,26 @@ func (p *DefaultPacketHandler) TryParseType(pkt []byte) (PacketType, bool) {
 		default:
 			return Unknown, false
 		}
-	case 3: // v1: <0xFF><ver><type>
-		if pkt[0] != Prefix {
+	case 3: // v1 header only: <0xFF><ver><type>
+		if pkt[0] != Prefix || pkt[1] != VersionV1 {
 			return Unknown, false
 		}
-		ver := pkt[1]
-		if ver == VersionV1 {
-			typ := PacketType(pkt[2])
-			switch typ {
-			case SessionReset:
-				return typ, true
-			case RekeyInit:
-				return RekeyInit, true
-			default:
-				return Unknown, false
-			}
+		typ := PacketType(pkt[2])
+		switch typ {
+		case SessionReset, RekeyInit, RekeyAck:
+			return typ, true
+		default:
+			return Unknown, false
+		}
+	case RekeyPacketLen: // v1 rekey packet with payload
+		if pkt[0] != Prefix || pkt[1] != VersionV1 {
+			return Unknown, false
+		}
+		switch PacketType(pkt[2]) {
+		case RekeyInit:
+			return RekeyInit, true
+		case RekeyAck:
+			return RekeyAck, true
 		}
 		return Unknown, false
 	default:
@@ -71,20 +78,31 @@ func (p *DefaultPacketHandler) EncodeLegacy(typ PacketType, buffer []byte) ([]by
 
 // EncodeV1 writes framed encoding: 0xFF <ver=1> <type>.
 func (p *DefaultPacketHandler) EncodeV1(typ PacketType, buffer []byte) ([]byte, error) {
-	if len(buffer) < 3 {
-		return nil, io.ErrShortBuffer
-	}
 	switch typ {
 	case SessionReset:
+		if len(buffer) < 3 {
+			return nil, io.ErrShortBuffer
+		}
 		buffer[0] = Prefix
 		buffer[1] = VersionV1
 		buffer[2] = byte(typ)
 		return buffer[:3], nil
 	case RekeyInit:
+		if len(buffer) < RekeyPacketLen {
+			return nil, io.ErrShortBuffer
+		}
 		buffer[0] = Prefix
 		buffer[1] = VersionV1
 		buffer[2] = byte(typ)
-		return buffer[:3], nil
+		return buffer[:RekeyPacketLen], nil
+	case RekeyAck:
+		if len(buffer) < RekeyPacketLen {
+			return nil, io.ErrShortBuffer
+		}
+		buffer[0] = Prefix
+		buffer[1] = VersionV1
+		buffer[2] = byte(typ)
+		return buffer[:RekeyPacketLen], nil
 	default:
 		return nil, ErrInvalidPacketType
 	}

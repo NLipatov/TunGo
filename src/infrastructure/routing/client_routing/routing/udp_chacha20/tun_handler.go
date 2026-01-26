@@ -8,6 +8,8 @@ import (
 	"tungo/application/network/connection"
 	"tungo/application/network/routing/tun"
 	"tungo/domain/network/service"
+	"tungo/infrastructure/cryptography/chacha20"
+	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/settings"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -21,6 +23,7 @@ type TunHandler struct {
 	servicePacket       service.PacketHandler
 	controlPacketBuffer [128]byte
 	rotateAt            time.Time
+	handshakeCrypto     handshake.Crypto
 }
 
 func NewTunHandler(ctx context.Context,
@@ -36,6 +39,7 @@ func NewTunHandler(ctx context.Context,
 		cryptographyService: cryptographyService,
 		servicePacket:       servicePacket,
 		rotateAt:            time.Now().UTC().Add(10 * time.Second),
+		handshakeCrypto:     &handshake.DefaultCrypto{},
 	}
 }
 
@@ -94,10 +98,32 @@ func (w *TunHandler) HandleTun() error {
 				return fmt.Errorf("could not read a packet from TUN: %v", err)
 			}
 			if time.Now().UTC().After(w.rotateAt) {
-				if _, err := w.servicePacket.EncodeV1(service.RekeyInit, w.controlPacketBuffer[12:]); err != nil {
+				publicKey, privateKey, keyErr := w.handshakeCrypto.GenerateX25519KeyPair()
+				if keyErr != nil {
+					fmt.Printf("failed to generate rekey key pair: %v", keyErr)
+					w.rotateAt = time.Now().UTC().Add(10 * time.Second)
+					continue
+				}
+				if session, ok := w.cryptographyService.(*chacha20.DefaultUdpSession); ok {
+					session.SetPendingRekeyPrivateKey(privateKey)
+				} else {
+					fmt.Println("unable to store rekey private key: crypto session type mismatch")
+				}
+
+				payloadBuf := w.controlPacketBuffer[chacha20poly1305.NonceSize:]
+				if len(publicKey) != service.RekeyPublicKeyLen {
+					fmt.Println("unexpected rekey public key length")
+					w.rotateAt = time.Now().UTC().Add(10 * time.Second)
+					continue
+				}
+				copy(payloadBuf[3:], publicKey)
+
+				servicePayload, err := w.servicePacket.EncodeV1(service.RekeyInit, payloadBuf)
+				if err != nil {
 					fmt.Println("failed to encode rekeyInit packet")
 				} else {
-					enc, encErr := w.cryptographyService.Encrypt(w.controlPacketBuffer[:15])
+					totalLen := chacha20poly1305.NonceSize + len(servicePayload)
+					enc, encErr := w.cryptographyService.Encrypt(w.controlPacketBuffer[:totalLen])
 					if encErr != nil {
 						fmt.Printf("failed to encrypt packet: %v", encErr)
 					} else {

@@ -12,10 +12,15 @@ import (
 	"tungo/application/network/connection"
 	"tungo/application/network/routing/transport"
 	"tungo/domain/network/service"
+	"tungo/infrastructure/cryptography/chacha20"
+	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/network/udp/adapters"
 	"tungo/infrastructure/network/udp/queue/udp"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
 	"tungo/infrastructure/settings"
+
+	"golang.org/x/crypto/chacha20poly1305"
+	"golang.org/x/crypto/curve25519"
 )
 
 const (
@@ -38,6 +43,7 @@ type TransportHandler struct {
 	handshakeFactory    connection.HandshakeFactory
 	cryptographyFactory connection.CryptoFactory
 	servicePacket       service.PacketHandler
+	rekeyCrypto         handshake.Crypto
 	// registrations holds per-client registration queues for clients that are
 	// currently performing a handshake.
 	regMu         sync.Mutex
@@ -66,6 +72,7 @@ func NewTransportHandler(
 		handshakeFactory:    handshakeFactory,
 		cryptographyFactory: cryptographyFactory,
 		servicePacket:       servicePacket,
+		rekeyCrypto:         &handshake.DefaultCrypto{},
 		registrations:       make(map[netip.AddrPort]*udp.RegistrationQueue),
 	}
 }
@@ -139,7 +146,55 @@ func (t *TransportHandler) handlePacket(
 		if spType, spOk := t.servicePacket.TryParseType(decrypted); spOk {
 			switch spType {
 			case service.RekeyInit:
-				t.logger.Printf("rekey init detected")
+				if len(decrypted) < service.RekeyPacketLen {
+					t.logger.Printf("rekey init packet too short: %d bytes", len(decrypted))
+					return nil
+				}
+				var clientRekeyPub [service.RekeyPublicKeyLen]byte
+				copy(clientRekeyPub[:], decrypted[3:service.RekeyPacketLen])
+
+				serverPub, serverPriv, err := t.rekeyCrypto.GenerateX25519KeyPair()
+				if err != nil {
+					t.logger.Printf("rekey init: failed to generate server key pair: %v", err)
+					return nil
+				}
+				shared, err := curve25519.X25519(serverPriv[:], clientRekeyPub[:])
+				if err != nil {
+					t.logger.Printf("rekey init: failed to derive shared: %v", err)
+					return nil
+				}
+				udpSession, ok := session.Crypto().(*chacha20.DefaultUdpSession)
+				if !ok {
+					t.logger.Printf("rekey init: unsupported crypto session type")
+					return nil
+				}
+				currentKey := udpSession.ClientToServerKey()
+				newKey, err := t.rekeyCrypto.DeriveKey(shared, currentKey, []byte("tungo-rekey-v1"))
+				if err != nil {
+					t.logger.Printf("rekey init: derive key failed: %v", err)
+					return nil
+				}
+				t.logger.Printf("rekey init: derived new key (server): %x", newKey)
+
+				ackBuf := make([]byte, chacha20poly1305.NonceSize+service.RekeyPacketLen,
+					chacha20poly1305.NonceSize+service.RekeyPacketLen+chacha20poly1305.Overhead)
+				payload := ackBuf[chacha20poly1305.NonceSize:]
+				copy(payload[3:], serverPub)
+				if _, err := t.servicePacket.EncodeV1(service.RekeyAck, payload); err != nil {
+					t.logger.Printf("rekey init: failed to encode rekey ack: %v", err)
+					return nil
+				}
+				enc, err := session.Crypto().Encrypt(ackBuf)
+				if err != nil {
+					t.logger.Printf("rekey init: encrypt ack failed: %v", err)
+					return nil
+				}
+				if _, err := session.Transport().Write(enc); err != nil {
+					t.logger.Printf("rekey init: write ack failed: %v", err)
+					return nil
+				}
+			case service.RekeyAck:
+				t.logger.Printf("rekey ack detected")
 			default:
 				t.logger.Printf("unknown service packet type")
 			}

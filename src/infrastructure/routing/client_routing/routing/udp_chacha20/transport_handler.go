@@ -10,7 +10,10 @@ import (
 	"tungo/application/network/routing/transport"
 	"tungo/domain/network/service"
 	"tungo/infrastructure/cryptography/chacha20"
+	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/settings"
+
+	"golang.org/x/crypto/curve25519"
 )
 
 type TransportHandler struct {
@@ -19,6 +22,7 @@ type TransportHandler struct {
 	writer              io.Writer
 	cryptographyService connection.Crypto
 	servicePacket       service.PacketHandler
+	handshakeCrypto     handshake.Crypto
 }
 
 func NewTransportHandler(
@@ -34,6 +38,7 @@ func NewTransportHandler(
 		writer:              writer,
 		cryptographyService: cryptographyService,
 		servicePacket:       servicePacket,
+		handshakeCrypto:     &handshake.DefaultCrypto{},
 	}
 }
 
@@ -75,6 +80,45 @@ func (t *TransportHandler) HandleTransport() error {
 					continue
 				}
 				return fmt.Errorf("failed to decrypt data: %s", decryptionErr)
+			}
+
+			if spType, spOk := t.servicePacket.TryParseType(decrypted); spOk {
+				switch spType {
+				case service.RekeyAck:
+					if len(decrypted) < service.RekeyPacketLen {
+						fmt.Printf("rekey ack too short: %d bytes\n", len(decrypted))
+						continue
+					}
+					session, ok := t.cryptographyService.(*chacha20.DefaultUdpSession)
+					if !ok {
+						fmt.Println("rekey ack: unsupported crypto session type")
+						continue
+					}
+					priv, ok := session.PendingRekeyPrivateKey()
+					if !ok {
+						fmt.Println("rekey ack: no pending client private key")
+						continue
+					}
+					serverPub := decrypted[3 : 3+service.RekeyPublicKeyLen]
+					shared, err := curve25519.X25519(priv[:], serverPub)
+					if err != nil {
+						fmt.Printf("rekey ack: failed to compute shared secret: %v\n", err)
+						continue
+					}
+					currentKey := session.ClientToServerKey()
+					newKey, err := t.handshakeCrypto.DeriveKey(shared, currentKey, []byte("tungo-rekey-v1"))
+					if err != nil {
+						fmt.Printf("rekey ack: derive key failed: %v\n", err)
+						continue
+					}
+					fmt.Printf("rekey ack: derived new key (client): %x\n", newKey)
+					session.ClearPendingRekeyPrivateKey()
+				case service.SessionReset:
+					return fmt.Errorf("server requested cryptographyService reset")
+				default:
+					// ignore unknown service packets
+				}
+				continue
 			}
 
 			_, writeErr := t.writer.Write(decrypted)
