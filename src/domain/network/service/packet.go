@@ -41,7 +41,7 @@ func (p *DefaultPacketHandler) TryParseType(pkt []byte) (PacketType, bool) {
 		}
 		typ := PacketType(pkt[2])
 		switch typ {
-		case SessionReset, RekeyInit, RekeyAck:
+		case SessionReset:
 			return typ, true
 		default:
 			return Unknown, false
@@ -55,8 +55,9 @@ func (p *DefaultPacketHandler) TryParseType(pkt []byte) (PacketType, bool) {
 			return RekeyInit, true
 		case RekeyAck:
 			return RekeyAck, true
+		default:
+			return Unknown, false
 		}
-		return Unknown, false
 	default:
 		return Unknown, false
 	}

@@ -45,10 +45,10 @@ func TestDefaultPacketHandler_TryParseType(t *testing.T) {
 			wantOK: true,
 		},
 		{
-			name:   "v1: valid framed rekey ack",
+			name:   "v1: header rekey ack no payload (invalid)",
 			in:     []byte{Prefix, VersionV1, byte(RekeyAck)},
-			wantT:  RekeyAck,
-			wantOK: true,
+			wantT:  Unknown,
+			wantOK: false,
 		},
 		{
 			name:   "v1: rekey init with payload",
