@@ -43,6 +43,8 @@ func (p *DefaultPacketHandler) TryParseType(pkt []byte) (PacketType, bool) {
 			switch typ {
 			case SessionReset:
 				return typ, true
+			case RekeyInit:
+				return RekeyInit, true
 			default:
 				return Unknown, false
 			}
