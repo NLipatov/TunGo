@@ -105,13 +105,24 @@ func (t *TransportHandler) HandleTransport() error {
 						fmt.Printf("rekey ack: failed to compute shared secret: %v\n", err)
 						continue
 					}
-					currentKey := session.ClientToServerKey()
-					newKey, err := t.handshakeCrypto.DeriveKey(shared, currentKey, []byte("tungo-rekey-v1"))
+					currentC2S := session.ClientToServerKey()
+					currentS2C := session.ServerToClientKey()
+					newC2S, err := t.handshakeCrypto.DeriveKey(shared, currentC2S, []byte("tungo-rekey-v1"))
 					if err != nil {
-						fmt.Printf("rekey ack: derive key failed: %v\n", err)
+						fmt.Printf("rekey ack: derive c2s failed: %v\n", err)
 						continue
 					}
-					fmt.Printf("rekey ack: derived new key (client): %x\n", newKey)
+					newS2C, err := t.handshakeCrypto.DeriveKey(shared, currentS2C, []byte("tungo-rekey-v1"))
+					if err != nil {
+						fmt.Printf("rekey ack: derive s2c failed: %v\n", err)
+						continue
+					}
+					nextEpoch := session.CurrentEpoch() + 1
+					if err := session.InstallNextKeys(nextEpoch, newC2S, newS2C); err != nil {
+						fmt.Printf("rekey ack: install next keys failed: %v\n", err)
+						continue
+					}
+					fmt.Printf("rekey ack: derived new keys (client) epoch=%d\n", nextEpoch)
 					session.ClearPendingRekeyPrivateKey()
 				case service.SessionReset:
 					return fmt.Errorf("server requested cryptographyService reset")

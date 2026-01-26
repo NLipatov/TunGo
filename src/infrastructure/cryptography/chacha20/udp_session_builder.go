@@ -23,13 +23,34 @@ func (u UdpSessionBuilder) FromHandshake(
 		return nil, err
 	}
 
-	return &DefaultUdpSession{
-		SessionId:      handshake.Id(),
-		sendCipher:     sendCipher,
-		recvCipher:     recvCipher,
-		nonce:          NewNonce(),
-		isServer:       isServer,
-		nonceValidator: NewSliding64(),
-		encoder:        DefaultUDPEncoder{},
-	}, nil
+	n := NewNonce()
+	session := &DefaultUdpSession{
+		SessionId: handshake.Id(),
+		isServer:  isServer,
+		encoder:   DefaultUDPEncoder{},
+	}
+	if isServer {
+		session.current = keySlot{
+			send:    sendCipher,
+			recv:    recvCipher,
+			sendKey: handshake.KeyServerToClient(), // server sends S->C
+			recvKey: handshake.KeyClientToServer(), // server receives C->S
+			keyID:   0,
+			nonce:   n,
+			window:  NewSliding64(),
+			set:     true,
+		}
+	} else {
+		session.current = keySlot{
+			send:    sendCipher,
+			recv:    recvCipher,
+			sendKey: handshake.KeyClientToServer(), // client sends C->S
+			recvKey: handshake.KeyServerToClient(), // client receives S->C
+			keyID:   0,
+			nonce:   n,
+			window:  NewSliding64(),
+			set:     true,
+		}
+	}
+	return session, nil
 }

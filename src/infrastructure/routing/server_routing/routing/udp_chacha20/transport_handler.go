@@ -169,16 +169,26 @@ func (t *TransportHandler) handlePacket(
 					return nil
 				}
 				currentKey := udpSession.ClientToServerKey()
-				newKey, err := t.rekeyCrypto.DeriveKey(shared, currentKey, []byte("tungo-rekey-v1"))
+				newClientToServer, err := t.rekeyCrypto.DeriveKey(shared, currentKey, []byte("tungo-rekey-v1"))
 				if err != nil {
-					t.logger.Printf("rekey init: derive key failed: %v", err)
+					t.logger.Printf("rekey init: derive c2s key failed: %v", err)
 					return nil
 				}
-				t.logger.Printf("rekey init: derived new key (server): %x", newKey)
+				newServerToClient, err := t.rekeyCrypto.DeriveKey(shared, udpSession.ServerToClientKey(), []byte("tungo-rekey-v1"))
+				if err != nil {
+					t.logger.Printf("rekey init: derive s2c key failed: %v", err)
+					return nil
+				}
+				nextEpoch := udpSession.CurrentEpoch() + 1
+				if err := udpSession.InstallNextKeys(nextEpoch, newServerToClient, newClientToServer); err != nil {
+					t.logger.Printf("rekey init: failed to install next keys: %v", err)
+					return nil
+				}
+				t.logger.Printf("rekey init: derived new keys (server) epoch=%d", nextEpoch)
 
-				ackBuf := make([]byte, chacha20poly1305.NonceSize+service.RekeyPacketLen,
-					chacha20poly1305.NonceSize+service.RekeyPacketLen+chacha20poly1305.Overhead)
-				payload := ackBuf[chacha20poly1305.NonceSize:]
+				ackBuf := make([]byte, 1+chacha20poly1305.NonceSize+service.RekeyPacketLen,
+					1+chacha20poly1305.NonceSize+service.RekeyPacketLen+chacha20poly1305.Overhead)
+				payload := ackBuf[1+chacha20poly1305.NonceSize:]
 				copy(payload[3:], serverPub)
 				if _, err := t.servicePacket.EncodeV1(service.RekeyAck, payload); err != nil {
 					t.logger.Printf("rekey init: failed to encode rekey ack: %v", err)

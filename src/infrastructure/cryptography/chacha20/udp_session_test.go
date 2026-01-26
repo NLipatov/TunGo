@@ -31,7 +31,7 @@ func TestUdpEncrypt_InPlaceCapacityError(t *testing.T) {
 	}
 
 	// Need cap >= len + Overhead; here cap == len, should error.
-	plain := make([]byte, 12+8) // 12 bytes header space + 8 bytes payload
+	plain := make([]byte, 13+8) // 1 key byte + 12 nonce + 8 payload
 	if _, err := sess.Encrypt(plain); err == nil {
 		t.Fatal("expected insufficient capacity error")
 	}
@@ -46,7 +46,7 @@ func TestUdpEncrypt_BufferTooShort(t *testing.T) {
 	}
 
 	// Less than 12 bytes total → should error "buffer too short"
-	tooShort := make([]byte, 11, 11+chacha20poly1305.Overhead)
+	tooShort := make([]byte, 12, 12+chacha20poly1305.Overhead)
 	if _, err := sess.Encrypt(tooShort); err == nil {
 		t.Fatal("expected buffer too short error")
 	}
@@ -61,19 +61,19 @@ func TestUdpEncrypt_Success_LengthAndLayout(t *testing.T) {
 	}
 
 	payload := []byte("hello-udp")
-	buf := make([]byte, 12+len(payload), 12+len(payload)+chacha20poly1305.Overhead)
-	copy(buf[12:], payload)
+	buf := make([]byte, 13+len(payload), 13+len(payload)+chacha20poly1305.Overhead)
+	copy(buf[13:], payload)
 
 	out, err := sess.Encrypt(buf)
 	if err != nil {
 		t.Fatalf("Encrypt: %v", err)
 	}
-	wantLen := 12 + len(payload) + chacha20poly1305.Overhead
+	wantLen := 13 + len(payload) + chacha20poly1305.Overhead
 	if len(out) != wantLen {
 		t.Fatalf("cipher len=%d; want %d", len(out), wantLen)
 	}
-	// Nonce (first 12 bytes) should be non-zero with very high probability
-	if bytes.Equal(out[:12], make([]byte, 12)) {
+	// Header (key + nonce) should be non-zero with very high probability
+	if bytes.Equal(out[:13], make([]byte, 13)) {
 		t.Fatal("nonce appears to be all zeros (unexpected)")
 	}
 }
@@ -106,8 +106,8 @@ func TestUdp_Decrypt_OpenFail_AADMismatch(t *testing.T) {
 	}
 
 	payload := []byte("payload-udp")
-	buf := make([]byte, 12+len(payload), 12+len(payload)+chacha20poly1305.Overhead)
-	copy(buf[12:], payload)
+	buf := make([]byte, 13+len(payload), 13+len(payload)+chacha20poly1305.Overhead)
+	copy(buf[13:], payload)
 
 	ct, err := cli.Encrypt(buf)
 	if err != nil {
@@ -133,8 +133,8 @@ func TestUdpDecrypt_ReplayRejected_ByNonceValidator(t *testing.T) {
 	}
 
 	payload := []byte("once-only")
-	buf := make([]byte, 12+len(payload), 12+len(payload)+chacha20poly1305.Overhead)
-	copy(buf[12:], payload)
+	buf := make([]byte, 13+len(payload), 13+len(payload)+chacha20poly1305.Overhead)
+	copy(buf[13:], payload)
 
 	ct, err := cli.Encrypt(buf)
 	if err != nil {
@@ -165,8 +165,8 @@ func TestUdp_RoundTrip_OK(t *testing.T) {
 	}
 
 	payload := []byte("round-trip-ok")
-	buf := make([]byte, 12+len(payload), 12+len(payload)+chacha20poly1305.Overhead)
-	copy(buf[12:], payload)
+	buf := make([]byte, 13+len(payload), 13+len(payload)+chacha20poly1305.Overhead)
+	copy(buf[13:], payload)
 
 	ct, err := cli.Encrypt(buf)
 	if err != nil {
@@ -185,13 +185,14 @@ func TestUdp_CreateAAD_BothDirections(t *testing.T) {
 	id := randID()
 	s := &DefaultUdpSession{SessionId: id}
 
-	nonce := make([]byte, chacha20poly1305.NonceSize)
-	for i := range nonce {
-		nonce[i] = byte(i + 1)
+	header := make([]byte, 1+chacha20poly1305.NonceSize)
+	header[0] = 0xAB
+	for i := 1; i < len(header); i++ {
+		header[i] = byte(i)
 	}
 
 	// Client->Server
-	aadC2S := s.CreateAAD(false, nonce, make([]byte, aadLength))
+	aadC2S := s.CreateAAD(false, header, make([]byte, aadLength))
 	if len(aadC2S) != aadLength {
 		t.Fatalf("aad len=%d, want %d", len(aadC2S), aadLength)
 	}
@@ -201,12 +202,15 @@ func TestUdp_CreateAAD_BothDirections(t *testing.T) {
 	if !bytes.Equal(aadC2S[sessionIdentifierLength:sessionIdentifierLength+directionLength], dirC2S[:]) {
 		t.Fatal("direction bytes mismatch (C2S)")
 	}
-	if !bytes.Equal(aadC2S[sessionIdentifierLength+directionLength:aadLength], nonce) {
+	if aadC2S[sessionIdentifierLength+directionLength] != header[0] {
+		t.Fatal("key id mismatch (C2S)")
+	}
+	if !bytes.Equal(aadC2S[sessionIdentifierLength+directionLength+1:aadLength], header[1:]) {
 		t.Fatal("nonce bytes mismatch (C2S)")
 	}
 
 	// Server->Client
-	aadS2C := s.CreateAAD(true, nonce, make([]byte, aadLength))
+	aadS2C := s.CreateAAD(true, header, make([]byte, aadLength))
 	if len(aadS2C) != aadLength {
 		t.Fatalf("aad len=%d, want %d", len(aadS2C), aadLength)
 	}
@@ -216,7 +220,10 @@ func TestUdp_CreateAAD_BothDirections(t *testing.T) {
 	if !bytes.Equal(aadS2C[sessionIdentifierLength:sessionIdentifierLength+directionLength], dirS2C[:]) {
 		t.Fatal("direction bytes mismatch (S2C)")
 	}
-	if !bytes.Equal(aadS2C[sessionIdentifierLength+directionLength:aadLength], nonce) {
+	if aadS2C[sessionIdentifierLength+directionLength] != header[0] {
+		t.Fatal("key id mismatch (S2C)")
+	}
+	if !bytes.Equal(aadS2C[sessionIdentifierLength+directionLength+1:aadLength], header[1:]) {
 		t.Fatal("nonce bytes mismatch (S2C)")
 	}
 
@@ -238,11 +245,11 @@ func TestUdpEncrypt_ErrOnNonceOverflow(t *testing.T) {
 	}
 
 	// Force overflow: high=max, low=max ⇒ incrementNonce() must return an error.
-	sess.nonce.high = ^uint32(0)
-	sess.nonce.low = ^uint64(0)
+	sess.current.nonce.high = ^uint32(0)
+	sess.current.nonce.low = ^uint64(0)
 
 	// Must satisfy pre-checks: len >= 12 and cap >= len + Overhead.
-	buf := make([]byte, chacha20poly1305.NonceSize, chacha20poly1305.NonceSize+chacha20poly1305.Overhead)
+	buf := make([]byte, 1+chacha20poly1305.NonceSize, 1+chacha20poly1305.NonceSize+chacha20poly1305.Overhead)
 
 	_, err = sess.Encrypt(buf)
 	if err == nil {
@@ -263,20 +270,20 @@ func TestUdpEncrypt_NonceRollover_WritesCorrectNonce(t *testing.T) {
 
 	// Set state to "just before rollover".
 	const startHigh = uint32(123)
-	sess.nonce.high = startHigh
-	sess.nonce.low = ^uint64(0)
+	sess.current.nonce.high = startHigh
+	sess.current.nonce.low = ^uint64(0)
 
 	// Empty payload (only 12-byte nonce header). Cap allows in-place tag append.
-	buf := make([]byte, chacha20poly1305.NonceSize, chacha20poly1305.NonceSize+chacha20poly1305.Overhead)
+	buf := make([]byte, 1+chacha20poly1305.NonceSize, 1+chacha20poly1305.NonceSize+chacha20poly1305.Overhead)
 
 	out, err := sess.Encrypt(buf)
 	if err != nil {
 		t.Fatalf("Encrypt (rollover): %v", err)
 	}
 
-	// Decode nonce: [0..7]=low (uint64 BE), [8..11]=high (uint32 BE).
-	encLow := binary.BigEndian.Uint64(out[:8])
-	encHigh := binary.BigEndian.Uint32(out[8:12])
+	// Decode nonce: [1..8]=low (uint64 BE), [9..12]=high (uint32 BE).
+	encLow := binary.BigEndian.Uint64(out[1:9])
+	encHigh := binary.BigEndian.Uint32(out[9:13])
 
 	if encLow != 0 {
 		t.Fatalf("nonce.low after rollover = %d; want 0", encLow)

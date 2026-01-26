@@ -7,5 +7,6 @@ import (
 const (
 	sessionIdentifierLength = 32
 	directionLength         = 16
-	aadLength               = sessionIdentifierLength + chacha20poly1305.NonceSize + directionLength
+	keyIDLength             = 1
+	aadLength               = sessionIdentifierLength + directionLength + keyIDLength + chacha20poly1305.NonceSize
 )

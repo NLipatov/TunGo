@@ -48,11 +48,11 @@ func NewTunHandler(ctx context.Context,
 //
 // Buffer layout (total size = MTU + NonceSize + TagSize):
 //
-//	[ 0 ........ 11 ][ 12 ........ 1511 ][ 1512 ........ 1527 ]
-//	|   Nonce    |      Payload (<= MTU) |       Tag (16B)    |
+//	[0][1........12][13........1512][1513........1528]
+//	|k|   Nonce    |   Payload (<= MTU) |    Tag (16B)  |
 //
-// Example with MTU = 1500, settings.UDPChacha20Overhead = 28:
-// - buffer length = 1500 + 28 = 1528
+// Example with MTU = 1500, settings.UDPChacha20Overhead = 29:
+// - buffer length = 1500 + 29 = 1529
 //
 // Step 1 – read plaintext from TUN:
 // - reader.Read writes at most MTU bytes into buffer[12:1512].
@@ -74,10 +74,10 @@ func (w *TunHandler) HandleTun() error {
 		case <-w.ctx.Done():
 			return nil
 		default:
-			n, err := w.reader.Read(buffer[chacha20poly1305.NonceSize : settings.DefaultEthernetMTU+chacha20poly1305.NonceSize])
+			n, err := w.reader.Read(buffer[1+chacha20poly1305.NonceSize : settings.DefaultEthernetMTU+1+chacha20poly1305.NonceSize])
 			if n > 0 {
 				// Encrypt expects header+payload (12+n)
-				enc, encErr := w.cryptographyService.Encrypt(buffer[:chacha20poly1305.NonceSize+n])
+				enc, encErr := w.cryptographyService.Encrypt(buffer[:1+chacha20poly1305.NonceSize+n])
 				if encErr != nil {
 					if w.ctx.Err() != nil {
 						return nil
@@ -110,7 +110,7 @@ func (w *TunHandler) HandleTun() error {
 					fmt.Println("unable to store rekey private key: crypto session type mismatch")
 				}
 
-				payloadBuf := w.controlPacketBuffer[chacha20poly1305.NonceSize:]
+				payloadBuf := w.controlPacketBuffer[1+chacha20poly1305.NonceSize:]
 				if len(publicKey) != service.RekeyPublicKeyLen {
 					fmt.Println("unexpected rekey public key length")
 					w.rotateAt = time.Now().UTC().Add(10 * time.Second)
@@ -122,7 +122,7 @@ func (w *TunHandler) HandleTun() error {
 				if err != nil {
 					fmt.Println("failed to encode rekeyInit packet")
 				} else {
-					totalLen := chacha20poly1305.NonceSize + len(servicePayload)
+					totalLen := 1 + chacha20poly1305.NonceSize + len(servicePayload)
 					enc, encErr := w.cryptographyService.Encrypt(w.controlPacketBuffer[:totalLen])
 					if encErr != nil {
 						fmt.Printf("failed to encrypt packet: %v", encErr)

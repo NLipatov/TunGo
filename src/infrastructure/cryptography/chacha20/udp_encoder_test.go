@@ -10,15 +10,17 @@ func TestDefaultUDPEncoderDecode(t *testing.T) {
 	encoder := &DefaultUDPEncoder{}
 
 	// Prepare test values.
+	keyID := byte(0x5A)
 	low := uint64(0x0102030405060708)
 	high := uint32(0x0A0B0C0D)
 	payload := []byte("test payload")
 
-	// Build data: first 8 bytes - low, next 4 bytes - high, then payload.
-	data := make([]byte, 12+len(payload))
-	binary.BigEndian.PutUint64(data[:8], low)
-	binary.BigEndian.PutUint32(data[8:12], high)
-	copy(data[12:], payload)
+	// Build data: [keyID][low64][high32][payload].
+	data := make([]byte, 13+len(payload))
+	data[0] = keyID
+	binary.BigEndian.PutUint64(data[1:9], low)
+	binary.BigEndian.PutUint32(data[9:13], high)
+	copy(data[13:], payload)
 
 	// Decode the data.
 	packet, err := encoder.Decode(data)
@@ -35,6 +37,9 @@ func TestDefaultUDPEncoderDecode(t *testing.T) {
 	}
 	if packet.Nonce.high != high {
 		t.Errorf("Expected nonce.high %x, got %x", high, packet.Nonce.high)
+	}
+	if packet.KeyID != keyID {
+		t.Errorf("Expected keyID %x, got %x", keyID, packet.KeyID)
 	}
 
 	// Check that payload is correctly extracted.

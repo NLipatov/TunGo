@@ -146,13 +146,14 @@ func TestCreateAAD_BothDirections(t *testing.T) {
 	id := randID()
 	s := &DefaultTcpSession{SessionId: id}
 
-	nonce := make([]byte, chacha20poly1305.NonceSize)
-	for i := range nonce {
-		nonce[i] = byte(i + 1)
+	header := make([]byte, 1+chacha20poly1305.NonceSize)
+	header[0] = 0xCD
+	for i := 1; i < len(header); i++ {
+		header[i] = byte(i + 1)
 	}
 
 	// Client->Server
-	aadC2S := s.CreateAAD(false, nonce, make([]byte, aadLength))
+	aadC2S := s.CreateAAD(false, header, make([]byte, aadLength))
 	if len(aadC2S) != aadLength {
 		t.Fatalf("aad len=%d, want %d", len(aadC2S), aadLength)
 	}
@@ -162,12 +163,15 @@ func TestCreateAAD_BothDirections(t *testing.T) {
 	if !bytes.Equal(aadC2S[sessionIdentifierLength:sessionIdentifierLength+directionLength], dirC2S[:]) {
 		t.Fatal("direction bytes mismatch (C2S)")
 	}
-	if !bytes.Equal(aadC2S[sessionIdentifierLength+directionLength:aadLength], nonce) {
+	if aadC2S[sessionIdentifierLength+directionLength] != header[0] {
+		t.Fatal("key id mismatch (C2S)")
+	}
+	if !bytes.Equal(aadC2S[sessionIdentifierLength+directionLength+1:aadLength], header[1:]) {
 		t.Fatal("nonce bytes mismatch (C2S)")
 	}
 
 	// Server->Client
-	aadS2C := s.CreateAAD(true, nonce, make([]byte, aadLength))
+	aadS2C := s.CreateAAD(true, header, make([]byte, aadLength))
 	if len(aadS2C) != aadLength {
 		t.Fatalf("aad len=%d, want %d", len(aadS2C), aadLength)
 	}
@@ -177,7 +181,10 @@ func TestCreateAAD_BothDirections(t *testing.T) {
 	if !bytes.Equal(aadS2C[sessionIdentifierLength:sessionIdentifierLength+directionLength], dirS2C[:]) {
 		t.Fatal("direction bytes mismatch (S2C)")
 	}
-	if !bytes.Equal(aadS2C[sessionIdentifierLength+directionLength:aadLength], nonce) {
+	if aadS2C[sessionIdentifierLength+directionLength] != header[0] {
+		t.Fatal("key id mismatch (S2C)")
+	}
+	if !bytes.Equal(aadS2C[sessionIdentifierLength+directionLength+1:aadLength], header[1:]) {
 		t.Fatal("nonce bytes mismatch (S2C)")
 	}
 
