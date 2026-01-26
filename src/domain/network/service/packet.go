@@ -80,6 +80,11 @@ func (p *DefaultPacketHandler) EncodeV1(typ PacketType, buffer []byte) ([]byte, 
 		buffer[1] = VersionV1
 		buffer[2] = byte(typ)
 		return buffer[:3], nil
+	case RekeyInit:
+		buffer[0] = Prefix
+		buffer[1] = VersionV1
+		buffer[2] = byte(typ)
+		return buffer[:3], nil
 	default:
 		return nil, ErrInvalidPacketType
 	}

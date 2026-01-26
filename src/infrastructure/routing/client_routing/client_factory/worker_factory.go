@@ -38,7 +38,13 @@ func (w *WorkerFactory) CreateWorker(
 		}
 		transport := adapters.NewClientUDPAdapter(conn.(*net.UDPConn), deadline, deadline)
 		// tunHandler reads from tun and writes to transport
-		tunHandler := udp_chacha20.NewTunHandler(ctx, tun, transport, crypto)
+		tunHandler := udp_chacha20.NewTunHandler(
+			ctx,
+			tun,
+			transport,
+			crypto,
+			service.NewDefaultPacketHandler(),
+		)
 		// transportHandler reads from transport and writes to tun
 		transportHandler := udp_chacha20.NewTransportHandler(
 			ctx,

@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
 	"tungo/application/network/connection"
 	"tungo/application/network/routing/tun"
+	"tungo/domain/network/service"
 	"tungo/infrastructure/settings"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -16,17 +18,24 @@ type TunHandler struct {
 	reader              io.Reader // abstraction over TUN device
 	writer              io.Writer // abstraction over transport
 	cryptographyService connection.Crypto
+	servicePacket       service.PacketHandler
+	controlPacketBuffer [128]byte
+	rotateAt            time.Time
 }
 
 func NewTunHandler(ctx context.Context,
 	reader io.Reader,
 	writer io.Writer,
-	cryptographyService connection.Crypto) tun.Handler {
+	cryptographyService connection.Crypto,
+	servicePacket service.PacketHandler,
+) tun.Handler {
 	return &TunHandler{
 		ctx:                 ctx,
 		reader:              reader,
 		writer:              writer,
 		cryptographyService: cryptographyService,
+		servicePacket:       servicePacket,
+		rotateAt:            time.Now().UTC().Add(10 * time.Second),
 	}
 }
 
@@ -83,6 +92,19 @@ func (w *TunHandler) HandleTun() error {
 					return nil
 				}
 				return fmt.Errorf("could not read a packet from TUN: %v", err)
+			}
+			if time.Now().UTC().After(w.rotateAt) {
+				if _, err := w.servicePacket.EncodeV1(service.RekeyInit, w.controlPacketBuffer[12:]); err != nil {
+					fmt.Println("failed to encode rekeyInit packet")
+				} else {
+					enc, encErr := w.cryptographyService.Encrypt(w.controlPacketBuffer[:15])
+					if encErr != nil {
+						fmt.Printf("failed to encrypt packet: %v", encErr)
+					} else {
+						_, _ = w.writer.Write(enc)
+					}
+				}
+				w.rotateAt = time.Now().UTC().Add(10 * time.Second)
 			}
 		}
 	}
