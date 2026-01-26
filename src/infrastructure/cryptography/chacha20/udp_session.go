@@ -3,38 +3,26 @@ package chacha20
 import (
 	"crypto/cipher"
 	"fmt"
-	"time"
 
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
 type (
 	DefaultUdpSession struct {
-		SessionId [32]byte
-		encoder   DefaultUDPEncoder
-		isServer  bool
-
-		current    keySlot
-		next       keySlot
-		previous   keySlot
-		prevExpiry time.Time
-
+		SessionId        [32]byte
+		encoder          DefaultUDPEncoder
+		sendCipher       cipher.AEAD
+		recvCipher       cipher.AEAD
+		sendKey          []byte
+		recvKey          []byte
+		nonce            *Nonce
+		isServer         bool
+		nonceValidator   *Sliding64
 		pendingRekeyPriv *[32]byte
-		encryptionAadBuf [aadLength]byte
-		decryptionAadBuf [aadLength]byte
+		encryptionAadBuf [60]byte //32 bytes for sessionId, 16 bytes for direction, 12 bytes for nonce. 60 bytes total.
+		decryptionAadBuf [60]byte //32 bytes for sessionId, 16 bytes for direction, 12 bytes for nonce. 60 bytes total.
 	}
 )
-
-type keySlot struct {
-	send    cipher.AEAD
-	recv    cipher.AEAD
-	sendKey []byte
-	recvKey []byte
-	keyID   uint8
-	nonce   *Nonce
-	window  *Sliding64
-	set     bool
-}
 
 func NewUdpSession(id [32]byte, sendKey, recvKey []byte, isServer bool) (*DefaultUdpSession, error) {
 	sendCipher, err := chacha20poly1305.New(sendKey)
@@ -47,22 +35,16 @@ func NewUdpSession(id [32]byte, sendKey, recvKey []byte, isServer bool) (*Defaul
 		return nil, err
 	}
 
-	curNonce := NewNonce()
 	return &DefaultUdpSession{
-		SessionId:  id,
-		isServer:   isServer,
-		encoder:    DefaultUDPEncoder{},
-		prevExpiry: time.Time{},
-		current: keySlot{
-			send:    sendCipher,
-			recv:    recvCipher,
-			sendKey: append([]byte(nil), sendKey...),
-			recvKey: append([]byte(nil), recvKey...),
-			keyID:   0,
-			nonce:   curNonce,
-			window:  NewSliding64(),
-			set:     true,
-		},
+		SessionId:      id,
+		sendCipher:     sendCipher,
+		recvCipher:     recvCipher,
+		sendKey:        append([]byte(nil), sendKey...),
+		recvKey:        append([]byte(nil), recvKey...),
+		nonce:          NewNonce(),
+		isServer:       isServer,
+		nonceValidator: NewSliding64(),
+		encoder:        DefaultUDPEncoder{},
 	}, nil
 }
 
@@ -73,74 +55,65 @@ func (s *DefaultUdpSession) Encrypt(plaintext []byte) ([]byte, error) {
 			len(plaintext), cap(plaintext))
 	}
 
-	// buf: [1B keyID | 12B nonce space | payload ...]
-	if len(plaintext) < chacha20poly1305.NonceSize+1 {
+	// buf: [12B nonce space | payload ...]
+	if len(plaintext) < chacha20poly1305.NonceSize {
 		return nil, fmt.Errorf("encrypt: buffer too short: %d", len(plaintext))
 	}
 
-	slot := &s.current
-	if err := slot.nonce.incrementNonce(); err != nil {
+	if err := s.nonce.incrementNonce(); err != nil {
 		return nil, err
 	}
 
-	// 1) write keyID + nonce into the first 13 bytes
-	plaintext[0] = slot.keyID
-	nonce := plaintext[1 : 1+chacha20poly1305.NonceSize]
-	_ = slot.nonce.Encode(nonce)
+	// 1) write nonce into the first 12 bytes
+	nonce := plaintext[:chacha20poly1305.NonceSize]
+	_ = s.nonce.Encode(nonce)
 
 	// 2) build AAD = sessionId || direction || nonce
-	aad := s.CreateAAD(s.isServer, plaintext[:1+chacha20poly1305.NonceSize], s.encryptionAadBuf[:])
+	aad := s.CreateAAD(s.isServer, nonce, s.encryptionAadBuf[:])
 
 	// 3) plaintext is everything after the 12B header
-	plain := plaintext[1+chacha20poly1305.NonceSize:]
+	plain := plaintext[chacha20poly1305.NonceSize:]
 
 	// 4) in-place encrypt: ciphertext overwrites plaintext region
 	//    requires caller to allocate +Overhead capacity
-	ct := slot.send.Seal(plain[:0], nonce, plain, aad)
+	ct := s.sendCipher.Seal(plain[:0], nonce, plain, aad)
 
 	// 5) return header + ciphertext view
-	return plaintext[:1+chacha20poly1305.NonceSize+len(ct)], nil
+	return plaintext[:chacha20poly1305.NonceSize+len(ct)], nil
 }
 
 func (s *DefaultUdpSession) Decrypt(ciphertext []byte) ([]byte, error) {
-	if len(ciphertext) < 1+chacha20poly1305.NonceSize+chacha20poly1305.Overhead {
+	if len(ciphertext) < chacha20poly1305.NonceSize+chacha20poly1305.Overhead {
 		return nil, fmt.Errorf("cipher too short: %d", len(ciphertext))
 	}
-	keyID := ciphertext[0]
-	nonceBytes := ciphertext[1 : 1+chacha20poly1305.NonceSize]
-	payloadBytes := ciphertext[1+chacha20poly1305.NonceSize:]
+	nonceBytes := ciphertext[:chacha20poly1305.NonceSize]
+	payloadBytes := ciphertext[chacha20poly1305.NonceSize:]
 
-	// Try keys by id: current, next, previous
-	if pt, ok := s.tryDecrypt(&s.current, keyID, nonceBytes, payloadBytes); ok {
-		return pt, nil
+	// 1) validate nonce
+	var n12 [chacha20poly1305.NonceSize]byte
+	copy(n12[:], nonceBytes)
+	if err := s.nonceValidator.Validate(n12); err != nil {
+		return nil, err
 	}
-	if s.next.set {
-		if pt, ok := s.tryDecrypt(&s.next, keyID, nonceBytes, payloadBytes); ok {
-			s.promoteNext()
-			return pt, nil
-		}
+
+	// 2) decrypt
+	aad := s.CreateAAD(!s.isServer, nonceBytes, s.decryptionAadBuf[:])
+	pt, err := s.recvCipher.Open(payloadBytes[:0], nonceBytes, payloadBytes, aad)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt: %w", err)
 	}
-	if s.previous.set {
-		// expire previous after grace window
-		if !s.prevExpiry.IsZero() && time.Now().After(s.prevExpiry) {
-			s.previous = keySlot{}
-		} else if pt, ok := s.tryDecrypt(&s.previous, keyID, nonceBytes, payloadBytes); ok {
-			return pt, nil
-		}
-	}
-	return nil, fmt.Errorf("failed to decrypt: %w", ErrNonUniqueNonce)
+	return pt, nil
 }
 
-func (s *DefaultUdpSession) CreateAAD(isServerToClient bool, header13, aad []byte) []byte {
-	// header13 = keyID(1) + nonce(12)
-	copy(aad[:sessionIdentifierLength], s.SessionId[:]) // 0..32
+func (s *DefaultUdpSession) CreateAAD(isServerToClient bool, nonce, aad []byte) []byte {
+	// aad must have len >= aadLen (60)
+	copy(aad[:sessionIdentifierLength], s.SessionId[:])
 	if isServerToClient {
 		copy(aad[sessionIdentifierLength:sessionIdentifierLength+directionLength], dirS2C[:]) // 32..48
 	} else {
 		copy(aad[sessionIdentifierLength:sessionIdentifierLength+directionLength], dirC2S[:]) // 32..48
 	}
-	aad[sessionIdentifierLength+directionLength] = header13[0]                   // keyID
-	copy(aad[sessionIdentifierLength+directionLength+1:aadLength], header13[1:]) // nonce
+	copy(aad[sessionIdentifierLength+directionLength:aadLength], nonce) // 48..60
 	return aad[:aadLength]
 }
 
@@ -148,25 +121,18 @@ func (s *DefaultUdpSession) CreateAAD(isServerToClient bool, header13, aad []byt
 // For server instances this is recvKey; for clients it is sendKey.
 func (s *DefaultUdpSession) ClientToServerKey() []byte {
 	if s.isServer {
-		return s.current.recvKey
+		return s.recvKey
 	}
-	return s.current.sendKey
+	return s.sendKey
 }
 
 // ServerToClientKey returns the key used for S->C traffic.
 // For server instances this is sendKey; for clients it is recvKey.
 func (s *DefaultUdpSession) ServerToClientKey() []byte {
 	if s.isServer {
-		return s.current.sendKey
+		return s.sendKey
 	}
-	return s.current.recvKey
-}
-
-func (s *DefaultUdpSession) CurrentKeyID() uint8 {
-	return s.current.keyID
-}
-func (s *DefaultUdpSession) CurrentEpoch() uint8 { // alias for compatibility
-	return s.current.keyID
+	return s.recvKey
 }
 
 func (s *DefaultUdpSession) SetPendingRekeyPrivateKey(priv [32]byte) {
@@ -182,58 +148,4 @@ func (s *DefaultUdpSession) PendingRekeyPrivateKey() ([32]byte, bool) {
 
 func (s *DefaultUdpSession) ClearPendingRekeyPrivateKey() {
 	s.pendingRekeyPriv = nil
-}
-
-// InstallNextKeys sets the next epoch keys and ciphers.
-func (s *DefaultUdpSession) InstallNextKeys(keyID uint8, sendKey, recvKey []byte) error {
-	sendCipher, err := chacha20poly1305.New(sendKey)
-	if err != nil {
-		return err
-	}
-	recvCipher, err := chacha20poly1305.New(recvKey)
-	if err != nil {
-		return err
-	}
-	n := NewNonce()
-	s.next = keySlot{
-		send:    sendCipher,
-		recv:    recvCipher,
-		sendKey: append([]byte(nil), sendKey...),
-		recvKey: append([]byte(nil), recvKey...),
-		keyID:   keyID,
-		nonce:   n,
-		window:  NewSliding64(),
-		set:     true,
-	}
-	return nil
-}
-
-func (s *DefaultUdpSession) tryDecrypt(slot *keySlot, keyID byte, nonceBytes, payloadBytes []byte) ([]byte, bool) {
-	if slot.recv == nil || !slot.set {
-		return nil, false
-	}
-	if keyID != slot.keyID {
-		return nil, false
-	}
-	var n12 [chacha20poly1305.NonceSize]byte
-	copy(n12[:], nonceBytes)
-	if err := slot.window.Validate(n12); err != nil {
-		return nil, false
-	}
-	header := append([]byte{keyID}, nonceBytes...)
-	aad := s.CreateAAD(!s.isServer, header, s.decryptionAadBuf[:])
-	pt, err := slot.recv.Open(payloadBytes[:0], nonceBytes, payloadBytes, aad)
-	if err != nil {
-		return nil, false
-	}
-	return pt, true
-}
-
-func (s *DefaultUdpSession) promoteNext() {
-	s.previous = s.current
-	s.previous.set = true
-	s.prevExpiry = time.Now().Add(2 * time.Minute)
-	s.current = s.next
-	s.current.set = true
-	s.next = keySlot{}
 }

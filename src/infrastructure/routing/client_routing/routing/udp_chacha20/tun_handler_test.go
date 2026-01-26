@@ -181,7 +181,7 @@ func TestHandleTun_SuccessThenCancel(t *testing.T) {
 	}
 
 	// verify written
-	zeros := make([]byte, 1+chacha20poly1305.NonceSize)
+	zeros := make([]byte, chacha20poly1305.NonceSize)
 	want := append([]byte("pre-"), append(zeros, dummyData...)...)
 	if len(writer.data) != 1 || !bytes.Equal(writer.data[0], want) {
 		t.Errorf("expected written %v, got %v", want, writer.data)
@@ -262,7 +262,7 @@ func TestHandleTun_ReadReturnsNAndEOF_OneWriteThenEOF(t *testing.T) {
 		t.Fatalf("expected exactly one write, got %d", len(w.data))
 	}
 	// payload layout: prefix || 12B nonce || [7,8,9]
-	zeros := make([]byte, 1+chacha20poly1305.NonceSize)
+	zeros := make([]byte, chacha20poly1305.NonceSize)
 	want := append([]byte("pre-"), append(zeros, []byte{7, 8, 9}...)...)
 	if !bytes.Equal(w.data[0], want) {
 		t.Fatalf("written mismatch: got %v, want %v", w.data[0], want)
