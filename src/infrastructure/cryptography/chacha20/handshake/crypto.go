@@ -23,6 +23,11 @@ type Crypto interface {
 		hello Hello) (sessionId [32]byte, clientToServerKey, serverToClientKey []byte, err error)
 	GenerateChaCha20KeysClientside(curvePrivate, sessionSalt []byte,
 		hello Hello) ([]byte, []byte, [32]byte, error)
+	DeriveKey(
+		sharedSecret []byte,
+		salt []byte,
+		info []byte,
+	) ([]byte, error)
 }
 
 type DefaultCrypto struct {
@@ -69,19 +74,23 @@ func (d *DefaultCrypto) GenerateChaCha20KeysServerside(
 	sharedSecret, _ := curve25519.X25519(curvePrivate[:], hello.CurvePublicKey())
 	salt := sha256.Sum256(append(serverNonce, hello.Nonce()...))
 
-	infoSC := []byte("server-to-client") // server-key info
-	infoCS := []byte("client-to-server") // client-key info
+	serverToClientKey, err = d.DeriveKey(
+		sharedSecret,
+		salt[:],
+		[]byte("server-to-client"),
+	)
+	if err != nil {
+		return [32]byte{}, nil, nil, err
+	}
 
-	// Generate HKDF for both encryption directions
-	serverToClientHKDF := hkdf.New(sha256.New, sharedSecret, salt[:], infoSC)
-	clientToServerHKDF := hkdf.New(sha256.New, sharedSecret, salt[:], infoCS)
-	keySize := chacha20poly1305.KeySize
-
-	// Generate keys for both encryption directions
-	serverToClientKey = make([]byte, keySize)
-	_, _ = io.ReadFull(serverToClientHKDF, serverToClientKey)
-	clientToServerKey = make([]byte, keySize)
-	_, _ = io.ReadFull(clientToServerHKDF, clientToServerKey)
+	clientToServerKey, err = d.DeriveKey(
+		sharedSecret,
+		salt[:],
+		[]byte("client-to-server"),
+	)
+	if err != nil {
+		return [32]byte{}, nil, nil, err
+	}
 
 	readerFactory := NewDefaultSessionIdReader([]byte("session-id-derivation"), sharedSecret, salt[:])
 	identifier := NewSessionIdentifier(readerFactory.NewReader())
@@ -98,15 +107,23 @@ func (d *DefaultCrypto) GenerateChaCha20KeysServerside(
 func (d *DefaultCrypto) GenerateChaCha20KeysClientside(curvePrivate, clientNonce []byte, hello Hello) ([]byte, []byte, [32]byte, error) {
 	sharedSecret, _ := curve25519.X25519(curvePrivate[:], hello.CurvePublicKey())
 	salt := sha256.Sum256(append(hello.Nonce(), clientNonce...))
-	infoSC := []byte("server-to-client") // server-key info
-	infoCS := []byte("client-to-server") // client-key info
-	serverToClientHKDF := hkdf.New(sha256.New, sharedSecret, salt[:], infoSC)
-	clientToServerHKDF := hkdf.New(sha256.New, sharedSecret, salt[:], infoCS)
-	keySize := chacha20poly1305.KeySize
-	serverToClientKey := make([]byte, keySize)
-	_, _ = io.ReadFull(serverToClientHKDF, serverToClientKey)
-	clientToServerKey := make([]byte, keySize)
-	_, _ = io.ReadFull(clientToServerHKDF, clientToServerKey)
+	serverToClientKey, err := d.DeriveKey(
+		sharedSecret,
+		salt[:],
+		[]byte("server-to-client"),
+	)
+	if err != nil {
+		return nil, nil, [32]byte{}, err
+	}
+
+	clientToServerKey, err := d.DeriveKey(
+		sharedSecret,
+		salt[:],
+		[]byte("client-to-server"),
+	)
+	if err != nil {
+		return nil, nil, [32]byte{}, err
+	}
 
 	readerFactory := NewDefaultSessionIdReader([]byte("session-id-derivation"), sharedSecret, salt[:])
 	identifier := NewSessionIdentifier(readerFactory.NewReader())
@@ -116,4 +133,20 @@ func (d *DefaultCrypto) GenerateChaCha20KeysClientside(curvePrivate, clientNonce
 	}
 
 	return serverToClientKey, clientToServerKey, sessionId, nil
+}
+
+func (d *DefaultCrypto) DeriveKey(
+	sharedSecret []byte,
+	salt []byte,
+	info []byte,
+) ([]byte, error) {
+	hkdfReader := hkdf.New(
+		sha256.New,
+		sharedSecret,
+		salt,
+		info,
+	)
+	key := make([]byte, chacha20poly1305.KeySize)
+	_, err := io.ReadFull(hkdfReader, key)
+	return key, err
 }
