@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 	"tungo/application/network/connection"
 	"tungo/application/network/rekey"
 	"tungo/application/network/routing/transport"
@@ -69,12 +70,14 @@ func (t *TransportHandler) HandleTransport() error {
 			}
 
 			if spType, spOk := t.servicePacket.TryParseType(buffer[:n]); spOk {
+				t.rekeyController.MaybeAbortPending(time.Now())
 				if spType == service.SessionReset {
 					return fmt.Errorf("server requested cryptographyService reset")
 				}
 			}
 
 			epoch := binary.BigEndian.Uint16(buffer[:2])
+			t.rekeyController.MaybeAbortPending(time.Now())
 			decrypted, decryptionErr := t.cryptographyService.Decrypt(buffer[:n])
 			if decryptionErr != nil {
 				if t.ctx.Err() != nil {
@@ -120,13 +123,8 @@ func (t *TransportHandler) HandleTransport() error {
 						continue
 					}
 					fmt.Printf("rekey ack: derived new keys (client) c2s:%x s2c:%x\n", newC2S, newS2C)
-					epoch, err := t.rekeyController.Crypto.Rekey(newC2S, newS2C)
-					if err != nil {
-						fmt.Printf("rekey ack: install new session failed: %v\n", err)
-						continue
-					}
-					if err := t.rekeyController.ApplyKeys(newC2S, newS2C, uint16(epoch)); err != nil {
-						fmt.Printf("rekey ack: apply keys failed: %v\n", err)
+					if _, err = t.rekeyController.RekeyAndApply(newC2S, newS2C); err != nil {
+						fmt.Printf("rekey ack: install/apply failed: %v\n", err)
 						continue
 					}
 					t.rekeyController.ClearPendingRekeyPrivateKey()

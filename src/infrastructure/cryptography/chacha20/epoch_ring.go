@@ -10,6 +10,10 @@ type EpochRing interface {
 	Resolve(epoch Epoch) (*DefaultUdpSession, bool)
 	Insert(epoch Epoch, session *DefaultUdpSession)
 	ResolveCurrent() (*DefaultUdpSession, bool)
+	Oldest() (Epoch, bool)
+	Len() int
+	Capacity() int
+	Remove(epoch Epoch) bool
 }
 
 type epochEntry struct {
@@ -73,4 +77,35 @@ func (r *defaultEpochRing) ResolveCurrent() (*DefaultUdpSession, bool) {
 		return nil, false
 	}
 	return r.entries[len(r.entries)-1].session, true
+}
+
+func (r *defaultEpochRing) Oldest() (Epoch, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if len(r.entries) == 0 {
+		return 0, false
+	}
+	return r.entries[0].epoch, true
+}
+
+func (r *defaultEpochRing) Len() int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return len(r.entries)
+}
+
+func (r *defaultEpochRing) Capacity() int {
+	return r.capacity
+}
+
+func (r *defaultEpochRing) Remove(epoch Epoch) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for i, e := range r.entries {
+		if e.epoch == epoch {
+			r.entries = append(r.entries[:i], r.entries[i+1:]...)
+			return true
+		}
+	}
+	return false
 }

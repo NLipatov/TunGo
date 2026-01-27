@@ -136,6 +136,12 @@ func (t *TransportHandler) handlePacket(
 	addrPort netip.AddrPort,
 	packet []byte,
 ) error {
+	if session, err := t.sessionManager.GetByExternalAddrPort(addrPort); err == nil {
+		if ctrl := session.RekeyController(); ctrl != nil {
+			ctrl.MaybeAbortPending(time.Now())
+		}
+	}
+
 	// Fast path: existing session.
 	session, sessionLookupErr := t.sessionManager.GetByExternalAddrPort(addrPort)
 	if sessionLookupErr == nil && session.ExternalAddrPort() == addrPort {
@@ -211,13 +217,8 @@ func (t *TransportHandler) handlePacket(
 				if rekeyCtrl.IsServer {
 					sendKey, recvKey = newS2C, newC2S // server sends S2C, receives C2S
 				}
-				epoch, err := rekeyCtrl.Crypto.Rekey(sendKey, recvKey)
-				if err != nil {
-					t.logger.Printf("rekey init: install new session failed: %v", err)
-					return nil
-				}
-				if err := rekeyCtrl.ApplyKeys(sendKey, recvKey, uint16(epoch)); err != nil {
-					t.logger.Printf("rekey init: apply keys failed: %v", err)
+				if _, err = rekeyCtrl.RekeyAndApply(sendKey, recvKey); err != nil {
+					t.logger.Printf("rekey init: install/apply failed: %v", err)
 					return nil
 				}
 			case service.RekeyAck:

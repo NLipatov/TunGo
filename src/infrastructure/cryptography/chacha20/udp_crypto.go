@@ -76,6 +76,14 @@ func (c *EpochUdpCrypto) Rekey(sendKey, recvKey []byte) (uint16, error) {
 	c.rekeyMu.Lock()
 	defer c.rekeyMu.Unlock()
 
+	// Protect against evicting the active send epoch when the ring is full.
+	sendEpoch := c.currentSendEpoch()
+	if oldest, ok := c.ring.Oldest(); ok &&
+		c.ring.Len() == c.ring.Capacity() &&
+		oldest == sendEpoch {
+		return 0, fmt.Errorf("rekey refused: active send epoch %d would be evicted; wait for confirmation", sendEpoch)
+	}
+
 	sendCipher, err := chacha20poly1305.New(sendKey)
 	if err != nil {
 		return 0, fmt.Errorf("rekey: build send cipher: %w", err)
@@ -96,4 +104,23 @@ func (c *EpochUdpCrypto) SetSendEpoch(epoch uint16) {
 	c.mu.Lock()
 	c.sendEpoch = Epoch(epoch)
 	c.mu.Unlock()
+}
+
+func (c *EpochUdpCrypto) currentSendEpoch() Epoch {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.sendEpoch
+}
+
+// RemoveEpoch removes a session for the specified epoch, if present.
+// Returns true if removed.
+func (c *EpochUdpCrypto) RemoveEpoch(epoch uint16) bool {
+	// Never remove active send epoch; never remove last remaining entry.
+	if Epoch(epoch) == c.currentSendEpoch() {
+		return false
+	}
+	if c.ring.Len() <= 1 {
+		return false
+	}
+	return c.ring.Remove(Epoch(epoch))
 }
