@@ -202,7 +202,6 @@ func (t *TransportHandler) handlePacket(
 					t.logger.Printf("rekey init: derive key failed: %v", err)
 					return nil
 				}
-				t.logger.Printf("rekey init: derived new keys (server) c2s:%x s2c:%x", newC2S, newS2C)
 
 				sendKey := newC2S
 				recvKey := newS2C

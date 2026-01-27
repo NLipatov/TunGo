@@ -130,7 +130,6 @@ func (t *TransportHandler) HandleTransport() error {
 						fmt.Printf("rekey ack: derive key failed: %v\n", err)
 						continue
 					}
-					fmt.Printf("rekey ack: derived new keys (client) c2s:%x s2c:%x\n", newC2S, newS2C)
 					epoch, err := t.rekeyController.RekeyAndApply(newC2S, newS2C)
 					if err != nil {
 						fmt.Printf("rekey ack: install/apply failed: %v\n", err)
