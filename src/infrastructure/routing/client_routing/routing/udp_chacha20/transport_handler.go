@@ -2,6 +2,7 @@ package udp_chacha20
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -72,6 +73,7 @@ func (t *TransportHandler) HandleTransport() error {
 				}
 			}
 
+			epoch := binary.BigEndian.Uint16(buffer[:2])
 			decrypted, decryptionErr := t.cryptographyService.Decrypt(buffer[:n])
 			if decryptionErr != nil {
 				if t.ctx.Err() != nil {
@@ -85,6 +87,8 @@ func (t *TransportHandler) HandleTransport() error {
 				}
 				return fmt.Errorf("failed to decrypt data: %s", decryptionErr)
 			}
+
+			t.rekeyController.ConfirmSendEpoch(epoch)
 
 			if spType, spOk := t.servicePacket.TryParseType(decrypted); spOk {
 				switch spType {

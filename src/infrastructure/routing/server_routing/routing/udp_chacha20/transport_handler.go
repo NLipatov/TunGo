@@ -2,6 +2,8 @@ package udp_chacha20
 
 import (
 	"context"
+	"encoding/binary"
+	"fmt"
 	"io"
 	"net/netip"
 	"sync"
@@ -137,10 +139,19 @@ func (t *TransportHandler) handlePacket(
 	session, sessionLookupErr := t.sessionManager.GetByExternalAddrPort(addrPort)
 	if sessionLookupErr == nil && session.ExternalAddrPort() == addrPort {
 		rekeyCtrl := session.RekeyController()
+		if len(packet) < 2 {
+			return fmt.Errorf("packet too short for nonce epoch")
+		}
+		epoch := binary.BigEndian.Uint16(packet[:2])
+
 		decrypted, decryptionErr := session.Crypto().Decrypt(packet)
 		if decryptionErr != nil {
 			t.logger.Printf("failed to decrypt data: %v", decryptionErr)
 			return decryptionErr
+		}
+
+		if rekeyCtrl := session.RekeyController(); rekeyCtrl != nil {
+			rekeyCtrl.ConfirmSendEpoch(epoch)
 		}
 
 		if spType, spOk := t.servicePacket.TryParseType(decrypted); spOk {

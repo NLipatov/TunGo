@@ -9,6 +9,7 @@ import (
 // It returns the new epoch so callers can keep control-plane state consistent.
 type Rekeyer interface {
 	Rekey(sendKey, recvKey []byte) (uint16, error)
+	SetSendEpoch(epoch uint16)
 }
 
 // Controller holds control-plane rekey state; crypto remains immutable and handshake-agnostic.
@@ -21,6 +22,8 @@ type Controller struct {
 	CurrentS2C     []byte
 	PendingPriv    *[32]byte
 	LastRekeyEpoch uint16
+	sendEpoch      uint16
+	pendingSend    *uint16
 }
 
 func NewController(core Rekeyer, c2s, s2c []byte, isServer bool) *Controller {
@@ -29,6 +32,7 @@ func NewController(core Rekeyer, c2s, s2c []byte, isServer bool) *Controller {
 		IsServer:   isServer,
 		CurrentC2S: append([]byte(nil), c2s...),
 		CurrentS2C: append([]byte(nil), s2c...),
+		sendEpoch:  0,
 	}
 }
 
@@ -83,5 +87,19 @@ func (c *Controller) ApplyKeys(sendKey, recvKey []byte, epoch uint16) error {
 		c.CurrentS2C = append([]byte(nil), recvKey...)
 	}
 	c.LastRekeyEpoch = epoch
+	// new keys ready for receive; defer send switch until confirmation
+	c.pendingSend = &epoch
 	return nil
+}
+
+// ConfirmSendEpoch promotes pending epoch to active for sending once a packet
+// with the pending epoch is successfully received.
+func (c *Controller) ConfirmSendEpoch(epoch uint16) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.pendingSend != nil && epoch == *c.pendingSend && epoch > c.sendEpoch {
+		c.Crypto.SetSendEpoch(epoch)
+		c.sendEpoch = epoch
+		c.pendingSend = nil
+	}
 }

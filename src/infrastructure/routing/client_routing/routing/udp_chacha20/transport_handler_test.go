@@ -16,6 +16,7 @@ import (
 type dummyRekeyer struct{}
 
 func (dummyRekeyer) Rekey(_, _ []byte) (uint16, error) { return 0, nil }
+func (dummyRekeyer) SetSendEpoch(uint16)               {}
 
 // thTestCrypto implements application.Crypto for testing TransportHandler
 // Only Decrypt is used in tests.

@@ -19,6 +19,7 @@ type EpochUdpCrypto struct {
 	sessionId [32]byte
 	mu        sync.RWMutex
 	rekeyMu   sync.Mutex
+	sendEpoch Epoch
 }
 
 func NewEpochUdpCrypto(
@@ -33,11 +34,16 @@ func NewEpochUdpCrypto(
 		ring:      NewEpochRing(defaultEpochRingCapacity, initialEpoch, initialSession),
 		isServer:  isServer,
 		sessionId: sessionId,
+		sendEpoch: initialEpoch,
 	}
 }
 
 func (c *EpochUdpCrypto) Encrypt(plaintext []byte) ([]byte, error) {
-	session, ok := c.ring.ResolveCurrent()
+	c.mu.RLock()
+	epoch := c.sendEpoch
+	c.mu.RUnlock()
+
+	session, ok := c.ring.Resolve(epoch)
 	if !ok {
 		return nil, fmt.Errorf("no active session")
 	}
@@ -79,4 +85,11 @@ func (c *EpochUdpCrypto) Rekey(sendKey, recvKey []byte) (uint16, error) {
 	newSession := NewUdpSessionWithCiphers(c.sessionId, sendCipher, recvCipher, c.isServer, nextEpoch)
 	c.ring.Insert(nextEpoch, newSession)
 	return uint16(nextEpoch), nil
+}
+
+// SetSendEpoch switches the epoch used for outbound encryption.
+func (c *EpochUdpCrypto) SetSendEpoch(epoch uint16) {
+	c.mu.Lock()
+	c.sendEpoch = Epoch(epoch)
+	c.mu.Unlock()
 }
