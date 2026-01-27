@@ -190,7 +190,6 @@ func (c *Controller) applyKeysLocked(sendKey, recvKey []byte, epoch uint16) erro
 		c.CurrentC2S = append([]byte(nil), sendKey...)
 		c.CurrentS2C = append([]byte(nil), recvKey...)
 	}
-	c.LastRekeyEpoch = epoch
 	// new keys ready for receive; defer send switch until confirmation
 	c.pendingSend = &epoch
 	c.pendingSince = time.Now()
@@ -209,6 +208,7 @@ func (c *Controller) ConfirmSendEpoch(epoch uint16) {
 		c.Crypto.SetSendEpoch(epoch)
 		c.sendEpoch = epoch
 		c.pendingSend = nil
+		c.LastRekeyEpoch = epoch
 		c.state = StateStable
 	}
 }
@@ -223,6 +223,8 @@ func (c *Controller) AbortPending() {
 	}
 	_ = c.Crypto.RemoveEpoch(*c.pendingSend) // best-effort
 	c.pendingSend = nil
+	// roll back epoch marker to the active send epoch to allow next rekey
+	c.LastRekeyEpoch = c.sendEpoch
 	c.state = StateStable
 }
 
