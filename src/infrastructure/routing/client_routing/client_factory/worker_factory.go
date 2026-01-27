@@ -58,13 +58,13 @@ func (w *WorkerFactory) CreateWorker(
 		)
 		return udp_chacha20.NewUdpWorker(transportHandler, tunHandler), nil
 	case settings.TCP:
-		tunHandler := tcp_chacha20.NewTunHandler(ctx, tun, conn, crypto)
-		transportHandler := tcp_chacha20.NewTransportHandler(ctx, conn, tun, crypto)
-		return tcp_chacha20.NewTcpTunWorker(ctx, tunHandler, transportHandler, crypto), nil
+		tunHandler := tcp_chacha20.NewTunHandler(ctx, tun, conn, crypto, controller, service.NewDefaultPacketHandler())
+		transportHandler := tcp_chacha20.NewTransportHandler(ctx, conn, tun, crypto, controller, service.NewDefaultPacketHandler())
+		return tcp_chacha20.NewTcpTunWorker(ctx, tunHandler, transportHandler, crypto, controller), nil
 	case settings.WS:
-		tunHandler := tcp_chacha20.NewTunHandler(ctx, tun, conn, crypto)
-		transportHandler := tcp_chacha20.NewTransportHandler(ctx, conn, tun, crypto)
-		return tcp_chacha20.NewTcpTunWorker(ctx, tunHandler, transportHandler, crypto), nil
+		tunHandler := tcp_chacha20.NewTunHandler(ctx, tun, conn, crypto, controller, service.NewDefaultPacketHandler())
+		transportHandler := tcp_chacha20.NewTransportHandler(ctx, conn, tun, crypto, controller, service.NewDefaultPacketHandler())
+		return tcp_chacha20.NewTcpTunWorker(ctx, tunHandler, transportHandler, crypto, controller), nil
 	default:
 		return nil, fmt.Errorf("unsupported protocol")
 	}

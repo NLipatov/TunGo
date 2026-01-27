@@ -23,14 +23,9 @@ func (t TcpSessionBuilder) FromHandshake(handshake connection.Handshake,
 		return nil, nil, err
 	}
 
-	return &DefaultTcpSession{
-		SessionId:          handshake.Id(),
-		sendCipher:         sendCipher,
-		recvCipher:         recvCipher,
-		RecvNonce:          NewNonce(0),
-		SendNonce:          NewNonce(0),
-		isServer:           isServer,
-		encryptionNonceBuf: [12]byte{},
-		decryptionNonceBuf: [12]byte{},
-	}, nil, nil
+	core := NewTcpCrypto(handshake.Id(), sendCipher, recvCipher, isServer)
+	// Directional raw keys live in controller for rekey derivation.
+	c2s := handshake.KeyClientToServer()
+	s2c := handshake.KeyServerToClient()
+	return core, rekey.NewController(core, c2s, s2c, isServer), nil
 }
