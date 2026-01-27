@@ -38,7 +38,7 @@ func NewTunHandler(ctx context.Context,
 		rekeyController:     rekeyController,
 		servicePacket:       servicePacket,
 		handshakeCrypto:     &handshake.DefaultCrypto{},
-		rotateAt:            time.Now().UTC().Add(30 * time.Minute),
+		rotateAt:            time.Now().UTC().Add(settings.DefaultRekeyInterval),
 	}
 }
 
@@ -79,7 +79,7 @@ func (t *TunHandler) HandleTun() error {
 				pub, priv, keyErr := t.handshakeCrypto.GenerateX25519KeyPair()
 				if keyErr != nil {
 					log.Printf("failed to generate rekey key pair: %v", keyErr)
-					t.rotateAt = time.Now().UTC().Add(30 * time.Minute)
+					t.rotateAt = time.Now().UTC().Add(settings.DefaultRekeyInterval)
 					continue
 				}
 				t.rekeyController.SetPendingRekeyPrivateKey(priv)
@@ -88,19 +88,19 @@ func (t *TunHandler) HandleTun() error {
 				servicePayload, err := t.servicePacket.EncodeV1(service.RekeyInit, payloadBuf)
 				if err != nil {
 					log.Printf("failed to encode rekeyInit packet")
-					t.rotateAt = time.Now().UTC().Add(30 * time.Minute)
+					t.rotateAt = time.Now().UTC().Add(settings.DefaultRekeyInterval)
 					continue
 				}
 				enc, encErr := t.cryptographyService.Encrypt(servicePayload)
 				if encErr != nil {
 					log.Printf("failed to encrypt rekeyInit: %v", encErr)
-					t.rotateAt = time.Now().UTC().Add(30 * time.Minute)
+					t.rotateAt = time.Now().UTC().Add(settings.DefaultRekeyInterval)
 					continue
 				}
 				if _, err := t.writer.Write(enc); err != nil {
 					log.Printf("failed to write rekeyInit: %v", err)
 				}
-				t.rotateAt = time.Now().UTC().Add(30 * time.Minute)
+				t.rotateAt = time.Now().UTC().Add(settings.DefaultRekeyInterval)
 			}
 		}
 	}

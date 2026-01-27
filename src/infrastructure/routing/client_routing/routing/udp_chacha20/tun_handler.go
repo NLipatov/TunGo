@@ -15,8 +15,6 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
-const defaultRekeyInterval = 30 * time.Second
-
 type TunHandler struct {
 	ctx                 context.Context
 	reader              io.Reader // abstraction over TUN device
@@ -43,7 +41,7 @@ func NewTunHandler(ctx context.Context,
 		cryptographyService: cryptographyService,
 		rekeyController:     rekeyController,
 		servicePacket:       servicePacket,
-		rotateAt:            time.Now().UTC().Add(defaultRekeyInterval),
+		rotateAt:            time.Now().UTC().Add(settings.DefaultRekeyInterval),
 		handshakeCrypto:     &handshake.DefaultCrypto{},
 	}
 }
@@ -105,13 +103,13 @@ func (w *TunHandler) HandleTun() error {
 			if time.Now().UTC().After(w.rotateAt) {
 				if w.rekeyController.State() != rekey.StateStable {
 					// Avoid overwriting pending priv or spamming in-flight rekeys.
-					w.rotateAt = time.Now().UTC().Add(defaultRekeyInterval)
+					w.rotateAt = time.Now().UTC().Add(settings.DefaultRekeyInterval)
 					continue
 				}
 				publicKey, privateKey, keyErr := w.handshakeCrypto.GenerateX25519KeyPair()
 				if keyErr != nil {
 					fmt.Printf("failed to generate rekey key pair: %v", keyErr)
-					w.rotateAt = time.Now().UTC().Add(defaultRekeyInterval)
+					w.rotateAt = time.Now().UTC().Add(settings.DefaultRekeyInterval)
 					continue
 				}
 				// Controller must always be present for UDP; panic on misconfiguration.
@@ -120,7 +118,7 @@ func (w *TunHandler) HandleTun() error {
 				payloadBuf := w.controlPacketBuffer[chacha20poly1305.NonceSize:]
 				if len(publicKey) != service.RekeyPublicKeyLen {
 					fmt.Println("unexpected rekey public key length")
-					w.rotateAt = time.Now().UTC().Add(defaultRekeyInterval)
+					w.rotateAt = time.Now().UTC().Add(settings.DefaultRekeyInterval)
 					continue
 				}
 				copy(payloadBuf[3:], publicKey)
@@ -137,7 +135,7 @@ func (w *TunHandler) HandleTun() error {
 						_, _ = w.writer.Write(enc)
 					}
 				}
-				w.rotateAt = time.Now().UTC().Add(defaultRekeyInterval)
+				w.rotateAt = time.Now().UTC().Add(settings.DefaultRekeyInterval)
 			}
 		}
 	}
