@@ -1,6 +1,7 @@
 package rekey_test
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -138,5 +139,72 @@ func TestSendEpochNeverEvicted(t *testing.T) {
 	}
 	if _, err := crypto.Encrypt(payload("pong")); err != nil {
 		t.Fatalf("encrypt after remove attempt failed: %v", err)
+	}
+}
+
+// TestConfirmRequiresMatchingEpoch ensures wrong epoch does not switch state.
+func TestConfirmRequiresMatchingEpoch(t *testing.T) {
+	crypto := newTestCrypto(t)
+	ctrl := rekey.NewController(crypto, []byte("c2s"), []byte("s2c"), false)
+
+	epoch, err := ctrl.RekeyAndApply(make([]byte, chacha20poly1305.KeySize), make([]byte, chacha20poly1305.KeySize))
+	if err != nil {
+		t.Fatalf("rekey: %v", err)
+	}
+	ctrl.ConfirmSendEpoch(epoch + 1) // wrong epoch
+	if ctrl.State() != rekey.StatePending {
+		t.Fatalf("state changed on wrong epoch confirm: %v", ctrl.State())
+	}
+	ctrl.ConfirmSendEpoch(epoch)
+	if ctrl.State() != rekey.StateStable {
+		t.Fatalf("state not stable after correct confirm: %v", ctrl.State())
+	}
+	if ctrl.LastRekeyEpoch != epoch {
+		t.Fatalf("LastRekeyEpoch not updated on confirm: %d != %d", ctrl.LastRekeyEpoch, epoch)
+	}
+}
+
+// TestRekeyWhilePending returns error and keeps state.
+func TestRekeyWhilePending(t *testing.T) {
+	crypto := newTestCrypto(t)
+	ctrl := rekey.NewController(crypto, []byte("c2s"), []byte("s2c"), false)
+	if _, err := ctrl.RekeyAndApply(make([]byte, chacha20poly1305.KeySize), make([]byte, chacha20poly1305.KeySize)); err != nil {
+		t.Fatalf("rekey: %v", err)
+	}
+	if _, err := ctrl.RekeyAndApply(make([]byte, chacha20poly1305.KeySize), make([]byte, chacha20poly1305.KeySize)); err == nil {
+		t.Fatal("expected error on rekey while pending")
+	}
+	if ctrl.State() != rekey.StatePending {
+		t.Fatalf("state should remain pending: %v", ctrl.State())
+	}
+}
+
+// TestAbortResetsLastEpoch ensures abort leaves LastRekeyEpoch at active send epoch.
+func TestAbortResetsLastEpoch(t *testing.T) {
+	crypto := newTestCrypto(t)
+	ctrl := rekey.NewController(crypto, []byte("c2s"), []byte("s2c"), false)
+	if _, err := ctrl.RekeyAndApply(make([]byte, chacha20poly1305.KeySize), make([]byte, chacha20poly1305.KeySize)); err != nil {
+		t.Fatalf("rekey: %v", err)
+	}
+	ctrl.AbortPending()
+	if ctrl.State() != rekey.StateStable {
+		t.Fatalf("expected stable after abort: %v", ctrl.State())
+	}
+	if _, ok := ctrl.PendingEpoch(); ok {
+		t.Fatalf("pending should be cleared")
+	}
+	if ctrl.LastRekeyEpoch != 0 {
+		t.Fatalf("LastRekeyEpoch should revert to active send epoch, got %d", ctrl.LastRekeyEpoch)
+	}
+}
+
+// TestEpochExhausted blocks further rekey and surfaces ErrEpochExhausted.
+func TestEpochExhausted(t *testing.T) {
+	crypto := newTestCrypto(t)
+	ctrl := rekey.NewController(crypto, []byte("c2s"), []byte("s2c"), false)
+	ctrl.LastRekeyEpoch = 65000
+	_, err := ctrl.RekeyAndApply(make([]byte, chacha20poly1305.KeySize), make([]byte, chacha20poly1305.KeySize))
+	if !errors.Is(err, rekey.ErrEpochExhausted) {
+		t.Fatalf("expected ErrEpochExhausted, got %v", err)
 	}
 }

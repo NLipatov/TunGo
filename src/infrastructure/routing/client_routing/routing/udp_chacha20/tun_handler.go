@@ -103,6 +103,11 @@ func (w *TunHandler) HandleTun() error {
 				return fmt.Errorf("could not read a packet from TUN: %v", err)
 			}
 			if time.Now().UTC().After(w.rotateAt) {
+				if w.rekeyController.State() != rekey.StateStable {
+					// Avoid overwriting pending priv or spamming in-flight rekeys.
+					w.rotateAt = time.Now().UTC().Add(defaultRekeyInterval)
+					continue
+				}
 				publicKey, privateKey, keyErr := w.handshakeCrypto.GenerateX25519KeyPair()
 				if keyErr != nil {
 					fmt.Printf("failed to generate rekey key pair: %v", keyErr)

@@ -136,6 +136,10 @@ func (t *TransportHandler) handlePacket(
 	addrPort netip.AddrPort,
 	packet []byte,
 ) error {
+	if len(packet) < 2 {
+		t.logger.Printf("packet too short for epoch from %v: %d bytes", addrPort, len(packet))
+		return nil
+	}
 	if session, err := t.sessionManager.GetByExternalAddrPort(addrPort); err == nil {
 		if ctrl := session.RekeyController(); ctrl != nil {
 			ctrl.MaybeAbortPending(time.Now())
@@ -200,6 +204,16 @@ func (t *TransportHandler) handlePacket(
 				}
 				t.logger.Printf("rekey init: derived new keys (server) c2s:%x s2c:%x", newC2S, newS2C)
 
+				sendKey := newC2S
+				recvKey := newS2C
+				if rekeyCtrl.IsServer {
+					sendKey, recvKey = newS2C, newC2S // server sends S2C, receives C2S
+				}
+				if _, err = rekeyCtrl.RekeyAndApply(sendKey, recvKey); err != nil {
+					t.logger.Printf("rekey init: install/apply failed: %v", err)
+					return nil
+				}
+				// Only send ACK after successful rekey installation.
 				ackBuf := make([]byte, chacha20poly1305.NonceSize+service.RekeyPacketLen,
 					chacha20poly1305.NonceSize+service.RekeyPacketLen+chacha20poly1305.Overhead)
 				payload := ackBuf[chacha20poly1305.NonceSize:]
@@ -215,15 +229,6 @@ func (t *TransportHandler) handlePacket(
 				}
 				if _, err := session.Transport().Write(enc); err != nil {
 					t.logger.Printf("rekey init: write ack failed: %v", err)
-					return nil
-				}
-				sendKey := newC2S
-				recvKey := newS2C
-				if rekeyCtrl.IsServer {
-					sendKey, recvKey = newS2C, newC2S // server sends S2C, receives C2S
-				}
-				if _, err = rekeyCtrl.RekeyAndApply(sendKey, recvKey); err != nil {
-					t.logger.Printf("rekey init: install/apply failed: %v", err)
 					return nil
 				}
 			case service.RekeyAck:

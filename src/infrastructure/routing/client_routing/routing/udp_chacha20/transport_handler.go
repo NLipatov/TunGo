@@ -76,6 +76,10 @@ func (t *TransportHandler) HandleTransport() error {
 				}
 			}
 
+			if n < 2 {
+				fmt.Printf("packet too short for epoch: %d bytes\n", n)
+				continue
+			}
 			epoch := binary.BigEndian.Uint16(buffer[:2])
 			t.rekeyController.MaybeAbortPending(time.Now())
 			decrypted, decryptionErr := t.cryptographyService.Decrypt(buffer[:n])
