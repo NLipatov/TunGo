@@ -15,6 +15,8 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
+const defaultRekeyInterval = 30 * time.Second
+
 type TunHandler struct {
 	ctx                 context.Context
 	reader              io.Reader // abstraction over TUN device
@@ -41,7 +43,7 @@ func NewTunHandler(ctx context.Context,
 		cryptographyService: cryptographyService,
 		rekeyController:     rekeyController,
 		servicePacket:       servicePacket,
-		rotateAt:            time.Now().UTC().Add(10 * time.Second),
+		rotateAt:            time.Now().UTC().Add(defaultRekeyInterval),
 		handshakeCrypto:     &handshake.DefaultCrypto{},
 	}
 }
@@ -104,7 +106,7 @@ func (w *TunHandler) HandleTun() error {
 				publicKey, privateKey, keyErr := w.handshakeCrypto.GenerateX25519KeyPair()
 				if keyErr != nil {
 					fmt.Printf("failed to generate rekey key pair: %v", keyErr)
-					w.rotateAt = time.Now().UTC().Add(10 * time.Second)
+					w.rotateAt = time.Now().UTC().Add(defaultRekeyInterval)
 					continue
 				}
 				// Controller must always be present for UDP; panic on misconfiguration.
@@ -113,7 +115,7 @@ func (w *TunHandler) HandleTun() error {
 				payloadBuf := w.controlPacketBuffer[chacha20poly1305.NonceSize:]
 				if len(publicKey) != service.RekeyPublicKeyLen {
 					fmt.Println("unexpected rekey public key length")
-					w.rotateAt = time.Now().UTC().Add(10 * time.Second)
+					w.rotateAt = time.Now().UTC().Add(defaultRekeyInterval)
 					continue
 				}
 				copy(payloadBuf[3:], publicKey)
@@ -130,7 +132,7 @@ func (w *TunHandler) HandleTun() error {
 						_, _ = w.writer.Write(enc)
 					}
 				}
-				w.rotateAt = time.Now().UTC().Add(10 * time.Second)
+				w.rotateAt = time.Now().UTC().Add(defaultRekeyInterval)
 			}
 		}
 	}
