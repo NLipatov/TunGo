@@ -200,17 +200,20 @@ func (c *Controller) applyKeysLocked(sendKey, recvKey []byte, epoch uint16) erro
 // with the pending epoch is successfully received.
 func (c *Controller) ConfirmSendEpoch(epoch uint16) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.state != StatePending {
+	if c.state != StatePending || c.pendingSend == nil || epoch != *c.pendingSend || epoch <= c.sendEpoch {
+		c.mu.Unlock()
 		return
 	}
-	if c.pendingSend != nil && epoch == *c.pendingSend && epoch > c.sendEpoch {
-		c.Crypto.SetSendEpoch(epoch)
-		c.sendEpoch = epoch
-		c.pendingSend = nil
-		c.LastRekeyEpoch = epoch
-		c.state = StateStable
-	}
+	old := c.sendEpoch
+	c.Crypto.SetSendEpoch(epoch)
+	c.sendEpoch = epoch
+	c.pendingSend = nil
+	c.LastRekeyEpoch = epoch
+	c.state = StateStable
+	c.mu.Unlock()
+
+	// log outside lock to avoid blocking hot path
+	fmt.Printf("send epoch switched: %d -> %d\n", old, epoch)
 }
 
 // AbortPending rolls back a pending rekey, removing the pending epoch session.
@@ -226,6 +229,7 @@ func (c *Controller) AbortPending() {
 	// roll back epoch marker to the active send epoch to allow next rekey
 	c.LastRekeyEpoch = c.sendEpoch
 	c.state = StateStable
+	fmt.Printf("send epoch abort pending; remain on %d\n", c.sendEpoch)
 }
 
 // MaybeAbortPending aborts if the pending timeout has elapsed.
@@ -239,5 +243,6 @@ func (c *Controller) MaybeAbortPending(now time.Time) {
 		_ = c.Crypto.RemoveEpoch(*c.pendingSend)
 		c.pendingSend = nil
 		c.state = StateStable
+		fmt.Printf("send epoch abort by timeout; remain on %d\n", c.sendEpoch)
 	}
 }

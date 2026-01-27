@@ -123,10 +123,13 @@ func (t *TransportHandler) HandleTransport() error {
 						continue
 					}
 					fmt.Printf("rekey ack: derived new keys (client) c2s:%x s2c:%x\n", newC2S, newS2C)
-					if _, err = t.rekeyController.RekeyAndApply(newC2S, newS2C); err != nil {
+					epoch, err := t.rekeyController.RekeyAndApply(newC2S, newS2C)
+					if err != nil {
 						fmt.Printf("rekey ack: install/apply failed: %v\n", err)
 						continue
 					}
+					// Initiator proactively switches send to drive peer confirmation.
+					t.rekeyController.ConfirmSendEpoch(epoch)
 					t.rekeyController.ClearPendingRekeyPrivateKey()
 				case service.SessionReset:
 					return fmt.Errorf("server requested cryptographyService reset")
