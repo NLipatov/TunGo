@@ -181,6 +181,11 @@ func (t *TransportHandler) handlePacket(
 					t.logger.Printf("rekey init: unsupported crypto session type")
 					return nil
 				}
+				if rekeyCtrl.LastRekeyEpoch >= 65000 {
+					t.logger.Printf("rekey init: epoch exhausted, sending session reset")
+					t.sendSessionReset(addrPort)
+					return nil
+				}
 				currentC2S := rekeyCtrl.CurrentClientToServerKey()
 				currentS2C := rekeyCtrl.CurrentServerToClientKey()
 				newC2S, err := t.rekeyCrypto.DeriveKey(shared, currentC2S, []byte("tungo-rekey-c2s"))

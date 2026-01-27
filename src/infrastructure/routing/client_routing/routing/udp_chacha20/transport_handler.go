@@ -95,6 +95,10 @@ func (t *TransportHandler) HandleTransport() error {
 			if spType, spOk := t.servicePacket.TryParseType(decrypted); spOk {
 				switch spType {
 				case service.RekeyAck:
+					if t.rekeyController.LastRekeyEpoch >= 65000 {
+						fmt.Println("rekey ack: epoch exhausted, requesting session reset")
+						return fmt.Errorf("epoch exhausted; reconnect required")
+					}
 					if len(decrypted) < service.RekeyPacketLen {
 						fmt.Printf("rekey ack too short: %d bytes\n", len(decrypted))
 						continue

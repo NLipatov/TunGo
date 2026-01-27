@@ -31,6 +31,12 @@ type Controller struct {
 	pendingTimeout time.Duration
 }
 
+const maxEpochSafety = 65000
+
+var (
+	ErrEpochExhausted = fmt.Errorf("epoch exhausted; requires full re-handshake")
+)
+
 type State int
 
 const (
@@ -152,6 +158,10 @@ func (c *Controller) RekeyAndApply(sendKey, recvKey []byte) (uint16, error) {
 		curState := c.state
 		c.mu.Unlock()
 		return 0, fmt.Errorf("rekey not allowed in state %v", curState)
+	}
+	if c.LastRekeyEpoch >= maxEpochSafety {
+		c.mu.Unlock()
+		return 0, ErrEpochExhausted
 	}
 	c.state = StateInstalling
 	c.mu.Unlock()
