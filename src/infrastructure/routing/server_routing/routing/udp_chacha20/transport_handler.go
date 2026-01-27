@@ -198,12 +198,17 @@ func (t *TransportHandler) handlePacket(
 					t.logger.Printf("rekey init: write ack failed: %v", err)
 					return nil
 				}
-				epoch, err := rekeyCtrl.Crypto.Rekey(newC2S, newS2C)
+				sendKey := newC2S
+				recvKey := newS2C
+				if rekeyCtrl.IsServer {
+					sendKey, recvKey = newS2C, newC2S // server sends S2C, receives C2S
+				}
+				epoch, err := rekeyCtrl.Crypto.Rekey(sendKey, recvKey)
 				if err != nil {
 					t.logger.Printf("rekey init: install new session failed: %v", err)
 					return nil
 				}
-				if err := rekeyCtrl.ApplyKeys(newC2S, newS2C, uint16(epoch)); err != nil {
+				if err := rekeyCtrl.ApplyKeys(sendKey, recvKey, uint16(epoch)); err != nil {
 					t.logger.Printf("rekey init: apply keys failed: %v", err)
 					return nil
 				}
