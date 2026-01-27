@@ -18,6 +18,7 @@ import (
 	"tungo/infrastructure/network/udp/adapters"
 	"tungo/infrastructure/network/udp/queue/udp"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
+	udphelpers "tungo/infrastructure/routing/udp"
 	"tungo/infrastructure/settings"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -150,10 +151,6 @@ func (t *TransportHandler) handlePacket(
 			return decryptionErr
 		}
 
-		if rekeyCtrl := session.RekeyController(); rekeyCtrl != nil {
-			rekeyCtrl.ConfirmSendEpoch(epoch)
-		}
-
 		if spType, spOk := t.servicePacket.TryParseType(decrypted); spOk {
 			switch spType {
 			case service.RekeyInit:
@@ -229,6 +226,10 @@ func (t *TransportHandler) handlePacket(
 				t.logger.Printf("unknown service packet type")
 			}
 			return nil
+		}
+
+		if rekeyCtrl := session.RekeyController(); rekeyCtrl != nil && !udphelpers.IsMulticastPacket(decrypted) {
+			rekeyCtrl.ConfirmSendEpoch(epoch)
 		}
 
 		_, err := t.writer.Write(decrypted)

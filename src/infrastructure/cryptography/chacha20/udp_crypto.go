@@ -45,7 +45,11 @@ func (c *EpochUdpCrypto) Encrypt(plaintext []byte) ([]byte, error) {
 
 	session, ok := c.ring.Resolve(epoch)
 	if !ok {
-		return nil, fmt.Errorf("no active session")
+		// Should not happen; fall back to latest known session to avoid drop.
+		session, ok = c.ring.ResolveCurrent()
+		if !ok {
+			return nil, fmt.Errorf("no active session")
+		}
 	}
 	return session.Encrypt(plaintext)
 }

@@ -13,6 +13,7 @@ import (
 	"tungo/domain/network/service"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/handshake"
+	"tungo/infrastructure/routing/udp"
 	"tungo/infrastructure/settings"
 
 	"golang.org/x/crypto/curve25519"
@@ -88,8 +89,6 @@ func (t *TransportHandler) HandleTransport() error {
 				return fmt.Errorf("failed to decrypt data: %s", decryptionErr)
 			}
 
-			t.rekeyController.ConfirmSendEpoch(epoch)
-
 			if spType, spOk := t.servicePacket.TryParseType(decrypted); spOk {
 				switch spType {
 				case service.RekeyAck:
@@ -137,6 +136,11 @@ func (t *TransportHandler) HandleTransport() error {
 					// ignore unknown service packets
 				}
 				continue
+			}
+
+			// Only confirm epoch on actual data packets (non-service, non-multicast)
+			if !udp.IsMulticastPacket(decrypted) {
+				t.rekeyController.ConfirmSendEpoch(epoch)
 			}
 
 			_, writeErr := t.writer.Write(decrypted)
