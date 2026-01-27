@@ -3,6 +3,7 @@ package network
 import (
 	"context"
 	"tungo/application/network/connection"
+	"tungo/application/network/rekey"
 )
 
 // SecretWithDeadline is a decorator for Secret which allows cancellation via ctx
@@ -18,23 +19,24 @@ func NewSecretWithDeadline(ctx context.Context, secret Secret) SecretWithDeadlin
 	}
 }
 
-func (s SecretWithDeadline) Exchange(transport connection.Transport) (connection.Crypto, error) {
+func (s SecretWithDeadline) Exchange(transport connection.Transport) (connection.Crypto, *rekey.Controller, error) {
 	type result struct {
 		cryptographyService connection.Crypto
+		controller          *rekey.Controller
 		err                 error
 	}
 
 	resultChan := make(chan result, 1)
 
 	go func() {
-		crypto, cryptoErr := s.secret.Exchange(transport)
-		resultChan <- result{crypto, cryptoErr}
+		crypto, ctrl, cryptoErr := s.secret.Exchange(transport)
+		resultChan <- result{crypto, ctrl, cryptoErr}
 	}()
 
 	select {
 	case <-s.ctx.Done():
-		return nil, s.ctx.Err()
+		return nil, nil, s.ctx.Err()
 	case res := <-resultChan:
-		return res.cryptographyService, res.err
+		return res.cryptographyService, res.controller, res.err
 	}
 }

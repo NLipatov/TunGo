@@ -12,7 +12,6 @@ import (
 	"tungo/application/network/connection"
 	"tungo/application/network/routing/transport"
 	"tungo/domain/network/service"
-	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/network/udp/adapters"
 	"tungo/infrastructure/network/udp/queue/udp"
@@ -137,6 +136,7 @@ func (t *TransportHandler) handlePacket(
 	// Fast path: existing session.
 	session, sessionLookupErr := t.sessionManager.GetByExternalAddrPort(addrPort)
 	if sessionLookupErr == nil && session.ExternalAddrPort() == addrPort {
+		rekeyCtrl := session.RekeyController()
 		decrypted, decryptionErr := session.Crypto().Decrypt(packet)
 		if decryptionErr != nil {
 			t.logger.Printf("failed to decrypt data: %v", decryptionErr)
@@ -163,18 +163,23 @@ func (t *TransportHandler) handlePacket(
 					t.logger.Printf("rekey init: failed to derive shared: %v", err)
 					return nil
 				}
-				udpSession, ok := session.Crypto().(*chacha20.DefaultUdpSession)
-				if !ok {
+				if rekeyCtrl == nil {
 					t.logger.Printf("rekey init: unsupported crypto session type")
 					return nil
 				}
-				currentKey := udpSession.ClientToServerKey()
-				newKey, err := t.rekeyCrypto.DeriveKey(shared, currentKey, []byte("tungo-rekey-v1"))
+				currentC2S := rekeyCtrl.CurrentClientToServerKey()
+				currentS2C := rekeyCtrl.CurrentServerToClientKey()
+				newC2S, err := t.rekeyCrypto.DeriveKey(shared, currentC2S, []byte("tungo-rekey-c2s"))
 				if err != nil {
 					t.logger.Printf("rekey init: derive key failed: %v", err)
 					return nil
 				}
-				t.logger.Printf("rekey init: derived new key (server): %x", newKey)
+				newS2C, err := t.rekeyCrypto.DeriveKey(shared, currentS2C, []byte("tungo-rekey-s2c"))
+				if err != nil {
+					t.logger.Printf("rekey init: derive key failed: %v", err)
+					return nil
+				}
+				t.logger.Printf("rekey init: derived new keys (server) c2s:%x s2c:%x", newC2S, newS2C)
 
 				ackBuf := make([]byte, chacha20poly1305.NonceSize+service.RekeyPacketLen,
 					chacha20poly1305.NonceSize+service.RekeyPacketLen+chacha20poly1305.Overhead)
@@ -191,6 +196,15 @@ func (t *TransportHandler) handlePacket(
 				}
 				if _, err := session.Transport().Write(enc); err != nil {
 					t.logger.Printf("rekey init: write ack failed: %v", err)
+					return nil
+				}
+				epoch, err := rekeyCtrl.Crypto.Rekey(newC2S, newS2C)
+				if err != nil {
+					t.logger.Printf("rekey init: install new session failed: %v", err)
+					return nil
+				}
+				if err := rekeyCtrl.ApplyKeys(newC2S, newS2C, uint16(epoch)); err != nil {
+					t.logger.Printf("rekey init: apply keys failed: %v", err)
 					return nil
 				}
 			case service.RekeyAck:
@@ -310,7 +324,7 @@ func (t *TransportHandler) registerClient(
 		return
 	}
 
-	cryptoSession, cryptoSessionErr := t.cryptographyFactory.FromHandshake(h, true)
+	cryptoSession, controller, cryptoSessionErr := t.cryptographyFactory.FromHandshake(h, true)
 	if cryptoSessionErr != nil {
 		t.logger.Printf("failed to init crypto session for %v: %v", addrPort.Addr().AsSlice(), cryptoSessionErr)
 		t.sendSessionReset(addrPort)
@@ -324,7 +338,7 @@ func (t *TransportHandler) registerClient(
 		return
 	}
 
-	t.sessionManager.Add(NewSession(adapter, cryptoSession, intIp, addrPort))
+	t.sessionManager.Add(NewSession(adapter, cryptoSession, controller, intIp, addrPort))
 	t.logger.Printf("UDP: %v registered as: %v", addrPort.Addr(), internalIP)
 }
 

@@ -46,12 +46,15 @@ func TestUdpSessionBuilder_FromHandshake_Server_Success(t *testing.T) {
 		server: keyGen.validKey(),
 		client: keyGen.validKey(),
 	}
-	svc, err := b.FromHandshake(hs, true)
+	svc, ctrl, err := b.FromHandshake(hs, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if svc == nil {
 		t.Fatal("expected non-nil service")
+	}
+	if ctrl == nil {
+		t.Fatal("expected non-nil controller")
 	}
 }
 
@@ -63,12 +66,15 @@ func TestUdpSessionBuilder_FromHandshake_Client_Success(t *testing.T) {
 		server: keyGen.validKey(),
 		client: keyGen.validKey(),
 	}
-	svc, err := b.FromHandshake(hs, false)
+	svc, ctrl, err := b.FromHandshake(hs, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if svc == nil {
 		t.Fatal("expected non-nil service")
+	}
+	if ctrl == nil {
+		t.Fatal("expected non-nil controller")
 	}
 }
 
@@ -80,12 +86,15 @@ func TestUdpSessionBuilder_FromHandshake_Server_InvalidServerKey(t *testing.T) {
 		server: keyGen.invalidKey(),
 		client: keyGen.validKey(),
 	}
-	svc, err := b.FromHandshake(hs, true)
+	svc, ctrl, err := b.FromHandshake(hs, true)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
 	if svc != nil {
 		t.Fatal("expected nil service")
+	}
+	if ctrl != nil {
+		t.Fatal("expected nil controller")
 	}
 }
 
@@ -97,12 +106,15 @@ func TestUdpSessionBuilder_FromHandshake_Server_InvalidClientKey(t *testing.T) {
 		server: keyGen.validKey(),
 		client: keyGen.invalidKey(),
 	}
-	svc, err := b.FromHandshake(hs, true)
+	svc, ctrl, err := b.FromHandshake(hs, true)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
 	if svc != nil {
 		t.Fatal("expected nil service")
+	}
+	if ctrl != nil {
+		t.Fatal("expected nil controller")
 	}
 }
 
@@ -114,12 +126,15 @@ func TestUdpSessionBuilder_FromHandshake_Client_InvalidClientKey(t *testing.T) {
 		server: keyGen.validKey(),
 		client: keyGen.invalidKey(),
 	}
-	svc, err := b.FromHandshake(hs, false)
+	svc, ctrl, err := b.FromHandshake(hs, false)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
 	if svc != nil {
 		t.Fatal("expected nil service")
+	}
+	if ctrl != nil {
+		t.Fatal("expected nil controller")
 	}
 }
 
@@ -131,11 +146,14 @@ func TestUdpSessionBuilder_FromHandshake_Client_InvalidServerKey(t *testing.T) {
 		server: keyGen.invalidKey(),
 		client: keyGen.validKey(),
 	}
-	svc, err := b.FromHandshake(hs, false)
+	svc, ctrl, err := b.FromHandshake(hs, false)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
 	if svc != nil {
 		t.Fatal("expected nil service")
+	}
+	if ctrl != nil {
+		t.Fatal("expected nil controller")
 	}
 }

@@ -80,9 +80,9 @@ func TestTcpSession_RoundTrip_And_Replay(t *testing.T) {
 		t.Fatalf("round-trip mismatch: got %q want %q", pt, msg)
 	}
 
-	// Replay should fail due to StrictCounter/nonce reuse
+	// Replay should fail because deterministic counter has advanced.
 	if _, err := server.Decrypt(ct1); err == nil {
-		t.Fatal("expected error on replay decryption, got nil")
+		t.Fatalf("expected replay to fail with moved counter")
 	}
 }
 

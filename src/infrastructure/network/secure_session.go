@@ -2,10 +2,11 @@ package network
 
 import (
 	"tungo/application/network/connection"
+	"tungo/application/network/rekey"
 )
 
 type SecureSession interface {
-	Establish() (connection.Transport, connection.Crypto, error)
+	Establish() (connection.Transport, connection.Crypto, *rekey.Controller, error)
 }
 
 type DefaultSecureSession struct {
@@ -20,11 +21,11 @@ func NewDefaultSecureSession(transport connection.Transport, secret Secret) *Def
 	}
 }
 
-func (c *DefaultSecureSession) Establish() (connection.Transport, connection.Crypto, error) {
-	crypto, err := c.secret.Exchange(c.transport)
+func (c *DefaultSecureSession) Establish() (connection.Transport, connection.Crypto, *rekey.Controller, error) {
+	crypto, controller, err := c.secret.Exchange(c.transport)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
-	return c.transport, crypto, nil
+	return c.transport, crypto, controller, nil
 }

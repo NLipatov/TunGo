@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"tungo/application/network/connection"
+	"tungo/application/network/rekey"
 	"tungo/application/network/routing/transport"
 	"tungo/domain/network/service"
 	"tungo/infrastructure/cryptography/chacha20"
@@ -21,6 +22,7 @@ type TransportHandler struct {
 	reader              io.Reader
 	writer              io.Writer
 	cryptographyService connection.Crypto
+	rekeyController     *rekey.Controller
 	servicePacket       service.PacketHandler
 	handshakeCrypto     handshake.Crypto
 }
@@ -30,6 +32,7 @@ func NewTransportHandler(
 	reader io.Reader,
 	writer io.Writer,
 	cryptographyService connection.Crypto,
+	rekeyController *rekey.Controller,
 	servicePacket service.PacketHandler,
 ) transport.Handler {
 	return &TransportHandler{
@@ -37,6 +40,7 @@ func NewTransportHandler(
 		reader:              reader,
 		writer:              writer,
 		cryptographyService: cryptographyService,
+		rekeyController:     rekeyController,
 		servicePacket:       servicePacket,
 		handshakeCrypto:     &handshake.DefaultCrypto{},
 	}
@@ -89,12 +93,7 @@ func (t *TransportHandler) HandleTransport() error {
 						fmt.Printf("rekey ack too short: %d bytes\n", len(decrypted))
 						continue
 					}
-					session, ok := t.cryptographyService.(*chacha20.DefaultUdpSession)
-					if !ok {
-						fmt.Println("rekey ack: unsupported crypto session type")
-						continue
-					}
-					priv, ok := session.PendingRekeyPrivateKey()
+					priv, ok := t.rekeyController.PendingRekeyPrivateKey()
 					if !ok {
 						fmt.Println("rekey ack: no pending client private key")
 						continue
@@ -105,14 +104,29 @@ func (t *TransportHandler) HandleTransport() error {
 						fmt.Printf("rekey ack: failed to compute shared secret: %v\n", err)
 						continue
 					}
-					currentKey := session.ClientToServerKey()
-					newKey, err := t.handshakeCrypto.DeriveKey(shared, currentKey, []byte("tungo-rekey-v1"))
+					currentC2S := t.rekeyController.CurrentClientToServerKey()
+					currentS2C := t.rekeyController.CurrentServerToClientKey()
+					newC2S, err := t.handshakeCrypto.DeriveKey(shared, currentC2S, []byte("tungo-rekey-c2s"))
 					if err != nil {
 						fmt.Printf("rekey ack: derive key failed: %v\n", err)
 						continue
 					}
-					fmt.Printf("rekey ack: derived new key (client): %x\n", newKey)
-					session.ClearPendingRekeyPrivateKey()
+					newS2C, err := t.handshakeCrypto.DeriveKey(shared, currentS2C, []byte("tungo-rekey-s2c"))
+					if err != nil {
+						fmt.Printf("rekey ack: derive key failed: %v\n", err)
+						continue
+					}
+					fmt.Printf("rekey ack: derived new keys (client) c2s:%x s2c:%x\n", newC2S, newS2C)
+					epoch, err := t.rekeyController.Crypto.Rekey(newC2S, newS2C)
+					if err != nil {
+						fmt.Printf("rekey ack: install new session failed: %v\n", err)
+						continue
+					}
+					if err := t.rekeyController.ApplyKeys(newC2S, newS2C, uint16(epoch)); err != nil {
+						fmt.Printf("rekey ack: apply keys failed: %v\n", err)
+						continue
+					}
+					t.rekeyController.ClearPendingRekeyPrivateKey()
 				case service.SessionReset:
 					return fmt.Errorf("server requested cryptographyService reset")
 				default:

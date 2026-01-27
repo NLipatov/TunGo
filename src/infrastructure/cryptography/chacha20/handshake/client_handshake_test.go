@@ -66,6 +66,9 @@ func (c *ClientHandshakeFakeCrypto) GenerateChaCha20KeysServerside(_, _ []byte, 
 func (c *ClientHandshakeFakeCrypto) GenerateChaCha20KeysClientside(_, _ []byte, _ Hello) ([]byte, []byte, [32]byte, error) {
 	return nil, nil, [32]byte{}, nil
 }
+func (c *ClientHandshakeFakeCrypto) DeriveKey(_ []byte, _ []byte, _ []byte) ([]byte, error) {
+	return nil, nil
+}
 
 // Capturing crypto to assert exact payloads passed to Verify and Sign.
 type CapturingCrypto struct {
@@ -103,6 +106,9 @@ func (c *CapturingCrypto) GenerateChaCha20KeysServerside(_, _ []byte, _ Hello) (
 }
 func (c *CapturingCrypto) GenerateChaCha20KeysClientside(_, _ []byte, _ Hello) ([]byte, []byte, [32]byte, error) {
 	return nil, nil, [32]byte{}, nil
+}
+func (c *CapturingCrypto) DeriveKey(_ []byte, _ []byte, _ []byte) ([]byte, error) {
+	return nil, nil
 }
 
 // --- existing tests (kept, maybe renamed) ---

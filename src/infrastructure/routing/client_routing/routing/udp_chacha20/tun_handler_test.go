@@ -8,6 +8,7 @@ import (
 	"io"
 	"testing"
 	"time"
+	"tungo/application/network/rekey"
 	"tungo/domain/network/service"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -90,11 +91,12 @@ func TestHandleTun_ImmediateCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel before calling
 
+	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 	h := NewTunHandler(ctx, &fakeReader{readFunc: func(p []byte) (int, error) {
 		// should not be called
 		t.Fatal("Read called despite context cancelled")
 		return 0, nil
-	}}, &fakeWriter{}, &tunhandlerTestRakeCrypto{}, service.NewDefaultPacketHandler())
+	}}, &fakeWriter{}, &tunhandlerTestRakeCrypto{}, ctrl, service.NewDefaultPacketHandler())
 
 	if err := h.HandleTun(); err != nil {
 		t.Fatalf("expected nil on immediate cancel, got %v", err)
@@ -104,9 +106,10 @@ func TestHandleTun_ImmediateCancel(t *testing.T) {
 func TestHandleTun_ReadError(t *testing.T) {
 	errRead := errors.New("read failure")
 	ctx := context.Background()
+	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 	h := NewTunHandler(ctx, &fakeReader{readFunc: func(p []byte) (int, error) {
 		return 0, errRead
-	}}, &fakeWriter{}, &tunhandlerTestRakeCrypto{}, service.NewDefaultPacketHandler())
+	}}, &fakeWriter{}, &tunhandlerTestRakeCrypto{}, ctrl, service.NewDefaultPacketHandler())
 
 	if err := h.HandleTun(); err == nil || err.Error() != fmt.Sprintf("could not read a packet from TUN: %v", errRead) {
 		t.Fatalf("expected read error wrapped, got %v", err)
@@ -121,7 +124,7 @@ func TestHandleTun_EncryptError(t *testing.T) {
 		return len(dummyData), nil
 	}}
 	errEnc := errors.New("encrypt fail")
-	h := NewTunHandler(ctx, reader, &fakeWriter{}, &tunhandlerTestRakeCrypto{err: errEnc}, service.NewDefaultPacketHandler())
+	h := NewTunHandler(ctx, reader, &fakeWriter{}, &tunhandlerTestRakeCrypto{err: errEnc}, rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false), service.NewDefaultPacketHandler())
 
 	if err := h.HandleTun(); err == nil || err.Error() != fmt.Sprintf("could not encrypt packet: %v", errEnc) {
 		t.Fatalf("expected encrypt error wrapped, got %v", err)
@@ -137,7 +140,7 @@ func TestHandleTun_WriteError(t *testing.T) {
 	}}
 	errWrite := errors.New("write fail")
 	writer := &fakeWriter{err: errWrite}
-	h := NewTunHandler(ctx, reader, writer, &tunhandlerTestRakeCrypto{prefix: []byte("x:")}, service.NewDefaultPacketHandler())
+	h := NewTunHandler(ctx, reader, writer, &tunhandlerTestRakeCrypto{prefix: []byte("x:")}, rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false), service.NewDefaultPacketHandler())
 
 	if err := h.HandleTun(); err == nil || err.Error() != fmt.Sprintf("could not write packet to transport: %v", errWrite) {
 		t.Fatalf("expected write error wrapped, got %v", err)
@@ -164,7 +167,7 @@ func TestHandleTun_SuccessThenCancel(t *testing.T) {
 	writer := &fakeWriter{}
 	crypto := &tunhandlerTestRakeCrypto{prefix: []byte("pre-")}
 
-	h := NewTunHandler(ctx, reader, writer, crypto, service.NewDefaultPacketHandler())
+	h := NewTunHandler(ctx, reader, writer, crypto, rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false), service.NewDefaultPacketHandler())
 
 	done := make(chan error)
 	go func() {
@@ -196,7 +199,8 @@ func TestHandleTun_ReadErrorAfterCancel_ReturnsNil(t *testing.T) {
 		cancel()
 		return 0, errors.New("read fail")
 	}}
-	h := NewTunHandler(ctx, r, &fakeWriter{}, &tunhandlerTestRakeCrypto{}, service.NewDefaultPacketHandler())
+	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	h := NewTunHandler(ctx, r, &fakeWriter{}, &tunhandlerTestRakeCrypto{}, ctrl, service.NewDefaultPacketHandler())
 
 	if err := h.HandleTun(); err != nil {
 		t.Fatalf("expected nil because ctx canceled, got %v", err)
@@ -213,7 +217,8 @@ func TestHandleTun_EncryptErrorAfterCancel_ReturnsNil(t *testing.T) {
 		return 3, nil
 	}}
 	crypt := &tunHandlerTestCancelOnEncrypt{cancel: cancel, err: errors.New("enc fail")}
-	h := NewTunHandler(ctx, r, &fakeWriter{}, crypt, service.NewDefaultPacketHandler())
+	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	h := NewTunHandler(ctx, r, &fakeWriter{}, crypt, ctrl, service.NewDefaultPacketHandler())
 
 	if err := h.HandleTun(); err != nil {
 		t.Fatalf("expected nil because ctx canceled before encrypt error handling, got %v", err)
@@ -229,7 +234,8 @@ func TestHandleTun_WriteErrorAfterCancel_ReturnsNil(t *testing.T) {
 		return 3, nil
 	}}
 	w := &tunHandlerTestCancelWriter{cancel: cancel}
-	h := NewTunHandler(ctx, r, w, &tunhandlerTestRakeCrypto{prefix: []byte("x:")}, service.NewDefaultPacketHandler())
+	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	h := NewTunHandler(ctx, r, w, &tunhandlerTestRakeCrypto{prefix: []byte("x:")}, ctrl, service.NewDefaultPacketHandler())
 
 	if err := h.HandleTun(); err != nil {
 		t.Fatalf("expected nil because ctx canceled before write error handling, got %v", err)
@@ -252,7 +258,8 @@ func TestHandleTun_ReadReturnsNAndEOF_OneWriteThenEOF(t *testing.T) {
 		return 0, io.EOF
 	}}
 	w := &fakeWriter{}
-	h := NewTunHandler(ctx, r, w, &tunhandlerTestRakeCrypto{prefix: []byte("pre-")}, service.NewDefaultPacketHandler())
+	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	h := NewTunHandler(ctx, r, w, &tunhandlerTestRakeCrypto{prefix: []byte("pre-")}, ctrl, service.NewDefaultPacketHandler())
 
 	err := h.HandleTun()
 	if err == nil || err.Error() != "could not read a packet from TUN: EOF" {

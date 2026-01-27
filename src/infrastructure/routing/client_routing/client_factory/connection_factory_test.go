@@ -172,7 +172,7 @@ func TestEstablishConnection_InvalidPort_TCP_ParseError(t *testing.T) {
 	}
 	f := &ConnectionFactory{conf: conf}
 
-	_, _, err := f.EstablishConnection(context.Background())
+	_, _, _, err := f.EstablishConnection(context.Background())
 	if err == nil {
 		t.Fatalf("expected parse error for bad port")
 	}
@@ -186,7 +186,7 @@ func TestEstablishConnection_InvalidPort_UDP_ParseError(t *testing.T) {
 	}
 	f := &ConnectionFactory{conf: conf}
 
-	_, _, err := f.EstablishConnection(context.Background())
+	_, _, _, err := f.EstablishConnection(context.Background())
 	if err == nil {
 		t.Fatalf("expected parse error for bad UDP port")
 	}
@@ -293,7 +293,7 @@ func TestEstablishConnection_WS_EmptyHost_And_EmptyConnectionIP(t *testing.T) {
 		WSSettings: mkWSSettings("", "", "8080", settings.WS),
 	}
 	f := &ConnectionFactory{conf: conf}
-	_, _, err := f.EstablishConnection(context.Background())
+	_, _, _, err := f.EstablishConnection(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "ws dial: empty host") {
 		t.Fatalf("expected empty host error, got: %v", err)
 	}
@@ -306,7 +306,7 @@ func TestEstablishConnection_WS_EmptyPort(t *testing.T) {
 		WSSettings: mkWSSettings("127.0.0.1", "", "", settings.WS),
 	}
 	f := &ConnectionFactory{conf: conf}
-	_, _, err := f.EstablishConnection(context.Background())
+	_, _, _, err := f.EstablishConnection(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "ws dial: empty port") {
 		t.Fatalf("expected empty port error, got: %v", err)
 	}
@@ -319,7 +319,7 @@ func TestEstablishConnection_WS_InvalidPort_NonNumeric(t *testing.T) {
 		WSSettings: mkWSSettings("127.0.0.1", "", "abc", settings.WS),
 	}
 	f := &ConnectionFactory{conf: conf}
-	_, _, err := f.EstablishConnection(context.Background())
+	_, _, _, err := f.EstablishConnection(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "ws dial: invalid port") {
 		t.Fatalf("expected invalid port error, got: %v", err)
 	}
@@ -332,7 +332,7 @@ func TestEstablishConnection_WS_InvalidPort_OutOfRange(t *testing.T) {
 		WSSettings: mkWSSettings("127.0.0.1", "", "70000", settings.WS),
 	}
 	f := &ConnectionFactory{conf: conf}
-	_, _, err := f.EstablishConnection(context.Background())
+	_, _, _, err := f.EstablishConnection(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "ws dial: invalid port") {
 		t.Fatalf("expected invalid port error, got: %v", err)
 	}
@@ -345,7 +345,7 @@ func TestEstablishConnection_WSS_EmptyHost(t *testing.T) {
 		WSSettings: mkWSSettings("", "", "443", settings.WSS),
 	}
 	f := &ConnectionFactory{conf: conf}
-	_, _, err := f.EstablishConnection(context.Background())
+	_, _, _, err := f.EstablishConnection(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "wss dial: empty host") {
 		t.Fatalf("expected empty host error, got: %v", err)
 	}
@@ -359,7 +359,7 @@ func TestEstablishConnection_WSS_DefaultPort443_And_WrappedError(t *testing.T) {
 		WSSettings: mkWSSettings("127.0.0.1", "", "", settings.WSS),
 	}
 	f := &ConnectionFactory{conf: conf}
-	_, _, err := f.EstablishConnection(context.Background())
+	_, _, _, err := f.EstablishConnection(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "unable to establish WebSocket connection") {
 		t.Fatalf("expected wrapped WS connect error, got: %v", err)
 	}
@@ -372,7 +372,7 @@ func TestEstablishConnection_WSS_InvalidPort_OutOfRange(t *testing.T) {
 		WSSettings: mkWSSettings("127.0.0.1", "", "70000", settings.WSS),
 	}
 	f := &ConnectionFactory{conf: conf}
-	_, _, err := f.EstablishConnection(context.Background())
+	_, _, _, err := f.EstablishConnection(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "wss dial: invalid port") {
 		t.Fatalf("expected invalid port error, got: %v", err)
 	}
@@ -382,7 +382,7 @@ func TestEstablishConnection_UnsupportedProtocol(t *testing.T) {
 	t.Parallel()
 	conf := client.Configuration{Protocol: 999}
 	f := &ConnectionFactory{conf: conf}
-	_, _, err := f.EstablishConnection(context.Background())
+	_, _, _, err := f.EstablishConnection(context.Background())
 	if err == nil {
 		t.Fatalf("expected error for unsupported protocol")
 	}
@@ -397,7 +397,7 @@ func TestEstablishConnection_TCP_DialError_IsWrapped(t *testing.T) {
 	}
 	f := &ConnectionFactory{conf: conf}
 
-	_, _, err := f.EstablishConnection(context.Background())
+	_, _, _, err := f.EstablishConnection(context.Background())
 	if err == nil {
 		t.Fatalf("expected dial error")
 	}
@@ -414,7 +414,7 @@ func TestEstablishConnection_WS_DialError_IsWrapped(t *testing.T) {
 		WSSettings: mkWSSettings("127.0.0.1", "", "9", settings.WS),
 	}
 	f := &ConnectionFactory{conf: conf}
-	_, _, err := f.EstablishConnection(context.Background())
+	_, _, _, err := f.EstablishConnection(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "unable to establish WebSocket connection") {
 		t.Fatalf("expected wrapped WS dial error, got: %v", err)
 	}

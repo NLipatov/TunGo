@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"tungo/application/network/connection"
+	"tungo/application/network/rekey"
 	"tungo/application/network/routing"
 	"tungo/application/network/routing/tun"
 )
@@ -22,9 +23,9 @@ type RouterFactoryConnectionFactoryMock struct {
 	Called bool
 }
 
-func (m *RouterFactoryConnectionFactoryMock) EstablishConnection(_ context.Context) (connection.Transport, connection.Crypto, error) {
+func (m *RouterFactoryConnectionFactoryMock) EstablishConnection(_ context.Context) (connection.Transport, connection.Crypto, *rekey.Controller, error) {
 	m.Called = true
-	return m.Conn, m.Crypto, m.Err
+	return m.Conn, m.Crypto, nil, m.Err
 }
 
 // RouterFactoryTunClientManagerMock mocks tun.ClientManager.
@@ -55,6 +56,7 @@ type RouterFactoryClientWorkerFactoryMock struct {
 	Conn   connection.Transport
 	Tun    io.ReadWriteCloser
 	Crypto connection.Crypto
+	Ctrl   *rekey.Controller
 
 	Called bool
 }
@@ -64,12 +66,14 @@ func (m *RouterFactoryClientWorkerFactoryMock) CreateWorker(
 	conn connection.Transport,
 	tun io.ReadWriteCloser,
 	cryptographyService connection.Crypto,
+	controller *rekey.Controller,
 ) (routing.Worker, error) {
 	m.Called = true
 	m.Ctx = ctx
 	m.Conn = conn
 	m.Tun = tun
 	m.Crypto = cryptographyService
+	m.Ctrl = controller
 	return m.Worker, m.Err
 }
 

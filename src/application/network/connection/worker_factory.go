@@ -3,6 +3,7 @@ package connection
 import (
 	"context"
 	"io"
+	"tungo/application/network/rekey"
 	"tungo/application/network/routing"
 	"tungo/infrastructure/settings"
 )
@@ -13,6 +14,7 @@ type ClientWorkerFactory interface {
 		conn Transport,
 		tun io.ReadWriteCloser,
 		cryptographyService Crypto,
+		controller *rekey.Controller,
 	) (routing.Worker, error)
 }
 

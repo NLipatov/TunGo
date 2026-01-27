@@ -2,6 +2,7 @@ package connection
 
 import (
 	"net/netip"
+	"tungo/application/network/rekey"
 )
 
 // Session is abstraction over established secure session of data-transfer between 2 hosts.
@@ -19,4 +20,7 @@ type Session interface {
 
 	// Crypto is a getter for Crypto, which used for encryption/decryption operations.
 	Crypto() Crypto
+
+	// RekeyController returns control-plane rekey state; may be nil for protocols without rekey.
+	RekeyController() *rekey.Controller
 }

@@ -6,9 +6,9 @@ import (
 	"io"
 	"time"
 	"tungo/application/network/connection"
+	"tungo/application/network/rekey"
 	"tungo/application/network/routing/tun"
 	"tungo/domain/network/service"
-	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/settings"
 
@@ -20,6 +20,7 @@ type TunHandler struct {
 	reader              io.Reader // abstraction over TUN device
 	writer              io.Writer // abstraction over transport
 	cryptographyService connection.Crypto
+	rekeyController     *rekey.Controller
 	servicePacket       service.PacketHandler
 	controlPacketBuffer [128]byte
 	rotateAt            time.Time
@@ -30,6 +31,7 @@ func NewTunHandler(ctx context.Context,
 	reader io.Reader,
 	writer io.Writer,
 	cryptographyService connection.Crypto,
+	rekeyController *rekey.Controller,
 	servicePacket service.PacketHandler,
 ) tun.Handler {
 	return &TunHandler{
@@ -37,6 +39,7 @@ func NewTunHandler(ctx context.Context,
 		reader:              reader,
 		writer:              writer,
 		cryptographyService: cryptographyService,
+		rekeyController:     rekeyController,
 		servicePacket:       servicePacket,
 		rotateAt:            time.Now().UTC().Add(10 * time.Second),
 		handshakeCrypto:     &handshake.DefaultCrypto{},
@@ -104,11 +107,8 @@ func (w *TunHandler) HandleTun() error {
 					w.rotateAt = time.Now().UTC().Add(10 * time.Second)
 					continue
 				}
-				if session, ok := w.cryptographyService.(*chacha20.DefaultUdpSession); ok {
-					session.SetPendingRekeyPrivateKey(privateKey)
-				} else {
-					fmt.Println("unable to store rekey private key: crypto session type mismatch")
-				}
+				// Controller must always be present for UDP; panic on misconfiguration.
+				w.rekeyController.SetPendingRekeyPrivateKey(privateKey)
 
 				payloadBuf := w.controlPacketBuffer[chacha20poly1305.NonceSize:]
 				if len(publicKey) != service.RekeyPublicKeyLen {

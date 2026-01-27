@@ -22,7 +22,7 @@ func (u *RouterFactory) CreateRouter(
 	tunManager tun.ClientManager,
 	workerFactory connection.ClientWorkerFactory,
 ) (application.Router, connection.Transport, tun.Device, error) {
-	conn, cryptographyService, connErr := connectionFactory.EstablishConnection(ctx)
+	conn, cryptographyService, controller, connErr := connectionFactory.EstablishConnection(ctx)
 	if connErr != nil {
 		return nil, nil, nil, connErr
 	}
@@ -33,7 +33,7 @@ func (u *RouterFactory) CreateRouter(
 		return nil, nil, nil, deviceErr
 	}
 
-	worker, workerErr := workerFactory.CreateWorker(ctx, conn, device, cryptographyService)
+	worker, workerErr := workerFactory.CreateWorker(ctx, conn, device, cryptographyService, controller)
 	if workerErr != nil {
 		return nil, nil, nil, workerErr
 	}

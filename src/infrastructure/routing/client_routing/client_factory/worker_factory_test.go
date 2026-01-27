@@ -56,7 +56,7 @@ func TestWorkerFactory_CreateWorker_UnsupportedProtocol(t *testing.T) {
 	crypto := &WorkerFactoryCryptoMock{}
 
 	ctx := context.Background()
-	worker, err := wf.CreateWorker(ctx, transport, tun, crypto)
+	worker, err := wf.CreateWorker(ctx, transport, tun, crypto, nil)
 	if err == nil {
 		t.Fatalf("expected error for unsupported protocol, got nil and worker=%v", worker)
 	}
@@ -80,7 +80,7 @@ func TestWorkerFactory_CreateWorker_TCP(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	worker, err := wf.CreateWorker(ctx, transport, tun, crypto)
+	worker, err := wf.CreateWorker(ctx, transport, tun, crypto, nil)
 	if err != nil {
 		t.Fatalf("expected no error for TCP protocol, got: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestWorkerFactory_CreateWorker_WS(t *testing.T) {
 	crypto := &WorkerFactoryCryptoMock{}
 
 	ctx := context.Background()
-	worker, err := wf.CreateWorker(ctx, transport, tun, crypto)
+	worker, err := wf.CreateWorker(ctx, transport, tun, crypto, nil)
 	if err != nil {
 		t.Fatalf("expected no error for WS protocol, got: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestWorkerFactory_CreateWorker_UDP(t *testing.T) {
 	crypto := &WorkerFactoryCryptoMock{}
 
 	ctx := context.Background()
-	worker, err := wf.CreateWorker(ctx, udpConn, tun, crypto)
+	worker, err := wf.CreateWorker(ctx, udpConn, tun, crypto, nil)
 	if err != nil {
 		t.Fatalf("expected no error for UDP protocol, got: %v", err)
 	}

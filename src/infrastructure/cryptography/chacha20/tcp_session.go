@@ -3,7 +3,6 @@ package chacha20
 import (
 	"crypto/cipher"
 	"fmt"
-	"unsafe"
 
 	"golang.org/x/crypto/chacha20poly1305"
 )
@@ -15,7 +14,6 @@ type DefaultTcpSession struct {
 	RecvNonce          *Nonce
 	isServer           bool
 	SessionId          [32]byte
-	nonceValidator     *StrictCounter
 	encryptionAadBuf   [aadLength]byte
 	decryptionAadBuf   [aadLength]byte
 	encryptionNonceBuf [chacha20poly1305.NonceSize]byte
@@ -37,10 +35,9 @@ func NewTcpCryptographyService(id [32]byte, sendKey, recvKey []byte, isServer bo
 		SessionId:          id,
 		sendCipher:         sendCipher,
 		recvCipher:         recvCipher,
-		RecvNonce:          NewNonce(),
-		SendNonce:          NewNonce(),
+		RecvNonce:          NewNonce(0),
+		SendNonce:          NewNonce(0),
 		isServer:           isServer,
-		nonceValidator:     NewStrictCounter(),
 		encryptionNonceBuf: [chacha20poly1305.NonceSize]byte{},
 		decryptionNonceBuf: [chacha20poly1305.NonceSize]byte{},
 	}, nil
@@ -73,12 +70,6 @@ func (s *DefaultTcpSession) Decrypt(ciphertext []byte) ([]byte, error) {
 	}
 
 	nonceBytes := s.RecvNonce.Encode(s.decryptionNonceBuf[:])
-
-	//converts nonceBytes to [12]byte with no allocations
-	nBErr := s.nonceValidator.Validate(*(*[12]byte)(unsafe.Pointer(&nonceBytes[0])))
-	if nBErr != nil {
-		return nil, nBErr
-	}
 
 	aad := s.CreateAAD(!s.isServer, nonceBytes, s.decryptionAadBuf[:])
 	plaintext, err := s.recvCipher.Open(ciphertext[:0], nonceBytes, ciphertext, aad)

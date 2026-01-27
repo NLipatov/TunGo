@@ -3,6 +3,7 @@ package tcp_chacha20
 import (
 	"net/netip"
 	"tungo/application/network/connection"
+	"tungo/application/network/rekey"
 )
 
 type Session struct {
@@ -39,6 +40,10 @@ func (s Session) ExternalAddrPort() netip.AddrPort {
 
 func (s Session) Crypto() connection.Crypto {
 	return s.cryptographyService
+}
+
+func (s Session) RekeyController() *rekey.Controller {
+	return nil
 }
 
 func (s Session) Transport() connection.Transport {

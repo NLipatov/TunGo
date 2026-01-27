@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 	"tungo/application/network/connection"
+	"tungo/application/network/rekey"
 	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/handshake"
@@ -32,10 +33,10 @@ func NewConnectionFactory(conf client.Configuration) connection.Factory {
 
 func (f *ConnectionFactory) EstablishConnection(
 	ctx context.Context,
-) (connection.Transport, connection.Crypto, error) {
+) (connection.Transport, connection.Crypto, *rekey.Controller, error) {
 	connSettings, connSettingsErr := f.connectionSettings()
 	if connSettingsErr != nil {
-		return nil, nil, connSettingsErr
+		return nil, nil, nil, connSettingsErr
 	}
 
 	deadline := time.Now().Add(time.Duration(math.Max(float64(connSettings.DialTimeoutMs), 5000)) * time.Millisecond)
@@ -46,12 +47,12 @@ func (f *ConnectionFactory) EstablishConnection(
 	case settings.UDP:
 		ap, apErr := netip.ParseAddrPort(net.JoinHostPort(connSettings.ConnectionIP, connSettings.Port))
 		if apErr != nil {
-			return nil, nil, apErr
+			return nil, nil, nil, apErr
 		}
 
 		adapter, err := f.dialUDP(establishCtx, ap)
 		if err != nil {
-			return nil, nil, fmt.Errorf("unable to establish UDP connection: %w", err)
+			return nil, nil, nil, fmt.Errorf("unable to establish UDP connection: %w", err)
 		}
 
 		return f.establishSecuredConnection(establishCtx, connSettings, adapter, chacha20.NewUdpSessionBuilder(
@@ -60,12 +61,12 @@ func (f *ConnectionFactory) EstablishConnection(
 	case settings.TCP:
 		ap, apErr := netip.ParseAddrPort(net.JoinHostPort(connSettings.ConnectionIP, connSettings.Port))
 		if apErr != nil {
-			return nil, nil, apErr
+			return nil, nil, nil, apErr
 		}
 
 		adapter, err := f.dialTCP(establishCtx, ap)
 		if err != nil {
-			return nil, nil, fmt.Errorf("unable to establish TCP connection: %w", err)
+			return nil, nil, nil, fmt.Errorf("unable to establish TCP connection: %w", err)
 		}
 
 		return f.establishSecuredConnection(establishCtx, connSettings, adapter, chacha20.NewTcpSessionBuilder(
@@ -78,18 +79,18 @@ func (f *ConnectionFactory) EstablishConnection(
 			host = connSettings.ConnectionIP
 		}
 		if host == "" {
-			return nil, nil, fmt.Errorf("ws dial: empty host (neither Host nor ConnectionIP provided)")
+			return nil, nil, nil, fmt.Errorf("ws dial: empty host (neither Host nor ConnectionIP provided)")
 		}
 		port := connSettings.Port
 		if port == "" {
-			return nil, nil, fmt.Errorf("ws dial: empty port")
+			return nil, nil, nil, fmt.Errorf("ws dial: empty port")
 		}
 		if pn, err := strconv.Atoi(port); err != nil || pn < 1 || pn > 65535 {
-			return nil, nil, fmt.Errorf("ws dial: invalid port: %q", port)
+			return nil, nil, nil, fmt.Errorf("ws dial: invalid port: %q", port)
 		}
 		adapter, err := f.dialWS(establishCtx, ctx, scheme, host, port)
 		if err != nil {
-			return nil, nil, fmt.Errorf("unable to establish WebSocket connection: %w", err)
+			return nil, nil, nil, fmt.Errorf("unable to establish WebSocket connection: %w", err)
 		}
 
 		return f.establishSecuredConnection(establishCtx, connSettings, adapter, chacha20.NewTcpSessionBuilder(
@@ -99,27 +100,27 @@ func (f *ConnectionFactory) EstablishConnection(
 		scheme := "wss"
 		host := connSettings.Host
 		if host == "" {
-			return nil, nil, fmt.Errorf("wss dial: empty host")
+			return nil, nil, nil, fmt.Errorf("wss dial: empty host")
 		}
 		port := connSettings.Port
 		if port == "" {
 			port = "443"
 		}
 		if portNumber, err := strconv.Atoi(port); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		} else if portNumber < 1 || portNumber > 65535 {
-			return nil, nil, fmt.Errorf("wss dial: invalid port: %d", portNumber)
+			return nil, nil, nil, fmt.Errorf("wss dial: invalid port: %d", portNumber)
 		}
 		adapter, err := f.dialWS(establishCtx, ctx, scheme, host, port)
 		if err != nil {
-			return nil, nil, fmt.Errorf("unable to establish WebSocket connection: %w", err)
+			return nil, nil, nil, fmt.Errorf("unable to establish WebSocket connection: %w", err)
 		}
 
 		return f.establishSecuredConnection(establishCtx, connSettings, adapter, chacha20.NewTcpSessionBuilder(
 			chacha20.NewDefaultAEADBuilder()),
 		)
 	default:
-		return nil, nil, fmt.Errorf("unsupported protocol: %v", connSettings.Protocol)
+		return nil, nil, nil, fmt.Errorf("unsupported protocol: %v", connSettings.Protocol)
 	}
 }
 
@@ -143,7 +144,7 @@ func (f *ConnectionFactory) establishSecuredConnection(
 	s settings.Settings,
 	adapter connection.Transport,
 	cryptoFactory connection.CryptoFactory,
-) (connection.Transport, connection.Crypto, error) {
+) (connection.Transport, connection.Crypto, *rekey.Controller, error) {
 	//connect to server and exchange secret
 	secret := network.NewDefaultSecret(
 		s,
@@ -154,12 +155,12 @@ func (f *ConnectionFactory) establishSecuredConnection(
 
 	session := network.NewDefaultSecureSession(adapter, cancellableSecret)
 	cancellableSession := network.NewSecureSessionWithDeadline(ctx, session)
-	ad, cr, err := cancellableSession.Establish()
+	ad, cr, ctrl, err := cancellableSession.Establish()
 	if err != nil {
 		_ = adapter.Close()
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	return ad, cr, nil
+	return ad, cr, ctrl, nil
 }
 
 func (f *ConnectionFactory) dialTCP(

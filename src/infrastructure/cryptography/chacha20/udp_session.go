@@ -10,21 +10,18 @@ import (
 type (
 	DefaultUdpSession struct {
 		SessionId        [32]byte
-		encoder          DefaultUDPEncoder
 		sendCipher       cipher.AEAD
 		recvCipher       cipher.AEAD
-		sendKey          []byte
-		recvKey          []byte
 		nonce            *Nonce
 		isServer         bool
 		nonceValidator   *Sliding64
-		pendingRekeyPriv *[32]byte
+		epoch            Epoch
 		encryptionAadBuf [60]byte //32 bytes for sessionId, 16 bytes for direction, 12 bytes for nonce. 60 bytes total.
 		decryptionAadBuf [60]byte //32 bytes for sessionId, 16 bytes for direction, 12 bytes for nonce. 60 bytes total.
 	}
 )
 
-func NewUdpSession(id [32]byte, sendKey, recvKey []byte, isServer bool) (*DefaultUdpSession, error) {
+func NewUdpSession(id [32]byte, sendKey, recvKey []byte, isServer bool, epoch Epoch) (*DefaultUdpSession, error) {
 	sendCipher, err := chacha20poly1305.New(sendKey)
 	if err != nil {
 		return nil, err
@@ -35,17 +32,19 @@ func NewUdpSession(id [32]byte, sendKey, recvKey []byte, isServer bool) (*Defaul
 		return nil, err
 	}
 
+	return NewUdpSessionWithCiphers(id, sendCipher, recvCipher, isServer, epoch), nil
+}
+
+func NewUdpSessionWithCiphers(id [32]byte, sendCipher, recvCipher cipher.AEAD, isServer bool, epoch Epoch) *DefaultUdpSession {
 	return &DefaultUdpSession{
 		SessionId:      id,
 		sendCipher:     sendCipher,
 		recvCipher:     recvCipher,
-		sendKey:        append([]byte(nil), sendKey...),
-		recvKey:        append([]byte(nil), recvKey...),
-		nonce:          NewNonce(),
+		nonce:          NewNonce(epoch),
 		isServer:       isServer,
+		epoch:          epoch,
 		nonceValidator: NewSliding64(),
-		encoder:        DefaultUDPEncoder{},
-	}, nil
+	}
 }
 
 func (s *DefaultUdpSession) Encrypt(plaintext []byte) ([]byte, error) {
@@ -105,6 +104,10 @@ func (s *DefaultUdpSession) Decrypt(ciphertext []byte) ([]byte, error) {
 	return pt, nil
 }
 
+func (s *DefaultUdpSession) Epoch() Epoch {
+	return s.epoch
+}
+
 func (s *DefaultUdpSession) CreateAAD(isServerToClient bool, nonce, aad []byte) []byte {
 	// aad must have len >= aadLen (60)
 	copy(aad[:sessionIdentifierLength], s.SessionId[:])
@@ -115,37 +118,4 @@ func (s *DefaultUdpSession) CreateAAD(isServerToClient bool, nonce, aad []byte) 
 	}
 	copy(aad[sessionIdentifierLength+directionLength:aadLength], nonce) // 48..60
 	return aad[:aadLength]
-}
-
-// ClientToServerKey returns the key used for C->S traffic.
-// For server instances this is recvKey; for clients it is sendKey.
-func (s *DefaultUdpSession) ClientToServerKey() []byte {
-	if s.isServer {
-		return s.recvKey
-	}
-	return s.sendKey
-}
-
-// ServerToClientKey returns the key used for S->C traffic.
-// For server instances this is sendKey; for clients it is recvKey.
-func (s *DefaultUdpSession) ServerToClientKey() []byte {
-	if s.isServer {
-		return s.sendKey
-	}
-	return s.recvKey
-}
-
-func (s *DefaultUdpSession) SetPendingRekeyPrivateKey(priv [32]byte) {
-	s.pendingRekeyPriv = &priv
-}
-
-func (s *DefaultUdpSession) PendingRekeyPrivateKey() ([32]byte, bool) {
-	if s.pendingRekeyPriv == nil {
-		return [32]byte{}, false
-	}
-	return *s.pendingRekeyPriv, true
-}
-
-func (s *DefaultUdpSession) ClearPendingRekeyPrivateKey() {
-	s.pendingRekeyPriv = nil
 }

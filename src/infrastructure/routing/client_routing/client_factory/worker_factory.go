@@ -7,6 +7,7 @@ import (
 	"net"
 	"time"
 	"tungo/application/network/connection"
+	"tungo/application/network/rekey"
 	"tungo/application/network/routing"
 	"tungo/domain/network/service"
 	"tungo/infrastructure/PAL/configuration/client"
@@ -28,7 +29,7 @@ func NewWorkerFactory(configuration client.Configuration) connection.ClientWorke
 }
 
 func (w *WorkerFactory) CreateWorker(
-	ctx context.Context, conn connection.Transport, tun io.ReadWriteCloser, crypto connection.Crypto,
+	ctx context.Context, conn connection.Transport, tun io.ReadWriteCloser, crypto connection.Crypto, controller *rekey.Controller,
 ) (routing.Worker, error) {
 	switch w.conf.Protocol {
 	case settings.UDP:
@@ -43,6 +44,7 @@ func (w *WorkerFactory) CreateWorker(
 			tun,
 			transport,
 			crypto,
+			controller,
 			service.NewDefaultPacketHandler(),
 		)
 		// transportHandler reads from transport and writes to tun
@@ -51,6 +53,7 @@ func (w *WorkerFactory) CreateWorker(
 			transport,
 			tun,
 			crypto,
+			controller,
 			service.NewDefaultPacketHandler(),
 		)
 		return udp_chacha20.NewUdpWorker(transportHandler, tunHandler), nil

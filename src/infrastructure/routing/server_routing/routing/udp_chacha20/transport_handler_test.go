@@ -12,6 +12,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"tungo/application/network/rekey"
 	"tungo/infrastructure/network/udp/queue/udp"
 
 	"tungo/application/network/connection"
@@ -59,8 +60,8 @@ func (r *TransportHandlerQueueReader) Run() {
 
 type failingCryptoFactory struct{}
 
-func (f failingCryptoFactory) FromHandshake(_ connection.Handshake, _ bool) (connection.Crypto, error) {
-	return nil, errors.New("crypto init fail")
+func (f failingCryptoFactory) FromHandshake(_ connection.Handshake, _ bool) (connection.Crypto, *rekey.Controller, error) {
+	return nil, nil, errors.New("crypto init fail")
 }
 
 // Slow handshake mock: simulates long-running ServerSideHandshake

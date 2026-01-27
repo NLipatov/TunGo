@@ -102,7 +102,7 @@ func (t *TransportHandler) registerClient(conn net.Conn, tunFile io.ReadWriteClo
 	}
 	t.logger.Printf("TCP: %s registered as %s", conn.RemoteAddr(), internalIP)
 
-	cryptographyService, cryptographyServiceErr := t.cryptographyFactory.FromHandshake(h, true)
+	cryptographyService, _, cryptographyServiceErr := t.cryptographyFactory.FromHandshake(h, true)
 	if cryptographyServiceErr != nil {
 		_ = conn.Close()
 		return fmt.Errorf("client %s failed registration: %w", conn.RemoteAddr(), cryptographyServiceErr)

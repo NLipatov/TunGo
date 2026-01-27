@@ -96,12 +96,15 @@ func TestTcpSessionBuilder_FromHandshake_Server_Success(t *testing.T) {
 		server: keyGen.validKey(),
 		client: keyGen.validKey(),
 	}
-	svc, err := b.FromHandshake(hs, true)
+	svc, ctrl, err := b.FromHandshake(hs, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if svc == nil {
 		t.Fatalf("expected non-nil service")
+	}
+	if ctrl != nil {
+		t.Fatalf("expected nil controller for TCP")
 	}
 }
 
@@ -113,12 +116,15 @@ func TestTcpSessionBuilder_FromHandshake_Client_Success(t *testing.T) {
 		server: keyGen.validKey(),
 		client: keyGen.validKey(),
 	}
-	svc, err := b.FromHandshake(hs, false)
+	svc, ctrl, err := b.FromHandshake(hs, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if svc == nil {
 		t.Fatalf("expected non-nil service")
+	}
+	if ctrl != nil {
+		t.Fatalf("expected nil controller for TCP")
 	}
 }
 
@@ -130,12 +136,15 @@ func TestTcpSessionBuilder_FromHandshake_Server_InvalidServerKey(t *testing.T) {
 		server: keyGen.invalidKey(),
 		client: keyGen.validKey(),
 	}
-	svc, err := b.FromHandshake(hs, true)
+	svc, ctrl, err := b.FromHandshake(hs, true)
 	if err == nil {
 		t.Fatalf("expected error, got nil")
 	}
 	if svc != nil {
 		t.Fatalf("expected nil service")
+	}
+	if ctrl != nil {
+		t.Fatalf("expected nil controller")
 	}
 }
 
@@ -147,12 +156,15 @@ func TestTcpSessionBuilder_FromHandshake_Server_InvalidClientKey(t *testing.T) {
 		server: keyGen.validKey(),
 		client: keyGen.invalidKey(),
 	}
-	svc, err := b.FromHandshake(hs, true)
+	svc, ctrl, err := b.FromHandshake(hs, true)
 	if err == nil {
 		t.Fatalf("expected error, got nil")
 	}
 	if svc != nil {
 		t.Fatalf("expected nil service")
+	}
+	if ctrl != nil {
+		t.Fatalf("expected nil controller")
 	}
 }
 
@@ -164,12 +176,15 @@ func TestTcpSessionBuilder_FromHandshake_Client_InvalidClientKey(t *testing.T) {
 		server: keyGen.validKey(),
 		client: keyGen.invalidKey(),
 	}
-	svc, err := b.FromHandshake(hs, false)
+	svc, ctrl, err := b.FromHandshake(hs, false)
 	if err == nil {
 		t.Fatalf("expected error, got nil")
 	}
 	if svc != nil {
 		t.Fatalf("expected nil service")
+	}
+	if ctrl != nil {
+		t.Fatalf("expected nil controller")
 	}
 }
 
@@ -181,11 +196,14 @@ func TestTcpSessionBuilder_FromHandshake_Client_InvalidServerKey(t *testing.T) {
 		server: keyGen.invalidKey(),
 		client: keyGen.validKey(),
 	}
-	svc, err := b.FromHandshake(hs, false)
+	svc, ctrl, err := b.FromHandshake(hs, false)
 	if err == nil {
 		t.Fatalf("expected error, got nil")
 	}
 	if svc != nil {
 		t.Fatalf("expected nil service")
+	}
+	if ctrl != nil {
+		t.Fatalf("expected nil controller")
 	}
 }

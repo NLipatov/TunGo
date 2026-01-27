@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 	"tungo/application/network/connection"
+	"tungo/application/network/rekey"
 )
 
 // secureSessionWithDeadlineTestMockSession implements SecureSession for testing.
@@ -17,11 +18,11 @@ type secureSessionWithDeadlineTestMockSession struct {
 	block     bool
 }
 
-func (m *secureSessionWithDeadlineTestMockSession) Establish() (connection.Transport, connection.Crypto, error) {
+func (m *secureSessionWithDeadlineTestMockSession) Establish() (connection.Transport, connection.Crypto, *rekey.Controller, error) {
 	if m.block {
 		select {} // hang forever
 	}
-	return m.transport, m.crypto, m.err
+	return m.transport, m.crypto, nil, m.err
 }
 
 // secureSessionWithDeadlineTestMockAdapter is a no-op Transport stub.
@@ -50,7 +51,7 @@ func TestSecureSessionWithDeadline_Success(t *testing.T) {
 	}
 	wrapper := NewSecureSessionWithDeadline(context.Background(), mockSess)
 
-	conn, svc, err := wrapper.Establish()
+	conn, svc, ctrl, err := wrapper.Establish()
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -59,6 +60,9 @@ func TestSecureSessionWithDeadline_Success(t *testing.T) {
 	}
 	if svc != crypto {
 		t.Errorf("expected crypto %v, got %v", crypto, svc)
+	}
+	if ctrl != nil {
+		t.Errorf("expected controller nil, got %v", ctrl)
 	}
 }
 
@@ -74,7 +78,7 @@ func TestSecureSessionWithDeadline_UnderlyingError(t *testing.T) {
 	}
 	wrapper := NewSecureSessionWithDeadline(context.Background(), mockSess)
 
-	conn, svc, err := wrapper.Establish()
+	conn, svc, _, err := wrapper.Establish()
 	if conn != nil {
 		t.Errorf("expected nil transport on error, got %v", conn)
 	}
@@ -97,10 +101,11 @@ func TestSecureSessionWithDeadline_Cancel(t *testing.T) {
 	resultCh := make(chan struct{})
 	var transportRes connection.Transport
 	var svcRes connection.Crypto
+	var ctrlRes *rekey.Controller
 	var errRes error
 
 	go func() {
-		transportRes, svcRes, errRes = wrapper.Establish()
+		transportRes, svcRes, ctrlRes, errRes = wrapper.Establish()
 		close(resultCh)
 	}()
 
@@ -119,6 +124,9 @@ func TestSecureSessionWithDeadline_Cancel(t *testing.T) {
 	}
 	if svcRes != nil {
 		t.Errorf("expected nil crypto after cancel, got %v", svcRes)
+	}
+	if ctrlRes != nil {
+		t.Errorf("expected nil controller after cancel, got %v", ctrlRes)
 	}
 	if !errors.Is(errRes, context.Canceled) {
 		t.Errorf("expected error context.Canceled, got %v", errRes)

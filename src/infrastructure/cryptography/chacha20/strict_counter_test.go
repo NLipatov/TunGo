@@ -6,10 +6,12 @@ import (
 	"testing"
 )
 
-func makeNonce(high uint32, low uint64) [12]byte {
+func makeNonce(high uint16, low uint64) [12]byte {
 	var nonce [12]byte
-	binary.BigEndian.PutUint64(nonce[0:8], low)
-	binary.BigEndian.PutUint32(nonce[8:12], high)
+	// epoch = 0 for tests
+	binary.BigEndian.PutUint16(nonce[0:2], 0)
+	binary.BigEndian.PutUint16(nonce[2:4], high)
+	binary.BigEndian.PutUint64(nonce[4:12], low)
 	return nonce
 }
 
@@ -103,13 +105,13 @@ func TestSliding64_BigJumpMarksCurrent(t *testing.T) {
 	var n [12]byte
 
 	// low = 1
-	binary.BigEndian.PutUint64(n[0:8], 1)
+	binary.BigEndian.PutUint64(n[4:12], 1)
 	if err := v.Validate(n); err != nil {
 		t.Fatalf("unexpected: %v", err)
 	}
 
 	// big jump: low = 1 + 100
-	binary.BigEndian.PutUint64(n[0:8], 101)
+	binary.BigEndian.PutUint64(n[4:12], 101)
 	if err := v.Validate(n); err != nil {
 		t.Fatalf("unexpected: %v", err)
 	}

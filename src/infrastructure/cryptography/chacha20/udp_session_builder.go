@@ -2,6 +2,7 @@ package chacha20
 
 import (
 	"tungo/application/network/connection"
+	"tungo/application/network/rekey"
 )
 
 type UdpSessionBuilder struct {
@@ -17,19 +18,16 @@ func NewUdpSessionBuilder(aeadBuilder connection.AEADBuilder) connection.CryptoF
 func (u UdpSessionBuilder) FromHandshake(
 	handshake connection.Handshake,
 	isServer bool,
-) (connection.Crypto, error) {
+) (connection.Crypto, *rekey.Controller, error) {
 	sendCipher, recvCipher, err := u.aeadBuilder.FromHandshake(handshake, isServer)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return &DefaultUdpSession{
-		SessionId:      handshake.Id(),
-		sendCipher:     sendCipher,
-		recvCipher:     recvCipher,
-		nonce:          NewNonce(),
-		isServer:       isServer,
-		nonceValidator: NewSliding64(),
-		encoder:        DefaultUDPEncoder{},
-	}, nil
+	// Directional keys (raw) stay in the controller, not the core crypto.
+	c2s := handshake.KeyClientToServer()
+	s2c := handshake.KeyServerToClient()
+
+	core := NewEpochUdpCrypto(handshake.Id(), sendCipher, recvCipher, isServer)
+	return core, rekey.NewController(core, c2s, s2c, isServer), nil
 }

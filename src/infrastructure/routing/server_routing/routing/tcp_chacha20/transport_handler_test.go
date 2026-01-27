@@ -16,6 +16,7 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 
 	"tungo/application/network/connection"
+	"tungo/application/network/rekey"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
 	"tungo/infrastructure/settings"
 )
@@ -171,11 +172,11 @@ func (f *fakeCrypto) Decrypt(in []byte) ([]byte, error) {
 
 type fakeCryptoFactory struct{ err error }
 
-func (f *fakeCryptoFactory) FromHandshake(_ connection.Handshake, _ bool) (connection.Crypto, error) {
+func (f *fakeCryptoFactory) FromHandshake(_ connection.Handshake, _ bool) (connection.Crypto, *rekey.Controller, error) {
 	if f.err != nil {
-		return nil, f.err
+		return nil, nil, f.err
 	}
-	return &fakeCrypto{}, nil
+	return &fakeCrypto{}, nil, nil
 }
 
 type fakeSessionRepo struct {

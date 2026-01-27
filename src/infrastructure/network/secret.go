@@ -3,11 +3,12 @@ package network
 import (
 	"fmt"
 	"tungo/application/network/connection"
+	"tungo/application/network/rekey"
 	"tungo/infrastructure/settings"
 )
 
 type Secret interface {
-	Exchange(transport connection.Transport) (connection.Crypto, error)
+	Exchange(transport connection.Transport) (connection.Crypto, *rekey.Controller, error)
 }
 
 type DefaultSecret struct {
@@ -29,21 +30,21 @@ func NewDefaultSecret(settings settings.Settings,
 
 func (s *DefaultSecret) Exchange(
 	transport connection.Transport,
-) (connection.Crypto, error) {
+) (connection.Crypto, *rekey.Controller, error) {
 	handshakeErr := s.handshake.ClientSideHandshake(transport, s.settings)
 	if handshakeErr != nil {
-		return nil, handshakeErr
+		return nil, nil, handshakeErr
 	}
 
-	crypto, cryptoErr := s.cryptographyServiceFactory.
+	crypto, controller, cryptoErr := s.cryptographyServiceFactory.
 		FromHandshake(s.handshake, false)
 	if cryptoErr != nil {
-		return nil, fmt.Errorf(
+		return nil, nil, fmt.Errorf(
 			"failed to create client crypto: %w",
 			cryptoErr,
 		)
 
 	}
 
-	return crypto, nil
+	return crypto, controller, nil
 }

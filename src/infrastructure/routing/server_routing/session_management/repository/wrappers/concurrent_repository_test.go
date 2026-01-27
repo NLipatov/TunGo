@@ -5,6 +5,7 @@ import (
 	"sync"
 	"testing"
 	"tungo/application/network/connection"
+	"tungo/application/network/rekey"
 )
 
 type concurrentManagerMockSession struct {
@@ -18,6 +19,9 @@ func (s concurrentManagerMockSession) Transport() connection.Transport {
 	return nil
 }
 func (s concurrentManagerMockSession) Crypto() connection.Crypto {
+	return nil
+}
+func (s concurrentManagerMockSession) RekeyController() *rekey.Controller {
 	return nil
 }
 

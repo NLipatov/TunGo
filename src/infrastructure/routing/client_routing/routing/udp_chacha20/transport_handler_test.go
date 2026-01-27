@@ -8,9 +8,14 @@ import (
 	"os"
 	"testing"
 	"time"
+	"tungo/application/network/rekey"
 	"tungo/domain/network/service"
 	"tungo/infrastructure/cryptography/chacha20"
 )
+
+type dummyRekeyer struct{}
+
+func (dummyRekeyer) Rekey(_, _ []byte) (uint16, error) { return 0, nil }
 
 // thTestCrypto implements application.Crypto for testing TransportHandler
 // Only Decrypt is used in tests.
@@ -94,7 +99,8 @@ func TestHandleTransport_ImmediateCancel(t *testing.T) {
 		func(p []byte) (int, error) { t.Fatal("Read called despite cancel"); return 0, nil },
 	}}
 	w := &thTestWriter{}
-	h := NewTransportHandler(ctx, r, w, &thTestCrypto{}, &servicePacketMock{})
+	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	h := NewTransportHandler(ctx, r, w, &thTestCrypto{}, ctrl, &servicePacketMock{})
 	if err := h.HandleTransport(); err != nil {
 		t.Errorf("expected nil on immediate cancel, got %v", err)
 	}
@@ -106,7 +112,8 @@ func TestHandleTransport_ReadErrorOther(t *testing.T) {
 		func(p []byte) (int, error) { return 0, errRead },
 	}}
 	w := &thTestWriter{}
-	h := NewTransportHandler(context.Background(), r, w, &thTestCrypto{}, &servicePacketMock{})
+	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	h := NewTransportHandler(context.Background(), r, w, &thTestCrypto{}, ctrl, &servicePacketMock{})
 	exp := fmt.Sprintf("could not read a packet from adapter: %v", errRead)
 	if err := h.HandleTransport(); err == nil || err.Error() != exp {
 		t.Errorf("expected %q, got %v", exp, err)
@@ -122,7 +129,8 @@ func TestHandleTransport_ReadDeadlineExceededSkip(t *testing.T) {
 		func(p []byte) (int, error) { <-ctx.Done(); return 0, errors.New("stop") },
 	}}
 	w := &thTestWriter{}
-	h := NewTransportHandler(ctx, r, w, &thTestCrypto{}, &servicePacketMock{})
+	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	h := NewTransportHandler(ctx, r, w, &thTestCrypto{}, ctrl, &servicePacketMock{})
 
 	done := make(chan error)
 	go func() { done <- h.HandleTransport() }()
@@ -139,7 +147,8 @@ func TestHandleTransport_ServerResetSignal(t *testing.T) {
 		func(p []byte) (int, error) { p[0] = byte(service.SessionReset); return 1, nil },
 	}}
 	w := &thTestWriter{}
-	h := NewTransportHandler(context.Background(), r, w, &thTestCrypto{}, &servicePacketSessionResetMock{})
+	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	h := NewTransportHandler(context.Background(), r, w, &thTestCrypto{}, ctrl, &servicePacketSessionResetMock{})
 	exp := "server requested cryptographyService reset"
 	if err := h.HandleTransport(); err == nil || err.Error() != exp {
 		t.Errorf("expected %q, got %v", exp, err)
@@ -159,7 +168,8 @@ func TestHandleTransport_DecryptNonUniqueNonceSkip(t *testing.T) {
 	}}
 	w := &thTestWriter{}
 	crypto := &thTestCrypto{err: chacha20.ErrNonUniqueNonce}
-	h := NewTransportHandler(ctx, r, w, crypto, &servicePacketMock{})
+	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	h := NewTransportHandler(ctx, r, w, crypto, ctrl, &servicePacketMock{})
 
 	done := make(chan error)
 	go func() { done <- h.HandleTransport() }()
@@ -179,7 +189,8 @@ func TestHandleTransport_DecryptErrorFatal(t *testing.T) {
 	}}
 	w := &thTestWriter{}
 	crypto := &thTestCrypto{err: errDec}
-	h := NewTransportHandler(context.Background(), r, w, crypto, &servicePacketMock{})
+	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	h := NewTransportHandler(context.Background(), r, w, crypto, ctrl, &servicePacketMock{})
 	exp := fmt.Sprintf("failed to decrypt data: %v", errDec)
 	if err := h.HandleTransport(); err == nil || err.Error() != exp {
 		t.Errorf("expected %q, got %v", exp, err)
@@ -195,7 +206,8 @@ func TestHandleTransport_WriteError(t *testing.T) {
 	errWrite := errors.New("write fail")
 	w := &thTestWriter{err: errWrite}
 	crypto := &thTestCrypto{output: d}
-	h := NewTransportHandler(context.Background(), r, w, crypto, &servicePacketMock{})
+	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	h := NewTransportHandler(context.Background(), r, w, crypto, ctrl, &servicePacketMock{})
 	exp := fmt.Sprintf("failed to write to TUN: %v", errWrite)
 	if err := h.HandleTransport(); err == nil || err.Error() != exp {
 		t.Errorf("expected %q, got %v", exp, err)
@@ -214,7 +226,8 @@ func TestHandleTransport_SuccessThenCancel(t *testing.T) {
 	}}
 	w := &thTestWriter{}
 	crypto := &thTestCrypto{output: decrypted}
-	h := NewTransportHandler(ctx, r, w, crypto, &servicePacketMock{})
+	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	h := NewTransportHandler(ctx, r, w, crypto, ctrl, &servicePacketMock{})
 
 	done := make(chan error)
 	go func() { done <- h.HandleTransport() }()

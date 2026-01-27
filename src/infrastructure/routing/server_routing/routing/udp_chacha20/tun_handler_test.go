@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 	"tungo/application/network/connection"
+	"tungo/application/network/rekey"
 )
 
 // ---------- Mocks (prefixed with the struct under test: TunHandler*) ----------
@@ -86,10 +87,11 @@ type mockSession struct {
 	external  netip.AddrPort
 }
 
-func (m *mockSession) Crypto() connection.Crypto        { return m.crypto }
-func (m *mockSession) Transport() connection.Transport  { return m.transport }
-func (m *mockSession) ExternalAddrPort() netip.AddrPort { return m.external }
-func (m *mockSession) InternalAddr() netip.Addr         { return m.internal }
+func (m *mockSession) Crypto() connection.Crypto          { return m.crypto }
+func (m *mockSession) Transport() connection.Transport    { return m.transport }
+func (m *mockSession) ExternalAddrPort() netip.AddrPort   { return m.external }
+func (m *mockSession) InternalAddr() netip.Addr           { return m.internal }
+func (m *mockSession) RekeyController() *rekey.Controller { return nil }
 
 // helper to build a session that matches the handler expectations
 func mkSession(c *TunHandlerMockConn, crypto *TunHandlerMockCrypto) connection.Session {

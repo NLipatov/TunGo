@@ -5,6 +5,7 @@ import (
 	"net/netip"
 	"testing"
 	"tungo/application/network/connection"
+	"tungo/application/network/rekey"
 )
 
 type fakeSession struct {
@@ -18,6 +19,9 @@ func (f *fakeSession) Transport() connection.Transport {
 	return nil
 }
 func (f *fakeSession) Crypto() connection.Crypto {
+	return nil
+}
+func (f *fakeSession) RekeyController() *rekey.Controller {
 	return nil
 }
 

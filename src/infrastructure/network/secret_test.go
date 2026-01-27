@@ -5,6 +5,7 @@ import (
 	"net"
 	"testing"
 	"tungo/application/network/connection"
+	"tungo/application/network/rekey"
 	"tungo/infrastructure/settings"
 )
 
@@ -29,8 +30,8 @@ type secretTestMockBuilder struct {
 	err error
 }
 
-func (m *secretTestMockBuilder) FromHandshake(_ connection.Handshake, _ bool) (connection.Crypto, error) {
-	return m.svc, m.err
+func (m *secretTestMockBuilder) FromHandshake(_ connection.Handshake, _ bool) (connection.Crypto, *rekey.Controller, error) {
+	return m.svc, nil, m.err
 }
 
 // mockCryptoService implements application.Crypto as a dummy.
@@ -50,9 +51,12 @@ func (m *mockConn) Close() error              { return nil }
 func TestExchange_HandshakeError(t *testing.T) {
 	hsErr := errors.New("handshake failed")
 	secret := NewDefaultSecret(settings.Settings{}, &secretTestMockHandshake{err: hsErr}, &secretTestMockBuilder{})
-	svc, err := secret.Exchange(&mockConn{})
+	svc, ctrl, err := secret.Exchange(&mockConn{})
 	if svc != nil {
 		t.Errorf("expected nil service on handshake error, got %v", svc)
+	}
+	if ctrl != nil {
+		t.Errorf("expected nil controller on handshake error, got %v", ctrl)
 	}
 	if !errors.Is(err, hsErr) {
 		t.Errorf("expected handshake error %v, got %v", hsErr, err)
@@ -67,9 +71,12 @@ func TestExchange_BuilderError(t *testing.T) {
 		&secretTestMockHandshake{err: nil},
 		&secretTestMockBuilder{svc: nil, err: builderErr},
 	)
-	svc, err := secret.Exchange(&mockConn{})
+	svc, ctrl, err := secret.Exchange(&mockConn{})
 	if svc != nil {
 		t.Errorf("expected nil service on builder error, got %v", svc)
+	}
+	if ctrl != nil {
+		t.Errorf("expected nil controller on builder error, got %v", ctrl)
 	}
 	wantPrefix := "failed to create client crypto: "
 	if err == nil || err.Error()[:len(wantPrefix)] != wantPrefix {
@@ -88,11 +95,14 @@ func TestExchange_Success(t *testing.T) {
 		&secretTestMockHandshake{err: nil},
 		&secretTestMockBuilder{svc: fakeSvc, err: nil},
 	)
-	svc, err := secret.Exchange(&mockConn{})
+	svc, ctrl, err := secret.Exchange(&mockConn{})
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 	if svc != fakeSvc {
 		t.Errorf("expected service %v, got %v", fakeSvc, svc)
+	}
+	if ctrl != nil {
+		t.Errorf("expected controller nil, got %v", ctrl)
 	}
 }

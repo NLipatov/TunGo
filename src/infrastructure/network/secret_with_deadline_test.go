@@ -6,21 +6,23 @@ import (
 	"testing"
 	"time"
 	"tungo/application/network/connection"
+	"tungo/application/network/rekey"
 )
 
 // secretWithDeadlineTestMockSecret implements Secret for testing.
 // If block==true, Exchange will hang forever; otherwise returns svc, err.
 type secretWithDeadlineTestMockSecret struct {
 	svc   connection.Crypto
+	ctrl  *rekey.Controller
 	err   error
 	block bool
 }
 
-func (m *secretWithDeadlineTestMockSecret) Exchange(_ connection.Transport) (connection.Crypto, error) {
+func (m *secretWithDeadlineTestMockSecret) Exchange(_ connection.Transport) (connection.Crypto, *rekey.Controller, error) {
 	if m.block {
 		select {} // hang
 	}
-	return m.svc, m.err
+	return m.svc, m.ctrl, m.err
 }
 
 // secretWithDeadlineTestMockConn is a no-op Transport.
@@ -43,13 +45,16 @@ func TestSecretWithDeadline_Success(t *testing.T) {
 	fakeSvc := &secretWithDeadlineTestMockCrypto{}
 	underlying := &secretWithDeadlineTestMockSecret{svc: fakeSvc, err: nil, block: false}
 	wrapper := NewSecretWithDeadline(ctx, underlying)
-	svc, err := wrapper.Exchange(&secretWithDeadlineTestMockConn{})
+	svc, ctrl, err := wrapper.Exchange(&secretWithDeadlineTestMockConn{})
 
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 	if svc != fakeSvc {
 		t.Errorf("expected service %v, got %v", fakeSvc, svc)
+	}
+	if ctrl != nil {
+		t.Errorf("expected controller nil, got %v", ctrl)
 	}
 }
 
@@ -59,7 +64,7 @@ func TestSecretWithDeadline_ErrorPropagation(t *testing.T) {
 	wantErr := errors.New("underlying failure")
 	underlying := &secretWithDeadlineTestMockSecret{svc: nil, err: wantErr, block: false}
 	wrapper := NewSecretWithDeadline(context.Background(), underlying)
-	svc, err := wrapper.Exchange(&secretWithDeadlineTestMockConn{})
+	svc, _, err := wrapper.Exchange(&secretWithDeadlineTestMockConn{})
 
 	if svc != nil {
 		t.Errorf("expected nil service on error, got %v", svc)
@@ -77,11 +82,12 @@ func TestSecretWithDeadline_Cancel(t *testing.T) {
 	wrapper := NewSecretWithDeadline(ctx, underlying)
 
 	var svcRes connection.Crypto
+	var ctrlRes *rekey.Controller
 	var errRes error
 	done := make(chan struct{})
 
 	go func() {
-		svcRes, errRes = wrapper.Exchange(&secretWithDeadlineTestMockConn{})
+		svcRes, ctrlRes, errRes = wrapper.Exchange(&secretWithDeadlineTestMockConn{})
 		close(done)
 	}()
 
@@ -97,6 +103,9 @@ func TestSecretWithDeadline_Cancel(t *testing.T) {
 
 	if svcRes != nil {
 		t.Errorf("expected nil service on cancel, got %v", svcRes)
+	}
+	if ctrlRes != nil {
+		t.Errorf("expected nil controller on cancel, got %v", ctrlRes)
 	}
 	if !errors.Is(errRes, context.Canceled) {
 		t.Errorf("expected context.Canceled error, got %v", errRes)

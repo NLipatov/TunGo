@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"testing"
 	"tungo/application/network/connection"
+	"tungo/application/network/rekey"
 )
 
 type sessionManagerFactoryDummySession struct {
@@ -22,6 +23,9 @@ func (d sessionManagerFactoryDummySession) Transport() connection.Transport {
 	return nil
 }
 func (d sessionManagerFactoryDummySession) Crypto() connection.Crypto {
+	return nil
+}
+func (d sessionManagerFactoryDummySession) RekeyController() *rekey.Controller {
 	return nil
 }
 
