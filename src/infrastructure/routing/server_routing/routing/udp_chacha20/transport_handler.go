@@ -8,6 +8,8 @@ import (
 	"net/netip"
 	"sync"
 	"time"
+	"tungo/infrastructure/cryptography/chacha20/rekey"
+	udphelpers "tungo/infrastructure/routing/udp"
 
 	"tungo/application/listeners"
 	"tungo/application/logging"
@@ -18,7 +20,6 @@ import (
 	"tungo/infrastructure/network/udp/adapters"
 	"tungo/infrastructure/network/udp/queue/udp"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
-	udphelpers "tungo/infrastructure/routing/udp"
 	"tungo/infrastructure/settings"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -124,7 +125,9 @@ func (t *TransportHandler) HandleTransport() error {
 
 			// Pass the slice view into the handler. The handler will copy it
 			// only when needed (for registration).
-			_ = t.handlePacket(clientAddr, buffer[:n])
+			if err := t.handlePacket(clientAddr, buffer[:n]); err != nil {
+				t.logger.Printf("failed to handle packet: %s", err)
+			}
 		}
 	}
 }
@@ -143,100 +146,22 @@ func (t *TransportHandler) handlePacket(
 	// Fast path: existing session.
 	session, sessionLookupErr := t.sessionManager.GetByExternalAddrPort(addrPort)
 	if sessionLookupErr == nil && session.ExternalAddrPort() == addrPort {
-		if ctrl := session.RekeyController(); ctrl != nil {
-			ctrl.AbortPendingIfExpired(time.Now())
+		rekeyCtrl := session.RekeyController()
+		if rekeyCtrl != nil {
+			rekeyCtrl.AbortPendingIfExpired(time.Now())
 		}
-		if len(packet) < 2 {
-			return fmt.Errorf("packet too short for nonce epoch")
-		}
-		epoch := binary.BigEndian.Uint16(packet[:2])
-
 		decrypted, decryptionErr := session.Crypto().Decrypt(packet)
 		if decryptionErr != nil {
 			t.logger.Printf("failed to decrypt data: %v", decryptionErr)
 			return decryptionErr
 		}
-
-		if spType, spOk := t.servicePacket.TryParseType(decrypted); spOk {
-			switch spType {
-			case service.RekeyInit:
-				if len(decrypted) < service.RekeyPacketLen {
-					t.logger.Printf("rekey init packet too short: %d bytes", len(decrypted))
-					return nil
-				}
-				var clientRekeyPub [service.RekeyPublicKeyLen]byte
-				copy(clientRekeyPub[:], decrypted[3:service.RekeyPacketLen])
-
-				serverPub, serverPriv, err := t.rekeyCrypto.GenerateX25519KeyPair()
-				if err != nil {
-					t.logger.Printf("rekey init: failed to generate server key pair: %v", err)
-					return nil
-				}
-				shared, err := curve25519.X25519(serverPriv[:], clientRekeyPub[:])
-				if err != nil {
-					t.logger.Printf("rekey init: failed to derive shared: %v", err)
-					return nil
-				}
-				rekeyCtrl := session.RekeyController()
-				if rekeyCtrl == nil {
-					t.logger.Printf("rekey init: unsupported crypto session type")
-					return nil
-				}
-				if rekeyCtrl.LastRekeyEpoch >= 65000 {
-					t.logger.Printf("rekey init: epoch exhausted, sending session reset")
-					t.sendSessionReset(addrPort)
-					return nil
-				}
-				currentC2S := rekeyCtrl.CurrentClientToServerKey()
-				currentS2C := rekeyCtrl.CurrentServerToClientKey()
-				newC2S, err := t.rekeyCrypto.DeriveKey(shared, currentC2S, []byte("tungo-rekey-c2s"))
-				if err != nil {
-					t.logger.Printf("rekey init: derive key failed: %v", err)
-					return nil
-				}
-				newS2C, err := t.rekeyCrypto.DeriveKey(shared, currentS2C, []byte("tungo-rekey-s2c"))
-				if err != nil {
-					t.logger.Printf("rekey init: derive key failed: %v", err)
-					return nil
-				}
-
-				sendKey := newC2S
-				recvKey := newS2C
-				if rekeyCtrl.IsServer {
-					sendKey, recvKey = newS2C, newC2S // server sends S2C, receives C2S
-				}
-				if _, err = rekeyCtrl.StartRekey(sendKey, recvKey); err != nil {
-					t.logger.Printf("rekey init: install/apply failed: %v", err)
-					return nil
-				}
-				// Only send ACK after successful rekey installation.
-				ackBuf := make([]byte, chacha20poly1305.NonceSize+service.RekeyPacketLen,
-					chacha20poly1305.NonceSize+service.RekeyPacketLen+chacha20poly1305.Overhead)
-				payload := ackBuf[chacha20poly1305.NonceSize:]
-				copy(payload[3:], serverPub)
-				if _, err := t.servicePacket.EncodeV1(service.RekeyAck, payload); err != nil {
-					t.logger.Printf("rekey init: failed to encode rekey ack: %v", err)
-					return nil
-				}
-				enc, err := session.Crypto().Encrypt(ackBuf)
-				if err != nil {
-					t.logger.Printf("rekey init: encrypt ack failed: %v", err)
-					return nil
-				}
-				if _, err := session.Transport().Write(enc); err != nil {
-					t.logger.Printf("rekey init: write ack failed: %v", err)
-					return nil
-				}
-			case service.RekeyAck:
-				t.logger.Printf("rekey ack detected")
-			default:
-				t.logger.Printf("unknown service packet type")
-			}
-			return nil
+		if rekeyCtrl != nil && !udphelpers.IsMulticastPacket(decrypted) {
+			epoch := binary.BigEndian.Uint16(packet[:2])
+			rekeyCtrl.ActivateSendEpoch(epoch)
 		}
 
-		if rekeyCtrl := session.RekeyController(); rekeyCtrl != nil && !udphelpers.IsMulticastPacket(decrypted) {
-			rekeyCtrl.ActivateSendEpoch(epoch)
+		if spType, spOk := t.servicePacket.TryParseType(decrypted); spOk {
+			return t.handleServicePacket(spType, decrypted, session, addrPort, rekeyCtrl)
 		}
 
 		_, err := t.writer.Write(decrypted)
@@ -258,6 +183,76 @@ func (t *TransportHandler) handlePacket(
 		go t.registerClient(addrPort, q)
 	}
 
+	return nil
+}
+
+func (t *TransportHandler) handleServicePacket(
+	packetType service.PacketType,
+	plaintext []byte,
+	session connection.Session,
+	addrPort netip.AddrPort,
+	rekeyCtrl *rekey.StateMachine,
+) error {
+	switch packetType {
+	case service.RekeyInit:
+		if rekeyCtrl == nil {
+			return fmt.Errorf("rekey init: unsupported crypto session type")
+		}
+		if len(plaintext) < service.RekeyPacketLen {
+			return fmt.Errorf("rekey init packet too short: %d bytes", len(plaintext))
+		}
+		var clientRekeyPub [service.RekeyPublicKeyLen]byte
+		copy(clientRekeyPub[:], plaintext[3:service.RekeyPacketLen])
+
+		serverPub, serverPriv, err := t.rekeyCrypto.GenerateX25519KeyPair()
+		if err != nil {
+			return fmt.Errorf("rekey init: failed to generate server key pair: %v", err)
+		}
+		shared, err := curve25519.X25519(serverPriv[:], clientRekeyPub[:])
+		if err != nil {
+			return fmt.Errorf("rekey init: failed to derive shared: %v", err)
+		}
+		if rekeyCtrl.LastRekeyEpoch >= 65000 {
+			t.sendSessionReset(addrPort)
+			return rekey.ErrEpochExhausted
+		}
+		currentC2S := rekeyCtrl.CurrentClientToServerKey()
+		currentS2C := rekeyCtrl.CurrentServerToClientKey()
+		newC2S, err := t.rekeyCrypto.DeriveKey(shared, currentC2S, []byte("tungo-rekey-c2s"))
+		if err != nil {
+			return fmt.Errorf("rekey init: derive key failed: %v", err)
+		}
+		newS2C, err := t.rekeyCrypto.DeriveKey(shared, currentS2C, []byte("tungo-rekey-s2c"))
+		if err != nil {
+			return fmt.Errorf("rekey init: derive key failed: %v", err)
+		}
+
+		sendKey := newC2S
+		recvKey := newS2C
+		if rekeyCtrl.IsServer {
+			sendKey, recvKey = newS2C, newC2S // server sends S2C, receives C2S
+		}
+		if _, err = rekeyCtrl.StartRekey(sendKey, recvKey); err != nil {
+			return fmt.Errorf("rekey init: install/apply failed: %v", err)
+		}
+		// Only send ACK after successful rekey installation.
+		ackBuf := make([]byte, chacha20poly1305.NonceSize+service.RekeyPacketLen,
+			chacha20poly1305.NonceSize+service.RekeyPacketLen+chacha20poly1305.Overhead)
+		payload := ackBuf[chacha20poly1305.NonceSize:]
+		copy(payload[3:], serverPub)
+		if _, err := t.servicePacket.EncodeV1(service.RekeyAck, payload); err != nil {
+			return fmt.Errorf("rekey init: failed to encode rekey ack: %v", err)
+		}
+		enc, err := session.Crypto().Encrypt(ackBuf)
+		if err != nil {
+			return fmt.Errorf("rekey init: encrypt ack failed: %v", err)
+		}
+		if _, err := session.Transport().Write(enc); err != nil {
+			return fmt.Errorf("rekey init: write ack failed: %v", err)
+		}
+	default:
+		t.logger.Printf("unexpected service packet type=%d from %v", packetType, addrPort)
+	}
 	return nil
 }
 
