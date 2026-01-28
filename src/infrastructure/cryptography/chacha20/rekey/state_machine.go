@@ -18,14 +18,15 @@ type Rekeyer interface {
 // It is intentionally not in the cryptography package to separate concerns.
 type StateMachine struct {
 	mu             sync.Mutex
-	Crypto         Rekeyer
+	crypto         Rekeyer
 	IsServer       bool
 	CurrentC2S     []byte
 	CurrentS2C     []byte
 	PendingPriv    *[32]byte
 	LastRekeyEpoch uint16
 	sendEpoch      uint16
-	pendingSend    *uint16
+	hasPending     bool
+	pendingSend    uint16
 	pendingSince   time.Time
 	state          State
 	pendingTimeout time.Duration
@@ -37,36 +38,29 @@ var (
 	ErrEpochExhausted = fmt.Errorf("epoch exhausted; requires full re-handshake")
 )
 
-type State int
-
-const (
-	StateStable State = iota
-	// StateInstalling means we started Rekey() but have not yet applied keys.
-	StateInstalling
-	// StatePending means new keys are installed for receive; send switch awaits confirmation.
-	StatePending
-)
-
-// Rekey FSM (single in-flight rekey):
+// State Machine (single in-flight rekey):
 // States:
-//   Stable: no pending epoch, sendEpoch active.
-//   Installing: Rekey() in progress, keys not yet applied.
-//   Pending: new epoch installed for recv, waiting for ConfirmSendEpoch (data) or timeout AbortPending.
+//
+//	Stable: no pending epoch, sendEpoch active.
+//	Installing: Rekey() in progress, keys not yet applied.
+//	Pending: new epoch installed for recv, waiting for PromoteSendEpoch (data) or timeout AbortPending.
 //
 // Allowed transitions:
-//   Stable --RekeyAndApply--> Installing --applyKeysLocked--> Pending --ConfirmSendEpoch--> Stable
-//   Pending --AbortPending/MaybeAbortPending(timeout)--> Stable
+//
+//	Stable --RekeyAndApply--> Installing --applyKeys--> Pending --PromoteSendEpoch--> Stable
+//	Pending --AbortPending/MaybeAbortPending(timeout)--> Stable
 //
 // Forbidden (must error/no-op):
-//   RekeyAndApply when not Stable
-//   ApplyKeys when not Stable or Installing
-//   ConfirmSendEpoch when not Pending
-//   second pending (pendingSend != nil) creation
-//   transitions that would remove last/active epoch (enforced in Rekeyer.RemoveEpoch/Rekey guards)
+//
+//	RekeyAndApply when not Stable
+//	ApplyKeys when not Stable or Installing
+//	PromoteSendEpoch when not Pending
+//	second pending (pendingSend != nil) creation
+//	transitions that would remove last/active epoch (enforced in Rekeyer.RemoveEpoch/Rekey guards)
 
-func NewController(core Rekeyer, c2s, s2c []byte, isServer bool) *StateMachine {
+func NewStateMachine(core Rekeyer, c2s, s2c []byte, isServer bool) *StateMachine {
 	return &StateMachine{
-		Crypto:         core,
+		crypto:         core,
 		IsServer:       isServer,
 		CurrentC2S:     append([]byte(nil), c2s...),
 		CurrentS2C:     append([]byte(nil), s2c...),
@@ -128,23 +122,10 @@ func (c *StateMachine) State() State {
 func (c *StateMachine) PendingEpoch() (uint16, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.pendingSend == nil {
+	if !c.hasPending {
 		return 0, false
 	}
-	return *c.pendingSend, true
-}
-
-// ApplyKeys updates the stored raw keys after a successful rekey operation.
-// sendKey/recvKey follow the same orientation as the crypto: sendKey is for
-// outbound traffic of this peer. epoch must be strictly increasing.
-func (c *StateMachine) ApplyKeys(sendKey, recvKey []byte, epoch uint16) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.state != StateInstalling && c.state != StateStable {
-		return fmt.Errorf("invalid state for ApplyKeys: %v", c.state)
-	}
-	return c.applyKeysLocked(sendKey, recvKey, epoch)
+	return c.pendingSend, true
 }
 
 // RekeyAndApply performs an atomic control-plane update:
@@ -155,41 +136,40 @@ func (c *StateMachine) ApplyKeys(sendKey, recvKey []byte, epoch uint16) error {
 func (c *StateMachine) RekeyAndApply(sendKey, recvKey []byte) (uint16, error) {
 	c.mu.Lock()
 	if c.state != StateStable {
-		curState := c.state
 		c.mu.Unlock()
-		return 0, fmt.Errorf("rekey not allowed in state %v", curState)
+		return 0, fmt.Errorf("rekey not allowed in state %v", c.state)
 	}
 	if c.LastRekeyEpoch >= maxEpochSafety {
 		c.mu.Unlock()
 		return 0, ErrEpochExhausted
 	}
 	c.state = StateInstalling
-	c.mu.Unlock()
-
-	epoch, err := c.Crypto.Rekey(sendKey, recvKey)
+	c.mu.Unlock() // Let FSM to process other events while wait for crypto
+	epoch, err := c.crypto.Rekey(sendKey, recvKey)
 	if err != nil {
 		c.mu.Lock()
-		c.state = StateStable
+		c.state = StateStable // back to stable on crypto err
 		c.mu.Unlock()
 		return 0, err
 	}
-
 	c.mu.Lock()
 	defer c.mu.Unlock()
-
+	// is it still in StateInstalling?
 	if c.state != StateInstalling {
 		return 0, fmt.Errorf("unexpected state after rekey: %v", c.state)
 	}
-	if err := c.applyKeysLocked(sendKey, recvKey, epoch); err != nil {
+	// can we apply keys?
+	if err := c.applyKeys(sendKey, recvKey, epoch); err != nil {
 		c.state = StateStable
 		return 0, err
 	}
+	// move next
 	c.state = StatePending
 	return epoch, nil
 }
 
-// applyKeysLocked assumes c.mu is held.
-func (c *StateMachine) applyKeysLocked(sendKey, recvKey []byte, epoch uint16) error {
+func (c *StateMachine) applyKeys(sendKey, recvKey []byte, epoch uint16) error {
+	// epoch should monotonically increase
 	if epoch <= c.LastRekeyEpoch {
 		return fmt.Errorf("non-monotonic epoch: got %d, last %d", epoch, c.LastRekeyEpoch)
 	}
@@ -201,57 +181,40 @@ func (c *StateMachine) applyKeysLocked(sendKey, recvKey []byte, epoch uint16) er
 		c.CurrentS2C = append([]byte(nil), recvKey...)
 	}
 	// new keys ready for receive; defer send switch until confirmation
-	c.pendingSend = &epoch
+	c.pendingSend = epoch
+	c.hasPending = true
 	c.pendingSince = time.Now()
 	return nil
 }
 
-// ConfirmSendEpoch promotes pending epoch to active for sending once a packet
-// with the pending epoch is successfully received.
-func (c *StateMachine) ConfirmSendEpoch(epoch uint16) {
+// PromoteSendEpoch switches the local send side to the given epoch.
+// It is called after a valid packet with this epoch is received from the peer,
+// which proves the peer has installed the key and can decrypt traffic.
+// After this call, outgoing packets are encrypted with the new epoch.
+func (c *StateMachine) PromoteSendEpoch(epoch uint16) {
 	c.mu.Lock()
-	if c.state != StatePending || c.pendingSend == nil || epoch != *c.pendingSend || epoch <= c.sendEpoch {
+	if c.state != StatePending || !c.hasPending || epoch != c.pendingSend || epoch <= c.sendEpoch {
 		c.mu.Unlock()
 		return
 	}
-	old := c.sendEpoch
-	c.Crypto.SetSendEpoch(epoch)
+	c.crypto.SetSendEpoch(epoch)
 	c.sendEpoch = epoch
-	c.pendingSend = nil
+	c.hasPending = false
 	c.LastRekeyEpoch = epoch
 	c.state = StateStable
 	c.mu.Unlock()
-
-	// log outside lock to avoid blocking hot path
-	fmt.Printf("send epoch switched: %d -> %d\n", old, epoch)
-}
-
-// AbortPending rolls back a pending rekey, removing the pending epoch session.
-// It leaves the current send/recv session intact and returns to Stable.
-func (c *StateMachine) AbortPending() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.state != StatePending || c.pendingSend == nil {
-		return
-	}
-	_ = c.Crypto.RemoveEpoch(*c.pendingSend) // best-effort
-	c.pendingSend = nil
-	// roll back epoch marker to the active send epoch to allow next rekey
-	c.LastRekeyEpoch = c.sendEpoch
-	c.state = StateStable
-	fmt.Printf("send epoch abort pending; remain on %d\n", c.sendEpoch)
 }
 
 // MaybeAbortPending aborts if the pending timeout has elapsed.
 func (c *StateMachine) MaybeAbortPending(now time.Time) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.state != StatePending || c.pendingSend == nil {
+	if c.state != StatePending || !c.hasPending {
 		return
 	}
 	if now.Sub(c.pendingSince) >= c.pendingTimeout {
-		_ = c.Crypto.RemoveEpoch(*c.pendingSend)
-		c.pendingSend = nil
+		_ = c.crypto.RemoveEpoch(c.pendingSend)
+		c.hasPending = false
 		c.state = StateStable
 		fmt.Printf("send epoch abort by timeout; remain on %d\n", c.sendEpoch)
 	}

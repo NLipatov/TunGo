@@ -60,7 +60,7 @@ func TestTransportHandler_ContextDone(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 	h := NewTransportHandler(ctx, rdr(), io.Discard, &TransportHandlerMockCrypto{}, ctrl, servicePacketMock{})
 	if err := h.HandleTransport(); err != nil {
 		t.Fatalf("want nil, got %v", err)
@@ -69,7 +69,7 @@ func TestTransportHandler_ContextDone(t *testing.T) {
 
 func TestTransportHandler_ReadError(t *testing.T) {
 	readErr := errors.New("read fail")
-	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 	h := NewTransportHandler(context.Background(),
 		rdr(struct {
 			data []byte
@@ -86,7 +86,7 @@ func TestTransportHandler_ReadError(t *testing.T) {
 func TestTransportHandler_ReadErrorAfterCancel_ReturnsNil(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 	h := NewTransportHandler(ctx,
 		rdr(struct {
 			data []byte
@@ -102,7 +102,7 @@ func TestTransportHandler_ReadErrorAfterCancel_ReturnsNil(t *testing.T) {
 
 func TestTransportHandler_InvalidTooShort_ThenEOF(t *testing.T) {
 	short := make([]byte, chacha20poly1305.Overhead-1) // triggers "invalid length"
-	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 	h := NewTransportHandler(context.Background(),
 		rdr(
 			struct {
@@ -125,7 +125,7 @@ func TestTransportHandler_InvalidTooShort_ThenEOF(t *testing.T) {
 func TestTransportHandler_DecryptError(t *testing.T) {
 	cipher := make([]byte, chacha20poly1305.Overhead+8)
 	decErr := errors.New("decrypt fail")
-	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 	h := NewTransportHandler(context.Background(),
 		rdr(struct {
 			data []byte
@@ -145,7 +145,7 @@ func TestTransportHandler_WriteError(t *testing.T) {
 	w := &TransportHandlerMockWriter{err: wErr}
 	plain := []byte{1, 2, 3, 4}
 
-	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 	h := NewTransportHandler(context.Background(),
 		rdr(struct {
 			data []byte
@@ -167,7 +167,7 @@ func TestTransportHandler_Happy_ThenEOF(t *testing.T) {
 	w := &TransportHandlerMockWriter{}
 	plain := []byte{9, 9, 9, 9, 9, 9}
 
-	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 	h := NewTransportHandler(context.Background(),
 		rdr(
 			struct {

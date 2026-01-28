@@ -29,5 +29,5 @@ func (u UdpSessionBuilder) FromHandshake(
 	s2c := handshake.KeyServerToClient()
 
 	core := NewEpochUdpCrypto(handshake.Id(), sendCipher, recvCipher, isServer)
-	return core, rekey.NewController(core, c2s, s2c, isServer), nil
+	return core, rekey.NewStateMachine(core, c2s, s2c, isServer), nil
 }

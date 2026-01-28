@@ -136,7 +136,7 @@ func (t *TransportHandler) HandleTransport() error {
 						continue
 					}
 					// Initiator proactively switches send to drive peer confirmation.
-					t.rekeyController.ConfirmSendEpoch(epoch)
+					t.rekeyController.PromoteSendEpoch(epoch)
 					t.rekeyController.ClearPendingRekeyPrivateKey()
 				case service.SessionReset:
 					return fmt.Errorf("server requested cryptographyService reset")
@@ -148,7 +148,7 @@ func (t *TransportHandler) HandleTransport() error {
 
 			// Only confirm epoch on actual data packets (non-service, non-multicast)
 			if !udp.IsMulticastPacket(decrypted) {
-				t.rekeyController.ConfirmSendEpoch(epoch)
+				t.rekeyController.PromoteSendEpoch(epoch)
 			}
 
 			_, writeErr := t.writer.Write(decrypted)

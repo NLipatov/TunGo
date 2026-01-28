@@ -120,7 +120,7 @@ func (t *TransportHandler) handleRekeyAck(payload []byte) {
 	}
 	if epoch, err := t.rekeyController.RekeyAndApply(newC2S, newS2C); err == nil {
 		// For TCP we can switch immediately.
-		t.rekeyController.ConfirmSendEpoch(epoch)
+		t.rekeyController.PromoteSendEpoch(epoch)
 		t.rekeyController.ClearPendingRekeyPrivateKey()
 	} else {
 		log.Printf("rekey ack: install/apply failed: %v", err)

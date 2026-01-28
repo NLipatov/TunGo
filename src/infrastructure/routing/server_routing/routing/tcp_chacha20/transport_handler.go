@@ -244,7 +244,7 @@ func (t *TransportHandler) handleRekeyInit(rc *rekey.StateMachine, session conne
 		return
 	}
 	// switch send immediately for TCP
-	rc.ConfirmSendEpoch(rc.LastRekeyEpoch)
+	rc.PromoteSendEpoch(rc.LastRekeyEpoch)
 
 	ackPayload := make([]byte, service.RekeyPacketLen)
 	copy(ackPayload[3:], serverPub)

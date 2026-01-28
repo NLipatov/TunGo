@@ -34,7 +34,7 @@ func (m *secretTestMockBuilder) FromHandshake(_ connection.Handshake, _ bool) (c
 	return m.svc, nil, m.err
 }
 
-// mockCryptoService implements application.Crypto as a dummy.
+// mockCryptoService implements application.crypto as a dummy.
 type mockCryptoService struct{}
 
 func (m *mockCryptoService) Encrypt(_ []byte) ([]byte, error) { return nil, nil }

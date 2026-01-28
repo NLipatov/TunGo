@@ -62,7 +62,7 @@ func TestTunHandler_ContextDone(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // canceled before entering the loop
 
-	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 	h := NewTunHandler(ctx, rdr(), io.Discard, &TunHandlerMockCrypto{}, ctrl, servicePacketMock{})
 	if err := h.HandleTun(); err != nil {
 		t.Fatalf("want nil, got %v", err)
@@ -70,7 +70,7 @@ func TestTunHandler_ContextDone(t *testing.T) {
 }
 
 func TestTunHandler_EOF(t *testing.T) {
-	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 	h := NewTunHandler(context.Background(),
 		rdr(struct {
 			data []byte
@@ -86,7 +86,7 @@ func TestTunHandler_EOF(t *testing.T) {
 
 func TestTunHandler_ReadError(t *testing.T) {
 	readErr := errors.New("read fail")
-	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 	h := NewTunHandler(context.Background(),
 		rdr(struct {
 			data []byte
@@ -102,7 +102,7 @@ func TestTunHandler_ReadError(t *testing.T) {
 
 func TestTunHandler_EncryptError(t *testing.T) {
 	encErr := errors.New("encrypt fail")
-	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 	h := NewTunHandler(context.Background(),
 		rdr(
 			struct {
@@ -121,7 +121,7 @@ func TestTunHandler_EncryptError(t *testing.T) {
 func TestTunHandler_WriteError(t *testing.T) {
 	wErr := errors.New("write fail")
 	w := &TunHandlerMockWriter{err: wErr}
-	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 	h := NewTunHandler(context.Background(),
 		rdr(struct {
 			data []byte
@@ -141,7 +141,7 @@ func TestTunHandler_WriteError(t *testing.T) {
 
 func TestTunHandler_HappyPath_SinglePacket_ThenEOF(t *testing.T) {
 	w := &TunHandlerMockWriter{}
-	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 	h := NewTunHandler(context.Background(),
 		rdr(
 			struct {
@@ -170,7 +170,7 @@ func TestTunHandler_ReadError_WhenContextCanceled_ReturnsNil(t *testing.T) {
 	cancel() // context already canceled before read
 
 	readErr := errors.New("any read error")
-	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 	h := NewTunHandler(
 		ctx,
 		rdr(struct {
@@ -189,7 +189,7 @@ func TestTunHandler_ReadError_WhenContextCanceled_ReturnsNil(t *testing.T) {
 
 func TestTunHandler_ZeroLengthPayload_ThenEOF(t *testing.T) {
 	w := &TunHandlerMockWriter{}
-	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 	h := NewTunHandler(
 		context.Background(),
 		rdr(

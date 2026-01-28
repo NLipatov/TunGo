@@ -47,7 +47,7 @@ func (p *TunHandlerMockParser) DestinationAddress(_ []byte) (netip.Addr, error) 
 	return p.addr, p.err
 }
 
-// Crypto mock.
+// crypto mock.
 // Assumes Encrypt returns a new slice (ct).
 type TunHandlerMockCrypto struct{ err error }
 

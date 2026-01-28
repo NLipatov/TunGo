@@ -24,7 +24,7 @@ func (dummyRekeyer) Rekey(_, _ []byte) (uint16, error) { return 0, nil }
 func (dummyRekeyer) SetSendEpoch(uint16)               {}
 func (dummyRekeyer) RemoveEpoch(uint16) bool           { return true }
 
-// thTestCrypto implements application.Crypto for testing TransportHandler
+// thTestCrypto implements application.crypto for testing TransportHandler
 // Only Decrypt is used in tests.
 type thTestCrypto struct {
 	output []byte
@@ -130,7 +130,7 @@ func TestHandleTransport_ImmediateCancel(t *testing.T) {
 		func(p []byte) (int, error) { t.Fatal("Read called despite cancel"); return 0, nil },
 	}}
 	w := &thTestWriter{}
-	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 	h := NewTransportHandler(ctx, r, w, &thTestCrypto{}, ctrl, &servicePacketMock{})
 	if err := h.HandleTransport(); err != nil {
 		t.Errorf("expected nil on immediate cancel, got %v", err)
@@ -143,7 +143,7 @@ func TestHandleTransport_ReadErrorOther(t *testing.T) {
 		func(p []byte) (int, error) { return 0, errRead },
 	}}
 	w := &thTestWriter{}
-	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 	h := NewTransportHandler(context.Background(), r, w, &thTestCrypto{}, ctrl, &servicePacketMock{})
 	exp := fmt.Sprintf("could not read a packet from adapter: %v", errRead)
 	if err := h.HandleTransport(); err == nil || err.Error() != exp {
@@ -160,7 +160,7 @@ func TestHandleTransport_ReadDeadlineExceededSkip(t *testing.T) {
 		func(p []byte) (int, error) { <-ctx.Done(); return 0, errors.New("stop") },
 	}}
 	w := &thTestWriter{}
-	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 	h := NewTransportHandler(ctx, r, w, &thTestCrypto{}, ctrl, &servicePacketMock{})
 
 	done := make(chan error)
@@ -178,7 +178,7 @@ func TestHandleTransport_ServerResetSignal(t *testing.T) {
 		func(p []byte) (int, error) { p[0] = byte(service.SessionReset); return 1, nil },
 	}}
 	w := &thTestWriter{}
-	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 	h := NewTransportHandler(context.Background(), r, w, &thTestCrypto{}, ctrl, &servicePacketSessionResetMock{})
 	exp := "server requested cryptographyService reset"
 	if err := h.HandleTransport(); err == nil || err.Error() != exp {
@@ -199,7 +199,7 @@ func TestHandleTransport_DecryptNonUniqueNonceSkip(t *testing.T) {
 	}}
 	w := &thTestWriter{}
 	crypto := &thTestCrypto{err: chacha20.ErrNonUniqueNonce}
-	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 	h := NewTransportHandler(ctx, r, w, crypto, ctrl, &servicePacketMock{})
 
 	done := make(chan error)
@@ -220,7 +220,7 @@ func TestHandleTransport_DecryptErrorFatal(t *testing.T) {
 	}}
 	w := &thTestWriter{}
 	crypto := &thTestCrypto{err: errDec}
-	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 	h := NewTransportHandler(context.Background(), r, w, crypto, ctrl, &servicePacketMock{})
 	exp := fmt.Sprintf("failed to decrypt data: %v", errDec)
 	if err := h.HandleTransport(); err == nil || err.Error() != exp {
@@ -236,7 +236,7 @@ func TestHandleTransport_WriteError(t *testing.T) {
 	errWrite := errors.New("write fail")
 	w := &thTestWriter{err: errWrite}
 	crypto := &thTestCrypto{output: d[1:]} // decrypted payload
-	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 	h := NewTransportHandler(context.Background(), r, w, crypto, ctrl, &servicePacketMock{})
 	exp := fmt.Sprintf("failed to write to TUN: %v", errWrite)
 	if err := h.HandleTransport(); err == nil || err.Error() != exp {
@@ -256,7 +256,7 @@ func TestHandleTransport_SuccessThenCancel(t *testing.T) {
 	}}
 	w := &thTestWriter{}
 	crypto := &thTestCrypto{output: decrypted}
-	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 	h := NewTransportHandler(ctx, r, w, crypto, ctrl, &servicePacketMock{})
 
 	done := make(chan error)
@@ -282,7 +282,7 @@ func TestHandleTransport_RekeyAckAfterDoubleInit_UsesOriginalPendingKey(t *testi
 
 	// Shared controller for TunHandler and TransportHandler.
 	rekeyer := &incRekeyer{}
-	ctrl := rekey.NewController(rekeyer, []byte("c2s0"), []byte("s2c0"), false)
+	ctrl := rekey.NewStateMachine(rekeyer, []byte("c2s0"), []byte("s2c0"), false)
 
 	// --- Step 1: fire two RekeyInit sends without ACK in between.
 	reader := &fakeReader{readFunc: func(p []byte) (int, error) {

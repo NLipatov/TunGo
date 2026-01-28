@@ -27,5 +27,5 @@ func (t TcpSessionBuilder) FromHandshake(handshake connection.Handshake,
 	// Directional raw keys live in controller for rekey derivation.
 	c2s := handshake.KeyClientToServer()
 	s2c := handshake.KeyServerToClient()
-	return core, rekey.NewController(core, c2s, s2c, isServer), nil
+	return core, rekey.NewStateMachine(core, c2s, s2c, isServer), nil
 }

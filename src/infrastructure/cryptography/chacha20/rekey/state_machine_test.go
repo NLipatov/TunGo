@@ -59,7 +59,7 @@ func TestEncryptNeverFailsWhileRingNonEmpty(t *testing.T) {
 // TestSinglePendingRekey enforces at most one in-flight rekey and idempotent duplicate.
 func TestSinglePendingRekey(t *testing.T) {
 	crypto := newTestCrypto(t)
-	ctrl := rekey.NewController(crypto, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(crypto, []byte("c2s"), []byte("s2c"), false)
 	ctrl.SetPendingTimeout(50 * time.Millisecond)
 
 	epoch1, err := ctrl.RekeyAndApply(make([]byte, chacha20poly1305.KeySize), make([]byte, chacha20poly1305.KeySize))
@@ -76,7 +76,7 @@ func TestSinglePendingRekey(t *testing.T) {
 		t.Fatalf("pending epoch changed: %v != %d", p, epoch1)
 	}
 	// Confirm resolves to stable.
-	ctrl.ConfirmSendEpoch(epoch1)
+	ctrl.PromoteSendEpoch(epoch1)
 	if ctrl.State() != rekey.StateStable {
 		t.Fatalf("expected stable after confirm, got %v", ctrl.State())
 	}
@@ -85,7 +85,7 @@ func TestSinglePendingRekey(t *testing.T) {
 // TestDuplicateAckNoAdvance verifies duplicate Ack (rekey) does not advance epoch+2.
 func TestDuplicateAckNoAdvance(t *testing.T) {
 	crypto := newTestCrypto(t)
-	ctrl := rekey.NewController(crypto, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(crypto, []byte("c2s"), []byte("s2c"), false)
 
 	epoch1, err := ctrl.RekeyAndApply(make([]byte, chacha20poly1305.KeySize), make([]byte, chacha20poly1305.KeySize))
 	if err != nil {
@@ -96,7 +96,7 @@ func TestDuplicateAckNoAdvance(t *testing.T) {
 		t.Fatal("duplicate rekey should fail")
 	}
 	// Confirm then check epoch advanced once.
-	ctrl.ConfirmSendEpoch(epoch1)
+	ctrl.PromoteSendEpoch(epoch1)
 	if ctrl.LastRekeyEpoch != epoch1 {
 		t.Fatalf("LastRekeyEpoch should be %d after confirm, got %d", epoch1, ctrl.LastRekeyEpoch)
 	}
@@ -105,7 +105,7 @@ func TestDuplicateAckNoAdvance(t *testing.T) {
 // TestPendingResolvesByAbort checks that timeout aborts pending and returns to Stable.
 func TestPendingResolvesByAbort(t *testing.T) {
 	crypto := newTestCrypto(t)
-	ctrl := rekey.NewController(crypto, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(crypto, []byte("c2s"), []byte("s2c"), false)
 	ctrl.SetPendingTimeout(5 * time.Millisecond)
 
 	if _, err := ctrl.RekeyAndApply(make([]byte, chacha20poly1305.KeySize), make([]byte, chacha20poly1305.KeySize)); err != nil {
@@ -144,17 +144,17 @@ func TestSendEpochNeverEvicted(t *testing.T) {
 // TestConfirmRequiresMatchingEpoch ensures wrong epoch does not switch state.
 func TestConfirmRequiresMatchingEpoch(t *testing.T) {
 	crypto := newTestCrypto(t)
-	ctrl := rekey.NewController(crypto, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(crypto, []byte("c2s"), []byte("s2c"), false)
 
 	epoch, err := ctrl.RekeyAndApply(make([]byte, chacha20poly1305.KeySize), make([]byte, chacha20poly1305.KeySize))
 	if err != nil {
 		t.Fatalf("rekey: %v", err)
 	}
-	ctrl.ConfirmSendEpoch(epoch + 1) // wrong epoch
+	ctrl.PromoteSendEpoch(epoch + 1) // wrong epoch
 	if ctrl.State() != rekey.StatePending {
 		t.Fatalf("state changed on wrong epoch confirm: %v", ctrl.State())
 	}
-	ctrl.ConfirmSendEpoch(epoch)
+	ctrl.PromoteSendEpoch(epoch)
 	if ctrl.State() != rekey.StateStable {
 		t.Fatalf("state not stable after correct confirm: %v", ctrl.State())
 	}
@@ -166,7 +166,7 @@ func TestConfirmRequiresMatchingEpoch(t *testing.T) {
 // TestRekeyWhilePending returns error and keeps state.
 func TestRekeyWhilePending(t *testing.T) {
 	crypto := newTestCrypto(t)
-	ctrl := rekey.NewController(crypto, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(crypto, []byte("c2s"), []byte("s2c"), false)
 	if _, err := ctrl.RekeyAndApply(make([]byte, chacha20poly1305.KeySize), make([]byte, chacha20poly1305.KeySize)); err != nil {
 		t.Fatalf("rekey: %v", err)
 	}
@@ -181,7 +181,7 @@ func TestRekeyWhilePending(t *testing.T) {
 // TestAbortResetsLastEpoch ensures abort leaves LastRekeyEpoch at active send epoch.
 func TestAbortResetsLastEpoch(t *testing.T) {
 	crypto := newTestCrypto(t)
-	ctrl := rekey.NewController(crypto, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(crypto, []byte("c2s"), []byte("s2c"), false)
 	if _, err := ctrl.RekeyAndApply(make([]byte, chacha20poly1305.KeySize), make([]byte, chacha20poly1305.KeySize)); err != nil {
 		t.Fatalf("rekey: %v", err)
 	}
@@ -200,7 +200,7 @@ func TestAbortResetsLastEpoch(t *testing.T) {
 // TestEpochExhausted blocks further rekey and surfaces ErrEpochExhausted.
 func TestEpochExhausted(t *testing.T) {
 	crypto := newTestCrypto(t)
-	ctrl := rekey.NewController(crypto, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(crypto, []byte("c2s"), []byte("s2c"), false)
 	ctrl.LastRekeyEpoch = 65000
 	_, err := ctrl.RekeyAndApply(make([]byte, chacha20poly1305.KeySize), make([]byte, chacha20poly1305.KeySize))
 	if !errors.Is(err, rekey.ErrEpochExhausted) {

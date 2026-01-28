@@ -239,7 +239,7 @@ func (t *TransportHandler) handlePacket(
 		}
 
 		if rekeyCtrl := session.RekeyController(); rekeyCtrl != nil && !udphelpers.IsMulticastPacket(decrypted) {
-			rekeyCtrl.ConfirmSendEpoch(epoch)
+			rekeyCtrl.PromoteSendEpoch(epoch)
 		}
 
 		_, err := t.writer.Write(decrypted)

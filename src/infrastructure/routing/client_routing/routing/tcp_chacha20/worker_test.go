@@ -42,7 +42,7 @@ func (TcpTunWorkerTestMockCrypt) Decrypt(b []byte) ([]byte, error) { return b, n
 func TestTcpTunWorker_DelegatesSuccessfully(t *testing.T) {
 	tun := &TcpTunWorkerTestMockTunHandler{}
 	transport := &TcpTunWorkerTestMockTransportHandler{}
-	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 	w := NewTcpTunWorker(context.Background(), tun, transport, &TcpTunWorkerTestMockCrypt{}, ctrl)
 
 	if err := w.HandleTun(); err != nil {
@@ -63,7 +63,7 @@ func TestTcpTunWorker_ErrorPropagation(t *testing.T) {
 
 	tun := &TcpTunWorkerTestMockTunHandler{err: tunErr}
 	transport := &TcpTunWorkerTestMockTransportHandler{err: trpErr}
-	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 	w := NewTcpTunWorker(context.Background(), tun, transport, &TcpTunWorkerTestMockCrypt{}, ctrl)
 
 	if err := w.HandleTun(); !errors.Is(err, tunErr) {
