@@ -259,9 +259,10 @@ func (t *TransportHandler) handleRekeyInit(rc *rekey.StateMachine, session conne
 	}
 	if _, err := session.Transport().Write(enc); err != nil {
 		t.logger.Printf("rekey init: write ack failed: %v", err)
+	} else {
+		// now it's safe to switch send for TCP
+		rc.ActivateSendEpoch(epoch)
 	}
-	// now it's safe to switch send for TCP
-	rc.ActivateSendEpoch(epoch)
 }
 
 // sendSessionReset sends a SessionReset service packet to the given session.
