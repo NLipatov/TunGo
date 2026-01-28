@@ -18,7 +18,7 @@ type secureSessionWithDeadlineTestMockSession struct {
 	block     bool
 }
 
-func (m *secureSessionWithDeadlineTestMockSession) Establish() (connection.Transport, connection.Crypto, *rekey.Controller, error) {
+func (m *secureSessionWithDeadlineTestMockSession) Establish() (connection.Transport, connection.Crypto, *rekey.StateMachine, error) {
 	if m.block {
 		select {} // hang forever
 	}
@@ -101,7 +101,7 @@ func TestSecureSessionWithDeadline_Cancel(t *testing.T) {
 	resultCh := make(chan struct{})
 	var transportRes connection.Transport
 	var svcRes connection.Crypto
-	var ctrlRes *rekey.Controller
+	var ctrlRes *rekey.StateMachine
 	var errRes error
 
 	go func() {

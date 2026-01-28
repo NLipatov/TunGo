@@ -60,7 +60,7 @@ func (r *TransportHandlerQueueReader) Run() {
 
 type failingCryptoFactory struct{}
 
-func (f failingCryptoFactory) FromHandshake(_ connection.Handshake, _ bool) (connection.Crypto, *rekey.Controller, error) {
+func (f failingCryptoFactory) FromHandshake(_ connection.Handshake, _ bool) (connection.Crypto, *rekey.StateMachine, error) {
 	return nil, nil, errors.New("crypto init fail")
 }
 

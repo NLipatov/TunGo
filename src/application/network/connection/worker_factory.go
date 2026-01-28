@@ -14,7 +14,7 @@ type ClientWorkerFactory interface {
 		conn Transport,
 		tun io.ReadWriteCloser,
 		cryptographyService Crypto,
-		controller *rekey.Controller,
+		controller *rekey.StateMachine,
 	) (routing.Worker, error)
 }
 

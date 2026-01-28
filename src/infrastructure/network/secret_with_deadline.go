@@ -19,10 +19,10 @@ func NewSecretWithDeadline(ctx context.Context, secret Secret) SecretWithDeadlin
 	}
 }
 
-func (s SecretWithDeadline) Exchange(transport connection.Transport) (connection.Crypto, *rekey.Controller, error) {
+func (s SecretWithDeadline) Exchange(transport connection.Transport) (connection.Crypto, *rekey.StateMachine, error) {
 	type result struct {
 		cryptographyService connection.Crypto
-		controller          *rekey.Controller
+		controller          *rekey.StateMachine
 		err                 error
 	}
 

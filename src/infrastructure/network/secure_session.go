@@ -6,7 +6,7 @@ import (
 )
 
 type SecureSession interface {
-	Establish() (connection.Transport, connection.Crypto, *rekey.Controller, error)
+	Establish() (connection.Transport, connection.Crypto, *rekey.StateMachine, error)
 }
 
 type DefaultSecureSession struct {
@@ -21,7 +21,7 @@ func NewDefaultSecureSession(transport connection.Transport, secret Secret) *Def
 	}
 }
 
-func (c *DefaultSecureSession) Establish() (connection.Transport, connection.Crypto, *rekey.Controller, error) {
+func (c *DefaultSecureSession) Establish() (connection.Transport, connection.Crypto, *rekey.StateMachine, error) {
 	crypto, controller, err := c.secret.Exchange(c.transport)
 	if err != nil {
 		return nil, nil, nil, err

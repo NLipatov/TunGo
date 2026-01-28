@@ -64,7 +64,7 @@ func (d *mockTunManager) DisposeDevices() error {
 type mockConnectionFactory struct{}
 
 func (d *mockConnectionFactory) EstablishConnection(_ context.Context,
-) (connection.Transport, connection.Crypto, *rekey.Controller, error) {
+) (connection.Transport, connection.Crypto, *rekey.StateMachine, error) {
 	return nil, nil, nil, nil
 }
 
@@ -72,7 +72,7 @@ func (d *mockConnectionFactory) EstablishConnection(_ context.Context,
 type mockWorkerFactory struct{}
 
 func (d *mockWorkerFactory) CreateWorker(
-	_ context.Context, _ connection.Transport, _ io.ReadWriteCloser, _ connection.Crypto, _ *rekey.Controller,
+	_ context.Context, _ connection.Transport, _ io.ReadWriteCloser, _ connection.Crypto, _ *rekey.StateMachine,
 ) (routing.Worker, error) {
 	return nil, nil
 }

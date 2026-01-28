@@ -19,11 +19,11 @@ func NewSecureSessionWithDeadline(ctx context.Context, secureConnection SecureSe
 	}
 }
 
-func (c *SecureSessionWithDeadline) Establish() (connection.Transport, connection.Crypto, *rekey.Controller, error) {
+func (c *SecureSessionWithDeadline) Establish() (connection.Transport, connection.Crypto, *rekey.StateMachine, error) {
 	type result struct {
 		transport connection.Transport
 		crypto    connection.Crypto
-		ctrl      *rekey.Controller
+		ctrl      *rekey.StateMachine
 		err       error
 	}
 

@@ -20,7 +20,7 @@ type TransportHandler struct {
 	reader              io.Reader
 	writer              io.Writer
 	cryptographyService connection.Crypto
-	rekeyController     *rekey.Controller
+	rekeyController     *rekey.StateMachine
 	servicePacket       service.PacketHandler
 	handshakeCrypto     handshake.Crypto
 }
@@ -30,7 +30,7 @@ func NewTransportHandler(
 	reader io.Reader,
 	writer io.Writer,
 	cryptographyService connection.Crypto,
-	rekeyController *rekey.Controller,
+	rekeyController *rekey.StateMachine,
 	servicePacket service.PacketHandler,
 ) transport.Handler {
 	return &TransportHandler{

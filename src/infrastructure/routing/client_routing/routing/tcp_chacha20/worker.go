@@ -12,7 +12,7 @@ import (
 type TcpTunWorker struct {
 	ctx                 context.Context
 	cryptographyService connection.Crypto
-	rekeyController     *rekey.Controller
+	rekeyController     *rekey.StateMachine
 	tunHandler          tun.Handler
 	transportHandler    transport.Handler
 }
@@ -22,7 +22,7 @@ func NewTcpTunWorker(
 	tunHandler tun.Handler,
 	transportHandler transport.Handler,
 	cryptographyService connection.Crypto,
-	rekeyController *rekey.Controller,
+	rekeyController *rekey.StateMachine,
 ) routing.Worker {
 	return &TcpTunWorker{
 		ctx:                 ctx,

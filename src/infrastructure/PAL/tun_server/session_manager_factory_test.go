@@ -25,7 +25,7 @@ func (d sessionManagerFactoryDummySession) Transport() connection.Transport {
 func (d sessionManagerFactoryDummySession) Crypto() connection.Crypto {
 	return nil
 }
-func (d sessionManagerFactoryDummySession) RekeyController() *rekey.Controller {
+func (d sessionManagerFactoryDummySession) RekeyController() *rekey.StateMachine {
 	return nil
 }
 

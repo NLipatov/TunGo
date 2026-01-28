@@ -21,7 +21,7 @@ func (s concurrentManagerMockSession) Transport() connection.Transport {
 func (s concurrentManagerMockSession) Crypto() connection.Crypto {
 	return nil
 }
-func (s concurrentManagerMockSession) RekeyController() *rekey.Controller {
+func (s concurrentManagerMockSession) RekeyController() *rekey.StateMachine {
 	return nil
 }
 

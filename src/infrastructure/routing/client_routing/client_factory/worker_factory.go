@@ -29,7 +29,7 @@ func NewWorkerFactory(configuration client.Configuration) connection.ClientWorke
 }
 
 func (w *WorkerFactory) CreateWorker(
-	ctx context.Context, conn connection.Transport, tun io.ReadWriteCloser, crypto connection.Crypto, controller *rekey.Controller,
+	ctx context.Context, conn connection.Transport, tun io.ReadWriteCloser, crypto connection.Crypto, controller *rekey.StateMachine,
 ) (routing.Worker, error) {
 	switch w.conf.Protocol {
 	case settings.UDP:

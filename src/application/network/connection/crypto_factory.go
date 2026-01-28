@@ -8,5 +8,5 @@ type CryptoFactory interface {
 	FromHandshake(
 		handshake Handshake,
 		isServer bool,
-	) (Crypto, *rekey.Controller, error)
+	) (Crypto, *rekey.StateMachine, error)
 }

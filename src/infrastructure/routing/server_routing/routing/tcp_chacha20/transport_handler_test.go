@@ -172,7 +172,7 @@ func (f *fakeCrypto) Decrypt(in []byte) ([]byte, error) {
 
 type fakeCryptoFactory struct{ err error }
 
-func (f *fakeCryptoFactory) FromHandshake(_ connection.Handshake, _ bool) (connection.Crypto, *rekey.Controller, error) {
+func (f *fakeCryptoFactory) FromHandshake(_ connection.Handshake, _ bool) (connection.Crypto, *rekey.StateMachine, error) {
 	if f.err != nil {
 		return nil, nil, f.err
 	}

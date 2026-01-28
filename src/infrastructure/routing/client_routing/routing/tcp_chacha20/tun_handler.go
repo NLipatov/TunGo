@@ -20,7 +20,7 @@ type TunHandler struct {
 	reader              io.Reader // abstraction over TUN device
 	writer              io.Writer // abstraction over transport
 	cryptographyService connection.Crypto
-	rekeyController     *rekey.Controller
+	rekeyController     *rekey.StateMachine
 	servicePacket       service.PacketHandler
 	handshakeCrypto     handshake.Crypto
 	rotateAt            time.Time
@@ -31,7 +31,7 @@ func NewTunHandler(ctx context.Context,
 	reader io.Reader,
 	writer io.Writer,
 	cryptographyService connection.Crypto,
-	rekeyController *rekey.Controller,
+	rekeyController *rekey.StateMachine,
 	servicePacket service.PacketHandler) tun.Handler {
 	return &TunHandler{
 		ctx:                 ctx,

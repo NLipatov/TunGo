@@ -200,7 +200,7 @@ func (t *TransportHandler) handleClient(ctx context.Context, session connection.
 	}
 }
 
-func (t *TransportHandler) handleRekeyInit(rc *rekey.Controller, session connection.Session, pt []byte) {
+func (t *TransportHandler) handleRekeyInit(rc *rekey.StateMachine, session connection.Session, pt []byte) {
 	if len(pt) < service.RekeyPacketLen {
 		t.logger.Printf("rekey init packet too short: %d bytes", len(pt))
 		return

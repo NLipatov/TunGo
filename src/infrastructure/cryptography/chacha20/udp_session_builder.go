@@ -18,7 +18,7 @@ func NewUdpSessionBuilder(aeadBuilder connection.AEADBuilder) connection.CryptoF
 func (u UdpSessionBuilder) FromHandshake(
 	handshake connection.Handshake,
 	isServer bool,
-) (connection.Crypto, *rekey.Controller, error) {
+) (connection.Crypto, *rekey.StateMachine, error) {
 	sendCipher, recvCipher, err := u.aeadBuilder.FromHandshake(handshake, isServer)
 	if err != nil {
 		return nil, nil, err

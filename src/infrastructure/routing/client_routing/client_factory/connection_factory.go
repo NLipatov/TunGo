@@ -33,7 +33,7 @@ func NewConnectionFactory(conf client.Configuration) connection.Factory {
 
 func (f *ConnectionFactory) EstablishConnection(
 	ctx context.Context,
-) (connection.Transport, connection.Crypto, *rekey.Controller, error) {
+) (connection.Transport, connection.Crypto, *rekey.StateMachine, error) {
 	connSettings, connSettingsErr := f.connectionSettings()
 	if connSettingsErr != nil {
 		return nil, nil, nil, connSettingsErr
@@ -144,7 +144,7 @@ func (f *ConnectionFactory) establishSecuredConnection(
 	s settings.Settings,
 	adapter connection.Transport,
 	cryptoFactory connection.CryptoFactory,
-) (connection.Transport, connection.Crypto, *rekey.Controller, error) {
+) (connection.Transport, connection.Crypto, *rekey.StateMachine, error) {
 	//connect to server and exchange secret
 	secret := network.NewDefaultSecret(
 		s,

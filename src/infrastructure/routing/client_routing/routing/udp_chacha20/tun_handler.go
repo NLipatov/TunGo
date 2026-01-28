@@ -21,7 +21,7 @@ type TunHandler struct {
 	reader              io.Reader // abstraction over TUN device
 	writer              io.Writer // abstraction over transport
 	cryptographyService connection.Crypto
-	rekeyController     *rekey.Controller
+	rekeyController     *rekey.StateMachine
 	servicePacket       service.PacketHandler
 	controlPacketBuffer [128]byte
 	rotateAt            time.Time
@@ -33,7 +33,7 @@ func NewTunHandler(ctx context.Context,
 	reader io.Reader,
 	writer io.Writer,
 	cryptographyService connection.Crypto,
-	rekeyController *rekey.Controller,
+	rekeyController *rekey.StateMachine,
 	servicePacket service.PacketHandler,
 ) tun.Handler {
 	return &TunHandler{
@@ -120,7 +120,7 @@ func (w *TunHandler) HandleTun() error {
 				} else {
 					publicKey, pendingPriv, keyErr = w.handshakeCrypto.GenerateX25519KeyPair()
 					if keyErr == nil {
-						// Controller must always be present for UDP; panic on misconfiguration.
+						// RekeyStateMachine must always be present for UDP; panic on misconfiguration.
 						w.rekeyController.SetPendingRekeyPrivateKey(pendingPriv)
 					}
 				}

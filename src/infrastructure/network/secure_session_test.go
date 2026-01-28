@@ -20,7 +20,7 @@ func (s *stubCrypto) Decrypt(p []byte) ([]byte, error) { return p, nil }
 
 type secretErr struct{}
 
-func (s *secretErr) Exchange(_ connection.Transport) (connection.Crypto, *rekey.Controller, error) {
+func (s *secretErr) Exchange(_ connection.Transport) (connection.Crypto, *rekey.StateMachine, error) {
 	return nil, nil, errors.New("exchange failed")
 }
 
@@ -28,7 +28,7 @@ type secretOK struct {
 	svc connection.Crypto
 }
 
-func (s *secretOK) Exchange(_ connection.Transport) (connection.Crypto, *rekey.Controller, error) {
+func (s *secretOK) Exchange(_ connection.Transport) (connection.Crypto, *rekey.StateMachine, error) {
 	return s.svc, nil, nil
 }
 

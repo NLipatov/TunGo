@@ -22,7 +22,7 @@ type RouterFactoryConnectionFactoryMock struct {
 	Called bool
 }
 
-func (m *RouterFactoryConnectionFactoryMock) EstablishConnection(_ context.Context) (connection.Transport, connection.Crypto, *rekey.Controller, error) {
+func (m *RouterFactoryConnectionFactoryMock) EstablishConnection(_ context.Context) (connection.Transport, connection.Crypto, *rekey.StateMachine, error) {
 	m.Called = true
 	return m.Conn, m.Crypto, nil, m.Err
 }
@@ -55,7 +55,7 @@ type RouterFactoryClientWorkerFactoryMock struct {
 	Conn   connection.Transport
 	Tun    io.ReadWriteCloser
 	Crypto connection.Crypto
-	Ctrl   *rekey.Controller
+	Ctrl   *rekey.StateMachine
 
 	Called bool
 }
@@ -65,7 +65,7 @@ func (m *RouterFactoryClientWorkerFactoryMock) CreateWorker(
 	conn connection.Transport,
 	tun io.ReadWriteCloser,
 	cryptographyService connection.Crypto,
-	controller *rekey.Controller,
+	controller *rekey.StateMachine,
 ) (routing.Worker, error) {
 	m.Called = true
 	m.Ctx = ctx

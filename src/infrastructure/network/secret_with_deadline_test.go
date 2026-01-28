@@ -13,12 +13,12 @@ import (
 // If block==true, Exchange will hang forever; otherwise returns svc, err.
 type secretWithDeadlineTestMockSecret struct {
 	svc   connection.Crypto
-	ctrl  *rekey.Controller
+	ctrl  *rekey.StateMachine
 	err   error
 	block bool
 }
 
-func (m *secretWithDeadlineTestMockSecret) Exchange(_ connection.Transport) (connection.Crypto, *rekey.Controller, error) {
+func (m *secretWithDeadlineTestMockSecret) Exchange(_ connection.Transport) (connection.Crypto, *rekey.StateMachine, error) {
 	if m.block {
 		select {} // hang
 	}
@@ -82,7 +82,7 @@ func TestSecretWithDeadline_Cancel(t *testing.T) {
 	wrapper := NewSecretWithDeadline(ctx, underlying)
 
 	var svcRes connection.Crypto
-	var ctrlRes *rekey.Controller
+	var ctrlRes *rekey.StateMachine
 	var errRes error
 	done := make(chan struct{})
 

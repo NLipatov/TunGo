@@ -17,7 +17,7 @@ func NewTcpSessionBuilder(aeadBuilder connection.AEADBuilder) connection.CryptoF
 
 func (t TcpSessionBuilder) FromHandshake(handshake connection.Handshake,
 	isServer bool,
-) (connection.Crypto, *rekey.Controller, error) {
+) (connection.Crypto, *rekey.StateMachine, error) {
 	sendCipher, recvCipher, err := t.aeadBuilder.FromHandshake(handshake, isServer)
 	if err != nil {
 		return nil, nil, err

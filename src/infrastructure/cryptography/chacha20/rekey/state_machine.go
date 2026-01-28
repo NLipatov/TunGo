@@ -14,9 +14,9 @@ type Rekeyer interface {
 	RemoveEpoch(epoch uint16) bool
 }
 
-// Controller holds control-plane rekey state; crypto remains immutable and handshake-agnostic.
+// StateMachine holds control-plane rekey state; crypto remains immutable and handshake-agnostic.
 // It is intentionally not in the cryptography package to separate concerns.
-type Controller struct {
+type StateMachine struct {
 	mu             sync.Mutex
 	Crypto         Rekeyer
 	IsServer       bool
@@ -64,8 +64,8 @@ const (
 //   second pending (pendingSend != nil) creation
 //   transitions that would remove last/active epoch (enforced in Rekeyer.RemoveEpoch/Rekey guards)
 
-func NewController(core Rekeyer, c2s, s2c []byte, isServer bool) *Controller {
-	return &Controller{
+func NewController(core Rekeyer, c2s, s2c []byte, isServer bool) *StateMachine {
+	return &StateMachine{
 		Crypto:         core,
 		IsServer:       isServer,
 		CurrentC2S:     append([]byte(nil), c2s...),
@@ -78,19 +78,19 @@ func NewController(core Rekeyer, c2s, s2c []byte, isServer bool) *Controller {
 
 // SetPendingTimeout overrides the timeout used to auto-abort pending rekeys.
 // Primarily for tests; production should use default.
-func (c *Controller) SetPendingTimeout(d time.Duration) {
+func (c *StateMachine) SetPendingTimeout(d time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.pendingTimeout = d
 }
 
-func (c *Controller) SetPendingRekeyPrivateKey(priv [32]byte) {
+func (c *StateMachine) SetPendingRekeyPrivateKey(priv [32]byte) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.PendingPriv = &priv
 }
 
-func (c *Controller) PendingRekeyPrivateKey() ([32]byte, bool) {
+func (c *StateMachine) PendingRekeyPrivateKey() ([32]byte, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.PendingPriv == nil {
@@ -99,33 +99,33 @@ func (c *Controller) PendingRekeyPrivateKey() ([32]byte, bool) {
 	return *c.PendingPriv, true
 }
 
-func (c *Controller) ClearPendingRekeyPrivateKey() {
+func (c *StateMachine) ClearPendingRekeyPrivateKey() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.PendingPriv = nil
 }
 
-func (c *Controller) CurrentClientToServerKey() []byte {
+func (c *StateMachine) CurrentClientToServerKey() []byte {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return append([]byte(nil), c.CurrentC2S...)
 }
 
-func (c *Controller) CurrentServerToClientKey() []byte {
+func (c *StateMachine) CurrentServerToClientKey() []byte {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return append([]byte(nil), c.CurrentS2C...)
 }
 
 // State returns the current FSM state.
-func (c *Controller) State() State {
+func (c *StateMachine) State() State {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.state
 }
 
 // PendingEpoch returns the pending epoch, if any.
-func (c *Controller) PendingEpoch() (uint16, bool) {
+func (c *StateMachine) PendingEpoch() (uint16, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.pendingSend == nil {
@@ -137,7 +137,7 @@ func (c *Controller) PendingEpoch() (uint16, bool) {
 // ApplyKeys updates the stored raw keys after a successful rekey operation.
 // sendKey/recvKey follow the same orientation as the crypto: sendKey is for
 // outbound traffic of this peer. epoch must be strictly increasing.
-func (c *Controller) ApplyKeys(sendKey, recvKey []byte, epoch uint16) error {
+func (c *StateMachine) ApplyKeys(sendKey, recvKey []byte, epoch uint16) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -152,7 +152,7 @@ func (c *Controller) ApplyKeys(sendKey, recvKey []byte, epoch uint16) error {
 // 2) asks crypto to install a new session
 // 3) records the new keys and marks the epoch pending for send confirmation
 // If any step fails, no control-plane state is mutated.
-func (c *Controller) RekeyAndApply(sendKey, recvKey []byte) (uint16, error) {
+func (c *StateMachine) RekeyAndApply(sendKey, recvKey []byte) (uint16, error) {
 	c.mu.Lock()
 	if c.state != StateStable {
 		curState := c.state
@@ -189,7 +189,7 @@ func (c *Controller) RekeyAndApply(sendKey, recvKey []byte) (uint16, error) {
 }
 
 // applyKeysLocked assumes c.mu is held.
-func (c *Controller) applyKeysLocked(sendKey, recvKey []byte, epoch uint16) error {
+func (c *StateMachine) applyKeysLocked(sendKey, recvKey []byte, epoch uint16) error {
 	if epoch <= c.LastRekeyEpoch {
 		return fmt.Errorf("non-monotonic epoch: got %d, last %d", epoch, c.LastRekeyEpoch)
 	}
@@ -208,7 +208,7 @@ func (c *Controller) applyKeysLocked(sendKey, recvKey []byte, epoch uint16) erro
 
 // ConfirmSendEpoch promotes pending epoch to active for sending once a packet
 // with the pending epoch is successfully received.
-func (c *Controller) ConfirmSendEpoch(epoch uint16) {
+func (c *StateMachine) ConfirmSendEpoch(epoch uint16) {
 	c.mu.Lock()
 	if c.state != StatePending || c.pendingSend == nil || epoch != *c.pendingSend || epoch <= c.sendEpoch {
 		c.mu.Unlock()
@@ -228,7 +228,7 @@ func (c *Controller) ConfirmSendEpoch(epoch uint16) {
 
 // AbortPending rolls back a pending rekey, removing the pending epoch session.
 // It leaves the current send/recv session intact and returns to Stable.
-func (c *Controller) AbortPending() {
+func (c *StateMachine) AbortPending() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.state != StatePending || c.pendingSend == nil {
@@ -243,7 +243,7 @@ func (c *Controller) AbortPending() {
 }
 
 // MaybeAbortPending aborts if the pending timeout has elapsed.
-func (c *Controller) MaybeAbortPending(now time.Time) {
+func (c *StateMachine) MaybeAbortPending(now time.Time) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.state != StatePending || c.pendingSend == nil {

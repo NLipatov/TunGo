@@ -30,7 +30,7 @@ type secretTestMockBuilder struct {
 	err error
 }
 
-func (m *secretTestMockBuilder) FromHandshake(_ connection.Handshake, _ bool) (connection.Crypto, *rekey.Controller, error) {
+func (m *secretTestMockBuilder) FromHandshake(_ connection.Handshake, _ bool) (connection.Crypto, *rekey.StateMachine, error) {
 	return m.svc, nil, m.err
 }
 

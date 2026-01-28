@@ -6,5 +6,5 @@ import (
 )
 
 type Factory interface {
-	EstablishConnection(ctx context.Context) (Transport, Crypto, *rekey.Controller, error)
+	EstablishConnection(ctx context.Context) (Transport, Crypto, *rekey.StateMachine, error)
 }
