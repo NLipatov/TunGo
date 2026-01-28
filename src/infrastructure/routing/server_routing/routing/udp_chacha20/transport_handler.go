@@ -142,7 +142,7 @@ func (t *TransportHandler) handlePacket(
 	}
 	if session, err := t.sessionManager.GetByExternalAddrPort(addrPort); err == nil {
 		if ctrl := session.RekeyController(); ctrl != nil {
-			ctrl.MaybeAbortPending(time.Now())
+			ctrl.AbortPendingIfExpired(time.Now())
 		}
 	}
 
@@ -208,7 +208,7 @@ func (t *TransportHandler) handlePacket(
 				if rekeyCtrl.IsServer {
 					sendKey, recvKey = newS2C, newC2S // server sends S2C, receives C2S
 				}
-				if _, err = rekeyCtrl.RekeyAndApply(sendKey, recvKey); err != nil {
+				if _, err = rekeyCtrl.StartRekey(sendKey, recvKey); err != nil {
 					t.logger.Printf("rekey init: install/apply failed: %v", err)
 					return nil
 				}
@@ -239,7 +239,7 @@ func (t *TransportHandler) handlePacket(
 		}
 
 		if rekeyCtrl := session.RekeyController(); rekeyCtrl != nil && !udphelpers.IsMulticastPacket(decrypted) {
-			rekeyCtrl.PromoteSendEpoch(epoch)
+			rekeyCtrl.ActivateSendEpoch(epoch)
 		}
 
 		_, err := t.writer.Write(decrypted)

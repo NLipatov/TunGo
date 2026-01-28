@@ -239,12 +239,12 @@ func (t *TransportHandler) handleRekeyInit(rc *rekey.StateMachine, session conne
 	if rc.IsServer {
 		sendKey, recvKey = newS2C, newC2S
 	}
-	if _, err := rc.RekeyAndApply(sendKey, recvKey); err != nil {
+	if _, err := rc.StartRekey(sendKey, recvKey); err != nil {
 		t.logger.Printf("rekey init: install/apply failed: %v", err)
 		return
 	}
 	// switch send immediately for TCP
-	rc.PromoteSendEpoch(rc.LastRekeyEpoch)
+	rc.ActivateSendEpoch(rc.LastRekeyEpoch)
 
 	ackPayload := make([]byte, service.RekeyPacketLen)
 	copy(ackPayload[3:], serverPub)

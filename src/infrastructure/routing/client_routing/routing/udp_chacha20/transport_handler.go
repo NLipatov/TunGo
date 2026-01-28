@@ -70,7 +70,7 @@ func (t *TransportHandler) HandleTransport() error {
 			}
 
 			if spType, spOk := t.servicePacket.TryParseType(buffer[:n]); spOk {
-				t.rekeyController.MaybeAbortPending(time.Now())
+				t.rekeyController.AbortPendingIfExpired(time.Now())
 				if spType == service.SessionReset {
 					return fmt.Errorf("server requested cryptographyService reset")
 				}
@@ -81,7 +81,7 @@ func (t *TransportHandler) HandleTransport() error {
 				continue
 			}
 			epoch := binary.BigEndian.Uint16(buffer[:2])
-			t.rekeyController.MaybeAbortPending(time.Now())
+			t.rekeyController.AbortPendingIfExpired(time.Now())
 			decrypted, decryptionErr := t.cryptographyService.Decrypt(buffer[:n])
 			if decryptionErr != nil {
 				if t.ctx.Err() != nil {
@@ -130,13 +130,13 @@ func (t *TransportHandler) HandleTransport() error {
 						fmt.Printf("rekey ack: derive key failed: %v\n", err)
 						continue
 					}
-					epoch, err := t.rekeyController.RekeyAndApply(newC2S, newS2C)
+					epoch, err := t.rekeyController.StartRekey(newC2S, newS2C)
 					if err != nil {
 						fmt.Printf("rekey ack: install/apply failed: %v\n", err)
 						continue
 					}
 					// Initiator proactively switches send to drive peer confirmation.
-					t.rekeyController.PromoteSendEpoch(epoch)
+					t.rekeyController.ActivateSendEpoch(epoch)
 					t.rekeyController.ClearPendingRekeyPrivateKey()
 				case service.SessionReset:
 					return fmt.Errorf("server requested cryptographyService reset")
@@ -148,7 +148,7 @@ func (t *TransportHandler) HandleTransport() error {
 
 			// Only confirm epoch on actual data packets (non-service, non-multicast)
 			if !udp.IsMulticastPacket(decrypted) {
-				t.rekeyController.PromoteSendEpoch(epoch)
+				t.rekeyController.ActivateSendEpoch(epoch)
 			}
 
 			_, writeErr := t.writer.Write(decrypted)

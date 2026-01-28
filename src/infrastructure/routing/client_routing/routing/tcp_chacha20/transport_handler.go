@@ -118,9 +118,9 @@ func (t *TransportHandler) handleRekeyAck(payload []byte) {
 		log.Printf("rekey ack: derive key failed: %v", err)
 		return
 	}
-	if epoch, err := t.rekeyController.RekeyAndApply(newC2S, newS2C); err == nil {
+	if epoch, err := t.rekeyController.StartRekey(newC2S, newS2C); err == nil {
 		// For TCP we can switch immediately.
-		t.rekeyController.PromoteSendEpoch(epoch)
+		t.rekeyController.ActivateSendEpoch(epoch)
 		t.rekeyController.ClearPendingRekeyPrivateKey()
 	} else {
 		log.Printf("rekey ack: install/apply failed: %v", err)
