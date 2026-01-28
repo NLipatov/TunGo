@@ -3,8 +3,8 @@ package connection
 import (
 	"context"
 	"io"
-	"tungo/application/network/rekey"
 	"tungo/application/network/routing"
+	"tungo/infrastructure/cryptography/chacha20/rekey"
 	"tungo/infrastructure/settings"
 )
 

@@ -4,9 +4,8 @@ import (
 	"errors"
 	"testing"
 	"time"
-
-	"tungo/application/network/rekey"
 	"tungo/infrastructure/cryptography/chacha20"
+	"tungo/infrastructure/cryptography/chacha20/rekey"
 
 	"golang.org/x/crypto/chacha20poly1305"
 )

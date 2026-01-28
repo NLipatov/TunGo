@@ -3,10 +3,10 @@ package tcp_chacha20
 import (
 	"context"
 	"tungo/application/network/connection"
-	"tungo/application/network/rekey"
 	"tungo/application/network/routing"
 	"tungo/application/network/routing/transport"
 	"tungo/application/network/routing/tun"
+	"tungo/infrastructure/cryptography/chacha20/rekey"
 )
 
 type TcpTunWorker struct {

@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 	"tungo/application/network/connection"
-	"tungo/application/network/rekey"
+	"tungo/infrastructure/cryptography/chacha20/rekey"
 )
 
 type sessionManagerFactoryDummySession struct {

@@ -5,11 +5,10 @@ import (
 	"errors"
 	"io"
 	"testing"
-
 	"tungo/application/network/connection"
-	"tungo/application/network/rekey"
 	"tungo/application/network/routing"
 	"tungo/application/network/routing/tun"
+	"tungo/infrastructure/cryptography/chacha20/rekey"
 )
 
 // -------------------- Mocks (prefixed with "RouterFactory") --------------------

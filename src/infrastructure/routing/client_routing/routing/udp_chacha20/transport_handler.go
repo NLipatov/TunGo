@@ -9,11 +9,11 @@ import (
 	"os"
 	"time"
 	"tungo/application/network/connection"
-	"tungo/application/network/rekey"
 	"tungo/application/network/routing/transport"
 	"tungo/domain/network/service"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/handshake"
+	"tungo/infrastructure/cryptography/chacha20/rekey"
 	"tungo/infrastructure/routing/udp"
 	"tungo/infrastructure/settings"
 

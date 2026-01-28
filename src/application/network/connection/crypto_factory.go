@@ -1,6 +1,8 @@
 package connection
 
-import "tungo/application/network/rekey"
+import (
+	"tungo/infrastructure/cryptography/chacha20/rekey"
+)
 
 type CryptoFactory interface {
 	FromHandshake(

@@ -7,7 +7,7 @@ import (
 	"net"
 	"testing"
 	"tungo/application/network/connection"
-	"tungo/application/network/rekey"
+	"tungo/infrastructure/cryptography/chacha20/rekey"
 	"tungo/infrastructure/settings"
 
 	"golang.org/x/crypto/chacha20poly1305"

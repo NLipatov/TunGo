@@ -2,7 +2,7 @@ package connection
 
 import (
 	"context"
-	"tungo/application/network/rekey"
+	"tungo/infrastructure/cryptography/chacha20/rekey"
 )
 
 type Factory interface {

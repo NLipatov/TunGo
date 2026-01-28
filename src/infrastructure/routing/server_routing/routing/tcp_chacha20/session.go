@@ -3,7 +3,7 @@ package tcp_chacha20
 import (
 	"net/netip"
 	"tungo/application/network/connection"
-	"tungo/application/network/rekey"
+	"tungo/infrastructure/cryptography/chacha20/rekey"
 )
 
 type Session struct {

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"io"
 	"testing"
-	"tungo/application/network/rekey"
+	"tungo/infrastructure/cryptography/chacha20/rekey"
 )
 
 // ---- Mocks (prefixed with TunHandler*) ----

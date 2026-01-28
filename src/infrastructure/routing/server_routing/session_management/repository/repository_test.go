@@ -5,7 +5,7 @@ import (
 	"net/netip"
 	"testing"
 	"tungo/application/network/connection"
-	"tungo/application/network/rekey"
+	"tungo/infrastructure/cryptography/chacha20/rekey"
 )
 
 type fakeSession struct {

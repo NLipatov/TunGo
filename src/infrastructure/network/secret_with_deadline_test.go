@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 	"tungo/application/network/connection"
-	"tungo/application/network/rekey"
+	"tungo/infrastructure/cryptography/chacha20/rekey"
 )
 
 // secretWithDeadlineTestMockSecret implements Secret for testing.

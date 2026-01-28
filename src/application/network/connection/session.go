@@ -2,7 +2,7 @@ package connection
 
 import (
 	"net/netip"
-	"tungo/application/network/rekey"
+	"tungo/infrastructure/cryptography/chacha20/rekey"
 )
 
 // Session is abstraction over established secure session of data-transfer between 2 hosts.

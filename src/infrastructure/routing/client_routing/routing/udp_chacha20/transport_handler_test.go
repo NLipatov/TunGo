@@ -9,10 +9,10 @@ import (
 	"os"
 	"testing"
 	"time"
-	"tungo/application/network/rekey"
 	"tungo/domain/network/service"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/handshake"
+	"tungo/infrastructure/cryptography/chacha20/rekey"
 
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/curve25519"

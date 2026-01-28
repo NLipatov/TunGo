@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 	"tungo/application/network/connection"
-	"tungo/application/network/rekey"
 	"tungo/application/network/routing"
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/configuration/client"
+	"tungo/infrastructure/cryptography/chacha20/rekey"
 	clientRunners "tungo/presentation/runners/client"
 	"unsafe"
 )

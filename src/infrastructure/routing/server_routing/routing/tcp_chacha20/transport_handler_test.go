@@ -12,11 +12,11 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"tungo/infrastructure/cryptography/chacha20/rekey"
 
 	"golang.org/x/crypto/chacha20poly1305"
 
 	"tungo/application/network/connection"
-	"tungo/application/network/rekey"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
 	"tungo/infrastructure/settings"
 )

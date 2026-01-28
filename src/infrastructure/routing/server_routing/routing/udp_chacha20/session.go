@@ -3,7 +3,7 @@ package udp_chacha20
 import (
 	"net/netip"
 	"tungo/application/network/connection"
-	"tungo/application/network/rekey"
+	"tungo/infrastructure/cryptography/chacha20/rekey"
 )
 
 // Session represents a single encrypted Session between a VPN client and server.

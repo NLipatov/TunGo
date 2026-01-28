@@ -8,8 +8,8 @@ import (
 	"io"
 	"testing"
 	"time"
-	"tungo/application/network/rekey"
 	"tungo/domain/network/service"
+	"tungo/infrastructure/cryptography/chacha20/rekey"
 
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/curve25519"

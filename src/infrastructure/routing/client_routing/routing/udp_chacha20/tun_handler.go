@@ -6,10 +6,10 @@ import (
 	"io"
 	"time"
 	"tungo/application/network/connection"
-	"tungo/application/network/rekey"
 	"tungo/application/network/routing/tun"
 	"tungo/domain/network/service"
 	"tungo/infrastructure/cryptography/chacha20/handshake"
+	"tungo/infrastructure/cryptography/chacha20/rekey"
 	"tungo/infrastructure/settings"
 
 	"golang.org/x/crypto/chacha20poly1305"

@@ -3,7 +3,7 @@ package network
 import (
 	"context"
 	"tungo/application/network/connection"
-	"tungo/application/network/rekey"
+	"tungo/infrastructure/cryptography/chacha20/rekey"
 )
 
 // SecureSessionWithDeadline is a decorator for SecureSession which allows cancellation via ctx
