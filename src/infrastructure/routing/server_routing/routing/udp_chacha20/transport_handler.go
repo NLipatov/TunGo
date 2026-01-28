@@ -149,7 +149,6 @@ func (t *TransportHandler) handlePacket(
 	// Fast path: existing session.
 	session, sessionLookupErr := t.sessionManager.GetByExternalAddrPort(addrPort)
 	if sessionLookupErr == nil && session.ExternalAddrPort() == addrPort {
-		rekeyCtrl := session.RekeyController()
 		if len(packet) < 2 {
 			return fmt.Errorf("packet too short for nonce epoch")
 		}
@@ -181,6 +180,7 @@ func (t *TransportHandler) handlePacket(
 					t.logger.Printf("rekey init: failed to derive shared: %v", err)
 					return nil
 				}
+				rekeyCtrl := session.RekeyController()
 				if rekeyCtrl == nil {
 					t.logger.Printf("rekey init: unsupported crypto session type")
 					return nil
