@@ -8,18 +8,17 @@ import (
 	"net/netip"
 	"sync"
 	"time"
-	"tungo/infrastructure/cryptography/chacha20/rekey"
-	udphelpers "tungo/infrastructure/routing/udp"
-
 	"tungo/application/listeners"
 	"tungo/application/logging"
 	"tungo/application/network/connection"
 	"tungo/application/network/routing/transport"
 	"tungo/domain/network/service"
 	"tungo/infrastructure/cryptography/chacha20/handshake"
+	"tungo/infrastructure/cryptography/chacha20/rekey"
 	"tungo/infrastructure/network/udp/adapters"
 	"tungo/infrastructure/network/udp/queue/udp"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
+	udphelpers "tungo/infrastructure/routing/udp"
 	"tungo/infrastructure/settings"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -152,20 +151,17 @@ func (t *TransportHandler) handlePacket(
 			t.logger.Printf("failed to decrypt data: %v", decryptionErr)
 			return decryptionErr
 		}
-		if rekeyCtrl != nil {
-			rekeyCtrl.AbortPendingIfExpired(time.Now())
-		}
-		if udphelpers.IsMulticastPacket(decrypted) {
-			return nil
-		}
 
 		if spType, spOk := t.servicePacket.TryParseType(decrypted); spOk {
 			return t.handleServicePacket(spType, decrypted, session, addrPort, rekeyCtrl)
 		}
 
 		if rekeyCtrl != nil {
-			epoch := binary.BigEndian.Uint16(packet[:2])
-			rekeyCtrl.ActivateSendEpoch(epoch)
+			if !udphelpers.IsMulticastPacket(decrypted) {
+				epoch := binary.BigEndian.Uint16(packet[:2])
+				rekeyCtrl.ActivateSendEpoch(epoch)
+			}
+			rekeyCtrl.AbortPendingIfExpired(time.Now())
 		}
 
 		_, err := t.writer.Write(decrypted)
