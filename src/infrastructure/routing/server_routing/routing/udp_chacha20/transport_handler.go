@@ -147,21 +147,25 @@ func (t *TransportHandler) handlePacket(
 	session, sessionLookupErr := t.sessionManager.GetByExternalAddrPort(addrPort)
 	if sessionLookupErr == nil && session.ExternalAddrPort() == addrPort {
 		rekeyCtrl := session.RekeyController()
-		if rekeyCtrl != nil {
-			rekeyCtrl.AbortPendingIfExpired(time.Now())
-		}
 		decrypted, decryptionErr := session.Crypto().Decrypt(packet)
 		if decryptionErr != nil {
 			t.logger.Printf("failed to decrypt data: %v", decryptionErr)
 			return decryptionErr
 		}
-		if rekeyCtrl != nil && !udphelpers.IsMulticastPacket(decrypted) {
-			epoch := binary.BigEndian.Uint16(packet[:2])
-			rekeyCtrl.ActivateSendEpoch(epoch)
+		if rekeyCtrl != nil {
+			rekeyCtrl.AbortPendingIfExpired(time.Now())
+		}
+		if udphelpers.IsMulticastPacket(decrypted) {
+			return nil
 		}
 
 		if spType, spOk := t.servicePacket.TryParseType(decrypted); spOk {
 			return t.handleServicePacket(spType, decrypted, session, addrPort, rekeyCtrl)
+		}
+
+		if rekeyCtrl != nil {
+			epoch := binary.BigEndian.Uint16(packet[:2])
+			rekeyCtrl.ActivateSendEpoch(epoch)
 		}
 
 		_, err := t.writer.Write(decrypted)
