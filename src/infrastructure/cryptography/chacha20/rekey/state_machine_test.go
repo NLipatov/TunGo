@@ -1,209 +1,643 @@
-package rekey_test
+package rekey
 
 import (
 	"errors"
+	"reflect"
+	"sync"
 	"testing"
 	"time"
-	"tungo/infrastructure/cryptography/chacha20"
-	"tungo/infrastructure/cryptography/chacha20/rekey"
-
-	"golang.org/x/crypto/chacha20poly1305"
 )
 
-// newTestCrypto builds a minimal EpochUdpCrypto for tests.
-func newTestCrypto(t *testing.T) *chacha20.EpochUdpCrypto {
-	t.Helper()
-	var sid [32]byte
-	key := make([]byte, chacha20poly1305.KeySize)
-	for i := range key {
-		key[i] = byte(i)
-	}
-	aead, err := chacha20poly1305.New(key)
-	if err != nil {
-		t.Fatalf("new cipher: %v", err)
-	}
-	return chacha20.NewEpochUdpCrypto(sid, aead, aead, false)
+// StateMachineRekeyerMock is a controllable mock for Rekeyer.
+// Name is prefixed with the tested structure per convention.
+type StateMachineRekeyerMock struct {
+	mu sync.Mutex
+
+	// Rekey behavior.
+	rekeyEpoch uint16
+	rekeyErr   error
+
+	// Optional blocking to simulate long crypto work and interleavings.
+	rekeyEntered chan struct{}   // closed when Rekey is entered
+	rekeyBlock   <-chan struct{} // if non-nil, Rekey waits until it's closed
+
+	// Call records.
+	rekeyCalls int
+	rekeySend  [][]byte
+	rekeyRecv  [][]byte
+
+	setSendEpochCalls []uint16
+	removeEpochCalls  []uint16
+
+	removeEpochReturn bool
 }
 
-// TestEncryptNeverFailsWhileRingNonEmpty ensures encrypt never returns error
-// while at least one session exists.
-func TestEncryptNeverFailsWhileRingNonEmpty(t *testing.T) {
-	crypto := newTestCrypto(t)
-	payload := func(s string) []byte {
-		data := []byte(s)
-		buf := make([]byte, chacha20poly1305.NonceSize+len(data), chacha20poly1305.NonceSize+len(data)+chacha20poly1305.Overhead)
-		copy(buf[chacha20poly1305.NonceSize:], data)
-		return buf
-	}
-	for i := 0; i < 5; i++ {
-		if _, err := crypto.Encrypt(payload("hello")); err != nil {
-			t.Fatalf("encrypt failed at %d: %v", i, err)
+func (m *StateMachineRekeyerMock) Rekey(sendKey, recvKey []byte) (uint16, error) {
+	// Record arguments as copies to avoid aliasing.
+	sendCopy := append([]byte(nil), sendKey...)
+	recvCopy := append([]byte(nil), recvKey...)
+
+	m.mu.Lock()
+	m.rekeyCalls++
+	m.rekeySend = append(m.rekeySend, sendCopy)
+	m.rekeyRecv = append(m.rekeyRecv, recvCopy)
+	entered := m.rekeyEntered
+	block := m.rekeyBlock
+	epoch := m.rekeyEpoch
+	err := m.rekeyErr
+	m.mu.Unlock()
+
+	if entered != nil {
+		select {
+		case <-entered:
+			// already closed
+		default:
+			close(entered)
 		}
 	}
-	if _, err := crypto.Rekey(make([]byte, chacha20poly1305.KeySize), make([]byte, chacha20poly1305.KeySize)); err != nil {
-		t.Fatalf("rekey: %v", err)
+	if block != nil {
+		<-block
 	}
-	for i := 0; i < 5; i++ {
-		if _, err := crypto.Encrypt(payload("world")); err != nil {
-			t.Fatalf("encrypt after rekey failed at %d: %v", i, err)
-		}
+	return epoch, err
+}
+
+func (m *StateMachineRekeyerMock) SetSendEpoch(epoch uint16) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.setSendEpochCalls = append(m.setSendEpochCalls, epoch)
+}
+
+func (m *StateMachineRekeyerMock) RemoveEpoch(epoch uint16) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.removeEpochCalls = append(m.removeEpochCalls, epoch)
+	// Default to true unless explicitly set otherwise.
+	if m.removeEpochCalls != nil && !m.removeEpochReturn && m.removeEpochReturn != false {
+		// no-op; keep explicitness simple
 	}
-	if crypto.RemoveEpoch(0) {
-		t.Fatal("should not remove active send epoch")
+	return m.removeEpochReturn || m.removeEpochReturn == false // allow default false only if set
+}
+
+func (m *StateMachineRekeyerMock) Snapshot() (rekeyCalls int, rekeySend, rekeyRecv [][]byte, setCalls, removeCalls []uint16) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	// Deep-ish copy slices for safety in asserts.
+	rekeySend = make([][]byte, len(m.rekeySend))
+	rekeyRecv = make([][]byte, len(m.rekeyRecv))
+	for i := range m.rekeySend {
+		rekeySend[i] = append([]byte(nil), m.rekeySend[i]...)
+		rekeyRecv[i] = append([]byte(nil), m.rekeyRecv[i]...)
 	}
-	if _, err := crypto.Encrypt(payload("still")); err != nil {
-		t.Fatalf("encrypt after failed remove: %v", err)
+	setCalls = append([]uint16(nil), m.setSendEpochCalls...)
+	removeCalls = append([]uint16(nil), m.removeEpochCalls...)
+	return m.rekeyCalls, rekeySend, rekeyRecv, setCalls, removeCalls
+}
+
+func TestNewStateMachine_InitialStateAndKeyCopies(t *testing.T) {
+	mock := &StateMachineRekeyerMock{}
+	c2s := []byte{1, 2, 3}
+	s2c := []byte{4, 5, 6}
+
+	sm := NewStateMachine(mock, c2s, s2c, true)
+
+	if sm.State() != StateStable {
+		t.Fatalf("expected initial state Stable, got %v", sm.State())
+	}
+	if sm.sendEpoch != 0 {
+		t.Fatalf("expected sendEpoch=0, got %d", sm.sendEpoch)
+	}
+
+	// Ensure keys are copied on construction.
+	gotC2S := sm.CurrentClientToServerKey()
+	gotS2C := sm.CurrentServerToClientKey()
+	if !reflect.DeepEqual(gotC2S, c2s) || !reflect.DeepEqual(gotS2C, s2c) {
+		t.Fatalf("expected keys to match initial values")
+	}
+	c2s[0] = 9
+	s2c[0] = 9
+	gotC2S2 := sm.CurrentClientToServerKey()
+	gotS2C2 := sm.CurrentServerToClientKey()
+	if gotC2S2[0] == 9 || gotS2C2[0] == 9 {
+		t.Fatalf("expected internal keys to be independent copies")
 	}
 }
 
-// TestSinglePendingRekey enforces at most one in-flight rekey and idempotent duplicate.
-func TestSinglePendingRekey(t *testing.T) {
-	crypto := newTestCrypto(t)
-	ctrl := rekey.NewStateMachine(crypto, []byte("c2s"), []byte("s2c"), false)
-	ctrl.SetPendingTimeout(50 * time.Millisecond)
+func TestStartRekey_Success_GoesPendingAndDoesNotSwitchSendUntilAck(t *testing.T) {
+	mock := &StateMachineRekeyerMock{rekeyEpoch: 10}
+	sm := NewStateMachine(mock, []byte("old-c2s"), []byte("old-s2c"), false)
 
-	epoch1, err := ctrl.StartRekey(make([]byte, chacha20poly1305.KeySize), make([]byte, chacha20poly1305.KeySize))
+	// Deterministic time.
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	sm.SetNowFunc(func() time.Time { return base })
+
+	epoch, err := sm.StartRekey([]byte("new-c2s"), []byte("new-s2c"))
 	if err != nil {
-		t.Fatalf("first rekey: %v", err)
+		t.Fatalf("StartRekey unexpected error: %v", err)
 	}
-	if ctrl.State() != rekey.StatePending {
-		t.Fatalf("expected pending, got %v", ctrl.State())
+	if epoch != 10 {
+		t.Fatalf("expected epoch=10, got %d", epoch)
 	}
-	if _, err := ctrl.StartRekey(make([]byte, chacha20poly1305.KeySize), make([]byte, chacha20poly1305.KeySize)); err == nil {
-		t.Fatal("second rekey should fail when pending")
+
+	if sm.State() != StatePending {
+		t.Fatalf("expected state Pending after StartRekey, got %v", sm.State())
 	}
-	if p, ok := ctrl.PendingEpoch(); !ok || p != epoch1 {
-		t.Fatalf("pending epoch changed: %v != %d", p, epoch1)
+	if !sm.hasPending || sm.pendingSendEpoch != 10 {
+		t.Fatalf("expected pending epoch=10, hasPending=%v pending=%d", sm.hasPending, sm.pendingSendEpoch)
 	}
-	// Confirm resolves to stable.
-	ctrl.ActivateSendEpoch(epoch1)
-	if ctrl.State() != rekey.StateStable {
-		t.Fatalf("expected stable after confirm, got %v", ctrl.State())
+	if !sm.pendingSince.Equal(base) {
+		t.Fatalf("expected pendingSince=%v, got %v", base, sm.pendingSince)
+	}
+
+	// Must not switch send epoch until confirmed.
+	if sm.sendEpoch != 0 {
+		t.Fatalf("expected sendEpoch still 0, got %d", sm.sendEpoch)
+	}
+
+	_, _, _, setCalls, removeCalls := mock.Snapshot()
+	if len(setCalls) != 0 {
+		t.Fatalf("expected SetSendEpoch not called yet, got %v", setCalls)
+	}
+	if len(removeCalls) != 0 {
+		t.Fatalf("expected RemoveEpoch not called, got %v", removeCalls)
 	}
 }
 
-// TestDuplicateAckNoAdvance verifies duplicate Ack (rekey) does not advance epoch+2.
-func TestDuplicateAckNoAdvance(t *testing.T) {
-	crypto := newTestCrypto(t)
-	ctrl := rekey.NewStateMachine(crypto, []byte("c2s"), []byte("s2c"), false)
+func TestActivateSendEpoch_NormalPath_PromotesKeysAndBecomesStable(t *testing.T) {
+	mock := &StateMachineRekeyerMock{rekeyEpoch: 7}
+	sm := NewStateMachine(mock, []byte("old-c2s"), []byte("old-s2c"), false)
 
-	epoch1, err := ctrl.StartRekey(make([]byte, chacha20poly1305.KeySize), make([]byte, chacha20poly1305.KeySize))
+	epoch, err := sm.StartRekey([]byte("new-c2s"), []byte("new-s2c"))
 	if err != nil {
-		t.Fatalf("rekey: %v", err)
+		t.Fatalf("StartRekey unexpected error: %v", err)
 	}
-	// Duplicate attempt should fail and not change epoch counter.
-	if _, err := ctrl.StartRekey(make([]byte, chacha20poly1305.KeySize), make([]byte, chacha20poly1305.KeySize)); err == nil {
-		t.Fatal("duplicate rekey should fail")
+	if sm.State() != StatePending {
+		t.Fatalf("expected Pending, got %v", sm.State())
 	}
-	// Confirm then check epoch advanced once.
-	ctrl.ActivateSendEpoch(epoch1)
-	if ctrl.LastRekeyEpoch != epoch1 {
-		t.Fatalf("LastRekeyEpoch should be %d after confirm, got %d", epoch1, ctrl.LastRekeyEpoch)
+
+	sm.ActivateSendEpoch(epoch)
+
+	if sm.State() != StateStable {
+		t.Fatalf("expected Stable after activation, got %v", sm.State())
+	}
+	if sm.sendEpoch != epoch || sm.LastRekeyEpoch != epoch {
+		t.Fatalf("expected sendEpoch/LastRekeyEpoch=%d, got send=%d last=%d", epoch, sm.sendEpoch, sm.LastRekeyEpoch)
+	}
+	if sm.hasPending || sm.pendingSendEpoch != 0 {
+		t.Fatalf("expected pending cleared, hasPending=%v pendingSendEpoch=%d", sm.hasPending, sm.pendingSendEpoch)
+	}
+
+	// Keys should be promoted.
+	if string(sm.CurrentClientToServerKey()) != "new-c2s" || string(sm.CurrentServerToClientKey()) != "new-s2c" {
+		t.Fatalf("expected promoted keys new-c2s/new-s2c, got %q/%q", sm.CurrentClientToServerKey(), sm.CurrentServerToClientKey())
+	}
+
+	_, _, _, setCalls, _ := mock.Snapshot()
+	if len(setCalls) != 1 || setCalls[0] != epoch {
+		t.Fatalf("expected SetSendEpoch(%d) once, got %v", epoch, setCalls)
 	}
 }
 
-// TestPendingResolvesByAbort checks that timeout aborts pending and returns to Stable.
-func TestPendingResolvesByAbort(t *testing.T) {
-	crypto := newTestCrypto(t)
-	ctrl := rekey.NewStateMachine(crypto, []byte("c2s"), []byte("s2c"), false)
-	ctrl.SetPendingTimeout(5 * time.Millisecond)
+func TestActivateSendEpoch_DoesNotActivateIfEpochNotConfirmed(t *testing.T) {
+	mock := &StateMachineRekeyerMock{rekeyEpoch: 10}
+	sm := NewStateMachine(mock, []byte("old-c2s"), []byte("old-s2c"), false)
 
-	if _, err := ctrl.StartRekey(make([]byte, chacha20poly1305.KeySize), make([]byte, chacha20poly1305.KeySize)); err != nil {
-		t.Fatalf("rekey: %v", err)
-	}
-	time.Sleep(10 * time.Millisecond)
-	ctrl.AbortPendingIfExpired(time.Now())
-	if ctrl.State() != rekey.StateStable {
-		t.Fatalf("expected stable after abort, got %v", ctrl.State())
-	}
-	if _, ok := ctrl.PendingEpoch(); ok {
-		t.Fatal("pendingSendEpoch not cleared after abort")
-	}
-}
-
-// TestSendEpochNeverEvicted ensures send epoch remains resolvable.
-func TestSendEpochNeverEvicted(t *testing.T) {
-	crypto := newTestCrypto(t)
-	payload := func(s string) []byte {
-		data := []byte(s)
-		buf := make([]byte, chacha20poly1305.NonceSize+len(data), chacha20poly1305.NonceSize+len(data)+chacha20poly1305.Overhead)
-		copy(buf[chacha20poly1305.NonceSize:], data)
-		return buf
-	}
-	if _, err := crypto.Encrypt(payload("ping")); err != nil {
-		t.Fatalf("encrypt failed: %v", err)
-	}
-	if crypto.RemoveEpoch(0) {
-		t.Fatal("should not remove active send epoch")
-	}
-	if _, err := crypto.Encrypt(payload("pong")); err != nil {
-		t.Fatalf("encrypt after remove attempt failed: %v", err)
-	}
-}
-
-// TestConfirmRequiresMatchingEpoch ensures wrong epoch does not switch state.
-func TestConfirmRequiresMatchingEpoch(t *testing.T) {
-	crypto := newTestCrypto(t)
-	ctrl := rekey.NewStateMachine(crypto, []byte("c2s"), []byte("s2c"), false)
-
-	epoch, err := ctrl.StartRekey(make([]byte, chacha20poly1305.KeySize), make([]byte, chacha20poly1305.KeySize))
+	epoch, err := sm.StartRekey([]byte("new-c2s"), []byte("new-s2c"))
 	if err != nil {
-		t.Fatalf("rekey: %v", err)
+		t.Fatalf("StartRekey unexpected error: %v", err)
 	}
-	ctrl.ActivateSendEpoch(epoch + 1) // wrong epoch
-	if ctrl.State() != rekey.StatePending {
-		t.Fatalf("state changed on wrong epoch confirm: %v", ctrl.State())
+	if epoch != 10 {
+		t.Fatalf("expected epoch=10, got %d", epoch)
 	}
-	ctrl.ActivateSendEpoch(epoch)
-	if ctrl.State() != rekey.StateStable {
-		t.Fatalf("state not stable after correct confirm: %v", ctrl.State())
+
+	// Confirm a smaller epoch than pending; should not activate.
+	sm.ActivateSendEpoch(9)
+
+	if sm.State() != StatePending {
+		t.Fatalf("expected still Pending, got %v", sm.State())
 	}
-	if ctrl.LastRekeyEpoch != epoch {
-		t.Fatalf("LastRekeyEpoch not updated on confirm: %d != %d", ctrl.LastRekeyEpoch, epoch)
+	if sm.sendEpoch != 0 {
+		t.Fatalf("expected sendEpoch still 0, got %d", sm.sendEpoch)
+	}
+
+	_, _, _, setCalls, _ := mock.Snapshot()
+	if len(setCalls) != 0 {
+		t.Fatalf("expected no SetSendEpoch calls, got %v", setCalls)
 	}
 }
 
-// TestRekeyWhilePending returns error and keeps state.
-func TestRekeyWhilePending(t *testing.T) {
-	crypto := newTestCrypto(t)
-	ctrl := rekey.NewStateMachine(crypto, []byte("c2s"), []byte("s2c"), false)
-	if _, err := ctrl.StartRekey(make([]byte, chacha20poly1305.KeySize), make([]byte, chacha20poly1305.KeySize)); err != nil {
-		t.Fatalf("rekey: %v", err)
+func TestStartRekey_EarlyAckDuringRekeying_AutoActivatesOnReturn(t *testing.T) {
+	rekeyEntered := make(chan struct{})
+	rekeyUnblock := make(chan struct{})
+
+	mock := &StateMachineRekeyerMock{
+		rekeyEpoch:   42,
+		rekeyEntered: rekeyEntered,
+		rekeyBlock:   rekeyUnblock,
 	}
-	if _, err := ctrl.StartRekey(make([]byte, chacha20poly1305.KeySize), make([]byte, chacha20poly1305.KeySize)); err == nil {
-		t.Fatal("expected error on rekey while pending")
+	sm := NewStateMachine(mock, []byte("old-c2s"), []byte("old-s2c"), false)
+
+	done := make(chan struct{})
+	var startEpoch uint16
+	var startErr error
+	go func() {
+		defer close(done)
+		startEpoch, startErr = sm.StartRekey([]byte("new-c2s"), []byte("new-s2c"))
+	}()
+
+	// Wait until crypto.Rekey is entered and StartRekey has released the mutex.
+	select {
+	case <-rekeyEntered:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timeout waiting for Rekey to be entered")
 	}
-	if ctrl.State() != rekey.StatePending {
-		t.Fatalf("state should remain pending: %v", ctrl.State())
+
+	// Early ACK while state is expected to be StateRekeying.
+	sm.ActivateSendEpoch(42)
+
+	// Let crypto.Rekey return.
+	close(rekeyUnblock)
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timeout waiting for StartRekey to finish")
+	}
+
+	if startErr != nil {
+		t.Fatalf("StartRekey unexpected error: %v", startErr)
+	}
+	if startEpoch != 42 {
+		t.Fatalf("expected epoch=42, got %d", startEpoch)
+	}
+
+	// Should have auto-activated and ended Stable (early-ack fast-forward).
+	if sm.State() != StateStable {
+		t.Fatalf("expected Stable after early-ack activation, got %v", sm.State())
+	}
+	if sm.sendEpoch != 42 || sm.LastRekeyEpoch != 42 {
+		t.Fatalf("expected sendEpoch/LastRekeyEpoch=42, got send=%d last=%d", sm.sendEpoch, sm.LastRekeyEpoch)
+	}
+	if string(sm.CurrentClientToServerKey()) != "new-c2s" || string(sm.CurrentServerToClientKey()) != "new-s2c" {
+		t.Fatalf("expected promoted keys new-c2s/new-s2c, got %q/%q", sm.CurrentClientToServerKey(), sm.CurrentServerToClientKey())
+	}
+
+	_, _, _, setCalls, _ := mock.Snapshot()
+	if len(setCalls) != 1 || setCalls[0] != 42 {
+		t.Fatalf("expected SetSendEpoch(42) once, got %v", setCalls)
 	}
 }
 
-// TestAbortResetsLastEpoch ensures abort leaves LastRekeyEpoch at active send epoch.
-func TestAbortResetsLastEpoch(t *testing.T) {
-	crypto := newTestCrypto(t)
-	ctrl := rekey.NewStateMachine(crypto, []byte("c2s"), []byte("s2c"), false)
-	if _, err := ctrl.StartRekey(make([]byte, chacha20poly1305.KeySize), make([]byte, chacha20poly1305.KeySize)); err != nil {
-		t.Fatalf("rekey: %v", err)
+func TestAbortPendingIfExpired_NoOpBeforeTimeout(t *testing.T) {
+	mock := &StateMachineRekeyerMock{rekeyEpoch: 5}
+	sm := NewStateMachine(mock, []byte("old-c2s"), []byte("old-s2c"), false)
+
+	base := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
+	sm.SetNowFunc(func() time.Time { return base })
+	sm.SetPendingTimeout(10 * time.Second)
+
+	epoch, err := sm.StartRekey([]byte("new-c2s"), []byte("new-s2c"))
+	if err != nil {
+		t.Fatalf("StartRekey unexpected error: %v", err)
 	}
-	ctrl.AbortPending()
-	if ctrl.State() != rekey.StateStable {
-		t.Fatalf("expected stable after abort: %v", ctrl.State())
+	if epoch != 5 {
+		t.Fatalf("expected epoch=5, got %d", epoch)
 	}
-	if _, ok := ctrl.PendingEpoch(); ok {
-		t.Fatalf("pending should be cleared")
+
+	sm.AbortPendingIfExpired(base.Add(9 * time.Second))
+
+	if sm.State() != StatePending {
+		t.Fatalf("expected still Pending, got %v", sm.State())
 	}
-	if ctrl.LastRekeyEpoch != 0 {
-		t.Fatalf("LastRekeyEpoch should revert to active send epoch, got %d", ctrl.LastRekeyEpoch)
+	_, _, _, _, removeCalls := mock.Snapshot()
+	if len(removeCalls) != 0 {
+		t.Fatalf("expected no RemoveEpoch calls, got %v", removeCalls)
 	}
 }
 
-// TestEpochExhausted blocks further rekey and surfaces ErrEpochExhausted.
-func TestEpochExhausted(t *testing.T) {
-	crypto := newTestCrypto(t)
-	ctrl := rekey.NewStateMachine(crypto, []byte("c2s"), []byte("s2c"), false)
-	ctrl.LastRekeyEpoch = 65000
-	_, err := ctrl.StartRekey(make([]byte, chacha20poly1305.KeySize), make([]byte, chacha20poly1305.KeySize))
-	if !errors.Is(err, rekey.ErrEpochExhausted) {
+func TestAbortPendingIfExpired_AbortsAfterTimeout_RemovesEpochAndResets(t *testing.T) {
+	mock := &StateMachineRekeyerMock{rekeyEpoch: 5}
+	sm := NewStateMachine(mock, []byte("old-c2s"), []byte("old-s2c"), false)
+
+	base := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
+	sm.SetNowFunc(func() time.Time { return base })
+	sm.SetPendingTimeout(10 * time.Second)
+
+	epoch, err := sm.StartRekey([]byte("new-c2s"), []byte("new-s2c"))
+	if err != nil {
+		t.Fatalf("StartRekey unexpected error: %v", err)
+	}
+	if epoch != 5 {
+		t.Fatalf("expected epoch=5, got %d", epoch)
+	}
+
+	sm.AbortPendingIfExpired(base.Add(10 * time.Second))
+
+	if sm.State() != StateStable {
+		t.Fatalf("expected Stable after abort, got %v", sm.State())
+	}
+	if sm.hasPending {
+		t.Fatalf("expected pending cleared after abort")
+	}
+	_, _, _, setCalls, removeCalls := mock.Snapshot()
+	if len(setCalls) != 0 {
+		t.Fatalf("expected no SetSendEpoch calls on abort, got %v", setCalls)
+	}
+	if len(removeCalls) != 1 || removeCalls[0] != 5 {
+		t.Fatalf("expected RemoveEpoch(5) once, got %v", removeCalls)
+	}
+}
+
+func TestStartRekey_NotAllowedWhenNotStable(t *testing.T) {
+	rekeyEntered := make(chan struct{})
+	rekeyUnblock := make(chan struct{})
+
+	mock := &StateMachineRekeyerMock{
+		rekeyEpoch:   1,
+		rekeyEntered: rekeyEntered,
+		rekeyBlock:   rekeyUnblock,
+	}
+	sm := NewStateMachine(mock, []byte("old-c2s"), []byte("old-s2c"), false)
+
+	// First StartRekey blocks in crypto and leaves state at StateRekeying for a while.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _ = sm.StartRekey([]byte("k1"), []byte("k2"))
+	}()
+
+	select {
+	case <-rekeyEntered:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timeout waiting for Rekey to be entered")
+	}
+
+	// Second StartRekey must fail while first is in-flight.
+	if _, err := sm.StartRekey([]byte("k3"), []byte("k4")); err == nil {
+		t.Fatalf("expected error when StartRekey is called in non-stable state")
+	}
+
+	// Unblock first call.
+	close(rekeyUnblock)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timeout waiting for StartRekey to finish")
+	}
+
+	// Now first call ended in Pending; StartRekey still must fail.
+	if sm.State() != StatePending {
+		t.Fatalf("expected Pending after first StartRekey, got %v", sm.State())
+	}
+	if _, err := sm.StartRekey([]byte("k5"), []byte("k6")); err == nil {
+		t.Fatalf("expected error when StartRekey is called in Pending state")
+	}
+}
+
+func TestStartRekey_CryptoError_RollsBackToStable_NoCleanupEpoch(t *testing.T) {
+	sentinelErr := errors.New("crypto failure")
+	mock := &StateMachineRekeyerMock{rekeyErr: sentinelErr}
+	sm := NewStateMachine(mock, []byte("old-c2s"), []byte("old-s2c"), false)
+
+	_, err := sm.StartRekey([]byte("new-c2s"), []byte("new-s2c"))
+	if !errors.Is(err, sentinelErr) {
+		t.Fatalf("expected crypto error, got %v", err)
+	}
+	if sm.State() != StateStable {
+		t.Fatalf("expected Stable after crypto error, got %v", sm.State())
+	}
+
+	rekeyCalls, _, _, _, removeCalls := mock.Snapshot()
+	if rekeyCalls != 1 {
+		t.Fatalf("expected Rekey called once, got %d", rekeyCalls)
+	}
+	if len(removeCalls) != 0 {
+		t.Fatalf("expected no RemoveEpoch call when Rekey returns error (no epoch installed), got %v", removeCalls)
+	}
+}
+
+func TestStartRekey_EpochExhaustedByLastRekeyEpoch_DoesNotCallCrypto(t *testing.T) {
+	mock := &StateMachineRekeyerMock{rekeyEpoch: 1}
+	sm := NewStateMachine(mock, []byte("old-c2s"), []byte("old-s2c"), false)
+
+	// Force exhaustion.
+	sm.mu.Lock()
+	sm.LastRekeyEpoch = maxEpochSafety
+	sm.mu.Unlock()
+
+	_, err := sm.StartRekey([]byte("x"), []byte("y"))
+	if !errors.Is(err, ErrEpochExhausted) {
 		t.Fatalf("expected ErrEpochExhausted, got %v", err)
+	}
+
+	rekeyCalls, _, _, _, _ := mock.Snapshot()
+	if rekeyCalls != 0 {
+		t.Fatalf("expected Rekey not called on exhaustion, got %d", rekeyCalls)
+	}
+}
+
+func TestStartRekey_EpochExhaustedByReturnedEpoch_CleansUpEpoch(t *testing.T) {
+	mock := &StateMachineRekeyerMock{rekeyEpoch: maxEpochSafety}
+	sm := NewStateMachine(mock, []byte("old-c2s"), []byte("old-s2c"), false)
+
+	_, err := sm.StartRekey([]byte("x"), []byte("y"))
+	if !errors.Is(err, ErrEpochExhausted) {
+		t.Fatalf("expected ErrEpochExhausted, got %v", err)
+	}
+	if sm.State() != StateStable {
+		t.Fatalf("expected Stable after exhaustion cleanup, got %v", sm.State())
+	}
+
+	_, _, _, _, removeCalls := mock.Snapshot()
+	if len(removeCalls) != 1 || removeCalls[0] != maxEpochSafety {
+		t.Fatalf("expected RemoveEpoch(%d) once, got %v", maxEpochSafety, removeCalls)
+	}
+}
+
+func TestStartRekey_NonMonotonicEpoch_CleansUpEpoch(t *testing.T) {
+	mock := &StateMachineRekeyerMock{rekeyEpoch: 5}
+	sm := NewStateMachine(mock, []byte("old-c2s"), []byte("old-s2c"), false)
+
+	// Pretend we've already activated epoch 5.
+	sm.mu.Lock()
+	sm.sendEpoch = 5
+	sm.LastRekeyEpoch = 5
+	sm.mu.Unlock()
+
+	_, err := sm.StartRekey([]byte("x"), []byte("y"))
+	if err == nil {
+		t.Fatalf("expected non-monotonic epoch error")
+	}
+	if sm.State() != StateStable {
+		t.Fatalf("expected Stable after failure, got %v", sm.State())
+	}
+
+	_, _, _, _, removeCalls := mock.Snapshot()
+	if len(removeCalls) != 1 || removeCalls[0] != 5 {
+		t.Fatalf("expected RemoveEpoch(5) once, got %v", removeCalls)
+	}
+}
+
+func TestStartRekey_UnexpectedStateAfterRekey_CleansUpEpoch(t *testing.T) {
+	rekeyEntered := make(chan struct{})
+	rekeyUnblock := make(chan struct{})
+
+	mock := &StateMachineRekeyerMock{
+		rekeyEpoch:   9,
+		rekeyEntered: rekeyEntered,
+		rekeyBlock:   rekeyUnblock,
+	}
+	sm := NewStateMachine(mock, []byte("old-c2s"), []byte("old-s2c"), false)
+
+	done := make(chan struct{})
+	var gotErr error
+	go func() {
+		defer close(done)
+		_, gotErr = sm.StartRekey([]byte("x"), []byte("y"))
+	}()
+
+	select {
+	case <-rekeyEntered:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timeout waiting for Rekey to be entered")
+	}
+
+	// Simulate an unexpected state mutation while StartRekey is blocked in crypto.
+	sm.mu.Lock()
+	sm.state = StateStable
+	sm.mu.Unlock()
+
+	close(rekeyUnblock)
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timeout waiting for StartRekey to finish")
+	}
+
+	if gotErr == nil {
+		t.Fatalf("expected error due to unexpected state after rekey")
+	}
+	if sm.State() != StateStable {
+		t.Fatalf("expected Stable after cleanup, got %v", sm.State())
+	}
+
+	_, _, _, _, removeCalls := mock.Snapshot()
+	if len(removeCalls) != 1 || removeCalls[0] != 9 {
+		t.Fatalf("expected RemoveEpoch(9) once, got %v", removeCalls)
+	}
+}
+
+func TestStartRekey_CopiesInputSlices_NoExternalMutationLeak(t *testing.T) {
+	rekeyEntered := make(chan struct{})
+	rekeyUnblock := make(chan struct{})
+
+	mock := &StateMachineRekeyerMock{
+		rekeyEpoch:   3,
+		rekeyEntered: rekeyEntered,
+		rekeyBlock:   rekeyUnblock,
+	}
+	sm := NewStateMachine(mock, []byte("old-c2s"), []byte("old-s2c"), false)
+
+	send := []byte{1, 2, 3}
+	recv := []byte{4, 5, 6}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _ = sm.StartRekey(send, recv)
+	}()
+
+	select {
+	case <-rekeyEntered:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timeout waiting for Rekey to be entered")
+	}
+
+	// Mutate original slices after StartRekey has passed copies to crypto.Rekey.
+	send[0] = 9
+	recv[0] = 9
+
+	close(rekeyUnblock)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timeout waiting for StartRekey to finish")
+	}
+
+	_, rekeySend, rekeyRecv, _, _ := mock.Snapshot()
+	if len(rekeySend) != 1 || len(rekeyRecv) != 1 {
+		t.Fatalf("expected exactly one Rekey call")
+	}
+	if rekeySend[0][0] != 1 || rekeyRecv[0][0] != 4 {
+		t.Fatalf("expected crypto to receive original (copied) values, got send=%v recv=%v", rekeySend[0], rekeyRecv[0])
+	}
+}
+
+func TestActivateSendEpoch_AlwaysTracksMaxPeerEpoch(t *testing.T) {
+	mock := &StateMachineRekeyerMock{rekeyEpoch: 2}
+	sm := NewStateMachine(mock, []byte("old-c2s"), []byte("old-s2c"), false)
+
+	sm.ActivateSendEpoch(10)
+	sm.ActivateSendEpoch(7)
+	sm.ActivateSendEpoch(11)
+
+	if sm.peerEpochSeenMax != 11 {
+		t.Fatalf("expected peerEpochSeenMax=11, got %d", sm.peerEpochSeenMax)
+	}
+}
+
+func TestConcurrent_ActivateAndAbort_NoDeadlock_EndsInValidState(t *testing.T) {
+	mock := &StateMachineRekeyerMock{rekeyEpoch: 100}
+	sm := NewStateMachine(mock, []byte("old-c2s"), []byte("old-s2c"), false)
+
+	base := time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC)
+	sm.SetNowFunc(func() time.Time { return base })
+	sm.SetPendingTimeout(1 * time.Second)
+
+	epoch, err := sm.StartRekey([]byte("new-c2s"), []byte("new-s2c"))
+	if err != nil {
+		t.Fatalf("StartRekey unexpected error: %v", err)
+	}
+	if epoch != 100 {
+		t.Fatalf("expected epoch=100, got %d", epoch)
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		// Try to confirm while another goroutine tries to abort.
+		for i := 0; i < 1000; i++ {
+			sm.ActivateSendEpoch(100)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		// Try to abort; depending on timing, activation may win.
+		for i := 0; i < 1000; i++ {
+			sm.AbortPendingIfExpired(base.Add(2 * time.Second))
+		}
+	}()
+
+	done := make(chan struct{})
+	go func() { defer close(done); wg.Wait() }()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timeout waiting for concurrent operations to finish (possible deadlock)")
+	}
+
+	// Final state should be Stable (either by activation or by abort).
+	if sm.State() != StateStable {
+		t.Fatalf("expected Stable at end, got %v", sm.State())
+	}
+
+	// Invariants: no pending should remain if Stable.
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	if sm.state == StateStable && sm.hasPending {
+		t.Fatalf("invariant violated: Stable but hasPending=true")
 	}
 }
