@@ -5,12 +5,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"testing"
 	"time"
 	"tungo/application/network/rekey"
 	"tungo/domain/network/service"
 	"tungo/infrastructure/cryptography/chacha20"
+	"tungo/infrastructure/cryptography/chacha20/handshake"
+
+	"golang.org/x/crypto/chacha20poly1305"
+	"golang.org/x/crypto/curve25519"
 )
 
 type dummyRekeyer struct{}
@@ -34,6 +39,19 @@ func (m *thTestCrypto) Decrypt([]byte) ([]byte, error) {
 		return nil, m.err
 	}
 	return m.output, nil
+}
+
+// thAckCrypto returns payload without the leading epoch bytes.
+type thAckCrypto struct{}
+
+func (thAckCrypto) Encrypt(b []byte) ([]byte, error) { return b, nil }
+func (thAckCrypto) Decrypt(b []byte) ([]byte, error) {
+	if len(b) <= 2 {
+		return nil, fmt.Errorf("cipher too short")
+	}
+	out := make([]byte, len(b)-2)
+	copy(out, b[2:])
+	return out, nil
 }
 
 type servicePacketMock struct {
@@ -62,6 +80,18 @@ func (s *servicePacketSessionResetMock) EncodeV1(_ service.PacketType, buffer []
 	return buffer, nil
 }
 
+// incRekeyer yields monotonically increasing epochs for rekey tests.
+type incRekeyer struct {
+	next uint16
+}
+
+func (r *incRekeyer) Rekey(_, _ []byte) (uint16, error) {
+	r.next++
+	return r.next, nil
+}
+func (r *incRekeyer) SetSendEpoch(uint16)     {}
+func (r *incRekeyer) RemoveEpoch(uint16) bool { return true }
+
 // thTestReader simulates a sequence of Read calls for TransportHandler
 type thTestReader struct {
 	reads []func(p []byte) (int, error)
@@ -70,8 +100,7 @@ type thTestReader struct {
 
 func (r *thTestReader) Read(p []byte) (int, error) {
 	if r.idx >= len(r.reads) {
-		// block until context done to avoid busy loop
-		select {}
+		return 0, io.EOF
 	}
 	fn := r.reads[r.idx]
 	r.idx++
@@ -200,14 +229,13 @@ func TestHandleTransport_DecryptErrorFatal(t *testing.T) {
 }
 
 func TestHandleTransport_WriteError(t *testing.T) {
-	d := []byte{9}
-	// reader returns data (non-service) -> decrypt -> writer error
+	d := []byte{0, 9} // epoch + payload
 	r := &thTestReader{reads: []func(p []byte) (int, error){
 		func(p []byte) (int, error) { copy(p, d); return len(d), nil },
 	}}
 	errWrite := errors.New("write fail")
 	w := &thTestWriter{err: errWrite}
-	crypto := &thTestCrypto{output: d}
+	crypto := &thTestCrypto{output: d[1:]} // decrypted payload
 	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 	h := NewTransportHandler(context.Background(), r, w, crypto, ctrl, &servicePacketMock{})
 	exp := fmt.Sprintf("failed to write to TUN: %v", errWrite)
@@ -220,7 +248,7 @@ func TestHandleTransport_SuccessThenCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	encrypted := []byte{42}
+	encrypted := []byte{0, 42} // epoch + payload
 	decrypted := []byte{100}
 	r := &thTestReader{reads: []func(p []byte) (int, error){
 		func(p []byte) (int, error) { copy(p, encrypted); return len(encrypted), nil },
@@ -243,5 +271,140 @@ func TestHandleTransport_SuccessThenCancel(t *testing.T) {
 
 	if len(w.data) != 1 || !bytes.Equal(w.data[0], decrypted) {
 		t.Errorf("expected decrypted data %v, got %v", decrypted, w.data)
+	}
+}
+
+// Regression test for repeated RekeyInit before Ack: pending private key must stay the same,
+// otherwise the RekeyAck computed with the first pubkey would derive mismatched session keys.
+func TestHandleTransport_RekeyAckAfterDoubleInit_UsesOriginalPendingKey(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Shared controller for TunHandler and TransportHandler.
+	rekeyer := &incRekeyer{}
+	ctrl := rekey.NewController(rekeyer, []byte("c2s0"), []byte("s2c0"), false)
+
+	// --- Step 1: fire two RekeyInit sends without ACK in between.
+	reader := &fakeReader{readFunc: func(p []byte) (int, error) {
+		return 0, nil // no payload needed; just spin the loop
+	}}
+	writer := &fakeWriter{}
+	crypto := &tunhandlerTestRakeCrypto{} // passthrough
+	tunHandler := NewTunHandler(ctx, reader, writer, crypto, ctrl, service.NewDefaultPacketHandler()).(*TunHandler)
+	tunHandler.rekeyInterval = 5 * time.Millisecond
+	tunHandler.rotateAt = time.Now().UTC().Add(tunHandler.rekeyInterval)
+
+	doneTun := make(chan struct{})
+	go func() {
+		_ = tunHandler.HandleTun()
+		close(doneTun)
+	}()
+
+	waitForWrites := func(w *fakeWriter, want int) {
+		deadline := time.Now().Add(300 * time.Millisecond)
+		for len(w.data) < want && time.Now().Before(deadline) {
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+	waitForWrites(writer, 2)
+	cancel()  // stop tun handler loop
+	<-doneTun // ensure exit
+	if len(writer.data) < 2 {
+		t.Fatalf("expected at least two RekeyInit packets, got %d", len(writer.data))
+	}
+
+	// Extract pending priv and first public key for expected derivation.
+	pendingPriv, ok := ctrl.PendingRekeyPrivateKey()
+	if !ok {
+		t.Fatal("pending priv key missing")
+	}
+	firstPub := func(pkt []byte) []byte {
+		start := chacha20poly1305.NonceSize + 3
+		end := start + service.RekeyPublicKeyLen
+		if len(pkt) < end {
+			t.Fatalf("rekey packet too short: %d", len(pkt))
+		}
+		out := make([]byte, service.RekeyPublicKeyLen)
+		copy(out, pkt[start:end])
+		return out
+	}(writer.data[0])
+	secondPub := func(pkt []byte) []byte {
+		start := chacha20poly1305.NonceSize + 3
+		end := start + service.RekeyPublicKeyLen
+		if len(pkt) < end {
+			t.Fatalf("rekey packet too short: %d", len(pkt))
+		}
+		out := make([]byte, service.RekeyPublicKeyLen)
+		copy(out, pkt[start:end])
+		return out
+	}(writer.data[1])
+	if !bytes.Equal(firstPub, secondPub) {
+		t.Fatalf("public keys differ across RekeyInit retries")
+	}
+
+	// --- Step 2: craft RekeyAck for the FIRST pubkey and feed TransportHandler.
+	hc := &handshake.DefaultCrypto{}
+	serverPub, _, err := hc.GenerateX25519KeyPair()
+	if err != nil {
+		t.Fatalf("failed to gen server key: %v", err)
+	}
+	shared, err := curve25519.X25519(pendingPriv[:], serverPub)
+	if err != nil {
+		t.Fatalf("shared derivation failed: %v", err)
+	}
+	expectedC2S, err := hc.DeriveKey(shared, ctrl.CurrentClientToServerKey(), []byte("tungo-rekey-c2s"))
+	if err != nil {
+		t.Fatalf("derive c2s failed: %v", err)
+	}
+	expectedS2C, err := hc.DeriveKey(shared, ctrl.CurrentServerToClientKey(), []byte("tungo-rekey-s2c"))
+	if err != nil {
+		t.Fatalf("derive s2c failed: %v", err)
+	}
+
+	ackPayload := make([]byte, service.RekeyPacketLen)
+	if _, err := service.NewDefaultPacketHandler().EncodeV1(service.RekeyAck, ackPayload); err != nil {
+		t.Fatalf("encode ack failed: %v", err)
+	}
+	copy(ackPayload[3:], serverPub)
+
+	// Ciphertext: epoch bytes + plaintext (Decrypt stub will strip the epoch).
+	cipherAck := append([]byte{0, 42}, ackPayload...)
+	r := &thTestReader{reads: []func(p []byte) (int, error){
+		func(p []byte) (int, error) { copy(p, cipherAck); return len(cipherAck), nil },
+		func(p []byte) (int, error) { <-ctx.Done(); return 0, errors.New("stop") },
+	}}
+	w := &thTestWriter{}
+
+	transportCtx, transportCancel := context.WithCancel(context.Background())
+	defer transportCancel()
+	h := NewTransportHandler(transportCtx, r, w, &thAckCrypto{}, ctrl, service.NewDefaultPacketHandler()).(*TransportHandler)
+	h.handshakeCrypto = hc
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- h.HandleTransport() }()
+
+	// Wait for rekey to apply.
+	deadline := time.Now().Add(300 * time.Millisecond)
+	for {
+		if ctrl.State() == rekey.StateStable && ctrl.LastRekeyEpoch == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timeout waiting for rekey apply; state=%v epoch=%d", ctrl.State(), ctrl.LastRekeyEpoch)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	transportCancel()
+	_ = <-errCh
+
+	// Validate derived keys match the ones expected from the ORIGINAL pending priv.
+	if got := ctrl.CurrentClientToServerKey(); !bytes.Equal(got, expectedC2S) {
+		t.Fatalf("C2S key mismatch; got %x want %x", got, expectedC2S)
+	}
+	if got := ctrl.CurrentServerToClientKey(); !bytes.Equal(got, expectedS2C) {
+		t.Fatalf("S2C key mismatch; got %x want %x", got, expectedS2C)
+	}
+	if _, ok := ctrl.PendingRekeyPrivateKey(); ok {
+		t.Fatalf("pending priv should be cleared after ack")
 	}
 }

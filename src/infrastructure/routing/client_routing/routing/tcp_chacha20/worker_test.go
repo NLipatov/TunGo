@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"tungo/application/network/rekey"
 )
 
 /* ─── mocks ──────────────────────────────────────────────────────────────── */
@@ -41,7 +42,8 @@ func (TcpTunWorkerTestMockCrypt) Decrypt(b []byte) ([]byte, error) { return b, n
 func TestTcpTunWorker_DelegatesSuccessfully(t *testing.T) {
 	tun := &TcpTunWorkerTestMockTunHandler{}
 	transport := &TcpTunWorkerTestMockTransportHandler{}
-	w := NewTcpTunWorker(context.Background(), tun, transport, &TcpTunWorkerTestMockCrypt{})
+	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	w := NewTcpTunWorker(context.Background(), tun, transport, &TcpTunWorkerTestMockCrypt{}, ctrl)
 
 	if err := w.HandleTun(); err != nil {
 		t.Fatalf("HandleTun returned unexpected error: %v", err)
@@ -61,7 +63,8 @@ func TestTcpTunWorker_ErrorPropagation(t *testing.T) {
 
 	tun := &TcpTunWorkerTestMockTunHandler{err: tunErr}
 	transport := &TcpTunWorkerTestMockTransportHandler{err: trpErr}
-	w := NewTcpTunWorker(context.Background(), tun, transport, &TcpTunWorkerTestMockCrypt{})
+	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	w := NewTcpTunWorker(context.Background(), tun, transport, &TcpTunWorkerTestMockCrypt{}, ctrl)
 
 	if err := w.HandleTun(); !errors.Is(err, tunErr) {
 		t.Fatalf("expected %v, got %v", tunErr, err)

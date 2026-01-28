@@ -12,6 +12,7 @@ import (
 	"tungo/domain/network/service"
 
 	"golang.org/x/crypto/chacha20poly1305"
+	"golang.org/x/crypto/curve25519"
 )
 
 // fakeCrypto implements application.Crypto for testing
@@ -273,5 +274,63 @@ func TestHandleTun_ReadReturnsNAndEOF_OneWriteThenEOF(t *testing.T) {
 	want := append([]byte("pre-"), append(zeros, []byte{7, 8, 9}...)...)
 	if !bytes.Equal(w.data[0], want) {
 		t.Fatalf("written mismatch: got %v, want %v", w.data[0], want)
+	}
+}
+
+func TestHandleTun_ReusesPendingRekeyKey(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	reader := &fakeReader{readFunc: func(p []byte) (int, error) { return 0, nil }}
+	writer := &fakeWriter{}
+	crypto := &tunhandlerTestRakeCrypto{} // passthrough encrypt
+	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+
+	h := NewTunHandler(ctx, reader, writer, crypto, ctrl, service.NewDefaultPacketHandler())
+	th := h.(*TunHandler)
+	th.rekeyInterval = 5 * time.Millisecond
+	th.rotateAt = time.Now().UTC().Add(th.rekeyInterval)
+
+	done := make(chan struct{})
+	go func() {
+		_ = h.HandleTun()
+		close(done)
+	}()
+
+	deadline := time.Now().Add(250 * time.Millisecond)
+	for len(writer.data) < 2 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	cancel()
+	<-done
+
+	if len(writer.data) < 2 {
+		t.Fatalf("expected at least two rekey inits, got %d", len(writer.data))
+	}
+
+	extractPub := func(pkt []byte) []byte {
+		start := chacha20poly1305.NonceSize + 3
+		end := start + service.RekeyPublicKeyLen
+		if len(pkt) < end {
+			t.Fatalf("rekey packet too short: %d bytes", len(pkt))
+		}
+		buf := make([]byte, service.RekeyPublicKeyLen)
+		copy(buf, pkt[start:end])
+		return buf
+	}
+
+	pk1 := extractPub(writer.data[0])
+	pk2 := extractPub(writer.data[1])
+	if !bytes.Equal(pk1, pk2) {
+		t.Fatalf("expected rekey init to reuse pending key, got different public keys")
+	}
+
+	priv, ok := ctrl.PendingRekeyPrivateKey()
+	if !ok {
+		t.Fatalf("expected pending private key to remain set")
+	}
+	derivedPub, _ := curve25519.X25519(priv[:], curve25519.Basepoint)
+	if !bytes.Equal(pk1, derivedPub) {
+		t.Fatalf("sent public key does not match pending private key")
 	}
 }

@@ -11,6 +11,8 @@ import (
 	"tungo/domain/network/service"
 	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/settings"
+
+	"golang.org/x/crypto/curve25519"
 )
 
 type TunHandler struct {
@@ -22,6 +24,7 @@ type TunHandler struct {
 	servicePacket       service.PacketHandler
 	handshakeCrypto     handshake.Crypto
 	rotateAt            time.Time
+	rekeyInterval       time.Duration
 }
 
 func NewTunHandler(ctx context.Context,
@@ -38,6 +41,7 @@ func NewTunHandler(ctx context.Context,
 		rekeyController:     rekeyController,
 		servicePacket:       servicePacket,
 		handshakeCrypto:     &handshake.DefaultCrypto{},
+		rekeyInterval:       settings.DefaultRekeyInterval,
 		rotateAt:            time.Now().UTC().Add(settings.DefaultRekeyInterval),
 	}
 }
@@ -76,31 +80,43 @@ func (t *TunHandler) HandleTun() error {
 			}
 
 			if time.Now().UTC().After(t.rotateAt) && t.rekeyController != nil && t.rekeyController.State() == rekey.StateStable {
-				pub, priv, keyErr := t.handshakeCrypto.GenerateX25519KeyPair()
-				if keyErr != nil {
-					log.Printf("failed to generate rekey key pair: %v", keyErr)
-					t.rotateAt = time.Now().UTC().Add(settings.DefaultRekeyInterval)
+				var (
+					pub  []byte
+					priv [32]byte
+					err  error
+				)
+				if pendingPriv, ok := t.rekeyController.PendingRekeyPrivateKey(); ok {
+					pub, err = curve25519.X25519(pendingPriv[:], curve25519.Basepoint)
+					priv = pendingPriv
+				} else {
+					pub, priv, err = t.handshakeCrypto.GenerateX25519KeyPair()
+					if err == nil {
+						t.rekeyController.SetPendingRekeyPrivateKey(priv)
+					}
+				}
+				if err != nil {
+					log.Printf("failed to prepare rekey key pair: %v", err)
+					t.rotateAt = time.Now().UTC().Add(t.rekeyInterval)
 					continue
 				}
-				t.rekeyController.SetPendingRekeyPrivateKey(priv)
 				payloadBuf := make([]byte, service.RekeyPacketLen)
 				copy(payloadBuf[3:], pub)
 				servicePayload, err := t.servicePacket.EncodeV1(service.RekeyInit, payloadBuf)
 				if err != nil {
 					log.Printf("failed to encode rekeyInit packet")
-					t.rotateAt = time.Now().UTC().Add(settings.DefaultRekeyInterval)
+					t.rotateAt = time.Now().UTC().Add(t.rekeyInterval)
 					continue
 				}
 				enc, encErr := t.cryptographyService.Encrypt(servicePayload)
 				if encErr != nil {
 					log.Printf("failed to encrypt rekeyInit: %v", encErr)
-					t.rotateAt = time.Now().UTC().Add(settings.DefaultRekeyInterval)
+					t.rotateAt = time.Now().UTC().Add(t.rekeyInterval)
 					continue
 				}
 				if _, err := t.writer.Write(enc); err != nil {
 					log.Printf("failed to write rekeyInit: %v", err)
 				}
-				t.rotateAt = time.Now().UTC().Add(settings.DefaultRekeyInterval)
+				t.rotateAt = time.Now().UTC().Add(t.rekeyInterval)
 			}
 		}
 	}

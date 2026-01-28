@@ -13,6 +13,7 @@ import (
 	"tungo/infrastructure/settings"
 
 	"golang.org/x/crypto/chacha20poly1305"
+	"golang.org/x/crypto/curve25519"
 )
 
 type TunHandler struct {
@@ -24,6 +25,7 @@ type TunHandler struct {
 	servicePacket       service.PacketHandler
 	controlPacketBuffer [128]byte
 	rotateAt            time.Time
+	rekeyInterval       time.Duration
 	handshakeCrypto     handshake.Crypto
 }
 
@@ -41,6 +43,7 @@ func NewTunHandler(ctx context.Context,
 		cryptographyService: cryptographyService,
 		rekeyController:     rekeyController,
 		servicePacket:       servicePacket,
+		rekeyInterval:       settings.DefaultRekeyInterval,
 		rotateAt:            time.Now().UTC().Add(settings.DefaultRekeyInterval),
 		handshakeCrypto:     &handshake.DefaultCrypto{},
 	}
@@ -103,22 +106,34 @@ func (w *TunHandler) HandleTun() error {
 			if time.Now().UTC().After(w.rotateAt) {
 				if w.rekeyController.State() != rekey.StateStable {
 					// Avoid overwriting pending priv or spamming in-flight rekeys.
-					w.rotateAt = time.Now().UTC().Add(settings.DefaultRekeyInterval)
+					w.rotateAt = time.Now().UTC().Add(w.rekeyInterval)
 					continue
 				}
-				publicKey, privateKey, keyErr := w.handshakeCrypto.GenerateX25519KeyPair()
+				var (
+					publicKey []byte
+					keyErr    error
+				)
+
+				if pendingPriv, ok := w.rekeyController.PendingRekeyPrivateKey(); ok {
+					// Reuse the in-flight key to avoid mismatched ACKs.
+					publicKey, keyErr = curve25519.X25519(pendingPriv[:], curve25519.Basepoint)
+				} else {
+					publicKey, pendingPriv, keyErr = w.handshakeCrypto.GenerateX25519KeyPair()
+					if keyErr == nil {
+						// Controller must always be present for UDP; panic on misconfiguration.
+						w.rekeyController.SetPendingRekeyPrivateKey(pendingPriv)
+					}
+				}
 				if keyErr != nil {
-					fmt.Printf("failed to generate rekey key pair: %v", keyErr)
-					w.rotateAt = time.Now().UTC().Add(settings.DefaultRekeyInterval)
+					fmt.Printf("failed to prepare rekey key pair: %v", keyErr)
+					w.rotateAt = time.Now().UTC().Add(w.rekeyInterval)
 					continue
 				}
-				// Controller must always be present for UDP; panic on misconfiguration.
-				w.rekeyController.SetPendingRekeyPrivateKey(privateKey)
 
 				payloadBuf := w.controlPacketBuffer[chacha20poly1305.NonceSize:]
 				if len(publicKey) != service.RekeyPublicKeyLen {
 					fmt.Println("unexpected rekey public key length")
-					w.rotateAt = time.Now().UTC().Add(settings.DefaultRekeyInterval)
+					w.rotateAt = time.Now().UTC().Add(w.rekeyInterval)
 					continue
 				}
 				copy(payloadBuf[3:], publicKey)
@@ -135,7 +150,7 @@ func (w *TunHandler) HandleTun() error {
 						_, _ = w.writer.Write(enc)
 					}
 				}
-				w.rotateAt = time.Now().UTC().Add(settings.DefaultRekeyInterval)
+				w.rotateAt = time.Now().UTC().Add(w.rekeyInterval)
 			}
 		}
 	}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"testing"
+	"tungo/application/network/rekey"
 )
 
 // ---- Mocks (prefixed with TunHandler*) ----
@@ -61,20 +62,22 @@ func TestTunHandler_ContextDone(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // canceled before entering the loop
 
-	h := NewTunHandler(ctx, rdr(), io.Discard, &TunHandlerMockCrypto{})
+	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	h := NewTunHandler(ctx, rdr(), io.Discard, &TunHandlerMockCrypto{}, ctrl, servicePacketMock{})
 	if err := h.HandleTun(); err != nil {
 		t.Fatalf("want nil, got %v", err)
 	}
 }
 
 func TestTunHandler_EOF(t *testing.T) {
+	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 	h := NewTunHandler(context.Background(),
 		rdr(struct {
 			data []byte
 			err  error
 		}{nil, io.EOF}),
 		io.Discard,
-		&TunHandlerMockCrypto{},
+		&TunHandlerMockCrypto{}, ctrl, servicePacketMock{},
 	)
 	if err := h.HandleTun(); err != io.EOF {
 		t.Fatalf("want io.EOF, got %v", err)
@@ -83,13 +86,14 @@ func TestTunHandler_EOF(t *testing.T) {
 
 func TestTunHandler_ReadError(t *testing.T) {
 	readErr := errors.New("read fail")
+	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 	h := NewTunHandler(context.Background(),
 		rdr(struct {
 			data []byte
 			err  error
 		}{nil, readErr}),
 		io.Discard,
-		&TunHandlerMockCrypto{},
+		&TunHandlerMockCrypto{}, ctrl, servicePacketMock{},
 	)
 	if err := h.HandleTun(); !errors.Is(err, readErr) {
 		t.Fatalf("want read error, got %v", err)
@@ -98,6 +102,7 @@ func TestTunHandler_ReadError(t *testing.T) {
 
 func TestTunHandler_EncryptError(t *testing.T) {
 	encErr := errors.New("encrypt fail")
+	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 	h := NewTunHandler(context.Background(),
 		rdr(
 			struct {
@@ -106,7 +111,7 @@ func TestTunHandler_EncryptError(t *testing.T) {
 			}{[]byte{1, 2, 3}, nil},
 		),
 		io.Discard,
-		&TunHandlerMockCrypto{err: encErr},
+		&TunHandlerMockCrypto{err: encErr}, ctrl, servicePacketMock{},
 	)
 	if err := h.HandleTun(); !errors.Is(err, encErr) {
 		t.Fatalf("want encrypt error, got %v", err)
@@ -116,13 +121,14 @@ func TestTunHandler_EncryptError(t *testing.T) {
 func TestTunHandler_WriteError(t *testing.T) {
 	wErr := errors.New("write fail")
 	w := &TunHandlerMockWriter{err: wErr}
+	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 	h := NewTunHandler(context.Background(),
 		rdr(struct {
 			data []byte
 			err  error
 		}{[]byte{9, 9}, nil}),
 		w,
-		&TunHandlerMockCrypto{},
+		&TunHandlerMockCrypto{}, ctrl, servicePacketMock{},
 	)
 	if err := h.HandleTun(); !errors.Is(err, wErr) {
 		t.Fatalf("want write error, got %v", err)
@@ -135,6 +141,7 @@ func TestTunHandler_WriteError(t *testing.T) {
 
 func TestTunHandler_HappyPath_SinglePacket_ThenEOF(t *testing.T) {
 	w := &TunHandlerMockWriter{}
+	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 	h := NewTunHandler(context.Background(),
 		rdr(
 			struct {
@@ -147,7 +154,7 @@ func TestTunHandler_HappyPath_SinglePacket_ThenEOF(t *testing.T) {
 			}{nil, io.EOF}, // exit
 		),
 		w,
-		&TunHandlerMockCrypto{},
+		&TunHandlerMockCrypto{}, ctrl, servicePacketMock{},
 	)
 
 	if err := h.HandleTun(); err != io.EOF {
@@ -163,6 +170,7 @@ func TestTunHandler_ReadError_WhenContextCanceled_ReturnsNil(t *testing.T) {
 	cancel() // context already canceled before read
 
 	readErr := errors.New("any read error")
+	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 	h := NewTunHandler(
 		ctx,
 		rdr(struct {
@@ -170,7 +178,7 @@ func TestTunHandler_ReadError_WhenContextCanceled_ReturnsNil(t *testing.T) {
 			err  error
 		}{nil, readErr}), // reader returns an error
 		io.Discard,
-		&TunHandlerMockCrypto{},
+		&TunHandlerMockCrypto{}, ctrl, servicePacketMock{},
 	)
 
 	// When ctx is canceled, the read error path should return nil.
@@ -181,6 +189,7 @@ func TestTunHandler_ReadError_WhenContextCanceled_ReturnsNil(t *testing.T) {
 
 func TestTunHandler_ZeroLengthPayload_ThenEOF(t *testing.T) {
 	w := &TunHandlerMockWriter{}
+	ctrl := rekey.NewController(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 	h := NewTunHandler(
 		context.Background(),
 		rdr(
@@ -194,7 +203,7 @@ func TestTunHandler_ZeroLengthPayload_ThenEOF(t *testing.T) {
 			}{nil, io.EOF}, // then exit
 		),
 		w,
-		&TunHandlerMockCrypto{},
+		&TunHandlerMockCrypto{}, ctrl, servicePacketMock{},
 	)
 
 	if err := h.HandleTun(); err != io.EOF {

@@ -943,8 +943,8 @@ func TestTransportHandler_SecondPacketGoesToExistingRegistrationQueue_NoNewGorou
 	// Two packets from same client before handshake finishes
 	conn := &TransportHandlerFakeUdpListener{
 		readBufs: [][]byte{
-			{0xaa},
-			{0xbb},
+			{0x00, 0xaa}, // include epoch byte to pass length check
+			{0x00, 0xbb},
 		},
 		readAddrs: []netip.AddrPort{clientAddr, clientAddr},
 	}
@@ -987,12 +987,12 @@ func TestTransportHandler_SecondPacketGoesToExistingRegistrationQueue_NoNewGorou
 	dst := make([]byte, 8)
 
 	n1, err1 := q.ReadInto(dst)
-	if err1 != nil || dst[:n1][0] != 0xaa {
+	if err1 != nil || n1 != 2 || dst[:n1][0] != 0x00 || dst[:n1][1] != 0xaa {
 		t.Fatalf("first packet mismatch: %x err=%v", dst[:n1], err1)
 	}
 
 	n2, err2 := q.ReadInto(dst)
-	if err2 != nil || dst[:n2][0] != 0xbb {
+	if err2 != nil || n2 != 2 || dst[:n2][0] != 0x00 || dst[:n2][1] != 0xbb {
 		t.Fatalf("second packet mismatch: %x err=%v", dst[:n2], err2)
 	}
 }
@@ -1130,7 +1130,7 @@ func TestRegisterClient_CryptoError_SendsReset(t *testing.T) {
 
 	writeCh := make(chan struct{}, 1)
 	conn := &TransportHandlerFakeUdpListener{
-		readBufs:  [][]byte{{0x01}},
+		readBufs:  [][]byte{{0x00, 0x01}}, // include epoch byte
 		readAddrs: []netip.AddrPort{client},
 		writeCh:   writeCh,
 	}
