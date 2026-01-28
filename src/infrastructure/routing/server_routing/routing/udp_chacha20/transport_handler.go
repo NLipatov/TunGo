@@ -140,15 +140,12 @@ func (t *TransportHandler) handlePacket(
 		t.logger.Printf("packet too short for epoch from %v: %d bytes", addrPort, len(packet))
 		return nil
 	}
-	if session, err := t.sessionManager.GetByExternalAddrPort(addrPort); err == nil {
-		if ctrl := session.RekeyController(); ctrl != nil {
-			ctrl.AbortPendingIfExpired(time.Now())
-		}
-	}
-
 	// Fast path: existing session.
 	session, sessionLookupErr := t.sessionManager.GetByExternalAddrPort(addrPort)
 	if sessionLookupErr == nil && session.ExternalAddrPort() == addrPort {
+		if ctrl := session.RekeyController(); ctrl != nil {
+			ctrl.AbortPendingIfExpired(time.Now())
+		}
 		if len(packet) < 2 {
 			return fmt.Errorf("packet too short for nonce epoch")
 		}
