@@ -9,11 +9,10 @@ import (
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
-	"tungo/infrastructure/network/service_packet"
+	"tungo/infrastructure/routing/controlplane"
 	"tungo/infrastructure/settings"
 
 	"golang.org/x/crypto/chacha20poly1305"
-	"golang.org/x/crypto/curve25519"
 )
 
 type TunHandler struct {
@@ -24,9 +23,7 @@ type TunHandler struct {
 	outbound            connection.Outbound
 	rekeyController     *rekey.StateMachine
 	controlPacketBuffer [128]byte
-	rotateAt            time.Time
-	rekeyInterval       time.Duration
-	handshakeCrypto     handshake.Crypto
+	rekeyInit           *controlplane.RekeyInitScheduler
 }
 
 func NewTunHandler(ctx context.Context,
@@ -35,6 +32,7 @@ func NewTunHandler(ctx context.Context,
 	cryptographyService connection.Crypto,
 	rekeyController *rekey.StateMachine,
 ) tun.Handler {
+	now := time.Now().UTC()
 	return &TunHandler{
 		ctx:                 ctx,
 		reader:              reader,
@@ -42,9 +40,7 @@ func NewTunHandler(ctx context.Context,
 		cryptographyService: cryptographyService,
 		outbound:            connection.NewDefaultOutbound(writer, cryptographyService),
 		rekeyController:     rekeyController,
-		rekeyInterval:       settings.DefaultRekeyInterval,
-		rotateAt:            time.Now().UTC().Add(settings.DefaultRekeyInterval),
-		handshakeCrypto:     &handshake.DefaultCrypto{},
+		rekeyInit:           controlplane.NewRekeyInitScheduler(&handshake.DefaultCrypto{}, settings.DefaultRekeyInterval, now),
 	}
 }
 
@@ -95,53 +91,19 @@ func (w *TunHandler) HandleTun() error {
 				}
 				return fmt.Errorf("could not read a packet from TUN: %v", err)
 			}
-			if time.Now().UTC().After(w.rotateAt) {
-				if w.rekeyController.State() != rekey.StateStable {
-					// Avoid overwriting pending priv or spamming in-flight rekeys.
-					w.rotateAt = time.Now().UTC().Add(w.rekeyInterval)
-					continue
-				}
-				var (
-					publicKey []byte
-					keyErr    error
-				)
-
-				if pendingPriv, ok := w.rekeyController.PendingRekeyPrivateKey(); ok {
-					// Reuse the in-flight key to avoid mismatched ACKs.
-					publicKey, keyErr = curve25519.X25519(pendingPriv[:], curve25519.Basepoint)
-				} else {
-					publicKey, pendingPriv, keyErr = w.handshakeCrypto.GenerateX25519KeyPair()
-					if keyErr == nil {
-						// RekeyStateMachine must always be present for UDP; panic on misconfiguration.
-						w.rekeyController.SetPendingRekeyPrivateKey(pendingPriv)
-					}
-				}
-				if keyErr != nil {
-					fmt.Printf("failed to prepare rekey key pair: %v", keyErr)
-					w.rotateAt = time.Now().UTC().Add(w.rekeyInterval)
-					continue
-				}
-
+			if w.rekeyInit != nil && w.rekeyController != nil {
 				payloadBuf := w.controlPacketBuffer[chacha20poly1305.NonceSize:]
-				if len(publicKey) != service_packet.RekeyPublicKeyLen {
-					fmt.Println("unexpected rekey public key length")
-					w.rotateAt = time.Now().UTC().Add(w.rekeyInterval)
+				servicePayload, ok, pErr := w.rekeyInit.MaybeBuildRekeyInit(time.Now().UTC(), w.rekeyController, payloadBuf)
+				if pErr != nil {
+					fmt.Printf("failed to prepare rekeyInit: %v", pErr)
 					continue
 				}
-				copy(payloadBuf[3:], publicKey)
-
-				servicePayload, err := service_packet.EncodeV1Header(service_packet.RekeyInit, payloadBuf)
-				if err != nil {
-					fmt.Println("failed to encode rekeyInit packet")
-				} else {
+				if ok {
 					totalLen := chacha20poly1305.NonceSize + len(servicePayload)
 					if err := w.outbound.SendControl(w.controlPacketBuffer[:totalLen]); err != nil {
-						fmt.Printf("failed to send packet: %v", err)
-					} else {
-						// sent
+						fmt.Printf("failed to send rekeyInit: %v", err)
 					}
 				}
-				w.rotateAt = time.Now().UTC().Add(w.rekeyInterval)
 			}
 		}
 	}

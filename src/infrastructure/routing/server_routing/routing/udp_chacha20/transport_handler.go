@@ -2,12 +2,9 @@ package udp_chacha20
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 	"net/netip"
-	"sync"
 	"time"
 	"tungo/application/listeners"
 	"tungo/application/logging"
@@ -16,7 +13,6 @@ import (
 	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
 	"tungo/infrastructure/network/service_packet"
-	"tungo/infrastructure/network/udp/queue/udp"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
 	"tungo/infrastructure/settings"
 )
@@ -45,12 +41,12 @@ type TransportHandler struct {
 	handshakeFactory    connection.HandshakeFactory
 	cryptographyFactory connection.CryptoFactory
 	crypto              handshake.Crypto
-	// registrations holds per-client registration queues for clients that are
-	// currently performing a handshake.
 	// Session-plane: registration and handshake tracking for not-yet-established sessions.
-	regMu         sync.Mutex
-	registrations map[netip.AddrPort]*udp.RegistrationQueue
-	cp            controlPlaneHandler
+	registrar *udpRegistrar
+	// Control-plane dispatcher (dataplane adapter).
+	cp controlPlaneHandler
+	// Dataplane worker for established sessions.
+	dp *udpDataplaneWorker
 }
 
 // NewTransportHandler constructs a new UDP transport handler.
@@ -65,7 +61,7 @@ func NewTransportHandler(
 	cryptographyFactory connection.CryptoFactory,
 ) transport.Handler {
 	crypto := &handshake.DefaultCrypto{}
-	return &TransportHandler{
+	h := &TransportHandler{
 		ctx:                 ctx,
 		settings:            settings,
 		writer:              writer,
@@ -75,9 +71,11 @@ func NewTransportHandler(
 		handshakeFactory:    handshakeFactory,
 		cryptographyFactory: cryptographyFactory,
 		crypto:              crypto,
-		registrations:       make(map[netip.AddrPort]*udp.RegistrationQueue),
 		cp:                  newServicePacketHandler(crypto),
 	}
+	h.dp = newUdpDataplaneWorker(writer, h.cp)
+	h.registrar = newUdpRegistrar(h)
+	return h
 }
 
 // HandleTransport runs the main UDP read loop and dispatches packets either
@@ -106,13 +104,17 @@ func (t *TransportHandler) HandleTransport() error {
 		case <-t.ctx.Done():
 			// Optionally, aggressively close all registration queues here as
 			// an extra safety net:
-			t.closeAllRegistrations()
+			if t.registrar != nil {
+				t.registrar.closeAllRegistrations()
+			}
 			return nil
 		default:
 			n, _, _, clientAddr, readFromUdpErr := t.listenerConn.ReadMsgUDPAddrPort(buffer[:], oobBuf[:])
 			if readFromUdpErr != nil {
 				if t.ctx.Err() != nil {
-					t.closeAllRegistrations()
+					if t.registrar != nil {
+						t.registrar.closeAllRegistrations()
+					}
 					return t.ctx.Err()
 				}
 				t.logger.Printf("failed to read from UDP: %s", readFromUdpErr)
@@ -149,38 +151,16 @@ func (t *TransportHandler) handlePacket(
 	// Fast path: existing session.
 	session, sessionLookupErr := t.sessionManager.GetByExternalAddrPort(addrPort)
 	if sessionLookupErr == nil && session.ExternalAddrPort() == addrPort {
-		rekeyCtrl := session.RekeyController()
-		decrypted, decryptionErr := session.Crypto().Decrypt(packet)
-		if decryptionErr != nil {
-			// Drop: untrusted UDP input can be garbage / attacker-driven.
+		if t.dp == nil {
+			// Should not happen; keep behavior safe.
 			return nil
 		}
-		if rekeyCtrl != nil {
-			// Data was successfully decrypted with epoch.
-			// Epoch can now be used to encrypt. Allow to encrypt with this epoch by promoting.
-			rekeyCtrl.ActivateSendEpoch(binary.BigEndian.Uint16(packet[:2]))
-			rekeyCtrl.AbortPendingIfExpired(time.Now())
-			// If service_packet packet - handle it.
-			if handled, err := t.cp.Handle(decrypted, session, rekeyCtrl); handled {
-				return err
-			}
-		}
-		// Pass it to TUN
-		_, err := t.writer.Write(decrypted)
-		if err != nil {
-			return fmt.Errorf("failed to write to TUN: %v", err)
-		}
-		return nil
+		return t.dp.HandleEstablished(session, packet)
 	}
 
 	// No existing session: route into registration queue.
-	q, isNew := t.getOrCreateRegistrationQueue(addrPort)
-	q.Enqueue(packet)
-
-	if isNew {
-		// Run handshake in a separate goroutine so HandleTransport keeps
-		// serving traffic for already registered clients.
-		go t.registerClient(addrPort, q)
+	if t.registrar != nil {
+		t.registrar.EnqueuePacket(addrPort, packet)
 	}
 
 	return nil

@@ -848,18 +848,14 @@ func TestTransportHandlerFakeAEAD_Roundtrip(t *testing.T) {
 }
 
 func TestTransportHandler_getOrCreateRegistrationQueue_ExistingQueue(t *testing.T) {
-	ctx := context.Background()
-	h := &TransportHandler{
-		ctx:           ctx,
-		registrations: make(map[netip.AddrPort]*udp.RegistrationQueue),
-	}
+	r := &udpRegistrar{registrations: make(map[netip.AddrPort]*udp.RegistrationQueue)}
 
 	addr := netip.MustParseAddrPort("1.2.3.4:9999")
 
 	original := udp.NewRegistrationQueue(RegistrationQueueCapacity)
-	h.registrations[addr] = original
+	r.registrations[addr] = original
 
-	q, isNew := h.getOrCreateRegistrationQueue(addr)
+	q, isNew := r.getOrCreateRegistrationQueue(addr)
 
 	if isNew {
 		t.Fatalf("expected existing queue, got new=true")
@@ -914,9 +910,9 @@ func TestTransportHandler_SecondPacketGoesToExistingRegistrationQueue_NoNewGorou
 	time.Sleep(50 * time.Millisecond)
 
 	impl := handler.(*TransportHandler)
-	impl.regMu.Lock()
-	q := impl.registrations[clientAddr]
-	impl.regMu.Unlock()
+	impl.registrar.mu.Lock()
+	q := impl.registrar.registrations[clientAddr]
+	impl.registrar.mu.Unlock()
 
 	if q == nil {
 		t.Fatalf("expected registration queue to exist (handshake has not finished yet)")
@@ -977,19 +973,15 @@ func TestHandleTransport_IgnoreHandlePacketError(t *testing.T) {
 }
 
 func TestRemoveRegistrationQueue_RemovesAndCloses(t *testing.T) {
-	ctx := context.Background()
-	h := &TransportHandler{
-		ctx:           ctx,
-		registrations: make(map[netip.AddrPort]*udp.RegistrationQueue),
-	}
+	r := &udpRegistrar{registrations: make(map[netip.AddrPort]*udp.RegistrationQueue)}
 
 	addr := netip.MustParseAddrPort("1.2.3.4:9999")
 	q := udp.NewRegistrationQueue(1)
-	h.registrations[addr] = q
+	r.registrations[addr] = q
 
-	h.removeRegistrationQueue(addr)
+	r.removeRegistrationQueue(addr)
 
-	if _, ok := h.registrations[addr]; ok {
+	if _, ok := r.registrations[addr]; ok {
 		t.Fatal("expected queue removed")
 	}
 
@@ -1001,11 +993,7 @@ func TestRemoveRegistrationQueue_RemovesAndCloses(t *testing.T) {
 }
 
 func TestCloseAllRegistrations(t *testing.T) {
-	ctx := context.Background()
-	h := &TransportHandler{
-		ctx:           ctx,
-		registrations: make(map[netip.AddrPort]*udp.RegistrationQueue),
-	}
+	r := &udpRegistrar{registrations: make(map[netip.AddrPort]*udp.RegistrationQueue)}
 
 	a1 := netip.MustParseAddrPort("1.1.1.1:1000")
 	a2 := netip.MustParseAddrPort("2.2.2.2:2000")
@@ -1013,10 +1001,10 @@ func TestCloseAllRegistrations(t *testing.T) {
 	q1 := udp.NewRegistrationQueue(1)
 	q2 := udp.NewRegistrationQueue(1)
 
-	h.registrations[a1] = q1
-	h.registrations[a2] = q2
+	r.registrations[a1] = q1
+	r.registrations[a2] = q2
 
-	h.closeAllRegistrations()
+	r.closeAllRegistrations()
 
 	for _, q := range []*udp.RegistrationQueue{q1, q2} {
 		dst := make([]byte, 10)
@@ -1026,21 +1014,17 @@ func TestCloseAllRegistrations(t *testing.T) {
 		}
 	}
 
-	if len(h.registrations) != 0 {
+	if len(r.registrations) != 0 {
 		t.Fatalf("expected empty registrations map")
 	}
 }
 
 func TestGetOrCreateRegistrationQueue_NewQueue(t *testing.T) {
-	ctx := context.Background()
-	h := &TransportHandler{
-		ctx:           ctx,
-		registrations: make(map[netip.AddrPort]*udp.RegistrationQueue),
-	}
+	r := &udpRegistrar{registrations: make(map[netip.AddrPort]*udp.RegistrationQueue)}
 
 	addr := netip.MustParseAddrPort("8.8.8.8:53")
 
-	q, isNew := h.getOrCreateRegistrationQueue(addr)
+	q, isNew := r.getOrCreateRegistrationQueue(addr)
 	if !isNew {
 		t.Fatal("expected new queue")
 	}
@@ -1048,7 +1032,7 @@ func TestGetOrCreateRegistrationQueue_NewQueue(t *testing.T) {
 		t.Fatal("nil queue returned")
 	}
 
-	if h.registrations[addr] != q {
+	if r.registrations[addr] != q {
 		t.Fatal("queue not stored")
 	}
 }
@@ -1157,17 +1141,18 @@ func TestRegisterClient_CanceledContextClosesQueue(t *testing.T) {
 	handler := &TransportHandler{
 		ctx:                 ctx,
 		settings:            settings.Settings{},
-		registrations:       map[netip.AddrPort]*udp.RegistrationQueue{addr: queue},
 		listenerConn:        &TransportHandlerFakeUdpListener{},
 		sessionManager:      &TransportHandlerSessionRepo{},
 		logger:              &TransportHandlerFakeLogger{},
 		handshakeFactory:    &TransportHandlerFakeHandshakeFactory{hs: hs},
 		cryptographyFactory: failingCryptoFactory{},
 	}
+	handler.registrar = newUdpRegistrar(handler)
+	handler.registrar.registrations[addr] = queue
 
 	done := make(chan struct{})
 	go func() {
-		handler.registerClient(addr, queue)
+		handler.registrar.registerClient(addr, queue)
 		close(done)
 	}()
 
@@ -1185,7 +1170,7 @@ func TestRegisterClient_CanceledContextClosesQueue(t *testing.T) {
 		t.Fatalf("expected closed queue after cancel, got %v", err)
 	}
 
-	if _, ok := handler.registrations[addr]; ok {
+	if _, ok := handler.registrar.registrations[addr]; ok {
 		t.Fatalf("registration entry for %v was not removed", addr)
 	}
 

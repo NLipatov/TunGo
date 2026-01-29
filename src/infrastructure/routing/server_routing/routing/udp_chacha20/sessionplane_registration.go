@@ -3,114 +3,133 @@ package udp_chacha20
 import (
 	"context"
 	"net/netip"
+	"sync"
 
+	"tungo/application/listeners"
+	"tungo/application/logging"
+	"tungo/application/network/connection"
 	"tungo/infrastructure/network/udp/adapters"
 	"tungo/infrastructure/network/udp/queue/udp"
+	"tungo/infrastructure/routing/server_routing/session_management/repository"
 )
 
-// Session-plane: registration + handshake for clients without an established session.
+// udpRegistrar is the session-plane component responsible for turning unknown UDP peers
+// into established sessions (handshake + crypto init) using a per-client packet queue.
+type udpRegistrar struct {
+	ctx context.Context
 
-// getOrCreateRegistrationQueue returns an existing RegistrationQueue for
-// addrPort or creates a new one. The boolean indicates whether it was newly
-// created.
-func (t *TransportHandler) getOrCreateRegistrationQueue(
-	addrPort netip.AddrPort,
-) (*udp.RegistrationQueue, bool) {
-	t.regMu.Lock()
-	defer t.regMu.Unlock()
+	listenerConn listeners.UdpListener
+	sessionRepo  repository.SessionRepository[connection.Session]
+	logger       logging.Logger
 
-	if q, ok := t.registrations[addrPort]; ok {
+	handshakeFactory    connection.HandshakeFactory
+	cryptographyFactory connection.CryptoFactory
+
+	mu            sync.Mutex
+	registrations map[netip.AddrPort]*udp.RegistrationQueue
+
+	sendReset func(addrPort netip.AddrPort)
+}
+
+func newUdpRegistrar(h *TransportHandler) *udpRegistrar {
+	return &udpRegistrar{
+		ctx:                 h.ctx,
+		listenerConn:        h.listenerConn,
+		sessionRepo:         h.sessionManager,
+		logger:              h.logger,
+		handshakeFactory:    h.handshakeFactory,
+		cryptographyFactory: h.cryptographyFactory,
+		registrations:       make(map[netip.AddrPort]*udp.RegistrationQueue),
+		sendReset:           h.sendSessionReset,
+	}
+}
+
+func (r *udpRegistrar) EnqueuePacket(addrPort netip.AddrPort, packet []byte) {
+	q, isNew := r.getOrCreateRegistrationQueue(addrPort)
+	q.Enqueue(packet)
+	if isNew {
+		go r.registerClient(addrPort, q)
+	}
+}
+
+func (r *udpRegistrar) getOrCreateRegistrationQueue(addrPort netip.AddrPort) (*udp.RegistrationQueue, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if q, ok := r.registrations[addrPort]; ok {
 		return q, false
 	}
-
 	q := udp.NewRegistrationQueue(RegistrationQueueCapacity)
-	t.registrations[addrPort] = q
+	r.registrations[addrPort] = q
 	return q, true
 }
 
-// removeRegistrationQueue removes and closes the RegistrationQueue for addrPort
-// if it exists.
-func (t *TransportHandler) removeRegistrationQueue(addrPort netip.AddrPort) {
-	t.regMu.Lock()
-	q, ok := t.registrations[addrPort]
+func (r *udpRegistrar) removeRegistrationQueue(addrPort netip.AddrPort) {
+	r.mu.Lock()
+	q, ok := r.registrations[addrPort]
 	if ok {
-		delete(t.registrations, addrPort)
+		delete(r.registrations, addrPort)
 	}
-	t.regMu.Unlock()
+	r.mu.Unlock()
 
 	if ok {
 		q.Close()
 	}
 }
 
-// closeAllRegistrations force-closes all active registration queues.
-// This is useful on handler shutdown to unblock any pending handshakes.
-func (t *TransportHandler) closeAllRegistrations() {
-	t.regMu.Lock()
-	queues := make([]*udp.RegistrationQueue, 0, len(t.registrations))
-	for _, q := range t.registrations {
+func (r *udpRegistrar) closeAllRegistrations() {
+	r.mu.Lock()
+	queues := make([]*udp.RegistrationQueue, 0, len(r.registrations))
+	for _, q := range r.registrations {
 		queues = append(queues, q)
 	}
-	t.registrations = make(map[netip.AddrPort]*udp.RegistrationQueue)
-	t.regMu.Unlock()
+	r.registrations = make(map[netip.AddrPort]*udp.RegistrationQueue)
+	r.mu.Unlock()
+
 	for _, q := range queues {
 		q.Close()
 	}
 }
 
-// registerClient performs server-side handshake for a single client using
-// a per-client RegistrationQueue as the source of incoming packets.
-//
-// The lifetime of this goroutine is bounded by a context derived from
-// TransportHandler.ctx with a timeout. On ctx cancellation/timeout, the queue
-// is closed, which unblocks ReadInto and allows this goroutine to exit.
-func (t *TransportHandler) registerClient(
-	addrPort netip.AddrPort,
-	queue *udp.RegistrationQueue,
-) {
-	// Ensure we always remove the registration entry and close the queue.
-	defer t.removeRegistrationQueue(addrPort)
+func (r *udpRegistrar) registerClient(addrPort netip.AddrPort, queue *udp.RegistrationQueue) {
+	defer r.removeRegistrationQueue(addrPort)
 
-	// Derive a context that bounds handshake lifetime. It reacts both to
-	// server shutdown (t.ctx.Done) and to registration timeout.
-	ctx, cancel := context.WithTimeout(t.ctx, HandshakeTimeout)
+	ctx, cancel := context.WithTimeout(r.ctx, HandshakeTimeout)
 	defer cancel()
 
-	// Watch for context cancellation and close the queue to unblock any
-	// pending ReadInto calls.
 	go func() {
 		<-ctx.Done()
 		queue.Close()
 	}()
 
-	h := t.handshakeFactory.NewHandshake()
+	h := r.handshakeFactory.NewHandshake()
 
-	// Transport reads from client's RegistrationQueue (fed by handlePacket)
+	// Transport reads from client's RegistrationQueue (fed by dataplane EnqueuePacket)
 	// and writes responses to the shared UDP socket.
-	regTransport := adapters.NewRegistrationTransport(t.listenerConn, addrPort, queue)
+	regTransport := adapters.NewRegistrationTransport(r.listenerConn, addrPort, queue)
 	adapter := adapters.NewInitialDataAdapter(regTransport, nil)
 
 	internalIP, handshakeErr := h.ServerSideHandshake(adapter)
 	if handshakeErr != nil {
-		t.logger.Printf("host %v failed registration: %v", addrPort.Addr().AsSlice(), handshakeErr)
-		t.sendSessionReset(addrPort)
+		r.logger.Printf("host %v failed registration: %v", addrPort.Addr().AsSlice(), handshakeErr)
+		r.sendReset(addrPort)
 		return
 	}
 
-	cryptoSession, controller, cryptoSessionErr := t.cryptographyFactory.FromHandshake(h, true)
+	cryptoSession, controller, cryptoSessionErr := r.cryptographyFactory.FromHandshake(h, true)
 	if cryptoSessionErr != nil {
-		t.logger.Printf("failed to init crypto session for %v: %v", addrPort.Addr().AsSlice(), cryptoSessionErr)
-		t.sendSessionReset(addrPort)
+		r.logger.Printf("failed to init crypto session for %v: %v", addrPort.Addr().AsSlice(), cryptoSessionErr)
+		r.sendReset(addrPort)
 		return
 	}
 
 	intIp, intIpOk := netip.AddrFromSlice(internalIP)
 	if !intIpOk {
-		t.logger.Printf("failed to parse internal IP: %v", internalIP)
-		t.sendSessionReset(addrPort)
+		r.logger.Printf("failed to parse internal IP: %v", internalIP)
+		r.sendReset(addrPort)
 		return
 	}
 
-	t.sessionManager.Add(NewSession(adapter, cryptoSession, controller, intIp, addrPort))
-	t.logger.Printf("UDP: %v registered as: %v", addrPort.Addr(), internalIP)
+	r.sessionRepo.Add(NewSession(adapter, cryptoSession, controller, intIp, addrPort))
+	r.logger.Printf("UDP: %v registered as: %v", addrPort.Addr(), internalIP)
 }

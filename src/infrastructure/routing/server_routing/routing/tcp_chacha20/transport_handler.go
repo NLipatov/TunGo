@@ -13,8 +13,6 @@ import (
 	"tungo/infrastructure/routing/controlplane"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
 	"tungo/infrastructure/settings"
-
-	"golang.org/x/crypto/chacha20poly1305"
 )
 
 type TransportHandler struct {
@@ -93,49 +91,14 @@ func (t *TransportHandler) HandleTransport() error {
 }
 
 func (t *TransportHandler) handleClient(ctx context.Context, session connection.Session, tunFile io.ReadWriteCloser) {
-	defer func() {
-		t.sessionManager.Delete(session)
-		_ = session.Transport().Close()
-		t.logger.Printf("disconnected: %s", session.ExternalAddrPort())
-	}()
-
-	buffer := make([]byte, settings.DefaultEthernetMTU+settings.TCPChacha20Overhead)
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			n, err := session.Transport().Read(buffer)
-			if err != nil {
-				if err != io.EOF {
-					t.logger.Printf("failed to read from client: %v", err)
-				}
-				return
-			}
-			if n < chacha20poly1305.Overhead || n > settings.DefaultEthernetMTU+settings.TCPChacha20Overhead {
-				t.logger.Printf("invalid ciphertext length: %d", n)
-				continue
-			}
-			pt, err := session.Crypto().Decrypt(buffer[:n])
-			if err != nil {
-				t.logger.Printf("failed to decrypt data: %s", err)
-				continue
-			}
-			if rc := session.RekeyController(); rc != nil {
-				if spType, spOk := service_packet.TryParseHeader(pt); spOk {
-					if spType == service_packet.RekeyInit {
-						t.handleRekeyInit(rc, session, pt)
-						continue
-					}
-					// server ignores Ack
-				}
-			}
-			if _, err = tunFile.Write(pt); err != nil {
-				t.logger.Printf("failed to write to TUN: %v", err)
-				return
-			}
-		}
-	}
+	(&tcpDataplaneWorker{
+		ctx:            ctx,
+		session:        session,
+		tunFile:        tunFile,
+		sessionManager: t.sessionManager,
+		logger:         t.logger,
+		onRekeyInit:    t.handleRekeyInit,
+	}).Run()
 }
 
 func (t *TransportHandler) handleRekeyInit(fsm rekey.FSM, session connection.Session, pt []byte) {

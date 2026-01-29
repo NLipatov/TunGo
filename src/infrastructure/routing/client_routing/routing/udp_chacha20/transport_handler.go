@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"time"
 	"tungo/application/network/connection"
@@ -62,57 +63,81 @@ func (t *TransportHandler) HandleTransport() error {
 				}
 				return fmt.Errorf("could not read a packet from adapter: %v", readErr)
 			}
-			if spType, spOk := service_packet.TryParseHeader(buffer[:n]); spOk {
-				t.rekeyController.AbortPendingIfExpired(time.Now())
-				if spType == service_packet.SessionReset {
-					return fmt.Errorf("server requested cryptographyService reset")
-				}
-			}
-			if n < 2 {
-				continue
-			}
-			decrypted, decryptionErr := t.cryptographyService.Decrypt(buffer[:n])
-			if decryptionErr != nil {
-				if t.ctx.Err() != nil {
-					return nil
-				}
-				// Duplicate nonce detected – this may indicate a network retransmission or a replay attack.
-				// In either case, skip this packet.
-				if errors.Is(decryptionErr, chacha20.ErrNonUniqueNonce) {
-					continue
-				}
-				return fmt.Errorf("failed to decrypt data: %s", decryptionErr)
-			}
-			// Data was successfully decrypted with epoch.
-			// Epoch can now be used to encrypt. Allow to encrypt with this epoch by promoting.
-			t.rekeyController.ActivateSendEpoch(binary.BigEndian.Uint16(buffer[:2]))
-			t.rekeyController.AbortPendingIfExpired(time.Now())
-
-			if spType, spOk := service_packet.TryParseHeader(decrypted); spOk {
-				switch spType {
-				case service_packet.RekeyAck:
-					if t.rekeyController.LastRekeyEpoch >= 65000 {
-						fmt.Println("rekey ack: epoch exhausted, requesting session reset")
-						return fmt.Errorf("epoch exhausted; reconnect required")
-					}
-					if _, err := controlplane.ClientHandleRekeyAck(t.handshakeCrypto, t.rekeyController, decrypted); err != nil {
-						fmt.Printf("rekey ack: install/apply failed: %v\n", err)
-					}
-				case service_packet.SessionReset:
-					return fmt.Errorf("server requested cryptographyService reset")
-				default:
-					// ignore unknown service_packet packets
-				}
-				continue
-			}
-
-			_, writeErr := t.writer.Write(decrypted)
-			if writeErr != nil {
-				if t.ctx.Err() != nil {
-					return nil
-				}
-				return fmt.Errorf("failed to write to TUN: %s", writeErr)
+			if err := t.handleDatagram(buffer[:n]); err != nil {
+				return err
 			}
 		}
+	}
+}
+
+func (t *TransportHandler) handleDatagram(pkt []byte) error {
+	// SessionReset is sent as a legacy, unencrypted control packet.
+	if spType, spOk := service_packet.TryParseHeader(pkt); spOk {
+		if t.rekeyController != nil {
+			t.rekeyController.AbortPendingIfExpired(time.Now())
+		}
+		if spType == service_packet.SessionReset {
+			return fmt.Errorf("server requested cryptographyService reset")
+		}
+	}
+	if len(pkt) < 2 {
+		return nil
+	}
+
+	decrypted, decryptionErr := t.cryptographyService.Decrypt(pkt)
+	if decryptionErr != nil {
+		if t.ctx.Err() != nil {
+			return nil
+		}
+		// Duplicate nonce detected – this may indicate a network retransmission or a replay attack.
+		// In either case, skip this packet.
+		if errors.Is(decryptionErr, chacha20.ErrNonUniqueNonce) {
+			return nil
+		}
+		return fmt.Errorf("failed to decrypt data: %s", decryptionErr)
+	}
+
+	if t.rekeyController != nil {
+		epoch := binary.BigEndian.Uint16(pkt[:2])
+		// Data was successfully decrypted with epoch; allow encrypt with this epoch by promoting.
+		t.rekeyController.ActivateSendEpoch(epoch)
+		t.rekeyController.AbortPendingIfExpired(time.Now())
+	}
+
+	if handled, err := t.handleControlplane(decrypted); handled {
+		return err
+	}
+
+	_, writeErr := t.writer.Write(decrypted)
+	if writeErr != nil {
+		if t.ctx.Err() != nil {
+			return nil
+		}
+		return fmt.Errorf("failed to write to TUN: %s", writeErr)
+	}
+	return nil
+}
+
+func (t *TransportHandler) handleControlplane(plaintext []byte) (handled bool, err error) {
+	spType, spOk := service_packet.TryParseHeader(plaintext)
+	if !spOk {
+		return false, nil
+	}
+
+	switch spType {
+	case service_packet.RekeyAck:
+		if t.rekeyController != nil && t.rekeyController.LastRekeyEpoch >= 65000 {
+			log.Printf("rekey ack: epoch exhausted, requesting session reset")
+			return true, fmt.Errorf("epoch exhausted; reconnect required")
+		}
+		if _, err := controlplane.ClientHandleRekeyAck(t.handshakeCrypto, t.rekeyController, plaintext); err != nil {
+			log.Printf("rekey ack: install/apply failed: %v", err)
+		}
+		return true, nil
+	case service_packet.SessionReset:
+		return true, fmt.Errorf("server requested cryptographyService reset")
+	default:
+		// ignore unknown service_packet packets
+		return true, nil
 	}
 }

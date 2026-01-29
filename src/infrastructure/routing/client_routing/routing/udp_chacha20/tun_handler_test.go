@@ -288,8 +288,8 @@ func TestHandleTun_ReusesPendingRekeyKey(t *testing.T) {
 
 	h := NewTunHandler(ctx, reader, writer, crypto, ctrl)
 	th := h.(*TunHandler)
-	th.rekeyInterval = 5 * time.Millisecond
-	th.rotateAt = time.Now().UTC().Add(th.rekeyInterval)
+	th.rekeyInit.SetInterval(5 * time.Millisecond)
+	th.rekeyInit.SetRotateAt(time.Now().UTC().Add(th.rekeyInit.Interval()))
 
 	done := make(chan struct{})
 	go func() {
