@@ -168,6 +168,7 @@ func (c *StateMachine) State() State {
 // If any step fails, no control-plane state is mutated.
 func (c *StateMachine) StartRekey(sendKey, recvKey []byte) (uint16, error) {
 	var sendCopy, recvCopy []byte
+	var effects []fsmEffect
 	c.mu.Lock()
 	if c.state != StateStable {
 		c.mu.Unlock()
@@ -195,28 +196,32 @@ func (c *StateMachine) StartRekey(sendKey, recvKey []byte) (uint16, error) {
 		prev := c.state
 		c.state = StateStable
 		c.mu.Unlock()
-		_ = c.crypto.RemoveEpoch(epoch)
+		c.applyEffects([]fsmEffect{effectRemoveEpoch{epoch: epoch}})
 		return 0, fmt.Errorf("unexpected state after rekey: %v", prev)
 	}
 	// Also guard based on the epoch returned by crypto (LastRekeyEpoch is updated only on activation).
 	if epoch >= maxEpochSafety {
 		c.state = StateStable
 		c.mu.Unlock()
-		_ = c.crypto.RemoveEpoch(epoch)
+		c.applyEffects([]fsmEffect{effectRemoveEpoch{epoch: epoch}})
 		return 0, ErrEpochExhausted
 	}
 	if err := c.installPendingKeysLocked(sendCopy, recvCopy, epoch); err != nil {
 		c.clearPendingLocked()
 		c.state = StateStable
 		c.mu.Unlock()
-		_ = c.crypto.RemoveEpoch(epoch)
+		c.applyEffects([]fsmEffect{effectRemoveEpoch{epoch: epoch}})
 		return 0, err
 	}
 	c.state = StatePending
 	// Handle "early ack": if peer's packet with this epoch arrived during StateRekeying,
 	// ActivateSendEpoch may have been called already; try to activate now.
-	c.maybeActivatePendingLocked()
+	activateEpoch := c.maybeActivatePendingLocked()
+	if activateEpoch != 0 {
+		effects = append(effects, effectSetSendEpoch{epoch: activateEpoch})
+	}
 	c.mu.Unlock()
+	c.applyEffects(effects)
 	return epoch, nil
 }
 
@@ -243,22 +248,21 @@ func (c *StateMachine) installPendingKeysLocked(sendKey, recvKey []byte, epoch u
 	return nil
 }
 
-func (c *StateMachine) maybeActivatePendingLocked() {
+func (c *StateMachine) maybeActivatePendingLocked() uint16 {
 	if c.state != StatePending {
-		return
+		return 0
 	}
 	if !c.hasPending {
-		return
+		return 0
 	}
 	if c.pendingSendEpoch <= c.sendEpoch {
-		return
+		return 0
 	}
 	// Confirmed when we've observed any valid traffic from peer at >= pending epoch.
 	if c.peerEpochSeenMax < c.pendingSendEpoch {
-		return
+		return 0
 	}
 	epoch := c.pendingSendEpoch
-	c.crypto.SetSendEpoch(epoch)
 	c.sendEpoch = epoch
 	c.LastRekeyEpoch = epoch
 	// Promote pending keys to active.
@@ -266,6 +270,7 @@ func (c *StateMachine) maybeActivatePendingLocked() {
 	c.CurrentS2C = append([]byte(nil), c.pendingS2C...)
 	c.clearPendingLocked()
 	c.state = StateStable
+	return epoch
 }
 
 func (c *StateMachine) clearPendingLocked() {
@@ -281,14 +286,19 @@ func (c *StateMachine) clearPendingLocked() {
 // IMPORTANT: This must be called only after a packet was successfully authenticated/decrypted
 // using the key material for that epoch (i.e., the epoch confirmation must be cryptographically proven).
 func (c *StateMachine) ActivateSendEpoch(epoch uint16) {
+	var effects []fsmEffect
 	c.mu.Lock()
 	// Always record peer confirmation, even if we are not yet in StatePending.
 	if epoch > c.peerEpochSeenMax {
 		c.peerEpochSeenMax = epoch
 	}
 	// If we're pending, try to activate (covers both normal and early-ack cases).
-	c.maybeActivatePendingLocked()
+	activateEpoch := c.maybeActivatePendingLocked()
+	if activateEpoch != 0 {
+		effects = append(effects, effectSetSendEpoch{epoch: activateEpoch})
+	}
 	c.mu.Unlock()
+	c.applyEffects(effects)
 }
 
 // AbortPendingIfExpired aborts if the pending timeout has elapsed.
@@ -313,5 +323,17 @@ func (c *StateMachine) AbortPendingIfExpired(now time.Time) {
 	if !doAbort {
 		return
 	}
-	_ = c.crypto.RemoveEpoch(pendingEpoch)
+	c.applyEffects([]fsmEffect{effectRemoveEpoch{epoch: pendingEpoch}})
+}
+
+func (c *StateMachine) applyEffects(effects []fsmEffect) {
+	if c.crypto == nil {
+		return
+	}
+	for _, e := range effects {
+		if e == nil {
+			continue
+		}
+		e.apply(c.crypto)
+	}
 }
