@@ -25,9 +25,11 @@ func NewSession(
 	internalIP netip.Addr,
 	externalIP netip.AddrPort,
 ) connection.Session {
+	out := connection.NewDefaultOutbound(connectionAdapter, cryptographyService)
 	return &Session{
 		connectionAdapter:   connectionAdapter,
 		cryptographyService: cryptographyService,
+		outbound:            out,
 		fsm:                 fsm,
 		internalIP:          internalIP,
 		externalIP:          externalIP,
@@ -44,6 +46,10 @@ func (s Session) ExternalAddrPort() netip.AddrPort {
 
 func (s Session) Crypto() connection.Crypto {
 	return s.cryptographyService
+}
+
+func (s Session) Outbound() connection.Outbound {
+	return s.outbound
 }
 
 func (s Session) RekeyController() rekey.FSM {
