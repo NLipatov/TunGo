@@ -3,6 +3,7 @@ package udp_chacha20
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net/netip"
@@ -18,7 +19,6 @@ import (
 	"tungo/infrastructure/network/udp/adapters"
 	"tungo/infrastructure/network/udp/queue/udp"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
-	udphelpers "tungo/infrastructure/routing/udp"
 	"tungo/infrastructure/settings"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -45,7 +45,7 @@ type TransportHandler struct {
 	handshakeFactory    connection.HandshakeFactory
 	cryptographyFactory connection.CryptoFactory
 	servicePacket       service.PacketHandler
-	rekeyCrypto         handshake.Crypto
+	crypto              handshake.Crypto
 	// registrations holds per-client registration queues for clients that are
 	// currently performing a handshake.
 	regMu         sync.Mutex
@@ -74,7 +74,7 @@ func NewTransportHandler(
 		handshakeFactory:    handshakeFactory,
 		cryptographyFactory: cryptographyFactory,
 		servicePacket:       servicePacket,
-		rekeyCrypto:         &handshake.DefaultCrypto{},
+		crypto:              &handshake.DefaultCrypto{},
 		registrations:       make(map[netip.AddrPort]*udp.RegistrationQueue),
 	}
 }
@@ -126,6 +126,9 @@ func (t *TransportHandler) HandleTransport() error {
 			// only when needed (for registration).
 			if err := t.handlePacket(clientAddr, buffer[:n]); err != nil {
 				t.logger.Printf("failed to handle packet: %s", err)
+				if errors.Is(err, rekey.ErrEpochExhausted) {
+					t.sendSessionReset(clientAddr)
+				}
 			}
 		}
 	}
@@ -148,28 +151,22 @@ func (t *TransportHandler) handlePacket(
 		rekeyCtrl := session.RekeyController()
 		decrypted, decryptionErr := session.Crypto().Decrypt(packet)
 		if decryptionErr != nil {
-			t.logger.Printf("failed to decrypt data: %v", decryptionErr)
-			return decryptionErr
+			// Drop: untrusted UDP input can be garbage / attacker-driven.
+			return nil
 		}
-
+		// Data was successfully decrypted with epoch.
+		// Epoch can now be used to encrypt. Allow to encrypt with this epoch by promoting.
+		rekeyCtrl.ActivateSendEpoch(binary.BigEndian.Uint16(packet[:2]))
+		rekeyCtrl.AbortPendingIfExpired(time.Now())
+		// If service packet - handle it.
 		if spType, spOk := t.servicePacket.TryParseType(decrypted); spOk {
 			return t.handleServicePacket(spType, decrypted, session, addrPort, rekeyCtrl)
 		}
-
-		if rekeyCtrl != nil {
-			if !udphelpers.IsMulticastPacket(decrypted) {
-				epoch := binary.BigEndian.Uint16(packet[:2])
-				rekeyCtrl.ActivateSendEpoch(epoch)
-			}
-			rekeyCtrl.AbortPendingIfExpired(time.Now())
-		}
-
+		// Pass it to TUN
 		_, err := t.writer.Write(decrypted)
 		if err != nil {
-			t.logger.Printf("failed to write to TUN: %v", err)
-			return err
+			return fmt.Errorf("failed to write to TUN: %v", err)
 		}
-
 		return nil
 	}
 
@@ -191,64 +188,62 @@ func (t *TransportHandler) handleServicePacket(
 	plaintext []byte,
 	session connection.Session,
 	addrPort netip.AddrPort,
-	rekeyCtrl *rekey.StateMachine,
+	fsm rekey.FSM,
 ) error {
 	switch packetType {
 	case service.RekeyInit:
-		if rekeyCtrl == nil {
-			return fmt.Errorf("rekey init: unsupported crypto session type")
+		if fsm.State() != rekey.StateStable {
+			return nil
 		}
 		if len(plaintext) < service.RekeyPacketLen {
-			return fmt.Errorf("rekey init packet too short: %d bytes", len(plaintext))
+			// drop garbage
+			return nil
 		}
 		var clientRekeyPub [service.RekeyPublicKeyLen]byte
 		copy(clientRekeyPub[:], plaintext[3:service.RekeyPacketLen])
 
-		serverPub, serverPriv, err := t.rekeyCrypto.GenerateX25519KeyPair()
+		serverPub, serverPriv, err := t.crypto.GenerateX25519KeyPair()
 		if err != nil {
-			return fmt.Errorf("rekey init: failed to generate server key pair: %v", err)
+			return nil
 		}
 		shared, err := curve25519.X25519(serverPriv[:], clientRekeyPub[:])
 		if err != nil {
-			return fmt.Errorf("rekey init: failed to derive shared: %v", err)
+			return nil
 		}
-		if rekeyCtrl.LastRekeyEpoch >= 65000 {
-			t.sendSessionReset(addrPort)
-			return rekey.ErrEpochExhausted
-		}
-		currentC2S := rekeyCtrl.CurrentClientToServerKey()
-		currentS2C := rekeyCtrl.CurrentServerToClientKey()
-		newC2S, err := t.rekeyCrypto.DeriveKey(shared, currentC2S, []byte("tungo-rekey-c2s"))
+		currentC2S := fsm.CurrentClientToServerKey()
+		currentS2C := fsm.CurrentServerToClientKey()
+		newC2S, err := t.crypto.DeriveKey(shared, currentC2S, []byte("tungo-rekey-c2s"))
 		if err != nil {
-			return fmt.Errorf("rekey init: derive key failed: %v", err)
+			return nil
 		}
-		newS2C, err := t.rekeyCrypto.DeriveKey(shared, currentS2C, []byte("tungo-rekey-s2c"))
+		newS2C, err := t.crypto.DeriveKey(shared, currentS2C, []byte("tungo-rekey-s2c"))
 		if err != nil {
-			return fmt.Errorf("rekey init: derive key failed: %v", err)
+			return nil
 		}
 
 		sendKey := newC2S
 		recvKey := newS2C
-		if rekeyCtrl.IsServer {
+		if fsm.IsServer() {
 			sendKey, recvKey = newS2C, newC2S // server sends S2C, receives C2S
 		}
-		if _, err = rekeyCtrl.StartRekey(sendKey, recvKey); err != nil {
-			return fmt.Errorf("rekey init: install/apply failed: %v", err)
+		if _, err := fsm.StartRekey(sendKey, recvKey); err != nil {
+			if errors.Is(err, rekey.ErrEpochExhausted) {
+				return err
+			}
+			return nil
 		}
 		// Only send ACK after successful rekey installation.
 		ackBuf := make([]byte, chacha20poly1305.NonceSize+service.RekeyPacketLen,
 			chacha20poly1305.NonceSize+service.RekeyPacketLen+chacha20poly1305.Overhead)
 		payload := ackBuf[chacha20poly1305.NonceSize:]
 		copy(payload[3:], serverPub)
-		if _, err := t.servicePacket.EncodeV1(service.RekeyAck, payload); err != nil {
-			return fmt.Errorf("rekey init: failed to encode rekey ack: %v", err)
+		if _, err = t.servicePacket.EncodeV1(service.RekeyAck, payload); err != nil {
+			return nil
 		}
-		enc, err := session.Crypto().Encrypt(ackBuf)
-		if err != nil {
-			return fmt.Errorf("rekey init: encrypt ack failed: %v", err)
-		}
-		if _, err := session.Transport().Write(enc); err != nil {
-			return fmt.Errorf("rekey init: write ack failed: %v", err)
+		if enc, err := session.Crypto().Encrypt(ackBuf); err != nil {
+			return nil
+		} else if _, err := session.Transport().Write(enc); err != nil {
+			return nil
 		}
 	default:
 		t.logger.Printf("unexpected service packet type=%d from %v", packetType, addrPort)

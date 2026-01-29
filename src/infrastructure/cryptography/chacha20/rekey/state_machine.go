@@ -14,11 +14,24 @@ type Rekeyer interface {
 	RemoveEpoch(epoch uint16) bool
 }
 
+type State int
+
+const (
+	StateStable State = iota
+	// StateRekeying means we started Rekey() but have not yet applied keys.
+	StateRekeying
+	// StatePending means new keys are installed for receive; send switch awaits confirmation.
+	StatePending
+)
+
 type FSM interface {
 	State() State
 	StartRekey(sendKey, recvKey []byte) (uint16, error)
 	ActivateSendEpoch(epoch uint16)
 	AbortPendingIfExpired(now time.Time)
+	CurrentServerToClientKey() []byte
+	CurrentClientToServerKey() []byte
+	IsServer() bool
 }
 
 // StateMachine holds control-plane rekey state; crypto remains immutable and handshake-agnostic.
@@ -28,7 +41,7 @@ type StateMachine struct {
 	crypto Rekeyer
 	// now is injectable for tests; defaults to time.Now.
 	now        func() time.Time
-	IsServer   bool
+	isServer   bool
 	CurrentC2S []byte
 	CurrentS2C []byte
 	// Pending key material is promoted to Current* only after ActivateSendEpoch confirms peer installed it.
@@ -77,7 +90,7 @@ func NewStateMachine(core Rekeyer, c2s, s2c []byte, isServer bool) *StateMachine
 	return &StateMachine{
 		crypto:         core,
 		now:            time.Now,
-		IsServer:       isServer,
+		isServer:       isServer,
 		CurrentC2S:     append([]byte(nil), c2s...),
 		CurrentS2C:     append([]byte(nil), s2c...),
 		sendEpoch:      0,
@@ -135,6 +148,10 @@ func (c *StateMachine) CurrentServerToClientKey() []byte {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return append([]byte(nil), c.CurrentS2C...)
+}
+
+func (c *StateMachine) IsServer() bool {
+	return c.isServer
 }
 
 // State returns the current FSM state.
@@ -213,7 +230,7 @@ func (c *StateMachine) installPendingKeysLocked(sendKey, recvKey []byte, epoch u
 		return fmt.Errorf("non-monotonic epoch: got %d, last %d", epoch, c.LastRekeyEpoch)
 	}
 	// Do not overwrite Current* until peer confirmation; keep pending separately.
-	if c.IsServer {
+	if c.isServer {
 		c.pendingS2C = append([]byte(nil), sendKey...)
 		c.pendingC2S = append([]byte(nil), recvKey...)
 	} else {
