@@ -14,9 +14,8 @@ import (
 	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
 	"tungo/infrastructure/network/service_packet"
+	"tungo/infrastructure/routing/controlplane"
 	"tungo/infrastructure/settings"
-
-	"golang.org/x/crypto/curve25519"
 )
 
 type TransportHandler struct {
@@ -96,41 +95,9 @@ func (t *TransportHandler) HandleTransport() error {
 						fmt.Println("rekey ack: epoch exhausted, requesting session reset")
 						return fmt.Errorf("epoch exhausted; reconnect required")
 					}
-					if len(decrypted) < service_packet.RekeyPacketLen {
-						fmt.Printf("rekey ack too short: %d bytes\n", len(decrypted))
-						continue
-					}
-					priv, ok := t.rekeyController.PendingRekeyPrivateKey()
-					if !ok {
-						fmt.Println("rekey ack: no pending client private key")
-						continue
-					}
-					serverPub := decrypted[3 : 3+service_packet.RekeyPublicKeyLen]
-					shared, err := curve25519.X25519(priv[:], serverPub)
-					if err != nil {
-						fmt.Printf("rekey ack: failed to compute shared secret: %v\n", err)
-						continue
-					}
-					currentC2S := t.rekeyController.CurrentClientToServerKey()
-					currentS2C := t.rekeyController.CurrentServerToClientKey()
-					newC2S, err := t.handshakeCrypto.DeriveKey(shared, currentC2S, []byte("tungo-rekey-c2s"))
-					if err != nil {
-						fmt.Printf("rekey ack: derive key failed: %v\n", err)
-						continue
-					}
-					newS2C, err := t.handshakeCrypto.DeriveKey(shared, currentS2C, []byte("tungo-rekey-s2c"))
-					if err != nil {
-						fmt.Printf("rekey ack: derive key failed: %v\n", err)
-						continue
-					}
-					epoch, err := t.rekeyController.StartRekey(newC2S, newS2C)
-					if err != nil {
+					if _, err := controlplane.ClientHandleRekeyAck(t.handshakeCrypto, t.rekeyController, decrypted); err != nil {
 						fmt.Printf("rekey ack: install/apply failed: %v\n", err)
-						continue
 					}
-					// Initiator proactively switches send to drive peer confirmation.
-					t.rekeyController.ActivateSendEpoch(epoch)
-					t.rekeyController.ClearPendingRekeyPrivateKey()
 				case service_packet.SessionReset:
 					return fmt.Errorf("server requested cryptographyService reset")
 				default:

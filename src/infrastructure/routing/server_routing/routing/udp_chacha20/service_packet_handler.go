@@ -6,24 +6,26 @@ import (
 	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
 	"tungo/infrastructure/network/service_packet"
+	"tungo/infrastructure/routing/controlplane"
 
 	"golang.org/x/crypto/chacha20poly1305"
-	"golang.org/x/crypto/curve25519"
 )
 
-type servicePacketHandler struct {
+// controlPlaneHandler is a dataplane-adapter for inbound control-plane packets.
+// It delegates protocol logic to infrastructure/routing/controlplane.
+type controlPlaneHandler struct {
 	crypto handshake.Crypto
 }
 
 func newServicePacketHandler(
 	crypto handshake.Crypto,
-) servicePacketHandler {
-	return servicePacketHandler{
+) controlPlaneHandler {
+	return controlPlaneHandler{
 		crypto: crypto,
 	}
 }
 
-func (r *servicePacketHandler) Handle(
+func (r *controlPlaneHandler) Handle(
 	plaindata []byte,
 	session connection.Session,
 	fsm rekey.FSM,
@@ -39,49 +41,19 @@ func (r *servicePacketHandler) Handle(
 	return false, nil
 }
 
-func (r *servicePacketHandler) handleRekeyInit(
+func (r *controlPlaneHandler) handleRekeyInit(
 	plaindata []byte,
 	session connection.Session,
 	fsm rekey.FSM,
 ) error {
-	if fsm.State() != rekey.StateStable {
-		return nil
-	}
-	if len(plaindata) < service_packet.RekeyPacketLen {
-		// drop garbage
-		return nil
-	}
-	var clientRekeyPub [service_packet.RekeyPublicKeyLen]byte
-	copy(clientRekeyPub[:], plaindata[3:service_packet.RekeyPacketLen])
-
-	serverPub, serverPriv, err := r.crypto.GenerateX25519KeyPair()
+	serverPub, _, ok, err := controlplane.ServerHandleRekeyInit(r.crypto, fsm, plaindata)
 	if err != nil {
-		return nil
-	}
-	shared, err := curve25519.X25519(serverPriv[:], clientRekeyPub[:])
-	if err != nil {
-		return nil
-	}
-	currentC2S := fsm.CurrentClientToServerKey()
-	currentS2C := fsm.CurrentServerToClientKey()
-	newC2S, err := r.crypto.DeriveKey(shared, currentC2S, []byte("tungo-rekey-c2s"))
-	if err != nil {
-		return nil
-	}
-	newS2C, err := r.crypto.DeriveKey(shared, currentS2C, []byte("tungo-rekey-s2c"))
-	if err != nil {
-		return nil
-	}
-
-	sendKey := newC2S
-	recvKey := newS2C
-	if fsm.IsServer() {
-		sendKey, recvKey = newS2C, newC2S // server sends S2C, receives C2S
-	}
-	if _, err := fsm.StartRekey(sendKey, recvKey); err != nil {
 		if errors.Is(err, rekey.ErrEpochExhausted) {
 			return err
 		}
+		return nil
+	}
+	if !ok {
 		return nil
 	}
 	// Only send ACK after successful rekey installation.

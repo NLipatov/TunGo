@@ -9,10 +9,10 @@ import (
 	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
 	"tungo/infrastructure/network/service_packet"
+	"tungo/infrastructure/routing/controlplane"
 	"tungo/infrastructure/settings"
 
 	"golang.org/x/crypto/chacha20poly1305"
-	"golang.org/x/crypto/curve25519"
 )
 
 type TransportHandler struct {
@@ -86,38 +86,9 @@ func (t *TransportHandler) handleRekeyAck(payload []byte) {
 	if t.rekeyController == nil {
 		return
 	}
-	if len(payload) < service_packet.RekeyPacketLen {
-		log.Printf("rekey ack too short: %d", len(payload))
-		return
-	}
-	priv, ok := t.rekeyController.PendingRekeyPrivateKey()
-	if !ok {
-		log.Printf("rekey ack: no pending client private key")
-		return
-	}
-	serverPub := payload[3 : 3+service_packet.RekeyPublicKeyLen]
-	shared, err := curve25519.X25519(priv[:], serverPub)
-	if err != nil {
-		log.Printf("rekey ack: failed to compute shared secret: %v", err)
-		return
-	}
-	currentC2S := t.rekeyController.CurrentClientToServerKey()
-	currentS2C := t.rekeyController.CurrentServerToClientKey()
-	newC2S, err := t.handshakeCrypto.DeriveKey(shared, currentC2S, []byte("tungo-rekey-c2s"))
-	if err != nil {
-		log.Printf("rekey ack: derive key failed: %v", err)
-		return
-	}
-	newS2C, err := t.handshakeCrypto.DeriveKey(shared, currentS2C, []byte("tungo-rekey-s2c"))
-	if err != nil {
-		log.Printf("rekey ack: derive key failed: %v", err)
-		return
-	}
-	if epoch, err := t.rekeyController.StartRekey(newC2S, newS2C); err == nil {
-		// For TCP we can switch immediately.
-		t.rekeyController.ActivateSendEpoch(epoch)
-		t.rekeyController.ClearPendingRekeyPrivateKey()
-	} else {
+	if ok, err := controlplane.ClientHandleRekeyAck(t.handshakeCrypto, t.rekeyController, payload); err != nil {
 		log.Printf("rekey ack: install/apply failed: %v", err)
+	} else if !ok {
+		// ignored
 	}
 }
