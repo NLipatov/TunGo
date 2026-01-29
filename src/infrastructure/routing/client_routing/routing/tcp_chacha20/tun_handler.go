@@ -10,9 +10,8 @@ import (
 	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
 	"tungo/infrastructure/network/service_packet"
+	"tungo/infrastructure/routing/controlplane"
 	"tungo/infrastructure/settings"
-
-	"golang.org/x/crypto/curve25519"
 )
 
 type TunHandler struct {
@@ -22,9 +21,8 @@ type TunHandler struct {
 	cryptographyService connection.Crypto
 	outbound            connection.Outbound
 	rekeyController     *rekey.StateMachine
-	handshakeCrypto     handshake.Crypto
-	rotateAt            time.Time
-	rekeyInterval       time.Duration
+	rekeyInit           *controlplane.RekeyInitScheduler
+	controlPacketBuf    [service_packet.RekeyPacketLen + settings.TCPChacha20Overhead]byte
 }
 
 func NewTunHandler(ctx context.Context,
@@ -33,6 +31,7 @@ func NewTunHandler(ctx context.Context,
 	cryptographyService connection.Crypto,
 	rekeyController *rekey.StateMachine,
 ) tun.Handler {
+	now := time.Now().UTC()
 	return &TunHandler{
 		ctx:                 ctx,
 		reader:              reader,
@@ -40,9 +39,7 @@ func NewTunHandler(ctx context.Context,
 		cryptographyService: cryptographyService,
 		outbound:            connection.NewDefaultOutbound(writer, cryptographyService),
 		rekeyController:     rekeyController,
-		handshakeCrypto:     &handshake.DefaultCrypto{},
-		rekeyInterval:       settings.DefaultRekeyInterval,
-		rotateAt:            time.Now().UTC().Add(settings.DefaultRekeyInterval),
+		rekeyInit:           controlplane.NewRekeyInitScheduler(&handshake.DefaultCrypto{}, settings.DefaultRekeyInterval, now),
 	}
 }
 
@@ -72,40 +69,19 @@ func (t *TunHandler) HandleTun() error {
 				return err
 			}
 
-			if time.Now().UTC().After(t.rotateAt) && t.rekeyController != nil && t.rekeyController.State() == rekey.StateStable {
-				var (
-					pub  []byte
-					priv [32]byte
-					err  error
-				)
-				if pendingPriv, ok := t.rekeyController.PendingRekeyPrivateKey(); ok {
-					pub, err = curve25519.X25519(pendingPriv[:], curve25519.Basepoint)
-					priv = pendingPriv
-				} else {
-					pub, priv, err = t.handshakeCrypto.GenerateX25519KeyPair()
-					if err == nil {
-						t.rekeyController.SetPendingRekeyPrivateKey(priv)
+			if t.rekeyInit != nil && t.rekeyController != nil {
+				now := time.Now().UTC()
+				dst := t.controlPacketBuf[:service_packet.RekeyPacketLen]
+				servicePayload, ok, err := t.rekeyInit.MaybeBuildRekeyInit(now, t.rekeyController, dst)
+				if err != nil {
+					log.Printf("failed to prepare rekeyInit: %v", err)
+					continue
+				}
+				if ok {
+					if err := t.outbound.SendControl(servicePayload); err != nil {
+						log.Printf("failed to send rekeyInit: %v", err)
 					}
 				}
-				if err != nil {
-					log.Printf("failed to prepare rekey key pair: %v", err)
-					t.rotateAt = time.Now().UTC().Add(t.rekeyInterval)
-					continue
-				}
-				payloadBuf := make([]byte, service_packet.RekeyPacketLen)
-				copy(payloadBuf[3:], pub)
-				servicePayload, err := service_packet.EncodeV1Header(service_packet.RekeyInit, payloadBuf)
-				if err != nil {
-					log.Printf("failed to encode rekeyInit packet")
-					t.rotateAt = time.Now().UTC().Add(t.rekeyInterval)
-					continue
-				}
-				if err := t.outbound.SendControl(servicePayload); err != nil {
-					log.Printf("failed to send rekeyInit: %v", err)
-					t.rotateAt = time.Now().UTC().Add(t.rekeyInterval)
-					continue
-				}
-				t.rotateAt = time.Now().UTC().Add(t.rekeyInterval)
 			}
 		}
 	}
