@@ -11,7 +11,7 @@ type Session struct {
 	transport connection.Transport
 	// crypto handles packet encryption and decryption.
 	crypto connection.Crypto
-	rekey  *rekey.StateMachine
+	fsm    rekey.FSM
 	// internalIP is the client's VPN-assigned IPv4 address (e.g. 10.0.1.3).
 	internalIP netip.Addr
 	// externalIP is the client's real-world IPv4 address (e.g. 51.195.101.45) and port (e.g. 1754).
@@ -21,14 +21,14 @@ type Session struct {
 func NewSession(
 	transport connection.Transport,
 	crypto connection.Crypto,
-	rekey *rekey.StateMachine,
+	fsm rekey.FSM,
 	internalIP netip.Addr,
 	externalIP netip.AddrPort,
 ) connection.Session {
 	return &Session{
 		transport:  transport,
 		crypto:     crypto,
-		rekey:      rekey,
+		fsm:        fsm,
 		internalIP: internalIP,
 		externalIP: externalIP,
 	}
@@ -46,8 +46,8 @@ func (s Session) Crypto() connection.Crypto {
 	return s.crypto
 }
 
-func (s Session) RekeyController() *rekey.StateMachine {
-	return s.rekey
+func (s Session) RekeyController() rekey.FSM {
+	return s.fsm
 }
 
 func (s Session) Transport() connection.Transport {

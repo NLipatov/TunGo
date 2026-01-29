@@ -200,7 +200,7 @@ func (t *TransportHandler) handleClient(ctx context.Context, session connection.
 	}
 }
 
-func (t *TransportHandler) handleRekeyInit(rc *rekey.StateMachine, session connection.Session, pt []byte) {
+func (t *TransportHandler) handleRekeyInit(fsm rekey.FSM, session connection.Session, pt []byte) {
 	if len(pt) < service.RekeyPacketLen {
 		t.logger.Printf("rekey init packet too short: %d bytes", len(pt))
 		return
@@ -217,13 +217,8 @@ func (t *TransportHandler) handleRekeyInit(rc *rekey.StateMachine, session conne
 		t.logger.Printf("rekey init: failed to derive shared: %v", err)
 		return
 	}
-	if rc.LastRekeyEpoch >= 65000 {
-		t.logger.Printf("rekey init: epoch exhausted, sending session reset")
-		t.sendSessionReset(session)
-		return
-	}
-	currentC2S := rc.CurrentClientToServerKey()
-	currentS2C := rc.CurrentServerToClientKey()
+	currentC2S := fsm.CurrentClientToServerKey()
+	currentS2C := fsm.CurrentServerToClientKey()
 	newC2S, err := t.handshakeCrypto.DeriveKey(shared, currentC2S, []byte("tungo-rekey-c2s"))
 	if err != nil {
 		t.logger.Printf("rekey init: derive key failed: %v", err)
@@ -236,10 +231,10 @@ func (t *TransportHandler) handleRekeyInit(rc *rekey.StateMachine, session conne
 	}
 	sendKey := newC2S
 	recvKey := newS2C
-	if rc.IsServer {
+	if fsm.IsServer() {
 		sendKey, recvKey = newS2C, newC2S
 	}
-	epoch, err := rc.StartRekey(sendKey, recvKey)
+	epoch, err := fsm.StartRekey(sendKey, recvKey)
 	if err != nil {
 		t.logger.Printf("rekey init: install/apply failed: %v", err)
 		return
@@ -261,7 +256,7 @@ func (t *TransportHandler) handleRekeyInit(rc *rekey.StateMachine, session conne
 		t.logger.Printf("rekey init: write ack failed: %v", err)
 	} else {
 		// now it's safe to switch send for TCP
-		rc.ActivateSendEpoch(epoch)
+		fsm.ActivateSendEpoch(epoch)
 	}
 }
 

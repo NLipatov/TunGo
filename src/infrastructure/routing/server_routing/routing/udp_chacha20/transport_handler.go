@@ -20,9 +20,6 @@ import (
 	"tungo/infrastructure/network/udp/queue/udp"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
 	"tungo/infrastructure/settings"
-
-	"golang.org/x/crypto/chacha20poly1305"
-	"golang.org/x/crypto/curve25519"
 )
 
 const (
@@ -50,6 +47,7 @@ type TransportHandler struct {
 	// currently performing a handshake.
 	regMu         sync.Mutex
 	registrations map[netip.AddrPort]*udp.RegistrationQueue
+	sp            servicePacketHandler
 }
 
 // NewTransportHandler constructs a new UDP transport handler.
@@ -64,6 +62,7 @@ func NewTransportHandler(
 	cryptographyFactory connection.CryptoFactory,
 	servicePacket service.PacketHandler,
 ) transport.Handler {
+	crypto := &handshake.DefaultCrypto{}
 	return &TransportHandler{
 		ctx:                 ctx,
 		settings:            settings,
@@ -74,8 +73,9 @@ func NewTransportHandler(
 		handshakeFactory:    handshakeFactory,
 		cryptographyFactory: cryptographyFactory,
 		servicePacket:       servicePacket,
-		crypto:              &handshake.DefaultCrypto{},
+		crypto:              crypto,
 		registrations:       make(map[netip.AddrPort]*udp.RegistrationQueue),
+		sp:                  newServicePacketHandler(crypto, servicePacket),
 	}
 }
 
@@ -159,8 +159,8 @@ func (t *TransportHandler) handlePacket(
 		rekeyCtrl.ActivateSendEpoch(binary.BigEndian.Uint16(packet[:2]))
 		rekeyCtrl.AbortPendingIfExpired(time.Now())
 		// If service packet - handle it.
-		if spType, spOk := t.servicePacket.TryParseType(decrypted); spOk {
-			return t.handleServicePacket(spType, decrypted, session, addrPort, rekeyCtrl)
+		if handled, err := t.sp.Handle(decrypted, session, rekeyCtrl); handled {
+			return err
 		}
 		// Pass it to TUN
 		_, err := t.writer.Write(decrypted)
@@ -180,74 +180,6 @@ func (t *TransportHandler) handlePacket(
 		go t.registerClient(addrPort, q)
 	}
 
-	return nil
-}
-
-func (t *TransportHandler) handleServicePacket(
-	packetType service.PacketType,
-	plaintext []byte,
-	session connection.Session,
-	addrPort netip.AddrPort,
-	fsm rekey.FSM,
-) error {
-	switch packetType {
-	case service.RekeyInit:
-		if fsm.State() != rekey.StateStable {
-			return nil
-		}
-		if len(plaintext) < service.RekeyPacketLen {
-			// drop garbage
-			return nil
-		}
-		var clientRekeyPub [service.RekeyPublicKeyLen]byte
-		copy(clientRekeyPub[:], plaintext[3:service.RekeyPacketLen])
-
-		serverPub, serverPriv, err := t.crypto.GenerateX25519KeyPair()
-		if err != nil {
-			return nil
-		}
-		shared, err := curve25519.X25519(serverPriv[:], clientRekeyPub[:])
-		if err != nil {
-			return nil
-		}
-		currentC2S := fsm.CurrentClientToServerKey()
-		currentS2C := fsm.CurrentServerToClientKey()
-		newC2S, err := t.crypto.DeriveKey(shared, currentC2S, []byte("tungo-rekey-c2s"))
-		if err != nil {
-			return nil
-		}
-		newS2C, err := t.crypto.DeriveKey(shared, currentS2C, []byte("tungo-rekey-s2c"))
-		if err != nil {
-			return nil
-		}
-
-		sendKey := newC2S
-		recvKey := newS2C
-		if fsm.IsServer() {
-			sendKey, recvKey = newS2C, newC2S // server sends S2C, receives C2S
-		}
-		if _, err := fsm.StartRekey(sendKey, recvKey); err != nil {
-			if errors.Is(err, rekey.ErrEpochExhausted) {
-				return err
-			}
-			return nil
-		}
-		// Only send ACK after successful rekey installation.
-		ackBuf := make([]byte, chacha20poly1305.NonceSize+service.RekeyPacketLen,
-			chacha20poly1305.NonceSize+service.RekeyPacketLen+chacha20poly1305.Overhead)
-		payload := ackBuf[chacha20poly1305.NonceSize:]
-		copy(payload[3:], serverPub)
-		if _, err = t.servicePacket.EncodeV1(service.RekeyAck, payload); err != nil {
-			return nil
-		}
-		if enc, err := session.Crypto().Encrypt(ackBuf); err != nil {
-			return nil
-		} else if _, err := session.Transport().Write(enc); err != nil {
-			return nil
-		}
-	default:
-		t.logger.Printf("unexpected service packet type=%d from %v", packetType, addrPort)
-	}
 	return nil
 }
 

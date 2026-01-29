@@ -22,5 +22,5 @@ type Session interface {
 	Crypto() Crypto
 
 	// RekeyController returns control-plane rekey state; may be nil for protocols without rekey.
-	RekeyController() *rekey.StateMachine
+	RekeyController() rekey.FSM
 }
