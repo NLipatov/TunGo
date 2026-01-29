@@ -93,7 +93,7 @@ func (t *TunHandler) HandleTun() error {
 				continue
 			}
 
-			// Encrypt "nonce || payload". The crypto service must treat the prefix as nonce.
+			// Encrypt "nonce || payload". The crypto service_packet must treat the prefix as nonce.
 			ct, eErr := session.Crypto().Encrypt(buffer[:chacha20poly1305.NonceSize+n])
 			if eErr != nil {
 				log.Printf("failed to encrypt packet: %v", eErr)

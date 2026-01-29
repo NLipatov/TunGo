@@ -7,9 +7,9 @@ import (
 	"time"
 	"tungo/application/network/connection"
 	"tungo/application/network/routing/tun"
-	"tungo/domain/network/service"
 	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/settings"
 
 	"golang.org/x/crypto/curve25519"
@@ -21,7 +21,6 @@ type TunHandler struct {
 	writer              io.Writer // abstraction over transport
 	cryptographyService connection.Crypto
 	rekeyController     *rekey.StateMachine
-	servicePacket       service.PacketHandler
 	handshakeCrypto     handshake.Crypto
 	rotateAt            time.Time
 	rekeyInterval       time.Duration
@@ -32,14 +31,13 @@ func NewTunHandler(ctx context.Context,
 	writer io.Writer,
 	cryptographyService connection.Crypto,
 	rekeyController *rekey.StateMachine,
-	servicePacket service.PacketHandler) tun.Handler {
+) tun.Handler {
 	return &TunHandler{
 		ctx:                 ctx,
 		reader:              reader,
 		writer:              writer,
 		cryptographyService: cryptographyService,
 		rekeyController:     rekeyController,
-		servicePacket:       servicePacket,
 		handshakeCrypto:     &handshake.DefaultCrypto{},
 		rekeyInterval:       settings.DefaultRekeyInterval,
 		rotateAt:            time.Now().UTC().Add(settings.DefaultRekeyInterval),
@@ -99,9 +97,9 @@ func (t *TunHandler) HandleTun() error {
 					t.rotateAt = time.Now().UTC().Add(t.rekeyInterval)
 					continue
 				}
-				payloadBuf := make([]byte, service.RekeyPacketLen)
+				payloadBuf := make([]byte, service_packet.RekeyPacketLen)
 				copy(payloadBuf[3:], pub)
-				servicePayload, err := t.servicePacket.EncodeV1(service.RekeyInit, payloadBuf)
+				servicePayload, err := service_packet.EncodeV1Header(service_packet.RekeyInit, payloadBuf)
 				if err != nil {
 					log.Printf("failed to encode rekeyInit packet")
 					t.rotateAt = time.Now().UTC().Add(t.rekeyInterval)

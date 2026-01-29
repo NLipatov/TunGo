@@ -102,7 +102,7 @@ func TestTcpSessionBuilder_FromHandshake_Server_Success(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if svc == nil {
-		t.Fatalf("expected non-nil service")
+		t.Fatalf("expected non-nil service_packet")
 	}
 	if ctrl == nil {
 		t.Fatalf("expected controller for TCP")
@@ -125,7 +125,7 @@ func TestTcpSessionBuilder_FromHandshake_Client_Success(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if svc == nil {
-		t.Fatalf("expected non-nil service")
+		t.Fatalf("expected non-nil service_packet")
 	}
 	if ctrl == nil {
 		t.Fatalf("expected controller for TCP")
@@ -145,7 +145,7 @@ func TestTcpSessionBuilder_FromHandshake_Server_InvalidServerKey(t *testing.T) {
 		t.Fatalf("expected error, got nil")
 	}
 	if svc != nil {
-		t.Fatalf("expected nil service")
+		t.Fatalf("expected nil service_packet")
 	}
 	if ctrl != nil {
 		t.Fatalf("expected nil controller")
@@ -165,7 +165,7 @@ func TestTcpSessionBuilder_FromHandshake_Server_InvalidClientKey(t *testing.T) {
 		t.Fatalf("expected error, got nil")
 	}
 	if svc != nil {
-		t.Fatalf("expected nil service")
+		t.Fatalf("expected nil service_packet")
 	}
 	if ctrl != nil {
 		t.Fatalf("expected nil controller")
@@ -185,7 +185,7 @@ func TestTcpSessionBuilder_FromHandshake_Client_InvalidClientKey(t *testing.T) {
 		t.Fatalf("expected error, got nil")
 	}
 	if svc != nil {
-		t.Fatalf("expected nil service")
+		t.Fatalf("expected nil service_packet")
 	}
 	if ctrl != nil {
 		t.Fatalf("expected nil controller")
@@ -205,7 +205,7 @@ func TestTcpSessionBuilder_FromHandshake_Client_InvalidServerKey(t *testing.T) {
 		t.Fatalf("expected error, got nil")
 	}
 	if svc != nil {
-		t.Fatalf("expected nil service")
+		t.Fatalf("expected nil service_packet")
 	}
 	if ctrl != nil {
 		t.Fatalf("expected nil controller")

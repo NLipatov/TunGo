@@ -10,11 +10,10 @@ import (
 	"time"
 	"tungo/application/network/connection"
 	"tungo/application/network/routing/transport"
-	"tungo/domain/network/service"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
-	"tungo/infrastructure/routing/udp"
+	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/settings"
 
 	"golang.org/x/crypto/curve25519"
@@ -26,7 +25,6 @@ type TransportHandler struct {
 	writer              io.Writer
 	cryptographyService connection.Crypto
 	rekeyController     *rekey.StateMachine
-	servicePacket       service.PacketHandler
 	handshakeCrypto     handshake.Crypto
 }
 
@@ -36,7 +34,6 @@ func NewTransportHandler(
 	writer io.Writer,
 	cryptographyService connection.Crypto,
 	rekeyController *rekey.StateMachine,
-	servicePacket service.PacketHandler,
 ) transport.Handler {
 	return &TransportHandler{
 		ctx:                 ctx,
@@ -44,7 +41,6 @@ func NewTransportHandler(
 		writer:              writer,
 		cryptographyService: cryptographyService,
 		rekeyController:     rekeyController,
-		servicePacket:       servicePacket,
 		handshakeCrypto:     &handshake.DefaultCrypto{},
 	}
 }
@@ -62,32 +58,25 @@ func (t *TransportHandler) HandleTransport() error {
 				if errors.Is(readErr, os.ErrDeadlineExceeded) {
 					continue
 				}
-
 				if t.ctx.Err() != nil {
 					return nil
 				}
 				return fmt.Errorf("could not read a packet from adapter: %v", readErr)
 			}
-
-			if spType, spOk := t.servicePacket.TryParseType(buffer[:n]); spOk {
+			if spType, spOk := service_packet.TryParseHeader(buffer[:n]); spOk {
 				t.rekeyController.AbortPendingIfExpired(time.Now())
-				if spType == service.SessionReset {
+				if spType == service_packet.SessionReset {
 					return fmt.Errorf("server requested cryptographyService reset")
 				}
 			}
-
 			if n < 2 {
-				fmt.Printf("packet too short for epoch: %d bytes\n", n)
 				continue
 			}
-			epoch := binary.BigEndian.Uint16(buffer[:2])
-			t.rekeyController.AbortPendingIfExpired(time.Now())
 			decrypted, decryptionErr := t.cryptographyService.Decrypt(buffer[:n])
 			if decryptionErr != nil {
 				if t.ctx.Err() != nil {
 					return nil
 				}
-
 				// Duplicate nonce detected – this may indicate a network retransmission or a replay attack.
 				// In either case, skip this packet.
 				if errors.Is(decryptionErr, chacha20.ErrNonUniqueNonce) {
@@ -95,15 +84,19 @@ func (t *TransportHandler) HandleTransport() error {
 				}
 				return fmt.Errorf("failed to decrypt data: %s", decryptionErr)
 			}
+			// Data was successfully decrypted with epoch.
+			// Epoch can now be used to encrypt. Allow to encrypt with this epoch by promoting.
+			t.rekeyController.ActivateSendEpoch(binary.BigEndian.Uint16(buffer[:2]))
+			t.rekeyController.AbortPendingIfExpired(time.Now())
 
-			if spType, spOk := t.servicePacket.TryParseType(decrypted); spOk {
+			if spType, spOk := service_packet.TryParseHeader(decrypted); spOk {
 				switch spType {
-				case service.RekeyAck:
+				case service_packet.RekeyAck:
 					if t.rekeyController.LastRekeyEpoch >= 65000 {
 						fmt.Println("rekey ack: epoch exhausted, requesting session reset")
 						return fmt.Errorf("epoch exhausted; reconnect required")
 					}
-					if len(decrypted) < service.RekeyPacketLen {
+					if len(decrypted) < service_packet.RekeyPacketLen {
 						fmt.Printf("rekey ack too short: %d bytes\n", len(decrypted))
 						continue
 					}
@@ -112,7 +105,7 @@ func (t *TransportHandler) HandleTransport() error {
 						fmt.Println("rekey ack: no pending client private key")
 						continue
 					}
-					serverPub := decrypted[3 : 3+service.RekeyPublicKeyLen]
+					serverPub := decrypted[3 : 3+service_packet.RekeyPublicKeyLen]
 					shared, err := curve25519.X25519(priv[:], serverPub)
 					if err != nil {
 						fmt.Printf("rekey ack: failed to compute shared secret: %v\n", err)
@@ -138,17 +131,12 @@ func (t *TransportHandler) HandleTransport() error {
 					// Initiator proactively switches send to drive peer confirmation.
 					t.rekeyController.ActivateSendEpoch(epoch)
 					t.rekeyController.ClearPendingRekeyPrivateKey()
-				case service.SessionReset:
+				case service_packet.SessionReset:
 					return fmt.Errorf("server requested cryptographyService reset")
 				default:
-					// ignore unknown service packets
+					// ignore unknown service_packet packets
 				}
 				continue
-			}
-
-			// Only confirm epoch on actual data packets (non-service, non-multicast)
-			if !udp.IsMulticastPacket(decrypted) {
-				t.rekeyController.ActivateSendEpoch(epoch)
 			}
 
 			_, writeErr := t.writer.Write(decrypted)

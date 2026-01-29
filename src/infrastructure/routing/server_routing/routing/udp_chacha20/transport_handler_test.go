@@ -12,12 +12,11 @@ import (
 	"sync"
 	"testing"
 	"time"
-	"tungo/infrastructure/cryptography/chacha20/rekey"
-	"tungo/infrastructure/network/udp/queue/udp"
-
 	"tungo/application/network/connection"
-	"tungo/domain/network/service"
 	"tungo/infrastructure/cryptography/chacha20"
+	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/network/service_packet"
+	"tungo/infrastructure/network/udp/queue/udp"
 	"tungo/infrastructure/settings"
 )
 
@@ -82,31 +81,31 @@ type TransportHandlerServicePacketEncodeErrMock struct {
 	called chan struct{}
 }
 
-func (s *TransportHandlerServicePacketEncodeErrMock) TryParseType(_ []byte) (service.PacketType, bool) {
-	return service.Unknown, false
+func (s *TransportHandlerServicePacketEncodeErrMock) TryParseType(_ []byte) (service_packet.HeaderType, bool) {
+	return service_packet.Unknown, false
 }
-func (s *TransportHandlerServicePacketEncodeErrMock) EncodeLegacy(_ service.PacketType, _ []byte) ([]byte, error) {
+func (s *TransportHandlerServicePacketEncodeErrMock) EncodeLegacy(_ service_packet.HeaderType, _ []byte) ([]byte, error) {
 	select {
 	case s.called <- struct{}{}:
 	default:
 	}
 	return nil, errors.New("encode failed")
 }
-func (s *TransportHandlerServicePacketEncodeErrMock) EncodeV1(_ service.PacketType, buffer []byte) ([]byte, error) {
+func (s *TransportHandlerServicePacketEncodeErrMock) EncodeV1(_ service_packet.HeaderType, buffer []byte) ([]byte, error) {
 	return buffer, nil
 }
 
 // TransportHandlerServicePacketMock encodes SessionReset as first byte = 1.
 type TransportHandlerServicePacketMock struct{}
 
-func (s *TransportHandlerServicePacketMock) TryParseType(_ []byte) (service.PacketType, bool) {
-	return service.Unknown, false
+func (s *TransportHandlerServicePacketMock) TryParseType(_ []byte) (service_packet.HeaderType, bool) {
+	return service_packet.Unknown, false
 }
-func (s *TransportHandlerServicePacketMock) EncodeLegacy(_ service.PacketType, buffer []byte) ([]byte, error) {
-	buffer[0] = byte(service.SessionReset)
+func (s *TransportHandlerServicePacketMock) EncodeLegacy(_ service_packet.HeaderType, buffer []byte) ([]byte, error) {
+	buffer[0] = byte(service_packet.SessionReset)
 	return buffer, nil
 }
-func (s *TransportHandlerServicePacketMock) EncodeV1(_ service.PacketType, buffer []byte) ([]byte, error) {
+func (s *TransportHandlerServicePacketMock) EncodeV1(_ service_packet.HeaderType, buffer []byte) ([]byte, error) {
 	return buffer, nil
 }
 
@@ -355,7 +354,6 @@ func TestHandleTransport_CancelBeforeLoop_ReturnsNil(t *testing.T) {
 
 	h := NewTransportHandler(ctx, settings.Settings{Port: "7777"}, writer, conn, repo, logger,
 		hsf, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
-		&TransportHandlerServicePacketMock{},
 	)
 
 	err := h.HandleTransport()
@@ -384,7 +382,6 @@ func TestHandleTransport_CancelWhileRead_ReturnsCtxErr(t *testing.T) {
 
 	h := NewTransportHandler(ctx, settings.Settings{Port: "9001"}, writer, bl, repo, logger,
 		hsf, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
-		&TransportHandlerServicePacketMock{},
 	)
 
 	errCh := make(chan error, 1)
@@ -421,7 +418,6 @@ func TestHandleTransport_ReadMsgUDPAddrPortError_LogsAndContinues(t *testing.T) 
 
 	h := NewTransportHandler(ctx, settings.Settings{Port: "4444"}, writer, conn, repo, logger,
 		hsf, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
-		&TransportHandlerServicePacketMock{},
 	)
 
 	done := make(chan struct{})
@@ -454,7 +450,6 @@ func TestHandleTransport_EmptyPacket_Dropped(t *testing.T) {
 
 	h := NewTransportHandler(ctx, settings.Settings{Port: "5555"}, writer, conn, repo, logger,
 		hsf, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
-		&TransportHandlerServicePacketMock{},
 	)
 
 	done := make(chan struct{})
@@ -500,7 +495,6 @@ func TestTransportHandler_RegistrationPacket(t *testing.T) {
 		logger,
 		handshakeFactory,
 		chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
-		&TransportHandlerServicePacketMock{},
 	)
 
 	go func() { _ = handler.HandleTransport() }()
@@ -549,7 +543,6 @@ func TestTransportHandler_HandshakeError_SendsSessionReset(t *testing.T) {
 		logger,
 		handshakeFactory,
 		chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
-		&TransportHandlerServicePacketMock{},
 	)
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
@@ -562,57 +555,8 @@ func TestTransportHandler_HandshakeError_SendsSessionReset(t *testing.T) {
 	cancel()
 	<-done
 
-	if len(conn.writes) != 1 || conn.writes[0].data[0] != byte(service.SessionReset) {
+	if len(conn.writes) != 1 || conn.writes[0].data[0] != byte(service_packet.SessionReset) {
 		t.Errorf("expected SessionReset to be sent, got %+v", conn.writes)
-	}
-}
-
-// EncodeLegacy error path -> no UDP write, but EncodeLegacy called.
-func TestTransportHandler_HandshakeError_ServicePacketEncodeError(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	writer := &TransportHandlerFakeWriter{}
-	logger := &TransportHandlerFakeLogger{}
-	repo := &TransportHandlerSessionRepo{}
-	clientAddr := netip.MustParseAddrPort("192.168.1.99:5999")
-
-	fakeHS := &TransportHandlerFakeHandshake{ip: nil, err: errors.New("hs fail")}
-	handshakeFactory := &TransportHandlerFakeHandshakeFactory{hs: fakeHS}
-
-	conn := &TransportHandlerFakeUdpListener{
-		readBufs:  [][]byte{{0xab, 0xcd}},
-		readAddrs: []netip.AddrPort{clientAddr},
-	}
-
-	sp := &TransportHandlerServicePacketEncodeErrMock{called: make(chan struct{}, 1)}
-
-	handler := NewTransportHandler(
-		ctx,
-		settings.Settings{Port: "5999"},
-		writer,
-		conn,
-		repo,
-		logger,
-		handshakeFactory,
-		chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
-		sp,
-	)
-
-	done := make(chan struct{})
-	go func() { _ = handler.HandleTransport(); close(done) }()
-
-	select {
-	case <-sp.called:
-		cancel()
-	case <-time.After(time.Second):
-		cancel()
-		t.Fatal("timeout waiting for EncodeLegacy to be called")
-	}
-	<-done
-
-	if got := len(conn.writes); got != 0 {
-		t.Fatalf("expected no UDP writes on EncodeLegacy error, got %d", got)
 	}
 }
 
@@ -655,7 +599,6 @@ func TestTransportHandler_DecryptError(t *testing.T) {
 		logger,
 		handshakeFactory,
 		chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
-		&TransportHandlerServicePacketMock{},
 	)
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
@@ -721,7 +664,6 @@ func TestTransportHandler_WriteError(t *testing.T) {
 		logger,
 		handshakeFactory,
 		chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
-		&TransportHandlerServicePacketMock{},
 	)
 
 	done := make(chan struct{})
@@ -788,7 +730,6 @@ func TestTransportHandler_HappyPath(t *testing.T) {
 		logger,
 		handshakeFactory,
 		chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
-		&TransportHandlerServicePacketMock{},
 	)
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
@@ -839,7 +780,6 @@ func TestTransportHandler_NATRebinding_ReRegister(t *testing.T) {
 		logger,
 		handshakeFactory,
 		chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
-		&TransportHandlerServicePacketMock{},
 	)
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
@@ -879,7 +819,6 @@ func TestTransportHandler_RegisterClient_BadInternalIP(t *testing.T) {
 		logger,
 		handshakeFactory,
 		chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
-		&TransportHandlerServicePacketMock{},
 	)
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
@@ -965,7 +904,6 @@ func TestTransportHandler_SecondPacketGoesToExistingRegistrationQueue_NoNewGorou
 		logger,
 		handshakeFactory,
 		chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
-		&TransportHandlerServicePacketMock{},
 	)
 
 	go func() {
@@ -1027,7 +965,6 @@ func TestHandleTransport_IgnoreHandlePacketError(t *testing.T) {
 		ctx, settings.Settings{Port: "9999"}, writer, conn, repo, logger,
 		&TransportHandlerFakeHandshakeFactory{}, // unused
 		chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
-		&TransportHandlerServicePacketMock{},
 	)
 
 	done := make(chan struct{})
@@ -1144,7 +1081,6 @@ func TestRegisterClient_CryptoError_SendsReset(t *testing.T) {
 		logger,
 		hsf,
 		failingCryptoFactory{},
-		&TransportHandlerServicePacketMock{},
 	)
 
 	go func() {
@@ -1227,7 +1163,6 @@ func TestRegisterClient_CanceledContextClosesQueue(t *testing.T) {
 		logger:              &TransportHandlerFakeLogger{},
 		handshakeFactory:    &TransportHandlerFakeHandshakeFactory{hs: hs},
 		cryptographyFactory: failingCryptoFactory{},
-		servicePacket:       &TransportHandlerServicePacketMock{},
 	}
 
 	done := make(chan struct{})

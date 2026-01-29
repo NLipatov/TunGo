@@ -7,9 +7,9 @@ import (
 	"time"
 	"tungo/application/network/connection"
 	"tungo/application/network/routing/tun"
-	"tungo/domain/network/service"
 	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/settings"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -22,7 +22,6 @@ type TunHandler struct {
 	writer              io.Writer // abstraction over transport
 	cryptographyService connection.Crypto
 	rekeyController     *rekey.StateMachine
-	servicePacket       service.PacketHandler
 	controlPacketBuffer [128]byte
 	rotateAt            time.Time
 	rekeyInterval       time.Duration
@@ -34,7 +33,6 @@ func NewTunHandler(ctx context.Context,
 	writer io.Writer,
 	cryptographyService connection.Crypto,
 	rekeyController *rekey.StateMachine,
-	servicePacket service.PacketHandler,
 ) tun.Handler {
 	return &TunHandler{
 		ctx:                 ctx,
@@ -42,7 +40,6 @@ func NewTunHandler(ctx context.Context,
 		writer:              writer,
 		cryptographyService: cryptographyService,
 		rekeyController:     rekeyController,
-		servicePacket:       servicePacket,
 		rekeyInterval:       settings.DefaultRekeyInterval,
 		rotateAt:            time.Now().UTC().Add(settings.DefaultRekeyInterval),
 		handshakeCrypto:     &handshake.DefaultCrypto{},
@@ -131,14 +128,14 @@ func (w *TunHandler) HandleTun() error {
 				}
 
 				payloadBuf := w.controlPacketBuffer[chacha20poly1305.NonceSize:]
-				if len(publicKey) != service.RekeyPublicKeyLen {
+				if len(publicKey) != service_packet.RekeyPublicKeyLen {
 					fmt.Println("unexpected rekey public key length")
 					w.rotateAt = time.Now().UTC().Add(w.rekeyInterval)
 					continue
 				}
 				copy(payloadBuf[3:], publicKey)
 
-				servicePayload, err := w.servicePacket.EncodeV1(service.RekeyInit, payloadBuf)
+				servicePayload, err := service_packet.EncodeV1Header(service_packet.RekeyInit, payloadBuf)
 				if err != nil {
 					fmt.Println("failed to encode rekeyInit packet")
 				} else {

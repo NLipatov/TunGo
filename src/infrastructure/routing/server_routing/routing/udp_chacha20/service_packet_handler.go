@@ -3,9 +3,9 @@ package udp_chacha20
 import (
 	"errors"
 	"tungo/application/network/connection"
-	"tungo/domain/network/service"
 	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/network/service_packet"
 
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/curve25519"
@@ -13,16 +13,13 @@ import (
 
 type servicePacketHandler struct {
 	crypto handshake.Crypto
-	sp     service.PacketHandler
 }
 
 func newServicePacketHandler(
 	crypto handshake.Crypto,
-	sp service.PacketHandler,
 ) servicePacketHandler {
 	return servicePacketHandler{
 		crypto: crypto,
-		sp:     sp,
 	}
 }
 
@@ -31,9 +28,9 @@ func (r *servicePacketHandler) Handle(
 	session connection.Session,
 	fsm rekey.FSM,
 ) (bool, error) {
-	if spType, ok := r.sp.TryParseType(plaindata); ok {
+	if spType, ok := service_packet.TryParseHeader(plaindata); ok {
 		switch spType {
-		case service.RekeyInit:
+		case service_packet.RekeyInit:
 			return true, r.handleRekeyInit(plaindata, session, fsm)
 		default:
 			return true, nil
@@ -50,12 +47,12 @@ func (r *servicePacketHandler) handleRekeyInit(
 	if fsm.State() != rekey.StateStable {
 		return nil
 	}
-	if len(plaindata) < service.RekeyPacketLen {
+	if len(plaindata) < service_packet.RekeyPacketLen {
 		// drop garbage
 		return nil
 	}
-	var clientRekeyPub [service.RekeyPublicKeyLen]byte
-	copy(clientRekeyPub[:], plaindata[3:service.RekeyPacketLen])
+	var clientRekeyPub [service_packet.RekeyPublicKeyLen]byte
+	copy(clientRekeyPub[:], plaindata[3:service_packet.RekeyPacketLen])
 
 	serverPub, serverPriv, err := r.crypto.GenerateX25519KeyPair()
 	if err != nil {
@@ -88,11 +85,11 @@ func (r *servicePacketHandler) handleRekeyInit(
 		return nil
 	}
 	// Only send ACK after successful rekey installation.
-	ackBuf := make([]byte, chacha20poly1305.NonceSize+service.RekeyPacketLen,
-		chacha20poly1305.NonceSize+service.RekeyPacketLen+chacha20poly1305.Overhead)
+	ackBuf := make([]byte, chacha20poly1305.NonceSize+service_packet.RekeyPacketLen,
+		chacha20poly1305.NonceSize+service_packet.RekeyPacketLen+chacha20poly1305.Overhead)
 	payload := ackBuf[chacha20poly1305.NonceSize:]
 	copy(payload[3:], serverPub)
-	if _, err = r.sp.EncodeV1(service.RekeyAck, payload); err != nil {
+	if _, err = service_packet.EncodeV1Header(service_packet.RekeyAck, payload); err != nil {
 		return nil
 	}
 	if enc, err := session.Crypto().Encrypt(ackBuf); err != nil {

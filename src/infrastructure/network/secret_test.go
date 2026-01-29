@@ -53,7 +53,7 @@ func TestExchange_HandshakeError(t *testing.T) {
 	secret := NewDefaultSecret(settings.Settings{}, &secretTestMockHandshake{err: hsErr}, &secretTestMockBuilder{})
 	svc, ctrl, err := secret.Exchange(&mockConn{})
 	if svc != nil {
-		t.Errorf("expected nil service on handshake error, got %v", svc)
+		t.Errorf("expected nil service_packet on handshake error, got %v", svc)
 	}
 	if ctrl != nil {
 		t.Errorf("expected nil controller on handshake error, got %v", ctrl)
@@ -73,7 +73,7 @@ func TestExchange_BuilderError(t *testing.T) {
 	)
 	svc, ctrl, err := secret.Exchange(&mockConn{})
 	if svc != nil {
-		t.Errorf("expected nil service on builder error, got %v", svc)
+		t.Errorf("expected nil service_packet on builder error, got %v", svc)
 	}
 	if ctrl != nil {
 		t.Errorf("expected nil controller on builder error, got %v", ctrl)
@@ -87,7 +87,7 @@ func TestExchange_BuilderError(t *testing.T) {
 	}
 }
 
-// TestExchange_Success verifies that a successful handshake and builder produce the returned service.
+// TestExchange_Success verifies that a successful handshake and builder produce the returned service_packet.
 func TestExchange_Success(t *testing.T) {
 	fakeSvc := &mockCryptoService{}
 	secret := NewDefaultSecret(
@@ -100,7 +100,7 @@ func TestExchange_Success(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 	if svc != fakeSvc {
-		t.Errorf("expected service %v, got %v", fakeSvc, svc)
+		t.Errorf("expected service_packet %v, got %v", fakeSvc, svc)
 	}
 	if ctrl != nil {
 		t.Errorf("expected controller nil, got %v", ctrl)

@@ -44,7 +44,7 @@ func TestDefaultSecureSession_Establish_SecretError(t *testing.T) {
 		t.Errorf("want transport=nil on error, got %v", gotAdapter)
 	}
 	if gotSvc != nil {
-		t.Errorf("want service=nil on error, got %v", gotSvc)
+		t.Errorf("want service_packet=nil on error, got %v", gotSvc)
 	}
 }
 
@@ -61,6 +61,6 @@ func TestDefaultSecureSession_Establish_Success(t *testing.T) {
 		t.Errorf("want transport=%v, got %v", adapter, gotAdapter)
 	}
 	if gotSvc != svc {
-		t.Errorf("want service=%v, got %v", svc, gotSvc)
+		t.Errorf("want service_packet=%v, got %v", svc, gotSvc)
 	}
 }

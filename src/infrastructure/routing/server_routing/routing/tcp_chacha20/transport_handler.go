@@ -11,9 +11,9 @@ import (
 	"tungo/application/logging"
 	"tungo/application/network/connection"
 	"tungo/application/network/routing/transport"
-	"tungo/domain/network/service"
 	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/network/tcp/adapters"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
 	"tungo/infrastructure/settings"
@@ -32,7 +32,6 @@ type TransportHandler struct {
 	handshakeFactory    connection.HandshakeFactory
 	cryptographyFactory connection.CryptoFactory
 	handshakeCrypto     handshake.Crypto
-	servicePacket       service.PacketHandler
 }
 
 func NewTransportHandler(
@@ -55,7 +54,6 @@ func NewTransportHandler(
 		handshakeFactory:    handshakeFactory,
 		cryptographyFactory: cryptographyFactory,
 		handshakeCrypto:     &handshake.DefaultCrypto{},
-		servicePacket:       service.NewDefaultPacketHandler(),
 	}
 }
 
@@ -184,8 +182,8 @@ func (t *TransportHandler) handleClient(ctx context.Context, session connection.
 				continue
 			}
 			if rc := session.RekeyController(); rc != nil {
-				if spType, spOk := service.NewDefaultPacketHandler().TryParseType(pt); spOk {
-					if spType == service.RekeyInit {
+				if spType, spOk := service_packet.TryParseHeader(pt); spOk {
+					if spType == service_packet.RekeyInit {
 						t.handleRekeyInit(rc, session, pt)
 						continue
 					}
@@ -201,12 +199,12 @@ func (t *TransportHandler) handleClient(ctx context.Context, session connection.
 }
 
 func (t *TransportHandler) handleRekeyInit(fsm rekey.FSM, session connection.Session, pt []byte) {
-	if len(pt) < service.RekeyPacketLen {
+	if len(pt) < service_packet.RekeyPacketLen {
 		t.logger.Printf("rekey init packet too short: %d bytes", len(pt))
 		return
 	}
-	var clientPub [service.RekeyPublicKeyLen]byte
-	copy(clientPub[:], pt[3:service.RekeyPacketLen])
+	var clientPub [service_packet.RekeyPublicKeyLen]byte
+	copy(clientPub[:], pt[3:service_packet.RekeyPacketLen])
 	serverPub, serverPriv, err := t.handshakeCrypto.GenerateX25519KeyPair()
 	if err != nil {
 		t.logger.Printf("rekey init: failed to generate server key pair: %v", err)
@@ -240,9 +238,9 @@ func (t *TransportHandler) handleRekeyInit(fsm rekey.FSM, session connection.Ses
 		return
 	}
 
-	ackPayload := make([]byte, service.RekeyPacketLen)
+	ackPayload := make([]byte, service_packet.RekeyPacketLen)
 	copy(ackPayload[3:], serverPub)
-	sp, err := service.NewDefaultPacketHandler().EncodeV1(service.RekeyAck, ackPayload)
+	sp, err := service_packet.EncodeV1Header(service_packet.RekeyAck, ackPayload)
 	if err != nil {
 		t.logger.Printf("rekey init: encode ack failed: %v", err)
 		return
@@ -260,12 +258,12 @@ func (t *TransportHandler) handleRekeyInit(fsm rekey.FSM, session connection.Ses
 	}
 }
 
-// sendSessionReset sends a SessionReset service packet to the given session.
+// sendSessionReset sends a SessionReset service_packet packet to the given session.
 func (t *TransportHandler) sendSessionReset(session connection.Session) {
 	servicePacketBuffer := make([]byte, 3)
-	servicePacketPayload, err := t.servicePacket.EncodeLegacy(service.SessionReset, servicePacketBuffer)
+	servicePacketPayload, err := service_packet.EncodeLegacyHeader(service_packet.SessionReset, servicePacketBuffer)
 	if err != nil {
-		t.logger.Printf("failed to encode legacy session reset service packet: %v", err)
+		t.logger.Printf("failed to encode legacy session reset service_packet packet: %v", err)
 		return
 	}
 	_, _ = session.Transport().Write(servicePacketPayload)

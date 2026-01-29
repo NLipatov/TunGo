@@ -9,10 +9,10 @@ import (
 	"os"
 	"testing"
 	"time"
-	"tungo/domain/network/service"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/network/service_packet"
 
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/curve25519"
@@ -57,26 +57,26 @@ func (thAckCrypto) Decrypt(b []byte) ([]byte, error) {
 type servicePacketMock struct {
 }
 
-func (s *servicePacketMock) TryParseType(_ []byte) (service.PacketType, bool) {
-	return service.Unknown, false
+func (s *servicePacketMock) TryParseType(_ []byte) (service_packet.HeaderType, bool) {
+	return service_packet.Unknown, false
 }
-func (s *servicePacketMock) EncodeLegacy(_ service.PacketType, buffer []byte) ([]byte, error) {
+func (s *servicePacketMock) EncodeLegacy(_ service_packet.HeaderType, buffer []byte) ([]byte, error) {
 	return buffer, nil
 }
-func (s *servicePacketMock) EncodeV1(_ service.PacketType, buffer []byte) ([]byte, error) {
+func (s *servicePacketMock) EncodeV1(_ service_packet.HeaderType, buffer []byte) ([]byte, error) {
 	return buffer, nil
 }
 
 type servicePacketSessionResetMock struct {
 }
 
-func (s *servicePacketSessionResetMock) TryParseType(_ []byte) (service.PacketType, bool) {
-	return service.SessionReset, true
+func (s *servicePacketSessionResetMock) TryParseType(_ []byte) (service_packet.HeaderType, bool) {
+	return service_packet.SessionReset, true
 }
-func (s *servicePacketSessionResetMock) EncodeLegacy(_ service.PacketType, buffer []byte) ([]byte, error) {
+func (s *servicePacketSessionResetMock) EncodeLegacy(_ service_packet.HeaderType, buffer []byte) ([]byte, error) {
 	return buffer, nil
 }
-func (s *servicePacketSessionResetMock) EncodeV1(_ service.PacketType, buffer []byte) ([]byte, error) {
+func (s *servicePacketSessionResetMock) EncodeV1(_ service_packet.HeaderType, buffer []byte) ([]byte, error) {
 	return buffer, nil
 }
 
@@ -131,7 +131,7 @@ func TestHandleTransport_ImmediateCancel(t *testing.T) {
 	}}
 	w := &thTestWriter{}
 	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTransportHandler(ctx, r, w, &thTestCrypto{}, ctrl, &servicePacketMock{})
+	h := NewTransportHandler(ctx, r, w, &thTestCrypto{}, ctrl)
 	if err := h.HandleTransport(); err != nil {
 		t.Errorf("expected nil on immediate cancel, got %v", err)
 	}
@@ -144,7 +144,7 @@ func TestHandleTransport_ReadErrorOther(t *testing.T) {
 	}}
 	w := &thTestWriter{}
 	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTransportHandler(context.Background(), r, w, &thTestCrypto{}, ctrl, &servicePacketMock{})
+	h := NewTransportHandler(context.Background(), r, w, &thTestCrypto{}, ctrl)
 	exp := fmt.Sprintf("could not read a packet from adapter: %v", errRead)
 	if err := h.HandleTransport(); err == nil || err.Error() != exp {
 		t.Errorf("expected %q, got %v", exp, err)
@@ -161,7 +161,7 @@ func TestHandleTransport_ReadDeadlineExceededSkip(t *testing.T) {
 	}}
 	w := &thTestWriter{}
 	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTransportHandler(ctx, r, w, &thTestCrypto{}, ctrl, &servicePacketMock{})
+	h := NewTransportHandler(ctx, r, w, &thTestCrypto{}, ctrl)
 
 	done := make(chan error)
 	go func() { done <- h.HandleTransport() }()
@@ -175,11 +175,11 @@ func TestHandleTransport_ReadDeadlineExceededSkip(t *testing.T) {
 
 func TestHandleTransport_ServerResetSignal(t *testing.T) {
 	r := &thTestReader{reads: []func(p []byte) (int, error){
-		func(p []byte) (int, error) { p[0] = byte(service.SessionReset); return 1, nil },
+		func(p []byte) (int, error) { p[0] = byte(service_packet.SessionReset); return 1, nil },
 	}}
 	w := &thTestWriter{}
 	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTransportHandler(context.Background(), r, w, &thTestCrypto{}, ctrl, &servicePacketSessionResetMock{})
+	h := NewTransportHandler(context.Background(), r, w, &thTestCrypto{}, ctrl)
 	exp := "server requested cryptographyService reset"
 	if err := h.HandleTransport(); err == nil || err.Error() != exp {
 		t.Errorf("expected %q, got %v", exp, err)
@@ -200,7 +200,7 @@ func TestHandleTransport_DecryptNonUniqueNonceSkip(t *testing.T) {
 	w := &thTestWriter{}
 	crypto := &thTestCrypto{err: chacha20.ErrNonUniqueNonce}
 	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTransportHandler(ctx, r, w, crypto, ctrl, &servicePacketMock{})
+	h := NewTransportHandler(ctx, r, w, crypto, ctrl)
 
 	done := make(chan error)
 	go func() { done <- h.HandleTransport() }()
@@ -221,7 +221,7 @@ func TestHandleTransport_DecryptErrorFatal(t *testing.T) {
 	w := &thTestWriter{}
 	crypto := &thTestCrypto{err: errDec}
 	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTransportHandler(context.Background(), r, w, crypto, ctrl, &servicePacketMock{})
+	h := NewTransportHandler(context.Background(), r, w, crypto, ctrl)
 	exp := fmt.Sprintf("failed to decrypt data: %v", errDec)
 	if err := h.HandleTransport(); err == nil || err.Error() != exp {
 		t.Errorf("expected %q, got %v", exp, err)
@@ -237,7 +237,7 @@ func TestHandleTransport_WriteError(t *testing.T) {
 	w := &thTestWriter{err: errWrite}
 	crypto := &thTestCrypto{output: d[1:]} // decrypted payload
 	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTransportHandler(context.Background(), r, w, crypto, ctrl, &servicePacketMock{})
+	h := NewTransportHandler(context.Background(), r, w, crypto, ctrl)
 	exp := fmt.Sprintf("failed to write to TUN: %v", errWrite)
 	if err := h.HandleTransport(); err == nil || err.Error() != exp {
 		t.Errorf("expected %q, got %v", exp, err)
@@ -257,7 +257,7 @@ func TestHandleTransport_SuccessThenCancel(t *testing.T) {
 	w := &thTestWriter{}
 	crypto := &thTestCrypto{output: decrypted}
 	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTransportHandler(ctx, r, w, crypto, ctrl, &servicePacketMock{})
+	h := NewTransportHandler(ctx, r, w, crypto, ctrl)
 
 	done := make(chan error)
 	go func() { done <- h.HandleTransport() }()
@@ -290,7 +290,7 @@ func TestHandleTransport_RekeyAckAfterDoubleInit_UsesOriginalPendingKey(t *testi
 	}}
 	writer := &fakeWriter{}
 	crypto := &tunhandlerTestRakeCrypto{} // passthrough
-	tunHandler := NewTunHandler(ctx, reader, writer, crypto, ctrl, service.NewDefaultPacketHandler()).(*TunHandler)
+	tunHandler := NewTunHandler(ctx, reader, writer, crypto, ctrl).(*TunHandler)
 	tunHandler.rekeyInterval = 5 * time.Millisecond
 	tunHandler.rotateAt = time.Now().UTC().Add(tunHandler.rekeyInterval)
 
@@ -320,21 +320,21 @@ func TestHandleTransport_RekeyAckAfterDoubleInit_UsesOriginalPendingKey(t *testi
 	}
 	firstPub := func(pkt []byte) []byte {
 		start := chacha20poly1305.NonceSize + 3
-		end := start + service.RekeyPublicKeyLen
+		end := start + service_packet.RekeyPublicKeyLen
 		if len(pkt) < end {
 			t.Fatalf("rekey packet too short: %d", len(pkt))
 		}
-		out := make([]byte, service.RekeyPublicKeyLen)
+		out := make([]byte, service_packet.RekeyPublicKeyLen)
 		copy(out, pkt[start:end])
 		return out
 	}(writer.data[0])
 	secondPub := func(pkt []byte) []byte {
 		start := chacha20poly1305.NonceSize + 3
-		end := start + service.RekeyPublicKeyLen
+		end := start + service_packet.RekeyPublicKeyLen
 		if len(pkt) < end {
 			t.Fatalf("rekey packet too short: %d", len(pkt))
 		}
-		out := make([]byte, service.RekeyPublicKeyLen)
+		out := make([]byte, service_packet.RekeyPublicKeyLen)
 		copy(out, pkt[start:end])
 		return out
 	}(writer.data[1])
@@ -361,8 +361,8 @@ func TestHandleTransport_RekeyAckAfterDoubleInit_UsesOriginalPendingKey(t *testi
 		t.Fatalf("derive s2c failed: %v", err)
 	}
 
-	ackPayload := make([]byte, service.RekeyPacketLen)
-	if _, err := service.NewDefaultPacketHandler().EncodeV1(service.RekeyAck, ackPayload); err != nil {
+	ackPayload := make([]byte, service_packet.RekeyPacketLen)
+	if _, err := service_packet.EncodeV1Header(service_packet.RekeyAck, ackPayload); err != nil {
 		t.Fatalf("encode ack failed: %v", err)
 	}
 	copy(ackPayload[3:], serverPub)
@@ -377,7 +377,7 @@ func TestHandleTransport_RekeyAckAfterDoubleInit_UsesOriginalPendingKey(t *testi
 
 	transportCtx, transportCancel := context.WithCancel(context.Background())
 	defer transportCancel()
-	h := NewTransportHandler(transportCtx, r, w, &thAckCrypto{}, ctrl, service.NewDefaultPacketHandler()).(*TransportHandler)
+	h := NewTransportHandler(transportCtx, r, w, &thAckCrypto{}, ctrl).(*TransportHandler)
 	h.handshakeCrypto = hc
 
 	errCh := make(chan error, 1)

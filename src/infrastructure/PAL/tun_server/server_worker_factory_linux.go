@@ -8,7 +8,6 @@ import (
 	"net/netip"
 	"tungo/application/network/connection"
 	"tungo/application/network/routing"
-	"tungo/domain/network/service"
 	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network/ip"
@@ -195,7 +194,6 @@ func (s *ServerWorkerFactory) createUDPWorker(
 		s.loggerFactory.newLogger(),
 		NewHandshakeFactory(*conf),
 		chacha20.NewUdpSessionBuilder(chacha20.NewDefaultAEADBuilder()),
-		service.NewDefaultPacketHandler(),
 	)
 	return udp_chacha20.NewUdpTunWorker(th, tr), nil
 }

@@ -39,7 +39,7 @@ func (m *secretWithDeadlineTestMockCrypto) Encrypt(p []byte) ([]byte, error) { r
 func (m *secretWithDeadlineTestMockCrypto) Decrypt(p []byte) ([]byte, error) { return p, nil }
 
 // TestSecretWithDeadline_Success ensures that when the underlying Secret returns
-// immediately, Exchange returns that service with no error.
+// immediately, Exchange returns that service_packet with no error.
 func TestSecretWithDeadline_Success(t *testing.T) {
 	ctx := context.Background()
 	fakeSvc := &secretWithDeadlineTestMockCrypto{}
@@ -51,7 +51,7 @@ func TestSecretWithDeadline_Success(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 	if svc != fakeSvc {
-		t.Errorf("expected service %v, got %v", fakeSvc, svc)
+		t.Errorf("expected service_packet %v, got %v", fakeSvc, svc)
 	}
 	if ctrl != nil {
 		t.Errorf("expected controller nil, got %v", ctrl)
@@ -59,7 +59,7 @@ func TestSecretWithDeadline_Success(t *testing.T) {
 }
 
 // TestSecretWithDeadline_ErrorPropagation ensures that if the underlying Secret
-// returns an error immediately, Exchange propagates that error and a nil service.
+// returns an error immediately, Exchange propagates that error and a nil service_packet.
 func TestSecretWithDeadline_ErrorPropagation(t *testing.T) {
 	wantErr := errors.New("underlying failure")
 	underlying := &secretWithDeadlineTestMockSecret{svc: nil, err: wantErr, block: false}
@@ -67,7 +67,7 @@ func TestSecretWithDeadline_ErrorPropagation(t *testing.T) {
 	svc, _, err := wrapper.Exchange(&secretWithDeadlineTestMockConn{})
 
 	if svc != nil {
-		t.Errorf("expected nil service on error, got %v", svc)
+		t.Errorf("expected nil service_packet on error, got %v", svc)
 	}
 	if !errors.Is(err, wantErr) {
 		t.Errorf("expected error %v, got %v", wantErr, err)
@@ -75,7 +75,7 @@ func TestSecretWithDeadline_ErrorPropagation(t *testing.T) {
 }
 
 // TestSecretWithDeadline_Cancel ensures that if the context is canceled before
-// the underlying Secret returns, Exchange returns context.Canceled and a nil service.
+// the underlying Secret returns, Exchange returns context.Canceled and a nil service_packet.
 func TestSecretWithDeadline_Cancel(t *testing.T) {
 	underlying := &secretWithDeadlineTestMockSecret{block: true}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -102,7 +102,7 @@ func TestSecretWithDeadline_Cancel(t *testing.T) {
 	}
 
 	if svcRes != nil {
-		t.Errorf("expected nil service on cancel, got %v", svcRes)
+		t.Errorf("expected nil service_packet on cancel, got %v", svcRes)
 	}
 	if ctrlRes != nil {
 		t.Errorf("expected nil controller on cancel, got %v", ctrlRes)

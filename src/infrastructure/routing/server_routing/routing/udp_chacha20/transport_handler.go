@@ -13,9 +13,9 @@ import (
 	"tungo/application/logging"
 	"tungo/application/network/connection"
 	"tungo/application/network/routing/transport"
-	"tungo/domain/network/service"
 	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/network/udp/adapters"
 	"tungo/infrastructure/network/udp/queue/udp"
 	"tungo/infrastructure/routing/server_routing/session_management/repository"
@@ -41,7 +41,6 @@ type TransportHandler struct {
 	listenerConn        listeners.UdpListener
 	handshakeFactory    connection.HandshakeFactory
 	cryptographyFactory connection.CryptoFactory
-	servicePacket       service.PacketHandler
 	crypto              handshake.Crypto
 	// registrations holds per-client registration queues for clients that are
 	// currently performing a handshake.
@@ -60,7 +59,6 @@ func NewTransportHandler(
 	logger logging.Logger,
 	handshakeFactory connection.HandshakeFactory,
 	cryptographyFactory connection.CryptoFactory,
-	servicePacket service.PacketHandler,
 ) transport.Handler {
 	crypto := &handshake.DefaultCrypto{}
 	return &TransportHandler{
@@ -72,10 +70,9 @@ func NewTransportHandler(
 		listenerConn:        listenerConn,
 		handshakeFactory:    handshakeFactory,
 		cryptographyFactory: cryptographyFactory,
-		servicePacket:       servicePacket,
 		crypto:              crypto,
 		registrations:       make(map[netip.AddrPort]*udp.RegistrationQueue),
-		sp:                  newServicePacketHandler(crypto, servicePacket),
+		sp:                  newServicePacketHandler(crypto),
 	}
 }
 
@@ -158,7 +155,7 @@ func (t *TransportHandler) handlePacket(
 		// Epoch can now be used to encrypt. Allow to encrypt with this epoch by promoting.
 		rekeyCtrl.ActivateSendEpoch(binary.BigEndian.Uint16(packet[:2]))
 		rekeyCtrl.AbortPendingIfExpired(time.Now())
-		// If service packet - handle it.
+		// If service_packet packet - handle it.
 		if handled, err := t.sp.Handle(decrypted, session, rekeyCtrl); handled {
 			return err
 		}
@@ -288,12 +285,12 @@ func (t *TransportHandler) registerClient(
 	t.logger.Printf("UDP: %v registered as: %v", addrPort.Addr(), internalIP)
 }
 
-// sendSessionReset sends a SessionReset service packet to the given client.
+// sendSessionReset sends a SessionReset service_packet packet to the given client.
 func (t *TransportHandler) sendSessionReset(addrPort netip.AddrPort) {
 	servicePacketBuffer := make([]byte, 3)
-	servicePacketPayload, err := t.servicePacket.EncodeLegacy(service.SessionReset, servicePacketBuffer)
+	servicePacketPayload, err := service_packet.EncodeLegacyHeader(service_packet.SessionReset, servicePacketBuffer)
 	if err != nil {
-		t.logger.Printf("failed to encode legacy session reset service packet: %v", err)
+		t.logger.Printf("failed to encode legacy session reset service_packet packet: %v", err)
 		return
 	}
 	_, _ = t.listenerConn.WriteToUDPAddrPort(servicePacketPayload, addrPort)

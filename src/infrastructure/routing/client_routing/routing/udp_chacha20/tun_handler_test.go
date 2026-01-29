@@ -8,8 +8,8 @@ import (
 	"io"
 	"testing"
 	"time"
-	"tungo/domain/network/service"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/network/service_packet"
 
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/curve25519"
@@ -97,7 +97,7 @@ func TestHandleTun_ImmediateCancel(t *testing.T) {
 		// should not be called
 		t.Fatal("Read called despite context cancelled")
 		return 0, nil
-	}}, &fakeWriter{}, &tunhandlerTestRakeCrypto{}, ctrl, service.NewDefaultPacketHandler())
+	}}, &fakeWriter{}, &tunhandlerTestRakeCrypto{}, ctrl)
 
 	if err := h.HandleTun(); err != nil {
 		t.Fatalf("expected nil on immediate cancel, got %v", err)
@@ -110,7 +110,7 @@ func TestHandleTun_ReadError(t *testing.T) {
 	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 	h := NewTunHandler(ctx, &fakeReader{readFunc: func(p []byte) (int, error) {
 		return 0, errRead
-	}}, &fakeWriter{}, &tunhandlerTestRakeCrypto{}, ctrl, service.NewDefaultPacketHandler())
+	}}, &fakeWriter{}, &tunhandlerTestRakeCrypto{}, ctrl)
 
 	if err := h.HandleTun(); err == nil || err.Error() != fmt.Sprintf("could not read a packet from TUN: %v", errRead) {
 		t.Fatalf("expected read error wrapped, got %v", err)
@@ -125,7 +125,7 @@ func TestHandleTun_EncryptError(t *testing.T) {
 		return len(dummyData), nil
 	}}
 	errEnc := errors.New("encrypt fail")
-	h := NewTunHandler(ctx, reader, &fakeWriter{}, &tunhandlerTestRakeCrypto{err: errEnc}, rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false), service.NewDefaultPacketHandler())
+	h := NewTunHandler(ctx, reader, &fakeWriter{}, &tunhandlerTestRakeCrypto{err: errEnc}, rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false))
 
 	if err := h.HandleTun(); err == nil || err.Error() != fmt.Sprintf("could not encrypt packet: %v", errEnc) {
 		t.Fatalf("expected encrypt error wrapped, got %v", err)
@@ -141,7 +141,7 @@ func TestHandleTun_WriteError(t *testing.T) {
 	}}
 	errWrite := errors.New("write fail")
 	writer := &fakeWriter{err: errWrite}
-	h := NewTunHandler(ctx, reader, writer, &tunhandlerTestRakeCrypto{prefix: []byte("x:")}, rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false), service.NewDefaultPacketHandler())
+	h := NewTunHandler(ctx, reader, writer, &tunhandlerTestRakeCrypto{prefix: []byte("x:")}, rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false))
 
 	if err := h.HandleTun(); err == nil || err.Error() != fmt.Sprintf("could not write packet to transport: %v", errWrite) {
 		t.Fatalf("expected write error wrapped, got %v", err)
@@ -168,7 +168,7 @@ func TestHandleTun_SuccessThenCancel(t *testing.T) {
 	writer := &fakeWriter{}
 	crypto := &tunhandlerTestRakeCrypto{prefix: []byte("pre-")}
 
-	h := NewTunHandler(ctx, reader, writer, crypto, rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false), service.NewDefaultPacketHandler())
+	h := NewTunHandler(ctx, reader, writer, crypto, rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false))
 
 	done := make(chan error)
 	go func() {
@@ -201,7 +201,7 @@ func TestHandleTun_ReadErrorAfterCancel_ReturnsNil(t *testing.T) {
 		return 0, errors.New("read fail")
 	}}
 	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTunHandler(ctx, r, &fakeWriter{}, &tunhandlerTestRakeCrypto{}, ctrl, service.NewDefaultPacketHandler())
+	h := NewTunHandler(ctx, r, &fakeWriter{}, &tunhandlerTestRakeCrypto{}, ctrl)
 
 	if err := h.HandleTun(); err != nil {
 		t.Fatalf("expected nil because ctx canceled, got %v", err)
@@ -219,7 +219,7 @@ func TestHandleTun_EncryptErrorAfterCancel_ReturnsNil(t *testing.T) {
 	}}
 	crypt := &tunHandlerTestCancelOnEncrypt{cancel: cancel, err: errors.New("enc fail")}
 	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTunHandler(ctx, r, &fakeWriter{}, crypt, ctrl, service.NewDefaultPacketHandler())
+	h := NewTunHandler(ctx, r, &fakeWriter{}, crypt, ctrl)
 
 	if err := h.HandleTun(); err != nil {
 		t.Fatalf("expected nil because ctx canceled before encrypt error handling, got %v", err)
@@ -236,7 +236,7 @@ func TestHandleTun_WriteErrorAfterCancel_ReturnsNil(t *testing.T) {
 	}}
 	w := &tunHandlerTestCancelWriter{cancel: cancel}
 	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTunHandler(ctx, r, w, &tunhandlerTestRakeCrypto{prefix: []byte("x:")}, ctrl, service.NewDefaultPacketHandler())
+	h := NewTunHandler(ctx, r, w, &tunhandlerTestRakeCrypto{prefix: []byte("x:")}, ctrl)
 
 	if err := h.HandleTun(); err != nil {
 		t.Fatalf("expected nil because ctx canceled before write error handling, got %v", err)
@@ -260,7 +260,7 @@ func TestHandleTun_ReadReturnsNAndEOF_OneWriteThenEOF(t *testing.T) {
 	}}
 	w := &fakeWriter{}
 	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTunHandler(ctx, r, w, &tunhandlerTestRakeCrypto{prefix: []byte("pre-")}, ctrl, service.NewDefaultPacketHandler())
+	h := NewTunHandler(ctx, r, w, &tunhandlerTestRakeCrypto{prefix: []byte("pre-")}, ctrl)
 
 	err := h.HandleTun()
 	if err == nil || err.Error() != "could not read a packet from TUN: EOF" {
@@ -286,7 +286,7 @@ func TestHandleTun_ReusesPendingRekeyKey(t *testing.T) {
 	crypto := &tunhandlerTestRakeCrypto{} // passthrough encrypt
 	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 
-	h := NewTunHandler(ctx, reader, writer, crypto, ctrl, service.NewDefaultPacketHandler())
+	h := NewTunHandler(ctx, reader, writer, crypto, ctrl)
 	th := h.(*TunHandler)
 	th.rekeyInterval = 5 * time.Millisecond
 	th.rotateAt = time.Now().UTC().Add(th.rekeyInterval)
@@ -310,11 +310,11 @@ func TestHandleTun_ReusesPendingRekeyKey(t *testing.T) {
 
 	extractPub := func(pkt []byte) []byte {
 		start := chacha20poly1305.NonceSize + 3
-		end := start + service.RekeyPublicKeyLen
+		end := start + service_packet.RekeyPublicKeyLen
 		if len(pkt) < end {
 			t.Fatalf("rekey packet too short: %d bytes", len(pkt))
 		}
-		buf := make([]byte, service.RekeyPublicKeyLen)
+		buf := make([]byte, service_packet.RekeyPublicKeyLen)
 		copy(buf, pkt[start:end])
 		return buf
 	}

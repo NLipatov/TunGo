@@ -6,9 +6,9 @@ import (
 	"log"
 	"tungo/application/network/connection"
 	"tungo/application/network/routing/transport"
-	"tungo/domain/network/service"
 	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/settings"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -21,7 +21,6 @@ type TransportHandler struct {
 	writer              io.Writer
 	cryptographyService connection.Crypto
 	rekeyController     *rekey.StateMachine
-	servicePacket       service.PacketHandler
 	handshakeCrypto     handshake.Crypto
 }
 
@@ -31,7 +30,6 @@ func NewTransportHandler(
 	writer io.Writer,
 	cryptographyService connection.Crypto,
 	rekeyController *rekey.StateMachine,
-	servicePacket service.PacketHandler,
 ) transport.Handler {
 	return &TransportHandler{
 		ctx:                 ctx,
@@ -39,7 +37,6 @@ func NewTransportHandler(
 		writer:              writer,
 		cryptographyService: cryptographyService,
 		rekeyController:     rekeyController,
-		servicePacket:       servicePacket,
 		handshakeCrypto:     &handshake.DefaultCrypto{},
 	}
 }
@@ -71,12 +68,10 @@ func (t *TransportHandler) HandleTransport() error {
 				log.Printf("failed to decrypt data: %s", payloadErr)
 				return payloadErr
 			}
-			if t.servicePacket != nil {
-				if spType, spOk := t.servicePacket.TryParseType(payload); spOk {
-					if spType == service.RekeyAck {
-						t.handleRekeyAck(payload)
-						continue
-					}
+			if spType, spOk := service_packet.TryParseHeader(payload); spOk {
+				if spType == service_packet.RekeyAck {
+					t.handleRekeyAck(payload)
+					continue
 				}
 			}
 			if _, writeErr := t.writer.Write(payload); writeErr != nil {
@@ -91,7 +86,7 @@ func (t *TransportHandler) handleRekeyAck(payload []byte) {
 	if t.rekeyController == nil {
 		return
 	}
-	if len(payload) < service.RekeyPacketLen {
+	if len(payload) < service_packet.RekeyPacketLen {
 		log.Printf("rekey ack too short: %d", len(payload))
 		return
 	}
@@ -100,7 +95,7 @@ func (t *TransportHandler) handleRekeyAck(payload []byte) {
 		log.Printf("rekey ack: no pending client private key")
 		return
 	}
-	serverPub := payload[3 : 3+service.RekeyPublicKeyLen]
+	serverPub := payload[3 : 3+service_packet.RekeyPublicKeyLen]
 	shared, err := curve25519.X25519(priv[:], serverPub)
 	if err != nil {
 		log.Printf("rekey ack: failed to compute shared secret: %v", err)

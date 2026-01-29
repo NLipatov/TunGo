@@ -8,7 +8,6 @@ import (
 	"time"
 	"tungo/application/network/connection"
 	"tungo/application/network/routing"
-	"tungo/domain/network/service"
 	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
 	"tungo/infrastructure/network"
@@ -45,7 +44,6 @@ func (w *WorkerFactory) CreateWorker(
 			transport,
 			crypto,
 			controller,
-			service.NewDefaultPacketHandler(),
 		)
 		// transportHandler reads from transport and writes to tun
 		transportHandler := udp_chacha20.NewTransportHandler(
@@ -54,16 +52,15 @@ func (w *WorkerFactory) CreateWorker(
 			tun,
 			crypto,
 			controller,
-			service.NewDefaultPacketHandler(),
 		)
 		return udp_chacha20.NewUdpWorker(transportHandler, tunHandler), nil
 	case settings.TCP:
-		tunHandler := tcp_chacha20.NewTunHandler(ctx, tun, conn, crypto, controller, service.NewDefaultPacketHandler())
-		transportHandler := tcp_chacha20.NewTransportHandler(ctx, conn, tun, crypto, controller, service.NewDefaultPacketHandler())
+		tunHandler := tcp_chacha20.NewTunHandler(ctx, tun, conn, crypto, controller)
+		transportHandler := tcp_chacha20.NewTransportHandler(ctx, conn, tun, crypto, controller)
 		return tcp_chacha20.NewTcpTunWorker(ctx, tunHandler, transportHandler, crypto, controller), nil
 	case settings.WS:
-		tunHandler := tcp_chacha20.NewTunHandler(ctx, tun, conn, crypto, controller, service.NewDefaultPacketHandler())
-		transportHandler := tcp_chacha20.NewTransportHandler(ctx, conn, tun, crypto, controller, service.NewDefaultPacketHandler())
+		tunHandler := tcp_chacha20.NewTunHandler(ctx, tun, conn, crypto, controller)
+		transportHandler := tcp_chacha20.NewTransportHandler(ctx, conn, tun, crypto, controller)
 		return tcp_chacha20.NewTcpTunWorker(ctx, tunHandler, transportHandler, crypto, controller), nil
 	default:
 		return nil, fmt.Errorf("unsupported protocol")

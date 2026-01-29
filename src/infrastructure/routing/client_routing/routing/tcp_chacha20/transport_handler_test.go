@@ -5,8 +5,8 @@ import (
 	"errors"
 	"io"
 	"testing"
-	"tungo/domain/network/service"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/network/service_packet"
 
 	"golang.org/x/crypto/chacha20poly1305"
 )
@@ -44,13 +44,13 @@ func (dummyRekeyer) RemoveEpoch(uint16) bool           { return true }
 
 type servicePacketMock struct{}
 
-func (servicePacketMock) TryParseType(_ []byte) (service.PacketType, bool) {
-	return service.Unknown, false
+func (servicePacketMock) TryParseType(_ []byte) (service_packet.HeaderType, bool) {
+	return service_packet.Unknown, false
 }
-func (servicePacketMock) EncodeLegacy(_ service.PacketType, buffer []byte) ([]byte, error) {
+func (servicePacketMock) EncodeLegacy(_ service_packet.HeaderType, buffer []byte) ([]byte, error) {
 	return buffer, nil
 }
-func (servicePacketMock) EncodeV1(_ service.PacketType, buffer []byte) ([]byte, error) {
+func (servicePacketMock) EncodeV1(_ service_packet.HeaderType, buffer []byte) ([]byte, error) {
 	return buffer, nil
 }
 
