@@ -10,8 +10,9 @@ import (
 type Session struct {
 	transport connection.Transport
 	// crypto handles packet encryption and decryption.
-	crypto connection.Crypto
-	fsm    rekey.FSM
+	crypto   connection.Crypto
+	outbound connection.Outbound
+	fsm      rekey.FSM
 	// internalIP is the client's VPN-assigned IPv4 address (e.g. 10.0.1.3).
 	internalIP netip.Addr
 	// externalIP is the client's real-world IPv4 address (e.g. 51.195.101.45) and port (e.g. 1754).
@@ -25,9 +26,11 @@ func NewSession(
 	internalIP netip.Addr,
 	externalIP netip.AddrPort,
 ) connection.Session {
+	out := connection.NewDefaultOutbound(transport, crypto)
 	return &Session{
 		transport:  transport,
 		crypto:     crypto,
+		outbound:   out,
 		fsm:        fsm,
 		internalIP: internalIP,
 		externalIP: externalIP,
@@ -44,6 +47,10 @@ func (s Session) ExternalAddrPort() netip.AddrPort {
 
 func (s Session) Crypto() connection.Crypto {
 	return s.crypto
+}
+
+func (s Session) Outbound() connection.Outbound {
+	return s.outbound
 }
 
 func (s Session) RekeyController() rekey.FSM {

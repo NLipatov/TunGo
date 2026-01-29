@@ -92,9 +92,7 @@ func (r *servicePacketHandler) handleRekeyInit(
 	if _, err = service_packet.EncodeV1Header(service_packet.RekeyAck, payload); err != nil {
 		return nil
 	}
-	if enc, err := session.Crypto().Encrypt(ackBuf); err != nil {
-		return nil
-	} else if _, err := session.Transport().Write(enc); err != nil {
+	if err := session.Outbound().SendControl(ackBuf); err != nil {
 		return nil
 	}
 	return nil

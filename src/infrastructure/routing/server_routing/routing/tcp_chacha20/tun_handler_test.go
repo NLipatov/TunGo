@@ -91,6 +91,7 @@ func makeSession(c *TunHandlerMockConn, crypto *TunHandlerMockCrypto) Session {
 	return Session{
 		connectionAdapter:   c,
 		cryptographyService: crypto,
+		outbound:            connection.NewDefaultOutbound(c, crypto),
 		internalIP:          in,
 		externalIP:          ex,
 	}

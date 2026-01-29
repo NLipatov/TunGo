@@ -94,14 +94,8 @@ func (t *TunHandler) HandleTun() error {
 			}
 
 			// Encrypt "nonce || payload". The crypto service_packet must treat the prefix as nonce.
-			ct, eErr := session.Crypto().Encrypt(buffer[:chacha20poly1305.NonceSize+n])
-			if eErr != nil {
-				log.Printf("failed to encrypt packet: %v", eErr)
-				continue
-			}
-
-			if _, wErr := session.Transport().Write(ct); wErr != nil {
-				log.Printf("failed to send packet to %v: %v", session.ExternalAddrPort(), wErr)
+			if err := session.Outbound().SendDataIP(buffer[:chacha20poly1305.NonceSize+n]); err != nil {
+				log.Printf("failed to send packet to %v: %v", session.ExternalAddrPort(), err)
 				// Unlike TCP, we do not delete the session on a single UDP write error.
 			}
 		}

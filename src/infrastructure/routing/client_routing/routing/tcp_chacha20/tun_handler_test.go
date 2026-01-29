@@ -63,7 +63,7 @@ func TestTunHandler_ContextDone(t *testing.T) {
 	cancel() // canceled before entering the loop
 
 	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTunHandler(ctx, rdr(), io.Discard, &TunHandlerMockCrypto{}, ctrl, servicePacketMock{})
+	h := NewTunHandler(ctx, rdr(), io.Discard, &TunHandlerMockCrypto{}, ctrl)
 	if err := h.HandleTun(); err != nil {
 		t.Fatalf("want nil, got %v", err)
 	}
@@ -77,7 +77,7 @@ func TestTunHandler_EOF(t *testing.T) {
 			err  error
 		}{nil, io.EOF}),
 		io.Discard,
-		&TunHandlerMockCrypto{}, ctrl, servicePacketMock{},
+		&TunHandlerMockCrypto{}, ctrl,
 	)
 	if err := h.HandleTun(); err != io.EOF {
 		t.Fatalf("want io.EOF, got %v", err)
@@ -93,7 +93,7 @@ func TestTunHandler_ReadError(t *testing.T) {
 			err  error
 		}{nil, readErr}),
 		io.Discard,
-		&TunHandlerMockCrypto{}, ctrl, servicePacketMock{},
+		&TunHandlerMockCrypto{}, ctrl,
 	)
 	if err := h.HandleTun(); !errors.Is(err, readErr) {
 		t.Fatalf("want read error, got %v", err)
@@ -111,7 +111,7 @@ func TestTunHandler_EncryptError(t *testing.T) {
 			}{[]byte{1, 2, 3}, nil},
 		),
 		io.Discard,
-		&TunHandlerMockCrypto{err: encErr}, ctrl, servicePacketMock{},
+		&TunHandlerMockCrypto{err: encErr}, ctrl,
 	)
 	if err := h.HandleTun(); !errors.Is(err, encErr) {
 		t.Fatalf("want encrypt error, got %v", err)
@@ -128,7 +128,7 @@ func TestTunHandler_WriteError(t *testing.T) {
 			err  error
 		}{[]byte{9, 9}, nil}),
 		w,
-		&TunHandlerMockCrypto{}, ctrl, servicePacketMock{},
+		&TunHandlerMockCrypto{}, ctrl,
 	)
 	if err := h.HandleTun(); !errors.Is(err, wErr) {
 		t.Fatalf("want write error, got %v", err)
@@ -154,7 +154,7 @@ func TestTunHandler_HappyPath_SinglePacket_ThenEOF(t *testing.T) {
 			}{nil, io.EOF}, // exit
 		),
 		w,
-		&TunHandlerMockCrypto{}, ctrl, servicePacketMock{},
+		&TunHandlerMockCrypto{}, ctrl,
 	)
 
 	if err := h.HandleTun(); err != io.EOF {
@@ -178,7 +178,7 @@ func TestTunHandler_ReadError_WhenContextCanceled_ReturnsNil(t *testing.T) {
 			err  error
 		}{nil, readErr}), // reader returns an error
 		io.Discard,
-		&TunHandlerMockCrypto{}, ctrl, servicePacketMock{},
+		&TunHandlerMockCrypto{}, ctrl,
 	)
 
 	// When ctx is canceled, the read error path should return nil.
@@ -203,7 +203,7 @@ func TestTunHandler_ZeroLengthPayload_ThenEOF(t *testing.T) {
 			}{nil, io.EOF}, // then exit
 		),
 		w,
-		&TunHandlerMockCrypto{}, ctrl, servicePacketMock{},
+		&TunHandlerMockCrypto{}, ctrl,
 	)
 
 	if err := h.HandleTun(); err != io.EOF {

@@ -245,13 +245,8 @@ func (t *TransportHandler) handleRekeyInit(fsm rekey.FSM, session connection.Ses
 		t.logger.Printf("rekey init: encode ack failed: %v", err)
 		return
 	}
-	enc, err := session.Crypto().Encrypt(sp)
-	if err != nil {
-		t.logger.Printf("rekey init: encrypt ack failed: %v", err)
-		return
-	}
-	if _, err := session.Transport().Write(enc); err != nil {
-		t.logger.Printf("rekey init: write ack failed: %v", err)
+	if err := session.Outbound().SendControl(sp); err != nil {
+		t.logger.Printf("rekey init: send ack failed: %v", err)
 	} else {
 		// now it's safe to switch send for TCP
 		fsm.ActivateSendEpoch(epoch)

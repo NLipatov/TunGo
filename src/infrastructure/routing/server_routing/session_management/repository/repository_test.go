@@ -21,7 +21,10 @@ func (f *fakeSession) Transport() connection.Transport {
 func (f *fakeSession) Crypto() connection.Crypto {
 	return nil
 }
-func (f *fakeSession) RekeyController() *rekey.StateMachine {
+func (f *fakeSession) Outbound() connection.Outbound {
+	return nil
+}
+func (f *fakeSession) RekeyController() rekey.FSM {
 	return nil
 }
 

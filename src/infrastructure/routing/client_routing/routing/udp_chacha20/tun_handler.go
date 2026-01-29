@@ -21,6 +21,7 @@ type TunHandler struct {
 	reader              io.Reader // abstraction over TUN device
 	writer              io.Writer // abstraction over transport
 	cryptographyService connection.Crypto
+	outbound            connection.Outbound
 	rekeyController     *rekey.StateMachine
 	controlPacketBuffer [128]byte
 	rotateAt            time.Time
@@ -39,6 +40,7 @@ func NewTunHandler(ctx context.Context,
 		reader:              reader,
 		writer:              writer,
 		cryptographyService: cryptographyService,
+		outbound:            connection.NewDefaultOutbound(writer, cryptographyService),
 		rekeyController:     rekeyController,
 		rekeyInterval:       settings.DefaultRekeyInterval,
 		rotateAt:            time.Now().UTC().Add(settings.DefaultRekeyInterval),
@@ -80,18 +82,11 @@ func (w *TunHandler) HandleTun() error {
 			n, err := w.reader.Read(buffer[chacha20poly1305.NonceSize : settings.DefaultEthernetMTU+chacha20poly1305.NonceSize])
 			if n > 0 {
 				// Encrypt expects header+payload (12+n)
-				enc, encErr := w.cryptographyService.Encrypt(buffer[:chacha20poly1305.NonceSize+n])
-				if encErr != nil {
+				if err := w.outbound.SendDataIP(buffer[:chacha20poly1305.NonceSize+n]); err != nil {
 					if w.ctx.Err() != nil {
 						return nil
 					}
-					return fmt.Errorf("could not encrypt packet: %v", encErr)
-				}
-				if _, wErr := w.writer.Write(enc); wErr != nil {
-					if w.ctx.Err() != nil {
-						return nil
-					}
-					return fmt.Errorf("could not write packet to transport: %v", wErr)
+					return fmt.Errorf("could not send packet to transport: %v", err)
 				}
 			}
 			if err != nil {
@@ -140,11 +135,10 @@ func (w *TunHandler) HandleTun() error {
 					fmt.Println("failed to encode rekeyInit packet")
 				} else {
 					totalLen := chacha20poly1305.NonceSize + len(servicePayload)
-					enc, encErr := w.cryptographyService.Encrypt(w.controlPacketBuffer[:totalLen])
-					if encErr != nil {
-						fmt.Printf("failed to encrypt packet: %v", encErr)
+					if err := w.outbound.SendControl(w.controlPacketBuffer[:totalLen]); err != nil {
+						fmt.Printf("failed to send packet: %v", err)
 					} else {
-						_, _ = w.writer.Write(enc)
+						// sent
 					}
 				}
 				w.rotateAt = time.Now().UTC().Add(w.rekeyInterval)

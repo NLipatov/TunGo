@@ -21,6 +21,9 @@ type Session interface {
 	// Crypto is a getter for Crypto, which used for encryption/decryption operations.
 	Crypto() Crypto
 
+	// Outbound is a single serialized egress path for encryption + transport writes.
+	Outbound() Outbound
+
 	// RekeyController returns control-plane rekey state; may be nil for protocols without rekey.
 	RekeyController() rekey.FSM
 }

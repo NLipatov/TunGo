@@ -127,7 +127,7 @@ func TestHandleTun_EncryptError(t *testing.T) {
 	errEnc := errors.New("encrypt fail")
 	h := NewTunHandler(ctx, reader, &fakeWriter{}, &tunhandlerTestRakeCrypto{err: errEnc}, rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false))
 
-	if err := h.HandleTun(); err == nil || err.Error() != fmt.Sprintf("could not encrypt packet: %v", errEnc) {
+	if err := h.HandleTun(); err == nil || err.Error() != fmt.Sprintf("could not send packet to transport: %v", errEnc) {
 		t.Fatalf("expected encrypt error wrapped, got %v", err)
 	}
 }
@@ -143,7 +143,7 @@ func TestHandleTun_WriteError(t *testing.T) {
 	writer := &fakeWriter{err: errWrite}
 	h := NewTunHandler(ctx, reader, writer, &tunhandlerTestRakeCrypto{prefix: []byte("x:")}, rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false))
 
-	if err := h.HandleTun(); err == nil || err.Error() != fmt.Sprintf("could not write packet to transport: %v", errWrite) {
+	if err := h.HandleTun(); err == nil || err.Error() != fmt.Sprintf("could not send packet to transport: %v", errWrite) {
 		t.Fatalf("expected write error wrapped, got %v", err)
 	}
 }

@@ -10,6 +10,7 @@ type Session struct {
 	connectionAdapter connection.Transport
 	// cryptographyService handles packet encryption and decryption.
 	cryptographyService connection.Crypto
+	outbound            connection.Outbound
 	// internalIP is the client's VPN-assigned IPv4 address (e.g. 10.0.1.3).
 	internalIP netip.Addr
 	// externalIP is the client's real-world IPv4 address (e.g. 51.195.101.45) and port (e.g. 1754).

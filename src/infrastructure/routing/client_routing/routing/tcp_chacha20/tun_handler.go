@@ -20,6 +20,7 @@ type TunHandler struct {
 	reader              io.Reader // abstraction over TUN device
 	writer              io.Writer // abstraction over transport
 	cryptographyService connection.Crypto
+	outbound            connection.Outbound
 	rekeyController     *rekey.StateMachine
 	handshakeCrypto     handshake.Crypto
 	rotateAt            time.Time
@@ -37,6 +38,7 @@ func NewTunHandler(ctx context.Context,
 		reader:              reader,
 		writer:              writer,
 		cryptographyService: cryptographyService,
+		outbound:            connection.NewDefaultOutbound(writer, cryptographyService),
 		rekeyController:     rekeyController,
 		handshakeCrypto:     &handshake.DefaultCrypto{},
 		rekeyInterval:       settings.DefaultRekeyInterval,
@@ -65,14 +67,7 @@ func (t *TunHandler) HandleTun() error {
 				return err
 			}
 
-			ciphertext, ciphertextErr := t.cryptographyService.Encrypt(payload[:n])
-			if ciphertextErr != nil {
-				log.Printf("failed to encrypt packet: %v", ciphertextErr)
-				return ciphertextErr
-			}
-
-			_, err = t.writer.Write(ciphertext)
-			if err != nil {
+			if err := t.outbound.SendDataIP(payload[:n]); err != nil {
 				log.Printf("write to TCP failed: %s", err)
 				return err
 			}
@@ -105,14 +100,10 @@ func (t *TunHandler) HandleTun() error {
 					t.rotateAt = time.Now().UTC().Add(t.rekeyInterval)
 					continue
 				}
-				enc, encErr := t.cryptographyService.Encrypt(servicePayload)
-				if encErr != nil {
-					log.Printf("failed to encrypt rekeyInit: %v", encErr)
+				if err := t.outbound.SendControl(servicePayload); err != nil {
+					log.Printf("failed to send rekeyInit: %v", err)
 					t.rotateAt = time.Now().UTC().Add(t.rekeyInterval)
 					continue
-				}
-				if _, err := t.writer.Write(enc); err != nil {
-					log.Printf("failed to write rekeyInit: %v", err)
 				}
 				t.rotateAt = time.Now().UTC().Add(t.rekeyInterval)
 			}

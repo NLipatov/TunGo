@@ -25,6 +25,9 @@ func (d sessionManagerFactoryDummySession) Transport() connection.Transport {
 func (d sessionManagerFactoryDummySession) Crypto() connection.Crypto {
 	return nil
 }
+func (d sessionManagerFactoryDummySession) Outbound() connection.Outbound {
+	return nil
+}
 func (d sessionManagerFactoryDummySession) RekeyController() rekey.FSM {
 	return nil
 }

@@ -151,13 +151,15 @@ func (t *TransportHandler) handlePacket(
 			// Drop: untrusted UDP input can be garbage / attacker-driven.
 			return nil
 		}
-		// Data was successfully decrypted with epoch.
-		// Epoch can now be used to encrypt. Allow to encrypt with this epoch by promoting.
-		rekeyCtrl.ActivateSendEpoch(binary.BigEndian.Uint16(packet[:2]))
-		rekeyCtrl.AbortPendingIfExpired(time.Now())
-		// If service_packet packet - handle it.
-		if handled, err := t.sp.Handle(decrypted, session, rekeyCtrl); handled {
-			return err
+		if rekeyCtrl != nil {
+			// Data was successfully decrypted with epoch.
+			// Epoch can now be used to encrypt. Allow to encrypt with this epoch by promoting.
+			rekeyCtrl.ActivateSendEpoch(binary.BigEndian.Uint16(packet[:2]))
+			rekeyCtrl.AbortPendingIfExpired(time.Now())
+			// If service_packet packet - handle it.
+			if handled, err := t.sp.Handle(decrypted, session, rekeyCtrl); handled {
+				return err
+			}
 		}
 		// Pass it to TUN
 		_, err := t.writer.Write(decrypted)

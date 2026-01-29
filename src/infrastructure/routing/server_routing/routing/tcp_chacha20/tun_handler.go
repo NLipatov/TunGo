@@ -65,15 +65,8 @@ func (t *TunHandler) HandleTun() error {
 				continue
 			}
 
-			ct, encryptErr := clientSession.Crypto().Encrypt(plaintext[:n])
-			if encryptErr != nil {
-				log.Printf("failed to encrypt packet: %s", encryptErr)
-				continue
-			}
-
-			_, connWriteErr := clientSession.Transport().Write(ct)
-			if connWriteErr != nil {
-				log.Printf("failed to write to TCP: %v", connWriteErr)
+			if err := clientSession.Outbound().SendDataIP(plaintext[:n]); err != nil {
+				log.Printf("failed to write to TCP: %v", err)
 				t.sessionManager.Delete(clientSession)
 			}
 		}

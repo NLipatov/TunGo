@@ -6,7 +6,6 @@ import (
 	"io"
 	"testing"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
-	"tungo/infrastructure/network/service_packet"
 
 	"golang.org/x/crypto/chacha20poly1305"
 )
@@ -42,18 +41,6 @@ func (dummyRekeyer) Rekey(_, _ []byte) (uint16, error) { return 0, nil }
 func (dummyRekeyer) SetSendEpoch(uint16)               {}
 func (dummyRekeyer) RemoveEpoch(uint16) bool           { return true }
 
-type servicePacketMock struct{}
-
-func (servicePacketMock) TryParseType(_ []byte) (service_packet.HeaderType, bool) {
-	return service_packet.Unknown, false
-}
-func (servicePacketMock) EncodeLegacy(_ service_packet.HeaderType, buffer []byte) ([]byte, error) {
-	return buffer, nil
-}
-func (servicePacketMock) EncodeV1(_ service_packet.HeaderType, buffer []byte) ([]byte, error) {
-	return buffer, nil
-}
-
 /* ─── Tests ─── */
 
 func TestTransportHandler_ContextDone(t *testing.T) {
@@ -61,7 +48,7 @@ func TestTransportHandler_ContextDone(t *testing.T) {
 	cancel()
 
 	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTransportHandler(ctx, rdr(), io.Discard, &TransportHandlerMockCrypto{}, ctrl, servicePacketMock{})
+	h := NewTransportHandler(ctx, rdr(), io.Discard, &TransportHandlerMockCrypto{}, ctrl)
 	if err := h.HandleTransport(); err != nil {
 		t.Fatalf("want nil, got %v", err)
 	}
@@ -76,7 +63,7 @@ func TestTransportHandler_ReadError(t *testing.T) {
 			err  error
 		}{nil, readErr}),
 		io.Discard,
-		&TransportHandlerMockCrypto{}, ctrl, servicePacketMock{},
+		&TransportHandlerMockCrypto{}, ctrl,
 	)
 	if err := h.HandleTransport(); !errors.Is(err, readErr) {
 		t.Fatalf("want read error, got %v", err)
@@ -93,7 +80,7 @@ func TestTransportHandler_ReadErrorAfterCancel_ReturnsNil(t *testing.T) {
 			err  error
 		}{nil, errors.New("any")}),
 		io.Discard,
-		&TransportHandlerMockCrypto{}, ctrl, servicePacketMock{},
+		&TransportHandlerMockCrypto{}, ctrl,
 	)
 	if err := h.HandleTransport(); err != nil {
 		t.Fatalf("want nil when ctx canceled, got %v", err)
@@ -115,7 +102,7 @@ func TestTransportHandler_InvalidTooShort_ThenEOF(t *testing.T) {
 			}{nil, io.EOF},
 		),
 		io.Discard,
-		&TransportHandlerMockCrypto{}, ctrl, servicePacketMock{},
+		&TransportHandlerMockCrypto{}, ctrl,
 	)
 	if err := h.HandleTransport(); err != io.EOF {
 		t.Fatalf("want io.EOF after invalid short frame, got %v", err)
@@ -132,7 +119,7 @@ func TestTransportHandler_DecryptError(t *testing.T) {
 			err  error
 		}{cipher, nil}),
 		io.Discard,
-		&TransportHandlerMockCrypto{decErr: decErr}, ctrl, servicePacketMock{},
+		&TransportHandlerMockCrypto{decErr: decErr}, ctrl,
 	)
 	if err := h.HandleTransport(); !errors.Is(err, decErr) {
 		t.Fatalf("want decrypt error, got %v", err)
@@ -152,7 +139,7 @@ func TestTransportHandler_WriteError(t *testing.T) {
 			err  error
 		}{cipher, nil}),
 		w,
-		&TransportHandlerMockCrypto{decOut: plain}, ctrl, servicePacketMock{},
+		&TransportHandlerMockCrypto{decOut: plain}, ctrl,
 	)
 	if err := h.HandleTransport(); !errors.Is(err, wErr) {
 		t.Fatalf("want write error, got %v", err)
@@ -180,7 +167,7 @@ func TestTransportHandler_Happy_ThenEOF(t *testing.T) {
 			}{nil, io.EOF}, // then EOF
 		),
 		w,
-		&TransportHandlerMockCrypto{decOut: plain}, ctrl, servicePacketMock{},
+		&TransportHandlerMockCrypto{decOut: plain}, ctrl,
 	)
 	if err := h.HandleTransport(); err != io.EOF {
 		t.Fatalf("want io.EOF, got %v", err)
