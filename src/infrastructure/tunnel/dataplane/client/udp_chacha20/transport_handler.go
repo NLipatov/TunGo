@@ -98,7 +98,7 @@ func (t *TransportHandler) handleDatagram(pkt []byte) error {
 	}
 
 	if t.rekeyController != nil {
-		epoch := binary.BigEndian.Uint16(pkt[:2])
+		epoch := binary.BigEndian.Uint16(pkt[chacha20.NonceEpochOffset : chacha20.NonceEpochOffset+2])
 		// Data was successfully decrypted with epoch; allow encrypt with this epoch by promoting.
 		t.rekeyController.ActivateSendEpoch(epoch)
 		t.rekeyController.AbortPendingIfExpired(time.Now())

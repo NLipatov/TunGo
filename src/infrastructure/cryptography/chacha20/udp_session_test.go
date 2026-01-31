@@ -274,9 +274,9 @@ func TestUdpEncrypt_NonceRollover_WritesCorrectNonce(t *testing.T) {
 		t.Fatalf("Encrypt (rollover): %v", err)
 	}
 
-	// Decode nonce: [0..1]=epoch, [2..3]=high, [4..11]=low.
-	encLow := binary.BigEndian.Uint64(out[4:12])
-	encHigh := binary.BigEndian.Uint16(out[2:4])
+	// Decode nonce: [0..7]=low, [8..9]=high, [10..11]=epoch.
+	encLow := binary.BigEndian.Uint64(out[0:8])
+	encHigh := binary.BigEndian.Uint16(out[8:10])
 
 	if encLow != 0 {
 		t.Fatalf("nonce.low after rollover = %d; want 0", encLow)

@@ -15,11 +15,11 @@ func TestDefaultUDPEncoderDecode(t *testing.T) {
 	high := uint16(0x0C0D)
 	payload := []byte("test payload")
 
-	// Build data: 2 bytes epoch, 2 bytes high, 8 bytes low, then payload.
+	// Build data: 8 bytes low, 2 bytes high, 2 bytes epoch, then payload.
 	data := make([]byte, 12+len(payload))
-	binary.BigEndian.PutUint16(data[0:2], uint16(epoch))
-	binary.BigEndian.PutUint16(data[2:4], high)
-	binary.BigEndian.PutUint64(data[4:12], low)
+	binary.BigEndian.PutUint64(data[0:8], low)
+	binary.BigEndian.PutUint16(data[8:10], high)
+	binary.BigEndian.PutUint16(data[10:12], uint16(epoch))
 	copy(data[12:], payload)
 
 	// Decode the data.

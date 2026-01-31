@@ -5,8 +5,12 @@ import (
 	"fmt"
 )
 
-// Nonce represents an epoch-prefixed counter:
-// | 0..1 epoch | 2..3 counterHigh | 4..11 counterLow |
+// NonceEpochOffset is the byte offset of the epoch field within the 12-byte nonce.
+const NonceEpochOffset = 10
+
+// Nonce represents an epoch-suffixed counter:
+// | 0..7 counterLow | 8..9 counterHigh | 10..11 epoch |
+// At epoch=0 the wire format is byte-identical to the pre-epoch nonce layout.
 // Epoch is immutable per session. Counter is per-session monotonic.
 // Not concurrency-safe by design; each session owns a single instance.
 type Nonce struct {
@@ -38,8 +42,8 @@ func (n *Nonce) incrementNonce() error {
 }
 
 func (n *Nonce) Encode(buffer []byte) []byte {
-	binary.BigEndian.PutUint16(buffer[0:2], uint16(n.epoch))
-	binary.BigEndian.PutUint16(buffer[2:4], n.counterHigh)
-	binary.BigEndian.PutUint64(buffer[4:12], n.counterLow)
+	binary.BigEndian.PutUint64(buffer[0:8], n.counterLow)
+	binary.BigEndian.PutUint16(buffer[8:10], n.counterHigh)
+	binary.BigEndian.PutUint16(buffer[10:12], uint16(n.epoch))
 	return buffer
 }

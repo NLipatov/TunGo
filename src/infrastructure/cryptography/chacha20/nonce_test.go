@@ -67,9 +67,9 @@ func TestNonceEncode(t *testing.T) {
 
 	// Build expected result.
 	expected := make([]byte, 12)
-	binary.BigEndian.PutUint16(expected[0:2], uint16(epoch))
-	binary.BigEndian.PutUint16(expected[2:4], nonce.counterHigh)
-	binary.BigEndian.PutUint64(expected[4:12], nonce.counterLow)
+	binary.BigEndian.PutUint64(expected[0:8], nonce.counterLow)
+	binary.BigEndian.PutUint16(expected[8:10], nonce.counterHigh)
+	binary.BigEndian.PutUint16(expected[10:12], uint16(epoch))
 
 	// Compare encoded bytes.
 	for i := range expected {

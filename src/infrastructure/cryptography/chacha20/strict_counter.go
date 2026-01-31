@@ -16,8 +16,8 @@ type StrictCounter struct {
 func NewStrictCounter() *StrictCounter { return &StrictCounter{} }
 
 func (c *StrictCounter) Validate(nonce [chacha20poly1305.NonceSize]byte) error {
-	high := binary.BigEndian.Uint16(nonce[2:4])
-	low := binary.BigEndian.Uint64(nonce[4:chacha20poly1305.NonceSize])
+	low := binary.BigEndian.Uint64(nonce[0:8])
+	high := binary.BigEndian.Uint16(nonce[8:10])
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -49,8 +49,8 @@ func NewSliding64() *Sliding64 {
 }
 
 func (s *Sliding64) Validate(nonce [chacha20poly1305.NonceSize]byte) error {
-	high := binary.BigEndian.Uint16(nonce[2:4])
-	low := binary.BigEndian.Uint64(nonce[4:chacha20poly1305.NonceSize])
+	low := binary.BigEndian.Uint64(nonce[0:8])
+	high := binary.BigEndian.Uint16(nonce[8:10])
 
 	s.mu.Lock()
 	defer s.mu.Unlock()

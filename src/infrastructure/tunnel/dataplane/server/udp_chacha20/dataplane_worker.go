@@ -6,6 +6,7 @@ import (
 	"io"
 	"time"
 
+	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/tunnel/session"
 )
 
@@ -38,7 +39,7 @@ func (w *udpDataplaneWorker) HandleEstablished(peer *session.Peer, packet []byte
 	if rekeyCtrl != nil {
 		// Data was successfully decrypted with epoch.
 		// Epoch can now be used to encrypt. Allow to encrypt with this epoch by promoting.
-		rekeyCtrl.ActivateSendEpoch(binary.BigEndian.Uint16(packet[:2]))
+		rekeyCtrl.ActivateSendEpoch(binary.BigEndian.Uint16(packet[chacha20.NonceEpochOffset : chacha20.NonceEpochOffset+2]))
 		rekeyCtrl.AbortPendingIfExpired(w.now())
 		// If service_packet packet - handle it.
 		if handled, err := w.cp.Handle(decrypted, peer.Egress(), rekeyCtrl); handled {

@@ -58,7 +58,7 @@ func (c *EpochUdpCrypto) Decrypt(ciphertext []byte) ([]byte, error) {
 	if len(ciphertext) < chacha20poly1305.NonceSize {
 		return nil, fmt.Errorf("cipher too short: %d", len(ciphertext))
 	}
-	epoch := Epoch(binary.BigEndian.Uint16(ciphertext[:2]))
+	epoch := Epoch(binary.BigEndian.Uint16(ciphertext[NonceEpochOffset : NonceEpochOffset+2]))
 	session, ok := c.ring.Resolve(epoch)
 	if !ok {
 		return nil, ErrUnknownEpoch
