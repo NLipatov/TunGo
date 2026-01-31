@@ -179,7 +179,10 @@ func (f *ConnectionFactory) dialTCP(
 		_ = tcp.SetKeepAlivePeriod(30 * time.Second)
 	}
 
-	return adapters.NewLengthPrefixFramingAdapter(conn, settings.DefaultEthernetMTU+settings.TCPChacha20Overhead)
+	return adapters.NewLengthPrefixFramingAdapter(
+		newReadDeadlineTransport(conn, settings.PingRestartTimeout),
+		settings.DefaultEthernetMTU+settings.TCPChacha20Overhead,
+	)
 }
 
 func (f *ConnectionFactory) dialUDP(
@@ -205,7 +208,29 @@ func (f *ConnectionFactory) dialWS(
 	}
 
 	return adapters.NewLengthPrefixFramingAdapter(
-		wsAdapters.NewDefaultAdapter(connCtx, conn, nil, nil),
+		newReadDeadlineTransport(wsAdapters.NewDefaultAdapter(connCtx, conn, nil, nil), settings.PingRestartTimeout),
 		settings.DefaultEthernetMTU+settings.TCPChacha20Overhead,
 	)
+}
+
+// readDeadlineTransport wraps a Transport and refreshes a read deadline before
+// each Read call. If the underlying transport does not support SetReadDeadline,
+// the wrapper is a no-op pass-through.
+type readDeadlineTransport struct {
+	connection.Transport
+	ds      interface{ SetReadDeadline(time.Time) error }
+	timeout time.Duration
+}
+
+func newReadDeadlineTransport(t connection.Transport, timeout time.Duration) connection.Transport {
+	ds, ok := t.(interface{ SetReadDeadline(time.Time) error })
+	if !ok {
+		return t
+	}
+	return &readDeadlineTransport{Transport: t, timeout: timeout, ds: ds}
+}
+
+func (d *readDeadlineTransport) Read(p []byte) (int, error) {
+	_ = d.ds.SetReadDeadline(time.Now().Add(d.timeout))
+	return d.Transport.Read(p)
 }

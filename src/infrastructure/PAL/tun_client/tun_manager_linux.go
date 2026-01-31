@@ -1,6 +1,7 @@
 package tun_client
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -131,23 +132,25 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.Settings) error 
 }
 
 func (t *PlatformTunManager) DisposeDevices() error {
-	if err := t.mss.Remove(t.configuration.UDPSettings.InterfaceName); err != nil {
-		log.Printf("failed to remove MSS clamping for %s: %v", t.configuration.UDPSettings.InterfaceName, err)
-	}
-	_ = t.ip.RouteDel(t.configuration.UDPSettings.ConnectionIP)
-	_ = t.ip.LinkDelete(t.configuration.UDPSettings.InterfaceName)
+	var errs []error
 
-	if err := t.mss.Remove(t.configuration.TCPSettings.InterfaceName); err != nil {
-		log.Printf("failed to remove MSS clamping for %s: %v", t.configuration.TCPSettings.InterfaceName, err)
+	for _, s := range []struct{ iface, connIP string }{
+		{t.configuration.UDPSettings.InterfaceName, t.configuration.UDPSettings.ConnectionIP},
+		{t.configuration.TCPSettings.InterfaceName, t.configuration.TCPSettings.ConnectionIP},
+		{t.configuration.WSSettings.InterfaceName, t.configuration.WSSettings.ConnectionIP},
+	} {
+		if err := t.mss.Remove(s.iface); err != nil {
+			log.Printf("cleanup: failed to remove MSS clamping for %s: %v", s.iface, err)
+		}
+		if err := t.ip.RouteDel(s.connIP); err != nil {
+			log.Printf("cleanup: failed to delete route for %s: %v", s.connIP, err)
+			errs = append(errs, fmt.Errorf("route del %s: %w", s.connIP, err))
+		}
+		if err := t.ip.LinkDelete(s.iface); err != nil {
+			log.Printf("cleanup: failed to delete link %s: %v", s.iface, err)
+			errs = append(errs, fmt.Errorf("link delete %s: %w", s.iface, err))
+		}
 	}
-	_ = t.ip.RouteDel(t.configuration.TCPSettings.ConnectionIP)
-	_ = t.ip.LinkDelete(t.configuration.TCPSettings.InterfaceName)
 
-	if err := t.mss.Remove(t.configuration.WSSettings.InterfaceName); err != nil {
-		log.Printf("failed to remove MSS clamping for %s: %v", t.configuration.WSSettings.InterfaceName, err)
-	}
-	_ = t.ip.RouteDel(t.configuration.WSSettings.ConnectionIP)
-	_ = t.ip.LinkDelete(t.configuration.WSSettings.InterfaceName)
-
-	return nil
+	return errors.Join(errs...)
 }
