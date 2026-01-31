@@ -132,7 +132,7 @@ func rdr(seq ...struct {
 func TestTunHandler_ContextDone(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	h := NewTunHandler(ctx, rdr(), &TunHandlerMockParser{}, &TunHandlerMockMgr{})
+	h := NewTunHandler(ctx, rdr(), &TunHandlerMockParser{}, &TunHandlerMockMgr{}, func(netip.AddrPort) {})
 	if err := h.HandleTun(); err != nil {
 		t.Fatalf("want nil, got %v", err)
 	}
@@ -143,7 +143,7 @@ func TestTunHandler_EOF(t *testing.T) {
 		data []byte
 		err  error
 	}{data: make([]byte, 20), err: io.EOF})
-	h := NewTunHandler(context.Background(), r, &TunHandlerMockParser{}, &TunHandlerMockMgr{})
+	h := NewTunHandler(context.Background(), r, &TunHandlerMockParser{}, &TunHandlerMockMgr{}, func(netip.AddrPort) {})
 	if err := h.HandleTun(); err != io.EOF {
 		t.Fatalf("want io.EOF, got %v", err)
 	}
@@ -155,7 +155,7 @@ func TestTunHandler_ReadOsErrors(t *testing.T) {
 		h := NewTunHandler(context.Background(), rdr(struct {
 			data []byte
 			err  error
-		}{nil, perr}), &TunHandlerMockParser{}, &TunHandlerMockMgr{})
+		}{nil, perr}), &TunHandlerMockParser{}, &TunHandlerMockMgr{}, func(netip.AddrPort) {})
 		if err := h.HandleTun(); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("want os.ErrNotExist, got %v", err)
 		}
@@ -165,7 +165,7 @@ func TestTunHandler_ReadOsErrors(t *testing.T) {
 		h := NewTunHandler(context.Background(), rdr(struct {
 			data []byte
 			err  error
-		}{nil, perr}), &TunHandlerMockParser{}, &TunHandlerMockMgr{})
+		}{nil, perr}), &TunHandlerMockParser{}, &TunHandlerMockMgr{}, func(netip.AddrPort) {})
 		if err := h.HandleTun(); !errors.Is(err, os.ErrPermission) {
 			t.Fatalf("want os.ErrPermission, got %v", err)
 		}
@@ -183,7 +183,7 @@ func TestTunHandler_TemporaryThenEOF(t *testing.T) {
 			err  error
 		}{nil, io.EOF},
 	)
-	h := NewTunHandler(context.Background(), r, &TunHandlerMockParser{}, &TunHandlerMockMgr{})
+	h := NewTunHandler(context.Background(), r, &TunHandlerMockParser{}, &TunHandlerMockMgr{}, func(netip.AddrPort) {})
 	// In current handler implementation a non-temporary error will be returned as-is.
 	// Our mock returns a non-Temporary error "tmp read", so HandleTun should return it.
 	if err := h.HandleTun(); err == nil || err.Error() != "tmp read" {
@@ -202,7 +202,7 @@ func TestTunHandler_ZeroLengthRead_Skips(t *testing.T) {
 			err  error
 		}{nil, io.EOF},
 	)
-	h := NewTunHandler(context.Background(), r, &TunHandlerMockParser{}, &TunHandlerMockMgr{})
+	h := NewTunHandler(context.Background(), r, &TunHandlerMockParser{}, &TunHandlerMockMgr{}, func(netip.AddrPort) {})
 	if err := h.HandleTun(); err != io.EOF {
 		t.Fatalf("want io.EOF, got %v", err)
 	}
@@ -224,7 +224,7 @@ func TestTunHandler_ParserError(t *testing.T) {
 	)
 	a := &TunHandlerMockConn{}
 	mgr := &TunHandlerMockMgr{peer: mkPeer(a, &TunHandlerMockCrypto{})}
-	h := NewTunHandler(context.Background(), r, p, mgr)
+	h := NewTunHandler(context.Background(), r, p, mgr, func(netip.AddrPort) {})
 	if err := h.HandleTun(); err != io.EOF {
 		t.Fatalf("want io.EOF, got %v", err)
 	}
@@ -247,7 +247,7 @@ func TestTunHandler_SessionNotFound(t *testing.T) {
 	}{nil, io.EOF})
 	a := &TunHandlerMockConn{}
 	mgr := &TunHandlerMockMgr{peer: mkPeer(a, &TunHandlerMockCrypto{}), getErr: errors.New("no sess")}
-	h := NewTunHandler(context.Background(), r, p, mgr)
+	h := NewTunHandler(context.Background(), r, p, mgr, func(netip.AddrPort) {})
 	if err := h.HandleTun(); err != io.EOF {
 		t.Fatalf("want io.EOF, got %v", err)
 	}
@@ -256,7 +256,7 @@ func TestTunHandler_SessionNotFound(t *testing.T) {
 	}
 }
 
-func TestTunHandler_EncryptError(t *testing.T) {
+func TestTunHandler_EncryptError_SendsResetAndDeletes(t *testing.T) {
 	ip4 := make([]byte, 20)
 	ip4[0] = 0x45
 	dst := netip.MustParseAddr("10.0.0.2")
@@ -271,16 +271,25 @@ func TestTunHandler_EncryptError(t *testing.T) {
 	a := &TunHandlerMockConn{}
 	crypto := &TunHandlerMockCrypto{err: errors.New("enc fail")}
 	mgr := &TunHandlerMockMgr{peer: mkPeer(a, crypto)}
-	h := NewTunHandler(context.Background(), r, p, mgr)
+	var resetCalled int32
+	h := NewTunHandler(context.Background(), r, p, mgr, func(netip.AddrPort) {
+		atomic.AddInt32(&resetCalled, 1)
+	})
 	if err := h.HandleTun(); err != io.EOF {
 		t.Fatalf("want io.EOF, got %v", err)
 	}
 	if n := atomic.LoadInt32(&a.writes); n != 0 {
 		t.Fatalf("writes=%d, want 0", n)
 	}
+	if atomic.LoadInt32(&resetCalled) != 1 {
+		t.Fatalf("sendSessionReset should be called on encrypt error")
+	}
+	if atomic.LoadInt32(&mgr.deleted) != 1 {
+		t.Fatalf("session should be deleted on encrypt error")
+	}
 }
 
-func TestTunHandler_WriteError_NoDelete(t *testing.T) {
+func TestTunHandler_WriteError_SendsResetAndDeletes(t *testing.T) {
 	ip4 := make([]byte, 20)
 	ip4[0] = 0x45
 	dst := netip.MustParseAddr("10.0.0.3")
@@ -294,16 +303,21 @@ func TestTunHandler_WriteError_NoDelete(t *testing.T) {
 	}{nil, io.EOF})
 	a := &TunHandlerMockConn{err: errors.New("write fail")}
 	mgr := &TunHandlerMockMgr{peer: mkPeer(a, &TunHandlerMockCrypto{})}
-	h := NewTunHandler(context.Background(), r, p, mgr)
+	var resetCalled int32
+	h := NewTunHandler(context.Background(), r, p, mgr, func(netip.AddrPort) {
+		atomic.AddInt32(&resetCalled, 1)
+	})
 	if err := h.HandleTun(); err != io.EOF {
 		t.Fatalf("want io.EOF, got %v", err)
 	}
 	if n := atomic.LoadInt32(&a.writes); n != 1 {
 		t.Fatalf("writes=%d, want 1", n)
 	}
-	// UDP branch: no Delete() on single write error
-	if atomic.LoadInt32(&mgr.deleted) != 0 {
-		t.Fatalf("Delete() should not be called for UDP write error")
+	if atomic.LoadInt32(&resetCalled) != 1 {
+		t.Fatalf("sendSessionReset should be called on write error")
+	}
+	if atomic.LoadInt32(&mgr.deleted) != 1 {
+		t.Fatalf("session should be deleted on write error")
 	}
 }
 
@@ -321,7 +335,7 @@ func TestTunHandler_Happy_V4(t *testing.T) {
 	}{nil, io.EOF})
 	a := &TunHandlerMockConn{}
 	mgr := &TunHandlerMockMgr{peer: mkPeer(a, &TunHandlerMockCrypto{})}
-	h := NewTunHandler(context.Background(), r, p, mgr)
+	h := NewTunHandler(context.Background(), r, p, mgr, func(netip.AddrPort) {})
 	if err := h.HandleTun(); err != io.EOF {
 		t.Fatalf("want io.EOF, got %v", err)
 	}
@@ -344,7 +358,7 @@ func TestTunHandler_Happy_V6(t *testing.T) {
 	}{nil, io.EOF})
 	a := &TunHandlerMockConn{}
 	mgr := &TunHandlerMockMgr{peer: mkPeer(a, &TunHandlerMockCrypto{})}
-	h := NewTunHandler(context.Background(), r, p, mgr)
+	h := NewTunHandler(context.Background(), r, p, mgr, func(netip.AddrPort) {})
 	if err := h.HandleTun(); err != io.EOF {
 		t.Fatalf("want io.EOF, got %v", err)
 	}

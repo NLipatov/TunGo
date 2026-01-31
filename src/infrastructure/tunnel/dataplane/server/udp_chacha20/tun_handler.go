@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log"
+	"net/netip"
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/settings"
 
@@ -14,10 +15,11 @@ import (
 )
 
 type TunHandler struct {
-	ctx            context.Context
-	reader         io.Reader
-	ipHeaderParser appip.HeaderParser
-	sessionManager session.Repository
+	ctx              context.Context
+	reader           io.Reader
+	ipHeaderParser   appip.HeaderParser
+	sessionManager   session.Repository
+	sendSessionReset func(netip.AddrPort)
 }
 
 func NewTunHandler(
@@ -25,12 +27,14 @@ func NewTunHandler(
 	reader io.Reader,
 	parser appip.HeaderParser,
 	sessionManager session.Repository,
+	sendSessionReset func(netip.AddrPort),
 ) tun.Handler {
 	return &TunHandler{
-		ctx:            ctx,
-		reader:         reader,
-		ipHeaderParser: parser,
-		sessionManager: sessionManager,
+		ctx:              ctx,
+		reader:           reader,
+		ipHeaderParser:   parser,
+		sessionManager:   sessionManager,
+		sendSessionReset: sendSessionReset,
 	}
 }
 
@@ -95,7 +99,8 @@ func (t *TunHandler) HandleTun() error {
 			// Encrypt "nonce || payload". The crypto service_packet must treat the prefix as nonce.
 			if err := peer.Egress().SendDataIP(buffer[:chacha20poly1305.NonceSize+n]); err != nil {
 				log.Printf("failed to send packet to %v: %v", peer.ExternalAddrPort(), err)
-				// Unlike TCP, we do not delete the session on a single UDP write error.
+				t.sendSessionReset(peer.ExternalAddrPort())
+				t.sessionManager.Delete(peer)
 			}
 		}
 	}

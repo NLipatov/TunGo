@@ -179,13 +179,6 @@ func (s *ServerWorkerFactory) createUDPWorker(
 		session.NewDefaultRepository(),
 	)
 
-	th := udp_chacha20.NewTunHandler(
-		ctx,
-		tun,
-		ip.NewHeaderParser(),
-		sessionManager,
-	)
-
 	conf, confErr := s.configurationManager.Configuration()
 	if confErr != nil {
 		return nil, confErr
@@ -202,6 +195,25 @@ func (s *ServerWorkerFactory) createUDPWorker(
 	}
 
 	logger := s.loggerFactory.newLogger()
+
+	sendReset := func(addr netip.AddrPort) {
+		buf := make([]byte, 3)
+		payload, spErr := service_packet.EncodeLegacyHeader(service_packet.SessionReset, buf)
+		if spErr != nil {
+			logger.Printf("failed to encode session reset: %v", spErr)
+			return
+		}
+		_, _ = conn.WriteToUDPAddrPort(payload, addr)
+	}
+
+	th := udp_chacha20.NewTunHandler(
+		ctx,
+		tun,
+		ip.NewHeaderParser(),
+		sessionManager,
+		sendReset,
+	)
+
 	registrar := udp_registration.NewRegistrar(
 		ctx,
 		conn,
@@ -209,15 +221,7 @@ func (s *ServerWorkerFactory) createUDPWorker(
 		logger,
 		NewHandshakeFactory(*conf),
 		chacha20.NewUdpSessionBuilder(chacha20.NewDefaultAEADBuilder()),
-		func(addrPort netip.AddrPort) {
-			buf := make([]byte, 3)
-			payload, spErr := service_packet.EncodeLegacyHeader(service_packet.SessionReset, buf)
-			if spErr != nil {
-				logger.Printf("failed to encode session reset: %v", spErr)
-				return
-			}
-			_, _ = conn.WriteToUDPAddrPort(payload, addrPort)
-		},
+		sendReset,
 	)
 
 	tr := udp_chacha20.NewTransportHandler(
