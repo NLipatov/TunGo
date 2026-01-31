@@ -17,6 +17,8 @@ import (
 	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/controlplane"
+
+	"golang.org/x/crypto/chacha20poly1305"
 )
 
 type TransportHandler struct {
@@ -26,6 +28,10 @@ type TransportHandler struct {
 	cryptographyService connection.Crypto
 	rekeyController     *rekey.StateMachine
 	handshakeCrypto     handshake.Crypto
+	egress              connection.Egress
+	lastRecvAt          time.Time
+	lastPingSentAt      time.Time
+	pingBuf             []byte
 }
 
 func NewTransportHandler(
@@ -34,7 +40,9 @@ func NewTransportHandler(
 	writer io.Writer,
 	cryptographyService connection.Crypto,
 	rekeyController *rekey.StateMachine,
+	egress connection.Egress,
 ) transport.Handler {
+	const pingLen = chacha20poly1305.NonceSize + 3
 	return &TransportHandler{
 		ctx:                 ctx,
 		reader:              reader,
@@ -42,6 +50,9 @@ func NewTransportHandler(
 		cryptographyService: cryptographyService,
 		rekeyController:     rekeyController,
 		handshakeCrypto:     &handshake.DefaultCrypto{},
+		egress:              egress,
+		lastRecvAt:          time.Now(),
+		pingBuf:             make([]byte, pingLen, pingLen+chacha20poly1305.Overhead),
 	}
 }
 
@@ -56,6 +67,9 @@ func (t *TransportHandler) HandleTransport() error {
 			n, readErr := t.reader.Read(buffer[:])
 			if readErr != nil {
 				if errors.Is(readErr, os.ErrDeadlineExceeded) {
+					if err := t.handleIdle(); err != nil {
+						return err
+					}
 					continue
 				}
 				if t.ctx.Err() != nil {
@@ -96,6 +110,7 @@ func (t *TransportHandler) handleDatagram(pkt []byte) error {
 		}
 		return fmt.Errorf("failed to decrypt data: %s", decryptionErr)
 	}
+	t.lastRecvAt = time.Now()
 
 	if t.rekeyController != nil {
 		epoch := binary.BigEndian.Uint16(pkt[chacha20.NonceEpochOffset : chacha20.NonceEpochOffset+2])
@@ -137,7 +152,28 @@ func (t *TransportHandler) handleControlplane(plaintext []byte) (handled bool, e
 	case service_packet.SessionReset:
 		return true, fmt.Errorf("server requested cryptographyService reset")
 	default:
-		// ignore unknown service_packet packets
+		// ignore unknown service_packet packets (including Pong — recv timer already reset above)
 		return true, nil
 	}
+}
+
+func (t *TransportHandler) handleIdle() error {
+	if time.Since(t.lastRecvAt) > settings.PingRestartTimeout {
+		return fmt.Errorf("server unreachable (no data for %s)", settings.PingRestartTimeout)
+	}
+	if t.egress != nil && time.Since(t.lastPingSentAt) > settings.PingInterval {
+		t.sendPing()
+	}
+	return nil
+}
+
+func (t *TransportHandler) sendPing() {
+	payload := t.pingBuf[chacha20poly1305.NonceSize:]
+	if _, err := service_packet.EncodeV1Header(service_packet.Ping, payload); err != nil {
+		return
+	}
+	if err := t.egress.SendControl(t.pingBuf[:]); err != nil {
+		return
+	}
+	t.lastPingSentAt = time.Now()
 }

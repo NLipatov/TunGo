@@ -82,6 +82,18 @@ func TestTryParseHeader(t *testing.T) {
 			wantOK:   false,
 		},
 		{
+			name:     "v1 header ping",
+			pkt:      []byte{Prefix, VersionV1, byte(Ping)},
+			wantType: Ping,
+			wantOK:   true,
+		},
+		{
+			name:     "v1 header pong",
+			pkt:      []byte{Prefix, VersionV1, byte(Pong)},
+			wantType: Pong,
+			wantOK:   true,
+		},
+		{
 			name:     "unsupported packet length",
 			pkt:      []byte{Prefix, VersionV1},
 			wantType: Unknown,
@@ -187,6 +199,24 @@ func TestEncodeV1Header(t *testing.T) {
 			header:   RekeyAck,
 			dstSize:  RekeyPacketLen,
 			wantSize: RekeyPacketLen,
+		},
+		{
+			name:     "encode v1 ping",
+			header:   Ping,
+			dstSize:  3,
+			wantSize: 3,
+		},
+		{
+			name:     "encode v1 pong",
+			header:   Pong,
+			dstSize:  3,
+			wantSize: 3,
+		},
+		{
+			name:    "encode v1 ping short buffer",
+			header:  Ping,
+			dstSize: 2,
+			wantErr: io.ErrShortBuffer,
 		},
 		{
 			name:    "encode v1 invalid header",

@@ -23,6 +23,8 @@ const (
 	SessionReset
 	RekeyInit
 	RekeyAck
+	Ping
+	Pong
 )
 
 // TryParseHeader detects service_packet packets in-place without allocations.
@@ -43,7 +45,7 @@ func TryParseHeader(pkt []byte) (HeaderType, bool) {
 		}
 		typ := HeaderType(pkt[2])
 		switch typ {
-		case SessionReset:
+		case SessionReset, Ping, Pong:
 			return typ, true
 		default:
 			return Unknown, false
@@ -82,7 +84,7 @@ func EncodeLegacyHeader(headerType HeaderType, dst []byte) ([]byte, error) {
 // EncodeV1Header writes framed encoding: 0xFF <ver=1> <type>.
 func EncodeV1Header(headerType HeaderType, dst []byte) ([]byte, error) {
 	switch headerType {
-	case SessionReset:
+	case SessionReset, Ping, Pong:
 		if len(dst) < 3 {
 			return nil, io.ErrShortBuffer
 		}

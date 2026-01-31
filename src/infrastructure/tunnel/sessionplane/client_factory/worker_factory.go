@@ -37,12 +37,12 @@ func (w *WorkerFactory) CreateWorker(
 			return nil, deadlineErr
 		}
 		transport := adapters.NewClientUDPAdapter(conn.(*net.UDPConn), deadline, deadline)
+		egress := connection.NewDefaultEgress(transport, crypto)
 		// tunHandler reads from tun and writes to transport
 		tunHandler := udp_chacha20.NewTunHandler(
 			ctx,
 			tun,
-			transport,
-			crypto,
+			egress,
 			controller,
 		)
 		// transportHandler reads from transport and writes to tun
@@ -52,6 +52,7 @@ func (w *WorkerFactory) CreateWorker(
 			tun,
 			crypto,
 			controller,
+			egress,
 		)
 		return udp_chacha20.NewUdpWorker(transportHandler, tunHandler), nil
 	case settings.TCP:

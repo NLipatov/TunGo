@@ -34,11 +34,24 @@ func (r *controlPlaneHandler) Handle(
 		switch spType {
 		case service_packet.RekeyInit:
 			return true, r.handleRekeyInit(plaindata, egress, fsm)
+		case service_packet.Ping:
+			return true, r.handlePing(egress)
 		default:
 			return true, nil
 		}
 	}
 	return false, nil
+}
+
+func (r *controlPlaneHandler) handlePing(egress connection.Egress) error {
+	buf := make([]byte, chacha20poly1305.NonceSize+3,
+		chacha20poly1305.NonceSize+3+chacha20poly1305.Overhead)
+	payload := buf[chacha20poly1305.NonceSize:]
+	if _, err := service_packet.EncodeV1Header(service_packet.Pong, payload); err != nil {
+		return nil
+	}
+	_ = egress.SendControl(buf)
+	return nil
 }
 
 func (r *controlPlaneHandler) handleRekeyInit(

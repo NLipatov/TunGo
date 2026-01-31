@@ -18,8 +18,6 @@ import (
 type TunHandler struct {
 	ctx                 context.Context
 	reader              io.Reader // abstraction over TUN device
-	writer              io.Writer // abstraction over transport
-	cryptographyService connection.Crypto
 	egress              connection.Egress
 	rekeyController     *rekey.StateMachine
 	controlPacketBuffer [128]byte
@@ -28,19 +26,16 @@ type TunHandler struct {
 
 func NewTunHandler(ctx context.Context,
 	reader io.Reader,
-	writer io.Writer,
-	cryptographyService connection.Crypto,
+	egress connection.Egress,
 	rekeyController *rekey.StateMachine,
 ) tun.Handler {
 	now := time.Now().UTC()
 	return &TunHandler{
-		ctx:                 ctx,
-		reader:              reader,
-		writer:              writer,
-		cryptographyService: cryptographyService,
-		egress:              connection.NewDefaultEgress(writer, cryptographyService),
-		rekeyController:     rekeyController,
-		rekeyInit:           controlplane.NewRekeyInitScheduler(&handshake.DefaultCrypto{}, settings.DefaultRekeyInterval, now),
+		ctx:             ctx,
+		reader:          reader,
+		egress:          egress,
+		rekeyController: rekeyController,
+		rekeyInit:       controlplane.NewRekeyInitScheduler(&handshake.DefaultCrypto{}, settings.DefaultRekeyInterval, now),
 	}
 }
 

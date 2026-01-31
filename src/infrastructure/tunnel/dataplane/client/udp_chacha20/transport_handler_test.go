@@ -7,12 +7,15 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 	"testing"
 	"time"
+	"tungo/application/network/connection"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
 	"tungo/infrastructure/network/service_packet"
+	"tungo/infrastructure/settings"
 
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/curve25519"
@@ -105,7 +108,7 @@ func TestHandleTransport_ImmediateCancel(t *testing.T) {
 	}}
 	w := &thTestWriter{}
 	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTransportHandler(ctx, r, w, &thTestCrypto{}, ctrl)
+	h := NewTransportHandler(ctx, r, w, &thTestCrypto{}, ctrl, nil)
 	if err := h.HandleTransport(); err != nil {
 		t.Errorf("expected nil on immediate cancel, got %v", err)
 	}
@@ -118,7 +121,7 @@ func TestHandleTransport_ReadErrorOther(t *testing.T) {
 	}}
 	w := &thTestWriter{}
 	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTransportHandler(context.Background(), r, w, &thTestCrypto{}, ctrl)
+	h := NewTransportHandler(context.Background(), r, w, &thTestCrypto{}, ctrl, nil)
 	exp := fmt.Sprintf("could not read a packet from adapter: %v", errRead)
 	if err := h.HandleTransport(); err == nil || err.Error() != exp {
 		t.Errorf("expected %q, got %v", exp, err)
@@ -135,7 +138,7 @@ func TestHandleTransport_ReadDeadlineExceededSkip(t *testing.T) {
 	}}
 	w := &thTestWriter{}
 	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTransportHandler(ctx, r, w, &thTestCrypto{}, ctrl)
+	h := NewTransportHandler(ctx, r, w, &thTestCrypto{}, ctrl, nil)
 
 	done := make(chan error)
 	go func() { done <- h.HandleTransport() }()
@@ -153,7 +156,7 @@ func TestHandleTransport_ServerResetSignal(t *testing.T) {
 	}}
 	w := &thTestWriter{}
 	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTransportHandler(context.Background(), r, w, &thTestCrypto{}, ctrl)
+	h := NewTransportHandler(context.Background(), r, w, &thTestCrypto{}, ctrl, nil)
 	exp := "server requested cryptographyService reset"
 	if err := h.HandleTransport(); err == nil || err.Error() != exp {
 		t.Errorf("expected %q, got %v", exp, err)
@@ -174,7 +177,7 @@ func TestHandleTransport_DecryptNonUniqueNonceSkip(t *testing.T) {
 	w := &thTestWriter{}
 	crypto := &thTestCrypto{err: chacha20.ErrNonUniqueNonce}
 	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTransportHandler(ctx, r, w, crypto, ctrl)
+	h := NewTransportHandler(ctx, r, w, crypto, ctrl, nil)
 
 	done := make(chan error)
 	go func() { done <- h.HandleTransport() }()
@@ -195,7 +198,7 @@ func TestHandleTransport_DecryptErrorFatal(t *testing.T) {
 	w := &thTestWriter{}
 	crypto := &thTestCrypto{err: errDec}
 	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTransportHandler(context.Background(), r, w, crypto, ctrl)
+	h := NewTransportHandler(context.Background(), r, w, crypto, ctrl, nil)
 	exp := fmt.Sprintf("failed to decrypt data: %v", errDec)
 	if err := h.HandleTransport(); err == nil || err.Error() != exp {
 		t.Errorf("expected %q, got %v", exp, err)
@@ -211,7 +214,7 @@ func TestHandleTransport_WriteError(t *testing.T) {
 	w := &thTestWriter{err: errWrite}
 	crypto := &thTestCrypto{output: d[1:]} // decrypted payload
 	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTransportHandler(context.Background(), r, w, crypto, ctrl)
+	h := NewTransportHandler(context.Background(), r, w, crypto, ctrl, nil)
 	exp := fmt.Sprintf("failed to write to TUN: %v", errWrite)
 	if err := h.HandleTransport(); err == nil || err.Error() != exp {
 		t.Errorf("expected %q, got %v", exp, err)
@@ -231,7 +234,7 @@ func TestHandleTransport_SuccessThenCancel(t *testing.T) {
 	w := &thTestWriter{}
 	crypto := &thTestCrypto{output: decrypted}
 	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTransportHandler(ctx, r, w, crypto, ctrl)
+	h := NewTransportHandler(ctx, r, w, crypto, ctrl, nil)
 
 	done := make(chan error)
 	go func() { done <- h.HandleTransport() }()
@@ -264,7 +267,7 @@ func TestHandleTransport_RekeyAckAfterDoubleInit_UsesOriginalPendingKey(t *testi
 	}}
 	writer := &fakeWriter{}
 	crypto := &tunhandlerTestRakeCrypto{} // passthrough
-	tunHandler := NewTunHandler(ctx, reader, writer, crypto, ctrl).(*TunHandler)
+	tunHandler := NewTunHandler(ctx, reader, connection.NewDefaultEgress(writer, crypto), ctrl).(*TunHandler)
 	tunHandler.rekeyInit.SetInterval(5 * time.Millisecond)
 	tunHandler.rekeyInit.SetRotateAt(time.Now().UTC().Add(tunHandler.rekeyInit.Interval()))
 
@@ -351,7 +354,7 @@ func TestHandleTransport_RekeyAckAfterDoubleInit_UsesOriginalPendingKey(t *testi
 
 	transportCtx, transportCancel := context.WithCancel(context.Background())
 	defer transportCancel()
-	h := NewTransportHandler(transportCtx, r, w, &thAckCrypto{}, ctrl).(*TransportHandler)
+	h := NewTransportHandler(transportCtx, r, w, &thAckCrypto{}, ctrl, nil).(*TransportHandler)
 	h.handshakeCrypto = hc
 
 	errCh := make(chan error, 1)
@@ -380,5 +383,138 @@ func TestHandleTransport_RekeyAckAfterDoubleInit_UsesOriginalPendingKey(t *testi
 	}
 	if _, ok := ctrl.PendingRekeyPrivateKey(); ok {
 		t.Fatalf("pending priv should be cleared after ack")
+	}
+}
+
+// capturingEgress records SendControl calls for test assertions.
+type capturingEgress struct {
+	mu      sync.Mutex
+	packets [][]byte
+	sendErr error
+}
+
+func (e *capturingEgress) SendDataIP(plaintext []byte) error {
+	return e.send(plaintext)
+}
+
+func (e *capturingEgress) SendControl(plaintext []byte) error {
+	return e.send(plaintext)
+}
+
+func (e *capturingEgress) send(plaintext []byte) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.sendErr != nil {
+		return e.sendErr
+	}
+	buf := make([]byte, len(plaintext))
+	copy(buf, plaintext)
+	e.packets = append(e.packets, buf)
+	return nil
+}
+
+func (e *capturingEgress) Packets() [][]byte {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	out := make([][]byte, len(e.packets))
+	copy(out, e.packets)
+	return out
+}
+
+func TestHandleTransport_PingRestartTimeout(t *testing.T) {
+	// Reader returns only deadline-exceeded errors; after PingRestartTimeout
+	// the handler must return an error indicating unreachable server.
+	r := &thTestReader{reads: make([]func(p []byte) (int, error), 0)}
+	// Fill enough reads to outlast the timeout. Each deadline-exceeded wakes ~immediately in test.
+	for i := 0; i < 200; i++ {
+		r.reads = append(r.reads, func(p []byte) (int, error) {
+			return 0, os.ErrDeadlineExceeded
+		})
+	}
+	w := &thTestWriter{}
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	eg := &capturingEgress{}
+	h := NewTransportHandler(context.Background(), r, w, &thTestCrypto{}, ctrl, eg).(*TransportHandler)
+	// Set lastRecvAt far in the past to trigger timeout immediately.
+	h.lastRecvAt = time.Now().Add(-settings.PingRestartTimeout - time.Second)
+
+	err := h.HandleTransport()
+	if err == nil {
+		t.Fatal("expected error for unreachable server, got nil")
+	}
+	if !bytes.Contains([]byte(err.Error()), []byte("server unreachable")) {
+		t.Fatalf("expected 'server unreachable' error, got: %v", err)
+	}
+}
+
+func TestHandleTransport_PingSentOnIdle(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// First read: deadline exceeded (triggers Ping send).
+	// Second read: blocks until cancel.
+	r := &thTestReader{reads: []func(p []byte) (int, error){
+		func(p []byte) (int, error) { return 0, os.ErrDeadlineExceeded },
+		func(p []byte) (int, error) { <-ctx.Done(); return 0, errors.New("stop") },
+	}}
+	w := &thTestWriter{}
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	eg := &capturingEgress{}
+	h := NewTransportHandler(ctx, r, w, &thTestCrypto{}, ctrl, eg).(*TransportHandler)
+	// Set lastRecvAt so that PingInterval is exceeded but PingRestartTimeout is not.
+	h.lastRecvAt = time.Now().Add(-settings.PingInterval - time.Second)
+
+	done := make(chan error)
+	go func() { done <- h.HandleTransport() }()
+
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+	<-done
+
+	pkts := eg.Packets()
+	if len(pkts) == 0 {
+		t.Fatal("expected at least one Ping sent via egress")
+	}
+	// Verify the captured packet contains a valid Ping V1 header.
+	pkt := pkts[0]
+	payload := pkt[chacha20poly1305.NonceSize:]
+	if len(payload) < 3 {
+		t.Fatalf("ping packet payload too short: %d", len(payload))
+	}
+	if payload[0] != service_packet.Prefix || payload[1] != service_packet.VersionV1 || payload[2] != byte(service_packet.Ping) {
+		t.Fatalf("unexpected ping payload: %v", payload[:3])
+	}
+}
+
+func TestHandleTransport_RecvResetsPingTimer(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Sequence:
+	// 1. Read deadline exceeded (idle, but within PingRestartTimeout)
+	// 2. Read data (successful decrypt resets lastRecvAt)
+	// 3. Read deadline exceeded again — should NOT timeout
+	// 4. Block until cancel
+	encrypted := []byte{0, 42}
+	decrypted := []byte{100}
+	r := &thTestReader{reads: []func(p []byte) (int, error){
+		func(p []byte) (int, error) { return 0, os.ErrDeadlineExceeded },
+		func(p []byte) (int, error) { copy(p, encrypted); return len(encrypted), nil },
+		func(p []byte) (int, error) { return 0, os.ErrDeadlineExceeded },
+		func(p []byte) (int, error) { <-ctx.Done(); return 0, errors.New("stop") },
+	}}
+	w := &thTestWriter{}
+	crypto := &thTestCrypto{output: decrypted}
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	h := NewTransportHandler(ctx, r, w, crypto, ctrl, nil)
+
+	done := make(chan error)
+	go func() { done <- h.HandleTransport() }()
+
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+	err := <-done
+	if err != nil {
+		t.Fatalf("expected nil (recv should have reset timer), got %v", err)
 	}
 }
