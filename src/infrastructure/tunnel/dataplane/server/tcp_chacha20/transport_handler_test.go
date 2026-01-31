@@ -574,7 +574,7 @@ func TestHandleClient_BadLength(t *testing.T) {
 	}
 }
 
-func TestHandleClient_DecryptError(t *testing.T) {
+func TestHandleClient_DecryptError_ClosesConnection(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	conn := &fakeConn{
@@ -592,6 +592,12 @@ func TestHandleClient_DecryptError(t *testing.T) {
 
 	if !logger.contains("failed to decrypt data: bad decrypt") {
 		t.Errorf("expected decrypt error log, got %v", logger.logs)
+	}
+	if len(repo.deleted) != 1 {
+		t.Fatalf("expected session deleted on decrypt error, got %d deletes", len(repo.deleted))
+	}
+	if !conn.closed {
+		t.Fatal("expected transport Close() on decrypt error")
 	}
 }
 

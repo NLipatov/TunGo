@@ -17,6 +17,8 @@ type Egress interface {
 	// SendControl sends a control-plane packet (e.g. rekey) over the encrypted transport.
 	// The plaintext buffer is passed to Crypto.Encrypt as-is.
 	SendControl(plaintext []byte) error
+	// Close tears down the underlying transport. Safe to call multiple times.
+	Close() error
 }
 
 type DefaultEgress struct {
@@ -35,6 +37,13 @@ func (o *DefaultEgress) SendDataIP(plaintext []byte) error {
 
 func (o *DefaultEgress) SendControl(plaintext []byte) error {
 	return o.send(plaintext)
+}
+
+func (o *DefaultEgress) Close() error {
+	if c, ok := o.w.(io.Closer); ok {
+		return c.Close()
+	}
+	return nil
 }
 
 func (o *DefaultEgress) send(plaintext []byte) error {

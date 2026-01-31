@@ -413,6 +413,8 @@ func (e *capturingEgress) send(plaintext []byte) error {
 	return nil
 }
 
+func (e *capturingEgress) Close() error { return nil }
+
 func (e *capturingEgress) Packets() [][]byte {
 	e.mu.Lock()
 	defer e.mu.Unlock()

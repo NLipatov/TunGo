@@ -54,6 +54,7 @@ func (m *TunHandlerMockCrypto) Decrypt([]byte) ([]byte, error) { return nil, nil
 // TunHandlerMockConn counts Write calls and can fail.
 type TunHandlerMockConn struct {
 	called int32
+	closed int32
 	err    error
 }
 
@@ -62,7 +63,7 @@ func (c *TunHandlerMockConn) Write(b []byte) (int, error) {
 	return len(b), c.err
 }
 func (c *TunHandlerMockConn) Read([]byte) (int, error)           { return 0, nil }
-func (c *TunHandlerMockConn) Close() error                       { return nil }
+func (c *TunHandlerMockConn) Close() error                       { atomic.AddInt32(&c.closed, 1); return nil }
 func (c *TunHandlerMockConn) LocalAddr() net.Addr                { return nil }
 func (c *TunHandlerMockConn) RemoteAddr() net.Addr               { return nil }
 func (c *TunHandlerMockConn) SetDeadline(_ time.Time) error      { return nil }
@@ -172,7 +173,7 @@ func TestTunHandler_EncryptError(t *testing.T) {
 	}
 }
 
-func TestTunHandler_WriteErrorDeletesSession(t *testing.T) {
+func TestTunHandler_WriteErrorDeletesSessionAndClosesTransport(t *testing.T) {
 	addr := netip.MustParseAddr("10.0.0.4")
 	p := &TunHandlerMockParser{addr: addr}
 	c := &TunHandlerMockConn{err: errors.New("write fail")}
@@ -184,6 +185,9 @@ func TestTunHandler_WriteErrorDeletesSession(t *testing.T) {
 	}
 	if atomic.LoadInt32(&mgr.deleted) != 1 {
 		t.Fatalf("expected Delete to be called once")
+	}
+	if atomic.LoadInt32(&c.closed) != 1 {
+		t.Fatalf("expected transport Close to be called once, got %d", atomic.LoadInt32(&c.closed))
 	}
 }
 

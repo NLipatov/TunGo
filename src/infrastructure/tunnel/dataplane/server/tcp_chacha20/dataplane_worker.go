@@ -52,7 +52,7 @@ func (w *tcpDataplaneWorker) Run() {
 			pt, err := w.peer.Crypto().Decrypt(buffer[:n])
 			if err != nil {
 				w.logger.Printf("failed to decrypt data: %s", err)
-				continue
+				return
 			}
 			if rc := w.peer.RekeyController(); rc != nil {
 				if spType, spOk := service_packet.TryParseHeader(pt); spOk {

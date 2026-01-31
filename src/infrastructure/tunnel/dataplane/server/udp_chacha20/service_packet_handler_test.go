@@ -32,6 +32,8 @@ func (e *spTestEgress) send(plaintext []byte) error {
 	return nil
 }
 
+func (e *spTestEgress) Close() error { return nil }
+
 func TestHandle_Ping_SendsPong(t *testing.T) {
 	handler := newServicePacketHandler(&handshake.DefaultCrypto{})
 

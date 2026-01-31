@@ -66,6 +66,7 @@ func (t *TunHandler) HandleTun() error {
 
 			if err := peer.Egress().SendDataIP(plaintext[:n]); err != nil {
 				log.Printf("failed to write to TCP: %v", err)
+				_ = peer.Egress().Close()
 				t.sessionManager.Delete(peer)
 			}
 		}
