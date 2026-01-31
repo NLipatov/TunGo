@@ -10,7 +10,7 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
-/* ─── Mocks (prefixed with the struct under test: TransportHandler*) ─── */
+/* --- Mocks (prefixed with the struct under test: TransportHandler*) --- */
 
 type TransportHandlerMockWriter struct {
 	writes int
@@ -41,7 +41,7 @@ func (dummyRekeyer) Rekey(_, _ []byte) (uint16, error) { return 0, nil }
 func (dummyRekeyer) SetSendEpoch(uint16)               {}
 func (dummyRekeyer) RemoveEpoch(uint16) bool           { return true }
 
-/* ─── Tests ─── */
+/* --- Tests --- */
 
 func TestTransportHandler_ContextDone(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())

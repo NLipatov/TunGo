@@ -62,14 +62,15 @@ func ServerHandleRekeyInit(
 		sendKey, recvKey = newS2C, newC2S // server sends S2C, receives C2S
 	}
 
+	if len(serverPub) != service_packet.RekeyPublicKeyLen {
+		return nil, 0, false, fmt.Errorf("unexpected server public key length: %d", len(serverPub))
+	}
+
 	epoch, err = fsm.StartRekey(sendKey, recvKey)
 	if err != nil {
 		return nil, 0, false, err
 	}
 
-	if len(serverPub) != service_packet.RekeyPublicKeyLen {
-		return nil, 0, false, fmt.Errorf("unexpected server public key length: %d", len(serverPub))
-	}
 	return serverPub, epoch, true, nil
 }
 

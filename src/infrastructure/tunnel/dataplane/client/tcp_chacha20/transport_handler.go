@@ -86,9 +86,8 @@ func (t *TransportHandler) handleRekeyAck(payload []byte) {
 	if t.rekeyController == nil {
 		return
 	}
-	if ok, err := controlplane.ClientHandleRekeyAck(t.handshakeCrypto, t.rekeyController, payload); err != nil {
+	_, err := controlplane.ClientHandleRekeyAck(t.handshakeCrypto, t.rekeyController, payload)
+	if err != nil {
 		log.Printf("rekey ack: install/apply failed: %v", err)
-	} else if !ok {
-		// ignored
 	}
 }

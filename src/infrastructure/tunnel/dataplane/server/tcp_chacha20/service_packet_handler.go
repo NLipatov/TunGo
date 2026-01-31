@@ -49,15 +49,19 @@ func (h *controlPlaneHandler) handleRekeyInit(
 	egress connection.Egress,
 	fsm rekey.FSM,
 ) {
+	// 1. Derive keys and install into the FSM (Rekey adds a new epoch session
+	//    but does NOT change the send epoch — outbound frames still use old key).
 	serverPub, epoch, ok, err := controlplane.ServerHandleRekeyInit(h.crypto, fsm, plaindata)
 	if err != nil {
-		h.logger.Printf("rekey init: install/apply failed: %v", err)
+		h.logger.Printf("rekey init: %v", err)
 		return
 	}
 	if !ok {
 		return
 	}
 
+	// 2. Build and send ACK. Because sendEpoch is still the old epoch, the ACK
+	//    is encrypted with the old key — the client can always decrypt it.
 	ackPayload := make([]byte, service_packet.RekeyPacketLen)
 	copy(ackPayload[3:], serverPub)
 	sp, err := service_packet.EncodeV1Header(service_packet.RekeyAck, ackPayload)
@@ -67,8 +71,9 @@ func (h *controlPlaneHandler) handleRekeyInit(
 	}
 	if err := egress.SendControl(sp); err != nil {
 		h.logger.Printf("rekey init: send ack failed: %v", err)
-	} else {
-		// now it's safe to switch send for TCP
-		fsm.ActivateSendEpoch(epoch)
+		return
 	}
+
+	// 3. Now switch send to the new epoch — all subsequent frames use new key.
+	fsm.ActivateSendEpoch(epoch)
 }
