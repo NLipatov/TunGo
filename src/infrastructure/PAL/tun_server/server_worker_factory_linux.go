@@ -11,12 +11,14 @@ import (
 	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network/ip"
+	"tungo/infrastructure/network/service_packet"
 	wsServer "tungo/infrastructure/network/ws/server/factory"
-	"tungo/infrastructure/routing/server_routing/routing/tcp_chacha20"
-	"tungo/infrastructure/routing/server_routing/routing/udp_chacha20"
-	"tungo/infrastructure/routing/server_routing/session_management/repository"
-	"tungo/infrastructure/routing/server_routing/session_management/repository/wrappers"
 	"tungo/infrastructure/settings"
+	"tungo/infrastructure/tunnel/dataplane/server/tcp_chacha20"
+	"tungo/infrastructure/tunnel/dataplane/server/udp_chacha20"
+	"tungo/infrastructure/tunnel/session"
+	"tungo/infrastructure/tunnel/sessionplane/server/tcp_registration"
+	"tungo/infrastructure/tunnel/sessionplane/server/udp_registration"
 )
 
 type ServerWorkerFactory struct {
@@ -65,8 +67,8 @@ func (s *ServerWorkerFactory) createTCPWorker(
 	tun io.ReadWriteCloser,
 	workerSettings settings.Settings,
 ) (routing.Worker, error) {
-	sessionManager := wrappers.NewConcurrentManager(
-		repository.NewDefaultWorkerSessionManager[connection.Session](),
+	sessionManager := session.NewConcurrentRepository(
+		session.NewDefaultRepository(),
 	)
 
 	th := tcp_chacha20.NewTunHandler(
@@ -91,15 +93,22 @@ func (s *ServerWorkerFactory) createTCPWorker(
 		return nil, fmt.Errorf("failed to listen TCP: %w", err)
 	}
 
+	logger := s.loggerFactory.newLogger()
+	registrar := tcp_registration.NewRegistrar(
+		logger,
+		NewHandshakeFactory(*conf),
+		chacha20.NewTcpSessionBuilder(chacha20.NewDefaultAEADBuilder()),
+		sessionManager,
+	)
+
 	tr := tcp_chacha20.NewTransportHandler(
 		ctx,
 		workerSettings,
 		tun,
 		listener,
 		sessionManager,
-		s.loggerFactory.newLogger(),
-		NewHandshakeFactory(*conf),
-		chacha20.NewTcpSessionBuilder(chacha20.NewDefaultAEADBuilder()),
+		logger,
+		registrar,
 	)
 	return tcp_chacha20.NewTcpTunWorker(th, tr), nil
 }
@@ -109,8 +118,8 @@ func (s *ServerWorkerFactory) createWSWorker(
 	tun io.ReadWriteCloser,
 	workerSettings settings.Settings,
 ) (routing.Worker, error) {
-	sessionManager := wrappers.NewConcurrentManager(
-		repository.NewDefaultWorkerSessionManager[connection.Session](),
+	sessionManager := session.NewConcurrentRepository(
+		session.NewDefaultRepository(),
 	)
 
 	th := tcp_chacha20.NewTunHandler(
@@ -141,15 +150,22 @@ func (s *ServerWorkerFactory) createWSWorker(
 		return nil, fmt.Errorf("failed to listen WebSocket: %w", wsListenerErr)
 	}
 
+	logger := s.loggerFactory.newLogger()
+	registrar := tcp_registration.NewRegistrar(
+		logger,
+		NewHandshakeFactory(*conf),
+		chacha20.NewTcpSessionBuilder(chacha20.NewDefaultAEADBuilder()),
+		sessionManager,
+	)
+
 	tr := tcp_chacha20.NewTransportHandler(
 		ctx,
 		workerSettings,
 		tun,
 		wsListener,
 		sessionManager,
-		s.loggerFactory.newLogger(),
-		NewHandshakeFactory(*conf),
-		chacha20.NewTcpSessionBuilder(chacha20.NewDefaultAEADBuilder()),
+		logger,
+		registrar,
 	)
 	return tcp_chacha20.NewTcpTunWorker(th, tr), nil
 }
@@ -159,8 +175,8 @@ func (s *ServerWorkerFactory) createUDPWorker(
 	tun io.ReadWriteCloser,
 	workerSettings settings.Settings,
 ) (routing.Worker, error) {
-	sessionManager := wrappers.NewConcurrentManager(
-		repository.NewDefaultWorkerSessionManager[connection.Session](),
+	sessionManager := session.NewConcurrentRepository(
+		session.NewDefaultRepository(),
 	)
 
 	th := udp_chacha20.NewTunHandler(
@@ -185,15 +201,33 @@ func (s *ServerWorkerFactory) createUDPWorker(
 		return nil, fmt.Errorf("failed to listen on port: %s", err)
 	}
 
+	logger := s.loggerFactory.newLogger()
+	registrar := udp_registration.NewRegistrar(
+		ctx,
+		conn,
+		sessionManager,
+		logger,
+		NewHandshakeFactory(*conf),
+		chacha20.NewUdpSessionBuilder(chacha20.NewDefaultAEADBuilder()),
+		func(addrPort netip.AddrPort) {
+			buf := make([]byte, 3)
+			payload, spErr := service_packet.EncodeLegacyHeader(service_packet.SessionReset, buf)
+			if spErr != nil {
+				logger.Printf("failed to encode session reset: %v", spErr)
+				return
+			}
+			_, _ = conn.WriteToUDPAddrPort(payload, addrPort)
+		},
+	)
+
 	tr := udp_chacha20.NewTransportHandler(
 		ctx,
 		workerSettings,
 		tun,
 		conn,
 		sessionManager,
-		s.loggerFactory.newLogger(),
-		NewHandshakeFactory(*conf),
-		chacha20.NewUdpSessionBuilder(chacha20.NewDefaultAEADBuilder()),
+		logger,
+		registrar,
 	)
 	return udp_chacha20.NewUdpTunWorker(th, tr), nil
 }

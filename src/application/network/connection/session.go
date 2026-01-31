@@ -16,19 +16,9 @@ type SessionMeta interface {
 	InternalAddr() netip.Addr
 }
 
-type SessionTransport interface {
-	// Transport is getter for Transport, which is used to IO operations between client and server.
-	Transport() Transport
-}
-
 type SessionCrypto interface {
 	// Crypto is a getter for Crypto, which used for encryption/decryption operations.
 	Crypto() Crypto
-}
-
-type SessionOutbound interface {
-	// Outbound is a single serialized egress path for encryption + transport writes.
-	Outbound() Outbound
 }
 
 type SessionRekey interface {
@@ -38,8 +28,6 @@ type SessionRekey interface {
 
 type Session interface {
 	SessionMeta
-	SessionTransport
 	SessionCrypto
-	SessionOutbound
 	SessionRekey
 }

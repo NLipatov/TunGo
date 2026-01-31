@@ -13,7 +13,7 @@ import (
 	"tungo/infrastructure/PAL/signal"
 	"tungo/infrastructure/PAL/stat"
 	"tungo/infrastructure/PAL/tun_server"
-	"tungo/infrastructure/routing/client_routing/client_factory"
+	"tungo/infrastructure/tunnel/sessionplane/client_factory"
 	"tungo/presentation/configuring"
 	"tungo/presentation/elevation"
 	"tungo/presentation/interactive_commands/handlers"

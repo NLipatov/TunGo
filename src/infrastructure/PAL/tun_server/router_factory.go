@@ -2,7 +2,7 @@ package tun_server
 
 import (
 	application "tungo/application/network/routing"
-	implementation "tungo/infrastructure/routing"
+	implementation "tungo/infrastructure/tunnel"
 )
 
 type ServerTrafficRouterFactory struct {
