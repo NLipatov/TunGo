@@ -142,15 +142,26 @@ func (t *PlatformTunManager) DisposeDevices() error {
 		if err := t.mss.Remove(s.iface); err != nil {
 			log.Printf("cleanup: failed to remove MSS clamping for %s: %v", s.iface, err)
 		}
-		if err := t.ip.RouteDel(s.connIP); err != nil {
+		if err := t.ip.RouteDel(s.connIP); err != nil && !isBenignCleanupError(err) {
 			log.Printf("cleanup: failed to delete route for %s: %v", s.connIP, err)
 			errs = append(errs, fmt.Errorf("route del %s: %w", s.connIP, err))
 		}
-		if err := t.ip.LinkDelete(s.iface); err != nil {
+		if err := t.ip.LinkDelete(s.iface); err != nil && !isBenignCleanupError(err) {
 			log.Printf("cleanup: failed to delete link %s: %v", s.iface, err)
 			errs = append(errs, fmt.Errorf("link delete %s: %w", s.iface, err))
 		}
 	}
 
 	return errors.Join(errs...)
+}
+
+// isBenignCleanupError returns true when the error indicates the resource is
+// already absent. Deleting something that doesn't exist is idempotent success.
+func isBenignCleanupError(err error) bool {
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "no such process") ||
+		strings.Contains(msg, "cannot find device") ||
+		strings.Contains(msg, "no such device") ||
+		strings.Contains(msg, "does not exist") ||
+		strings.Contains(msg, "not found")
 }
