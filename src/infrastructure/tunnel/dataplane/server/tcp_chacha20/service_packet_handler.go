@@ -6,6 +6,7 @@ import (
 	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
 	"tungo/infrastructure/network/service_packet"
+	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/controlplane"
 )
 
@@ -62,7 +63,7 @@ func (h *controlPlaneHandler) handleRekeyInit(
 
 	// 2. Build and send ACK. Because sendEpoch is still the old epoch, the ACK
 	//    is encrypted with the old key — the client can always decrypt it.
-	ackPayload := make([]byte, service_packet.RekeyPacketLen)
+	ackPayload := make([]byte, service_packet.RekeyPacketLen, service_packet.RekeyPacketLen+settings.TCPChacha20Overhead)
 	copy(ackPayload[3:], serverPub)
 	sp, err := service_packet.EncodeV1Header(service_packet.RekeyAck, ackPayload)
 	if err != nil {
