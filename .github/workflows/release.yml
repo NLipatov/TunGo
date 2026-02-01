@@ -423,6 +423,13 @@ jobs:
           # Strip leading 'v' from version for Debian compatibility
           DEB_VERSION="${VERSION#v}"
 
+          # Launchpad won't accept re-uploading the exact same Version, so make the
+          # Debian revision unique per commit.
+          # Example: 0.2.32-1+git20260201123059.abc1234
+          GIT_DATE="$(git -C repo show -s --date=format:%Y%m%d%H%M%S --format=%cd HEAD)"
+          GIT_SHA="$(git -C repo rev-parse --short=7 HEAD)"
+          PPA_REVISION="1+git${GIT_DATE}.${GIT_SHA}"
+
           # Build an upstream orig tarball (3.0 quilt) from source.
           # debian/ must NOT be inside the orig tarball.
           mkdir -p tungo-${DEB_VERSION}
@@ -442,7 +449,7 @@ jobs:
 
           # Update changelog (format is strict about whitespace)
           printf '%s\n' \
-            "tungo (${DEB_VERSION}-1) questing; urgency=medium" \
+            "tungo (${DEB_VERSION}-${PPA_REVISION}) questing; urgency=medium" \
             "" \
             "  * New upstream release" \
             "" \
@@ -451,6 +458,7 @@ jobs:
 
           # Save for next step
           echo "DEB_VERSION=${DEB_VERSION}" >> $GITHUB_ENV
+          echo "PPA_REVISION=${PPA_REVISION}" >> $GITHUB_ENV
 
       - name: Build source package
         # -d: do not check build deps on the GitHub runner; Launchpad will enforce them.

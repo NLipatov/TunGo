@@ -2,14 +2,15 @@
 
 export DH_VERBOSE = 1
 
+VER := $(shell dpkg-parsechangelog -SVersion | sed 's/-.*//')
+GO ?= go
+
 %:
 	dh $@
 
 override_dh_auto_build:
 	# Build from source using the Go toolchain available in the build chroot.
 	# We vendor deps in the source tarball in CI to avoid network during build.
-	VER := $(shell dpkg-parsechangelog -SVersion | sed 's/-.*//')
-	GO := /usr/lib/go-1.25/bin/go
 	cd src && \
 		CGO_ENABLED=0 GOFLAGS="-buildvcs=false -mod=vendor" \
 		$(GO) build -trimpath \
