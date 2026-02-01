@@ -6,6 +6,7 @@ import (
 	"io"
 	"testing"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/network/service_packet"
 
 	"golang.org/x/crypto/chacha20poly1305"
 )
@@ -174,5 +175,78 @@ func TestTransportHandler_Happy_ThenEOF(t *testing.T) {
 	}
 	if w.writes != 1 {
 		t.Fatalf("writes=%d, want 1", w.writes)
+	}
+}
+
+func TestTransportHandler_RekeyAck_Handled(t *testing.T) {
+	ackPayload := make([]byte, service_packet.RekeyPacketLen)
+	_, _ = service_packet.EncodeV1Header(service_packet.RekeyAck, ackPayload)
+
+	cipher := make([]byte, chacha20poly1305.Overhead+len(ackPayload))
+
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	h := NewTransportHandler(context.Background(),
+		rdr(
+			struct {
+				data []byte
+				err  error
+			}{cipher, nil},
+			struct {
+				data []byte
+				err  error
+			}{nil, io.EOF},
+		),
+		io.Discard,
+		&TransportHandlerMockCrypto{decOut: ackPayload}, ctrl,
+	)
+	// RekeyAck is consumed; handler continues to next read which is EOF.
+	if err := h.HandleTransport(); err != io.EOF {
+		t.Fatalf("want io.EOF after RekeyAck, got %v", err)
+	}
+}
+
+func TestTransportHandler_RekeyAck_NilController(t *testing.T) {
+	ackPayload := make([]byte, service_packet.RekeyPacketLen)
+	_, _ = service_packet.EncodeV1Header(service_packet.RekeyAck, ackPayload)
+
+	cipher := make([]byte, chacha20poly1305.Overhead+len(ackPayload))
+
+	h := NewTransportHandler(context.Background(),
+		rdr(
+			struct {
+				data []byte
+				err  error
+			}{cipher, nil},
+			struct {
+				data []byte
+				err  error
+			}{nil, io.EOF},
+		),
+		io.Discard,
+		&TransportHandlerMockCrypto{decOut: ackPayload}, nil,
+	)
+	// With nil controller, handleRekeyAck returns immediately; handler continues to EOF.
+	if err := h.HandleTransport(); err != io.EOF {
+		t.Fatalf("want io.EOF, got %v", err)
+	}
+}
+
+func TestTransportHandler_TCPDecryptErrorAfterCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	decErr := errors.New("decrypt fail")
+	cipher := make([]byte, chacha20poly1305.Overhead+8)
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	h := NewTransportHandler(ctx,
+		rdr(struct {
+			data []byte
+			err  error
+		}{cipher, nil}),
+		io.Discard,
+		&TransportHandlerMockCrypto{decErr: decErr}, ctrl,
+	)
+	// ctx already canceled -> decrypt error is suppressed, returns nil.
+	if err := h.HandleTransport(); err != nil {
+		t.Fatalf("want nil when ctx canceled, got %v", err)
 	}
 }

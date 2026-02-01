@@ -25,13 +25,13 @@ type tcpRegHandshake struct {
 	err        error
 }
 
-func (h *tcpRegHandshake) Id() [32]byte                                { return h.id }
-func (h *tcpRegHandshake) KeyClientToServer() []byte                   { return h.c2s }
-func (h *tcpRegHandshake) KeyServerToClient() []byte                   { return h.s2c }
-func (h *tcpRegHandshake) ClientSideHandshake(connection.Transport, settings.Settings) error {
+func (h *tcpRegHandshake) Id() [32]byte              { return h.id }
+func (h *tcpRegHandshake) KeyClientToServer() []byte { return h.c2s }
+func (h *tcpRegHandshake) KeyServerToClient() []byte { return h.s2c }
+func (*tcpRegHandshake) ClientSideHandshake(connection.Transport, settings.Settings) error {
 	return nil
 }
-func (h *tcpRegHandshake) ServerSideHandshake(transport connection.Transport) (net.IP, error) {
+func (h *tcpRegHandshake) ServerSideHandshake(_ connection.Transport) (net.IP, error) {
 	if h.err != nil {
 		return nil, h.err
 	}
@@ -58,7 +58,7 @@ type tcpRegRekeyer struct{}
 
 func (tcpRegRekeyer) Rekey(_, _ []byte) (uint16, error) { return 0, nil }
 func (tcpRegRekeyer) SetSendEpoch(uint16)               {}
-func (tcpRegRekeyer) RemoveEpoch(uint16) bool            { return true }
+func (tcpRegRekeyer) RemoveEpoch(uint16) bool           { return true }
 
 // tcpRegCryptoFactory returns a pre-configured crypto.
 type tcpRegCryptoFactory struct {
@@ -83,16 +83,16 @@ type tcpRegConn struct {
 
 func (c *tcpRegConn) RemoteAddr() net.Addr { return c.remoteAddr }
 func (c *tcpRegConn) Close() error         { c.closed = true; return nil }
-func (c *tcpRegConn) Read(b []byte) (int, error) {
+func (*tcpRegConn) Read(_ []byte) (int, error) {
 	// Simulate a blocking read for the framing adapter.
 	time.Sleep(time.Millisecond)
 	return 0, errors.New("read error")
 }
-func (c *tcpRegConn) Write(b []byte) (int, error) { return len(b), nil }
-func (c *tcpRegConn) SetDeadline(time.Time) error { return nil }
-func (c *tcpRegConn) SetReadDeadline(time.Time) error { return nil }
-func (c *tcpRegConn) SetWriteDeadline(time.Time) error { return nil }
-func (c *tcpRegConn) LocalAddr() net.Addr {
+func (*tcpRegConn) Write(b []byte) (int, error)      { return len(b), nil }
+func (*tcpRegConn) SetDeadline(time.Time) error      { return nil }
+func (*tcpRegConn) SetReadDeadline(time.Time) error  { return nil }
+func (*tcpRegConn) SetWriteDeadline(time.Time) error { return nil }
+func (*tcpRegConn) LocalAddr() net.Addr {
 	return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8080}
 }
 
@@ -206,9 +206,9 @@ type tcpRegEgress struct {
 	closed bool
 }
 
-func (e *tcpRegEgress) SendDataIP([]byte) error  { return nil }
-func (e *tcpRegEgress) SendControl([]byte) error  { return nil }
-func (e *tcpRegEgress) Close() error               { e.closed = true; return nil }
+func (*tcpRegEgress) SendDataIP([]byte) error  { return nil }
+func (*tcpRegEgress) SendControl([]byte) error { return nil }
+func (e *tcpRegEgress) Close() error           { e.closed = true; return nil }
 
 func TestRegisterClient_ReplacesExistingSession(t *testing.T) {
 	hf := &tcpRegHandshakeFactory{
@@ -291,6 +291,51 @@ func TestRegisterClient_NonTCPAddr_ClosesConn(t *testing.T) {
 	}
 	if !conn.closed {
 		t.Fatal("expected conn to be closed")
+	}
+}
+
+// tcpRegFailingRepo returns a non-ErrNotFound error from GetByInternalAddrPort.
+type tcpRegFailingRepo struct {
+	err error
+}
+
+func (*tcpRegFailingRepo) Add(*session.Peer)    {}
+func (*tcpRegFailingRepo) Delete(*session.Peer) {}
+func (r *tcpRegFailingRepo) GetByInternalAddrPort(netip.Addr) (*session.Peer, error) {
+	return nil, r.err
+}
+func (r *tcpRegFailingRepo) GetByExternalAddrPort(netip.AddrPort) (*session.Peer, error) {
+	return nil, r.err
+}
+
+func TestRegisterClient_LookupError_ClosesConn(t *testing.T) {
+	hf := &tcpRegHandshakeFactory{
+		handshake: &tcpRegHandshake{
+			internalIP: net.IPv4(10, 0, 0, 1),
+			c2s:        make([]byte, 32),
+			s2c:        make([]byte, 32),
+		},
+	}
+	cf := &tcpRegCryptoFactory{
+		crypto: tcpRegCrypto{},
+		ctrl:   rekey.NewStateMachine(tcpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
+	}
+	repo := &tcpRegFailingRepo{err: errors.New("database unavailable")}
+	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo)
+
+	conn := &tcpRegConn{
+		remoteAddr: &net.TCPAddr{IP: net.IPv4(192, 168, 1, 1), Port: 12345},
+	}
+
+	peer, transport, err := reg.RegisterClient(conn)
+	if err == nil {
+		t.Fatal("expected error from lookup failure")
+	}
+	if peer != nil || transport != nil {
+		t.Fatal("expected nil peer and transport on lookup error")
+	}
+	if !conn.closed {
+		t.Fatal("expected conn to be closed on lookup error")
 	}
 }
 

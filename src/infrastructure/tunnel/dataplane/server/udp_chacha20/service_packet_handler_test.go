@@ -78,17 +78,17 @@ func (r *spTestRekeyer) Rekey(_, _ []byte) (uint16, error) {
 	r.nextEpoch++
 	return r.nextEpoch, nil
 }
-func (r *spTestRekeyer) SetSendEpoch(uint16)     {}
-func (r *spTestRekeyer) RemoveEpoch(uint16) bool { return true }
+func (*spTestRekeyer) SetSendEpoch(uint16)     {}
+func (*spTestRekeyer) RemoveEpoch(uint16) bool { return true }
 
 // errTestEgress returns an error on SendControl.
 type errTestEgress struct {
 	sendErr error
 }
 
-func (e *errTestEgress) SendDataIP([]byte) error  { return e.sendErr }
-func (e *errTestEgress) SendControl([]byte) error  { return e.sendErr }
-func (e *errTestEgress) Close() error               { return nil }
+func (e *errTestEgress) SendDataIP(_ []byte) error  { return e.sendErr }
+func (e *errTestEgress) SendControl(_ []byte) error { return e.sendErr }
+func (*errTestEgress) Close() error                 { return nil }
 
 func TestHandle_NonServicePacket_ReturnsFalse(t *testing.T) {
 	handler := newServicePacketHandler(&handshake.DefaultCrypto{})
@@ -115,7 +115,7 @@ func TestHandle_RekeyInit_Success_SendsAck(t *testing.T) {
 		t.Fatal(err)
 	}
 	pkt := make([]byte, service_packet.RekeyPacketLen)
-	service_packet.EncodeV1Header(service_packet.RekeyInit, pkt)
+	_, _ = service_packet.EncodeV1Header(service_packet.RekeyInit, pkt)
 	copy(pkt[3:], pub)
 
 	handled, handleErr := handler.Handle(pkt, eg, fsm)
@@ -147,7 +147,7 @@ func TestHandle_RekeyInit_NilFSM_NoAck(t *testing.T) {
 
 	pub, _, _ := crypto.GenerateX25519KeyPair()
 	pkt := make([]byte, service_packet.RekeyPacketLen)
-	service_packet.EncodeV1Header(service_packet.RekeyInit, pkt)
+	_, _ = service_packet.EncodeV1Header(service_packet.RekeyInit, pkt)
 	copy(pkt[3:], pub)
 
 	eg := &spTestEgress{}
@@ -176,7 +176,7 @@ func TestHandle_RekeyInit_EgressError_Swallowed(t *testing.T) {
 
 	pub, _, _ := crypto.GenerateX25519KeyPair()
 	pkt := make([]byte, service_packet.RekeyPacketLen)
-	service_packet.EncodeV1Header(service_packet.RekeyInit, pkt)
+	_, _ = service_packet.EncodeV1Header(service_packet.RekeyInit, pkt)
 	copy(pkt[3:], pub)
 
 	handled, err := handler.Handle(pkt, eg, fsm)
@@ -191,7 +191,7 @@ func TestHandle_RekeyInit_EgressError_Swallowed(t *testing.T) {
 func TestHandle_Pong_ReturnsTrueNilErr(t *testing.T) {
 	handler := newServicePacketHandler(&handshake.DefaultCrypto{})
 	pkt := make([]byte, 3)
-	service_packet.EncodeV1Header(service_packet.Pong, pkt)
+	_, _ = service_packet.EncodeV1Header(service_packet.Pong, pkt)
 
 	eg := &spTestEgress{}
 	handled, err := handler.Handle(pkt, eg, nil)
@@ -200,5 +200,61 @@ func TestHandle_Pong_ReturnsTrueNilErr(t *testing.T) {
 	}
 	if !handled {
 		t.Fatal("expected Pong to be handled (default case)")
+	}
+}
+
+func TestHandle_RekeyInit_EpochExhausted_ReturnsError(t *testing.T) {
+	crypto := &handshake.DefaultCrypto{}
+	handler := newServicePacketHandler(crypto)
+
+	rk := &spTestRekeyer{}
+	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32), true)
+	// Force epoch exhaustion.
+	fsm.LastRekeyEpoch = 65001
+
+	pub, _, _ := crypto.GenerateX25519KeyPair()
+	pkt := make([]byte, service_packet.RekeyPacketLen)
+	_, _ = service_packet.EncodeV1Header(service_packet.RekeyInit, pkt)
+	copy(pkt[3:], pub)
+
+	eg := &spTestEgress{}
+	handled, err := handler.Handle(pkt, eg, fsm)
+	if !handled {
+		t.Fatal("expected RekeyInit to be handled")
+	}
+	if !errors.Is(err, rekey.ErrEpochExhausted) {
+		t.Fatalf("expected ErrEpochExhausted, got %v", err)
+	}
+}
+
+func TestHandle_RekeyInit_NotStable_Swallowed(t *testing.T) {
+	crypto := &handshake.DefaultCrypto{}
+	handler := newServicePacketHandler(crypto)
+
+	rk := &spTestRekeyer{}
+	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32), true)
+	// Put FSM in non-stable state so ServerHandleRekeyInit returns ok=false, nil error.
+	_, _ = fsm.StartRekey([]byte("k1"), []byte("k2"))
+
+	pub, _, err := crypto.GenerateX25519KeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkt := make([]byte, service_packet.RekeyPacketLen)
+	_, _ = service_packet.EncodeV1Header(service_packet.RekeyInit, pkt)
+	copy(pkt[3:], pub)
+
+	eg := &spTestEgress{}
+	handled, handleErr := handler.Handle(pkt, eg, fsm)
+	if !handled {
+		t.Fatal("expected RekeyInit to be handled")
+	}
+	if handleErr != nil {
+		t.Fatalf("expected nil error for non-stable FSM, got %v", handleErr)
+	}
+	eg.mu.Lock()
+	defer eg.mu.Unlock()
+	if len(eg.packets) != 0 {
+		t.Fatalf("expected no ACK for non-stable FSM, got %d", len(eg.packets))
 	}
 }

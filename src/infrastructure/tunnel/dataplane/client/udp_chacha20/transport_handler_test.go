@@ -556,7 +556,7 @@ func TestHandleTransport_EpochExhausted_ReturnsError(t *testing.T) {
 
 	// Build a RekeyAck plaintext that will be "decrypted" by thTestCrypto.
 	ackPayload := make([]byte, service_packet.RekeyPacketLen)
-	service_packet.EncodeV1Header(service_packet.RekeyAck, ackPayload)
+	_, _ = service_packet.EncodeV1Header(service_packet.RekeyAck, ackPayload)
 
 	// Ciphertext: 2 bytes epoch + ack payload.
 	cipher := append([]byte{0, 0}, ackPayload...)
@@ -579,7 +579,7 @@ func TestHandleTransport_EpochExhausted_ReturnsError(t *testing.T) {
 func TestHandleTransport_EncryptedSessionReset(t *testing.T) {
 	// When decrypted data is a SessionReset service packet.
 	resetPayload := make([]byte, service_packet.RekeyPacketLen)
-	service_packet.EncodeV1Header(service_packet.SessionReset, resetPayload)
+	_, _ = service_packet.EncodeV1Header(service_packet.SessionReset, resetPayload)
 
 	// thTestCrypto returns the reset payload as decrypted output.
 	cipher := []byte{0, 0, 0xFF, 0x01, byte(service_packet.SessionReset)}
@@ -649,6 +649,89 @@ func TestHandleTransport_DecryptErrorAfterCancel(t *testing.T) {
 	err := h.HandleTransport()
 	if err != nil {
 		t.Fatalf("expected nil after cancel during decrypt error, got %v", err)
+	}
+}
+
+func TestHandleTransport_RekeyAckInstallError_LoggedAndContinues(t *testing.T) {
+	// When ClientHandleRekeyAck returns an error (e.g., short ack packet),
+	// the handler should log and continue (not return the error).
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Build a short RekeyAck that won't have enough data for ClientHandleRekeyAck.
+	ackPayload := make([]byte, 3) // only header, no public key
+	_, _ = service_packet.EncodeV1Header(service_packet.RekeyAck, ackPayload)
+
+	cipher := append([]byte{0, 0}, ackPayload...)
+	r := &thTestReader{reads: []func(p []byte) (int, error){
+		func(p []byte) (int, error) { copy(p, cipher); return len(cipher), nil },
+		func(p []byte) (int, error) { <-ctx.Done(); return 0, errors.New("stop") },
+	}}
+	w := &thTestWriter{}
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, make([]byte, 32), make([]byte, 32), false)
+	h := NewTransportHandler(ctx, r, w, &thAckCrypto{}, ctrl, nil)
+
+	done := make(chan error)
+	go func() { done <- h.HandleTransport() }()
+
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+	err := <-done
+	if err != nil {
+		t.Fatalf("expected nil (ack error should be logged, not returned), got %v", err)
+	}
+}
+
+func TestHandleTransport_PingSendError_Swallowed(t *testing.T) {
+	// When egress.SendControl returns an error during Ping, sendPing returns early without panic.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	r := &thTestReader{reads: []func(p []byte) (int, error){
+		func(p []byte) (int, error) { return 0, os.ErrDeadlineExceeded },
+		func(p []byte) (int, error) { <-ctx.Done(); return 0, errors.New("stop") },
+	}}
+	w := &thTestWriter{}
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	eg := &capturingEgress{sendErr: errors.New("send failed")}
+	h := NewTransportHandler(ctx, r, w, &thTestCrypto{}, ctrl, eg).(*TransportHandler)
+	h.lastRecvAt = time.Now().Add(-settings.PingInterval - time.Second)
+
+	done := make(chan error)
+	go func() { done <- h.HandleTransport() }()
+
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("expected nil, got %v", err)
+	}
+}
+
+func TestHandleTransport_NilRekeyController(t *testing.T) {
+	// With nil rekeyController, handleDatagram should skip epoch/rekey logic.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	encrypted := []byte{0, 42}
+	decrypted := []byte{100}
+	r := &thTestReader{reads: []func(p []byte) (int, error){
+		func(p []byte) (int, error) { copy(p, encrypted); return len(encrypted), nil },
+		func(p []byte) (int, error) { <-ctx.Done(); return 0, errors.New("stop") },
+	}}
+	w := &thTestWriter{}
+	crypto := &thTestCrypto{output: decrypted}
+	h := NewTransportHandler(ctx, r, w, crypto, nil, nil)
+
+	done := make(chan error)
+	go func() { done <- h.HandleTransport() }()
+
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("expected nil, got %v", err)
+	}
+	if len(w.data) != 1 || !bytes.Equal(w.data[0], decrypted) {
+		t.Fatalf("expected decrypted data written, got %v", w.data)
 	}
 }
 

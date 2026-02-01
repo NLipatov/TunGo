@@ -755,3 +755,44 @@ func TestActivateSendEpoch_NoOpWhenStable(t *testing.T) {
 		t.Fatalf("expected no SetSendEpoch calls, got %v", setCalls)
 	}
 }
+
+func TestSetPendingTimeout(t *testing.T) {
+	mock := &StateMachineRekeyerMock{rekeyEpoch: 1}
+	sm := NewStateMachine(mock, []byte("c2s"), []byte("s2c"), false)
+
+	sm.SetPendingTimeout(42 * time.Second)
+
+	sm.mu.Lock()
+	got := sm.pendingTimeout
+	sm.mu.Unlock()
+	if got != 42*time.Second {
+		t.Fatalf("expected pendingTimeout=42s, got %v", got)
+	}
+}
+
+func TestApplyEffects_NilCrypto_NoPanic(t *testing.T) {
+	sm := &StateMachine{} // nil crypto
+	// Should not panic.
+	sm.applyEffects([]fsmEffect{effectSetSendEpoch{epoch: 1}})
+}
+
+func TestApplyEffects_NilEffect_NoPanic(t *testing.T) {
+	mock := &StateMachineRekeyerMock{}
+	sm := NewStateMachine(mock, []byte("c2s"), []byte("s2c"), false)
+	// Should not panic with nil effect in the list.
+	sm.applyEffects([]fsmEffect{nil, effectSetSendEpoch{epoch: 1}})
+
+	_, _, _, setCalls, _ := mock.Snapshot()
+	if len(setCalls) != 1 || setCalls[0] != 1 {
+		t.Fatalf("expected SetSendEpoch(1) once (skipping nil), got %v", setCalls)
+	}
+}
+
+func TestClearPendingRekeyPrivateKey_WhenNil(t *testing.T) {
+	sm := NewStateMachine(&StateMachineRekeyerMock{}, []byte("c2s"), []byte("s2c"), false)
+	// Clearing when nil should be a no-op.
+	sm.ClearPendingRekeyPrivateKey()
+	if _, ok := sm.PendingRekeyPrivateKey(); ok {
+		t.Fatal("expected no pending key")
+	}
+}

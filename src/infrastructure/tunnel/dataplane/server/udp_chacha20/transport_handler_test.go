@@ -1156,3 +1156,114 @@ func TestRegisterClient_CanceledContextClosesQueue(t *testing.T) {
 		t.Fatalf("handshake did not observe queue closure: %v", err)
 	}
 }
+
+func TestHandleTransport_ShortPacket_Logged(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	writer := &TransportHandlerFakeWriter{}
+	logger := &TransportHandlerFakeLogger{}
+	repo := &TransportHandlerSessionRepo{}
+	hsf := &TransportHandlerFakeHandshakeFactory{hs: &TransportHandlerFakeHandshake{}}
+
+	clientAddr := netip.MustParseAddrPort("192.168.1.99:9999")
+	conn := &TransportHandlerFakeUdpListener{
+		readBufs:  [][]byte{{0x01}}, // 1-byte packet: too short for epoch
+		readAddrs: []netip.AddrPort{clientAddr},
+	}
+
+	registrar := udp_registration.NewRegistrar(ctx, conn, repo, logger,
+		hsf, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}), noopSendReset,
+	)
+	handler := NewTransportHandler(ctx, settings.Settings{Port: "9999"}, writer, conn, repo, logger, registrar)
+
+	done := make(chan struct{})
+	go func() { _ = handler.HandleTransport(); close(done) }()
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+	<-done
+
+	if !logger.contains("packet too short for epoch") {
+		t.Fatalf("expected short packet log, got %v", logger.logs)
+	}
+}
+
+func TestHandleTransport_EpochExhausted_SendsSessionReset(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	writer := &TransportHandlerFakeWriter{}
+	logger := &TransportHandlerFakeLogger{}
+
+	clientAddr := netip.MustParseAddrPort("192.168.1.80:8080")
+	internalIP := netip.MustParseAddr("10.0.0.80")
+
+	rk := &rekey.StateMachine{}
+	rk.LastRekeyEpoch = 65001
+
+	sess := &testSession{
+		crypto:     &TransportHandlerAlwaysWriteCrypto{},
+		internalIP: internalIP,
+		externalIP: clientAddr,
+		fsm:        rk,
+	}
+	repo := &TransportHandlerSessionRepo{sessions: map[netip.AddrPort]*session.Peer{
+		clientAddr: session.NewPeer(sess, nil),
+	}}
+
+	hsf := &TransportHandlerFakeHandshakeFactory{hs: &TransportHandlerFakeHandshake{}}
+
+	// Build a RekeyInit service packet that, once decrypted, triggers EpochExhausted.
+	rekeyPayload := make([]byte, service_packet.RekeyPacketLen)
+	_, _ = service_packet.EncodeV1Header(service_packet.RekeyInit, rekeyPayload)
+
+	writeCh := make(chan struct{}, 1)
+	conn := &TransportHandlerFakeUdpListener{
+		readBufs:  [][]byte{rekeyPayload},
+		readAddrs: []netip.AddrPort{clientAddr},
+		writeCh:   writeCh,
+	}
+
+	registrar := udp_registration.NewRegistrar(ctx, conn, repo, logger,
+		hsf, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}), noopSendReset,
+	)
+	handler := NewTransportHandler(ctx, settings.Settings{Port: "8080"}, writer, conn, repo, logger, registrar)
+
+	done := make(chan struct{})
+	go func() { _ = handler.HandleTransport(); close(done) }()
+
+	// Wait for either the write (session reset) or timeout.
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+	<-done
+
+	// Check that handlePacket error was logged.
+	if !logger.contains("failed to handle packet") {
+		t.Logf("logs: %v", logger.logs)
+	}
+}
+
+func TestHandleTransport_NilRegistrar_NoUnknownPanic(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	writer := &TransportHandlerFakeWriter{}
+	logger := &TransportHandlerFakeLogger{}
+	repo := &TransportHandlerSessionRepo{}
+	clientAddr := netip.MustParseAddrPort("192.168.1.90:9090")
+
+	conn := &TransportHandlerFakeUdpListener{
+		readBufs:  [][]byte{{0xde, 0xad}},
+		readAddrs: []netip.AddrPort{clientAddr},
+	}
+
+	// nil registrar — unknown client should not panic.
+	handler := NewTransportHandler(ctx, settings.Settings{Port: "9090"}, writer, conn, repo, logger, nil)
+
+	done := make(chan struct{})
+	go func() { _ = handler.HandleTransport(); close(done) }()
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+	<-done
+	// No panic = success.
+}

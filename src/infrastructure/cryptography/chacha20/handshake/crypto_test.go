@@ -91,6 +91,53 @@ func TestGenerateRandomBytesArray(t *testing.T) {
 	}
 }
 
+func TestDeriveKey_ReturnsCorrectLength(t *testing.T) {
+	c := newDefaultCrypto()
+	secret := c.GenerateRandomBytesArray(32)
+	salt := c.GenerateRandomBytesArray(32)
+	key, err := c.DeriveKey(secret, salt, []byte("test-info"))
+	if err != nil {
+		t.Fatalf("DeriveKey: %v", err)
+	}
+	if len(key) != chacha20poly1305.KeySize {
+		t.Errorf("key length = %d; want %d", len(key), chacha20poly1305.KeySize)
+	}
+}
+
+func TestDeriveKey_DifferentInfoProducesDifferentKeys(t *testing.T) {
+	c := newDefaultCrypto()
+	secret := c.GenerateRandomBytesArray(32)
+	salt := c.GenerateRandomBytesArray(32)
+
+	k1, _ := c.DeriveKey(secret, salt, []byte("info-a"))
+	k2, _ := c.DeriveKey(secret, salt, []byte("info-b"))
+
+	if bytes.Equal(k1, k2) {
+		t.Error("different info strings should produce different keys")
+	}
+}
+
+func TestDeriveKey_DeterministicForSameInput(t *testing.T) {
+	c := newDefaultCrypto()
+	secret := []byte("fixed-secret-for-determinism-test")
+	salt := []byte("fixed-salt-for-determinism-test!")
+	info := []byte("fixed-info")
+
+	k1, _ := c.DeriveKey(secret, salt, info)
+	k2, _ := c.DeriveKey(secret, salt, info)
+
+	if !bytes.Equal(k1, k2) {
+		t.Error("same inputs should produce same key")
+	}
+}
+
+func TestNewDefaultCrypto(t *testing.T) {
+	c := newDefaultCrypto()
+	if c == nil {
+		t.Fatal("expected non-nil Crypto")
+	}
+}
+
 func TestGenerateChaCha20Keys_BothSidesMatch(t *testing.T) {
 	c := newDefaultCrypto()
 

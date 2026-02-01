@@ -281,11 +281,108 @@ func TestConfigureTUN_ErrorPropagation_WithGatewayPath(t *testing.T) {
 	}
 }
 
-func TestDisposeDevices(t *testing.T) {
+func TestDisposeDevices_NoErrors(t *testing.T) {
 	ipMock := &platformTunManagerIPMock{}
 	m := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{})
 
 	if err := m.DisposeDevices(); err != nil {
 		t.Fatalf("DisposeDevices error: %v", err)
+	}
+}
+
+// platformTunManagerIPDisposeFail returns real errors from RouteDel and LinkDelete.
+type platformTunManagerIPDisposeFail struct {
+	platformTunManagerIPMock
+	routeDelErr error
+	linkDelErr  error
+}
+
+func (m *platformTunManagerIPDisposeFail) RouteDel(string) error {
+	return m.routeDelErr
+}
+func (m *platformTunManagerIPDisposeFail) LinkDelete(string) error {
+	return m.linkDelErr
+}
+
+func TestDisposeDevices_RouteDelError(t *testing.T) {
+	ipMock := &platformTunManagerIPDisposeFail{routeDelErr: errors.New("permission denied")}
+	m := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{})
+
+	err := m.DisposeDevices()
+	if err == nil {
+		t.Fatal("expected error from RouteDel")
+	}
+	if !strings.Contains(err.Error(), "route del") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDisposeDevices_LinkDeleteError(t *testing.T) {
+	ipMock := &platformTunManagerIPDisposeFail{linkDelErr: errors.New("operation not permitted")}
+	m := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{})
+
+	err := m.DisposeDevices()
+	if err == nil {
+		t.Fatal("expected error from LinkDelete")
+	}
+	if !strings.Contains(err.Error(), "link delete") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDisposeDevices_BenignErrors_Ignored(t *testing.T) {
+	// "No such process" and "cannot find device" are benign — should NOT propagate.
+	ipMock := &platformTunManagerIPDisposeFail{
+		routeDelErr: errors.New("No Such Process"),
+		linkDelErr:  errors.New("Cannot Find Device"),
+	}
+	m := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{})
+
+	if err := m.DisposeDevices(); err != nil {
+		t.Fatalf("expected benign errors to be ignored, got %v", err)
+	}
+}
+
+func TestIsBenignCleanupError(t *testing.T) {
+	benign := []string{
+		"RTNETLINK answers: No such process",
+		"Cannot find device \"tun0\"",
+		"no such device",
+		"device does not exist",
+		"route not found",
+	}
+	for _, msg := range benign {
+		if !isBenignCleanupError(errors.New(msg)) {
+			t.Errorf("expected benign: %q", msg)
+		}
+	}
+	if isBenignCleanupError(errors.New("permission denied")) {
+		t.Error("permission denied should not be benign")
+	}
+}
+
+func TestConfigureTUN_MSSInstallError(t *testing.T) {
+	ipMock := &platformTunManagerIPMock{routeReply: "198.51.100.1 dev eth0"}
+	mssMock := platformTunManagerMSSMock{installErr: errors.New("iptables fail")}
+	m := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, mssMock, platformTunManagerPlainWrapper{})
+
+	_, err := m.CreateDevice()
+	if err == nil {
+		t.Fatal("expected MSS install error")
+	}
+	if !strings.Contains(err.Error(), "failed to install MSS clamping") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDisposeDevices_MSSRemoveError_Logged(t *testing.T) {
+	// MSS remove errors are logged but do NOT cause DisposeDevices to fail.
+	ipMock := &platformTunManagerIPMock{}
+	mssMock := platformTunManagerMSSMock{removeErr: errors.New("cleanup fail")}
+	m := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, mssMock, platformTunManagerPlainWrapper{})
+
+	// Should not return error because MSS remove errors are only logged.
+	if err := m.DisposeDevices(); err != nil {
+		t.Fatalf("expected no error (MSS remove only logged), got %v", err)
 	}
 }
