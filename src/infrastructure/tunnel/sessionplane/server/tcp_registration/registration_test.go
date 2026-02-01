@@ -201,6 +201,15 @@ func TestRegisterClient_Success(t *testing.T) {
 	}
 }
 
+// tcpRegEgress tracks Close calls.
+type tcpRegEgress struct {
+	closed bool
+}
+
+func (e *tcpRegEgress) SendDataIP([]byte) error  { return nil }
+func (e *tcpRegEgress) SendControl([]byte) error  { return nil }
+func (e *tcpRegEgress) Close() error               { e.closed = true; return nil }
+
 func TestRegisterClient_ReplacesExistingSession(t *testing.T) {
 	hf := &tcpRegHandshakeFactory{
 		handshake: &tcpRegHandshake{
@@ -218,7 +227,8 @@ func TestRegisterClient_ReplacesExistingSession(t *testing.T) {
 	// Pre-populate repo with an existing session for the same internal IP.
 	ip := netip.MustParseAddr("10.0.0.1")
 	existingSession := session.NewSession(tcpRegCrypto{}, nil, ip, netip.MustParseAddrPort("192.168.1.100:9999"))
-	existingPeer := session.NewPeer(existingSession, nil)
+	oldEgress := &tcpRegEgress{}
+	existingPeer := session.NewPeer(existingSession, oldEgress)
 	repo.Add(existingPeer)
 
 	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo)
@@ -234,6 +244,15 @@ func TestRegisterClient_ReplacesExistingSession(t *testing.T) {
 	}
 	if peer == nil {
 		t.Fatal("expected non-nil peer")
+	}
+
+	// Old peer's egress should be closed.
+	if !oldEgress.closed {
+		t.Fatal("expected old peer's egress to be closed")
+	}
+	// New conn must NOT be closed — it's the active connection.
+	if conn.closed {
+		t.Fatal("new conn must not be closed when replacing existing session")
 	}
 
 	// Old peer should be gone — new peer should be found.

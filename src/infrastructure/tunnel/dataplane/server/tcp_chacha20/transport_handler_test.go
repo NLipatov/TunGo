@@ -24,6 +24,12 @@ import (
 
 /* ========= fakes / test doubles ========= */
 
+type noopEgress struct{}
+
+func (noopEgress) SendDataIP([]byte) error  { return nil }
+func (noopEgress) SendControl([]byte) error { return nil }
+func (noopEgress) Close() error             { return nil }
+
 type fakeTcpListenerCtxDone struct {
 	t      *testing.T
 	ctx    context.Context
@@ -443,7 +449,7 @@ func TestRegisterClient_ReplaceSession(t *testing.T) {
 	handshakeFactory := &fakeHandshakeFactory{hs: handshake}
 
 	oldSess := &testSession{externalIP: mustAddrPort("127.0.0.1:8070")}
-	oldPeer := session.NewPeer(oldSess, nil)
+	oldPeer := session.NewPeer(oldSess, &noopEgress{})
 	srepo := &fakeSessionRepo{
 		getErr:     nil,
 		returnPeer: oldPeer, // existing session -> will be deleted
