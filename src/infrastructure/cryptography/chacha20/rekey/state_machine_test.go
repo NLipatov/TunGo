@@ -641,3 +641,117 @@ func TestConcurrent_ActivateAndAbort_NoDeadlock_EndsInValidState(t *testing.T) {
 		t.Fatalf("invariant violated: Stable but hasPending=true")
 	}
 }
+
+func TestSetNowFunc_NilIsNoOp(t *testing.T) {
+	mock := &StateMachineRekeyerMock{rekeyEpoch: 1}
+	sm := NewStateMachine(mock, []byte("c2s"), []byte("s2c"), false)
+
+	// Should not panic or replace the time source.
+	sm.SetNowFunc(nil)
+
+	// Verify the FSM still works (now func is intact).
+	base := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
+	sm.SetNowFunc(func() time.Time { return base })
+	sm.SetPendingTimeout(1 * time.Second)
+
+	epoch, err := sm.StartRekey([]byte("k1"), []byte("k2"))
+	if err != nil {
+		t.Fatalf("StartRekey failed: %v", err)
+	}
+	sm.mu.Lock()
+	since := sm.pendingSince
+	sm.mu.Unlock()
+	if !since.Equal(base) {
+		t.Fatalf("expected pendingSince=%v, got %v", base, since)
+	}
+	_ = epoch
+}
+
+func TestIsServer(t *testing.T) {
+	server := NewStateMachine(&StateMachineRekeyerMock{}, []byte("c2s"), []byte("s2c"), true)
+	client := NewStateMachine(&StateMachineRekeyerMock{}, []byte("c2s"), []byte("s2c"), false)
+
+	if !server.IsServer() {
+		t.Fatal("expected IsServer()=true for server")
+	}
+	if client.IsServer() {
+		t.Fatal("expected IsServer()=false for client")
+	}
+}
+
+func TestPendingRekeyPrivateKey_SetGetClear(t *testing.T) {
+	sm := NewStateMachine(&StateMachineRekeyerMock{}, []byte("c2s"), []byte("s2c"), false)
+
+	// Initially no pending key.
+	if _, ok := sm.PendingRekeyPrivateKey(); ok {
+		t.Fatal("expected no pending key initially")
+	}
+
+	// Set a key.
+	var key [32]byte
+	key[0] = 42
+	sm.SetPendingRekeyPrivateKey(key)
+
+	got, ok := sm.PendingRekeyPrivateKey()
+	if !ok {
+		t.Fatal("expected pending key after set")
+	}
+	if got[0] != 42 {
+		t.Fatalf("expected key[0]=42, got %d", got[0])
+	}
+
+	// Clear.
+	sm.ClearPendingRekeyPrivateKey()
+	if _, ok := sm.PendingRekeyPrivateKey(); ok {
+		t.Fatal("expected no pending key after clear")
+	}
+}
+
+func TestAbortPendingIfExpired_NoOpWhenStable(t *testing.T) {
+	mock := &StateMachineRekeyerMock{}
+	sm := NewStateMachine(mock, []byte("c2s"), []byte("s2c"), false)
+
+	// Should be a no-op — no panic, no state change.
+	sm.AbortPendingIfExpired(time.Now().Add(time.Hour))
+
+	if sm.State() != StateStable {
+		t.Fatalf("expected Stable, got %v", sm.State())
+	}
+}
+
+func TestStartRekey_ServerSideKeyOrientation(t *testing.T) {
+	mock := &StateMachineRekeyerMock{rekeyEpoch: 3}
+	sm := NewStateMachine(mock, []byte("old-c2s"), []byte("old-s2c"), true)
+
+	epoch, err := sm.StartRekey([]byte("new-send"), []byte("new-recv"))
+	if err != nil {
+		t.Fatalf("StartRekey failed: %v", err)
+	}
+
+	// Activate to promote keys.
+	sm.ActivateSendEpoch(epoch)
+
+	// For isServer=true, sendKey goes to S2C and recvKey goes to C2S.
+	if string(sm.CurrentServerToClientKey()) != "new-send" {
+		t.Fatalf("expected S2C=new-send, got %q", sm.CurrentServerToClientKey())
+	}
+	if string(sm.CurrentClientToServerKey()) != "new-recv" {
+		t.Fatalf("expected C2S=new-recv, got %q", sm.CurrentClientToServerKey())
+	}
+}
+
+func TestActivateSendEpoch_NoOpWhenStable(t *testing.T) {
+	mock := &StateMachineRekeyerMock{}
+	sm := NewStateMachine(mock, []byte("c2s"), []byte("s2c"), false)
+
+	// No pending rekey; ActivateSendEpoch should be a no-op.
+	sm.ActivateSendEpoch(5)
+
+	if sm.State() != StateStable {
+		t.Fatalf("expected Stable, got %v", sm.State())
+	}
+	_, _, _, setCalls, _ := mock.Snapshot()
+	if len(setCalls) != 0 {
+		t.Fatalf("expected no SetSendEpoch calls, got %v", setCalls)
+	}
+}

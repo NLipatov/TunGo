@@ -520,3 +520,159 @@ func TestHandleTransport_RecvResetsPingTimer(t *testing.T) {
 		t.Fatalf("expected nil (recv should have reset timer), got %v", err)
 	}
 }
+
+func TestHandleTransport_ShortPacket_SkippedAfterServiceCheck(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// A 1-byte packet that is NOT SessionReset and has len<2 — should be silently skipped.
+	r := &thTestReader{reads: []func(p []byte) (int, error){
+		func(p []byte) (int, error) { p[0] = 0x45; return 1, nil },
+		func(p []byte) (int, error) { <-ctx.Done(); return 0, errors.New("stop") },
+	}}
+	w := &thTestWriter{}
+	crypto := &thTestCrypto{output: []byte{42}} // should not be reached
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	h := NewTransportHandler(ctx, r, w, crypto, ctrl, nil)
+
+	done := make(chan error)
+	go func() { done <- h.HandleTransport() }()
+
+	time.Sleep(10 * time.Millisecond)
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("expected nil for short packet skip, got %v", err)
+	}
+}
+
+func TestHandleTransport_EpochExhausted_ReturnsError(t *testing.T) {
+	// When rekeyController.LastRekeyEpoch >= 65000 and a RekeyAck arrives,
+	// handleControlplane should return an error about epoch exhaustion.
+	rk := &incRekeyer{}
+	ctrl := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32), false)
+
+	// Force LastRekeyEpoch to exhausted state.
+	ctrl.LastRekeyEpoch = 65001
+
+	// Build a RekeyAck plaintext that will be "decrypted" by thTestCrypto.
+	ackPayload := make([]byte, service_packet.RekeyPacketLen)
+	service_packet.EncodeV1Header(service_packet.RekeyAck, ackPayload)
+
+	// Ciphertext: 2 bytes epoch + ack payload.
+	cipher := append([]byte{0, 0}, ackPayload...)
+	r := &thTestReader{reads: []func(p []byte) (int, error){
+		func(p []byte) (int, error) { copy(p, cipher); return len(cipher), nil },
+	}}
+	w := &thTestWriter{}
+	crypto := &thAckCrypto{}
+	h := NewTransportHandler(context.Background(), r, w, crypto, ctrl, nil)
+
+	err := h.HandleTransport()
+	if err == nil {
+		t.Fatal("expected epoch exhaustion error")
+	}
+	if !bytes.Contains([]byte(err.Error()), []byte("epoch exhausted")) {
+		t.Fatalf("expected 'epoch exhausted' in error, got: %v", err)
+	}
+}
+
+func TestHandleTransport_EncryptedSessionReset(t *testing.T) {
+	// When decrypted data is a SessionReset service packet.
+	resetPayload := make([]byte, service_packet.RekeyPacketLen)
+	service_packet.EncodeV1Header(service_packet.SessionReset, resetPayload)
+
+	// thTestCrypto returns the reset payload as decrypted output.
+	cipher := []byte{0, 0, 0xFF, 0x01, byte(service_packet.SessionReset)}
+	r := &thTestReader{reads: []func(p []byte) (int, error){
+		func(p []byte) (int, error) { copy(p, cipher); return len(cipher), nil },
+	}}
+	w := &thTestWriter{}
+	// Decrypt returns a 3-byte V1 SessionReset.
+	resetSP := []byte{0xFF, 0x01, byte(service_packet.SessionReset)}
+	crypto := &thTestCrypto{output: resetSP}
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	h := NewTransportHandler(context.Background(), r, w, crypto, ctrl, nil)
+
+	err := h.HandleTransport()
+	if err == nil {
+		t.Fatal("expected session reset error")
+	}
+	if !bytes.Contains([]byte(err.Error()), []byte("server requested")) {
+		t.Fatalf("expected session reset error, got: %v", err)
+	}
+}
+
+func TestHandleTransport_NilEgress_NoIdlePing(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// With nil egress, idle should not attempt to send Ping.
+	r := &thTestReader{reads: []func(p []byte) (int, error){
+		func(p []byte) (int, error) { return 0, os.ErrDeadlineExceeded },
+		func(p []byte) (int, error) { <-ctx.Done(); return 0, errors.New("stop") },
+	}}
+	w := &thTestWriter{}
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	h := NewTransportHandler(ctx, r, w, &thTestCrypto{}, ctrl, nil).(*TransportHandler)
+	// Set lastRecvAt so PingInterval is exceeded but not PingRestartTimeout.
+	h.lastRecvAt = time.Now().Add(-settings.PingInterval - time.Second)
+
+	done := make(chan error)
+	go func() { done <- h.HandleTransport() }()
+
+	time.Sleep(10 * time.Millisecond)
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("expected nil, got %v", err)
+	}
+	// No panic = success (nil egress handled gracefully).
+}
+
+func TestHandleTransport_DecryptErrorAfterCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errDec := errors.New("decrypt fail")
+	r := &thTestReader{reads: []func(p []byte) (int, error){
+		func(p []byte) (int, error) {
+			cancel() // cancel before decrypt processes
+			p[0] = 9
+			p[1] = 9
+			return 2, nil
+		},
+	}}
+	w := &thTestWriter{}
+	crypto := &thTestCrypto{err: errDec}
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	h := NewTransportHandler(ctx, r, w, crypto, ctrl, nil)
+
+	err := h.HandleTransport()
+	if err != nil {
+		t.Fatalf("expected nil after cancel during decrypt error, got %v", err)
+	}
+}
+
+func TestHandleTransport_WriteErrorAfterCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	encrypted := []byte{0, 42}
+	decrypted := []byte{100}
+	r := &thTestReader{reads: []func(p []byte) (int, error){
+		func(p []byte) (int, error) { copy(p, encrypted); return len(encrypted), nil },
+	}}
+	errWrite := errors.New("write fail")
+	w := &thTestWriter{err: errWrite}
+	crypto := &thTestCrypto{output: decrypted}
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+
+	h := NewTransportHandler(ctx, r, w, crypto, ctrl, nil).(*TransportHandler)
+	// Force context done before write error check.
+	cancel()
+
+	err := h.HandleTransport()
+	// With ctx cancelled, the write error should be suppressed.
+	if err != nil {
+		t.Fatalf("expected nil after cancel, got %v", err)
+	}
+}
