@@ -19,6 +19,7 @@ import (
 type controlPlaneHandler struct {
 	crypto handshake.Crypto
 	logger logging.Logger
+	ackBuf [service_packet.RekeyPacketLen + settings.TCPChacha20Overhead]byte
 }
 
 func newControlPlaneHandler(crypto handshake.Crypto, logger logging.Logger) controlPlaneHandler {
@@ -63,7 +64,7 @@ func (h *controlPlaneHandler) handleRekeyInit(
 
 	// 2. Build and send ACK. Because sendEpoch is still the old epoch, the ACK
 	//    is encrypted with the old key — the client can always decrypt it.
-	ackPayload := make([]byte, service_packet.RekeyPacketLen, service_packet.RekeyPacketLen+settings.TCPChacha20Overhead)
+	ackPayload := h.ackBuf[:service_packet.RekeyPacketLen]
 	copy(ackPayload[3:], serverPub)
 	sp, err := service_packet.EncodeV1Header(service_packet.RekeyAck, ackPayload)
 	if err != nil {

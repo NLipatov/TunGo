@@ -14,7 +14,9 @@ import (
 // controlPlaneHandler is a dataplane-adapter for inbound control-plane packets.
 // It delegates protocol logic to infrastructure/routing/controlplane.
 type controlPlaneHandler struct {
-	crypto handshake.Crypto
+	crypto  handshake.Crypto
+	ackBuf  [chacha20poly1305.NonceSize + service_packet.RekeyPacketLen + chacha20poly1305.Overhead]byte
+	pongBuf [chacha20poly1305.NonceSize + 3 + chacha20poly1305.Overhead]byte
 }
 
 func newServicePacketHandler(
@@ -44,8 +46,7 @@ func (r *controlPlaneHandler) Handle(
 }
 
 func (r *controlPlaneHandler) handlePing(egress connection.Egress) error {
-	buf := make([]byte, chacha20poly1305.NonceSize+3,
-		chacha20poly1305.NonceSize+3+chacha20poly1305.Overhead)
+	buf := r.pongBuf[:chacha20poly1305.NonceSize+3]
 	payload := buf[chacha20poly1305.NonceSize:]
 	if _, err := service_packet.EncodeV1Header(service_packet.Pong, payload); err != nil {
 		return nil
@@ -70,8 +71,7 @@ func (r *controlPlaneHandler) handleRekeyInit(
 		return nil
 	}
 	// Only send ACK after successful rekey installation.
-	ackBuf := make([]byte, chacha20poly1305.NonceSize+service_packet.RekeyPacketLen,
-		chacha20poly1305.NonceSize+service_packet.RekeyPacketLen+chacha20poly1305.Overhead)
+	ackBuf := r.ackBuf[:chacha20poly1305.NonceSize+service_packet.RekeyPacketLen]
 	payload := ackBuf[chacha20poly1305.NonceSize:]
 	copy(payload[3:], serverPub)
 	if _, err = service_packet.EncodeV1Header(service_packet.RekeyAck, payload); err != nil {
