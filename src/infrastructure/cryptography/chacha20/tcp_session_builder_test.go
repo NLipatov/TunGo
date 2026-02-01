@@ -7,6 +7,7 @@ import (
 	"net"
 	"testing"
 	"tungo/application/network/connection"
+	"tungo/infrastructure/cryptography/chacha20/rekey"
 	"tungo/infrastructure/settings"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -96,12 +97,18 @@ func TestTcpSessionBuilder_FromHandshake_Server_Success(t *testing.T) {
 		server: keyGen.validKey(),
 		client: keyGen.validKey(),
 	}
-	svc, err := b.FromHandshake(hs, true)
+	svc, ctrl, err := b.FromHandshake(hs, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if svc == nil {
-		t.Fatalf("expected non-nil service")
+		t.Fatalf("expected non-nil service_packet")
+	}
+	if ctrl == nil {
+		t.Fatalf("expected controller for TCP")
+	}
+	if ctrl.State() != rekey.StateStable {
+		t.Fatalf("expected controller in Stable state, got %v", ctrl.State())
 	}
 }
 
@@ -113,12 +120,15 @@ func TestTcpSessionBuilder_FromHandshake_Client_Success(t *testing.T) {
 		server: keyGen.validKey(),
 		client: keyGen.validKey(),
 	}
-	svc, err := b.FromHandshake(hs, false)
+	svc, ctrl, err := b.FromHandshake(hs, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if svc == nil {
-		t.Fatalf("expected non-nil service")
+		t.Fatalf("expected non-nil service_packet")
+	}
+	if ctrl == nil {
+		t.Fatalf("expected controller for TCP")
 	}
 }
 
@@ -130,12 +140,15 @@ func TestTcpSessionBuilder_FromHandshake_Server_InvalidServerKey(t *testing.T) {
 		server: keyGen.invalidKey(),
 		client: keyGen.validKey(),
 	}
-	svc, err := b.FromHandshake(hs, true)
+	svc, ctrl, err := b.FromHandshake(hs, true)
 	if err == nil {
 		t.Fatalf("expected error, got nil")
 	}
 	if svc != nil {
-		t.Fatalf("expected nil service")
+		t.Fatalf("expected nil service_packet")
+	}
+	if ctrl != nil {
+		t.Fatalf("expected nil controller")
 	}
 }
 
@@ -147,12 +160,15 @@ func TestTcpSessionBuilder_FromHandshake_Server_InvalidClientKey(t *testing.T) {
 		server: keyGen.validKey(),
 		client: keyGen.invalidKey(),
 	}
-	svc, err := b.FromHandshake(hs, true)
+	svc, ctrl, err := b.FromHandshake(hs, true)
 	if err == nil {
 		t.Fatalf("expected error, got nil")
 	}
 	if svc != nil {
-		t.Fatalf("expected nil service")
+		t.Fatalf("expected nil service_packet")
+	}
+	if ctrl != nil {
+		t.Fatalf("expected nil controller")
 	}
 }
 
@@ -164,12 +180,15 @@ func TestTcpSessionBuilder_FromHandshake_Client_InvalidClientKey(t *testing.T) {
 		server: keyGen.validKey(),
 		client: keyGen.invalidKey(),
 	}
-	svc, err := b.FromHandshake(hs, false)
+	svc, ctrl, err := b.FromHandshake(hs, false)
 	if err == nil {
 		t.Fatalf("expected error, got nil")
 	}
 	if svc != nil {
-		t.Fatalf("expected nil service")
+		t.Fatalf("expected nil service_packet")
+	}
+	if ctrl != nil {
+		t.Fatalf("expected nil controller")
 	}
 }
 
@@ -181,11 +200,14 @@ func TestTcpSessionBuilder_FromHandshake_Client_InvalidServerKey(t *testing.T) {
 		server: keyGen.invalidKey(),
 		client: keyGen.validKey(),
 	}
-	svc, err := b.FromHandshake(hs, false)
+	svc, ctrl, err := b.FromHandshake(hs, false)
 	if err == nil {
 		t.Fatalf("expected error, got nil")
 	}
 	if svc != nil {
-		t.Fatalf("expected nil service")
+		t.Fatalf("expected nil service_packet")
+	}
+	if ctrl != nil {
+		t.Fatalf("expected nil controller")
 	}
 }

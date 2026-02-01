@@ -6,10 +6,11 @@ import (
 	"testing"
 )
 
-func makeNonce(high uint32, low uint64) [12]byte {
+func makeNonce(high uint16, low uint64) [12]byte {
 	var nonce [12]byte
 	binary.BigEndian.PutUint64(nonce[0:8], low)
-	binary.BigEndian.PutUint32(nonce[8:12], high)
+	binary.BigEndian.PutUint16(nonce[8:10], high)
+	// epoch at [10:12] defaults to 0
 	return nonce
 }
 

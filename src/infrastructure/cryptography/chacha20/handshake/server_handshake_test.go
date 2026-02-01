@@ -67,6 +67,9 @@ func (s *stubCrypto) GenerateChaCha20KeysServerside(_, _ []byte, _ Hello) (sessi
 func (s *stubCrypto) GenerateChaCha20KeysClientside(_, _ []byte, _ Hello) ([]byte, []byte, [32]byte, error) {
 	panic("not implemented")
 }
+func (s *stubCrypto) DeriveKey(_ []byte, _ []byte, _ []byte) ([]byte, error) {
+	panic("not implemented")
+}
 
 func (s *stubCrypto) Sign(_ ed25519.PrivateKey, _ []byte) []byte {
 	return s.signature

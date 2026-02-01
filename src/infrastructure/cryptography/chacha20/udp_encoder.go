@@ -17,15 +17,17 @@ type (
 )
 
 func (p *DefaultUDPEncoder) Decode(data []byte) (*UDPPacket, error) {
-	low := binary.BigEndian.Uint64(data[:8])
-	high := binary.BigEndian.Uint32(data[8:12])
+	counterLow := binary.BigEndian.Uint64(data[0:8])
+	counterHigh := binary.BigEndian.Uint16(data[8:10])
+	epoch := Epoch(binary.BigEndian.Uint16(data[10:12]))
 	payload := data[12:]
 
 	return &UDPPacket{
 		Payload: payload,
 		Nonce: &Nonce{
-			high: high,
-			low:  low,
+			epoch:       epoch,
+			counterHigh: counterHigh,
+			counterLow:  counterLow,
 		},
 	}, nil
 }

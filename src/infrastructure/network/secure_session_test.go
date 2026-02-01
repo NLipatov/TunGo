@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 	"tungo/application/network/connection"
+	"tungo/infrastructure/cryptography/chacha20/rekey"
 )
 
 type stubAdapter struct{}
@@ -19,23 +20,23 @@ func (s *stubCrypto) Decrypt(p []byte) ([]byte, error) { return p, nil }
 
 type secretErr struct{}
 
-func (s *secretErr) Exchange(_ connection.Transport) (connection.Crypto, error) {
-	return nil, errors.New("exchange failed")
+func (s *secretErr) Exchange(_ connection.Transport) (connection.Crypto, *rekey.StateMachine, error) {
+	return nil, nil, errors.New("exchange failed")
 }
 
 type secretOK struct {
 	svc connection.Crypto
 }
 
-func (s *secretOK) Exchange(_ connection.Transport) (connection.Crypto, error) {
-	return s.svc, nil
+func (s *secretOK) Exchange(_ connection.Transport) (connection.Crypto, *rekey.StateMachine, error) {
+	return s.svc, nil, nil
 }
 
 func TestDefaultSecureSession_Establish_SecretError(t *testing.T) {
 	adapter := &stubAdapter{}
 	s := NewDefaultSecureSession(adapter, &secretErr{})
 
-	gotAdapter, gotSvc, err := s.Establish()
+	gotAdapter, gotSvc, _, err := s.Establish()
 	if err == nil || err.Error() != "exchange failed" {
 		t.Fatalf("want error 'exchange failed', got %v", err)
 	}
@@ -43,7 +44,7 @@ func TestDefaultSecureSession_Establish_SecretError(t *testing.T) {
 		t.Errorf("want transport=nil on error, got %v", gotAdapter)
 	}
 	if gotSvc != nil {
-		t.Errorf("want service=nil on error, got %v", gotSvc)
+		t.Errorf("want service_packet=nil on error, got %v", gotSvc)
 	}
 }
 
@@ -52,7 +53,7 @@ func TestDefaultSecureSession_Establish_Success(t *testing.T) {
 	svc := &stubCrypto{}
 	s := NewDefaultSecureSession(adapter, &secretOK{svc: svc})
 
-	gotAdapter, gotSvc, err := s.Establish()
+	gotAdapter, gotSvc, _, err := s.Establish()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -60,6 +61,6 @@ func TestDefaultSecureSession_Establish_Success(t *testing.T) {
 		t.Errorf("want transport=%v, got %v", adapter, gotAdapter)
 	}
 	if gotSvc != svc {
-		t.Errorf("want service=%v, got %v", svc, gotSvc)
+		t.Errorf("want service_packet=%v, got %v", svc, gotSvc)
 	}
 }

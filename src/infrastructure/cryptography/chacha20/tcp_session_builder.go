@@ -2,6 +2,7 @@ package chacha20
 
 import (
 	"tungo/application/network/connection"
+	"tungo/infrastructure/cryptography/chacha20/rekey"
 )
 
 type TcpSessionBuilder struct {
@@ -16,21 +17,15 @@ func NewTcpSessionBuilder(aeadBuilder connection.AEADBuilder) connection.CryptoF
 
 func (t TcpSessionBuilder) FromHandshake(handshake connection.Handshake,
 	isServer bool,
-) (connection.Crypto, error) {
+) (connection.Crypto, *rekey.StateMachine, error) {
 	sendCipher, recvCipher, err := t.aeadBuilder.FromHandshake(handshake, isServer)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return &DefaultTcpSession{
-		SessionId:          handshake.Id(),
-		sendCipher:         sendCipher,
-		recvCipher:         recvCipher,
-		RecvNonce:          NewNonce(),
-		SendNonce:          NewNonce(),
-		isServer:           isServer,
-		nonceValidator:     NewStrictCounter(),
-		encryptionNonceBuf: [12]byte{},
-		decryptionNonceBuf: [12]byte{},
-	}, nil
+	core := NewTcpCrypto(handshake.Id(), sendCipher, recvCipher, isServer)
+	// Directional raw keys live in controller for rekey derivation.
+	c2s := handshake.KeyClientToServer()
+	s2c := handshake.KeyServerToClient()
+	return core, rekey.NewStateMachine(core, c2s, s2c, isServer), nil
 }

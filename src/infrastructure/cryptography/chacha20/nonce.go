@@ -5,34 +5,45 @@ import (
 	"fmt"
 )
 
-// Nonce is not concurrent-safe by design as it must be used from a single goroutine.
+// NonceEpochOffset is the byte offset of the epoch field within the 12-byte nonce.
+const NonceEpochOffset = 10
+
+// Nonce represents an epoch-suffixed counter:
+// | 0..7 counterLow | 8..9 counterHigh | 10..11 epoch |
+// At epoch=0 the wire format is byte-identical to the pre-epoch nonce layout.
+// Epoch is immutable per session. Counter is per-session monotonic.
+// Not concurrency-safe by design; each session owns a single instance.
 type Nonce struct {
-	low  uint64
-	high uint32
+	epoch       Epoch
+	counterLow  uint64
+	counterHigh uint16
 }
 
-func NewNonce() *Nonce {
-	return &Nonce{low: 0, high: 0}
+func NewNonce(epoch Epoch) *Nonce {
+	return &Nonce{
+		epoch: epoch,
+	}
 }
 
 func (n *Nonce) incrementNonce() error {
-	// Ensure nonce does not overflow
-	if n.high == ^uint32(0) && n.low == ^uint64(0) {
+	// Ensure counter does not overflow.
+	if n.counterHigh == ^uint16(0) && n.counterLow == ^uint64(0) {
 		return fmt.Errorf("nonce overflow: maximum number of messages reached")
 	}
 
-	if n.low == ^uint64(0) {
-		n.high++
-		n.low = 0
+	if n.counterLow == ^uint64(0) {
+		n.counterHigh++
+		n.counterLow = 0
 	} else {
-		n.low++
+		n.counterLow++
 	}
 
 	return nil
 }
 
 func (n *Nonce) Encode(buffer []byte) []byte {
-	binary.BigEndian.PutUint64(buffer[:8], n.low)
-	binary.BigEndian.PutUint32(buffer[8:], n.high)
+	binary.BigEndian.PutUint64(buffer[0:8], n.counterLow)
+	binary.BigEndian.PutUint16(buffer[8:10], n.counterHigh)
+	binary.BigEndian.PutUint16(buffer[10:12], uint16(n.epoch))
 	return buffer
 }

@@ -2,9 +2,10 @@ package tun_server
 
 import (
 	"net/netip"
-	"reflect"
 	"testing"
 	"tungo/application/network/connection"
+	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/tunnel/session"
 )
 
 type sessionManagerFactoryDummySession struct {
@@ -18,15 +19,15 @@ func (d sessionManagerFactoryDummySession) InternalAddr() netip.Addr {
 func (d sessionManagerFactoryDummySession) ExternalAddrPort() netip.AddrPort {
 	return d.externalIP
 }
-func (d sessionManagerFactoryDummySession) Transport() connection.Transport {
+func (d sessionManagerFactoryDummySession) Crypto() connection.Crypto {
 	return nil
 }
-func (d sessionManagerFactoryDummySession) Crypto() connection.Crypto {
+func (d sessionManagerFactoryDummySession) RekeyController() rekey.FSM {
 	return nil
 }
 
 func TestSessionManagerFactory_CreateManager(t *testing.T) {
-	f := newSessionManagerFactory[sessionManagerFactoryDummySession]()
+	f := newSessionManagerFactory()
 	mgr := f.createManager()
 
 	in, _ := netip.ParseAddr("10.0.0.1")
@@ -36,32 +37,33 @@ func TestSessionManagerFactory_CreateManager(t *testing.T) {
 		internalIP: in,
 		externalIP: ex,
 	}
+	peer := session.NewPeer(sess, nil)
 
-	mgr.Add(sess)
+	mgr.Add(peer)
 	gotByInt, err := mgr.GetByInternalAddrPort(sess.InternalAddr())
 	if err != nil {
 		t.Fatalf("GetByInternalAddrPort: unexpected error: %v", err)
 	}
-	if !reflect.DeepEqual(gotByInt.InternalAddr(), sess.InternalAddr()) {
-		t.Errorf("InternalAddr: got %v, want %v", gotByInt.InternalAddr(), sess.InternalAddr())
+	if gotByInt != peer {
+		t.Errorf("GetByInternalAddrPort: got different peer")
 	}
 
 	gotByExt, err := mgr.GetByExternalAddrPort(sess.ExternalAddrPort())
 	if err != nil {
 		t.Fatalf("GetByExternalAddrPort: unexpected error: %v", err)
 	}
-	if !reflect.DeepEqual(gotByExt.ExternalAddrPort(), sess.ExternalAddrPort()) {
-		t.Errorf("ExternalAddrPort: got %v, want %v", gotByExt.ExternalAddrPort(), sess.ExternalAddrPort())
+	if gotByExt != peer {
+		t.Errorf("GetByExternalAddrPort: got different peer")
 	}
 
-	mgr.Delete(sess)
+	mgr.Delete(peer)
 	if _, err := mgr.GetByInternalAddrPort(sess.InternalAddr()); err == nil {
 		t.Error("after Delete, GetByInternalAddrPort should return error, got nil")
 	}
 }
 
 func TestSessionManagerFactory_CreateConcurrentManager(t *testing.T) {
-	f := newSessionManagerFactory[sessionManagerFactoryDummySession]()
+	f := newSessionManagerFactory()
 	cmgr := f.createConcurrentManager()
 
 	in, _ := netip.ParseAddr("172.16.0.2")
@@ -71,26 +73,27 @@ func TestSessionManagerFactory_CreateConcurrentManager(t *testing.T) {
 		internalIP: in,
 		externalIP: ex,
 	}
+	peer := session.NewPeer(sess, nil)
 
-	cmgr.Add(sess)
+	cmgr.Add(peer)
 
 	gotByInt, err := cmgr.GetByInternalAddrPort(sess.InternalAddr())
 	if err != nil {
 		t.Fatalf("concurrent GetByInternalAddrPort: unexpected error: %v", err)
 	}
-	if !reflect.DeepEqual(gotByInt.InternalAddr(), sess.InternalAddr()) {
-		t.Errorf("concurrent InternalAddr: got %v, want %v", gotByInt.InternalAddr(), sess.InternalAddr())
+	if gotByInt != peer {
+		t.Errorf("concurrent GetByInternalAddrPort: got different peer")
 	}
 
 	gotByExt, err := cmgr.GetByExternalAddrPort(sess.ExternalAddrPort())
 	if err != nil {
 		t.Fatalf("concurrent GetByExternalAddrPort: unexpected error: %v", err)
 	}
-	if !reflect.DeepEqual(gotByExt.ExternalAddrPort(), sess.ExternalAddrPort()) {
-		t.Errorf("concurrent ExternalAddrPort: got %v, want %v", gotByExt.ExternalAddrPort(), sess.ExternalAddrPort())
+	if gotByExt != peer {
+		t.Errorf("concurrent GetByExternalAddrPort: got different peer")
 	}
 
-	cmgr.Delete(sess)
+	cmgr.Delete(peer)
 	if _, err := cmgr.GetByInternalAddrPort(sess.InternalAddr()); err == nil {
 		t.Error("after concurrent Delete, GetByInternalAddrPort should return error, got nil")
 	}

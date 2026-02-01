@@ -14,10 +14,10 @@ func TestNewUdpSession_KeyLengthError(t *testing.T) {
 	short := []byte("short")
 	ok := randKey()
 
-	if _, err := NewUdpSession(id, short, ok, false); err == nil {
+	if _, err := NewUdpSession(id, short, ok, false, 0); err == nil {
 		t.Fatal("expected error for invalid sendKey length")
 	}
-	if _, err := NewUdpSession(id, ok, short, false); err == nil {
+	if _, err := NewUdpSession(id, ok, short, false, 0); err == nil {
 		t.Fatal("expected error for invalid recvKey length")
 	}
 }
@@ -25,7 +25,7 @@ func TestNewUdpSession_KeyLengthError(t *testing.T) {
 func TestUdpEncrypt_InPlaceCapacityError(t *testing.T) {
 	id := randID()
 	key := randKey()
-	sess, err := NewUdpSession(id, key, key, false)
+	sess, err := NewUdpSession(id, key, key, false, 0)
 	if err != nil {
 		t.Fatalf("NewUdpSession: %v", err)
 	}
@@ -40,7 +40,7 @@ func TestUdpEncrypt_InPlaceCapacityError(t *testing.T) {
 func TestUdpEncrypt_BufferTooShort(t *testing.T) {
 	id := randID()
 	key := randKey()
-	sess, err := NewUdpSession(id, key, key, false)
+	sess, err := NewUdpSession(id, key, key, false, 0)
 	if err != nil {
 		t.Fatalf("NewUdpSession: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestUdpEncrypt_BufferTooShort(t *testing.T) {
 func TestUdpEncrypt_Success_LengthAndLayout(t *testing.T) {
 	id := randID()
 	key := randKey()
-	sess, err := NewUdpSession(id, key, key, false)
+	sess, err := NewUdpSession(id, key, key, false, 0)
 	if err != nil {
 		t.Fatalf("NewUdpSession: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestUdpEncrypt_Success_LengthAndLayout(t *testing.T) {
 func TestUdpDecrypt_TooShort(t *testing.T) {
 	id := randID()
 	key := randKey()
-	sess, err := NewUdpSession(id, key, key, true)
+	sess, err := NewUdpSession(id, key, key, true, 0)
 	if err != nil {
 		t.Fatalf("NewUdpSession: %v", err)
 	}
@@ -96,11 +96,11 @@ func TestUdp_Decrypt_OpenFail_AADMismatch(t *testing.T) {
 	idServer := randID() // different → AAD mismatch
 	key := randKey()
 
-	cli, err := NewUdpSession(idClient, key, key, false)
+	cli, err := NewUdpSession(idClient, key, key, false, 0)
 	if err != nil {
 		t.Fatalf("client: %v", err)
 	}
-	srv, err := NewUdpSession(idServer, key, key, true)
+	srv, err := NewUdpSession(idServer, key, key, true, 0)
 	if err != nil {
 		t.Fatalf("server: %v", err)
 	}
@@ -123,11 +123,11 @@ func TestUdpDecrypt_ReplayRejected_ByNonceValidator(t *testing.T) {
 	key := randKey()
 
 	// client (encrypt) → server (decrypt)
-	cli, err := NewUdpSession(id, key, key, false)
+	cli, err := NewUdpSession(id, key, key, false, 0)
 	if err != nil {
 		t.Fatalf("client: %v", err)
 	}
-	srv, err := NewUdpSession(id, key, key, true)
+	srv, err := NewUdpSession(id, key, key, true, 0)
 	if err != nil {
 		t.Fatalf("server: %v", err)
 	}
@@ -155,11 +155,11 @@ func TestUdp_RoundTrip_OK(t *testing.T) {
 	id := randID()
 	key := randKey()
 
-	cli, err := NewUdpSession(id, key, key, false)
+	cli, err := NewUdpSession(id, key, key, false, 0)
 	if err != nil {
 		t.Fatalf("client: %v", err)
 	}
-	srv, err := NewUdpSession(id, key, key, true)
+	srv, err := NewUdpSession(id, key, key, true, 0)
 	if err != nil {
 		t.Fatalf("server: %v", err)
 	}
@@ -232,14 +232,14 @@ func TestUdp_CreateAAD_BothDirections(t *testing.T) {
 func TestUdpEncrypt_ErrOnNonceOverflow(t *testing.T) {
 	id := randID()
 	key := randKey()
-	sess, err := NewUdpSession(id, key, key, false)
+	sess, err := NewUdpSession(id, key, key, false, 0)
 	if err != nil {
 		t.Fatalf("NewUdpSession: %v", err)
 	}
 
 	// Force overflow: high=max, low=max ⇒ incrementNonce() must return an error.
-	sess.nonce.high = ^uint32(0)
-	sess.nonce.low = ^uint64(0)
+	sess.nonce.counterHigh = ^uint16(0)
+	sess.nonce.counterLow = ^uint64(0)
 
 	// Must satisfy pre-checks: len >= 12 and cap >= len + Overhead.
 	buf := make([]byte, chacha20poly1305.NonceSize, chacha20poly1305.NonceSize+chacha20poly1305.Overhead)
@@ -256,15 +256,15 @@ func TestUdpEncrypt_ErrOnNonceOverflow(t *testing.T) {
 func TestUdpEncrypt_NonceRollover_WritesCorrectNonce(t *testing.T) {
 	id := randID()
 	key := randKey()
-	sess, err := NewUdpSession(id, key, key, false)
+	sess, err := NewUdpSession(id, key, key, false, 0)
 	if err != nil {
 		t.Fatalf("NewUdpSession: %v", err)
 	}
 
 	// Set state to "just before rollover".
-	const startHigh = uint32(123)
-	sess.nonce.high = startHigh
-	sess.nonce.low = ^uint64(0)
+	const startHigh = uint16(123)
+	sess.nonce.counterHigh = startHigh
+	sess.nonce.counterLow = ^uint64(0)
 
 	// Empty payload (only 12-byte nonce header). Cap allows in-place tag append.
 	buf := make([]byte, chacha20poly1305.NonceSize, chacha20poly1305.NonceSize+chacha20poly1305.Overhead)
@@ -274,9 +274,9 @@ func TestUdpEncrypt_NonceRollover_WritesCorrectNonce(t *testing.T) {
 		t.Fatalf("Encrypt (rollover): %v", err)
 	}
 
-	// Decode nonce: [0..7]=low (uint64 BE), [8..11]=high (uint32 BE).
-	encLow := binary.BigEndian.Uint64(out[:8])
-	encHigh := binary.BigEndian.Uint32(out[8:12])
+	// Decode nonce: [0..7]=low, [8..9]=high, [10..11]=epoch.
+	encLow := binary.BigEndian.Uint64(out[0:8])
+	encHigh := binary.BigEndian.Uint16(out[8:10])
 
 	if encLow != 0 {
 		t.Fatalf("nonce.low after rollover = %d; want 0", encLow)

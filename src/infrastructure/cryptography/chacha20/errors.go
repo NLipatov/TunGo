@@ -5,3 +5,4 @@ import (
 )
 
 var ErrNonUniqueNonce = errors.New("critical decryption error: nonce was not unique")
+var ErrUnknownEpoch = errors.New("unknown or expired epoch")

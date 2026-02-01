@@ -12,6 +12,7 @@ import (
 	"tungo/application/network/routing"
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/configuration/client"
+	"tungo/infrastructure/cryptography/chacha20/rekey"
 	clientRunners "tungo/presentation/runners/client"
 	"unsafe"
 )
@@ -63,15 +64,15 @@ func (d *mockTunManager) DisposeDevices() error {
 type mockConnectionFactory struct{}
 
 func (d *mockConnectionFactory) EstablishConnection(_ context.Context,
-) (connection.Transport, connection.Crypto, error) {
-	return nil, nil, nil
+) (connection.Transport, connection.Crypto, *rekey.StateMachine, error) {
+	return nil, nil, nil, nil
 }
 
 // mockWorkerFactory implements application.ClientWorkerFactory.
 type mockWorkerFactory struct{}
 
 func (d *mockWorkerFactory) CreateWorker(
-	_ context.Context, _ connection.Transport, _ io.ReadWriteCloser, _ connection.Crypto,
+	_ context.Context, _ connection.Transport, _ io.ReadWriteCloser, _ connection.Crypto, _ *rekey.StateMachine,
 ) (routing.Worker, error) {
 	return nil, nil
 }

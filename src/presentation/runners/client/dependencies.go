@@ -6,7 +6,7 @@ import (
 	"tungo/application/network/routing/tun"
 	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/PAL/tun_client"
-	"tungo/infrastructure/routing/client_routing/client_factory"
+	"tungo/infrastructure/tunnel/sessionplane/client_factory"
 )
 
 type AppDependencies interface {

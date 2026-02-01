@@ -10,18 +10,18 @@ import (
 type (
 	DefaultUdpSession struct {
 		SessionId        [32]byte
-		encoder          DefaultUDPEncoder
 		sendCipher       cipher.AEAD
 		recvCipher       cipher.AEAD
 		nonce            *Nonce
 		isServer         bool
 		nonceValidator   *Sliding64
+		epoch            Epoch
 		encryptionAadBuf [60]byte //32 bytes for sessionId, 16 bytes for direction, 12 bytes for nonce. 60 bytes total.
 		decryptionAadBuf [60]byte //32 bytes for sessionId, 16 bytes for direction, 12 bytes for nonce. 60 bytes total.
 	}
 )
 
-func NewUdpSession(id [32]byte, sendKey, recvKey []byte, isServer bool) (*DefaultUdpSession, error) {
+func NewUdpSession(id [32]byte, sendKey, recvKey []byte, isServer bool, epoch Epoch) (*DefaultUdpSession, error) {
 	sendCipher, err := chacha20poly1305.New(sendKey)
 	if err != nil {
 		return nil, err
@@ -32,15 +32,19 @@ func NewUdpSession(id [32]byte, sendKey, recvKey []byte, isServer bool) (*Defaul
 		return nil, err
 	}
 
+	return NewUdpSessionWithCiphers(id, sendCipher, recvCipher, isServer, epoch), nil
+}
+
+func NewUdpSessionWithCiphers(id [32]byte, sendCipher, recvCipher cipher.AEAD, isServer bool, epoch Epoch) *DefaultUdpSession {
 	return &DefaultUdpSession{
 		SessionId:      id,
 		sendCipher:     sendCipher,
 		recvCipher:     recvCipher,
-		nonce:          NewNonce(),
+		nonce:          NewNonce(epoch),
 		isServer:       isServer,
+		epoch:          epoch,
 		nonceValidator: NewSliding64(),
-		encoder:        DefaultUDPEncoder{},
-	}, nil
+	}
 }
 
 func (s *DefaultUdpSession) Encrypt(plaintext []byte) ([]byte, error) {
@@ -98,6 +102,10 @@ func (s *DefaultUdpSession) Decrypt(ciphertext []byte) ([]byte, error) {
 		return nil, fmt.Errorf("failed to decrypt: %w", err)
 	}
 	return pt, nil
+}
+
+func (s *DefaultUdpSession) Epoch() Epoch {
+	return s.epoch
 }
 
 func (s *DefaultUdpSession) CreateAAD(isServerToClient bool, nonce, aad []byte) []byte {
