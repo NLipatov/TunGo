@@ -77,18 +77,22 @@ func (m *RouterFactoryClientWorkerFactoryMock) CreateWorker(
 }
 
 // RouterFactoryTransportMock is a simple transport mock implementing connection.Transport.
-type RouterFactoryTransportMock struct{}
+type RouterFactoryTransportMock struct {
+	Closed bool
+}
 
 func (r *RouterFactoryTransportMock) Write(b []byte) (int, error) { return len(b), nil }
 func (r *RouterFactoryTransportMock) Read(_ []byte) (int, error)  { return 0, io.EOF }
-func (r *RouterFactoryTransportMock) Close() error                { return nil }
+func (r *RouterFactoryTransportMock) Close() error                { r.Closed = true; return nil }
 
 // RouterFactoryDeviceMock is a simple device mock implementing tun.Device.
-type RouterFactoryDeviceMock struct{}
+type RouterFactoryDeviceMock struct {
+	Closed bool
+}
 
 func (d *RouterFactoryDeviceMock) Read(_ []byte) (int, error)  { return 0, io.EOF }
 func (d *RouterFactoryDeviceMock) Write(b []byte) (int, error) { return len(b), nil }
-func (d *RouterFactoryDeviceMock) Close() error                { return nil }
+func (d *RouterFactoryDeviceMock) Close() error                { d.Closed = true; return nil }
 
 // RouterFactoryWorkerMock implements application.Worker (HandleTun, HandleTransport).
 type RouterFactoryWorkerMock struct {
@@ -161,6 +165,9 @@ func TestRouterFactory_CreateRouter_CreateDeviceError(t *testing.T) {
 	if !tunManager.Called {
 		t.Fatalf("expected CreateDevice to be called")
 	}
+	if !connMock.Closed {
+		t.Fatalf("expected connection to be closed on CreateDevice failure")
+	}
 }
 
 func TestRouterFactory_CreateRouter_CreateWorkerError(t *testing.T) {
@@ -181,6 +188,12 @@ func TestRouterFactory_CreateRouter_CreateWorkerError(t *testing.T) {
 	}
 	if !workerFactory.Called {
 		t.Fatalf("expected CreateWorker to be called")
+	}
+	if !connMock.Closed {
+		t.Fatalf("expected connection to be closed on CreateWorker failure")
+	}
+	if !deviceMock.Closed {
+		t.Fatalf("expected device to be closed on CreateWorker failure")
 	}
 }
 

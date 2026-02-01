@@ -29,12 +29,15 @@ func (u *RouterFactory) CreateRouter(
 
 	device, deviceErr := tunManager.CreateDevice()
 	if deviceErr != nil {
+		_ = conn.Close()
 		log.Printf("failed to create TUN device: %s", deviceErr)
 		return nil, nil, nil, deviceErr
 	}
 
 	worker, workerErr := workerFactory.CreateWorker(ctx, conn, device, cryptographyService, controller)
 	if workerErr != nil {
+		_ = device.Close()
+		_ = conn.Close()
 		return nil, nil, nil, workerErr
 	}
 
