@@ -404,7 +404,17 @@ jobs:
       - name: Import GPG key
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
+          mkdir -p ~/.gnupg
+          chmod 700 ~/.gnupg
+          # Ensure GPG can run non-interactively in GitHub Actions.
+          # debsign/debuild use gpg under the hood; without loopback pinentry it fails with
+          # "Inappropriate ioctl for device" when a passphrase is required.
+          echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
+          echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
+          gpgconf --kill gpg-agent || true
+
           echo "$GPG_PRIVATE_KEY" | gpg --batch --import
           echo -e "5\ny\n" | gpg --batch --command-fd 0 --edit-key 6stringsohei@gmail.com trust
 
@@ -444,8 +454,17 @@ jobs:
 
       - name: Build source package
         # -d: do not check build deps on the GitHub runner; Launchpad will enforce them.
-        run: debuild -S -sa -k6stringsohei@gmail.com -d
+        # Build unsigned; we sign explicitly in the next step (non-interactive loopback).
+        run: debuild -S -sa -us -uc -d
         working-directory: tungo-${{ env.DEB_VERSION }}
 
+      - name: Sign source package
+        env:
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          debsign -k6stringsohei@gmail.com \
+            -p"gpg --batch --yes --pinentry-mode loopback --passphrase ${GPG_PASSPHRASE}" \
+            tungo_*_source.changes
+
       - name: Upload to PPA
-        run: dput ppa:nlipatov/tungo tungo_*.changes
+        run: dput ppa:nlipatov/tungo tungo_*_source.changes
