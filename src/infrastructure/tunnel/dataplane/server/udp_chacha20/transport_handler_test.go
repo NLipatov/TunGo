@@ -1267,3 +1267,25 @@ func TestHandleTransport_NilRegistrar_NoUnknownPanic(t *testing.T) {
 	<-done
 	// No panic = success.
 }
+
+func TestSendSessionReset_WritesToUDP(t *testing.T) {
+	logger := &TransportHandlerFakeLogger{}
+	conn := &TransportHandlerFakeUdpListener{}
+	h := &TransportHandler{
+		logger:       logger,
+		listenerConn: conn,
+	}
+	addr := netip.MustParseAddrPort("192.168.1.1:12345")
+	h.sendSessionReset(addr)
+
+	if len(conn.writes) != 1 {
+		t.Fatalf("expected 1 write, got %d", len(conn.writes))
+	}
+	w := conn.writes[0]
+	if w.addr != addr {
+		t.Fatalf("expected write to %v, got %v", addr, w.addr)
+	}
+	if len(w.data) < 1 || w.data[0] != byte(service_packet.SessionReset) {
+		t.Fatalf("expected SessionReset byte, got %v", w.data)
+	}
+}

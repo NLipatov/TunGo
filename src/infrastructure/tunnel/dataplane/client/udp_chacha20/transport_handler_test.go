@@ -735,6 +735,37 @@ func TestHandleTransport_NilRekeyController(t *testing.T) {
 	}
 }
 
+func TestHandleTransport_EncryptedPong_ConsumedSilently(t *testing.T) {
+	// When decrypted data is a Pong service packet, handleControlplane should
+	// return handled=true, err=nil (default case), and no TUN write occurs.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	pongSP := []byte{0xFF, 0x01, byte(service_packet.Pong)}
+	cipher := append([]byte{0, 0}, pongSP...) // epoch prefix + payload
+	r := &thTestReader{reads: []func(p []byte) (int, error){
+		func(p []byte) (int, error) { copy(p, cipher); return len(cipher), nil },
+		func(p []byte) (int, error) { <-ctx.Done(); return 0, errors.New("stop") },
+	}}
+	w := &thTestWriter{}
+	crypto := &thTestCrypto{output: pongSP}
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	h := NewTransportHandler(ctx, r, w, crypto, ctrl, nil)
+
+	done := make(chan error)
+	go func() { done <- h.HandleTransport() }()
+
+	time.Sleep(10 * time.Millisecond)
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("expected nil, got %v", err)
+	}
+	// Pong should be consumed; no TUN write.
+	if len(w.data) != 0 {
+		t.Fatalf("expected no TUN writes for Pong, got %d", len(w.data))
+	}
+}
+
 func TestHandleTransport_WriteErrorAfterCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

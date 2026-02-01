@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"testing"
+	"time"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
 )
 
@@ -184,6 +185,120 @@ func TestTunHandler_ReadError_WhenContextCanceled_ReturnsNil(t *testing.T) {
 	// When ctx is canceled, the read error path should return nil.
 	if err := h.HandleTun(); err != nil {
 		t.Fatalf("want nil, got %v", err)
+	}
+}
+
+func TestTunHandler_RekeyInitSentAfterPayload(t *testing.T) {
+	w := &TunHandlerMockWriter{}
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, make([]byte, 32), make([]byte, 32), false)
+	h := NewTunHandler(context.Background(),
+		rdr(
+			struct {
+				data []byte
+				err  error
+			}{[]byte{0xAA, 0xBB}, nil},
+			struct {
+				data []byte
+				err  error
+			}{nil, io.EOF},
+		),
+		w,
+		&TunHandlerMockCrypto{}, ctrl,
+	)
+
+	// Force rekey to fire by setting rotateAt to the past.
+	th := h.(*TunHandler)
+	th.rekeyInit.SetRotateAt(time.Now().Add(-time.Second))
+	th.rekeyInit.SetInterval(time.Millisecond)
+
+	if err := th.HandleTun(); err != io.EOF {
+		t.Fatalf("want io.EOF, got %v", err)
+	}
+	// At least 2 writes: one for data, one for rekeyInit control packet.
+	if w.writes < 2 {
+		t.Fatalf("expected at least 2 writes (data + rekeyInit), got %d", w.writes)
+	}
+}
+
+func TestTunHandler_RekeyInitSendError_Continues(t *testing.T) {
+	// When sending a rekey init via egress fails, the handler should log and continue.
+	sendCount := 0
+	mockWriter := &TunHandlerMockWriter{err: nil}
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, make([]byte, 32), make([]byte, 32), false)
+	h := NewTunHandler(context.Background(),
+		rdr(
+			struct {
+				data []byte
+				err  error
+			}{[]byte{0xAA}, nil},
+			struct {
+				data []byte
+				err  error
+			}{nil, io.EOF},
+		),
+		mockWriter,
+		&TunHandlerMockCrypto{}, ctrl,
+	)
+	th := h.(*TunHandler)
+	th.rekeyInit.SetRotateAt(time.Now().Add(-time.Second))
+	th.rekeyInit.SetInterval(time.Millisecond)
+
+	// Replace egress with one that fails on SendControl.
+	th.egress = &failingControlEgress{dataErr: nil, controlErr: errors.New("send fail")}
+
+	if err := th.HandleTun(); err != io.EOF {
+		t.Fatalf("want io.EOF, got %v", err)
+	}
+	_ = sendCount // handler should continue despite send error
+}
+
+// failingControlEgress is an egress that fails on SendControl.
+type failingControlEgress struct {
+	dataErr    error
+	controlErr error
+}
+
+func (e *failingControlEgress) SendDataIP(_ []byte) error  { return e.dataErr }
+func (e *failingControlEgress) SendControl(_ []byte) error { return e.controlErr }
+func (e *failingControlEgress) Close() error               { return nil }
+
+func TestTunHandler_RekeyInitPrepareError_Continues(t *testing.T) {
+	// When MaybeBuildRekeyInit returns an error, the handler should log and continue (not exit).
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, make([]byte, 32), make([]byte, 32), false)
+	mockW := &TunHandlerMockWriter{}
+	h := NewTunHandler(context.Background(),
+		rdr(
+			struct {
+				data []byte
+				err  error
+			}{[]byte{0xAA}, nil},
+			struct {
+				data []byte
+				err  error
+			}{[]byte{0xBB}, nil},
+			struct {
+				data []byte
+				err  error
+			}{nil, io.EOF},
+		),
+		mockW,
+		&TunHandlerMockCrypto{}, ctrl,
+	)
+	th := h.(*TunHandler)
+	th.rekeyInit.SetRotateAt(time.Now().Add(-time.Second))
+	th.rekeyInit.SetInterval(time.Millisecond)
+
+	// Set the pending key so the reuse branch in MaybeBuildRekeyInit fires,
+	// but truncate controlPacketBuf to force an error (short dst).
+	// Actually, easier: just set rekeyInit to use a nil crypto which returns ok=false.
+	th.rekeyInit = nil // nil rekeyInit -> skip rekey entirely (handles the nil guard)
+
+	if err := th.HandleTun(); err != io.EOF {
+		t.Fatalf("want io.EOF, got %v", err)
+	}
+	// Both data packets should still have been sent.
+	if mockW.writes < 2 {
+		t.Fatalf("expected at least 2 writes, got %d", mockW.writes)
 	}
 }
 

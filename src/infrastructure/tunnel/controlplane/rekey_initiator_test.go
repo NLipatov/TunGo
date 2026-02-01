@@ -1,6 +1,7 @@
 package controlplane
 
 import (
+	"errors"
 	"testing"
 	"time"
 	"tungo/infrastructure/cryptography/chacha20/handshake"
@@ -92,7 +93,7 @@ func TestMaybeBuildRekeyInit_NotStable(t *testing.T) {
 	s := NewRekeyInitScheduler(&handshake.DefaultCrypto{}, time.Millisecond, now)
 
 	// Put FSM in non-stable state.
-	fsm.StartRekey([]byte("k1"), []byte("k2"))
+	_, _ = fsm.StartRekey([]byte("k1"), []byte("k2"))
 
 	dst := make([]byte, service_packet.RekeyPacketLen)
 	_, ok, err := s.MaybeBuildRekeyInit(now.Add(time.Second), fsm, dst)
@@ -187,5 +188,23 @@ func TestMaybeBuildRekeyInit_ReusesPendingKey(t *testing.T) {
 
 	if string(pub1) != string(pub2) {
 		t.Fatal("expected same public key on second call (pending key reuse)")
+	}
+}
+
+func TestMaybeBuildRekeyInit_GenerateKeyPairError(t *testing.T) {
+	genErr := errors.New("keygen failed")
+	crypto := &mockCrypto{genErr: genErr}
+	rk := &initTestRekeyer{}
+	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32), false)
+	now := time.Now()
+	s := NewRekeyInitScheduler(crypto, time.Millisecond, now)
+
+	dst := make([]byte, service_packet.RekeyPacketLen)
+	_, ok, err := s.MaybeBuildRekeyInit(now.Add(time.Second), fsm, dst)
+	if !errors.Is(err, genErr) {
+		t.Fatalf("expected keygen error, got %v", err)
+	}
+	if ok {
+		t.Fatal("expected ok=false on keygen error")
 	}
 }

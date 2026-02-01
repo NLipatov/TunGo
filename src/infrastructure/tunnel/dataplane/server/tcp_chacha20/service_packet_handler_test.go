@@ -15,7 +15,7 @@ type tcpTestLogger struct {
 	msgs []string
 }
 
-func (l *tcpTestLogger) Printf(format string, v ...any) {
+func (l *tcpTestLogger) Printf(format string, _ ...any) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.msgs = append(l.msgs, format)
@@ -40,7 +40,7 @@ type tcpTestEgress struct {
 	sendErr error
 }
 
-func (e *tcpTestEgress) SendDataIP(plaintext []byte) error { return e.send(plaintext) }
+func (e *tcpTestEgress) SendDataIP(plaintext []byte) error  { return e.send(plaintext) }
 func (e *tcpTestEgress) SendControl(plaintext []byte) error { return e.send(plaintext) }
 func (e *tcpTestEgress) Close() error                       { return nil }
 
@@ -89,7 +89,7 @@ func TestTCPHandle_UnknownServicePacket_ReturnsTrue(t *testing.T) {
 
 	// A valid V1 header for Ping (3 bytes) — not RekeyInit, so falls to default case.
 	pkt := make([]byte, 3)
-	service_packet.EncodeV1Header(service_packet.Ping, pkt)
+	_, _ = service_packet.EncodeV1Header(service_packet.Ping, pkt)
 
 	handled := h.Handle(pkt, eg, nil)
 	if !handled {
@@ -145,6 +145,36 @@ func TestTCPHandle_RekeyInit_ShortPacket_NilFSM(t *testing.T) {
 	defer eg.mu.Unlock()
 	if len(eg.packets) != 0 {
 		t.Fatalf("expected no ACK sent with nil FSM, got %d packets", len(eg.packets))
+	}
+}
+
+func TestTCPHandle_RekeyInit_EpochExhausted_Logs(t *testing.T) {
+	logger := &tcpTestLogger{}
+	crypto := &handshake.DefaultCrypto{}
+	h := newControlPlaneHandler(crypto, logger)
+
+	rk := &tcpTestRekeyer{}
+	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32), true)
+	// Force epoch exhaustion so ServerHandleRekeyInit returns ErrEpochExhausted.
+	fsm.LastRekeyEpoch = 65001
+
+	eg := &tcpTestEgress{}
+	pkt := buildTCPRekeyInitPacket(t, crypto)
+	handled := h.Handle(pkt, eg, fsm)
+	if !handled {
+		t.Fatal("expected Handle to return true for RekeyInit")
+	}
+
+	logger.mu.Lock()
+	defer logger.mu.Unlock()
+	if len(logger.msgs) == 0 {
+		t.Fatal("expected logger to capture epoch exhaustion error")
+	}
+	// No ACK should be sent.
+	eg.mu.Lock()
+	defer eg.mu.Unlock()
+	if len(eg.packets) != 0 {
+		t.Fatalf("expected no ACK on epoch exhaustion, got %d", len(eg.packets))
 	}
 }
 
