@@ -24,8 +24,7 @@ func NewRunner(deps AppDependencies, routerFactory connection.TrafficRouterFacto
 func (r *Runner) Run(ctx context.Context) {
 	defer func() {
 		if err := r.deps.TunManager().DisposeDevices(); err != nil {
-			log.Printf("WARN: network cleanup failed on exit: %v", err)
-			log.Printf("WARN: routes or interfaces may be left in a broken state; manual cleanup may be required")
+			log.Printf("error disposing tun devices on exit: %s", err)
 		}
 	}()
 
@@ -46,7 +45,7 @@ func (r *Runner) runSession(parentCtx context.Context) error {
 	defer cancel()
 
 	if err := r.deps.TunManager().DisposeDevices(); err != nil {
-		return fmt.Errorf("network cleanup failed (not safe to create a new session): %w", err)
+		log.Printf("error disposing tun devices: %v", err)
 	}
 
 	router, conn, tun, err := r.routerFactory.
