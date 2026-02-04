@@ -12,8 +12,8 @@ import (
 	"time"
 	"tungo/application/network/connection"
 	"tungo/infrastructure/cryptography/chacha20"
-	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/settings"
 
@@ -320,7 +320,7 @@ func TestHandleTransport_RekeyAckAfterDoubleInit_UsesOriginalPendingKey(t *testi
 	}
 
 	// --- Step 2: craft RekeyAck for the FIRST pubkey and feed TransportHandler.
-	hc := &handshake.DefaultCrypto{}
+	hc := &primitives.DefaultKeyDeriver{}
 	serverPub, _, err := hc.GenerateX25519KeyPair()
 	if err != nil {
 		t.Fatalf("failed to gen server key: %v", err)

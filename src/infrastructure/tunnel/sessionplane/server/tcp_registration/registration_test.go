@@ -28,7 +28,7 @@ type tcpRegHandshake struct {
 func (h *tcpRegHandshake) Id() [32]byte              { return h.id }
 func (h *tcpRegHandshake) KeyClientToServer() []byte { return h.c2s }
 func (h *tcpRegHandshake) KeyServerToClient() []byte { return h.s2c }
-func (*tcpRegHandshake) ClientSideHandshake(connection.Transport, settings.Settings) error {
+func (*tcpRegHandshake) ClientSideHandshake(_ connection.Transport, _ settings.Settings) error {
 	return nil
 }
 func (h *tcpRegHandshake) ServerSideHandshake(_ connection.Transport) (net.IP, error) {

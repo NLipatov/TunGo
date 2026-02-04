@@ -8,8 +8,8 @@ import (
 	"tungo/application/listeners"
 	"tungo/application/logging"
 	"tungo/application/network/routing/transport"
-	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/session"
@@ -32,8 +32,6 @@ type TransportHandler struct {
 	listenerConn   listeners.UdpListener
 	// Session-plane: registration and handshake tracking for not-yet-established sessions.
 	registrar *udp_registration.Registrar
-	// Control-plane dispatcher (dataplane adapter).
-	cp controlPlaneHandler
 	// Dataplane worker for established sessions.
 	dp *udpDataplaneWorker
 }
@@ -48,7 +46,7 @@ func NewTransportHandler(
 	logger logging.Logger,
 	registrar *udp_registration.Registrar,
 ) transport.Handler {
-	crypto := &handshake.DefaultCrypto{}
+	crypto := &primitives.DefaultKeyDeriver{}
 	cp := newServicePacketHandler(crypto)
 	dp := newUdpDataplaneWorker(writer, cp)
 	return &TransportHandler{
@@ -59,7 +57,6 @@ func NewTransportHandler(
 		logger:         logger,
 		listenerConn:   listenerConn,
 		registrar:      registrar,
-		cp:             cp,
 		dp:             dp,
 	}
 }

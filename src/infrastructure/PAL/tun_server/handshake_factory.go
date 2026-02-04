@@ -3,7 +3,7 @@ package tun_server
 import (
 	"tungo/application/network/connection"
 	"tungo/infrastructure/PAL/configuration/server"
-	"tungo/infrastructure/cryptography/chacha20/handshake"
+	"tungo/infrastructure/cryptography/noise"
 )
 
 type HandshakeFactory struct {
@@ -17,8 +17,8 @@ func NewHandshakeFactory(configuration server.Configuration) *HandshakeFactory {
 }
 
 func (h *HandshakeFactory) NewHandshake() connection.Handshake {
-	return handshake.NewHandshake(
-		h.configuration.Ed25519PublicKey,
-		h.configuration.Ed25519PrivateKey,
+	return noise.NewNoiseHandshake(
+		h.configuration.X25519PublicKey,
+		h.configuration.X25519PrivateKey,
 	)
 }

@@ -14,9 +14,9 @@ func makeTestConfig() client.Configuration {
 			ConnectionIP: "127.0.0.1",
 			Port:         "8080",
 		},
-		UDPSettings:      settings.Settings{},
-		Ed25519PublicKey: nil,
-		Protocol:         settings.TCP,
+		UDPSettings:     settings.Settings{},
+		X25519PublicKey: nil,
+		Protocol:        settings.TCP,
 	}
 }
 

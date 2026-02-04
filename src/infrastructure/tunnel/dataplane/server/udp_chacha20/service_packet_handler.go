@@ -3,8 +3,8 @@ package udp_chacha20
 import (
 	"errors"
 	"tungo/application/network/connection"
-	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/tunnel/controlplane"
 
@@ -14,13 +14,13 @@ import (
 // controlPlaneHandler is a dataplane-adapter for inbound control-plane packets.
 // It delegates protocol logic to infrastructure/routing/controlplane.
 type controlPlaneHandler struct {
-	crypto  handshake.Crypto
+	crypto  primitives.KeyDeriver
 	ackBuf  [chacha20poly1305.NonceSize + service_packet.RekeyPacketLen + chacha20poly1305.Overhead]byte
 	pongBuf [chacha20poly1305.NonceSize + 3 + chacha20poly1305.Overhead]byte
 }
 
 func newServicePacketHandler(
-	crypto handshake.Crypto,
+	crypto primitives.KeyDeriver,
 ) controlPlaneHandler {
 	return controlPlaneHandler{
 		crypto: crypto,

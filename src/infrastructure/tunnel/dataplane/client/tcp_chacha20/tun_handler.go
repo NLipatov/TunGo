@@ -7,8 +7,8 @@ import (
 	"time"
 	"tungo/application/network/connection"
 	"tungo/application/network/routing/tun"
-	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/controlplane"
@@ -39,7 +39,7 @@ func NewTunHandler(ctx context.Context,
 		cryptographyService: cryptographyService,
 		egress:              connection.NewDefaultEgress(writer, cryptographyService),
 		rekeyController:     rekeyController,
-		rekeyInit:           controlplane.NewRekeyInitScheduler(&handshake.DefaultCrypto{}, settings.DefaultRekeyInterval, now),
+		rekeyInit:           controlplane.NewRekeyInitScheduler(&primitives.DefaultKeyDeriver{}, settings.DefaultRekeyInterval, now),
 	}
 }
 

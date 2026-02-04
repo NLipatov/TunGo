@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"bytes"
-	"crypto/ed25519"
 	"errors"
 	"io"
 	"os"
@@ -36,7 +35,7 @@ func (m *ConfgenHandlerMockMgr) IncrementClientCounter() error {
 	m.cfg.ClientCounter++
 	return nil
 }
-func (m *ConfgenHandlerMockMgr) InjectEdKeys(_ ed25519.PublicKey, _ ed25519.PrivateKey) error {
+func (m *ConfgenHandlerMockMgr) InjectX25519Keys(_, _ []byte) error {
 	return m.injectErr
 }
 
@@ -95,8 +94,8 @@ func validCfg() *serverConfiguration.Configuration {
 		EnableUDP:             false,
 		EnableTCP:             false,
 		EnableWS:              true,
-		Ed25519PublicKey:      []byte("PUB"),
-		Ed25519PrivateKey:     []byte("PRIV"),
+		X25519PublicKey:       []byte("PUB"),
+		X25519PrivateKey:      []byte("PRIV"),
 		TCPSettings: settings.Settings{
 			InterfaceName:   "tun-tcp0",
 			InterfaceIPCIDR: "10.0.0.1/24",

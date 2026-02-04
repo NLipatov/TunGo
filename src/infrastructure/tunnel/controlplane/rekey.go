@@ -2,8 +2,8 @@ package controlplane
 
 import (
 	"fmt"
-	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/service_packet"
 
 	"golang.org/x/crypto/curve25519"
@@ -19,7 +19,7 @@ var (
 // It does not do any IO; caller is responsible for sending RekeyAck with the returned serverPub.
 // Returns ok=false when packet should be ignored/dropped (non-stable FSM, short packet, etc).
 func ServerHandleRekeyInit(
-	crypto handshake.Crypto,
+	crypto primitives.KeyDeriver,
 	fsm rekey.FSM,
 	plaindata []byte,
 ) (serverPub []byte, epoch uint16, ok bool, err error) {
@@ -79,7 +79,7 @@ func ServerHandleRekeyInit(
 // It switches the local send side immediately (ActivateSendEpoch) and clears the pending private key.
 // Returns ok=false when packet should be ignored/dropped (no pending key, short packet, etc).
 func ClientHandleRekeyAck(
-	crypto handshake.Crypto,
+	crypto primitives.KeyDeriver,
 	fsm *rekey.StateMachine,
 	plaindata []byte,
 ) (ok bool, err error) {

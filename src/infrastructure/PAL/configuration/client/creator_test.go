@@ -51,8 +51,8 @@ func (c *creatorTestConfigProvider) mockedConfig() Configuration {
 			Encryption:       settings.ChaCha20Poly1305,
 			DialTimeoutMs:    5000,
 		},
-		Ed25519PublicKey: publicKey,
-		Protocol:         settings.UDP,
+		X25519PublicKey: publicKey,
+		Protocol:        settings.UDP,
 	}
 }
 

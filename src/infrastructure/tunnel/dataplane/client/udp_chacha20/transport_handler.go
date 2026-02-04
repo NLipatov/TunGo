@@ -12,8 +12,8 @@ import (
 	"tungo/application/network/connection"
 	"tungo/application/network/routing/transport"
 	"tungo/infrastructure/cryptography/chacha20"
-	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/controlplane"
@@ -27,7 +27,7 @@ type TransportHandler struct {
 	writer              io.Writer
 	cryptographyService connection.Crypto
 	rekeyController     *rekey.StateMachine
-	handshakeCrypto     handshake.Crypto
+	handshakeCrypto     primitives.KeyDeriver
 	egress              connection.Egress
 	lastRecvAt          time.Time
 	lastPingSentAt      time.Time
@@ -49,7 +49,7 @@ func NewTransportHandler(
 		writer:              writer,
 		cryptographyService: cryptographyService,
 		rekeyController:     rekeyController,
-		handshakeCrypto:     &handshake.DefaultCrypto{},
+		handshakeCrypto:     &primitives.DefaultKeyDeriver{},
 		egress:              egress,
 		lastRecvAt:          time.Now(),
 		pingBuf:             make([]byte, pingLen, pingLen+chacha20poly1305.Overhead),

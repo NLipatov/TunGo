@@ -13,6 +13,7 @@ require (
 	github.com/charmbracelet/bubbles v0.21.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/coder/websocket v1.8.14
+	github.com/flynn/noise v1.1.0
 	golang.org/x/net v0.47.0
 	golang.org/x/sync v0.18.0
 	golang.zx2c4.com/wireguard/windows v0.5.3

@@ -7,7 +7,6 @@ import (
 	"tungo/application/logging"
 	"tungo/application/network/connection"
 	"tungo/application/network/routing/transport"
-	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/session"
@@ -22,7 +21,6 @@ type TransportHandler struct {
 	sessionManager session.Repository
 	logger         logging.Logger
 	registrar      *tcp_registration.Registrar
-	cp             controlPlaneHandler
 }
 
 func NewTransportHandler(
@@ -42,7 +40,6 @@ func NewTransportHandler(
 		sessionManager: sessionManager,
 		logger:         logger,
 		registrar:      registrar,
-		cp:             newControlPlaneHandler(&handshake.DefaultCrypto{}, logger),
 	}
 }
 
@@ -96,7 +93,6 @@ func (t *TransportHandler) handleClient(ctx context.Context, peer *session.Peer,
 		tunFile:        tunFile,
 		sessionManager: t.sessionManager,
 		logger:         t.logger,
-		cp:             t.cp,
 	}).Run()
 }
 

@@ -55,7 +55,7 @@ func main() {
 		exitCode = 1
 		return
 	}
-	keyManager := serverConf.NewEd25519KeyManager(configurationManager)
+	keyManager := serverConf.NewX25519KeyManager(configurationManager)
 	if pKeysErr := keyManager.PrepareKeys(); pKeysErr != nil {
 		log.Printf("could not prepare keys: %s", pKeysErr)
 		exitCode = 1
@@ -140,7 +140,7 @@ func startServer(
 	deps := server.NewDependencies(
 		tunFactory,
 		*conf,
-		serverConf.NewEd25519KeyManager(configurationManager),
+		serverConf.NewX25519KeyManager(configurationManager),
 		configurationManager,
 	)
 

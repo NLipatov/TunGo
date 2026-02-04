@@ -106,8 +106,8 @@ func (c *ConfgenHandler) generate() (*client.Configuration, error) {
 			Encryption:       serverConf.WSSettings.Encryption,
 			DialTimeoutMs:    serverConf.WSSettings.DialTimeoutMs,
 		},
-		Ed25519PublicKey: serverConf.Ed25519PublicKey,
-		Protocol:         c.getDefaultProtocol(serverConf),
+		X25519PublicKey: serverConf.X25519PublicKey,
+		Protocol:        c.getDefaultProtocol(serverConf),
 	}
 
 	return &conf, nil

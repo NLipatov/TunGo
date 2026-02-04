@@ -1,7 +1,6 @@
 package server
 
 import (
-	"crypto/ed25519"
 	"fmt"
 	"net/netip"
 	"strconv"
@@ -9,23 +8,23 @@ import (
 )
 
 type Configuration struct {
-	TCPSettings           settings.Settings  `json:"TCPSettings"`
-	UDPSettings           settings.Settings  `json:"UDPSettings"`
-	WSSettings            settings.Settings  `json:"WSSettings"`
-	FallbackServerAddress string             `json:"FallbackServerAddress"`
-	Ed25519PublicKey      ed25519.PublicKey  `json:"Ed25519PublicKey"`
-	Ed25519PrivateKey     ed25519.PrivateKey `json:"Ed25519PrivateKey"`
-	ClientCounter         int                `json:"ClientCounter"`
-	EnableTCP             bool               `json:"EnableTCP"`
-	EnableUDP             bool               `json:"EnableUDP"`
-	EnableWS              bool               `json:"EnableWS"`
+	TCPSettings           settings.Settings `json:"TCPSettings"`
+	UDPSettings           settings.Settings `json:"UDPSettings"`
+	WSSettings            settings.Settings `json:"WSSettings"`
+	FallbackServerAddress string            `json:"FallbackServerAddress"`
+	X25519PublicKey       []byte            `json:"X25519PublicKey"`
+	X25519PrivateKey      []byte            `json:"X25519PrivateKey"`
+	ClientCounter         int               `json:"ClientCounter"`
+	EnableTCP             bool              `json:"EnableTCP"`
+	EnableUDP             bool              `json:"EnableUDP"`
+	EnableWS              bool              `json:"EnableWS"`
 }
 
 func NewDefaultConfiguration() *Configuration {
 	configuration := &Configuration{
 		FallbackServerAddress: "",
-		Ed25519PublicKey:      nil,
-		Ed25519PrivateKey:     nil,
+		X25519PublicKey:       nil,
+		X25519PrivateKey:      nil,
 		ClientCounter:         0,
 		EnableTCP:             false,
 		EnableUDP:             true,

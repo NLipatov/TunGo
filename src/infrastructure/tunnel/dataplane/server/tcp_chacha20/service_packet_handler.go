@@ -3,8 +3,8 @@ package tcp_chacha20
 import (
 	"tungo/application/logging"
 	"tungo/application/network/connection"
-	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/controlplane"
@@ -17,12 +17,12 @@ import (
 // ACK (stream protocol — explicit activation). UDP activates based on received
 // packet epoch.
 type controlPlaneHandler struct {
-	crypto handshake.Crypto
+	crypto primitives.KeyDeriver
 	logger logging.Logger
 	ackBuf [service_packet.RekeyPacketLen + settings.TCPChacha20Overhead]byte
 }
 
-func newControlPlaneHandler(crypto handshake.Crypto, logger logging.Logger) controlPlaneHandler {
+func newControlPlaneHandler(crypto primitives.KeyDeriver, logger logging.Logger) controlPlaneHandler {
 	return controlPlaneHandler{
 		crypto: crypto,
 		logger: logger,

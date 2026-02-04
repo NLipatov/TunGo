@@ -24,7 +24,7 @@ type udpRegRekeyer struct{}
 
 func (udpRegRekeyer) Rekey(_, _ []byte) (uint16, error) { return 0, nil }
 func (udpRegRekeyer) SetSendEpoch(uint16)               {}
-func (udpRegRekeyer) RemoveEpoch(uint16) bool            { return true }
+func (udpRegRekeyer) RemoveEpoch(uint16) bool           { return true }
 
 // udpRegCrypto is a mock crypto.
 type udpRegCrypto struct{}
@@ -43,7 +43,7 @@ type udpRegHandshake struct {
 func (h *udpRegHandshake) Id() [32]byte              { return h.id }
 func (h *udpRegHandshake) KeyClientToServer() []byte { return h.c2s }
 func (h *udpRegHandshake) KeyServerToClient() []byte { return h.s2c }
-func (h *udpRegHandshake) ClientSideHandshake(connection.Transport, settings.Settings) error {
+func (h *udpRegHandshake) ClientSideHandshake(_ connection.Transport, _ settings.Settings) error {
 	return nil
 }
 func (h *udpRegHandshake) ServerSideHandshake(transport connection.Transport) (net.IP, error) {
@@ -93,10 +93,10 @@ type udpRegWrite struct {
 	addr netip.AddrPort
 }
 
-func (l *udpRegListener) Close() error                                  { return nil }
-func (l *udpRegListener) SetReadBuffer(int) error                       { return nil }
-func (l *udpRegListener) SetWriteBuffer(int) error                      { return nil }
-func (l *udpRegListener) ReadMsgUDPAddrPort(b, oob []byte) (int, int, int, netip.AddrPort, error) {
+func (l *udpRegListener) Close() error             { return nil }
+func (l *udpRegListener) SetReadBuffer(int) error  { return nil }
+func (l *udpRegListener) SetWriteBuffer(int) error { return nil }
+func (l *udpRegListener) ReadMsgUDPAddrPort(_, _ []byte) (int, int, int, netip.AddrPort, error) {
 	return 0, 0, 0, netip.AddrPort{}, errors.New("not implemented")
 }
 

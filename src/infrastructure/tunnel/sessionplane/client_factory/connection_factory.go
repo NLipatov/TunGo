@@ -11,8 +11,8 @@ import (
 	"tungo/application/network/connection"
 	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/cryptography/chacha20"
-	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/cryptography/noise"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/network/tcp/adapters"
 	wsAdapters "tungo/infrastructure/network/ws/adapter"
@@ -145,22 +145,18 @@ func (f *ConnectionFactory) establishSecuredConnection(
 	adapter connection.Transport,
 	cryptoFactory connection.CryptoFactory,
 ) (connection.Transport, connection.Crypto, *rekey.StateMachine, error) {
-	//connect to server and exchange secret
 	secret := network.NewDefaultSecret(
 		s,
-		handshake.NewHandshake(f.conf.Ed25519PublicKey, nil),
+		noise.NewNoiseHandshake(f.conf.X25519PublicKey, nil),
 		cryptoFactory,
 	)
 	cancellableSecret := network.NewSecretWithDeadline(ctx, secret)
-
-	session := network.NewDefaultSecureSession(adapter, cancellableSecret)
-	cancellableSession := network.NewSecureSessionWithDeadline(ctx, session)
-	ad, cr, ctrl, err := cancellableSession.Establish()
+	cr, ctrl, err := cancellableSecret.Exchange(adapter)
 	if err != nil {
 		_ = adapter.Close()
 		return nil, nil, nil, err
 	}
-	return ad, cr, ctrl, nil
+	return adapter, cr, ctrl, nil
 }
 
 func (f *ConnectionFactory) dialTCP(
@@ -202,7 +198,10 @@ func (f *ConnectionFactory) dialWS(
 	scheme, host, port string,
 ) (connection.Transport, error) {
 	url := fmt.Sprintf("%s://%s/ws", scheme, net.JoinHostPort(host, port))
-	conn, _, err := websocket.Dial(establishCtx, url, nil)
+	conn, resp, err := websocket.Dial(establishCtx, url, nil)
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 	if err != nil {
 		return nil, err
 	}

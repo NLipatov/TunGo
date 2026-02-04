@@ -2,7 +2,6 @@ package server
 
 import (
 	"bytes"
-	"crypto/ed25519"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -279,9 +278,10 @@ func TestManager_InjectEdKeys_Success(t *testing.T) {
 		reader:   reader,
 	}
 
-	pub, priv, _ := ed25519.GenerateKey(nil)
+	pub := make([]byte, 32)
+	priv := make([]byte, 32)
 
-	err := manager.InjectEdKeys(pub, priv)
+	err := manager.InjectX25519Keys(pub, priv)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -295,15 +295,15 @@ func TestManager_InjectEdKeys_Success(t *testing.T) {
 		t.Fatalf("written data is not Configuration")
 	}
 
-	if !pub.Equal(confWritten.Ed25519PublicKey) {
+	if !bytes.Equal(pub, confWritten.X25519PublicKey) {
 		t.Errorf("public key mismatch")
 	}
-	if !priv.Equal(confWritten.Ed25519PrivateKey) {
+	if !bytes.Equal(priv, confWritten.X25519PrivateKey) {
 		t.Errorf("private key mismatch")
 	}
 }
 
-func TestManager_InjectEdKeys_ConfigError(t *testing.T) {
+func TestManager_InjectX25519Keys_ConfigError(t *testing.T) {
 	resolver := &ManagerMockResolver{Path: "/fake/path"}
 	statMock := &ManagerMockStat{Err: nil}
 	writer := &ManagerMockWriter{}
@@ -316,7 +316,7 @@ func TestManager_InjectEdKeys_ConfigError(t *testing.T) {
 		reader:   reader,
 	}
 
-	err := manager.InjectEdKeys(nil, nil)
+	err := manager.InjectX25519Keys(nil, nil)
 	if err == nil {
 		t.Fatal("expected error due to config read failure, got nil")
 	}
@@ -325,7 +325,7 @@ func TestManager_InjectEdKeys_ConfigError(t *testing.T) {
 	}
 }
 
-func TestManager_InjectEdKeys_WriteError(t *testing.T) {
+func TestManager_InjectX25519Keys_WriteError(t *testing.T) {
 	initialConf := NewDefaultConfiguration()
 	resolver := &ManagerMockResolver{Path: "/fake/path"}
 	statMock := &ManagerMockStat{Err: nil}
@@ -339,9 +339,10 @@ func TestManager_InjectEdKeys_WriteError(t *testing.T) {
 		reader:   reader,
 	}
 
-	pub, priv, _ := ed25519.GenerateKey(nil)
+	pub := make([]byte, 32)
+	priv := make([]byte, 32)
 
-	err := manager.InjectEdKeys(pub, priv)
+	err := manager.InjectX25519Keys(pub, priv)
 	if err == nil || !strings.Contains(err.Error(), "write fail") {
 		t.Fatalf("expected writer error, got: %v", err)
 	}

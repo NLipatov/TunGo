@@ -4,8 +4,8 @@ import (
 	"errors"
 	"sync"
 	"testing"
-	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/service_packet"
 )
 
@@ -56,7 +56,7 @@ func (e *tcpTestEgress) send(plaintext []byte) error {
 	return nil
 }
 
-func buildTCPRekeyInitPacket(t *testing.T, crypto handshake.Crypto) []byte {
+func buildTCPRekeyInitPacket(t *testing.T, crypto primitives.KeyDeriver) []byte {
 	t.Helper()
 	pub, _, err := crypto.GenerateX25519KeyPair()
 	if err != nil {
@@ -72,7 +72,7 @@ func buildTCPRekeyInitPacket(t *testing.T, crypto handshake.Crypto) []byte {
 
 func TestTCPHandle_NonServicePacket_ReturnsFalse(t *testing.T) {
 	logger := &tcpTestLogger{}
-	h := newControlPlaneHandler(&handshake.DefaultCrypto{}, logger)
+	h := newControlPlaneHandler(&primitives.DefaultKeyDeriver{}, logger)
 	eg := &tcpTestEgress{}
 
 	// Random data that is not a service packet.
@@ -84,7 +84,7 @@ func TestTCPHandle_NonServicePacket_ReturnsFalse(t *testing.T) {
 
 func TestTCPHandle_UnknownServicePacket_ReturnsTrue(t *testing.T) {
 	logger := &tcpTestLogger{}
-	h := newControlPlaneHandler(&handshake.DefaultCrypto{}, logger)
+	h := newControlPlaneHandler(&primitives.DefaultKeyDeriver{}, logger)
 	eg := &tcpTestEgress{}
 
 	// A valid V1 header for Ping (3 bytes) — not RekeyInit, so falls to default case.
@@ -99,7 +99,7 @@ func TestTCPHandle_UnknownServicePacket_ReturnsTrue(t *testing.T) {
 
 func TestTCPHandle_RekeyInit_Success_SendsAckAndActivates(t *testing.T) {
 	logger := &tcpTestLogger{}
-	crypto := &handshake.DefaultCrypto{}
+	crypto := &primitives.DefaultKeyDeriver{}
 	h := newControlPlaneHandler(crypto, logger)
 
 	rk := &tcpTestRekeyer{}
@@ -130,7 +130,7 @@ func TestTCPHandle_RekeyInit_Success_SendsAckAndActivates(t *testing.T) {
 
 func TestTCPHandle_RekeyInit_ShortPacket_NilFSM(t *testing.T) {
 	logger := &tcpTestLogger{}
-	crypto := &handshake.DefaultCrypto{}
+	crypto := &primitives.DefaultKeyDeriver{}
 	h := newControlPlaneHandler(crypto, logger)
 	eg := &tcpTestEgress{}
 
@@ -150,7 +150,7 @@ func TestTCPHandle_RekeyInit_ShortPacket_NilFSM(t *testing.T) {
 
 func TestTCPHandle_RekeyInit_EpochExhausted_Logs(t *testing.T) {
 	logger := &tcpTestLogger{}
-	crypto := &handshake.DefaultCrypto{}
+	crypto := &primitives.DefaultKeyDeriver{}
 	h := newControlPlaneHandler(crypto, logger)
 
 	rk := &tcpTestRekeyer{}
@@ -180,7 +180,7 @@ func TestTCPHandle_RekeyInit_EpochExhausted_Logs(t *testing.T) {
 
 func TestTCPHandle_RekeyInit_EgressError_Logs(t *testing.T) {
 	logger := &tcpTestLogger{}
-	crypto := &handshake.DefaultCrypto{}
+	crypto := &primitives.DefaultKeyDeriver{}
 	h := newControlPlaneHandler(crypto, logger)
 
 	rk := &tcpTestRekeyer{}

@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"crypto/ed25519"
 	"errors"
 	"reflect"
 	"testing"
@@ -71,7 +70,7 @@ func (m *mockManager) IncrementClientCounter() error {
 	return m.incErr
 }
 
-func (m *mockManager) InjectEdKeys(_ ed25519.PublicKey, _ ed25519.PrivateKey) error {
+func (m *mockManager) InjectX25519Keys(_, _ []byte) error {
 	return m.injectErr
 }
 

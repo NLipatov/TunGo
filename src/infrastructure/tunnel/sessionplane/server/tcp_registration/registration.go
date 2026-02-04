@@ -50,27 +50,27 @@ func (r *Registrar) RegisterClient(conn net.Conn) (*session.Peer, connection.Tra
 	h := r.handshakeFactory.NewHandshake()
 	internalIP, handshakeErr := h.ServerSideHandshake(framingAdapter)
 	if handshakeErr != nil {
-		_ = conn.Close()
+		_ = framingAdapter.Close()
 		return nil, nil, fmt.Errorf("client %s failed registration: %w", conn.RemoteAddr(), handshakeErr)
 	}
 	r.logger.Printf("TCP: %s registered as %s", conn.RemoteAddr(), internalIP)
 
 	cryptographyService, rekeyCtrl, cryptographyServiceErr := r.cryptographyFactory.FromHandshake(h, true)
 	if cryptographyServiceErr != nil {
-		_ = conn.Close()
+		_ = framingAdapter.Close()
 		return nil, nil, fmt.Errorf("client %s failed registration: %w", conn.RemoteAddr(), cryptographyServiceErr)
 	}
 
 	addr := conn.RemoteAddr()
 	tcpAddr, ok := addr.(*net.TCPAddr)
 	if !ok {
-		_ = conn.Close()
+		_ = framingAdapter.Close()
 		return nil, nil, fmt.Errorf("invalid remote address type: %T", addr)
 	}
 
 	intIP, intIPOk := netip.AddrFromSlice(internalIP)
 	if !intIPOk {
-		_ = conn.Close()
+		_ = framingAdapter.Close()
 		return nil, nil, fmt.Errorf("invalid internal IP from handshake")
 	}
 
@@ -81,7 +81,7 @@ func (r *Registrar) RegisterClient(conn net.Conn) (*session.Peer, connection.Tra
 		r.sessionManager.Delete(existingPeer)
 		r.logger.Printf("Replacing existing session for %s", intIP)
 	} else if !errors.Is(getErr, session.ErrNotFound) {
-		_ = conn.Close()
+		_ = framingAdapter.Close()
 		return nil, nil, fmt.Errorf(
 			"connection closed: %s (internal IP %s lookup failed: %v)",
 			conn.RemoteAddr(),

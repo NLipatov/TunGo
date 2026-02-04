@@ -31,8 +31,7 @@ func NewDefaultSecret(settings settings.Settings,
 func (s *DefaultSecret) Exchange(
 	transport connection.Transport,
 ) (connection.Crypto, *rekey.StateMachine, error) {
-	handshakeErr := s.handshake.ClientSideHandshake(transport, s.settings)
-	if handshakeErr != nil {
+	if handshakeErr := s.handshake.ClientSideHandshake(transport, s.settings); handshakeErr != nil {
 		return nil, nil, handshakeErr
 	}
 

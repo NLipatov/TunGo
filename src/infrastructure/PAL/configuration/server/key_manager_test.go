@@ -1,7 +1,6 @@
 package server
 
 import (
-	"crypto/ed25519"
 	"encoding/base64"
 	"errors"
 	"os"
@@ -10,9 +9,9 @@ import (
 )
 
 // Compile-time check tath KeyManager implement KeyManager interface.
-var _ KeyManager = &Ed25519KeyManager{}
+var _ KeyManager = &X25519KeyManager{}
 
-// ---------- Mocks (prefixed with Ed25519KeyManager...) ----------
+// ---------- Mocks ----------
 
 // mockConfigurationManager fakes ServerConfigurationManager for tests.
 type mockConfigurationManager struct {
@@ -29,10 +28,7 @@ func (m *mockConfigurationManager) Configuration() (*Configuration, error) {
 }
 func (m *mockConfigurationManager) IncrementClientCounter() error { return nil } // unused here
 
-// IMPORTANT:
-// This mock uses the ed25519.PublicKey/PrivateKey signature to mirror the usual
-// ServerConfigurationManager contract. If your real interface uses []byte, adjust here.
-func (m *mockConfigurationManager) InjectEdKeys(pub ed25519.PublicKey, priv ed25519.PrivateKey) error {
+func (m *mockConfigurationManager) InjectX25519Keys(pub, priv []byte) error {
 	m.injectCalls++
 	m.lastPub = append([]byte(nil), pub...)
 	m.lastPriv = append([]byte(nil), priv...)
@@ -41,16 +37,16 @@ func (m *mockConfigurationManager) InjectEdKeys(pub ed25519.PublicKey, priv ed25
 	}
 	// Simulate persistence into configuration.
 	if m.cfg != nil {
-		m.cfg.Ed25519PublicKey = pub
-		m.cfg.Ed25519PrivateKey = priv
+		m.cfg.X25519PublicKey = pub
+		m.cfg.X25519PrivateKey = priv
 	}
 	return nil
 }
 
 // ---------- Helpers ----------
 
-func newKM(manager *mockConfigurationManager) *Ed25519KeyManager {
-	return &Ed25519KeyManager{configurationManager: manager}
+func newKM(manager *mockConfigurationManager) *X25519KeyManager {
+	return &X25519KeyManager{configurationManager: manager}
 }
 
 func mustSetenv(t *testing.T, k, v string) {
@@ -64,12 +60,12 @@ func mustSetenv(t *testing.T, k, v string) {
 // ---------- Tests: PrepareKeys high-level paths ----------
 
 func TestPrepareKeys_ConfigAlreadyHasValidKeys_NoOp(t *testing.T) {
-	pub := make([]byte, ed25519.PublicKeySize)
-	priv := make([]byte, ed25519.PrivateKeySize)
+	pub := make([]byte, 32)
+	priv := make([]byte, 32)
 	manager := &mockConfigurationManager{
 		cfg: &Configuration{
-			Ed25519PublicKey:  pub,
-			Ed25519PrivateKey: priv,
+			X25519PublicKey:  pub,
+			X25519PrivateKey: priv,
 		},
 	}
 	km := newKM(manager)
@@ -86,8 +82,8 @@ func TestPrepareKeys_EnvKeys_Valid_Injection(t *testing.T) {
 	manager := &mockConfigurationManager{cfg: &Configuration{}}
 	km := newKM(manager)
 
-	pub := make([]byte, ed25519.PublicKeySize)
-	priv := make([]byte, ed25519.PrivateKeySize)
+	pub := make([]byte, 32)
+	priv := make([]byte, 32)
 	mustSetenv(t, publicKeyEnvVar, base64.StdEncoding.EncodeToString(pub))
 	mustSetenv(t, privateKeyEnvVar, base64.StdEncoding.EncodeToString(priv))
 
@@ -97,7 +93,7 @@ func TestPrepareKeys_EnvKeys_Valid_Injection(t *testing.T) {
 	if manager.injectCalls != 1 {
 		t.Fatalf("expected 1 inject call, got %d", manager.injectCalls)
 	}
-	if len(manager.lastPub) != ed25519.PublicKeySize || len(manager.lastPriv) != ed25519.PrivateKeySize {
+	if len(manager.lastPub) != 32 || len(manager.lastPriv) != 32 {
 		t.Fatalf("wrong sizes: pub=%d priv=%d", len(manager.lastPub), len(manager.lastPriv))
 	}
 }
@@ -115,7 +111,7 @@ func TestPrepareKeys_EnvMissing_FallsBackToGenerate(t *testing.T) {
 	if manager.injectCalls != 1 {
 		t.Fatalf("generate path should inject once, got %d", manager.injectCalls)
 	}
-	if len(manager.lastPub) != ed25519.PublicKeySize || len(manager.lastPriv) != ed25519.PrivateKeySize {
+	if len(manager.lastPub) != 32 || len(manager.lastPriv) != 32 {
 		t.Fatalf("generated sizes mismatch")
 	}
 }
@@ -166,8 +162,8 @@ func Test_keysAreInConfiguration_ReadError(t *testing.T) {
 func Test_keysAreInConfiguration_LengthValidation(t *testing.T) {
 	// wrong lengths -> false
 	manager1 := &mockConfigurationManager{cfg: &Configuration{
-		Ed25519PublicKey:  make([]byte, 10),
-		Ed25519PrivateKey: make([]byte, 20),
+		X25519PublicKey:  make([]byte, 10),
+		X25519PrivateKey: make([]byte, 20),
 	}}
 	km1 := newKM(manager1)
 	ok, err := km1.keysAreInConfiguration()
@@ -177,8 +173,8 @@ func Test_keysAreInConfiguration_LengthValidation(t *testing.T) {
 
 	// correct lengths -> true
 	manager2 := &mockConfigurationManager{cfg: &Configuration{
-		Ed25519PublicKey:  make([]byte, ed25519.PublicKeySize),
-		Ed25519PrivateKey: make([]byte, ed25519.PrivateKeySize),
+		X25519PublicKey:  make([]byte, 32),
+		X25519PrivateKey: make([]byte, 32),
 	}}
 	km2 := newKM(manager2)
 	ok, err = km2.keysAreInConfiguration()
@@ -207,7 +203,7 @@ func Test_keysAreInEnvVariables_BadPublicBase64(t *testing.T) {
 	km := newKM(manager)
 
 	mustSetenv(t, publicKeyEnvVar, "!!!bad!!!")
-	mustSetenv(t, privateKeyEnvVar, base64.StdEncoding.EncodeToString(make([]byte, ed25519.PrivateKeySize)))
+	mustSetenv(t, privateKeyEnvVar, base64.StdEncoding.EncodeToString(make([]byte, 32)))
 
 	ok, err := km.keysAreInEnvVariables()
 	if ok || err == nil || !strings.Contains(err.Error(), "failed to decode public key") {
@@ -219,7 +215,7 @@ func Test_keysAreInEnvVariables_BadPrivateBase64(t *testing.T) {
 	manager := &mockConfigurationManager{cfg: &Configuration{}}
 	km := newKM(manager)
 
-	mustSetenv(t, publicKeyEnvVar, base64.StdEncoding.EncodeToString(make([]byte, ed25519.PublicKeySize)))
+	mustSetenv(t, publicKeyEnvVar, base64.StdEncoding.EncodeToString(make([]byte, 32)))
 	mustSetenv(t, privateKeyEnvVar, "!!!bad!!!")
 
 	ok, err := km.keysAreInEnvVariables()
@@ -235,11 +231,11 @@ func Test_keysAreInEnvVariables_InjectError(t *testing.T) {
 	}
 	km := newKM(manager)
 
-	mustSetenv(t, publicKeyEnvVar, base64.StdEncoding.EncodeToString(make([]byte, ed25519.PublicKeySize)))
-	mustSetenv(t, privateKeyEnvVar, base64.StdEncoding.EncodeToString(make([]byte, ed25519.PrivateKeySize)))
+	mustSetenv(t, publicKeyEnvVar, base64.StdEncoding.EncodeToString(make([]byte, 32)))
+	mustSetenv(t, privateKeyEnvVar, base64.StdEncoding.EncodeToString(make([]byte, 32)))
 
 	ok, err := km.keysAreInEnvVariables()
-	if ok || err == nil || !strings.Contains(err.Error(), "failed to inject Ed25519 key pair") {
+	if ok || err == nil || !strings.Contains(err.Error(), "failed to inject X25519 key pair") {
 		t.Fatalf("want inject error, got (%v, %v)", ok, err)
 	}
 }
@@ -248,8 +244,8 @@ func Test_keysAreInEnvVariables_Valid(t *testing.T) {
 	manager := &mockConfigurationManager{cfg: &Configuration{}}
 	km := newKM(manager)
 
-	mustSetenv(t, publicKeyEnvVar, base64.StdEncoding.EncodeToString(make([]byte, ed25519.PublicKeySize)))
-	mustSetenv(t, privateKeyEnvVar, base64.StdEncoding.EncodeToString(make([]byte, ed25519.PrivateKeySize)))
+	mustSetenv(t, publicKeyEnvVar, base64.StdEncoding.EncodeToString(make([]byte, 32)))
+	mustSetenv(t, privateKeyEnvVar, base64.StdEncoding.EncodeToString(make([]byte, 32)))
 
 	ok, err := km.keysAreInEnvVariables()
 	if !ok || err != nil {

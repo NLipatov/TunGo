@@ -16,8 +16,8 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 
 	"tungo/application/network/connection"
-	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/session"
@@ -517,7 +517,7 @@ func TestHandleClient_RekeyInit_DispatchedToControlPlane(t *testing.T) {
 	defer cancel()
 
 	// Build a valid RekeyInit packet.
-	crypto := &handshake.DefaultCrypto{}
+	crypto := &primitives.DefaultKeyDeriver{}
 	pub, _, err := crypto.GenerateX25519KeyPair()
 	if err != nil {
 		t.Fatal(err)
