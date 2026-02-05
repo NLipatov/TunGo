@@ -99,7 +99,11 @@ func (w *ConfigWatcher) Watch(ctx context.Context) {
 				fsEvents = nil // Channel closed, fall back to polling only
 				continue
 			}
-			if event.Op&(fsnotify.Write|fsnotify.Create) != 0 {
+			// Watch for Write, Create, and Rename (atomic writes use rename)
+			if event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Rename) != 0 {
+				if w.logger != nil {
+					w.logger.Printf("ConfigWatcher: detected config change (op=%s)", event.Op)
+				}
 				w.checkAndRevoke()
 			}
 		case err, ok := <-fsErrors:
@@ -175,6 +179,9 @@ func (w *ConfigWatcher) checkAndRevoke() {
 	// Update runtime AllowedPeers map (enables new peers to connect without restart)
 	if w.peersUpdater != nil {
 		w.peersUpdater.Update(conf.AllowedPeers)
+		if w.logger != nil {
+			w.logger.Printf("ConfigWatcher: updated AllowedPeers (%d peers)", len(conf.AllowedPeers))
+		}
 	}
 
 	// Update previous state
