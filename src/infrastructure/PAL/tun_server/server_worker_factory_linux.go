@@ -6,7 +6,6 @@ import (
 	"io"
 	"net"
 	"net/netip"
-	"tungo/application/network/connection"
 	"tungo/application/network/routing"
 	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/cryptography/chacha20"
