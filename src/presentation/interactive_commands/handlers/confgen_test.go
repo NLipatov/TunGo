@@ -17,11 +17,13 @@ import (
 // ConfgenHandlerMockMgr implements ServerConfigurationManager and lets us
 // script configuration reads and increment errors.
 type ConfgenHandlerMockMgr struct {
-	cfg       *serverConfiguration.Configuration
-	cfgErr    error
-	incErr    error
-	injectErr error
-	incCalls  int
+	cfg         *serverConfiguration.Configuration
+	cfgErr      error
+	incErr      error
+	injectErr   error
+	addPeerErr  error
+	incCalls    int
+	addedPeers  []serverConfiguration.AllowedPeer
 }
 
 func (m *ConfgenHandlerMockMgr) Configuration() (*serverConfiguration.Configuration, error) {
@@ -37,6 +39,13 @@ func (m *ConfgenHandlerMockMgr) IncrementClientCounter() error {
 }
 func (m *ConfgenHandlerMockMgr) InjectX25519Keys(_, _ []byte) error {
 	return m.injectErr
+}
+func (m *ConfgenHandlerMockMgr) AddAllowedPeer(peer serverConfiguration.AllowedPeer) error {
+	if m.addPeerErr != nil {
+		return m.addPeerErr
+	}
+	m.addedPeers = append(m.addedPeers, peer)
+	return nil
 }
 
 // ConfgenHandlerMockIP implements ip.Contract. We override only the two methods

@@ -13,6 +13,7 @@ type ConfigurationManager interface {
 	Configuration() (*Configuration, error)
 	IncrementClientCounter() error
 	InjectX25519Keys(public, private []byte) error
+	AddAllowedPeer(peer AllowedPeer) error
 }
 
 type Manager struct {
@@ -100,6 +101,21 @@ func (c *Manager) InjectX25519Keys(public, private []byte) error {
 
 	configuration.X25519PublicKey = append([]byte(nil), public...)
 	configuration.X25519PrivateKey = append([]byte(nil), private...)
+
+	return c.writer.Write(*configuration)
+}
+
+func (c *Manager) AddAllowedPeer(peer AllowedPeer) error {
+	if len(peer.PublicKey) != 32 {
+		return fmt.Errorf("invalid public key length: got %d, want 32", len(peer.PublicKey))
+	}
+
+	configuration, configurationErr := c.Configuration()
+	if configurationErr != nil {
+		return configurationErr
+	}
+
+	configuration.AllowedPeers = append(configuration.AllowedPeers, peer)
 
 	return c.writer.Write(*configuration)
 }

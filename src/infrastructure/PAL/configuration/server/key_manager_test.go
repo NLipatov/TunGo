@@ -43,6 +43,10 @@ func (m *mockConfigurationManager) InjectX25519Keys(pub, priv []byte) error {
 	return nil
 }
 
+func (m *mockConfigurationManager) AddAllowedPeer(_ AllowedPeer) error {
+	return nil
+}
+
 // ---------- Helpers ----------
 
 func newKM(manager *mockConfigurationManager) *X25519KeyManager {

@@ -6,6 +6,7 @@ import (
 	serverConfiguration "tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/PAL/exec_commander"
 	"tungo/infrastructure/PAL/linux/network_tools/ip"
+	"tungo/infrastructure/cryptography/primitives"
 	nip "tungo/infrastructure/network/ip"
 	"tungo/infrastructure/settings"
 )
@@ -72,6 +73,36 @@ func (c *ConfgenHandler) generate() (*client.Configuration, error) {
 		return nil, err
 	}
 
+	// Generate client X25519 keypair for Noise IK handshake.
+	keyDeriver := &primitives.DefaultKeyDeriver{}
+	clientPubKey, clientPrivKey, err := keyDeriver.GenerateX25519KeyPair()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate client keypair: %w", err)
+	}
+
+	// Determine internal IP based on default protocol.
+	defaultProtocol := c.getDefaultProtocol(serverConf)
+	var internalIP string
+	switch defaultProtocol {
+	case settings.UDP:
+		internalIP = clientUDPIfIp
+	case settings.TCP:
+		internalIP = clientTCPIfIp
+	case settings.WS, settings.WSS:
+		internalIP = clientWSIfIp
+	}
+
+	// Add the new client to server's AllowedPeers.
+	newPeer := serverConfiguration.AllowedPeer{
+		PublicKey:  clientPubKey,
+		Enabled:    true,
+		ClientIP:   internalIP,
+		AllowedIPs: nil,
+	}
+	if err := c.serverConfigurationManager.AddAllowedPeer(newPeer); err != nil {
+		return nil, fmt.Errorf("failed to add client to AllowedPeers: %w", err)
+	}
+
 	conf := client.Configuration{
 		TCPSettings: settings.Settings{
 			InterfaceName:    serverConf.TCPSettings.InterfaceName,
@@ -106,8 +137,11 @@ func (c *ConfgenHandler) generate() (*client.Configuration, error) {
 			Encryption:       serverConf.WSSettings.Encryption,
 			DialTimeoutMs:    serverConf.WSSettings.DialTimeoutMs,
 		},
-		X25519PublicKey: serverConf.X25519PublicKey,
-		Protocol:        c.getDefaultProtocol(serverConf),
+		X25519PublicKey:  serverConf.X25519PublicKey,
+		Protocol:         defaultProtocol,
+		ClientPublicKey:  clientPubKey,
+		ClientPrivateKey: clientPrivKey[:],
+		InternalIP:       internalIP,
 	}
 
 	return &conf, nil

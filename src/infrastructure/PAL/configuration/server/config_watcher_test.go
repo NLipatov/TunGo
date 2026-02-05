@@ -48,6 +48,10 @@ func (m *mockConfigManager) InjectX25519Keys(_, _ []byte) error {
 	return nil
 }
 
+func (m *mockConfigManager) AddAllowedPeer(_ AllowedPeer) error {
+	return nil
+}
+
 func (m *mockConfigManager) setConfig(c *Configuration) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

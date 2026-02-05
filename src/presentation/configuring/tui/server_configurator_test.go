@@ -3,6 +3,7 @@ package tui
 import (
 	"errors"
 	"reflect"
+	"runtime"
 	"testing"
 	"tungo/infrastructure/settings"
 
@@ -74,6 +75,10 @@ func (m *mockManager) InjectX25519Keys(_, _ []byte) error {
 	return m.injectErr
 }
 
+func (m *mockManager) AddAllowedPeer(_ srv.AllowedPeer) error {
+	return nil
+}
+
 func Test_selectOption_Success(t *testing.T) {
 	qsel := &queueSelector{options: []string{startServerOption}}
 	sf := &mockSelectorFactory{selector: qsel}
@@ -128,6 +133,9 @@ func Test_Configure_StartServerOption(t *testing.T) {
 }
 
 func Test_Configure_AddClientOption_Success_ThenExit(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("test requires Linux ip command")
+	}
 	qsel := &queueSelector{options: []string{addClientOption, startServerOption}}
 	sf := &mockSelectorFactory{selector: qsel}
 
