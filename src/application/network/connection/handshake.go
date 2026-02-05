@@ -1,7 +1,6 @@
 package connection
 
 import (
-	"net"
 	"net/netip"
 	"tungo/infrastructure/settings"
 )
@@ -10,7 +9,7 @@ type Handshake interface {
 	Id() [32]byte
 	KeyClientToServer() []byte
 	KeyServerToClient() []byte
-	ServerSideHandshake(transport Transport) (net.IP, error)
+	ServerSideHandshake(transport Transport) (netip.Addr, error)
 	ClientSideHandshake(transport Transport, settings settings.Settings) error
 }
 

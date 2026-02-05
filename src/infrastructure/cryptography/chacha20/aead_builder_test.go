@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/hex"
-	"net"
+	"net/netip"
 	"testing"
 	"tungo/application/network/connection"
 	"tungo/infrastructure/settings"
@@ -23,7 +23,7 @@ func (f fakeHandshake) Id() [32]byte {
 	panic("not implemented")
 }
 
-func (f fakeHandshake) ServerSideHandshake(_ connection.Transport) (net.IP, error) {
+func (f fakeHandshake) ServerSideHandshake(_ connection.Transport) (netip.Addr, error) {
 	panic("not implemented")
 }
 

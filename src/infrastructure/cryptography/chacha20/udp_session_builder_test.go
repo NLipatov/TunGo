@@ -2,7 +2,7 @@ package chacha20
 
 import (
 	"bytes"
-	"net"
+	"net/netip"
 	"testing"
 	"tungo/application/network/connection"
 	"tungo/infrastructure/settings"
@@ -20,8 +20,8 @@ type mockUdpHandshake struct {
 func (m *mockUdpHandshake) Id() [32]byte              { return m.id }
 func (m *mockUdpHandshake) KeyServerToClient() []byte { return m.server }
 func (m *mockUdpHandshake) KeyClientToServer() []byte { return m.client }
-func (m *mockUdpHandshake) ServerSideHandshake(_ connection.Transport) (net.IP, error) {
-	return m.server, nil
+func (m *mockUdpHandshake) ServerSideHandshake(_ connection.Transport) (netip.Addr, error) {
+	return netip.Addr{}, nil
 }
 func (m *mockUdpHandshake) ClientSideHandshake(_ connection.Transport, _ settings.Settings) error {
 	return nil

@@ -6,6 +6,7 @@ import (
 	"net/netip"
 	"sync"
 	"time"
+	"tungo/infrastructure/cryptography/mem"
 
 	"golang.org/x/crypto/blake2s"
 	"golang.org/x/crypto/chacha20poly1305"
@@ -95,7 +96,7 @@ func (cm *CookieManager) CreateCookieReply(clientIP netip.Addr, clientEphemeral,
 	cookieValue := cm.ComputeCookieValue(clientIP)
 
 	key := deriveCookieEncryptionKey(serverPubKey, clientEphemeral)
-	defer zeroBytes(key[:])
+	defer mem.ZeroBytes(key[:])
 
 	aead, err := chacha20poly1305.NewX(key[:])
 	if err != nil {
@@ -125,7 +126,7 @@ func DecryptCookieReply(reply, clientEphemeral, serverPubKey []byte) ([]byte, er
 	ciphertext := reply[CookieNonceSize:]
 
 	key := deriveCookieEncryptionKey(serverPubKey, clientEphemeral)
-	defer zeroBytes(key[:])
+	defer mem.ZeroBytes(key[:])
 
 	aead, err := chacha20poly1305.NewX(key[:])
 	if err != nil {
@@ -175,7 +176,7 @@ func (cm *CookieManager) RotateSecret() error {
 	cm.secret = newSecret
 	cm.mu.Unlock()
 
-	zeroBytes(oldSecret[:])
+	mem.ZeroBytes(oldSecret[:])
 	return nil
 }
 

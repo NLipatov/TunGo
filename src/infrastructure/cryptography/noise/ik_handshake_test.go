@@ -6,6 +6,7 @@ import (
 	"net/netip"
 	"strings"
 	"testing"
+
 	framelimit "tungo/domain/network/ip/frame_limit"
 	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/network/tcp/adapters"
@@ -60,7 +61,7 @@ func TestIKHandshake_Success(t *testing.T) {
 	serverAdapter, _ := adapters.NewLengthPrefixFramingAdapter(serverConn, framelimit.Cap(2048))
 
 	// Run both sides concurrently
-	var srvIP net.IP
+	var srvIP netip.Addr
 	srvCh := make(chan error, 1)
 	cliCh := make(chan error, 1)
 
@@ -95,8 +96,8 @@ func TestIKHandshake_Success(t *testing.T) {
 	}
 
 	// Verify client IP
-	expectedIP := net.ParseIP("10.0.0.5").To4()
-	if !srvIP.Equal(expectedIP) {
+	expectedIP := netip.MustParseAddr("10.0.0.5")
+	if srvIP != expectedIP {
 		t.Fatalf("expected client IP %v, got %v", expectedIP, srvIP)
 	}
 

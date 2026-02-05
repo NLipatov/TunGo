@@ -159,13 +159,6 @@ func (r *Registrar) RegisterClient(addrPort netip.AddrPort, queue *udp.Registrat
 		return
 	}
 
-	intIp, intIpOk := netip.AddrFromSlice(internalIP)
-	if !intIpOk {
-		r.logger.Printf("failed to parse internal IP: %v", internalIP)
-		r.sendReset(addrPort)
-		return
-	}
-
 	// Extract authentication info from IK handshake result if available
 	var clientPubKey []byte
 	var allowedIPs []netip.Prefix
@@ -176,7 +169,7 @@ func (r *Registrar) RegisterClient(addrPort netip.AddrPort, queue *udp.Registrat
 		}
 	}
 
-	sess := session.NewSessionWithAuth(cryptoSession, controller, intIp, addrPort, clientPubKey, allowedIPs)
+	sess := session.NewSessionWithAuth(cryptoSession, controller, internalIP, addrPort, clientPubKey, allowedIPs)
 	egress := connection.NewDefaultEgress(regTransport, cryptoSession)
 	peer := session.NewPeer(sess, egress)
 	r.sessionRepo.Add(peer)

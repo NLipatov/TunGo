@@ -19,7 +19,7 @@ func (tcpRegLogger) Printf(string, ...any) {}
 
 // tcpRegHandshake is a mock handshake.
 type tcpRegHandshake struct {
-	internalIP net.IP
+	internalIP netip.Addr
 	id         [32]byte
 	c2s, s2c   []byte
 	err        error
@@ -31,9 +31,9 @@ func (h *tcpRegHandshake) KeyServerToClient() []byte { return h.s2c }
 func (*tcpRegHandshake) ClientSideHandshake(_ connection.Transport, _ settings.Settings) error {
 	return nil
 }
-func (h *tcpRegHandshake) ServerSideHandshake(_ connection.Transport) (net.IP, error) {
+func (h *tcpRegHandshake) ServerSideHandshake(_ connection.Transport) (netip.Addr, error) {
 	if h.err != nil {
-		return nil, h.err
+		return netip.Addr{}, h.err
 	}
 	return h.internalIP, nil
 }
@@ -134,7 +134,7 @@ func TestRegisterClient_HandshakeError_ClosesConn(t *testing.T) {
 func TestRegisterClient_CryptoFactoryError_ClosesConn(t *testing.T) {
 	hf := &tcpRegHandshakeFactory{
 		handshake: &tcpRegHandshake{
-			internalIP: net.IPv4(10, 0, 0, 1),
+			internalIP: netip.MustParseAddr("10.0.0.1"),
 			c2s:        make([]byte, 32),
 			s2c:        make([]byte, 32),
 		},
@@ -163,7 +163,7 @@ func TestRegisterClient_CryptoFactoryError_ClosesConn(t *testing.T) {
 func TestRegisterClient_Success(t *testing.T) {
 	hf := &tcpRegHandshakeFactory{
 		handshake: &tcpRegHandshake{
-			internalIP: net.IPv4(10, 0, 0, 1),
+			internalIP: netip.MustParseAddr("10.0.0.1"),
 			c2s:        make([]byte, 32),
 			s2c:        make([]byte, 32),
 		},
@@ -213,7 +213,7 @@ func (e *tcpRegEgress) Close() error           { e.closed = true; return nil }
 func TestRegisterClient_ReplacesExistingSession(t *testing.T) {
 	hf := &tcpRegHandshakeFactory{
 		handshake: &tcpRegHandshake{
-			internalIP: net.IPv4(10, 0, 0, 1),
+			internalIP: netip.MustParseAddr("10.0.0.1"),
 			c2s:        make([]byte, 32),
 			s2c:        make([]byte, 32),
 		},
@@ -268,7 +268,7 @@ func TestRegisterClient_ReplacesExistingSession(t *testing.T) {
 func TestRegisterClient_NonTCPAddr_ClosesConn(t *testing.T) {
 	hf := &tcpRegHandshakeFactory{
 		handshake: &tcpRegHandshake{
-			internalIP: net.IPv4(10, 0, 0, 1),
+			internalIP: netip.MustParseAddr("10.0.0.1"),
 			c2s:        make([]byte, 32),
 			s2c:        make([]byte, 32),
 		},
@@ -314,7 +314,7 @@ func (r *tcpRegFailingRepo) FindByDestinationIP(netip.Addr) (*session.Peer, erro
 func TestRegisterClient_LookupError_ClosesConn(t *testing.T) {
 	hf := &tcpRegHandshakeFactory{
 		handshake: &tcpRegHandshake{
-			internalIP: net.IPv4(10, 0, 0, 1),
+			internalIP: netip.MustParseAddr("10.0.0.1"),
 			c2s:        make([]byte, 32),
 			s2c:        make([]byte, 32),
 		},
@@ -342,10 +342,12 @@ func TestRegisterClient_LookupError_ClosesConn(t *testing.T) {
 	}
 }
 
-func TestRegisterClient_InvalidInternalIP_ClosesConn(t *testing.T) {
+func TestRegisterClient_ZeroInternalIP_Succeeds(t *testing.T) {
+	// With netip.Addr, zero value is still a valid address (just represents "no address")
+	// The registration should still succeed - the zero IP will be stored
 	hf := &tcpRegHandshakeFactory{
 		handshake: &tcpRegHandshake{
-			internalIP: net.IP{}, // invalid IP
+			internalIP: netip.Addr{}, // zero value
 			c2s:        make([]byte, 32),
 			s2c:        make([]byte, 32),
 		},
@@ -361,11 +363,14 @@ func TestRegisterClient_InvalidInternalIP_ClosesConn(t *testing.T) {
 		remoteAddr: &net.TCPAddr{IP: net.IPv4(192, 168, 1, 1), Port: 12345},
 	}
 
-	_, _, err := reg.RegisterClient(conn)
-	if err == nil {
-		t.Fatal("expected error for invalid internal IP")
+	peer, transport, err := reg.RegisterClient(conn)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if !conn.closed {
-		t.Fatal("expected conn to be closed")
+	if peer == nil {
+		t.Fatal("expected non-nil peer")
+	}
+	if transport == nil {
+		t.Fatal("expected non-nil transport")
 	}
 }

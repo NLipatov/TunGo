@@ -7,7 +7,6 @@ import (
 	"crypto/rand"
 	"errors"
 	"io"
-	"net"
 	"net/netip"
 	"sync"
 	"testing"
@@ -33,14 +32,14 @@ type TransportHandlerBlockingHandshake struct {
 func (b *TransportHandlerBlockingHandshake) Id() [32]byte              { return [32]byte{} }
 func (b *TransportHandlerBlockingHandshake) KeyClientToServer() []byte { return nil }
 func (b *TransportHandlerBlockingHandshake) KeyServerToClient() []byte { return nil }
-func (b *TransportHandlerBlockingHandshake) ServerSideHandshake(t connection.Transport) (net.IP, error) {
+func (b *TransportHandlerBlockingHandshake) ServerSideHandshake(t connection.Transport) (netip.Addr, error) {
 	buf := make([]byte, 1)
 	_, err := t.Read(buf)
 	if b.errCh != nil {
 		b.errCh <- err
 		close(b.errCh)
 	}
-	return nil, err
+	return netip.Addr{}, err
 }
 func (b *TransportHandlerBlockingHandshake) ClientSideHandshake(_ connection.Transport, _ settings.Settings) error {
 	return nil
@@ -68,12 +67,12 @@ func (f failingCryptoFactory) FromHandshake(_ connection.Handshake, _ bool) (con
 // Slow handshake mock: simulates long-running ServerSideHandshake
 type TransportHandlerSlowHandshake struct {
 	delay                         time.Duration
-	ip                            net.IP
+	ip                            netip.Addr
 	err                           error
 	TransportHandlerFakeHandshake // embed
 }
 
-func (s *TransportHandlerSlowHandshake) ServerSideHandshake(_ connection.Transport) (net.IP, error) {
+func (s *TransportHandlerSlowHandshake) ServerSideHandshake(_ connection.Transport) (netip.Addr, error) {
 	time.Sleep(s.delay)
 	return s.ip, s.err
 }
@@ -253,7 +252,7 @@ func (l *TransportHandlerFakeLogger) count(sub string) int {
 
 // TransportHandlerFakeHandshake & factory.
 type TransportHandlerFakeHandshake struct {
-	ip     net.IP
+	ip     netip.Addr
 	err    error
 	id     [32]byte
 	client [32]byte
@@ -263,7 +262,7 @@ type TransportHandlerFakeHandshake struct {
 func (f *TransportHandlerFakeHandshake) Id() [32]byte              { return f.id }
 func (f *TransportHandlerFakeHandshake) KeyClientToServer() []byte { return f.client[:] }
 func (f *TransportHandlerFakeHandshake) KeyServerToClient() []byte { return f.server[:] }
-func (f *TransportHandlerFakeHandshake) ServerSideHandshake(_ connection.Transport) (net.IP, error) {
+func (f *TransportHandlerFakeHandshake) ServerSideHandshake(_ connection.Transport) (netip.Addr, error) {
 	return f.ip, f.err
 }
 func (f *TransportHandlerFakeHandshake) ClientSideHandshake(_ connection.Transport, _ settings.Settings) error {
@@ -492,7 +491,7 @@ func TestTransportHandler_RegistrationPacket(t *testing.T) {
 	}
 
 	clientAddr := netip.MustParseAddrPort("192.168.1.10:5555")
-	internalIP := net.ParseIP("10.0.0.5")
+	internalIP := netip.MustParseAddr("10.0.0.5")
 	fakeHS := &TransportHandlerFakeHandshake{ip: internalIP}
 	handshakeFactory := &TransportHandlerFakeHandshakeFactory{hs: fakeHS}
 
@@ -533,7 +532,7 @@ func TestTransportHandler_HandshakeError_SendsSessionReset(t *testing.T) {
 	logger := &TransportHandlerFakeLogger{}
 	repo := &TransportHandlerSessionRepo{}
 	clientAddr := netip.MustParseAddrPort("192.168.1.20:5000")
-	fakeHS := &TransportHandlerFakeHandshake{ip: nil, err: errors.New("hs fail")}
+	fakeHS := &TransportHandlerFakeHandshake{ip: netip.Addr{}, err: errors.New("hs fail")}
 	handshakeFactory := &TransportHandlerFakeHandshakeFactory{hs: fakeHS}
 
 	writeCh := make(chan struct{}, 1)
@@ -573,7 +572,7 @@ func TestTransportHandler_DecryptError(t *testing.T) {
 	logger := &TransportHandlerFakeLogger{}
 	repo := &TransportHandlerSessionRepo{}
 	clientAddr := netip.MustParseAddrPort("192.168.1.30:4000")
-	internalIP := net.ParseIP("10.0.0.10")
+	internalIP := netip.MustParseAddr("10.0.0.10")
 	fakeHS := &TransportHandlerFakeHandshake{ip: internalIP}
 	handshakeFactory := &TransportHandlerFakeHandshakeFactory{hs: fakeHS}
 
@@ -630,7 +629,7 @@ func TestTransportHandler_WriteError(t *testing.T) {
 
 	logger := &TransportHandlerFakeLogger{}
 	clientAddr := netip.MustParseAddrPort("192.168.1.40:6000")
-	internalIP := net.ParseIP("10.0.0.40")
+	internalIP := netip.MustParseAddr("10.0.0.40")
 
 	fakeHS := &TransportHandlerFakeHandshake{ip: internalIP}
 	handshakeFactory := &TransportHandlerFakeHandshakeFactory{hs: fakeHS}
@@ -671,8 +670,7 @@ func TestTransportHandler_WriteError(t *testing.T) {
 	}
 
 	// 2) Now inject second packet dynamically - must be valid IPv4 packet with matching source IP
-	internalIPParsed, _ := netip.AddrFromSlice(internalIP)
-	validPacket := makeValidIPv4Packet(internalIPParsed)
+	validPacket := makeValidIPv4Packet(internalIP)
 	conn.readMu.Lock()
 	conn.readBufs = append(conn.readBufs, validPacket)
 	conn.readAddrs = append(conn.readAddrs, clientAddr)
@@ -711,7 +709,7 @@ func TestTransportHandler_HappyPath(t *testing.T) {
 	}
 	repo.sessions[clientAddr] = session.NewPeer(sess, nil)
 
-	fakeHS := &TransportHandlerFakeHandshake{ip: internalIP.AsSlice()}
+	fakeHS := &TransportHandlerFakeHandshake{ip: internalIP}
 	handshakeFactory := &TransportHandlerFakeHandshakeFactory{hs: fakeHS}
 
 	// Must use valid IPv4 packet with matching source IP for AllowedIPs validation
@@ -758,7 +756,7 @@ func TestTransportHandler_NATRebinding_ReRegister(t *testing.T) {
 	sessionRegistered := make(chan struct{})
 	repo.afterAdd = func() { close(sessionRegistered) }
 
-	fakeHS := &TransportHandlerFakeHandshake{ip: internalIP.AsSlice()}
+	fakeHS := &TransportHandlerFakeHandshake{ip: internalIP}
 	handshakeFactory := &TransportHandlerFakeHandshakeFactory{hs: fakeHS}
 
 	conn := &TransportHandlerFakeUdpListener{
@@ -780,37 +778,44 @@ func TestTransportHandler_NATRebinding_ReRegister(t *testing.T) {
 	<-done
 }
 
-// registerClient: bad internal IP slice -> no session added.
-func TestTransportHandler_RegisterClient_BadInternalIP(t *testing.T) {
+// registerClient with zero IP -> session is still added (zero value is valid in netip.Addr)
+func TestTransportHandler_RegisterClient_ZeroInternalIP(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	writer := &TransportHandlerFakeWriter{}
 	logger := &TransportHandlerFakeLogger{}
-	repo := &TransportHandlerSessionRepo{}
+	sessionRegistered := make(chan struct{})
+	repo := &TransportHandlerSessionRepo{
+		afterAdd: func() { close(sessionRegistered) },
+	}
 	clientAddr := netip.MustParseAddrPort("192.168.1.60:6000")
 
-	badIP := []byte{1, 2, 3} // invalid IP slice
-	fakeHS := &TransportHandlerFakeHandshake{ip: badIP}
+	fakeHS := &TransportHandlerFakeHandshake{ip: netip.Addr{}} // zero value
 	handshakeFactory := &TransportHandlerFakeHandshakeFactory{hs: fakeHS}
 
 	conn := &TransportHandlerFakeUdpListener{
-		readBufs:  [][]byte{{0x01}},
+		readBufs:  [][]byte{{0xde, 0xad}}, // needs >= 2 bytes to pass epoch check
 		readAddrs: []netip.AddrPort{clientAddr},
 	}
 	registrar := udp_registration.NewRegistrar(ctx, conn, repo, logger,
 		handshakeFactory, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
-		testSendReset(conn),
+		noopSendReset,
 	)
 	handler := NewTransportHandler(ctx, settings.Settings{Port: "6000"}, writer, conn, repo, logger, registrar)
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
-	time.Sleep(20 * time.Millisecond)
-	cancel()
+
+	select {
+	case <-sessionRegistered:
+		cancel()
+	case <-time.After(time.Second):
+		t.Fatal("timeout: session was not registered")
+	}
 	<-done
 
-	if len(repo.adds) != 0 {
-		t.Errorf("expected no session registered due to bad internal IP, got %d", len(repo.adds))
+	if len(repo.adds) != 1 {
+		t.Errorf("expected 1 session registered with zero IP, got %d", len(repo.adds))
 	}
 }
 
@@ -875,7 +880,7 @@ func TestTransportHandler_SecondPacketGoesToExistingRegistrationQueue_NoNewGorou
 
 	fakeHS := &TransportHandlerSlowHandshake{
 		delay: 100 * time.Millisecond, // handshake runs slow, queue remains alive
-		ip:    net.ParseIP("10.0.0.70"),
+		ip:    netip.MustParseAddr("10.0.0.70"),
 	}
 
 	handshakeFactory := &TransportHandlerFakeHandshakeFactory{hs: fakeHS}
@@ -1045,7 +1050,7 @@ func TestRegisterClient_CryptoError_SendsReset(t *testing.T) {
 	repo := &TransportHandlerSessionRepo{}
 	client := netip.MustParseAddrPort("5.5.5.5:5555")
 
-	hs := &TransportHandlerFakeHandshake{ip: net.ParseIP("10.0.0.5")}
+	hs := &TransportHandlerFakeHandshake{ip: netip.MustParseAddr("10.0.0.5")}
 	hsf := &TransportHandlerFakeHandshakeFactory{hs: hs}
 
 	writeCh := make(chan struct{}, 1)

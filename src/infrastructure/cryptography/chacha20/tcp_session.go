@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"sync"
+	"tungo/infrastructure/cryptography/mem"
 
 	"golang.org/x/crypto/chacha20poly1305"
 )
@@ -267,17 +268,17 @@ func (c *TcpCrypto) Zeroize() {
 	if c.prev != nil {
 		c.prev.zeroize()
 	}
-	zeroBytes(c.sessionId[:])
+	mem.ZeroBytes(c.sessionId[:])
 }
 
 // zeroize zeros key material in a DefaultTcpSession.
 func (s *DefaultTcpSession) zeroize() {
 	// cipher.AEAD doesn't expose key material, but we zero what we can
-	zeroBytes(s.SessionId[:])
-	zeroBytes(s.encryptionAadBuf[:])
-	zeroBytes(s.decryptionAadBuf[:])
-	zeroBytes(s.encryptionNonceBuf[:])
-	zeroBytes(s.decryptionNonceBuf[:])
+	mem.ZeroBytes(s.SessionId[:])
+	mem.ZeroBytes(s.encryptionAadBuf[:])
+	mem.ZeroBytes(s.decryptionAadBuf[:])
+	mem.ZeroBytes(s.encryptionNonceBuf[:])
+	mem.ZeroBytes(s.decryptionNonceBuf[:])
 	if s.SendNonce != nil {
 		s.SendNonce.Zeroize()
 	}

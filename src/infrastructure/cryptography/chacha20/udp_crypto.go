@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"sync"
+	"tungo/infrastructure/cryptography/mem"
 
 	"golang.org/x/crypto/chacha20poly1305"
 )
@@ -140,7 +141,7 @@ func (c *EpochUdpCrypto) Zeroize() {
 	defer c.rekeyMu.Unlock()
 
 	// Zero the session ID
-	zeroBytes(c.sessionId[:])
+	mem.ZeroBytes(c.sessionId[:])
 
 	// Zero all sessions in the ring.
 	// ZeroizeAll is part of EpochRing interface - no type assertion needed.

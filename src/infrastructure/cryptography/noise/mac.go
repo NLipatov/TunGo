@@ -2,6 +2,7 @@ package noise
 
 import (
 	"crypto/hmac"
+	"tungo/infrastructure/cryptography/mem"
 
 	"golang.org/x/crypto/blake2s"
 )
@@ -66,7 +67,7 @@ func deriveMAC1Key(serverPubKey []byte) [32]byte {
 // Uses BLAKE2s's built-in keyed MAC mode for efficiency and FIPS compatibility.
 func ComputeMAC1(msg1, serverPubKey []byte) []byte {
 	key := deriveMAC1Key(serverPubKey)
-	defer zeroBytes(key[:])
+	defer mem.ZeroBytes(key[:])
 
 	// BLAKE2s-128 with key
 	h, _ := blake2s.New128(key[:])
@@ -107,7 +108,7 @@ func deriveMAC2Key(cookie []byte) [32]byte {
 // Uses BLAKE2s's built-in keyed MAC mode for efficiency and FIPS compatibility.
 func ComputeMAC2(msg1, mac1, cookie []byte) []byte {
 	key := deriveMAC2Key(cookie)
-	defer zeroBytes(key[:])
+	defer mem.ZeroBytes(key[:])
 
 	// BLAKE2s-128 with key
 	h, _ := blake2s.New128(key[:])

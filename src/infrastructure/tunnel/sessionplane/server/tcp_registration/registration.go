@@ -69,18 +69,12 @@ func (r *Registrar) RegisterClient(conn net.Conn) (*session.Peer, connection.Tra
 		return nil, nil, fmt.Errorf("invalid remote address type: %T", addr)
 	}
 
-	intIP, intIPOk := netip.AddrFromSlice(internalIP)
-	if !intIPOk {
-		_ = framingAdapter.Close()
-		return nil, nil, fmt.Errorf("invalid internal IP from handshake")
-	}
-
 	// If session not found, or client is using a new (IP, port) address (e.g., after NAT rebinding), re-register the client.
-	existingPeer, getErr := r.sessionManager.GetByInternalAddrPort(intIP)
+	existingPeer, getErr := r.sessionManager.GetByInternalAddrPort(internalIP)
 	if getErr == nil {
 		_ = existingPeer.Egress().Close()
 		r.sessionManager.Delete(existingPeer)
-		r.logger.Printf("Replacing existing session for %s", intIP)
+		r.logger.Printf("Replacing existing session for %s", internalIP)
 	} else if !errors.Is(getErr, session.ErrNotFound) {
 		_ = framingAdapter.Close()
 		return nil, nil, fmt.Errorf(
@@ -101,7 +95,7 @@ func (r *Registrar) RegisterClient(conn net.Conn) (*session.Peer, connection.Tra
 		}
 	}
 
-	sess := session.NewSessionWithAuth(cryptographyService, rekeyCtrl, intIP, tcpAddr.AddrPort(), clientPubKey, allowedIPs)
+	sess := session.NewSessionWithAuth(cryptographyService, rekeyCtrl, internalIP, tcpAddr.AddrPort(), clientPubKey, allowedIPs)
 	egress := connection.NewDefaultEgress(framingAdapter, cryptographyService)
 	peer := session.NewPeer(sess, egress)
 	r.sessionManager.Add(peer)

@@ -3,6 +3,7 @@ package chacha20
 import (
 	"crypto/cipher"
 	"fmt"
+	"tungo/infrastructure/cryptography/mem"
 
 	"golang.org/x/crypto/chacha20poly1305"
 )
@@ -131,9 +132,9 @@ func (s *DefaultUdpSession) CreateAAD(isServerToClient bool, nonce, aad []byte) 
 // SECURITY INVARIANT: All session state including replay window is zeroed.
 // This reduces forensic exposure of key material and packet patterns.
 func (s *DefaultUdpSession) Zeroize() {
-	zeroBytes(s.SessionId[:])
-	zeroBytes(s.encryptionAadBuf[:])
-	zeroBytes(s.decryptionAadBuf[:])
+	mem.ZeroBytes(s.SessionId[:])
+	mem.ZeroBytes(s.encryptionAadBuf[:])
+	mem.ZeroBytes(s.decryptionAadBuf[:])
 	if s.nonce != nil {
 		s.nonce.Zeroize()
 	}
