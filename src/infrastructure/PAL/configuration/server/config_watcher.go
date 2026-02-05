@@ -194,9 +194,11 @@ func (w *ConfigWatcher) checkAndRevoke() {
 	// Update runtime AllowedPeers map (enables new peers to connect without restart)
 	if w.peersUpdater != nil {
 		w.peersUpdater.Update(conf.AllowedPeers)
-		if w.logger != nil {
-			w.logger.Printf("ConfigWatcher: updated AllowedPeers (%d peers)", len(conf.AllowedPeers))
-		}
+	}
+
+	// Log only if peer count changed
+	if w.logger != nil && len(currentPeers) != len(w.prevPeers) {
+		w.logger.Printf("ConfigWatcher: AllowedPeers changed (%d -> %d peers)", len(w.prevPeers), len(currentPeers))
 	}
 
 	// Update previous state
