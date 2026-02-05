@@ -81,7 +81,9 @@ func (c *EpochUdpCrypto) Rekey(sendKey, recvKey []byte) (uint16, error) {
 	if oldest, ok := c.ring.Oldest(); ok &&
 		c.ring.Len() == c.ring.Capacity() &&
 		oldest == sendEpoch {
-		return 0, fmt.Errorf("rekey refused: active send epoch %d would be evicted; wait for confirmation", sendEpoch)
+		// SECURITY (R-19): Generic error to avoid revealing epoch state.
+		// Detailed reason: active send epoch would be evicted before confirmation.
+		return 0, fmt.Errorf("rekey refused: wait for confirmation before next rekey")
 	}
 
 	sendCipher, err := chacha20poly1305.New(sendKey)
@@ -123,4 +125,24 @@ func (c *EpochUdpCrypto) RemoveEpoch(epoch uint16) bool {
 		return false
 	}
 	return c.ring.Remove(Epoch(epoch))
+}
+
+// Zeroize overwrites all key material with zeros.
+// After this call, the crypto instance is unusable.
+// Implements connection.CryptoZeroizer.
+//
+// SECURITY INVARIANT: All session keys in the EpochRing are zeroed.
+// This is guaranteed by the EpochRing interface (ZeroizeAll is mandatory).
+func (c *EpochUdpCrypto) Zeroize() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.rekeyMu.Lock()
+	defer c.rekeyMu.Unlock()
+
+	// Zero the session ID
+	zeroBytes(c.sessionId[:])
+
+	// Zero all sessions in the ring.
+	// ZeroizeAll is part of EpochRing interface - no type assertion needed.
+	c.ring.ZeroizeAll()
 }

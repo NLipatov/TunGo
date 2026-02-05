@@ -17,6 +17,7 @@ func (s concurrentRepoMockSession) ExternalAddrPort() netip.AddrPort { return s.
 func (s concurrentRepoMockSession) InternalAddr() netip.Addr         { return s.in }
 func (s concurrentRepoMockSession) Crypto() connection.Crypto        { return nil }
 func (s concurrentRepoMockSession) RekeyController() rekey.FSM       { return nil }
+func (s concurrentRepoMockSession) IsSourceAllowed(netip.Addr) bool  { return true }
 
 type concurrentRepoMockManager struct {
 	add, del, getInt, getExt int
@@ -40,6 +41,10 @@ func (m *concurrentRepoMockManager) GetByInternalAddrPort(b netip.Addr) (*Peer, 
 func (m *concurrentRepoMockManager) GetByExternalAddrPort(b netip.AddrPort) (*Peer, error) {
 	m.getExt++
 	m.lastIP = b.Addr()
+	return m.lastPeer, nil
+}
+func (m *concurrentRepoMockManager) FindByDestinationIP(b netip.Addr) (*Peer, error) {
+	m.lastIP = b
 	return m.lastPeer, nil
 }
 

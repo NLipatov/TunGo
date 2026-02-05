@@ -40,3 +40,8 @@ func (t *RegistrationAdapter) Close() error {
 	// TransportHandler. The queue is closed by removeRegistrationQueue.
 	return nil
 }
+
+// RemoteAddrPort returns the client's external address for cookie IP binding.
+func (t *RegistrationAdapter) RemoteAddrPort() netip.AddrPort {
+	return t.addrPort
+}

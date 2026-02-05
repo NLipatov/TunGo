@@ -6,6 +6,7 @@ import (
 
 	"tungo/application/logging"
 	"tungo/application/network/connection"
+	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/session"
@@ -49,6 +50,13 @@ func (w *tcpDataplaneWorker) Run() {
 				w.logger.Printf("invalid ciphertext length: %d", n)
 				continue
 			}
+			// SECURITY: Check closed flag before using crypto.
+			// ConfigWatcher may have terminated this session via TerminateByPubKey.
+			// The closed flag is set atomically before crypto is zeroed.
+			if w.peer.IsClosed() {
+				w.logger.Printf("session closed, exiting")
+				return
+			}
 			pt, err := w.peer.Crypto().Decrypt(buffer[:n])
 			if err != nil {
 				w.logger.Printf("failed to decrypt data: %s", err)
@@ -63,6 +71,20 @@ func (w *tcpDataplaneWorker) Run() {
 					// server ignores Ack
 				}
 			}
+
+			// Validate source IP against AllowedIPs after decryption
+			// Session interface embeds SessionAuth - no type assertion needed
+			srcIP, srcOk := ip.ExtractSourceIP(pt)
+			if !srcOk {
+				// Malformed IP header - drop to prevent AllowedIPs bypass
+				continue
+			}
+			if !w.peer.Session.IsSourceAllowed(srcIP) {
+				// Log violation and drop packet, but do NOT terminate session
+				w.logger.Printf("AllowedIPs violation: source %s not allowed", srcIP)
+				continue
+			}
+
 			if _, err = w.tunFile.Write(pt); err != nil {
 				w.logger.Printf("failed to write to TUN: %v", err)
 				return

@@ -132,8 +132,10 @@ func (t *TransportHandler) handlePacket(
 		return nil
 	}
 	// Fast path: existing session.
+	// SECURITY: Check IsClosed() to handle TOCTOU race with Delete.
+	// The peer might be marked for deletion between lookup and use.
 	peer, sessionLookupErr := t.sessionManager.GetByExternalAddrPort(addrPort)
-	if sessionLookupErr == nil && peer.ExternalAddrPort() == addrPort {
+	if sessionLookupErr == nil && !peer.IsClosed() && peer.ExternalAddrPort() == addrPort {
 		if t.dp == nil {
 			// Should not happen; keep behavior safe.
 			return nil

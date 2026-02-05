@@ -307,6 +307,9 @@ func (r *TransportHandlerSessionRepo) GetByExternalAddrPort(addr netip.AddrPort)
 	}
 	return s, nil
 }
+func (r *TransportHandlerSessionRepo) FindByDestinationIP(_ netip.Addr) (*session.Peer, error) {
+	return nil, errors.New("not implemented")
+}
 
 // testSession is a lightweight mock implementing connection.Session for tests.
 type testSession struct {
@@ -316,10 +319,21 @@ type testSession struct {
 	fsm        rekey.FSM
 }
 
-func (s *testSession) Crypto() connection.Crypto        { return s.crypto }
-func (s *testSession) InternalAddr() netip.Addr         { return s.internalIP }
-func (s *testSession) ExternalAddrPort() netip.AddrPort { return s.externalIP }
-func (s *testSession) RekeyController() rekey.FSM       { return s.fsm }
+func (s *testSession) Crypto() connection.Crypto          { return s.crypto }
+func (s *testSession) InternalAddr() netip.Addr           { return s.internalIP }
+func (s *testSession) ExternalAddrPort() netip.AddrPort   { return s.externalIP }
+func (s *testSession) RekeyController() rekey.FSM         { return s.fsm }
+func (s *testSession) IsSourceAllowed(netip.Addr) bool { return true }
+
+// makeValidIPv4Packet creates a minimal valid IPv4 packet with the given source IP.
+// Used in tests to satisfy AllowedIPs validation.
+func makeValidIPv4Packet(srcIP netip.Addr) []byte {
+	packet := make([]byte, 20) // Minimum IPv4 header
+	packet[0] = 0x45           // Version 4, IHL 5 (20 bytes)
+	src := srcIP.As4()
+	copy(packet[12:16], src[:])
+	return packet
+}
 
 // testSendReset creates a sendReset callback that encodes a SessionReset and writes to conn.
 func testSendReset(conn *TransportHandlerFakeUdpListener) func(netip.AddrPort) {
@@ -656,9 +670,11 @@ func TestTransportHandler_WriteError(t *testing.T) {
 		t.Fatal("timeout: session not registered")
 	}
 
-	// 2) Now inject second packet dynamically
+	// 2) Now inject second packet dynamically - must be valid IPv4 packet with matching source IP
+	internalIPParsed, _ := netip.AddrFromSlice(internalIP)
+	validPacket := makeValidIPv4Packet(internalIPParsed)
 	conn.readMu.Lock()
-	conn.readBufs = append(conn.readBufs, []byte{0xba, 0xad, 0xf0, 0x0d})
+	conn.readBufs = append(conn.readBufs, validPacket)
 	conn.readAddrs = append(conn.readAddrs, clientAddr)
 	conn.readMu.Unlock()
 
@@ -698,8 +714,10 @@ func TestTransportHandler_HappyPath(t *testing.T) {
 	fakeHS := &TransportHandlerFakeHandshake{ip: internalIP.AsSlice()}
 	handshakeFactory := &TransportHandlerFakeHandshakeFactory{hs: fakeHS}
 
+	// Must use valid IPv4 packet with matching source IP for AllowedIPs validation
+	validPacket := makeValidIPv4Packet(internalIP)
 	conn := &TransportHandlerFakeUdpListener{
-		readBufs:  [][]byte{{0xde, 0xad, 0xbe, 0xef}},
+		readBufs:  [][]byte{validPacket},
 		readAddrs: []netip.AddrPort{clientAddr},
 	}
 	registrar := udp_registration.NewRegistrar(ctx, conn, repo, logger,

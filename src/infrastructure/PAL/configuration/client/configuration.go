@@ -11,6 +11,19 @@ type Configuration struct {
 	WSSettings      settings.Settings `json:"WSSettings"`
 	X25519PublicKey []byte            `json:"X25519PublicKey"`
 	Protocol        settings.Protocol `json:"Protocol"`
+
+	// Client identity for Noise IK handshake.
+	// ClientPublicKey MUST match the PublicKey in server's AllowedPeers entry.
+	ClientPublicKey []byte `json:"ClientPublicKey"`
+
+	// ClientPrivateKey is the client's X25519 static private key (32 bytes).
+	// MUST derive ClientPublicKey when processed with X25519.
+	ClientPrivateKey []byte `json:"ClientPrivateKey"`
+
+	// InternalIP is the server-assigned internal VPN IP for this client.
+	// MUST match ClientIP in server's AllowedPeers entry.
+	// Client MUST use exactly this IP as source in tunnel packets.
+	InternalIP string `json:"InternalIP"`
 }
 
 func (c *Configuration) ActiveSettings() (settings.Settings, error) {

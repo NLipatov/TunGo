@@ -26,8 +26,29 @@ type SessionRekey interface {
 	RekeyController() rekey.FSM
 }
 
+// SessionAuth provides AllowedIPs enforcement functionality.
+// SECURITY INVARIANT: All sessions MUST implement this interface.
+// IsSourceAllowed MUST be called for every ingress packet after decryption.
+type SessionAuth interface {
+	// IsSourceAllowed checks if the given source IP is allowed for this session.
+	// Returns true if srcIP equals the internal IP or is within any allowed prefix.
+	// MUST normalize IPv4-mapped-IPv6 addresses before comparison.
+	IsSourceAllowed(srcIP netip.Addr) bool
+}
+
+// Session is the complete interface for established secure sessions.
+// Embeds SessionAuth to enforce AllowedIPs checking at the type level.
 type Session interface {
 	SessionMeta
 	SessionCrypto
 	SessionRekey
+	SessionAuth
+}
+
+// SessionIdentity provides access to the client's cryptographic identity.
+// Optional interface for sessions created with authentication info.
+type SessionIdentity interface {
+	// ClientPubKey returns the client's X25519 static public key.
+	// May return nil for sessions without authentication info.
+	ClientPubKey() []byte
 }

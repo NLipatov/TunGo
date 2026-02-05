@@ -7,6 +7,40 @@ import (
 	"tungo/infrastructure/settings"
 )
 
+// AllowedPeer represents a single authorized client.
+// This is the sole source of truth for client authorization.
+type AllowedPeer struct {
+	// PublicKey is the client's X25519 static public key (32 bytes).
+	// This is the cryptographic identity.
+	PublicKey []byte `json:"PublicKey"`
+
+	// Enabled controls whether this client can connect.
+	// Setting to false revokes access immediately.
+	Enabled bool `json:"Enabled"`
+
+	// ClientIP is the server-assigned internal IP for this client.
+	// Exactly one address: /32 (IPv4) or /128 (IPv6).
+	// The client does not choose this.
+	ClientIP string `json:"ClientIP"`
+
+	// AllowedIPs are additional prefixes this client may use as source IP.
+	// Optional. ClientIP is always implicitly allowed.
+	AllowedIPs []string `json:"AllowedIPs"`
+}
+
+// AllowedIPPrefixes parses AllowedIPs and returns them as netip.Prefix slice.
+// ClientIP is NOT included; caller should handle it separately.
+func (p *AllowedPeer) AllowedIPPrefixes() []netip.Prefix {
+	prefixes := make([]netip.Prefix, 0, len(p.AllowedIPs))
+	for _, cidr := range p.AllowedIPs {
+		prefix, err := netip.ParsePrefix(cidr)
+		if err == nil {
+			prefixes = append(prefixes, prefix)
+		}
+	}
+	return prefixes
+}
+
 type Configuration struct {
 	TCPSettings           settings.Settings `json:"TCPSettings"`
 	UDPSettings           settings.Settings `json:"UDPSettings"`
@@ -18,6 +52,10 @@ type Configuration struct {
 	EnableTCP             bool              `json:"EnableTCP"`
 	EnableUDP             bool              `json:"EnableUDP"`
 	EnableWS              bool              `json:"EnableWS"`
+
+	// AllowedPeers is the list of authorized clients.
+	// Each peer is identified by their X25519 static public key.
+	AllowedPeers []AllowedPeer `json:"AllowedPeers"`
 }
 
 func NewDefaultConfiguration() *Configuration {
@@ -230,6 +268,12 @@ func (c *Configuration) Validate() error {
 	if c.overlappingSubnets(subnets) {
 		return fmt.Errorf("invalid 'InterfaceIPCIDR':  two or more interface subnets are overlapping.")
 	}
+
+	// validate AllowedPeers
+	if err := c.ValidateAllowedPeers(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -240,6 +284,112 @@ func (c *Configuration) overlappingSubnets(subnets []netip.Prefix) bool {
 			if a.Overlaps(b) || b.Overlaps(a) {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+// ValidateAllowedPeers validates the AllowedPeers configuration.
+// Ensures no AllowedIPs overlap between different peers and no duplicate public keys.
+// Also validates that each ClientIP is within at least one enabled interface subnet.
+func (c *Configuration) ValidateAllowedPeers() error {
+	// Collect interface subnets for ClientIP validation
+	var interfaceSubnets []netip.Prefix
+	if c.EnableTCP {
+		if pfx, err := netip.ParsePrefix(c.TCPSettings.InterfaceIPCIDR); err == nil {
+			interfaceSubnets = append(interfaceSubnets, pfx)
+		}
+	}
+	if c.EnableUDP {
+		if pfx, err := netip.ParsePrefix(c.UDPSettings.InterfaceIPCIDR); err == nil {
+			interfaceSubnets = append(interfaceSubnets, pfx)
+		}
+	}
+	if c.EnableWS {
+		if pfx, err := netip.ParsePrefix(c.WSSettings.InterfaceIPCIDR); err == nil {
+			interfaceSubnets = append(interfaceSubnets, pfx)
+		}
+	}
+
+	// Collect all prefixes with their peer index
+	type prefixOwner struct {
+		prefix netip.Prefix
+		peer   int
+	}
+	var allPrefixes []prefixOwner
+
+	for i, peer := range c.AllowedPeers {
+		// Validate public key length
+		if len(peer.PublicKey) != 32 {
+			return fmt.Errorf("peer %d: invalid public key length %d, expected 32", i, len(peer.PublicKey))
+		}
+
+		// Parse and collect ClientIP as /32 or /128
+		clientIP, err := netip.ParseAddr(peer.ClientIP)
+		if err != nil {
+			return fmt.Errorf("peer %d: invalid ClientIP %q: %w", i, peer.ClientIP, err)
+		}
+
+		// Validate ClientIP is within at least one interface subnet
+		if !c.isClientIPInSubnet(clientIP, interfaceSubnets) {
+			return fmt.Errorf(
+				"peer %d: ClientIP %s is not within any enabled interface subnet; "+
+					"must be in one of: %v",
+				i, peer.ClientIP, interfaceSubnets,
+			)
+		}
+
+		bits := 32
+		if clientIP.Is6() {
+			bits = 128
+		}
+		clientPrefix := netip.PrefixFrom(clientIP, bits)
+		allPrefixes = append(allPrefixes, prefixOwner{clientPrefix, i})
+
+		// Parse and collect AllowedIPs
+		for _, cidr := range peer.AllowedIPs {
+			prefix, err := netip.ParsePrefix(cidr)
+			if err != nil {
+				return fmt.Errorf("peer %d: invalid AllowedIP %q: %w", i, cidr, err)
+			}
+			allPrefixes = append(allPrefixes, prefixOwner{prefix, i})
+		}
+	}
+
+	// Check for overlaps between different peers
+	for i := 0; i < len(allPrefixes); i++ {
+		for j := i + 1; j < len(allPrefixes); j++ {
+			a, b := allPrefixes[i], allPrefixes[j]
+			if a.peer == b.peer {
+				continue // Same peer, overlap is fine
+			}
+			if a.prefix.Overlaps(b.prefix) {
+				return fmt.Errorf(
+					"AllowedIPs overlap: peer %d prefix %s overlaps with peer %d prefix %s",
+					a.peer, a.prefix, b.peer, b.prefix,
+				)
+			}
+		}
+	}
+
+	// Check for duplicate public keys
+	seen := make(map[string]int)
+	for i, peer := range c.AllowedPeers {
+		key := string(peer.PublicKey)
+		if prev, exists := seen[key]; exists {
+			return fmt.Errorf("duplicate public key: peer %d and peer %d", prev, i)
+		}
+		seen[key] = i
+	}
+
+	return nil
+}
+
+// isClientIPInSubnet checks if clientIP is contained in any of the interface subnets.
+func (c *Configuration) isClientIPInSubnet(clientIP netip.Addr, subnets []netip.Prefix) bool {
+	for _, subnet := range subnets {
+		if subnet.Contains(clientIP) {
+			return true
 		}
 	}
 	return false

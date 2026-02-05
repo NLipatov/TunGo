@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 	"tungo/domain/app"
 	"tungo/domain/mode"
 	"tungo/infrastructure/PAL/configuration/client"
@@ -21,6 +22,12 @@ import (
 	"tungo/presentation/runners/server"
 	"tungo/presentation/runners/version"
 	"tungo/presentation/signals/shutdown"
+)
+
+const (
+	// configWatchInterval is how often the server checks for AllowedPeers changes.
+	// Sessions for removed/disabled peers are revoked on detection.
+	configWatchInterval = 30 * time.Second
 )
 
 func main() {
@@ -144,9 +151,20 @@ func startServer(
 		configurationManager,
 	)
 
+	workerFactory := tun_server.NewServerWorkerFactory(configurationManager)
+
+	// Start ConfigWatcher to revoke sessions when AllowedPeers changes
+	configWatcher := serverConf.NewConfigWatcher(
+		configurationManager,
+		workerFactory.SessionRevoker(),
+		configWatchInterval,
+		log.Default(),
+	)
+	go configWatcher.Watch(ctx)
+
 	runner := server.NewRunner(
 		deps,
-		tun_server.NewServerWorkerFactory(configurationManager),
+		workerFactory,
 		tun_server.NewServerTrafficRouterFactory(),
 	)
 	return runner.Run(ctx)

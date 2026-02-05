@@ -24,25 +24,35 @@ import (
 type ServerWorkerFactory struct {
 	loggerFactory        loggerFactory
 	configurationManager server.ConfigurationManager
+	sessionRevoker       *session.CompositeSessionRevoker
 }
 
 func NewServerWorkerFactory(
 	manager server.ConfigurationManager,
-) connection.ServerWorkerFactory {
+) *ServerWorkerFactory {
 	return &ServerWorkerFactory{
 		loggerFactory:        newDefaultLoggerFactory(),
 		configurationManager: manager,
+		sessionRevoker:       session.NewCompositeSessionRevoker(),
 	}
 }
 
 func NewTestServerWorkerFactory(
 	loggerFactory loggerFactory,
 	manager server.ConfigurationManager,
-) connection.ServerWorkerFactory {
+) *ServerWorkerFactory {
 	return &ServerWorkerFactory{
 		loggerFactory:        loggerFactory,
 		configurationManager: manager,
+		sessionRevoker:       session.NewCompositeSessionRevoker(),
 	}
+}
+
+// SessionRevoker returns the composite session revoker that aggregates
+// all session repositories created by this factory.
+// Used by ConfigWatcher to revoke sessions when AllowedPeers changes.
+func (s *ServerWorkerFactory) SessionRevoker() *session.CompositeSessionRevoker {
+	return s.sessionRevoker
 }
 
 func (s *ServerWorkerFactory) CreateWorker(
@@ -70,6 +80,10 @@ func (s *ServerWorkerFactory) createTCPWorker(
 	sessionManager := session.NewConcurrentRepository(
 		session.NewDefaultRepository(),
 	)
+	// Register for session revocation on config changes
+	if revocable, ok := sessionManager.(session.RepositoryWithRevocation); ok {
+		s.sessionRevoker.Register(revocable)
+	}
 
 	th := tcp_chacha20.NewTunHandler(
 		ctx,
@@ -94,9 +108,16 @@ func (s *ServerWorkerFactory) createTCPWorker(
 	}
 
 	logger := s.loggerFactory.newLogger()
+
+	handshakeFactory, err := NewHandshakeFactory(*conf)
+	if err != nil {
+		_ = listener.Close()
+		return nil, fmt.Errorf("failed to create handshake factory: %w", err)
+	}
+
 	registrar := tcp_registration.NewRegistrar(
 		logger,
-		NewHandshakeFactory(*conf),
+		handshakeFactory,
 		chacha20.NewTcpSessionBuilder(chacha20.NewDefaultAEADBuilder()),
 		sessionManager,
 	)
@@ -121,6 +142,10 @@ func (s *ServerWorkerFactory) createWSWorker(
 	sessionManager := session.NewConcurrentRepository(
 		session.NewDefaultRepository(),
 	)
+	// Register for session revocation on config changes
+	if revocable, ok := sessionManager.(session.RepositoryWithRevocation); ok {
+		s.sessionRevoker.Register(revocable)
+	}
 
 	th := tcp_chacha20.NewTunHandler(
 		ctx,
@@ -151,9 +176,16 @@ func (s *ServerWorkerFactory) createWSWorker(
 	}
 
 	logger := s.loggerFactory.newLogger()
+
+	handshakeFactory, err := NewHandshakeFactory(*conf)
+	if err != nil {
+		_ = wsListener.Close()
+		return nil, fmt.Errorf("failed to create handshake factory: %w", err)
+	}
+
 	registrar := tcp_registration.NewRegistrar(
 		logger,
-		NewHandshakeFactory(*conf),
+		handshakeFactory,
 		chacha20.NewTcpSessionBuilder(chacha20.NewDefaultAEADBuilder()),
 		sessionManager,
 	)
@@ -178,6 +210,10 @@ func (s *ServerWorkerFactory) createUDPWorker(
 	sessionManager := session.NewConcurrentRepository(
 		session.NewDefaultRepository(),
 	)
+	// Register for session revocation on config changes
+	if revocable, ok := sessionManager.(session.RepositoryWithRevocation); ok {
+		s.sessionRevoker.Register(revocable)
+	}
 
 	conf, confErr := s.configurationManager.Configuration()
 	if confErr != nil {
@@ -214,12 +250,18 @@ func (s *ServerWorkerFactory) createUDPWorker(
 		sendReset,
 	)
 
+	handshakeFactory, err := NewHandshakeFactory(*conf)
+	if err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("failed to create handshake factory: %w", err)
+	}
+
 	registrar := udp_registration.NewRegistrar(
 		ctx,
 		conn,
 		sessionManager,
 		logger,
-		NewHandshakeFactory(*conf),
+		handshakeFactory,
 		chacha20.NewUdpSessionBuilder(chacha20.NewDefaultAEADBuilder()),
 		sendReset,
 	)

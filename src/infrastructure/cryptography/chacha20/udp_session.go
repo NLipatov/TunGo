@@ -88,10 +88,10 @@ func (s *DefaultUdpSession) Decrypt(ciphertext []byte) ([]byte, error) {
 	nonceBytes := ciphertext[:chacha20poly1305.NonceSize]
 	payloadBytes := ciphertext[chacha20poly1305.NonceSize:]
 
-	// 1) validate nonce
+	// 1) check nonce (tentative - don't commit yet)
 	var n12 [chacha20poly1305.NonceSize]byte
 	copy(n12[:], nonceBytes)
-	if err := s.nonceValidator.Validate(n12); err != nil {
+	if err := s.nonceValidator.Check(n12); err != nil {
 		return nil, err
 	}
 
@@ -99,8 +99,13 @@ func (s *DefaultUdpSession) Decrypt(ciphertext []byte) ([]byte, error) {
 	aad := s.CreateAAD(!s.isServer, nonceBytes, s.decryptionAadBuf[:])
 	pt, err := s.recvCipher.Open(payloadBytes[:0], nonceBytes, payloadBytes, aad)
 	if err != nil {
+		// Decryption failed - do NOT commit nonce to window
 		return nil, fmt.Errorf("failed to decrypt: %w", err)
 	}
+
+	// 3) commit nonce after successful decryption
+	s.nonceValidator.Accept(n12)
+
 	return pt, nil
 }
 
@@ -118,4 +123,22 @@ func (s *DefaultUdpSession) CreateAAD(isServerToClient bool, nonce, aad []byte) 
 	}
 	copy(aad[sessionIdentifierLength+directionLength:aadLength], nonce) // 48..60
 	return aad[:aadLength]
+}
+
+// Zeroize zeros key material in the session.
+// cipher.AEAD doesn't expose key material, but we zero what we can.
+//
+// SECURITY INVARIANT: All session state including replay window is zeroed.
+// This reduces forensic exposure of key material and packet patterns.
+func (s *DefaultUdpSession) Zeroize() {
+	zeroBytes(s.SessionId[:])
+	zeroBytes(s.encryptionAadBuf[:])
+	zeroBytes(s.decryptionAadBuf[:])
+	if s.nonce != nil {
+		s.nonce.Zeroize()
+	}
+	// Zero replay window state (nonce history is security-sensitive)
+	if s.nonceValidator != nil {
+		s.nonceValidator.Zeroize()
+	}
 }

@@ -19,6 +19,9 @@ const (
 	// HandshakeTimeout bounds how long we keep a registration goroutine alive
 	// in case the client stalls or disappears.
 	HandshakeTimeout = 10 * time.Second
+	// MaxConcurrentRegistrations limits the number of simultaneous handshakes
+	// to prevent memory exhaustion from spoofed source addresses.
+	MaxConcurrentRegistrations = 1000
 )
 
 // Registrar is the session-plane component responsible for turning unknown UDP peers
@@ -62,6 +65,11 @@ func NewRegistrar(
 
 func (r *Registrar) EnqueuePacket(addrPort netip.AddrPort, packet []byte) {
 	q, isNew := r.getOrCreateRegistrationQueue(addrPort)
+	if q == nil {
+		// At registration capacity - silently drop to prevent DoS amplification.
+		// Legitimate clients will retry; attackers waste resources.
+		return
+	}
 	q.Enqueue(packet)
 	if isNew {
 		go r.RegisterClient(addrPort, q)
@@ -93,6 +101,15 @@ func (r *Registrar) getOrCreateRegistrationQueue(addrPort netip.AddrPort) (*udp.
 	if q, ok := r.registrations[addrPort]; ok {
 		return q, false
 	}
+
+	// Enforce maximum concurrent registrations to prevent memory exhaustion
+	// from spoofed source addresses.
+	if len(r.registrations) >= MaxConcurrentRegistrations {
+		// At capacity - reject new registration attempts.
+		// Return nil queue; caller must handle gracefully.
+		return nil, false
+	}
+
 	q := udp.NewRegistrationQueue(RegistrationQueueCapacity)
 	r.registrations[addrPort] = q
 	return q, true
@@ -149,7 +166,17 @@ func (r *Registrar) RegisterClient(addrPort netip.AddrPort, queue *udp.Registrat
 		return
 	}
 
-	sess := session.NewSession(cryptoSession, controller, intIp, addrPort)
+	// Extract authentication info from IK handshake result if available
+	var clientPubKey []byte
+	var allowedIPs []netip.Prefix
+	if hwr, ok := h.(connection.HandshakeWithResult); ok {
+		if result := hwr.Result(); result != nil {
+			clientPubKey = result.ClientPubKey()
+			allowedIPs = result.AllowedIPs()
+		}
+	}
+
+	sess := session.NewSessionWithAuth(cryptoSession, controller, intIp, addrPort, clientPubKey, allowedIPs)
 	egress := connection.NewDefaultEgress(regTransport, cryptoSession)
 	peer := session.NewPeer(sess, egress)
 	r.sessionRepo.Add(peer)

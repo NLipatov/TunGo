@@ -217,6 +217,12 @@ func (r *fakeSessionRepo) GetByExternalAddrPort(addr netip.AddrPort) (*session.P
 	}
 	return s, nil
 }
+func (r *fakeSessionRepo) FindByDestinationIP(_ netip.Addr) (*session.Peer, error) {
+	if r.getErr != nil {
+		return nil, r.getErr
+	}
+	return r.returnPeer, nil
+}
 
 type fakeWriter struct {
 	buf   bytes.Buffer
@@ -241,10 +247,21 @@ type testSession struct {
 	externalIP netip.AddrPort
 }
 
-func (s *testSession) Crypto() connection.Crypto        { return s.crypto }
-func (s *testSession) InternalAddr() netip.Addr         { return s.internalIP }
-func (s *testSession) ExternalAddrPort() netip.AddrPort { return s.externalIP }
-func (s *testSession) RekeyController() rekey.FSM       { return nil }
+func (s *testSession) Crypto() connection.Crypto          { return s.crypto }
+func (s *testSession) InternalAddr() netip.Addr           { return s.internalIP }
+func (s *testSession) ExternalAddrPort() netip.AddrPort   { return s.externalIP }
+func (s *testSession) RekeyController() rekey.FSM         { return nil }
+func (s *testSession) IsSourceAllowed(netip.Addr) bool { return true }
+
+// makeValidIPv4Packet creates a minimal valid IPv4 packet with the given source IP.
+// Used in tests to satisfy AllowedIPs validation.
+func makeValidIPv4Packet(srcIP netip.Addr) []byte {
+	packet := make([]byte, 20) // Minimum IPv4 header
+	packet[0] = 0x45           // Version 4, IHL 5 (20 bytes)
+	src := srcIP.As4()
+	copy(packet[12:16], src[:])
+	return packet
+}
 
 /* ========= tests ========= */
 
@@ -677,13 +694,14 @@ func TestHandleClient_DecryptError_ClosesConnection(t *testing.T) {
 func TestHandleClient_WriteTunError(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	internalIP := netip.MustParseAddr("10.0.0.11")
 	conn := &fakeConn{
 		addr:     tcpAddr("1.2.3.4", 5561),
-		readBufs: [][]byte{make([]byte, chacha20poly1305.Overhead)}, // valid length
+		readBufs: [][]byte{makeValidIPv4Packet(internalIP)}, // valid IPv4 packet
 	}
 	writer := &fakeWriter{err: errors.New("fail tun")}
 	logger := &fakeLogger{}
-	sess := &testSession{crypto: &fakeCrypto{}, internalIP: netip.MustParseAddr("10.0.0.11"), externalIP: mustAddrPort("1.2.3.4:5561")}
+	sess := &testSession{crypto: &fakeCrypto{}, internalIP: internalIP, externalIP: mustAddrPort("1.2.3.4:5561")}
 	peer := session.NewPeer(sess, nil)
 	repo := &fakeSessionRepo{}
 	registrar := tcp_registration.NewRegistrar(logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{}, repo)
@@ -699,7 +717,8 @@ func TestHandleClient_HappyDataPath_WritesToTun_AndCloses(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	payload := make([]byte, chacha20poly1305.Overhead) // minimal valid length
+	internalIP := netip.MustParseAddr("10.0.0.12")
+	payload := makeValidIPv4Packet(internalIP) // valid IPv4 packet
 
 	conn := &fakeConn{
 		addr:     tcpAddr("1.2.3.4", 6001),
@@ -709,7 +728,7 @@ func TestHandleClient_HappyDataPath_WritesToTun_AndCloses(t *testing.T) {
 	logger := &fakeLogger{}
 	sess := &testSession{
 		crypto:     &fakeCrypto{},
-		internalIP: netip.MustParseAddr("10.0.0.12"),
+		internalIP: internalIP,
 		externalIP: mustAddrPort("1.2.3.4:6001"),
 	}
 	peer := session.NewPeer(sess, nil)

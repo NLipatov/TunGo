@@ -276,3 +276,206 @@ func TestConfiguration_OverlappingSubnets_NoOverlap(t *testing.T) {
 		t.Fatalf("expected no overlap, got true")
 	}
 }
+
+// --- Tests for AllowedPeers validation ---
+
+func TestConfiguration_ValidateAllowedPeers_ValidConfig(t *testing.T) {
+	cfg := mkValid()
+	cfg.AllowedPeers = []AllowedPeer{
+		{
+			PublicKey: make([]byte, 32),
+			Enabled:   true,
+			ClientIP:  "10.0.0.5",
+		},
+		{
+			PublicKey: func() []byte {
+				k := make([]byte, 32)
+				k[0] = 1
+				return k
+			}(),
+			Enabled:  true,
+			ClientIP: "10.0.0.6",
+		},
+	}
+	if err := cfg.ValidateAllowedPeers(); err != nil {
+		t.Fatalf("expected valid config, got: %v", err)
+	}
+}
+
+func TestConfiguration_ValidateAllowedPeers_InvalidKeyLength(t *testing.T) {
+	cfg := mkValid()
+	cfg.AllowedPeers = []AllowedPeer{
+		{
+			PublicKey: make([]byte, 16), // Invalid: should be 32
+			Enabled:   true,
+			ClientIP:  "10.0.0.5",
+		},
+	}
+	err := cfg.ValidateAllowedPeers()
+	if err == nil {
+		t.Fatal("expected error for invalid key length")
+	}
+	if !strings.Contains(err.Error(), "invalid public key length") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestConfiguration_ValidateAllowedPeers_InvalidClientIP(t *testing.T) {
+	cfg := mkValid()
+	cfg.AllowedPeers = []AllowedPeer{
+		{
+			PublicKey: make([]byte, 32),
+			Enabled:   true,
+			ClientIP:  "invalid.ip",
+		},
+	}
+	err := cfg.ValidateAllowedPeers()
+	if err == nil {
+		t.Fatal("expected error for invalid ClientIP")
+	}
+	if !strings.Contains(err.Error(), "invalid ClientIP") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestConfiguration_ValidateAllowedPeers_InvalidAllowedIP(t *testing.T) {
+	cfg := mkValid()
+	cfg.AllowedPeers = []AllowedPeer{
+		{
+			PublicKey:  make([]byte, 32),
+			Enabled:    true,
+			ClientIP:   "10.0.0.5",
+			AllowedIPs: []string{"192.168.1.0/33"}, // Invalid CIDR
+		},
+	}
+	err := cfg.ValidateAllowedPeers()
+	if err == nil {
+		t.Fatal("expected error for invalid AllowedIP")
+	}
+	if !strings.Contains(err.Error(), "invalid AllowedIP") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestConfiguration_ValidateAllowedPeers_DuplicatePublicKey(t *testing.T) {
+	cfg := mkValid()
+	pubKey := make([]byte, 32)
+	pubKey[0] = 42
+	cfg.AllowedPeers = []AllowedPeer{
+		{
+			PublicKey: pubKey,
+			Enabled:   true,
+			ClientIP:  "10.0.0.5",
+		},
+		{
+			PublicKey: pubKey, // Duplicate
+			Enabled:   true,
+			ClientIP:  "10.0.0.6",
+		},
+	}
+	err := cfg.ValidateAllowedPeers()
+	if err == nil {
+		t.Fatal("expected error for duplicate public key")
+	}
+	if !strings.Contains(err.Error(), "duplicate public key") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestConfiguration_ValidateAllowedPeers_ClientIPOverlap(t *testing.T) {
+	cfg := mkValid()
+	cfg.AllowedPeers = []AllowedPeer{
+		{
+			PublicKey: make([]byte, 32),
+			Enabled:   true,
+			ClientIP:  "10.0.0.5",
+		},
+		{
+			PublicKey: func() []byte {
+				k := make([]byte, 32)
+				k[0] = 1
+				return k
+			}(),
+			Enabled:  true,
+			ClientIP: "10.0.0.5", // Same ClientIP as peer 0
+		},
+	}
+	err := cfg.ValidateAllowedPeers()
+	if err == nil {
+		t.Fatal("expected error for ClientIP overlap")
+	}
+	if !strings.Contains(err.Error(), "AllowedIPs overlap") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestConfiguration_ValidateAllowedPeers_AllowedIPsOverlap(t *testing.T) {
+	cfg := mkValid()
+	cfg.AllowedPeers = []AllowedPeer{
+		{
+			PublicKey:  make([]byte, 32),
+			Enabled:    true,
+			ClientIP:   "10.0.0.5",
+			AllowedIPs: []string{"192.168.0.0/16"},
+		},
+		{
+			PublicKey: func() []byte {
+				k := make([]byte, 32)
+				k[0] = 1
+				return k
+			}(),
+			Enabled:    true,
+			ClientIP:   "10.0.0.6",
+			AllowedIPs: []string{"192.168.1.0/24"}, // Overlaps with peer 0's 192.168.0.0/16
+		},
+	}
+	err := cfg.ValidateAllowedPeers()
+	if err == nil {
+		t.Fatal("expected error for AllowedIPs overlap")
+	}
+	if !strings.Contains(err.Error(), "AllowedIPs overlap") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestConfiguration_ValidateAllowedPeers_SamePeerAllowedIPsOverlapOk(t *testing.T) {
+	cfg := mkValid()
+	cfg.AllowedPeers = []AllowedPeer{
+		{
+			PublicKey: make([]byte, 32),
+			Enabled:   true,
+			ClientIP:  "10.0.0.5",
+			AllowedIPs: []string{
+				"192.168.0.0/16",
+				"192.168.1.0/24", // Overlaps within same peer - OK
+			},
+		},
+	}
+	if err := cfg.ValidateAllowedPeers(); err != nil {
+		t.Fatalf("expected no error for same-peer overlap, got: %v", err)
+	}
+}
+
+func TestAllowedPeer_AllowedIPPrefixes(t *testing.T) {
+	peer := AllowedPeer{
+		PublicKey: make([]byte, 32),
+		Enabled:   true,
+		ClientIP:  "10.0.0.5",
+		AllowedIPs: []string{
+			"192.168.1.0/24",
+			"10.10.0.0/16",
+			"invalid/cidr", // Should be skipped
+		},
+	}
+
+	prefixes := peer.AllowedIPPrefixes()
+	if len(prefixes) != 2 {
+		t.Fatalf("expected 2 valid prefixes, got %d", len(prefixes))
+	}
+	if prefixes[0].String() != "192.168.1.0/24" {
+		t.Fatalf("unexpected first prefix: %s", prefixes[0])
+	}
+	if prefixes[1].String() != "10.10.0.0/16" {
+		t.Fatalf("unexpected second prefix: %s", prefixes[1])
+	}
+}

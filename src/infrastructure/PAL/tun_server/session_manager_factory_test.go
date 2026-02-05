@@ -25,6 +25,9 @@ func (d sessionManagerFactoryDummySession) Crypto() connection.Crypto {
 func (d sessionManagerFactoryDummySession) RekeyController() rekey.FSM {
 	return nil
 }
+func (d sessionManagerFactoryDummySession) IsSourceAllowed(netip.Addr) bool {
+	return true
+}
 
 func TestSessionManagerFactory_CreateManager(t *testing.T) {
 	f := newSessionManagerFactory()

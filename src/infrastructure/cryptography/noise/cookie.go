@@ -95,7 +95,7 @@ func (cm *CookieManager) CreateCookieReply(clientIP netip.Addr, clientEphemeral,
 	cookieValue := cm.ComputeCookieValue(clientIP)
 
 	key := deriveCookieEncryptionKey(serverPubKey, clientEphemeral)
-	defer ZeroBytes(key[:])
+	defer zeroBytes(key[:])
 
 	aead, err := chacha20poly1305.NewX(key[:])
 	if err != nil {
@@ -125,7 +125,7 @@ func DecryptCookieReply(reply, clientEphemeral, serverPubKey []byte) ([]byte, er
 	ciphertext := reply[CookieNonceSize:]
 
 	key := deriveCookieEncryptionKey(serverPubKey, clientEphemeral)
-	defer ZeroBytes(key[:])
+	defer zeroBytes(key[:])
 
 	aead, err := chacha20poly1305.NewX(key[:])
 	if err != nil {
@@ -175,7 +175,7 @@ func (cm *CookieManager) RotateSecret() error {
 	cm.secret = newSecret
 	cm.mu.Unlock()
 
-	ZeroBytes(oldSecret[:])
+	zeroBytes(oldSecret[:])
 	return nil
 }
 

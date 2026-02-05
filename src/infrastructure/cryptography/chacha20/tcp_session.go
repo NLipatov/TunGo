@@ -72,19 +72,25 @@ func (s *DefaultTcpSession) Encrypt(plaintext []byte) ([]byte, error) {
 }
 
 func (s *DefaultTcpSession) Decrypt(ciphertext []byte) ([]byte, error) {
-	err := s.RecvNonce.incrementNonce()
+	// Compute next nonce WITHOUT committing yet.
+	// We only increment after successful decryption to prevent desync
+	// when an attacker sends malformed ciphertext.
+	nextNonce, err := s.RecvNonce.peek()
 	if err != nil {
 		return nil, err
 	}
 
-	nonceBytes := s.RecvNonce.Encode(s.decryptionNonceBuf[:])
+	nonceBytes := nextNonce.Encode(s.decryptionNonceBuf[:])
 
 	aad := s.CreateAAD(!s.isServer, nonceBytes, s.decryptionAadBuf[:])
 	plaintext, err := s.recvCipher.Open(ciphertext[:0], nonceBytes, ciphertext, aad)
 	if err != nil {
-		// Properly handle failed decryption attempt to avoid reuse of any state
+		// Decryption failed - do NOT commit nonce to prevent desync
 		return nil, err
 	}
+
+	// Decryption succeeded - now commit the nonce increment
+	_ = s.RecvNonce.incrementNonce()
 
 	return plaintext, nil
 }
@@ -171,7 +177,9 @@ func (c *TcpCrypto) Decrypt(data []byte) ([]byte, error) {
 	c.mu.RUnlock()
 
 	if sess == nil {
-		return nil, fmt.Errorf("unknown epoch %d", epoch)
+		// SECURITY (R-19): Use generic error to avoid revealing epoch state.
+		// Detailed logging should happen at caller if needed.
+		return nil, ErrUnknownEpoch
 	}
 
 	pt, err := sess.Decrypt(data[epochPrefixSize:])
@@ -181,9 +189,15 @@ func (c *TcpCrypto) Decrypt(data []byte) ([]byte, error) {
 
 	// Auto-cleanup: first successful decrypt with current epoch means
 	// TCP ordering guarantees no more prev-epoch frames will arrive.
+	//
+	// SECURITY INVARIANT: Previous session keys MUST be zeroed before release.
+	// This prevents key material from persisting in memory until GC collection.
 	if cleanupPrev {
 		c.mu.Lock()
-		c.prev = nil
+		if c.prev != nil {
+			c.prev.zeroize()
+			c.prev = nil
+		}
 		c.mu.Unlock()
 	}
 
@@ -239,6 +253,38 @@ func (c *TcpCrypto) SetSendEpoch(epoch uint16) {
 // automatically in Decrypt when the first current-epoch frame arrives (TCP
 // ordering guarantee). Returns true to satisfy FSM expectations.
 func (c *TcpCrypto) RemoveEpoch(_ uint16) bool { return true }
+
+// Zeroize overwrites all key material with zeros.
+// After this call, the crypto instance is unusable.
+// Implements connection.CryptoZeroizer.
+func (c *TcpCrypto) Zeroize() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.current != nil {
+		c.current.zeroize()
+	}
+	if c.prev != nil {
+		c.prev.zeroize()
+	}
+	zeroBytes(c.sessionId[:])
+}
+
+// zeroize zeros key material in a DefaultTcpSession.
+func (s *DefaultTcpSession) zeroize() {
+	// cipher.AEAD doesn't expose key material, but we zero what we can
+	zeroBytes(s.SessionId[:])
+	zeroBytes(s.encryptionAadBuf[:])
+	zeroBytes(s.decryptionAadBuf[:])
+	zeroBytes(s.encryptionNonceBuf[:])
+	zeroBytes(s.decryptionNonceBuf[:])
+	if s.SendNonce != nil {
+		s.SendNonce.Zeroize()
+	}
+	if s.RecvNonce != nil {
+		s.RecvNonce.Zeroize()
+	}
+}
 
 func (c *TcpCrypto) sendSession() *DefaultTcpSession {
 	if c.prev != nil && c.sendEpoch == c.prevEpoch {

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"tungo/infrastructure/cryptography/chacha20"
+	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/tunnel/session"
 )
 
@@ -28,6 +29,13 @@ func newUdpDataplaneWorker(tunWriter io.Writer, cp controlPlaneHandler) *udpData
 }
 
 func (w *udpDataplaneWorker) HandleEstablished(peer *session.Peer, packet []byte) error {
+	// SECURITY: Check closed flag BEFORE using crypto.
+	// This prevents use-after-free if peer is being deleted concurrently.
+	// The closed flag is set atomically before crypto is zeroed.
+	if peer.IsClosed() {
+		return nil
+	}
+
 	rekeyCtrl := peer.RekeyController()
 
 	decrypted, decryptionErr := peer.Crypto().Decrypt(packet)
@@ -45,6 +53,18 @@ func (w *udpDataplaneWorker) HandleEstablished(peer *session.Peer, packet []byte
 		if handled, err := w.cp.Handle(decrypted, peer.Egress(), rekeyCtrl); handled {
 			return err
 		}
+	}
+
+	// Validate source IP against AllowedIPs after decryption
+	// Session interface embeds SessionAuth - no type assertion needed
+	srcIP, srcOk := ip.ExtractSourceIP(decrypted)
+	if !srcOk {
+		// Malformed IP header - drop to prevent AllowedIPs bypass
+		return nil
+	}
+	if !peer.Session.IsSourceAllowed(srcIP) {
+		// AllowedIPs violation - silently drop for UDP
+		return nil
 	}
 
 	// Pass it to TUN.

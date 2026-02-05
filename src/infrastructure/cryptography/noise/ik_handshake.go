@@ -218,7 +218,7 @@ func (h *IKHandshake) ServerSideHandshake(transport connection.Transport) (net.I
 	// Zero ephemeral on any exit path (set early before WriteMessage)
 	defer func() {
 		if localEph := hs.LocalEphemeral(); localEph.Private != nil {
-			ZeroBytes(localEph.Private)
+			zeroBytes(localEph.Private)
 		}
 	}()
 
@@ -260,8 +260,8 @@ func (h *IKHandshake) ServerSideHandshake(transport connection.Transport) (net.I
 	copy(h.clientKey, c2sKey[:])
 	h.serverKey = make([]byte, 32)
 	copy(h.serverKey, s2cKey[:])
-	ZeroBytes(c2sKey[:])
-	ZeroBytes(s2cKey[:])
+	zeroBytes(c2sKey[:])
+	zeroBytes(s2cKey[:])
 
 	// Session ID from channel binding
 	cb := hs.ChannelBinding()
@@ -317,7 +317,7 @@ func (h *IKHandshake) ClientSideHandshake(transport connection.Transport, s sett
 	// Zero ephemeral on any exit path (set early before WriteMessage)
 	defer func() {
 		if localEph := hs.LocalEphemeral(); localEph.Private != nil {
-			ZeroBytes(localEph.Private)
+			zeroBytes(localEph.Private)
 		}
 	}()
 
@@ -381,8 +381,8 @@ func (h *IKHandshake) ClientSideHandshake(transport connection.Transport, s sett
 	copy(h.clientKey, c2sKey[:])
 	h.serverKey = make([]byte, 32)
 	copy(h.serverKey, s2cKey[:])
-	ZeroBytes(c2sKey[:])
-	ZeroBytes(s2cKey[:])
+	zeroBytes(c2sKey[:])
+	zeroBytes(s2cKey[:])
 
 	cb := hs.ChannelBinding()
 	copy(h.id[:], cb[:32])
@@ -411,7 +411,7 @@ func (h *IKHandshake) retryWithCookie(transport connection.Transport, s settings
 	// Zero ephemeral on any exit path (set early before WriteMessage)
 	defer func() {
 		if localEph := hs.LocalEphemeral(); localEph.Private != nil {
-			ZeroBytes(localEph.Private)
+			zeroBytes(localEph.Private)
 		}
 	}()
 
@@ -462,8 +462,8 @@ func (h *IKHandshake) retryWithCookie(transport connection.Transport, s settings
 	copy(h.clientKey, c2sKey[:])
 	h.serverKey = make([]byte, 32)
 	copy(h.serverKey, s2cKey[:])
-	ZeroBytes(c2sKey[:])
-	ZeroBytes(s2cKey[:])
+	zeroBytes(c2sKey[:])
+	zeroBytes(s2cKey[:])
 
 	cb := hs.ChannelBinding()
 	copy(h.id[:], cb[:32])

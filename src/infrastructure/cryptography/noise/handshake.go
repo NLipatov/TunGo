@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"tungo/application/network/connection"
+	"tungo/infrastructure/cryptography/mem"
 	"tungo/infrastructure/settings"
 
 	noiselib "github.com/flynn/noise"
@@ -12,15 +13,13 @@ import (
 
 var cipherSuite = noiselib.NewCipherSuite(noiselib.DH25519, noiselib.CipherChaChaPoly, noiselib.HashSHA256)
 
-// ZeroBytes overwrites a byte slice with zeros.
-func ZeroBytes(b []byte) {
-	for i := range b {
-		b[i] = 0
-	}
+// zeroBytes is a package-local alias for mem.ZeroBytes.
+func zeroBytes(b []byte) {
+	mem.ZeroBytes(b)
 }
 
-// NoiseHandshake implements connection.Handshake using Noise XX.
-type NoiseHandshake struct {
+// Handshake implements connection.Handshake using Noise XX.
+type Handshake struct {
 	id        [32]byte
 	clientKey []byte
 	serverKey []byte
@@ -33,20 +32,20 @@ type NoiseHandshake struct {
 // NewNoiseHandshake creates a new Noise XX handshake.
 // Server: staticPublicKey + staticPrivateKey (X25519 keys derived from Ed25519 seeds).
 // Client: only peerStaticPublicKey (server's public key).
-func NewNoiseHandshake(staticPublicKey, staticPrivateKey []byte) *NoiseHandshake {
-	return &NoiseHandshake{
+func NewNoiseHandshake(staticPublicKey, staticPrivateKey []byte) *Handshake {
+	return &Handshake{
 		staticPublicKey:  staticPublicKey,
 		staticPrivateKey: staticPrivateKey,
 	}
 }
 
-func (h *NoiseHandshake) Id() [32]byte              { return h.id }
-func (h *NoiseHandshake) KeyClientToServer() []byte { return h.clientKey }
-func (h *NoiseHandshake) KeyServerToClient() []byte { return h.serverKey }
+func (h *Handshake) Id() [32]byte              { return h.id }
+func (h *Handshake) KeyClientToServer() []byte { return h.clientKey }
+func (h *Handshake) KeyServerToClient() []byte { return h.serverKey }
 
 // ServerSideHandshake performs Noise XX as responder.
 // Returns the client's internal IP and the same transport passed in.
-func (h *NoiseHandshake) ServerSideHandshake(
+func (h *Handshake) ServerSideHandshake(
 	transport connection.Transport,
 ) (net.IP, error) {
 	staticKey := noiselib.DHKey{
@@ -93,7 +92,7 @@ func (h *NoiseHandshake) ServerSideHandshake(
 	// NOTE: ReadMessage(msg3) still needs e.Private for the "se" DH token,
 	// so defer ensures zeroing happens on function exit, not before msg3.
 	localEph := hs.LocalEphemeral()
-	defer ZeroBytes(localEph.Private)
+	defer zeroBytes(localEph.Private)
 
 	// XX has 3 messages. cs1/cs2 should be nil after msg2 (not the last message).
 	if cs1 != nil || cs2 != nil {
@@ -129,8 +128,8 @@ func (h *NoiseHandshake) ServerSideHandshake(
 	copy(h.clientKey, c2sKey[:])
 	h.serverKey = make([]byte, 32)
 	copy(h.serverKey, s2cKey[:])
-	ZeroBytes(c2sKey[:])
-	ZeroBytes(s2cKey[:])
+	zeroBytes(c2sKey[:])
+	zeroBytes(s2cKey[:])
 
 	// Session ID from channel binding.
 	cb := hs.ChannelBinding()
@@ -140,7 +139,7 @@ func (h *NoiseHandshake) ServerSideHandshake(
 }
 
 // ClientSideHandshake performs Noise XX as initiator.
-func (h *NoiseHandshake) ClientSideHandshake(
+func (h *Handshake) ClientSideHandshake(
 	transport connection.Transport,
 	s settings.Settings,
 ) error {
@@ -149,7 +148,7 @@ func (h *NoiseHandshake) ClientSideHandshake(
 	if err != nil {
 		return fmt.Errorf("noise: generate client static: %w", err)
 	}
-	defer ZeroBytes(clientStatic.Private)
+	defer zeroBytes(clientStatic.Private)
 
 	hs, err := noiselib.NewHandshakeState(noiselib.Config{
 		CipherSuite:   cipherSuite,
@@ -171,7 +170,7 @@ func (h *NoiseHandshake) ClientSideHandshake(
 	// lazily during WriteMessage for msg1, so LocalEphemeral() is valid here.
 	// It must remain available for DH operations in msg2, hence defer.
 	localEph := hs.LocalEphemeral()
-	defer ZeroBytes(localEph.Private)
+	defer zeroBytes(localEph.Private)
 
 	if _, err := transport.Write(msg1); err != nil {
 		return fmt.Errorf("noise: send msg1: %w", err)
@@ -225,8 +224,8 @@ func (h *NoiseHandshake) ClientSideHandshake(
 	copy(h.clientKey, c2sKey[:])
 	h.serverKey = make([]byte, 32)
 	copy(h.serverKey, s2cKey[:])
-	ZeroBytes(c2sKey[:])
-	ZeroBytes(s2cKey[:])
+	zeroBytes(c2sKey[:])
+	zeroBytes(s2cKey[:])
 
 	cb := hs.ChannelBinding()
 	copy(h.id[:], cb[:32])

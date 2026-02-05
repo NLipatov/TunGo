@@ -41,9 +41,37 @@ func (n *Nonce) incrementNonce() error {
 	return nil
 }
 
+// peek returns a copy of the nonce with the counter incremented,
+// without modifying the original. Used for tentative decryption
+// where we only commit the increment after successful validation.
+func (n *Nonce) peek() (*Nonce, error) {
+	// Check for overflow
+	if n.counterHigh == ^uint16(0) && n.counterLow == ^uint64(0) {
+		return nil, fmt.Errorf("nonce overflow: maximum number of messages reached")
+	}
+
+	peeked := &Nonce{epoch: n.epoch}
+	if n.counterLow == ^uint64(0) {
+		peeked.counterHigh = n.counterHigh + 1
+		peeked.counterLow = 0
+	} else {
+		peeked.counterHigh = n.counterHigh
+		peeked.counterLow = n.counterLow + 1
+	}
+
+	return peeked, nil
+}
+
 func (n *Nonce) Encode(buffer []byte) []byte {
 	binary.BigEndian.PutUint64(buffer[0:8], n.counterLow)
 	binary.BigEndian.PutUint16(buffer[8:10], n.counterHigh)
 	binary.BigEndian.PutUint16(buffer[10:12], uint16(n.epoch))
 	return buffer
+}
+
+// Zeroize zeros the nonce state.
+func (n *Nonce) Zeroize() {
+	n.epoch = 0
+	n.counterLow = 0
+	n.counterHigh = 0
 }

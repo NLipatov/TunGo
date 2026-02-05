@@ -39,3 +39,20 @@ func (c *ConcurrentRepository) GetByExternalAddrPort(addrPort netip.AddrPort) (*
 	defer c.mu.RUnlock()
 	return c.manager.GetByExternalAddrPort(addrPort)
 }
+
+func (c *ConcurrentRepository) FindByDestinationIP(addr netip.Addr) (*Peer, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.manager.FindByDestinationIP(addr)
+}
+
+// TerminateByPubKey implements RepositoryWithRevocation.
+// Thread-safe wrapper that delegates to the underlying repository.
+func (c *ConcurrentRepository) TerminateByPubKey(pubKey []byte) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if revocable, ok := c.manager.(RepositoryWithRevocation); ok {
+		return revocable.TerminateByPubKey(pubKey)
+	}
+	return 0
+}

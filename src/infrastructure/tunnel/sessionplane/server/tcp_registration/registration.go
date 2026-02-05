@@ -45,6 +45,7 @@ func (r *Registrar) RegisterClient(conn net.Conn) (*session.Peer, connection.Tra
 
 	framingAdapter, fErr := adapters.NewLengthPrefixFramingAdapter(conn, settings.DefaultEthernetMTU+settings.TCPChacha20Overhead)
 	if fErr != nil {
+		_ = conn.Close() // Prevent socket leak on framing adapter failure
 		return nil, nil, fErr
 	}
 	h := r.handshakeFactory.NewHandshake()
@@ -90,7 +91,17 @@ func (r *Registrar) RegisterClient(conn net.Conn) (*session.Peer, connection.Tra
 		)
 	}
 
-	sess := session.NewSession(cryptographyService, rekeyCtrl, intIP, tcpAddr.AddrPort())
+	// Extract authentication info from IK handshake result if available
+	var clientPubKey []byte
+	var allowedIPs []netip.Prefix
+	if hwr, ok := h.(connection.HandshakeWithResult); ok {
+		if result := hwr.Result(); result != nil {
+			clientPubKey = result.ClientPubKey()
+			allowedIPs = result.AllowedIPs()
+		}
+	}
+
+	sess := session.NewSessionWithAuth(cryptographyService, rekeyCtrl, intIP, tcpAddr.AddrPort(), clientPubKey, allowedIPs)
 	egress := connection.NewDefaultEgress(framingAdapter, cryptographyService)
 	peer := session.NewPeer(sess, egress)
 	r.sessionManager.Add(peer)

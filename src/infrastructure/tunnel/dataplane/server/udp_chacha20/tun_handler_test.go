@@ -86,10 +86,11 @@ type mockSession struct {
 	external netip.AddrPort
 }
 
-func (m *mockSession) Crypto() connection.Crypto        { return m.crypto }
-func (m *mockSession) ExternalAddrPort() netip.AddrPort { return m.external }
-func (m *mockSession) InternalAddr() netip.Addr         { return m.internal }
-func (m *mockSession) RekeyController() rekey.FSM       { return nil }
+func (m *mockSession) Crypto() connection.Crypto          { return m.crypto }
+func (m *mockSession) ExternalAddrPort() netip.AddrPort   { return m.external }
+func (m *mockSession) InternalAddr() netip.Addr           { return m.internal }
+func (m *mockSession) RekeyController() rekey.FSM         { return nil }
+func (m *mockSession) IsSourceAllowed(netip.Addr) bool { return true }
 
 // helper to build a peer that matches the handler expectations
 func mkPeer(c *TunHandlerMockConn, crypto *TunHandlerMockCrypto) *session.Peer {
@@ -118,6 +119,9 @@ func (m *TunHandlerMockMgr) GetByInternalAddrPort(_ netip.Addr) (*session.Peer, 
 }
 func (m *TunHandlerMockMgr) GetByExternalAddrPort(_ netip.AddrPort) (*session.Peer, error) {
 	return m.peer, nil
+}
+func (m *TunHandlerMockMgr) FindByDestinationIP(_ netip.Addr) (*session.Peer, error) {
+	return m.peer, m.getErr
 }
 
 func rdr(seq ...struct {

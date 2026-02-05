@@ -1,0 +1,127 @@
+package server
+
+import (
+	"context"
+	"log"
+	"time"
+)
+
+// SessionRevoker revokes sessions by public key.
+// Implemented by session.CompositeSessionRevoker.
+type SessionRevoker interface {
+	RevokeByPubKey(pubKey []byte) int
+}
+
+// ConfigWatcher monitors AllowedPeers configuration changes and revokes
+// sessions for peers that are removed or disabled.
+type ConfigWatcher struct {
+	configManager ConfigurationManager
+	revoker       SessionRevoker
+	interval      time.Duration
+	logger        *log.Logger
+
+	// prevPeers stores the previous AllowedPeers state for comparison.
+	// Key is string(PublicKey), value is Enabled status.
+	prevPeers map[string]bool
+}
+
+// NewConfigWatcher creates a new configuration watcher.
+// interval determines how often to check for changes (recommend: 30s-60s).
+func NewConfigWatcher(
+	configManager ConfigurationManager,
+	revoker SessionRevoker,
+	interval time.Duration,
+	logger *log.Logger,
+) *ConfigWatcher {
+	return &ConfigWatcher{
+		configManager: configManager,
+		revoker:       revoker,
+		interval:      interval,
+		logger:        logger,
+		prevPeers:     make(map[string]bool),
+	}
+}
+
+// Watch starts the configuration watcher loop.
+// Blocks until context is cancelled.
+func (w *ConfigWatcher) Watch(ctx context.Context) {
+	// Initialize with current state
+	w.loadCurrentState()
+
+	ticker := time.NewTicker(w.interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			w.checkAndRevoke()
+		}
+	}
+}
+
+// loadCurrentState initializes prevPeers from current configuration.
+func (w *ConfigWatcher) loadCurrentState() {
+	conf, err := w.configManager.Configuration()
+	if err != nil {
+		if w.logger != nil {
+			w.logger.Printf("ConfigWatcher: failed to load initial config: %v", err)
+		}
+		return
+	}
+
+	w.prevPeers = make(map[string]bool, len(conf.AllowedPeers))
+	for _, peer := range conf.AllowedPeers {
+		key := string(peer.PublicKey)
+		w.prevPeers[key] = peer.Enabled
+	}
+}
+
+// checkAndRevoke compares current config with previous state and revokes
+// sessions for peers that were removed or disabled.
+func (w *ConfigWatcher) checkAndRevoke() {
+	conf, err := w.configManager.Configuration()
+	if err != nil {
+		if w.logger != nil {
+			w.logger.Printf("ConfigWatcher: failed to load config: %v", err)
+		}
+		return
+	}
+
+	// Build current state map
+	currentPeers := make(map[string]bool, len(conf.AllowedPeers))
+	for _, peer := range conf.AllowedPeers {
+		key := string(peer.PublicKey)
+		currentPeers[key] = peer.Enabled
+	}
+
+	// Find peers to revoke:
+	// 1. Previously existed and enabled, now removed
+	// 2. Previously existed and enabled, now disabled
+	for pubKeyStr, wasEnabled := range w.prevPeers {
+		if !wasEnabled {
+			continue // Was already disabled, nothing to revoke
+		}
+
+		nowEnabled, exists := currentPeers[pubKeyStr]
+		shouldRevoke := !exists || !nowEnabled
+
+		if shouldRevoke {
+			pubKey := []byte(pubKeyStr)
+			count := w.revoker.RevokeByPubKey(pubKey)
+			if w.logger != nil && count > 0 {
+				w.logger.Printf("ConfigWatcher: revoked %d session(s) for peer (removed/disabled)", count)
+			}
+		}
+	}
+
+	// Update previous state
+	w.prevPeers = currentPeers
+}
+
+// ForceCheck triggers an immediate configuration check.
+// Useful for testing or manual triggers (e.g., SIGHUP handler).
+func (w *ConfigWatcher) ForceCheck() {
+	w.checkAndRevoke()
+}

@@ -307,6 +307,9 @@ func (r *tcpRegFailingRepo) GetByInternalAddrPort(netip.Addr) (*session.Peer, er
 func (r *tcpRegFailingRepo) GetByExternalAddrPort(netip.AddrPort) (*session.Peer, error) {
 	return nil, r.err
 }
+func (r *tcpRegFailingRepo) FindByDestinationIP(netip.Addr) (*session.Peer, error) {
+	return nil, r.err
+}
 
 func TestRegisterClient_LookupError_ClosesConn(t *testing.T) {
 	hf := &tcpRegHandshakeFactory{

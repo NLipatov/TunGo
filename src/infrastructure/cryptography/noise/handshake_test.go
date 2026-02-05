@@ -12,7 +12,7 @@ import (
 
 func TestZeroBytes(t *testing.T) {
 	b := []byte{1, 2, 3, 4, 5}
-	ZeroBytes(b)
+	zeroBytes(b)
 	for i, v := range b {
 		if v != 0 {
 			t.Fatalf("byte %d not zeroed: %d", i, v)
@@ -22,7 +22,7 @@ func TestZeroBytes(t *testing.T) {
 
 func TestZeroBytes_Empty(t *testing.T) {
 	b := []byte{}
-	ZeroBytes(b) // should not panic
+	zeroBytes(b) // should not panic
 }
 
 func TestNewNoiseHandshake(t *testing.T) {

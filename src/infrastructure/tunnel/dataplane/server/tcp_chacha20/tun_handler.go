@@ -58,9 +58,9 @@ func (t *TunHandler) HandleTun() error {
 				continue
 			}
 
-			peer, getErr := t.sessionManager.GetByInternalAddrPort(addr)
+			peer, getErr := t.sessionManager.FindByDestinationIP(addr)
 			if getErr != nil {
-				log.Printf("packet dropped: %s, destination host: %v", getErr, addr)
+				// No route to destination - either unknown host or not in any peer's AllowedIPs
 				continue
 			}
 
