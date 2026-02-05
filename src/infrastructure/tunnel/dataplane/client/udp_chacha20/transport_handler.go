@@ -91,15 +91,10 @@ func (t *TransportHandler) handleDatagram(pkt []byte) error {
 
 	decrypted, decryptionErr := t.cryptographyService.Decrypt(pkt)
 	if decryptionErr != nil {
-		if t.ctx.Err() != nil {
-			return nil
-		}
-		// Duplicate nonce detected – this may indicate a network retransmission or a replay attack.
-		// In either case, skip this packet.
-		if errors.Is(decryptionErr, chacha20.ErrNonUniqueNonce) {
-			return nil
-		}
-		return fmt.Errorf("failed to decrypt data: %s", decryptionErr)
+		// Drop undecryptable packets without terminating session.
+		// If session is truly broken, keepalive timeout will detect it.
+		// This makes client resilient to packet corruption and garbage injection.
+		return nil
 	}
 	t.lastRecvAt = time.Now()
 

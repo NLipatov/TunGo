@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -176,19 +177,22 @@ func TestHandleTransport_DecryptNonUniqueNonceSkip(t *testing.T) {
 	}
 }
 
-func TestHandleTransport_DecryptErrorFatal(t *testing.T) {
+func TestHandleTransport_DecryptErrorDropped(t *testing.T) {
 	errDec := errors.New("decrypt fail")
-	// reader returns 2 bytes so decryption proceeds
+	// reader returns bad packet, then EOF
+	// decrypt error should be dropped, not terminate session
 	r := &thTestReader{reads: []func(p []byte) (int, error){
 		func(p []byte) (int, error) { p[0] = 9; p[1] = 9; return 2, nil },
+		func(p []byte) (int, error) { return 0, io.EOF },
 	}}
 	w := &thTestWriter{}
 	crypto := &thTestCrypto{err: errDec}
 	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 	h := NewTransportHandler(context.Background(), r, w, crypto, ctrl, nil)
-	exp := fmt.Sprintf("failed to decrypt data: %v", errDec)
-	if err := h.HandleTransport(); err == nil || err.Error() != exp {
-		t.Errorf("expected %q, got %v", exp, err)
+	// Should exit with read error (EOF), not decrypt error
+	err := h.HandleTransport()
+	if err == nil || !strings.Contains(err.Error(), "EOF") {
+		t.Errorf("expected EOF error after dropped decrypt, got %v", err)
 	}
 }
 
