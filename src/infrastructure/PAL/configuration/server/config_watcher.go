@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"log"
+	"path/filepath"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -68,22 +69,29 @@ func (w *ConfigWatcher) Watch(ctx context.Context) {
 	// Initialize with current state
 	w.loadCurrentState()
 
-	// Try to set up fsnotify
+	// Try to set up fsnotify - watch directory because atomic writes
+	// (write to temp, then rename) lose the watch on the original inode.
 	var fsEvents <-chan fsnotify.Event
 	var fsErrors <-chan error
+	var configFileName string
 	watcher, err := fsnotify.NewWatcher()
-	if err == nil {
+	if err == nil && w.configPath != "" {
 		defer watcher.Close()
-		if err := watcher.Add(w.configPath); err == nil {
+		dir, file := filepath.Split(w.configPath)
+		if dir == "" {
+			dir = "."
+		}
+		configFileName = file
+		if err := watcher.Add(dir); err == nil {
 			fsEvents = watcher.Events
 			fsErrors = watcher.Errors
 			if w.logger != nil {
-				w.logger.Printf("ConfigWatcher: watching %s for changes", w.configPath)
+				w.logger.Printf("ConfigWatcher: watching directory %s for changes to %s", dir, file)
 			}
 		} else if w.logger != nil {
 			w.logger.Printf("ConfigWatcher: fsnotify watch failed: %v (using polling)", err)
 		}
-	} else if w.logger != nil {
+	} else if w.logger != nil && err != nil {
 		w.logger.Printf("ConfigWatcher: fsnotify unavailable: %v (using polling)", err)
 	}
 
@@ -97,6 +105,11 @@ func (w *ConfigWatcher) Watch(ctx context.Context) {
 		case event, ok := <-fsEvents:
 			if !ok {
 				fsEvents = nil // Channel closed, fall back to polling only
+				continue
+			}
+			// Filter for our config file only
+			_, eventFile := filepath.Split(event.Name)
+			if eventFile != configFileName {
 				continue
 			}
 			// Watch for Write, Create, and Rename (atomic writes use rename)
