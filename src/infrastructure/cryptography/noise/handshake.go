@@ -167,6 +167,12 @@ func (h *NoiseHandshake) ClientSideHandshake(
 		return fmt.Errorf("noise: write msg1: %w", err)
 	}
 
+	// Zero the client's ephemeral private key on exit. The ephemeral is generated
+	// lazily during WriteMessage for msg1, so LocalEphemeral() is valid here.
+	// It must remain available for DH operations in msg2, hence defer.
+	localEph := hs.LocalEphemeral()
+	defer ZeroBytes(localEph.Private)
+
 	if _, err := transport.Write(msg1); err != nil {
 		return fmt.Errorf("noise: send msg1: %w", err)
 	}
