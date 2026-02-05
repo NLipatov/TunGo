@@ -47,6 +47,8 @@ func (m *mockConfigurationManager) AddAllowedPeer(_ AllowedPeer) error {
 	return nil
 }
 
+func (m *mockConfigurationManager) InvalidateCache() {}
+
 // ---------- Helpers ----------
 
 func newKM(manager *mockConfigurationManager) *X25519KeyManager {

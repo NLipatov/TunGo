@@ -48,6 +48,8 @@ func (m *ConfgenHandlerMockMgr) AddAllowedPeer(peer serverConfiguration.AllowedP
 	return nil
 }
 
+func (m *ConfgenHandlerMockMgr) InvalidateCache() {}
+
 // ConfgenHandlerMockIP implements ip.Contract. We override only the two methods
 // used by the handler, the rest are harmless no-ops.
 type ConfgenHandlerMockIP struct {

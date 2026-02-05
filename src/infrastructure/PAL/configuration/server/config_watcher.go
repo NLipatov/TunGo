@@ -117,6 +117,8 @@ func (w *ConfigWatcher) Watch(ctx context.Context) {
 				if w.logger != nil {
 					w.logger.Printf("ConfigWatcher: detected config change (op=%s)", event.Op)
 				}
+				// Invalidate cache before reading fresh config
+				w.configManager.InvalidateCache()
 				w.checkAndRevoke()
 			}
 		case err, ok := <-fsErrors:

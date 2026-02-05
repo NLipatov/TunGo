@@ -52,6 +52,8 @@ func (m *mockConfigManager) AddAllowedPeer(_ AllowedPeer) error {
 	return nil
 }
 
+func (m *mockConfigManager) InvalidateCache() {}
+
 func (m *mockConfigManager) setConfig(c *Configuration) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

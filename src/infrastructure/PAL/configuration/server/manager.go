@@ -14,6 +14,7 @@ type ConfigurationManager interface {
 	IncrementClientCounter() error
 	InjectX25519Keys(public, private []byte) error
 	AddAllowedPeer(peer AllowedPeer) error
+	InvalidateCache()
 }
 
 type Manager struct {
@@ -118,4 +119,12 @@ func (c *Manager) AddAllowedPeer(peer AllowedPeer) error {
 	configuration.AllowedPeers = append(configuration.AllowedPeers, peer)
 
 	return c.writer.Write(*configuration)
+}
+
+// InvalidateCache clears the cached configuration if the reader supports it.
+// Implements CacheInvalidator interface.
+func (c *Manager) InvalidateCache() {
+	if ttlReader, ok := c.reader.(*TTLReader); ok {
+		ttlReader.InvalidateCache()
+	}
 }

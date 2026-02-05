@@ -30,3 +30,9 @@ func (t *TTLReader) read() (*Configuration, error) {
 	t.cacheExpiresAt = time.Now().Add(t.ttl)
 	return configuration, nil
 }
+
+// InvalidateCache clears the cached configuration, forcing a re-read on next access.
+func (t *TTLReader) InvalidateCache() {
+	t.cache = nil
+	t.cacheExpiresAt = time.Time{}
+}
