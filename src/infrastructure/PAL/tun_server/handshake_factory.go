@@ -15,18 +15,19 @@ type HandshakeFactory struct {
 }
 
 // NewHandshakeFactory creates a new HandshakeFactory with IK handshake support.
-func NewHandshakeFactory(configuration server.Configuration) (*HandshakeFactory, error) {
-	cookieManager, err := noise.NewCookieManager()
-	if err != nil {
-		return nil, err
-	}
-
+// Uses provided allowedPeers for shared runtime updates across workers.
+func NewHandshakeFactory(
+	configuration server.Configuration,
+	allowedPeers noise.AllowedPeersLookup,
+	cookieManager *noise.CookieManager,
+	loadMonitor *noise.LoadMonitor,
+) *HandshakeFactory {
 	return &HandshakeFactory{
 		configuration: configuration,
-		allowedPeers:  noise.NewAllowedPeersLookup(configuration.AllowedPeers),
+		allowedPeers:  allowedPeers,
 		cookieManager: cookieManager,
-		loadMonitor:   noise.NewLoadMonitor(noise.DefaultLoadThreshold),
-	}, nil
+		loadMonitor:   loadMonitor,
+	}
 }
 
 // NewHandshake creates a new IK handshake instance.

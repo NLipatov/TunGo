@@ -4,6 +4,8 @@ import (
 	"context"
 	"log"
 	"time"
+
+	"github.com/fsnotify/fsnotify"
 )
 
 // SessionRevoker revokes sessions by public key.
@@ -12,11 +14,22 @@ type SessionRevoker interface {
 	RevokeByPubKey(pubKey []byte) int
 }
 
-// ConfigWatcher monitors AllowedPeers configuration changes and revokes
-// sessions for peers that are removed or disabled.
+// AllowedPeersUpdater updates the runtime AllowedPeers map.
+// Implemented by noise.allowedPeersMap.
+type AllowedPeersUpdater interface {
+	Update(peers []AllowedPeer)
+}
+
+// ConfigWatcher monitors AllowedPeers configuration changes and:
+// 1. Revokes sessions for peers that are removed or disabled
+// 2. Updates the runtime AllowedPeers map for new peer lookups
+//
+// Uses fsnotify for instant updates, with polling as fallback.
 type ConfigWatcher struct {
 	configManager ConfigurationManager
 	revoker       SessionRevoker
+	peersUpdater  AllowedPeersUpdater
+	configPath    string
 	interval      time.Duration
 	logger        *log.Logger
 
@@ -26,16 +39,22 @@ type ConfigWatcher struct {
 }
 
 // NewConfigWatcher creates a new configuration watcher.
-// interval determines how often to check for changes (recommend: 30s-60s).
+// configPath is the path to watch for changes (fsnotify).
+// interval is the fallback polling interval (recommend: 30s-60s).
+// peersUpdater can be nil if runtime peer updates are not needed.
 func NewConfigWatcher(
 	configManager ConfigurationManager,
 	revoker SessionRevoker,
+	peersUpdater AllowedPeersUpdater,
+	configPath string,
 	interval time.Duration,
 	logger *log.Logger,
 ) *ConfigWatcher {
 	return &ConfigWatcher{
 		configManager: configManager,
 		revoker:       revoker,
+		peersUpdater:  peersUpdater,
+		configPath:    configPath,
 		interval:      interval,
 		logger:        logger,
 		prevPeers:     make(map[string]bool),
@@ -43,10 +62,30 @@ func NewConfigWatcher(
 }
 
 // Watch starts the configuration watcher loop.
+// Uses fsnotify for instant updates, with polling as fallback.
 // Blocks until context is cancelled.
 func (w *ConfigWatcher) Watch(ctx context.Context) {
 	// Initialize with current state
 	w.loadCurrentState()
+
+	// Try to set up fsnotify
+	var fsEvents <-chan fsnotify.Event
+	var fsErrors <-chan error
+	watcher, err := fsnotify.NewWatcher()
+	if err == nil {
+		defer watcher.Close()
+		if err := watcher.Add(w.configPath); err == nil {
+			fsEvents = watcher.Events
+			fsErrors = watcher.Errors
+			if w.logger != nil {
+				w.logger.Printf("ConfigWatcher: watching %s for changes", w.configPath)
+			}
+		} else if w.logger != nil {
+			w.logger.Printf("ConfigWatcher: fsnotify watch failed: %v (using polling)", err)
+		}
+	} else if w.logger != nil {
+		w.logger.Printf("ConfigWatcher: fsnotify unavailable: %v (using polling)", err)
+	}
 
 	ticker := time.NewTicker(w.interval)
 	defer ticker.Stop()
@@ -55,6 +94,22 @@ func (w *ConfigWatcher) Watch(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
+		case event, ok := <-fsEvents:
+			if !ok {
+				fsEvents = nil // Channel closed, fall back to polling only
+				continue
+			}
+			if event.Op&(fsnotify.Write|fsnotify.Create) != 0 {
+				w.checkAndRevoke()
+			}
+		case err, ok := <-fsErrors:
+			if !ok {
+				fsErrors = nil
+				continue
+			}
+			if w.logger != nil {
+				w.logger.Printf("ConfigWatcher: fsnotify error: %v", err)
+			}
 		case <-ticker.C:
 			w.checkAndRevoke()
 		}
@@ -78,8 +133,9 @@ func (w *ConfigWatcher) loadCurrentState() {
 	}
 }
 
-// checkAndRevoke compares current config with previous state and revokes
-// sessions for peers that were removed or disabled.
+// checkAndRevoke compares current config with previous state and:
+// 1. Revokes sessions for peers that were removed or disabled
+// 2. Updates the runtime AllowedPeers map for new handshake lookups
 func (w *ConfigWatcher) checkAndRevoke() {
 	conf, err := w.configManager.Configuration()
 	if err != nil {
@@ -114,6 +170,11 @@ func (w *ConfigWatcher) checkAndRevoke() {
 				w.logger.Printf("ConfigWatcher: revoked %d session(s) for peer (removed/disabled)", count)
 			}
 		}
+	}
+
+	// Update runtime AllowedPeers map (enables new peers to connect without restart)
+	if w.peersUpdater != nil {
+		w.peersUpdater.Update(conf.AllowedPeers)
 	}
 
 	// Update previous state

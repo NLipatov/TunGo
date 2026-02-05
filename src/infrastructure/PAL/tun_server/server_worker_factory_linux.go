@@ -9,6 +9,7 @@ import (
 	"tungo/application/network/routing"
 	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/cryptography/chacha20"
+	"tungo/infrastructure/cryptography/noise"
 	"tungo/infrastructure/network/ip"
 	wsServer "tungo/infrastructure/network/ws/server/factory"
 	"tungo/infrastructure/settings"
@@ -23,27 +24,56 @@ type ServerWorkerFactory struct {
 	loggerFactory        loggerFactory
 	configurationManager server.ConfigurationManager
 	sessionRevoker       *session.CompositeSessionRevoker
+	allowedPeers         noise.AllowedPeersLookup
+	cookieManager        *noise.CookieManager
+	loadMonitor          *noise.LoadMonitor
 }
 
 func NewServerWorkerFactory(
 	manager server.ConfigurationManager,
-) *ServerWorkerFactory {
+) (*ServerWorkerFactory, error) {
+	conf, err := manager.Configuration()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load configuration: %w", err)
+	}
+
+	cookieManager, err := noise.NewCookieManager()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create cookie manager: %w", err)
+	}
+
 	return &ServerWorkerFactory{
 		loggerFactory:        newDefaultLoggerFactory(),
 		configurationManager: manager,
 		sessionRevoker:       session.NewCompositeSessionRevoker(),
-	}
+		allowedPeers:         noise.NewAllowedPeersLookup(conf.AllowedPeers),
+		cookieManager:        cookieManager,
+		loadMonitor:          noise.NewLoadMonitor(noise.DefaultLoadThreshold),
+	}, nil
 }
 
 func NewTestServerWorkerFactory(
 	loggerFactory loggerFactory,
 	manager server.ConfigurationManager,
-) *ServerWorkerFactory {
+) (*ServerWorkerFactory, error) {
+	conf, err := manager.Configuration()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load configuration: %w", err)
+	}
+
+	cookieManager, err := noise.NewCookieManager()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create cookie manager: %w", err)
+	}
+
 	return &ServerWorkerFactory{
 		loggerFactory:        loggerFactory,
 		configurationManager: manager,
 		sessionRevoker:       session.NewCompositeSessionRevoker(),
-	}
+		allowedPeers:         noise.NewAllowedPeersLookup(conf.AllowedPeers),
+		cookieManager:        cookieManager,
+		loadMonitor:          noise.NewLoadMonitor(noise.DefaultLoadThreshold),
+	}, nil
 }
 
 // SessionRevoker returns the composite session revoker that aggregates
@@ -51,6 +81,12 @@ func NewTestServerWorkerFactory(
 // Used by ConfigWatcher to revoke sessions when AllowedPeers changes.
 func (s *ServerWorkerFactory) SessionRevoker() *session.CompositeSessionRevoker {
 	return s.sessionRevoker
+}
+
+// AllowedPeersUpdater returns the AllowedPeers lookup for runtime updates.
+// Used by ConfigWatcher to update peer map when config changes.
+func (s *ServerWorkerFactory) AllowedPeersUpdater() server.AllowedPeersUpdater {
+	return s.allowedPeers
 }
 
 func (s *ServerWorkerFactory) CreateWorker(
@@ -107,11 +143,7 @@ func (s *ServerWorkerFactory) createTCPWorker(
 
 	logger := s.loggerFactory.newLogger()
 
-	handshakeFactory, err := NewHandshakeFactory(*conf)
-	if err != nil {
-		_ = listener.Close()
-		return nil, fmt.Errorf("failed to create handshake factory: %w", err)
-	}
+	handshakeFactory := NewHandshakeFactory(*conf, s.allowedPeers, s.cookieManager, s.loadMonitor)
 
 	registrar := tcp_registration.NewRegistrar(
 		logger,
@@ -175,11 +207,7 @@ func (s *ServerWorkerFactory) createWSWorker(
 
 	logger := s.loggerFactory.newLogger()
 
-	handshakeFactory, err := NewHandshakeFactory(*conf)
-	if err != nil {
-		_ = wsListener.Close()
-		return nil, fmt.Errorf("failed to create handshake factory: %w", err)
-	}
+	handshakeFactory := NewHandshakeFactory(*conf, s.allowedPeers, s.cookieManager, s.loadMonitor)
 
 	registrar := tcp_registration.NewRegistrar(
 		logger,
@@ -237,11 +265,7 @@ func (s *ServerWorkerFactory) createUDPWorker(
 		sessionManager,
 	)
 
-	handshakeFactory, err := NewHandshakeFactory(*conf)
-	if err != nil {
-		_ = conn.Close()
-		return nil, fmt.Errorf("failed to create handshake factory: %w", err)
-	}
+	handshakeFactory := NewHandshakeFactory(*conf, s.allowedPeers, s.cookieManager, s.loadMonitor)
 
 	registrar := udp_registration.NewRegistrar(
 		ctx,

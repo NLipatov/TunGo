@@ -74,7 +74,7 @@ func TestConfigWatcher_RevokesDisabledPeer(t *testing.T) {
 	configManager := &mockConfigManager{config: initialConfig}
 	revoker := &mockRevoker{}
 
-	watcher := NewConfigWatcher(configManager, revoker, 10*time.Millisecond, nil)
+	watcher := NewConfigWatcher(configManager, revoker, nil, "", 10*time.Millisecond, nil)
 
 	// Initialize state
 	watcher.loadCurrentState()
@@ -117,7 +117,7 @@ func TestConfigWatcher_RevokesRemovedPeer(t *testing.T) {
 	configManager := &mockConfigManager{config: initialConfig}
 	revoker := &mockRevoker{}
 
-	watcher := NewConfigWatcher(configManager, revoker, 10*time.Millisecond, nil)
+	watcher := NewConfigWatcher(configManager, revoker, nil, "", 10*time.Millisecond, nil)
 	watcher.loadCurrentState()
 
 	// Remove peer1 entirely
@@ -153,7 +153,7 @@ func TestConfigWatcher_NoRevokeForAlreadyDisabled(t *testing.T) {
 	configManager := &mockConfigManager{config: initialConfig}
 	revoker := &mockRevoker{}
 
-	watcher := NewConfigWatcher(configManager, revoker, 10*time.Millisecond, nil)
+	watcher := NewConfigWatcher(configManager, revoker, nil, "", 10*time.Millisecond, nil)
 	watcher.loadCurrentState()
 
 	// Keep disabled
@@ -180,7 +180,7 @@ func TestConfigWatcher_NoRevokeWhenReEnabled(t *testing.T) {
 	configManager := &mockConfigManager{config: initialConfig}
 	revoker := &mockRevoker{}
 
-	watcher := NewConfigWatcher(configManager, revoker, 10*time.Millisecond, nil)
+	watcher := NewConfigWatcher(configManager, revoker, nil, "", 10*time.Millisecond, nil)
 	watcher.loadCurrentState()
 
 	// No change
@@ -205,7 +205,7 @@ func TestConfigWatcher_WatchLoop(t *testing.T) {
 	configManager := &mockConfigManager{config: initialConfig}
 	revoker := &mockRevoker{}
 
-	watcher := NewConfigWatcher(configManager, revoker, 50*time.Millisecond, nil)
+	watcher := NewConfigWatcher(configManager, revoker, nil, "", 50*time.Millisecond, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

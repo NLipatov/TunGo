@@ -53,8 +53,9 @@ func main() {
 		return
 	}
 
+	serverResolver := serverConf.NewServerResolver()
 	configurationManager, configurationManagerErr := serverConf.NewManager(
-		serverConf.NewServerResolver(),
+		serverResolver,
 		stat.NewDefaultStat(),
 	)
 	if configurationManagerErr != nil {
@@ -62,6 +63,7 @@ func main() {
 		exitCode = 1
 		return
 	}
+	serverConfigPath, _ := serverResolver.Resolve()
 	keyManager := serverConf.NewX25519KeyManager(configurationManager)
 	if pKeysErr := keyManager.PrepareKeys(); pKeysErr != nil {
 		log.Printf("could not prepare keys: %s", pKeysErr)
@@ -81,7 +83,7 @@ func main() {
 	switch appMode {
 	case mode.Server:
 		log.Printf("Starting server...")
-		err := startServer(appCtx, configurationManager)
+		err := startServer(appCtx, configurationManager, serverConfigPath)
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return
@@ -136,6 +138,7 @@ func startClient(appCtx context.Context) error {
 func startServer(
 	ctx context.Context,
 	configurationManager serverConf.ConfigurationManager,
+	configPath string,
 ) error {
 	tunFactory := tun_server.NewServerTunFactory()
 
@@ -151,12 +154,17 @@ func startServer(
 		configurationManager,
 	)
 
-	workerFactory := tun_server.NewServerWorkerFactory(configurationManager)
+	workerFactory, err := tun_server.NewServerWorkerFactory(configurationManager)
+	if err != nil {
+		return fmt.Errorf("failed to create worker factory: %w", err)
+	}
 
-	// Start ConfigWatcher to revoke sessions when AllowedPeers changes
+	// Start ConfigWatcher to revoke sessions and update AllowedPeers at runtime
 	configWatcher := serverConf.NewConfigWatcher(
 		configurationManager,
 		workerFactory.SessionRevoker(),
+		workerFactory.AllowedPeersUpdater(),
+		configPath,
 		configWatchInterval,
 		log.Default(),
 	)
