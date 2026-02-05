@@ -85,15 +85,6 @@ func (t *TransportHandler) HandleTransport() error {
 }
 
 func (t *TransportHandler) handleDatagram(pkt []byte) error {
-	// SessionReset is sent as a legacy, unencrypted control packet.
-	if spType, spOk := service_packet.TryParseHeader(pkt); spOk {
-		if t.rekeyController != nil {
-			t.rekeyController.AbortPendingIfExpired(time.Now())
-		}
-		if spType == service_packet.SessionReset {
-			return fmt.Errorf("server requested cryptographyService reset")
-		}
-	}
 	if len(pkt) < 2 {
 		return nil
 	}
@@ -149,8 +140,6 @@ func (t *TransportHandler) handleControlplane(plaintext []byte) (handled bool, e
 			log.Printf("rekey ack: install/apply failed: %v", err)
 		}
 		return true, nil
-	case service_packet.SessionReset:
-		return true, fmt.Errorf("server requested cryptographyService reset")
 	default:
 		// ignore unknown service_packet packets (including Pong — recv timer already reset above)
 		return true, nil

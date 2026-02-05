@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"log"
-	"net/netip"
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/settings"
 
@@ -15,11 +14,10 @@ import (
 )
 
 type TunHandler struct {
-	ctx              context.Context
-	reader           io.Reader
-	ipHeaderParser   appip.HeaderParser
-	sessionManager   session.Repository
-	sendSessionReset func(netip.AddrPort)
+	ctx            context.Context
+	reader         io.Reader
+	ipHeaderParser appip.HeaderParser
+	sessionManager session.Repository
 }
 
 func NewTunHandler(
@@ -27,14 +25,12 @@ func NewTunHandler(
 	reader io.Reader,
 	parser appip.HeaderParser,
 	sessionManager session.Repository,
-	sendSessionReset func(netip.AddrPort),
 ) tun.Handler {
 	return &TunHandler{
-		ctx:              ctx,
-		reader:           reader,
-		ipHeaderParser:   parser,
-		sessionManager:   sessionManager,
-		sendSessionReset: sendSessionReset,
+		ctx:            ctx,
+		reader:         reader,
+		ipHeaderParser: parser,
+		sessionManager: sessionManager,
 	}
 }
 
@@ -99,7 +95,6 @@ func (t *TunHandler) HandleTun() error {
 			// Encrypt "nonce || payload". The crypto service_packet must treat the prefix as nonce.
 			if err := peer.Egress().SendDataIP(buffer[:chacha20poly1305.NonceSize+n]); err != nil {
 				log.Printf("failed to send packet to %v: %v", peer.ExternalAddrPort(), err)
-				t.sendSessionReset(peer.ExternalAddrPort())
 				t.sessionManager.Delete(peer)
 			}
 		}

@@ -7,7 +7,6 @@ import (
 	"tungo/application/logging"
 	"tungo/application/network/connection"
 	"tungo/application/network/routing/transport"
-	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/session"
 	"tungo/infrastructure/tunnel/sessionplane/server/tcp_registration"
@@ -94,15 +93,4 @@ func (t *TransportHandler) handleClient(ctx context.Context, peer *session.Peer,
 		sessionManager: t.sessionManager,
 		logger:         t.logger,
 	}).Run()
-}
-
-// sendSessionReset sends a SessionReset service_packet packet to the given transport.
-func (t *TransportHandler) sendSessionReset(tr connection.Transport) {
-	servicePacketBuffer := make([]byte, 3)
-	servicePacketPayload, err := service_packet.EncodeLegacyHeader(service_packet.SessionReset, servicePacketBuffer)
-	if err != nil {
-		t.logger.Printf("failed to encode legacy session reset service_packet packet: %v", err)
-		return
-	}
-	_, _ = tr.Write(servicePacketPayload)
 }

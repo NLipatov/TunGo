@@ -517,25 +517,6 @@ func TestRegisterClient_AddsSessionOnNotFound(t *testing.T) {
 	}
 }
 
-func TestSendSessionReset_WritesToTransport(t *testing.T) {
-	logger := &fakeLogger{}
-	h := &TransportHandler{logger: logger}
-	conn := &fakeConn{addr: tcpAddr("1.2.3.4", 5000)}
-	h.sendSessionReset(conn)
-
-	if conn.writeBuf.Len() == 0 {
-		t.Fatal("expected sendSessionReset to write data to transport")
-	}
-	// Verify the written bytes are a legacy SessionReset.
-	data := conn.writeBuf.Bytes()
-	if len(data) < 1 {
-		t.Fatalf("written data too short: %d", len(data))
-	}
-	if data[0] != byte(service_packet.SessionReset) {
-		t.Fatalf("expected SessionReset byte, got %d", data[0])
-	}
-}
-
 func TestHandleClient_RekeyInit_DispatchedToControlPlane(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

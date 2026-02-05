@@ -38,8 +38,6 @@ type Registrar struct {
 
 	mu            sync.Mutex
 	registrations map[netip.AddrPort]*udp.RegistrationQueue
-
-	sendReset func(addrPort netip.AddrPort)
 }
 
 func NewRegistrar(
@@ -49,7 +47,6 @@ func NewRegistrar(
 	logger logging.Logger,
 	handshakeFactory connection.HandshakeFactory,
 	cryptographyFactory connection.CryptoFactory,
-	sendReset func(addrPort netip.AddrPort),
 ) *Registrar {
 	return &Registrar{
 		ctx:                 ctx,
@@ -59,7 +56,6 @@ func NewRegistrar(
 		handshakeFactory:    handshakeFactory,
 		cryptographyFactory: cryptographyFactory,
 		registrations:       make(map[netip.AddrPort]*udp.RegistrationQueue),
-		sendReset:           sendReset,
 	}
 }
 
@@ -148,14 +144,12 @@ func (r *Registrar) RegisterClient(addrPort netip.AddrPort, queue *udp.Registrat
 	internalIP, handshakeErr := h.ServerSideHandshake(regTransport)
 	if handshakeErr != nil {
 		r.logger.Printf("host %v failed registration: %v", addrPort.Addr().AsSlice(), handshakeErr)
-		r.sendReset(addrPort)
 		return
 	}
 
 	cryptoSession, controller, cryptoSessionErr := r.cryptographyFactory.FromHandshake(h, true)
 	if cryptoSessionErr != nil {
 		r.logger.Printf("failed to init crypto session for %v: %v", addrPort.Addr().AsSlice(), cryptoSessionErr)
-		r.sendReset(addrPort)
 		return
 	}
 

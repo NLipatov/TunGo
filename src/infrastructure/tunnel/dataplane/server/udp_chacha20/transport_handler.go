@@ -2,15 +2,12 @@ package udp_chacha20
 
 import (
 	"context"
-	"errors"
 	"io"
 	"net/netip"
 	"tungo/application/listeners"
 	"tungo/application/logging"
 	"tungo/application/network/routing/transport"
-	"tungo/infrastructure/cryptography/chacha20/rekey"
 	"tungo/infrastructure/cryptography/primitives"
-	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/session"
 	"tungo/infrastructure/tunnel/sessionplane/server/udp_registration"
@@ -112,9 +109,6 @@ func (t *TransportHandler) HandleTransport() error {
 			// only when needed (for registration).
 			if err := t.handlePacket(clientAddr, buffer[:n]); err != nil {
 				t.logger.Printf("failed to handle packet: %s", err)
-				if errors.Is(err, rekey.ErrEpochExhausted) {
-					t.sendSessionReset(clientAddr)
-				}
 			}
 		}
 	}
@@ -149,15 +143,4 @@ func (t *TransportHandler) handlePacket(
 	}
 
 	return nil
-}
-
-// sendSessionReset sends a SessionReset service_packet packet to the given client.
-func (t *TransportHandler) sendSessionReset(addrPort netip.AddrPort) {
-	servicePacketBuffer := make([]byte, 3)
-	servicePacketPayload, err := service_packet.EncodeLegacyHeader(service_packet.SessionReset, servicePacketBuffer)
-	if err != nil {
-		t.logger.Printf("failed to encode legacy session reset service_packet packet: %v", err)
-		return
-	}
-	_, _ = t.listenerConn.WriteToUDPAddrPort(servicePacketPayload, addrPort)
 }

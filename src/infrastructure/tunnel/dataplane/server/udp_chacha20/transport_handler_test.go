@@ -334,21 +334,6 @@ func makeValidIPv4Packet(srcIP netip.Addr) []byte {
 	return packet
 }
 
-// testSendReset creates a sendReset callback that encodes a SessionReset and writes to conn.
-func testSendReset(conn *TransportHandlerFakeUdpListener) func(netip.AddrPort) {
-	return func(addrPort netip.AddrPort) {
-		buf := make([]byte, 3)
-		payload, err := service_packet.EncodeLegacyHeader(service_packet.SessionReset, buf)
-		if err != nil {
-			return
-		}
-		_, _ = conn.WriteToUDPAddrPort(payload, addrPort)
-	}
-}
-
-// noopSendReset is a no-op sendReset for tests that don't test session resets.
-func noopSendReset(_ netip.AddrPort) {}
-
 /* ==================================== Tests ==================================== */
 
 // Cancel before first read: select chooses ctx.Done() branch => returns nil.
@@ -363,7 +348,7 @@ func TestHandleTransport_CancelBeforeLoop_ReturnsNil(t *testing.T) {
 	conn := &TransportHandlerFakeUdpListener{} // Accept/read should not matter
 
 	registrar := udp_registration.NewRegistrar(ctx, conn, repo, logger,
-		hsf, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}), noopSendReset,
+		hsf, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
 	)
 	h := NewTransportHandler(ctx, settings.Settings{Port: "7777"}, writer, conn, repo, logger, registrar)
 
@@ -392,7 +377,7 @@ func TestHandleTransport_CancelWhileRead_ReturnsCtxErr(t *testing.T) {
 	}
 
 	registrar := udp_registration.NewRegistrar(ctx, bl, repo, logger,
-		hsf, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}), noopSendReset,
+		hsf, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
 	)
 	h := NewTransportHandler(ctx, settings.Settings{Port: "9001"}, writer, bl, repo, logger, registrar)
 
@@ -429,7 +414,7 @@ func TestHandleTransport_ReadMsgUDPAddrPortError_LogsAndContinues(t *testing.T) 
 	}
 
 	registrar := udp_registration.NewRegistrar(ctx, conn, repo, logger,
-		hsf, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}), noopSendReset,
+		hsf, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
 	)
 	h := NewTransportHandler(ctx, settings.Settings{Port: "4444"}, writer, conn, repo, logger, registrar)
 
@@ -462,7 +447,7 @@ func TestHandleTransport_EmptyPacket_Dropped(t *testing.T) {
 	}
 
 	registrar := udp_registration.NewRegistrar(ctx, conn, repo, logger,
-		hsf, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}), noopSendReset,
+		hsf, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
 	)
 	h := NewTransportHandler(ctx, settings.Settings{Port: "5555"}, writer, conn, repo, logger, registrar)
 
@@ -501,7 +486,7 @@ func TestTransportHandler_RegistrationPacket(t *testing.T) {
 	}
 
 	registrar := udp_registration.NewRegistrar(ctx, conn, repo, logger,
-		handshakeFactory, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}), noopSendReset,
+		handshakeFactory, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
 	)
 	handler := NewTransportHandler(ctx, settings.Settings{Port: "9999"}, writer, conn, repo, logger, registrar)
 
@@ -520,46 +505,6 @@ func TestTransportHandler_RegistrationPacket(t *testing.T) {
 	// Buffers should have been set
 	if conn.setReadBufferCnt == 0 || conn.setWriteBufferCnt == 0 {
 		t.Fatalf("expected SetReadBuffer/SetWriteBuffer to be called, got r=%d w=%d", conn.setReadBufferCnt, conn.setWriteBufferCnt)
-	}
-}
-
-// Handshake error -> SessionReset is sent (EncodeLegacy ok).
-func TestTransportHandler_HandshakeError_SendsSessionReset(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	writer := &TransportHandlerFakeWriter{}
-	logger := &TransportHandlerFakeLogger{}
-	repo := &TransportHandlerSessionRepo{}
-	clientAddr := netip.MustParseAddrPort("192.168.1.20:5000")
-	fakeHS := &TransportHandlerFakeHandshake{ip: netip.Addr{}, err: errors.New("hs fail")}
-	handshakeFactory := &TransportHandlerFakeHandshakeFactory{hs: fakeHS}
-
-	writeCh := make(chan struct{}, 1)
-	conn := &TransportHandlerFakeUdpListener{
-		readBufs:  [][]byte{{0xab, 0xcd}},
-		readAddrs: []netip.AddrPort{clientAddr},
-		writeCh:   writeCh,
-	}
-
-	registrar := udp_registration.NewRegistrar(ctx, conn, repo, logger,
-		handshakeFactory, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
-		testSendReset(conn),
-	)
-	handler := NewTransportHandler(ctx, settings.Settings{Port: "1111"}, writer, conn, repo, logger, registrar)
-	done := make(chan struct{})
-	go func() { _ = handler.HandleTransport(); close(done) }()
-
-	select {
-	case <-writeCh:
-	case <-time.After(time.Second):
-		t.Fatal("timeout: SessionReset was not sent")
-	}
-	cancel()
-	<-done
-
-	if len(conn.writes) != 1 || conn.writes[0].data[0] != byte(service_packet.SessionReset) {
-		t.Errorf("expected SessionReset to be sent, got %+v", conn.writes)
 	}
 }
 
@@ -595,7 +540,7 @@ func TestTransportHandler_DecryptError(t *testing.T) {
 	}
 
 	registrar := udp_registration.NewRegistrar(ctx, conn, repo, logger,
-		handshakeFactory, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}), noopSendReset,
+		handshakeFactory, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
 	)
 	handler := NewTransportHandler(ctx, settings.Settings{Port: "2222"}, writer, conn, repo, logger, registrar)
 	done := make(chan struct{})
@@ -655,7 +600,7 @@ func TestTransportHandler_WriteError(t *testing.T) {
 	}
 
 	registrar := udp_registration.NewRegistrar(ctx, conn, repo, logger,
-		handshakeFactory, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}), noopSendReset,
+		handshakeFactory, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
 	)
 	handler := NewTransportHandler(ctx, settings.Settings{Port: "3333"}, writer, conn, repo, logger, registrar)
 
@@ -719,7 +664,7 @@ func TestTransportHandler_HappyPath(t *testing.T) {
 		readAddrs: []netip.AddrPort{clientAddr},
 	}
 	registrar := udp_registration.NewRegistrar(ctx, conn, repo, logger,
-		handshakeFactory, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}), noopSendReset,
+		handshakeFactory, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
 	)
 	handler := NewTransportHandler(ctx, settings.Settings{Port: "5050"}, writer, conn, repo, logger, registrar)
 	done := make(chan struct{})
@@ -764,7 +709,7 @@ func TestTransportHandler_NATRebinding_ReRegister(t *testing.T) {
 		readAddrs: []netip.AddrPort{newAddr},
 	}
 	registrar := udp_registration.NewRegistrar(ctx, conn, repo, logger,
-		handshakeFactory, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}), noopSendReset,
+		handshakeFactory, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
 	)
 	handler := NewTransportHandler(ctx, settings.Settings{Port: "6060"}, writer, conn, repo, logger, registrar)
 	done := make(chan struct{})
@@ -800,7 +745,6 @@ func TestTransportHandler_RegisterClient_ZeroInternalIP(t *testing.T) {
 	}
 	registrar := udp_registration.NewRegistrar(ctx, conn, repo, logger,
 		handshakeFactory, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
-		noopSendReset,
 	)
 	handler := NewTransportHandler(ctx, settings.Settings{Port: "6000"}, writer, conn, repo, logger, registrar)
 	done := make(chan struct{})
@@ -840,7 +784,7 @@ func TestTransportHandler_getOrCreateRegistrationQueue_ExistingQueue(t *testing.
 	r := udp_registration.NewRegistrar(ctx, &TransportHandlerFakeUdpListener{},
 		&TransportHandlerSessionRepo{}, &TransportHandlerFakeLogger{},
 		&TransportHandlerFakeHandshakeFactory{hs: &TransportHandlerFakeHandshake{}},
-		chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}), noopSendReset,
+		chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
 	)
 
 	addr := netip.MustParseAddrPort("1.2.3.4:9999")
@@ -886,7 +830,7 @@ func TestTransportHandler_SecondPacketGoesToExistingRegistrationQueue_NoNewGorou
 	handshakeFactory := &TransportHandlerFakeHandshakeFactory{hs: fakeHS}
 
 	registrar := udp_registration.NewRegistrar(ctx, conn, repo, logger,
-		handshakeFactory, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}), noopSendReset,
+		handshakeFactory, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
 	)
 	handler := NewTransportHandler(ctx, settings.Settings{Port: "7000"}, writer, conn, repo, logger, registrar)
 
@@ -947,7 +891,7 @@ func TestHandleTransport_IgnoreHandlePacketError(t *testing.T) {
 
 	registrar := udp_registration.NewRegistrar(ctx, conn, repo, logger,
 		&TransportHandlerFakeHandshakeFactory{},
-		chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}), noopSendReset,
+		chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
 	)
 	handler := NewTransportHandler(ctx, settings.Settings{Port: "9999"}, writer, conn, repo, logger, registrar)
 
@@ -966,7 +910,7 @@ func TestRemoveRegistrationQueue_RemovesAndCloses(t *testing.T) {
 	r := udp_registration.NewRegistrar(ctx, &TransportHandlerFakeUdpListener{},
 		&TransportHandlerSessionRepo{}, &TransportHandlerFakeLogger{},
 		&TransportHandlerFakeHandshakeFactory{hs: hs},
-		chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}), noopSendReset,
+		chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
 	)
 
 	addr := netip.MustParseAddrPort("1.2.3.4:9999")
@@ -992,7 +936,7 @@ func TestCloseAllRegistrations(t *testing.T) {
 	r := udp_registration.NewRegistrar(ctx, &TransportHandlerFakeUdpListener{},
 		&TransportHandlerSessionRepo{}, &TransportHandlerFakeLogger{},
 		&TransportHandlerFakeHandshakeFactory{hs: &TransportHandlerFakeHandshake{}},
-		chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}), noopSendReset,
+		chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
 	)
 
 	a1 := netip.MustParseAddrPort("1.1.1.1:1000")
@@ -1022,7 +966,7 @@ func TestGetOrCreateRegistrationQueue_NewQueue(t *testing.T) {
 	r := udp_registration.NewRegistrar(ctx, &TransportHandlerFakeUdpListener{},
 		&TransportHandlerSessionRepo{}, &TransportHandlerFakeLogger{},
 		&TransportHandlerFakeHandshakeFactory{hs: &TransportHandlerFakeHandshake{}},
-		chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}), noopSendReset,
+		chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
 	)
 
 	addr := netip.MustParseAddrPort("8.8.8.8:53")
@@ -1041,7 +985,7 @@ func TestGetOrCreateRegistrationQueue_NewQueue(t *testing.T) {
 	}
 }
 
-func TestRegisterClient_CryptoError_SendsReset(t *testing.T) {
+func TestRegisterClient_CryptoError_LogsAndFails(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1053,28 +997,30 @@ func TestRegisterClient_CryptoError_SendsReset(t *testing.T) {
 	hs := &TransportHandlerFakeHandshake{ip: netip.MustParseAddr("10.0.0.5")}
 	hsf := &TransportHandlerFakeHandshakeFactory{hs: hs}
 
-	writeCh := make(chan struct{}, 1)
 	conn := &TransportHandlerFakeUdpListener{
 		readBufs:  [][]byte{{0x00, 0x01}}, // include epoch byte
 		readAddrs: []netip.AddrPort{client},
-		writeCh:   writeCh,
 	}
 
 	registrar := udp_registration.NewRegistrar(ctx, conn, repo, logger,
-		hsf, failingCryptoFactory{}, testSendReset(conn),
+		hsf, failingCryptoFactory{},
 	)
 	handler := NewTransportHandler(ctx, settings.Settings{Port: "5555"}, writer, conn, repo, logger, registrar)
 
+	done := make(chan struct{})
 	go func() {
 		_ = handler.HandleTransport()
+		close(done)
 	}()
 
-	select {
-	case <-writeCh:
-		cancel()
-	case <-time.After(time.Second):
-		cancel()
-		t.Fatal("SessionReset not sent on crypto error")
+	// Give time for registration to fail
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+	<-done
+
+	// Verify no session was added due to crypto error
+	if len(repo.adds) != 0 {
+		t.Fatalf("expected no sessions added on crypto error, got %d", len(repo.adds))
 	}
 }
 func TestTransportHandler_RegistrationQueueOverflow(t *testing.T) {
@@ -1143,7 +1089,6 @@ func TestRegisterClient_CanceledContextClosesQueue(t *testing.T) {
 		&TransportHandlerFakeLogger{},
 		&TransportHandlerFakeHandshakeFactory{hs: hs},
 		failingCryptoFactory{},
-		noopSendReset,
 	)
 
 	// Pre-populate the queue in the registrar's internal map
@@ -1196,7 +1141,7 @@ func TestHandleTransport_ShortPacket_Logged(t *testing.T) {
 	}
 
 	registrar := udp_registration.NewRegistrar(ctx, conn, repo, logger,
-		hsf, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}), noopSendReset,
+		hsf, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
 	)
 	handler := NewTransportHandler(ctx, settings.Settings{Port: "9999"}, writer, conn, repo, logger, registrar)
 
@@ -1211,7 +1156,7 @@ func TestHandleTransport_ShortPacket_Logged(t *testing.T) {
 	}
 }
 
-func TestHandleTransport_EpochExhausted_SendsSessionReset(t *testing.T) {
+func TestHandleTransport_EpochExhausted_LogsError(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1240,22 +1185,20 @@ func TestHandleTransport_EpochExhausted_SendsSessionReset(t *testing.T) {
 	rekeyPayload := make([]byte, service_packet.RekeyPacketLen)
 	_, _ = service_packet.EncodeV1Header(service_packet.RekeyInit, rekeyPayload)
 
-	writeCh := make(chan struct{}, 1)
 	conn := &TransportHandlerFakeUdpListener{
 		readBufs:  [][]byte{rekeyPayload},
 		readAddrs: []netip.AddrPort{clientAddr},
-		writeCh:   writeCh,
 	}
 
 	registrar := udp_registration.NewRegistrar(ctx, conn, repo, logger,
-		hsf, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}), noopSendReset,
+		hsf, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
 	)
 	handler := NewTransportHandler(ctx, settings.Settings{Port: "8080"}, writer, conn, repo, logger, registrar)
 
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
 
-	// Wait for either the write (session reset) or timeout.
+	// Wait for the packet to be processed.
 	time.Sleep(50 * time.Millisecond)
 	cancel()
 	<-done
@@ -1291,24 +1234,3 @@ func TestHandleTransport_NilRegistrar_NoUnknownPanic(t *testing.T) {
 	// No panic = success.
 }
 
-func TestSendSessionReset_WritesToUDP(t *testing.T) {
-	logger := &TransportHandlerFakeLogger{}
-	conn := &TransportHandlerFakeUdpListener{}
-	h := &TransportHandler{
-		logger:       logger,
-		listenerConn: conn,
-	}
-	addr := netip.MustParseAddrPort("192.168.1.1:12345")
-	h.sendSessionReset(addr)
-
-	if len(conn.writes) != 1 {
-		t.Fatalf("expected 1 write, got %d", len(conn.writes))
-	}
-	w := conn.writes[0]
-	if w.addr != addr {
-		t.Fatalf("expected write to %v, got %v", addr, w.addr)
-	}
-	if len(w.data) < 1 || w.data[0] != byte(service_packet.SessionReset) {
-		t.Fatalf("expected SessionReset byte, got %v", w.data)
-	}
-}

@@ -150,19 +150,6 @@ func TestHandleTransport_ReadDeadlineExceededSkip(t *testing.T) {
 	}
 }
 
-func TestHandleTransport_ServerResetSignal(t *testing.T) {
-	r := &thTestReader{reads: []func(p []byte) (int, error){
-		func(p []byte) (int, error) { p[0] = byte(service_packet.SessionReset); return 1, nil },
-	}}
-	w := &thTestWriter{}
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTransportHandler(context.Background(), r, w, &thTestCrypto{}, ctrl, nil)
-	exp := "server requested cryptographyService reset"
-	if err := h.HandleTransport(); err == nil || err.Error() != exp {
-		t.Errorf("expected %q, got %v", exp, err)
-	}
-}
-
 func TestHandleTransport_DecryptNonUniqueNonceSkip(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -191,7 +178,7 @@ func TestHandleTransport_DecryptNonUniqueNonceSkip(t *testing.T) {
 
 func TestHandleTransport_DecryptErrorFatal(t *testing.T) {
 	errDec := errors.New("decrypt fail")
-	// reader returns 2 bytes so SessionReset not triggered
+	// reader returns 2 bytes so decryption proceeds
 	r := &thTestReader{reads: []func(p []byte) (int, error){
 		func(p []byte) (int, error) { p[0] = 9; p[1] = 9; return 2, nil },
 	}}
@@ -525,7 +512,7 @@ func TestHandleTransport_ShortPacket_SkippedAfterServiceCheck(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// A 1-byte packet that is NOT SessionReset and has len<2 — should be silently skipped.
+	// A 1-byte packet with len<2 — should be silently skipped.
 	r := &thTestReader{reads: []func(p []byte) (int, error){
 		func(p []byte) (int, error) { p[0] = 0x45; return 1, nil },
 		func(p []byte) (int, error) { <-ctx.Done(); return 0, errors.New("stop") },
@@ -573,32 +560,6 @@ func TestHandleTransport_EpochExhausted_ReturnsError(t *testing.T) {
 	}
 	if !bytes.Contains([]byte(err.Error()), []byte("epoch exhausted")) {
 		t.Fatalf("expected 'epoch exhausted' in error, got: %v", err)
-	}
-}
-
-func TestHandleTransport_EncryptedSessionReset(t *testing.T) {
-	// When decrypted data is a SessionReset service packet.
-	resetPayload := make([]byte, service_packet.RekeyPacketLen)
-	_, _ = service_packet.EncodeV1Header(service_packet.SessionReset, resetPayload)
-
-	// thTestCrypto returns the reset payload as decrypted output.
-	cipher := []byte{0, 0, 0xFF, 0x01, byte(service_packet.SessionReset)}
-	r := &thTestReader{reads: []func(p []byte) (int, error){
-		func(p []byte) (int, error) { copy(p, cipher); return len(cipher), nil },
-	}}
-	w := &thTestWriter{}
-	// Decrypt returns a 3-byte V1 SessionReset.
-	resetSP := []byte{0xFF, 0x01, byte(service_packet.SessionReset)}
-	crypto := &thTestCrypto{output: resetSP}
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTransportHandler(context.Background(), r, w, crypto, ctrl, nil)
-
-	err := h.HandleTransport()
-	if err == nil {
-		t.Fatal("expected session reset error")
-	}
-	if !bytes.Contains([]byte(err.Error()), []byte("server requested")) {
-		t.Fatalf("expected session reset error, got: %v", err)
 	}
 }
 

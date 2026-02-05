@@ -11,7 +11,6 @@ import (
 	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network/ip"
-	"tungo/infrastructure/network/service_packet"
 	wsServer "tungo/infrastructure/network/ws/server/factory"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/dataplane/server/tcp_chacha20"
@@ -232,22 +231,11 @@ func (s *ServerWorkerFactory) createUDPWorker(
 
 	logger := s.loggerFactory.newLogger()
 
-	sendReset := func(addr netip.AddrPort) {
-		buf := make([]byte, 3)
-		payload, spErr := service_packet.EncodeLegacyHeader(service_packet.SessionReset, buf)
-		if spErr != nil {
-			logger.Printf("failed to encode session reset: %v", spErr)
-			return
-		}
-		_, _ = conn.WriteToUDPAddrPort(payload, addr)
-	}
-
 	th := udp_chacha20.NewTunHandler(
 		ctx,
 		tun,
 		ip.NewHeaderParser(),
 		sessionManager,
-		sendReset,
 	)
 
 	handshakeFactory, err := NewHandshakeFactory(*conf)
@@ -263,7 +251,6 @@ func (s *ServerWorkerFactory) createUDPWorker(
 		logger,
 		handshakeFactory,
 		chacha20.NewUdpSessionBuilder(chacha20.NewDefaultAEADBuilder()),
-		sendReset,
 	)
 
 	tr := udp_chacha20.NewTransportHandler(
