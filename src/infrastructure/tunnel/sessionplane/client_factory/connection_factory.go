@@ -145,18 +145,17 @@ func (f *ConnectionFactory) establishSecuredConnection(
 	adapter connection.Transport,
 	cryptoFactory connection.CryptoFactory,
 ) (connection.Transport, connection.Crypto, *rekey.StateMachine, error) {
-	// Use IK handshake if client keys are configured, otherwise fall back to XX
-	var handshake connection.Handshake
-	if len(f.conf.ClientPublicKey) == 32 && len(f.conf.ClientPrivateKey) == 32 {
-		handshake = noise.NewIKHandshakeClient(
-			f.conf.ClientPublicKey,
-			f.conf.ClientPrivateKey,
-			f.conf.X25519PublicKey,
-		)
-	} else {
-		// Legacy XX handshake for backward compatibility
-		handshake = noise.NewNoiseHandshake(f.conf.X25519PublicKey, nil)
+	// IK handshake requires client keys
+	if len(f.conf.ClientPublicKey) != 32 || len(f.conf.ClientPrivateKey) != 32 {
+		_ = adapter.Close()
+		return nil, nil, nil, fmt.Errorf("client keys not configured (required for IK handshake)")
 	}
+
+	handshake := noise.NewIKHandshakeClient(
+		f.conf.ClientPublicKey,
+		f.conf.ClientPrivateKey,
+		f.conf.X25519PublicKey,
+	)
 
 	secret := network.NewDefaultSecret(
 		s,

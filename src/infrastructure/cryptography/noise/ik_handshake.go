@@ -6,11 +6,19 @@ import (
 	"net"
 	"net/netip"
 	"tungo/application/network/connection"
+	"tungo/infrastructure/cryptography/mem"
 	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/settings"
 
 	noiselib "github.com/flynn/noise"
 )
+
+var cipherSuite = noiselib.NewCipherSuite(noiselib.DH25519, noiselib.CipherChaChaPoly, noiselib.HashSHA256)
+
+// zeroBytes is a package-local alias for mem.ZeroBytes.
+func zeroBytes(b []byte) {
+	mem.ZeroBytes(b)
+}
 
 // IKHandshakeResult contains the result of a successful server-side IK handshake.
 // Implements connection.HandshakeResult interface.
