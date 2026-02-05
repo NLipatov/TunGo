@@ -25,6 +25,7 @@ const (
 	RekeyAck
 	Ping
 	Pong
+	EpochExhausted // server → client: cannot rekey, please reconnect
 )
 
 // TryParseHeader detects service_packet packets in-place without allocations.
@@ -37,7 +38,7 @@ func TryParseHeader(pkt []byte) (HeaderType, bool) {
 		}
 		typ := HeaderType(pkt[2])
 		switch typ {
-		case Ping, Pong:
+		case Ping, Pong, EpochExhausted:
 			return typ, true
 		default:
 			return Unknown, false
@@ -62,7 +63,7 @@ func TryParseHeader(pkt []byte) (HeaderType, bool) {
 // EncodeV1Header writes framed encoding: 0xFF <ver=1> <type>.
 func EncodeV1Header(headerType HeaderType, dst []byte) ([]byte, error) {
 	switch headerType {
-	case Ping, Pong:
+	case Ping, Pong, EpochExhausted:
 		if len(dst) < 3 {
 			return nil, io.ErrShortBuffer
 		}

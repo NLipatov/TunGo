@@ -1,6 +1,8 @@
 package tcp_chacha20
 
 import (
+	"errors"
+
 	"tungo/application/logging"
 	"tungo/application/network/connection"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
@@ -17,9 +19,10 @@ import (
 // ACK (stream protocol — explicit activation). UDP activates based on received
 // packet epoch.
 type controlPlaneHandler struct {
-	crypto primitives.KeyDeriver
-	logger logging.Logger
-	ackBuf [service_packet.RekeyPacketLen + settings.TCPChacha20Overhead]byte
+	crypto       primitives.KeyDeriver
+	logger       logging.Logger
+	ackBuf       [service_packet.RekeyPacketLen + settings.TCPChacha20Overhead]byte
+	exhaustedBuf [3 + settings.TCPChacha20Overhead]byte
 }
 
 func newControlPlaneHandler(crypto primitives.KeyDeriver, logger logging.Logger) controlPlaneHandler {
@@ -46,6 +49,7 @@ func (h *controlPlaneHandler) Handle(
 	return false
 }
 
+// handleRekeyInit processes a rekey init packet.
 func (h *controlPlaneHandler) handleRekeyInit(
 	plaindata []byte,
 	egress connection.Egress,
@@ -56,6 +60,11 @@ func (h *controlPlaneHandler) handleRekeyInit(
 	serverPub, epoch, ok, err := controlplane.ServerHandleRekeyInit(h.crypto, fsm, plaindata)
 	if err != nil {
 		h.logger.Printf("rekey init: %v", err)
+		if errors.Is(err, rekey.ErrEpochExhausted) {
+			// Send EpochExhausted to notify client to reconnect.
+			// Session stays alive - client will reconnect, then this session closes.
+			h.sendEpochExhausted(egress)
+		}
 		return
 	}
 	if !ok {
@@ -78,4 +87,13 @@ func (h *controlPlaneHandler) handleRekeyInit(
 
 	// 3. Now switch send to the new epoch — all subsequent frames use new key.
 	fsm.ActivateSendEpoch(epoch)
+}
+
+func (h *controlPlaneHandler) sendEpochExhausted(egress connection.Egress) {
+	payload := h.exhaustedBuf[:3]
+	sp, err := service_packet.EncodeV1Header(service_packet.EpochExhausted, payload)
+	if err != nil {
+		return
+	}
+	_ = egress.SendControl(sp)
 }

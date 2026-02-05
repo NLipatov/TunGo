@@ -466,6 +466,56 @@ func TestAllowedPeersLookup(t *testing.T) {
 	}
 }
 
+func TestAllowedPeersLookup_DynamicUpdate(t *testing.T) {
+	pubKey1 := make([]byte, 32)
+	pubKey1[0] = 1
+	pubKey2 := make([]byte, 32)
+	pubKey2[0] = 2
+	pubKey3 := make([]byte, 32)
+	pubKey3[0] = 3
+
+	// Initial peers
+	peers := []server.AllowedPeer{
+		{PublicKey: pubKey1, Enabled: true, ClientIP: "10.0.0.1"},
+	}
+
+	lookup := NewAllowedPeersLookup(peers)
+
+	// Verify initial state
+	if lookup.Lookup(pubKey1) == nil {
+		t.Fatal("should find peer 1")
+	}
+	if lookup.Lookup(pubKey2) != nil {
+		t.Fatal("should not find peer 2 before update")
+	}
+
+	// Update with new peers
+	newPeers := []server.AllowedPeer{
+		{PublicKey: pubKey2, Enabled: true, ClientIP: "10.0.0.2"},
+		{PublicKey: pubKey3, Enabled: true, ClientIP: "10.0.0.3"},
+	}
+	lookup.Update(newPeers)
+
+	// Old peer should be gone
+	if lookup.Lookup(pubKey1) != nil {
+		t.Fatal("should not find peer 1 after update")
+	}
+
+	// New peers should be present
+	if lookup.Lookup(pubKey2) == nil {
+		t.Fatal("should find peer 2 after update")
+	}
+	if lookup.Lookup(pubKey3) == nil {
+		t.Fatal("should find peer 3 after update")
+	}
+
+	// Verify correct data
+	peer2 := lookup.Lookup(pubKey2)
+	if peer2.ClientIP != "10.0.0.2" {
+		t.Fatalf("expected ClientIP 10.0.0.2, got %s", peer2.ClientIP)
+	}
+}
+
 func TestIKHandshake_AllowedIPsInResult(t *testing.T) {
 	serverKP, _ := cipherSuite.GenerateKeypair(nil)
 	clientKP, _ := cipherSuite.GenerateKeypair(nil)

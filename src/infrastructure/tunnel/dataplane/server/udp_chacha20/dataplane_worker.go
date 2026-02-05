@@ -50,8 +50,10 @@ func (w *udpDataplaneWorker) HandleEstablished(peer *session.Peer, packet []byte
 		rekeyCtrl.ActivateSendEpoch(binary.BigEndian.Uint16(packet[chacha20.NonceEpochOffset : chacha20.NonceEpochOffset+2]))
 		rekeyCtrl.AbortPendingIfExpired(w.now())
 		// If service_packet packet - handle it.
-		if handled, err := w.cp.Handle(decrypted, peer.Egress(), rekeyCtrl); handled {
-			return err
+		// Note: On EpochExhausted, server sends EpochExhausted packet to client.
+		// Session stays alive until client reconnects with fresh handshake.
+		if handled, _ := w.cp.Handle(decrypted, peer.Egress(), rekeyCtrl); handled {
+			return nil
 		}
 	}
 

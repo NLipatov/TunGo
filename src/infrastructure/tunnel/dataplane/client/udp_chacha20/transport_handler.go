@@ -124,6 +124,10 @@ func (t *TransportHandler) handleDatagram(pkt []byte) error {
 	return nil
 }
 
+// ErrEpochExhausted is returned when server signals epoch exhaustion.
+// Client should reconnect with a fresh handshake.
+var ErrEpochExhausted = errors.New("epoch exhausted; reconnect required")
+
 func (t *TransportHandler) handleControlplane(plaintext []byte) (handled bool, err error) {
 	spType, spOk := service_packet.TryParseHeader(plaintext)
 	if !spOk {
@@ -131,10 +135,14 @@ func (t *TransportHandler) handleControlplane(plaintext []byte) (handled bool, e
 	}
 
 	switch spType {
+	case service_packet.EpochExhausted:
+		// Server cannot create new epochs - reconnect immediately.
+		log.Printf("received EpochExhausted from server, initiating reconnect")
+		return true, ErrEpochExhausted
 	case service_packet.RekeyAck:
 		if t.rekeyController != nil && t.rekeyController.LastRekeyEpoch >= 65000 {
 			log.Printf("rekey ack: epoch exhausted, requesting session reset")
-			return true, fmt.Errorf("epoch exhausted; reconnect required")
+			return true, ErrEpochExhausted
 		}
 		if _, err := controlplane.ClientHandleRekeyAck(t.handshakeCrypto, t.rekeyController, plaintext); err != nil {
 			log.Printf("rekey ack: install/apply failed: %v", err)

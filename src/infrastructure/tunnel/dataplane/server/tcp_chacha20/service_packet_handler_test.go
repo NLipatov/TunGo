@@ -148,7 +148,7 @@ func TestTCPHandle_RekeyInit_ShortPacket_NilFSM(t *testing.T) {
 	}
 }
 
-func TestTCPHandle_RekeyInit_EpochExhausted_Logs(t *testing.T) {
+func TestTCPHandle_RekeyInit_EpochExhausted_SendsEpochExhausted(t *testing.T) {
 	logger := &tcpTestLogger{}
 	crypto := &primitives.DefaultKeyDeriver{}
 	h := newControlPlaneHandler(crypto, logger)
@@ -170,11 +170,20 @@ func TestTCPHandle_RekeyInit_EpochExhausted_Logs(t *testing.T) {
 	if len(logger.msgs) == 0 {
 		t.Fatal("expected logger to capture epoch exhaustion error")
 	}
-	// No ACK should be sent.
+
+	// EpochExhausted packet should be sent (not RekeyAck).
+	// Session stays alive - no termination.
 	eg.mu.Lock()
 	defer eg.mu.Unlock()
-	if len(eg.packets) != 0 {
-		t.Fatalf("expected no ACK on epoch exhaustion, got %d", len(eg.packets))
+	if len(eg.packets) != 1 {
+		t.Fatalf("expected 1 EpochExhausted packet, got %d", len(eg.packets))
+	}
+	exhausted := eg.packets[0]
+	if len(exhausted) < 3 {
+		t.Fatalf("EpochExhausted packet too short: %d", len(exhausted))
+	}
+	if exhausted[0] != service_packet.Prefix || exhausted[1] != service_packet.VersionV1 || exhausted[2] != byte(service_packet.EpochExhausted) {
+		t.Fatalf("expected EpochExhausted header, got: %v", exhausted[:3])
 	}
 }
 
@@ -190,7 +199,7 @@ func TestTCPHandle_RekeyInit_EgressError_Logs(t *testing.T) {
 	pkt := buildTCPRekeyInitPacket(t, crypto)
 	handled := h.Handle(pkt, eg, fsm)
 	if !handled {
-		t.Fatal("expected Handle to return true for RekeyInit")
+		t.Fatal("expected Handle to return true for RekeyInit (even with egress error)")
 	}
 
 	logger.mu.Lock()

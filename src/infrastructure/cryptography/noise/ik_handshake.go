@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"net/netip"
+	"sync/atomic"
 	"tungo/application/network/connection"
 	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/cryptography/mem"
@@ -47,24 +48,38 @@ type AllowedPeersLookup interface {
 	// Lookup returns the peer configuration for the given public key.
 	// Returns nil if the peer is not found.
 	Lookup(pubKey []byte) *server.AllowedPeer
+
+	// Update atomically replaces the peer map with a new configuration.
+	// This allows runtime updates without server restart.
+	Update(peers []server.AllowedPeer)
 }
 
-// allowedPeersMap implements AllowedPeersLookup using a map.
+// allowedPeersMap implements AllowedPeersLookup using atomic pointer for lock-free reads.
 type allowedPeersMap struct {
-	peers map[string]*server.AllowedPeer
+	peers atomic.Pointer[map[string]*server.AllowedPeer]
 }
 
 // NewAllowedPeersLookup creates an AllowedPeersLookup from a slice of AllowedPeer.
 func NewAllowedPeersLookup(peers []server.AllowedPeer) AllowedPeersLookup {
+	a := &allowedPeersMap{}
+	a.Update(peers)
+	return a
+}
+
+func (a *allowedPeersMap) Lookup(pubKey []byte) *server.AllowedPeer {
+	m := a.peers.Load()
+	if m == nil {
+		return nil
+	}
+	return (*m)[string(pubKey)]
+}
+
+func (a *allowedPeersMap) Update(peers []server.AllowedPeer) {
 	m := make(map[string]*server.AllowedPeer, len(peers))
 	for i := range peers {
 		m[string(peers[i].PublicKey)] = &peers[i]
 	}
-	return &allowedPeersMap{peers: m}
-}
-
-func (a *allowedPeersMap) Lookup(pubKey []byte) *server.AllowedPeer {
-	return a.peers[string(pubKey)]
+	a.peers.Store(&m)
 }
 
 // IKHandshake implements Noise IK handshake with DoS protection.
