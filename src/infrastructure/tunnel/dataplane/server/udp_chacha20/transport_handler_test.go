@@ -15,10 +15,10 @@ import (
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
 	"tungo/infrastructure/network/service_packet"
-	"tungo/infrastructure/network/udp/queue/udp"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/session"
 	"tungo/infrastructure/tunnel/sessionplane/server/udp_registration"
+	udpQueue "tungo/infrastructure/tunnel/sessionplane/server/udp_registration/queue"
 )
 
 /* ===================== Test doubles (prefixed with TransportHandler...) ===================== */
@@ -47,7 +47,7 @@ func (b *TransportHandlerBlockingHandshake) ClientSideHandshake(_ connection.Tra
 
 // TransportHandlerQueueReader consumes a queue and reports when Unblocked.
 type TransportHandlerQueueReader struct {
-	q  *udp.RegistrationQueue
+	q  *udpQueue.RegistrationQueue
 	ch chan error
 }
 
@@ -318,11 +318,11 @@ type testSession struct {
 	fsm        rekey.FSM
 }
 
-func (s *testSession) Crypto() connection.Crypto          { return s.crypto }
-func (s *testSession) InternalAddr() netip.Addr           { return s.internalIP }
-func (s *testSession) ExternalAddrPort() netip.AddrPort   { return s.externalIP }
-func (s *testSession) RekeyController() rekey.FSM         { return s.fsm }
-func (s *testSession) IsSourceAllowed(netip.Addr) bool { return true }
+func (s *testSession) Crypto() connection.Crypto        { return s.crypto }
+func (s *testSession) InternalAddr() netip.Addr         { return s.internalIP }
+func (s *testSession) ExternalAddrPort() netip.AddrPort { return s.externalIP }
+func (s *testSession) RekeyController() rekey.FSM       { return s.fsm }
+func (s *testSession) IsSourceAllowed(netip.Addr) bool  { return true }
 
 // makeValidIPv4Packet creates a minimal valid IPv4 packet with the given source IP.
 // Used in tests to satisfy AllowedIPs validation.
@@ -947,7 +947,7 @@ func TestCloseAllRegistrations(t *testing.T) {
 
 	r.CloseAll()
 
-	for _, q := range []*udp.RegistrationQueue{q1, q2} {
+	for _, q := range []*udpQueue.RegistrationQueue{q1, q2} {
 		dst := make([]byte, 10)
 		_, err := q.ReadInto(dst)
 		if !errors.Is(err, io.EOF) {
@@ -1024,7 +1024,7 @@ func TestRegisterClient_CryptoError_LogsAndFails(t *testing.T) {
 	}
 }
 func TestTransportHandler_RegistrationQueueOverflow(t *testing.T) {
-	q := udp.NewRegistrationQueue(1)
+	q := udpQueue.NewRegistrationQueue(1)
 
 	// capacity=1 → first enqueue OK, second dropped
 	q.Enqueue([]byte{0x01})
@@ -1053,7 +1053,7 @@ func TestTransportHandler_RegistrationQueueOverflow(t *testing.T) {
 }
 
 func TestTransportHandler_RegistrationQueue_CloseUnblocksRead(t *testing.T) {
-	q := udp.NewRegistrationQueue(2)
+	q := udpQueue.NewRegistrationQueue(2)
 
 	reader := &TransportHandlerQueueReader{
 		q:  q,
@@ -1077,7 +1077,7 @@ func TestRegisterClient_CanceledContextClosesQueue(t *testing.T) {
 	defer cancel()
 
 	addr := netip.MustParseAddrPort("1.2.3.4:1234")
-	queue := udp.NewRegistrationQueue(1)
+	queue := udpQueue.NewRegistrationQueue(1)
 
 	errCh := make(chan error, 1)
 	hs := &TransportHandlerBlockingHandshake{errCh: errCh}
@@ -1233,4 +1233,3 @@ func TestHandleTransport_NilRegistrar_NoUnknownPanic(t *testing.T) {
 	<-done
 	// No panic = success.
 }
-

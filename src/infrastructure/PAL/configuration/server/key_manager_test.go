@@ -1,8 +1,10 @@
 package server
 
 import (
+	crand "crypto/rand"
 	"encoding/base64"
 	"errors"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -55,6 +57,12 @@ func newKM(manager *mockConfigurationManager) *X25519KeyManager {
 	return &X25519KeyManager{configurationManager: manager}
 }
 
+type errReader struct{}
+
+func (errReader) Read(_ []byte) (int, error) {
+	return 0, io.ErrUnexpectedEOF
+}
+
 func mustSetenv(t *testing.T, k, v string) {
 	t.Helper()
 	if err := os.Setenv(k, v); err != nil {
@@ -81,6 +89,14 @@ func TestPrepareKeys_ConfigAlreadyHasValidKeys_NoOp(t *testing.T) {
 	}
 	if manager.injectCalls != 0 {
 		t.Fatalf("should not inject when config already has keys")
+	}
+}
+
+func TestNewX25519KeyManager(t *testing.T) {
+	manager := &mockConfigurationManager{cfg: &Configuration{}}
+	km := NewX25519KeyManager(manager)
+	if km == nil {
+		t.Fatal("expected non-nil key manager")
 	}
 }
 
@@ -246,6 +262,19 @@ func Test_keysAreInEnvVariables_InjectError(t *testing.T) {
 	}
 }
 
+func Test_keysAreInEnvVariables_InvalidLength(t *testing.T) {
+	manager := &mockConfigurationManager{cfg: &Configuration{}}
+	km := newKM(manager)
+
+	mustSetenv(t, publicKeyEnvVar, base64.StdEncoding.EncodeToString(make([]byte, 31)))
+	mustSetenv(t, privateKeyEnvVar, base64.StdEncoding.EncodeToString(make([]byte, 32)))
+
+	ok, err := km.keysAreInEnvVariables()
+	if ok || err == nil || !strings.Contains(err.Error(), "invalid X25519 key length") {
+		t.Fatalf("expected invalid length error, got (%v, %v)", ok, err)
+	}
+}
+
 func Test_keysAreInEnvVariables_Valid(t *testing.T) {
 	manager := &mockConfigurationManager{cfg: &Configuration{}}
 	km := newKM(manager)
@@ -259,5 +288,19 @@ func Test_keysAreInEnvVariables_Valid(t *testing.T) {
 	}
 	if manager.injectCalls != 1 {
 		t.Fatalf("expected inject once, got %d", manager.injectCalls)
+	}
+}
+
+func Test_generateAndStoreKeysInConfiguration_RandError(t *testing.T) {
+	manager := &mockConfigurationManager{cfg: &Configuration{}}
+	km := newKM(manager)
+
+	orig := crand.Reader
+	crand.Reader = errReader{}
+	t.Cleanup(func() { crand.Reader = orig })
+
+	err := km.generateAndStoreKeysInConfiguration()
+	if err == nil || !strings.Contains(err.Error(), "failed to generate X25519 private key") {
+		t.Fatalf("expected rand error, got %v", err)
 	}
 }

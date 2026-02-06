@@ -10,8 +10,8 @@ import (
 	"tungo/application/logging"
 	"tungo/application/network/connection"
 	"tungo/infrastructure/network/udp/adapters"
-	"tungo/infrastructure/network/udp/queue/udp"
 	"tungo/infrastructure/tunnel/session"
+	udpQueue "tungo/infrastructure/tunnel/sessionplane/server/udp_registration/queue"
 )
 
 const (
@@ -37,7 +37,7 @@ type Registrar struct {
 	cryptographyFactory connection.CryptoFactory
 
 	mu            sync.Mutex
-	registrations map[netip.AddrPort]*udp.RegistrationQueue
+	registrations map[netip.AddrPort]*udpQueue.RegistrationQueue
 }
 
 func NewRegistrar(
@@ -55,7 +55,7 @@ func NewRegistrar(
 		logger:              logger,
 		handshakeFactory:    handshakeFactory,
 		cryptographyFactory: cryptographyFactory,
-		registrations:       make(map[netip.AddrPort]*udp.RegistrationQueue),
+		registrations:       make(map[netip.AddrPort]*udpQueue.RegistrationQueue),
 	}
 }
 
@@ -74,11 +74,11 @@ func (r *Registrar) EnqueuePacket(addrPort netip.AddrPort, packet []byte) {
 
 func (r *Registrar) CloseAll() {
 	r.mu.Lock()
-	queues := make([]*udp.RegistrationQueue, 0, len(r.registrations))
+	queues := make([]*udpQueue.RegistrationQueue, 0, len(r.registrations))
 	for _, q := range r.registrations {
 		queues = append(queues, q)
 	}
-	r.registrations = make(map[netip.AddrPort]*udp.RegistrationQueue)
+	r.registrations = make(map[netip.AddrPort]*udpQueue.RegistrationQueue)
 	r.mu.Unlock()
 
 	for _, q := range queues {
@@ -86,11 +86,11 @@ func (r *Registrar) CloseAll() {
 	}
 }
 
-func (r *Registrar) GetOrCreateRegistrationQueue(addrPort netip.AddrPort) (*udp.RegistrationQueue, bool) {
+func (r *Registrar) GetOrCreateRegistrationQueue(addrPort netip.AddrPort) (*udpQueue.RegistrationQueue, bool) {
 	return r.getOrCreateRegistrationQueue(addrPort)
 }
 
-func (r *Registrar) getOrCreateRegistrationQueue(addrPort netip.AddrPort) (*udp.RegistrationQueue, bool) {
+func (r *Registrar) getOrCreateRegistrationQueue(addrPort netip.AddrPort) (*udpQueue.RegistrationQueue, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -106,7 +106,7 @@ func (r *Registrar) getOrCreateRegistrationQueue(addrPort netip.AddrPort) (*udp.
 		return nil, false
 	}
 
-	q := udp.NewRegistrationQueue(RegistrationQueueCapacity)
+	q := udpQueue.NewRegistrationQueue(RegistrationQueueCapacity)
 	r.registrations[addrPort] = q
 	return q, true
 }
@@ -124,7 +124,7 @@ func (r *Registrar) removeRegistrationQueue(addrPort netip.AddrPort) {
 	}
 }
 
-func (r *Registrar) RegisterClient(addrPort netip.AddrPort, queue *udp.RegistrationQueue) {
+func (r *Registrar) RegisterClient(addrPort netip.AddrPort, queue *udpQueue.RegistrationQueue) {
 	defer r.removeRegistrationQueue(addrPort)
 
 	ctx, cancel := context.WithTimeout(r.ctx, HandshakeTimeout)
@@ -171,7 +171,7 @@ func (r *Registrar) RegisterClient(addrPort netip.AddrPort, queue *udp.Registrat
 }
 
 // Registrations exposes the internal registrations map for testing.
-func (r *Registrar) Registrations() map[netip.AddrPort]*udp.RegistrationQueue {
+func (r *Registrar) Registrations() map[netip.AddrPort]*udpQueue.RegistrationQueue {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.registrations

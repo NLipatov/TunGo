@@ -1,7 +1,13 @@
 package server
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"log"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -30,13 +36,18 @@ func (r *mockRevoker) revokedKeys() [][]byte {
 
 // mockConfigManager returns configurable AllowedPeers for testing.
 type mockConfigManager struct {
-	mu     sync.Mutex
-	config *Configuration
+	mu              sync.Mutex
+	config          *Configuration
+	configErr       error
+	invalidateCalls int
 }
 
 func (m *mockConfigManager) Configuration() (*Configuration, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.configErr != nil {
+		return nil, m.configErr
+	}
 	return m.config, nil
 }
 
@@ -52,12 +63,47 @@ func (m *mockConfigManager) AddAllowedPeer(_ AllowedPeer) error {
 	return nil
 }
 
-func (m *mockConfigManager) InvalidateCache() {}
+func (m *mockConfigManager) InvalidateCache() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.invalidateCalls++
+}
 
 func (m *mockConfigManager) setConfig(c *Configuration) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.config = c
+}
+
+func (m *mockConfigManager) setConfigError(err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.configErr = err
+}
+
+func (m *mockConfigManager) invalidateCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.invalidateCalls
+}
+
+type mockPeersUpdater struct {
+	mu      sync.Mutex
+	updates [][]AllowedPeer
+}
+
+func (u *mockPeersUpdater) Update(peers []AllowedPeer) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	cp := make([]AllowedPeer, len(peers))
+	copy(cp, peers)
+	u.updates = append(u.updates, cp)
+}
+
+func (u *mockPeersUpdater) updatesCount() int {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return len(u.updates)
 }
 
 func TestConfigWatcher_RevokesDisabledPeer(t *testing.T) {
@@ -235,4 +281,214 @@ func TestConfigWatcher_WatchLoop(t *testing.T) {
 	}
 
 	cancel()
+}
+
+func TestConfigWatcher_CheckAndRevoke_UpdatesPeersUpdater(t *testing.T) {
+	pubKey1 := make([]byte, 32)
+	pubKey1[0] = 1
+
+	initialConfig := &Configuration{
+		AllowedPeers: []AllowedPeer{
+			{PublicKey: pubKey1, Enabled: true, ClientIP: "10.0.0.1"},
+		},
+	}
+
+	configManager := &mockConfigManager{config: initialConfig}
+	revoker := &mockRevoker{}
+	updater := &mockPeersUpdater{}
+
+	watcher := NewConfigWatcher(configManager, revoker, updater, "", 10*time.Millisecond, nil)
+	watcher.loadCurrentState()
+	watcher.ForceCheck()
+
+	if updater.updatesCount() != 1 {
+		t.Fatalf("expected one peers update, got %d", updater.updatesCount())
+	}
+}
+
+func TestConfigWatcher_LoadAndCheck_ConfigError_NoPanic(t *testing.T) {
+	configManager := &mockConfigManager{configErr: errors.New("boom")}
+	revoker := &mockRevoker{}
+
+	var logBuf bytes.Buffer
+	logger := log.New(&logBuf, "", 0)
+	watcher := NewConfigWatcher(configManager, revoker, nil, "", 10*time.Millisecond, logger)
+
+	// Should just log and return.
+	watcher.loadCurrentState()
+	watcher.checkAndRevoke()
+
+	if got := logBuf.String(); got == "" {
+		t.Fatal("expected watcher to log config errors")
+	}
+}
+
+func TestConfigWatcher_Watch_FsnotifyEventTriggersInvalidateAndRevoke(t *testing.T) {
+	pubKey1 := make([]byte, 32)
+	pubKey1[0] = 1
+	pubKey2 := make([]byte, 32)
+	pubKey2[0] = 2
+
+	initialConfig := &Configuration{
+		AllowedPeers: []AllowedPeer{
+			{PublicKey: pubKey1, Enabled: true, ClientIP: "10.0.0.1"},
+			{PublicKey: pubKey2, Enabled: true, ClientIP: "10.0.0.2"},
+		},
+	}
+
+	configManager := &mockConfigManager{config: initialConfig}
+	revoker := &mockRevoker{}
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "server.json")
+	if err := os.WriteFile(configPath, []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write initial file: %v", err)
+	}
+
+	watcher := NewConfigWatcher(configManager, revoker, nil, configPath, time.Hour, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go watcher.Watch(ctx)
+
+	time.Sleep(80 * time.Millisecond)
+
+	// Disable peer1 and trigger fs event on watched file.
+	configManager.setConfig(&Configuration{
+		AllowedPeers: []AllowedPeer{
+			{PublicKey: pubKey1, Enabled: false, ClientIP: "10.0.0.1"},
+			{PublicKey: pubKey2, Enabled: true, ClientIP: "10.0.0.2"},
+		},
+	})
+	if err := os.WriteFile(configPath, []byte("{\"changed\":true}"), 0o644); err != nil {
+		t.Fatalf("write changed file: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if len(revoker.revokedKeys()) == 1 && configManager.invalidateCount() > 0 {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("expected fsnotify-driven revoke+invalidate, revoked=%d invalidates=%d",
+		len(revoker.revokedKeys()), configManager.invalidateCount())
+}
+
+func TestConfigWatcher_Watch_InvalidPathFallsBackToPolling(t *testing.T) {
+	pubKey1 := make([]byte, 32)
+	pubKey1[0] = 1
+
+	initialConfig := &Configuration{
+		AllowedPeers: []AllowedPeer{
+			{PublicKey: pubKey1, Enabled: true, ClientIP: "10.0.0.1"},
+		},
+	}
+
+	configManager := &mockConfigManager{config: initialConfig}
+	revoker := &mockRevoker{}
+	watcher := NewConfigWatcher(
+		configManager,
+		revoker,
+		nil,
+		filepath.Join(t.TempDir(), "missing", "server.json"), // watcher.Add(dir) fails
+		40*time.Millisecond,
+		nil,
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go watcher.Watch(ctx)
+
+	time.Sleep(30 * time.Millisecond)
+	configManager.setConfig(&Configuration{
+		AllowedPeers: []AllowedPeer{
+			{PublicKey: pubKey1, Enabled: false, ClientIP: "10.0.0.1"},
+		},
+	})
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if len(revoker.revokedKeys()) == 1 {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("expected polling fallback revoke, got %d", len(revoker.revokedKeys()))
+}
+
+func TestConfigWatcher_Watch_LogsWatchDirForBareFilename(t *testing.T) {
+	pubKey1 := make([]byte, 32)
+	pubKey1[0] = 1
+
+	configManager := &mockConfigManager{
+		config: &Configuration{
+			AllowedPeers: []AllowedPeer{
+				{PublicKey: pubKey1, Enabled: true, ClientIP: "10.0.0.1"},
+			},
+		},
+	}
+	revoker := &mockRevoker{}
+	var logBuf bytes.Buffer
+	logger := log.New(&logBuf, "", 0)
+
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	tmp := t.TempDir()
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir temp: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(wd) })
+	if err := os.WriteFile("server.json", []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	watcher := NewConfigWatcher(configManager, revoker, nil, "server.json", time.Hour, logger)
+	ctx, cancel := context.WithCancel(context.Background())
+	go watcher.Watch(ctx)
+	time.Sleep(80 * time.Millisecond)
+	cancel()
+	time.Sleep(20 * time.Millisecond)
+
+	if !bytes.Contains(logBuf.Bytes(), []byte("watching directory . for changes to server.json")) {
+		t.Fatalf("expected watch-dir log, got: %s", logBuf.String())
+	}
+}
+
+func TestConfigWatcher_CheckAndRevoke_LoggerBranches(t *testing.T) {
+	pubKey1 := make([]byte, 32)
+	pubKey1[0] = 1
+	pubKey2 := make([]byte, 32)
+	pubKey2[0] = 2
+
+	configManager := &mockConfigManager{
+		config: &Configuration{
+			AllowedPeers: []AllowedPeer{
+				{PublicKey: pubKey1, Enabled: true, ClientIP: "10.0.0.1"},
+				{PublicKey: pubKey2, Enabled: true, ClientIP: "10.0.0.2"},
+			},
+		},
+	}
+	revoker := &mockRevoker{}
+	var logBuf bytes.Buffer
+	logger := log.New(&logBuf, "", 0)
+	watcher := NewConfigWatcher(configManager, revoker, nil, "", 10*time.Millisecond, logger)
+	watcher.loadCurrentState()
+
+	// Remove one peer to trigger revoke log (count > 0) and peer-count-changed log.
+	configManager.setConfig(&Configuration{
+		AllowedPeers: []AllowedPeer{
+			{PublicKey: pubKey2, Enabled: true, ClientIP: "10.0.0.2"},
+		},
+	})
+	watcher.checkAndRevoke()
+
+	logs := logBuf.String()
+	if !strings.Contains(logs, "revoked 1 session(s)") {
+		t.Fatalf("expected revoke log, got: %s", logs)
+	}
+	if !strings.Contains(logs, "AllowedPeers changed (2 -> 1 peers)") {
+		t.Fatalf("expected peer-count-change log, got: %s", logs)
+	}
 }

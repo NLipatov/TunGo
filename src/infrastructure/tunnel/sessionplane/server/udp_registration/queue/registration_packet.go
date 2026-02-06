@@ -1,4 +1,4 @@
-package udp
+package queue
 
 import "tungo/infrastructure/settings"
 

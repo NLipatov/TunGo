@@ -479,3 +479,60 @@ func TestAllowedPeer_AllowedIPPrefixes(t *testing.T) {
 		t.Fatalf("unexpected second prefix: %s", prefixes[1])
 	}
 }
+
+func TestConfiguration_Validate_PropagatesValidateAllowedPeersError(t *testing.T) {
+	cfg := mkValid()
+	cfg.AllowedPeers = []AllowedPeer{
+		{
+			PublicKey: make([]byte, 31), // invalid
+			Enabled:   true,
+			ClientIP:  "10.0.0.5",
+		},
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected Validate to propagate ValidateAllowedPeers error")
+	}
+}
+
+func TestConfiguration_ValidateAllowedPeers_ClientIPNotInEnabledSubnets(t *testing.T) {
+	cfg := mkValid()
+	cfg.AllowedPeers = []AllowedPeer{
+		{
+			PublicKey: make([]byte, 32),
+			Enabled:   true,
+			ClientIP:  "172.16.0.1", // outside 10.0.x enabled subnets
+		},
+	}
+	err := cfg.ValidateAllowedPeers()
+	if err == nil || !strings.Contains(err.Error(), "not within any enabled interface subnet") {
+		t.Fatalf("expected out-of-subnet error, got %v", err)
+	}
+}
+
+func TestConfiguration_ValidateAllowedPeers_IPv6ClientIP(t *testing.T) {
+	cfg := mkValid()
+	cfg.TCPSettings.InterfaceIPCIDR = "2001:db8::/64"
+	cfg.TCPSettings.InterfaceAddress = "2001:db8::1"
+	cfg.EnableUDP = false
+	cfg.EnableWS = false
+	cfg.AllowedPeers = []AllowedPeer{
+		{
+			PublicKey: make([]byte, 32),
+			Enabled:   true,
+			ClientIP:  "2001:db8::42",
+		},
+	}
+	if err := cfg.ValidateAllowedPeers(); err != nil {
+		t.Fatalf("expected valid IPv6 clientIP, got %v", err)
+	}
+}
+
+func TestConfiguration_isClientIPInSubnet_False(t *testing.T) {
+	cfg := mkValid()
+	subnets := []netip.Prefix{
+		netip.MustParsePrefix("10.0.0.0/24"),
+	}
+	if cfg.isClientIPInSubnet(netip.MustParseAddr("10.0.1.5"), subnets) {
+		t.Fatal("expected false for IP outside subnet")
+	}
+}

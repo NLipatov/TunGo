@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 // --- Mocks ---
@@ -325,6 +326,28 @@ func TestManager_InjectX25519Keys_ConfigError(t *testing.T) {
 	}
 }
 
+func TestManager_InjectX25519Keys_InvalidPrivateKeyLength(t *testing.T) {
+	resolver := &ManagerMockResolver{Path: "/fake/path"}
+	statMock := &ManagerMockStat{Err: nil}
+	writer := &ManagerMockWriter{}
+	reader := &ManagerMockReader{Config: NewDefaultConfiguration()}
+
+	manager := &Manager{
+		resolver: resolver,
+		stat:     statMock,
+		writer:   writer,
+		reader:   reader,
+	}
+
+	pub := make([]byte, 32)
+	priv := make([]byte, 31)
+
+	err := manager.InjectX25519Keys(pub, priv)
+	if err == nil || !strings.Contains(err.Error(), "invalid private key length") {
+		t.Fatalf("expected invalid private key length error, got: %v", err)
+	}
+}
+
 func TestManager_InjectX25519Keys_WriteError(t *testing.T) {
 	initialConf := NewDefaultConfiguration()
 	resolver := &ManagerMockResolver{Path: "/fake/path"}
@@ -364,4 +387,154 @@ func TestNewManagerWithReader_ErrorFromResolver(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "failed to resolve server configuration path") {
 		t.Fatalf("expected resolve error, got %v", err)
 	}
+}
+
+func TestNewManager_Success(t *testing.T) {
+	tmp := t.TempDir()
+	resolver := &ManagerMockResolver{Path: tmp + "/server.json"}
+
+	m, err := NewManager(resolver, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if m == nil {
+		t.Fatal("expected non-nil manager")
+	}
+}
+
+func TestNewManagerWithReader_Success(t *testing.T) {
+	resolver := &ManagerMockResolver{Path: "/fake/path"}
+	reader := &ManagerMockReader{Config: NewDefaultConfiguration()}
+
+	m, err := NewManagerWithReader(resolver, reader, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if m == nil {
+		t.Fatal("expected non-nil manager")
+	}
+}
+
+func TestManager_AddAllowedPeer_Success(t *testing.T) {
+	initialConf := NewDefaultConfiguration()
+	resolver := &ManagerMockResolver{Path: "/fake/path"}
+	statMock := &ManagerMockStat{Err: nil}
+	writer := &ManagerMockWriter{}
+	reader := &ManagerMockReader{Config: initialConf}
+
+	manager := &Manager{
+		resolver: resolver,
+		stat:     statMock,
+		writer:   writer,
+		reader:   reader,
+	}
+
+	peer := AllowedPeer{
+		PublicKey: bytes.Repeat([]byte{3}, 32),
+		Enabled:   true,
+		ClientIP:  "10.0.0.9",
+	}
+
+	if err := manager.AddAllowedPeer(peer); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if writer.WriteCalls != 1 {
+		t.Fatalf("expected one write call, got %d", writer.WriteCalls)
+	}
+	confWritten, ok := writer.WrittenData.(Configuration)
+	if !ok {
+		t.Fatalf("written data is not Configuration")
+	}
+	if len(confWritten.AllowedPeers) != 1 {
+		t.Fatalf("expected one allowed peer, got %d", len(confWritten.AllowedPeers))
+	}
+	if !bytes.Equal(confWritten.AllowedPeers[0].PublicKey, peer.PublicKey) {
+		t.Fatal("written peer public key mismatch")
+	}
+}
+
+func TestManager_AddAllowedPeer_InvalidKeyLen(t *testing.T) {
+	manager := &Manager{}
+	err := manager.AddAllowedPeer(AllowedPeer{PublicKey: []byte{1}})
+	if err == nil || !strings.Contains(err.Error(), "invalid public key length") {
+		t.Fatalf("expected invalid key len error, got %v", err)
+	}
+}
+
+func TestManager_AddAllowedPeer_ConfigError(t *testing.T) {
+	resolver := &ManagerMockResolver{Path: "/fake/path"}
+	statMock := &ManagerMockStat{Err: nil}
+	writer := &ManagerMockWriter{}
+	reader := &ManagerMockReader{Err: errors.New("read error")}
+
+	manager := &Manager{
+		resolver: resolver,
+		stat:     statMock,
+		writer:   writer,
+		reader:   reader,
+	}
+
+	peer := AllowedPeer{PublicKey: bytes.Repeat([]byte{7}, 32)}
+	err := manager.AddAllowedPeer(peer)
+	if err == nil || !strings.Contains(err.Error(), "read error") {
+		t.Fatalf("expected read error, got %v", err)
+	}
+}
+
+func TestManager_AddAllowedPeer_WriteError(t *testing.T) {
+	initialConf := NewDefaultConfiguration()
+	resolver := &ManagerMockResolver{Path: "/fake/path"}
+	statMock := &ManagerMockStat{Err: nil}
+	writer := &ManagerMockWriter{Err: errors.New("write fail")}
+	reader := &ManagerMockReader{Config: initialConf}
+
+	manager := &Manager{
+		resolver: resolver,
+		stat:     statMock,
+		writer:   writer,
+		reader:   reader,
+	}
+
+	peer := AllowedPeer{PublicKey: bytes.Repeat([]byte{5}, 32)}
+	err := manager.AddAllowedPeer(peer)
+	if err == nil || !strings.Contains(err.Error(), "write fail") {
+		t.Fatalf("expected write error, got %v", err)
+	}
+}
+
+func TestManager_InvalidateCache(t *testing.T) {
+	inner := &ManagerMockReader{Config: NewDefaultConfiguration()}
+	ttl := NewTTLReader(inner, time.Hour)
+	manager := &Manager{reader: ttl}
+
+	// 1st read populates cache
+	if _, err := manager.reader.read(); err != nil {
+		t.Fatalf("unexpected read error: %v", err)
+	}
+	if inner.ReadCalls != 1 {
+		t.Fatalf("expected first read through inner reader")
+	}
+
+	// 2nd read should hit cache
+	if _, err := manager.reader.read(); err != nil {
+		t.Fatalf("unexpected read error: %v", err)
+	}
+	if inner.ReadCalls != 1 {
+		t.Fatalf("expected cached read, calls=%d", inner.ReadCalls)
+	}
+
+	manager.InvalidateCache()
+
+	// After invalidation, next read should hit inner reader again.
+	if _, err := manager.reader.read(); err != nil {
+		t.Fatalf("unexpected read error: %v", err)
+	}
+	if inner.ReadCalls != 2 {
+		t.Fatalf("expected cache miss after invalidation, calls=%d", inner.ReadCalls)
+	}
+}
+
+func TestManager_InvalidateCache_NonTTLReader_NoPanic(t *testing.T) {
+	manager := &Manager{reader: &ManagerMockReader{Config: NewDefaultConfiguration()}}
+	manager.InvalidateCache()
 }

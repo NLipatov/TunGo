@@ -33,35 +33,18 @@ const (
 // ExtractSourceIP extracts the source IP address from an IP packet.
 // Returns the IP address and true if successful, or an invalid address and false if the packet is malformed.
 func ExtractSourceIP(packet []byte) (netip.Addr, bool) {
-	if len(packet) < 1 {
-		return netip.Addr{}, false
-	}
-
-	version := packet[0] >> 4
-
-	switch version {
-	case IPv4Version:
-		if len(packet) < IPv4HeaderMinLen {
-			return netip.Addr{}, false
-		}
-		addr, ok := netip.AddrFromSlice(packet[IPv4SrcOffset : IPv4SrcOffset+4])
-		return addr, ok
-
-	case IPv6Version:
-		if len(packet) < IPv6HeaderLen {
-			return netip.Addr{}, false
-		}
-		addr, ok := netip.AddrFromSlice(packet[IPv6SrcOffset : IPv6SrcOffset+16])
-		return addr, ok
-
-	default:
-		return netip.Addr{}, false
-	}
+	return extractIPByOffsets(packet, IPv4SrcOffset, IPv6SrcOffset)
 }
 
 // ExtractDestIP extracts the destination IP address from an IP packet.
 // Returns the IP address and true if successful, or an invalid address and false if the packet is malformed.
 func ExtractDestIP(packet []byte) (netip.Addr, bool) {
+	return extractIPByOffsets(packet, IPv4DstOffset, IPv6DstOffset)
+}
+
+// extractIPByOffsets extracts an IPv4 or IPv6 address from the packet using
+// the provided source/destination offsets for each protocol version.
+func extractIPByOffsets(packet []byte, ipv4Offset, ipv6Offset int) (netip.Addr, bool) {
 	if len(packet) < 1 {
 		return netip.Addr{}, false
 	}
@@ -73,14 +56,14 @@ func ExtractDestIP(packet []byte) (netip.Addr, bool) {
 		if len(packet) < IPv4HeaderMinLen {
 			return netip.Addr{}, false
 		}
-		addr, ok := netip.AddrFromSlice(packet[IPv4DstOffset : IPv4DstOffset+4])
+		addr, ok := netip.AddrFromSlice(packet[ipv4Offset : ipv4Offset+4])
 		return addr, ok
 
 	case IPv6Version:
 		if len(packet) < IPv6HeaderLen {
 			return netip.Addr{}, false
 		}
-		addr, ok := netip.AddrFromSlice(packet[IPv6DstOffset : IPv6DstOffset+16])
+		addr, ok := netip.AddrFromSlice(packet[ipv6Offset : ipv6Offset+16])
 		return addr, ok
 
 	default:

@@ -4,21 +4,25 @@ import (
 	"net/netip"
 	"tungo/application/listeners"
 	"tungo/application/network/connection"
-	"tungo/infrastructure/network/udp/queue"
 )
+
+type registrationQueue interface {
+	ReadInto(dst []byte) (int, error)
+	Close()
+}
 
 // RegistrationAdapter adapts registrationQueue to connection.Transport
 // so that handshake implementation can use its usual Read/Write interface.
 type RegistrationAdapter struct {
 	conn     listeners.UdpListener
 	addrPort netip.AddrPort
-	queue    queue.RegistrationQueue
+	queue    registrationQueue
 }
 
 func NewRegistrationTransport(
 	conn listeners.UdpListener,
 	addrPort netip.AddrPort,
-	queue queue.RegistrationQueue,
+	queue registrationQueue,
 ) connection.Transport {
 	return &RegistrationAdapter{
 		conn:     conn,

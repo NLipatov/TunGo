@@ -1,4 +1,4 @@
-package udp
+package queue
 
 import (
 	"io"
@@ -6,21 +6,6 @@ import (
 	"testing"
 	"time"
 )
-
-// mockRegistrationQueueWaiter is a helper used to synchronize goroutines.
-// It is NOT mocking the queue internals, only behaviour around Wait().
-type mockRegistrationQueueWaiter struct {
-	wg sync.WaitGroup
-}
-
-func (m *mockRegistrationQueueWaiter) Block() {
-	m.wg.Add(1)
-	m.wg.Wait()
-}
-
-func (m *mockRegistrationQueueWaiter) Release() {
-	m.wg.Done()
-}
 
 func TestRegistrationQueue_Table(t *testing.T) {
 	tests := []struct {
@@ -30,7 +15,7 @@ func TestRegistrationQueue_Table(t *testing.T) {
 		{
 			name: "enqueue_and_read_single_packet",
 			fn: func(t *testing.T) {
-				// Ensures that a basic enqueue→read works in concurrent mode.
+				// Ensures that a basic enqueue->read works in concurrent mode.
 				q := NewRegistrationQueue(2)
 				data := []byte("hello")
 				dst := make([]byte, 16)
@@ -52,7 +37,6 @@ func TestRegistrationQueue_Table(t *testing.T) {
 				}
 			},
 		},
-
 		{
 			name: "read_blocks_until_enqueue",
 			fn: func(t *testing.T) {
@@ -83,7 +67,6 @@ func TestRegistrationQueue_Table(t *testing.T) {
 				}
 			},
 		},
-
 		{
 			name: "close_unblocks_reader_with_eof",
 			fn: func(t *testing.T) {
@@ -111,7 +94,6 @@ func TestRegistrationQueue_Table(t *testing.T) {
 				}
 			},
 		},
-
 		{
 			name: "queue_full_drops_packets",
 			fn: func(t *testing.T) {
@@ -141,7 +123,6 @@ func TestRegistrationQueue_Table(t *testing.T) {
 				<-done
 			},
 		},
-
 		{
 			name: "packet_too_large_is_dropped",
 			fn: func(t *testing.T) {
@@ -159,7 +140,6 @@ func TestRegistrationQueue_Table(t *testing.T) {
 				}
 			},
 		},
-
 		{
 			name: "read_into_short_buffer_returns_error",
 			fn: func(t *testing.T) {
@@ -173,7 +153,6 @@ func TestRegistrationQueue_Table(t *testing.T) {
 				}
 			},
 		},
-
 		{
 			name: "close_multiple_times_is_safe",
 			fn: func(t *testing.T) {
@@ -183,7 +162,6 @@ func TestRegistrationQueue_Table(t *testing.T) {
 				q.Close()
 			},
 		},
-
 		{
 			name: "enqueue_after_close_is_ignored",
 			fn: func(t *testing.T) {
@@ -199,7 +177,6 @@ func TestRegistrationQueue_Table(t *testing.T) {
 				}
 			},
 		},
-
 		{
 			name: "multiple_concurrent_readers_and_writers",
 			fn: func(t *testing.T) {
