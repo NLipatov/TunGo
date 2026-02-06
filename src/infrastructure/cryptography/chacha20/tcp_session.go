@@ -40,7 +40,7 @@ func NewTcpCryptographyService(id [32]byte, sendKey, recvKey []byte, isServer bo
 		return nil, err
 	}
 
-	return &DefaultTcpSession{
+	s := &DefaultTcpSession{
 		SessionId:          id,
 		sendCipher:         sendCipher,
 		recvCipher:         recvCipher,
@@ -49,7 +49,21 @@ func NewTcpCryptographyService(id [32]byte, sendKey, recvKey []byte, isServer bo
 		isServer:           isServer,
 		encryptionNonceBuf: [chacha20poly1305.NonceSize]byte{},
 		decryptionNonceBuf: [chacha20poly1305.NonceSize]byte{},
-	}, nil
+	}
+
+	// Pre-fill static AAD prefix (SessionId + direction) to avoid copying on every packet.
+	// Only the 12-byte nonce needs to be updated per-packet.
+	copy(s.encryptionAadBuf[:sessionIdentifierLength], id[:])
+	copy(s.decryptionAadBuf[:sessionIdentifierLength], id[:])
+	if isServer {
+		copy(s.encryptionAadBuf[sessionIdentifierLength:sessionIdentifierLength+directionLength], dirS2C[:])
+		copy(s.decryptionAadBuf[sessionIdentifierLength:sessionIdentifierLength+directionLength], dirC2S[:])
+	} else {
+		copy(s.encryptionAadBuf[sessionIdentifierLength:sessionIdentifierLength+directionLength], dirC2S[:])
+		copy(s.decryptionAadBuf[sessionIdentifierLength:sessionIdentifierLength+directionLength], dirS2C[:])
+	}
+
+	return s, nil
 }
 
 func (s *DefaultTcpSession) Encrypt(plaintext []byte) ([]byte, error) {
@@ -131,6 +145,18 @@ func NewTcpCrypto(id [32]byte, sendCipher, recvCipher cipher.AEAD, isServer bool
 		encryptionNonceBuf: [12]byte{},
 		decryptionNonceBuf: [12]byte{},
 	}
+
+	// Pre-fill static AAD prefix (SessionId + direction).
+	copy(sess.encryptionAadBuf[:sessionIdentifierLength], id[:])
+	copy(sess.decryptionAadBuf[:sessionIdentifierLength], id[:])
+	if isServer {
+		copy(sess.encryptionAadBuf[sessionIdentifierLength:sessionIdentifierLength+directionLength], dirS2C[:])
+		copy(sess.decryptionAadBuf[sessionIdentifierLength:sessionIdentifierLength+directionLength], dirC2S[:])
+	} else {
+		copy(sess.encryptionAadBuf[sessionIdentifierLength:sessionIdentifierLength+directionLength], dirC2S[:])
+		copy(sess.decryptionAadBuf[sessionIdentifierLength:sessionIdentifierLength+directionLength], dirS2C[:])
+	}
+
 	return &TcpCrypto{
 		current:      sess,
 		currentEpoch: 0,
@@ -233,6 +259,17 @@ func (c *TcpCrypto) Rekey(sendKey, recvKey []byte) (uint16, error) {
 		decryptionNonceBuf: [12]byte{},
 	}
 
+	// Pre-fill static AAD prefix (SessionId + direction).
+	copy(newSess.encryptionAadBuf[:sessionIdentifierLength], c.sessionId[:])
+	copy(newSess.decryptionAadBuf[:sessionIdentifierLength], c.sessionId[:])
+	if c.isServer {
+		copy(newSess.encryptionAadBuf[sessionIdentifierLength:sessionIdentifierLength+directionLength], dirS2C[:])
+		copy(newSess.decryptionAadBuf[sessionIdentifierLength:sessionIdentifierLength+directionLength], dirC2S[:])
+	} else {
+		copy(newSess.encryptionAadBuf[sessionIdentifierLength:sessionIdentifierLength+directionLength], dirC2S[:])
+		copy(newSess.decryptionAadBuf[sessionIdentifierLength:sessionIdentifierLength+directionLength], dirS2C[:])
+	}
+
 	c.prev = c.current
 	c.prevEpoch = c.currentEpoch
 	c.current = newSess
@@ -305,13 +342,9 @@ func (c *TcpCrypto) sessionForEpoch(epoch uint16) *DefaultTcpSession {
 }
 
 func (s *DefaultTcpSession) CreateAAD(isServerToClient bool, nonce, aad []byte) []byte {
-	// aad must have len >= aadLen (60)
-	copy(aad[:sessionIdentifierLength], s.SessionId[:])
-	if isServerToClient {
-		copy(aad[sessionIdentifierLength:sessionIdentifierLength+directionLength], dirS2C[:]) // 32..48
-	} else {
-		copy(aad[sessionIdentifierLength:sessionIdentifierLength+directionLength], dirC2S[:]) // 32..48
-	}
+	// SessionId and direction are pre-filled in the buffer at session creation.
+	// Only copy the 12-byte nonce (saves 48 bytes of copying per packet).
+	_ = isServerToClient // direction already set in buffer
 	copy(aad[sessionIdentifierLength+directionLength:aadLength], nonce) // 48..60
 	return aad[:aadLength]
 }

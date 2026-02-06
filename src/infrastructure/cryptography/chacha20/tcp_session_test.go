@@ -143,17 +143,29 @@ func TestTcpSession_DifferentSessionID_Fails(t *testing.T) {
 }
 
 func TestCreateAAD_BothDirections(t *testing.T) {
-	// Use visible unexported constants/vars since tests are in the same package.
+	// Use constructor to ensure AAD buffers are pre-filled correctly.
 	id := randID()
-	s := &DefaultTcpSession{SessionId: id}
+	key := randKey()
+
+	// Test client session (encrypts C2S, decrypts S2C)
+	clientSession, err := NewTcpCryptographyService(id, key, key, false)
+	if err != nil {
+		t.Fatalf("NewTcpCryptographyService: %v", err)
+	}
+
+	// Test server session (encrypts S2C, decrypts C2S)
+	serverSession, err := NewTcpCryptographyService(id, key, key, true)
+	if err != nil {
+		t.Fatalf("NewTcpCryptographyService: %v", err)
+	}
 
 	nonce := make([]byte, chacha20poly1305.NonceSize)
 	for i := range nonce {
 		nonce[i] = byte(i + 1)
 	}
 
-	// Client->Server
-	aadC2S := s.CreateAAD(false, nonce, make([]byte, aadLength))
+	// Client encrypts C2S - uses encryptionAadBuf
+	aadC2S := clientSession.CreateAAD(false, nonce, clientSession.encryptionAadBuf[:])
 	if len(aadC2S) != aadLength {
 		t.Fatalf("aad len=%d, want %d", len(aadC2S), aadLength)
 	}
@@ -167,8 +179,8 @@ func TestCreateAAD_BothDirections(t *testing.T) {
 		t.Fatal("nonce bytes mismatch (C2S)")
 	}
 
-	// Server->Client
-	aadS2C := s.CreateAAD(true, nonce, make([]byte, aadLength))
+	// Server encrypts S2C - uses encryptionAadBuf
+	aadS2C := serverSession.CreateAAD(true, nonce, serverSession.encryptionAadBuf[:])
 	if len(aadS2C) != aadLength {
 		t.Fatalf("aad len=%d, want %d", len(aadS2C), aadLength)
 	}

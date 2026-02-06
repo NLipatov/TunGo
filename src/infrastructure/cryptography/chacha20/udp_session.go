@@ -37,7 +37,7 @@ func NewUdpSession(id [32]byte, sendKey, recvKey []byte, isServer bool, epoch Ep
 }
 
 func NewUdpSessionWithCiphers(id [32]byte, sendCipher, recvCipher cipher.AEAD, isServer bool, epoch Epoch) *DefaultUdpSession {
-	return &DefaultUdpSession{
+	s := &DefaultUdpSession{
 		SessionId:      id,
 		sendCipher:     sendCipher,
 		recvCipher:     recvCipher,
@@ -46,6 +46,20 @@ func NewUdpSessionWithCiphers(id [32]byte, sendCipher, recvCipher cipher.AEAD, i
 		epoch:          epoch,
 		nonceValidator: NewSliding64(),
 	}
+
+	// Pre-fill static AAD prefix (SessionId + direction) to avoid copying on every packet.
+	// Only the 12-byte nonce needs to be updated per-packet.
+	copy(s.encryptionAadBuf[:sessionIdentifierLength], id[:])
+	copy(s.decryptionAadBuf[:sessionIdentifierLength], id[:])
+	if isServer {
+		copy(s.encryptionAadBuf[sessionIdentifierLength:sessionIdentifierLength+directionLength], dirS2C[:])
+		copy(s.decryptionAadBuf[sessionIdentifierLength:sessionIdentifierLength+directionLength], dirC2S[:])
+	} else {
+		copy(s.encryptionAadBuf[sessionIdentifierLength:sessionIdentifierLength+directionLength], dirC2S[:])
+		copy(s.decryptionAadBuf[sessionIdentifierLength:sessionIdentifierLength+directionLength], dirS2C[:])
+	}
+
+	return s
 }
 
 func (s *DefaultUdpSession) Encrypt(plaintext []byte) ([]byte, error) {
@@ -115,13 +129,9 @@ func (s *DefaultUdpSession) Epoch() Epoch {
 }
 
 func (s *DefaultUdpSession) CreateAAD(isServerToClient bool, nonce, aad []byte) []byte {
-	// aad must have len >= aadLen (60)
-	copy(aad[:sessionIdentifierLength], s.SessionId[:])
-	if isServerToClient {
-		copy(aad[sessionIdentifierLength:sessionIdentifierLength+directionLength], dirS2C[:]) // 32..48
-	} else {
-		copy(aad[sessionIdentifierLength:sessionIdentifierLength+directionLength], dirC2S[:]) // 32..48
-	}
+	// SessionId and direction are pre-filled in the buffer at session creation.
+	// Only copy the 12-byte nonce (saves 48 bytes of copying per packet).
+	_ = isServerToClient // direction already set in buffer
 	copy(aad[sessionIdentifierLength+directionLength:aadLength], nonce) // 48..60
 	return aad[:aadLength]
 }
