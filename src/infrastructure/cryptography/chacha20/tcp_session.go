@@ -167,11 +167,25 @@ func NewTcpCrypto(id [32]byte, sendCipher, recvCipher cipher.AEAD, isServer bool
 	}
 }
 
-func (c *TcpCrypto) Encrypt(plaintext []byte) ([]byte, error) {
-	needed := len(plaintext) + chacha20poly1305.Overhead + epochPrefixSize
-	if cap(plaintext) < needed {
+// Encrypt encrypts the data portion of the buffer and prepends the epoch prefix.
+//
+// Buffer layout contract:
+//
+//	input:  [ 2B epoch reserved ][ plaintext (n bytes) ][ Overhead capacity ]
+//	output: [ 2B epoch          ][ ciphertext (n + 16 bytes)                ]
+//
+// The first epochPrefixSize bytes are overwritten with the epoch tag.
+// The plaintext at buf[epochPrefixSize:] is encrypted in-place.
+// The caller must ensure len(buf) >= epochPrefixSize and
+// cap(buf) >= len(buf) + chacha20poly1305.Overhead.
+func (c *TcpCrypto) Encrypt(buf []byte) ([]byte, error) {
+	if len(buf) < epochPrefixSize {
+		return nil, fmt.Errorf("buffer too short for epoch prefix: len=%d", len(buf))
+	}
+	data := buf[epochPrefixSize:]
+	if cap(buf) < len(buf)+chacha20poly1305.Overhead {
 		return nil, fmt.Errorf("insufficient capacity for epoch-prefixed encryption: cap=%d, need>=%d",
-			cap(plaintext), needed)
+			cap(buf), len(buf)+chacha20poly1305.Overhead)
 	}
 
 	c.mu.RLock()
@@ -179,17 +193,15 @@ func (c *TcpCrypto) Encrypt(plaintext []byte) ([]byte, error) {
 	epoch := c.sendEpoch
 	c.mu.RUnlock()
 
-	ct, err := sess.Encrypt(plaintext)
+	ct, err := sess.Encrypt(data)
 	if err != nil {
 		return nil, err
 	}
 
-	// Extend buffer by 2 for epoch prefix and shift ciphertext right.
-	result := ct[:len(ct)+epochPrefixSize]
-	copy(result[epochPrefixSize:], ct)
-	binary.BigEndian.PutUint16(result[:epochPrefixSize], epoch)
+	// Write epoch prefix into the reserved space (no memmove needed).
+	binary.BigEndian.PutUint16(buf[:epochPrefixSize], epoch)
 
-	return result, nil
+	return buf[:epochPrefixSize+len(ct)], nil
 }
 
 func (c *TcpCrypto) Decrypt(data []byte) ([]byte, error) {

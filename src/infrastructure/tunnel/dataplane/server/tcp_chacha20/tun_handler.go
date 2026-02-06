@@ -10,6 +10,10 @@ import (
 	"tungo/infrastructure/tunnel/session"
 )
 
+// epochPrefixSize is the number of bytes reserved at the start of the buffer
+// for the 2-byte epoch tag prepended to every TCP ciphertext frame.
+const epochPrefixSize = 2
+
 type TunHandler struct {
 	ctx            context.Context
 	reader         io.Reader
@@ -32,8 +36,9 @@ func NewTunHandler(
 }
 
 func (t *TunHandler) HandleTun() error {
+	// Buffer layout: [2B epoch reserved][plaintext up to MTU][16B AEAD tag capacity]
 	var buffer [settings.DefaultEthernetMTU + settings.TCPChacha20Overhead]byte
-	plaintext := buffer[:settings.DefaultEthernetMTU]
+	plaintext := buffer[epochPrefixSize : settings.DefaultEthernetMTU+epochPrefixSize]
 
 	for {
 		select {
@@ -64,7 +69,8 @@ func (t *TunHandler) HandleTun() error {
 				continue
 			}
 
-			if err := peer.Egress().SendDataIP(plaintext[:n]); err != nil {
+			// Pass buffer including the 2-byte epoch prefix reservation.
+			if err := peer.Egress().SendDataIP(buffer[:epochPrefixSize+n]); err != nil {
 				log.Printf("failed to write to TCP: %v", err)
 				_ = peer.Egress().Close()
 				t.sessionManager.Delete(peer)

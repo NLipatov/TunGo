@@ -21,8 +21,8 @@ import (
 type controlPlaneHandler struct {
 	crypto       primitives.KeyDeriver
 	logger       logging.Logger
-	ackBuf       [service_packet.RekeyPacketLen + settings.TCPChacha20Overhead]byte
-	exhaustedBuf [3 + settings.TCPChacha20Overhead]byte
+	ackBuf       [epochPrefixSize + service_packet.RekeyPacketLen + settings.TCPChacha20Overhead]byte
+	exhaustedBuf [epochPrefixSize + 3 + settings.TCPChacha20Overhead]byte
 }
 
 func newControlPlaneHandler(crypto primitives.KeyDeriver, logger logging.Logger) controlPlaneHandler {
@@ -73,14 +73,17 @@ func (h *controlPlaneHandler) handleRekeyInit(
 
 	// 2. Build and send ACK. Because sendEpoch is still the old epoch, the ACK
 	//    is encrypted with the old key — the client can always decrypt it.
-	ackPayload := h.ackBuf[:service_packet.RekeyPacketLen]
+	// Reserve first 2 bytes for epoch prefix (written by TcpCrypto.Encrypt).
+	ackPayload := h.ackBuf[epochPrefixSize : epochPrefixSize+service_packet.RekeyPacketLen]
 	copy(ackPayload[3:], serverPub)
 	sp, err := service_packet.EncodeV1Header(service_packet.RekeyAck, ackPayload)
 	if err != nil {
 		h.logger.Printf("rekey init: encode ack failed: %v", err)
 		return
 	}
-	if err := egress.SendControl(sp); err != nil {
+	// Prepend epoch prefix reservation to the service packet.
+	spWithPrefix := h.ackBuf[:epochPrefixSize+len(sp)]
+	if err := egress.SendControl(spWithPrefix); err != nil {
 		h.logger.Printf("rekey init: send ack failed: %v", err)
 		return
 	}
@@ -90,10 +93,11 @@ func (h *controlPlaneHandler) handleRekeyInit(
 }
 
 func (h *controlPlaneHandler) sendEpochExhausted(egress connection.Egress) {
-	payload := h.exhaustedBuf[:3]
+	payload := h.exhaustedBuf[epochPrefixSize : epochPrefixSize+3]
 	sp, err := service_packet.EncodeV1Header(service_packet.EpochExhausted, payload)
 	if err != nil {
 		return
 	}
-	_ = egress.SendControl(sp)
+	spWithPrefix := h.exhaustedBuf[:epochPrefixSize+len(sp)]
+	_ = egress.SendControl(spWithPrefix)
 }

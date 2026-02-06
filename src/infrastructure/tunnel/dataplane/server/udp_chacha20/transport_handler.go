@@ -67,9 +67,9 @@ func (t *TransportHandler) HandleTransport() error {
 
 	t.logger.Printf("server listening on port %s (UDP)", t.settings.Port)
 
-	// Ensure buffers are reasonably sized for high throughput.
-	_ = t.listenerConn.SetReadBuffer(65536)
-	_ = t.listenerConn.SetWriteBuffer(65536)
+	// Size socket buffers for burst absorption under high throughput.
+	_ = t.listenerConn.SetReadBuffer(4 * 1024 * 1024)
+	_ = t.listenerConn.SetWriteBuffer(4 * 1024 * 1024)
 
 	go func() {
 		<-t.ctx.Done()

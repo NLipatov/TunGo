@@ -225,8 +225,9 @@ func newCryptoPair(t *testing.T) (client, server *TcpCrypto) {
 
 func encryptBuf(t *testing.T, tc *TcpCrypto, msg []byte) []byte {
 	t.Helper()
-	buf := make([]byte, len(msg), len(msg)+chacha20poly1305.Overhead+epochPrefixSize)
-	copy(buf, msg)
+	// Reserve epochPrefixSize bytes at the start for the epoch tag.
+	buf := make([]byte, epochPrefixSize+len(msg), epochPrefixSize+len(msg)+chacha20poly1305.Overhead)
+	copy(buf[epochPrefixSize:], msg)
 	ct, err := tc.Encrypt(buf)
 	if err != nil {
 		t.Fatalf("Encrypt: %v", err)

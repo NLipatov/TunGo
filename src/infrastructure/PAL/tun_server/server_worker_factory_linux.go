@@ -111,9 +111,7 @@ func (s *ServerWorkerFactory) createTCPWorker(
 	tun io.ReadWriteCloser,
 	workerSettings settings.Settings,
 ) (routing.Worker, error) {
-	sessionManager := session.NewConcurrentRepository(
-		session.NewDefaultRepository(),
-	)
+	sessionManager := session.NewDefaultRepository()
 	// Register for session revocation on config changes
 	if revocable, ok := sessionManager.(session.RepositoryWithRevocation); ok {
 		s.sessionRevoker.Register(revocable)
@@ -169,9 +167,7 @@ func (s *ServerWorkerFactory) createWSWorker(
 	tun io.ReadWriteCloser,
 	workerSettings settings.Settings,
 ) (routing.Worker, error) {
-	sessionManager := session.NewConcurrentRepository(
-		session.NewDefaultRepository(),
-	)
+	sessionManager := session.NewDefaultRepository()
 	// Register for session revocation on config changes
 	if revocable, ok := sessionManager.(session.RepositoryWithRevocation); ok {
 		s.sessionRevoker.Register(revocable)
@@ -233,9 +229,7 @@ func (s *ServerWorkerFactory) createUDPWorker(
 	tun io.ReadWriteCloser,
 	workerSettings settings.Settings,
 ) (routing.Worker, error) {
-	sessionManager := session.NewConcurrentRepository(
-		session.NewDefaultRepository(),
-	)
+	sessionManager := session.NewDefaultRepository()
 	// Register for session revocation on config changes
 	if revocable, ok := sessionManager.(session.RepositoryWithRevocation); ok {
 		s.sessionRevoker.Register(revocable)

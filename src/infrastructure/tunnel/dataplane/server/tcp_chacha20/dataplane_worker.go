@@ -33,13 +33,13 @@ func (w *tcpDataplaneWorker) Run() {
 		w.logger.Printf("disconnected: %s", w.peer.ExternalAddrPort())
 	}()
 
-	buffer := make([]byte, settings.DefaultEthernetMTU+settings.TCPChacha20Overhead)
+	var buffer [settings.DefaultEthernetMTU + settings.TCPChacha20Overhead]byte
 	for {
 		select {
 		case <-w.ctx.Done():
 			return
 		default:
-			n, err := w.transport.Read(buffer)
+			n, err := w.transport.Read(buffer[:])
 			if err != nil {
 				if err != io.EOF {
 					w.logger.Printf("failed to read from client: %v", err)

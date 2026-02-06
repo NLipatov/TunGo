@@ -36,6 +36,8 @@ func NewSession(
 }
 
 // NewSessionWithAuth creates a session with client authentication info.
+// AllowedIPs prefixes are normalized (Unmap) at creation time to avoid
+// per-packet allocations in IsSourceAllowed.
 func NewSessionWithAuth(
 	crypto connection.Crypto,
 	fsm rekey.FSM,
@@ -44,13 +46,17 @@ func NewSessionWithAuth(
 	clientPubKey []byte,
 	allowedIPs []netip.Prefix,
 ) *Session {
+	normalized := make([]netip.Prefix, len(allowedIPs))
+	for i, p := range allowedIPs {
+		normalized[i] = netip.PrefixFrom(p.Addr().Unmap(), p.Bits())
+	}
 	return &Session{
 		crypto:       crypto,
 		fsm:          fsm,
-		internalIP:   internalIP,
+		internalIP:   internalIP.Unmap(),
 		externalIP:   externalIP,
 		clientPubKey: clientPubKey,
-		allowedIPs:   allowedIPs,
+		allowedIPs:   normalized,
 	}
 }
 
@@ -82,22 +88,14 @@ func (s *Session) AllowedIPs() []netip.Prefix {
 
 // IsSourceAllowed checks if the given source IP is allowed for this session.
 // Returns true if srcIP equals the internal IP or is within any allowed prefix.
-// Normalizes IPv4-mapped-IPv6 addresses (e.g., ::ffff:10.0.0.5 → 10.0.0.5) before comparison.
+// Both internalIP and allowedIPs are pre-normalized at session creation.
 func (s *Session) IsSourceAllowed(srcIP netip.Addr) bool {
-	// Normalize IPv4-mapped-IPv6 to pure IPv4 for consistent comparison
-	normalizedSrc := srcIP.Unmap()
-	normalizedInternal := s.internalIP.Unmap()
-
-	// Internal IP is always allowed
-	if normalizedSrc == normalizedInternal {
+	src := srcIP.Unmap()
+	if src == s.internalIP {
 		return true
 	}
-	// Check additional AllowedIPs
 	for _, prefix := range s.allowedIPs {
-		// Unmap prefix address for consistent matching
-		prefixAddr := prefix.Addr().Unmap()
-		normalizedPrefix := netip.PrefixFrom(prefixAddr, prefix.Bits())
-		if normalizedPrefix.Contains(normalizedSrc) {
+		if prefix.Contains(src) {
 			return true
 		}
 	}

@@ -118,13 +118,14 @@ func TestTCPHandle_RekeyInit_Success_SendsAckAndActivates(t *testing.T) {
 		t.Fatalf("expected 1 ACK packet sent, got %d", len(eg.packets))
 	}
 
-	// Verify ACK packet has RekeyAck header.
+	// Verify ACK packet has RekeyAck header (after 2-byte epoch prefix).
 	ack := eg.packets[0]
-	if len(ack) < 3 {
+	if len(ack) < epochPrefixSize+3 {
 		t.Fatalf("ACK packet too short: %d", len(ack))
 	}
-	if ack[0] != service_packet.Prefix || ack[1] != service_packet.VersionV1 || ack[2] != byte(service_packet.RekeyAck) {
-		t.Fatalf("unexpected ACK header: %v", ack[:3])
+	hdr := ack[epochPrefixSize:]
+	if hdr[0] != service_packet.Prefix || hdr[1] != service_packet.VersionV1 || hdr[2] != byte(service_packet.RekeyAck) {
+		t.Fatalf("unexpected ACK header: %v", hdr[:3])
 	}
 }
 
@@ -179,11 +180,12 @@ func TestTCPHandle_RekeyInit_EpochExhausted_SendsEpochExhausted(t *testing.T) {
 		t.Fatalf("expected 1 EpochExhausted packet, got %d", len(eg.packets))
 	}
 	exhausted := eg.packets[0]
-	if len(exhausted) < 3 {
+	if len(exhausted) < epochPrefixSize+3 {
 		t.Fatalf("EpochExhausted packet too short: %d", len(exhausted))
 	}
-	if exhausted[0] != service_packet.Prefix || exhausted[1] != service_packet.VersionV1 || exhausted[2] != byte(service_packet.EpochExhausted) {
-		t.Fatalf("expected EpochExhausted header, got: %v", exhausted[:3])
+	hdr := exhausted[epochPrefixSize:]
+	if hdr[0] != service_packet.Prefix || hdr[1] != service_packet.VersionV1 || hdr[2] != byte(service_packet.EpochExhausted) {
+		t.Fatalf("expected EpochExhausted header, got: %v", hdr[:3])
 	}
 }
 

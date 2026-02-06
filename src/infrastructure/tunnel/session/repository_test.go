@@ -196,9 +196,8 @@ func TestDefaultRepository_TerminateByPubKey(t *testing.T) {
 	}
 }
 
-func TestConcurrentRepository_TerminateByPubKey(t *testing.T) {
-	inner := NewDefaultRepository()
-	repo := NewConcurrentRepository(inner)
+func TestDefaultRepository_TerminateByPubKey_ViaInterface(t *testing.T) {
+	repo := NewDefaultRepository()
 
 	pubKey := []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
 		17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32}
@@ -216,7 +215,7 @@ func TestConcurrentRepository_TerminateByPubKey(t *testing.T) {
 	// Test via RepositoryWithRevocation interface
 	revocable, ok := repo.(RepositoryWithRevocation)
 	if !ok {
-		t.Fatal("ConcurrentRepository should implement RepositoryWithRevocation")
+		t.Fatal("DefaultRepository should implement RepositoryWithRevocation")
 	}
 
 	count := revocable.TerminateByPubKey(pubKey)
@@ -229,9 +228,8 @@ func TestConcurrentRepository_TerminateByPubKey(t *testing.T) {
 	}
 }
 
-func TestConcurrentRepository(t *testing.T) {
-	inner := NewDefaultRepository()
-	repo := NewConcurrentRepository(inner)
+func TestDefaultRepository_BasicOperations(t *testing.T) {
+	repo := NewDefaultRepository()
 
 	internal := netip.MustParseAddr("10.0.0.1")
 	external := netip.MustParseAddrPort("5.6.7.8:9000")
