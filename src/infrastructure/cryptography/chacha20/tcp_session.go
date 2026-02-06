@@ -90,12 +90,11 @@ func (s *DefaultTcpSession) Decrypt(ciphertext []byte) ([]byte, error) {
 	// Compute next nonce WITHOUT committing yet.
 	// We only increment after successful decryption to prevent desync
 	// when an attacker sends malformed ciphertext.
-	nextNonce, err := s.RecvNonce.peek()
+	// peekEncode encodes directly into the buffer — zero allocation.
+	nonceBytes, err := s.RecvNonce.peekEncode(s.decryptionNonceBuf[:])
 	if err != nil {
 		return nil, err
 	}
-
-	nonceBytes := nextNonce.Encode(s.decryptionNonceBuf[:])
 
 	aad := s.CreateAAD(!s.isServer, nonceBytes, s.decryptionAadBuf[:])
 	plaintext, err := s.recvCipher.Open(ciphertext[:0], nonceBytes, ciphertext, aad)

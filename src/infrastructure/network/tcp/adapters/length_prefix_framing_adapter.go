@@ -14,8 +14,10 @@ type LengthPrefixFramingAdapter struct {
 	adapter  connection.Transport
 	frameCap framelimit.Cap
 
-	// pre-allocated headers buffers (to avoid any chance of escape/allocation)
-	readHeaderBuffer, writeHeaderBuffer [2]byte
+	// pre-allocated header buffer for reads (to avoid any chance of escape/allocation)
+	readHeaderBuffer [2]byte
+	// pre-allocated buffer for writes: 2-byte header + payload combined into single syscall
+	writeBuf []byte
 }
 
 func NewLengthPrefixFramingAdapter(
@@ -31,10 +33,15 @@ func NewLengthPrefixFramingAdapter(
 	if int(frameCap) > math.MaxUint16 {
 		return nil, fmt.Errorf("frame cap %d exceeds u16 transport cap %d", int(frameCap), math.MaxUint16)
 	}
-	return &LengthPrefixFramingAdapter{adapter: adapter, frameCap: frameCap}, nil
+	return &LengthPrefixFramingAdapter{
+		adapter:  adapter,
+		frameCap: frameCap,
+		writeBuf: make([]byte, 2+int(frameCap)),
+	}, nil
 }
 
 // Write writes one u16-BE length-prefixed frame. Returns len(data) on success.
+// Header and payload are combined into a single write to avoid double syscall.
 // NOTE: On errors adapter DOES NOT drain; the caller MUST close the connection.
 func (a *LengthPrefixFramingAdapter) Write(data []byte) (int, error) {
 	if len(data) == 0 {
@@ -43,11 +50,9 @@ func (a *LengthPrefixFramingAdapter) Write(data []byte) (int, error) {
 	if capErr := a.frameCap.ValidateLen(len(data)); capErr != nil {
 		return 0, capErr
 	}
-	binary.BigEndian.PutUint16(a.writeHeaderBuffer[:], uint16(len(data)))
-	if err := a.writeFull(a.adapter, a.writeHeaderBuffer[:]); err != nil {
-		return 0, err
-	}
-	if err := a.writeFull(a.adapter, data); err != nil {
+	binary.BigEndian.PutUint16(a.writeBuf[:2], uint16(len(data)))
+	copy(a.writeBuf[2:], data)
+	if err := a.writeFull(a.adapter, a.writeBuf[:2+len(data)]); err != nil {
 		return 0, err
 	}
 	return len(data), nil

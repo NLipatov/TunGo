@@ -41,25 +41,24 @@ func (n *Nonce) incrementNonce() error {
 	return nil
 }
 
-// peek returns a copy of the nonce with the counter incremented,
-// without modifying the original. Used for tentative decryption
-// where we only commit the increment after successful validation.
-func (n *Nonce) peek() (*Nonce, error) {
-	// Check for overflow
+// peekEncode computes the next nonce value (without incrementing the receiver)
+// and encodes it directly into buf. Returns buf as a convenience.
+// Zero allocation — avoids the heap-allocated *Nonce that peek() required.
+func (n *Nonce) peekEncode(buf []byte) ([]byte, error) {
 	if n.counterHigh == ^uint16(0) && n.counterLow == ^uint64(0) {
 		return nil, fmt.Errorf("nonce overflow: maximum number of messages reached")
 	}
 
-	peeked := &Nonce{epoch: n.epoch}
 	if n.counterLow == ^uint64(0) {
-		peeked.counterHigh = n.counterHigh + 1
-		peeked.counterLow = 0
+		binary.BigEndian.PutUint64(buf[0:8], 0)
+		binary.BigEndian.PutUint16(buf[8:10], n.counterHigh+1)
 	} else {
-		peeked.counterHigh = n.counterHigh
-		peeked.counterLow = n.counterLow + 1
+		binary.BigEndian.PutUint64(buf[0:8], n.counterLow+1)
+		binary.BigEndian.PutUint16(buf[8:10], n.counterHigh)
 	}
+	binary.BigEndian.PutUint16(buf[10:12], uint16(n.epoch))
 
-	return peeked, nil
+	return buf, nil
 }
 
 func (n *Nonce) Encode(buffer []byte) []byte {

@@ -2,6 +2,7 @@ package chacha20
 
 import (
 	"crypto/cipher"
+	"encoding/binary"
 	"fmt"
 	"tungo/infrastructure/cryptography/mem"
 
@@ -103,10 +104,12 @@ func (s *DefaultUdpSession) Decrypt(ciphertext []byte) ([]byte, error) {
 	nonceBytes := ciphertext[:chacha20poly1305.NonceSize]
 	payloadBytes := ciphertext[chacha20poly1305.NonceSize:]
 
+	// Parse nonce fields once — avoids redundant decoding in Check and Accept.
+	low := binary.BigEndian.Uint64(nonceBytes[0:8])
+	high := binary.BigEndian.Uint16(nonceBytes[8:10])
+
 	// 1) check nonce (tentative - don't commit yet)
-	var n12 [chacha20poly1305.NonceSize]byte
-	copy(n12[:], nonceBytes)
-	if err := s.nonceValidator.Check(n12); err != nil {
+	if err := s.nonceValidator.Check(low, high); err != nil {
 		return nil, err
 	}
 
@@ -119,7 +122,7 @@ func (s *DefaultUdpSession) Decrypt(ciphertext []byte) ([]byte, error) {
 	}
 
 	// 3) commit nonce after successful decryption
-	s.nonceValidator.Accept(n12)
+	s.nonceValidator.Accept(low, high)
 
 	return pt, nil
 }

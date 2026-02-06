@@ -49,10 +49,8 @@ func NewSliding64() *Sliding64 {
 }
 
 // Check returns nil if nonce would be accepted, without modifying state.
-func (s *Sliding64) Check(nonce [chacha20poly1305.NonceSize]byte) error {
-	low := binary.BigEndian.Uint64(nonce[0:8])
-	high := binary.BigEndian.Uint16(nonce[8:10])
-
+// Nonce bytes are pre-parsed by caller to avoid redundant decoding.
+func (s *Sliding64) Check(low uint64, high uint16) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -82,11 +80,8 @@ func (s *Sliding64) Check(nonce [chacha20poly1305.NonceSize]byte) error {
 }
 
 // Accept commits the nonce to the window. Must be called only after
-// decryption succeeds. Assumes Check(nonce) returned nil.
-func (s *Sliding64) Accept(nonce [chacha20poly1305.NonceSize]byte) {
-	low := binary.BigEndian.Uint64(nonce[0:8])
-	high := binary.BigEndian.Uint16(nonce[8:10])
-
+// decryption succeeds. Assumes Check returned nil for the same values.
+func (s *Sliding64) Accept(low uint64, high uint16) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
