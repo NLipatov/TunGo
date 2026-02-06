@@ -10,7 +10,6 @@ import (
 	"tungo/application/network/routing"
 	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
-	"tungo/infrastructure/network"
 	"tungo/infrastructure/network/udp/adapters"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/dataplane/client/tcp_chacha20"
@@ -32,10 +31,7 @@ func (w *WorkerFactory) CreateWorker(
 ) (routing.Worker, error) {
 	switch w.conf.Protocol {
 	case settings.UDP:
-		deadline, deadlineErr := network.NewDeadline(time.Second * 1)
-		if deadlineErr != nil {
-			return nil, deadlineErr
-		}
+		deadline := time.Second
 		transport := adapters.NewClientUDPAdapter(conn.(*net.UDPConn), deadline, deadline)
 		egress := connection.NewDefaultEgress(transport, crypto)
 		// tunHandler reads from tun and writes to transport
