@@ -1,12 +1,62 @@
 package chacha20
 
 import (
+	"crypto/cipher"
 	"encoding/binary"
 	"errors"
 	"testing"
 
 	"golang.org/x/crypto/chacha20poly1305"
 )
+
+type testEpochRing struct {
+	current        Epoch
+	lenVal         int
+	capVal         int
+	oldest         Epoch
+	hasOldest      bool
+	resolveSession *DefaultUdpSession
+	resolveOK      bool
+	removeResult   bool
+	zeroized       bool
+}
+
+func (r *testEpochRing) Current() Epoch { return r.current }
+func (r *testEpochRing) Resolve(_ Epoch) (*DefaultUdpSession, bool) {
+	return r.resolveSession, r.resolveOK
+}
+func (r *testEpochRing) Insert(_ Epoch, _ *DefaultUdpSession) {}
+func (r *testEpochRing) ResolveCurrent() (*DefaultUdpSession, bool) {
+	return r.resolveSession, r.resolveOK
+}
+func (r *testEpochRing) Oldest() (Epoch, bool) { return r.oldest, r.hasOldest }
+func (r *testEpochRing) Len() int              { return r.lenVal }
+func (r *testEpochRing) Capacity() int         { return r.capVal }
+func (r *testEpochRing) Remove(_ Epoch) bool   { return r.removeResult }
+func (r *testEpochRing) ZeroizeAll()           { r.zeroized = true }
+
+type badAEAD struct{}
+
+func (badAEAD) NonceSize() int { return chacha20poly1305.NonceSize }
+func (badAEAD) Overhead() int  { return chacha20poly1305.Overhead }
+func (badAEAD) Seal(dst, nonce, plaintext, additionalData []byte) []byte {
+	_ = nonce
+	_ = additionalData
+	out := make([]byte, len(dst)+len(plaintext))
+	copy(out, dst)
+	copy(out[len(dst):], plaintext)
+	return out
+}
+func (badAEAD) Open(dst, nonce, ciphertext, additionalData []byte) ([]byte, error) {
+	_ = nonce
+	_ = ciphertext
+	_ = additionalData
+	return dst, nil
+}
+
+func newUdpSessionWithAEAD(epoch Epoch, a cipher.AEAD) *DefaultUdpSession {
+	return NewUdpSessionWithCiphers([32]byte{}, a, a, false, epoch)
+}
 
 func makeUdpCrypto(t *testing.T) *EpochUdpCrypto {
 	t.Helper()
@@ -168,6 +218,14 @@ func TestEpochUdpCrypto_RemoveEpoch_CannotRemoveLastEntry(t *testing.T) {
 	}
 }
 
+func TestEpochUdpCrypto_RemoveEpoch_CannotRemoveLastEntry_NonSendEpoch(t *testing.T) {
+	c := makeUdpCrypto(t)
+	c.SetSendEpoch(99) // ensure first guard does not trigger
+	if c.RemoveEpoch(0) {
+		t.Fatal("expected RemoveEpoch to refuse removing last entry")
+	}
+}
+
 func TestEpochUdpCrypto_RemoveEpoch_Success(t *testing.T) {
 	c := makeUdpCrypto(t)
 	key := make([]byte, chacha20poly1305.KeySize)
@@ -188,5 +246,60 @@ func TestEpochUdpCrypto_Rekey_BadKey(t *testing.T) {
 	_, err := c.Rekey([]byte("short"), []byte("short"))
 	if err == nil {
 		t.Fatal("expected error for invalid key length")
+	}
+}
+
+func TestEpochUdpCrypto_Decrypt_EpochMismatch(t *testing.T) {
+	c := makeUdpCrypto(t)
+	r := &testEpochRing{
+		resolveSession: newUdpSessionWithAEAD(7, badAEAD{}),
+		resolveOK:      true,
+	}
+	c.ring = r
+
+	buf := make([]byte, chacha20poly1305.NonceSize+chacha20poly1305.Overhead+1)
+	binary.BigEndian.PutUint16(buf[NonceEpochOffset:NonceEpochOffset+2], 0)
+
+	_, err := c.Decrypt(buf)
+	if !errors.Is(err, ErrUnknownEpoch) {
+		t.Fatalf("expected ErrUnknownEpoch on epoch mismatch, got %v", err)
+	}
+}
+
+func TestEpochUdpCrypto_Rekey_BadRecvKey(t *testing.T) {
+	c := makeUdpCrypto(t)
+	_, err := c.Rekey(make([]byte, chacha20poly1305.KeySize), []byte("short"))
+	if err == nil {
+		t.Fatal("expected rekey recv key error")
+	}
+}
+
+func TestEpochUdpCrypto_RemoveEpoch_NotFound(t *testing.T) {
+	c := makeUdpCrypto(t)
+	c.ring = &testEpochRing{
+		lenVal:       2,
+		removeResult: false,
+	}
+	c.SetSendEpoch(99)
+	if c.RemoveEpoch(1) {
+		t.Fatal("expected false when ring.Remove returns false")
+	}
+}
+
+func TestEpochUdpCrypto_Zeroize(t *testing.T) {
+	c := makeUdpCrypto(t)
+	r := &testEpochRing{}
+	c.ring = r
+	for i := range c.sessionId {
+		c.sessionId[i] = byte(i + 1)
+	}
+
+	c.Zeroize()
+
+	if !r.zeroized {
+		t.Fatal("expected ring.ZeroizeAll to be called")
+	}
+	if c.sessionId != [32]byte{} {
+		t.Fatal("expected sessionId to be zeroized")
 	}
 }

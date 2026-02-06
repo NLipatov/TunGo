@@ -298,3 +298,29 @@ func TestUdpEncrypt_NonceRollover_WritesCorrectNonce(t *testing.T) {
 		t.Fatalf("nonce.high after rollover = %d; want %d", encHigh, startHigh+1)
 	}
 }
+
+func TestUdpSession_Zeroize(t *testing.T) {
+	id := randID()
+	key := randKey()
+	sess, err := NewUdpSession(id, key, key, false, 3)
+	if err != nil {
+		t.Fatalf("NewUdpSession: %v", err)
+	}
+
+	// Fill nonce validator state.
+	if err := sess.nonceValidator.Validate(makeNonce(2, 10)); err != nil {
+		t.Fatalf("validator setup failed: %v", err)
+	}
+
+	sess.Zeroize()
+
+	if sess.SessionId != [32]byte{} {
+		t.Fatal("expected SessionId zeroized")
+	}
+	if sess.nonce.counterLow != 0 || sess.nonce.counterHigh != 0 {
+		t.Fatal("expected nonce counters zeroized")
+	}
+	if len(sess.nonceValidator.wins) != 0 {
+		t.Fatal("expected replay window state zeroized")
+	}
+}

@@ -120,3 +120,82 @@ func TestSliding64_BigJumpMarksCurrent(t *testing.T) {
 		t.Fatalf("expected ErrNonUniqueNonce after big jump replay")
 	}
 }
+
+func TestSliding64_CheckAcceptAndZeroize(t *testing.T) {
+	s := NewSliding64()
+
+	// Check on unknown high should accept.
+	if err := s.Check(10, 1); err != nil {
+		t.Fatalf("expected check accept for new high, got %v", err)
+	}
+
+	// Accept creates window.
+	s.Accept(10, 1)
+	if len(s.wins) != 1 {
+		t.Fatalf("expected 1 window, got %d", len(s.wins))
+	}
+
+	// Check duplicate should reject.
+	if err := s.Check(10, 1); !errors.Is(err, ErrNonUniqueNonce) {
+		t.Fatalf("expected duplicate rejection, got %v", err)
+	}
+	// Check with low > current max should accept.
+	if err := s.Check(11, 1); err != nil {
+		t.Fatalf("expected high nonce accept, got %v", err)
+	}
+	// Move max far enough for too-old check.
+	s.Accept(100, 1)
+	// Check too old should reject.
+	if err := s.Check(36, 1); !errors.Is(err, ErrNonUniqueNonce) {
+		t.Fatalf("expected too-old rejection, got %v", err)
+	}
+	// Check unseen in-window should accept.
+	if err := s.Check(99, 1); err != nil {
+		t.Fatalf("expected unseen in-window accept, got %v", err)
+	}
+	// Accept in-window unseen.
+	s.Accept(99, 1)
+	// Accept large shift path.
+	s.Accept(200, 1)
+	// Accept too-old no-op path.
+	beforeMax := s.wins[0].max
+	beforeBitmap := s.wins[0].bitmap
+	s.Accept(200-64, 1)
+	if s.wins[0].max != beforeMax || s.wins[0].bitmap != beforeBitmap {
+		t.Fatal("expected too-old Accept to be no-op")
+	}
+
+	// Fill and exceed cap in Accept (eviction path).
+	s.Accept(1, 2)
+	s.Accept(1, 3)
+	s.Accept(1, 4)
+	s.Accept(1, 5) // should evict one high window
+	if len(s.wins) != 4 {
+		t.Fatalf("expected capped windows=4, got %d", len(s.wins))
+	}
+
+	// Zeroize must clear all state.
+	s.Zeroize()
+	if len(s.wins) != 0 {
+		t.Fatalf("expected zeroized windows, got %d", len(s.wins))
+	}
+}
+
+func TestSliding64Validate_EvictsOldestAtCapacity(t *testing.T) {
+	s := NewSliding64()
+	for high := uint16(1); high <= 4; high++ {
+		if err := s.Validate(makeNonce(high, 1)); err != nil {
+			t.Fatalf("validate high=%d failed: %v", high, err)
+		}
+	}
+	if len(s.wins) != 4 {
+		t.Fatalf("expected full windows, got %d", len(s.wins))
+	}
+	// This should trigger eviction path when len == cap and high is new.
+	if err := s.Validate(makeNonce(5, 1)); err != nil {
+		t.Fatalf("validate high=5 failed: %v", err)
+	}
+	if len(s.wins) != 4 {
+		t.Fatalf("expected windows capped at 4, got %d", len(s.wins))
+	}
+}

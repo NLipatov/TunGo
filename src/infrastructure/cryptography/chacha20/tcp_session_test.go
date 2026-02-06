@@ -452,3 +452,102 @@ func TestTcpCrypto_RemoveEpoch_NoOp(t *testing.T) {
 		t.Fatal("RemoveEpoch should always return true for TCP")
 	}
 }
+
+func TestTcpSession_Encrypt_NonceOverflow(t *testing.T) {
+	id := randID()
+	key := randKey()
+	s, err := NewTcpCryptographyService(id, key, key, false)
+	if err != nil {
+		t.Fatalf("NewTcpCryptographyService: %v", err)
+	}
+	s.SendNonce.counterHigh = ^uint16(0)
+	s.SendNonce.counterLow = ^uint64(0)
+
+	msg := make([]byte, 1, 1+chacha20poly1305.Overhead)
+	if _, err := s.Encrypt(msg); err == nil {
+		t.Fatal("expected nonce overflow error")
+	}
+}
+
+func TestTcpSession_Decrypt_PeekNonceOverflow(t *testing.T) {
+	id := randID()
+	key := randKey()
+	s, err := NewTcpCryptographyService(id, key, key, false)
+	if err != nil {
+		t.Fatalf("NewTcpCryptographyService: %v", err)
+	}
+	s.RecvNonce.counterHigh = ^uint16(0)
+	s.RecvNonce.counterLow = ^uint64(0)
+
+	if _, err := s.Decrypt([]byte{1}); err == nil {
+		t.Fatal("expected nonce overflow error from peekEncode")
+	}
+}
+
+func TestTcpCrypto_Encrypt_BufferTooShortForEpochPrefix(t *testing.T) {
+	client, _ := newCryptoPair(t)
+	if _, err := client.Encrypt([]byte{1}); err == nil {
+		t.Fatal("expected buffer-too-short-for-prefix error")
+	}
+}
+
+func TestTcpCrypto_Encrypt_PropagatesSessionEncryptError(t *testing.T) {
+	client, _ := newCryptoPair(t)
+	client.current.SendNonce.counterHigh = ^uint16(0)
+	client.current.SendNonce.counterLow = ^uint64(0)
+
+	buf := make([]byte, epochPrefixSize+1, epochPrefixSize+1+chacha20poly1305.Overhead)
+	if _, err := client.Encrypt(buf); err == nil {
+		t.Fatal("expected session encrypt error")
+	}
+}
+
+func TestTcpCrypto_Decrypt_PropagatesSessionDecryptError(t *testing.T) {
+	_, server := newCryptoPair(t)
+	// Known epoch=0 but random payload should fail authentication in session decrypt.
+	frame := make([]byte, epochPrefixSize+chacha20poly1305.Overhead+1)
+	binary.BigEndian.PutUint16(frame[:epochPrefixSize], 0)
+	if _, err := server.Decrypt(frame); err == nil {
+		t.Fatal("expected decrypt failure for malformed ciphertext")
+	}
+}
+
+func TestTcpCrypto_Rekey_BadRecvKey(t *testing.T) {
+	client, _ := newCryptoPair(t)
+	good := randKey()
+	bad := []byte("short")
+
+	if _, err := client.Rekey(good, bad); err == nil {
+		t.Fatal("expected rekey error for invalid recv key")
+	}
+}
+
+func TestTcpCrypto_Rekey_BadSendKey(t *testing.T) {
+	client, _ := newCryptoPair(t)
+	if _, err := client.Rekey([]byte("short"), randKey()); err == nil {
+		t.Fatal("expected rekey error for invalid send key")
+	}
+}
+
+func TestTcpCrypto_Zeroize(t *testing.T) {
+	client, _ := newCryptoPair(t)
+	newKey := randKey()
+	if _, err := client.Rekey(newKey, newKey); err != nil {
+		t.Fatalf("Rekey: %v", err)
+	}
+	if client.prev == nil {
+		t.Fatal("expected prev session after rekey")
+	}
+
+	client.Zeroize()
+
+	if client.sessionId != [32]byte{} {
+		t.Fatal("expected session id to be zeroized")
+	}
+	if client.current.SendNonce.counterLow != 0 || client.current.SendNonce.counterHigh != 0 {
+		t.Fatal("expected current send nonce to be zeroized")
+	}
+	if client.prev.SendNonce.counterLow != 0 || client.prev.SendNonce.counterHigh != 0 {
+		t.Fatal("expected prev send nonce to be zeroized")
+	}
+}
