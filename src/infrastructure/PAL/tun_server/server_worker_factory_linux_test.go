@@ -2,7 +2,6 @@ package tun_server
 
 import (
 	"context"
-	"crypto/ed25519"
 	"errors"
 	"io"
 	"net"
@@ -20,13 +19,14 @@ type dummyConfigManager struct{}
 func (d *dummyConfigManager) Configuration() (*serverCfg.Configuration, error) {
 	return &serverCfg.Configuration{}, nil
 }
-func (d *dummyConfigManager) InjectSessionTtlIntervals(_, _ settings.HumanReadableDuration) error {
+func (d *dummyConfigManager) AddAllowedPeer(_ serverCfg.AllowedPeer) error {
 	return nil
 }
 func (d *dummyConfigManager) IncrementClientCounter() error { return nil }
-func (d *dummyConfigManager) InjectEdKeys(_ ed25519.PublicKey, _ ed25519.PrivateKey) error {
+func (d *dummyConfigManager) InjectX25519Keys(_, _ []byte) error {
 	return nil
 }
+func (d *dummyConfigManager) InvalidateCache() {}
 
 // Erroring ServerConfigurationManager to trigger config error paths.
 type errorConfigManager struct{}
@@ -34,13 +34,14 @@ type errorConfigManager struct{}
 func (e *errorConfigManager) Configuration() (*serverCfg.Configuration, error) {
 	return nil, errors.New("config error")
 }
-func (e *errorConfigManager) InjectSessionTtlIntervals(_, _ settings.HumanReadableDuration) error {
+func (e *errorConfigManager) AddAllowedPeer(_ serverCfg.AllowedPeer) error {
 	return nil
 }
 func (e *errorConfigManager) IncrementClientCounter() error { return nil }
-func (e *errorConfigManager) InjectEdKeys(_ ed25519.PublicKey, _ ed25519.PrivateKey) error {
+func (e *errorConfigManager) InjectX25519Keys(_, _ []byte) error {
 	return nil
 }
+func (e *errorConfigManager) InvalidateCache() {}
 
 // Nop TUN handle.
 type nopReadWriteCloser struct{}
@@ -84,42 +85,48 @@ func Test_addrPortToListen_InvalidPortNumber(t *testing.T) {
 }
 
 func Test_CreateWorker_UnsupportedProtocol(t *testing.T) {
-	factory := NewTestServerWorkerFactory(newDefaultLoggerFactory(), &dummyConfigManager{})
+	factory, err := NewTestServerWorkerFactory(newDefaultLoggerFactory(), &dummyConfigManager{})
+	if err != nil {
+		t.Fatalf("unexpected constructor error: %v", err)
+	}
 
 	ws := settings.Settings{Protocol: settings.UNKNOWN} // unknown enum value
-	_, err := factory.CreateWorker(context.Background(), nopReadWriteCloser{}, ws)
+	_, err = factory.CreateWorker(context.Background(), nopReadWriteCloser{}, ws)
 	if err == nil || err.Error() != "protocol UNKNOWN not supported" {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
 func Test_CreateWorker_TCP_ConfigError(t *testing.T) {
-	factory := NewTestServerWorkerFactory(newDefaultLoggerFactory(), &errorConfigManager{})
-	ws := settings.Settings{Protocol: settings.TCP, ConnectionIP: "127.0.0.1", Port: "0"}
+	factory, err := NewTestServerWorkerFactory(newDefaultLoggerFactory(), &errorConfigManager{})
+	if err == nil {
+		t.Fatal("expected constructor error")
+	}
 
-	_, err := factory.CreateWorker(context.Background(), nopReadWriteCloser{}, ws)
-	if err == nil || err.Error() != "config error" {
-		t.Fatalf("expected config error, got %v", err)
+	if factory != nil {
+		t.Fatal("expected nil factory on constructor error")
 	}
 }
 
 func Test_CreateWorker_UDP_ConfigError(t *testing.T) {
-	factory := NewTestServerWorkerFactory(newDefaultLoggerFactory(), &errorConfigManager{})
-	ws := settings.Settings{Protocol: settings.UDP, ConnectionIP: "127.0.0.1", Port: "0"}
+	factory, err := NewTestServerWorkerFactory(newDefaultLoggerFactory(), &errorConfigManager{})
+	if err == nil {
+		t.Fatal("expected constructor error")
+	}
 
-	_, err := factory.CreateWorker(context.Background(), nopReadWriteCloser{}, ws)
-	if err == nil || err.Error() != "config error" {
-		t.Fatalf("expected config error, got %v", err)
+	if factory != nil {
+		t.Fatal("expected nil factory on constructor error")
 	}
 }
 
 func Test_CreateWorker_WS_ConfigError(t *testing.T) {
-	factory := NewTestServerWorkerFactory(newDefaultLoggerFactory(), &errorConfigManager{})
-	ws := settings.Settings{Protocol: settings.WS, ConnectionIP: "127.0.0.1", Port: "0"}
+	factory, err := NewTestServerWorkerFactory(newDefaultLoggerFactory(), &errorConfigManager{})
+	if err == nil {
+		t.Fatal("expected constructor error")
+	}
 
-	_, err := factory.CreateWorker(context.Background(), nopReadWriteCloser{}, ws)
-	if err == nil || err.Error() != "config error" {
-		t.Fatalf("expected config error, got %v", err)
+	if factory != nil {
+		t.Fatal("expected nil factory on constructor error")
 	}
 }
 
@@ -134,7 +141,10 @@ func Test_CreateWorker_TCP_ListenError(t *testing.T) {
 	}(l)
 	_, port, _ := net.SplitHostPort(l.Addr().String())
 
-	factory := NewTestServerWorkerFactory(newDefaultLoggerFactory(), &dummyConfigManager{})
+	factory, err := NewTestServerWorkerFactory(newDefaultLoggerFactory(), &dummyConfigManager{})
+	if err != nil {
+		t.Fatalf("unexpected constructor error: %v", err)
+	}
 	ws := settings.Settings{Protocol: settings.TCP, ConnectionIP: "127.0.0.1", Port: port}
 
 	if _, err := factory.CreateWorker(context.Background(), nopReadWriteCloser{}, ws); err == nil {
@@ -157,7 +167,10 @@ func Test_CreateWorker_UDP_ListenError(t *testing.T) {
 	}(l)
 	_, port, _ := net.SplitHostPort(l.LocalAddr().String())
 
-	factory := NewTestServerWorkerFactory(newDefaultLoggerFactory(), &dummyConfigManager{})
+	factory, err := NewTestServerWorkerFactory(newDefaultLoggerFactory(), &dummyConfigManager{})
+	if err != nil {
+		t.Fatalf("unexpected constructor error: %v", err)
+	}
 	ws := settings.Settings{Protocol: settings.UDP, ConnectionIP: "127.0.0.1", Port: port}
 
 	if _, err := factory.CreateWorker(context.Background(), nopReadWriteCloser{}, ws); err == nil {
@@ -176,7 +189,10 @@ func Test_CreateWorker_WS_ListenError(t *testing.T) {
 	}(l)
 	_, port, _ := net.SplitHostPort(l.Addr().String())
 
-	factory := NewTestServerWorkerFactory(newDefaultLoggerFactory(), &dummyConfigManager{})
+	factory, err := NewTestServerWorkerFactory(newDefaultLoggerFactory(), &dummyConfigManager{})
+	if err != nil {
+		t.Fatalf("unexpected constructor error: %v", err)
+	}
 	ws := settings.Settings{Protocol: settings.WS, ConnectionIP: "127.0.0.1", Port: port}
 
 	if _, err := factory.CreateWorker(context.Background(), nopReadWriteCloser{}, ws); err == nil {
@@ -187,7 +203,10 @@ func Test_CreateWorker_WS_ListenError(t *testing.T) {
 func Test_CreateWorker_TCP_UDP_WS_Success(t *testing.T) {
 	for _, proto := range []settings.Protocol{settings.TCP, settings.UDP, settings.WS} {
 		ctx, cancel := context.WithCancel(context.Background())
-		factory := NewTestServerWorkerFactory(newDefaultLoggerFactory(), &dummyConfigManager{})
+		factory, err := NewTestServerWorkerFactory(newDefaultLoggerFactory(), &dummyConfigManager{})
+		if err != nil {
+			t.Fatalf("unexpected constructor error for %s: %v", proto, err)
+		}
 		ws := settings.Settings{Protocol: proto, ConnectionIP: "127.0.0.1", Port: "0"}
 		w, err := factory.CreateWorker(ctx, nopReadWriteCloser{}, ws)
 		if err != nil {
@@ -203,11 +222,11 @@ func Test_CreateWorker_TCP_UDP_WS_Success(t *testing.T) {
 func Test_NewServerWorkerFactory_Coverage(t *testing.T) {
 	dcm := &dummyConfigManager{}
 	// Production constructor
-	if f := NewServerWorkerFactory(dcm); f == nil {
-		t.Error("nil factory (prod)")
+	if f, err := NewServerWorkerFactory(dcm); f == nil || err != nil {
+		t.Errorf("nil/error factory (prod): factory=%v err=%v", f, err)
 	}
 	// Test constructor
-	if f := NewTestServerWorkerFactory(newDefaultLoggerFactory(), dcm); f == nil {
-		t.Error("nil factory (test)")
+	if f, err := NewTestServerWorkerFactory(newDefaultLoggerFactory(), dcm); f == nil || err != nil {
+		t.Errorf("nil/error factory (test): factory=%v err=%v", f, err)
 	}
 }
