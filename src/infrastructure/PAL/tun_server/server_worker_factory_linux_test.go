@@ -228,7 +228,38 @@ func Test_CreateWorker_TCP_UDP_WS_Success(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected constructor error for %s: %v", proto, err)
 		}
-		ws := settings.Settings{Protocol: proto, Host: mustHost("127.0.0.1"), Port: 0}
+
+		var portNum int
+		switch proto {
+		case settings.UDP:
+			addr, resolveErr := net.ResolveUDPAddr("udp", "127.0.0.1:0")
+			if resolveErr != nil {
+				t.Fatalf("resolve udp addr failed for %s: %v", proto, resolveErr)
+			}
+			conn, listenErr := net.ListenUDP("udp", addr)
+			if listenErr != nil {
+				t.Fatalf("listen udp failed for %s: %v", proto, listenErr)
+			}
+			_, port, _ := net.SplitHostPort(conn.LocalAddr().String())
+			_ = conn.Close()
+			portNum, err = strconv.Atoi(port)
+			if err != nil {
+				t.Fatalf("failed to parse port %q for %s: %v", port, proto, err)
+			}
+		default:
+			ln, listenErr := net.Listen("tcp", "127.0.0.1:0")
+			if listenErr != nil {
+				t.Fatalf("listen tcp failed for %s: %v", proto, listenErr)
+			}
+			_, port, _ := net.SplitHostPort(ln.Addr().String())
+			_ = ln.Close()
+			portNum, err = strconv.Atoi(port)
+			if err != nil {
+				t.Fatalf("failed to parse port %q for %s: %v", port, proto, err)
+			}
+		}
+
+		ws := settings.Settings{Protocol: proto, Host: mustHost("127.0.0.1"), Port: portNum}
 		w, err := factory.CreateWorker(ctx, nopReadWriteCloser{}, ws)
 		if err != nil {
 			t.Fatalf("unexpected error for %s: %v", proto, err)
