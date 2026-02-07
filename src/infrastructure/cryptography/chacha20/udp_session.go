@@ -16,7 +16,7 @@ type (
 		recvCipher       cipher.AEAD
 		nonce            *Nonce
 		isServer         bool
-		nonceValidator   *Sliding64
+		nonceValidator   *SlidingWindow
 		epoch            Epoch
 		encryptionAadBuf [60]byte //32 bytes for sessionId, 16 bytes for direction, 12 bytes for nonce. 60 bytes total.
 		decryptionAadBuf [60]byte //32 bytes for sessionId, 16 bytes for direction, 12 bytes for nonce. 60 bytes total.
@@ -45,7 +45,7 @@ func NewUdpSessionWithCiphers(id [32]byte, sendCipher, recvCipher cipher.AEAD, i
 		nonce:          NewNonce(epoch),
 		isServer:       isServer,
 		epoch:          epoch,
-		nonceValidator: NewSliding64(),
+		nonceValidator: NewSlidingWindow(),
 	}
 
 	// Pre-fill static AAD prefix (SessionId + direction) to avoid copying on every packet.

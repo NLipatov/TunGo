@@ -145,7 +145,7 @@ func TestUdpDecrypt_ReplayRejected_ByNonceValidator(t *testing.T) {
 	if _, err := srv.Decrypt(ct); err != nil {
 		t.Fatalf("first decrypt failed: %v", err)
 	}
-	// Replay must be rejected by Sliding64 validator (nonce reuse)
+	// Replay must be rejected by SlidingWindow validator (nonce reuse)
 	if _, err := srv.Decrypt(ct); err == nil {
 		t.Fatal("expected nonce validator error on replay, got nil")
 	}
