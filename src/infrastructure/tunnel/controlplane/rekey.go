@@ -3,6 +3,7 @@ package controlplane
 import (
 	"fmt"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/cryptography/mem"
 	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/service_packet"
 
@@ -40,10 +41,12 @@ func ServerHandleRekeyInit(
 	if err != nil {
 		return nil, 0, false, err
 	}
+	defer mem.ZeroBytes(serverPriv[:])
 	shared, err := curve25519.X25519(serverPriv[:], clientPub[:])
 	if err != nil {
 		return nil, 0, false, err
 	}
+	defer mem.ZeroBytes(shared)
 
 	currentC2S := fsm.CurrentClientToServerKey()
 	currentS2C := fsm.CurrentServerToClientKey()
@@ -94,12 +97,14 @@ func ClientHandleRekeyAck(
 	if !ok {
 		return false, nil
 	}
+	defer mem.ZeroBytes(priv[:])
 
 	serverPub := plaindata[3 : 3+service_packet.RekeyPublicKeyLen]
 	shared, err := curve25519.X25519(priv[:], serverPub)
 	if err != nil {
 		return false, err
 	}
+	defer mem.ZeroBytes(shared)
 
 	currentC2S := fsm.CurrentClientToServerKey()
 	currentS2C := fsm.CurrentServerToClientKey()
