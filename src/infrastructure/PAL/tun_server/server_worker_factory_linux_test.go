@@ -282,3 +282,22 @@ func Test_NewServerWorkerFactory_Coverage(t *testing.T) {
 		t.Errorf("nil/error factory (test): factory=%v err=%v", f, err)
 	}
 }
+
+func Test_ServerWorkerFactory_SessionRevokerAndAllowedPeersUpdater(t *testing.T) {
+	factory, err := NewTestServerWorkerFactory(newDefaultLoggerFactory(), &dummyConfigManager{})
+	if err != nil {
+		t.Fatalf("unexpected constructor error: %v", err)
+	}
+
+	revoker := factory.SessionRevoker()
+	if revoker == nil {
+		t.Fatal("expected non-nil session revoker")
+	}
+
+	updater := factory.AllowedPeersUpdater()
+	if updater == nil {
+		t.Fatal("expected non-nil allowed peers updater")
+	}
+
+	updater.Update(nil)
+}
