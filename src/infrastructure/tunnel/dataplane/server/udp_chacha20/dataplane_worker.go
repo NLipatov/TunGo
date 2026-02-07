@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"tungo/infrastructure/cryptography/chacha20"
+	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/tunnel/session"
 )
 
@@ -28,6 +29,13 @@ func newUdpDataplaneWorker(tunWriter io.Writer, cp controlPlaneHandler) *udpData
 }
 
 func (w *udpDataplaneWorker) HandleEstablished(peer *session.Peer, packet []byte) error {
+	// SECURITY: Check closed flag BEFORE using crypto.
+	// This prevents use-after-free if peer is being deleted concurrently.
+	// The closed flag is set atomically before crypto is zeroed.
+	if peer.IsClosed() {
+		return nil
+	}
+
 	rekeyCtrl := peer.RekeyController()
 
 	decrypted, decryptionErr := peer.Crypto().Decrypt(packet)
@@ -42,9 +50,23 @@ func (w *udpDataplaneWorker) HandleEstablished(peer *session.Peer, packet []byte
 		rekeyCtrl.ActivateSendEpoch(binary.BigEndian.Uint16(packet[chacha20.NonceEpochOffset : chacha20.NonceEpochOffset+2]))
 		rekeyCtrl.AbortPendingIfExpired(w.now())
 		// If service_packet packet - handle it.
-		if handled, err := w.cp.Handle(decrypted, peer.Egress(), rekeyCtrl); handled {
-			return err
+		// Note: On EpochExhausted, server sends EpochExhausted packet to client.
+		// Session stays alive until client reconnects with fresh handshake.
+		if handled, _ := w.cp.Handle(decrypted, peer.Egress(), rekeyCtrl); handled {
+			return nil
 		}
+	}
+
+	// Validate source IP against AllowedIPs after decryption
+	// Session interface embeds SessionAuth - no type assertion needed
+	srcIP, srcOk := ip.ExtractSourceIP(decrypted)
+	if !srcOk {
+		// Malformed IP header - drop to prevent AllowedIPs bypass
+		return nil
+	}
+	if !peer.Session.IsSourceAllowed(srcIP) {
+		// AllowedIPs violation - silently drop for UDP
+		return nil
 	}
 
 	// Pass it to TUN.

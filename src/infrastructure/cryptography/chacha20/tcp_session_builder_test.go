@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"crypto/cipher"
 	"fmt"
-	"net"
+	"net/netip"
 	"testing"
 	"tungo/application/network/connection"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
@@ -71,8 +71,8 @@ type mockHandshake struct {
 func (m *mockHandshake) Id() [32]byte              { return m.id }
 func (m *mockHandshake) KeyServerToClient() []byte { return m.server }
 func (m *mockHandshake) KeyClientToServer() []byte { return m.client }
-func (m *mockHandshake) ServerSideHandshake(_ connection.Transport) (net.IP, error) {
-	return m.server, nil
+func (m *mockHandshake) ServerSideHandshake(_ connection.Transport) (netip.Addr, error) {
+	return netip.Addr{}, nil
 }
 func (m *mockHandshake) ClientSideHandshake(_ connection.Transport, _ settings.Settings) error {
 	return nil

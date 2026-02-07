@@ -78,3 +78,37 @@ func TestNonceEncode(t *testing.T) {
 		}
 	}
 }
+
+func TestNoncePeekEncode_OverflowAndRollover(t *testing.T) {
+	t.Run("overflow", func(t *testing.T) {
+		n := NewNonce(0)
+		n.counterLow = ^uint64(0)
+		n.counterHigh = ^uint16(0)
+		buf := make([]byte, 12)
+		if _, err := n.peekEncode(buf); err == nil {
+			t.Fatal("expected overflow error from peekEncode")
+		}
+	})
+
+	t.Run("rollover", func(t *testing.T) {
+		const epoch = Epoch(9)
+		n := NewNonce(epoch)
+		n.counterLow = ^uint64(0)
+		n.counterHigh = 7
+
+		buf := make([]byte, 12)
+		out, err := n.peekEncode(buf)
+		if err != nil {
+			t.Fatalf("peekEncode failed: %v", err)
+		}
+		if got := binary.BigEndian.Uint64(out[0:8]); got != 0 {
+			t.Fatalf("expected low=0, got %d", got)
+		}
+		if got := binary.BigEndian.Uint16(out[8:10]); got != 8 {
+			t.Fatalf("expected high=8, got %d", got)
+		}
+		if got := binary.BigEndian.Uint16(out[10:12]); got != uint16(epoch) {
+			t.Fatalf("expected epoch=%d, got %d", epoch, got)
+		}
+	})
+}

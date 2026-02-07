@@ -11,8 +11,3 @@ func newSessionManagerFactory() sessionManagerFactory {
 func (c *sessionManagerFactory) createManager() session.Repository {
 	return session.NewDefaultRepository()
 }
-
-func (c *sessionManagerFactory) createConcurrentManager() session.Repository {
-	sessionManager := c.createManager()
-	return session.NewConcurrentRepository(sessionManager)
-}

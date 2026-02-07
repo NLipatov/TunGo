@@ -1,31 +1,53 @@
 package server
 
 import (
-	"crypto/ed25519"
 	"fmt"
 	"net/netip"
-	"strconv"
 	"tungo/infrastructure/settings"
 )
 
+// AllowedPeer represents a single authorized client.
+// This is the sole source of truth for client authorization.
+type AllowedPeer struct {
+	// Name is a human-friendly client identifier (e.g., "client-42").
+	// Optional; does not participate in cryptographic authentication.
+	Name string `json:"Name,omitempty"`
+
+	// PublicKey is the client's X25519 static public key (32 bytes).
+	// This is the cryptographic identity.
+	PublicKey []byte `json:"PublicKey"`
+
+	// Enabled controls whether this client can connect.
+	// Setting to false revokes access immediately.
+	Enabled bool `json:"Enabled"`
+
+	// Address is the server-assigned internal IP for this client.
+	// Exactly one address is supported per peer.
+	Address netip.Addr `json:"Address"`
+}
+
 type Configuration struct {
-	TCPSettings           settings.Settings  `json:"TCPSettings"`
-	UDPSettings           settings.Settings  `json:"UDPSettings"`
-	WSSettings            settings.Settings  `json:"WSSettings"`
-	FallbackServerAddress string             `json:"FallbackServerAddress"`
-	Ed25519PublicKey      ed25519.PublicKey  `json:"Ed25519PublicKey"`
-	Ed25519PrivateKey     ed25519.PrivateKey `json:"Ed25519PrivateKey"`
-	ClientCounter         int                `json:"ClientCounter"`
-	EnableTCP             bool               `json:"EnableTCP"`
-	EnableUDP             bool               `json:"EnableUDP"`
-	EnableWS              bool               `json:"EnableWS"`
+	TCPSettings           settings.Settings `json:"TCPSettings"`
+	UDPSettings           settings.Settings `json:"UDPSettings"`
+	WSSettings            settings.Settings `json:"WSSettings"`
+	FallbackServerAddress string            `json:"FallbackServerAddress"`
+	X25519PublicKey       []byte            `json:"X25519PublicKey"`
+	X25519PrivateKey      []byte            `json:"X25519PrivateKey"`
+	ClientCounter         int               `json:"ClientCounter"`
+	EnableTCP             bool              `json:"EnableTCP"`
+	EnableUDP             bool              `json:"EnableUDP"`
+	EnableWS              bool              `json:"EnableWS"`
+
+	// AllowedPeers is the list of authorized clients.
+	// Each peer is identified by their X25519 static public key.
+	AllowedPeers []AllowedPeer `json:"AllowedPeers"`
 }
 
 func NewDefaultConfiguration() *Configuration {
 	configuration := &Configuration{
 		FallbackServerAddress: "",
-		Ed25519PublicKey:      nil,
-		Ed25519PrivateKey:     nil,
+		X25519PublicKey:       nil,
+		X25519PrivateKey:      nil,
 		ClientCounter:         0,
 		EnableTCP:             false,
 		EnableUDP:             true,
@@ -35,9 +57,27 @@ func NewDefaultConfiguration() *Configuration {
 }
 
 func (c *Configuration) EnsureDefaults() *Configuration {
-	c.applyDefaults(&c.TCPSettings, c.defaultTCPSettings())
-	c.applyDefaults(&c.UDPSettings, c.defaultUDPSettings())
-	c.applyDefaults(&c.WSSettings, c.defaultWSSettings())
+	c.applyDefaults(&c.TCPSettings, c.defaultSettings(
+		settings.TCP,
+		"tcptun0",
+		"10.0.0.0/24",
+		"10.0.0.1",
+		8080,
+	))
+	c.applyDefaults(&c.UDPSettings, c.defaultSettings(
+		settings.UDP,
+		"udptun0",
+		"10.0.1.0/24",
+		"10.0.1.1",
+		9090,
+	))
+	c.applyDefaults(&c.WSSettings, c.defaultSettings(
+		settings.WS,
+		"wstun0",
+		"10.0.2.0/24",
+		"10.0.2.1",
+		1010,
+	))
 	return c
 }
 
@@ -48,13 +88,13 @@ func (c *Configuration) applyDefaults(
 	if to.InterfaceName == "" {
 		to.InterfaceName = from.InterfaceName
 	}
-	if to.InterfaceIPCIDR == "" {
-		to.InterfaceIPCIDR = from.InterfaceIPCIDR
+	if !to.InterfaceSubnet.IsValid() {
+		to.InterfaceSubnet = from.InterfaceSubnet
 	}
-	if to.InterfaceAddress == "" {
-		to.InterfaceAddress = from.InterfaceAddress
+	if !to.InterfaceIP.IsValid() {
+		to.InterfaceIP = from.InterfaceIP
 	}
-	if to.Port == "" {
+	if to.Port == 0 {
 		to.Port = from.Port
 	}
 	if to.MTU == 0 {
@@ -68,45 +108,16 @@ func (c *Configuration) applyDefaults(
 	}
 }
 
-func (c *Configuration) defaultTCPSettings() settings.Settings {
-	return c.defaultSettings(
-		settings.TCP,
-		"tcptun0",
-		"10.0.0.0/24",
-		"10.0.0.1",
-		"8080",
-	)
-}
-
-func (c *Configuration) defaultUDPSettings() settings.Settings {
-	return c.defaultSettings(
-		settings.UDP,
-		"udptun0",
-		"10.0.1.0/24",
-		"10.0.1.1",
-		"9090",
-	)
-}
-
-func (c *Configuration) defaultWSSettings() settings.Settings {
-	return c.defaultSettings(
-		settings.WS,
-		"wstun0",
-		"10.0.2.0/24",
-		"10.0.2.1",
-		"1010",
-	)
-}
-
 func (c *Configuration) defaultSettings(
 	protocol settings.Protocol,
-	interfaceName, InterfaceCIDR, InterfaceAddr, port string,
+	interfaceName, InterfaceCIDR, InterfaceAddr string,
+	port int,
 ) settings.Settings {
 	return settings.Settings{
 		InterfaceName:    interfaceName,
-		InterfaceIPCIDR:  InterfaceCIDR,
-		InterfaceAddress: InterfaceAddr,
-		ConnectionIP:     "",
+		InterfaceSubnet:  netip.MustParsePrefix(InterfaceCIDR),
+		InterfaceIP:      netip.MustParseAddr(InterfaceAddr),
+		Host:             "",
 		Port:             port,
 		MTU:              settings.DefaultEthernetMTU,
 		Protocol:         protocol,
@@ -159,15 +170,7 @@ func (c *Configuration) Validate() error {
 			)
 		}
 		// validate port number
-		portNumber, err := strconv.Atoi(config.Port)
-		if err != nil {
-			return fmt.Errorf(
-				"invalid 'Port': [%s/%s] invalid port %q: not a number",
-				config.Protocol,
-				config.InterfaceName,
-				config.Port,
-			)
-		}
+		portNumber := config.Port
 		if portNumber < 1 || portNumber > 65535 {
 			return fmt.Errorf(
 				"invalid 'Port': [%s/%s] invalid port %d: must be in 1..65535",
@@ -194,34 +197,31 @@ func (c *Configuration) Validate() error {
 				config.MTU,
 			)
 		}
-		// validate interface subnet (InterfaceIPCIDR)
-		pfx, err := netip.ParsePrefix(config.InterfaceIPCIDR)
-		if err != nil {
+		pfx := config.InterfaceSubnet
+		if !pfx.IsValid() {
 			return fmt.Errorf(
-				"invalid 'InterfaceIPCIDR': [%s/%s] invalid CIDR %q: %v",
+				"invalid 'InterfaceSubnet': [%s/%s] invalid CIDR %q",
 				config.Protocol,
 				config.InterfaceName,
-				config.InterfaceIPCIDR,
-				err,
+				config.InterfaceSubnet,
 			)
 		}
-		addr, err := netip.ParseAddr(config.InterfaceAddress)
-		if err != nil {
+		addr := config.InterfaceIP.Unmap()
+		if !addr.IsValid() {
 			return fmt.Errorf(
-				"invalid 'InterfaceAddress': [%s/%s] invalid address %q: %v",
+				"invalid 'InterfaceIP': [%s/%s] invalid address %q",
 				config.Protocol,
 				config.InterfaceName,
-				config.InterfaceAddress,
-				err,
+				config.InterfaceIP,
 			)
 		}
 		if !pfx.Contains(addr) {
 			return fmt.Errorf(
-				"invalid 'InterfaceAddress': [%s/%s] address %s not in 'InterfaceIPCIDR' subnet %s",
+				"invalid 'InterfaceIP': [%s/%s] address %s not in 'InterfaceSubnet' subnet %s",
 				config.Protocol,
 				config.InterfaceName,
-				config.InterfaceAddress,
-				config.InterfaceIPCIDR,
+				config.InterfaceIP,
+				config.InterfaceSubnet,
 			)
 		}
 		subnets = append(subnets, pfx)
@@ -229,8 +229,14 @@ func (c *Configuration) Validate() error {
 
 	// interface subnets must not overlap
 	if c.overlappingSubnets(subnets) {
-		return fmt.Errorf("invalid 'InterfaceIPCIDR':  two or more interface subnets are overlapping.")
+		return fmt.Errorf("invalid 'InterfaceSubnet':  two or more interface subnets are overlapping.")
 	}
+
+	// validate AllowedPeers
+	if err := c.ValidateAllowedPeers(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -241,6 +247,95 @@ func (c *Configuration) overlappingSubnets(subnets []netip.Prefix) bool {
 			if a.Overlaps(b) || b.Overlaps(a) {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+// ValidateAllowedPeers validates the AllowedPeers configuration.
+// Ensures no Address overlap between different peers and no duplicate public keys.
+// Also validates that each peer's internal address
+// is within at least one enabled interface subnet.
+func (c *Configuration) ValidateAllowedPeers() error {
+	// Collect interface subnets for peer address validation
+	var interfaceSubnets []netip.Prefix
+	if c.EnableTCP {
+		if pfx := c.TCPSettings.InterfaceSubnet; pfx.IsValid() {
+			interfaceSubnets = append(interfaceSubnets, pfx)
+		}
+	}
+	if c.EnableUDP {
+		if pfx := c.UDPSettings.InterfaceSubnet; pfx.IsValid() {
+			interfaceSubnets = append(interfaceSubnets, pfx)
+		}
+	}
+	if c.EnableWS {
+		if pfx := c.WSSettings.InterfaceSubnet; pfx.IsValid() {
+			interfaceSubnets = append(interfaceSubnets, pfx)
+		}
+	}
+
+	// Collect all addresses with their peer index
+	type addressOwner struct {
+		address netip.Addr
+		peer    int
+	}
+	var allAddresses []addressOwner
+
+	for i, peer := range c.AllowedPeers {
+		// Validate public key length
+		if len(peer.PublicKey) != 32 {
+			return fmt.Errorf("peer %d: invalid public key length %d, expected 32", i, len(peer.PublicKey))
+		}
+
+		if !peer.Address.IsValid() {
+			return fmt.Errorf("peer %d: invalid Address %v: missing or invalid Address", i, peer.Address)
+		}
+		address := peer.Address.Unmap()
+
+		// Validate internal address is within at least one interface subnet
+		if !c.isClientIPInSubnet(address, interfaceSubnets) {
+			return fmt.Errorf(
+				"peer %d: Address %s is not within any enabled interface subnet; "+
+					"must be in one of: %v",
+				i, address, interfaceSubnets,
+			)
+		}
+
+		allAddresses = append(allAddresses, addressOwner{address, i})
+	}
+
+	// Check for duplicate addresses between different peers
+	for i := 0; i < len(allAddresses); i++ {
+		for j := i + 1; j < len(allAddresses); j++ {
+			a, b := allAddresses[i], allAddresses[j]
+			if a.peer != b.peer && a.address == b.address {
+				return fmt.Errorf(
+					"Address conflict: peer %d address %s conflicts with peer %d address %s",
+					a.peer, a.address, b.peer, b.address,
+				)
+			}
+		}
+	}
+
+	// Check for duplicate public keys
+	seen := make(map[string]int)
+	for i, peer := range c.AllowedPeers {
+		key := string(peer.PublicKey)
+		if prev, exists := seen[key]; exists {
+			return fmt.Errorf("duplicate public key: peer %d and peer %d", prev, i)
+		}
+		seen[key] = i
+	}
+
+	return nil
+}
+
+// isClientIPInSubnet checks if clientIP is contained in any of the interface subnets.
+func (c *Configuration) isClientIPInSubnet(clientIP netip.Addr, subnets []netip.Prefix) bool {
+	for _, subnet := range subnets {
+		if subnet.Contains(clientIP) {
+			return true
 		}
 	}
 	return false

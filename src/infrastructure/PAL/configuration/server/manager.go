@@ -1,7 +1,6 @@
 package server
 
 import (
-	"crypto/ed25519"
 	"errors"
 	"fmt"
 	"os"
@@ -13,7 +12,9 @@ import (
 type ConfigurationManager interface {
 	Configuration() (*Configuration, error)
 	IncrementClientCounter() error
-	InjectEdKeys(public ed25519.PublicKey, private ed25519.PrivateKey) error
+	InjectX25519Keys(public, private []byte) error
+	AddAllowedPeer(peer AllowedPeer) error
+	InvalidateCache()
 }
 
 type Manager struct {
@@ -86,12 +87,12 @@ func (c *Manager) IncrementClientCounter() error {
 	return c.writer.Write(*configuration)
 }
 
-func (c *Manager) InjectEdKeys(public ed25519.PublicKey, private ed25519.PrivateKey) error {
-	if len(public) != ed25519.PublicKeySize {
-		return fmt.Errorf("invalid public key length: got %d, want %d", len(public), ed25519.PublicKeySize)
+func (c *Manager) InjectX25519Keys(public, private []byte) error {
+	if len(public) != 32 {
+		return fmt.Errorf("invalid public key length: got %d, want 32", len(public))
 	}
-	if len(private) != ed25519.PrivateKeySize {
-		return fmt.Errorf("invalid private key length: got %d, want %d", len(private), ed25519.PrivateKeySize)
+	if len(private) != 32 {
+		return fmt.Errorf("invalid private key length: got %d, want 32", len(private))
 	}
 
 	configuration, configurationErr := c.Configuration()
@@ -99,8 +100,31 @@ func (c *Manager) InjectEdKeys(public ed25519.PublicKey, private ed25519.Private
 		return configurationErr
 	}
 
-	configuration.Ed25519PublicKey = public
-	configuration.Ed25519PrivateKey = private
+	configuration.X25519PublicKey = append([]byte(nil), public...)
+	configuration.X25519PrivateKey = append([]byte(nil), private...)
 
 	return c.writer.Write(*configuration)
+}
+
+func (c *Manager) AddAllowedPeer(peer AllowedPeer) error {
+	if len(peer.PublicKey) != 32 {
+		return fmt.Errorf("invalid public key length: got %d, want 32", len(peer.PublicKey))
+	}
+
+	configuration, configurationErr := c.Configuration()
+	if configurationErr != nil {
+		return configurationErr
+	}
+
+	configuration.AllowedPeers = append(configuration.AllowedPeers, peer)
+
+	return c.writer.Write(*configuration)
+}
+
+// InvalidateCache clears the cached configuration if the reader supports it.
+// Implements CacheInvalidator interface.
+func (c *Manager) InvalidateCache() {
+	if ttlReader, ok := c.reader.(*TTLReader); ok {
+		ttlReader.InvalidateCache()
+	}
 }

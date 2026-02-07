@@ -16,8 +16,8 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 
 	"tungo/application/network/connection"
-	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/session"
@@ -146,7 +146,7 @@ func (l *fakeLogger) count(sub string) int {
 }
 
 type fakeHandshake struct {
-	ip     net.IP
+	ip     netip.Addr
 	err    error
 	id     [32]byte
 	client [32]byte
@@ -156,7 +156,7 @@ type fakeHandshake struct {
 func (f *fakeHandshake) Id() [32]byte              { return f.id }
 func (f *fakeHandshake) KeyClientToServer() []byte { return f.client[:] }
 func (f *fakeHandshake) KeyServerToClient() []byte { return f.server[:] }
-func (f *fakeHandshake) ServerSideHandshake(_ connection.Transport) (net.IP, error) {
+func (f *fakeHandshake) ServerSideHandshake(_ connection.Transport) (netip.Addr, error) {
 	return f.ip, f.err
 }
 func (f *fakeHandshake) ClientSideHandshake(_ connection.Transport, _ settings.Settings) error {
@@ -217,6 +217,12 @@ func (r *fakeSessionRepo) GetByExternalAddrPort(addr netip.AddrPort) (*session.P
 	}
 	return s, nil
 }
+func (r *fakeSessionRepo) FindByDestinationIP(_ netip.Addr) (*session.Peer, error) {
+	if r.getErr != nil {
+		return nil, r.getErr
+	}
+	return r.returnPeer, nil
+}
 
 type fakeWriter struct {
 	buf   bytes.Buffer
@@ -245,6 +251,17 @@ func (s *testSession) Crypto() connection.Crypto        { return s.crypto }
 func (s *testSession) InternalAddr() netip.Addr         { return s.internalIP }
 func (s *testSession) ExternalAddrPort() netip.AddrPort { return s.externalIP }
 func (s *testSession) RekeyController() rekey.FSM       { return nil }
+func (s *testSession) IsSourceAllowed(netip.Addr) bool  { return true }
+
+// makeValidIPv4Packet creates a minimal valid IPv4 packet with the given source IP.
+// Used in tests to satisfy AllowedIPs validation.
+func makeValidIPv4Packet(srcIP netip.Addr) []byte {
+	packet := make([]byte, 20) // Minimum IPv4 header
+	packet[0] = 0x45           // Version 4, IHL 5 (20 bytes)
+	src := srcIP.As4()
+	copy(packet[12:16], src[:])
+	return packet
+}
 
 /* ========= tests ========= */
 
@@ -256,7 +273,7 @@ func TestHandleTransport_CtxDoneBeforeAccept_ReturnsNil(t *testing.T) {
 	registrar := tcp_registration.NewRegistrar(logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{}, repo)
 	handler := NewTransportHandler(
 		ctx,
-		settings.Settings{Port: "7777"},
+		settings.Settings{Port: 7777},
 		&fakeWriter{},
 		listener,
 		repo,
@@ -292,7 +309,7 @@ func TestHandleTransport_AlreadyCanceled_ReturnsCtxErr(t *testing.T) {
 	registrar := tcp_registration.NewRegistrar(logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{}, repo)
 	handler := NewTransportHandler(
 		ctx,
-		settings.Settings{Port: "7777"},
+		settings.Settings{Port: 7777},
 		&fakeWriter{},
 		listener,
 		repo,
@@ -320,7 +337,7 @@ func TestHandleTransport_AcceptError(t *testing.T) {
 	registrar := tcp_registration.NewRegistrar(logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{}, repo)
 	handler := NewTransportHandler(
 		ctx,
-		settings.Settings{Port: "1111"},
+		settings.Settings{Port: 1111},
 		&fakeWriter{},
 		listener,
 		repo,
@@ -351,12 +368,12 @@ func TestHandleTransport_RegisterClientError_Logged(t *testing.T) {
 	fconn := &fakeConn{addr: addr}
 	listener := &fakeTcpListener{conns: []net.Conn{fconn}}
 	logger := &fakeLogger{}
-	h := &fakeHandshake{ip: []byte{127, 0, 0, 1}, err: errors.New("handshake fail")}
+	h := &fakeHandshake{ip: netip.MustParseAddr("127.0.0.1"), err: errors.New("handshake fail")}
 	handshakeFactory := &fakeHandshakeFactory{hs: h}
 	repo := &fakeSessionRepo{}
 
 	registrar := tcp_registration.NewRegistrar(logger, handshakeFactory, &fakeCryptoFactory{}, repo)
-	handler := NewTransportHandler(ctx, settings.Settings{Port: "2222"}, &fakeWriter{}, listener, repo, logger, registrar)
+	handler := NewTransportHandler(ctx, settings.Settings{Port: 2222}, &fakeWriter{}, listener, repo, logger, registrar)
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
 
@@ -373,7 +390,7 @@ func TestRegisterClient_HandshakeError(t *testing.T) {
 	addr := tcpAddr("127.0.0.1", 9991)
 	fconn := &fakeConn{addr: addr}
 	logger := &fakeLogger{}
-	hs := &fakeHandshake{ip: []byte{127, 0, 0, 1}, err: errors.New("boom")}
+	hs := &fakeHandshake{ip: netip.MustParseAddr("127.0.0.1"), err: errors.New("boom")}
 	hf := &fakeHandshakeFactory{hs: hs}
 
 	registrar := tcp_registration.NewRegistrar(logger, hf, &fakeCryptoFactory{}, &fakeSessionRepo{})
@@ -387,7 +404,7 @@ func TestRegisterClient_CryptoFactoryError(t *testing.T) {
 	addr := tcpAddr("127.0.0.1", 9999)
 	fconn := &fakeConn{addr: addr}
 	logger := &fakeLogger{}
-	h := &fakeHandshake{ip: []byte{127, 0, 0, 1}}
+	h := &fakeHandshake{ip: netip.MustParseAddr("127.0.0.1")}
 	handshakeFactory := &fakeHandshakeFactory{hs: h}
 
 	registrar := tcp_registration.NewRegistrar(logger, handshakeFactory, &fakeCryptoFactory{err: errors.New("crypto fail")}, &fakeSessionRepo{})
@@ -404,7 +421,7 @@ func (c *badAddrConn) RemoteAddr() net.Addr { return &struct{ net.Addr }{} }
 func TestRegisterClient_BadAddrType(t *testing.T) {
 	fconn := &badAddrConn{fakeConn{addr: nil}}
 	logger := &fakeLogger{}
-	h := &fakeHandshake{ip: []byte{127, 0, 0, 1}}
+	h := &fakeHandshake{ip: netip.MustParseAddr("127.0.0.1")}
 	handshakeFactory := &fakeHandshakeFactory{hs: h}
 
 	registrar := tcp_registration.NewRegistrar(logger, handshakeFactory, &fakeCryptoFactory{}, &fakeSessionRepo{})
@@ -414,17 +431,24 @@ func TestRegisterClient_BadAddrType(t *testing.T) {
 	}
 }
 
-func TestRegisterClient_BadInternalIP(t *testing.T) {
+func TestRegisterClient_ZeroInternalIP_Succeeds(t *testing.T) {
+	// With netip.Addr, zero value is storable and registration succeeds
 	addr := tcpAddr("127.0.0.1", 8080)
 	fconn := &fakeConn{addr: addr}
 	logger := &fakeLogger{}
-	h := &fakeHandshake{ip: []byte{1, 2}}
+	h := &fakeHandshake{ip: netip.Addr{}} // zero value
 	handshakeFactory := &fakeHandshakeFactory{hs: h}
 
-	registrar := tcp_registration.NewRegistrar(logger, handshakeFactory, &fakeCryptoFactory{}, &fakeSessionRepo{})
-	_, _, err := registrar.RegisterClient(fconn)
-	if err == nil || err.Error() != "invalid internal IP from handshake" {
-		t.Errorf("expected bad internal IP error, got %v", err)
+	registrar := tcp_registration.NewRegistrar(logger, handshakeFactory, &fakeCryptoFactory{}, &fakeSessionRepo{getErr: session.ErrNotFound})
+	peer, transport, err := registrar.RegisterClient(fconn)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if peer == nil {
+		t.Fatal("expected non-nil peer")
+	}
+	if transport == nil {
+		t.Fatal("expected non-nil transport")
 	}
 }
 
@@ -432,7 +456,7 @@ func TestRegisterClient_SessionRepoGetError(t *testing.T) {
 	addr := tcpAddr("127.0.0.1", 9090)
 	fconn := &fakeConn{addr: addr}
 	logger := &fakeLogger{}
-	h := &fakeHandshake{ip: []byte{127, 0, 0, 1}}
+	h := &fakeHandshake{ip: netip.MustParseAddr("127.0.0.1")}
 	handshakeFactory := &fakeHandshakeFactory{hs: h}
 	repo := &fakeSessionRepo{getErr: errors.New("db down")}
 
@@ -447,7 +471,7 @@ func TestRegisterClient_ReplaceSession(t *testing.T) {
 	addr := tcpAddr("127.0.0.1", 8070)
 	fconn := &fakeConn{addr: addr}
 	logger := &fakeLogger{}
-	h := &fakeHandshake{ip: []byte{127, 0, 0, 1}}
+	h := &fakeHandshake{ip: netip.MustParseAddr("127.0.0.1")}
 	handshakeFactory := &fakeHandshakeFactory{hs: h}
 
 	oldSess := &testSession{externalIP: mustAddrPort("127.0.0.1:8070")}
@@ -476,7 +500,7 @@ func TestRegisterClient_AddsSessionOnNotFound(t *testing.T) {
 	addr := tcpAddr("127.0.0.1", 6010)
 	fconn := &fakeConn{addr: addr}
 	logger := &fakeLogger{}
-	h := &fakeHandshake{ip: []byte{127, 0, 0, 1}}
+	h := &fakeHandshake{ip: netip.MustParseAddr("127.0.0.1")}
 	handshakeFactory := &fakeHandshakeFactory{hs: h}
 	repo := &fakeSessionRepo{getErr: session.ErrNotFound}
 
@@ -493,31 +517,12 @@ func TestRegisterClient_AddsSessionOnNotFound(t *testing.T) {
 	}
 }
 
-func TestSendSessionReset_WritesToTransport(t *testing.T) {
-	logger := &fakeLogger{}
-	h := &TransportHandler{logger: logger}
-	conn := &fakeConn{addr: tcpAddr("1.2.3.4", 5000)}
-	h.sendSessionReset(conn)
-
-	if conn.writeBuf.Len() == 0 {
-		t.Fatal("expected sendSessionReset to write data to transport")
-	}
-	// Verify the written bytes are a legacy SessionReset.
-	data := conn.writeBuf.Bytes()
-	if len(data) < 1 {
-		t.Fatalf("written data too short: %d", len(data))
-	}
-	if data[0] != byte(service_packet.SessionReset) {
-		t.Fatalf("expected SessionReset byte, got %d", data[0])
-	}
-}
-
 func TestHandleClient_RekeyInit_DispatchedToControlPlane(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	// Build a valid RekeyInit packet.
-	crypto := &handshake.DefaultCrypto{}
+	crypto := &primitives.DefaultKeyDeriver{}
 	pub, _, err := crypto.GenerateX25519KeyPair()
 	if err != nil {
 		t.Fatal(err)
@@ -555,6 +560,9 @@ func TestHandleClient_RekeyInit_DispatchedToControlPlane(t *testing.T) {
 	// Verify no TUN write happened (controlplane packets are consumed).
 	if len(writer.wrote) != 0 {
 		t.Fatalf("expected no TUN writes for RekeyInit (should be consumed by controlplane), got %d", len(writer.wrote))
+	}
+	if fsm.LastRekeyEpoch == 0 {
+		t.Fatalf("expected rekey to be processed and epoch activated, got LastRekeyEpoch=%d", fsm.LastRekeyEpoch)
 	}
 }
 
@@ -677,13 +685,14 @@ func TestHandleClient_DecryptError_ClosesConnection(t *testing.T) {
 func TestHandleClient_WriteTunError(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	internalIP := netip.MustParseAddr("10.0.0.11")
 	conn := &fakeConn{
 		addr:     tcpAddr("1.2.3.4", 5561),
-		readBufs: [][]byte{make([]byte, chacha20poly1305.Overhead)}, // valid length
+		readBufs: [][]byte{makeValidIPv4Packet(internalIP)}, // valid IPv4 packet
 	}
 	writer := &fakeWriter{err: errors.New("fail tun")}
 	logger := &fakeLogger{}
-	sess := &testSession{crypto: &fakeCrypto{}, internalIP: netip.MustParseAddr("10.0.0.11"), externalIP: mustAddrPort("1.2.3.4:5561")}
+	sess := &testSession{crypto: &fakeCrypto{}, internalIP: internalIP, externalIP: mustAddrPort("1.2.3.4:5561")}
 	peer := session.NewPeer(sess, nil)
 	repo := &fakeSessionRepo{}
 	registrar := tcp_registration.NewRegistrar(logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{}, repo)
@@ -699,7 +708,8 @@ func TestHandleClient_HappyDataPath_WritesToTun_AndCloses(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	payload := make([]byte, chacha20poly1305.Overhead) // minimal valid length
+	internalIP := netip.MustParseAddr("10.0.0.12")
+	payload := makeValidIPv4Packet(internalIP) // valid IPv4 packet
 
 	conn := &fakeConn{
 		addr:     tcpAddr("1.2.3.4", 6001),
@@ -709,7 +719,7 @@ func TestHandleClient_HappyDataPath_WritesToTun_AndCloses(t *testing.T) {
 	logger := &fakeLogger{}
 	sess := &testSession{
 		crypto:     &fakeCrypto{},
-		internalIP: netip.MustParseAddr("10.0.0.12"),
+		internalIP: internalIP,
 		externalIP: mustAddrPort("1.2.3.4:6001"),
 	}
 	peer := session.NewPeer(sess, nil)

@@ -2,15 +2,12 @@ package udp_chacha20
 
 import (
 	"context"
-	"errors"
 	"io"
 	"net/netip"
 	"tungo/application/listeners"
 	"tungo/application/logging"
 	"tungo/application/network/routing/transport"
-	"tungo/infrastructure/cryptography/chacha20/handshake"
-	"tungo/infrastructure/cryptography/chacha20/rekey"
-	"tungo/infrastructure/network/service_packet"
+	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/session"
 	"tungo/infrastructure/tunnel/sessionplane/server/udp_registration"
@@ -32,8 +29,6 @@ type TransportHandler struct {
 	listenerConn   listeners.UdpListener
 	// Session-plane: registration and handshake tracking for not-yet-established sessions.
 	registrar *udp_registration.Registrar
-	// Control-plane dispatcher (dataplane adapter).
-	cp controlPlaneHandler
 	// Dataplane worker for established sessions.
 	dp *udpDataplaneWorker
 }
@@ -48,7 +43,7 @@ func NewTransportHandler(
 	logger logging.Logger,
 	registrar *udp_registration.Registrar,
 ) transport.Handler {
-	crypto := &handshake.DefaultCrypto{}
+	crypto := &primitives.DefaultKeyDeriver{}
 	cp := newServicePacketHandler(crypto)
 	dp := newUdpDataplaneWorker(writer, cp)
 	return &TransportHandler{
@@ -59,7 +54,6 @@ func NewTransportHandler(
 		logger:         logger,
 		listenerConn:   listenerConn,
 		registrar:      registrar,
-		cp:             cp,
 		dp:             dp,
 	}
 }
@@ -71,11 +65,11 @@ func (t *TransportHandler) HandleTransport() error {
 		_ = conn.Close()
 	}(t.listenerConn)
 
-	t.logger.Printf("server listening on port %s (UDP)", t.settings.Port)
+	t.logger.Printf("server listening on port %d (UDP)", t.settings.Port)
 
-	// Ensure buffers are reasonably sized for high throughput.
-	_ = t.listenerConn.SetReadBuffer(65536)
-	_ = t.listenerConn.SetWriteBuffer(65536)
+	// Size socket buffers for burst absorption under high throughput.
+	_ = t.listenerConn.SetReadBuffer(4 * 1024 * 1024)
+	_ = t.listenerConn.SetWriteBuffer(4 * 1024 * 1024)
 
 	go func() {
 		<-t.ctx.Done()
@@ -115,9 +109,6 @@ func (t *TransportHandler) HandleTransport() error {
 			// only when needed (for registration).
 			if err := t.handlePacket(clientAddr, buffer[:n]); err != nil {
 				t.logger.Printf("failed to handle packet: %s", err)
-				if errors.Is(err, rekey.ErrEpochExhausted) {
-					t.sendSessionReset(clientAddr)
-				}
 			}
 		}
 	}
@@ -135,8 +126,10 @@ func (t *TransportHandler) handlePacket(
 		return nil
 	}
 	// Fast path: existing session.
+	// SECURITY: Check IsClosed() to handle TOCTOU race with Delete.
+	// The peer might be marked for deletion between lookup and use.
 	peer, sessionLookupErr := t.sessionManager.GetByExternalAddrPort(addrPort)
-	if sessionLookupErr == nil && peer.ExternalAddrPort() == addrPort {
+	if sessionLookupErr == nil && !peer.IsClosed() && peer.ExternalAddrPort() == addrPort {
 		if t.dp == nil {
 			// Should not happen; keep behavior safe.
 			return nil
@@ -150,15 +143,4 @@ func (t *TransportHandler) handlePacket(
 	}
 
 	return nil
-}
-
-// sendSessionReset sends a SessionReset service_packet packet to the given client.
-func (t *TransportHandler) sendSessionReset(addrPort netip.AddrPort) {
-	servicePacketBuffer := make([]byte, 3)
-	servicePacketPayload, err := service_packet.EncodeLegacyHeader(service_packet.SessionReset, servicePacketBuffer)
-	if err != nil {
-		t.logger.Printf("failed to encode legacy session reset service_packet packet: %v", err)
-		return
-	}
-	_, _ = t.listenerConn.WriteToUDPAddrPort(servicePacketPayload, addrPort)
 }

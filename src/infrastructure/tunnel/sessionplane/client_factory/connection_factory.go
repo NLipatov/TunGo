@@ -6,13 +6,12 @@ import (
 	"math"
 	"net"
 	"net/netip"
-	"strconv"
 	"time"
 	"tungo/application/network/connection"
 	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/cryptography/chacha20"
-	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/cryptography/noise"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/network/tcp/adapters"
 	wsAdapters "tungo/infrastructure/network/ws/adapter"
@@ -45,9 +44,9 @@ func (f *ConnectionFactory) EstablishConnection(
 
 	switch connSettings.Protocol {
 	case settings.UDP:
-		ap, apErr := netip.ParseAddrPort(net.JoinHostPort(connSettings.ConnectionIP, connSettings.Port))
+		ap, apErr := connSettings.Host.AddrPort(connSettings.Port)
 		if apErr != nil {
-			return nil, nil, nil, apErr
+			return nil, nil, nil, fmt.Errorf("udp dial: %w", apErr)
 		}
 
 		adapter, err := f.dialUDP(establishCtx, ap)
@@ -59,9 +58,9 @@ func (f *ConnectionFactory) EstablishConnection(
 			chacha20.NewDefaultAEADBuilder()),
 		)
 	case settings.TCP:
-		ap, apErr := netip.ParseAddrPort(net.JoinHostPort(connSettings.ConnectionIP, connSettings.Port))
+		ap, apErr := connSettings.Host.AddrPort(connSettings.Port)
 		if apErr != nil {
-			return nil, nil, nil, apErr
+			return nil, nil, nil, fmt.Errorf("tcp dial: %w", apErr)
 		}
 
 		adapter, err := f.dialTCP(establishCtx, ap)
@@ -74,21 +73,11 @@ func (f *ConnectionFactory) EstablishConnection(
 		)
 	case settings.WS:
 		scheme := "ws"
-		host := connSettings.Host
-		if host == "" {
-			host = connSettings.ConnectionIP
+		endpoint, endpointErr := connSettings.Host.Endpoint(connSettings.Port)
+		if endpointErr != nil {
+			return nil, nil, nil, fmt.Errorf("ws dial: %w", endpointErr)
 		}
-		if host == "" {
-			return nil, nil, nil, fmt.Errorf("ws dial: empty host (neither Host nor ConnectionIP provided)")
-		}
-		port := connSettings.Port
-		if port == "" {
-			return nil, nil, nil, fmt.Errorf("ws dial: empty port")
-		}
-		if pn, err := strconv.Atoi(port); err != nil || pn < 1 || pn > 65535 {
-			return nil, nil, nil, fmt.Errorf("ws dial: invalid port: %q", port)
-		}
-		adapter, err := f.dialWS(establishCtx, ctx, scheme, host, port)
+		adapter, err := f.dialWS(establishCtx, ctx, scheme, endpoint)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("unable to establish WebSocket connection: %w", err)
 		}
@@ -98,20 +87,15 @@ func (f *ConnectionFactory) EstablishConnection(
 		)
 	case settings.WSS:
 		scheme := "wss"
-		host := connSettings.Host
-		if host == "" {
-			return nil, nil, nil, fmt.Errorf("wss dial: empty host")
-		}
 		port := connSettings.Port
-		if port == "" {
-			port = "443"
+		if port == 0 {
+			port = 443
 		}
-		if portNumber, err := strconv.Atoi(port); err != nil {
-			return nil, nil, nil, err
-		} else if portNumber < 1 || portNumber > 65535 {
-			return nil, nil, nil, fmt.Errorf("wss dial: invalid port: %d", portNumber)
+		endpoint, endpointErr := connSettings.Host.Endpoint(port)
+		if endpointErr != nil {
+			return nil, nil, nil, fmt.Errorf("wss dial: %w", endpointErr)
 		}
-		adapter, err := f.dialWS(establishCtx, ctx, scheme, host, port)
+		adapter, err := f.dialWS(establishCtx, ctx, scheme, endpoint)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("unable to establish WebSocket connection: %w", err)
 		}
@@ -145,22 +129,30 @@ func (f *ConnectionFactory) establishSecuredConnection(
 	adapter connection.Transport,
 	cryptoFactory connection.CryptoFactory,
 ) (connection.Transport, connection.Crypto, *rekey.StateMachine, error) {
-	//connect to server and exchange secret
+	// IK handshake requires client keys
+	if len(f.conf.ClientPublicKey) != 32 || len(f.conf.ClientPrivateKey) != 32 {
+		_ = adapter.Close()
+		return nil, nil, nil, fmt.Errorf("client keys not configured (required for IK handshake)")
+	}
+
+	handshake := noise.NewIKHandshakeClient(
+		f.conf.ClientPublicKey,
+		f.conf.ClientPrivateKey,
+		f.conf.X25519PublicKey,
+	)
+
 	secret := network.NewDefaultSecret(
 		s,
-		handshake.NewHandshake(f.conf.Ed25519PublicKey, nil),
+		handshake,
 		cryptoFactory,
 	)
 	cancellableSecret := network.NewSecretWithDeadline(ctx, secret)
-
-	session := network.NewDefaultSecureSession(adapter, cancellableSecret)
-	cancellableSession := network.NewSecureSessionWithDeadline(ctx, session)
-	ad, cr, ctrl, err := cancellableSession.Establish()
+	cr, ctrl, err := cancellableSecret.Exchange(adapter)
 	if err != nil {
 		_ = adapter.Close()
 		return nil, nil, nil, err
 	}
-	return ad, cr, ctrl, nil
+	return adapter, cr, ctrl, nil
 }
 
 func (f *ConnectionFactory) dialTCP(
@@ -199,10 +191,13 @@ func (f *ConnectionFactory) dialUDP(
 
 func (f *ConnectionFactory) dialWS(
 	establishCtx, connCtx context.Context,
-	scheme, host, port string,
+	scheme, endpoint string,
 ) (connection.Transport, error) {
-	url := fmt.Sprintf("%s://%s/ws", scheme, net.JoinHostPort(host, port))
-	conn, _, err := websocket.Dial(establishCtx, url, nil)
+	url := fmt.Sprintf("%s://%s/ws", scheme, endpoint)
+	conn, resp, err := websocket.Dial(establishCtx, url, nil)
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 	if err != nil {
 		return nil, err
 	}

@@ -2,8 +2,8 @@ package controlplane
 
 import (
 	"time"
-	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/service_packet"
 
 	"golang.org/x/crypto/curve25519"
@@ -14,12 +14,12 @@ import (
 // It is control-plane only: it does not encrypt and does not perform any transport/TUN IO.
 // The caller must provide a destination buffer to avoid allocations.
 type RekeyInitScheduler struct {
-	crypto   handshake.Crypto
+	crypto   primitives.KeyDeriver
 	interval time.Duration
 	rotateAt time.Time
 }
 
-func NewRekeyInitScheduler(crypto handshake.Crypto, interval time.Duration, now time.Time) *RekeyInitScheduler {
+func NewRekeyInitScheduler(crypto primitives.KeyDeriver, interval time.Duration, now time.Time) *RekeyInitScheduler {
 	return &RekeyInitScheduler{
 		crypto:   crypto,
 		interval: interval,

@@ -2,7 +2,7 @@ package network
 
 import (
 	"errors"
-	"net"
+	"net/netip"
 	"testing"
 	"tungo/application/network/connection"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
@@ -17,8 +17,8 @@ type secretTestMockHandshake struct {
 func (m *secretTestMockHandshake) Id() [32]byte              { return [32]byte{} }
 func (m *secretTestMockHandshake) KeyClientToServer() []byte { return nil }
 func (m *secretTestMockHandshake) KeyServerToClient() []byte { return nil }
-func (m *secretTestMockHandshake) ServerSideHandshake(_ connection.Transport) (net.IP, error) {
-	return nil, nil
+func (m *secretTestMockHandshake) ServerSideHandshake(_ connection.Transport) (netip.Addr, error) {
+	return netip.Addr{}, nil
 }
 func (m *secretTestMockHandshake) ClientSideHandshake(_ connection.Transport, _ settings.Settings) error {
 	return m.err

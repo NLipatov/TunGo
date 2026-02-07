@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sync"
 	"time"
+	"tungo/infrastructure/cryptography/mem"
 )
 
 // Rekeyer is the minimal interface the controller needs from the crypto layer.
@@ -135,6 +136,9 @@ func (c *StateMachine) PendingRekeyPrivateKey() ([32]byte, bool) {
 func (c *StateMachine) ClearPendingRekeyPrivateKey() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.PendingPriv != nil {
+		mem.ZeroBytes(c.PendingPriv[:])
+	}
 	c.PendingPriv = nil
 }
 
@@ -265,7 +269,9 @@ func (c *StateMachine) maybeActivatePendingLocked() uint16 {
 	epoch := c.pendingSendEpoch
 	c.sendEpoch = epoch
 	c.LastRekeyEpoch = epoch
-	// Promote pending keys to active.
+	// Promote pending keys to active; zero old keys first.
+	mem.ZeroBytes(c.CurrentC2S)
+	mem.ZeroBytes(c.CurrentS2C)
 	c.CurrentC2S = append([]byte(nil), c.pendingC2S...)
 	c.CurrentS2C = append([]byte(nil), c.pendingS2C...)
 	c.clearPendingLocked()
@@ -274,6 +280,8 @@ func (c *StateMachine) maybeActivatePendingLocked() uint16 {
 }
 
 func (c *StateMachine) clearPendingLocked() {
+	mem.ZeroBytes(c.pendingC2S)
+	mem.ZeroBytes(c.pendingS2C)
 	c.pendingC2S = nil
 	c.pendingS2C = nil
 	c.hasPending = false

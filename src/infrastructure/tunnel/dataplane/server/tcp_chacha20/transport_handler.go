@@ -7,8 +7,6 @@ import (
 	"tungo/application/logging"
 	"tungo/application/network/connection"
 	"tungo/application/network/routing/transport"
-	"tungo/infrastructure/cryptography/chacha20/handshake"
-	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/session"
 	"tungo/infrastructure/tunnel/sessionplane/server/tcp_registration"
@@ -22,7 +20,6 @@ type TransportHandler struct {
 	sessionManager session.Repository
 	logger         logging.Logger
 	registrar      *tcp_registration.Registrar
-	cp             controlPlaneHandler
 }
 
 func NewTransportHandler(
@@ -42,7 +39,6 @@ func NewTransportHandler(
 		sessionManager: sessionManager,
 		logger:         logger,
 		registrar:      registrar,
-		cp:             newControlPlaneHandler(&handshake.DefaultCrypto{}, logger),
 	}
 }
 
@@ -54,7 +50,7 @@ func (t *TransportHandler) HandleTransport() error {
 	defer func() {
 		_ = t.listener.Close()
 	}()
-	t.logger.Printf("server listening on port %s (TCP)", t.settings.Port)
+	t.logger.Printf("server listening on port %d (TCP)", t.settings.Port)
 
 	//using this goroutine to 'unblock' TcpListener.Accept blocking-call
 	go func() {
@@ -89,24 +85,5 @@ func (t *TransportHandler) HandleTransport() error {
 }
 
 func (t *TransportHandler) handleClient(ctx context.Context, peer *session.Peer, tr connection.Transport, tunFile io.ReadWriteCloser) {
-	(&tcpDataplaneWorker{
-		ctx:            ctx,
-		peer:           peer,
-		transport:      tr,
-		tunFile:        tunFile,
-		sessionManager: t.sessionManager,
-		logger:         t.logger,
-		cp:             t.cp,
-	}).Run()
-}
-
-// sendSessionReset sends a SessionReset service_packet packet to the given transport.
-func (t *TransportHandler) sendSessionReset(tr connection.Transport) {
-	servicePacketBuffer := make([]byte, 3)
-	servicePacketPayload, err := service_packet.EncodeLegacyHeader(service_packet.SessionReset, servicePacketBuffer)
-	if err != nil {
-		t.logger.Printf("failed to encode legacy session reset service_packet packet: %v", err)
-		return
-	}
-	_, _ = tr.Write(servicePacketPayload)
+	newTCPDataplaneWorker(ctx, peer, tr, tunFile, t.sessionManager, t.logger).Run()
 }

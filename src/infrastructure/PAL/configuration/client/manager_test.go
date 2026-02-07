@@ -78,10 +78,10 @@ func TestManagerConfigurationInvalidJSON(t *testing.T) {
 func TestManagerConfigurationSuccess(t *testing.T) {
 	// Create a valid configuration file.
 	defaultConfig := Configuration{
-		TCPSettings:      settings.Settings{},
-		UDPSettings:      settings.Settings{},
-		Ed25519PublicKey: nil,
-		Protocol:         settings.TCP,
+		TCPSettings:     settings.Settings{},
+		UDPSettings:     settings.Settings{},
+		X25519PublicKey: nil,
+		Protocol:        settings.TCP,
 	}
 	path := createTempConfigFile(t, defaultConfig)
 	manager := NewManager()

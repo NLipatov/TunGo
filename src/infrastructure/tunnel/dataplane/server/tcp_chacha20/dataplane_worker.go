@@ -6,6 +6,8 @@ import (
 
 	"tungo/application/logging"
 	"tungo/application/network/connection"
+	"tungo/infrastructure/cryptography/primitives"
+	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/session"
@@ -25,6 +27,26 @@ type tcpDataplaneWorker struct {
 	cp             controlPlaneHandler
 }
 
+func newTCPDataplaneWorker(
+	ctx context.Context,
+	peer *session.Peer,
+	transport connection.Transport,
+	tunFile io.ReadWriteCloser,
+	sessionManager session.Repository,
+	logger logging.Logger,
+) *tcpDataplaneWorker {
+	crypto := &primitives.DefaultKeyDeriver{}
+	return &tcpDataplaneWorker{
+		ctx:            ctx,
+		peer:           peer,
+		transport:      transport,
+		tunFile:        tunFile,
+		sessionManager: sessionManager,
+		logger:         logger,
+		cp:             newControlPlaneHandler(crypto, logger),
+	}
+}
+
 func (w *tcpDataplaneWorker) Run() {
 	defer func() {
 		w.sessionManager.Delete(w.peer)
@@ -32,13 +54,13 @@ func (w *tcpDataplaneWorker) Run() {
 		w.logger.Printf("disconnected: %s", w.peer.ExternalAddrPort())
 	}()
 
-	buffer := make([]byte, settings.DefaultEthernetMTU+settings.TCPChacha20Overhead)
+	var buffer [settings.DefaultEthernetMTU + settings.TCPChacha20Overhead]byte
 	for {
 		select {
 		case <-w.ctx.Done():
 			return
 		default:
-			n, err := w.transport.Read(buffer)
+			n, err := w.transport.Read(buffer[:])
 			if err != nil {
 				if err != io.EOF {
 					w.logger.Printf("failed to read from client: %v", err)
@@ -48,6 +70,13 @@ func (w *tcpDataplaneWorker) Run() {
 			if n < chacha20poly1305.Overhead || n > settings.DefaultEthernetMTU+settings.TCPChacha20Overhead {
 				w.logger.Printf("invalid ciphertext length: %d", n)
 				continue
+			}
+			// SECURITY: Check closed flag before using crypto.
+			// ConfigWatcher may have terminated this session via TerminateByPubKey.
+			// The closed flag is set atomically before crypto is zeroed.
+			if w.peer.IsClosed() {
+				w.logger.Printf("session closed, exiting")
+				return
 			}
 			pt, err := w.peer.Crypto().Decrypt(buffer[:n])
 			if err != nil {
@@ -63,6 +92,20 @@ func (w *tcpDataplaneWorker) Run() {
 					// server ignores Ack
 				}
 			}
+
+			// Validate source IP against AllowedIPs after decryption
+			// Session interface embeds SessionAuth - no type assertion needed
+			srcIP, srcOk := ip.ExtractSourceIP(pt)
+			if !srcOk {
+				// Malformed IP header - drop to prevent AllowedIPs bypass
+				continue
+			}
+			if !w.peer.Session.IsSourceAllowed(srcIP) {
+				// Log violation and drop packet, but do NOT terminate session
+				w.logger.Printf("AllowedIPs violation: source %s not allowed", srcIP)
+				continue
+			}
+
 			if _, err = w.tunFile.Write(pt); err != nil {
 				w.logger.Printf("failed to write to TUN: %v", err)
 				return

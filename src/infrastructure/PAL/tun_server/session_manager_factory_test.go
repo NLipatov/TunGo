@@ -25,6 +25,9 @@ func (d sessionManagerFactoryDummySession) Crypto() connection.Crypto {
 func (d sessionManagerFactoryDummySession) RekeyController() rekey.FSM {
 	return nil
 }
+func (d sessionManagerFactoryDummySession) IsSourceAllowed(netip.Addr) bool {
+	return true
+}
 
 func TestSessionManagerFactory_CreateManager(t *testing.T) {
 	f := newSessionManagerFactory()
@@ -62,39 +65,3 @@ func TestSessionManagerFactory_CreateManager(t *testing.T) {
 	}
 }
 
-func TestSessionManagerFactory_CreateConcurrentManager(t *testing.T) {
-	f := newSessionManagerFactory()
-	cmgr := f.createConcurrentManager()
-
-	in, _ := netip.ParseAddr("172.16.0.2")
-	ex, _ := netip.ParseAddrPort("8.8.8.8:9000")
-
-	sess := sessionManagerFactoryDummySession{
-		internalIP: in,
-		externalIP: ex,
-	}
-	peer := session.NewPeer(sess, nil)
-
-	cmgr.Add(peer)
-
-	gotByInt, err := cmgr.GetByInternalAddrPort(sess.InternalAddr())
-	if err != nil {
-		t.Fatalf("concurrent GetByInternalAddrPort: unexpected error: %v", err)
-	}
-	if gotByInt != peer {
-		t.Errorf("concurrent GetByInternalAddrPort: got different peer")
-	}
-
-	gotByExt, err := cmgr.GetByExternalAddrPort(sess.ExternalAddrPort())
-	if err != nil {
-		t.Fatalf("concurrent GetByExternalAddrPort: unexpected error: %v", err)
-	}
-	if gotByExt != peer {
-		t.Errorf("concurrent GetByExternalAddrPort: got different peer")
-	}
-
-	cmgr.Delete(peer)
-	if _, err := cmgr.GetByInternalAddrPort(sess.InternalAddr()); err == nil {
-		t.Error("after concurrent Delete, GetByInternalAddrPort should return error, got nil")
-	}
-}

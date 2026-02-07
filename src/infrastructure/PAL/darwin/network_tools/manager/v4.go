@@ -50,9 +50,9 @@ func (m *v4) CreateDevice() (tun.Device, error) {
 		return nil, fmt.Errorf("get utun name: %w", err)
 	}
 	m.ifName = name
-	if getErr := m.rtc.Get(m.s.ConnectionIP); getErr != nil {
+	if getErr := m.rtc.Get(m.s.Host); getErr != nil {
 		_ = m.DisposeDevices()
-		return nil, fmt.Errorf("route to server %s: %w", m.s.ConnectionIP, getErr)
+		return nil, fmt.Errorf("route to server %s: %w", m.s.Host, getErr)
 	}
 	if assignErr := m.assignIPv4(); assignErr != nil {
 		_ = m.DisposeDevices()
@@ -70,8 +70,8 @@ func (m *v4) CreateDevice() (tun.Device, error) {
 
 func (m *v4) DisposeDevices() error {
 	_ = m.rtc.DelSplit(m.ifName)
-	if m.s.ConnectionIP != "" {
-		_ = m.rtc.Del(m.s.ConnectionIP)
+	if m.s.Host != "" {
+		_ = m.rtc.Del(m.s.Host)
 	}
 	if m.tunDev != nil {
 		_ = m.tunDev.Close()
@@ -83,27 +83,27 @@ func (m *v4) DisposeDevices() error {
 }
 
 func (m *v4) validateSettings() error {
-	if net.ParseIP(m.s.ConnectionIP) == nil || net.ParseIP(m.s.ConnectionIP).To4() == nil {
-		return fmt.Errorf("v4: invalid ConnectionIP %q", m.s.ConnectionIP)
+	if net.ParseIP(m.s.Host) == nil || net.ParseIP(m.s.Host).To4() == nil {
+		return fmt.Errorf("v4: invalid Host %q", m.s.Host)
 	}
-	if ip := net.ParseIP(m.s.InterfaceAddress); ip == nil || ip.To4() == nil {
-		return fmt.Errorf("v4: invalid InterfaceAddress %q", m.s.InterfaceAddress)
+	if ip := net.ParseIP(m.s.InterfaceIP); ip == nil || ip.To4() == nil {
+		return fmt.Errorf("v4: invalid InterfaceIP %q", m.s.InterfaceIP)
 	}
-	if !strings.Contains(m.s.InterfaceIPCIDR, "/") {
-		return fmt.Errorf("v4: InterfaceIPCIDR must be CIDR, got %q", m.s.InterfaceIPCIDR)
+	if !strings.Contains(m.s.InterfaceSubnet, "/") {
+		return fmt.Errorf("v4: InterfaceSubnet must be CIDR, got %q", m.s.InterfaceSubnet)
 	}
-	if _, _, err := net.ParseCIDR(m.s.InterfaceIPCIDR); err != nil {
-		return fmt.Errorf("v4: bad InterfaceIPCIDR %q: %w", m.s.InterfaceIPCIDR, err)
+	if _, _, err := net.ParseCIDR(m.s.InterfaceSubnet); err != nil {
+		return fmt.Errorf("v4: bad InterfaceSubnet %q: %w", m.s.InterfaceSubnet, err)
 	}
 	return nil
 }
 
 func (m *v4) assignIPv4() error {
 	pfx := "32"
-	if parts := strings.Split(m.s.InterfaceIPCIDR, "/"); len(parts) == 2 && parts[1] == "32" {
+	if parts := strings.Split(m.s.InterfaceSubnet, "/"); len(parts) == 2 && parts[1] == "32" {
 		pfx = "32"
 	}
-	cidr := fmt.Sprintf("%s/%s", m.s.InterfaceAddress, pfx)
+	cidr := fmt.Sprintf("%s/%s", m.s.InterfaceIP, pfx)
 	if err := m.ifc.LinkAddrAdd(m.ifName, cidr); err != nil {
 		return fmt.Errorf("v4: set addr %s on %s: %w", cidr, m.ifName, err)
 	}

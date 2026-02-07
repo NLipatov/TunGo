@@ -3,8 +3,8 @@ package adapters
 import (
 	"io"
 	"net"
+	"time"
 	"tungo/application/network/connection"
-	"tungo/infrastructure/network"
 	"tungo/infrastructure/settings"
 )
 
@@ -12,12 +12,12 @@ import (
 type ClientUDPAdapter struct {
 	conn                        *net.UDPConn
 	buf                         [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
-	readDeadline, writeDeadline network.Timeout
+	readDeadline, writeDeadline time.Duration
 }
 
 func NewClientUDPAdapter(
 	conn *net.UDPConn,
-	readDeadline, writeDeadline network.Timeout) connection.Transport {
+	readDeadline, writeDeadline time.Duration) connection.Transport {
 	return &ClientUDPAdapter{
 		conn:          conn,
 		writeDeadline: writeDeadline,
@@ -26,7 +26,11 @@ func NewClientUDPAdapter(
 }
 
 func (c *ClientUDPAdapter) Write(buffer []byte) (int, error) {
-	if err := c.conn.SetWriteDeadline(c.writeDeadline.Time()); err != nil {
+	deadline := time.Time{}
+	if c.writeDeadline > 0 {
+		deadline = time.Now().Add(c.writeDeadline)
+	}
+	if err := c.conn.SetWriteDeadline(deadline); err != nil {
 		return 0, err
 	}
 
@@ -34,7 +38,11 @@ func (c *ClientUDPAdapter) Write(buffer []byte) (int, error) {
 }
 
 func (c *ClientUDPAdapter) Read(buffer []byte) (int, error) {
-	if err := c.conn.SetReadDeadline(c.readDeadline.Time()); err != nil {
+	deadline := time.Time{}
+	if c.readDeadline > 0 {
+		deadline = time.Now().Add(c.readDeadline)
+	}
+	if err := c.conn.SetReadDeadline(deadline); err != nil {
 		return 0, err
 	}
 

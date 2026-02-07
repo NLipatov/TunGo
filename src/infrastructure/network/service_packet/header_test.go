@@ -16,32 +16,20 @@ func TestTryParseHeader(t *testing.T) {
 		wantOK   bool
 	}{
 		{
-			name:     "legacy session reset",
-			pkt:      []byte{byte(SessionReset)},
-			wantType: SessionReset,
-			wantOK:   true,
-		},
-		{
-			name:     "legacy unknown type",
-			pkt:      []byte{0xFF},
+			name:     "single byte packet returns unknown",
+			pkt:      []byte{0x01},
 			wantType: Unknown,
 			wantOK:   false,
 		},
 		{
-			name:     "v1 header session reset",
-			pkt:      []byte{Prefix, VersionV1, byte(SessionReset)},
-			wantType: SessionReset,
-			wantOK:   true,
-		},
-		{
 			name:     "v1 header invalid prefix",
-			pkt:      []byte{0x00, VersionV1, byte(SessionReset)},
+			pkt:      []byte{0x00, VersionV1, byte(Ping)},
 			wantType: Unknown,
 			wantOK:   false,
 		},
 		{
 			name:     "v1 header invalid version",
-			pkt:      []byte{Prefix, 0xFF, byte(SessionReset)},
+			pkt:      []byte{Prefix, 0xFF, byte(Ping)},
 			wantType: Unknown,
 			wantOK:   false,
 		},
@@ -115,51 +103,6 @@ func TestTryParseHeader(t *testing.T) {
 	}
 }
 
-// -------------------- EncodeLegacyHeader --------------------
-
-func TestEncodeLegacyHeader(t *testing.T) {
-	tests := []struct {
-		name      string
-		header    HeaderType
-		dstSize   int
-		wantErr   error
-		wantBytes []byte
-	}{
-		{
-			name:      "encode legacy session reset",
-			header:    SessionReset,
-			dstSize:   1,
-			wantBytes: []byte{byte(SessionReset)},
-		},
-		{
-			name:    "encode legacy short buffer",
-			header:  SessionReset,
-			dstSize: 0,
-			wantErr: io.ErrShortBuffer,
-		},
-		{
-			name:    "encode legacy invalid header",
-			header:  RekeyInit,
-			dstSize: 1,
-			wantErr: ErrInvalidHeader,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			dst := make([]byte, tt.dstSize)
-			out, err := EncodeLegacyHeader(tt.header, dst)
-
-			if !errors.Is(err, tt.wantErr) {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if tt.wantErr == nil && string(out) != string(tt.wantBytes) {
-				t.Fatalf("got %v, want %v", out, tt.wantBytes)
-			}
-		})
-	}
-}
-
 // -------------------- EncodeV1Header --------------------
 
 func TestEncodeV1Header(t *testing.T) {
@@ -170,18 +113,6 @@ func TestEncodeV1Header(t *testing.T) {
 		wantErr  error
 		wantSize int
 	}{
-		{
-			name:     "encode v1 session reset",
-			header:   SessionReset,
-			dstSize:  3,
-			wantSize: 3,
-		},
-		{
-			name:    "encode v1 session reset short buffer",
-			header:  SessionReset,
-			dstSize: 2,
-			wantErr: io.ErrShortBuffer,
-		},
 		{
 			name:     "encode v1 rekey init",
 			header:   RekeyInit,

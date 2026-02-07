@@ -2,12 +2,13 @@ package tcp_chacha20
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log"
 	"tungo/application/network/connection"
 	"tungo/application/network/routing/transport"
-	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/controlplane"
@@ -15,13 +16,17 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
+// ErrEpochExhausted is returned when server signals epoch exhaustion.
+// Client should reconnect with a fresh handshake.
+var ErrEpochExhausted = errors.New("epoch exhausted; reconnect required")
+
 type TransportHandler struct {
 	ctx                 context.Context
 	reader              io.Reader
 	writer              io.Writer
 	cryptographyService connection.Crypto
 	rekeyController     *rekey.StateMachine
-	handshakeCrypto     handshake.Crypto
+	handshakeCrypto     primitives.KeyDeriver
 }
 
 func NewTransportHandler(
@@ -37,7 +42,7 @@ func NewTransportHandler(
 		writer:              writer,
 		cryptographyService: cryptographyService,
 		rekeyController:     rekeyController,
-		handshakeCrypto:     &handshake.DefaultCrypto{},
+		handshakeCrypto:     &primitives.DefaultKeyDeriver{},
 	}
 }
 
@@ -69,7 +74,11 @@ func (t *TransportHandler) HandleTransport() error {
 				return payloadErr
 			}
 			if spType, spOk := service_packet.TryParseHeader(payload); spOk {
-				if spType == service_packet.RekeyAck {
+				switch spType {
+				case service_packet.EpochExhausted:
+					log.Printf("received EpochExhausted from server, initiating reconnect")
+					return ErrEpochExhausted
+				case service_packet.RekeyAck:
 					t.handleRekeyAck(payload)
 					continue
 				}

@@ -53,9 +53,9 @@ func (m *v6) CreateDevice() (tun.Device, error) {
 	}
 	m.ifName = name
 
-	if err := m.rt.Get(m.s.ConnectionIP); err != nil {
+	if err := m.rt.Get(m.s.Host); err != nil {
 		_ = m.DisposeDevices()
-		return nil, fmt.Errorf("route to server %s: %w", m.s.ConnectionIP, err)
+		return nil, fmt.Errorf("route to server %s: %w", m.s.Host, err)
 	}
 	if err := m.assignIPv6(); err != nil {
 		_ = m.DisposeDevices()
@@ -73,8 +73,8 @@ func (m *v6) CreateDevice() (tun.Device, error) {
 
 func (m *v6) DisposeDevices() error {
 	_ = m.rt.DelSplit(m.ifName)
-	if m.s.ConnectionIP != "" {
-		_ = m.rt.Del(m.s.ConnectionIP)
+	if m.s.Host != "" {
+		_ = m.rt.Del(m.s.Host)
 	}
 	if m.tunDev != nil {
 		_ = m.tunDev.Close()
@@ -86,35 +86,35 @@ func (m *v6) DisposeDevices() error {
 }
 
 func (m *v6) validateSettings() error {
-	ip := net.ParseIP(m.s.InterfaceAddress)
+	ip := net.ParseIP(m.s.InterfaceIP)
 	if ip == nil || ip.To4() != nil {
-		return fmt.Errorf("v6: invalid InterfaceAddress %q", m.s.InterfaceAddress)
+		return fmt.Errorf("v6: invalid InterfaceIP %q", m.s.InterfaceIP)
 	}
-	dst := net.ParseIP(m.s.ConnectionIP)
+	dst := net.ParseIP(m.s.Host)
 	if dst == nil || dst.To4() != nil {
-		return fmt.Errorf("v6: invalid ConnectionIP %q", m.s.ConnectionIP)
+		return fmt.Errorf("v6: invalid Host %q", m.s.Host)
 	}
-	if m.s.InterfaceIPCIDR != "" {
-		if !strings.Contains(m.s.InterfaceIPCIDR, "/") {
-			return fmt.Errorf("v6: InterfaceIPCIDR must be CIDR or empty, got %q", m.s.InterfaceIPCIDR)
+	if m.s.InterfaceSubnet != "" {
+		if !strings.Contains(m.s.InterfaceSubnet, "/") {
+			return fmt.Errorf("v6: InterfaceSubnet must be CIDR or empty, got %q", m.s.InterfaceSubnet)
 		}
-		if _, _, err := net.ParseCIDR(m.s.InterfaceIPCIDR); err != nil {
-			return fmt.Errorf("v6: bad InterfaceIPCIDR %q: %w", m.s.InterfaceIPCIDR, err)
+		if _, _, err := net.ParseCIDR(m.s.InterfaceSubnet); err != nil {
+			return fmt.Errorf("v6: bad InterfaceSubnet %q: %w", m.s.InterfaceSubnet, err)
 		}
 	}
 	return nil
 }
 
 func (m *v6) assignIPv6() error {
-	cidr := m.s.InterfaceIPCIDR
+	cidr := m.s.InterfaceSubnet
 	if cidr == "" {
-		cidr = m.s.InterfaceAddress + "/128"
+		cidr = m.s.InterfaceIP + "/128"
 	} else {
 		parts := strings.Split(cidr, "/")
 		if len(parts) != 2 {
 			return fmt.Errorf("v6: malformed CIDR %q", cidr)
 		}
-		cidr = m.s.InterfaceAddress + "/" + parts[1]
+		cidr = m.s.InterfaceIP + "/" + parts[1]
 	}
 	if err := m.ifc.LinkAddrAdd(m.ifName, cidr); err != nil {
 		return fmt.Errorf("v6: set addr %s on %s: %w", cidr, m.ifName, err)

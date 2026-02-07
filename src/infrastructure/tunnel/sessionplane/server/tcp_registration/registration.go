@@ -45,43 +45,38 @@ func (r *Registrar) RegisterClient(conn net.Conn) (*session.Peer, connection.Tra
 
 	framingAdapter, fErr := adapters.NewLengthPrefixFramingAdapter(conn, settings.DefaultEthernetMTU+settings.TCPChacha20Overhead)
 	if fErr != nil {
+		_ = conn.Close() // Prevent socket leak on framing adapter failure
 		return nil, nil, fErr
 	}
 	h := r.handshakeFactory.NewHandshake()
 	internalIP, handshakeErr := h.ServerSideHandshake(framingAdapter)
 	if handshakeErr != nil {
-		_ = conn.Close()
+		_ = framingAdapter.Close()
 		return nil, nil, fmt.Errorf("client %s failed registration: %w", conn.RemoteAddr(), handshakeErr)
 	}
 	r.logger.Printf("TCP: %s registered as %s", conn.RemoteAddr(), internalIP)
 
 	cryptographyService, rekeyCtrl, cryptographyServiceErr := r.cryptographyFactory.FromHandshake(h, true)
 	if cryptographyServiceErr != nil {
-		_ = conn.Close()
+		_ = framingAdapter.Close()
 		return nil, nil, fmt.Errorf("client %s failed registration: %w", conn.RemoteAddr(), cryptographyServiceErr)
 	}
 
 	addr := conn.RemoteAddr()
 	tcpAddr, ok := addr.(*net.TCPAddr)
 	if !ok {
-		_ = conn.Close()
+		_ = framingAdapter.Close()
 		return nil, nil, fmt.Errorf("invalid remote address type: %T", addr)
 	}
 
-	intIP, intIPOk := netip.AddrFromSlice(internalIP)
-	if !intIPOk {
-		_ = conn.Close()
-		return nil, nil, fmt.Errorf("invalid internal IP from handshake")
-	}
-
 	// If session not found, or client is using a new (IP, port) address (e.g., after NAT rebinding), re-register the client.
-	existingPeer, getErr := r.sessionManager.GetByInternalAddrPort(intIP)
+	existingPeer, getErr := r.sessionManager.GetByInternalAddrPort(internalIP)
 	if getErr == nil {
 		_ = existingPeer.Egress().Close()
 		r.sessionManager.Delete(existingPeer)
-		r.logger.Printf("Replacing existing session for %s", intIP)
+		r.logger.Printf("Replacing existing session for %s", internalIP)
 	} else if !errors.Is(getErr, session.ErrNotFound) {
-		_ = conn.Close()
+		_ = framingAdapter.Close()
 		return nil, nil, fmt.Errorf(
 			"connection closed: %s (internal IP %s lookup failed: %v)",
 			conn.RemoteAddr(),
@@ -90,7 +85,17 @@ func (r *Registrar) RegisterClient(conn net.Conn) (*session.Peer, connection.Tra
 		)
 	}
 
-	sess := session.NewSession(cryptographyService, rekeyCtrl, intIP, tcpAddr.AddrPort())
+	// Extract authentication info from IK handshake result if available
+	var clientPubKey []byte
+	var allowedIPs []netip.Prefix
+	if hwr, ok := h.(connection.HandshakeWithResult); ok {
+		if result := hwr.Result(); result != nil {
+			clientPubKey = result.ClientPubKey()
+			allowedIPs = result.AllowedIPs()
+		}
+	}
+
+	sess := session.NewSessionWithAuth(cryptographyService, rekeyCtrl, internalIP, tcpAddr.AddrPort(), clientPubKey, allowedIPs)
 	egress := connection.NewDefaultEgress(framingAdapter, cryptographyService)
 	peer := session.NewPeer(sess, egress)
 	r.sessionManager.Add(peer)

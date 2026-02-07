@@ -1,8 +1,6 @@
 package chacha20
 
-import (
-	"golang.org/x/crypto/chacha20poly1305"
-)
+import "golang.org/x/crypto/chacha20poly1305"
 
 const (
 	sessionIdentifierLength = 32

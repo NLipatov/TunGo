@@ -1,16 +1,21 @@
 package server
 
 import (
+	"errors"
 	"testing"
 	"time"
 )
 
 type mockReader struct {
 	count int
+	err   error
 }
 
 func (m *mockReader) read() (*Configuration, error) {
 	m.count++
+	if m.err != nil {
+		return nil, m.err
+	}
 	return &Configuration{}, nil
 }
 
@@ -38,5 +43,17 @@ func TestTTLReader_Caching(t *testing.T) {
 	}
 	if mr.count != 2 {
 		t.Fatalf("expected underlying read after TTL expire, got %d", mr.count)
+	}
+}
+
+func TestTTLReader_ReadError(t *testing.T) {
+	mr := &mockReader{err: errors.New("read fail")}
+	r := NewTTLReader(mr, time.Minute)
+
+	if _, err := r.read(); err == nil || err.Error() != "read fail" {
+		t.Fatalf("expected read fail error, got %v", err)
+	}
+	if mr.count != 1 {
+		t.Fatalf("expected one underlying read call, got %d", mr.count)
 	}
 }

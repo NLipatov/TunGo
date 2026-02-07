@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 	"tungo/domain/app"
 	"tungo/domain/mode"
 	"tungo/infrastructure/PAL/configuration/client"
@@ -21,6 +22,12 @@ import (
 	"tungo/presentation/runners/server"
 	"tungo/presentation/runners/version"
 	"tungo/presentation/signals/shutdown"
+)
+
+const (
+	// configWatchInterval is how often the server checks for AllowedPeers changes.
+	// Sessions for removed/disabled peers are revoked on detection.
+	configWatchInterval = 30 * time.Second
 )
 
 func main() {
@@ -46,8 +53,9 @@ func main() {
 		return
 	}
 
+	serverResolver := serverConf.NewServerResolver()
 	configurationManager, configurationManagerErr := serverConf.NewManager(
-		serverConf.NewServerResolver(),
+		serverResolver,
 		stat.NewDefaultStat(),
 	)
 	if configurationManagerErr != nil {
@@ -55,7 +63,8 @@ func main() {
 		exitCode = 1
 		return
 	}
-	keyManager := serverConf.NewEd25519KeyManager(configurationManager)
+	serverConfigPath, _ := serverResolver.Resolve()
+	keyManager := serverConf.NewX25519KeyManager(configurationManager)
 	if pKeysErr := keyManager.PrepareKeys(); pKeysErr != nil {
 		log.Printf("could not prepare keys: %s", pKeysErr)
 		exitCode = 1
@@ -74,7 +83,7 @@ func main() {
 	switch appMode {
 	case mode.Server:
 		log.Printf("Starting server...")
-		err := startServer(appCtx, configurationManager)
+		err := startServer(appCtx, configurationManager, serverConfigPath)
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return
@@ -129,6 +138,7 @@ func startClient(appCtx context.Context) error {
 func startServer(
 	ctx context.Context,
 	configurationManager serverConf.ConfigurationManager,
+	configPath string,
 ) error {
 	tunFactory := tun_server.NewServerTunFactory()
 
@@ -140,13 +150,29 @@ func startServer(
 	deps := server.NewDependencies(
 		tunFactory,
 		*conf,
-		serverConf.NewEd25519KeyManager(configurationManager),
+		serverConf.NewX25519KeyManager(configurationManager),
 		configurationManager,
 	)
 
+	workerFactory, err := tun_server.NewServerWorkerFactory(configurationManager)
+	if err != nil {
+		return fmt.Errorf("failed to create worker factory: %w", err)
+	}
+
+	// Start ConfigWatcher to revoke sessions and update AllowedPeers at runtime
+	configWatcher := serverConf.NewConfigWatcher(
+		configurationManager,
+		workerFactory.SessionRevoker(),
+		workerFactory.AllowedPeersUpdater(),
+		configPath,
+		configWatchInterval,
+		log.Default(),
+	)
+	go configWatcher.Watch(ctx)
+
 	runner := server.NewRunner(
 		deps,
-		tun_server.NewServerWorkerFactory(configurationManager),
+		workerFactory,
 		tun_server.NewServerTrafficRouterFactory(),
 	)
 	return runner.Run(ctx)

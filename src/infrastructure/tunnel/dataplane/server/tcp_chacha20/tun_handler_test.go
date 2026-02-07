@@ -85,6 +85,9 @@ func (m *TunHandlerMockMgr) GetByInternalAddrPort(_ netip.Addr) (*session.Peer, 
 func (m *TunHandlerMockMgr) GetByExternalAddrPort(_ netip.AddrPort) (*session.Peer, error) {
 	return m.peer, nil
 }
+func (m *TunHandlerMockMgr) FindByDestinationIP(_ netip.Addr) (*session.Peer, error) {
+	return m.peer, m.getErr
+}
 
 // helper to build a peer for tests
 func makePeer(c *TunHandlerMockConn, crypto *TunHandlerMockCrypto) *session.Peer {
