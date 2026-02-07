@@ -72,7 +72,10 @@ func (r *defaultEpochRing) Insert(epoch Epoch, session *DefaultUdpSession) {
 	defer r.mu.Unlock()
 
 	if len(r.entries) == r.capacity {
-		// Evict oldest.
+		// Evict oldest; zero key material before releasing.
+		if r.entries[0].session != nil {
+			r.entries[0].session.Zeroize()
+		}
 		r.entries = r.entries[1:]
 	}
 	r.entries = append(r.entries, epochEntry{epoch: epoch, session: session})
@@ -111,6 +114,9 @@ func (r *defaultEpochRing) Remove(epoch Epoch) bool {
 	defer r.mu.Unlock()
 	for i, e := range r.entries {
 		if e.epoch == epoch {
+			if e.session != nil {
+				e.session.Zeroize()
+			}
 			r.entries = append(r.entries[:i], r.entries[i+1:]...)
 			return true
 		}
