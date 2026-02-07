@@ -110,7 +110,7 @@ func (cm *CookieManager) CreateCookieReply(clientIP netip.Addr, clientEphemeral,
 
 	reply := make([]byte, CookieNonceSize+aead.Overhead()+len(cookieValue))
 	copy(reply[:CookieNonceSize], nonce[:])
-	aead.Seal(reply[CookieNonceSize:CookieNonceSize], nonce[:], cookieValue, nil)
+	aead.Seal(reply[CookieNonceSize:CookieNonceSize], nonce[:], cookieValue, clientEphemeral)
 
 	return reply, nil
 }
@@ -133,7 +133,7 @@ func DecryptCookieReply(reply, clientEphemeral, serverPubKey []byte) ([]byte, er
 		return nil, err
 	}
 
-	return aead.Open(nil, nonce, ciphertext, nil)
+	return aead.Open(nil, nonce, ciphertext, clientEphemeral)
 }
 
 // ValidateCookie checks if a cookie is valid for the given client IP.
