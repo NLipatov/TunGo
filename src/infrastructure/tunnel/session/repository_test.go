@@ -14,11 +14,31 @@ type fakeSession struct {
 	external netip.AddrPort
 }
 
-func (f *fakeSession) InternalAddr() netip.Addr           { return f.internal }
-func (f *fakeSession) ExternalAddrPort() netip.AddrPort   { return f.external }
-func (f *fakeSession) Crypto() connection.Crypto          { return nil }
-func (f *fakeSession) RekeyController() rekey.FSM         { return nil }
-func (f *fakeSession) IsSourceAllowed(netip.Addr) bool { return true }
+func (f *fakeSession) InternalAddr() netip.Addr         { return f.internal }
+func (f *fakeSession) ExternalAddrPort() netip.AddrPort { return f.external }
+func (f *fakeSession) Crypto() connection.Crypto        { return nil }
+func (f *fakeSession) RekeyController() rekey.FSM       { return nil }
+func (f *fakeSession) IsSourceAllowed(netip.Addr) bool  { return true }
+
+type fakeSessionWithCrypto struct {
+	fakeSession
+	crypto connection.Crypto
+}
+
+func (f *fakeSessionWithCrypto) Crypto() connection.Crypto { return f.crypto }
+
+type fakeCryptoZeroizer struct {
+	zeroized bool
+}
+
+func (f *fakeCryptoZeroizer) Encrypt(plaintext []byte) ([]byte, error)  { return plaintext, nil }
+func (f *fakeCryptoZeroizer) Decrypt(ciphertext []byte) ([]byte, error) { return ciphertext, nil }
+func (f *fakeCryptoZeroizer) Zeroize()                                  { f.zeroized = true }
+
+type fakeCryptoNoZeroizer struct{}
+
+func (f *fakeCryptoNoZeroizer) Encrypt(plaintext []byte) ([]byte, error)  { return plaintext, nil }
+func (f *fakeCryptoNoZeroizer) Decrypt(ciphertext []byte) ([]byte, error) { return ciphertext, nil }
 
 // fakeEgress is a no-op egress for testing Peer.Egress().
 type fakeEgress struct{}
@@ -258,6 +278,94 @@ func TestDefaultRepository_BasicOperations(t *testing.T) {
 	repo.Delete(p)
 	_, err = repo.GetByInternalAddrPort(internal)
 	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound after Delete, got %v", err)
+	}
+}
+
+func TestDefaultRepository_FindByDestinationIP(t *testing.T) {
+	repo := NewDefaultRepository()
+
+	fastInternal := netip.MustParseAddr("10.0.0.10")
+	fastExternal := netip.MustParseAddrPort("1.1.1.1:1000")
+	fastPeer := NewPeer(NewSession(nil, nil, fastInternal, fastExternal), nil)
+	repo.Add(fastPeer)
+
+	allowedInternal := netip.MustParseAddr("10.0.0.20")
+	allowedExternal := netip.MustParseAddrPort("2.2.2.2:2000")
+	allowedPeer := NewPeer(NewSessionWithAuth(
+		nil, nil, allowedInternal, allowedExternal, nil,
+		[]netip.Prefix{netip.MustParsePrefix("192.168.50.0/24")},
+	), nil)
+	repo.Add(allowedPeer)
+
+	t.Run("FastPathInternalExactMatch", func(t *testing.T) {
+		got, err := repo.FindByDestinationIP(netip.MustParseAddr("::ffff:10.0.0.10"))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != fastPeer {
+			t.Fatalf("got %p, want %p", got, fastPeer)
+		}
+	})
+
+	t.Run("SlowPathAllowedIPsMatch", func(t *testing.T) {
+		got, err := repo.FindByDestinationIP(netip.MustParseAddr("192.168.50.42"))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != allowedPeer {
+			t.Fatalf("got %p, want %p", got, allowedPeer)
+		}
+	})
+
+	t.Run("NotFound", func(t *testing.T) {
+		_, err := repo.FindByDestinationIP(netip.MustParseAddr("203.0.113.77"))
+		if !errors.Is(err, ErrNotFound) {
+			t.Fatalf("expected ErrNotFound, got %v", err)
+		}
+	})
+}
+
+func TestDefaultRepository_Delete_ZeroizesCrypto(t *testing.T) {
+	repo := NewDefaultRepository()
+	crypto := &fakeCryptoZeroizer{}
+
+	s := &fakeSessionWithCrypto{
+		fakeSession: fakeSession{
+			internal: netip.MustParseAddr("10.1.0.1"),
+			external: netip.MustParseAddrPort("9.9.9.9:9999"),
+		},
+		crypto: crypto,
+	}
+	p := NewPeer(s, nil)
+	repo.Add(p)
+
+	repo.Delete(p)
+
+	if !p.IsClosed() {
+		t.Fatal("expected peer to be marked closed")
+	}
+	if !crypto.zeroized {
+		t.Fatal("expected crypto to be zeroized")
+	}
+}
+
+func TestDefaultRepository_Delete_NonZeroizerCrypto(t *testing.T) {
+	repo := NewDefaultRepository()
+	crypto := &fakeCryptoNoZeroizer{}
+
+	s := &fakeSessionWithCrypto{
+		fakeSession: fakeSession{
+			internal: netip.MustParseAddr("10.1.0.2"),
+			external: netip.MustParseAddrPort("9.9.9.8:9998"),
+		},
+		crypto: crypto,
+	}
+	p := NewPeer(s, nil)
+	repo.Add(p)
+	repo.Delete(p)
+
+	if _, err := repo.GetByInternalAddrPort(s.internal); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expected ErrNotFound after Delete, got %v", err)
 	}
 }

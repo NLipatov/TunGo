@@ -339,3 +339,196 @@ func TestIKHandshake_Server_InvalidPeerClientIP(t *testing.T) {
 		t.Fatalf("expected invalid client IP error, got %v", err)
 	}
 }
+
+func TestIKHandshake_Server_ErrorBranches(t *testing.T) {
+	t.Run("under load cookie reply write error", func(t *testing.T) {
+		serverKP, _ := cipherSuite.GenerateKeypair(nil)
+		clientKP, _ := cipherSuite.GenerateKeypair(nil)
+		cm, _ := NewCookieManager()
+		lm := NewLoadMonitor(1)
+		lm.handshakesPerSecond.Store(2)
+
+		h := NewIKHandshakeServer(
+			serverKP.Public,
+			serverKP.Private,
+			NewAllowedPeersLookup([]server.AllowedPeer{
+				{PublicKey: clientKP.Public, Enabled: true, ClientIP: "10.0.0.2"},
+			}),
+			cm,
+			lm,
+		)
+
+		msg := newClientMsg1WithVersion(t, clientKP.Private, clientKP.Public, serverKP.Public)
+		tr := &queueRemoteTransport{
+			queueTransport: queueTransport{
+				reads:    [][]byte{msg},
+				writeErr: io.ErrClosedPipe,
+			},
+			addr: netip.MustParseAddrPort("203.0.113.50:12345"),
+		}
+
+		_, err := h.ServerSideHandshake(tr)
+		if err == nil || !strings.Contains(err.Error(), "send cookie reply") {
+			t.Fatalf("expected send cookie reply error, got %v", err)
+		}
+	})
+
+	t.Run("server invalid key fails during msg1 read", func(t *testing.T) {
+		serverPub := []byte{1}
+		serverPriv := []byte{2}
+		noiseMsg := bytes.Repeat([]byte{3}, MinMsg1Size)
+		msg := PrependVersion(AppendMACs(noiseMsg, serverPub, nil))
+
+		h := NewIKHandshakeServer(
+			serverPub,
+			serverPriv,
+			NewAllowedPeersLookup(nil),
+			nil,
+			nil,
+		)
+
+		_, err := h.ServerSideHandshake(&queueTransport{reads: [][]byte{msg}})
+		if err == nil || !strings.Contains(err.Error(), "read msg1") {
+			t.Fatalf("expected read msg1 error, got %v", err)
+		}
+	})
+
+	t.Run("server read msg1 crypto failure", func(t *testing.T) {
+		serverKP, _ := cipherSuite.GenerateKeypair(nil)
+		noiseMsg := bytes.Repeat([]byte{0xAA}, MinMsg1Size)
+		msg := PrependVersion(AppendMACs(noiseMsg, serverKP.Public, nil))
+
+		h := NewIKHandshakeServer(
+			serverKP.Public,
+			serverKP.Private,
+			NewAllowedPeersLookup(nil),
+			nil,
+			nil,
+		)
+
+		_, err := h.ServerSideHandshake(&queueTransport{reads: [][]byte{msg}})
+		if err == nil || !strings.Contains(err.Error(), "read msg1") {
+			t.Fatalf("expected read msg1 error, got %v", err)
+		}
+	})
+
+	t.Run("send msg2 write error", func(t *testing.T) {
+		serverKP, _ := cipherSuite.GenerateKeypair(nil)
+		clientKP, _ := cipherSuite.GenerateKeypair(nil)
+		msg := newClientMsg1WithVersion(t, clientKP.Private, clientKP.Public, serverKP.Public)
+
+		h := NewIKHandshakeServer(
+			serverKP.Public,
+			serverKP.Private,
+			NewAllowedPeersLookup([]server.AllowedPeer{
+				{PublicKey: clientKP.Public, Enabled: true, ClientIP: "10.0.0.2"},
+			}),
+			nil,
+			nil,
+		)
+
+		tr := &queueTransport{
+			reads:    [][]byte{msg},
+			writeErr: io.ErrClosedPipe,
+		}
+		_, err := h.ServerSideHandshake(tr)
+		if err == nil || !strings.Contains(err.Error(), "send msg2") {
+			t.Fatalf("expected send msg2 error, got %v", err)
+		}
+	})
+}
+
+func TestIKHandshake_Client_ErrorBranches(t *testing.T) {
+	t.Run("invalid client key fails during msg1 write", func(t *testing.T) {
+		h := NewIKHandshakeClient([]byte{1}, []byte{2}, []byte{3})
+		err := h.ClientSideHandshake(&queueTransport{}, settings.Settings{})
+		if err == nil || !strings.Contains(err.Error(), "write msg1") {
+			t.Fatalf("expected write msg1 error, got %v", err)
+		}
+	})
+
+	t.Run("send msg1 write error", func(t *testing.T) {
+		serverKP, _ := cipherSuite.GenerateKeypair(nil)
+		clientKP, _ := cipherSuite.GenerateKeypair(nil)
+		h := NewIKHandshakeClient(clientKP.Public, clientKP.Private, serverKP.Public)
+
+		err := h.ClientSideHandshake(&queueTransport{writeErr: io.ErrClosedPipe}, settings.Settings{})
+		if err == nil || !strings.Contains(err.Error(), "send msg1") {
+			t.Fatalf("expected send msg1 error, got %v", err)
+		}
+	})
+
+	t.Run("cookie decrypt failure", func(t *testing.T) {
+		serverKP, _ := cipherSuite.GenerateKeypair(nil)
+		clientKP, _ := cipherSuite.GenerateKeypair(nil)
+		h := NewIKHandshakeClient(clientKP.Public, clientKP.Private, serverKP.Public)
+
+		corruptedCookieReply := make([]byte, CookieReplySize)
+		err := h.ClientSideHandshake(&queueTransport{reads: [][]byte{corruptedCookieReply}}, settings.Settings{})
+		if err == nil || !strings.Contains(err.Error(), "decrypt cookie") {
+			t.Fatalf("expected decrypt cookie error, got %v", err)
+		}
+	})
+
+	t.Run("read msg2 failure", func(t *testing.T) {
+		serverKP, _ := cipherSuite.GenerateKeypair(nil)
+		clientKP, _ := cipherSuite.GenerateKeypair(nil)
+		h := NewIKHandshakeClient(clientKP.Public, clientKP.Private, serverKP.Public)
+
+		err := h.ClientSideHandshake(&queueTransport{reads: [][]byte{[]byte("bad-msg2")}}, settings.Settings{})
+		if err == nil || !strings.Contains(err.Error(), "read msg2") {
+			t.Fatalf("expected read msg2 error, got %v", err)
+		}
+	})
+}
+
+func TestIKHandshake_RetryWithCookie_ErrorBranches(t *testing.T) {
+	t.Run("retry invalid key fails during msg1 write", func(t *testing.T) {
+		h := &IKHandshake{
+			clientPubKey:  []byte{1},
+			clientPrivKey: []byte{2},
+			peerPubKey:    []byte{3},
+		}
+
+		err := h.retryWithCookie(&queueTransport{}, settings.Settings{})
+		if err == nil || !strings.Contains(err.Error(), "write msg1") {
+			t.Fatalf("expected write msg1 error, got %v", err)
+		}
+	})
+
+	t.Run("retry send msg1 error", func(t *testing.T) {
+		serverKP, _ := cipherSuite.GenerateKeypair(nil)
+		clientKP, _ := cipherSuite.GenerateKeypair(nil)
+		h := NewIKHandshakeClient(clientKP.Public, clientKP.Private, serverKP.Public)
+		h.cookie = bytes.Repeat([]byte{1}, CookieSize)
+
+		err := h.retryWithCookie(&queueTransport{writeErr: io.ErrClosedPipe}, settings.Settings{})
+		if err == nil || !strings.Contains(err.Error(), "send msg1 retry") {
+			t.Fatalf("expected send msg1 retry error, got %v", err)
+		}
+	})
+
+	t.Run("retry read msg2 error", func(t *testing.T) {
+		serverKP, _ := cipherSuite.GenerateKeypair(nil)
+		clientKP, _ := cipherSuite.GenerateKeypair(nil)
+		h := NewIKHandshakeClient(clientKP.Public, clientKP.Private, serverKP.Public)
+		h.cookie = bytes.Repeat([]byte{1}, CookieSize)
+
+		err := h.retryWithCookie(&queueTransport{readErr: io.ErrUnexpectedEOF}, settings.Settings{})
+		if err == nil || !strings.Contains(err.Error(), "read msg2") {
+			t.Fatalf("expected read msg2 error, got %v", err)
+		}
+	})
+
+	t.Run("retry read msg2 crypto failure", func(t *testing.T) {
+		serverKP, _ := cipherSuite.GenerateKeypair(nil)
+		clientKP, _ := cipherSuite.GenerateKeypair(nil)
+		h := NewIKHandshakeClient(clientKP.Public, clientKP.Private, serverKP.Public)
+		h.cookie = bytes.Repeat([]byte{1}, CookieSize)
+
+		err := h.retryWithCookie(&queueTransport{reads: [][]byte{[]byte("bad-msg2")}}, settings.Settings{})
+		if err == nil || !strings.Contains(err.Error(), "read msg2") {
+			t.Fatalf("expected read msg2 error, got %v", err)
+		}
+	})
+}

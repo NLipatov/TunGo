@@ -492,3 +492,102 @@ func TestConfigWatcher_CheckAndRevoke_LoggerBranches(t *testing.T) {
 		t.Fatalf("expected peer-count-change log, got: %s", logs)
 	}
 }
+
+func TestConfigWatcher_Watch_LogsFsnotifyAddFailure(t *testing.T) {
+	configManager := &mockConfigManager{config: &Configuration{}}
+	revoker := &mockRevoker{}
+	var logBuf bytes.Buffer
+	logger := log.New(&logBuf, "", 0)
+
+	// Missing directory -> watcher.Add(dir) fails, should log fallback message.
+	watcher := NewConfigWatcher(
+		configManager,
+		revoker,
+		nil,
+		filepath.Join(t.TempDir(), "missing", "server.json"),
+		20*time.Millisecond,
+		logger,
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go watcher.Watch(ctx)
+	time.Sleep(80 * time.Millisecond)
+	cancel()
+	time.Sleep(20 * time.Millisecond)
+
+	if !strings.Contains(logBuf.String(), "fsnotify watch failed") {
+		t.Fatalf("expected fsnotify watch-failed log, got: %s", logBuf.String())
+	}
+}
+
+func TestConfigWatcher_Watch_IgnoresOtherFilesAndLogsOwnFile(t *testing.T) {
+	pubKey1 := make([]byte, 32)
+	pubKey1[0] = 1
+	pubKey2 := make([]byte, 32)
+	pubKey2[0] = 2
+
+	configManager := &mockConfigManager{
+		config: &Configuration{
+			AllowedPeers: []AllowedPeer{
+				{PublicKey: pubKey1, Enabled: true, ClientIP: "10.0.0.1"},
+				{PublicKey: pubKey2, Enabled: true, ClientIP: "10.0.0.2"},
+			},
+		},
+	}
+	revoker := &mockRevoker{}
+	var logBuf bytes.Buffer
+	logger := log.New(&logBuf, "", 0)
+
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "server.json")
+	otherPath := filepath.Join(dir, "other.json")
+	if err := os.WriteFile(configPath, []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	if err := os.WriteFile(otherPath, []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write other: %v", err)
+	}
+
+	watcher := NewConfigWatcher(configManager, revoker, nil, configPath, time.Hour, logger)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go watcher.Watch(ctx)
+
+	time.Sleep(80 * time.Millisecond)
+
+	// Change non-target file: must be ignored (no revoke).
+	if err := os.WriteFile(otherPath, []byte("{\"x\":1}"), 0o644); err != nil {
+		t.Fatalf("write other changed: %v", err)
+	}
+	time.Sleep(80 * time.Millisecond)
+	if len(revoker.revokedKeys()) != 0 {
+		t.Fatalf("expected no revokes from other-file event, got %d", len(revoker.revokedKeys()))
+	}
+
+	// Now change target config and state to trigger revoke.
+	configManager.setConfig(&Configuration{
+		AllowedPeers: []AllowedPeer{
+			{PublicKey: pubKey1, Enabled: false, ClientIP: "10.0.0.1"},
+			{PublicKey: pubKey2, Enabled: true, ClientIP: "10.0.0.2"},
+		},
+	})
+	if err := os.WriteFile(configPath, []byte("{\"changed\":true}"), 0o644); err != nil {
+		t.Fatalf("write config changed: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if len(revoker.revokedKeys()) == 1 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if len(revoker.revokedKeys()) != 1 {
+		t.Fatalf("expected one revoke from config event, got %d", len(revoker.revokedKeys()))
+	}
+
+	logs := logBuf.String()
+	if !strings.Contains(logs, "detected config change") {
+		t.Fatalf("expected detected-change log, got: %s", logs)
+	}
+}

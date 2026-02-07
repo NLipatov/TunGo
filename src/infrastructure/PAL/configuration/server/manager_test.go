@@ -317,11 +317,11 @@ func TestManager_InjectX25519Keys_ConfigError(t *testing.T) {
 		reader:   reader,
 	}
 
-	err := manager.InjectX25519Keys(nil, nil)
+	err := manager.InjectX25519Keys(make([]byte, 32), make([]byte, 32))
 	if err == nil {
 		t.Fatal("expected error due to config read failure, got nil")
 	}
-	if !strings.Contains(err.Error(), "invalid public key length") {
+	if !strings.Contains(err.Error(), "read error") {
 		t.Errorf("unexpected error message: %v", err)
 	}
 }
@@ -345,6 +345,14 @@ func TestManager_InjectX25519Keys_InvalidPrivateKeyLength(t *testing.T) {
 	err := manager.InjectX25519Keys(pub, priv)
 	if err == nil || !strings.Contains(err.Error(), "invalid private key length") {
 		t.Fatalf("expected invalid private key length error, got: %v", err)
+	}
+}
+
+func TestManager_InjectX25519Keys_InvalidPublicKeyLength(t *testing.T) {
+	manager := &Manager{}
+	err := manager.InjectX25519Keys(make([]byte, 31), make([]byte, 32))
+	if err == nil || !strings.Contains(err.Error(), "invalid public key length") {
+		t.Fatalf("expected invalid public key length error, got: %v", err)
 	}
 }
 
