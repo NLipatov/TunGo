@@ -241,6 +241,39 @@ func TestConfigWatcher_NoRevokeWhenReEnabled(t *testing.T) {
 	}
 }
 
+func TestConfigWatcher_RevokesPeerWhenAddressChanged(t *testing.T) {
+	pubKey1 := make([]byte, 32)
+	pubKey1[0] = 1
+
+	initialConfig := &Configuration{
+		AllowedPeers: []AllowedPeer{
+			{PublicKey: pubKey1, Enabled: true, Address: netip.MustParseAddr("10.0.0.10")},
+		},
+	}
+
+	configManager := &mockConfigManager{config: initialConfig}
+	revoker := &mockRevoker{}
+
+	watcher := NewConfigWatcher(configManager, revoker, nil, "", 10*time.Millisecond, nil)
+	watcher.loadCurrentState()
+
+	configManager.setConfig(&Configuration{
+		AllowedPeers: []AllowedPeer{
+			{PublicKey: pubKey1, Enabled: true, Address: netip.MustParseAddr("10.0.0.11")},
+		},
+	})
+
+	watcher.ForceCheck()
+
+	revoked := revoker.revokedKeys()
+	if len(revoked) != 1 {
+		t.Fatalf("expected 1 revoked key, got %d", len(revoked))
+	}
+	if revoked[0][0] != 1 {
+		t.Error("expected pubKey1 to be revoked")
+	}
+}
+
 func TestConfigWatcher_WatchLoop(t *testing.T) {
 	pubKey1 := make([]byte, 32)
 	pubKey1[0] = 1

@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"log"
+	"net/netip"
 	"path/filepath"
 	"time"
 
@@ -35,8 +36,13 @@ type ConfigWatcher struct {
 	logger        *log.Logger
 
 	// prevPeers stores the previous AllowedPeers state for comparison.
-	// Key is string(PublicKey), value is Enabled status.
-	prevPeers map[string]bool
+	// Key is string(PublicKey), value is peer access snapshot.
+	prevPeers map[string]peerAccessState
+}
+
+type peerAccessState struct {
+	enabled bool
+	address netip.Addr
 }
 
 // NewConfigWatcher creates a new configuration watcher.
@@ -58,7 +64,7 @@ func NewConfigWatcher(
 		configPath:    configPath,
 		interval:      interval,
 		logger:        logger,
-		prevPeers:     make(map[string]bool),
+		prevPeers:     make(map[string]peerAccessState),
 	}
 }
 
@@ -76,7 +82,9 @@ func (w *ConfigWatcher) Watch(ctx context.Context) {
 	var configFileName string
 	watcher, err := fsnotify.NewWatcher()
 	if err == nil && w.configPath != "" {
-		defer watcher.Close()
+		defer func(watcher *fsnotify.Watcher) {
+			_ = watcher.Close()
+		}(watcher)
 		dir, file := filepath.Split(w.configPath)
 		if dir == "" {
 			dir = "."
@@ -145,10 +153,13 @@ func (w *ConfigWatcher) loadCurrentState() {
 		return
 	}
 
-	w.prevPeers = make(map[string]bool, len(conf.AllowedPeers))
+	w.prevPeers = make(map[string]peerAccessState, len(conf.AllowedPeers))
 	for _, peer := range conf.AllowedPeers {
 		key := string(peer.PublicKey)
-		w.prevPeers[key] = peer.Enabled
+		w.prevPeers[key] = peerAccessState{
+			enabled: peer.Enabled,
+			address: peer.Address.Unmap(),
+		}
 	}
 }
 
@@ -165,28 +176,31 @@ func (w *ConfigWatcher) checkAndRevoke() {
 	}
 
 	// Build current state map
-	currentPeers := make(map[string]bool, len(conf.AllowedPeers))
+	currentPeers := make(map[string]peerAccessState, len(conf.AllowedPeers))
 	for _, peer := range conf.AllowedPeers {
 		key := string(peer.PublicKey)
-		currentPeers[key] = peer.Enabled
+		currentPeers[key] = peerAccessState{
+			enabled: peer.Enabled,
+			address: peer.Address.Unmap(),
+		}
 	}
 
 	// Find peers to revoke:
 	// 1. Previously existed and enabled, now removed
 	// 2. Previously existed and enabled, now disabled
-	for pubKeyStr, wasEnabled := range w.prevPeers {
-		if !wasEnabled {
+	for pubKeyStr, prevState := range w.prevPeers {
+		if !prevState.enabled {
 			continue // Was already disabled, nothing to revoke
 		}
 
-		nowEnabled, exists := currentPeers[pubKeyStr]
-		shouldRevoke := !exists || !nowEnabled
+		currentState, exists := currentPeers[pubKeyStr]
+		shouldRevoke := !exists || !currentState.enabled || currentState.address != prevState.address
 
 		if shouldRevoke {
 			pubKey := []byte(pubKeyStr)
 			count := w.revoker.RevokeByPubKey(pubKey)
 			if w.logger != nil && count > 0 {
-				w.logger.Printf("ConfigWatcher: revoked %d session(s) for peer (removed/disabled)", count)
+				w.logger.Printf("ConfigWatcher: revoked %d session(s) for peer (ACL changed/removed/disabled)", count)
 			}
 		}
 	}
