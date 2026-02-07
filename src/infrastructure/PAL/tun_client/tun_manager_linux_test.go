@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"net/netip"
 	"os"
 	"strings"
 	"testing"
@@ -81,6 +82,22 @@ type platformTunManagerMSSMock struct {
 	removeErr  error
 }
 
+func mustHost(raw string) settings.Host {
+	h, err := settings.NewHost(raw)
+	if err != nil {
+		panic(err)
+	}
+	return h
+}
+
+func mustPrefix(raw string) netip.Prefix {
+	return netip.MustParsePrefix(raw)
+}
+
+func mustAddr(raw string) netip.Addr {
+	return netip.MustParseAddr(raw)
+}
+
 func (m platformTunManagerMSSMock) Install(string) error { return m.installErr }
 func (m platformTunManagerMSSMock) Remove(string) error  { return m.removeErr }
 
@@ -123,20 +140,23 @@ func newMgr(
 		Protocol: proto,
 		UDPSettings: settings.Settings{
 			InterfaceName:    "tun0",
-			InterfaceAddress: "10.0.0.2/30",
-			ConnectionIP:     "198.51.100.1",
+			InterfaceSubnet:  mustPrefix("10.0.0.0/30"),
+			InterfaceIP:      mustAddr("10.0.0.2"),
+			Host:             mustHost("198.51.100.1"),
 			MTU:              1400,
 		},
 		TCPSettings: settings.Settings{
 			InterfaceName:    "tun1",
-			InterfaceAddress: "10.0.0.6/30",
-			ConnectionIP:     "203.0.113.1",
+			InterfaceSubnet:  mustPrefix("10.0.0.4/30"),
+			InterfaceIP:      mustAddr("10.0.0.6"),
+			Host:             mustHost("203.0.113.1"),
 			MTU:              1400,
 		},
 		WSSettings: settings.Settings{
 			InterfaceName:    "tun2",
-			InterfaceAddress: "10.0.0.10/30",
-			ConnectionIP:     "203.0.113.2",
+			InterfaceSubnet:  mustPrefix("10.0.0.8/30"),
+			InterfaceIP:      mustAddr("10.0.0.10"),
+			Host:             mustHost("203.0.113.2"),
 			MTU:              1250,
 		},
 	}

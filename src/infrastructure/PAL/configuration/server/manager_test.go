@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"net/netip"
 	"os"
 	"strings"
 	"testing"
@@ -440,7 +441,7 @@ func TestManager_AddAllowedPeer_Success(t *testing.T) {
 	peer := AllowedPeer{
 		PublicKey: bytes.Repeat([]byte{3}, 32),
 		Enabled:   true,
-		ClientIP:  "10.0.0.9",
+		Address:   netip.MustParseAddr("10.0.0.9"),
 	}
 
 	if err := manager.AddAllowedPeer(peer); err != nil {

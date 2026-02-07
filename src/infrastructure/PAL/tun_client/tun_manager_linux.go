@@ -3,6 +3,7 @@ package tun_client
 import (
 	"fmt"
 	"log"
+	"net/netip"
 	"strings"
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/configuration/client"
@@ -69,14 +70,20 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.Settings) error 
 	fmt.Printf("created TUN interface: %v\n", connSettings.InterfaceName)
 
 	// Assign IP address to the TUN interface
-	err = t.ip.AddrAddDev(connSettings.InterfaceName, connSettings.InterfaceAddress)
+	interfaceCIDR, interfaceCIDRErr := interfaceCIDR(connSettings.InterfaceIP, connSettings.InterfaceSubnet)
+	if interfaceCIDRErr != nil {
+		return interfaceCIDRErr
+	}
+	err = t.ip.AddrAddDev(connSettings.InterfaceName, interfaceCIDR)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("assigned IP %s to interface %s\n", connSettings.InterfaceAddress, connSettings.InterfaceName)
+	fmt.Printf("assigned IP %s to interface %s\n", interfaceCIDR, connSettings.InterfaceName)
 
-	// Parse server IP
-	serverIP := connSettings.ConnectionIP
+	serverIP, hostErr := connSettings.Host.RouteIP()
+	if hostErr != nil {
+		return fmt.Errorf("failed to resolve route target host: %w", hostErr)
+	}
 
 	// Get routing information
 	routeInfo, err := t.ip.RouteGet(serverIP)
@@ -130,23 +137,39 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.Settings) error 
 	return nil
 }
 
+func interfaceCIDR(addr netip.Addr, subnet netip.Prefix) (string, error) {
+	if !addr.IsValid() {
+		return "", fmt.Errorf("invalid InterfaceIP")
+	}
+	if !subnet.IsValid() {
+		return "", fmt.Errorf("invalid InterfaceSubnet")
+	}
+	return netip.PrefixFrom(addr.Unmap(), subnet.Bits()).String(), nil
+}
+
 func (t *PlatformTunManager) DisposeDevices() error {
 	if err := t.mss.Remove(t.configuration.UDPSettings.InterfaceName); err != nil {
 		log.Printf("failed to remove MSS clamping for %s: %v", t.configuration.UDPSettings.InterfaceName, err)
 	}
-	_ = t.ip.RouteDel(t.configuration.UDPSettings.ConnectionIP)
+	if routeTarget, routeErr := t.configuration.UDPSettings.Host.RouteIP(); routeErr == nil {
+		_ = t.ip.RouteDel(routeTarget)
+	}
 	_ = t.ip.LinkDelete(t.configuration.UDPSettings.InterfaceName)
 
 	if err := t.mss.Remove(t.configuration.TCPSettings.InterfaceName); err != nil {
 		log.Printf("failed to remove MSS clamping for %s: %v", t.configuration.TCPSettings.InterfaceName, err)
 	}
-	_ = t.ip.RouteDel(t.configuration.TCPSettings.ConnectionIP)
+	if routeTarget, routeErr := t.configuration.TCPSettings.Host.RouteIP(); routeErr == nil {
+		_ = t.ip.RouteDel(routeTarget)
+	}
 	_ = t.ip.LinkDelete(t.configuration.TCPSettings.InterfaceName)
 
 	if err := t.mss.Remove(t.configuration.WSSettings.InterfaceName); err != nil {
 		log.Printf("failed to remove MSS clamping for %s: %v", t.configuration.WSSettings.InterfaceName, err)
 	}
-	_ = t.ip.RouteDel(t.configuration.WSSettings.ConnectionIP)
+	if routeTarget, routeErr := t.configuration.WSSettings.Host.RouteIP(); routeErr == nil {
+		_ = t.ip.RouteDel(routeTarget)
+	}
 	_ = t.ip.LinkDelete(t.configuration.WSSettings.InterfaceName)
 
 	return nil

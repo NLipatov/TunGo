@@ -18,19 +18,14 @@ var cipherSuite = noiselib.NewCipherSuite(noiselib.DH25519, noiselib.CipherChaCh
 // IKHandshakeResult contains the result of a successful server-side IK handshake.
 // Implements connection.HandshakeResult interface.
 type IKHandshakeResult struct {
-	// clientIP is the server-assigned internal IP for this client.
-	clientIP netip.Addr
+	// internalIP is the server-assigned internal IP for this client.
+	internalIP netip.Addr
 
 	// clientPubKey is the client's X25519 static public key.
 	clientPubKey []byte
 
 	// allowedIPs are the additional prefixes this client may use as source IP.
 	allowedIPs []netip.Prefix
-}
-
-// ClientIP returns the server-assigned internal IP for this client.
-func (r *IKHandshakeResult) ClientIP() netip.Addr {
-	return r.clientIP
 }
 
 // ClientPubKey returns the client's X25519 static public key.
@@ -47,7 +42,7 @@ func (r *IKHandshakeResult) AllowedIPs() []netip.Prefix {
 type AllowedPeersLookup interface {
 	// Lookup returns the peer configuration for the given public key.
 	// Returns nil if the peer is not found.
-	Lookup(pubKey []byte) *server.AllowedPeer
+	Lookup(pubKey []byte) *RuntimeAllowedPeer
 
 	// Update atomically replaces the peer map with a new configuration.
 	// This allows runtime updates without server restart.
@@ -56,7 +51,18 @@ type AllowedPeersLookup interface {
 
 // allowedPeersMap implements AllowedPeersLookup using atomic pointer for lock-free reads.
 type allowedPeersMap struct {
-	peers atomic.Pointer[map[string]*server.AllowedPeer]
+	peers atomic.Pointer[map[string]*RuntimeAllowedPeer]
+}
+
+// RuntimeAllowedPeer is a parsed, runtime-ready representation of server.AllowedPeer.
+// It keeps the original text address and parse result so Address parsing happens once
+// at configuration update time, not per handshake.
+type RuntimeAllowedPeer struct {
+	Name      string
+	PublicKey []byte
+	Enabled   bool
+	Address   netip.Addr
+	addrErr   error
 }
 
 // NewAllowedPeersLookup creates an AllowedPeersLookup from a slice of AllowedPeer.
@@ -66,7 +72,7 @@ func NewAllowedPeersLookup(peers []server.AllowedPeer) AllowedPeersLookup {
 	return a
 }
 
-func (a *allowedPeersMap) Lookup(pubKey []byte) *server.AllowedPeer {
+func (a *allowedPeersMap) Lookup(pubKey []byte) *RuntimeAllowedPeer {
 	m := a.peers.Load()
 	if m == nil {
 		return nil
@@ -75,9 +81,23 @@ func (a *allowedPeersMap) Lookup(pubKey []byte) *server.AllowedPeer {
 }
 
 func (a *allowedPeersMap) Update(peers []server.AllowedPeer) {
-	m := make(map[string]*server.AllowedPeer, len(peers))
+	m := make(map[string]*RuntimeAllowedPeer, len(peers))
 	for i := range peers {
-		m[string(peers[i].PublicKey)] = &peers[i]
+		peer := peers[i]
+		addr := peer.Address
+		var err error
+		if addr.IsValid() {
+			addr = addr.Unmap()
+		} else {
+			err = fmt.Errorf("invalid Address")
+		}
+		m[string(peer.PublicKey)] = &RuntimeAllowedPeer{
+			Name:      peer.Name,
+			PublicKey: append([]byte(nil), peer.PublicKey...),
+			Enabled:   peer.Enabled,
+			Address:   addr,
+			addrErr:   err,
+		}
 	}
 	a.peers.Store(&m)
 }
@@ -284,22 +304,21 @@ func (h *IKHandshake) ServerSideHandshake(transport connection.Transport) (netip
 	cb := hs.ChannelBinding()
 	copy(h.id[:], cb[:32])
 
-	// Parse client IP and prepare result
-	clientIP, err := netip.ParseAddr(peer.ClientIP)
-	if err != nil {
-		return netip.Addr{}, fmt.Errorf("noise: invalid client IP in config: %s", peer.ClientIP)
+	// Validate configured internal address and prepare result
+	if peer.addrErr != nil {
+		return netip.Addr{}, fmt.Errorf("noise: invalid peer address: %w", peer.addrErr)
 	}
 
 	pubKeyCopy := make([]byte, len(clientPubKey))
 	copy(pubKeyCopy, clientPubKey)
 
 	h.result = &IKHandshakeResult{
-		clientIP:     clientIP,
+		internalIP:   peer.Address,
 		clientPubKey: pubKeyCopy,
-		allowedIPs:   peer.AllowedIPPrefixes(),
+		allowedIPs:   nil,
 	}
 
-	return clientIP, nil
+	return peer.Address, nil
 }
 
 // ClientSideHandshake performs Noise IK as initiator.

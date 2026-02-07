@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"net/netip"
 	"os"
 	"strings"
 	"testing"
@@ -17,13 +18,25 @@ import (
 // ConfgenHandlerMockMgr implements ServerConfigurationManager and lets us
 // script configuration reads and increment errors.
 type ConfgenHandlerMockMgr struct {
-	cfg         *serverConfiguration.Configuration
-	cfgErr      error
-	incErr      error
-	injectErr   error
-	addPeerErr  error
-	incCalls    int
-	addedPeers  []serverConfiguration.AllowedPeer
+	cfg        *serverConfiguration.Configuration
+	cfgErr     error
+	incErr     error
+	injectErr  error
+	addPeerErr error
+	incCalls   int
+	addedPeers []serverConfiguration.AllowedPeer
+}
+
+func mustHost(raw string) settings.Host {
+	h, err := settings.NewHost(raw)
+	if err != nil {
+		panic(err)
+	}
+	return h
+}
+
+func mustPrefix(raw string) netip.Prefix {
+	return netip.MustParsePrefix(raw)
 }
 
 func (m *ConfgenHandlerMockMgr) Configuration() (*serverConfiguration.Configuration, error) {
@@ -109,24 +122,24 @@ func validCfg() *serverConfiguration.Configuration {
 		X25519PrivateKey:      []byte("PRIV"),
 		TCPSettings: settings.Settings{
 			InterfaceName:   "tun-tcp0",
-			InterfaceIPCIDR: "10.0.0.1/24",
-			Port:            "443",
+			InterfaceSubnet: mustPrefix("10.0.0.0/24"),
+			Port:            443,
 			MTU:             1400,
 			DialTimeoutMs:   1000,
 			Protocol:        settings.TCP,
 		},
 		UDPSettings: settings.Settings{
 			InterfaceName:   "tun-udp0",
-			InterfaceIPCIDR: "10.1.0.1/24",
-			Port:            "53",
+			InterfaceSubnet: mustPrefix("10.1.0.0/24"),
+			Port:            53,
 			MTU:             1400,
 			DialTimeoutMs:   1000,
 			Protocol:        settings.UDP,
 		},
 		WSSettings: settings.Settings{
 			InterfaceName:   "tun-ws0",
-			InterfaceIPCIDR: "10.2.0.1/24",
-			Port:            "8080",
+			InterfaceSubnet: mustPrefix("10.2.0.0/24"),
+			Port:            8080,
 			MTU:             1400,
 			DialTimeoutMs:   1000,
 			Protocol:        settings.WS,
@@ -252,19 +265,45 @@ func Test_generate_addr_error_with_fallback_and_success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected: %v", err)
 	}
-	// Fallback must be used as ConnectionIP for WS.
-	if conf.WSSettings.ConnectionIP != mgr.cfg.FallbackServerAddress {
-		t.Fatalf("expected fallback ConnectionIP, got %q", conf.WSSettings.ConnectionIP)
+	// Fallback must be used as Host for WS.
+	if conf.WSSettings.Host != mustHost(mgr.cfg.FallbackServerAddress) {
+		t.Fatalf("expected fallback Host, got %q", conf.WSSettings.Host)
 	}
 	if mgr.incCalls != 1 {
 		t.Fatalf("IncrementClientCounter not called")
 	}
 }
 
+func Test_generate_adds_peer_with_address_and_name(t *testing.T) {
+	mgr := &ConfgenHandlerMockMgr{cfg: validCfg()}
+	h := NewConfgenHandler(mgr, NewJsonMarshaller())
+	h.ip = ConfgenHandlerMockIP{
+		RouteDefaultFunc: func() (string, error) { return "eth0", nil },
+		AddrShowDevFunc:  func(int, string) (string, error) { return "192.0.2.10", nil },
+	}
+
+	conf, err := h.generate()
+	if err != nil {
+		t.Fatalf("unexpected: %v", err)
+	}
+
+	if len(mgr.addedPeers) != 1 {
+		t.Fatalf("expected 1 added peer, got %d", len(mgr.addedPeers))
+	}
+
+	peer := mgr.addedPeers[0]
+	if peer.Address != conf.InternalIP {
+		t.Fatalf("expected Address %q, got %q", conf.InternalIP, peer.Address)
+	}
+	if peer.Name != "client-8" {
+		t.Fatalf("expected peer name client-8, got %q", peer.Name)
+	}
+}
+
 func Test_generate_allocate_error_propagates(t *testing.T) {
 	// Break TCP allocation by providing invalid CIDR.
 	cfg := validCfg()
-	cfg.TCPSettings.InterfaceIPCIDR = "bad"
+	cfg.TCPSettings.InterfaceSubnet = netip.Prefix{}
 	mgr := &ConfgenHandlerMockMgr{cfg: cfg}
 	h := NewConfgenHandler(mgr, NewJsonMarshaller())
 	h.ip = ConfgenHandlerMockIP{
@@ -297,7 +336,7 @@ func Test_allocateNewClientIP_success(t *testing.T) {
 
 func Test_allocateNewClientIP_tcp_error(t *testing.T) {
 	cfg := validCfg()
-	cfg.TCPSettings.InterfaceIPCIDR = "bad"
+	cfg.TCPSettings.InterfaceSubnet = netip.Prefix{}
 	mgr := &ConfgenHandlerMockMgr{cfg: cfg}
 	h := NewConfgenHandler(mgr, NewJsonMarshaller())
 
@@ -309,7 +348,7 @@ func Test_allocateNewClientIP_tcp_error(t *testing.T) {
 
 func Test_allocateNewClientIP_udp_error(t *testing.T) {
 	cfg := validCfg()
-	cfg.UDPSettings.InterfaceIPCIDR = "bad"
+	cfg.UDPSettings.InterfaceSubnet = netip.Prefix{}
 	mgr := &ConfgenHandlerMockMgr{cfg: cfg}
 	h := NewConfgenHandler(mgr, NewJsonMarshaller())
 
@@ -321,7 +360,7 @@ func Test_allocateNewClientIP_udp_error(t *testing.T) {
 
 func Test_allocateNewClientIP_ws_error(t *testing.T) {
 	cfg := validCfg()
-	cfg.WSSettings.InterfaceIPCIDR = "bad"
+	cfg.WSSettings.InterfaceSubnet = netip.Prefix{}
 	mgr := &ConfgenHandlerMockMgr{cfg: cfg}
 	h := NewConfgenHandler(mgr, NewJsonMarshaller())
 

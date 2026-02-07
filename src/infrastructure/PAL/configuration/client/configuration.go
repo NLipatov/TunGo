@@ -2,6 +2,7 @@ package client
 
 import (
 	"fmt"
+	"net/netip"
 	"tungo/infrastructure/settings"
 )
 
@@ -21,9 +22,9 @@ type Configuration struct {
 	ClientPrivateKey []byte `json:"ClientPrivateKey"`
 
 	// InternalIP is the server-assigned internal VPN IP for this client.
-	// MUST match ClientIP in server's AllowedPeers entry.
+	// MUST match Address in server's AllowedPeers entry for this client.
 	// Client MUST use exactly this IP as source in tunnel packets.
-	InternalIP string `json:"InternalIP"`
+	InternalIP netip.Addr `json:"InternalIP"`
 }
 
 func (c *Configuration) ActiveSettings() (settings.Settings, error) {

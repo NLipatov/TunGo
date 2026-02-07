@@ -6,7 +6,6 @@ import (
 	"math"
 	"net"
 	"net/netip"
-	"strconv"
 	"time"
 	"tungo/application/network/connection"
 	"tungo/infrastructure/PAL/configuration/client"
@@ -45,9 +44,9 @@ func (f *ConnectionFactory) EstablishConnection(
 
 	switch connSettings.Protocol {
 	case settings.UDP:
-		ap, apErr := netip.ParseAddrPort(net.JoinHostPort(connSettings.ConnectionIP, connSettings.Port))
+		ap, apErr := connSettings.Host.AddrPort(connSettings.Port)
 		if apErr != nil {
-			return nil, nil, nil, apErr
+			return nil, nil, nil, fmt.Errorf("udp dial: %w", apErr)
 		}
 
 		adapter, err := f.dialUDP(establishCtx, ap)
@@ -59,9 +58,9 @@ func (f *ConnectionFactory) EstablishConnection(
 			chacha20.NewDefaultAEADBuilder()),
 		)
 	case settings.TCP:
-		ap, apErr := netip.ParseAddrPort(net.JoinHostPort(connSettings.ConnectionIP, connSettings.Port))
+		ap, apErr := connSettings.Host.AddrPort(connSettings.Port)
 		if apErr != nil {
-			return nil, nil, nil, apErr
+			return nil, nil, nil, fmt.Errorf("tcp dial: %w", apErr)
 		}
 
 		adapter, err := f.dialTCP(establishCtx, ap)
@@ -74,21 +73,11 @@ func (f *ConnectionFactory) EstablishConnection(
 		)
 	case settings.WS:
 		scheme := "ws"
-		host := connSettings.Host
-		if host == "" {
-			host = connSettings.ConnectionIP
+		endpoint, endpointErr := connSettings.Host.Endpoint(connSettings.Port)
+		if endpointErr != nil {
+			return nil, nil, nil, fmt.Errorf("ws dial: %w", endpointErr)
 		}
-		if host == "" {
-			return nil, nil, nil, fmt.Errorf("ws dial: empty host (neither Host nor ConnectionIP provided)")
-		}
-		port := connSettings.Port
-		if port == "" {
-			return nil, nil, nil, fmt.Errorf("ws dial: empty port")
-		}
-		if pn, err := strconv.Atoi(port); err != nil || pn < 1 || pn > 65535 {
-			return nil, nil, nil, fmt.Errorf("ws dial: invalid port: %q", port)
-		}
-		adapter, err := f.dialWS(establishCtx, ctx, scheme, host, port)
+		adapter, err := f.dialWS(establishCtx, ctx, scheme, endpoint)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("unable to establish WebSocket connection: %w", err)
 		}
@@ -98,20 +87,15 @@ func (f *ConnectionFactory) EstablishConnection(
 		)
 	case settings.WSS:
 		scheme := "wss"
-		host := connSettings.Host
-		if host == "" {
-			return nil, nil, nil, fmt.Errorf("wss dial: empty host")
-		}
 		port := connSettings.Port
-		if port == "" {
-			port = "443"
+		if port == 0 {
+			port = 443
 		}
-		if portNumber, err := strconv.Atoi(port); err != nil {
-			return nil, nil, nil, err
-		} else if portNumber < 1 || portNumber > 65535 {
-			return nil, nil, nil, fmt.Errorf("wss dial: invalid port: %d", portNumber)
+		endpoint, endpointErr := connSettings.Host.Endpoint(port)
+		if endpointErr != nil {
+			return nil, nil, nil, fmt.Errorf("wss dial: %w", endpointErr)
 		}
-		adapter, err := f.dialWS(establishCtx, ctx, scheme, host, port)
+		adapter, err := f.dialWS(establishCtx, ctx, scheme, endpoint)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("unable to establish WebSocket connection: %w", err)
 		}
@@ -207,9 +191,9 @@ func (f *ConnectionFactory) dialUDP(
 
 func (f *ConnectionFactory) dialWS(
 	establishCtx, connCtx context.Context,
-	scheme, host, port string,
+	scheme, endpoint string,
 ) (connection.Transport, error) {
-	url := fmt.Sprintf("%s://%s/ws", scheme, net.JoinHostPort(host, port))
+	url := fmt.Sprintf("%s://%s/ws", scheme, endpoint)
 	conn, resp, err := websocket.Dial(establishCtx, url, nil)
 	if resp != nil && resp.Body != nil {
 		_ = resp.Body.Close()

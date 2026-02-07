@@ -50,7 +50,7 @@ func (t *TransportHandler) HandleTransport() error {
 	defer func() {
 		_ = t.listener.Close()
 	}()
-	t.logger.Printf("server listening on port %s (TCP)", t.settings.Port)
+	t.logger.Printf("server listening on port %d (TCP)", t.settings.Port)
 
 	//using this goroutine to 'unblock' TcpListener.Accept blocking-call
 	go func() {

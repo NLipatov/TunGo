@@ -3,13 +3,16 @@ package server
 import (
 	"fmt"
 	"net/netip"
-	"strconv"
 	"tungo/infrastructure/settings"
 )
 
 // AllowedPeer represents a single authorized client.
 // This is the sole source of truth for client authorization.
 type AllowedPeer struct {
+	// Name is a human-friendly client identifier (e.g., "client-42").
+	// Optional; does not participate in cryptographic authentication.
+	Name string `json:"Name,omitempty"`
+
 	// PublicKey is the client's X25519 static public key (32 bytes).
 	// This is the cryptographic identity.
 	PublicKey []byte `json:"PublicKey"`
@@ -18,27 +21,9 @@ type AllowedPeer struct {
 	// Setting to false revokes access immediately.
 	Enabled bool `json:"Enabled"`
 
-	// ClientIP is the server-assigned internal IP for this client.
-	// Exactly one address: /32 (IPv4) or /128 (IPv6).
-	// The client does not choose this.
-	ClientIP string `json:"ClientIP"`
-
-	// AllowedIPs are additional prefixes this client may use as source IP.
-	// Optional. ClientIP is always implicitly allowed.
-	AllowedIPs []string `json:"AllowedIPs"`
-}
-
-// AllowedIPPrefixes parses AllowedIPs and returns them as netip.Prefix slice.
-// ClientIP is NOT included; caller should handle it separately.
-func (p *AllowedPeer) AllowedIPPrefixes() []netip.Prefix {
-	prefixes := make([]netip.Prefix, 0, len(p.AllowedIPs))
-	for _, cidr := range p.AllowedIPs {
-		prefix, err := netip.ParsePrefix(cidr)
-		if err == nil {
-			prefixes = append(prefixes, prefix)
-		}
-	}
-	return prefixes
+	// Address is the server-assigned internal IP for this client.
+	// Exactly one address is supported per peer.
+	Address netip.Addr `json:"Address"`
 }
 
 type Configuration struct {
@@ -72,9 +57,27 @@ func NewDefaultConfiguration() *Configuration {
 }
 
 func (c *Configuration) EnsureDefaults() *Configuration {
-	c.applyDefaults(&c.TCPSettings, c.defaultTCPSettings())
-	c.applyDefaults(&c.UDPSettings, c.defaultUDPSettings())
-	c.applyDefaults(&c.WSSettings, c.defaultWSSettings())
+	c.applyDefaults(&c.TCPSettings, c.defaultSettings(
+		settings.TCP,
+		"tcptun0",
+		"10.0.0.0/24",
+		"10.0.0.1",
+		8080,
+	))
+	c.applyDefaults(&c.UDPSettings, c.defaultSettings(
+		settings.UDP,
+		"udptun0",
+		"10.0.1.0/24",
+		"10.0.1.1",
+		9090,
+	))
+	c.applyDefaults(&c.WSSettings, c.defaultSettings(
+		settings.WS,
+		"wstun0",
+		"10.0.2.0/24",
+		"10.0.2.1",
+		1010,
+	))
 	return c
 }
 
@@ -85,13 +88,13 @@ func (c *Configuration) applyDefaults(
 	if to.InterfaceName == "" {
 		to.InterfaceName = from.InterfaceName
 	}
-	if to.InterfaceIPCIDR == "" {
-		to.InterfaceIPCIDR = from.InterfaceIPCIDR
+	if !to.InterfaceSubnet.IsValid() {
+		to.InterfaceSubnet = from.InterfaceSubnet
 	}
-	if to.InterfaceAddress == "" {
-		to.InterfaceAddress = from.InterfaceAddress
+	if !to.InterfaceIP.IsValid() {
+		to.InterfaceIP = from.InterfaceIP
 	}
-	if to.Port == "" {
+	if to.Port == 0 {
 		to.Port = from.Port
 	}
 	if to.MTU == 0 {
@@ -105,45 +108,16 @@ func (c *Configuration) applyDefaults(
 	}
 }
 
-func (c *Configuration) defaultTCPSettings() settings.Settings {
-	return c.defaultSettings(
-		settings.TCP,
-		"tcptun0",
-		"10.0.0.0/24",
-		"10.0.0.1",
-		"8080",
-	)
-}
-
-func (c *Configuration) defaultUDPSettings() settings.Settings {
-	return c.defaultSettings(
-		settings.UDP,
-		"udptun0",
-		"10.0.1.0/24",
-		"10.0.1.1",
-		"9090",
-	)
-}
-
-func (c *Configuration) defaultWSSettings() settings.Settings {
-	return c.defaultSettings(
-		settings.WS,
-		"wstun0",
-		"10.0.2.0/24",
-		"10.0.2.1",
-		"1010",
-	)
-}
-
 func (c *Configuration) defaultSettings(
 	protocol settings.Protocol,
-	interfaceName, InterfaceCIDR, InterfaceAddr, port string,
+	interfaceName, InterfaceCIDR, InterfaceAddr string,
+	port int,
 ) settings.Settings {
 	return settings.Settings{
 		InterfaceName:    interfaceName,
-		InterfaceIPCIDR:  InterfaceCIDR,
-		InterfaceAddress: InterfaceAddr,
-		ConnectionIP:     "",
+		InterfaceSubnet:  netip.MustParsePrefix(InterfaceCIDR),
+		InterfaceIP:      netip.MustParseAddr(InterfaceAddr),
+		Host:             "",
 		Port:             port,
 		MTU:              settings.DefaultEthernetMTU,
 		Protocol:         protocol,
@@ -196,15 +170,7 @@ func (c *Configuration) Validate() error {
 			)
 		}
 		// validate port number
-		portNumber, err := strconv.Atoi(config.Port)
-		if err != nil {
-			return fmt.Errorf(
-				"invalid 'Port': [%s/%s] invalid port %q: not a number",
-				config.Protocol,
-				config.InterfaceName,
-				config.Port,
-			)
-		}
+		portNumber := config.Port
 		if portNumber < 1 || portNumber > 65535 {
 			return fmt.Errorf(
 				"invalid 'Port': [%s/%s] invalid port %d: must be in 1..65535",
@@ -231,34 +197,31 @@ func (c *Configuration) Validate() error {
 				config.MTU,
 			)
 		}
-		// validate interface subnet (InterfaceIPCIDR)
-		pfx, err := netip.ParsePrefix(config.InterfaceIPCIDR)
-		if err != nil {
+		pfx := config.InterfaceSubnet
+		if !pfx.IsValid() {
 			return fmt.Errorf(
-				"invalid 'InterfaceIPCIDR': [%s/%s] invalid CIDR %q: %v",
+				"invalid 'InterfaceSubnet': [%s/%s] invalid CIDR %q",
 				config.Protocol,
 				config.InterfaceName,
-				config.InterfaceIPCIDR,
-				err,
+				config.InterfaceSubnet,
 			)
 		}
-		addr, err := netip.ParseAddr(config.InterfaceAddress)
-		if err != nil {
+		addr := config.InterfaceIP.Unmap()
+		if !addr.IsValid() {
 			return fmt.Errorf(
-				"invalid 'InterfaceAddress': [%s/%s] invalid address %q: %v",
+				"invalid 'InterfaceIP': [%s/%s] invalid address %q",
 				config.Protocol,
 				config.InterfaceName,
-				config.InterfaceAddress,
-				err,
+				config.InterfaceIP,
 			)
 		}
 		if !pfx.Contains(addr) {
 			return fmt.Errorf(
-				"invalid 'InterfaceAddress': [%s/%s] address %s not in 'InterfaceIPCIDR' subnet %s",
+				"invalid 'InterfaceIP': [%s/%s] address %s not in 'InterfaceSubnet' subnet %s",
 				config.Protocol,
 				config.InterfaceName,
-				config.InterfaceAddress,
-				config.InterfaceIPCIDR,
+				config.InterfaceIP,
+				config.InterfaceSubnet,
 			)
 		}
 		subnets = append(subnets, pfx)
@@ -266,7 +229,7 @@ func (c *Configuration) Validate() error {
 
 	// interface subnets must not overlap
 	if c.overlappingSubnets(subnets) {
-		return fmt.Errorf("invalid 'InterfaceIPCIDR':  two or more interface subnets are overlapping.")
+		return fmt.Errorf("invalid 'InterfaceSubnet':  two or more interface subnets are overlapping.")
 	}
 
 	// validate AllowedPeers
@@ -290,33 +253,34 @@ func (c *Configuration) overlappingSubnets(subnets []netip.Prefix) bool {
 }
 
 // ValidateAllowedPeers validates the AllowedPeers configuration.
-// Ensures no AllowedIPs overlap between different peers and no duplicate public keys.
-// Also validates that each ClientIP is within at least one enabled interface subnet.
+// Ensures no Address overlap between different peers and no duplicate public keys.
+// Also validates that each peer's internal address
+// is within at least one enabled interface subnet.
 func (c *Configuration) ValidateAllowedPeers() error {
-	// Collect interface subnets for ClientIP validation
+	// Collect interface subnets for peer address validation
 	var interfaceSubnets []netip.Prefix
 	if c.EnableTCP {
-		if pfx, err := netip.ParsePrefix(c.TCPSettings.InterfaceIPCIDR); err == nil {
+		if pfx := c.TCPSettings.InterfaceSubnet; pfx.IsValid() {
 			interfaceSubnets = append(interfaceSubnets, pfx)
 		}
 	}
 	if c.EnableUDP {
-		if pfx, err := netip.ParsePrefix(c.UDPSettings.InterfaceIPCIDR); err == nil {
+		if pfx := c.UDPSettings.InterfaceSubnet; pfx.IsValid() {
 			interfaceSubnets = append(interfaceSubnets, pfx)
 		}
 	}
 	if c.EnableWS {
-		if pfx, err := netip.ParsePrefix(c.WSSettings.InterfaceIPCIDR); err == nil {
+		if pfx := c.WSSettings.InterfaceSubnet; pfx.IsValid() {
 			interfaceSubnets = append(interfaceSubnets, pfx)
 		}
 	}
 
-	// Collect all prefixes with their peer index
-	type prefixOwner struct {
-		prefix netip.Prefix
-		peer   int
+	// Collect all addresses with their peer index
+	type addressOwner struct {
+		address netip.Addr
+		peer    int
 	}
-	var allPrefixes []prefixOwner
+	var allAddresses []addressOwner
 
 	for i, peer := range c.AllowedPeers {
 		// Validate public key length
@@ -324,49 +288,31 @@ func (c *Configuration) ValidateAllowedPeers() error {
 			return fmt.Errorf("peer %d: invalid public key length %d, expected 32", i, len(peer.PublicKey))
 		}
 
-		// Parse and collect ClientIP as /32 or /128
-		clientIP, err := netip.ParseAddr(peer.ClientIP)
-		if err != nil {
-			return fmt.Errorf("peer %d: invalid ClientIP %q: %w", i, peer.ClientIP, err)
+		if !peer.Address.IsValid() {
+			return fmt.Errorf("peer %d: invalid Address %v: missing or invalid Address", i, peer.Address)
 		}
+		address := peer.Address.Unmap()
 
-		// Validate ClientIP is within at least one interface subnet
-		if !c.isClientIPInSubnet(clientIP, interfaceSubnets) {
+		// Validate internal address is within at least one interface subnet
+		if !c.isClientIPInSubnet(address, interfaceSubnets) {
 			return fmt.Errorf(
-				"peer %d: ClientIP %s is not within any enabled interface subnet; "+
+				"peer %d: Address %s is not within any enabled interface subnet; "+
 					"must be in one of: %v",
-				i, peer.ClientIP, interfaceSubnets,
+				i, address, interfaceSubnets,
 			)
 		}
 
-		bits := 32
-		if clientIP.Is6() {
-			bits = 128
-		}
-		clientPrefix := netip.PrefixFrom(clientIP, bits)
-		allPrefixes = append(allPrefixes, prefixOwner{clientPrefix, i})
-
-		// Parse and collect AllowedIPs
-		for _, cidr := range peer.AllowedIPs {
-			prefix, err := netip.ParsePrefix(cidr)
-			if err != nil {
-				return fmt.Errorf("peer %d: invalid AllowedIP %q: %w", i, cidr, err)
-			}
-			allPrefixes = append(allPrefixes, prefixOwner{prefix, i})
-		}
+		allAddresses = append(allAddresses, addressOwner{address, i})
 	}
 
-	// Check for overlaps between different peers
-	for i := 0; i < len(allPrefixes); i++ {
-		for j := i + 1; j < len(allPrefixes); j++ {
-			a, b := allPrefixes[i], allPrefixes[j]
-			if a.peer == b.peer {
-				continue // Same peer, overlap is fine
-			}
-			if a.prefix.Overlaps(b.prefix) {
+	// Check for duplicate addresses between different peers
+	for i := 0; i < len(allAddresses); i++ {
+		for j := i + 1; j < len(allAddresses); j++ {
+			a, b := allAddresses[i], allAddresses[j]
+			if a.peer != b.peer && a.address == b.address {
 				return fmt.Errorf(
-					"AllowedIPs overlap: peer %d prefix %s overlaps with peer %d prefix %s",
-					a.peer, a.prefix, b.peer, b.prefix,
+					"Address conflict: peer %d address %s conflicts with peer %d address %s",
+					a.peer, a.address, b.peer, b.address,
 				)
 			}
 		}

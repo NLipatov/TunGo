@@ -65,7 +65,7 @@ func (t *TransportHandler) HandleTransport() error {
 		_ = conn.Close()
 	}(t.listenerConn)
 
-	t.logger.Printf("server listening on port %s (UDP)", t.settings.Port)
+	t.logger.Printf("server listening on port %d (UDP)", t.settings.Port)
 
 	// Size socket buffers for burst absorption under high throughput.
 	_ = t.listenerConn.SetReadBuffer(4 * 1024 * 1024)

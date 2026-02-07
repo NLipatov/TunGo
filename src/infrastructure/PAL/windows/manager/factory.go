@@ -12,11 +12,11 @@ import (
 	"tungo/application/network/routing/tun"
 )
 
-// Factory builds a family-specific TUN manager (IPv4 or IPv6) based on InterfaceAddress.
+// Factory builds a family-specific TUN manager (IPv4 or IPv6) based on InterfaceIP.
 // Assumptions:
-//   - InterfaceAddress is a strict invariant and always valid (non-empty, not unspecified).
-//   - We keep code simple: choose by InterfaceAddress family only.
-//   - Optional safety: ensure ConnectionIP family matches InterfaceAddress family.
+//   - InterfaceIP is a strict invariant and always valid (non-empty, not unspecified).
+//   - We keep code simple: choose by InterfaceIP family only.
+//   - Optional safety: ensure Host family matches InterfaceIP family.
 type Factory struct {
 	connectionSettings settings.Settings
 	netConfigFactory   ipcfg.Factory
@@ -33,22 +33,22 @@ func NewFactory(
 
 // Create returns a tun.ClientManager specialized for IPv4 or IPv6.
 func (f *Factory) Create() (tun.ClientManager, error) {
-	ifAddr := f.stripZone(f.connectionSettings.InterfaceAddress) // e.g., "fe80::1%12" -> "fe80::1"
+	ifAddr := f.stripZone(f.connectionSettings.InterfaceIP) // e.g., "fe80::1%12" -> "fe80::1"
 	ip := net.ParseIP(ifAddr)
 	if ip == nil {
-		return nil, fmt.Errorf("invalid InterfaceAddress: %q", f.connectionSettings.InterfaceAddress)
+		return nil, fmt.Errorf("invalid InterfaceIP: %q", f.connectionSettings.InterfaceIP)
 	}
 	if ip.IsUnspecified() {
-		return nil, fmt.Errorf("unspecified InterfaceAddress is not allowed: %q", f.connectionSettings.InterfaceAddress)
+		return nil, fmt.Errorf("unspecified InterfaceIP is not allowed: %q", f.connectionSettings.InterfaceIP)
 	}
-	// Optional safety: enforce family match between InterfaceAddress and ConnectionIP.
-	connIP := net.ParseIP(f.stripZone(f.connectionSettings.ConnectionIP))
+	// Optional safety: enforce family match between InterfaceIP and Host.
+	connIP := net.ParseIP(f.stripZone(f.connectionSettings.Host))
 	if connIP == nil {
-		return nil, fmt.Errorf("invalid ConnectionIP: %q", f.connectionSettings.ConnectionIP)
+		return nil, fmt.Errorf("invalid Host: %q", f.connectionSettings.Host)
 	}
 	if (ip.To4() != nil) != (connIP.To4() != nil) {
-		return nil, fmt.Errorf("IP family mismatch: InterfaceAddress=%q vs ConnectionIP=%q",
-			f.connectionSettings.InterfaceAddress, f.connectionSettings.ConnectionIP)
+		return nil, fmt.Errorf("IP family mismatch: InterfaceIP=%q vs Host=%q",
+			f.connectionSettings.InterfaceIP, f.connectionSettings.Host)
 	}
 	if ip.To4() != nil {
 		return newV4Manager(

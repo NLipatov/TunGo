@@ -247,11 +247,11 @@ type testSession struct {
 	externalIP netip.AddrPort
 }
 
-func (s *testSession) Crypto() connection.Crypto          { return s.crypto }
-func (s *testSession) InternalAddr() netip.Addr           { return s.internalIP }
-func (s *testSession) ExternalAddrPort() netip.AddrPort   { return s.externalIP }
-func (s *testSession) RekeyController() rekey.FSM         { return nil }
-func (s *testSession) IsSourceAllowed(netip.Addr) bool { return true }
+func (s *testSession) Crypto() connection.Crypto        { return s.crypto }
+func (s *testSession) InternalAddr() netip.Addr         { return s.internalIP }
+func (s *testSession) ExternalAddrPort() netip.AddrPort { return s.externalIP }
+func (s *testSession) RekeyController() rekey.FSM       { return nil }
+func (s *testSession) IsSourceAllowed(netip.Addr) bool  { return true }
 
 // makeValidIPv4Packet creates a minimal valid IPv4 packet with the given source IP.
 // Used in tests to satisfy AllowedIPs validation.
@@ -273,7 +273,7 @@ func TestHandleTransport_CtxDoneBeforeAccept_ReturnsNil(t *testing.T) {
 	registrar := tcp_registration.NewRegistrar(logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{}, repo)
 	handler := NewTransportHandler(
 		ctx,
-		settings.Settings{Port: "7777"},
+		settings.Settings{Port: 7777},
 		&fakeWriter{},
 		listener,
 		repo,
@@ -309,7 +309,7 @@ func TestHandleTransport_AlreadyCanceled_ReturnsCtxErr(t *testing.T) {
 	registrar := tcp_registration.NewRegistrar(logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{}, repo)
 	handler := NewTransportHandler(
 		ctx,
-		settings.Settings{Port: "7777"},
+		settings.Settings{Port: 7777},
 		&fakeWriter{},
 		listener,
 		repo,
@@ -337,7 +337,7 @@ func TestHandleTransport_AcceptError(t *testing.T) {
 	registrar := tcp_registration.NewRegistrar(logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{}, repo)
 	handler := NewTransportHandler(
 		ctx,
-		settings.Settings{Port: "1111"},
+		settings.Settings{Port: 1111},
 		&fakeWriter{},
 		listener,
 		repo,
@@ -373,7 +373,7 @@ func TestHandleTransport_RegisterClientError_Logged(t *testing.T) {
 	repo := &fakeSessionRepo{}
 
 	registrar := tcp_registration.NewRegistrar(logger, handshakeFactory, &fakeCryptoFactory{}, repo)
-	handler := NewTransportHandler(ctx, settings.Settings{Port: "2222"}, &fakeWriter{}, listener, repo, logger, registrar)
+	handler := NewTransportHandler(ctx, settings.Settings{Port: 2222}, &fakeWriter{}, listener, repo, logger, registrar)
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
 

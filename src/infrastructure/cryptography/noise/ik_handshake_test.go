@@ -30,7 +30,7 @@ func TestIKHandshake_Success(t *testing.T) {
 		{
 			PublicKey: clientKP.Public,
 			Enabled:   true,
-			ClientIP:  "10.0.0.5",
+			Address:   netip.MustParseAddr("10.0.0.5"),
 		},
 	}
 
@@ -121,7 +121,7 @@ func TestIKHandshake_UnknownClient(t *testing.T) {
 		{
 			PublicKey: clientKP.Public,
 			Enabled:   true,
-			ClientIP:  "10.0.0.5",
+			Address:   netip.MustParseAddr("10.0.0.5"),
 		},
 	}
 
@@ -173,7 +173,7 @@ func TestIKHandshake_DisabledClient(t *testing.T) {
 		{
 			PublicKey: clientKP.Public,
 			Enabled:   false, // Disabled
-			ClientIP:  "10.0.0.5",
+			Address:   netip.MustParseAddr("10.0.0.5"),
 		},
 	}
 
@@ -222,7 +222,7 @@ func TestIKHandshake_KeyMismatch(t *testing.T) {
 		{
 			PublicKey: clientKP.Public,
 			Enabled:   true,
-			ClientIP:  "10.0.0.5",
+			Address:   netip.MustParseAddr("10.0.0.5"),
 		},
 	}
 
@@ -288,7 +288,7 @@ func TestIKHandshake_FreshEphemeralPerHandshake(t *testing.T) {
 		{
 			PublicKey: clientKP.Public,
 			Enabled:   true,
-			ClientIP:  "10.0.0.5",
+			Address:   netip.MustParseAddr("10.0.0.5"),
 		},
 	}
 
@@ -395,7 +395,7 @@ func TestIKHandshake_InvalidMAC1(t *testing.T) {
 	clientKP, _ := cipherSuite.GenerateKeypair(nil)
 
 	allowedPeers := []server.AllowedPeer{
-		{PublicKey: clientKP.Public, Enabled: true, ClientIP: "10.0.0.5"},
+		{PublicKey: clientKP.Public, Enabled: true, Address: netip.MustParseAddr("10.0.0.5")},
 	}
 
 	cookieManager, _ := NewCookieManager()
@@ -434,8 +434,8 @@ func TestAllowedPeersLookup(t *testing.T) {
 	pubKey2[0] = 2
 
 	peers := []server.AllowedPeer{
-		{PublicKey: pubKey1, Enabled: true, ClientIP: "10.0.0.1"},
-		{PublicKey: pubKey2, Enabled: false, ClientIP: "10.0.0.2"},
+		{PublicKey: pubKey1, Enabled: true, Address: netip.MustParseAddr("10.0.0.1")},
+		{PublicKey: pubKey2, Enabled: false, Address: netip.MustParseAddr("10.0.0.2")},
 	}
 
 	lookup := NewAllowedPeersLookup(peers)
@@ -445,7 +445,7 @@ func TestAllowedPeersLookup(t *testing.T) {
 	if peer == nil {
 		t.Fatal("should find peer 1")
 	}
-	if peer.ClientIP != "10.0.0.1" {
+	if peer.Address.String() != "10.0.0.1" {
 		t.Fatal("wrong peer returned")
 	}
 
@@ -476,7 +476,7 @@ func TestAllowedPeersLookup_DynamicUpdate(t *testing.T) {
 
 	// Initial peers
 	peers := []server.AllowedPeer{
-		{PublicKey: pubKey1, Enabled: true, ClientIP: "10.0.0.1"},
+		{PublicKey: pubKey1, Enabled: true, Address: netip.MustParseAddr("10.0.0.1")},
 	}
 
 	lookup := NewAllowedPeersLookup(peers)
@@ -491,8 +491,8 @@ func TestAllowedPeersLookup_DynamicUpdate(t *testing.T) {
 
 	// Update with new peers
 	newPeers := []server.AllowedPeer{
-		{PublicKey: pubKey2, Enabled: true, ClientIP: "10.0.0.2"},
-		{PublicKey: pubKey3, Enabled: true, ClientIP: "10.0.0.3"},
+		{PublicKey: pubKey2, Enabled: true, Address: netip.MustParseAddr("10.0.0.2")},
+		{PublicKey: pubKey3, Enabled: true, Address: netip.MustParseAddr("10.0.0.3")},
 	}
 	lookup.Update(newPeers)
 
@@ -511,8 +511,8 @@ func TestAllowedPeersLookup_DynamicUpdate(t *testing.T) {
 
 	// Verify correct data
 	peer2 := lookup.Lookup(pubKey2)
-	if peer2.ClientIP != "10.0.0.2" {
-		t.Fatalf("expected ClientIP 10.0.0.2, got %s", peer2.ClientIP)
+	if peer2.Address.String() != "10.0.0.2" {
+		t.Fatalf("expected Address 10.0.0.2, got %s", peer2.Address)
 	}
 }
 
@@ -522,10 +522,9 @@ func TestIKHandshake_AllowedIPsInResult(t *testing.T) {
 
 	allowedPeers := []server.AllowedPeer{
 		{
-			PublicKey:  clientKP.Public,
-			Enabled:    true,
-			ClientIP:   "10.0.0.5",
-			AllowedIPs: []string{"192.168.1.0/24", "10.10.0.0/16"},
+			PublicKey: clientKP.Public,
+			Enabled:   true,
+			Address:   netip.MustParseAddr("10.0.0.5"),
 		},
 	}
 
@@ -559,16 +558,8 @@ func TestIKHandshake_AllowedIPsInResult(t *testing.T) {
 	}
 
 	allowedIPs := result.AllowedIPs()
-	if len(allowedIPs) != 2 {
-		t.Fatalf("expected 2 allowed IPs, got %d", len(allowedIPs))
-	}
-
-	// Verify prefixes
-	if allowedIPs[0].String() != "192.168.1.0/24" {
-		t.Fatalf("expected 192.168.1.0/24, got %s", allowedIPs[0])
-	}
-	if allowedIPs[1].String() != "10.10.0.0/16" {
-		t.Fatalf("expected 10.10.0.0/16, got %s", allowedIPs[1])
+	if len(allowedIPs) != 0 {
+		t.Fatalf("expected no additional allowed IPs, got %d", len(allowedIPs))
 	}
 }
 
@@ -579,7 +570,7 @@ func TestSecurity_HandshakeReplayMsg1(t *testing.T) {
 	clientKP, _ := cipherSuite.GenerateKeypair(nil)
 
 	allowedPeers := []server.AllowedPeer{
-		{PublicKey: clientKP.Public, Enabled: true, ClientIP: "10.0.0.5"},
+		{PublicKey: clientKP.Public, Enabled: true, Address: netip.MustParseAddr("10.0.0.5")},
 	}
 
 	cookieManager, _ := NewCookieManager()
@@ -655,7 +646,7 @@ func TestSecurity_RejectUnknownProtocolVersions(t *testing.T) {
 	clientKP, _ := cipherSuite.GenerateKeypair(nil)
 
 	allowedPeers := []server.AllowedPeer{
-		{PublicKey: clientKP.Public, Enabled: true, ClientIP: "10.0.0.5"},
+		{PublicKey: clientKP.Public, Enabled: true, Address: netip.MustParseAddr("10.0.0.5")},
 	}
 
 	cookieManager, _ := NewCookieManager()
@@ -767,10 +758,9 @@ func TestSecurity_SpoofedSourceIP(t *testing.T) {
 
 	allowedPeers := []server.AllowedPeer{
 		{
-			PublicKey:  clientKP.Public,
-			Enabled:    true,
-			ClientIP:   "10.0.0.5",
-			AllowedIPs: []string{"192.168.1.0/24"}, // Client can also use this range
+			PublicKey: clientKP.Public,
+			Enabled:   true,
+			Address:   netip.MustParseAddr("10.0.0.5"),
 		},
 	}
 
@@ -803,9 +793,6 @@ func TestSecurity_SpoofedSourceIP(t *testing.T) {
 		t.Fatal("result should not be nil after successful handshake")
 	}
 
-	// Verify AllowedIPs were extracted correctly
-	allowedIPs := result.AllowedIPs()
-
 	// Test cases for source IP validation
 	tests := []struct {
 		name    string
@@ -813,11 +800,8 @@ func TestSecurity_SpoofedSourceIP(t *testing.T) {
 		allowed bool
 	}{
 		{"client assigned IP", "10.0.0.5", true},
-		{"IP in allowed range", "192.168.1.100", true},
-		{"IP at range start", "192.168.1.0", true},
-		{"IP at range end", "192.168.1.255", true},
 		{"spoofed IP outside range", "10.0.0.99", false},
-		{"spoofed IP different subnet", "192.168.2.1", false},
+		{"spoofed IP different subnet", "10.0.1.1", false},
 		{"spoofed public IP", "8.8.8.8", false},
 		{"spoofed localhost", "127.0.0.1", false},
 	}
@@ -832,15 +816,6 @@ func TestSecurity_SpoofedSourceIP(t *testing.T) {
 			// Check if internal IP matches
 			internalIP, _ := netip.ParseAddr("10.0.0.5")
 			allowed := srcIP == internalIP
-			if !allowed {
-				// Check AllowedIPs
-				for _, prefix := range allowedIPs {
-					if prefix.Contains(srcIP) {
-						allowed = true
-						break
-					}
-				}
-			}
 
 			if allowed != tc.allowed {
 				t.Errorf("source IP %s: expected allowed=%v, got %v", tc.srcIP, tc.allowed, allowed)
@@ -901,9 +876,9 @@ func TestSecurity_CookieBoundToEphemeral(t *testing.T) {
 	}
 }
 
-// TestSecurity_AllowedIPsOverlapRejectedAtConfig verifies that overlapping AllowedIPs
-// between different peers are rejected at configuration validation time.
-func TestSecurity_AllowedIPsOverlapRejectedAtConfig(t *testing.T) {
+// TestSecurity_AddressConflictRejectedAtConfig verifies that duplicate peer addresses
+// are rejected at configuration validation time.
+func TestSecurity_AddressConflictRejectedAtConfig(t *testing.T) {
 	pubKey1 := make([]byte, 32)
 	pubKey1[0] = 1
 	pubKey2 := make([]byte, 32)
@@ -916,45 +891,27 @@ func TestSecurity_AllowedIPsOverlapRejectedAtConfig(t *testing.T) {
 		errMsg    string
 	}{
 		{
-			name: "no overlap - disjoint prefixes",
+			name: "no conflict - distinct addresses",
 			peers: []server.AllowedPeer{
-				{PublicKey: pubKey1, Enabled: true, ClientIP: "10.0.0.1", AllowedIPs: []string{"192.168.1.0/24"}},
-				{PublicKey: pubKey2, Enabled: true, ClientIP: "10.0.0.2", AllowedIPs: []string{"192.168.2.0/24"}},
+				{PublicKey: pubKey1, Enabled: true, Address: netip.MustParseAddr("10.0.0.1")},
+				{PublicKey: pubKey2, Enabled: true, Address: netip.MustParseAddr("10.0.0.2")},
 			},
 			expectErr: false,
 		},
 		{
-			name: "overlap - identical prefixes",
+			name: "conflict - identical address",
 			peers: []server.AllowedPeer{
-				{PublicKey: pubKey1, Enabled: true, ClientIP: "10.0.0.1", AllowedIPs: []string{"192.168.1.0/24"}},
-				{PublicKey: pubKey2, Enabled: true, ClientIP: "10.0.0.2", AllowedIPs: []string{"192.168.1.0/24"}},
+				{PublicKey: pubKey1, Enabled: true, Address: netip.MustParseAddr("10.0.0.1")},
+				{PublicKey: pubKey2, Enabled: true, Address: netip.MustParseAddr("10.0.0.1")},
 			},
 			expectErr: true,
-			errMsg:    "overlap",
-		},
-		{
-			name: "overlap - supernet/subnet",
-			peers: []server.AllowedPeer{
-				{PublicKey: pubKey1, Enabled: true, ClientIP: "10.0.0.1", AllowedIPs: []string{"192.168.0.0/16"}},
-				{PublicKey: pubKey2, Enabled: true, ClientIP: "10.0.0.2", AllowedIPs: []string{"192.168.1.0/24"}},
-			},
-			expectErr: true,
-			errMsg:    "overlap",
-		},
-		{
-			name: "overlap - ClientIP conflicts with AllowedIP",
-			peers: []server.AllowedPeer{
-				{PublicKey: pubKey1, Enabled: true, ClientIP: "10.0.0.1"},
-				{PublicKey: pubKey2, Enabled: true, ClientIP: "10.0.0.2", AllowedIPs: []string{"10.0.0.0/24"}},
-			},
-			expectErr: true,
-			errMsg:    "overlap",
+			errMsg:    "Address conflict",
 		},
 		{
 			name: "duplicate public keys",
 			peers: []server.AllowedPeer{
-				{PublicKey: pubKey1, Enabled: true, ClientIP: "10.0.0.1"},
-				{PublicKey: pubKey1, Enabled: true, ClientIP: "10.0.0.2"},
+				{PublicKey: pubKey1, Enabled: true, Address: netip.MustParseAddr("10.0.0.1")},
+				{PublicKey: pubKey1, Enabled: true, Address: netip.MustParseAddr("10.0.0.2")},
 			},
 			expectErr: true,
 			errMsg:    "duplicate",
@@ -963,13 +920,13 @@ func TestSecurity_AllowedIPsOverlapRejectedAtConfig(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := &server.Configuration{
-				EnableUDP: true,
-				UDPSettings: settings.Settings{
-					InterfaceIPCIDR: "10.0.0.0/24",
-				},
-				AllowedPeers: tc.peers,
-			}
+				cfg := &server.Configuration{
+					EnableUDP: true,
+					UDPSettings: settings.Settings{
+						InterfaceSubnet: netip.MustParsePrefix("10.0.0.0/24"),
+					},
+					AllowedPeers: tc.peers,
+				}
 
 			err := cfg.ValidateAllowedPeers()
 
@@ -995,7 +952,7 @@ func TestSecurity_MAC1VerifiedBeforeAllocation(t *testing.T) {
 	clientKP, _ := cipherSuite.GenerateKeypair(nil)
 
 	allowedPeers := []server.AllowedPeer{
-		{PublicKey: clientKP.Public, Enabled: true, ClientIP: "10.0.0.5"},
+		{PublicKey: clientKP.Public, Enabled: true, Address: netip.MustParseAddr("10.0.0.5")},
 	}
 
 	cookieManager, _ := NewCookieManager()

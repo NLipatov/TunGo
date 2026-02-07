@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -114,8 +115,8 @@ func TestConfigWatcher_RevokesDisabledPeer(t *testing.T) {
 
 	initialConfig := &Configuration{
 		AllowedPeers: []AllowedPeer{
-			{PublicKey: pubKey1, Enabled: true, ClientIP: "10.0.0.1"},
-			{PublicKey: pubKey2, Enabled: true, ClientIP: "10.0.0.2"},
+			{PublicKey: pubKey1, Enabled: true, Address: netip.MustParseAddr("10.0.0.1")},
+			{PublicKey: pubKey2, Enabled: true, Address: netip.MustParseAddr("10.0.0.2")},
 		},
 	}
 
@@ -130,8 +131,8 @@ func TestConfigWatcher_RevokesDisabledPeer(t *testing.T) {
 	// Disable peer1
 	updatedConfig := &Configuration{
 		AllowedPeers: []AllowedPeer{
-			{PublicKey: pubKey1, Enabled: false, ClientIP: "10.0.0.1"}, // disabled
-			{PublicKey: pubKey2, Enabled: true, ClientIP: "10.0.0.2"},
+			{PublicKey: pubKey1, Enabled: false, Address: netip.MustParseAddr("10.0.0.1")}, // disabled
+			{PublicKey: pubKey2, Enabled: true, Address: netip.MustParseAddr("10.0.0.2")},
 		},
 	}
 	configManager.setConfig(updatedConfig)
@@ -157,8 +158,8 @@ func TestConfigWatcher_RevokesRemovedPeer(t *testing.T) {
 
 	initialConfig := &Configuration{
 		AllowedPeers: []AllowedPeer{
-			{PublicKey: pubKey1, Enabled: true, ClientIP: "10.0.0.1"},
-			{PublicKey: pubKey2, Enabled: true, ClientIP: "10.0.0.2"},
+			{PublicKey: pubKey1, Enabled: true, Address: netip.MustParseAddr("10.0.0.1")},
+			{PublicKey: pubKey2, Enabled: true, Address: netip.MustParseAddr("10.0.0.2")},
 		},
 	}
 
@@ -171,7 +172,7 @@ func TestConfigWatcher_RevokesRemovedPeer(t *testing.T) {
 	// Remove peer1 entirely
 	updatedConfig := &Configuration{
 		AllowedPeers: []AllowedPeer{
-			{PublicKey: pubKey2, Enabled: true, ClientIP: "10.0.0.2"},
+			{PublicKey: pubKey2, Enabled: true, Address: netip.MustParseAddr("10.0.0.2")},
 		},
 	}
 	configManager.setConfig(updatedConfig)
@@ -194,7 +195,7 @@ func TestConfigWatcher_NoRevokeForAlreadyDisabled(t *testing.T) {
 	// Start with already disabled peer
 	initialConfig := &Configuration{
 		AllowedPeers: []AllowedPeer{
-			{PublicKey: pubKey1, Enabled: false, ClientIP: "10.0.0.1"},
+			{PublicKey: pubKey1, Enabled: false, Address: netip.MustParseAddr("10.0.0.1")},
 		},
 	}
 
@@ -221,7 +222,7 @@ func TestConfigWatcher_NoRevokeWhenReEnabled(t *testing.T) {
 	// Start with enabled peer
 	initialConfig := &Configuration{
 		AllowedPeers: []AllowedPeer{
-			{PublicKey: pubKey1, Enabled: true, ClientIP: "10.0.0.1"},
+			{PublicKey: pubKey1, Enabled: true, Address: netip.MustParseAddr("10.0.0.1")},
 		},
 	}
 
@@ -246,7 +247,7 @@ func TestConfigWatcher_WatchLoop(t *testing.T) {
 
 	initialConfig := &Configuration{
 		AllowedPeers: []AllowedPeer{
-			{PublicKey: pubKey1, Enabled: true, ClientIP: "10.0.0.1"},
+			{PublicKey: pubKey1, Enabled: true, Address: netip.MustParseAddr("10.0.0.1")},
 		},
 	}
 
@@ -267,7 +268,7 @@ func TestConfigWatcher_WatchLoop(t *testing.T) {
 	// Disable the peer
 	configManager.setConfig(&Configuration{
 		AllowedPeers: []AllowedPeer{
-			{PublicKey: pubKey1, Enabled: false, ClientIP: "10.0.0.1"},
+			{PublicKey: pubKey1, Enabled: false, Address: netip.MustParseAddr("10.0.0.1")},
 		},
 	})
 
@@ -289,7 +290,7 @@ func TestConfigWatcher_CheckAndRevoke_UpdatesPeersUpdater(t *testing.T) {
 
 	initialConfig := &Configuration{
 		AllowedPeers: []AllowedPeer{
-			{PublicKey: pubKey1, Enabled: true, ClientIP: "10.0.0.1"},
+			{PublicKey: pubKey1, Enabled: true, Address: netip.MustParseAddr("10.0.0.1")},
 		},
 	}
 
@@ -331,8 +332,8 @@ func TestConfigWatcher_Watch_FsnotifyEventTriggersInvalidateAndRevoke(t *testing
 
 	initialConfig := &Configuration{
 		AllowedPeers: []AllowedPeer{
-			{PublicKey: pubKey1, Enabled: true, ClientIP: "10.0.0.1"},
-			{PublicKey: pubKey2, Enabled: true, ClientIP: "10.0.0.2"},
+			{PublicKey: pubKey1, Enabled: true, Address: netip.MustParseAddr("10.0.0.1")},
+			{PublicKey: pubKey2, Enabled: true, Address: netip.MustParseAddr("10.0.0.2")},
 		},
 	}
 
@@ -355,8 +356,8 @@ func TestConfigWatcher_Watch_FsnotifyEventTriggersInvalidateAndRevoke(t *testing
 	// Disable peer1 and trigger fs event on watched file.
 	configManager.setConfig(&Configuration{
 		AllowedPeers: []AllowedPeer{
-			{PublicKey: pubKey1, Enabled: false, ClientIP: "10.0.0.1"},
-			{PublicKey: pubKey2, Enabled: true, ClientIP: "10.0.0.2"},
+			{PublicKey: pubKey1, Enabled: false, Address: netip.MustParseAddr("10.0.0.1")},
+			{PublicKey: pubKey2, Enabled: true, Address: netip.MustParseAddr("10.0.0.2")},
 		},
 	})
 	if err := os.WriteFile(configPath, []byte("{\"changed\":true}"), 0o644); err != nil {
@@ -380,7 +381,7 @@ func TestConfigWatcher_Watch_InvalidPathFallsBackToPolling(t *testing.T) {
 
 	initialConfig := &Configuration{
 		AllowedPeers: []AllowedPeer{
-			{PublicKey: pubKey1, Enabled: true, ClientIP: "10.0.0.1"},
+			{PublicKey: pubKey1, Enabled: true, Address: netip.MustParseAddr("10.0.0.1")},
 		},
 	}
 
@@ -402,7 +403,7 @@ func TestConfigWatcher_Watch_InvalidPathFallsBackToPolling(t *testing.T) {
 	time.Sleep(30 * time.Millisecond)
 	configManager.setConfig(&Configuration{
 		AllowedPeers: []AllowedPeer{
-			{PublicKey: pubKey1, Enabled: false, ClientIP: "10.0.0.1"},
+			{PublicKey: pubKey1, Enabled: false, Address: netip.MustParseAddr("10.0.0.1")},
 		},
 	})
 
@@ -423,7 +424,7 @@ func TestConfigWatcher_Watch_LogsWatchDirForBareFilename(t *testing.T) {
 	configManager := &mockConfigManager{
 		config: &Configuration{
 			AllowedPeers: []AllowedPeer{
-				{PublicKey: pubKey1, Enabled: true, ClientIP: "10.0.0.1"},
+				{PublicKey: pubKey1, Enabled: true, Address: netip.MustParseAddr("10.0.0.1")},
 			},
 		},
 	}
@@ -465,8 +466,8 @@ func TestConfigWatcher_CheckAndRevoke_LoggerBranches(t *testing.T) {
 	configManager := &mockConfigManager{
 		config: &Configuration{
 			AllowedPeers: []AllowedPeer{
-				{PublicKey: pubKey1, Enabled: true, ClientIP: "10.0.0.1"},
-				{PublicKey: pubKey2, Enabled: true, ClientIP: "10.0.0.2"},
+				{PublicKey: pubKey1, Enabled: true, Address: netip.MustParseAddr("10.0.0.1")},
+				{PublicKey: pubKey2, Enabled: true, Address: netip.MustParseAddr("10.0.0.2")},
 			},
 		},
 	}
@@ -479,7 +480,7 @@ func TestConfigWatcher_CheckAndRevoke_LoggerBranches(t *testing.T) {
 	// Remove one peer to trigger revoke log (count > 0) and peer-count-changed log.
 	configManager.setConfig(&Configuration{
 		AllowedPeers: []AllowedPeer{
-			{PublicKey: pubKey2, Enabled: true, ClientIP: "10.0.0.2"},
+			{PublicKey: pubKey2, Enabled: true, Address: netip.MustParseAddr("10.0.0.2")},
 		},
 	})
 	watcher.checkAndRevoke()
@@ -529,8 +530,8 @@ func TestConfigWatcher_Watch_IgnoresOtherFilesAndLogsOwnFile(t *testing.T) {
 	configManager := &mockConfigManager{
 		config: &Configuration{
 			AllowedPeers: []AllowedPeer{
-				{PublicKey: pubKey1, Enabled: true, ClientIP: "10.0.0.1"},
-				{PublicKey: pubKey2, Enabled: true, ClientIP: "10.0.0.2"},
+				{PublicKey: pubKey1, Enabled: true, Address: netip.MustParseAddr("10.0.0.1")},
+				{PublicKey: pubKey2, Enabled: true, Address: netip.MustParseAddr("10.0.0.2")},
 			},
 		},
 	}
@@ -567,8 +568,8 @@ func TestConfigWatcher_Watch_IgnoresOtherFilesAndLogsOwnFile(t *testing.T) {
 	// Now change target config and state to trigger revoke.
 	configManager.setConfig(&Configuration{
 		AllowedPeers: []AllowedPeer{
-			{PublicKey: pubKey1, Enabled: false, ClientIP: "10.0.0.1"},
-			{PublicKey: pubKey2, Enabled: true, ClientIP: "10.0.0.2"},
+			{PublicKey: pubKey1, Enabled: false, Address: netip.MustParseAddr("10.0.0.1")},
+			{PublicKey: pubKey2, Enabled: true, Address: netip.MustParseAddr("10.0.0.2")},
 		},
 	})
 	if err := os.WriteFile(configPath, []byte("{\"changed\":true}"), 0o644); err != nil {

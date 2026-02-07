@@ -7,12 +7,20 @@ import (
 	"tungo/infrastructure/settings"
 )
 
+func mustHostParser(raw string) settings.Host {
+	h, err := settings.NewHost(raw)
+	if err != nil {
+		panic(err)
+	}
+	return h
+}
+
 // makeTestConfig returns a minimal Configuration for tests.
 func makeTestConfig() client.Configuration {
 	return client.Configuration{
 		TCPSettings: settings.Settings{
-			ConnectionIP: "127.0.0.1",
-			Port:         "8080",
+			Host: mustHostParser("127.0.0.1"),
+			Port:         8080,
 		},
 		UDPSettings:     settings.Settings{},
 		X25519PublicKey: nil,
@@ -29,7 +37,7 @@ func TestFromJson_Simple(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.TCPSettings.ConnectionIP != want.TCPSettings.ConnectionIP || cfg.TCPSettings.Port != want.TCPSettings.Port {
+	if cfg.TCPSettings.Host != want.TCPSettings.Host || cfg.TCPSettings.Port != want.TCPSettings.Port {
 		t.Errorf("got %+v, want %+v", cfg, want)
 	}
 	if cfg.Protocol != want.Protocol {
@@ -49,7 +57,7 @@ func TestFromJson_WithBOMAndZeroWidthAndControl(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if cfg.TCPSettings.Port != want.TCPSettings.Port {
-		t.Errorf("got Port=%q, want %q", cfg.TCPSettings.Port, want.TCPSettings.Port)
+		t.Errorf("got Port=%d, want %d", cfg.TCPSettings.Port, want.TCPSettings.Port)
 	}
 }
 
@@ -57,8 +65,8 @@ func TestFromJson_PrettyPrint_CRLF(t *testing.T) {
 	parser := NewConfigurationParser()
 	pretty := "{\r\n" +
 		"  \"TCPSettings\": {\r\n" +
-		"    \"ConnectionIP\": \"127.0.0.1\",\r\n" +
-		"    \"Port\": \"8080\"\r\n" +
+		"    \"Host\": \"127.0.0.1\",\r\n" +
+		"    \"Port\": 8080\r\n" +
 		"  },\r\n" +
 		"  \"UDPSettings\": {},\r\n" +
 		"  \"Protocol\": \"TCP\"\r\n" +
@@ -84,8 +92,8 @@ func TestFromJson_NonBreakingSpaceTrim(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.TCPSettings.ConnectionIP != want.TCPSettings.ConnectionIP {
-		t.Errorf("got ConnectionIP=%q, want %q", cfg.TCPSettings.ConnectionIP, want.TCPSettings.ConnectionIP)
+	if cfg.TCPSettings.Host != want.TCPSettings.Host {
+		t.Errorf("got Host=%q, want %q", cfg.TCPSettings.Host, want.TCPSettings.Host)
 	}
 }
 

@@ -32,23 +32,24 @@ func NewFactory(s settings.Settings) *Factory {
 
 // Create returns a tun.ClientManager specialized for IPv4 or IPv6 (darwin).
 func (f *Factory) Create() (tun.ClientManager, error) {
-	ifAddr := stripZone(f.s.InterfaceAddress)
+	ifAddr := stripZone(f.s.InterfaceIP)
 	ip := net.ParseIP(ifAddr)
 	if ip == nil {
-		return nil, fmt.Errorf("invalid InterfaceAddress: %q", f.s.InterfaceAddress)
+		return nil, fmt.Errorf("invalid InterfaceIP: %q", f.s.InterfaceIP)
 	}
 	if ip.IsUnspecified() {
-		return nil, fmt.Errorf("unspecified InterfaceAddress is not allowed: %q", f.s.InterfaceAddress)
+		return nil, fmt.Errorf("unspecified InterfaceIP is not allowed: %q", f.s.InterfaceIP)
 	}
 
-	connIP := net.ParseIP(stripZone(f.s.ConnectionIP))
-	if connIP == nil {
-		return nil, fmt.Errorf("invalid ConnectionIP: %q", f.s.ConnectionIP)
+	hostIP, ok := f.s.Host.IP()
+	if !ok {
+		return nil, fmt.Errorf("invalid Host: %q", f.s.Host)
 	}
+	connIP := net.ParseIP(hostIP.String())
 	// Enforce family match to avoid surprising routing behavior.
 	if (ip.To4() != nil) != (connIP.To4() != nil) {
-		return nil, fmt.Errorf("IP family mismatch: InterfaceAddress=%q vs ConnectionIP=%q",
-			f.s.InterfaceAddress, f.s.ConnectionIP)
+		return nil, fmt.Errorf("IP family mismatch: InterfaceIP=%q vs Host=%q",
+			f.s.InterfaceIP, f.s.Host)
 	}
 
 	if ip.To4() != nil {

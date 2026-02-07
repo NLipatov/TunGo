@@ -112,7 +112,7 @@ func TestRead_ValidateFails_DuplicatePort_IncludesPathAndReason(t *testing.T) {
 		EnableTCP: true,
 		EnableUDP: true,
 		UDPSettings: settings.Settings{
-			Port: "8080",
+			Port: 8080,
 		},
 	}
 	path := createTempConfigFile(t, initial)

@@ -153,12 +153,12 @@ func (s ServerTunFactory) createTun(settings settings.Settings) (*os.File, error
 		return nil, fmt.Errorf("could not set mtu on tuntap dev: %s", mtuErr)
 	}
 
-	serverIp, serverIpErr := nIp.AllocateServerIp(settings.InterfaceIPCIDR)
+	serverIp, serverIpErr := nIp.AllocateServerIp(settings.InterfaceSubnet.String())
 	if serverIpErr != nil {
 		return nil, fmt.Errorf("could not allocate server IP (%s): %s", serverIp, serverIpErr)
 	}
 
-	cidrServerIp, cidrServerIpErr := nIp.ToCIDR(settings.InterfaceIPCIDR, serverIp)
+	cidrServerIp, cidrServerIpErr := nIp.ToCIDR(settings.InterfaceSubnet.String(), serverIp)
 	if cidrServerIpErr != nil {
 		return nil, fmt.Errorf("could not conver server IP(%s) to CIDR: %s", serverIp, cidrServerIpErr)
 	}

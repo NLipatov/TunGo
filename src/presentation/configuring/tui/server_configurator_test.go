@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"net/netip"
 	"reflect"
 	"runtime"
 	"testing"
@@ -16,6 +17,22 @@ type queueSelector struct {
 	options []string
 	errs    []error
 	idx     int
+}
+
+func mustHost(raw string) settings.Host {
+	h, err := settings.NewHost(raw)
+	if err != nil {
+		panic(err)
+	}
+	return h
+}
+
+func mustPrefix(raw string) netip.Prefix {
+	return netip.MustParsePrefix(raw)
+}
+
+func mustAddr(raw string) netip.Addr {
+	return netip.MustParseAddr(raw)
 }
 
 func (m *queueSelector) SelectOne() (string, error) {
@@ -144,19 +161,19 @@ func Test_Configure_AddClientOption_Success_ThenExit(t *testing.T) {
 	m := &mockManager{
 		confRet: &srv.Configuration{
 			TCPSettings: settings.Settings{
-				ConnectionIP:     "10.10.0.1",
-				InterfaceIPCIDR:  "10.10.0.0/24",
-				InterfaceAddress: "10.10.0.2",
+				Host:             mustHost("10.10.0.1"),
+				InterfaceSubnet:  mustPrefix("10.10.0.0/24"),
+				InterfaceIP:      mustAddr("10.10.0.2"),
 			},
 			UDPSettings: settings.Settings{
-				ConnectionIP:     "10.10.1.1",
-				InterfaceIPCIDR:  "10.10.1.1/24",
-				InterfaceAddress: "10.10.1.2",
+				Host:             mustHost("10.10.1.1"),
+				InterfaceSubnet:  mustPrefix("10.10.1.1/24"),
+				InterfaceIP:      mustAddr("10.10.1.2"),
 			},
 			WSSettings: settings.Settings{
-				ConnectionIP:     "10.10.3.1",
-				InterfaceIPCIDR:  "10.10.3.1/24",
-				InterfaceAddress: "10.10.3.2",
+				Host:             mustHost("10.10.3.1"),
+				InterfaceSubnet:  mustPrefix("10.10.3.1/24"),
+				InterfaceIP:      mustAddr("10.10.3.2"),
 			},
 			EnableTCP: true,
 		},

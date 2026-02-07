@@ -1,14 +1,15 @@
 package settings
 
+import "net/netip"
+
 type Settings struct {
-	InterfaceName    string `json:"InterfaceName"`
-	InterfaceIPCIDR  string `json:"InterfaceIPCIDR"`
-	InterfaceAddress string `json:"InterfaceAddress"`
-	ConnectionIP     string `json:"ConnectionIP"`
-	Host             string `json:"Host,omitempty"` //used by WS and WSS protocols
-	Port             string `json:"Port"`
-	MTU              int    `json:"MTU"`
+	InterfaceName    string       `json:"InterfaceName"`
+	InterfaceSubnet  netip.Prefix `json:"InterfaceSubnet"`
+	InterfaceIP      netip.Addr   `json:"InterfaceIP"`
+	Host             Host         `json:"Host"`
+	Port             int          `json:"Port"`
+	MTU              int          `json:"MTU"`
 	Protocol         Protocol
 	Encryption       Encryption
-	DialTimeoutMs    int `json:"DialTimeoutMs"`
+	DialTimeoutMs    DialTimeoutMs `json:"DialTimeoutMs"`
 }

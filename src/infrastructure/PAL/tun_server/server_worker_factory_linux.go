@@ -129,7 +129,7 @@ func (s *ServerWorkerFactory) createTCPWorker(
 		return nil, confErr
 	}
 
-	addrPort, addrPortErr := s.addrPortToListen(workerSettings.ConnectionIP, workerSettings.Port)
+	addrPort, addrPortErr := s.addrPortToListen(workerSettings.Host, workerSettings.Port)
 	if addrPortErr != nil {
 		return nil, addrPortErr
 	}
@@ -185,7 +185,7 @@ func (s *ServerWorkerFactory) createWSWorker(
 		return nil, confErr
 	}
 
-	addrPort, addrPortErr := s.addrPortToListen(workerSettings.ConnectionIP, workerSettings.Port)
+	addrPort, addrPortErr := s.addrPortToListen(workerSettings.Host, workerSettings.Port)
 	if addrPortErr != nil {
 		return nil, addrPortErr
 	}
@@ -240,7 +240,7 @@ func (s *ServerWorkerFactory) createUDPWorker(
 		return nil, confErr
 	}
 
-	addrPort, addrPortErr := s.addrPortToListen(workerSettings.ConnectionIP, workerSettings.Port)
+	addrPort, addrPortErr := s.addrPortToListen(workerSettings.Host, workerSettings.Port)
 	if addrPortErr != nil {
 		return nil, addrPortErr
 	}
@@ -283,10 +283,8 @@ func (s *ServerWorkerFactory) createUDPWorker(
 }
 
 func (s *ServerWorkerFactory) addrPortToListen(
-	ip, port string,
+	host settings.Host,
+	port int,
 ) (netip.AddrPort, error) {
-	if ip == "" {
-		ip = "::" // dual-stack listen - both ipv4 and ipv6
-	}
-	return netip.ParseAddrPort(net.JoinHostPort(ip, port))
+	return host.ListenAddrPort(port, "::")
 }
