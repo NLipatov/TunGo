@@ -85,12 +85,5 @@ func (t *TransportHandler) HandleTransport() error {
 }
 
 func (t *TransportHandler) handleClient(ctx context.Context, peer *session.Peer, tr connection.Transport, tunFile io.ReadWriteCloser) {
-	(&tcpDataplaneWorker{
-		ctx:            ctx,
-		peer:           peer,
-		transport:      tr,
-		tunFile:        tunFile,
-		sessionManager: t.sessionManager,
-		logger:         t.logger,
-	}).Run()
+	newTCPDataplaneWorker(ctx, peer, tr, tunFile, t.sessionManager, t.logger).Run()
 }

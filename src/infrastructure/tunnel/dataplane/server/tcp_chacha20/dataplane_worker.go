@@ -6,6 +6,7 @@ import (
 
 	"tungo/application/logging"
 	"tungo/application/network/connection"
+	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/settings"
@@ -24,6 +25,26 @@ type tcpDataplaneWorker struct {
 	sessionManager session.Repository
 	logger         logging.Logger
 	cp             controlPlaneHandler
+}
+
+func newTCPDataplaneWorker(
+	ctx context.Context,
+	peer *session.Peer,
+	transport connection.Transport,
+	tunFile io.ReadWriteCloser,
+	sessionManager session.Repository,
+	logger logging.Logger,
+) *tcpDataplaneWorker {
+	crypto := &primitives.DefaultKeyDeriver{}
+	return &tcpDataplaneWorker{
+		ctx:            ctx,
+		peer:           peer,
+		transport:      transport,
+		tunFile:        tunFile,
+		sessionManager: sessionManager,
+		logger:         logger,
+		cp:             newControlPlaneHandler(crypto, logger),
+	}
 }
 
 func (w *tcpDataplaneWorker) Run() {

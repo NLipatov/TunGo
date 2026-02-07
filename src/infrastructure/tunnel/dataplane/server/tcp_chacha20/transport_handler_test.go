@@ -561,6 +561,9 @@ func TestHandleClient_RekeyInit_DispatchedToControlPlane(t *testing.T) {
 	if len(writer.wrote) != 0 {
 		t.Fatalf("expected no TUN writes for RekeyInit (should be consumed by controlplane), got %d", len(writer.wrote))
 	}
+	if fsm.LastRekeyEpoch == 0 {
+		t.Fatalf("expected rekey to be processed and epoch activated, got LastRekeyEpoch=%d", fsm.LastRekeyEpoch)
+	}
 }
 
 func TestHandleClient_CtxDone(t *testing.T) {

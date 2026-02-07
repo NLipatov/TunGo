@@ -24,14 +24,14 @@ func newDPWPeer(internal string, crypto connection.Crypto) *session.Peer {
 }
 
 func newDPWWorker(peer *session.Peer, tr connection.Transport, tun *fakeWriter, repo session.Repository) *tcpDataplaneWorker {
-	return &tcpDataplaneWorker{
-		ctx:            context.Background(),
-		peer:           peer,
-		transport:      tr,
-		tunFile:        tun,
-		sessionManager: repo,
-		logger:         &fakeLogger{},
-	}
+	return newTCPDataplaneWorker(
+		context.Background(),
+		peer,
+		tr,
+		tun,
+		repo,
+		&fakeLogger{},
+	)
 }
 
 func TestTCPDataplaneWorker_Run_StopsWhenPeerClosed(t *testing.T) {
