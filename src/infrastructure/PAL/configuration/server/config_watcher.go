@@ -138,6 +138,7 @@ func (w *ConfigWatcher) Watch(ctx context.Context) {
 				w.logger.Printf("ConfigWatcher: fsnotify error: %v", err)
 			}
 		case <-ticker.C:
+			w.configManager.InvalidateCache()
 			w.checkAndRevoke()
 		}
 	}

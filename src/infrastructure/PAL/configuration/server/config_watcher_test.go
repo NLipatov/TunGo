@@ -442,12 +442,13 @@ func TestConfigWatcher_Watch_InvalidPathFallsBackToPolling(t *testing.T) {
 
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		if len(revoker.revokedKeys()) == 1 {
+		if len(revoker.revokedKeys()) == 1 && configManager.invalidateCount() > 0 {
 			return
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	t.Fatalf("expected polling fallback revoke, got %d", len(revoker.revokedKeys()))
+	t.Fatalf("expected polling fallback revoke+invalidate, revoked=%d invalidates=%d",
+		len(revoker.revokedKeys()), configManager.invalidateCount())
 }
 
 func TestConfigWatcher_Watch_LogsWatchDirForBareFilename(t *testing.T) {
