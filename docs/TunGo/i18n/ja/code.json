@@ -24,7 +24,7 @@
     "message": "セキュア"
   },
   "feature.secure.description": {
-    "message": "ChaCha20 暗号化によるエンドツーエンドトンネル"
+    "message": "Noise IK ハンドシェイク、X25519 鍵交換、ChaCha20-Poly1305 AEAD"
   },
   "feature.multiTransport.title": {
     "message": "マルチトランスポート対応"

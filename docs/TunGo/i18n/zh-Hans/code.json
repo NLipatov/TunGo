@@ -24,7 +24,7 @@
     "message": "安全"
   },
   "feature.secure.description": {
-    "message": "端到端隧道，使用 ChaCha20 加密"
+    "message": "Noise IK 握手、X25519 密钥协商、ChaCha20-Poly1305 AEAD"
   },
   "feature.multiTransport.title": {
     "message": "多传输协议支持"

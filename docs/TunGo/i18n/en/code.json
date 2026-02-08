@@ -347,7 +347,7 @@
     "message": "Secure"
   },
   "feature.secure.description": {
-    "message": "End-to-end tunnel with ChaCha20 encryption"
+    "message": "Noise IK handshake, X25519 key agreement, ChaCha20-Poly1305 AEAD"
   },
   "feature.multiTransport.title": {
     "message": "Multi-Transport Support"

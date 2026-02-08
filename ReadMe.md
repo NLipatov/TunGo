@@ -17,7 +17,7 @@
 - 🧩 **Easy to deploy & configure**.
 - 🚀 **High Performance** — near-zero allocations on the hot path (benchmarked).
 - 📦 **Tiny Memory Footprint** — ≈5–15 MB **RSS** under load, ≈5–8 MB idle.
-- 🔒 **End-to-End Encryption** — X25519 (Curve25519 ECDH) for key agreement; ChaCha20-Poly1305 (AEAD) for traffic encryption; Ed25519 for authentication.
+- 🔒 **End-to-End Encryption** — Noise IK handshake for mutual authentication; X25519 (Curve25519 ECDH) for key agreement; ChaCha20-Poly1305 (AEAD) for traffic encryption.
 - ⚡ **Built from Scratch** — no legacy, no bloat. Clean, readable Go code.
 - 🌐 **IoT & Embedded Ready** — optimized for small devices and constrained environments.
 - 🛡️ **Open Source** — AGPL-3.0-only; commercial licenses available.

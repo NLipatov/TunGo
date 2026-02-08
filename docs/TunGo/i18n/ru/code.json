@@ -24,7 +24,7 @@
     "message": "Безопасный"
   },
   "feature.secure.description": {
-    "message": "Сквозной туннель с шифрованием ChaCha20"
+    "message": "Хендшейк Noise IK, обмен ключами X25519, AEAD ChaCha20-Poly1305"
   },
   "feature.multiTransport.title": {
     "message": "Поддержка нескольких транспортов"
