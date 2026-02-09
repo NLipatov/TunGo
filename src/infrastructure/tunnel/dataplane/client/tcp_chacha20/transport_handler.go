@@ -50,7 +50,7 @@ func NewTransportHandler(
 		rekeyController:     rekeyController,
 		handshakeCrypto:     &primitives.DefaultKeyDeriver{},
 		egress:              egress,
-		pingBuf:             make([]byte, epochPrefixSize+3),
+		pingBuf:             make([]byte, epochPrefixSize+3, epochPrefixSize+3+settings.TCPChacha20Overhead),
 	}
 	t.lastRecvNano.Store(time.Now().UnixNano())
 	return t
