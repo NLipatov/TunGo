@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"io"
+	"sync"
 	"testing"
+	"time"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
 	"tungo/infrastructure/network/service_packet"
 
@@ -248,6 +250,128 @@ func TestTransportHandler_TCPDecryptErrorAfterCancel(t *testing.T) {
 	// ctx already canceled -> decrypt error is suppressed, returns nil.
 	if err := h.HandleTransport(); err != nil {
 		t.Fatalf("want nil when ctx canceled, got %v", err)
+	}
+}
+
+func TestTransportHandler_EpochExhausted_ReturnsError(t *testing.T) {
+	epochPayload := make([]byte, 3)
+	_, _ = service_packet.EncodeV1Header(service_packet.EpochExhausted, epochPayload)
+
+	cipher := make([]byte, chacha20poly1305.Overhead+len(epochPayload))
+
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	h := NewTransportHandler(context.Background(),
+		rdr(struct {
+			data []byte
+			err  error
+		}{cipher, nil}),
+		io.Discard,
+		&TransportHandlerMockCrypto{decOut: epochPayload}, ctrl, nil,
+	)
+	err := h.HandleTransport()
+	if !errors.Is(err, ErrEpochExhausted) {
+		t.Fatalf("want ErrEpochExhausted, got %v", err)
+	}
+}
+
+func TestTransportHandler_HandleRekeyAck_EpochExhausted(t *testing.T) {
+	ackPayload := make([]byte, service_packet.RekeyPacketLen)
+	_, _ = service_packet.EncodeV1Header(service_packet.RekeyAck, ackPayload)
+
+	cipher := make([]byte, chacha20poly1305.Overhead+len(ackPayload))
+
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl.LastRekeyEpoch = 65001 // >= 65000 triggers epoch exhaustion
+
+	h := NewTransportHandler(context.Background(),
+		rdr(struct {
+			data []byte
+			err  error
+		}{cipher, nil}),
+		io.Discard,
+		&TransportHandlerMockCrypto{decOut: ackPayload}, ctrl, nil,
+	)
+	err := h.HandleTransport()
+	if !errors.Is(err, ErrEpochExhausted) {
+		t.Fatalf("want ErrEpochExhausted on epoch exhaustion, got %v", err)
+	}
+}
+
+type TransportHandlerMockEgress struct {
+	mu    sync.Mutex
+	pings [][]byte
+	err   error
+}
+
+func (e *TransportHandlerMockEgress) SendDataIP(_ []byte) error { return nil }
+func (e *TransportHandlerMockEgress) SendControl(p []byte) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.pings = append(e.pings, append([]byte(nil), p...))
+	return e.err
+}
+func (e *TransportHandlerMockEgress) Close() error { return nil }
+
+func (e *TransportHandlerMockEgress) pingCount() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return len(e.pings)
+}
+
+func TestTransportHandler_SendPing_Success(t *testing.T) {
+	egress := &TransportHandlerMockEgress{}
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+
+	h := NewTransportHandler(context.Background(),
+		rdr(), io.Discard,
+		&TransportHandlerMockCrypto{}, ctrl, egress,
+	)
+	impl := h.(*TransportHandler)
+	impl.sendPing()
+
+	if egress.pingCount() != 1 {
+		t.Fatalf("expected 1 ping sent, got %d", egress.pingCount())
+	}
+}
+
+func TestTransportHandler_SendPing_EgressError(t *testing.T) {
+	egress := &TransportHandlerMockEgress{err: errors.New("send fail")}
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+
+	h := NewTransportHandler(context.Background(),
+		rdr(), io.Discard,
+		&TransportHandlerMockCrypto{}, ctrl, egress,
+	)
+	impl := h.(*TransportHandler)
+	// Should not panic
+	impl.sendPing()
+}
+
+func TestTransportHandler_KeepaliveLoop_CancelStops(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	egress := &TransportHandlerMockEgress{}
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+
+	h := NewTransportHandler(ctx,
+		rdr(), io.Discard,
+		&TransportHandlerMockCrypto{}, ctrl, egress,
+	)
+	impl := h.(*TransportHandler)
+
+	done := make(chan struct{})
+	go func() {
+		impl.keepaliveLoop()
+		close(done)
+	}()
+
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("keepaliveLoop did not stop after cancel")
 	}
 }
 

@@ -242,3 +242,68 @@ func TestDecryptCookieReply_InvalidFormat(t *testing.T) {
 		t.Fatal("should fail for corrupted ciphertext")
 	}
 }
+
+func TestDecryptCookieReply_ExactMinSize(t *testing.T) {
+	clientEphemeral := make([]byte, EphemeralSize)
+	serverPubKey := make([]byte, 32)
+
+	// Exactly nonce size + overhead: too short for any plaintext content
+	minInvalid := make([]byte, CookieNonceSize+16) // nonce + tag but no ciphertext content
+	_, err := DecryptCookieReply(minInvalid, clientEphemeral, serverPubKey)
+	if err == nil {
+		t.Fatal("should fail for minimum-size invalid reply")
+	}
+}
+
+func TestCookie_ValidateCookie_WrongIP_Fails(t *testing.T) {
+	var secret [32]byte
+	secret[0] = 1
+	cm := NewCookieManagerWithSecret(secret)
+
+	clientIP := netip.MustParseAddr("10.0.0.1")
+	wrongIP := netip.MustParseAddr("10.0.0.2")
+	cookie := cm.ComputeCookieValue(clientIP)
+
+	if cm.ValidateCookie(wrongIP, cookie) {
+		t.Fatal("cookie should not validate for different IP")
+	}
+}
+
+func TestCookie_ValidateCookie_GarbageCookie_Fails(t *testing.T) {
+	var secret [32]byte
+	secret[0] = 1
+	cm := NewCookieManagerWithSecret(secret)
+
+	clientIP := netip.MustParseAddr("10.0.0.1")
+	garbage := make([]byte, CookieSize)
+	garbage[0] = 0xff
+
+	if cm.ValidateCookie(clientIP, garbage) {
+		t.Fatal("garbage cookie should not validate")
+	}
+}
+
+func TestCookie_IsCookieReply_Empty(t *testing.T) {
+	if IsCookieReply(nil) {
+		t.Fatal("nil should not be cookie reply")
+	}
+	if IsCookieReply([]byte{}) {
+		t.Fatal("empty slice should not be cookie reply")
+	}
+}
+
+func TestCookie_IPv6Client(t *testing.T) {
+	cm, err := NewCookieManager()
+	if err != nil {
+		t.Fatalf("failed to create cookie manager: %v", err)
+	}
+
+	clientIP := netip.MustParseAddr("2001:db8::1")
+	cookie := cm.ComputeCookieValue(clientIP)
+	if len(cookie) != CookieSize {
+		t.Fatalf("expected %d bytes, got %d", CookieSize, len(cookie))
+	}
+	if !cm.ValidateCookie(clientIP, cookie) {
+		t.Fatal("cookie should validate for IPv6 client")
+	}
+}

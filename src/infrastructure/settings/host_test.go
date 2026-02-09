@@ -146,3 +146,156 @@ func TestHost_UnmarshalErrors(t *testing.T) {
 		t.Fatal("expected error for invalid host")
 	}
 }
+
+func TestHost_ListenAddrPort_WithIP_Success(t *testing.T) {
+	h, err := NewHost("192.0.2.1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	ap, err := h.ListenAddrPort(443, "0.0.0.0")
+	if err != nil {
+		t.Fatalf("ListenAddrPort failed: %v", err)
+	}
+	if ap.String() != "192.0.2.1:443" {
+		t.Fatalf("unexpected addr:port: %s", ap)
+	}
+}
+
+func TestHost_ListenAddrPort_ZeroHost_FallsBackToDefault(t *testing.T) {
+	var zero Host
+	ap, err := zero.ListenAddrPort(80, "0.0.0.0")
+	if err != nil {
+		t.Fatalf("ListenAddrPort with fallback failed: %v", err)
+	}
+	if ap.String() != "0.0.0.0:80" {
+		t.Fatalf("unexpected addr:port: %s", ap)
+	}
+}
+
+func TestHost_ListenAddrPort_ZeroHost_InvalidFallback(t *testing.T) {
+	var zero Host
+	_, err := zero.ListenAddrPort(80, "not-a-valid-@-host")
+	if err == nil {
+		t.Fatal("expected error for invalid fallback")
+	}
+}
+
+func TestHost_Domain_ReturnsIP_False(t *testing.T) {
+	h, err := NewHost("10.0.0.1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	domain, ok := h.Domain()
+	if ok || domain != "" {
+		t.Fatalf("expected Domain()=(\"\", false) for IP host, got (%q, %v)", domain, ok)
+	}
+}
+
+func TestHost_Domain_Empty_False(t *testing.T) {
+	var zero Host
+	domain, ok := zero.Domain()
+	if ok || domain != "" {
+		t.Fatalf("expected Domain()=(\"\", false) for empty host, got (%q, %v)", domain, ok)
+	}
+}
+
+func TestHost_IsZero(t *testing.T) {
+	var zero Host
+	if !zero.IsZero() {
+		t.Fatal("expected IsZero for empty host")
+	}
+	h, _ := NewHost("10.0.0.1")
+	if h.IsZero() {
+		t.Fatal("expected non-zero host")
+	}
+}
+
+func TestHost_Endpoint_InvalidPort(t *testing.T) {
+	h, _ := NewHost("10.0.0.1")
+	if _, err := h.Endpoint(0); err == nil {
+		t.Fatal("expected error for port 0")
+	}
+	if _, err := h.Endpoint(70000); err == nil {
+		t.Fatal("expected error for port 70000")
+	}
+}
+
+func TestHost_AddrPort_InvalidPort(t *testing.T) {
+	h, _ := NewHost("10.0.0.1")
+	if _, err := h.AddrPort(0); err == nil {
+		t.Fatal("expected error for port 0")
+	}
+}
+
+func TestHost_NewHost_Empty(t *testing.T) {
+	h, err := NewHost("")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !h.IsZero() {
+		t.Fatal("expected zero host for empty string")
+	}
+}
+
+func TestHost_NewHost_Whitespace(t *testing.T) {
+	h, err := NewHost("   ")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !h.IsZero() {
+		t.Fatal("expected zero host for whitespace-only string")
+	}
+}
+
+func TestNormalizeDomain_TooLong(t *testing.T) {
+	long := strings.Repeat("a.", 127) + "a" // > 253 chars
+	if _, ok := normalizeDomain(long); ok {
+		t.Fatal("expected invalid for domain >253 chars")
+	}
+}
+
+func TestNormalizeDomain_InvalidChars(t *testing.T) {
+	invalid := []string{
+		"exam_ple.com",    // underscore
+		"exam!ple.com",    // exclamation
+		"example-.com",    // label ending with -
+		"",                // empty
+		"..",              // empty labels
+		"example..com",    // empty label
+		"exa\tmple.com",   // tab
+		"exa\nmple.com",   // newline
+		"example.com/foo", // slash
+		"example.com:80",  // colon
+		"example.com?q=1", // question mark
+		"example.com#f",   // hash
+	}
+	for _, s := range invalid {
+		if _, ok := normalizeDomain(s); ok {
+			t.Errorf("expected normalizeDomain(%q) to fail", s)
+		}
+	}
+}
+
+func TestIsValidDomainLabel_InvalidChars(t *testing.T) {
+	if isValidDomainLabel("") {
+		t.Fatal("expected false for empty label")
+	}
+	if isValidDomainLabel(strings.Repeat("a", 64)) {
+		t.Fatal("expected false for label >63 chars")
+	}
+	if isValidDomainLabel("abc_def") {
+		t.Fatal("expected false for underscore in label")
+	}
+	if isValidDomainLabel("-abc") {
+		t.Fatal("expected false for leading dash")
+	}
+	if isValidDomainLabel("abc-") {
+		t.Fatal("expected false for trailing dash")
+	}
+	if !isValidDomainLabel("a-b-c") {
+		t.Fatal("expected true for valid label with dashes")
+	}
+	if !isValidDomainLabel("a123") {
+		t.Fatal("expected true for alphanumeric label")
+	}
+}

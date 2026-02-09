@@ -944,6 +944,51 @@ func TestSecurity_ClientIDConflictRejectedAtConfig(t *testing.T) {
 	}
 }
 
+func TestIKHandshake_ServerMissingKeys(t *testing.T) {
+	// Server with nil keys
+	serverHS := NewIKHandshakeServer(nil, nil, NewAllowedPeersLookup(nil), nil, nil)
+	serverConn, _ := net.Pipe()
+	defer serverConn.Close()
+	serverAdapter, _ := adapters.NewLengthPrefixFramingAdapter(serverConn, framelimit.Cap(2048))
+
+	_, err := serverHS.ServerSideHandshake(serverAdapter)
+	if err != ErrMissingServerKey {
+		t.Fatalf("expected ErrMissingServerKey, got: %v", err)
+	}
+}
+
+func TestIKHandshake_Result_NilBeforeHandshake(t *testing.T) {
+	serverKP, _ := cipherSuite.GenerateKeypair(nil)
+	serverHS := NewIKHandshakeServer(
+		serverKP.Public, serverKP.Private,
+		NewAllowedPeersLookup(nil), nil, nil,
+	)
+	result := serverHS.Result()
+	if result != nil {
+		t.Fatal("expected nil result before handshake")
+	}
+}
+
+func TestIKHandshake_ClientResult_AlwaysNil(t *testing.T) {
+	clientKP, _ := cipherSuite.GenerateKeypair(nil)
+	serverKP, _ := cipherSuite.GenerateKeypair(nil)
+	clientHS := NewIKHandshakeClient(clientKP.Public, clientKP.Private, serverKP.Public)
+	result := clientHS.Result()
+	if result != nil {
+		t.Fatal("expected nil result for client handshake")
+	}
+}
+
+func TestAllowedPeersLookup_NilMap_ReturnsNil(t *testing.T) {
+	// Create lookup with empty peers, then try lookup
+	lookup := NewAllowedPeersLookup(nil)
+	pubKey := make([]byte, 32)
+	pubKey[0] = 1
+	if lookup.Lookup(pubKey) != nil {
+		t.Fatal("expected nil for empty peers map")
+	}
+}
+
 // TestSecurity_MAC1VerifiedBeforeAllocation verifies that MAC1 is checked
 // before any expensive operations or state allocation.
 func TestSecurity_MAC1VerifiedBeforeAllocation(t *testing.T) {

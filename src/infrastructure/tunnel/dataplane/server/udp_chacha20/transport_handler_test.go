@@ -1329,6 +1329,67 @@ func TestHandleEstablished_NoTouchOnClosedPeer(t *testing.T) {
 	}
 }
 
+// testSessionWithAllowedIPs returns false for IsSourceAllowed for a specific denied IP.
+type testSessionDenyAll struct {
+	crypto     connection.Crypto
+	internalIP netip.Addr
+	externalIP netip.AddrPort
+	fsm        rekey.FSM
+}
+
+func (s *testSessionDenyAll) Crypto() connection.Crypto        { return s.crypto }
+func (s *testSessionDenyAll) InternalAddr() netip.Addr         { return s.internalIP }
+func (s *testSessionDenyAll) ExternalAddrPort() netip.AddrPort { return s.externalIP }
+func (s *testSessionDenyAll) RekeyController() rekey.FSM       { return s.fsm }
+func (s *testSessionDenyAll) IsSourceAllowed(netip.Addr) bool  { return false }
+
+func TestHandleEstablished_MalformedIPHeader_Dropped(t *testing.T) {
+	internalIP := netip.MustParseAddr("10.0.0.88")
+	clientAddr := netip.MustParseAddrPort("192.168.1.88:8888")
+	writer := &TransportHandlerFakeWriter{}
+
+	sess := &testSession{
+		crypto:     &TransportHandlerAlwaysWriteCrypto{},
+		internalIP: internalIP,
+		externalIP: clientAddr,
+	}
+	peer := session.NewPeer(sess, nil)
+
+	dp := newUdpDataplaneWorker(writer, newServicePacketHandler(&primitives.DefaultKeyDeriver{}))
+
+	// 3-byte "packet" — too short for IP header
+	if err := dp.HandleEstablished(peer, []byte{0x45, 0x00, 0x00}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(writer.wrote) != 0 {
+		t.Fatal("expected no TUN writes for malformed IP header")
+	}
+}
+
+func TestHandleEstablished_AllowedIPsViolation_Dropped(t *testing.T) {
+	clientAddr := netip.MustParseAddrPort("192.168.1.87:8787")
+	spoofedIP := netip.MustParseAddr("10.0.0.99")
+	writer := &TransportHandlerFakeWriter{}
+
+	sess := &testSessionDenyAll{
+		crypto:     &TransportHandlerAlwaysWriteCrypto{},
+		internalIP: netip.MustParseAddr("10.0.0.87"),
+		externalIP: clientAddr,
+	}
+	peer := session.NewPeer(sess, nil)
+
+	dp := newUdpDataplaneWorker(writer, newServicePacketHandler(&primitives.DefaultKeyDeriver{}))
+
+	// Valid IPv4 packet with a spoofed source IP
+	packet := makeValidIPv4Packet(spoofedIP)
+	if err := dp.HandleEstablished(peer, packet); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(writer.wrote) != 0 {
+		t.Fatal("expected no TUN writes for AllowedIPs violation")
+	}
+}
+
 func TestHandleTransport_NilRegistrar_NoUnknownPanic(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

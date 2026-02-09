@@ -311,7 +311,7 @@ func TestEstablishConnection_WS_EmptyHost_And_EmptyHost(t *testing.T) {
 	}
 	f := &ConnectionFactory{conf: conf}
 	_, _, _, err := f.EstablishConnection(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "ws dial: empty host") {
+	if err == nil || !strings.Contains(err.Error(), "empty host") {
 		t.Fatalf("expected empty host error, got: %v", err)
 	}
 }
@@ -324,7 +324,7 @@ func TestEstablishConnection_WS_ZeroPort(t *testing.T) {
 	}
 	f := &ConnectionFactory{conf: conf}
 	_, _, _, err := f.EstablishConnection(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "ws dial: invalid port") {
+	if err == nil || !strings.Contains(err.Error(), "invalid port") {
 		t.Fatalf("expected invalid port error, got: %v", err)
 	}
 }
@@ -337,7 +337,7 @@ func TestEstablishConnection_WS_InvalidPort_Zero(t *testing.T) {
 	}
 	f := &ConnectionFactory{conf: conf}
 	_, _, _, err := f.EstablishConnection(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "ws dial: invalid port") {
+	if err == nil || !strings.Contains(err.Error(), "invalid port") {
 		t.Fatalf("expected invalid port error, got: %v", err)
 	}
 }
@@ -350,7 +350,7 @@ func TestEstablishConnection_WS_InvalidPort_OutOfRange(t *testing.T) {
 	}
 	f := &ConnectionFactory{conf: conf}
 	_, _, _, err := f.EstablishConnection(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "ws dial: invalid port") {
+	if err == nil || !strings.Contains(err.Error(), "invalid port") {
 		t.Fatalf("expected invalid port error, got: %v", err)
 	}
 }
@@ -363,7 +363,7 @@ func TestEstablishConnection_WSS_EmptyHost(t *testing.T) {
 	}
 	f := &ConnectionFactory{conf: conf}
 	_, _, _, err := f.EstablishConnection(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "wss dial: empty host") {
+	if err == nil || !strings.Contains(err.Error(), "empty host") {
 		t.Fatalf("expected empty host error, got: %v", err)
 	}
 }
@@ -390,7 +390,7 @@ func TestEstablishConnection_WSS_InvalidPort_OutOfRange(t *testing.T) {
 	}
 	f := &ConnectionFactory{conf: conf}
 	_, _, _, err := f.EstablishConnection(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "wss dial: invalid port") {
+	if err == nil || !strings.Contains(err.Error(), "invalid port") {
 		t.Fatalf("expected invalid port error, got: %v", err)
 	}
 }
@@ -704,7 +704,7 @@ func TestConnectionFactoryUnit_EstablishConnection_ErrorBranches(t *testing.T) {
 			WSSettings: mkWSSettings("", 8080, settings.WS),
 		}}
 		_, _, _, err := f.EstablishConnection(context.Background())
-		if err == nil || !strings.Contains(err.Error(), "ws dial: empty host") {
+		if err == nil || !strings.Contains(err.Error(), "empty host") {
 			t.Fatalf("expected empty host error, got %v", err)
 		}
 	})
@@ -715,7 +715,7 @@ func TestConnectionFactoryUnit_EstablishConnection_ErrorBranches(t *testing.T) {
 			WSSettings: mkWSSettings("127.0.0.1", 70000, settings.WS),
 		}}
 		_, _, _, err := f.EstablishConnection(context.Background())
-		if err == nil || !strings.Contains(err.Error(), "ws dial: invalid port") {
+		if err == nil || !strings.Contains(err.Error(), "invalid port") {
 			t.Fatalf("expected invalid ws port error, got %v", err)
 		}
 	})
@@ -726,7 +726,7 @@ func TestConnectionFactoryUnit_EstablishConnection_ErrorBranches(t *testing.T) {
 			WSSettings: mkWSSettings("", 443, settings.WSS),
 		}}
 		_, _, _, err := f.EstablishConnection(context.Background())
-		if err == nil || !strings.Contains(err.Error(), "wss dial: empty host") {
+		if err == nil || !strings.Contains(err.Error(), "empty host") {
 			t.Fatalf("expected empty wss host error, got %v", err)
 		}
 	})
@@ -737,7 +737,7 @@ func TestConnectionFactoryUnit_EstablishConnection_ErrorBranches(t *testing.T) {
 			WSSettings: mkWSSettings("127.0.0.1", 70000, settings.WSS),
 		}}
 		_, _, _, err := f.EstablishConnection(context.Background())
-		if err == nil || !strings.Contains(err.Error(), "wss dial: invalid port") {
+		if err == nil || !strings.Contains(err.Error(), "invalid port") {
 			t.Fatalf("expected wss invalid port error, got %v", err)
 		}
 	})

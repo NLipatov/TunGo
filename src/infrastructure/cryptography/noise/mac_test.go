@@ -308,3 +308,71 @@ func TestCheckVersion_ZeroVersion(t *testing.T) {
 		t.Fatalf("expected ErrUnknownProtocol, got: %v", err)
 	}
 }
+
+func TestVerifyMAC2_TooShort(t *testing.T) {
+	short := make([]byte, MinTotalSize-1)
+	cookie := make([]byte, CookieSize)
+	if VerifyMAC2(short, cookie) {
+		t.Fatal("VerifyMAC2 should return false for truncated message")
+	}
+}
+
+func TestExtractNoiseMsg_TooShort(t *testing.T) {
+	short := make([]byte, MinTotalSize-1)
+	if ExtractNoiseMsg(short) != nil {
+		t.Fatal("ExtractNoiseMsg should return nil for truncated message")
+	}
+}
+
+func TestExtractClientEphemeral_NoiseMsgTooShort(t *testing.T) {
+	// Message has enough total size but noise part < EphemeralSize
+	// Create a message that's MinTotalSize exactly — noiseMsg will be 80 bytes, which is >= 32 (EphemeralSize).
+	// So we need an edge case where noiseMsg is < EphemeralSize.
+	// That can't happen because MinTotalSize = MinMsg1Size + MAC1Size + MAC2Size and MinMsg1Size = 80 >= EphemeralSize.
+	// So we only test the too-short outer boundary.
+	short := make([]byte, MinTotalSize-1)
+	if ExtractClientEphemeral(short) != nil {
+		t.Fatal("ExtractClientEphemeral should return nil for too-short message")
+	}
+}
+
+func TestAppendMACs_VerifyRoundTrip(t *testing.T) {
+	serverPubKey := make([]byte, 32)
+	serverPubKey[0] = 42
+	cookie := []byte("roundtrip_cookie")
+
+	noiseMsg := make([]byte, MinMsg1Size)
+	for i := range noiseMsg {
+		noiseMsg[i] = byte(i * 3)
+	}
+
+	withMAC := AppendMACs(noiseMsg, serverPubKey, cookie)
+
+	if !VerifyMAC1(withMAC, serverPubKey) {
+		t.Fatal("MAC1 roundtrip verification failed")
+	}
+	if !VerifyMAC2(withMAC, cookie) {
+		t.Fatal("MAC2 roundtrip verification failed")
+	}
+
+	extracted := ExtractNoiseMsg(withMAC)
+	if !bytes.Equal(extracted, noiseMsg) {
+		t.Fatal("extracted noise msg doesn't match original")
+	}
+}
+
+func TestPrependCheckVersion_RoundTrip(t *testing.T) {
+	msg := make([]byte, MinTotalSize)
+	for i := range msg {
+		msg[i] = byte(i)
+	}
+
+	withVersion := PrependVersion(msg)
+	extracted, err := CheckVersion(withVersion)
+	if err != nil {
+		t.Fatalf("CheckVersion failed: %v", err)
+	}
+	if !bytes.Equal(extracted, msg) {
+		t.Fatal("roundtrip through PrependVersion/CheckVersion failed")
+	}
+}
