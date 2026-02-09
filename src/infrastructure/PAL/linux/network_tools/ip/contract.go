@@ -10,6 +10,7 @@ type Contract interface {
 	AddrShowDev(ipV int, ifName string) (string, error)
 	RouteDefault() (string, error)
 	RouteAddDefaultDev(devName string) error
+	Route6AddDefaultDev(devName string) error
 	RouteGet(hostIp string) (string, error)
 	RouteAddDev(hostIp string, ifName string) error
 	RouteAddViaDev(hostIp string, ifName string, gateway string) error

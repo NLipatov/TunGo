@@ -49,7 +49,8 @@ func (m *mockConfigurationManager) AddAllowedPeer(_ AllowedPeer) error {
 	return nil
 }
 
-func (m *mockConfigurationManager) InvalidateCache() {}
+func (m *mockConfigurationManager) EnsureIPv6Subnets() error { return nil }
+func (m *mockConfigurationManager) InvalidateCache()          {}
 
 // ---------- Helpers ----------
 

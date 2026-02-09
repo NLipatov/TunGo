@@ -17,6 +17,7 @@ func (d *darwinDummyConfigManager) Configuration() (*serverCfg.Configuration, er
 func (d *darwinDummyConfigManager) AddAllowedPeer(_ serverCfg.AllowedPeer) error { return nil }
 func (d *darwinDummyConfigManager) IncrementClientCounter() error                { return nil }
 func (d *darwinDummyConfigManager) InjectX25519Keys(_, _ []byte) error           { return nil }
+func (d *darwinDummyConfigManager) EnsureIPv6Subnets() error                     { return nil }
 func (d *darwinDummyConfigManager) InvalidateCache()                             {}
 
 type darwinNopReadWriteCloser struct{}

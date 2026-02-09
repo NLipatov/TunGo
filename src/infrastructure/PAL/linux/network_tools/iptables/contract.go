@@ -9,4 +9,13 @@ type Contract interface {
 	DisableForwardingFromDevToTun(tunName, devName string) error
 	EnableForwardingTunToTun(tunName string) error
 	DisableForwardingTunToTun(tunName string) error
+
+	Enable6DevMasquerade(devName string) error
+	Disable6DevMasquerade(devName string) error
+	Enable6ForwardingFromTunToDev(tunName, devName string) error
+	Disable6ForwardingFromTunToDev(tunName, devName string) error
+	Enable6ForwardingFromDevToTun(tunName, devName string) error
+	Disable6ForwardingFromDevToTun(tunName, devName string) error
+	Enable6ForwardingTunToTun(tunName string) error
+	Disable6ForwardingTunToTun(tunName string) error
 }

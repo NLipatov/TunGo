@@ -38,6 +38,7 @@ type Registrar struct {
 	cryptographyFactory connection.CryptoFactory
 
 	interfaceSubnet netip.Prefix
+	ipv6Subnet      netip.Prefix
 
 	mu            sync.Mutex
 	registrations map[netip.AddrPort]*udpQueue.RegistrationQueue
@@ -51,6 +52,7 @@ func NewRegistrar(
 	handshakeFactory connection.HandshakeFactory,
 	cryptographyFactory connection.CryptoFactory,
 	interfaceSubnet netip.Prefix,
+	ipv6Subnet netip.Prefix,
 ) *Registrar {
 	return &Registrar{
 		ctx:                 ctx,
@@ -60,6 +62,7 @@ func NewRegistrar(
 		handshakeFactory:    handshakeFactory,
 		cryptographyFactory: cryptographyFactory,
 		interfaceSubnet:     interfaceSubnet,
+		ipv6Subnet:          ipv6Subnet,
 		registrations:       make(map[netip.AddrPort]*udpQueue.RegistrationQueue),
 	}
 }
@@ -171,6 +174,14 @@ func (r *Registrar) RegisterClient(addrPort netip.AddrPort, queue *udpQueue.Regi
 		if result := hwr.Result(); result != nil {
 			clientPubKey = result.ClientPubKey()
 			allowedIPs = result.AllowedIPs()
+		}
+	}
+
+	// Add IPv6 address to allowedIPs for dual-stack support
+	if r.ipv6Subnet.IsValid() {
+		ipv6Addr, ipv6Err := ip.AllocateClientIP(r.ipv6Subnet, clientID)
+		if ipv6Err == nil {
+			allowedIPs = append(allowedIPs, netip.PrefixFrom(ipv6Addr, 128))
 		}
 	}
 

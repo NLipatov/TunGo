@@ -815,7 +815,7 @@ func TestConnectionFactoryUnit_establishSecuredConnection_Success(t *testing.T) 
 		{
 			PublicKey: clientPub,
 			Enabled:   true,
-			Address:   netip.MustParseAddr("10.44.0.2"),
+			ClientID: 1,
 		},
 	}
 	serverHS := noise.NewIKHandshakeServer(

@@ -69,16 +69,28 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.Settings) error 
 	}
 	fmt.Printf("created TUN interface: %v\n", connSettings.InterfaceName)
 
-	// Assign IP address to the TUN interface
-	interfaceCIDR, interfaceCIDRErr := interfaceCIDR(connSettings.InterfaceIP, connSettings.InterfaceSubnet)
-	if interfaceCIDRErr != nil {
-		return interfaceCIDRErr
+	// Assign IPv4 address to the TUN interface
+	cidr4, cidr4Err := interfaceCIDR(connSettings.InterfaceIP, connSettings.InterfaceSubnet)
+	if cidr4Err != nil {
+		return cidr4Err
 	}
-	err = t.ip.AddrAddDev(connSettings.InterfaceName, interfaceCIDR)
+	err = t.ip.AddrAddDev(connSettings.InterfaceName, cidr4)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("assigned IP %s to interface %s\n", interfaceCIDR, connSettings.InterfaceName)
+	fmt.Printf("assigned IP %s to interface %s\n", cidr4, connSettings.InterfaceName)
+
+	// Assign IPv6 address if configured
+	if connSettings.IPv6IP.IsValid() && connSettings.IPv6Subnet.IsValid() {
+		cidr6, cidr6Err := interfaceCIDR(connSettings.IPv6IP, connSettings.IPv6Subnet)
+		if cidr6Err != nil {
+			return cidr6Err
+		}
+		if err := t.ip.AddrAddDev(connSettings.InterfaceName, cidr6); err != nil {
+			return err
+		}
+		fmt.Printf("assigned IPv6 %s to interface %s\n", cidr6, connSettings.InterfaceName)
+	}
 
 	serverIP, hostErr := connSettings.Host.RouteIP()
 	if hostErr != nil {
@@ -115,12 +127,48 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.Settings) error 
 	}
 	fmt.Printf("added route to server %s via %s dev %s\n", serverIP, viaGateway, devInterface)
 
+	// Add route for IPv6 server address (if available)
+	if !connSettings.IPv6Host.IsZero() {
+		serverIPv6, ipv6HostErr := connSettings.IPv6Host.RouteIP()
+		if ipv6HostErr == nil {
+			routeInfo6, routeErr6 := t.ip.RouteGet(serverIPv6)
+			if routeErr6 == nil {
+				var via6, dev6 string
+				fields6 := strings.Fields(routeInfo6)
+				for i, field := range fields6 {
+					if field == "via" && i+1 < len(fields6) {
+						via6 = fields6[i+1]
+					}
+					if field == "dev" && i+1 < len(fields6) {
+						dev6 = fields6[i+1]
+					}
+				}
+				if dev6 != "" {
+					if via6 == "" {
+						_ = t.ip.RouteAddDev(serverIPv6, dev6)
+					} else {
+						_ = t.ip.RouteAddViaDev(serverIPv6, dev6, via6)
+					}
+					fmt.Printf("added route to IPv6 server %s via %s dev %s\n", serverIPv6, via6, dev6)
+				}
+			}
+		}
+	}
+
 	// Set the TUN interface as the default gateway
 	err = t.ip.RouteAddDefaultDev(connSettings.InterfaceName)
 	if err != nil {
 		return err
 	}
 	fmt.Printf("set %s as default gateway\n", connSettings.InterfaceName)
+
+	// Set IPv6 default route if configured
+	if connSettings.IPv6IP.IsValid() {
+		if err := t.ip.Route6AddDefaultDev(connSettings.InterfaceName); err != nil {
+			return err
+		}
+		fmt.Printf("set %s as IPv6 default gateway\n", connSettings.InterfaceName)
+	}
 
 	// sets client's TUN device maximum transmission unit (MTU)
 	if setMtuErr := t.ip.LinkSetDevMTU(connSettings.InterfaceName, connSettings.MTU); setMtuErr != nil {
@@ -148,29 +196,24 @@ func interfaceCIDR(addr netip.Addr, subnet netip.Prefix) (string, error) {
 }
 
 func (t *PlatformTunManager) DisposeDevices() error {
-	if err := t.mss.Remove(t.configuration.UDPSettings.InterfaceName); err != nil {
-		log.Printf("failed to remove MSS clamping for %s: %v", t.configuration.UDPSettings.InterfaceName, err)
+	for _, s := range []settings.Settings{
+		t.configuration.UDPSettings,
+		t.configuration.TCPSettings,
+		t.configuration.WSSettings,
+	} {
+		if err := t.mss.Remove(s.InterfaceName); err != nil {
+			log.Printf("failed to remove MSS clamping for %s: %v", s.InterfaceName, err)
+		}
+		if routeTarget, routeErr := s.Host.RouteIP(); routeErr == nil {
+			_ = t.ip.RouteDel(routeTarget)
+		}
+		if !s.IPv6Host.IsZero() {
+			if routeTarget, routeErr := s.IPv6Host.RouteIP(); routeErr == nil {
+				_ = t.ip.RouteDel(routeTarget)
+			}
+		}
+		_ = t.ip.LinkDelete(s.InterfaceName)
 	}
-	if routeTarget, routeErr := t.configuration.UDPSettings.Host.RouteIP(); routeErr == nil {
-		_ = t.ip.RouteDel(routeTarget)
-	}
-	_ = t.ip.LinkDelete(t.configuration.UDPSettings.InterfaceName)
-
-	if err := t.mss.Remove(t.configuration.TCPSettings.InterfaceName); err != nil {
-		log.Printf("failed to remove MSS clamping for %s: %v", t.configuration.TCPSettings.InterfaceName, err)
-	}
-	if routeTarget, routeErr := t.configuration.TCPSettings.Host.RouteIP(); routeErr == nil {
-		_ = t.ip.RouteDel(routeTarget)
-	}
-	_ = t.ip.LinkDelete(t.configuration.TCPSettings.InterfaceName)
-
-	if err := t.mss.Remove(t.configuration.WSSettings.InterfaceName); err != nil {
-		log.Printf("failed to remove MSS clamping for %s: %v", t.configuration.WSSettings.InterfaceName, err)
-	}
-	if routeTarget, routeErr := t.configuration.WSSettings.Host.RouteIP(); routeErr == nil {
-		_ = t.ip.RouteDel(routeTarget)
-	}
-	_ = t.ip.LinkDelete(t.configuration.WSSettings.InterfaceName)
 
 	return nil
 }

@@ -87,6 +87,17 @@ func (i *Wrapper) RouteAddDefaultDev(devName string) error {
 	return nil
 }
 
+// Route6AddDefaultDev sets a default IPv6 route through the given device
+func (i *Wrapper) Route6AddDefaultDev(devName string) error {
+	output, err := i.commander.CombinedOutput("ip", "-6", "route",
+		"add", "default", "dev", devName)
+	if err != nil {
+		return fmt.Errorf("failed to set IPv6 default gateway %v: %v, output: %s",
+			devName, err, output)
+	}
+	return nil
+}
+
 // RouteGet gets route to host by host ip
 func (i *Wrapper) RouteGet(hostIp string) (string, error) {
 	routeBytes, err := i.commander.Output("ip", "route", "get", hostIp)

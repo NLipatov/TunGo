@@ -44,12 +44,7 @@ func (f *ConnectionFactory) EstablishConnection(
 
 	switch connSettings.Protocol {
 	case settings.UDP:
-		ap, apErr := connSettings.Host.AddrPort(connSettings.Port)
-		if apErr != nil {
-			return nil, nil, nil, fmt.Errorf("udp dial: %w", apErr)
-		}
-
-		adapter, err := f.dialUDP(establishCtx, ap)
+		adapter, err := f.dialWithFallback(establishCtx, connSettings, f.dialUDP)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("unable to establish UDP connection: %w", err)
 		}
@@ -58,12 +53,7 @@ func (f *ConnectionFactory) EstablishConnection(
 			chacha20.NewDefaultAEADBuilder()),
 		)
 	case settings.TCP:
-		ap, apErr := connSettings.Host.AddrPort(connSettings.Port)
-		if apErr != nil {
-			return nil, nil, nil, fmt.Errorf("tcp dial: %w", apErr)
-		}
-
-		adapter, err := f.dialTCP(establishCtx, ap)
+		adapter, err := f.dialWithFallback(establishCtx, connSettings, f.dialTCP)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("unable to establish TCP connection: %w", err)
 		}
@@ -72,12 +62,7 @@ func (f *ConnectionFactory) EstablishConnection(
 			chacha20.NewDefaultAEADBuilder()),
 		)
 	case settings.WS:
-		scheme := "ws"
-		endpoint, endpointErr := connSettings.Host.Endpoint(connSettings.Port)
-		if endpointErr != nil {
-			return nil, nil, nil, fmt.Errorf("ws dial: %w", endpointErr)
-		}
-		adapter, err := f.dialWS(establishCtx, ctx, scheme, endpoint)
+		adapter, err := f.dialWSWithFallback(establishCtx, ctx, connSettings, "ws")
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("unable to establish WebSocket connection: %w", err)
 		}
@@ -86,16 +71,7 @@ func (f *ConnectionFactory) EstablishConnection(
 			chacha20.NewDefaultAEADBuilder()),
 		)
 	case settings.WSS:
-		scheme := "wss"
-		port := connSettings.Port
-		if port == 0 {
-			port = 443
-		}
-		endpoint, endpointErr := connSettings.Host.Endpoint(port)
-		if endpointErr != nil {
-			return nil, nil, nil, fmt.Errorf("wss dial: %w", endpointErr)
-		}
-		adapter, err := f.dialWS(establishCtx, ctx, scheme, endpoint)
+		adapter, err := f.dialWSWithFallback(establishCtx, ctx, connSettings, "wss")
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("unable to establish WebSocket connection: %w", err)
 		}
@@ -187,6 +163,59 @@ func (f *ConnectionFactory) dialUDP(
 		return nil, err
 	}
 	return conn, nil
+}
+
+const ipv6FallbackTimeout = 2 * time.Second
+
+func (f *ConnectionFactory) dialWithFallback(
+	ctx context.Context,
+	s settings.Settings,
+	dialFn func(context.Context, netip.AddrPort) (connection.Transport, error),
+) (connection.Transport, error) {
+	if !s.IPv6Host.IsZero() {
+		ipv6AP, err := s.IPv6Host.AddrPort(s.Port)
+		if err == nil {
+			ipv6Ctx, cancel := context.WithTimeout(ctx, ipv6FallbackTimeout)
+			transport, dialErr := dialFn(ipv6Ctx, ipv6AP)
+			cancel()
+			if dialErr == nil {
+				return transport, nil
+			}
+		}
+	}
+	ap, err := s.Host.AddrPort(s.Port)
+	if err != nil {
+		return nil, err
+	}
+	return dialFn(ctx, ap)
+}
+
+func (f *ConnectionFactory) dialWSWithFallback(
+	establishCtx, connCtx context.Context,
+	s settings.Settings,
+	scheme string,
+) (connection.Transport, error) {
+	port := s.Port
+	if scheme == "wss" && port == 0 {
+		port = 443
+	}
+
+	if !s.IPv6Host.IsZero() {
+		endpoint, err := s.IPv6Host.Endpoint(port)
+		if err == nil {
+			ipv6Ctx, cancel := context.WithTimeout(establishCtx, ipv6FallbackTimeout)
+			adapter, dialErr := f.dialWS(ipv6Ctx, connCtx, scheme, endpoint)
+			cancel()
+			if dialErr == nil {
+				return adapter, nil
+			}
+		}
+	}
+	endpoint, err := s.Host.Endpoint(port)
+	if err != nil {
+		return nil, err
+	}
+	return f.dialWS(establishCtx, connCtx, scheme, endpoint)
 }
 
 func (f *ConnectionFactory) dialWS(

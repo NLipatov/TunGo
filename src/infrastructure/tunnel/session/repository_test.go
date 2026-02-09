@@ -308,6 +308,24 @@ func TestDefaultRepository_FindByDestinationIP(t *testing.T) {
 		}
 	})
 
+	ipv6Internal := netip.MustParseAddr("10.0.0.30")
+	ipv6External := netip.MustParseAddrPort("3.3.3.3:3000")
+	ipv6Peer := NewPeer(NewSessionWithAuth(
+		nil, nil, ipv6Internal, ipv6External, nil,
+		[]netip.Prefix{netip.MustParsePrefix("fd00::2/128")},
+	), nil)
+	repo.Add(ipv6Peer)
+
+	t.Run("FastPathAllowedIPv6HostRoute", func(t *testing.T) {
+		got, err := repo.FindByDestinationIP(netip.MustParseAddr("fd00::2"))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != ipv6Peer {
+			t.Fatalf("got %p, want %p", got, ipv6Peer)
+		}
+	})
+
 	t.Run("SlowPathAllowedIPsMatch", func(t *testing.T) {
 		got, err := repo.FindByDestinationIP(netip.MustParseAddr("192.168.50.42"))
 		if err != nil {

@@ -3,10 +3,12 @@ package server
 import (
 	"errors"
 	"fmt"
+	"net/netip"
 	"os"
 	"time"
 	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/PAL/stat"
+	"tungo/infrastructure/settings"
 )
 
 type ConfigurationManager interface {
@@ -14,6 +16,7 @@ type ConfigurationManager interface {
 	IncrementClientCounter() error
 	InjectX25519Keys(public, private []byte) error
 	AddAllowedPeer(peer AllowedPeer) error
+	EnsureIPv6Subnets() error
 	InvalidateCache()
 }
 
@@ -118,6 +121,47 @@ func (c *Manager) AddAllowedPeer(peer AllowedPeer) error {
 
 	configuration.AllowedPeers = append(configuration.AllowedPeers, peer)
 
+	return c.writer.Write(*configuration)
+}
+
+// EnsureIPv6Subnets sets default IPv6 tunnel subnets if not already configured.
+func (c *Manager) EnsureIPv6Subnets() error {
+	configuration, configurationErr := c.Configuration()
+	if configurationErr != nil {
+		return configurationErr
+	}
+
+	changed := false
+	for _, s := range []*settings.Settings{
+		&configuration.TCPSettings,
+		&configuration.UDPSettings,
+		&configuration.WSSettings,
+	} {
+		if !s.IPv6Subnet.IsValid() {
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
+	}
+
+	defaults := []netip.Prefix{
+		netip.MustParsePrefix("fd00::/64"),
+		netip.MustParsePrefix("fd00:1::/64"),
+		netip.MustParsePrefix("fd00:2::/64"),
+	}
+	targets := []*settings.Settings{
+		&configuration.TCPSettings,
+		&configuration.UDPSettings,
+		&configuration.WSSettings,
+	}
+	for i, s := range targets {
+		if !s.IPv6Subnet.IsValid() {
+			s.IPv6Subnet = defaults[i]
+		}
+	}
+
+	configuration.EnsureDefaults()
 	return c.writer.Write(*configuration)
 }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"net/netip"
 	"os"
 	"strings"
 	"testing"
@@ -545,4 +546,116 @@ func TestManager_InvalidateCache(t *testing.T) {
 func TestManager_InvalidateCache_NonTTLReader_NoPanic(t *testing.T) {
 	manager := &Manager{reader: &ManagerMockReader{Config: NewDefaultConfiguration()}}
 	manager.InvalidateCache()
+}
+
+// --- EnsureIPv6Subnets ---
+
+func TestManager_EnsureIPv6Subnets_SetsDefaults(t *testing.T) {
+	conf := NewDefaultConfiguration()
+	// Ensure no IPv6 subnets are set
+	if conf.TCPSettings.IPv6Subnet.IsValid() {
+		t.Fatal("precondition: TCPSettings.IPv6Subnet should not be valid in default config")
+	}
+
+	resolver := &ManagerMockResolver{Path: "/fake/path"}
+	statMock := &ManagerMockStat{Err: nil}
+	writer := &ManagerMockWriter{}
+	reader := &ManagerMockReader{Config: conf}
+
+	manager := &Manager{
+		resolver: resolver,
+		stat:     statMock,
+		writer:   writer,
+		reader:   reader,
+	}
+
+	if err := manager.EnsureIPv6Subnets(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if writer.WriteCalls != 1 {
+		t.Fatalf("expected writer.Write called once, got %d", writer.WriteCalls)
+	}
+
+	written, ok := writer.WrittenData.(Configuration)
+	if !ok {
+		t.Fatalf("written data is not Configuration")
+	}
+	if !written.TCPSettings.IPv6Subnet.IsValid() {
+		t.Fatal("TCPSettings.IPv6Subnet should be set")
+	}
+	if !written.UDPSettings.IPv6Subnet.IsValid() {
+		t.Fatal("UDPSettings.IPv6Subnet should be set")
+	}
+	if !written.WSSettings.IPv6Subnet.IsValid() {
+		t.Fatal("WSSettings.IPv6Subnet should be set")
+	}
+	// EnsureDefaults should have derived IPv6IP from IPv6Subnet
+	if !written.TCPSettings.IPv6IP.IsValid() {
+		t.Fatal("TCPSettings.IPv6IP should be derived from IPv6Subnet")
+	}
+}
+
+func TestManager_EnsureIPv6Subnets_AlreadySet_NoWrite(t *testing.T) {
+	conf := NewDefaultConfiguration()
+	conf.TCPSettings.IPv6Subnet = netip.MustParsePrefix("fd00::/64")
+	conf.UDPSettings.IPv6Subnet = netip.MustParsePrefix("fd00:1::/64")
+	conf.WSSettings.IPv6Subnet = netip.MustParsePrefix("fd00:2::/64")
+
+	resolver := &ManagerMockResolver{Path: "/fake/path"}
+	statMock := &ManagerMockStat{Err: nil}
+	writer := &ManagerMockWriter{}
+	reader := &ManagerMockReader{Config: conf}
+
+	manager := &Manager{
+		resolver: resolver,
+		stat:     statMock,
+		writer:   writer,
+		reader:   reader,
+	}
+
+	if err := manager.EnsureIPv6Subnets(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if writer.WriteCalls != 0 {
+		t.Fatalf("expected no write when all IPv6 subnets already set, got %d", writer.WriteCalls)
+	}
+}
+
+func TestManager_EnsureIPv6Subnets_ConfigError(t *testing.T) {
+	resolver := &ManagerMockResolver{Path: "/fake/path"}
+	statMock := &ManagerMockStat{Err: nil}
+	writer := &ManagerMockWriter{}
+	reader := &ManagerMockReader{Err: errors.New("read error")}
+
+	manager := &Manager{
+		resolver: resolver,
+		stat:     statMock,
+		writer:   writer,
+		reader:   reader,
+	}
+
+	err := manager.EnsureIPv6Subnets()
+	if err == nil || !strings.Contains(err.Error(), "read error") {
+		t.Fatalf("expected read error, got %v", err)
+	}
+}
+
+func TestManager_EnsureIPv6Subnets_WriteError(t *testing.T) {
+	conf := NewDefaultConfiguration()
+	resolver := &ManagerMockResolver{Path: "/fake/path"}
+	statMock := &ManagerMockStat{Err: nil}
+	writer := &ManagerMockWriter{Err: errors.New("write fail")}
+	reader := &ManagerMockReader{Config: conf}
+
+	manager := &Manager{
+		resolver: resolver,
+		stat:     statMock,
+		writer:   writer,
+		reader:   reader,
+	}
+
+	err := manager.EnsureIPv6Subnets()
+	if err == nil || !strings.Contains(err.Error(), "write fail") {
+		t.Fatalf("expected write error, got %v", err)
+	}
 }

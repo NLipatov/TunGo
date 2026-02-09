@@ -57,6 +57,7 @@ func (m *platformTunManagerIPMock) AddrAddDev(string, string) error         { re
 func (m *platformTunManagerIPMock) AddrShowDev(int, string) (string, error) { return "", nil }
 func (m *platformTunManagerIPMock) RouteDefault() (string, error)           { return "eth0", nil }
 func (m *platformTunManagerIPMock) RouteAddDefaultDev(string) error         { return m.mark("def") }
+func (m *platformTunManagerIPMock) Route6AddDefaultDev(string) error        { return m.mark("def6") }
 func (m *platformTunManagerIPMock) RouteGet(string) (string, error)         { return m.routeReply, nil }
 func (m *platformTunManagerIPMock) RouteAddDev(string, string) error        { return m.mark("radd") }
 func (m *platformTunManagerIPMock) RouteAddViaDev(string, string, string) error {
@@ -121,6 +122,7 @@ func newMgr(
 		AddrShowDev(int, string) (string, error)
 		RouteDefault() (string, error)
 		RouteAddDefaultDev(string) error
+		Route6AddDefaultDev(string) error
 		RouteGet(string) (string, error)
 		RouteAddDev(string, string) error
 		RouteAddViaDev(string, string, string) error

@@ -63,6 +63,8 @@ func (m *mockConfigManager) AddAllowedPeer(_ AllowedPeer) error {
 	return nil
 }
 
+func (m *mockConfigManager) EnsureIPv6Subnets() error { return nil }
+
 func (m *mockConfigManager) InvalidateCache() {
 	m.mu.Lock()
 	defer m.mu.Unlock()

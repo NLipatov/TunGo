@@ -39,29 +39,9 @@ func TestConfiguration_DefaultSettingsValues(t *testing.T) {
 		tcp.DialTimeoutMs != 5000 {
 		t.Fatalf("unexpected default TCP settings: %+v", tcp)
 	}
-
-	udp := c.defaultSettings(settings.UDP, "udptun0", "10.0.1.0/24", "10.0.1.1", 9090)
-	if udp.InterfaceName != "udptun0" ||
-		udp.InterfaceSubnet.String() != "10.0.1.0/24" ||
-		udp.InterfaceIP.String() != "10.0.1.1" ||
-		udp.Port != 9090 ||
-		udp.MTU != settings.DefaultEthernetMTU ||
-		udp.Protocol != settings.UDP ||
-		udp.Encryption != settings.ChaCha20Poly1305 ||
-		udp.DialTimeoutMs != 5000 {
-		t.Fatalf("unexpected default UDP settings: %+v", udp)
-	}
-
-	ws := c.defaultSettings(settings.WS, "wstun0", "10.0.2.0/24", "10.0.2.1", 1010)
-	if ws.InterfaceName != "wstun0" ||
-		ws.InterfaceSubnet.String() != "10.0.2.0/24" ||
-		ws.InterfaceIP.String() != "10.0.2.1" ||
-		ws.Port != 1010 ||
-		ws.MTU != settings.DefaultEthernetMTU ||
-		ws.Protocol != settings.WS ||
-		ws.Encryption != settings.ChaCha20Poly1305 ||
-		ws.DialTimeoutMs != 5000 {
-		t.Fatalf("unexpected default WS settings: %+v", ws)
+	// IPv6 is opt-in — no defaults
+	if tcp.IPv6Subnet.IsValid() || tcp.IPv6IP.IsValid() {
+		t.Fatalf("IPv6 should not have defaults: %+v", tcp)
 	}
 }
 
@@ -70,37 +50,44 @@ func TestConfiguration_EnsureDefaults_FillsZeroFieldsOnly(t *testing.T) {
 	c := &Configuration{}
 	_ = c.EnsureDefaults()
 
-	// TCP
-	if c.TCPSettings.InterfaceName == "" ||
-		!c.TCPSettings.InterfaceSubnet.IsValid() ||
-		!c.TCPSettings.InterfaceIP.IsValid() ||
-		c.TCPSettings.Port == 0 ||
-		c.TCPSettings.MTU == 0 ||
-		c.TCPSettings.Protocol == settings.UNKNOWN ||
-		c.TCPSettings.DialTimeoutMs == 0 {
-		t.Fatalf("EnsureDefaults did not fill TCP zero fields: %+v", c.TCPSettings)
+	for _, tc := range []struct {
+		name string
+		s    settings.Settings
+	}{
+		{"TCP", c.TCPSettings},
+		{"UDP", c.UDPSettings},
+		{"WS", c.WSSettings},
+	} {
+		if tc.s.InterfaceName == "" ||
+			!tc.s.InterfaceSubnet.IsValid() ||
+			!tc.s.InterfaceIP.IsValid() ||
+			tc.s.Port == 0 ||
+			tc.s.MTU == 0 ||
+			tc.s.Protocol == settings.UNKNOWN ||
+			tc.s.DialTimeoutMs == 0 {
+			t.Fatalf("EnsureDefaults did not fill %s zero fields: %+v", tc.name, tc.s)
+		}
+		// IPv6 is opt-in — EnsureDefaults must NOT populate it
+		if tc.s.IPv6Subnet.IsValid() || tc.s.IPv6IP.IsValid() {
+			t.Fatalf("EnsureDefaults should not set IPv6 defaults for %s: %+v", tc.name, tc.s)
+		}
 	}
+}
 
-	// UDP
-	if c.UDPSettings.InterfaceName == "" ||
-		!c.UDPSettings.InterfaceSubnet.IsValid() ||
-		!c.UDPSettings.InterfaceIP.IsValid() ||
-		c.UDPSettings.Port == 0 ||
-		c.UDPSettings.MTU == 0 ||
-		c.UDPSettings.Protocol == settings.UNKNOWN ||
-		c.UDPSettings.DialTimeoutMs == 0 {
-		t.Fatalf("EnsureDefaults did not fill UDP zero fields: %+v", c.UDPSettings)
+func TestConfiguration_EnsureDefaults_DerivesIPv6IPFromSubnet(t *testing.T) {
+	c := &Configuration{
+		TCPSettings: settings.Settings{
+			IPv6Subnet: netip.MustParsePrefix("fd00::/64"),
+			// IPv6IP not set — should be derived as fd00::1
+		},
 	}
+	_ = c.EnsureDefaults()
 
-	// WS
-	if c.WSSettings.InterfaceName == "" ||
-		!c.WSSettings.InterfaceSubnet.IsValid() ||
-		!c.WSSettings.InterfaceIP.IsValid() ||
-		c.WSSettings.Port == 0 ||
-		c.WSSettings.MTU == 0 ||
-		c.WSSettings.Protocol == settings.UNKNOWN ||
-		c.WSSettings.DialTimeoutMs == 0 {
-		t.Fatalf("EnsureDefaults did not fill WS zero fields: %+v", c.WSSettings)
+	if !c.TCPSettings.IPv6IP.IsValid() {
+		t.Fatal("expected IPv6IP to be derived from IPv6Subnet")
+	}
+	if c.TCPSettings.IPv6IP != netip.MustParseAddr("fd00::1") {
+		t.Fatalf("expected fd00::1, got %s", c.TCPSettings.IPv6IP)
 	}
 }
 

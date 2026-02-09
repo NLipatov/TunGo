@@ -27,7 +27,8 @@ func (d *dummyConfigManager) IncrementClientCounter() error { return nil }
 func (d *dummyConfigManager) InjectX25519Keys(_, _ []byte) error {
 	return nil
 }
-func (d *dummyConfigManager) InvalidateCache() {}
+func (d *dummyConfigManager) EnsureIPv6Subnets() error { return nil }
+func (d *dummyConfigManager) InvalidateCache()          {}
 
 // Erroring ServerConfigurationManager to trigger config error paths.
 type errorConfigManager struct{}
@@ -42,7 +43,8 @@ func (e *errorConfigManager) IncrementClientCounter() error { return nil }
 func (e *errorConfigManager) InjectX25519Keys(_, _ []byte) error {
 	return nil
 }
-func (e *errorConfigManager) InvalidateCache() {}
+func (e *errorConfigManager) EnsureIPv6Subnets() error { return nil }
+func (e *errorConfigManager) InvalidateCache()          {}
 
 // Nop TUN handle.
 type nopReadWriteCloser struct{}

@@ -97,7 +97,7 @@ func (*tcpRegConn) LocalAddr() net.Addr {
 }
 
 func TestNewRegistrar(t *testing.T) {
-	r := NewRegistrar(tcpRegLogger{}, nil, nil, nil, netip.MustParsePrefix("10.0.0.0/24"))
+	r := NewRegistrar(tcpRegLogger{}, nil, nil, nil, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 	if r == nil {
 		t.Fatal("expected non-nil registrar")
 	}
@@ -113,7 +113,7 @@ func TestRegisterClient_HandshakeError_ClosesConn(t *testing.T) {
 		ctrl:   rekey.NewStateMachine(tcpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
 	}
 	repo := session.NewDefaultRepository()
-	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo, netip.MustParsePrefix("10.0.0.0/24"))
+	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	conn := &tcpRegConn{
 		remoteAddr: &net.TCPAddr{IP: net.IPv4(192, 168, 1, 1), Port: 12345},
@@ -142,7 +142,7 @@ func TestRegisterClient_CryptoFactoryError_ClosesConn(t *testing.T) {
 	cryptoErr := errors.New("crypto init failed")
 	cf := &tcpRegCryptoFactory{err: cryptoErr}
 	repo := session.NewDefaultRepository()
-	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo, netip.MustParsePrefix("10.0.0.0/24"))
+	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	conn := &tcpRegConn{
 		remoteAddr: &net.TCPAddr{IP: net.IPv4(192, 168, 1, 1), Port: 12345},
@@ -173,7 +173,7 @@ func TestRegisterClient_Success(t *testing.T) {
 		ctrl:   rekey.NewStateMachine(tcpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
 	}
 	repo := session.NewDefaultRepository()
-	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo, netip.MustParsePrefix("10.0.0.0/24"))
+	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	conn := &tcpRegConn{
 		remoteAddr: &net.TCPAddr{IP: net.IPv4(192, 168, 1, 1), Port: 12345},
@@ -232,7 +232,7 @@ func TestRegisterClient_ReplacesExistingSession(t *testing.T) {
 	existingPeer := session.NewPeer(existingSession, oldEgress)
 	repo.Add(existingPeer)
 
-	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo, netip.MustParsePrefix("10.0.0.0/24"))
+	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	conn := &tcpRegConn{
 		remoteAddr: &net.TCPAddr{IP: net.IPv4(192, 168, 1, 1), Port: 12345},
@@ -279,7 +279,7 @@ func TestRegisterClient_NonTCPAddr_ClosesConn(t *testing.T) {
 		ctrl:   rekey.NewStateMachine(tcpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
 	}
 	repo := session.NewDefaultRepository()
-	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo, netip.MustParsePrefix("10.0.0.0/24"))
+	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	// Use a UDP address instead of TCP.
 	conn := &tcpRegConn{
@@ -325,7 +325,7 @@ func TestRegisterClient_LookupError_ClosesConn(t *testing.T) {
 		ctrl:   rekey.NewStateMachine(tcpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
 	}
 	repo := &tcpRegFailingRepo{err: errors.New("database unavailable")}
-	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo, netip.MustParsePrefix("10.0.0.0/24"))
+	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	conn := &tcpRegConn{
 		remoteAddr: &net.TCPAddr{IP: net.IPv4(192, 168, 1, 1), Port: 12345},
@@ -357,7 +357,7 @@ func TestRegisterClient_NegativeClientID_FailsAllocation(t *testing.T) {
 		ctrl:   rekey.NewStateMachine(tcpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
 	}
 	repo := session.NewDefaultRepository()
-	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo, netip.MustParsePrefix("10.0.0.0/24"))
+	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	conn := &tcpRegConn{
 		remoteAddr: &net.TCPAddr{IP: net.IPv4(192, 168, 1, 1), Port: 12345},

@@ -15,12 +15,14 @@ import (
 // --------- fakes & stubs ---------
 
 type mockMgr struct {
-	cfg        *serverConfiguration.Configuration
-	cfgErr     error
-	incErr     error
-	addPeerErr error
-	incCalls   int
-	addedPeers []serverConfiguration.AllowedPeer
+	cfg                *serverConfiguration.Configuration
+	cfgErr             error
+	incErr             error
+	addPeerErr         error
+	ensureIPv6Err      error
+	incCalls           int
+	ensureIPv6Calls    int
+	addedPeers         []serverConfiguration.AllowedPeer
 }
 
 func mustHost(raw string) settings.Host {
@@ -47,6 +49,23 @@ func (m *mockMgr) IncrementClientCounter() error {
 	return nil
 }
 func (m *mockMgr) InjectX25519Keys(_, _ []byte) error { return nil }
+func (m *mockMgr) EnsureIPv6Subnets() error {
+	m.ensureIPv6Calls++
+	if m.ensureIPv6Err != nil {
+		return m.ensureIPv6Err
+	}
+	// Simulate what the real manager does: set default IPv6 subnets if missing.
+	for _, s := range []*settings.Settings{
+		&m.cfg.TCPSettings,
+		&m.cfg.UDPSettings,
+		&m.cfg.WSSettings,
+	} {
+		if !s.IPv6Subnet.IsValid() {
+			// leave as-is; tests that need IPv6 subnets pre-set them
+		}
+	}
+	return nil
+}
 func (m *mockMgr) AddAllowedPeer(peer serverConfiguration.AllowedPeer) error {
 	if m.addPeerErr != nil {
 		return m.addPeerErr
@@ -68,6 +87,7 @@ func (m mockIP) LinkSetDevUp(string) error                           { return ni
 func (m mockIP) LinkSetDevMTU(string, int) error                     { return nil }
 func (m mockIP) AddrAddDev(string, string) error                     { return nil }
 func (m mockIP) RouteAddDefaultDev(string) error                     { return nil }
+func (m mockIP) Route6AddDefaultDev(string) error                    { return nil }
 func (m mockIP) RouteGet(string) (string, error)                     { return "", nil }
 func (m mockIP) RouteAddDev(string, string) error                    { return nil }
 func (m mockIP) RouteAddViaDev(string, string, string) error         { return nil }
@@ -99,6 +119,7 @@ func validCfg() *serverConfiguration.Configuration {
 		TCPSettings: settings.Settings{
 			InterfaceName:   "tun-tcp0",
 			InterfaceSubnet: mustPrefix("10.0.0.0/24"),
+			IPv6Subnet:      mustPrefix("fd00::/64"),
 			Port:            443,
 			MTU:             1400,
 			DialTimeoutMs:   1000,
@@ -107,6 +128,7 @@ func validCfg() *serverConfiguration.Configuration {
 		UDPSettings: settings.Settings{
 			InterfaceName:   "tun-udp0",
 			InterfaceSubnet: mustPrefix("10.1.0.0/24"),
+			IPv6Subnet:      mustPrefix("fd00:1::/64"),
 			Port:            53,
 			MTU:             1400,
 			DialTimeoutMs:   1000,
@@ -115,6 +137,7 @@ func validCfg() *serverConfiguration.Configuration {
 		WSSettings: settings.Settings{
 			InterfaceName:   "tun-ws0",
 			InterfaceSubnet: mustPrefix("10.2.0.0/24"),
+			IPv6Subnet:      mustPrefix("fd00:2::/64"),
 			Port:            8080,
 			MTU:             1400,
 			DialTimeoutMs:   1000,
@@ -135,7 +158,12 @@ func TestGenerate_success(t *testing.T) {
 	mgr := &mockMgr{cfg: validCfg()}
 	g := generatorWithMocks(mgr, mockIP{
 		RouteDefaultFunc: func() (string, error) { return "eth0", nil },
-		AddrShowDevFunc:  func(int, string) (string, error) { return "192.0.2.10", nil },
+		AddrShowDevFunc: func(v int, _ string) (string, error) {
+			if v == 6 {
+				return "2001:db8::1", nil
+			}
+			return "192.0.2.10", nil
+		},
 	})
 
 	conf, err := g.Generate()
@@ -144,6 +172,24 @@ func TestGenerate_success(t *testing.T) {
 	}
 	if !conf.TCPSettings.InterfaceIP.IsValid() {
 		t.Fatal("TCP InterfaceIP must be valid")
+	}
+	// IPv6 should also be set
+	if !conf.TCPSettings.IPv6IP.IsValid() {
+		t.Fatal("TCP IPv6IP must be valid")
+	}
+	if !conf.UDPSettings.IPv6IP.IsValid() {
+		t.Fatal("UDP IPv6IP must be valid")
+	}
+	if !conf.WSSettings.IPv6IP.IsValid() {
+		t.Fatal("WS IPv6IP must be valid")
+	}
+	// IPv6Host should be populated in client settings
+	if conf.TCPSettings.IPv6Host.IsZero() {
+		t.Fatal("TCP IPv6Host must be set when server has IPv6")
+	}
+	expectedHost := mustHost("2001:db8::1")
+	if conf.TCPSettings.IPv6Host != expectedHost {
+		t.Fatalf("TCP IPv6Host: want %s, got %s", expectedHost, conf.TCPSettings.IPv6Host)
 	}
 }
 
@@ -175,7 +221,9 @@ func TestGenerate_addr_error_no_fallback(t *testing.T) {
 	mgr := &mockMgr{cfg: cfg}
 	g := generatorWithMocks(mgr, mockIP{
 		RouteDefaultFunc: func() (string, error) { return "eth0", nil },
-		AddrShowDevFunc:  func(int, string) (string, error) { return "", errors.New("addr-fail") },
+		AddrShowDevFunc: func(v int, _ string) (string, error) {
+			return "", errors.New("addr-fail")
+		},
 	})
 
 	_, err := g.Generate()
@@ -201,13 +249,22 @@ func TestGenerate_addr_error_with_fallback_success(t *testing.T) {
 	if mgr.incCalls != 1 {
 		t.Fatalf("IncrementClientCounter not called")
 	}
+	// No IPv6 detected → IPv6Host should be zero
+	if !conf.WSSettings.IPv6Host.IsZero() {
+		t.Fatal("IPv6Host must be zero when no IPv6 detected")
+	}
 }
 
 func TestGenerate_clientID_matches_allocated_IPs(t *testing.T) {
 	mgr := &mockMgr{cfg: validCfg()}
 	g := generatorWithMocks(mgr, mockIP{
 		RouteDefaultFunc: func() (string, error) { return "eth0", nil },
-		AddrShowDevFunc:  func(int, string) (string, error) { return "192.0.2.10", nil },
+		AddrShowDevFunc: func(v int, _ string) (string, error) {
+			if v == 6 {
+				return "2001:db8::1", nil
+			}
+			return "192.0.2.10", nil
+		},
 	})
 
 	conf, err := g.Generate()
@@ -221,8 +278,7 @@ func TestGenerate_clientID_matches_allocated_IPs(t *testing.T) {
 	peer := mgr.addedPeers[0]
 
 	// The invariant: AllocateClientIP(subnet, peer.ClientID) must produce the
-	// same IP that was given to the client configuration. A mismatch means the
-	// server will assign a different tunnel address than the client expects.
+	// same IP that was given to the client configuration.
 	for _, tc := range []struct {
 		name     string
 		subnet   netip.Prefix
@@ -231,6 +287,9 @@ func TestGenerate_clientID_matches_allocated_IPs(t *testing.T) {
 		{"TCP", mgr.cfg.TCPSettings.InterfaceSubnet, conf.TCPSettings.InterfaceIP},
 		{"UDP", mgr.cfg.UDPSettings.InterfaceSubnet, conf.UDPSettings.InterfaceIP},
 		{"WS", mgr.cfg.WSSettings.InterfaceSubnet, conf.WSSettings.InterfaceIP},
+		{"TCP-IPv6", mgr.cfg.TCPSettings.IPv6Subnet, conf.TCPSettings.IPv6IP},
+		{"UDP-IPv6", mgr.cfg.UDPSettings.IPv6Subnet, conf.UDPSettings.IPv6IP},
+		{"WS-IPv6", mgr.cfg.WSSettings.IPv6Subnet, conf.WSSettings.IPv6IP},
 	} {
 		got, allocErr := nip.AllocateClientIP(tc.subnet, peer.ClientID)
 		if allocErr != nil {
@@ -249,7 +308,12 @@ func TestGenerate_allocate_error_propagates(t *testing.T) {
 	mgr := &mockMgr{cfg: cfg}
 	g := generatorWithMocks(mgr, mockIP{
 		RouteDefaultFunc: func() (string, error) { return "eth0", nil },
-		AddrShowDevFunc:  func(int, string) (string, error) { return "192.0.2.10", nil },
+		AddrShowDevFunc: func(v int, _ string) (string, error) {
+			if v == 6 {
+				return "2001:db8::1", nil
+			}
+			return "192.0.2.10", nil
+		},
 	})
 
 	_, err := g.Generate()
@@ -264,12 +328,15 @@ func TestAllocateClientIPs_success(t *testing.T) {
 	mgr := &mockMgr{cfg: validCfg()}
 	g := generatorWithMocks(mgr, mockIP{})
 
-	tcp, udp, ws, err := g.allocateClientIPs(mgr.cfg, mgr.cfg.ClientCounter+1)
+	ips, err := g.allocateClientIPs(mgr.cfg, mgr.cfg.ClientCounter+1)
 	if err != nil {
 		t.Fatalf("unexpected: %v", err)
 	}
-	if !tcp.IsValid() || !udp.IsValid() || !ws.IsValid() {
-		t.Fatalf("invalid addresses returned")
+	if !ips.tcp.IsValid() || !ips.udp.IsValid() || !ips.ws.IsValid() {
+		t.Fatalf("invalid IPv4 addresses returned")
+	}
+	if !ips.tcpV6.IsValid() || !ips.udpV6.IsValid() || !ips.wsV6.IsValid() {
+		t.Fatalf("invalid IPv6 addresses returned")
 	}
 	if mgr.incCalls != 1 {
 		t.Fatalf("IncrementClientCounter must be called exactly once")
@@ -282,7 +349,7 @@ func TestAllocateClientIPs_tcp_error(t *testing.T) {
 	mgr := &mockMgr{cfg: cfg}
 	g := generatorWithMocks(mgr, mockIP{})
 
-	_, _, _, err := g.allocateClientIPs(cfg, cfg.ClientCounter+1)
+	_, err := g.allocateClientIPs(cfg, cfg.ClientCounter+1)
 	if err == nil || !strings.Contains(err.Error(), "TCP interface address allocation fail") {
 		t.Fatalf("want TCP alloc error, got %v", err)
 	}
@@ -294,7 +361,7 @@ func TestAllocateClientIPs_udp_error(t *testing.T) {
 	mgr := &mockMgr{cfg: cfg}
 	g := generatorWithMocks(mgr, mockIP{})
 
-	_, _, _, err := g.allocateClientIPs(cfg, cfg.ClientCounter+1)
+	_, err := g.allocateClientIPs(cfg, cfg.ClientCounter+1)
 	if err == nil || !strings.Contains(err.Error(), "UDP interface address allocation fail") {
 		t.Fatalf("want UDP alloc error, got %v", err)
 	}
@@ -306,7 +373,7 @@ func TestAllocateClientIPs_ws_error(t *testing.T) {
 	mgr := &mockMgr{cfg: cfg}
 	g := generatorWithMocks(mgr, mockIP{})
 
-	_, _, _, err := g.allocateClientIPs(cfg, cfg.ClientCounter+1)
+	_, err := g.allocateClientIPs(cfg, cfg.ClientCounter+1)
 	if err == nil || !strings.Contains(err.Error(), "WS interface address allocation fail") {
 		t.Fatalf("want WS alloc error, got %v", err)
 	}
@@ -317,7 +384,7 @@ func TestAllocateClientIPs_increment_error(t *testing.T) {
 	mgr := &mockMgr{cfg: cfg, incErr: errors.New("inc-fail")}
 	g := generatorWithMocks(mgr, mockIP{})
 
-	_, _, _, err := g.allocateClientIPs(cfg, cfg.ClientCounter+1)
+	_, err := g.allocateClientIPs(cfg, cfg.ClientCounter+1)
 	if err == nil || !strings.Contains(err.Error(), "inc-fail") {
 		t.Fatalf("want increment error, got %v", err)
 	}
@@ -353,15 +420,18 @@ func TestDeriveClientSettings_copies_fields_correctly(t *testing.T) {
 	serverS := settings.Settings{
 		InterfaceName:   "tun-tcp0",
 		InterfaceSubnet: mustPrefix("10.0.0.0/24"),
+		IPv6Subnet:      mustPrefix("fd00::/64"),
 		Port:            443,
 		MTU:             1400,
 		Encryption:      1,
 		DialTimeoutMs:   2000,
 	}
 	clientIP := netip.MustParseAddr("10.0.0.8")
+	clientIPv6 := netip.MustParseAddr("fd00::8")
 	host := mustHost("192.0.2.1")
+	ipv6Host := mustHost("2001:db8::1")
 
-	got := deriveClientSettings(serverS, clientIP, host, settings.TCP)
+	got := deriveClientSettings(serverS, clientIP, clientIPv6, host, ipv6Host, settings.TCP)
 
 	if got.InterfaceName != serverS.InterfaceName {
 		t.Fatalf("InterfaceName mismatch")
@@ -372,8 +442,17 @@ func TestDeriveClientSettings_copies_fields_correctly(t *testing.T) {
 	if got.InterfaceIP != clientIP {
 		t.Fatalf("InterfaceIP: want %s, got %s", clientIP, got.InterfaceIP)
 	}
+	if got.IPv6Subnet != serverS.IPv6Subnet {
+		t.Fatalf("IPv6Subnet mismatch")
+	}
+	if got.IPv6IP != clientIPv6 {
+		t.Fatalf("IPv6IP: want %s, got %s", clientIPv6, got.IPv6IP)
+	}
 	if got.Host != host {
 		t.Fatalf("Host mismatch")
+	}
+	if got.IPv6Host != ipv6Host {
+		t.Fatalf("IPv6Host: want %s, got %s", ipv6Host, got.IPv6Host)
 	}
 	if got.Port != serverS.Port {
 		t.Fatalf("Port mismatch")
@@ -394,8 +473,98 @@ func TestDeriveClientSettings_copies_fields_correctly(t *testing.T) {
 
 func TestDeriveClientSettings_udp_uses_safe_mtu(t *testing.T) {
 	serverS := settings.Settings{MTU: 1400}
-	got := deriveClientSettings(serverS, netip.Addr{}, "", settings.UDP)
+	got := deriveClientSettings(serverS, netip.Addr{}, netip.Addr{}, "", "", settings.UDP)
 	if got.MTU != settings.SafeMTU {
 		t.Fatalf("UDP MTU: want SafeMTU (%d), got %d", settings.SafeMTU, got.MTU)
+	}
+}
+
+// --------- tests: IPv6 detection ---------
+
+func TestGenerate_no_ipv6_on_server(t *testing.T) {
+	mgr := &mockMgr{cfg: validCfg()}
+	g := generatorWithMocks(mgr, mockIP{
+		RouteDefaultFunc: func() (string, error) { return "eth0", nil },
+		AddrShowDevFunc: func(v int, _ string) (string, error) {
+			if v == 6 {
+				return "", errors.New("no-ipv6")
+			}
+			return "192.0.2.10", nil
+		},
+	})
+
+	conf, err := g.Generate()
+	if err != nil {
+		t.Fatalf("unexpected: %v", err)
+	}
+	if !conf.TCPSettings.IPv6Host.IsZero() {
+		t.Fatal("IPv6Host must be zero when server has no IPv6")
+	}
+	if mgr.ensureIPv6Calls != 0 {
+		t.Fatal("EnsureIPv6Subnets should not be called when no IPv6 detected")
+	}
+}
+
+func TestGenerate_ipv6_skips_link_local(t *testing.T) {
+	mgr := &mockMgr{cfg: validCfg()}
+	g := generatorWithMocks(mgr, mockIP{
+		RouteDefaultFunc: func() (string, error) { return "eth0", nil },
+		AddrShowDevFunc: func(v int, _ string) (string, error) {
+			if v == 6 {
+				return "fe80::1\n2001:db8::42", nil
+			}
+			return "192.0.2.10", nil
+		},
+	})
+
+	conf, err := g.Generate()
+	if err != nil {
+		t.Fatalf("unexpected: %v", err)
+	}
+	expectedHost := mustHost("2001:db8::42")
+	if conf.TCPSettings.IPv6Host != expectedHost {
+		t.Fatalf("IPv6Host: want %s, got %s (should skip fe80:: link-local)", expectedHost, conf.TCPSettings.IPv6Host)
+	}
+}
+
+func TestGenerate_ipv6_only_link_local(t *testing.T) {
+	mgr := &mockMgr{cfg: validCfg()}
+	g := generatorWithMocks(mgr, mockIP{
+		RouteDefaultFunc: func() (string, error) { return "eth0", nil },
+		AddrShowDevFunc: func(v int, _ string) (string, error) {
+			if v == 6 {
+				return "fe80::1", nil
+			}
+			return "192.0.2.10", nil
+		},
+	})
+
+	conf, err := g.Generate()
+	if err != nil {
+		t.Fatalf("unexpected: %v", err)
+	}
+	if !conf.TCPSettings.IPv6Host.IsZero() {
+		t.Fatal("IPv6Host must be zero when only link-local IPv6 available")
+	}
+}
+
+func TestGenerate_ensure_ipv6_subnets_error(t *testing.T) {
+	mgr := &mockMgr{
+		cfg:           validCfg(),
+		ensureIPv6Err: errors.New("ensure-fail"),
+	}
+	g := generatorWithMocks(mgr, mockIP{
+		RouteDefaultFunc: func() (string, error) { return "eth0", nil },
+		AddrShowDevFunc: func(v int, _ string) (string, error) {
+			if v == 6 {
+				return "2001:db8::1", nil
+			}
+			return "192.0.2.10", nil
+		},
+	})
+
+	_, err := g.Generate()
+	if err == nil || !strings.Contains(err.Error(), "failed to auto-enable IPv6 subnets") {
+		t.Fatalf("want auto-enable error, got %v", err)
 	}
 }

@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"net/netip"
+	nip "tungo/infrastructure/network/ip"
 	"tungo/infrastructure/settings"
 )
 
@@ -93,6 +94,12 @@ func (c *Configuration) applyDefaults(
 	}
 	if !to.InterfaceIP.IsValid() {
 		to.InterfaceIP = from.InterfaceIP
+	}
+	// IPv6 is opt-in: admin sets IPv6Subnet, server IP is derived automatically.
+	if to.IPv6Subnet.IsValid() && !to.IPv6IP.IsValid() {
+		if serverIPv6, err := nip.AllocateServerIP(to.IPv6Subnet); err == nil {
+			to.IPv6IP = netip.MustParseAddr(serverIPv6)
+		}
 	}
 	if to.Port == 0 {
 		to.Port = from.Port
@@ -225,6 +232,29 @@ func (c *Configuration) Validate() error {
 			)
 		}
 		subnets = append(subnets, pfx)
+
+		// Validate optional IPv6 settings
+		if config.IPv6Subnet.IsValid() {
+			ipv6Addr := config.IPv6IP.Unmap()
+			if !ipv6Addr.IsValid() {
+				return fmt.Errorf(
+					"invalid 'IPv6IP': [%s/%s] invalid address %q",
+					config.Protocol,
+					config.InterfaceName,
+					config.IPv6IP,
+				)
+			}
+			if !config.IPv6Subnet.Contains(ipv6Addr) {
+				return fmt.Errorf(
+					"invalid 'IPv6IP': [%s/%s] address %s not in 'IPv6Subnet' %s",
+					config.Protocol,
+					config.InterfaceName,
+					config.IPv6IP,
+					config.IPv6Subnet,
+				)
+			}
+			subnets = append(subnets, config.IPv6Subnet)
+		}
 	}
 
 	// interface subnets must not overlap

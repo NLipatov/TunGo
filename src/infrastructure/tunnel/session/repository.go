@@ -43,8 +43,9 @@ type RepositoryWithRevocation interface {
 // This ensures no new lookups can return the peer while zeroing is in progress.
 type DefaultRepository struct {
 	mu               sync.RWMutex
-	internalIpToPeer map[netip.Addr]*Peer
-	externalIPToPeer map[netip.AddrPort]*Peer
+	internalIpToPeer  map[netip.Addr]*Peer
+	externalIPToPeer  map[netip.AddrPort]*Peer
+	allowedAddrToPeer map[netip.Addr]*Peer // host-route (/32, /128) from AllowedIPs for O(1) lookup
 	// pubKeyToPeers tracks sessions by client public key for revocation support.
 	// Multiple sessions may exist for the same pubkey (e.g., TCP + UDP).
 	pubKeyToPeers map[string][]*Peer
@@ -52,9 +53,10 @@ type DefaultRepository struct {
 
 func NewDefaultRepository() Repository {
 	return &DefaultRepository{
-		internalIpToPeer: make(map[netip.Addr]*Peer),
-		externalIPToPeer: make(map[netip.AddrPort]*Peer),
-		pubKeyToPeers:    make(map[string][]*Peer),
+		internalIpToPeer:  make(map[netip.Addr]*Peer),
+		externalIPToPeer:  make(map[netip.AddrPort]*Peer),
+		allowedAddrToPeer: make(map[netip.Addr]*Peer),
+		pubKeyToPeers:     make(map[string][]*Peer),
 	}
 }
 
@@ -64,6 +66,15 @@ func (s *DefaultRepository) Add(peer *Peer) {
 
 	s.internalIpToPeer[peer.InternalAddr().Unmap()] = peer
 	s.externalIPToPeer[s.canonicalAP(peer.ExternalAddrPort())] = peer
+
+	// Index host-route prefixes from AllowedIPs for O(1) lookup (e.g. IPv6 /128)
+	if sess, ok := peer.Session.(*Session); ok {
+		for _, prefix := range sess.AllowedIPs() {
+			if prefix.IsSingleIP() {
+				s.allowedAddrToPeer[prefix.Addr()] = peer
+			}
+		}
+	}
 
 	// Track by public key for revocation support
 	if identity, ok := peer.Session.(connection.SessionIdentity); ok {
@@ -117,27 +128,25 @@ func (s *DefaultRepository) canonicalAP(ap netip.AddrPort) netip.AddrPort {
 }
 
 // FindByDestinationIP finds the peer that should receive packets destined for addr.
-// Fast path: O(1) lookup by internal IP.
-// Slow path: O(n) scan through all peers checking AllowedIPs prefixes.
-//
-// SECURITY NOTE (R-18): The O(n) scan creates a minor timing side-channel that
-// could reveal the approximate number of peers. This is an ACCEPTED RISK because:
-// - Peer count is not highly sensitive information
-// - Impact is minimal (attacker learns "few" vs "many" peers)
-// - Fix would require radix tree, adding complexity without meaningful security benefit
-// - Typical deployments have <100 peers, making timing differences negligible
+// Fast path: O(1) lookup by internal IP, then O(1) by AllowedIPs host-routes.
+// Slow path: O(n) scan through all peers checking non-host AllowedIPs prefixes.
 func (s *DefaultRepository) FindByDestinationIP(addr netip.Addr) (*Peer, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	normalized := addr.Unmap()
 
-	// Fast path: exact match on internal IP
+	// Fast path: exact match on internal IP (IPv4)
 	if peer, found := s.internalIpToPeer[normalized]; found {
 		return peer, nil
 	}
 
-	// Slow path: check AllowedIPs for each peer
+	// Fast path: exact match on AllowedIPs host-route (IPv6 /128, etc.)
+	if peer, found := s.allowedAddrToPeer[normalized]; found {
+		return peer, nil
+	}
+
+	// Slow path: check non-host AllowedIPs prefixes for each peer
 	for _, peer := range s.internalIpToPeer {
 		if peer.IsSourceAllowed(normalized) {
 			return peer, nil
@@ -200,6 +209,15 @@ func (s *DefaultRepository) deleteLocked(peer *Peer) {
 	// Step 3: Remove from all maps
 	delete(s.internalIpToPeer, peer.InternalAddr().Unmap())
 	delete(s.externalIPToPeer, s.canonicalAP(peer.ExternalAddrPort()))
+
+	// Remove host-route entries from AllowedIPs index
+	if sess, ok := peer.Session.(*Session); ok {
+		for _, prefix := range sess.AllowedIPs() {
+			if prefix.IsSingleIP() {
+				delete(s.allowedAddrToPeer, prefix.Addr())
+			}
+		}
+	}
 
 	// Remove from pubkey index
 	if identity, ok := peer.Session.(connection.SessionIdentity); ok {

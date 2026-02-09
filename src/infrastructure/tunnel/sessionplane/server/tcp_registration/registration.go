@@ -22,6 +22,7 @@ type Registrar struct {
 	cryptographyFactory connection.CryptoFactory
 	sessionManager      session.Repository
 	interfaceSubnet     netip.Prefix
+	ipv6Subnet          netip.Prefix
 }
 
 func NewRegistrar(
@@ -30,6 +31,7 @@ func NewRegistrar(
 	cryptographyFactory connection.CryptoFactory,
 	sessionManager session.Repository,
 	interfaceSubnet netip.Prefix,
+	ipv6Subnet netip.Prefix,
 ) *Registrar {
 	return &Registrar{
 		logger:              logger,
@@ -37,6 +39,7 @@ func NewRegistrar(
 		cryptographyFactory: cryptographyFactory,
 		sessionManager:      sessionManager,
 		interfaceSubnet:     interfaceSubnet,
+		ipv6Subnet:          ipv6Subnet,
 	}
 }
 
@@ -102,6 +105,14 @@ func (r *Registrar) RegisterClient(conn net.Conn) (*session.Peer, connection.Tra
 		if result := hwr.Result(); result != nil {
 			clientPubKey = result.ClientPubKey()
 			allowedIPs = result.AllowedIPs()
+		}
+	}
+
+	// Add IPv6 address to allowedIPs for dual-stack support
+	if r.ipv6Subnet.IsValid() {
+		ipv6Addr, ipv6Err := ip.AllocateClientIP(r.ipv6Subnet, clientID)
+		if ipv6Err == nil {
+			allowedIPs = append(allowedIPs, netip.PrefixFrom(ipv6Addr, 128))
 		}
 	}
 

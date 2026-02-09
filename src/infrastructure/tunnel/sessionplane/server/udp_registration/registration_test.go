@@ -110,7 +110,7 @@ func (l *udpRegListener) WriteToUDPAddrPort(data []byte, addr netip.AddrPort) (i
 
 func TestNewRegistrar_CreatesEmptyRegistrations(t *testing.T) {
 	ctx := context.Background()
-	r := NewRegistrar(ctx, nil, nil, udpRegLogger{}, nil, nil, netip.MustParsePrefix("10.0.0.0/24"))
+	r := NewRegistrar(ctx, nil, nil, udpRegLogger{}, nil, nil, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 	if r == nil {
 		t.Fatal("expected non-nil registrar")
 	}
@@ -121,7 +121,7 @@ func TestNewRegistrar_CreatesEmptyRegistrations(t *testing.T) {
 
 func TestGetOrCreateRegistrationQueue_CreatesNew(t *testing.T) {
 	ctx := context.Background()
-	r := NewRegistrar(ctx, nil, nil, udpRegLogger{}, nil, nil, netip.MustParsePrefix("10.0.0.0/24"))
+	r := NewRegistrar(ctx, nil, nil, udpRegLogger{}, nil, nil, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	addr := netip.MustParseAddrPort("192.168.1.1:1234")
 	q, isNew := r.GetOrCreateRegistrationQueue(addr)
@@ -144,7 +144,7 @@ func TestGetOrCreateRegistrationQueue_CreatesNew(t *testing.T) {
 
 func TestCloseAll_ClearsRegistrations(t *testing.T) {
 	ctx := context.Background()
-	r := NewRegistrar(ctx, nil, nil, udpRegLogger{}, nil, nil, netip.MustParsePrefix("10.0.0.0/24"))
+	r := NewRegistrar(ctx, nil, nil, udpRegLogger{}, nil, nil, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	r.GetOrCreateRegistrationQueue(netip.MustParseAddrPort("192.168.1.1:1234"))
 	r.GetOrCreateRegistrationQueue(netip.MustParseAddrPort("192.168.1.2:5678"))
@@ -177,7 +177,7 @@ func TestEnqueuePacket_CreatesQueueAndStartsRegistration(t *testing.T) {
 		ctrl:   rekey.NewStateMachine(udpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
 	}
 
-	r := NewRegistrar(ctx, listener, repo, udpRegLogger{}, hf, cf, netip.MustParsePrefix("10.0.0.0/24"))
+	r := NewRegistrar(ctx, listener, repo, udpRegLogger{}, hf, cf, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	addr := netip.MustParseAddrPort("192.168.1.1:1234")
 	r.EnqueuePacket(addr, []byte("hello"))
@@ -209,7 +209,7 @@ func TestRegisterClient_Success(t *testing.T) {
 		ctrl:   rekey.NewStateMachine(udpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
 	}
 
-	r := NewRegistrar(ctx, listener, repo, udpRegLogger{}, hf, cf, netip.MustParsePrefix("10.0.0.0/24"))
+	r := NewRegistrar(ctx, listener, repo, udpRegLogger{}, hf, cf, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	addr := netip.MustParseAddrPort("192.168.1.1:1234")
 	q, _ := r.GetOrCreateRegistrationQueue(addr)
@@ -256,7 +256,7 @@ func TestRegisterClient_CryptoFactoryError_FailsGracefully(t *testing.T) {
 	}
 	cf := &udpRegCryptoFactory{err: errors.New("crypto failed")}
 
-	r := NewRegistrar(ctx, listener, repo, udpRegLogger{}, hf, cf, netip.MustParsePrefix("10.0.0.0/24"))
+	r := NewRegistrar(ctx, listener, repo, udpRegLogger{}, hf, cf, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	addr := netip.MustParseAddrPort("192.168.1.1:1234")
 	q, _ := r.GetOrCreateRegistrationQueue(addr)
@@ -305,7 +305,7 @@ func TestRegisterClient_NegativeClientID_FailsAllocation(t *testing.T) {
 		ctrl:   rekey.NewStateMachine(udpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
 	}
 
-	r := NewRegistrar(ctx, listener, repo, udpRegLogger{}, hf, cf, netip.MustParsePrefix("10.0.0.0/24"))
+	r := NewRegistrar(ctx, listener, repo, udpRegLogger{}, hf, cf, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	addr := netip.MustParseAddrPort("192.168.1.1:1234")
 	q, _ := r.GetOrCreateRegistrationQueue(addr)
@@ -333,7 +333,7 @@ func TestRegisterClient_NegativeClientID_FailsAllocation(t *testing.T) {
 
 func TestGetOrCreateRegistrationQueue_SecondCallReusesQueue(t *testing.T) {
 	ctx := context.Background()
-	r := NewRegistrar(ctx, nil, nil, udpRegLogger{}, nil, nil, netip.MustParsePrefix("10.0.0.0/24"))
+	r := NewRegistrar(ctx, nil, nil, udpRegLogger{}, nil, nil, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	addr := netip.MustParseAddrPort("192.168.1.1:1234")
 

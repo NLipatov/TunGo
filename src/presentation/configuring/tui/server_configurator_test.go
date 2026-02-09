@@ -96,7 +96,8 @@ func (m *mockManager) AddAllowedPeer(_ srv.AllowedPeer) error {
 	return nil
 }
 
-func (m *mockManager) InvalidateCache() {}
+func (m *mockManager) EnsureIPv6Subnets() error { return nil }
+func (m *mockManager) InvalidateCache()          {}
 
 func Test_selectOption_Success(t *testing.T) {
 	qsel := &queueSelector{options: []string{startServerOption}}

@@ -86,8 +86,17 @@ func (s ServerTunFactory) DisposeDevices(connSettings settings.Settings) error {
 				log.Printf("disabling forwarding to %s <- %s: %v", ifName, extIface, err)
 			}
 		}
+		if err := s.iptables.Disable6ForwardingFromTunToDev(ifName, extIface); err != nil {
+			if !s.isBenignNetfilterError(err) {
+				log.Printf("disabling IPv6 forwarding from %s -> %s: %v", ifName, extIface, err)
+			}
+		}
+		if err := s.iptables.Disable6ForwardingFromDevToTun(ifName, extIface); err != nil {
+			if !s.isBenignNetfilterError(err) {
+				log.Printf("disabling IPv6 forwarding to %s <- %s: %v", ifName, extIface, err)
+			}
+		}
 	} else {
-		// Optional: debug log instead of noisy warning
 		log.Printf("skipping iptables forwarding disable for %s: external interface unknown", ifName)
 	}
 
@@ -97,9 +106,21 @@ func (s ServerTunFactory) DisposeDevices(connSettings settings.Settings) error {
 		}
 	}
 
+	if err := s.iptables.Disable6ForwardingTunToTun(ifName); err != nil {
+		if !s.isBenignNetfilterError(err) {
+			log.Printf("disabling IPv6 client-to-client forwarding for %s: %v", ifName, err)
+		}
+	}
+
 	if err := s.iptables.DisableDevMasquerade(ifName); err != nil {
 		if !s.isBenignNetfilterError(err) {
 			log.Printf("disabling masquerade %s: %v", ifName, err)
+		}
+	}
+
+	if err := s.iptables.Disable6DevMasquerade(ifName); err != nil {
+		if !s.isBenignNetfilterError(err) {
+			log.Printf("disabling IPv6 masquerade %s: %v", ifName, err)
 		}
 	}
 
@@ -167,6 +188,21 @@ func (s ServerTunFactory) createTun(settings settings.Settings) (*os.File, error
 		return nil, fmt.Errorf("failed to convert server ip to CIDR format: %s", addrAddDev)
 	}
 
+	// Assign IPv6 address if configured
+	if settings.IPv6Subnet.IsValid() {
+		serverIPv6, serverIPv6Err := nIp.AllocateServerIP(settings.IPv6Subnet)
+		if serverIPv6Err != nil {
+			return nil, fmt.Errorf("could not allocate server IPv6 (%s): %s", settings.IPv6Subnet, serverIPv6Err)
+		}
+		cidr6, cidr6Err := nIp.ToCIDR(settings.IPv6Subnet.String(), serverIPv6)
+		if cidr6Err != nil {
+			return nil, fmt.Errorf("could not convert server IPv6 (%s) to CIDR: %s", serverIPv6, cidr6Err)
+		}
+		if err := s.ip.AddrAddDev(settings.InterfaceName, cidr6); err != nil {
+			return nil, fmt.Errorf("failed to assign IPv6 to TUN %s: %s", settings.InterfaceName, err)
+		}
+	}
+
 	tunFile, tunFileErr := s.ioctl.CreateTunInterface(settings.InterfaceName)
 	if tunFileErr != nil {
 		return nil, fmt.Errorf("failed to open TUN interface: %v", tunFileErr)
@@ -185,6 +221,18 @@ func (s ServerTunFactory) enableForwarding() error {
 		output, err = s.sysctl.WNetIpv4IpForward()
 		if err != nil {
 			return fmt.Errorf("failed to enable IPv4 packet forwarding: %v, output: %s", err, output)
+		}
+	}
+
+	output6, err6 := s.sysctl.NetIpv6ConfAllForwarding()
+	if err6 != nil {
+		return fmt.Errorf("failed to read IPv6 forwarding state: %v, output: %s", err6, output6)
+	}
+
+	if string(output6) != "net.ipv6.conf.all.forwarding = 1\n" {
+		output6, err6 = s.sysctl.WNetIpv6ConfAllForwarding()
+		if err6 != nil {
+			return fmt.Errorf("failed to enable IPv6 packet forwarding: %v, output: %s", err6, output6)
 		}
 	}
 
@@ -207,6 +255,10 @@ func (s ServerTunFactory) configure(tunFile *os.File) error {
 
 	if err := s.iptables.EnableDevMasquerade(externalIfName); err != nil {
 		return fmt.Errorf("failed enabling NAT: %v", err)
+	}
+
+	if err := s.iptables.Enable6DevMasquerade(externalIfName); err != nil {
+		return fmt.Errorf("failed enabling IPv6 NAT: %v", err)
 	}
 
 	if err := s.setupForwarding(tunName, externalIfName); err != nil {
@@ -232,6 +284,11 @@ func (s ServerTunFactory) Unconfigure(tunFile *os.File) error {
 		log.Printf("failed to disbale NAT: %s\n", err)
 	}
 
+	err = s.iptables.Disable6DevMasquerade(tunName)
+	if err != nil {
+		log.Printf("failed to disable IPv6 NAT: %s\n", err)
+	}
+
 	defaultIfName, defaultIfNameErr := s.ip.RouteDefault()
 	if defaultIfNameErr != nil {
 		return fmt.Errorf("failed to resolve default interface: %v", defaultIfNameErr)
@@ -254,7 +311,7 @@ func (s ServerTunFactory) setupForwarding(tunName string, extIface string) error
 		return fmt.Errorf("failed to get TUN interface name")
 	}
 
-	// Set up iptables rules
+	// Set up iptables rules (IPv4)
 	if err := s.iptables.EnableForwardingFromTunToDev(tunName, extIface); err != nil {
 		return fmt.Errorf("failed to setup forwarding rule: %s", err)
 	}
@@ -263,9 +320,21 @@ func (s ServerTunFactory) setupForwarding(tunName string, extIface string) error
 		return fmt.Errorf("failed to setup forwarding rule: %s", err)
 	}
 
-	// Enable client-to-client forwarding
 	if err := s.iptables.EnableForwardingTunToTun(tunName); err != nil {
 		return fmt.Errorf("failed to setup client-to-client forwarding rule: %s", err)
+	}
+
+	// Set up ip6tables rules (IPv6)
+	if err := s.iptables.Enable6ForwardingFromTunToDev(tunName, extIface); err != nil {
+		return fmt.Errorf("failed to setup IPv6 forwarding rule: %s", err)
+	}
+
+	if err := s.iptables.Enable6ForwardingFromDevToTun(tunName, extIface); err != nil {
+		return fmt.Errorf("failed to setup IPv6 forwarding rule: %s", err)
+	}
+
+	if err := s.iptables.Enable6ForwardingTunToTun(tunName); err != nil {
+		return fmt.Errorf("failed to setup IPv6 client-to-client forwarding rule: %s", err)
 	}
 
 	return nil
@@ -286,6 +355,18 @@ func (s ServerTunFactory) clearForwarding(tunName string, extIface string) error
 
 	if err := s.iptables.DisableForwardingTunToTun(tunName); err != nil {
 		return fmt.Errorf("failed to execute iptables command: %s", err)
+	}
+
+	if err := s.iptables.Disable6ForwardingFromTunToDev(tunName, extIface); err != nil {
+		return fmt.Errorf("failed to execute ip6tables command: %s", err)
+	}
+
+	if err := s.iptables.Disable6ForwardingFromDevToTun(tunName, extIface); err != nil {
+		return fmt.Errorf("failed to execute ip6tables command: %s", err)
+	}
+
+	if err := s.iptables.Disable6ForwardingTunToTun(tunName); err != nil {
+		return fmt.Errorf("failed to execute ip6tables command: %s", err)
 	}
 
 	return nil
