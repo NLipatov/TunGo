@@ -18,8 +18,8 @@ var cipherSuite = noiselib.NewCipherSuite(noiselib.DH25519, noiselib.CipherChaCh
 // IKHandshakeResult contains the result of a successful server-side IK handshake.
 // Implements connection.HandshakeResult interface.
 type IKHandshakeResult struct {
-	// clientIndex is the 1-based ordinal for AllocateClientIP.
-	clientIndex int
+	// clientID is the 1-based ordinal for AllocateClientIP.
+	clientID int
 
 	// clientPubKey is the client's X25519 static public key.
 	clientPubKey []byte
@@ -59,7 +59,7 @@ type RuntimeAllowedPeer struct {
 	Name        string
 	PublicKey   []byte
 	Enabled     bool
-	ClientIndex int
+	ClientID int
 }
 
 // NewAllowedPeersLookup creates an AllowedPeersLookup from a slice of AllowedPeer.
@@ -85,7 +85,7 @@ func (a *allowedPeersMap) Update(peers []server.AllowedPeer) {
 			Name:        peer.Name,
 			PublicKey:   append([]byte(nil), peer.PublicKey...),
 			Enabled:     peer.Enabled,
-			ClientIndex: peer.ClientIndex,
+			ClientID: peer.ClientID,
 		}
 	}
 	a.peers.Store(&m)
@@ -158,7 +158,7 @@ func (h *IKHandshake) Result() connection.HandshakeResult {
 }
 
 // ServerSideHandshake performs Noise IK as responder with DoS protection.
-// Returns the client's ClientIndex for IP allocation at registration time.
+// Returns the client's ClientID for IP allocation at registration time.
 func (h *IKHandshake) ServerSideHandshake(transport connection.Transport) (int, error) {
 	if h.serverPrivKey == nil || h.serverPubKey == nil {
 		return 0, ErrMissingServerKey
@@ -297,12 +297,12 @@ func (h *IKHandshake) ServerSideHandshake(transport connection.Transport) (int, 
 	copy(pubKeyCopy, clientPubKey)
 
 	h.result = &IKHandshakeResult{
-		clientIndex:  peer.ClientIndex,
+		clientID:  peer.ClientID,
 		clientPubKey: pubKeyCopy,
 		allowedIPs:   nil,
 	}
 
-	return peer.ClientIndex, nil
+	return peer.ClientID, nil
 }
 
 // ClientSideHandshake performs Noise IK as initiator.

@@ -33,7 +33,7 @@ func (udpRegCrypto) Decrypt(b []byte) ([]byte, error) { return b, nil }
 
 // udpRegHandshake is a mock handshake that reads from registration queue.
 type udpRegHandshake struct {
-	clientIndex int
+	clientID int
 	err         error
 	id          [32]byte
 	c2s, s2c    []byte
@@ -57,7 +57,7 @@ func (h *udpRegHandshake) ServerSideHandshake(transport connection.Transport) (i
 	if h.err != nil {
 		return 0, h.err
 	}
-	return h.clientIndex, nil
+	return h.clientID, nil
 }
 
 type udpRegHandshakeFactory struct {
@@ -199,7 +199,7 @@ func TestRegisterClient_Success(t *testing.T) {
 
 	hf := &udpRegHandshakeFactory{
 		handshake: &udpRegHandshake{
-			clientIndex: 1,
+			clientID: 1,
 			c2s:         make([]byte, 32),
 			s2c:         make([]byte, 32),
 		},
@@ -249,7 +249,7 @@ func TestRegisterClient_CryptoFactoryError_FailsGracefully(t *testing.T) {
 
 	hf := &udpRegHandshakeFactory{
 		handshake: &udpRegHandshake{
-			clientIndex: 1,
+			clientID: 1,
 			c2s:         make([]byte, 32),
 			s2c:         make([]byte, 32),
 		},
@@ -284,8 +284,8 @@ func TestRegisterClient_CryptoFactoryError_FailsGracefully(t *testing.T) {
 	}
 }
 
-func TestRegisterClient_NegativeClientIndex_FailsAllocation(t *testing.T) {
-	// Negative clientIndex causes AllocateClientIP to fail.
+func TestRegisterClient_NegativeClientID_FailsAllocation(t *testing.T) {
+	// Negative clientID causes AllocateClientIP to fail.
 	// UDP registrar logs and returns silently, no session added.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -295,7 +295,7 @@ func TestRegisterClient_NegativeClientIndex_FailsAllocation(t *testing.T) {
 
 	hf := &udpRegHandshakeFactory{
 		handshake: &udpRegHandshake{
-			clientIndex: -1, // invalid
+			clientID: -1, // invalid
 			c2s:         make([]byte, 32),
 			s2c:         make([]byte, 32),
 		},

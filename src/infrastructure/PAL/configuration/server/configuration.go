@@ -21,9 +21,9 @@ type AllowedPeer struct {
 	// Setting to false revokes access immediately.
 	Enabled bool `json:"Enabled"`
 
-	// ClientIndex is the 1-based ordinal passed to AllocateClientIP at registration time.
-	// Each peer must have a unique, positive ClientIndex.
-	ClientIndex int `json:"ClientIndex"`
+	// ClientID is the 1-based ordinal passed to AllocateClientIP at registration time.
+	// Each peer must have a unique, positive ClientID.
+	ClientID int `json:"ClientID"`
 }
 
 type Configuration struct {
@@ -253,9 +253,9 @@ func (c *Configuration) overlappingSubnets(subnets []netip.Prefix) bool {
 }
 
 // ValidateAllowedPeers validates the AllowedPeers configuration.
-// Ensures no ClientIndex overlap between different peers and no duplicate public keys.
+// Ensures no ClientID overlap between different peers and no duplicate public keys.
 func (c *Configuration) ValidateAllowedPeers() error {
-	seenIndex := make(map[int]int) // ClientIndex → peer index
+	seenIndex := make(map[int]int) // ClientID → peer index
 
 	for i, peer := range c.AllowedPeers {
 		// Validate public key length
@@ -263,18 +263,18 @@ func (c *Configuration) ValidateAllowedPeers() error {
 			return fmt.Errorf("peer %d: invalid public key length %d, expected 32", i, len(peer.PublicKey))
 		}
 
-		if peer.ClientIndex <= 0 {
-			return fmt.Errorf("peer %d: invalid ClientIndex %d: must be > 0", i, peer.ClientIndex)
+		if peer.ClientID <= 0 {
+			return fmt.Errorf("peer %d: invalid ClientID %d: must be > 0", i, peer.ClientID)
 		}
 
-		// Check for duplicate ClientIndex
-		if prev, exists := seenIndex[peer.ClientIndex]; exists {
+		// Check for duplicate ClientID
+		if prev, exists := seenIndex[peer.ClientID]; exists {
 			return fmt.Errorf(
-				"ClientIndex conflict: peer %d and peer %d both have ClientIndex %d",
-				prev, i, peer.ClientIndex,
+				"ClientID conflict: peer %d and peer %d both have ClientID %d",
+				prev, i, peer.ClientID,
 			)
 		}
-		seenIndex[peer.ClientIndex] = i
+		seenIndex[peer.ClientID] = i
 	}
 
 	// Check for duplicate public keys

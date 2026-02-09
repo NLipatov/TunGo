@@ -169,12 +169,12 @@ func TestIKHandshake_Extra_GettersAndNilResult(t *testing.T) {
 		t.Fatal("unexpected server key")
 	}
 
-	h.result = &IKHandshakeResult{clientIndex: 9}
+	h.result = &IKHandshakeResult{clientID: 9}
 	result, ok := h.Result().(*IKHandshakeResult)
 	if !ok {
 		t.Fatal("expected IKHandshakeResult type")
 	}
-	if got := result.clientIndex; got != 9 {
+	if got := result.clientID; got != 9 {
 		t.Fatalf("expected client index 9, got %d", got)
 	}
 }
@@ -217,7 +217,7 @@ func TestIKHandshake_Server_UnderLoadCookieRequiredBranches(t *testing.T) {
 	cm, _ := NewCookieManager()
 
 	allowedPeers := []server.AllowedPeer{
-		{PublicKey: clientKP.Public, Enabled: true, ClientIndex: 2},
+		{PublicKey: clientKP.Public, Enabled: true, ClientID: 2},
 	}
 
 	msg := newClientMsg1WithVersion(t, clientKP.Private, clientKP.Public, serverKP.Public)
@@ -327,7 +327,7 @@ func TestIKHandshake_Server_ErrorBranches(t *testing.T) {
 			serverKP.Public,
 			serverKP.Private,
 			NewAllowedPeersLookup([]server.AllowedPeer{
-				{PublicKey: clientKP.Public, Enabled: true, ClientIndex: 2},
+				{PublicKey: clientKP.Public, Enabled: true, ClientID: 2},
 			}),
 			cm,
 			lm,
@@ -396,7 +396,7 @@ func TestIKHandshake_Server_ErrorBranches(t *testing.T) {
 			serverKP.Public,
 			serverKP.Private,
 			NewAllowedPeersLookup([]server.AllowedPeer{
-				{PublicKey: clientKP.Public, Enabled: true, ClientIndex: 2},
+				{PublicKey: clientKP.Public, Enabled: true, ClientID: 2},
 			}),
 			nil,
 			nil,

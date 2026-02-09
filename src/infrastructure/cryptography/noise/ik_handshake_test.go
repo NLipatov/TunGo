@@ -30,7 +30,7 @@ func TestIKHandshake_Success(t *testing.T) {
 		{
 			PublicKey: clientKP.Public,
 			Enabled:   true,
-			ClientIndex: 5,
+			ClientID: 5,
 		},
 	}
 
@@ -61,13 +61,13 @@ func TestIKHandshake_Success(t *testing.T) {
 	serverAdapter, _ := adapters.NewLengthPrefixFramingAdapter(serverConn, framelimit.Cap(2048))
 
 	// Run both sides concurrently
-	var srvClientIndex int
+	var srvClientID int
 	srvCh := make(chan error, 1)
 	cliCh := make(chan error, 1)
 
 	go func() {
 		idx, err := serverHS.ServerSideHandshake(serverAdapter)
-		srvClientIndex = idx
+		srvClientID = idx
 		srvCh <- err
 	}()
 	go func() {
@@ -96,8 +96,8 @@ func TestIKHandshake_Success(t *testing.T) {
 	}
 
 	// Verify client index
-	if srvClientIndex != 5 {
-		t.Fatalf("expected client index 5, got %d", srvClientIndex)
+	if srvClientID != 5 {
+		t.Fatalf("expected client index 5, got %d", srvClientID)
 	}
 
 	// Verify result is populated
@@ -120,7 +120,7 @@ func TestIKHandshake_UnknownClient(t *testing.T) {
 		{
 			PublicKey: clientKP.Public,
 			Enabled:   true,
-			ClientIndex: 5,
+			ClientID: 5,
 		},
 	}
 
@@ -172,7 +172,7 @@ func TestIKHandshake_DisabledClient(t *testing.T) {
 		{
 			PublicKey: clientKP.Public,
 			Enabled:   false, // Disabled
-			ClientIndex: 5,
+			ClientID: 5,
 		},
 	}
 
@@ -221,7 +221,7 @@ func TestIKHandshake_KeyMismatch(t *testing.T) {
 		{
 			PublicKey: clientKP.Public,
 			Enabled:   true,
-			ClientIndex: 5,
+			ClientID: 5,
 		},
 	}
 
@@ -287,7 +287,7 @@ func TestIKHandshake_FreshEphemeralPerHandshake(t *testing.T) {
 		{
 			PublicKey: clientKP.Public,
 			Enabled:   true,
-			ClientIndex: 5,
+			ClientID: 5,
 		},
 	}
 
@@ -394,7 +394,7 @@ func TestIKHandshake_InvalidMAC1(t *testing.T) {
 	clientKP, _ := cipherSuite.GenerateKeypair(nil)
 
 	allowedPeers := []server.AllowedPeer{
-		{PublicKey: clientKP.Public, Enabled: true, ClientIndex: 5},
+		{PublicKey: clientKP.Public, Enabled: true, ClientID: 5},
 	}
 
 	cookieManager, _ := NewCookieManager()
@@ -433,8 +433,8 @@ func TestAllowedPeersLookup(t *testing.T) {
 	pubKey2[0] = 2
 
 	peers := []server.AllowedPeer{
-		{PublicKey: pubKey1, Enabled: true, ClientIndex: 1},
-		{PublicKey: pubKey2, Enabled: false, ClientIndex: 2},
+		{PublicKey: pubKey1, Enabled: true, ClientID: 1},
+		{PublicKey: pubKey2, Enabled: false, ClientID: 2},
 	}
 
 	lookup := NewAllowedPeersLookup(peers)
@@ -444,7 +444,7 @@ func TestAllowedPeersLookup(t *testing.T) {
 	if peer == nil {
 		t.Fatal("should find peer 1")
 	}
-	if peer.ClientIndex != 1 {
+	if peer.ClientID != 1 {
 		t.Fatal("wrong peer returned")
 	}
 
@@ -475,7 +475,7 @@ func TestAllowedPeersLookup_DynamicUpdate(t *testing.T) {
 
 	// Initial peers
 	peers := []server.AllowedPeer{
-		{PublicKey: pubKey1, Enabled: true, ClientIndex: 1},
+		{PublicKey: pubKey1, Enabled: true, ClientID: 1},
 	}
 
 	lookup := NewAllowedPeersLookup(peers)
@@ -490,8 +490,8 @@ func TestAllowedPeersLookup_DynamicUpdate(t *testing.T) {
 
 	// Update with new peers
 	newPeers := []server.AllowedPeer{
-		{PublicKey: pubKey2, Enabled: true, ClientIndex: 2},
-		{PublicKey: pubKey3, Enabled: true, ClientIndex: 3},
+		{PublicKey: pubKey2, Enabled: true, ClientID: 2},
+		{PublicKey: pubKey3, Enabled: true, ClientID: 3},
 	}
 	lookup.Update(newPeers)
 
@@ -510,8 +510,8 @@ func TestAllowedPeersLookup_DynamicUpdate(t *testing.T) {
 
 	// Verify correct data
 	peer2 := lookup.Lookup(pubKey2)
-	if peer2.ClientIndex != 2 {
-		t.Fatalf("expected ClientIndex 2, got %d", peer2.ClientIndex)
+	if peer2.ClientID != 2 {
+		t.Fatalf("expected ClientID 2, got %d", peer2.ClientID)
 	}
 }
 
@@ -523,7 +523,7 @@ func TestIKHandshake_AllowedIPsInResult(t *testing.T) {
 		{
 			PublicKey: clientKP.Public,
 			Enabled:   true,
-			ClientIndex: 5,
+			ClientID: 5,
 		},
 	}
 
@@ -569,7 +569,7 @@ func TestSecurity_HandshakeReplayMsg1(t *testing.T) {
 	clientKP, _ := cipherSuite.GenerateKeypair(nil)
 
 	allowedPeers := []server.AllowedPeer{
-		{PublicKey: clientKP.Public, Enabled: true, ClientIndex: 5},
+		{PublicKey: clientKP.Public, Enabled: true, ClientID: 5},
 	}
 
 	cookieManager, _ := NewCookieManager()
@@ -645,7 +645,7 @@ func TestSecurity_RejectUnknownProtocolVersions(t *testing.T) {
 	clientKP, _ := cipherSuite.GenerateKeypair(nil)
 
 	allowedPeers := []server.AllowedPeer{
-		{PublicKey: clientKP.Public, Enabled: true, ClientIndex: 5},
+		{PublicKey: clientKP.Public, Enabled: true, ClientID: 5},
 	}
 
 	cookieManager, _ := NewCookieManager()
@@ -759,7 +759,7 @@ func TestSecurity_SpoofedSourceIP(t *testing.T) {
 		{
 			PublicKey: clientKP.Public,
 			Enabled:   true,
-			ClientIndex: 5,
+			ClientID: 5,
 		},
 	}
 
@@ -875,9 +875,9 @@ func TestSecurity_CookieBoundToEphemeral(t *testing.T) {
 	}
 }
 
-// TestSecurity_ClientIndexConflictRejectedAtConfig verifies that duplicate peer ClientIndex values
+// TestSecurity_ClientIDConflictRejectedAtConfig verifies that duplicate peer ClientID values
 // are rejected at configuration validation time.
-func TestSecurity_ClientIndexConflictRejectedAtConfig(t *testing.T) {
+func TestSecurity_ClientIDConflictRejectedAtConfig(t *testing.T) {
 	pubKey1 := make([]byte, 32)
 	pubKey1[0] = 1
 	pubKey2 := make([]byte, 32)
@@ -892,25 +892,25 @@ func TestSecurity_ClientIndexConflictRejectedAtConfig(t *testing.T) {
 		{
 			name: "no conflict - distinct indices",
 			peers: []server.AllowedPeer{
-				{PublicKey: pubKey1, Enabled: true, ClientIndex: 1},
-				{PublicKey: pubKey2, Enabled: true, ClientIndex: 2},
+				{PublicKey: pubKey1, Enabled: true, ClientID: 1},
+				{PublicKey: pubKey2, Enabled: true, ClientID: 2},
 			},
 			expectErr: false,
 		},
 		{
-			name: "conflict - identical ClientIndex",
+			name: "conflict - identical ClientID",
 			peers: []server.AllowedPeer{
-				{PublicKey: pubKey1, Enabled: true, ClientIndex: 1},
-				{PublicKey: pubKey2, Enabled: true, ClientIndex: 1},
+				{PublicKey: pubKey1, Enabled: true, ClientID: 1},
+				{PublicKey: pubKey2, Enabled: true, ClientID: 1},
 			},
 			expectErr: true,
-			errMsg:    "ClientIndex conflict",
+			errMsg:    "ClientID conflict",
 		},
 		{
 			name: "duplicate public keys",
 			peers: []server.AllowedPeer{
-				{PublicKey: pubKey1, Enabled: true, ClientIndex: 1},
-				{PublicKey: pubKey1, Enabled: true, ClientIndex: 2},
+				{PublicKey: pubKey1, Enabled: true, ClientID: 1},
+				{PublicKey: pubKey1, Enabled: true, ClientID: 2},
 			},
 			expectErr: true,
 			errMsg:    "duplicate",
@@ -951,7 +951,7 @@ func TestSecurity_MAC1VerifiedBeforeAllocation(t *testing.T) {
 	clientKP, _ := cipherSuite.GenerateKeypair(nil)
 
 	allowedPeers := []server.AllowedPeer{
-		{PublicKey: clientKP.Public, Enabled: true, ClientIndex: 5},
+		{PublicKey: clientKP.Public, Enabled: true, ClientID: 5},
 	}
 
 	cookieManager, _ := NewCookieManager()

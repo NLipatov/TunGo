@@ -203,7 +203,7 @@ func TestGenerate_addr_error_with_fallback_success(t *testing.T) {
 	}
 }
 
-func TestGenerate_clientIndex_matches_allocated_IPs(t *testing.T) {
+func TestGenerate_clientID_matches_allocated_IPs(t *testing.T) {
 	mgr := &mockMgr{cfg: validCfg()}
 	g := generatorWithMocks(mgr, mockIP{
 		RouteDefaultFunc: func() (string, error) { return "eth0", nil },
@@ -220,7 +220,7 @@ func TestGenerate_clientIndex_matches_allocated_IPs(t *testing.T) {
 
 	peer := mgr.addedPeers[0]
 
-	// The invariant: AllocateClientIP(subnet, peer.ClientIndex) must produce the
+	// The invariant: AllocateClientIP(subnet, peer.ClientID) must produce the
 	// same IP that was given to the client configuration. A mismatch means the
 	// server will assign a different tunnel address than the client expects.
 	for _, tc := range []struct {
@@ -232,13 +232,13 @@ func TestGenerate_clientIndex_matches_allocated_IPs(t *testing.T) {
 		{"UDP", mgr.cfg.UDPSettings.InterfaceSubnet, conf.UDPSettings.InterfaceIP},
 		{"WS", mgr.cfg.WSSettings.InterfaceSubnet, conf.WSSettings.InterfaceIP},
 	} {
-		got, allocErr := nip.AllocateClientIP(tc.subnet, peer.ClientIndex)
+		got, allocErr := nip.AllocateClientIP(tc.subnet, peer.ClientID)
 		if allocErr != nil {
-			t.Fatalf("%s: AllocateClientIP(%s, %d) error: %v", tc.name, tc.subnet, peer.ClientIndex, allocErr)
+			t.Fatalf("%s: AllocateClientIP(%s, %d) error: %v", tc.name, tc.subnet, peer.ClientID, allocErr)
 		}
 		if got != tc.clientIP {
-			t.Fatalf("%s: server would assign %s but client expects %s (ClientIndex=%d)",
-				tc.name, got, tc.clientIP, peer.ClientIndex)
+			t.Fatalf("%s: server would assign %s but client expects %s (ClientID=%d)",
+				tc.name, got, tc.clientIP, peer.ClientID)
 		}
 	}
 }
@@ -264,7 +264,7 @@ func TestAllocateClientIPs_success(t *testing.T) {
 	mgr := &mockMgr{cfg: validCfg()}
 	g := generatorWithMocks(mgr, mockIP{})
 
-	tcp, udp, ws, err := g.allocateClientIPs(mgr.cfg)
+	tcp, udp, ws, err := g.allocateClientIPs(mgr.cfg, mgr.cfg.ClientCounter+1)
 	if err != nil {
 		t.Fatalf("unexpected: %v", err)
 	}
@@ -282,7 +282,7 @@ func TestAllocateClientIPs_tcp_error(t *testing.T) {
 	mgr := &mockMgr{cfg: cfg}
 	g := generatorWithMocks(mgr, mockIP{})
 
-	_, _, _, err := g.allocateClientIPs(cfg)
+	_, _, _, err := g.allocateClientIPs(cfg, cfg.ClientCounter+1)
 	if err == nil || !strings.Contains(err.Error(), "TCP interface address allocation fail") {
 		t.Fatalf("want TCP alloc error, got %v", err)
 	}
@@ -294,7 +294,7 @@ func TestAllocateClientIPs_udp_error(t *testing.T) {
 	mgr := &mockMgr{cfg: cfg}
 	g := generatorWithMocks(mgr, mockIP{})
 
-	_, _, _, err := g.allocateClientIPs(cfg)
+	_, _, _, err := g.allocateClientIPs(cfg, cfg.ClientCounter+1)
 	if err == nil || !strings.Contains(err.Error(), "UDP interface address allocation fail") {
 		t.Fatalf("want UDP alloc error, got %v", err)
 	}
@@ -306,7 +306,7 @@ func TestAllocateClientIPs_ws_error(t *testing.T) {
 	mgr := &mockMgr{cfg: cfg}
 	g := generatorWithMocks(mgr, mockIP{})
 
-	_, _, _, err := g.allocateClientIPs(cfg)
+	_, _, _, err := g.allocateClientIPs(cfg, cfg.ClientCounter+1)
 	if err == nil || !strings.Contains(err.Error(), "WS interface address allocation fail") {
 		t.Fatalf("want WS alloc error, got %v", err)
 	}
@@ -317,7 +317,7 @@ func TestAllocateClientIPs_increment_error(t *testing.T) {
 	mgr := &mockMgr{cfg: cfg, incErr: errors.New("inc-fail")}
 	g := generatorWithMocks(mgr, mockIP{})
 
-	_, _, _, err := g.allocateClientIPs(cfg)
+	_, _, _, err := g.allocateClientIPs(cfg, cfg.ClientCounter+1)
 	if err == nil || !strings.Contains(err.Error(), "inc-fail") {
 		t.Fatalf("want increment error, got %v", err)
 	}

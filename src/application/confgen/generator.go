@@ -44,7 +44,9 @@ func (g *Generator) Generate() (*client.Configuration, error) {
 		return nil, err
 	}
 
-	clientTCPAddr, clientUDPAddr, clientWSAddr, err := g.allocateClientIPs(serverConf)
+	clientID := serverConf.ClientCounter + 1
+
+	clientTCPAddr, clientUDPAddr, clientWSAddr, err := g.allocateClientIPs(serverConf, clientID)
 	if err != nil {
 		return nil, err
 	}
@@ -55,10 +57,10 @@ func (g *Generator) Generate() (*client.Configuration, error) {
 	}
 
 	newPeer := serverConfiguration.AllowedPeer{
-		Name:        fmt.Sprintf("client-%d", serverConf.ClientCounter),
+		Name:        fmt.Sprintf("client-%d", clientID),
 		PublicKey:   clientPubKey,
 		Enabled:     true,
-		ClientIndex: serverConf.ClientCounter,
+		ClientID: clientID,
 	}
 	if err := g.serverConfigurationManager.AddAllowedPeer(newPeer); err != nil {
 		return nil, fmt.Errorf("failed to add client to AllowedPeers: %w", err)
@@ -105,20 +107,19 @@ func (g *Generator) resolveServerHost(fallback string) (settings.Host, error) {
 
 func (g *Generator) allocateClientIPs(
 	serverConf *serverConfiguration.Configuration,
+	clientID int,
 ) (tcp, udp, ws netip.Addr, err error) {
-	clientCounter := serverConf.ClientCounter + 1
-
-	tcp, err = nip.AllocateClientIP(serverConf.TCPSettings.InterfaceSubnet, clientCounter)
+	tcp, err = nip.AllocateClientIP(serverConf.TCPSettings.InterfaceSubnet, clientID)
 	if err != nil {
 		return netip.Addr{}, netip.Addr{}, netip.Addr{}, fmt.Errorf("TCP interface address allocation fail: %w", err)
 	}
 
-	udp, err = nip.AllocateClientIP(serverConf.UDPSettings.InterfaceSubnet, clientCounter)
+	udp, err = nip.AllocateClientIP(serverConf.UDPSettings.InterfaceSubnet, clientID)
 	if err != nil {
 		return netip.Addr{}, netip.Addr{}, netip.Addr{}, fmt.Errorf("UDP interface address allocation fail: %w", err)
 	}
 
-	ws, err = nip.AllocateClientIP(serverConf.WSSettings.InterfaceSubnet, clientCounter)
+	ws, err = nip.AllocateClientIP(serverConf.WSSettings.InterfaceSubnet, clientID)
 	if err != nil {
 		return netip.Addr{}, netip.Addr{}, netip.Addr{}, fmt.Errorf("WS interface address allocation fail: %w", err)
 	}

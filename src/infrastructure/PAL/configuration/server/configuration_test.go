@@ -277,7 +277,7 @@ func TestConfiguration_ValidateAllowedPeers_ValidConfig(t *testing.T) {
 		{
 			PublicKey:    make([]byte, 32),
 			Enabled:      true,
-			ClientIndex:  5,
+			ClientID:  5,
 		},
 		{
 			PublicKey: func() []byte {
@@ -286,7 +286,7 @@ func TestConfiguration_ValidateAllowedPeers_ValidConfig(t *testing.T) {
 				return k
 			}(),
 			Enabled:     true,
-			ClientIndex: 6,
+			ClientID: 6,
 		},
 	}
 	if err := cfg.ValidateAllowedPeers(); err != nil {
@@ -300,7 +300,7 @@ func TestConfiguration_ValidateAllowedPeers_InvalidKeyLength(t *testing.T) {
 		{
 			PublicKey:    make([]byte, 16), // Invalid: should be 32
 			Enabled:      true,
-			ClientIndex:  5,
+			ClientID:  5,
 		},
 	}
 	err := cfg.ValidateAllowedPeers()
@@ -312,38 +312,38 @@ func TestConfiguration_ValidateAllowedPeers_InvalidKeyLength(t *testing.T) {
 	}
 }
 
-func TestConfiguration_ValidateAllowedPeers_InvalidClientIndex(t *testing.T) {
+func TestConfiguration_ValidateAllowedPeers_InvalidClientID(t *testing.T) {
 	cfg := mkValid()
 	cfg.AllowedPeers = []AllowedPeer{
 		{
 			PublicKey:    make([]byte, 32),
 			Enabled:      true,
-			ClientIndex:  0, // invalid: must be > 0
+			ClientID:  0, // invalid: must be > 0
 		},
 	}
 	err := cfg.ValidateAllowedPeers()
 	if err == nil {
-		t.Fatal("expected error for invalid ClientIndex")
+		t.Fatal("expected error for invalid ClientID")
 	}
-	if !strings.Contains(err.Error(), "invalid ClientIndex") {
+	if !strings.Contains(err.Error(), "invalid ClientID") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestConfiguration_ValidateAllowedPeers_MissingClientIndex(t *testing.T) {
+func TestConfiguration_ValidateAllowedPeers_MissingClientID(t *testing.T) {
 	cfg := mkValid()
 	cfg.AllowedPeers = []AllowedPeer{
 		{
 			PublicKey: make([]byte, 32),
 			Enabled:   true,
-			// ClientIndex defaults to 0 (zero value)
+			// ClientID defaults to 0 (zero value)
 		},
 	}
 	err := cfg.ValidateAllowedPeers()
 	if err == nil {
-		t.Fatal("expected error for missing ClientIndex")
+		t.Fatal("expected error for missing ClientID")
 	}
-	if !strings.Contains(err.Error(), "invalid ClientIndex") {
+	if !strings.Contains(err.Error(), "invalid ClientID") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -356,12 +356,12 @@ func TestConfiguration_ValidateAllowedPeers_DuplicatePublicKey(t *testing.T) {
 		{
 			PublicKey:    pubKey,
 			Enabled:      true,
-			ClientIndex:  5,
+			ClientID:  5,
 		},
 		{
 			PublicKey:    pubKey, // Duplicate
 			Enabled:      true,
-			ClientIndex:  6,
+			ClientID:  6,
 		},
 	}
 	err := cfg.ValidateAllowedPeers()
@@ -373,13 +373,13 @@ func TestConfiguration_ValidateAllowedPeers_DuplicatePublicKey(t *testing.T) {
 	}
 }
 
-func TestConfiguration_ValidateAllowedPeers_ClientIndexConflict(t *testing.T) {
+func TestConfiguration_ValidateAllowedPeers_ClientIDConflict(t *testing.T) {
 	cfg := mkValid()
 	cfg.AllowedPeers = []AllowedPeer{
 		{
 			PublicKey:    make([]byte, 32),
 			Enabled:      true,
-			ClientIndex:  5,
+			ClientID:  5,
 		},
 		{
 			PublicKey: func() []byte {
@@ -388,14 +388,14 @@ func TestConfiguration_ValidateAllowedPeers_ClientIndexConflict(t *testing.T) {
 				return k
 			}(),
 			Enabled:     true,
-			ClientIndex: 5, // Same index as peer 0
+			ClientID: 5, // Same index as peer 0
 		},
 	}
 	err := cfg.ValidateAllowedPeers()
 	if err == nil {
-		t.Fatal("expected error for ClientIndex conflict")
+		t.Fatal("expected error for ClientID conflict")
 	}
-	if !strings.Contains(err.Error(), "ClientIndex conflict") {
+	if !strings.Contains(err.Error(), "ClientID conflict") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -406,7 +406,7 @@ func TestConfiguration_Validate_PropagatesValidateAllowedPeersError(t *testing.T
 		{
 			PublicKey:    make([]byte, 31), // invalid
 			Enabled:      true,
-			ClientIndex:  5,
+			ClientID:  5,
 		},
 	}
 	if err := cfg.Validate(); err == nil {

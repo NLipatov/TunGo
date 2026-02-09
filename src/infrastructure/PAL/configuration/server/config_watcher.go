@@ -41,7 +41,7 @@ type ConfigWatcher struct {
 
 type peerAccessState struct {
 	enabled     bool
-	clientIndex int
+	clientID int
 }
 
 // NewConfigWatcher creates a new configuration watcher.
@@ -158,7 +158,7 @@ func (w *ConfigWatcher) loadCurrentState() {
 		key := string(peer.PublicKey)
 		w.prevPeers[key] = peerAccessState{
 			enabled:     peer.Enabled,
-			clientIndex: peer.ClientIndex,
+			clientID: peer.ClientID,
 		}
 	}
 }
@@ -181,7 +181,7 @@ func (w *ConfigWatcher) checkAndRevoke() {
 		key := string(peer.PublicKey)
 		currentPeers[key] = peerAccessState{
 			enabled:     peer.Enabled,
-			clientIndex: peer.ClientIndex,
+			clientID: peer.ClientID,
 		}
 	}
 
@@ -194,7 +194,7 @@ func (w *ConfigWatcher) checkAndRevoke() {
 		}
 
 		currentState, exists := currentPeers[pubKeyStr]
-		shouldRevoke := !exists || !currentState.enabled || currentState.clientIndex != prevState.clientIndex
+		shouldRevoke := !exists || !currentState.enabled || currentState.clientID != prevState.clientID
 
 		if shouldRevoke {
 			pubKey := []byte(pubKeyStr)

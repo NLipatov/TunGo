@@ -19,7 +19,7 @@ func (tcpRegLogger) Printf(string, ...any) {}
 
 // tcpRegHandshake is a mock handshake.
 type tcpRegHandshake struct {
-	clientIndex int
+	clientID int
 	id          [32]byte
 	c2s, s2c    []byte
 	err         error
@@ -35,7 +35,7 @@ func (h *tcpRegHandshake) ServerSideHandshake(_ connection.Transport) (int, erro
 	if h.err != nil {
 		return 0, h.err
 	}
-	return h.clientIndex, nil
+	return h.clientID, nil
 }
 
 // tcpRegHandshakeFactory returns a pre-configured handshake.
@@ -134,7 +134,7 @@ func TestRegisterClient_HandshakeError_ClosesConn(t *testing.T) {
 func TestRegisterClient_CryptoFactoryError_ClosesConn(t *testing.T) {
 	hf := &tcpRegHandshakeFactory{
 		handshake: &tcpRegHandshake{
-			clientIndex: 1,
+			clientID: 1,
 			c2s:         make([]byte, 32),
 			s2c:         make([]byte, 32),
 		},
@@ -163,7 +163,7 @@ func TestRegisterClient_CryptoFactoryError_ClosesConn(t *testing.T) {
 func TestRegisterClient_Success(t *testing.T) {
 	hf := &tcpRegHandshakeFactory{
 		handshake: &tcpRegHandshake{
-			clientIndex: 1,
+			clientID: 1,
 			c2s:         make([]byte, 32),
 			s2c:         make([]byte, 32),
 		},
@@ -213,7 +213,7 @@ func (e *tcpRegEgress) Close() error           { e.closed = true; return nil }
 func TestRegisterClient_ReplacesExistingSession(t *testing.T) {
 	hf := &tcpRegHandshakeFactory{
 		handshake: &tcpRegHandshake{
-			clientIndex: 1,
+			clientID: 1,
 			c2s:         make([]byte, 32),
 			s2c:         make([]byte, 32),
 		},
@@ -269,7 +269,7 @@ func TestRegisterClient_ReplacesExistingSession(t *testing.T) {
 func TestRegisterClient_NonTCPAddr_ClosesConn(t *testing.T) {
 	hf := &tcpRegHandshakeFactory{
 		handshake: &tcpRegHandshake{
-			clientIndex: 1,
+			clientID: 1,
 			c2s:         make([]byte, 32),
 			s2c:         make([]byte, 32),
 		},
@@ -315,7 +315,7 @@ func (r *tcpRegFailingRepo) FindByDestinationIP(netip.Addr) (*session.Peer, erro
 func TestRegisterClient_LookupError_ClosesConn(t *testing.T) {
 	hf := &tcpRegHandshakeFactory{
 		handshake: &tcpRegHandshake{
-			clientIndex: 1,
+			clientID: 1,
 			c2s:         make([]byte, 32),
 			s2c:         make([]byte, 32),
 		},
@@ -343,11 +343,11 @@ func TestRegisterClient_LookupError_ClosesConn(t *testing.T) {
 	}
 }
 
-func TestRegisterClient_NegativeClientIndex_FailsAllocation(t *testing.T) {
-	// Negative clientIndex causes AllocateClientIP to fail.
+func TestRegisterClient_NegativeClientID_FailsAllocation(t *testing.T) {
+	// Negative clientID causes AllocateClientIP to fail.
 	hf := &tcpRegHandshakeFactory{
 		handshake: &tcpRegHandshake{
-			clientIndex: -1, // invalid
+			clientID: -1, // invalid
 			c2s:         make([]byte, 32),
 			s2c:         make([]byte, 32),
 		},
@@ -365,7 +365,7 @@ func TestRegisterClient_NegativeClientIndex_FailsAllocation(t *testing.T) {
 
 	peer, transport, err := reg.RegisterClient(conn)
 	if err == nil {
-		t.Fatal("expected error from IP allocation with negative clientIndex")
+		t.Fatal("expected error from IP allocation with negative clientID")
 	}
 	if peer != nil || transport != nil {
 		t.Fatal("expected nil peer and transport on allocation error")

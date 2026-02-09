@@ -440,7 +440,7 @@ func TestManager_AddAllowedPeer_Success(t *testing.T) {
 	peer := AllowedPeer{
 		PublicKey:    bytes.Repeat([]byte{3}, 32),
 		Enabled:     true,
-		ClientIndex: 9,
+		ClientID: 9,
 	}
 
 	if err := manager.AddAllowedPeer(peer); err != nil {

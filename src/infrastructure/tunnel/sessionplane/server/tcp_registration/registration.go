@@ -53,13 +53,13 @@ func (r *Registrar) RegisterClient(conn net.Conn) (*session.Peer, connection.Tra
 		return nil, nil, fErr
 	}
 	h := r.handshakeFactory.NewHandshake()
-	clientIndex, handshakeErr := h.ServerSideHandshake(framingAdapter)
+	clientID, handshakeErr := h.ServerSideHandshake(framingAdapter)
 	if handshakeErr != nil {
 		_ = framingAdapter.Close()
 		return nil, nil, fmt.Errorf("client %s failed registration: %w", conn.RemoteAddr(), handshakeErr)
 	}
 
-	internalIP, allocErr := ip.AllocateClientIP(r.interfaceSubnet, clientIndex)
+	internalIP, allocErr := ip.AllocateClientIP(r.interfaceSubnet, clientID)
 	if allocErr != nil {
 		_ = framingAdapter.Close()
 		return nil, nil, fmt.Errorf("client %s IP allocation failed: %w", conn.RemoteAddr(), allocErr)

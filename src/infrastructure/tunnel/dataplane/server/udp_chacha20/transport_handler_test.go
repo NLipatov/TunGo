@@ -67,14 +67,14 @@ func (f failingCryptoFactory) FromHandshake(_ connection.Handshake, _ bool) (con
 // Slow handshake mock: simulates long-running ServerSideHandshake
 type TransportHandlerSlowHandshake struct {
 	delay                         time.Duration
-	clientIndex                   int
+	clientID                   int
 	err                           error
 	TransportHandlerFakeHandshake // embed
 }
 
 func (s *TransportHandlerSlowHandshake) ServerSideHandshake(_ connection.Transport) (int, error) {
 	time.Sleep(s.delay)
-	return s.clientIndex, s.err
+	return s.clientID, s.err
 }
 
 // TransportHandlerAlwaysWriteCrypto passes data through unchanged.
@@ -252,7 +252,7 @@ func (l *TransportHandlerFakeLogger) count(sub string) int {
 
 // TransportHandlerFakeHandshake & factory.
 type TransportHandlerFakeHandshake struct {
-	clientIndex int
+	clientID int
 	err         error
 	id          [32]byte
 	client      [32]byte
@@ -263,7 +263,7 @@ func (f *TransportHandlerFakeHandshake) Id() [32]byte              { return f.id
 func (f *TransportHandlerFakeHandshake) KeyClientToServer() []byte { return f.client[:] }
 func (f *TransportHandlerFakeHandshake) KeyServerToClient() []byte { return f.server[:] }
 func (f *TransportHandlerFakeHandshake) ServerSideHandshake(_ connection.Transport) (int, error) {
-	return f.clientIndex, f.err
+	return f.clientID, f.err
 }
 func (f *TransportHandlerFakeHandshake) ClientSideHandshake(_ connection.Transport, _ settings.Settings) error {
 	return nil
@@ -480,7 +480,7 @@ func TestTransportHandler_RegistrationPacket(t *testing.T) {
 	}
 
 	clientAddr := netip.MustParseAddrPort("192.168.1.10:5555")
-	fakeHS := &TransportHandlerFakeHandshake{clientIndex: 4}
+	fakeHS := &TransportHandlerFakeHandshake{clientID: 4}
 	handshakeFactory := &TransportHandlerFakeHandshakeFactory{hs: fakeHS}
 
 	conn := &TransportHandlerFakeUdpListener{
@@ -521,7 +521,7 @@ func TestTransportHandler_DecryptError(t *testing.T) {
 	logger := &TransportHandlerFakeLogger{}
 	repo := &TransportHandlerSessionRepo{}
 	clientAddr := netip.MustParseAddrPort("192.168.1.30:4000")
-	fakeHS := &TransportHandlerFakeHandshake{clientIndex: 9}
+	fakeHS := &TransportHandlerFakeHandshake{clientID: 9}
 	handshakeFactory := &TransportHandlerFakeHandshakeFactory{hs: fakeHS}
 
 	// First packet -> registration
@@ -580,7 +580,7 @@ func TestTransportHandler_WriteError(t *testing.T) {
 	clientAddr := netip.MustParseAddrPort("192.168.1.40:6000")
 	internalIP := netip.MustParseAddr("10.0.0.40")
 
-	fakeHS := &TransportHandlerFakeHandshake{clientIndex: 39}
+	fakeHS := &TransportHandlerFakeHandshake{clientID: 39}
 	handshakeFactory := &TransportHandlerFakeHandshakeFactory{hs: fakeHS}
 
 	repo := &TransportHandlerSessionRepo{sessions: make(map[netip.AddrPort]*session.Peer)}
@@ -659,7 +659,7 @@ func TestTransportHandler_HappyPath(t *testing.T) {
 	}
 	repo.sessions[clientAddr] = session.NewPeer(sess, nil)
 
-	fakeHS := &TransportHandlerFakeHandshake{clientIndex: 49}
+	fakeHS := &TransportHandlerFakeHandshake{clientID: 49}
 	handshakeFactory := &TransportHandlerFakeHandshakeFactory{hs: fakeHS}
 
 	// Must use valid IPv4 packet with matching source IP for AllowedIPs validation
@@ -707,7 +707,7 @@ func TestTransportHandler_NATRebinding_ReRegister(t *testing.T) {
 	sessionRegistered := make(chan struct{})
 	repo.afterAdd = func() { close(sessionRegistered) }
 
-	fakeHS := &TransportHandlerFakeHandshake{clientIndex: 50}
+	fakeHS := &TransportHandlerFakeHandshake{clientID: 50}
 	handshakeFactory := &TransportHandlerFakeHandshakeFactory{hs: fakeHS}
 
 	conn := &TransportHandlerFakeUdpListener{
@@ -730,9 +730,9 @@ func TestTransportHandler_NATRebinding_ReRegister(t *testing.T) {
 	<-done
 }
 
-// registerClient with zero clientIndex -> AllocateClientIP fails.
-func TestTransportHandler_RegisterClient_NegativeClientIndex_FailsAllocation(t *testing.T) {
-	// Negative clientIndex causes AllocateClientIP to fail.
+// registerClient with zero clientID -> AllocateClientIP fails.
+func TestTransportHandler_RegisterClient_NegativeClientID_FailsAllocation(t *testing.T) {
+	// Negative clientID causes AllocateClientIP to fail.
 	// UDP registrar logs the failure and returns without adding a session.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -742,7 +742,7 @@ func TestTransportHandler_RegisterClient_NegativeClientIndex_FailsAllocation(t *
 	repo := &TransportHandlerSessionRepo{}
 	clientAddr := netip.MustParseAddrPort("192.168.1.60:6000")
 
-	fakeHS := &TransportHandlerFakeHandshake{clientIndex: -1} // invalid
+	fakeHS := &TransportHandlerFakeHandshake{clientID: -1} // invalid
 	handshakeFactory := &TransportHandlerFakeHandshakeFactory{hs: fakeHS}
 
 	conn := &TransportHandlerFakeUdpListener{
@@ -829,7 +829,7 @@ func TestTransportHandler_SecondPacketGoesToExistingRegistrationQueue_NoNewGorou
 
 	fakeHS := &TransportHandlerSlowHandshake{
 		delay:       100 * time.Millisecond, // handshake runs slow, queue remains alive
-		clientIndex: 69,
+		clientID: 69,
 	}
 
 	handshakeFactory := &TransportHandlerFakeHandshakeFactory{hs: fakeHS}
@@ -1004,7 +1004,7 @@ func TestRegisterClient_CryptoError_LogsAndFails(t *testing.T) {
 	repo := &TransportHandlerSessionRepo{}
 	client := netip.MustParseAddrPort("5.5.5.5:5555")
 
-	hs := &TransportHandlerFakeHandshake{clientIndex: 4}
+	hs := &TransportHandlerFakeHandshake{clientID: 4}
 	hsf := &TransportHandlerFakeHandshakeFactory{hs: hs}
 
 	conn := &TransportHandlerFakeUdpListener{

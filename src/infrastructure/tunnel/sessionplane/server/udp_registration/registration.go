@@ -146,13 +146,13 @@ func (r *Registrar) RegisterClient(addrPort netip.AddrPort, queue *udpQueue.Regi
 	// and writes responses to the shared UDP socket.
 	regTransport := adapters.NewRegistrationTransport(r.listenerConn, addrPort, queue)
 
-	clientIndex, handshakeErr := h.ServerSideHandshake(regTransport)
+	clientID, handshakeErr := h.ServerSideHandshake(regTransport)
 	if handshakeErr != nil {
 		r.logger.Printf("host %v failed registration: %v", addrPort.Addr().AsSlice(), handshakeErr)
 		return
 	}
 
-	internalIP, allocErr := ip.AllocateClientIP(r.interfaceSubnet, clientIndex)
+	internalIP, allocErr := ip.AllocateClientIP(r.interfaceSubnet, clientID)
 	if allocErr != nil {
 		r.logger.Printf("host %v IP allocation failed: %v", addrPort.Addr().AsSlice(), allocErr)
 		return
