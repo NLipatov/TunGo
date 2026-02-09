@@ -50,6 +50,15 @@ func NewRegistrar(
 func (r *Registrar) RegisterClient(conn net.Conn) (*session.Peer, connection.Transport, error) {
 	r.logger.Printf("TCP: %s connected", conn.RemoteAddr())
 
+	// Extract remote address early — needed for cookie IP binding during
+	// the handshake (DoS protection) and later for session tracking.
+	addr := conn.RemoteAddr()
+	tcpAddr, ok := addr.(*net.TCPAddr)
+	if !ok {
+		_ = conn.Close()
+		return nil, nil, fmt.Errorf("invalid remote address type: %T", addr)
+	}
+
 	// Enable OS-level TCP keepalive for dead connection detection.
 	if tcp, ok := conn.(*net.TCPConn); ok {
 		_ = tcp.SetKeepAlive(true)
@@ -60,7 +69,11 @@ func (r *Registrar) RegisterClient(conn net.Conn) (*session.Peer, connection.Tra
 	// application level (no data within ServerIdleTimeout → connection closed).
 	deadlineConn := adapters.NewReadDeadlineTransport(conn, settings.ServerIdleTimeout)
 
-	framingAdapter, fErr := adapters.NewLengthPrefixFramingAdapter(deadlineConn, settings.DefaultEthernetMTU+settings.TCPChacha20Overhead)
+	// Attach remote address so the handshake can extract the client IP
+	// for cookie binding through the LengthPrefixFramingAdapter chain.
+	addrConn := adapters.NewRemoteAddrTransport(deadlineConn, tcpAddr.AddrPort())
+
+	framingAdapter, fErr := adapters.NewLengthPrefixFramingAdapter(addrConn, settings.DefaultEthernetMTU+settings.TCPChacha20Overhead)
 	if fErr != nil {
 		_ = conn.Close() // Prevent socket leak on framing adapter failure
 		return nil, nil, fErr
@@ -83,13 +96,6 @@ func (r *Registrar) RegisterClient(conn net.Conn) (*session.Peer, connection.Tra
 	if cryptographyServiceErr != nil {
 		_ = framingAdapter.Close()
 		return nil, nil, fmt.Errorf("client %s failed registration: %w", conn.RemoteAddr(), cryptographyServiceErr)
-	}
-
-	addr := conn.RemoteAddr()
-	tcpAddr, ok := addr.(*net.TCPAddr)
-	if !ok {
-		_ = framingAdapter.Close()
-		return nil, nil, fmt.Errorf("invalid remote address type: %T", addr)
 	}
 
 	// If session not found, or client is using a new (IP, port) address (e.g., after NAT rebinding), re-register the client.

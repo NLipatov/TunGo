@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net/netip"
 	"tungo/application/network/connection"
 	framelimit "tungo/domain/network/ip/frame_limit"
 )
@@ -97,3 +98,14 @@ func (a *LengthPrefixFramingAdapter) Read(buffer []byte) (int, error) {
 }
 
 func (a *LengthPrefixFramingAdapter) Close() error { return a.adapter.Close() }
+
+// RemoteAddrPort delegates to the inner transport if it implements
+// TransportWithRemoteAddr (e.g. via RemoteAddrTransport). This allows
+// the Noise handshake to extract the client IP for cookie binding
+// through the adapter chain.
+func (a *LengthPrefixFramingAdapter) RemoteAddrPort() netip.AddrPort {
+	if t, ok := a.adapter.(connection.TransportWithRemoteAddr); ok {
+		return t.RemoteAddrPort()
+	}
+	return netip.AddrPort{}
+}
