@@ -32,14 +32,14 @@ type TransportHandlerBlockingHandshake struct {
 func (b *TransportHandlerBlockingHandshake) Id() [32]byte              { return [32]byte{} }
 func (b *TransportHandlerBlockingHandshake) KeyClientToServer() []byte { return nil }
 func (b *TransportHandlerBlockingHandshake) KeyServerToClient() []byte { return nil }
-func (b *TransportHandlerBlockingHandshake) ServerSideHandshake(t connection.Transport) (netip.Addr, error) {
+func (b *TransportHandlerBlockingHandshake) ServerSideHandshake(t connection.Transport) (int, error) {
 	buf := make([]byte, 1)
 	_, err := t.Read(buf)
 	if b.errCh != nil {
 		b.errCh <- err
 		close(b.errCh)
 	}
-	return netip.Addr{}, err
+	return 0, err
 }
 func (b *TransportHandlerBlockingHandshake) ClientSideHandshake(_ connection.Transport, _ settings.Settings) error {
 	return nil
@@ -67,14 +67,14 @@ func (f failingCryptoFactory) FromHandshake(_ connection.Handshake, _ bool) (con
 // Slow handshake mock: simulates long-running ServerSideHandshake
 type TransportHandlerSlowHandshake struct {
 	delay                         time.Duration
-	ip                            netip.Addr
+	clientIndex                   int
 	err                           error
 	TransportHandlerFakeHandshake // embed
 }
 
-func (s *TransportHandlerSlowHandshake) ServerSideHandshake(_ connection.Transport) (netip.Addr, error) {
+func (s *TransportHandlerSlowHandshake) ServerSideHandshake(_ connection.Transport) (int, error) {
 	time.Sleep(s.delay)
-	return s.ip, s.err
+	return s.clientIndex, s.err
 }
 
 // TransportHandlerAlwaysWriteCrypto passes data through unchanged.
@@ -252,18 +252,18 @@ func (l *TransportHandlerFakeLogger) count(sub string) int {
 
 // TransportHandlerFakeHandshake & factory.
 type TransportHandlerFakeHandshake struct {
-	ip     netip.Addr
-	err    error
-	id     [32]byte
-	client [32]byte
-	server [32]byte
+	clientIndex int
+	err         error
+	id          [32]byte
+	client      [32]byte
+	server      [32]byte
 }
 
 func (f *TransportHandlerFakeHandshake) Id() [32]byte              { return f.id }
 func (f *TransportHandlerFakeHandshake) KeyClientToServer() []byte { return f.client[:] }
 func (f *TransportHandlerFakeHandshake) KeyServerToClient() []byte { return f.server[:] }
-func (f *TransportHandlerFakeHandshake) ServerSideHandshake(_ connection.Transport) (netip.Addr, error) {
-	return f.ip, f.err
+func (f *TransportHandlerFakeHandshake) ServerSideHandshake(_ connection.Transport) (int, error) {
+	return f.clientIndex, f.err
 }
 func (f *TransportHandlerFakeHandshake) ClientSideHandshake(_ connection.Transport, _ settings.Settings) error {
 	return nil
@@ -349,6 +349,7 @@ func TestHandleTransport_CancelBeforeLoop_ReturnsNil(t *testing.T) {
 
 	registrar := udp_registration.NewRegistrar(ctx, conn, repo, logger,
 		hsf, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
+		netip.MustParsePrefix("10.0.0.0/24"),
 	)
 	h := NewTransportHandler(ctx, settings.Settings{Port: 7777}, writer, conn, repo, logger, registrar)
 
@@ -378,6 +379,7 @@ func TestHandleTransport_CancelWhileRead_ReturnsCtxErr(t *testing.T) {
 
 	registrar := udp_registration.NewRegistrar(ctx, bl, repo, logger,
 		hsf, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
+		netip.MustParsePrefix("10.0.0.0/24"),
 	)
 	h := NewTransportHandler(ctx, settings.Settings{Port: 9001}, writer, bl, repo, logger, registrar)
 
@@ -415,6 +417,7 @@ func TestHandleTransport_ReadMsgUDPAddrPortError_LogsAndContinues(t *testing.T) 
 
 	registrar := udp_registration.NewRegistrar(ctx, conn, repo, logger,
 		hsf, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
+		netip.MustParsePrefix("10.0.0.0/24"),
 	)
 	h := NewTransportHandler(ctx, settings.Settings{Port: 4444}, writer, conn, repo, logger, registrar)
 
@@ -448,6 +451,7 @@ func TestHandleTransport_EmptyPacket_Dropped(t *testing.T) {
 
 	registrar := udp_registration.NewRegistrar(ctx, conn, repo, logger,
 		hsf, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
+		netip.MustParsePrefix("10.0.0.0/24"),
 	)
 	h := NewTransportHandler(ctx, settings.Settings{Port: 5555}, writer, conn, repo, logger, registrar)
 
@@ -476,8 +480,7 @@ func TestTransportHandler_RegistrationPacket(t *testing.T) {
 	}
 
 	clientAddr := netip.MustParseAddrPort("192.168.1.10:5555")
-	internalIP := netip.MustParseAddr("10.0.0.5")
-	fakeHS := &TransportHandlerFakeHandshake{ip: internalIP}
+	fakeHS := &TransportHandlerFakeHandshake{clientIndex: 4}
 	handshakeFactory := &TransportHandlerFakeHandshakeFactory{hs: fakeHS}
 
 	conn := &TransportHandlerFakeUdpListener{
@@ -487,6 +490,7 @@ func TestTransportHandler_RegistrationPacket(t *testing.T) {
 
 	registrar := udp_registration.NewRegistrar(ctx, conn, repo, logger,
 		handshakeFactory, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
+		netip.MustParsePrefix("10.0.0.0/24"),
 	)
 	handler := NewTransportHandler(ctx, settings.Settings{Port: 9999}, writer, conn, repo, logger, registrar)
 
@@ -517,8 +521,7 @@ func TestTransportHandler_DecryptError(t *testing.T) {
 	logger := &TransportHandlerFakeLogger{}
 	repo := &TransportHandlerSessionRepo{}
 	clientAddr := netip.MustParseAddrPort("192.168.1.30:4000")
-	internalIP := netip.MustParseAddr("10.0.0.10")
-	fakeHS := &TransportHandlerFakeHandshake{ip: internalIP}
+	fakeHS := &TransportHandlerFakeHandshake{clientIndex: 9}
 	handshakeFactory := &TransportHandlerFakeHandshakeFactory{hs: fakeHS}
 
 	// First packet -> registration
@@ -541,6 +544,7 @@ func TestTransportHandler_DecryptError(t *testing.T) {
 
 	registrar := udp_registration.NewRegistrar(ctx, conn, repo, logger,
 		handshakeFactory, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
+		netip.MustParsePrefix("10.0.0.0/24"),
 	)
 	handler := NewTransportHandler(ctx, settings.Settings{Port: 2222}, writer, conn, repo, logger, registrar)
 	done := make(chan struct{})
@@ -576,7 +580,7 @@ func TestTransportHandler_WriteError(t *testing.T) {
 	clientAddr := netip.MustParseAddrPort("192.168.1.40:6000")
 	internalIP := netip.MustParseAddr("10.0.0.40")
 
-	fakeHS := &TransportHandlerFakeHandshake{ip: internalIP}
+	fakeHS := &TransportHandlerFakeHandshake{clientIndex: 39}
 	handshakeFactory := &TransportHandlerFakeHandshakeFactory{hs: fakeHS}
 
 	repo := &TransportHandlerSessionRepo{sessions: make(map[netip.AddrPort]*session.Peer)}
@@ -601,6 +605,7 @@ func TestTransportHandler_WriteError(t *testing.T) {
 
 	registrar := udp_registration.NewRegistrar(ctx, conn, repo, logger,
 		handshakeFactory, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
+		netip.MustParsePrefix("10.0.0.0/24"),
 	)
 	handler := NewTransportHandler(ctx, settings.Settings{Port: 3333}, writer, conn, repo, logger, registrar)
 
@@ -654,7 +659,7 @@ func TestTransportHandler_HappyPath(t *testing.T) {
 	}
 	repo.sessions[clientAddr] = session.NewPeer(sess, nil)
 
-	fakeHS := &TransportHandlerFakeHandshake{ip: internalIP}
+	fakeHS := &TransportHandlerFakeHandshake{clientIndex: 49}
 	handshakeFactory := &TransportHandlerFakeHandshakeFactory{hs: fakeHS}
 
 	// Must use valid IPv4 packet with matching source IP for AllowedIPs validation
@@ -665,6 +670,7 @@ func TestTransportHandler_HappyPath(t *testing.T) {
 	}
 	registrar := udp_registration.NewRegistrar(ctx, conn, repo, logger,
 		handshakeFactory, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
+		netip.MustParsePrefix("10.0.0.0/24"),
 	)
 	handler := NewTransportHandler(ctx, settings.Settings{Port: 5050}, writer, conn, repo, logger, registrar)
 	done := make(chan struct{})
@@ -701,7 +707,7 @@ func TestTransportHandler_NATRebinding_ReRegister(t *testing.T) {
 	sessionRegistered := make(chan struct{})
 	repo.afterAdd = func() { close(sessionRegistered) }
 
-	fakeHS := &TransportHandlerFakeHandshake{ip: internalIP}
+	fakeHS := &TransportHandlerFakeHandshake{clientIndex: 50}
 	handshakeFactory := &TransportHandlerFakeHandshakeFactory{hs: fakeHS}
 
 	conn := &TransportHandlerFakeUdpListener{
@@ -710,6 +716,7 @@ func TestTransportHandler_NATRebinding_ReRegister(t *testing.T) {
 	}
 	registrar := udp_registration.NewRegistrar(ctx, conn, repo, logger,
 		handshakeFactory, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
+		netip.MustParsePrefix("10.0.0.0/24"),
 	)
 	handler := NewTransportHandler(ctx, settings.Settings{Port: 6060}, writer, conn, repo, logger, registrar)
 	done := make(chan struct{})
@@ -723,43 +730,40 @@ func TestTransportHandler_NATRebinding_ReRegister(t *testing.T) {
 	<-done
 }
 
-// registerClient with zero IP -> session is still added (zero value is valid in netip.Addr)
-func TestTransportHandler_RegisterClient_ZeroInternalIP(t *testing.T) {
+// registerClient with zero clientIndex -> AllocateClientIP fails.
+func TestTransportHandler_RegisterClient_NegativeClientIndex_FailsAllocation(t *testing.T) {
+	// Negative clientIndex causes AllocateClientIP to fail.
+	// UDP registrar logs the failure and returns without adding a session.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	writer := &TransportHandlerFakeWriter{}
 	logger := &TransportHandlerFakeLogger{}
-	sessionRegistered := make(chan struct{})
-	repo := &TransportHandlerSessionRepo{
-		afterAdd: func() { close(sessionRegistered) },
-	}
+	repo := &TransportHandlerSessionRepo{}
 	clientAddr := netip.MustParseAddrPort("192.168.1.60:6000")
 
-	fakeHS := &TransportHandlerFakeHandshake{ip: netip.Addr{}} // zero value
+	fakeHS := &TransportHandlerFakeHandshake{clientIndex: -1} // invalid
 	handshakeFactory := &TransportHandlerFakeHandshakeFactory{hs: fakeHS}
 
 	conn := &TransportHandlerFakeUdpListener{
-		readBufs:  [][]byte{{0xde, 0xad}}, // needs >= 2 bytes to pass epoch check
+		readBufs:  [][]byte{{0xde, 0xad}},
 		readAddrs: []netip.AddrPort{clientAddr},
 	}
 	registrar := udp_registration.NewRegistrar(ctx, conn, repo, logger,
 		handshakeFactory, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
+		netip.MustParsePrefix("10.0.0.0/24"),
 	)
 	handler := NewTransportHandler(ctx, settings.Settings{Port: 6000}, writer, conn, repo, logger, registrar)
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
 
-	select {
-	case <-sessionRegistered:
-		cancel()
-	case <-time.After(time.Second):
-		t.Fatal("timeout: session was not registered")
-	}
+	// Give registration goroutine time to run and fail.
+	time.Sleep(200 * time.Millisecond)
+	cancel()
 	<-done
 
-	if len(repo.adds) != 1 {
-		t.Errorf("expected 1 session registered with zero IP, got %d", len(repo.adds))
+	if len(repo.adds) != 0 {
+		t.Errorf("expected 0 sessions (allocation failed), got %d", len(repo.adds))
 	}
 }
 
@@ -785,6 +789,7 @@ func TestTransportHandler_getOrCreateRegistrationQueue_ExistingQueue(t *testing.
 		&TransportHandlerSessionRepo{}, &TransportHandlerFakeLogger{},
 		&TransportHandlerFakeHandshakeFactory{hs: &TransportHandlerFakeHandshake{}},
 		chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
+		netip.MustParsePrefix("10.0.0.0/24"),
 	)
 
 	addr := netip.MustParseAddrPort("1.2.3.4:9999")
@@ -823,14 +828,15 @@ func TestTransportHandler_SecondPacketGoesToExistingRegistrationQueue_NoNewGorou
 	}
 
 	fakeHS := &TransportHandlerSlowHandshake{
-		delay: 100 * time.Millisecond, // handshake runs slow, queue remains alive
-		ip:    netip.MustParseAddr("10.0.0.70"),
+		delay:       100 * time.Millisecond, // handshake runs slow, queue remains alive
+		clientIndex: 69,
 	}
 
 	handshakeFactory := &TransportHandlerFakeHandshakeFactory{hs: fakeHS}
 
 	registrar := udp_registration.NewRegistrar(ctx, conn, repo, logger,
 		handshakeFactory, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
+		netip.MustParsePrefix("10.0.0.0/24"),
 	)
 	handler := NewTransportHandler(ctx, settings.Settings{Port: 7000}, writer, conn, repo, logger, registrar)
 
@@ -892,6 +898,7 @@ func TestHandleTransport_IgnoreHandlePacketError(t *testing.T) {
 	registrar := udp_registration.NewRegistrar(ctx, conn, repo, logger,
 		&TransportHandlerFakeHandshakeFactory{},
 		chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
+		netip.MustParsePrefix("10.0.0.0/24"),
 	)
 	handler := NewTransportHandler(ctx, settings.Settings{Port: 9999}, writer, conn, repo, logger, registrar)
 
@@ -911,6 +918,7 @@ func TestRemoveRegistrationQueue_RemovesAndCloses(t *testing.T) {
 		&TransportHandlerSessionRepo{}, &TransportHandlerFakeLogger{},
 		&TransportHandlerFakeHandshakeFactory{hs: hs},
 		chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
+		netip.MustParsePrefix("10.0.0.0/24"),
 	)
 
 	addr := netip.MustParseAddrPort("1.2.3.4:9999")
@@ -937,6 +945,7 @@ func TestCloseAllRegistrations(t *testing.T) {
 		&TransportHandlerSessionRepo{}, &TransportHandlerFakeLogger{},
 		&TransportHandlerFakeHandshakeFactory{hs: &TransportHandlerFakeHandshake{}},
 		chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
+		netip.MustParsePrefix("10.0.0.0/24"),
 	)
 
 	a1 := netip.MustParseAddrPort("1.1.1.1:1000")
@@ -967,6 +976,7 @@ func TestGetOrCreateRegistrationQueue_NewQueue(t *testing.T) {
 		&TransportHandlerSessionRepo{}, &TransportHandlerFakeLogger{},
 		&TransportHandlerFakeHandshakeFactory{hs: &TransportHandlerFakeHandshake{}},
 		chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
+		netip.MustParsePrefix("10.0.0.0/24"),
 	)
 
 	addr := netip.MustParseAddrPort("8.8.8.8:53")
@@ -994,7 +1004,7 @@ func TestRegisterClient_CryptoError_LogsAndFails(t *testing.T) {
 	repo := &TransportHandlerSessionRepo{}
 	client := netip.MustParseAddrPort("5.5.5.5:5555")
 
-	hs := &TransportHandlerFakeHandshake{ip: netip.MustParseAddr("10.0.0.5")}
+	hs := &TransportHandlerFakeHandshake{clientIndex: 4}
 	hsf := &TransportHandlerFakeHandshakeFactory{hs: hs}
 
 	conn := &TransportHandlerFakeUdpListener{
@@ -1004,6 +1014,7 @@ func TestRegisterClient_CryptoError_LogsAndFails(t *testing.T) {
 
 	registrar := udp_registration.NewRegistrar(ctx, conn, repo, logger,
 		hsf, failingCryptoFactory{},
+		netip.MustParsePrefix("10.0.0.0/24"),
 	)
 	handler := NewTransportHandler(ctx, settings.Settings{Port: 5555}, writer, conn, repo, logger, registrar)
 
@@ -1089,6 +1100,7 @@ func TestRegisterClient_CanceledContextClosesQueue(t *testing.T) {
 		&TransportHandlerFakeLogger{},
 		&TransportHandlerFakeHandshakeFactory{hs: hs},
 		failingCryptoFactory{},
+		netip.MustParsePrefix("10.0.0.0/24"),
 	)
 
 	// Pre-populate the queue in the registrar's internal map
@@ -1142,6 +1154,7 @@ func TestHandleTransport_ShortPacket_Logged(t *testing.T) {
 
 	registrar := udp_registration.NewRegistrar(ctx, conn, repo, logger,
 		hsf, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
+		netip.MustParsePrefix("10.0.0.0/24"),
 	)
 	handler := NewTransportHandler(ctx, settings.Settings{Port: 9999}, writer, conn, repo, logger, registrar)
 
@@ -1192,6 +1205,7 @@ func TestHandleTransport_EpochExhausted_LogsError(t *testing.T) {
 
 	registrar := udp_registration.NewRegistrar(ctx, conn, repo, logger,
 		hsf, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
+		netip.MustParsePrefix("10.0.0.0/24"),
 	)
 	handler := NewTransportHandler(ctx, settings.Settings{Port: 8080}, writer, conn, repo, logger, registrar)
 

@@ -148,6 +148,7 @@ func (s *ServerWorkerFactory) createTCPWorker(
 		handshakeFactory,
 		chacha20.NewTcpSessionBuilder(chacha20.NewDefaultAEADBuilder()),
 		sessionManager,
+		workerSettings.InterfaceSubnet,
 	)
 
 	tr := tcp_chacha20.NewTransportHandler(
@@ -210,6 +211,7 @@ func (s *ServerWorkerFactory) createWSWorker(
 		handshakeFactory,
 		chacha20.NewTcpSessionBuilder(chacha20.NewDefaultAEADBuilder()),
 		sessionManager,
+		workerSettings.InterfaceSubnet,
 	)
 
 	tr := tcp_chacha20.NewTransportHandler(
@@ -268,6 +270,7 @@ func (s *ServerWorkerFactory) createUDPWorker(
 		logger,
 		handshakeFactory,
 		chacha20.NewUdpSessionBuilder(chacha20.NewDefaultAEADBuilder()),
+		workerSettings.InterfaceSubnet,
 	)
 
 	tr := udp_chacha20.NewTransportHandler(

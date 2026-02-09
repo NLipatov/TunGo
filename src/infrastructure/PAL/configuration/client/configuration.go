@@ -2,7 +2,6 @@ package client
 
 import (
 	"fmt"
-	"net/netip"
 	"tungo/infrastructure/settings"
 )
 
@@ -20,11 +19,6 @@ type Configuration struct {
 	// ClientPrivateKey is the client's X25519 static private key (32 bytes).
 	// MUST derive ClientPublicKey when processed with X25519.
 	ClientPrivateKey []byte `json:"ClientPrivateKey"`
-
-	// InternalIP is the server-assigned internal VPN IP for this client.
-	// MUST match Address in server's AllowedPeers entry for this client.
-	// Client MUST use exactly this IP as source in tunnel packets.
-	InternalIP netip.Addr `json:"InternalIP"`
 }
 
 func (c *Configuration) ActiveSettings() (settings.Settings, error) {

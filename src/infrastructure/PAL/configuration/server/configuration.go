@@ -21,9 +21,9 @@ type AllowedPeer struct {
 	// Setting to false revokes access immediately.
 	Enabled bool `json:"Enabled"`
 
-	// Address is the server-assigned internal IP for this client.
-	// Exactly one address is supported per peer.
-	Address netip.Addr `json:"Address"`
+	// ClientIndex is the 1-based ordinal passed to AllocateClientIP at registration time.
+	// Each peer must have a unique, positive ClientIndex.
+	ClientIndex int `json:"ClientIndex"`
 }
 
 type Configuration struct {
@@ -114,15 +114,15 @@ func (c *Configuration) defaultSettings(
 	port int,
 ) settings.Settings {
 	return settings.Settings{
-		InterfaceName:    interfaceName,
-		InterfaceSubnet:  netip.MustParsePrefix(InterfaceCIDR),
-		InterfaceIP:      netip.MustParseAddr(InterfaceAddr),
-		Host:             "",
-		Port:             port,
-		MTU:              settings.DefaultEthernetMTU,
-		Protocol:         protocol,
-		Encryption:       settings.ChaCha20Poly1305,
-		DialTimeoutMs:    5000,
+		InterfaceName:   interfaceName,
+		InterfaceSubnet: netip.MustParsePrefix(InterfaceCIDR),
+		InterfaceIP:     netip.MustParseAddr(InterfaceAddr),
+		Host:            "",
+		Port:            port,
+		MTU:             settings.DefaultEthernetMTU,
+		Protocol:        protocol,
+		Encryption:      settings.ChaCha20Poly1305,
+		DialTimeoutMs:   5000,
 	}
 }
 
@@ -253,34 +253,9 @@ func (c *Configuration) overlappingSubnets(subnets []netip.Prefix) bool {
 }
 
 // ValidateAllowedPeers validates the AllowedPeers configuration.
-// Ensures no Address overlap between different peers and no duplicate public keys.
-// Also validates that each peer's internal address
-// is within at least one enabled interface subnet.
+// Ensures no ClientIndex overlap between different peers and no duplicate public keys.
 func (c *Configuration) ValidateAllowedPeers() error {
-	// Collect interface subnets for peer address validation
-	var interfaceSubnets []netip.Prefix
-	if c.EnableTCP {
-		if pfx := c.TCPSettings.InterfaceSubnet; pfx.IsValid() {
-			interfaceSubnets = append(interfaceSubnets, pfx)
-		}
-	}
-	if c.EnableUDP {
-		if pfx := c.UDPSettings.InterfaceSubnet; pfx.IsValid() {
-			interfaceSubnets = append(interfaceSubnets, pfx)
-		}
-	}
-	if c.EnableWS {
-		if pfx := c.WSSettings.InterfaceSubnet; pfx.IsValid() {
-			interfaceSubnets = append(interfaceSubnets, pfx)
-		}
-	}
-
-	// Collect all addresses with their peer index
-	type addressOwner struct {
-		address netip.Addr
-		peer    int
-	}
-	var allAddresses []addressOwner
+	seenIndex := make(map[int]int) // ClientIndex → peer index
 
 	for i, peer := range c.AllowedPeers {
 		// Validate public key length
@@ -288,34 +263,18 @@ func (c *Configuration) ValidateAllowedPeers() error {
 			return fmt.Errorf("peer %d: invalid public key length %d, expected 32", i, len(peer.PublicKey))
 		}
 
-		if !peer.Address.IsValid() {
-			return fmt.Errorf("peer %d: invalid Address %v: missing or invalid Address", i, peer.Address)
+		if peer.ClientIndex <= 0 {
+			return fmt.Errorf("peer %d: invalid ClientIndex %d: must be > 0", i, peer.ClientIndex)
 		}
-		address := peer.Address.Unmap()
 
-		// Validate internal address is within at least one interface subnet
-		if !c.isClientIPInSubnet(address, interfaceSubnets) {
+		// Check for duplicate ClientIndex
+		if prev, exists := seenIndex[peer.ClientIndex]; exists {
 			return fmt.Errorf(
-				"peer %d: Address %s is not within any enabled interface subnet; "+
-					"must be in one of: %v",
-				i, address, interfaceSubnets,
+				"ClientIndex conflict: peer %d and peer %d both have ClientIndex %d",
+				prev, i, peer.ClientIndex,
 			)
 		}
-
-		allAddresses = append(allAddresses, addressOwner{address, i})
-	}
-
-	// Check for duplicate addresses between different peers
-	for i := 0; i < len(allAddresses); i++ {
-		for j := i + 1; j < len(allAddresses); j++ {
-			a, b := allAddresses[i], allAddresses[j]
-			if a.peer != b.peer && a.address == b.address {
-				return fmt.Errorf(
-					"Address conflict: peer %d address %s conflicts with peer %d address %s",
-					a.peer, a.address, b.peer, b.address,
-				)
-			}
-		}
+		seenIndex[peer.ClientIndex] = i
 	}
 
 	// Check for duplicate public keys
@@ -329,14 +288,4 @@ func (c *Configuration) ValidateAllowedPeers() error {
 	}
 
 	return nil
-}
-
-// isClientIPInSubnet checks if clientIP is contained in any of the interface subnets.
-func (c *Configuration) isClientIPInSubnet(clientIP netip.Addr, subnets []netip.Prefix) bool {
-	for _, subnet := range subnets {
-		if subnet.Contains(clientIP) {
-			return true
-		}
-	}
-	return false
 }

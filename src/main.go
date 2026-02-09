@@ -17,7 +17,9 @@ import (
 	"tungo/infrastructure/tunnel/sessionplane/client_factory"
 	"tungo/presentation/configuring"
 	"tungo/presentation/elevation"
-	"tungo/presentation/interactive_commands/handlers"
+	"encoding/json"
+	"tungo/application/confgen"
+	"tungo/infrastructure/cryptography/primitives"
 	clientConf "tungo/presentation/runners/client"
 	"tungo/presentation/runners/server"
 	"tungo/presentation/runners/version"
@@ -93,15 +95,20 @@ func main() {
 			return
 		}
 	case mode.ServerConfGen:
-		handler := handlers.NewConfgenHandler(
-			configurationManager,
-			handlers.NewJsonMarshaller(),
-		)
-		if err := handler.GenerateNewClientConf(); err != nil {
+		gen := confgen.NewGenerator(configurationManager, &primitives.DefaultKeyDeriver{})
+		conf, err := gen.Generate()
+		if err != nil {
 			log.Printf("failed to generate client configuration: %v", err)
 			exitCode = 1
 			return
 		}
+		data, err := json.MarshalIndent(conf, "", "  ")
+		if err != nil {
+			log.Printf("failed to marshal client configuration: %v", err)
+			exitCode = 1
+			return
+		}
+		fmt.Println(string(data))
 	case mode.Client:
 		log.Printf("Starting client...")
 		if err := startClient(appCtx); err != nil {

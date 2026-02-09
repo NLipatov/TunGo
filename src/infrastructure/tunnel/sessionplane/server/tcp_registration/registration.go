@@ -8,6 +8,7 @@ import (
 
 	"tungo/application/logging"
 	"tungo/application/network/connection"
+	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/network/tcp/adapters"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/session"
@@ -20,6 +21,7 @@ type Registrar struct {
 	handshakeFactory    connection.HandshakeFactory
 	cryptographyFactory connection.CryptoFactory
 	sessionManager      session.Repository
+	interfaceSubnet     netip.Prefix
 }
 
 func NewRegistrar(
@@ -27,12 +29,14 @@ func NewRegistrar(
 	handshakeFactory connection.HandshakeFactory,
 	cryptographyFactory connection.CryptoFactory,
 	sessionManager session.Repository,
+	interfaceSubnet netip.Prefix,
 ) *Registrar {
 	return &Registrar{
 		logger:              logger,
 		handshakeFactory:    handshakeFactory,
 		cryptographyFactory: cryptographyFactory,
 		sessionManager:      sessionManager,
+		interfaceSubnet:     interfaceSubnet,
 	}
 }
 
@@ -49,10 +53,16 @@ func (r *Registrar) RegisterClient(conn net.Conn) (*session.Peer, connection.Tra
 		return nil, nil, fErr
 	}
 	h := r.handshakeFactory.NewHandshake()
-	internalIP, handshakeErr := h.ServerSideHandshake(framingAdapter)
+	clientIndex, handshakeErr := h.ServerSideHandshake(framingAdapter)
 	if handshakeErr != nil {
 		_ = framingAdapter.Close()
 		return nil, nil, fmt.Errorf("client %s failed registration: %w", conn.RemoteAddr(), handshakeErr)
+	}
+
+	internalIP, allocErr := ip.AllocateClientIP(r.interfaceSubnet, clientIndex)
+	if allocErr != nil {
+		_ = framingAdapter.Close()
+		return nil, nil, fmt.Errorf("client %s IP allocation failed: %w", conn.RemoteAddr(), allocErr)
 	}
 	r.logger.Printf("TCP: %s registered as %s", conn.RemoteAddr(), internalIP)
 

@@ -18,8 +18,8 @@ var cipherSuite = noiselib.NewCipherSuite(noiselib.DH25519, noiselib.CipherChaCh
 // IKHandshakeResult contains the result of a successful server-side IK handshake.
 // Implements connection.HandshakeResult interface.
 type IKHandshakeResult struct {
-	// internalIP is the server-assigned internal IP for this client.
-	internalIP netip.Addr
+	// clientIndex is the 1-based ordinal for AllocateClientIP.
+	clientIndex int
 
 	// clientPubKey is the client's X25519 static public key.
 	clientPubKey []byte
@@ -54,15 +54,12 @@ type allowedPeersMap struct {
 	peers atomic.Pointer[map[string]*RuntimeAllowedPeer]
 }
 
-// RuntimeAllowedPeer is a parsed, runtime-ready representation of server.AllowedPeer.
-// It keeps the original text address and parse result so Address parsing happens once
-// at configuration update time, not per handshake.
+// RuntimeAllowedPeer is a runtime-ready representation of server.AllowedPeer.
 type RuntimeAllowedPeer struct {
-	Name      string
-	PublicKey []byte
-	Enabled   bool
-	Address   netip.Addr
-	addrErr   error
+	Name        string
+	PublicKey   []byte
+	Enabled     bool
+	ClientIndex int
 }
 
 // NewAllowedPeersLookup creates an AllowedPeersLookup from a slice of AllowedPeer.
@@ -84,19 +81,11 @@ func (a *allowedPeersMap) Update(peers []server.AllowedPeer) {
 	m := make(map[string]*RuntimeAllowedPeer, len(peers))
 	for i := range peers {
 		peer := peers[i]
-		addr := peer.Address
-		var err error
-		if addr.IsValid() {
-			addr = addr.Unmap()
-		} else {
-			err = fmt.Errorf("invalid Address")
-		}
 		m[string(peer.PublicKey)] = &RuntimeAllowedPeer{
-			Name:      peer.Name,
-			PublicKey: append([]byte(nil), peer.PublicKey...),
-			Enabled:   peer.Enabled,
-			Address:   addr,
-			addrErr:   err,
+			Name:        peer.Name,
+			PublicKey:   append([]byte(nil), peer.PublicKey...),
+			Enabled:     peer.Enabled,
+			ClientIndex: peer.ClientIndex,
 		}
 	}
 	a.peers.Store(&m)
@@ -169,20 +158,20 @@ func (h *IKHandshake) Result() connection.HandshakeResult {
 }
 
 // ServerSideHandshake performs Noise IK as responder with DoS protection.
-// Returns the client's server-assigned internal IP.
-func (h *IKHandshake) ServerSideHandshake(transport connection.Transport) (netip.Addr, error) {
+// Returns the client's ClientIndex for IP allocation at registration time.
+func (h *IKHandshake) ServerSideHandshake(transport connection.Transport) (int, error) {
 	if h.serverPrivKey == nil || h.serverPubKey == nil {
-		return netip.Addr{}, ErrMissingServerKey
+		return 0, ErrMissingServerKey
 	}
 	if h.allowedPeers == nil {
-		return netip.Addr{}, ErrMissingAllowedPeers
+		return 0, ErrMissingAllowedPeers
 	}
 
 	// Read msg1 with version prefix and MACs
 	msg1Buf := make([]byte, 2048)
 	n, err := transport.Read(msg1Buf)
 	if err != nil {
-		return netip.Addr{}, fmt.Errorf("noise: read msg1: %w", err)
+		return 0, fmt.Errorf("noise: read msg1: %w", err)
 	}
 	msgWithVersion := msg1Buf[:n]
 
@@ -190,12 +179,12 @@ func (h *IKHandshake) ServerSideHandshake(transport connection.Transport) (netip
 	// This rejects deprecated (v1/XX) and unknown versions immediately.
 	msg1WithMAC, err := CheckVersion(msgWithVersion)
 	if err != nil {
-		return netip.Addr{}, err
+		return 0, err
 	}
 
 	// PHASE 1: Verify MAC1 (stateless, cheap) BEFORE any allocation
 	if !VerifyMAC1(msg1WithMAC, h.serverPubKey) {
-		return netip.Addr{}, ErrInvalidMAC1
+		return 0, ErrInvalidMAC1
 	}
 
 	// Record handshake for load monitoring
@@ -208,7 +197,7 @@ func (h *IKHandshake) ServerSideHandshake(transport connection.Transport) (netip
 		// Extract client ephemeral AFTER MAC1 verification
 		clientEphemeral := ExtractClientEphemeral(msg1WithMAC)
 		if clientEphemeral == nil {
-			return netip.Addr{}, ErrMsgTooShort
+			return 0, ErrMsgTooShort
 		}
 
 		// Extract client IP from transport for cookie binding
@@ -217,7 +206,7 @@ func (h *IKHandshake) ServerSideHandshake(transport connection.Transport) (netip
 			clientIP = tr.RemoteAddrPort().Addr()
 		} else {
 			// Fallback: cannot bind cookie to IP, reject under load
-			return netip.Addr{}, ErrCookieRequired
+			return 0, ErrCookieRequired
 		}
 
 		cookie := h.cookieManager.ComputeCookieValue(clientIP)
@@ -225,12 +214,12 @@ func (h *IKHandshake) ServerSideHandshake(transport connection.Transport) (netip
 			// Send cookie reply
 			reply, err := h.cookieManager.CreateCookieReply(clientIP, clientEphemeral, h.serverPubKey)
 			if err != nil {
-				return netip.Addr{}, fmt.Errorf("noise: create cookie reply: %w", err)
+				return 0, fmt.Errorf("noise: create cookie reply: %w", err)
 			}
 			if _, err := transport.Write(reply); err != nil {
-				return netip.Addr{}, fmt.Errorf("noise: send cookie reply: %w", err)
+				return 0, fmt.Errorf("noise: send cookie reply: %w", err)
 			}
-			return netip.Addr{}, ErrCookieRequired
+			return 0, ErrCookieRequired
 		}
 	}
 
@@ -249,7 +238,7 @@ func (h *IKHandshake) ServerSideHandshake(transport connection.Transport) (netip
 		StaticKeypair: staticKey,
 	})
 	if err != nil {
-		return netip.Addr{}, fmt.Errorf("noise: server handshake state: %w", err)
+		return 0, fmt.Errorf("noise: server handshake state: %w", err)
 	}
 
 	// Zero ephemeral on any exit path (set early before WriteMessage)
@@ -262,31 +251,31 @@ func (h *IKHandshake) ServerSideHandshake(transport connection.Transport) (netip
 	// Read msg1 (e, es, s, ss)
 	_, _, _, err = hs.ReadMessage(nil, noiseMsg)
 	if err != nil {
-		return netip.Addr{}, fmt.Errorf("noise: read msg1: %w", err)
+		return 0, fmt.Errorf("noise: read msg1: %w", err)
 	}
 
 	// Extract and validate client identity
 	clientPubKey := hs.PeerStatic()
 	peer := h.allowedPeers.Lookup(clientPubKey)
 	if peer == nil {
-		return netip.Addr{}, ErrUnknownPeer
+		return 0, ErrUnknownPeer
 	}
 	if !peer.Enabled {
-		return netip.Addr{}, ErrPeerDisabled
+		return 0, ErrPeerDisabled
 	}
 
 	// Write msg2 (e, ee, se)
 	msg2, cs1, cs2, err := hs.WriteMessage(nil, nil)
 	if err != nil {
-		return netip.Addr{}, fmt.Errorf("noise: write msg2: %w", err)
+		return 0, fmt.Errorf("noise: write msg2: %w", err)
 	}
 
 	if _, err := transport.Write(msg2); err != nil {
-		return netip.Addr{}, fmt.Errorf("noise: send msg2: %w", err)
+		return 0, fmt.Errorf("noise: send msg2: %w", err)
 	}
 
 	if cs1 == nil || cs2 == nil {
-		return netip.Addr{}, fmt.Errorf("noise: handshake not complete after msg2")
+		return 0, fmt.Errorf("noise: handshake not complete after msg2")
 	}
 
 	// Extract session keys
@@ -304,21 +293,16 @@ func (h *IKHandshake) ServerSideHandshake(transport connection.Transport) (netip
 	cb := hs.ChannelBinding()
 	copy(h.id[:], cb[:32])
 
-	// Validate configured internal address and prepare result
-	if peer.addrErr != nil {
-		return netip.Addr{}, fmt.Errorf("noise: invalid peer address: %w", peer.addrErr)
-	}
-
 	pubKeyCopy := make([]byte, len(clientPubKey))
 	copy(pubKeyCopy, clientPubKey)
 
 	h.result = &IKHandshakeResult{
-		internalIP:   peer.Address,
+		clientIndex:  peer.ClientIndex,
 		clientPubKey: pubKeyCopy,
 		allowedIPs:   nil,
 	}
 
-	return peer.Address, nil
+	return peer.ClientIndex, nil
 }
 
 // ClientSideHandshake performs Noise IK as initiator.

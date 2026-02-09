@@ -153,7 +153,7 @@ func (s ServerTunFactory) createTun(settings settings.Settings) (*os.File, error
 		return nil, fmt.Errorf("could not set mtu on tuntap dev: %s", mtuErr)
 	}
 
-	serverIp, serverIpErr := nIp.AllocateServerIp(settings.InterfaceSubnet.String())
+	serverIp, serverIpErr := nIp.AllocateServerIP(settings.InterfaceSubnet)
 	if serverIpErr != nil {
 		return nil, fmt.Errorf("could not allocate server IP (%s): %s", serverIp, serverIpErr)
 	}

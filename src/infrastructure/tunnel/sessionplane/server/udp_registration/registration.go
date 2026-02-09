@@ -9,6 +9,7 @@ import (
 	"tungo/application/listeners"
 	"tungo/application/logging"
 	"tungo/application/network/connection"
+	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/network/udp/adapters"
 	"tungo/infrastructure/tunnel/session"
 	udpQueue "tungo/infrastructure/tunnel/sessionplane/server/udp_registration/queue"
@@ -36,6 +37,8 @@ type Registrar struct {
 	handshakeFactory    connection.HandshakeFactory
 	cryptographyFactory connection.CryptoFactory
 
+	interfaceSubnet netip.Prefix
+
 	mu            sync.Mutex
 	registrations map[netip.AddrPort]*udpQueue.RegistrationQueue
 }
@@ -47,6 +50,7 @@ func NewRegistrar(
 	logger logging.Logger,
 	handshakeFactory connection.HandshakeFactory,
 	cryptographyFactory connection.CryptoFactory,
+	interfaceSubnet netip.Prefix,
 ) *Registrar {
 	return &Registrar{
 		ctx:                 ctx,
@@ -55,6 +59,7 @@ func NewRegistrar(
 		logger:              logger,
 		handshakeFactory:    handshakeFactory,
 		cryptographyFactory: cryptographyFactory,
+		interfaceSubnet:     interfaceSubnet,
 		registrations:       make(map[netip.AddrPort]*udpQueue.RegistrationQueue),
 	}
 }
@@ -141,9 +146,15 @@ func (r *Registrar) RegisterClient(addrPort netip.AddrPort, queue *udpQueue.Regi
 	// and writes responses to the shared UDP socket.
 	regTransport := adapters.NewRegistrationTransport(r.listenerConn, addrPort, queue)
 
-	internalIP, handshakeErr := h.ServerSideHandshake(regTransport)
+	clientIndex, handshakeErr := h.ServerSideHandshake(regTransport)
 	if handshakeErr != nil {
 		r.logger.Printf("host %v failed registration: %v", addrPort.Addr().AsSlice(), handshakeErr)
+		return
+	}
+
+	internalIP, allocErr := ip.AllocateClientIP(r.interfaceSubnet, clientIndex)
+	if allocErr != nil {
+		r.logger.Printf("host %v IP allocation failed: %v", addrPort.Addr().AsSlice(), allocErr)
 		return
 	}
 

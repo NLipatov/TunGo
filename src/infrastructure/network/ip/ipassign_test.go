@@ -1,12 +1,13 @@
 package ip
 
 import (
+	"net/netip"
 	"testing"
 )
 
-func TestAllocateServerIp_Success(t *testing.T) {
+func TestAllocateServerIP_Success(t *testing.T) {
 	// typical /24 network
-	ip, err := AllocateServerIp("192.168.1.0/24")
+	ip, err := AllocateServerIP(netip.MustParsePrefix("192.168.1.0/24"))
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -15,55 +16,43 @@ func TestAllocateServerIp_Success(t *testing.T) {
 	}
 }
 
-func TestAllocateServerIp_Errors(t *testing.T) {
-	cases := []struct{ in, wantErr string }{
-		{"not a cidr", "invalid subnet"},
-		{"2001:db8::/32", "only IPv4 supported"},
-	}
-	for _, c := range cases {
-		_, err := AllocateServerIp(c.in)
-		if err == nil || !contains(err.Error(), c.wantErr) {
-			t.Errorf("AllocateServerIp(%q) error = %v, want contains %q", c.in, err, c.wantErr)
-		}
+func TestAllocateServerIP_IPv6Rejected(t *testing.T) {
+	_, err := AllocateServerIP(netip.MustParsePrefix("2001:db8::/32"))
+	if err == nil || !contains(err.Error(), "only IPv4 supported") {
+		t.Errorf("expected IPv4 error, got %v", err)
 	}
 }
 
-func TestAllocateClientIp_SuccessAndBounds(t *testing.T) {
+func TestAllocateClientIP_SuccessAndBounds(t *testing.T) {
 	// /30 network has 2 hosts: .0 network, .1 first host, .2 second host, .3 broadcast
 	// so available hosts = 2 (counter 0 -> .1, counter 1 -> .2)
-	ip0, err := AllocateClientIp("10.0.0.0/30", 0)
-	if err != nil || ip0 != "10.0.0.1" {
+	ip0, err := AllocateClientIP(netip.MustParsePrefix("10.0.0.0/30"), 0)
+	if err != nil || ip0 != netip.MustParseAddr("10.0.0.1") {
 		t.Errorf("counter 0: got %s, %v; want 10.0.0.1, nil", ip0, err)
 	}
-	ip1, err := AllocateClientIp("10.0.0.0/30", 1)
-	if err != nil || ip1 != "10.0.0.2" {
+	ip1, err := AllocateClientIP(netip.MustParsePrefix("10.0.0.0/30"), 1)
+	if err != nil || ip1 != netip.MustParseAddr("10.0.0.2") {
 		t.Errorf("counter 1: got %s, %v; want 10.0.0.2, nil", ip1, err)
 	}
 }
 
-func TestAllocateClientIp_OutOfRange(t *testing.T) {
+func TestAllocateClientIP_OutOfRange(t *testing.T) {
 	// /30 network has only 2 clients
-	_, err := AllocateClientIp("10.0.0.0/30", 2)
+	_, err := AllocateClientIP(netip.MustParsePrefix("10.0.0.0/30"), 2)
 	if err == nil || !contains(err.Error(), "client counter exceeds") {
 		t.Errorf("expected counter exceeds error, got %v", err)
 	}
 	// negative counter
-	_, err = AllocateClientIp("10.0.0.0/24", -1)
+	_, err = AllocateClientIP(netip.MustParsePrefix("10.0.0.0/24"), -1)
 	if err == nil || !contains(err.Error(), "client counter exceeds") {
 		t.Errorf("expected counter exceeds error for -1, got %v", err)
 	}
 }
 
-func TestAllocateClientIp_InvalidInputs(t *testing.T) {
-	// invalid CIDR
-	_, err := AllocateClientIp("foo", 0)
-	if err == nil || !contains(err.Error(), "invalid subnet") {
-		t.Errorf("expected invalid subnet error, got %v", err)
-	}
-	// IPv6 not supported
-	_, err = AllocateClientIp("2001:db8::/64", 0)
+func TestAllocateClientIP_IPv6Rejected(t *testing.T) {
+	_, err := AllocateClientIP(netip.MustParsePrefix("2001:db8::/64"), 0)
 	if err == nil || !contains(err.Error(), "only IPv4 supported") {
-		t.Errorf("expected IPv4 supported error, got %v", err)
+		t.Errorf("expected IPv4 error, got %v", err)
 	}
 }
 

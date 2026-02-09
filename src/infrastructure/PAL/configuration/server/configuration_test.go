@@ -275,9 +275,9 @@ func TestConfiguration_ValidateAllowedPeers_ValidConfig(t *testing.T) {
 	cfg := mkValid()
 	cfg.AllowedPeers = []AllowedPeer{
 		{
-			PublicKey: make([]byte, 32),
-			Enabled:   true,
-			Address:   netip.MustParseAddr("10.0.0.5"),
+			PublicKey:    make([]byte, 32),
+			Enabled:      true,
+			ClientIndex:  5,
 		},
 		{
 			PublicKey: func() []byte {
@@ -285,8 +285,8 @@ func TestConfiguration_ValidateAllowedPeers_ValidConfig(t *testing.T) {
 				k[0] = 1
 				return k
 			}(),
-			Enabled: true,
-			Address: netip.MustParseAddr("10.0.0.6"),
+			Enabled:     true,
+			ClientIndex: 6,
 		},
 	}
 	if err := cfg.ValidateAllowedPeers(); err != nil {
@@ -298,9 +298,9 @@ func TestConfiguration_ValidateAllowedPeers_InvalidKeyLength(t *testing.T) {
 	cfg := mkValid()
 	cfg.AllowedPeers = []AllowedPeer{
 		{
-			PublicKey: make([]byte, 16), // Invalid: should be 32
-			Enabled:   true,
-			Address:   netip.MustParseAddr("10.0.0.5"),
+			PublicKey:    make([]byte, 16), // Invalid: should be 32
+			Enabled:      true,
+			ClientIndex:  5,
 		},
 	}
 	err := cfg.ValidateAllowedPeers()
@@ -312,37 +312,38 @@ func TestConfiguration_ValidateAllowedPeers_InvalidKeyLength(t *testing.T) {
 	}
 }
 
-func TestConfiguration_ValidateAllowedPeers_InvalidClientIP(t *testing.T) {
+func TestConfiguration_ValidateAllowedPeers_InvalidClientIndex(t *testing.T) {
 	cfg := mkValid()
 	cfg.AllowedPeers = []AllowedPeer{
 		{
-			PublicKey: make([]byte, 32),
-			Enabled:   true,
-			Address:   netip.Addr{},
+			PublicKey:    make([]byte, 32),
+			Enabled:      true,
+			ClientIndex:  0, // invalid: must be > 0
 		},
 	}
 	err := cfg.ValidateAllowedPeers()
 	if err == nil {
-		t.Fatal("expected error for invalid Address")
+		t.Fatal("expected error for invalid ClientIndex")
 	}
-	if !strings.Contains(err.Error(), "invalid Address") {
+	if !strings.Contains(err.Error(), "invalid ClientIndex") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestConfiguration_ValidateAllowedPeers_MissingAddress(t *testing.T) {
+func TestConfiguration_ValidateAllowedPeers_MissingClientIndex(t *testing.T) {
 	cfg := mkValid()
 	cfg.AllowedPeers = []AllowedPeer{
 		{
 			PublicKey: make([]byte, 32),
 			Enabled:   true,
+			// ClientIndex defaults to 0 (zero value)
 		},
 	}
 	err := cfg.ValidateAllowedPeers()
 	if err == nil {
-		t.Fatal("expected error for missing Address")
+		t.Fatal("expected error for missing ClientIndex")
 	}
-	if !strings.Contains(err.Error(), "invalid Address") {
+	if !strings.Contains(err.Error(), "invalid ClientIndex") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -353,14 +354,14 @@ func TestConfiguration_ValidateAllowedPeers_DuplicatePublicKey(t *testing.T) {
 	pubKey[0] = 42
 	cfg.AllowedPeers = []AllowedPeer{
 		{
-			PublicKey: pubKey,
-			Enabled:   true,
-			Address:   netip.MustParseAddr("10.0.0.5"),
+			PublicKey:    pubKey,
+			Enabled:      true,
+			ClientIndex:  5,
 		},
 		{
-			PublicKey: pubKey, // Duplicate
-			Enabled:   true,
-			Address:   netip.MustParseAddr("10.0.0.6"),
+			PublicKey:    pubKey, // Duplicate
+			Enabled:      true,
+			ClientIndex:  6,
 		},
 	}
 	err := cfg.ValidateAllowedPeers()
@@ -372,13 +373,13 @@ func TestConfiguration_ValidateAllowedPeers_DuplicatePublicKey(t *testing.T) {
 	}
 }
 
-func TestConfiguration_ValidateAllowedPeers_ClientIPOverlap(t *testing.T) {
+func TestConfiguration_ValidateAllowedPeers_ClientIndexConflict(t *testing.T) {
 	cfg := mkValid()
 	cfg.AllowedPeers = []AllowedPeer{
 		{
-			PublicKey: make([]byte, 32),
-			Enabled:   true,
-			Address:   netip.MustParseAddr("10.0.0.5"),
+			PublicKey:    make([]byte, 32),
+			Enabled:      true,
+			ClientIndex:  5,
 		},
 		{
 			PublicKey: func() []byte {
@@ -386,15 +387,15 @@ func TestConfiguration_ValidateAllowedPeers_ClientIPOverlap(t *testing.T) {
 				k[0] = 1
 				return k
 			}(),
-			Enabled: true,
-			Address: netip.MustParseAddr("10.0.0.5"), // Same address as peer 0
+			Enabled:     true,
+			ClientIndex: 5, // Same index as peer 0
 		},
 	}
 	err := cfg.ValidateAllowedPeers()
 	if err == nil {
-		t.Fatal("expected error for address conflict")
+		t.Fatal("expected error for ClientIndex conflict")
 	}
-	if !strings.Contains(err.Error(), "Address conflict") {
+	if !strings.Contains(err.Error(), "ClientIndex conflict") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -403,55 +404,12 @@ func TestConfiguration_Validate_PropagatesValidateAllowedPeersError(t *testing.T
 	cfg := mkValid()
 	cfg.AllowedPeers = []AllowedPeer{
 		{
-			PublicKey: make([]byte, 31), // invalid
-			Enabled:   true,
-			Address:   netip.MustParseAddr("10.0.0.5"),
+			PublicKey:    make([]byte, 31), // invalid
+			Enabled:      true,
+			ClientIndex:  5,
 		},
 	}
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("expected Validate to propagate ValidateAllowedPeers error")
-	}
-}
-
-func TestConfiguration_ValidateAllowedPeers_ClientIPNotInEnabledSubnets(t *testing.T) {
-	cfg := mkValid()
-	cfg.AllowedPeers = []AllowedPeer{
-		{
-			PublicKey: make([]byte, 32),
-			Enabled:   true,
-			Address:   netip.MustParseAddr("172.16.0.1"), // outside 10.0.x enabled subnets
-		},
-	}
-	err := cfg.ValidateAllowedPeers()
-	if err == nil || !strings.Contains(err.Error(), "not within any enabled interface subnet") {
-		t.Fatalf("expected out-of-subnet error, got %v", err)
-	}
-}
-
-func TestConfiguration_ValidateAllowedPeers_IPv6ClientIP(t *testing.T) {
-	cfg := mkValid()
-	cfg.TCPSettings.InterfaceSubnet = netip.MustParsePrefix("2001:db8::/64")
-	cfg.TCPSettings.InterfaceIP = netip.MustParseAddr("2001:db8::1")
-	cfg.EnableUDP = false
-	cfg.EnableWS = false
-	cfg.AllowedPeers = []AllowedPeer{
-		{
-			PublicKey: make([]byte, 32),
-			Enabled:   true,
-			Address:   netip.MustParseAddr("2001:db8::42"),
-		},
-	}
-	if err := cfg.ValidateAllowedPeers(); err != nil {
-		t.Fatalf("expected valid IPv6 clientIP, got %v", err)
-	}
-}
-
-func TestConfiguration_isClientIPInSubnet_False(t *testing.T) {
-	cfg := mkValid()
-	subnets := []netip.Prefix{
-		netip.MustParsePrefix("10.0.0.0/24"),
-	}
-	if cfg.isClientIPInSubnet(netip.MustParseAddr("10.0.1.5"), subnets) {
-		t.Fatal("expected false for IP outside subnet")
 	}
 }

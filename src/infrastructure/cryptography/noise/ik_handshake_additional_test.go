@@ -169,14 +169,13 @@ func TestIKHandshake_Extra_GettersAndNilResult(t *testing.T) {
 		t.Fatal("unexpected server key")
 	}
 
-	clientIP := netip.MustParseAddr("10.55.0.9")
-	h.result = &IKHandshakeResult{internalIP: clientIP}
+	h.result = &IKHandshakeResult{clientIndex: 9}
 	result, ok := h.Result().(*IKHandshakeResult)
 	if !ok {
 		t.Fatal("expected IKHandshakeResult type")
 	}
-	if got := result.internalIP; got != clientIP {
-		t.Fatalf("expected internal IP %s, got %s", clientIP, got)
+	if got := result.clientIndex; got != 9 {
+		t.Fatalf("expected client index 9, got %d", got)
 	}
 }
 
@@ -218,7 +217,7 @@ func TestIKHandshake_Server_UnderLoadCookieRequiredBranches(t *testing.T) {
 	cm, _ := NewCookieManager()
 
 	allowedPeers := []server.AllowedPeer{
-		{PublicKey: clientKP.Public, Enabled: true, Address: netip.MustParseAddr("10.0.0.2")},
+		{PublicKey: clientKP.Public, Enabled: true, ClientIndex: 2},
 	}
 
 	msg := newClientMsg1WithVersion(t, clientKP.Private, clientKP.Public, serverKP.Public)
@@ -316,30 +315,6 @@ func TestIKHandshake_Client_CookieRetryPaths(t *testing.T) {
 	})
 }
 
-func TestIKHandshake_Server_InvalidPeerAddress(t *testing.T) {
-	serverKP, _ := cipherSuite.GenerateKeypair(nil)
-	clientKP, _ := cipherSuite.GenerateKeypair(nil)
-	cm, _ := NewCookieManager()
-
-	allowedPeers := []server.AllowedPeer{
-		{PublicKey: clientKP.Public, Enabled: true},
-	}
-
-	serverHS := NewIKHandshakeServer(
-		serverKP.Public,
-		serverKP.Private,
-		NewAllowedPeersLookup(allowedPeers),
-		cm,
-		nil,
-	)
-	msg := newClientMsg1WithVersion(t, clientKP.Private, clientKP.Public, serverKP.Public)
-
-	_, err := serverHS.ServerSideHandshake(&queueTransport{reads: [][]byte{msg}})
-	if err == nil || !strings.Contains(err.Error(), "invalid peer address") {
-		t.Fatalf("expected invalid peer address error, got %v", err)
-	}
-}
-
 func TestIKHandshake_Server_ErrorBranches(t *testing.T) {
 	t.Run("under load cookie reply write error", func(t *testing.T) {
 		serverKP, _ := cipherSuite.GenerateKeypair(nil)
@@ -352,7 +327,7 @@ func TestIKHandshake_Server_ErrorBranches(t *testing.T) {
 			serverKP.Public,
 			serverKP.Private,
 			NewAllowedPeersLookup([]server.AllowedPeer{
-				{PublicKey: clientKP.Public, Enabled: true, Address: netip.MustParseAddr("10.0.0.2")},
+				{PublicKey: clientKP.Public, Enabled: true, ClientIndex: 2},
 			}),
 			cm,
 			lm,
@@ -421,7 +396,7 @@ func TestIKHandshake_Server_ErrorBranches(t *testing.T) {
 			serverKP.Public,
 			serverKP.Private,
 			NewAllowedPeersLookup([]server.AllowedPeer{
-				{PublicKey: clientKP.Public, Enabled: true, Address: netip.MustParseAddr("10.0.0.2")},
+				{PublicKey: clientKP.Public, Enabled: true, ClientIndex: 2},
 			}),
 			nil,
 			nil,

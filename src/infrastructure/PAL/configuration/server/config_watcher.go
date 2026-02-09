@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"log"
-	"net/netip"
 	"path/filepath"
 	"time"
 
@@ -41,8 +40,8 @@ type ConfigWatcher struct {
 }
 
 type peerAccessState struct {
-	enabled bool
-	address netip.Addr
+	enabled     bool
+	clientIndex int
 }
 
 // NewConfigWatcher creates a new configuration watcher.
@@ -158,8 +157,8 @@ func (w *ConfigWatcher) loadCurrentState() {
 	for _, peer := range conf.AllowedPeers {
 		key := string(peer.PublicKey)
 		w.prevPeers[key] = peerAccessState{
-			enabled: peer.Enabled,
-			address: peer.Address.Unmap(),
+			enabled:     peer.Enabled,
+			clientIndex: peer.ClientIndex,
 		}
 	}
 }
@@ -181,8 +180,8 @@ func (w *ConfigWatcher) checkAndRevoke() {
 	for _, peer := range conf.AllowedPeers {
 		key := string(peer.PublicKey)
 		currentPeers[key] = peerAccessState{
-			enabled: peer.Enabled,
-			address: peer.Address.Unmap(),
+			enabled:     peer.Enabled,
+			clientIndex: peer.ClientIndex,
 		}
 	}
 
@@ -195,7 +194,7 @@ func (w *ConfigWatcher) checkAndRevoke() {
 		}
 
 		currentState, exists := currentPeers[pubKeyStr]
-		shouldRevoke := !exists || !currentState.enabled || currentState.address != prevState.address
+		shouldRevoke := !exists || !currentState.enabled || currentState.clientIndex != prevState.clientIndex
 
 		if shouldRevoke {
 			pubKey := []byte(pubKeyStr)

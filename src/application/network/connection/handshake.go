@@ -9,7 +9,7 @@ type Handshake interface {
 	Id() [32]byte
 	KeyClientToServer() []byte
 	KeyServerToClient() []byte
-	ServerSideHandshake(transport Transport) (netip.Addr, error)
+	ServerSideHandshake(transport Transport) (int, error)
 	ClientSideHandshake(transport Transport, settings settings.Settings) error
 }
 
