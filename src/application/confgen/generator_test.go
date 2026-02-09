@@ -217,8 +217,8 @@ func TestGenerate_adds_peer_with_clientIndex_and_name(t *testing.T) {
 		t.Fatalf("expected 1 added peer, got %d", len(mgr.addedPeers))
 	}
 	peer := mgr.addedPeers[0]
-	if peer.ClientIndex != 9 {
-		t.Fatalf("expected ClientIndex 9, got %d", peer.ClientIndex)
+	if peer.ClientIndex != 8 {
+		t.Fatalf("expected ClientIndex 8, got %d", peer.ClientIndex)
 	}
 	if peer.Name != "client-8" {
 		t.Fatalf("expected peer name client-8, got %q", peer.Name)

@@ -58,7 +58,7 @@ func (g *Generator) Generate() (*client.Configuration, error) {
 		Name:        fmt.Sprintf("client-%d", serverConf.ClientCounter),
 		PublicKey:   clientPubKey,
 		Enabled:     true,
-		ClientIndex: serverConf.ClientCounter + 1,
+		ClientIndex: serverConf.ClientCounter,
 	}
 	if err := g.serverConfigurationManager.AddAllowedPeer(newPeer); err != nil {
 		return nil, fmt.Errorf("failed to add client to AllowedPeers: %w", err)
