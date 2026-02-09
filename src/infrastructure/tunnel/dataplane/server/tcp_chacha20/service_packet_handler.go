@@ -96,10 +96,13 @@ func (h *controlPlaneHandler) handleRekeyInit(
 func (h *controlPlaneHandler) HandlePing(egress connection.Egress) {
 	payload := h.pongBuf[epochPrefixSize : epochPrefixSize+3]
 	if _, err := service_packet.EncodeV1Header(service_packet.Pong, payload); err != nil {
+		h.logger.Printf("pong: failed to encode: %v", err)
 		return
 	}
 	spWithPrefix := h.pongBuf[:epochPrefixSize+3]
-	_ = egress.SendControl(spWithPrefix)
+	if err := egress.SendControl(spWithPrefix); err != nil {
+		h.logger.Printf("pong: failed to send: %v", err)
+	}
 }
 
 func (h *controlPlaneHandler) sendEpochExhausted(egress connection.Egress) {

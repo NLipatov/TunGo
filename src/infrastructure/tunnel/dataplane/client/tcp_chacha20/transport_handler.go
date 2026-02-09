@@ -94,7 +94,9 @@ func (t *TransportHandler) HandleTransport() error {
 					log.Printf("received EpochExhausted from server, initiating reconnect")
 					return ErrEpochExhausted
 				case service_packet.RekeyAck:
-					t.handleRekeyAck(payload)
+					if err := t.handleRekeyAck(payload); err != nil {
+						return err
+					}
 					continue
 				case service_packet.Pong:
 					continue
@@ -135,12 +137,17 @@ func (t *TransportHandler) sendPing() {
 	}
 }
 
-func (t *TransportHandler) handleRekeyAck(payload []byte) {
+func (t *TransportHandler) handleRekeyAck(payload []byte) error {
 	if t.rekeyController == nil {
-		return
+		return nil
+	}
+	if t.rekeyController.LastRekeyEpoch >= 65000 {
+		log.Printf("rekey ack: epoch exhausted, requesting session reset")
+		return ErrEpochExhausted
 	}
 	_, err := controlplane.ClientHandleRekeyAck(t.handshakeCrypto, t.rekeyController, payload)
 	if err != nil {
 		log.Printf("rekey ack: install/apply failed: %v", err)
 	}
+	return nil
 }
