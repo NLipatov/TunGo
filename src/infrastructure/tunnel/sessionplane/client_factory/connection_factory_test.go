@@ -585,17 +585,17 @@ func TestConnectionFactoryUnit_establishSecuredConnection_HandshakeError_ClosesA
 	}
 }
 
-func TestConnectionFactoryUnit_newReadDeadlineTransport_NoDeadlineSupport_ReturnsSame(t *testing.T) {
+func TestConnectionFactoryUnit_NewReadDeadlineTransport_NoDeadlineSupport_ReturnsSame(t *testing.T) {
 	tr := &cfUnitNoDeadlineTransport{}
-	wrapped := newReadDeadlineTransport(tr, time.Second)
+	wrapped := adapters.NewReadDeadlineTransport(tr, time.Second)
 	if wrapped != tr {
 		t.Fatal("expected same transport when SetReadDeadline is not supported")
 	}
 }
 
-func TestConnectionFactoryUnit_newReadDeadlineTransport_WithDeadlineSupport_WrapsAndSetsDeadline(t *testing.T) {
+func TestConnectionFactoryUnit_NewReadDeadlineTransport_WithDeadlineSupport_WrapsAndSetsDeadline(t *testing.T) {
 	tr := &cfUnitTransport{readBuf: []byte("abc")}
-	wrapped := newReadDeadlineTransport(tr, time.Second)
+	wrapped := adapters.NewReadDeadlineTransport(tr, time.Second)
 
 	if wrapped == tr {
 		t.Fatal("expected wrapped transport")

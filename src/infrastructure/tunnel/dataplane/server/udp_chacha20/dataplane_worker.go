@@ -44,6 +44,10 @@ func (w *udpDataplaneWorker) HandleEstablished(peer *session.Peer, packet []byte
 		return nil
 	}
 
+	// Record activity AFTER successful decryption so attackers cannot
+	// keep a session alive by sending garbage to its external address.
+	peer.TouchActivity()
+
 	if rekeyCtrl != nil {
 		// Data was successfully decrypted with epoch.
 		// Epoch can now be used to encrypt. Allow to encrypt with this epoch by promoting.

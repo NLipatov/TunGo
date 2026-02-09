@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/netip"
 	"testing"
+	"time"
 
 	"tungo/application/network/connection"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
@@ -385,5 +386,209 @@ func TestDefaultRepository_Delete_NonZeroizerCrypto(t *testing.T) {
 
 	if _, err := repo.GetByInternalAddrPort(s.internal); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expected ErrNotFound after Delete, got %v", err)
+	}
+}
+
+// --- Peer activity tracking tests ---
+
+func TestPeer_NewPeer_InitializesLastActivity(t *testing.T) {
+	before := time.Now()
+	s := &fakeSession{
+		internal: netip.MustParseAddr("10.0.0.1"),
+		external: netip.MustParseAddrPort("1.2.3.4:5000"),
+	}
+	p := NewPeer(s, nil)
+	after := time.Now()
+
+	la := p.LastActivity()
+	if la.Before(before.Truncate(time.Second)) || la.After(after.Add(time.Second)) {
+		t.Fatalf("lastActivity %v not within [%v, %v]", la, before, after)
+	}
+}
+
+func TestPeer_TouchActivity_UpdatesTime(t *testing.T) {
+	s := &fakeSession{
+		internal: netip.MustParseAddr("10.0.0.1"),
+		external: netip.MustParseAddrPort("1.2.3.4:5000"),
+	}
+	p := NewPeer(s, nil)
+
+	// Force lastActivity to the past
+	p.lastActivity.Store(time.Now().Add(-10 * time.Minute).Unix())
+	old := p.LastActivity()
+
+	p.TouchActivity()
+	updated := p.LastActivity()
+
+	if !updated.After(old) {
+		t.Fatalf("expected TouchActivity to advance time: old=%v updated=%v", old, updated)
+	}
+}
+
+func TestPeer_LastActivity_ReturnsStoredTime(t *testing.T) {
+	s := &fakeSession{
+		internal: netip.MustParseAddr("10.0.0.1"),
+		external: netip.MustParseAddrPort("1.2.3.4:5000"),
+	}
+	p := NewPeer(s, nil)
+
+	fixed := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	p.lastActivity.Store(fixed.Unix())
+
+	got := p.LastActivity()
+	if got.Unix() != fixed.Unix() {
+		t.Fatalf("expected %v, got %v", fixed, got)
+	}
+}
+
+// --- ReapIdle tests ---
+
+func TestDefaultRepository_ReapIdle_RemovesIdlePeers(t *testing.T) {
+	repo := NewDefaultRepository().(*DefaultRepository)
+
+	s := &fakeSession{
+		internal: netip.MustParseAddr("10.0.0.1"),
+		external: netip.MustParseAddrPort("1.1.1.1:1000"),
+	}
+	p := NewPeer(s, nil)
+	// Set activity far in the past
+	p.lastActivity.Store(time.Now().Add(-5 * time.Minute).Unix())
+	repo.Add(p)
+
+	count := repo.ReapIdle(30 * time.Second)
+	if count != 1 {
+		t.Fatalf("expected 1 reaped, got %d", count)
+	}
+	if !p.IsClosed() {
+		t.Fatal("expected peer to be marked closed")
+	}
+	if _, err := repo.GetByInternalAddrPort(s.internal); !errors.Is(err, ErrNotFound) {
+		t.Fatal("expected peer removed from repo")
+	}
+}
+
+func TestDefaultRepository_ReapIdle_KeepsActivePeers(t *testing.T) {
+	repo := NewDefaultRepository().(*DefaultRepository)
+
+	s := &fakeSession{
+		internal: netip.MustParseAddr("10.0.0.2"),
+		external: netip.MustParseAddrPort("2.2.2.2:2000"),
+	}
+	p := NewPeer(s, nil)
+	// Activity is fresh (just created)
+	repo.Add(p)
+
+	count := repo.ReapIdle(30 * time.Second)
+	if count != 0 {
+		t.Fatalf("expected 0 reaped, got %d", count)
+	}
+	if _, err := repo.GetByInternalAddrPort(s.internal); err != nil {
+		t.Fatal("expected peer to still exist")
+	}
+}
+
+func TestDefaultRepository_ReapIdle_MixedActiveAndIdle(t *testing.T) {
+	repo := NewDefaultRepository().(*DefaultRepository)
+
+	idle := &fakeSession{
+		internal: netip.MustParseAddr("10.0.0.1"),
+		external: netip.MustParseAddrPort("1.1.1.1:1000"),
+	}
+	active := &fakeSession{
+		internal: netip.MustParseAddr("10.0.0.2"),
+		external: netip.MustParseAddrPort("2.2.2.2:2000"),
+	}
+
+	pIdle := NewPeer(idle, nil)
+	pIdle.lastActivity.Store(time.Now().Add(-2 * time.Minute).Unix())
+	repo.Add(pIdle)
+
+	pActive := NewPeer(active, nil)
+	// pActive has fresh lastActivity from NewPeer
+	repo.Add(pActive)
+
+	count := repo.ReapIdle(30 * time.Second)
+	if count != 1 {
+		t.Fatalf("expected 1 reaped, got %d", count)
+	}
+
+	// Idle peer removed
+	if _, err := repo.GetByInternalAddrPort(idle.internal); !errors.Is(err, ErrNotFound) {
+		t.Fatal("expected idle peer removed")
+	}
+	// Active peer survives
+	if _, err := repo.GetByInternalAddrPort(active.internal); err != nil {
+		t.Fatal("expected active peer to survive")
+	}
+}
+
+func TestDefaultRepository_ReapIdle_EmptyRepo(t *testing.T) {
+	repo := NewDefaultRepository().(*DefaultRepository)
+	count := repo.ReapIdle(30 * time.Second)
+	if count != 0 {
+		t.Fatalf("expected 0 reaped on empty repo, got %d", count)
+	}
+}
+
+func TestDefaultRepository_ReapIdle_ViaInterface(t *testing.T) {
+	repo := NewDefaultRepository()
+
+	reaper, ok := repo.(IdleReaper)
+	if !ok {
+		t.Fatal("DefaultRepository should implement IdleReaper")
+	}
+
+	s := &fakeSession{
+		internal: netip.MustParseAddr("10.0.0.1"),
+		external: netip.MustParseAddrPort("1.1.1.1:1000"),
+	}
+	p := NewPeer(s, nil)
+	p.lastActivity.Store(time.Now().Add(-5 * time.Minute).Unix())
+	repo.Add(p)
+
+	count := reaper.ReapIdle(30 * time.Second)
+	if count != 1 {
+		t.Fatalf("expected 1, got %d", count)
+	}
+}
+
+func TestDefaultRepository_ReapIdle_ZeroizesCrypto(t *testing.T) {
+	repo := NewDefaultRepository().(*DefaultRepository)
+	crypto := &fakeCryptoZeroizer{}
+
+	s := &fakeSessionWithCrypto{
+		fakeSession: fakeSession{
+			internal: netip.MustParseAddr("10.0.0.1"),
+			external: netip.MustParseAddrPort("1.1.1.1:1000"),
+		},
+		crypto: crypto,
+	}
+	p := NewPeer(s, nil)
+	p.lastActivity.Store(time.Now().Add(-5 * time.Minute).Unix())
+	repo.Add(p)
+
+	repo.ReapIdle(30 * time.Second)
+
+	if !crypto.zeroized {
+		t.Fatal("expected crypto to be zeroized on reap")
+	}
+}
+
+func TestDefaultRepository_ReapIdle_MultipleIdlePeers(t *testing.T) {
+	repo := NewDefaultRepository().(*DefaultRepository)
+
+	for i := 1; i <= 5; i++ {
+		s := &fakeSession{
+			internal: netip.AddrFrom4([4]byte{10, 0, 0, byte(i)}),
+			external: netip.AddrPortFrom(netip.AddrFrom4([4]byte{1, 1, 1, byte(i)}), uint16(1000+i)),
+		}
+		p := NewPeer(s, nil)
+		p.lastActivity.Store(time.Now().Add(-time.Hour).Unix())
+		repo.Add(p)
+	}
+
+	count := repo.ReapIdle(30 * time.Second)
+	if count != 5 {
+		t.Fatalf("expected 5 reaped, got %d", count)
 	}
 }

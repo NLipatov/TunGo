@@ -67,6 +67,11 @@ func (t *TransportHandler) HandleTransport() error {
 
 	t.logger.Printf("server listening on port %d (UDP)", t.settings.Port)
 
+	// Start idle session reaper if the repository supports it.
+	if reaper, ok := t.sessionManager.(session.IdleReaper); ok {
+		go session.RunIdleReaperLoop(t.ctx, reaper, settings.ServerIdleTimeout, settings.IdleReaperInterval, t.logger)
+	}
+
 	// Size socket buffers for burst absorption under high throughput.
 	_ = t.listenerConn.SetReadBuffer(4 * 1024 * 1024)
 	_ = t.listenerConn.SetWriteBuffer(4 * 1024 * 1024)

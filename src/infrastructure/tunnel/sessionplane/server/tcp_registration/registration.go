@@ -50,7 +50,17 @@ func NewRegistrar(
 func (r *Registrar) RegisterClient(conn net.Conn) (*session.Peer, connection.Transport, error) {
 	r.logger.Printf("TCP: %s connected", conn.RemoteAddr())
 
-	framingAdapter, fErr := adapters.NewLengthPrefixFramingAdapter(conn, settings.DefaultEthernetMTU+settings.TCPChacha20Overhead)
+	// Enable OS-level TCP keepalive for dead connection detection.
+	if tcp, ok := conn.(*net.TCPConn); ok {
+		_ = tcp.SetKeepAlive(true)
+		_ = tcp.SetKeepAlivePeriod(settings.ServerIdleTimeout)
+	}
+
+	// Wrap with read deadline so the server detects dead clients at the
+	// application level (no data within ServerIdleTimeout → connection closed).
+	deadlineConn := adapters.NewReadDeadlineTransport(conn, settings.ServerIdleTimeout)
+
+	framingAdapter, fErr := adapters.NewLengthPrefixFramingAdapter(deadlineConn, settings.DefaultEthernetMTU+settings.TCPChacha20Overhead)
 	if fErr != nil {
 		_ = conn.Close() // Prevent socket leak on framing adapter failure
 		return nil, nil, fErr

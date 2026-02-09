@@ -3,6 +3,7 @@ package session
 import (
 	"net/netip"
 	"sync"
+	"time"
 
 	"tungo/application/network/connection"
 )
@@ -31,6 +32,13 @@ type RepositoryWithRevocation interface {
 	// SECURITY: Must be called after AllowedPeers config changes to prevent
 	// stale AllowedIPs snapshots from persisting.
 	TerminateByPubKey(pubKey []byte) int
+}
+
+// IdleReaper is implemented by repositories that support idle session cleanup.
+type IdleReaper interface {
+	// ReapIdle deletes all sessions whose last activity is older than timeout.
+	// Returns the number of sessions reaped.
+	ReapIdle(timeout time.Duration) int
 }
 
 // DefaultRepository is a thread-safe session repository.
@@ -246,4 +254,22 @@ func (s *DefaultRepository) deleteLocked(peer *Peer) {
 			zeroizer.Zeroize()
 		}
 	}
+}
+
+// ReapIdle deletes all sessions whose last activity is older than timeout.
+// Safe to call concurrently; acquires write lock internally.
+// Deleting from a map during range iteration is safe in Go.
+func (s *DefaultRepository) ReapIdle(timeout time.Duration) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	cutoff := time.Now().Add(-timeout)
+	var count int
+	for _, peer := range s.internalIpToPeer {
+		if peer.LastActivity().Before(cutoff) {
+			s.deleteLocked(peer)
+			count++
+		}
+	}
+	return count
 }

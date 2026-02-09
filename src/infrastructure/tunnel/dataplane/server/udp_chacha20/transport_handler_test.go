@@ -14,6 +14,7 @@ import (
 	"tungo/application/network/connection"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/session"
@@ -1240,6 +1241,91 @@ func TestHandleTransport_EpochExhausted_LogsError(t *testing.T) {
 	// Check that handlePacket error was logged.
 	if !logger.contains("failed to handle packet") {
 		t.Logf("logs: %v", logger.logs)
+	}
+}
+
+// TouchActivity: HandleEstablished updates lastActivity after successful decryption.
+func TestHandleEstablished_TouchesActivityAfterDecrypt(t *testing.T) {
+	internalIP := netip.MustParseAddr("10.0.0.99")
+	clientAddr := netip.MustParseAddrPort("192.168.1.99:9000")
+	writer := &TransportHandlerFakeWriter{}
+
+	sess := &testSession{
+		crypto:     &TransportHandlerAlwaysWriteCrypto{},
+		internalIP: internalIP,
+		externalIP: clientAddr,
+	}
+	peer := session.NewPeer(sess, nil)
+
+	// Set lastActivity to the past so we can detect the update.
+	peer.SetLastActivityForTest(time.Now().Add(-10 * time.Minute).Unix())
+	before := peer.LastActivity()
+
+	dp := newUdpDataplaneWorker(writer, newServicePacketHandler(&primitives.DefaultKeyDeriver{}))
+
+	packet := makeValidIPv4Packet(internalIP)
+	if err := dp.HandleEstablished(peer, packet); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	after := peer.LastActivity()
+	if !after.After(before) {
+		t.Fatalf("expected LastActivity to be updated: before=%v after=%v", before, after)
+	}
+}
+
+// TouchActivity: HandleEstablished does NOT update lastActivity on decrypt failure.
+func TestHandleEstablished_NoTouchOnDecryptFailure(t *testing.T) {
+	internalIP := netip.MustParseAddr("10.0.0.98")
+	clientAddr := netip.MustParseAddrPort("192.168.1.98:9001")
+	writer := &TransportHandlerFakeWriter{}
+
+	sess := &testSession{
+		crypto:     &transportHandlerFailingCrypto{},
+		internalIP: internalIP,
+		externalIP: clientAddr,
+	}
+	peer := session.NewPeer(sess, nil)
+
+	fixed := time.Now().Add(-10 * time.Minute).Unix()
+	peer.SetLastActivityForTest(fixed)
+
+	dp := newUdpDataplaneWorker(writer, newServicePacketHandler(&primitives.DefaultKeyDeriver{}))
+
+	_ = dp.HandleEstablished(peer, []byte{0xde, 0xad, 0xbe, 0xef})
+
+	if peer.LastActivity().Unix() != fixed {
+		t.Fatalf("expected lastActivity unchanged on decrypt failure, got %v", peer.LastActivity())
+	}
+}
+
+// TouchActivity: HandleEstablished does NOT update lastActivity on closed peer.
+func TestHandleEstablished_NoTouchOnClosedPeer(t *testing.T) {
+	internalIP := netip.MustParseAddr("10.0.0.97")
+	clientAddr := netip.MustParseAddrPort("192.168.1.97:9002")
+	writer := &TransportHandlerFakeWriter{}
+
+	sess := &testSession{
+		crypto:     &TransportHandlerAlwaysWriteCrypto{},
+		internalIP: internalIP,
+		externalIP: clientAddr,
+	}
+	peer := session.NewPeer(sess, nil)
+
+	fixed := time.Now().Add(-10 * time.Minute).Unix()
+	peer.SetLastActivityForTest(fixed)
+
+	// Simulate repo deletion — mark peer closed
+	repo := session.NewDefaultRepository()
+	repo.Add(peer)
+	repo.Delete(peer)
+
+	dp := newUdpDataplaneWorker(writer, newServicePacketHandler(&primitives.DefaultKeyDeriver{}))
+
+	_ = dp.HandleEstablished(peer, makeValidIPv4Packet(internalIP))
+
+	if peer.LastActivity().Unix() != fixed {
+		t.Fatalf("expected lastActivity unchanged on closed peer, got %v", peer.LastActivity())
 	}
 }
 
