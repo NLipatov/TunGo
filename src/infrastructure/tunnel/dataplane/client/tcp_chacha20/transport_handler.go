@@ -127,9 +127,12 @@ func (t *TransportHandler) keepaliveLoop() {
 func (t *TransportHandler) sendPing() {
 	payload := t.pingBuf[epochPrefixSize:]
 	if _, err := service_packet.EncodeV1Header(service_packet.Ping, payload); err != nil {
+		log.Printf("keepalive: failed to encode ping: %v", err)
 		return
 	}
-	_ = t.egress.SendControl(t.pingBuf[:])
+	if err := t.egress.SendControl(t.pingBuf[:]); err != nil {
+		log.Printf("keepalive: failed to send ping: %v", err)
+	}
 }
 
 func (t *TransportHandler) handleRekeyAck(payload []byte) {
