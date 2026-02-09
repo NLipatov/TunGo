@@ -8,6 +8,7 @@ import (
 
 	serverConfiguration "tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/cryptography/primitives"
+	nip "tungo/infrastructure/network/ip"
 	"tungo/infrastructure/settings"
 )
 
@@ -202,26 +203,43 @@ func TestGenerate_addr_error_with_fallback_success(t *testing.T) {
 	}
 }
 
-func TestGenerate_adds_peer_with_clientIndex_and_name(t *testing.T) {
+func TestGenerate_clientIndex_matches_allocated_IPs(t *testing.T) {
 	mgr := &mockMgr{cfg: validCfg()}
 	g := generatorWithMocks(mgr, mockIP{
 		RouteDefaultFunc: func() (string, error) { return "eth0", nil },
 		AddrShowDevFunc:  func(int, string) (string, error) { return "192.0.2.10", nil },
 	})
 
-	_, err := g.Generate()
+	conf, err := g.Generate()
 	if err != nil {
 		t.Fatalf("unexpected: %v", err)
 	}
 	if len(mgr.addedPeers) != 1 {
 		t.Fatalf("expected 1 added peer, got %d", len(mgr.addedPeers))
 	}
+
 	peer := mgr.addedPeers[0]
-	if peer.ClientIndex != 8 {
-		t.Fatalf("expected ClientIndex 8, got %d", peer.ClientIndex)
-	}
-	if peer.Name != "client-8" {
-		t.Fatalf("expected peer name client-8, got %q", peer.Name)
+
+	// The invariant: AllocateClientIP(subnet, peer.ClientIndex) must produce the
+	// same IP that was given to the client configuration. A mismatch means the
+	// server will assign a different tunnel address than the client expects.
+	for _, tc := range []struct {
+		name     string
+		subnet   netip.Prefix
+		clientIP netip.Addr
+	}{
+		{"TCP", mgr.cfg.TCPSettings.InterfaceSubnet, conf.TCPSettings.InterfaceIP},
+		{"UDP", mgr.cfg.UDPSettings.InterfaceSubnet, conf.UDPSettings.InterfaceIP},
+		{"WS", mgr.cfg.WSSettings.InterfaceSubnet, conf.WSSettings.InterfaceIP},
+	} {
+		got, allocErr := nip.AllocateClientIP(tc.subnet, peer.ClientIndex)
+		if allocErr != nil {
+			t.Fatalf("%s: AllocateClientIP(%s, %d) error: %v", tc.name, tc.subnet, peer.ClientIndex, allocErr)
+		}
+		if got != tc.clientIP {
+			t.Fatalf("%s: server would assign %s but client expects %s (ClientIndex=%d)",
+				tc.name, got, tc.clientIP, peer.ClientIndex)
+		}
 	}
 }
 
