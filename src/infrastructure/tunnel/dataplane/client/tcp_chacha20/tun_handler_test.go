@@ -6,6 +6,7 @@ import (
 	"io"
 	"testing"
 	"time"
+	"tungo/application/network/connection"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
 )
 
@@ -57,6 +58,10 @@ func rdr(seq ...struct {
 	return &TunHandlerMockReader{seq: seq}
 }
 
+func mockEgress(w io.Writer, c connection.Crypto) connection.Egress {
+	return connection.NewDefaultEgress(w, c)
+}
+
 // ---- Tests ----
 
 func TestTunHandler_ContextDone(t *testing.T) {
@@ -64,7 +69,7 @@ func TestTunHandler_ContextDone(t *testing.T) {
 	cancel() // canceled before entering the loop
 
 	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTunHandler(ctx, rdr(), io.Discard, &TunHandlerMockCrypto{}, ctrl)
+	h := NewTunHandler(ctx, rdr(), mockEgress(io.Discard, &TunHandlerMockCrypto{}), ctrl)
 	if err := h.HandleTun(); err != nil {
 		t.Fatalf("want nil, got %v", err)
 	}
@@ -77,8 +82,7 @@ func TestTunHandler_EOF(t *testing.T) {
 			data []byte
 			err  error
 		}{nil, io.EOF}),
-		io.Discard,
-		&TunHandlerMockCrypto{}, ctrl,
+		mockEgress(io.Discard, &TunHandlerMockCrypto{}), ctrl,
 	)
 	if err := h.HandleTun(); err != io.EOF {
 		t.Fatalf("want io.EOF, got %v", err)
@@ -93,8 +97,7 @@ func TestTunHandler_ReadError(t *testing.T) {
 			data []byte
 			err  error
 		}{nil, readErr}),
-		io.Discard,
-		&TunHandlerMockCrypto{}, ctrl,
+		mockEgress(io.Discard, &TunHandlerMockCrypto{}), ctrl,
 	)
 	if err := h.HandleTun(); !errors.Is(err, readErr) {
 		t.Fatalf("want read error, got %v", err)
@@ -111,8 +114,7 @@ func TestTunHandler_EncryptError(t *testing.T) {
 				err  error
 			}{[]byte{1, 2, 3}, nil},
 		),
-		io.Discard,
-		&TunHandlerMockCrypto{err: encErr}, ctrl,
+		mockEgress(io.Discard, &TunHandlerMockCrypto{err: encErr}), ctrl,
 	)
 	if err := h.HandleTun(); !errors.Is(err, encErr) {
 		t.Fatalf("want encrypt error, got %v", err)
@@ -128,8 +130,7 @@ func TestTunHandler_WriteError(t *testing.T) {
 			data []byte
 			err  error
 		}{[]byte{9, 9}, nil}),
-		w,
-		&TunHandlerMockCrypto{}, ctrl,
+		mockEgress(w, &TunHandlerMockCrypto{}), ctrl,
 	)
 	if err := h.HandleTun(); !errors.Is(err, wErr) {
 		t.Fatalf("want write error, got %v", err)
@@ -154,8 +155,7 @@ func TestTunHandler_HappyPath_SinglePacket_ThenEOF(t *testing.T) {
 				err  error
 			}{nil, io.EOF}, // exit
 		),
-		w,
-		&TunHandlerMockCrypto{}, ctrl,
+		mockEgress(w, &TunHandlerMockCrypto{}), ctrl,
 	)
 
 	if err := h.HandleTun(); err != io.EOF {
@@ -178,8 +178,7 @@ func TestTunHandler_ReadError_WhenContextCanceled_ReturnsNil(t *testing.T) {
 			data []byte
 			err  error
 		}{nil, readErr}), // reader returns an error
-		io.Discard,
-		&TunHandlerMockCrypto{}, ctrl,
+		mockEgress(io.Discard, &TunHandlerMockCrypto{}), ctrl,
 	)
 
 	// When ctx is canceled, the read error path should return nil.
@@ -202,8 +201,7 @@ func TestTunHandler_RekeyInitSentAfterPayload(t *testing.T) {
 				err  error
 			}{nil, io.EOF},
 		),
-		w,
-		&TunHandlerMockCrypto{}, ctrl,
+		mockEgress(w, &TunHandlerMockCrypto{}), ctrl,
 	)
 
 	// Force rekey to fire by setting rotateAt to the past.
@@ -222,8 +220,6 @@ func TestTunHandler_RekeyInitSentAfterPayload(t *testing.T) {
 
 func TestTunHandler_RekeyInitSendError_Continues(t *testing.T) {
 	// When sending a rekey init via egress fails, the handler should log and continue.
-	sendCount := 0
-	mockWriter := &TunHandlerMockWriter{err: nil}
 	ctrl := rekey.NewStateMachine(dummyRekeyer{}, make([]byte, 32), make([]byte, 32), false)
 	h := NewTunHandler(context.Background(),
 		rdr(
@@ -236,8 +232,7 @@ func TestTunHandler_RekeyInitSendError_Continues(t *testing.T) {
 				err  error
 			}{nil, io.EOF},
 		),
-		mockWriter,
-		&TunHandlerMockCrypto{}, ctrl,
+		mockEgress(io.Discard, &TunHandlerMockCrypto{}), ctrl,
 	)
 	th := h.(*TunHandler)
 	th.rekeyInit.SetRotateAt(time.Now().Add(-time.Second))
@@ -249,7 +244,6 @@ func TestTunHandler_RekeyInitSendError_Continues(t *testing.T) {
 	if err := th.HandleTun(); err != io.EOF {
 		t.Fatalf("want io.EOF, got %v", err)
 	}
-	_ = sendCount // handler should continue despite send error
 }
 
 // failingControlEgress is an egress that fails on SendControl.
@@ -281,8 +275,7 @@ func TestTunHandler_RekeyInitPrepareError_Continues(t *testing.T) {
 				err  error
 			}{nil, io.EOF},
 		),
-		mockW,
-		&TunHandlerMockCrypto{}, ctrl,
+		mockEgress(mockW, &TunHandlerMockCrypto{}), ctrl,
 	)
 	th := h.(*TunHandler)
 	th.rekeyInit.SetRotateAt(time.Now().Add(-time.Second))
@@ -317,8 +310,7 @@ func TestTunHandler_ZeroLengthPayload_ThenEOF(t *testing.T) {
 				err  error
 			}{nil, io.EOF}, // then exit
 		),
-		w,
-		&TunHandlerMockCrypto{}, ctrl,
+		mockEgress(w, &TunHandlerMockCrypto{}), ctrl,
 	)
 
 	if err := h.HandleTun(); err != io.EOF {

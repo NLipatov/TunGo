@@ -5,6 +5,8 @@ import (
 	"errors"
 	"io"
 	"log"
+	"sync/atomic"
+	"time"
 	"tungo/application/network/connection"
 	"tungo/application/network/routing/transport"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
@@ -27,6 +29,9 @@ type TransportHandler struct {
 	cryptographyService connection.Crypto
 	rekeyController     *rekey.StateMachine
 	handshakeCrypto     primitives.KeyDeriver
+	egress              connection.Egress
+	lastRecvNano        atomic.Int64
+	pingBuf             []byte
 }
 
 func NewTransportHandler(
@@ -35,18 +40,25 @@ func NewTransportHandler(
 	writer io.Writer,
 	cryptographyService connection.Crypto,
 	rekeyController *rekey.StateMachine,
+	egress connection.Egress,
 ) transport.Handler {
-	return &TransportHandler{
+	t := &TransportHandler{
 		ctx:                 ctx,
 		reader:              reader,
 		writer:              writer,
 		cryptographyService: cryptographyService,
 		rekeyController:     rekeyController,
 		handshakeCrypto:     &primitives.DefaultKeyDeriver{},
+		egress:              egress,
+		pingBuf:             make([]byte, epochPrefixSize+3),
 	}
+	t.lastRecvNano.Store(time.Now().UnixNano())
+	return t
 }
 
 func (t *TransportHandler) HandleTransport() error {
+	go t.keepaliveLoop()
+
 	var buffer [settings.DefaultEthernetMTU + settings.TCPChacha20Overhead]byte
 
 	for {
@@ -73,6 +85,9 @@ func (t *TransportHandler) HandleTransport() error {
 				log.Printf("failed to decrypt data: %s", payloadErr)
 				return payloadErr
 			}
+
+			t.lastRecvNano.Store(time.Now().UnixNano())
+
 			if spType, spOk := service_packet.TryParseHeader(payload); spOk {
 				switch spType {
 				case service_packet.EpochExhausted:
@@ -80,6 +95,8 @@ func (t *TransportHandler) HandleTransport() error {
 					return ErrEpochExhausted
 				case service_packet.RekeyAck:
 					t.handleRekeyAck(payload)
+					continue
+				case service_packet.Pong:
 					continue
 				}
 			}
@@ -89,6 +106,30 @@ func (t *TransportHandler) HandleTransport() error {
 			}
 		}
 	}
+}
+
+func (t *TransportHandler) keepaliveLoop() {
+	ticker := time.NewTicker(settings.PingInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-t.ctx.Done():
+			return
+		case <-ticker.C:
+			lastRecv := time.Unix(0, t.lastRecvNano.Load())
+			if t.egress != nil && time.Since(lastRecv) > settings.PingInterval {
+				t.sendPing()
+			}
+		}
+	}
+}
+
+func (t *TransportHandler) sendPing() {
+	payload := t.pingBuf[epochPrefixSize:]
+	if _, err := service_packet.EncodeV1Header(service_packet.Ping, payload); err != nil {
+		return
+	}
+	_ = t.egress.SendControl(t.pingBuf[:])
 }
 
 func (t *TransportHandler) handleRekeyAck(payload []byte) {

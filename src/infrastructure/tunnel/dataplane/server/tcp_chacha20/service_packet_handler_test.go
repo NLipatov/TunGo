@@ -189,6 +189,38 @@ func TestTCPHandle_RekeyInit_EpochExhausted_SendsEpochExhausted(t *testing.T) {
 	}
 }
 
+func TestTCPHandlePing_SendsPong(t *testing.T) {
+	logger := &tcpTestLogger{}
+	h := newControlPlaneHandler(&primitives.DefaultKeyDeriver{}, logger)
+	eg := &tcpTestEgress{}
+
+	h.HandlePing(eg)
+
+	eg.mu.Lock()
+	defer eg.mu.Unlock()
+	if len(eg.packets) != 1 {
+		t.Fatalf("expected 1 Pong packet sent, got %d", len(eg.packets))
+	}
+
+	pong := eg.packets[0]
+	if len(pong) < epochPrefixSize+3 {
+		t.Fatalf("Pong packet too short: %d", len(pong))
+	}
+	hdr := pong[epochPrefixSize:]
+	if hdr[0] != service_packet.Prefix || hdr[1] != service_packet.VersionV1 || hdr[2] != byte(service_packet.Pong) {
+		t.Fatalf("expected Pong header, got: %v", hdr[:3])
+	}
+}
+
+func TestTCPHandlePing_EgressError_DoesNotPanic(t *testing.T) {
+	logger := &tcpTestLogger{}
+	h := newControlPlaneHandler(&primitives.DefaultKeyDeriver{}, logger)
+	eg := &tcpTestEgress{sendErr: errors.New("send failed")}
+
+	// Should not panic even when egress fails.
+	h.HandlePing(eg)
+}
+
 func TestTCPHandle_RekeyInit_EgressError_Logs(t *testing.T) {
 	logger := &tcpTestLogger{}
 	crypto := &primitives.DefaultKeyDeriver{}

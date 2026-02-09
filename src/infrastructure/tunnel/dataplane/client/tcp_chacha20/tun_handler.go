@@ -19,31 +19,26 @@ import (
 const epochPrefixSize = 2
 
 type TunHandler struct {
-	ctx                 context.Context
-	reader              io.Reader // abstraction over TUN device
-	writer              io.Writer // abstraction over transport
-	cryptographyService connection.Crypto
-	egress              connection.Egress
-	rekeyController     *rekey.StateMachine
-	rekeyInit           *controlplane.RekeyInitScheduler
-	controlPacketBuf    [epochPrefixSize + service_packet.RekeyPacketLen + settings.TCPChacha20Overhead]byte
+	ctx              context.Context
+	reader           io.Reader // abstraction over TUN device
+	egress           connection.Egress
+	rekeyController  *rekey.StateMachine
+	rekeyInit        *controlplane.RekeyInitScheduler
+	controlPacketBuf [epochPrefixSize + service_packet.RekeyPacketLen + settings.TCPChacha20Overhead]byte
 }
 
 func NewTunHandler(ctx context.Context,
 	reader io.Reader,
-	writer io.Writer,
-	cryptographyService connection.Crypto,
+	egress connection.Egress,
 	rekeyController *rekey.StateMachine,
 ) tun.Handler {
 	now := time.Now().UTC()
 	return &TunHandler{
-		ctx:                 ctx,
-		reader:              reader,
-		writer:              writer,
-		cryptographyService: cryptographyService,
-		egress:              connection.NewDefaultEgress(writer, cryptographyService),
-		rekeyController:     rekeyController,
-		rekeyInit:           controlplane.NewRekeyInitScheduler(&primitives.DefaultKeyDeriver{}, settings.DefaultRekeyInterval, now),
+		ctx:             ctx,
+		reader:          reader,
+		egress:          egress,
+		rekeyController: rekeyController,
+		rekeyInit:       controlplane.NewRekeyInitScheduler(&primitives.DefaultKeyDeriver{}, settings.DefaultRekeyInterval, now),
 	}
 }
 

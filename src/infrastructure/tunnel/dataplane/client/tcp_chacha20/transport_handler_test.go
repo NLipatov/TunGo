@@ -49,7 +49,7 @@ func TestTransportHandler_ContextDone(t *testing.T) {
 	cancel()
 
 	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTransportHandler(ctx, rdr(), io.Discard, &TransportHandlerMockCrypto{}, ctrl)
+	h := NewTransportHandler(ctx, rdr(), io.Discard, &TransportHandlerMockCrypto{}, ctrl, nil)
 	if err := h.HandleTransport(); err != nil {
 		t.Fatalf("want nil, got %v", err)
 	}
@@ -64,7 +64,7 @@ func TestTransportHandler_ReadError(t *testing.T) {
 			err  error
 		}{nil, readErr}),
 		io.Discard,
-		&TransportHandlerMockCrypto{}, ctrl,
+		&TransportHandlerMockCrypto{}, ctrl, nil,
 	)
 	if err := h.HandleTransport(); !errors.Is(err, readErr) {
 		t.Fatalf("want read error, got %v", err)
@@ -81,7 +81,7 @@ func TestTransportHandler_ReadErrorAfterCancel_ReturnsNil(t *testing.T) {
 			err  error
 		}{nil, errors.New("any")}),
 		io.Discard,
-		&TransportHandlerMockCrypto{}, ctrl,
+		&TransportHandlerMockCrypto{}, ctrl, nil,
 	)
 	if err := h.HandleTransport(); err != nil {
 		t.Fatalf("want nil when ctx canceled, got %v", err)
@@ -103,7 +103,7 @@ func TestTransportHandler_InvalidTooShort_ThenEOF(t *testing.T) {
 			}{nil, io.EOF},
 		),
 		io.Discard,
-		&TransportHandlerMockCrypto{}, ctrl,
+		&TransportHandlerMockCrypto{}, ctrl, nil,
 	)
 	if err := h.HandleTransport(); err != io.EOF {
 		t.Fatalf("want io.EOF after invalid short frame, got %v", err)
@@ -120,7 +120,7 @@ func TestTransportHandler_DecryptError(t *testing.T) {
 			err  error
 		}{cipher, nil}),
 		io.Discard,
-		&TransportHandlerMockCrypto{decErr: decErr}, ctrl,
+		&TransportHandlerMockCrypto{decErr: decErr}, ctrl, nil,
 	)
 	if err := h.HandleTransport(); !errors.Is(err, decErr) {
 		t.Fatalf("want decrypt error, got %v", err)
@@ -140,7 +140,7 @@ func TestTransportHandler_WriteError(t *testing.T) {
 			err  error
 		}{cipher, nil}),
 		w,
-		&TransportHandlerMockCrypto{decOut: plain}, ctrl,
+		&TransportHandlerMockCrypto{decOut: plain}, ctrl, nil,
 	)
 	if err := h.HandleTransport(); !errors.Is(err, wErr) {
 		t.Fatalf("want write error, got %v", err)
@@ -168,7 +168,7 @@ func TestTransportHandler_Happy_ThenEOF(t *testing.T) {
 			}{nil, io.EOF}, // then EOF
 		),
 		w,
-		&TransportHandlerMockCrypto{decOut: plain}, ctrl,
+		&TransportHandlerMockCrypto{decOut: plain}, ctrl, nil,
 	)
 	if err := h.HandleTransport(); err != io.EOF {
 		t.Fatalf("want io.EOF, got %v", err)
@@ -197,7 +197,7 @@ func TestTransportHandler_RekeyAck_Handled(t *testing.T) {
 			}{nil, io.EOF},
 		),
 		io.Discard,
-		&TransportHandlerMockCrypto{decOut: ackPayload}, ctrl,
+		&TransportHandlerMockCrypto{decOut: ackPayload}, ctrl, nil,
 	)
 	// RekeyAck is consumed; handler continues to next read which is EOF.
 	if err := h.HandleTransport(); err != io.EOF {
@@ -223,7 +223,7 @@ func TestTransportHandler_RekeyAck_NilController(t *testing.T) {
 			}{nil, io.EOF},
 		),
 		io.Discard,
-		&TransportHandlerMockCrypto{decOut: ackPayload}, nil,
+		&TransportHandlerMockCrypto{decOut: ackPayload}, nil, nil,
 	)
 	// With nil controller, handleRekeyAck returns immediately; handler continues to EOF.
 	if err := h.HandleTransport(); err != io.EOF {
@@ -243,10 +243,37 @@ func TestTransportHandler_TCPDecryptErrorAfterCancel(t *testing.T) {
 			err  error
 		}{cipher, nil}),
 		io.Discard,
-		&TransportHandlerMockCrypto{decErr: decErr}, ctrl,
+		&TransportHandlerMockCrypto{decErr: decErr}, ctrl, nil,
 	)
 	// ctx already canceled -> decrypt error is suppressed, returns nil.
 	if err := h.HandleTransport(); err != nil {
 		t.Fatalf("want nil when ctx canceled, got %v", err)
+	}
+}
+
+func TestTransportHandler_Pong_Consumed(t *testing.T) {
+	pongPayload := make([]byte, 3)
+	_, _ = service_packet.EncodeV1Header(service_packet.Pong, pongPayload)
+
+	cipher := make([]byte, chacha20poly1305.Overhead+len(pongPayload))
+
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	h := NewTransportHandler(context.Background(),
+		rdr(
+			struct {
+				data []byte
+				err  error
+			}{cipher, nil},
+			struct {
+				data []byte
+				err  error
+			}{nil, io.EOF},
+		),
+		io.Discard,
+		&TransportHandlerMockCrypto{decOut: pongPayload}, ctrl, nil,
+	)
+	// Pong is consumed silently; handler continues to next read which is EOF.
+	if err := h.HandleTransport(); err != io.EOF {
+		t.Fatalf("want io.EOF after Pong, got %v", err)
 	}
 }

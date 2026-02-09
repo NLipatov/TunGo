@@ -23,6 +23,7 @@ type controlPlaneHandler struct {
 	logger       logging.Logger
 	ackBuf       [epochPrefixSize + service_packet.RekeyPacketLen + settings.TCPChacha20Overhead]byte
 	exhaustedBuf [epochPrefixSize + 3 + settings.TCPChacha20Overhead]byte
+	pongBuf      [epochPrefixSize + 3 + settings.TCPChacha20Overhead]byte
 }
 
 func newControlPlaneHandler(crypto primitives.KeyDeriver, logger logging.Logger) controlPlaneHandler {
@@ -90,6 +91,15 @@ func (h *controlPlaneHandler) handleRekeyInit(
 
 	// 3. Now switch send to the new epoch — all subsequent frames use new key.
 	fsm.ActivateSendEpoch(epoch)
+}
+
+func (h *controlPlaneHandler) HandlePing(egress connection.Egress) {
+	payload := h.pongBuf[epochPrefixSize : epochPrefixSize+3]
+	if _, err := service_packet.EncodeV1Header(service_packet.Pong, payload); err != nil {
+		return
+	}
+	spWithPrefix := h.pongBuf[:epochPrefixSize+3]
+	_ = egress.SendControl(spWithPrefix)
 }
 
 func (h *controlPlaneHandler) sendEpochExhausted(egress connection.Egress) {

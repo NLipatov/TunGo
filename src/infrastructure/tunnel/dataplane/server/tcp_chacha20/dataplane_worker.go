@@ -83,14 +83,16 @@ func (w *tcpDataplaneWorker) Run() {
 				w.logger.Printf("failed to decrypt data: %s", err)
 				return
 			}
-			if rc := w.peer.RekeyController(); rc != nil {
-				if spType, spOk := service_packet.TryParseHeader(pt); spOk {
-					if spType == service_packet.RekeyInit {
+			if spType, spOk := service_packet.TryParseHeader(pt); spOk {
+				switch spType {
+				case service_packet.RekeyInit:
+					if rc := w.peer.RekeyController(); rc != nil {
 						w.cp.Handle(pt, w.peer.Egress(), rc)
-						continue
 					}
-					// server ignores Ack
+				case service_packet.Ping:
+					w.cp.HandlePing(w.peer.Egress())
 				}
+				continue
 			}
 
 			// Validate source IP against AllowedIPs after decryption
