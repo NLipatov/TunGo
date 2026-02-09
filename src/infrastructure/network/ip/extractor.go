@@ -71,6 +71,17 @@ func extractIPByOffsets(packet []byte, ipv4Offset, ipv6Offset int) (netip.Addr, 
 	}
 }
 
+// IsAllowedSource extracts the source IP from packet and checks whether
+// it is in the allowed set. O(1) via map lookup. Returns false for malformed packets.
+func IsAllowedSource(packet []byte, allowed map[netip.Addr]struct{}) bool {
+	src, ok := ExtractSourceIP(packet)
+	if !ok {
+		return false
+	}
+	_, found := allowed[src.Unmap()]
+	return found
+}
+
 // ExtractIPVersion extracts the IP version from a packet.
 // Returns 4 for IPv4, 6 for IPv6, or 0 if the packet is empty.
 func ExtractIPVersion(packet []byte) uint8 {

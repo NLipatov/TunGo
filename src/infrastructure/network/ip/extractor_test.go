@@ -107,6 +107,38 @@ func TestExtractDestIP_IPv4(t *testing.T) {
 	}
 }
 
+func makeIPv4(srcIP netip.Addr) []byte {
+	pkt := make([]byte, IPv4HeaderMinLen)
+	pkt[0] = 0x45
+	src := srcIP.As4()
+	copy(pkt[12:16], src[:])
+	return pkt
+}
+
+func TestIsAllowedSource_Match(t *testing.T) {
+	if !IsAllowedSource(makeIPv4(netip.MustParseAddr("10.0.0.2")), map[netip.Addr]struct{}{netip.MustParseAddr("10.0.0.2"): {}}) {
+		t.Fatal("expected allowed")
+	}
+}
+
+func TestIsAllowedSource_Mismatch(t *testing.T) {
+	if IsAllowedSource(makeIPv4(netip.MustParseAddr("192.168.64.5")), map[netip.Addr]struct{}{netip.MustParseAddr("10.0.0.2"): {}}) {
+		t.Fatal("expected denied")
+	}
+}
+
+func TestIsAllowedSource_Malformed(t *testing.T) {
+	if IsAllowedSource([]byte{0x45}, map[netip.Addr]struct{}{netip.MustParseAddr("10.0.0.2"): {}}) {
+		t.Fatal("expected denied for malformed packet")
+	}
+}
+
+func TestIsAllowedSource_EmptyAllowed(t *testing.T) {
+	if IsAllowedSource(makeIPv4(netip.MustParseAddr("10.0.0.2")), nil) {
+		t.Fatal("expected denied when allowed list is empty")
+	}
+}
+
 func TestExtractDestIP_IPv6(t *testing.T) {
 	packet := make([]byte, IPv6HeaderLen)
 	packet[0] = 0x60 // Version 6

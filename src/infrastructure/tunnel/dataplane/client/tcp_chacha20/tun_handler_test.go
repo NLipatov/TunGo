@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/netip"
 	"testing"
 	"time"
 	"tungo/application/network/connection"
@@ -69,7 +70,7 @@ func TestTunHandler_ContextDone(t *testing.T) {
 	cancel() // canceled before entering the loop
 
 	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTunHandler(ctx, rdr(), mockEgress(io.Discard, &TunHandlerMockCrypto{}), ctrl)
+	h := NewTunHandler(ctx, rdr(), mockEgress(io.Discard, &TunHandlerMockCrypto{}), ctrl, nil)
 	if err := h.HandleTun(); err != nil {
 		t.Fatalf("want nil, got %v", err)
 	}
@@ -82,7 +83,7 @@ func TestTunHandler_EOF(t *testing.T) {
 			data []byte
 			err  error
 		}{nil, io.EOF}),
-		mockEgress(io.Discard, &TunHandlerMockCrypto{}), ctrl,
+		mockEgress(io.Discard, &TunHandlerMockCrypto{}), ctrl, nil,
 	)
 	if err := h.HandleTun(); err != io.EOF {
 		t.Fatalf("want io.EOF, got %v", err)
@@ -97,7 +98,7 @@ func TestTunHandler_ReadError(t *testing.T) {
 			data []byte
 			err  error
 		}{nil, readErr}),
-		mockEgress(io.Discard, &TunHandlerMockCrypto{}), ctrl,
+		mockEgress(io.Discard, &TunHandlerMockCrypto{}), ctrl, nil,
 	)
 	if err := h.HandleTun(); !errors.Is(err, readErr) {
 		t.Fatalf("want read error, got %v", err)
@@ -114,7 +115,7 @@ func TestTunHandler_EncryptError(t *testing.T) {
 				err  error
 			}{[]byte{1, 2, 3}, nil},
 		),
-		mockEgress(io.Discard, &TunHandlerMockCrypto{err: encErr}), ctrl,
+		mockEgress(io.Discard, &TunHandlerMockCrypto{err: encErr}), ctrl, nil,
 	)
 	if err := h.HandleTun(); !errors.Is(err, encErr) {
 		t.Fatalf("want encrypt error, got %v", err)
@@ -130,7 +131,7 @@ func TestTunHandler_WriteError(t *testing.T) {
 			data []byte
 			err  error
 		}{[]byte{9, 9}, nil}),
-		mockEgress(w, &TunHandlerMockCrypto{}), ctrl,
+		mockEgress(w, &TunHandlerMockCrypto{}), ctrl, nil,
 	)
 	if err := h.HandleTun(); !errors.Is(err, wErr) {
 		t.Fatalf("want write error, got %v", err)
@@ -155,7 +156,7 @@ func TestTunHandler_HappyPath_SinglePacket_ThenEOF(t *testing.T) {
 				err  error
 			}{nil, io.EOF}, // exit
 		),
-		mockEgress(w, &TunHandlerMockCrypto{}), ctrl,
+		mockEgress(w, &TunHandlerMockCrypto{}), ctrl, nil,
 	)
 
 	if err := h.HandleTun(); err != io.EOF {
@@ -178,7 +179,7 @@ func TestTunHandler_ReadError_WhenContextCanceled_ReturnsNil(t *testing.T) {
 			data []byte
 			err  error
 		}{nil, readErr}), // reader returns an error
-		mockEgress(io.Discard, &TunHandlerMockCrypto{}), ctrl,
+		mockEgress(io.Discard, &TunHandlerMockCrypto{}), ctrl, nil,
 	)
 
 	// When ctx is canceled, the read error path should return nil.
@@ -201,7 +202,7 @@ func TestTunHandler_RekeyInitSentAfterPayload(t *testing.T) {
 				err  error
 			}{nil, io.EOF},
 		),
-		mockEgress(w, &TunHandlerMockCrypto{}), ctrl,
+		mockEgress(w, &TunHandlerMockCrypto{}), ctrl, nil,
 	)
 
 	// Force rekey to fire by setting rotateAt to the past.
@@ -232,7 +233,7 @@ func TestTunHandler_RekeyInitSendError_Continues(t *testing.T) {
 				err  error
 			}{nil, io.EOF},
 		),
-		mockEgress(io.Discard, &TunHandlerMockCrypto{}), ctrl,
+		mockEgress(io.Discard, &TunHandlerMockCrypto{}), ctrl, nil,
 	)
 	th := h.(*TunHandler)
 	th.rekeyInit.SetRotateAt(time.Now().Add(-time.Second))
@@ -275,7 +276,7 @@ func TestTunHandler_RekeyInitPrepareError_Continues(t *testing.T) {
 				err  error
 			}{nil, io.EOF},
 		),
-		mockEgress(mockW, &TunHandlerMockCrypto{}), ctrl,
+		mockEgress(mockW, &TunHandlerMockCrypto{}), ctrl, nil,
 	)
 	th := h.(*TunHandler)
 	th.rekeyInit.SetRotateAt(time.Now().Add(-time.Second))
@@ -310,7 +311,7 @@ func TestTunHandler_ZeroLengthPayload_ThenEOF(t *testing.T) {
 				err  error
 			}{nil, io.EOF}, // then exit
 		),
-		mockEgress(w, &TunHandlerMockCrypto{}), ctrl,
+		mockEgress(w, &TunHandlerMockCrypto{}), ctrl, nil,
 	)
 
 	if err := h.HandleTun(); err != io.EOF {
@@ -319,5 +320,47 @@ func TestTunHandler_ZeroLengthPayload_ThenEOF(t *testing.T) {
 	// Writer should be called once even for zero-length payload (Encrypt returns empty slice).
 	if w.writes != 1 {
 		t.Fatalf("writes=%d, want 1", w.writes)
+	}
+}
+
+func testIPv4Pkt(srcIP netip.Addr) []byte {
+	pkt := make([]byte, 20)
+	pkt[0] = 0x45
+	src := srcIP.As4()
+	copy(pkt[12:16], src[:])
+	return pkt
+}
+
+func TestTunHandler_SourceFilter_DropsNonVPN(t *testing.T) {
+	vpnPacket := testIPv4Pkt(netip.MustParseAddr("10.0.0.2"))
+	lanPacket := testIPv4Pkt(netip.MustParseAddr("192.168.64.5"))
+
+	w := &TunHandlerMockWriter{}
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	allowed := map[netip.Addr]struct{}{netip.MustParseAddr("10.0.0.2"): {}}
+
+	h := NewTunHandler(context.Background(),
+		rdr(
+			struct {
+				data []byte
+				err  error
+			}{lanPacket, nil}, // dropped by filter
+			struct {
+				data []byte
+				err  error
+			}{vpnPacket, nil}, // passes filter
+			struct {
+				data []byte
+				err  error
+			}{nil, io.EOF},
+		),
+		mockEgress(w, &TunHandlerMockCrypto{}), ctrl, allowed,
+	)
+
+	if err := h.HandleTun(); err != io.EOF {
+		t.Fatalf("want io.EOF, got %v", err)
+	}
+	if w.writes != 1 {
+		t.Fatalf("writes=%d, want 1 (LAN packet should be dropped)", w.writes)
 	}
 }

@@ -75,12 +75,10 @@ func (s *DefaultRepository) Add(peer *Peer) {
 	s.internalIpToPeer[peer.InternalAddr().Unmap()] = peer
 	s.externalIPToPeer[s.canonicalAP(peer.ExternalAddrPort())] = peer
 
-	// Index host-route prefixes from AllowedIPs for O(1) lookup (e.g. IPv6 /128)
+	// Index allowed addresses for O(1) peer lookup (e.g. IPv6 address)
 	if sess, ok := peer.Session.(*Session); ok {
-		for _, prefix := range sess.AllowedIPs() {
-			if prefix.IsSingleIP() {
-				s.allowedAddrToPeer[prefix.Addr()] = peer
-			}
+		for addr := range sess.AllowedAddrs() {
+			s.allowedAddrToPeer[addr] = peer
 		}
 	}
 
@@ -218,11 +216,11 @@ func (s *DefaultRepository) deleteLocked(peer *Peer) {
 	delete(s.internalIpToPeer, peer.InternalAddr().Unmap())
 	delete(s.externalIPToPeer, s.canonicalAP(peer.ExternalAddrPort()))
 
-	// Remove host-route entries from AllowedIPs index
+	// Remove allowed address entries from index
 	if sess, ok := peer.Session.(*Session); ok {
-		for _, prefix := range sess.AllowedIPs() {
-			if prefix.IsSingleIP() {
-				delete(s.allowedAddrToPeer, prefix.Addr())
+		for addr := range sess.AllowedAddrs() {
+			if s.allowedAddrToPeer[addr] == peer {
+				delete(s.allowedAddrToPeer, addr)
 			}
 		}
 	}

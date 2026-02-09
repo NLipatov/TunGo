@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/netip"
 	"time"
 	"tungo/application/network/connection"
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
 	"tungo/infrastructure/cryptography/primitives"
+	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/controlplane"
 
@@ -20,6 +22,7 @@ type TunHandler struct {
 	reader              io.Reader // abstraction over TUN device
 	egress              connection.Egress
 	rekeyController     *rekey.StateMachine
+	allowedSources      map[netip.Addr]struct{}
 	controlPacketBuffer [128]byte
 	rekeyInit           *controlplane.RekeyInitScheduler
 }
@@ -28,6 +31,7 @@ func NewTunHandler(ctx context.Context,
 	reader io.Reader,
 	egress connection.Egress,
 	rekeyController *rekey.StateMachine,
+	allowedSources map[netip.Addr]struct{},
 ) tun.Handler {
 	now := time.Now().UTC()
 	return &TunHandler{
@@ -36,6 +40,7 @@ func NewTunHandler(ctx context.Context,
 		egress:          egress,
 		rekeyController: rekeyController,
 		rekeyInit:       controlplane.NewRekeyInitScheduler(&primitives.DefaultKeyDeriver{}, settings.DefaultRekeyInterval, now),
+		allowedSources:  allowedSources,
 	}
 }
 
@@ -71,6 +76,9 @@ func (w *TunHandler) HandleTun() error {
 			return nil
 		default:
 			n, err := w.reader.Read(buffer[chacha20poly1305.NonceSize : settings.DefaultEthernetMTU+chacha20poly1305.NonceSize])
+			if n > 0 && len(w.allowedSources) > 0 && !ip.IsAllowedSource(buffer[chacha20poly1305.NonceSize:chacha20poly1305.NonceSize+n], w.allowedSources) {
+				n = 0 // drop; fall through to error check
+			}
 			if n > 0 {
 				// Encrypt expects header+payload (12+n)
 				if err := w.egress.SendDataIP(buffer[:chacha20poly1305.NonceSize+n]); err != nil {

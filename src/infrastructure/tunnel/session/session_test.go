@@ -207,7 +207,31 @@ func TestSessionWithAuth_ClientPubKey(t *testing.T) {
 	}
 }
 
-func TestSessionWithAuth_AllowedIPs(t *testing.T) {
+func TestSessionWithAuth_AllowedAddrs_SingleHost(t *testing.T) {
+	internal := netip.MustParseAddr("10.0.0.5")
+	external, _ := netip.ParseAddrPort("93.184.216.34:9000")
+	allowedIPs := []netip.Prefix{
+		netip.MustParsePrefix("192.168.1.1/32"),
+	}
+
+	s := NewSessionWithAuth(
+		&sessionTestCrypto{},
+		nil,
+		internal,
+		external,
+		nil,
+		allowedIPs,
+	)
+
+	if len(s.AllowedAddrs()) != 1 {
+		t.Errorf("expected 1 allowed addr, got %d", len(s.AllowedAddrs()))
+	}
+	if _, ok := s.AllowedAddrs()[netip.MustParseAddr("192.168.1.1")]; !ok {
+		t.Error("expected 192.168.1.1 in allowed addrs")
+	}
+}
+
+func TestSessionWithAuth_AllowedSubnet(t *testing.T) {
 	internal := netip.MustParseAddr("10.0.0.5")
 	external, _ := netip.ParseAddrPort("93.184.216.34:9000")
 	allowedIPs := []netip.Prefix{
@@ -223,8 +247,12 @@ func TestSessionWithAuth_AllowedIPs(t *testing.T) {
 		allowedIPs,
 	)
 
-	if len(s.AllowedIPs()) != 1 {
-		t.Errorf("expected 1 allowed IP, got %d", len(s.AllowedIPs()))
+	// Subnet goes to fallback, not to the addr map.
+	if len(s.AllowedAddrs()) != 0 {
+		t.Errorf("expected 0 allowed addrs for subnet, got %d", len(s.AllowedAddrs()))
+	}
+	if !s.IsSourceAllowed(netip.MustParseAddr("192.168.1.100")) {
+		t.Error("address in subnet should be allowed")
 	}
 }
 

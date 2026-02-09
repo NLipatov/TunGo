@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/netip"
 	"testing"
 	"time"
 	"tungo/application/network/connection"
@@ -100,7 +101,7 @@ func TestHandleTun_ImmediateCancel(t *testing.T) {
 		// should not be called
 		t.Fatal("Read called despite context cancelled")
 		return 0, nil
-	}}, connection.NewDefaultEgress(w, c), ctrl)
+	}}, connection.NewDefaultEgress(w, c), ctrl, nil)
 
 	if err := h.HandleTun(); err != nil {
 		t.Fatalf("expected nil on immediate cancel, got %v", err)
@@ -113,7 +114,7 @@ func TestHandleTun_ReadError(t *testing.T) {
 	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 	h := NewTunHandler(ctx, &fakeReader{readFunc: func(p []byte) (int, error) {
 		return 0, errRead
-	}}, connection.NewDefaultEgress(&fakeWriter{}, &tunhandlerTestRakeCrypto{}), ctrl)
+	}}, connection.NewDefaultEgress(&fakeWriter{}, &tunhandlerTestRakeCrypto{}), ctrl, nil)
 
 	if err := h.HandleTun(); err == nil || err.Error() != fmt.Sprintf("could not read a packet from TUN: %v", errRead) {
 		t.Fatalf("expected read error wrapped, got %v", err)
@@ -128,7 +129,7 @@ func TestHandleTun_EncryptError(t *testing.T) {
 		return len(dummyData), nil
 	}}
 	errEnc := errors.New("encrypt fail")
-	h := NewTunHandler(ctx, reader, connection.NewDefaultEgress(&fakeWriter{}, &tunhandlerTestRakeCrypto{err: errEnc}), rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false))
+	h := NewTunHandler(ctx, reader, connection.NewDefaultEgress(&fakeWriter{}, &tunhandlerTestRakeCrypto{err: errEnc}), rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false), nil)
 
 	if err := h.HandleTun(); err == nil || err.Error() != fmt.Sprintf("could not send packet to transport: %v", errEnc) {
 		t.Fatalf("expected encrypt error wrapped, got %v", err)
@@ -144,7 +145,7 @@ func TestHandleTun_WriteError(t *testing.T) {
 	}}
 	errWrite := errors.New("write fail")
 	writer := &fakeWriter{err: errWrite}
-	h := NewTunHandler(ctx, reader, connection.NewDefaultEgress(writer, &tunhandlerTestRakeCrypto{prefix: []byte("x:")}), rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false))
+	h := NewTunHandler(ctx, reader, connection.NewDefaultEgress(writer, &tunhandlerTestRakeCrypto{prefix: []byte("x:")}), rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false), nil)
 
 	if err := h.HandleTun(); err == nil || err.Error() != fmt.Sprintf("could not send packet to transport: %v", errWrite) {
 		t.Fatalf("expected write error wrapped, got %v", err)
@@ -171,7 +172,7 @@ func TestHandleTun_SuccessThenCancel(t *testing.T) {
 	writer := &fakeWriter{}
 	crypto := &tunhandlerTestRakeCrypto{prefix: []byte("pre-")}
 
-	h := NewTunHandler(ctx, reader, connection.NewDefaultEgress(writer, crypto), rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false))
+	h := NewTunHandler(ctx, reader, connection.NewDefaultEgress(writer, crypto), rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false), nil)
 
 	done := make(chan error)
 	go func() {
@@ -204,7 +205,7 @@ func TestHandleTun_ReadErrorAfterCancel_ReturnsNil(t *testing.T) {
 		return 0, errors.New("read fail")
 	}}
 	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTunHandler(ctx, r, connection.NewDefaultEgress(&fakeWriter{}, &tunhandlerTestRakeCrypto{}), ctrl)
+	h := NewTunHandler(ctx, r, connection.NewDefaultEgress(&fakeWriter{}, &tunhandlerTestRakeCrypto{}), ctrl, nil)
 
 	if err := h.HandleTun(); err != nil {
 		t.Fatalf("expected nil because ctx canceled, got %v", err)
@@ -222,7 +223,7 @@ func TestHandleTun_EncryptErrorAfterCancel_ReturnsNil(t *testing.T) {
 	}}
 	crypt := &tunHandlerTestCancelOnEncrypt{cancel: cancel, err: errors.New("enc fail")}
 	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTunHandler(ctx, r, connection.NewDefaultEgress(&fakeWriter{}, crypt), ctrl)
+	h := NewTunHandler(ctx, r, connection.NewDefaultEgress(&fakeWriter{}, crypt), ctrl, nil)
 
 	if err := h.HandleTun(); err != nil {
 		t.Fatalf("expected nil because ctx canceled before encrypt error handling, got %v", err)
@@ -239,7 +240,7 @@ func TestHandleTun_WriteErrorAfterCancel_ReturnsNil(t *testing.T) {
 	}}
 	w := &tunHandlerTestCancelWriter{cancel: cancel}
 	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTunHandler(ctx, r, connection.NewDefaultEgress(w, &tunhandlerTestRakeCrypto{prefix: []byte("x:")}), ctrl)
+	h := NewTunHandler(ctx, r, connection.NewDefaultEgress(w, &tunhandlerTestRakeCrypto{prefix: []byte("x:")}), ctrl, nil)
 
 	if err := h.HandleTun(); err != nil {
 		t.Fatalf("expected nil because ctx canceled before write error handling, got %v", err)
@@ -263,7 +264,7 @@ func TestHandleTun_ReadReturnsNAndEOF_OneWriteThenEOF(t *testing.T) {
 	}}
 	w := &fakeWriter{}
 	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTunHandler(ctx, r, connection.NewDefaultEgress(w, &tunhandlerTestRakeCrypto{prefix: []byte("pre-")}), ctrl)
+	h := NewTunHandler(ctx, r, connection.NewDefaultEgress(w, &tunhandlerTestRakeCrypto{prefix: []byte("pre-")}), ctrl, nil)
 
 	err := h.HandleTun()
 	if err == nil || err.Error() != "could not read a packet from TUN: EOF" {
@@ -289,7 +290,7 @@ func TestHandleTun_ReusesPendingRekeyKey(t *testing.T) {
 	crypto := &tunhandlerTestRakeCrypto{} // passthrough encrypt
 	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 
-	h := NewTunHandler(ctx, reader, connection.NewDefaultEgress(writer, crypto), ctrl)
+	h := NewTunHandler(ctx, reader, connection.NewDefaultEgress(writer, crypto), ctrl, nil)
 	th := h.(*TunHandler)
 	th.rekeyInit.SetInterval(5 * time.Millisecond)
 	th.rekeyInit.SetRotateAt(time.Now().UTC().Add(th.rekeyInit.Interval()))
@@ -335,5 +336,43 @@ func TestHandleTun_ReusesPendingRekeyKey(t *testing.T) {
 	derivedPub, _ := curve25519.X25519(priv[:], curve25519.Basepoint)
 	if !bytes.Equal(pk1, derivedPub) {
 		t.Fatalf("sent public key does not match pending private key")
+	}
+}
+
+func testIPv4Pkt(srcIP netip.Addr) []byte {
+	pkt := make([]byte, 20)
+	pkt[0] = 0x45
+	src := srcIP.As4()
+	copy(pkt[12:16], src[:])
+	return pkt
+}
+
+func TestHandleTun_SourceFilter_DropsNonVPN(t *testing.T) {
+	vpnPacket := testIPv4Pkt(netip.MustParseAddr("10.0.0.2"))
+	lanPacket := testIPv4Pkt(netip.MustParseAddr("192.168.64.5"))
+
+	callIdx := 0
+	packets := [][]byte{lanPacket, vpnPacket}
+	reader := &fakeReader{readFunc: func(p []byte) (int, error) {
+		if callIdx >= len(packets) {
+			return 0, io.EOF
+		}
+		pkt := packets[callIdx]
+		callIdx++
+		return copy(p, pkt), nil
+	}}
+
+	writer := &fakeWriter{}
+	crypto := &tunhandlerTestRakeCrypto{prefix: []byte("e:")}
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	allowed := map[netip.Addr]struct{}{netip.MustParseAddr("10.0.0.2"): {}}
+
+	h := NewTunHandler(context.Background(), reader, connection.NewDefaultEgress(writer, crypto), ctrl, allowed)
+	if err := h.HandleTun(); err == nil || err.Error() != fmt.Sprintf("could not read a packet from TUN: %v", io.EOF) {
+		t.Fatalf("want wrapped EOF, got %v", err)
+	}
+
+	if len(writer.data) != 1 {
+		t.Fatalf("writes=%d, want 1 (LAN packet should be dropped)", len(writer.data))
 	}
 }

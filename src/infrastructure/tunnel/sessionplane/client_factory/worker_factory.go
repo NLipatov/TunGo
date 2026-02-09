@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"time"
 	"tungo/application/network/connection"
 	"tungo/application/network/routing"
@@ -29,6 +30,8 @@ func NewWorkerFactory(configuration client.Configuration) connection.ClientWorke
 func (w *WorkerFactory) CreateWorker(
 	ctx context.Context, conn connection.Transport, tun io.ReadWriteCloser, crypto connection.Crypto, controller *rekey.StateMachine,
 ) (routing.Worker, error) {
+	allowed := w.allowedSources()
+
 	switch w.conf.Protocol {
 	case settings.UDP:
 		deadline := time.Second
@@ -40,6 +43,7 @@ func (w *WorkerFactory) CreateWorker(
 			tun,
 			egress,
 			controller,
+			allowed,
 		)
 		// transportHandler reads from transport and writes to tun
 		transportHandler := udp_chacha20.NewTransportHandler(
@@ -53,15 +57,30 @@ func (w *WorkerFactory) CreateWorker(
 		return udp_chacha20.NewUdpWorker(transportHandler, tunHandler), nil
 	case settings.TCP:
 		egress := connection.NewDefaultEgress(conn, crypto)
-		tunHandler := tcp_chacha20.NewTunHandler(ctx, tun, egress, controller)
+		tunHandler := tcp_chacha20.NewTunHandler(ctx, tun, egress, controller, allowed)
 		transportHandler := tcp_chacha20.NewTransportHandler(ctx, conn, tun, crypto, controller, egress)
 		return tcp_chacha20.NewTcpTunWorker(ctx, tunHandler, transportHandler, crypto, controller), nil
 	case settings.WS:
 		egress := connection.NewDefaultEgress(conn, crypto)
-		tunHandler := tcp_chacha20.NewTunHandler(ctx, tun, egress, controller)
+		tunHandler := tcp_chacha20.NewTunHandler(ctx, tun, egress, controller, allowed)
 		transportHandler := tcp_chacha20.NewTransportHandler(ctx, conn, tun, crypto, controller, egress)
 		return tcp_chacha20.NewTcpTunWorker(ctx, tunHandler, transportHandler, crypto, controller), nil
 	default:
 		return nil, fmt.Errorf("unsupported protocol")
 	}
+}
+
+func (w *WorkerFactory) allowedSources() map[netip.Addr]struct{} {
+	s, err := w.conf.ActiveSettings()
+	if err != nil {
+		return nil
+	}
+	m := make(map[netip.Addr]struct{}, 2)
+	if s.InterfaceIP.IsValid() {
+		m[s.InterfaceIP.Unmap()] = struct{}{}
+	}
+	if s.IPv6IP.IsValid() {
+		m[s.IPv6IP.Unmap()] = struct{}{}
+	}
+	return m
 }

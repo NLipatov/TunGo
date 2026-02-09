@@ -258,7 +258,7 @@ func TestHandleTransport_RekeyAckAfterDoubleInit_UsesOriginalPendingKey(t *testi
 	}}
 	writer := &fakeWriter{}
 	crypto := &tunhandlerTestRakeCrypto{} // passthrough
-	tunHandler := NewTunHandler(ctx, reader, connection.NewDefaultEgress(writer, crypto), ctrl).(*TunHandler)
+	tunHandler := NewTunHandler(ctx, reader, connection.NewDefaultEgress(writer, crypto), ctrl, nil).(*TunHandler)
 	tunHandler.rekeyInit.SetInterval(5 * time.Millisecond)
 	tunHandler.rekeyInit.SetRotateAt(time.Now().UTC().Add(tunHandler.rekeyInit.Interval()))
 

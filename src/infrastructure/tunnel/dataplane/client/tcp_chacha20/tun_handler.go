@@ -4,11 +4,13 @@ import (
 	"context"
 	"io"
 	"log"
+	"net/netip"
 	"time"
 	"tungo/application/network/connection"
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
 	"tungo/infrastructure/cryptography/primitives"
+	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/controlplane"
@@ -24,6 +26,7 @@ type TunHandler struct {
 	egress           connection.Egress
 	rekeyController  *rekey.StateMachine
 	rekeyInit        *controlplane.RekeyInitScheduler
+	allowedSources   map[netip.Addr]struct{}
 	controlPacketBuf [epochPrefixSize + service_packet.RekeyPacketLen + settings.TCPChacha20Overhead]byte
 }
 
@@ -31,6 +34,7 @@ func NewTunHandler(ctx context.Context,
 	reader io.Reader,
 	egress connection.Egress,
 	rekeyController *rekey.StateMachine,
+	allowedSources map[netip.Addr]struct{},
 ) tun.Handler {
 	now := time.Now().UTC()
 	return &TunHandler{
@@ -39,6 +43,7 @@ func NewTunHandler(ctx context.Context,
 		egress:          egress,
 		rekeyController: rekeyController,
 		rekeyInit:       controlplane.NewRekeyInitScheduler(&primitives.DefaultKeyDeriver{}, settings.DefaultRekeyInterval, now),
+		allowedSources:  allowedSources,
 	}
 }
 
@@ -59,6 +64,10 @@ func (t *TunHandler) HandleTun() error {
 				}
 				log.Printf("failed to read from TUN: %v", err)
 				return err
+			}
+
+			if len(t.allowedSources) > 0 && !ip.IsAllowedSource(payload[:n], t.allowedSources) {
+				continue
 			}
 
 			// Pass buffer including the 2-byte epoch prefix reservation.
