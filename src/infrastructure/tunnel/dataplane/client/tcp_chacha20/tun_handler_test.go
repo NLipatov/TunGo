@@ -331,6 +331,41 @@ func testIPv4Pkt(srcIP netip.Addr) []byte {
 	return pkt
 }
 
+// tunBlockingReader blocks until ctx is canceled, then returns an error.
+type tunBlockingReader struct {
+	ctx context.Context
+}
+
+func (r *tunBlockingReader) Read(_ []byte) (int, error) {
+	<-r.ctx.Done()
+	return 0, r.ctx.Err()
+}
+
+func TestTunHandler_ReadError_ContextCanceledDuringRead(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	h := NewTunHandler(ctx,
+		&tunBlockingReader{ctx: ctx},
+		mockEgress(io.Discard, &TunHandlerMockCrypto{}), ctrl, nil,
+	)
+
+	done := make(chan error, 1)
+	go func() { done <- h.HandleTun() }()
+
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("want nil (ctx canceled during TUN read), got %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for HandleTun to return")
+	}
+}
+
 func TestTunHandler_SourceFilter_DropsNonVPN(t *testing.T) {
 	vpnPacket := testIPv4Pkt(netip.MustParseAddr("10.0.0.2"))
 	lanPacket := testIPv4Pkt(netip.MustParseAddr("192.168.64.5"))

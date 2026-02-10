@@ -256,6 +256,42 @@ func TestSessionWithAuth_AllowedSubnet(t *testing.T) {
 	}
 }
 
+// TestSession_IsSourceAllowed_AllowedAddrsMapHit verifies that single-host /32
+// AllowedIPs entries hit the O(1) allowedAddrs map path (not the internalIP check
+// and not the subnet fallback).
+func TestSession_IsSourceAllowed_AllowedAddrsMapHit(t *testing.T) {
+	internal := netip.MustParseAddr("10.0.0.5")
+	external, _ := netip.ParseAddrPort("93.184.216.34:9000")
+
+	// /32 entries go into the allowedAddrs map, not allowedSubnets
+	allowedIPs := []netip.Prefix{
+		netip.MustParsePrefix("192.168.1.1/32"),
+		netip.MustParsePrefix("172.16.0.99/32"),
+	}
+
+	s := NewSessionWithAuth(
+		&sessionTestCrypto{},
+		nil,
+		internal,
+		external,
+		[]byte("client-pub-key-placeholder32"),
+		allowedIPs,
+	)
+
+	// These IPs should be found via the allowedAddrs map (not internalIP, not subnet scan)
+	if !s.IsSourceAllowed(netip.MustParseAddr("192.168.1.1")) {
+		t.Error("192.168.1.1 should be allowed via allowedAddrs map")
+	}
+	if !s.IsSourceAllowed(netip.MustParseAddr("172.16.0.99")) {
+		t.Error("172.16.0.99 should be allowed via allowedAddrs map")
+	}
+
+	// An IP NOT in the map and not internalIP should be denied
+	if s.IsSourceAllowed(netip.MustParseAddr("192.168.1.2")) {
+		t.Error("192.168.1.2 should NOT be allowed")
+	}
+}
+
 // TestSession_IsSourceAllowed_IPv4MappedIPv6 verifies that IPv4-mapped-IPv6 addresses
 // (e.g., ::ffff:10.0.0.5) are correctly normalized to IPv4 before comparison.
 // This prevents false rejections when dual-stack clients send IPv4-mapped addresses.

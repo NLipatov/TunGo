@@ -385,3 +385,43 @@ func TestNormalizeDomain_BracketInvalid(t *testing.T) {
 		t.Fatal("expected invalid for brackets")
 	}
 }
+
+// Tests for normalized() error paths via directly-cast Host values.
+// When Host is constructed without NewHost (e.g. Host("https://bad")),
+// normalized() returns an error because NewHost rejects the value.
+
+func TestHost_Endpoint_NormalizedError(t *testing.T) {
+	h := Host("https://bad")
+	if _, err := h.Endpoint(443); err == nil {
+		t.Fatal("expected normalized() error for invalid host cast")
+	}
+}
+
+func TestHost_AddrPort_NormalizedError(t *testing.T) {
+	h := Host("https://bad")
+	if _, err := h.AddrPort(443); err == nil {
+		t.Fatal("expected normalized() error for invalid host cast")
+	}
+}
+
+func TestHost_ListenAddrPort_NormalizedError(t *testing.T) {
+	h := Host("https://bad")
+	if _, err := h.ListenAddrPort(443, "0.0.0.0"); err == nil {
+		t.Fatal("expected normalized() error for invalid host cast")
+	}
+}
+
+func TestHost_RouteIP_NormalizedError(t *testing.T) {
+	h := Host("https://bad")
+	if _, err := h.RouteIP(); err == nil {
+		t.Fatal("expected normalized() error for invalid host cast")
+	}
+}
+
+func TestHost_Domain_NormalizedError(t *testing.T) {
+	h := Host("https://bad")
+	domain, ok := h.Domain()
+	if ok || domain != "" {
+		t.Fatalf("expected Domain()=(\"\",false) for invalid host cast, got (%q,%v)", domain, ok)
+	}
+}

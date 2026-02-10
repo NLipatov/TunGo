@@ -397,6 +397,44 @@ func TestTransportHandler_InvalidTooLong_ThenEOF(t *testing.T) {
 	}
 }
 
+// blockingReader blocks until ctx is canceled, then returns an error.
+// This simulates a real TCP read that's interrupted by context cancellation.
+type blockingReader struct {
+	ctx context.Context
+}
+
+func (r *blockingReader) Read(_ []byte) (int, error) {
+	<-r.ctx.Done()
+	return 0, r.ctx.Err()
+}
+
+func TestTransportHandler_ReadError_ContextCanceledDuringRead(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	h := NewTransportHandler(ctx,
+		&blockingReader{ctx: ctx},
+		io.Discard,
+		&TransportHandlerMockCrypto{}, ctrl, nil,
+	)
+
+	done := make(chan error, 1)
+	go func() { done <- h.HandleTransport() }()
+
+	// Give goroutine time to enter Read, then cancel
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("want nil (ctx canceled during read), got %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for HandleTransport to return")
+	}
+}
+
 func TestTransportHandler_Pong_Consumed(t *testing.T) {
 	pongPayload := make([]byte, 3)
 	_, _ = service_packet.EncodeV1Header(service_packet.Pong, pongPayload)

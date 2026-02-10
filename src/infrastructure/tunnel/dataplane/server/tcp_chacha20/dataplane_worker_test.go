@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"tungo/application/network/connection"
+	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/tunnel/session"
 )
 
@@ -67,6 +68,40 @@ func TestTCPDataplaneWorker_Run_DropsMalformedIP(t *testing.T) {
 	worker.Run()
 	if len(tun.wrote) != 0 {
 		t.Fatalf("expected no writes to tun for malformed packet, got %d", len(tun.wrote))
+	}
+}
+
+func newDPWPeerWithEgress(internal string, crypto connection.Crypto, egress connection.Egress) *session.Peer {
+	in := netip.MustParseAddr(internal)
+	ex := netip.MustParseAddrPort("203.0.113.10:41000")
+	s := session.NewSession(crypto, nil, in, ex)
+	return session.NewPeer(s, egress)
+}
+
+func TestTCPDataplaneWorker_Run_HandlesPing(t *testing.T) {
+	// Build a Ping service packet (3 bytes)
+	pingPayload := make([]byte, 3)
+	if _, err := service_packet.EncodeV1Header(service_packet.Ping, pingPayload); err != nil {
+		t.Fatalf("failed to encode Ping: %v", err)
+	}
+
+	crypto := &dpwTestCrypto{plaintext: pingPayload}
+	peer := newDPWPeerWithEgress("10.0.0.1", crypto, &noopEgress{})
+	repo := &fakeSessionRepo{}
+	tun := &fakeWriter{}
+
+	worker := newDPWWorker(
+		peer,
+		&fakeConn{readBufs: [][]byte{make([]byte, 32)}}, // valid ciphertext length
+		tun,
+		repo,
+	)
+
+	worker.Run()
+
+	// Ping should be consumed — no TUN write
+	if len(tun.wrote) != 0 {
+		t.Fatalf("expected no TUN writes for Ping (consumed by controlplane), got %d", len(tun.wrote))
 	}
 }
 

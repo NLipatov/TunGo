@@ -574,6 +574,68 @@ func TestDefaultRepository_ReapIdle_ZeroizesCrypto(t *testing.T) {
 	}
 }
 
+func TestDefaultRepository_Delete_CleansUpAllowedAddrs(t *testing.T) {
+	repo := NewDefaultRepository().(*DefaultRepository)
+
+	internal := netip.MustParseAddr("10.0.0.1")
+	external := netip.MustParseAddrPort("1.1.1.1:1000")
+	allowedIPs := []netip.Prefix{
+		netip.MustParsePrefix("192.168.1.1/32"),
+		netip.MustParsePrefix("fd00::2/128"),
+	}
+
+	s := NewSessionWithAuth(nil, nil, internal, external, nil, allowedIPs)
+	p := NewPeer(s, nil)
+	repo.Add(p)
+
+	// Verify allowed addrs are indexed
+	if _, found := repo.allowedAddrToPeer[netip.MustParseAddr("192.168.1.1")]; !found {
+		t.Fatal("expected 192.168.1.1 in allowedAddrToPeer after Add")
+	}
+	if _, found := repo.allowedAddrToPeer[netip.MustParseAddr("fd00::2")]; !found {
+		t.Fatal("expected fd00::2 in allowedAddrToPeer after Add")
+	}
+
+	// Delete should clean up the allowed addr index
+	repo.Delete(p)
+
+	if _, found := repo.allowedAddrToPeer[netip.MustParseAddr("192.168.1.1")]; found {
+		t.Fatal("expected 192.168.1.1 removed from allowedAddrToPeer after Delete")
+	}
+	if _, found := repo.allowedAddrToPeer[netip.MustParseAddr("fd00::2")]; found {
+		t.Fatal("expected fd00::2 removed from allowedAddrToPeer after Delete")
+	}
+}
+
+func TestPeer_SetLastActivityForTest(t *testing.T) {
+	s := &fakeSession{
+		internal: netip.MustParseAddr("10.0.0.1"),
+		external: netip.MustParseAddrPort("1.2.3.4:5000"),
+	}
+	p := NewPeer(s, nil)
+
+	fixed := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC).Unix()
+	p.SetLastActivityForTest(fixed)
+	if got := p.LastActivity().Unix(); got != fixed {
+		t.Fatalf("SetLastActivityForTest: got %d, want %d", got, fixed)
+	}
+}
+
+func TestPeer_MarkClosedForTest(t *testing.T) {
+	s := &fakeSession{
+		internal: netip.MustParseAddr("10.0.0.1"),
+		external: netip.MustParseAddrPort("1.2.3.4:5000"),
+	}
+	p := NewPeer(s, nil)
+	if p.IsClosed() {
+		t.Fatal("new peer should not be closed")
+	}
+	p.MarkClosedForTest()
+	if !p.IsClosed() {
+		t.Fatal("expected peer to be closed after MarkClosedForTest")
+	}
+}
+
 func TestDefaultRepository_ReapIdle_MultipleIdlePeers(t *testing.T) {
 	repo := NewDefaultRepository().(*DefaultRepository)
 

@@ -336,6 +336,44 @@ func TestTunHandler_Happy_V4(t *testing.T) {
 	}
 }
 
+// tempErr implements the Temporary() interface to test the temporary-error retry path.
+type tempErr struct{}
+
+func (tempErr) Error() string   { return "temporary TUN error" }
+func (tempErr) Temporary() bool { return true }
+
+func TestTunHandler_TemporaryError_Continues(t *testing.T) {
+	ip4 := make([]byte, 20)
+	ip4[0] = 0x45
+	dst := netip.MustParseAddr("10.0.0.1")
+	p := &TunHandlerMockParser{addr: dst}
+	a := &TunHandlerMockConn{}
+	mgr := &TunHandlerMockMgr{peer: mkPeer(a, &TunHandlerMockCrypto{})}
+
+	r := rdr(
+		struct {
+			data []byte
+			err  error
+		}{nil, tempErr{}}, // temporary error → continue
+		struct {
+			data []byte
+			err  error
+		}{ip4, nil}, // next read succeeds
+		struct {
+			data []byte
+			err  error
+		}{nil, io.EOF},
+	)
+	h := NewTunHandler(context.Background(), r, p, mgr)
+	if err := h.HandleTun(); err != io.EOF {
+		t.Fatalf("want io.EOF, got %v", err)
+	}
+	// The temporary error was skipped; the second read was processed.
+	if n := atomic.LoadInt32(&a.writes); n != 1 {
+		t.Fatalf("writes=%d, want 1 (temp error should have been skipped)", n)
+	}
+}
+
 func TestTunHandler_Happy_V6(t *testing.T) {
 	ip6 := make([]byte, 40)
 	ip6[0] = 0x60
