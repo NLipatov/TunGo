@@ -236,6 +236,33 @@ func TestConfiguration_Validate_SubnetOverlap(t *testing.T) {
 	}
 }
 
+func TestConfiguration_Validate_IPv6IP_Invalid(t *testing.T) {
+	cfg := mkValid()
+	cfg.TCPSettings.IPv6Subnet = netip.MustParsePrefix("fd00::/64")
+	// IPv6IP left as zero value → invalid after Unmap
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "invalid 'IPv6IP'") {
+		t.Fatalf("expected IPv6IP validation error, got: %v", err)
+	}
+}
+
+func TestConfiguration_Validate_IPv6IP_NotInSubnet(t *testing.T) {
+	cfg := mkValid()
+	cfg.TCPSettings.IPv6Subnet = netip.MustParsePrefix("fd00::/64")
+	cfg.TCPSettings.IPv6IP = netip.MustParseAddr("fd01::99") // outside fd00::/64
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "not in 'IPv6Subnet'") {
+		t.Fatalf("expected IPv6IP not-in-subnet error, got: %v", err)
+	}
+}
+
+func TestConfiguration_Validate_IPv6_HappyPath(t *testing.T) {
+	cfg := mkValid()
+	cfg.TCPSettings.IPv6Subnet = netip.MustParsePrefix("fd00::/64")
+	cfg.TCPSettings.IPv6IP = netip.MustParseAddr("fd00::1")
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected valid config with IPv6, got: %v", err)
+	}
+}
+
 func TestConfiguration_Validate_UnsupportedProtocol(t *testing.T) {
 	cfg := mkValid()
 	cfg.TCPSettings.Protocol = settings.Protocol(99)

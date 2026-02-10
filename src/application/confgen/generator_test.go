@@ -17,6 +17,8 @@ import (
 type mockMgr struct {
 	cfg                *serverConfiguration.Configuration
 	cfgErr             error
+	cfgErrOnCall       int // when > 0, return cfgErr only on this call number
+	cfgCalls           int
 	incErr             error
 	addPeerErr         error
 	ensureIPv6Err      error
@@ -38,6 +40,13 @@ func mustPrefix(raw string) netip.Prefix {
 }
 
 func (m *mockMgr) Configuration() (*serverConfiguration.Configuration, error) {
+	m.cfgCalls++
+	if m.cfgErrOnCall > 0 && m.cfgCalls == m.cfgErrOnCall {
+		return nil, m.cfgErr
+	}
+	if m.cfgErrOnCall > 0 {
+		return m.cfg, nil
+	}
 	return m.cfg, m.cfgErr
 }
 func (m *mockMgr) IncrementClientCounter() error {
@@ -548,6 +557,21 @@ func TestGenerate_ipv6_only_link_local(t *testing.T) {
 	}
 }
 
+type mockKeyDeriver struct {
+	genErr error
+}
+
+func (m *mockKeyDeriver) GenerateX25519KeyPair() ([]byte, [32]byte, error) {
+	if m.genErr != nil {
+		return nil, [32]byte{}, m.genErr
+	}
+	return make([]byte, 32), [32]byte{1}, nil
+}
+
+func (m *mockKeyDeriver) DeriveKey(_, _, _ []byte) ([]byte, error) {
+	return nil, nil
+}
+
 func TestGenerate_ensure_ipv6_subnets_error(t *testing.T) {
 	mgr := &mockMgr{
 		cfg:           validCfg(),
@@ -566,5 +590,119 @@ func TestGenerate_ensure_ipv6_subnets_error(t *testing.T) {
 	_, err := g.Generate()
 	if err == nil || !strings.Contains(err.Error(), "failed to auto-enable IPv6 subnets") {
 		t.Fatalf("want auto-enable error, got %v", err)
+	}
+}
+
+func TestGenerate_reread_config_error(t *testing.T) {
+	mgr := &mockMgr{
+		cfg:          validCfg(),
+		cfgErr:       errors.New("reread-fail"),
+		cfgErrOnCall: 2, // succeed on 1st call, fail on 2nd (re-read after EnsureIPv6Subnets)
+	}
+	g := generatorWithMocks(mgr, mockIP{
+		RouteDefaultFunc: func() (string, error) { return "eth0", nil },
+		AddrShowDevFunc: func(v int, _ string) (string, error) {
+			if v == 6 {
+				return "2001:db8::1", nil
+			}
+			return "192.0.2.10", nil
+		},
+	})
+
+	_, err := g.Generate()
+	if err == nil || !strings.Contains(err.Error(), "failed to re-read server configuration") {
+		t.Fatalf("want re-read error, got %v", err)
+	}
+}
+
+func TestGenerate_keypair_error(t *testing.T) {
+	mgr := &mockMgr{cfg: validCfg()}
+	g := generatorWithMocks(mgr, mockIP{
+		RouteDefaultFunc: func() (string, error) { return "eth0", nil },
+		AddrShowDevFunc:  func(int, string) (string, error) { return "", errors.New("no-ip") },
+	})
+	g.keyDeriver = &mockKeyDeriver{genErr: errors.New("keygen-fail")}
+
+	_, err := g.Generate()
+	if err == nil || !strings.Contains(err.Error(), "failed to generate client keypair") {
+		t.Fatalf("want keypair error, got %v", err)
+	}
+}
+
+func TestGenerate_add_peer_error(t *testing.T) {
+	mgr := &mockMgr{
+		cfg:        validCfg(),
+		addPeerErr: errors.New("add-fail"),
+	}
+	g := generatorWithMocks(mgr, mockIP{
+		RouteDefaultFunc: func() (string, error) { return "eth0", nil },
+		AddrShowDevFunc:  func(int, string) (string, error) { return "", errors.New("no-ip") },
+	})
+
+	_, err := g.Generate()
+	if err == nil || !strings.Contains(err.Error(), "failed to add client to AllowedPeers") {
+		t.Fatalf("want add-peer error, got %v", err)
+	}
+}
+
+func TestGenerate_ipv6_unparseable_addr_skipped(t *testing.T) {
+	mgr := &mockMgr{cfg: validCfg()}
+	g := generatorWithMocks(mgr, mockIP{
+		RouteDefaultFunc: func() (string, error) { return "eth0", nil },
+		AddrShowDevFunc: func(v int, _ string) (string, error) {
+			if v == 6 {
+				return "not-an-ip\n2001:db8::1", nil
+			}
+			return "192.0.2.10", nil
+		},
+	})
+
+	conf, err := g.Generate()
+	if err != nil {
+		t.Fatalf("unexpected: %v", err)
+	}
+	expectedHost := mustHost("2001:db8::1")
+	if conf.TCPSettings.IPv6Host != expectedHost {
+		t.Fatalf("IPv6Host: want %s, got %s (should skip unparseable line)", expectedHost, conf.TCPSettings.IPv6Host)
+	}
+}
+
+func TestGenerate_invalid_host_error(t *testing.T) {
+	mgr := &mockMgr{cfg: validCfg()}
+	g := generatorWithMocks(mgr, mockIP{
+		RouteDefaultFunc: func() (string, error) { return "eth0", nil },
+		AddrShowDevFunc: func(v int, _ string) (string, error) {
+			if v == 6 {
+				return "", errors.New("no-ipv6")
+			}
+			return "http://bad", nil // not a valid IP or domain
+		},
+	})
+
+	_, err := g.Generate()
+	if err == nil || !strings.Contains(err.Error(), "invalid server host") {
+		t.Fatalf("want invalid host error, got %v", err)
+	}
+}
+
+func TestGenerate_ipv6_empty_line_skipped(t *testing.T) {
+	mgr := &mockMgr{cfg: validCfg()}
+	g := generatorWithMocks(mgr, mockIP{
+		RouteDefaultFunc: func() (string, error) { return "eth0", nil },
+		AddrShowDevFunc: func(v int, _ string) (string, error) {
+			if v == 6 {
+				return "\n2001:db8::1", nil // leading empty line
+			}
+			return "192.0.2.10", nil
+		},
+	})
+
+	conf, err := g.Generate()
+	if err != nil {
+		t.Fatalf("unexpected: %v", err)
+	}
+	expectedHost := mustHost("2001:db8::1")
+	if conf.TCPSettings.IPv6Host != expectedHost {
+		t.Fatalf("IPv6Host: want %s, got %s", expectedHost, conf.TCPSettings.IPv6Host)
 	}
 }
