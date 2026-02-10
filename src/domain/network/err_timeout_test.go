@@ -55,6 +55,20 @@ func TestErrTimeout_UnwrapAndErrorsIs_As(t *testing.T) {
 	}
 }
 
+func TestNewErrTimeout(t *testing.T) {
+	cause := context.DeadlineExceeded
+	et := NewErrTimeout(cause)
+	if et == nil {
+		t.Fatal("expected non-nil ErrTimeout")
+	}
+	if !errors.Is(et, cause) {
+		t.Fatal("expected Unwrap to return cause")
+	}
+	if !et.Timeout() {
+		t.Fatal("expected Timeout()=true")
+	}
+}
+
 func TestErrTimeout_TimeoutAndTemporaryFlags(t *testing.T) {
 	e := ErrTimeout{cause: context.DeadlineExceeded}
 

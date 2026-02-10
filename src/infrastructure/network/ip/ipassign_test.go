@@ -5,6 +5,20 @@ import (
 	"testing"
 )
 
+func TestAllocateServerIP_InvalidSubnet(t *testing.T) {
+	_, err := AllocateServerIP(netip.Prefix{})
+	if err == nil {
+		t.Fatal("expected error for invalid subnet")
+	}
+}
+
+func TestAllocateClientIP_InvalidSubnet(t *testing.T) {
+	_, err := AllocateClientIP(netip.Prefix{}, 1)
+	if err == nil {
+		t.Fatal("expected error for invalid subnet")
+	}
+}
+
 func TestAllocateServerIP_Success(t *testing.T) {
 	// typical /24 network
 	ip, err := AllocateServerIP(netip.MustParsePrefix("192.168.1.0/24"))

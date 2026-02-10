@@ -191,6 +191,23 @@ func TestMaybeBuildRekeyInit_ReusesPendingKey(t *testing.T) {
 	}
 }
 
+func TestMaybeBuildRekeyInit_WrongSizePublicKey(t *testing.T) {
+	crypto := &mockCrypto{genPub: make([]byte, 31)} // wrong size
+	rk := &initTestRekeyer{}
+	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32), false)
+	now := time.Now()
+	s := NewRekeyInitScheduler(crypto, time.Millisecond, now)
+
+	dst := make([]byte, service_packet.RekeyPacketLen)
+	_, ok, err := s.MaybeBuildRekeyInit(now.Add(time.Second), fsm, dst)
+	if err != nil {
+		t.Fatalf("expected nil error (silent drop), got %v", err)
+	}
+	if ok {
+		t.Fatal("expected ok=false for wrong-size public key")
+	}
+}
+
 func TestMaybeBuildRekeyInit_GenerateKeyPairError(t *testing.T) {
 	genErr := errors.New("keygen failed")
 	crypto := &mockCrypto{genErr: genErr}

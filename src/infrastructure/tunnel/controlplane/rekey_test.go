@@ -3,6 +3,7 @@ package controlplane
 import (
 	"errors"
 	"testing"
+	"time"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
 	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/service_packet"
@@ -262,6 +263,88 @@ func TestServerHandleRekeyInit_ClientSideFSM(t *testing.T) {
 		t.Fatal("expected non-zero epoch")
 	}
 }
+
+func TestServerHandleRekeyInit_WrongSizePublicKey(t *testing.T) {
+	crypto := &mockCrypto{genPub: make([]byte, 31)} // wrong size
+	rk := &rekeyTestRekeyer{}
+	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32), true)
+	pkt, _ := buildRekeyInitPacket(t, &primitives.DefaultKeyDeriver{})
+
+	_, _, ok, err := ServerHandleRekeyInit(crypto, fsm, pkt)
+	if err == nil {
+		t.Fatal("expected error for wrong-size public key")
+	}
+	if ok {
+		t.Fatal("expected ok=false for wrong-size public key")
+	}
+}
+
+// mockFSM implements rekey.FSM with a controllable StartRekey error.
+type mockFSM struct {
+	state    rekey.State
+	c2sKey   []byte
+	s2cKey   []byte
+	isServer bool
+	startErr error
+}
+
+func (m *mockFSM) State() rekey.State                          { return m.state }
+func (m *mockFSM) StartRekey(_, _ []byte) (uint16, error)      { return 0, m.startErr }
+func (m *mockFSM) ActivateSendEpoch(uint16)                    {}
+func (m *mockFSM) AbortPendingIfExpired(time.Time)             {}
+func (m *mockFSM) CurrentServerToClientKey() []byte            { return m.s2cKey }
+func (m *mockFSM) CurrentClientToServerKey() []byte            { return m.c2sKey }
+func (m *mockFSM) IsServer() bool                              { return m.isServer }
+
+func TestServerHandleRekeyInit_StartRekeyError(t *testing.T) {
+	crypto := &primitives.DefaultKeyDeriver{}
+	fsm := &mockFSM{
+		state:    rekey.StateStable,
+		c2sKey:   make([]byte, 32),
+		s2cKey:   make([]byte, 32),
+		isServer: true,
+		startErr: errors.New("rekey-fail"),
+	}
+	pkt, _ := buildRekeyInitPacket(t, crypto)
+
+	_, _, ok, err := ServerHandleRekeyInit(crypto, fsm, pkt)
+	if err == nil {
+		t.Fatal("expected StartRekey error")
+	}
+	if ok {
+		t.Fatal("expected ok=false")
+	}
+}
+
+func TestClientHandleRekeyAck_StartRekeyError(t *testing.T) {
+	// Use a rekeyer that always fails.
+	rk := &failingRekeyer{}
+	crypto := &primitives.DefaultKeyDeriver{}
+	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32), false)
+
+	_, priv, _ := crypto.GenerateX25519KeyPair()
+	fsm.SetPendingRekeyPrivateKey(priv)
+
+	serverPub, _, _ := crypto.GenerateX25519KeyPair()
+	pkt := make([]byte, service_packet.RekeyPacketLen)
+	_, _ = service_packet.EncodeV1Header(service_packet.RekeyAck, pkt)
+	copy(pkt[3:], serverPub)
+
+	ok, err := ClientHandleRekeyAck(crypto, fsm, pkt)
+	if err == nil {
+		t.Fatal("expected StartRekey error from failing rekeyer")
+	}
+	if ok {
+		t.Fatal("expected ok=false")
+	}
+}
+
+// failingRekeyer always returns an error from Rekey.
+type failingRekeyer struct{}
+
+func (*failingRekeyer) Rekey(_, _ []byte) (uint16, error) { return 0, errors.New("rekey-fail") }
+func (*failingRekeyer) SetSendEpoch(uint16)               {}
+func (*failingRekeyer) RemoveEpoch(uint16) bool            { return true }
 
 func TestClientHandleRekeyAck_DeriveKeyError_FirstCall(t *testing.T) {
 	deriveErr := errors.New("derive c2s failed")

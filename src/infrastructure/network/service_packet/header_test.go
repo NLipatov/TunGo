@@ -132,6 +132,12 @@ func TestEncodeV1Header(t *testing.T) {
 			wantSize: RekeyPacketLen,
 		},
 		{
+			name:    "encode v1 rekey ack short buffer",
+			header:  RekeyAck,
+			dstSize: RekeyPacketLen - 1,
+			wantErr: io.ErrShortBuffer,
+		},
+		{
 			name:     "encode v1 ping",
 			header:   Ping,
 			dstSize:  3,
