@@ -1,6 +1,7 @@
 package adapters
 
 import (
+	"bufio"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -15,6 +16,8 @@ type LengthPrefixFramingAdapter struct {
 	adapter  connection.Transport
 	frameCap framelimit.Cap
 
+	// bufReader amortizes underlying Read syscalls: header + payload served from a single buffer refill.
+	bufReader *bufio.Reader
 	// pre-allocated header buffer for reads (to avoid any chance of escape/allocation)
 	readHeaderBuffer [2]byte
 	// pre-allocated buffer for writes: 2-byte header + payload combined into single syscall
@@ -35,9 +38,10 @@ func NewLengthPrefixFramingAdapter(
 		return nil, fmt.Errorf("frame cap %d exceeds u16 transport cap %d", int(frameCap), math.MaxUint16)
 	}
 	return &LengthPrefixFramingAdapter{
-		adapter:  adapter,
-		frameCap: frameCap,
-		writeBuf: make([]byte, 2+int(frameCap)),
+		adapter:   adapter,
+		frameCap:  frameCap,
+		bufReader: bufio.NewReader(adapter),
+		writeBuf:  make([]byte, 2+int(frameCap)),
 	}, nil
 }
 
@@ -78,7 +82,7 @@ func (a *LengthPrefixFramingAdapter) writeFull(w io.Writer, p []byte) error {
 // Read reads exactly one u16-BE length-prefixed frame into buffer and returns payload size.
 // NOTE: On errors adapter DOES NOT drain; the caller MUST close the connection.
 func (a *LengthPrefixFramingAdapter) Read(buffer []byte) (int, error) {
-	if _, err := io.ReadFull(a.adapter, a.readHeaderBuffer[:]); err != nil {
+	if _, err := io.ReadFull(a.bufReader, a.readHeaderBuffer[:]); err != nil {
 		return 0, fmt.Errorf("%w: %w", ErrInvalidLengthPrefixHeader, err)
 	}
 	length := int(binary.BigEndian.Uint16(a.readHeaderBuffer[:]))
@@ -91,7 +95,7 @@ func (a *LengthPrefixFramingAdapter) Read(buffer []byte) (int, error) {
 	if length > len(buffer) {
 		return 0, io.ErrShortBuffer
 	}
-	if _, err := io.ReadFull(a.adapter, buffer[:length]); err != nil {
+	if _, err := io.ReadFull(a.bufReader, buffer[:length]); err != nil {
 		return 0, err
 	}
 	return length, nil
