@@ -52,6 +52,12 @@ func (p *Peer) SetLastActivityForTest(unix int64) {
 	p.lastActivity.Store(unix)
 }
 
+// MarkClosedForTest sets the closed flag for testing.
+// Must not be used in production code.
+func (p *Peer) MarkClosedForTest() {
+	p.closed.Store(true)
+}
+
 // markClosed sets the closed flag. Called by repository during Delete.
 // After this returns, crypto will be zeroed; callers must not use it.
 func (p *Peer) markClosed() {

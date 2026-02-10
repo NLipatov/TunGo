@@ -375,6 +375,28 @@ func TestTransportHandler_KeepaliveLoop_CancelStops(t *testing.T) {
 	}
 }
 
+func TestTransportHandler_InvalidTooLong_ThenEOF(t *testing.T) {
+	long := make([]byte, 1500+18+1) // DefaultEthernetMTU + TCPChacha20Overhead + 1
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	h := NewTransportHandler(context.Background(),
+		rdr(
+			struct {
+				data []byte
+				err  error
+			}{long, nil},
+			struct {
+				data []byte
+				err  error
+			}{nil, io.EOF},
+		),
+		io.Discard,
+		&TransportHandlerMockCrypto{}, ctrl, nil,
+	)
+	if err := h.HandleTransport(); err != io.EOF {
+		t.Fatalf("want io.EOF after invalid long frame, got %v", err)
+	}
+}
+
 func TestTransportHandler_Pong_Consumed(t *testing.T) {
 	pongPayload := make([]byte, 3)
 	_, _ = service_packet.EncodeV1Header(service_packet.Pong, pongPayload)

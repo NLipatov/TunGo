@@ -376,3 +376,66 @@ func TestPrependCheckVersion_RoundTrip(t *testing.T) {
 		t.Fatal("roundtrip through PrependVersion/CheckVersion failed")
 	}
 }
+
+func TestAppendMACs_EmptyCookie_MAC2Zeros(t *testing.T) {
+	noiseMsg := make([]byte, MinMsg1Size)
+	serverPubKey := make([]byte, 32)
+
+	// Empty slice (not nil) — MAC2 should still be zeros.
+	msg1WithMAC := AppendMACs(noiseMsg, serverPubKey, []byte{})
+
+	mac2Start := MinMsg1Size + MAC1Size
+	for i := mac2Start; i < len(msg1WithMAC); i++ {
+		if msg1WithMAC[i] != 0 {
+			t.Fatal("MAC2 should be zeros for empty cookie slice")
+		}
+	}
+}
+
+func TestVerifyMAC1_ExactMinSize(t *testing.T) {
+	serverPubKey := make([]byte, 32)
+	noiseMsg := make([]byte, MinMsg1Size)
+	msg := AppendMACs(noiseMsg, serverPubKey, nil)
+
+	// Message is exactly MinTotalSize — should pass.
+	if !VerifyMAC1(msg, serverPubKey) {
+		t.Fatal("MAC1 should verify for message at exact MinTotalSize")
+	}
+}
+
+func TestVerifyMAC2_ExactMinSize(t *testing.T) {
+	serverPubKey := make([]byte, 32)
+	cookie := []byte("exact_min_cookie") // 16 bytes
+	noiseMsg := make([]byte, MinMsg1Size)
+	msg := AppendMACs(noiseMsg, serverPubKey, cookie)
+
+	if !VerifyMAC2(msg, cookie) {
+		t.Fatal("MAC2 should verify for message at exact MinTotalSize")
+	}
+}
+
+func TestExtractNoiseMsg_ExactMinSize(t *testing.T) {
+	serverPubKey := make([]byte, 32)
+	noiseMsg := make([]byte, MinMsg1Size)
+	for i := range noiseMsg {
+		noiseMsg[i] = byte(i + 50)
+	}
+	msg := AppendMACs(noiseMsg, serverPubKey, nil)
+
+	extracted := ExtractNoiseMsg(msg)
+	if !bytes.Equal(extracted, noiseMsg) {
+		t.Fatal("should extract noise msg at exact MinTotalSize")
+	}
+}
+
+func TestMAC2_KeyDerivation_IncludesProtocolAndVersion(t *testing.T) {
+	cookie1 := []byte("cookie_key_one__") // 16 bytes
+	cookie2 := []byte("cookie_key_two__") // 16 bytes
+
+	key1 := deriveMAC2Key(cookie1)
+	key2 := deriveMAC2Key(cookie2)
+
+	if bytes.Equal(key1[:], key2[:]) {
+		t.Fatal("different cookies should produce different MAC2 keys")
+	}
+}

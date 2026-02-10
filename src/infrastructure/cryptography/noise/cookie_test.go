@@ -307,3 +307,87 @@ func TestCookie_IPv6Client(t *testing.T) {
 		t.Fatal("cookie should validate for IPv6 client")
 	}
 }
+
+func TestCookie_IPv6MappedIPv4(t *testing.T) {
+	var secret [32]byte
+	secret[0] = 1
+	cm := NewCookieManagerWithSecret(secret)
+
+	mapped := netip.MustParseAddr("::ffff:192.0.2.1")
+	native := netip.MustParseAddr("192.0.2.1")
+
+	cookieMapped := cm.ComputeCookieValue(mapped)
+	cookieNative := cm.ComputeCookieValue(native)
+
+	// As16() returns the same 16-byte representation for both,
+	// so cookies should be identical.
+	if !bytes.Equal(cookieMapped, cookieNative) {
+		t.Fatal("IPv6-mapped-IPv4 and native IPv4 should produce the same cookie")
+	}
+}
+
+func TestCookie_DifferentSecrets_ProduceDifferentCookies(t *testing.T) {
+	var s1, s2 [32]byte
+	s1[0] = 1
+	s2[0] = 2
+	cm1 := NewCookieManagerWithSecret(s1)
+	cm2 := NewCookieManagerWithSecret(s2)
+
+	ip := netip.MustParseAddr("10.0.0.1")
+	c1 := cm1.ComputeCookieValue(ip)
+	c2 := cm2.ComputeCookieValue(ip)
+
+	if bytes.Equal(c1, c2) {
+		t.Fatal("different secrets should produce different cookies")
+	}
+}
+
+func TestCookie_CreateAndValidateRoundTrip(t *testing.T) {
+	cm, err := NewCookieManager()
+	if err != nil {
+		t.Fatalf("failed to create cookie manager: %v", err)
+	}
+
+	clientIP := netip.MustParseAddr("10.0.0.5")
+	eph := make([]byte, EphemeralSize)
+	eph[0] = 42
+	pub := make([]byte, 32)
+	pub[0] = 7
+
+	reply, err := cm.CreateCookieReply(clientIP, eph, pub)
+	if err != nil {
+		t.Fatalf("create cookie reply: %v", err)
+	}
+
+	cookie, err := DecryptCookieReply(reply, eph, pub)
+	if err != nil {
+		t.Fatalf("decrypt cookie reply: %v", err)
+	}
+
+	if !cm.ValidateCookie(clientIP, cookie) {
+		t.Fatal("decrypted cookie should validate")
+	}
+}
+
+func TestDecryptCookieReply_WrongServerPubKey(t *testing.T) {
+	cm, err := NewCookieManager()
+	if err != nil {
+		t.Fatalf("failed to create cookie manager: %v", err)
+	}
+
+	clientIP := netip.MustParseAddr("10.0.0.5")
+	eph := make([]byte, EphemeralSize)
+	pub1 := make([]byte, 32)
+	pub1[0] = 1
+	pub2 := make([]byte, 32)
+	pub2[0] = 2
+
+	reply, err := cm.CreateCookieReply(clientIP, eph, pub1)
+	if err != nil {
+		t.Fatalf("create cookie reply: %v", err)
+	}
+
+	if _, err := DecryptCookieReply(reply, eph, pub2); err == nil {
+		t.Fatal("decryption should fail with wrong server pubkey")
+	}
+}

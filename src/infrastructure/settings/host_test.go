@@ -299,3 +299,89 @@ func TestIsValidDomainLabel_InvalidChars(t *testing.T) {
 		t.Fatal("expected true for alphanumeric label")
 	}
 }
+
+func TestHost_Endpoint_DomainHost(t *testing.T) {
+	h, err := NewHost("example.org")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	ep, err := h.Endpoint(8080)
+	if err != nil {
+		t.Fatalf("endpoint failed: %v", err)
+	}
+	if ep != "example.org:8080" {
+		t.Fatalf("unexpected endpoint: %q", ep)
+	}
+}
+
+func TestHost_ListenAddrPort_DomainHost_Error(t *testing.T) {
+	h, err := NewHost("example.org")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Domain host is non-zero but not an IP → AddrPort must fail.
+	if _, err := h.ListenAddrPort(80, "0.0.0.0"); err == nil {
+		t.Fatal("expected error for domain host in ListenAddrPort")
+	}
+}
+
+func TestHost_AddrPort_EmptyHost_Error(t *testing.T) {
+	var zero Host
+	if _, err := zero.AddrPort(80); err == nil {
+		t.Fatal("expected error for empty host AddrPort")
+	}
+}
+
+func TestHost_Endpoint_IPv4(t *testing.T) {
+	h, _ := NewHost("10.0.0.1")
+	ep, err := h.Endpoint(443)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ep != "10.0.0.1:443" {
+		t.Fatalf("unexpected endpoint: %q", ep)
+	}
+}
+
+func TestHost_RouteIP_IPv4(t *testing.T) {
+	h, _ := NewHost("192.168.1.1")
+	route, err := h.RouteIP()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if route != "192.168.1.1" {
+		t.Fatalf("unexpected route: %q", route)
+	}
+}
+
+func TestHost_RouteIP_EmptyHost(t *testing.T) {
+	var zero Host
+	if _, err := zero.RouteIP(); err == nil {
+		t.Fatal("expected error for empty host RouteIP")
+	}
+}
+
+func TestNormalizeDomain_SingleLabel(t *testing.T) {
+	domain, ok := normalizeDomain("localhost")
+	if !ok || domain != "localhost" {
+		t.Fatalf("expected 'localhost', got %q ok=%v", domain, ok)
+	}
+}
+
+func TestNormalizeDomain_BackslashInvalid(t *testing.T) {
+	if _, ok := normalizeDomain(`exam\ple.com`); ok {
+		t.Fatal("expected invalid for backslash")
+	}
+}
+
+func TestNormalizeDomain_AtSignInvalid(t *testing.T) {
+	if _, ok := normalizeDomain("user@example.com"); ok {
+		t.Fatal("expected invalid for @ sign")
+	}
+}
+
+func TestNormalizeDomain_BracketInvalid(t *testing.T) {
+	if _, ok := normalizeDomain("[example].com"); ok {
+		t.Fatal("expected invalid for brackets")
+	}
+}
