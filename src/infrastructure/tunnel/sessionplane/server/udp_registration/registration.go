@@ -2,6 +2,7 @@ package udp_registration
 
 import (
 	"context"
+	"errors"
 	"net/netip"
 	"sync"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"tungo/application/listeners"
 	"tungo/application/logging"
 	"tungo/application/network/connection"
+	"tungo/infrastructure/cryptography/noise"
 	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/network/udp/adapters"
 	"tungo/infrastructure/tunnel/session"
@@ -143,14 +145,23 @@ func (r *Registrar) RegisterClient(addrPort netip.AddrPort, queue *udpQueue.Regi
 		queue.Close()
 	}()
 
-	h := r.handshakeFactory.NewHandshake()
-
 	// Transport reads from client's RegistrationQueue (fed by dataplane EnqueuePacket)
 	// and writes responses to the shared UDP socket.
 	regTransport := adapters.NewRegistrationTransport(r.listenerConn, addrPort, queue)
 
-	clientID, handshakeErr := h.ServerSideHandshake(regTransport)
-	if handshakeErr != nil {
+	var h connection.Handshake
+	var clientID int
+	for attempt := 0; ; attempt++ {
+		h = r.handshakeFactory.NewHandshake()
+		var handshakeErr error
+		clientID, handshakeErr = h.ServerSideHandshake(regTransport)
+		if handshakeErr == nil {
+			break
+		}
+		if errors.Is(handshakeErr, noise.ErrCookieRequired) && attempt == 0 {
+			r.logger.Printf("UDP: %v cookie sent, awaiting retry", addrPort.Addr().AsSlice())
+			continue
+		}
 		r.logger.Printf("host %v failed registration: %v", addrPort.Addr().AsSlice(), handshakeErr)
 		return
 	}

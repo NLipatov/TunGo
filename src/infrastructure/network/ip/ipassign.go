@@ -70,7 +70,11 @@ func allocateClientIPv6(addr netip.Addr, subnet netip.Prefix, clientCounter int)
 	lo := binary.BigEndian.Uint64(b[8:])
 	lo += offset
 	binary.BigEndian.PutUint64(b[8:], lo)
-	return netip.AddrFrom16(b), nil
+	result := netip.AddrFrom16(b)
+	if !subnet.Contains(result) {
+		return netip.Addr{}, fmt.Errorf("client counter %d exceeds subnet %s capacity", clientCounter, subnet)
+	}
+	return result, nil
 }
 
 // ToCIDR combines an IP address with the mask length from the given subnet.

@@ -8,6 +8,7 @@ import (
 
 	"tungo/application/logging"
 	"tungo/application/network/connection"
+	"tungo/infrastructure/cryptography/noise"
 	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/network/tcp/adapters"
 	"tungo/infrastructure/settings"
@@ -78,9 +79,19 @@ func (r *Registrar) RegisterClient(conn net.Conn) (*session.Peer, connection.Tra
 		_ = conn.Close() // Prevent socket leak on framing adapter failure
 		return nil, nil, fErr
 	}
-	h := r.handshakeFactory.NewHandshake()
-	clientID, handshakeErr := h.ServerSideHandshake(framingAdapter)
-	if handshakeErr != nil {
+	var h connection.Handshake
+	var clientID int
+	for attempt := 0; ; attempt++ {
+		h = r.handshakeFactory.NewHandshake()
+		var handshakeErr error
+		clientID, handshakeErr = h.ServerSideHandshake(framingAdapter)
+		if handshakeErr == nil {
+			break
+		}
+		if errors.Is(handshakeErr, noise.ErrCookieRequired) && attempt == 0 {
+			r.logger.Printf("TCP: %s cookie sent, awaiting retry", conn.RemoteAddr())
+			continue
+		}
 		_ = framingAdapter.Close()
 		return nil, nil, fmt.Errorf("client %s failed registration: %w", conn.RemoteAddr(), handshakeErr)
 	}

@@ -9,6 +9,7 @@ import (
 	"time"
 	"tungo/application/network/connection"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/cryptography/noise"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/session"
 )
@@ -443,6 +444,90 @@ func TestRegisterClient_HandshakeWithResult_IPv6(t *testing.T) {
 	// IPv6 allocation (fd00::2 for clientID=1) should be in allowedAddrs.
 	if !peer.IsSourceAllowed(netip.MustParseAddr("fd00::2")) {
 		t.Fatal("expected IPv6 address to be allowed")
+	}
+}
+
+// udpRegCookieHandshake returns ErrCookieRequired (after reading from transport)
+// so the retry loop creates a fresh handshake.
+type udpRegCookieHandshake struct {
+	udpRegHandshake
+}
+
+func (h *udpRegCookieHandshake) ServerSideHandshake(transport connection.Transport) (int, error) {
+	buf := make([]byte, 1024)
+	if _, err := transport.Read(buf); err != nil {
+		return 0, err
+	}
+	if _, err := transport.Write([]byte("cookie")); err != nil {
+		return 0, err
+	}
+	return 0, noise.ErrCookieRequired
+}
+
+// udpRegCookieHandshakeFactory returns a cookie handshake first, then a
+// successful handshake on the second call.
+type udpRegCookieHandshakeFactory struct {
+	calls    int
+	clientID int
+}
+
+func (f *udpRegCookieHandshakeFactory) NewHandshake() connection.Handshake {
+	f.calls++
+	if f.calls == 1 {
+		return &udpRegCookieHandshake{}
+	}
+	return &udpRegHandshake{
+		clientID: f.clientID,
+		c2s:      make([]byte, 32),
+		s2c:      make([]byte, 32),
+	}
+}
+
+func TestRegisterClient_CookieRetry_Success(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	listener := &udpRegListener{}
+	repo := session.NewDefaultRepository()
+
+	hf := &udpRegCookieHandshakeFactory{clientID: 1}
+	cf := &udpRegCryptoFactory{
+		crypto: udpRegCrypto{},
+		ctrl:   rekey.NewStateMachine(udpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
+	}
+
+	r := NewRegistrar(ctx, listener, repo, udpRegLogger{}, hf, cf, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
+
+	addr := netip.MustParseAddrPort("192.168.1.1:1234")
+	q, _ := r.GetOrCreateRegistrationQueue(addr)
+
+	done := make(chan struct{})
+	go func() {
+		r.RegisterClient(addr, q)
+		close(done)
+	}()
+
+	// First packet triggers cookie response, second packet is the retry.
+	q.Enqueue([]byte("client-hello"))
+	q.Enqueue([]byte("client-hello-with-cookie"))
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for RegisterClient to complete")
+	}
+
+	// Verify session was added after cookie retry.
+	ip := netip.MustParseAddr("10.0.0.2")
+	peer, err := repo.GetByInternalAddrPort(ip)
+	if err != nil {
+		t.Fatalf("expected peer in repo after cookie retry: %v", err)
+	}
+	if peer == nil {
+		t.Fatal("expected non-nil peer")
+	}
+	if hf.calls != 2 {
+		t.Fatalf("expected 2 handshake attempts (cookie + retry), got %d", hf.calls)
 	}
 }
 

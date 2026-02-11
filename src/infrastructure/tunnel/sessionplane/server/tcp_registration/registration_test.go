@@ -8,6 +8,7 @@ import (
 	"time"
 	"tungo/application/network/connection"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/cryptography/noise"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/session"
 )
@@ -396,6 +397,78 @@ type tcpRegHandshakeWithResultFactory struct {
 
 func (f *tcpRegHandshakeWithResultFactory) NewHandshake() connection.Handshake {
 	return f.handshake
+}
+
+// tcpRegCookieHandshakeFactory returns ErrCookieRequired on the first
+// NewHandshake call, then a successful handshake on the second.
+type tcpRegCookieHandshakeFactory struct {
+	calls    int
+	clientID int
+}
+
+func (f *tcpRegCookieHandshakeFactory) NewHandshake() connection.Handshake {
+	f.calls++
+	if f.calls == 1 {
+		return &tcpRegHandshake{err: noise.ErrCookieRequired}
+	}
+	return &tcpRegHandshake{
+		clientID: f.clientID,
+		c2s:      make([]byte, 32),
+		s2c:      make([]byte, 32),
+	}
+}
+
+func TestRegisterClient_CookieRetry_Success(t *testing.T) {
+	hf := &tcpRegCookieHandshakeFactory{clientID: 1}
+	cf := &tcpRegCryptoFactory{
+		crypto: tcpRegCrypto{},
+		ctrl:   rekey.NewStateMachine(tcpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
+	}
+	repo := session.NewDefaultRepository()
+	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
+
+	conn := &tcpRegConn{
+		remoteAddr: &net.TCPAddr{IP: net.IPv4(192, 168, 1, 1), Port: 12345},
+	}
+
+	peer, transport, err := reg.RegisterClient(conn)
+	if err != nil {
+		t.Fatalf("expected success after cookie retry, got: %v", err)
+	}
+	if peer == nil || transport == nil {
+		t.Fatal("expected non-nil peer and transport")
+	}
+	if conn.closed {
+		t.Fatal("connection must not be closed on successful retry")
+	}
+	if hf.calls != 2 {
+		t.Fatalf("expected 2 handshake attempts (cookie + retry), got %d", hf.calls)
+	}
+}
+
+func TestRegisterClient_CookieRetry_SecondFailure_ClosesConn(t *testing.T) {
+	// Both attempts return ErrCookieRequired — second should close.
+	hf := &tcpRegHandshakeFactory{
+		handshake: &tcpRegHandshake{err: noise.ErrCookieRequired},
+	}
+	cf := &tcpRegCryptoFactory{
+		crypto: tcpRegCrypto{},
+		ctrl:   rekey.NewStateMachine(tcpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
+	}
+	repo := session.NewDefaultRepository()
+	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
+
+	conn := &tcpRegConn{
+		remoteAddr: &net.TCPAddr{IP: net.IPv4(192, 168, 1, 1), Port: 12345},
+	}
+
+	_, _, err := reg.RegisterClient(conn)
+	if err == nil {
+		t.Fatal("expected error when cookie retry also fails")
+	}
+	if !conn.closed {
+		t.Fatal("expected conn to be closed after second cookie failure")
+	}
 }
 
 func TestRegisterClient_HandshakeWithResult_IPv6(t *testing.T) {

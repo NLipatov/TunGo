@@ -98,6 +98,25 @@ func TestAllocateClientIP_IPv6_NegativeCounter(t *testing.T) {
 	}
 }
 
+func TestAllocateClientIP_IPv6_OutOfBounds(t *testing.T) {
+	// /120 prefix has 256 addresses (0x00..0xff in the last byte).
+	// base=0, server=1, so clients 1..253 are valid (offset 2..254).
+	// clientCounter=254 → offset=255 → last address in range.
+	_, err := AllocateClientIP(netip.MustParsePrefix("fd00::/120"), 254)
+	if err != nil {
+		t.Fatalf("expected clientCounter=254 to be valid in /120, got: %v", err)
+	}
+
+	// clientCounter=255 → offset=256 → escapes the /120 subnet.
+	_, err = AllocateClientIP(netip.MustParsePrefix("fd00::/120"), 255)
+	if err == nil {
+		t.Fatal("expected error for clientCounter=255 in /120 (exceeds subnet capacity)")
+	}
+	if !contains(err.Error(), "exceeds subnet") {
+		t.Errorf("expected 'exceeds subnet' error, got: %v", err)
+	}
+}
+
 func TestToCIDR_Success(t *testing.T) {
 	o, err := ToCIDR("192.0.2.0/24", "192.0.2.5")
 	if err != nil {
