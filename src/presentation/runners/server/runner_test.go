@@ -390,6 +390,51 @@ func TestRunWorkers_AggregatesMultipleErrors(t *testing.T) {
 	}
 }
 
+func TestRun_CleanupError_ContinuesRunning(t *testing.T) {
+	deps := &RunnerMockDeps{
+		key: &RunnerMockKeyManager{},
+		tun: &RunnerMockTunManager{disposeErr: errBoom},
+		cfg: server.Configuration{}, // no protocols — runWorkers succeeds immediately
+	}
+	r := NewRunner(deps,
+		RunnerMockWorkerFactory{create: func(context.Context, io.ReadWriteCloser, settings.Settings) (routing.Worker, error) {
+			return RunnerMockWorker{}, nil
+		}},
+		RunnerMockRouterFactory{make: func(routing.Worker) routing.Router {
+			return RunnerMockRouter{route: func(context.Context) error { return nil }}
+		}},
+	)
+	// cleanup() errors are logged, Run() still succeeds.
+	if err := r.Run(context.Background()); err != nil {
+		t.Fatalf("Run should succeed despite cleanup error: %v", err)
+	}
+}
+
+func TestRunWorkers_CreateRouterError(t *testing.T) {
+	deps := &RunnerMockDeps{
+		key: &RunnerMockKeyManager{},
+		tun: &RunnerMockTunManager{
+			createErrByProto: map[settings.Protocol]error{settings.TCP: errBoom},
+		},
+		cfg: server.Configuration{
+			EnableTCP:   true,
+			TCPSettings: settings.Settings{Protocol: settings.TCP},
+		},
+	}
+	r := NewRunner(deps,
+		RunnerMockWorkerFactory{create: func(context.Context, io.ReadWriteCloser, settings.Settings) (routing.Worker, error) {
+			return RunnerMockWorker{}, nil
+		}},
+		RunnerMockRouterFactory{make: func(routing.Worker) routing.Router {
+			return RunnerMockRouter{route: func(context.Context) error { return nil }}
+		}},
+	)
+	err := r.runWorkers(context.Background())
+	if err == nil || !contains(err.Error(), "could not create") {
+		t.Fatalf("expected createRouter error, got: %v", err)
+	}
+}
+
 // tiny substring helper
 func contains(s, sub string) bool {
 	if len(sub) == 0 {

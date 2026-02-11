@@ -371,3 +371,76 @@ func TestRegisterClient_NegativeClientID_FailsAllocation(t *testing.T) {
 		t.Fatal("expected nil peer and transport on allocation error")
 	}
 }
+
+// tcpRegHandshakeResult implements connection.HandshakeResult.
+type tcpRegHandshakeResult struct {
+	pubKey     []byte
+	allowedIPs []netip.Prefix
+}
+
+func (r *tcpRegHandshakeResult) ClientPubKey() []byte       { return r.pubKey }
+func (r *tcpRegHandshakeResult) AllowedIPs() []netip.Prefix { return r.allowedIPs }
+
+// tcpRegHandshakeWithResult extends tcpRegHandshake with HandshakeWithResult.
+type tcpRegHandshakeWithResult struct {
+	tcpRegHandshake
+	result connection.HandshakeResult
+}
+
+func (h *tcpRegHandshakeWithResult) Result() connection.HandshakeResult { return h.result }
+
+// tcpRegHandshakeWithResultFactory returns a HandshakeWithResult mock.
+type tcpRegHandshakeWithResultFactory struct {
+	handshake *tcpRegHandshakeWithResult
+}
+
+func (f *tcpRegHandshakeWithResultFactory) NewHandshake() connection.Handshake {
+	return f.handshake
+}
+
+func TestRegisterClient_HandshakeWithResult_IPv6(t *testing.T) {
+	hf := &tcpRegHandshakeWithResultFactory{
+		handshake: &tcpRegHandshakeWithResult{
+			tcpRegHandshake: tcpRegHandshake{
+				clientID: 1,
+				c2s:      make([]byte, 32),
+				s2c:      make([]byte, 32),
+			},
+			result: &tcpRegHandshakeResult{
+				pubKey:     []byte("test-client-pub-key-32-bytes!!!!"),
+				allowedIPs: []netip.Prefix{netip.MustParsePrefix("192.168.100.0/24")},
+			},
+		},
+	}
+	cf := &tcpRegCryptoFactory{
+		crypto: tcpRegCrypto{},
+		ctrl:   rekey.NewStateMachine(tcpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
+	}
+	repo := session.NewDefaultRepository()
+	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo,
+		netip.MustParsePrefix("10.0.0.0/24"),
+		netip.MustParsePrefix("fd00::/64"),
+	)
+
+	conn := &tcpRegConn{
+		remoteAddr: &net.TCPAddr{IP: net.IPv4(192, 168, 1, 1), Port: 12345},
+	}
+
+	peer, transport, err := reg.RegisterClient(conn)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if peer == nil || transport == nil {
+		t.Fatal("expected non-nil peer and transport")
+	}
+
+	// HandshakeWithResult allowedIPs (192.168.100.0/24) should be applied.
+	if !peer.IsSourceAllowed(netip.MustParseAddr("192.168.100.5")) {
+		t.Fatal("expected allowedIPs from handshake result to be applied")
+	}
+
+	// IPv6 allocation (fd00::2 for clientID=1) should be in allowedAddrs.
+	if !peer.IsSourceAllowed(netip.MustParseAddr("fd00::2")) {
+		t.Fatal("expected IPv6 address to be allowed")
+	}
+}

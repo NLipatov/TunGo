@@ -331,6 +331,121 @@ func TestRegisterClient_NegativeClientID_FailsAllocation(t *testing.T) {
 	}
 }
 
+// udpRegHandshakeResult implements connection.HandshakeResult.
+type udpRegHandshakeResult struct {
+	pubKey     []byte
+	allowedIPs []netip.Prefix
+}
+
+func (r *udpRegHandshakeResult) ClientPubKey() []byte       { return r.pubKey }
+func (r *udpRegHandshakeResult) AllowedIPs() []netip.Prefix { return r.allowedIPs }
+
+// udpRegHandshakeWithResult extends udpRegHandshake with HandshakeWithResult.
+type udpRegHandshakeWithResult struct {
+	udpRegHandshake
+	result connection.HandshakeResult
+}
+
+func (h *udpRegHandshakeWithResult) Result() connection.HandshakeResult { return h.result }
+
+type udpRegHandshakeWithResultFactory struct {
+	handshake *udpRegHandshakeWithResult
+}
+
+func (f *udpRegHandshakeWithResultFactory) NewHandshake() connection.Handshake {
+	return f.handshake
+}
+
+func TestEnqueuePacket_AtCapacity_SilentDrop(t *testing.T) {
+	ctx := context.Background()
+	r := NewRegistrar(ctx, nil, nil, udpRegLogger{}, nil, nil, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
+
+	// Fill up to MaxConcurrentRegistrations using direct queue creation.
+	for i := 0; i < MaxConcurrentRegistrations; i++ {
+		ip := netip.AddrFrom4([4]byte{10, 0, byte(i >> 8), byte(i)})
+		addr := netip.AddrPortFrom(ip, 1234)
+		r.GetOrCreateRegistrationQueue(addr)
+	}
+
+	if len(r.Registrations()) != MaxConcurrentRegistrations {
+		t.Fatalf("expected %d registrations, got %d", MaxConcurrentRegistrations, len(r.Registrations()))
+	}
+
+	// EnqueuePacket for a new address should be silently dropped.
+	excess := netip.MustParseAddrPort("255.255.255.255:9999")
+	r.EnqueuePacket(excess, []byte("should-be-dropped"))
+
+	// No new queue should have been created.
+	if len(r.Registrations()) != MaxConcurrentRegistrations {
+		t.Fatalf("expected %d registrations after drop, got %d", MaxConcurrentRegistrations, len(r.Registrations()))
+	}
+}
+
+func TestRegisterClient_HandshakeWithResult_IPv6(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	listener := &udpRegListener{}
+	repo := session.NewDefaultRepository()
+
+	hf := &udpRegHandshakeWithResultFactory{
+		handshake: &udpRegHandshakeWithResult{
+			udpRegHandshake: udpRegHandshake{
+				clientID: 1,
+				c2s:      make([]byte, 32),
+				s2c:      make([]byte, 32),
+			},
+			result: &udpRegHandshakeResult{
+				pubKey:     []byte("test-client-pub-key-32-bytes!!!!"),
+				allowedIPs: []netip.Prefix{netip.MustParsePrefix("192.168.100.0/24")},
+			},
+		},
+	}
+	cf := &udpRegCryptoFactory{
+		crypto: udpRegCrypto{},
+		ctrl:   rekey.NewStateMachine(udpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
+	}
+
+	r := NewRegistrar(ctx, listener, repo, udpRegLogger{}, hf, cf,
+		netip.MustParsePrefix("10.0.0.0/24"),
+		netip.MustParsePrefix("fd00::/64"),
+	)
+
+	addr := netip.MustParseAddrPort("192.168.1.1:1234")
+	q, _ := r.GetOrCreateRegistrationQueue(addr)
+
+	done := make(chan struct{})
+	go func() {
+		r.RegisterClient(addr, q)
+		close(done)
+	}()
+
+	q.Enqueue([]byte("client-hello"))
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for RegisterClient to complete")
+	}
+
+	// Verify session has auth data.
+	ip := netip.MustParseAddr("10.0.0.2")
+	peer, err := repo.GetByInternalAddrPort(ip)
+	if err != nil {
+		t.Fatalf("expected peer in repo: %v", err)
+	}
+
+	// HandshakeWithResult allowedIPs (192.168.100.0/24) should be applied.
+	if !peer.IsSourceAllowed(netip.MustParseAddr("192.168.100.5")) {
+		t.Fatal("expected allowedIPs from handshake result to be applied")
+	}
+
+	// IPv6 allocation (fd00::2 for clientID=1) should be in allowedAddrs.
+	if !peer.IsSourceAllowed(netip.MustParseAddr("fd00::2")) {
+		t.Fatal("expected IPv6 address to be allowed")
+	}
+}
+
 func TestGetOrCreateRegistrationQueue_SecondCallReusesQueue(t *testing.T) {
 	ctx := context.Background()
 	r := NewRegistrar(ctx, nil, nil, udpRegLogger{}, nil, nil, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})

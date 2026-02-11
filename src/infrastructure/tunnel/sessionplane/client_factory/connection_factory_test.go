@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -847,4 +848,56 @@ func TestConnectionFactoryUnit_establishSecuredConnection_Success(t *testing.T) 
 	if serr := <-serverErrCh; serr != nil {
 		t.Fatalf("server handshake failed: %v", serr)
 	}
+}
+
+func TestDialWithFallback_IPv6Success(t *testing.T) {
+	t.Parallel()
+	f := &ConnectionFactory{}
+	tr := &cfUnitTransport{}
+
+	s := settings.Settings{
+		Host:     mustHost("127.0.0.1"),
+		IPv6Host: mustHost("::1"),
+		Port:     8080,
+	}
+
+	var dialedAddr netip.AddrPort
+	got, err := f.dialWithFallback(context.Background(), s, func(_ context.Context, ap netip.AddrPort) (connection.Transport, error) {
+		dialedAddr = ap
+		return tr, nil
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != tr {
+		t.Fatal("expected transport from IPv6 dial")
+	}
+	// Should have dialed the IPv6 address, not IPv4.
+	if !dialedAddr.Addr().Is6() {
+		t.Fatalf("expected IPv6 dial address, got %v", dialedAddr)
+	}
+}
+
+func TestDialWSWithFallback_IPv6Success(t *testing.T) {
+	t.Parallel()
+	host, portStr, shutdown := ConnectionFactoryMockWSServer(t)
+	defer shutdown()
+
+	portInt, _ := strconv.Atoi(portStr)
+	f := &ConnectionFactory{}
+
+	s := settings.Settings{
+		Host:     mustHost(host),
+		IPv6Host: mustHost(host), // same host — tests the IPv6-first path
+		Port:     portInt,
+	}
+
+	adapter, err := f.dialWSWithFallback(context.Background(), context.Background(), s, "ws")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if adapter == nil {
+		t.Fatal("expected non-nil adapter from IPv6 WS dial")
+	}
+	_ = adapter.Close()
 }

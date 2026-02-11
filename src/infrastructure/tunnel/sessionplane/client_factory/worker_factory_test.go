@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net"
+	"net/netip"
 	"testing"
 	"time"
 
@@ -140,5 +141,33 @@ func TestWorkerFactory_CreateWorker_UDP(t *testing.T) {
 	}
 	if worker == nil {
 		t.Fatalf("expected non-nil worker for UDP")
+	}
+}
+
+func TestWorkerFactory_CreateWorker_TCP_WithAllowedSources(t *testing.T) {
+	// Covers allowedSources() InterfaceIP and IPv6IP branches.
+	cfg := client.Configuration{
+		Protocol: settings.TCP,
+		TCPSettings: settings.Settings{
+			InterfaceIP: netip.MustParseAddr("10.0.0.2"),
+			IPv6IP:      netip.MustParseAddr("fd00::2"),
+		},
+	}
+
+	wf := NewWorkerFactory(cfg)
+
+	transport := &WorkerFactoryTransportMock{}
+	tun := &WorkerFactoryTunMock{}
+	crypto := &WorkerFactoryCryptoMock{}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	worker, err := wf.CreateWorker(ctx, transport, tun, crypto, nil)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if worker == nil {
+		t.Fatal("expected non-nil worker")
 	}
 }
