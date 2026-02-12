@@ -79,3 +79,59 @@ func TestWNetIpv4IpForward_Error(t *testing.T) {
 		t.Errorf("expected nil output on error, got %q", out)
 	}
 }
+
+func TestNetIpv6ConfAllForwarding_Success(t *testing.T) {
+	expected := []byte("net.ipv6.conf.all.forwarding = 1\n")
+	mock := &sysctlMockCommander{output: expected, err: nil}
+	w := NewWrapper(mock)
+
+	out, err := w.NetIpv6ConfAllForwarding()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(out) != string(expected) {
+		t.Errorf("got %q, want %q", out, expected)
+	}
+}
+
+func TestNetIpv6ConfAllForwarding_Error(t *testing.T) {
+	mockErr := errors.New("sysctl failed")
+	mock := &sysctlMockCommander{output: nil, err: mockErr}
+	w := NewWrapper(mock)
+
+	out, err := w.NetIpv6ConfAllForwarding()
+	if !errors.Is(err, mockErr) {
+		t.Fatalf("got error %v, want %v", err, mockErr)
+	}
+	if out != nil {
+		t.Errorf("expected nil output on error, got %q", out)
+	}
+}
+
+func TestWNetIpv6ConfAllForwarding_Success(t *testing.T) {
+	expected := []byte("net.ipv6.conf.all.forwarding = 1\n")
+	mock := &sysctlMockCommander{output: expected, err: nil}
+	w := NewWrapper(mock)
+
+	out, err := w.WNetIpv6ConfAllForwarding()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(out) != string(expected) {
+		t.Errorf("got %q, want %q", out, expected)
+	}
+}
+
+func TestWNetIpv6ConfAllForwarding_Error(t *testing.T) {
+	mockErr := errors.New("cannot write")
+	mock := &sysctlMockCommander{output: nil, err: mockErr}
+	w := NewWrapper(mock)
+
+	out, err := w.WNetIpv6ConfAllForwarding()
+	if !errors.Is(err, mockErr) {
+		t.Fatalf("got error %v, want %v", err, mockErr)
+	}
+	if out != nil {
+		t.Errorf("expected nil output on error, got %q", out)
+	}
+}

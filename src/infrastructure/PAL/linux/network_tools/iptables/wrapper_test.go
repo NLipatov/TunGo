@@ -1,6 +1,7 @@
 package iptables
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -52,12 +53,67 @@ func TestWrapper_AllCommands(t *testing.T) {
 		{"DisableForwardingFromDevToTun", func() error { return w.DisableForwardingFromDevToTun(tun, dev) }},
 		{"EnableForwardingTunToTun", func() error { return w.EnableForwardingTunToTun(tun) }},
 		{"DisableForwardingTunToTun", func() error { return w.DisableForwardingTunToTun(tun) }},
+		{"Enable6DevMasquerade", func() error { return w.Enable6DevMasquerade(dev) }},
+		{"Disable6DevMasquerade", func() error { return w.Disable6DevMasquerade(dev) }},
+		{"Enable6ForwardingFromTunToDev", func() error { return w.Enable6ForwardingFromTunToDev(tun, dev) }},
+		{"Disable6ForwardingFromTunToDev", func() error { return w.Disable6ForwardingFromTunToDev(tun, dev) }},
+		{"Enable6ForwardingFromDevToTun", func() error { return w.Enable6ForwardingFromDevToTun(tun, dev) }},
+		{"Disable6ForwardingFromDevToTun", func() error { return w.Disable6ForwardingFromDevToTun(tun, dev) }},
+		{"Enable6ForwardingTunToTun", func() error { return w.Enable6ForwardingTunToTun(tun) }},
+		{"Disable6ForwardingTunToTun", func() error { return w.Disable6ForwardingTunToTun(tun) }},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if err := tt.call(); err != nil {
 				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestWrapper_IPv6_Errors(t *testing.T) {
+	const dev = "eth0"
+	const tun = "tun0"
+
+	errFail := errors.New("fail")
+	failAll := &mockCommander{
+		outputMap: map[string][]byte{},
+		errMap:    make(map[string]error),
+	}
+	// Fill errMap for every possible ip6tables command so all calls fail.
+	for _, cmd := range []string{
+		"ip6tables -t nat -A POSTROUTING -o " + dev + " -j MASQUERADE",
+		"ip6tables -t nat -D POSTROUTING -o " + dev + " -j MASQUERADE",
+		"ip6tables -A FORWARD -i " + tun + " -o " + dev + " -j ACCEPT",
+		"ip6tables -D FORWARD -i " + tun + " -o " + dev + " -j ACCEPT",
+		"ip6tables -A FORWARD -i " + dev + " -o " + tun + " -m state --state RELATED,ESTABLISHED -j ACCEPT",
+		"ip6tables -D FORWARD -i " + dev + " -o " + tun + " -m state --state RELATED,ESTABLISHED -j ACCEPT",
+		"ip6tables -A FORWARD -i " + tun + " -o " + tun + " -j ACCEPT",
+		"ip6tables -D FORWARD -i " + tun + " -o " + tun + " -j ACCEPT",
+	} {
+		failAll.errMap[cmd] = errFail
+	}
+	w := &Wrapper{commander: failAll}
+
+	tests := []struct {
+		name string
+		call func() error
+	}{
+		{"Enable6DevMasquerade", func() error { return w.Enable6DevMasquerade(dev) }},
+		{"Disable6DevMasquerade", func() error { return w.Disable6DevMasquerade(dev) }},
+		{"Enable6ForwardingFromTunToDev", func() error { return w.Enable6ForwardingFromTunToDev(tun, dev) }},
+		{"Disable6ForwardingFromTunToDev", func() error { return w.Disable6ForwardingFromTunToDev(tun, dev) }},
+		{"Enable6ForwardingFromDevToTun", func() error { return w.Enable6ForwardingFromDevToTun(tun, dev) }},
+		{"Disable6ForwardingFromDevToTun", func() error { return w.Disable6ForwardingFromDevToTun(tun, dev) }},
+		{"Enable6ForwardingTunToTun", func() error { return w.Enable6ForwardingTunToTun(tun) }},
+		{"Disable6ForwardingTunToTun", func() error { return w.Disable6ForwardingTunToTun(tun) }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := tt.call(); err == nil {
+				t.Error("expected error")
 			}
 		})
 	}

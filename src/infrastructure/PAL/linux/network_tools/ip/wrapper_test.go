@@ -139,6 +139,21 @@ func TestRouteAddDefaultDev(t *testing.T) {
 	})
 }
 
+func TestRoute6AddDefaultDev(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		err := newWrapper(true, "", nil).Route6AddDefaultDev("tun0")
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Run("error", func(t *testing.T) {
+		err := newWrapper(false, "output", errors.New("fail")).Route6AddDefaultDev("tun0")
+		if err == nil {
+			t.Fatal("expected error")
+		}
+	})
+}
+
 func TestRouteGet(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		route, err := newWrapper(true, "10.0.0.1 dev eth0", nil).RouteGet("1.1.1.1")

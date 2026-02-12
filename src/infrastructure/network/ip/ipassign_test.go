@@ -98,6 +98,23 @@ func TestAllocateClientIP_IPv6_NegativeCounter(t *testing.T) {
 	}
 }
 
+func TestAllocateClientIP_IPv4_BroadcastGuard(t *testing.T) {
+	// /30 has 4 addresses: .0 network, .1 server, .2 client (counter=1), .3 broadcast.
+	// counter=1 should succeed; counter=2 should fail (would be broadcast).
+	ip1, err := AllocateClientIP(netip.MustParsePrefix("10.0.0.0/30"), 1)
+	if err != nil {
+		t.Fatalf("expected counter=1 to be valid in /30, got: %v", err)
+	}
+	if ip1 != netip.MustParseAddr("10.0.0.2") {
+		t.Fatalf("expected 10.0.0.2, got %s", ip1)
+	}
+
+	_, err = AllocateClientIP(netip.MustParsePrefix("10.0.0.0/30"), 2)
+	if err == nil {
+		t.Fatal("expected error for counter=2 in /30 (out of range)")
+	}
+}
+
 func TestAllocateClientIP_IPv6_OutOfBounds(t *testing.T) {
 	// /120 prefix has 256 addresses (0x00..0xff in the last byte).
 	// base=0, server=1, so clients 1..253 are valid (offset 2..254).

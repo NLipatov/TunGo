@@ -168,6 +168,12 @@ func (m *ServerTunFactoryMockIPTErr) DisableForwardingFromTunToDev(tunName, devN
 	}
 	return m.ServerTunFactoryMockIPT.DisableForwardingFromTunToDev(tunName, devName)
 }
+func (m *ServerTunFactoryMockIPTErr) EnableForwardingFromDevToTun(tunName, devName string) error {
+	if m.errTag == "EnableForwardingFromDevToTun" {
+		return m.err
+	}
+	return m.ServerTunFactoryMockIPT.EnableForwardingFromDevToTun(tunName, devName)
+}
 func (m *ServerTunFactoryMockIPTErr) DisableForwardingFromDevToTun(tunName, devName string) error {
 	if m.errTag == "DisableForwardingFromDevToTun" {
 		return m.err
@@ -185,6 +191,64 @@ func (m *ServerTunFactoryMockIPTErr) DisableForwardingTunToTun(tunName string) e
 		return m.err
 	}
 	return m.ServerTunFactoryMockIPT.DisableForwardingTunToTun(tunName)
+}
+func (m *ServerTunFactoryMockIPTErr) Enable6DevMasquerade(devName string) error {
+	if m.errTag == "Enable6DevMasquerade" {
+		return m.err
+	}
+	return m.ServerTunFactoryMockIPT.Enable6DevMasquerade(devName)
+}
+func (m *ServerTunFactoryMockIPTErr) Enable6ForwardingFromTunToDev(tunName, devName string) error {
+	if m.errTag == "Enable6ForwardingFromTunToDev" {
+		return m.err
+	}
+	return m.ServerTunFactoryMockIPT.Enable6ForwardingFromTunToDev(tunName, devName)
+}
+func (m *ServerTunFactoryMockIPTErr) Enable6ForwardingFromDevToTun(tunName, devName string) error {
+	if m.errTag == "Enable6ForwardingFromDevToTun" {
+		return m.err
+	}
+	return m.ServerTunFactoryMockIPT.Enable6ForwardingFromDevToTun(tunName, devName)
+}
+func (m *ServerTunFactoryMockIPTErr) Enable6ForwardingTunToTun(tunName string) error {
+	if m.errTag == "Enable6ForwardingTunToTun" {
+		return m.err
+	}
+	return m.ServerTunFactoryMockIPT.Enable6ForwardingTunToTun(tunName)
+}
+func (m *ServerTunFactoryMockIPTErr) Disable6ForwardingFromTunToDev(tunName, devName string) error {
+	if m.errTag == "Disable6ForwardingFromTunToDev" {
+		return m.err
+	}
+	return m.ServerTunFactoryMockIPT.Disable6ForwardingFromTunToDev(tunName, devName)
+}
+func (m *ServerTunFactoryMockIPTErr) Disable6ForwardingFromDevToTun(tunName, devName string) error {
+	if m.errTag == "Disable6ForwardingFromDevToTun" {
+		return m.err
+	}
+	return m.ServerTunFactoryMockIPT.Disable6ForwardingFromDevToTun(tunName, devName)
+}
+func (m *ServerTunFactoryMockIPTErr) Disable6ForwardingTunToTun(tunName string) error {
+	if m.errTag == "Disable6ForwardingTunToTun" {
+		return m.err
+	}
+	return m.ServerTunFactoryMockIPT.Disable6ForwardingTunToTun(tunName)
+}
+
+// ServerTunFactoryMockIPErrNthAddr fails on the Nth call to AddrAddDev (1-based).
+type ServerTunFactoryMockIPErrNthAddr struct {
+	*ServerTunFactoryMockIP
+	failOnCall int
+	callCount  int
+	err        error
+}
+
+func (m *ServerTunFactoryMockIPErrNthAddr) AddrAddDev(devName, cidr string) error {
+	m.callCount++
+	if m.callCount == m.failOnCall {
+		return m.err
+	}
+	return m.ServerTunFactoryMockIP.AddrAddDev(devName, cidr)
 }
 
 // ServerTunFactoryMockMSS implements mssclamp.Contract.
@@ -237,9 +301,12 @@ func (m *ServerTunFactoryMockIOCTL) DetectTunNameFromFd(_ *os.File) (string, err
 
 // ServerTunFactoryMockSys implements sysctl.Contract.
 type ServerTunFactoryMockSys struct {
-	netErr    bool
-	wErr      bool
-	netOutput []byte
+	netErr     bool
+	wErr       bool
+	netOutput  []byte
+	net6Err    bool
+	w6Err      bool
+	net6Output []byte
 }
 
 func (m *ServerTunFactoryMockSys) NetIpv4IpForward() ([]byte, error) {
@@ -258,9 +325,18 @@ func (m *ServerTunFactoryMockSys) WNetIpv4IpForward() ([]byte, error) {
 	return []byte("net.ipv4.ip_forward = 1\n"), nil
 }
 func (m *ServerTunFactoryMockSys) NetIpv6ConfAllForwarding() ([]byte, error) {
+	if m.net6Err {
+		return nil, errors.New("net6_err")
+	}
+	if m.net6Output != nil {
+		return m.net6Output, nil
+	}
 	return []byte("net.ipv6.conf.all.forwarding = 1\n"), nil
 }
 func (m *ServerTunFactoryMockSys) WNetIpv6ConfAllForwarding() ([]byte, error) {
+	if m.w6Err {
+		return nil, errors.New("w6_err")
+	}
 	return []byte("net.ipv6.conf.all.forwarding = 1\n"), nil
 }
 
@@ -810,4 +886,192 @@ func TestEnableForwarding_WritesWhenDisabled_Succeeds(t *testing.T) {
 		t.Fatal("expected non-nil tun file")
 	}
 	_ = tun.Close()
+}
+
+func TestEnableForwarding_IPv6ReadError(t *testing.T) {
+	f := newFactory(
+		&ServerTunFactoryMockIP{},
+		&ServerTunFactoryMockIPT{},
+		nil,
+		&ServerTunFactoryMockIOCTL{},
+		&ServerTunFactoryMockSys{net6Err: true},
+	)
+	_, err := f.CreateDevice(baseCfg)
+	if err == nil || !strings.Contains(err.Error(), "failed to read IPv6 forwarding state") {
+		t.Errorf("expected IPv6 read error, got %v", err)
+	}
+}
+
+func TestEnableForwarding_IPv6WriteError(t *testing.T) {
+	f := newFactory(
+		&ServerTunFactoryMockIP{},
+		&ServerTunFactoryMockIPT{},
+		nil,
+		&ServerTunFactoryMockIOCTL{},
+		&ServerTunFactoryMockSys{
+			net6Output: []byte("net.ipv6.conf.all.forwarding = 0\n"),
+			w6Err:      true,
+		},
+	)
+	_, err := f.CreateDevice(baseCfg)
+	if err == nil || !strings.Contains(err.Error(), "failed to enable IPv6 packet forwarding") {
+		t.Errorf("expected IPv6 write error, got %v", err)
+	}
+}
+
+func TestEnableForwarding_IPv6WritesWhenDisabled_Succeeds(t *testing.T) {
+	f := newFactory(
+		&ServerTunFactoryMockIP{},
+		&ServerTunFactoryMockIPT{},
+		nil,
+		&ServerTunFactoryMockIOCTL{},
+		&ServerTunFactoryMockSys{net6Output: []byte("net.ipv6.conf.all.forwarding = 0\n")},
+	)
+	tun, err := f.CreateDevice(baseCfg)
+	if err != nil {
+		t.Fatalf("CreateDevice should succeed after enabling IPv6 forwarding, got: %v", err)
+	}
+	_ = tun.Close()
+}
+
+func TestCreateTunDevice_WithIPv6Subnet_Success(t *testing.T) {
+	cfg := baseCfg
+	cfg.IPv6Subnet = netip.MustParsePrefix("fd00::/64")
+	f := newFactory(
+		&ServerTunFactoryMockIP{},
+		&ServerTunFactoryMockIPT{},
+		nil,
+		&ServerTunFactoryMockIOCTL{},
+		&ServerTunFactoryMockSys{},
+	)
+	tun, err := f.CreateDevice(cfg)
+	if err != nil {
+		t.Fatalf("CreateDevice with IPv6 subnet should succeed, got: %v", err)
+	}
+	_ = tun.Close()
+}
+
+func TestCreateTunDevice_WithIPv6Subnet_AddrAddError(t *testing.T) {
+	cfg := baseCfg
+	cfg.IPv6Subnet = netip.MustParsePrefix("fd00::/64")
+	ipMock := &ServerTunFactoryMockIPErrNthAddr{
+		ServerTunFactoryMockIP: &ServerTunFactoryMockIP{},
+		failOnCall:             2, // second AddrAddDev call (IPv6)
+		err:                    errors.New("v6_addr_err"),
+	}
+	f := newFactory(ipMock, &ServerTunFactoryMockIPT{}, nil, &ServerTunFactoryMockIOCTL{}, &ServerTunFactoryMockSys{})
+	_, err := f.CreateDevice(cfg)
+	if err == nil || !strings.Contains(err.Error(), "failed to assign IPv6 to TUN") {
+		t.Errorf("expected IPv6 addr error, got %v", err)
+	}
+}
+
+func TestSetupForwarding_IPv6Errors(t *testing.T) {
+	cases := []struct {
+		errTag string
+		want   string
+	}{
+		{"Enable6ForwardingFromTunToDev", "failed to setup IPv6 forwarding rule"},
+		{"Enable6ForwardingFromDevToTun", "failed to setup IPv6 forwarding rule"},
+		{"Enable6ForwardingTunToTun", "failed to setup IPv6 client-to-client forwarding rule"},
+	}
+	for _, c := range cases {
+		iptErr := &ServerTunFactoryMockIPTErr{
+			ServerTunFactoryMockIPT: &ServerTunFactoryMockIPT{},
+			errTag:                  c.errTag,
+			err:                     errors.New("v6_err"),
+		}
+		f := newFactory(&ServerTunFactoryMockIP{}, iptErr, nil, &ServerTunFactoryMockIOCTL{}, &ServerTunFactoryMockSys{})
+		if err := f.setupForwarding("tun0", "eth0"); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("case %s: expected error containing %q, got %v", c.errTag, c.want, err)
+		}
+	}
+}
+
+func TestClearForwarding_IPv6Errors(t *testing.T) {
+	cases := []struct {
+		errTag string
+		want   string
+	}{
+		{"Disable6ForwardingFromTunToDev", "failed to execute ip6tables command"},
+		{"Disable6ForwardingFromDevToTun", "failed to execute ip6tables command"},
+		{"Disable6ForwardingTunToTun", "failed to execute ip6tables command"},
+	}
+	for _, c := range cases {
+		iptErr := &ServerTunFactoryMockIPTErr{
+			ServerTunFactoryMockIPT: &ServerTunFactoryMockIPT{},
+			errTag:                  c.errTag,
+			err:                     errors.New("v6_err"),
+		}
+		f := newFactory(&ServerTunFactoryMockIP{}, iptErr, nil, &ServerTunFactoryMockIOCTL{}, &ServerTunFactoryMockSys{})
+		if err := f.clearForwarding("tun0", "eth0"); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("case %s: expected error containing %q, got %v", c.errTag, c.want, err)
+		}
+	}
+}
+
+func TestConfigure_Enable6DevMasqueradeError(t *testing.T) {
+	f := newFactory(
+		&ServerTunFactoryMockIP{},
+		&ServerTunFactoryMockIPTErr{
+			ServerTunFactoryMockIPT: &ServerTunFactoryMockIPT{},
+			errTag:                  "Enable6DevMasquerade",
+			err:                     errors.New("v6_masq_err"),
+		},
+		nil,
+		&ServerTunFactoryMockIOCTL{},
+		&ServerTunFactoryMockSys{},
+	)
+	_, err := f.CreateDevice(baseCfg)
+	if err == nil || !strings.Contains(err.Error(), "failed enabling IPv6 NAT") {
+		t.Errorf("expected IPv6 NAT error, got %v", err)
+	}
+}
+
+func TestEnableForwarding_ForwardingFromDevToTun_Error(t *testing.T) {
+	iptErr := &ServerTunFactoryMockIPTErr{
+		ServerTunFactoryMockIPT: &ServerTunFactoryMockIPT{},
+		errTag:                  "EnableForwardingFromDevToTun",
+		err:                     errors.New("fwd_dt_err"),
+	}
+	f := newFactory(&ServerTunFactoryMockIP{}, iptErr, nil, &ServerTunFactoryMockIOCTL{}, &ServerTunFactoryMockSys{})
+	if err := f.setupForwarding("tun0", "eth0"); err == nil || !strings.Contains(err.Error(), "failed to setup forwarding rule") {
+		t.Errorf("expected forwarding rule error, got %v", err)
+	}
+}
+
+func TestEnableForwarding_ForwardingTunToTun_Error(t *testing.T) {
+	iptErr := &ServerTunFactoryMockIPTErr{
+		ServerTunFactoryMockIPT: &ServerTunFactoryMockIPT{},
+		errTag:                  "EnableForwardingTunToTun",
+		err:                     errors.New("fwd_tt_err"),
+	}
+	f := newFactory(&ServerTunFactoryMockIP{}, iptErr, nil, &ServerTunFactoryMockIOCTL{}, &ServerTunFactoryMockSys{})
+	if err := f.setupForwarding("tun0", "eth0"); err == nil || !strings.Contains(err.Error(), "failed to setup client-to-client forwarding rule") {
+		t.Errorf("expected client-to-client forwarding error, got %v", err)
+	}
+}
+
+func TestClearForwarding_DisableForwardingFromDevToTun_Error(t *testing.T) {
+	iptErr := &ServerTunFactoryMockIPTErr{
+		ServerTunFactoryMockIPT: &ServerTunFactoryMockIPT{},
+		errTag:                  "DisableForwardingFromDevToTun",
+		err:                     errors.New("dtd_err"),
+	}
+	f := newFactory(&ServerTunFactoryMockIP{}, iptErr, nil, &ServerTunFactoryMockIOCTL{}, &ServerTunFactoryMockSys{})
+	if err := f.clearForwarding("tun0", "eth0"); err == nil || !strings.Contains(err.Error(), "failed to execute iptables command") {
+		t.Errorf("expected iptables error, got %v", err)
+	}
+}
+
+func TestClearForwarding_DisableForwardingTunToTun_Error(t *testing.T) {
+	iptErr := &ServerTunFactoryMockIPTErr{
+		ServerTunFactoryMockIPT: &ServerTunFactoryMockIPT{},
+		errTag:                  "DisableForwardingTunToTun",
+		err:                     errors.New("dtt_err"),
+	}
+	f := newFactory(&ServerTunFactoryMockIP{}, iptErr, nil, &ServerTunFactoryMockIOCTL{}, &ServerTunFactoryMockSys{})
+	if err := f.clearForwarding("tun0", "eth0"); err == nil || !strings.Contains(err.Error(), "failed to execute iptables command") {
+		t.Errorf("expected iptables error, got %v", err)
+	}
 }

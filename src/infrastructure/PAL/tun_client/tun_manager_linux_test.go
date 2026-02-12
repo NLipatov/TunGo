@@ -326,6 +326,104 @@ func TestConfigureTUN_MSSInstallError(t *testing.T) {
 	}
 }
 
+func TestCreateDevice_IPv6_FullPath(t *testing.T) {
+	// IPv6 configured: should assign IPv6 address, set IPv6 default route,
+	// and add route to IPv6 server.
+	ipMock := &platformTunManagerIPMock{routeReply: "198.51.100.1 via 192.0.2.1 dev eth0"}
+	mgr := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{})
+
+	// Enable IPv6 on the active protocol's settings.
+	mgr.configuration.UDPSettings.IPv6IP = mustAddr("fd00::2")
+	mgr.configuration.UDPSettings.IPv6Subnet = mustPrefix("fd00::/64")
+	mgr.configuration.UDPSettings.IPv6Host = mustHost("2001:db8::1")
+
+	dev, err := mgr.CreateDevice()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	_ = dev.Close()
+
+	// Should include: addr (IPv4), addr (IPv6), def6, and the ipv6 route steps.
+	got := ipMock.log.String()
+	if !strings.Contains(got, "def6;") {
+		t.Fatalf("expected IPv6 default route step, got: %s", got)
+	}
+	// Two "addr;" calls: one for IPv4, one for IPv6
+	if strings.Count(got, "addr;") != 2 {
+		t.Fatalf("expected 2 addr calls (IPv4 + IPv6), got: %s", got)
+	}
+}
+
+func TestCreateDevice_IPv6_AddrAddError(t *testing.T) {
+	// When IPv6 AddrAddDev fails, creation should fail.
+	calls := 0
+	ipMock := &platformTunManagerIPMock{routeReply: "198.51.100.1 via 192.0.2.1 dev eth0"}
+	// Override AddrAddDev to fail on the second call (IPv6).
+	origMark := ipMock.mark
+	_ = origMark
+	mgr := newMgr(settings.UDP, &platformTunManagerIPMockFailNthAddr{
+		platformTunManagerIPMock: platformTunManagerIPMock{routeReply: "198.51.100.1 via 192.0.2.1 dev eth0"},
+		failOnCall:              2,
+		callCount:               &calls,
+	}, platformTunManagerIOCTLMock{}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{})
+
+	mgr.configuration.UDPSettings.IPv6IP = mustAddr("fd00::2")
+	mgr.configuration.UDPSettings.IPv6Subnet = mustPrefix("fd00::/64")
+
+	_, err := mgr.CreateDevice()
+	if err == nil {
+		t.Fatal("expected error on IPv6 addr add failure")
+	}
+}
+
+func TestCreateDevice_IPv6_Route6DefaultError(t *testing.T) {
+	ipMock := &platformTunManagerIPMock{
+		routeReply: "198.51.100.1 dev eth0",
+		failStep:   "def6",
+	}
+	mgr := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{})
+	mgr.configuration.UDPSettings.IPv6IP = mustAddr("fd00::2")
+	mgr.configuration.UDPSettings.IPv6Subnet = mustPrefix("fd00::/64")
+
+	_, err := mgr.CreateDevice()
+	if err == nil {
+		t.Fatal("expected error on Route6AddDefaultDev failure")
+	}
+}
+
+func TestDisposeDevices_IPv6HostRouteCleanup(t *testing.T) {
+	ipMock := &platformTunManagerIPMock{}
+	mgr := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{})
+	mgr.configuration.UDPSettings.IPv6Host = mustHost("2001:db8::1")
+	mgr.configuration.TCPSettings.IPv6Host = mustHost("2001:db8::2")
+	mgr.configuration.WSSettings.IPv6Host = mustHost("2001:db8::3")
+
+	if err := mgr.DisposeDevices(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Each protocol should have rdel for IPv4 host + rdel for IPv6 host + ldel.
+	got := ipMock.log.String()
+	if strings.Count(got, "rdel;") != 6 {
+		t.Fatalf("expected 6 route deletions (3 IPv4 + 3 IPv6), got: %s", got)
+	}
+}
+
+// platformTunManagerIPMockFailNthAddr fails AddrAddDev on the N-th call.
+type platformTunManagerIPMockFailNthAddr struct {
+	platformTunManagerIPMock
+	failOnCall int
+	callCount  *int
+}
+
+func (m *platformTunManagerIPMockFailNthAddr) AddrAddDev(dev, cidr string) error {
+	*m.callCount++
+	if *m.callCount == m.failOnCall {
+		return errors.New("addr add failed")
+	}
+	return nil
+}
+
 func TestDisposeDevices_MSSRemoveError_Logged(t *testing.T) {
 	// MSS remove errors are logged but do NOT cause DisposeDevices to fail.
 	ipMock := &platformTunManagerIPMock{}
