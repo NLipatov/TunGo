@@ -3,6 +3,7 @@ package noise
 import (
 	"crypto/hmac"
 	"crypto/rand"
+	"encoding/binary"
 	"net/netip"
 	"sync"
 	"time"
@@ -62,11 +63,11 @@ func (cm *CookieManager) ComputeCookieValue(clientIP netip.Addr) []byte {
 	secret := cm.secret
 	cm.mu.RUnlock()
 
-	bucket := cm.now().Unix() / CookieBucketSeconds
+	bucket := uint64(cm.now().Unix() / CookieBucketSeconds)
 	ip16 := clientIP.As16()
-	data := make([]byte, 0, 18) // 16 bytes IP + 2 bytes timestamp
+	data := make([]byte, 0, 24) // 16 bytes IP + 8 bytes timestamp
 	data = append(data, ip16[:]...)
-	data = append(data, byte(bucket), byte(bucket>>8))
+	data = binary.LittleEndian.AppendUint64(data, bucket)
 
 	// BLAKE2s with key - returns keyed 128-bit MAC
 	h, _ := blake2s.New128(secret[:])
@@ -150,11 +151,11 @@ func (cm *CookieManager) ValidateCookie(clientIP netip.Addr, cookie []byte) bool
 	secret := cm.secret
 	cm.mu.RUnlock()
 
-	bucket := cm.now().Unix()/CookieBucketSeconds - 1
+	bucket := uint64(cm.now().Unix()/CookieBucketSeconds - 1)
 	ip16 := clientIP.As16()
-	data := make([]byte, 0, 18)
+	data := make([]byte, 0, 24)
 	data = append(data, ip16[:]...)
-	data = append(data, byte(bucket), byte(bucket>>8))
+	data = binary.LittleEndian.AppendUint64(data, bucket)
 
 	h, _ := blake2s.New128(secret[:])
 	h.Write(data)
