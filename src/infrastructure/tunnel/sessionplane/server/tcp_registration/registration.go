@@ -112,7 +112,6 @@ func (r *Registrar) RegisterClient(conn net.Conn) (*session.Peer, connection.Tra
 	// If session not found, or client is using a new (IP, port) address (e.g., after NAT rebinding), re-register the client.
 	existingPeer, getErr := r.sessionManager.GetByInternalAddrPort(internalIP)
 	if getErr == nil {
-		_ = existingPeer.Egress().Close()
 		r.sessionManager.Delete(existingPeer)
 		r.logger.Printf("Replacing existing session for %s", internalIP)
 	} else if !errors.Is(getErr, session.ErrNotFound) {

@@ -196,6 +196,13 @@ func (r *Registrar) RegisterClient(addrPort netip.AddrPort, queue *udpQueue.Regi
 		}
 	}
 
+	// Evict stale session for the same internal IP (e.g. client reconnect after NAT rebinding).
+	existingPeer, getErr := r.sessionRepo.GetByInternalAddrPort(internalIP)
+	if getErr == nil {
+		r.sessionRepo.Delete(existingPeer)
+		r.logger.Printf("UDP: replacing existing session for %s", internalIP)
+	}
+
 	sess := session.NewSessionWithAuth(cryptoSession, controller, internalIP, addrPort, clientPubKey, allowedIPs)
 	egress := connection.NewDefaultEgress(regTransport, cryptoSession)
 	peer := session.NewPeer(sess, egress)
