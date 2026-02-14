@@ -91,14 +91,14 @@ func TestLoadMonitor_ConcurrentAccess(t *testing.T) {
 func TestLoadMonitor_DefaultThreshold(t *testing.T) {
 	// Zero threshold should use default
 	lm := NewLoadMonitor(0)
-	if lm.threshold != DefaultLoadThreshold {
-		t.Fatalf("expected default threshold %d, got %d", DefaultLoadThreshold, lm.threshold)
+	if lm.threshold.Load() != DefaultLoadThreshold {
+		t.Fatalf("expected default threshold %d, got %d", DefaultLoadThreshold, lm.threshold.Load())
 	}
 
 	// Negative threshold should use default
 	lm = NewLoadMonitor(-1)
-	if lm.threshold != DefaultLoadThreshold {
-		t.Fatalf("expected default threshold %d, got %d", DefaultLoadThreshold, lm.threshold)
+	if lm.threshold.Load() != DefaultLoadThreshold {
+		t.Fatalf("expected default threshold %d, got %d", DefaultLoadThreshold, lm.threshold.Load())
 	}
 }
 

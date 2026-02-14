@@ -14,7 +14,7 @@ const (
 // When under load, the server requires valid MAC2 (cookie) before performing DH.
 type LoadMonitor struct {
 	handshakesPerSecond atomic.Int64
-	threshold           int64
+	threshold           atomic.Int64
 	counter             atomic.Int64
 	lastResetTime       atomic.Int64
 }
@@ -24,9 +24,8 @@ func NewLoadMonitor(threshold int64) *LoadMonitor {
 	if threshold <= 0 {
 		threshold = DefaultLoadThreshold
 	}
-	lm := &LoadMonitor{
-		threshold: threshold,
-	}
+	lm := &LoadMonitor{}
+	lm.threshold.Store(threshold)
 	lm.lastResetTime.Store(time.Now().Unix())
 	return lm
 }
@@ -49,7 +48,7 @@ func (lm *LoadMonitor) RecordHandshake() {
 
 // UnderLoad returns true if the server is receiving handshakes above the threshold.
 func (lm *LoadMonitor) UnderLoad() bool {
-	return lm.handshakesPerSecond.Load() > lm.threshold
+	return lm.handshakesPerSecond.Load() > lm.threshold.Load()
 }
 
 // HandshakesPerSecond returns the current handshake rate.
@@ -59,5 +58,5 @@ func (lm *LoadMonitor) HandshakesPerSecond() int64 {
 
 // SetThreshold updates the load threshold.
 func (lm *LoadMonitor) SetThreshold(threshold int64) {
-	lm.threshold = threshold
+	lm.threshold.Store(threshold)
 }
