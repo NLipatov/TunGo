@@ -3,6 +3,7 @@ package chacha20
 import (
 	"tungo/application/network/connection"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/cryptography/mem"
 )
 
 type TcpSessionBuilder struct {
@@ -27,5 +28,8 @@ func (t TcpSessionBuilder) FromHandshake(handshake connection.Handshake,
 	// Directional raw keys live in controller for rekey derivation.
 	c2s := handshake.KeyClientToServer()
 	s2c := handshake.KeyServerToClient()
-	return core, rekey.NewStateMachine(core, c2s, s2c, isServer), nil
+	sm := rekey.NewStateMachine(core, c2s, s2c, isServer)
+	mem.ZeroBytes(c2s)
+	mem.ZeroBytes(s2c)
+	return core, sm, nil
 }

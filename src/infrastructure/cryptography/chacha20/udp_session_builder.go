@@ -3,6 +3,7 @@ package chacha20
 import (
 	"tungo/application/network/connection"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/cryptography/mem"
 )
 
 type UdpSessionBuilder struct {
@@ -29,5 +30,8 @@ func (u UdpSessionBuilder) FromHandshake(
 	s2c := handshake.KeyServerToClient()
 
 	core := NewEpochUdpCrypto(handshake.Id(), sendCipher, recvCipher, isServer)
-	return core, rekey.NewStateMachine(core, c2s, s2c, isServer), nil
+	sm := rekey.NewStateMachine(core, c2s, s2c, isServer)
+	mem.ZeroBytes(c2s)
+	mem.ZeroBytes(s2c)
+	return core, sm, nil
 }
