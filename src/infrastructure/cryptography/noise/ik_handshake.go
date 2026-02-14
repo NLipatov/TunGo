@@ -209,8 +209,7 @@ func (h *IKHandshake) ServerSideHandshake(transport connection.Transport) (int, 
 			return 0, ErrCookieRequired
 		}
 
-		cookie := h.cookieManager.ComputeCookieValue(clientIP)
-		if !VerifyMAC2(msg1WithMAC, cookie) {
+		if !h.cookieManager.VerifyMAC2ForClient(msg1WithMAC, clientIP) {
 			// Send cookie reply
 			reply, err := h.cookieManager.CreateCookieReply(clientIP, clientEphemeral, h.serverPubKey)
 			if err != nil {

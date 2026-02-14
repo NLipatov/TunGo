@@ -164,6 +164,32 @@ func (cm *CookieManager) ValidateCookie(clientIP netip.Addr, cookie []byte) bool
 	return hmac.Equal(cookie, expectedPrev)
 }
 
+// VerifyMAC2ForClient checks if msg1WithMAC carries a valid MAC2 for clientIP.
+// Checks both current and previous time bucket to handle boundary transitions.
+func (cm *CookieManager) VerifyMAC2ForClient(msg1WithMAC []byte, clientIP netip.Addr) bool {
+	cookie := cm.ComputeCookieValue(clientIP)
+	if VerifyMAC2(msg1WithMAC, cookie) {
+		return true
+	}
+
+	// Try previous bucket
+	cm.mu.RLock()
+	secret := cm.secret
+	cm.mu.RUnlock()
+
+	bucket := uint64(cm.now().Unix()/CookieBucketSeconds - 1)
+	ip16 := clientIP.As16()
+	data := make([]byte, 0, 24)
+	data = append(data, ip16[:]...)
+	data = binary.LittleEndian.AppendUint64(data, bucket)
+
+	h, _ := blake2s.New128(secret[:])
+	h.Write(data)
+	prevCookie := h.Sum(nil)
+
+	return VerifyMAC2(msg1WithMAC, prevCookie)
+}
+
 // RotateSecret generates a new random secret.
 // Old cookies will become invalid after the bucket transition period.
 func (cm *CookieManager) RotateSecret() error {
