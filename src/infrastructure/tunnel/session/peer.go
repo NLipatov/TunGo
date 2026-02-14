@@ -1,6 +1,7 @@
 package session
 
 import (
+	"net/netip"
 	"sync/atomic"
 	"time"
 
@@ -17,6 +18,7 @@ type Peer struct {
 	egress       connection.Egress
 	closed       atomic.Bool
 	lastActivity atomic.Int64 // unix seconds
+	roamedAddr   atomic.Pointer[netip.AddrPort]
 }
 
 func NewPeer(session connection.Session, egress connection.Egress) *Peer {
@@ -27,6 +29,19 @@ func NewPeer(session connection.Session, egress connection.Egress) *Peer {
 
 func (p *Peer) Egress() connection.Egress {
 	return p.egress
+}
+
+// ExternalAddrPort returns the roamed address if set, otherwise the original session address.
+func (p *Peer) ExternalAddrPort() netip.AddrPort {
+	if addr := p.roamedAddr.Load(); addr != nil {
+		return *addr
+	}
+	return p.Session.ExternalAddrPort()
+}
+
+// SetExternalAddrPort atomically updates the external address after NAT roaming.
+func (p *Peer) SetExternalAddrPort(addr netip.AddrPort) {
+	p.roamedAddr.Store(&addr)
 }
 
 // IsClosed returns true if this peer has been marked for deletion.

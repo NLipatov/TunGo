@@ -36,22 +36,28 @@ func (w *udpDataplaneWorker) HandleEstablished(peer *session.Peer, packet []byte
 		return nil
 	}
 
-	rekeyCtrl := peer.RekeyController()
-
 	decrypted, decryptionErr := peer.Crypto().Decrypt(packet)
 	if decryptionErr != nil {
 		// Drop: untrusted UDP input can be garbage / attacker-driven.
 		return nil
 	}
 
+	return w.handleDecrypted(peer, packet, decrypted)
+}
+
+// handleDecrypted processes a successfully decrypted packet for the given peer.
+// Separated from HandleEstablished so the roaming path can reuse it without
+// double-decrypting.
+func (w *udpDataplaneWorker) handleDecrypted(peer *session.Peer, rawPacket, decrypted []byte) error {
 	// Record activity AFTER successful decryption so attackers cannot
 	// keep a session alive by sending garbage to its external address.
 	peer.TouchActivity()
 
+	rekeyCtrl := peer.RekeyController()
 	if rekeyCtrl != nil {
 		// Data was successfully decrypted with epoch.
 		// Epoch can now be used to encrypt. Allow to encrypt with this epoch by promoting.
-		rekeyCtrl.ActivateSendEpoch(binary.BigEndian.Uint16(packet[chacha20.NonceEpochOffset : chacha20.NonceEpochOffset+2]))
+		rekeyCtrl.ActivateSendEpoch(binary.BigEndian.Uint16(rawPacket[chacha20.NonceEpochOffset : chacha20.NonceEpochOffset+2]))
 		rekeyCtrl.AbortPendingIfExpired(w.now())
 		// If service_packet packet - handle it.
 		// Note: On EpochExhausted, server sends EpochExhausted packet to client.

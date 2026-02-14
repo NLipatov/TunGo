@@ -21,6 +21,12 @@ type Repository interface {
 	// Checks both internal IP (exact match) and AllowedIPs (prefix match).
 	// Used for egress routing (TUN → client).
 	FindByDestinationIP(addr netip.Addr) (*Peer, error)
+	// AllPeers returns a snapshot slice of all peers in the repository.
+	// Used for trial decryption during NAT roaming.
+	AllPeers() []*Peer
+	// UpdateExternalAddr atomically re-indexes the peer under a new external address.
+	// Used when a client roams to a different NAT endpoint.
+	UpdateExternalAddr(peer *Peer, newAddr netip.AddrPort)
 }
 
 // RepositoryWithRevocation extends Repository with session revocation capability.
@@ -131,6 +137,29 @@ func (s *DefaultRepository) GetByExternalAddrPort(addr netip.AddrPort) (*Peer, e
 func (s *DefaultRepository) canonicalAP(ap netip.AddrPort) netip.AddrPort {
 	ip := ap.Addr().Unmap()
 	return netip.AddrPortFrom(ip, ap.Port())
+}
+
+func (s *DefaultRepository) AllPeers() []*Peer {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	peers := make([]*Peer, 0, len(s.internalIpToPeer))
+	for _, p := range s.internalIpToPeer {
+		peers = append(peers, p)
+	}
+	return peers
+}
+
+func (s *DefaultRepository) UpdateExternalAddr(peer *Peer, newAddr netip.AddrPort) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Remove old external address index entry
+	delete(s.externalIPToPeer, s.canonicalAP(peer.ExternalAddrPort()))
+	// Update the peer's external address
+	peer.SetExternalAddrPort(newAddr)
+	// Re-index under the new address
+	s.externalIPToPeer[s.canonicalAP(newAddr)] = peer
 }
 
 // FindByDestinationIP finds the peer that should receive packets destined for addr.

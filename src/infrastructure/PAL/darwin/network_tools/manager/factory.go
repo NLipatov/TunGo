@@ -4,8 +4,6 @@ package manager
 
 import (
 	"fmt"
-	"net"
-	"strings"
 	"tungo/infrastructure/PAL/exec_commander"
 
 	"tungo/application/network/routing/tun"
@@ -14,7 +12,7 @@ import (
 	"tungo/infrastructure/settings"
 )
 
-// Factory builds a family-specific TUN manager (IPv4 or IPv6) for darwin.
+// Factory builds a TUN manager for darwin: dual-stack, IPv4-only, or IPv6-only.
 type Factory struct {
 	s          settings.Settings
 	ifcFactory *ifcfg.Factory
@@ -30,29 +28,31 @@ func NewFactory(s settings.Settings) *Factory {
 	}
 }
 
-// Create returns a tun.ClientManager specialized for IPv4 or IPv6 (darwin).
+// Create returns a tun.ClientManager for the configured address families.
+// Dual-stack is used when InterfaceIP is IPv4 and a valid IPv6IP is also configured.
 func (f *Factory) Create() (tun.ClientManager, error) {
-	ifAddr := stripZone(f.s.InterfaceIP)
-	ip := net.ParseIP(ifAddr)
-	if ip == nil {
-		return nil, fmt.Errorf("invalid InterfaceIP: %q", f.s.InterfaceIP)
+	ifAddr := f.s.InterfaceIP
+	if !ifAddr.IsValid() {
+		return nil, fmt.Errorf("invalid InterfaceIP: %q", ifAddr)
 	}
-	if ip.IsUnspecified() {
-		return nil, fmt.Errorf("unspecified InterfaceIP is not allowed: %q", f.s.InterfaceIP)
-	}
-
-	hostIP, ok := f.s.Host.IP()
-	if !ok {
-		return nil, fmt.Errorf("invalid Host: %q", f.s.Host)
-	}
-	connIP := net.ParseIP(hostIP.String())
-	// Enforce family match to avoid surprising routing behavior.
-	if (ip.To4() != nil) != (connIP.To4() != nil) {
-		return nil, fmt.Errorf("IP family mismatch: InterfaceIP=%q vs Host=%q",
-			f.s.InterfaceIP, f.s.Host)
+	if ifAddr.IsUnspecified() {
+		return nil, fmt.Errorf("unspecified InterfaceIP is not allowed: %q", ifAddr)
 	}
 
-	if ip.To4() != nil {
+	ifIs4 := ifAddr.Unmap().Is4()
+
+	// Dual-stack: IPv4 interface + valid IPv6 configured.
+	if ifIs4 && f.s.IPv6IP.IsValid() && !f.s.IPv6IP.IsUnspecified() {
+		return newDualStack(
+			f.s,
+			f.ifcFactory.NewV4(),
+			f.ifcFactory.NewV6(),
+			f.rtFactory.NewV4(),
+			f.rtFactory.NewV6(),
+		), nil
+	}
+
+	if ifIs4 {
 		return newV4(
 			f.s,
 			f.ifcFactory.NewV4(),
@@ -64,11 +64,4 @@ func (f *Factory) Create() (tun.ClientManager, error) {
 		f.ifcFactory.NewV6(),
 		f.rtFactory.NewV6(),
 	), nil
-}
-
-func stripZone(s string) string {
-	if i := strings.IndexByte(s, '%'); i >= 0 {
-		return s[:i]
-	}
-	return s
 }

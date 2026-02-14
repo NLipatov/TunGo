@@ -223,6 +223,21 @@ func (r *fakeSessionRepo) FindByDestinationIP(_ netip.Addr) (*session.Peer, erro
 	}
 	return r.returnPeer, nil
 }
+func (r *fakeSessionRepo) AllPeers() []*session.Peer {
+	peers := make([]*session.Peer, 0, len(r.sessions))
+	for _, p := range r.sessions {
+		peers = append(peers, p)
+	}
+	return peers
+}
+func (r *fakeSessionRepo) UpdateExternalAddr(peer *session.Peer, newAddr netip.AddrPort) {
+	delete(r.sessions, peer.ExternalAddrPort())
+	peer.SetExternalAddrPort(newAddr)
+	if r.sessions == nil {
+		r.sessions = make(map[netip.AddrPort]*session.Peer)
+	}
+	r.sessions[newAddr] = peer
+}
 
 type fakeWriter struct {
 	buf   bytes.Buffer

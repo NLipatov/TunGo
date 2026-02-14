@@ -310,6 +310,23 @@ func (r *TransportHandlerSessionRepo) GetByExternalAddrPort(addr netip.AddrPort)
 func (r *TransportHandlerSessionRepo) FindByDestinationIP(_ netip.Addr) (*session.Peer, error) {
 	return nil, errors.New("not implemented")
 }
+func (r *TransportHandlerSessionRepo) AllPeers() []*session.Peer {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	peers := make([]*session.Peer, 0, len(r.sessions))
+	for _, p := range r.sessions {
+		peers = append(peers, p)
+	}
+	return peers
+}
+func (r *TransportHandlerSessionRepo) UpdateExternalAddr(peer *session.Peer, newAddr netip.AddrPort) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	// Remove old entry
+	delete(r.sessions, peer.ExternalAddrPort())
+	peer.SetExternalAddrPort(newAddr)
+	r.sessions[newAddr] = peer
+}
 
 // testSession is a lightweight mock implementing connection.Session for tests.
 type testSession struct {
@@ -693,12 +710,13 @@ func TestTransportHandler_HappyPath(t *testing.T) {
 	}
 }
 
-// NAT rebinding: new addr -> registration is triggered and session is added.
-func TestTransportHandler_NATRebinding_ReRegister(t *testing.T) {
+// NAT rebinding: packet from new addr is trial-decrypted against existing sessions.
+// On success the peer's address is updated and the packet is processed — no re-registration.
+func TestTransportHandler_NATRoaming_TrialDecrypt(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	writer := &TransportHandlerFakeWriter{}
+	tunWriter := &TransportHandlerFakeWriter{}
 	logger := &TransportHandlerFakeLogger{}
 
 	oldAddr := netip.MustParseAddrPort("192.168.1.51:5050")
@@ -711,16 +729,16 @@ func TestTransportHandler_NATRebinding_ReRegister(t *testing.T) {
 		internalIP: internalIP,
 		externalIP: oldAddr,
 	}
-	repo.sessions[oldAddr] = session.NewPeer(oldSess, nil)
-
-	sessionRegistered := make(chan struct{})
-	repo.afterAdd = func() { close(sessionRegistered) }
+	peer := session.NewPeer(oldSess, nil)
+	repo.sessions[oldAddr] = peer
 
 	fakeHS := &TransportHandlerFakeHandshake{clientID: 50}
 	handshakeFactory := &TransportHandlerFakeHandshakeFactory{hs: fakeHS}
 
+	// Send a valid IPv4 packet from the NEW address — should be roamed, not re-registered.
+	validPacket := makeValidIPv4Packet(internalIP)
 	conn := &TransportHandlerFakeUdpListener{
-		readBufs:  [][]byte{{0xca, 0xfe}}, // new addr will force re-registration
+		readBufs:  [][]byte{validPacket},
 		readAddrs: []netip.AddrPort{newAddr},
 	}
 	registrar := udp_registration.NewRegistrar(ctx, conn, repo, logger,
@@ -728,16 +746,76 @@ func TestTransportHandler_NATRebinding_ReRegister(t *testing.T) {
 		netip.MustParsePrefix("10.0.0.0/24"),
 		netip.Prefix{},
 	)
-	handler := NewTransportHandler(ctx, settings.Settings{Port: 6060}, writer, conn, repo, logger, registrar)
+	handler := NewTransportHandler(ctx, settings.Settings{Port: 6060}, tunWriter, conn, repo, logger, registrar)
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
-	select {
-	case <-sessionRegistered:
-		cancel()
-	case <-time.After(time.Second):
-		t.Fatal("timeout: session was not re-registered")
-	}
+	time.Sleep(50 * time.Millisecond)
+	cancel()
 	<-done
+
+	// Packet should have been written to TUN (roaming succeeded).
+	if len(tunWriter.wrote) != 1 {
+		t.Fatalf("expected 1 packet written to TUN via roaming, got %d", len(tunWriter.wrote))
+	}
+	// No re-registration should have occurred.
+	if len(repo.adds) != 0 {
+		t.Fatalf("expected 0 re-registrations, got %d", len(repo.adds))
+	}
+	// Peer should now be indexed under the new address.
+	if peer.ExternalAddrPort() != newAddr {
+		t.Fatalf("expected peer address updated to %v, got %v", newAddr, peer.ExternalAddrPort())
+	}
+}
+
+// After roaming, subsequent packets from the new address use the fast path.
+func TestTransportHandler_NATRoaming_FastPathAfterRoam(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	tunWriter := &TransportHandlerFakeWriter{}
+	logger := &TransportHandlerFakeLogger{}
+
+	oldAddr := netip.MustParseAddrPort("192.168.1.52:5050")
+	newAddr := netip.MustParseAddrPort("192.168.1.52:7070")
+	internalIP := netip.MustParseAddr("10.0.0.52")
+
+	repo := &TransportHandlerSessionRepo{sessions: map[netip.AddrPort]*session.Peer{}}
+	oldSess := &testSession{
+		crypto:     &TransportHandlerAlwaysWriteCrypto{},
+		internalIP: internalIP,
+		externalIP: oldAddr,
+	}
+	peer := session.NewPeer(oldSess, nil)
+	repo.sessions[oldAddr] = peer
+
+	fakeHS := &TransportHandlerFakeHandshake{clientID: 51}
+	handshakeFactory := &TransportHandlerFakeHandshakeFactory{hs: fakeHS}
+
+	validPacket := makeValidIPv4Packet(internalIP)
+	// Two packets from new address: first triggers roaming, second uses fast path.
+	conn := &TransportHandlerFakeUdpListener{
+		readBufs:  [][]byte{validPacket, validPacket},
+		readAddrs: []netip.AddrPort{newAddr, newAddr},
+	}
+	registrar := udp_registration.NewRegistrar(ctx, conn, repo, logger,
+		handshakeFactory, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
+		netip.MustParsePrefix("10.0.0.0/24"),
+		netip.Prefix{},
+	)
+	handler := NewTransportHandler(ctx, settings.Settings{Port: 7070}, tunWriter, conn, repo, logger, registrar)
+	done := make(chan struct{})
+	go func() { _ = handler.HandleTransport(); close(done) }()
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+	<-done
+
+	// Both packets should be processed (one via roaming, one via fast path).
+	if len(tunWriter.wrote) != 2 {
+		t.Fatalf("expected 2 packets written to TUN, got %d", len(tunWriter.wrote))
+	}
+	if len(repo.adds) != 0 {
+		t.Fatalf("expected 0 re-registrations, got %d", len(repo.adds))
+	}
 }
 
 // registerClient with zero clientID -> AllocateClientIP fails.

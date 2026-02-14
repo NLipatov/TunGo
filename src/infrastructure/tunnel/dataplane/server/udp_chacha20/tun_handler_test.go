@@ -123,6 +123,8 @@ func (m *TunHandlerMockMgr) GetByExternalAddrPort(_ netip.AddrPort) (*session.Pe
 func (m *TunHandlerMockMgr) FindByDestinationIP(_ netip.Addr) (*session.Peer, error) {
 	return m.peer, m.getErr
 }
+func (m *TunHandlerMockMgr) AllPeers() []*session.Peer           { return nil }
+func (m *TunHandlerMockMgr) UpdateExternalAddr(_ *session.Peer, _ netip.AddrPort) {}
 
 func rdr(seq ...struct {
 	data []byte

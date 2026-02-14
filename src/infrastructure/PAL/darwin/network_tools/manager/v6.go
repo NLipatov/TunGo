@@ -4,8 +4,6 @@ package manager
 
 import (
 	"fmt"
-	"net"
-	"strings"
 
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/darwin/network_tools/ifconfig"
@@ -53,7 +51,12 @@ func (m *v6) CreateDevice() (tun.Device, error) {
 	}
 	m.ifName = name
 
-	if err := m.rt.Get(m.s.Host); err != nil {
+	routeIP, routeErr := m.s.Host.RouteIP()
+	if routeErr != nil {
+		_ = m.DisposeDevices()
+		return nil, fmt.Errorf("v6: resolve route for %s: %w", m.s.Host, routeErr)
+	}
+	if err := m.rt.Get(routeIP); err != nil {
 		_ = m.DisposeDevices()
 		return nil, fmt.Errorf("route to server %s: %w", m.s.Host, err)
 	}
@@ -73,8 +76,8 @@ func (m *v6) CreateDevice() (tun.Device, error) {
 
 func (m *v6) DisposeDevices() error {
 	_ = m.rt.DelSplit(m.ifName)
-	if m.s.Host != "" {
-		_ = m.rt.Del(m.s.Host)
+	if !m.s.Host.IsZero() {
+		_ = m.rt.Del(string(m.s.Host))
 	}
 	if m.tunDev != nil {
 		_ = m.tunDev.Close()
@@ -86,35 +89,22 @@ func (m *v6) DisposeDevices() error {
 }
 
 func (m *v6) validateSettings() error {
-	ip := net.ParseIP(m.s.InterfaceIP)
-	if ip == nil || ip.To4() != nil {
+	ip := m.s.InterfaceIP.Unmap()
+	if !ip.IsValid() || ip.Is4() {
 		return fmt.Errorf("v6: invalid InterfaceIP %q", m.s.InterfaceIP)
 	}
-	dst := net.ParseIP(m.s.Host)
-	if dst == nil || dst.To4() != nil {
-		return fmt.Errorf("v6: invalid Host %q", m.s.Host)
-	}
-	if m.s.InterfaceSubnet != "" {
-		if !strings.Contains(m.s.InterfaceSubnet, "/") {
-			return fmt.Errorf("v6: InterfaceSubnet must be CIDR or empty, got %q", m.s.InterfaceSubnet)
-		}
-		if _, _, err := net.ParseCIDR(m.s.InterfaceSubnet); err != nil {
-			return fmt.Errorf("v6: bad InterfaceSubnet %q: %w", m.s.InterfaceSubnet, err)
-		}
+	if m.s.Host.IsZero() {
+		return fmt.Errorf("v6: empty Host")
 	}
 	return nil
 }
 
 func (m *v6) assignIPv6() error {
-	cidr := m.s.InterfaceSubnet
-	if cidr == "" {
-		cidr = m.s.InterfaceIP + "/128"
+	var cidr string
+	if m.s.InterfaceSubnet.IsValid() {
+		cidr = fmt.Sprintf("%s/%d", m.s.InterfaceIP, m.s.InterfaceSubnet.Bits())
 	} else {
-		parts := strings.Split(cidr, "/")
-		if len(parts) != 2 {
-			return fmt.Errorf("v6: malformed CIDR %q", cidr)
-		}
-		cidr = m.s.InterfaceIP + "/" + parts[1]
+		cidr = fmt.Sprintf("%s/128", m.s.InterfaceIP)
 	}
 	if err := m.ifc.LinkAddrAdd(m.ifName, cidr); err != nil {
 		return fmt.Errorf("v6: set addr %s on %s: %w", cidr, m.ifName, err)

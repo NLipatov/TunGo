@@ -121,6 +121,8 @@ func (t *TransportHandler) HandleTransport() error {
 
 // handlePacket processes a UDP packet from addrPort.
 // - If a session exists, decrypts and forwards the packet to the TUN device.
+// - If the address is unknown but trial decryption succeeds (NAT roaming),
+//   updates the peer's address and processes the packet.
 // - Otherwise, enqueues the packet into the registration pipeline.
 func (t *TransportHandler) handlePacket(
 	addrPort netip.AddrPort,
@@ -142,10 +144,47 @@ func (t *TransportHandler) handlePacket(
 		return t.dp.HandleEstablished(peer, packet)
 	}
 
+	// Trial decryption: the client may have roamed to a new NAT address.
+	if t.dp != nil && t.tryRoaming(addrPort, packet) {
+		return nil
+	}
+
 	// No existing session: route into registration queue.
 	if t.registrar != nil {
 		t.registrar.EnqueuePacket(addrPort, packet)
 	}
 
 	return nil
+}
+
+// tryRoaming attempts trial decryption against all existing sessions.
+// If a session successfully decrypts the packet, the client has roamed —
+// update its external address and process the packet.
+//
+// SAFETY: Decrypt on a wrong session fails at the AEAD auth tag check and
+// does not mutate any state. We decrypt a copy because Open() modifies the
+// buffer in-place.
+func (t *TransportHandler) tryRoaming(newAddr netip.AddrPort, packet []byte) bool {
+	peers := t.sessionManager.AllPeers()
+	for _, peer := range peers {
+		if peer.IsClosed() {
+			continue
+		}
+		// Decrypt a copy — AEAD Open() overwrites ciphertext in-place.
+		trial := make([]byte, len(packet))
+		copy(trial, packet)
+
+		decrypted, err := peer.Crypto().Decrypt(trial)
+		if err != nil {
+			continue
+		}
+
+		// Decryption succeeded — this client has roamed.
+		t.sessionManager.UpdateExternalAddr(peer, newAddr)
+		// Process via the shared post-decrypt path using the original rawPacket
+		// (needed for epoch extraction) and the decrypted payload.
+		_ = t.dp.handleDecrypted(peer, packet, decrypted)
+		return true
+	}
+	return false
 }

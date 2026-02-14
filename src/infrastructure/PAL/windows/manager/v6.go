@@ -35,20 +35,8 @@ func newV6Manager(
 // CreateDevice creates/configures the TUN adapter and system routes/DNS for IPv6.
 // Safe order mirrors v4 with IPv6-specific details.
 func (m *v6Manager) CreateDevice() (tun.Device, error) {
-	if strings.TrimSpace(m.s.InterfaceName) == "" {
-		return nil, fmt.Errorf("empty InterfaceName")
-	}
-	if net.ParseIP(m.s.Host) == nil {
-		return nil, fmt.Errorf("invalid Host: %q", m.s.Host)
-	}
-	if _, _, err := net.ParseCIDR(m.s.InterfaceSubnet); err != nil {
-		return nil, fmt.Errorf("invalid InterfaceSubnet: %q", m.s.InterfaceSubnet)
-	}
-	if net.ParseIP(m.s.InterfaceIP).To4() != nil {
-		return nil, fmt.Errorf("v6Manager requires IPv6 InterfaceIP, got %q", m.s.InterfaceIP)
-	}
-	if net.ParseIP(m.s.Host).To4() != nil {
-		return nil, fmt.Errorf("v6Manager requires IPv6 Host, got %q", m.s.Host)
+	if err := m.validateSettings(); err != nil {
+		return nil, err
 	}
 
 	tunDev, err := m.createTunDevice()
@@ -80,6 +68,19 @@ func (m *v6Manager) CreateDevice() (tun.Device, error) {
 	return m.tun, nil
 }
 
+func (m *v6Manager) validateSettings() error {
+	if strings.TrimSpace(m.s.InterfaceName) == "" {
+		return fmt.Errorf("empty InterfaceName")
+	}
+	if m.s.Host.IsZero() {
+		return fmt.Errorf("empty Host")
+	}
+	if !m.s.InterfaceIP.IsValid() || m.s.InterfaceIP.Unmap().Is4() {
+		return fmt.Errorf("v6Manager requires IPv6 InterfaceIP, got %q", m.s.InterfaceIP)
+	}
+	return nil
+}
+
 func (m *v6Manager) createTunDevice() (tun.Device, error) {
 	adapter, err := wintun.CreateAdapter(m.s.InterfaceName, tunnelType, nil)
 	if err != nil {
@@ -97,16 +98,20 @@ func (m *v6Manager) createTunDevice() (tun.Device, error) {
 }
 
 func (m *v6Manager) addStaticRouteToServer() error {
-	_ = m.netConfig.DeleteRoute(m.s.Host)
-	gw, ifName, _, _, err := m.netConfig.BestRoute(m.s.Host)
+	routeIP, err := m.s.Host.RouteIP()
 	if err != nil {
-		return err
+		return fmt.Errorf("resolve host %s: %w", m.s.Host, err)
+	}
+	_ = m.netConfig.DeleteRoute(routeIP)
+	gw, ifName, _, _, bestErr := m.netConfig.BestRoute(routeIP)
+	if bestErr != nil {
+		return bestErr
 	}
 	if gw == "" {
 		// on-link
-		return m.netConfig.AddHostRouteOnLink(m.s.Host, ifName, 1)
+		return m.netConfig.AddHostRouteOnLink(routeIP, ifName, 1)
 	}
-	return m.netConfig.AddHostRouteViaGateway(m.s.Host, ifName, gw, 1)
+	return m.netConfig.AddHostRouteViaGateway(routeIP, ifName, gw, 1)
 }
 
 // onLinkInterfaceName returns the name of an interface whose IPv6 prefix contains 'server'.
@@ -145,15 +150,19 @@ func (m *v6Manager) isCandidateIF(it net.Interface, selfName string) bool {
 
 // assignIPToTunDevice validates IPv6 address ∈ CIDR and applies it via prefix length.
 func (m *v6Manager) assignIPToTunDevice() error {
-	ip := net.ParseIP(m.s.InterfaceIP)
-	_, nw, _ := net.ParseCIDR(m.s.InterfaceSubnet)
+	ipStr := m.s.InterfaceIP.String()
+	subnetStr := m.s.InterfaceSubnet.String()
+	ip := net.ParseIP(ipStr)
+	_, nw, _ := net.ParseCIDR(subnetStr)
 	if ip == nil || ip.To4() != nil || nw == nil || !nw.Contains(ip) {
-		_ = m.netConfig.DeleteRoute(m.s.Host)
-		return fmt.Errorf("address %s not in %s", m.s.InterfaceIP, m.s.InterfaceSubnet)
+		routeIP, _ := m.s.Host.RouteIP()
+		_ = m.netConfig.DeleteRoute(routeIP)
+		return fmt.Errorf("address %s not in %s", ipStr, subnetStr)
 	}
 	prefix, _ := nw.Mask.Size()
-	if err := m.netConfig.SetAddressStatic(m.s.InterfaceName, m.s.InterfaceIP, strconv.Itoa(prefix)); err != nil {
-		_ = m.netConfig.DeleteRoute(m.s.Host)
+	if err := m.netConfig.SetAddressStatic(m.s.InterfaceName, ipStr, strconv.Itoa(prefix)); err != nil {
+		routeIP, _ := m.s.Host.RouteIP()
+		_ = m.netConfig.DeleteRoute(routeIP)
 		return err
 	}
 	return nil
@@ -163,7 +172,8 @@ func (m *v6Manager) assignIPToTunDevice() error {
 func (m *v6Manager) setRouteToTunDevice() error {
 	_ = m.netConfig.DeleteDefaultSplitRoutes(m.s.InterfaceName)
 	if err := m.netConfig.AddDefaultSplitRoutes(m.s.InterfaceName, 1); err != nil {
-		_ = m.netConfig.DeleteRoute(m.s.Host)
+		routeIP, _ := m.s.Host.RouteIP()
+		_ = m.netConfig.DeleteRoute(routeIP)
 		return err
 	}
 	return nil
@@ -178,7 +188,8 @@ func (m *v6Manager) setMTUToTunDevice() error {
 		mtu = settings.MinimumIPv6MTU
 	}
 	if err := m.netConfig.SetMTU(m.s.InterfaceName, mtu); err != nil {
-		_ = m.netConfig.DeleteRoute(m.s.Host)
+		routeIP, _ := m.s.Host.RouteIP()
+		_ = m.netConfig.DeleteRoute(routeIP)
 		return err
 	}
 	return nil
@@ -189,7 +200,8 @@ func (m *v6Manager) setDNSToTunDevice() error {
 	if err := m.netConfig.SetDNS(m.s.InterfaceName,
 		[]string{"2606:4700:4700::1111", "2001:4860:4860::8888"},
 	); err != nil {
-		_ = m.netConfig.DeleteRoute(m.s.Host)
+		routeIP, _ := m.s.Host.RouteIP()
+		_ = m.netConfig.DeleteRoute(routeIP)
 		return err
 	}
 	_ = m.netConfig.FlushDNS()
@@ -199,7 +211,10 @@ func (m *v6Manager) setDNSToTunDevice() error {
 // DisposeDevices reverses CreateDevice in safe order.
 func (m *v6Manager) DisposeDevices() error {
 	_ = m.netConfig.DeleteDefaultSplitRoutes(m.s.InterfaceName)
-	_ = m.netConfig.DeleteRoute(m.s.Host)
+	routeIP, _ := m.s.Host.RouteIP()
+	if routeIP != "" {
+		_ = m.netConfig.DeleteRoute(routeIP)
+	}
 	if m.tun != nil {
 		_ = m.tun.Close()
 	}

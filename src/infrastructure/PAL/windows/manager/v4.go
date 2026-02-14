@@ -70,17 +70,14 @@ func (m *v4Manager) validateSettings() error {
 	if strings.TrimSpace(m.s.InterfaceName) == "" {
 		return fmt.Errorf("empty InterfaceName")
 	}
-	if net.ParseIP(m.s.Host) == nil {
-		return fmt.Errorf("invalid Host: %q", m.s.Host)
+	if m.s.Host.IsZero() {
+		return fmt.Errorf("empty Host")
 	}
-	if _, _, err := net.ParseCIDR(m.s.InterfaceSubnet); err != nil {
+	if !m.s.InterfaceSubnet.IsValid() {
 		return fmt.Errorf("invalid InterfaceSubnet: %q", m.s.InterfaceSubnet)
 	}
-	if net.ParseIP(m.s.InterfaceIP).To4() == nil {
+	if !m.s.InterfaceIP.IsValid() || !m.s.InterfaceIP.Unmap().Is4() {
 		return fmt.Errorf("v4Manager requires IPv4 InterfaceIP, got %q", m.s.InterfaceIP)
-	}
-	if net.ParseIP(m.s.Host).To4() == nil {
-		return fmt.Errorf("v4Manager requires IPv4 Host, got %q", m.s.Host)
 	}
 	return nil
 }
@@ -103,16 +100,21 @@ func (m *v4Manager) createOrOpenTunDevice() (tun.Device, error) {
 }
 
 func (m *v4Manager) addStaticRouteToServer() error {
-	_ = m.netCfg.DeleteRoute(m.s.Host)
-	gw, ifName, _, _, err := m.netCfg.BestRoute(m.s.Host)
+	hostStr := m.s.Host.String()
+	routeIP, err := m.s.Host.RouteIP()
 	if err != nil {
-		return err
+		return fmt.Errorf("resolve host %s: %w", hostStr, err)
+	}
+	_ = m.netCfg.DeleteRoute(routeIP)
+	gw, ifName, _, _, bestErr := m.netCfg.BestRoute(routeIP)
+	if bestErr != nil {
+		return bestErr
 	}
 	if gw == "" {
 		// on-link
-		return m.netCfg.AddHostRouteOnLink(m.s.Host, ifName, 1)
+		return m.netCfg.AddHostRouteOnLink(routeIP, ifName, 1)
 	}
-	return m.netCfg.AddHostRouteViaGateway(m.s.Host, ifName, gw, 1)
+	return m.netCfg.AddHostRouteViaGateway(routeIP, ifName, gw, 1)
 }
 
 // onLinkInterfaceName returns the name of an interface whose IPv4 prefix contains 'server'.
@@ -152,15 +154,19 @@ func (m *v4Manager) isCandidateIF(it net.Interface, selfName string) bool {
 
 // assignIPToTunDevice validates IPv4 address ∈ CIDR and applies it.
 func (m *v4Manager) assignIPToTunDevice() error {
-	ip := net.ParseIP(m.s.InterfaceIP)
-	_, network, _ := net.ParseCIDR(m.s.InterfaceSubnet)
+	ipStr := m.s.InterfaceIP.String()
+	subnetStr := m.s.InterfaceSubnet.String()
+	ip := net.ParseIP(ipStr)
+	_, network, _ := net.ParseCIDR(subnetStr)
 	if ip == nil || network == nil || !network.Contains(ip) {
-		_ = m.netCfg.DeleteRoute(m.s.Host)
-		return fmt.Errorf("address %s not in %s", m.s.InterfaceIP, m.s.InterfaceSubnet)
+		routeIP, _ := m.s.Host.RouteIP()
+		_ = m.netCfg.DeleteRoute(routeIP)
+		return fmt.Errorf("address %s not in %s", ipStr, subnetStr)
 	}
 	mask := net.IP(network.Mask).String() // dotted decimal mask
-	if err := m.netCfg.SetAddressStatic(m.s.InterfaceName, m.s.InterfaceIP, mask); err != nil {
-		_ = m.netCfg.DeleteRoute(m.s.Host)
+	if err := m.netCfg.SetAddressStatic(m.s.InterfaceName, ipStr, mask); err != nil {
+		routeIP, _ := m.s.Host.RouteIP()
+		_ = m.netCfg.DeleteRoute(routeIP)
 		return err
 	}
 	return nil
@@ -170,7 +176,8 @@ func (m *v4Manager) assignIPToTunDevice() error {
 func (m *v4Manager) setDefaultRouteToTunDevice() error {
 	_ = m.netCfg.DeleteDefaultSplitRoutes(m.s.InterfaceName)
 	if err := m.netCfg.AddDefaultSplitRoutes(m.s.InterfaceName, 1); err != nil {
-		_ = m.netCfg.DeleteRoute(m.s.Host)
+		routeIP, _ := m.s.Host.RouteIP()
+		_ = m.netCfg.DeleteRoute(routeIP)
 		return err
 	}
 	return nil
@@ -186,7 +193,8 @@ func (m *v4Manager) setMTUToTunDevice() error {
 		mtu = settings.MinimumIPv4MTU
 	}
 	if err := m.netCfg.SetMTU(m.s.InterfaceName, mtu); err != nil {
-		_ = m.netCfg.DeleteRoute(m.s.Host)
+		routeIP, _ := m.s.Host.RouteIP()
+		_ = m.netCfg.DeleteRoute(routeIP)
 		return err
 	}
 	return nil
@@ -205,7 +213,10 @@ func (m *v4Manager) setDNSToTunDevice() error {
 // DisposeDevices reverses CreateDevice in safe order.
 func (m *v4Manager) DisposeDevices() error {
 	_ = m.netCfg.DeleteDefaultSplitRoutes(m.s.InterfaceName)
-	_ = m.netCfg.DeleteRoute(m.s.Host)
+	routeIP, _ := m.s.Host.RouteIP()
+	if routeIP != "" {
+		_ = m.netCfg.DeleteRoute(routeIP)
+	}
 	if m.tun != nil {
 		_ = m.tun.Close()
 	}
