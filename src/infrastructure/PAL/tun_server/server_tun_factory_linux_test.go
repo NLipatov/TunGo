@@ -407,6 +407,13 @@ var baseCfg = settings.Settings{
 	MTU:             settings.SafeMTU,
 }
 
+var baseCfgIPv6 = settings.Settings{
+	InterfaceName:   "tun0",
+	InterfaceSubnet: netip.MustParsePrefix("10.0.0.0/30"),
+	IPv6Subnet:      netip.MustParsePrefix("fd00::/64"),
+	MTU:             settings.SafeMTU,
+}
+
 // ServerTunFactoryMockIPTBenign simulates benign iptables errors that must be ignored.
 type ServerTunFactoryMockIPTBenign struct{ log bytes.Buffer }
 
@@ -641,7 +648,7 @@ func TestSetupAndClearForwarding_Errors(t *testing.T) {
 	defaultIP, defaultIPT := &ServerTunFactoryMockIP{}, &ServerTunFactoryMockIPT{}
 
 	f1 := newFactory(defaultIP, defaultIPT, nil, &ServerTunFactoryMockIOCTL{}, &ServerTunFactoryMockSys{})
-	if err := f1.setupForwarding("", "eth0"); err == nil ||
+	if err := f1.setupForwarding("", "eth0", true); err == nil ||
 		!strings.Contains(err.Error(), "failed to get TUN interface name") {
 		t.Errorf("expected empty name error, got %v", err)
 	}
@@ -649,14 +656,14 @@ func TestSetupAndClearForwarding_Errors(t *testing.T) {
 	// setup: iptables error
 	iptErr := &ServerTunFactoryMockIPTErr{ServerTunFactoryMockIPT: &ServerTunFactoryMockIPT{}, errTag: "EnableForwardingFromTunToDev", err: errors.New("f_err")}
 	f2 := newFactory(defaultIP, iptErr, nil, &ServerTunFactoryMockIOCTL{}, &ServerTunFactoryMockSys{})
-	if err := f2.setupForwarding("tunZ", "eth0"); err == nil ||
+	if err := f2.setupForwarding("tunZ", "eth0", true); err == nil ||
 		!strings.Contains(err.Error(), "failed to setup forwarding rule") {
 		t.Errorf("expected forwarding rule error, got %v", err)
 	}
 
 	// clear: empty name
 	f3 := newFactory(defaultIP, defaultIPT, nil, &ServerTunFactoryMockIOCTL{}, &ServerTunFactoryMockSys{})
-	if err := f3.clearForwarding("", "eth0"); err == nil ||
+	if err := f3.clearForwarding("", "eth0", true); err == nil ||
 		!strings.Contains(err.Error(), "failed to get TUN interface name") {
 		t.Errorf("expected empty name error, got %v", err)
 	}
@@ -664,7 +671,7 @@ func TestSetupAndClearForwarding_Errors(t *testing.T) {
 	// clear: DisableForwardingFromTunToDev error
 	iptErr2 := &ServerTunFactoryMockIPTErr{ServerTunFactoryMockIPT: &ServerTunFactoryMockIPT{}, errTag: "DisableForwardingFromTunToDev", err: errors.New("dtd_err")}
 	f4 := newFactory(defaultIP, iptErr2, nil, &ServerTunFactoryMockIOCTL{}, &ServerTunFactoryMockSys{})
-	if err := f4.clearForwarding("tunC", "eth0"); err == nil ||
+	if err := f4.clearForwarding("tunC", "eth0", true); err == nil ||
 		!strings.Contains(err.Error(), "failed to execute iptables command") {
 		t.Errorf("expected clearForwarding error, got %v", err)
 	}
@@ -896,10 +903,26 @@ func TestEnableForwarding_IPv6ReadError(t *testing.T) {
 		&ServerTunFactoryMockIOCTL{},
 		&ServerTunFactoryMockSys{net6Err: true},
 	)
-	_, err := f.CreateDevice(baseCfg)
+	_, err := f.CreateDevice(baseCfgIPv6)
 	if err == nil || !strings.Contains(err.Error(), "failed to read IPv6 forwarding state") {
 		t.Errorf("expected IPv6 read error, got %v", err)
 	}
+}
+
+func TestEnableForwarding_IPv6Skipped_WhenNoIPv6Subnet(t *testing.T) {
+	// IPv6 sysctl fails, but baseCfg has no IPv6Subnet — must succeed.
+	f := newFactory(
+		&ServerTunFactoryMockIP{},
+		&ServerTunFactoryMockIPT{},
+		nil,
+		&ServerTunFactoryMockIOCTL{},
+		&ServerTunFactoryMockSys{net6Err: true},
+	)
+	tun, err := f.CreateDevice(baseCfg)
+	if err != nil {
+		t.Fatalf("CreateDevice should skip IPv6 forwarding when no IPv6 subnet, got: %v", err)
+	}
+	_ = tun.Close()
 }
 
 func TestEnableForwarding_IPv6WriteError(t *testing.T) {
@@ -913,7 +936,7 @@ func TestEnableForwarding_IPv6WriteError(t *testing.T) {
 			w6Err:      true,
 		},
 	)
-	_, err := f.CreateDevice(baseCfg)
+	_, err := f.CreateDevice(baseCfgIPv6)
 	if err == nil || !strings.Contains(err.Error(), "failed to enable IPv6 packet forwarding") {
 		t.Errorf("expected IPv6 write error, got %v", err)
 	}
@@ -927,7 +950,7 @@ func TestEnableForwarding_IPv6WritesWhenDisabled_Succeeds(t *testing.T) {
 		&ServerTunFactoryMockIOCTL{},
 		&ServerTunFactoryMockSys{net6Output: []byte("net.ipv6.conf.all.forwarding = 0\n")},
 	)
-	tun, err := f.CreateDevice(baseCfg)
+	tun, err := f.CreateDevice(baseCfgIPv6)
 	if err != nil {
 		t.Fatalf("CreateDevice should succeed after enabling IPv6 forwarding, got: %v", err)
 	}
@@ -982,7 +1005,7 @@ func TestSetupForwarding_IPv6Errors(t *testing.T) {
 			err:                     errors.New("v6_err"),
 		}
 		f := newFactory(&ServerTunFactoryMockIP{}, iptErr, nil, &ServerTunFactoryMockIOCTL{}, &ServerTunFactoryMockSys{})
-		if err := f.setupForwarding("tun0", "eth0"); err == nil || !strings.Contains(err.Error(), c.want) {
+		if err := f.setupForwarding("tun0", "eth0", true); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("case %s: expected error containing %q, got %v", c.errTag, c.want, err)
 		}
 	}
@@ -1004,7 +1027,7 @@ func TestClearForwarding_IPv6Errors(t *testing.T) {
 			err:                     errors.New("v6_err"),
 		}
 		f := newFactory(&ServerTunFactoryMockIP{}, iptErr, nil, &ServerTunFactoryMockIOCTL{}, &ServerTunFactoryMockSys{})
-		if err := f.clearForwarding("tun0", "eth0"); err == nil || !strings.Contains(err.Error(), c.want) {
+		if err := f.clearForwarding("tun0", "eth0", true); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("case %s: expected error containing %q, got %v", c.errTag, c.want, err)
 		}
 	}
@@ -1022,7 +1045,7 @@ func TestConfigure_Enable6DevMasqueradeError(t *testing.T) {
 		&ServerTunFactoryMockIOCTL{},
 		&ServerTunFactoryMockSys{},
 	)
-	_, err := f.CreateDevice(baseCfg)
+	_, err := f.CreateDevice(baseCfgIPv6)
 	if err == nil || !strings.Contains(err.Error(), "failed enabling IPv6 NAT") {
 		t.Errorf("expected IPv6 NAT error, got %v", err)
 	}
@@ -1035,7 +1058,7 @@ func TestEnableForwarding_ForwardingFromDevToTun_Error(t *testing.T) {
 		err:                     errors.New("fwd_dt_err"),
 	}
 	f := newFactory(&ServerTunFactoryMockIP{}, iptErr, nil, &ServerTunFactoryMockIOCTL{}, &ServerTunFactoryMockSys{})
-	if err := f.setupForwarding("tun0", "eth0"); err == nil || !strings.Contains(err.Error(), "failed to setup forwarding rule") {
+	if err := f.setupForwarding("tun0", "eth0", true); err == nil || !strings.Contains(err.Error(), "failed to setup forwarding rule") {
 		t.Errorf("expected forwarding rule error, got %v", err)
 	}
 }
@@ -1047,7 +1070,7 @@ func TestEnableForwarding_ForwardingTunToTun_Error(t *testing.T) {
 		err:                     errors.New("fwd_tt_err"),
 	}
 	f := newFactory(&ServerTunFactoryMockIP{}, iptErr, nil, &ServerTunFactoryMockIOCTL{}, &ServerTunFactoryMockSys{})
-	if err := f.setupForwarding("tun0", "eth0"); err == nil || !strings.Contains(err.Error(), "failed to setup client-to-client forwarding rule") {
+	if err := f.setupForwarding("tun0", "eth0", true); err == nil || !strings.Contains(err.Error(), "failed to setup client-to-client forwarding rule") {
 		t.Errorf("expected client-to-client forwarding error, got %v", err)
 	}
 }
@@ -1059,7 +1082,7 @@ func TestClearForwarding_DisableForwardingFromDevToTun_Error(t *testing.T) {
 		err:                     errors.New("dtd_err"),
 	}
 	f := newFactory(&ServerTunFactoryMockIP{}, iptErr, nil, &ServerTunFactoryMockIOCTL{}, &ServerTunFactoryMockSys{})
-	if err := f.clearForwarding("tun0", "eth0"); err == nil || !strings.Contains(err.Error(), "failed to execute iptables command") {
+	if err := f.clearForwarding("tun0", "eth0", true); err == nil || !strings.Contains(err.Error(), "failed to execute iptables command") {
 		t.Errorf("expected iptables error, got %v", err)
 	}
 }
@@ -1071,7 +1094,7 @@ func TestClearForwarding_DisableForwardingTunToTun_Error(t *testing.T) {
 		err:                     errors.New("dtt_err"),
 	}
 	f := newFactory(&ServerTunFactoryMockIP{}, iptErr, nil, &ServerTunFactoryMockIOCTL{}, &ServerTunFactoryMockSys{})
-	if err := f.clearForwarding("tun0", "eth0"); err == nil || !strings.Contains(err.Error(), "failed to execute iptables command") {
+	if err := f.clearForwarding("tun0", "eth0", true); err == nil || !strings.Contains(err.Error(), "failed to execute iptables command") {
 		t.Errorf("expected iptables error, got %v", err)
 	}
 }
