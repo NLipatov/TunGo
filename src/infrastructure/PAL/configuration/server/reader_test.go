@@ -44,9 +44,9 @@ func TestRead_Happy_NoEnv_EnsuresDefaults(t *testing.T) {
 		t.Fatalf("read error: %v", err)
 	}
 	// defaults must be applied
-	if conf.TCPSettings.InterfaceName == "" || conf.UDPSettings.InterfaceName == "" || conf.WSSettings.InterfaceName == "" {
+	if conf.TCPSettings.TunName == "" || conf.UDPSettings.TunName == "" || conf.WSSettings.TunName == "" {
 		t.Fatalf("defaults not applied: TCP=%q UDP=%q WS=%q",
-			conf.TCPSettings.InterfaceName, conf.UDPSettings.InterfaceName, conf.WSSettings.InterfaceName)
+			conf.TCPSettings.TunName, conf.UDPSettings.TunName, conf.WSSettings.TunName)
 	}
 }
 
@@ -112,7 +112,7 @@ func TestRead_ValidateFails_DuplicatePort_IncludesPathAndReason(t *testing.T) {
 		EnableTCP: true,
 		EnableUDP: true,
 		UDPSettings: settings.Settings{
-			Port: 8080,
+			Addressing: settings.Addressing{Port: 8080},
 		},
 	}
 	path := createTempConfigFile(t, initial)

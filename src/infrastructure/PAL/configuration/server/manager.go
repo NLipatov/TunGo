@@ -8,7 +8,6 @@ import (
 	"time"
 	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/PAL/stat"
-	"tungo/infrastructure/settings"
 )
 
 type ConfigurationManager interface {
@@ -80,14 +79,22 @@ func (c *Manager) Configuration() (*Configuration, error) {
 	return c.reader.read()
 }
 
-func (c *Manager) IncrementClientCounter() error {
-	configuration, configurationErr := c.Configuration()
-	if configurationErr != nil {
-		return configurationErr
+func (c *Manager) update(fn func(*Configuration) error) error {
+	conf, err := c.Configuration()
+	if err != nil {
+		return err
 	}
+	if err := fn(conf); err != nil {
+		return err
+	}
+	return c.writer.Write(*conf)
+}
 
-	configuration.ClientCounter += 1
-	return c.writer.Write(*configuration)
+func (c *Manager) IncrementClientCounter() error {
+	return c.update(func(conf *Configuration) error {
+		conf.ClientCounter++
+		return nil
+	})
 }
 
 func (c *Manager) InjectX25519Keys(public, private []byte) error {
@@ -97,52 +104,28 @@ func (c *Manager) InjectX25519Keys(public, private []byte) error {
 	if len(private) != 32 {
 		return fmt.Errorf("invalid private key length: got %d, want 32", len(private))
 	}
-
-	configuration, configurationErr := c.Configuration()
-	if configurationErr != nil {
-		return configurationErr
-	}
-
-	configuration.X25519PublicKey = append([]byte(nil), public...)
-	configuration.X25519PrivateKey = append([]byte(nil), private...)
-
-	return c.writer.Write(*configuration)
+	return c.update(func(conf *Configuration) error {
+		conf.X25519PublicKey = append([]byte(nil), public...)
+		conf.X25519PrivateKey = append([]byte(nil), private...)
+		return nil
+	})
 }
 
 func (c *Manager) AddAllowedPeer(peer AllowedPeer) error {
 	if len(peer.PublicKey) != 32 {
 		return fmt.Errorf("invalid public key length: got %d, want 32", len(peer.PublicKey))
 	}
-
-	configuration, configurationErr := c.Configuration()
-	if configurationErr != nil {
-		return configurationErr
-	}
-
-	configuration.AllowedPeers = append(configuration.AllowedPeers, peer)
-
-	return c.writer.Write(*configuration)
+	return c.update(func(conf *Configuration) error {
+		conf.AllowedPeers = append(conf.AllowedPeers, peer)
+		return nil
+	})
 }
 
 // EnsureIPv6Subnets sets default IPv6 tunnel subnets if not already configured.
 func (c *Manager) EnsureIPv6Subnets() error {
-	configuration, configurationErr := c.Configuration()
-	if configurationErr != nil {
-		return configurationErr
-	}
-
-	changed := false
-	for _, s := range []*settings.Settings{
-		&configuration.TCPSettings,
-		&configuration.UDPSettings,
-		&configuration.WSSettings,
-	} {
-		if !s.IPv6Subnet.IsValid() {
-			changed = true
-		}
-	}
-	if !changed {
-		return nil
+	conf, err := c.Configuration()
+	if err != nil {
+		return err
 	}
 
 	defaults := []netip.Prefix{
@@ -150,19 +133,19 @@ func (c *Manager) EnsureIPv6Subnets() error {
 		netip.MustParsePrefix("fd00:1::/64"),
 		netip.MustParsePrefix("fd00:2::/64"),
 	}
-	targets := []*settings.Settings{
-		&configuration.TCPSettings,
-		&configuration.UDPSettings,
-		&configuration.WSSettings,
-	}
-	for i, s := range targets {
+	changed := false
+	for i, s := range conf.AllSettingsPtrs() {
 		if !s.IPv6Subnet.IsValid() {
 			s.IPv6Subnet = defaults[i]
+			changed = true
 		}
 	}
+	if !changed {
+		return nil
+	}
 
-	configuration.EnsureDefaults()
-	return c.writer.Write(*configuration)
+	conf.EnsureDefaults()
+	return c.writer.Write(*conf)
 }
 
 // InvalidateCache clears the cached configuration if the reader supports it.

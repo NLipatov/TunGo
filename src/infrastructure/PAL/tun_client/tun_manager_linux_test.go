@@ -149,25 +149,31 @@ func newMgr(
 	cfg := client.Configuration{
 		Protocol: proto,
 		UDPSettings: settings.Settings{
-			InterfaceName:    "tun0",
-			IPv4Subnet:  mustPrefix("10.0.0.0/30"),
-			IPv4IP:      mustAddr("10.0.0.2"),
-			Host:             mustHost("198.51.100.1"),
-			MTU:              1400,
+			Addressing: settings.Addressing{
+				TunName:    "tun0",
+				IPv4Subnet: mustPrefix("10.0.0.0/30"),
+				IPv4:       mustAddr("10.0.0.2"),
+				Server:     mustHost("198.51.100.1"),
+			},
+			MTU: 1400,
 		},
 		TCPSettings: settings.Settings{
-			InterfaceName:    "tun1",
-			IPv4Subnet:  mustPrefix("10.0.0.4/30"),
-			IPv4IP:      mustAddr("10.0.0.6"),
-			Host:             mustHost("203.0.113.1"),
-			MTU:              1400,
+			Addressing: settings.Addressing{
+				TunName:    "tun1",
+				IPv4Subnet: mustPrefix("10.0.0.4/30"),
+				IPv4:       mustAddr("10.0.0.6"),
+				Server:     mustHost("203.0.113.1"),
+			},
+			MTU: 1400,
 		},
 		WSSettings: settings.Settings{
-			InterfaceName:    "tun2",
-			IPv4Subnet:  mustPrefix("10.0.0.8/30"),
-			IPv4IP:      mustAddr("10.0.0.10"),
-			Host:             mustHost("203.0.113.2"),
-			MTU:              1250,
+			Addressing: settings.Addressing{
+				TunName:    "tun2",
+				IPv4Subnet: mustPrefix("10.0.0.8/30"),
+				IPv4:       mustAddr("10.0.0.10"),
+				Server:     mustHost("203.0.113.2"),
+			},
+			MTU: 1250,
 		},
 	}
 	return &PlatformTunManager{
@@ -341,9 +347,9 @@ func TestCreateDevice_IPv6_FullPath(t *testing.T) {
 	mgr := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{})
 
 	// Enable IPv6 on the active protocol's settings.
-	mgr.configuration.UDPSettings.IPv6IP = mustAddr("fd00::2")
+	mgr.configuration.UDPSettings.IPv6 = mustAddr("fd00::2")
 	mgr.configuration.UDPSettings.IPv6Subnet = mustPrefix("fd00::/64")
-	mgr.configuration.UDPSettings.Host = mgr.configuration.UDPSettings.Host.WithIPv6(netip.MustParseAddr("2001:db8::1"))
+	mgr.configuration.UDPSettings.Server = mgr.configuration.UDPSettings.Server.WithIPv6(netip.MustParseAddr("2001:db8::1"))
 
 	dev, err := mgr.CreateDevice()
 	if err != nil {
@@ -375,7 +381,7 @@ func TestCreateDevice_IPv6_AddrAddError(t *testing.T) {
 		callCount:               &calls,
 	}, platformTunManagerIOCTLMock{}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{})
 
-	mgr.configuration.UDPSettings.IPv6IP = mustAddr("fd00::2")
+	mgr.configuration.UDPSettings.IPv6 = mustAddr("fd00::2")
 	mgr.configuration.UDPSettings.IPv6Subnet = mustPrefix("fd00::/64")
 
 	_, err := mgr.CreateDevice()
@@ -390,7 +396,7 @@ func TestCreateDevice_IPv6_Route6DefaultError(t *testing.T) {
 		failStep:   "def6",
 	}
 	mgr := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{})
-	mgr.configuration.UDPSettings.IPv6IP = mustAddr("fd00::2")
+	mgr.configuration.UDPSettings.IPv6 = mustAddr("fd00::2")
 	mgr.configuration.UDPSettings.IPv6Subnet = mustPrefix("fd00::/64")
 
 	_, err := mgr.CreateDevice()
@@ -402,9 +408,9 @@ func TestCreateDevice_IPv6_Route6DefaultError(t *testing.T) {
 func TestDisposeDevices_IPv6HostRouteCleanup(t *testing.T) {
 	ipMock := &platformTunManagerIPMock{}
 	mgr := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{})
-	mgr.configuration.UDPSettings.Host = mgr.configuration.UDPSettings.Host.WithIPv6(netip.MustParseAddr("2001:db8::1"))
-	mgr.configuration.TCPSettings.Host = mgr.configuration.TCPSettings.Host.WithIPv6(netip.MustParseAddr("2001:db8::2"))
-	mgr.configuration.WSSettings.Host = mgr.configuration.WSSettings.Host.WithIPv6(netip.MustParseAddr("2001:db8::3"))
+	mgr.configuration.UDPSettings.Server = mgr.configuration.UDPSettings.Server.WithIPv6(netip.MustParseAddr("2001:db8::1"))
+	mgr.configuration.TCPSettings.Server = mgr.configuration.TCPSettings.Server.WithIPv6(netip.MustParseAddr("2001:db8::2"))
+	mgr.configuration.WSSettings.Server = mgr.configuration.WSSettings.Server.WithIPv6(netip.MustParseAddr("2001:db8::3"))
 
 	if err := mgr.DisposeDevices(); err != nil {
 		t.Fatalf("unexpected error: %v", err)

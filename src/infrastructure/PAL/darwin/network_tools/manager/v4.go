@@ -49,15 +49,15 @@ func (m *v4) CreateDevice() (tun.Device, error) {
 		return nil, fmt.Errorf("get utun name: %w", err)
 	}
 	m.ifName = name
-	routeIP, routeErr := m.s.Host.RouteIPv4()
+	routeIP, routeErr := m.s.Server.RouteIPv4()
 	if routeErr != nil {
 		_ = m.DisposeDevices()
-		return nil, fmt.Errorf("v4: resolve route for %s: %w", m.s.Host, routeErr)
+		return nil, fmt.Errorf("v4: resolve route for %s: %w", m.s.Server, routeErr)
 	}
 	m.resolvedRouteIP = routeIP
 	if getErr := m.rtc.Get(routeIP); getErr != nil {
 		_ = m.DisposeDevices()
-		return nil, fmt.Errorf("route to server %s: %w", m.s.Host, getErr)
+		return nil, fmt.Errorf("route to server %s: %w", m.s.Server, getErr)
 	}
 	if assignErr := m.assignIPv4(); assignErr != nil {
 		_ = m.DisposeDevices()
@@ -90,11 +90,11 @@ func (m *v4) DisposeDevices() error {
 }
 
 func (m *v4) validateSettings() error {
-	if m.s.Host.IsZero() {
-		return fmt.Errorf("v4: empty Host")
+	if m.s.Server.IsZero() {
+		return fmt.Errorf("v4: empty Server")
 	}
-	if !m.s.IPv4IP.IsValid() || !m.s.IPv4IP.Unmap().Is4() {
-		return fmt.Errorf("v4: invalid IPv4IP %q", m.s.IPv4IP)
+	if !m.s.IPv4.IsValid() || !m.s.IPv4.Unmap().Is4() {
+		return fmt.Errorf("v4: invalid IPv4 %q", m.s.IPv4)
 	}
 	if !m.s.IPv4Subnet.IsValid() {
 		return fmt.Errorf("v4: invalid IPv4Subnet %q", m.s.IPv4Subnet)
@@ -103,7 +103,7 @@ func (m *v4) validateSettings() error {
 }
 
 func (m *v4) assignIPv4() error {
-	cidr := fmt.Sprintf("%s/32", m.s.IPv4IP)
+	cidr := fmt.Sprintf("%s/32", m.s.IPv4)
 	if err := m.ifc.LinkAddrAdd(m.ifName, cidr); err != nil {
 		return fmt.Errorf("v4: set addr %s on %s: %w", cidr, m.ifName, err)
 	}

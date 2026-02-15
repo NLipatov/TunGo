@@ -7,7 +7,6 @@ import (
 	"tungo/infrastructure/PAL/configuration/client"
 	serverConfiguration "tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/cryptography/primitives"
-	nip "tungo/infrastructure/network/ip"
 	"tungo/infrastructure/settings"
 )
 
@@ -82,8 +81,7 @@ func (g *Generator) Generate() (*client.Configuration, error) {
 
 	clientID := serverConf.ClientCounter + 1
 
-	clientIPs, err := g.allocateClientIPs(serverConf, clientID)
-	if err != nil {
+	if err := g.serverConfigurationManager.IncrementClientCounter(); err != nil {
 		return nil, err
 	}
 
@@ -93,10 +91,10 @@ func (g *Generator) Generate() (*client.Configuration, error) {
 	}
 
 	newPeer := serverConfiguration.AllowedPeer{
-		Name:        fmt.Sprintf("client-%d", clientID),
-		PublicKey:   clientPubKey,
-		Enabled:     true,
-		ClientID: clientID,
+		Name:      fmt.Sprintf("client-%d", clientID),
+		PublicKey: clientPubKey,
+		Enabled:   true,
+		ClientID:  clientID,
 	}
 	if err := g.serverConfigurationManager.AddAllowedPeer(newPeer); err != nil {
 		return nil, fmt.Errorf("failed to add client to AllowedPeers: %w", err)
@@ -105,9 +103,10 @@ func (g *Generator) Generate() (*client.Configuration, error) {
 	defaultProtocol := getDefaultProtocol(serverConf)
 
 	conf := client.Configuration{
-		TCPSettings:      deriveClientSettings(serverConf.TCPSettings, clientIPs.tcp, clientIPs.tcpV6, serverHost, settings.TCP),
-		UDPSettings:      deriveClientSettings(serverConf.UDPSettings, clientIPs.udp, clientIPs.udpV6, serverHost, settings.UDP),
-		WSSettings:       deriveClientSettings(serverConf.WSSettings, clientIPs.ws, clientIPs.wsV6, serverHost, settings.WS),
+		ClientID:         clientID,
+		TCPSettings:      deriveClientSettings(serverConf.TCPSettings, serverHost, settings.TCP),
+		UDPSettings:      deriveClientSettings(serverConf.UDPSettings, serverHost, settings.UDP),
+		WSSettings:       deriveClientSettings(serverConf.WSSettings, serverHost, settings.WS),
 		X25519PublicKey:  serverConf.X25519PublicKey,
 		Protocol:         defaultProtocol,
 		ClientPublicKey:  clientPubKey,
@@ -144,55 +143,10 @@ func (g *Generator) resolveServerHost(fallback string) (settings.Host, error) {
 	return host, nil
 }
 
-type clientIPs struct {
-	tcp, udp, ws       netip.Addr
-	tcpV6, udpV6, wsV6 netip.Addr
-}
-
-func (g *Generator) allocateClientIPs(
-	serverConf *serverConfiguration.Configuration,
-	clientID int,
-) (clientIPs, error) {
-	var ips clientIPs
-	var err error
-
-	ips.tcp, err = nip.AllocateClientIP(serverConf.TCPSettings.IPv4Subnet, clientID)
-	if err != nil {
-		return clientIPs{}, fmt.Errorf("TCP interface address allocation fail: %w", err)
-	}
-
-	ips.udp, err = nip.AllocateClientIP(serverConf.UDPSettings.IPv4Subnet, clientID)
-	if err != nil {
-		return clientIPs{}, fmt.Errorf("UDP interface address allocation fail: %w", err)
-	}
-
-	ips.ws, err = nip.AllocateClientIP(serverConf.WSSettings.IPv4Subnet, clientID)
-	if err != nil {
-		return clientIPs{}, fmt.Errorf("WS interface address allocation fail: %w", err)
-	}
-
-	// Allocate IPv6 addresses (optional — only if server has IPv6 subnets configured)
-	if serverConf.TCPSettings.IPv6Subnet.IsValid() {
-		ips.tcpV6, _ = nip.AllocateClientIP(serverConf.TCPSettings.IPv6Subnet, clientID)
-	}
-	if serverConf.UDPSettings.IPv6Subnet.IsValid() {
-		ips.udpV6, _ = nip.AllocateClientIP(serverConf.UDPSettings.IPv6Subnet, clientID)
-	}
-	if serverConf.WSSettings.IPv6Subnet.IsValid() {
-		ips.wsV6, _ = nip.AllocateClientIP(serverConf.WSSettings.IPv6Subnet, clientID)
-	}
-
-	if err = g.serverConfigurationManager.IncrementClientCounter(); err != nil {
-		return clientIPs{}, err
-	}
-
-	return ips, nil
-}
-
+// deriveClientSettings copies subnets from server settings into a client Settings.
+// IPv4/IPv6 addresses are NOT set here — they are derived at load time via Resolve().
 func deriveClientSettings(
 	serverSettings settings.Settings,
-	clientIP netip.Addr,
-	clientIPv6 netip.Addr,
 	serverHost settings.Host,
 	protocol settings.Protocol,
 ) settings.Settings {
@@ -201,19 +155,19 @@ func deriveClientSettings(
 		mtu = settings.SafeMTU
 	}
 	s := settings.Settings{
-		InterfaceName: serverSettings.InterfaceName,
-		IPv4Subnet:    serverSettings.IPv4Subnet,
-		IPv4IP:        clientIP.Unmap(),
-		Host:          serverHost,
-		Port:          serverSettings.Port,
+		Addressing: settings.Addressing{
+			TunName:    serverSettings.TunName,
+			IPv4Subnet: serverSettings.IPv4Subnet,
+			Server:     serverHost,
+			Port:       serverSettings.Port,
+		},
 		MTU:           mtu,
 		Protocol:      protocol,
 		Encryption:    serverSettings.Encryption,
 		DialTimeoutMs: serverSettings.DialTimeoutMs,
 	}
-	if clientIPv6.IsValid() {
+	if serverSettings.IPv6Subnet.IsValid() {
 		s.IPv6Subnet = serverSettings.IPv6Subnet
-		s.IPv6IP = clientIPv6
 	}
 	return s
 }

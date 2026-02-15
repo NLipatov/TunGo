@@ -70,25 +70,25 @@ func (m *v6Manager) CreateDevice() (tun.Device, error) {
 }
 
 func (m *v6Manager) validateSettings() error {
-	if strings.TrimSpace(m.s.InterfaceName) == "" {
-		return fmt.Errorf("empty InterfaceName")
+	if strings.TrimSpace(m.s.TunName) == "" {
+		return fmt.Errorf("empty TunName")
 	}
-	if m.s.Host.IsZero() {
-		return fmt.Errorf("empty Host")
+	if m.s.Server.IsZero() {
+		return fmt.Errorf("empty Server")
 	}
 	if !m.s.IPv6Subnet.IsValid() {
 		return fmt.Errorf("invalid IPv6Subnet: %q", m.s.IPv6Subnet)
 	}
-	if !m.s.IPv6IP.IsValid() || m.s.IPv6IP.Unmap().Is4() {
-		return fmt.Errorf("v6Manager requires IPv6 address, got %q", m.s.IPv6IP)
+	if !m.s.IPv6.IsValid() || m.s.IPv6.Unmap().Is4() {
+		return fmt.Errorf("v6Manager requires IPv6 address, got %q", m.s.IPv6)
 	}
 	return nil
 }
 
 func (m *v6Manager) createTunDevice() (tun.Device, error) {
-	adapter, err := wintun.CreateAdapter(m.s.InterfaceName, tunnelType, nil)
+	adapter, err := wintun.CreateAdapter(m.s.TunName, tunnelType, nil)
 	if err != nil {
-		if existing, openErr := wintun.OpenAdapter(m.s.InterfaceName); openErr == nil {
+		if existing, openErr := wintun.OpenAdapter(m.s.TunName); openErr == nil {
 			return wtun.NewTUN(existing)
 		}
 		return nil, fmt.Errorf("create/open adapter: %w", err)
@@ -102,9 +102,9 @@ func (m *v6Manager) createTunDevice() (tun.Device, error) {
 }
 
 func (m *v6Manager) addStaticRouteToServer() error {
-	routeIP, err := m.s.Host.RouteIPv6()
+	routeIP, err := m.s.Server.RouteIPv6()
 	if err != nil {
-		return fmt.Errorf("resolve host %s: %w", m.s.Host, err)
+		return fmt.Errorf("resolve host %s: %w", m.s.Server, err)
 	}
 	m.resolvedRouteIP = routeIP
 	_ = m.netConfig.DeleteRoute(routeIP)
@@ -121,7 +121,7 @@ func (m *v6Manager) addStaticRouteToServer() error {
 
 // assignIPToTunDevice validates IPv6 address ∈ CIDR and applies it via prefix length.
 func (m *v6Manager) assignIPToTunDevice() error {
-	ipStr := m.s.IPv6IP.String()
+	ipStr := m.s.IPv6.String()
 	subnetStr := m.s.IPv6Subnet.String()
 	ip := net.ParseIP(ipStr)
 	_, nw, _ := net.ParseCIDR(subnetStr)
@@ -129,13 +129,13 @@ func (m *v6Manager) assignIPToTunDevice() error {
 		return fmt.Errorf("address %s not in %s", ipStr, subnetStr)
 	}
 	prefix, _ := nw.Mask.Size()
-	return m.netConfig.SetAddressStatic(m.s.InterfaceName, ipStr, strconv.Itoa(prefix))
+	return m.netConfig.SetAddressStatic(m.s.TunName, ipStr, strconv.Itoa(prefix))
 }
 
 // setRouteToTunDevice replaces any existing default with IPv6 split default (::/1, 8000::/1).
 func (m *v6Manager) setRouteToTunDevice() error {
-	_ = m.netConfig.DeleteDefaultSplitRoutes(m.s.InterfaceName)
-	return m.netConfig.AddDefaultSplitRoutes(m.s.InterfaceName, 1)
+	_ = m.netConfig.DeleteDefaultSplitRoutes(m.s.TunName)
+	return m.netConfig.AddDefaultSplitRoutes(m.s.TunName, 1)
 }
 
 func (m *v6Manager) setMTUToTunDevice() error {
@@ -146,12 +146,12 @@ func (m *v6Manager) setMTUToTunDevice() error {
 	if mtu < settings.MinimumIPv6MTU {
 		mtu = settings.MinimumIPv6MTU
 	}
-	return m.netConfig.SetMTU(m.s.InterfaceName, mtu)
+	return m.netConfig.SetMTU(m.s.TunName, mtu)
 }
 
 func (m *v6Manager) setDNSToTunDevice() error {
 	// ToDo: Move dns server addresses to configuration
-	if err := m.netConfig.SetDNS(m.s.InterfaceName,
+	if err := m.netConfig.SetDNS(m.s.TunName,
 		[]string{"2606:4700:4700::1111", "2001:4860:4860::8888"},
 	); err != nil {
 		return err
@@ -162,7 +162,7 @@ func (m *v6Manager) setDNSToTunDevice() error {
 
 // DisposeDevices reverses CreateDevice in safe order.
 func (m *v6Manager) DisposeDevices() error {
-	_ = m.netConfig.DeleteDefaultSplitRoutes(m.s.InterfaceName)
+	_ = m.netConfig.DeleteDefaultSplitRoutes(m.s.TunName)
 	if m.resolvedRouteIP != "" {
 		_ = m.netConfig.DeleteRoute(m.resolvedRouteIP)
 	}

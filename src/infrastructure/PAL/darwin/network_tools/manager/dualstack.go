@@ -62,40 +62,43 @@ func (m *dualStack) CreateDevice() (tun.Device, error) {
 	m.ifName = name
 
 	// Pin route to IPv4 server.
-	routeIP4, err := m.s.Host.RouteIPv4()
+	routeIP4, err := m.s.Server.RouteIPv4()
 	if err != nil {
 		_ = m.DisposeDevices()
-		return nil, fmt.Errorf("dualstack: resolve v4 route for %s: %w", m.s.Host, err)
+		return nil, fmt.Errorf("dualstack: resolve v4 route for %s: %w", m.s.Server, err)
 	}
 	m.resolvedRouteIP4 = routeIP4
 	if err := m.rtc4.Get(routeIP4); err != nil {
 		_ = m.DisposeDevices()
-		return nil, fmt.Errorf("dualstack: pin v4 route to %s: %w", m.s.Host, err)
+		return nil, fmt.Errorf("dualstack: pin v4 route to %s: %w", m.s.Server, err)
 	}
 
 	// Pin route to IPv6 server (if configured).
-	if m.s.Host.HasIPv6() {
-		routeIP6, err := m.s.Host.RouteIPv6()
+	if m.s.Server.HasIPv6() {
+		routeIP6, err := m.s.Server.RouteIPv6()
 		if err != nil {
 			_ = m.DisposeDevices()
-			return nil, fmt.Errorf("dualstack: resolve v6 route for %s: %w", m.s.Host, err)
+			return nil, fmt.Errorf("dualstack: resolve v6 route for %s: %w", m.s.Server, err)
 		}
 		m.resolvedRouteIP6 = routeIP6
 		if err := m.rtc6.Get(routeIP6); err != nil {
 			_ = m.DisposeDevices()
-			return nil, fmt.Errorf("dualstack: pin v6 route to %s: %w", m.s.Host, err)
+			return nil, fmt.Errorf("dualstack: pin v6 route to %s: %w", m.s.Server, err)
 		}
 	}
 
 	// Assign IPv4 address.
-	cidr4 := fmt.Sprintf("%s/32", m.s.IPv4IP)
+	cidr4 := fmt.Sprintf("%s/32", m.s.IPv4)
 	if err := m.ifc4.LinkAddrAdd(m.ifName, cidr4); err != nil {
 		_ = m.DisposeDevices()
 		return nil, fmt.Errorf("dualstack: set v4 addr %s on %s: %w", cidr4, m.ifName, err)
 	}
 
 	// Assign IPv6 address.
-	cidr6 := m.ipv6CIDR()
+	cidr6, _ := m.s.IPv6CIDR()
+	if cidr6 == "" {
+		cidr6 = fmt.Sprintf("%s/128", m.s.IPv6)
+	}
 	if err := m.ifc6.LinkAddrAdd(m.ifName, cidr6); err != nil {
 		_ = m.DisposeDevices()
 		return nil, fmt.Errorf("dualstack: set v6 addr %s on %s: %w", cidr6, m.ifName, err)
@@ -138,23 +141,16 @@ func (m *dualStack) DisposeDevices() error {
 }
 
 func (m *dualStack) validateSettings() error {
-	if m.s.Host.IsZero() {
-		return fmt.Errorf("dualstack: empty Host")
+	if m.s.Server.IsZero() {
+		return fmt.Errorf("dualstack: empty Server")
 	}
-	if !m.s.IPv4IP.IsValid() || !m.s.IPv4IP.Unmap().Is4() {
-		return fmt.Errorf("dualstack: invalid IPv4 IPv4IP %q", m.s.IPv4IP)
+	if !m.s.IPv4.IsValid() || !m.s.IPv4.Unmap().Is4() {
+		return fmt.Errorf("dualstack: invalid IPv4 %q", m.s.IPv4)
 	}
-	if !m.s.IPv6IP.IsValid() || m.s.IPv6IP.Unmap().Is4() {
-		return fmt.Errorf("dualstack: invalid IPv6IP %q", m.s.IPv6IP)
+	if !m.s.IPv6.IsValid() || m.s.IPv6.Unmap().Is4() {
+		return fmt.Errorf("dualstack: invalid IPv6 %q", m.s.IPv6)
 	}
 	return nil
-}
-
-func (m *dualStack) ipv6CIDR() string {
-	if m.s.IPv6Subnet.IsValid() {
-		return fmt.Sprintf("%s/%d", m.s.IPv6IP, m.s.IPv6Subnet.Bits())
-	}
-	return fmt.Sprintf("%s/128", m.s.IPv6IP)
 }
 
 func (m *dualStack) effectiveMTU() int {

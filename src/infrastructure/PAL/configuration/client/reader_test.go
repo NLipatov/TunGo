@@ -2,6 +2,7 @@ package client
 
 import (
 	"encoding/json"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,13 +24,27 @@ func createTempClientConfigFile(t *testing.T, data interface{}) string {
 	return filePath
 }
 
-func TestReaderReadSuccess(t *testing.T) {
-	expectedConfig := Configuration{
-		TCPSettings:     settings.Settings{},
-		UDPSettings:     settings.Settings{},
-		X25519PublicKey: nil,
-		Protocol:        settings.UDP,
+func validTestConfig() Configuration {
+	host, _ := settings.NewHost("127.0.0.1")
+	return Configuration{
+		ClientID: 1,
+		UDPSettings: settings.Settings{
+			Addressing: settings.Addressing{
+				Server:     host,
+				Port:       9090,
+				IPv4Subnet: netip.MustParsePrefix("10.0.1.0/24"),
+			},
+			Protocol: settings.UDP,
+		},
+		X25519PublicKey:  make([]byte, 32),
+		ClientPublicKey:  make([]byte, 32),
+		ClientPrivateKey: make([]byte, 32),
+		Protocol:         settings.UDP,
 	}
+}
+
+func TestReaderReadSuccess(t *testing.T) {
+	expectedConfig := validTestConfig()
 	path := createTempClientConfigFile(t, expectedConfig)
 	r := newReader(path)
 	config, err := r.read()

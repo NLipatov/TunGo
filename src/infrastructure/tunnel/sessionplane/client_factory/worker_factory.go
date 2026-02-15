@@ -55,12 +55,7 @@ func (w *WorkerFactory) CreateWorker(
 			egress,
 		)
 		return udp_chacha20.NewUdpWorker(transportHandler, tunHandler), nil
-	case settings.TCP:
-		egress := connection.NewDefaultEgress(conn, crypto)
-		tunHandler := tcp_chacha20.NewTunHandler(ctx, tun, egress, controller, allowed)
-		transportHandler := tcp_chacha20.NewTransportHandler(ctx, conn, tun, crypto, controller, egress)
-		return tcp_chacha20.NewTcpTunWorker(ctx, tunHandler, transportHandler, crypto, controller), nil
-	case settings.WS, settings.WSS:
+	case settings.TCP, settings.WS, settings.WSS:
 		egress := connection.NewDefaultEgress(conn, crypto)
 		tunHandler := tcp_chacha20.NewTunHandler(ctx, tun, egress, controller, allowed)
 		transportHandler := tcp_chacha20.NewTransportHandler(ctx, conn, tun, crypto, controller, egress)
@@ -76,11 +71,11 @@ func (w *WorkerFactory) allowedSources() map[netip.Addr]struct{} {
 		return nil
 	}
 	m := make(map[netip.Addr]struct{}, 2)
-	if s.IPv4IP.IsValid() {
-		m[s.IPv4IP.Unmap()] = struct{}{}
+	if s.IPv4.IsValid() {
+		m[s.IPv4.Unmap()] = struct{}{}
 	}
-	if s.IPv6IP.IsValid() {
-		m[s.IPv6IP.Unmap()] = struct{}{}
+	if s.IPv6.IsValid() {
+		m[s.IPv6.Unmap()] = struct{}{}
 	}
 	return m
 }

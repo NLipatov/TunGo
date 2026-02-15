@@ -38,15 +38,17 @@ func (d *mockConfigurationManager) Configuration() (*client.Configuration, error
 func newDummyConfig() *client.Configuration {
 	return &client.Configuration{
 		UDPSettings: settings.Settings{
-			InterfaceName:    "udp_dependencies_test_0",
-			IPv4Subnet:  mustPrefix("10.0.1.0/24"),
-			IPv4IP:      mustAddr("10.0.1.1"),
-			Host:             mustHost("1.2.3.4"),
-			Port:             1010,
-			MTU:              1000,
-			Protocol:         settings.UDP,
-			Encryption:       settings.ChaCha20Poly1305,
-			DialTimeoutMs:    5000,
+			Addressing: settings.Addressing{
+				TunName:    "udp_dependencies_test_0",
+				IPv4Subnet: mustPrefix("10.0.1.0/24"),
+				IPv4:       mustAddr("10.0.1.1"),
+				Server:     mustHost("1.2.3.4"),
+				Port:       1010,
+			},
+			MTU:           1000,
+			Protocol:      settings.UDP,
+			Encryption:    settings.ChaCha20Poly1305,
+			DialTimeoutMs: 5000,
 		},
 		Protocol: settings.UDP,
 	}

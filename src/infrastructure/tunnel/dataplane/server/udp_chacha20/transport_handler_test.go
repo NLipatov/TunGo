@@ -370,7 +370,7 @@ func TestHandleTransport_CancelBeforeLoop_ReturnsNil(t *testing.T) {
 		netip.MustParsePrefix("10.0.0.0/24"),
 		netip.Prefix{},
 	)
-	h := NewTransportHandler(ctx, settings.Settings{Port: 7777}, writer, conn, repo, logger, registrar)
+	h := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 7777}}, writer, conn, repo, logger, registrar)
 
 	err := h.HandleTransport()
 	if err != nil {
@@ -401,7 +401,7 @@ func TestHandleTransport_CancelWhileRead_ReturnsCtxErr(t *testing.T) {
 		netip.MustParsePrefix("10.0.0.0/24"),
 		netip.Prefix{},
 	)
-	h := NewTransportHandler(ctx, settings.Settings{Port: 9001}, writer, bl, repo, logger, registrar)
+	h := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 9001}}, writer, bl, repo, logger, registrar)
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- h.HandleTransport() }()
@@ -440,7 +440,7 @@ func TestHandleTransport_ReadMsgUDPAddrPortError_LogsAndContinues(t *testing.T) 
 		netip.MustParsePrefix("10.0.0.0/24"),
 		netip.Prefix{},
 	)
-	h := NewTransportHandler(ctx, settings.Settings{Port: 4444}, writer, conn, repo, logger, registrar)
+	h := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 4444}}, writer, conn, repo, logger, registrar)
 
 	done := make(chan struct{})
 	go func() { _ = h.HandleTransport(); close(done) }()
@@ -475,7 +475,7 @@ func TestHandleTransport_EmptyPacket_Dropped(t *testing.T) {
 		netip.MustParsePrefix("10.0.0.0/24"),
 		netip.Prefix{},
 	)
-	h := NewTransportHandler(ctx, settings.Settings{Port: 5555}, writer, conn, repo, logger, registrar)
+	h := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 5555}}, writer, conn, repo, logger, registrar)
 
 	done := make(chan struct{})
 	go func() { _ = h.HandleTransport(); close(done) }()
@@ -515,7 +515,7 @@ func TestTransportHandler_RegistrationPacket(t *testing.T) {
 		netip.MustParsePrefix("10.0.0.0/24"),
 		netip.Prefix{},
 	)
-	handler := NewTransportHandler(ctx, settings.Settings{Port: 9999}, writer, conn, repo, logger, registrar)
+	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 9999}}, writer, conn, repo, logger, registrar)
 
 	go func() { _ = handler.HandleTransport() }()
 
@@ -570,7 +570,7 @@ func TestTransportHandler_DecryptError(t *testing.T) {
 		netip.MustParsePrefix("10.0.0.0/24"),
 		netip.Prefix{},
 	)
-	handler := NewTransportHandler(ctx, settings.Settings{Port: 2222}, writer, conn, repo, logger, registrar)
+	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 2222}}, writer, conn, repo, logger, registrar)
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
 	<-sessionRegistered
@@ -632,7 +632,7 @@ func TestTransportHandler_WriteError(t *testing.T) {
 		netip.MustParsePrefix("10.0.0.0/24"),
 		netip.Prefix{},
 	)
-	handler := NewTransportHandler(ctx, settings.Settings{Port: 3333}, writer, conn, repo, logger, registrar)
+	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 3333}}, writer, conn, repo, logger, registrar)
 
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
@@ -698,7 +698,7 @@ func TestTransportHandler_HappyPath(t *testing.T) {
 		netip.MustParsePrefix("10.0.0.0/24"),
 		netip.Prefix{},
 	)
-	handler := NewTransportHandler(ctx, settings.Settings{Port: 5050}, writer, conn, repo, logger, registrar)
+	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 5050}}, writer, conn, repo, logger, registrar)
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
 	time.Sleep(20 * time.Millisecond)
@@ -746,7 +746,7 @@ func TestTransportHandler_NATRoaming_TrialDecrypt(t *testing.T) {
 		netip.MustParsePrefix("10.0.0.0/24"),
 		netip.Prefix{},
 	)
-	handler := NewTransportHandler(ctx, settings.Settings{Port: 6060}, tunWriter, conn, repo, logger, registrar)
+	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 6060}}, tunWriter, conn, repo, logger, registrar)
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
 	time.Sleep(50 * time.Millisecond)
@@ -802,7 +802,7 @@ func TestTransportHandler_NATRoaming_FastPathAfterRoam(t *testing.T) {
 		netip.MustParsePrefix("10.0.0.0/24"),
 		netip.Prefix{},
 	)
-	handler := NewTransportHandler(ctx, settings.Settings{Port: 7070}, tunWriter, conn, repo, logger, registrar)
+	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 7070}}, tunWriter, conn, repo, logger, registrar)
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
 	time.Sleep(50 * time.Millisecond)
@@ -842,7 +842,7 @@ func TestTransportHandler_RegisterClient_NegativeClientID_FailsAllocation(t *tes
 		netip.MustParsePrefix("10.0.0.0/24"),
 		netip.Prefix{},
 	)
-	handler := NewTransportHandler(ctx, settings.Settings{Port: 6000}, writer, conn, repo, logger, registrar)
+	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 6000}}, writer, conn, repo, logger, registrar)
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
 
@@ -929,7 +929,7 @@ func TestTransportHandler_SecondPacketGoesToExistingRegistrationQueue_NoNewGorou
 		netip.MustParsePrefix("10.0.0.0/24"),
 		netip.Prefix{},
 	)
-	handler := NewTransportHandler(ctx, settings.Settings{Port: 7000}, writer, conn, repo, logger, registrar)
+	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 7000}}, writer, conn, repo, logger, registrar)
 
 	go func() {
 		_ = handler.HandleTransport()
@@ -992,7 +992,7 @@ func TestHandleTransport_IgnoreHandlePacketError(t *testing.T) {
 		netip.MustParsePrefix("10.0.0.0/24"),
 		netip.Prefix{},
 	)
-	handler := NewTransportHandler(ctx, settings.Settings{Port: 9999}, writer, conn, repo, logger, registrar)
+	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 9999}}, writer, conn, repo, logger, registrar)
 
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
@@ -1112,7 +1112,7 @@ func TestRegisterClient_CryptoError_LogsAndFails(t *testing.T) {
 		netip.MustParsePrefix("10.0.0.0/24"),
 		netip.Prefix{},
 	)
-	handler := NewTransportHandler(ctx, settings.Settings{Port: 5555}, writer, conn, repo, logger, registrar)
+	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 5555}}, writer, conn, repo, logger, registrar)
 
 	done := make(chan struct{})
 	go func() {
@@ -1254,7 +1254,7 @@ func TestHandleTransport_ShortPacket_Logged(t *testing.T) {
 		netip.MustParsePrefix("10.0.0.0/24"),
 		netip.Prefix{},
 	)
-	handler := NewTransportHandler(ctx, settings.Settings{Port: 9999}, writer, conn, repo, logger, registrar)
+	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 9999}}, writer, conn, repo, logger, registrar)
 
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
@@ -1306,7 +1306,7 @@ func TestHandleTransport_EpochExhausted_LogsError(t *testing.T) {
 		netip.MustParsePrefix("10.0.0.0/24"),
 		netip.Prefix{},
 	)
-	handler := NewTransportHandler(ctx, settings.Settings{Port: 8080}, writer, conn, repo, logger, registrar)
+	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 8080}}, writer, conn, repo, logger, registrar)
 
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
@@ -1483,7 +1483,7 @@ func TestHandleTransport_NilRegistrar_NoUnknownPanic(t *testing.T) {
 	}
 
 	// nil registrar — unknown client should not panic.
-	handler := NewTransportHandler(ctx, settings.Settings{Port: 9090}, writer, conn, repo, logger, nil)
+	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 9090}}, writer, conn, repo, logger, nil)
 
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()

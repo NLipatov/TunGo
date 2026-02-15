@@ -3,7 +3,6 @@ package tun_client
 import (
 	"fmt"
 	"log"
-	"net/netip"
 	"strings"
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/configuration/client"
@@ -48,7 +47,7 @@ func (t *PlatformTunManager) CreateDevice() (tun.Device, error) {
 	}
 
 	// opens the TUN device
-	tunFile, openTunErr := t.ioctl.CreateTunInterface(connectionSettings.InterfaceName)
+	tunFile, openTunErr := t.ioctl.CreateTunInterface(connectionSettings.TunName)
 	if openTunErr != nil {
 		return nil, fmt.Errorf("failed to open TUN interface: %v", openTunErr)
 	}
@@ -58,41 +57,41 @@ func (t *PlatformTunManager) CreateDevice() (tun.Device, error) {
 
 // configureTUN Configures client's TUN device (creates the TUN device, assigns an IP to it, etc)
 func (t *PlatformTunManager) configureTUN(connSettings settings.Settings) error {
-	err := t.ip.TunTapAddDevTun(connSettings.InterfaceName)
+	err := t.ip.TunTapAddDevTun(connSettings.TunName)
 	if err != nil {
 		return err
 	}
 
-	err = t.ip.LinkSetDevUp(connSettings.InterfaceName)
+	err = t.ip.LinkSetDevUp(connSettings.TunName)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("created TUN interface: %v\n", connSettings.InterfaceName)
+	fmt.Printf("created TUN interface: %v\n", connSettings.TunName)
 
 	// Assign IPv4 address to the TUN interface
-	cidr4, cidr4Err := interfaceCIDR(connSettings.IPv4IP, connSettings.IPv4Subnet)
+	cidr4, cidr4Err := connSettings.IPv4CIDR()
 	if cidr4Err != nil {
 		return cidr4Err
 	}
-	err = t.ip.AddrAddDev(connSettings.InterfaceName, cidr4)
+	err = t.ip.AddrAddDev(connSettings.TunName, cidr4)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("assigned IP %s to interface %s\n", cidr4, connSettings.InterfaceName)
+	fmt.Printf("assigned IP %s to interface %s\n", cidr4, connSettings.TunName)
 
 	// Assign IPv6 address if configured
-	if connSettings.IPv6IP.IsValid() && connSettings.IPv6Subnet.IsValid() {
-		cidr6, cidr6Err := interfaceCIDR(connSettings.IPv6IP, connSettings.IPv6Subnet)
+	if connSettings.IPv6.IsValid() && connSettings.IPv6Subnet.IsValid() {
+		cidr6, cidr6Err := connSettings.IPv6CIDR()
 		if cidr6Err != nil {
 			return cidr6Err
 		}
-		if err := t.ip.AddrAddDev(connSettings.InterfaceName, cidr6); err != nil {
+		if err := t.ip.AddrAddDev(connSettings.TunName, cidr6); err != nil {
 			return err
 		}
-		fmt.Printf("assigned IPv6 %s to interface %s\n", cidr6, connSettings.InterfaceName)
+		fmt.Printf("assigned IPv6 %s to interface %s\n", cidr6, connSettings.TunName)
 	}
 
-	serverIP, hostErr := connSettings.Host.RouteIP()
+	serverIP, hostErr := connSettings.Server.RouteIP()
 	if hostErr != nil {
 		return fmt.Errorf("failed to resolve route target host: %w", hostErr)
 	}
@@ -128,8 +127,8 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.Settings) error 
 	fmt.Printf("added route to server %s via %s dev %s\n", serverIP, viaGateway, devInterface)
 
 	// Add route for IPv6 server address (if available)
-	if connSettings.Host.HasIPv6() {
-		serverIPv6, ipv6HostErr := connSettings.Host.RouteIPv6()
+	if connSettings.Server.HasIPv6() {
+		serverIPv6, ipv6HostErr := connSettings.Server.RouteIPv6()
 		if ipv6HostErr == nil {
 			routeInfo6, routeErr6 := t.ip.RouteGet(serverIPv6)
 			if routeErr6 == nil {
@@ -158,43 +157,33 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.Settings) error 
 	// Set split default routes — more specific than 0.0.0.0/0 so they take
 	// priority without destroying the original default route. On crash or
 	// device deletion the kernel removes them automatically.
-	err = t.ip.RouteAddSplitDefaultDev(connSettings.InterfaceName)
+	err = t.ip.RouteAddSplitDefaultDev(connSettings.TunName)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("set %s as default gateway (split routes)\n", connSettings.InterfaceName)
+	fmt.Printf("set %s as default gateway (split routes)\n", connSettings.TunName)
 
 	// Set IPv6 split default routes if configured
-	if connSettings.IPv6IP.IsValid() {
-		if err := t.ip.Route6AddSplitDefaultDev(connSettings.InterfaceName); err != nil {
+	if connSettings.IPv6.IsValid() {
+		if err := t.ip.Route6AddSplitDefaultDev(connSettings.TunName); err != nil {
 			return err
 		}
-		fmt.Printf("set %s as IPv6 default gateway (split routes)\n", connSettings.InterfaceName)
+		fmt.Printf("set %s as IPv6 default gateway (split routes)\n", connSettings.TunName)
 	}
 
 	// sets client's TUN device maximum transmission unit (MTU)
-	if setMtuErr := t.ip.LinkSetDevMTU(connSettings.InterfaceName, connSettings.MTU); setMtuErr != nil {
+	if setMtuErr := t.ip.LinkSetDevMTU(connSettings.TunName, connSettings.MTU); setMtuErr != nil {
 		return fmt.Errorf(
-			"failed to set %d MTU for %s: %s", connSettings.MTU, connSettings.InterfaceName, setMtuErr,
+			"failed to set %d MTU for %s: %s", connSettings.MTU, connSettings.TunName, setMtuErr,
 		)
 	}
 
 	// install MSS clamping to prevent PMTU blackholes when forwarding traffic
-	if err := t.mss.Install(connSettings.InterfaceName); err != nil {
-		return fmt.Errorf("failed to install MSS clamping for %s: %v", connSettings.InterfaceName, err)
+	if err := t.mss.Install(connSettings.TunName); err != nil {
+		return fmt.Errorf("failed to install MSS clamping for %s: %v", connSettings.TunName, err)
 	}
 
 	return nil
-}
-
-func interfaceCIDR(addr netip.Addr, subnet netip.Prefix) (string, error) {
-	if !addr.IsValid() {
-		return "", fmt.Errorf("invalid address")
-	}
-	if !subnet.IsValid() {
-		return "", fmt.Errorf("invalid subnet")
-	}
-	return netip.PrefixFrom(addr.Unmap(), subnet.Bits()).String(), nil
 }
 
 func (t *PlatformTunManager) DisposeDevices() error {
@@ -203,21 +192,21 @@ func (t *PlatformTunManager) DisposeDevices() error {
 		t.configuration.TCPSettings,
 		t.configuration.WSSettings,
 	} {
-		if err := t.mss.Remove(s.InterfaceName); err != nil {
-			log.Printf("failed to remove MSS clamping for %s: %v", s.InterfaceName, err)
+		if err := t.mss.Remove(s.TunName); err != nil {
+			log.Printf("failed to remove MSS clamping for %s: %v", s.TunName, err)
 		}
 		// Remove split routes before deleting the device
-		_ = t.ip.RouteDelSplitDefault(s.InterfaceName)
-		_ = t.ip.Route6DelSplitDefault(s.InterfaceName)
-		if routeTarget, routeErr := s.Host.RouteIP(); routeErr == nil {
+		_ = t.ip.RouteDelSplitDefault(s.TunName)
+		_ = t.ip.Route6DelSplitDefault(s.TunName)
+		if routeTarget, routeErr := s.Server.RouteIP(); routeErr == nil {
 			_ = t.ip.RouteDel(routeTarget)
 		}
-		if s.Host.HasIPv6() {
-			if routeTarget, routeErr := s.Host.RouteIPv6(); routeErr == nil {
+		if s.Server.HasIPv6() {
+			if routeTarget, routeErr := s.Server.RouteIPv6(); routeErr == nil {
 				_ = t.ip.RouteDel(routeTarget)
 			}
 		}
-		_ = t.ip.LinkDelete(s.InterfaceName)
+		_ = t.ip.LinkDelete(s.TunName)
 	}
 
 	return nil

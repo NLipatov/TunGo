@@ -3,7 +3,6 @@ package server
 import (
 	"fmt"
 	"net/netip"
-	nip "tungo/infrastructure/network/ip"
 	"tungo/infrastructure/settings"
 )
 
@@ -58,27 +57,21 @@ func NewDefaultConfiguration() *Configuration {
 }
 
 func (c *Configuration) EnsureDefaults() *Configuration {
-	c.applyDefaults(&c.TCPSettings, c.defaultSettings(
-		settings.TCP,
-		"tcptun0",
-		"10.0.0.0/24",
-		"10.0.0.1",
-		8080,
-	))
-	c.applyDefaults(&c.UDPSettings, c.defaultSettings(
-		settings.UDP,
-		"udptun0",
-		"10.0.1.0/24",
-		"10.0.1.1",
-		9090,
-	))
-	c.applyDefaults(&c.WSSettings, c.defaultSettings(
-		settings.WS,
-		"wstun0",
-		"10.0.2.0/24",
-		"10.0.2.1",
-		1010,
-	))
+	type proto struct {
+		protocol settings.Protocol
+		tunName  string
+		cidr     string
+		port     int
+	}
+	defaults := []proto{
+		{settings.TCP, "tcptun0", "10.0.0.0/24", 8080},
+		{settings.UDP, "udptun0", "10.0.1.0/24", 9090},
+		{settings.WS, "wstun0", "10.0.2.0/24", 1010},
+	}
+	for i, s := range c.AllSettingsPtrs() {
+		d := defaults[i]
+		c.applyDefaults(s, c.defaultSettings(d.protocol, d.tunName, d.cidr, d.port))
+	}
 	return c
 }
 
@@ -86,20 +79,19 @@ func (c *Configuration) applyDefaults(
 	to *settings.Settings,
 	from settings.Settings,
 ) {
-	if to.InterfaceName == "" {
-		to.InterfaceName = from.InterfaceName
+	if to.TunName == "" {
+		to.TunName = from.TunName
 	}
 	if !to.IPv4Subnet.IsValid() {
 		to.IPv4Subnet = from.IPv4Subnet
 	}
-	if !to.IPv4IP.IsValid() {
-		to.IPv4IP = from.IPv4IP
+	// Derive server IPv4 from subnet if not already set.
+	if to.IPv4Subnet.IsValid() && !to.IPv4.IsValid() {
+		_ = to.Addressing.DeriveIP(0)
 	}
 	// IPv6 is opt-in: admin sets IPv6Subnet, server IP is derived automatically.
-	if to.IPv6Subnet.IsValid() && !to.IPv6IP.IsValid() {
-		if serverIPv6, err := nip.AllocateServerIP(to.IPv6Subnet); err == nil {
-			to.IPv6IP = netip.MustParseAddr(serverIPv6)
-		}
+	if to.IPv6Subnet.IsValid() && !to.IPv6.IsValid() {
+		_ = to.Addressing.DeriveIP(0)
 	}
 	if to.Port == 0 {
 		to.Port = from.Port
@@ -117,62 +109,77 @@ func (c *Configuration) applyDefaults(
 
 func (c *Configuration) defaultSettings(
 	protocol settings.Protocol,
-	interfaceName, ipv4CIDR, ipv4Addr string,
+	tunName, ipv4CIDR string,
 	port int,
 ) settings.Settings {
-	return settings.Settings{
-		InterfaceName: interfaceName,
-		IPv4Subnet:    netip.MustParsePrefix(ipv4CIDR),
-		IPv4IP:        netip.MustParseAddr(ipv4Addr),
-		Port:          port,
+	s := settings.Settings{
+		Addressing: settings.Addressing{
+			TunName:    tunName,
+			IPv4Subnet: netip.MustParsePrefix(ipv4CIDR),
+			Port:       port,
+		},
 		MTU:           settings.DefaultEthernetMTU,
 		Protocol:      protocol,
 		Encryption:    settings.ChaCha20Poly1305,
 		DialTimeoutMs: 5000,
 	}
+	// Derive server IP from subnet.
+	_ = s.Addressing.DeriveIP(0)
+	return s
+}
+
+// AllSettings returns all protocol settings regardless of enabled state.
+func (c Configuration) AllSettings() []settings.Settings {
+	return []settings.Settings{c.TCPSettings, c.UDPSettings, c.WSSettings}
+}
+
+// EnabledSettings returns only the settings for enabled protocols.
+func (c Configuration) EnabledSettings() []settings.Settings {
+	var result []settings.Settings
+	if c.EnableTCP {
+		result = append(result, c.TCPSettings)
+	}
+	if c.EnableUDP {
+		result = append(result, c.UDPSettings)
+	}
+	if c.EnableWS {
+		result = append(result, c.WSSettings)
+	}
+	return result
+}
+
+// AllSettingsPtrs returns pointers to all protocol settings for in-place mutation.
+func (c *Configuration) AllSettingsPtrs() []*settings.Settings {
+	return []*settings.Settings{&c.TCPSettings, &c.UDPSettings, &c.WSSettings}
 }
 
 func (c *Configuration) Validate() error {
-	configs := []settings.Settings{c.TCPSettings, c.UDPSettings, c.WSSettings}
 	// interface names (ifNames) should be unique
 	ifNames := map[string]struct{}{}
-	for _, ifName := range []string{c.TCPSettings.InterfaceName, c.UDPSettings.InterfaceName, c.WSSettings.InterfaceName} {
-		if ifName == "" {
+	for _, s := range c.AllSettings() {
+		if s.TunName == "" {
 			return fmt.Errorf("interface name is empty")
 		}
-		if _, ok := ifNames[ifName]; ok {
-			return fmt.Errorf("duplicate interface name: %s", ifName)
+		if _, ok := ifNames[s.TunName]; ok {
+			return fmt.Errorf("duplicate interface name: %s", s.TunName)
 		}
-		ifNames[ifName] = struct{}{}
+		ifNames[s.TunName] = struct{}{}
 	}
-	// ports should be unique
-	ports := make(map[int]struct{}, len(configs))
-	// subnets must not overlap
-	subnets := make([]netip.Prefix, 0, len(configs))
 
-	for _, config := range configs {
+	enabled := c.EnabledSettings()
+	ports := make(map[int]struct{}, len(enabled))
+	subnets := make([]netip.Prefix, 0, len(enabled))
+
+	for _, config := range enabled {
 		switch config.Protocol {
-		// if protocol is turned off, its validation may be skipped
-		case settings.TCP:
-			if !c.EnableTCP {
-				continue
-			}
-		case settings.UDP:
-			if !c.EnableUDP {
-				continue
-			}
-		case settings.WS:
-			if !c.EnableWS {
-				continue
-			}
+		case settings.TCP, settings.UDP, settings.WS, settings.WSS:
+			// known protocol
 		case settings.UNKNOWN:
-			return fmt.Errorf("[%s] protocol is UNKNOWN", config.InterfaceName)
+			return fmt.Errorf("[%s] protocol is UNKNOWN", config.TunName)
 		default:
 			return fmt.Errorf(
 				"[%s/%s] unsupported protocol %v",
-				config.Protocol,
-				config.InterfaceName,
-				config.Protocol,
+				config.Protocol, config.TunName, config.Protocol,
 			)
 		}
 		// validate port number
@@ -181,7 +188,7 @@ func (c *Configuration) Validate() error {
 			return fmt.Errorf(
 				"invalid 'Port': [%s/%s] invalid port %d: must be in 1..65535",
 				config.Protocol,
-				config.InterfaceName,
+				config.TunName,
 				portNumber,
 			)
 		}
@@ -189,7 +196,7 @@ func (c *Configuration) Validate() error {
 			return fmt.Errorf(
 				"invalid 'Port': [%s/%s] duplicate port %d",
 				config.Protocol,
-				config.InterfaceName,
+				config.TunName,
 				portNumber,
 			)
 		}
@@ -199,58 +206,19 @@ func (c *Configuration) Validate() error {
 			return fmt.Errorf(
 				"invalid 'MTU': [%s/%s] invalid MTU %d: expected 576..9000",
 				config.Protocol,
-				config.InterfaceName,
+				config.TunName,
 				config.MTU,
 			)
 		}
-		pfx := config.IPv4Subnet
-		if !pfx.IsValid() {
-			return fmt.Errorf(
-				"invalid 'IPv4Subnet': [%s/%s] invalid CIDR %q",
-				config.Protocol,
-				config.InterfaceName,
-				config.IPv4Subnet,
-			)
+		if err := c.validateSubnetContainsAddr("IPv4", config.IPv4Subnet, config.IPv4, config.Protocol, config.TunName); err != nil {
+			return err
 		}
-		addr := config.IPv4IP.Unmap()
-		if !addr.IsValid() {
-			return fmt.Errorf(
-				"invalid 'IPv4IP': [%s/%s] invalid address %q",
-				config.Protocol,
-				config.InterfaceName,
-				config.IPv4IP,
-			)
-		}
-		if !pfx.Contains(addr) {
-			return fmt.Errorf(
-				"invalid 'IPv4IP': [%s/%s] address %s not in 'IPv4Subnet' subnet %s",
-				config.Protocol,
-				config.InterfaceName,
-				config.IPv4IP,
-				config.IPv4Subnet,
-			)
-		}
-		subnets = append(subnets, pfx)
+		subnets = append(subnets, config.IPv4Subnet)
 
 		// Validate optional IPv6 settings
 		if config.IPv6Subnet.IsValid() {
-			ipv6Addr := config.IPv6IP.Unmap()
-			if !ipv6Addr.IsValid() {
-				return fmt.Errorf(
-					"invalid 'IPv6IP': [%s/%s] invalid address %q",
-					config.Protocol,
-					config.InterfaceName,
-					config.IPv6IP,
-				)
-			}
-			if !config.IPv6Subnet.Contains(ipv6Addr) {
-				return fmt.Errorf(
-					"invalid 'IPv6IP': [%s/%s] address %s not in 'IPv6Subnet' %s",
-					config.Protocol,
-					config.InterfaceName,
-					config.IPv6IP,
-					config.IPv6Subnet,
-				)
+			if err := c.validateSubnetContainsAddr("IPv6", config.IPv6Subnet, config.IPv6, config.Protocol, config.TunName); err != nil {
+				return err
 			}
 			subnets = append(subnets, config.IPv6Subnet)
 		}
@@ -262,10 +230,35 @@ func (c *Configuration) Validate() error {
 	}
 
 	// validate AllowedPeers
-	if err := c.ValidateAllowedPeers(); err != nil {
-		return err
-	}
+	return c.ValidateAllowedPeers()
+}
 
+func (c *Configuration) validateSubnetContainsAddr(
+	family string,
+	subnet netip.Prefix,
+	addr netip.Addr,
+	proto settings.Protocol,
+	tunName string,
+) error {
+	if !subnet.IsValid() {
+		return fmt.Errorf(
+			"invalid '%sSubnet': [%s/%s] invalid CIDR %q",
+			family, proto, tunName, subnet,
+		)
+	}
+	unmapped := addr.Unmap()
+	if !unmapped.IsValid() {
+		return fmt.Errorf(
+			"invalid '%s': [%s/%s] invalid address %q",
+			family, proto, tunName, addr,
+		)
+	}
+	if !subnet.Contains(unmapped) {
+		return fmt.Errorf(
+			"invalid '%s': [%s/%s] address %s not in '%sSubnet' %s",
+			family, proto, tunName, addr, family, subnet,
+		)
+	}
 	return nil
 }
 
@@ -284,7 +277,7 @@ func (c *Configuration) overlappingSubnets(subnets []netip.Prefix) bool {
 // ValidateAllowedPeers validates the AllowedPeers configuration.
 // Ensures no ClientID overlap between different peers and no duplicate public keys.
 func (c *Configuration) ValidateAllowedPeers() error {
-	seenIndex := make(map[int]int) // ClientID → peer index
+	seenIndex := make(map[int]int) // ClientID -> peer index
 
 	for i, peer := range c.AllowedPeers {
 		// Validate public key length

@@ -406,16 +406,20 @@ func pickLoopbackName() string {
 }
 
 var baseCfg = settings.Settings{
-	InterfaceName:   "tun0",
-	IPv4Subnet: netip.MustParsePrefix("10.0.0.0/30"),
-	MTU:             settings.SafeMTU,
+	Addressing: settings.Addressing{
+		TunName:    "tun0",
+		IPv4Subnet: netip.MustParsePrefix("10.0.0.0/30"),
+	},
+	MTU: settings.SafeMTU,
 }
 
 var baseCfgIPv6 = settings.Settings{
-	InterfaceName:   "tun0",
-	IPv4Subnet: netip.MustParsePrefix("10.0.0.0/30"),
-	IPv6Subnet:      netip.MustParsePrefix("fd00::/64"),
-	MTU:             settings.SafeMTU,
+	Addressing: settings.Addressing{
+		TunName:    "tun0",
+		IPv4Subnet: netip.MustParsePrefix("10.0.0.0/30"),
+		IPv6Subnet: netip.MustParsePrefix("fd00::/64"),
+	},
+	MTU: settings.SafeMTU,
 }
 
 // ServerTunFactoryMockIPTBenign simulates benign iptables errors that must be ignored.
@@ -515,7 +519,7 @@ func TestCreateAndDispose_SuccessAndSkipForwardingDisableWhenExtIfaceUnknown(t *
 
 	// Use a real existing interface to pass net.InterfaceByName(...) check.
 	cfg := baseCfg
-	cfg.InterfaceName = pickLoopbackName()
+	cfg.TunName = pickLoopbackName()
 
 	if err := f.DisposeDevices(cfg); err != nil {
 		t.Fatalf("DisposeDevices: %v", err)
@@ -525,7 +529,7 @@ func TestCreateAndDispose_SuccessAndSkipForwardingDisableWhenExtIfaceUnknown(t *
 func TestDisposeDevices_NoSuchInterface_IsBenign_NoError(t *testing.T) {
 	f := newFactory(&ServerTunFactoryMockIP{}, &ServerTunFactoryMockIPT{}, nil, &ServerTunFactoryMockIOCTL{}, &ServerTunFactoryMockSys{})
 	cfg := baseCfg
-	cfg.InterfaceName = "definitely-not-existing-xyz123"
+	cfg.TunName = "definitely-not-existing-xyz123"
 	// Should early return nil because net.InterfaceByName(...) fails with benign error text.
 	if err := f.DisposeDevices(cfg); err != nil {
 		t.Fatalf("DisposeDevices should ignore missing iface: %v", err)
@@ -684,7 +688,7 @@ func TestSetupAndClearForwarding_Errors(t *testing.T) {
 func TestDisposeTunDevices_DeleteError(t *testing.T) {
 	// Use existing interface name to get past net.InterfaceByName
 	cfg := baseCfg
-	cfg.InterfaceName = pickLoopbackName()
+	cfg.TunName = pickLoopbackName()
 	f := newFactory(&ServerTunFactoryMockIPErrDel{ServerTunFactoryMockIP: &ServerTunFactoryMockIP{}, err: errors.New("del_err")}, &ServerTunFactoryMockIPT{}, nil, &ServerTunFactoryMockIOCTL{}, &ServerTunFactoryMockSys{})
 	if err := f.DisposeDevices(cfg); err == nil || !strings.Contains(err.Error(), "error deleting TUN device") {
 		t.Errorf("expected delete error, got %v", err)
@@ -838,7 +842,7 @@ func TestDisposeDevices_BenignIptablesErrorsAreIgnored(t *testing.T) {
 	f := newFactory(ipMock, iptMock, nil, &ServerTunFactoryMockIOCTL{}, &ServerTunFactoryMockSys{})
 
 	cfg := baseCfg
-	cfg.InterfaceName = pickLoopbackName() // ensure InterfaceByName(...) passes
+	cfg.TunName = pickLoopbackName() // ensure InterfaceByName(...) passes
 
 	// Act + Assert
 	if err := f.DisposeDevices(cfg); err != nil {
@@ -853,7 +857,7 @@ func TestDisposeDevices_NonBenignIptablesErrorsAreLoggedButIgnored(t *testing.T)
 	f := newFactory(ipMock, iptMock, nil, &ServerTunFactoryMockIOCTL{}, &ServerTunFactoryMockSys{})
 
 	cfg := baseCfg
-	cfg.InterfaceName = pickLoopbackName()
+	cfg.TunName = pickLoopbackName()
 
 	// Act + Assert
 	if err := f.DisposeDevices(cfg); err != nil {

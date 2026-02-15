@@ -33,7 +33,7 @@ func NewConnectionFactory(conf client.Configuration) connection.Factory {
 func (f *ConnectionFactory) EstablishConnection(
 	ctx context.Context,
 ) (connection.Transport, connection.Crypto, *rekey.StateMachine, error) {
-	connSettings, connSettingsErr := f.connectionSettings()
+	connSettings, connSettingsErr := f.conf.ActiveSettings()
 	if connSettingsErr != nil {
 		return nil, nil, nil, connSettingsErr
 	}
@@ -42,61 +42,38 @@ func (f *ConnectionFactory) EstablishConnection(
 	establishCtx, establishCancel := context.WithDeadline(ctx, deadline)
 	defer establishCancel()
 
-	switch connSettings.Protocol {
+	adapter, err := f.dial(establishCtx, ctx, connSettings)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("unable to establish %s connection: %w", connSettings.Protocol, err)
+	}
+
+	builder := f.sessionBuilder(connSettings.Protocol)
+	return f.establishSecuredConnection(establishCtx, connSettings, adapter, builder)
+}
+
+func (f *ConnectionFactory) dial(
+	establishCtx, connCtx context.Context,
+	s settings.Settings,
+) (connection.Transport, error) {
+	switch s.Protocol {
 	case settings.UDP:
-		adapter, err := f.dialWithFallback(establishCtx, connSettings, f.dialUDP)
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("unable to establish UDP connection: %w", err)
-		}
-
-		return f.establishSecuredConnection(establishCtx, connSettings, adapter, chacha20.NewUdpSessionBuilder(
-			chacha20.NewDefaultAEADBuilder()),
-		)
+		return f.dialWithFallback(establishCtx, s, f.dialUDP)
 	case settings.TCP:
-		adapter, err := f.dialWithFallback(establishCtx, connSettings, f.dialTCP)
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("unable to establish TCP connection: %w", err)
-		}
-
-		return f.establishSecuredConnection(establishCtx, connSettings, adapter, chacha20.NewTcpSessionBuilder(
-			chacha20.NewDefaultAEADBuilder()),
-		)
+		return f.dialWithFallback(establishCtx, s, f.dialTCP)
 	case settings.WS:
-		adapter, err := f.dialWSWithFallback(establishCtx, ctx, connSettings, "ws")
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("unable to establish WebSocket connection: %w", err)
-		}
-
-		return f.establishSecuredConnection(establishCtx, connSettings, adapter, chacha20.NewTcpSessionBuilder(
-			chacha20.NewDefaultAEADBuilder()),
-		)
+		return f.dialWSWithFallback(establishCtx, connCtx, s, "ws")
 	case settings.WSS:
-		adapter, err := f.dialWSWithFallback(establishCtx, ctx, connSettings, "wss")
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("unable to establish WebSocket connection: %w", err)
-		}
-
-		return f.establishSecuredConnection(establishCtx, connSettings, adapter, chacha20.NewTcpSessionBuilder(
-			chacha20.NewDefaultAEADBuilder()),
-		)
+		return f.dialWSWithFallback(establishCtx, connCtx, s, "wss")
 	default:
-		return nil, nil, nil, fmt.Errorf("unsupported protocol: %v", connSettings.Protocol)
+		return nil, fmt.Errorf("unsupported protocol: %v", s.Protocol)
 	}
 }
 
-func (f *ConnectionFactory) connectionSettings() (settings.Settings, error) {
-	switch f.conf.Protocol {
-	case settings.TCP:
-		return f.conf.TCPSettings, nil
-	case settings.UDP:
-		return f.conf.UDPSettings, nil
-	case settings.WS:
-		return f.conf.WSSettings, nil
-	case settings.WSS:
-		return f.conf.WSSettings, nil
-	default:
-		return settings.Settings{}, fmt.Errorf("unsupported protocol: %v", f.conf.Protocol)
+func (f *ConnectionFactory) sessionBuilder(proto settings.Protocol) connection.CryptoFactory {
+	if proto == settings.UDP {
+		return chacha20.NewUdpSessionBuilder(chacha20.NewDefaultAEADBuilder())
 	}
+	return chacha20.NewTcpSessionBuilder(chacha20.NewDefaultAEADBuilder())
 }
 
 func (f *ConnectionFactory) establishSecuredConnection(
@@ -172,8 +149,8 @@ func (f *ConnectionFactory) dialWithFallback(
 	s settings.Settings,
 	dialFn func(context.Context, netip.AddrPort) (connection.Transport, error),
 ) (connection.Transport, error) {
-	if s.Host.HasIPv6() {
-		ipv6AP, err := s.Host.IPv6AddrPort(s.Port)
+	if s.Server.HasIPv6() {
+		ipv6AP, err := s.Server.IPv6AddrPort(s.Port)
 		if err == nil {
 			ipv6Ctx, cancel := context.WithTimeout(ctx, ipv6FallbackTimeout)
 			transport, dialErr := dialFn(ipv6Ctx, ipv6AP)
@@ -183,7 +160,7 @@ func (f *ConnectionFactory) dialWithFallback(
 			}
 		}
 	}
-	ap, err := s.Host.AddrPort(s.Port)
+	ap, err := s.Server.AddrPort(s.Port)
 	if err != nil {
 		return nil, err
 	}
@@ -200,8 +177,8 @@ func (f *ConnectionFactory) dialWSWithFallback(
 		port = 443
 	}
 
-	if s.Host.HasIPv6() {
-		endpoint, err := s.Host.IPv6Endpoint(port)
+	if s.Server.HasIPv6() {
+		endpoint, err := s.Server.IPv6Endpoint(port)
 		if err == nil {
 			ipv6Ctx, cancel := context.WithTimeout(establishCtx, ipv6FallbackTimeout)
 			adapter, dialErr := f.dialWS(ipv6Ctx, connCtx, scheme, endpoint)
@@ -211,7 +188,7 @@ func (f *ConnectionFactory) dialWSWithFallback(
 			}
 		}
 	}
-	endpoint, err := s.Host.Endpoint(port)
+	endpoint, err := s.Server.Endpoint(port)
 	if err != nil {
 		return nil, err
 	}

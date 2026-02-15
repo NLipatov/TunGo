@@ -16,7 +16,6 @@ import (
 	"tungo/infrastructure/PAL/linux/network_tools/mssclamp"
 	"tungo/infrastructure/PAL/linux/network_tools/sysctl"
 	"tungo/infrastructure/PAL/linux/tun/epoll"
-	nIp "tungo/infrastructure/network/ip"
 	"tungo/infrastructure/settings"
 )
 
@@ -63,7 +62,7 @@ func (s ServerTunFactory) CreateDevice(connSettings settings.Settings) (tun.Devi
 }
 
 func (s ServerTunFactory) DisposeDevices(connSettings settings.Settings) error {
-	ifName := connSettings.InterfaceName
+	ifName := connSettings.TunName
 
 	// If interface does not exist, treat as successful no-op.
 	if _, err := net.InterfaceByName(ifName); err != nil {
@@ -160,53 +159,44 @@ func (s ServerTunFactory) isBenignNetfilterError(err error) bool {
 
 func (s ServerTunFactory) createTun(settings settings.Settings) (*os.File, error) {
 	// delete previous tun if any exist
-	_ = s.ip.LinkDelete(settings.InterfaceName)
+	_ = s.ip.LinkDelete(settings.TunName)
 
-	devErr := s.ip.TunTapAddDevTun(settings.InterfaceName)
+	devErr := s.ip.TunTapAddDevTun(settings.TunName)
 	if devErr != nil {
 		return nil, fmt.Errorf("could not create tuntap dev: %s", devErr)
 	}
 
-	upErr := s.ip.LinkSetDevUp(settings.InterfaceName)
+	upErr := s.ip.LinkSetDevUp(settings.TunName)
 	if upErr != nil {
 		return nil, fmt.Errorf("could not set tuntap dev up: %s", upErr)
 	}
 
-	mtuErr := s.ip.LinkSetDevMTU(settings.InterfaceName, settings.MTU)
+	mtuErr := s.ip.LinkSetDevMTU(settings.TunName, settings.MTU)
 	if mtuErr != nil {
 		return nil, fmt.Errorf("could not set mtu on tuntap dev: %s", mtuErr)
 	}
 
-	serverIp, serverIpErr := nIp.AllocateServerIP(settings.IPv4Subnet)
-	if serverIpErr != nil {
-		return nil, fmt.Errorf("could not allocate server IP (%s): %s", serverIp, serverIpErr)
+	cidr4, cidr4Err := settings.IPv4CIDR()
+	if cidr4Err != nil {
+		return nil, fmt.Errorf("could not derive server IPv4 CIDR: %s", cidr4Err)
 	}
-
-	cidrServerIp, cidrServerIpErr := nIp.ToCIDR(settings.IPv4Subnet.String(), serverIp)
-	if cidrServerIpErr != nil {
-		return nil, fmt.Errorf("could not conver server IP(%s) to CIDR: %s", serverIp, cidrServerIpErr)
-	}
-	addrAddDev := s.ip.AddrAddDev(settings.InterfaceName, cidrServerIp)
+	addrAddDev := s.ip.AddrAddDev(settings.TunName, cidr4)
 	if addrAddDev != nil {
 		return nil, fmt.Errorf("failed to convert server ip to CIDR format: %s", addrAddDev)
 	}
 
 	// Assign IPv6 address if configured
 	if settings.IPv6Subnet.IsValid() {
-		serverIPv6, serverIPv6Err := nIp.AllocateServerIP(settings.IPv6Subnet)
-		if serverIPv6Err != nil {
-			return nil, fmt.Errorf("could not allocate server IPv6 (%s): %s", settings.IPv6Subnet, serverIPv6Err)
-		}
-		cidr6, cidr6Err := nIp.ToCIDR(settings.IPv6Subnet.String(), serverIPv6)
+		cidr6, cidr6Err := settings.IPv6CIDR()
 		if cidr6Err != nil {
-			return nil, fmt.Errorf("could not convert server IPv6 (%s) to CIDR: %s", serverIPv6, cidr6Err)
+			return nil, fmt.Errorf("could not derive server IPv6 CIDR: %s", cidr6Err)
 		}
-		if err := s.ip.AddrAddDev(settings.InterfaceName, cidr6); err != nil {
-			return nil, fmt.Errorf("failed to assign IPv6 to TUN %s: %s", settings.InterfaceName, err)
+		if err := s.ip.AddrAddDev(settings.TunName, cidr6); err != nil {
+			return nil, fmt.Errorf("failed to assign IPv6 to TUN %s: %s", settings.TunName, err)
 		}
 	}
 
-	tunFile, tunFileErr := s.ioctl.CreateTunInterface(settings.InterfaceName)
+	tunFile, tunFileErr := s.ioctl.CreateTunInterface(settings.TunName)
 	if tunFileErr != nil {
 		return nil, fmt.Errorf("failed to open TUN interface: %v", tunFileErr)
 	}

@@ -35,6 +35,10 @@ func (c *Dependencies) Initialize() error {
 		return fmt.Errorf("failed to read client configuration: %w", err)
 	}
 
+	if err := conf.Resolve(); err != nil {
+		return fmt.Errorf("failed to derive addresses: %w", err)
+	}
+
 	c.conn = client_factory.NewConnectionFactory(*conf)
 	c.worker = client_factory.NewWorkerFactory(*conf)
 	c.tun, err = tun_client.NewPlatformTunManager(*conf)

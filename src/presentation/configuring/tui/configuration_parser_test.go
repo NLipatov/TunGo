@@ -2,6 +2,8 @@ package tui
 
 import (
 	"encoding/json"
+	"net/netip"
+	"strings"
 	"testing"
 	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/settings"
@@ -15,16 +17,22 @@ func mustHostParser(raw string) settings.Host {
 	return h
 }
 
-// makeTestConfig returns a minimal Configuration for tests.
+// makeTestConfig returns a valid Configuration for tests.
 func makeTestConfig() client.Configuration {
 	return client.Configuration{
+		ClientID: 1,
 		TCPSettings: settings.Settings{
-			Host: mustHostParser("127.0.0.1"),
-			Port:         8080,
+			Addressing: settings.Addressing{
+				Server:     mustHostParser("127.0.0.1"),
+				Port:       8080,
+				IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24"),
+			},
+			Protocol: settings.TCP,
 		},
-		UDPSettings:     settings.Settings{},
-		X25519PublicKey: nil,
-		Protocol:        settings.TCP,
+		X25519PublicKey:  make([]byte, 32),
+		ClientPublicKey:  make([]byte, 32),
+		ClientPrivateKey: make([]byte, 32),
+		Protocol:         settings.TCP,
 	}
 }
 
@@ -37,7 +45,7 @@ func TestFromJson_Simple(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.TCPSettings.Host != want.TCPSettings.Host || cfg.TCPSettings.Port != want.TCPSettings.Port {
+	if cfg.TCPSettings.Server != want.TCPSettings.Server || cfg.TCPSettings.Port != want.TCPSettings.Port {
 		t.Errorf("got %+v, want %+v", cfg, want)
 	}
 	if cfg.Protocol != want.Protocol {
@@ -63,14 +71,10 @@ func TestFromJson_WithBOMAndZeroWidthAndControl(t *testing.T) {
 
 func TestFromJson_PrettyPrint_CRLF(t *testing.T) {
 	parser := NewConfigurationParser()
-	pretty := "{\r\n" +
-		"  \"TCPSettings\": {\r\n" +
-		"    \"Host\": {\"IPv4\": \"127.0.0.1\"},\r\n" +
-		"    \"Port\": 8080\r\n" +
-		"  },\r\n" +
-		"  \"UDPSettings\": {},\r\n" +
-		"  \"Protocol\": \"TCP\"\r\n" +
-		"}"
+	want := makeTestConfig()
+	raw, _ := json.MarshalIndent(want, "", "  ")
+	// Replace LF with CRLF to simulate Windows-style line endings.
+	pretty := strings.ReplaceAll(string(raw), "\n", "\r\n")
 
 	cfg, err := parser.FromJson(pretty)
 	if err != nil {
@@ -92,8 +96,8 @@ func TestFromJson_NonBreakingSpaceTrim(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.TCPSettings.Host != want.TCPSettings.Host {
-		t.Errorf("got Host=%q, want %q", cfg.TCPSettings.Host, want.TCPSettings.Host)
+	if cfg.TCPSettings.Server != want.TCPSettings.Server {
+		t.Errorf("got Server=%q, want %q", cfg.TCPSettings.Server, want.TCPSettings.Server)
 	}
 }
 

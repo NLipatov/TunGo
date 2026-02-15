@@ -2,6 +2,7 @@ package client
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 )
 
@@ -25,6 +26,10 @@ func (c *reader) read() (*Configuration, error) {
 	err = json.Unmarshal(data, &configuration)
 	if err != nil {
 		return nil, err
+	}
+
+	if err := configuration.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid client configuration (%s): %w", c.path, err)
 	}
 
 	return &configuration, nil

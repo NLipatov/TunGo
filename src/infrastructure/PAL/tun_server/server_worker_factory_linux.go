@@ -130,7 +130,7 @@ func (s *ServerWorkerFactory) createTCPWorker(
 		return nil, confErr
 	}
 
-	addrPort, addrPortErr := s.addrPortToListen(workerSettings.Host, workerSettings.Port)
+	addrPort, addrPortErr := s.addrPortToListen(workerSettings.Server, workerSettings.Port)
 	if addrPortErr != nil {
 		return nil, addrPortErr
 	}
@@ -188,7 +188,7 @@ func (s *ServerWorkerFactory) createWSWorker(
 		return nil, confErr
 	}
 
-	addrPort, addrPortErr := s.addrPortToListen(workerSettings.Host, workerSettings.Port)
+	addrPort, addrPortErr := s.addrPortToListen(workerSettings.Server, workerSettings.Port)
 	if addrPortErr != nil {
 		return nil, addrPortErr
 	}
@@ -245,7 +245,7 @@ func (s *ServerWorkerFactory) createUDPWorker(
 		return nil, confErr
 	}
 
-	addrPort, addrPortErr := s.addrPortToListen(workerSettings.Host, workerSettings.Port)
+	addrPort, addrPortErr := s.addrPortToListen(workerSettings.Server, workerSettings.Port)
 	if addrPortErr != nil {
 		return nil, addrPortErr
 	}

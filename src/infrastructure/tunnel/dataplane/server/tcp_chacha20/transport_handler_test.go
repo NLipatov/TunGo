@@ -288,7 +288,7 @@ func TestHandleTransport_CtxDoneBeforeAccept_ReturnsNil(t *testing.T) {
 	registrar := tcp_registration.NewRegistrar(logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{}, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 	handler := NewTransportHandler(
 		ctx,
-		settings.Settings{Port: 7777},
+		settings.Settings{Addressing: settings.Addressing{Port: 7777}},
 		&fakeWriter{},
 		listener,
 		repo,
@@ -324,7 +324,7 @@ func TestHandleTransport_AlreadyCanceled_ReturnsCtxErr(t *testing.T) {
 	registrar := tcp_registration.NewRegistrar(logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{}, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 	handler := NewTransportHandler(
 		ctx,
-		settings.Settings{Port: 7777},
+		settings.Settings{Addressing: settings.Addressing{Port: 7777}},
 		&fakeWriter{},
 		listener,
 		repo,
@@ -352,7 +352,7 @@ func TestHandleTransport_AcceptError(t *testing.T) {
 	registrar := tcp_registration.NewRegistrar(logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{}, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 	handler := NewTransportHandler(
 		ctx,
-		settings.Settings{Port: 1111},
+		settings.Settings{Addressing: settings.Addressing{Port: 1111}},
 		&fakeWriter{},
 		listener,
 		repo,
@@ -388,7 +388,7 @@ func TestHandleTransport_RegisterClientError_Logged(t *testing.T) {
 	repo := &fakeSessionRepo{}
 
 	registrar := tcp_registration.NewRegistrar(logger, handshakeFactory, &fakeCryptoFactory{}, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
-	handler := NewTransportHandler(ctx, settings.Settings{Port: 2222}, &fakeWriter{}, listener, repo, logger, registrar)
+	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 2222}}, &fakeWriter{}, listener, repo, logger, registrar)
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
 

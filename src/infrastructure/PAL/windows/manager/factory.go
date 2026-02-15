@@ -27,8 +27,8 @@ func NewFactory(
 
 // Create returns a tun.ClientManager for the configured address families.
 func (f *Factory) Create() (tun.ClientManager, error) {
-	has4 := f.connectionSettings.IPv4IP.IsValid() && !f.connectionSettings.IPv4IP.IsUnspecified() && f.connectionSettings.IPv4IP.Unmap().Is4()
-	has6 := f.connectionSettings.IPv6IP.IsValid() && !f.connectionSettings.IPv6IP.IsUnspecified() && !f.connectionSettings.IPv6IP.Unmap().Is4()
+	has4 := f.connectionSettings.IPv4.IsValid() && !f.connectionSettings.IPv4.IsUnspecified() && f.connectionSettings.IPv4.Unmap().Is4()
+	has6 := f.connectionSettings.IPv6.IsValid() && !f.connectionSettings.IPv6.IsUnspecified() && !f.connectionSettings.IPv6.Unmap().Is4()
 
 	if has4 {
 		return newV4Manager(
@@ -42,5 +42,5 @@ func (f *Factory) Create() (tun.ClientManager, error) {
 			f.netConfigFactory.NewV6(),
 		), nil
 	}
-	return nil, fmt.Errorf("no valid IPv4IP or IPv6IP configured")
+	return nil, fmt.Errorf("no valid IPv4 or IPv6 configured")
 }

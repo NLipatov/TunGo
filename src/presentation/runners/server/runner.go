@@ -53,16 +53,11 @@ func (r *Runner) Run(
 
 func (r *Runner) cleanup() error {
 	var eg errgroup.Group
-	for _, ws := range []settings.Settings{
-		r.deps.Configuration().TCPSettings,
-		r.deps.Configuration().UDPSettings,
-		r.deps.Configuration().WSSettings,
-	} {
+	for _, ws := range r.deps.Configuration().AllSettings() {
 		eg.Go(func() error {
 			return r.deps.TunManager().DisposeDevices(ws)
 		})
 	}
-
 	return eg.Wait()
 }
 
@@ -91,18 +86,7 @@ func (r *Runner) runWorkers(
 }
 
 func (r *Runner) workerSettings() []settings.Settings {
-	enabledProtocolSettings := make([]settings.Settings, 0)
-	configuration := r.deps.Configuration()
-	if configuration.EnableTCP {
-		enabledProtocolSettings = append(enabledProtocolSettings, configuration.TCPSettings)
-	}
-	if configuration.EnableUDP {
-		enabledProtocolSettings = append(enabledProtocolSettings, configuration.UDPSettings)
-	}
-	if configuration.EnableWS {
-		enabledProtocolSettings = append(enabledProtocolSettings, configuration.WSSettings)
-	}
-	return enabledProtocolSettings
+	return r.deps.Configuration().EnabledSettings()
 }
 
 func (r *Runner) createRouter(

@@ -52,15 +52,15 @@ func (m *v6) CreateDevice() (tun.Device, error) {
 	}
 	m.ifName = name
 
-	routeIP, routeErr := m.s.Host.RouteIPv6()
+	routeIP, routeErr := m.s.Server.RouteIPv6()
 	if routeErr != nil {
 		_ = m.DisposeDevices()
-		return nil, fmt.Errorf("v6: resolve route for %s: %w", m.s.Host, routeErr)
+		return nil, fmt.Errorf("v6: resolve route for %s: %w", m.s.Server, routeErr)
 	}
 	m.resolvedRouteIP = routeIP
 	if err := m.rt.Get(routeIP); err != nil {
 		_ = m.DisposeDevices()
-		return nil, fmt.Errorf("route to server %s: %w", m.s.Host, err)
+		return nil, fmt.Errorf("route to server %s: %w", m.s.Server, err)
 	}
 	if err := m.assignIPv6(); err != nil {
 		_ = m.DisposeDevices()
@@ -93,12 +93,12 @@ func (m *v6) DisposeDevices() error {
 }
 
 func (m *v6) validateSettings() error {
-	ip := m.s.IPv6IP.Unmap()
+	ip := m.s.IPv6.Unmap()
 	if !ip.IsValid() || ip.Is4() {
-		return fmt.Errorf("v6: invalid IPv6IP %q", m.s.IPv6IP)
+		return fmt.Errorf("v6: invalid IPv6 %q", m.s.IPv6)
 	}
-	if m.s.Host.IsZero() {
-		return fmt.Errorf("v6: empty Host")
+	if m.s.Server.IsZero() {
+		return fmt.Errorf("v6: empty Server")
 	}
 	return nil
 }
@@ -106,9 +106,9 @@ func (m *v6) validateSettings() error {
 func (m *v6) assignIPv6() error {
 	var cidr string
 	if m.s.IPv6Subnet.IsValid() {
-		cidr = fmt.Sprintf("%s/%d", m.s.IPv6IP, m.s.IPv6Subnet.Bits())
+		cidr = fmt.Sprintf("%s/%d", m.s.IPv6, m.s.IPv6Subnet.Bits())
 	} else {
-		cidr = fmt.Sprintf("%s/128", m.s.IPv6IP)
+		cidr = fmt.Sprintf("%s/128", m.s.IPv6)
 	}
 	if err := m.ifc.LinkAddrAdd(m.ifName, cidr); err != nil {
 		return fmt.Errorf("v6: set addr %s on %s: %w", cidr, m.ifName, err)

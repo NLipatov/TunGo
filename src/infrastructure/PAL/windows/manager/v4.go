@@ -68,26 +68,26 @@ func (m *v4Manager) CreateDevice() (tun.Device, error) {
 }
 
 func (m *v4Manager) validateSettings() error {
-	if strings.TrimSpace(m.s.InterfaceName) == "" {
-		return fmt.Errorf("empty InterfaceName")
+	if strings.TrimSpace(m.s.TunName) == "" {
+		return fmt.Errorf("empty TunName")
 	}
-	if m.s.Host.IsZero() {
-		return fmt.Errorf("empty Host")
+	if m.s.Server.IsZero() {
+		return fmt.Errorf("empty Server")
 	}
 	if !m.s.IPv4Subnet.IsValid() {
 		return fmt.Errorf("invalid IPv4Subnet: %q", m.s.IPv4Subnet)
 	}
-	if !m.s.IPv4IP.IsValid() || !m.s.IPv4IP.Unmap().Is4() {
-		return fmt.Errorf("v4Manager requires IPv4 IPv4IP, got %q", m.s.IPv4IP)
+	if !m.s.IPv4.IsValid() || !m.s.IPv4.Unmap().Is4() {
+		return fmt.Errorf("v4Manager requires valid IPv4, got %q", m.s.IPv4)
 	}
 	return nil
 }
 
 // createOrOpenTunDevice creates or opening existing wintun adapter (idempotent behavior).
 func (m *v4Manager) createOrOpenTunDevice() (tun.Device, error) {
-	adapter, err := wintun.CreateAdapter(m.s.InterfaceName, tunnelType, nil)
+	adapter, err := wintun.CreateAdapter(m.s.TunName, tunnelType, nil)
 	if err != nil {
-		if existing, openErr := wintun.OpenAdapter(m.s.InterfaceName); openErr == nil {
+		if existing, openErr := wintun.OpenAdapter(m.s.TunName); openErr == nil {
 			return wtun.NewTUN(existing)
 		}
 		return nil, fmt.Errorf("create/open adapter: %w", err)
@@ -101,9 +101,9 @@ func (m *v4Manager) createOrOpenTunDevice() (tun.Device, error) {
 }
 
 func (m *v4Manager) addStaticRouteToServer() error {
-	routeIP, err := m.s.Host.RouteIPv4()
+	routeIP, err := m.s.Server.RouteIPv4()
 	if err != nil {
-		return fmt.Errorf("resolve host %s: %w", m.s.Host, err)
+		return fmt.Errorf("resolve host %s: %w", m.s.Server, err)
 	}
 	m.resolvedRouteIP = routeIP
 	_ = m.netCfg.DeleteRoute(routeIP)
@@ -120,7 +120,7 @@ func (m *v4Manager) addStaticRouteToServer() error {
 
 // assignIPToTunDevice validates IPv4 address ∈ CIDR and applies it.
 func (m *v4Manager) assignIPToTunDevice() error {
-	ipStr := m.s.IPv4IP.String()
+	ipStr := m.s.IPv4.String()
 	subnetStr := m.s.IPv4Subnet.String()
 	ip := net.ParseIP(ipStr)
 	_, network, _ := net.ParseCIDR(subnetStr)
@@ -128,7 +128,7 @@ func (m *v4Manager) assignIPToTunDevice() error {
 		return fmt.Errorf("address %s not in %s", ipStr, subnetStr)
 	}
 	mask := net.IP(network.Mask).String() // dotted decimal mask
-	if err := m.netCfg.SetAddressStatic(m.s.InterfaceName, ipStr, mask); err != nil {
+	if err := m.netCfg.SetAddressStatic(m.s.TunName, ipStr, mask); err != nil {
 		return err
 	}
 	return nil
@@ -136,8 +136,8 @@ func (m *v4Manager) assignIPToTunDevice() error {
 
 // setDefaultRouteToTunDevice replaces any existing default route with split default route (0.0.0.0/1, 128.0.0.0/1).
 func (m *v4Manager) setDefaultRouteToTunDevice() error {
-	_ = m.netCfg.DeleteDefaultSplitRoutes(m.s.InterfaceName)
-	return m.netCfg.AddDefaultSplitRoutes(m.s.InterfaceName, 1)
+	_ = m.netCfg.DeleteDefaultSplitRoutes(m.s.TunName)
+	return m.netCfg.AddDefaultSplitRoutes(m.s.TunName, 1)
 }
 
 // setMTUToTunDevice sets MTU (or safe default).
@@ -149,13 +149,13 @@ func (m *v4Manager) setMTUToTunDevice() error {
 	if mtu < settings.MinimumIPv4MTU {
 		mtu = settings.MinimumIPv4MTU
 	}
-	return m.netCfg.SetMTU(m.s.InterfaceName, mtu)
+	return m.netCfg.SetMTU(m.s.TunName, mtu)
 }
 
 // setDNSToTunDevice applies v4 DNS resolvers and flushes system cache.
 func (m *v4Manager) setDNSToTunDevice() error {
 	//ToDo: move dns server addresses to configuration
-	if err := m.netCfg.SetDNS(m.s.InterfaceName, []string{"1.1.1.1", "8.8.8.8"}); err != nil {
+	if err := m.netCfg.SetDNS(m.s.TunName, []string{"1.1.1.1", "8.8.8.8"}); err != nil {
 		return err
 	}
 	_ = m.netCfg.FlushDNS()
@@ -164,7 +164,7 @@ func (m *v4Manager) setDNSToTunDevice() error {
 
 // DisposeDevices reverses CreateDevice in safe order.
 func (m *v4Manager) DisposeDevices() error {
-	_ = m.netCfg.DeleteDefaultSplitRoutes(m.s.InterfaceName)
+	_ = m.netCfg.DeleteDefaultSplitRoutes(m.s.TunName)
 	if m.resolvedRouteIP != "" {
 		_ = m.netCfg.DeleteRoute(m.resolvedRouteIP)
 	}
