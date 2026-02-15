@@ -274,25 +274,6 @@ func (h Host) MarshalJSON() ([]byte, error) {
 }
 
 func (h *Host) UnmarshalJSON(data []byte) error {
-	if len(data) == 0 {
-		return fmt.Errorf("empty JSON for Host")
-	}
-
-	// Legacy string format: "192.0.2.10" or "example.com"
-	if data[0] == '"' {
-		var raw string
-		if err := json.Unmarshal(data, &raw); err != nil {
-			return fmt.Errorf("host must be JSON string: %w", err)
-		}
-		normalized, err := NewHost(raw)
-		if err != nil {
-			return err
-		}
-		*h = normalized
-		return nil
-	}
-
-	// New object format: {"Domain":"...", "IPv4":"...", "IPv6":"..."}
 	var obj hostJSON
 	if err := json.Unmarshal(data, &obj); err != nil {
 		return fmt.Errorf("invalid Host JSON: %w", err)

@@ -65,7 +65,7 @@ func TestFromJson_PrettyPrint_CRLF(t *testing.T) {
 	parser := NewConfigurationParser()
 	pretty := "{\r\n" +
 		"  \"TCPSettings\": {\r\n" +
-		"    \"Host\": \"127.0.0.1\",\r\n" +
+		"    \"Host\": {\"IPv4\": \"127.0.0.1\"},\r\n" +
 		"    \"Port\": 8080\r\n" +
 		"  },\r\n" +
 		"  \"UDPSettings\": {},\r\n" +

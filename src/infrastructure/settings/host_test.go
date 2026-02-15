@@ -534,37 +534,13 @@ func TestHost_JSON_Object_Composite(t *testing.T) {
 	}
 }
 
-func TestHost_JSON_LegacyString(t *testing.T) {
-	var h Host
-	if err := json.Unmarshal([]byte(`"192.0.2.10"`), &h); err != nil {
-		t.Fatalf("unmarshal legacy string failed: %v", err)
-	}
-	if !h.HasIPv4() {
-		t.Fatal("expected IPv4 from legacy string")
-	}
-	ip, _ := h.IPv4()
-	if ip != netip.MustParseAddr("192.0.2.10") {
-		t.Fatalf("unexpected IPv4: %v", ip)
-	}
-}
-
-func TestHost_JSON_LegacyString_Domain(t *testing.T) {
-	var h Host
-	if err := json.Unmarshal([]byte(`"ExAmPlE.org"`), &h); err != nil {
-		t.Fatalf("unmarshal failed: %v", err)
-	}
-	if h.String() != "example.org" {
-		t.Fatalf("unexpected normalized value: %q", h.String())
-	}
-}
-
 func TestHost_JSON_UnmarshalErrors(t *testing.T) {
 	var h Host
 	if err := json.Unmarshal([]byte(`123`), &h); err == nil {
 		t.Fatal("expected error for numeric host json")
 	}
-	if err := json.Unmarshal([]byte(`"http://bad"`), &h); err == nil {
-		t.Fatal("expected error for invalid host")
+	if err := json.Unmarshal([]byte(`"some-string"`), &h); err == nil {
+		t.Fatal("expected error for string host json")
 	}
 }
 
