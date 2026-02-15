@@ -922,7 +922,9 @@ func TestSecurity_ClientIDConflictRejectedAtConfig(t *testing.T) {
 				cfg := &server.Configuration{
 					EnableUDP: true,
 					UDPSettings: settings.Settings{
-						IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24"),
+						Addressing: settings.Addressing{
+							IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24"),
+						},
 					},
 					AllowedPeers: tc.peers,
 				}
