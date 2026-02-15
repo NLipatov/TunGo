@@ -129,6 +129,20 @@ func Test_connectionSettings_TCP(t *testing.T) {
 	}
 }
 
+func TestSessionBuilder_ByProtocol(t *testing.T) {
+	f := &ConnectionFactory{}
+
+	udpBuilder := f.sessionBuilder(settings.UDP)
+	if udpBuilder == nil {
+		t.Fatal("expected non-nil UDP session builder")
+	}
+
+	tcpBuilder := f.sessionBuilder(settings.TCP)
+	if tcpBuilder == nil {
+		t.Fatal("expected non-nil TCP session builder")
+	}
+}
+
 func Test_connectionSettings_UDP(t *testing.T) {
 	t.Parallel()
 	conf := client.Configuration{
@@ -822,7 +836,7 @@ func TestConnectionFactoryUnit_establishSecuredConnection_Success(t *testing.T) 
 		{
 			PublicKey: clientPub,
 			Enabled:   true,
-			ClientID: 1,
+			ClientID:  1,
 		},
 	}
 	serverHS := noise.NewIKHandshakeServer(

@@ -78,6 +78,23 @@ func TestUpdateEnter(t *testing.T) {
 	}
 }
 
+func TestUpdateEnter_KeyTypeEnter_Quits(t *testing.T) {
+	ti := NewTextInput("Test")
+	msg := tea.KeyMsg{Type: tea.KeyEnter}
+
+	model, cmd := ti.Update(msg)
+	if model != ti {
+		t.Fatal("expected model to remain unchanged")
+	}
+	if cmd == nil {
+		t.Fatal("expected non-nil command from enter key")
+	}
+	got := cmd()
+	if _, ok := got.(tea.QuitMsg); !ok {
+		t.Fatalf("expected tea.QuitMsg, got %T", got)
+	}
+}
+
 func TestView(t *testing.T) {
 	ti := NewTextInput("Test")
 	view := ti.View()

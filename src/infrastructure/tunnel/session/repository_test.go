@@ -48,6 +48,19 @@ func (fakeEgress) SendDataIP([]byte) error  { return nil }
 func (fakeEgress) SendControl([]byte) error { return nil }
 func (fakeEgress) Close() error             { return nil }
 
+type fakeAddrPortEgress struct {
+	addrPort netip.AddrPort
+	setCalls int
+}
+
+func (f *fakeAddrPortEgress) SendDataIP([]byte) error  { return nil }
+func (f *fakeAddrPortEgress) SendControl([]byte) error { return nil }
+func (f *fakeAddrPortEgress) Close() error             { return nil }
+func (f *fakeAddrPortEgress) SetAddrPort(addr netip.AddrPort) {
+	f.addrPort = addr
+	f.setCalls++
+}
+
 func TestDefaultRepository(t *testing.T) {
 	sm := NewDefaultRepository()
 
@@ -652,5 +665,130 @@ func TestDefaultRepository_ReapIdle_MultipleIdlePeers(t *testing.T) {
 	count := repo.ReapIdle(30 * time.Second)
 	if count != 5 {
 		t.Fatalf("expected 5 reaped, got %d", count)
+	}
+}
+
+func TestDefaultRepository_AllPeers_ReturnsSnapshot(t *testing.T) {
+	repo := NewDefaultRepository().(*DefaultRepository)
+
+	p1 := NewPeer(&fakeSession{
+		internal: netip.MustParseAddr("10.0.0.1"),
+		external: netip.MustParseAddrPort("1.1.1.1:1001"),
+	}, nil)
+	p2 := NewPeer(&fakeSession{
+		internal: netip.MustParseAddr("10.0.0.2"),
+		external: netip.MustParseAddrPort("1.1.1.2:1002"),
+	}, nil)
+	repo.Add(p1)
+	repo.Add(p2)
+
+	peers := repo.AllPeers()
+	if len(peers) != 2 {
+		t.Fatalf("expected 2 peers, got %d", len(peers))
+	}
+
+	var found1, found2 bool
+	for _, p := range peers {
+		if p == p1 {
+			found1 = true
+		}
+		if p == p2 {
+			found2 = true
+		}
+	}
+	if !found1 || !found2 {
+		t.Fatal("expected snapshot to contain both peers")
+	}
+
+	peers[0] = nil
+	again := repo.AllPeers()
+	if len(again) != 2 {
+		t.Fatalf("expected 2 peers in fresh snapshot, got %d", len(again))
+	}
+}
+
+func TestDefaultRepository_UpdateExternalAddr_ReindexesAndUpdatesEgress(t *testing.T) {
+	repo := NewDefaultRepository().(*DefaultRepository)
+	oldAddr := netip.MustParseAddrPort("198.51.100.10:5000")
+	newAddr := netip.MustParseAddrPort("198.51.100.11:6000")
+	egress := &fakeAddrPortEgress{}
+
+	p := NewPeer(&fakeSession{
+		internal: netip.MustParseAddr("10.9.0.1"),
+		external: oldAddr,
+	}, egress)
+	repo.Add(p)
+
+	repo.UpdateExternalAddr(p, newAddr)
+
+	if _, err := repo.GetByExternalAddrPort(oldAddr); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected old address to be removed, got %v", err)
+	}
+	got, err := repo.GetByExternalAddrPort(newAddr)
+	if err != nil {
+		t.Fatalf("expected new address lookup to succeed, got %v", err)
+	}
+	if got != p {
+		t.Fatal("expected repository to keep same peer instance after reindex")
+	}
+	if p.ExternalAddrPort() != newAddr {
+		t.Fatalf("expected peer external address to be updated to %v, got %v", newAddr, p.ExternalAddrPort())
+	}
+	if egress.setCalls != 1 || egress.addrPort != newAddr {
+		t.Fatalf("expected egress SetAddrPort to be called once with %v, got calls=%d addr=%v",
+			newAddr, egress.setCalls, egress.addrPort)
+	}
+}
+
+func TestDefaultRepository_UpdateExternalAddr_ClosedPeerNoOp(t *testing.T) {
+	repo := NewDefaultRepository().(*DefaultRepository)
+	oldAddr := netip.MustParseAddrPort("203.0.113.10:5000")
+	newAddr := netip.MustParseAddrPort("203.0.113.11:6000")
+	egress := &fakeAddrPortEgress{}
+
+	p := NewPeer(&fakeSession{
+		internal: netip.MustParseAddr("10.9.0.2"),
+		external: oldAddr,
+	}, egress)
+	repo.Add(p)
+	p.MarkClosedForTest()
+
+	repo.UpdateExternalAddr(p, newAddr)
+
+	if _, err := repo.GetByExternalAddrPort(oldAddr); err != nil {
+		t.Fatalf("expected old address to stay indexed for closed peer, got %v", err)
+	}
+	if _, err := repo.GetByExternalAddrPort(newAddr); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected new address not to be indexed for closed peer, got %v", err)
+	}
+	if p.ExternalAddrPort() != oldAddr {
+		t.Fatalf("expected peer external address to remain %v, got %v", oldAddr, p.ExternalAddrPort())
+	}
+	if egress.setCalls != 0 {
+		t.Fatalf("expected no egress address update for closed peer, got %d calls", egress.setCalls)
+	}
+}
+
+func TestPeer_CryptoRLock_SuccessAndUnlock(t *testing.T) {
+	p := NewPeer(&fakeSession{
+		internal: netip.MustParseAddr("10.0.1.1"),
+		external: netip.MustParseAddrPort("192.0.2.10:1000"),
+	}, nil)
+
+	if !p.CryptoRLock() {
+		t.Fatal("expected lock acquisition for active peer")
+	}
+	p.CryptoRUnlock()
+}
+
+func TestPeer_CryptoRLock_ReturnsFalseWhenClosed(t *testing.T) {
+	p := NewPeer(&fakeSession{
+		internal: netip.MustParseAddr("10.0.1.2"),
+		external: netip.MustParseAddrPort("192.0.2.11:1001"),
+	}, nil)
+	p.MarkClosedForTest()
+
+	if p.CryptoRLock() {
+		t.Fatal("expected lock acquisition to fail for closed peer")
 	}
 }

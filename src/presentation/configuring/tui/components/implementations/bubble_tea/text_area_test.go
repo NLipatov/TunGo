@@ -76,3 +76,12 @@ func TestTextArea_View(t *testing.T) {
 		t.Errorf("Expected view to contain placeholder %q, got %q", ta.ta.Placeholder, view)
 	}
 }
+
+func TestTextArea_View_WhenDone_Empty(t *testing.T) {
+	ta := NewTextArea("Type here...")
+	_, _ = ta.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if view := ta.View(); view != "" {
+		t.Fatalf("expected empty view when done, got %q", view)
+	}
+}

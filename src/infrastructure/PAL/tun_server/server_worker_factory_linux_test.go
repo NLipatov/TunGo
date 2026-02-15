@@ -28,7 +28,7 @@ func (d *dummyConfigManager) InjectX25519Keys(_, _ []byte) error {
 	return nil
 }
 func (d *dummyConfigManager) EnsureIPv6Subnets() error { return nil }
-func (d *dummyConfigManager) InvalidateCache()          {}
+func (d *dummyConfigManager) InvalidateCache()         {}
 
 // Erroring ServerConfigurationManager to trigger config error paths.
 type errorConfigManager struct{}
@@ -44,7 +44,7 @@ func (e *errorConfigManager) InjectX25519Keys(_, _ []byte) error {
 	return nil
 }
 func (e *errorConfigManager) EnsureIPv6Subnets() error { return nil }
-func (e *errorConfigManager) InvalidateCache()          {}
+func (e *errorConfigManager) InvalidateCache()         {}
 
 // Nop TUN handle.
 type nopReadWriteCloser struct{}
@@ -160,7 +160,13 @@ func Test_CreateWorker_TCP_ListenError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected constructor error: %v", err)
 	}
-	ws := settings.Settings{Protocol: settings.TCP, Host: mustHost("127.0.0.1"), Port: portNum}
+	ws := settings.Settings{
+		Protocol: settings.TCP,
+		Addressing: settings.Addressing{
+			Server: mustHost("127.0.0.1"),
+			Port:   portNum,
+		},
+	}
 
 	if _, err := factory.CreateWorker(context.Background(), nopReadWriteCloser{}, ws); err == nil {
 		t.Fatal("expected listen error due to port in use")
@@ -190,7 +196,13 @@ func Test_CreateWorker_UDP_ListenError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected constructor error: %v", err)
 	}
-	ws := settings.Settings{Protocol: settings.UDP, Host: mustHost("127.0.0.1"), Port: portNum}
+	ws := settings.Settings{
+		Protocol: settings.UDP,
+		Addressing: settings.Addressing{
+			Server: mustHost("127.0.0.1"),
+			Port:   portNum,
+		},
+	}
 
 	if _, err := factory.CreateWorker(context.Background(), nopReadWriteCloser{}, ws); err == nil {
 		t.Fatal("expected listen error due to port in use")
@@ -216,7 +228,13 @@ func Test_CreateWorker_WS_ListenError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected constructor error: %v", err)
 	}
-	ws := settings.Settings{Protocol: settings.WS, Host: mustHost("127.0.0.1"), Port: portNum}
+	ws := settings.Settings{
+		Protocol: settings.WS,
+		Addressing: settings.Addressing{
+			Server: mustHost("127.0.0.1"),
+			Port:   portNum,
+		},
+	}
 
 	if _, err := factory.CreateWorker(context.Background(), nopReadWriteCloser{}, ws); err == nil {
 		t.Fatal("expected listen error due to port in use")
@@ -261,7 +279,13 @@ func Test_CreateWorker_TCP_UDP_WS_Success(t *testing.T) {
 			}
 		}
 
-		ws := settings.Settings{Protocol: proto, Host: mustHost("127.0.0.1"), Port: portNum}
+		ws := settings.Settings{
+			Protocol: proto,
+			Addressing: settings.Addressing{
+				Server: mustHost("127.0.0.1"),
+				Port:   portNum,
+			},
+		}
 		w, err := factory.CreateWorker(ctx, nopReadWriteCloser{}, ws)
 		if err != nil {
 			t.Fatalf("unexpected error for %s: %v", proto, err)

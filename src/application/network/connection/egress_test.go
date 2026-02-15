@@ -3,6 +3,7 @@ package connection
 import (
 	"bytes"
 	"errors"
+	"net/netip"
 	"sync"
 	"testing"
 )
@@ -49,6 +50,17 @@ type egressMockWriteCloser struct {
 func (wc *egressMockWriteCloser) Close() error {
 	wc.closed = true
 	return nil
+}
+
+type egressMockAddrPortWriter struct {
+	egressMockWriter
+	addrPort netip.AddrPort
+	set      bool
+}
+
+func (w *egressMockAddrPortWriter) SetAddrPort(addr netip.AddrPort) {
+	w.addrPort = addr
+	w.set = true
 }
 
 func TestNewDefaultEgress(t *testing.T) {
@@ -126,6 +138,28 @@ func TestDefaultEgress_Close_WithoutCloser(t *testing.T) {
 	if err := e.Close(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+}
+
+func TestDefaultEgress_SetAddrPort_WithSetter(t *testing.T) {
+	w := &egressMockAddrPortWriter{}
+	e := NewDefaultEgress(w, &egressMockCrypto{})
+	want := netip.MustParseAddrPort("203.0.113.7:51820")
+
+	e.SetAddrPort(want)
+
+	if !w.set {
+		t.Fatal("expected SetAddrPort to be forwarded to writer")
+	}
+	if w.addrPort != want {
+		t.Fatalf("unexpected addr port: got %v, want %v", w.addrPort, want)
+	}
+}
+
+func TestDefaultEgress_SetAddrPort_WithoutSetter(t *testing.T) {
+	w := &egressMockWriter{}
+	e := NewDefaultEgress(w, &egressMockCrypto{})
+
+	e.SetAddrPort(netip.MustParseAddrPort("203.0.113.8:51820"))
 }
 
 func TestDefaultEgress_ConcurrentSend(t *testing.T) {

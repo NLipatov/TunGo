@@ -41,6 +41,13 @@ func TestNewTextInput_Success(t *testing.T) {
 	}
 }
 
+func TestNewTextInputAdapter_DefaultRunnerConstructs(t *testing.T) {
+	f := NewTextInputAdapter()
+	if f == nil {
+		t.Fatal("expected non-nil factory from NewTextInputAdapter")
+	}
+}
+
 func TestNewTextInput_RunError(t *testing.T) {
 	want := errors.New("boom")
 	adapter := NewCustomTeaRunnerTextInputAdapter(&textInputAdapterMockRunner{

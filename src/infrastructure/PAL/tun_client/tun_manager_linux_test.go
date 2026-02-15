@@ -65,9 +65,15 @@ func (m *platformTunManagerIPMock) RouteAddViaDev(string, string, string) error 
 }
 func (m *platformTunManagerIPMock) RouteAddSplitDefaultDev(string) error  { return m.mark("splitdef") }
 func (m *platformTunManagerIPMock) Route6AddSplitDefaultDev(string) error { return m.mark("splitdef6") }
-func (m *platformTunManagerIPMock) RouteDelSplitDefault(string) error     { m.log.WriteString("splitdel;"); return nil }
-func (m *platformTunManagerIPMock) Route6DelSplitDefault(string) error    { m.log.WriteString("splitdel6;"); return nil }
-func (m *platformTunManagerIPMock) RouteDel(string) error                 { m.log.WriteString("rdel;"); return nil }
+func (m *platformTunManagerIPMock) RouteDelSplitDefault(string) error {
+	m.log.WriteString("splitdel;")
+	return nil
+}
+func (m *platformTunManagerIPMock) Route6DelSplitDefault(string) error {
+	m.log.WriteString("splitdel6;")
+	return nil
+}
+func (m *platformTunManagerIPMock) RouteDel(string) error { m.log.WriteString("rdel;"); return nil }
 
 // platformTunManagerIPGetErr forces RouteGet to error (code ignores err, falls to parse error).
 type platformTunManagerIPGetErr struct{ platformTunManagerIPMock }
@@ -202,7 +208,7 @@ func TestCreateDevice_UDP_WithGateway(t *testing.T) {
 	}
 	_ = dev.Close()
 
-	want := "add;up;addr;raddvia;def;mtu;"
+	want := "add;up;addr;raddvia;splitdef;mtu;"
 	if got := ipMock.log.String(); got != want {
 		t.Fatalf("call sequence mismatch\nwant %s\ngot  %s", want, got)
 	}
@@ -221,7 +227,7 @@ func TestCreateDevice_TCP_NoGateway(t *testing.T) {
 	}
 	_ = dev.Close()
 
-	want := "add;up;addr;radd;def;mtu;"
+	want := "add;up;addr;radd;splitdef;mtu;"
 	if got := ipMock.log.String(); got != want {
 		t.Fatalf("call sequence mismatch\nwant %s\ngot  %s", want, got)
 	}
@@ -296,7 +302,7 @@ func TestCreateDevice_WrapError(t *testing.T) {
 }
 
 func TestConfigureTUN_ErrorPropagation_NoGatewayPath(t *testing.T) {
-	steps := []string{"add", "up", "addr", "radd", "def", "mtu"}
+	steps := []string{"add", "up", "addr", "radd", "splitdef", "mtu"}
 	for _, step := range steps {
 		ipMock := &platformTunManagerIPMock{routeReply: "198.51.100.1 dev eth0", failStep: step}
 		m := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{})
@@ -307,7 +313,7 @@ func TestConfigureTUN_ErrorPropagation_NoGatewayPath(t *testing.T) {
 }
 
 func TestConfigureTUN_ErrorPropagation_WithGatewayPath(t *testing.T) {
-	steps := []string{"add", "up", "addr", "raddvia", "def", "mtu"}
+	steps := []string{"add", "up", "addr", "raddvia", "splitdef", "mtu"}
 	for _, step := range steps {
 		ipMock := &platformTunManagerIPMock{routeReply: "198.51.100.1 via 192.0.2.1 dev eth0", failStep: step}
 		m := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{})
@@ -357,9 +363,9 @@ func TestCreateDevice_IPv6_FullPath(t *testing.T) {
 	}
 	_ = dev.Close()
 
-	// Should include: addr (IPv4), addr (IPv6), def6, and the ipv6 route steps.
+	// Should include: addr (IPv4), addr (IPv6), splitdef6, and the ipv6 route steps.
 	got := ipMock.log.String()
-	if !strings.Contains(got, "def6;") {
+	if !strings.Contains(got, "splitdef6;") {
 		t.Fatalf("expected IPv6 default route step, got: %s", got)
 	}
 	// Two "addr;" calls: one for IPv4, one for IPv6
@@ -377,8 +383,8 @@ func TestCreateDevice_IPv6_AddrAddError(t *testing.T) {
 	_ = origMark
 	mgr := newMgr(settings.UDP, &platformTunManagerIPMockFailNthAddr{
 		platformTunManagerIPMock: platformTunManagerIPMock{routeReply: "198.51.100.1 via 192.0.2.1 dev eth0"},
-		failOnCall:              2,
-		callCount:               &calls,
+		failOnCall:               2,
+		callCount:                &calls,
 	}, platformTunManagerIOCTLMock{}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{})
 
 	mgr.configuration.UDPSettings.IPv6 = mustAddr("fd00::2")
