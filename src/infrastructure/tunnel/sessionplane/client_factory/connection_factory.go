@@ -87,6 +87,10 @@ func (f *ConnectionFactory) establishSecuredConnection(
 		_ = adapter.Close()
 		return nil, nil, nil, fmt.Errorf("client keys not configured (required for IK handshake)")
 	}
+	if len(f.conf.X25519PublicKey) != 32 {
+		_ = adapter.Close()
+		return nil, nil, nil, fmt.Errorf("server public key not configured (required for IK handshake)")
+	}
 
 	handshake := noise.NewIKHandshakeClient(
 		f.conf.ClientPublicKey,
@@ -213,4 +217,3 @@ func (f *ConnectionFactory) dialWS(
 		settings.DefaultEthernetMTU+settings.TCPChacha20Overhead,
 	)
 }
-

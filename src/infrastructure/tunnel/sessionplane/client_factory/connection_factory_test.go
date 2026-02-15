@@ -573,6 +573,37 @@ func TestConnectionFactoryUnit_establishSecuredConnection_MissingClientKeys_Clos
 	}
 }
 
+func TestConnectionFactoryUnit_establishSecuredConnection_MissingServerPublicKey_ClosesAdapter(t *testing.T) {
+	clientPub := make([]byte, 32)
+	clientPriv := make([]byte, 32)
+
+	f := &ConnectionFactory{
+		conf: client.Configuration{
+			ClientPublicKey:  clientPub,
+			ClientPrivateKey: clientPriv,
+			X25519PublicKey:  []byte{7, 8, 9}, // invalid length
+		},
+	}
+	tr := &cfUnitTransport{}
+	cryptoFactory := &cfUnitCryptoFactory{}
+
+	_, _, _, err := f.establishSecuredConnection(
+		context.Background(),
+		settings.Settings{Protocol: settings.TCP},
+		tr,
+		cryptoFactory,
+	)
+	if err == nil || !strings.Contains(err.Error(), "server public key not configured") {
+		t.Fatalf("expected server public key error, got %v", err)
+	}
+	if !tr.closed {
+		t.Fatal("expected adapter to be closed on missing server public key")
+	}
+	if cryptoFactory.called {
+		t.Fatal("crypto factory should not be called when server key is missing")
+	}
+}
+
 func TestConnectionFactoryUnit_establishSecuredConnection_HandshakeError_ClosesAdapter(t *testing.T) {
 	clientPub := make([]byte, 32)
 	clientPriv := make([]byte, 32)
