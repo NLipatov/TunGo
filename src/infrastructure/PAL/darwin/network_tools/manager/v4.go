@@ -93,17 +93,17 @@ func (m *v4) validateSettings() error {
 	if m.s.Host.IsZero() {
 		return fmt.Errorf("v4: empty Host")
 	}
-	if !m.s.InterfaceIP.IsValid() || !m.s.InterfaceIP.Unmap().Is4() {
-		return fmt.Errorf("v4: invalid InterfaceIP %q", m.s.InterfaceIP)
+	if !m.s.IPv4IP.IsValid() || !m.s.IPv4IP.Unmap().Is4() {
+		return fmt.Errorf("v4: invalid IPv4IP %q", m.s.IPv4IP)
 	}
-	if !m.s.InterfaceSubnet.IsValid() {
-		return fmt.Errorf("v4: invalid InterfaceSubnet %q", m.s.InterfaceSubnet)
+	if !m.s.IPv4Subnet.IsValid() {
+		return fmt.Errorf("v4: invalid IPv4Subnet %q", m.s.IPv4Subnet)
 	}
 	return nil
 }
 
 func (m *v4) assignIPv4() error {
-	cidr := fmt.Sprintf("%s/32", m.s.InterfaceIP)
+	cidr := fmt.Sprintf("%s/32", m.s.IPv4IP)
 	if err := m.ifc.LinkAddrAdd(m.ifName, cidr); err != nil {
 		return fmt.Errorf("v4: set addr %s on %s: %w", cidr, m.ifName, err)
 	}

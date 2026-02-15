@@ -70,7 +70,7 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.Settings) error 
 	fmt.Printf("created TUN interface: %v\n", connSettings.InterfaceName)
 
 	// Assign IPv4 address to the TUN interface
-	cidr4, cidr4Err := interfaceCIDR(connSettings.InterfaceIP, connSettings.InterfaceSubnet)
+	cidr4, cidr4Err := interfaceCIDR(connSettings.IPv4IP, connSettings.IPv4Subnet)
 	if cidr4Err != nil {
 		return cidr4Err
 	}
@@ -128,8 +128,8 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.Settings) error 
 	fmt.Printf("added route to server %s via %s dev %s\n", serverIP, viaGateway, devInterface)
 
 	// Add route for IPv6 server address (if available)
-	if !connSettings.IPv6Host.IsZero() {
-		serverIPv6, ipv6HostErr := connSettings.IPv6Host.RouteIP()
+	if connSettings.Host.HasIPv6() {
+		serverIPv6, ipv6HostErr := connSettings.Host.RouteIPv6()
 		if ipv6HostErr == nil {
 			routeInfo6, routeErr6 := t.ip.RouteGet(serverIPv6)
 			if routeErr6 == nil {
@@ -189,10 +189,10 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.Settings) error 
 
 func interfaceCIDR(addr netip.Addr, subnet netip.Prefix) (string, error) {
 	if !addr.IsValid() {
-		return "", fmt.Errorf("invalid InterfaceIP")
+		return "", fmt.Errorf("invalid address")
 	}
 	if !subnet.IsValid() {
-		return "", fmt.Errorf("invalid InterfaceSubnet")
+		return "", fmt.Errorf("invalid subnet")
 	}
 	return netip.PrefixFrom(addr.Unmap(), subnet.Bits()).String(), nil
 }
@@ -212,8 +212,8 @@ func (t *PlatformTunManager) DisposeDevices() error {
 		if routeTarget, routeErr := s.Host.RouteIP(); routeErr == nil {
 			_ = t.ip.RouteDel(routeTarget)
 		}
-		if !s.IPv6Host.IsZero() {
-			if routeTarget, routeErr := s.IPv6Host.RouteIP(); routeErr == nil {
+		if s.Host.HasIPv6() {
+			if routeTarget, routeErr := s.Host.RouteIPv6(); routeErr == nil {
 				_ = t.ip.RouteDel(routeTarget)
 			}
 		}

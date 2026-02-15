@@ -64,12 +64,12 @@ func (g *Generator) Generate() (*client.Configuration, error) {
 		return nil, fmt.Errorf("failed to read server configuration: %w", err)
 	}
 
-	serverHost, ipv6Host, err := g.resolveServerHosts(serverConf.FallbackServerAddress)
+	serverHost, err := g.resolveServerHost(serverConf.FallbackServerAddress)
 	if err != nil {
 		return nil, err
 	}
 
-	if !ipv6Host.IsZero() {
+	if serverHost.HasIPv6() {
 		if err := g.serverConfigurationManager.EnsureIPv6Subnets(); err != nil {
 			return nil, fmt.Errorf("failed to auto-enable IPv6 subnets: %w", err)
 		}
@@ -105,9 +105,9 @@ func (g *Generator) Generate() (*client.Configuration, error) {
 	defaultProtocol := getDefaultProtocol(serverConf)
 
 	conf := client.Configuration{
-		TCPSettings:      deriveClientSettings(serverConf.TCPSettings, clientIPs.tcp, clientIPs.tcpV6, serverHost, ipv6Host, settings.TCP),
-		UDPSettings:      deriveClientSettings(serverConf.UDPSettings, clientIPs.udp, clientIPs.udpV6, serverHost, ipv6Host, settings.UDP),
-		WSSettings:       deriveClientSettings(serverConf.WSSettings, clientIPs.ws, clientIPs.wsV6, serverHost, ipv6Host, settings.WS),
+		TCPSettings:      deriveClientSettings(serverConf.TCPSettings, clientIPs.tcp, clientIPs.tcpV6, serverHost, settings.TCP),
+		UDPSettings:      deriveClientSettings(serverConf.UDPSettings, clientIPs.udp, clientIPs.udpV6, serverHost, settings.UDP),
+		WSSettings:       deriveClientSettings(serverConf.WSSettings, clientIPs.ws, clientIPs.wsV6, serverHost, settings.WS),
 		X25519PublicKey:  serverConf.X25519PublicKey,
 		Protocol:         defaultProtocol,
 		ClientPublicKey:  clientPubKey,
@@ -117,11 +117,11 @@ func (g *Generator) Generate() (*client.Configuration, error) {
 	return &conf, nil
 }
 
-func (g *Generator) resolveServerHosts(fallback string) (ipv4Host, ipv6Host settings.Host, err error) {
+func (g *Generator) resolveServerHost(fallback string) (settings.Host, error) {
 	ipv4Str, ipv4Err := g.resolver.ResolveIPv4()
 	if ipv4Err != nil {
 		if fallback == "" {
-			return "", "", fmt.Errorf(
+			return settings.Host{}, fmt.Errorf(
 				"failed to resolve server IP and no fallback address provided in server configuration: %w",
 				ipv4Err,
 			)
@@ -129,17 +129,19 @@ func (g *Generator) resolveServerHosts(fallback string) (ipv4Host, ipv6Host sett
 		ipv4Str = fallback
 	}
 
-	ipv4Host, err = settings.NewHost(ipv4Str)
+	host, err := settings.NewHost(ipv4Str)
 	if err != nil {
-		return "", "", fmt.Errorf("invalid server host %q: %w", ipv4Str, err)
+		return settings.Host{}, fmt.Errorf("invalid server host %q: %w", ipv4Str, err)
 	}
 
 	ipv6Str, ipv6Err := g.resolver.ResolveIPv6()
 	if ipv6Err == nil {
-		ipv6Host, _ = settings.NewHost(ipv6Str)
+		if ipv6Addr, parseErr := netip.ParseAddr(ipv6Str); parseErr == nil {
+			host = host.WithIPv6(ipv6Addr)
+		}
 	}
 
-	return ipv4Host, ipv6Host, nil
+	return host, nil
 }
 
 type clientIPs struct {
@@ -154,17 +156,17 @@ func (g *Generator) allocateClientIPs(
 	var ips clientIPs
 	var err error
 
-	ips.tcp, err = nip.AllocateClientIP(serverConf.TCPSettings.InterfaceSubnet, clientID)
+	ips.tcp, err = nip.AllocateClientIP(serverConf.TCPSettings.IPv4Subnet, clientID)
 	if err != nil {
 		return clientIPs{}, fmt.Errorf("TCP interface address allocation fail: %w", err)
 	}
 
-	ips.udp, err = nip.AllocateClientIP(serverConf.UDPSettings.InterfaceSubnet, clientID)
+	ips.udp, err = nip.AllocateClientIP(serverConf.UDPSettings.IPv4Subnet, clientID)
 	if err != nil {
 		return clientIPs{}, fmt.Errorf("UDP interface address allocation fail: %w", err)
 	}
 
-	ips.ws, err = nip.AllocateClientIP(serverConf.WSSettings.InterfaceSubnet, clientID)
+	ips.ws, err = nip.AllocateClientIP(serverConf.WSSettings.IPv4Subnet, clientID)
 	if err != nil {
 		return clientIPs{}, fmt.Errorf("WS interface address allocation fail: %w", err)
 	}
@@ -192,7 +194,6 @@ func deriveClientSettings(
 	clientIP netip.Addr,
 	clientIPv6 netip.Addr,
 	serverHost settings.Host,
-	ipv6Host settings.Host,
 	protocol settings.Protocol,
 ) settings.Settings {
 	mtu := serverSettings.MTU
@@ -200,16 +201,15 @@ func deriveClientSettings(
 		mtu = settings.SafeMTU
 	}
 	s := settings.Settings{
-		InterfaceName:   serverSettings.InterfaceName,
-		InterfaceSubnet: serverSettings.InterfaceSubnet,
-		InterfaceIP:     clientIP.Unmap(),
-		Host:            serverHost,
-		IPv6Host:        ipv6Host,
-		Port:            serverSettings.Port,
-		MTU:             mtu,
-		Protocol:        protocol,
-		Encryption:      serverSettings.Encryption,
-		DialTimeoutMs:   serverSettings.DialTimeoutMs,
+		InterfaceName: serverSettings.InterfaceName,
+		IPv4Subnet:    serverSettings.IPv4Subnet,
+		IPv4IP:        clientIP.Unmap(),
+		Host:          serverHost,
+		Port:          serverSettings.Port,
+		MTU:           mtu,
+		Protocol:      protocol,
+		Encryption:    serverSettings.Encryption,
+		DialTimeoutMs: serverSettings.DialTimeoutMs,
 	}
 	if clientIPv6.IsValid() {
 		s.IPv6Subnet = serverSettings.IPv6Subnet

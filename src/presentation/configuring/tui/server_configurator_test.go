@@ -163,18 +163,18 @@ func Test_Configure_AddClientOption_Success_ThenExit(t *testing.T) {
 		confRet: &srv.Configuration{
 			TCPSettings: settings.Settings{
 				Host:             mustHost("10.10.0.1"),
-				InterfaceSubnet:  mustPrefix("10.10.0.0/24"),
-				InterfaceIP:      mustAddr("10.10.0.2"),
+				IPv4Subnet:  mustPrefix("10.10.0.0/24"),
+				IPv4IP:      mustAddr("10.10.0.2"),
 			},
 			UDPSettings: settings.Settings{
 				Host:             mustHost("10.10.1.1"),
-				InterfaceSubnet:  mustPrefix("10.10.1.1/24"),
-				InterfaceIP:      mustAddr("10.10.1.2"),
+				IPv4Subnet:  mustPrefix("10.10.1.1/24"),
+				IPv4IP:      mustAddr("10.10.1.2"),
 			},
 			WSSettings: settings.Settings{
 				Host:             mustHost("10.10.3.1"),
-				InterfaceSubnet:  mustPrefix("10.10.3.1/24"),
-				InterfaceIP:      mustAddr("10.10.3.2"),
+				IPv4Subnet:  mustPrefix("10.10.3.1/24"),
+				IPv4IP:      mustAddr("10.10.3.2"),
 			},
 			EnableTCP: true,
 		},

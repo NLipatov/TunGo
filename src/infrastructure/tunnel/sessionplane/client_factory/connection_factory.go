@@ -172,8 +172,8 @@ func (f *ConnectionFactory) dialWithFallback(
 	s settings.Settings,
 	dialFn func(context.Context, netip.AddrPort) (connection.Transport, error),
 ) (connection.Transport, error) {
-	if !s.IPv6Host.IsZero() {
-		ipv6AP, err := s.IPv6Host.AddrPort(s.Port)
+	if s.Host.HasIPv6() {
+		ipv6AP, err := s.Host.IPv6AddrPort(s.Port)
 		if err == nil {
 			ipv6Ctx, cancel := context.WithTimeout(ctx, ipv6FallbackTimeout)
 			transport, dialErr := dialFn(ipv6Ctx, ipv6AP)
@@ -200,8 +200,8 @@ func (f *ConnectionFactory) dialWSWithFallback(
 		port = 443
 	}
 
-	if !s.IPv6Host.IsZero() {
-		endpoint, err := s.IPv6Host.Endpoint(port)
+	if s.Host.HasIPv6() {
+		endpoint, err := s.Host.IPv6Endpoint(port)
 		if err == nil {
 			ipv6Ctx, cancel := context.WithTimeout(establishCtx, ipv6FallbackTimeout)
 			adapter, dialErr := f.dialWS(ipv6Ctx, connCtx, scheme, endpoint)

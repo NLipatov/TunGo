@@ -63,7 +63,11 @@ func (m *platformTunManagerIPMock) RouteAddDev(string, string) error        { re
 func (m *platformTunManagerIPMock) RouteAddViaDev(string, string, string) error {
 	return m.mark("raddvia")
 }
-func (m *platformTunManagerIPMock) RouteDel(string) error { m.log.WriteString("rdel;"); return nil }
+func (m *platformTunManagerIPMock) RouteAddSplitDefaultDev(string) error  { return m.mark("splitdef") }
+func (m *platformTunManagerIPMock) Route6AddSplitDefaultDev(string) error { return m.mark("splitdef6") }
+func (m *platformTunManagerIPMock) RouteDelSplitDefault(string) error     { m.log.WriteString("splitdel;"); return nil }
+func (m *platformTunManagerIPMock) Route6DelSplitDefault(string) error    { m.log.WriteString("splitdel6;"); return nil }
+func (m *platformTunManagerIPMock) RouteDel(string) error                 { m.log.WriteString("rdel;"); return nil }
 
 // platformTunManagerIPGetErr forces RouteGet to error (code ignores err, falls to parse error).
 type platformTunManagerIPGetErr struct{ platformTunManagerIPMock }
@@ -123,6 +127,10 @@ func newMgr(
 		RouteDefault() (string, error)
 		RouteAddDefaultDev(string) error
 		Route6AddDefaultDev(string) error
+		RouteAddSplitDefaultDev(string) error
+		Route6AddSplitDefaultDev(string) error
+		RouteDelSplitDefault(string) error
+		Route6DelSplitDefault(string) error
 		RouteGet(string) (string, error)
 		RouteAddDev(string, string) error
 		RouteAddViaDev(string, string, string) error
@@ -142,22 +150,22 @@ func newMgr(
 		Protocol: proto,
 		UDPSettings: settings.Settings{
 			InterfaceName:    "tun0",
-			InterfaceSubnet:  mustPrefix("10.0.0.0/30"),
-			InterfaceIP:      mustAddr("10.0.0.2"),
+			IPv4Subnet:  mustPrefix("10.0.0.0/30"),
+			IPv4IP:      mustAddr("10.0.0.2"),
 			Host:             mustHost("198.51.100.1"),
 			MTU:              1400,
 		},
 		TCPSettings: settings.Settings{
 			InterfaceName:    "tun1",
-			InterfaceSubnet:  mustPrefix("10.0.0.4/30"),
-			InterfaceIP:      mustAddr("10.0.0.6"),
+			IPv4Subnet:  mustPrefix("10.0.0.4/30"),
+			IPv4IP:      mustAddr("10.0.0.6"),
 			Host:             mustHost("203.0.113.1"),
 			MTU:              1400,
 		},
 		WSSettings: settings.Settings{
 			InterfaceName:    "tun2",
-			InterfaceSubnet:  mustPrefix("10.0.0.8/30"),
-			InterfaceIP:      mustAddr("10.0.0.10"),
+			IPv4Subnet:  mustPrefix("10.0.0.8/30"),
+			IPv4IP:      mustAddr("10.0.0.10"),
 			Host:             mustHost("203.0.113.2"),
 			MTU:              1250,
 		},
@@ -335,7 +343,7 @@ func TestCreateDevice_IPv6_FullPath(t *testing.T) {
 	// Enable IPv6 on the active protocol's settings.
 	mgr.configuration.UDPSettings.IPv6IP = mustAddr("fd00::2")
 	mgr.configuration.UDPSettings.IPv6Subnet = mustPrefix("fd00::/64")
-	mgr.configuration.UDPSettings.IPv6Host = mustHost("2001:db8::1")
+	mgr.configuration.UDPSettings.Host = mgr.configuration.UDPSettings.Host.WithIPv6(netip.MustParseAddr("2001:db8::1"))
 
 	dev, err := mgr.CreateDevice()
 	if err != nil {
@@ -394,9 +402,9 @@ func TestCreateDevice_IPv6_Route6DefaultError(t *testing.T) {
 func TestDisposeDevices_IPv6HostRouteCleanup(t *testing.T) {
 	ipMock := &platformTunManagerIPMock{}
 	mgr := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{})
-	mgr.configuration.UDPSettings.IPv6Host = mustHost("2001:db8::1")
-	mgr.configuration.TCPSettings.IPv6Host = mustHost("2001:db8::2")
-	mgr.configuration.WSSettings.IPv6Host = mustHost("2001:db8::3")
+	mgr.configuration.UDPSettings.Host = mgr.configuration.UDPSettings.Host.WithIPv6(netip.MustParseAddr("2001:db8::1"))
+	mgr.configuration.TCPSettings.Host = mgr.configuration.TCPSettings.Host.WithIPv6(netip.MustParseAddr("2001:db8::2"))
+	mgr.configuration.WSSettings.Host = mgr.configuration.WSSettings.Host.WithIPv6(netip.MustParseAddr("2001:db8::3"))
 
 	if err := mgr.DisposeDevices(); err != nil {
 		t.Fatalf("unexpected error: %v", err)

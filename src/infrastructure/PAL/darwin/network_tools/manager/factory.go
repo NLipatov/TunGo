@@ -29,20 +29,12 @@ func NewFactory(s settings.Settings) *Factory {
 }
 
 // Create returns a tun.ClientManager for the configured address families.
-// Dual-stack is used when InterfaceIP is IPv4 and a valid IPv6IP is also configured.
+// Dual-stack is used when both a valid IPv4IP and a valid IPv6IP are configured.
 func (f *Factory) Create() (tun.ClientManager, error) {
-	ifAddr := f.s.InterfaceIP
-	if !ifAddr.IsValid() {
-		return nil, fmt.Errorf("invalid InterfaceIP: %q", ifAddr)
-	}
-	if ifAddr.IsUnspecified() {
-		return nil, fmt.Errorf("unspecified InterfaceIP is not allowed: %q", ifAddr)
-	}
+	has4 := f.s.IPv4IP.IsValid() && !f.s.IPv4IP.IsUnspecified() && f.s.IPv4IP.Unmap().Is4()
+	has6 := f.s.IPv6IP.IsValid() && !f.s.IPv6IP.IsUnspecified() && !f.s.IPv6IP.Unmap().Is4()
 
-	ifIs4 := ifAddr.Unmap().Is4()
-
-	// Dual-stack: IPv4 interface + valid IPv6 configured.
-	if ifIs4 && f.s.IPv6IP.IsValid() && !f.s.IPv6IP.IsUnspecified() {
+	if has4 && has6 {
 		return newDualStack(
 			f.s,
 			f.ifcFactory.NewV4(),
@@ -51,17 +43,19 @@ func (f *Factory) Create() (tun.ClientManager, error) {
 			f.rtFactory.NewV6(),
 		), nil
 	}
-
-	if ifIs4 {
+	if has4 {
 		return newV4(
 			f.s,
 			f.ifcFactory.NewV4(),
 			f.rtFactory.NewV4(),
 		), nil
 	}
-	return newV6(
-		f.s,
-		f.ifcFactory.NewV6(),
-		f.rtFactory.NewV6(),
-	), nil
+	if has6 {
+		return newV6(
+			f.s,
+			f.ifcFactory.NewV6(),
+			f.rtFactory.NewV6(),
+		), nil
+	}
+	return nil, fmt.Errorf("no valid IPv4IP or IPv6IP configured")
 }

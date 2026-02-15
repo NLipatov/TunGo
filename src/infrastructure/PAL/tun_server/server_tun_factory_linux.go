@@ -41,8 +41,8 @@ func NewServerTunFactory() tun.ServerManager {
 }
 
 func (s ServerTunFactory) CreateDevice(connSettings settings.Settings) (tun.Device, error) {
-	ipv4 := connSettings.InterfaceSubnet.IsValid() && connSettings.InterfaceSubnet.Addr().Is4()
-	ipv6 := connSettings.IPv6Subnet.IsValid() || (connSettings.InterfaceSubnet.IsValid() && !connSettings.InterfaceSubnet.Addr().Is4())
+	ipv4 := connSettings.IPv4Subnet.IsValid() && connSettings.IPv4Subnet.Addr().Is4()
+	ipv6 := connSettings.IPv6Subnet.IsValid() || (connSettings.IPv4Subnet.IsValid() && !connSettings.IPv4Subnet.Addr().Is4())
 
 	forwardingErr := s.enableForwarding(ipv4, ipv6)
 	if forwardingErr != nil {
@@ -177,12 +177,12 @@ func (s ServerTunFactory) createTun(settings settings.Settings) (*os.File, error
 		return nil, fmt.Errorf("could not set mtu on tuntap dev: %s", mtuErr)
 	}
 
-	serverIp, serverIpErr := nIp.AllocateServerIP(settings.InterfaceSubnet)
+	serverIp, serverIpErr := nIp.AllocateServerIP(settings.IPv4Subnet)
 	if serverIpErr != nil {
 		return nil, fmt.Errorf("could not allocate server IP (%s): %s", serverIp, serverIpErr)
 	}
 
-	cidrServerIp, cidrServerIpErr := nIp.ToCIDR(settings.InterfaceSubnet.String(), serverIp)
+	cidrServerIp, cidrServerIpErr := nIp.ToCIDR(settings.IPv4Subnet.String(), serverIp)
 	if cidrServerIpErr != nil {
 		return nil, fmt.Errorf("could not conver server IP(%s) to CIDR: %s", serverIp, cidrServerIpErr)
 	}

@@ -10,7 +10,7 @@ import (
 	"tungo/infrastructure/settings"
 )
 
-// Factory builds a family-specific TUN manager (IPv4 or IPv6) based on InterfaceIP.
+// Factory builds a family-specific TUN manager (IPv4, IPv6, or dual-stack) based on configured addresses.
 type Factory struct {
 	connectionSettings settings.Settings
 	netConfigFactory   ipcfg.Factory
@@ -25,24 +25,22 @@ func NewFactory(
 	}
 }
 
-// Create returns a tun.ClientManager specialized for IPv4 or IPv6.
+// Create returns a tun.ClientManager for the configured address families.
 func (f *Factory) Create() (tun.ClientManager, error) {
-	ifAddr := f.connectionSettings.InterfaceIP
-	if !ifAddr.IsValid() {
-		return nil, fmt.Errorf("invalid InterfaceIP: %q", ifAddr)
-	}
-	if ifAddr.IsUnspecified() {
-		return nil, fmt.Errorf("unspecified InterfaceIP is not allowed: %q", ifAddr)
-	}
+	has4 := f.connectionSettings.IPv4IP.IsValid() && !f.connectionSettings.IPv4IP.IsUnspecified() && f.connectionSettings.IPv4IP.Unmap().Is4()
+	has6 := f.connectionSettings.IPv6IP.IsValid() && !f.connectionSettings.IPv6IP.IsUnspecified() && !f.connectionSettings.IPv6IP.Unmap().Is4()
 
-	if ifAddr.Unmap().Is4() {
+	if has4 {
 		return newV4Manager(
 			f.connectionSettings,
 			f.netConfigFactory.NewV4(),
 		), nil
 	}
-	return newV6Manager(
-		f.connectionSettings,
-		f.netConfigFactory.NewV6(),
-	), nil
+	if has6 {
+		return newV6Manager(
+			f.connectionSettings,
+			f.netConfigFactory.NewV6(),
+		), nil
+	}
+	return nil, fmt.Errorf("no valid IPv4IP or IPv6IP configured")
 }

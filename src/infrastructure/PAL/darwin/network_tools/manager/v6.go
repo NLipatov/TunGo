@@ -93,9 +93,9 @@ func (m *v6) DisposeDevices() error {
 }
 
 func (m *v6) validateSettings() error {
-	ip := m.s.InterfaceIP.Unmap()
+	ip := m.s.IPv6IP.Unmap()
 	if !ip.IsValid() || ip.Is4() {
-		return fmt.Errorf("v6: invalid InterfaceIP %q", m.s.InterfaceIP)
+		return fmt.Errorf("v6: invalid IPv6IP %q", m.s.IPv6IP)
 	}
 	if m.s.Host.IsZero() {
 		return fmt.Errorf("v6: empty Host")
@@ -105,10 +105,10 @@ func (m *v6) validateSettings() error {
 
 func (m *v6) assignIPv6() error {
 	var cidr string
-	if m.s.InterfaceSubnet.IsValid() {
-		cidr = fmt.Sprintf("%s/%d", m.s.InterfaceIP, m.s.InterfaceSubnet.Bits())
+	if m.s.IPv6Subnet.IsValid() {
+		cidr = fmt.Sprintf("%s/%d", m.s.IPv6IP, m.s.IPv6Subnet.Bits())
 	} else {
-		cidr = fmt.Sprintf("%s/128", m.s.InterfaceIP)
+		cidr = fmt.Sprintf("%s/128", m.s.IPv6IP)
 	}
 	if err := m.ifc.LinkAddrAdd(m.ifName, cidr); err != nil {
 		return fmt.Errorf("v6: set addr %s on %s: %w", cidr, m.ifName, err)

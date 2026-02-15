@@ -48,8 +48,8 @@ func (c *creatorTestConfigProvider) mockedConfig() Configuration {
 	return Configuration{
 		TCPSettings: settings.Settings{
 			InterfaceName:    "tcptun0",
-			InterfaceSubnet:  mustPrefix("10.0.0.0/24"),
-			InterfaceIP:      mustAddr("10.0.0.10"),
+			IPv4Subnet:  mustPrefix("10.0.0.0/24"),
+			IPv4IP:      mustAddr("10.0.0.10"),
 			Host:             mustHost("192.168.122.194"),
 			Port:             8080,
 			MTU:              settings.DefaultEthernetMTU,
@@ -59,8 +59,8 @@ func (c *creatorTestConfigProvider) mockedConfig() Configuration {
 		},
 		UDPSettings: settings.Settings{
 			InterfaceName:    "udptun0",
-			InterfaceSubnet:  mustPrefix("10.0.1.0/24"),
-			InterfaceIP:      mustAddr("10.0.1.10"),
+			IPv4Subnet:  mustPrefix("10.0.1.0/24"),
+			IPv4IP:      mustAddr("10.0.1.10"),
 			Host:             mustHost("192.168.122.194"),
 			Port:             9090,
 			MTU:              settings.DefaultEthernetMTU,

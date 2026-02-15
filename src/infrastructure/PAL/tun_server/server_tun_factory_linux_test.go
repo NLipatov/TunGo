@@ -407,13 +407,13 @@ func pickLoopbackName() string {
 
 var baseCfg = settings.Settings{
 	InterfaceName:   "tun0",
-	InterfaceSubnet: netip.MustParsePrefix("10.0.0.0/30"),
+	IPv4Subnet: netip.MustParsePrefix("10.0.0.0/30"),
 	MTU:             settings.SafeMTU,
 }
 
 var baseCfgIPv6 = settings.Settings{
 	InterfaceName:   "tun0",
-	InterfaceSubnet: netip.MustParsePrefix("10.0.0.0/30"),
+	IPv4Subnet: netip.MustParsePrefix("10.0.0.0/30"),
 	IPv6Subnet:      netip.MustParsePrefix("fd00::/64"),
 	MTU:             settings.SafeMTU,
 }
@@ -587,7 +587,7 @@ func TestCreateTunDevice_InvalidCIDR_ErrorsFromAllocator(t *testing.T) {
 
 	f := newFactory(ipMock, iptMock, nil, ioMock, sysMock)
 	bad := baseCfg
-	bad.InterfaceSubnet = netip.Prefix{}
+	bad.IPv4Subnet = netip.Prefix{}
 	_, err := f.CreateDevice(bad)
 	if err == nil || !strings.Contains(err.Error(), "could not allocate server IP") {
 		t.Fatalf("expected allocator error, got %v", err)

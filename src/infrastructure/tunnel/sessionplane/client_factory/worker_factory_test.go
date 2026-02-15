@@ -145,11 +145,11 @@ func TestWorkerFactory_CreateWorker_UDP(t *testing.T) {
 }
 
 func TestWorkerFactory_CreateWorker_TCP_WithAllowedSources(t *testing.T) {
-	// Covers allowedSources() InterfaceIP and IPv6IP branches.
+	// Covers allowedSources() IPv4IP and IPv6IP branches.
 	cfg := client.Configuration{
 		Protocol: settings.TCP,
 		TCPSettings: settings.Settings{
-			InterfaceIP: netip.MustParseAddr("10.0.0.2"),
+			IPv4IP: netip.MustParseAddr("10.0.0.2"),
 			IPv6IP:      netip.MustParseAddr("fd00::2"),
 		},
 	}

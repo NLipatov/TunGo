@@ -39,8 +39,8 @@ func newDummyConfig() *client.Configuration {
 	return &client.Configuration{
 		UDPSettings: settings.Settings{
 			InterfaceName:    "udp_dependencies_test_0",
-			InterfaceSubnet:  mustPrefix("10.0.1.0/24"),
-			InterfaceIP:      mustAddr("10.0.1.1"),
+			IPv4Subnet:  mustPrefix("10.0.1.0/24"),
+			IPv4IP:      mustAddr("10.0.1.1"),
 			Host:             mustHost("1.2.3.4"),
 			Port:             1010,
 			MTU:              1000,

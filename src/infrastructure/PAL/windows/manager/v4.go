@@ -74,11 +74,11 @@ func (m *v4Manager) validateSettings() error {
 	if m.s.Host.IsZero() {
 		return fmt.Errorf("empty Host")
 	}
-	if !m.s.InterfaceSubnet.IsValid() {
-		return fmt.Errorf("invalid InterfaceSubnet: %q", m.s.InterfaceSubnet)
+	if !m.s.IPv4Subnet.IsValid() {
+		return fmt.Errorf("invalid IPv4Subnet: %q", m.s.IPv4Subnet)
 	}
-	if !m.s.InterfaceIP.IsValid() || !m.s.InterfaceIP.Unmap().Is4() {
-		return fmt.Errorf("v4Manager requires IPv4 InterfaceIP, got %q", m.s.InterfaceIP)
+	if !m.s.IPv4IP.IsValid() || !m.s.IPv4IP.Unmap().Is4() {
+		return fmt.Errorf("v4Manager requires IPv4 IPv4IP, got %q", m.s.IPv4IP)
 	}
 	return nil
 }
@@ -120,8 +120,8 @@ func (m *v4Manager) addStaticRouteToServer() error {
 
 // assignIPToTunDevice validates IPv4 address ∈ CIDR and applies it.
 func (m *v4Manager) assignIPToTunDevice() error {
-	ipStr := m.s.InterfaceIP.String()
-	subnetStr := m.s.InterfaceSubnet.String()
+	ipStr := m.s.IPv4IP.String()
+	subnetStr := m.s.IPv4Subnet.String()
 	ip := net.ParseIP(ipStr)
 	_, network, _ := net.ParseCIDR(subnetStr)
 	if ip == nil || network == nil || !network.Contains(ip) {

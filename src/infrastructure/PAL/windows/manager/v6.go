@@ -76,11 +76,11 @@ func (m *v6Manager) validateSettings() error {
 	if m.s.Host.IsZero() {
 		return fmt.Errorf("empty Host")
 	}
-	if !m.s.InterfaceSubnet.IsValid() {
-		return fmt.Errorf("invalid InterfaceSubnet: %q", m.s.InterfaceSubnet)
+	if !m.s.IPv6Subnet.IsValid() {
+		return fmt.Errorf("invalid IPv6Subnet: %q", m.s.IPv6Subnet)
 	}
-	if !m.s.InterfaceIP.IsValid() || m.s.InterfaceIP.Unmap().Is4() {
-		return fmt.Errorf("v6Manager requires IPv6 InterfaceIP, got %q", m.s.InterfaceIP)
+	if !m.s.IPv6IP.IsValid() || m.s.IPv6IP.Unmap().Is4() {
+		return fmt.Errorf("v6Manager requires IPv6 address, got %q", m.s.IPv6IP)
 	}
 	return nil
 }
@@ -121,8 +121,8 @@ func (m *v6Manager) addStaticRouteToServer() error {
 
 // assignIPToTunDevice validates IPv6 address ∈ CIDR and applies it via prefix length.
 func (m *v6Manager) assignIPToTunDevice() error {
-	ipStr := m.s.InterfaceIP.String()
-	subnetStr := m.s.InterfaceSubnet.String()
+	ipStr := m.s.IPv6IP.String()
+	subnetStr := m.s.IPv6Subnet.String()
 	ip := net.ParseIP(ipStr)
 	_, nw, _ := net.ParseCIDR(subnetStr)
 	if ip == nil || ip.To4() != nil || nw == nil || !nw.Contains(ip) {

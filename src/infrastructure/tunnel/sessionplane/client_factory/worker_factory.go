@@ -76,8 +76,8 @@ func (w *WorkerFactory) allowedSources() map[netip.Addr]struct{} {
 		return nil
 	}
 	m := make(map[netip.Addr]struct{}, 2)
-	if s.InterfaceIP.IsValid() {
-		m[s.InterfaceIP.Unmap()] = struct{}{}
+	if s.IPv4IP.IsValid() {
+		m[s.IPv4IP.Unmap()] = struct{}{}
 	}
 	if s.IPv6IP.IsValid() {
 		m[s.IPv6IP.Unmap()] = struct{}{}

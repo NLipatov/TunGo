@@ -98,7 +98,7 @@ func validCfg() *serverConfiguration.Configuration {
 		X25519PrivateKey:      []byte("PRIV"),
 		TCPSettings: settings.Settings{
 			InterfaceName:   "tun-tcp0",
-			InterfaceSubnet: mustPrefix("10.0.0.0/24"),
+			IPv4Subnet: mustPrefix("10.0.0.0/24"),
 			IPv6Subnet:      mustPrefix("fd00::/64"),
 			Port:            443,
 			MTU:             1400,
@@ -107,7 +107,7 @@ func validCfg() *serverConfiguration.Configuration {
 		},
 		UDPSettings: settings.Settings{
 			InterfaceName:   "tun-udp0",
-			InterfaceSubnet: mustPrefix("10.1.0.0/24"),
+			IPv4Subnet: mustPrefix("10.1.0.0/24"),
 			IPv6Subnet:      mustPrefix("fd00:1::/64"),
 			Port:            53,
 			MTU:             1400,
@@ -116,7 +116,7 @@ func validCfg() *serverConfiguration.Configuration {
 		},
 		WSSettings: settings.Settings{
 			InterfaceName:   "tun-ws0",
-			InterfaceSubnet: mustPrefix("10.2.0.0/24"),
+			IPv4Subnet: mustPrefix("10.2.0.0/24"),
 			IPv6Subnet:      mustPrefix("fd00:2::/64"),
 			Port:            8080,
 			MTU:             1400,
@@ -145,8 +145,8 @@ func TestGenerate_success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected: %v", err)
 	}
-	if !conf.TCPSettings.InterfaceIP.IsValid() {
-		t.Fatal("TCP InterfaceIP must be valid")
+	if !conf.TCPSettings.IPv4IP.IsValid() {
+		t.Fatal("TCP IPv4IP must be valid")
 	}
 	if !conf.TCPSettings.IPv6IP.IsValid() {
 		t.Fatal("TCP IPv6IP must be valid")
@@ -157,12 +157,12 @@ func TestGenerate_success(t *testing.T) {
 	if !conf.WSSettings.IPv6IP.IsValid() {
 		t.Fatal("WS IPv6IP must be valid")
 	}
-	if conf.TCPSettings.IPv6Host.IsZero() {
-		t.Fatal("TCP IPv6Host must be set when server has IPv6")
+	if !conf.TCPSettings.Host.HasIPv6() {
+		t.Fatal("TCP Host must have IPv6 when server has IPv6")
 	}
-	expectedHost := mustHost("2001:db8::1")
-	if conf.TCPSettings.IPv6Host != expectedHost {
-		t.Fatalf("TCP IPv6Host: want %s, got %s", expectedHost, conf.TCPSettings.IPv6Host)
+	expectedIPv6 := netip.MustParseAddr("2001:db8::1")
+	if ipv6, ok := conf.TCPSettings.Host.IPv6(); !ok || ipv6 != expectedIPv6 {
+		t.Fatalf("TCP Host IPv6: want %s, got %v", expectedIPv6, ipv6)
 	}
 }
 
@@ -207,8 +207,8 @@ func TestGenerate_resolve_error_with_fallback_success(t *testing.T) {
 	if mgr.incCalls != 1 {
 		t.Fatalf("IncrementClientCounter not called")
 	}
-	if !conf.WSSettings.IPv6Host.IsZero() {
-		t.Fatal("IPv6Host must be zero when no IPv6 detected")
+	if conf.WSSettings.Host.HasIPv6() {
+		t.Fatal("Host must not have IPv6 when no IPv6 detected")
 	}
 }
 
@@ -234,9 +234,9 @@ func TestGenerate_clientID_matches_allocated_IPs(t *testing.T) {
 		subnet   netip.Prefix
 		clientIP netip.Addr
 	}{
-		{"TCP", mgr.cfg.TCPSettings.InterfaceSubnet, conf.TCPSettings.InterfaceIP},
-		{"UDP", mgr.cfg.UDPSettings.InterfaceSubnet, conf.UDPSettings.InterfaceIP},
-		{"WS", mgr.cfg.WSSettings.InterfaceSubnet, conf.WSSettings.InterfaceIP},
+		{"TCP", mgr.cfg.TCPSettings.IPv4Subnet, conf.TCPSettings.IPv4IP},
+		{"UDP", mgr.cfg.UDPSettings.IPv4Subnet, conf.UDPSettings.IPv4IP},
+		{"WS", mgr.cfg.WSSettings.IPv4Subnet, conf.WSSettings.IPv4IP},
 		{"TCP-IPv6", mgr.cfg.TCPSettings.IPv6Subnet, conf.TCPSettings.IPv6IP},
 		{"UDP-IPv6", mgr.cfg.UDPSettings.IPv6Subnet, conf.UDPSettings.IPv6IP},
 		{"WS-IPv6", mgr.cfg.WSSettings.IPv6Subnet, conf.WSSettings.IPv6IP},
@@ -254,7 +254,7 @@ func TestGenerate_clientID_matches_allocated_IPs(t *testing.T) {
 
 func TestGenerate_allocate_error_propagates(t *testing.T) {
 	cfg := validCfg()
-	cfg.TCPSettings.InterfaceSubnet = netip.Prefix{}
+	cfg.TCPSettings.IPv4Subnet = netip.Prefix{}
 	mgr := &mockMgr{cfg: cfg}
 	g := generatorWithMocks(mgr, mockResolver{
 		ipv4: "192.0.2.10",
@@ -290,7 +290,7 @@ func TestAllocateClientIPs_success(t *testing.T) {
 
 func TestAllocateClientIPs_tcp_error(t *testing.T) {
 	cfg := validCfg()
-	cfg.TCPSettings.InterfaceSubnet = netip.Prefix{}
+	cfg.TCPSettings.IPv4Subnet = netip.Prefix{}
 	mgr := &mockMgr{cfg: cfg}
 	g := generatorWithMocks(mgr, mockResolver{})
 
@@ -302,7 +302,7 @@ func TestAllocateClientIPs_tcp_error(t *testing.T) {
 
 func TestAllocateClientIPs_udp_error(t *testing.T) {
 	cfg := validCfg()
-	cfg.UDPSettings.InterfaceSubnet = netip.Prefix{}
+	cfg.UDPSettings.IPv4Subnet = netip.Prefix{}
 	mgr := &mockMgr{cfg: cfg}
 	g := generatorWithMocks(mgr, mockResolver{})
 
@@ -314,7 +314,7 @@ func TestAllocateClientIPs_udp_error(t *testing.T) {
 
 func TestAllocateClientIPs_ws_error(t *testing.T) {
 	cfg := validCfg()
-	cfg.WSSettings.InterfaceSubnet = netip.Prefix{}
+	cfg.WSSettings.IPv4Subnet = netip.Prefix{}
 	mgr := &mockMgr{cfg: cfg}
 	g := generatorWithMocks(mgr, mockResolver{})
 
@@ -361,7 +361,7 @@ func TestGetDefaultProtocol_priority(t *testing.T) {
 func TestDeriveClientSettings_copies_fields_correctly(t *testing.T) {
 	serverS := settings.Settings{
 		InterfaceName:   "tun-tcp0",
-		InterfaceSubnet: mustPrefix("10.0.0.0/24"),
+		IPv4Subnet: mustPrefix("10.0.0.0/24"),
 		IPv6Subnet:      mustPrefix("fd00::/64"),
 		Port:            443,
 		MTU:             1400,
@@ -370,19 +370,18 @@ func TestDeriveClientSettings_copies_fields_correctly(t *testing.T) {
 	}
 	clientIP := netip.MustParseAddr("10.0.0.8")
 	clientIPv6 := netip.MustParseAddr("fd00::8")
-	host := mustHost("192.0.2.1")
-	ipv6Host := mustHost("2001:db8::1")
+	host := mustHost("192.0.2.1").WithIPv6(netip.MustParseAddr("2001:db8::1"))
 
-	got := deriveClientSettings(serverS, clientIP, clientIPv6, host, ipv6Host, settings.TCP)
+	got := deriveClientSettings(serverS, clientIP, clientIPv6, host, settings.TCP)
 
 	if got.InterfaceName != serverS.InterfaceName {
 		t.Fatalf("InterfaceName mismatch")
 	}
-	if got.InterfaceSubnet != serverS.InterfaceSubnet {
-		t.Fatalf("InterfaceSubnet mismatch")
+	if got.IPv4Subnet != serverS.IPv4Subnet {
+		t.Fatalf("IPv4Subnet mismatch")
 	}
-	if got.InterfaceIP != clientIP {
-		t.Fatalf("InterfaceIP: want %s, got %s", clientIP, got.InterfaceIP)
+	if got.IPv4IP != clientIP {
+		t.Fatalf("IPv4IP: want %s, got %s", clientIP, got.IPv4IP)
 	}
 	if got.IPv6Subnet != serverS.IPv6Subnet {
 		t.Fatalf("IPv6Subnet mismatch")
@@ -393,8 +392,8 @@ func TestDeriveClientSettings_copies_fields_correctly(t *testing.T) {
 	if got.Host != host {
 		t.Fatalf("Host mismatch")
 	}
-	if got.IPv6Host != ipv6Host {
-		t.Fatalf("IPv6Host: want %s, got %s", ipv6Host, got.IPv6Host)
+	if ipv6, ok := got.Host.IPv6(); !ok || ipv6 != netip.MustParseAddr("2001:db8::1") {
+		t.Fatalf("Host IPv6: want 2001:db8::1, got %v", ipv6)
 	}
 	if got.Port != serverS.Port {
 		t.Fatalf("Port mismatch")
@@ -415,7 +414,7 @@ func TestDeriveClientSettings_copies_fields_correctly(t *testing.T) {
 
 func TestDeriveClientSettings_udp_uses_safe_mtu(t *testing.T) {
 	serverS := settings.Settings{MTU: 1400}
-	got := deriveClientSettings(serverS, netip.Addr{}, netip.Addr{}, "", "", settings.UDP)
+	got := deriveClientSettings(serverS, netip.Addr{}, netip.Addr{}, settings.Host{}, settings.UDP)
 	if got.MTU != settings.SafeMTU {
 		t.Fatalf("UDP MTU: want SafeMTU (%d), got %d", settings.SafeMTU, got.MTU)
 	}
@@ -434,8 +433,8 @@ func TestGenerate_no_ipv6_on_server(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected: %v", err)
 	}
-	if !conf.TCPSettings.IPv6Host.IsZero() {
-		t.Fatal("IPv6Host must be zero when server has no IPv6")
+	if conf.TCPSettings.Host.HasIPv6() {
+		t.Fatal("Host must not have IPv6 when server has no IPv6")
 	}
 	if mgr.ensureIPv6Calls != 0 {
 		t.Fatal("EnsureIPv6Subnets should not be called when no IPv6 detected")

@@ -30,8 +30,8 @@ func TestConfiguration_DefaultSettingsValues(t *testing.T) {
 
 	tcp := c.defaultSettings(settings.TCP, "tcptun0", "10.0.0.0/24", "10.0.0.1", 8080)
 	if tcp.InterfaceName != "tcptun0" ||
-		tcp.InterfaceSubnet.String() != "10.0.0.0/24" ||
-		tcp.InterfaceIP.String() != "10.0.0.1" ||
+		tcp.IPv4Subnet.String() != "10.0.0.0/24" ||
+		tcp.IPv4IP.String() != "10.0.0.1" ||
 		tcp.Port != 8080 ||
 		tcp.MTU != settings.DefaultEthernetMTU ||
 		tcp.Protocol != settings.TCP ||
@@ -59,8 +59,8 @@ func TestConfiguration_EnsureDefaults_FillsZeroFieldsOnly(t *testing.T) {
 		{"WS", c.WSSettings},
 	} {
 		if tc.s.InterfaceName == "" ||
-			!tc.s.InterfaceSubnet.IsValid() ||
-			!tc.s.InterfaceIP.IsValid() ||
+			!tc.s.IPv4Subnet.IsValid() ||
+			!tc.s.IPv4IP.IsValid() ||
 			tc.s.Port == 0 ||
 			tc.s.MTU == 0 ||
 			tc.s.Protocol == settings.UNKNOWN ||
@@ -95,8 +95,8 @@ func TestConfiguration_EnsureDefaults_DoesNotOverrideExplicitFields(t *testing.T
 	c := &Configuration{
 		TCPSettings: settings.Settings{
 			InterfaceName:    "custom0",
-			InterfaceSubnet:  netip.MustParsePrefix("10.9.0.0/24"),
-			InterfaceIP:      netip.MustParseAddr("10.9.0.1"),
+			IPv4Subnet:  netip.MustParsePrefix("10.9.0.0/24"),
+			IPv4IP:      netip.MustParseAddr("10.9.0.1"),
 			Port:             1234,
 			MTU:              1400,
 			Protocol:         settings.TCP,
@@ -108,8 +108,8 @@ func TestConfiguration_EnsureDefaults_DoesNotOverrideExplicitFields(t *testing.T
 
 	// Ensure values were not overridden.
 	if c.TCPSettings.InterfaceName != "custom0" ||
-		c.TCPSettings.InterfaceSubnet.String() != "10.9.0.0/24" ||
-		c.TCPSettings.InterfaceIP.String() != "10.9.0.1" ||
+		c.TCPSettings.IPv4Subnet.String() != "10.9.0.0/24" ||
+		c.TCPSettings.IPv4IP.String() != "10.9.0.1" ||
 		c.TCPSettings.Port != 1234 ||
 		c.TCPSettings.MTU != 1400 ||
 		c.TCPSettings.Protocol != settings.TCP ||
@@ -131,7 +131,7 @@ func TestConfiguration_Validate_SkipsDisabledProtocol(t *testing.T) {
 	cfg := mkValid()
 	// Make WS invalid but disabled; Validate should ignore WS and still pass.
 	cfg.EnableWS = false
-	cfg.WSSettings.InterfaceSubnet = netip.Prefix{} // invalid, but skipped
+	cfg.WSSettings.IPv4Subnet = netip.Prefix{} // invalid, but skipped
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("expected valid config with WS disabled, got: %v", err)
 	}
@@ -204,7 +204,7 @@ func TestConfiguration_Validate_MTUTooLarge(t *testing.T) {
 
 func TestConfiguration_Validate_InvalidCIDR(t *testing.T) {
 	cfg := mkValid()
-	cfg.TCPSettings.InterfaceSubnet = netip.Prefix{}
+	cfg.TCPSettings.IPv4Subnet = netip.Prefix{}
 	if err := cfg.Validate(); err == nil {
 		t.Fatalf("expected error for invalid CIDR")
 	}
@@ -212,7 +212,7 @@ func TestConfiguration_Validate_InvalidCIDR(t *testing.T) {
 
 func TestConfiguration_Validate_InvalidAddress(t *testing.T) {
 	cfg := mkValid()
-	cfg.TCPSettings.InterfaceIP = netip.Addr{}
+	cfg.TCPSettings.IPv4IP = netip.Addr{}
 	if err := cfg.Validate(); err == nil {
 		t.Fatalf("expected error for invalid address")
 	}
@@ -220,7 +220,7 @@ func TestConfiguration_Validate_InvalidAddress(t *testing.T) {
 
 func TestConfiguration_Validate_AddressNotInCIDR(t *testing.T) {
 	cfg := mkValid()
-	cfg.TCPSettings.InterfaceIP = netip.MustParseAddr("10.0.9.9") // not in 10.0.0.0/24
+	cfg.TCPSettings.IPv4IP = netip.MustParseAddr("10.0.9.9") // not in 10.0.0.0/24
 	if err := cfg.Validate(); err == nil {
 		t.Fatalf("expected error for address not in CIDR")
 	}
@@ -229,8 +229,8 @@ func TestConfiguration_Validate_AddressNotInCIDR(t *testing.T) {
 func TestConfiguration_Validate_SubnetOverlap(t *testing.T) {
 	cfg := mkValid()
 	// Force overlap: make UDP use same 10.0.0.0/24 as TCP.
-	cfg.UDPSettings.InterfaceSubnet = netip.MustParsePrefix("10.0.0.0/24")
-	cfg.UDPSettings.InterfaceIP = netip.MustParseAddr("10.0.0.2")
+	cfg.UDPSettings.IPv4Subnet = netip.MustParsePrefix("10.0.0.0/24")
+	cfg.UDPSettings.IPv4IP = netip.MustParseAddr("10.0.0.2")
 	if err := cfg.Validate(); err == nil {
 		t.Fatalf("expected error for overlapping subnets")
 	}

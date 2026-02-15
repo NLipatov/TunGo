@@ -89,11 +89,11 @@ func (c *Configuration) applyDefaults(
 	if to.InterfaceName == "" {
 		to.InterfaceName = from.InterfaceName
 	}
-	if !to.InterfaceSubnet.IsValid() {
-		to.InterfaceSubnet = from.InterfaceSubnet
+	if !to.IPv4Subnet.IsValid() {
+		to.IPv4Subnet = from.IPv4Subnet
 	}
-	if !to.InterfaceIP.IsValid() {
-		to.InterfaceIP = from.InterfaceIP
+	if !to.IPv4IP.IsValid() {
+		to.IPv4IP = from.IPv4IP
 	}
 	// IPv6 is opt-in: admin sets IPv6Subnet, server IP is derived automatically.
 	if to.IPv6Subnet.IsValid() && !to.IPv6IP.IsValid() {
@@ -117,19 +117,18 @@ func (c *Configuration) applyDefaults(
 
 func (c *Configuration) defaultSettings(
 	protocol settings.Protocol,
-	interfaceName, InterfaceCIDR, InterfaceAddr string,
+	interfaceName, ipv4CIDR, ipv4Addr string,
 	port int,
 ) settings.Settings {
 	return settings.Settings{
-		InterfaceName:   interfaceName,
-		InterfaceSubnet: netip.MustParsePrefix(InterfaceCIDR),
-		InterfaceIP:     netip.MustParseAddr(InterfaceAddr),
-		Host:            "",
-		Port:            port,
-		MTU:             settings.DefaultEthernetMTU,
-		Protocol:        protocol,
-		Encryption:      settings.ChaCha20Poly1305,
-		DialTimeoutMs:   5000,
+		InterfaceName: interfaceName,
+		IPv4Subnet:    netip.MustParsePrefix(ipv4CIDR),
+		IPv4IP:        netip.MustParseAddr(ipv4Addr),
+		Port:          port,
+		MTU:           settings.DefaultEthernetMTU,
+		Protocol:      protocol,
+		Encryption:    settings.ChaCha20Poly1305,
+		DialTimeoutMs: 5000,
 	}
 }
 
@@ -204,31 +203,31 @@ func (c *Configuration) Validate() error {
 				config.MTU,
 			)
 		}
-		pfx := config.InterfaceSubnet
+		pfx := config.IPv4Subnet
 		if !pfx.IsValid() {
 			return fmt.Errorf(
-				"invalid 'InterfaceSubnet': [%s/%s] invalid CIDR %q",
+				"invalid 'IPv4Subnet': [%s/%s] invalid CIDR %q",
 				config.Protocol,
 				config.InterfaceName,
-				config.InterfaceSubnet,
+				config.IPv4Subnet,
 			)
 		}
-		addr := config.InterfaceIP.Unmap()
+		addr := config.IPv4IP.Unmap()
 		if !addr.IsValid() {
 			return fmt.Errorf(
-				"invalid 'InterfaceIP': [%s/%s] invalid address %q",
+				"invalid 'IPv4IP': [%s/%s] invalid address %q",
 				config.Protocol,
 				config.InterfaceName,
-				config.InterfaceIP,
+				config.IPv4IP,
 			)
 		}
 		if !pfx.Contains(addr) {
 			return fmt.Errorf(
-				"invalid 'InterfaceIP': [%s/%s] address %s not in 'InterfaceSubnet' subnet %s",
+				"invalid 'IPv4IP': [%s/%s] address %s not in 'IPv4Subnet' subnet %s",
 				config.Protocol,
 				config.InterfaceName,
-				config.InterfaceIP,
-				config.InterfaceSubnet,
+				config.IPv4IP,
+				config.IPv4Subnet,
 			)
 		}
 		subnets = append(subnets, pfx)
@@ -259,7 +258,7 @@ func (c *Configuration) Validate() error {
 
 	// interface subnets must not overlap
 	if c.overlappingSubnets(subnets) {
-		return fmt.Errorf("invalid 'InterfaceSubnet':  two or more interface subnets are overlapping.")
+		return fmt.Errorf("two or more subnets are overlapping")
 	}
 
 	// validate AllowedPeers
