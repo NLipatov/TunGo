@@ -393,7 +393,7 @@ func TestCreateDevice_IPv6_AddrAddError(t *testing.T) {
 func TestCreateDevice_IPv6_Route6DefaultError(t *testing.T) {
 	ipMock := &platformTunManagerIPMock{
 		routeReply: "198.51.100.1 dev eth0",
-		failStep:   "def6",
+		failStep:   "splitdef6",
 	}
 	mgr := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{})
 	mgr.configuration.UDPSettings.IPv6 = mustAddr("fd00::2")
@@ -401,7 +401,7 @@ func TestCreateDevice_IPv6_Route6DefaultError(t *testing.T) {
 
 	_, err := mgr.CreateDevice()
 	if err == nil {
-		t.Fatal("expected error on Route6AddDefaultDev failure")
+		t.Fatal("expected error on Route6AddSplitDefaultDev failure")
 	}
 }
 
