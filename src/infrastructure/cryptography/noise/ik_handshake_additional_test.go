@@ -143,7 +143,11 @@ func newClientMsg1WithVersion(t *testing.T, clientPriv, clientPub, serverPub []b
 	if err != nil {
 		t.Fatalf("failed to write msg1: %v", err)
 	}
-	return PrependVersion(AppendMACs(msg1, serverPub, nil))
+	withMAC, err := AppendMACs(msg1, serverPub, nil)
+	if err != nil {
+		t.Fatalf("AppendMACs error: %v", err)
+	}
+	return PrependVersion(withMAC)
 }
 
 func TestIKHandshake_Extra_GettersAndNilResult(t *testing.T) {
@@ -352,7 +356,11 @@ func TestIKHandshake_Server_ErrorBranches(t *testing.T) {
 		serverPub := []byte{1}
 		serverPriv := []byte{2}
 		noiseMsg := bytes.Repeat([]byte{3}, MinMsg1Size)
-		msg := PrependVersion(AppendMACs(noiseMsg, serverPub, nil))
+		withMAC, err := AppendMACs(noiseMsg, serverPub, nil)
+		if err != nil {
+			t.Fatalf("AppendMACs error: %v", err)
+		}
+		msg := PrependVersion(withMAC)
 
 		h := NewIKHandshakeServer(
 			serverPub,
@@ -362,7 +370,7 @@ func TestIKHandshake_Server_ErrorBranches(t *testing.T) {
 			nil,
 		)
 
-		_, err := h.ServerSideHandshake(&queueTransport{reads: [][]byte{msg}})
+		_, err = h.ServerSideHandshake(&queueTransport{reads: [][]byte{msg}})
 		if err == nil || !strings.Contains(err.Error(), "read msg1") {
 			t.Fatalf("expected read msg1 error, got %v", err)
 		}
@@ -371,7 +379,11 @@ func TestIKHandshake_Server_ErrorBranches(t *testing.T) {
 	t.Run("server read msg1 crypto failure", func(t *testing.T) {
 		serverKP, _ := cipherSuite.GenerateKeypair(nil)
 		noiseMsg := bytes.Repeat([]byte{0xAA}, MinMsg1Size)
-		msg := PrependVersion(AppendMACs(noiseMsg, serverKP.Public, nil))
+		withMAC, err := AppendMACs(noiseMsg, serverKP.Public, nil)
+		if err != nil {
+			t.Fatalf("AppendMACs error: %v", err)
+		}
+		msg := PrependVersion(withMAC)
 
 		h := NewIKHandshakeServer(
 			serverKP.Public,
@@ -381,7 +393,7 @@ func TestIKHandshake_Server_ErrorBranches(t *testing.T) {
 			nil,
 		)
 
-		_, err := h.ServerSideHandshake(&queueTransport{reads: [][]byte{msg}})
+		_, err = h.ServerSideHandshake(&queueTransport{reads: [][]byte{msg}})
 		if err == nil || !strings.Contains(err.Error(), "read msg1") {
 			t.Fatalf("expected read msg1 error, got %v", err)
 		}

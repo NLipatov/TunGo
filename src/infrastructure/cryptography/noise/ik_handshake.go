@@ -342,8 +342,11 @@ func (h *IKHandshake) ClientSideHandshake(transport connection.Transport, s sett
 		return fmt.Errorf("noise: write msg1: %w", err)
 	}
 
-	// Add MACs (MAC2 is zeros if no cookie, or valid if we have one)
-	msg1WithMAC := AppendMACs(msg1, h.peerPubKey, h.cookie)
+	// Add MACs (MAC2 is random if no cookie, or valid if we have one)
+	msg1WithMAC, err := AppendMACs(msg1, h.peerPubKey, h.cookie)
+	if err != nil {
+		return fmt.Errorf("noise: append MACs: %w", err)
+	}
 
 	// Prepend protocol version byte
 	msgWithVersion := PrependVersion(msg1WithMAC)
@@ -437,7 +440,10 @@ func (h *IKHandshake) retryWithCookie(transport connection.Transport, s settings
 	}
 
 	// Add MACs with cookie
-	msg1WithMAC := AppendMACs(msg1, h.peerPubKey, h.cookie)
+	msg1WithMAC, err := AppendMACs(msg1, h.peerPubKey, h.cookie)
+	if err != nil {
+		return fmt.Errorf("noise: append MACs: %w", err)
+	}
 
 	// Prepend protocol version byte
 	msgWithVersion := PrependVersion(msg1WithMAC)

@@ -53,7 +53,10 @@ func TestMAC1_Verification_Valid(t *testing.T) {
 		noiseMsg[i] = byte(i)
 	}
 
-	msg1WithMAC := AppendMACs(noiseMsg, serverPubKey, nil)
+	msg1WithMAC, err := AppendMACs(noiseMsg, serverPubKey, nil)
+	if err != nil {
+		t.Fatalf("AppendMACs error: %v", err)
+	}
 
 	if !VerifyMAC1(msg1WithMAC, serverPubKey) {
 		t.Fatal("MAC1 verification should pass for valid message")
@@ -65,7 +68,10 @@ func TestMAC1_Verification_Invalid(t *testing.T) {
 	serverPubKey[0] = 1
 
 	noiseMsg := make([]byte, MinMsg1Size)
-	msg1WithMAC := AppendMACs(noiseMsg, serverPubKey, nil)
+	msg1WithMAC, err := AppendMACs(noiseMsg, serverPubKey, nil)
+	if err != nil {
+		t.Fatalf("AppendMACs error: %v", err)
+	}
 
 	// Corrupt MAC1
 	msg1WithMAC[MinMsg1Size]++
@@ -126,7 +132,10 @@ func TestMAC2_Verification(t *testing.T) {
 	cookie := []byte("test_cookie_1234") // 16 bytes
 
 	noiseMsg := make([]byte, MinMsg1Size)
-	msg1WithMAC := AppendMACs(noiseMsg, serverPubKey, cookie)
+	msg1WithMAC, err := AppendMACs(noiseMsg, serverPubKey, cookie)
+	if err != nil {
+		t.Fatalf("AppendMACs error: %v", err)
+	}
 
 	if !VerifyMAC2(msg1WithMAC, cookie) {
 		t.Fatal("MAC2 verification should pass for valid cookie")
@@ -146,7 +155,10 @@ func TestExtractNoiseMsg(t *testing.T) {
 	}
 
 	serverPubKey := make([]byte, 32)
-	msg1WithMAC := AppendMACs(noiseMsg, serverPubKey, nil)
+	msg1WithMAC, err := AppendMACs(noiseMsg, serverPubKey, nil)
+	if err != nil {
+		t.Fatalf("AppendMACs error: %v", err)
+	}
 
 	extracted := ExtractNoiseMsg(msg1WithMAC)
 	if !bytes.Equal(extracted, noiseMsg) {
@@ -165,7 +177,10 @@ func TestExtractClientEphemeral(t *testing.T) {
 	copy(noiseMsg[:EphemeralSize], ephemeral)
 
 	serverPubKey := make([]byte, 32)
-	msg1WithMAC := AppendMACs(noiseMsg, serverPubKey, nil)
+	msg1WithMAC, err := AppendMACs(noiseMsg, serverPubKey, nil)
+	if err != nil {
+		t.Fatalf("AppendMACs error: %v", err)
+	}
 
 	extracted := ExtractClientEphemeral(msg1WithMAC)
 	if !bytes.Equal(extracted, ephemeral) {
@@ -185,19 +200,27 @@ func TestAppendMACs_WithoutCookie(t *testing.T) {
 	noiseMsg := make([]byte, MinMsg1Size)
 	serverPubKey := make([]byte, 32)
 
-	msg1WithMAC := AppendMACs(noiseMsg, serverPubKey, nil)
+	msg1WithMAC, err := AppendMACs(noiseMsg, serverPubKey, nil)
+	if err != nil {
+		t.Fatalf("AppendMACs error: %v", err)
+	}
 
 	expectedLen := MinMsg1Size + MAC1Size + MAC2Size
 	if len(msg1WithMAC) != expectedLen {
 		t.Fatalf("expected length %d, got %d", expectedLen, len(msg1WithMAC))
 	}
 
-	// MAC2 should be zeros when no cookie
+	// MAC2 should be random (not all zeros) when no cookie
 	mac2Start := MinMsg1Size + MAC1Size
+	allZero := true
 	for i := mac2Start; i < len(msg1WithMAC); i++ {
 		if msg1WithMAC[i] != 0 {
-			t.Fatal("MAC2 should be zeros when no cookie provided")
+			allZero = false
+			break
 		}
+	}
+	if allZero {
+		t.Fatal("MAC2 should be random, not zeros, when no cookie provided")
 	}
 }
 
@@ -206,7 +229,10 @@ func TestAppendMACs_WithCookie(t *testing.T) {
 	serverPubKey := make([]byte, 32)
 	cookie := []byte("valid_cookie_123") // 16 bytes
 
-	msg1WithMAC := AppendMACs(noiseMsg, serverPubKey, cookie)
+	msg1WithMAC, err := AppendMACs(noiseMsg, serverPubKey, cookie)
+	if err != nil {
+		t.Fatalf("AppendMACs error: %v", err)
+	}
 
 	// MAC2 should NOT be zeros when cookie provided
 	mac2Start := MinMsg1Size + MAC1Size
@@ -346,7 +372,10 @@ func TestAppendMACs_VerifyRoundTrip(t *testing.T) {
 		noiseMsg[i] = byte(i * 3)
 	}
 
-	withMAC := AppendMACs(noiseMsg, serverPubKey, cookie)
+	withMAC, err := AppendMACs(noiseMsg, serverPubKey, cookie)
+	if err != nil {
+		t.Fatalf("AppendMACs error: %v", err)
+	}
 
 	if !VerifyMAC1(withMAC, serverPubKey) {
 		t.Fatal("MAC1 roundtrip verification failed")
@@ -377,25 +406,36 @@ func TestPrependCheckVersion_RoundTrip(t *testing.T) {
 	}
 }
 
-func TestAppendMACs_EmptyCookie_MAC2Zeros(t *testing.T) {
+func TestAppendMACs_EmptyCookie_MAC2Random(t *testing.T) {
 	noiseMsg := make([]byte, MinMsg1Size)
 	serverPubKey := make([]byte, 32)
 
-	// Empty slice (not nil) — MAC2 should still be zeros.
-	msg1WithMAC := AppendMACs(noiseMsg, serverPubKey, []byte{})
+	// Empty slice (not nil) — MAC2 should be random, not zeros.
+	msg1WithMAC, err := AppendMACs(noiseMsg, serverPubKey, []byte{})
+	if err != nil {
+		t.Fatalf("AppendMACs error: %v", err)
+	}
 
 	mac2Start := MinMsg1Size + MAC1Size
+	allZero := true
 	for i := mac2Start; i < len(msg1WithMAC); i++ {
 		if msg1WithMAC[i] != 0 {
-			t.Fatal("MAC2 should be zeros for empty cookie slice")
+			allZero = false
+			break
 		}
+	}
+	if allZero {
+		t.Fatal("MAC2 should be random, not zeros, for empty cookie slice")
 	}
 }
 
 func TestVerifyMAC1_ExactMinSize(t *testing.T) {
 	serverPubKey := make([]byte, 32)
 	noiseMsg := make([]byte, MinMsg1Size)
-	msg := AppendMACs(noiseMsg, serverPubKey, nil)
+	msg, err := AppendMACs(noiseMsg, serverPubKey, nil)
+	if err != nil {
+		t.Fatalf("AppendMACs error: %v", err)
+	}
 
 	// Message is exactly MinTotalSize — should pass.
 	if !VerifyMAC1(msg, serverPubKey) {
@@ -407,7 +447,10 @@ func TestVerifyMAC2_ExactMinSize(t *testing.T) {
 	serverPubKey := make([]byte, 32)
 	cookie := []byte("exact_min_cookie") // 16 bytes
 	noiseMsg := make([]byte, MinMsg1Size)
-	msg := AppendMACs(noiseMsg, serverPubKey, cookie)
+	msg, err := AppendMACs(noiseMsg, serverPubKey, cookie)
+	if err != nil {
+		t.Fatalf("AppendMACs error: %v", err)
+	}
 
 	if !VerifyMAC2(msg, cookie) {
 		t.Fatal("MAC2 should verify for message at exact MinTotalSize")
@@ -420,7 +463,10 @@ func TestExtractNoiseMsg_ExactMinSize(t *testing.T) {
 	for i := range noiseMsg {
 		noiseMsg[i] = byte(i + 50)
 	}
-	msg := AppendMACs(noiseMsg, serverPubKey, nil)
+	msg, err := AppendMACs(noiseMsg, serverPubKey, nil)
+	if err != nil {
+		t.Fatalf("AppendMACs error: %v", err)
+	}
 
 	extracted := ExtractNoiseMsg(msg)
 	if !bytes.Equal(extracted, noiseMsg) {

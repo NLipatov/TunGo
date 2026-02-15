@@ -2,6 +2,8 @@ package noise
 
 import (
 	"crypto/hmac"
+	"crypto/rand"
+	"fmt"
 	"tungo/infrastructure/cryptography/mem"
 
 	"golang.org/x/crypto/blake2s"
@@ -157,8 +159,8 @@ func ExtractClientEphemeral(msg1WithMAC []byte) []byte {
 }
 
 // AppendMACs appends MAC1 and MAC2 to msg1.
-// If cookie is nil or empty, MAC2 is set to zeros.
-func AppendMACs(msg1, serverPubKey, cookie []byte) []byte {
+// If cookie is nil or empty, MAC2 is filled with random bytes to avoid a DPI fingerprint.
+func AppendMACs(msg1, serverPubKey, cookie []byte) ([]byte, error) {
 	mac1 := ComputeMAC1(msg1, serverPubKey)
 
 	result := make([]byte, len(msg1)+MAC1Size+MAC2Size)
@@ -168,10 +170,13 @@ func AppendMACs(msg1, serverPubKey, cookie []byte) []byte {
 	if len(cookie) > 0 {
 		mac2 := ComputeMAC2(msg1, mac1, cookie)
 		copy(result[len(msg1)+MAC1Size:], mac2)
+	} else {
+		if _, err := rand.Read(result[len(msg1)+MAC1Size:]); err != nil {
+			return nil, fmt.Errorf("crypto/rand failed: %w", err)
+		}
 	}
-	// If no cookie, MAC2 remains zeros
 
-	return result
+	return result, nil
 }
 
 // PrependVersion adds the protocol version byte to a message.
