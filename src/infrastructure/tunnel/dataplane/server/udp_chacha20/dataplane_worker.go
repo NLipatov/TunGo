@@ -29,16 +29,10 @@ func newUdpDataplaneWorker(tunWriter io.Writer, cp controlPlaneHandler) *udpData
 }
 
 func (w *udpDataplaneWorker) HandleEstablished(peer *session.Peer, packet []byte) error {
-	// SECURITY: Check closed flag BEFORE using crypto.
-	// This prevents use-after-free if peer is being deleted concurrently.
-	// The closed flag is set atomically before crypto is zeroed.
-	if peer.IsClosed() {
-		return nil
-	}
-
-	decrypted, decryptionErr := peer.Crypto().Decrypt(packet)
-	if decryptionErr != nil {
-		// Drop: untrusted UDP input can be garbage / attacker-driven.
+	// Use tryDecryptSafe to guard against TOCTOU race with idle reaper:
+	// between IsClosed() check and Decrypt(), the reaper may Zeroize crypto.
+	decrypted, ok := tryDecryptSafe(peer, packet)
+	if !ok {
 		return nil
 	}
 

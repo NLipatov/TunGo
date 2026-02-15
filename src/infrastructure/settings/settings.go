@@ -1,18 +1,57 @@
 package settings
 
-import "net/netip"
+import (
+	"encoding/json"
+	"fmt"
+	"net/netip"
+	"strconv"
+)
 
 type Settings struct {
-	InterfaceName    string       `json:"InterfaceName"`
-	InterfaceSubnet  netip.Prefix `json:"InterfaceSubnet"`
-	InterfaceIP      netip.Addr   `json:"InterfaceIP"`
-	IPv6Subnet       netip.Prefix `json:"IPv6Subnet,omitempty"`
-	IPv6IP           netip.Addr   `json:"IPv6IP,omitempty"`
-	Host             Host         `json:"Host"`
-	IPv6Host         Host         `json:"IPv6Host,omitempty"`
-	Port             int          `json:"Port"`
-	MTU              int          `json:"MTU"`
-	Protocol         Protocol
-	Encryption       Encryption
-	DialTimeoutMs    DialTimeoutMs `json:"DialTimeoutMs"`
+	InterfaceName   string        `json:"InterfaceName"`
+	InterfaceSubnet netip.Prefix  `json:"InterfaceSubnet"`
+	InterfaceIP     netip.Addr    `json:"InterfaceIP"`
+	IPv6Subnet      netip.Prefix  `json:"IPv6Subnet,omitempty"`
+	IPv6IP          netip.Addr    `json:"IPv6IP,omitempty"`
+	Host            Host          `json:"Host"`
+	IPv6Host        Host          `json:"IPv6Host,omitempty"`
+	Port            int           `json:"Port"`
+	MTU             int           `json:"MTU"`
+	Protocol        Protocol      `json:"Protocol"`
+	Encryption      Encryption    `json:"Encryption"`
+	DialTimeoutMs   DialTimeoutMs `json:"DialTimeoutMs"`
+}
+
+// UnmarshalJSON supports both int and legacy string representation for Port.
+func (s *Settings) UnmarshalJSON(data []byte) error {
+	type Alias Settings
+	aux := &struct {
+		Port json.RawMessage `json:"Port"`
+		*Alias
+	}{
+		Alias: (*Alias)(s),
+	}
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+	if len(aux.Port) == 0 {
+		return nil
+	}
+	// Try int first
+	var portInt int
+	if err := json.Unmarshal(aux.Port, &portInt); err == nil {
+		s.Port = portInt
+		return nil
+	}
+	// Fall back to string (legacy configs)
+	var portStr string
+	if err := json.Unmarshal(aux.Port, &portStr); err != nil {
+		return fmt.Errorf("Port must be an integer or a string, got %s", string(aux.Port))
+	}
+	parsed, err := strconv.Atoi(portStr)
+	if err != nil {
+		return fmt.Errorf("invalid Port string %q: %w", portStr, err)
+	}
+	s.Port = parsed
+	return nil
 }

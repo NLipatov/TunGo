@@ -98,8 +98,10 @@ func TestHost_MethodErrors(t *testing.T) {
 	if _, err := domain.AddrPort(80); err == nil {
 		t.Fatal("expected addrport error for domain host")
 	}
-	if _, err := domain.RouteIP(); err == nil {
-		t.Fatal("expected routeip error for domain host")
+	// RouteIP now resolves domains via DNS — test with an unresolvable domain instead.
+	unresolvable, _ := NewHost("this-domain-does-not-exist.invalid")
+	if _, err := unresolvable.RouteIP(); err == nil {
+		t.Fatal("expected routeip error for unresolvable domain host")
 	}
 
 	var zero Host
@@ -423,5 +425,75 @@ func TestHost_Domain_NormalizedError(t *testing.T) {
 	domain, ok := h.Domain()
 	if ok || domain != "" {
 		t.Fatalf("expected Domain()=(\"\",false) for invalid host cast, got (%q,%v)", domain, ok)
+	}
+}
+
+func TestHost_RouteIPv4_IPv4Literal(t *testing.T) {
+	h, _ := NewHost("192.168.1.1")
+	route, err := h.RouteIPv4()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if route != "192.168.1.1" {
+		t.Fatalf("expected 192.168.1.1, got %q", route)
+	}
+}
+
+func TestHost_RouteIPv4_IPv6Literal_Error(t *testing.T) {
+	h, _ := NewHost("2001:db8::1")
+	_, err := h.RouteIPv4()
+	if err == nil {
+		t.Fatal("expected error for IPv6 literal in RouteIPv4")
+	}
+}
+
+func TestHost_RouteIPv6_IPv6Literal(t *testing.T) {
+	h, _ := NewHost("2001:db8::1")
+	route, err := h.RouteIPv6()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if route != "2001:db8::1" {
+		t.Fatalf("expected 2001:db8::1, got %q", route)
+	}
+}
+
+func TestHost_RouteIPv6_IPv4Literal_Error(t *testing.T) {
+	h, _ := NewHost("192.168.1.1")
+	_, err := h.RouteIPv6()
+	if err == nil {
+		t.Fatal("expected error for IPv4 literal in RouteIPv6")
+	}
+}
+
+func TestHost_RouteIPv4_EmptyHost_Error(t *testing.T) {
+	var zero Host
+	_, err := zero.RouteIPv4()
+	if err == nil {
+		t.Fatal("expected error for empty host RouteIPv4")
+	}
+}
+
+func TestHost_RouteIPv6_EmptyHost_Error(t *testing.T) {
+	var zero Host
+	_, err := zero.RouteIPv6()
+	if err == nil {
+		t.Fatal("expected error for empty host RouteIPv6")
+	}
+}
+
+func TestHost_RouteIPv4_UnresolvableDomain_Error(t *testing.T) {
+	h, _ := NewHost("this-does-not-exist.invalid")
+	_, err := h.RouteIPv4()
+	if err == nil {
+		t.Fatal("expected error for unresolvable domain in RouteIPv4")
+	}
+}
+
+func TestHost_RouteIPv6_UnresolvableDomain_Error(t *testing.T) {
+	h, _ := NewHost("this-does-not-exist.invalid")
+	_, err := h.RouteIPv6()
+	if err == nil {
+		t.Fatal("expected error for unresolvable domain in RouteIPv6")
 	}
 }

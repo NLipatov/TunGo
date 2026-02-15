@@ -2,19 +2,45 @@ package confgen
 
 import (
 	"fmt"
+	"net"
 	"net/netip"
-	"strings"
 	"tungo/infrastructure/PAL/configuration/client"
 	serverConfiguration "tungo/infrastructure/PAL/configuration/server"
-	"tungo/infrastructure/PAL/exec_commander"
-	"tungo/infrastructure/PAL/linux/network_tools/ip"
 	"tungo/infrastructure/cryptography/primitives"
 	nip "tungo/infrastructure/network/ip"
 	"tungo/infrastructure/settings"
 )
 
+// hostResolver resolves the server's outbound IPv4 and IPv6 addresses.
+type hostResolver interface {
+	ResolveIPv4() (string, error)
+	ResolveIPv6() (string, error)
+}
+
+// dialHostResolver uses net.Dial to discover the outbound source address
+// the kernel would pick. No traffic is actually sent (UDP dial is local).
+type dialHostResolver struct{}
+
+func (dialHostResolver) ResolveIPv4() (string, error) {
+	conn, err := net.Dial("udp4", "8.8.8.8:80")
+	if err != nil {
+		return "", err
+	}
+	defer conn.Close()
+	return conn.LocalAddr().(*net.UDPAddr).IP.String(), nil
+}
+
+func (dialHostResolver) ResolveIPv6() (string, error) {
+	conn, err := net.Dial("udp6", "[2001:4860:4860::8888]:80")
+	if err != nil {
+		return "", err
+	}
+	defer conn.Close()
+	return conn.LocalAddr().(*net.UDPAddr).IP.String(), nil
+}
+
 type Generator struct {
-	ip                         ip.Contract
+	resolver                   hostResolver
 	serverConfigurationManager serverConfiguration.ConfigurationManager
 	keyDeriver                 primitives.KeyDeriver
 }
@@ -24,9 +50,7 @@ func NewGenerator(
 	keyDeriver primitives.KeyDeriver,
 ) *Generator {
 	return &Generator{
-		ip: ip.NewWrapper(
-			exec_commander.NewExecCommander(),
-		),
+		resolver:                   dialHostResolver{},
 		serverConfigurationManager: serverConfigurationManager,
 		keyDeriver:                 keyDeriver,
 	}
@@ -94,44 +118,25 @@ func (g *Generator) Generate() (*client.Configuration, error) {
 }
 
 func (g *Generator) resolveServerHosts(fallback string) (ipv4Host, ipv6Host settings.Host, err error) {
-	defaultIf, routeErr := g.ip.RouteDefault()
-	if routeErr != nil {
-		return "", "", routeErr
-	}
-
-	defaultIfIpV4, addrErr := g.ip.AddrShowDev(4, defaultIf)
-	if addrErr != nil {
+	ipv4Str, ipv4Err := g.resolver.ResolveIPv4()
+	if ipv4Err != nil {
 		if fallback == "" {
 			return "", "", fmt.Errorf(
 				"failed to resolve server IP and no fallback address provided in server configuration: %w",
-				addrErr,
+				ipv4Err,
 			)
 		}
-		defaultIfIpV4 = fallback
+		ipv4Str = fallback
 	}
 
-	ipv4Host, err = settings.NewHost(defaultIfIpV4)
+	ipv4Host, err = settings.NewHost(ipv4Str)
 	if err != nil {
-		return "", "", fmt.Errorf("invalid server host %q: %w", defaultIfIpV4, err)
+		return "", "", fmt.Errorf("invalid server host %q: %w", ipv4Str, err)
 	}
 
-	ipv6Str, ipv6Err := g.ip.AddrShowDev(6, defaultIf)
+	ipv6Str, ipv6Err := g.resolver.ResolveIPv6()
 	if ipv6Err == nil {
-		for _, line := range strings.Split(ipv6Str, "\n") {
-			addr := strings.TrimSpace(line)
-			if addr == "" {
-				continue
-			}
-			ip, parseErr := netip.ParseAddr(addr)
-			if parseErr != nil {
-				continue
-			}
-			if ip.IsLinkLocalUnicast() {
-				continue
-			}
-			ipv6Host, _ = settings.NewHost(addr)
-			break
-		}
+		ipv6Host, _ = settings.NewHost(ipv6Str)
 	}
 
 	return ipv4Host, ipv6Host, nil

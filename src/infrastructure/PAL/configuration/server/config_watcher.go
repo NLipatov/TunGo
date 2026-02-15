@@ -222,5 +222,6 @@ func (w *ConfigWatcher) checkAndRevoke() {
 // ForceCheck triggers an immediate configuration check.
 // Useful for testing or manual triggers (e.g., SIGHUP handler).
 func (w *ConfigWatcher) ForceCheck() {
+	w.configManager.InvalidateCache()
 	w.checkAndRevoke()
 }

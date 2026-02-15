@@ -16,9 +16,10 @@ import (
 
 // v4Manager configures a Wintun adapter and the host stack for IPv4.
 type v4Manager struct {
-	s      settings.Settings
-	tun    tun.Device
-	netCfg ipcfg.Contract
+	s               settings.Settings
+	tun             tun.Device
+	netCfg          ipcfg.Contract
+	resolvedRouteIP string // cached resolved server IP for consistent teardown
 }
 
 func newV4Manager(
@@ -100,11 +101,11 @@ func (m *v4Manager) createOrOpenTunDevice() (tun.Device, error) {
 }
 
 func (m *v4Manager) addStaticRouteToServer() error {
-	hostStr := m.s.Host.String()
-	routeIP, err := m.s.Host.RouteIP()
+	routeIP, err := m.s.Host.RouteIPv4()
 	if err != nil {
-		return fmt.Errorf("resolve host %s: %w", hostStr, err)
+		return fmt.Errorf("resolve host %s: %w", m.s.Host, err)
 	}
+	m.resolvedRouteIP = routeIP
 	_ = m.netCfg.DeleteRoute(routeIP)
 	gw, ifName, _, _, bestErr := m.netCfg.BestRoute(routeIP)
 	if bestErr != nil {
@@ -117,41 +118,6 @@ func (m *v4Manager) addStaticRouteToServer() error {
 	return m.netCfg.AddHostRouteViaGateway(routeIP, ifName, gw, 1)
 }
 
-// onLinkInterfaceName returns the name of an interface whose IPv4 prefix contains 'server'.
-func (m *v4Manager) onLinkInterfaceName(server net.IP) (string, bool) {
-	srv4 := server.To4()
-	if srv4 == nil {
-		return "", false
-	}
-	iFaces, _ := net.Interfaces()
-	for _, iFace := range iFaces {
-		if !m.isCandidateIF(iFace, m.s.InterfaceName) {
-			continue
-		}
-		addresses, _ := iFace.Addrs()
-		for _, a := range addresses {
-			if ipn, ok := a.(*net.IPNet); ok && ipn.IP.To4() != nil && ipn.Contains(srv4) {
-				return iFace.Name, true
-			}
-		}
-	}
-	return "", false
-}
-
-func (m *v4Manager) isCandidateIF(it net.Interface, selfName string) bool {
-	// Only UP, non-loopback, and not our own TUN
-	if (it.Flags & net.FlagUp) == 0 {
-		return false
-	}
-	if (it.Flags & net.FlagLoopback) != 0 {
-		return false
-	}
-	if it.Name == selfName {
-		return false
-	}
-	return true
-}
-
 // assignIPToTunDevice validates IPv4 address ∈ CIDR and applies it.
 func (m *v4Manager) assignIPToTunDevice() error {
 	ipStr := m.s.InterfaceIP.String()
@@ -159,14 +125,10 @@ func (m *v4Manager) assignIPToTunDevice() error {
 	ip := net.ParseIP(ipStr)
 	_, network, _ := net.ParseCIDR(subnetStr)
 	if ip == nil || network == nil || !network.Contains(ip) {
-		routeIP, _ := m.s.Host.RouteIP()
-		_ = m.netCfg.DeleteRoute(routeIP)
 		return fmt.Errorf("address %s not in %s", ipStr, subnetStr)
 	}
 	mask := net.IP(network.Mask).String() // dotted decimal mask
 	if err := m.netCfg.SetAddressStatic(m.s.InterfaceName, ipStr, mask); err != nil {
-		routeIP, _ := m.s.Host.RouteIP()
-		_ = m.netCfg.DeleteRoute(routeIP)
 		return err
 	}
 	return nil
@@ -175,12 +137,7 @@ func (m *v4Manager) assignIPToTunDevice() error {
 // setDefaultRouteToTunDevice replaces any existing default route with split default route (0.0.0.0/1, 128.0.0.0/1).
 func (m *v4Manager) setDefaultRouteToTunDevice() error {
 	_ = m.netCfg.DeleteDefaultSplitRoutes(m.s.InterfaceName)
-	if err := m.netCfg.AddDefaultSplitRoutes(m.s.InterfaceName, 1); err != nil {
-		routeIP, _ := m.s.Host.RouteIP()
-		_ = m.netCfg.DeleteRoute(routeIP)
-		return err
-	}
-	return nil
+	return m.netCfg.AddDefaultSplitRoutes(m.s.InterfaceName, 1)
 }
 
 // setMTUToTunDevice sets MTU (or safe default).
@@ -192,12 +149,7 @@ func (m *v4Manager) setMTUToTunDevice() error {
 	if mtu < settings.MinimumIPv4MTU {
 		mtu = settings.MinimumIPv4MTU
 	}
-	if err := m.netCfg.SetMTU(m.s.InterfaceName, mtu); err != nil {
-		routeIP, _ := m.s.Host.RouteIP()
-		_ = m.netCfg.DeleteRoute(routeIP)
-		return err
-	}
-	return nil
+	return m.netCfg.SetMTU(m.s.InterfaceName, mtu)
 }
 
 // setDNSToTunDevice applies v4 DNS resolvers and flushes system cache.
@@ -213,9 +165,8 @@ func (m *v4Manager) setDNSToTunDevice() error {
 // DisposeDevices reverses CreateDevice in safe order.
 func (m *v4Manager) DisposeDevices() error {
 	_ = m.netCfg.DeleteDefaultSplitRoutes(m.s.InterfaceName)
-	routeIP, _ := m.s.Host.RouteIP()
-	if routeIP != "" {
-		_ = m.netCfg.DeleteRoute(routeIP)
+	if m.resolvedRouteIP != "" {
+		_ = m.netCfg.DeleteRoute(m.resolvedRouteIP)
 	}
 	if m.tun != nil {
 		_ = m.tun.Close()

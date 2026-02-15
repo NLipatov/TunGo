@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"net/netip"
+	"sync/atomic"
 	"tungo/application/listeners"
 	"tungo/application/network/connection"
 )
@@ -13,10 +14,13 @@ type registrationQueue interface {
 
 // RegistrationAdapter adapts registrationQueue to connection.Transport
 // so that handshake implementation can use its usual Read/Write interface.
+//
+// The destination address is stored atomically so that it can be updated
+// after NAT roaming without replacing the writer in the egress pipeline.
 type RegistrationAdapter struct {
-	conn     listeners.UdpListener
-	addrPort netip.AddrPort
-	queue    registrationQueue
+	conn  listeners.UdpListener
+	addr  atomic.Pointer[netip.AddrPort]
+	queue registrationQueue
 }
 
 func NewRegistrationTransport(
@@ -24,11 +28,12 @@ func NewRegistrationTransport(
 	addrPort netip.AddrPort,
 	queue registrationQueue,
 ) connection.Transport {
-	return &RegistrationAdapter{
-		conn:     conn,
-		addrPort: addrPort,
-		queue:    queue,
+	a := &RegistrationAdapter{
+		conn:  conn,
+		queue: queue,
 	}
+	a.addr.Store(&addrPort)
+	return a
 }
 
 func (t *RegistrationAdapter) Read(p []byte) (int, error) {
@@ -36,7 +41,7 @@ func (t *RegistrationAdapter) Read(p []byte) (int, error) {
 }
 
 func (t *RegistrationAdapter) Write(p []byte) (int, error) {
-	return t.conn.WriteToUDPAddrPort(p, t.addrPort)
+	return t.conn.WriteToUDPAddrPort(p, *t.addr.Load())
 }
 
 func (t *RegistrationAdapter) Close() error {
@@ -45,7 +50,12 @@ func (t *RegistrationAdapter) Close() error {
 	return nil
 }
 
-// RemoteAddrPort returns the client's external address for cookie IP binding.
+// RemoteAddrPort returns the client's current external address.
 func (t *RegistrationAdapter) RemoteAddrPort() netip.AddrPort {
-	return t.addrPort
+	return *t.addr.Load()
+}
+
+// SetAddrPort atomically updates the destination address after NAT roaming.
+func (t *RegistrationAdapter) SetAddrPort(addr netip.AddrPort) {
+	t.addr.Store(&addr)
 }

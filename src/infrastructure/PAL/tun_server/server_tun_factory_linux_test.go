@@ -52,9 +52,13 @@ func (m *ServerTunFactoryMockIP) LinkSetDevMTU(_ string, _ int) error         { 
 func (m *ServerTunFactoryMockIP) AddrAddDev(_, _ string) error                { m.add("addr"); return nil }
 func (m *ServerTunFactoryMockIP) AddrShowDev(_ int, _ string) (string, error) { return "", nil }
 func (m *ServerTunFactoryMockIP) RouteDefault() (string, error)               { m.add("route"); return "eth0", nil }
-func (m *ServerTunFactoryMockIP) RouteAddDefaultDev(_ string) error           { return nil }
-func (m *ServerTunFactoryMockIP) Route6AddDefaultDev(_ string) error          { return nil }
-func (m *ServerTunFactoryMockIP) RouteGet(_ string) (string, error)           { return "", nil }
+func (m *ServerTunFactoryMockIP) RouteAddDefaultDev(_ string) error            { return nil }
+func (m *ServerTunFactoryMockIP) Route6AddDefaultDev(_ string) error           { return nil }
+func (m *ServerTunFactoryMockIP) RouteAddSplitDefaultDev(_ string) error       { return nil }
+func (m *ServerTunFactoryMockIP) Route6AddSplitDefaultDev(_ string) error      { return nil }
+func (m *ServerTunFactoryMockIP) RouteDelSplitDefault(_ string) error          { return nil }
+func (m *ServerTunFactoryMockIP) Route6DelSplitDefault(_ string) error         { return nil }
+func (m *ServerTunFactoryMockIP) RouteGet(_ string) (string, error)            { return "", nil }
 func (m *ServerTunFactoryMockIP) RouteAddDev(_, _ string) error               { return nil }
 func (m *ServerTunFactoryMockIP) RouteAddViaDev(_, _, _ string) error         { return nil }
 func (m *ServerTunFactoryMockIP) RouteDel(_ string) error                     { return nil }
@@ -648,7 +652,7 @@ func TestSetupAndClearForwarding_Errors(t *testing.T) {
 	defaultIP, defaultIPT := &ServerTunFactoryMockIP{}, &ServerTunFactoryMockIPT{}
 
 	f1 := newFactory(defaultIP, defaultIPT, nil, &ServerTunFactoryMockIOCTL{}, &ServerTunFactoryMockSys{})
-	if err := f1.setupForwarding("", "eth0", true); err == nil ||
+	if err := f1.setupForwarding("", "eth0", true, true); err == nil ||
 		!strings.Contains(err.Error(), "failed to get TUN interface name") {
 		t.Errorf("expected empty name error, got %v", err)
 	}
@@ -656,14 +660,14 @@ func TestSetupAndClearForwarding_Errors(t *testing.T) {
 	// setup: iptables error
 	iptErr := &ServerTunFactoryMockIPTErr{ServerTunFactoryMockIPT: &ServerTunFactoryMockIPT{}, errTag: "EnableForwardingFromTunToDev", err: errors.New("f_err")}
 	f2 := newFactory(defaultIP, iptErr, nil, &ServerTunFactoryMockIOCTL{}, &ServerTunFactoryMockSys{})
-	if err := f2.setupForwarding("tunZ", "eth0", true); err == nil ||
+	if err := f2.setupForwarding("tunZ", "eth0", true, true); err == nil ||
 		!strings.Contains(err.Error(), "failed to setup forwarding rule") {
 		t.Errorf("expected forwarding rule error, got %v", err)
 	}
 
 	// clear: empty name
 	f3 := newFactory(defaultIP, defaultIPT, nil, &ServerTunFactoryMockIOCTL{}, &ServerTunFactoryMockSys{})
-	if err := f3.clearForwarding("", "eth0", true); err == nil ||
+	if err := f3.clearForwarding("", "eth0", true, true); err == nil ||
 		!strings.Contains(err.Error(), "failed to get TUN interface name") {
 		t.Errorf("expected empty name error, got %v", err)
 	}
@@ -671,7 +675,7 @@ func TestSetupAndClearForwarding_Errors(t *testing.T) {
 	// clear: DisableForwardingFromTunToDev error
 	iptErr2 := &ServerTunFactoryMockIPTErr{ServerTunFactoryMockIPT: &ServerTunFactoryMockIPT{}, errTag: "DisableForwardingFromTunToDev", err: errors.New("dtd_err")}
 	f4 := newFactory(defaultIP, iptErr2, nil, &ServerTunFactoryMockIOCTL{}, &ServerTunFactoryMockSys{})
-	if err := f4.clearForwarding("tunC", "eth0", true); err == nil ||
+	if err := f4.clearForwarding("tunC", "eth0", true, true); err == nil ||
 		!strings.Contains(err.Error(), "failed to execute iptables command") {
 		t.Errorf("expected clearForwarding error, got %v", err)
 	}
@@ -1005,7 +1009,7 @@ func TestSetupForwarding_IPv6Errors(t *testing.T) {
 			err:                     errors.New("v6_err"),
 		}
 		f := newFactory(&ServerTunFactoryMockIP{}, iptErr, nil, &ServerTunFactoryMockIOCTL{}, &ServerTunFactoryMockSys{})
-		if err := f.setupForwarding("tun0", "eth0", true); err == nil || !strings.Contains(err.Error(), c.want) {
+		if err := f.setupForwarding("tun0", "eth0", true, true); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("case %s: expected error containing %q, got %v", c.errTag, c.want, err)
 		}
 	}
@@ -1027,7 +1031,7 @@ func TestClearForwarding_IPv6Errors(t *testing.T) {
 			err:                     errors.New("v6_err"),
 		}
 		f := newFactory(&ServerTunFactoryMockIP{}, iptErr, nil, &ServerTunFactoryMockIOCTL{}, &ServerTunFactoryMockSys{})
-		if err := f.clearForwarding("tun0", "eth0", true); err == nil || !strings.Contains(err.Error(), c.want) {
+		if err := f.clearForwarding("tun0", "eth0", true, true); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("case %s: expected error containing %q, got %v", c.errTag, c.want, err)
 		}
 	}
@@ -1058,7 +1062,7 @@ func TestEnableForwarding_ForwardingFromDevToTun_Error(t *testing.T) {
 		err:                     errors.New("fwd_dt_err"),
 	}
 	f := newFactory(&ServerTunFactoryMockIP{}, iptErr, nil, &ServerTunFactoryMockIOCTL{}, &ServerTunFactoryMockSys{})
-	if err := f.setupForwarding("tun0", "eth0", true); err == nil || !strings.Contains(err.Error(), "failed to setup forwarding rule") {
+	if err := f.setupForwarding("tun0", "eth0", true, true); err == nil || !strings.Contains(err.Error(), "failed to setup forwarding rule") {
 		t.Errorf("expected forwarding rule error, got %v", err)
 	}
 }
@@ -1070,7 +1074,7 @@ func TestEnableForwarding_ForwardingTunToTun_Error(t *testing.T) {
 		err:                     errors.New("fwd_tt_err"),
 	}
 	f := newFactory(&ServerTunFactoryMockIP{}, iptErr, nil, &ServerTunFactoryMockIOCTL{}, &ServerTunFactoryMockSys{})
-	if err := f.setupForwarding("tun0", "eth0", true); err == nil || !strings.Contains(err.Error(), "failed to setup client-to-client forwarding rule") {
+	if err := f.setupForwarding("tun0", "eth0", true, true); err == nil || !strings.Contains(err.Error(), "failed to setup client-to-client forwarding rule") {
 		t.Errorf("expected client-to-client forwarding error, got %v", err)
 	}
 }
@@ -1082,7 +1086,7 @@ func TestClearForwarding_DisableForwardingFromDevToTun_Error(t *testing.T) {
 		err:                     errors.New("dtd_err"),
 	}
 	f := newFactory(&ServerTunFactoryMockIP{}, iptErr, nil, &ServerTunFactoryMockIOCTL{}, &ServerTunFactoryMockSys{})
-	if err := f.clearForwarding("tun0", "eth0", true); err == nil || !strings.Contains(err.Error(), "failed to execute iptables command") {
+	if err := f.clearForwarding("tun0", "eth0", true, true); err == nil || !strings.Contains(err.Error(), "failed to execute iptables command") {
 		t.Errorf("expected iptables error, got %v", err)
 	}
 }
@@ -1094,7 +1098,7 @@ func TestClearForwarding_DisableForwardingTunToTun_Error(t *testing.T) {
 		err:                     errors.New("dtt_err"),
 	}
 	f := newFactory(&ServerTunFactoryMockIP{}, iptErr, nil, &ServerTunFactoryMockIOCTL{}, &ServerTunFactoryMockSys{})
-	if err := f.clearForwarding("tun0", "eth0", true); err == nil || !strings.Contains(err.Error(), "failed to execute iptables command") {
+	if err := f.clearForwarding("tun0", "eth0", true, true); err == nil || !strings.Contains(err.Error(), "failed to execute iptables command") {
 		t.Errorf("expected iptables error, got %v", err)
 	}
 }

@@ -56,23 +56,37 @@ func (i *Wrapper) AddrAddDev(devName string, cidr string) error {
 	return nil
 }
 
-// RouteDefault Gets a default network device name
+// RouteDefault gets the default network device name.
+// It checks the IPv4 routing table first, then falls back to IPv6.
 func (i *Wrapper) RouteDefault() (string, error) {
-	out, err := i.commander.Output("ip", "route")
+	if iface, err := i.parseDefaultRoute("ip", "route"); err == nil {
+		return iface, nil
+	}
+	if iface, err := i.parseDefaultRoute("ip", "-6", "route"); err == nil {
+		return iface, nil
+	}
+	return "", fmt.Errorf("failed to get default interface from IPv4 or IPv6 routing table")
+}
+
+// parseDefaultRoute runs the given command and extracts the interface name
+// from the first "default" route line by searching for the "dev" keyword.
+func (i *Wrapper) parseDefaultRoute(name string, args ...string) (string, error) {
+	out, err := i.commander.Output(name, args...)
 	if err != nil {
 		return "", err
 	}
-
 	lines := strings.Split(string(out), "\n")
 	for _, line := range lines {
 		if strings.HasPrefix(line, "default") {
 			fields := strings.Fields(line)
-			if len(fields) >= 5 {
-				return fields[4], nil
+			for j, f := range fields {
+				if f == "dev" && j+1 < len(fields) {
+					return fields[j+1], nil
+				}
 			}
 		}
 	}
-	return "", fmt.Errorf("failed to get default interface")
+	return "", fmt.Errorf("no default route found")
 }
 
 // RouteAddDefaultDev Sets a default network device
@@ -94,6 +108,50 @@ func (i *Wrapper) Route6AddDefaultDev(devName string) error {
 	if err != nil {
 		return fmt.Errorf("failed to set IPv6 default gateway %v: %v, output: %s",
 			devName, err, output)
+	}
+	return nil
+}
+
+// RouteAddSplitDefaultDev adds IPv4 split default routes (0.0.0.0/1 + 128.0.0.0/1)
+// through the given device. These are more specific than 0.0.0.0/0 so they take
+// priority without replacing the original default route. When the TUN device is
+// deleted, the kernel removes these routes automatically.
+func (i *Wrapper) RouteAddSplitDefaultDev(devName string) error {
+	for _, prefix := range []string{"0.0.0.0/1", "128.0.0.0/1"} {
+		output, err := i.commander.CombinedOutput("ip", "route", "add", prefix, "dev", devName)
+		if err != nil {
+			return fmt.Errorf("failed to add split route %s via %s: %v, output: %s",
+				prefix, devName, err, output)
+		}
+	}
+	return nil
+}
+
+// Route6AddSplitDefaultDev adds IPv6 split default routes (::/1 + 8000::/1)
+// through the given device.
+func (i *Wrapper) Route6AddSplitDefaultDev(devName string) error {
+	for _, prefix := range []string{"::/1", "8000::/1"} {
+		output, err := i.commander.CombinedOutput("ip", "-6", "route", "add", prefix, "dev", devName)
+		if err != nil {
+			return fmt.Errorf("failed to add IPv6 split route %s via %s: %v, output: %s",
+				prefix, devName, err, output)
+		}
+	}
+	return nil
+}
+
+// RouteDelSplitDefault removes IPv4 split default routes through the given device.
+func (i *Wrapper) RouteDelSplitDefault(devName string) error {
+	for _, prefix := range []string{"0.0.0.0/1", "128.0.0.0/1"} {
+		_, _ = i.commander.CombinedOutput("ip", "route", "del", prefix, "dev", devName)
+	}
+	return nil
+}
+
+// Route6DelSplitDefault removes IPv6 split default routes through the given device.
+func (i *Wrapper) Route6DelSplitDefault(devName string) error {
+	for _, prefix := range []string{"::/1", "8000::/1"} {
+		_, _ = i.commander.CombinedOutput("ip", "-6", "route", "del", prefix, "dev", devName)
 	}
 	return nil
 }

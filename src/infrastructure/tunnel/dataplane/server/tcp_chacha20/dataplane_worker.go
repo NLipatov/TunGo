@@ -71,14 +71,15 @@ func (w *tcpDataplaneWorker) Run() {
 				w.logger.Printf("invalid ciphertext length: %d", n)
 				continue
 			}
-			// SECURITY: Check closed flag before using crypto.
-			// ConfigWatcher may have terminated this session via TerminateByPubKey.
-			// The closed flag is set atomically before crypto is zeroed.
-			if w.peer.IsClosed() {
+			// SECURITY: Acquire crypto read lock before decryption.
+			// This prevents the TOCTOU race where ConfigWatcher or idle reaper
+			// could zeroize crypto between closed check and Decrypt call.
+			if !w.peer.CryptoRLock() {
 				w.logger.Printf("session closed, exiting")
 				return
 			}
 			pt, err := w.peer.Crypto().Decrypt(buffer[:n])
+			w.peer.CryptoRUnlock()
 			if err != nil {
 				w.logger.Printf("failed to decrypt data: %s", err)
 				return

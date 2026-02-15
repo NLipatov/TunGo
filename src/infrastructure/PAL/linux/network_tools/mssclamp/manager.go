@@ -24,6 +24,7 @@ const (
 type Manager struct {
 	commander exec_commander.Commander
 	backend   backend
+	ipv6      int8 // 0=unknown, 1=available, -1=unavailable
 }
 
 func NewManager(commander exec_commander.Commander) *Manager {
@@ -101,7 +102,7 @@ func (m *Manager) run(commands []describedCommand) error {
 }
 
 func (m *Manager) installIptables(tunName string) error {
-	rules := []describedCommand{
+	ipv4Rules := []describedCommand{
 		{
 			name: "iptables",
 			args: []string{"-t", "mangle", "-A", "OUTPUT", "-o", tunName, "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"},
@@ -117,6 +118,16 @@ func (m *Manager) installIptables(tunName string) error {
 			args: []string{"-t", "mangle", "-A", "FORWARD", "-i", tunName, "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"},
 			desc: "add IPv4 FORWARD iif TCPMSS clamp for " + tunName,
 		},
+	}
+	if err := m.run(ipv4Rules); err != nil {
+		return err
+	}
+
+	if !m.ip6tablesUsable() {
+		return nil
+	}
+
+	ipv6Rules := []describedCommand{
 		{
 			name: "ip6tables",
 			args: []string{"-t", "mangle", "-A", "OUTPUT", "-o", tunName, "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"},
@@ -133,12 +144,11 @@ func (m *Manager) installIptables(tunName string) error {
 			desc: "add IPv6 FORWARD iif TCPMSS clamp for " + tunName,
 		},
 	}
-
-	return m.run(rules)
+	return m.run(ipv6Rules)
 }
 
 func (m *Manager) removeIptables(tunName string) error {
-	rules := []describedCommand{
+	ipv4Rules := []describedCommand{
 		{
 			name: "iptables",
 			args: []string{"-t", "mangle", "-D", "OUTPUT", "-o", tunName, "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"},
@@ -154,6 +164,16 @@ func (m *Manager) removeIptables(tunName string) error {
 			args: []string{"-t", "mangle", "-D", "FORWARD", "-i", tunName, "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"},
 			desc: "delete IPv4 FORWARD iif TCPMSS clamp for " + tunName,
 		},
+	}
+	if err := m.run(ipv4Rules); err != nil {
+		return err
+	}
+
+	if !m.ip6tablesUsable() {
+		return nil
+	}
+
+	ipv6Rules := []describedCommand{
 		{
 			name: "ip6tables",
 			args: []string{"-t", "mangle", "-D", "OUTPUT", "-o", tunName, "-p", "tcp", "--tcp-flags", "SYN,RST", "SYN", "-j", "TCPMSS", "--clamp-mss-to-pmtu"},
@@ -170,8 +190,23 @@ func (m *Manager) removeIptables(tunName string) error {
 			desc: "delete IPv6 FORWARD iif TCPMSS clamp for " + tunName,
 		},
 	}
+	return m.run(ipv6Rules)
+}
 
-	return m.run(rules)
+// ip6tablesUsable reports whether ip6tables can manage mangle rules.
+// On kernels with ipv6.disable=1 the ip6_tables module is absent and
+// all ip6tables commands fail. The result is cached for the Manager lifetime.
+func (m *Manager) ip6tablesUsable() bool {
+	if m.ipv6 != 0 {
+		return m.ipv6 > 0
+	}
+	_, err := m.commander.CombinedOutput("ip6tables", "-t", "mangle", "-L", "-n")
+	if err == nil {
+		m.ipv6 = 1
+	} else {
+		m.ipv6 = -1
+	}
+	return m.ipv6 > 0
 }
 
 func (m *Manager) installNft(tunName string) error {

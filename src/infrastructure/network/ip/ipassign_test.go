@@ -98,6 +98,16 @@ func TestAllocateClientIP_IPv6_NegativeCounter(t *testing.T) {
 	}
 }
 
+func TestAllocateClientIP_IPv4_TooLargePrefix(t *testing.T) {
+	// /0 and /1 would overflow the 1<<(32-ones) bit-shift
+	for _, prefix := range []string{"0.0.0.0/0", "0.0.0.0/1"} {
+		_, err := AllocateClientIP(netip.MustParsePrefix(prefix), 1)
+		if err == nil || !contains(err.Error(), "too large") {
+			t.Errorf("prefix %s: expected 'too large' error, got %v", prefix, err)
+		}
+	}
+}
+
 func TestAllocateClientIP_IPv4_BroadcastGuard(t *testing.T) {
 	// /30 has 4 addresses: .0 network, .1 server, .2 client (counter=1), .3 broadcast.
 	// counter=1 should succeed; counter=2 should fail (would be broadcast).

@@ -45,8 +45,11 @@ func AllocateClientIP(subnet netip.Prefix, clientCounter int) (netip.Addr, error
 func allocateClientIPv4(addr netip.Addr, subnet netip.Prefix, clientCounter int) (netip.Addr, error) {
 	arr := addr.As4()
 	base := binary.BigEndian.Uint32(arr[:])
-	ones, bits := subnet.Bits(), 32
-	total := 1 << (bits - ones)
+	ones := subnet.Bits()
+	if ones < 2 {
+		return netip.Addr{}, fmt.Errorf("IPv4 prefix /%d too large for client allocation (minimum /2)", ones)
+	}
+	total := 1 << (32 - ones)
 	if clientCounter < 1 || clientCounter >= total-2 {
 		return netip.Addr{}, fmt.Errorf("client counter out of range (must be 1..%d): %d", total-3, clientCounter)
 	}

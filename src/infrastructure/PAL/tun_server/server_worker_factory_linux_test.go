@@ -71,13 +71,13 @@ func Test_addrPortToListen_ErrorsAndDualStackDefault(t *testing.T) {
 		t.Fatal("expected error for invalid port")
 	}
 
-	// default dual-stack when ip is empty
+	// default listen address when host is empty: "::" on dual-stack, "0.0.0.0" on IPv4-only
 	addr, err := f.addrPortToListen(mustHost(""), 1234)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got := addr.Addr().String(); got != "::" {
-		t.Errorf("expected ::, got %q", got)
+	if got := addr.Addr().String(); got != "::" && got != "0.0.0.0" {
+		t.Errorf("expected :: or 0.0.0.0, got %q", got)
 	}
 }
 

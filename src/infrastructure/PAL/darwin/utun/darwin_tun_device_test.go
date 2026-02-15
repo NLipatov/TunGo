@@ -8,7 +8,6 @@ import (
 	"reflect"
 	"syscall"
 	"testing"
-	"tungo/infrastructure/settings"
 )
 
 type fakeTun struct {
@@ -27,12 +26,17 @@ type fakeTun struct {
 
 func (f *fakeTun) Name() (string, error) { panic("not implemented") }
 
-func (f *fakeTun) Read(bufs [][]byte, sizes []int, offset int) (int, error) {
+func (f *fakeTun) Read(bufs [][]byte, sizes []int, _ int) (int, error) {
 	if f.readErr != nil {
 		return 0, f.readErr
 	}
-	// copy payload after 4-byte utun header
-	copy(bufs[0][offset:], f.readPayload[offset:offset+f.readSize])
+	// Scatter-gather: bufs[0] = header sink, bufs[1] = payload destination
+	if len(bufs) > 0 && len(f.readPayload) >= 4 {
+		copy(bufs[0], f.readPayload[:4])
+	}
+	if len(bufs) > 1 && f.readSize > 0 {
+		copy(bufs[1], f.readPayload[4:4+f.readSize])
+	}
 	sizes[0] = f.readSize
 	return f.readSize, nil
 }
@@ -86,14 +90,10 @@ func TestRead_ErrFromDevice(t *testing.T) {
 }
 
 func TestRead_DestinationTooSmall(t *testing.T) {
-	payload := []byte{1, 2, 3, 4, 5}
-	ft := &fakeTun{
-		readPayload: append(make([]byte, 4), payload...),
-		readSize:    len(payload),
-	}
+	ft := &fakeTun{}
 	adapter := NewDarwinTunDevice(ft)
 
-	_, err := adapter.Read(make([]byte, len(payload)-1))
+	_, err := adapter.Read(nil)
 	if err == nil || err.Error() != "destination slice too small" {
 		t.Fatalf("Read error = %v, want destination slice too small", err)
 	}
@@ -113,22 +113,22 @@ func TestWrite_Success_IPv4(t *testing.T) {
 		t.Fatalf("Write returned length %d, want %d", n, len(payload))
 	}
 
-	wbuf := ft.writtenBuf[0]
-	if len(wbuf) != len(payload)+4 {
-		t.Fatalf("written buffer len = %d, want %d", len(wbuf), len(payload)+4)
+	// Scatter-gather: writtenBuf[0] = 4-byte AF header, writtenBuf[1] = payload
+	if len(ft.writtenBuf) != 2 {
+		t.Fatalf("expected 2 iovecs, got %d", len(ft.writtenBuf))
 	}
 
 	// verify IPv4 family header
 	wantFam := make([]byte, 4)
 	binary.BigEndian.PutUint32(wantFam, syscall.AF_INET)
-	if !reflect.DeepEqual(wbuf[:4], wantFam) {
-		t.Fatalf("family header = %v, want %v", wbuf[:4], wantFam)
+	if !reflect.DeepEqual(ft.writtenBuf[0], wantFam) {
+		t.Fatalf("family header = %v, want %v", ft.writtenBuf[0], wantFam)
 	}
-	if !reflect.DeepEqual(wbuf[4:], payload) {
-		t.Fatalf("payload = %v, want %v", wbuf[4:], payload)
+	if !reflect.DeepEqual(ft.writtenBuf[1], payload) {
+		t.Fatalf("payload = %v, want %v", ft.writtenBuf[1], payload)
 	}
-	if ft.writeOff != 4 {
-		t.Fatalf("write offset = %d, want 4", ft.writeOff)
+	if ft.writeOff != 0 {
+		t.Fatalf("write offset = %d, want 0", ft.writeOff)
 	}
 }
 
@@ -143,12 +143,11 @@ func TestWrite_Success_IPv6(t *testing.T) {
 		t.Fatalf("Write error = %v", err)
 	}
 
-	// verify IPv6 family header
-	wbuf := ft.writtenBuf[0]
+	// verify IPv6 family header (scatter-gather: writtenBuf[0] = header)
 	wantFam := make([]byte, 4)
 	binary.BigEndian.PutUint32(wantFam, syscall.AF_INET6)
-	if !reflect.DeepEqual(wbuf[:4], wantFam) {
-		t.Fatalf("family header = %v, want %v", wbuf[:4], wantFam)
+	if !reflect.DeepEqual(ft.writtenBuf[0], wantFam) {
+		t.Fatalf("family header = %v, want %v", ft.writtenBuf[0], wantFam)
 	}
 }
 
@@ -159,18 +158,6 @@ func TestWrite_EmptyPacket(t *testing.T) {
 	_, err := adapter.Write(nil)
 	if err == nil || err.Error() != "empty packet" {
 		t.Fatalf("Write error = %v, want empty packet", err)
-	}
-}
-
-func TestWrite_TooLargePacket(t *testing.T) {
-	// payload larger than MaxPacketLengthBytes-4
-	tooBig := make([]byte, settings.DefaultEthernetMTU+headerSize)
-	ft := &fakeTun{}
-	adapter := NewDarwinTunDevice(ft)
-
-	_, err := adapter.Write(tooBig)
-	if err == nil || err.Error() != "packet exceeds max size" {
-		t.Fatalf("Write error = %v, want packet exceeds max size", err)
 	}
 }
 

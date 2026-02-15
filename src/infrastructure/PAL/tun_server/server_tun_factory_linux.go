@@ -41,9 +41,10 @@ func NewServerTunFactory() tun.ServerManager {
 }
 
 func (s ServerTunFactory) CreateDevice(connSettings settings.Settings) (tun.Device, error) {
-	ipv6 := connSettings.IPv6Subnet.IsValid()
+	ipv4 := connSettings.InterfaceSubnet.IsValid() && connSettings.InterfaceSubnet.Addr().Is4()
+	ipv6 := connSettings.IPv6Subnet.IsValid() || (connSettings.InterfaceSubnet.IsValid() && !connSettings.InterfaceSubnet.Addr().Is4())
 
-	forwardingErr := s.enableForwarding(ipv6)
+	forwardingErr := s.enableForwarding(ipv4, ipv6)
 	if forwardingErr != nil {
 		return nil, forwardingErr
 	}
@@ -53,7 +54,7 @@ func (s ServerTunFactory) CreateDevice(connSettings settings.Settings) (tun.Devi
 		return nil, fmt.Errorf("failed to open TUN interface: %w", err)
 	}
 
-	configureErr := s.configure(tunFile, ipv6)
+	configureErr := s.configure(tunFile, ipv4, ipv6)
 	if configureErr != nil {
 		return nil, fmt.Errorf("failed to configure a server: %s\n", configureErr)
 	}
@@ -213,16 +214,18 @@ func (s ServerTunFactory) createTun(settings settings.Settings) (*os.File, error
 	return tunFile, nil
 }
 
-func (s ServerTunFactory) enableForwarding(ipv6 bool) error {
-	output, err := s.sysctl.NetIpv4IpForward()
-	if err != nil {
-		return fmt.Errorf("failed to enable IPv4 packet forwarding: %v, output: %s", err, output)
-	}
-
-	if string(output) != "net.ipv4.ip_forward = 1\n" {
-		output, err = s.sysctl.WNetIpv4IpForward()
+func (s ServerTunFactory) enableForwarding(ipv4, ipv6 bool) error {
+	if ipv4 {
+		output, err := s.sysctl.NetIpv4IpForward()
 		if err != nil {
 			return fmt.Errorf("failed to enable IPv4 packet forwarding: %v, output: %s", err, output)
+		}
+
+		if string(output) != "net.ipv4.ip_forward = 1\n" {
+			output, err = s.sysctl.WNetIpv4IpForward()
+			if err != nil {
+				return fmt.Errorf("failed to enable IPv4 packet forwarding: %v, output: %s", err, output)
+			}
 		}
 	}
 
@@ -243,7 +246,7 @@ func (s ServerTunFactory) enableForwarding(ipv6 bool) error {
 	return nil
 }
 
-func (s ServerTunFactory) configure(tunFile *os.File, ipv6 bool) error {
+func (s ServerTunFactory) configure(tunFile *os.File, ipv4, ipv6 bool) error {
 	tunName, err := s.ioctl.DetectTunNameFromFd(tunFile)
 	if err != nil {
 		return fmt.Errorf("failed to determing tunnel ifName: %s\n", err)
@@ -257,8 +260,10 @@ func (s ServerTunFactory) configure(tunFile *os.File, ipv6 bool) error {
 		return err
 	}
 
-	if err := s.iptables.EnableDevMasquerade(externalIfName); err != nil {
-		return fmt.Errorf("failed enabling NAT: %v", err)
+	if ipv4 {
+		if err := s.iptables.EnableDevMasquerade(externalIfName); err != nil {
+			return fmt.Errorf("failed enabling NAT: %v", err)
+		}
 	}
 
 	if ipv6 {
@@ -267,7 +272,7 @@ func (s ServerTunFactory) configure(tunFile *os.File, ipv6 bool) error {
 		}
 	}
 
-	if err := s.setupForwarding(tunName, externalIfName, ipv6); err != nil {
+	if err := s.setupForwarding(tunName, externalIfName, ipv4, ipv6); err != nil {
 		return fmt.Errorf("failed to set up forwarding: %v", err)
 	}
 
@@ -304,7 +309,7 @@ func (s ServerTunFactory) Unconfigure(tunFile *os.File) error {
 		if err := s.mss.Remove(tunName); err != nil {
 			log.Printf("failed to remove MSS clamping for %s: %v\n", tunName, err)
 		}
-		if err := s.clearForwarding(tunName, defaultIfName, true); err != nil {
+		if err := s.clearForwarding(tunName, defaultIfName, true, true); err != nil {
 			return err
 		}
 	}
@@ -312,22 +317,24 @@ func (s ServerTunFactory) Unconfigure(tunFile *os.File) error {
 	return nil
 }
 
-func (s ServerTunFactory) setupForwarding(tunName string, extIface string, ipv6 bool) error {
+func (s ServerTunFactory) setupForwarding(tunName string, extIface string, ipv4, ipv6 bool) error {
 	if tunName == "" {
 		return fmt.Errorf("failed to get TUN interface name")
 	}
 
 	// Set up iptables rules (IPv4)
-	if err := s.iptables.EnableForwardingFromTunToDev(tunName, extIface); err != nil {
-		return fmt.Errorf("failed to setup forwarding rule: %s", err)
-	}
+	if ipv4 {
+		if err := s.iptables.EnableForwardingFromTunToDev(tunName, extIface); err != nil {
+			return fmt.Errorf("failed to setup forwarding rule: %s", err)
+		}
 
-	if err := s.iptables.EnableForwardingFromDevToTun(tunName, extIface); err != nil {
-		return fmt.Errorf("failed to setup forwarding rule: %s", err)
-	}
+		if err := s.iptables.EnableForwardingFromDevToTun(tunName, extIface); err != nil {
+			return fmt.Errorf("failed to setup forwarding rule: %s", err)
+		}
 
-	if err := s.iptables.EnableForwardingTunToTun(tunName); err != nil {
-		return fmt.Errorf("failed to setup client-to-client forwarding rule: %s", err)
+		if err := s.iptables.EnableForwardingTunToTun(tunName); err != nil {
+			return fmt.Errorf("failed to setup client-to-client forwarding rule: %s", err)
+		}
 	}
 
 	// Set up ip6tables rules (IPv6)
@@ -348,21 +355,23 @@ func (s ServerTunFactory) setupForwarding(tunName string, extIface string, ipv6 
 	return nil
 }
 
-func (s ServerTunFactory) clearForwarding(tunName string, extIface string, ipv6 bool) error {
+func (s ServerTunFactory) clearForwarding(tunName string, extIface string, ipv4, ipv6 bool) error {
 	if tunName == "" {
 		return fmt.Errorf("failed to get TUN interface name")
 	}
 
-	if err := s.iptables.DisableForwardingFromTunToDev(tunName, extIface); err != nil {
-		return fmt.Errorf("failed to execute iptables command: %s", err)
-	}
+	if ipv4 {
+		if err := s.iptables.DisableForwardingFromTunToDev(tunName, extIface); err != nil {
+			return fmt.Errorf("failed to execute iptables command: %s", err)
+		}
 
-	if err := s.iptables.DisableForwardingFromDevToTun(tunName, extIface); err != nil {
-		return fmt.Errorf("failed to execute iptables command: %s", err)
-	}
+		if err := s.iptables.DisableForwardingFromDevToTun(tunName, extIface); err != nil {
+			return fmt.Errorf("failed to execute iptables command: %s", err)
+		}
 
-	if err := s.iptables.DisableForwardingTunToTun(tunName); err != nil {
-		return fmt.Errorf("failed to execute iptables command: %s", err)
+		if err := s.iptables.DisableForwardingTunToTun(tunName); err != nil {
+			return fmt.Errorf("failed to execute iptables command: %s", err)
+		}
 	}
 
 	if ipv6 {

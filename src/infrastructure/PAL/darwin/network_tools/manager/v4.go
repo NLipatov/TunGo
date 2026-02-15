@@ -13,12 +13,13 @@ import (
 )
 
 type v4 struct {
-	s       settings.Settings
-	tunDev  tun.Device
-	rawUTUN utun.UTUN
-	ifc     ifconfig.Contract // v4 ifconfig.Contract implementation
-	rtc     route.Contract    // v4 route.Contract implementation
-	ifName  string
+	s              settings.Settings
+	tunDev         tun.Device
+	rawUTUN        utun.UTUN
+	ifc            ifconfig.Contract // v4 ifconfig.Contract implementation
+	rtc            route.Contract    // v4 route.Contract implementation
+	ifName         string
+	resolvedRouteIP string // cached resolved server IP for consistent teardown
 }
 
 func newV4(
@@ -48,11 +49,12 @@ func (m *v4) CreateDevice() (tun.Device, error) {
 		return nil, fmt.Errorf("get utun name: %w", err)
 	}
 	m.ifName = name
-	routeIP, routeErr := m.s.Host.RouteIP()
+	routeIP, routeErr := m.s.Host.RouteIPv4()
 	if routeErr != nil {
 		_ = m.DisposeDevices()
 		return nil, fmt.Errorf("v4: resolve route for %s: %w", m.s.Host, routeErr)
 	}
+	m.resolvedRouteIP = routeIP
 	if getErr := m.rtc.Get(routeIP); getErr != nil {
 		_ = m.DisposeDevices()
 		return nil, fmt.Errorf("route to server %s: %w", m.s.Host, getErr)
@@ -73,13 +75,15 @@ func (m *v4) CreateDevice() (tun.Device, error) {
 
 func (m *v4) DisposeDevices() error {
 	_ = m.rtc.DelSplit(m.ifName)
-	if !m.s.Host.IsZero() {
-		_ = m.rtc.Del(string(m.s.Host))
+	if m.resolvedRouteIP != "" {
+		_ = m.rtc.Del(m.resolvedRouteIP)
 	}
 	if m.tunDev != nil {
-		_ = m.tunDev.Close()
-		m.tunDev = nil
+		_ = m.tunDev.Close() // closes underlying rawUTUN
+	} else if m.rawUTUN != nil {
+		_ = m.rawUTUN.Close() // tunDev never created, close raw directly
 	}
+	m.tunDev = nil
 	m.rawUTUN = nil
 	m.ifName = ""
 	return nil

@@ -154,10 +154,18 @@ func (s *DefaultRepository) UpdateExternalAddr(peer *Peer, newAddr netip.AddrPor
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// Guard against re-inserting a peer that was concurrently deleted.
+	// Without this check, a zombie entry would persist in externalIPToPeer.
+	if peer.IsClosed() {
+		return
+	}
+
 	// Remove old external address index entry
 	delete(s.externalIPToPeer, s.canonicalAP(peer.ExternalAddrPort()))
 	// Update the peer's external address
 	peer.SetExternalAddrPort(newAddr)
+	// Update the egress writer's destination so replies go to the new address.
+	peer.updateEgressAddr(newAddr)
 	// Re-index under the new address
 	s.externalIPToPeer[s.canonicalAP(newAddr)] = peer
 }
@@ -272,15 +280,15 @@ func (s *DefaultRepository) deleteLocked(peer *Peer) {
 		}
 	}
 
-	// Step 4: Zero key material - safe because:
-	// - Peer is marked closed (handlers will abort)
-	// - Egress is closed (no new writes)
-	// - Peer is removed from maps (no new lookups)
+	// Step 4: Zero key material — wait for active decrypts to finish.
+	// cryptoMu.Lock blocks until all in-flight CryptoRLock holders release.
+	peer.cryptoMu.Lock()
 	if crypto := peer.Crypto(); crypto != nil {
 		if zeroizer, ok := crypto.(connection.CryptoZeroizer); ok {
 			zeroizer.Zeroize()
 		}
 	}
+	peer.cryptoMu.Unlock()
 }
 
 // ReapIdle deletes all sessions whose last activity is older than timeout.

@@ -51,18 +51,63 @@ func TestManager_InstallAndRemove_Iptables(t *testing.T) {
 
 	expected := []string{
 		"iptables --version",
+		// Install IPv4
 		"iptables -t mangle -A OUTPUT -o tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu",
 		"iptables -t mangle -A FORWARD -o tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu",
 		"iptables -t mangle -A FORWARD -i tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu",
+		// Probe ip6tables availability
+		"ip6tables -t mangle -L -n",
+		// Install IPv6
 		"ip6tables -t mangle -A OUTPUT -o tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu",
 		"ip6tables -t mangle -A FORWARD -o tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu",
 		"ip6tables -t mangle -A FORWARD -i tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu",
+		// Remove IPv4
 		"iptables -t mangle -D OUTPUT -o tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu",
 		"iptables -t mangle -D FORWARD -o tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu",
 		"iptables -t mangle -D FORWARD -i tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu",
+		// ip6tables probe cached — no second probe
+		// Remove IPv6
 		"ip6tables -t mangle -D OUTPUT -o tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu",
 		"ip6tables -t mangle -D FORWARD -o tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu",
 		"ip6tables -t mangle -D FORWARD -i tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu",
+	}
+
+	if !reflect.DeepEqual(expected, cmd.calls) {
+		t.Fatalf("unexpected commands.\nwant: %v\n got: %v", expected, cmd.calls)
+	}
+}
+
+func TestManager_InstallAndRemove_Iptables_IPv4Only(t *testing.T) {
+	cmd := &recordingCommander{
+		outputMap: map[string][]byte{
+			"iptables --version": {},
+		},
+		errMap: map[string]error{
+			// ip6tables probe fails — simulates ipv6.disable=1
+			"ip6tables -t mangle -L -n": assertError("ip6_tables module not found"),
+		},
+	}
+
+	m := NewManager(cmd)
+	if err := m.Install("tun0"); err != nil {
+		t.Fatalf("Install returned error: %v", err)
+	}
+	if err := m.Remove("tun0"); err != nil {
+		t.Fatalf("Remove returned error: %v", err)
+	}
+
+	expected := []string{
+		"iptables --version",
+		// Install IPv4 only
+		"iptables -t mangle -A OUTPUT -o tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu",
+		"iptables -t mangle -A FORWARD -o tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu",
+		"iptables -t mangle -A FORWARD -i tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu",
+		// ip6tables probe — fails, IPv6 skipped
+		"ip6tables -t mangle -L -n",
+		// Remove IPv4 only (ip6tables cached as unavailable)
+		"iptables -t mangle -D OUTPUT -o tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu",
+		"iptables -t mangle -D FORWARD -o tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu",
+		"iptables -t mangle -D FORWARD -i tun0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu",
 	}
 
 	if !reflect.DeepEqual(expected, cmd.calls) {

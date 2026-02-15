@@ -155,19 +155,21 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.Settings) error 
 		}
 	}
 
-	// Set the TUN interface as the default gateway
-	err = t.ip.RouteAddDefaultDev(connSettings.InterfaceName)
+	// Set split default routes — more specific than 0.0.0.0/0 so they take
+	// priority without destroying the original default route. On crash or
+	// device deletion the kernel removes them automatically.
+	err = t.ip.RouteAddSplitDefaultDev(connSettings.InterfaceName)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("set %s as default gateway\n", connSettings.InterfaceName)
+	fmt.Printf("set %s as default gateway (split routes)\n", connSettings.InterfaceName)
 
-	// Set IPv6 default route if configured
+	// Set IPv6 split default routes if configured
 	if connSettings.IPv6IP.IsValid() {
-		if err := t.ip.Route6AddDefaultDev(connSettings.InterfaceName); err != nil {
+		if err := t.ip.Route6AddSplitDefaultDev(connSettings.InterfaceName); err != nil {
 			return err
 		}
-		fmt.Printf("set %s as IPv6 default gateway\n", connSettings.InterfaceName)
+		fmt.Printf("set %s as IPv6 default gateway (split routes)\n", connSettings.InterfaceName)
 	}
 
 	// sets client's TUN device maximum transmission unit (MTU)
@@ -204,6 +206,9 @@ func (t *PlatformTunManager) DisposeDevices() error {
 		if err := t.mss.Remove(s.InterfaceName); err != nil {
 			log.Printf("failed to remove MSS clamping for %s: %v", s.InterfaceName, err)
 		}
+		// Remove split routes before deleting the device
+		_ = t.ip.RouteDelSplitDefault(s.InterfaceName)
+		_ = t.ip.Route6DelSplitDefault(s.InterfaceName)
 		if routeTarget, routeErr := s.Host.RouteIP(); routeErr == nil {
 			_ = t.ip.RouteDel(routeTarget)
 		}

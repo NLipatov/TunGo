@@ -586,8 +586,11 @@ func TestConfigWatcher_Watch_IgnoresOtherFilesAndLogsOwnFile(t *testing.T) {
 
 	watcher := NewConfigWatcher(configManager, revoker, nil, configPath, time.Hour, logger)
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go watcher.Watch(ctx)
+	watchDone := make(chan struct{})
+	go func() {
+		watcher.Watch(ctx)
+		close(watchDone)
+	}()
 
 	time.Sleep(80 * time.Millisecond)
 
@@ -621,6 +624,10 @@ func TestConfigWatcher_Watch_IgnoresOtherFilesAndLogsOwnFile(t *testing.T) {
 	if len(revoker.revokedKeys()) != 1 {
 		t.Fatalf("expected one revoke from config event, got %d", len(revoker.revokedKeys()))
 	}
+
+	// Stop the watcher goroutine and wait for it to exit before reading the shared log buffer.
+	cancel()
+	<-watchDone
 
 	logs := logBuf.String()
 	if !strings.Contains(logs, "detected config change") {

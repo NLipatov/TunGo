@@ -60,7 +60,7 @@ func (w *WorkerFactory) CreateWorker(
 		tunHandler := tcp_chacha20.NewTunHandler(ctx, tun, egress, controller, allowed)
 		transportHandler := tcp_chacha20.NewTransportHandler(ctx, conn, tun, crypto, controller, egress)
 		return tcp_chacha20.NewTcpTunWorker(ctx, tunHandler, transportHandler, crypto, controller), nil
-	case settings.WS:
+	case settings.WS, settings.WSS:
 		egress := connection.NewDefaultEgress(conn, crypto)
 		tunHandler := tcp_chacha20.NewTunHandler(ctx, tun, egress, controller, allowed)
 		transportHandler := tcp_chacha20.NewTransportHandler(ctx, conn, tun, crypto, controller, egress)

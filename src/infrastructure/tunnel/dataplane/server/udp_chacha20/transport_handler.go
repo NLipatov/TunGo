@@ -164,6 +164,9 @@ func (t *TransportHandler) handlePacket(
 // SAFETY: Decrypt on a wrong session fails at the AEAD auth tag check and
 // does not mutate any state. We decrypt a copy because Open() modifies the
 // buffer in-place.
+//
+// CONCURRENCY: tryDecryptSafe acquires the peer's crypto read lock,
+// preventing the idle reaper from zeroizing crypto during decryption.
 func (t *TransportHandler) tryRoaming(newAddr netip.AddrPort, packet []byte) bool {
 	peers := t.sessionManager.AllPeers()
 	for _, peer := range peers {
@@ -174,8 +177,8 @@ func (t *TransportHandler) tryRoaming(newAddr netip.AddrPort, packet []byte) boo
 		trial := make([]byte, len(packet))
 		copy(trial, packet)
 
-		decrypted, err := peer.Crypto().Decrypt(trial)
-		if err != nil {
+		decrypted, ok := tryDecryptSafe(peer, trial)
+		if !ok {
 			continue
 		}
 
@@ -187,4 +190,19 @@ func (t *TransportHandler) tryRoaming(newAddr netip.AddrPort, packet []byte) boo
 		return true
 	}
 	return false
+}
+
+// tryDecryptSafe attempts decryption under the peer's crypto read lock,
+// preventing the TOCTOU race where crypto could be zeroed concurrently.
+// Used by both the fast path (HandleEstablished) and the roaming path (tryRoaming).
+func tryDecryptSafe(peer *session.Peer, data []byte) ([]byte, bool) {
+	if !peer.CryptoRLock() {
+		return nil, false
+	}
+	defer peer.CryptoRUnlock()
+	result, err := peer.Crypto().Decrypt(data)
+	if err != nil {
+		return nil, false
+	}
+	return result, true
 }

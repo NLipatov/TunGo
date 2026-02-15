@@ -90,16 +90,83 @@ func (h Host) ListenAddrPort(port int, defaultIP string) (netip.AddrPort, error)
 	return normalized.AddrPort(port)
 }
 
+// RouteIP returns an IP address suitable for route setup.
+// If the host is an IP address, it is returned directly.
+// If the host is a domain name, it is resolved via DNS.
 func (h Host) RouteIP() (string, error) {
 	normalized, err := h.normalized()
 	if err != nil {
 		return "", err
 	}
 	ip, ok := normalized.IP()
-	if !ok {
-		return "", fmt.Errorf("host %q is not an IP address", h.String())
+	if ok {
+		return ip.String(), nil
 	}
-	return ip.String(), nil
+	return normalized.resolveFirstAddr(nil)
+}
+
+// RouteIPv4 returns an IPv4 address suitable for route setup.
+// If the host is an IPv4 literal, it is returned directly.
+// If the host is an IPv6 literal, an error is returned.
+// If the host is a domain name, it is resolved and the first IPv4 result is returned.
+func (h Host) RouteIPv4() (string, error) {
+	normalized, err := h.normalized()
+	if err != nil {
+		return "", err
+	}
+	ip, ok := normalized.IP()
+	if ok {
+		if !ip.Unmap().Is4() {
+			return "", fmt.Errorf("host %q is IPv6, expected IPv4", h.String())
+		}
+		return ip.String(), nil
+	}
+	filter := func(addr netip.Addr) bool { return addr.Unmap().Is4() }
+	return normalized.resolveFirstAddr(filter)
+}
+
+// RouteIPv6 returns an IPv6 address suitable for route setup.
+// If the host is an IPv6 literal, it is returned directly.
+// If the host is an IPv4 literal, an error is returned.
+// If the host is a domain name, it is resolved and the first IPv6 result is returned.
+func (h Host) RouteIPv6() (string, error) {
+	normalized, err := h.normalized()
+	if err != nil {
+		return "", err
+	}
+	ip, ok := normalized.IP()
+	if ok {
+		if ip.Unmap().Is4() {
+			return "", fmt.Errorf("host %q is IPv4, expected IPv6", h.String())
+		}
+		return ip.String(), nil
+	}
+	filter := func(addr netip.Addr) bool { return !addr.Unmap().Is4() }
+	return normalized.resolveFirstAddr(filter)
+}
+
+// resolveFirstAddr resolves the domain and returns the first address matching filter.
+// If filter is nil, any address is accepted.
+// Returned addresses are always normalized via Unmap() for consistency with parseHostIP.
+func (h Host) resolveFirstAddr(filter func(netip.Addr) bool) (string, error) {
+	domain, domainOk := h.Domain()
+	if !domainOk {
+		return "", fmt.Errorf("host %q is neither an IP address nor a valid domain", h.String())
+	}
+	addrs, resolveErr := net.LookupHost(domain)
+	if resolveErr != nil || len(addrs) == 0 {
+		return "", fmt.Errorf("failed to resolve host %q: %v", domain, resolveErr)
+	}
+	for _, a := range addrs {
+		ip, err := netip.ParseAddr(a)
+		if err != nil {
+			continue
+		}
+		if filter == nil || filter(ip) {
+			return ip.Unmap().String(), nil
+		}
+	}
+	return "", fmt.Errorf("no matching address family found resolving host %q", h.String())
 }
 
 func (h Host) IP() (netip.Addr, bool) {

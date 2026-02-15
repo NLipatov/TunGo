@@ -2,6 +2,7 @@ package connection
 
 import (
 	"io"
+	"net/netip"
 	"sync"
 )
 
@@ -44,6 +45,17 @@ func (o *DefaultEgress) Close() error {
 		return c.Close()
 	}
 	return nil
+}
+
+// SetAddrPort updates the destination address of the underlying writer,
+// if it supports address updates (e.g. UDP RegistrationAdapter after NAT roaming).
+func (o *DefaultEgress) SetAddrPort(addr netip.AddrPort) {
+	type addrPortSetter interface {
+		SetAddrPort(netip.AddrPort)
+	}
+	if u, ok := o.w.(addrPortSetter); ok {
+		u.SetAddrPort(addr)
+	}
 }
 
 func (o *DefaultEgress) send(plaintext []byte) error {

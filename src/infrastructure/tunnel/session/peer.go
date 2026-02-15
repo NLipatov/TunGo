@@ -2,6 +2,7 @@ package session
 
 import (
 	"net/netip"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -19,6 +20,7 @@ type Peer struct {
 	closed       atomic.Bool
 	lastActivity atomic.Int64 // unix seconds
 	roamedAddr   atomic.Pointer[netip.AddrPort]
+	cryptoMu     sync.RWMutex // protects crypto from concurrent zeroize
 }
 
 func NewPeer(session connection.Session, egress connection.Egress) *Peer {
@@ -71,6 +73,33 @@ func (p *Peer) SetLastActivityForTest(unix int64) {
 // Must not be used in production code.
 func (p *Peer) MarkClosedForTest() {
 	p.closed.Store(true)
+}
+
+// CryptoRLock acquires read lock for crypto operations.
+// Returns false if peer is closed (caller must not use crypto).
+func (p *Peer) CryptoRLock() bool {
+	p.cryptoMu.RLock()
+	if p.closed.Load() {
+		p.cryptoMu.RUnlock()
+		return false
+	}
+	return true
+}
+
+// CryptoRUnlock releases the crypto read lock.
+func (p *Peer) CryptoRUnlock() {
+	p.cryptoMu.RUnlock()
+}
+
+// updateEgressAddr updates the egress writer's destination address after NAT roaming.
+// Called by repository during UpdateExternalAddr.
+func (p *Peer) updateEgressAddr(addr netip.AddrPort) {
+	type addrPortSetter interface {
+		SetAddrPort(netip.AddrPort)
+	}
+	if u, ok := p.egress.(addrPortSetter); ok {
+		u.SetAddrPort(addr)
+	}
 }
 
 // markClosed sets the closed flag. Called by repository during Delete.

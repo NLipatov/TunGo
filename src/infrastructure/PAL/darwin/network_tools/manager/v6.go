@@ -13,12 +13,13 @@ import (
 )
 
 type v6 struct {
-	s       settings.Settings
-	tunDev  tun.Device
-	rawUTUN utun.UTUN
-	ifc     ifconfig.Contract // v6 ifconfig.Contract implementation
-	rt      route.Contract    // v6 route.Contract implementation
-	ifName  string
+	s              settings.Settings
+	tunDev         tun.Device
+	rawUTUN        utun.UTUN
+	ifc            ifconfig.Contract // v6 ifconfig.Contract implementation
+	rt             route.Contract    // v6 route.Contract implementation
+	ifName         string
+	resolvedRouteIP string // cached resolved server IP for consistent teardown
 }
 
 func newV6(
@@ -51,11 +52,12 @@ func (m *v6) CreateDevice() (tun.Device, error) {
 	}
 	m.ifName = name
 
-	routeIP, routeErr := m.s.Host.RouteIP()
+	routeIP, routeErr := m.s.Host.RouteIPv6()
 	if routeErr != nil {
 		_ = m.DisposeDevices()
 		return nil, fmt.Errorf("v6: resolve route for %s: %w", m.s.Host, routeErr)
 	}
+	m.resolvedRouteIP = routeIP
 	if err := m.rt.Get(routeIP); err != nil {
 		_ = m.DisposeDevices()
 		return nil, fmt.Errorf("route to server %s: %w", m.s.Host, err)
@@ -76,13 +78,15 @@ func (m *v6) CreateDevice() (tun.Device, error) {
 
 func (m *v6) DisposeDevices() error {
 	_ = m.rt.DelSplit(m.ifName)
-	if !m.s.Host.IsZero() {
-		_ = m.rt.Del(string(m.s.Host))
+	if m.resolvedRouteIP != "" {
+		_ = m.rt.Del(m.resolvedRouteIP)
 	}
 	if m.tunDev != nil {
-		_ = m.tunDev.Close()
-		m.tunDev = nil
+		_ = m.tunDev.Close() // closes underlying rawUTUN
+	} else if m.rawUTUN != nil {
+		_ = m.rawUTUN.Close() // tunDev never created, close raw directly
 	}
+	m.tunDev = nil
 	m.rawUTUN = nil
 	m.ifName = ""
 	return nil

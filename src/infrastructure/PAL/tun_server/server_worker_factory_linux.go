@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"sync"
 	"tungo/application/network/routing"
 	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/cryptography/chacha20"
@@ -99,7 +100,7 @@ func (s *ServerWorkerFactory) CreateWorker(
 		return s.createTCPWorker(ctx, tun, workerSettings)
 	case settings.UDP:
 		return s.createUDPWorker(ctx, tun, workerSettings)
-	case settings.WS:
+	case settings.WS, settings.WSS:
 		return s.createWSWorker(ctx, tun, workerSettings)
 	default:
 		return nil, fmt.Errorf("protocol %v not supported", workerSettings.Protocol)
@@ -292,5 +293,16 @@ func (s *ServerWorkerFactory) addrPortToListen(
 	host settings.Host,
 	port int,
 ) (netip.AddrPort, error) {
-	return host.ListenAddrPort(port, "::")
+	return host.ListenAddrPort(port, listenFallbackIP())
 }
+
+// listenFallbackIP returns "::" on dual-stack/IPv6-only systems, or "0.0.0.0"
+// when the kernel has IPv6 disabled (e.g. ipv6.disable=1).
+var listenFallbackIP = sync.OnceValue(func() string {
+	ln, err := net.Listen("tcp", "[::]:0")
+	if err != nil {
+		return "0.0.0.0"
+	}
+	_ = ln.Close()
+	return "::"
+})
