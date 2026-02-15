@@ -52,13 +52,13 @@ func (m *ServerTunFactoryMockIP) LinkSetDevMTU(_ string, _ int) error         { 
 func (m *ServerTunFactoryMockIP) AddrAddDev(_, _ string) error                { m.add("addr"); return nil }
 func (m *ServerTunFactoryMockIP) AddrShowDev(_ int, _ string) (string, error) { return "", nil }
 func (m *ServerTunFactoryMockIP) RouteDefault() (string, error)               { m.add("route"); return "eth0", nil }
-func (m *ServerTunFactoryMockIP) RouteAddDefaultDev(_ string) error            { return nil }
-func (m *ServerTunFactoryMockIP) Route6AddDefaultDev(_ string) error           { return nil }
-func (m *ServerTunFactoryMockIP) RouteAddSplitDefaultDev(_ string) error       { return nil }
-func (m *ServerTunFactoryMockIP) Route6AddSplitDefaultDev(_ string) error      { return nil }
-func (m *ServerTunFactoryMockIP) RouteDelSplitDefault(_ string) error          { return nil }
-func (m *ServerTunFactoryMockIP) Route6DelSplitDefault(_ string) error         { return nil }
-func (m *ServerTunFactoryMockIP) RouteGet(_ string) (string, error)            { return "", nil }
+func (m *ServerTunFactoryMockIP) RouteAddDefaultDev(_ string) error           { return nil }
+func (m *ServerTunFactoryMockIP) Route6AddDefaultDev(_ string) error          { return nil }
+func (m *ServerTunFactoryMockIP) RouteAddSplitDefaultDev(_ string) error      { return nil }
+func (m *ServerTunFactoryMockIP) Route6AddSplitDefaultDev(_ string) error     { return nil }
+func (m *ServerTunFactoryMockIP) RouteDelSplitDefault(_ string) error         { return nil }
+func (m *ServerTunFactoryMockIP) Route6DelSplitDefault(_ string) error        { return nil }
+func (m *ServerTunFactoryMockIP) RouteGet(_ string) (string, error)           { return "", nil }
 func (m *ServerTunFactoryMockIP) RouteAddDev(_, _ string) error               { return nil }
 func (m *ServerTunFactoryMockIP) RouteAddViaDev(_, _, _ string) error         { return nil }
 func (m *ServerTunFactoryMockIP) RouteDel(_ string) error                     { return nil }
@@ -138,14 +138,14 @@ func (m *ServerTunFactoryMockIPT) DisableForwardingTunToTun(_ string) error {
 	m.add("fwd_tt_off")
 	return nil
 }
-func (m *ServerTunFactoryMockIPT) Enable6DevMasquerade(_ string) error               { return nil }
-func (m *ServerTunFactoryMockIPT) Disable6DevMasquerade(_ string) error              { return nil }
-func (m *ServerTunFactoryMockIPT) Enable6ForwardingFromTunToDev(_, _ string) error    { return nil }
-func (m *ServerTunFactoryMockIPT) Disable6ForwardingFromTunToDev(_, _ string) error   { return nil }
-func (m *ServerTunFactoryMockIPT) Enable6ForwardingFromDevToTun(_, _ string) error    { return nil }
-func (m *ServerTunFactoryMockIPT) Disable6ForwardingFromDevToTun(_, _ string) error   { return nil }
-func (m *ServerTunFactoryMockIPT) Enable6ForwardingTunToTun(_ string) error           { return nil }
-func (m *ServerTunFactoryMockIPT) Disable6ForwardingTunToTun(_ string) error          { return nil }
+func (m *ServerTunFactoryMockIPT) Enable6DevMasquerade(_ string) error              { return nil }
+func (m *ServerTunFactoryMockIPT) Disable6DevMasquerade(_ string) error             { return nil }
+func (m *ServerTunFactoryMockIPT) Enable6ForwardingFromTunToDev(_, _ string) error  { return nil }
+func (m *ServerTunFactoryMockIPT) Disable6ForwardingFromTunToDev(_, _ string) error { return nil }
+func (m *ServerTunFactoryMockIPT) Enable6ForwardingFromDevToTun(_, _ string) error  { return nil }
+func (m *ServerTunFactoryMockIPT) Disable6ForwardingFromDevToTun(_, _ string) error { return nil }
+func (m *ServerTunFactoryMockIPT) Enable6ForwardingTunToTun(_ string) error         { return nil }
+func (m *ServerTunFactoryMockIPT) Disable6ForwardingTunToTun(_ string) error        { return nil }
 
 // Error injector for iptables paths.
 type ServerTunFactoryMockIPTErr struct {
@@ -409,6 +409,7 @@ var baseCfg = settings.Settings{
 	Addressing: settings.Addressing{
 		TunName:    "tun0",
 		IPv4Subnet: netip.MustParsePrefix("10.0.0.0/30"),
+		IPv4:       netip.MustParseAddr("10.0.0.1"),
 	},
 	MTU: settings.SafeMTU,
 }
@@ -418,6 +419,8 @@ var baseCfgIPv6 = settings.Settings{
 		TunName:    "tun0",
 		IPv4Subnet: netip.MustParsePrefix("10.0.0.0/30"),
 		IPv6Subnet: netip.MustParsePrefix("fd00::/64"),
+		IPv4:       netip.MustParseAddr("10.0.0.1"),
+		IPv6:       netip.MustParseAddr("fd00::1"),
 	},
 	MTU: settings.SafeMTU,
 }
@@ -439,16 +442,16 @@ func (m *ServerTunFactoryMockIPTBenign) EnableForwardingFromDevToTun(_, _ string
 func (m *ServerTunFactoryMockIPTBenign) DisableForwardingFromDevToTun(_, _ string) error {
 	return errors.New("rule does not exist") // benign
 }
-func (m *ServerTunFactoryMockIPTBenign) EnableForwardingTunToTun(_ string) error  { return nil }
-func (m *ServerTunFactoryMockIPTBenign) DisableForwardingTunToTun(_ string) error { return nil }
-func (m *ServerTunFactoryMockIPTBenign) Enable6DevMasquerade(_ string) error               { return nil }
-func (m *ServerTunFactoryMockIPTBenign) Disable6DevMasquerade(_ string) error              { return nil }
-func (m *ServerTunFactoryMockIPTBenign) Enable6ForwardingFromTunToDev(_, _ string) error    { return nil }
-func (m *ServerTunFactoryMockIPTBenign) Disable6ForwardingFromTunToDev(_, _ string) error   { return nil }
-func (m *ServerTunFactoryMockIPTBenign) Enable6ForwardingFromDevToTun(_, _ string) error    { return nil }
-func (m *ServerTunFactoryMockIPTBenign) Disable6ForwardingFromDevToTun(_, _ string) error   { return nil }
-func (m *ServerTunFactoryMockIPTBenign) Enable6ForwardingTunToTun(_ string) error           { return nil }
-func (m *ServerTunFactoryMockIPTBenign) Disable6ForwardingTunToTun(_ string) error          { return nil }
+func (m *ServerTunFactoryMockIPTBenign) EnableForwardingTunToTun(_ string) error          { return nil }
+func (m *ServerTunFactoryMockIPTBenign) DisableForwardingTunToTun(_ string) error         { return nil }
+func (m *ServerTunFactoryMockIPTBenign) Enable6DevMasquerade(_ string) error              { return nil }
+func (m *ServerTunFactoryMockIPTBenign) Disable6DevMasquerade(_ string) error             { return nil }
+func (m *ServerTunFactoryMockIPTBenign) Enable6ForwardingFromTunToDev(_, _ string) error  { return nil }
+func (m *ServerTunFactoryMockIPTBenign) Disable6ForwardingFromTunToDev(_, _ string) error { return nil }
+func (m *ServerTunFactoryMockIPTBenign) Enable6ForwardingFromDevToTun(_, _ string) error  { return nil }
+func (m *ServerTunFactoryMockIPTBenign) Disable6ForwardingFromDevToTun(_, _ string) error { return nil }
+func (m *ServerTunFactoryMockIPTBenign) Enable6ForwardingTunToTun(_ string) error         { return nil }
+func (m *ServerTunFactoryMockIPTBenign) Disable6ForwardingTunToTun(_ string) error        { return nil }
 
 // ServerTunFactoryMockIPTAlwaysErr simulates non-benign iptables errors that are logged but not fatal.
 type ServerTunFactoryMockIPTAlwaysErr struct{}
@@ -593,7 +596,7 @@ func TestCreateTunDevice_InvalidCIDR_ErrorsFromAllocator(t *testing.T) {
 	bad := baseCfg
 	bad.IPv4Subnet = netip.Prefix{}
 	_, err := f.CreateDevice(bad)
-	if err == nil || !strings.Contains(err.Error(), "could not allocate server IP") {
+	if err == nil || !strings.Contains(err.Error(), "could not derive server IPv4 CIDR") {
 		t.Fatalf("expected allocator error, got %v", err)
 	}
 }
@@ -968,6 +971,7 @@ func TestEnableForwarding_IPv6WritesWhenDisabled_Succeeds(t *testing.T) {
 func TestCreateTunDevice_WithIPv6Subnet_Success(t *testing.T) {
 	cfg := baseCfg
 	cfg.IPv6Subnet = netip.MustParsePrefix("fd00::/64")
+	cfg.IPv6 = netip.MustParseAddr("fd00::1")
 	f := newFactory(
 		&ServerTunFactoryMockIP{},
 		&ServerTunFactoryMockIPT{},
@@ -985,6 +989,7 @@ func TestCreateTunDevice_WithIPv6Subnet_Success(t *testing.T) {
 func TestCreateTunDevice_WithIPv6Subnet_AddrAddError(t *testing.T) {
 	cfg := baseCfg
 	cfg.IPv6Subnet = netip.MustParsePrefix("fd00::/64")
+	cfg.IPv6 = netip.MustParseAddr("fd00::1")
 	ipMock := &ServerTunFactoryMockIPErrNthAddr{
 		ServerTunFactoryMockIP: &ServerTunFactoryMockIP{},
 		failOnCall:             2, // second AddrAddDev call (IPv6)
