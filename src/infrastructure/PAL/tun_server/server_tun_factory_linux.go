@@ -98,8 +98,20 @@ func (s ServerTunFactory) DisposeDevices(connSettings settings.Settings) error {
 				log.Printf("disabling IPv6 forwarding to %s <- %s: %v", ifName, extIface, err)
 			}
 		}
+
+		if err := s.iptables.DisableDevMasquerade(extIface); err != nil {
+			if !s.isBenignNetfilterError(err) {
+				log.Printf("disabling masquerade %s: %v", extIface, err)
+			}
+		}
+
+		if err := s.iptables.Disable6DevMasquerade(extIface); err != nil {
+			if !s.isBenignNetfilterError(err) {
+				log.Printf("disabling IPv6 masquerade %s: %v", extIface, err)
+			}
+		}
 	} else {
-		log.Printf("skipping iptables forwarding disable for %s: external interface unknown", ifName)
+		log.Printf("skipping iptables cleanup for %s: external interface unknown", ifName)
 	}
 
 	if err := s.iptables.DisableForwardingTunToTun(ifName); err != nil {
@@ -111,18 +123,6 @@ func (s ServerTunFactory) DisposeDevices(connSettings settings.Settings) error {
 	if err := s.iptables.Disable6ForwardingTunToTun(ifName); err != nil {
 		if !s.isBenignNetfilterError(err) {
 			log.Printf("disabling IPv6 client-to-client forwarding for %s: %v", ifName, err)
-		}
-	}
-
-	if err := s.iptables.DisableDevMasquerade(ifName); err != nil {
-		if !s.isBenignNetfilterError(err) {
-			log.Printf("disabling masquerade %s: %v", ifName, err)
-		}
-	}
-
-	if err := s.iptables.Disable6DevMasquerade(ifName); err != nil {
-		if !s.isBenignNetfilterError(err) {
-			log.Printf("disabling IPv6 masquerade %s: %v", ifName, err)
 		}
 	}
 
@@ -280,19 +280,19 @@ func (s ServerTunFactory) Unconfigure(tunFile *os.File) error {
 		log.Printf("failed to determing tunnel ifName: %s\n", err)
 	}
 
-	err = s.iptables.DisableDevMasquerade(tunName)
+	defaultIfName, defaultIfNameErr := s.ip.RouteDefault()
+	if defaultIfNameErr != nil {
+		return fmt.Errorf("failed to resolve default interface: %v", defaultIfNameErr)
+	}
+
+	err = s.iptables.DisableDevMasquerade(defaultIfName)
 	if err != nil {
 		log.Printf("failed to disbale NAT: %s\n", err)
 	}
 
-	err = s.iptables.Disable6DevMasquerade(tunName)
+	err = s.iptables.Disable6DevMasquerade(defaultIfName)
 	if err != nil {
 		log.Printf("failed to disable IPv6 NAT: %s\n", err)
-	}
-
-	defaultIfName, defaultIfNameErr := s.ip.RouteDefault()
-	if defaultIfNameErr != nil {
-		return fmt.Errorf("failed to resolve default interface: %v", defaultIfNameErr)
 	}
 
 	if tunName != "" {
