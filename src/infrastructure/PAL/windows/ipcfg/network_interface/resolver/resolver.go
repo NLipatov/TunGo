@@ -4,6 +4,7 @@ package resolver
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -34,6 +35,15 @@ func (r *resolver) NetworkInterfaceByName(ifName string) (winipcfg.LUID, error) 
 	addrs, err := winipcfg.GetAdaptersAddresses(winipcfg.AddressFamily(windows.AF_UNSPEC), 0)
 	if err != nil {
 		return 0, err
+	}
+	if index, parseErr := strconv.ParseUint(want, 10, 32); parseErr == nil && index > 0 {
+		for _, a := range addrs {
+			if ifRow, _ := a.LUID.Interface(); ifRow != nil && ifRow.InterfaceIndex == uint32(index) {
+				r.putCached(ifName, a.LUID)
+				return a.LUID, nil
+			}
+		}
+		return 0, fmt.Errorf("interface index %d not found", index)
 	}
 
 	type cand struct {

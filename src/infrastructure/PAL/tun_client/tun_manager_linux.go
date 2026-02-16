@@ -3,6 +3,7 @@ package tun_client
 import (
 	"fmt"
 	"log"
+	"net/netip"
 	"strings"
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/configuration/client"
@@ -21,6 +22,7 @@ type PlatformTunManager struct {
 	ioctl         ioctl.Contract
 	mss           mssclamp.Contract
 	wrapper       tun.Wrapper
+	routeEndpoint netip.AddrPort
 }
 
 func NewPlatformTunManager(
@@ -53,6 +55,10 @@ func (t *PlatformTunManager) CreateDevice() (tun.Device, error) {
 	}
 
 	return t.wrapper.Wrap(tunFile)
+}
+
+func (t *PlatformTunManager) SetRouteEndpoint(addr netip.AddrPort) {
+	t.routeEndpoint = addr
 }
 
 // configureTUN Configures client's TUN device (creates the TUN device, assigns an IP to it, etc)
@@ -91,9 +97,21 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.Settings) error 
 		fmt.Printf("assigned IPv6 %s to interface %s\n", cidr6, connSettings.TunName)
 	}
 
-	serverIP, hostErr := connSettings.Server.RouteIP()
-	if hostErr != nil {
-		return fmt.Errorf("failed to resolve route target host: %w", hostErr)
+	serverIP := ""
+	if t.routeEndpoint.IsValid() {
+		ip := t.routeEndpoint.Addr()
+		if ip.Unmap().Is4() {
+			serverIP = ip.Unmap().String()
+		} else {
+			serverIP = ip.String()
+		}
+	}
+	if serverIP == "" {
+		var hostErr error
+		serverIP, hostErr = connSettings.Server.RouteIP()
+		if hostErr != nil {
+			return fmt.Errorf("failed to resolve route target host: %w", hostErr)
+		}
 	}
 
 	// Get routing information
@@ -127,9 +145,16 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.Settings) error 
 	fmt.Printf("added route to server %s via %s dev %s\n", serverIP, viaGateway, devInterface)
 
 	// Add route for IPv6 server address (if available)
-	if connSettings.Server.HasIPv6() {
-		serverIPv6, ipv6HostErr := connSettings.Server.RouteIPv6()
-		if ipv6HostErr == nil {
+	if connSettings.Server.HasIPv6() || (t.routeEndpoint.IsValid() && !t.routeEndpoint.Addr().Unmap().Is4()) {
+		serverIPv6 := ""
+		if t.routeEndpoint.IsValid() && !t.routeEndpoint.Addr().Unmap().Is4() {
+			serverIPv6 = t.routeEndpoint.Addr().String()
+		}
+		if serverIPv6 == "" {
+			var ipv6HostErr error
+			serverIPv6, ipv6HostErr = connSettings.Server.RouteIPv6()
+		}
+		if serverIPv6 != "" {
 			routeInfo6, routeErr6 := t.ip.RouteGet(serverIPv6)
 			if routeErr6 == nil {
 				var via6, dev6 string

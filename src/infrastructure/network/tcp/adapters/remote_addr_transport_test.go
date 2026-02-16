@@ -19,6 +19,9 @@ func TestRemoteAddrTransport_RemoteAddrPort(t *testing.T) {
 	if got := rat.RemoteAddrPort(); got != addr {
 		t.Fatalf("RemoteAddrPort() = %v, want %v", got, addr)
 	}
+	if got := rat.Unwrap(); got != inner {
+		t.Fatalf("Unwrap() = %T, want %T", got, inner)
+	}
 }
 
 func TestRemoteAddrTransport_DelegatesReadWriteClose(t *testing.T) {

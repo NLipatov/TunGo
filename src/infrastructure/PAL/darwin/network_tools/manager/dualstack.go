@@ -4,6 +4,8 @@ package manager
 
 import (
 	"fmt"
+	"net/netip"
+	"strings"
 
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/darwin/network_tools/ifconfig"
@@ -23,8 +25,13 @@ type dualStack struct {
 	rtc4             route.Contract
 	rtc6             route.Contract
 	ifName           string
+	routeEndpoint    netip.AddrPort
 	resolvedRouteIP4 string // cached resolved IPv4 server IP for consistent teardown
 	resolvedRouteIP6 string // cached resolved IPv6 server IP for consistent teardown
+}
+
+func (m *dualStack) SetRouteEndpoint(addr netip.AddrPort) {
+	m.routeEndpoint = addr
 }
 
 func newDualStack(
@@ -62,29 +69,29 @@ func (m *dualStack) CreateDevice() (tun.Device, error) {
 	m.ifName = name
 
 	// Pin route to IPv4 server.
-	routeIP4, err := m.s.Server.RouteIPv4()
-	if err != nil {
+	routeIP4, route4Err := m.resolveRouteIPv4()
+	if route4Err == nil {
+		m.resolvedRouteIP4 = routeIP4
+		if err := m.rtc4.Get(routeIP4); err != nil {
+			_ = m.DisposeDevices()
+			return nil, fmt.Errorf("dualstack: pin v4 route to %s: %w", m.s.Server, err)
+		}
+	} else if !shouldSkipDarwinIPv4Route(route4Err) {
 		_ = m.DisposeDevices()
-		return nil, fmt.Errorf("dualstack: resolve v4 route for %s: %w", m.s.Server, err)
-	}
-	m.resolvedRouteIP4 = routeIP4
-	if err := m.rtc4.Get(routeIP4); err != nil {
-		_ = m.DisposeDevices()
-		return nil, fmt.Errorf("dualstack: pin v4 route to %s: %w", m.s.Server, err)
+		return nil, fmt.Errorf("dualstack: resolve v4 route for %s: %w", m.s.Server, route4Err)
 	}
 
 	// Pin route to IPv6 server (if configured).
-	if m.s.Server.HasIPv6() {
-		routeIP6, err := m.s.Server.RouteIPv6()
-		if err != nil {
-			_ = m.DisposeDevices()
-			return nil, fmt.Errorf("dualstack: resolve v6 route for %s: %w", m.s.Server, err)
-		}
+	routeIP6, route6Err := m.resolveRouteIPv6()
+	if route6Err == nil {
 		m.resolvedRouteIP6 = routeIP6
 		if err := m.rtc6.Get(routeIP6); err != nil {
 			_ = m.DisposeDevices()
 			return nil, fmt.Errorf("dualstack: pin v6 route to %s: %w", m.s.Server, err)
 		}
+	} else if !shouldSkipDarwinIPv6Route(route6Err) {
+		_ = m.DisposeDevices()
+		return nil, fmt.Errorf("dualstack: resolve v6 route for %s: %w", m.s.Server, route6Err)
 	}
 
 	// Assign IPv4 address.
@@ -163,4 +170,44 @@ func (m *dualStack) effectiveMTU() int {
 		mtu = settings.MinimumIPv6MTU
 	}
 	return mtu
+}
+
+func (m *dualStack) resolveRouteIPv4() (string, error) {
+	if m.routeEndpoint.IsValid() {
+		ip := m.routeEndpoint.Addr()
+		if ip.Unmap().Is4() {
+			return ip.Unmap().String(), nil
+		}
+		return "", fmt.Errorf("route endpoint %s is IPv6, expected IPv4", ip)
+	}
+	return m.s.Server.RouteIPv4()
+}
+
+func (m *dualStack) resolveRouteIPv6() (string, error) {
+	if m.routeEndpoint.IsValid() {
+		ip := m.routeEndpoint.Addr()
+		if !ip.Unmap().Is4() {
+			return ip.String(), nil
+		}
+		return "", fmt.Errorf("route endpoint %s is IPv4, expected IPv6", ip)
+	}
+	return m.s.Server.RouteIPv6()
+}
+
+func shouldSkipDarwinIPv4Route(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "expected IPv4") ||
+		strings.Contains(msg, "no matching address family found")
+}
+
+func shouldSkipDarwinIPv6Route(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "expected IPv6") ||
+		strings.Contains(msg, "no matching address family found")
 }

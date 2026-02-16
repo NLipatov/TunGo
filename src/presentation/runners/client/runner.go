@@ -35,7 +35,13 @@ func (r *Runner) Run(ctx context.Context) {
 			return
 		default:
 			log.Printf("session error: %v, reconnecting…", err)
-			time.Sleep(500 * time.Millisecond)
+			timer := time.NewTimer(500 * time.Millisecond)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+			}
 		}
 	}
 }

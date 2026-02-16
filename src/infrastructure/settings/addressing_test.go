@@ -2,6 +2,7 @@ package settings
 
 import (
 	"net/netip"
+	"reflect"
 	"testing"
 )
 
@@ -128,5 +129,38 @@ func TestWithIPv6Subnet(t *testing.T) {
 	}
 	if a.IPv6Subnet.IsValid() {
 		t.Fatal("original should not be mutated")
+	}
+}
+
+func TestDNSResolvers_Defaults(t *testing.T) {
+	a := Addressing{}
+
+	if !reflect.DeepEqual(a.DNSv4Resolvers(), DefaultClientDNSv4Resolvers) {
+		t.Fatalf("unexpected default DNSv4 resolvers: got %v want %v", a.DNSv4Resolvers(), DefaultClientDNSv4Resolvers)
+	}
+	if !reflect.DeepEqual(a.DNSv6Resolvers(), DefaultClientDNSv6Resolvers) {
+		t.Fatalf("unexpected default DNSv6 resolvers: got %v want %v", a.DNSv6Resolvers(), DefaultClientDNSv6Resolvers)
+	}
+}
+
+func TestDNSResolvers_CustomAndCopied(t *testing.T) {
+	a := Addressing{
+		DNSv4: []string{"9.9.9.9"},
+		DNSv6: []string{"2620:fe::9"},
+	}
+
+	got4 := a.DNSv4Resolvers()
+	got6 := a.DNSv6Resolvers()
+	if !reflect.DeepEqual(got4, []string{"9.9.9.9"}) {
+		t.Fatalf("unexpected DNSv4 resolvers: %v", got4)
+	}
+	if !reflect.DeepEqual(got6, []string{"2620:fe::9"}) {
+		t.Fatalf("unexpected DNSv6 resolvers: %v", got6)
+	}
+
+	got4[0] = "8.8.8.8"
+	got6[0] = "2001:4860:4860::8888"
+	if a.DNSv4[0] != "9.9.9.9" || a.DNSv6[0] != "2620:fe::9" {
+		t.Fatal("resolver methods must return a copy, not mutate config")
 	}
 }

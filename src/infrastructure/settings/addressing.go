@@ -15,6 +15,8 @@ type Addressing struct {
 	IPv6Subnet netip.Prefix `json:"IPv6Subnet,omitzero"`
 	Server     Host         `json:"Server,omitzero"`
 	Port       int          `json:"Port,omitzero"`
+	DNSv4      []string     `json:"DNSv4,omitempty"`
+	DNSv6      []string     `json:"DNSv6,omitempty"`
 
 	// Derived at runtime — not serialized.
 	IPv4 netip.Addr `json:"-"`
@@ -61,8 +63,24 @@ func (a Addressing) IsZero() bool {
 		!a.IPv6Subnet.IsValid() &&
 		a.Server.IsZero() &&
 		a.Port == 0 &&
+		len(a.DNSv4) == 0 &&
+		len(a.DNSv6) == 0 &&
 		!a.IPv4.IsValid() &&
 		!a.IPv6.IsValid()
+}
+
+func (a Addressing) DNSv4Resolvers() []string {
+	if len(a.DNSv4) == 0 {
+		return append([]string(nil), DefaultClientDNSv4Resolvers...)
+	}
+	return append([]string(nil), a.DNSv4...)
+}
+
+func (a Addressing) DNSv6Resolvers() []string {
+	if len(a.DNSv6) == 0 {
+		return append([]string(nil), DefaultClientDNSv6Resolvers...)
+	}
+	return append([]string(nil), a.DNSv6...)
 }
 
 // IPv4CIDR returns the IPv4 address combined with the subnet prefix length, e.g. "10.0.0.2/24".

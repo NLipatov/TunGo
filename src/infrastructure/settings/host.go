@@ -1,6 +1,7 @@
 package settings
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -15,6 +16,10 @@ type Host struct {
 	domain string
 	ipv4   netip.Addr
 	ipv6   netip.Addr
+}
+
+var lookupHostContext = func(ctx context.Context, domain string) ([]string, error) {
+	return net.DefaultResolver.LookupHost(ctx, domain)
 }
 
 // IPHost creates a Host from a string that must be a valid IP address.
@@ -194,16 +199,26 @@ func (h Host) ListenAddrPort(port int, defaultIP string) (netip.AddrPort, error)
 // If the host has an IP address, it is returned directly.
 // If the host is a domain name, it is resolved via DNS.
 func (h Host) RouteIP() (string, error) {
+	return h.RouteIPContext(context.Background())
+}
+
+// RouteIPContext returns an IP address suitable for route setup using context-bounded DNS resolution.
+func (h Host) RouteIPContext(ctx context.Context) (string, error) {
 	if ip, ok := h.IP(); ok {
 		return ip.String(), nil
 	}
-	return h.resolveFirstAddr(nil)
+	return h.resolveFirstAddr(ctx, nil)
 }
 
 // RouteIPv4 returns an IPv4 address suitable for route setup.
 // If the host has an ipv4 field, it is returned directly.
 // If the host is a domain name, it is resolved and the first IPv4 result is returned.
 func (h Host) RouteIPv4() (string, error) {
+	return h.RouteIPv4Context(context.Background())
+}
+
+// RouteIPv4Context returns an IPv4 address suitable for route setup using context-bounded DNS resolution.
+func (h Host) RouteIPv4Context(ctx context.Context) (string, error) {
 	if h.ipv4.IsValid() {
 		return h.ipv4.String(), nil
 	}
@@ -211,13 +226,18 @@ func (h Host) RouteIPv4() (string, error) {
 		return "", fmt.Errorf("host %q is IPv6, expected IPv4", h.String())
 	}
 	filter := func(addr netip.Addr) bool { return addr.Unmap().Is4() }
-	return h.resolveFirstAddr(filter)
+	return h.resolveFirstAddr(ctx, filter)
 }
 
 // RouteIPv6 returns an IPv6 address suitable for route setup.
 // If the host has an ipv6 field, it is returned directly.
 // If the host is a domain name, it is resolved and the first IPv6 result is returned.
 func (h Host) RouteIPv6() (string, error) {
+	return h.RouteIPv6Context(context.Background())
+}
+
+// RouteIPv6Context returns an IPv6 address suitable for route setup using context-bounded DNS resolution.
+func (h Host) RouteIPv6Context(ctx context.Context) (string, error) {
 	if h.ipv6.IsValid() {
 		return h.ipv6.String(), nil
 	}
@@ -225,18 +245,21 @@ func (h Host) RouteIPv6() (string, error) {
 		return "", fmt.Errorf("host %q is IPv4, expected IPv6", h.String())
 	}
 	filter := func(addr netip.Addr) bool { return !addr.Unmap().Is4() }
-	return h.resolveFirstAddr(filter)
+	return h.resolveFirstAddr(ctx, filter)
 }
 
 // resolveFirstAddr resolves the domain and returns the first address matching filter.
 // If filter is nil, any address is accepted.
 // Returned addresses are always normalized via Unmap() for consistency with parseHostIP.
-func (h Host) resolveFirstAddr(filter func(netip.Addr) bool) (string, error) {
+func (h Host) resolveFirstAddr(ctx context.Context, filter func(netip.Addr) bool) (string, error) {
 	domain, domainOk := h.Domain()
 	if !domainOk {
 		return "", fmt.Errorf("host %q is neither an IP address nor a valid domain", h.String())
 	}
-	addrs, resolveErr := net.LookupHost(domain)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	addrs, resolveErr := lookupHostContext(ctx, domain)
 	if resolveErr != nil || len(addrs) == 0 {
 		return "", fmt.Errorf("failed to resolve host %q: %v", domain, resolveErr)
 	}

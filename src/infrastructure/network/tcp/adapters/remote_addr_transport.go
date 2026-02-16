@@ -21,3 +21,9 @@ func NewRemoteAddrTransport(t connection.Transport, addr netip.AddrPort) *Remote
 func (r *RemoteAddrTransport) RemoteAddrPort() netip.AddrPort {
 	return r.addr
 }
+
+// Unwrap exposes the wrapped transport for call sites that need concrete
+// capabilities (for example, extracting *net.UDPConn from decorator chains).
+func (r *RemoteAddrTransport) Unwrap() connection.Transport {
+	return r.Transport
+}

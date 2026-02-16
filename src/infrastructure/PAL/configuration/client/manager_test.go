@@ -82,6 +82,7 @@ func TestManagerConfigurationSuccess(t *testing.T) {
 		ClientID: 1,
 		TCPSettings: settings.Settings{
 			Addressing: settings.Addressing{
+				TunName:    "tun0",
 				Server:     host,
 				Port:       8080,
 				IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24"),

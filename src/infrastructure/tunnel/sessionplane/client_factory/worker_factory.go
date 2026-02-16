@@ -34,8 +34,12 @@ func (w *WorkerFactory) CreateWorker(
 
 	switch w.conf.Protocol {
 	case settings.UDP:
+		udpConn, err := unwrapUDPConn(conn)
+		if err != nil {
+			return nil, err
+		}
 		deadline := time.Second
-		transport := adapters.NewClientUDPAdapter(conn.(*net.UDPConn), deadline, deadline)
+		transport := adapters.NewClientUDPAdapter(udpConn, deadline, deadline)
 		egress := connection.NewDefaultEgress(transport, crypto)
 		// tunHandler reads from tun and writes to transport
 		tunHandler := udp_chacha20.NewTunHandler(
@@ -63,6 +67,25 @@ func (w *WorkerFactory) CreateWorker(
 	default:
 		return nil, fmt.Errorf("unsupported protocol")
 	}
+}
+
+func unwrapUDPConn(transport connection.Transport) (*net.UDPConn, error) {
+	current := transport
+	for i := 0; i < 8; i++ {
+		if udpConn, ok := current.(*net.UDPConn); ok {
+			return udpConn, nil
+		}
+		unwrapper, ok := current.(interface{ Unwrap() connection.Transport })
+		if !ok {
+			break
+		}
+		next := unwrapper.Unwrap()
+		if next == nil || next == current {
+			break
+		}
+		current = next
+	}
+	return nil, fmt.Errorf("udp transport must wrap *net.UDPConn, got %T", transport)
 }
 
 func (w *WorkerFactory) allowedSources() map[netip.Addr]struct{} {

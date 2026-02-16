@@ -4,6 +4,7 @@ package manager
 
 import (
 	"fmt"
+	"net/netip"
 
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/darwin/network_tools/ifconfig"
@@ -13,13 +14,18 @@ import (
 )
 
 type v6 struct {
-	s              settings.Settings
-	tunDev         tun.Device
-	rawUTUN        utun.UTUN
-	ifc            ifconfig.Contract // v6 ifconfig.Contract implementation
-	rt             route.Contract    // v6 route.Contract implementation
-	ifName         string
+	s               settings.Settings
+	tunDev          tun.Device
+	rawUTUN         utun.UTUN
+	ifc             ifconfig.Contract // v6 ifconfig.Contract implementation
+	rt              route.Contract    // v6 route.Contract implementation
+	ifName          string
+	routeEndpoint   netip.AddrPort
 	resolvedRouteIP string // cached resolved server IP for consistent teardown
+}
+
+func (m *v6) SetRouteEndpoint(addr netip.AddrPort) {
+	m.routeEndpoint = addr
 }
 
 func newV6(
@@ -52,8 +58,12 @@ func (m *v6) CreateDevice() (tun.Device, error) {
 	}
 	m.ifName = name
 
-	routeIP, routeErr := m.s.Server.RouteIPv6()
+	routeIP, routeErr := m.resolveRouteIPv6()
 	if routeErr != nil {
+		if m.routeEndpoint.IsValid() && m.routeEndpoint.Addr().Unmap().Is4() {
+			m.tunDev = utun.NewDarwinTunDevice(raw)
+			return m.tunDev, nil
+		}
 		_ = m.DisposeDevices()
 		return nil, fmt.Errorf("v6: resolve route for %s: %w", m.s.Server, routeErr)
 	}
@@ -125,4 +135,15 @@ func (m *v6) effectiveMTU() int {
 		mtu = 1280
 	}
 	return mtu
+}
+
+func (m *v6) resolveRouteIPv6() (string, error) {
+	if m.routeEndpoint.IsValid() {
+		ip := m.routeEndpoint.Addr()
+		if !ip.Unmap().Is4() {
+			return ip.String(), nil
+		}
+		return "", fmt.Errorf("route endpoint %s is IPv4, expected IPv6", ip)
+	}
+	return m.s.Server.RouteIPv6()
 }

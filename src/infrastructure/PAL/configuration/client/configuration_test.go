@@ -1,6 +1,8 @@
 package client
 
 import (
+	"net/netip"
+	"reflect"
 	"testing"
 	"tungo/infrastructure/settings"
 )
@@ -64,9 +66,36 @@ func TestConfiguration_ActiveSettings(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 
-			if got != tt.want {
+			if !reflect.DeepEqual(got, tt.want) {
 				t.Fatalf("unexpected result: got %+v, want %+v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestConfiguration_ResolveActive_SkipsInactiveBrokenSettings(t *testing.T) {
+	cfg := Configuration{
+		ClientID: 2,
+		Protocol: settings.UDP,
+		UDPSettings: settings.Settings{
+			Addressing: settings.Addressing{
+				IPv4Subnet: netip.MustParsePrefix("10.0.1.0/24"),
+			},
+			Protocol: settings.UDP,
+		},
+		TCPSettings: settings.Settings{
+			Addressing: settings.Addressing{
+				// Deliberately tiny subnet to trigger client allocation error if resolved.
+				IPv4Subnet: netip.MustParsePrefix("10.0.2.1/32"),
+			},
+			Protocol: settings.TCP,
+		},
+	}
+
+	if err := cfg.ResolveActive(); err != nil {
+		t.Fatalf("ResolveActive should ignore inactive broken settings, got %v", err)
+	}
+	if !cfg.UDPSettings.IPv4.IsValid() {
+		t.Fatal("expected active UDP IPv4 to be derived")
 	}
 }

@@ -30,6 +30,13 @@ func (f *Factory) Create() (tun.ClientManager, error) {
 	has4 := f.connectionSettings.IPv4.IsValid() && !f.connectionSettings.IPv4.IsUnspecified() && f.connectionSettings.IPv4.Unmap().Is4()
 	has6 := f.connectionSettings.IPv6.IsValid() && !f.connectionSettings.IPv6.IsUnspecified() && !f.connectionSettings.IPv6.Unmap().Is4()
 
+	if has4 && has6 {
+		return newDualStackManager(
+			f.connectionSettings,
+			f.netConfigFactory.NewV4(),
+			f.netConfigFactory.NewV6(),
+		), nil
+	}
 	if has4 {
 		return newV4Manager(
 			f.connectionSettings,

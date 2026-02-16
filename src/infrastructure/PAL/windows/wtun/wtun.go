@@ -295,8 +295,9 @@ func (t *TUN) Close() error {
 	oldRef := t.cur.Swap(nil)
 	if oldRef != nil {
 		oldRef.drainWait.Store(1)
+		// Arm wait event before checking inflight to avoid losing a wakeup.
+		_ = windows.ResetEvent(oldRef.zeroEvent)
 		if oldRef.inflight.Load() != 0 {
-			_ = windows.ResetEvent(oldRef.zeroEvent)
 			_, _ = windows.WaitForSingleObject(oldRef.zeroEvent, windows.INFINITE)
 		}
 		oldRef.s.End()

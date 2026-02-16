@@ -8,7 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"tungo/application/network/connection"
 	"tungo/infrastructure/PAL/configuration/client"
+	"tungo/infrastructure/network/tcp/adapters"
 	"tungo/infrastructure/settings"
 )
 
@@ -27,6 +29,14 @@ type WorkerFactoryTransportMock struct{}
 func (r *WorkerFactoryTransportMock) Write(b []byte) (int, error) { return len(b), nil }
 func (r *WorkerFactoryTransportMock) Read(_ []byte) (int, error)  { return 0, io.EOF }
 func (r *WorkerFactoryTransportMock) Close() error                { return nil }
+
+type WorkerFactoryWrappedTransportMock struct {
+	connection.Transport
+}
+
+func (r *WorkerFactoryWrappedTransportMock) Unwrap() connection.Transport {
+	return r.Transport
+}
 
 // WorkerFactoryCryptoMock implements connection.Crypto (simple identity).
 type WorkerFactoryCryptoMock struct{}
@@ -113,7 +123,6 @@ func TestWorkerFactory_CreateWorker_WS(t *testing.T) {
 }
 
 func TestWorkerFactory_CreateWorker_UDP(t *testing.T) {
-	// UDP path expects conn to be *net.UDPConn (code does conn.(*net.UDPConn)).
 	// Create a real UDPConn bound to localhost for the duration of test.
 	laddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0}
 	udpConn, err := net.ListenUDP("udp", laddr)
@@ -141,6 +150,55 @@ func TestWorkerFactory_CreateWorker_UDP(t *testing.T) {
 	}
 	if worker == nil {
 		t.Fatalf("expected non-nil worker for UDP")
+	}
+}
+
+func TestWorkerFactory_CreateWorker_UDP_WithWrappedTransport(t *testing.T) {
+	laddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0}
+	udpConn, err := net.ListenUDP("udp", laddr)
+	if err != nil {
+		t.Fatalf("failed to create UDP listener for test: %v", err)
+	}
+	defer func(udpConn *net.UDPConn) {
+		_ = udpConn.Close()
+	}(udpConn)
+
+	cfg := client.Configuration{
+		Protocol: settings.UDP,
+	}
+	wf := NewWorkerFactory(cfg)
+
+	wrapped := adapters.NewRemoteAddrTransport(udpConn, netip.MustParseAddrPort("127.0.0.1:9999"))
+	tun := &WorkerFactoryTunMock{}
+	crypto := &WorkerFactoryCryptoMock{}
+
+	worker, err := wf.CreateWorker(context.Background(), wrapped, tun, crypto, nil)
+	if err != nil {
+		t.Fatalf("expected no error for wrapped UDP transport, got: %v", err)
+	}
+	if worker == nil {
+		t.Fatalf("expected non-nil worker for wrapped UDP transport")
+	}
+}
+
+func TestWorkerFactory_CreateWorker_UDP_RejectsNonUDPTransport(t *testing.T) {
+	cfg := client.Configuration{
+		Protocol: settings.UDP,
+	}
+	wf := NewWorkerFactory(cfg)
+
+	wrapped := &WorkerFactoryWrappedTransportMock{
+		Transport: &WorkerFactoryTransportMock{},
+	}
+	tun := &WorkerFactoryTunMock{}
+	crypto := &WorkerFactoryCryptoMock{}
+
+	worker, err := wf.CreateWorker(context.Background(), wrapped, tun, crypto, nil)
+	if err == nil {
+		t.Fatalf("expected error for non-UDP transport, got nil and worker=%v", worker)
+	}
+	if worker != nil {
+		t.Fatalf("expected nil worker when non-UDP transport provided, got %v", worker)
 	}
 }
 

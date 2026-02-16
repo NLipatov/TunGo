@@ -23,6 +23,7 @@ func makeTestConfig() client.Configuration {
 		ClientID: 1,
 		TCPSettings: settings.Settings{
 			Addressing: settings.Addressing{
+				TunName:    "tun0",
 				Server:     mustHostParser("127.0.0.1"),
 				Port:       8080,
 				IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24"),

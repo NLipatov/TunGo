@@ -4,6 +4,7 @@ package manager
 
 import (
 	"fmt"
+	"net/netip"
 
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/darwin/network_tools/ifconfig"
@@ -13,13 +14,18 @@ import (
 )
 
 type v4 struct {
-	s              settings.Settings
-	tunDev         tun.Device
-	rawUTUN        utun.UTUN
-	ifc            ifconfig.Contract // v4 ifconfig.Contract implementation
-	rtc            route.Contract    // v4 route.Contract implementation
-	ifName         string
+	s               settings.Settings
+	tunDev          tun.Device
+	rawUTUN         utun.UTUN
+	ifc             ifconfig.Contract // v4 ifconfig.Contract implementation
+	rtc             route.Contract    // v4 route.Contract implementation
+	ifName          string
+	routeEndpoint   netip.AddrPort
 	resolvedRouteIP string // cached resolved server IP for consistent teardown
+}
+
+func (m *v4) SetRouteEndpoint(addr netip.AddrPort) {
+	m.routeEndpoint = addr
 }
 
 func newV4(
@@ -49,8 +55,12 @@ func (m *v4) CreateDevice() (tun.Device, error) {
 		return nil, fmt.Errorf("get utun name: %w", err)
 	}
 	m.ifName = name
-	routeIP, routeErr := m.s.Server.RouteIPv4()
+	routeIP, routeErr := m.resolveRouteIPv4()
 	if routeErr != nil {
+		if m.routeEndpoint.IsValid() && !m.routeEndpoint.Addr().Unmap().Is4() {
+			m.tunDev = utun.NewDarwinTunDevice(raw)
+			return m.tunDev, nil
+		}
 		_ = m.DisposeDevices()
 		return nil, fmt.Errorf("v4: resolve route for %s: %w", m.s.Server, routeErr)
 	}
@@ -119,4 +129,15 @@ func (m *v4) effectiveMTU() int {
 		mtu = settings.MinimumIPv4MTU
 	}
 	return mtu
+}
+
+func (m *v4) resolveRouteIPv4() (string, error) {
+	if m.routeEndpoint.IsValid() {
+		ip := m.routeEndpoint.Addr()
+		if ip.Unmap().Is4() {
+			return ip.Unmap().String(), nil
+		}
+		return "", fmt.Errorf("route endpoint %s is IPv6, expected IPv4", ip)
+	}
+	return m.s.Server.RouteIPv4()
 }

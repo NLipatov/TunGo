@@ -3,8 +3,12 @@
 package manager
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"log"
 	"net"
+	"net/netip"
 	"strconv"
 	"strings"
 	"tungo/application/network/routing/tun"
@@ -17,10 +21,14 @@ import (
 
 // v6Manager configures a Wintun adapter and the host stack for IPv6.
 type v6Manager struct {
-	s               settings.Settings
-	tun             tun.Device
-	netConfig       ipcfg.Contract
-	resolvedRouteIP string // cached resolved server IP for consistent teardown
+	s                  settings.Settings
+	tun                tun.Device
+	netConfig          ipcfg.Contract
+	routeEndpoint      netip.AddrPort
+	createTunDeviceFn  func() (tun.Device, error)
+	resolveRouteIPv6Fn func() (string, error)
+	resolvedRouteIP    string // cached resolved server IP for consistent teardown
+	resolvedRouteIf    string // cached egress interface used for host route
 }
 
 func newV6Manager(
@@ -40,7 +48,11 @@ func (m *v6Manager) CreateDevice() (tun.Device, error) {
 		return nil, err
 	}
 
-	tunDev, err := m.createTunDevice()
+	createTun := m.createTunDeviceFn
+	if createTun == nil {
+		createTun = m.createTunDevice
+	}
+	tunDev, err := createTun()
 	if err != nil {
 		return nil, err
 	}
@@ -102,16 +114,26 @@ func (m *v6Manager) createTunDevice() (tun.Device, error) {
 }
 
 func (m *v6Manager) addStaticRouteToServer() error {
-	routeIP, err := m.s.Server.RouteIPv6()
+	routeIP, err := m.resolveRouteIPv6()
 	if err != nil {
+		// If control channel is pinned to IPv4 endpoint, there is no IPv6 host route to preserve.
+		if m.routeEndpoint.IsValid() && m.routeEndpoint.Addr().Unmap().Is4() {
+			return nil
+		}
 		return fmt.Errorf("resolve host %s: %w", m.s.Server, err)
 	}
-	m.resolvedRouteIP = routeIP
-	_ = m.netConfig.DeleteRoute(routeIP)
-	gw, ifName, _, _, bestErr := m.netConfig.BestRoute(routeIP)
+	gw, ifName, ifIndex, _, bestErr := m.netConfig.BestRoute(routeIP)
 	if bestErr != nil {
 		return bestErr
 	}
+	ifName, err = routeInterfaceName(ifName, ifIndex)
+	if err != nil {
+		return err
+	}
+	m.resolvedRouteIP = routeIP
+	m.resolvedRouteIf = ifName
+	_ = m.netConfig.DeleteRoute(routeIP)
+	_ = m.netConfig.DeleteRouteOnInterface(routeIP, ifName)
 	if gw == "" {
 		// on-link
 		return m.netConfig.AddHostRouteOnLink(routeIP, ifName, 1)
@@ -150,24 +172,56 @@ func (m *v6Manager) setMTUToTunDevice() error {
 }
 
 func (m *v6Manager) setDNSToTunDevice() error {
-	// ToDo: Move dns server addresses to configuration
-	if err := m.netConfig.SetDNS(m.s.TunName,
-		[]string{"2606:4700:4700::1111", "2001:4860:4860::8888"},
-	); err != nil {
+	if err := m.netConfig.SetDNS(m.s.TunName, m.s.DNSv6Resolvers()); err != nil {
 		return err
 	}
-	_ = m.netConfig.FlushDNS()
+	if err := m.netConfig.FlushDNS(); err != nil {
+		log.Printf("failed to flush IPv6 DNS cache: %v", err)
+	}
 	return nil
 }
 
 // DisposeDevices reverses CreateDevice in safe order.
 func (m *v6Manager) DisposeDevices() error {
-	_ = m.netConfig.DeleteDefaultSplitRoutes(m.s.TunName)
+	var cleanupErrs []error
+	if err := m.netConfig.DeleteDefaultSplitRoutes(m.s.TunName); err != nil {
+		cleanupErrs = append(cleanupErrs, fmt.Errorf("delete default split routes: %w", err))
+	}
 	if m.resolvedRouteIP != "" {
-		_ = m.netConfig.DeleteRoute(m.resolvedRouteIP)
+		if err := m.netConfig.DeleteRouteOnInterface(m.resolvedRouteIP, m.resolvedRouteIf); err != nil {
+			cleanupErrs = append(cleanupErrs, fmt.Errorf("delete route %s on %s: %w", m.resolvedRouteIP, m.resolvedRouteIf, err))
+		}
+	}
+	if err := m.netConfig.SetDNS(m.s.TunName, nil); err != nil {
+		cleanupErrs = append(cleanupErrs, fmt.Errorf("clear DNS: %w", err))
+	}
+	if err := m.netConfig.FlushDNS(); err != nil {
+		log.Printf("failed to flush IPv6 DNS cache during cleanup: %v", err)
 	}
 	if m.tun != nil {
-		_ = m.tun.Close()
+		if err := m.tun.Close(); err != nil {
+			cleanupErrs = append(cleanupErrs, fmt.Errorf("close tun: %w", err))
+		}
 	}
-	return nil
+	return errors.Join(cleanupErrs...)
+}
+
+func (m *v6Manager) SetRouteEndpoint(addr netip.AddrPort) {
+	m.routeEndpoint = addr
+}
+
+func (m *v6Manager) resolveRouteIPv6() (string, error) {
+	if m.routeEndpoint.IsValid() {
+		ip := m.routeEndpoint.Addr()
+		if !ip.Unmap().Is4() {
+			return ip.String(), nil
+		}
+		return "", fmt.Errorf("route endpoint %s is IPv4, expected IPv6", ip)
+	}
+	if m.resolveRouteIPv6Fn != nil {
+		return m.resolveRouteIPv6Fn()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), routeResolveTimeout(m.s))
+	defer cancel()
+	return m.s.Server.RouteIPv6Context(ctx)
 }

@@ -26,6 +26,12 @@ import (
 	"tungo/infrastructure/settings"
 )
 
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
 func mustHost(raw string) settings.Host {
 	h, err := settings.NewHost(raw)
 	if err != nil {
@@ -260,6 +266,9 @@ func TestDialTCP_Success(t *testing.T) {
 	if adapter == nil {
 		t.Fatalf("adapter must not be nil on success")
 	}
+	if remote, ok := adapter.(connection.TransportWithRemoteAddr); !ok || !remote.RemoteAddrPort().IsValid() {
+		t.Fatalf("expected transport with valid remote address, got %T", adapter)
+	}
 	_ = adapter.Close()
 	<-done
 }
@@ -294,6 +303,9 @@ func TestDialUDP_Success_NoServerNeeded(t *testing.T) {
 	if conn == nil {
 		t.Fatalf("conn must not be nil")
 	}
+	if remote, ok := conn.(connection.TransportWithRemoteAddr); !ok || !remote.RemoteAddrPort().IsValid() {
+		t.Fatalf("expected UDP transport with valid remote address, got %T", conn)
+	}
 	_ = conn.Close()
 }
 
@@ -309,6 +321,29 @@ func TestDialWS_Success(t *testing.T) {
 	}
 	if adapter == nil {
 		t.Fatalf("adapter must not be nil")
+	}
+	if remote, ok := adapter.(connection.TransportWithRemoteAddr); !ok || !remote.RemoteAddrPort().IsValid() {
+		t.Fatalf("expected WS transport with valid remote address, got %T", adapter)
+	}
+	_ = adapter.Close()
+}
+
+func TestDialWS_Success_DomainEndpointHasRemoteAddr(t *testing.T) {
+	t.Parallel()
+	_, port, shutdown := ConnectionFactoryMockWSServer(t)
+	defer shutdown()
+
+	f := &ConnectionFactory{}
+	adapter, err := f.dialWS(context.Background(), context.Background(), "ws", net.JoinHostPort("localhost", port))
+	if err != nil {
+		t.Fatalf("dialWS failed: %v", err)
+	}
+	if adapter == nil {
+		t.Fatalf("adapter must not be nil")
+	}
+	remote, ok := adapter.(connection.TransportWithRemoteAddr)
+	if !ok || !remote.RemoteAddrPort().IsValid() {
+		t.Fatalf("expected WS transport with valid remote address for domain endpoint, got %T", adapter)
 	}
 	_ = adapter.Close()
 }
@@ -398,8 +433,29 @@ func TestEstablishConnection_WSS_DefaultPort443_And_WrappedError(t *testing.T) {
 	}
 	f := &ConnectionFactory{conf: conf}
 	_, _, _, err := f.EstablishConnection(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "unable to establish WS") {
+	if err == nil || !strings.Contains(err.Error(), "unable to establish WSS") {
 		t.Fatalf("expected wrapped WS connect error, got: %v", err)
+	}
+}
+
+func TestEstablishConnection_WSS_UsesSelectedProtocolWhenBucketProtocolIsWS(t *testing.T) {
+	t.Parallel()
+
+	conf := client.Configuration{
+		Protocol:   settings.WSS,
+		WSSettings: mkWSSettings("127.0.0.1", 0, settings.WS),
+	}
+	f := &ConnectionFactory{conf: conf}
+
+	_, _, _, err := f.EstablishConnection(context.Background())
+	if err == nil {
+		t.Fatal("expected dial error")
+	}
+	if strings.Contains(err.Error(), "invalid port") {
+		t.Fatalf("expected selected WSS behavior (default 443), got invalid-port error: %v", err)
+	}
+	if !strings.Contains(err.Error(), "unable to establish WSS") {
+		t.Fatalf("expected wrapped WSS dial error, got: %v", err)
 	}
 }
 
@@ -930,6 +986,115 @@ func TestDialWithFallback_IPv6Success(t *testing.T) {
 	}
 }
 
+func TestDialWithFallback_IPv6Only_DialsOnce(t *testing.T) {
+	t.Parallel()
+	f := &ConnectionFactory{}
+	s := settings.Settings{
+		Addressing: settings.Addressing{
+			Server: mustHost("::1"),
+			Port:   8080,
+		},
+	}
+
+	var (
+		calls int
+		last  netip.AddrPort
+	)
+	_, err := f.dialWithFallback(context.Background(), s, func(_ context.Context, ap netip.AddrPort) (connection.Transport, error) {
+		calls++
+		last = ap
+		return nil, errors.New("dial failed")
+	})
+	if err == nil {
+		t.Fatal("expected error from dial")
+	}
+	if calls != 1 {
+		t.Fatalf("expected single dial attempt for IPv6-only endpoint, got %d", calls)
+	}
+	if !last.IsValid() || !last.Addr().Is6() {
+		t.Fatalf("expected IPv6 dial target, got %v", last)
+	}
+}
+
+func TestDialWSWithFallback_IPv6Only_DialsOnce(t *testing.T) {
+	t.Parallel()
+	f := &ConnectionFactory{}
+	s := settings.Settings{
+		Addressing: settings.Addressing{
+			Server: mustHost("::1"),
+			Port:   8080,
+		},
+	}
+
+	var calls int
+	_, err := f.dialWSWithFallbackUsing(
+		context.Background(),
+		context.Background(),
+		s,
+		"ws",
+		func(_ context.Context, _ context.Context, _ string, _ string) (connection.Transport, error) {
+			calls++
+			return nil, errors.New("dial failed")
+		},
+	)
+	if err == nil {
+		t.Fatal("expected error from dial")
+	}
+	if calls != 1 {
+		t.Fatalf("expected single WS dial attempt for IPv6-only endpoint, got %d", calls)
+	}
+}
+
+func TestIPv6ProbeTimeout_FromDialTimeout(t *testing.T) {
+	t.Parallel()
+
+	if got := ipv6ProbeTimeout(settings.Settings{}); got != 2500*time.Millisecond {
+		t.Fatalf("unexpected default probe timeout: got %v want %v", got, 2500*time.Millisecond)
+	}
+	if got := ipv6ProbeTimeout(settings.Settings{DialTimeoutMs: 1000}); got != 2*time.Second {
+		t.Fatalf("unexpected clamped probe timeout for short dial timeout: got %v", got)
+	}
+	if got := ipv6ProbeTimeout(settings.Settings{DialTimeoutMs: 12000}); got != 6*time.Second {
+		t.Fatalf("unexpected probe timeout: got %v want 6s", got)
+	}
+}
+
+func TestDialWithFallback_DomainTCP_Succeeds(t *testing.T) {
+	t.Parallel()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen tcp: %v", err)
+	}
+	defer func() { _ = ln.Close() }()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if conn, acceptErr := ln.Accept(); acceptErr == nil {
+			_ = conn.Close()
+		}
+	}()
+
+	port := ln.Addr().(*net.TCPAddr).Port
+	f := &ConnectionFactory{}
+	s := settings.Settings{
+		Addressing: settings.Addressing{
+			Server: mustHost("localhost"),
+			Port:   port,
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	conn, dialErr := f.dialWithFallback(ctx, s, f.dialTCP)
+	if dialErr != nil {
+		t.Fatalf("expected domain dial success, got %v", dialErr)
+	}
+	_ = conn.Close()
+	<-done
+}
+
 func TestDialWSWithFallback_IPv6Success(t *testing.T) {
 	t.Parallel()
 	// Start WS server on IPv6 loopback.
@@ -968,4 +1133,19 @@ func TestDialWSWithFallback_IPv6Success(t *testing.T) {
 		t.Fatal("expected non-nil adapter from IPv6 WS dial")
 	}
 	_ = adapter.Close()
+}
+
+func TestCloneDefaultTransport_WhenGlobalDefaultIsCustomRoundTripper(t *testing.T) {
+	old := http.DefaultTransport
+	http.DefaultTransport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("not used")
+	})
+	t.Cleanup(func() {
+		http.DefaultTransport = old
+	})
+
+	tr := cloneDefaultTransport()
+	if tr == nil {
+		t.Fatal("expected non-nil transport clone")
+	}
 }

@@ -30,6 +30,7 @@ func validTestConfig() Configuration {
 		ClientID: 1,
 		UDPSettings: settings.Settings{
 			Addressing: settings.Addressing{
+				TunName:    "tun0",
 				Server:     host,
 				Port:       9090,
 				IPv4Subnet: netip.MustParsePrefix("10.0.1.0/24"),

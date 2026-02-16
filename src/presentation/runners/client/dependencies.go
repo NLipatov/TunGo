@@ -35,8 +35,8 @@ func (c *Dependencies) Initialize() error {
 		return fmt.Errorf("failed to read client configuration: %w", err)
 	}
 
-	if err := conf.Resolve(); err != nil {
-		return fmt.Errorf("failed to derive addresses: %w", err)
+	if err := conf.ResolveActive(); err != nil {
+		return fmt.Errorf("failed to derive active addresses: %w", err)
 	}
 
 	c.conn = client_factory.NewConnectionFactory(*conf)

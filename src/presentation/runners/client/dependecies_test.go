@@ -81,6 +81,26 @@ func TestClientDependencies_InitializeSuccess(t *testing.T) {
 	}
 }
 
+func TestClientDependencies_Initialize_IgnoresInactiveBrokenSettings(t *testing.T) {
+	cfg := newDummyConfig()
+	cfg.TCPSettings = settings.Settings{
+		Addressing: settings.Addressing{
+			// Broken for client allocation; should not block active UDP startup.
+			IPv4Subnet: mustPrefix("10.255.255.1/32"),
+		},
+		Protocol: settings.TCP,
+	}
+
+	dcm := &mockConfigurationManager{
+		conf: cfg,
+		err:  nil,
+	}
+	deps := clientRunners.NewDependencies(dcm)
+	if err := deps.Initialize(); err != nil {
+		t.Fatalf("Initialize() should ignore inactive broken settings, got: %v", err)
+	}
+}
+
 func TestClientDependencies_InitializeError(t *testing.T) {
 	dcm := &mockConfigurationManager{
 		conf: nil,
