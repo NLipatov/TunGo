@@ -13,18 +13,26 @@ func NewWrapper(commander exec_commander.Commander) *Wrapper {
 	return &Wrapper{commander: commander}
 }
 
-func (w *Wrapper) EnableDevMasquerade(devName string) error {
-	output, err := w.commander.CombinedOutput("iptables", "-t", "nat",
-		"-A", "POSTROUTING", "-o", devName, "-j", "MASQUERADE")
+func (w *Wrapper) EnableDevMasquerade(devName, sourceCIDR string) error {
+	args := []string{"-t", "nat", "-A", "POSTROUTING"}
+	if sourceCIDR != "" {
+		args = append(args, "-s", sourceCIDR)
+	}
+	args = append(args, "-o", devName, "-j", "MASQUERADE")
+	output, err := w.commander.CombinedOutput("iptables", args...)
 	if err != nil {
 		return fmt.Errorf("failed to enable NAT on %s: %v, output: %s", devName, err, output)
 	}
 	return nil
 }
 
-func (w *Wrapper) DisableDevMasquerade(devName string) error {
-	output, err := w.commander.CombinedOutput("iptables", "-t", "nat",
-		"-D", "POSTROUTING", "-o", devName, "-j", "MASQUERADE")
+func (w *Wrapper) DisableDevMasquerade(devName, sourceCIDR string) error {
+	args := []string{"-t", "nat", "-D", "POSTROUTING"}
+	if sourceCIDR != "" {
+		args = append(args, "-s", sourceCIDR)
+	}
+	args = append(args, "-o", devName, "-j", "MASQUERADE")
+	output, err := w.commander.CombinedOutput("iptables", args...)
 	if err != nil {
 		return fmt.Errorf("failed to disable NAT on %s: %v, output: %s", devName, err, output)
 	}
@@ -100,18 +108,26 @@ func (w *Wrapper) DisableForwardingTunToTun(tunName string) error {
 
 // IPv6 (ip6tables) counterparts
 
-func (w *Wrapper) Enable6DevMasquerade(devName string) error {
-	output, err := w.commander.CombinedOutput("ip6tables", "-t", "nat",
-		"-A", "POSTROUTING", "-o", devName, "-j", "MASQUERADE")
+func (w *Wrapper) Enable6DevMasquerade(devName, sourceCIDR string) error {
+	args := []string{"-t", "nat", "-A", "POSTROUTING"}
+	if sourceCIDR != "" {
+		args = append(args, "-s", sourceCIDR)
+	}
+	args = append(args, "-o", devName, "-j", "MASQUERADE")
+	output, err := w.commander.CombinedOutput("ip6tables", args...)
 	if err != nil {
 		return fmt.Errorf("failed to enable IPv6 NAT on %s: %v, output: %s", devName, err, output)
 	}
 	return nil
 }
 
-func (w *Wrapper) Disable6DevMasquerade(devName string) error {
-	output, err := w.commander.CombinedOutput("ip6tables", "-t", "nat",
-		"-D", "POSTROUTING", "-o", devName, "-j", "MASQUERADE")
+func (w *Wrapper) Disable6DevMasquerade(devName, sourceCIDR string) error {
+	args := []string{"-t", "nat", "-D", "POSTROUTING"}
+	if sourceCIDR != "" {
+		args = append(args, "-s", sourceCIDR)
+	}
+	args = append(args, "-o", devName, "-j", "MASQUERADE")
+	output, err := w.commander.CombinedOutput("ip6tables", args...)
 	if err != nil {
 		return fmt.Errorf("failed to disable IPv6 NAT on %s: %v, output: %s", devName, err, output)
 	}

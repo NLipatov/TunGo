@@ -35,6 +35,8 @@ func newWrapperWithMocks(out map[string][]byte, errs map[string]error) *Wrapper 
 func TestWrapper_AllCommands(t *testing.T) {
 	const dev = "eth0"
 	const tun = "tun0"
+	const v4CIDR = "10.0.0.0/24"
+	const v6CIDR = "fd00::/64"
 
 	successOut := map[string][]byte{}
 	noErr := map[string]error{}
@@ -45,16 +47,16 @@ func TestWrapper_AllCommands(t *testing.T) {
 		name string
 		call func() error
 	}{
-		{"EnableDevMasquerade", func() error { return w.EnableDevMasquerade(dev) }},
-		{"DisableDevMasquerade", func() error { return w.DisableDevMasquerade(dev) }},
+		{"EnableDevMasquerade", func() error { return w.EnableDevMasquerade(dev, v4CIDR) }},
+		{"DisableDevMasquerade", func() error { return w.DisableDevMasquerade(dev, v4CIDR) }},
 		{"EnableForwardingFromTunToDev", func() error { return w.EnableForwardingFromTunToDev(tun, dev) }},
 		{"DisableForwardingFromTunToDev", func() error { return w.DisableForwardingFromTunToDev(tun, dev) }},
 		{"EnableForwardingFromDevToTun", func() error { return w.EnableForwardingFromDevToTun(tun, dev) }},
 		{"DisableForwardingFromDevToTun", func() error { return w.DisableForwardingFromDevToTun(tun, dev) }},
 		{"EnableForwardingTunToTun", func() error { return w.EnableForwardingTunToTun(tun) }},
 		{"DisableForwardingTunToTun", func() error { return w.DisableForwardingTunToTun(tun) }},
-		{"Enable6DevMasquerade", func() error { return w.Enable6DevMasquerade(dev) }},
-		{"Disable6DevMasquerade", func() error { return w.Disable6DevMasquerade(dev) }},
+		{"Enable6DevMasquerade", func() error { return w.Enable6DevMasquerade(dev, v6CIDR) }},
+		{"Disable6DevMasquerade", func() error { return w.Disable6DevMasquerade(dev, v6CIDR) }},
 		{"Enable6ForwardingFromTunToDev", func() error { return w.Enable6ForwardingFromTunToDev(tun, dev) }},
 		{"Disable6ForwardingFromTunToDev", func() error { return w.Disable6ForwardingFromTunToDev(tun, dev) }},
 		{"Enable6ForwardingFromDevToTun", func() error { return w.Enable6ForwardingFromDevToTun(tun, dev) }},
@@ -75,6 +77,7 @@ func TestWrapper_AllCommands(t *testing.T) {
 func TestWrapper_IPv6_Errors(t *testing.T) {
 	const dev = "eth0"
 	const tun = "tun0"
+	const v6CIDR = "fd00::/64"
 
 	errFail := errors.New("fail")
 	failAll := &mockCommander{
@@ -83,8 +86,8 @@ func TestWrapper_IPv6_Errors(t *testing.T) {
 	}
 	// Fill errMap for every possible ip6tables command so all calls fail.
 	for _, cmd := range []string{
-		"ip6tables -t nat -A POSTROUTING -o " + dev + " -j MASQUERADE",
-		"ip6tables -t nat -D POSTROUTING -o " + dev + " -j MASQUERADE",
+		"ip6tables -t nat -A POSTROUTING -s " + v6CIDR + " -o " + dev + " -j MASQUERADE",
+		"ip6tables -t nat -D POSTROUTING -s " + v6CIDR + " -o " + dev + " -j MASQUERADE",
 		"ip6tables -A FORWARD -i " + tun + " -o " + dev + " -j ACCEPT",
 		"ip6tables -D FORWARD -i " + tun + " -o " + dev + " -j ACCEPT",
 		"ip6tables -A FORWARD -i " + dev + " -o " + tun + " -m state --state RELATED,ESTABLISHED -j ACCEPT",
@@ -100,8 +103,8 @@ func TestWrapper_IPv6_Errors(t *testing.T) {
 		name string
 		call func() error
 	}{
-		{"Enable6DevMasquerade", func() error { return w.Enable6DevMasquerade(dev) }},
-		{"Disable6DevMasquerade", func() error { return w.Disable6DevMasquerade(dev) }},
+		{"Enable6DevMasquerade", func() error { return w.Enable6DevMasquerade(dev, v6CIDR) }},
+		{"Disable6DevMasquerade", func() error { return w.Disable6DevMasquerade(dev, v6CIDR) }},
 		{"Enable6ForwardingFromTunToDev", func() error { return w.Enable6ForwardingFromTunToDev(tun, dev) }},
 		{"Disable6ForwardingFromTunToDev", func() error { return w.Disable6ForwardingFromTunToDev(tun, dev) }},
 		{"Enable6ForwardingFromDevToTun", func() error { return w.Enable6ForwardingFromDevToTun(tun, dev) }},
