@@ -151,8 +151,7 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.Settings) error 
 			serverIPv6 = t.routeEndpoint.Addr().String()
 		}
 		if serverIPv6 == "" {
-			var ipv6HostErr error
-			serverIPv6, ipv6HostErr = connSettings.Server.RouteIPv6()
+			serverIPv6, _ = connSettings.Server.RouteIPv6()
 		}
 		if serverIPv6 != "" {
 			routeInfo6, routeErr6 := t.ip.RouteGet(serverIPv6)
