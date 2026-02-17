@@ -8,6 +8,7 @@ import (
 	"time"
 	"tungo/application/network/connection"
 	"tungo/application/network/routing/tun"
+	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
 	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/ip"
@@ -49,25 +50,25 @@ func NewTunHandler(ctx context.Context,
 //
 // Buffer layout before Encrypt (total size = MTU + UDPChacha20Overhead):
 //
-//	[ 0 ........ 11 ][ 12 ........ 1511 ][ 1512 ........ end ]
-//	|   Nonce    |      Payload (<= MTU) |   spare headroom   |
+//	[ 0 ..... 7 ][ 8 .... 19 ][ 20 ........ 1519 ][ 1520 ..... end ]
+//	| Route ID  |   Nonce    |   Payload (<= MTU) |   AEAD tag headroom |
 //
 // Example with MTU = 1500, settings.UDPChacha20Overhead = 36:
 // - buffer length = 1500 + 36 = 1536
 //
 // Step 1 – read plaintext from TUN:
-// - reader.Read writes at most MTU bytes into buffer[12:1512].
-// - the first 12 bytes (buffer[0:12]) are reserved for the nonce
-// - trailing headroom is used by Encrypt for Poly1305 tag (+16) and route-id prefix (+8)
+// - reader.Read writes at most MTU bytes into buffer[20:1520].
+// - first 8 bytes are reserved for route-id, next 12 for nonce
+// - trailing headroom is used by Encrypt for Poly1305 tag (+16)
 //
 // Step 2 – encrypt plaintext in place:
-//   - encryption operates on buffer[0 : 12+n] (nonce + payload)
+//   - encryption operates on buffer[0 : 20+n] (route-id + nonce + payload)
 //   - ciphertext and authentication tag are written back in place
-//   - no additional allocations are required since both the prefix
-//     (nonce) and the suffix (tag) are already reserved in the buffer.
+//   - no additional allocations are required since all prefixes and suffix headroom are reserved.
 func (w *TunHandler) HandleTun() error {
-	// +12 nonce +16 AEAD tag +8 route-id headroom
+	// +8 route-id +12 nonce +16 AEAD tag
 	var buffer [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
+	payloadStart := chacha20.UDPRouteIDLength + chacha20poly1305.NonceSize
 
 	// Main loop to read from TUN and send data
 	for {
@@ -75,13 +76,13 @@ func (w *TunHandler) HandleTun() error {
 		case <-w.ctx.Done():
 			return nil
 		default:
-			n, err := w.reader.Read(buffer[chacha20poly1305.NonceSize : settings.DefaultEthernetMTU+chacha20poly1305.NonceSize])
-			if n > 0 && len(w.allowedSources) > 0 && !ip.IsAllowedSource(buffer[chacha20poly1305.NonceSize:chacha20poly1305.NonceSize+n], w.allowedSources) {
+			n, err := w.reader.Read(buffer[payloadStart : payloadStart+settings.DefaultEthernetMTU])
+			if n > 0 && len(w.allowedSources) > 0 && !ip.IsAllowedSource(buffer[payloadStart:payloadStart+n], w.allowedSources) {
 				n = 0 // drop; fall through to error check
 			}
 			if n > 0 {
-				// Encrypt expects header+payload (12+n)
-				if err := w.egress.SendDataIP(buffer[:chacha20poly1305.NonceSize+n]); err != nil {
+				// Encrypt expects route-id+nonce+payload (20+n).
+				if err := w.egress.SendDataIP(buffer[:payloadStart+n]); err != nil {
 					if w.ctx.Err() != nil {
 						return nil
 					}
@@ -95,14 +96,14 @@ func (w *TunHandler) HandleTun() error {
 				return fmt.Errorf("could not read a packet from TUN: %v", err)
 			}
 			if w.rekeyInit != nil && w.rekeyController != nil {
-				payloadBuf := w.controlPacketBuffer[chacha20poly1305.NonceSize:]
+				payloadBuf := w.controlPacketBuffer[chacha20.UDPRouteIDLength+chacha20poly1305.NonceSize:]
 				servicePayload, ok, pErr := w.rekeyInit.MaybeBuildRekeyInit(time.Now().UTC(), w.rekeyController, payloadBuf)
 				if pErr != nil {
 					fmt.Printf("failed to prepare rekeyInit: %v", pErr)
 					continue
 				}
 				if ok {
-					totalLen := chacha20poly1305.NonceSize + len(servicePayload)
+					totalLen := chacha20.UDPRouteIDLength + chacha20poly1305.NonceSize + len(servicePayload)
 					if err := w.egress.SendControl(w.controlPacketBuffer[:totalLen]); err != nil {
 						fmt.Printf("failed to send rekeyInit: %v", err)
 					}

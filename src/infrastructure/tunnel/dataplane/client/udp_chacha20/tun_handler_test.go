@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 	"tungo/application/network/connection"
+	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
 	"tungo/infrastructure/network/service_packet"
 
@@ -189,7 +190,7 @@ func TestHandleTun_SuccessThenCancel(t *testing.T) {
 	}
 
 	// verify written
-	zeros := make([]byte, chacha20poly1305.NonceSize)
+	zeros := make([]byte, chacha20.UDPRouteIDLength+chacha20poly1305.NonceSize)
 	want := append([]byte("pre-"), append(zeros, dummyData...)...)
 	if len(writer.data) != 1 || !bytes.Equal(writer.data[0], want) {
 		t.Errorf("expected written %v, got %v", want, writer.data)
@@ -274,7 +275,7 @@ func TestHandleTun_ReadReturnsNAndEOF_OneWriteThenEOF(t *testing.T) {
 		t.Fatalf("expected exactly one write, got %d", len(w.data))
 	}
 	// payload layout: prefix || 12B nonce || [7,8,9]
-	zeros := make([]byte, chacha20poly1305.NonceSize)
+	zeros := make([]byte, chacha20.UDPRouteIDLength+chacha20poly1305.NonceSize)
 	want := append([]byte("pre-"), append(zeros, []byte{7, 8, 9}...)...)
 	if !bytes.Equal(w.data[0], want) {
 		t.Fatalf("written mismatch: got %v, want %v", w.data[0], want)
@@ -313,7 +314,7 @@ func TestHandleTun_ReusesPendingRekeyKey(t *testing.T) {
 	}
 
 	extractPub := func(pkt []byte) []byte {
-		start := chacha20poly1305.NonceSize + 3
+		start := chacha20.UDPRouteIDLength + chacha20poly1305.NonceSize + 3
 		end := start + service_packet.RekeyPublicKeyLen
 		if len(pkt) < end {
 			t.Fatalf("rekey packet too short: %d bytes", len(pkt))

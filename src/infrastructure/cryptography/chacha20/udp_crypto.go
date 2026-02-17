@@ -42,6 +42,10 @@ func NewEpochUdpCrypto(
 }
 
 func (c *EpochUdpCrypto) Encrypt(plaintext []byte) ([]byte, error) {
+	if len(plaintext) < UDPRouteIDLength+chacha20poly1305.NonceSize {
+		return nil, fmt.Errorf("buffer too short for route-id+nonce prefix: %d", len(plaintext))
+	}
+
 	c.mu.RLock()
 	epoch := c.sendEpoch
 	c.mu.RUnlock()
@@ -54,11 +58,16 @@ func (c *EpochUdpCrypto) Encrypt(plaintext []byte) ([]byte, error) {
 			return nil, fmt.Errorf("no active session")
 		}
 	}
-	encrypted, err := session.Encrypt(plaintext)
+	// Layout contract for UDP encrypt input:
+	// [8B route-id reserved][12B nonce reserved][payload]
+	//
+	// The session encryptor works over the nonce+payload segment.
+	encrypted, err := session.Encrypt(plaintext[UDPRouteIDLength:])
 	if err != nil {
 		return nil, err
 	}
-	return prependUDPRouteID(encrypted, c.routeID), nil
+	binary.BigEndian.PutUint64(plaintext[:UDPRouteIDLength], c.routeID)
+	return plaintext[:UDPRouteIDLength+len(encrypted)], nil
 }
 
 func (c *EpochUdpCrypto) Decrypt(ciphertext []byte) ([]byte, error) {

@@ -42,7 +42,7 @@ func NewTransportHandler(
 	rekeyController *rekey.StateMachine,
 	egress connection.Egress,
 ) transport.Handler {
-	const pingLen = chacha20poly1305.NonceSize + 3
+	const pingLen = chacha20.UDPRouteIDLength + chacha20poly1305.NonceSize + 3
 	return &TransportHandler{
 		ctx:                 ctx,
 		reader:              reader,
@@ -162,7 +162,7 @@ func (t *TransportHandler) handleIdle() error {
 }
 
 func (t *TransportHandler) sendPing() {
-	payload := t.pingBuf[chacha20poly1305.NonceSize:]
+	payload := t.pingBuf[chacha20.UDPRouteIDLength+chacha20poly1305.NonceSize:]
 	if _, err := service_packet.EncodeV1Header(service_packet.Ping, payload); err != nil {
 		return
 	}

@@ -3,6 +3,7 @@ package udp_chacha20
 import (
 	"errors"
 	"tungo/application/network/connection"
+	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
 	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/service_packet"
@@ -15,9 +16,9 @@ import (
 // It delegates protocol logic to infrastructure/routing/controlplane.
 type controlPlaneHandler struct {
 	crypto       primitives.KeyDeriver
-	ackBuf       [chacha20poly1305.NonceSize + service_packet.RekeyPacketLen + chacha20poly1305.Overhead]byte
-	pongBuf      [chacha20poly1305.NonceSize + 3 + chacha20poly1305.Overhead]byte
-	exhaustedBuf [chacha20poly1305.NonceSize + 3 + chacha20poly1305.Overhead]byte
+	ackBuf       [chacha20.UDPRouteIDLength + chacha20poly1305.NonceSize + service_packet.RekeyPacketLen + chacha20poly1305.Overhead]byte
+	pongBuf      [chacha20.UDPRouteIDLength + chacha20poly1305.NonceSize + 3 + chacha20poly1305.Overhead]byte
+	exhaustedBuf [chacha20.UDPRouteIDLength + chacha20poly1305.NonceSize + 3 + chacha20poly1305.Overhead]byte
 }
 
 func newServicePacketHandler(
@@ -47,8 +48,9 @@ func (r *controlPlaneHandler) Handle(
 }
 
 func (r *controlPlaneHandler) handlePing(egress connection.Egress) error {
-	buf := r.pongBuf[:chacha20poly1305.NonceSize+3]
-	payload := buf[chacha20poly1305.NonceSize:]
+	payloadOffset := chacha20.UDPRouteIDLength + chacha20poly1305.NonceSize
+	buf := r.pongBuf[:payloadOffset+3]
+	payload := buf[payloadOffset:]
 	if _, err := service_packet.EncodeV1Header(service_packet.Pong, payload); err != nil {
 		return nil
 	}
@@ -74,8 +76,9 @@ func (r *controlPlaneHandler) handleRekeyInit(
 		return nil
 	}
 	// Only send ACK after successful rekey installation.
-	ackBuf := r.ackBuf[:chacha20poly1305.NonceSize+service_packet.RekeyPacketLen]
-	payload := ackBuf[chacha20poly1305.NonceSize:]
+	payloadOffset := chacha20.UDPRouteIDLength + chacha20poly1305.NonceSize
+	ackBuf := r.ackBuf[:payloadOffset+service_packet.RekeyPacketLen]
+	payload := ackBuf[payloadOffset:]
 	copy(payload[3:], serverPub)
 	if _, err = service_packet.EncodeV1Header(service_packet.RekeyAck, payload); err != nil {
 		return nil
@@ -87,8 +90,9 @@ func (r *controlPlaneHandler) handleRekeyInit(
 }
 
 func (r *controlPlaneHandler) sendEpochExhausted(egress connection.Egress) {
-	buf := r.exhaustedBuf[:chacha20poly1305.NonceSize+3]
-	payload := buf[chacha20poly1305.NonceSize:]
+	payloadOffset := chacha20.UDPRouteIDLength + chacha20poly1305.NonceSize
+	buf := r.exhaustedBuf[:payloadOffset+3]
+	payload := buf[payloadOffset:]
 	if _, err := service_packet.EncodeV1Header(service_packet.EpochExhausted, payload); err != nil {
 		return
 	}

@@ -92,8 +92,12 @@ func TestEpochUdpCrypto_EncryptDecrypt_RoundTrip(t *testing.T) {
 	payload := []byte("hello world")
 
 	// Client encrypts → server decrypts.
-	buf := make([]byte, chacha20poly1305.NonceSize+len(payload), chacha20poly1305.NonceSize+len(payload)+chacha20poly1305.Overhead+UDPRouteIDLength)
-	copy(buf[chacha20poly1305.NonceSize:], payload)
+	buf := make(
+		[]byte,
+		UDPRouteIDLength+chacha20poly1305.NonceSize+len(payload),
+		UDPRouteIDLength+chacha20poly1305.NonceSize+len(payload)+chacha20poly1305.Overhead,
+	)
+	copy(buf[UDPRouteIDLength+chacha20poly1305.NonceSize:], payload)
 
 	encrypted, err := client.Encrypt(buf)
 	if err != nil {
@@ -137,7 +141,11 @@ func TestEpochUdpCrypto_Encrypt_NoActiveSession(t *testing.T) {
 	c.ring.Remove(0)
 	c.SetSendEpoch(99)
 
-	buf := make([]byte, chacha20poly1305.NonceSize+10, chacha20poly1305.NonceSize+10+chacha20poly1305.Overhead+UDPRouteIDLength)
+	buf := make(
+		[]byte,
+		UDPRouteIDLength+chacha20poly1305.NonceSize+10,
+		UDPRouteIDLength+chacha20poly1305.NonceSize+10+chacha20poly1305.Overhead,
+	)
 	_, err := c.Encrypt(buf)
 	if err == nil {
 		t.Fatal("expected error when no active session")

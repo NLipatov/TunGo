@@ -4,6 +4,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
 	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/service_packet"
@@ -60,7 +61,7 @@ func TestHandle_Ping_SendsPong(t *testing.T) {
 		t.Fatalf("expected 1 Pong packet, got %d", len(eg.packets))
 	}
 	pkt := eg.packets[0]
-	payload := pkt[chacha20poly1305.NonceSize:]
+	payload := pkt[chacha20.UDPRouteIDLength+chacha20poly1305.NonceSize:]
 	if len(payload) < 3 {
 		t.Fatalf("pong payload too short: %d", len(payload))
 	}
@@ -132,7 +133,7 @@ func TestHandle_RekeyInit_Success_SendsAck(t *testing.T) {
 		t.Fatalf("expected 1 ACK packet, got %d", len(eg.packets))
 	}
 	ack := eg.packets[0]
-	ackPayload := ack[chacha20poly1305.NonceSize:]
+	ackPayload := ack[chacha20.UDPRouteIDLength+chacha20poly1305.NonceSize:]
 	if len(ackPayload) < 3 {
 		t.Fatalf("ACK payload too short: %d", len(ackPayload))
 	}

@@ -46,6 +46,16 @@ func (c *ClientUDPAdapter) Read(buffer []byte) (int, error) {
 		return 0, err
 	}
 
+	// Fast path: hot dataplane buffers are already max-sized, so read directly
+	// into caller memory and avoid an extra copy.
+	if len(buffer) >= len(c.buf) {
+		n, _, _, _, err := c.conn.ReadMsgUDPAddrPort(buffer[:len(c.buf)], nil)
+		if err != nil {
+			return 0, err
+		}
+		return n, nil
+	}
+
 	n, _, _, _, err := c.conn.ReadMsgUDPAddrPort(c.buf[:], nil)
 	if err != nil {
 		return 0, err

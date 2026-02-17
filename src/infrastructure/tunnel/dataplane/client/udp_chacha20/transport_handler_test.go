@@ -287,7 +287,7 @@ func TestHandleTransport_RekeyAckAfterDoubleInit_UsesOriginalPendingKey(t *testi
 		t.Fatal("pending priv key missing")
 	}
 	firstPub := func(pkt []byte) []byte {
-		start := chacha20poly1305.NonceSize + 3
+		start := chacha20.UDPRouteIDLength + chacha20poly1305.NonceSize + 3
 		end := start + service_packet.RekeyPublicKeyLen
 		if len(pkt) < end {
 			t.Fatalf("rekey packet too short: %d", len(pkt))
@@ -297,7 +297,7 @@ func TestHandleTransport_RekeyAckAfterDoubleInit_UsesOriginalPendingKey(t *testi
 		return out
 	}(writer.data[0])
 	secondPub := func(pkt []byte) []byte {
-		start := chacha20poly1305.NonceSize + 3
+		start := chacha20.UDPRouteIDLength + chacha20poly1305.NonceSize + 3
 		end := start + service_packet.RekeyPublicKeyLen
 		if len(pkt) < end {
 			t.Fatalf("rekey packet too short: %d", len(pkt))
@@ -470,7 +470,7 @@ func TestHandleTransport_PingSentOnIdle(t *testing.T) {
 	}
 	// Verify the captured packet contains a valid Ping V1 header.
 	pkt := pkts[0]
-	payload := pkt[chacha20poly1305.NonceSize:]
+	payload := pkt[chacha20.UDPRouteIDLength+chacha20poly1305.NonceSize:]
 	if len(payload) < 3 {
 		t.Fatalf("ping packet payload too short: %d", len(payload))
 	}
