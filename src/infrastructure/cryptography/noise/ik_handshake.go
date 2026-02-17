@@ -39,9 +39,9 @@ func (r *ikHandshakeResult) AllowedIPs() []netip.Prefix {
 
 // AllowedPeersLookup provides lookup functionality for AllowedPeers.
 type AllowedPeersLookup interface {
-	// Lookup returns the peer configuration for the given public key.
-	// Returns nil if the peer is not found.
-	Lookup(pubKey []byte) *RuntimeAllowedPeer
+	// Lookup returns peer authz data for the given public key.
+	// found=false means unknown peer.
+	Lookup(pubKey []byte) (clientID int, enabled bool, found bool)
 
 	// Update atomically replaces the peer map with a new configuration.
 	// This allows runtime updates without server restart.
@@ -50,15 +50,12 @@ type AllowedPeersLookup interface {
 
 // allowedPeersMap implements AllowedPeersLookup using atomic pointer for lock-free reads.
 type allowedPeersMap struct {
-	peers atomic.Pointer[map[string]*RuntimeAllowedPeer]
+	peers atomic.Pointer[map[string]allowedPeerEntry]
 }
 
-// RuntimeAllowedPeer is a runtime-ready representation of server.AllowedPeer.
-type RuntimeAllowedPeer struct {
-	Name      string
-	PublicKey []byte
-	Enabled   bool
-	ClientID  int
+type allowedPeerEntry struct {
+	enabled  bool
+	clientID int
 }
 
 // NewAllowedPeersLookup creates an AllowedPeersLookup from a slice of AllowedPeer.
@@ -68,23 +65,25 @@ func NewAllowedPeersLookup(peers []server.AllowedPeer) AllowedPeersLookup {
 	return a
 }
 
-func (a *allowedPeersMap) Lookup(pubKey []byte) *RuntimeAllowedPeer {
+func (a *allowedPeersMap) Lookup(pubKey []byte) (int, bool, bool) {
 	m := a.peers.Load()
 	if m == nil {
-		return nil
+		return 0, false, false
 	}
-	return (*m)[string(pubKey)]
+	peer, ok := (*m)[string(pubKey)]
+	if !ok {
+		return 0, false, false
+	}
+	return peer.clientID, peer.enabled, true
 }
 
 func (a *allowedPeersMap) Update(peers []server.AllowedPeer) {
-	m := make(map[string]*RuntimeAllowedPeer, len(peers))
+	m := make(map[string]allowedPeerEntry, len(peers))
 	for i := range peers {
 		peer := peers[i]
-		m[string(peer.PublicKey)] = &RuntimeAllowedPeer{
-			Name:      peer.Name,
-			PublicKey: append([]byte(nil), peer.PublicKey...),
-			Enabled:   peer.Enabled,
-			ClientID:  peer.ClientID,
+		m[string(peer.PublicKey)] = allowedPeerEntry{
+			enabled:  peer.Enabled,
+			clientID: peer.ClientID,
 		}
 	}
 	a.peers.Store(&m)
@@ -113,6 +112,18 @@ type IKHandshake struct {
 
 	// Cookie for retry (client-side)
 	cookie []byte
+}
+
+type sessionMaterial struct {
+	id        [32]byte
+	clientKey []byte
+	serverKey []byte
+}
+
+type serverHandshakeOutcome struct {
+	clientID     int
+	clientPubKey []byte
+	material     sessionMaterial
 }
 
 // NewIKHandshakeServer creates a new IK handshake for server-side use.
@@ -159,76 +170,146 @@ func (h *IKHandshake) Result() connection.HandshakeResult {
 // ServerSideHandshake performs Noise IK as responder with DoS protection.
 // Returns the client's ClientID for IP allocation at registration time.
 func (h *IKHandshake) ServerSideHandshake(transport connection.Transport) (int, error) {
-	if h.serverPrivKey == nil || h.serverPubKey == nil {
-		return 0, ErrMissingServerKey
-	}
-	if h.allowedPeers == nil {
-		return 0, ErrMissingAllowedPeers
+	if err := h.validateServerConfig(); err != nil {
+		return 0, err
 	}
 
-	// Read msg1 with version prefix and MACs
-	msg1Buf := make([]byte, 2048)
-	n, err := transport.Read(msg1Buf)
+	msgWithVersion, err := readHandshakeMessage(transport, "noise: read msg1")
 	if err != nil {
-		return 0, fmt.Errorf("noise: read msg1: %w", err)
+		return 0, err
 	}
-	msgWithVersion := msg1Buf[:n]
-
-	// PHASE 0: Check protocol version BEFORE any crypto
-	// This rejects deprecated (v1/XX) and unknown versions immediately.
 	msg1WithMAC, err := CheckVersion(msgWithVersion)
 	if err != nil {
 		return 0, err
 	}
-
-	// PHASE 1: Verify MAC1 (stateless, cheap) BEFORE any allocation
 	if !VerifyMAC1(msg1WithMAC, h.serverPubKey) {
 		return 0, ErrInvalidMAC1
 	}
 
-	// Record handshake for load monitoring
 	if h.loadMonitor != nil {
 		h.loadMonitor.RecordHandshake()
 	}
-
-	// PHASE 2: Check load and MAC2
-	if h.loadMonitor != nil && h.loadMonitor.UnderLoad() && h.cookieManager != nil {
-		// Extract client ephemeral AFTER MAC1 verification
-		clientEphemeral := ExtractClientEphemeral(msg1WithMAC)
-		if clientEphemeral == nil {
-			return 0, ErrMsgTooShort
-		}
-
-		// Extract client IP from transport for cookie binding
-		var clientIP netip.Addr
-		if tr, ok := transport.(connection.TransportWithRemoteAddr); ok {
-			clientIP = tr.RemoteAddrPort().Addr()
-		} else {
-			// Fallback: cannot bind cookie to IP, reject under load
-			return 0, ErrCookieRequired
-		}
-
-		if !h.cookieManager.VerifyMAC2ForClient(msg1WithMAC, clientIP) {
-			// Send cookie reply
-			reply, err := h.cookieManager.CreateCookieReply(clientIP, clientEphemeral, h.serverPubKey)
-			if err != nil {
-				return 0, fmt.Errorf("noise: create cookie reply: %w", err)
-			}
-			if _, err := transport.Write(reply); err != nil {
-				return 0, fmt.Errorf("noise: send cookie reply: %w", err)
-			}
-			return 0, ErrCookieRequired
-		}
+	if err := h.enforceCookieIfNeeded(transport, msg1WithMAC); err != nil {
+		return 0, err
 	}
 
-	// PHASE 3: Process Noise handshake
-	noiseMsg := ExtractNoiseMsg(msg1WithMAC)
+	outcome, err := h.runResponderNoise(transport, msg1WithMAC)
+	if err != nil {
+		return 0, err
+	}
+	h.applySessionMaterial(outcome.material)
+	h.result = newIKHandshakeResult(outcome.clientID, outcome.clientPubKey)
+	return outcome.clientID, nil
+}
 
+// ClientSideHandshake performs Noise IK as initiator.
+func (h *IKHandshake) ClientSideHandshake(transport connection.Transport) error {
+	if err := h.validateClientConfig(); err != nil {
+		return err
+	}
+
+	hs, response, err := h.initiatorAttempt(transport, "noise: send msg1", "noise: read response")
+	if err != nil {
+		return err
+	}
+	if IsCookieReply(response) {
+		cookie, err := DecryptCookieReply(response, hs.LocalEphemeral().Public, h.peerPubKey)
+		zeroizeLocalEphemeral(hs)
+		if err != nil {
+			return fmt.Errorf("noise: decrypt cookie: %w", err)
+		}
+		h.cookie = cookie
+
+		hs, response, err = h.initiatorAttempt(transport, "noise: send msg1 retry", "noise: read msg2")
+		if err != nil {
+			return err
+		}
+		if IsCookieReply(response) {
+			zeroizeLocalEphemeral(hs)
+			return fmt.Errorf("noise: unexpected cookie reply on retry")
+		}
+		material, err := h.completeInitiatorFromMsg2(hs, response, false)
+		zeroizeLocalEphemeral(hs)
+		if err != nil {
+			return err
+		}
+		h.applySessionMaterial(material)
+		return nil
+	}
+
+	material, err := h.completeInitiatorFromMsg2(hs, response, true)
+	zeroizeLocalEphemeral(hs)
+	if err != nil {
+		return err
+	}
+	h.applySessionMaterial(material)
+	return nil
+}
+
+func (h *IKHandshake) validateServerConfig() error {
+	if h.serverPrivKey == nil || h.serverPubKey == nil {
+		return ErrMissingServerKey
+	}
+	if h.allowedPeers == nil {
+		return ErrMissingAllowedPeers
+	}
+	return nil
+}
+
+func (h *IKHandshake) validateClientConfig() error {
+	if h.clientPrivKey == nil || h.clientPubKey == nil {
+		return ErrMissingClientKey
+	}
+	if h.peerPubKey == nil {
+		return ErrMissingServerKey
+	}
+	return nil
+}
+
+func (h *IKHandshake) enforceCookieIfNeeded(
+	transport connection.Transport,
+	msg1WithMAC []byte,
+) error {
+	if h.loadMonitor == nil || !h.loadMonitor.UnderLoad() || h.cookieManager == nil {
+		return nil
+	}
+
+	clientEphemeral := ExtractClientEphemeral(msg1WithMAC)
+	if clientEphemeral == nil {
+		return ErrMsgTooShort
+	}
+
+	clientIP, ok := h.transportRemoteIP(transport)
+	if !ok {
+		return ErrCookieRequired
+	}
+	if h.cookieManager.VerifyMAC2ForClient(msg1WithMAC, clientIP) {
+		return nil
+	}
+
+	reply, err := h.cookieManager.CreateCookieReply(clientIP, clientEphemeral, h.serverPubKey)
+	if err != nil {
+		return fmt.Errorf("noise: create cookie reply: %w", err)
+	}
+	if _, err := transport.Write(reply); err != nil {
+		return fmt.Errorf("noise: send cookie reply: %w", err)
+	}
+	return ErrCookieRequired
+}
+
+func (h *IKHandshake) transportRemoteIP(transport connection.Transport) (netip.Addr, bool) {
+	tr, ok := transport.(connection.TransportWithRemoteAddr)
+	if !ok {
+		return netip.Addr{}, false
+	}
+	return tr.RemoteAddrPort().Addr(), true
+}
+
+func (h *IKHandshake) newResponderState() (*noiselib.HandshakeState, error) {
 	staticKey := noiselib.DHKey{
 		Private: h.serverPrivKey,
 		Public:  h.serverPubKey,
 	}
-
 	hs, err := noiselib.NewHandshakeState(noiselib.Config{
 		CipherSuite:   cipherSuite,
 		Pattern:       noiselib.HandshakeIK,
@@ -236,257 +317,177 @@ func (h *IKHandshake) ServerSideHandshake(transport connection.Transport) (int, 
 		StaticKeypair: staticKey,
 	})
 	if err != nil {
-		return 0, fmt.Errorf("noise: server handshake state: %w", err)
+		return nil, fmt.Errorf("noise: server handshake state: %w", err)
 	}
+	return hs, nil
+}
 
-	// Zero ephemeral on any exit path (set early before WriteMessage)
-	defer func() {
-		if localEph := hs.LocalEphemeral(); localEph.Private != nil {
-			mem.ZeroBytes(localEph.Private)
-		}
-	}()
+func (h *IKHandshake) runResponderNoise(
+	transport connection.Transport,
+	msg1WithMAC []byte,
+) (serverHandshakeOutcome, error) {
+	hs, err := h.newResponderState()
+	if err != nil {
+		return serverHandshakeOutcome{}, err
+	}
+	defer zeroizeLocalEphemeral(hs)
 
-	// Read msg1 (e, es, s, ss)
+	noiseMsg := ExtractNoiseMsg(msg1WithMAC)
 	_, _, _, err = hs.ReadMessage(nil, noiseMsg)
 	if err != nil {
-		return 0, fmt.Errorf("noise: read msg1: %w", err)
+		return serverHandshakeOutcome{}, fmt.Errorf("noise: read msg1: %w", err)
 	}
 
-	// Extract and validate client identity
 	clientPubKey := hs.PeerStatic()
-	peer := h.allowedPeers.Lookup(clientPubKey)
-	if peer == nil {
-		return 0, ErrUnknownPeer
+	clientID, enabled, found := h.allowedPeers.Lookup(clientPubKey)
+	if !found {
+		return serverHandshakeOutcome{}, ErrUnknownPeer
 	}
-	if !peer.Enabled {
-		return 0, ErrPeerDisabled
+	if !enabled {
+		return serverHandshakeOutcome{}, ErrPeerDisabled
 	}
 
-	// Write msg2 (e, ee, se)
 	msg2, cs1, cs2, err := hs.WriteMessage(nil, nil)
 	if err != nil {
-		return 0, fmt.Errorf("noise: write msg2: %w", err)
+		return serverHandshakeOutcome{}, fmt.Errorf("noise: write msg2: %w", err)
 	}
-
 	if _, err := transport.Write(msg2); err != nil {
-		return 0, fmt.Errorf("noise: send msg2: %w", err)
+		return serverHandshakeOutcome{}, fmt.Errorf("noise: send msg2: %w", err)
 	}
-
 	if cs1 == nil || cs2 == nil {
-		return 0, fmt.Errorf("noise: handshake not complete after msg2")
+		return serverHandshakeOutcome{}, fmt.Errorf("noise: handshake not complete after msg2")
 	}
 
-	// Extract session keys
+	return serverHandshakeOutcome{
+		clientID:     clientID,
+		clientPubKey: clientPubKey,
+		material:     extractSessionMaterial(cs1, cs2, hs.ChannelBinding()),
+	}, nil
+}
+
+func (h *IKHandshake) newInitiatorState() (*noiselib.HandshakeState, error) {
+	clientStatic := noiselib.DHKey{
+		Private: h.clientPrivKey,
+		Public:  h.clientPubKey,
+	}
+
+	hs, err := noiselib.NewHandshakeState(noiselib.Config{
+		CipherSuite:   cipherSuite,
+		Pattern:       noiselib.HandshakeIK,
+		Initiator:     true,
+		StaticKeypair: clientStatic,
+		PeerStatic:    h.peerPubKey,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("noise: client handshake state: %w", err)
+	}
+	return hs, nil
+}
+
+func (h *IKHandshake) initiatorAttempt(
+	transport connection.Transport,
+	sendErrPrefix string,
+	readErrPrefix string,
+) (*noiselib.HandshakeState, []byte, error) {
+	hs, err := h.newInitiatorState()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	msg1, _, _, err := hs.WriteMessage(nil, nil)
+	if err != nil {
+		zeroizeLocalEphemeral(hs)
+		return nil, nil, fmt.Errorf("noise: write msg1: %w", err)
+	}
+	msg1WithMAC, err := AppendMACs(msg1, h.peerPubKey, h.cookie)
+	if err != nil {
+		zeroizeLocalEphemeral(hs)
+		return nil, nil, fmt.Errorf("noise: append MACs: %w", err)
+	}
+	msgWithVersion := PrependVersion(msg1WithMAC)
+	if _, err := transport.Write(msgWithVersion); err != nil {
+		zeroizeLocalEphemeral(hs)
+		return nil, nil, fmt.Errorf("%s: %w", sendErrPrefix, err)
+	}
+	response, err := readHandshakeMessage(transport, readErrPrefix)
+	if err != nil {
+		zeroizeLocalEphemeral(hs)
+		return nil, nil, err
+	}
+	return hs, response, nil
+}
+
+func (h *IKHandshake) completeInitiatorFromMsg2(
+	hs *noiselib.HandshakeState,
+	response []byte,
+	verifyServerStatic bool,
+) (sessionMaterial, error) {
+	_, cs1, cs2, err := hs.ReadMessage(nil, response)
+	if err != nil {
+		return sessionMaterial{}, fmt.Errorf("noise: read msg2: %w", err)
+	}
+	if cs1 == nil || cs2 == nil {
+		return sessionMaterial{}, fmt.Errorf("noise: handshake not complete after msg2")
+	}
+	if verifyServerStatic && !bytes.Equal(hs.PeerStatic(), h.peerPubKey) {
+		return sessionMaterial{}, fmt.Errorf("noise: server static key mismatch")
+	}
+	return extractSessionMaterial(cs1, cs2, hs.ChannelBinding()), nil
+}
+
+func extractSessionMaterial(
+	cs1, cs2 *noiselib.CipherState,
+	channelBinding []byte,
+) sessionMaterial {
 	c2sKey := cs1.UnsafeKey()
 	s2cKey := cs2.UnsafeKey()
 
-	h.clientKey = make([]byte, 32)
-	copy(h.clientKey, c2sKey[:])
-	h.serverKey = make([]byte, 32)
-	copy(h.serverKey, s2cKey[:])
+	material := sessionMaterial{
+		clientKey: make([]byte, 32),
+		serverKey: make([]byte, 32),
+	}
+	copy(material.clientKey, c2sKey[:])
+	copy(material.serverKey, s2cKey[:])
 	mem.ZeroBytes(c2sKey[:])
 	mem.ZeroBytes(s2cKey[:])
+	copy(material.id[:], channelBinding[:32])
+	return material
+}
 
-	// Session ID from channel binding
-	cb := hs.ChannelBinding()
-	copy(h.id[:], cb[:32])
+func (h *IKHandshake) applySessionMaterial(material sessionMaterial) {
+	h.clientKey = material.clientKey
+	h.serverKey = material.serverKey
+	h.id = material.id
+}
 
+func newIKHandshakeResult(clientID int, clientPubKey []byte) *ikHandshakeResult {
 	pubKeyCopy := make([]byte, len(clientPubKey))
 	copy(pubKeyCopy, clientPubKey)
-
-	h.result = &ikHandshakeResult{
-		clientID:     peer.ClientID,
+	return &ikHandshakeResult{
+		clientID:     clientID,
 		clientPubKey: pubKeyCopy,
 		allowedIPs:   nil,
 	}
-
-	return peer.ClientID, nil
 }
 
-// ClientSideHandshake performs Noise IK as initiator.
-func (h *IKHandshake) ClientSideHandshake(transport connection.Transport) error {
-	if h.clientPrivKey == nil || h.clientPubKey == nil {
-		return ErrMissingClientKey
-	}
-	if h.peerPubKey == nil {
-		return ErrMissingServerKey
-	}
-
-	clientStatic := noiselib.DHKey{
-		Private: h.clientPrivKey,
-		Public:  h.clientPubKey,
-	}
-
-	hs, err := noiselib.NewHandshakeState(noiselib.Config{
-		CipherSuite:   cipherSuite,
-		Pattern:       noiselib.HandshakeIK,
-		Initiator:     true,
-		StaticKeypair: clientStatic,
-		PeerStatic:    h.peerPubKey,
-	})
+func readHandshakeMessage(
+	transport connection.Transport,
+	errPrefix string,
+) ([]byte, error) {
+	buf := make([]byte, 2048)
+	n, err := transport.Read(buf)
 	if err != nil {
-		return fmt.Errorf("noise: client handshake state: %w", err)
+		return nil, fmt.Errorf("%s: %w", errPrefix, err)
 	}
-
-	// Zero ephemeral on any exit path (set early before WriteMessage)
-	defer func() {
-		if localEph := hs.LocalEphemeral(); localEph.Private != nil {
-			mem.ZeroBytes(localEph.Private)
-		}
-	}()
-
-	// Generate msg1 (e, es, s, ss)
-	msg1, _, _, err := hs.WriteMessage(nil, nil)
-	if err != nil {
-		return fmt.Errorf("noise: write msg1: %w", err)
-	}
-
-	// Add MACs (MAC2 is random if no cookie, or valid if we have one)
-	msg1WithMAC, err := AppendMACs(msg1, h.peerPubKey, h.cookie)
-	if err != nil {
-		return fmt.Errorf("noise: append MACs: %w", err)
-	}
-
-	// Prepend protocol version byte
-	msgWithVersion := PrependVersion(msg1WithMAC)
-
-	if _, err := transport.Write(msgWithVersion); err != nil {
-		return fmt.Errorf("noise: send msg1: %w", err)
-	}
-
-	// Read response (could be msg2 or cookie reply)
-	responseBuf := make([]byte, 2048)
-	n, err := transport.Read(responseBuf)
-	if err != nil {
-		return fmt.Errorf("noise: read response: %w", err)
-	}
-	response := responseBuf[:n]
-
-	// Check if it's a cookie reply
-	if IsCookieReply(response) {
-		cookie, err := DecryptCookieReply(response, hs.LocalEphemeral().Public, h.peerPubKey)
-		if err != nil {
-			return fmt.Errorf("noise: decrypt cookie: %w", err)
-		}
-		h.cookie = cookie
-
-		// Retry with cookie - need to create new handshake state
-		return h.retryWithCookie(transport)
-	}
-
-	// Process msg2 (e, ee, se)
-	_, cs1, cs2, err := hs.ReadMessage(nil, response)
-	if err != nil {
-		return fmt.Errorf("noise: read msg2: %w", err)
-	}
-
-	if cs1 == nil || cs2 == nil {
-		return fmt.Errorf("noise: handshake not complete after msg2")
-	}
-
-	// Verify server's static key matches expected
-	peerStatic := hs.PeerStatic()
-	if !bytes.Equal(peerStatic, h.peerPubKey) {
-		return fmt.Errorf("noise: server static key mismatch")
-	}
-
-	// Extract session keys
-	c2sKey := cs1.UnsafeKey()
-	s2cKey := cs2.UnsafeKey()
-
-	h.clientKey = make([]byte, 32)
-	copy(h.clientKey, c2sKey[:])
-	h.serverKey = make([]byte, 32)
-	copy(h.serverKey, s2cKey[:])
-	mem.ZeroBytes(c2sKey[:])
-	mem.ZeroBytes(s2cKey[:])
-
-	cb := hs.ChannelBinding()
-	copy(h.id[:], cb[:32])
-
-	return nil
+	return buf[:n], nil
 }
 
-// retryWithCookie retries the handshake with the stored cookie.
-func (h *IKHandshake) retryWithCookie(transport connection.Transport) error {
-	clientStatic := noiselib.DHKey{
-		Private: h.clientPrivKey,
-		Public:  h.clientPubKey,
+func zeroizeLocalEphemeral(hs *noiselib.HandshakeState) {
+	if hs == nil {
+		return
 	}
-
-	hs, err := noiselib.NewHandshakeState(noiselib.Config{
-		CipherSuite:   cipherSuite,
-		Pattern:       noiselib.HandshakeIK,
-		Initiator:     true,
-		StaticKeypair: clientStatic,
-		PeerStatic:    h.peerPubKey,
-	})
-	if err != nil {
-		return fmt.Errorf("noise: client handshake state: %w", err)
+	localEph := hs.LocalEphemeral()
+	if localEph.Private != nil {
+		mem.ZeroBytes(localEph.Private)
 	}
-
-	// Zero ephemeral on any exit path (set early before WriteMessage)
-	defer func() {
-		if localEph := hs.LocalEphemeral(); localEph.Private != nil {
-			mem.ZeroBytes(localEph.Private)
-		}
-	}()
-
-	// Generate new msg1 with fresh ephemeral
-	msg1, _, _, err := hs.WriteMessage(nil, nil)
-	if err != nil {
-		return fmt.Errorf("noise: write msg1: %w", err)
-	}
-
-	// Add MACs with cookie
-	msg1WithMAC, err := AppendMACs(msg1, h.peerPubKey, h.cookie)
-	if err != nil {
-		return fmt.Errorf("noise: append MACs: %w", err)
-	}
-
-	// Prepend protocol version byte
-	msgWithVersion := PrependVersion(msg1WithMAC)
-
-	if _, err := transport.Write(msgWithVersion); err != nil {
-		return fmt.Errorf("noise: send msg1 retry: %w", err)
-	}
-
-	// Read msg2
-	responseBuf := make([]byte, 2048)
-	n, err := transport.Read(responseBuf)
-	if err != nil {
-		return fmt.Errorf("noise: read msg2: %w", err)
-	}
-	response := responseBuf[:n]
-
-	// Should not get another cookie reply
-	if IsCookieReply(response) {
-		return fmt.Errorf("noise: unexpected cookie reply on retry")
-	}
-
-	// Process msg2
-	_, cs1, cs2, err := hs.ReadMessage(nil, response)
-	if err != nil {
-		return fmt.Errorf("noise: read msg2: %w", err)
-	}
-
-	if cs1 == nil || cs2 == nil {
-		return fmt.Errorf("noise: handshake not complete after msg2")
-	}
-
-	// Extract session keys
-	c2sKey := cs1.UnsafeKey()
-	s2cKey := cs2.UnsafeKey()
-
-	h.clientKey = make([]byte, 32)
-	copy(h.clientKey, c2sKey[:])
-	h.serverKey = make([]byte, 32)
-	copy(h.serverKey, s2cKey[:])
-	mem.ZeroBytes(c2sKey[:])
-	mem.ZeroBytes(s2cKey[:])
-
-	cb := hs.ChannelBinding()
-	copy(h.id[:], cb[:32])
-
-	return nil
 }

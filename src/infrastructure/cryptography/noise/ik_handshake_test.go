@@ -440,27 +440,33 @@ func TestAllowedPeersLookup(t *testing.T) {
 	lookup := NewAllowedPeersLookup(peers)
 
 	// Find existing peer
-	peer := lookup.Lookup(pubKey1)
-	if peer == nil {
+	clientID, enabled, found := lookup.Lookup(pubKey1)
+	if !found {
 		t.Fatal("should find peer 1")
 	}
-	if peer.ClientID != 1 {
+	if clientID != 1 {
 		t.Fatal("wrong peer returned")
+	}
+	if !enabled {
+		t.Fatal("peer 1 should be enabled")
 	}
 
 	// Find second peer
-	peer2 := lookup.Lookup(pubKey2)
-	if peer2 == nil {
+	clientID2, enabled2, found2 := lookup.Lookup(pubKey2)
+	if !found2 {
 		t.Fatal("should find peer 2")
 	}
-	if peer2.Enabled {
+	if clientID2 != 2 {
+		t.Fatal("wrong peer returned")
+	}
+	if enabled2 {
 		t.Fatal("peer 2 should be disabled")
 	}
 
 	// Unknown peer
 	unknown := make([]byte, 32)
 	unknown[0] = 99
-	if lookup.Lookup(unknown) != nil {
+	if _, _, found := lookup.Lookup(unknown); found {
 		t.Fatal("should not find unknown peer")
 	}
 }
@@ -481,10 +487,10 @@ func TestAllowedPeersLookup_DynamicUpdate(t *testing.T) {
 	lookup := NewAllowedPeersLookup(peers)
 
 	// Verify initial state
-	if lookup.Lookup(pubKey1) == nil {
+	if _, _, found := lookup.Lookup(pubKey1); !found {
 		t.Fatal("should find peer 1")
 	}
-	if lookup.Lookup(pubKey2) != nil {
+	if _, _, found := lookup.Lookup(pubKey2); found {
 		t.Fatal("should not find peer 2 before update")
 	}
 
@@ -496,22 +502,25 @@ func TestAllowedPeersLookup_DynamicUpdate(t *testing.T) {
 	lookup.Update(newPeers)
 
 	// Old peer should be gone
-	if lookup.Lookup(pubKey1) != nil {
+	if _, _, found := lookup.Lookup(pubKey1); found {
 		t.Fatal("should not find peer 1 after update")
 	}
 
 	// New peers should be present
-	if lookup.Lookup(pubKey2) == nil {
+	if _, _, found := lookup.Lookup(pubKey2); !found {
 		t.Fatal("should find peer 2 after update")
 	}
-	if lookup.Lookup(pubKey3) == nil {
+	if _, _, found := lookup.Lookup(pubKey3); !found {
 		t.Fatal("should find peer 3 after update")
 	}
 
 	// Verify correct data
-	peer2 := lookup.Lookup(pubKey2)
-	if peer2.ClientID != 2 {
-		t.Fatalf("expected ClientID 2, got %d", peer2.ClientID)
+	clientID2, _, found := lookup.Lookup(pubKey2)
+	if !found {
+		t.Fatal("should find peer 2 after update")
+	}
+	if clientID2 != 2 {
+		t.Fatalf("expected ClientID 2, got %d", clientID2)
 	}
 }
 
@@ -986,7 +995,7 @@ func TestAllowedPeersLookup_NilMap_ReturnsNil(t *testing.T) {
 	lookup := NewAllowedPeersLookup(nil)
 	pubKey := make([]byte, 32)
 	pubKey[0] = 1
-	if lookup.Lookup(pubKey) != nil {
+	if _, _, found := lookup.Lookup(pubKey); found {
 		t.Fatal("expected nil for empty peers map")
 	}
 }
