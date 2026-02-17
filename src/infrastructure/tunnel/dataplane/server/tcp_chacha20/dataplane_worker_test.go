@@ -24,7 +24,7 @@ func newDPWPeer(internal string, crypto connection.Crypto) *session.Peer {
 	return session.NewPeer(s, nil)
 }
 
-func newDPWWorker(peer *session.Peer, tr connection.Transport, tun *fakeWriter, repo session.Repository) *tcpDataplaneWorker {
+func newDPWWorker(peer *session.Peer, tr connection.Transport, tun *fakeWriter, repo session.PeerStore) *tcpDataplaneWorker {
 	return newTCPDataplaneWorker(
 		context.Background(),
 		peer,

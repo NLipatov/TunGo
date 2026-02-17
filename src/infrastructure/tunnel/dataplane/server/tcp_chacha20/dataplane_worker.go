@@ -18,13 +18,13 @@ import (
 // tcpDataplaneWorker runs a per-connection dataplane loop:
 // read ciphertext -> decrypt -> (controlplane dispatch | write to TUN).
 type tcpDataplaneWorker struct {
-	ctx            context.Context
-	peer           *session.Peer
-	transport      connection.Transport
-	tunFile        io.ReadWriteCloser
-	sessionManager session.Repository
-	logger         logging.Logger
-	cp             controlPlaneHandler
+	ctx       context.Context
+	peer      *session.Peer
+	transport connection.Transport
+	tunFile   io.ReadWriteCloser
+	peerStore session.PeerStore
+	logger    logging.Logger
+	cp        controlPlaneHandler
 }
 
 func newTCPDataplaneWorker(
@@ -32,24 +32,24 @@ func newTCPDataplaneWorker(
 	peer *session.Peer,
 	transport connection.Transport,
 	tunFile io.ReadWriteCloser,
-	sessionManager session.Repository,
+	peerStore session.PeerStore,
 	logger logging.Logger,
 ) *tcpDataplaneWorker {
 	crypto := &primitives.DefaultKeyDeriver{}
 	return &tcpDataplaneWorker{
-		ctx:            ctx,
-		peer:           peer,
-		transport:      transport,
-		tunFile:        tunFile,
-		sessionManager: sessionManager,
-		logger:         logger,
-		cp:             newControlPlaneHandler(crypto, logger),
+		ctx:       ctx,
+		peer:      peer,
+		transport: transport,
+		tunFile:   tunFile,
+		peerStore: peerStore,
+		logger:    logger,
+		cp:        newControlPlaneHandler(crypto, logger),
 	}
 }
 
 func (w *tcpDataplaneWorker) Run() {
 	defer func() {
-		w.sessionManager.Delete(w.peer)
+		w.peerStore.Delete(w.peer)
 		_ = w.transport.Close()
 		w.logger.Printf("disconnected: %s", w.peer.ExternalAddrPort())
 	}()

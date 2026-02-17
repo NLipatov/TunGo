@@ -21,16 +21,21 @@ type Registrar struct {
 	logger              logging.Logger
 	handshakeFactory    connection.HandshakeFactory
 	cryptographyFactory connection.CryptoFactory
-	sessionManager      session.Repository
+	sessionManager      tcpRegistrationRepo
 	interfaceSubnet     netip.Prefix
 	ipv6Subnet          netip.Prefix
+}
+
+type tcpRegistrationRepo interface {
+	session.PeerStore
+	session.InternalLookup
 }
 
 func NewRegistrar(
 	logger logging.Logger,
 	handshakeFactory connection.HandshakeFactory,
 	cryptographyFactory connection.CryptoFactory,
-	sessionManager session.Repository,
+	sessionManager tcpRegistrationRepo,
 	interfaceSubnet netip.Prefix,
 	ipv6Subnet netip.Prefix,
 ) *Registrar {

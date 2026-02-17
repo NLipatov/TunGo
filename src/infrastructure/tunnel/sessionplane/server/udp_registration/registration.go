@@ -33,7 +33,7 @@ type Registrar struct {
 	ctx context.Context
 
 	listenerConn listeners.UdpListener
-	sessionRepo  session.Repository
+	sessionRepo  udpRegistrationRepo
 	logger       logging.Logger
 
 	handshakeFactory    connection.HandshakeFactory
@@ -46,10 +46,15 @@ type Registrar struct {
 	registrations map[netip.AddrPort]*udpQueue.RegistrationQueue
 }
 
+type udpRegistrationRepo interface {
+	session.PeerStore
+	session.InternalLookup
+}
+
 func NewRegistrar(
 	ctx context.Context,
 	listenerConn listeners.UdpListener,
-	sessionRepo session.Repository,
+	sessionRepo udpRegistrationRepo,
 	logger logging.Logger,
 	handshakeFactory connection.HandshakeFactory,
 	cryptographyFactory connection.CryptoFactory,

@@ -284,6 +284,7 @@ func (s *ServerWorkerFactory) createUDPWorker(
 		tun,
 		conn,
 		sessionManager,
+		sessionManager,
 		logger,
 		registrar,
 	)

@@ -18,20 +18,20 @@ type TunHandler struct {
 	ctx            context.Context
 	reader         io.Reader
 	ipHeaderParser appip.HeaderParser
-	sessionManager session.Repository
+	peerStore      session.PeerStore
 }
 
 func NewTunHandler(
 	ctx context.Context,
 	reader io.Reader,
 	ipParser appip.HeaderParser,
-	sessionManager session.Repository,
+	peerStore session.PeerStore,
 ) tun.Handler {
 	return &TunHandler{
 		ctx:            ctx,
 		reader:         reader,
 		ipHeaderParser: ipParser,
-		sessionManager: sessionManager,
+		peerStore:      peerStore,
 	}
 }
 
@@ -63,7 +63,7 @@ func (t *TunHandler) HandleTun() error {
 				continue
 			}
 
-			peer, getErr := t.sessionManager.FindByDestinationIP(addr)
+			peer, getErr := t.peerStore.FindByDestinationIP(addr)
 			if getErr != nil {
 				// No route to destination - either unknown host or not in any peer's AllowedIPs
 				continue
@@ -73,7 +73,7 @@ func (t *TunHandler) HandleTun() error {
 			if err := peer.Egress().SendDataIP(buffer[:epochPrefixSize+n]); err != nil {
 				log.Printf("failed to write to TCP: %v", err)
 				_ = peer.Egress().Close()
-				t.sessionManager.Delete(peer)
+				t.peerStore.Delete(peer)
 			}
 		}
 	}

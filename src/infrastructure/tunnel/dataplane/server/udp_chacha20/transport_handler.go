@@ -22,12 +22,13 @@ import (
 //
 // For unknown clients, it delegates to session-plane registration via the injected registrar.
 type TransportHandler struct {
-	ctx            context.Context
-	settings       settings.Settings
-	writer         io.Writer
-	sessionManager session.Repository
-	logger         logging.Logger
-	listenerConn   listeners.UdpListener
+	ctx          context.Context
+	settings     settings.Settings
+	writer       io.Writer
+	routeLookup  session.RouteLookup
+	addrUpdater  session.PeerAddressUpdater
+	logger       logging.Logger
+	listenerConn listeners.UdpListener
 	// Session-plane: registration and handshake tracking for not-yet-established sessions.
 	registrar *udp_registration.Registrar
 	// Dataplane worker for established sessions.
@@ -40,7 +41,8 @@ func NewTransportHandler(
 	settings settings.Settings,
 	writer io.Writer,
 	listenerConn listeners.UdpListener,
-	sessionManager session.Repository,
+	routeLookup session.RouteLookup,
+	addrUpdater session.PeerAddressUpdater,
 	logger logging.Logger,
 	registrar *udp_registration.Registrar,
 ) transport.Handler {
@@ -48,14 +50,15 @@ func NewTransportHandler(
 	cp := newServicePacketHandler(crypto)
 	dp := newUdpDataplaneWorker(writer, cp)
 	return &TransportHandler{
-		ctx:            ctx,
-		settings:       settings,
-		writer:         writer,
-		sessionManager: sessionManager,
-		logger:         logger,
-		listenerConn:   listenerConn,
-		registrar:      registrar,
-		dp:             dp,
+		ctx:          ctx,
+		settings:     settings,
+		writer:       writer,
+		routeLookup:  routeLookup,
+		addrUpdater:  addrUpdater,
+		logger:       logger,
+		listenerConn: listenerConn,
+		registrar:    registrar,
+		dp:           dp,
 	}
 }
 
@@ -69,7 +72,7 @@ func (t *TransportHandler) HandleTransport() error {
 	t.logger.Printf("server listening on port %d (UDP)", t.settings.Port)
 
 	// Start idle session reaper if the repository supports it.
-	if reaper, ok := t.sessionManager.(session.IdleReaper); ok {
+	if reaper, ok := t.routeLookup.(session.IdleReaper); ok {
 		go session.RunIdleReaperLoop(t.ctx, reaper, settings.ServerIdleTimeout, settings.IdleReaperInterval, t.logger)
 	}
 
@@ -148,7 +151,7 @@ func (t *TransportHandler) getPeerByRouteID(packet []byte) (*session.Peer, bool)
 	if !ok {
 		return nil, false
 	}
-	peer, err := t.sessionManager.GetByRouteID(routeID)
+	peer, err := t.routeLookup.GetByRouteID(routeID)
 	if err != nil {
 		return nil, false
 	}
@@ -166,7 +169,7 @@ func (t *TransportHandler) handleEstablished(addrPort netip.AddrPort, peer *sess
 	}
 
 	if peer.ExternalAddrPort() != addrPort {
-		t.sessionManager.UpdateExternalAddr(peer, addrPort)
+		t.addrUpdater.UpdateExternalAddr(peer, addrPort)
 	}
 
 	return t.dp.handleDecrypted(peer, packet, decrypted)

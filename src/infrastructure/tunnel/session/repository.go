@@ -9,24 +9,41 @@ import (
 )
 
 type Repository interface {
-	// Add adds peer to the repository
-	Add(peer *Peer)
-	// Delete deletes peer from the repository and zeroes key material
-	Delete(peer *Peer)
-	// GetByInternalAddrPort tries to retrieve peer by internal(in vpn) ip
-	GetByInternalAddrPort(addr netip.Addr) (*Peer, error)
-	// GetByExternalAddrPort tries to retrieve peer by external(outside of vpn) ip and port combination
+	PeerStore
+	InternalLookup
+	RouteLookup
+	PeerAddressUpdater
+
+	// GetByExternalAddrPort tries to retrieve peer by external(outside of vpn) ip and port combination.
 	GetByExternalAddrPort(addrPort netip.AddrPort) (*Peer, error)
-	// GetByRouteID tries to retrieve peer by stable per-session UDP route identifier.
+	// AllPeers returns a snapshot slice of all peers in the repository.
+	AllPeers() []*Peer
+}
+
+// RouteLookup provides O(1) lookup by stable UDP route identifier.
+type RouteLookup interface {
 	GetByRouteID(routeID uint64) (*Peer, error)
+}
+
+// InternalLookup resolves a peer by internal tunnel IP.
+type InternalLookup interface {
+	GetByInternalAddrPort(addr netip.Addr) (*Peer, error)
+}
+
+// PeerStore is the minimal read/write capability used by dataplane/sessionplane.
+type PeerStore interface {
+	// Add adds peer to the repository.
+	Add(peer *Peer)
+	// Delete deletes peer from the repository and zeroes key material.
+	Delete(peer *Peer)
 	// FindByDestinationIP finds the peer that should receive packets destined for addr.
 	// Checks both internal IP (exact match) and AllowedIPs (prefix match).
 	// Used for egress routing (TUN → client).
 	FindByDestinationIP(addr netip.Addr) (*Peer, error)
-	// AllPeers returns a snapshot slice of all peers in the repository.
-	AllPeers() []*Peer
-	// UpdateExternalAddr atomically re-indexes the peer under a new external address.
-	// Used when a client roams to a different NAT endpoint.
+}
+
+// PeerAddressUpdater re-indexes a peer when client external endpoint changes.
+type PeerAddressUpdater interface {
 	UpdateExternalAddr(peer *Peer, newAddr netip.AddrPort)
 }
 

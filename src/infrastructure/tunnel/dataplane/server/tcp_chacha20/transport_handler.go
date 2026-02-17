@@ -13,13 +13,13 @@ import (
 )
 
 type TransportHandler struct {
-	ctx            context.Context
-	settings       settings.Settings
-	writer         io.ReadWriteCloser
-	listener       listeners.TcpListener
-	sessionManager session.Repository
-	logger         logging.Logger
-	registrar      *tcp_registration.Registrar
+	ctx       context.Context
+	settings  settings.Settings
+	writer    io.ReadWriteCloser
+	listener  listeners.TcpListener
+	peerStore session.PeerStore
+	logger    logging.Logger
+	registrar *tcp_registration.Registrar
 }
 
 func NewTransportHandler(
@@ -27,18 +27,18 @@ func NewTransportHandler(
 	settings settings.Settings,
 	writer io.ReadWriteCloser,
 	listener listeners.TcpListener,
-	sessionManager session.Repository,
+	peerStore session.PeerStore,
 	logger logging.Logger,
 	registrar *tcp_registration.Registrar,
 ) transport.Handler {
 	return &TransportHandler{
-		ctx:            ctx,
-		settings:       settings,
-		writer:         writer,
-		listener:       listener,
-		sessionManager: sessionManager,
-		logger:         logger,
-		registrar:      registrar,
+		ctx:       ctx,
+		settings:  settings,
+		writer:    writer,
+		listener:  listener,
+		peerStore: peerStore,
+		logger:    logger,
+		registrar: registrar,
 	}
 }
 
@@ -85,5 +85,5 @@ func (t *TransportHandler) HandleTransport() error {
 }
 
 func (t *TransportHandler) handleClient(ctx context.Context, peer *session.Peer, tr connection.Transport, tunFile io.ReadWriteCloser) {
-	newTCPDataplaneWorker(ctx, peer, tr, tunFile, t.sessionManager, t.logger).Run()
+	newTCPDataplaneWorker(ctx, peer, tr, tunFile, t.peerStore, t.logger).Run()
 }

@@ -17,20 +17,20 @@ type TunHandler struct {
 	ctx            context.Context
 	reader         io.Reader
 	ipHeaderParser appip.HeaderParser
-	sessionManager session.Repository
+	peerStore      session.PeerStore
 }
 
 func NewTunHandler(
 	ctx context.Context,
 	reader io.Reader,
 	parser appip.HeaderParser,
-	sessionManager session.Repository,
+	peerStore session.PeerStore,
 ) tun.Handler {
 	return &TunHandler{
 		ctx:            ctx,
 		reader:         reader,
 		ipHeaderParser: parser,
-		sessionManager: sessionManager,
+		peerStore:      peerStore,
 	}
 }
 
@@ -86,7 +86,7 @@ func (t *TunHandler) HandleTun() error {
 				continue
 			}
 
-			peer, sErr := t.sessionManager.FindByDestinationIP(addr)
+			peer, sErr := t.peerStore.FindByDestinationIP(addr)
 			if sErr != nil {
 				// No route to destination - either unknown host or not in any peer's AllowedIPs
 				continue
@@ -95,7 +95,7 @@ func (t *TunHandler) HandleTun() error {
 			// Encrypt "nonce || payload". The crypto service_packet must treat the prefix as nonce.
 			if err := peer.Egress().SendDataIP(buffer[:chacha20poly1305.NonceSize+n]); err != nil {
 				log.Printf("failed to send packet to %v: %v", peer.ExternalAddrPort(), err)
-				t.sessionManager.Delete(peer)
+				t.peerStore.Delete(peer)
 			}
 		}
 	}
