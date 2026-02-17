@@ -46,8 +46,9 @@ type RunnerMockTunManager struct {
 	createErrByProto map[settings.Protocol]error
 	disposeErr       error
 
-	createCalls  int32
-	disposeCalls int32
+	createCalls    int32
+	disposeCalls   int32
+	lastCreatedTun *RunnerMockTun
 }
 
 func (m *RunnerMockTunManager) CreateDevice(s settings.Settings) (tun.Device, error) {
@@ -55,7 +56,9 @@ func (m *RunnerMockTunManager) CreateDevice(s settings.Settings) (tun.Device, er
 	if e := m.createErrByProto[s.Protocol]; e != nil {
 		return nil, e
 	}
-	return &RunnerMockTun{}, nil
+	t := &RunnerMockTun{}
+	m.lastCreatedTun = t
+	return t, nil
 }
 
 func (m *RunnerMockTunManager) DisposeDevices(_ settings.Settings) error {
@@ -324,6 +327,12 @@ func TestRoute_CreateWorkerError(t *testing.T) {
 	_, err := r.createRouter(context.Background(), settings.Settings{Protocol: settings.WS})
 	if err == nil || err.Error() != "error creating worker: boom" {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	if deps.tun.lastCreatedTun == nil {
+		t.Fatal("expected created tun")
+	}
+	if got := atomic.LoadInt32(&deps.tun.lastCreatedTun.closed); got != 1 {
+		t.Fatalf("expected tun to be closed on worker creation error, got closed=%d", got)
 	}
 }
 

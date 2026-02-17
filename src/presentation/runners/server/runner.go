@@ -64,20 +64,22 @@ func (r *Runner) cleanup() error {
 func (r *Runner) runWorkers(
 	ctx context.Context,
 ) error {
-	errGroup, errGroupCtx := errgroup.WithContext(ctx)
+	workersCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	errGroup, errGroupCtx := errgroup.WithContext(workersCtx)
 	s := r.workerSettings()
-	routers := make([]routing.Router, 0, len(s))
 	for _, setting := range s {
 		router, err := r.createRouter(errGroupCtx, setting)
 		if err != nil {
+			// Ensure already started workers are asked to stop before return.
+			cancel()
+			_ = errGroup.Wait()
 			return fmt.Errorf("could not create %s router: %w", setting.Protocol, err)
 		}
-		routers = append(routers, router)
-	}
-	for i, router := range routers {
+		proto := setting.Protocol
 		errGroup.Go(func() error {
 			if routeErr := router.RouteTraffic(errGroupCtx); routeErr != nil {
-				return fmt.Errorf("%s worker failed: %w", s[i].Protocol, routeErr)
+				return fmt.Errorf("%s worker failed: %w", proto, routeErr)
 			}
 			return nil
 		})
@@ -99,6 +101,7 @@ func (r *Runner) createRouter(
 	}
 	worker, workerErr := r.workerFactory.CreateWorker(ctx, tun, settings)
 	if workerErr != nil {
+		_ = tun.Close()
 		return nil, fmt.Errorf("error creating worker: %w", workerErr)
 	}
 	return r.routerFactory.CreateRouter(worker), nil

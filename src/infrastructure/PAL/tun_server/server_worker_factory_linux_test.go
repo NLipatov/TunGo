@@ -241,6 +241,43 @@ func Test_CreateWorker_WS_ListenError(t *testing.T) {
 	}
 }
 
+func Test_CreateWorker_WS_ListenerInitError_ClosesTCPListener(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, port, _ := net.SplitHostPort(ln.Addr().String())
+	portNum, convErr := strconv.Atoi(port)
+	if convErr != nil {
+		_ = ln.Close()
+		t.Fatalf("failed to parse port %q: %v", port, convErr)
+	}
+	_ = ln.Close()
+
+	factory, err := NewTestServerWorkerFactory(newDefaultLoggerFactory(), &dummyConfigManager{})
+	if err != nil {
+		t.Fatalf("unexpected constructor error: %v", err)
+	}
+	ws := settings.Settings{
+		Protocol: settings.WS,
+		Addressing: settings.Addressing{
+			Server: mustHost("127.0.0.1"),
+			Port:   portNum,
+		},
+	}
+
+	// nil ctx makes ws listener creation fail; underlying TCP listener must be closed.
+	if _, err := factory.CreateWorker(nil, nopReadWriteCloser{}, ws); err == nil {
+		t.Fatal("expected ws listener init error for nil context")
+	}
+
+	reopen, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", port))
+	if err != nil {
+		t.Fatalf("expected port to be free after ws listener init failure, got: %v", err)
+	}
+	_ = reopen.Close()
+}
+
 func Test_CreateWorker_TCP_UDP_WS_Success(t *testing.T) {
 	for _, proto := range []settings.Protocol{settings.TCP, settings.UDP, settings.WS} {
 		ctx, cancel := context.WithCancel(context.Background())

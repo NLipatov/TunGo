@@ -201,6 +201,7 @@ func (s *ServerWorkerFactory) createWSWorker(
 	wsListenerFactory := wsServer.NewDefaultListenerFactory()
 	wsListener, wsListenerErr := wsListenerFactory.NewListener(ctx, tcpListener)
 	if wsListenerErr != nil {
+		_ = tcpListener.Close()
 		return nil, fmt.Errorf("failed to listen WebSocket: %w", wsListenerErr)
 	}
 
