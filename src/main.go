@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"os"
 	"time"
+	"tungo/application/confgen"
 	"tungo/domain/app"
 	"tungo/domain/mode"
 	"tungo/infrastructure/PAL/configuration/client"
@@ -14,12 +16,10 @@ import (
 	"tungo/infrastructure/PAL/signal"
 	"tungo/infrastructure/PAL/stat"
 	"tungo/infrastructure/PAL/tun_server"
+	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/tunnel/sessionplane/client_factory"
 	"tungo/presentation/configuring"
 	"tungo/presentation/elevation"
-	"encoding/json"
-	"tungo/application/confgen"
-	"tungo/infrastructure/cryptography/primitives"
 	clientConf "tungo/presentation/runners/client"
 	"tungo/presentation/runners/server"
 	"tungo/presentation/runners/version"
@@ -65,13 +65,6 @@ func main() {
 		exitCode = 1
 		return
 	}
-	serverConfigPath, _ := serverResolver.Resolve()
-	keyManager := serverConf.NewX25519KeyManager(configurationManager)
-	if pKeysErr := keyManager.PrepareKeys(); pKeysErr != nil {
-		log.Printf("could not prepare keys: %s", pKeysErr)
-		exitCode = 1
-		return
-	}
 
 	configuratorFactory := configuring.NewConfigurationFactory(configurationManager)
 	configurator := configuratorFactory.Configurator()
@@ -84,6 +77,12 @@ func main() {
 
 	switch appMode {
 	case mode.Server:
+		if err := prepareServerKeys(configurationManager); err != nil {
+			log.Printf("%v", err)
+			exitCode = 1
+			return
+		}
+		serverConfigPath, _ := serverResolver.Resolve()
 		log.Printf("Starting server...")
 		err := startServer(appCtx, configurationManager, serverConfigPath)
 		if err != nil {
@@ -95,6 +94,11 @@ func main() {
 			return
 		}
 	case mode.ServerConfGen:
+		if err := prepareServerKeys(configurationManager); err != nil {
+			log.Printf("%v", err)
+			exitCode = 1
+			return
+		}
 		gen := confgen.NewGenerator(configurationManager, &primitives.DefaultKeyDeriver{})
 		conf, err := gen.Generate()
 		if err != nil {
@@ -126,6 +130,14 @@ func main() {
 		exitCode = 1
 		return
 	}
+}
+
+func prepareServerKeys(configurationManager serverConf.ConfigurationManager) error {
+	keyManager := serverConf.NewX25519KeyManager(configurationManager)
+	if err := keyManager.PrepareKeys(); err != nil {
+		return fmt.Errorf("could not prepare keys: %w", err)
+	}
+	return nil
 }
 
 func startClient(appCtx context.Context) error {
