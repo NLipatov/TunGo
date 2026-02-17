@@ -12,8 +12,8 @@ import (
 	"tungo/application/network/connection"
 	"tungo/application/network/routing/transport"
 	"tungo/infrastructure/cryptography/chacha20"
-	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/controlplane"
@@ -27,7 +27,7 @@ type TransportHandler struct {
 	writer              io.Writer
 	cryptographyService connection.Crypto
 	rekeyController     *rekey.StateMachine
-	handshakeCrypto     handshake.Crypto
+	handshakeCrypto     primitives.KeyDeriver
 	egress              connection.Egress
 	lastRecvAt          time.Time
 	lastPingSentAt      time.Time
@@ -42,14 +42,14 @@ func NewTransportHandler(
 	rekeyController *rekey.StateMachine,
 	egress connection.Egress,
 ) transport.Handler {
-	const pingLen = chacha20poly1305.NonceSize + 3
+	const pingLen = chacha20.UDPRouteIDLength + chacha20poly1305.NonceSize + 3
 	return &TransportHandler{
 		ctx:                 ctx,
 		reader:              reader,
 		writer:              writer,
 		cryptographyService: cryptographyService,
 		rekeyController:     rekeyController,
-		handshakeCrypto:     &handshake.DefaultCrypto{},
+		handshakeCrypto:     &primitives.DefaultKeyDeriver{},
 		egress:              egress,
 		lastRecvAt:          time.Now(),
 		pingBuf:             make([]byte, pingLen, pingLen+chacha20poly1305.Overhead),
@@ -85,37 +85,25 @@ func (t *TransportHandler) HandleTransport() error {
 }
 
 func (t *TransportHandler) handleDatagram(pkt []byte) error {
-	// SessionReset is sent as a legacy, unencrypted control packet.
-	if spType, spOk := service_packet.TryParseHeader(pkt); spOk {
-		if t.rekeyController != nil {
-			t.rekeyController.AbortPendingIfExpired(time.Now())
-		}
-		if spType == service_packet.SessionReset {
-			return fmt.Errorf("server requested cryptographyService reset")
-		}
-	}
 	if len(pkt) < 2 {
 		return nil
 	}
 
 	decrypted, decryptionErr := t.cryptographyService.Decrypt(pkt)
 	if decryptionErr != nil {
-		if t.ctx.Err() != nil {
-			return nil
-		}
-		// Duplicate nonce detected – this may indicate a network retransmission or a replay attack.
-		// In either case, skip this packet.
-		if errors.Is(decryptionErr, chacha20.ErrNonUniqueNonce) {
-			return nil
-		}
-		return fmt.Errorf("failed to decrypt data: %s", decryptionErr)
+		// Drop undecryptable packets without terminating session.
+		// If session is truly broken, keepalive timeout will detect it.
+		// This makes client resilient to packet corruption and garbage injection.
+		return nil
 	}
 	t.lastRecvAt = time.Now()
 
 	if t.rekeyController != nil {
-		epoch := binary.BigEndian.Uint16(pkt[chacha20.NonceEpochOffset : chacha20.NonceEpochOffset+2])
-		// Data was successfully decrypted with epoch; allow encrypt with this epoch by promoting.
-		t.rekeyController.ActivateSendEpoch(epoch)
+		if len(pkt) >= chacha20.UDPEpochOffset+2 {
+			epoch := binary.BigEndian.Uint16(pkt[chacha20.UDPEpochOffset : chacha20.UDPEpochOffset+2])
+			// Data was successfully decrypted with epoch; allow encrypt with this epoch by promoting.
+			t.rekeyController.ActivateSendEpoch(epoch)
+		}
 		t.rekeyController.AbortPendingIfExpired(time.Now())
 	}
 
@@ -133,6 +121,10 @@ func (t *TransportHandler) handleDatagram(pkt []byte) error {
 	return nil
 }
 
+// ErrEpochExhausted is returned when server signals epoch exhaustion.
+// Client should reconnect with a fresh handshake.
+var ErrEpochExhausted = errors.New("epoch exhausted; reconnect required")
+
 func (t *TransportHandler) handleControlplane(plaintext []byte) (handled bool, err error) {
 	spType, spOk := service_packet.TryParseHeader(plaintext)
 	if !spOk {
@@ -140,17 +132,19 @@ func (t *TransportHandler) handleControlplane(plaintext []byte) (handled bool, e
 	}
 
 	switch spType {
+	case service_packet.EpochExhausted:
+		// Server cannot create new epochs - reconnect immediately.
+		log.Printf("received EpochExhausted from server, initiating reconnect")
+		return true, ErrEpochExhausted
 	case service_packet.RekeyAck:
 		if t.rekeyController != nil && t.rekeyController.LastRekeyEpoch >= 65000 {
 			log.Printf("rekey ack: epoch exhausted, requesting session reset")
-			return true, fmt.Errorf("epoch exhausted; reconnect required")
+			return true, ErrEpochExhausted
 		}
 		if _, err := controlplane.ClientHandleRekeyAck(t.handshakeCrypto, t.rekeyController, plaintext); err != nil {
 			log.Printf("rekey ack: install/apply failed: %v", err)
 		}
 		return true, nil
-	case service_packet.SessionReset:
-		return true, fmt.Errorf("server requested cryptographyService reset")
 	default:
 		// ignore unknown service_packet packets (including Pong — recv timer already reset above)
 		return true, nil
@@ -168,7 +162,7 @@ func (t *TransportHandler) handleIdle() error {
 }
 
 func (t *TransportHandler) sendPing() {
-	payload := t.pingBuf[chacha20poly1305.NonceSize:]
+	payload := t.pingBuf[chacha20.UDPRouteIDLength+chacha20poly1305.NonceSize:]
 	if _, err := service_packet.EncodeV1Header(service_packet.Ping, payload); err != nil {
 		return
 	}

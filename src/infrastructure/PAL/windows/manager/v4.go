@@ -3,22 +3,29 @@
 package manager
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"log"
 	"net"
+	"net/netip"
 	"strings"
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/windows/ipcfg"
 	"tungo/infrastructure/PAL/windows/wtun"
 	"tungo/infrastructure/settings"
-
-	"golang.zx2c4.com/wintun"
 )
 
 // v4Manager configures a Wintun adapter and the host stack for IPv4.
 type v4Manager struct {
-	s      settings.Settings
-	tun    tun.Device
-	netCfg ipcfg.Contract
+	s                  settings.Settings
+	tun                tun.Device
+	netCfg             ipcfg.Contract
+	routeEndpoint      netip.AddrPort
+	createTunDeviceFn  func() (tun.Device, error)
+	resolveRouteIPv4Fn func() (string, error)
+	resolvedRouteIP    string // cached resolved server IP for consistent teardown
+	resolvedRouteIf    string // cached egress interface used for host route
 }
 
 func newV4Manager(
@@ -38,7 +45,11 @@ func (m *v4Manager) CreateDevice() (tun.Device, error) {
 	if sErr := m.validateSettings(); sErr != nil {
 		return nil, sErr
 	}
-	tunDev, err := m.createOrOpenTunDevice()
+	createTun := m.createTunDeviceFn
+	if createTun == nil {
+		createTun = m.createOrOpenTunDevice
+	}
+	tunDev, err := createTun()
 	if err != nil {
 		return nil, err
 	}
@@ -67,29 +78,26 @@ func (m *v4Manager) CreateDevice() (tun.Device, error) {
 }
 
 func (m *v4Manager) validateSettings() error {
-	if strings.TrimSpace(m.s.InterfaceName) == "" {
-		return fmt.Errorf("empty InterfaceName")
+	if strings.TrimSpace(m.s.TunName) == "" {
+		return fmt.Errorf("empty TunName")
 	}
-	if net.ParseIP(m.s.ConnectionIP) == nil {
-		return fmt.Errorf("invalid ConnectionIP: %q", m.s.ConnectionIP)
+	if m.s.Server.IsZero() {
+		return fmt.Errorf("empty Server")
 	}
-	if _, _, err := net.ParseCIDR(m.s.InterfaceIPCIDR); err != nil {
-		return fmt.Errorf("invalid InterfaceIPCIDR: %q", m.s.InterfaceIPCIDR)
+	if !m.s.IPv4Subnet.IsValid() {
+		return fmt.Errorf("invalid IPv4Subnet: %q", m.s.IPv4Subnet)
 	}
-	if net.ParseIP(m.s.InterfaceAddress).To4() == nil {
-		return fmt.Errorf("v4Manager requires IPv4 InterfaceAddress, got %q", m.s.InterfaceAddress)
-	}
-	if net.ParseIP(m.s.ConnectionIP).To4() == nil {
-		return fmt.Errorf("v4Manager requires IPv4 ConnectionIP, got %q", m.s.ConnectionIP)
+	if !m.s.IPv4.IsValid() || !m.s.IPv4.Unmap().Is4() {
+		return fmt.Errorf("v4Manager requires valid IPv4, got %q", m.s.IPv4)
 	}
 	return nil
 }
 
 // createOrOpenTunDevice creates or opening existing wintun adapter (idempotent behavior).
 func (m *v4Manager) createOrOpenTunDevice() (tun.Device, error) {
-	adapter, err := wintun.CreateAdapter(m.s.InterfaceName, tunnelType, nil)
+	adapter, err := wintun.CreateAdapter(m.s.TunName, tunnelType, nil)
 	if err != nil {
-		if existing, openErr := wintun.OpenAdapter(m.s.InterfaceName); openErr == nil {
+		if existing, openErr := wintun.OpenAdapter(m.s.TunName); openErr == nil {
 			return wtun.NewTUN(existing)
 		}
 		return nil, fmt.Errorf("create/open adapter: %w", err)
@@ -103,64 +111,44 @@ func (m *v4Manager) createOrOpenTunDevice() (tun.Device, error) {
 }
 
 func (m *v4Manager) addStaticRouteToServer() error {
-	_ = m.netCfg.DeleteRoute(m.s.ConnectionIP)
-	gw, ifName, _, _, err := m.netCfg.BestRoute(m.s.ConnectionIP)
+	routeIP, err := m.resolveRouteIPv4()
+	if err != nil {
+		// If control channel is pinned to IPv6 endpoint, there is no IPv4 host route to preserve.
+		if m.routeEndpoint.IsValid() && !m.routeEndpoint.Addr().Unmap().Is4() {
+			return nil
+		}
+		return fmt.Errorf("resolve host %s: %w", m.s.Server, err)
+	}
+	gw, ifName, ifIndex, _, bestErr := m.netCfg.BestRoute(routeIP)
+	if bestErr != nil {
+		return bestErr
+	}
+	ifName, err = routeInterfaceName(ifName, ifIndex)
 	if err != nil {
 		return err
 	}
+	m.resolvedRouteIP = routeIP
+	m.resolvedRouteIf = ifName
+	_ = m.netCfg.DeleteRoute(routeIP)
+	_ = m.netCfg.DeleteRouteOnInterface(routeIP, ifName)
 	if gw == "" {
 		// on-link
-		return m.netCfg.AddHostRouteOnLink(m.s.ConnectionIP, ifName, 1)
+		return m.netCfg.AddHostRouteOnLink(routeIP, ifName, 1)
 	}
-	return m.netCfg.AddHostRouteViaGateway(m.s.ConnectionIP, ifName, gw, 1)
-}
-
-// onLinkInterfaceName returns the name of an interface whose IPv4 prefix contains 'server'.
-func (m *v4Manager) onLinkInterfaceName(server net.IP) (string, bool) {
-	srv4 := server.To4()
-	if srv4 == nil {
-		return "", false
-	}
-	iFaces, _ := net.Interfaces()
-	for _, iFace := range iFaces {
-		if !m.isCandidateIF(iFace, m.s.InterfaceName) {
-			continue
-		}
-		addresses, _ := iFace.Addrs()
-		for _, a := range addresses {
-			if ipn, ok := a.(*net.IPNet); ok && ipn.IP.To4() != nil && ipn.Contains(srv4) {
-				return iFace.Name, true
-			}
-		}
-	}
-	return "", false
-}
-
-func (m *v4Manager) isCandidateIF(it net.Interface, selfName string) bool {
-	// Only UP, non-loopback, and not our own TUN
-	if (it.Flags & net.FlagUp) == 0 {
-		return false
-	}
-	if (it.Flags & net.FlagLoopback) != 0 {
-		return false
-	}
-	if it.Name == selfName {
-		return false
-	}
-	return true
+	return m.netCfg.AddHostRouteViaGateway(routeIP, ifName, gw, 1)
 }
 
 // assignIPToTunDevice validates IPv4 address ∈ CIDR and applies it.
 func (m *v4Manager) assignIPToTunDevice() error {
-	ip := net.ParseIP(m.s.InterfaceAddress)
-	_, network, _ := net.ParseCIDR(m.s.InterfaceIPCIDR)
+	ipStr := m.s.IPv4.String()
+	subnetStr := m.s.IPv4Subnet.String()
+	ip := net.ParseIP(ipStr)
+	_, network, _ := net.ParseCIDR(subnetStr)
 	if ip == nil || network == nil || !network.Contains(ip) {
-		_ = m.netCfg.DeleteRoute(m.s.ConnectionIP)
-		return fmt.Errorf("address %s not in %s", m.s.InterfaceAddress, m.s.InterfaceIPCIDR)
+		return fmt.Errorf("address %s not in %s", ipStr, subnetStr)
 	}
 	mask := net.IP(network.Mask).String() // dotted decimal mask
-	if err := m.netCfg.SetAddressStatic(m.s.InterfaceName, m.s.InterfaceAddress, mask); err != nil {
-		_ = m.netCfg.DeleteRoute(m.s.ConnectionIP)
+	if err := m.netCfg.SetAddressStatic(m.s.TunName, ipStr, mask); err != nil {
 		return err
 	}
 	return nil
@@ -168,12 +156,8 @@ func (m *v4Manager) assignIPToTunDevice() error {
 
 // setDefaultRouteToTunDevice replaces any existing default route with split default route (0.0.0.0/1, 128.0.0.0/1).
 func (m *v4Manager) setDefaultRouteToTunDevice() error {
-	_ = m.netCfg.DeleteDefaultSplitRoutes(m.s.InterfaceName)
-	if err := m.netCfg.AddDefaultSplitRoutes(m.s.InterfaceName, 1); err != nil {
-		_ = m.netCfg.DeleteRoute(m.s.ConnectionIP)
-		return err
-	}
-	return nil
+	_ = m.netCfg.DeleteDefaultSplitRoutes(m.s.TunName)
+	return m.netCfg.AddDefaultSplitRoutes(m.s.TunName, 1)
 }
 
 // setMTUToTunDevice sets MTU (or safe default).
@@ -185,29 +169,61 @@ func (m *v4Manager) setMTUToTunDevice() error {
 	if mtu < settings.MinimumIPv4MTU {
 		mtu = settings.MinimumIPv4MTU
 	}
-	if err := m.netCfg.SetMTU(m.s.InterfaceName, mtu); err != nil {
-		_ = m.netCfg.DeleteRoute(m.s.ConnectionIP)
-		return err
-	}
-	return nil
+	return m.netCfg.SetMTU(m.s.TunName, mtu)
 }
 
 // setDNSToTunDevice applies v4 DNS resolvers and flushes system cache.
 func (m *v4Manager) setDNSToTunDevice() error {
-	//ToDo: move dns server addresses to configuration
-	if err := m.netCfg.SetDNS(m.s.InterfaceName, []string{"1.1.1.1", "8.8.8.8"}); err != nil {
+	if err := m.netCfg.SetDNS(m.s.TunName, m.s.DNSv4Resolvers()); err != nil {
 		return err
 	}
-	_ = m.netCfg.FlushDNS()
+	if err := m.netCfg.FlushDNS(); err != nil {
+		log.Printf("failed to flush IPv4 DNS cache: %v", err)
+	}
 	return nil
 }
 
 // DisposeDevices reverses CreateDevice in safe order.
 func (m *v4Manager) DisposeDevices() error {
-	_ = m.netCfg.DeleteDefaultSplitRoutes(m.s.InterfaceName)
-	_ = m.netCfg.DeleteRoute(m.s.ConnectionIP)
-	if m.tun != nil {
-		_ = m.tun.Close()
+	var cleanupErrs []error
+	if err := m.netCfg.DeleteDefaultSplitRoutes(m.s.TunName); err != nil {
+		cleanupErrs = append(cleanupErrs, fmt.Errorf("delete default split routes: %w", err))
 	}
-	return nil
+	if m.resolvedRouteIP != "" {
+		if err := m.netCfg.DeleteRouteOnInterface(m.resolvedRouteIP, m.resolvedRouteIf); err != nil {
+			cleanupErrs = append(cleanupErrs, fmt.Errorf("delete route %s on %s: %w", m.resolvedRouteIP, m.resolvedRouteIf, err))
+		}
+	}
+	if err := m.netCfg.SetDNS(m.s.TunName, nil); err != nil {
+		cleanupErrs = append(cleanupErrs, fmt.Errorf("clear DNS: %w", err))
+	}
+	if err := m.netCfg.FlushDNS(); err != nil {
+		log.Printf("failed to flush IPv4 DNS cache during cleanup: %v", err)
+	}
+	if m.tun != nil {
+		if err := m.tun.Close(); err != nil {
+			cleanupErrs = append(cleanupErrs, fmt.Errorf("close tun: %w", err))
+		}
+	}
+	return errors.Join(cleanupErrs...)
+}
+
+func (m *v4Manager) SetRouteEndpoint(addr netip.AddrPort) {
+	m.routeEndpoint = addr
+}
+
+func (m *v4Manager) resolveRouteIPv4() (string, error) {
+	if m.routeEndpoint.IsValid() {
+		ip := m.routeEndpoint.Addr()
+		if ip.Unmap().Is4() {
+			return ip.Unmap().String(), nil
+		}
+		return "", fmt.Errorf("route endpoint %s is IPv6, expected IPv4", ip)
+	}
+	if m.resolveRouteIPv4Fn != nil {
+		return m.resolveRouteIPv4Fn()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), routeResolveTimeout(m.s))
+	defer cancel()
+	return m.s.Server.RouteIPv4Context(ctx)
 }

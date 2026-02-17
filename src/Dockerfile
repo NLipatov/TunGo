@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Stage 1: build tungo
-FROM golang:1.25 AS builder
+FROM golang:1.26 AS builder
 
 # Set destination for COPY
 WORKDIR /src

@@ -1,11 +1,11 @@
 package controlplane
 
 import (
-	"crypto/ed25519"
 	"errors"
 	"testing"
-	"tungo/infrastructure/cryptography/chacha20/handshake"
+	"time"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/service_packet"
 )
 
@@ -20,7 +20,7 @@ func (r *rekeyTestRekeyer) Rekey(_, _ []byte) (uint16, error) {
 func (*rekeyTestRekeyer) SetSendEpoch(uint16)     {}
 func (*rekeyTestRekeyer) RemoveEpoch(uint16) bool { return true }
 
-func buildRekeyInitPacket(t *testing.T, crypto handshake.Crypto) ([]byte, [32]byte) {
+func buildRekeyInitPacket(t *testing.T, crypto primitives.KeyDeriver) ([]byte, [32]byte) {
 	t.Helper()
 	pub, priv, err := crypto.GenerateX25519KeyPair()
 	if err != nil {
@@ -35,7 +35,7 @@ func buildRekeyInitPacket(t *testing.T, crypto handshake.Crypto) ([]byte, [32]by
 }
 
 func TestServerHandleRekeyInit_NilFSM(t *testing.T) {
-	_, _, ok, err := ServerHandleRekeyInit(&handshake.DefaultCrypto{}, nil, nil)
+	_, _, ok, err := ServerHandleRekeyInit(&primitives.DefaultKeyDeriver{}, nil, nil)
 	if err != nil || ok {
 		t.Fatalf("expected ok=false with nil FSM, got ok=%v err=%v", ok, err)
 	}
@@ -53,7 +53,7 @@ func TestServerHandleRekeyInit_NilCrypto(t *testing.T) {
 func TestServerHandleRekeyInit_ShortPacket(t *testing.T) {
 	rk := &rekeyTestRekeyer{}
 	fsm := rekey.NewStateMachine(rk, []byte("c2s"), []byte("s2c"), true)
-	_, _, ok, err := ServerHandleRekeyInit(&handshake.DefaultCrypto{}, fsm, make([]byte, 10))
+	_, _, ok, err := ServerHandleRekeyInit(&primitives.DefaultKeyDeriver{}, fsm, make([]byte, 10))
 	if err != nil || ok {
 		t.Fatalf("expected ok=false for short packet, got ok=%v err=%v", ok, err)
 	}
@@ -65,7 +65,7 @@ func TestServerHandleRekeyInit_NotStable(t *testing.T) {
 	// Put FSM in non-stable state by starting a rekey.
 	_, _ = fsm.StartRekey([]byte("k1"), []byte("k2"))
 
-	crypto := &handshake.DefaultCrypto{}
+	crypto := &primitives.DefaultKeyDeriver{}
 	pkt, _ := buildRekeyInitPacket(t, crypto)
 
 	_, _, ok, err := ServerHandleRekeyInit(crypto, fsm, pkt)
@@ -76,7 +76,7 @@ func TestServerHandleRekeyInit_NotStable(t *testing.T) {
 
 func TestServerHandleRekeyInit_Success(t *testing.T) {
 	rk := &rekeyTestRekeyer{}
-	crypto := &handshake.DefaultCrypto{}
+	crypto := &primitives.DefaultKeyDeriver{}
 	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32), true)
 
 	pkt, _ := buildRekeyInitPacket(t, crypto)
@@ -97,7 +97,7 @@ func TestServerHandleRekeyInit_Success(t *testing.T) {
 }
 
 func TestClientHandleRekeyAck_NilFSM(t *testing.T) {
-	ok, err := ClientHandleRekeyAck(&handshake.DefaultCrypto{}, nil, nil)
+	ok, err := ClientHandleRekeyAck(&primitives.DefaultKeyDeriver{}, nil, nil)
 	if err != nil || ok {
 		t.Fatalf("expected ok=false with nil FSM, got ok=%v err=%v", ok, err)
 	}
@@ -115,7 +115,7 @@ func TestClientHandleRekeyAck_NilCrypto(t *testing.T) {
 func TestClientHandleRekeyAck_ShortPacket(t *testing.T) {
 	rk := &rekeyTestRekeyer{}
 	fsm := rekey.NewStateMachine(rk, []byte("c2s"), []byte("s2c"), false)
-	ok, err := ClientHandleRekeyAck(&handshake.DefaultCrypto{}, fsm, make([]byte, 10))
+	ok, err := ClientHandleRekeyAck(&primitives.DefaultKeyDeriver{}, fsm, make([]byte, 10))
 	if err != nil || ok {
 		t.Fatalf("expected ok=false for short packet, got ok=%v err=%v", ok, err)
 	}
@@ -128,7 +128,7 @@ func TestClientHandleRekeyAck_NoPendingKey(t *testing.T) {
 	pkt := make([]byte, service_packet.RekeyPacketLen)
 	_, _ = service_packet.EncodeV1Header(service_packet.RekeyAck, pkt)
 
-	ok, err := ClientHandleRekeyAck(&handshake.DefaultCrypto{}, fsm, pkt)
+	ok, err := ClientHandleRekeyAck(&primitives.DefaultKeyDeriver{}, fsm, pkt)
 	if err != nil || ok {
 		t.Fatalf("expected ok=false without pending key, got ok=%v err=%v", ok, err)
 	}
@@ -136,7 +136,7 @@ func TestClientHandleRekeyAck_NoPendingKey(t *testing.T) {
 
 func TestClientHandleRekeyAck_Success(t *testing.T) {
 	rk := &rekeyTestRekeyer{}
-	crypto := &handshake.DefaultCrypto{}
+	crypto := &primitives.DefaultKeyDeriver{}
 	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32), false)
 
 	// Set a pending private key (as the client would after sending RekeyInit).
@@ -163,7 +163,7 @@ func TestClientHandleRekeyAck_Success(t *testing.T) {
 	}
 }
 
-// mockCrypto is a controllable mock of handshake.Crypto for testing error paths.
+// mockCrypto is a controllable mock of primitives.KeyDeriver for testing error paths.
 type mockCrypto struct {
 	genPub    []byte
 	genPriv   [32]byte
@@ -173,11 +173,6 @@ type mockCrypto struct {
 	deriveCnt int
 }
 
-func (*mockCrypto) Sign(_ ed25519.PrivateKey, _ []byte) []byte   { return nil }
-func (*mockCrypto) Verify(_ ed25519.PublicKey, _, _ []byte) bool { return false }
-func (*mockCrypto) GenerateEd25519KeyPair() (ed25519.PublicKey, ed25519.PrivateKey, error) {
-	return nil, nil, nil
-}
 func (f *mockCrypto) GenerateX25519KeyPair() ([]byte, [32]byte, error) {
 	if f.genErr != nil {
 		return nil, f.genPriv, f.genErr
@@ -185,14 +180,7 @@ func (f *mockCrypto) GenerateX25519KeyPair() ([]byte, [32]byte, error) {
 	if f.genPub != nil {
 		return f.genPub, f.genPriv, nil
 	}
-	return (&handshake.DefaultCrypto{}).GenerateX25519KeyPair()
-}
-func (*mockCrypto) GenerateRandomBytesArray(_ int) []byte { return make([]byte, 32) }
-func (*mockCrypto) GenerateChaCha20KeysServerside(_, _ []byte, _ handshake.Hello) ([32]byte, []byte, []byte, error) {
-	return [32]byte{}, nil, nil, nil
-}
-func (*mockCrypto) GenerateChaCha20KeysClientside(_, _ []byte, _ handshake.Hello) ([]byte, []byte, [32]byte, error) {
-	return nil, nil, [32]byte{}, nil
+	return (&primitives.DefaultKeyDeriver{}).GenerateX25519KeyPair()
 }
 func (f *mockCrypto) DeriveKey(_, _, _ []byte) ([]byte, error) {
 	f.deriveCnt++
@@ -208,7 +196,7 @@ func TestServerHandleRekeyInit_GenerateKeyPairError(t *testing.T) {
 	rk := &rekeyTestRekeyer{}
 	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32), true)
 
-	pkt, _ := buildRekeyInitPacket(t, &handshake.DefaultCrypto{})
+	pkt, _ := buildRekeyInitPacket(t, &primitives.DefaultKeyDeriver{})
 
 	_, _, ok, err := ServerHandleRekeyInit(crypto, fsm, pkt)
 	if !errors.Is(err, genErr) {
@@ -225,7 +213,7 @@ func TestServerHandleRekeyInit_DeriveKeyError_FirstCall(t *testing.T) {
 	rk := &rekeyTestRekeyer{}
 	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32), true)
 
-	pkt, _ := buildRekeyInitPacket(t, &handshake.DefaultCrypto{})
+	pkt, _ := buildRekeyInitPacket(t, &primitives.DefaultKeyDeriver{})
 
 	_, _, ok, err := ServerHandleRekeyInit(crypto, fsm, pkt)
 	if !errors.Is(err, deriveErr) {
@@ -242,7 +230,7 @@ func TestServerHandleRekeyInit_DeriveKeyError_SecondCall(t *testing.T) {
 	rk := &rekeyTestRekeyer{}
 	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32), true)
 
-	pkt, _ := buildRekeyInitPacket(t, &handshake.DefaultCrypto{})
+	pkt, _ := buildRekeyInitPacket(t, &primitives.DefaultKeyDeriver{})
 
 	_, _, ok, err := ServerHandleRekeyInit(crypto, fsm, pkt)
 	if !errors.Is(err, deriveErr) {
@@ -255,7 +243,7 @@ func TestServerHandleRekeyInit_DeriveKeyError_SecondCall(t *testing.T) {
 
 func TestServerHandleRekeyInit_ClientSideFSM(t *testing.T) {
 	rk := &rekeyTestRekeyer{}
-	crypto := &handshake.DefaultCrypto{}
+	crypto := &primitives.DefaultKeyDeriver{}
 	// Use isServer=false to cover the else branch of the key-swap.
 	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32), false)
 
@@ -276,13 +264,95 @@ func TestServerHandleRekeyInit_ClientSideFSM(t *testing.T) {
 	}
 }
 
+func TestServerHandleRekeyInit_WrongSizePublicKey(t *testing.T) {
+	crypto := &mockCrypto{genPub: make([]byte, 31)} // wrong size
+	rk := &rekeyTestRekeyer{}
+	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32), true)
+	pkt, _ := buildRekeyInitPacket(t, &primitives.DefaultKeyDeriver{})
+
+	_, _, ok, err := ServerHandleRekeyInit(crypto, fsm, pkt)
+	if err == nil {
+		t.Fatal("expected error for wrong-size public key")
+	}
+	if ok {
+		t.Fatal("expected ok=false for wrong-size public key")
+	}
+}
+
+// mockFSM implements rekey.FSM with a controllable StartRekey error.
+type mockFSM struct {
+	state    rekey.State
+	c2sKey   []byte
+	s2cKey   []byte
+	isServer bool
+	startErr error
+}
+
+func (m *mockFSM) State() rekey.State                          { return m.state }
+func (m *mockFSM) StartRekey(_, _ []byte) (uint16, error)      { return 0, m.startErr }
+func (m *mockFSM) ActivateSendEpoch(uint16)                    {}
+func (m *mockFSM) AbortPendingIfExpired(time.Time)             {}
+func (m *mockFSM) CurrentServerToClientKey() []byte            { return m.s2cKey }
+func (m *mockFSM) CurrentClientToServerKey() []byte            { return m.c2sKey }
+func (m *mockFSM) IsServer() bool                              { return m.isServer }
+
+func TestServerHandleRekeyInit_StartRekeyError(t *testing.T) {
+	crypto := &primitives.DefaultKeyDeriver{}
+	fsm := &mockFSM{
+		state:    rekey.StateStable,
+		c2sKey:   make([]byte, 32),
+		s2cKey:   make([]byte, 32),
+		isServer: true,
+		startErr: errors.New("rekey-fail"),
+	}
+	pkt, _ := buildRekeyInitPacket(t, crypto)
+
+	_, _, ok, err := ServerHandleRekeyInit(crypto, fsm, pkt)
+	if err == nil {
+		t.Fatal("expected StartRekey error")
+	}
+	if ok {
+		t.Fatal("expected ok=false")
+	}
+}
+
+func TestClientHandleRekeyAck_StartRekeyError(t *testing.T) {
+	// Use a rekeyer that always fails.
+	rk := &failingRekeyer{}
+	crypto := &primitives.DefaultKeyDeriver{}
+	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32), false)
+
+	_, priv, _ := crypto.GenerateX25519KeyPair()
+	fsm.SetPendingRekeyPrivateKey(priv)
+
+	serverPub, _, _ := crypto.GenerateX25519KeyPair()
+	pkt := make([]byte, service_packet.RekeyPacketLen)
+	_, _ = service_packet.EncodeV1Header(service_packet.RekeyAck, pkt)
+	copy(pkt[3:], serverPub)
+
+	ok, err := ClientHandleRekeyAck(crypto, fsm, pkt)
+	if err == nil {
+		t.Fatal("expected StartRekey error from failing rekeyer")
+	}
+	if ok {
+		t.Fatal("expected ok=false")
+	}
+}
+
+// failingRekeyer always returns an error from Rekey.
+type failingRekeyer struct{}
+
+func (*failingRekeyer) Rekey(_, _ []byte) (uint16, error) { return 0, errors.New("rekey-fail") }
+func (*failingRekeyer) SetSendEpoch(uint16)               {}
+func (*failingRekeyer) RemoveEpoch(uint16) bool            { return true }
+
 func TestClientHandleRekeyAck_DeriveKeyError_FirstCall(t *testing.T) {
 	deriveErr := errors.New("derive c2s failed")
 	crypto := &mockCrypto{deriveErr: deriveErr, deriveN: 1}
 	rk := &rekeyTestRekeyer{}
 	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32), false)
 
-	realCrypto := &handshake.DefaultCrypto{}
+	realCrypto := &primitives.DefaultKeyDeriver{}
 	_, priv, _ := realCrypto.GenerateX25519KeyPair()
 	fsm.SetPendingRekeyPrivateKey(priv)
 
@@ -306,7 +376,7 @@ func TestClientHandleRekeyAck_DeriveKeyError_SecondCall(t *testing.T) {
 	rk := &rekeyTestRekeyer{}
 	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32), false)
 
-	realCrypto := &handshake.DefaultCrypto{}
+	realCrypto := &primitives.DefaultKeyDeriver{}
 	_, priv, _ := realCrypto.GenerateX25519KeyPair()
 	fsm.SetPendingRekeyPrivateKey(priv)
 

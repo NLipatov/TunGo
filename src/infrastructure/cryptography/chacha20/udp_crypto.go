@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"sync"
+	"tungo/infrastructure/cryptography/mem"
 
 	"golang.org/x/crypto/chacha20poly1305"
 )
@@ -17,6 +18,7 @@ type EpochUdpCrypto struct {
 	ring      EpochRing
 	isServer  bool
 	sessionId [32]byte
+	routeID   uint64
 	mu        sync.RWMutex
 	rekeyMu   sync.Mutex
 	sendEpoch Epoch
@@ -34,11 +36,16 @@ func NewEpochUdpCrypto(
 		ring:      NewEpochRing(defaultEpochRingCapacity, initialEpoch, initialSession),
 		isServer:  isServer,
 		sessionId: sessionId,
+		routeID:   RouteIDFromSessionID(sessionId),
 		sendEpoch: initialEpoch,
 	}
 }
 
 func (c *EpochUdpCrypto) Encrypt(plaintext []byte) ([]byte, error) {
+	if len(plaintext) < UDPRouteIDLength+chacha20poly1305.NonceSize {
+		return nil, fmt.Errorf("buffer too short for route-id+nonce prefix: %d", len(plaintext))
+	}
+
 	c.mu.RLock()
 	epoch := c.sendEpoch
 	c.mu.RUnlock()
@@ -51,14 +58,32 @@ func (c *EpochUdpCrypto) Encrypt(plaintext []byte) ([]byte, error) {
 			return nil, fmt.Errorf("no active session")
 		}
 	}
-	return session.Encrypt(plaintext)
+	// Layout contract for UDP encrypt input:
+	// [8B route-id reserved][12B nonce reserved][payload]
+	//
+	// The session encryptor works over the nonce+payload segment.
+	encrypted, err := session.Encrypt(plaintext[UDPRouteIDLength:])
+	if err != nil {
+		return nil, err
+	}
+	binary.BigEndian.PutUint64(plaintext[:UDPRouteIDLength], c.routeID)
+	return plaintext[:UDPRouteIDLength+len(encrypted)], nil
 }
 
 func (c *EpochUdpCrypto) Decrypt(ciphertext []byte) ([]byte, error) {
-	if len(ciphertext) < chacha20poly1305.NonceSize {
+	if len(ciphertext) < UDPMinPacketSize {
 		return nil, fmt.Errorf("cipher too short: %d", len(ciphertext))
 	}
-	epoch := Epoch(binary.BigEndian.Uint16(ciphertext[NonceEpochOffset : NonceEpochOffset+2]))
+	routeID, ok := ReadUDPRouteID(ciphertext)
+	if !ok {
+		return nil, fmt.Errorf("cipher too short: %d", len(ciphertext))
+	}
+	if routeID != c.routeID {
+		return nil, ErrUnknownRouteID
+	}
+
+	cipherPayload := ciphertext[UDPNonceOffset:]
+	epoch := Epoch(binary.BigEndian.Uint16(cipherPayload[NonceEpochOffset : NonceEpochOffset+2]))
 	session, ok := c.ring.Resolve(epoch)
 	if !ok {
 		return nil, ErrUnknownEpoch
@@ -66,7 +91,7 @@ func (c *EpochUdpCrypto) Decrypt(ciphertext []byte) ([]byte, error) {
 	if session.Epoch() != epoch {
 		return nil, ErrUnknownEpoch
 	}
-	return session.Decrypt(ciphertext)
+	return session.Decrypt(cipherPayload)
 }
 
 // Rekey installs a new immutable session with fresh nonce/replay state.
@@ -81,7 +106,9 @@ func (c *EpochUdpCrypto) Rekey(sendKey, recvKey []byte) (uint16, error) {
 	if oldest, ok := c.ring.Oldest(); ok &&
 		c.ring.Len() == c.ring.Capacity() &&
 		oldest == sendEpoch {
-		return 0, fmt.Errorf("rekey refused: active send epoch %d would be evicted; wait for confirmation", sendEpoch)
+		// SECURITY (R-19): Generic error to avoid revealing epoch state.
+		// Detailed reason: active send epoch would be evicted before confirmation.
+		return 0, fmt.Errorf("rekey refused: wait for confirmation before next rekey")
 	}
 
 	sendCipher, err := chacha20poly1305.New(sendKey)
@@ -112,6 +139,10 @@ func (c *EpochUdpCrypto) currentSendEpoch() Epoch {
 	return c.sendEpoch
 }
 
+func (c *EpochUdpCrypto) RouteID() uint64 {
+	return c.routeID
+}
+
 // RemoveEpoch removes a session for the specified epoch, if present.
 // Returns true if removed.
 func (c *EpochUdpCrypto) RemoveEpoch(epoch uint16) bool {
@@ -123,4 +154,24 @@ func (c *EpochUdpCrypto) RemoveEpoch(epoch uint16) bool {
 		return false
 	}
 	return c.ring.Remove(Epoch(epoch))
+}
+
+// Zeroize overwrites all key material with zeros.
+// After this call, the crypto instance is unusable.
+// Implements connection.CryptoZeroizer.
+//
+// SECURITY INVARIANT: All session keys in the EpochRing are zeroed.
+// This is guaranteed by the EpochRing interface (ZeroizeAll is mandatory).
+func (c *EpochUdpCrypto) Zeroize() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.rekeyMu.Lock()
+	defer c.rekeyMu.Unlock()
+
+	// Zero the session ID
+	mem.ZeroBytes(c.sessionId[:])
+
+	// Zero all sessions in the ring.
+	// ZeroizeAll is part of EpochRing interface - no type assertion needed.
+	c.ring.ZeroizeAll()
 }

@@ -24,7 +24,7 @@
     "message": "Seguro"
   },
   "feature.secure.description": {
-    "message": "Túnel de extremo a extremo con cifrado ChaCha20"
+    "message": "Handshake Noise IK, acuerdo de claves X25519, AEAD ChaCha20-Poly1305"
   },
   "feature.multiTransport.title": {
     "message": "Soporte Multi-Transporte"

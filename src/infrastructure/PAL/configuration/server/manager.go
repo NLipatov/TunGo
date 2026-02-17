@@ -1,9 +1,9 @@
 package server
 
 import (
-	"crypto/ed25519"
 	"errors"
 	"fmt"
+	"net/netip"
 	"os"
 	"time"
 	"tungo/infrastructure/PAL/configuration/client"
@@ -13,7 +13,10 @@ import (
 type ConfigurationManager interface {
 	Configuration() (*Configuration, error)
 	IncrementClientCounter() error
-	InjectEdKeys(public ed25519.PublicKey, private ed25519.PrivateKey) error
+	InjectX25519Keys(public, private []byte) error
+	AddAllowedPeer(peer AllowedPeer) error
+	EnsureIPv6Subnets() error
+	InvalidateCache()
 }
 
 type Manager struct {
@@ -76,31 +79,79 @@ func (c *Manager) Configuration() (*Configuration, error) {
 	return c.reader.read()
 }
 
-func (c *Manager) IncrementClientCounter() error {
-	configuration, configurationErr := c.Configuration()
-	if configurationErr != nil {
-		return configurationErr
+func (c *Manager) update(fn func(*Configuration) error) error {
+	conf, err := c.Configuration()
+	if err != nil {
+		return err
 	}
-
-	configuration.ClientCounter += 1
-	return c.writer.Write(*configuration)
+	if err := fn(conf); err != nil {
+		return err
+	}
+	return c.writer.Write(*conf)
 }
 
-func (c *Manager) InjectEdKeys(public ed25519.PublicKey, private ed25519.PrivateKey) error {
-	if len(public) != ed25519.PublicKeySize {
-		return fmt.Errorf("invalid public key length: got %d, want %d", len(public), ed25519.PublicKeySize)
+func (c *Manager) IncrementClientCounter() error {
+	return c.update(func(conf *Configuration) error {
+		conf.ClientCounter++
+		return nil
+	})
+}
+
+func (c *Manager) InjectX25519Keys(public, private []byte) error {
+	if len(public) != 32 {
+		return fmt.Errorf("invalid public key length: got %d, want 32", len(public))
 	}
-	if len(private) != ed25519.PrivateKeySize {
-		return fmt.Errorf("invalid private key length: got %d, want %d", len(private), ed25519.PrivateKeySize)
+	if len(private) != 32 {
+		return fmt.Errorf("invalid private key length: got %d, want 32", len(private))
+	}
+	return c.update(func(conf *Configuration) error {
+		conf.X25519PublicKey = append([]byte(nil), public...)
+		conf.X25519PrivateKey = append([]byte(nil), private...)
+		return nil
+	})
+}
+
+func (c *Manager) AddAllowedPeer(peer AllowedPeer) error {
+	if len(peer.PublicKey) != 32 {
+		return fmt.Errorf("invalid public key length: got %d, want 32", len(peer.PublicKey))
+	}
+	return c.update(func(conf *Configuration) error {
+		conf.AllowedPeers = append(conf.AllowedPeers, peer)
+		return nil
+	})
+}
+
+// EnsureIPv6Subnets sets default IPv6 tunnel subnets if not already configured.
+func (c *Manager) EnsureIPv6Subnets() error {
+	conf, err := c.Configuration()
+	if err != nil {
+		return err
 	}
 
-	configuration, configurationErr := c.Configuration()
-	if configurationErr != nil {
-		return configurationErr
+	defaults := []netip.Prefix{
+		netip.MustParsePrefix("fd00::/64"),
+		netip.MustParsePrefix("fd00:1::/64"),
+		netip.MustParsePrefix("fd00:2::/64"),
+	}
+	changed := false
+	for i, s := range conf.AllSettingsPtrs() {
+		if !s.IPv6Subnet.IsValid() {
+			s.IPv6Subnet = defaults[i]
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
 	}
 
-	configuration.Ed25519PublicKey = public
-	configuration.Ed25519PrivateKey = private
+	conf.EnsureDefaults()
+	return c.writer.Write(*conf)
+}
 
-	return c.writer.Write(*configuration)
+// InvalidateCache clears the cached configuration if the reader supports it.
+// Implements CacheInvalidator interface.
+func (c *Manager) InvalidateCache() {
+	if ttlReader, ok := c.reader.(*TTLReader); ok {
+		ttlReader.InvalidateCache()
+	}
 }

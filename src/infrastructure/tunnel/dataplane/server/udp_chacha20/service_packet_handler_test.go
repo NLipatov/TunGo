@@ -4,8 +4,9 @@ import (
 	"errors"
 	"sync"
 	"testing"
-	"tungo/infrastructure/cryptography/chacha20/handshake"
+	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/service_packet"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -37,7 +38,7 @@ func (e *spTestEgress) send(plaintext []byte) error {
 func (e *spTestEgress) Close() error { return nil }
 
 func TestHandle_Ping_SendsPong(t *testing.T) {
-	handler := newServicePacketHandler(&handshake.DefaultCrypto{})
+	handler := newServicePacketHandler(&primitives.DefaultKeyDeriver{})
 
 	// Build a valid Ping packet (3 bytes: 0xFF, 0x01, Ping type).
 	ping := make([]byte, 3)
@@ -60,7 +61,7 @@ func TestHandle_Ping_SendsPong(t *testing.T) {
 		t.Fatalf("expected 1 Pong packet, got %d", len(eg.packets))
 	}
 	pkt := eg.packets[0]
-	payload := pkt[chacha20poly1305.NonceSize:]
+	payload := pkt[chacha20.UDPRouteIDLength+chacha20poly1305.NonceSize:]
 	if len(payload) < 3 {
 		t.Fatalf("pong payload too short: %d", len(payload))
 	}
@@ -91,7 +92,7 @@ func (e *errTestEgress) SendControl(_ []byte) error { return e.sendErr }
 func (*errTestEgress) Close() error                 { return nil }
 
 func TestHandle_NonServicePacket_ReturnsFalse(t *testing.T) {
-	handler := newServicePacketHandler(&handshake.DefaultCrypto{})
+	handler := newServicePacketHandler(&primitives.DefaultKeyDeriver{})
 	eg := &spTestEgress{}
 	handled, err := handler.Handle([]byte{0x45, 0x00, 0x00, 0x28}, eg, nil)
 	if err != nil {
@@ -103,7 +104,7 @@ func TestHandle_NonServicePacket_ReturnsFalse(t *testing.T) {
 }
 
 func TestHandle_RekeyInit_Success_SendsAck(t *testing.T) {
-	crypto := &handshake.DefaultCrypto{}
+	crypto := &primitives.DefaultKeyDeriver{}
 	handler := newServicePacketHandler(crypto)
 
 	rk := &spTestRekeyer{}
@@ -132,7 +133,7 @@ func TestHandle_RekeyInit_Success_SendsAck(t *testing.T) {
 		t.Fatalf("expected 1 ACK packet, got %d", len(eg.packets))
 	}
 	ack := eg.packets[0]
-	ackPayload := ack[chacha20poly1305.NonceSize:]
+	ackPayload := ack[chacha20.UDPRouteIDLength+chacha20poly1305.NonceSize:]
 	if len(ackPayload) < 3 {
 		t.Fatalf("ACK payload too short: %d", len(ackPayload))
 	}
@@ -142,7 +143,7 @@ func TestHandle_RekeyInit_Success_SendsAck(t *testing.T) {
 }
 
 func TestHandle_RekeyInit_NilFSM_NoAck(t *testing.T) {
-	crypto := &handshake.DefaultCrypto{}
+	crypto := &primitives.DefaultKeyDeriver{}
 	handler := newServicePacketHandler(crypto)
 
 	pub, _, _ := crypto.GenerateX25519KeyPair()
@@ -167,7 +168,7 @@ func TestHandle_RekeyInit_NilFSM_NoAck(t *testing.T) {
 }
 
 func TestHandle_RekeyInit_EgressError_Swallowed(t *testing.T) {
-	crypto := &handshake.DefaultCrypto{}
+	crypto := &primitives.DefaultKeyDeriver{}
 	handler := newServicePacketHandler(crypto)
 
 	rk := &spTestRekeyer{}
@@ -189,7 +190,7 @@ func TestHandle_RekeyInit_EgressError_Swallowed(t *testing.T) {
 }
 
 func TestHandle_Pong_ReturnsTrueNilErr(t *testing.T) {
-	handler := newServicePacketHandler(&handshake.DefaultCrypto{})
+	handler := newServicePacketHandler(&primitives.DefaultKeyDeriver{})
 	pkt := make([]byte, 3)
 	_, _ = service_packet.EncodeV1Header(service_packet.Pong, pkt)
 
@@ -204,7 +205,7 @@ func TestHandle_Pong_ReturnsTrueNilErr(t *testing.T) {
 }
 
 func TestHandle_RekeyInit_EpochExhausted_ReturnsError(t *testing.T) {
-	crypto := &handshake.DefaultCrypto{}
+	crypto := &primitives.DefaultKeyDeriver{}
 	handler := newServicePacketHandler(crypto)
 
 	rk := &spTestRekeyer{}
@@ -228,7 +229,7 @@ func TestHandle_RekeyInit_EpochExhausted_ReturnsError(t *testing.T) {
 }
 
 func TestHandle_RekeyInit_NotStable_Swallowed(t *testing.T) {
-	crypto := &handshake.DefaultCrypto{}
+	crypto := &primitives.DefaultKeyDeriver{}
 	handler := newServicePacketHandler(crypto)
 
 	rk := &spTestRekeyer{}

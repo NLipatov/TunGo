@@ -85,6 +85,14 @@ func (m *TunHandlerMockMgr) GetByInternalAddrPort(_ netip.Addr) (*session.Peer, 
 func (m *TunHandlerMockMgr) GetByExternalAddrPort(_ netip.AddrPort) (*session.Peer, error) {
 	return m.peer, nil
 }
+func (m *TunHandlerMockMgr) GetByRouteID(_ uint64) (*session.Peer, error) {
+	return nil, session.ErrNotFound
+}
+func (m *TunHandlerMockMgr) FindByDestinationIP(_ netip.Addr) (*session.Peer, error) {
+	return m.peer, m.getErr
+}
+func (m *TunHandlerMockMgr) AllPeers() []*session.Peer                            { return nil }
+func (m *TunHandlerMockMgr) UpdateExternalAddr(_ *session.Peer, _ netip.AddrPort) {}
 
 // helper to build a peer for tests
 func makePeer(c *TunHandlerMockConn, crypto *TunHandlerMockCrypto) *session.Peer {

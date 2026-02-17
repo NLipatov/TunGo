@@ -4,8 +4,7 @@ package manager
 
 import (
 	"fmt"
-	"net"
-	"strings"
+	"net/netip"
 
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/darwin/network_tools/ifconfig"
@@ -15,12 +14,18 @@ import (
 )
 
 type v4 struct {
-	s       settings.Settings
-	tunDev  tun.Device
-	rawUTUN utun.UTUN
-	ifc     ifconfig.Contract // v4 ifconfig.Contract implementation
-	rtc     route.Contract    // v4 route.Contract implementation
-	ifName  string
+	s               settings.Settings
+	tunDev          tun.Device
+	rawUTUN         utun.UTUN
+	ifc             ifconfig.Contract // v4 ifconfig.Contract implementation
+	rtc             route.Contract    // v4 route.Contract implementation
+	ifName          string
+	routeEndpoint   netip.AddrPort
+	resolvedRouteIP string // cached resolved server IP for consistent teardown
+}
+
+func (m *v4) SetRouteEndpoint(addr netip.AddrPort) {
+	m.routeEndpoint = addr
 }
 
 func newV4(
@@ -50,9 +55,19 @@ func (m *v4) CreateDevice() (tun.Device, error) {
 		return nil, fmt.Errorf("get utun name: %w", err)
 	}
 	m.ifName = name
-	if getErr := m.rtc.Get(m.s.ConnectionIP); getErr != nil {
+	routeIP, routeErr := m.resolveRouteIPv4()
+	if routeErr != nil {
+		if m.routeEndpoint.IsValid() && !m.routeEndpoint.Addr().Unmap().Is4() {
+			m.tunDev = utun.NewDarwinTunDevice(raw)
+			return m.tunDev, nil
+		}
 		_ = m.DisposeDevices()
-		return nil, fmt.Errorf("route to server %s: %w", m.s.ConnectionIP, getErr)
+		return nil, fmt.Errorf("v4: resolve route for %s: %w", m.s.Server, routeErr)
+	}
+	m.resolvedRouteIP = routeIP
+	if getErr := m.rtc.Get(routeIP); getErr != nil {
+		_ = m.DisposeDevices()
+		return nil, fmt.Errorf("route to server %s: %w", m.s.Server, getErr)
 	}
 	if assignErr := m.assignIPv4(); assignErr != nil {
 		_ = m.DisposeDevices()
@@ -70,40 +85,35 @@ func (m *v4) CreateDevice() (tun.Device, error) {
 
 func (m *v4) DisposeDevices() error {
 	_ = m.rtc.DelSplit(m.ifName)
-	if m.s.ConnectionIP != "" {
-		_ = m.rtc.Del(m.s.ConnectionIP)
+	if m.resolvedRouteIP != "" {
+		_ = m.rtc.Del(m.resolvedRouteIP)
 	}
 	if m.tunDev != nil {
-		_ = m.tunDev.Close()
-		m.tunDev = nil
+		_ = m.tunDev.Close() // closes underlying rawUTUN
+	} else if m.rawUTUN != nil {
+		_ = m.rawUTUN.Close() // tunDev never created, close raw directly
 	}
+	m.tunDev = nil
 	m.rawUTUN = nil
 	m.ifName = ""
 	return nil
 }
 
 func (m *v4) validateSettings() error {
-	if net.ParseIP(m.s.ConnectionIP) == nil || net.ParseIP(m.s.ConnectionIP).To4() == nil {
-		return fmt.Errorf("v4: invalid ConnectionIP %q", m.s.ConnectionIP)
+	if m.s.Server.IsZero() {
+		return fmt.Errorf("v4: empty Server")
 	}
-	if ip := net.ParseIP(m.s.InterfaceAddress); ip == nil || ip.To4() == nil {
-		return fmt.Errorf("v4: invalid InterfaceAddress %q", m.s.InterfaceAddress)
+	if !m.s.IPv4.IsValid() || !m.s.IPv4.Unmap().Is4() {
+		return fmt.Errorf("v4: invalid IPv4 %q", m.s.IPv4)
 	}
-	if !strings.Contains(m.s.InterfaceIPCIDR, "/") {
-		return fmt.Errorf("v4: InterfaceIPCIDR must be CIDR, got %q", m.s.InterfaceIPCIDR)
-	}
-	if _, _, err := net.ParseCIDR(m.s.InterfaceIPCIDR); err != nil {
-		return fmt.Errorf("v4: bad InterfaceIPCIDR %q: %w", m.s.InterfaceIPCIDR, err)
+	if !m.s.IPv4Subnet.IsValid() {
+		return fmt.Errorf("v4: invalid IPv4Subnet %q", m.s.IPv4Subnet)
 	}
 	return nil
 }
 
 func (m *v4) assignIPv4() error {
-	pfx := "32"
-	if parts := strings.Split(m.s.InterfaceIPCIDR, "/"); len(parts) == 2 && parts[1] == "32" {
-		pfx = "32"
-	}
-	cidr := fmt.Sprintf("%s/%s", m.s.InterfaceAddress, pfx)
+	cidr := fmt.Sprintf("%s/32", m.s.IPv4)
 	if err := m.ifc.LinkAddrAdd(m.ifName, cidr); err != nil {
 		return fmt.Errorf("v4: set addr %s on %s: %w", cidr, m.ifName, err)
 	}
@@ -119,4 +129,15 @@ func (m *v4) effectiveMTU() int {
 		mtu = settings.MinimumIPv4MTU
 	}
 	return mtu
+}
+
+func (m *v4) resolveRouteIPv4() (string, error) {
+	if m.routeEndpoint.IsValid() {
+		ip := m.routeEndpoint.Addr()
+		if ip.Unmap().Is4() {
+			return ip.Unmap().String(), nil
+		}
+		return "", fmt.Errorf("route endpoint %s is IPv6, expected IPv4", ip)
+	}
+	return m.s.Server.RouteIPv4()
 }

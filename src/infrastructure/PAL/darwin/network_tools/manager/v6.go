@@ -4,8 +4,7 @@ package manager
 
 import (
 	"fmt"
-	"net"
-	"strings"
+	"net/netip"
 
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/darwin/network_tools/ifconfig"
@@ -15,12 +14,18 @@ import (
 )
 
 type v6 struct {
-	s       settings.Settings
-	tunDev  tun.Device
-	rawUTUN utun.UTUN
-	ifc     ifconfig.Contract // v6 ifconfig.Contract implementation
-	rt      route.Contract    // v6 route.Contract implementation
-	ifName  string
+	s               settings.Settings
+	tunDev          tun.Device
+	rawUTUN         utun.UTUN
+	ifc             ifconfig.Contract // v6 ifconfig.Contract implementation
+	rt              route.Contract    // v6 route.Contract implementation
+	ifName          string
+	routeEndpoint   netip.AddrPort
+	resolvedRouteIP string // cached resolved server IP for consistent teardown
+}
+
+func (m *v6) SetRouteEndpoint(addr netip.AddrPort) {
+	m.routeEndpoint = addr
 }
 
 func newV6(
@@ -53,9 +58,19 @@ func (m *v6) CreateDevice() (tun.Device, error) {
 	}
 	m.ifName = name
 
-	if err := m.rt.Get(m.s.ConnectionIP); err != nil {
+	routeIP, routeErr := m.resolveRouteIPv6()
+	if routeErr != nil {
+		if m.routeEndpoint.IsValid() && m.routeEndpoint.Addr().Unmap().Is4() {
+			m.tunDev = utun.NewDarwinTunDevice(raw)
+			return m.tunDev, nil
+		}
 		_ = m.DisposeDevices()
-		return nil, fmt.Errorf("route to server %s: %w", m.s.ConnectionIP, err)
+		return nil, fmt.Errorf("v6: resolve route for %s: %w", m.s.Server, routeErr)
+	}
+	m.resolvedRouteIP = routeIP
+	if err := m.rt.Get(routeIP); err != nil {
+		_ = m.DisposeDevices()
+		return nil, fmt.Errorf("route to server %s: %w", m.s.Server, err)
 	}
 	if err := m.assignIPv6(); err != nil {
 		_ = m.DisposeDevices()
@@ -73,48 +88,37 @@ func (m *v6) CreateDevice() (tun.Device, error) {
 
 func (m *v6) DisposeDevices() error {
 	_ = m.rt.DelSplit(m.ifName)
-	if m.s.ConnectionIP != "" {
-		_ = m.rt.Del(m.s.ConnectionIP)
+	if m.resolvedRouteIP != "" {
+		_ = m.rt.Del(m.resolvedRouteIP)
 	}
 	if m.tunDev != nil {
-		_ = m.tunDev.Close()
-		m.tunDev = nil
+		_ = m.tunDev.Close() // closes underlying rawUTUN
+	} else if m.rawUTUN != nil {
+		_ = m.rawUTUN.Close() // tunDev never created, close raw directly
 	}
+	m.tunDev = nil
 	m.rawUTUN = nil
 	m.ifName = ""
 	return nil
 }
 
 func (m *v6) validateSettings() error {
-	ip := net.ParseIP(m.s.InterfaceAddress)
-	if ip == nil || ip.To4() != nil {
-		return fmt.Errorf("v6: invalid InterfaceAddress %q", m.s.InterfaceAddress)
+	ip := m.s.IPv6.Unmap()
+	if !ip.IsValid() || ip.Is4() {
+		return fmt.Errorf("v6: invalid IPv6 %q", m.s.IPv6)
 	}
-	dst := net.ParseIP(m.s.ConnectionIP)
-	if dst == nil || dst.To4() != nil {
-		return fmt.Errorf("v6: invalid ConnectionIP %q", m.s.ConnectionIP)
-	}
-	if m.s.InterfaceIPCIDR != "" {
-		if !strings.Contains(m.s.InterfaceIPCIDR, "/") {
-			return fmt.Errorf("v6: InterfaceIPCIDR must be CIDR or empty, got %q", m.s.InterfaceIPCIDR)
-		}
-		if _, _, err := net.ParseCIDR(m.s.InterfaceIPCIDR); err != nil {
-			return fmt.Errorf("v6: bad InterfaceIPCIDR %q: %w", m.s.InterfaceIPCIDR, err)
-		}
+	if m.s.Server.IsZero() {
+		return fmt.Errorf("v6: empty Server")
 	}
 	return nil
 }
 
 func (m *v6) assignIPv6() error {
-	cidr := m.s.InterfaceIPCIDR
-	if cidr == "" {
-		cidr = m.s.InterfaceAddress + "/128"
+	var cidr string
+	if m.s.IPv6Subnet.IsValid() {
+		cidr = fmt.Sprintf("%s/%d", m.s.IPv6, m.s.IPv6Subnet.Bits())
 	} else {
-		parts := strings.Split(cidr, "/")
-		if len(parts) != 2 {
-			return fmt.Errorf("v6: malformed CIDR %q", cidr)
-		}
-		cidr = m.s.InterfaceAddress + "/" + parts[1]
+		cidr = fmt.Sprintf("%s/128", m.s.IPv6)
 	}
 	if err := m.ifc.LinkAddrAdd(m.ifName, cidr); err != nil {
 		return fmt.Errorf("v6: set addr %s on %s: %w", cidr, m.ifName, err)
@@ -131,4 +135,15 @@ func (m *v6) effectiveMTU() int {
 		mtu = 1280
 	}
 	return mtu
+}
+
+func (m *v6) resolveRouteIPv6() (string, error) {
+	if m.routeEndpoint.IsValid() {
+		ip := m.routeEndpoint.Addr()
+		if !ip.Unmap().Is4() {
+			return ip.String(), nil
+		}
+		return "", fmt.Errorf("route endpoint %s is IPv4, expected IPv6", ip)
+	}
+	return m.s.Server.RouteIPv6()
 }

@@ -2,6 +2,7 @@ package ip
 
 import (
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -38,6 +39,24 @@ func newWrapper(success bool, output string, err error) Contract {
 			return []byte(output), err
 		},
 	})
+}
+
+type recordingCommander struct {
+	combinedCalls [][]string
+	failOnCall    int
+}
+
+func (m *recordingCommander) Run(_ string, _ ...string) error { return nil }
+func (m *recordingCommander) Output(_ string, _ ...string) ([]byte, error) {
+	return nil, nil
+}
+func (m *recordingCommander) CombinedOutput(name string, args ...string) ([]byte, error) {
+	call := append([]string{name}, args...)
+	m.combinedCalls = append(m.combinedCalls, call)
+	if m.failOnCall > 0 && len(m.combinedCalls) == m.failOnCall {
+		return []byte("boom"), errors.New("boom")
+	}
+	return nil, nil
 }
 
 func TestTunTapAddDevTun(t *testing.T) {
@@ -137,6 +156,107 @@ func TestRouteAddDefaultDev(t *testing.T) {
 			t.Fatal("expected error")
 		}
 	})
+}
+
+func TestRoute6AddDefaultDev(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		err := newWrapper(true, "", nil).Route6AddDefaultDev("tun0")
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Run("error", func(t *testing.T) {
+		err := newWrapper(false, "output", errors.New("fail")).Route6AddDefaultDev("tun0")
+		if err == nil {
+			t.Fatal("expected error")
+		}
+	})
+}
+
+func TestRouteAddSplitDefaultDev(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		rec := &recordingCommander{}
+		w := NewWrapper(rec)
+		if err := w.RouteAddSplitDefaultDev("tun0"); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := [][]string{
+			{"ip", "route", "add", "0.0.0.0/1", "dev", "tun0"},
+			{"ip", "route", "add", "128.0.0.0/1", "dev", "tun0"},
+		}
+		if !reflect.DeepEqual(rec.combinedCalls, want) {
+			t.Fatalf("unexpected calls: got %v, want %v", rec.combinedCalls, want)
+		}
+	})
+
+	t.Run("error on second route", func(t *testing.T) {
+		rec := &recordingCommander{failOnCall: 2}
+		w := NewWrapper(rec)
+		err := w.RouteAddSplitDefaultDev("tun0")
+		if err == nil || !strings.Contains(err.Error(), "failed to add split route 128.0.0.0/1") {
+			t.Fatalf("expected split-route error, got %v", err)
+		}
+	})
+}
+
+func TestRoute6AddSplitDefaultDev(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		rec := &recordingCommander{}
+		w := NewWrapper(rec)
+		if err := w.Route6AddSplitDefaultDev("tun0"); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := [][]string{
+			{"ip", "-6", "route", "add", "::/1", "dev", "tun0"},
+			{"ip", "-6", "route", "add", "8000::/1", "dev", "tun0"},
+		}
+		if !reflect.DeepEqual(rec.combinedCalls, want) {
+			t.Fatalf("unexpected calls: got %v, want %v", rec.combinedCalls, want)
+		}
+	})
+
+	t.Run("error on second route", func(t *testing.T) {
+		rec := &recordingCommander{failOnCall: 2}
+		w := NewWrapper(rec)
+		err := w.Route6AddSplitDefaultDev("tun0")
+		if err == nil || !strings.Contains(err.Error(), "failed to add IPv6 split route 8000::/1") {
+			t.Fatalf("expected IPv6 split-route error, got %v", err)
+		}
+	})
+}
+
+func TestRouteDelSplitDefault(t *testing.T) {
+	rec := &recordingCommander{failOnCall: 1}
+	w := NewWrapper(rec)
+
+	if err := w.RouteDelSplitDefault("tun0"); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	want := [][]string{
+		{"ip", "route", "del", "0.0.0.0/1", "dev", "tun0"},
+		{"ip", "route", "del", "128.0.0.0/1", "dev", "tun0"},
+	}
+	if !reflect.DeepEqual(rec.combinedCalls, want) {
+		t.Fatalf("unexpected calls: got %v, want %v", rec.combinedCalls, want)
+	}
+}
+
+func TestRoute6DelSplitDefault(t *testing.T) {
+	rec := &recordingCommander{failOnCall: 1}
+	w := NewWrapper(rec)
+
+	if err := w.Route6DelSplitDefault("tun0"); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	want := [][]string{
+		{"ip", "-6", "route", "del", "::/1", "dev", "tun0"},
+		{"ip", "-6", "route", "del", "8000::/1", "dev", "tun0"},
+	}
+	if !reflect.DeepEqual(rec.combinedCalls, want) {
+		t.Fatalf("unexpected calls: got %v, want %v", rec.combinedCalls, want)
+	}
 }
 
 func TestRouteGet(t *testing.T) {

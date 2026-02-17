@@ -7,13 +7,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 	"tungo/application/network/connection"
 	"tungo/infrastructure/cryptography/chacha20"
-	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/settings"
 
@@ -150,19 +151,6 @@ func TestHandleTransport_ReadDeadlineExceededSkip(t *testing.T) {
 	}
 }
 
-func TestHandleTransport_ServerResetSignal(t *testing.T) {
-	r := &thTestReader{reads: []func(p []byte) (int, error){
-		func(p []byte) (int, error) { p[0] = byte(service_packet.SessionReset); return 1, nil },
-	}}
-	w := &thTestWriter{}
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTransportHandler(context.Background(), r, w, &thTestCrypto{}, ctrl, nil)
-	exp := "server requested cryptographyService reset"
-	if err := h.HandleTransport(); err == nil || err.Error() != exp {
-		t.Errorf("expected %q, got %v", exp, err)
-	}
-}
-
 func TestHandleTransport_DecryptNonUniqueNonceSkip(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -189,19 +177,22 @@ func TestHandleTransport_DecryptNonUniqueNonceSkip(t *testing.T) {
 	}
 }
 
-func TestHandleTransport_DecryptErrorFatal(t *testing.T) {
+func TestHandleTransport_DecryptErrorDropped(t *testing.T) {
 	errDec := errors.New("decrypt fail")
-	// reader returns 2 bytes so SessionReset not triggered
+	// reader returns bad packet, then EOF
+	// decrypt error should be dropped, not terminate session
 	r := &thTestReader{reads: []func(p []byte) (int, error){
 		func(p []byte) (int, error) { p[0] = 9; p[1] = 9; return 2, nil },
+		func(p []byte) (int, error) { return 0, io.EOF },
 	}}
 	w := &thTestWriter{}
 	crypto := &thTestCrypto{err: errDec}
 	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
 	h := NewTransportHandler(context.Background(), r, w, crypto, ctrl, nil)
-	exp := fmt.Sprintf("failed to decrypt data: %v", errDec)
-	if err := h.HandleTransport(); err == nil || err.Error() != exp {
-		t.Errorf("expected %q, got %v", exp, err)
+	// Should exit with read error (EOF), not decrypt error
+	err := h.HandleTransport()
+	if err == nil || !strings.Contains(err.Error(), "EOF") {
+		t.Errorf("expected EOF error after dropped decrypt, got %v", err)
 	}
 }
 
@@ -267,7 +258,7 @@ func TestHandleTransport_RekeyAckAfterDoubleInit_UsesOriginalPendingKey(t *testi
 	}}
 	writer := &fakeWriter{}
 	crypto := &tunhandlerTestRakeCrypto{} // passthrough
-	tunHandler := NewTunHandler(ctx, reader, connection.NewDefaultEgress(writer, crypto), ctrl).(*TunHandler)
+	tunHandler := NewTunHandler(ctx, reader, connection.NewDefaultEgress(writer, crypto), ctrl, nil).(*TunHandler)
 	tunHandler.rekeyInit.SetInterval(5 * time.Millisecond)
 	tunHandler.rekeyInit.SetRotateAt(time.Now().UTC().Add(tunHandler.rekeyInit.Interval()))
 
@@ -296,7 +287,7 @@ func TestHandleTransport_RekeyAckAfterDoubleInit_UsesOriginalPendingKey(t *testi
 		t.Fatal("pending priv key missing")
 	}
 	firstPub := func(pkt []byte) []byte {
-		start := chacha20poly1305.NonceSize + 3
+		start := chacha20.UDPRouteIDLength + chacha20poly1305.NonceSize + 3
 		end := start + service_packet.RekeyPublicKeyLen
 		if len(pkt) < end {
 			t.Fatalf("rekey packet too short: %d", len(pkt))
@@ -306,7 +297,7 @@ func TestHandleTransport_RekeyAckAfterDoubleInit_UsesOriginalPendingKey(t *testi
 		return out
 	}(writer.data[0])
 	secondPub := func(pkt []byte) []byte {
-		start := chacha20poly1305.NonceSize + 3
+		start := chacha20.UDPRouteIDLength + chacha20poly1305.NonceSize + 3
 		end := start + service_packet.RekeyPublicKeyLen
 		if len(pkt) < end {
 			t.Fatalf("rekey packet too short: %d", len(pkt))
@@ -320,7 +311,7 @@ func TestHandleTransport_RekeyAckAfterDoubleInit_UsesOriginalPendingKey(t *testi
 	}
 
 	// --- Step 2: craft RekeyAck for the FIRST pubkey and feed TransportHandler.
-	hc := &handshake.DefaultCrypto{}
+	hc := &primitives.DefaultKeyDeriver{}
 	serverPub, _, err := hc.GenerateX25519KeyPair()
 	if err != nil {
 		t.Fatalf("failed to gen server key: %v", err)
@@ -479,7 +470,7 @@ func TestHandleTransport_PingSentOnIdle(t *testing.T) {
 	}
 	// Verify the captured packet contains a valid Ping V1 header.
 	pkt := pkts[0]
-	payload := pkt[chacha20poly1305.NonceSize:]
+	payload := pkt[chacha20.UDPRouteIDLength+chacha20poly1305.NonceSize:]
 	if len(payload) < 3 {
 		t.Fatalf("ping packet payload too short: %d", len(payload))
 	}
@@ -525,7 +516,7 @@ func TestHandleTransport_ShortPacket_SkippedAfterServiceCheck(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// A 1-byte packet that is NOT SessionReset and has len<2 — should be silently skipped.
+	// A 1-byte packet with len<2 — should be silently skipped.
 	r := &thTestReader{reads: []func(p []byte) (int, error){
 		func(p []byte) (int, error) { p[0] = 0x45; return 1, nil },
 		func(p []byte) (int, error) { <-ctx.Done(); return 0, errors.New("stop") },
@@ -573,32 +564,6 @@ func TestHandleTransport_EpochExhausted_ReturnsError(t *testing.T) {
 	}
 	if !bytes.Contains([]byte(err.Error()), []byte("epoch exhausted")) {
 		t.Fatalf("expected 'epoch exhausted' in error, got: %v", err)
-	}
-}
-
-func TestHandleTransport_EncryptedSessionReset(t *testing.T) {
-	// When decrypted data is a SessionReset service packet.
-	resetPayload := make([]byte, service_packet.RekeyPacketLen)
-	_, _ = service_packet.EncodeV1Header(service_packet.SessionReset, resetPayload)
-
-	// thTestCrypto returns the reset payload as decrypted output.
-	cipher := []byte{0, 0, 0xFF, 0x01, byte(service_packet.SessionReset)}
-	r := &thTestReader{reads: []func(p []byte) (int, error){
-		func(p []byte) (int, error) { copy(p, cipher); return len(cipher), nil },
-	}}
-	w := &thTestWriter{}
-	// Decrypt returns a 3-byte V1 SessionReset.
-	resetSP := []byte{0xFF, 0x01, byte(service_packet.SessionReset)}
-	crypto := &thTestCrypto{output: resetSP}
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTransportHandler(context.Background(), r, w, crypto, ctrl, nil)
-
-	err := h.HandleTransport()
-	if err == nil {
-		t.Fatal("expected session reset error")
-	}
-	if !bytes.Contains([]byte(err.Error()), []byte("server requested")) {
-		t.Fatalf("expected session reset error, got: %v", err)
 	}
 }
 

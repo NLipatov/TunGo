@@ -23,6 +23,9 @@ func (c *ConfigurationParser) FromJson(input string) (client.Configuration, erro
 	if err := json.Unmarshal([]byte(clean), &cfg); err != nil {
 		return client.Configuration{}, err
 	}
+	if err := cfg.Validate(); err != nil {
+		return client.Configuration{}, err
+	}
 	return cfg, nil
 }
 

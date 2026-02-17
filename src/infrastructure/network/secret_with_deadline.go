@@ -2,8 +2,9 @@ package network
 
 import (
 	"context"
-	"tungo/application/network/connection"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+
+	"tungo/application/network/connection"
 )
 
 // SecretWithDeadline is a decorator for Secret which allows cancellation via ctx

@@ -4,8 +4,8 @@ import (
 	"errors"
 	"sync"
 	"testing"
-	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/service_packet"
 )
 
@@ -56,7 +56,7 @@ func (e *tcpTestEgress) send(plaintext []byte) error {
 	return nil
 }
 
-func buildTCPRekeyInitPacket(t *testing.T, crypto handshake.Crypto) []byte {
+func buildTCPRekeyInitPacket(t *testing.T, crypto primitives.KeyDeriver) []byte {
 	t.Helper()
 	pub, _, err := crypto.GenerateX25519KeyPair()
 	if err != nil {
@@ -72,7 +72,7 @@ func buildTCPRekeyInitPacket(t *testing.T, crypto handshake.Crypto) []byte {
 
 func TestTCPHandle_NonServicePacket_ReturnsFalse(t *testing.T) {
 	logger := &tcpTestLogger{}
-	h := newControlPlaneHandler(&handshake.DefaultCrypto{}, logger)
+	h := newControlPlaneHandler(&primitives.DefaultKeyDeriver{}, logger)
 	eg := &tcpTestEgress{}
 
 	// Random data that is not a service packet.
@@ -84,7 +84,7 @@ func TestTCPHandle_NonServicePacket_ReturnsFalse(t *testing.T) {
 
 func TestTCPHandle_UnknownServicePacket_ReturnsTrue(t *testing.T) {
 	logger := &tcpTestLogger{}
-	h := newControlPlaneHandler(&handshake.DefaultCrypto{}, logger)
+	h := newControlPlaneHandler(&primitives.DefaultKeyDeriver{}, logger)
 	eg := &tcpTestEgress{}
 
 	// A valid V1 header for Ping (3 bytes) — not RekeyInit, so falls to default case.
@@ -99,7 +99,7 @@ func TestTCPHandle_UnknownServicePacket_ReturnsTrue(t *testing.T) {
 
 func TestTCPHandle_RekeyInit_Success_SendsAckAndActivates(t *testing.T) {
 	logger := &tcpTestLogger{}
-	crypto := &handshake.DefaultCrypto{}
+	crypto := &primitives.DefaultKeyDeriver{}
 	h := newControlPlaneHandler(crypto, logger)
 
 	rk := &tcpTestRekeyer{}
@@ -118,19 +118,20 @@ func TestTCPHandle_RekeyInit_Success_SendsAckAndActivates(t *testing.T) {
 		t.Fatalf("expected 1 ACK packet sent, got %d", len(eg.packets))
 	}
 
-	// Verify ACK packet has RekeyAck header.
+	// Verify ACK packet has RekeyAck header (after 2-byte epoch prefix).
 	ack := eg.packets[0]
-	if len(ack) < 3 {
+	if len(ack) < epochPrefixSize+3 {
 		t.Fatalf("ACK packet too short: %d", len(ack))
 	}
-	if ack[0] != service_packet.Prefix || ack[1] != service_packet.VersionV1 || ack[2] != byte(service_packet.RekeyAck) {
-		t.Fatalf("unexpected ACK header: %v", ack[:3])
+	hdr := ack[epochPrefixSize:]
+	if hdr[0] != service_packet.Prefix || hdr[1] != service_packet.VersionV1 || hdr[2] != byte(service_packet.RekeyAck) {
+		t.Fatalf("unexpected ACK header: %v", hdr[:3])
 	}
 }
 
 func TestTCPHandle_RekeyInit_ShortPacket_NilFSM(t *testing.T) {
 	logger := &tcpTestLogger{}
-	crypto := &handshake.DefaultCrypto{}
+	crypto := &primitives.DefaultKeyDeriver{}
 	h := newControlPlaneHandler(crypto, logger)
 	eg := &tcpTestEgress{}
 
@@ -148,9 +149,9 @@ func TestTCPHandle_RekeyInit_ShortPacket_NilFSM(t *testing.T) {
 	}
 }
 
-func TestTCPHandle_RekeyInit_EpochExhausted_Logs(t *testing.T) {
+func TestTCPHandle_RekeyInit_EpochExhausted_SendsEpochExhausted(t *testing.T) {
 	logger := &tcpTestLogger{}
-	crypto := &handshake.DefaultCrypto{}
+	crypto := &primitives.DefaultKeyDeriver{}
 	h := newControlPlaneHandler(crypto, logger)
 
 	rk := &tcpTestRekeyer{}
@@ -170,17 +171,59 @@ func TestTCPHandle_RekeyInit_EpochExhausted_Logs(t *testing.T) {
 	if len(logger.msgs) == 0 {
 		t.Fatal("expected logger to capture epoch exhaustion error")
 	}
-	// No ACK should be sent.
+
+	// EpochExhausted packet should be sent (not RekeyAck).
+	// Session stays alive - no termination.
 	eg.mu.Lock()
 	defer eg.mu.Unlock()
-	if len(eg.packets) != 0 {
-		t.Fatalf("expected no ACK on epoch exhaustion, got %d", len(eg.packets))
+	if len(eg.packets) != 1 {
+		t.Fatalf("expected 1 EpochExhausted packet, got %d", len(eg.packets))
 	}
+	exhausted := eg.packets[0]
+	if len(exhausted) < epochPrefixSize+3 {
+		t.Fatalf("EpochExhausted packet too short: %d", len(exhausted))
+	}
+	hdr := exhausted[epochPrefixSize:]
+	if hdr[0] != service_packet.Prefix || hdr[1] != service_packet.VersionV1 || hdr[2] != byte(service_packet.EpochExhausted) {
+		t.Fatalf("expected EpochExhausted header, got: %v", hdr[:3])
+	}
+}
+
+func TestTCPHandlePing_SendsPong(t *testing.T) {
+	logger := &tcpTestLogger{}
+	h := newControlPlaneHandler(&primitives.DefaultKeyDeriver{}, logger)
+	eg := &tcpTestEgress{}
+
+	h.HandlePing(eg)
+
+	eg.mu.Lock()
+	defer eg.mu.Unlock()
+	if len(eg.packets) != 1 {
+		t.Fatalf("expected 1 Pong packet sent, got %d", len(eg.packets))
+	}
+
+	pong := eg.packets[0]
+	if len(pong) < epochPrefixSize+3 {
+		t.Fatalf("Pong packet too short: %d", len(pong))
+	}
+	hdr := pong[epochPrefixSize:]
+	if hdr[0] != service_packet.Prefix || hdr[1] != service_packet.VersionV1 || hdr[2] != byte(service_packet.Pong) {
+		t.Fatalf("expected Pong header, got: %v", hdr[:3])
+	}
+}
+
+func TestTCPHandlePing_EgressError_DoesNotPanic(t *testing.T) {
+	logger := &tcpTestLogger{}
+	h := newControlPlaneHandler(&primitives.DefaultKeyDeriver{}, logger)
+	eg := &tcpTestEgress{sendErr: errors.New("send failed")}
+
+	// Should not panic even when egress fails.
+	h.HandlePing(eg)
 }
 
 func TestTCPHandle_RekeyInit_EgressError_Logs(t *testing.T) {
 	logger := &tcpTestLogger{}
-	crypto := &handshake.DefaultCrypto{}
+	crypto := &primitives.DefaultKeyDeriver{}
 	h := newControlPlaneHandler(crypto, logger)
 
 	rk := &tcpTestRekeyer{}
@@ -190,7 +233,7 @@ func TestTCPHandle_RekeyInit_EgressError_Logs(t *testing.T) {
 	pkt := buildTCPRekeyInitPacket(t, crypto)
 	handled := h.Handle(pkt, eg, fsm)
 	if !handled {
-		t.Fatal("expected Handle to return true for RekeyInit")
+		t.Fatal("expected Handle to return true for RekeyInit (even with egress error)")
 	}
 
 	logger.mu.Lock()

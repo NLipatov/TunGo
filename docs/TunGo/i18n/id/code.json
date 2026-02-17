@@ -24,7 +24,7 @@
     "message": "Aman"
   },
   "feature.secure.description": {
-    "message": "Tunnel end-to-end dengan enkripsi ChaCha20"
+    "message": "Handshake Noise IK, pertukaran kunci X25519, AEAD ChaCha20-Poly1305"
   },
   "feature.multiTransport.title": {
     "message": "Dukungan Multi-Transport"

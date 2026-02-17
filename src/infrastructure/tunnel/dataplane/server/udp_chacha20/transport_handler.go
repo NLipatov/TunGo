@@ -2,15 +2,13 @@ package udp_chacha20
 
 import (
 	"context"
-	"errors"
 	"io"
 	"net/netip"
 	"tungo/application/listeners"
 	"tungo/application/logging"
 	"tungo/application/network/routing/transport"
-	"tungo/infrastructure/cryptography/chacha20/handshake"
-	"tungo/infrastructure/cryptography/chacha20/rekey"
-	"tungo/infrastructure/network/service_packet"
+	"tungo/infrastructure/cryptography/chacha20"
+	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/session"
 	"tungo/infrastructure/tunnel/sessionplane/server/udp_registration"
@@ -24,16 +22,15 @@ import (
 //
 // For unknown clients, it delegates to session-plane registration via the injected registrar.
 type TransportHandler struct {
-	ctx            context.Context
-	settings       settings.Settings
-	writer         io.Writer
-	sessionManager session.Repository
-	logger         logging.Logger
-	listenerConn   listeners.UdpListener
+	ctx          context.Context
+	settings     settings.Settings
+	writer       io.Writer
+	routeLookup  session.RouteLookup
+	addrUpdater  session.PeerAddressUpdater
+	logger       logging.Logger
+	listenerConn listeners.UdpListener
 	// Session-plane: registration and handshake tracking for not-yet-established sessions.
 	registrar *udp_registration.Registrar
-	// Control-plane dispatcher (dataplane adapter).
-	cp controlPlaneHandler
 	// Dataplane worker for established sessions.
 	dp *udpDataplaneWorker
 }
@@ -44,23 +41,24 @@ func NewTransportHandler(
 	settings settings.Settings,
 	writer io.Writer,
 	listenerConn listeners.UdpListener,
-	sessionManager session.Repository,
+	routeLookup session.RouteLookup,
+	addrUpdater session.PeerAddressUpdater,
 	logger logging.Logger,
 	registrar *udp_registration.Registrar,
 ) transport.Handler {
-	crypto := &handshake.DefaultCrypto{}
+	crypto := &primitives.DefaultKeyDeriver{}
 	cp := newServicePacketHandler(crypto)
 	dp := newUdpDataplaneWorker(writer, cp)
 	return &TransportHandler{
-		ctx:            ctx,
-		settings:       settings,
-		writer:         writer,
-		sessionManager: sessionManager,
-		logger:         logger,
-		listenerConn:   listenerConn,
-		registrar:      registrar,
-		cp:             cp,
-		dp:             dp,
+		ctx:          ctx,
+		settings:     settings,
+		writer:       writer,
+		routeLookup:  routeLookup,
+		addrUpdater:  addrUpdater,
+		logger:       logger,
+		listenerConn: listenerConn,
+		registrar:    registrar,
+		dp:           dp,
 	}
 }
 
@@ -71,11 +69,16 @@ func (t *TransportHandler) HandleTransport() error {
 		_ = conn.Close()
 	}(t.listenerConn)
 
-	t.logger.Printf("server listening on port %s (UDP)", t.settings.Port)
+	t.logger.Printf("server listening on port %d (UDP)", t.settings.Port)
 
-	// Ensure buffers are reasonably sized for high throughput.
-	_ = t.listenerConn.SetReadBuffer(65536)
-	_ = t.listenerConn.SetWriteBuffer(65536)
+	// Start idle session reaper if the repository supports it.
+	if reaper, ok := t.routeLookup.(session.IdleReaper); ok {
+		go session.RunIdleReaperLoop(t.ctx, reaper, settings.ServerIdleTimeout, settings.IdleReaperInterval, t.logger)
+	}
+
+	// Size socket buffers for burst absorption under high throughput.
+	_ = t.listenerConn.SetReadBuffer(4 * 1024 * 1024)
+	_ = t.listenerConn.SetWriteBuffer(4 * 1024 * 1024)
 
 	go func() {
 		<-t.ctx.Done()
@@ -115,33 +118,24 @@ func (t *TransportHandler) HandleTransport() error {
 			// only when needed (for registration).
 			if err := t.handlePacket(clientAddr, buffer[:n]); err != nil {
 				t.logger.Printf("failed to handle packet: %s", err)
-				if errors.Is(err, rekey.ErrEpochExhausted) {
-					t.sendSessionReset(clientAddr)
-				}
 			}
 		}
 	}
 }
 
 // handlePacket processes a UDP packet from addrPort.
-// - If a session exists, decrypts and forwards the packet to the TUN device.
-// - Otherwise, enqueues the packet into the registration pipeline.
+// - Fast path: route-id lookup in O(1), then decrypts and forwards to TUN.
+// - Unknown peers are delegated to registration pipeline.
 func (t *TransportHandler) handlePacket(
 	addrPort netip.AddrPort,
 	packet []byte,
 ) error {
-	if len(packet) < 2 {
-		t.logger.Printf("packet too short for epoch from %v: %d bytes", addrPort, len(packet))
-		return nil
-	}
-	// Fast path: existing session.
-	peer, sessionLookupErr := t.sessionManager.GetByExternalAddrPort(addrPort)
-	if sessionLookupErr == nil && peer.ExternalAddrPort() == addrPort {
-		if t.dp == nil {
-			// Should not happen; keep behavior safe.
-			return nil
+	if len(packet) < chacha20.UDPRouteIDLength {
+		t.logger.Printf("packet too short for route id from %v: %d bytes", addrPort, len(packet))
+	} else {
+		if peer, ok := t.getPeerByRouteID(packet); ok {
+			return t.handleEstablished(addrPort, peer, packet)
 		}
-		return t.dp.HandleEstablished(peer, packet)
 	}
 
 	// No existing session: route into registration queue.
@@ -152,13 +146,46 @@ func (t *TransportHandler) handlePacket(
 	return nil
 }
 
-// sendSessionReset sends a SessionReset service_packet packet to the given client.
-func (t *TransportHandler) sendSessionReset(addrPort netip.AddrPort) {
-	servicePacketBuffer := make([]byte, 3)
-	servicePacketPayload, err := service_packet.EncodeLegacyHeader(service_packet.SessionReset, servicePacketBuffer)
-	if err != nil {
-		t.logger.Printf("failed to encode legacy session reset service_packet packet: %v", err)
-		return
+func (t *TransportHandler) getPeerByRouteID(packet []byte) (*session.Peer, bool) {
+	routeID, ok := chacha20.ReadUDPRouteID(packet)
+	if !ok {
+		return nil, false
 	}
-	_, _ = t.listenerConn.WriteToUDPAddrPort(servicePacketPayload, addrPort)
+	peer, err := t.routeLookup.GetByRouteID(routeID)
+	if err != nil {
+		return nil, false
+	}
+	return peer, true
+}
+
+func (t *TransportHandler) handleEstablished(addrPort netip.AddrPort, peer *session.Peer, packet []byte) error {
+	if t.dp == nil || peer == nil || peer.IsClosed() {
+		return nil
+	}
+
+	decrypted, ok := tryDecryptSafe(peer, packet)
+	if !ok {
+		return nil
+	}
+
+	if peer.ExternalAddrPort() != addrPort {
+		t.addrUpdater.UpdateExternalAddr(peer, addrPort)
+	}
+
+	return t.dp.handleDecrypted(peer, packet, decrypted)
+}
+
+// tryDecryptSafe attempts decryption under the peer's crypto read lock,
+// preventing the TOCTOU race where crypto could be zeroed concurrently.
+// Used by the established session path.
+func tryDecryptSafe(peer *session.Peer, data []byte) ([]byte, bool) {
+	if !peer.CryptoRLock() {
+		return nil, false
+	}
+	defer peer.CryptoRUnlock()
+	result, err := peer.Crypto().Decrypt(data)
+	if err != nil {
+		return nil, false
+	}
+	return result, true
 }

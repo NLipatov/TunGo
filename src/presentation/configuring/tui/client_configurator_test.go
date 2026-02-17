@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -217,7 +218,8 @@ func Test_Configure_AddOption_Flow_Success(t *testing.T) {
 		selector: &queuedSelector{options: []string{addOption, "newconf.json"}},
 	}
 	tif := &textInputFactoryMock{ti: &textInputMock{val: "newconf"}}
-	taf := &textAreaFactoryMock{ta: &textAreaMock{val: `{}`}}
+	validCfgJSON, _ := json.Marshal(makeTestConfig())
+	taf := &textAreaFactoryMock{ta: &textAreaMock{val: string(validCfgJSON)}}
 	creator := &cfgCreatorMock{}
 	clientSel := &cfgSelectorMock{}
 

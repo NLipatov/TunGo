@@ -4,8 +4,8 @@ import (
 	"context"
 	"io"
 	"log"
-	"net/netip"
 	"tungo/application/network/routing/tun"
+	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/settings"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -15,54 +15,51 @@ import (
 )
 
 type TunHandler struct {
-	ctx              context.Context
-	reader           io.Reader
-	ipHeaderParser   appip.HeaderParser
-	sessionManager   session.Repository
-	sendSessionReset func(netip.AddrPort)
+	ctx            context.Context
+	reader         io.Reader
+	ipHeaderParser appip.HeaderParser
+	peerStore      session.PeerStore
 }
 
 func NewTunHandler(
 	ctx context.Context,
 	reader io.Reader,
 	parser appip.HeaderParser,
-	sessionManager session.Repository,
-	sendSessionReset func(netip.AddrPort),
+	peerStore session.PeerStore,
 ) tun.Handler {
 	return &TunHandler{
-		ctx:              ctx,
-		reader:           reader,
-		ipHeaderParser:   parser,
-		sessionManager:   sessionManager,
-		sendSessionReset: sendSessionReset,
+		ctx:            ctx,
+		reader:         reader,
+		ipHeaderParser: parser,
+		peerStore:      peerStore,
 	}
 }
 
 // HandleTun reads packets from the TUN interface,
 // reserves space for AEAD overhead, encrypts them, and forwards them to the correct session.
 //
-// Buffer layout (total size = MTU + NonceSize + TagSize):
+// Buffer layout before Encrypt (total size = MTU + UDPChacha20Overhead):
 //
-//	[ 0 ........ 11 ][ 12 ........ 1511 ][ 1512 ........ 1527 ]
-//	|   Nonce    |      Payload (<= MTU) |       Tag (16B)    |
+//	[ 0 ..... 7 ][ 8 .... 19 ][ 20 ........ 1519 ][ 1520 ..... end ]
+//	| Route ID  |   Nonce    |   Payload (<= MTU) |   AEAD tag headroom |
 //
-// Example with settings.MTU = 1500, settings.UDPChacha20Overhead = 28:
-// - buffer length = 1500 + 28 = 1528
+// Example with settings.MTU = 1500, settings.UDPChacha20Overhead = 36:
+// - buffer length = 1500 + 36 = 1536
 //
 // Step 1 – read plaintext from TUN:
-// - reader.Read writes at most MTU bytes into buffer[12:1512].
-// - the first 12 bytes (buffer[0:12]) are reserved for the nonce
-// - the last 16 bytes (buffer[1512:1528]) are reserved for the Poly1305 tag
+// - reader.Read writes at most MTU bytes into buffer[20:1520].
+// - first 8 bytes are reserved for route-id, next 12 for nonce
+// - trailing headroom is used by Encrypt for Poly1305 tag (+16)
 //
 // Step 2 – encrypt plaintext in place:
-//   - encryption operates on buffer[0 : 12+n] (nonce + payload)
+//   - encryption operates on buffer[0 : 20+n] (route-id + nonce + payload)
 //   - ciphertext and authentication tag are written back in place
-//   - no additional allocations are required since both the prefix
-//     (nonce) and the suffix (tag) are already reserved in the buffer.
+//   - no additional allocations are required since all prefixes and suffix headroom are reserved.
 func (t *TunHandler) HandleTun() error {
-	// Reserve space for nonce + payload + AEAD tag (in-place encryption needs extra capacity).
+	// Reserve space for route-id + nonce + payload + AEAD tag.
 	var buffer [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
-	plaintext := buffer[chacha20poly1305.NonceSize : settings.DefaultEthernetMTU+chacha20poly1305.NonceSize]
+	payloadStart := chacha20.UDPRouteIDLength + chacha20poly1305.NonceSize
+	plaintext := buffer[payloadStart : payloadStart+settings.DefaultEthernetMTU]
 
 	for {
 		select {
@@ -82,25 +79,24 @@ func (t *TunHandler) HandleTun() error {
 				continue
 			}
 
-			// Parse destination from the IP header (skip the nonce).
-			payload := buffer[chacha20poly1305.NonceSize : chacha20poly1305.NonceSize+n]
+			// Parse destination from the IP header.
+			payload := buffer[payloadStart : payloadStart+n]
 			addr, addrErr := t.ipHeaderParser.DestinationAddress(payload)
 			if addrErr != nil {
 				log.Printf("packet dropped: failed to parse destination address: %v", addrErr)
 				continue
 			}
 
-			peer, sErr := t.sessionManager.GetByInternalAddrPort(addr)
+			peer, sErr := t.peerStore.FindByDestinationIP(addr)
 			if sErr != nil {
-				log.Printf("packet dropped: %v, destination host: %v", sErr, addr)
+				// No route to destination - either unknown host or not in any peer's AllowedIPs
 				continue
 			}
 
-			// Encrypt "nonce || payload". The crypto service_packet must treat the prefix as nonce.
-			if err := peer.Egress().SendDataIP(buffer[:chacha20poly1305.NonceSize+n]); err != nil {
+			// Encrypt "route-id || nonce || payload".
+			if err := peer.Egress().SendDataIP(buffer[:payloadStart+n]); err != nil {
 				log.Printf("failed to send packet to %v: %v", peer.ExternalAddrPort(), err)
-				t.sendSessionReset(peer.ExternalAddrPort())
-				t.sessionManager.Delete(peer)
+				t.peerStore.Delete(peer)
 			}
 		}
 	}

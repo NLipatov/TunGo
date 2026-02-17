@@ -8,7 +8,7 @@ import (
 	"time"
 	"tungo/application/network/connection"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
-	"tungo/infrastructure/settings"
+	"tungo/infrastructure/cryptography/noise"
 	"tungo/infrastructure/tunnel/session"
 )
 
@@ -19,23 +19,23 @@ func (tcpRegLogger) Printf(string, ...any) {}
 
 // tcpRegHandshake is a mock handshake.
 type tcpRegHandshake struct {
-	internalIP net.IP
-	id         [32]byte
-	c2s, s2c   []byte
-	err        error
+	clientID int
+	id       [32]byte
+	c2s, s2c []byte
+	err      error
 }
 
 func (h *tcpRegHandshake) Id() [32]byte              { return h.id }
 func (h *tcpRegHandshake) KeyClientToServer() []byte { return h.c2s }
 func (h *tcpRegHandshake) KeyServerToClient() []byte { return h.s2c }
-func (*tcpRegHandshake) ClientSideHandshake(connection.Transport, settings.Settings) error {
+func (*tcpRegHandshake) ClientSideHandshake(_ connection.Transport) error {
 	return nil
 }
-func (h *tcpRegHandshake) ServerSideHandshake(_ connection.Transport) (net.IP, error) {
+func (h *tcpRegHandshake) ServerSideHandshake(_ connection.Transport) (int, error) {
 	if h.err != nil {
-		return nil, h.err
+		return 0, h.err
 	}
-	return h.internalIP, nil
+	return h.clientID, nil
 }
 
 // tcpRegHandshakeFactory returns a pre-configured handshake.
@@ -97,7 +97,7 @@ func (*tcpRegConn) LocalAddr() net.Addr {
 }
 
 func TestNewRegistrar(t *testing.T) {
-	r := NewRegistrar(tcpRegLogger{}, nil, nil, nil)
+	r := NewRegistrar(tcpRegLogger{}, nil, nil, nil, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 	if r == nil {
 		t.Fatal("expected non-nil registrar")
 	}
@@ -113,7 +113,7 @@ func TestRegisterClient_HandshakeError_ClosesConn(t *testing.T) {
 		ctrl:   rekey.NewStateMachine(tcpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
 	}
 	repo := session.NewDefaultRepository()
-	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo)
+	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	conn := &tcpRegConn{
 		remoteAddr: &net.TCPAddr{IP: net.IPv4(192, 168, 1, 1), Port: 12345},
@@ -134,15 +134,15 @@ func TestRegisterClient_HandshakeError_ClosesConn(t *testing.T) {
 func TestRegisterClient_CryptoFactoryError_ClosesConn(t *testing.T) {
 	hf := &tcpRegHandshakeFactory{
 		handshake: &tcpRegHandshake{
-			internalIP: net.IPv4(10, 0, 0, 1),
-			c2s:        make([]byte, 32),
-			s2c:        make([]byte, 32),
+			clientID: 1,
+			c2s:      make([]byte, 32),
+			s2c:      make([]byte, 32),
 		},
 	}
 	cryptoErr := errors.New("crypto init failed")
 	cf := &tcpRegCryptoFactory{err: cryptoErr}
 	repo := session.NewDefaultRepository()
-	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo)
+	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	conn := &tcpRegConn{
 		remoteAddr: &net.TCPAddr{IP: net.IPv4(192, 168, 1, 1), Port: 12345},
@@ -163,9 +163,9 @@ func TestRegisterClient_CryptoFactoryError_ClosesConn(t *testing.T) {
 func TestRegisterClient_Success(t *testing.T) {
 	hf := &tcpRegHandshakeFactory{
 		handshake: &tcpRegHandshake{
-			internalIP: net.IPv4(10, 0, 0, 1),
-			c2s:        make([]byte, 32),
-			s2c:        make([]byte, 32),
+			clientID: 1,
+			c2s:      make([]byte, 32),
+			s2c:      make([]byte, 32),
 		},
 	}
 	cf := &tcpRegCryptoFactory{
@@ -173,7 +173,7 @@ func TestRegisterClient_Success(t *testing.T) {
 		ctrl:   rekey.NewStateMachine(tcpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
 	}
 	repo := session.NewDefaultRepository()
-	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo)
+	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	conn := &tcpRegConn{
 		remoteAddr: &net.TCPAddr{IP: net.IPv4(192, 168, 1, 1), Port: 12345},
@@ -190,8 +190,8 @@ func TestRegisterClient_Success(t *testing.T) {
 		t.Fatal("expected non-nil transport")
 	}
 
-	// Verify peer is in repo.
-	ip := netip.MustParseAddr("10.0.0.1")
+	// Verify peer is in repo. AllocateClientIP(10.0.0.0/24, 1) → 10.0.0.2
+	ip := netip.MustParseAddr("10.0.0.2")
 	found, findErr := repo.GetByInternalAddrPort(ip)
 	if findErr != nil {
 		t.Fatalf("expected peer in repo, got error: %v", findErr)
@@ -213,9 +213,9 @@ func (e *tcpRegEgress) Close() error           { e.closed = true; return nil }
 func TestRegisterClient_ReplacesExistingSession(t *testing.T) {
 	hf := &tcpRegHandshakeFactory{
 		handshake: &tcpRegHandshake{
-			internalIP: net.IPv4(10, 0, 0, 1),
-			c2s:        make([]byte, 32),
-			s2c:        make([]byte, 32),
+			clientID: 1,
+			c2s:      make([]byte, 32),
+			s2c:      make([]byte, 32),
 		},
 	}
 	cf := &tcpRegCryptoFactory{
@@ -225,13 +225,14 @@ func TestRegisterClient_ReplacesExistingSession(t *testing.T) {
 	repo := session.NewDefaultRepository()
 
 	// Pre-populate repo with an existing session for the same internal IP.
-	ip := netip.MustParseAddr("10.0.0.1")
+	// AllocateClientIP(10.0.0.0/24, 1) → 10.0.0.2
+	ip := netip.MustParseAddr("10.0.0.2")
 	existingSession := session.NewSession(tcpRegCrypto{}, nil, ip, netip.MustParseAddrPort("192.168.1.100:9999"))
 	oldEgress := &tcpRegEgress{}
 	existingPeer := session.NewPeer(existingSession, oldEgress)
 	repo.Add(existingPeer)
 
-	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo)
+	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	conn := &tcpRegConn{
 		remoteAddr: &net.TCPAddr{IP: net.IPv4(192, 168, 1, 1), Port: 12345},
@@ -268,9 +269,9 @@ func TestRegisterClient_ReplacesExistingSession(t *testing.T) {
 func TestRegisterClient_NonTCPAddr_ClosesConn(t *testing.T) {
 	hf := &tcpRegHandshakeFactory{
 		handshake: &tcpRegHandshake{
-			internalIP: net.IPv4(10, 0, 0, 1),
-			c2s:        make([]byte, 32),
-			s2c:        make([]byte, 32),
+			clientID: 1,
+			c2s:      make([]byte, 32),
+			s2c:      make([]byte, 32),
 		},
 	}
 	cf := &tcpRegCryptoFactory{
@@ -278,7 +279,7 @@ func TestRegisterClient_NonTCPAddr_ClosesConn(t *testing.T) {
 		ctrl:   rekey.NewStateMachine(tcpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
 	}
 	repo := session.NewDefaultRepository()
-	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo)
+	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	// Use a UDP address instead of TCP.
 	conn := &tcpRegConn{
@@ -307,13 +308,19 @@ func (r *tcpRegFailingRepo) GetByInternalAddrPort(netip.Addr) (*session.Peer, er
 func (r *tcpRegFailingRepo) GetByExternalAddrPort(netip.AddrPort) (*session.Peer, error) {
 	return nil, r.err
 }
+func (r *tcpRegFailingRepo) GetByRouteID(uint64) (*session.Peer, error) { return nil, r.err }
+func (r *tcpRegFailingRepo) FindByDestinationIP(netip.Addr) (*session.Peer, error) {
+	return nil, r.err
+}
+func (*tcpRegFailingRepo) AllPeers() []*session.Peer                            { return nil }
+func (*tcpRegFailingRepo) UpdateExternalAddr(_ *session.Peer, _ netip.AddrPort) {}
 
 func TestRegisterClient_LookupError_ClosesConn(t *testing.T) {
 	hf := &tcpRegHandshakeFactory{
 		handshake: &tcpRegHandshake{
-			internalIP: net.IPv4(10, 0, 0, 1),
-			c2s:        make([]byte, 32),
-			s2c:        make([]byte, 32),
+			clientID: 1,
+			c2s:      make([]byte, 32),
+			s2c:      make([]byte, 32),
 		},
 	}
 	cf := &tcpRegCryptoFactory{
@@ -321,7 +328,7 @@ func TestRegisterClient_LookupError_ClosesConn(t *testing.T) {
 		ctrl:   rekey.NewStateMachine(tcpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
 	}
 	repo := &tcpRegFailingRepo{err: errors.New("database unavailable")}
-	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo)
+	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	conn := &tcpRegConn{
 		remoteAddr: &net.TCPAddr{IP: net.IPv4(192, 168, 1, 1), Port: 12345},
@@ -339,12 +346,13 @@ func TestRegisterClient_LookupError_ClosesConn(t *testing.T) {
 	}
 }
 
-func TestRegisterClient_InvalidInternalIP_ClosesConn(t *testing.T) {
+func TestRegisterClient_NegativeClientID_FailsAllocation(t *testing.T) {
+	// Negative clientID causes AllocateClientIP to fail.
 	hf := &tcpRegHandshakeFactory{
 		handshake: &tcpRegHandshake{
-			internalIP: net.IP{}, // invalid IP
-			c2s:        make([]byte, 32),
-			s2c:        make([]byte, 32),
+			clientID: -1, // invalid
+			c2s:      make([]byte, 32),
+			s2c:      make([]byte, 32),
 		},
 	}
 	cf := &tcpRegCryptoFactory{
@@ -352,7 +360,105 @@ func TestRegisterClient_InvalidInternalIP_ClosesConn(t *testing.T) {
 		ctrl:   rekey.NewStateMachine(tcpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
 	}
 	repo := session.NewDefaultRepository()
-	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo)
+	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
+
+	conn := &tcpRegConn{
+		remoteAddr: &net.TCPAddr{IP: net.IPv4(192, 168, 1, 1), Port: 12345},
+	}
+
+	peer, transport, err := reg.RegisterClient(conn)
+	if err == nil {
+		t.Fatal("expected error from IP allocation with negative clientID")
+	}
+	if peer != nil || transport != nil {
+		t.Fatal("expected nil peer and transport on allocation error")
+	}
+}
+
+// tcpRegHandshakeResult implements connection.HandshakeResult.
+type tcpRegHandshakeResult struct {
+	pubKey     []byte
+	allowedIPs []netip.Prefix
+}
+
+func (r *tcpRegHandshakeResult) ClientPubKey() []byte       { return r.pubKey }
+func (r *tcpRegHandshakeResult) AllowedIPs() []netip.Prefix { return r.allowedIPs }
+
+// tcpRegHandshakeWithResult extends tcpRegHandshake with HandshakeWithResult.
+type tcpRegHandshakeWithResult struct {
+	tcpRegHandshake
+	result connection.HandshakeResult
+}
+
+func (h *tcpRegHandshakeWithResult) Result() connection.HandshakeResult { return h.result }
+
+// tcpRegHandshakeWithResultFactory returns a HandshakeWithResult mock.
+type tcpRegHandshakeWithResultFactory struct {
+	handshake *tcpRegHandshakeWithResult
+}
+
+func (f *tcpRegHandshakeWithResultFactory) NewHandshake() connection.Handshake {
+	return f.handshake
+}
+
+// tcpRegCookieHandshakeFactory returns ErrCookieRequired on the first
+// NewHandshake call, then a successful handshake on the second.
+type tcpRegCookieHandshakeFactory struct {
+	calls    int
+	clientID int
+}
+
+func (f *tcpRegCookieHandshakeFactory) NewHandshake() connection.Handshake {
+	f.calls++
+	if f.calls == 1 {
+		return &tcpRegHandshake{err: noise.ErrCookieRequired}
+	}
+	return &tcpRegHandshake{
+		clientID: f.clientID,
+		c2s:      make([]byte, 32),
+		s2c:      make([]byte, 32),
+	}
+}
+
+func TestRegisterClient_CookieRetry_Success(t *testing.T) {
+	hf := &tcpRegCookieHandshakeFactory{clientID: 1}
+	cf := &tcpRegCryptoFactory{
+		crypto: tcpRegCrypto{},
+		ctrl:   rekey.NewStateMachine(tcpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
+	}
+	repo := session.NewDefaultRepository()
+	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
+
+	conn := &tcpRegConn{
+		remoteAddr: &net.TCPAddr{IP: net.IPv4(192, 168, 1, 1), Port: 12345},
+	}
+
+	peer, transport, err := reg.RegisterClient(conn)
+	if err != nil {
+		t.Fatalf("expected success after cookie retry, got: %v", err)
+	}
+	if peer == nil || transport == nil {
+		t.Fatal("expected non-nil peer and transport")
+	}
+	if conn.closed {
+		t.Fatal("connection must not be closed on successful retry")
+	}
+	if hf.calls != 2 {
+		t.Fatalf("expected 2 handshake attempts (cookie + retry), got %d", hf.calls)
+	}
+}
+
+func TestRegisterClient_CookieRetry_SecondFailure_ClosesConn(t *testing.T) {
+	// Both attempts return ErrCookieRequired — second should close.
+	hf := &tcpRegHandshakeFactory{
+		handshake: &tcpRegHandshake{err: noise.ErrCookieRequired},
+	}
+	cf := &tcpRegCryptoFactory{
+		crypto: tcpRegCrypto{},
+		ctrl:   rekey.NewStateMachine(tcpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
+	}
+	repo := session.NewDefaultRepository()
+	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	conn := &tcpRegConn{
 		remoteAddr: &net.TCPAddr{IP: net.IPv4(192, 168, 1, 1), Port: 12345},
@@ -360,9 +466,56 @@ func TestRegisterClient_InvalidInternalIP_ClosesConn(t *testing.T) {
 
 	_, _, err := reg.RegisterClient(conn)
 	if err == nil {
-		t.Fatal("expected error for invalid internal IP")
+		t.Fatal("expected error when cookie retry also fails")
 	}
 	if !conn.closed {
-		t.Fatal("expected conn to be closed")
+		t.Fatal("expected conn to be closed after second cookie failure")
+	}
+}
+
+func TestRegisterClient_HandshakeWithResult_IPv6(t *testing.T) {
+	hf := &tcpRegHandshakeWithResultFactory{
+		handshake: &tcpRegHandshakeWithResult{
+			tcpRegHandshake: tcpRegHandshake{
+				clientID: 1,
+				c2s:      make([]byte, 32),
+				s2c:      make([]byte, 32),
+			},
+			result: &tcpRegHandshakeResult{
+				pubKey:     []byte("test-client-pub-key-32-bytes!!!!"),
+				allowedIPs: []netip.Prefix{netip.MustParsePrefix("192.168.100.0/24")},
+			},
+		},
+	}
+	cf := &tcpRegCryptoFactory{
+		crypto: tcpRegCrypto{},
+		ctrl:   rekey.NewStateMachine(tcpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
+	}
+	repo := session.NewDefaultRepository()
+	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo,
+		netip.MustParsePrefix("10.0.0.0/24"),
+		netip.MustParsePrefix("fd00::/64"),
+	)
+
+	conn := &tcpRegConn{
+		remoteAddr: &net.TCPAddr{IP: net.IPv4(192, 168, 1, 1), Port: 12345},
+	}
+
+	peer, transport, err := reg.RegisterClient(conn)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if peer == nil || transport == nil {
+		t.Fatal("expected non-nil peer and transport")
+	}
+
+	// HandshakeWithResult allowedIPs (192.168.100.0/24) should be applied.
+	if !peer.IsSourceAllowed(netip.MustParseAddr("192.168.100.5")) {
+		t.Fatal("expected allowedIPs from handshake result to be applied")
+	}
+
+	// IPv6 allocation (fd00::2 for clientID=1) should be in allowedAddrs.
+	if !peer.IsSourceAllowed(netip.MustParseAddr("fd00::2")) {
+		t.Fatal("expected IPv6 address to be allowed")
 	}
 }

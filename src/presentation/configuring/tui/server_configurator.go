@@ -1,11 +1,13 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
+	"tungo/application/confgen"
 	"tungo/infrastructure/PAL/configuration/server"
+	"tungo/infrastructure/cryptography/primitives"
 	"tungo/presentation/configuring/tui/components/domain/contracts/selector"
 	"tungo/presentation/configuring/tui/components/domain/value_objects"
-	"tungo/presentation/interactive_commands/handlers"
 )
 
 const (
@@ -37,11 +39,16 @@ func (s *serverConfigurator) Configure() error {
 	case startServerOption:
 		return nil
 	case addClientOption:
-		handler := handlers.NewConfgenHandler(s.manager, handlers.NewJsonMarshaller())
-		generateNewClientConfErr := handler.GenerateNewClientConf()
-		if generateNewClientConfErr != nil {
-			return generateNewClientConfErr
+		gen := confgen.NewGenerator(s.manager, &primitives.DefaultKeyDeriver{})
+		conf, err := gen.Generate()
+		if err != nil {
+			return err
 		}
+		data, err := json.MarshalIndent(conf, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal client configuration: %w", err)
+		}
+		fmt.Println(string(data))
 		return s.Configure()
 	default:
 		return fmt.Errorf("invalid option: %s", option)

@@ -20,32 +20,25 @@ type HeaderType uint8
 
 const (
 	Unknown HeaderType = iota
-	SessionReset
+	_                  // reserved
 	RekeyInit
 	RekeyAck
 	Ping
 	Pong
+	EpochExhausted // server → client: cannot rekey, please reconnect
 )
 
 // TryParseHeader detects service_packet packets in-place without allocations.
 // Returns (type, ok). Never returns an error on the fast path.
 func TryParseHeader(pkt []byte) (HeaderType, bool) {
 	switch len(pkt) {
-	case 1: // legacy: <type>
-		typ := HeaderType(pkt[0])
-		switch typ {
-		case SessionReset:
-			return SessionReset, true
-		default:
-			return Unknown, false
-		}
 	case 3: // v1 header only: <0xFF><ver><type>
 		if pkt[0] != Prefix || pkt[1] != VersionV1 {
 			return Unknown, false
 		}
 		typ := HeaderType(pkt[2])
 		switch typ {
-		case SessionReset, Ping, Pong:
+		case Ping, Pong, EpochExhausted:
 			return typ, true
 		default:
 			return Unknown, false
@@ -67,24 +60,10 @@ func TryParseHeader(pkt []byte) (HeaderType, bool) {
 	}
 }
 
-// EncodeLegacyHeader writes legacy single-byte encoding.
-func EncodeLegacyHeader(headerType HeaderType, dst []byte) ([]byte, error) {
-	if len(dst) < 1 {
-		return nil, io.ErrShortBuffer
-	}
-	switch headerType {
-	case SessionReset:
-		dst[0] = byte(headerType)
-		return dst[:1], nil
-	default:
-		return nil, ErrInvalidHeader
-	}
-}
-
 // EncodeV1Header writes framed encoding: 0xFF <ver=1> <type>.
 func EncodeV1Header(headerType HeaderType, dst []byte) ([]byte, error) {
 	switch headerType {
-	case SessionReset, Ping, Pong:
+	case Ping, Pong, EpochExhausted:
 		if len(dst) < 3 {
 			return nil, io.ErrShortBuffer
 		}

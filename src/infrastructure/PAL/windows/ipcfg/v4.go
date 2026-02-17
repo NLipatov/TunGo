@@ -8,6 +8,7 @@ import (
 	"math"
 	"net"
 	"net/netip"
+	"strconv"
 	"strings"
 	"tungo/infrastructure/PAL/windows/ipcfg/network_interface/resolver"
 
@@ -323,6 +324,41 @@ func (v *v4) DeleteRoute(destination string) error {
 	return last
 }
 
+func (v *v4) DeleteRouteOnInterface(destination, ifName string) error {
+	luid, err := v.resolver.NetworkInterfaceByName(ifName)
+	if err != nil {
+		return err
+	}
+	pfx, err := v.parseDestPrefixV4(destination)
+	if err != nil {
+		return fmt.Errorf("DeleteRouteOnInterface: %w", err)
+	}
+	rows, err := winipcfg.GetIPForwardTable2(winipcfg.AddressFamily(windows.AF_INET))
+	if err != nil {
+		return fmt.Errorf("GetIPForwardTable2: %w", err)
+	}
+	var (
+		found int
+		last  error
+	)
+	for i := range rows {
+		r := &rows[i]
+		dp := r.DestinationPrefix.Prefix()
+		if !dp.Addr().Is4() || dp != pfx || r.InterfaceLUID != luid {
+			continue
+		}
+		if delErr := r.Delete(); delErr != nil {
+			last = delErr
+			continue
+		}
+		found++
+	}
+	if found == 0 {
+		return nil
+	}
+	return last
+}
+
 func (v *v4) parseDestPrefixV4(s string) (netip.Prefix, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -424,5 +460,8 @@ func (v *v4) BestRoute(dest string) (string, string, int, int, error) {
 	}
 
 	alias := v.resolver.NetworkInterfaceName(best.InterfaceLUID)
+	if strings.TrimSpace(alias) == "" && best.InterfaceIndex != 0 {
+		alias = strconv.Itoa(int(best.InterfaceIndex))
+	}
 	return gw, alias, int(best.InterfaceIndex), int(best.Metric), nil
 }

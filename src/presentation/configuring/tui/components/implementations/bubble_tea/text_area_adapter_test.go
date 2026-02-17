@@ -55,6 +55,13 @@ func TestTextAreaAdapter_NewTextArea_Success(t *testing.T) {
 	}
 }
 
+func TestTextAreaAdapter_NewTextAreaAdapter_DefaultRunnerConstructs(t *testing.T) {
+	f := NewTextAreaAdapter()
+	if f == nil {
+		t.Fatal("expected non-nil factory from NewTextAreaAdapter")
+	}
+}
+
 func TestTextAreaAdapter_NewTextArea_RunError(t *testing.T) {
 	adapter := NewCustomTeaRunnerTextAreaAdapter(
 		&textAreaAdapterMockTeaRunner{ret: nil, err: errors.New("bang")},

@@ -274,7 +274,7 @@ func TestRead_ZeroLengthFrame(t *testing.T) {
 }
 
 func TestRead_ExceedsDomainCap_NoDrain(t *testing.T) {
-	// header says 3 bytes, but domain cap is 2 -> expect domain error, payload remains unread.
+	// header says 3 bytes, but domain cap is 2 -> expect domain error, payload not consumed by Read.
 	frame := mkFrame([]byte("xyz")) // len=3
 	mock := &LengthPrefixFramingAdapterMockConn{readData: frame}
 	capv, _ := framelimit.NewCap(2)
@@ -283,11 +283,9 @@ func TestRead_ExceedsDomainCap_NoDrain(t *testing.T) {
 	if _, err := a.Read(make([]byte, 3)); !errors.Is(err, framelimit.ErrCapExceeded) {
 		t.Fatalf("expected framelimit.ErrCapExceeded, got %v", err)
 	}
-	// No drain: next byte to read should be the first payload byte, breaking alignment for any next Read.
-	// We won't call a.Read again (per contract caller must close), but ensure mock still has unread data:
-	if rem := len(mock.readData) - mock.readOff; rem == 0 {
-		t.Fatalf("expected unread payload to remain, but none left")
-	}
+	// Contract: adapter does NOT drain payload on error; caller must close.
+	// (With buffering, mock data may be consumed into bufReader — that's fine,
+	// the payload is still not returned to the caller.)
 }
 
 func TestRead_ShortBuffer_NoDrain(t *testing.T) {
@@ -300,10 +298,7 @@ func TestRead_ShortBuffer_NoDrain(t *testing.T) {
 	if _, err := a.Read(make([]byte, 4)); !errors.Is(err, io.ErrShortBuffer) {
 		t.Fatalf("expected io.ErrShortBuffer, got %v", err)
 	}
-	// No drain — unread payload should remain.
-	if rem := len(mock.readData) - mock.readOff; rem == 0 {
-		t.Fatalf("expected unread payload to remain, but none left")
-	}
+	// Contract: adapter does NOT drain payload on error; caller must close.
 }
 
 func TestRead_PayloadReadError(t *testing.T) {
@@ -338,5 +333,40 @@ func TestClose_Err(t *testing.T) {
 
 	if err := a.Close(); !errors.Is(err, io.ErrClosedPipe) {
 		t.Fatalf("expected io.ErrClosedPipe, got %v", err)
+	}
+}
+
+// --- Buffering tests ---
+
+func TestRead_BufferedReducesSyscalls(t *testing.T) {
+	// Two complete frames in mock — no readChunks, so mock returns all data at once.
+	frame1 := mkFrame([]byte("frame-one"))
+	frame2 := mkFrame([]byte("frame-two"))
+	mock := &LengthPrefixFramingAdapterMockConn{
+		readData: append(frame1, frame2...),
+	}
+	capv, _ := framelimit.NewCap(1024)
+	a, _ := NewLengthPrefixFramingAdapter(mock, capv)
+
+	buf := make([]byte, 1024)
+	n1, err := a.Read(buf)
+	if err != nil {
+		t.Fatalf("read frame 1: %v", err)
+	}
+	if got := string(buf[:n1]); got != "frame-one" {
+		t.Fatalf("frame 1 payload: got=%q want=%q", got, "frame-one")
+	}
+
+	n2, err := a.Read(buf)
+	if err != nil {
+		t.Fatalf("read frame 2: %v", err)
+	}
+	if got := string(buf[:n2]); got != "frame-two" {
+		t.Fatalf("frame 2 payload: got=%q want=%q", got, "frame-two")
+	}
+
+	// Both frames served from a single underlying Read thanks to bufio.Reader.
+	if mock.rCalls != 1 {
+		t.Fatalf("expected 1 underlying Read call, got %d", mock.rCalls)
 	}
 }

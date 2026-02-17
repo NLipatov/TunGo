@@ -3,14 +3,13 @@ package udp_registration
 import (
 	"context"
 	"errors"
-	"net"
 	"net/netip"
 	"sync"
 	"testing"
 	"time"
 	"tungo/application/network/connection"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
-	"tungo/infrastructure/settings"
+	"tungo/infrastructure/cryptography/noise"
 	"tungo/infrastructure/tunnel/session"
 )
 
@@ -24,7 +23,7 @@ type udpRegRekeyer struct{}
 
 func (udpRegRekeyer) Rekey(_, _ []byte) (uint16, error) { return 0, nil }
 func (udpRegRekeyer) SetSendEpoch(uint16)               {}
-func (udpRegRekeyer) RemoveEpoch(uint16) bool            { return true }
+func (udpRegRekeyer) RemoveEpoch(uint16) bool           { return true }
 
 // udpRegCrypto is a mock crypto.
 type udpRegCrypto struct{}
@@ -34,31 +33,31 @@ func (udpRegCrypto) Decrypt(b []byte) ([]byte, error) { return b, nil }
 
 // udpRegHandshake is a mock handshake that reads from registration queue.
 type udpRegHandshake struct {
-	internalIP net.IP
-	err        error
-	id         [32]byte
-	c2s, s2c   []byte
+	clientID int
+	err      error
+	id       [32]byte
+	c2s, s2c []byte
 }
 
 func (h *udpRegHandshake) Id() [32]byte              { return h.id }
 func (h *udpRegHandshake) KeyClientToServer() []byte { return h.c2s }
 func (h *udpRegHandshake) KeyServerToClient() []byte { return h.s2c }
-func (h *udpRegHandshake) ClientSideHandshake(connection.Transport, settings.Settings) error {
+func (h *udpRegHandshake) ClientSideHandshake(_ connection.Transport) error {
 	return nil
 }
-func (h *udpRegHandshake) ServerSideHandshake(transport connection.Transport) (net.IP, error) {
+func (h *udpRegHandshake) ServerSideHandshake(transport connection.Transport) (int, error) {
 	// Simulate handshake: read from queue, write response.
 	buf := make([]byte, 1024)
 	if _, err := transport.Read(buf); err != nil {
-		return nil, err
+		return 0, err
 	}
 	if _, err := transport.Write([]byte("ok")); err != nil {
-		return nil, err
+		return 0, err
 	}
 	if h.err != nil {
-		return nil, h.err
+		return 0, h.err
 	}
-	return h.internalIP, nil
+	return h.clientID, nil
 }
 
 type udpRegHandshakeFactory struct {
@@ -93,10 +92,10 @@ type udpRegWrite struct {
 	addr netip.AddrPort
 }
 
-func (l *udpRegListener) Close() error                                  { return nil }
-func (l *udpRegListener) SetReadBuffer(int) error                       { return nil }
-func (l *udpRegListener) SetWriteBuffer(int) error                      { return nil }
-func (l *udpRegListener) ReadMsgUDPAddrPort(b, oob []byte) (int, int, int, netip.AddrPort, error) {
+func (l *udpRegListener) Close() error             { return nil }
+func (l *udpRegListener) SetReadBuffer(int) error  { return nil }
+func (l *udpRegListener) SetWriteBuffer(int) error { return nil }
+func (l *udpRegListener) ReadMsgUDPAddrPort(_, _ []byte) (int, int, int, netip.AddrPort, error) {
 	return 0, 0, 0, netip.AddrPort{}, errors.New("not implemented")
 }
 
@@ -111,7 +110,7 @@ func (l *udpRegListener) WriteToUDPAddrPort(data []byte, addr netip.AddrPort) (i
 
 func TestNewRegistrar_CreatesEmptyRegistrations(t *testing.T) {
 	ctx := context.Background()
-	r := NewRegistrar(ctx, nil, nil, udpRegLogger{}, nil, nil, nil)
+	r := NewRegistrar(ctx, nil, nil, udpRegLogger{}, nil, nil, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 	if r == nil {
 		t.Fatal("expected non-nil registrar")
 	}
@@ -122,7 +121,7 @@ func TestNewRegistrar_CreatesEmptyRegistrations(t *testing.T) {
 
 func TestGetOrCreateRegistrationQueue_CreatesNew(t *testing.T) {
 	ctx := context.Background()
-	r := NewRegistrar(ctx, nil, nil, udpRegLogger{}, nil, nil, nil)
+	r := NewRegistrar(ctx, nil, nil, udpRegLogger{}, nil, nil, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	addr := netip.MustParseAddrPort("192.168.1.1:1234")
 	q, isNew := r.GetOrCreateRegistrationQueue(addr)
@@ -145,7 +144,7 @@ func TestGetOrCreateRegistrationQueue_CreatesNew(t *testing.T) {
 
 func TestCloseAll_ClearsRegistrations(t *testing.T) {
 	ctx := context.Background()
-	r := NewRegistrar(ctx, nil, nil, udpRegLogger{}, nil, nil, nil)
+	r := NewRegistrar(ctx, nil, nil, udpRegLogger{}, nil, nil, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	r.GetOrCreateRegistrationQueue(netip.MustParseAddrPort("192.168.1.1:1234"))
 	r.GetOrCreateRegistrationQueue(netip.MustParseAddrPort("192.168.1.2:5678"))
@@ -168,11 +167,9 @@ func TestEnqueuePacket_CreatesQueueAndStartsRegistration(t *testing.T) {
 	listener := &udpRegListener{}
 	repo := session.NewDefaultRepository()
 
-	resetCalled := make(chan netip.AddrPort, 1)
-
 	hf := &udpRegHandshakeFactory{
 		handshake: &udpRegHandshake{
-			err: errors.New("handshake fail"), // cause registration to fail and send reset
+			err: errors.New("handshake fail"), // cause registration to fail
 		},
 	}
 	cf := &udpRegCryptoFactory{
@@ -180,25 +177,14 @@ func TestEnqueuePacket_CreatesQueueAndStartsRegistration(t *testing.T) {
 		ctrl:   rekey.NewStateMachine(udpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
 	}
 
-	r := NewRegistrar(ctx, listener, repo, udpRegLogger{}, hf, cf, func(addr netip.AddrPort) {
-		resetCalled <- addr
-	})
+	r := NewRegistrar(ctx, listener, repo, udpRegLogger{}, hf, cf, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	addr := netip.MustParseAddrPort("192.168.1.1:1234")
 	r.EnqueuePacket(addr, []byte("hello"))
 
-	// Wait for reset to be called (handshake will fail).
-	select {
-	case got := <-resetCalled:
-		if got != addr {
-			t.Fatalf("expected reset for %v, got %v", addr, got)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("timeout waiting for reset callback")
-	}
-
 	// After registration failure, the queue should be removed.
-	time.Sleep(50 * time.Millisecond)
+	// Give time for the registration goroutine to complete.
+	time.Sleep(100 * time.Millisecond)
 	if len(r.Registrations()) != 0 {
 		t.Fatalf("expected registration removed after failure, got %d", len(r.Registrations()))
 	}
@@ -213,9 +199,9 @@ func TestRegisterClient_Success(t *testing.T) {
 
 	hf := &udpRegHandshakeFactory{
 		handshake: &udpRegHandshake{
-			internalIP: net.IPv4(10, 0, 0, 1),
-			c2s:        make([]byte, 32),
-			s2c:        make([]byte, 32),
+			clientID: 1,
+			c2s:      make([]byte, 32),
+			s2c:      make([]byte, 32),
 		},
 	}
 	cf := &udpRegCryptoFactory{
@@ -223,7 +209,7 @@ func TestRegisterClient_Success(t *testing.T) {
 		ctrl:   rekey.NewStateMachine(udpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
 	}
 
-	r := NewRegistrar(ctx, listener, repo, udpRegLogger{}, hf, cf, func(netip.AddrPort) {})
+	r := NewRegistrar(ctx, listener, repo, udpRegLogger{}, hf, cf, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	addr := netip.MustParseAddrPort("192.168.1.1:1234")
 	q, _ := r.GetOrCreateRegistrationQueue(addr)
@@ -244,7 +230,7 @@ func TestRegisterClient_Success(t *testing.T) {
 	}
 
 	// Verify session was added.
-	ip := netip.MustParseAddr("10.0.0.1")
+	ip := netip.MustParseAddr("10.0.0.2") // AllocateClientIP(10.0.0.0/24, 1) → 10.0.0.2
 	peer, err := repo.GetByInternalAddrPort(ip)
 	if err != nil {
 		t.Fatalf("expected peer in repo: %v", err)
@@ -254,7 +240,7 @@ func TestRegisterClient_Success(t *testing.T) {
 	}
 }
 
-func TestRegisterClient_CryptoFactoryError_SendsReset(t *testing.T) {
+func TestRegisterClient_CryptoFactoryError_FailsGracefully(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -263,17 +249,14 @@ func TestRegisterClient_CryptoFactoryError_SendsReset(t *testing.T) {
 
 	hf := &udpRegHandshakeFactory{
 		handshake: &udpRegHandshake{
-			internalIP: net.IPv4(10, 0, 0, 1),
-			c2s:        make([]byte, 32),
-			s2c:        make([]byte, 32),
+			clientID: 1,
+			c2s:      make([]byte, 32),
+			s2c:      make([]byte, 32),
 		},
 	}
 	cf := &udpRegCryptoFactory{err: errors.New("crypto failed")}
 
-	resetCalled := make(chan netip.AddrPort, 1)
-	r := NewRegistrar(ctx, listener, repo, udpRegLogger{}, hf, cf, func(addr netip.AddrPort) {
-		resetCalled <- addr
-	})
+	r := NewRegistrar(ctx, listener, repo, udpRegLogger{}, hf, cf, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	addr := netip.MustParseAddrPort("192.168.1.1:1234")
 	q, _ := r.GetOrCreateRegistrationQueue(addr)
@@ -287,17 +270,23 @@ func TestRegisterClient_CryptoFactoryError_SendsReset(t *testing.T) {
 	q.Enqueue([]byte("client-hello"))
 
 	select {
-	case got := <-resetCalled:
-		if got != addr {
-			t.Fatalf("expected reset for %v, got %v", addr, got)
-		}
+	case <-done:
+		// Registration completed (with failure)
 	case <-time.After(5 * time.Second):
-		t.Fatal("timeout waiting for reset callback")
+		t.Fatal("timeout waiting for RegisterClient to complete")
 	}
-	<-done
+
+	// No session should have been added due to crypto error
+	ip := netip.MustParseAddr("10.0.0.2")
+	_, err := repo.GetByInternalAddrPort(ip)
+	if err == nil {
+		t.Fatal("expected no session in repo after crypto error")
+	}
 }
 
-func TestRegisterClient_InvalidInternalIP_SendsReset(t *testing.T) {
+func TestRegisterClient_NegativeClientID_FailsAllocation(t *testing.T) {
+	// Negative clientID causes AllocateClientIP to fail.
+	// UDP registrar logs and returns silently, no session added.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -306,9 +295,9 @@ func TestRegisterClient_InvalidInternalIP_SendsReset(t *testing.T) {
 
 	hf := &udpRegHandshakeFactory{
 		handshake: &udpRegHandshake{
-			internalIP: net.IP{}, // invalid
-			c2s:        make([]byte, 32),
-			s2c:        make([]byte, 32),
+			clientID: -1, // invalid
+			c2s:      make([]byte, 32),
+			s2c:      make([]byte, 32),
 		},
 	}
 	cf := &udpRegCryptoFactory{
@@ -316,10 +305,7 @@ func TestRegisterClient_InvalidInternalIP_SendsReset(t *testing.T) {
 		ctrl:   rekey.NewStateMachine(udpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
 	}
 
-	resetCalled := make(chan netip.AddrPort, 1)
-	r := NewRegistrar(ctx, listener, repo, udpRegLogger{}, hf, cf, func(addr netip.AddrPort) {
-		resetCalled <- addr
-	})
+	r := NewRegistrar(ctx, listener, repo, udpRegLogger{}, hf, cf, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	addr := netip.MustParseAddrPort("192.168.1.1:1234")
 	q, _ := r.GetOrCreateRegistrationQueue(addr)
@@ -333,19 +319,220 @@ func TestRegisterClient_InvalidInternalIP_SendsReset(t *testing.T) {
 	q.Enqueue([]byte("client-hello"))
 
 	select {
-	case got := <-resetCalled:
-		if got != addr {
-			t.Fatalf("expected reset for %v, got %v", addr, got)
-		}
+	case <-done:
 	case <-time.After(5 * time.Second):
-		t.Fatal("timeout waiting for reset callback")
+		t.Fatal("timeout waiting for RegisterClient to complete")
 	}
-	<-done
+
+	// No session should be added due to allocation failure.
+	_, err := repo.GetByInternalAddrPort(netip.MustParseAddr("10.0.0.1"))
+	if err == nil {
+		t.Fatal("expected no session in repo after allocation failure")
+	}
+}
+
+// udpRegHandshakeResult implements connection.HandshakeResult.
+type udpRegHandshakeResult struct {
+	pubKey     []byte
+	allowedIPs []netip.Prefix
+}
+
+func (r *udpRegHandshakeResult) ClientPubKey() []byte       { return r.pubKey }
+func (r *udpRegHandshakeResult) AllowedIPs() []netip.Prefix { return r.allowedIPs }
+
+// udpRegHandshakeWithResult extends udpRegHandshake with HandshakeWithResult.
+type udpRegHandshakeWithResult struct {
+	udpRegHandshake
+	result connection.HandshakeResult
+}
+
+func (h *udpRegHandshakeWithResult) Result() connection.HandshakeResult { return h.result }
+
+type udpRegHandshakeWithResultFactory struct {
+	handshake *udpRegHandshakeWithResult
+}
+
+func (f *udpRegHandshakeWithResultFactory) NewHandshake() connection.Handshake {
+	return f.handshake
+}
+
+func TestEnqueuePacket_AtCapacity_SilentDrop(t *testing.T) {
+	ctx := context.Background()
+	r := NewRegistrar(ctx, nil, nil, udpRegLogger{}, nil, nil, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
+
+	// Fill up to MaxConcurrentRegistrations using direct queue creation.
+	for i := 0; i < MaxConcurrentRegistrations; i++ {
+		ip := netip.AddrFrom4([4]byte{10, 0, byte(i >> 8), byte(i)})
+		addr := netip.AddrPortFrom(ip, 1234)
+		r.GetOrCreateRegistrationQueue(addr)
+	}
+
+	if len(r.Registrations()) != MaxConcurrentRegistrations {
+		t.Fatalf("expected %d registrations, got %d", MaxConcurrentRegistrations, len(r.Registrations()))
+	}
+
+	// EnqueuePacket for a new address should be silently dropped.
+	excess := netip.MustParseAddrPort("255.255.255.255:9999")
+	r.EnqueuePacket(excess, []byte("should-be-dropped"))
+
+	// No new queue should have been created.
+	if len(r.Registrations()) != MaxConcurrentRegistrations {
+		t.Fatalf("expected %d registrations after drop, got %d", MaxConcurrentRegistrations, len(r.Registrations()))
+	}
+}
+
+func TestRegisterClient_HandshakeWithResult_IPv6(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	listener := &udpRegListener{}
+	repo := session.NewDefaultRepository()
+
+	hf := &udpRegHandshakeWithResultFactory{
+		handshake: &udpRegHandshakeWithResult{
+			udpRegHandshake: udpRegHandshake{
+				clientID: 1,
+				c2s:      make([]byte, 32),
+				s2c:      make([]byte, 32),
+			},
+			result: &udpRegHandshakeResult{
+				pubKey:     []byte("test-client-pub-key-32-bytes!!!!"),
+				allowedIPs: []netip.Prefix{netip.MustParsePrefix("192.168.100.0/24")},
+			},
+		},
+	}
+	cf := &udpRegCryptoFactory{
+		crypto: udpRegCrypto{},
+		ctrl:   rekey.NewStateMachine(udpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
+	}
+
+	r := NewRegistrar(ctx, listener, repo, udpRegLogger{}, hf, cf,
+		netip.MustParsePrefix("10.0.0.0/24"),
+		netip.MustParsePrefix("fd00::/64"),
+	)
+
+	addr := netip.MustParseAddrPort("192.168.1.1:1234")
+	q, _ := r.GetOrCreateRegistrationQueue(addr)
+
+	done := make(chan struct{})
+	go func() {
+		r.RegisterClient(addr, q)
+		close(done)
+	}()
+
+	q.Enqueue([]byte("client-hello"))
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for RegisterClient to complete")
+	}
+
+	// Verify session has auth data.
+	ip := netip.MustParseAddr("10.0.0.2")
+	peer, err := repo.GetByInternalAddrPort(ip)
+	if err != nil {
+		t.Fatalf("expected peer in repo: %v", err)
+	}
+
+	// HandshakeWithResult allowedIPs (192.168.100.0/24) should be applied.
+	if !peer.IsSourceAllowed(netip.MustParseAddr("192.168.100.5")) {
+		t.Fatal("expected allowedIPs from handshake result to be applied")
+	}
+
+	// IPv6 allocation (fd00::2 for clientID=1) should be in allowedAddrs.
+	if !peer.IsSourceAllowed(netip.MustParseAddr("fd00::2")) {
+		t.Fatal("expected IPv6 address to be allowed")
+	}
+}
+
+// udpRegCookieHandshake returns ErrCookieRequired (after reading from transport)
+// so the retry loop creates a fresh handshake.
+type udpRegCookieHandshake struct {
+	udpRegHandshake
+}
+
+func (h *udpRegCookieHandshake) ServerSideHandshake(transport connection.Transport) (int, error) {
+	buf := make([]byte, 1024)
+	if _, err := transport.Read(buf); err != nil {
+		return 0, err
+	}
+	if _, err := transport.Write([]byte("cookie")); err != nil {
+		return 0, err
+	}
+	return 0, noise.ErrCookieRequired
+}
+
+// udpRegCookieHandshakeFactory returns a cookie handshake first, then a
+// successful handshake on the second call.
+type udpRegCookieHandshakeFactory struct {
+	calls    int
+	clientID int
+}
+
+func (f *udpRegCookieHandshakeFactory) NewHandshake() connection.Handshake {
+	f.calls++
+	if f.calls == 1 {
+		return &udpRegCookieHandshake{}
+	}
+	return &udpRegHandshake{
+		clientID: f.clientID,
+		c2s:      make([]byte, 32),
+		s2c:      make([]byte, 32),
+	}
+}
+
+func TestRegisterClient_CookieRetry_Success(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	listener := &udpRegListener{}
+	repo := session.NewDefaultRepository()
+
+	hf := &udpRegCookieHandshakeFactory{clientID: 1}
+	cf := &udpRegCryptoFactory{
+		crypto: udpRegCrypto{},
+		ctrl:   rekey.NewStateMachine(udpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
+	}
+
+	r := NewRegistrar(ctx, listener, repo, udpRegLogger{}, hf, cf, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
+
+	addr := netip.MustParseAddrPort("192.168.1.1:1234")
+	q, _ := r.GetOrCreateRegistrationQueue(addr)
+
+	done := make(chan struct{})
+	go func() {
+		r.RegisterClient(addr, q)
+		close(done)
+	}()
+
+	// First packet triggers cookie response, second packet is the retry.
+	q.Enqueue([]byte("client-hello"))
+	q.Enqueue([]byte("client-hello-with-cookie"))
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for RegisterClient to complete")
+	}
+
+	// Verify session was added after cookie retry.
+	ip := netip.MustParseAddr("10.0.0.2")
+	peer, err := repo.GetByInternalAddrPort(ip)
+	if err != nil {
+		t.Fatalf("expected peer in repo after cookie retry: %v", err)
+	}
+	if peer == nil {
+		t.Fatal("expected non-nil peer")
+	}
+	if hf.calls != 2 {
+		t.Fatalf("expected 2 handshake attempts (cookie + retry), got %d", hf.calls)
+	}
 }
 
 func TestGetOrCreateRegistrationQueue_SecondCallReusesQueue(t *testing.T) {
 	ctx := context.Background()
-	r := NewRegistrar(ctx, nil, nil, udpRegLogger{}, nil, nil, nil)
+	r := NewRegistrar(ctx, nil, nil, udpRegLogger{}, nil, nil, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	addr := netip.MustParseAddrPort("192.168.1.1:1234")
 

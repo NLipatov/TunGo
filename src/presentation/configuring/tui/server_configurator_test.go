@@ -1,9 +1,10 @@
 package tui
 
 import (
-	"crypto/ed25519"
 	"errors"
+	"net/netip"
 	"reflect"
+	"runtime"
 	"testing"
 	"tungo/infrastructure/settings"
 
@@ -16,6 +17,22 @@ type queueSelector struct {
 	options []string
 	errs    []error
 	idx     int
+}
+
+func mustHost(raw string) settings.Host {
+	h, err := settings.NewHost(raw)
+	if err != nil {
+		panic(err)
+	}
+	return h
+}
+
+func mustPrefix(raw string) netip.Prefix {
+	return netip.MustParsePrefix(raw)
+}
+
+func mustAddr(raw string) netip.Addr {
+	return netip.MustParseAddr(raw)
 }
 
 func (m *queueSelector) SelectOne() (string, error) {
@@ -71,9 +88,16 @@ func (m *mockManager) IncrementClientCounter() error {
 	return m.incErr
 }
 
-func (m *mockManager) InjectEdKeys(_ ed25519.PublicKey, _ ed25519.PrivateKey) error {
+func (m *mockManager) InjectX25519Keys(_, _ []byte) error {
 	return m.injectErr
 }
+
+func (m *mockManager) AddAllowedPeer(_ srv.AllowedPeer) error {
+	return nil
+}
+
+func (m *mockManager) EnsureIPv6Subnets() error { return nil }
+func (m *mockManager) InvalidateCache()          {}
 
 func Test_selectOption_Success(t *testing.T) {
 	qsel := &queueSelector{options: []string{startServerOption}}
@@ -129,25 +153,34 @@ func Test_Configure_StartServerOption(t *testing.T) {
 }
 
 func Test_Configure_AddClientOption_Success_ThenExit(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("test requires Linux ip command")
+	}
 	qsel := &queueSelector{options: []string{addClientOption, startServerOption}}
 	sf := &mockSelectorFactory{selector: qsel}
 
 	m := &mockManager{
 		confRet: &srv.Configuration{
 			TCPSettings: settings.Settings{
-				ConnectionIP:     "10.10.0.1",
-				InterfaceIPCIDR:  "10.10.0.0/24",
-				InterfaceAddress: "10.10.0.2",
+				Addressing: settings.Addressing{
+					Server:     mustHost("10.10.0.1"),
+					IPv4Subnet: mustPrefix("10.10.0.0/24"),
+					IPv4:       mustAddr("10.10.0.2"),
+				},
 			},
 			UDPSettings: settings.Settings{
-				ConnectionIP:     "10.10.1.1",
-				InterfaceIPCIDR:  "10.10.1.1/24",
-				InterfaceAddress: "10.10.1.2",
+				Addressing: settings.Addressing{
+					Server:     mustHost("10.10.1.1"),
+					IPv4Subnet: mustPrefix("10.10.1.1/24"),
+					IPv4:       mustAddr("10.10.1.2"),
+				},
 			},
 			WSSettings: settings.Settings{
-				ConnectionIP:     "10.10.3.1",
-				InterfaceIPCIDR:  "10.10.3.1/24",
-				InterfaceAddress: "10.10.3.2",
+				Addressing: settings.Addressing{
+					Server:     mustHost("10.10.3.1"),
+					IPv4Subnet: mustPrefix("10.10.3.1/24"),
+					IPv4:       mustAddr("10.10.3.2"),
+				},
 			},
 			EnableTCP: true,
 		},

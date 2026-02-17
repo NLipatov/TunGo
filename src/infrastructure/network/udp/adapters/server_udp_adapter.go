@@ -27,6 +27,15 @@ func (ua *ServerUdpAdapter) Write(data []byte) (int, error) {
 }
 
 func (ua *ServerUdpAdapter) Read(buffer []byte) (int, error) {
+	// Fast path: dataplane supplies max-sized buffers; read directly and avoid copy.
+	if len(buffer) >= len(ua.readBuffer) {
+		n, _, _, _, err := ua.conn.ReadMsgUDPAddrPort(buffer[:len(ua.readBuffer)], ua.oob[:])
+		if err != nil {
+			return 0, err
+		}
+		return n, nil
+	}
+
 	n, _, _, _, err := ua.conn.ReadMsgUDPAddrPort(ua.readBuffer[:], ua.oob[:])
 	if err != nil {
 		return 0, err

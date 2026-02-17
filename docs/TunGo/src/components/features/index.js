@@ -35,7 +35,7 @@ export default function Features() {
                     <Feature
                         Svg={require('@site/static/svg/key.svg').default}
                         title={<Translate id="feature.secure.title">Secure</Translate>}
-                        description={<Translate id="feature.secure.description">End-to-end tunnel with ChaCha20 encryption</Translate>}
+                        description={<Translate id="feature.secure.description">Noise IK handshake, X25519 key agreement, ChaCha20-Poly1305 AEAD</Translate>}
                     />
                     <Feature
                         Svg={require('@site/static/svg/cable.svg').default}

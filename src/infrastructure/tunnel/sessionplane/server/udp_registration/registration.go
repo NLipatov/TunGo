@@ -2,6 +2,7 @@ package udp_registration
 
 import (
 	"context"
+	"errors"
 	"net/netip"
 	"sync"
 	"time"
@@ -9,9 +10,11 @@ import (
 	"tungo/application/listeners"
 	"tungo/application/logging"
 	"tungo/application/network/connection"
+	"tungo/infrastructure/cryptography/noise"
+	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/network/udp/adapters"
-	"tungo/infrastructure/network/udp/queue/udp"
 	"tungo/infrastructure/tunnel/session"
+	udpQueue "tungo/infrastructure/tunnel/sessionplane/server/udp_registration/queue"
 )
 
 const (
@@ -19,6 +22,9 @@ const (
 	// HandshakeTimeout bounds how long we keep a registration goroutine alive
 	// in case the client stalls or disappears.
 	HandshakeTimeout = 10 * time.Second
+	// MaxConcurrentRegistrations limits the number of simultaneous handshakes
+	// to prevent memory exhaustion from spoofed source addresses.
+	MaxConcurrentRegistrations = 1000
 )
 
 // Registrar is the session-plane component responsible for turning unknown UDP peers
@@ -27,26 +33,33 @@ type Registrar struct {
 	ctx context.Context
 
 	listenerConn listeners.UdpListener
-	sessionRepo  session.Repository
+	sessionRepo  udpRegistrationRepo
 	logger       logging.Logger
 
 	handshakeFactory    connection.HandshakeFactory
 	cryptographyFactory connection.CryptoFactory
 
-	mu            sync.Mutex
-	registrations map[netip.AddrPort]*udp.RegistrationQueue
+	interfaceSubnet netip.Prefix
+	ipv6Subnet      netip.Prefix
 
-	sendReset func(addrPort netip.AddrPort)
+	mu            sync.Mutex
+	registrations map[netip.AddrPort]*udpQueue.RegistrationQueue
+}
+
+type udpRegistrationRepo interface {
+	session.PeerStore
+	session.InternalLookup
 }
 
 func NewRegistrar(
 	ctx context.Context,
 	listenerConn listeners.UdpListener,
-	sessionRepo session.Repository,
+	sessionRepo udpRegistrationRepo,
 	logger logging.Logger,
 	handshakeFactory connection.HandshakeFactory,
 	cryptographyFactory connection.CryptoFactory,
-	sendReset func(addrPort netip.AddrPort),
+	interfaceSubnet netip.Prefix,
+	ipv6Subnet netip.Prefix,
 ) *Registrar {
 	return &Registrar{
 		ctx:                 ctx,
@@ -55,13 +68,19 @@ func NewRegistrar(
 		logger:              logger,
 		handshakeFactory:    handshakeFactory,
 		cryptographyFactory: cryptographyFactory,
-		registrations:       make(map[netip.AddrPort]*udp.RegistrationQueue),
-		sendReset:           sendReset,
+		interfaceSubnet:     interfaceSubnet,
+		ipv6Subnet:          ipv6Subnet,
+		registrations:       make(map[netip.AddrPort]*udpQueue.RegistrationQueue),
 	}
 }
 
 func (r *Registrar) EnqueuePacket(addrPort netip.AddrPort, packet []byte) {
 	q, isNew := r.getOrCreateRegistrationQueue(addrPort)
+	if q == nil {
+		// At registration capacity - silently drop to prevent DoS amplification.
+		// Legitimate clients will retry; attackers waste resources.
+		return
+	}
 	q.Enqueue(packet)
 	if isNew {
 		go r.RegisterClient(addrPort, q)
@@ -70,11 +89,11 @@ func (r *Registrar) EnqueuePacket(addrPort netip.AddrPort, packet []byte) {
 
 func (r *Registrar) CloseAll() {
 	r.mu.Lock()
-	queues := make([]*udp.RegistrationQueue, 0, len(r.registrations))
+	queues := make([]*udpQueue.RegistrationQueue, 0, len(r.registrations))
 	for _, q := range r.registrations {
 		queues = append(queues, q)
 	}
-	r.registrations = make(map[netip.AddrPort]*udp.RegistrationQueue)
+	r.registrations = make(map[netip.AddrPort]*udpQueue.RegistrationQueue)
 	r.mu.Unlock()
 
 	for _, q := range queues {
@@ -82,18 +101,27 @@ func (r *Registrar) CloseAll() {
 	}
 }
 
-func (r *Registrar) GetOrCreateRegistrationQueue(addrPort netip.AddrPort) (*udp.RegistrationQueue, bool) {
+func (r *Registrar) GetOrCreateRegistrationQueue(addrPort netip.AddrPort) (*udpQueue.RegistrationQueue, bool) {
 	return r.getOrCreateRegistrationQueue(addrPort)
 }
 
-func (r *Registrar) getOrCreateRegistrationQueue(addrPort netip.AddrPort) (*udp.RegistrationQueue, bool) {
+func (r *Registrar) getOrCreateRegistrationQueue(addrPort netip.AddrPort) (*udpQueue.RegistrationQueue, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if q, ok := r.registrations[addrPort]; ok {
 		return q, false
 	}
-	q := udp.NewRegistrationQueue(RegistrationQueueCapacity)
+
+	// Enforce maximum concurrent registrations to prevent memory exhaustion
+	// from spoofed source addresses.
+	if len(r.registrations) >= MaxConcurrentRegistrations {
+		// At capacity - reject new registration attempts.
+		// Return nil queue; caller must handle gracefully.
+		return nil, false
+	}
+
+	q := udpQueue.NewRegistrationQueue(RegistrationQueueCapacity)
 	r.registrations[addrPort] = q
 	return q, true
 }
@@ -111,7 +139,7 @@ func (r *Registrar) removeRegistrationQueue(addrPort netip.AddrPort) {
 	}
 }
 
-func (r *Registrar) RegisterClient(addrPort netip.AddrPort, queue *udp.RegistrationQueue) {
+func (r *Registrar) RegisterClient(addrPort netip.AddrPort, queue *udpQueue.RegistrationQueue) {
 	defer r.removeRegistrationQueue(addrPort)
 
 	ctx, cancel := context.WithTimeout(r.ctx, HandshakeTimeout)
@@ -122,34 +150,65 @@ func (r *Registrar) RegisterClient(addrPort netip.AddrPort, queue *udp.Registrat
 		queue.Close()
 	}()
 
-	h := r.handshakeFactory.NewHandshake()
-
 	// Transport reads from client's RegistrationQueue (fed by dataplane EnqueuePacket)
 	// and writes responses to the shared UDP socket.
 	regTransport := adapters.NewRegistrationTransport(r.listenerConn, addrPort, queue)
 
-	internalIP, handshakeErr := h.ServerSideHandshake(regTransport)
-	if handshakeErr != nil {
+	var h connection.Handshake
+	var clientID int
+	for attempt := 0; ; attempt++ {
+		h = r.handshakeFactory.NewHandshake()
+		var handshakeErr error
+		clientID, handshakeErr = h.ServerSideHandshake(regTransport)
+		if handshakeErr == nil {
+			break
+		}
+		if errors.Is(handshakeErr, noise.ErrCookieRequired) && attempt == 0 {
+			r.logger.Printf("UDP: %v cookie sent, awaiting retry", addrPort.Addr().AsSlice())
+			continue
+		}
 		r.logger.Printf("host %v failed registration: %v", addrPort.Addr().AsSlice(), handshakeErr)
-		r.sendReset(addrPort)
+		return
+	}
+
+	internalIP, allocErr := ip.AllocateClientIP(r.interfaceSubnet, clientID)
+	if allocErr != nil {
+		r.logger.Printf("host %v IP allocation failed: %v", addrPort.Addr().AsSlice(), allocErr)
 		return
 	}
 
 	cryptoSession, controller, cryptoSessionErr := r.cryptographyFactory.FromHandshake(h, true)
 	if cryptoSessionErr != nil {
 		r.logger.Printf("failed to init crypto session for %v: %v", addrPort.Addr().AsSlice(), cryptoSessionErr)
-		r.sendReset(addrPort)
 		return
 	}
 
-	intIp, intIpOk := netip.AddrFromSlice(internalIP)
-	if !intIpOk {
-		r.logger.Printf("failed to parse internal IP: %v", internalIP)
-		r.sendReset(addrPort)
-		return
+	// Extract authentication info from IK handshake result if available
+	var clientPubKey []byte
+	var allowedIPs []netip.Prefix
+	if hwr, ok := h.(connection.HandshakeWithResult); ok {
+		if result := hwr.Result(); result != nil {
+			clientPubKey = result.ClientPubKey()
+			allowedIPs = result.AllowedIPs()
+		}
 	}
 
-	sess := session.NewSession(cryptoSession, controller, intIp, addrPort)
+	// Add IPv6 address to allowedIPs for dual-stack support
+	if r.ipv6Subnet.IsValid() {
+		ipv6Addr, ipv6Err := ip.AllocateClientIP(r.ipv6Subnet, clientID)
+		if ipv6Err == nil {
+			allowedIPs = append(allowedIPs, netip.PrefixFrom(ipv6Addr, 128))
+		}
+	}
+
+	// Evict stale session for the same internal IP (e.g. client reconnect after NAT rebinding).
+	existingPeer, getErr := r.sessionRepo.GetByInternalAddrPort(internalIP)
+	if getErr == nil {
+		r.sessionRepo.Delete(existingPeer)
+		r.logger.Printf("UDP: replacing existing session for %s", internalIP)
+	}
+
+	sess := session.NewSessionWithAuth(cryptoSession, controller, internalIP, addrPort, clientPubKey, allowedIPs)
 	egress := connection.NewDefaultEgress(regTransport, cryptoSession)
 	peer := session.NewPeer(sess, egress)
 	r.sessionRepo.Add(peer)
@@ -157,7 +216,7 @@ func (r *Registrar) RegisterClient(addrPort netip.AddrPort, queue *udp.Registrat
 }
 
 // Registrations exposes the internal registrations map for testing.
-func (r *Registrar) Registrations() map[netip.AddrPort]*udp.RegistrationQueue {
+func (r *Registrar) Registrations() map[netip.AddrPort]*udpQueue.RegistrationQueue {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.registrations

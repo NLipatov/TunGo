@@ -1,34 +1,36 @@
 package server
 
 import (
-	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"os"
+
+	"golang.org/x/crypto/curve25519"
 )
 
 type KeyManager interface {
-	// PrepareKeys guarantees that Ed25519 keys are presented in configuration
+	// PrepareKeys guarantees that X25519 keys are presented in configuration
 	PrepareKeys() error
 }
 
 const (
-	publicKeyEnvVar  = "ED25519_PUBLIC_KEY"
-	privateKeyEnvVar = "ED25519_PRIVATE_KEY"
+	publicKeyEnvVar  = "X25519_PUBLIC_KEY"
+	privateKeyEnvVar = "X25519_PRIVATE_KEY"
 )
 
-type Ed25519KeyManager struct {
+type X25519KeyManager struct {
 	configurationManager ConfigurationManager
 }
 
-func NewEd25519KeyManager(store ConfigurationManager) KeyManager {
-	return &Ed25519KeyManager{
+func NewX25519KeyManager(store ConfigurationManager) KeyManager {
+	return &X25519KeyManager{
 		configurationManager: store,
 	}
 }
 
-func (m *Ed25519KeyManager) PrepareKeys() error {
+func (m *X25519KeyManager) PrepareKeys() error {
 	if keysAreInConfiguration, err := m.keysAreInConfiguration(); keysAreInConfiguration && err == nil {
 		return nil
 	}
@@ -40,33 +42,22 @@ func (m *Ed25519KeyManager) PrepareKeys() error {
 	return m.generateAndStoreKeysInConfiguration()
 }
 
-// keysAreInConfiguration checks if Ed25519 keys are presented in configuration
-func (m *Ed25519KeyManager) keysAreInConfiguration() (bool, error) {
+func (m *X25519KeyManager) keysAreInConfiguration() (bool, error) {
 	configuration, err := m.configurationManager.Configuration()
-	if err == nil {
-		// validate public key
-		pubKeyPresent := len(configuration.Ed25519PublicKey) > 0
-		pubKeyHasValidLength := len(configuration.Ed25519PublicKey) == ed25519.PublicKeySize
-		pubKeyIsValid := pubKeyPresent && pubKeyHasValidLength
-		// validate private key
-		privateKeyPresent := len(configuration.Ed25519PrivateKey) > 0
-		privateKeyHasValidLength := len(configuration.Ed25519PrivateKey) == ed25519.PrivateKeySize
-		privateKeyIsValid := privateKeyPresent && privateKeyHasValidLength
-		return pubKeyIsValid && privateKeyIsValid, nil
+	if err != nil {
+		return false, err
 	}
-
-	return false, err
+	pubKeyValid := len(configuration.X25519PublicKey) == 32
+	privKeyValid := len(configuration.X25519PrivateKey) == 32
+	return pubKeyValid && privKeyValid, nil
 }
 
-// keysAreInEnvVariables checks if Ed25519 keys are presented in env variables
-func (m *Ed25519KeyManager) keysAreInEnvVariables() (bool, error) {
-	// get Ed25519 key pair from env variables
+func (m *X25519KeyManager) keysAreInEnvVariables() (bool, error) {
 	publicKeyString := os.Getenv(publicKeyEnvVar)
 	privateKeyString := os.Getenv(privateKeyEnvVar)
 	if publicKeyString == "" || privateKeyString == "" {
-		return false, nil // no valid ed25519 key pair in env variables
+		return false, nil
 	}
-	// decode Ed25519 key pair from env variables
 	publicKey, publicKeyErr := base64.StdEncoding.DecodeString(publicKeyString)
 	if publicKeyErr != nil {
 		return false, fmt.Errorf("failed to decode public key: %w", publicKeyErr)
@@ -75,19 +66,37 @@ func (m *Ed25519KeyManager) keysAreInEnvVariables() (bool, error) {
 	if privateKeyErr != nil {
 		return false, fmt.Errorf("failed to decode private key: %w", privateKeyErr)
 	}
-	// inject Ed25519 key pair into configuration
-	injectEdKeysErr := m.configurationManager.InjectEdKeys(publicKey, privateKey)
-	if injectEdKeysErr != nil {
-		return false, fmt.Errorf("failed to inject Ed25519 key pair: %w", injectEdKeysErr)
+	if len(publicKey) != 32 || len(privateKey) != 32 {
+		return false, fmt.Errorf("invalid X25519 key length")
+	}
+	defer func() {
+		for i := range publicKey {
+			publicKey[i] = 0
+		}
+		for i := range privateKey {
+			privateKey[i] = 0
+		}
+	}()
+	injectErr := m.configurationManager.InjectX25519Keys(publicKey, privateKey)
+	if injectErr != nil {
+		return false, fmt.Errorf("failed to inject X25519 key pair: %w", injectErr)
 	}
 	return true, nil
 }
 
-// generateAndStoreKeysInConfiguration generate new Ed25519 key pair and store it in configuration
-func (m *Ed25519KeyManager) generateAndStoreKeysInConfiguration() error {
-	public, private, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		return fmt.Errorf("failed to generate Ed25519 key pair: %w", err)
+func (m *X25519KeyManager) generateAndStoreKeysInConfiguration() error {
+	var private [32]byte
+	defer func() {
+		for i := range private {
+			private[i] = 0
+		}
+	}()
+	if _, err := io.ReadFull(rand.Reader, private[:]); err != nil {
+		return fmt.Errorf("failed to generate X25519 private key: %w", err)
 	}
-	return m.configurationManager.InjectEdKeys(public, private)
+	public, err := curve25519.X25519(private[:], curve25519.Basepoint)
+	if err != nil {
+		return fmt.Errorf("failed to derive X25519 public key: %w", err)
+	}
+	return m.configurationManager.InjectX25519Keys(public, private[:])
 }

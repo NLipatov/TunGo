@@ -145,7 +145,7 @@ func TestUdpDecrypt_ReplayRejected_ByNonceValidator(t *testing.T) {
 	if _, err := srv.Decrypt(ct); err != nil {
 		t.Fatalf("first decrypt failed: %v", err)
 	}
-	// Replay must be rejected by Sliding64 validator (nonce reuse)
+	// Replay must be rejected by SlidingWindow validator (nonce reuse)
 	if _, err := srv.Decrypt(ct); err == nil {
 		t.Fatal("expected nonce validator error on replay, got nil")
 	}
@@ -182,16 +182,29 @@ func TestUdp_RoundTrip_OK(t *testing.T) {
 }
 
 func TestUdp_CreateAAD_BothDirections(t *testing.T) {
+	// Use constructor to ensure AAD buffers are pre-filled correctly.
 	id := randID()
-	s := &DefaultUdpSession{SessionId: id}
+	key := randKey()
+
+	// Test client session (encrypts C2S, decrypts S2C)
+	clientSession, err := NewUdpSession(id, key, key, false, 0)
+	if err != nil {
+		t.Fatalf("NewUdpSession: %v", err)
+	}
+
+	// Test server session (encrypts S2C, decrypts C2S)
+	serverSession, err := NewUdpSession(id, key, key, true, 0)
+	if err != nil {
+		t.Fatalf("NewUdpSession: %v", err)
+	}
 
 	nonce := make([]byte, chacha20poly1305.NonceSize)
 	for i := range nonce {
 		nonce[i] = byte(i + 1)
 	}
 
-	// Client->Server
-	aadC2S := s.CreateAAD(false, nonce, make([]byte, aadLength))
+	// Client encrypts C2S - uses encryptionAadBuf
+	aadC2S := clientSession.CreateAAD(false, nonce, clientSession.encryptionAadBuf[:])
 	if len(aadC2S) != aadLength {
 		t.Fatalf("aad len=%d, want %d", len(aadC2S), aadLength)
 	}
@@ -205,8 +218,8 @@ func TestUdp_CreateAAD_BothDirections(t *testing.T) {
 		t.Fatal("nonce bytes mismatch (C2S)")
 	}
 
-	// Server->Client
-	aadS2C := s.CreateAAD(true, nonce, make([]byte, aadLength))
+	// Server encrypts S2C - uses encryptionAadBuf
+	aadS2C := serverSession.CreateAAD(true, nonce, serverSession.encryptionAadBuf[:])
 	if len(aadS2C) != aadLength {
 		t.Fatalf("aad len=%d, want %d", len(aadS2C), aadLength)
 	}
@@ -283,5 +296,32 @@ func TestUdpEncrypt_NonceRollover_WritesCorrectNonce(t *testing.T) {
 	}
 	if encHigh != startHigh+1 {
 		t.Fatalf("nonce.high after rollover = %d; want %d", encHigh, startHigh+1)
+	}
+}
+
+func TestUdpSession_Zeroize(t *testing.T) {
+	id := randID()
+	key := randKey()
+	sess, err := NewUdpSession(id, key, key, false, 3)
+	if err != nil {
+		t.Fatalf("NewUdpSession: %v", err)
+	}
+
+	// Fill nonce validator state.
+	if err := sess.nonceValidator.Check(10, 2); err != nil {
+		t.Fatalf("validator setup failed: %v", err)
+	}
+	sess.nonceValidator.Accept(10, 2)
+
+	sess.Zeroize()
+
+	if sess.SessionId != [32]byte{} {
+		t.Fatal("expected SessionId zeroized")
+	}
+	if sess.nonce.counterLow != 0 || sess.nonce.counterHigh != 0 {
+		t.Fatal("expected nonce counters zeroized")
+	}
+	if len(sess.nonceValidator.wins) != 0 {
+		t.Fatal("expected replay window state zeroized")
 	}
 }

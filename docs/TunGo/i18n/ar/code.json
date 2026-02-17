@@ -24,7 +24,7 @@
     "message": "آمن"
   },
   "feature.secure.description": {
-    "message": "نفق من طرف إلى طرف مع تشفير ChaCha20"
+    "message": "مصافحة Noise IK، اتفاق مفاتيح X25519، تشفير AEAD ChaCha20-Poly1305"
   },
   "feature.multiTransport.title": {
     "message": "دعم النقل المتعدد"

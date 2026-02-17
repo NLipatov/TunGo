@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"net/netip"
 	"os"
 	"strings"
 	"testing"
@@ -56,10 +57,21 @@ func (m *platformTunManagerIPMock) AddrAddDev(string, string) error         { re
 func (m *platformTunManagerIPMock) AddrShowDev(int, string) (string, error) { return "", nil }
 func (m *platformTunManagerIPMock) RouteDefault() (string, error)           { return "eth0", nil }
 func (m *platformTunManagerIPMock) RouteAddDefaultDev(string) error         { return m.mark("def") }
+func (m *platformTunManagerIPMock) Route6AddDefaultDev(string) error        { return m.mark("def6") }
 func (m *platformTunManagerIPMock) RouteGet(string) (string, error)         { return m.routeReply, nil }
 func (m *platformTunManagerIPMock) RouteAddDev(string, string) error        { return m.mark("radd") }
 func (m *platformTunManagerIPMock) RouteAddViaDev(string, string, string) error {
 	return m.mark("raddvia")
+}
+func (m *platformTunManagerIPMock) RouteAddSplitDefaultDev(string) error  { return m.mark("splitdef") }
+func (m *platformTunManagerIPMock) Route6AddSplitDefaultDev(string) error { return m.mark("splitdef6") }
+func (m *platformTunManagerIPMock) RouteDelSplitDefault(string) error {
+	m.log.WriteString("splitdel;")
+	return nil
+}
+func (m *platformTunManagerIPMock) Route6DelSplitDefault(string) error {
+	m.log.WriteString("splitdel6;")
+	return nil
 }
 func (m *platformTunManagerIPMock) RouteDel(string) error { m.log.WriteString("rdel;"); return nil }
 
@@ -79,6 +91,22 @@ type platformTunManagerIOCTLMock struct {
 type platformTunManagerMSSMock struct {
 	installErr error
 	removeErr  error
+}
+
+func mustHost(raw string) settings.Host {
+	h, err := settings.NewHost(raw)
+	if err != nil {
+		panic(err)
+	}
+	return h
+}
+
+func mustPrefix(raw string) netip.Prefix {
+	return netip.MustParsePrefix(raw)
+}
+
+func mustAddr(raw string) netip.Addr {
+	return netip.MustParseAddr(raw)
 }
 
 func (m platformTunManagerMSSMock) Install(string) error { return m.installErr }
@@ -104,6 +132,11 @@ func newMgr(
 		AddrShowDev(int, string) (string, error)
 		RouteDefault() (string, error)
 		RouteAddDefaultDev(string) error
+		Route6AddDefaultDev(string) error
+		RouteAddSplitDefaultDev(string) error
+		Route6AddSplitDefaultDev(string) error
+		RouteDelSplitDefault(string) error
+		Route6DelSplitDefault(string) error
 		RouteGet(string) (string, error)
 		RouteAddDev(string, string) error
 		RouteAddViaDev(string, string, string) error
@@ -122,22 +155,31 @@ func newMgr(
 	cfg := client.Configuration{
 		Protocol: proto,
 		UDPSettings: settings.Settings{
-			InterfaceName:    "tun0",
-			InterfaceAddress: "10.0.0.2/30",
-			ConnectionIP:     "198.51.100.1",
-			MTU:              1400,
+			Addressing: settings.Addressing{
+				TunName:    "tun0",
+				IPv4Subnet: mustPrefix("10.0.0.0/30"),
+				IPv4:       mustAddr("10.0.0.2"),
+				Server:     mustHost("198.51.100.1"),
+			},
+			MTU: 1400,
 		},
 		TCPSettings: settings.Settings{
-			InterfaceName:    "tun1",
-			InterfaceAddress: "10.0.0.6/30",
-			ConnectionIP:     "203.0.113.1",
-			MTU:              1400,
+			Addressing: settings.Addressing{
+				TunName:    "tun1",
+				IPv4Subnet: mustPrefix("10.0.0.4/30"),
+				IPv4:       mustAddr("10.0.0.6"),
+				Server:     mustHost("203.0.113.1"),
+			},
+			MTU: 1400,
 		},
 		WSSettings: settings.Settings{
-			InterfaceName:    "tun2",
-			InterfaceAddress: "10.0.0.10/30",
-			ConnectionIP:     "203.0.113.2",
-			MTU:              1250,
+			Addressing: settings.Addressing{
+				TunName:    "tun2",
+				IPv4Subnet: mustPrefix("10.0.0.8/30"),
+				IPv4:       mustAddr("10.0.0.10"),
+				Server:     mustHost("203.0.113.2"),
+			},
+			MTU: 1250,
 		},
 	}
 	return &PlatformTunManager{
@@ -166,7 +208,7 @@ func TestCreateDevice_UDP_WithGateway(t *testing.T) {
 	}
 	_ = dev.Close()
 
-	want := "add;up;addr;raddvia;def;mtu;"
+	want := "add;up;addr;raddvia;splitdef;mtu;"
 	if got := ipMock.log.String(); got != want {
 		t.Fatalf("call sequence mismatch\nwant %s\ngot  %s", want, got)
 	}
@@ -185,7 +227,7 @@ func TestCreateDevice_TCP_NoGateway(t *testing.T) {
 	}
 	_ = dev.Close()
 
-	want := "add;up;addr;radd;def;mtu;"
+	want := "add;up;addr;radd;splitdef;mtu;"
 	if got := ipMock.log.String(); got != want {
 		t.Fatalf("call sequence mismatch\nwant %s\ngot  %s", want, got)
 	}
@@ -260,7 +302,7 @@ func TestCreateDevice_WrapError(t *testing.T) {
 }
 
 func TestConfigureTUN_ErrorPropagation_NoGatewayPath(t *testing.T) {
-	steps := []string{"add", "up", "addr", "radd", "def", "mtu"}
+	steps := []string{"add", "up", "addr", "radd", "splitdef", "mtu"}
 	for _, step := range steps {
 		ipMock := &platformTunManagerIPMock{routeReply: "198.51.100.1 dev eth0", failStep: step}
 		m := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{})
@@ -271,7 +313,7 @@ func TestConfigureTUN_ErrorPropagation_NoGatewayPath(t *testing.T) {
 }
 
 func TestConfigureTUN_ErrorPropagation_WithGatewayPath(t *testing.T) {
-	steps := []string{"add", "up", "addr", "raddvia", "def", "mtu"}
+	steps := []string{"add", "up", "addr", "raddvia", "splitdef", "mtu"}
 	for _, step := range steps {
 		ipMock := &platformTunManagerIPMock{routeReply: "198.51.100.1 via 192.0.2.1 dev eth0", failStep: step}
 		m := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{})
@@ -302,6 +344,104 @@ func TestConfigureTUN_MSSInstallError(t *testing.T) {
 	if !strings.Contains(err.Error(), "failed to install MSS clamping") {
 		t.Fatalf("unexpected error: %v", err)
 	}
+}
+
+func TestCreateDevice_IPv6_FullPath(t *testing.T) {
+	// IPv6 configured: should assign IPv6 address, set IPv6 default route,
+	// and add route to IPv6 server.
+	ipMock := &platformTunManagerIPMock{routeReply: "198.51.100.1 via 192.0.2.1 dev eth0"}
+	mgr := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{})
+
+	// Enable IPv6 on the active protocol's settings.
+	mgr.configuration.UDPSettings.IPv6 = mustAddr("fd00::2")
+	mgr.configuration.UDPSettings.IPv6Subnet = mustPrefix("fd00::/64")
+	mgr.configuration.UDPSettings.Server = mgr.configuration.UDPSettings.Server.WithIPv6(netip.MustParseAddr("2001:db8::1"))
+
+	dev, err := mgr.CreateDevice()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	_ = dev.Close()
+
+	// Should include: addr (IPv4), addr (IPv6), splitdef6, and the ipv6 route steps.
+	got := ipMock.log.String()
+	if !strings.Contains(got, "splitdef6;") {
+		t.Fatalf("expected IPv6 default route step, got: %s", got)
+	}
+	// Two "addr;" calls: one for IPv4, one for IPv6
+	if strings.Count(got, "addr;") != 2 {
+		t.Fatalf("expected 2 addr calls (IPv4 + IPv6), got: %s", got)
+	}
+}
+
+func TestCreateDevice_IPv6_AddrAddError(t *testing.T) {
+	// When IPv6 AddrAddDev fails, creation should fail.
+	calls := 0
+	ipMock := &platformTunManagerIPMock{routeReply: "198.51.100.1 via 192.0.2.1 dev eth0"}
+	// Override AddrAddDev to fail on the second call (IPv6).
+	origMark := ipMock.mark
+	_ = origMark
+	mgr := newMgr(settings.UDP, &platformTunManagerIPMockFailNthAddr{
+		platformTunManagerIPMock: platformTunManagerIPMock{routeReply: "198.51.100.1 via 192.0.2.1 dev eth0"},
+		failOnCall:               2,
+		callCount:                &calls,
+	}, platformTunManagerIOCTLMock{}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{})
+
+	mgr.configuration.UDPSettings.IPv6 = mustAddr("fd00::2")
+	mgr.configuration.UDPSettings.IPv6Subnet = mustPrefix("fd00::/64")
+
+	_, err := mgr.CreateDevice()
+	if err == nil {
+		t.Fatal("expected error on IPv6 addr add failure")
+	}
+}
+
+func TestCreateDevice_IPv6_Route6DefaultError(t *testing.T) {
+	ipMock := &platformTunManagerIPMock{
+		routeReply: "198.51.100.1 dev eth0",
+		failStep:   "splitdef6",
+	}
+	mgr := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{})
+	mgr.configuration.UDPSettings.IPv6 = mustAddr("fd00::2")
+	mgr.configuration.UDPSettings.IPv6Subnet = mustPrefix("fd00::/64")
+
+	_, err := mgr.CreateDevice()
+	if err == nil {
+		t.Fatal("expected error on Route6AddSplitDefaultDev failure")
+	}
+}
+
+func TestDisposeDevices_IPv6HostRouteCleanup(t *testing.T) {
+	ipMock := &platformTunManagerIPMock{}
+	mgr := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{})
+	mgr.configuration.UDPSettings.Server = mgr.configuration.UDPSettings.Server.WithIPv6(netip.MustParseAddr("2001:db8::1"))
+	mgr.configuration.TCPSettings.Server = mgr.configuration.TCPSettings.Server.WithIPv6(netip.MustParseAddr("2001:db8::2"))
+	mgr.configuration.WSSettings.Server = mgr.configuration.WSSettings.Server.WithIPv6(netip.MustParseAddr("2001:db8::3"))
+
+	if err := mgr.DisposeDevices(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Each protocol should have rdel for IPv4 host + rdel for IPv6 host + ldel.
+	got := ipMock.log.String()
+	if strings.Count(got, "rdel;") != 6 {
+		t.Fatalf("expected 6 route deletions (3 IPv4 + 3 IPv6), got: %s", got)
+	}
+}
+
+// platformTunManagerIPMockFailNthAddr fails AddrAddDev on the N-th call.
+type platformTunManagerIPMockFailNthAddr struct {
+	platformTunManagerIPMock
+	failOnCall int
+	callCount  *int
+}
+
+func (m *platformTunManagerIPMockFailNthAddr) AddrAddDev(dev, cidr string) error {
+	*m.callCount++
+	if *m.callCount == m.failOnCall {
+		return errors.New("addr add failed")
+	}
+	return nil
 }
 
 func TestDisposeDevices_MSSRemoveError_Logged(t *testing.T) {

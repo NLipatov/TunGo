@@ -286,6 +286,41 @@ func (v *v6) DeleteRoute(dst string) error {
 	return last
 }
 
+func (v *v6) DeleteRouteOnInterface(destination, ifName string) error {
+	luid, err := v.resolver.NetworkInterfaceByName(ifName)
+	if err != nil {
+		return err
+	}
+	pfx, err := v.parseDestPrefixV6(destination)
+	if err != nil {
+		return fmt.Errorf("DeleteRouteOnInterface(v6): %w", err)
+	}
+	rows, err := winipcfg.GetIPForwardTable2(winipcfg.AddressFamily(windows.AF_INET6))
+	if err != nil {
+		return fmt.Errorf("GetIPForwardTable2(v6): %w", err)
+	}
+	var (
+		found int
+		last  error
+	)
+	for i := range rows {
+		r := &rows[i]
+		dp := r.DestinationPrefix.Prefix()
+		if !dp.Addr().Is6() || dp != pfx || r.InterfaceLUID != luid {
+			continue
+		}
+		if delErr := r.Delete(); delErr != nil {
+			last = delErr
+			continue
+		}
+		found++
+	}
+	if found == 0 {
+		return nil
+	}
+	return last
+}
+
 // Print returns a human-readable dump of the IPv6 route table.
 // If t is non-empty, only lines containing t are included (substring match).
 func (v *v6) Print(t string) ([]byte, error) {
@@ -364,6 +399,9 @@ func (v *v6) BestRoute(dest string) (string, string, int, int, error) {
 	}
 
 	alias := v.resolver.NetworkInterfaceName(best.InterfaceLUID)
+	if strings.TrimSpace(alias) == "" && best.InterfaceIndex != 0 {
+		alias = strconv.Itoa(int(best.InterfaceIndex))
+	}
 	return gw, alias, int(best.InterfaceIndex), int(best.Metric), nil
 }
 

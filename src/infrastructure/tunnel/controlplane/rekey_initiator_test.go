@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 	"time"
-	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/service_packet"
 )
 
@@ -23,7 +23,7 @@ func (r *initTestRekeyer) RemoveEpoch(uint16) bool { return true }
 func TestNewRekeyInitScheduler_Fields(t *testing.T) {
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	interval := 30 * time.Second
-	s := NewRekeyInitScheduler(&handshake.DefaultCrypto{}, interval, now)
+	s := NewRekeyInitScheduler(&primitives.DefaultKeyDeriver{}, interval, now)
 
 	if s.Interval() != interval {
 		t.Fatalf("expected interval=%v, got %v", interval, s.Interval())
@@ -35,7 +35,7 @@ func TestNewRekeyInitScheduler_Fields(t *testing.T) {
 
 func TestRekeyInitScheduler_SetInterval(t *testing.T) {
 	now := time.Now()
-	s := NewRekeyInitScheduler(&handshake.DefaultCrypto{}, time.Second, now)
+	s := NewRekeyInitScheduler(&primitives.DefaultKeyDeriver{}, time.Second, now)
 	s.SetInterval(5 * time.Second)
 	if s.Interval() != 5*time.Second {
 		t.Fatalf("expected interval=5s, got %v", s.Interval())
@@ -44,7 +44,7 @@ func TestRekeyInitScheduler_SetInterval(t *testing.T) {
 
 func TestRekeyInitScheduler_SetRotateAt(t *testing.T) {
 	now := time.Now()
-	s := NewRekeyInitScheduler(&handshake.DefaultCrypto{}, time.Second, now)
+	s := NewRekeyInitScheduler(&primitives.DefaultKeyDeriver{}, time.Second, now)
 	target := now.Add(10 * time.Second)
 	s.SetRotateAt(target)
 	if !s.RotateAt().Equal(target) {
@@ -64,7 +64,7 @@ func TestMaybeBuildRekeyInit_NilCrypto(t *testing.T) {
 }
 
 func TestMaybeBuildRekeyInit_NilFSM(t *testing.T) {
-	s := NewRekeyInitScheduler(&handshake.DefaultCrypto{}, time.Second, time.Now().Add(-time.Hour))
+	s := NewRekeyInitScheduler(&primitives.DefaultKeyDeriver{}, time.Second, time.Now().Add(-time.Hour))
 	dst := make([]byte, service_packet.RekeyPacketLen)
 	_, ok, err := s.MaybeBuildRekeyInit(time.Now(), nil, dst)
 	if err != nil || ok {
@@ -76,7 +76,7 @@ func TestMaybeBuildRekeyInit_BeforeRotateAt(t *testing.T) {
 	rk := &initTestRekeyer{}
 	fsm := rekey.NewStateMachine(rk, []byte("c2s"), []byte("s2c"), false)
 	now := time.Now()
-	s := NewRekeyInitScheduler(&handshake.DefaultCrypto{}, 10*time.Second, now)
+	s := NewRekeyInitScheduler(&primitives.DefaultKeyDeriver{}, 10*time.Second, now)
 	dst := make([]byte, service_packet.RekeyPacketLen)
 
 	// now is before rotateAt (now+10s), should return false.
@@ -90,7 +90,7 @@ func TestMaybeBuildRekeyInit_NotStable(t *testing.T) {
 	rk := &initTestRekeyer{}
 	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32), false)
 	now := time.Now()
-	s := NewRekeyInitScheduler(&handshake.DefaultCrypto{}, time.Millisecond, now)
+	s := NewRekeyInitScheduler(&primitives.DefaultKeyDeriver{}, time.Millisecond, now)
 
 	// Put FSM in non-stable state.
 	_, _ = fsm.StartRekey([]byte("k1"), []byte("k2"))
@@ -106,7 +106,7 @@ func TestMaybeBuildRekeyInit_ShortDst(t *testing.T) {
 	rk := &initTestRekeyer{}
 	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32), false)
 	now := time.Now()
-	s := NewRekeyInitScheduler(&handshake.DefaultCrypto{}, time.Millisecond, now)
+	s := NewRekeyInitScheduler(&primitives.DefaultKeyDeriver{}, time.Millisecond, now)
 
 	// dst too short.
 	dst := make([]byte, 10)
@@ -120,7 +120,7 @@ func TestMaybeBuildRekeyInit_Success(t *testing.T) {
 	rk := &initTestRekeyer{}
 	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32), false)
 	now := time.Now()
-	s := NewRekeyInitScheduler(&handshake.DefaultCrypto{}, time.Millisecond, now)
+	s := NewRekeyInitScheduler(&primitives.DefaultKeyDeriver{}, time.Millisecond, now)
 
 	dst := make([]byte, service_packet.RekeyPacketLen)
 	payload, ok, err := s.MaybeBuildRekeyInit(now.Add(time.Second), fsm, dst)
@@ -148,7 +148,7 @@ func TestMaybeBuildRekeyInit_AdvancesRotateAt(t *testing.T) {
 	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32), false)
 	now := time.Now()
 	interval := 5 * time.Second
-	s := NewRekeyInitScheduler(&handshake.DefaultCrypto{}, interval, now)
+	s := NewRekeyInitScheduler(&primitives.DefaultKeyDeriver{}, interval, now)
 
 	callTime := now.Add(10 * time.Second)
 	dst := make([]byte, service_packet.RekeyPacketLen)
@@ -163,7 +163,7 @@ func TestMaybeBuildRekeyInit_AdvancesRotateAt(t *testing.T) {
 
 func TestMaybeBuildRekeyInit_ReusesPendingKey(t *testing.T) {
 	rk := &initTestRekeyer{}
-	crypto := &handshake.DefaultCrypto{}
+	crypto := &primitives.DefaultKeyDeriver{}
 	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32), false)
 	now := time.Now()
 	s := NewRekeyInitScheduler(crypto, time.Millisecond, now)
@@ -188,6 +188,23 @@ func TestMaybeBuildRekeyInit_ReusesPendingKey(t *testing.T) {
 
 	if string(pub1) != string(pub2) {
 		t.Fatal("expected same public key on second call (pending key reuse)")
+	}
+}
+
+func TestMaybeBuildRekeyInit_WrongSizePublicKey(t *testing.T) {
+	crypto := &mockCrypto{genPub: make([]byte, 31)} // wrong size
+	rk := &initTestRekeyer{}
+	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32), false)
+	now := time.Now()
+	s := NewRekeyInitScheduler(crypto, time.Millisecond, now)
+
+	dst := make([]byte, service_packet.RekeyPacketLen)
+	_, ok, err := s.MaybeBuildRekeyInit(now.Add(time.Second), fsm, dst)
+	if err != nil {
+		t.Fatalf("expected nil error (silent drop), got %v", err)
+	}
+	if ok {
+		t.Fatal("expected ok=false for wrong-size public key")
 	}
 }
 

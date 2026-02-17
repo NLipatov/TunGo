@@ -46,8 +46,9 @@ type RunnerMockTunManager struct {
 	createErrByProto map[settings.Protocol]error
 	disposeErr       error
 
-	createCalls  int32
-	disposeCalls int32
+	createCalls    int32
+	disposeCalls   int32
+	lastCreatedTun *RunnerMockTun
 }
 
 func (m *RunnerMockTunManager) CreateDevice(s settings.Settings) (tun.Device, error) {
@@ -55,7 +56,9 @@ func (m *RunnerMockTunManager) CreateDevice(s settings.Settings) (tun.Device, er
 	if e := m.createErrByProto[s.Protocol]; e != nil {
 		return nil, e
 	}
-	return &RunnerMockTun{}, nil
+	t := &RunnerMockTun{}
+	m.lastCreatedTun = t
+	return t, nil
 }
 
 func (m *RunnerMockTunManager) DisposeDevices(_ settings.Settings) error {
@@ -325,6 +328,12 @@ func TestRoute_CreateWorkerError(t *testing.T) {
 	if err == nil || err.Error() != "error creating worker: boom" {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	if deps.tun.lastCreatedTun == nil {
+		t.Fatal("expected created tun")
+	}
+	if got := atomic.LoadInt32(&deps.tun.lastCreatedTun.closed); got != 1 {
+		t.Fatalf("expected tun to be closed on worker creation error, got closed=%d", got)
+	}
 }
 
 func TestRunWorkers_SingleRouteError(t *testing.T) {
@@ -387,6 +396,51 @@ func TestRunWorkers_AggregatesMultipleErrors(t *testing.T) {
 	msg := err.Error()
 	if !(contains(msg, "tcp") || contains(msg, "udp") || contains(msg, "worker failed")) {
 		t.Fatalf("unexpected aggregated error: %v", err)
+	}
+}
+
+func TestRun_CleanupError_ContinuesRunning(t *testing.T) {
+	deps := &RunnerMockDeps{
+		key: &RunnerMockKeyManager{},
+		tun: &RunnerMockTunManager{disposeErr: errBoom},
+		cfg: server.Configuration{}, // no protocols — runWorkers succeeds immediately
+	}
+	r := NewRunner(deps,
+		RunnerMockWorkerFactory{create: func(context.Context, io.ReadWriteCloser, settings.Settings) (routing.Worker, error) {
+			return RunnerMockWorker{}, nil
+		}},
+		RunnerMockRouterFactory{make: func(routing.Worker) routing.Router {
+			return RunnerMockRouter{route: func(context.Context) error { return nil }}
+		}},
+	)
+	// cleanup() errors are logged, Run() still succeeds.
+	if err := r.Run(context.Background()); err != nil {
+		t.Fatalf("Run should succeed despite cleanup error: %v", err)
+	}
+}
+
+func TestRunWorkers_CreateRouterError(t *testing.T) {
+	deps := &RunnerMockDeps{
+		key: &RunnerMockKeyManager{},
+		tun: &RunnerMockTunManager{
+			createErrByProto: map[settings.Protocol]error{settings.TCP: errBoom},
+		},
+		cfg: server.Configuration{
+			EnableTCP:   true,
+			TCPSettings: settings.Settings{Protocol: settings.TCP},
+		},
+	}
+	r := NewRunner(deps,
+		RunnerMockWorkerFactory{create: func(context.Context, io.ReadWriteCloser, settings.Settings) (routing.Worker, error) {
+			return RunnerMockWorker{}, nil
+		}},
+		RunnerMockRouterFactory{make: func(routing.Worker) routing.Router {
+			return RunnerMockRouter{route: func(context.Context) error { return nil }}
+		}},
+	)
+	err := r.runWorkers(context.Background())
+	if err == nil || !contains(err.Error(), "could not create") {
+		t.Fatalf("expected createRouter error, got: %v", err)
 	}
 }
 

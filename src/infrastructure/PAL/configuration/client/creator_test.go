@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,6 +23,22 @@ func (f *creatorTestResolver) Resolve() (string, error) {
 
 type creatorTestConfigProvider struct{}
 
+func mustHost(raw string) settings.Host {
+	h, err := settings.NewHost(raw)
+	if err != nil {
+		panic(err)
+	}
+	return h
+}
+
+func mustPrefix(raw string) netip.Prefix {
+	return netip.MustParsePrefix(raw)
+}
+
+func mustAddr(raw string) netip.Addr {
+	return netip.MustParseAddr(raw)
+}
+
 func (c *creatorTestConfigProvider) mockedConfig() Configuration {
 	publicKey, _, keyGenerationErr := ed25519.GenerateKey(rand.Reader)
 	if keyGenerationErr != nil {
@@ -30,29 +47,33 @@ func (c *creatorTestConfigProvider) mockedConfig() Configuration {
 
 	return Configuration{
 		TCPSettings: settings.Settings{
-			InterfaceName:    "tcptun0",
-			InterfaceIPCIDR:  "10.0.0.0/24",
-			InterfaceAddress: "10.0.0.10",
-			ConnectionIP:     "192.168.122.194",
-			Port:             "8080",
-			MTU:              settings.DefaultEthernetMTU,
-			Protocol:         settings.TCP,
-			Encryption:       settings.ChaCha20Poly1305,
-			DialTimeoutMs:    5000,
+			Addressing: settings.Addressing{
+				TunName:    "tcptun0",
+				IPv4Subnet: mustPrefix("10.0.0.0/24"),
+				IPv4:       mustAddr("10.0.0.10"),
+				Server:     mustHost("192.168.122.194"),
+				Port:       8080,
+			},
+			MTU:           settings.DefaultEthernetMTU,
+			Protocol:      settings.TCP,
+			Encryption:    settings.ChaCha20Poly1305,
+			DialTimeoutMs: 5000,
 		},
 		UDPSettings: settings.Settings{
-			InterfaceName:    "udptun0",
-			InterfaceIPCIDR:  "10.0.1.0/24",
-			InterfaceAddress: "10.0.1.10",
-			ConnectionIP:     "192.168.122.194",
-			Port:             "9090",
-			MTU:              settings.DefaultEthernetMTU,
-			Protocol:         settings.UDP,
-			Encryption:       settings.ChaCha20Poly1305,
-			DialTimeoutMs:    5000,
+			Addressing: settings.Addressing{
+				TunName:    "udptun0",
+				IPv4Subnet: mustPrefix("10.0.1.0/24"),
+				IPv4:       mustAddr("10.0.1.10"),
+				Server:     mustHost("192.168.122.194"),
+				Port:       9090,
+			},
+			MTU:           settings.DefaultEthernetMTU,
+			Protocol:      settings.UDP,
+			Encryption:    settings.ChaCha20Poly1305,
+			DialTimeoutMs: 5000,
 		},
-		Ed25519PublicKey: publicKey,
-		Protocol:         settings.UDP,
+		X25519PublicKey: publicKey,
+		Protocol:        settings.UDP,
 	}
 }
 
@@ -75,14 +96,14 @@ func TestDefaultCreator_Create_Success(t *testing.T) {
 	if !strings.Contains(body, `"TCPSettings"`) {
 		t.Errorf("Expected TCPSettings section, got: %s", body)
 	}
-	if !strings.Contains(body, `"InterfaceName": "tcptun0"`) {
-		t.Errorf("Expected InterfaceName tcptun0, got: %s", body)
+	if !strings.Contains(body, `"TunName": "tcptun0"`) {
+		t.Errorf("Expected TunName tcptun0, got: %s", body)
 	}
 	if !strings.Contains(body, `"UDPSettings"`) {
 		t.Errorf("Expected UDPSettings section, got: %s", body)
 	}
-	if !strings.Contains(body, `"InterfaceName": "udptun0"`) {
-		t.Errorf("Expected InterfaceName udptun0, got: %s", body)
+	if !strings.Contains(body, `"TunName": "udptun0"`) {
+		t.Errorf("Expected TunName udptun0, got: %s", body)
 	}
 }
 
@@ -91,7 +112,7 @@ func TestDefaultCreator_Create_ResolveError(t *testing.T) {
 	creator := NewDefaultCreator(resolver)
 	err := creator.Create((&creatorTestConfigProvider{}).mockedConfig(), "x")
 	if err == nil || err.Error() != "no path" {
-		t.Errorf("Expected resolve error “no path”, got %v", err)
+		t.Errorf("Expected resolve error \"no path\", got %v", err)
 	}
 }
 

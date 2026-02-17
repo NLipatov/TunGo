@@ -23,45 +23,25 @@ func mkValid() *Configuration {
 	return cfg
 }
 
-// --- Tests for default*Settings and EnsureDefaults/applyDefaults ---
+// --- Tests for defaultSettings and EnsureDefaults/applyDefaults ---
 
 func TestConfiguration_DefaultSettingsValues(t *testing.T) {
 	c := &Configuration{}
 
-	tcp := c.defaultTCPSettings()
-	if tcp.InterfaceName != "tcptun0" ||
-		tcp.InterfaceIPCIDR != "10.0.0.0/24" ||
-		tcp.InterfaceAddress != "10.0.0.1" ||
-		tcp.Port != "8080" ||
+	tcp := c.defaultSettings(settings.TCP, "tcptun0", "10.0.0.0/24", 8080)
+	if tcp.TunName != "tcptun0" ||
+		tcp.IPv4Subnet.String() != "10.0.0.0/24" ||
+		tcp.IPv4.String() != "10.0.0.1" ||
+		tcp.Port != 8080 ||
 		tcp.MTU != settings.DefaultEthernetMTU ||
 		tcp.Protocol != settings.TCP ||
 		tcp.Encryption != settings.ChaCha20Poly1305 ||
 		tcp.DialTimeoutMs != 5000 {
 		t.Fatalf("unexpected default TCP settings: %+v", tcp)
 	}
-
-	udp := c.defaultUDPSettings()
-	if udp.InterfaceName != "udptun0" ||
-		udp.InterfaceIPCIDR != "10.0.1.0/24" ||
-		udp.InterfaceAddress != "10.0.1.1" ||
-		udp.Port != "9090" ||
-		udp.MTU != settings.DefaultEthernetMTU ||
-		udp.Protocol != settings.UDP ||
-		udp.Encryption != settings.ChaCha20Poly1305 ||
-		udp.DialTimeoutMs != 5000 {
-		t.Fatalf("unexpected default UDP settings: %+v", udp)
-	}
-
-	ws := c.defaultWSSettings()
-	if ws.InterfaceName != "wstun0" ||
-		ws.InterfaceIPCIDR != "10.0.2.0/24" ||
-		ws.InterfaceAddress != "10.0.2.1" ||
-		ws.Port != "1010" ||
-		ws.MTU != settings.DefaultEthernetMTU ||
-		ws.Protocol != settings.WS ||
-		ws.Encryption != settings.ChaCha20Poly1305 ||
-		ws.DialTimeoutMs != 5000 {
-		t.Fatalf("unexpected default WS settings: %+v", ws)
+	// IPv6 is opt-in — no defaults
+	if tcp.IPv6Subnet.IsValid() || tcp.IPv6.IsValid() {
+		t.Fatalf("IPv6 should not have defaults: %+v", tcp)
 	}
 }
 
@@ -70,60 +50,70 @@ func TestConfiguration_EnsureDefaults_FillsZeroFieldsOnly(t *testing.T) {
 	c := &Configuration{}
 	_ = c.EnsureDefaults()
 
-	// TCP
-	if c.TCPSettings.InterfaceName == "" ||
-		c.TCPSettings.InterfaceIPCIDR == "" ||
-		c.TCPSettings.InterfaceAddress == "" ||
-		c.TCPSettings.Port == "" ||
-		c.TCPSettings.MTU == 0 ||
-		c.TCPSettings.Protocol == settings.UNKNOWN ||
-		c.TCPSettings.DialTimeoutMs == 0 {
-		t.Fatalf("EnsureDefaults did not fill TCP zero fields: %+v", c.TCPSettings)
+	for _, tc := range []struct {
+		name string
+		s    settings.Settings
+	}{
+		{"TCP", c.TCPSettings},
+		{"UDP", c.UDPSettings},
+		{"WS", c.WSSettings},
+	} {
+		if tc.s.TunName == "" ||
+			!tc.s.IPv4Subnet.IsValid() ||
+			!tc.s.IPv4.IsValid() ||
+			tc.s.Port == 0 ||
+			tc.s.MTU == 0 ||
+			tc.s.Protocol == settings.UNKNOWN ||
+			tc.s.DialTimeoutMs == 0 {
+			t.Fatalf("EnsureDefaults did not fill %s zero fields: %+v", tc.name, tc.s)
+		}
+		// IPv6 is opt-in — EnsureDefaults must NOT populate it
+		if tc.s.IPv6Subnet.IsValid() || tc.s.IPv6.IsValid() {
+			t.Fatalf("EnsureDefaults should not set IPv6 defaults for %s: %+v", tc.name, tc.s)
+		}
 	}
+}
 
-	// UDP
-	if c.UDPSettings.InterfaceName == "" ||
-		c.UDPSettings.InterfaceIPCIDR == "" ||
-		c.UDPSettings.InterfaceAddress == "" ||
-		c.UDPSettings.Port == "" ||
-		c.UDPSettings.MTU == 0 ||
-		c.UDPSettings.Protocol == settings.UNKNOWN ||
-		c.UDPSettings.DialTimeoutMs == 0 {
-		t.Fatalf("EnsureDefaults did not fill UDP zero fields: %+v", c.UDPSettings)
+func TestConfiguration_EnsureDefaults_DerivesIPv6FromSubnet(t *testing.T) {
+	c := &Configuration{
+		TCPSettings: settings.Settings{
+			Addressing: settings.Addressing{
+				IPv6Subnet: netip.MustParsePrefix("fd00::/64"),
+				// IPv6 not set — should be derived as fd00::1
+			},
+		},
 	}
+	_ = c.EnsureDefaults()
 
-	// WS
-	if c.WSSettings.InterfaceName == "" ||
-		c.WSSettings.InterfaceIPCIDR == "" ||
-		c.WSSettings.InterfaceAddress == "" ||
-		c.WSSettings.Port == "" ||
-		c.WSSettings.MTU == 0 ||
-		c.WSSettings.Protocol == settings.UNKNOWN ||
-		c.WSSettings.DialTimeoutMs == 0 {
-		t.Fatalf("EnsureDefaults did not fill WS zero fields: %+v", c.WSSettings)
+	if !c.TCPSettings.IPv6.IsValid() {
+		t.Fatal("expected IPv6 to be derived from IPv6Subnet")
+	}
+	if c.TCPSettings.IPv6 != netip.MustParseAddr("fd00::1") {
+		t.Fatalf("expected fd00::1, got %s", c.TCPSettings.IPv6)
 	}
 }
 
 func TestConfiguration_EnsureDefaults_DoesNotOverrideExplicitFields(t *testing.T) {
 	c := &Configuration{
 		TCPSettings: settings.Settings{
-			InterfaceName:    "custom0",
-			InterfaceIPCIDR:  "10.9.0.0/24",
-			InterfaceAddress: "10.9.0.1",
-			Port:             "1234",
-			MTU:              1400,
-			Protocol:         settings.TCP,
-			DialTimeoutMs:    2500,
-			// Encryption is constant (ChaCha20Poly1305) in defaults; we keep it implicit here.
+			Addressing: settings.Addressing{
+				TunName:    "custom0",
+				IPv4Subnet: netip.MustParsePrefix("10.9.0.0/24"),
+				IPv4:       netip.MustParseAddr("10.9.0.1"),
+				Port:       1234,
+			},
+			MTU:           1400,
+			Protocol:      settings.TCP,
+			DialTimeoutMs: 2500,
 		},
 	}
 	_ = c.EnsureDefaults()
 
 	// Ensure values were not overridden.
-	if c.TCPSettings.InterfaceName != "custom0" ||
-		c.TCPSettings.InterfaceIPCIDR != "10.9.0.0/24" ||
-		c.TCPSettings.InterfaceAddress != "10.9.0.1" ||
-		c.TCPSettings.Port != "1234" ||
+	if c.TCPSettings.TunName != "custom0" ||
+		c.TCPSettings.IPv4Subnet.String() != "10.9.0.0/24" ||
+		c.TCPSettings.IPv4.String() != "10.9.0.1" ||
+		c.TCPSettings.Port != 1234 ||
 		c.TCPSettings.MTU != 1400 ||
 		c.TCPSettings.Protocol != settings.TCP ||
 		c.TCPSettings.DialTimeoutMs != 2500 {
@@ -144,7 +134,7 @@ func TestConfiguration_Validate_SkipsDisabledProtocol(t *testing.T) {
 	cfg := mkValid()
 	// Make WS invalid but disabled; Validate should ignore WS and still pass.
 	cfg.EnableWS = false
-	cfg.WSSettings.InterfaceIPCIDR = "10.0.0.0/33" // invalid, but skipped
+	cfg.WSSettings.IPv4Subnet = netip.Prefix{} // invalid, but skipped
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("expected valid config with WS disabled, got: %v", err)
 	}
@@ -152,7 +142,7 @@ func TestConfiguration_Validate_SkipsDisabledProtocol(t *testing.T) {
 
 func TestConfiguration_Validate_InterfaceNameEmpty(t *testing.T) {
 	cfg := mkValid()
-	cfg.TCPSettings.InterfaceName = ""
+	cfg.TCPSettings.TunName = ""
 	if err := cfg.Validate(); err == nil {
 		t.Fatalf("expected error for empty interface name")
 	}
@@ -160,7 +150,7 @@ func TestConfiguration_Validate_InterfaceNameEmpty(t *testing.T) {
 
 func TestConfiguration_Validate_InterfaceNameDuplicate(t *testing.T) {
 	cfg := mkValid()
-	cfg.UDPSettings.InterfaceName = cfg.TCPSettings.InterfaceName // duplicate
+	cfg.UDPSettings.TunName = cfg.TCPSettings.TunName // duplicate
 	if err := cfg.Validate(); err == nil {
 		t.Fatalf("expected error for duplicate interface name")
 	}
@@ -174,17 +164,9 @@ func TestConfiguration_Validate_ProtocolUnknown(t *testing.T) {
 	}
 }
 
-func TestConfiguration_Validate_PortNotNumber(t *testing.T) {
-	cfg := mkValid()
-	cfg.UDPSettings.Port = "abc"
-	if err := cfg.Validate(); err == nil {
-		t.Fatalf("expected error for non-numeric port")
-	}
-}
-
 func TestConfiguration_Validate_PortOutOfRangeLow(t *testing.T) {
 	cfg := mkValid()
-	cfg.UDPSettings.Port = "0"
+	cfg.UDPSettings.Port = 0
 	if err := cfg.Validate(); err == nil {
 		t.Fatalf("expected error for port below range")
 	}
@@ -192,7 +174,7 @@ func TestConfiguration_Validate_PortOutOfRangeLow(t *testing.T) {
 
 func TestConfiguration_Validate_PortOutOfRangeHigh(t *testing.T) {
 	cfg := mkValid()
-	cfg.UDPSettings.Port = "70000"
+	cfg.UDPSettings.Port = 70000
 	if err := cfg.Validate(); err == nil {
 		t.Fatalf("expected error for port above range")
 	}
@@ -225,7 +207,7 @@ func TestConfiguration_Validate_MTUTooLarge(t *testing.T) {
 
 func TestConfiguration_Validate_InvalidCIDR(t *testing.T) {
 	cfg := mkValid()
-	cfg.TCPSettings.InterfaceIPCIDR = "10.0.0.0/33"
+	cfg.TCPSettings.IPv4Subnet = netip.Prefix{}
 	if err := cfg.Validate(); err == nil {
 		t.Fatalf("expected error for invalid CIDR")
 	}
@@ -233,7 +215,7 @@ func TestConfiguration_Validate_InvalidCIDR(t *testing.T) {
 
 func TestConfiguration_Validate_InvalidAddress(t *testing.T) {
 	cfg := mkValid()
-	cfg.TCPSettings.InterfaceAddress = "bad.ip.addr"
+	cfg.TCPSettings.IPv4 = netip.Addr{}
 	if err := cfg.Validate(); err == nil {
 		t.Fatalf("expected error for invalid address")
 	}
@@ -241,7 +223,7 @@ func TestConfiguration_Validate_InvalidAddress(t *testing.T) {
 
 func TestConfiguration_Validate_AddressNotInCIDR(t *testing.T) {
 	cfg := mkValid()
-	cfg.TCPSettings.InterfaceAddress = "10.0.9.9" // not in 10.0.0.0/24
+	cfg.TCPSettings.IPv4 = netip.MustParseAddr("10.0.9.9") // not in 10.0.0.0/24
 	if err := cfg.Validate(); err == nil {
 		t.Fatalf("expected error for address not in CIDR")
 	}
@@ -250,10 +232,37 @@ func TestConfiguration_Validate_AddressNotInCIDR(t *testing.T) {
 func TestConfiguration_Validate_SubnetOverlap(t *testing.T) {
 	cfg := mkValid()
 	// Force overlap: make UDP use same 10.0.0.0/24 as TCP.
-	cfg.UDPSettings.InterfaceIPCIDR = "10.0.0.0/24"
-	cfg.UDPSettings.InterfaceAddress = "10.0.0.2"
+	cfg.UDPSettings.IPv4Subnet = netip.MustParsePrefix("10.0.0.0/24")
+	cfg.UDPSettings.IPv4 = netip.MustParseAddr("10.0.0.2")
 	if err := cfg.Validate(); err == nil {
 		t.Fatalf("expected error for overlapping subnets")
+	}
+}
+
+func TestConfiguration_Validate_IPv6_Invalid(t *testing.T) {
+	cfg := mkValid()
+	cfg.TCPSettings.IPv6Subnet = netip.MustParsePrefix("fd00::/64")
+	// IPv6 left as zero value → invalid after Unmap
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "invalid 'IPv6'") {
+		t.Fatalf("expected IPv6 validation error, got: %v", err)
+	}
+}
+
+func TestConfiguration_Validate_IPv6_NotInSubnet(t *testing.T) {
+	cfg := mkValid()
+	cfg.TCPSettings.IPv6Subnet = netip.MustParsePrefix("fd00::/64")
+	cfg.TCPSettings.IPv6 = netip.MustParseAddr("fd01::99") // outside fd00::/64
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "not in 'IPv6Subnet'") {
+		t.Fatalf("expected IPv6 not-in-subnet error, got: %v", err)
+	}
+}
+
+func TestConfiguration_Validate_IPv6_HappyPath(t *testing.T) {
+	cfg := mkValid()
+	cfg.TCPSettings.IPv6Subnet = netip.MustParsePrefix("fd00::/64")
+	cfg.TCPSettings.IPv6 = netip.MustParseAddr("fd00::1")
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected valid config with IPv6, got: %v", err)
 	}
 }
 
@@ -274,5 +283,150 @@ func TestConfiguration_OverlappingSubnets_NoOverlap(t *testing.T) {
 	}
 	if cfg.overlappingSubnets(subs) {
 		t.Fatalf("expected no overlap, got true")
+	}
+}
+
+// --- Tests for AllowedPeers validation ---
+
+func TestConfiguration_ValidateAllowedPeers_ValidConfig(t *testing.T) {
+	cfg := mkValid()
+	cfg.AllowedPeers = []AllowedPeer{
+		{
+			PublicKey: make([]byte, 32),
+			Enabled:   true,
+			ClientID:  5,
+		},
+		{
+			PublicKey: func() []byte {
+				k := make([]byte, 32)
+				k[0] = 1
+				return k
+			}(),
+			Enabled:  true,
+			ClientID: 6,
+		},
+	}
+	if err := cfg.ValidateAllowedPeers(); err != nil {
+		t.Fatalf("expected valid config, got: %v", err)
+	}
+}
+
+func TestConfiguration_ValidateAllowedPeers_InvalidKeyLength(t *testing.T) {
+	cfg := mkValid()
+	cfg.AllowedPeers = []AllowedPeer{
+		{
+			PublicKey: make([]byte, 16), // Invalid: should be 32
+			Enabled:   true,
+			ClientID:  5,
+		},
+	}
+	err := cfg.ValidateAllowedPeers()
+	if err == nil {
+		t.Fatal("expected error for invalid key length")
+	}
+	if !strings.Contains(err.Error(), "invalid public key length") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestConfiguration_ValidateAllowedPeers_InvalidClientID(t *testing.T) {
+	cfg := mkValid()
+	cfg.AllowedPeers = []AllowedPeer{
+		{
+			PublicKey: make([]byte, 32),
+			Enabled:   true,
+			ClientID:  0, // invalid: must be > 0
+		},
+	}
+	err := cfg.ValidateAllowedPeers()
+	if err == nil {
+		t.Fatal("expected error for invalid ClientID")
+	}
+	if !strings.Contains(err.Error(), "invalid ClientID") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestConfiguration_ValidateAllowedPeers_MissingClientID(t *testing.T) {
+	cfg := mkValid()
+	cfg.AllowedPeers = []AllowedPeer{
+		{
+			PublicKey: make([]byte, 32),
+			Enabled:   true,
+			// ClientID defaults to 0 (zero value)
+		},
+	}
+	err := cfg.ValidateAllowedPeers()
+	if err == nil {
+		t.Fatal("expected error for missing ClientID")
+	}
+	if !strings.Contains(err.Error(), "invalid ClientID") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestConfiguration_ValidateAllowedPeers_DuplicatePublicKey(t *testing.T) {
+	cfg := mkValid()
+	pubKey := make([]byte, 32)
+	pubKey[0] = 42
+	cfg.AllowedPeers = []AllowedPeer{
+		{
+			PublicKey: pubKey,
+			Enabled:   true,
+			ClientID:  5,
+		},
+		{
+			PublicKey: pubKey, // Duplicate
+			Enabled:   true,
+			ClientID:  6,
+		},
+	}
+	err := cfg.ValidateAllowedPeers()
+	if err == nil {
+		t.Fatal("expected error for duplicate public key")
+	}
+	if !strings.Contains(err.Error(), "duplicate public key") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestConfiguration_ValidateAllowedPeers_ClientIDConflict(t *testing.T) {
+	cfg := mkValid()
+	cfg.AllowedPeers = []AllowedPeer{
+		{
+			PublicKey: make([]byte, 32),
+			Enabled:   true,
+			ClientID:  5,
+		},
+		{
+			PublicKey: func() []byte {
+				k := make([]byte, 32)
+				k[0] = 1
+				return k
+			}(),
+			Enabled:  true,
+			ClientID: 5, // Same index as peer 0
+		},
+	}
+	err := cfg.ValidateAllowedPeers()
+	if err == nil {
+		t.Fatal("expected error for ClientID conflict")
+	}
+	if !strings.Contains(err.Error(), "ClientID conflict") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestConfiguration_Validate_PropagatesValidateAllowedPeersError(t *testing.T) {
+	cfg := mkValid()
+	cfg.AllowedPeers = []AllowedPeer{
+		{
+			PublicKey: make([]byte, 31), // invalid
+			Enabled:   true,
+			ClientID:  5,
+		},
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected Validate to propagate ValidateAllowedPeers error")
 	}
 }

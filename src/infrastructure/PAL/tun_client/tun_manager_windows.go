@@ -1,6 +1,7 @@
 package tun_client
 
 import (
+	"net/netip"
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/PAL/windows/manager"
@@ -41,4 +42,8 @@ func (m *PlatformTunManager) CreateDevice() (tun.Device, error) {
 
 func (m *PlatformTunManager) DisposeDevices() error {
 	return m.manager.DisposeDevices()
+}
+
+func (m *PlatformTunManager) SetRouteEndpoint(addr netip.AddrPort) {
+	m.manager.SetRouteEndpoint(addr)
 }

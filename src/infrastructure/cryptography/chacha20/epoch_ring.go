@@ -5,6 +5,10 @@ import "sync"
 // Epoch is encoded into the nonce prefix. We use uint16 for a compact, fixed width field.
 type Epoch uint16
 
+// EpochRing manages a fixed-capacity ring of UDP sessions indexed by epoch.
+//
+// SECURITY INVARIANT: ZeroizeAll MUST be called when the crypto instance is
+// destroyed. This is enforced by the interface - implementations cannot omit it.
 type EpochRing interface {
 	Current() Epoch
 	Resolve(epoch Epoch) (*DefaultUdpSession, bool)
@@ -14,6 +18,10 @@ type EpochRing interface {
 	Len() int
 	Capacity() int
 	Remove(epoch Epoch) bool
+	// ZeroizeAll zeros all sessions in the ring.
+	// MUST be called during crypto teardown to ensure key material is cleared.
+	// After this call, all sessions in the ring are unusable.
+	ZeroizeAll()
 }
 
 type epochEntry struct {
@@ -64,7 +72,10 @@ func (r *defaultEpochRing) Insert(epoch Epoch, session *DefaultUdpSession) {
 	defer r.mu.Unlock()
 
 	if len(r.entries) == r.capacity {
-		// Evict oldest.
+		// Evict oldest; zero key material before releasing.
+		if r.entries[0].session != nil {
+			r.entries[0].session.Zeroize()
+		}
 		r.entries = r.entries[1:]
 	}
 	r.entries = append(r.entries, epochEntry{epoch: epoch, session: session})
@@ -103,9 +114,25 @@ func (r *defaultEpochRing) Remove(epoch Epoch) bool {
 	defer r.mu.Unlock()
 	for i, e := range r.entries {
 		if e.epoch == epoch {
+			if e.session != nil {
+				e.session.Zeroize()
+			}
 			r.entries = append(r.entries[:i], r.entries[i+1:]...)
 			return true
 		}
 	}
 	return false
+}
+
+// ZeroizeAll zeros all sessions in the ring.
+// Called during crypto teardown to ensure key material is cleared.
+func (r *defaultEpochRing) ZeroizeAll() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, e := range r.entries {
+		if e.session != nil {
+			e.session.Zeroize()
+		}
+	}
+	r.entries = nil
 }

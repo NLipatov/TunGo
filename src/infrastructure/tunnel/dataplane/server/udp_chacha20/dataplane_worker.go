@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"tungo/infrastructure/cryptography/chacha20"
+	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/tunnel/session"
 )
 
@@ -28,23 +29,48 @@ func newUdpDataplaneWorker(tunWriter io.Writer, cp controlPlaneHandler) *udpData
 }
 
 func (w *udpDataplaneWorker) HandleEstablished(peer *session.Peer, packet []byte) error {
-	rekeyCtrl := peer.RekeyController()
-
-	decrypted, decryptionErr := peer.Crypto().Decrypt(packet)
-	if decryptionErr != nil {
-		// Drop: untrusted UDP input can be garbage / attacker-driven.
+	// Use tryDecryptSafe to guard against TOCTOU race with idle reaper:
+	// between IsClosed() check and Decrypt(), the reaper may Zeroize crypto.
+	decrypted, ok := tryDecryptSafe(peer, packet)
+	if !ok {
 		return nil
 	}
 
+	return w.handleDecrypted(peer, packet, decrypted)
+}
+
+// handleDecrypted processes a successfully decrypted packet for the given peer.
+// Separated from HandleEstablished so the roaming path can reuse it without
+// double-decrypting.
+func (w *udpDataplaneWorker) handleDecrypted(peer *session.Peer, rawPacket, decrypted []byte) error {
+	// Record activity AFTER successful decryption so attackers cannot
+	// keep a session alive by sending garbage to its external address.
+	peer.TouchActivity()
+
+	rekeyCtrl := peer.RekeyController()
 	if rekeyCtrl != nil {
 		// Data was successfully decrypted with epoch.
 		// Epoch can now be used to encrypt. Allow to encrypt with this epoch by promoting.
-		rekeyCtrl.ActivateSendEpoch(binary.BigEndian.Uint16(packet[chacha20.NonceEpochOffset : chacha20.NonceEpochOffset+2]))
+		rekeyCtrl.ActivateSendEpoch(binary.BigEndian.Uint16(rawPacket[chacha20.UDPEpochOffset : chacha20.UDPEpochOffset+2]))
 		rekeyCtrl.AbortPendingIfExpired(w.now())
 		// If service_packet packet - handle it.
-		if handled, err := w.cp.Handle(decrypted, peer.Egress(), rekeyCtrl); handled {
-			return err
+		// Note: On EpochExhausted, server sends EpochExhausted packet to client.
+		// Session stays alive until client reconnects with fresh handshake.
+		if handled, _ := w.cp.Handle(decrypted, peer.Egress(), rekeyCtrl); handled {
+			return nil
 		}
+	}
+
+	// Validate source IP against AllowedIPs after decryption
+	// Session interface embeds SessionAuth - no type assertion needed
+	srcIP, srcOk := ip.ExtractSourceIP(decrypted)
+	if !srcOk {
+		// Malformed IP header - drop to prevent AllowedIPs bypass
+		return nil
+	}
+	if !peer.Session.IsSourceAllowed(srcIP) {
+		// AllowedIPs violation - silently drop for UDP
+		return nil
 	}
 
 	// Pass it to TUN.

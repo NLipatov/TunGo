@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"tungo/application/network/connection"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
-	"tungo/infrastructure/settings"
 )
 
 type Secret interface {
@@ -12,17 +11,14 @@ type Secret interface {
 }
 
 type DefaultSecret struct {
-	settings                   settings.Settings
 	handshake                  connection.Handshake
 	cryptographyServiceFactory connection.CryptoFactory
 }
 
-func NewDefaultSecret(settings settings.Settings,
-	handshake connection.Handshake,
+func NewDefaultSecret(handshake connection.Handshake,
 	cryptographyServiceFactory connection.CryptoFactory,
 ) Secret {
 	return &DefaultSecret{
-		settings:                   settings,
 		handshake:                  handshake,
 		cryptographyServiceFactory: cryptographyServiceFactory,
 	}
@@ -31,8 +27,7 @@ func NewDefaultSecret(settings settings.Settings,
 func (s *DefaultSecret) Exchange(
 	transport connection.Transport,
 ) (connection.Crypto, *rekey.StateMachine, error) {
-	handshakeErr := s.handshake.ClientSideHandshake(transport, s.settings)
-	if handshakeErr != nil {
+	if handshakeErr := s.handshake.ClientSideHandshake(transport); handshakeErr != nil {
 		return nil, nil, handshakeErr
 	}
 

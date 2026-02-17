@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/netip"
 	"reflect"
 	"sync"
 	"testing"
@@ -59,6 +60,8 @@ func (d *mockTunManager) DisposeDevices() error {
 	d.disposeCount++
 	return d.disposeErr
 }
+
+func (d *mockTunManager) SetRouteEndpoint(netip.AddrPort) {}
 
 // mockConnectionFactory implements application.ConnectionFactory.
 type mockConnectionFactory struct{}

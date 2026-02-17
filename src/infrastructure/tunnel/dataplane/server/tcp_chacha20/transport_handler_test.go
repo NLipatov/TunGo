@@ -16,8 +16,8 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 
 	"tungo/application/network/connection"
-	"tungo/infrastructure/cryptography/chacha20/handshake"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/session"
@@ -146,20 +146,20 @@ func (l *fakeLogger) count(sub string) int {
 }
 
 type fakeHandshake struct {
-	ip     net.IP
-	err    error
-	id     [32]byte
-	client [32]byte
-	server [32]byte
+	clientID int
+	err      error
+	id       [32]byte
+	client   [32]byte
+	server   [32]byte
 }
 
 func (f *fakeHandshake) Id() [32]byte              { return f.id }
 func (f *fakeHandshake) KeyClientToServer() []byte { return f.client[:] }
 func (f *fakeHandshake) KeyServerToClient() []byte { return f.server[:] }
-func (f *fakeHandshake) ServerSideHandshake(_ connection.Transport) (net.IP, error) {
-	return f.ip, f.err
+func (f *fakeHandshake) ServerSideHandshake(_ connection.Transport) (int, error) {
+	return f.clientID, f.err
 }
-func (f *fakeHandshake) ClientSideHandshake(_ connection.Transport, _ settings.Settings) error {
+func (f *fakeHandshake) ClientSideHandshake(_ connection.Transport) error {
 	return nil
 }
 
@@ -217,6 +217,33 @@ func (r *fakeSessionRepo) GetByExternalAddrPort(addr netip.AddrPort) (*session.P
 	}
 	return s, nil
 }
+func (r *fakeSessionRepo) GetByRouteID(_ uint64) (*session.Peer, error) {
+	if r.getErr != nil {
+		return nil, r.getErr
+	}
+	return nil, session.ErrNotFound
+}
+func (r *fakeSessionRepo) FindByDestinationIP(_ netip.Addr) (*session.Peer, error) {
+	if r.getErr != nil {
+		return nil, r.getErr
+	}
+	return r.returnPeer, nil
+}
+func (r *fakeSessionRepo) AllPeers() []*session.Peer {
+	peers := make([]*session.Peer, 0, len(r.sessions))
+	for _, p := range r.sessions {
+		peers = append(peers, p)
+	}
+	return peers
+}
+func (r *fakeSessionRepo) UpdateExternalAddr(peer *session.Peer, newAddr netip.AddrPort) {
+	delete(r.sessions, peer.ExternalAddrPort())
+	peer.SetExternalAddrPort(newAddr)
+	if r.sessions == nil {
+		r.sessions = make(map[netip.AddrPort]*session.Peer)
+	}
+	r.sessions[newAddr] = peer
+}
 
 type fakeWriter struct {
 	buf   bytes.Buffer
@@ -245,6 +272,17 @@ func (s *testSession) Crypto() connection.Crypto        { return s.crypto }
 func (s *testSession) InternalAddr() netip.Addr         { return s.internalIP }
 func (s *testSession) ExternalAddrPort() netip.AddrPort { return s.externalIP }
 func (s *testSession) RekeyController() rekey.FSM       { return nil }
+func (s *testSession) IsSourceAllowed(netip.Addr) bool  { return true }
+
+// makeValidIPv4Packet creates a minimal valid IPv4 packet with the given source IP.
+// Used in tests to satisfy AllowedIPs validation.
+func makeValidIPv4Packet(srcIP netip.Addr) []byte {
+	packet := make([]byte, 20) // Minimum IPv4 header
+	packet[0] = 0x45           // Version 4, IHL 5 (20 bytes)
+	src := srcIP.As4()
+	copy(packet[12:16], src[:])
+	return packet
+}
 
 /* ========= tests ========= */
 
@@ -253,10 +291,10 @@ func TestHandleTransport_CtxDoneBeforeAccept_ReturnsNil(t *testing.T) {
 	listener := &fakeTcpListenerCtxDone{ctx: ctx, t: t}
 	logger := &fakeLogger{}
 	repo := &fakeSessionRepo{}
-	registrar := tcp_registration.NewRegistrar(logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{}, repo)
+	registrar := tcp_registration.NewRegistrar(logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{}, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 	handler := NewTransportHandler(
 		ctx,
-		settings.Settings{Port: "7777"},
+		settings.Settings{Addressing: settings.Addressing{Port: 7777}},
 		&fakeWriter{},
 		listener,
 		repo,
@@ -289,10 +327,10 @@ func TestHandleTransport_AlreadyCanceled_ReturnsCtxErr(t *testing.T) {
 	listener := &fakeTcpListener{conns: nil}
 	logger := &fakeLogger{}
 	repo := &fakeSessionRepo{}
-	registrar := tcp_registration.NewRegistrar(logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{}, repo)
+	registrar := tcp_registration.NewRegistrar(logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{}, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 	handler := NewTransportHandler(
 		ctx,
-		settings.Settings{Port: "7777"},
+		settings.Settings{Addressing: settings.Addressing{Port: 7777}},
 		&fakeWriter{},
 		listener,
 		repo,
@@ -317,10 +355,10 @@ func TestHandleTransport_AcceptError(t *testing.T) {
 	listener := &fakeTcpListener{err: errors.New("accept fail"), maxErrCount: maxErrs}
 	logger := &fakeLogger{}
 	repo := &fakeSessionRepo{}
-	registrar := tcp_registration.NewRegistrar(logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{}, repo)
+	registrar := tcp_registration.NewRegistrar(logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{}, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 	handler := NewTransportHandler(
 		ctx,
-		settings.Settings{Port: "1111"},
+		settings.Settings{Addressing: settings.Addressing{Port: 1111}},
 		&fakeWriter{},
 		listener,
 		repo,
@@ -351,12 +389,12 @@ func TestHandleTransport_RegisterClientError_Logged(t *testing.T) {
 	fconn := &fakeConn{addr: addr}
 	listener := &fakeTcpListener{conns: []net.Conn{fconn}}
 	logger := &fakeLogger{}
-	h := &fakeHandshake{ip: []byte{127, 0, 0, 1}, err: errors.New("handshake fail")}
+	h := &fakeHandshake{clientID: 1, err: errors.New("handshake fail")}
 	handshakeFactory := &fakeHandshakeFactory{hs: h}
 	repo := &fakeSessionRepo{}
 
-	registrar := tcp_registration.NewRegistrar(logger, handshakeFactory, &fakeCryptoFactory{}, repo)
-	handler := NewTransportHandler(ctx, settings.Settings{Port: "2222"}, &fakeWriter{}, listener, repo, logger, registrar)
+	registrar := tcp_registration.NewRegistrar(logger, handshakeFactory, &fakeCryptoFactory{}, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
+	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 2222}}, &fakeWriter{}, listener, repo, logger, registrar)
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
 
@@ -373,10 +411,10 @@ func TestRegisterClient_HandshakeError(t *testing.T) {
 	addr := tcpAddr("127.0.0.1", 9991)
 	fconn := &fakeConn{addr: addr}
 	logger := &fakeLogger{}
-	hs := &fakeHandshake{ip: []byte{127, 0, 0, 1}, err: errors.New("boom")}
+	hs := &fakeHandshake{clientID: 1, err: errors.New("boom")}
 	hf := &fakeHandshakeFactory{hs: hs}
 
-	registrar := tcp_registration.NewRegistrar(logger, hf, &fakeCryptoFactory{}, &fakeSessionRepo{})
+	registrar := tcp_registration.NewRegistrar(logger, hf, &fakeCryptoFactory{}, &fakeSessionRepo{}, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 	_, _, err := registrar.RegisterClient(fconn)
 	if err == nil || !strings.Contains(err.Error(), "client 127.0.0.1:9991 failed registration: boom") {
 		t.Fatalf("expected handshake error, got %v", err)
@@ -387,10 +425,10 @@ func TestRegisterClient_CryptoFactoryError(t *testing.T) {
 	addr := tcpAddr("127.0.0.1", 9999)
 	fconn := &fakeConn{addr: addr}
 	logger := &fakeLogger{}
-	h := &fakeHandshake{ip: []byte{127, 0, 0, 1}}
+	h := &fakeHandshake{clientID: 1}
 	handshakeFactory := &fakeHandshakeFactory{hs: h}
 
-	registrar := tcp_registration.NewRegistrar(logger, handshakeFactory, &fakeCryptoFactory{err: errors.New("crypto fail")}, &fakeSessionRepo{})
+	registrar := tcp_registration.NewRegistrar(logger, handshakeFactory, &fakeCryptoFactory{err: errors.New("crypto fail")}, &fakeSessionRepo{}, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 	_, _, err := registrar.RegisterClient(fconn)
 	if err == nil || err.Error() != "client 127.0.0.1:9999 failed registration: crypto fail" {
 		t.Errorf("expected crypto error, got %v", err)
@@ -404,27 +442,31 @@ func (c *badAddrConn) RemoteAddr() net.Addr { return &struct{ net.Addr }{} }
 func TestRegisterClient_BadAddrType(t *testing.T) {
 	fconn := &badAddrConn{fakeConn{addr: nil}}
 	logger := &fakeLogger{}
-	h := &fakeHandshake{ip: []byte{127, 0, 0, 1}}
+	h := &fakeHandshake{clientID: 1}
 	handshakeFactory := &fakeHandshakeFactory{hs: h}
 
-	registrar := tcp_registration.NewRegistrar(logger, handshakeFactory, &fakeCryptoFactory{}, &fakeSessionRepo{})
+	registrar := tcp_registration.NewRegistrar(logger, handshakeFactory, &fakeCryptoFactory{}, &fakeSessionRepo{}, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 	_, _, err := registrar.RegisterClient(fconn)
 	if err == nil || !strings.HasPrefix(err.Error(), "invalid remote address type") {
 		t.Errorf("expected 'invalid remote address type' error, got '%v'", err)
 	}
 }
 
-func TestRegisterClient_BadInternalIP(t *testing.T) {
+func TestRegisterClient_NegativeClientID_FailsAllocation(t *testing.T) {
+	// Negative clientID causes AllocateClientIP to fail.
 	addr := tcpAddr("127.0.0.1", 8080)
 	fconn := &fakeConn{addr: addr}
 	logger := &fakeLogger{}
-	h := &fakeHandshake{ip: []byte{1, 2}}
+	h := &fakeHandshake{clientID: -1} // invalid
 	handshakeFactory := &fakeHandshakeFactory{hs: h}
 
-	registrar := tcp_registration.NewRegistrar(logger, handshakeFactory, &fakeCryptoFactory{}, &fakeSessionRepo{})
-	_, _, err := registrar.RegisterClient(fconn)
-	if err == nil || err.Error() != "invalid internal IP from handshake" {
-		t.Errorf("expected bad internal IP error, got %v", err)
+	registrar := tcp_registration.NewRegistrar(logger, handshakeFactory, &fakeCryptoFactory{}, &fakeSessionRepo{getErr: session.ErrNotFound}, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
+	peer, transport, err := registrar.RegisterClient(fconn)
+	if err == nil {
+		t.Fatal("expected error from IP allocation with zero clientID")
+	}
+	if peer != nil || transport != nil {
+		t.Fatal("expected nil peer and transport on allocation error")
 	}
 }
 
@@ -432,11 +474,11 @@ func TestRegisterClient_SessionRepoGetError(t *testing.T) {
 	addr := tcpAddr("127.0.0.1", 9090)
 	fconn := &fakeConn{addr: addr}
 	logger := &fakeLogger{}
-	h := &fakeHandshake{ip: []byte{127, 0, 0, 1}}
+	h := &fakeHandshake{clientID: 1}
 	handshakeFactory := &fakeHandshakeFactory{hs: h}
 	repo := &fakeSessionRepo{getErr: errors.New("db down")}
 
-	registrar := tcp_registration.NewRegistrar(logger, handshakeFactory, &fakeCryptoFactory{}, repo)
+	registrar := tcp_registration.NewRegistrar(logger, handshakeFactory, &fakeCryptoFactory{}, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 	_, _, err := registrar.RegisterClient(fconn)
 	if err == nil || !strings.HasPrefix(err.Error(), "connection closed") {
 		t.Errorf("expected 'connection closed', got '%v'", err)
@@ -447,7 +489,7 @@ func TestRegisterClient_ReplaceSession(t *testing.T) {
 	addr := tcpAddr("127.0.0.1", 8070)
 	fconn := &fakeConn{addr: addr}
 	logger := &fakeLogger{}
-	h := &fakeHandshake{ip: []byte{127, 0, 0, 1}}
+	h := &fakeHandshake{clientID: 1}
 	handshakeFactory := &fakeHandshakeFactory{hs: h}
 
 	oldSess := &testSession{externalIP: mustAddrPort("127.0.0.1:8070")}
@@ -457,7 +499,7 @@ func TestRegisterClient_ReplaceSession(t *testing.T) {
 		returnPeer: oldPeer, // existing session -> will be deleted
 	}
 
-	registrar := tcp_registration.NewRegistrar(logger, handshakeFactory, &fakeCryptoFactory{}, srepo)
+	registrar := tcp_registration.NewRegistrar(logger, handshakeFactory, &fakeCryptoFactory{}, srepo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 	_, _, _ = registrar.RegisterClient(fconn)
 
 	// We expect exactly one Delete call: old replaced session.
@@ -476,11 +518,11 @@ func TestRegisterClient_AddsSessionOnNotFound(t *testing.T) {
 	addr := tcpAddr("127.0.0.1", 6010)
 	fconn := &fakeConn{addr: addr}
 	logger := &fakeLogger{}
-	h := &fakeHandshake{ip: []byte{127, 0, 0, 1}}
+	h := &fakeHandshake{clientID: 1}
 	handshakeFactory := &fakeHandshakeFactory{hs: h}
 	repo := &fakeSessionRepo{getErr: session.ErrNotFound}
 
-	registrar := tcp_registration.NewRegistrar(logger, handshakeFactory, &fakeCryptoFactory{}, repo)
+	registrar := tcp_registration.NewRegistrar(logger, handshakeFactory, &fakeCryptoFactory{}, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 	if _, _, err := registrar.RegisterClient(fconn); err != nil {
 		t.Fatalf("RegisterClient returned error: %v", err)
 	}
@@ -493,31 +535,12 @@ func TestRegisterClient_AddsSessionOnNotFound(t *testing.T) {
 	}
 }
 
-func TestSendSessionReset_WritesToTransport(t *testing.T) {
-	logger := &fakeLogger{}
-	h := &TransportHandler{logger: logger}
-	conn := &fakeConn{addr: tcpAddr("1.2.3.4", 5000)}
-	h.sendSessionReset(conn)
-
-	if conn.writeBuf.Len() == 0 {
-		t.Fatal("expected sendSessionReset to write data to transport")
-	}
-	// Verify the written bytes are a legacy SessionReset.
-	data := conn.writeBuf.Bytes()
-	if len(data) < 1 {
-		t.Fatalf("written data too short: %d", len(data))
-	}
-	if data[0] != byte(service_packet.SessionReset) {
-		t.Fatalf("expected SessionReset byte, got %d", data[0])
-	}
-}
-
 func TestHandleClient_RekeyInit_DispatchedToControlPlane(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	// Build a valid RekeyInit packet.
-	crypto := &handshake.DefaultCrypto{}
+	crypto := &primitives.DefaultKeyDeriver{}
 	pub, _, err := crypto.GenerateX25519KeyPair()
 	if err != nil {
 		t.Fatal(err)
@@ -547,7 +570,7 @@ func TestHandleClient_RekeyInit_DispatchedToControlPlane(t *testing.T) {
 	peer = session.NewPeer(realSess, eg)
 
 	repo := &fakeSessionRepo{}
-	registrar := tcp_registration.NewRegistrar(logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{}, repo)
+	registrar := tcp_registration.NewRegistrar(logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{}, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 	h := NewTransportHandler(context.Background(), settings.Settings{}, writer, &fakeTcpListener{}, repo, logger, registrar)
 	h.(*TransportHandler).handleClient(ctx, peer, conn, writer)
 
@@ -555,6 +578,9 @@ func TestHandleClient_RekeyInit_DispatchedToControlPlane(t *testing.T) {
 	// Verify no TUN write happened (controlplane packets are consumed).
 	if len(writer.wrote) != 0 {
 		t.Fatalf("expected no TUN writes for RekeyInit (should be consumed by controlplane), got %d", len(writer.wrote))
+	}
+	if fsm.LastRekeyEpoch == 0 {
+		t.Fatalf("expected rekey to be processed and epoch activated, got LastRekeyEpoch=%d", fsm.LastRekeyEpoch)
 	}
 }
 
@@ -568,7 +594,7 @@ func TestHandleClient_CtxDone(t *testing.T) {
 	peer := session.NewPeer(sess, nil)
 	repo := &fakeSessionRepo{}
 
-	registrar := tcp_registration.NewRegistrar(logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{}, repo)
+	registrar := tcp_registration.NewRegistrar(logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{}, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 	handler := NewTransportHandler(context.Background(), settings.Settings{}, writer, &fakeTcpListener{}, repo, logger, registrar)
 	handler.(*TransportHandler).handleClient(ctx, peer, conn, writer)
 
@@ -589,7 +615,7 @@ func TestHandleClient_ReadFullError(t *testing.T) {
 	sess := &testSession{crypto: &fakeCrypto{}, internalIP: netip.MustParseAddr("10.0.0.6"), externalIP: mustAddrPort("1.2.3.4:5556")}
 	peer := session.NewPeer(sess, nil)
 	repo := &fakeSessionRepo{}
-	registrar := tcp_registration.NewRegistrar(logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{}, repo)
+	registrar := tcp_registration.NewRegistrar(logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{}, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 	handler := NewTransportHandler(context.Background(), settings.Settings{}, writer, &fakeTcpListener{}, repo, logger, registrar)
 	handler.(*TransportHandler).handleClient(ctx, peer, conn, writer)
 
@@ -613,7 +639,7 @@ func TestHandleClient_EOF(t *testing.T) {
 	sess := &testSession{crypto: &fakeCrypto{}, internalIP: netip.MustParseAddr("10.0.0.7"), externalIP: mustAddrPort("1.2.3.4:5557")}
 	peer := session.NewPeer(sess, nil)
 	repo := &fakeSessionRepo{}
-	registrar := tcp_registration.NewRegistrar(logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{}, repo)
+	registrar := tcp_registration.NewRegistrar(logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{}, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 	handler := NewTransportHandler(context.Background(), settings.Settings{}, writer, &fakeTcpListener{}, repo, logger, registrar)
 	handler.(*TransportHandler).handleClient(ctx, peer, conn, writer)
 
@@ -638,7 +664,7 @@ func TestHandleClient_BadLength(t *testing.T) {
 	sess := &testSession{crypto: &fakeCrypto{}, internalIP: netip.MustParseAddr("10.0.0.8"), externalIP: mustAddrPort("1.2.3.4:5558")}
 	peer := session.NewPeer(sess, nil)
 	repo := &fakeSessionRepo{}
-	registrar := tcp_registration.NewRegistrar(logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{}, repo)
+	registrar := tcp_registration.NewRegistrar(logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{}, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 	handler := NewTransportHandler(context.Background(), settings.Settings{}, writer, &fakeTcpListener{}, repo, logger, registrar)
 	handler.(*TransportHandler).handleClient(ctx, peer, conn, writer)
 
@@ -659,7 +685,7 @@ func TestHandleClient_DecryptError_ClosesConnection(t *testing.T) {
 	sess := &testSession{crypto: &fakeCrypto{decErr: errors.New("bad decrypt")}, internalIP: netip.MustParseAddr("10.0.0.10"), externalIP: mustAddrPort("1.2.3.4:5560")}
 	peer := session.NewPeer(sess, nil)
 	repo := &fakeSessionRepo{}
-	registrar := tcp_registration.NewRegistrar(logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{}, repo)
+	registrar := tcp_registration.NewRegistrar(logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{}, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 	handler := NewTransportHandler(context.Background(), settings.Settings{}, writer, &fakeTcpListener{}, repo, logger, registrar)
 	handler.(*TransportHandler).handleClient(ctx, peer, conn, writer)
 
@@ -677,16 +703,17 @@ func TestHandleClient_DecryptError_ClosesConnection(t *testing.T) {
 func TestHandleClient_WriteTunError(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	internalIP := netip.MustParseAddr("10.0.0.11")
 	conn := &fakeConn{
 		addr:     tcpAddr("1.2.3.4", 5561),
-		readBufs: [][]byte{make([]byte, chacha20poly1305.Overhead)}, // valid length
+		readBufs: [][]byte{makeValidIPv4Packet(internalIP)}, // valid IPv4 packet
 	}
 	writer := &fakeWriter{err: errors.New("fail tun")}
 	logger := &fakeLogger{}
-	sess := &testSession{crypto: &fakeCrypto{}, internalIP: netip.MustParseAddr("10.0.0.11"), externalIP: mustAddrPort("1.2.3.4:5561")}
+	sess := &testSession{crypto: &fakeCrypto{}, internalIP: internalIP, externalIP: mustAddrPort("1.2.3.4:5561")}
 	peer := session.NewPeer(sess, nil)
 	repo := &fakeSessionRepo{}
-	registrar := tcp_registration.NewRegistrar(logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{}, repo)
+	registrar := tcp_registration.NewRegistrar(logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{}, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 	handler := NewTransportHandler(context.Background(), settings.Settings{}, writer, &fakeTcpListener{}, repo, logger, registrar)
 	handler.(*TransportHandler).handleClient(ctx, peer, conn, writer)
 
@@ -699,7 +726,8 @@ func TestHandleClient_HappyDataPath_WritesToTun_AndCloses(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	payload := make([]byte, chacha20poly1305.Overhead) // minimal valid length
+	internalIP := netip.MustParseAddr("10.0.0.12")
+	payload := makeValidIPv4Packet(internalIP) // valid IPv4 packet
 
 	conn := &fakeConn{
 		addr:     tcpAddr("1.2.3.4", 6001),
@@ -709,12 +737,12 @@ func TestHandleClient_HappyDataPath_WritesToTun_AndCloses(t *testing.T) {
 	logger := &fakeLogger{}
 	sess := &testSession{
 		crypto:     &fakeCrypto{},
-		internalIP: netip.MustParseAddr("10.0.0.12"),
+		internalIP: internalIP,
 		externalIP: mustAddrPort("1.2.3.4:6001"),
 	}
 	peer := session.NewPeer(sess, nil)
 	repo := &fakeSessionRepo{}
-	registrar := tcp_registration.NewRegistrar(logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{}, repo)
+	registrar := tcp_registration.NewRegistrar(logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{}, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 	h := NewTransportHandler(context.Background(), settings.Settings{}, writer, &fakeTcpListener{}, repo, logger, registrar)
 
 	h.(*TransportHandler).handleClient(ctx, peer, conn, writer)

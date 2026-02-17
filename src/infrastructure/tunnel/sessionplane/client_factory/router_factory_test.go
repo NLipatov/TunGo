@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/netip"
 	"testing"
 	"tungo/application/network/connection"
 	"tungo/application/network/routing"
@@ -32,7 +33,10 @@ type RouterFactoryTunClientManagerMock struct {
 	Device tun.Device
 	Err    error
 
-	Called bool
+	Called                bool
+	RouteEndpoint         netip.AddrPort
+	RouteEndpointSet      bool
+	RouteEndpointSetCalls int
 }
 
 func (m *RouterFactoryTunClientManagerMock) CreateDevice() (tun.Device, error) {
@@ -43,6 +47,12 @@ func (m *RouterFactoryTunClientManagerMock) CreateDevice() (tun.Device, error) {
 func (m *RouterFactoryTunClientManagerMock) DisposeDevices() error {
 	// Not needed for these tests.
 	return nil
+}
+
+func (m *RouterFactoryTunClientManagerMock) SetRouteEndpoint(addr netip.AddrPort) {
+	m.RouteEndpoint = addr
+	m.RouteEndpointSet = true
+	m.RouteEndpointSetCalls++
 }
 
 // RouterFactoryClientWorkerFactoryMock mocks connection.ClientWorkerFactory.
@@ -85,6 +95,15 @@ type RouterFactoryTransportMock struct {
 func (r *RouterFactoryTransportMock) Write(b []byte) (int, error) { return len(b), nil }
 func (r *RouterFactoryTransportMock) Read(_ []byte) (int, error)  { return 0, io.EOF }
 func (r *RouterFactoryTransportMock) Close() error                { r.Closed = true; return r.CloseErr }
+
+type RouterFactoryRemoteTransportMock struct {
+	RouterFactoryTransportMock
+	addr netip.AddrPort
+}
+
+func (r *RouterFactoryRemoteTransportMock) RemoteAddrPort() netip.AddrPort {
+	return r.addr
+}
 
 // RouterFactoryDeviceMock is a simple device mock implementing tun.Device.
 type RouterFactoryDeviceMock struct {
@@ -278,5 +297,85 @@ func TestRouterFactory_CreateRouter_Success(t *testing.T) {
 	}
 	if workerFactory.Ctx != ctx {
 		t.Fatalf("worker factory received wrong context")
+	}
+}
+
+func TestRouterFactory_CreateRouter_AttachesRouteEndpointFromConnection(t *testing.T) {
+	factory := NewRouterFactory()
+
+	remote := netip.MustParseAddrPort("198.51.100.10:443")
+	connMock := &RouterFactoryRemoteTransportMock{addr: remote}
+	deviceMock := &RouterFactoryDeviceMock{}
+	workerMock := &RouterFactoryWorkerMock{}
+	cryptoMock := &RouterFactoryCryptoMock{}
+
+	connFactoryMock := &RouterFactoryConnectionFactoryMock{Conn: connMock, Crypto: cryptoMock, Err: nil}
+	tunManager := &RouterFactoryTunClientManagerMock{Device: deviceMock}
+	workerFactory := &RouterFactoryClientWorkerFactoryMock{Worker: workerMock}
+
+	_, _, _, err := factory.CreateRouter(context.Background(), connFactoryMock, tunManager, workerFactory)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !tunManager.RouteEndpointSet {
+		t.Fatal("expected route endpoint to be attached to tun manager")
+	}
+	if tunManager.RouteEndpoint != remote {
+		t.Fatalf("unexpected route endpoint: got %v want %v", tunManager.RouteEndpoint, remote)
+	}
+	if tunManager.RouteEndpointSetCalls != 2 {
+		t.Fatalf("expected clear+attach route endpoint calls, got %d", tunManager.RouteEndpointSetCalls)
+	}
+}
+
+func TestRouterFactory_CreateRouter_ClearsStaleRouteEndpointWhenConnectionHasNoRemote(t *testing.T) {
+	factory := NewRouterFactory()
+
+	connMock := &RouterFactoryTransportMock{}
+	deviceMock := &RouterFactoryDeviceMock{}
+	workerMock := &RouterFactoryWorkerMock{}
+
+	connFactoryMock := &RouterFactoryConnectionFactoryMock{Conn: connMock, Crypto: &RouterFactoryCryptoMock{}, Err: nil}
+	tunManager := &RouterFactoryTunClientManagerMock{
+		Device:        deviceMock,
+		RouteEndpoint: netip.MustParseAddrPort("203.0.113.55:443"),
+	}
+	workerFactory := &RouterFactoryClientWorkerFactoryMock{Worker: workerMock}
+
+	_, _, _, err := factory.CreateRouter(context.Background(), connFactoryMock, tunManager, workerFactory)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !tunManager.RouteEndpointSet {
+		t.Fatal("expected route endpoint to be set")
+	}
+	if tunManager.RouteEndpoint.IsValid() {
+		t.Fatalf("expected stale route endpoint to be cleared, got %v", tunManager.RouteEndpoint)
+	}
+	if tunManager.RouteEndpointSetCalls != 1 {
+		t.Fatalf("expected exactly one clear call, got %d", tunManager.RouteEndpointSetCalls)
+	}
+}
+
+func TestRouterFactory_CreateRouter_ClearsStaleRouteEndpointOnConnectionError(t *testing.T) {
+	factory := NewRouterFactory()
+
+	tunManager := &RouterFactoryTunClientManagerMock{
+		RouteEndpoint: netip.MustParseAddrPort("203.0.113.55:443"),
+	}
+	connFactoryMock := &RouterFactoryConnectionFactoryMock{Err: errors.New("connect fail")}
+
+	_, _, _, err := factory.CreateRouter(context.Background(), connFactoryMock, tunManager, &RouterFactoryClientWorkerFactoryMock{})
+	if err == nil {
+		t.Fatal("expected connection error")
+	}
+	if !tunManager.RouteEndpointSet {
+		t.Fatal("expected route endpoint clear call")
+	}
+	if tunManager.RouteEndpoint.IsValid() {
+		t.Fatalf("expected stale route endpoint to be cleared, got %v", tunManager.RouteEndpoint)
+	}
+	if tunManager.RouteEndpointSetCalls != 1 {
+		t.Fatalf("expected exactly one clear call, got %d", tunManager.RouteEndpointSetCalls)
 	}
 }

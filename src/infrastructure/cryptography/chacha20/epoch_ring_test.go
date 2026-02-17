@@ -142,3 +142,18 @@ func TestEpochRing_Oldest(t *testing.T) {
 		t.Fatalf("expected Oldest()=5, got %d ok=%v", oldest, ok)
 	}
 }
+
+func TestEpochRing_ZeroizeAll(t *testing.T) {
+	r := NewEpochRing(4, 0, testSession(0))
+	r.Insert(1, testSession(1))
+	r.Insert(2, testSession(2))
+
+	r.ZeroizeAll()
+
+	if r.Len() != 0 {
+		t.Fatalf("expected ring to be empty after ZeroizeAll, got len=%d", r.Len())
+	}
+	if _, ok := r.ResolveCurrent(); ok {
+		t.Fatal("expected no current session after ZeroizeAll")
+	}
+}

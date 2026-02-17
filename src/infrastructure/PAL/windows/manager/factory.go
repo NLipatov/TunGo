@@ -4,19 +4,13 @@ package manager
 
 import (
 	"fmt"
-	"net"
-	"strings"
 	"tungo/infrastructure/PAL/windows/ipcfg"
-	"tungo/infrastructure/settings"
 
 	"tungo/application/network/routing/tun"
+	"tungo/infrastructure/settings"
 )
 
-// Factory builds a family-specific TUN manager (IPv4 or IPv6) based on InterfaceAddress.
-// Assumptions:
-//   - InterfaceAddress is a strict invariant and always valid (non-empty, not unspecified).
-//   - We keep code simple: choose by InterfaceAddress family only.
-//   - Optional safety: ensure ConnectionIP family matches InterfaceAddress family.
+// Factory builds a family-specific TUN manager (IPv4, IPv6, or dual-stack) based on configured addresses.
 type Factory struct {
 	connectionSettings settings.Settings
 	netConfigFactory   ipcfg.Factory
@@ -31,43 +25,29 @@ func NewFactory(
 	}
 }
 
-// Create returns a tun.ClientManager specialized for IPv4 or IPv6.
+// Create returns a tun.ClientManager for the configured address families.
 func (f *Factory) Create() (tun.ClientManager, error) {
-	ifAddr := f.stripZone(f.connectionSettings.InterfaceAddress) // e.g., "fe80::1%12" -> "fe80::1"
-	ip := net.ParseIP(ifAddr)
-	if ip == nil {
-		return nil, fmt.Errorf("invalid InterfaceAddress: %q", f.connectionSettings.InterfaceAddress)
+	has4 := f.connectionSettings.IPv4.IsValid() && !f.connectionSettings.IPv4.IsUnspecified() && f.connectionSettings.IPv4.Unmap().Is4()
+	has6 := f.connectionSettings.IPv6.IsValid() && !f.connectionSettings.IPv6.IsUnspecified() && !f.connectionSettings.IPv6.Unmap().Is4()
+
+	if has4 && has6 {
+		return newDualStackManager(
+			f.connectionSettings,
+			f.netConfigFactory.NewV4(),
+			f.netConfigFactory.NewV6(),
+		), nil
 	}
-	if ip.IsUnspecified() {
-		return nil, fmt.Errorf("unspecified InterfaceAddress is not allowed: %q", f.connectionSettings.InterfaceAddress)
-	}
-	// Optional safety: enforce family match between InterfaceAddress and ConnectionIP.
-	connIP := net.ParseIP(f.stripZone(f.connectionSettings.ConnectionIP))
-	if connIP == nil {
-		return nil, fmt.Errorf("invalid ConnectionIP: %q", f.connectionSettings.ConnectionIP)
-	}
-	if (ip.To4() != nil) != (connIP.To4() != nil) {
-		return nil, fmt.Errorf("IP family mismatch: InterfaceAddress=%q vs ConnectionIP=%q",
-			f.connectionSettings.InterfaceAddress, f.connectionSettings.ConnectionIP)
-	}
-	if ip.To4() != nil {
+	if has4 {
 		return newV4Manager(
 			f.connectionSettings,
 			f.netConfigFactory.NewV4(),
 		), nil
-	} else {
+	}
+	if has6 {
 		return newV6Manager(
 			f.connectionSettings,
 			f.netConfigFactory.NewV6(),
 		), nil
 	}
-}
-
-// stripZone removes IPv6 zone suffix (e.g., "%12") if present.
-// Safe to call for IPv4 or empty strings.
-func (f *Factory) stripZone(s string) string {
-	if i := strings.IndexByte(s, '%'); i >= 0 {
-		return s[:i]
-	}
-	return s
+	return nil, fmt.Errorf("no valid IPv4 or IPv6 configured")
 }

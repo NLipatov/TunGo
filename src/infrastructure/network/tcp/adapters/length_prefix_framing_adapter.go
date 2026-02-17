@@ -1,10 +1,12 @@
 package adapters
 
 import (
+	"bufio"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"math"
+	"net/netip"
 	"tungo/application/network/connection"
 	framelimit "tungo/domain/network/ip/frame_limit"
 )
@@ -14,8 +16,10 @@ type LengthPrefixFramingAdapter struct {
 	adapter  connection.Transport
 	frameCap framelimit.Cap
 
-	// pre-allocated headers buffers (to avoid any chance of escape/allocation)
-	readHeaderBuffer, writeHeaderBuffer [2]byte
+	// bufReader amortizes underlying Read syscalls: header + payload served from a single buffer refill.
+	bufReader *bufio.Reader
+	// pre-allocated header buffer for reads (to avoid any chance of escape/allocation)
+	readHeaderBuffer [2]byte
 }
 
 func NewLengthPrefixFramingAdapter(
@@ -31,10 +35,15 @@ func NewLengthPrefixFramingAdapter(
 	if int(frameCap) > math.MaxUint16 {
 		return nil, fmt.Errorf("frame cap %d exceeds u16 transport cap %d", int(frameCap), math.MaxUint16)
 	}
-	return &LengthPrefixFramingAdapter{adapter: adapter, frameCap: frameCap}, nil
+	return &LengthPrefixFramingAdapter{
+		adapter:   adapter,
+		frameCap:  frameCap,
+		bufReader: bufio.NewReader(adapter),
+	}, nil
 }
 
 // Write writes one u16-BE length-prefixed frame. Returns len(data) on success.
+// Header and payload are written without payload copy.
 // NOTE: On errors adapter DOES NOT drain; the caller MUST close the connection.
 func (a *LengthPrefixFramingAdapter) Write(data []byte) (int, error) {
 	if len(data) == 0 {
@@ -43,8 +52,9 @@ func (a *LengthPrefixFramingAdapter) Write(data []byte) (int, error) {
 	if capErr := a.frameCap.ValidateLen(len(data)); capErr != nil {
 		return 0, capErr
 	}
-	binary.BigEndian.PutUint16(a.writeHeaderBuffer[:], uint16(len(data)))
-	if err := a.writeFull(a.adapter, a.writeHeaderBuffer[:]); err != nil {
+	var header [2]byte
+	binary.BigEndian.PutUint16(header[:], uint16(len(data)))
+	if err := a.writeFull(a.adapter, header[:]); err != nil {
 		return 0, err
 	}
 	if err := a.writeFull(a.adapter, data); err != nil {
@@ -72,7 +82,7 @@ func (a *LengthPrefixFramingAdapter) writeFull(w io.Writer, p []byte) error {
 // Read reads exactly one u16-BE length-prefixed frame into buffer and returns payload size.
 // NOTE: On errors adapter DOES NOT drain; the caller MUST close the connection.
 func (a *LengthPrefixFramingAdapter) Read(buffer []byte) (int, error) {
-	if _, err := io.ReadFull(a.adapter, a.readHeaderBuffer[:]); err != nil {
+	if _, err := io.ReadFull(a.bufReader, a.readHeaderBuffer[:]); err != nil {
 		return 0, fmt.Errorf("%w: %w", ErrInvalidLengthPrefixHeader, err)
 	}
 	length := int(binary.BigEndian.Uint16(a.readHeaderBuffer[:]))
@@ -85,10 +95,21 @@ func (a *LengthPrefixFramingAdapter) Read(buffer []byte) (int, error) {
 	if length > len(buffer) {
 		return 0, io.ErrShortBuffer
 	}
-	if _, err := io.ReadFull(a.adapter, buffer[:length]); err != nil {
+	if _, err := io.ReadFull(a.bufReader, buffer[:length]); err != nil {
 		return 0, err
 	}
 	return length, nil
 }
 
 func (a *LengthPrefixFramingAdapter) Close() error { return a.adapter.Close() }
+
+// RemoteAddrPort delegates to the inner transport if it implements
+// TransportWithRemoteAddr (e.g. via RemoteAddrTransport). This allows
+// the Noise handshake to extract the client IP for cookie binding
+// through the adapter chain.
+func (a *LengthPrefixFramingAdapter) RemoteAddrPort() netip.AddrPort {
+	if t, ok := a.adapter.(connection.TransportWithRemoteAddr); ok {
+		return t.RemoteAddrPort()
+	}
+	return netip.AddrPort{}
+}
