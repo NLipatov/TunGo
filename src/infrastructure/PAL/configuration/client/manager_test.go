@@ -102,6 +102,6 @@ func TestManagerConfigurationSuccess(t *testing.T) {
 		t.Fatalf("expected success, got error: %v", err)
 	}
 	if config.Protocol != settings.TCP {
-		t.Errorf("expected Protocol %q, got %d", settings.TCP, config.Protocol)
+		t.Errorf("expected Protocol %d, got %d", settings.TCP, config.Protocol)
 	}
 }
