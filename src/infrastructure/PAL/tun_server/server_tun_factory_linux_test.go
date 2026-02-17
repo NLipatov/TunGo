@@ -660,6 +660,42 @@ func TestCreateTunDevice_InvalidCIDR_ErrorsFromAllocator(t *testing.T) {
 	}
 }
 
+func TestCreateDevice_RejectsLegacyIPv6InIPv4SubnetField(t *testing.T) {
+	cfg := settings.Settings{
+		Addressing: settings.Addressing{
+			TunName:    "tun0",
+			IPv4Subnet: netip.MustParsePrefix("fd00::/64"),
+		},
+		MTU: settings.SafeMTU,
+	}
+	f := newFactory(
+		&ServerTunFactoryMockIP{},
+		&ServerTunFactoryMockIPT{},
+		nil,
+		&ServerTunFactoryMockIOCTL{},
+		&ServerTunFactoryMockSys{},
+	)
+
+	_, err := f.CreateDevice(cfg)
+	if err == nil || !strings.Contains(err.Error(), "no tunnel IP configuration") {
+		t.Fatalf("expected strict config error for legacy IPv6-in-IPv4 field, got %v", err)
+	}
+}
+
+func TestMasqueradeCIDR6_RequiresIPv6SubnetField(t *testing.T) {
+	f := newFactory(nil, nil, nil, nil, nil)
+
+	legacy := settings.Settings{
+		Addressing: settings.Addressing{
+			IPv4Subnet: netip.MustParsePrefix("fd00::/64"),
+		},
+	}
+	_, err := f.masqueradeCIDR6(legacy)
+	if err == nil || !strings.Contains(err.Error(), "no IPv6 subnet configured") {
+		t.Fatalf("expected strict IPv6 subnet error, got %v", err)
+	}
+}
+
 func TestConfigure_Errors(t *testing.T) {
 	// RouteDefault error
 	f1 := newFactory(

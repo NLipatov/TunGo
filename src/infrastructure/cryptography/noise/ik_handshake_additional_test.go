@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 	"tungo/infrastructure/PAL/configuration/server"
-	"tungo/infrastructure/settings"
 
 	noiselib "github.com/flynn/noise"
 )
@@ -173,10 +172,10 @@ func TestIKHandshake_Extra_GettersAndNilResult(t *testing.T) {
 		t.Fatal("unexpected server key")
 	}
 
-	h.result = &IKHandshakeResult{clientID: 9}
-	result, ok := h.Result().(*IKHandshakeResult)
+	h.result = &ikHandshakeResult{clientID: 9}
+	result, ok := h.Result().(*ikHandshakeResult)
 	if !ok {
-		t.Fatal("expected IKHandshakeResult type")
+		t.Fatal("expected ikHandshakeResult type")
 	}
 	if got := result.clientID; got != 9 {
 		t.Fatalf("expected client index 9, got %d", got)
@@ -289,7 +288,7 @@ func TestIKHandshake_Client_CookieRetryPaths(t *testing.T) {
 			clientIP:      netip.MustParseAddr("198.51.100.20"),
 		}
 
-		err := h.ClientSideHandshake(tr, settings.Settings{})
+		err := h.ClientSideHandshake(tr)
 		if err != nil {
 			t.Fatalf("unexpected client handshake error: %v", err)
 		}
@@ -312,7 +311,7 @@ func TestIKHandshake_Client_CookieRetryPaths(t *testing.T) {
 			cookieReplyOnRetry: true,
 		}
 
-		err := h.ClientSideHandshake(tr, settings.Settings{})
+		err := h.ClientSideHandshake(tr)
 		if err == nil || !strings.Contains(err.Error(), "unexpected cookie reply on retry") {
 			t.Fatalf("expected unexpected-cookie-reply error, got %v", err)
 		}
@@ -428,7 +427,7 @@ func TestIKHandshake_Server_ErrorBranches(t *testing.T) {
 func TestIKHandshake_Client_ErrorBranches(t *testing.T) {
 	t.Run("invalid client key fails during msg1 write", func(t *testing.T) {
 		h := NewIKHandshakeClient([]byte{1}, []byte{2}, []byte{3})
-		err := h.ClientSideHandshake(&queueTransport{}, settings.Settings{})
+		err := h.ClientSideHandshake(&queueTransport{})
 		if err == nil || !strings.Contains(err.Error(), "write msg1") {
 			t.Fatalf("expected write msg1 error, got %v", err)
 		}
@@ -439,7 +438,7 @@ func TestIKHandshake_Client_ErrorBranches(t *testing.T) {
 		clientKP, _ := cipherSuite.GenerateKeypair(nil)
 		h := NewIKHandshakeClient(clientKP.Public, clientKP.Private, serverKP.Public)
 
-		err := h.ClientSideHandshake(&queueTransport{writeErr: io.ErrClosedPipe}, settings.Settings{})
+		err := h.ClientSideHandshake(&queueTransport{writeErr: io.ErrClosedPipe})
 		if err == nil || !strings.Contains(err.Error(), "send msg1") {
 			t.Fatalf("expected send msg1 error, got %v", err)
 		}
@@ -451,7 +450,7 @@ func TestIKHandshake_Client_ErrorBranches(t *testing.T) {
 		h := NewIKHandshakeClient(clientKP.Public, clientKP.Private, serverKP.Public)
 
 		corruptedCookieReply := make([]byte, CookieReplySize)
-		err := h.ClientSideHandshake(&queueTransport{reads: [][]byte{corruptedCookieReply}}, settings.Settings{})
+		err := h.ClientSideHandshake(&queueTransport{reads: [][]byte{corruptedCookieReply}})
 		if err == nil || !strings.Contains(err.Error(), "decrypt cookie") {
 			t.Fatalf("expected decrypt cookie error, got %v", err)
 		}
@@ -462,7 +461,7 @@ func TestIKHandshake_Client_ErrorBranches(t *testing.T) {
 		clientKP, _ := cipherSuite.GenerateKeypair(nil)
 		h := NewIKHandshakeClient(clientKP.Public, clientKP.Private, serverKP.Public)
 
-		err := h.ClientSideHandshake(&queueTransport{reads: [][]byte{[]byte("bad-msg2")}}, settings.Settings{})
+		err := h.ClientSideHandshake(&queueTransport{reads: [][]byte{[]byte("bad-msg2")}})
 		if err == nil || !strings.Contains(err.Error(), "read msg2") {
 			t.Fatalf("expected read msg2 error, got %v", err)
 		}
@@ -477,7 +476,7 @@ func TestIKHandshake_RetryWithCookie_ErrorBranches(t *testing.T) {
 			peerPubKey:    []byte{3},
 		}
 
-		err := h.retryWithCookie(&queueTransport{}, settings.Settings{})
+		err := h.retryWithCookie(&queueTransport{})
 		if err == nil || !strings.Contains(err.Error(), "write msg1") {
 			t.Fatalf("expected write msg1 error, got %v", err)
 		}
@@ -489,7 +488,7 @@ func TestIKHandshake_RetryWithCookie_ErrorBranches(t *testing.T) {
 		h := NewIKHandshakeClient(clientKP.Public, clientKP.Private, serverKP.Public)
 		h.cookie = bytes.Repeat([]byte{1}, CookieSize)
 
-		err := h.retryWithCookie(&queueTransport{writeErr: io.ErrClosedPipe}, settings.Settings{})
+		err := h.retryWithCookie(&queueTransport{writeErr: io.ErrClosedPipe})
 		if err == nil || !strings.Contains(err.Error(), "send msg1 retry") {
 			t.Fatalf("expected send msg1 retry error, got %v", err)
 		}
@@ -501,7 +500,7 @@ func TestIKHandshake_RetryWithCookie_ErrorBranches(t *testing.T) {
 		h := NewIKHandshakeClient(clientKP.Public, clientKP.Private, serverKP.Public)
 		h.cookie = bytes.Repeat([]byte{1}, CookieSize)
 
-		err := h.retryWithCookie(&queueTransport{readErr: io.ErrUnexpectedEOF}, settings.Settings{})
+		err := h.retryWithCookie(&queueTransport{readErr: io.ErrUnexpectedEOF})
 		if err == nil || !strings.Contains(err.Error(), "read msg2") {
 			t.Fatalf("expected read msg2 error, got %v", err)
 		}
@@ -513,7 +512,7 @@ func TestIKHandshake_RetryWithCookie_ErrorBranches(t *testing.T) {
 		h := NewIKHandshakeClient(clientKP.Public, clientKP.Private, serverKP.Public)
 		h.cookie = bytes.Repeat([]byte{1}, CookieSize)
 
-		err := h.retryWithCookie(&queueTransport{reads: [][]byte{[]byte("bad-msg2")}}, settings.Settings{})
+		err := h.retryWithCookie(&queueTransport{reads: [][]byte{[]byte("bad-msg2")}})
 		if err == nil || !strings.Contains(err.Error(), "read msg2") {
 			t.Fatalf("expected read msg2 error, got %v", err)
 		}

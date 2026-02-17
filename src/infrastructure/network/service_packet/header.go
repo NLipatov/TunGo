@@ -20,7 +20,7 @@ type HeaderType uint8
 
 const (
 	Unknown HeaderType = iota
-	_                  // reserved (was SessionReset)
+	_                  // reserved
 	RekeyInit
 	RekeyAck
 	Ping

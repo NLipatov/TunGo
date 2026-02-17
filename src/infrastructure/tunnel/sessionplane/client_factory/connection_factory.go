@@ -53,7 +53,7 @@ func (f *ConnectionFactory) EstablishConnection(
 	}
 
 	builder := f.sessionBuilder(connSettings.Protocol)
-	return f.establishSecuredConnection(establishCtx, connSettings, adapter, builder)
+	return f.establishSecuredConnection(establishCtx, adapter, builder)
 }
 
 func (f *ConnectionFactory) dial(
@@ -83,7 +83,6 @@ func (f *ConnectionFactory) sessionBuilder(proto settings.Protocol) connection.C
 
 func (f *ConnectionFactory) establishSecuredConnection(
 	ctx context.Context,
-	s settings.Settings,
 	adapter connection.Transport,
 	cryptoFactory connection.CryptoFactory,
 ) (connection.Transport, connection.Crypto, *rekey.StateMachine, error) {
@@ -104,7 +103,6 @@ func (f *ConnectionFactory) establishSecuredConnection(
 	)
 
 	secret := network.NewDefaultSecret(
-		s,
 		handshake,
 		cryptoFactory,
 	)

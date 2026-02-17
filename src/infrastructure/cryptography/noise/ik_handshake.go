@@ -8,16 +8,15 @@ import (
 	"tungo/application/network/connection"
 	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/cryptography/mem"
-	"tungo/infrastructure/settings"
 
 	noiselib "github.com/flynn/noise"
 )
 
 var cipherSuite = noiselib.NewCipherSuite(noiselib.DH25519, noiselib.CipherChaChaPoly, noiselib.HashSHA256)
 
-// IKHandshakeResult contains the result of a successful server-side IK handshake.
+// ikHandshakeResult contains the result of a successful server-side IK handshake.
 // Implements connection.HandshakeResult interface.
-type IKHandshakeResult struct {
+type ikHandshakeResult struct {
 	// clientID is the 1-based ordinal for AllocateClientIP.
 	clientID int
 
@@ -29,12 +28,12 @@ type IKHandshakeResult struct {
 }
 
 // ClientPubKey returns the client's X25519 static public key.
-func (r *IKHandshakeResult) ClientPubKey() []byte {
+func (r *ikHandshakeResult) ClientPubKey() []byte {
 	return r.clientPubKey
 }
 
 // AllowedIPs returns the additional prefixes this client may use as source IP.
-func (r *IKHandshakeResult) AllowedIPs() []netip.Prefix {
+func (r *ikHandshakeResult) AllowedIPs() []netip.Prefix {
 	return r.allowedIPs
 }
 
@@ -56,10 +55,10 @@ type allowedPeersMap struct {
 
 // RuntimeAllowedPeer is a runtime-ready representation of server.AllowedPeer.
 type RuntimeAllowedPeer struct {
-	Name        string
-	PublicKey   []byte
-	Enabled     bool
-	ClientID int
+	Name      string
+	PublicKey []byte
+	Enabled   bool
+	ClientID  int
 }
 
 // NewAllowedPeersLookup creates an AllowedPeersLookup from a slice of AllowedPeer.
@@ -82,10 +81,10 @@ func (a *allowedPeersMap) Update(peers []server.AllowedPeer) {
 	for i := range peers {
 		peer := peers[i]
 		m[string(peer.PublicKey)] = &RuntimeAllowedPeer{
-			Name:        peer.Name,
-			PublicKey:   append([]byte(nil), peer.PublicKey...),
-			Enabled:     peer.Enabled,
-			ClientID: peer.ClientID,
+			Name:      peer.Name,
+			PublicKey: append([]byte(nil), peer.PublicKey...),
+			Enabled:   peer.Enabled,
+			ClientID:  peer.ClientID,
 		}
 	}
 	a.peers.Store(&m)
@@ -110,7 +109,7 @@ type IKHandshake struct {
 	peerPubKey    []byte // Server's public key (client perspective)
 
 	// Handshake result (server-side)
-	result *IKHandshakeResult
+	result *ikHandshakeResult
 
 	// Cookie for retry (client-side)
 	cookie []byte
@@ -295,8 +294,8 @@ func (h *IKHandshake) ServerSideHandshake(transport connection.Transport) (int, 
 	pubKeyCopy := make([]byte, len(clientPubKey))
 	copy(pubKeyCopy, clientPubKey)
 
-	h.result = &IKHandshakeResult{
-		clientID:  peer.ClientID,
+	h.result = &ikHandshakeResult{
+		clientID:     peer.ClientID,
 		clientPubKey: pubKeyCopy,
 		allowedIPs:   nil,
 	}
@@ -305,7 +304,7 @@ func (h *IKHandshake) ServerSideHandshake(transport connection.Transport) (int, 
 }
 
 // ClientSideHandshake performs Noise IK as initiator.
-func (h *IKHandshake) ClientSideHandshake(transport connection.Transport, s settings.Settings) error {
+func (h *IKHandshake) ClientSideHandshake(transport connection.Transport) error {
 	if h.clientPrivKey == nil || h.clientPubKey == nil {
 		return ErrMissingClientKey
 	}
@@ -372,7 +371,7 @@ func (h *IKHandshake) ClientSideHandshake(transport connection.Transport, s sett
 		h.cookie = cookie
 
 		// Retry with cookie - need to create new handshake state
-		return h.retryWithCookie(transport, s)
+		return h.retryWithCookie(transport)
 	}
 
 	// Process msg2 (e, ee, se)
@@ -409,7 +408,7 @@ func (h *IKHandshake) ClientSideHandshake(transport connection.Transport, s sett
 }
 
 // retryWithCookie retries the handshake with the stored cookie.
-func (h *IKHandshake) retryWithCookie(transport connection.Transport, s settings.Settings) error {
+func (h *IKHandshake) retryWithCookie(transport connection.Transport) error {
 	clientStatic := noiselib.DHKey{
 		Private: h.clientPrivKey,
 		Public:  h.clientPubKey,

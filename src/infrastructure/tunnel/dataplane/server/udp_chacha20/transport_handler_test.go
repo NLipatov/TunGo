@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/cipher"
 	"crypto/rand"
+	"encoding/binary"
 	"errors"
 	"io"
 	"net/netip"
@@ -42,7 +43,7 @@ func (b *TransportHandlerBlockingHandshake) ServerSideHandshake(t connection.Tra
 	}
 	return 0, err
 }
-func (b *TransportHandlerBlockingHandshake) ClientSideHandshake(_ connection.Transport, _ settings.Settings) error {
+func (b *TransportHandlerBlockingHandshake) ClientSideHandshake(_ connection.Transport) error {
 	return nil
 }
 
@@ -68,7 +69,7 @@ func (f failingCryptoFactory) FromHandshake(_ connection.Handshake, _ bool) (con
 // Slow handshake mock: simulates long-running ServerSideHandshake
 type TransportHandlerSlowHandshake struct {
 	delay                         time.Duration
-	clientID                   int
+	clientID                      int
 	err                           error
 	TransportHandlerFakeHandshake // embed
 }
@@ -254,10 +255,10 @@ func (l *TransportHandlerFakeLogger) count(sub string) int {
 // TransportHandlerFakeHandshake & factory.
 type TransportHandlerFakeHandshake struct {
 	clientID int
-	err         error
-	id          [32]byte
-	client      [32]byte
-	server      [32]byte
+	err      error
+	id       [32]byte
+	client   [32]byte
+	server   [32]byte
 }
 
 func (f *TransportHandlerFakeHandshake) Id() [32]byte              { return f.id }
@@ -266,7 +267,7 @@ func (f *TransportHandlerFakeHandshake) KeyServerToClient() []byte { return f.se
 func (f *TransportHandlerFakeHandshake) ServerSideHandshake(_ connection.Transport) (int, error) {
 	return f.clientID, f.err
 }
-func (f *TransportHandlerFakeHandshake) ClientSideHandshake(_ connection.Transport, _ settings.Settings) error {
+func (f *TransportHandlerFakeHandshake) ClientSideHandshake(_ connection.Transport) error {
 	return nil
 }
 
@@ -278,6 +279,7 @@ func (f *TransportHandlerFakeHandshakeFactory) NewHandshake() connection.Handsha
 type TransportHandlerSessionRepo struct {
 	mu       sync.Mutex
 	sessions map[netip.AddrPort]*session.Peer
+	routes   map[uint64]*session.Peer
 	adds     []*session.Peer
 	afterAdd func()
 }
@@ -288,7 +290,13 @@ func (r *TransportHandlerSessionRepo) Add(p *session.Peer) {
 	if r.sessions == nil {
 		r.sessions = map[netip.AddrPort]*session.Peer{}
 	}
+	if r.routes == nil {
+		r.routes = map[uint64]*session.Peer{}
+	}
 	r.sessions[p.ExternalAddrPort()] = p
+	if routeID, ok := routeIDForPeer(p); ok {
+		r.routes[routeID] = p
+	}
 	r.adds = append(r.adds, p)
 	if r.afterAdd != nil {
 		r.afterAdd()
@@ -327,6 +335,29 @@ func (r *TransportHandlerSessionRepo) UpdateExternalAddr(peer *session.Peer, new
 	peer.SetExternalAddrPort(newAddr)
 	r.sessions[newAddr] = peer
 }
+func (r *TransportHandlerSessionRepo) GetByRouteID(routeID uint64) (*session.Peer, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	s, ok := r.routes[routeID]
+	if !ok {
+		return nil, errors.New("no session")
+	}
+	return s, nil
+}
+
+func routeIDForPeer(peer *session.Peer) (uint64, bool) {
+	type routeIDProvider interface {
+		RouteID() uint64
+	}
+	if peer == nil || peer.Crypto() == nil {
+		return 0, false
+	}
+	routed, ok := peer.Crypto().(routeIDProvider)
+	if !ok {
+		return 0, false
+	}
+	return routed.RouteID(), true
+}
 
 // testSession is a lightweight mock implementing connection.Session for tests.
 type testSession struct {
@@ -349,6 +380,13 @@ func makeValidIPv4Packet(srcIP netip.Addr) []byte {
 	packet[0] = 0x45           // Version 4, IHL 5 (20 bytes)
 	src := srcIP.As4()
 	copy(packet[12:16], src[:])
+	return packet
+}
+
+func withRouteID(routeID uint64, payload []byte) []byte {
+	packet := make([]byte, 8+len(payload))
+	binary.BigEndian.PutUint64(packet[:8], routeID)
+	copy(packet[8:], payload)
 	return packet
 }
 
@@ -544,6 +582,7 @@ func TestTransportHandler_DecryptError(t *testing.T) {
 	logger := &TransportHandlerFakeLogger{}
 	repo := &TransportHandlerSessionRepo{}
 	clientAddr := netip.MustParseAddrPort("192.168.1.30:4000")
+	routeID := uint64(0x2122232425262728)
 	fakeHS := &TransportHandlerFakeHandshake{clientID: 9}
 	handshakeFactory := &TransportHandlerFakeHandshakeFactory{hs: fakeHS}
 
@@ -559,9 +598,14 @@ func TestTransportHandler_DecryptError(t *testing.T) {
 		sess := &testSession{
 			internalIP: s.InternalAddr(),
 			externalIP: s.ExternalAddrPort(),
-			crypto:     &transportHandlerFailingCrypto{},
+			crypto:     &transportHandlerRouteFailingCrypto{routeID: routeID},
 		}
-		repo.sessions[clientAddr] = session.NewPeer(sess, nil)
+		p := session.NewPeer(sess, nil)
+		if repo.routes == nil {
+			repo.routes = map[uint64]*session.Peer{}
+		}
+		repo.sessions[clientAddr] = p
+		repo.routes[routeID] = p
 		close(sessionRegistered)
 	}
 
@@ -589,6 +633,51 @@ func (t *transportHandlerFailingCrypto) Decrypt(_ []byte) ([]byte, error) {
 	return nil, errors.New("dec fail")
 }
 
+type transportHandlerRouteFailingCrypto struct {
+	routeID uint64
+}
+
+func (t *transportHandlerRouteFailingCrypto) Encrypt(in []byte) ([]byte, error) {
+	return withRouteID(t.routeID, in), nil
+}
+
+func (t *transportHandlerRouteFailingCrypto) Decrypt(in []byte) ([]byte, error) {
+	if len(in) < 8 {
+		return nil, errors.New("short packet")
+	}
+	if binary.BigEndian.Uint64(in[:8]) != t.routeID {
+		return nil, errors.New("route id mismatch")
+	}
+	return nil, errors.New("dec fail")
+}
+
+func (t *transportHandlerRouteFailingCrypto) RouteID() uint64 { return t.routeID }
+
+type transportHandlerRouteCrypto struct {
+	routeID uint64
+}
+
+func (t *transportHandlerRouteCrypto) Encrypt(in []byte) ([]byte, error) {
+	out := make([]byte, 8+len(in))
+	binary.BigEndian.PutUint64(out[:8], t.routeID)
+	copy(out[8:], in)
+	return out, nil
+}
+
+func (t *transportHandlerRouteCrypto) Decrypt(in []byte) ([]byte, error) {
+	if len(in) < 8 {
+		return nil, errors.New("short packet")
+	}
+	if binary.BigEndian.Uint64(in[:8]) != t.routeID {
+		return nil, errors.New("route id mismatch")
+	}
+	out := make([]byte, len(in)-8)
+	copy(out, in[8:])
+	return out, nil
+}
+
+func (t *transportHandlerRouteCrypto) RouteID() uint64 { return t.routeID }
+
 // Writer error after successful decrypt.
 func TestTransportHandler_WriteError(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -603,6 +692,7 @@ func TestTransportHandler_WriteError(t *testing.T) {
 	logger := &TransportHandlerFakeLogger{}
 	clientAddr := netip.MustParseAddrPort("192.168.1.40:6000")
 	internalIP := netip.MustParseAddr("10.0.0.40")
+	routeID := uint64(0x3132333435363738)
 
 	fakeHS := &TransportHandlerFakeHandshake{clientID: 39}
 	handshakeFactory := &TransportHandlerFakeHandshakeFactory{hs: fakeHS}
@@ -615,9 +705,14 @@ func TestTransportHandler_WriteError(t *testing.T) {
 		sess := &testSession{
 			internalIP: s.InternalAddr(),
 			externalIP: s.ExternalAddrPort(),
-			crypto:     &TransportHandlerAlwaysWriteCrypto{},
+			crypto:     &transportHandlerRouteCrypto{routeID: routeID},
 		}
-		repo.sessions[clientAddr] = session.NewPeer(sess, nil)
+		p := session.NewPeer(sess, nil)
+		if repo.routes == nil {
+			repo.routes = map[uint64]*session.Peer{}
+		}
+		repo.sessions[clientAddr] = p
+		repo.routes[routeID] = p
 		close(sessionRegistered)
 	}
 
@@ -645,7 +740,7 @@ func TestTransportHandler_WriteError(t *testing.T) {
 	}
 
 	// 2) Now inject second packet dynamically - must be valid IPv4 packet with matching source IP
-	validPacket := makeValidIPv4Packet(internalIP)
+	validPacket := withRouteID(routeID, makeValidIPv4Packet(internalIP))
 	conn.readMu.Lock()
 	conn.readBufs = append(conn.readBufs, validPacket)
 	conn.readAddrs = append(conn.readAddrs, clientAddr)
@@ -676,19 +771,20 @@ func TestTransportHandler_HappyPath(t *testing.T) {
 
 	clientAddr := netip.MustParseAddrPort("192.168.1.50:5050")
 	internalIP := netip.MustParseAddr("10.0.0.50")
+	routeID := uint64(0x4142434445464748)
 	repo := &TransportHandlerSessionRepo{sessions: map[netip.AddrPort]*session.Peer{}}
 	sess := &testSession{
-		crypto:     &TransportHandlerAlwaysWriteCrypto{},
+		crypto:     &transportHandlerRouteCrypto{routeID: routeID},
 		internalIP: internalIP,
 		externalIP: clientAddr,
 	}
-	repo.sessions[clientAddr] = session.NewPeer(sess, nil)
+	repo.Add(session.NewPeer(sess, nil))
 
 	fakeHS := &TransportHandlerFakeHandshake{clientID: 49}
 	handshakeFactory := &TransportHandlerFakeHandshakeFactory{hs: fakeHS}
 
 	// Must use valid IPv4 packet with matching source IP for AllowedIPs validation
-	validPacket := makeValidIPv4Packet(internalIP)
+	validPacket := withRouteID(routeID, makeValidIPv4Packet(internalIP))
 	conn := &TransportHandlerFakeUdpListener{
 		readBufs:  [][]byte{validPacket},
 		readAddrs: []netip.AddrPort{clientAddr},
@@ -710,9 +806,9 @@ func TestTransportHandler_HappyPath(t *testing.T) {
 	}
 }
 
-// NAT rebinding: packet from new addr is trial-decrypted against existing sessions.
-// On success the peer's address is updated and the packet is processed — no re-registration.
-func TestTransportHandler_NATRoaming_TrialDecrypt(t *testing.T) {
+// NAT rebinding: packet from new addr is resolved by route-id lookup in O(1).
+// On successful decrypt the peer's address is updated and the packet is processed.
+func TestTransportHandler_NATRoaming_RouteIDLookup(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -722,21 +818,24 @@ func TestTransportHandler_NATRoaming_TrialDecrypt(t *testing.T) {
 	oldAddr := netip.MustParseAddrPort("192.168.1.51:5050")
 	newAddr := netip.MustParseAddrPort("192.168.1.51:6060")
 	internalIP := netip.MustParseAddr("10.0.0.51")
+	routeID := uint64(0x0102030405060708)
 
 	repo := &TransportHandlerSessionRepo{sessions: map[netip.AddrPort]*session.Peer{}}
 	oldSess := &testSession{
-		crypto:     &TransportHandlerAlwaysWriteCrypto{},
+		crypto:     &transportHandlerRouteCrypto{routeID: routeID},
 		internalIP: internalIP,
 		externalIP: oldAddr,
 	}
 	peer := session.NewPeer(oldSess, nil)
-	repo.sessions[oldAddr] = peer
+	repo.Add(peer)
+	repo.adds = nil
 
 	fakeHS := &TransportHandlerFakeHandshake{clientID: 50}
 	handshakeFactory := &TransportHandlerFakeHandshakeFactory{hs: fakeHS}
 
-	// Send a valid IPv4 packet from the NEW address — should be roamed, not re-registered.
-	validPacket := makeValidIPv4Packet(internalIP)
+	// Send a valid routed packet from the NEW address — should be roamed, not re-registered.
+	validPacket := append(make([]byte, 8), makeValidIPv4Packet(internalIP)...)
+	binary.BigEndian.PutUint64(validPacket[:8], routeID)
 	conn := &TransportHandlerFakeUdpListener{
 		readBufs:  [][]byte{validPacket},
 		readAddrs: []netip.AddrPort{newAddr},
@@ -767,8 +866,8 @@ func TestTransportHandler_NATRoaming_TrialDecrypt(t *testing.T) {
 	}
 }
 
-// After roaming, subsequent packets from the new address use the fast path.
-func TestTransportHandler_NATRoaming_FastPathAfterRoam(t *testing.T) {
+// After roaming, subsequent packets from the new address continue via route-id lookup.
+func TestTransportHandler_NATRoaming_RouteIDLookupAfterRoam(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -778,21 +877,24 @@ func TestTransportHandler_NATRoaming_FastPathAfterRoam(t *testing.T) {
 	oldAddr := netip.MustParseAddrPort("192.168.1.52:5050")
 	newAddr := netip.MustParseAddrPort("192.168.1.52:7070")
 	internalIP := netip.MustParseAddr("10.0.0.52")
+	routeID := uint64(0x1112131415161718)
 
 	repo := &TransportHandlerSessionRepo{sessions: map[netip.AddrPort]*session.Peer{}}
 	oldSess := &testSession{
-		crypto:     &TransportHandlerAlwaysWriteCrypto{},
+		crypto:     &transportHandlerRouteCrypto{routeID: routeID},
 		internalIP: internalIP,
 		externalIP: oldAddr,
 	}
 	peer := session.NewPeer(oldSess, nil)
-	repo.sessions[oldAddr] = peer
+	repo.Add(peer)
+	repo.adds = nil
 
 	fakeHS := &TransportHandlerFakeHandshake{clientID: 51}
 	handshakeFactory := &TransportHandlerFakeHandshakeFactory{hs: fakeHS}
 
-	validPacket := makeValidIPv4Packet(internalIP)
-	// Two packets from new address: first triggers roaming, second uses fast path.
+	validPacket := append(make([]byte, 8), makeValidIPv4Packet(internalIP)...)
+	binary.BigEndian.PutUint64(validPacket[:8], routeID)
+	// Two packets from new address: first triggers roaming, second uses updated external addr.
 	conn := &TransportHandlerFakeUdpListener{
 		readBufs:  [][]byte{validPacket, validPacket},
 		readAddrs: []netip.AddrPort{newAddr, newAddr},
@@ -809,7 +911,7 @@ func TestTransportHandler_NATRoaming_FastPathAfterRoam(t *testing.T) {
 	cancel()
 	<-done
 
-	// Both packets should be processed (one via roaming, one via fast path).
+	// Both packets should be processed.
 	if len(tunWriter.wrote) != 2 {
 		t.Fatalf("expected 2 packets written to TUN, got %d", len(tunWriter.wrote))
 	}
@@ -918,7 +1020,7 @@ func TestTransportHandler_SecondPacketGoesToExistingRegistrationQueue_NoNewGorou
 	}
 
 	fakeHS := &TransportHandlerSlowHandshake{
-		delay:       100 * time.Millisecond, // handshake runs slow, queue remains alive
+		delay:    100 * time.Millisecond, // handshake runs slow, queue remains alive
 		clientID: 69,
 	}
 
@@ -970,19 +1072,18 @@ func TestHandleTransport_IgnoreHandlePacketError(t *testing.T) {
 	repo := &TransportHandlerSessionRepo{}
 
 	clientAddr := netip.MustParseAddrPort("1.2.3.4:9999")
+	routeID := uint64(0x5152535455565758)
 
 	// Existing session → decrypt OK → writer.Write returns error
 	sess := &testSession{
-		crypto:     &TransportHandlerAlwaysWriteCrypto{},
+		crypto:     &transportHandlerRouteCrypto{routeID: routeID},
 		internalIP: netip.MustParseAddr("10.0.0.1"),
 		externalIP: clientAddr,
 	}
-	repo.sessions = map[netip.AddrPort]*session.Peer{
-		clientAddr: session.NewPeer(sess, nil),
-	}
+	repo.Add(session.NewPeer(sess, nil))
 
 	conn := &TransportHandlerFakeUdpListener{
-		readBufs:  [][]byte{{0x01, 0x02}},
+		readBufs:  [][]byte{withRouteID(routeID, makeValidIPv4Packet(netip.MustParseAddr("10.0.0.1")))},
 		readAddrs: []netip.AddrPort{clientAddr},
 	}
 
@@ -1245,7 +1346,7 @@ func TestHandleTransport_ShortPacket_Logged(t *testing.T) {
 
 	clientAddr := netip.MustParseAddrPort("192.168.1.99:9999")
 	conn := &TransportHandlerFakeUdpListener{
-		readBufs:  [][]byte{{0x01}}, // 1-byte packet: too short for epoch
+		readBufs:  [][]byte{{0x01}}, // 1-byte packet: too short for route-id header
 		readAddrs: []netip.AddrPort{clientAddr},
 	}
 
@@ -1262,7 +1363,7 @@ func TestHandleTransport_ShortPacket_Logged(t *testing.T) {
 	cancel()
 	<-done
 
-	if !logger.contains("packet too short for epoch") {
+	if !logger.contains("packet too short for route id") {
 		t.Fatalf("expected short packet log, got %v", logger.logs)
 	}
 }
@@ -1276,19 +1377,19 @@ func TestHandleTransport_EpochExhausted_LogsError(t *testing.T) {
 
 	clientAddr := netip.MustParseAddrPort("192.168.1.80:8080")
 	internalIP := netip.MustParseAddr("10.0.0.80")
+	routeID := uint64(0x6162636465666768)
 
 	rk := &rekey.StateMachine{}
 	rk.LastRekeyEpoch = 65001
 
 	sess := &testSession{
-		crypto:     &TransportHandlerAlwaysWriteCrypto{},
+		crypto:     &transportHandlerRouteCrypto{routeID: routeID},
 		internalIP: internalIP,
 		externalIP: clientAddr,
 		fsm:        rk,
 	}
-	repo := &TransportHandlerSessionRepo{sessions: map[netip.AddrPort]*session.Peer{
-		clientAddr: session.NewPeer(sess, nil),
-	}}
+	repo := &TransportHandlerSessionRepo{sessions: map[netip.AddrPort]*session.Peer{}}
+	repo.Add(session.NewPeer(sess, nil))
 
 	hsf := &TransportHandlerFakeHandshakeFactory{hs: &TransportHandlerFakeHandshake{}}
 
@@ -1297,7 +1398,7 @@ func TestHandleTransport_EpochExhausted_LogsError(t *testing.T) {
 	_, _ = service_packet.EncodeV1Header(service_packet.RekeyInit, rekeyPayload)
 
 	conn := &TransportHandlerFakeUdpListener{
-		readBufs:  [][]byte{rekeyPayload},
+		readBufs:  [][]byte{withRouteID(routeID, rekeyPayload)},
 		readAddrs: []netip.AddrPort{clientAddr},
 	}
 

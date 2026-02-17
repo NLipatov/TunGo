@@ -7,6 +7,7 @@ import (
 	"tungo/application/listeners"
 	"tungo/application/logging"
 	"tungo/application/network/routing/transport"
+	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/session"
@@ -120,33 +121,18 @@ func (t *TransportHandler) HandleTransport() error {
 }
 
 // handlePacket processes a UDP packet from addrPort.
-// - If a session exists, decrypts and forwards the packet to the TUN device.
-// - If the address is unknown but trial decryption succeeds (NAT roaming),
-//   updates the peer's address and processes the packet.
-// - Otherwise, enqueues the packet into the registration pipeline.
+// - Fast path: route-id lookup in O(1), then decrypts and forwards to TUN.
+// - Unknown peers are delegated to registration pipeline.
 func (t *TransportHandler) handlePacket(
 	addrPort netip.AddrPort,
 	packet []byte,
 ) error {
-	if len(packet) < 2 {
-		t.logger.Printf("packet too short for epoch from %v: %d bytes", addrPort, len(packet))
-		return nil
-	}
-	// Fast path: existing session.
-	// SECURITY: Check IsClosed() to handle TOCTOU race with Delete.
-	// The peer might be marked for deletion between lookup and use.
-	peer, sessionLookupErr := t.sessionManager.GetByExternalAddrPort(addrPort)
-	if sessionLookupErr == nil && !peer.IsClosed() && peer.ExternalAddrPort() == addrPort {
-		if t.dp == nil {
-			// Should not happen; keep behavior safe.
-			return nil
+	if len(packet) < chacha20.UDPRouteIDLength {
+		t.logger.Printf("packet too short for route id from %v: %d bytes", addrPort, len(packet))
+	} else {
+		if peer, ok := t.getPeerByRouteID(packet); ok {
+			return t.handleEstablished(addrPort, peer, packet)
 		}
-		return t.dp.HandleEstablished(peer, packet)
-	}
-
-	// Trial decryption: the client may have roamed to a new NAT address.
-	if t.dp != nil && t.tryRoaming(addrPort, packet) {
-		return nil
 	}
 
 	// No existing session: route into registration queue.
@@ -157,44 +143,38 @@ func (t *TransportHandler) handlePacket(
 	return nil
 }
 
-// tryRoaming attempts trial decryption against all existing sessions.
-// If a session successfully decrypts the packet, the client has roamed —
-// update its external address and process the packet.
-//
-// SAFETY: Decrypt on a wrong session fails at the AEAD auth tag check and
-// does not mutate any state. We decrypt a copy because Open() modifies the
-// buffer in-place.
-//
-// CONCURRENCY: tryDecryptSafe acquires the peer's crypto read lock,
-// preventing the idle reaper from zeroizing crypto during decryption.
-func (t *TransportHandler) tryRoaming(newAddr netip.AddrPort, packet []byte) bool {
-	peers := t.sessionManager.AllPeers()
-	for _, peer := range peers {
-		if peer.IsClosed() {
-			continue
-		}
-		// Decrypt a copy — AEAD Open() overwrites ciphertext in-place.
-		trial := make([]byte, len(packet))
-		copy(trial, packet)
-
-		decrypted, ok := tryDecryptSafe(peer, trial)
-		if !ok {
-			continue
-		}
-
-		// Decryption succeeded — this client has roamed.
-		t.sessionManager.UpdateExternalAddr(peer, newAddr)
-		// Process via the shared post-decrypt path using the original rawPacket
-		// (needed for epoch extraction) and the decrypted payload.
-		_ = t.dp.handleDecrypted(peer, packet, decrypted)
-		return true
+func (t *TransportHandler) getPeerByRouteID(packet []byte) (*session.Peer, bool) {
+	routeID, ok := chacha20.ReadUDPRouteID(packet)
+	if !ok {
+		return nil, false
 	}
-	return false
+	peer, err := t.sessionManager.GetByRouteID(routeID)
+	if err != nil {
+		return nil, false
+	}
+	return peer, true
+}
+
+func (t *TransportHandler) handleEstablished(addrPort netip.AddrPort, peer *session.Peer, packet []byte) error {
+	if t.dp == nil || peer == nil || peer.IsClosed() {
+		return nil
+	}
+
+	decrypted, ok := tryDecryptSafe(peer, packet)
+	if !ok {
+		return nil
+	}
+
+	if peer.ExternalAddrPort() != addrPort {
+		t.sessionManager.UpdateExternalAddr(peer, addrPort)
+	}
+
+	return t.dp.handleDecrypted(peer, packet, decrypted)
 }
 
 // tryDecryptSafe attempts decryption under the peer's crypto read lock,
 // preventing the TOCTOU race where crypto could be zeroed concurrently.
-// Used by both the fast path (HandleEstablished) and the roaming path (tryRoaming).
+// Used by the established session path.
 func tryDecryptSafe(peer *session.Peer, data []byte) ([]byte, bool) {
 	if !peer.CryptoRLock() {
 		return nil, false

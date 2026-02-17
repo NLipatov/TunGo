@@ -41,7 +41,7 @@ func NewServerTunFactory() tun.ServerManager {
 
 func (s ServerTunFactory) CreateDevice(connSettings settings.Settings) (tun.Device, error) {
 	ipv4 := connSettings.IPv4Subnet.IsValid() && connSettings.IPv4Subnet.Addr().Is4()
-	ipv6 := connSettings.IPv6Subnet.IsValid() || (connSettings.IPv4Subnet.IsValid() && !connSettings.IPv4Subnet.Addr().Is4())
+	ipv6 := connSettings.IPv6Subnet.IsValid()
 
 	forwardingErr := s.enableForwarding(ipv4, ipv6)
 	if forwardingErr != nil {
@@ -179,10 +179,6 @@ func (s ServerTunFactory) masqueradeCIDR6(connSettings settings.Settings) (strin
 	if connSettings.IPv6Subnet.IsValid() {
 		return connSettings.IPv6Subnet.Masked().String(), nil
 	}
-	// Backward-compatibility: legacy configs may keep IPv6 subnet in IPv4Subnet field.
-	if connSettings.IPv4Subnet.IsValid() && !connSettings.IPv4Subnet.Addr().Is4() {
-		return connSettings.IPv4Subnet.Masked().String(), nil
-	}
 	return "", fmt.Errorf("no IPv6 subnet configured")
 }
 
@@ -226,10 +222,6 @@ func (s ServerTunFactory) createTun(settings settings.Settings, ipv4, ipv6 bool)
 
 	if ipv6 {
 		cidr6, cidr6Err := settings.IPv6CIDR()
-		// Backward-compatibility: older configs may carry IPv6 in IPv4Subnet.
-		if cidr6Err != nil && !settings.IPv6Subnet.IsValid() {
-			cidr6, cidr6Err = settings.IPv4CIDR()
-		}
 		if cidr6Err != nil {
 			return nil, fmt.Errorf("could not derive server IPv6 CIDR: %s", cidr6Err)
 		}

@@ -14,14 +14,24 @@ func makeNonce(high uint16, low uint64) [12]byte {
 	return nonce
 }
 
+func applyNonce(s *SlidingWindow, nonce [12]byte) error {
+	low := binary.BigEndian.Uint64(nonce[0:8])
+	high := binary.BigEndian.Uint16(nonce[8:10])
+	if err := s.Check(low, high); err != nil {
+		return err
+	}
+	s.Accept(low, high)
+	return nil
+}
+
 func TestSlidingWindowAdvanceSmallShift(t *testing.T) {
 	s := NewSlidingWindow()
 	// Initial advance
-	if err := s.Validate(makeNonce(0, 10)); err != nil {
+	if err := applyNonce(s, makeNonce(0, 10)); err != nil {
 		t.Fatalf("initial advance failed: %v", err)
 	}
 	// Advance with small shift (<64)
-	if err := s.Validate(makeNonce(0, 15)); err != nil {
+	if err := applyNonce(s, makeNonce(0, 15)); err != nil {
 		t.Fatalf("small shift advance failed: %v", err)
 	}
 }
@@ -29,11 +39,11 @@ func TestSlidingWindowAdvanceSmallShift(t *testing.T) {
 func TestSlidingWindowAdvanceReset(t *testing.T) {
 	s := NewSlidingWindow()
 	// Advance to a high low value
-	if err := s.Validate(makeNonce(0, 100)); err != nil {
+	if err := applyNonce(s, makeNonce(0, 100)); err != nil {
 		t.Fatalf("advance to 100 failed: %v", err)
 	}
 	// Advance with large shift (>=64) should reset bitmap
-	if err := s.Validate(makeNonce(0, 200)); err != nil {
+	if err := applyNonce(s, makeNonce(0, 200)); err != nil {
 		t.Fatalf("large shift advance failed: %v", err)
 	}
 }
@@ -43,20 +53,20 @@ func TestSlidingWindowWindowBehavior(t *testing.T) {
 	const windowSize = slidingWindowWords * 64
 	const max = windowSize + 200
 	// Set max
-	if err := s.Validate(makeNonce(0, max)); err != nil {
+	if err := applyNonce(s, makeNonce(0, max)); err != nil {
 		t.Fatalf("advance to %d failed: %v", max, err)
 	}
 	// Within window (low=max-1)
-	if err := s.Validate(makeNonce(0, max-1)); err != nil {
+	if err := applyNonce(s, makeNonce(0, max-1)); err != nil {
 		t.Fatalf("window accept failed: %v", err)
 	}
 	// Duplicate within window
-	if err := s.Validate(makeNonce(0, max-1)); !errors.Is(err, ErrNonUniqueNonce) {
+	if err := applyNonce(s, makeNonce(0, max-1)); !errors.Is(err, ErrNonUniqueNonce) {
 		t.Fatalf("expected duplicate nonce error in window, got %v", err)
 	}
 	// Too old (low = max - windowSize)
 	tooOld := uint64(max - windowSize)
-	if err := s.Validate(makeNonce(0, tooOld)); !errors.Is(err, ErrNonUniqueNonce) {
+	if err := applyNonce(s, makeNonce(0, tooOld)); !errors.Is(err, ErrNonUniqueNonce) {
 		t.Fatalf("expected too old nonce error, got %v", err)
 	}
 }
@@ -64,11 +74,11 @@ func TestSlidingWindowWindowBehavior(t *testing.T) {
 func TestSlidingWindowSeparateHighs(t *testing.T) {
 	s := NewSlidingWindow()
 	// nonce with high=1
-	if err := s.Validate(makeNonce(1, 50)); err != nil {
+	if err := applyNonce(s, makeNonce(1, 50)); err != nil {
 		t.Fatalf("high=1 advance failed: %v", err)
 	}
 	// Same low, different high=2
-	if err := s.Validate(makeNonce(2, 50)); err != nil {
+	if err := applyNonce(s, makeNonce(2, 50)); err != nil {
 		t.Fatalf("high=2 advance failed: %v", err)
 	}
 }
@@ -79,18 +89,18 @@ func TestSlidingWindow_BigJumpMarksCurrent(t *testing.T) {
 
 	// low = 1
 	binary.BigEndian.PutUint64(n[0:8], 1)
-	if err := v.Validate(n); err != nil {
+	if err := applyNonce(v, n); err != nil {
 		t.Fatalf("unexpected: %v", err)
 	}
 
 	// big jump: low = 1 + 100
 	binary.BigEndian.PutUint64(n[0:8], 101)
-	if err := v.Validate(n); err != nil {
+	if err := applyNonce(v, n); err != nil {
 		t.Fatalf("unexpected: %v", err)
 	}
 
 	// replay the same 101 must be rejected
-	if err := v.Validate(n); err == nil {
+	if err := applyNonce(v, n); err == nil {
 		t.Fatalf("expected ErrNonUniqueNonce after big jump replay")
 	}
 }
@@ -156,10 +166,10 @@ func TestSlidingWindow_CheckAcceptAndZeroize(t *testing.T) {
 	}
 }
 
-func TestSlidingWindowValidate_EvictsOldestAtCapacity(t *testing.T) {
+func TestSlidingWindow_EvictsOldestAtCapacity(t *testing.T) {
 	s := NewSlidingWindow()
 	for high := uint16(1); high <= 4; high++ {
-		if err := s.Validate(makeNonce(high, 1)); err != nil {
+		if err := applyNonce(s, makeNonce(high, 1)); err != nil {
 			t.Fatalf("validate high=%d failed: %v", high, err)
 		}
 	}
@@ -167,7 +177,7 @@ func TestSlidingWindowValidate_EvictsOldestAtCapacity(t *testing.T) {
 		t.Fatalf("expected full windows, got %d", len(s.wins))
 	}
 	// This should trigger eviction path when len == cap and high is new.
-	if err := s.Validate(makeNonce(5, 1)); err != nil {
+	if err := applyNonce(s, makeNonce(5, 1)); err != nil {
 		t.Fatalf("validate high=5 failed: %v", err)
 	}
 	if len(s.wins) != 4 {
@@ -317,11 +327,11 @@ func TestSlidingWindow_OldNoncesExpireAfterLargeShift(t *testing.T) {
 func TestSlidingWindow_LowZero(t *testing.T) {
 	s := NewSlidingWindow()
 	// First nonce with low=0 should be accepted (max starts at 0, but bitmap is empty)
-	if err := s.Validate(makeNonce(0, 0)); err != nil {
+	if err := applyNonce(s, makeNonce(0, 0)); err != nil {
 		t.Fatalf("low=0 first use should be accepted, got %v", err)
 	}
 	// Duplicate
-	if err := s.Validate(makeNonce(0, 0)); !errors.Is(err, ErrNonUniqueNonce) {
+	if err := applyNonce(s, makeNonce(0, 0)); !errors.Is(err, ErrNonUniqueNonce) {
 		t.Fatalf("low=0 replay should be rejected, got %v", err)
 	}
 }
@@ -353,25 +363,25 @@ func TestSlidingWindow_WindowEdgeBoundary(t *testing.T) {
 	}
 }
 
-// --- Validate vs Check+Accept equivalence ---
+// --- Helper vs manual Check+Accept equivalence ---
 
-func TestSlidingWindow_ValidateEqualsCheckAccept(t *testing.T) {
-	// Apply the same sequence to both a Validate-only window and a Check+Accept window.
+func TestSlidingWindow_ApplyNonceEqualsCheckAccept(t *testing.T) {
+	// Apply the same sequence to both helper-based and manual windows.
 	// They must produce identical results.
 	nonces := []struct {
 		low  uint64
 		high uint16
 	}{
 		{1, 0}, {5, 0}, {3, 0}, {3, 0}, // advance, advance, in-window, duplicate
-		{1, 1}, {200, 0}, {4, 0},        // new high, big jump, too-old
-		{199, 0}, {199, 0},              // in-window, duplicate
+		{1, 1}, {200, 0}, {4, 0}, // new high, big jump, too-old
+		{199, 0}, {199, 0}, // in-window, duplicate
 	}
 
-	vw := NewSlidingWindow()  // uses Validate
+	vw := NewSlidingWindow()  // uses applyNonce helper
 	caw := NewSlidingWindow() // uses Check+Accept
 
 	for i, n := range nonces {
-		vErr := vw.Validate(makeNonce(n.high, n.low))
+		vErr := applyNonce(vw, makeNonce(n.high, n.low))
 		cErr := caw.Check(n.low, n.high)
 		if cErr == nil {
 			caw.Accept(n.low, n.high)
@@ -380,7 +390,7 @@ func TestSlidingWindow_ValidateEqualsCheckAccept(t *testing.T) {
 		vOk := vErr == nil
 		cOk := cErr == nil
 		if vOk != cOk {
-			t.Fatalf("step %d (low=%d high=%d): Validate=%v, Check=%v",
+			t.Fatalf("step %d (low=%d high=%d): applyNonce=%v, Check=%v",
 				i, n.low, n.high, vErr, cErr)
 		}
 	}

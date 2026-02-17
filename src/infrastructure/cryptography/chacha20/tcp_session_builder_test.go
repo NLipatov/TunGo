@@ -7,7 +7,6 @@ import (
 	"testing"
 	"tungo/application/network/connection"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
-	"tungo/infrastructure/settings"
 
 	"golang.org/x/crypto/chacha20poly1305"
 )
@@ -73,7 +72,7 @@ func (m *mockHandshake) KeyClientToServer() []byte { return m.client }
 func (m *mockHandshake) ServerSideHandshake(_ connection.Transport) (int, error) {
 	return 0, nil
 }
-func (m *mockHandshake) ClientSideHandshake(_ connection.Transport, _ settings.Settings) error {
+func (m *mockHandshake) ClientSideHandshake(_ connection.Transport) error {
 	return nil
 }
 

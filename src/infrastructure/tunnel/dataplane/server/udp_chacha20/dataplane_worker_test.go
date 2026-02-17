@@ -24,7 +24,7 @@ func (m *dpMockCrypto) Decrypt(_ []byte) ([]byte, error) { return m.decOut, m.de
 
 type dpMockEgress struct{}
 
-func (dpMockEgress) SendDataIP([]byte) error { return nil }
+func (dpMockEgress) SendDataIP([]byte) error  { return nil }
 func (dpMockEgress) SendControl([]byte) error { return nil }
 func (dpMockEgress) Close() error             { return nil }
 
@@ -45,7 +45,7 @@ type dpMockRekeyer struct{}
 
 func (dpMockRekeyer) Rekey(_, _ []byte) (uint16, error) { return 0, nil }
 func (dpMockRekeyer) SetSendEpoch(uint16)               {}
-func (dpMockRekeyer) RemoveEpoch(uint16) bool            { return true }
+func (dpMockRekeyer) RemoveEpoch(uint16) bool           { return true }
 
 // makeIPv4Packet builds a minimal valid IPv4 packet with the given source IP.
 func makeIPv4Packet(srcIP netip.Addr) []byte {
@@ -58,8 +58,8 @@ func makeIPv4Packet(srcIP netip.Addr) []byte {
 
 // makeCiphertext returns a byte slice large enough for the epoch offset.
 func makeCiphertext(epoch uint16) []byte {
-	buf := make([]byte, chacha20.NonceEpochOffset+2)
-	binary.BigEndian.PutUint16(buf[chacha20.NonceEpochOffset:chacha20.NonceEpochOffset+2], epoch)
+	buf := make([]byte, chacha20.UDPEpochOffset+2)
+	binary.BigEndian.PutUint16(buf[chacha20.UDPEpochOffset:chacha20.UDPEpochOffset+2], epoch)
 	return buf
 }
 

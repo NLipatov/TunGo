@@ -37,18 +37,18 @@ func NewTunHandler(
 // HandleTun reads packets from the TUN interface,
 // reserves space for AEAD overhead, encrypts them, and forwards them to the correct session.
 //
-// Buffer layout (total size = MTU + NonceSize + TagSize):
+// Buffer layout before Encrypt (total size = MTU + UDPChacha20Overhead):
 //
-//	[ 0 ........ 11 ][ 12 ........ 1511 ][ 1512 ........ 1527 ]
-//	|   Nonce    |      Payload (<= MTU) |       Tag (16B)    |
+//	[ 0 ........ 11 ][ 12 ........ 1511 ][ 1512 ........ end ]
+//	|   Nonce    |      Payload (<= MTU) |   spare headroom   |
 //
-// Example with settings.MTU = 1500, settings.UDPChacha20Overhead = 28:
-// - buffer length = 1500 + 28 = 1528
+// Example with settings.MTU = 1500, settings.UDPChacha20Overhead = 36:
+// - buffer length = 1500 + 36 = 1536
 //
 // Step 1 – read plaintext from TUN:
 // - reader.Read writes at most MTU bytes into buffer[12:1512].
 // - the first 12 bytes (buffer[0:12]) are reserved for the nonce
-// - the last 16 bytes (buffer[1512:1528]) are reserved for the Poly1305 tag
+// - trailing headroom is used by Encrypt for Poly1305 tag (+16) and route-id prefix (+8)
 //
 // Step 2 – encrypt plaintext in place:
 //   - encryption operates on buffer[0 : 12+n] (nonce + payload)

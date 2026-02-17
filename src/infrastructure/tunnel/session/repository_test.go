@@ -41,6 +41,14 @@ type fakeCryptoNoZeroizer struct{}
 func (f *fakeCryptoNoZeroizer) Encrypt(plaintext []byte) ([]byte, error)  { return plaintext, nil }
 func (f *fakeCryptoNoZeroizer) Decrypt(ciphertext []byte) ([]byte, error) { return ciphertext, nil }
 
+type fakeRouteCrypto struct {
+	id uint64
+}
+
+func (f *fakeRouteCrypto) Encrypt(plaintext []byte) ([]byte, error)  { return plaintext, nil }
+func (f *fakeRouteCrypto) Decrypt(ciphertext []byte) ([]byte, error) { return ciphertext, nil }
+func (f *fakeRouteCrypto) RouteID() uint64                           { return f.id }
+
 // fakeEgress is a no-op egress for testing Peer.Egress().
 type fakeEgress struct{}
 
@@ -790,5 +798,48 @@ func TestPeer_CryptoRLock_ReturnsFalseWhenClosed(t *testing.T) {
 
 	if p.CryptoRLock() {
 		t.Fatal("expected lock acquisition to fail for closed peer")
+	}
+}
+
+func TestDefaultRepository_GetByRouteID(t *testing.T) {
+	repo := NewDefaultRepository().(*DefaultRepository)
+	routeID := uint64(0x1122334455667788)
+
+	sess := &fakeSessionWithCrypto{
+		fakeSession: fakeSession{
+			internal: netip.MustParseAddr("10.10.0.1"),
+			external: netip.MustParseAddrPort("203.0.113.20:5000"),
+		},
+		crypto: &fakeRouteCrypto{id: routeID},
+	}
+	peer := NewPeer(sess, nil)
+	repo.Add(peer)
+
+	got, err := repo.GetByRouteID(routeID)
+	if err != nil {
+		t.Fatalf("expected route-id lookup success, got %v", err)
+	}
+	if got != peer {
+		t.Fatalf("expected peer %p, got %p", peer, got)
+	}
+}
+
+func TestDefaultRepository_GetByRouteID_NotFoundAfterDelete(t *testing.T) {
+	repo := NewDefaultRepository().(*DefaultRepository)
+	routeID := uint64(0xaabbccddeeff0011)
+
+	sess := &fakeSessionWithCrypto{
+		fakeSession: fakeSession{
+			internal: netip.MustParseAddr("10.10.0.2"),
+			external: netip.MustParseAddrPort("203.0.113.21:5001"),
+		},
+		crypto: &fakeRouteCrypto{id: routeID},
+	}
+	peer := NewPeer(sess, nil)
+	repo.Add(peer)
+	repo.Delete(peer)
+
+	if _, err := repo.GetByRouteID(routeID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound after delete, got %v", err)
 	}
 }

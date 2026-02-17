@@ -92,7 +92,7 @@ func TestEpochUdpCrypto_EncryptDecrypt_RoundTrip(t *testing.T) {
 	payload := []byte("hello world")
 
 	// Client encrypts → server decrypts.
-	buf := make([]byte, chacha20poly1305.NonceSize+len(payload), chacha20poly1305.NonceSize+len(payload)+chacha20poly1305.Overhead)
+	buf := make([]byte, chacha20poly1305.NonceSize+len(payload), chacha20poly1305.NonceSize+len(payload)+chacha20poly1305.Overhead+UDPRouteIDLength)
 	copy(buf[chacha20poly1305.NonceSize:], payload)
 
 	encrypted, err := client.Encrypt(buf)
@@ -112,7 +112,7 @@ func TestEpochUdpCrypto_EncryptDecrypt_RoundTrip(t *testing.T) {
 
 func TestEpochUdpCrypto_Decrypt_TooShort(t *testing.T) {
 	c := makeUdpCrypto(t)
-	_, err := c.Decrypt(make([]byte, chacha20poly1305.NonceSize-1))
+	_, err := c.Decrypt(make([]byte, UDPMinPacketSize-1))
 	if err == nil {
 		t.Fatal("expected error for short ciphertext")
 	}
@@ -121,9 +121,9 @@ func TestEpochUdpCrypto_Decrypt_TooShort(t *testing.T) {
 func TestEpochUdpCrypto_Decrypt_UnknownEpoch(t *testing.T) {
 	c := makeUdpCrypto(t)
 
-	// Craft a packet with epoch=99 in nonce bytes 10-11.
-	buf := make([]byte, chacha20poly1305.NonceSize+chacha20poly1305.Overhead+1)
-	binary.BigEndian.PutUint16(buf[NonceEpochOffset:NonceEpochOffset+2], 99)
+	// Craft a packet with matching route-id and unknown epoch.
+	buf := make([]byte, UDPMinPacketSize)
+	binary.BigEndian.PutUint16(buf[UDPEpochOffset:UDPEpochOffset+2], 99)
 
 	_, err := c.Decrypt(buf)
 	if !errors.Is(err, ErrUnknownEpoch) {
@@ -137,7 +137,7 @@ func TestEpochUdpCrypto_Encrypt_NoActiveSession(t *testing.T) {
 	c.ring.Remove(0)
 	c.SetSendEpoch(99)
 
-	buf := make([]byte, chacha20poly1305.NonceSize+10, chacha20poly1305.NonceSize+10+chacha20poly1305.Overhead)
+	buf := make([]byte, chacha20poly1305.NonceSize+10, chacha20poly1305.NonceSize+10+chacha20poly1305.Overhead+UDPRouteIDLength)
 	_, err := c.Encrypt(buf)
 	if err == nil {
 		t.Fatal("expected error when no active session")
@@ -257,8 +257,8 @@ func TestEpochUdpCrypto_Decrypt_EpochMismatch(t *testing.T) {
 	}
 	c.ring = r
 
-	buf := make([]byte, chacha20poly1305.NonceSize+chacha20poly1305.Overhead+1)
-	binary.BigEndian.PutUint16(buf[NonceEpochOffset:NonceEpochOffset+2], 0)
+	buf := make([]byte, UDPMinPacketSize)
+	binary.BigEndian.PutUint16(buf[UDPEpochOffset:UDPEpochOffset+2], 0)
 
 	_, err := c.Decrypt(buf)
 	if !errors.Is(err, ErrUnknownEpoch) {
@@ -301,5 +301,35 @@ func TestEpochUdpCrypto_Zeroize(t *testing.T) {
 	}
 	if c.sessionId != [32]byte{} {
 		t.Fatal("expected sessionId to be zeroized")
+	}
+}
+
+func TestEpochUdpCrypto_Decrypt_UnknownRouteID(t *testing.T) {
+	var sessionID [32]byte
+	copy(sessionID[:8], []byte{1, 2, 3, 4, 5, 6, 7, 8})
+	key := make([]byte, chacha20poly1305.KeySize)
+	sendCipher, _ := chacha20poly1305.New(key)
+	recvCipher, _ := chacha20poly1305.New(key)
+	c := NewEpochUdpCrypto(sessionID, sendCipher, recvCipher, false)
+
+	packet := make([]byte, UDPMinPacketSize)
+	binary.BigEndian.PutUint64(packet[:UDPRouteIDLength], 0x9988776655443322)
+
+	_, err := c.Decrypt(packet)
+	if !errors.Is(err, ErrUnknownRouteID) {
+		t.Fatalf("expected ErrUnknownRouteID, got %v", err)
+	}
+}
+
+func TestEpochUdpCrypto_RouteID(t *testing.T) {
+	var sessionID [32]byte
+	copy(sessionID[:8], []byte{0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x11})
+	key := make([]byte, chacha20poly1305.KeySize)
+	sendCipher, _ := chacha20poly1305.New(key)
+	recvCipher, _ := chacha20poly1305.New(key)
+	c := NewEpochUdpCrypto(sessionID, sendCipher, recvCipher, false)
+
+	if got := c.RouteID(); got != RouteIDFromSessionID(sessionID) {
+		t.Fatalf("unexpected route id: got %x", got)
 	}
 }

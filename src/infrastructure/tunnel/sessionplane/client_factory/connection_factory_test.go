@@ -614,7 +614,6 @@ func TestConnectionFactoryUnit_establishSecuredConnection_MissingClientKeys_Clos
 
 	_, _, _, err := f.establishSecuredConnection(
 		context.Background(),
-		settings.Settings{Protocol: settings.TCP},
 		tr,
 		cryptoFactory,
 	)
@@ -645,7 +644,6 @@ func TestConnectionFactoryUnit_establishSecuredConnection_MissingServerPublicKey
 
 	_, _, _, err := f.establishSecuredConnection(
 		context.Background(),
-		settings.Settings{Protocol: settings.TCP},
 		tr,
 		cryptoFactory,
 	)
@@ -678,7 +676,6 @@ func TestConnectionFactoryUnit_establishSecuredConnection_HandshakeError_ClosesA
 
 	_, _, _, err := f.establishSecuredConnection(
 		context.Background(),
-		settings.Settings{Protocol: settings.TCP},
 		tr,
 		cryptoFactory,
 	)
@@ -942,7 +939,6 @@ func TestConnectionFactoryUnit_establishSecuredConnection_Success(t *testing.T) 
 
 	adapter, crypto, _, err := f.establishSecuredConnection(
 		context.Background(),
-		settings.Settings{Protocol: settings.TCP},
 		clientAdapter,
 		chacha20.NewTcpSessionBuilder(chacha20.NewDefaultAEADBuilder()),
 	)

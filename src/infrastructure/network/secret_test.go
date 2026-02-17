@@ -5,7 +5,6 @@ import (
 	"testing"
 	"tungo/application/network/connection"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
-	"tungo/infrastructure/settings"
 )
 
 // secretTestMockHandshake implements application.Handshake for testing DefaultSecret.Exchange.
@@ -19,7 +18,7 @@ func (m *secretTestMockHandshake) KeyServerToClient() []byte { return nil }
 func (m *secretTestMockHandshake) ServerSideHandshake(_ connection.Transport) (int, error) {
 	return 0, nil
 }
-func (m *secretTestMockHandshake) ClientSideHandshake(_ connection.Transport, _ settings.Settings) error {
+func (m *secretTestMockHandshake) ClientSideHandshake(_ connection.Transport) error {
 	return m.err
 }
 
@@ -49,7 +48,7 @@ func (m *mockConn) Close() error              { return nil }
 // TestExchange_HandshakeError verifies that an error from ClientSideHandshake is returned as-is.
 func TestExchange_HandshakeError(t *testing.T) {
 	hsErr := errors.New("handshake failed")
-	secret := NewDefaultSecret(settings.Settings{}, &secretTestMockHandshake{err: hsErr}, &secretTestMockBuilder{})
+	secret := NewDefaultSecret(&secretTestMockHandshake{err: hsErr}, &secretTestMockBuilder{})
 	svc, ctrl, err := secret.Exchange(&mockConn{})
 	if svc != nil {
 		t.Errorf("expected nil service_packet on handshake error, got %v", svc)
@@ -66,7 +65,6 @@ func TestExchange_HandshakeError(t *testing.T) {
 func TestExchange_BuilderError(t *testing.T) {
 	builderErr := errors.New("builder failed")
 	secret := NewDefaultSecret(
-		settings.Settings{},
 		&secretTestMockHandshake{err: nil},
 		&secretTestMockBuilder{svc: nil, err: builderErr},
 	)
@@ -90,7 +88,6 @@ func TestExchange_BuilderError(t *testing.T) {
 func TestExchange_Success(t *testing.T) {
 	fakeSvc := &mockCryptoService{}
 	secret := NewDefaultSecret(
-		settings.Settings{},
 		&secretTestMockHandshake{err: nil},
 		&secretTestMockBuilder{svc: fakeSvc, err: nil},
 	)

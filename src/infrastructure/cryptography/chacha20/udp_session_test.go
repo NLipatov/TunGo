@@ -308,9 +308,10 @@ func TestUdpSession_Zeroize(t *testing.T) {
 	}
 
 	// Fill nonce validator state.
-	if err := sess.nonceValidator.Validate(makeNonce(2, 10)); err != nil {
+	if err := sess.nonceValidator.Check(10, 2); err != nil {
 		t.Fatalf("validator setup failed: %v", err)
 	}
+	sess.nonceValidator.Accept(10, 2)
 
 	sess.Zeroize()
 

@@ -147,10 +147,10 @@ func (l *fakeLogger) count(sub string) int {
 
 type fakeHandshake struct {
 	clientID int
-	err         error
-	id          [32]byte
-	client      [32]byte
-	server      [32]byte
+	err      error
+	id       [32]byte
+	client   [32]byte
+	server   [32]byte
 }
 
 func (f *fakeHandshake) Id() [32]byte              { return f.id }
@@ -159,7 +159,7 @@ func (f *fakeHandshake) KeyServerToClient() []byte { return f.server[:] }
 func (f *fakeHandshake) ServerSideHandshake(_ connection.Transport) (int, error) {
 	return f.clientID, f.err
 }
-func (f *fakeHandshake) ClientSideHandshake(_ connection.Transport, _ settings.Settings) error {
+func (f *fakeHandshake) ClientSideHandshake(_ connection.Transport) error {
 	return nil
 }
 
@@ -216,6 +216,12 @@ func (r *fakeSessionRepo) GetByExternalAddrPort(addr netip.AddrPort) (*session.P
 		return nil, errors.New("no session")
 	}
 	return s, nil
+}
+func (r *fakeSessionRepo) GetByRouteID(_ uint64) (*session.Peer, error) {
+	if r.getErr != nil {
+		return nil, r.getErr
+	}
+	return nil, session.ErrNotFound
 }
 func (r *fakeSessionRepo) FindByDestinationIP(_ netip.Addr) (*session.Peer, error) {
 	if r.getErr != nil {

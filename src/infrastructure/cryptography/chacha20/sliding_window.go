@@ -1,11 +1,5 @@
 package chacha20
 
-import (
-	"encoding/binary"
-
-	"golang.org/x/crypto/chacha20poly1305"
-)
-
 const slidingWindowWords = 16 // 16 × 64 = 1024-bit replay window
 
 type slidingWindowEntry struct {
@@ -83,50 +77,6 @@ func (s *SlidingWindow) Accept(low uint64, high uint16) {
 		word := diff / 64
 		bit := uint64(1) << (diff % 64)
 		w.bitmap[word] |= bit
-	}
-}
-
-// Validate checks and accepts in one call. Kept for backward compatibility.
-func (s *SlidingWindow) Validate(nonce [chacha20poly1305.NonceSize]byte) error {
-	low := binary.BigEndian.Uint64(nonce[0:8])
-	high := binary.BigEndian.Uint16(nonce[8:10])
-
-	var w *slidingWindowEntry
-	for i := range s.wins {
-		if s.wins[i].high == high {
-			w = &s.wins[i]
-			break
-		}
-	}
-	if w == nil {
-		if len(s.wins) == slidingWindowCap {
-			// evict oldest (index 0)
-			s.wins = s.wins[1:]
-		}
-		s.wins = append(s.wins, slidingWindowEntry{high: high})
-		w = &s.wins[len(s.wins)-1]
-	}
-
-	switch {
-	case low > w.max:
-		shift := low - w.max
-		shiftBitmap(&w.bitmap, shift)
-		w.bitmap[0] |= 1
-		w.max = low
-		return nil
-
-	case w.max-low >= slidingWindowWords*64:
-		return ErrNonUniqueNonce
-
-	default:
-		diff := w.max - low
-		word := diff / 64
-		bit := uint64(1) << (diff % 64)
-		if w.bitmap[word]&bit != 0 {
-			return ErrNonUniqueNonce
-		}
-		w.bitmap[word] |= bit
-		return nil
 	}
 }
 

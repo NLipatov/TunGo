@@ -18,6 +18,7 @@ type EpochUdpCrypto struct {
 	ring      EpochRing
 	isServer  bool
 	sessionId [32]byte
+	routeID   uint64
 	mu        sync.RWMutex
 	rekeyMu   sync.Mutex
 	sendEpoch Epoch
@@ -35,6 +36,7 @@ func NewEpochUdpCrypto(
 		ring:      NewEpochRing(defaultEpochRingCapacity, initialEpoch, initialSession),
 		isServer:  isServer,
 		sessionId: sessionId,
+		routeID:   RouteIDFromSessionID(sessionId),
 		sendEpoch: initialEpoch,
 	}
 }
@@ -52,14 +54,27 @@ func (c *EpochUdpCrypto) Encrypt(plaintext []byte) ([]byte, error) {
 			return nil, fmt.Errorf("no active session")
 		}
 	}
-	return session.Encrypt(plaintext)
+	encrypted, err := session.Encrypt(plaintext)
+	if err != nil {
+		return nil, err
+	}
+	return prependUDPRouteID(encrypted, c.routeID), nil
 }
 
 func (c *EpochUdpCrypto) Decrypt(ciphertext []byte) ([]byte, error) {
-	if len(ciphertext) < chacha20poly1305.NonceSize {
+	if len(ciphertext) < UDPMinPacketSize {
 		return nil, fmt.Errorf("cipher too short: %d", len(ciphertext))
 	}
-	epoch := Epoch(binary.BigEndian.Uint16(ciphertext[NonceEpochOffset : NonceEpochOffset+2]))
+	routeID, ok := ReadUDPRouteID(ciphertext)
+	if !ok {
+		return nil, fmt.Errorf("cipher too short: %d", len(ciphertext))
+	}
+	if routeID != c.routeID {
+		return nil, ErrUnknownRouteID
+	}
+
+	cipherPayload := ciphertext[UDPNonceOffset:]
+	epoch := Epoch(binary.BigEndian.Uint16(cipherPayload[NonceEpochOffset : NonceEpochOffset+2]))
 	session, ok := c.ring.Resolve(epoch)
 	if !ok {
 		return nil, ErrUnknownEpoch
@@ -67,7 +82,7 @@ func (c *EpochUdpCrypto) Decrypt(ciphertext []byte) ([]byte, error) {
 	if session.Epoch() != epoch {
 		return nil, ErrUnknownEpoch
 	}
-	return session.Decrypt(ciphertext)
+	return session.Decrypt(cipherPayload)
 }
 
 // Rekey installs a new immutable session with fresh nonce/replay state.
@@ -113,6 +128,10 @@ func (c *EpochUdpCrypto) currentSendEpoch() Epoch {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.sendEpoch
+}
+
+func (c *EpochUdpCrypto) RouteID() uint64 {
+	return c.routeID
 }
 
 // RemoveEpoch removes a session for the specified epoch, if present.

@@ -30,7 +30,7 @@ func TestIKHandshake_Success(t *testing.T) {
 		{
 			PublicKey: clientKP.Public,
 			Enabled:   true,
-			ClientID: 5,
+			ClientID:  5,
 		},
 	}
 
@@ -71,7 +71,7 @@ func TestIKHandshake_Success(t *testing.T) {
 		srvCh <- err
 	}()
 	go func() {
-		cliCh <- clientHS.ClientSideHandshake(clientAdapter, settings.Settings{})
+		cliCh <- clientHS.ClientSideHandshake(clientAdapter)
 	}()
 
 	// Both should complete without error
@@ -120,7 +120,7 @@ func TestIKHandshake_UnknownClient(t *testing.T) {
 		{
 			PublicKey: clientKP.Public,
 			Enabled:   true,
-			ClientID: 5,
+			ClientID:  5,
 		},
 	}
 
@@ -154,7 +154,7 @@ func TestIKHandshake_UnknownClient(t *testing.T) {
 		srvCh <- err
 	}()
 	go func() {
-		cliCh <- clientHS.ClientSideHandshake(clientAdapter, settings.Settings{})
+		cliCh <- clientHS.ClientSideHandshake(clientAdapter)
 	}()
 
 	srvErr := <-srvCh
@@ -172,7 +172,7 @@ func TestIKHandshake_DisabledClient(t *testing.T) {
 		{
 			PublicKey: clientKP.Public,
 			Enabled:   false, // Disabled
-			ClientID: 5,
+			ClientID:  5,
 		},
 	}
 
@@ -203,7 +203,7 @@ func TestIKHandshake_DisabledClient(t *testing.T) {
 		srvCh <- err
 	}()
 	go func() {
-		_ = clientHS.ClientSideHandshake(clientAdapter, settings.Settings{})
+		_ = clientHS.ClientSideHandshake(clientAdapter)
 	}()
 
 	srvErr := <-srvCh
@@ -221,7 +221,7 @@ func TestIKHandshake_KeyMismatch(t *testing.T) {
 		{
 			PublicKey: clientKP.Public,
 			Enabled:   true,
-			ClientID: 5,
+			ClientID:  5,
 		},
 	}
 
@@ -258,7 +258,7 @@ func TestIKHandshake_KeyMismatch(t *testing.T) {
 		serverConn.Close()
 	}()
 	go func() {
-		cliCh <- clientHS.ClientSideHandshake(clientAdapter, settings.Settings{})
+		cliCh <- clientHS.ClientSideHandshake(clientAdapter)
 		// Close client's side when it's done to unblock server
 		clientConn.Close()
 	}()
@@ -287,7 +287,7 @@ func TestIKHandshake_FreshEphemeralPerHandshake(t *testing.T) {
 		{
 			PublicKey: clientKP.Public,
 			Enabled:   true,
-			ClientID: 5,
+			ClientID:  5,
 		},
 	}
 
@@ -317,7 +317,7 @@ func TestIKHandshake_FreshEphemeralPerHandshake(t *testing.T) {
 			serverHS.ServerSideHandshake(serverAdapter)
 			close(done)
 		}()
-		clientHS.ClientSideHandshake(clientAdapter, settings.Settings{})
+		clientHS.ClientSideHandshake(clientAdapter)
 		<-done
 
 		clientConn.Close()
@@ -348,7 +348,7 @@ func TestIKHandshake_MissingClientKey(t *testing.T) {
 	defer clientConn.Close()
 	clientAdapter, _ := adapters.NewLengthPrefixFramingAdapter(clientConn, framelimit.Cap(2048))
 
-	err := clientHS.ClientSideHandshake(clientAdapter, settings.Settings{})
+	err := clientHS.ClientSideHandshake(clientAdapter)
 	if err == nil || err != ErrMissingClientKey {
 		t.Fatalf("expected ErrMissingClientKey, got: %v", err)
 	}
@@ -364,7 +364,7 @@ func TestIKHandshake_MissingServerKey(t *testing.T) {
 	defer clientConn.Close()
 	clientAdapter, _ := adapters.NewLengthPrefixFramingAdapter(clientConn, framelimit.Cap(2048))
 
-	err := clientHS.ClientSideHandshake(clientAdapter, settings.Settings{})
+	err := clientHS.ClientSideHandshake(clientAdapter)
 	if err == nil || err != ErrMissingServerKey {
 		t.Fatalf("expected ErrMissingServerKey, got: %v", err)
 	}
@@ -523,7 +523,7 @@ func TestIKHandshake_AllowedIPsInResult(t *testing.T) {
 		{
 			PublicKey: clientKP.Public,
 			Enabled:   true,
-			ClientID: 5,
+			ClientID:  5,
 		},
 	}
 
@@ -548,7 +548,7 @@ func TestIKHandshake_AllowedIPsInResult(t *testing.T) {
 		serverHS.ServerSideHandshake(serverAdapter)
 		close(done)
 	}()
-	clientHS.ClientSideHandshake(clientAdapter, settings.Settings{})
+	clientHS.ClientSideHandshake(clientAdapter)
 	<-done
 
 	result := serverHS.Result()
@@ -592,7 +592,7 @@ func TestSecurity_HandshakeReplayMsg1(t *testing.T) {
 		serverHS1.ServerSideHandshake(serverAdapter1)
 		close(done1)
 	}()
-	clientHS1.ClientSideHandshake(clientAdapter1, settings.Settings{})
+	clientHS1.ClientSideHandshake(clientAdapter1)
 	<-done1
 
 	clientConn1.Close()
@@ -618,7 +618,7 @@ func TestSecurity_HandshakeReplayMsg1(t *testing.T) {
 		serverHS2.ServerSideHandshake(serverAdapter2)
 		close(done2)
 	}()
-	clientHS2.ClientSideHandshake(clientAdapter2, settings.Settings{})
+	clientHS2.ClientSideHandshake(clientAdapter2)
 	<-done2
 
 	clientConn2.Close()
@@ -759,7 +759,7 @@ func TestSecurity_SpoofedSourceIP(t *testing.T) {
 		{
 			PublicKey: clientKP.Public,
 			Enabled:   true,
-			ClientID: 5,
+			ClientID:  5,
 		},
 	}
 
@@ -784,7 +784,7 @@ func TestSecurity_SpoofedSourceIP(t *testing.T) {
 		serverHS.ServerSideHandshake(serverAdapter)
 		close(done)
 	}()
-	clientHS.ClientSideHandshake(clientAdapter, settings.Settings{})
+	clientHS.ClientSideHandshake(clientAdapter)
 	<-done
 
 	result := serverHS.Result()
@@ -919,15 +919,15 @@ func TestSecurity_ClientIDConflictRejectedAtConfig(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-				cfg := &server.Configuration{
-					EnableUDP: true,
-					UDPSettings: settings.Settings{
-						Addressing: settings.Addressing{
-							IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24"),
-						},
+			cfg := &server.Configuration{
+				EnableUDP: true,
+				UDPSettings: settings.Settings{
+					Addressing: settings.Addressing{
+						IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24"),
 					},
-					AllowedPeers: tc.peers,
-				}
+				},
+				AllowedPeers: tc.peers,
+			}
 
 			err := cfg.ValidateAllowedPeers()
 

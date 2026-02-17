@@ -9,7 +9,6 @@ import (
 	"tungo/application/network/connection"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
 	"tungo/infrastructure/cryptography/noise"
-	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/session"
 )
 
@@ -21,15 +20,15 @@ func (tcpRegLogger) Printf(string, ...any) {}
 // tcpRegHandshake is a mock handshake.
 type tcpRegHandshake struct {
 	clientID int
-	id          [32]byte
-	c2s, s2c    []byte
-	err         error
+	id       [32]byte
+	c2s, s2c []byte
+	err      error
 }
 
 func (h *tcpRegHandshake) Id() [32]byte              { return h.id }
 func (h *tcpRegHandshake) KeyClientToServer() []byte { return h.c2s }
 func (h *tcpRegHandshake) KeyServerToClient() []byte { return h.s2c }
-func (*tcpRegHandshake) ClientSideHandshake(_ connection.Transport, _ settings.Settings) error {
+func (*tcpRegHandshake) ClientSideHandshake(_ connection.Transport) error {
 	return nil
 }
 func (h *tcpRegHandshake) ServerSideHandshake(_ connection.Transport) (int, error) {
@@ -136,8 +135,8 @@ func TestRegisterClient_CryptoFactoryError_ClosesConn(t *testing.T) {
 	hf := &tcpRegHandshakeFactory{
 		handshake: &tcpRegHandshake{
 			clientID: 1,
-			c2s:         make([]byte, 32),
-			s2c:         make([]byte, 32),
+			c2s:      make([]byte, 32),
+			s2c:      make([]byte, 32),
 		},
 	}
 	cryptoErr := errors.New("crypto init failed")
@@ -165,8 +164,8 @@ func TestRegisterClient_Success(t *testing.T) {
 	hf := &tcpRegHandshakeFactory{
 		handshake: &tcpRegHandshake{
 			clientID: 1,
-			c2s:         make([]byte, 32),
-			s2c:         make([]byte, 32),
+			c2s:      make([]byte, 32),
+			s2c:      make([]byte, 32),
 		},
 	}
 	cf := &tcpRegCryptoFactory{
@@ -215,8 +214,8 @@ func TestRegisterClient_ReplacesExistingSession(t *testing.T) {
 	hf := &tcpRegHandshakeFactory{
 		handshake: &tcpRegHandshake{
 			clientID: 1,
-			c2s:         make([]byte, 32),
-			s2c:         make([]byte, 32),
+			c2s:      make([]byte, 32),
+			s2c:      make([]byte, 32),
 		},
 	}
 	cf := &tcpRegCryptoFactory{
@@ -271,8 +270,8 @@ func TestRegisterClient_NonTCPAddr_ClosesConn(t *testing.T) {
 	hf := &tcpRegHandshakeFactory{
 		handshake: &tcpRegHandshake{
 			clientID: 1,
-			c2s:         make([]byte, 32),
-			s2c:         make([]byte, 32),
+			c2s:      make([]byte, 32),
+			s2c:      make([]byte, 32),
 		},
 	}
 	cf := &tcpRegCryptoFactory{
@@ -309,18 +308,19 @@ func (r *tcpRegFailingRepo) GetByInternalAddrPort(netip.Addr) (*session.Peer, er
 func (r *tcpRegFailingRepo) GetByExternalAddrPort(netip.AddrPort) (*session.Peer, error) {
 	return nil, r.err
 }
+func (r *tcpRegFailingRepo) GetByRouteID(uint64) (*session.Peer, error) { return nil, r.err }
 func (r *tcpRegFailingRepo) FindByDestinationIP(netip.Addr) (*session.Peer, error) {
 	return nil, r.err
 }
-func (*tcpRegFailingRepo) AllPeers() []*session.Peer                              { return nil }
+func (*tcpRegFailingRepo) AllPeers() []*session.Peer                            { return nil }
 func (*tcpRegFailingRepo) UpdateExternalAddr(_ *session.Peer, _ netip.AddrPort) {}
 
 func TestRegisterClient_LookupError_ClosesConn(t *testing.T) {
 	hf := &tcpRegHandshakeFactory{
 		handshake: &tcpRegHandshake{
 			clientID: 1,
-			c2s:         make([]byte, 32),
-			s2c:         make([]byte, 32),
+			c2s:      make([]byte, 32),
+			s2c:      make([]byte, 32),
 		},
 	}
 	cf := &tcpRegCryptoFactory{
@@ -351,8 +351,8 @@ func TestRegisterClient_NegativeClientID_FailsAllocation(t *testing.T) {
 	hf := &tcpRegHandshakeFactory{
 		handshake: &tcpRegHandshake{
 			clientID: -1, // invalid
-			c2s:         make([]byte, 32),
-			s2c:         make([]byte, 32),
+			c2s:      make([]byte, 32),
+			s2c:      make([]byte, 32),
 		},
 	}
 	cf := &tcpRegCryptoFactory{

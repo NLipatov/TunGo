@@ -51,7 +51,7 @@ func (w *udpDataplaneWorker) handleDecrypted(peer *session.Peer, rawPacket, decr
 	if rekeyCtrl != nil {
 		// Data was successfully decrypted with epoch.
 		// Epoch can now be used to encrypt. Allow to encrypt with this epoch by promoting.
-		rekeyCtrl.ActivateSendEpoch(binary.BigEndian.Uint16(rawPacket[chacha20.NonceEpochOffset : chacha20.NonceEpochOffset+2]))
+		rekeyCtrl.ActivateSendEpoch(binary.BigEndian.Uint16(rawPacket[chacha20.UDPEpochOffset : chacha20.UDPEpochOffset+2]))
 		rekeyCtrl.AbortPendingIfExpired(w.now())
 		// If service_packet packet - handle it.
 		// Note: On EpochExhausted, server sends EpochExhausted packet to client.

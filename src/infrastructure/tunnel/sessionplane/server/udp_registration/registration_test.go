@@ -10,7 +10,6 @@ import (
 	"tungo/application/network/connection"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
 	"tungo/infrastructure/cryptography/noise"
-	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/session"
 )
 
@@ -35,15 +34,15 @@ func (udpRegCrypto) Decrypt(b []byte) ([]byte, error) { return b, nil }
 // udpRegHandshake is a mock handshake that reads from registration queue.
 type udpRegHandshake struct {
 	clientID int
-	err         error
-	id          [32]byte
-	c2s, s2c    []byte
+	err      error
+	id       [32]byte
+	c2s, s2c []byte
 }
 
 func (h *udpRegHandshake) Id() [32]byte              { return h.id }
 func (h *udpRegHandshake) KeyClientToServer() []byte { return h.c2s }
 func (h *udpRegHandshake) KeyServerToClient() []byte { return h.s2c }
-func (h *udpRegHandshake) ClientSideHandshake(_ connection.Transport, _ settings.Settings) error {
+func (h *udpRegHandshake) ClientSideHandshake(_ connection.Transport) error {
 	return nil
 }
 func (h *udpRegHandshake) ServerSideHandshake(transport connection.Transport) (int, error) {
@@ -201,8 +200,8 @@ func TestRegisterClient_Success(t *testing.T) {
 	hf := &udpRegHandshakeFactory{
 		handshake: &udpRegHandshake{
 			clientID: 1,
-			c2s:         make([]byte, 32),
-			s2c:         make([]byte, 32),
+			c2s:      make([]byte, 32),
+			s2c:      make([]byte, 32),
 		},
 	}
 	cf := &udpRegCryptoFactory{
@@ -251,8 +250,8 @@ func TestRegisterClient_CryptoFactoryError_FailsGracefully(t *testing.T) {
 	hf := &udpRegHandshakeFactory{
 		handshake: &udpRegHandshake{
 			clientID: 1,
-			c2s:         make([]byte, 32),
-			s2c:         make([]byte, 32),
+			c2s:      make([]byte, 32),
+			s2c:      make([]byte, 32),
 		},
 	}
 	cf := &udpRegCryptoFactory{err: errors.New("crypto failed")}
@@ -297,8 +296,8 @@ func TestRegisterClient_NegativeClientID_FailsAllocation(t *testing.T) {
 	hf := &udpRegHandshakeFactory{
 		handshake: &udpRegHandshake{
 			clientID: -1, // invalid
-			c2s:         make([]byte, 32),
-			s2c:         make([]byte, 32),
+			c2s:      make([]byte, 32),
+			s2c:      make([]byte, 32),
 		},
 	}
 	cf := &udpRegCryptoFactory{

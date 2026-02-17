@@ -17,12 +17,13 @@ type Repository interface {
 	GetByInternalAddrPort(addr netip.Addr) (*Peer, error)
 	// GetByExternalAddrPort tries to retrieve peer by external(outside of vpn) ip and port combination
 	GetByExternalAddrPort(addrPort netip.AddrPort) (*Peer, error)
+	// GetByRouteID tries to retrieve peer by stable per-session UDP route identifier.
+	GetByRouteID(routeID uint64) (*Peer, error)
 	// FindByDestinationIP finds the peer that should receive packets destined for addr.
 	// Checks both internal IP (exact match) and AllowedIPs (prefix match).
 	// Used for egress routing (TUN → client).
 	FindByDestinationIP(addr netip.Addr) (*Peer, error)
 	// AllPeers returns a snapshot slice of all peers in the repository.
-	// Used for trial decryption during NAT roaming.
 	AllPeers() []*Peer
 	// UpdateExternalAddr atomically re-indexes the peer under a new external address.
 	// Used when a client roams to a different NAT endpoint.
@@ -56,9 +57,10 @@ type IdleReaper interface {
 // LIFECYCLE INVARIANT: Delete zeroes key material AFTER removing from maps.
 // This ensures no new lookups can return the peer while zeroing is in progress.
 type DefaultRepository struct {
-	mu               sync.RWMutex
+	mu                sync.RWMutex
 	internalIpToPeer  map[netip.Addr]*Peer
 	externalIPToPeer  map[netip.AddrPort]*Peer
+	routeIDToPeer     map[uint64]*Peer
 	allowedAddrToPeer map[netip.Addr]*Peer // host-route (/32, /128) from AllowedIPs for O(1) lookup
 	// pubKeyToPeers tracks sessions by client public key for revocation support.
 	// Multiple sessions may exist for the same pubkey (e.g., TCP + UDP).
@@ -69,6 +71,7 @@ func NewDefaultRepository() Repository {
 	return &DefaultRepository{
 		internalIpToPeer:  make(map[netip.Addr]*Peer),
 		externalIPToPeer:  make(map[netip.AddrPort]*Peer),
+		routeIDToPeer:     make(map[uint64]*Peer),
 		allowedAddrToPeer: make(map[netip.Addr]*Peer),
 		pubKeyToPeers:     make(map[string][]*Peer),
 	}
@@ -80,6 +83,9 @@ func (s *DefaultRepository) Add(peer *Peer) {
 
 	s.internalIpToPeer[peer.InternalAddr().Unmap()] = peer
 	s.externalIPToPeer[s.canonicalAP(peer.ExternalAddrPort())] = peer
+	if routeID, ok := peerRouteID(peer); ok {
+		s.routeIDToPeer[routeID] = peer
+	}
 
 	// Index allowed addresses for O(1) peer lookup (e.g. IPv6 address)
 	if sess, ok := peer.Session.(*Session); ok {
@@ -128,6 +134,17 @@ func (s *DefaultRepository) GetByExternalAddrPort(addr netip.AddrPort) (*Peer, e
 	defer s.mu.RUnlock()
 
 	value, found := s.externalIPToPeer[s.canonicalAP(addr)]
+	if !found {
+		return nil, ErrNotFound
+	}
+	return value, nil
+}
+
+func (s *DefaultRepository) GetByRouteID(routeID uint64) (*Peer, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	value, found := s.routeIDToPeer[routeID]
 	if !found {
 		return nil, ErrNotFound
 	}
@@ -252,6 +269,11 @@ func (s *DefaultRepository) deleteLocked(peer *Peer) {
 	// Step 3: Remove from all maps
 	delete(s.internalIpToPeer, peer.InternalAddr().Unmap())
 	delete(s.externalIPToPeer, s.canonicalAP(peer.ExternalAddrPort()))
+	if routeID, ok := peerRouteID(peer); ok {
+		if indexed := s.routeIDToPeer[routeID]; indexed == peer {
+			delete(s.routeIDToPeer, routeID)
+		}
+	}
 
 	// Remove allowed address entries from index
 	if sess, ok := peer.Session.(*Session); ok {
@@ -289,6 +311,22 @@ func (s *DefaultRepository) deleteLocked(peer *Peer) {
 		}
 	}
 	peer.cryptoMu.Unlock()
+}
+
+func peerRouteID(peer *Peer) (uint64, bool) {
+	type routeIDProvider interface {
+		RouteID() uint64
+	}
+
+	crypto := peer.Crypto()
+	if crypto == nil {
+		return 0, false
+	}
+	provider, ok := crypto.(routeIDProvider)
+	if !ok {
+		return 0, false
+	}
+	return provider.RouteID(), true
 }
 
 // ReapIdle deletes all sessions whose last activity is older than timeout.

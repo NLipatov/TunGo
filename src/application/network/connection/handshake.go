@@ -2,7 +2,6 @@ package connection
 
 import (
 	"net/netip"
-	"tungo/infrastructure/settings"
 )
 
 type Handshake interface {
@@ -10,7 +9,7 @@ type Handshake interface {
 	KeyClientToServer() []byte
 	KeyServerToClient() []byte
 	ServerSideHandshake(transport Transport) (int, error)
-	ClientSideHandshake(transport Transport, settings settings.Settings) error
+	ClientSideHandshake(transport Transport) error
 }
 
 // HandshakeResult contains extended handshake result for IK pattern.

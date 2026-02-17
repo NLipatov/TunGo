@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"testing"
 	"tungo/application/network/connection"
-	"tungo/infrastructure/settings"
 
 	"golang.org/x/crypto/chacha20poly1305"
 )
@@ -26,7 +25,7 @@ func (f fakeHandshake) ServerSideHandshake(_ connection.Transport) (int, error) 
 	panic("not implemented")
 }
 
-func (f fakeHandshake) ClientSideHandshake(_ connection.Transport, _ settings.Settings) error {
+func (f fakeHandshake) ClientSideHandshake(_ connection.Transport) error {
 	panic("not implemented")
 }
 
