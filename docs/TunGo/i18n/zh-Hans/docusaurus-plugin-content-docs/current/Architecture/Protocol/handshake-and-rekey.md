@@ -1,7 +1,7 @@
 # 握手与密钥更新协议
 
 **状态：** 持续更新文档
-**最后更新：** 2026-02-07
+**最后更新：** 2026-02-17
 
 ## 概述
 
@@ -152,8 +152,10 @@ Wire frame: [2B epoch] [ciphertext + 16B tag]
 ### 3.4 UDP 传输
 
 ```
-Wire frame: [12B nonce] [ciphertext + 16B tag]
+Wire frame: [8B route-id] [12B nonce] [ciphertext + 16B tag]
 ```
+
+- Route-id is derived from `sessionId` (first 8 bytes, big-endian) and enables O(1) session lookup.
 
 - Epoch 嵌入在 nonce 的第 10..11 字节中。
 - **重放保护：** 每个纪元使用 1024 位滑动窗口位图。
@@ -246,7 +248,7 @@ Client                                     Server
 | Nonce 重放窗口 | 会话拆除时（`SlidingWindow.Zeroize`） |
 | AAD 缓冲区 | 会话拆除时（`DefaultUdpSession.Zeroize`） |
 
-**限制：** Go GC 可能在清零前复制堆对象。`mem.ZeroBytes` 是对抗内存取证的尽力而为的防御措施，已通过编译器输出分析验证不会被优化掉（Go 1.25.7，所有目标平台）。
+**限制：** Go GC 可能在清零前复制堆对象。`mem.ZeroBytes` 是对抗内存取证的尽力而为的防御措施，已通过编译器输出分析验证不会被优化掉（Go 1.26.x，所有目标平台）。
 
 ---
 
@@ -259,6 +261,7 @@ Client                                     Server
 | Cookie bucket | 120 秒 | 绑定 IP 的 Cookie 有效窗口 |
 | Cookie reply size | 56 字节 | nonce (24) + encrypted cookie (16) + tag (16) |
 | AAD length | 60 字节 | sessionId (32) + direction (16) + nonce (12) |
+| UDP route-id | 8 bytes | session identifier prefix for O(1) peer lookup |
 | Nonce counter | 80 位 | 溢出前每个纪元的消息数 |
 | Replay window | 1024 位 | UDP 乱序容错 |
 | Epoch capacity | uint16 | 65535 个值，安全阈值 65000 |

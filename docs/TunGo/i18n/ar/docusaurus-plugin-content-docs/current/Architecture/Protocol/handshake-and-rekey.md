@@ -1,7 +1,7 @@
 # بروتوكول المصافحة وتجديد المفاتيح
 
 **الحالة:** مستند قابل للتحديث المستمر
-**آخر تحديث:** 2026-02-07
+**آخر تحديث:** 2026-02-17
 
 ## نظرة عامة
 
@@ -152,8 +152,10 @@ Wire frame: [2B epoch] [ciphertext + 16B tag]
 ### 3.4 نقل UDP
 
 ```
-Wire frame: [12B nonce] [ciphertext + 16B tag]
+Wire frame: [8B route-id] [12B nonce] [ciphertext + 16B tag]
 ```
+
+- Route-id is derived from `sessionId` (first 8 bytes, big-endian) and enables O(1) session lookup.
 
 - Epoch مضمّن في البايتات 10..11 من nonce.
 - **الحماية من إعادة التشغيل:** خريطة بتات نافذة منزلقة بحجم 1024 بت لكل حقبة.
@@ -246,7 +248,7 @@ Client                                     Server
 | نافذة إعادة تشغيل Nonce | عند تفكيك الجلسة (`SlidingWindow.Zeroize`) |
 | مخازن AAD المؤقتة | عند تفكيك الجلسة (`DefaultUdpSession.Zeroize`) |
 
-**قيد:** قد يقوم جامع القمامة في Go بنسخ كائنات الكومة قبل التصفير. يُعدّ `mem.ZeroBytes` دفاعًا بأقصى جهد ضد التحليل الجنائي للذاكرة، وقد تم التحقق من خلال تحليل مخرجات المُصرّف بأنه لا يتم حذفه بالتحسين (Go 1.25.7، جميع المنصات المستهدفة).
+**قيد:** قد يقوم جامع القمامة في Go بنسخ كائنات الكومة قبل التصفير. يُعدّ `mem.ZeroBytes` دفاعًا بأقصى جهد ضد التحليل الجنائي للذاكرة، وقد تم التحقق من خلال تحليل مخرجات المُصرّف بأنه لا يتم حذفه بالتحسين (Go 1.26.x، جميع المنصات المستهدفة).
 
 ---
 
@@ -259,6 +261,7 @@ Client                                     Server
 | Cookie bucket | 120 ثانية | نافذة صلاحية Cookie المرتبطة بعنوان IP |
 | Cookie reply size | 56 بايت | nonce (24) + encrypted cookie (16) + tag (16) |
 | AAD length | 60 بايت | sessionId (32) + direction (16) + nonce (12) |
+| UDP route-id | 8 bytes | session identifier prefix for O(1) peer lookup |
 | Nonce counter | 80 بت | الرسائل لكل حقبة قبل الطفحان |
 | Replay window | 1024 بت | تحمل إعادة الترتيب في UDP |
 | Epoch capacity | uint16 | 65535 قيمة، عتبة الأمان 65000 |

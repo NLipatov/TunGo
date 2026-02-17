@@ -1,7 +1,7 @@
 # Protocole de Handshake et de Renouvellement des Cles
 
 **Statut :** Document evolutif
-**Derniere mise a jour :** 2026-02-07
+**Derniere mise a jour :** 2026-02-17
 
 ## Apercu
 
@@ -152,8 +152,10 @@ Wire frame: [2B epoch] [ciphertext + 16B tag]
 ### 3.4 Transport UDP
 
 ```
-Wire frame: [12B nonce] [ciphertext + 16B tag]
+Wire frame: [8B route-id] [12B nonce] [ciphertext + 16B tag]
 ```
+
+- Route-id is derived from `sessionId` (first 8 bytes, big-endian) and enables O(1) session lookup.
 
 - Epoque integree dans les octets 10..11 du nonce.
 - **Protection contre la repetition :** Fenetre glissante de 1024 bits (bitmap) par epoque.
@@ -246,7 +248,7 @@ Client                                     Server
 | Fenetre de repetition des nonces | A la fermeture de la session (`SlidingWindow.Zeroize`) |
 | Tampons AAD | A la fermeture de la session (`DefaultUdpSession.Zeroize`) |
 
-**Limitation :** Le ramasse-miettes de Go peut copier des objets du tas avant la mise a zero. `mem.ZeroBytes` est une defense au mieux contre l'analyse forensique de la memoire, verifiee par l'analyse de la sortie du compilateur pour confirmer l'absence d'optimisation (Go 1.25.7, toutes les plateformes cibles).
+**Limitation :** Le ramasse-miettes de Go peut copier des objets du tas avant la mise a zero. `mem.ZeroBytes` est une defense au mieux contre l'analyse forensique de la memoire, verifiee par l'analyse de la sortie du compilateur pour confirmer l'absence d'optimisation (Go 1.26.x, toutes les plateformes cibles).
 
 ---
 
@@ -259,6 +261,7 @@ Client                                     Server
 | Intervalle de cookie | 120 secondes | Fenetre de validite du cookie lie a l'IP |
 | Taille de la reponse cookie | 56 octets | nonce (24) + cookie chiffre (16) + tag (16) |
 | Longueur de AAD | 60 octets | sessionId (32) + direction (16) + nonce (12) |
+| UDP route-id | 8 bytes | session identifier prefix for O(1) peer lookup |
 | Compteur de nonce | 80 bits | Messages par epoque avant depassement |
 | Fenetre de repetition | 1024 bits | Tolerance au desordre UDP |
 | Capacite des epoques | uint16 | 65535 valeurs, seuil de securite 65000 |

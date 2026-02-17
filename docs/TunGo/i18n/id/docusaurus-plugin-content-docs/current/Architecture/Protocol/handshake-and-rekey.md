@@ -1,7 +1,7 @@
 # Protokol Handshake dan Rekeying
 
 **Status:** Dokumen yang terus diperbarui
-**Terakhir diperbarui:** 2026-02-07
+**Terakhir diperbarui:** 2026-02-17
 
 ## Ringkasan
 
@@ -152,8 +152,10 @@ Wire frame: [2B epoch] [ciphertext + 16B tag]
 ### 3.4 Transport UDP
 
 ```
-Wire frame: [12B nonce] [ciphertext + 16B tag]
+Wire frame: [8B route-id] [12B nonce] [ciphertext + 16B tag]
 ```
+
+- Route-id is derived from `sessionId` (first 8 bytes, big-endian) and enables O(1) session lookup.
 
 - Epoch tertanam dalam byte nonce 10..11.
 - **Perlindungan replay:** Bitmap jendela geser 1024-bit per epoch.
@@ -246,7 +248,7 @@ Client                                     Server
 | Jendela replay Nonce | Saat pembongkaran sesi (`SlidingWindow.Zeroize`) |
 | Buffer AAD | Saat pembongkaran sesi (`DefaultUdpSession.Zeroize`) |
 
-**Keterbatasan:** GC Go mungkin menyalin objek heap sebelum penghapusan. `mem.ZeroBytes` adalah pertahanan terbaik yang mungkin terhadap forensik memori, diverifikasi melalui analisis output compiler untuk memastikan tidak dioptimalkan (Go 1.25.7, semua platform target).
+**Keterbatasan:** GC Go mungkin menyalin objek heap sebelum penghapusan. `mem.ZeroBytes` adalah pertahanan terbaik yang mungkin terhadap forensik memori, diverifikasi melalui analisis output compiler untuk memastikan tidak dioptimalkan (Go 1.26.x, semua platform target).
 
 ---
 
@@ -259,6 +261,7 @@ Client                                     Server
 | Cookie bucket | 120 detik | Jendela validitas cookie terikat IP |
 | Cookie reply size | 56 byte | nonce (24) + encrypted cookie (16) + tag (16) |
 | AAD length | 60 byte | sessionId (32) + direction (16) + nonce (12) |
+| UDP route-id | 8 bytes | session identifier prefix for O(1) peer lookup |
 | Nonce counter | 80 bit | Pesan per epoch sebelum overflow |
 | Replay window | 1024 bit | Toleransi ketidakterurutan UDP |
 | Epoch capacity | uint16 | 65535 nilai, ambang aman 65000 |

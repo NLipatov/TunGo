@@ -1,7 +1,7 @@
 # ハンドシェイクおよびリキー・プロトコル
 
 **ステータス:** 継続的に更新される文書
-**最終更新日:** 2026-02-07
+**最終更新日:** 2026-02-17
 
 ## 概要
 
@@ -152,8 +152,10 @@ Wire frame: [2B epoch] [ciphertext + 16B tag]
 ### 3.4 UDPトランスポート
 
 ```
-Wire frame: [12B nonce] [ciphertext + 16B tag]
+Wire frame: [8B route-id] [12B nonce] [ciphertext + 16B tag]
 ```
+
+- Route-id is derived from `sessionId` (first 8 bytes, big-endian) and enables O(1) session lookup.
 
 - エポックはナンスのバイト10..11に埋め込まれます。
 - **リプレイ防御:** エポックごとの1024ビットスライディングウィンドウビットマップ。
@@ -246,7 +248,7 @@ Client                                     Server
 | ナンスリプレイウィンドウ | セッション終了時（`SlidingWindow.Zeroize`） |
 | AADバッファ | セッション終了時（`DefaultUdpSession.Zeroize`） |
 
-**制限事項:** GoのGCはゼロ化前にヒープオブジェクトをコピーする可能性があります。`mem.ZeroBytes`はメモリフォレンジックに対するベストエフォートの防御であり、コンパイラ出力分析によって最適化で除去されないことが検証されています（Go 1.25.7、全対象プラットフォーム）。
+**制限事項:** GoのGCはゼロ化前にヒープオブジェクトをコピーする可能性があります。`mem.ZeroBytes`はメモリフォレンジックに対するベストエフォートの防御であり、コンパイラ出力分析によって最適化で除去されないことが検証されています（Go 1.26.x、全対象プラットフォーム）。
 
 ---
 
@@ -259,6 +261,7 @@ Client                                     Server
 | Cookieバケット | 120秒 | IPバインドCookieの有効期間 |
 | Cookie応答サイズ | 56バイト | nonce (24) + 暗号化Cookie (16) + tag (16) |
 | AAD長 | 60バイト | sessionId (32) + direction (16) + nonce (12) |
+| UDP route-id | 8 bytes | session identifier prefix for O(1) peer lookup |
 | ナンスカウンター | 80ビット | オーバーフロー前のエポックあたりのメッセージ数 |
 | リプレイウィンドウ | 1024ビット | UDP順序外パケット許容範囲 |
 | エポック容量 | uint16 | 65535値、安全閾値65000 |

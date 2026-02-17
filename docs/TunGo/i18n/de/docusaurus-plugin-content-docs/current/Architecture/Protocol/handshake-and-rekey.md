@@ -1,7 +1,7 @@
 # Handshake- und Rekeying-Protokoll
 
 **Status:** Lebendes Dokument
-**Zuletzt aktualisiert:** 2026-02-07
+**Zuletzt aktualisiert:** 2026-02-17
 
 ## Überblick
 
@@ -152,8 +152,10 @@ Wire frame: [2B epoch] [ciphertext + 16B tag]
 ### 3.4 UDP-Transport
 
 ```
-Wire frame: [12B nonce] [ciphertext + 16B tag]
+Wire frame: [8B route-id] [12B nonce] [ciphertext + 16B tag]
 ```
+
+- Route-id is derived from `sessionId` (first 8 bytes, big-endian) and enables O(1) session lookup.
 
 - Epoche eingebettet in Nonce-Bytes 10..11.
 - **Replay-Schutz:** 1024-Bit-Schiebefenster-Bitmap pro Epoche.
@@ -246,7 +248,7 @@ Client                                     Server
 | Nonce-Replay-Fenster | Bei Sitzungsabbau (`SlidingWindow.Zeroize`) |
 | AAD-Puffer | Bei Sitzungsabbau (`DefaultUdpSession.Zeroize`) |
 
-**Einschränkung:** Der Go-GC kann Heap-Objekte vor dem Nullen kopieren. `mem.ZeroBytes` ist eine Best-Effort-Verteidigung gegen Speicherforensik, durch Compiler-Ausgabeanalyse verifiziert, dass sie nicht wegoptimiert wird (Go 1.25.7, alle Zielplattformen).
+**Einschränkung:** Der Go-GC kann Heap-Objekte vor dem Nullen kopieren. `mem.ZeroBytes` ist eine Best-Effort-Verteidigung gegen Speicherforensik, durch Compiler-Ausgabeanalyse verifiziert, dass sie nicht wegoptimiert wird (Go 1.26.x, alle Zielplattformen).
 
 ---
 
@@ -259,6 +261,7 @@ Client                                     Server
 | Cookie-Bucket | 120 Sekunden | IP-gebundenes Cookie-Gültigkeitsfenster |
 | Cookie-Antwortgröße | 56 Bytes | Nonce (24) + verschlüsseltes Cookie (16) + Tag (16) |
 | AAD-Länge | 60 Bytes | sessionId (32) + direction (16) + nonce (12) |
+| UDP route-id | 8 bytes | session identifier prefix for O(1) peer lookup |
 | Nonce-Counter | 80 Bits | Nachrichten pro Epoche vor Überlauf |
 | Replay-Fenster | 1024 Bits | UDP-Toleranz für ungeordnete Pakete |
 | Epochen-Kapazität | uint16 | 65535 Werte, sicherer Schwellenwert 65000 |

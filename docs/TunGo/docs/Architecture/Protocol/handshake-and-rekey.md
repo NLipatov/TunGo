@@ -1,7 +1,7 @@
 # Handshake and Rekeying Protocol
 
 **Status:** Living document
-**Last updated:** 2026-02-07
+**Last updated:** 2026-02-17
 
 ## Overview
 
@@ -152,9 +152,10 @@ Wire frame: [2B epoch] [ciphertext + 16B tag]
 ### 3.4 UDP Transport
 
 ```
-Wire frame: [12B nonce] [ciphertext + 16B tag]
+Wire frame: [8B route-id] [12B nonce] [ciphertext + 16B tag]
 ```
 
+- Route-id is derived from `sessionId` (first 8 bytes, big-endian) and enables O(1) session lookup.
 - Epoch embedded in nonce bytes 10..11.
 - **Replay protection:** 1024-bit sliding window bitmap per epoch.
   - Tentative check before decryption (Check).
@@ -246,7 +247,7 @@ Client                                     Server
 | Nonce replay window | On session teardown (`SlidingWindow.Zeroize`) |
 | AAD buffers | On session teardown (`DefaultUdpSession.Zeroize`) |
 
-**Limitation:** Go GC may copy heap objects before zeroing. `mem.ZeroBytes` is best-effort defense against memory forensics, verified by compiler output analysis to not be optimized away (Go 1.25.7, all target platforms).
+**Limitation:** Go GC may copy heap objects before zeroing. `mem.ZeroBytes` is best-effort defense against memory forensics, verified by compiler output analysis to not be optimized away (Go 1.26.x, all target platforms).
 
 ---
 
@@ -259,6 +260,7 @@ Client                                     Server
 | Cookie bucket | 120 seconds | IP-bound cookie validity window |
 | Cookie reply size | 56 bytes | nonce (24) + encrypted cookie (16) + tag (16) |
 | AAD length | 60 bytes | sessionId (32) + direction (16) + nonce (12) |
+| UDP route-id | 8 bytes | session identifier prefix for O(1) peer lookup |
 | Nonce counter | 80 bits | Messages per epoch before overflow |
 | Replay window | 1024 bits | UDP out-of-order tolerance |
 | Epoch capacity | uint16 | 65535 values, safe threshold 65000 |

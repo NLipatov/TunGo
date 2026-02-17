@@ -1,7 +1,7 @@
 # Protocolo de Handshake e Rekeying
 
 **Status:** Documento vivo
-**Última atualização:** 2026-02-07
+**Última atualização:** 2026-02-17
 
 ## Visão Geral
 
@@ -152,8 +152,10 @@ Wire frame: [2B epoch] [ciphertext + 16B tag]
 ### 3.4 Transporte UDP
 
 ```
-Wire frame: [12B nonce] [ciphertext + 16B tag]
+Wire frame: [8B route-id] [12B nonce] [ciphertext + 16B tag]
 ```
+
+- Route-id is derived from `sessionId` (first 8 bytes, big-endian) and enables O(1) session lookup.
 
 - Época embutida nos bytes 10..11 do nonce.
 - **Proteção contra replay:** bitmap de janela deslizante de 1024 bits por época.
@@ -246,7 +248,7 @@ Client                                     Server
 | Janela de replay de nonce | No encerramento da sessão (`SlidingWindow.Zeroize`) |
 | Buffers AAD | No encerramento da sessão (`DefaultUdpSession.Zeroize`) |
 
-**Limitação:** O GC do Go pode copiar objetos do heap antes da zeragem. `mem.ZeroBytes` é uma defesa de melhor esforço contra análise forense de memória, verificada por análise da saída do compilador para não ser otimizada e removida (Go 1.25.7, todas as plataformas alvo).
+**Limitação:** O GC do Go pode copiar objetos do heap antes da zeragem. `mem.ZeroBytes` é uma defesa de melhor esforço contra análise forense de memória, verificada por análise da saída do compilador para não ser otimizada e removida (Go 1.26.x, todas as plataformas alvo).
 
 ---
 
@@ -259,6 +261,7 @@ Client                                     Server
 | Bucket de cookie | 120 segundos | Janela de validade de cookie vinculado a IP |
 | Tamanho da resposta de cookie | 56 bytes | nonce (24) + cookie criptografado (16) + tag (16) |
 | Comprimento AAD | 60 bytes | sessionId (32) + direction (16) + nonce (12) |
+| UDP route-id | 8 bytes | session identifier prefix for O(1) peer lookup |
 | Contador de nonce | 80 bits | Mensagens por época antes do estouro |
 | Janela de replay | 1024 bits | Tolerância a pacotes fora de ordem UDP |
 | Capacidade de época | uint16 | 65535 valores, limiar seguro 65000 |
