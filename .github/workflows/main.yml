@@ -51,9 +51,39 @@ jobs:
           flags: unittests
           fail_ci_if_error: true
 
+  cross-compile-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: windows
+            goarch: amd64
+          - goos: darwin
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+    steps:
+      - name: Get repository code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: 'recursive'
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Cross-compile test packages (${{ matrix.goos }}/${{ matrix.goarch }})
+        run: |
+          cd src
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} CGO_ENABLED=0 \
+            go test -run '^$' -exec /usr/bin/true ./...
+
   version-and-tag:
     runs-on: ubuntu-latest
-    needs: run-tests
+    needs: [run-tests, cross-compile-tests]
     if: github.event_name == 'push' # Prevents this job from running in PR. It will only run on push to main.
     outputs:
       semver: ${{ steps.gitversion.outputs.semver }}

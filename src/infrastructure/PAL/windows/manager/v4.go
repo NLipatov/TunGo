@@ -14,6 +14,8 @@ import (
 	"tungo/infrastructure/PAL/windows/ipcfg"
 	"tungo/infrastructure/PAL/windows/wtun"
 	"tungo/infrastructure/settings"
+
+	"golang.zx2c4.com/wintun"
 )
 
 // v4Manager configures a Wintun adapter and the host stack for IPv4.
