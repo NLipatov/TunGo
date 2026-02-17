@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"net/netip"
 	"time"
 	"tungo/application/network/connection"
@@ -13,6 +14,7 @@ import (
 	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/settings"
+	"tungo/infrastructure/telemetry/trafficstats"
 	"tungo/infrastructure/tunnel/controlplane"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -69,11 +71,20 @@ func (w *TunHandler) HandleTun() error {
 	// +8 route-id +12 nonce +16 AEAD tag
 	var buffer [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
 	payloadStart := chacha20.UDPRouteIDLength + chacha20poly1305.NonceSize
+	statsCollector := trafficstats.Global()
+	var pendingTX uint64
+	flushPendingTX := func() {
+		if statsCollector != nil && pendingTX != 0 {
+			statsCollector.AddTXBytes(pendingTX)
+			pendingTX = 0
+		}
+	}
 
 	// Main loop to read from TUN and send data
 	for {
 		select {
 		case <-w.ctx.Done():
+			flushPendingTX()
 			return nil
 		default:
 			n, err := w.reader.Read(buffer[payloadStart : payloadStart+settings.DefaultEthernetMTU])
@@ -84,28 +95,39 @@ func (w *TunHandler) HandleTun() error {
 				// Encrypt expects route-id+nonce+payload (20+n).
 				if err := w.egress.SendDataIP(buffer[:payloadStart+n]); err != nil {
 					if w.ctx.Err() != nil {
+						flushPendingTX()
 						return nil
 					}
+					flushPendingTX()
 					return fmt.Errorf("could not send packet to transport: %v", err)
+				}
+				if statsCollector != nil {
+					pendingTX += uint64(n)
+					if pendingTX >= trafficstats.HotPathFlushThresholdBytes {
+						statsCollector.AddTXBytes(pendingTX)
+						pendingTX = 0
+					}
 				}
 			}
 			if err != nil {
 				if w.ctx.Err() != nil {
+					flushPendingTX()
 					return nil
 				}
+				flushPendingTX()
 				return fmt.Errorf("could not read a packet from TUN: %v", err)
 			}
 			if w.rekeyInit != nil && w.rekeyController != nil {
 				payloadBuf := w.controlPacketBuffer[chacha20.UDPRouteIDLength+chacha20poly1305.NonceSize:]
 				servicePayload, ok, pErr := w.rekeyInit.MaybeBuildRekeyInit(time.Now().UTC(), w.rekeyController, payloadBuf)
 				if pErr != nil {
-					fmt.Printf("failed to prepare rekeyInit: %v", pErr)
+					log.Printf("failed to prepare rekeyInit: %v", pErr)
 					continue
 				}
 				if ok {
 					totalLen := chacha20.UDPRouteIDLength + chacha20poly1305.NonceSize + len(servicePayload)
 					if err := w.egress.SendControl(w.controlPacketBuffer[:totalLen]); err != nil {
-						fmt.Printf("failed to send rekeyInit: %v", err)
+						log.Printf("failed to send rekeyInit: %v", err)
 					}
 				}
 			}

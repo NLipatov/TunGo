@@ -2,11 +2,13 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"tungo/application/network/connection"
 	"tungo/application/network/routing"
 	"tungo/infrastructure/settings"
+	bubbleTea "tungo/presentation/configuring/tui/components/implementations/bubble_tea"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -15,6 +17,11 @@ type Runner struct {
 	deps          AppDependencies
 	workerFactory connection.ServerWorkerFactory
 	routerFactory connection.ServerTrafficRouterFactory
+}
+
+type runtimeUIResult struct {
+	userQuit bool
+	err      error
 }
 
 func NewRunner(
@@ -48,7 +55,61 @@ func (r *Runner) Run(
 		}
 	}()
 
-	return r.runWorkers(ctx)
+	if !bubbleTea.IsInteractiveTerminal() {
+		return r.runWorkers(ctx)
+	}
+
+	workersCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	logBuffer := bubbleTea.NewRuntimeLogBuffer(600)
+	restoreLogger := bubbleTea.RedirectStandardLoggerToBuffer(logBuffer)
+	defer restoreLogger()
+	log.Printf("server runtime dashboard attached")
+
+	workerErrCh := make(chan error, 1)
+	go func() {
+		workerErrCh <- r.runWorkers(workersCtx)
+	}()
+
+	uiResultCh := make(chan runtimeUIResult, 1)
+	go func() {
+		userQuit, err := bubbleTea.RunRuntimeDashboard(workersCtx, bubbleTea.RuntimeDashboardOptions{
+			Mode:    bubbleTea.RuntimeDashboardServer,
+			LogFeed: logBuffer,
+		})
+		uiResultCh <- runtimeUIResult{userQuit: userQuit, err: err}
+	}()
+
+	for {
+		select {
+		case workerErr := <-workerErrCh:
+			cancel()
+			uiResult := <-uiResultCh
+			if uiResult.err != nil {
+				log.Printf("runtime UI error: %v", uiResult.err)
+			}
+			return workerErr
+		case uiResult := <-uiResultCh:
+			if uiResult.err != nil {
+				cancel()
+				workerErr := <-workerErrCh
+				if workerErr == nil || errors.Is(workerErr, context.Canceled) {
+					return fmt.Errorf("runtime UI failed: %w", uiResult.err)
+				}
+				return workerErr
+			}
+			if uiResult.userQuit {
+				cancel()
+				workerErr := <-workerErrCh
+				if workerErr == nil || errors.Is(workerErr, context.Canceled) {
+					return context.Canceled
+				}
+				return workerErr
+			}
+			return <-workerErrCh
+		}
+	}
 }
 
 func (r *Runner) cleanup() error {

@@ -1,26 +1,40 @@
 package bubble_tea
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // TextArea - is a multiline text input
 type TextArea struct {
-	ta   *textarea.Model
-	done bool
+	ta          *textarea.Model
+	done        bool
+	placeholder string
+	width       int
+	height      int
 }
 
 func NewTextArea(placeholder string) *TextArea {
 	ta := textarea.New()
+	ta.Prompt = "┃ "
 	ta.Placeholder = placeholder
 	ta.SetWidth(80)
 	ta.SetHeight(10)
 	ta.ShowLineNumbers = true
 	ta.Focus()
+	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
+	ta.FocusedStyle.Prompt = lipgloss.NewStyle().Foreground(themeColor("#00ADD8", "#00ADD8"))
+	ta.FocusedStyle.Placeholder = lipgloss.NewStyle().Foreground(themeColor("#4b5563", "#5fd18a"))
+	ta.FocusedStyle.Text = lipgloss.NewStyle().Foreground(themeColor("#000000", "#00ff66"))
+	ta.FocusedStyle.LineNumber = lipgloss.NewStyle().Foreground(themeColor("#4b5563", "#5fd18a"))
 	return &TextArea{
-		ta:   &ta,
-		done: false,
+		ta:          &ta,
+		done:        false,
+		placeholder: placeholder,
 	}
 }
 
@@ -34,6 +48,16 @@ func (m *TextArea) Init() tea.Cmd {
 
 func (m *TextArea) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		if msg.Width > 24 {
+			m.ta.SetWidth(msg.Width - 28)
+		}
+		if msg.Height > 14 {
+			m.ta.SetHeight(msg.Height - 18)
+		}
+		return m, nil
 	case tea.KeyMsg:
 		if msg.String() == "enter" {
 			m.done = true
@@ -49,5 +73,23 @@ func (m *TextArea) View() string {
 	if m.done {
 		return ""
 	}
-	return m.ta.View()
+	value := m.ta.Value()
+	lineCount := 1
+	if value != "" {
+		lineCount = len(strings.Split(value, "\n"))
+	}
+	stats := metaTextStyle().Render(fmt.Sprintf("Lines: %d", lineCount))
+
+	body := []string{
+		inputContainerStyle().Render(m.ta.View()),
+		stats,
+	}
+	return renderScreen(
+		m.width,
+		m.height,
+		"Paste configuration",
+		m.placeholder,
+		body,
+		"Enter to confirm",
+	)
 }

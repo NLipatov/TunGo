@@ -9,6 +9,7 @@ type TeaRunner interface {
 type defaultTeaRunner struct{}
 
 func (r *defaultTeaRunner) Run(model tea.Model, opts ...tea.ProgramOption) (tea.Model, error) {
+	defer clearTerminalAfterTUI()
 	p := tea.NewProgram(model, opts...)
 	return p.Run()
 }

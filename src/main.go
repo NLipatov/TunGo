@@ -17,6 +17,7 @@ import (
 	"tungo/infrastructure/PAL/stat"
 	"tungo/infrastructure/PAL/tun_server"
 	"tungo/infrastructure/cryptography/primitives"
+	"tungo/infrastructure/telemetry/trafficstats"
 	"tungo/infrastructure/tunnel/sessionplane/client_factory"
 	"tungo/presentation/configuring"
 	"tungo/presentation/elevation"
@@ -39,6 +40,11 @@ func main() {
 		os.Exit(exitCode)
 	}()
 	defer appCtxCancel()
+
+	trafficCollector := trafficstats.NewCollector(time.Second, 0.35)
+	trafficstats.SetGlobal(trafficCollector)
+	defer trafficstats.SetGlobal(nil)
+	go trafficCollector.Start(appCtx)
 	// handle shutdown signals
 	shutdownSignalHandler := shutdown.NewHandler(
 		appCtx,

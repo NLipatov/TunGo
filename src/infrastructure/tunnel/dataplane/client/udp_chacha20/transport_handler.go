@@ -16,6 +16,7 @@ import (
 	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/settings"
+	"tungo/infrastructure/telemetry/trafficstats"
 	"tungo/infrastructure/tunnel/controlplane"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -58,6 +59,15 @@ func NewTransportHandler(
 
 func (t *TransportHandler) HandleTransport() error {
 	var buffer [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
+	statsCollector := trafficstats.Global()
+	var pendingRX uint64
+	flushPendingRX := func() {
+		if statsCollector != nil && pendingRX != 0 {
+			statsCollector.AddRXBytes(pendingRX)
+			pendingRX = 0
+		}
+	}
+	defer flushPendingRX()
 
 	for {
 		select {
@@ -77,16 +87,24 @@ func (t *TransportHandler) HandleTransport() error {
 				}
 				return fmt.Errorf("could not read a packet from adapter: %v", readErr)
 			}
-			if err := t.handleDatagram(buffer[:n]); err != nil {
+			writtenBytes, err := t.handleDatagram(buffer[:n])
+			if err != nil {
 				return err
+			}
+			if statsCollector != nil && writtenBytes > 0 {
+				pendingRX += uint64(writtenBytes)
+				if pendingRX >= trafficstats.HotPathFlushThresholdBytes {
+					statsCollector.AddRXBytes(pendingRX)
+					pendingRX = 0
+				}
 			}
 		}
 	}
 }
 
-func (t *TransportHandler) handleDatagram(pkt []byte) error {
+func (t *TransportHandler) handleDatagram(pkt []byte) (int, error) {
 	if len(pkt) < 2 {
-		return nil
+		return 0, nil
 	}
 
 	decrypted, decryptionErr := t.cryptographyService.Decrypt(pkt)
@@ -94,7 +112,7 @@ func (t *TransportHandler) handleDatagram(pkt []byte) error {
 		// Drop undecryptable packets without terminating session.
 		// If session is truly broken, keepalive timeout will detect it.
 		// This makes client resilient to packet corruption and garbage injection.
-		return nil
+		return 0, nil
 	}
 	t.lastRecvAt = time.Now()
 
@@ -108,17 +126,17 @@ func (t *TransportHandler) handleDatagram(pkt []byte) error {
 	}
 
 	if handled, err := t.handleControlplane(decrypted); handled {
-		return err
+		return 0, err
 	}
 
 	_, writeErr := t.writer.Write(decrypted)
 	if writeErr != nil {
 		if t.ctx.Err() != nil {
-			return nil
+			return 0, nil
 		}
-		return fmt.Errorf("failed to write to TUN: %s", writeErr)
+		return 0, fmt.Errorf("failed to write to TUN: %s", writeErr)
 	}
-	return nil
+	return len(decrypted), nil
 }
 
 // ErrEpochExhausted is returned when server signals epoch exhaustion.

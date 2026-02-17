@@ -61,6 +61,25 @@ func (m *cfgCreatorMock) Create(_ clientConfiguration.Configuration, name string
 	return m.err
 }
 
+type cfgManagerMock struct {
+	results []*clientConfiguration.Configuration
+	errs    []error
+	call    int
+}
+
+func (m *cfgManagerMock) Configuration() (*clientConfiguration.Configuration, error) {
+	var result *clientConfiguration.Configuration
+	var err error
+	if m.call < len(m.results) {
+		result = m.results[m.call]
+	}
+	if m.call < len(m.errs) {
+		err = m.errs[m.call]
+	}
+	m.call++
+	return result, err
+}
+
 type queuedSelector struct {
 	options []string
 	errs    []error
@@ -137,7 +156,7 @@ func Test_Configure_ObserveError(t *testing.T) {
 	obs := &cfgObserverMock{
 		errs: []error{errors.New("observe fail")},
 	}
-	cc := newClientConfigurator(obs, nil, nil, nil, nil, nil, nil)
+	cc := newClientConfigurator(obs, nil, nil, nil, nil, nil, nil, nil)
 
 	err := cc.Configure()
 	if err == nil || err.Error() != "observe fail" {
@@ -151,7 +170,7 @@ func Test_Configure_SelectConf_FactoryError(t *testing.T) {
 		selector: &queuedSelector{},
 		errs:     []error{errors.New("factory fail")},
 	}
-	cc := newClientConfigurator(obs, nil, nil, nil, sf, nil, nil)
+	cc := newClientConfigurator(obs, nil, nil, nil, sf, nil, nil, nil)
 
 	err := cc.Configure()
 	if err == nil || err.Error() != "factory fail" {
@@ -167,7 +186,7 @@ func Test_Configure_SelectConf_SelectOneError(t *testing.T) {
 			errs:    []error{errors.New("select fail")},
 		},
 	}
-	cc := newClientConfigurator(obs, nil, nil, nil, sf, nil, nil)
+	cc := newClientConfigurator(obs, nil, nil, nil, sf, nil, nil, nil)
 
 	err := cc.Configure()
 	if err == nil || err.Error() != "select fail" {
@@ -182,7 +201,7 @@ func Test_Configure_DefaultSelection_Success(t *testing.T) {
 	}
 	clientSel := &cfgSelectorMock{}
 
-	cc := newClientConfigurator(obs, clientSel, nil, nil, sf, nil, nil)
+	cc := newClientConfigurator(obs, clientSel, nil, nil, sf, nil, nil, nil)
 
 	if err := cc.Configure(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -199,7 +218,7 @@ func Test_Configure_DefaultSelection_SelectorError(t *testing.T) {
 	}
 	clientSel := &cfgSelectorMock{err: errors.New("apply fail")}
 
-	cc := newClientConfigurator(obs, clientSel, nil, nil, sf, nil, nil)
+	cc := newClientConfigurator(obs, clientSel, nil, nil, sf, nil, nil, nil)
 
 	err := cc.Configure()
 	if err == nil || err.Error() != "apply fail" {
@@ -223,7 +242,7 @@ func Test_Configure_AddOption_Flow_Success(t *testing.T) {
 	creator := &cfgCreatorMock{}
 	clientSel := &cfgSelectorMock{}
 
-	cc := newClientConfigurator(obs, clientSel, nil, creator, sf, tif, taf)
+	cc := newClientConfigurator(obs, clientSel, nil, creator, sf, tif, taf, nil)
 
 	if err := cc.Configure(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -250,7 +269,7 @@ func Test_Configure_RemoveOption_Flow_Success(t *testing.T) {
 	del := &cfgDeleterMock{}
 	clientSel := &cfgSelectorMock{}
 
-	cc := newClientConfigurator(obs, clientSel, del, nil, sf, nil, nil)
+	cc := newClientConfigurator(obs, clientSel, del, nil, sf, nil, nil, nil)
 
 	if err := cc.Configure(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -275,10 +294,94 @@ func Test_Configure_RemoveOption_SecondSelect_Error(t *testing.T) {
 			errs:    []error{nil, errors.New("remove select fail")},
 		},
 	}
-	cc := newClientConfigurator(obs, nil, &cfgDeleterMock{}, nil, sf, nil, nil)
+	cc := newClientConfigurator(obs, nil, &cfgDeleterMock{}, nil, sf, nil, nil, nil)
 
 	err := cc.Configure()
 	if err == nil || err.Error() != "remove select fail" {
 		t.Fatalf("expected remove select fail, got %v", err)
+	}
+}
+
+func Test_Configure_InvalidSelectedConfiguration_ShowsWarningAndRetries(t *testing.T) {
+	obs := &cfgObserverMock{
+		results: [][]string{
+			{"broken.json", "valid.json"},
+			{"broken.json", "valid.json"},
+		},
+	}
+	sf := &queuedSelectorFactory{
+		selector: &queuedSelector{options: []string{"broken.json", invalidConfigRetryOption, "valid.json"}},
+	}
+	clientSel := &cfgSelectorMock{}
+	manager := &cfgManagerMock{
+		errs: []error{
+			errors.New("invalid client configuration (/tmp/client.json): invalid ClientID 0: must be > 0"),
+			nil,
+		},
+	}
+
+	cc := newClientConfigurator(obs, clientSel, nil, nil, sf, nil, nil, manager)
+	if err := cc.Configure(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if clientSel.lastSelected != "valid.json" {
+		t.Fatalf("expected final selection %q, got %q", "valid.json", clientSel.lastSelected)
+	}
+}
+
+func Test_Configure_InvalidSelectedConfiguration_ShowDetailsThenRetry(t *testing.T) {
+	obs := &cfgObserverMock{
+		results: [][]string{
+			{"broken.json", "valid.json"},
+			{"broken.json", "valid.json"},
+		},
+	}
+	sf := &queuedSelectorFactory{
+		selector: &queuedSelector{
+			options: []string{
+				"broken.json",
+				invalidConfigDetailOption,
+				invalidConfigBackOption,
+				invalidConfigRetryOption,
+				"valid.json",
+			},
+		},
+	}
+	clientSel := &cfgSelectorMock{}
+	manager := &cfgManagerMock{
+		errs: []error{
+			errors.New("invalid client configuration (/tmp/client.json): invalid ClientID 0: must be > 0"),
+			nil,
+		},
+	}
+
+	cc := newClientConfigurator(obs, clientSel, nil, nil, sf, nil, nil, manager)
+	if err := cc.Configure(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if clientSel.lastSelected != "valid.json" {
+		t.Fatalf("expected final selection %q, got %q", "valid.json", clientSel.lastSelected)
+	}
+}
+
+func Test_Configure_SelectedConfigurationCheck_NonInvalidErrorReturned(t *testing.T) {
+	obs := &cfgObserverMock{results: [][]string{{"conf1"}}}
+	sf := &queuedSelectorFactory{selector: &queuedSelector{options: []string{"conf1"}}}
+	clientSel := &cfgSelectorMock{}
+	manager := &cfgManagerMock{errs: []error{errors.New("permission denied")}}
+
+	cc := newClientConfigurator(obs, clientSel, nil, nil, sf, nil, nil, manager)
+	err := cc.Configure()
+	if err == nil || err.Error() != "permission denied" {
+		t.Fatalf("expected permission denied, got %v", err)
+	}
+}
+
+func Test_summarizeInvalidConfigurationError(t *testing.T) {
+	msg := summarizeInvalidConfigurationError(
+		errors.New("invalid client configuration (/tmp/client.json): invalid ClientID 0: must be > 0"),
+	)
+	if msg != "invalid ClientID 0: must be > 0" {
+		t.Fatalf("unexpected summary: %q", msg)
 	}
 }

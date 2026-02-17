@@ -21,7 +21,7 @@ func (p *AppMode) Mode() (mode.Mode, error) {
 	clientMode := "client"
 	serverMode := "server"
 	tuiSelector, selectorErr := p.selectorFactory.NewTuiSelector(
-		"Mode selection:",
+		"Select mode",
 		[]string{clientMode, serverMode},
 		value_objects.NewDefaultColor(),
 		value_objects.NewTransparentColor(),

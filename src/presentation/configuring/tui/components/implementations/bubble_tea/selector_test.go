@@ -42,9 +42,6 @@ func TestNewSelector(t *testing.T) {
 	if len(sel.options) != 2 {
 		t.Errorf("expected 2 options, got %d", len(sel.options))
 	}
-	if sel.checked != -1 {
-		t.Errorf("expected checked = -1 at start, got %d", sel.checked)
-	}
 }
 
 func TestSelector_Init(t *testing.T) {
@@ -105,9 +102,6 @@ func TestSelector_UpdateEnter_FirstTime_SetsChoice_Quits(t *testing.T) {
 	if updatedSel.choice != "client" {
 		t.Errorf("expected choice 'client', got %q", updatedSel.choice)
 	}
-	if updatedSel.checked != 0 {
-		t.Errorf("expected checked=0, got %d", updatedSel.checked)
-	}
 	if cmd == nil {
 		t.Error("expected quit command on enter")
 	}
@@ -127,9 +121,6 @@ func TestSelector_UpdateEnter_SecondTime_StillQuits_NoChange(t *testing.T) {
 	if afterSecond.choice != afterFirst.choice {
 		t.Errorf("expected choice unchanged, got %q vs %q", afterSecond.choice, afterFirst.choice)
 	}
-	if afterSecond.checked != afterFirst.checked {
-		t.Errorf("expected checked unchanged, got %d vs %d", afterSecond.checked, afterFirst.checked)
-	}
 	if cmd2 == nil {
 		t.Error("expected quit command on second enter too")
 	}
@@ -146,7 +137,7 @@ func TestSelector_UpdateQ_Quits(t *testing.T) {
 	}
 }
 
-func TestSelector_View_Normal_HighlightsCursor_AndCheckedMarker(t *testing.T) {
+func TestSelector_View_Normal_HighlightsCursor(t *testing.T) {
 	sel, colorizer := newTestSelector("client mode", "server mode")
 	sel.cursor = 0
 	view := sel.View()
@@ -159,12 +150,6 @@ func TestSelector_View_Normal_HighlightsCursor_AndCheckedMarker(t *testing.T) {
 	}
 	if !strings.Contains(view, "[["+colorizer.lastS+"]]") {
 		t.Errorf("highlight marker not found in view")
-	}
-
-	sel.checked = 0
-	view = sel.View()
-	if !strings.Contains(view, "[x]") {
-		t.Error("expected checked marker [x] for selected item")
 	}
 }
 
@@ -184,5 +169,81 @@ func TestSelector_Choice(t *testing.T) {
 	sel.choice = "client"
 	if sel.Choice() != "client" {
 		t.Errorf("expected 'client', got %q", sel.Choice())
+	}
+}
+
+func TestSplitPlaceholder_Multiline(t *testing.T) {
+	title, details := splitPlaceholder("Configuration error\nReason: invalid port\nChoose another one")
+	if title != "Configuration error" {
+		t.Fatalf("unexpected title: %q", title)
+	}
+	if len(details) != 2 {
+		t.Fatalf("unexpected details len: %d", len(details))
+	}
+}
+
+func TestSelector_TabSwitchesToSettings(t *testing.T) {
+	sel, _ := newTestSelector("Main title", "a", "b")
+	updatedModel, _ := sel.Update(tea.KeyMsg{Type: tea.KeyTab})
+	updatedSel := updatedModel.(Selector)
+
+	view := updatedSel.View()
+	if !strings.Contains(view, "Settings") {
+		t.Fatalf("expected settings screen, got view: %q", view)
+	}
+}
+
+func TestSelector_SettingsToggleFooter(t *testing.T) {
+	UpdateUIPreferences(func(p *UIPreferences) {
+		p.Theme = ThemeAuto
+		p.Language = "en"
+		p.StatsUnits = StatsUnitsBiBytes
+		p.ShowFooter = true
+	})
+	t.Cleanup(func() {
+		UpdateUIPreferences(func(p *UIPreferences) {
+			p.Theme = ThemeAuto
+			p.Language = "en"
+			p.StatsUnits = StatsUnitsBiBytes
+			p.ShowFooter = true
+		})
+	})
+
+	sel, _ := newTestSelector("Main title", "a", "b")
+	m1, _ := sel.Update(tea.KeyMsg{Type: tea.KeyTab})            // settings
+	m2, _ := m1.(Selector).Update(tea.KeyMsg{Type: tea.KeyDown}) // language row
+	m3, _ := m2.(Selector).Update(tea.KeyMsg{Type: tea.KeyDown}) // stats units row
+	m4, _ := m3.(Selector).Update(tea.KeyMsg{Type: tea.KeyDown}) // footer row
+	_, _ = m4.(Selector).Update(tea.KeyMsg{Type: tea.KeyRight})  // toggle
+
+	if CurrentUIPreferences().ShowFooter {
+		t.Fatalf("expected ShowFooter to be toggled off")
+	}
+}
+
+func TestSelector_SettingsToggleStatsUnits(t *testing.T) {
+	UpdateUIPreferences(func(p *UIPreferences) {
+		p.Theme = ThemeAuto
+		p.Language = "en"
+		p.StatsUnits = StatsUnitsBiBytes
+		p.ShowFooter = true
+	})
+	t.Cleanup(func() {
+		UpdateUIPreferences(func(p *UIPreferences) {
+			p.Theme = ThemeAuto
+			p.Language = "en"
+			p.StatsUnits = StatsUnitsBiBytes
+			p.ShowFooter = true
+		})
+	})
+
+	sel, _ := newTestSelector("Main title", "a", "b")
+	m1, _ := sel.Update(tea.KeyMsg{Type: tea.KeyTab})            // settings
+	m2, _ := m1.(Selector).Update(tea.KeyMsg{Type: tea.KeyDown}) // language row
+	m3, _ := m2.(Selector).Update(tea.KeyMsg{Type: tea.KeyDown}) // stats units row
+	_, _ = m3.(Selector).Update(tea.KeyMsg{Type: tea.KeyRight})  // toggle
+
+	if CurrentUIPreferences().StatsUnits != StatsUnitsBytes {
+		t.Fatalf("expected StatsUnits to be toggled to bytes")
 	}
 }

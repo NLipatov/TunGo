@@ -40,6 +40,7 @@ func TestConfigurator_Configure_ClientMode(t *testing.T) {
 			clientSelectorFactory,
 			nil,
 			nil,
+			nil,
 		),
 		serverConfigurator: newServerConfigurator(&mockManager{}, &mockSelectorFactory{
 			selector: &queueSelector{options: []string{startServerOption}},

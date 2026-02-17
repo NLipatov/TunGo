@@ -13,6 +13,7 @@ import (
 	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/settings"
+	"tungo/infrastructure/telemetry/trafficstats"
 	"tungo/infrastructure/tunnel/controlplane"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -60,6 +61,15 @@ func (t *TransportHandler) HandleTransport() error {
 	go t.keepaliveLoop()
 
 	var buffer [settings.DefaultEthernetMTU + settings.TCPChacha20Overhead]byte
+	statsCollector := trafficstats.Global()
+	var pendingRX uint64
+	flushPendingRX := func() {
+		if statsCollector != nil && pendingRX != 0 {
+			statsCollector.AddRXBytes(pendingRX)
+			pendingRX = 0
+		}
+	}
+	defer flushPendingRX()
 
 	for {
 		select {
@@ -105,6 +115,13 @@ func (t *TransportHandler) HandleTransport() error {
 			if _, writeErr := t.writer.Write(payload); writeErr != nil {
 				log.Printf("failed to write to TUN: %v", writeErr)
 				return writeErr
+			}
+			if statsCollector != nil {
+				pendingRX += uint64(len(payload))
+				if pendingRX >= trafficstats.HotPathFlushThresholdBytes {
+					statsCollector.AddRXBytes(pendingRX)
+					pendingRX = 0
+				}
 			}
 		}
 	}

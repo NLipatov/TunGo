@@ -62,8 +62,8 @@ func TestAppMode_Mode_Client(t *testing.T) {
 		t.Fatalf("expected mode.Client, got %v", got)
 	}
 	// assert factory inputs
-	if sf.gotLabel != "Mode selection:" {
-		t.Fatalf("expected label %q, got %q", "Mode selection:", sf.gotLabel)
+	if sf.gotLabel != "Select mode" {
+		t.Fatalf("expected label %q, got %q", "Select mode", sf.gotLabel)
 	}
 	wantOpts := []string{"client", "server"}
 	if !reflect.DeepEqual(sf.gotOptions, wantOpts) {
@@ -84,8 +84,8 @@ func TestAppMode_Mode_Server(t *testing.T) {
 		t.Fatalf("expected mode.Server, got %v", got)
 	}
 	// sanity check inputs once more
-	if sf.gotLabel != "Mode selection:" {
-		t.Fatalf("expected label %q, got %q", "Mode selection:", sf.gotLabel)
+	if sf.gotLabel != "Select mode" {
+		t.Fatalf("expected label %q, got %q", "Select mode", sf.gotLabel)
 	}
 	wantOpts := []string{"client", "server"}
 	if !reflect.DeepEqual(sf.gotOptions, wantOpts) {

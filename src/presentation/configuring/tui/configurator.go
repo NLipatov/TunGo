@@ -27,7 +27,16 @@ func NewConfigurator(
 	textAreaFactory text_area.TextAreaFactory,
 ) *Configurator {
 	return &Configurator{
-		clientConfigurator: newClientConfigurator(observer, selector, deleter, creator, selectorFactory, textInputFactory, textAreaFactory),
+		clientConfigurator: newClientConfigurator(
+			observer,
+			selector,
+			deleter,
+			creator,
+			selectorFactory,
+			textInputFactory,
+			textAreaFactory,
+			clientConfiguration.NewManager(),
+		),
 		serverConfigurator: newServerConfigurator(serverConfigurationManager, selectorFactory),
 		appMode:            NewAppMode(selectorFactory),
 	}
