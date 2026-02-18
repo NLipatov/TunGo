@@ -15,6 +15,11 @@ type Runner struct {
 	routerFactory connection.TrafficRouterFactory
 }
 
+var (
+	isInteractiveRuntime = runtimeUI.IsInteractiveRuntime
+	runRuntimeDashboard  = runtimeUI.RunRuntimeDashboard
+)
+
 type runtimeUIResult struct {
 	userQuit bool
 	err      error
@@ -73,7 +78,7 @@ func (r *Runner) runSession(parentCtx context.Context) error {
 	}()
 
 	log.Printf("tunneling traffic via tun device")
-	if !runtimeUI.IsInteractiveRuntime() {
+	if !isInteractiveRuntime() {
 		return router.RouteTraffic(ctx)
 	}
 	routeErrCh := make(chan error, 1)
@@ -83,7 +88,7 @@ func (r *Runner) runSession(parentCtx context.Context) error {
 
 	uiResultCh := make(chan runtimeUIResult, 1)
 	go func() {
-		userQuit, err := runtimeUI.RunRuntimeDashboard(ctx, runtimeUI.RuntimeModeClient)
+		userQuit, err := runRuntimeDashboard(ctx, runtimeUI.RuntimeModeClient)
 		uiResultCh <- runtimeUIResult{userQuit: userQuit, err: err}
 	}()
 

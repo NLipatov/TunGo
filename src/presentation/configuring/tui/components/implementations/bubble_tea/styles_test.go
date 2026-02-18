@@ -1,6 +1,7 @@
 package bubble_tea
 
 import (
+	"strings"
 	"testing"
 	"tungo/infrastructure/telemetry/trafficstats"
 )
@@ -83,5 +84,197 @@ func Test_formatStatsLines_FixedWidth(t *testing.T) {
 	}
 	if len(smallLines[1]) != len(largeLines[1]) {
 		t.Fatalf("expected fixed width line, got %q vs %q", smallLines[1], largeLines[1])
+	}
+}
+
+func TestHelpers_BasicBranches(t *testing.T) {
+	if got := formatCount(3, 0); got != "3" {
+		t.Fatalf("expected count without max, got %q", got)
+	}
+	if got := maxInt(1, 5); got != 5 {
+		t.Fatalf("expected max=5, got %d", got)
+	}
+	if unitSystemForPrefs(UIPreferences{StatsUnits: StatsUnitsBytes}) != trafficstats.UnitSystemBytes {
+		t.Fatal("expected decimal bytes unit system")
+	}
+	if unitSystemForPrefs(UIPreferences{StatsUnits: StatsUnitsBiBytes}) != trafficstats.UnitSystemBinary {
+		t.Fatal("expected binary unit system")
+	}
+}
+
+func TestWrapAndSplitHelpers_EdgeCases(t *testing.T) {
+	if got := wrapBody(nil, 10); got != nil {
+		t.Fatalf("expected nil for empty body, got %v", got)
+	}
+	lines := wrapText("a\nb", 0)
+	if len(lines) != 2 || lines[0] != "a" || lines[1] != "b" {
+		t.Fatalf("expected split by newline for width<=0, got %v", lines)
+	}
+	empty := wrapText("", 10)
+	if len(empty) != 1 || empty[0] != "" {
+		t.Fatalf("expected single empty line, got %v", empty)
+	}
+	head, tail := splitRunes("abc", 0)
+	if head != "" || tail != "abc" {
+		t.Fatalf("expected full tail when maxRunes<=0, got head=%q tail=%q", head, tail)
+	}
+}
+
+func TestContentWidthForTerminal_NonPositiveWidth(t *testing.T) {
+	if got := contentWidthForTerminal(0); got != 1 {
+		t.Fatalf("expected fallback content width 1, got %d", got)
+	}
+}
+
+func TestRenderScreen_ANSIAndCanvasFill(t *testing.T) {
+	UpdateUIPreferences(func(p *UIPreferences) {
+		p.Theme = ThemeDark
+		p.ShowFooter = true
+	})
+	t.Cleanup(func() {
+		UpdateUIPreferences(func(p *UIPreferences) {
+			p.Theme = ThemeLight
+			p.ShowFooter = true
+		})
+	})
+
+	ansiTitle := "\x1b[31mTitle\x1b[0m"
+	out := renderScreen(80, 24, ansiTitle, "subtitle", []string{"body"}, "hint")
+	if !strings.Contains(out, ansiTitle) {
+		t.Fatalf("expected ANSI title preserved, got %q", out)
+	}
+	if !strings.Contains(out, "\x1b[48;2;0;0;0m") {
+		t.Fatalf("expected dark base background fill ANSI code, got %q", out)
+	}
+}
+
+func TestBuildFooterBlock_OnlyStatsWhenHintEmpty(t *testing.T) {
+	styles := resolveUIStyles(UIPreferences{
+		Theme:      ThemeLight,
+		Language:   "en",
+		StatsUnits: StatsUnitsBiBytes,
+		ShowFooter: true,
+	})
+	lines := buildFooterBlock(styles, UIPreferences{
+		Theme:      ThemeLight,
+		Language:   "en",
+		StatsUnits: StatsUnitsBiBytes,
+		ShowFooter: true,
+	}, 0, "")
+	if len(lines) < 2 {
+		t.Fatalf("expected footer rule + stats lines, got %v", lines)
+	}
+}
+
+func TestBuildFooterBlock_NoHintAndNoStats_ReturnsNil(t *testing.T) {
+	prevFormatter := statsFooterFormatter
+	t.Cleanup(func() { statsFooterFormatter = prevFormatter })
+	statsFooterFormatter = func(UIPreferences) []string { return nil }
+
+	styles := resolveUIStyles(UIPreferences{
+		Theme:      ThemeLight,
+		Language:   "en",
+		StatsUnits: StatsUnitsBiBytes,
+		ShowFooter: true,
+	})
+	lines := buildFooterBlock(styles, UIPreferences{
+		Theme:      ThemeLight,
+		Language:   "en",
+		StatsUnits: StatsUnitsBiBytes,
+		ShowFooter: true,
+	}, 0, "")
+	if lines != nil {
+		t.Fatalf("expected nil footer block when both hint and stats are empty, got %v", lines)
+	}
+}
+
+func TestRenderScreen_SubtitleANSIAndNoViewportSize(t *testing.T) {
+	UpdateUIPreferences(func(p *UIPreferences) {
+		p.Theme = ThemeLight
+		p.ShowFooter = false
+	})
+	out := renderScreen(0, 0, "Title", "\x1b[31mansi subtitle\x1b[0m", []string{"body"}, "")
+	if !strings.Contains(out, "ansi subtitle") {
+		t.Fatalf("expected subtitle content, got %q", out)
+	}
+}
+
+func TestComputeCardDimensions_ZeroInput(t *testing.T) {
+	if got := computeCardWidth(0); got != 0 {
+		t.Fatalf("expected width=0 for zero terminal width, got %d", got)
+	}
+	if got := computeCardHeight(0); got != 0 {
+		t.Fatalf("expected height=0 for zero terminal height, got %d", got)
+	}
+}
+
+func TestWrapBody_EmptyWrappedLineBranch(t *testing.T) {
+	// width<=0 makes wrapText split by '\n'; keep an empty row in the body.
+	lines := wrapBody([]string{""}, 0)
+	if len(lines) != 1 || lines[0] != "" {
+		t.Fatalf("expected preserved empty row, got %v", lines)
+	}
+}
+
+func TestWrapBody_EmptyWrappedFromHook(t *testing.T) {
+	prev := wrapTextForBody
+	t.Cleanup(func() { wrapTextForBody = prev })
+	wrapTextForBody = func(string, int) []string { return nil }
+
+	lines := wrapBody([]string{"x"}, 10)
+	if len(lines) != 1 || lines[0] != "" {
+		t.Fatalf("expected fallback empty line for nil wrap result, got %v", lines)
+	}
+}
+
+func TestWrapLine_WhitespaceOnly(t *testing.T) {
+	lines := wrapLine("      ", 2)
+	if len(lines) != 1 || lines[0] != "" {
+		t.Fatalf("expected whitespace-only line to collapse to empty line, got %v", lines)
+	}
+}
+
+func TestWrapLine_LongWordFlushesCurrentPrefix(t *testing.T) {
+	lines := wrapLine("a supercalifragilistic", 6)
+	if len(lines) < 2 {
+		t.Fatalf("expected wrapped output, got %v", lines)
+	}
+	if lines[0] != "a" {
+		t.Fatalf("expected current prefix to flush before long word chunks, got %v", lines)
+	}
+	for _, line := range lines {
+		if len([]rune(line)) > 6 {
+			t.Fatalf("line exceeds width: %q", line)
+		}
+	}
+}
+
+func TestSplitRunes_NoSplitWhenWithinLimit(t *testing.T) {
+	head, tail := splitRunes("abc", 3)
+	if head != "abc" || tail != "" {
+		t.Fatalf("expected no split, got head=%q tail=%q", head, tail)
+	}
+}
+
+func TestEnforceBaseThemeFill_ReappliesAfterAnsiReset(t *testing.T) {
+	out := enforceBaseThemeFill("x"+ansiReset+"y", UIPreferences{Theme: ThemeLight})
+	if !strings.Contains(out, ansiReset) {
+		t.Fatalf("expected reset sequence in output, got %q", out)
+	}
+	if !strings.Contains(out, "\x1b[48;2;255;255;255m") {
+		t.Fatalf("expected light background sequence, got %q", out)
+	}
+}
+
+func TestEnforceBaseThemeFill_NoBaseThemeAvailable(t *testing.T) {
+	prev := baseANSIForThemeFunc
+	t.Cleanup(func() { baseANSIForThemeFunc = prev })
+	baseANSIForThemeFunc = func(UIPreferences) (string, string, bool) {
+		return "", "", false
+	}
+
+	const input = "plain"
+	if out := enforceBaseThemeFill(input, UIPreferences{Theme: ThemeLight}); out != input {
+		t.Fatalf("expected unchanged string when base theme is unavailable, got %q", out)
 	}
 }

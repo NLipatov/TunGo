@@ -545,3 +545,362 @@ func Test_summarizeInvalidConfigurationError(t *testing.T) {
 		t.Fatalf("unexpected summary: %q", msg)
 	}
 }
+
+func TestShowInvalidConfigurationWarning_Branches(t *testing.T) {
+	base := &clientConfigurator{
+		selectorFactory: &queuedSelectorFactory{
+			selector: &queuedSelector{options: []string{invalidConfigDeleteOption}},
+		},
+	}
+
+	err := base.showInvalidConfigurationWarning("broken.json", errors.New("bad"), false)
+	if err == nil || err.Error() != "configuration selection aborted" {
+		t.Fatalf("expected aborted when delete picked but not allowed, got %v", err)
+	}
+
+	base.deleter = nil
+	err = base.showInvalidConfigurationWarning("broken.json", errors.New("bad"), true)
+	if err == nil || err.Error() != "invalid configuration cannot be deleted" {
+		t.Fatalf("expected nil deleter error, got %v", err)
+	}
+
+	base.deleter = &cfgDeleterMock{}
+	err = base.showInvalidConfigurationWarning("", errors.New("bad"), true)
+	if err == nil || err.Error() != "configuration selection aborted" {
+		t.Fatalf("expected empty selection error, got %v", err)
+	}
+
+	base.deleter = &cfgDeleterMock{err: errors.New("delete failed")}
+	err = base.showInvalidConfigurationWarning("broken.json", errors.New("bad"), true)
+	if err == nil || err.Error() != "delete failed" {
+		t.Fatalf("expected delete failed, got %v", err)
+	}
+}
+
+func TestShowInvalidConfigurationWarning_SelectErrors(t *testing.T) {
+	cc := &clientConfigurator{
+		selectorFactory: &queuedSelectorFactory{
+			selector: &queuedSelector{options: []string{""}, errs: []error{selector.ErrUserExit}},
+		},
+	}
+	err := cc.showInvalidConfigurationWarning("broken.json", errors.New("bad"), true)
+	if !errors.Is(err, ErrUserExit) {
+		t.Fatalf("expected ErrUserExit, got %v", err)
+	}
+
+	cc.selectorFactory = &queuedSelectorFactory{
+		selector: &queuedSelector{options: []string{""}, errs: []error{errors.New("select failed")}},
+	}
+	err = cc.showInvalidConfigurationWarning("broken.json", errors.New("bad"), true)
+	if err == nil || err.Error() != "select failed" {
+		t.Fatalf("expected select failed, got %v", err)
+	}
+}
+
+func TestSummarizeAndInvalidClassifier_EdgeCases(t *testing.T) {
+	if got := summarizeInvalidConfigurationError(nil); got != "" {
+		t.Fatalf("expected empty summary for nil error, got %q", got)
+	}
+	longMessage := "invalid client configuration (/tmp/client.json): " + string(make([]byte, 130))
+	_ = longMessage
+	longText := "invalid client configuration (/tmp/client.json): " + "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+	if got := summarizeInvalidConfigurationError(errors.New(longText)); len(got) > 120 {
+		t.Fatalf("expected summarized message <=120 chars, got %d", len(got))
+	}
+
+	if isInvalidClientConfigurationError(nil) {
+		t.Fatal("expected false for nil error")
+	}
+	if !isInvalidClientConfigurationError(errors.New("cannot unmarshal value")) {
+		t.Fatal("expected true for parse-related errors")
+	}
+	if isInvalidClientConfigurationError(errors.New("permission denied")) {
+		t.Fatal("expected false for unrelated errors")
+	}
+}
+
+func TestConfigure_AddAndInvalidWarning_UserExitAndFactoryErrors(t *testing.T) {
+	obs := &cfgObserverMock{results: [][]string{{"a.json"}}}
+	sf := &queuedSelectorFactory{
+		selector: &queuedSelector{
+			options: []string{addOption, ""},
+			errs:    []error{nil, selector.ErrUserExit},
+		},
+	}
+	cc := newClientConfigurator(
+		obs,
+		&cfgSelectorMock{},
+		&cfgDeleterMock{},
+		&cfgCreatorMock{},
+		sf,
+		&textInputFactoryMock{ti: &textInputMock{val: "name"}},
+		&textAreaFactoryMock{ta: &textAreaMock{val: "{ invalid json"}},
+		nil,
+	)
+	err := cc.Configure()
+	if !errors.Is(err, ErrUserExit) {
+		t.Fatalf("expected ErrUserExit from invalid warning selection, got %v", err)
+	}
+}
+
+func Test_Configure_ConfigSelection_UserExit_ReturnsUserExit(t *testing.T) {
+	obs := &cfgObserverMock{results: [][]string{{"conf1"}}}
+	sf := &queuedSelectorFactory{
+		selector: &queuedSelector{
+			options: []string{""},
+			errs:    []error{selector.ErrUserExit},
+		},
+	}
+	cc := newClientConfigurator(obs, &cfgSelectorMock{}, &cfgDeleterMock{}, &cfgCreatorMock{}, sf, nil, nil, nil)
+
+	err := cc.Configure()
+	if !errors.Is(err, ErrUserExit) {
+		t.Fatalf("expected ErrUserExit, got %v", err)
+	}
+}
+
+func Test_Configure_RemoveSelection_UserExit_ReturnsUserExit(t *testing.T) {
+	obs := &cfgObserverMock{results: [][]string{{"conf1"}}}
+	sf := &queuedSelectorFactory{
+		selector: &queuedSelector{
+			options: []string{removeOption, ""},
+			errs:    []error{nil, selector.ErrUserExit},
+		},
+	}
+	cc := newClientConfigurator(obs, &cfgSelectorMock{}, &cfgDeleterMock{}, &cfgCreatorMock{}, sf, nil, nil, nil)
+
+	err := cc.Configure()
+	if !errors.Is(err, ErrUserExit) {
+		t.Fatalf("expected ErrUserExit, got %v", err)
+	}
+}
+
+func Test_Configure_RemoveSelection_UnknownOptionAborted(t *testing.T) {
+	obs := &cfgObserverMock{results: [][]string{{"conf1"}}}
+	sf := &queuedSelectorFactory{
+		selector: &queuedSelector{
+			options: []string{removeOption, "not-in-options"},
+		},
+	}
+	cc := newClientConfigurator(obs, &cfgSelectorMock{}, &cfgDeleterMock{}, &cfgCreatorMock{}, sf, nil, nil, nil)
+
+	err := cc.Configure()
+	if err == nil || err.Error() != "configuration selection aborted" {
+		t.Fatalf("expected configuration selection aborted, got %v", err)
+	}
+}
+
+func Test_Configure_RemoveSelection_DeleteError(t *testing.T) {
+	obs := &cfgObserverMock{results: [][]string{{"conf1"}}}
+	sf := &queuedSelectorFactory{
+		selector: &queuedSelector{
+			options: []string{removeOption, "conf1"},
+		},
+	}
+	cc := newClientConfigurator(obs, &cfgSelectorMock{}, &cfgDeleterMock{err: errors.New("delete failed")}, &cfgCreatorMock{}, sf, nil, nil, nil)
+
+	err := cc.Configure()
+	if err == nil || err.Error() != "delete failed" {
+		t.Fatalf("expected delete failed, got %v", err)
+	}
+}
+
+func Test_Configure_RemoveLastConfiguration_TransitionsToAddFlow(t *testing.T) {
+	obs := &cfgObserverMock{
+		results: [][]string{
+			{"only.json"},
+			{"new.json"},
+		},
+	}
+	sf := &queuedSelectorFactory{
+		selector: &queuedSelector{
+			options: []string{removeOption, "only.json", "new.json"},
+		},
+	}
+	tif := &textInputFactoryMock{ti: &textInputMock{val: "new"}}
+	validCfgJSON, _ := json.Marshal(makeTestConfig())
+	taf := &textAreaFactoryMock{ta: &textAreaMock{val: string(validCfgJSON)}}
+	deleter := &cfgDeleterMock{}
+	creator := &cfgCreatorMock{}
+	clientSel := &cfgSelectorMock{}
+	cc := newClientConfigurator(obs, clientSel, deleter, creator, sf, tif, taf, nil)
+
+	if err := cc.Configure(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(deleter.deleted) != 1 || deleter.deleted[0] != "only.json" {
+		t.Fatalf("expected deleted [only.json], got %v", deleter.deleted)
+	}
+	if creator.createdName != "new" {
+		t.Fatalf("expected creator called with new, got %q", creator.createdName)
+	}
+	if clientSel.lastSelected != "new.json" {
+		t.Fatalf("expected selected new.json, got %q", clientSel.lastSelected)
+	}
+}
+
+func Test_Configure_AddNameFactoryError(t *testing.T) {
+	obs := &cfgObserverMock{results: [][]string{{}}}
+	sf := &queuedSelectorFactory{selector: &queuedSelector{options: []string{addOption}}}
+	cc := newClientConfigurator(
+		obs,
+		&cfgSelectorMock{},
+		&cfgDeleterMock{},
+		&cfgCreatorMock{},
+		sf,
+		&textInputFactoryMock{err: errors.New("text input factory failed")},
+		nil,
+		nil,
+	)
+
+	err := cc.Configure()
+	if err == nil || err.Error() != "text input factory failed" {
+		t.Fatalf("expected text input factory failed, got %v", err)
+	}
+}
+
+func Test_Configure_AddNameValueError(t *testing.T) {
+	obs := &cfgObserverMock{results: [][]string{{}}}
+	sf := &queuedSelectorFactory{selector: &queuedSelector{options: []string{addOption}}}
+	cc := newClientConfigurator(
+		obs,
+		&cfgSelectorMock{},
+		&cfgDeleterMock{},
+		&cfgCreatorMock{},
+		sf,
+		&textInputFactoryMock{ti: &textInputMock{err: errors.New("text input failed")}},
+		nil,
+		nil,
+	)
+
+	err := cc.Configure()
+	if err == nil || err.Error() != "text input failed" {
+		t.Fatalf("expected text input failed, got %v", err)
+	}
+}
+
+func Test_Configure_AddJSONFactoryError(t *testing.T) {
+	obs := &cfgObserverMock{results: [][]string{{}}}
+	sf := &queuedSelectorFactory{selector: &queuedSelector{options: []string{addOption}}}
+	cc := newClientConfigurator(
+		obs,
+		&cfgSelectorMock{},
+		&cfgDeleterMock{},
+		&cfgCreatorMock{},
+		sf,
+		&textInputFactoryMock{ti: &textInputMock{val: "new"}},
+		&textAreaFactoryMock{err: errors.New("text area factory failed")},
+		nil,
+	)
+
+	err := cc.Configure()
+	if err == nil || err.Error() != "text area factory failed" {
+		t.Fatalf("expected text area factory failed, got %v", err)
+	}
+}
+
+func Test_Configure_AddJSONValueError(t *testing.T) {
+	obs := &cfgObserverMock{results: [][]string{{}}}
+	sf := &queuedSelectorFactory{selector: &queuedSelector{options: []string{addOption}}}
+	cc := newClientConfigurator(
+		obs,
+		&cfgSelectorMock{},
+		&cfgDeleterMock{},
+		&cfgCreatorMock{},
+		sf,
+		&textInputFactoryMock{ti: &textInputMock{val: "new"}},
+		&textAreaFactoryMock{ta: &textAreaMock{err: errors.New("text area value failed")}},
+		nil,
+	)
+
+	err := cc.Configure()
+	if err == nil || err.Error() != "text area value failed" {
+		t.Fatalf("expected text area value failed, got %v", err)
+	}
+}
+
+func Test_Configure_AddCreateError(t *testing.T) {
+	obs := &cfgObserverMock{results: [][]string{{}}}
+	sf := &queuedSelectorFactory{selector: &queuedSelector{options: []string{addOption}}}
+	validCfgJSON, _ := json.Marshal(makeTestConfig())
+	cc := newClientConfigurator(
+		obs,
+		&cfgSelectorMock{},
+		&cfgDeleterMock{},
+		&cfgCreatorMock{err: errors.New("create failed")},
+		sf,
+		&textInputFactoryMock{ti: &textInputMock{val: "new"}},
+		&textAreaFactoryMock{ta: &textAreaMock{val: string(validCfgJSON)}},
+		nil,
+	)
+
+	err := cc.Configure()
+	if err == nil || err.Error() != "create failed" {
+		t.Fatalf("expected create failed, got %v", err)
+	}
+}
+
+func Test_Configure_ValidSelectedConfiguration_WithManager(t *testing.T) {
+	obs := &cfgObserverMock{results: [][]string{{"conf1"}}}
+	sf := &queuedSelectorFactory{selector: &queuedSelector{options: []string{"conf1"}}}
+	clientSel := &cfgSelectorMock{}
+	manager := &cfgManagerMock{errs: []error{nil}}
+	cc := newClientConfigurator(obs, clientSel, &cfgDeleterMock{}, &cfgCreatorMock{}, sf, nil, nil, manager)
+
+	if err := cc.Configure(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if manager.call != 1 {
+		t.Fatalf("expected manager called once, got %d", manager.call)
+	}
+}
+
+func TestShowInvalidConfigurationWarning_SelectorFactoryError(t *testing.T) {
+	cc := &clientConfigurator{
+		selectorFactory: &queuedSelectorFactory{
+			selector: &queuedSelector{options: []string{invalidConfigOkOption}},
+			errs:     []error{errors.New("factory failed")},
+		},
+	}
+	err := cc.showInvalidConfigurationWarning("broken.json", errors.New("bad"), true)
+	if err == nil || err.Error() != "factory failed" {
+		t.Fatalf("expected factory failed, got %v", err)
+	}
+}
+
+func TestShowInvalidConfigurationWarning_OkAndUnknownSelection(t *testing.T) {
+	cc := &clientConfigurator{
+		selectorFactory: &queuedSelectorFactory{
+			selector: &queuedSelector{options: []string{invalidConfigOkOption}},
+		},
+	}
+	if err := cc.showInvalidConfigurationWarning("broken.json", errors.New("bad"), true); err != nil {
+		t.Fatalf("expected nil for OK selection, got %v", err)
+	}
+
+	cc.selectorFactory = &queuedSelectorFactory{
+		selector: &queuedSelector{options: []string{"unexpected"}},
+	}
+	err := cc.showInvalidConfigurationWarning("broken.json", errors.New("bad"), true)
+	if err == nil || err.Error() != "configuration selection aborted" {
+		t.Fatalf("expected configuration selection aborted, got %v", err)
+	}
+}
+
+func TestClientConfigureFromState_UnknownState(t *testing.T) {
+	cc := newClientConfigurator(
+		&cfgObserverMock{},
+		&cfgSelectorMock{},
+		&cfgDeleterMock{},
+		&cfgCreatorMock{},
+		&queuedSelectorFactory{selector: &queuedSelector{}},
+		nil,
+		nil,
+		nil,
+	)
+
+	err := cc.configureFromState(clientFlowState(99))
+	if err == nil || err.Error() != "unknown client flow state: 99" {
+		t.Fatalf("expected unknown state error, got %v", err)
+	}
+}

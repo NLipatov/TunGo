@@ -103,6 +103,15 @@ func TestTextArea_View_WhenDone_Empty(t *testing.T) {
 	}
 }
 
+func TestTextArea_View_ShowsLineCountForMultilineValue(t *testing.T) {
+	ta := NewTextArea("Type here...")
+	ta.ta.SetValue("one\ntwo")
+	view := ta.View()
+	if !strings.Contains(view, "Lines: 2") {
+		t.Fatalf("expected line count in view, got %q", view)
+	}
+}
+
 func TestTextArea_UpdateWindowSize_ClampsToCardContentWidth(t *testing.T) {
 	ta := NewTextArea("Type here...")
 	_, _ = ta.Update(tea.WindowSizeMsg{Width: 220, Height: 40})
@@ -116,5 +125,28 @@ func TestTextArea_UpdateWindowSize_ClampsToCardContentWidth(t *testing.T) {
 	}
 	if ta.ta.Width() < 1 {
 		t.Fatalf("expected positive width, got %d", ta.ta.Width())
+	}
+}
+
+func TestTextArea_InputContainerWidth_FallbackToTextAreaWidth(t *testing.T) {
+	ta := NewTextArea("Type here...")
+	ta.width = 0
+	ta.ta.SetWidth(17)
+
+	got := ta.inputContainerWidth()
+	want := maxInt(1, ta.ta.Width()+inputContainerStyle().GetHorizontalFrameSize())
+	if got != want {
+		t.Fatalf("expected fallback width %d, got %d", want, got)
+	}
+}
+
+func TestTextArea_InputContainerWidth_UsesTerminalWidthWhenKnown(t *testing.T) {
+	ta := NewTextArea("Type here...")
+	ta.width = 120
+
+	got := ta.inputContainerWidth()
+	want := maxInt(1, contentWidthForTerminal(120))
+	if got != want {
+		t.Fatalf("expected width from terminal content %d, got %d", want, got)
 	}
 }

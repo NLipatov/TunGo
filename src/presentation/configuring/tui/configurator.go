@@ -67,7 +67,10 @@ func NewDefaultConfigurator(serverConfigurationManager server.ConfigurationManag
 }
 
 func (p *Configurator) Configure() (mode.Mode, error) {
-	state := configuratorStateModeSelect
+	return p.configureFromState(configuratorStateModeSelect)
+}
+
+func (p *Configurator) configureFromState(state configuratorState) (mode.Mode, error) {
 	selectedMode := mode.Unknown
 	for {
 		switch state {

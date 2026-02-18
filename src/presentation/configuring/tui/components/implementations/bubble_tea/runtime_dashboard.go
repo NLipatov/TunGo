@@ -49,6 +49,14 @@ type RuntimeDashboard struct {
 	quitRequested  bool
 }
 
+type runtimeDashboardProgram interface {
+	Run() (tea.Model, error)
+}
+
+var newRuntimeDashboardProgram = func(model tea.Model) runtimeDashboardProgram {
+	return tea.NewProgram(model, tea.WithAltScreen())
+}
+
 func NewRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions) RuntimeDashboard {
 	if ctx == nil {
 		ctx = context.Background()
@@ -75,7 +83,7 @@ func RunRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions) (
 		safeCtx = context.Background()
 	}
 	model := NewRuntimeDashboard(safeCtx, options)
-	program := tea.NewProgram(model, tea.WithAltScreen())
+	program := newRuntimeDashboardProgram(model)
 	result, err := program.Run()
 	if err != nil {
 		if errors.Is(safeCtx.Err(), context.Canceled) {

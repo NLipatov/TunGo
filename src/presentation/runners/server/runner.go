@@ -19,6 +19,11 @@ type Runner struct {
 	routerFactory connection.ServerTrafficRouterFactory
 }
 
+var (
+	isInteractiveRuntime = runtimeUI.IsInteractiveRuntime
+	runRuntimeDashboard  = runtimeUI.RunRuntimeDashboard
+)
+
 type runtimeUIResult struct {
 	userQuit bool
 	err      error
@@ -55,7 +60,7 @@ func (r *Runner) Run(
 		}
 	}()
 
-	if !runtimeUI.IsInteractiveRuntime() {
+	if !isInteractiveRuntime() {
 		return r.runWorkers(ctx)
 	}
 
@@ -69,7 +74,7 @@ func (r *Runner) Run(
 
 	uiResultCh := make(chan runtimeUIResult, 1)
 	go func() {
-		userQuit, err := runtimeUI.RunRuntimeDashboard(workersCtx, runtimeUI.RuntimeModeServer)
+		userQuit, err := runRuntimeDashboard(workersCtx, runtimeUI.RuntimeModeServer)
 		uiResultCh <- runtimeUIResult{userQuit: userQuit, err: err}
 	}()
 

@@ -72,7 +72,11 @@ func newClientConfigurator(observer clientConfiguration.Observer,
 }
 
 func (c *clientConfigurator) Configure() error {
-	flow := clientFlowContext{state: clientStateSelectConfiguration}
+	return c.configureFromState(clientStateSelectConfiguration)
+}
+
+func (c *clientConfigurator) configureFromState(state clientFlowState) error {
+	flow := clientFlowContext{state: state}
 	for {
 		switch flow.state {
 		case clientStateSelectConfiguration:

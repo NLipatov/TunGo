@@ -33,13 +33,21 @@ type UIPreferences struct {
 }
 
 var (
-	preferences atomic.Value
-	prefsMu     sync.Mutex
+	preferences          atomic.Value
+	prefsMu              sync.Mutex
+	runtimeGOOS          = runtime.GOOS
+	marshalUIPreferences = func(p UIPreferences) ([]byte, error) {
+		return json.MarshalIndent(p, "", "  ")
+	}
 )
 
 const uiSettingsPathEnv = "TUNGO_UI_SETTINGS_PATH"
 
 func init() {
+	initializeUIPreferences()
+}
+
+func initializeUIPreferences() {
 	p := defaultUIPreferences()
 	if loaded, err := loadUIPreferencesFromDisk(); err == nil {
 		p = loaded
@@ -126,7 +134,7 @@ func uiPreferencesPath() string {
 }
 
 func defaultUIPreferencesPath() string {
-	if runtime.GOOS == "windows" {
+	if runtimeGOOS == "windows" {
 		programData := strings.TrimSpace(os.Getenv("ProgramData"))
 		if programData == "" {
 			programData = `C:\ProgramData`
@@ -160,7 +168,7 @@ func persistUIPreferencesToDisk(p UIPreferences) error {
 		return err
 	}
 
-	payload, err := json.MarshalIndent(sanitizeUIPreferences(p), "", "  ")
+	payload, err := marshalUIPreferences(sanitizeUIPreferences(p))
 	if err != nil {
 		return err
 	}

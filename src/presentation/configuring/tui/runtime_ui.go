@@ -12,25 +12,33 @@ const (
 	RuntimeModeServer RuntimeMode = "server"
 )
 
+var (
+	bubbleIsInteractiveRuntime = bubbleTea.IsInteractiveTerminal
+	bubbleEnableLogCapture     = bubbleTea.EnableGlobalRuntimeLogCapture
+	bubbleDisableLogCapture    = bubbleTea.DisableGlobalRuntimeLogCapture
+	bubbleRunRuntimeDashboard  = bubbleTea.RunRuntimeDashboard
+	bubbleRuntimeLogFeed       = bubbleTea.GlobalRuntimeLogFeed
+)
+
 func IsInteractiveRuntime() bool {
-	return bubbleTea.IsInteractiveTerminal()
+	return bubbleIsInteractiveRuntime()
 }
 
 func EnableRuntimeLogCapture(capacity int) {
-	bubbleTea.EnableGlobalRuntimeLogCapture(capacity)
+	bubbleEnableLogCapture(capacity)
 }
 
 func DisableRuntimeLogCapture() {
-	bubbleTea.DisableGlobalRuntimeLogCapture()
+	bubbleDisableLogCapture()
 }
 
 func RunRuntimeDashboard(ctx context.Context, mode RuntimeMode) (bool, error) {
 	options := bubbleTea.RuntimeDashboardOptions{
 		Mode:    bubbleTea.RuntimeDashboardClient,
-		LogFeed: bubbleTea.GlobalRuntimeLogFeed(),
+		LogFeed: bubbleRuntimeLogFeed(),
 	}
 	if mode == RuntimeModeServer {
 		options.Mode = bubbleTea.RuntimeDashboardServer
 	}
-	return bubbleTea.RunRuntimeDashboard(ctx, options)
+	return bubbleRunRuntimeDashboard(ctx, options)
 }

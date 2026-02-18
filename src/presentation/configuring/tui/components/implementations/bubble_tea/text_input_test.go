@@ -123,6 +123,29 @@ func TestView(t *testing.T) {
 	}
 }
 
+func TestInputContainerWidth_FallbackToTextInputWidth(t *testing.T) {
+	ti := NewTextInput("Test")
+	ti.width = 0
+	ti.ti.Width = 19
+
+	got := ti.inputContainerWidth()
+	want := maxInt(1, ti.ti.Width+inputContainerStyle().GetHorizontalFrameSize())
+	if got != want {
+		t.Fatalf("expected fallback width %d, got %d", want, got)
+	}
+}
+
+func TestInputContainerWidth_UsesTerminalWidthWhenKnown(t *testing.T) {
+	ti := NewTextInput("Test")
+	ti.width = 120
+
+	got := ti.inputContainerWidth()
+	want := maxInt(1, contentWidthForTerminal(120))
+	if got != want {
+		t.Fatalf("expected width from terminal content %d, got %d", want, got)
+	}
+}
+
 func TestUpdateWindowSize_ClampsToCardContentWidth(t *testing.T) {
 	ti := NewTextInput("Test")
 	_, _ = ti.Update(tea.WindowSizeMsg{Width: 220, Height: 40})

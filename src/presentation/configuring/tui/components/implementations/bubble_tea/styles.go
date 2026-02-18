@@ -37,6 +37,12 @@ type uiStyles struct {
 
 const ansiReset = "\x1b[0m"
 
+var (
+	statsFooterFormatter = formatStatsFooter
+	wrapTextForBody      = wrapText
+	baseANSIForThemeFunc = baseANSIForTheme
+)
+
 func themeColorForPrefs(prefs UIPreferences, light, dark string) lipgloss.TerminalColor {
 	if prefs.Theme == ThemeLight {
 		return lipgloss.Color(light)
@@ -234,7 +240,7 @@ func buildFooterBlock(styles uiStyles, prefs UIPreferences, contentWidth int, hi
 	}
 
 	statsLines := []string{}
-	for _, metricLine := range formatStatsFooter(prefs) {
+	for _, metricLine := range statsFooterFormatter(prefs) {
 		line := styles.meta.Render(metricLine)
 		if contentWidth > 0 {
 			line = lipgloss.NewStyle().Width(contentWidth).Align(lipgloss.Right).Render(line)
@@ -356,7 +362,7 @@ func wrapBody(lines []string, width int) []string {
 	}
 	out := make([]string, 0, len(lines))
 	for _, line := range lines {
-		wrapped := wrapText(line, width)
+		wrapped := wrapTextForBody(line, width)
 		if len(wrapped) == 0 {
 			out = append(out, "")
 			continue
@@ -441,7 +447,7 @@ func containsANSI(s string) bool {
 }
 
 func enforceBaseThemeFill(s string, prefs UIPreferences) string {
-	bg, fg, ok := baseANSIForTheme(prefs)
+	bg, fg, ok := baseANSIForThemeFunc(prefs)
 	if !ok {
 		return s
 	}

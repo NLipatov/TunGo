@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"tungo/application/confgen"
+	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/cryptography/primitives"
 	"tungo/presentation/configuring/tui/components/domain/contracts/selector"
@@ -22,6 +23,22 @@ type serverConfigurator struct {
 	selectorFactory selector.Factory
 }
 
+type clientConfigGenerator interface {
+	Generate() (*clientConfiguration.Configuration, error)
+}
+
+var (
+	newServerClientConfigGenerator = func(manager server.ConfigurationManager) clientConfigGenerator {
+		return confgen.NewGenerator(manager, &primitives.DefaultKeyDeriver{})
+	}
+	marshalServerClientConfiguration = func(v any) ([]byte, error) {
+		return json.MarshalIndent(v, "", "  ")
+	}
+	printServerClientConfiguration = func(s string) {
+		fmt.Println(s)
+	}
+)
+
 type serverFlowState int
 
 const (
@@ -38,7 +55,10 @@ func newServerConfigurator(manager server.ConfigurationManager, selectorFactory 
 }
 
 func (s *serverConfigurator) Configure() error {
-	state := serverStateSelectOption
+	return s.configureFromState(serverStateSelectOption)
+}
+
+func (s *serverConfigurator) configureFromState(state serverFlowState) error {
 	for {
 		switch state {
 		case serverStateSelectOption:
@@ -63,16 +83,16 @@ func (s *serverConfigurator) Configure() error {
 			}
 
 		case serverStateGenerateClient:
-			gen := confgen.NewGenerator(s.manager, &primitives.DefaultKeyDeriver{})
+			gen := newServerClientConfigGenerator(s.manager)
 			conf, err := gen.Generate()
 			if err != nil {
 				return err
 			}
-			data, err := json.MarshalIndent(conf, "", "  ")
+			data, err := marshalServerClientConfiguration(conf)
 			if err != nil {
 				return fmt.Errorf("failed to marshal client configuration: %w", err)
 			}
-			fmt.Println(string(data))
+			printServerClientConfiguration(string(data))
 			state = serverStateSelectOption
 
 		default:

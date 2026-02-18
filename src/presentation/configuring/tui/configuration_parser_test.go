@@ -109,3 +109,15 @@ func TestFromJson_Invalid(t *testing.T) {
 		t.Fatal("expected error for invalid JSON, got nil")
 	}
 }
+
+func TestFromJson_InvalidByValidation(t *testing.T) {
+	parser := NewConfigurationParser()
+	cfg := makeTestConfig()
+	cfg.ClientID = 0
+	raw, _ := json.Marshal(cfg)
+
+	_, err := parser.FromJson(string(raw))
+	if err == nil {
+		t.Fatal("expected validation error for invalid client configuration")
+	}
+}

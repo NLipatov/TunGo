@@ -217,6 +217,17 @@ func TestSelector_TabSwitchesToLogs(t *testing.T) {
 	}
 }
 
+func TestSelector_TabSwitchesBackToMain(t *testing.T) {
+	sel, _ := newTestSelector("Main title", "a", "b")
+	m1, _ := sel.Update(tea.KeyMsg{Type: tea.KeyTab}) // settings
+	m2, _ := m1.(Selector).Update(tea.KeyMsg{Type: tea.KeyTab})
+	m3, _ := m2.(Selector).Update(tea.KeyMsg{Type: tea.KeyTab})
+	view := m3.(Selector).View()
+	if !strings.Contains(view, "Main") {
+		t.Fatalf("expected main screen after third tab, got %q", view)
+	}
+}
+
 func TestSelector_LogsView_EmptyFeedShowsNoLogsYet(t *testing.T) {
 	DisableGlobalRuntimeLogCapture()
 	sel, _ := newTestSelector("Main title", "a", "b")
@@ -284,6 +295,122 @@ func TestSelector_SettingsToggleStatsUnits(t *testing.T) {
 	}
 }
 
+func TestSelector_SettingsNavigationBoundsAndMutations(t *testing.T) {
+	UpdateUIPreferences(func(p *UIPreferences) {
+		p.Theme = ThemeLight
+		p.Language = "en"
+		p.StatsUnits = StatsUnitsBytes
+		p.ShowFooter = true
+	})
+	t.Cleanup(func() {
+		UpdateUIPreferences(func(p *UIPreferences) {
+			p.Theme = ThemeLight
+			p.Language = "en"
+			p.StatsUnits = StatsUnitsBiBytes
+			p.ShowFooter = true
+		})
+	})
+
+	sel, _ := newTestSelector("Main title", "a", "b")
+	sel.screen = selectorScreenSettings
+
+	// Up at top stays at top.
+	m1, _ := sel.Update(tea.KeyMsg{Type: tea.KeyUp})
+	sel = m1.(Selector)
+	if sel.settingsCursor != 0 {
+		t.Fatalf("expected cursor at top, got %d", sel.settingsCursor)
+	}
+	sel.settingsCursor = 1
+	m1, _ = sel.Update(tea.KeyMsg{Type: tea.KeyUp})
+	sel = m1.(Selector)
+	if sel.settingsCursor != 0 {
+		t.Fatalf("expected up from row 1 to row 0, got %d", sel.settingsCursor)
+	}
+
+	// Move to bottom and verify lower bound.
+	for i := 0; i < settingsRowsCount+1; i++ {
+		m1, _ = sel.Update(tea.KeyMsg{Type: tea.KeyDown})
+		sel = m1.(Selector)
+	}
+	if sel.settingsCursor != settingsRowsCount-1 {
+		t.Fatalf("expected cursor at bottom, got %d", sel.settingsCursor)
+	}
+
+	// Theme row left wraps to dark.
+	sel.settingsCursor = settingsThemeRow
+	m1, _ = sel.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	sel = m1.(Selector)
+	if CurrentUIPreferences().Theme != ThemeDark {
+		t.Fatalf("expected theme dark after left wrap, got %q", CurrentUIPreferences().Theme)
+	}
+
+	// Language row select keeps EN.
+	sel.settingsCursor = settingsLanguageRow
+	_, _ = sel.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if CurrentUIPreferences().Language != "en" {
+		t.Fatalf("expected language en, got %q", CurrentUIPreferences().Language)
+	}
+
+	// Stats row left toggles to bibytes.
+	sel.settingsCursor = settingsStatsUnitsRow
+	_, _ = sel.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	if CurrentUIPreferences().StatsUnits != StatsUnitsBiBytes {
+		t.Fatalf("expected bibytes after left toggle, got %q", CurrentUIPreferences().StatsUnits)
+	}
+
+	// Footer row select toggles.
+	sel.settingsCursor = settingsFooterRow
+	_, _ = sel.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if CurrentUIPreferences().ShowFooter {
+		t.Fatalf("expected footer OFF after toggle")
+	}
+}
+
+func TestSelector_ViewIncludesSubtitleAndDetails(t *testing.T) {
+	col := &mockColorizer{}
+	sel := NewSelector(
+		"Title\nSubtitle\nDetail line",
+		[]string{"one"},
+		col,
+		value_objects.NewDefaultColor(),
+		value_objects.NewTransparentColor(),
+	)
+	view := sel.View()
+	if !strings.Contains(view, "Subtitle") || !strings.Contains(view, "Detail line") {
+		t.Fatalf("expected subtitle/details in view, got %q", view)
+	}
+}
+
+func TestNextStatsUnits_UnknownCurrentFallsBackToBytes(t *testing.T) {
+	got := nextStatsUnits(StatsUnitsOption("unexpected"), 1)
+	if got != StatsUnitsBiBytes {
+		t.Fatalf("expected fallback step from bytes to bibytes, got %q", got)
+	}
+}
+
+func TestSelector_SettingsAndLogsView_WithWidth(t *testing.T) {
+	DisableGlobalRuntimeLogCapture()
+	t.Cleanup(DisableGlobalRuntimeLogCapture)
+	EnableGlobalRuntimeLogCapture(8)
+	feed := GlobalRuntimeLogFeed().(*RuntimeLogBuffer)
+	_, _ = feed.Write([]byte("line one\n"))
+
+	sel, _ := newTestSelector("a")
+	sel.width = 100
+	sel.height = 30
+	sel.screen = selectorScreenSettings
+	settings := sel.settingsView("ignored", "ignored", []string{"detail"})
+	if !strings.Contains(settings, "detail") || !strings.Contains(settings, "Theme") {
+		t.Fatalf("expected settings details and rows, got %q", settings)
+	}
+
+	sel.screen = selectorScreenLogs
+	logs := sel.logsView()
+	if !strings.Contains(logs, "line one") {
+		t.Fatalf("expected runtime line in logs view, got %q", logs)
+	}
+}
+
 func TestSelector_View_TruncatesLongOptionToContentWidth(t *testing.T) {
 	longOption := strings.Repeat("x", 160)
 	sel, _ := newTestSelector(longOption)
@@ -296,5 +423,74 @@ func TestSelector_View_TruncatesLongOptionToContentWidth(t *testing.T) {
 	}
 	if !strings.Contains(view, "...") {
 		t.Fatalf("expected truncated marker in view, got: %q", view)
+	}
+}
+
+func TestSelectorKeyMap_HelpLayouts(t *testing.T) {
+	keys := defaultSelectorKeyMap()
+	if len(keys.ShortHelp()) == 0 {
+		t.Fatal("expected short help bindings")
+	}
+	full := keys.FullHelp()
+	if len(full) != 2 || len(full[0]) == 0 || len(full[1]) == 0 {
+		t.Fatalf("unexpected full help layout: %v", full)
+	}
+}
+
+func TestSelector_UpdateHelpTogglesAndWindowWidthSetsHelpWidth(t *testing.T) {
+	sel, _ := newTestSelector("a", "b")
+	m1, _ := sel.Update(tea.WindowSizeMsg{Width: 80, Height: 20})
+	updated := m1.(Selector)
+	if updated.help.Width <= 0 {
+		t.Fatalf("expected positive help width, got %d", updated.help.Width)
+	}
+
+	m2, _ := updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	withHelp := m2.(Selector)
+	if !withHelp.help.ShowAll {
+		t.Fatal("expected help panel enabled after '?'")
+	}
+	m3, _ := withHelp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	if m3.(Selector).help.ShowAll {
+		t.Fatal("expected help panel disabled after second '?'")
+	}
+}
+
+func TestSelector_NextThemeAndOnOffBranches(t *testing.T) {
+	if got := nextTheme(ThemeLight, 1); got != ThemeDark {
+		t.Fatalf("expected light->dark, got %q", got)
+	}
+	if got := nextTheme(ThemeDark, -1); got != ThemeLight {
+		t.Fatalf("expected dark->light, got %q", got)
+	}
+	if got := onOff(false); got != "OFF" {
+		t.Fatalf("expected OFF, got %q", got)
+	}
+}
+
+func TestSplitPlaceholder_EmptyAndSingle(t *testing.T) {
+	title, details := splitPlaceholder(" \n\t ")
+	if title != "Choose option" || details != nil {
+		t.Fatalf("expected fallback title, got title=%q details=%v", title, details)
+	}
+	title, details = splitPlaceholder("Only title")
+	if title != "Only title" || details != nil {
+		t.Fatalf("expected single title only, got title=%q details=%v", title, details)
+	}
+}
+
+func TestSelector_LogsTail_WithGlobalFeed(t *testing.T) {
+	DisableGlobalRuntimeLogCapture()
+	t.Cleanup(DisableGlobalRuntimeLogCapture)
+
+	EnableGlobalRuntimeLogCapture(8)
+	feed := GlobalRuntimeLogFeed().(*RuntimeLogBuffer)
+	_, _ = feed.Write([]byte("line one\nline two\n"))
+
+	sel, _ := newTestSelector("Main title", "a")
+	sel.height = 24
+	lines := sel.logsTail()
+	if len(lines) == 0 {
+		t.Fatal("expected non-empty logs tail from global feed")
 	}
 }

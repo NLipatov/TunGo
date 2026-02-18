@@ -44,3 +44,71 @@ func TestGlobalRuntimeLogCapture_CapturesStandardLogger(t *testing.T) {
 		t.Fatalf("expected log line in runtime feed, got %v", lines)
 	}
 }
+
+func TestRuntimeLogBuffer_DefaultCapacityAndPartialLine(t *testing.T) {
+	b := NewRuntimeLogBuffer(0)
+	_, _ = b.Write([]byte("partial"))
+	if tail := b.Tail(10); len(tail) != 0 {
+		t.Fatalf("expected no complete lines yet, got %v", tail)
+	}
+
+	_, _ = b.Write([]byte(" line\n"))
+	tail := b.Tail(10)
+	if len(tail) != 1 || tail[0] != "partial line" {
+		t.Fatalf("unexpected tail after newline flush: %v", tail)
+	}
+}
+
+func TestRuntimeLogBuffer_TailEdgeCases(t *testing.T) {
+	b := NewRuntimeLogBuffer(2)
+	_, _ = b.Write([]byte("\n")) // empty line must be ignored
+	if got := b.Tail(0); got != nil {
+		t.Fatalf("expected nil for non-positive limit, got %v", got)
+	}
+	if got := b.Tail(-1); got != nil {
+		t.Fatalf("expected nil for non-positive limit, got %v", got)
+	}
+}
+
+func TestRedirectStandardLoggerToBuffer_NilBufferNoop(t *testing.T) {
+	restore := RedirectStandardLoggerToBuffer(nil)
+	if restore == nil {
+		t.Fatal("expected non-nil restore func")
+	}
+	restore()
+}
+
+func TestRedirectStandardLoggerToBuffer_RestoresWriter(t *testing.T) {
+	b := NewRuntimeLogBuffer(8)
+	prevWriter := log.Writer()
+	restore := RedirectStandardLoggerToBuffer(b)
+	log.Printf("redirected line")
+	restore()
+	if log.Writer() != prevWriter {
+		t.Fatal("expected logger writer to be restored")
+	}
+	if lines := b.Tail(8); len(lines) == 0 {
+		t.Fatal("expected redirected log line in buffer")
+	}
+}
+
+func TestEnableGlobalRuntimeLogCapture_IdempotentAndDisableSafe(t *testing.T) {
+	DisableGlobalRuntimeLogCapture()
+	DisableGlobalRuntimeLogCapture() // safe when already disabled
+
+	EnableGlobalRuntimeLogCapture(4)
+	first := GlobalRuntimeLogFeed()
+	if first == nil {
+		t.Fatal("expected initialized feed")
+	}
+	EnableGlobalRuntimeLogCapture(99) // should not replace existing buffer
+	second := GlobalRuntimeLogFeed()
+	if first != second {
+		t.Fatal("expected global capture enable to be idempotent")
+	}
+
+	DisableGlobalRuntimeLogCapture()
+	if GlobalRuntimeLogFeed() != nil {
+		t.Fatal("expected nil feed after disable")
+	}
+}
