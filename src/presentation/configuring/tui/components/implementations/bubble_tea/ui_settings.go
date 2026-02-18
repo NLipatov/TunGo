@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -13,7 +14,6 @@ import (
 type ThemeOption string
 
 const (
-	ThemeAuto  ThemeOption = "auto"
 	ThemeLight ThemeOption = "light"
 	ThemeDark  ThemeOption = "dark"
 )
@@ -37,10 +37,7 @@ var (
 	prefsMu     sync.Mutex
 )
 
-const (
-	defaultUIPreferencesPath = "/etc/tungo/ui.json"
-	uiSettingsPathEnv        = "TUNGO_UI_SETTINGS_PATH"
-)
+const uiSettingsPathEnv = "TUNGO_UI_SETTINGS_PATH"
 
 func init() {
 	p := defaultUIPreferences()
@@ -72,7 +69,7 @@ func UpdateUIPreferences(update func(p *UIPreferences)) UIPreferences {
 	}
 	p = sanitizeUIPreferences(p)
 	preferences.Store(p)
-	_ = persistUIPreferencesToDisk(p) // keep runtime behavior even if persistence fails.
+	_ = persistUIPreferencesToDisk(p)
 	return p
 }
 
@@ -97,7 +94,7 @@ func SaveUIPreferences() error {
 
 func defaultUIPreferences() UIPreferences {
 	return UIPreferences{
-		Theme:      ThemeAuto,
+		Theme:      ThemeLight,
 		Language:   "en",
 		StatsUnits: StatsUnitsBiBytes,
 		ShowFooter: true,
@@ -105,8 +102,11 @@ func defaultUIPreferences() UIPreferences {
 }
 
 func sanitizeUIPreferences(p UIPreferences) UIPreferences {
-	if p.Theme != ThemeAuto && p.Theme != ThemeLight && p.Theme != ThemeDark {
-		p.Theme = ThemeAuto
+	if p.Theme == ThemeOption("auto") {
+		p.Theme = ThemeLight
+	}
+	if p.Theme != ThemeLight && p.Theme != ThemeDark {
+		p.Theme = ThemeLight
 	}
 	if strings.TrimSpace(p.Language) == "" {
 		p.Language = "en"
@@ -122,7 +122,18 @@ func uiPreferencesPath() string {
 	if custom != "" {
 		return custom
 	}
-	return defaultUIPreferencesPath
+	return defaultUIPreferencesPath()
+}
+
+func defaultUIPreferencesPath() string {
+	if runtime.GOOS == "windows" {
+		programData := strings.TrimSpace(os.Getenv("ProgramData"))
+		if programData == "" {
+			programData = `C:\ProgramData`
+		}
+		return filepath.Join(programData, "TunGo", "tui.json")
+	}
+	return filepath.Join(string(os.PathSeparator), "etc", "tungo", "tui.json")
 }
 
 func loadUIPreferencesFromDisk() (UIPreferences, error) {

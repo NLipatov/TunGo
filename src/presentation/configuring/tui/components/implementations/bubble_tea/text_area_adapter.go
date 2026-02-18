@@ -9,7 +9,10 @@ import (
 )
 
 type TextAreaAdapter struct {
-	textArea  interface{ Value() string }
+	textArea interface {
+		Value() string
+		Cancelled() bool
+	}
 	teaRunner TeaRunner
 }
 
@@ -28,7 +31,10 @@ func (t *TextAreaAdapter) NewTextArea(ph string) (text_area.TextArea, error) {
 		return nil, err
 	}
 
-	taLike, ok := res.(interface{ Value() string })
+	taLike, ok := res.(interface {
+		Value() string
+		Cancelled() bool
+	})
 	if !ok {
 		return nil, errors.New("unexpected textArea type")
 	}
@@ -37,5 +43,8 @@ func (t *TextAreaAdapter) NewTextArea(ph string) (text_area.TextArea, error) {
 }
 
 func (t *TextAreaAdapter) Value() (string, error) {
+	if t.textArea.Cancelled() {
+		return "", text_area.ErrCancelled
+	}
 	return t.textArea.Value(), nil
 }

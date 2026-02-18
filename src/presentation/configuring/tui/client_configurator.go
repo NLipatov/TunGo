@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
@@ -11,23 +12,43 @@ import (
 )
 
 const (
-	addOption                 string = "+ add configuration"
-	removeOption              string = "- remove configuration"
-	invalidConfigRetryOption  string = "Choose another configuration"
-	invalidConfigDetailOption string = "Show details"
-	invalidConfigBackOption   string = "Back"
+	addOption                 string = labelAddConfig
+	removeOption              string = labelRemoveConfig
+	removeItemPrefix          string = ""
+	invalidConfigDeleteOption string = labelDeleteInvalid
+	invalidConfigOkOption     string = "OK"
 )
 
 type clientConfigurator struct {
-	observer              clientConfiguration.Observer
-	selector              clientConfiguration.Selector
-	deleter               clientConfiguration.Deleter
-	creator               clientConfiguration.Creator
-	selectorFactory       selector.Factory
-	textInputFactory      text_input.TextInputFactory
-	textAreaFactory       text_area.TextAreaFactory
-	configurationManager  clientConfiguration.ConfigurationManager
-	invalidConfigHeadline string
+	observer             clientConfiguration.Observer
+	selector             clientConfiguration.Selector
+	deleter              clientConfiguration.Deleter
+	creator              clientConfiguration.Creator
+	selectorFactory      selector.Factory
+	textInputFactory     text_input.TextInputFactory
+	textAreaFactory      text_area.TextAreaFactory
+	configurationManager clientConfiguration.ConfigurationManager
+}
+
+type clientFlowState int
+
+const (
+	clientStateSelectConfiguration clientFlowState = iota
+	clientStateSelectForRemoval
+	clientStateAddName
+	clientStateAddJSON
+	clientStateValidateSelection
+	clientStateInvalidConfigWarning
+)
+
+type clientFlowContext struct {
+	state                 clientFlowState
+	configurationOptions  []string
+	selectedConfiguration string
+	newConfigurationName  string
+	invalidConfiguration  string
+	invalidErr            error
+	allowInvalidDelete    bool
 }
 
 func newClientConfigurator(observer clientConfiguration.Observer,
@@ -39,81 +60,169 @@ func newClientConfigurator(observer clientConfiguration.Observer,
 	textAreaFactory text_area.TextAreaFactory,
 	configurationManager clientConfiguration.ConfigurationManager) *clientConfigurator {
 	return &clientConfigurator{
-		observer:              observer,
-		selector:              selector,
-		deleter:               deleter,
-		creator:               creator,
-		selectorFactory:       selectorFactory,
-		textInputFactory:      textInputFactory,
-		textAreaFactory:       textAreaFactory,
-		configurationManager:  configurationManager,
-		invalidConfigHeadline: "Configuration error",
+		observer:             observer,
+		selector:             selector,
+		deleter:              deleter,
+		creator:              creator,
+		selectorFactory:      selectorFactory,
+		textInputFactory:     textInputFactory,
+		textAreaFactory:      textAreaFactory,
+		configurationManager: configurationManager,
 	}
 }
 
 func (c *clientConfigurator) Configure() error {
-	options, optionsErr := c.observer.Observe()
-	if optionsErr != nil {
-		return optionsErr
-	}
+	flow := clientFlowContext{state: clientStateSelectConfiguration}
+	for {
+		switch flow.state {
+		case clientStateSelectConfiguration:
+			configurationOptions, optionsErr := c.observer.Observe()
+			if optionsErr != nil {
+				return optionsErr
+			}
+			flow.configurationOptions = configurationOptions
 
-	// deletion option is only shown if there's anything to delete
-	if len(options) > 0 {
-		options = append(options, removeOption)
-	}
-	//add option is always shown
-	options = append(options, addOption)
+			options := make([]string, 0, len(configurationOptions)+2)
+			options = append(options, configurationOptions...)
+			if len(configurationOptions) > 0 {
+				options = append(options, removeOption)
+			}
+			options = append(options, addOption)
 
-	selectedOption, selectedOptionErr := c.selectConf(
-		options,
-		"Select configuration – or add/remove one:",
-		value_objects.NewDefaultColor(), value_objects.NewTransparentColor(),
-	)
-	if selectedOptionErr != nil {
-		return selectedOptionErr
-	}
-
-	if selectedOption == removeOption {
-		optionsWithoutAddAndRemove := options[:len(options)-2]
-		confToDelete, confToDeleteErr := c.selectConf(
-			optionsWithoutAddAndRemove,
-			"Choose a configuration to remove:",
-			value_objects.NewColor(value_objects.ColorGreen, true), value_objects.NewTransparentColor(),
-		)
-		if confToDeleteErr != nil {
-			return confToDeleteErr
-		}
-
-		deleteErr := c.deleter.Delete(confToDelete)
-		if deleteErr != nil {
-			return deleteErr
-		}
-
-		if len(options) == 1 {
-			createErr := c.createConf()
-			if createErr != nil {
-				return createErr
+			selectedOption, selectedOptionErr := c.selectConf(
+				options,
+				"Select configuration - or add/remove one:",
+				value_objects.NewDefaultColor(), value_objects.NewTransparentColor(),
+			)
+			if selectedOptionErr != nil {
+				switch {
+				case errors.Is(selectedOptionErr, selector.ErrNavigateBack):
+					return ErrBackToModeSelection
+				case errors.Is(selectedOptionErr, selector.ErrUserExit):
+					return ErrUserExit
+				default:
+					return selectedOptionErr
+				}
 			}
 
-			return c.Configure()
+			switch selectedOption {
+			case removeOption:
+				flow.state = clientStateSelectForRemoval
+			case addOption:
+				flow.state = clientStateAddName
+			default:
+				flow.selectedConfiguration = selectedOption
+				flow.state = clientStateValidateSelection
+			}
+
+		case clientStateSelectForRemoval:
+			removeOptions, removeOptionToConfig := buildRemoveOptions(flow.configurationOptions)
+			confToDelete, confToDeleteErr := c.selectConf(
+				removeOptions,
+				"Choose a configuration to remove:",
+				value_objects.NewColor(value_objects.ColorRed, true), value_objects.NewTransparentColor(),
+			)
+			if confToDeleteErr != nil {
+				switch {
+				case errors.Is(confToDeleteErr, selector.ErrNavigateBack):
+					flow.state = clientStateSelectConfiguration
+					continue
+				case errors.Is(confToDeleteErr, selector.ErrUserExit):
+					return ErrUserExit
+				default:
+					return confToDeleteErr
+				}
+			}
+
+			resolvedConfToDelete, ok := removeOptionToConfig[confToDelete]
+			if !ok {
+				return fmt.Errorf("configuration selection aborted")
+			}
+			if deleteErr := c.deleter.Delete(resolvedConfToDelete); deleteErr != nil {
+				return deleteErr
+			}
+
+			if len(flow.configurationOptions) <= 1 {
+				flow.state = clientStateAddName
+			} else {
+				flow.state = clientStateSelectConfiguration
+			}
+
+		case clientStateAddName:
+			textInput, valueErr := c.textInputFactory.NewTextInput("Give it a name")
+			if valueErr != nil {
+				return valueErr
+			}
+			textInputValue, textInputValueErr := textInput.Value()
+			if textInputValueErr != nil {
+				if errors.Is(textInputValueErr, text_input.ErrCancelled) {
+					flow.state = clientStateSelectConfiguration
+					continue
+				}
+				return textInputValueErr
+			}
+			flow.newConfigurationName = textInputValue
+			flow.state = clientStateAddJSON
+
+		case clientStateAddJSON:
+			textArea, textAreaErr := c.textAreaFactory.NewTextArea("Paste it here")
+			if textAreaErr != nil {
+				return textAreaErr
+			}
+			textAreaValue, textAreaValueErr := textArea.Value()
+			if textAreaValueErr != nil {
+				if errors.Is(textAreaValueErr, text_area.ErrCancelled) {
+					flow.state = clientStateAddName
+					continue
+				}
+				return textAreaValueErr
+			}
+
+			configurationParser := NewConfigurationParser()
+			configuration, configurationErr := configurationParser.FromJson(textAreaValue)
+			if configurationErr != nil {
+				flow.invalidErr = configurationErr
+				flow.invalidConfiguration = ""
+				flow.allowInvalidDelete = false
+				flow.state = clientStateInvalidConfigWarning
+				continue
+			}
+
+			if createErr := c.creator.Create(configuration, flow.newConfigurationName); createErr != nil {
+				return createErr
+			}
+			flow.state = clientStateSelectConfiguration
+
+		case clientStateValidateSelection:
+			if selectErr := c.selector.Select(flow.selectedConfiguration); selectErr != nil {
+				return selectErr
+			}
+			if c.configurationManager == nil {
+				return nil
+			}
+			_, configurationErr := c.configurationManager.Configuration()
+			if configurationErr == nil {
+				return nil
+			}
+			if !isInvalidClientConfigurationError(configurationErr) {
+				return configurationErr
+			}
+
+			flow.invalidErr = configurationErr
+			flow.invalidConfiguration = flow.selectedConfiguration
+			flow.allowInvalidDelete = true
+			flow.state = clientStateInvalidConfigWarning
+
+		case clientStateInvalidConfigWarning:
+			if warningErr := c.showInvalidConfigurationWarning(flow.invalidConfiguration, flow.invalidErr, flow.allowInvalidDelete); warningErr != nil {
+				return warningErr
+			}
+			flow.state = clientStateSelectConfiguration
+
+		default:
+			return fmt.Errorf("unknown client flow state: %d", flow.state)
 		}
-
-		return c.Configure()
-	} else if selectedOption == addOption {
-		createErr := c.createConf()
-		if createErr != nil {
-			return createErr
-		}
-
-		return c.Configure()
 	}
-
-	selectErr := c.selector.Select(selectedOption)
-	if selectErr != nil {
-		return selectErr
-	}
-
-	return c.ensureSelectedConfigurationIsValid()
 }
 
 func (c *clientConfigurator) selectConf(
@@ -146,97 +255,60 @@ func (c *clientConfigurator) selectConf(
 	return selectedOption, nil
 }
 
-func (c *clientConfigurator) createConf() error {
-	textInput, valueErr := c.textInputFactory.NewTextInput("Give it a name")
-	if valueErr != nil {
-		return valueErr
+func buildRemoveOptions(configurationNames []string) ([]string, map[string]string) {
+	options := make([]string, 0, len(configurationNames))
+	optionToConfig := make(map[string]string, len(configurationNames))
+	for _, name := range configurationNames {
+		display := removeItemPrefix + name
+		options = append(options, display)
+		optionToConfig[display] = name
 	}
-
-	textInputValue, textInputValueErr := textInput.Value()
-	if textInputValueErr != nil {
-		return textInputValueErr
-	}
-
-	textArea, textAreaErr := c.textAreaFactory.NewTextArea("Paste it here")
-	if textAreaErr != nil {
-		return textAreaErr
-	}
-
-	textAreaValue, textAreaValueErr := textArea.Value()
-	if textAreaValueErr != nil {
-		return textAreaValueErr
-	}
-
-	configurationParser := NewConfigurationParser()
-	configuration, configurationErr := configurationParser.FromJson(textAreaValue)
-	if configurationErr != nil {
-		return configurationErr
-	}
-
-	return c.creator.Create(configuration, textInputValue)
+	return options, optionToConfig
 }
 
-func (c *clientConfigurator) ensureSelectedConfigurationIsValid() error {
-	if c.configurationManager == nil {
-		return nil
-	}
-
-	_, configurationErr := c.configurationManager.Configuration()
-	if configurationErr == nil {
-		return nil
-	}
-	if !isInvalidClientConfigurationError(configurationErr) {
-		return configurationErr
-	}
-
-	return c.showInvalidConfigurationWarning(configurationErr)
-}
-
-func (c *clientConfigurator) showInvalidConfigurationWarning(configurationErr error) error {
+func (c *clientConfigurator) showInvalidConfigurationWarning(selectedConfiguration string, configurationErr error, allowDelete bool) error {
 	reason := summarizeInvalidConfigurationError(configurationErr)
-	for {
-		placeholder := fmt.Sprintf(
-			"%s\nSelected configuration is invalid. Choose another configuration to continue.\nReason: %s",
-			c.invalidConfigHeadline,
-			reason,
-		)
-		selectedOption, selectErr := c.selectConf(
-			[]string{invalidConfigRetryOption, invalidConfigDetailOption},
-			placeholder,
-			value_objects.NewColor(value_objects.ColorRed, true),
-			value_objects.NewTransparentColor(),
-		)
-		if selectErr != nil {
-			return selectErr
-		}
-
-		switch selectedOption {
-		case invalidConfigRetryOption:
-			return c.Configure()
-		case invalidConfigDetailOption:
-			if detailErr := c.showInvalidConfigurationDetails(configurationErr); detailErr != nil {
-				return detailErr
-			}
-		default:
-			return fmt.Errorf("configuration selection aborted")
-		}
+	placeholder := fmt.Sprintf("Configuration is invalid: %s", reason)
+	options := []string{invalidConfigOkOption}
+	if allowDelete {
+		options = []string{invalidConfigDeleteOption, invalidConfigOkOption}
 	}
-}
-
-func (c *clientConfigurator) showInvalidConfigurationDetails(configurationErr error) error {
 	selectedOption, selectErr := c.selectConf(
-		[]string{invalidConfigBackOption},
-		fmt.Sprintf("%s details\n%s", c.invalidConfigHeadline, strings.TrimSpace(configurationErr.Error())),
+		options,
+		placeholder,
 		value_objects.NewColor(value_objects.ColorRed, true),
 		value_objects.NewTransparentColor(),
 	)
 	if selectErr != nil {
+		if errors.Is(selectErr, selector.ErrNavigateBack) {
+			return nil
+		}
+		if errors.Is(selectErr, selector.ErrUserExit) {
+			return ErrUserExit
+		}
 		return selectErr
 	}
-	if selectedOption != invalidConfigBackOption {
+
+	switch selectedOption {
+	case invalidConfigDeleteOption:
+		if !allowDelete {
+			return fmt.Errorf("configuration selection aborted")
+		}
+		if c.deleter == nil {
+			return fmt.Errorf("invalid configuration cannot be deleted")
+		}
+		if selectedConfiguration == "" {
+			return fmt.Errorf("configuration selection aborted")
+		}
+		if deleteErr := c.deleter.Delete(selectedConfiguration); deleteErr != nil {
+			return deleteErr
+		}
+		return nil
+	case invalidConfigOkOption:
+		return nil
+	default:
 		return fmt.Errorf("configuration selection aborted")
 	}
-	return nil
 }
 
 func summarizeInvalidConfigurationError(err error) string {

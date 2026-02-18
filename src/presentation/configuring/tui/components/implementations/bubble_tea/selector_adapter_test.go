@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	selectorContract "tungo/presentation/configuring/tui/components/domain/contracts/selector"
 	"tungo/presentation/configuring/tui/components/domain/value_objects"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -120,5 +121,31 @@ func TestSelectorAdapter_SelectOne(t *testing.T) {
 	}
 	if choice != "opt2" {
 		t.Fatalf("expected choice %q, got %q", "opt2", choice)
+	}
+}
+
+func TestSelectorAdapter_SelectOne_BackRequested(t *testing.T) {
+	adapter := &SelectorAdapter{
+		selector: Selector{
+			backRequested: true,
+		},
+	}
+
+	_, err := adapter.SelectOne()
+	if !errors.Is(err, selectorContract.ErrNavigateBack) {
+		t.Fatalf("expected selector.ErrNavigateBack, got %v", err)
+	}
+}
+
+func TestSelectorAdapter_SelectOne_QuitRequested(t *testing.T) {
+	adapter := &SelectorAdapter{
+		selector: Selector{
+			quitRequested: true,
+		},
+	}
+
+	_, err := adapter.SelectOne()
+	if !errors.Is(err, selectorContract.ErrUserExit) {
+		t.Fatalf("expected selector.ErrUserExit, got %v", err)
 	}
 }

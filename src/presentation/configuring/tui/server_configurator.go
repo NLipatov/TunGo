@@ -2,6 +2,7 @@ package tui
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"tungo/application/confgen"
 	"tungo/infrastructure/PAL/configuration/server"
@@ -11,8 +12,8 @@ import (
 )
 
 const (
-	startServerOption string = "start server"
-	addClientOption   string = "+ add a client"
+	startServerOption string = labelStartServer
+	addClientOption   string = labelAddServerPeer
 )
 
 type serverConfigurator struct {
@@ -20,6 +21,13 @@ type serverConfigurator struct {
 	optionsSet      [2]string
 	selectorFactory selector.Factory
 }
+
+type serverFlowState int
+
+const (
+	serverStateSelectOption serverFlowState = iota
+	serverStateGenerateClient
+)
 
 func newServerConfigurator(manager server.ConfigurationManager, selectorFactory selector.Factory) *serverConfigurator {
 	return &serverConfigurator{
@@ -30,28 +38,46 @@ func newServerConfigurator(manager server.ConfigurationManager, selectorFactory 
 }
 
 func (s *serverConfigurator) Configure() error {
-	option, optionErr := s.selectOption()
-	if optionErr != nil {
-		return optionErr
-	}
+	state := serverStateSelectOption
+	for {
+		switch state {
+		case serverStateSelectOption:
+			option, optionErr := s.selectOption()
+			if optionErr != nil {
+				if errors.Is(optionErr, selector.ErrNavigateBack) {
+					return ErrBackToModeSelection
+				}
+				if errors.Is(optionErr, selector.ErrUserExit) {
+					return ErrUserExit
+				}
+				return optionErr
+			}
 
-	switch option {
-	case startServerOption:
-		return nil
-	case addClientOption:
-		gen := confgen.NewGenerator(s.manager, &primitives.DefaultKeyDeriver{})
-		conf, err := gen.Generate()
-		if err != nil {
-			return err
+			switch option {
+			case startServerOption:
+				return nil
+			case addClientOption:
+				state = serverStateGenerateClient
+			default:
+				return fmt.Errorf("invalid option: %s", option)
+			}
+
+		case serverStateGenerateClient:
+			gen := confgen.NewGenerator(s.manager, &primitives.DefaultKeyDeriver{})
+			conf, err := gen.Generate()
+			if err != nil {
+				return err
+			}
+			data, err := json.MarshalIndent(conf, "", "  ")
+			if err != nil {
+				return fmt.Errorf("failed to marshal client configuration: %w", err)
+			}
+			fmt.Println(string(data))
+			state = serverStateSelectOption
+
+		default:
+			return fmt.Errorf("unknown server flow state: %d", state)
 		}
-		data, err := json.MarshalIndent(conf, "", "  ")
-		if err != nil {
-			return fmt.Errorf("failed to marshal client configuration: %w", err)
-		}
-		fmt.Println(string(data))
-		return s.Configure()
-	default:
-		return fmt.Errorf("invalid option: %s", option)
 	}
 }
 

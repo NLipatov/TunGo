@@ -4,13 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 	"tungo/infrastructure/telemetry/trafficstats"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 type RuntimeDashboardMode string
@@ -29,13 +27,21 @@ type runtimeTickMsg struct{}
 type runtimeLogTickMsg struct{}
 type runtimeContextDoneMsg struct{}
 
+type runtimeDashboardScreen int
+
+const (
+	runtimeScreenDataplane runtimeDashboardScreen = iota
+	runtimeScreenSettings
+	runtimeScreenLogs
+)
+
 type RuntimeDashboard struct {
 	ctx            context.Context
 	mode           RuntimeDashboardMode
 	width          int
 	height         int
 	keys           selectorKeyMap
-	screen         selectorScreen
+	screen         runtimeDashboardScreen
 	settingsCursor int
 	preferences    UIPreferences
 	logFeed        RuntimeLogFeed
@@ -55,7 +61,7 @@ func NewRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions) R
 		ctx:         ctx,
 		mode:        mode,
 		keys:        defaultSelectorKeyMap(),
-		screen:      selectorScreenMain,
+		screen:      runtimeScreenDataplane,
 		preferences: CurrentUIPreferences(),
 		logFeed:     options.LogFeed,
 	}
@@ -112,17 +118,13 @@ func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.quitRequested = true
 			return m, tea.Quit
 		case key.Matches(msg, m.keys.Tab):
-			if m.screen == selectorScreenMain {
-				m.screen = selectorScreenSettings
-			} else {
-				m.screen = selectorScreenMain
-			}
+			m.screen = m.nextScreen()
 			m.preferences = CurrentUIPreferences()
 			return m, nil
 		}
 
 		switch m.screen {
-		case selectorScreenSettings:
+		case runtimeScreenSettings:
 			return m.updateSettings(msg)
 		default:
 			return m, nil
@@ -133,10 +135,23 @@ func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m RuntimeDashboard) View() string {
 	switch m.screen {
-	case selectorScreenSettings:
+	case runtimeScreenSettings:
 		return m.settingsView()
+	case runtimeScreenLogs:
+		return m.logsView()
 	default:
 		return m.mainView()
+	}
+}
+
+func (m RuntimeDashboard) nextScreen() runtimeDashboardScreen {
+	switch m.screen {
+	case runtimeScreenDataplane:
+		return runtimeScreenSettings
+	case runtimeScreenSettings:
+		return runtimeScreenLogs
+	default:
+		return runtimeScreenDataplane
 	}
 }
 
@@ -178,41 +193,29 @@ func (m *RuntimeDashboard) refreshLogs() {
 		m.logLines = nil
 		return
 	}
-	limit := 8
-	if m.height > 0 {
-		limit = maxInt(4, minInt(14, m.height/3))
-	}
-	m.logLines = m.logFeed.Tail(limit)
+	m.logLines = m.logFeed.Tail(logTailLimit(m.height))
 }
 
 func (m RuntimeDashboard) mainView() string {
 	title := m.tabsLine()
-	subtitle := "Client runtime • Traffic is routed through TunGo"
+	subtitle := "Client runtime - Traffic is routed through TunGo"
 	status := "connected"
 	if m.mode == RuntimeDashboardServer {
-		subtitle = "Server runtime • Workers are running"
+		subtitle = "Server runtime - Workers are running"
 		status = "running"
 	}
 
 	snapshot := trafficstats.SnapshotGlobal()
+	statsLines := formatStatsLines(m.preferences, snapshot)
 	body := []string{
 		optionTextStyle().Render(fmt.Sprintf("Status: %s", status)),
 	}
 	if !m.preferences.ShowFooter {
-		body = append(body,
-			optionTextStyle().Render(fmt.Sprintf("RX %s | TX %s", formatRateForPrefs(m.preferences, snapshot.RXRate), formatRateForPrefs(m.preferences, snapshot.TXRate))),
-			optionTextStyle().Render(fmt.Sprintf("Total RX %s | TX %s", formatTotalForPrefs(m.preferences, snapshot.RXBytesTotal), formatTotalForPrefs(m.preferences, snapshot.TXBytesTotal))),
-		)
-	}
-	body = append(body, "", optionTextStyle().Render("Recent logs"))
-
-	if len(m.logLines) == 0 {
-		body = append(body, metaTextStyle().Render("  waiting for logs..."))
-	} else {
-		for _, line := range m.logLines {
-			body = append(body, metaTextStyle().Render("  "+line))
+		for _, line := range statsLines {
+			body = append(body, optionTextStyle().Render(line))
 		}
 	}
+	body = append(body, "", metaTextStyle().Render("Open Logs tab for live runtime output."))
 
 	return renderScreen(
 		m.width,
@@ -220,54 +223,47 @@ func (m RuntimeDashboard) mainView() string {
 		title,
 		subtitle,
 		body,
-		"Tab switch Dataplane/Settings • q quit",
+		"Tab switch tabs | q exit",
 	)
 }
 
 func (m RuntimeDashboard) settingsView() string {
 	body := []string{}
-
-	rows := []string{
-		fmt.Sprintf("Theme      : %s", strings.ToUpper(string(m.preferences.Theme))),
-		fmt.Sprintf("Language   : %s", strings.ToUpper(m.preferences.Language)),
-		fmt.Sprintf("Stats units: %s", strings.ToUpper(string(m.preferences.StatsUnits))),
-		fmt.Sprintf("Show footer: %s", onOff(m.preferences.ShowFooter)),
+	contentWidth := 0
+	if m.width > 0 {
+		contentWidth = contentWidthForTerminal(m.width)
 	}
-
-	for i, row := range rows {
-		prefix := "  "
-		if i == m.settingsCursor {
-			prefix = "▸ "
-			body = append(body, activeOptionTextStyle().Render(prefix+row))
-			continue
-		}
-		body = append(body, optionTextStyle().Render(prefix+row))
-	}
-	body = append(body, "")
-	body = append(body, optionTextStyle().Render("Language is MVP (EN only)."))
+	body = append(body, renderSelectableRows(uiSettingsRows(m.preferences), m.settingsCursor, contentWidth)...)
 
 	return renderScreen(
 		m.width,
 		m.height,
 		m.tabsLine(),
-		"Settings • Theme, language, units, and footer preferences",
+		"",
 		body,
-		"↑/k ↓/j row • ←/→/Enter change • Tab switch Dataplane/Settings • q quit",
+		"up/k down/j row | left/right/Enter change | Tab switch tabs | q exit",
+	)
+}
+
+func (m RuntimeDashboard) logsView() string {
+	contentWidth := 0
+	if m.width > 0 {
+		contentWidth = contentWidthForTerminal(m.width)
+	}
+	body := renderLogsBody(m.logLines, contentWidth)
+
+	return renderScreen(
+		m.width,
+		m.height,
+		m.tabsLine(),
+		"",
+		body,
+		"Tab switch tabs | q exit",
 	)
 }
 
 func (m RuntimeDashboard) tabsLine() string {
-	label := headerLabelStyle().Render("TunGo")
-	dataplaneTab := optionTextStyle().Render(" Dataplane ")
-	settingsTab := optionTextStyle().Render(" Settings ")
-
-	if m.screen == selectorScreenMain {
-		dataplaneTab = activeOptionTextStyle().Render(" Dataplane ")
-	} else {
-		settingsTab = activeOptionTextStyle().Render(" Settings ")
-	}
-
-	return lipgloss.JoinHorizontal(lipgloss.Left, label, "  ", dataplaneTab, " ", settingsTab)
+	return renderTabsLine("TunGo", []string{"Dataplane", "Settings", "Logs"}, int(m.screen))
 }
 
 func runtimeTickCmd() tea.Cmd {

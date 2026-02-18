@@ -13,6 +13,7 @@ import (
 type TextArea struct {
 	ta          *textarea.Model
 	done        bool
+	cancelled   bool
 	placeholder string
 	width       int
 	height      int
@@ -20,7 +21,7 @@ type TextArea struct {
 
 func NewTextArea(placeholder string) *TextArea {
 	ta := textarea.New()
-	ta.Prompt = "┃ "
+	ta.Prompt = "> "
 	ta.Placeholder = placeholder
 	ta.SetWidth(80)
 	ta.SetHeight(10)
@@ -42,6 +43,10 @@ func (m *TextArea) Value() string {
 	return m.ta.Value()
 }
 
+func (m *TextArea) Cancelled() bool {
+	return m.cancelled
+}
+
 func (m *TextArea) Init() tea.Cmd {
 	return textarea.Blink
 }
@@ -51,9 +56,9 @@ func (m *TextArea) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		if msg.Width > 24 {
-			m.ta.SetWidth(msg.Width - 28)
-		}
+		contentWidth := contentWidthForTerminal(msg.Width)
+		available := maxInt(1, contentWidth-inputContainerStyle().GetHorizontalFrameSize())
+		m.ta.SetWidth(minInt(80, available))
 		if msg.Height > 14 {
 			m.ta.SetHeight(msg.Height - 18)
 		}
@@ -61,6 +66,11 @@ func (m *TextArea) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		if msg.String() == "enter" {
 			m.done = true
+			return m, tea.Quit
+		}
+		if msg.String() == "esc" {
+			m.done = true
+			m.cancelled = true
 			return m, tea.Quit
 		}
 	}
@@ -79,9 +89,10 @@ func (m *TextArea) View() string {
 		lineCount = len(strings.Split(value, "\n"))
 	}
 	stats := metaTextStyle().Render(fmt.Sprintf("Lines: %d", lineCount))
+	container := inputContainerStyle().Width(m.inputContainerWidth())
 
 	body := []string{
-		inputContainerStyle().Render(m.ta.View()),
+		container.Render(m.ta.View()),
 		stats,
 	}
 	return renderScreen(
@@ -90,6 +101,13 @@ func (m *TextArea) View() string {
 		"Paste configuration",
 		m.placeholder,
 		body,
-		"Enter to confirm",
+		"Enter confirm | Esc Back",
 	)
+}
+
+func (m *TextArea) inputContainerWidth() int {
+	if m.width > 0 {
+		return maxInt(1, contentWidthForTerminal(m.width))
+	}
+	return maxInt(1, m.ta.Width()+inputContainerStyle().GetHorizontalFrameSize())
 }

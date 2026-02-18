@@ -8,7 +8,7 @@ import (
 	"tungo/application/network/connection"
 	"tungo/application/network/routing"
 	"tungo/infrastructure/settings"
-	bubbleTea "tungo/presentation/configuring/tui/components/implementations/bubble_tea"
+	runtimeUI "tungo/presentation/configuring/tui"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -55,17 +55,12 @@ func (r *Runner) Run(
 		}
 	}()
 
-	if !bubbleTea.IsInteractiveTerminal() {
+	if !runtimeUI.IsInteractiveRuntime() {
 		return r.runWorkers(ctx)
 	}
 
 	workersCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-
-	logBuffer := bubbleTea.NewRuntimeLogBuffer(600)
-	restoreLogger := bubbleTea.RedirectStandardLoggerToBuffer(logBuffer)
-	defer restoreLogger()
-	log.Printf("server runtime dashboard attached")
 
 	workerErrCh := make(chan error, 1)
 	go func() {
@@ -74,10 +69,7 @@ func (r *Runner) Run(
 
 	uiResultCh := make(chan runtimeUIResult, 1)
 	go func() {
-		userQuit, err := bubbleTea.RunRuntimeDashboard(workersCtx, bubbleTea.RuntimeDashboardOptions{
-			Mode:    bubbleTea.RuntimeDashboardServer,
-			LogFeed: logBuffer,
-		})
+		userQuit, err := runtimeUI.RunRuntimeDashboard(workersCtx, runtimeUI.RuntimeModeServer)
 		uiResultCh <- runtimeUIResult{userQuit: userQuit, err: err}
 	}()
 

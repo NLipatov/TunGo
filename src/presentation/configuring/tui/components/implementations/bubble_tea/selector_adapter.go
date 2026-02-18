@@ -2,7 +2,7 @@ package bubble_tea
 
 import (
 	"errors"
-	"tungo/presentation/configuring/tui/components/domain/contracts/selector"
+	selectorContract "tungo/presentation/configuring/tui/components/domain/contracts/selector"
 	"tungo/presentation/configuring/tui/components/domain/value_objects"
 )
 
@@ -11,13 +11,13 @@ type SelectorAdapter struct {
 	teaRunner TeaRunner
 }
 
-func NewSelectorAdapter() selector.Factory {
+func NewSelectorAdapter() selectorContract.Factory {
 	return &SelectorAdapter{
 		teaRunner: &defaultTeaRunner{},
 	}
 }
 
-func NewCustomTeaRunnerSelectorAdapter(teaRunner TeaRunner) selector.Factory {
+func NewCustomTeaRunnerSelectorAdapter(teaRunner TeaRunner) selectorContract.Factory {
 	return &SelectorAdapter{
 		teaRunner: teaRunner,
 	}
@@ -27,7 +27,7 @@ func (s *SelectorAdapter) NewTuiSelector(
 	placeholder string,
 	options []string,
 	foregroundColor, backgroundColor value_objects.Color,
-) (selector.Selector, error) {
+) (selectorContract.Selector, error) {
 	newSelector := NewSelector(placeholder, options, NewColorizer(), foregroundColor, backgroundColor)
 	selectorProgram, selectorProgramErr := s.teaRunner.Run(newSelector)
 	if selectorProgramErr != nil {
@@ -45,5 +45,11 @@ func (s *SelectorAdapter) NewTuiSelector(
 }
 
 func (s *SelectorAdapter) SelectOne() (string, error) {
+	if s.selector.QuitRequested() {
+		return "", selectorContract.ErrUserExit
+	}
+	if s.selector.BackRequested() {
+		return "", selectorContract.ErrNavigateBack
+	}
 	return s.selector.Choice(), nil
 }

@@ -97,7 +97,7 @@ func (m *mockManager) AddAllowedPeer(_ srv.AllowedPeer) error {
 }
 
 func (m *mockManager) EnsureIPv6Subnets() error { return nil }
-func (m *mockManager) InvalidateCache()          {}
+func (m *mockManager) InvalidateCache()         {}
 
 func Test_selectOption_Success(t *testing.T) {
 	qsel := &queueSelector{options: []string{startServerOption}}
@@ -204,6 +204,17 @@ func Test_Configure_InvalidOption(t *testing.T) {
 	err := sc.Configure()
 	if err == nil || err.Error() != "invalid option: unknown" {
 		t.Fatalf("expected invalid option error, got %v", err)
+	}
+}
+
+func Test_Configure_EscBack_ReturnsBackToModeSelection(t *testing.T) {
+	qsel := &queueSelector{options: []string{""}, errs: []error{selector.ErrNavigateBack}}
+	sf := &mockSelectorFactory{selector: qsel}
+	sc := newServerConfigurator(&mockManager{}, sf)
+
+	err := sc.Configure()
+	if !errors.Is(err, ErrBackToModeSelection) {
+		t.Fatalf("expected ErrBackToModeSelection, got %v", err)
 	}
 }
 

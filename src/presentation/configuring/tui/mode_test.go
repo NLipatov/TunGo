@@ -8,7 +8,7 @@ import (
 
 	"tungo/domain/mode"
 	"tungo/presentation/configuring/tui"
-	"tungo/presentation/configuring/tui/components/domain/contracts/selector"
+	selectorContract "tungo/presentation/configuring/tui/components/domain/contracts/selector"
 	"tungo/presentation/configuring/tui/components/domain/value_objects"
 )
 
@@ -24,7 +24,7 @@ func (m *AppModeMockSelector) SelectOne() (string, error) {
 
 // AppModeMockSelectorFactory records inputs and returns the preset selector/error.
 type AppModeMockSelectorFactory struct {
-	selector selector.Selector
+	selector selectorContract.Selector
 	err      error
 
 	gotLabel      string
@@ -38,7 +38,7 @@ func (m *AppModeMockSelectorFactory) NewTuiSelector(
 	options []string,
 	foreground value_objects.Color,
 	background value_objects.Color,
-) (selector.Selector, error) {
+) (selectorContract.Selector, error) {
 	m.gotLabel = label
 	m.gotOptions = append([]string(nil), options...)
 	m.gotForeground = foreground
@@ -107,6 +107,20 @@ func TestAppMode_Mode_UnknownSelection(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "invalid mode") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestAppMode_Mode_EscExits(t *testing.T) {
+	sf := &AppModeMockSelectorFactory{
+		selector: &AppModeMockSelector{err: selectorContract.ErrNavigateBack},
+	}
+	app := tui.NewAppMode(sf)
+	got, err := app.Mode()
+	if !errors.Is(err, tui.ErrUserExit) {
+		t.Fatalf("expected ErrUserExit, got %v", err)
+	}
+	if got != mode.Unknown {
+		t.Fatalf("expected mode.Unknown, got %v", got)
 	}
 }
 

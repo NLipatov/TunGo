@@ -18,16 +18,27 @@ func TestRuntimeDashboard_TabSwitchesToSettings(t *testing.T) {
 	}
 }
 
+func TestRuntimeDashboard_TabSwitchesToLogs(t *testing.T) {
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	m1, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab}) // settings
+	m2, _ := m1.(RuntimeDashboard).Update(tea.KeyMsg{Type: tea.KeyTab})
+	view := m2.(RuntimeDashboard).View()
+
+	if !strings.Contains(view, "Logs") {
+		t.Fatalf("expected logs screen after second Tab, got view: %q", view)
+	}
+}
+
 func TestRuntimeDashboard_TogglesFooterInSettings(t *testing.T) {
 	UpdateUIPreferences(func(p *UIPreferences) {
-		p.Theme = ThemeAuto
+		p.Theme = ThemeDark
 		p.Language = "en"
 		p.StatsUnits = StatsUnitsBiBytes
 		p.ShowFooter = true
 	})
 	t.Cleanup(func() {
 		UpdateUIPreferences(func(p *UIPreferences) {
-			p.Theme = ThemeAuto
+			p.Theme = ThemeDark
 			p.Language = "en"
 			p.StatsUnits = StatsUnitsBiBytes
 			p.ShowFooter = true
@@ -48,14 +59,14 @@ func TestRuntimeDashboard_TogglesFooterInSettings(t *testing.T) {
 
 func TestRuntimeDashboard_TogglesStatsUnitsInSettings(t *testing.T) {
 	UpdateUIPreferences(func(p *UIPreferences) {
-		p.Theme = ThemeAuto
+		p.Theme = ThemeDark
 		p.Language = "en"
 		p.StatsUnits = StatsUnitsBiBytes
 		p.ShowFooter = true
 	})
 	t.Cleanup(func() {
 		UpdateUIPreferences(func(p *UIPreferences) {
-			p.Theme = ThemeAuto
+			p.Theme = ThemeDark
 			p.Language = "en"
 			p.StatsUnits = StatsUnitsBiBytes
 			p.ShowFooter = true

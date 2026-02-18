@@ -20,6 +20,12 @@ type RuntimeLogBuffer struct {
 	partial  string
 }
 
+var (
+	globalRuntimeLogMu      sync.Mutex
+	globalRuntimeLogBuffer  *RuntimeLogBuffer
+	globalRuntimeLogRestore func()
+)
+
 func NewRuntimeLogBuffer(capacity int) *RuntimeLogBuffer {
 	if capacity <= 0 {
 		capacity = defaultRuntimeLogCapacity
@@ -86,4 +92,42 @@ func RedirectStandardLoggerToBuffer(buffer *RuntimeLogBuffer) func() {
 	return func() {
 		log.SetOutput(previousWriter)
 	}
+}
+
+func EnableGlobalRuntimeLogCapture(capacity int) {
+	globalRuntimeLogMu.Lock()
+	defer globalRuntimeLogMu.Unlock()
+
+	if globalRuntimeLogBuffer != nil {
+		return
+	}
+
+	buffer := NewRuntimeLogBuffer(capacity)
+	previousWriter := log.Writer()
+	log.SetOutput(io.Writer(buffer))
+
+	globalRuntimeLogBuffer = buffer
+	globalRuntimeLogRestore = func() {
+		log.SetOutput(previousWriter)
+	}
+}
+
+func DisableGlobalRuntimeLogCapture() {
+	globalRuntimeLogMu.Lock()
+	defer globalRuntimeLogMu.Unlock()
+
+	if globalRuntimeLogRestore != nil {
+		globalRuntimeLogRestore()
+	}
+	globalRuntimeLogRestore = nil
+	globalRuntimeLogBuffer = nil
+}
+
+func GlobalRuntimeLogFeed() RuntimeLogFeed {
+	globalRuntimeLogMu.Lock()
+	defer globalRuntimeLogMu.Unlock()
+	if globalRuntimeLogBuffer == nil {
+		return nil
+	}
+	return globalRuntimeLogBuffer
 }

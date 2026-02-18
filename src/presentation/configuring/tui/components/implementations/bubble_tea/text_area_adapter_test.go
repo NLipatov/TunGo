@@ -3,6 +3,7 @@ package bubble_tea
 import (
 	"errors"
 	"testing"
+	"tungo/presentation/configuring/tui/components/domain/contracts/text_area"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -16,7 +17,10 @@ func (m *textAreaAdapterMockTeaRunner) Run(_ tea.Model, _ ...tea.ProgramOption) 
 	return m.ret, m.err
 }
 
-type textAreaMock struct{ val string }
+type textAreaMock struct {
+	val       string
+	cancelled bool
+}
 
 func (f *textAreaMock) Init() tea.Cmd {
 	panic("not implemented")
@@ -31,6 +35,9 @@ func (f *textAreaMock) View() string {
 }
 
 func (f *textAreaMock) Value() string { return f.val }
+func (f *textAreaMock) Cancelled() bool {
+	return f.cancelled
+}
 
 type dummyModel struct{}
 
@@ -88,5 +95,15 @@ func TestTextAreaAdapter_Value_Empty(t *testing.T) {
 	}
 	if v, _ := adapter.Value(); v != "" {
 		t.Fatalf("want empty string, got %q", v)
+	}
+}
+
+func TestTextAreaAdapter_Value_Cancelled(t *testing.T) {
+	adapter := &TextAreaAdapter{
+		textArea: &textAreaMock{val: "", cancelled: true},
+	}
+	_, err := adapter.Value()
+	if !errors.Is(err, text_area.ErrCancelled) {
+		t.Fatalf("want ErrCancelled, got %v", err)
 	}
 }

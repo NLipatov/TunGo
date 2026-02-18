@@ -14,11 +14,12 @@ type TextInput struct {
 	placeholder string
 	width       int
 	height      int
+	cancelled   bool
 }
 
 func NewTextInput(placeholder string) *TextInput {
 	ti := textinput.New()
-	ti.Prompt = "┃ "
+	ti.Prompt = "> "
 	ti.Placeholder = placeholder
 	ti.Focus()
 	ti.CharLimit = 256
@@ -37,6 +38,10 @@ func (m *TextInput) Value() string {
 	return m.ti.Value()
 }
 
+func (m *TextInput) Cancelled() bool {
+	return m.cancelled
+}
+
 func (m *TextInput) Init() tea.Cmd {
 	return textinput.Blink
 }
@@ -46,12 +51,17 @@ func (m *TextInput) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		if msg.Width > 26 {
-			m.ti.Width = msg.Width - 26
-		}
+		contentWidth := contentWidthForTerminal(msg.Width)
+		available := maxInt(1, contentWidth-inputContainerStyle().GetHorizontalFrameSize())
+		// Keep stable text-input width to avoid visual jumps on first typed symbol.
+		m.ti.Width = minInt(40, available)
 		return m, nil
 	case tea.KeyMsg:
 		if msg.String() == "enter" {
+			return m, tea.Quit
+		}
+		if msg.String() == "esc" {
+			m.cancelled = true
 			return m, tea.Quit
 		}
 	}
@@ -62,9 +72,10 @@ func (m *TextInput) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *TextInput) View() string {
+	container := inputContainerStyle().Width(m.inputContainerWidth())
 	stats := metaTextStyle().Render("Characters: " + formatCount(utf8.RuneCountInString(m.ti.Value()), m.ti.CharLimit))
 	body := []string{
-		inputContainerStyle().Render(m.ti.View()),
+		container.Render(m.ti.View()),
 		stats,
 	}
 	return renderScreen(
@@ -73,6 +84,13 @@ func (m *TextInput) View() string {
 		"Name configuration",
 		m.placeholder,
 		body,
-		"Enter to confirm",
+		"Enter confirm | Esc Back",
 	)
+}
+
+func (m *TextInput) inputContainerWidth() int {
+	if m.width > 0 {
+		return maxInt(1, contentWidthForTerminal(m.width))
+	}
+	return maxInt(1, m.ti.Width+inputContainerStyle().GetHorizontalFrameSize())
 }

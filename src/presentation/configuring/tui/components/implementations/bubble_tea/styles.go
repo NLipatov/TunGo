@@ -17,6 +17,7 @@ const (
 	minCardHeight   = 16
 	maxCardHeight   = 30
 	topBottomInsets = 4
+	statsValueWidth = 12
 )
 
 type uiStyles struct {
@@ -37,14 +38,10 @@ type uiStyles struct {
 const ansiReset = "\x1b[0m"
 
 func themeColorForPrefs(prefs UIPreferences, light, dark string) lipgloss.TerminalColor {
-	switch prefs.Theme {
-	case ThemeLight:
+	if prefs.Theme == ThemeLight {
 		return lipgloss.Color(light)
-	case ThemeDark:
-		return lipgloss.Color(dark)
-	default:
-		return lipgloss.AdaptiveColor{Light: light, Dark: dark}
 	}
+	return lipgloss.Color(dark)
 }
 
 func themeColor(light, dark string) lipgloss.TerminalColor {
@@ -72,7 +69,7 @@ func paletteForPrefs(prefs UIPreferences) palette {
 		mutedLight:      "#374151",
 		mutedDark:       "#5fd18a",
 		accent:          "#00ADD8",
-		activeText:      "#ffffff",
+		activeText:      "#000000",
 	}
 }
 
@@ -85,25 +82,22 @@ func resolveUIStyles(prefs UIPreferences) uiStyles {
 	activeTextColor := themeColorForPrefs(prefs, p.activeText, p.activeText)
 
 	backgroundColor := themeColorForPrefs(prefs, p.backgroundLight, p.backgroundDark)
-	applyBackground := prefs.Theme == ThemeDark || prefs.Theme == ThemeLight
 
 	screenFrameStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
+		Border(lipgloss.ASCIIBorder()).
 		BorderForeground(accentColor).
 		Foreground(textColor).
 		Padding(1, 2)
 	inputFrameStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
+		Border(lipgloss.ASCIIBorder()).
 		BorderForeground(accentColor).
 		Foreground(textColor).
 		Padding(0, 1)
 	canvasStyle := lipgloss.NewStyle().
 		Foreground(textColor)
-	if applyBackground {
-		screenFrameStyle = screenFrameStyle.Background(backgroundColor)
-		inputFrameStyle = inputFrameStyle.Background(backgroundColor)
-		canvasStyle = canvasStyle.Background(backgroundColor)
-	}
+	screenFrameStyle = screenFrameStyle.Background(backgroundColor)
+	inputFrameStyle = inputFrameStyle.Background(backgroundColor)
+	canvasStyle = canvasStyle.Background(backgroundColor)
 
 	return uiStyles{
 		screenFrame: screenFrameStyle,
@@ -183,10 +177,10 @@ func renderScreen(width, height int, title, subtitle string, body []string, hint
 		}
 		if contentWidth > 0 {
 			mainLines = append(mainLines, styles.headerBar.Width(contentWidth).Render(headerTitle))
-			mainLines = append(mainLines, styles.headerRule.Render(strings.Repeat("─", maxInt(1, contentWidth))))
+			mainLines = append(mainLines, styles.headerRule.Render(strings.Repeat("-", maxInt(1, contentWidth))))
 		} else {
 			mainLines = append(mainLines, styles.headerBar.Render(headerTitle))
-			mainLines = append(mainLines, styles.headerRule.Render("─"))
+			mainLines = append(mainLines, styles.headerRule.Render("-"))
 		}
 		mainLines = append(mainLines, "")
 	}
@@ -232,40 +226,58 @@ func renderScreen(width, height int, title, subtitle string, body []string, hint
 }
 
 func buildFooterBlock(styles uiStyles, prefs UIPreferences, contentWidth int, hint string) []string {
-	footer := make([]string, 0, 3)
+	hintLines := []string{}
 	if strings.TrimSpace(hint) != "" {
 		for _, line := range wrapText(hint, contentWidth) {
-			footer = append(footer, styles.hint.Render(line))
+			hintLines = append(hintLines, styles.hint.Render(line))
 		}
 	}
+
+	statsLines := []string{}
 	for _, metricLine := range formatStatsFooter(prefs) {
-		footer = append(footer, styles.meta.Render(metricLine))
+		line := styles.meta.Render(metricLine)
+		if contentWidth > 0 {
+			line = lipgloss.NewStyle().Width(contentWidth).Align(lipgloss.Right).Render(line)
+		}
+		statsLines = append(statsLines, line)
 	}
-	if len(footer) == 0 {
+	if len(hintLines) == 0 && len(statsLines) == 0 {
 		return nil
 	}
 
-	rule := styles.headerRule.Render("─")
+	rule := styles.headerRule.Render("-")
 	if contentWidth > 0 {
-		rule = styles.headerRule.Render(strings.Repeat("─", maxInt(1, contentWidth)))
+		rule = styles.headerRule.Render(strings.Repeat("-", maxInt(1, contentWidth)))
 	}
 
-	block := make([]string, 0, len(footer)+2)
+	block := make([]string, 0, len(hintLines)+len(statsLines)+4)
 	block = append(block, rule)
-	block = append(block, footer...)
+	if len(hintLines) > 0 {
+		block = append(block, hintLines...)
+	}
+	if len(hintLines) > 0 && len(statsLines) > 0 {
+		block = append(block, "")
+	}
+	if len(statsLines) > 0 {
+		block = append(block, statsLines...)
+	}
 	return block
 }
 
 func formatStatsFooter(prefs UIPreferences) []string {
 	snapshot := trafficstats.SnapshotGlobal()
+	return formatStatsLines(prefs, snapshot)
+}
+
+func formatStatsLines(prefs UIPreferences, snapshot trafficstats.Snapshot) []string {
 	rxRate := formatRateForPrefs(prefs, snapshot.RXRate)
 	txRate := formatRateForPrefs(prefs, snapshot.TXRate)
 	rxTotal := formatTotalForPrefs(prefs, snapshot.RXBytesTotal)
 	txTotal := formatTotalForPrefs(prefs, snapshot.TXBytesTotal)
 
 	return []string{
-		fmt.Sprintf("RX %s | TX %s", rxRate, txRate),
-		fmt.Sprintf("Total RX %s | TX %s", rxTotal, txTotal),
+		fmt.Sprintf("%-8s %*s | %-8s %*s", "RX", statsValueWidth, rxRate, "TX", statsValueWidth, txRate),
+		fmt.Sprintf("%-8s %*s | %-8s %*s", "Total RX", statsValueWidth, rxTotal, "Total TX", statsValueWidth, txTotal),
 	}
 }
 
@@ -439,14 +451,10 @@ func enforceBaseThemeFill(s string, prefs UIPreferences) string {
 }
 
 func baseANSIForTheme(prefs UIPreferences) (bg string, fg string, ok bool) {
-	switch prefs.Theme {
-	case ThemeDark:
-		// Black canvas + green default text.
-		return "\x1b[48;2;0;0;0m", "\x1b[38;2;0;255;102m", true
-	case ThemeLight:
+	if prefs.Theme == ThemeLight {
 		// White canvas + black default text.
 		return "\x1b[48;2;255;255;255m", "\x1b[38;2;0;0;0m", true
-	default:
-		return "", "", false
 	}
+	// Black canvas + green default text.
+	return "\x1b[48;2;0;0;0m", "\x1b[38;2;0;255;102m", true
 }

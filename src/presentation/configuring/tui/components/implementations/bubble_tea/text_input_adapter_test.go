@@ -3,6 +3,7 @@ package bubble_tea
 import (
 	"errors"
 	"testing"
+	"tungo/presentation/configuring/tui/components/domain/contracts/text_input"
 
 	"github.com/charmbracelet/bubbletea"
 )
@@ -70,5 +71,15 @@ func TestNewTextInput_InvalidFormat(t *testing.T) {
 	_, err := adapter.NewTextInput("pl")
 	if err == nil || err.Error() != "invalid textInput format" {
 		t.Errorf("expected invalid format error, got %v", err)
+	}
+}
+
+func TestTextInputAdapter_Value_Cancelled(t *testing.T) {
+	adapter := &TextInputAdapter{
+		input: TextInput{cancelled: true},
+	}
+	_, err := adapter.Value()
+	if !errors.Is(err, text_input.ErrCancelled) {
+		t.Fatalf("expected ErrCancelled, got %v", err)
 	}
 }

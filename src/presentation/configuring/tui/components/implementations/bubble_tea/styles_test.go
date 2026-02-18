@@ -1,6 +1,9 @@
 package bubble_tea
 
-import "testing"
+import (
+	"testing"
+	"tungo/infrastructure/telemetry/trafficstats"
+)
 
 func Test_computeCardWidth_ClampedToTerminal(t *testing.T) {
 	if got := computeCardWidth(40); got > 40 {
@@ -52,5 +55,33 @@ func Test_wrapText_ANSIIsNotWrapped(t *testing.T) {
 	}
 	if lines[0] != raw {
 		t.Fatalf("expected unchanged ANSI line")
+	}
+}
+
+func Test_formatStatsLines_FixedWidth(t *testing.T) {
+	prefs := UIPreferences{StatsUnits: StatsUnitsBiBytes}
+	small := trafficstats.Snapshot{
+		RXBytesTotal: 1,
+		TXBytesTotal: 2,
+		RXRate:       3,
+		TXRate:       4,
+	}
+	large := trafficstats.Snapshot{
+		RXBytesTotal: 1234567890,
+		TXBytesTotal: 987654321,
+		RXRate:       12345678,
+		TXRate:       9876543,
+	}
+
+	smallLines := formatStatsLines(prefs, small)
+	largeLines := formatStatsLines(prefs, large)
+	if len(smallLines) != 2 || len(largeLines) != 2 {
+		t.Fatalf("expected two stats lines")
+	}
+	if len(smallLines[0]) != len(largeLines[0]) {
+		t.Fatalf("expected fixed width line, got %q vs %q", smallLines[0], largeLines[0])
+	}
+	if len(smallLines[1]) != len(largeLines[1]) {
+		t.Fatalf("expected fixed width line, got %q vs %q", smallLines[1], largeLines[1])
 	}
 }

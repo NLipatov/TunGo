@@ -9,7 +9,6 @@ import (
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 type selectorKeyMap struct {
@@ -27,19 +26,19 @@ func defaultSelectorKeyMap() selectorKeyMap {
 	return selectorKeyMap{
 		Up: key.NewBinding(
 			key.WithKeys("up", "k"),
-			key.WithHelp("↑/k", "move up"),
+			key.WithHelp("up/k", "move up"),
 		),
 		Down: key.NewBinding(
 			key.WithKeys("down", "j"),
-			key.WithHelp("↓/j", "move down"),
+			key.WithHelp("down/j", "move down"),
 		),
 		Left: key.NewBinding(
 			key.WithKeys("left", "h"),
-			key.WithHelp("←/h", "previous"),
+			key.WithHelp("left/h", "previous"),
 		),
 		Right: key.NewBinding(
 			key.WithKeys("right", "l"),
-			key.WithHelp("→/l", "next"),
+			key.WithHelp("right/l", "next"),
 		),
 		Tab: key.NewBinding(
 			key.WithKeys("tab"),
@@ -55,7 +54,7 @@ func defaultSelectorKeyMap() selectorKeyMap {
 		),
 		Quit: key.NewBinding(
 			key.WithKeys("q", "ctrl+c"),
-			key.WithHelp("q", "quit"),
+			key.WithHelp("q", "exit"),
 		),
 	}
 }
@@ -76,6 +75,7 @@ type selectorScreen int
 const (
 	selectorScreenMain selectorScreen = iota
 	selectorScreenSettings
+	selectorScreenLogs
 )
 
 const (
@@ -101,6 +101,8 @@ type Selector struct {
 	screen                           selectorScreen
 	settingsCursor                   int
 	preferences                      UIPreferences
+	backRequested                    bool
+	quitRequested                    bool
 }
 
 func NewSelector(
@@ -126,6 +128,14 @@ func (m Selector) Choice() string {
 	return m.choice
 }
 
+func (m Selector) BackRequested() bool {
+	return m.backRequested
+}
+
+func (m Selector) QuitRequested() bool {
+	return m.quitRequested
+}
+
 func (m Selector) Init() tea.Cmd {
 	return nil
 }
@@ -140,14 +150,14 @@ func (m Selector) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		case key.Matches(msg, m.keys.Help):
 			m.help.ShowAll = !m.help.ShowAll
+		case msg.String() == "esc":
+			m.backRequested = true
+			return m, tea.Quit
 		case key.Matches(msg, m.keys.Quit):
+			m.quitRequested = true
 			return m, tea.Quit
 		case key.Matches(msg, m.keys.Tab):
-			if m.screen == selectorScreenMain {
-				m.screen = selectorScreenSettings
-			} else {
-				m.screen = selectorScreenMain
-			}
+			m.screen = m.nextScreen()
 			m.preferences = CurrentUIPreferences()
 		}
 
@@ -216,7 +226,7 @@ func (m Selector) changeSetting(step int) UIPreferences {
 }
 
 func nextTheme(current ThemeOption, step int) ThemeOption {
-	order := []ThemeOption{ThemeAuto, ThemeLight, ThemeDark}
+	order := []ThemeOption{ThemeLight, ThemeDark}
 	idx := 0
 	for i, item := range order {
 		if item == current {
@@ -265,20 +275,37 @@ func (m Selector) View() string {
 	if m.screen == selectorScreenSettings {
 		return m.settingsView(title, subtitle, preamble)
 	}
+	if m.screen == selectorScreenLogs {
+		return m.logsView()
+	}
 
 	return m.mainView(title, subtitle, preamble)
 }
 
+func (m Selector) nextScreen() selectorScreen {
+	switch m.screen {
+	case selectorScreenMain:
+		return selectorScreenSettings
+	case selectorScreenSettings:
+		return selectorScreenLogs
+	default:
+		return selectorScreenMain
+	}
+}
+
 func (m Selector) mainView(title, subtitle string, preamble []string) string {
+	contentWidth := 0
+	if m.width > 0 {
+		contentWidth = contentWidthForTerminal(m.width)
+	}
 	options := make([]string, 0, len(m.options))
 	for i, choice := range m.options {
 		pointer := "  "
 		if m.cursor == i {
-			pointer = "▸ "
+			pointer = "> "
 		}
-		line := fmt.Sprintf("%s%s", pointer, choice)
+		line := truncateWithEllipsis(fmt.Sprintf("%s%s", pointer, choice), contentWidth)
 		if m.cursor == i {
-			line = m.colorizer.ColorizeString(line, m.backgroundColor, m.foregroundColor)
 			line = activeOptionTextStyle().Render(line)
 		} else {
 			line = optionTextStyle().Render(line)
@@ -302,7 +329,7 @@ func (m Selector) mainView(title, subtitle string, preamble []string) string {
 		m.tabsLine(),
 		title,
 		body,
-		"↑/k move • ↓/j move • Enter select • Tab switch Main/Settings • q quit",
+		"up/k move | down/j move | Enter select | Tab switch tabs | Esc Back | q exit",
 	)
 }
 
@@ -313,46 +340,49 @@ func (m Selector) settingsView(title, subtitle string, preamble []string) string
 		body = append(body, "")
 	}
 
-	rows := []string{
-		fmt.Sprintf("Theme      : %s", strings.ToUpper(string(m.preferences.Theme))),
-		fmt.Sprintf("Language   : %s", strings.ToUpper(m.preferences.Language)),
-		fmt.Sprintf("Stats units: %s", strings.ToUpper(string(m.preferences.StatsUnits))),
-		fmt.Sprintf("Show footer: %s", onOff(m.preferences.ShowFooter)),
+	contentWidth := 0
+	if m.width > 0 {
+		contentWidth = contentWidthForTerminal(m.width)
 	}
-	for i, row := range rows {
-		prefix := "  "
-		if i == m.settingsCursor {
-			prefix = "▸ "
-			body = append(body, activeOptionTextStyle().Render(prefix+row))
-			continue
-		}
-		body = append(body, optionTextStyle().Render(prefix+row))
-	}
-	body = append(body, "")
-	body = append(body, optionTextStyle().Render("Language is MVP (EN only)."))
+	body = append(body, renderSelectableRows(uiSettingsRows(m.preferences), m.settingsCursor, contentWidth)...)
 
 	return renderScreen(
 		m.width,
 		m.height,
 		m.tabsLine(),
-		"Settings • Theme, language, units, and footer preferences",
+		"",
 		body,
-		"←/→ or Enter change value • Tab switch Main/Settings",
+		"left/right or Enter change value | Tab switch tabs | Esc Back | q exit",
 	)
 }
 
-func (m Selector) tabsLine() string {
-	label := headerLabelStyle().Render("TunGo")
-	mainTab := optionTextStyle().Render(" Main ")
-	settingsTab := optionTextStyle().Render(" Settings ")
-
-	if m.screen == selectorScreenMain {
-		mainTab = activeOptionTextStyle().Render(" Main ")
-	} else {
-		settingsTab = activeOptionTextStyle().Render(" Settings ")
+func (m Selector) logsView() string {
+	contentWidth := 0
+	if m.width > 0 {
+		contentWidth = contentWidthForTerminal(m.width)
 	}
+	body := renderLogsBody(m.logsTail(), contentWidth)
 
-	return lipgloss.JoinHorizontal(lipgloss.Left, label, "  ", mainTab, " ", settingsTab)
+	return renderScreen(
+		m.width,
+		m.height,
+		m.tabsLine(),
+		"",
+		body,
+		"Tab switch tabs | Esc Back | q exit",
+	)
+}
+
+func (m Selector) logsTail() []string {
+	feed := GlobalRuntimeLogFeed()
+	if feed == nil {
+		return nil
+	}
+	return feed.Tail(logTailLimit(m.height))
+}
+
+func (m Selector) tabsLine() string {
+	return renderTabsLine("TunGo", []string{"Main", "Settings", "Logs"}, int(m.screen))
 }
 
 func onOff(v bool) string {

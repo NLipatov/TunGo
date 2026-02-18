@@ -1,17 +1,18 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"tungo/domain/mode"
-	"tungo/presentation/configuring/tui/components/domain/contracts/selector"
+	selectorContract "tungo/presentation/configuring/tui/components/domain/contracts/selector"
 	"tungo/presentation/configuring/tui/components/domain/value_objects"
 )
 
 type AppMode struct {
-	selectorFactory selector.Factory
+	selectorFactory selectorContract.Factory
 }
 
-func NewAppMode(selectorFactory selector.Factory) AppMode {
+func NewAppMode(selectorFactory selectorContract.Factory) AppMode {
 	return AppMode{
 		selectorFactory: selectorFactory,
 	}
@@ -32,6 +33,9 @@ func (p *AppMode) Mode() (mode.Mode, error) {
 
 	selectedOption, selectOneErr := tuiSelector.SelectOne()
 	if selectOneErr != nil {
+		if errors.Is(selectOneErr, selectorContract.ErrNavigateBack) || errors.Is(selectOneErr, selectorContract.ErrUserExit) {
+			return mode.Unknown, ErrUserExit
+		}
 		return mode.Unknown, selectOneErr
 	}
 	switch selectedOption {

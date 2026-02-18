@@ -39,5 +39,8 @@ func (t *TextInputAdapter) NewTextInput(placeholder string) (text_input.TextInpu
 }
 
 func (t *TextInputAdapter) Value() (string, error) {
+	if t.input.Cancelled() {
+		return "", text_input.ErrCancelled
+	}
 	return t.input.Value(), nil
 }

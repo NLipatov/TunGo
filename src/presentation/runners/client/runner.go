@@ -7,7 +7,7 @@ import (
 	"log"
 	"time"
 	"tungo/application/network/connection"
-	bubbleTea "tungo/presentation/configuring/tui/components/implementations/bubble_tea"
+	runtimeUI "tungo/presentation/configuring/tui"
 )
 
 type Runner struct {
@@ -73,14 +73,9 @@ func (r *Runner) runSession(parentCtx context.Context) error {
 	}()
 
 	log.Printf("tunneling traffic via tun device")
-	if !bubbleTea.IsInteractiveTerminal() {
+	if !runtimeUI.IsInteractiveRuntime() {
 		return router.RouteTraffic(ctx)
 	}
-	logBuffer := bubbleTea.NewRuntimeLogBuffer(400)
-	restoreLogger := bubbleTea.RedirectStandardLoggerToBuffer(logBuffer)
-	defer restoreLogger()
-	log.Printf("client runtime dashboard attached")
-
 	routeErrCh := make(chan error, 1)
 	go func() {
 		routeErrCh <- router.RouteTraffic(ctx)
@@ -88,10 +83,7 @@ func (r *Runner) runSession(parentCtx context.Context) error {
 
 	uiResultCh := make(chan runtimeUIResult, 1)
 	go func() {
-		userQuit, err := bubbleTea.RunRuntimeDashboard(ctx, bubbleTea.RuntimeDashboardOptions{
-			Mode:    bubbleTea.RuntimeDashboardClient,
-			LogFeed: logBuffer,
-		})
+		userQuit, err := runtimeUI.RunRuntimeDashboard(ctx, runtimeUI.RuntimeModeClient)
 		uiResultCh <- runtimeUIResult{userQuit: userQuit, err: err}
 	}()
 

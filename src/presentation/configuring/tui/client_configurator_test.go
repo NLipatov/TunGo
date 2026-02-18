@@ -143,6 +143,37 @@ type textAreaMock struct {
 
 func (m *textAreaMock) Value() (string, error) { return m.val, m.err }
 
+type stagedTextAreaMock struct {
+	values []string
+	errs   []error
+	idx    int
+}
+
+func (m *stagedTextAreaMock) Value() (string, error) {
+	if m.idx >= len(m.values) && m.idx >= len(m.errs) {
+		if len(m.values) > 0 {
+			return m.values[len(m.values)-1], nil
+		}
+		if len(m.errs) > 0 {
+			return "", m.errs[len(m.errs)-1]
+		}
+		return "", nil
+	}
+
+	cur := m.idx
+	m.idx++
+
+	var val string
+	var err error
+	if cur < len(m.values) {
+		val = m.values[cur]
+	}
+	if cur < len(m.errs) {
+		err = m.errs[cur]
+	}
+	return val, err
+}
+
 type textAreaFactoryMock struct {
 	ta  text_area.TextArea
 	err error
@@ -226,6 +257,22 @@ func Test_Configure_DefaultSelection_SelectorError(t *testing.T) {
 	}
 }
 
+func Test_Configure_EscFromConfigSelection_ReturnsBackToModeSelection(t *testing.T) {
+	obs := &cfgObserverMock{results: [][]string{{"conf1"}}}
+	sf := &queuedSelectorFactory{
+		selector: &queuedSelector{
+			options: []string{""},
+			errs:    []error{selector.ErrNavigateBack},
+		},
+	}
+	cc := newClientConfigurator(obs, &cfgSelectorMock{}, nil, nil, sf, nil, nil, nil)
+
+	err := cc.Configure()
+	if !errors.Is(err, ErrBackToModeSelection) {
+		t.Fatalf("expected ErrBackToModeSelection, got %v", err)
+	}
+}
+
 func Test_Configure_AddOption_Flow_Success(t *testing.T) {
 	obs := &cfgObserverMock{
 		results: [][]string{
@@ -255,6 +302,91 @@ func Test_Configure_AddOption_Flow_Success(t *testing.T) {
 	}
 }
 
+func Test_Configure_AddOption_InvalidJSON_ShowsWarningAndReturnsToSelection(t *testing.T) {
+	obs := &cfgObserverMock{
+		results: [][]string{
+			{"valid.json"},
+			{"valid.json"},
+		},
+	}
+	sf := &queuedSelectorFactory{
+		selector: &queuedSelector{
+			options: []string{addOption, "", "valid.json"},
+			errs:    []error{nil, selector.ErrNavigateBack, nil},
+		},
+	}
+	tif := &textInputFactoryMock{ti: &textInputMock{val: "broken"}}
+	taf := &textAreaFactoryMock{ta: &textAreaMock{val: "{ invalid json"}}
+	creator := &cfgCreatorMock{}
+	clientSel := &cfgSelectorMock{}
+
+	cc := newClientConfigurator(obs, clientSel, nil, creator, sf, tif, taf, nil)
+
+	if err := cc.Configure(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if creator.createdName != "" {
+		t.Fatalf("expected creator to not be called for invalid json, got %q", creator.createdName)
+	}
+	if clientSel.lastSelected != "valid.json" {
+		t.Fatalf("expected final selection %q, got %q", "valid.json", clientSel.lastSelected)
+	}
+}
+
+func Test_Configure_AddOption_NameInputCancelled_ReturnsToSelection(t *testing.T) {
+	obs := &cfgObserverMock{
+		results: [][]string{
+			{"valid.json"},
+			{"valid.json"},
+		},
+	}
+	sf := &queuedSelectorFactory{
+		selector: &queuedSelector{options: []string{addOption, "valid.json"}},
+	}
+	tif := &textInputFactoryMock{ti: &textInputMock{err: text_input.ErrCancelled}}
+	taf := &textAreaFactoryMock{ta: &textAreaMock{val: ""}}
+	clientSel := &cfgSelectorMock{}
+
+	cc := newClientConfigurator(obs, clientSel, nil, &cfgCreatorMock{}, sf, tif, taf, nil)
+	if err := cc.Configure(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if clientSel.lastSelected != "valid.json" {
+		t.Fatalf("expected final selection %q, got %q", "valid.json", clientSel.lastSelected)
+	}
+}
+
+func Test_Configure_AddOption_TextAreaCancelled_ReturnsToNameStep(t *testing.T) {
+	obs := &cfgObserverMock{
+		results: [][]string{
+			{"valid.json"},
+			{"newconf.json"},
+		},
+	}
+	sf := &queuedSelectorFactory{
+		selector: &queuedSelector{options: []string{addOption, "newconf.json"}},
+	}
+	tif := &textInputFactoryMock{ti: &textInputMock{val: "newconf"}}
+	validCfgJSON, _ := json.Marshal(makeTestConfig())
+	taf := &textAreaFactoryMock{ta: &stagedTextAreaMock{
+		values: []string{"", string(validCfgJSON)},
+		errs:   []error{text_area.ErrCancelled, nil},
+	}}
+	creator := &cfgCreatorMock{}
+	clientSel := &cfgSelectorMock{}
+
+	cc := newClientConfigurator(obs, clientSel, nil, creator, sf, tif, taf, nil)
+	if err := cc.Configure(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if creator.createdName != "newconf" {
+		t.Fatalf("expected creator called with %q, got %q", "newconf", creator.createdName)
+	}
+	if clientSel.lastSelected != "newconf.json" {
+		t.Fatalf("expected final selection %q, got %q", "newconf.json", clientSel.lastSelected)
+	}
+}
+
 func Test_Configure_RemoveOption_Flow_Success(t *testing.T) {
 	obs := &cfgObserverMock{
 		results: [][]string{
@@ -263,7 +395,7 @@ func Test_Configure_RemoveOption_Flow_Success(t *testing.T) {
 		},
 	}
 	sf := &queuedSelectorFactory{
-		selector: &queuedSelector{options: []string{removeOption, "a.json", "b.json"}},
+		selector: &queuedSelector{options: []string{removeOption, removeItemPrefix + "a.json", "b.json"}},
 	}
 
 	del := &cfgDeleterMock{}
@@ -302,7 +434,36 @@ func Test_Configure_RemoveOption_SecondSelect_Error(t *testing.T) {
 	}
 }
 
-func Test_Configure_InvalidSelectedConfiguration_ShowsWarningAndRetries(t *testing.T) {
+func Test_Configure_RemoveOption_Back(t *testing.T) {
+	obs := &cfgObserverMock{
+		results: [][]string{
+			{"a.json", "b.json"},
+			{"a.json", "b.json"},
+		},
+	}
+	sf := &queuedSelectorFactory{
+		selector: &queuedSelector{
+			options: []string{removeOption, "", "b.json"},
+			errs:    []error{nil, selector.ErrNavigateBack, nil},
+		},
+	}
+
+	del := &cfgDeleterMock{}
+	clientSel := &cfgSelectorMock{}
+
+	cc := newClientConfigurator(obs, clientSel, del, nil, sf, nil, nil, nil)
+	if err := cc.Configure(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(del.deleted) != 0 {
+		t.Fatalf("expected nothing deleted, got %v", del.deleted)
+	}
+	if clientSel.lastSelected != "b.json" {
+		t.Fatalf("expected final selection %q, got %q", "b.json", clientSel.lastSelected)
+	}
+}
+
+func Test_Configure_InvalidSelectedConfiguration_Back_ReturnsToSelection(t *testing.T) {
 	obs := &cfgObserverMock{
 		results: [][]string{
 			{"broken.json", "valid.json"},
@@ -310,7 +471,10 @@ func Test_Configure_InvalidSelectedConfiguration_ShowsWarningAndRetries(t *testi
 		},
 	}
 	sf := &queuedSelectorFactory{
-		selector: &queuedSelector{options: []string{"broken.json", invalidConfigRetryOption, "valid.json"}},
+		selector: &queuedSelector{
+			options: []string{"broken.json", "", "valid.json"},
+			errs:    []error{nil, selector.ErrNavigateBack, nil},
+		},
 	}
 	clientSel := &cfgSelectorMock{}
 	manager := &cfgManagerMock{
@@ -329,25 +493,18 @@ func Test_Configure_InvalidSelectedConfiguration_ShowsWarningAndRetries(t *testi
 	}
 }
 
-func Test_Configure_InvalidSelectedConfiguration_ShowDetailsThenRetry(t *testing.T) {
+func Test_Configure_InvalidSelectedConfiguration_Delete_RemovesBrokenConfig(t *testing.T) {
 	obs := &cfgObserverMock{
 		results: [][]string{
 			{"broken.json", "valid.json"},
-			{"broken.json", "valid.json"},
+			{"valid.json"},
 		},
 	}
 	sf := &queuedSelectorFactory{
-		selector: &queuedSelector{
-			options: []string{
-				"broken.json",
-				invalidConfigDetailOption,
-				invalidConfigBackOption,
-				invalidConfigRetryOption,
-				"valid.json",
-			},
-		},
+		selector: &queuedSelector{options: []string{"broken.json", invalidConfigDeleteOption, "valid.json"}},
 	}
 	clientSel := &cfgSelectorMock{}
+	del := &cfgDeleterMock{}
 	manager := &cfgManagerMock{
 		errs: []error{
 			errors.New("invalid client configuration (/tmp/client.json): invalid ClientID 0: must be > 0"),
@@ -355,9 +512,12 @@ func Test_Configure_InvalidSelectedConfiguration_ShowDetailsThenRetry(t *testing
 		},
 	}
 
-	cc := newClientConfigurator(obs, clientSel, nil, nil, sf, nil, nil, manager)
+	cc := newClientConfigurator(obs, clientSel, del, nil, sf, nil, nil, manager)
 	if err := cc.Configure(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(del.deleted) != 1 || del.deleted[0] != "broken.json" {
+		t.Fatalf("expected invalid config to be deleted, got %v", del.deleted)
 	}
 	if clientSel.lastSelected != "valid.json" {
 		t.Fatalf("expected final selection %q, got %q", "valid.json", clientSel.lastSelected)

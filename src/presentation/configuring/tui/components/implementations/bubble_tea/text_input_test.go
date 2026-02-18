@@ -95,10 +95,46 @@ func TestUpdateEnter_KeyTypeEnter_Quits(t *testing.T) {
 	}
 }
 
+func TestUpdateEsc_KeyTypeEsc_CancelsAndQuits(t *testing.T) {
+	ti := NewTextInput("Test")
+	msg := tea.KeyMsg{Type: tea.KeyEsc}
+
+	model, cmd := ti.Update(msg)
+	if model != ti {
+		t.Fatal("expected model to remain unchanged")
+	}
+	if cmd == nil {
+		t.Fatal("expected non-nil command from esc key")
+	}
+	if !ti.Cancelled() {
+		t.Fatal("expected cancelled state after esc")
+	}
+	got := cmd()
+	if _, ok := got.(tea.QuitMsg); !ok {
+		t.Fatalf("expected tea.QuitMsg, got %T", got)
+	}
+}
+
 func TestView(t *testing.T) {
 	ti := NewTextInput("Test")
 	view := ti.View()
 	if view == "" {
 		t.Error("Expected non-empty view output")
+	}
+}
+
+func TestUpdateWindowSize_ClampsToCardContentWidth(t *testing.T) {
+	ti := NewTextInput("Test")
+	_, _ = ti.Update(tea.WindowSizeMsg{Width: 220, Height: 40})
+
+	maxAllowed := contentWidthForTerminal(220) - inputContainerStyle().GetHorizontalFrameSize()
+	if ti.ti.Width > maxAllowed {
+		t.Fatalf("expected width <= %d, got %d", maxAllowed, ti.ti.Width)
+	}
+	if ti.ti.Width > 40 {
+		t.Fatalf("expected width to stay stable and not exceed 40, got %d", ti.ti.Width)
+	}
+	if ti.ti.Width < 1 {
+		t.Fatalf("expected positive width, got %d", ti.ti.Width)
 	}
 }

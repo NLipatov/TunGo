@@ -129,27 +129,40 @@ func TestSelector_UpdateEnter_SecondTime_StillQuits_NoChange(t *testing.T) {
 func TestSelector_UpdateQ_Quits(t *testing.T) {
 	sel, _ := newTestSelector("client mode", "server mode")
 	updatedModel, cmd := sel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
-	if _, ok := updatedModel.(Selector); !ok {
+	updatedSel, ok := updatedModel.(Selector)
+	if !ok {
 		t.Fatal("Update did not return Selector")
+	}
+	if !updatedSel.QuitRequested() {
+		t.Error("expected quitRequested=true on 'q'")
 	}
 	if cmd == nil {
 		t.Error("expected quit command on 'q'")
 	}
 }
 
+func TestSelector_UpdateEsc_Backs(t *testing.T) {
+	sel, _ := newTestSelector("client mode", "server mode")
+	updatedModel, cmd := sel.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	updatedSel := updatedModel.(Selector)
+	if !updatedSel.BackRequested() {
+		t.Error("expected backRequested=true on esc")
+	}
+	if cmd == nil {
+		t.Error("expected quit command on esc")
+	}
+}
+
 func TestSelector_View_Normal_HighlightsCursor(t *testing.T) {
-	sel, colorizer := newTestSelector("client mode", "server mode")
+	sel, _ := newTestSelector("client mode", "server mode")
 	sel.cursor = 0
 	view := sel.View()
 
 	if !strings.Contains(view, sel.placeholder) {
 		t.Errorf("view should contain placeholder %q", sel.placeholder)
 	}
-	if colorizer.calls == 0 {
-		t.Fatal("expected colorizer to be called for highlighted line")
-	}
-	if !strings.Contains(view, "[["+colorizer.lastS+"]]") {
-		t.Errorf("highlight marker not found in view")
+	if !strings.Contains(view, "> client mode") {
+		t.Errorf("expected highlighted row marker in view, got %q", view)
 	}
 }
 
@@ -193,16 +206,39 @@ func TestSelector_TabSwitchesToSettings(t *testing.T) {
 	}
 }
 
+func TestSelector_TabSwitchesToLogs(t *testing.T) {
+	sel, _ := newTestSelector("Main title", "a", "b")
+	m1, _ := sel.Update(tea.KeyMsg{Type: tea.KeyTab}) // settings
+	m2, _ := m1.(Selector).Update(tea.KeyMsg{Type: tea.KeyTab})
+	view := m2.(Selector).View()
+
+	if !strings.Contains(view, "Logs") {
+		t.Fatalf("expected logs screen, got view: %q", view)
+	}
+}
+
+func TestSelector_LogsView_EmptyFeedShowsNoLogsYet(t *testing.T) {
+	DisableGlobalRuntimeLogCapture()
+	sel, _ := newTestSelector("Main title", "a", "b")
+	m1, _ := sel.Update(tea.KeyMsg{Type: tea.KeyTab}) // settings
+	m2, _ := m1.(Selector).Update(tea.KeyMsg{Type: tea.KeyTab})
+	view := m2.(Selector).View()
+
+	if !strings.Contains(view, "No logs yet") {
+		t.Fatalf("expected empty logs hint, got view: %q", view)
+	}
+}
+
 func TestSelector_SettingsToggleFooter(t *testing.T) {
 	UpdateUIPreferences(func(p *UIPreferences) {
-		p.Theme = ThemeAuto
+		p.Theme = ThemeDark
 		p.Language = "en"
 		p.StatsUnits = StatsUnitsBiBytes
 		p.ShowFooter = true
 	})
 	t.Cleanup(func() {
 		UpdateUIPreferences(func(p *UIPreferences) {
-			p.Theme = ThemeAuto
+			p.Theme = ThemeDark
 			p.Language = "en"
 			p.StatsUnits = StatsUnitsBiBytes
 			p.ShowFooter = true
@@ -223,14 +259,14 @@ func TestSelector_SettingsToggleFooter(t *testing.T) {
 
 func TestSelector_SettingsToggleStatsUnits(t *testing.T) {
 	UpdateUIPreferences(func(p *UIPreferences) {
-		p.Theme = ThemeAuto
+		p.Theme = ThemeDark
 		p.Language = "en"
 		p.StatsUnits = StatsUnitsBiBytes
 		p.ShowFooter = true
 	})
 	t.Cleanup(func() {
 		UpdateUIPreferences(func(p *UIPreferences) {
-			p.Theme = ThemeAuto
+			p.Theme = ThemeDark
 			p.Language = "en"
 			p.StatsUnits = StatsUnitsBiBytes
 			p.ShowFooter = true
@@ -245,5 +281,20 @@ func TestSelector_SettingsToggleStatsUnits(t *testing.T) {
 
 	if CurrentUIPreferences().StatsUnits != StatsUnitsBytes {
 		t.Fatalf("expected StatsUnits to be toggled to bytes")
+	}
+}
+
+func TestSelector_View_TruncatesLongOptionToContentWidth(t *testing.T) {
+	longOption := strings.Repeat("x", 160)
+	sel, _ := newTestSelector(longOption)
+	updatedModel, _ := sel.Update(tea.WindowSizeMsg{Width: 60, Height: 20})
+	updatedSel := updatedModel.(Selector)
+
+	view := updatedSel.View()
+	if strings.Contains(view, longOption) {
+		t.Fatalf("expected long option to be truncated in view")
+	}
+	if !strings.Contains(view, "...") {
+		t.Fatalf("expected truncated marker in view, got: %q", view)
 	}
 }

@@ -20,6 +20,7 @@ import (
 	"tungo/infrastructure/telemetry/trafficstats"
 	"tungo/infrastructure/tunnel/sessionplane/client_factory"
 	"tungo/presentation/configuring"
+	"tungo/presentation/configuring/tui"
 	"tungo/presentation/elevation"
 	clientConf "tungo/presentation/runners/client"
 	"tungo/presentation/runners/server"
@@ -45,6 +46,11 @@ func main() {
 	trafficstats.SetGlobal(trafficCollector)
 	defer trafficstats.SetGlobal(nil)
 	go trafficCollector.Start(appCtx)
+
+	if tui.IsInteractiveRuntime() {
+		tui.EnableRuntimeLogCapture(1200)
+		defer tui.DisableRuntimeLogCapture()
+	}
 	// handle shutdown signals
 	shutdownSignalHandler := shutdown.NewHandler(
 		appCtx,
@@ -76,6 +82,9 @@ func main() {
 	configurator := configuratorFactory.Configurator()
 	appMode, appModeErr := configurator.Configure()
 	if appModeErr != nil {
+		if errors.Is(appModeErr, tui.ErrUserExit) {
+			return
+		}
 		log.Printf("%v", appModeErr)
 		exitCode = 1
 		return

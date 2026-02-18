@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"tungo/domain/mode"
+	selectorContract "tungo/presentation/configuring/tui/components/domain/contracts/selector"
 )
 
 func TestNewConfigurator(t *testing.T) {
@@ -90,5 +91,42 @@ func TestConfigurator_Configure_AppModeError(t *testing.T) {
 	}
 	if gotMode != mode.Unknown {
 		t.Fatalf("expected mode.Unknown, got %v", gotMode)
+	}
+}
+
+func TestConfigurator_Configure_BackToModeFromClient_ThenServer(t *testing.T) {
+	appSelectorFactory := &mockSelectorFactory{
+		selector: &queueSelector{options: []string{"client", "server"}},
+	}
+	clientSelectorFactory := &queuedSelectorFactory{
+		selector: &queuedSelector{
+			options: []string{""},
+			errs:    []error{selectorContract.ErrNavigateBack},
+		},
+	}
+
+	c := &Configurator{
+		appMode: NewAppMode(appSelectorFactory),
+		clientConfigurator: newClientConfigurator(
+			&cfgObserverMock{results: [][]string{{"conf1"}}},
+			&cfgSelectorMock{},
+			nil,
+			nil,
+			clientSelectorFactory,
+			nil,
+			nil,
+			nil,
+		),
+		serverConfigurator: newServerConfigurator(&mockManager{}, &mockSelectorFactory{
+			selector: &queueSelector{options: []string{startServerOption}},
+		}),
+	}
+
+	gotMode, err := c.Configure()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gotMode != mode.Server {
+		t.Fatalf("expected mode.Server after back to mode selection, got %v", gotMode)
 	}
 }

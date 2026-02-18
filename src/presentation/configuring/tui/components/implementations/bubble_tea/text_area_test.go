@@ -52,6 +52,23 @@ func TestTextArea_UpdateEnter(t *testing.T) {
 	}
 }
 
+func TestTextArea_UpdateEsc_CancelsAndQuits(t *testing.T) {
+	ta := NewTextArea("Type here...")
+	msg := tea.KeyMsg{Type: tea.KeyEsc}
+	model, cmd := ta.Update(msg)
+
+	updatedTA, ok := model.(*TextArea)
+	if !ok {
+		t.Fatal("Expected model to be *TextArea")
+	}
+	if cmd == nil {
+		t.Error("Expected a non-nil quit command on esc")
+	}
+	if !updatedTA.Cancelled() {
+		t.Fatal("expected cancelled state after esc")
+	}
+}
+
 func TestTextArea_UpdateOther(t *testing.T) {
 	ta := NewTextArea("Type here...")
 	initialValue := ta.Value()
@@ -83,5 +100,21 @@ func TestTextArea_View_WhenDone_Empty(t *testing.T) {
 
 	if view := ta.View(); view != "" {
 		t.Fatalf("expected empty view when done, got %q", view)
+	}
+}
+
+func TestTextArea_UpdateWindowSize_ClampsToCardContentWidth(t *testing.T) {
+	ta := NewTextArea("Type here...")
+	_, _ = ta.Update(tea.WindowSizeMsg{Width: 220, Height: 40})
+
+	maxAllowed := contentWidthForTerminal(220) - inputContainerStyle().GetHorizontalFrameSize()
+	if ta.ta.Width() > maxAllowed {
+		t.Fatalf("expected width <= %d, got %d", maxAllowed, ta.ta.Width())
+	}
+	if ta.ta.Width() > 80 {
+		t.Fatalf("expected width to stay stable and not exceed 80, got %d", ta.ta.Width())
+	}
+	if ta.ta.Width() < 1 {
+		t.Fatalf("expected positive width, got %d", ta.ta.Width())
 	}
 }
