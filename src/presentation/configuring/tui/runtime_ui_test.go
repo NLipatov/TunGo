@@ -10,6 +10,9 @@ import (
 type runtimeUITestFeed struct{}
 
 func (runtimeUITestFeed) Tail(int) []string { return nil }
+func (runtimeUITestFeed) TailInto([]string, int) int {
+	return 0
+}
 
 func TestRuntimeUI_Wrappers(t *testing.T) {
 	prevInteractive := bubbleIsInteractiveRuntime

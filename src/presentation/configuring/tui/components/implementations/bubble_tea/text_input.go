@@ -5,7 +5,6 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // TextInput - is a single line text input
@@ -24,10 +23,6 @@ func NewTextInput(placeholder string) *TextInput {
 	ti.Focus()
 	ti.CharLimit = 256
 	ti.Width = 40
-	ti.PromptStyle = lipgloss.NewStyle().Foreground(themeColor("#00ADD8", "#00ADD8"))
-	ti.TextStyle = lipgloss.NewStyle().Foreground(themeColor("#000000", "#00ff66"))
-	ti.PlaceholderStyle = lipgloss.NewStyle().Foreground(themeColor("#4b5563", "#5fd18a"))
-	ti.Cursor.Style = lipgloss.NewStyle().Foreground(themeColor("#00ADD8", "#00ADD8"))
 	return &TextInput{
 		ti:          ti,
 		placeholder: placeholder,

@@ -6,7 +6,6 @@ import (
 
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // TextArea - is a multiline text input
@@ -27,11 +26,6 @@ func NewTextArea(placeholder string) *TextArea {
 	ta.SetHeight(10)
 	ta.ShowLineNumbers = true
 	ta.Focus()
-	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
-	ta.FocusedStyle.Prompt = lipgloss.NewStyle().Foreground(themeColor("#00ADD8", "#00ADD8"))
-	ta.FocusedStyle.Placeholder = lipgloss.NewStyle().Foreground(themeColor("#4b5563", "#5fd18a"))
-	ta.FocusedStyle.Text = lipgloss.NewStyle().Foreground(themeColor("#000000", "#00ff66"))
-	ta.FocusedStyle.LineNumber = lipgloss.NewStyle().Foreground(themeColor("#4b5563", "#5fd18a"))
 	return &TextArea{
 		ta:          &ta,
 		done:        false,

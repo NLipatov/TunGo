@@ -3,11 +3,12 @@ package bubble_tea
 import (
 	"fmt"
 	"strings"
+	"time"
 	"tungo/presentation/configuring/tui/components/domain/contracts/colorization"
 	"tungo/presentation/configuring/tui/components/domain/value_objects"
 
-	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -18,7 +19,6 @@ type selectorKeyMap struct {
 	Right  key.Binding
 	Tab    key.Binding
 	Select key.Binding
-	Help   key.Binding
 	Quit   key.Binding
 }
 
@@ -48,10 +48,6 @@ func defaultSelectorKeyMap() selectorKeyMap {
 			key.WithKeys("enter"),
 			key.WithHelp("enter", "apply/select"),
 		),
-		Help: key.NewBinding(
-			key.WithKeys("?"),
-			key.WithHelp("?", "more"),
-		),
 		Quit: key.NewBinding(
 			key.WithKeys("q", "ctrl+c"),
 			key.WithHelp("q", "exit"),
@@ -66,7 +62,7 @@ func (k selectorKeyMap) ShortHelp() []key.Binding {
 func (k selectorKeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Left, k.Right},
-		{k.Select, k.Tab, k.Help, k.Quit},
+		{k.Select, k.Tab, k.Quit},
 	}
 }
 
@@ -78,9 +74,12 @@ const (
 	selectorScreenLogs
 )
 
+type selectorLogTickMsg struct {
+	seq uint64
+}
+
 const (
 	settingsThemeRow = iota
-	settingsLanguageRow
 	settingsStatsUnitsRow
 	settingsFooterRow
 	settingsRowsCount
@@ -96,11 +95,16 @@ type Selector struct {
 	done                             bool
 	width                            int
 	height                           int
-	help                             help.Model
 	keys                             selectorKeyMap
 	screen                           selectorScreen
 	settingsCursor                   int
 	preferences                      UIPreferences
+	logViewport                      viewport.Model
+	logReady                         bool
+	logFollow                        bool
+	logScratch                       []string
+	logWaitStop                      chan struct{}
+	logTickSeq                       uint64
 	backRequested                    bool
 	quitRequested                    bool
 }
@@ -117,10 +121,12 @@ func NewSelector(
 		colorizer:       colorizer,
 		foregroundColor: foregroundColor,
 		backgroundColor: backgroundColor,
-		help:            help.New(),
 		keys:            defaultSelectorKeyMap(),
 		screen:          selectorScreenMain,
 		preferences:     CurrentUIPreferences(),
+		logViewport:     viewport.New(1, 8),
+		logReady:        true,
+		logFollow:       true,
 	}
 }
 
@@ -145,25 +151,49 @@ func (m Selector) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.help.Width = maxInt(1, contentWidthForTerminal(msg.Width))
+		if m.screen == selectorScreenLogs {
+			m.refreshLogsViewport()
+		}
+	case selectorLogTickMsg:
+		if msg.seq != m.logTickSeq || m.screen != selectorScreenLogs {
+			return m, nil
+		}
+		m.refreshLogsViewport()
+		return m, selectorLogUpdateCmd(m.logsFeed(), m.logWaitStop, m.logTickSeq)
 	case tea.KeyMsg:
 		switch {
-		case key.Matches(msg, m.keys.Help):
-			m.help.ShowAll = !m.help.ShowAll
 		case msg.String() == "esc":
+			m.stopLogWait()
 			m.backRequested = true
 			return m, tea.Quit
 		case key.Matches(msg, m.keys.Quit):
+			m.stopLogWait()
 			m.quitRequested = true
 			return m, tea.Quit
 		case key.Matches(msg, m.keys.Tab):
+			previous := m.screen
 			m.screen = m.nextScreen()
 			m.preferences = CurrentUIPreferences()
+			if m.screen == selectorScreenLogs {
+				m.restartLogWait()
+				m.logTickSeq++
+				m.refreshLogsViewport()
+				return m, tea.Batch(
+					tea.ClearScreen,
+					selectorLogUpdateCmd(m.logsFeed(), m.logWaitStop, m.logTickSeq),
+				)
+			}
+			if previous == selectorScreenLogs {
+				m.stopLogWait()
+			}
+			return m, tea.ClearScreen
 		}
 
 		switch m.screen {
 		case selectorScreenSettings:
 			return m.updateSettings(msg)
+		case selectorScreenLogs:
+			return m.updateLogs(msg)
 		default:
 			return m.updateMain(msg)
 		}
@@ -186,12 +216,14 @@ func (m Selector) updateMain(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.choice = m.options[m.cursor]
 			m.done = true
 		}
+		m.stopLogWait()
 		return m, tea.Quit
 	}
 	return m, nil
 }
 
 func (m Selector) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
 	switch {
 	case key.Matches(msg, m.keys.Up):
 		if m.settingsCursor > 0 {
@@ -202,11 +234,19 @@ func (m Selector) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.settingsCursor++
 		}
 	case key.Matches(msg, m.keys.Left):
+		prevTheme := m.preferences.Theme
 		m.preferences = m.changeSetting(-1)
+		if m.settingsCursor == settingsThemeRow && m.preferences.Theme != prevTheme {
+			cmd = tea.ClearScreen
+		}
 	case key.Matches(msg, m.keys.Right), key.Matches(msg, m.keys.Select):
+		prevTheme := m.preferences.Theme
 		m.preferences = m.changeSetting(1)
+		if m.settingsCursor == settingsThemeRow && m.preferences.Theme != prevTheme {
+			cmd = tea.ClearScreen
+		}
 	}
-	return m, nil
+	return m, cmd
 }
 
 func (m Selector) changeSetting(step int) UIPreferences {
@@ -214,9 +254,6 @@ func (m Selector) changeSetting(step int) UIPreferences {
 		switch m.settingsCursor {
 		case settingsThemeRow:
 			p.Theme = nextTheme(p.Theme, step)
-		case settingsLanguageRow:
-			// MVP: only English is supported right now.
-			p.Language = "en"
 		case settingsStatsUnitsRow:
 			p.StatsUnits = nextStatsUnits(p.StatsUnits, step)
 		case settingsFooterRow:
@@ -294,6 +331,7 @@ func (m Selector) nextScreen() selectorScreen {
 }
 
 func (m Selector) mainView(title, subtitle string, preamble []string) string {
+	styles := resolveUIStyles(m.preferences)
 	contentWidth := 0
 	if m.width > 0 {
 		contentWidth = contentWidthForTerminal(m.width)
@@ -306,9 +344,7 @@ func (m Selector) mainView(title, subtitle string, preamble []string) string {
 		}
 		line := truncateWithEllipsis(fmt.Sprintf("%s%s", pointer, choice), contentWidth)
 		if m.cursor == i {
-			line = activeOptionTextStyle().Render(line)
-		} else {
-			line = optionTextStyle().Render(line)
+			line = styles.active.Render(line)
 		}
 		options = append(options, line)
 	}
@@ -326,7 +362,7 @@ func (m Selector) mainView(title, subtitle string, preamble []string) string {
 	return renderScreen(
 		m.width,
 		m.height,
-		m.tabsLine(),
+		m.tabsLine(styles),
 		title,
 		body,
 		"up/k move | down/j move | Enter select | Tab switch tabs | Esc Back | q exit",
@@ -334,6 +370,7 @@ func (m Selector) mainView(title, subtitle string, preamble []string) string {
 }
 
 func (m Selector) settingsView(title, subtitle string, preamble []string) string {
+	styles := resolveUIStyles(m.preferences)
 	body := make([]string, 0, len(preamble)+8)
 	if len(preamble) > 0 {
 		body = append(body, preamble...)
@@ -344,12 +381,12 @@ func (m Selector) settingsView(title, subtitle string, preamble []string) string
 	if m.width > 0 {
 		contentWidth = contentWidthForTerminal(m.width)
 	}
-	body = append(body, renderSelectableRows(uiSettingsRows(m.preferences), m.settingsCursor, contentWidth)...)
+	body = append(body, renderSelectableRows(uiSettingsRows(m.preferences), m.settingsCursor, contentWidth, styles)...)
 
 	return renderScreen(
 		m.width,
 		m.height,
-		m.tabsLine(),
+		m.tabsLine(styles),
 		"",
 		body,
 		"left/right or Enter change value | Tab switch tabs | Esc Back | q exit",
@@ -357,32 +394,139 @@ func (m Selector) settingsView(title, subtitle string, preamble []string) string
 }
 
 func (m Selector) logsView() string {
-	contentWidth := 0
-	if m.width > 0 {
-		contentWidth = contentWidthForTerminal(m.width)
-	}
-	body := renderLogsBody(m.logsTail(), contentWidth)
+	styles := resolveUIStyles(m.preferences)
+	body := []string{m.logViewport.View()}
 
 	return renderScreen(
 		m.width,
 		m.height,
-		m.tabsLine(),
+		m.tabsLine(styles),
 		"",
 		body,
-		"Tab switch tabs | Esc Back | q exit",
+		m.logsHint(),
 	)
 }
 
-func (m Selector) logsTail() []string {
-	feed := GlobalRuntimeLogFeed()
-	if feed == nil {
-		return nil
-	}
-	return feed.Tail(logTailLimit(m.height))
+func (m *Selector) logsTail() []string {
+	feed := m.logsFeed()
+	return runtimeLogSnapshot(feed, &m.logScratch)
 }
 
-func (m Selector) tabsLine() string {
-	return renderTabsLine("TunGo", []string{"Main", "Settings", "Logs"}, int(m.screen))
+func (m Selector) logsFeed() RuntimeLogFeed {
+	return GlobalRuntimeLogFeed()
+}
+
+func (m Selector) tabsLine(styles uiStyles) string {
+	return renderTabsLine(productLabel(), "selector", selectorTabs[:], int(m.screen), styles)
+}
+
+func (m *Selector) ensureLogsViewport() {
+	contentWidth, viewportHeight := computeLogsViewportSize(
+		m.width,
+		m.height,
+		m.preferences,
+		"",
+		m.logsHint(),
+	)
+	if !m.logReady {
+		m.logViewport = viewport.New(contentWidth, viewportHeight)
+		m.logReady = true
+		return
+	}
+	m.logViewport.Width = contentWidth
+	m.logViewport.Height = viewportHeight
+}
+
+func (m *Selector) refreshLogsViewport() {
+	m.ensureLogsViewport()
+	lines := m.logsTail()
+	wasAtBottom := m.logViewport.AtBottom()
+	offset := m.logViewport.YOffset
+	content := renderLogsViewportContent(lines, m.logViewport.Width, resolveUIStyles(m.preferences))
+	m.logViewport.SetContent(content)
+	if m.logFollow || wasAtBottom {
+		m.logViewport.GotoBottom()
+		m.logFollow = true
+		return
+	}
+	m.logViewport.SetYOffset(offset)
+}
+
+func (m Selector) logsHint() string {
+	return "up/down scroll | PgUp/PgDn page | Home/End jump | Space follow | Tab switch tabs | Esc back | q exit"
+}
+
+func (m Selector) updateLogs(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyPgUp:
+		m.logViewport.PageUp()
+		m.logFollow = false
+		return m, nil
+	case tea.KeyPgDown:
+		m.logViewport.PageDown()
+		m.logFollow = m.logViewport.AtBottom()
+		return m, nil
+	case tea.KeyHome:
+		m.logViewport.GotoTop()
+		m.logFollow = false
+		return m, nil
+	case tea.KeyEnd:
+		m.logViewport.GotoBottom()
+		m.logFollow = true
+		return m, nil
+	case tea.KeySpace:
+		m.logFollow = !m.logFollow
+		if m.logFollow {
+			m.logViewport.GotoBottom()
+		}
+		return m, nil
+	}
+
+	switch {
+	case key.Matches(msg, m.keys.Up):
+		m.logViewport.LineUp(1)
+		m.logFollow = false
+	case key.Matches(msg, m.keys.Down):
+		m.logViewport.LineDown(1)
+		m.logFollow = m.logViewport.AtBottom()
+	}
+	return m, nil
+}
+
+func selectorLogTickCmd(seq uint64) tea.Cmd {
+	return tea.Tick(time.Second, func(time.Time) tea.Msg {
+		return selectorLogTickMsg{seq: seq}
+	})
+}
+
+func selectorLogUpdateCmd(feed RuntimeLogFeed, stop <-chan struct{}, seq uint64) tea.Cmd {
+	changeFeed, ok := feed.(RuntimeLogChangeFeed)
+	if ok {
+		changes := changeFeed.Changes()
+		if changes != nil {
+			return func() tea.Msg {
+				select {
+				case <-stop:
+					return selectorLogTickMsg{}
+				case <-changes:
+					return selectorLogTickMsg{seq: seq}
+				}
+			}
+		}
+	}
+	return selectorLogTickCmd(seq)
+}
+
+func (m *Selector) restartLogWait() {
+	m.stopLogWait()
+	m.logWaitStop = make(chan struct{})
+}
+
+func (m *Selector) stopLogWait() {
+	if m.logWaitStop != nil {
+		close(m.logWaitStop)
+		m.logWaitStop = nil
+	}
 }
 
 func onOff(v bool) string {

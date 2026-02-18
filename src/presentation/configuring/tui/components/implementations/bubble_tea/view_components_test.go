@@ -1,6 +1,9 @@
 package bubble_tea
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestRenderLogsBody_EmptyAndNonEmpty(t *testing.T) {
 	empty := renderLogsBody(nil, 40)
@@ -38,5 +41,30 @@ func TestLogTailLimit_Adaptive(t *testing.T) {
 	}
 	if got := logTailLimit(6); got != 4 {
 		t.Fatalf("expected lower clamp 4 for tiny height, got %d", got)
+	}
+}
+
+func TestUISettingsRows_UsesReadableStatsUnitsLabels(t *testing.T) {
+	rows := uiSettingsRows(UIPreferences{
+		Theme:      ThemeLight,
+		Language:   "en",
+		StatsUnits: StatsUnitsBytes,
+		ShowFooter: true,
+	})
+	if len(rows) != 3 {
+		t.Fatalf("expected 3 settings rows without language, got %d", len(rows))
+	}
+	if !strings.Contains(rows[1], "Decimal units (KB/MB/GB)") {
+		t.Fatalf("expected bytes label, got %q", rows[1])
+	}
+
+	rows = uiSettingsRows(UIPreferences{
+		Theme:      ThemeLight,
+		Language:   "en",
+		StatsUnits: StatsUnitsBiBytes,
+		ShowFooter: true,
+	})
+	if !strings.Contains(rows[1], "Binary units (KiB/MiB/GiB)") {
+		t.Fatalf("expected binary label, got %q", rows[1])
 	}
 }

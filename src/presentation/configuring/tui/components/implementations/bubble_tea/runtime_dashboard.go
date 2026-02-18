@@ -3,11 +3,12 @@ package bubble_tea
 import (
 	"context"
 	"errors"
-	"fmt"
+	"strings"
 	"time"
 	"tungo/infrastructure/telemetry/trafficstats"
 
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -23,8 +24,13 @@ type RuntimeDashboardOptions struct {
 	LogFeed RuntimeLogFeed
 }
 
-type runtimeTickMsg struct{}
-type runtimeLogTickMsg struct{}
+type runtimeTickMsg struct {
+	seq uint64
+}
+
+type runtimeLogTickMsg struct {
+	seq uint64
+}
 type runtimeContextDoneMsg struct{}
 
 type runtimeDashboardScreen int
@@ -34,6 +40,12 @@ const (
 	runtimeScreenSettings
 	runtimeScreenLogs
 )
+
+const (
+	runtimeSparklinePoints = 40
+)
+
+var zeroBrailleSparklineCache = initZeroBrailleSparklineCache()
 
 type RuntimeDashboard struct {
 	ctx            context.Context
@@ -45,7 +57,19 @@ type RuntimeDashboard struct {
 	settingsCursor int
 	preferences    UIPreferences
 	logFeed        RuntimeLogFeed
-	logLines       []string
+	logViewport    viewport.Model
+	logReady       bool
+	logFollow      bool
+	logScratch     []string
+	logWaitStop    chan struct{}
+	rxSamples      [runtimeSparklinePoints]uint64
+	txSamples      [runtimeSparklinePoints]uint64
+	sampleCount    int
+	sampleCursor   int
+	tickSeq        uint64
+	logTickSeq     uint64
+	confirmOpen    bool
+	confirmCursor  int
 	quitRequested  bool
 }
 
@@ -65,14 +89,20 @@ func NewRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions) R
 	if mode != RuntimeDashboardServer {
 		mode = RuntimeDashboardClient
 	}
-	return RuntimeDashboard{
+	model := RuntimeDashboard{
 		ctx:         ctx,
 		mode:        mode,
 		keys:        defaultSelectorKeyMap(),
 		screen:      runtimeScreenDataplane,
 		preferences: CurrentUIPreferences(),
 		logFeed:     options.LogFeed,
+		logViewport: viewport.New(1, 8),
+		logReady:    true,
+		logFollow:   true,
+		tickSeq:     1,
 	}
+	model.recordTrafficSample(trafficstats.SnapshotGlobal())
+	return model
 }
 
 func RunRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions) (bool, error) {
@@ -100,8 +130,7 @@ func RunRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions) (
 
 func (m RuntimeDashboard) Init() tea.Cmd {
 	return tea.Batch(
-		runtimeTickCmd(),
-		runtimeLogTickCmd(),
+		runtimeTickCmd(m.tickSeq),
 		waitForRuntimeContextDone(m.ctx),
 	)
 }
@@ -111,32 +140,110 @@ func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.refreshLogs()
+		if m.screen == runtimeScreenLogs {
+			m.refreshLogs()
+		}
 		return m, nil
 	case runtimeTickMsg:
-		return m, runtimeTickCmd()
+		if msg.seq != m.tickSeq {
+			return m, nil
+		}
+		if m.screen != runtimeScreenDataplane {
+			return m, nil
+		}
+		m.recordTrafficSample(trafficstats.SnapshotGlobal())
+		return m, runtimeTickCmd(m.tickSeq)
 	case runtimeLogTickMsg:
+		if msg.seq != m.logTickSeq || m.screen != runtimeScreenLogs {
+			return m, nil
+		}
 		m.refreshLogs()
-		return m, runtimeLogTickCmd()
+		return m, runtimeLogUpdateCmd(m.ctx, m.logFeed, m.logWaitStop, m.logTickSeq)
 	case runtimeContextDoneMsg:
 		return m, tea.Quit
 	case tea.KeyMsg:
+		if m.confirmOpen {
+			return m.updateConfirm(msg)
+		}
 		switch {
 		case key.Matches(msg, m.keys.Quit):
+			m.stopLogWait()
 			m.quitRequested = true
 			return m, tea.Quit
+		case msg.String() == "esc":
+			switch m.screen {
+			case runtimeScreenDataplane:
+				m.confirmOpen = true
+				m.confirmCursor = 0
+			case runtimeScreenLogs:
+				m.stopLogWait()
+				m.screen = runtimeScreenSettings
+				return m, nil
+			case runtimeScreenSettings:
+				m.screen = runtimeScreenDataplane
+			}
+			return m, nil
 		case key.Matches(msg, m.keys.Tab):
+			previous := m.screen
 			m.screen = m.nextScreen()
 			m.preferences = CurrentUIPreferences()
-			return m, nil
+			if m.screen == runtimeScreenLogs {
+				m.restartLogWait()
+				m.logTickSeq++
+				m.refreshLogs()
+				return m, tea.Batch(
+					tea.ClearScreen,
+					runtimeLogUpdateCmd(m.ctx, m.logFeed, m.logWaitStop, m.logTickSeq),
+				)
+			}
+			if previous == runtimeScreenLogs {
+				m.stopLogWait()
+			}
+			if m.screen == runtimeScreenDataplane && previous != runtimeScreenDataplane {
+				m.tickSeq++
+				return m, tea.Batch(tea.ClearScreen, runtimeTickCmd(m.tickSeq))
+			}
+			return m, tea.ClearScreen
 		}
 
 		switch m.screen {
 		case runtimeScreenSettings:
 			return m.updateSettings(msg)
+		case runtimeScreenLogs:
+			return m.updateLogs(msg)
 		default:
 			return m, nil
 		}
+	}
+	return m, nil
+}
+
+func (m RuntimeDashboard) updateConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, m.keys.Quit):
+		m.stopLogWait()
+		m.quitRequested = true
+		return m, tea.Quit
+	case msg.String() == "esc":
+		m.confirmOpen = false
+		m.confirmCursor = 0
+		return m, nil
+	case key.Matches(msg, m.keys.Up), key.Matches(msg, m.keys.Left):
+		if m.confirmCursor > 0 {
+			m.confirmCursor--
+		}
+	case key.Matches(msg, m.keys.Down), key.Matches(msg, m.keys.Right):
+		if m.confirmCursor < 1 {
+			m.confirmCursor++
+		}
+	case key.Matches(msg, m.keys.Select):
+		if m.confirmCursor == 1 {
+			m.stopLogWait()
+			m.quitRequested = true
+			return m, tea.Quit
+		}
+		m.confirmOpen = false
+		m.confirmCursor = 0
 	}
 	return m, nil
 }
@@ -164,6 +271,7 @@ func (m RuntimeDashboard) nextScreen() runtimeDashboardScreen {
 }
 
 func (m RuntimeDashboard) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
 	switch {
 	case key.Matches(msg, m.keys.Up):
 		if m.settingsCursor > 0 {
@@ -174,11 +282,19 @@ func (m RuntimeDashboard) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.settingsCursor++
 		}
 	case key.Matches(msg, m.keys.Left):
+		prevTheme := m.preferences.Theme
 		m.preferences = m.changeSetting(-1)
+		if m.settingsCursor == settingsThemeRow && m.preferences.Theme != prevTheme {
+			cmd = tea.ClearScreen
+		}
 	case key.Matches(msg, m.keys.Right), key.Matches(msg, m.keys.Select):
+		prevTheme := m.preferences.Theme
 		m.preferences = m.changeSetting(1)
+		if m.settingsCursor == settingsThemeRow && m.preferences.Theme != prevTheme {
+			cmd = tea.ClearScreen
+		}
 	}
-	return m, nil
+	return m, cmd
 }
 
 func (m RuntimeDashboard) changeSetting(step int) UIPreferences {
@@ -186,8 +302,6 @@ func (m RuntimeDashboard) changeSetting(step int) UIPreferences {
 		switch m.settingsCursor {
 		case settingsThemeRow:
 			p.Theme = nextTheme(p.Theme, step)
-		case settingsLanguageRow:
-			p.Language = "en"
 		case settingsStatsUnitsRow:
 			p.StatsUnits = nextStatsUnits(p.StatsUnits, step)
 		case settingsFooterRow:
@@ -197,56 +311,83 @@ func (m RuntimeDashboard) changeSetting(step int) UIPreferences {
 }
 
 func (m *RuntimeDashboard) refreshLogs() {
-	if m.logFeed == nil {
-		m.logLines = nil
+	lines := runtimeLogSnapshot(m.logFeed, &m.logScratch)
+	m.ensureLogsViewport()
+	wasAtBottom := m.logViewport.AtBottom()
+	offset := m.logViewport.YOffset
+	content := renderLogsViewportContent(lines, m.logViewport.Width, resolveUIStyles(m.preferences))
+	m.logViewport.SetContent(content)
+	if m.logFollow || wasAtBottom {
+		m.logViewport.GotoBottom()
+		m.logFollow = true
 		return
 	}
-	m.logLines = m.logFeed.Tail(logTailLimit(m.height))
+	m.logViewport.SetYOffset(offset)
 }
 
 func (m RuntimeDashboard) mainView() string {
-	title := m.tabsLine()
-	subtitle := "Client runtime - Traffic is routed through TunGo"
-	status := "connected"
+	styles := resolveUIStyles(m.preferences)
+	title := m.tabsLine(styles)
+	modeLine := "Mode: Client"
+	status := "Status: Connected"
 	if m.mode == RuntimeDashboardServer {
-		subtitle = "Server runtime - Workers are running"
-		status = "running"
+		modeLine = "Mode: Server"
+		status = "Status: Running"
+	}
+	contentWidth := 0
+	if m.width > 0 {
+		contentWidth = contentWidthForTerminal(m.width)
 	}
 
 	snapshot := trafficstats.SnapshotGlobal()
 	statsLines := formatStatsLines(m.preferences, snapshot)
+	sparklineWidth := sparklineWidthForContent(contentWidth)
 	body := []string{
-		optionTextStyle().Render(fmt.Sprintf("Status: %s", status)),
+		modeLine,
+		status,
+		"",
+		statsLines[0],
+		statsLines[1],
+		"RX trend: " + renderRateBrailleRing(m.rxSamples, m.sampleCount, m.sampleCursor, sparklineWidth),
+		"TX trend: " + renderRateBrailleRing(m.txSamples, m.sampleCount, m.sampleCursor, sparklineWidth),
 	}
-	if !m.preferences.ShowFooter {
-		for _, line := range statsLines {
-			body = append(body, optionTextStyle().Render(line))
-		}
+	if m.confirmOpen {
+		body = append(body, "", "Stop tunnel and reconfigure?", "")
+		body = append(body, renderSelectableRows(
+			[]string{"Stay", "Stop tunnel and reconfigure"},
+			m.confirmCursor,
+			contentWidth,
+			styles,
+		)...)
 	}
-	body = append(body, "", metaTextStyle().Render("Open Logs tab for live runtime output."))
+	hint := "Tab switch tabs | q exit"
+	if m.confirmOpen {
+		hint = "left/right choose | Enter confirm | Esc cancel | q exit"
+	}
 
-	return renderScreen(
+	return renderScreenRaw(
 		m.width,
 		m.height,
 		title,
-		subtitle,
+		"",
 		body,
-		"Tab switch tabs | q exit",
+		hint,
 	)
 }
 
 func (m RuntimeDashboard) settingsView() string {
+	styles := resolveUIStyles(m.preferences)
 	body := []string{}
 	contentWidth := 0
 	if m.width > 0 {
 		contentWidth = contentWidthForTerminal(m.width)
 	}
-	body = append(body, renderSelectableRows(uiSettingsRows(m.preferences), m.settingsCursor, contentWidth)...)
+	body = append(body, renderSelectableRows(uiSettingsRows(m.preferences), m.settingsCursor, contentWidth, styles)...)
 
 	return renderScreen(
 		m.width,
 		m.height,
-		m.tabsLine(),
+		m.tabsLine(styles),
 		"",
 		body,
 		"up/k down/j row | left/right/Enter change | Tab switch tabs | q exit",
@@ -254,35 +395,115 @@ func (m RuntimeDashboard) settingsView() string {
 }
 
 func (m RuntimeDashboard) logsView() string {
-	contentWidth := 0
-	if m.width > 0 {
-		contentWidth = contentWidthForTerminal(m.width)
-	}
-	body := renderLogsBody(m.logLines, contentWidth)
+	styles := resolveUIStyles(m.preferences)
+	body := []string{m.logViewport.View()}
 
 	return renderScreen(
 		m.width,
 		m.height,
-		m.tabsLine(),
+		m.tabsLine(styles),
 		"",
 		body,
-		"Tab switch tabs | q exit",
+		m.logsHint(),
 	)
 }
 
-func (m RuntimeDashboard) tabsLine() string {
-	return renderTabsLine("TunGo", []string{"Dataplane", "Settings", "Logs"}, int(m.screen))
+func (m RuntimeDashboard) tabsLine(styles uiStyles) string {
+	return renderTabsLine(productLabel(), "runtime", runtimeTabs[:], int(m.screen), styles)
 }
 
-func runtimeTickCmd() tea.Cmd {
+func (m *RuntimeDashboard) ensureLogsViewport() {
+	contentWidth, viewportHeight := computeLogsViewportSize(
+		m.width,
+		m.height,
+		m.preferences,
+		"",
+		m.logsHint(),
+	)
+	if !m.logReady {
+		m.logViewport = viewport.New(contentWidth, viewportHeight)
+		m.logReady = true
+		return
+	}
+	m.logViewport.Width = contentWidth
+	m.logViewport.Height = viewportHeight
+}
+
+func (m RuntimeDashboard) logsHint() string {
+	return "up/down scroll | PgUp/PgDn page | Home/End jump | Space follow | Tab switch tabs | Esc back | q exit"
+}
+
+func (m RuntimeDashboard) updateLogs(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyPgUp:
+		m.logViewport.PageUp()
+		m.logFollow = false
+		return m, nil
+	case tea.KeyPgDown:
+		m.logViewport.PageDown()
+		m.logFollow = m.logViewport.AtBottom()
+		return m, nil
+	case tea.KeyHome:
+		m.logViewport.GotoTop()
+		m.logFollow = false
+		return m, nil
+	case tea.KeyEnd:
+		m.logViewport.GotoBottom()
+		m.logFollow = true
+		return m, nil
+	case tea.KeySpace:
+		m.logFollow = !m.logFollow
+		if m.logFollow {
+			m.logViewport.GotoBottom()
+		}
+		return m, nil
+	}
+
+	switch {
+	case key.Matches(msg, m.keys.Up):
+		m.logViewport.LineUp(1)
+		m.logFollow = false
+	case key.Matches(msg, m.keys.Down):
+		m.logViewport.LineDown(1)
+		m.logFollow = m.logViewport.AtBottom()
+	}
+	return m, nil
+}
+
+func runtimeTickCmd(seq uint64) tea.Cmd {
 	return tea.Tick(time.Second, func(time.Time) tea.Msg {
-		return runtimeTickMsg{}
+		return runtimeTickMsg{seq: seq}
 	})
 }
 
-func runtimeLogTickCmd() tea.Cmd {
-	return tea.Tick(250*time.Millisecond, func(time.Time) tea.Msg {
-		return runtimeLogTickMsg{}
+func runtimeLogUpdateCmd(
+	ctx context.Context,
+	feed RuntimeLogFeed,
+	stop <-chan struct{},
+	seq uint64,
+) tea.Cmd {
+	changeFeed, ok := feed.(RuntimeLogChangeFeed)
+	if ok {
+		changes := changeFeed.Changes()
+		if changes != nil {
+			return func() tea.Msg {
+				select {
+				case <-ctx.Done():
+					return runtimeContextDoneMsg{}
+				case <-stop:
+					return runtimeLogTickMsg{}
+				case <-changes:
+					return runtimeLogTickMsg{seq: seq}
+				}
+			}
+		}
+	}
+	return runtimeLogTickCmd(seq)
+}
+
+func runtimeLogTickCmd(seq uint64) tea.Cmd {
+	return tea.Tick(time.Second, func(time.Time) tea.Msg {
+		return runtimeLogTickMsg{seq: seq}
 	})
 }
 
@@ -291,4 +512,165 @@ func waitForRuntimeContextDone(ctx context.Context) tea.Cmd {
 		<-ctx.Done()
 		return runtimeContextDoneMsg{}
 	}
+}
+
+func (m *RuntimeDashboard) recordTrafficSample(snapshot trafficstats.Snapshot) {
+	m.rxSamples[m.sampleCursor] = snapshot.RXRate
+	m.txSamples[m.sampleCursor] = snapshot.TXRate
+	if m.sampleCount < runtimeSparklinePoints {
+		m.sampleCount++
+	}
+	m.sampleCursor = (m.sampleCursor + 1) % runtimeSparklinePoints
+}
+
+func (m *RuntimeDashboard) restartLogWait() {
+	m.stopLogWait()
+	m.logWaitStop = make(chan struct{})
+}
+
+func (m *RuntimeDashboard) stopLogWait() {
+	if m.logWaitStop != nil {
+		close(m.logWaitStop)
+		m.logWaitStop = nil
+	}
+}
+
+func sparklineWidthForContent(contentWidth int) int {
+	if contentWidth <= 0 {
+		return 20
+	}
+	available := contentWidth - len("RX trend: ")
+	return maxInt(12, minInt(runtimeSparklinePoints, available))
+}
+
+func renderRateBrailleRing(
+	samples [runtimeSparklinePoints]uint64,
+	count, cursor, width int,
+) string {
+	if count <= 0 {
+		return "no-data"
+	}
+	if width <= 0 {
+		width = minInt(runtimeSparklinePoints, count)
+	}
+	maxValue := uint64(0)
+	for i := 0; i < count; i++ {
+		value := ringSampleAt(samples, count, cursor, i)
+		if value > maxValue {
+			maxValue = value
+		}
+	}
+
+	if maxValue == 0 {
+		return zeroBrailleSparkline(width)
+	}
+
+	pixelWidth := maxInt(2, width*2)
+	lastPos := maxInt(1, count-1)
+	var cellBuf [runtimeSparklinePoints]uint8
+	cells := cellBuf[:width]
+	lastY := -1
+	for x := 0; x < pixelWidth; x++ {
+		pos := (x * lastPos) / maxInt(1, pixelWidth-1)
+		value := ringSampleAt(samples, count, cursor, pos)
+		y := brailleRow(value, maxValue)
+		setBrailleDot(cells, x, y)
+		if lastY >= 0 && lastY != y {
+			start, end := lastY, y
+			if start > end {
+				start, end = end, start
+			}
+			for mid := start; mid <= end; mid++ {
+				setBrailleDot(cells, x, mid)
+			}
+		}
+		lastY = y
+	}
+
+	var runeBuf [runtimeSparklinePoints]rune
+	for i, mask := range cells {
+		runeBuf[i] = rune(0x2800 + int(mask))
+	}
+	return string(runeBuf[:width])
+}
+
+func initZeroBrailleSparklineCache() [runtimeSparklinePoints + 1]string {
+	var out [runtimeSparklinePoints + 1]string
+	for i := 1; i <= runtimeSparklinePoints; i++ {
+		out[i] = strings.Repeat("⣀", i)
+	}
+	return out
+}
+
+func zeroBrailleSparkline(width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if width > runtimeSparklinePoints {
+		width = runtimeSparklinePoints
+	}
+	return zeroBrailleSparklineCache[width]
+}
+
+func brailleRow(value, maxValue uint64) int {
+	if maxValue == 0 {
+		return 3
+	}
+	level := int((value * 3) / maxValue)
+	return 3 - level
+}
+
+func setBrailleDot(cells []uint8, xPixel int, yRow int) {
+	if len(cells) == 0 || xPixel < 0 {
+		return
+	}
+	cellIndex := xPixel / 2
+	if cellIndex < 0 || cellIndex >= len(cells) {
+		return
+	}
+	subColumn := xPixel % 2
+	if yRow < 0 {
+		yRow = 0
+	}
+	if yRow > 3 {
+		yRow = 3
+	}
+	cells[cellIndex] |= brailleDotMask(subColumn, yRow)
+}
+
+func brailleDotMask(subColumn int, yRow int) uint8 {
+	if subColumn == 0 {
+		switch yRow {
+		case 0:
+			return 1
+		case 1:
+			return 2
+		case 2:
+			return 4
+		default:
+			return 64
+		}
+	}
+	switch yRow {
+	case 0:
+		return 8
+	case 1:
+		return 16
+	case 2:
+		return 32
+	default:
+		return 128
+	}
+}
+
+func ringSampleAt(
+	samples [runtimeSparklinePoints]uint64,
+	count, cursor, pos int,
+) uint64 {
+	if count <= 0 || pos < 0 || pos >= count {
+		return 0
+	}
+	start := (cursor - count + runtimeSparklinePoints) % runtimeSparklinePoints
+	index := (start + pos) % runtimeSparklinePoints
+	return samples[index]
 }

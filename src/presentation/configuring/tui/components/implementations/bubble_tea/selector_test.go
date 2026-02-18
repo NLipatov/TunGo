@@ -1,6 +1,7 @@
 package bubble_tea
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -47,7 +48,7 @@ func TestNewSelector(t *testing.T) {
 func TestSelector_Init(t *testing.T) {
 	sel, _ := newTestSelector("a")
 	if cmd := sel.Init(); cmd != nil {
-		t.Errorf("expected Init to return nil cmd")
+		t.Errorf("expected Init to return nil and start log tick only on Logs tab")
 	}
 }
 
@@ -228,6 +229,20 @@ func TestSelector_TabSwitchesBackToMain(t *testing.T) {
 	}
 }
 
+func TestSelector_TabSwitch_RequestsClearScreenCmd(t *testing.T) {
+	sel, _ := newTestSelector("Main title", "a", "b")
+	updatedModel, cmd := sel.Update(tea.KeyMsg{Type: tea.KeyTab}) // settings
+	if cmd == nil {
+		t.Fatal("expected clear-screen command on tab switch to settings")
+	}
+	updated := updatedModel.(Selector)
+
+	_, cmd = updated.Update(tea.KeyMsg{Type: tea.KeyTab}) // logs
+	if cmd == nil {
+		t.Fatal("expected clear-screen command on tab switch to logs")
+	}
+}
+
 func TestSelector_LogsView_EmptyFeedShowsNoLogsYet(t *testing.T) {
 	DisableGlobalRuntimeLogCapture()
 	sel, _ := newTestSelector("Main title", "a", "b")
@@ -258,10 +273,9 @@ func TestSelector_SettingsToggleFooter(t *testing.T) {
 
 	sel, _ := newTestSelector("Main title", "a", "b")
 	m1, _ := sel.Update(tea.KeyMsg{Type: tea.KeyTab})            // settings
-	m2, _ := m1.(Selector).Update(tea.KeyMsg{Type: tea.KeyDown}) // language row
-	m3, _ := m2.(Selector).Update(tea.KeyMsg{Type: tea.KeyDown}) // stats units row
-	m4, _ := m3.(Selector).Update(tea.KeyMsg{Type: tea.KeyDown}) // footer row
-	_, _ = m4.(Selector).Update(tea.KeyMsg{Type: tea.KeyRight})  // toggle
+	m2, _ := m1.(Selector).Update(tea.KeyMsg{Type: tea.KeyDown}) // stats units row
+	m3, _ := m2.(Selector).Update(tea.KeyMsg{Type: tea.KeyDown}) // footer row
+	_, _ = m3.(Selector).Update(tea.KeyMsg{Type: tea.KeyRight})  // toggle
 
 	if CurrentUIPreferences().ShowFooter {
 		t.Fatalf("expected ShowFooter to be toggled off")
@@ -286,9 +300,8 @@ func TestSelector_SettingsToggleStatsUnits(t *testing.T) {
 
 	sel, _ := newTestSelector("Main title", "a", "b")
 	m1, _ := sel.Update(tea.KeyMsg{Type: tea.KeyTab})            // settings
-	m2, _ := m1.(Selector).Update(tea.KeyMsg{Type: tea.KeyDown}) // language row
-	m3, _ := m2.(Selector).Update(tea.KeyMsg{Type: tea.KeyDown}) // stats units row
-	_, _ = m3.(Selector).Update(tea.KeyMsg{Type: tea.KeyRight})  // toggle
+	m2, _ := m1.(Selector).Update(tea.KeyMsg{Type: tea.KeyDown}) // stats units row
+	_, _ = m2.(Selector).Update(tea.KeyMsg{Type: tea.KeyRight})  // toggle
 
 	if CurrentUIPreferences().StatsUnits != StatsUnitsBytes {
 		t.Fatalf("expected StatsUnits to be toggled to bytes")
@@ -342,13 +355,6 @@ func TestSelector_SettingsNavigationBoundsAndMutations(t *testing.T) {
 	sel = m1.(Selector)
 	if CurrentUIPreferences().Theme != ThemeDark {
 		t.Fatalf("expected theme dark after left wrap, got %q", CurrentUIPreferences().Theme)
-	}
-
-	// Language row select keeps EN.
-	sel.settingsCursor = settingsLanguageRow
-	_, _ = sel.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	if CurrentUIPreferences().Language != "en" {
-		t.Fatalf("expected language en, got %q", CurrentUIPreferences().Language)
 	}
 
 	// Stats row left toggles to bibytes.
@@ -405,9 +411,38 @@ func TestSelector_SettingsAndLogsView_WithWidth(t *testing.T) {
 	}
 
 	sel.screen = selectorScreenLogs
+	sel.refreshLogsViewport()
 	logs := sel.logsView()
 	if !strings.Contains(logs, "line one") {
 		t.Fatalf("expected runtime line in logs view, got %q", logs)
+	}
+}
+
+func TestSelector_SettingsThemeChange_RequestsClearScreen(t *testing.T) {
+	UpdateUIPreferences(func(p *UIPreferences) {
+		p.Theme = ThemeLight
+		p.StatsUnits = StatsUnitsBytes
+		p.ShowFooter = true
+	})
+	t.Cleanup(func() {
+		UpdateUIPreferences(func(p *UIPreferences) {
+			p.Theme = ThemeLight
+			p.StatsUnits = StatsUnitsBiBytes
+			p.ShowFooter = true
+		})
+	})
+
+	sel, _ := newTestSelector("Main title", "a", "b")
+	sel.screen = selectorScreenSettings
+	sel.settingsCursor = settingsThemeRow
+
+	updatedModel, cmd := sel.Update(tea.KeyMsg{Type: tea.KeyRight})
+	updated := updatedModel.(Selector)
+	if cmd == nil {
+		t.Fatal("expected clear-screen command when theme changes")
+	}
+	if updated.preferences.Theme != ThemeDark {
+		t.Fatalf("expected theme to change to dark, got %q", updated.preferences.Theme)
 	}
 }
 
@@ -437,22 +472,21 @@ func TestSelectorKeyMap_HelpLayouts(t *testing.T) {
 	}
 }
 
-func TestSelector_UpdateHelpTogglesAndWindowWidthSetsHelpWidth(t *testing.T) {
+func TestSelector_UpdateWindowSizeAndQuestionMarkNoOp(t *testing.T) {
 	sel, _ := newTestSelector("a", "b")
 	m1, _ := sel.Update(tea.WindowSizeMsg{Width: 80, Height: 20})
 	updated := m1.(Selector)
-	if updated.help.Width <= 0 {
-		t.Fatalf("expected positive help width, got %d", updated.help.Width)
+	if updated.width != 80 || updated.height != 20 {
+		t.Fatalf("expected window size to be stored, got width=%d height=%d", updated.width, updated.height)
 	}
 
 	m2, _ := updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
-	withHelp := m2.(Selector)
-	if !withHelp.help.ShowAll {
-		t.Fatal("expected help panel enabled after '?'")
+	afterQuestion := m2.(Selector)
+	if afterQuestion.done {
+		t.Fatal("expected '?' key to have no side effects")
 	}
-	m3, _ := withHelp.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
-	if m3.(Selector).help.ShowAll {
-		t.Fatal("expected help panel disabled after second '?'")
+	if afterQuestion.cursor != updated.cursor {
+		t.Fatalf("expected cursor unchanged, got %d -> %d", updated.cursor, afterQuestion.cursor)
 	}
 }
 
@@ -492,5 +526,52 @@ func TestSelector_LogsTail_WithGlobalFeed(t *testing.T) {
 	lines := sel.logsTail()
 	if len(lines) == 0 {
 		t.Fatal("expected non-empty logs tail from global feed")
+	}
+}
+
+func TestSelector_LogsViewportScrollAndFollowToggle(t *testing.T) {
+	DisableGlobalRuntimeLogCapture()
+	t.Cleanup(DisableGlobalRuntimeLogCapture)
+	EnableGlobalRuntimeLogCapture(64)
+	feed := GlobalRuntimeLogFeed().(*RuntimeLogBuffer)
+	for i := 0; i < 40; i++ {
+		_, _ = feed.Write([]byte(fmt.Sprintf("line-%02d\n", i)))
+	}
+
+	sel, _ := newTestSelector("Main title", "a", "b")
+	updatedModel, _ := sel.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	sel = updatedModel.(Selector)
+	updatedModel, _ = sel.Update(tea.KeyMsg{Type: tea.KeyTab}) // settings
+	sel = updatedModel.(Selector)
+	updatedModel, _ = sel.Update(tea.KeyMsg{Type: tea.KeyTab}) // logs
+	sel = updatedModel.(Selector)
+
+	if !sel.logViewport.AtBottom() {
+		t.Fatal("expected selector logs viewport to start at tail")
+	}
+
+	beforeOffset := sel.logViewport.YOffset
+	updatedModel, _ = sel.Update(tea.KeyMsg{Type: tea.KeyUp})
+	sel = updatedModel.(Selector)
+	if sel.logFollow {
+		t.Fatal("expected follow disabled after manual scroll in logs tab")
+	}
+	if sel.logViewport.YOffset >= beforeOffset {
+		t.Fatalf("expected viewport offset to move up, before=%d after=%d", beforeOffset, sel.logViewport.YOffset)
+	}
+
+	updatedModel, _ = sel.Update(tea.KeyMsg{Type: tea.KeySpace})
+	sel = updatedModel.(Selector)
+	if !sel.logFollow {
+		t.Fatal("expected follow enabled after pressing space")
+	}
+	if !sel.logViewport.AtBottom() {
+		t.Fatal("expected viewport to jump to tail after enabling follow")
+	}
+}
+
+func TestSelectorLogTickCmd_EmitsMessage(t *testing.T) {
+	if _, ok := selectorLogTickCmd(1)().(selectorLogTickMsg); !ok {
+		t.Fatal("expected selectorLogTickMsg from selector log tick command")
 	}
 }

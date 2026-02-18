@@ -148,7 +148,7 @@ func TestRenderScreen_ANSIAndCanvasFill(t *testing.T) {
 	}
 }
 
-func TestBuildFooterBlock_OnlyStatsWhenHintEmpty(t *testing.T) {
+func TestBuildFooterBlock_OnlyHintWhenProvided(t *testing.T) {
 	styles := resolveUIStyles(UIPreferences{
 		Theme:      ThemeLight,
 		Language:   "en",
@@ -160,17 +160,13 @@ func TestBuildFooterBlock_OnlyStatsWhenHintEmpty(t *testing.T) {
 		Language:   "en",
 		StatsUnits: StatsUnitsBiBytes,
 		ShowFooter: true,
-	}, 0, "")
+	}, 0, "hint line")
 	if len(lines) < 2 {
-		t.Fatalf("expected footer rule + stats lines, got %v", lines)
+		t.Fatalf("expected footer rule + hint line, got %v", lines)
 	}
 }
 
-func TestBuildFooterBlock_NoHintAndNoStats_ReturnsNil(t *testing.T) {
-	prevFormatter := statsFooterFormatter
-	t.Cleanup(func() { statsFooterFormatter = prevFormatter })
-	statsFooterFormatter = func(UIPreferences) []string { return nil }
-
+func TestBuildFooterBlock_NoHint_ReturnsNil(t *testing.T) {
 	styles := resolveUIStyles(UIPreferences{
 		Theme:      ThemeLight,
 		Language:   "en",
@@ -184,7 +180,7 @@ func TestBuildFooterBlock_NoHintAndNoStats_ReturnsNil(t *testing.T) {
 		ShowFooter: true,
 	}, 0, "")
 	if lines != nil {
-		t.Fatalf("expected nil footer block when both hint and stats are empty, got %v", lines)
+		t.Fatalf("expected nil footer block when hint is empty, got %v", lines)
 	}
 }
 
@@ -276,5 +272,41 @@ func TestEnforceBaseThemeFill_NoBaseThemeAvailable(t *testing.T) {
 	const input = "plain"
 	if out := enforceBaseThemeFill(input, UIPreferences{Theme: ThemeLight}); out != input {
 		t.Fatalf("expected unchanged string when base theme is unavailable, got %q", out)
+	}
+}
+
+func TestVisibleWidthANSI_AndStripANSI_WithCSI(t *testing.T) {
+	colored := "\x1b[38;2;0;255;102mTunGo\x1b[0m [dev-build]"
+	if got := stripANSI(colored); got != "TunGo [dev-build]" {
+		t.Fatalf("unexpected stripped value: %q", got)
+	}
+	if got := visibleWidthANSI(colored); got != len("TunGo [dev-build]") {
+		t.Fatalf("unexpected visible width: %d", got)
+	}
+}
+
+func TestEnforceBaseThemeFill_ReappliesAfterCommonSGRResets(t *testing.T) {
+	const base = "\x1b[48;2;0;0;0m\x1b[38;2;0;255;102m"
+	out := enforceBaseThemeFill("\x1b[mx\x1b[49my\x1b[39mz\x1b[0mw", UIPreferences{Theme: ThemeDark})
+
+	if !strings.Contains(out, "\x1b[m"+base) {
+		t.Fatalf("expected base reapplied after CSI m reset, got %q", out)
+	}
+	if !strings.Contains(out, "\x1b[49m"+base) {
+		t.Fatalf("expected base reapplied after background reset, got %q", out)
+	}
+	if !strings.Contains(out, "\x1b[39m"+base) {
+		t.Fatalf("expected base reapplied after foreground reset, got %q", out)
+	}
+	if !strings.Contains(out, "\x1b[0m"+base) {
+		t.Fatalf("expected base reapplied after full reset, got %q", out)
+	}
+}
+
+func TestEnforceBaseThemeFill_AppliesBasePerLine(t *testing.T) {
+	const base = "\x1b[48;2;0;0;0m\x1b[38;2;0;255;102m"
+	out := enforceBaseThemeFill("line1\nline2", UIPreferences{Theme: ThemeDark})
+	if strings.Count(out, base) < 2 {
+		t.Fatalf("expected base sequence on each line, got %q", out)
 	}
 }

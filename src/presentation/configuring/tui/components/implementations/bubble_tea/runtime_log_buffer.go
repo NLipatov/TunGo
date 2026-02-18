@@ -11,6 +11,12 @@ const defaultRuntimeLogCapacity = 256
 
 type RuntimeLogFeed interface {
 	Tail(limit int) []string
+	TailInto(dst []string, limit int) int
+}
+
+type RuntimeLogChangeFeed interface {
+	RuntimeLogFeed
+	Changes() <-chan struct{}
 }
 
 type RuntimeLogBuffer struct {
@@ -18,6 +24,7 @@ type RuntimeLogBuffer struct {
 	capacity int
 	lines    []string
 	partial  string
+	changes  chan struct{}
 }
 
 var (
@@ -33,6 +40,7 @@ func NewRuntimeLogBuffer(capacity int) *RuntimeLogBuffer {
 	return &RuntimeLogBuffer{
 		capacity: capacity,
 		lines:    make([]string, 0, capacity),
+		changes:  make(chan struct{}, 1),
 	}
 }
 
@@ -71,16 +79,49 @@ func (b *RuntimeLogBuffer) Tail(limit int) []string {
 	return out
 }
 
+func (b *RuntimeLogBuffer) TailInto(dst []string, limit int) int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if limit <= 0 || len(dst) == 0 || len(b.lines) == 0 {
+		return 0
+	}
+	if limit > len(dst) {
+		limit = len(dst)
+	}
+	start := 0
+	if len(b.lines) > limit {
+		start = len(b.lines) - limit
+	}
+	n := copy(dst, b.lines[start:])
+	return n
+}
+
 func (b *RuntimeLogBuffer) appendLineLocked(line string) {
 	if line == "" {
 		return
 	}
 	if len(b.lines) < b.capacity {
 		b.lines = append(b.lines, line)
+		b.signalChangeLocked()
 		return
 	}
 	copy(b.lines, b.lines[1:])
 	b.lines[len(b.lines)-1] = line
+	b.signalChangeLocked()
+}
+
+func (b *RuntimeLogBuffer) signalChangeLocked() {
+	select {
+	case b.changes <- struct{}{}:
+	default:
+	}
+}
+
+func (b *RuntimeLogBuffer) Changes() <-chan struct{} {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.changes
 }
 
 func RedirectStandardLoggerToBuffer(buffer *RuntimeLogBuffer) func() {

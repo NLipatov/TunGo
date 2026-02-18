@@ -3,6 +3,7 @@ package version
 import (
 	"context"
 	"fmt"
+	"strings"
 	"tungo/domain/app"
 )
 
@@ -16,6 +17,14 @@ func NewRunner() *Runner { return &Runner{} }
 func (r *Runner) Run(_ context.Context) {
 	fmt.Printf("%s %s\n",
 		app.Name,
-		Tag,
+		displayTag(Tag),
 	)
+}
+
+func displayTag(tag string) string {
+	normalized := strings.TrimSpace(tag)
+	if normalized == "" || strings.EqualFold(normalized, "version not set") {
+		return "dev-build"
+	}
+	return normalized
 }
