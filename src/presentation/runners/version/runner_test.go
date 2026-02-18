@@ -43,7 +43,7 @@ func TestRunner_Run_PrintsDevBuildWhenTagUnset(t *testing.T) {
 	prevTag := Tag
 	t.Cleanup(func() { Tag = prevTag })
 
-	Tag = "version not set"
+	Tag = "dev-build"
 	got := capture(func() { NewRunner().Run(context.Background()) })
 	want := app.Name + " dev-build"
 	if !strings.Contains(got, want) {
@@ -51,11 +51,17 @@ func TestRunner_Run_PrintsDevBuildWhenTagUnset(t *testing.T) {
 	}
 }
 
-func TestDisplayTag(t *testing.T) {
-	if got := displayTag(" v0.3.0 "); got != "v0.3.0" {
+func TestCurrent(t *testing.T) {
+	prevTag := Tag
+	t.Cleanup(func() { Tag = prevTag })
+
+	Tag = " v0.3.0 "
+	if got := Current(); got != "v0.3.0" {
 		t.Fatalf("expected trimmed tag, got %q", got)
 	}
-	if got := displayTag(""); got != "dev-build" {
-		t.Fatalf("expected dev-build for empty tag, got %q", got)
+
+	Tag = ""
+	if got := Current(); got != "" {
+		t.Fatalf("expected empty value for empty tag, got %q", got)
 	}
 }

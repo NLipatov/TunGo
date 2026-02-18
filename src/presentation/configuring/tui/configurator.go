@@ -9,7 +9,7 @@ import (
 	"tungo/presentation/configuring/tui/components/domain/contracts/selector"
 	"tungo/presentation/configuring/tui/components/domain/contracts/text_area"
 	"tungo/presentation/configuring/tui/components/domain/contracts/text_input"
-	"tungo/presentation/configuring/tui/components/implementations/bubble_tea"
+	bubbleTea "tungo/presentation/configuring/tui/components/implementations/bubble_tea"
 )
 
 type Configurator struct {
@@ -60,9 +60,9 @@ func NewDefaultConfigurator(serverConfigurationManager server.ConfigurationManag
 		clientConfiguration.NewDefaultCreator(clientConfResolver),
 		clientConfiguration.NewDefaultDeleter(clientConfResolver),
 		serverConfigurationManager,
-		bubble_tea.NewSelectorAdapter(),
-		bubble_tea.NewTextInputAdapter(),
-		bubble_tea.NewTextAreaAdapter(),
+		bubbleTea.NewSelectorAdapter(),
+		bubbleTea.NewTextInputAdapter(),
+		bubbleTea.NewTextAreaAdapter(),
 	)
 }
 
