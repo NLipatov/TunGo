@@ -97,6 +97,9 @@ type mockManager struct {
 	setAllowedCalls     int
 	lastSetClientID     int
 	lastSetClientEnable bool
+	removeAllowedErr    error
+	removeAllowedCalls  int
+	lastRemovedClientID int
 }
 
 func (m *mockManager) Configuration() (*srv.Configuration, error) {
@@ -140,6 +143,24 @@ func (m *mockManager) SetAllowedPeerEnabled(clientID int, enabled bool) error {
 	for i := range m.confRet.AllowedPeers {
 		if m.confRet.AllowedPeers[i].ClientID == clientID {
 			m.confRet.AllowedPeers[i].Enabled = enabled
+			break
+		}
+	}
+	return nil
+}
+
+func (m *mockManager) RemoveAllowedPeer(clientID int) error {
+	m.removeAllowedCalls++
+	m.lastRemovedClientID = clientID
+	if m.removeAllowedErr != nil {
+		return m.removeAllowedErr
+	}
+	if m.confRet == nil {
+		return nil
+	}
+	for i := range m.confRet.AllowedPeers {
+		if m.confRet.AllowedPeers[i].ClientID == clientID {
+			m.confRet.AllowedPeers = append(m.confRet.AllowedPeers[:i], m.confRet.AllowedPeers[i+1:]...)
 			break
 		}
 	}
@@ -492,6 +513,104 @@ func Test_Configure_AddClientOption_CopyClipboardError(t *testing.T) {
 	}
 }
 
+func TestServerPeerDisplayName_EmptyName(t *testing.T) {
+	peer := srv.AllowedPeer{ClientID: 42, Name: ""}
+	if got := serverPeerDisplayName(peer); got != "client-42" {
+		t.Fatalf("expected 'client-42' for empty name, got %q", got)
+	}
+}
+
+func TestServerPeerDisplayName_WhitespaceName(t *testing.T) {
+	peer := srv.AllowedPeer{ClientID: 7, Name: "   "}
+	if got := serverPeerDisplayName(peer); got != "client-7" {
+		t.Fatalf("expected 'client-7' for whitespace name, got %q", got)
+	}
+}
+
+func TestServerPeerDisplayName_NonEmptyName(t *testing.T) {
+	peer := srv.AllowedPeer{ClientID: 1, Name: "alpha"}
+	if got := serverPeerDisplayName(peer); got != "alpha" {
+		t.Fatalf("expected 'alpha', got %q", got)
+	}
+}
+
+func TestSelectManagedPeer_UnknownOptionError(t *testing.T) {
+	manager := &mockManager{
+		confRet: &srv.Configuration{
+			AllowedPeers: []srv.AllowedPeer{
+				{
+					Name:      "alpha",
+					PublicKey: make([]byte, 32),
+					Enabled:   true,
+					ClientID:  1,
+				},
+			},
+		},
+	}
+	// The selector returns a label that does not match any peer
+	qsel := &queueSelector{options: []string{"non-existent-label"}}
+	sf := &mockSelectorFactory{selector: qsel}
+	sc := newServerConfigurator(manager, sf)
+
+	_, err := sc.selectManagedPeer()
+	if err == nil || !strings.Contains(err.Error(), "unknown managed client option") {
+		t.Fatalf("expected 'unknown managed client option' error, got %v", err)
+	}
+}
+
+func TestSelectManagedPeer_ListError(t *testing.T) {
+	manager := &mockManager{confErr: errors.New("list failed")}
+	sf := &mockSelectorFactory{selector: &queueSelector{}}
+	sc := newServerConfigurator(manager, sf)
+
+	_, err := sc.selectManagedPeer()
+	if err == nil || err.Error() != "list failed" {
+		t.Fatalf("expected list failed error, got %v", err)
+	}
+}
+
+func TestSelectManagedPeer_SelectorFactoryError(t *testing.T) {
+	manager := &mockManager{
+		confRet: &srv.Configuration{
+			AllowedPeers: []srv.AllowedPeer{
+				{Name: "a", PublicKey: make([]byte, 32), Enabled: true, ClientID: 1},
+			},
+		},
+	}
+	sf := &mockSelectorFactory{
+		selector: &queueSelector{},
+		err:      errors.New("factory failed"),
+	}
+	sc := newServerConfigurator(manager, sf)
+
+	_, err := sc.selectManagedPeer()
+	if err == nil || err.Error() != "factory failed" {
+		t.Fatalf("expected factory failed, got %v", err)
+	}
+}
+
+func TestConfigure_ManageClients_UserExitFromPeerSelection(t *testing.T) {
+	manager := &mockManager{
+		confRet: &srv.Configuration{
+			AllowedPeers: []srv.AllowedPeer{
+				{Name: "a", PublicKey: make([]byte, 32), Enabled: true, ClientID: 1},
+			},
+		},
+	}
+	label := serverPeerOptionLabel(manager.confRet.AllowedPeers[0])
+	qsel := &queueSelector{
+		options: []string{manageClients, label},
+		errs:    []error{nil, selector.ErrUserExit},
+	}
+	sf := &mockSelectorFactory{selector: qsel}
+	sc := newServerConfigurator(manager, sf)
+
+	err := sc.Configure()
+	if !errors.Is(err, ErrUserExit) {
+		t.Fatalf("expected ErrUserExit from manage peer selection, got %v", err)
+	}
+}
+
 func Test_Configure_AddClientOption_BackFromUpdatedMenu_ReturnsToModeSelection(t *testing.T) {
 	qsel := &queueSelector{
 		options: []string{addClientOption, ""},
@@ -513,6 +632,45 @@ func Test_Configure_AddClientOption_BackFromUpdatedMenu_ReturnsToModeSelection(t
 	err := sc.Configure()
 	if !errors.Is(err, ErrBackToModeSelection) {
 		t.Fatalf("expected ErrBackToModeSelection, got %v", err)
+	}
+}
+
+func TestConfigure_ManageClients_GenericErrorFromPeerSelection(t *testing.T) {
+	manager := &mockManager{
+		confErr: errors.New("list peers failed"),
+	}
+	qsel := &queueSelector{
+		options: []string{manageClients},
+	}
+	sf := &mockSelectorFactory{selector: qsel}
+	sc := newServerConfigurator(manager, sf)
+
+	err := sc.Configure()
+	if err == nil || err.Error() != "list peers failed" {
+		t.Fatalf("expected generic error propagation from manage clients flow, got %v", err)
+	}
+}
+
+func TestConfigure_ManageClients_UnknownPeerOptionError(t *testing.T) {
+	manager := &mockManager{
+		confRet: &srv.Configuration{
+			AllowedPeers: []srv.AllowedPeer{
+				{Name: "x", PublicKey: make([]byte, 32), Enabled: true, ClientID: 1},
+			},
+		},
+	}
+	// The queueSelector returns "manageClients" first (menu), then an unknown
+	// label that does not match any peer label, which triggers a generic error
+	// from selectManagedPeer that propagates through the default branch.
+	qsel := &queueSelector{
+		options: []string{manageClients, "not-a-real-peer-label"},
+	}
+	sf := &mockSelectorFactory{selector: qsel}
+	sc := newServerConfigurator(manager, sf)
+
+	err := sc.Configure()
+	if err == nil || !strings.Contains(err.Error(), "unknown managed client option") {
+		t.Fatalf("expected unknown managed client option error, got %v", err)
 	}
 }
 

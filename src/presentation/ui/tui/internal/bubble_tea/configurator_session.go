@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -17,10 +18,29 @@ import (
 	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 var ErrConfiguratorSessionUserExit = errors.New("configurator session user exit")
+
+type configuratorLogTickMsg struct {
+	seq uint64
+}
+
+const (
+	configuratorTabMain = iota
+	configuratorTabSettings
+	configuratorTabLogs
+)
+
+type configuratorSessionProgram interface {
+	Run() (tea.Model, error)
+}
+
+var newConfiguratorSessionProgram = func(model tea.Model) configuratorSessionProgram {
+	return tea.NewProgram(model, tea.WithAltScreen())
+}
 
 type ConfiguratorSessionOptions struct {
 	Observer            clientConfiguration.Observer
@@ -42,6 +62,7 @@ const (
 	configuratorScreenClientInvalid
 	configuratorScreenServerSelect
 	configuratorScreenServerManage
+	configuratorScreenServerDeleteConfirm
 )
 
 const (
@@ -57,6 +78,9 @@ const (
 	sessionServerStart  = "start server"
 	sessionServerAdd    = "add client"
 	sessionServerManage = "manage clients"
+
+	sessionServerDeleteConfirm = "Delete client"
+	sessionCancel              = "Cancel"
 )
 
 type configuratorSessionModel struct {
@@ -75,6 +99,8 @@ type configuratorSessionModel struct {
 	serverMenuOptions  []string
 	serverManagePeers  []serverConfiguration.AllowedPeer
 	serverManageLabels []string
+	serverDeletePeer   serverConfiguration.AllowedPeer
+	serverDeleteCursor int
 
 	addNameInput textinput.Model
 	addJSONInput textarea.Model
@@ -86,12 +112,23 @@ type configuratorSessionModel struct {
 
 	notice string
 
+	tab            int
+	settingsCursor int
+	preferences    UIPreferences
+
+	logViewport viewport.Model
+	logReady    bool
+	logFollow   bool
+	logScratch  []string
+	logWaitStop chan struct{}
+	logTickSeq  uint64
+
 	resultMode mode.Mode
 	resultErr  error
 	done       bool
 }
 
-func RunConfiguratorSession(options ConfiguratorSessionOptions) (mode.Mode, error) {
+func RunConfiguratorSession(options ConfiguratorSessionOptions) (selectedMode mode.Mode, err error) {
 	defer clearTerminalAfterTUI()
 
 	model, err := newConfiguratorSessionModel(options)
@@ -99,7 +136,7 @@ func RunConfiguratorSession(options ConfiguratorSessionOptions) (mode.Mode, erro
 		return mode.Unknown, err
 	}
 
-	program := tea.NewProgram(model, tea.WithAltScreen())
+	program := newConfiguratorSessionProgram(model)
 	finalModel, runErr := program.Run()
 	if runErr != nil {
 		return mode.Unknown, runErr
@@ -129,6 +166,10 @@ func newConfiguratorSessionModel(options ConfiguratorSessionOptions) (configurat
 			sessionServerAdd,
 			sessionServerManage,
 		},
+		preferences: CurrentUIPreferences(),
+		logViewport: viewport.New(1, 8),
+		logReady:    true,
+		logFollow:   true,
 	}
 
 	if options.Observer == nil ||
@@ -158,13 +199,32 @@ func (m configuratorSessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.adjustInputsToViewport()
+		if m.tab == configuratorTabLogs {
+			m.refreshLogs()
+		}
 		return m, nil
+	case configuratorLogTickMsg:
+		if msg.seq != m.logTickSeq || m.tab != configuratorTabLogs {
+			return m, nil
+		}
+		m.refreshLogs()
+		return m, configuratorLogUpdateCmd(m.logsFeed(), m.logWaitStop, m.logTickSeq)
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "ctrl+c":
+			m.stopLogWait()
 			m.resultErr = ErrConfiguratorSessionUserExit
 			m.done = true
 			return m, tea.Quit
+		case "tab":
+			return m.cycleTab()
+		}
+
+		switch m.tab {
+		case configuratorTabSettings:
+			return m.updateSettingsTab(msg)
+		case configuratorTabLogs:
+			return m.updateLogsTab(msg)
 		}
 
 		switch m.screen {
@@ -184,6 +244,8 @@ func (m configuratorSessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateServerSelectScreen(msg)
 		case configuratorScreenServerManage:
 			return m.updateServerManageScreen(msg)
+		case configuratorScreenServerDeleteConfirm:
+			return m.updateServerDeleteConfirmScreen(msg)
 		}
 	}
 
@@ -191,6 +253,13 @@ func (m configuratorSessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m configuratorSessionModel) View() string {
+	switch m.tab {
+	case configuratorTabSettings:
+		return m.settingsTabView()
+	case configuratorTabLogs:
+		return m.logsTabView()
+	}
+
 	switch m.screen {
 	case configuratorScreenMode:
 		return m.renderSelectionScreen(
@@ -198,7 +267,7 @@ func (m configuratorSessionModel) View() string {
 			m.notice,
 			m.modeOptions,
 			m.cursor,
-			"up/k move | down/j move | Enter select | Esc exit | q exit",
+			"up/k down/j move | Enter select | Tab switch tabs | Esc exit | q exit",
 		)
 	case configuratorScreenClientSelect:
 		return m.renderSelectionScreen(
@@ -206,7 +275,7 @@ func (m configuratorSessionModel) View() string {
 			m.notice,
 			m.clientMenuOptions,
 			m.cursor,
-			"up/k move | down/j move | Enter select | Esc back | q exit",
+			"up/k down/j move | Enter select | Tab switch tabs | Esc back | q exit",
 		)
 	case configuratorScreenClientRemove:
 		return m.renderSelectionScreen(
@@ -214,39 +283,45 @@ func (m configuratorSessionModel) View() string {
 			"",
 			m.clientRemovePaths,
 			m.cursor,
-			"up/k move | down/j move | Enter remove | Esc back | q exit",
+			"up/k down/j move | Enter remove | Tab switch tabs | Esc back | q exit",
 		)
 	case configuratorScreenClientAddName:
+		styles := resolveUIStyles(m.preferences)
 		container := inputContainerStyle().Width(m.inputContainerWidth())
 		stats := metaTextStyle().Render("Characters: " + formatCount(utf8.RuneCountInString(m.addNameInput.Value()), m.addNameInput.CharLimit))
+		body := make([]string, 0, 4)
+		if strings.TrimSpace(m.notice) != "" {
+			body = append(body, m.notice, "")
+		}
+		body = append(body, container.Render(m.addNameInput.View()), stats)
 		return renderScreen(
 			m.width,
 			m.height,
+			m.tabsLine(styles),
 			"Name configuration",
-			m.notice,
-			[]string{
-				container.Render(m.addNameInput.View()),
-				stats,
-			},
-			"Enter confirm | Esc back | q exit",
+			body,
+			"Enter confirm | Tab switch tabs | Esc back | q exit",
 		)
 	case configuratorScreenClientAddJSON:
+		styles := resolveUIStyles(m.preferences)
 		container := inputContainerStyle().Width(m.inputContainerWidth())
 		lines := 1
 		if value := m.addJSONInput.Value(); value != "" {
 			lines = len(strings.Split(value, "\n"))
 		}
 		stats := metaTextStyle().Render(fmt.Sprintf("Lines: %d", lines))
+		body := make([]string, 0, 4)
+		if strings.TrimSpace(m.notice) != "" {
+			body = append(body, m.notice, "")
+		}
+		body = append(body, container.Render(m.addJSONInput.View()), stats)
 		return renderScreen(
 			m.width,
 			m.height,
+			m.tabsLine(styles),
 			"Paste configuration",
-			m.notice,
-			[]string{
-				container.Render(m.addJSONInput.View()),
-				stats,
-			},
-			"Enter confirm | Esc back | q exit",
+			body,
+			"Enter confirm | Tab switch tabs | Esc back | q exit",
 		)
 	case configuratorScreenClientInvalid:
 		options := []string{sessionInvalidOK}
@@ -259,7 +334,7 @@ func (m configuratorSessionModel) View() string {
 			subtitle,
 			options,
 			m.cursor,
-			"up/k move | down/j move | Enter select | Esc back | q exit",
+			"up/k down/j move | Enter select | Tab switch tabs | Esc back | q exit",
 		)
 	case configuratorScreenServerSelect:
 		return m.renderSelectionScreen(
@@ -267,15 +342,27 @@ func (m configuratorSessionModel) View() string {
 			m.notice,
 			m.serverMenuOptions,
 			m.cursor,
-			"up/k move | down/j move | Enter select | Esc back | q exit",
+			"up/k down/j move | Enter select | Tab switch tabs | Esc back | q exit",
 		)
 	case configuratorScreenServerManage:
 		return m.renderSelectionScreen(
-			"Select client to enable/disable",
+			"Select client to enable/disable or delete",
 			"",
 			m.serverManageLabels,
 			m.cursor,
-			"up/k move | down/j move | Enter toggle | Esc back | q exit",
+			"up/k down/j move | Enter toggle | d delete | Tab switch tabs | Esc back | q exit",
+		)
+	case configuratorScreenServerDeleteConfirm:
+		return m.renderSelectionScreen(
+			fmt.Sprintf(
+				"Delete client #%d %s?",
+				m.serverDeletePeer.ClientID,
+				serverPeerDisplayName(m.serverDeletePeer),
+			),
+			"This action removes client access from server configuration.",
+			[]string{sessionServerDeleteConfirm, sessionCancel},
+			m.cursor,
+			"up/k down/j move | Enter confirm | Tab switch tabs | Esc back | q exit",
 		)
 	default:
 		return ""
@@ -588,6 +675,15 @@ func (m configuratorSessionModel) updateServerManageScreen(msg tea.KeyMsg) (tea.
 		m.cursor = 0
 		m.screen = configuratorScreenServerSelect
 		return m, nil
+	case "d", "D":
+		if len(m.serverManagePeers) == 0 {
+			return m, nil
+		}
+		m.serverDeletePeer = m.serverManagePeers[m.cursor]
+		m.serverDeleteCursor = m.cursor
+		m.cursor = 0
+		m.screen = configuratorScreenServerDeleteConfirm
+		return m, nil
 	}
 
 	m.updateCursor(msg, len(m.serverManagePeers))
@@ -621,6 +717,160 @@ func (m configuratorSessionModel) updateServerManageScreen(msg tea.KeyMsg) (tea.
 	m.serverManageLabels = buildServerManageLabels(peers)
 	if m.cursor >= len(m.serverManagePeers) {
 		m.cursor = len(m.serverManagePeers) - 1
+	}
+	return m, nil
+}
+
+func (m configuratorSessionModel) updateServerDeleteConfirmScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		if len(m.serverManagePeers) > 0 {
+			m.cursor = minInt(m.serverDeleteCursor, len(m.serverManagePeers)-1)
+		} else {
+			m.cursor = 0
+		}
+		m.screen = configuratorScreenServerManage
+		return m, nil
+	}
+
+	options := []string{sessionServerDeleteConfirm, sessionCancel}
+	m.updateCursor(msg, len(options))
+	if msg.String() != "enter" {
+		return m, nil
+	}
+
+	selected := options[m.cursor]
+	if selected == sessionCancel {
+		if len(m.serverManagePeers) > 0 {
+			m.cursor = minInt(m.serverDeleteCursor, len(m.serverManagePeers)-1)
+		} else {
+			m.cursor = 0
+		}
+		m.screen = configuratorScreenServerManage
+		return m, nil
+	}
+
+	if err := m.options.ServerConfigManager.RemoveAllowedPeer(m.serverDeletePeer.ClientID); err != nil {
+		m.notice = fmt.Sprintf("Failed to remove client #%d: %v", m.serverDeletePeer.ClientID, err)
+		m.screen = configuratorScreenServerManage
+		m.cursor = 0
+		return m, nil
+	}
+
+	peers, err := m.options.ServerConfigManager.ListAllowedPeers()
+	if err != nil {
+		m.resultErr = err
+		m.done = true
+		return m, tea.Quit
+	}
+	if len(peers) == 0 {
+		m.notice = "No clients configured yet."
+		m.screen = configuratorScreenServerSelect
+		m.cursor = 0
+		return m, nil
+	}
+
+	m.notice = fmt.Sprintf(
+		"Client #%d %s removed.",
+		m.serverDeletePeer.ClientID,
+		serverPeerDisplayName(m.serverDeletePeer),
+	)
+	m.serverManagePeers = peers
+	m.serverManageLabels = buildServerManageLabels(peers)
+	m.cursor = minInt(m.serverDeleteCursor, len(peers)-1)
+	m.screen = configuratorScreenServerManage
+	return m, nil
+}
+
+func (m configuratorSessionModel) cycleTab() (tea.Model, tea.Cmd) {
+	previous := m.tab
+	switch m.tab {
+	case configuratorTabMain:
+		m.tab = configuratorTabSettings
+	case configuratorTabSettings:
+		m.tab = configuratorTabLogs
+	default:
+		m.tab = configuratorTabMain
+	}
+	m.preferences = CurrentUIPreferences()
+	if m.tab == configuratorTabLogs {
+		m.restartLogWait()
+		m.logTickSeq++
+		m.refreshLogs()
+		return m, configuratorLogUpdateCmd(m.logsFeed(), m.logWaitStop, m.logTickSeq)
+	}
+	if previous == configuratorTabLogs {
+		m.stopLogWait()
+	}
+	return m, nil
+}
+
+func (m configuratorSessionModel) updateSettingsTab(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.tab = configuratorTabMain
+		return m, nil
+	}
+	var cmd tea.Cmd
+	switch msg.String() {
+	case "up", "k":
+		m.settingsCursor = settingsCursorUp(m.settingsCursor)
+	case "down", "j":
+		m.settingsCursor = settingsCursorDown(m.settingsCursor)
+	case "left", "h":
+		prevTheme := m.preferences.Theme
+		m.preferences = applySettingsChange(m.settingsCursor, -1)
+		if m.settingsCursor == settingsThemeRow && m.preferences.Theme != prevTheme {
+			cmd = tea.ClearScreen
+		}
+	case "right", "l", "enter":
+		prevTheme := m.preferences.Theme
+		m.preferences = applySettingsChange(m.settingsCursor, 1)
+		if m.settingsCursor == settingsThemeRow && m.preferences.Theme != prevTheme {
+			cmd = tea.ClearScreen
+		}
+	}
+	return m, cmd
+}
+
+func (m configuratorSessionModel) updateLogsTab(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.stopLogWait()
+		m.tab = configuratorTabMain
+		return m, nil
+	}
+	switch msg.Type {
+	case tea.KeyPgUp:
+		m.logViewport.PageUp()
+		m.logFollow = false
+		return m, nil
+	case tea.KeyPgDown:
+		m.logViewport.PageDown()
+		m.logFollow = m.logViewport.AtBottom()
+		return m, nil
+	case tea.KeyHome:
+		m.logViewport.GotoTop()
+		m.logFollow = false
+		return m, nil
+	case tea.KeyEnd:
+		m.logViewport.GotoBottom()
+		m.logFollow = true
+		return m, nil
+	case tea.KeySpace:
+		m.logFollow = !m.logFollow
+		if m.logFollow {
+			m.logViewport.GotoBottom()
+		}
+		return m, nil
+	}
+	switch msg.String() {
+	case "up", "k":
+		m.logViewport.LineUp(1)
+		m.logFollow = false
+	case "down", "j":
+		m.logViewport.LineDown(1)
+		m.logFollow = m.logViewport.AtBottom()
 	}
 	return m, nil
 }
@@ -677,24 +927,29 @@ func (m *configuratorSessionModel) adjustInputsToViewport() {
 }
 
 func (m configuratorSessionModel) renderSelectionScreen(
-	title string,
-	subtitle string,
+	screenTitle string,
+	notice string,
 	options []string,
 	cursor int,
 	hint string,
 ) string {
-	styles := resolveUIStyles(CurrentUIPreferences())
+	styles := resolveUIStyles(m.preferences)
 	contentWidth := 0
 	if m.width > 0 {
 		contentWidth = contentWidthForTerminal(m.width)
 	}
 
-	body := renderSelectableRows(options, cursor, contentWidth, styles)
+	rows := renderSelectableRows(options, cursor, contentWidth, styles)
+	body := make([]string, 0, len(rows)+2)
+	if strings.TrimSpace(notice) != "" {
+		body = append(body, notice, "")
+	}
+	body = append(body, rows...)
 	return renderScreen(
 		m.width,
 		m.height,
-		title,
-		subtitle,
+		m.tabsLine(styles),
+		screenTitle,
 		body,
 		hint,
 	)
@@ -705,6 +960,114 @@ func (m configuratorSessionModel) inputContainerWidth() int {
 		return maxInt(1, contentWidthForTerminal(m.width))
 	}
 	return 40 + inputContainerStyle().GetHorizontalFrameSize()
+}
+
+func (m configuratorSessionModel) settingsTabView() string {
+	styles := resolveUIStyles(m.preferences)
+	contentWidth := 0
+	if m.width > 0 {
+		contentWidth = contentWidthForTerminal(m.width)
+	}
+	body := renderSelectableRows(uiSettingsRows(m.preferences), m.settingsCursor, contentWidth, styles)
+	return renderScreen(
+		m.width,
+		m.height,
+		m.tabsLine(styles),
+		"",
+		body,
+		"up/k down/j row | left/right/Enter change | Tab switch tabs | Esc back | q exit",
+	)
+}
+
+func (m configuratorSessionModel) logsTabView() string {
+	styles := resolveUIStyles(m.preferences)
+	body := []string{m.logViewport.View()}
+	return renderScreen(
+		m.width,
+		m.height,
+		m.tabsLine(styles),
+		"",
+		body,
+		"up/down scroll | PgUp/PgDn page | Home/End jump | Space follow | Tab switch tabs | Esc back | q exit",
+	)
+}
+
+func (m configuratorSessionModel) tabsLine(styles uiStyles) string {
+	contentWidth := contentWidthForTerminal(m.width)
+	return renderTabsLine(productLabel(), "configurator", selectorTabs[:], m.tab, contentWidth, styles)
+}
+
+func (m configuratorSessionModel) logsFeed() RuntimeLogFeed {
+	return GlobalRuntimeLogFeed()
+}
+
+func (m *configuratorSessionModel) refreshLogs() {
+	lines := runtimeLogSnapshot(m.logsFeed(), &m.logScratch)
+	m.ensureLogsViewport()
+	wasAtBottom := m.logViewport.AtBottom()
+	offset := m.logViewport.YOffset
+	content := renderLogsViewportContent(lines, m.logViewport.Width, resolveUIStyles(m.preferences))
+	m.logViewport.SetContent(content)
+	if m.logFollow || wasAtBottom {
+		m.logViewport.GotoBottom()
+		m.logFollow = true
+		return
+	}
+	m.logViewport.SetYOffset(offset)
+}
+
+func (m *configuratorSessionModel) ensureLogsViewport() {
+	hint := "up/down scroll | PgUp/PgDn page | Home/End jump | Space follow | Tab switch tabs | Esc back | q exit"
+	contentWidth, viewportHeight := computeLogsViewportSize(
+		m.width,
+		m.height,
+		m.preferences,
+		"",
+		hint,
+	)
+	if !m.logReady {
+		m.logViewport = viewport.New(contentWidth, viewportHeight)
+		m.logReady = true
+		return
+	}
+	m.logViewport.Width = contentWidth
+	m.logViewport.Height = viewportHeight
+}
+
+func (m *configuratorSessionModel) restartLogWait() {
+	m.stopLogWait()
+	m.logWaitStop = make(chan struct{})
+}
+
+func (m *configuratorSessionModel) stopLogWait() {
+	if m.logWaitStop != nil {
+		close(m.logWaitStop)
+		m.logWaitStop = nil
+	}
+}
+
+func configuratorLogTickCmd(seq uint64) tea.Cmd {
+	return tea.Tick(time.Second, func(time.Time) tea.Msg {
+		return configuratorLogTickMsg{seq: seq}
+	})
+}
+
+func configuratorLogUpdateCmd(feed RuntimeLogFeed, stop <-chan struct{}, seq uint64) tea.Cmd {
+	changeFeed, ok := feed.(RuntimeLogChangeFeed)
+	if ok {
+		changes := changeFeed.Changes()
+		if changes != nil {
+			return func() tea.Msg {
+				select {
+				case <-stop:
+					return configuratorLogTickMsg{}
+				case <-changes:
+					return configuratorLogTickMsg{seq: seq}
+				}
+			}
+		}
+	}
+	return configuratorLogTickCmd(seq)
 }
 
 func (m *configuratorSessionModel) updateCursor(keyMsg tea.KeyMsg, listSize int) {
@@ -733,15 +1096,20 @@ func buildServerManageLabels(peers []serverConfiguration.AllowedPeer) []string {
 	return labels
 }
 
+func serverPeerDisplayName(peer serverConfiguration.AllowedPeer) string {
+	name := strings.TrimSpace(peer.Name)
+	if name == "" {
+		return fmt.Sprintf("client-%d", peer.ClientID)
+	}
+	return name
+}
+
 func serverPeerOptionLabel(peer serverConfiguration.AllowedPeer) string {
 	status := "disabled"
 	if peer.Enabled {
 		status = "enabled"
 	}
-	name := strings.TrimSpace(peer.Name)
-	if name == "" {
-		name = fmt.Sprintf("client-%d", peer.ClientID)
-	}
+	name := serverPeerDisplayName(peer)
 	return fmt.Sprintf("#%d %s [%s]", peer.ClientID, name, status)
 }
 

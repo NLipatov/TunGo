@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
+	"runtime/debug"
 	"time"
 	"tungo/application/confgen"
 	"tungo/domain/app"
@@ -94,6 +96,7 @@ func main() {
 
 		switch appMode {
 		case mode.Server:
+			setupCrashLog(serverResolver)
 			if err := prepareServerKeys(configurationManager); err != nil {
 				log.Printf("%v", err)
 				exitCode = 1
@@ -136,6 +139,7 @@ func main() {
 			fmt.Println(string(data))
 			return
 		case mode.Client:
+			setupCrashLog(client.NewDefaultResolver())
 			log.Printf("Starting client...")
 			err := startClient(appCtx)
 			if errors.Is(err, runnersCommon.ErrReconfigureRequested) {
@@ -223,6 +227,25 @@ func startServer(
 		tun_server.NewServerTrafficRouterFactory(),
 	)
 	return runner.Run(ctx)
+}
+
+func setupCrashLog(resolver client.Resolver) {
+	configPath, err := resolver.Resolve()
+	if err != nil {
+		return
+	}
+	crashPath := filepath.Join(filepath.Dir(configPath), "crash.log")
+	f, err := os.OpenFile(crashPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+	if err != nil {
+		return
+	}
+	info, _ := f.Stat()
+	if info != nil && info.Size() > 0 {
+		_, _ = fmt.Fprintf(f, "\n--- crash at %s ---\n\n", time.Now().Format(time.RFC3339))
+	}
+	if err := debug.SetCrashOutput(f, debug.CrashOptions{}); err != nil {
+		_ = f.Close()
+	}
 }
 
 func printVersion(appCtx context.Context) {

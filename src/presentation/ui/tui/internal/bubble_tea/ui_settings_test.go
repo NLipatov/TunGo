@@ -28,6 +28,9 @@ func TestUpdateUIPreferences_SanitizesValues(t *testing.T) {
 	if p.StatsUnits != StatsUnitsBiBytes {
 		t.Fatalf("expected fallback stats units bibytes, got %q", p.StatsUnits)
 	}
+	if !p.ShowDataplaneStats || !p.ShowDataplaneGraph {
+		t.Fatalf("expected dataplane stats/graph to default on, got %+v", p)
+	}
 }
 
 func TestOrderedThemeOptions_HasOneLightAndSixDarkThemes(t *testing.T) {
@@ -56,19 +59,28 @@ func TestUIPreferences_SaveAndReloadRoundTrip(t *testing.T) {
 		p.Theme = ThemeDark
 		p.Language = "en"
 		p.StatsUnits = StatsUnitsBytes
+		p.ShowDataplaneStats = false
+		p.ShowDataplaneGraph = false
 		p.ShowFooter = false
 	})
 	if err := SaveUIPreferences(); err != nil {
 		t.Fatalf("save failed: %v", err)
 	}
 
-	preferences.Store(UIPreferences{Theme: ThemeLight, Language: "en", StatsUnits: StatsUnitsBiBytes, ShowFooter: true})
+	preferences.Store(UIPreferences{
+		Theme: ThemeLight, Language: "en", StatsUnits: StatsUnitsBiBytes,
+		ShowDataplaneStats: true, ShowDataplaneGraph: true, ShowFooter: true,
+	})
 
 	if err := ReloadUIPreferences(); err != nil {
 		t.Fatalf("reload failed: %v", err)
 	}
 	p := CurrentUIPreferences()
-	if p.Theme != ThemeDark || p.ShowFooter || p.StatsUnits != StatsUnitsBytes {
+	if p.Theme != ThemeDark ||
+		p.ShowFooter ||
+		p.StatsUnits != StatsUnitsBytes ||
+		p.ShowDataplaneStats ||
+		p.ShowDataplaneGraph {
 		t.Fatalf("expected reloaded settings from disk, got %+v", p)
 	}
 }
@@ -80,7 +92,12 @@ func TestReloadUIPreferences_MissingFileUsesDefaults(t *testing.T) {
 		t.Fatalf("reload should succeed for missing file, got: %v", err)
 	}
 	p := CurrentUIPreferences()
-	if p.Theme != ThemeLight || p.Language != "en" || p.StatsUnits != StatsUnitsBiBytes || !p.ShowFooter {
+	if p.Theme != ThemeLight ||
+		p.Language != "en" ||
+		p.StatsUnits != StatsUnitsBiBytes ||
+		!p.ShowDataplaneStats ||
+		!p.ShowDataplaneGraph ||
+		!p.ShowFooter {
 		t.Fatalf("expected defaults for missing file, got %+v", p)
 	}
 }
@@ -133,7 +150,7 @@ func TestReloadUIPreferences_LegacyThemeMigratesToSupportedTheme(t *testing.T) {
 
 func TestCurrentUIPreferences_NonEmptyAfterInit(t *testing.T) {
 	p := CurrentUIPreferences()
-	if p.Language == "" {
+	if p.Language == "" || !p.ShowDataplaneStats || !p.ShowDataplaneGraph {
 		t.Fatalf("expected initialized preferences, got %+v", p)
 	}
 }
@@ -280,7 +297,28 @@ func TestInitializeUIPreferences_LoadSuccess(t *testing.T) {
 
 	initializeUIPreferences()
 	p := CurrentUIPreferences()
-	if p.Theme != ThemeDark || p.StatsUnits != StatsUnitsBytes || p.ShowFooter {
+	if p.Theme != ThemeDark ||
+		p.StatsUnits != StatsUnitsBytes ||
+		!p.ShowDataplaneStats ||
+		!p.ShowDataplaneGraph ||
+		p.ShowFooter {
 		t.Fatalf("unexpected loaded preferences: %+v", p)
+	}
+}
+
+func TestReloadUIPreferences_MissingDataplaneKeys_DefaultsToEnabled(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tui.json")
+	t.Setenv(uiSettingsPathEnv, path)
+	payload := []byte("{\"theme\":\"dark\",\"language\":\"en\",\"stats_units\":\"bytes\",\"show_footer\":true}\n")
+	if err := os.WriteFile(path, payload, 0o644); err != nil {
+		t.Fatalf("write ui file failed: %v", err)
+	}
+
+	if err := ReloadUIPreferences(); err != nil {
+		t.Fatalf("reload failed: %v", err)
+	}
+	p := CurrentUIPreferences()
+	if !p.ShowDataplaneStats || !p.ShowDataplaneGraph {
+		t.Fatalf("expected missing dataplane flags to default true, got %+v", p)
 	}
 }

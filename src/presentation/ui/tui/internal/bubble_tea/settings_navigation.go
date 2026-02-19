@@ -3,6 +3,8 @@ package bubble_tea
 const (
 	settingsThemeRow = iota
 	settingsStatsUnitsRow
+	settingsDataplaneStatsRow
+	settingsDataplaneGraphRow
 	settingsFooterRow
 	settingsRowsCount
 )
@@ -28,6 +30,10 @@ func applySettingsChange(settingsCursor int, step int) UIPreferences {
 			p.Theme = nextTheme(p.Theme, step)
 		case settingsStatsUnitsRow:
 			p.StatsUnits = nextStatsUnits(p.StatsUnits, step)
+		case settingsDataplaneStatsRow:
+			p.ShowDataplaneStats = !p.ShowDataplaneStats
+		case settingsDataplaneGraphRow:
+			p.ShowDataplaneGraph = !p.ShowDataplaneGraph
 		case settingsFooterRow:
 			p.ShowFooter = !p.ShowFooter
 		}

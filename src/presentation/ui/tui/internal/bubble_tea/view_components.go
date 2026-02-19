@@ -106,6 +106,8 @@ func uiSettingsRows(prefs UIPreferences) []string {
 	return []string{
 		fmt.Sprintf("Theme      : %s", strings.ToUpper(strings.ReplaceAll(string(prefs.Theme), "_", " "))),
 		fmt.Sprintf("Stats units: %s", statsUnitsLabel(prefs.StatsUnits)),
+		fmt.Sprintf("Dataplane stats: %s", onOff(prefs.ShowDataplaneStats)),
+		fmt.Sprintf("Dataplane graph: %s", onOff(prefs.ShowDataplaneGraph)),
 		fmt.Sprintf("Show footer: %s", onOff(prefs.ShowFooter)),
 	}
 }

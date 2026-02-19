@@ -75,6 +75,8 @@ func TestRuntimeDashboard_TogglesFooterInSettings(t *testing.T) {
 		p.Theme = ThemeDark
 		p.Language = "en"
 		p.StatsUnits = StatsUnitsBiBytes
+		p.ShowDataplaneStats = true
+		p.ShowDataplaneGraph = true
 		p.ShowFooter = true
 	})
 	t.Cleanup(func() {
@@ -82,6 +84,8 @@ func TestRuntimeDashboard_TogglesFooterInSettings(t *testing.T) {
 			p.Theme = ThemeDark
 			p.Language = "en"
 			p.StatsUnits = StatsUnitsBiBytes
+			p.ShowDataplaneStats = true
+			p.ShowDataplaneGraph = true
 			p.ShowFooter = true
 		})
 	})
@@ -89,9 +93,11 @@ func TestRuntimeDashboard_TogglesFooterInSettings(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
 	m1, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})                      // settings
 	m2, _ := m1.(RuntimeDashboard).Update(tea.KeyMsg{Type: tea.KeyDown}) // stats units row
-	m3, _ := m2.(RuntimeDashboard).Update(tea.KeyMsg{Type: tea.KeyDown}) // footer row
-	m4 := m3
-	_, _ = m4.(RuntimeDashboard).Update(tea.KeyMsg{Type: tea.KeyRight}) // toggle
+	m3, _ := m2.(RuntimeDashboard).Update(tea.KeyMsg{Type: tea.KeyDown}) // dataplane stats row
+	m4, _ := m3.(RuntimeDashboard).Update(tea.KeyMsg{Type: tea.KeyDown}) // dataplane graph row
+	m5, _ := m4.(RuntimeDashboard).Update(tea.KeyMsg{Type: tea.KeyDown}) // footer row
+	m6 := m5
+	_, _ = m6.(RuntimeDashboard).Update(tea.KeyMsg{Type: tea.KeyRight}) // toggle
 
 	if CurrentUIPreferences().ShowFooter {
 		t.Fatalf("expected ShowFooter to be toggled off")
@@ -103,6 +109,8 @@ func TestRuntimeDashboard_TogglesStatsUnitsInSettings(t *testing.T) {
 		p.Theme = ThemeDark
 		p.Language = "en"
 		p.StatsUnits = StatsUnitsBiBytes
+		p.ShowDataplaneStats = true
+		p.ShowDataplaneGraph = true
 		p.ShowFooter = true
 	})
 	t.Cleanup(func() {
@@ -110,6 +118,8 @@ func TestRuntimeDashboard_TogglesStatsUnitsInSettings(t *testing.T) {
 			p.Theme = ThemeDark
 			p.Language = "en"
 			p.StatsUnits = StatsUnitsBiBytes
+			p.ShowDataplaneStats = true
+			p.ShowDataplaneGraph = true
 			p.ShowFooter = true
 		})
 	})
@@ -446,6 +456,8 @@ func TestRuntimeDashboard_SettingsNavigationAndMutation(t *testing.T) {
 		p.Theme = ThemeLight
 		p.Language = "en"
 		p.StatsUnits = StatsUnitsBiBytes
+		p.ShowDataplaneStats = true
+		p.ShowDataplaneGraph = true
 		p.ShowFooter = true
 	})
 	t.Cleanup(func() {
@@ -453,6 +465,8 @@ func TestRuntimeDashboard_SettingsNavigationAndMutation(t *testing.T) {
 			p.Theme = ThemeLight
 			p.Language = "en"
 			p.StatsUnits = StatsUnitsBiBytes
+			p.ShowDataplaneStats = true
+			p.ShowDataplaneGraph = true
 			p.ShowFooter = true
 		})
 	})
@@ -508,6 +522,20 @@ func TestRuntimeDashboard_SettingsNavigationAndMutation(t *testing.T) {
 		t.Fatalf("expected stats units bytes, got %q", CurrentUIPreferences().StatsUnits)
 	}
 
+	// Dataplane stats row: Enter toggles.
+	m.settingsCursor = settingsDataplaneStatsRow
+	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if CurrentUIPreferences().ShowDataplaneStats {
+		t.Fatalf("expected dataplane stats off after toggle")
+	}
+
+	// Dataplane graph row: Enter toggles.
+	m.settingsCursor = settingsDataplaneGraphRow
+	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if CurrentUIPreferences().ShowDataplaneGraph {
+		t.Fatalf("expected dataplane graph off after toggle")
+	}
+
 	// Footer row: Enter toggles.
 	m.settingsCursor = settingsFooterRow
 	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -526,10 +554,14 @@ func TestRuntimeDashboard_SettingsNavigationAndMutation(t *testing.T) {
 
 func TestRuntimeDashboard_MainView_ServerAndFooterOff(t *testing.T) {
 	UpdateUIPreferences(func(p *UIPreferences) {
+		p.ShowDataplaneStats = true
+		p.ShowDataplaneGraph = true
 		p.ShowFooter = false
 	})
 	t.Cleanup(func() {
 		UpdateUIPreferences(func(p *UIPreferences) {
+			p.ShowDataplaneStats = true
+			p.ShowDataplaneGraph = true
 			p.ShowFooter = true
 		})
 	})
@@ -551,6 +583,32 @@ func TestRuntimeDashboard_MainView_ServerAndFooterOff(t *testing.T) {
 	}
 	if !strings.Contains(view, "RX trend:") || !strings.Contains(view, "TX trend:") {
 		t.Fatalf("expected sparkline trend lines in dataplane view, got %q", view)
+	}
+}
+
+func TestRuntimeDashboard_MainView_CanHideStatsAndGraph(t *testing.T) {
+	UpdateUIPreferences(func(p *UIPreferences) {
+		p.ShowDataplaneStats = false
+		p.ShowDataplaneGraph = false
+		p.ShowFooter = true
+	})
+	t.Cleanup(func() {
+		UpdateUIPreferences(func(p *UIPreferences) {
+			p.ShowDataplaneStats = true
+			p.ShowDataplaneGraph = true
+			p.ShowFooter = true
+		})
+	})
+
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	m.width = 120
+	m.height = 30
+	view := m.View()
+	if strings.Contains(view, "Total RX") || strings.Contains(view, "RX trend:") || strings.Contains(view, "TX trend:") {
+		t.Fatalf("expected stats and trend lines hidden, got %q", view)
+	}
+	if !strings.Contains(view, "Dataplane metrics are hidden in Settings.") {
+		t.Fatalf("expected hidden-metrics hint, got %q", view)
 	}
 }
 
@@ -615,12 +673,16 @@ func TestRuntimeDashboard_SettingsThemeChange_RequestsClearScreen(t *testing.T) 
 	UpdateUIPreferences(func(p *UIPreferences) {
 		p.Theme = ThemeLight
 		p.StatsUnits = StatsUnitsBytes
+		p.ShowDataplaneStats = true
+		p.ShowDataplaneGraph = true
 		p.ShowFooter = true
 	})
 	t.Cleanup(func() {
 		UpdateUIPreferences(func(p *UIPreferences) {
 			p.Theme = ThemeLight
 			p.StatsUnits = StatsUnitsBiBytes
+			p.ShowDataplaneStats = true
+			p.ShowDataplaneGraph = true
 			p.ShowFooter = true
 		})
 	})
@@ -754,4 +816,578 @@ func TestBrailleDotMaskAndSetBrailleDot(t *testing.T) {
 	// out-of-range calls must be safe no-op
 	setBrailleDot(cells, -1, 0)
 	setBrailleDot(cells, 3, 0)
+}
+
+func TestUpdateConfirm_UpLeftDownRight(t *testing.T) {
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	m.confirmOpen = true
+	m.confirmCursor = 1
+
+	// Up decrements cursor when > 0
+	updatedModel, _ := m.updateConfirm(tea.KeyMsg{Type: tea.KeyUp})
+	updated := updatedModel.(RuntimeDashboard)
+	if updated.confirmCursor != 0 {
+		t.Fatalf("expected cursor 0 after Up, got %d", updated.confirmCursor)
+	}
+
+	// Up at cursor=0 stays at 0
+	updatedModel, _ = updated.updateConfirm(tea.KeyMsg{Type: tea.KeyUp})
+	updated = updatedModel.(RuntimeDashboard)
+	if updated.confirmCursor != 0 {
+		t.Fatalf("expected cursor to stay at 0 after Up at top, got %d", updated.confirmCursor)
+	}
+
+	// Left works same as Up
+	m.confirmCursor = 1
+	updatedModel, _ = m.updateConfirm(tea.KeyMsg{Type: tea.KeyLeft})
+	updated = updatedModel.(RuntimeDashboard)
+	if updated.confirmCursor != 0 {
+		t.Fatalf("expected cursor 0 after Left, got %d", updated.confirmCursor)
+	}
+
+	// Down increments cursor when < 1
+	m.confirmCursor = 0
+	updatedModel, _ = m.updateConfirm(tea.KeyMsg{Type: tea.KeyDown})
+	updated = updatedModel.(RuntimeDashboard)
+	if updated.confirmCursor != 1 {
+		t.Fatalf("expected cursor 1 after Down, got %d", updated.confirmCursor)
+	}
+
+	// Down at cursor=1 stays at 1
+	updatedModel, _ = updated.updateConfirm(tea.KeyMsg{Type: tea.KeyDown})
+	updated = updatedModel.(RuntimeDashboard)
+	if updated.confirmCursor != 1 {
+		t.Fatalf("expected cursor to stay at 1 after Down at bottom, got %d", updated.confirmCursor)
+	}
+
+	// Right works same as Down
+	m.confirmCursor = 0
+	updatedModel, _ = m.updateConfirm(tea.KeyMsg{Type: tea.KeyRight})
+	updated = updatedModel.(RuntimeDashboard)
+	if updated.confirmCursor != 1 {
+		t.Fatalf("expected cursor 1 after Right, got %d", updated.confirmCursor)
+	}
+}
+
+func TestUpdateConfirm_EscClosesConfirm(t *testing.T) {
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	m.confirmOpen = true
+	m.confirmCursor = 1
+
+	updatedModel, _ := m.updateConfirm(tea.KeyMsg{Type: tea.KeyEsc})
+	updated := updatedModel.(RuntimeDashboard)
+	if updated.confirmOpen {
+		t.Fatal("expected confirmOpen=false after Esc")
+	}
+	if updated.confirmCursor != 0 {
+		t.Fatalf("expected confirmCursor reset to 0 after Esc, got %d", updated.confirmCursor)
+	}
+}
+
+func TestUpdateConfirm_EnterAtCursor0_ClosesConfirm(t *testing.T) {
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	m.confirmOpen = true
+	m.confirmCursor = 0
+
+	updatedModel, cmd := m.updateConfirm(tea.KeyMsg{Type: tea.KeyEnter})
+	updated := updatedModel.(RuntimeDashboard)
+	if updated.confirmOpen {
+		t.Fatal("expected confirmOpen=false after Enter at cursor=0 (Stay)")
+	}
+	if cmd != nil {
+		t.Fatal("expected no quit command when selecting Stay")
+	}
+}
+
+func TestUpdateConfirm_EnterAtCursor1_Reconfigures(t *testing.T) {
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	m.confirmOpen = true
+	m.confirmCursor = 1
+
+	updatedModel, cmd := m.updateConfirm(tea.KeyMsg{Type: tea.KeyEnter})
+	updated := updatedModel.(RuntimeDashboard)
+	if !updated.reconfigureRequested {
+		t.Fatal("expected reconfigureRequested=true after Enter at cursor=1")
+	}
+	if cmd == nil {
+		t.Fatal("expected quit command when confirming reconfigure")
+	}
+}
+
+func TestUpdateConfirm_QDuringConfirmExits(t *testing.T) {
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	m.confirmOpen = true
+
+	updatedModel, cmd := m.updateConfirm(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	updated := updatedModel.(RuntimeDashboard)
+	if !updated.exitRequested {
+		t.Fatal("expected exitRequested=true after q during confirm")
+	}
+	if cmd == nil {
+		t.Fatal("expected quit command on q during confirm")
+	}
+}
+
+func TestUpdateLogs_DownKeyNotAtBottom(t *testing.T) {
+	lines := make([]string, 0, 30)
+	for i := 0; i < 30; i++ {
+		lines = append(lines, fmt.Sprintf("line-%02d", i))
+	}
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		LogFeed: testRuntimeLogFeed{lines: lines},
+	})
+	m.width = 120
+	m.height = 24
+	m.screen = runtimeScreenLogs
+	m.refreshLogs()
+	m.logViewport.GotoTop()
+	m.logFollow = false
+
+	updatedModel, _ := m.updateLogs(tea.KeyMsg{Type: tea.KeyDown})
+	updated := updatedModel.(RuntimeDashboard)
+	if updated.logFollow {
+		t.Fatal("expected logFollow=false when not at bottom after Down")
+	}
+}
+
+func TestUpdateLogs_UpSetFollowFalse(t *testing.T) {
+	lines := make([]string, 0, 30)
+	for i := 0; i < 30; i++ {
+		lines = append(lines, fmt.Sprintf("line-%02d", i))
+	}
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		LogFeed: testRuntimeLogFeed{lines: lines},
+	})
+	m.width = 120
+	m.height = 24
+	m.screen = runtimeScreenLogs
+	m.refreshLogs()
+	m.logFollow = true
+
+	updatedModel, _ := m.updateLogs(tea.KeyMsg{Type: tea.KeyUp})
+	updated := updatedModel.(RuntimeDashboard)
+	if updated.logFollow {
+		t.Fatal("expected logFollow=false after Up")
+	}
+}
+
+func TestUpdateLogs_PgDownAtBottomSetsFollow(t *testing.T) {
+	lines := make([]string, 0, 30)
+	for i := 0; i < 30; i++ {
+		lines = append(lines, fmt.Sprintf("line-%02d", i))
+	}
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		LogFeed: testRuntimeLogFeed{lines: lines},
+	})
+	m.width = 120
+	m.height = 24
+	m.screen = runtimeScreenLogs
+	m.refreshLogs()
+	m.logViewport.GotoBottom()
+
+	updatedModel, _ := m.updateLogs(tea.KeyMsg{Type: tea.KeyPgDown})
+	updated := updatedModel.(RuntimeDashboard)
+	if !updated.logFollow {
+		t.Fatal("expected logFollow=true after PgDown when already at bottom")
+	}
+}
+
+func TestUpdateLogs_HomeGoesToTop(t *testing.T) {
+	lines := make([]string, 0, 30)
+	for i := 0; i < 30; i++ {
+		lines = append(lines, fmt.Sprintf("line-%02d", i))
+	}
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		LogFeed: testRuntimeLogFeed{lines: lines},
+	})
+	m.width = 120
+	m.height = 24
+	m.screen = runtimeScreenLogs
+	m.refreshLogs()
+
+	updatedModel, _ := m.updateLogs(tea.KeyMsg{Type: tea.KeyHome})
+	updated := updatedModel.(RuntimeDashboard)
+	if updated.logFollow {
+		t.Fatal("expected logFollow=false after Home")
+	}
+	if updated.logViewport.YOffset != 0 {
+		t.Fatalf("expected viewport offset 0 after Home, got %d", updated.logViewport.YOffset)
+	}
+}
+
+func TestUpdateLogs_EndGoesToBottom(t *testing.T) {
+	lines := make([]string, 0, 30)
+	for i := 0; i < 30; i++ {
+		lines = append(lines, fmt.Sprintf("line-%02d", i))
+	}
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		LogFeed: testRuntimeLogFeed{lines: lines},
+	})
+	m.width = 120
+	m.height = 24
+	m.screen = runtimeScreenLogs
+	m.refreshLogs()
+	m.logViewport.GotoTop()
+
+	updatedModel, _ := m.updateLogs(tea.KeyMsg{Type: tea.KeyEnd})
+	updated := updatedModel.(RuntimeDashboard)
+	if !updated.logFollow {
+		t.Fatal("expected logFollow=true after End")
+	}
+	if !updated.logViewport.AtBottom() {
+		t.Fatal("expected viewport at bottom after End")
+	}
+}
+
+func TestUpdateLogs_SpaceTogglesFollow(t *testing.T) {
+	lines := make([]string, 0, 30)
+	for i := 0; i < 30; i++ {
+		lines = append(lines, fmt.Sprintf("line-%02d", i))
+	}
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		LogFeed: testRuntimeLogFeed{lines: lines},
+	})
+	m.width = 120
+	m.height = 24
+	m.screen = runtimeScreenLogs
+	m.refreshLogs()
+	m.logFollow = false
+
+	updatedModel, _ := m.updateLogs(tea.KeyMsg{Type: tea.KeySpace})
+	updated := updatedModel.(RuntimeDashboard)
+	if !updated.logFollow {
+		t.Fatal("expected logFollow=true after Space toggle from false")
+	}
+
+	updatedModel, _ = updated.updateLogs(tea.KeyMsg{Type: tea.KeySpace})
+	updated = updatedModel.(RuntimeDashboard)
+	if updated.logFollow {
+		t.Fatal("expected logFollow=false after Space toggle from true")
+	}
+}
+
+func TestRuntimeLogUpdateCmd_PlainFeedFallsBackToTick(t *testing.T) {
+	feed := testRuntimeLogFeed{lines: []string{"line"}}
+	stop := make(chan struct{})
+	cmd := runtimeLogUpdateCmd(context.Background(), feed, stop, 1)
+	if cmd == nil {
+		t.Fatal("expected non-nil command")
+	}
+	// The returned command should be a tick cmd (time-based), not a channel wait.
+	// We verify it returns a runtimeLogTickMsg eventually.
+	msg := cmd()
+	if _, ok := msg.(runtimeLogTickMsg); !ok {
+		t.Fatalf("expected runtimeLogTickMsg from plain feed fallback, got %T", msg)
+	}
+}
+
+type testRuntimeChangeFeed struct {
+	testRuntimeLogFeed
+	changes chan struct{}
+}
+
+func (f testRuntimeChangeFeed) Changes() <-chan struct{} {
+	return f.changes
+}
+
+func TestRuntimeLogUpdateCmd_ChangeFeedNilChanges_FallsBackToTick(t *testing.T) {
+	feed := testRuntimeChangeFeed{
+		testRuntimeLogFeed: testRuntimeLogFeed{lines: []string{"line"}},
+		changes:            nil,
+	}
+	stop := make(chan struct{})
+	cmd := runtimeLogUpdateCmd(context.Background(), feed, stop, 1)
+	if cmd == nil {
+		t.Fatal("expected non-nil command")
+	}
+	msg := cmd()
+	if _, ok := msg.(runtimeLogTickMsg); !ok {
+		t.Fatalf("expected runtimeLogTickMsg from nil Changes fallback, got %T", msg)
+	}
+}
+
+func TestZeroBrailleSparkline_WidthEdgeCases(t *testing.T) {
+	if got := zeroBrailleSparkline(0); got != "" {
+		t.Fatalf("expected empty string for width<=0, got %q", got)
+	}
+	if got := zeroBrailleSparkline(-5); got != "" {
+		t.Fatalf("expected empty string for negative width, got %q", got)
+	}
+
+	clamped := zeroBrailleSparkline(runtimeSparklinePoints + 10)
+	expected := zeroBrailleSparkline(runtimeSparklinePoints)
+	if clamped != expected {
+		t.Fatalf("expected width clamped to runtimeSparklinePoints, got %q vs %q", clamped, expected)
+	}
+	if utf8.RuneCountInString(clamped) != runtimeSparklinePoints {
+		t.Fatalf("expected rune count %d, got %d", runtimeSparklinePoints, utf8.RuneCountInString(clamped))
+	}
+}
+
+func TestSetBrailleDot_EmptyCells(t *testing.T) {
+	var cells []uint8
+	setBrailleDot(cells, 0, 0) // should not panic
+}
+
+func TestSetBrailleDot_NegativeXPixel(t *testing.T) {
+	cells := make([]uint8, 2)
+	setBrailleDot(cells, -1, 0) // should not panic and not modify cells
+	if cells[0] != 0 || cells[1] != 0 {
+		t.Fatalf("expected cells unchanged after negative xPixel, got %v", cells)
+	}
+}
+
+func TestSetBrailleDot_CellIndexOutOfRange(t *testing.T) {
+	cells := make([]uint8, 1)
+	setBrailleDot(cells, 4, 0) // cellIndex=2 >= len(cells)=1, should be no-op
+	if cells[0] != 0 {
+		t.Fatalf("expected cell unchanged when cellIndex out of range, got %d", cells[0])
+	}
+}
+
+func TestSetBrailleDot_YRowClamping(t *testing.T) {
+	cells := make([]uint8, 1)
+
+	// yRow < 0 should be clamped to 0
+	setBrailleDot(cells, 0, -1)
+	expected := brailleDotMask(0, 0) // yRow clamped to 0
+	if cells[0] != expected {
+		t.Fatalf("expected mask for yRow=0 (%d), got %d", expected, cells[0])
+	}
+
+	cells[0] = 0
+	// yRow > 3 should be clamped to 3
+	setBrailleDot(cells, 0, 5)
+	expected = brailleDotMask(0, 3) // yRow clamped to 3
+	if cells[0] != expected {
+		t.Fatalf("expected mask for yRow=3 (%d), got %d", expected, cells[0])
+	}
+}
+
+func TestRingSampleAt_EdgeCases(t *testing.T) {
+	var samples [runtimeSparklinePoints]uint64
+	samples[0] = 42
+
+	// count=0 returns 0
+	if got := ringSampleAt(samples, 0, 0, 0); got != 0 {
+		t.Fatalf("expected 0 for count=0, got %d", got)
+	}
+
+	// pos < 0 returns 0
+	if got := ringSampleAt(samples, 1, 1, -1); got != 0 {
+		t.Fatalf("expected 0 for pos<0, got %d", got)
+	}
+
+	// pos >= count returns 0
+	if got := ringSampleAt(samples, 1, 1, 1); got != 0 {
+		t.Fatalf("expected 0 for pos>=count, got %d", got)
+	}
+}
+
+func TestHandleGraphPreferenceChange_FalseToTrue(t *testing.T) {
+	m := RuntimeDashboard{}
+	m.preferences.ShowDataplaneGraph = true
+
+	m.handleGraphPreferenceChange(false)
+
+	// The false->true transition should call recordTrafficSample,
+	// which increments sampleCount.
+	if m.sampleCount != 1 {
+		t.Fatalf("expected sampleCount=1 after false->true transition, got %d", m.sampleCount)
+	}
+}
+
+func TestHandleGraphPreferenceChange_TrueToFalse(t *testing.T) {
+	m := RuntimeDashboard{}
+	m.preferences.ShowDataplaneGraph = false
+	m.sampleCount = 5
+	m.sampleCursor = 3
+
+	m.handleGraphPreferenceChange(true)
+
+	// The true->false transition should clear samples.
+	if m.sampleCount != 0 {
+		t.Fatalf("expected sampleCount=0 after true->false transition, got %d", m.sampleCount)
+	}
+	if m.sampleCursor != 0 {
+		t.Fatalf("expected sampleCursor=0 after true->false transition, got %d", m.sampleCursor)
+	}
+}
+
+func TestHandleGraphPreferenceChange_NoChange(t *testing.T) {
+	m := RuntimeDashboard{}
+	m.preferences.ShowDataplaneGraph = true
+	m.sampleCount = 3
+
+	m.handleGraphPreferenceChange(true)
+	// No change: sampleCount should remain as-is.
+	if m.sampleCount != 3 {
+		t.Fatalf("expected sampleCount unchanged when no transition, got %d", m.sampleCount)
+	}
+}
+
+func TestEnsureLogsViewport_WhenLogReadyFalse(t *testing.T) {
+	m := RuntimeDashboard{
+		width:       100,
+		height:      30,
+		preferences: CurrentUIPreferences(),
+	}
+	m.logReady = false
+
+	m.ensureLogsViewport()
+	if !m.logReady {
+		t.Fatal("expected logReady=true after ensureLogsViewport")
+	}
+	if m.logViewport.Width <= 0 {
+		t.Fatalf("expected viewport width > 0, got %d", m.logViewport.Width)
+	}
+}
+
+func TestEnsureLogsViewport_WhenLogReadyTrue_Resizes(t *testing.T) {
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	m.width = 80
+	m.height = 20
+	origWidth := m.logViewport.Width
+
+	m.width = 120
+	m.height = 30
+	m.ensureLogsViewport()
+	if m.logViewport.Width == origWidth {
+		t.Fatal("expected viewport width to change after resize")
+	}
+}
+
+func TestRuntimeDashboard_Update_LogTickMismatchedSeqOnLogsScreen(t *testing.T) {
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		LogFeed: testRuntimeLogFeed{lines: []string{"one", "two"}},
+	})
+	// Navigate to logs screen.
+	m1, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})  // settings
+	m2, _ := m1.(RuntimeDashboard).Update(tea.KeyMsg{Type: tea.KeyTab}) // logs
+	dash := m2.(RuntimeDashboard)
+
+	// Send a runtimeLogTickMsg with a mismatched seq while on logs screen.
+	wrongSeq := dash.logTickSeq + 99
+	updatedModel, cmd := dash.Update(runtimeLogTickMsg{seq: wrongSeq})
+	if cmd != nil {
+		t.Fatal("expected nil cmd for mismatched log tick seq on logs screen")
+	}
+	_ = updatedModel.(RuntimeDashboard)
+}
+
+func TestUpdateLogs_DownKeyAtBottom_SetsFollowTrue(t *testing.T) {
+	// Use very few lines so the viewport is already at bottom.
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		LogFeed: testRuntimeLogFeed{lines: []string{"a"}},
+	})
+	m.width = 120
+	m.height = 24
+	m.screen = runtimeScreenLogs
+	m.refreshLogs()
+	// Ensure viewport is at bottom.
+	m.logViewport.GotoBottom()
+	m.logFollow = false
+
+	updatedModel, _ := m.updateLogs(tea.KeyMsg{Type: tea.KeyDown})
+	updated := updatedModel.(RuntimeDashboard)
+	if !updated.logFollow {
+		t.Fatal("expected logFollow=true when Down key pressed and viewport is at bottom")
+	}
+}
+
+func TestRuntimeLogUpdateCmd_StopClosedReturnsLogTickMsg(t *testing.T) {
+	// Use a change feed with a valid channel so we enter the select branch.
+	changes := make(chan struct{}, 1)
+	feed := testRuntimeChangeFeed{
+		testRuntimeLogFeed: testRuntimeLogFeed{lines: []string{"line"}},
+		changes:            changes,
+	}
+	stop := make(chan struct{})
+	close(stop) // close immediately
+
+	cmd := runtimeLogUpdateCmd(context.Background(), feed, stop, 42)
+	if cmd == nil {
+		t.Fatal("expected non-nil command")
+	}
+	msg := cmd()
+	tick, ok := msg.(runtimeLogTickMsg)
+	if !ok {
+		t.Fatalf("expected runtimeLogTickMsg when stop is closed, got %T", msg)
+	}
+	// When stop fires, seq should be zero (not the passed-in seq).
+	if tick.seq != 0 {
+		t.Fatalf("expected seq=0 from stop branch, got %d", tick.seq)
+	}
+}
+
+func TestRuntimeLogUpdateCmd_ContextCanceled(t *testing.T) {
+	changes := make(chan struct{}, 1)
+	feed := testRuntimeChangeFeed{
+		testRuntimeLogFeed: testRuntimeLogFeed{lines: []string{"line"}},
+		changes:            changes,
+	}
+	stop := make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+
+	cmd := runtimeLogUpdateCmd(ctx, feed, stop, 42)
+	if cmd == nil {
+		t.Fatal("expected non-nil command")
+	}
+	msg := cmd()
+	if _, ok := msg.(runtimeContextDoneMsg); !ok {
+		t.Fatalf("expected runtimeContextDoneMsg when context is canceled, got %T", msg)
+	}
+}
+
+func TestRuntimeLogUpdateCmd_ChangeFeedSignalReturnsMatchingSeq(t *testing.T) {
+	changes := make(chan struct{}, 1)
+	changes <- struct{}{} // signal immediately
+	feed := testRuntimeChangeFeed{
+		testRuntimeLogFeed: testRuntimeLogFeed{lines: []string{"line"}},
+		changes:            changes,
+	}
+	stop := make(chan struct{})
+
+	cmd := runtimeLogUpdateCmd(context.Background(), feed, stop, 42)
+	if cmd == nil {
+		t.Fatal("expected non-nil command")
+	}
+	msg := cmd()
+	tick, ok := msg.(runtimeLogTickMsg)
+	if !ok {
+		t.Fatalf("expected runtimeLogTickMsg from changes signal, got %T", msg)
+	}
+	if tick.seq != 42 {
+		t.Fatalf("expected seq=42 from changes signal, got %d", tick.seq)
+	}
+}
+
+func TestBrailleRow_ValueEqualsMaxValue(t *testing.T) {
+	// When value == maxValue, level = (100*3)/100 = 3, row = 3-3 = 0.
+	if got := brailleRow(100, 100); got != 0 {
+		t.Fatalf("expected brailleRow(100, 100) == 0, got %d", got)
+	}
+	if got := brailleRow(50, 100); got == 0 {
+		t.Fatalf("expected brailleRow(50, 100) != 0, got %d", got)
+	}
+}
+
+func TestRenderRateBrailleRing_WidthZeroDefaults(t *testing.T) {
+	var samples [runtimeSparklinePoints]uint64
+	for i := 0; i < 5; i++ {
+		samples[i] = uint64(i + 1)
+	}
+	// width=0 should default to min(runtimeSparklinePoints, count) = min(40, 5) = 5.
+	out := renderRateBrailleRing(samples, 5, 5, 0)
+	if out == "no-data" {
+		t.Fatal("expected actual braille output for width=0 with data")
+	}
+	runeCount := 0
+	for range out {
+		runeCount++
+	}
+	if runeCount != 5 {
+		t.Fatalf("expected default width of 5 runes, got %d", runeCount)
+	}
 }

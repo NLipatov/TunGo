@@ -1,6 +1,7 @@
 package bubble_tea
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"tungo/infrastructure/telemetry/trafficstats"
@@ -427,5 +428,246 @@ func TestAnsiStylePrefix_UsesAnsiConstants(t *testing.T) {
 	}
 	if got := ansiStylePrefix("", ansiBgBlack, false); got != "" {
 		t.Fatalf("expected empty style when fg is missing, got %q", got)
+	}
+}
+
+func TestOptionTextStyle_ReturnsNonNil(t *testing.T) {
+	s := optionTextStyle()
+	_ = s.Render("test")
+}
+
+func TestActiveOptionTextStyle_ReturnsNonNil(t *testing.T) {
+	s := activeOptionTextStyle()
+	_ = s.Render("test")
+}
+
+func TestHeaderLabelStyle_ReturnsNonNil(t *testing.T) {
+	s := headerLabelStyle()
+	_ = s.Render("test")
+}
+
+func TestAnsiTextStyle_Width(t *testing.T) {
+	s := ansiTextStyle{prefix: ansiFgRed}
+	w0 := s.Width(0)
+	if w0.width != 0 {
+		t.Fatalf("expected width=0, got %d", w0.width)
+	}
+	rendered := w0.Render("hi")
+	if rendered != ansiFgRed+"hi"+ansiReset {
+		t.Fatalf("expected no padding for width=0, got %q", rendered)
+	}
+
+	w10 := s.Width(10)
+	if w10.width != 10 {
+		t.Fatalf("expected width=10, got %d", w10.width)
+	}
+	rendered = w10.Render("hi")
+	if !strings.Contains(rendered, "hi") {
+		t.Fatalf("expected rendered text to contain 'hi', got %q", rendered)
+	}
+	if len(rendered) < 10 {
+		// The padding should make it wider
+	}
+}
+
+func TestAnsiTextStyle_RenderWithWidthPadsOrTruncates(t *testing.T) {
+	s := ansiTextStyle{prefix: ansiFgRed, width: 10}
+	rendered := s.Render("ab")
+	// Should contain the text, padding, and ANSI sequences
+	if !strings.Contains(rendered, "ab") {
+		t.Fatalf("expected text in output, got %q", rendered)
+	}
+	if !strings.HasSuffix(rendered, ansiReset) {
+		t.Fatalf("expected ANSI reset at end, got %q", rendered)
+	}
+
+	// Without prefix, should just return padded value
+	noPrefixStyle := ansiTextStyle{width: 10}
+	rendered = noPrefixStyle.Render("ab")
+	if strings.Contains(rendered, ansiReset) {
+		t.Fatalf("expected no ANSI sequences without prefix, got %q", rendered)
+	}
+}
+
+func TestWriteBorderLine_EmptyPrefix(t *testing.T) {
+	var b strings.Builder
+	writeBorderLine(&b, "", "+----+")
+	if b.String() != "+----+" {
+		t.Fatalf("expected plain border line, got %q", b.String())
+	}
+}
+
+func TestVisibleWidthANSI_OSCSequences(t *testing.T) {
+	// OSC terminated by BEL (\a)
+	osc := "\x1b]0;window title\ahello"
+	if got := visibleWidthANSI(osc); got != 5 {
+		t.Fatalf("expected visible width 5 for OSC+BEL string, got %d", got)
+	}
+
+	// OSC terminated by ST (\x1b\\)
+	oscST := "\x1b]0;window title\x1b\\world"
+	if got := visibleWidthANSI(oscST); got != 5 {
+		t.Fatalf("expected visible width 5 for OSC+ST string, got %d", got)
+	}
+}
+
+func TestVisibleWidthANSI_EmojiMultiByte(t *testing.T) {
+	// Each emoji/multi-byte character counts as 1 rune width in our simple counter
+	s := "AB"
+	if got := visibleWidthANSI(s); got != 2 {
+		t.Fatalf("expected visible width 2, got %d", got)
+	}
+}
+
+func TestStripANSI_OSCSequences(t *testing.T) {
+	osc := "\x1b]0;title\ahello\x1b]8;;link\x1b\\world"
+	got := stripANSI(osc)
+	if got != "helloworld" {
+		t.Fatalf("expected 'helloworld', got %q", got)
+	}
+}
+
+func TestStripANSI_NormalColors(t *testing.T) {
+	colored := "\x1b[31mred\x1b[0m text"
+	got := stripANSI(colored)
+	if got != "red text" {
+		t.Fatalf("expected 'red text', got %q", got)
+	}
+}
+
+func TestTruncateVisible_ANSIColoredStrings(t *testing.T) {
+	s := ansiFgRed + "hello world" + ansiReset
+	got := truncateVisible(s, 5)
+	if got != "he..." {
+		t.Fatalf("expected 'he...' for width 5, got %q", got)
+	}
+}
+
+func TestTruncateVisible_WidthZero(t *testing.T) {
+	got := truncateVisible("hello", 0)
+	if got != "" {
+		t.Fatalf("expected empty string for width=0, got %q", got)
+	}
+}
+
+func TestBaseANSIForTheme_UnknownTheme(t *testing.T) {
+	bg, fg, ok := baseANSIForTheme(UIPreferences{Theme: ThemeOption("unknown_theme")})
+	if !ok {
+		t.Fatal("expected ok=true even for unknown theme (falls back to light)")
+	}
+	if bg == "" || fg == "" {
+		t.Fatalf("expected non-empty bg/fg for fallback theme, got bg=%q fg=%q", bg, fg)
+	}
+	// Verify it uses light theme palette
+	lightPalette := paletteForTheme(ThemeLight)
+	if bg != lightPalette.background {
+		t.Fatalf("expected light background %q, got %q", lightPalette.background, bg)
+	}
+}
+
+func TestAnsiFrameStyle_Render_WidthZero_AutoWidth(t *testing.T) {
+	s := ansiFrameStyle{borderPrefix: "", width: 0}
+	content := "short\nlonger line here"
+	rendered := s.Render(content)
+	// With width=0, innerWidth should be computed from the longest line.
+	if !strings.Contains(rendered, "short") {
+		t.Fatalf("expected content in rendered output, got %q", rendered)
+	}
+	if !strings.Contains(rendered, "longer line here") {
+		t.Fatalf("expected longer line in rendered output, got %q", rendered)
+	}
+	// The border should accommodate the longest line.
+	lines := strings.Split(rendered, "\n")
+	// First line is top border.
+	topBorder := lines[0]
+	// The inner width should be at least as wide as "longer line here" (16 chars).
+	innerWidth := len(topBorder) - 2 // minus the two '+' chars
+	if innerWidth < 18 { // 16 + 2 padding
+		t.Fatalf("expected inner width >= 18, got %d from border: %q", innerWidth, topBorder)
+	}
+}
+
+func TestAppendWrappedBody_LineWithNewline(t *testing.T) {
+	// A line containing "\n" should be wrapped/split even when it contains no ANSI.
+	lines := appendWrappedBody(nil, []string{"first\nsecond"}, 80)
+	if len(lines) < 2 {
+		t.Fatalf("expected line with newline to be split into multiple lines, got %v", lines)
+	}
+	found := false
+	for _, l := range lines {
+		if strings.Contains(l, "first") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected 'first' in output lines, got %v", lines)
+	}
+}
+
+func TestPlaceCardCentered_CardWiderThanWidth(t *testing.T) {
+	// Create a card wider than the target width.
+	card := strings.Repeat("X", 100)
+	placed := placeCardCentered(card, 50, 10)
+	// Should not panic and should clamp.
+	lines := strings.Split(placed, "\n")
+	for _, line := range lines {
+		vis := visibleWidthANSI(line)
+		if vis > 50 {
+			t.Fatalf("expected card width clamped to 50, got line width %d: %q", vis, line)
+		}
+	}
+}
+
+func TestPlaceCardCentered_CardTallerThanHeight(t *testing.T) {
+	// Create a card taller than the target height.
+	var parts []string
+	for i := 0; i < 20; i++ {
+		parts = append(parts, fmt.Sprintf("line-%02d", i))
+	}
+	card := strings.Join(parts, "\n")
+	placed := placeCardCentered(card, 80, 5)
+	// The output should have at most `height` lines (excluding trailing empty).
+	lines := strings.Split(placed, "\n")
+	// Remove trailing empty string from final split.
+	nonEmpty := 0
+	for _, l := range lines {
+		if strings.TrimSpace(l) != "" {
+			nonEmpty++
+		}
+	}
+	if nonEmpty > 5 {
+		t.Fatalf("expected at most 5 non-empty lines, got %d", nonEmpty)
+	}
+}
+
+func TestResolveUIStyles_UnknownTheme_FallsToLight(t *testing.T) {
+	forceANSIColorProfile(t, ansiColorProfileTrueColor)
+	styles := resolveUIStyles(UIPreferences{
+		Theme:      ThemeOption("imaginary_theme"),
+		StatsUnits: StatsUnitsBiBytes,
+		ShowFooter: true,
+	})
+	lightStyles := resolveUIStyles(UIPreferences{
+		Theme:      ThemeLight,
+		StatsUnits: StatsUnitsBiBytes,
+		ShowFooter: true,
+	})
+	if styles.brand.prefix != lightStyles.brand.prefix {
+		t.Fatalf("expected unknown theme to fall back to light brand, got %q vs %q", styles.brand.prefix, lightStyles.brand.prefix)
+	}
+}
+
+func TestTruncateVisible_ShortLineReturnedAsIs(t *testing.T) {
+	// A line shorter than width (after stripping ANSI) should be returned as-is.
+	s := ansiFgRed + "hi" + ansiReset
+	got := truncateVisible(s, 50)
+	if got != s {
+		t.Fatalf("expected short ANSI line returned as-is, got %q", got)
+	}
+
+	plain := "hello"
+	got = truncateVisible(plain, 50)
+	if got != plain {
+		t.Fatalf("expected short plain line returned as-is, got %q", got)
 	}
 }

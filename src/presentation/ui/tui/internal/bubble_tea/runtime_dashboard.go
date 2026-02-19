@@ -104,11 +104,13 @@ func NewRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions) R
 		logFollow:   true,
 		tickSeq:     1,
 	}
-	model.recordTrafficSample(trafficstats.SnapshotGlobal())
+	if model.preferences.ShowDataplaneGraph {
+		model.recordTrafficSample(trafficstats.SnapshotGlobal())
+	}
 	return model
 }
 
-func RunRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions) (bool, error) {
+func RunRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions) (reconfigure bool, err error) {
 	defer clearTerminalAfterTUI()
 
 	safeCtx := ctx
@@ -157,7 +159,9 @@ func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.screen != runtimeScreenDataplane {
 			return m, nil
 		}
-		m.recordTrafficSample(trafficstats.SnapshotGlobal())
+		if m.preferences.ShowDataplaneGraph {
+			m.recordTrafficSample(trafficstats.SnapshotGlobal())
+		}
 		return m, runtimeTickCmd(m.tickSeq)
 	case runtimeLogTickMsg:
 		if msg.seq != m.logTickSeq || m.screen != runtimeScreenLogs {
@@ -275,6 +279,7 @@ func (m RuntimeDashboard) nextScreen() runtimeDashboardScreen {
 
 func (m RuntimeDashboard) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
+	prevGraphEnabled := m.preferences.ShowDataplaneGraph
 	switch {
 	case key.Matches(msg, m.keys.Up):
 		m.settingsCursor = settingsCursorUp(m.settingsCursor)
@@ -293,6 +298,7 @@ func (m RuntimeDashboard) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			cmd = tea.ClearScreen
 		}
 	}
+	m.handleGraphPreferenceChange(prevGraphEnabled)
 	return m, cmd
 }
 
@@ -325,17 +331,28 @@ func (m RuntimeDashboard) mainView() string {
 		contentWidth = contentWidthForTerminal(m.width)
 	}
 
-	snapshot := trafficstats.SnapshotGlobal()
-	statsLines := formatStatsLines(m.preferences, snapshot)
-	sparklineWidth := sparklineWidthForContent(contentWidth)
 	body := []string{
 		modeLine,
 		status,
-		"",
-		statsLines[0],
-		statsLines[1],
-		"RX trend: " + renderRateBrailleRing(m.rxSamples, m.sampleCount, m.sampleCursor, sparklineWidth),
-		"TX trend: " + renderRateBrailleRing(m.txSamples, m.sampleCount, m.sampleCursor, sparklineWidth),
+	}
+	if m.preferences.ShowDataplaneStats || m.preferences.ShowDataplaneGraph {
+		body = append(body, "")
+	}
+	if m.preferences.ShowDataplaneStats {
+		snapshot := trafficstats.SnapshotGlobal()
+		statsLines := formatStatsLines(m.preferences, snapshot)
+		body = append(body, statsLines[0], statsLines[1])
+	}
+	if m.preferences.ShowDataplaneGraph {
+		sparklineWidth := sparklineWidthForContent(contentWidth)
+		body = append(
+			body,
+			"RX trend: "+renderRateBrailleRing(m.rxSamples, m.sampleCount, m.sampleCursor, sparklineWidth),
+			"TX trend: "+renderRateBrailleRing(m.txSamples, m.sampleCount, m.sampleCursor, sparklineWidth),
+		)
+	}
+	if !m.preferences.ShowDataplaneStats && !m.preferences.ShowDataplaneGraph {
+		body = append(body, "", "Dataplane metrics are hidden in Settings.")
 	}
 	if m.confirmOpen {
 		body = append(body, "", "Stop tunnel and reconfigure?", "")
@@ -508,6 +525,27 @@ func (m *RuntimeDashboard) recordTrafficSample(snapshot trafficstats.Snapshot) {
 		m.sampleCount++
 	}
 	m.sampleCursor = (m.sampleCursor + 1) % runtimeSparklinePoints
+}
+
+func (m *RuntimeDashboard) handleGraphPreferenceChange(previous bool) {
+	current := m.preferences.ShowDataplaneGraph
+	if previous == current {
+		return
+	}
+	if !current {
+		m.clearTrafficSamples()
+		return
+	}
+	m.recordTrafficSample(trafficstats.SnapshotGlobal())
+}
+
+func (m *RuntimeDashboard) clearTrafficSamples() {
+	for i := range m.rxSamples {
+		m.rxSamples[i] = 0
+		m.txSamples[i] = 0
+	}
+	m.sampleCount = 0
+	m.sampleCursor = 0
 }
 
 func (m *RuntimeDashboard) restartLogWait() {

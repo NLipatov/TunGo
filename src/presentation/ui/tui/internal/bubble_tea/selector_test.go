@@ -260,6 +260,8 @@ func TestSelector_SettingsToggleFooter(t *testing.T) {
 		p.Theme = ThemeDark
 		p.Language = "en"
 		p.StatsUnits = StatsUnitsBiBytes
+		p.ShowDataplaneStats = true
+		p.ShowDataplaneGraph = true
 		p.ShowFooter = true
 	})
 	t.Cleanup(func() {
@@ -267,6 +269,8 @@ func TestSelector_SettingsToggleFooter(t *testing.T) {
 			p.Theme = ThemeDark
 			p.Language = "en"
 			p.StatsUnits = StatsUnitsBiBytes
+			p.ShowDataplaneStats = true
+			p.ShowDataplaneGraph = true
 			p.ShowFooter = true
 		})
 	})
@@ -274,9 +278,11 @@ func TestSelector_SettingsToggleFooter(t *testing.T) {
 	sel, _ := newTestSelector("Main title", "a", "b")
 	m1, _ := sel.Update(tea.KeyMsg{Type: tea.KeyTab})            // settings
 	m2, _ := m1.(Selector).Update(tea.KeyMsg{Type: tea.KeyDown}) // stats units row
-	m3, _ := m2.(Selector).Update(tea.KeyMsg{Type: tea.KeyDown}) // footer row
-	m4 := m3
-	_, _ = m4.(Selector).Update(tea.KeyMsg{Type: tea.KeyRight}) // toggle
+	m3, _ := m2.(Selector).Update(tea.KeyMsg{Type: tea.KeyDown}) // dataplane stats row
+	m4, _ := m3.(Selector).Update(tea.KeyMsg{Type: tea.KeyDown}) // dataplane graph row
+	m5, _ := m4.(Selector).Update(tea.KeyMsg{Type: tea.KeyDown}) // footer row
+	m6 := m5
+	_, _ = m6.(Selector).Update(tea.KeyMsg{Type: tea.KeyRight}) // toggle
 
 	if CurrentUIPreferences().ShowFooter {
 		t.Fatalf("expected ShowFooter to be toggled off")
@@ -288,6 +294,8 @@ func TestSelector_SettingsToggleStatsUnits(t *testing.T) {
 		p.Theme = ThemeDark
 		p.Language = "en"
 		p.StatsUnits = StatsUnitsBiBytes
+		p.ShowDataplaneStats = true
+		p.ShowDataplaneGraph = true
 		p.ShowFooter = true
 	})
 	t.Cleanup(func() {
@@ -295,6 +303,8 @@ func TestSelector_SettingsToggleStatsUnits(t *testing.T) {
 			p.Theme = ThemeDark
 			p.Language = "en"
 			p.StatsUnits = StatsUnitsBiBytes
+			p.ShowDataplaneStats = true
+			p.ShowDataplaneGraph = true
 			p.ShowFooter = true
 		})
 	})
@@ -315,6 +325,8 @@ func TestSelector_SettingsNavigationBoundsAndMutations(t *testing.T) {
 		p.Theme = ThemeLight
 		p.Language = "en"
 		p.StatsUnits = StatsUnitsBytes
+		p.ShowDataplaneStats = true
+		p.ShowDataplaneGraph = true
 		p.ShowFooter = true
 	})
 	t.Cleanup(func() {
@@ -322,6 +334,8 @@ func TestSelector_SettingsNavigationBoundsAndMutations(t *testing.T) {
 			p.Theme = ThemeLight
 			p.Language = "en"
 			p.StatsUnits = StatsUnitsBiBytes
+			p.ShowDataplaneStats = true
+			p.ShowDataplaneGraph = true
 			p.ShowFooter = true
 		})
 	})
@@ -365,6 +379,20 @@ func TestSelector_SettingsNavigationBoundsAndMutations(t *testing.T) {
 	_, _ = sel.Update(tea.KeyMsg{Type: tea.KeyLeft})
 	if CurrentUIPreferences().StatsUnits != StatsUnitsBiBytes {
 		t.Fatalf("expected bibytes after left toggle, got %q", CurrentUIPreferences().StatsUnits)
+	}
+
+	// Dataplane stats row select toggles.
+	sel.settingsCursor = settingsDataplaneStatsRow
+	_, _ = sel.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if CurrentUIPreferences().ShowDataplaneStats {
+		t.Fatalf("expected dataplane stats OFF after toggle")
+	}
+
+	// Dataplane graph row select toggles.
+	sel.settingsCursor = settingsDataplaneGraphRow
+	_, _ = sel.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if CurrentUIPreferences().ShowDataplaneGraph {
+		t.Fatalf("expected dataplane graph OFF after toggle")
 	}
 
 	// Footer row select toggles.
@@ -425,12 +453,16 @@ func TestSelector_SettingsThemeChange_RequestsClearScreen(t *testing.T) {
 	UpdateUIPreferences(func(p *UIPreferences) {
 		p.Theme = ThemeLight
 		p.StatsUnits = StatsUnitsBytes
+		p.ShowDataplaneStats = true
+		p.ShowDataplaneGraph = true
 		p.ShowFooter = true
 	})
 	t.Cleanup(func() {
 		UpdateUIPreferences(func(p *UIPreferences) {
 			p.Theme = ThemeLight
 			p.StatsUnits = StatsUnitsBiBytes
+			p.ShowDataplaneStats = true
+			p.ShowDataplaneGraph = true
 			p.ShowFooter = true
 		})
 	})
@@ -576,5 +608,303 @@ func TestSelector_LogsViewportScrollAndFollowToggle(t *testing.T) {
 func TestSelectorLogTickCmd_EmitsMessage(t *testing.T) {
 	if _, ok := selectorLogTickCmd(1)().(selectorLogTickMsg); !ok {
 		t.Fatal("expected selectorLogTickMsg from selector log tick command")
+	}
+}
+
+func TestSelector_UpdateLogs_AllNavigationKeys(t *testing.T) {
+	DisableGlobalRuntimeLogCapture()
+	t.Cleanup(DisableGlobalRuntimeLogCapture)
+	EnableGlobalRuntimeLogCapture(64)
+	feed := GlobalRuntimeLogFeed().(*RuntimeLogBuffer)
+	for i := 0; i < 40; i++ {
+		_, _ = feed.Write([]byte(fmt.Sprintf("line-%02d\n", i)))
+	}
+
+	sel, _ := newTestSelector("Main title", "a", "b")
+	updatedModel, _ := sel.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	sel = updatedModel.(Selector)
+	updatedModel, _ = sel.Update(tea.KeyMsg{Type: tea.KeyTab}) // settings
+	sel = updatedModel.(Selector)
+	updatedModel, _ = sel.Update(tea.KeyMsg{Type: tea.KeyTab}) // logs
+	sel = updatedModel.(Selector)
+
+	// PgUp
+	updatedModel, _ = sel.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	sel = updatedModel.(Selector)
+	if sel.logFollow {
+		t.Fatal("expected logFollow=false after PgUp")
+	}
+
+	// PgDown when at bottom
+	sel.logViewport.GotoBottom()
+	updatedModel, _ = sel.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	sel = updatedModel.(Selector)
+	if !sel.logFollow {
+		t.Fatal("expected logFollow=true after PgDown at bottom")
+	}
+
+	// Home
+	updatedModel, _ = sel.Update(tea.KeyMsg{Type: tea.KeyHome})
+	sel = updatedModel.(Selector)
+	if sel.logFollow {
+		t.Fatal("expected logFollow=false after Home")
+	}
+
+	// End
+	updatedModel, _ = sel.Update(tea.KeyMsg{Type: tea.KeyEnd})
+	sel = updatedModel.(Selector)
+	if !sel.logFollow {
+		t.Fatal("expected logFollow=true after End")
+	}
+
+	// Down when not at bottom
+	sel.logViewport.GotoTop()
+	sel.logFollow = false
+	updatedModel, _ = sel.Update(tea.KeyMsg{Type: tea.KeyDown})
+	sel = updatedModel.(Selector)
+	if sel.logFollow {
+		t.Fatal("expected logFollow=false after Down when not at bottom")
+	}
+}
+
+func TestSelector_EnsureLogsViewport_WhenLogReadyFalse(t *testing.T) {
+	sel, _ := newTestSelector("a", "b")
+	sel.logReady = false
+	sel.width = 100
+	sel.height = 30
+
+	sel.ensureLogsViewport()
+	if !sel.logReady {
+		t.Fatal("expected logReady=true after ensureLogsViewport")
+	}
+	if sel.logViewport.Width <= 0 {
+		t.Fatalf("expected viewport width > 0, got %d", sel.logViewport.Width)
+	}
+}
+
+func TestSelectorLogUpdateCmd_PlainFeedFallsBackToTick(t *testing.T) {
+	feed := testRuntimeLogFeed{lines: []string{"line"}}
+	stop := make(chan struct{})
+	cmd := selectorLogUpdateCmd(feed, stop, 1)
+	if cmd == nil {
+		t.Fatal("expected non-nil command")
+	}
+	msg := cmd()
+	if _, ok := msg.(selectorLogTickMsg); !ok {
+		t.Fatalf("expected selectorLogTickMsg from plain feed fallback, got %T", msg)
+	}
+}
+
+func TestSelectorLogUpdateCmd_ChangeFeedNilChanges(t *testing.T) {
+	feed := testRuntimeChangeFeed{
+		testRuntimeLogFeed: testRuntimeLogFeed{lines: []string{"line"}},
+		changes:            nil,
+	}
+	stop := make(chan struct{})
+	cmd := selectorLogUpdateCmd(feed, stop, 1)
+	if cmd == nil {
+		t.Fatal("expected non-nil command")
+	}
+	msg := cmd()
+	if _, ok := msg.(selectorLogTickMsg); !ok {
+		t.Fatalf("expected selectorLogTickMsg from nil Changes fallback, got %T", msg)
+	}
+}
+
+func TestSelector_TabCycleMainSettingsLogsMain_ReturnsLogCmd(t *testing.T) {
+	sel, _ := newTestSelector("Main title", "a", "b")
+
+	// Tab: main -> settings (no cmd)
+	m1, cmd1 := sel.Update(tea.KeyMsg{Type: tea.KeyTab})
+	s1 := m1.(Selector)
+	if s1.screen != selectorScreenSettings {
+		t.Fatalf("expected settings screen, got %v", s1.screen)
+	}
+	if cmd1 != nil {
+		t.Fatal("expected no cmd when entering settings")
+	}
+
+	// Tab: settings -> logs (should return cmd)
+	m2, cmd2 := s1.Update(tea.KeyMsg{Type: tea.KeyTab})
+	s2 := m2.(Selector)
+	if s2.screen != selectorScreenLogs {
+		t.Fatalf("expected logs screen, got %v", s2.screen)
+	}
+	if cmd2 == nil {
+		t.Fatal("expected log update cmd when entering logs screen")
+	}
+
+	// Tab: logs -> main (no cmd, but logWait should be stopped)
+	m3, cmd3 := s2.Update(tea.KeyMsg{Type: tea.KeyTab})
+	s3 := m3.(Selector)
+	if s3.screen != selectorScreenMain {
+		t.Fatalf("expected main screen, got %v", s3.screen)
+	}
+	if cmd3 != nil {
+		t.Fatal("expected no cmd when returning to main")
+	}
+}
+
+func TestSelector_WindowSizeMsgOnLogsScreen(t *testing.T) {
+	DisableGlobalRuntimeLogCapture()
+	t.Cleanup(DisableGlobalRuntimeLogCapture)
+	EnableGlobalRuntimeLogCapture(64)
+	feed := GlobalRuntimeLogFeed().(*RuntimeLogBuffer)
+	for i := 0; i < 20; i++ {
+		_, _ = feed.Write([]byte(fmt.Sprintf("line-%02d\n", i)))
+	}
+
+	sel, _ := newTestSelector("Main title", "a", "b")
+	// Navigate to logs screen.
+	m1, _ := sel.Update(tea.KeyMsg{Type: tea.KeyTab})  // settings
+	m2, _ := m1.(Selector).Update(tea.KeyMsg{Type: tea.KeyTab}) // logs
+	s := m2.(Selector)
+
+	// Send WindowSizeMsg on logs screen.
+	m3, _ := s.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	s3 := m3.(Selector)
+	if s3.width != 100 || s3.height != 30 {
+		t.Fatalf("expected updated size, got %dx%d", s3.width, s3.height)
+	}
+	// The logs viewport should have been refreshed.
+	if s3.logViewport.TotalLineCount() == 0 {
+		t.Fatal("expected logs viewport content after WindowSizeMsg on logs screen")
+	}
+}
+
+func TestSelector_LogTickMatchingSeqOnLogsScreen(t *testing.T) {
+	DisableGlobalRuntimeLogCapture()
+	t.Cleanup(DisableGlobalRuntimeLogCapture)
+	EnableGlobalRuntimeLogCapture(64)
+	feed := GlobalRuntimeLogFeed().(*RuntimeLogBuffer)
+	_, _ = feed.Write([]byte("log line\n"))
+
+	sel, _ := newTestSelector("Main title", "a", "b")
+	m1, _ := sel.Update(tea.KeyMsg{Type: tea.KeyTab})  // settings
+	m2, _ := m1.(Selector).Update(tea.KeyMsg{Type: tea.KeyTab}) // logs
+	s := m2.(Selector)
+
+	// Send a matching selectorLogTickMsg.
+	m3, cmd := s.Update(selectorLogTickMsg{seq: s.logTickSeq})
+	if cmd == nil {
+		t.Fatal("expected follow-up log cmd on matching log tick")
+	}
+	_ = m3.(Selector)
+}
+
+func TestNextTheme_UnknownTheme_DefaultsToIdx0(t *testing.T) {
+	unknown := ThemeOption("totally_unknown")
+	got := nextTheme(unknown, 1)
+	// Unknown should default to idx=0, then step forward to idx=1.
+	if got != orderedThemeOptions[1] {
+		t.Fatalf("expected %q for unknown+step(1), got %q", orderedThemeOptions[1], got)
+	}
+	got = nextTheme(unknown, -1)
+	// Unknown defaults to idx=0, step back wraps to last.
+	if got != orderedThemeOptions[len(orderedThemeOptions)-1] {
+		t.Fatalf("expected %q for unknown+step(-1), got %q", orderedThemeOptions[len(orderedThemeOptions)-1], got)
+	}
+}
+
+func TestSelector_RefreshLogsViewport_SetYOffsetFallback(t *testing.T) {
+	DisableGlobalRuntimeLogCapture()
+	t.Cleanup(DisableGlobalRuntimeLogCapture)
+	EnableGlobalRuntimeLogCapture(64)
+	feed := GlobalRuntimeLogFeed().(*RuntimeLogBuffer)
+	for i := 0; i < 40; i++ {
+		_, _ = feed.Write([]byte(fmt.Sprintf("line-%02d\n", i)))
+	}
+
+	sel, _ := newTestSelector("Main title", "a", "b")
+	sel.width = 120
+	sel.height = 24
+
+	// Populate viewport initially.
+	sel.refreshLogsViewport()
+	// Scroll up so we are not at bottom, and disable follow.
+	sel.logViewport.GotoTop()
+	sel.logFollow = false
+
+	// Set a known offset and refresh again.
+	sel.logViewport.SetYOffset(2)
+	savedOffset := sel.logViewport.YOffset
+
+	sel.refreshLogsViewport()
+	// logFollow is false and was not at bottom, so it should use SetYOffset fallback.
+	if sel.logViewport.YOffset != savedOffset {
+		t.Fatalf("expected viewport offset to be restored to %d, got %d", savedOffset, sel.logViewport.YOffset)
+	}
+	if sel.logFollow {
+		t.Fatal("expected logFollow to remain false when not at bottom")
+	}
+}
+
+func TestSelectorLogUpdateCmd_StopClosedReturnsTick(t *testing.T) {
+	changes := make(chan struct{}, 1)
+	feed := testRuntimeChangeFeed{
+		testRuntimeLogFeed: testRuntimeLogFeed{lines: []string{"line"}},
+		changes:            changes,
+	}
+	stop := make(chan struct{})
+	close(stop) // close immediately
+
+	cmd := selectorLogUpdateCmd(feed, stop, 42)
+	if cmd == nil {
+		t.Fatal("expected non-nil command")
+	}
+	msg := cmd()
+	tick, ok := msg.(selectorLogTickMsg)
+	if !ok {
+		t.Fatalf("expected selectorLogTickMsg when stop is closed, got %T", msg)
+	}
+	// When stop fires, seq should be zero (not the passed-in seq).
+	if tick.seq != 0 {
+		t.Fatalf("expected seq=0 from stop branch, got %d", tick.seq)
+	}
+}
+
+func TestSelectorLogUpdateCmd_ChangeFeedSignalReturnsMatchingSeq(t *testing.T) {
+	changes := make(chan struct{}, 1)
+	changes <- struct{}{} // signal immediately
+	feed := testRuntimeChangeFeed{
+		testRuntimeLogFeed: testRuntimeLogFeed{lines: []string{"line"}},
+		changes:            changes,
+	}
+	stop := make(chan struct{})
+
+	cmd := selectorLogUpdateCmd(feed, stop, 42)
+	if cmd == nil {
+		t.Fatal("expected non-nil command")
+	}
+	msg := cmd()
+	tick, ok := msg.(selectorLogTickMsg)
+	if !ok {
+		t.Fatalf("expected selectorLogTickMsg from changes signal, got %T", msg)
+	}
+	if tick.seq != 42 {
+		t.Fatalf("expected seq=42 from changes signal, got %d", tick.seq)
+	}
+}
+
+func TestSelector_DownKeyAtBottom_SetsFollowTrue(t *testing.T) {
+	DisableGlobalRuntimeLogCapture()
+	t.Cleanup(DisableGlobalRuntimeLogCapture)
+	EnableGlobalRuntimeLogCapture(64)
+	feed := GlobalRuntimeLogFeed().(*RuntimeLogBuffer)
+	// Write a single line so viewport is at bottom.
+	_, _ = feed.Write([]byte("single line\n"))
+
+	sel, _ := newTestSelector("Main title", "a", "b")
+	sel.width = 120
+	sel.height = 24
+	sel.screen = selectorScreenLogs
+	sel.refreshLogsViewport()
+	sel.logViewport.GotoBottom()
+	sel.logFollow = false
+
+	updatedModel, _ := sel.Update(tea.KeyMsg{Type: tea.KeyDown})
+	updated := updatedModel.(Selector)
+	if !updated.logFollow {
+		t.Fatal("expected logFollow=true when Down key pressed and viewport is already at bottom")
 	}
 }

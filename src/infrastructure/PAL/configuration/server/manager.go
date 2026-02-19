@@ -17,6 +17,7 @@ type ConfigurationManager interface {
 	AddAllowedPeer(peer AllowedPeer) error
 	ListAllowedPeers() ([]AllowedPeer, error)
 	SetAllowedPeerEnabled(clientID int, enabled bool) error
+	RemoveAllowedPeer(clientID int) error
 	EnsureIPv6Subnets() error
 	InvalidateCache()
 }
@@ -152,6 +153,23 @@ func (c *Manager) SetAllowedPeerEnabled(clientID int, enabled bool) error {
 				continue
 			}
 			conf.AllowedPeers[i].Enabled = enabled
+			return nil
+		}
+		return fmt.Errorf("allowed peer with ClientID %d not found", clientID)
+	})
+}
+
+func (c *Manager) RemoveAllowedPeer(clientID int) error {
+	if clientID <= 0 {
+		return fmt.Errorf("invalid client id %d", clientID)
+	}
+
+	return c.update(func(conf *Configuration) error {
+		for i := range conf.AllowedPeers {
+			if conf.AllowedPeers[i].ClientID != clientID {
+				continue
+			}
+			conf.AllowedPeers = append(conf.AllowedPeers[:i], conf.AllowedPeers[i+1:]...)
 			return nil
 		}
 		return fmt.Errorf("allowed peer with ClientID %d not found", clientID)

@@ -948,6 +948,127 @@ func TestShowInvalidConfigurationWarning_OkAndUnknownSelection(t *testing.T) {
 	}
 }
 
+func TestShowEmptyConfigurationNameWarning_ErrNavigateBack(t *testing.T) {
+	cc := &clientConfigurator{
+		selectorFactory: &queuedSelectorFactory{
+			selector: &queuedSelector{
+				options: []string{""},
+				errs:    []error{selector.ErrNavigateBack},
+			},
+		},
+	}
+	err := cc.showEmptyConfigurationNameWarning()
+	if err != nil {
+		t.Fatalf("expected nil on ErrNavigateBack, got %v", err)
+	}
+}
+
+func TestShowEmptyConfigurationNameWarning_ErrUserExit(t *testing.T) {
+	cc := &clientConfigurator{
+		selectorFactory: &queuedSelectorFactory{
+			selector: &queuedSelector{
+				options: []string{""},
+				errs:    []error{selector.ErrUserExit},
+			},
+		},
+	}
+	err := cc.showEmptyConfigurationNameWarning()
+	if !errors.Is(err, ErrUserExit) {
+		t.Fatalf("expected ErrUserExit, got %v", err)
+	}
+}
+
+func TestShowEmptyConfigurationNameWarning_UnexpectedSelection(t *testing.T) {
+	cc := &clientConfigurator{
+		selectorFactory: &queuedSelectorFactory{
+			selector: &queuedSelector{
+				options: []string{"unexpected-option"},
+			},
+		},
+	}
+	err := cc.showEmptyConfigurationNameWarning()
+	if err == nil || err.Error() != "configuration selection aborted" {
+		t.Fatalf("expected 'configuration selection aborted', got %v", err)
+	}
+}
+
+func TestShowEmptyConfigurationNameWarning_GenericSelectError(t *testing.T) {
+	cc := &clientConfigurator{
+		selectorFactory: &queuedSelectorFactory{
+			selector: &queuedSelector{
+				options: []string{""},
+				errs:    []error{errors.New("select failed")},
+			},
+		},
+	}
+	err := cc.showEmptyConfigurationNameWarning()
+	if err == nil || err.Error() != "select failed" {
+		t.Fatalf("expected 'select failed', got %v", err)
+	}
+}
+
+func TestShowEmptyConfigurationNameWarning_FactoryError(t *testing.T) {
+	cc := &clientConfigurator{
+		selectorFactory: &queuedSelectorFactory{
+			selector: &queuedSelector{},
+			errs:     []error{errors.New("factory failed")},
+		},
+	}
+	err := cc.showEmptyConfigurationNameWarning()
+	if err == nil || err.Error() != "factory failed" {
+		t.Fatalf("expected 'factory failed', got %v", err)
+	}
+}
+
+func TestConfigure_InvalidSelectedConfiguration_WarningUserExit(t *testing.T) {
+	obs := &cfgObserverMock{
+		results: [][]string{{"broken.json"}},
+	}
+	sf := &queuedSelectorFactory{
+		selector: &queuedSelector{
+			options: []string{"broken.json", ""},
+			errs:    []error{nil, selector.ErrUserExit},
+		},
+	}
+	clientSel := &cfgSelectorMock{}
+	manager := &cfgManagerMock{
+		errs: []error{
+			errors.New("invalid client configuration (/tmp/client.json): bad field"),
+		},
+	}
+
+	cc := newClientConfigurator(obs, clientSel, &cfgDeleterMock{}, nil, sf, nil, nil, manager)
+	err := cc.Configure()
+	if !errors.Is(err, ErrUserExit) {
+		t.Fatalf("expected ErrUserExit from invalid config warning, got %v", err)
+	}
+}
+
+func TestConfigure_AddOption_EmptyNameWarningError_Propagates(t *testing.T) {
+	obs := &cfgObserverMock{results: [][]string{{}}}
+	sf := &queuedSelectorFactory{
+		selector: &queuedSelector{
+			options: []string{addOption, ""},
+			errs:    []error{nil, selector.ErrUserExit},
+		},
+	}
+	tif := &textInputFactoryMock{ti: &textInputMock{val: "   "}}
+	cc := newClientConfigurator(
+		obs,
+		&cfgSelectorMock{},
+		&cfgDeleterMock{},
+		&cfgCreatorMock{},
+		sf,
+		tif,
+		nil,
+		nil,
+	)
+	err := cc.Configure()
+	if !errors.Is(err, ErrUserExit) {
+		t.Fatalf("expected ErrUserExit from empty name warning, got %v", err)
+	}
+}
+
 func TestClientConfigureFromState_UnknownState(t *testing.T) {
 	cc := newClientConfigurator(
 		&cfgObserverMock{},

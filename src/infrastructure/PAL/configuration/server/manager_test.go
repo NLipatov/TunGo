@@ -650,6 +650,100 @@ func TestManager_SetAllowedPeerEnabled_WriteError(t *testing.T) {
 	}
 }
 
+func TestManager_RemoveAllowedPeer_Success(t *testing.T) {
+	initialConf := NewDefaultConfiguration()
+	initialConf.ClientCounter = 12
+	initialConf.AllowedPeers = []AllowedPeer{
+		{PublicKey: bytes.Repeat([]byte{5}, 32), Enabled: true, ClientID: 1},
+		{PublicKey: bytes.Repeat([]byte{6}, 32), Enabled: true, ClientID: 2},
+	}
+	writer := &ManagerMockWriter{}
+	manager := &Manager{
+		resolver: &ManagerMockResolver{Path: "/fake/path"},
+		stat:     &ManagerMockStat{Err: nil},
+		writer:   writer,
+		reader:   &ManagerMockReader{Config: initialConf},
+	}
+
+	if err := manager.RemoveAllowedPeer(1); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if writer.WriteCalls != 1 {
+		t.Fatalf("expected one write call, got %d", writer.WriteCalls)
+	}
+	written, ok := writer.WrittenData.(Configuration)
+	if !ok {
+		t.Fatalf("written data is not Configuration")
+	}
+	if len(written.AllowedPeers) != 1 {
+		t.Fatalf("expected one remaining peer, got %d", len(written.AllowedPeers))
+	}
+	if written.AllowedPeers[0].ClientID != 2 {
+		t.Fatalf("expected remaining peer client id 2, got %d", written.AllowedPeers[0].ClientID)
+	}
+	if written.ClientCounter != 12 {
+		t.Fatalf("expected ClientCounter to stay unchanged, got %d", written.ClientCounter)
+	}
+}
+
+func TestManager_RemoveAllowedPeer_InvalidClientID(t *testing.T) {
+	manager := &Manager{}
+	err := manager.RemoveAllowedPeer(0)
+	if err == nil || !strings.Contains(err.Error(), "invalid client id") {
+		t.Fatalf("expected invalid client id error, got %v", err)
+	}
+}
+
+func TestManager_RemoveAllowedPeer_PeerNotFound(t *testing.T) {
+	initialConf := NewDefaultConfiguration()
+	initialConf.AllowedPeers = []AllowedPeer{
+		{PublicKey: bytes.Repeat([]byte{7}, 32), Enabled: true, ClientID: 1},
+	}
+	manager := &Manager{
+		resolver: &ManagerMockResolver{Path: "/fake/path"},
+		stat:     &ManagerMockStat{Err: nil},
+		writer:   &ManagerMockWriter{},
+		reader:   &ManagerMockReader{Config: initialConf},
+	}
+
+	err := manager.RemoveAllowedPeer(9)
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("expected not found error, got %v", err)
+	}
+}
+
+func TestManager_RemoveAllowedPeer_ConfigError(t *testing.T) {
+	manager := &Manager{
+		resolver: &ManagerMockResolver{Path: "/fake/path"},
+		stat:     &ManagerMockStat{Err: nil},
+		writer:   &ManagerMockWriter{},
+		reader:   &ManagerMockReader{Err: errors.New("read error")},
+	}
+
+	err := manager.RemoveAllowedPeer(1)
+	if err == nil || !strings.Contains(err.Error(), "read error") {
+		t.Fatalf("expected read error, got %v", err)
+	}
+}
+
+func TestManager_RemoveAllowedPeer_WriteError(t *testing.T) {
+	initialConf := NewDefaultConfiguration()
+	initialConf.AllowedPeers = []AllowedPeer{
+		{PublicKey: bytes.Repeat([]byte{8}, 32), Enabled: true, ClientID: 8},
+	}
+	manager := &Manager{
+		resolver: &ManagerMockResolver{Path: "/fake/path"},
+		stat:     &ManagerMockStat{Err: nil},
+		writer:   &ManagerMockWriter{Err: errors.New("write fail")},
+		reader:   &ManagerMockReader{Config: initialConf},
+	}
+
+	err := manager.RemoveAllowedPeer(8)
+	if err == nil || !strings.Contains(err.Error(), "write fail") {
+		t.Fatalf("expected write fail error, got %v", err)
+	}
+}
+
 func TestManager_InvalidateCache(t *testing.T) {
 	inner := &ManagerMockReader{Config: NewDefaultConfiguration()}
 	ttl := NewTTLReader(inner, time.Hour)

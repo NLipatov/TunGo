@@ -25,6 +25,7 @@ func (d *dummyConfigManager) AddAllowedPeer(_ serverCfg.AllowedPeer) error {
 }
 func (d *dummyConfigManager) ListAllowedPeers() ([]serverCfg.AllowedPeer, error) { return nil, nil }
 func (d *dummyConfigManager) SetAllowedPeerEnabled(_ int, _ bool) error          { return nil }
+func (d *dummyConfigManager) RemoveAllowedPeer(_ int) error                      { return nil }
 func (d *dummyConfigManager) IncrementClientCounter() error                      { return nil }
 func (d *dummyConfigManager) InjectX25519Keys(_, _ []byte) error {
 	return nil
@@ -43,6 +44,7 @@ func (e *errorConfigManager) AddAllowedPeer(_ serverCfg.AllowedPeer) error {
 }
 func (e *errorConfigManager) ListAllowedPeers() ([]serverCfg.AllowedPeer, error) { return nil, nil }
 func (e *errorConfigManager) SetAllowedPeerEnabled(_ int, _ bool) error          { return nil }
+func (e *errorConfigManager) RemoveAllowedPeer(_ int) error                      { return nil }
 func (e *errorConfigManager) IncrementClientCounter() error                      { return nil }
 func (e *errorConfigManager) InjectX25519Keys(_, _ []byte) error {
 	return nil

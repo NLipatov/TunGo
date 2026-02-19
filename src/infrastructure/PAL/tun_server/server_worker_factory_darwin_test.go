@@ -19,6 +19,7 @@ func (d *darwinDummyConfigManager) ListAllowedPeers() ([]serverCfg.AllowedPeer, 
 	return nil, nil
 }
 func (d *darwinDummyConfigManager) SetAllowedPeerEnabled(_ int, _ bool) error { return nil }
+func (d *darwinDummyConfigManager) RemoveAllowedPeer(_ int) error             { return nil }
 func (d *darwinDummyConfigManager) IncrementClientCounter() error             { return nil }
 func (d *darwinDummyConfigManager) InjectX25519Keys(_, _ []byte) error        { return nil }
 func (d *darwinDummyConfigManager) EnsureIPv6Subnets() error                  { return nil }

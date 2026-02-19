@@ -252,3 +252,44 @@ func TestConfigurator_ConfigureFromState_UnknownState(t *testing.T) {
 		t.Fatalf("expected mode.Unknown, got %v", gotMode)
 	}
 }
+
+func TestConfigurator_ConfigureContinuous_NilClientConfigurator(t *testing.T) {
+	c := &Configurator{
+		useContinuousUI:    true,
+		clientConfigurator: nil,
+		serverConfigurator: newServerConfigurator(&mockManager{}, &mockSelectorFactory{selector: &queueSelector{}}),
+	}
+	gotMode, err := c.Configure()
+	if err == nil || err.Error() != "continuous configurator is not initialized" {
+		t.Fatalf("expected initialization error, got %v", err)
+	}
+	if gotMode != mode.Unknown {
+		t.Fatalf("expected mode.Unknown, got %v", gotMode)
+	}
+}
+
+func TestConfigurator_ConfigureContinuous_NilServerConfigurator(t *testing.T) {
+	c := &Configurator{
+		useContinuousUI: true,
+		clientConfigurator: newClientConfigurator(
+			&cfgObserverMock{}, &cfgSelectorMock{}, nil, nil,
+			&queuedSelectorFactory{selector: &queuedSelector{}}, nil, nil, nil,
+		),
+		serverConfigurator: nil,
+	}
+	gotMode, err := c.Configure()
+	if err == nil || err.Error() != "continuous configurator is not initialized" {
+		t.Fatalf("expected initialization error, got %v", err)
+	}
+	if gotMode != mode.Unknown {
+		t.Fatalf("expected mode.Unknown, got %v", gotMode)
+	}
+}
+
+func TestConfigurator_WithContinuousUI(t *testing.T) {
+	c := &Configurator{}
+	c.withContinuousUI()
+	if !c.useContinuousUI {
+		t.Fatal("expected useContinuousUI=true after withContinuousUI()")
+	}
+}

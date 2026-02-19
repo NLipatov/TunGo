@@ -92,6 +92,31 @@ func TestRedirectStandardLoggerToBuffer_RestoresWriter(t *testing.T) {
 	}
 }
 
+func TestRuntimeLogBuffer_TailInto_EmptyDst(t *testing.T) {
+	b := NewRuntimeLogBuffer(4)
+	_, _ = b.Write([]byte("one\ntwo\n"))
+
+	dst := make([]string, 0)
+	n := b.TailInto(dst, 10)
+	if n != 0 {
+		t.Fatalf("expected 0 for empty dst, got %d", n)
+	}
+}
+
+func TestRuntimeLogBuffer_TailInto_LimitGreaterThanDst(t *testing.T) {
+	b := NewRuntimeLogBuffer(8)
+	_, _ = b.Write([]byte("one\ntwo\nthree\nfour\nfive\n"))
+
+	dst := make([]string, 2)
+	n := b.TailInto(dst, 100) // limit > len(dst) => clamp to len(dst)
+	if n != 2 {
+		t.Fatalf("expected 2 (clamped to dst length), got %d", n)
+	}
+	if dst[0] != "four" || dst[1] != "five" {
+		t.Fatalf("expected last 2 lines, got %v", dst[:n])
+	}
+}
+
 func TestEnableGlobalRuntimeLogCapture_IdempotentAndDisableSafe(t *testing.T) {
 	DisableGlobalRuntimeLogCapture()
 	DisableGlobalRuntimeLogCapture() // safe when already disabled

@@ -31,10 +31,12 @@ const (
 )
 
 type UIPreferences struct {
-	Theme      ThemeOption      `json:"theme"`
-	Language   string           `json:"language"`
-	StatsUnits StatsUnitsOption `json:"stats_units"`
-	ShowFooter bool             `json:"show_footer"`
+	Theme              ThemeOption      `json:"theme"`
+	Language           string           `json:"language"`
+	StatsUnits         StatsUnitsOption `json:"stats_units"`
+	ShowDataplaneStats bool             `json:"show_dataplane_stats"`
+	ShowDataplaneGraph bool             `json:"show_dataplane_graph"`
+	ShowFooter         bool             `json:"show_footer"`
 }
 
 var orderedThemeOptions = [...]ThemeOption{
@@ -137,10 +139,12 @@ func SaveUIPreferences() error {
 
 func defaultUIPreferences() UIPreferences {
 	return UIPreferences{
-		Theme:      ThemeLight,
-		Language:   "en",
-		StatsUnits: StatsUnitsBiBytes,
-		ShowFooter: true,
+		Theme:              ThemeLight,
+		Language:           "en",
+		StatsUnits:         StatsUnitsBiBytes,
+		ShowDataplaneStats: true,
+		ShowDataplaneGraph: true,
+		ShowFooter:         true,
 	}
 }
 
@@ -204,6 +208,16 @@ func loadUIPreferencesFromDisk() (UIPreferences, error) {
 	var p UIPreferences
 	if err := json.Unmarshal(data, &p); err != nil {
 		return defaultUIPreferences(), err
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return defaultUIPreferences(), err
+	}
+	if _, ok := raw["show_dataplane_stats"]; !ok {
+		p.ShowDataplaneStats = true
+	}
+	if _, ok := raw["show_dataplane_graph"]; !ok {
+		p.ShowDataplaneGraph = true
 	}
 	return sanitizeUIPreferences(p), nil
 }
