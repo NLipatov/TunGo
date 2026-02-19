@@ -190,6 +190,13 @@ func withServerConfiguratorHooks(
 	})
 }
 
+func withFileWriteHook(t *testing.T, fn func(int, []byte) (string, error)) {
+	t.Helper()
+	prev := writeServerClientConfigurationFile
+	writeServerClientConfigurationFile = fn
+	t.Cleanup(func() { writeServerClientConfigurationFile = prev })
+}
+
 func TestServerConfigurator_DefaultHooks_AreCallable(t *testing.T) {
 	generator := newServerClientConfigGenerator(&mockManager{})
 	if generator == nil {
@@ -491,7 +498,44 @@ func Test_Configure_SelectError(t *testing.T) {
 	}
 }
 
-func Test_Configure_AddClientOption_CopyClipboardError(t *testing.T) {
+func Test_Configure_AddClientOption_ClipboardFails_FallsBackToFile(t *testing.T) {
+	qsel := &queueSelector{options: []string{addClientOption, startServerOption}}
+	sf := &mockSelectorFactory{selector: qsel}
+	var savedClientID int
+	var savedData []byte
+	withServerConfiguratorHooks(
+		t,
+		func(srv.ConfigurationManager) clientConfigGenerator {
+			return mockClientConfGenerator{conf: &clientcfg.Configuration{ClientID: 7}}
+		},
+		func(v any) ([]byte, error) {
+			return json.Marshal(v)
+		},
+		func(string) error {
+			return errors.New("clipboard down")
+		},
+	)
+	withFileWriteHook(t, func(clientID int, data []byte) (string, error) {
+		savedClientID = clientID
+		savedData = data
+		return "/tmp/7_configuration.json", nil
+	})
+	sc := newServerConfigurator(&mockManager{}, sf)
+	if err := sc.Configure(); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if savedClientID != 7 {
+		t.Fatalf("expected file written for client 7, got %d", savedClientID)
+	}
+	if len(savedData) == 0 {
+		t.Fatal("expected non-empty config data written to file")
+	}
+	if len(sf.labels) < 2 || !strings.Contains(sf.labels[1], "/tmp/7_configuration.json") {
+		t.Fatalf("expected file path in notice, got labels: %v", sf.labels)
+	}
+}
+
+func Test_Configure_AddClientOption_ClipboardAndFileBothFail(t *testing.T) {
 	qsel := &queueSelector{options: []string{addClientOption}}
 	sf := &mockSelectorFactory{selector: qsel}
 	withServerConfiguratorHooks(
@@ -506,10 +550,13 @@ func Test_Configure_AddClientOption_CopyClipboardError(t *testing.T) {
 			return errors.New("clipboard down")
 		},
 	)
+	withFileWriteHook(t, func(int, []byte) (string, error) {
+		return "", errors.New("disk full")
+	})
 	sc := newServerConfigurator(&mockManager{}, sf)
 	err := sc.Configure()
-	if err == nil || err.Error() != "failed to copy client configuration to clipboard: clipboard down" {
-		t.Fatalf("expected clipboard copy error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "disk full") {
+		t.Fatalf("expected file write error, got %v", err)
 	}
 }
 

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"tungo/application/confgen"
 	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
@@ -41,6 +43,15 @@ var (
 	}
 	writeServerClientConfigurationClipboard = func(config string) error {
 		return clipboard.WriteAll(config)
+	}
+	writeServerClientConfigurationFile = func(clientID int, data []byte) (string, error) {
+		name := fmt.Sprintf("%d_configuration.json", clientID)
+		dir, err := os.Getwd()
+		if err != nil {
+			return "", err
+		}
+		path := filepath.Join(dir, name)
+		return path, os.WriteFile(path, data, 0600)
 	}
 )
 
@@ -104,9 +115,14 @@ func (s *serverConfigurator) configureFromState(state serverFlowState) error {
 				return fmt.Errorf("failed to marshal client configuration: %w", err)
 			}
 			if copyErr := writeServerClientConfigurationClipboard(string(data)); copyErr != nil {
-				return fmt.Errorf("failed to copy client configuration to clipboard: %w", copyErr)
+				path, fileErr := writeServerClientConfigurationFile(conf.ClientID, data)
+				if fileErr != nil {
+					return fmt.Errorf("failed to save client configuration: %w", fileErr)
+				}
+				s.notice = fmt.Sprintf("Client configuration saved to %s", path)
+			} else {
+				s.notice = "Client configuration copied to clipboard."
 			}
-			s.notice = "Client configuration copied to clipboard."
 			state = serverStateSelectOption
 		case serverStateManageClients:
 			selectedPeer, selectErr := s.selectManagedPeer()
