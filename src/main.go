@@ -239,13 +239,12 @@ func setupCrashLog(resolver client.Resolver) {
 	if err != nil {
 		return
 	}
+	defer f.Close()
 	info, _ := f.Stat()
 	if info != nil && info.Size() > 0 {
 		_, _ = fmt.Fprintf(f, "\n--- crash at %s ---\n\n", time.Now().Format(time.RFC3339))
 	}
-	if err := debug.SetCrashOutput(f, debug.CrashOptions{}); err != nil {
-		_ = f.Close()
-	}
+	_ = debug.SetCrashOutput(f, debug.CrashOptions{})
 }
 
 func printVersion(appCtx context.Context) {
