@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"tungo/domain/mode"
@@ -12,6 +13,10 @@ import (
 	"tungo/presentation/ui/tui/internal/ui/contracts/text_input"
 	uifactory "tungo/presentation/ui/tui/internal/ui/factory"
 )
+
+// activeUnifiedSession holds the shared unified session across configurator/runtime phases.
+// It is created by configureContinuous() on first call and reused on reconfigure loops.
+var activeUnifiedSession *bubbleTea.UnifiedSession
 
 type Configurator struct {
 	appMode            AppMode
@@ -86,20 +91,33 @@ func (p *Configurator) configureContinuous() (mode.Mode, error) {
 	if p.clientConfigurator == nil || p.serverConfigurator == nil {
 		return mode.Unknown, fmt.Errorf("continuous configurator is not initialized")
 	}
-	selectedMode, err := bubbleTea.RunConfiguratorSession(
-		bubbleTea.ConfiguratorSessionOptions{
-			Observer:            p.clientConfigurator.observer,
-			Selector:            p.clientConfigurator.selector,
-			Creator:             p.clientConfigurator.creator,
-			Deleter:             p.clientConfigurator.deleter,
-			ClientConfigManager: p.clientConfigurator.configurationManager,
-			ServerConfigManager: p.serverConfigurator.manager,
-		},
-	)
+
+	configOpts := bubbleTea.ConfiguratorSessionOptions{
+		Observer:            p.clientConfigurator.observer,
+		Selector:            p.clientConfigurator.selector,
+		Creator:             p.clientConfigurator.creator,
+		Deleter:             p.clientConfigurator.deleter,
+		ClientConfigManager: p.clientConfigurator.configurationManager,
+		ServerConfigManager: p.serverConfigurator.manager,
+	}
+
+	if activeUnifiedSession == nil {
+		session, err := bubbleTea.NewUnifiedSession(context.Background(), configOpts)
+		if err != nil {
+			return mode.Unknown, err
+		}
+		activeUnifiedSession = session
+	}
+
+	selectedMode, err := activeUnifiedSession.WaitForMode()
 	if err != nil {
-		if errors.Is(err, bubbleTea.ErrConfiguratorSessionUserExit) {
+		if errors.Is(err, bubbleTea.ErrUnifiedSessionQuit) {
+			activeUnifiedSession.Close()
+			activeUnifiedSession = nil
 			return mode.Unknown, ErrUserExit
 		}
+		activeUnifiedSession.Close()
+		activeUnifiedSession = nil
 		return mode.Unknown, err
 	}
 	return selectedMode, nil

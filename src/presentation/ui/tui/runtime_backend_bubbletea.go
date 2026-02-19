@@ -40,6 +40,25 @@ func (bubbleTeaRuntimeBackend) runRuntimeDashboard(ctx context.Context, mode Run
 	if mode == RuntimeModeServer {
 		options.Mode = bubbleTea.RuntimeDashboardServer
 	}
+
+	// Route to unified session when active (eliminates terminal flash).
+	if activeUnifiedSession != nil {
+		activeUnifiedSession.ActivateRuntime(ctx, options)
+		reconfigure, err := activeUnifiedSession.WaitForRuntimeExit()
+		if err != nil {
+			if errors.Is(err, bubbleTea.ErrUnifiedSessionQuit) {
+				activeUnifiedSession.Close()
+				activeUnifiedSession = nil
+				return false, ErrUserExit
+			}
+			activeUnifiedSession.Close()
+			activeUnifiedSession = nil
+			return false, err
+		}
+		return reconfigure, nil
+	}
+
+	// Fallback: standalone runtime dashboard (non-unified mode).
 	reconfigureRequested, err := bubbleRuntimeRunDashboard(ctx, options)
 	if err != nil {
 		if errors.Is(err, bubbleTea.ErrRuntimeDashboardExitRequested) {

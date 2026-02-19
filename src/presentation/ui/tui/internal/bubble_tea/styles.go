@@ -305,7 +305,7 @@ func resolveUIStyles(prefs UIPreferences) uiStyles {
 		headerRule:  ansiTextStyle{prefix: rulePrefix},
 		title:       ansiTextStyle{prefix: ansiStylePrefix(textColor, backgroundColor, true)},
 		subtitle:    ansiTextStyle{prefix: mutedPrefix},
-		hint:        ansiTextStyle{prefix: mutedPrefix},
+		hint:        ansiTextStyle{prefix: textPrefix},
 		option:      ansiTextStyle{prefix: textPrefix},
 		active:      ansiTextStyle{prefix: activePrefix},
 		inputFrame:  ansiFrameStyle{borderPrefix: rulePrefix},
