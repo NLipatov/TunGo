@@ -7,6 +7,7 @@ import (
 	appip "tungo/application/network/ip"
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/settings"
+	"tungo/infrastructure/telemetry/trafficstats"
 	"tungo/infrastructure/tunnel/session"
 )
 
@@ -39,6 +40,8 @@ func (t *TunHandler) HandleTun() error {
 	// Buffer layout: [2B epoch reserved][plaintext up to MTU][16B AEAD tag capacity]
 	var buffer [settings.DefaultEthernetMTU + settings.TCPChacha20Overhead]byte
 	plaintext := buffer[epochPrefixSize : settings.DefaultEthernetMTU+epochPrefixSize]
+	rec := trafficstats.NewRecorder()
+	defer rec.Flush()
 
 	for {
 		select {
@@ -75,6 +78,7 @@ func (t *TunHandler) HandleTun() error {
 				_ = peer.Egress().Close()
 				t.peerStore.Delete(peer)
 			}
+			rec.RecordTX(uint64(n))
 		}
 	}
 }

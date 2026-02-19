@@ -71,20 +71,13 @@ func (w *TunHandler) HandleTun() error {
 	// +8 route-id +12 nonce +16 AEAD tag
 	var buffer [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
 	payloadStart := chacha20.UDPRouteIDLength + chacha20poly1305.NonceSize
-	statsCollector := trafficstats.Global()
-	var pendingTX uint64
-	flushPendingTX := func() {
-		if statsCollector != nil && pendingTX != 0 {
-			statsCollector.AddTXBytes(pendingTX)
-			pendingTX = 0
-		}
-	}
+	rec := trafficstats.NewRecorder()
 
 	// Main loop to read from TUN and send data
 	for {
 		select {
 		case <-w.ctx.Done():
-			flushPendingTX()
+			rec.Flush()
 			return nil
 		default:
 			n, err := w.reader.Read(buffer[payloadStart : payloadStart+settings.DefaultEthernetMTU])
@@ -95,26 +88,20 @@ func (w *TunHandler) HandleTun() error {
 				// Encrypt expects route-id+nonce+payload (20+n).
 				if err := w.egress.SendDataIP(buffer[:payloadStart+n]); err != nil {
 					if w.ctx.Err() != nil {
-						flushPendingTX()
+						rec.Flush()
 						return nil
 					}
-					flushPendingTX()
+					rec.Flush()
 					return fmt.Errorf("could not send packet to transport: %v", err)
 				}
-				if statsCollector != nil {
-					pendingTX += uint64(n)
-					if pendingTX >= trafficstats.HotPathFlushThresholdBytes {
-						statsCollector.AddTXBytes(pendingTX)
-						pendingTX = 0
-					}
-				}
+				rec.RecordTX(uint64(n))
 			}
 			if err != nil {
 				if w.ctx.Err() != nil {
-					flushPendingTX()
+					rec.Flush()
 					return nil
 				}
-				flushPendingTX()
+				rec.Flush()
 				return fmt.Errorf("could not read a packet from TUN: %v", err)
 			}
 			if w.rekeyInit != nil && w.rekeyController != nil {

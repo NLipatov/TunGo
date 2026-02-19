@@ -45,12 +45,12 @@ func main() {
 	}()
 	defer appCtxCancel()
 
-	trafficCollector := trafficstats.NewCollector(time.Second, 0.35)
-	trafficstats.SetGlobal(trafficCollector)
-	defer trafficstats.SetGlobal(nil)
-	go trafficCollector.Start(appCtx)
-
 	if tui.IsInteractiveRuntime() {
+		trafficCollector := trafficstats.NewCollector(time.Second, 0.35)
+		trafficstats.SetGlobal(trafficCollector)
+		defer trafficstats.SetGlobal(nil)
+		go trafficCollector.Start(appCtx)
+
 		tui.EnableRuntimeLogCapture(1200)
 		defer tui.DisableRuntimeLogCapture()
 	}

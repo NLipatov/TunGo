@@ -52,29 +52,22 @@ func (t *TunHandler) HandleTun() error {
 	// Buffer layout: [2B epoch reserved][plaintext up to MTU][16B AEAD tag capacity]
 	var buffer [settings.DefaultEthernetMTU + settings.TCPChacha20Overhead]byte
 	payload := buffer[epochPrefixSize : settings.DefaultEthernetMTU+epochPrefixSize]
-	statsCollector := trafficstats.Global()
-	var pendingTX uint64
-	flushPendingTX := func() {
-		if statsCollector != nil && pendingTX != 0 {
-			statsCollector.AddTXBytes(pendingTX)
-			pendingTX = 0
-		}
-	}
+	rec := trafficstats.NewRecorder()
 
 	for {
 		select {
 		case <-t.ctx.Done():
-			flushPendingTX()
+			rec.Flush()
 			return nil
 		default:
 			n, err := t.reader.Read(payload)
 			if err != nil {
 				if t.ctx.Err() != nil {
-					flushPendingTX()
+					rec.Flush()
 					return nil
 				}
 				log.Printf("failed to read from TUN: %v", err)
-				flushPendingTX()
+				rec.Flush()
 				return err
 			}
 
@@ -85,16 +78,10 @@ func (t *TunHandler) HandleTun() error {
 			// Pass buffer including the 2-byte epoch prefix reservation.
 			if err := t.egress.SendDataIP(buffer[:epochPrefixSize+n]); err != nil {
 				log.Printf("write to TCP failed: %s", err)
-				flushPendingTX()
+				rec.Flush()
 				return err
 			}
-			if n > 0 && statsCollector != nil {
-				pendingTX += uint64(n)
-				if pendingTX >= trafficstats.HotPathFlushThresholdBytes {
-					statsCollector.AddTXBytes(pendingTX)
-					pendingTX = 0
-				}
-			}
+			rec.RecordTX(uint64(n))
 
 			if t.rekeyInit != nil && t.rekeyController != nil {
 				now := time.Now().UTC()

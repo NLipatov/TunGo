@@ -61,15 +61,8 @@ func (t *TransportHandler) HandleTransport() error {
 	go t.keepaliveLoop()
 
 	var buffer [settings.DefaultEthernetMTU + settings.TCPChacha20Overhead]byte
-	statsCollector := trafficstats.Global()
-	var pendingRX uint64
-	flushPendingRX := func() {
-		if statsCollector != nil && pendingRX != 0 {
-			statsCollector.AddRXBytes(pendingRX)
-			pendingRX = 0
-		}
-	}
-	defer flushPendingRX()
+	rec := trafficstats.NewRecorder()
+	defer rec.Flush()
 
 	for {
 		select {
@@ -116,13 +109,7 @@ func (t *TransportHandler) HandleTransport() error {
 				log.Printf("failed to write to TUN: %v", writeErr)
 				return writeErr
 			}
-			if statsCollector != nil {
-				pendingRX += uint64(len(payload))
-				if pendingRX >= trafficstats.HotPathFlushThresholdBytes {
-					statsCollector.AddRXBytes(pendingRX)
-					pendingRX = 0
-				}
-			}
+			rec.RecordRX(uint64(len(payload)))
 		}
 	}
 }

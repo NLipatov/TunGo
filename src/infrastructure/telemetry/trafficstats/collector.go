@@ -2,7 +2,6 @@ package trafficstats
 
 import (
 	"context"
-	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -25,12 +24,12 @@ type Collector struct {
 	sampleInterval time.Duration
 	emaAlpha       float64
 
-	mu      sync.Mutex
+	// accessed only from the single sampler goroutine in Start()
 	lastRX  uint64
 	lastTX  uint64
 	rxEMA   float64
 	txEMA   float64
-	started bool
+	started atomic.Bool
 }
 
 func NewCollector(sampleInterval time.Duration, emaAlpha float64) *Collector {
@@ -50,13 +49,9 @@ func NewCollector(sampleInterval time.Duration, emaAlpha float64) *Collector {
 }
 
 func (c *Collector) Start(ctx context.Context) {
-	c.mu.Lock()
-	if c.started {
-		c.mu.Unlock()
+	if !c.started.CompareAndSwap(false, true) {
 		return
 	}
-	c.started = true
-	c.mu.Unlock()
 
 	ticker := time.NewTicker(c.sampleInterval)
 	defer ticker.Stop()
@@ -119,7 +114,6 @@ func (c *Collector) updateRates(interval time.Duration) {
 	rxNow := c.rxBytesTotal.Load()
 	txNow := c.txBytesTotal.Load()
 
-	c.mu.Lock()
 	rxDelta := rxNow - c.lastRX
 	txDelta := txNow - c.lastTX
 	c.lastRX = rxNow
@@ -142,7 +136,6 @@ func (c *Collector) updateRates(interval time.Duration) {
 		rxPerSec = c.rxEMA
 		txPerSec = c.txEMA
 	}
-	c.mu.Unlock()
 
 	c.rxRate.Store(uint64(rxPerSec))
 	c.txRate.Store(uint64(txPerSec))
