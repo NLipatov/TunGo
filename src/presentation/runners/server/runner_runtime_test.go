@@ -10,7 +10,8 @@ import (
 	"tungo/application/network/routing"
 	serverConfig "tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/settings"
-	"tungo/presentation/configuring/tui"
+	runnerCommon "tungo/presentation/runners/common"
+	"tungo/presentation/ui/tui"
 )
 
 func withServerRuntimeHooks(
@@ -29,7 +30,7 @@ func withServerRuntimeHooks(
 	})
 }
 
-func TestRun_Interactive_UserQuitReturnsCanceled(t *testing.T) {
+func TestRun_Interactive_ReconfigureReturnsBackToModeSelection(t *testing.T) {
 	withServerRuntimeHooks(t, true, func(context.Context, tui.RuntimeMode) (bool, error) {
 		return true, nil
 	})
@@ -59,8 +60,8 @@ func TestRun_Interactive_UserQuitReturnsCanceled(t *testing.T) {
 
 	r := NewRunner(deps, wf, rf)
 	err := r.Run(context.Background())
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("expected context canceled from user quit, got %v", err)
+	if !errors.Is(err, runnerCommon.ErrReconfigureRequested) {
+		t.Fatalf("expected back-to-mode-selection from reconfigure request, got %v", err)
 	}
 }
 
@@ -96,6 +97,41 @@ func TestRun_Interactive_UIErrorWrappedWhenWorkersCanceled(t *testing.T) {
 	err := r.Run(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "runtime UI failed: ui failed") {
 		t.Fatalf("expected wrapped runtime ui error, got %v", err)
+	}
+}
+
+func TestRun_Interactive_UserExitErrorReturnsCanceled(t *testing.T) {
+	withServerRuntimeHooks(t, true, func(context.Context, tui.RuntimeMode) (bool, error) {
+		return false, tui.ErrUserExit
+	})
+	deps := &RunnerMockDeps{
+		key: &RunnerMockKeyManager{},
+		tun: &RunnerMockTunManager{},
+		cfg: serverConfig.Configuration{
+			EnableTCP:   true,
+			TCPSettings: settings.Settings{Protocol: settings.TCP},
+		},
+	}
+	wf := RunnerMockWorkerFactory{
+		create: func(context.Context, io.ReadWriteCloser, settings.Settings) (routing.Worker, error) {
+			return RunnerMockWorker{}, nil
+		},
+	}
+	rf := RunnerMockRouterFactory{
+		make: func(routing.Worker) routing.Router {
+			return RunnerMockRouter{
+				route: func(ctx context.Context) error {
+					<-ctx.Done()
+					return ctx.Err()
+				},
+			}
+		},
+	}
+
+	r := NewRunner(deps, wf, rf)
+	err := r.Run(context.Background())
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context canceled from user exit, got %v", err)
 	}
 }
 

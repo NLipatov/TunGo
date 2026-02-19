@@ -62,6 +62,8 @@ func (m *mockConfigManager) InjectX25519Keys(_, _ []byte) error {
 func (m *mockConfigManager) AddAllowedPeer(_ AllowedPeer) error {
 	return nil
 }
+func (m *mockConfigManager) ListAllowedPeers() ([]AllowedPeer, error)  { return nil, nil }
+func (m *mockConfigManager) SetAllowedPeerEnabled(_ int, _ bool) error { return nil }
 
 func (m *mockConfigManager) EnsureIPv6Subnets() error { return nil }
 

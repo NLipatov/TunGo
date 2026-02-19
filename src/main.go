@@ -20,12 +20,13 @@ import (
 	"tungo/infrastructure/telemetry/trafficstats"
 	"tungo/infrastructure/tunnel/sessionplane/client_factory"
 	"tungo/presentation/configuring"
-	"tungo/presentation/configuring/tui"
 	"tungo/presentation/elevation"
 	clientConf "tungo/presentation/runners/client"
+	runnersCommon "tungo/presentation/runners/common"
 	"tungo/presentation/runners/server"
 	"tungo/presentation/runners/version"
 	"tungo/presentation/signals/shutdown"
+	"tungo/presentation/ui/tui"
 )
 
 const (
@@ -80,70 +81,83 @@ func main() {
 
 	configuratorFactory := configuring.NewConfigurationFactory(configurationManager)
 	configurator := configuratorFactory.Configurator()
-	appMode, appModeErr := configurator.Configure()
-	if appModeErr != nil {
-		if errors.Is(appModeErr, tui.ErrUserExit) {
+	for appCtx.Err() == nil {
+		appMode, appModeErr := configurator.Configure()
+		if appModeErr != nil {
+			if errors.Is(appModeErr, configuring.ErrUserExit) {
+				return
+			}
+			log.Printf("%v", appModeErr)
+			exitCode = 1
 			return
 		}
-		log.Printf("%v", appModeErr)
-		exitCode = 1
-		return
-	}
 
-	switch appMode {
-	case mode.Server:
-		if err := prepareServerKeys(configurationManager); err != nil {
-			log.Printf("%v", err)
-			exitCode = 1
-			return
-		}
-		serverConfigPath, _ := serverResolver.Resolve()
-		log.Printf("Starting server...")
-		err := startServer(appCtx, configurationManager, serverConfigPath)
-		if err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		switch appMode {
+		case mode.Server:
+			if err := prepareServerKeys(configurationManager); err != nil {
+				log.Printf("%v", err)
+				exitCode = 1
 				return
 			}
-			log.Printf("Server finished with error: %v", err)
-			exitCode = 2
-			return
-		}
-	case mode.ServerConfGen:
-		if err := prepareServerKeys(configurationManager); err != nil {
-			log.Printf("%v", err)
-			exitCode = 1
-			return
-		}
-		gen := confgen.NewGenerator(configurationManager, &primitives.DefaultKeyDeriver{})
-		conf, err := gen.Generate()
-		if err != nil {
-			log.Printf("failed to generate client configuration: %v", err)
-			exitCode = 1
-			return
-		}
-		data, err := json.MarshalIndent(conf, "", "  ")
-		if err != nil {
-			log.Printf("failed to marshal client configuration: %v", err)
-			exitCode = 1
-			return
-		}
-		fmt.Println(string(data))
-	case mode.Client:
-		log.Printf("Starting client...")
-		if err := startClient(appCtx); err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			serverConfigPath, _ := serverResolver.Resolve()
+			log.Printf("Starting server...")
+			err := startServer(appCtx, configurationManager, serverConfigPath)
+			if errors.Is(err, runnersCommon.ErrReconfigureRequested) {
+				continue
+			}
+			if err != nil {
+				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+					return
+				}
+				log.Printf("Server finished with error: %v", err)
+				exitCode = 2
 				return
 			}
-			log.Printf("Client finished with error: %v", err)
-			exitCode = 2
+			return
+		case mode.ServerConfGen:
+			if err := prepareServerKeys(configurationManager); err != nil {
+				log.Printf("%v", err)
+				exitCode = 1
+				return
+			}
+			gen := confgen.NewGenerator(configurationManager, &primitives.DefaultKeyDeriver{})
+			conf, err := gen.Generate()
+			if err != nil {
+				log.Printf("failed to generate client configuration: %v", err)
+				exitCode = 1
+				return
+			}
+			data, err := json.MarshalIndent(conf, "", "  ")
+			if err != nil {
+				log.Printf("failed to marshal client configuration: %v", err)
+				exitCode = 1
+				return
+			}
+			fmt.Println(string(data))
+			return
+		case mode.Client:
+			log.Printf("Starting client...")
+			err := startClient(appCtx)
+			if errors.Is(err, runnersCommon.ErrReconfigureRequested) {
+				continue
+			}
+			if err != nil {
+				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+					return
+				}
+				log.Printf("Client finished with error: %v", err)
+				exitCode = 2
+				return
+			}
+			return
+		case mode.Version:
+			printVersion(appCtx)
+			return
+		default:
+			log.Printf("invalid app mode: %v", appMode)
+			exitCode = 1
 			return
 		}
-	case mode.Version:
-		printVersion(appCtx)
-	default:
-		log.Printf("invalid app mode: %v", appMode)
-		exitCode = 1
-		return
 	}
 }
 
@@ -165,8 +179,7 @@ func startClient(appCtx context.Context) error {
 	routerFactory := client_factory.NewRouterFactory()
 
 	runner := clientConf.NewRunner(deps, routerFactory)
-	runner.Run(appCtx)
-	return nil
+	return runner.Run(appCtx)
 }
 
 func startServer(

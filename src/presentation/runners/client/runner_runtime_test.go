@@ -13,7 +13,8 @@ import (
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
-	"tungo/presentation/configuring/tui"
+	runnerCommon "tungo/presentation/runners/common"
+	"tungo/presentation/ui/tui"
 )
 
 type runtimeTestTransport struct {
@@ -109,7 +110,7 @@ func withClientRuntimeHooks(
 	})
 }
 
-func TestRunSession_Interactive_UserQuitCancelsSession(t *testing.T) {
+func TestRunSession_Interactive_ReconfigureReturnsBackToModeSelection(t *testing.T) {
 	withClientRuntimeHooks(t, true, func(context.Context, tui.RuntimeMode) (bool, error) {
 		return true, nil
 	})
@@ -129,8 +130,8 @@ func TestRunSession_Interactive_UserQuitCancelsSession(t *testing.T) {
 	})
 
 	err := r.runSession(context.Background())
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("expected context canceled on user quit, got %v", err)
+	if !errors.Is(err, runnerCommon.ErrReconfigureRequested) {
+		t.Fatalf("expected back-to-mode-selection on reconfigure request, got %v", err)
 	}
 }
 
@@ -154,6 +155,29 @@ func TestRunSession_Interactive_UIErrorWrappedWhenRouteCanceled(t *testing.T) {
 	err := r.runSession(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "runtime UI failed: ui failed") {
 		t.Fatalf("expected wrapped ui error, got %v", err)
+	}
+}
+
+func TestRunSession_Interactive_UserExitErrorCancelsSession(t *testing.T) {
+	withClientRuntimeHooks(t, true, func(context.Context, tui.RuntimeMode) (bool, error) {
+		return false, tui.ErrUserExit
+	})
+	deps := &runtimeTestDeps{}
+	r := NewRunner(deps, runtimeTestRouterFactory{
+		create: func(_ context.Context, _ connection.Factory, _ tun.ClientManager, _ connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
+			router := runtimeTestRouter{
+				route: func(ctx context.Context) error {
+					<-ctx.Done()
+					return ctx.Err()
+				},
+			}
+			return router, &runtimeTestTransport{}, &runtimeTestTun{}, nil
+		},
+	})
+
+	err := r.runSession(context.Background())
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context canceled on user exit, got %v", err)
 	}
 }
 

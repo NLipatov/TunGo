@@ -4,8 +4,8 @@ import (
 	"os"
 	"testing"
 
-	"tungo/presentation/configuring/cli"
-	"tungo/presentation/configuring/tui"
+	"tungo/presentation/ui/cli"
+	"tungo/presentation/ui/tui"
 )
 
 func TestNewConfigurationFactory(t *testing.T) {

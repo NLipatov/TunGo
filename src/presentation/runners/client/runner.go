@@ -7,7 +7,8 @@ import (
 	"log"
 	"time"
 	"tungo/application/network/connection"
-	runtimeUI "tungo/presentation/configuring/tui"
+	runnerCommon "tungo/presentation/runners/common"
+	runtimeUI "tungo/presentation/ui/tui"
 )
 
 type Runner struct {
@@ -32,7 +33,7 @@ func NewRunner(deps AppDependencies, routerFactory connection.TrafficRouterFacto
 	}
 }
 
-func (r *Runner) Run(ctx context.Context) {
+func (r *Runner) Run(ctx context.Context) error {
 	defer func() {
 		if err := r.deps.TunManager().DisposeDevices(); err != nil {
 			log.Printf("error disposing tun devices on exit: %s", err)
@@ -42,19 +43,24 @@ func (r *Runner) Run(ctx context.Context) {
 	for ctx.Err() == nil {
 		err := r.runSession(ctx)
 		switch {
-		case err == nil, errors.Is(err, context.Canceled):
-			return
+		case err == nil:
+			return nil
+		case errors.Is(err, context.Canceled):
+			return context.Canceled
+		case errors.Is(err, runnerCommon.ErrReconfigureRequested):
+			return runnerCommon.ErrReconfigureRequested
 		default:
 			log.Printf("session error: %v, reconnecting…", err)
 			timer := time.NewTimer(500 * time.Millisecond)
 			select {
 			case <-ctx.Done():
 				timer.Stop()
-				return
+				return context.Canceled
 			case <-timer.C:
 			}
 		}
 	}
+	return context.Canceled
 }
 
 func (r *Runner) runSession(parentCtx context.Context) error {
@@ -97,12 +103,20 @@ func (r *Runner) runSession(parentCtx context.Context) error {
 		case routeErr := <-routeErrCh:
 			cancel()
 			uiResult := <-uiResultCh
-			if uiResult.err != nil {
+			if uiResult.err != nil && !errors.Is(uiResult.err, runtimeUI.ErrUserExit) {
 				log.Printf("runtime UI error: %v", uiResult.err)
 			}
 			return routeErr
 		case uiResult := <-uiResultCh:
 			if uiResult.err != nil {
+				if errors.Is(uiResult.err, runtimeUI.ErrUserExit) {
+					cancel()
+					routeErr := <-routeErrCh
+					if routeErr == nil || errors.Is(routeErr, context.Canceled) {
+						return context.Canceled
+					}
+					return routeErr
+				}
 				cancel()
 				routeErr := <-routeErrCh
 				if routeErr == nil || errors.Is(routeErr, context.Canceled) {
@@ -114,7 +128,7 @@ func (r *Runner) runSession(parentCtx context.Context) error {
 				cancel()
 				routeErr := <-routeErrCh
 				if routeErr == nil || errors.Is(routeErr, context.Canceled) {
-					return context.Canceled
+					return runnerCommon.ErrReconfigureRequested
 				}
 				return routeErr
 			}

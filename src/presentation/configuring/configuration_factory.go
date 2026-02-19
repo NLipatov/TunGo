@@ -3,8 +3,8 @@ package configuring
 import (
 	"os"
 	"tungo/infrastructure/PAL/configuration/server"
-	"tungo/presentation/configuring/cli"
-	"tungo/presentation/configuring/tui"
+	"tungo/presentation/ui/cli"
+	"tungo/presentation/ui/tui"
 )
 
 type ConfigurationFactory struct {

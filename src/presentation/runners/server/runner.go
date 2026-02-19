@@ -8,7 +8,8 @@ import (
 	"tungo/application/network/connection"
 	"tungo/application/network/routing"
 	"tungo/infrastructure/settings"
-	runtimeUI "tungo/presentation/configuring/tui"
+	runnerCommon "tungo/presentation/runners/common"
+	runtimeUI "tungo/presentation/ui/tui"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -83,12 +84,20 @@ func (r *Runner) Run(
 		case workerErr := <-workerErrCh:
 			cancel()
 			uiResult := <-uiResultCh
-			if uiResult.err != nil {
+			if uiResult.err != nil && !errors.Is(uiResult.err, runtimeUI.ErrUserExit) {
 				log.Printf("runtime UI error: %v", uiResult.err)
 			}
 			return workerErr
 		case uiResult := <-uiResultCh:
 			if uiResult.err != nil {
+				if errors.Is(uiResult.err, runtimeUI.ErrUserExit) {
+					cancel()
+					workerErr := <-workerErrCh
+					if workerErr == nil || errors.Is(workerErr, context.Canceled) {
+						return context.Canceled
+					}
+					return workerErr
+				}
 				cancel()
 				workerErr := <-workerErrCh
 				if workerErr == nil || errors.Is(workerErr, context.Canceled) {
@@ -100,7 +109,7 @@ func (r *Runner) Run(
 				cancel()
 				workerErr := <-workerErrCh
 				if workerErr == nil || errors.Is(workerErr, context.Canceled) {
-					return context.Canceled
+					return runnerCommon.ErrReconfigureRequested
 				}
 				return workerErr
 			}
