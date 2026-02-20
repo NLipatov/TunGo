@@ -13,8 +13,6 @@ import (
 	"tungo/infrastructure/cryptography/primitives"
 	"tungo/presentation/ui/tui/internal/ui/contracts/selector"
 	"tungo/presentation/ui/tui/internal/ui/value_objects"
-
-	"github.com/atotto/clipboard"
 )
 
 const (
@@ -41,16 +39,19 @@ var (
 	marshalServerClientConfiguration = func(v any) ([]byte, error) {
 		return json.MarshalIndent(v, "", "  ")
 	}
-	writeServerClientConfigurationClipboard = func(config string) error {
-		return clipboard.WriteAll(config)
-	}
-	writeServerClientConfigurationFile = func(clientID int, data []byte) (string, error) {
-		name := fmt.Sprintf("%d_configuration.json", clientID)
-		dir, err := os.Getwd()
+	resolveServerConfigDir = func() (string, error) {
+		configPath, err := server.NewServerResolver().Resolve()
 		if err != nil {
 			return "", err
 		}
-		path := filepath.Join(dir, name)
+		return filepath.Dir(configPath), nil
+	}
+	writeServerClientConfigurationFile = func(clientID int, data []byte) (string, error) {
+		dir, err := resolveServerConfigDir()
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve server config directory: %w", err)
+		}
+		path := filepath.Join(dir, fmt.Sprintf("%d_configuration.json", clientID))
 		return path, os.WriteFile(path, data, 0600)
 	}
 )
@@ -114,15 +115,11 @@ func (s *serverConfigurator) configureFromState(state serverFlowState) error {
 			if err != nil {
 				return fmt.Errorf("failed to marshal client configuration: %w", err)
 			}
-			if copyErr := writeServerClientConfigurationClipboard(string(data)); copyErr != nil {
-				path, fileErr := writeServerClientConfigurationFile(conf.ClientID, data)
-				if fileErr != nil {
-					return fmt.Errorf("failed to save client configuration: %w", fileErr)
-				}
-				s.notice = fmt.Sprintf("Client configuration saved to %s", path)
-			} else {
-				s.notice = "Client configuration copied to clipboard."
+			path, fileErr := writeServerClientConfigurationFile(conf.ClientID, data)
+			if fileErr != nil {
+				return fmt.Errorf("failed to save client configuration: %w", fileErr)
 			}
+			s.notice = fmt.Sprintf("Client configuration saved to %s", path)
 			state = serverStateSelectOption
 		case serverStateManageClients:
 			selectedPeer, selectErr := s.selectManagedPeer()

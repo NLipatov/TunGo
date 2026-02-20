@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/netip"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -174,19 +176,15 @@ func withServerConfiguratorHooks(
 	t *testing.T,
 	newGenerator func(srv.ConfigurationManager) clientConfigGenerator,
 	marshalFn func(any) ([]byte, error),
-	clipboardFn func(string) error,
 ) {
 	t.Helper()
 	prevGenerator := newServerClientConfigGenerator
 	prevMarshal := marshalServerClientConfiguration
-	prevClipboard := writeServerClientConfigurationClipboard
 	newServerClientConfigGenerator = newGenerator
 	marshalServerClientConfiguration = marshalFn
-	writeServerClientConfigurationClipboard = clipboardFn
 	t.Cleanup(func() {
 		newServerClientConfigGenerator = prevGenerator
 		marshalServerClientConfiguration = prevMarshal
-		writeServerClientConfigurationClipboard = prevClipboard
 	})
 }
 
@@ -209,6 +207,56 @@ func TestServerConfigurator_DefaultHooks_AreCallable(t *testing.T) {
 	}
 	if len(payload) == 0 {
 		t.Fatal("expected non-empty payload")
+	}
+}
+
+func withResolveServerConfigDir(t *testing.T, fn func() (string, error)) {
+	t.Helper()
+	prev := resolveServerConfigDir
+	resolveServerConfigDir = fn
+	t.Cleanup(func() { resolveServerConfigDir = prev })
+}
+
+func TestDefaultWriteFile_WritesCorrectPathAndContent(t *testing.T) {
+	tmpDir := t.TempDir()
+	withResolveServerConfigDir(t, func() (string, error) { return tmpDir, nil })
+
+	data := []byte(`{"clientID":42}`)
+	path, err := writeServerClientConfigurationFile(42, data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected := filepath.Join(tmpDir, "42_configuration.json")
+	if path != expected {
+		t.Fatalf("expected path %s, got %s", expected, path)
+	}
+	got, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatalf("failed to read written file: %v", readErr)
+	}
+	if string(got) != string(data) {
+		t.Fatalf("expected content %q, got %q", data, got)
+	}
+}
+
+func TestDefaultWriteFile_ResolverError(t *testing.T) {
+	withResolveServerConfigDir(t, func() (string, error) {
+		return "", errors.New("resolver failed")
+	})
+
+	_, err := writeServerClientConfigurationFile(1, []byte("x"))
+	if err == nil || !strings.Contains(err.Error(), "resolver failed") {
+		t.Fatalf("expected resolver error, got %v", err)
+	}
+}
+
+func TestDefaultResolveServerConfigDir(t *testing.T) {
+	dir, err := resolveServerConfigDir()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if dir == "" {
+		t.Fatal("expected non-empty directory")
 	}
 }
 
@@ -270,7 +318,6 @@ func Test_Configure_AddClientOption_Success_ThenExit(t *testing.T) {
 	qsel := &queueSelector{options: []string{addClientOption, startServerOption}}
 	sf := &mockSelectorFactory{selector: qsel}
 	m := &mockManager{}
-	var copiedConfig string
 	withServerConfiguratorHooks(
 		t,
 		func(srv.ConfigurationManager) clientConfigGenerator {
@@ -281,11 +328,12 @@ func Test_Configure_AddClientOption_Success_ThenExit(t *testing.T) {
 		func(v any) ([]byte, error) {
 			return json.Marshal(v)
 		},
-		func(config string) error {
-			copiedConfig = config
-			return nil
-		},
 	)
+	var savedPath string
+	withFileWriteHook(t, func(_ int, _ []byte) (string, error) {
+		savedPath = "/tmp/1_configuration.json"
+		return savedPath, nil
+	})
 
 	sc := newServerConfigurator(m, sf)
 
@@ -295,11 +343,8 @@ func Test_Configure_AddClientOption_Success_ThenExit(t *testing.T) {
 	if sf.called < 2 {
 		t.Fatalf("expected selector factory called at least two times, got %d", sf.called)
 	}
-	if len(sf.labels) < 2 || !strings.Contains(sf.labels[1], "Client configuration copied to clipboard.") {
-		t.Fatalf("expected copied notice in options label, got labels: %v", sf.labels)
-	}
-	if copiedConfig == "" || !strings.Contains(copiedConfig, "\"ClientID\":1") {
-		t.Fatalf("expected generated client config copied to clipboard, got %q", copiedConfig)
+	if len(sf.labels) < 2 || !strings.Contains(sf.labels[1], savedPath) {
+		t.Fatalf("expected file path in notice, got labels: %v", sf.labels)
 	}
 }
 
@@ -451,7 +496,6 @@ func Test_Configure_AddClientOption_GenerateError(t *testing.T) {
 			return mockClientConfGenerator{err: errors.New("generate failed")}
 		},
 		marshalServerClientConfiguration,
-		func(string) error { return nil },
 	)
 	sc := newServerConfigurator(&mockManager{}, sf)
 	if err := sc.Configure(); err == nil || err.Error() != "generate failed" {
@@ -470,7 +514,6 @@ func Test_Configure_AddClientOption_MarshalError(t *testing.T) {
 		func(any) ([]byte, error) {
 			return nil, errors.New("marshal failed")
 		},
-		func(string) error { return nil },
 	)
 	sc := newServerConfigurator(&mockManager{}, sf)
 	err := sc.Configure()
@@ -498,7 +541,7 @@ func Test_Configure_SelectError(t *testing.T) {
 	}
 }
 
-func Test_Configure_AddClientOption_ClipboardFails_FallsBackToFile(t *testing.T) {
+func Test_Configure_AddClientOption_SavesConfigToFile(t *testing.T) {
 	qsel := &queueSelector{options: []string{addClientOption, startServerOption}}
 	sf := &mockSelectorFactory{selector: qsel}
 	var savedClientID int
@@ -510,9 +553,6 @@ func Test_Configure_AddClientOption_ClipboardFails_FallsBackToFile(t *testing.T)
 		},
 		func(v any) ([]byte, error) {
 			return json.Marshal(v)
-		},
-		func(string) error {
-			return errors.New("clipboard down")
 		},
 	)
 	withFileWriteHook(t, func(clientID int, data []byte) (string, error) {
@@ -535,7 +575,7 @@ func Test_Configure_AddClientOption_ClipboardFails_FallsBackToFile(t *testing.T)
 	}
 }
 
-func Test_Configure_AddClientOption_ClipboardAndFileBothFail(t *testing.T) {
+func Test_Configure_AddClientOption_FileWriteError(t *testing.T) {
 	qsel := &queueSelector{options: []string{addClientOption}}
 	sf := &mockSelectorFactory{selector: qsel}
 	withServerConfiguratorHooks(
@@ -545,9 +585,6 @@ func Test_Configure_AddClientOption_ClipboardAndFileBothFail(t *testing.T) {
 		},
 		func(v any) ([]byte, error) {
 			return json.Marshal(v)
-		},
-		func(string) error {
-			return errors.New("clipboard down")
 		},
 	)
 	withFileWriteHook(t, func(int, []byte) (string, error) {
@@ -672,8 +709,10 @@ func Test_Configure_AddClientOption_BackFromUpdatedMenu_ReturnsToModeSelection(t
 		func(v any) ([]byte, error) {
 			return json.Marshal(v)
 		},
-		func(string) error { return nil },
 	)
+	withFileWriteHook(t, func(int, []byte) (string, error) {
+		return "/tmp/3_configuration.json", nil
+	})
 
 	sc := newServerConfigurator(&mockManager{}, sf)
 	err := sc.Configure()
@@ -735,8 +774,10 @@ func Test_Configure_AddClientOption_UserExitFromUpdatedMenu(t *testing.T) {
 		func(v any) ([]byte, error) {
 			return json.Marshal(v)
 		},
-		func(string) error { return nil },
 	)
+	withFileWriteHook(t, func(_ int, _ []byte) (string, error) {
+		return "/tmp/3_configuration.json", nil
+	})
 
 	sc := newServerConfigurator(&mockManager{}, sf)
 	err := sc.Configure()

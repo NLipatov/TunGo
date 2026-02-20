@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/netip"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -337,5 +339,49 @@ func TestNewConfiguratorSessionModel_MissingServerConfigManager(t *testing.T) {
 	_, err := newConfiguratorSessionModel(opts)
 	if err == nil {
 		t.Fatal("expected error for missing ServerConfigManager, got nil")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// writeServerClientConfigFile
+// ---------------------------------------------------------------------------
+
+func withBubbleTeaResolveServerConfigDir(t *testing.T, fn func() (string, error)) {
+	t.Helper()
+	prev := resolveServerConfigDir
+	resolveServerConfigDir = fn
+	t.Cleanup(func() { resolveServerConfigDir = prev })
+}
+
+func TestDefaultWriteServerClientConfigFile_WritesCorrectPathAndContent(t *testing.T) {
+	tmpDir := t.TempDir()
+	withBubbleTeaResolveServerConfigDir(t, func() (string, error) { return tmpDir, nil })
+
+	data := []byte(`{"clientID":5}`)
+	path, err := writeServerClientConfigFile(5, data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected := filepath.Join(tmpDir, "5_configuration.json")
+	if path != expected {
+		t.Fatalf("expected path %s, got %s", expected, path)
+	}
+	got, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatalf("failed to read written file: %v", readErr)
+	}
+	if string(got) != string(data) {
+		t.Fatalf("expected content %q, got %q", data, got)
+	}
+}
+
+func TestDefaultWriteServerClientConfigFile_ResolverError(t *testing.T) {
+	withBubbleTeaResolveServerConfigDir(t, func() (string, error) {
+		return "", errors.New("resolver broken")
+	})
+
+	_, err := writeServerClientConfigFile(1, []byte("x"))
+	if err == nil || !strings.Contains(err.Error(), "resolver broken") {
+		t.Fatalf("expected resolver error, got %v", err)
 	}
 }

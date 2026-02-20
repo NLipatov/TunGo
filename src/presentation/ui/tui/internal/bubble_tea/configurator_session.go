@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode"
@@ -15,7 +17,6 @@ import (
 	serverConfiguration "tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/cryptography/primitives"
 
-	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -40,6 +41,23 @@ type configuratorSessionProgram interface {
 
 var newConfiguratorSessionProgram = func(model tea.Model) configuratorSessionProgram {
 	return tea.NewProgram(model, tea.WithAltScreen())
+}
+
+var resolveServerConfigDir = func() (string, error) {
+	configPath, err := serverConfiguration.NewServerResolver().Resolve()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Dir(configPath), nil
+}
+
+var writeServerClientConfigFile = func(clientID int, data []byte) (string, error) {
+	dir, err := resolveServerConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve server config directory: %w", err)
+	}
+	path := filepath.Join(dir, fmt.Sprintf("%d_configuration.json", clientID))
+	return path, os.WriteFile(path, data, 0600)
 }
 
 type ConfiguratorSessionOptions struct {
@@ -640,12 +658,13 @@ func (m configuratorSessionModel) updateServerSelectScreen(msg tea.KeyMsg) (tea.
 			m.done = true
 			return m, tea.Quit
 		}
-		if err := clipboard.WriteAll(string(data)); err != nil {
-			m.resultErr = fmt.Errorf("failed to copy client configuration to clipboard: %w", err)
+		path, fileErr := writeServerClientConfigFile(conf.ClientID, data)
+		if fileErr != nil {
+			m.resultErr = fmt.Errorf("failed to save client configuration: %w", fileErr)
 			m.done = true
 			return m, tea.Quit
 		}
-		m.notice = "Client configuration copied to clipboard."
+		m.notice = fmt.Sprintf("Client configuration saved to %s", path)
 		return m, nil
 	case sessionServerManage:
 		peers, err := m.options.ServerConfigManager.ListAllowedPeers()
