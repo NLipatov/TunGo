@@ -942,7 +942,7 @@ func (m *configuratorSessionModel) adjustInputsToViewport() {
 	available := maxInt(1, contentWidth-inputContainerStyle().GetHorizontalFrameSize())
 	m.addNameInput.Width = minInt(40, available)
 	m.addJSONInput.SetWidth(minInt(80, available))
-	if m.height > 14 {
+	if m.height > 18 {
 		m.addJSONInput.SetHeight(m.height - 18)
 	}
 }
