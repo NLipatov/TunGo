@@ -12,17 +12,12 @@ const (
 )
 
 type runtimeBackend interface {
-	isInteractiveTerminal() bool
 	enableRuntimeLogCapture(capacity int)
 	disableRuntimeLogCapture()
 	runRuntimeDashboard(ctx context.Context, mode RuntimeMode) (bool, error)
 }
 
 var activeRuntimeBackend runtimeBackend = newBubbleTeaRuntimeBackend()
-
-func IsInteractiveRuntime() bool {
-	return activeRuntimeBackend.isInteractiveTerminal()
-}
 
 func EnableRuntimeLogCapture(capacity int) {
 	activeRuntimeBackend.enableRuntimeLogCapture(capacity)

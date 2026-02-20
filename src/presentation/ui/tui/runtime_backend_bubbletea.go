@@ -9,19 +9,14 @@ import (
 type bubbleTeaRuntimeBackend struct{}
 
 var (
-	bubbleRuntimeIsInteractive = bubbleTea.IsInteractiveTerminal
-	bubbleRuntimeEnableLogs    = bubbleTea.EnableGlobalRuntimeLogCapture
-	bubbleRuntimeDisableLogs   = bubbleTea.DisableGlobalRuntimeLogCapture
-	bubbleRuntimeRunDashboard  = bubbleTea.RunRuntimeDashboard
-	bubbleRuntimeLogFeed       = bubbleTea.GlobalRuntimeLogFeed
+	bubbleRuntimeEnableLogs   = bubbleTea.EnableGlobalRuntimeLogCapture
+	bubbleRuntimeDisableLogs  = bubbleTea.DisableGlobalRuntimeLogCapture
+	bubbleRuntimeRunDashboard = bubbleTea.RunRuntimeDashboard
+	bubbleRuntimeLogFeed      = bubbleTea.GlobalRuntimeLogFeed
 )
 
 func newBubbleTeaRuntimeBackend() runtimeBackend {
 	return bubbleTeaRuntimeBackend{}
-}
-
-func (bubbleTeaRuntimeBackend) isInteractiveTerminal() bool {
-	return bubbleRuntimeIsInteractive()
 }
 
 func (bubbleTeaRuntimeBackend) enableRuntimeLogCapture(capacity int) {

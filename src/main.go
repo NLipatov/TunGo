@@ -45,7 +45,7 @@ func main() {
 	}()
 	defer appCtxCancel()
 
-	if tui.IsInteractiveRuntime() {
+	if len(os.Args) < 2 {
 		trafficCollector := trafficstats.NewCollector(time.Second, 0.35)
 		trafficstats.SetGlobal(trafficCollector)
 		defer trafficstats.SetGlobal(nil)
@@ -219,7 +219,9 @@ func startServer(
 		configWatchInterval,
 		log.Default(),
 	)
-	go configWatcher.Watch(ctx)
+	watchCtx, watchCancel := context.WithCancel(ctx)
+	defer watchCancel()
+	go configWatcher.Watch(watchCtx)
 
 	runner := server.NewRunner(
 		deps,

@@ -14,13 +14,11 @@ func (runtimeBackendTestFeed) Tail(int) []string { return nil }
 func (runtimeBackendTestFeed) TailInto([]string, int) int { return 0 }
 
 func TestBubbleTeaRuntimeBackend_MappingAndHooks(t *testing.T) {
-	prevInteractive := bubbleRuntimeIsInteractive
 	prevEnable := bubbleRuntimeEnableLogs
 	prevDisable := bubbleRuntimeDisableLogs
 	prevRun := bubbleRuntimeRunDashboard
 	prevFeed := bubbleRuntimeLogFeed
 	t.Cleanup(func() {
-		bubbleRuntimeIsInteractive = prevInteractive
 		bubbleRuntimeEnableLogs = prevEnable
 		bubbleRuntimeDisableLogs = prevDisable
 		bubbleRuntimeRunDashboard = prevRun
@@ -28,11 +26,6 @@ func TestBubbleTeaRuntimeBackend_MappingAndHooks(t *testing.T) {
 	})
 
 	backend := bubbleTeaRuntimeBackend{}
-
-	bubbleRuntimeIsInteractive = func() bool { return true }
-	if !backend.isInteractiveTerminal() {
-		t.Fatal("expected interactive terminal from backend")
-	}
 
 	capacity := 0
 	bubbleRuntimeEnableLogs = func(v int) { capacity = v }

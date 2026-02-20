@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"tungo/application/network/connection"
 	"tungo/application/network/routing"
 	"tungo/infrastructure/settings"
@@ -21,8 +22,8 @@ type Runner struct {
 }
 
 var (
-	isInteractiveRuntime = runtimeUI.IsInteractiveRuntime
-	runRuntimeDashboard  = runtimeUI.RunRuntimeDashboard
+	isTUIMode           = func() bool { return len(os.Args) < 2 }
+	runRuntimeDashboard = runtimeUI.RunRuntimeDashboard
 )
 
 type runtimeUIResult struct {
@@ -61,7 +62,7 @@ func (r *Runner) Run(
 		}
 	}()
 
-	if !isInteractiveRuntime() {
+	if !isTUIMode() {
 		return r.runWorkers(ctx)
 	}
 

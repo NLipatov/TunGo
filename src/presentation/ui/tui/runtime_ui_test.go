@@ -7,13 +7,10 @@ import (
 )
 
 type runtimeUITestBackend struct {
-	interactive bool
-	enabledCap  int
-	disabled    bool
-	run         func(ctx context.Context, mode RuntimeMode) (bool, error)
+	enabledCap int
+	disabled   bool
+	run        func(ctx context.Context, mode RuntimeMode) (bool, error)
 }
-
-func (m *runtimeUITestBackend) isInteractiveTerminal() bool { return m.interactive }
 
 func (m *runtimeUITestBackend) enableRuntimeLogCapture(capacity int) { m.enabledCap = capacity }
 
@@ -32,11 +29,8 @@ func TestRuntimeUI_Wrappers(t *testing.T) {
 		activeRuntimeBackend = prevBackend
 	})
 
-	mock := &runtimeUITestBackend{interactive: true}
+	mock := &runtimeUITestBackend{}
 	activeRuntimeBackend = mock
-	if !IsInteractiveRuntime() {
-		t.Fatal("expected interactive runtime from wrapper")
-	}
 
 	EnableRuntimeLogCapture(42)
 	if mock.enabledCap != 42 {

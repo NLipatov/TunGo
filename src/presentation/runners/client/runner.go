@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"time"
 	"tungo/application/network/connection"
 	runnerCommon "tungo/presentation/runners/common"
@@ -17,8 +18,8 @@ type Runner struct {
 }
 
 var (
-	isInteractiveRuntime = runtimeUI.IsInteractiveRuntime
-	runRuntimeDashboard  = runtimeUI.RunRuntimeDashboard
+	isTUIMode           = func() bool { return len(os.Args) < 2 }
+	runRuntimeDashboard = runtimeUI.RunRuntimeDashboard
 )
 
 type runtimeUIResult struct {
@@ -84,7 +85,7 @@ func (r *Runner) runSession(parentCtx context.Context) error {
 	}()
 
 	log.Printf("tunneling traffic via tun device")
-	if !isInteractiveRuntime() {
+	if !isTUIMode() {
 		return router.RouteTraffic(ctx)
 	}
 	routeErrCh := make(chan error, 1)

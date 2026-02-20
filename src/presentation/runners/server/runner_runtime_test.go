@@ -20,12 +20,12 @@ func withServerRuntimeHooks(
 	runDashboard func(context.Context, tui.RuntimeMode) (bool, error),
 ) {
 	t.Helper()
-	prevInteractive := isInteractiveRuntime
+	prevTUIMode := isTUIMode
 	prevRunDashboard := runRuntimeDashboard
-	isInteractiveRuntime = func() bool { return interactive }
+	isTUIMode = func() bool { return interactive }
 	runRuntimeDashboard = runDashboard
 	t.Cleanup(func() {
-		isInteractiveRuntime = prevInteractive
+		isTUIMode = prevTUIMode
 		runRuntimeDashboard = prevRunDashboard
 	})
 }
