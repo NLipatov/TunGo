@@ -87,8 +87,8 @@ const (
 	sessionModeClient = "client"
 	sessionModeServer = "server"
 
-	sessionClientAdd    = "+ add configuration"
-	sessionClientRemove = "- remove configuration"
+	sessionClientAdd    = "add configuration"
+	sessionClientRemove = "remove configuration"
 
 	sessionInvalidDelete = "Delete invalid configuration"
 	sessionInvalidOK     = "OK"
