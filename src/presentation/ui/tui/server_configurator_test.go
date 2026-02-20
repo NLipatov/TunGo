@@ -226,7 +226,7 @@ func TestDefaultWriteFile_WritesCorrectPathAndContent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	expected := filepath.Join(tmpDir, "42_configuration.json")
+	expected := filepath.Join(tmpDir, "client_configuration.json.42")
 	if path != expected {
 		t.Fatalf("expected path %s, got %s", expected, path)
 	}
@@ -331,7 +331,7 @@ func Test_Configure_AddClientOption_Success_ThenExit(t *testing.T) {
 	)
 	var savedPath string
 	withFileWriteHook(t, func(_ int, _ []byte) (string, error) {
-		savedPath = "/tmp/1_configuration.json"
+		savedPath = "/tmp/client_configuration.json.1"
 		return savedPath, nil
 	})
 
@@ -711,7 +711,7 @@ func Test_Configure_AddClientOption_BackFromUpdatedMenu_ReturnsToModeSelection(t
 		},
 	)
 	withFileWriteHook(t, func(int, []byte) (string, error) {
-		return "/tmp/3_configuration.json", nil
+		return "/tmp/client_configuration.json.3", nil
 	})
 
 	sc := newServerConfigurator(&mockManager{}, sf)
@@ -776,7 +776,7 @@ func Test_Configure_AddClientOption_UserExitFromUpdatedMenu(t *testing.T) {
 		},
 	)
 	withFileWriteHook(t, func(_ int, _ []byte) (string, error) {
-		return "/tmp/3_configuration.json", nil
+		return "/tmp/client_configuration.json.3", nil
 	})
 
 	sc := newServerConfigurator(&mockManager{}, sf)

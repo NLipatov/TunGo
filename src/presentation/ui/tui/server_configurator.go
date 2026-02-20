@@ -51,7 +51,7 @@ var (
 		if err != nil {
 			return "", fmt.Errorf("failed to resolve server config directory: %w", err)
 		}
-		path := filepath.Join(dir, fmt.Sprintf("%d_configuration.json", clientID))
+		path := filepath.Join(dir, fmt.Sprintf("client_configuration.json.%d", clientID))
 		return path, os.WriteFile(path, data, 0600)
 	}
 )

@@ -362,7 +362,7 @@ func TestDefaultWriteServerClientConfigFile_WritesCorrectPathAndContent(t *testi
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	expected := filepath.Join(tmpDir, "5_configuration.json")
+	expected := filepath.Join(tmpDir, "client_configuration.json.5")
 	if path != expected {
 		t.Fatalf("expected path %s, got %s", expected, path)
 	}
