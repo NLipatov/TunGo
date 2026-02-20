@@ -132,6 +132,7 @@ func (r *Runner) runSession(parentCtx context.Context) error {
 				}
 				return routeErr
 			}
+			cancel()
 			return <-routeErrCh
 		}
 	}

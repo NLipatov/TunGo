@@ -74,12 +74,12 @@ func (w *TunHandler) HandleTun() error {
 	var buffer [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
 	payloadStart := chacha20.UDPRouteIDLength + chacha20poly1305.NonceSize
 	rec := trafficstats.NewRecorder()
+	defer rec.Flush()
 
 	// Main loop to read from TUN and send data
 	for {
 		select {
 		case <-w.ctx.Done():
-			rec.Flush()
 			return nil
 		default:
 			n, err := w.reader.Read(buffer[payloadStart : payloadStart+settings.DefaultEthernetMTU])
@@ -90,7 +90,6 @@ func (w *TunHandler) HandleTun() error {
 				// Encrypt expects route-id+nonce+payload (20+n).
 				if err := w.egress.SendDataIP(buffer[:payloadStart+n]); err != nil {
 					if w.ctx.Err() != nil {
-						rec.Flush()
 						return nil
 					}
 					var netErr net.Error
@@ -99,17 +98,14 @@ func (w *TunHandler) HandleTun() error {
 						log.Printf("transient write error (packet dropped): %v", err)
 						continue
 					}
-					rec.Flush()
 					return fmt.Errorf("could not send packet to transport: %v", err)
 				}
 				rec.RecordTX(uint64(n))
 			}
 			if err != nil {
 				if w.ctx.Err() != nil {
-					rec.Flush()
 					return nil
 				}
-				rec.Flush()
 				return fmt.Errorf("could not read a packet from TUN: %v", err)
 			}
 			if w.rekeyInit != nil && w.rekeyController != nil {

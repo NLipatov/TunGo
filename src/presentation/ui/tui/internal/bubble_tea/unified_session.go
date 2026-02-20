@@ -107,6 +107,10 @@ func (m unifiedSessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		return m.delegateToActive(msg)
 
+	case tea.QuitMsg:
+		m.stopAllLogWaits()
+		return m, tea.Quit
+
 	case contextDoneMsg:
 		m.stopAllLogWaits()
 		m.sendEvent(unifiedEvent{kind: unifiedEventExit})

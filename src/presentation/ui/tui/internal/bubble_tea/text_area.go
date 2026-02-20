@@ -53,7 +53,7 @@ func (m *TextArea) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		contentWidth := contentWidthForTerminal(msg.Width)
 		available := maxInt(1, contentWidth-inputContainerStyle().GetHorizontalFrameSize())
 		m.ta.SetWidth(minInt(80, available))
-		if msg.Height > 14 {
+		if msg.Height > 18 {
 			m.ta.SetHeight(msg.Height - 18)
 		}
 		return m, nil

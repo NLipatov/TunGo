@@ -100,6 +100,7 @@ func (t *TunHandler) HandleTun() error {
 			if err := peer.Egress().SendDataIP(buffer[:payloadStart+n]); err != nil {
 				log.Printf("failed to send packet to %v: %v", peer.ExternalAddrPort(), err)
 				t.peerStore.Delete(peer)
+				continue
 			}
 			rec.RecordTX(uint64(n))
 		}

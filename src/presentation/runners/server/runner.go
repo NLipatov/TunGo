@@ -113,6 +113,7 @@ func (r *Runner) Run(
 				}
 				return workerErr
 			}
+			cancel()
 			return <-workerErrCh
 		}
 	}

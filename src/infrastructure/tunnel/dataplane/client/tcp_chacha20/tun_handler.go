@@ -53,21 +53,19 @@ func (t *TunHandler) HandleTun() error {
 	var buffer [settings.DefaultEthernetMTU + settings.TCPChacha20Overhead]byte
 	payload := buffer[epochPrefixSize : settings.DefaultEthernetMTU+epochPrefixSize]
 	rec := trafficstats.NewRecorder()
+	defer rec.Flush()
 
 	for {
 		select {
 		case <-t.ctx.Done():
-			rec.Flush()
 			return nil
 		default:
 			n, err := t.reader.Read(payload)
 			if err != nil {
 				if t.ctx.Err() != nil {
-					rec.Flush()
 					return nil
 				}
 				log.Printf("failed to read from TUN: %v", err)
-				rec.Flush()
 				return err
 			}
 
@@ -78,7 +76,6 @@ func (t *TunHandler) HandleTun() error {
 			// Pass buffer including the 2-byte epoch prefix reservation.
 			if err := t.egress.SendDataIP(buffer[:epochPrefixSize+n]); err != nil {
 				log.Printf("write to TCP failed: %s", err)
-				rec.Flush()
 				return err
 			}
 			rec.RecordTX(uint64(n))

@@ -77,6 +77,7 @@ func (t *TunHandler) HandleTun() error {
 				log.Printf("failed to write to TCP: %v", err)
 				_ = peer.Egress().Close()
 				t.peerStore.Delete(peer)
+				continue
 			}
 			rec.RecordTX(uint64(n))
 		}

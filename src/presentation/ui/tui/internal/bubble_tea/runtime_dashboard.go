@@ -173,6 +173,7 @@ func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshLogs()
 		return m, runtimeLogUpdateCmd(m.ctx, m.logFeed, m.logWaitStop, m.logTickSeq, m.runtimeSeq)
 	case runtimeContextDoneMsg:
+		m.stopLogWait()
 		return m, tea.Quit
 	case tea.KeyMsg:
 		if m.confirmOpen {
