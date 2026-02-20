@@ -122,6 +122,12 @@ func TestUnifiedSession_ActivateRuntime_TransitionsToRuntime(t *testing.T) {
 	if updated.runtime.width != 100 || updated.runtime.height != 30 {
 		t.Fatalf("expected propagated size 100x30, got %dx%d", updated.runtime.width, updated.runtime.height)
 	}
+	if updated.runtimeSeq != 1 {
+		t.Fatalf("expected runtimeSeq=1, got %d", updated.runtimeSeq)
+	}
+	if updated.runtime.runtimeSeq != 1 {
+		t.Fatalf("expected runtime.runtimeSeq=1, got %d", updated.runtime.runtimeSeq)
+	}
 	if cmd == nil {
 		t.Fatal("expected init cmd from runtime")
 	}
@@ -270,10 +276,12 @@ func TestUnifiedSession_ContextDone_SendsExitEvent(t *testing.T) {
 func TestUnifiedSession_RuntimeContextDone_SendsExitEvent(t *testing.T) {
 	m, events := newTestUnifiedModel(t)
 	m.phase = phaseRuntime
+	m.runtimeSeq = 3
 	rt := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	rt.runtimeSeq = 3
 	m.runtime = &rt
 
-	result, cmd := m.Update(runtimeContextDoneMsg{})
+	result, cmd := m.Update(runtimeContextDoneMsg{seq: 3})
 	_ = result
 
 	if cmd == nil {
@@ -290,6 +298,30 @@ func TestUnifiedSession_RuntimeContextDone_SendsExitEvent(t *testing.T) {
 	}
 }
 
+func TestUnifiedSession_RuntimeContextDone_StaleSeqIgnored(t *testing.T) {
+	m, events := newTestUnifiedModel(t)
+	m.phase = phaseRuntime
+	m.runtimeSeq = 5
+	rt := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	rt.runtimeSeq = 5
+	m.runtime = &rt
+
+	// Stale message from a previous runtime (seq=2).
+	result, cmd := m.Update(runtimeContextDoneMsg{seq: 2})
+	updated := result.(unifiedSessionModel)
+	if updated.phase != phaseRuntime {
+		t.Fatalf("expected phaseRuntime (stale msg ignored), got %d", updated.phase)
+	}
+	if cmd != nil {
+		t.Fatal("expected nil cmd for stale runtimeContextDoneMsg")
+	}
+	select {
+	case event := <-events:
+		t.Fatalf("expected no event for stale msg, got %d", event.kind)
+	default:
+	}
+}
+
 func TestUnifiedSession_RuntimeContextDone_IgnoredOutsideRuntimePhase(t *testing.T) {
 	m, _ := newTestUnifiedModel(t)
 	// phase is phaseConfiguring
@@ -300,6 +332,35 @@ func TestUnifiedSession_RuntimeContextDone_IgnoredOutsideRuntimePhase(t *testing
 	}
 	if cmd != nil {
 		t.Fatal("expected nil cmd when runtimeContextDone not in runtime phase")
+	}
+}
+
+// --- stopAllLogWaits ---
+
+func TestUnifiedSession_ContextDone_StopsLogWaits(t *testing.T) {
+	m, _ := newTestUnifiedModel(t)
+	m.phase = phaseRuntime
+	m.runtimeSeq = 1
+	rt := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	rt.runtimeSeq = 1
+	rtLogStop := make(chan struct{})
+	rt.logWaitStop = rtLogStop
+	m.runtime = &rt
+	cfgLogStop := make(chan struct{})
+	m.configurator.logWaitStop = cfgLogStop
+
+	m.Update(contextDoneMsg{})
+
+	// Verify both channels were closed (reading from closed channel returns immediately).
+	select {
+	case <-cfgLogStop:
+	default:
+		t.Fatal("expected configurator logWaitStop to be closed")
+	}
+	select {
+	case <-rtLogStop:
+	default:
+		t.Fatal("expected runtime logWaitStop to be closed")
 	}
 }
 

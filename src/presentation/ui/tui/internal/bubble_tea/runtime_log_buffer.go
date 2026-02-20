@@ -98,9 +98,6 @@ func (b *RuntimeLogBuffer) TailInto(dst []string, limit int) int {
 }
 
 func (b *RuntimeLogBuffer) appendLineLocked(line string) {
-	if line == "" {
-		return
-	}
 	if len(b.lines) < b.capacity {
 		b.lines = append(b.lines, line)
 		b.signalChangeLocked()

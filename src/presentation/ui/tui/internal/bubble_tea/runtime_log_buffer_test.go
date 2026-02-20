@@ -60,8 +60,11 @@ func TestRuntimeLogBuffer_DefaultCapacityAndPartialLine(t *testing.T) {
 }
 
 func TestRuntimeLogBuffer_TailEdgeCases(t *testing.T) {
-	b := NewRuntimeLogBuffer(2)
-	_, _ = b.Write([]byte("\n")) // empty line must be ignored
+	b := NewRuntimeLogBuffer(4)
+	_, _ = b.Write([]byte("\n")) // empty line preserved for visual spacing
+	if lines := b.Tail(4); len(lines) != 1 || lines[0] != "" {
+		t.Fatalf("expected single empty line preserved, got %v", lines)
+	}
 	if got := b.Tail(0); got != nil {
 		t.Fatalf("expected nil for non-positive limit, got %v", got)
 	}

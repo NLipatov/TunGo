@@ -31,7 +31,9 @@ type runtimeTickMsg struct {
 type runtimeLogTickMsg struct {
 	seq uint64
 }
-type runtimeContextDoneMsg struct{}
+type runtimeContextDoneMsg struct {
+	seq uint64
+}
 
 type runtimeDashboardScreen int
 
@@ -72,6 +74,7 @@ type RuntimeDashboard struct {
 	logTickSeq           uint64
 	confirmOpen          bool
 	confirmCursor        int
+	runtimeSeq           uint64
 	exitRequested        bool
 	reconfigureRequested bool
 }
@@ -139,7 +142,7 @@ func RunRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions) (
 func (m RuntimeDashboard) Init() tea.Cmd {
 	return tea.Batch(
 		runtimeTickCmd(m.tickSeq),
-		waitForRuntimeContextDone(m.ctx),
+		waitForRuntimeContextDone(m.ctx, m.runtimeSeq),
 	)
 }
 
@@ -168,7 +171,7 @@ func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.refreshLogs()
-		return m, runtimeLogUpdateCmd(m.ctx, m.logFeed, m.logWaitStop, m.logTickSeq)
+		return m, runtimeLogUpdateCmd(m.ctx, m.logFeed, m.logWaitStop, m.logTickSeq, m.runtimeSeq)
 	case runtimeContextDoneMsg:
 		return m, tea.Quit
 	case tea.KeyMsg:
@@ -201,7 +204,7 @@ func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.restartLogWait()
 				m.logTickSeq++
 				m.refreshLogs()
-				return m, runtimeLogUpdateCmd(m.ctx, m.logFeed, m.logWaitStop, m.logTickSeq)
+				return m, runtimeLogUpdateCmd(m.ctx, m.logFeed, m.logWaitStop, m.logTickSeq, m.runtimeSeq)
 			}
 			if previous == runtimeScreenLogs {
 				m.stopLogWait()
@@ -484,7 +487,8 @@ func runtimeLogUpdateCmd(
 	ctx context.Context,
 	feed RuntimeLogFeed,
 	stop <-chan struct{},
-	seq uint64,
+	logSeq uint64,
+	runtimeSeq uint64,
 ) tea.Cmd {
 	changeFeed, ok := feed.(RuntimeLogChangeFeed)
 	if ok {
@@ -493,16 +497,16 @@ func runtimeLogUpdateCmd(
 			return func() tea.Msg {
 				select {
 				case <-ctx.Done():
-					return runtimeContextDoneMsg{}
+					return runtimeContextDoneMsg{seq: runtimeSeq}
 				case <-stop:
 					return runtimeLogTickMsg{}
 				case <-changes:
-					return runtimeLogTickMsg{seq: seq}
+					return runtimeLogTickMsg{seq: logSeq}
 				}
 			}
 		}
 	}
-	return runtimeLogTickCmd(seq)
+	return runtimeLogTickCmd(logSeq)
 }
 
 func runtimeLogTickCmd(seq uint64) tea.Cmd {
@@ -511,10 +515,10 @@ func runtimeLogTickCmd(seq uint64) tea.Cmd {
 	})
 }
 
-func waitForRuntimeContextDone(ctx context.Context) tea.Cmd {
+func waitForRuntimeContextDone(ctx context.Context, seq uint64) tea.Cmd {
 	return func() tea.Msg {
 		<-ctx.Done()
-		return runtimeContextDoneMsg{}
+		return runtimeContextDoneMsg{seq: seq}
 	}
 }
 

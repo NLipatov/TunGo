@@ -623,7 +623,7 @@ func TestRuntimeDashboard_RefreshLogsNilFeed(t *testing.T) {
 
 func TestWaitForRuntimeContextDone(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	cmd := waitForRuntimeContextDone(ctx)
+	cmd := waitForRuntimeContextDone(ctx, 0)
 	done := make(chan tea.Msg, 1)
 	go func() {
 		done <- cmd()
@@ -1069,7 +1069,7 @@ func TestUpdateLogs_SpaceTogglesFollow(t *testing.T) {
 func TestRuntimeLogUpdateCmd_PlainFeedFallsBackToTick(t *testing.T) {
 	feed := testRuntimeLogFeed{lines: []string{"line"}}
 	stop := make(chan struct{})
-	cmd := runtimeLogUpdateCmd(context.Background(), feed, stop, 1)
+	cmd := runtimeLogUpdateCmd(context.Background(), feed, stop, 1, 0)
 	if cmd == nil {
 		t.Fatal("expected non-nil command")
 	}
@@ -1096,7 +1096,7 @@ func TestRuntimeLogUpdateCmd_ChangeFeedNilChanges_FallsBackToTick(t *testing.T) 
 		changes:            nil,
 	}
 	stop := make(chan struct{})
-	cmd := runtimeLogUpdateCmd(context.Background(), feed, stop, 1)
+	cmd := runtimeLogUpdateCmd(context.Background(), feed, stop, 1, 0)
 	if cmd == nil {
 		t.Fatal("expected non-nil command")
 	}
@@ -1305,7 +1305,7 @@ func TestRuntimeLogUpdateCmd_StopClosedReturnsLogTickMsg(t *testing.T) {
 	stop := make(chan struct{})
 	close(stop) // close immediately
 
-	cmd := runtimeLogUpdateCmd(context.Background(), feed, stop, 42)
+	cmd := runtimeLogUpdateCmd(context.Background(), feed, stop, 42, 0)
 	if cmd == nil {
 		t.Fatal("expected non-nil command")
 	}
@@ -1330,7 +1330,7 @@ func TestRuntimeLogUpdateCmd_ContextCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel immediately
 
-	cmd := runtimeLogUpdateCmd(ctx, feed, stop, 42)
+	cmd := runtimeLogUpdateCmd(ctx, feed, stop, 42, 0)
 	if cmd == nil {
 		t.Fatal("expected non-nil command")
 	}
@@ -1349,7 +1349,7 @@ func TestRuntimeLogUpdateCmd_ChangeFeedSignalReturnsMatchingSeq(t *testing.T) {
 	}
 	stop := make(chan struct{})
 
-	cmd := runtimeLogUpdateCmd(context.Background(), feed, stop, 42)
+	cmd := runtimeLogUpdateCmd(context.Background(), feed, stop, 42, 0)
 	if cmd == nil {
 		t.Fatal("expected non-nil command")
 	}

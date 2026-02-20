@@ -72,6 +72,7 @@ type unifiedSessionModel struct {
 	height       int
 	events       chan<- unifiedEvent
 	appCtx       context.Context
+	runtimeSeq   uint64
 }
 
 func newUnifiedSessionModel(
@@ -107,6 +108,7 @@ func (m unifiedSessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.delegateToActive(msg)
 
 	case contextDoneMsg:
+		m.stopAllLogWaits()
 		m.sendEvent(unifiedEvent{kind: unifiedEventExit})
 		return m, tea.Quit
 
@@ -114,7 +116,9 @@ func (m unifiedSessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.phase != phaseWaitingForRuntime {
 			return m, nil
 		}
+		m.runtimeSeq++
 		rt := NewRuntimeDashboard(msg.ctx, msg.options)
+		rt.runtimeSeq = m.runtimeSeq
 		if m.width > 0 || m.height > 0 {
 			rt.width = m.width
 			rt.height = m.height
@@ -125,7 +129,9 @@ func (m unifiedSessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case runtimeContextDoneMsg:
 		// Runtime context was cancelled — treat as graceful exit.
-		if m.phase == phaseRuntime {
+		// Check seq to ignore stale messages from a previous runtime.
+		if m.phase == phaseRuntime && msg.seq == m.runtimeSeq {
+			m.stopAllLogWaits()
 			m.sendEvent(unifiedEvent{kind: unifiedEventExit})
 			return m, tea.Quit
 		}
@@ -182,6 +188,7 @@ func (m unifiedSessionModel) updateRuntime(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.runtime = &rtModel
 
 	if rtModel.exitRequested {
+		m.configurator.stopLogWait()
 		m.sendEvent(unifiedEvent{kind: unifiedEventExit})
 		return m, tea.Quit
 	}
@@ -237,6 +244,13 @@ func (m unifiedSessionModel) waitingView() string {
 		body,
 		"",
 	)
+}
+
+func (m *unifiedSessionModel) stopAllLogWaits() {
+	m.configurator.stopLogWait()
+	if m.runtime != nil {
+		m.runtime.stopLogWait()
+	}
 }
 
 func (m unifiedSessionModel) sendEvent(event unifiedEvent) {

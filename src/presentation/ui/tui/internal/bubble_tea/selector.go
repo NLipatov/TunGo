@@ -202,7 +202,7 @@ func (m Selector) updateMain(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cursor++
 		}
 	case key.Matches(msg, m.keys.Select):
-		if !m.done {
+		if !m.done && len(m.options) > 0 {
 			m.choice = m.options[m.cursor]
 			m.done = true
 		}

@@ -235,7 +235,9 @@ func (m configuratorSessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.done = true
 			return m, tea.Quit
 		case "tab":
-			return m.cycleTab()
+			if m.screen != configuratorScreenClientAddName && m.screen != configuratorScreenClientAddJSON {
+				return m.cycleTab()
+			}
 		}
 
 		switch m.tab {

@@ -178,6 +178,30 @@ func TestUpdate_Tab_CyclesTabs(t *testing.T) {
 	}
 }
 
+func TestUpdate_Tab_DoesNotCycleOnAddNameScreen(t *testing.T) {
+	m := newTestSessionModel(t)
+	m.screen = configuratorScreenClientAddName
+	m.tab = configuratorTabMain
+
+	result, _ := m.Update(keyNamed(tea.KeyTab))
+	updated := result.(configuratorSessionModel)
+	if updated.tab != configuratorTabMain {
+		t.Fatalf("expected tab=Main (Tab should not cycle on add-name screen), got %d", updated.tab)
+	}
+}
+
+func TestUpdate_Tab_DoesNotCycleOnAddJSONScreen(t *testing.T) {
+	m := newTestSessionModel(t)
+	m.screen = configuratorScreenClientAddJSON
+	m.tab = configuratorTabMain
+
+	result, _ := m.Update(keyNamed(tea.KeyTab))
+	updated := result.(configuratorSessionModel)
+	if updated.tab != configuratorTabMain {
+		t.Fatalf("expected tab=Main (Tab should not cycle on add-JSON screen), got %d", updated.tab)
+	}
+}
+
 func TestUpdate_SettingsTab_DispatchesToSettings(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.tab = configuratorTabSettings

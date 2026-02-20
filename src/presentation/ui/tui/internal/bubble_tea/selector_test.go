@@ -142,6 +142,18 @@ func TestSelector_UpdateCtrlC_Quits(t *testing.T) {
 	}
 }
 
+func TestSelector_EnterWithEmptyOptions_NoPanic(t *testing.T) {
+	sel, _ := newTestSelector()
+	updatedModel, _ := sel.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updatedSel := updatedModel.(Selector)
+	if updatedSel.done {
+		t.Error("expected done=false with empty options")
+	}
+	if updatedSel.choice != "" {
+		t.Errorf("expected empty choice, got %q", updatedSel.choice)
+	}
+}
+
 func TestSelector_UpdateEsc_Backs(t *testing.T) {
 	sel, _ := newTestSelector("client mode", "server mode")
 	updatedModel, cmd := sel.Update(tea.KeyMsg{Type: tea.KeyEsc})
