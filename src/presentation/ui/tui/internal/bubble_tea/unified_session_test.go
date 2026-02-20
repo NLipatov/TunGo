@@ -315,8 +315,12 @@ func TestFilterQuit_NilCmd(t *testing.T) {
 func TestFilterQuit_QuitMsgFiltered(t *testing.T) {
 	cmd := func() tea.Msg { return tea.QuitMsg{} }
 	result := filterQuit(cmd)
-	if result != nil {
-		t.Fatal("expected tea.Quit to be filtered out")
+	if result == nil {
+		t.Fatal("expected non-nil wrapper cmd")
+	}
+	msg := result()
+	if msg != nil {
+		t.Fatalf("expected nil msg (QuitMsg filtered), got %T", msg)
 	}
 }
 

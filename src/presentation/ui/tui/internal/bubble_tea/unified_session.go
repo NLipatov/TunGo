@@ -260,21 +260,20 @@ func waitForContextDone(ctx context.Context) tea.Cmd {
 	}
 }
 
-// --- filterQuit removes tea.Quit from a cmd result ---
-
+// filterQuit wraps a tea.Cmd so that any tea.QuitMsg it produces is
+// silently swallowed. The command still runs asynchronously via the
+// Bubble Tea runtime — we never call cmd() on the main goroutine.
 func filterQuit(cmd tea.Cmd) tea.Cmd {
 	if cmd == nil {
 		return nil
 	}
-	msg := cmd()
-	if msg == nil {
-		return nil
+	return func() tea.Msg {
+		msg := cmd()
+		if _, ok := msg.(tea.QuitMsg); ok {
+			return nil
+		}
+		return msg
 	}
-	if _, ok := msg.(tea.QuitMsg); ok {
-		return nil
-	}
-	// Return a cmd that produces the same message.
-	return func() tea.Msg { return msg }
 }
 
 // --- UnifiedSession (external handle) ---
