@@ -164,8 +164,8 @@ func TestUnifiedSession_RuntimeExit_QuitsProgram(t *testing.T) {
 	rt := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
 	m.runtime = &rt
 
-	// Simulate q key press.
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	// Simulate ctrl+c key press.
+	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	updated := result.(unifiedSessionModel)
 	_ = updated
 
@@ -225,8 +225,8 @@ func TestUnifiedSession_RuntimeReconfigure_TransitionsToConfiguring(t *testing.T
 func TestUnifiedSession_ConfiguratorQuit_SendsExitEvent(t *testing.T) {
 	m, events := newTestUnifiedModel(t)
 
-	// Press q to quit from configurator.
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	// Press ctrl+c to quit from configurator.
+	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	_ = result
 
 	if cmd == nil {

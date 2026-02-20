@@ -229,7 +229,7 @@ func (m configuratorSessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, configuratorLogUpdateCmd(m.logsFeed(), m.logWaitStop, m.logTickSeq)
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "q", "ctrl+c":
+		case "ctrl+c":
 			m.stopLogWait()
 			m.resultErr = ErrConfiguratorSessionUserExit
 			m.done = true
@@ -285,7 +285,7 @@ func (m configuratorSessionModel) View() string {
 			m.notice,
 			m.modeOptions,
 			m.cursor,
-			"up/k down/j move | Enter select | Tab switch tabs | Esc exit | q exit",
+			"up/k down/j move | Enter select | Tab switch tabs | Esc exit | ctrl+c exit",
 		)
 	case configuratorScreenClientSelect:
 		return m.renderSelectionScreen(
@@ -293,7 +293,7 @@ func (m configuratorSessionModel) View() string {
 			m.notice,
 			m.clientMenuOptions,
 			m.cursor,
-			"up/k down/j move | Enter select | Tab switch tabs | Esc back | q exit",
+			"up/k down/j move | Enter select | Tab switch tabs | Esc back | ctrl+c exit",
 		)
 	case configuratorScreenClientRemove:
 		return m.renderSelectionScreen(
@@ -301,7 +301,7 @@ func (m configuratorSessionModel) View() string {
 			"",
 			m.clientRemovePaths,
 			m.cursor,
-			"up/k down/j move | Enter remove | Tab switch tabs | Esc back | q exit",
+			"up/k down/j move | Enter remove | Tab switch tabs | Esc back | ctrl+c exit",
 		)
 	case configuratorScreenClientAddName:
 		styles := resolveUIStyles(m.preferences)
@@ -318,7 +318,7 @@ func (m configuratorSessionModel) View() string {
 			m.tabsLine(styles),
 			"Name configuration",
 			body,
-			"Enter confirm | Tab switch tabs | Esc back | q exit",
+			"Enter confirm | Tab switch tabs | Esc back | ctrl+c exit",
 		)
 	case configuratorScreenClientAddJSON:
 		styles := resolveUIStyles(m.preferences)
@@ -339,7 +339,7 @@ func (m configuratorSessionModel) View() string {
 			m.tabsLine(styles),
 			"Paste configuration",
 			body,
-			"Enter confirm | Tab switch tabs | Esc back | q exit",
+			"Enter confirm | Tab switch tabs | Esc back | ctrl+c exit",
 		)
 	case configuratorScreenClientInvalid:
 		options := []string{sessionInvalidOK}
@@ -352,7 +352,7 @@ func (m configuratorSessionModel) View() string {
 			subtitle,
 			options,
 			m.cursor,
-			"up/k down/j move | Enter select | Tab switch tabs | Esc back | q exit",
+			"up/k down/j move | Enter select | Tab switch tabs | Esc back | ctrl+c exit",
 		)
 	case configuratorScreenServerSelect:
 		return m.renderSelectionScreen(
@@ -360,7 +360,7 @@ func (m configuratorSessionModel) View() string {
 			m.notice,
 			m.serverMenuOptions,
 			m.cursor,
-			"up/k down/j move | Enter select | Tab switch tabs | Esc back | q exit",
+			"up/k down/j move | Enter select | Tab switch tabs | Esc back | ctrl+c exit",
 		)
 	case configuratorScreenServerManage:
 		return m.renderSelectionScreen(
@@ -368,7 +368,7 @@ func (m configuratorSessionModel) View() string {
 			"",
 			m.serverManageLabels,
 			m.cursor,
-			"up/k down/j move | Enter toggle | d delete | Tab switch tabs | Esc back | q exit",
+			"up/k down/j move | Enter toggle | d delete | Tab switch tabs | Esc back | ctrl+c exit",
 		)
 	case configuratorScreenServerDeleteConfirm:
 		return m.renderSelectionScreen(
@@ -380,7 +380,7 @@ func (m configuratorSessionModel) View() string {
 			"This action removes client access from server configuration.",
 			[]string{sessionServerDeleteConfirm, sessionCancel},
 			m.cursor,
-			"up/k down/j move | Enter confirm | Tab switch tabs | Esc back | q exit",
+			"up/k down/j move | Enter confirm | Tab switch tabs | Esc back | ctrl+c exit",
 		)
 	default:
 		return ""
@@ -994,7 +994,7 @@ func (m configuratorSessionModel) settingsTabView() string {
 		m.tabsLine(styles),
 		"",
 		body,
-		"up/k down/j row | left/right/Enter change | Tab switch tabs | Esc back | q exit",
+		"up/k down/j row | left/right/Enter change | Tab switch tabs | Esc back | ctrl+c exit",
 	)
 }
 
@@ -1007,7 +1007,7 @@ func (m configuratorSessionModel) logsTabView() string {
 		m.tabsLine(styles),
 		"",
 		body,
-		"up/down scroll | PgUp/PgDn page | Home/End jump | Space follow | Tab switch tabs | Esc back | q exit",
+		"up/down scroll | PgUp/PgDn page | Home/End jump | Space follow | Tab switch tabs | Esc back | ctrl+c exit",
 	)
 }
 
@@ -1036,7 +1036,7 @@ func (m *configuratorSessionModel) refreshLogs() {
 }
 
 func (m *configuratorSessionModel) ensureLogsViewport() {
-	hint := "up/down scroll | PgUp/PgDn page | Home/End jump | Space follow | Tab switch tabs | Esc back | q exit"
+	hint := "up/down scroll | PgUp/PgDn page | Home/End jump | Space follow | Tab switch tabs | Esc back | ctrl+c exit"
 	contentWidth, viewportHeight := computeLogsViewportSize(
 		m.width,
 		m.height,

@@ -363,9 +363,9 @@ func (m RuntimeDashboard) mainView() string {
 			styles,
 		)...)
 	}
-	hint := "Tab switch tabs | q exit"
+	hint := "Tab switch tabs | ctrl+c exit"
 	if m.confirmOpen {
-		hint = "left/right choose | Enter confirm | Esc cancel | q exit"
+		hint = "left/right choose | Enter confirm | Esc cancel | ctrl+c exit"
 	}
 
 	return renderScreenRaw(
@@ -393,7 +393,7 @@ func (m RuntimeDashboard) settingsView() string {
 		m.tabsLine(styles),
 		"",
 		body,
-		"up/k down/j row | left/right/Enter change | Tab switch tabs | q exit",
+		"up/k down/j row | left/right/Enter change | Tab switch tabs | ctrl+c exit",
 	)
 }
 
@@ -434,7 +434,7 @@ func (m *RuntimeDashboard) ensureLogsViewport() {
 }
 
 func (m RuntimeDashboard) logsHint() string {
-	return "up/down scroll | PgUp/PgDn page | Home/End jump | Space follow | Tab switch tabs | Esc back | q exit"
+	return "up/down scroll | PgUp/PgDn page | Home/End jump | Space follow | Tab switch tabs | Esc back | ctrl+c exit"
 }
 
 func (m RuntimeDashboard) updateLogs(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

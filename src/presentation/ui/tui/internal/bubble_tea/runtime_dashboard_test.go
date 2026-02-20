@@ -354,12 +354,12 @@ func TestRuntimeDashboard_Update_WindowAndContextDoneAndQuit(t *testing.T) {
 	}
 	updated = updatedModel.(RuntimeDashboard)
 
-	updatedModel, cmd = updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	updatedModel, cmd = updated.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	if cmd == nil {
-		t.Fatal("expected quit cmd on q")
+		t.Fatal("expected quit cmd on ctrl+c")
 	}
 	if !updatedModel.(RuntimeDashboard).exitRequested {
-		t.Fatal("expected exitRequested flag on q")
+		t.Fatal("expected exitRequested flag on ctrl+c")
 	}
 }
 
@@ -914,17 +914,17 @@ func TestUpdateConfirm_EnterAtCursor1_Reconfigures(t *testing.T) {
 	}
 }
 
-func TestUpdateConfirm_QDuringConfirmExits(t *testing.T) {
+func TestUpdateConfirm_CtrlCDuringConfirmExits(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
 	m.confirmOpen = true
 
-	updatedModel, cmd := m.updateConfirm(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	updatedModel, cmd := m.updateConfirm(tea.KeyMsg{Type: tea.KeyCtrlC})
 	updated := updatedModel.(RuntimeDashboard)
 	if !updated.exitRequested {
-		t.Fatal("expected exitRequested=true after q during confirm")
+		t.Fatal("expected exitRequested=true after ctrl+c during confirm")
 	}
 	if cmd == nil {
-		t.Fatal("expected quit command on q during confirm")
+		t.Fatal("expected quit command on ctrl+c during confirm")
 	}
 }
 

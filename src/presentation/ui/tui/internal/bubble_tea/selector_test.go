@@ -127,18 +127,18 @@ func TestSelector_UpdateEnter_SecondTime_StillQuits_NoChange(t *testing.T) {
 	}
 }
 
-func TestSelector_UpdateQ_Quits(t *testing.T) {
+func TestSelector_UpdateCtrlC_Quits(t *testing.T) {
 	sel, _ := newTestSelector("client mode", "server mode")
-	updatedModel, cmd := sel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	updatedModel, cmd := sel.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	updatedSel, ok := updatedModel.(Selector)
 	if !ok {
 		t.Fatal("Update did not return Selector")
 	}
 	if !updatedSel.QuitRequested() {
-		t.Error("expected quitRequested=true on 'q'")
+		t.Error("expected quitRequested=true on ctrl+c")
 	}
 	if cmd == nil {
-		t.Error("expected quit command on 'q'")
+		t.Error("expected quit command on ctrl+c")
 	}
 }
 

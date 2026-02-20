@@ -49,8 +49,8 @@ func defaultSelectorKeyMap() selectorKeyMap {
 			key.WithHelp("enter", "apply/select"),
 		),
 		Quit: key.NewBinding(
-			key.WithKeys("q", "ctrl+c"),
-			key.WithHelp("q", "exit"),
+			key.WithKeys("ctrl+c"),
+			key.WithHelp("ctrl+c", "exit"),
 		),
 	}
 }
@@ -341,7 +341,7 @@ func (m Selector) mainView(title, subtitle string, preamble []string) string {
 		m.tabsLine(styles),
 		title,
 		body,
-		"up/k move | down/j move | Enter select | Tab switch tabs | Esc Back | q exit",
+		"up/k move | down/j move | Enter select | Tab switch tabs | Esc Back | ctrl+c exit",
 	)
 }
 
@@ -365,7 +365,7 @@ func (m Selector) settingsView(title, subtitle string, preamble []string) string
 		m.tabsLine(styles),
 		"",
 		body,
-		"left/right or Enter change value | Tab switch tabs | Esc Back | q exit",
+		"left/right or Enter change value | Tab switch tabs | Esc Back | ctrl+c exit",
 	)
 }
 
@@ -430,7 +430,7 @@ func (m *Selector) refreshLogsViewport() {
 }
 
 func (m Selector) logsHint() string {
-	return "up/down scroll | PgUp/PgDn page | Home/End jump | Space follow | Tab switch tabs | Esc back | q exit"
+	return "up/down scroll | PgUp/PgDn page | Home/End jump | Space follow | Tab switch tabs | Esc back | ctrl+c exit"
 }
 
 func (m Selector) updateLogs(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

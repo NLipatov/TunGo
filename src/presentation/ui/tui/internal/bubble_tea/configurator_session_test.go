@@ -150,21 +150,6 @@ func TestUpdate_LogTickMsg_WrongTab_Ignored(t *testing.T) {
 	}
 }
 
-func TestUpdate_KeyQ_Exits(t *testing.T) {
-	m := newTestSessionModel(t)
-	result, cmd := m.Update(keyRunes('q'))
-	updated := result.(configuratorSessionModel)
-	if !updated.done {
-		t.Fatal("expected done=true on q key")
-	}
-	if !errors.Is(updated.resultErr, ErrConfiguratorSessionUserExit) {
-		t.Fatalf("expected ErrConfiguratorSessionUserExit, got %v", updated.resultErr)
-	}
-	if cmd == nil {
-		t.Fatal("expected non-nil cmd (tea.Quit)")
-	}
-}
-
 func TestUpdate_CtrlC_Exits(t *testing.T) {
 	m := newTestSessionModel(t)
 	result, cmd := m.Update(keyNamed(tea.KeyCtrlC))
