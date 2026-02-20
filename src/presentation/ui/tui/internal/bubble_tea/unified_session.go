@@ -188,7 +188,7 @@ func (m unifiedSessionModel) updateRuntime(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.runtime = &rtModel
 
 	if rtModel.exitRequested {
-		m.configurator.stopLogWait()
+		m.stopAllLogWaits()
 		m.sendEvent(unifiedEvent{kind: unifiedEventExit})
 		return m, tea.Quit
 	}
