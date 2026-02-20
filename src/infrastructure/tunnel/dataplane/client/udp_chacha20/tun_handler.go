@@ -2,9 +2,11 @@ package udp_chacha20
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/netip"
 	"time"
 	"tungo/application/network/connection"
@@ -90,6 +92,12 @@ func (w *TunHandler) HandleTun() error {
 					if w.ctx.Err() != nil {
 						rec.Flush()
 						return nil
+					}
+					var netErr net.Error
+					if errors.As(err, &netErr) {
+						// Transient socket error (e.g. WSAENOBUFS) — packet lost, socket is fine.
+						log.Printf("transient write error (packet dropped): %v", err)
+						continue
 					}
 					rec.Flush()
 					return fmt.Errorf("could not send packet to transport: %v", err)
