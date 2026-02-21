@@ -10,6 +10,7 @@ import (
 	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/settings"
+	"tungo/infrastructure/telemetry/trafficstats"
 	"tungo/infrastructure/tunnel/session"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -55,6 +56,9 @@ func (w *tcpDataplaneWorker) Run() {
 	}()
 
 	var buffer [settings.DefaultEthernetMTU + settings.TCPChacha20Overhead]byte
+	rec := trafficstats.NewRecorder()
+	defer rec.Flush()
+
 	for {
 		select {
 		case <-w.ctx.Done():
@@ -113,6 +117,7 @@ func (w *tcpDataplaneWorker) Run() {
 				w.logger.Printf("failed to write to TUN: %v", err)
 				return
 			}
+			rec.RecordRX(uint64(len(pt)))
 		}
 	}
 }

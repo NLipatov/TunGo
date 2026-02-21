@@ -48,9 +48,12 @@ func (m *mockConfigurationManager) InjectX25519Keys(pub, priv []byte) error {
 func (m *mockConfigurationManager) AddAllowedPeer(_ AllowedPeer) error {
 	return nil
 }
+func (m *mockConfigurationManager) ListAllowedPeers() ([]AllowedPeer, error)  { return nil, nil }
+func (m *mockConfigurationManager) SetAllowedPeerEnabled(_ int, _ bool) error { return nil }
+func (m *mockConfigurationManager) RemoveAllowedPeer(_ int) error             { return nil }
 
 func (m *mockConfigurationManager) EnsureIPv6Subnets() error { return nil }
-func (m *mockConfigurationManager) InvalidateCache()          {}
+func (m *mockConfigurationManager) InvalidateCache()         {}
 
 // ---------- Helpers ----------
 

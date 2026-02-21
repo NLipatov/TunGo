@@ -143,6 +143,27 @@ func TestDefaultCreator_Create_WriteError(t *testing.T) {
 	}
 }
 
+func TestDefaultCreator_Create_RejectsPathTraversal(t *testing.T) {
+	tmp := t.TempDir()
+	resolver := &creatorTestResolver{path: filepath.Join(tmp, "config"), err: nil}
+	creator := NewDefaultCreator(resolver)
+	cfg := (&creatorTestConfigProvider{}).mockedConfig()
+
+	badNames := []string{
+		"../etc/passwd",
+		"foo/bar",
+		`foo\bar`,
+		".",
+		"..",
+		"name\x00evil",
+	}
+	for _, name := range badNames {
+		if err := creator.Create(cfg, name); err == nil {
+			t.Errorf("expected error for name %q, got nil", name)
+		}
+	}
+}
+
 func TestDefaultCreator_Create_MkdirAllError(t *testing.T) {
 	tmp := t.TempDir()
 

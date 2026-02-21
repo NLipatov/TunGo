@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/netip"
 	"testing"
 	"time"
@@ -91,6 +92,20 @@ func (w *tunHandlerTestCancelWriter) Write(_ []byte) (int, error) {
 	return 0, errors.New("write fail")
 }
 
+// netErrorWriter simulates a transient network write error (e.g. WSAENOBUFS).
+type netErrorWriter struct {
+	errCount int // number of errors to return before succeeding
+	returned int
+}
+
+func (w *netErrorWriter) Write(_ []byte) (int, error) {
+	if w.returned < w.errCount {
+		w.returned++
+		return 0, &net.OpError{Op: "write", Net: "udp", Err: errors.New("send buffer full")}
+	}
+	return 0, nil
+}
+
 func TestHandleTun_ImmediateCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel before calling
@@ -150,6 +165,39 @@ func TestHandleTun_WriteError(t *testing.T) {
 
 	if err := h.HandleTun(); err == nil || err.Error() != fmt.Sprintf("could not send packet to transport: %v", errWrite) {
 		t.Fatalf("expected write error wrapped, got %v", err)
+	}
+}
+
+func TestHandleTun_TransientWriteError_ContinuesLoop(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	readCount := 0
+	reader := &fakeReader{readFunc: func(p []byte) (int, error) {
+		readCount++
+		if readCount <= 3 {
+			copy(p, []byte{1, 2, 3})
+			return 3, nil
+		}
+		cancel()
+		return 0, errors.New("done")
+	}}
+
+	// First 2 writes return net.OpError (transient), third succeeds.
+	writer := &netErrorWriter{errCount: 2}
+	crypto := &tunhandlerTestRakeCrypto{prefix: []byte("e:")}
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+
+	h := NewTunHandler(ctx, reader, connection.NewDefaultEgress(writer, crypto), ctrl, nil)
+	err := h.HandleTun()
+
+	// Handler should return nil (context cancelled), not a write error.
+	if err != nil {
+		t.Fatalf("expected nil (transient errors skipped, then ctx cancel), got %v", err)
+	}
+	// All 3 reads should have been processed — transient errors didn't abort.
+	if readCount < 3 {
+		t.Fatalf("expected at least 3 reads (transient errors continued), got %d", readCount)
 	}
 }
 

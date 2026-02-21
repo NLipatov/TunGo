@@ -72,7 +72,7 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.Settings) error 
 	if err != nil {
 		return err
 	}
-	fmt.Printf("created TUN interface: %v\n", connSettings.TunName)
+	log.Printf("created TUN interface: %v", connSettings.TunName)
 
 	// Assign IPv4 address to the TUN interface
 	cidr4, cidr4Err := connSettings.IPv4CIDR()
@@ -83,7 +83,7 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.Settings) error 
 	if err != nil {
 		return err
 	}
-	fmt.Printf("assigned IP %s to interface %s\n", cidr4, connSettings.TunName)
+	log.Printf("assigned IP %s to interface %s", cidr4, connSettings.TunName)
 
 	// Assign IPv6 address if configured
 	if connSettings.IPv6.IsValid() && connSettings.IPv6Subnet.IsValid() {
@@ -94,7 +94,7 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.Settings) error 
 		if err := t.ip.AddrAddDev(connSettings.TunName, cidr6); err != nil {
 			return err
 		}
-		fmt.Printf("assigned IPv6 %s to interface %s\n", cidr6, connSettings.TunName)
+		log.Printf("assigned IPv6 %s to interface %s", cidr6, connSettings.TunName)
 	}
 
 	serverIP := ""
@@ -142,7 +142,7 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.Settings) error 
 	if err != nil {
 		return fmt.Errorf("failed to add route to server IP: %v", err)
 	}
-	fmt.Printf("added route to server %s via %s dev %s\n", serverIP, viaGateway, devInterface)
+	log.Printf("added route to server %s via %s dev %s", serverIP, viaGateway, devInterface)
 
 	// Add route for IPv6 server address (if available)
 	if connSettings.Server.HasIPv6() || (t.routeEndpoint.IsValid() && !t.routeEndpoint.Addr().Unmap().Is4()) {
@@ -172,7 +172,7 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.Settings) error 
 					} else {
 						_ = t.ip.RouteAddViaDev(serverIPv6, dev6, via6)
 					}
-					fmt.Printf("added route to IPv6 server %s via %s dev %s\n", serverIPv6, via6, dev6)
+					log.Printf("added route to IPv6 server %s via %s dev %s", serverIPv6, via6, dev6)
 				}
 			}
 		}
@@ -185,14 +185,14 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.Settings) error 
 	if err != nil {
 		return err
 	}
-	fmt.Printf("set %s as default gateway (split routes)\n", connSettings.TunName)
+	log.Printf("set %s as default gateway (split routes)", connSettings.TunName)
 
 	// Set IPv6 split default routes if configured
 	if connSettings.IPv6.IsValid() {
 		if err := t.ip.Route6AddSplitDefaultDev(connSettings.TunName); err != nil {
 			return err
 		}
-		fmt.Printf("set %s as IPv6 default gateway (split routes)\n", connSettings.TunName)
+		log.Printf("set %s as IPv6 default gateway (split routes)", connSettings.TunName)
 	}
 
 	// sets client's TUN device maximum transmission unit (MTU)

@@ -15,6 +15,9 @@ type ConfigurationManager interface {
 	IncrementClientCounter() error
 	InjectX25519Keys(public, private []byte) error
 	AddAllowedPeer(peer AllowedPeer) error
+	ListAllowedPeers() ([]AllowedPeer, error)
+	SetAllowedPeerEnabled(clientID int, enabled bool) error
+	RemoveAllowedPeer(clientID int) error
 	EnsureIPv6Subnets() error
 	InvalidateCache()
 }
@@ -118,6 +121,58 @@ func (c *Manager) AddAllowedPeer(peer AllowedPeer) error {
 	return c.update(func(conf *Configuration) error {
 		conf.AllowedPeers = append(conf.AllowedPeers, peer)
 		return nil
+	})
+}
+
+func (c *Manager) ListAllowedPeers() ([]AllowedPeer, error) {
+	conf, err := c.Configuration()
+	if err != nil {
+		return nil, err
+	}
+
+	peers := make([]AllowedPeer, len(conf.AllowedPeers))
+	for i := range conf.AllowedPeers {
+		peers[i] = AllowedPeer{
+			Name:      conf.AllowedPeers[i].Name,
+			PublicKey: append([]byte(nil), conf.AllowedPeers[i].PublicKey...),
+			Enabled:   conf.AllowedPeers[i].Enabled,
+			ClientID:  conf.AllowedPeers[i].ClientID,
+		}
+	}
+	return peers, nil
+}
+
+func (c *Manager) SetAllowedPeerEnabled(clientID int, enabled bool) error {
+	if clientID <= 0 {
+		return fmt.Errorf("invalid client id %d", clientID)
+	}
+
+	return c.update(func(conf *Configuration) error {
+		for i := range conf.AllowedPeers {
+			if conf.AllowedPeers[i].ClientID != clientID {
+				continue
+			}
+			conf.AllowedPeers[i].Enabled = enabled
+			return nil
+		}
+		return fmt.Errorf("allowed peer with ClientID %d not found", clientID)
+	})
+}
+
+func (c *Manager) RemoveAllowedPeer(clientID int) error {
+	if clientID <= 0 {
+		return fmt.Errorf("invalid client id %d", clientID)
+	}
+
+	return c.update(func(conf *Configuration) error {
+		for i := range conf.AllowedPeers {
+			if conf.AllowedPeers[i].ClientID != clientID {
+				continue
+			}
+			conf.AllowedPeers = append(conf.AllowedPeers[:i], conf.AllowedPeers[i+1:]...)
+			return nil
+		}
+		return fmt.Errorf("allowed peer with ClientID %d not found", clientID)
 	})
 }
 

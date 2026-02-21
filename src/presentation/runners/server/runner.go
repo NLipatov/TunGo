@@ -2,11 +2,15 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
+	"os"
 	"tungo/application/network/connection"
 	"tungo/application/network/routing"
 	"tungo/infrastructure/settings"
+	runnerCommon "tungo/presentation/runners/common"
+	runtimeUI "tungo/presentation/ui/tui"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -15,6 +19,16 @@ type Runner struct {
 	deps          AppDependencies
 	workerFactory connection.ServerWorkerFactory
 	routerFactory connection.ServerTrafficRouterFactory
+}
+
+var (
+	isTUIMode           = func() bool { return len(os.Args) < 2 }
+	runRuntimeDashboard = runtimeUI.RunRuntimeDashboard
+)
+
+type runtimeUIResult struct {
+	userQuit bool
+	err      error
 }
 
 func NewRunner(
@@ -48,7 +62,62 @@ func (r *Runner) Run(
 		}
 	}()
 
-	return r.runWorkers(ctx)
+	if !isTUIMode() {
+		return r.runWorkers(ctx)
+	}
+
+	workersCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	workerErrCh := make(chan error, 1)
+	go func() {
+		workerErrCh <- r.runWorkers(workersCtx)
+	}()
+
+	uiResultCh := make(chan runtimeUIResult, 1)
+	go func() {
+		userQuit, err := runRuntimeDashboard(workersCtx, runtimeUI.RuntimeModeServer)
+		uiResultCh <- runtimeUIResult{userQuit: userQuit, err: err}
+	}()
+
+	for {
+		select {
+		case workerErr := <-workerErrCh:
+			cancel()
+			uiResult := <-uiResultCh
+			if uiResult.err != nil && !errors.Is(uiResult.err, runtimeUI.ErrUserExit) {
+				log.Printf("runtime UI error: %v", uiResult.err)
+			}
+			return workerErr
+		case uiResult := <-uiResultCh:
+			if uiResult.err != nil {
+				if errors.Is(uiResult.err, runtimeUI.ErrUserExit) {
+					cancel()
+					workerErr := <-workerErrCh
+					if workerErr == nil || errors.Is(workerErr, context.Canceled) {
+						return context.Canceled
+					}
+					return workerErr
+				}
+				cancel()
+				workerErr := <-workerErrCh
+				if workerErr == nil || errors.Is(workerErr, context.Canceled) {
+					return fmt.Errorf("runtime UI failed: %w", uiResult.err)
+				}
+				return workerErr
+			}
+			if uiResult.userQuit {
+				cancel()
+				workerErr := <-workerErrCh
+				if workerErr == nil || errors.Is(workerErr, context.Canceled) {
+					return runnerCommon.ErrReconfigureRequested
+				}
+				return workerErr
+			}
+			cancel()
+			return <-workerErrCh
+		}
+	}
 }
 
 func (r *Runner) cleanup() error {

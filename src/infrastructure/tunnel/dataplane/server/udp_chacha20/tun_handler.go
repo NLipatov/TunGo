@@ -7,6 +7,7 @@ import (
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/settings"
+	"tungo/infrastructure/telemetry/trafficstats"
 
 	"golang.org/x/crypto/chacha20poly1305"
 
@@ -60,6 +61,8 @@ func (t *TunHandler) HandleTun() error {
 	var buffer [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
 	payloadStart := chacha20.UDPRouteIDLength + chacha20poly1305.NonceSize
 	plaintext := buffer[payloadStart : payloadStart+settings.DefaultEthernetMTU]
+	rec := trafficstats.NewRecorder()
+	defer rec.Flush()
 
 	for {
 		select {
@@ -97,7 +100,9 @@ func (t *TunHandler) HandleTun() error {
 			if err := peer.Egress().SendDataIP(buffer[:payloadStart+n]); err != nil {
 				log.Printf("failed to send packet to %v: %v", peer.ExternalAddrPort(), err)
 				t.peerStore.Delete(peer)
+				continue
 			}
+			rec.RecordTX(uint64(n))
 		}
 	}
 }

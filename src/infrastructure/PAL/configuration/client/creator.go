@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type Creator interface {
@@ -22,6 +23,10 @@ func NewDefaultCreator(resolver Resolver) Creator {
 }
 
 func (d *DefaultCreator) Create(configuration Configuration, name string) error {
+	if strings.ContainsAny(name, `/\`) || name == "." || name == ".." || strings.ContainsAny(name, "\x00") {
+		return fmt.Errorf("invalid configuration name %q: must not contain path separators", name)
+	}
+
 	serialized, serializedErr := json.MarshalIndent(configuration, "", "\t")
 	if serializedErr != nil {
 		return serializedErr
