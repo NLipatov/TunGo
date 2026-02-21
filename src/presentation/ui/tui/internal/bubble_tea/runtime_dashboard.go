@@ -191,7 +191,7 @@ func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.confirmCursor = 0
 			case runtimeScreenLogs:
 				m.stopLogWait()
-				m.screen = runtimeScreenSettings
+				m.screen = runtimeScreenDataplane
 				return m, nil
 			case runtimeScreenSettings:
 				m.screen = runtimeScreenDataplane
@@ -583,9 +583,10 @@ func renderRateBrailleRing(
 	if width <= 0 {
 		width = minInt(runtimeSparklinePoints, count)
 	}
+	displayCount := minInt(count, width)
 	maxValue := uint64(0)
-	for i := 0; i < count; i++ {
-		value := ringSampleAt(samples, count, cursor, i)
+	for i := 0; i < displayCount; i++ {
+		value := ringSampleAt(samples, displayCount, cursor, i)
 		if value > maxValue {
 			maxValue = value
 		}
@@ -596,13 +597,13 @@ func renderRateBrailleRing(
 	}
 
 	pixelWidth := maxInt(2, width*2)
-	lastPos := maxInt(1, count-1)
+	lastPos := maxInt(1, displayCount-1)
 	var cellBuf [runtimeSparklinePoints]uint8
 	cells := cellBuf[:width]
 	lastY := -1
 	for x := 0; x < pixelWidth; x++ {
 		pos := (x * lastPos) / maxInt(1, pixelWidth-1)
-		value := ringSampleAt(samples, count, cursor, pos)
+		value := ringSampleAt(samples, displayCount, cursor, pos)
 		y := brailleRow(value, maxValue)
 		setBrailleDot(cells, x, y)
 		if lastY >= 0 && lastY != y {

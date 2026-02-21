@@ -446,8 +446,8 @@ func TestRuntimeDashboard_EscOnSettingsAndLogs_NavigatesBack(t *testing.T) {
 	}
 	updatedModel, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	updated = updatedModel.(RuntimeDashboard)
-	if updated.screen != runtimeScreenSettings {
-		t.Fatalf("expected esc to navigate back to settings, got %v", updated.screen)
+	if updated.screen != runtimeScreenDataplane {
+		t.Fatalf("expected esc to navigate back to dataplane, got %v", updated.screen)
 	}
 }
 

@@ -21,7 +21,7 @@ func TestColorizeString_ForegroundNormal(t *testing.T) {
 	bg := value_objects.NewTransparentColor()                   // disabled
 
 	got := cz.ColorizeString(text, bg, fg)
-	want := "\033[34m" + "test" + "\033[0m"
+	want := "\x1b[34m" + "test" + "\x1b[0m"
 
 	if got != want {
 		t.Fatalf("unexpected output:\n got: %q\nwant: %q", got, want)
@@ -37,7 +37,7 @@ func TestColorizeString_ForegroundBright(t *testing.T) {
 	bg := value_objects.NewTransparentColor()
 
 	got := cz.ColorizeString(text, bg, fg)
-	want := "\033[93m" + "test" + "\033[0m"
+	want := "\x1b[93m" + "test" + "\x1b[0m"
 
 	if got != want {
 		t.Fatalf("unexpected bright FG output:\n got: %q\nwant: %q", got, want)
@@ -53,7 +53,7 @@ func TestColorizeString_BackgroundNormal(t *testing.T) {
 	fg := value_objects.NewTransparentColor()
 
 	got := cz.ColorizeString(text, bg, fg)
-	want := "\033[45m" + "bg" + "\033[0m"
+	want := "\x1b[45m" + "bg" + "\x1b[0m"
 
 	if got != want {
 		t.Fatalf("unexpected normal BG output:\n got: %q\nwant: %q", got, want)
@@ -69,7 +69,7 @@ func TestColorizeString_BackgroundBright(t *testing.T) {
 	fg := value_objects.NewTransparentColor()
 
 	got := cz.ColorizeString(text, bg, fg)
-	want := "\033[106m" + "bg" + "\033[0m"
+	want := "\x1b[106m" + "bg" + "\x1b[0m"
 
 	if got != want {
 		t.Fatalf("unexpected bright BG output:\n got: %q\nwant: %q", got, want)
@@ -86,7 +86,7 @@ func TestColorizeString_BothEnabled(t *testing.T) {
 	bg := value_objects.NewColor(value_objects.ColorBrightBlack, true)
 
 	got := cz.ColorizeString(text, bg, fg)
-	want := "\033[32m" + "\033[100m" + "hello" + "\033[0m"
+	want := "\x1b[32m" + "\x1b[100m" + "hello" + "\x1b[0m"
 
 	if got != want {
 		t.Fatalf("unexpected combined output:\n got: %q\nwant: %q", got, want)
@@ -101,7 +101,7 @@ func TestColorizeString_NoneEnabled(t *testing.T) {
 	fg := value_objects.NewTransparentColor()
 
 	got := cz.ColorizeString(text, bg, fg)
-	want := "plain\033[0m"
+	want := "plain\x1b[0m"
 
 	if got != want {
 		t.Fatalf("unexpected output with no colors:\n got: %q\nwant: %q", got, want)

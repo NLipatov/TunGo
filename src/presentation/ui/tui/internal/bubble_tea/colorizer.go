@@ -22,21 +22,21 @@ func (c *Colorizer) ColorizeString(
 	if foreground.Enabled() {
 		code := foreground.Code()
 		if code <= 7 {
-			out += fmt.Sprintf("\033[%dm", 30+code)
+			out += fmt.Sprintf("\x1b[%dm", 30+code)
 		} else {
-			out += fmt.Sprintf("\033[%dm", 90+(code-8))
+			out += fmt.Sprintf("\x1b[%dm", 90+(code-8))
 		}
 	}
 
 	if background.Enabled() {
 		code := background.Code()
 		if code <= 7 {
-			out += fmt.Sprintf("\033[%dm", 40+code)
+			out += fmt.Sprintf("\x1b[%dm", 40+code)
 		} else {
-			out += fmt.Sprintf("\033[%dm", 100+(code-8))
+			out += fmt.Sprintf("\x1b[%dm", 100+(code-8))
 		}
 	}
 
-	out += s + "\033[0m"
+	out += s + "\x1b[0m"
 	return out
 }
