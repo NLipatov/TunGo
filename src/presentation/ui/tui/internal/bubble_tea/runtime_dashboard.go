@@ -596,10 +596,11 @@ func renderRateBrailleRing(
 		return zeroBrailleSparkline(width)
 	}
 
-	pixelWidth := maxInt(2, width*2)
+	dataWidth := displayCount
+	pixelWidth := maxInt(2, dataWidth*2)
 	lastPos := maxInt(1, displayCount-1)
 	var cellBuf [runtimeSparklinePoints]uint8
-	cells := cellBuf[:width]
+	cells := cellBuf[:dataWidth]
 	lastY := -1
 	for x := 0; x < pixelWidth; x++ {
 		pos := (x * lastPos) / maxInt(1, pixelWidth-1)
@@ -622,7 +623,11 @@ func renderRateBrailleRing(
 	for i, mask := range cells {
 		runeBuf[i] = rune(0x2800 + int(mask))
 	}
-	return string(runeBuf[:width])
+	padWidth := width - dataWidth
+	if padWidth > 0 {
+		return zeroBrailleSparkline(padWidth) + string(runeBuf[:dataWidth])
+	}
+	return string(runeBuf[:dataWidth])
 }
 
 func initZeroBrailleSparklineCache() [runtimeSparklinePoints + 1]string {
