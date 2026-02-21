@@ -89,6 +89,8 @@ func (m *TextArea) View() string {
 		container.Render(m.ta.View()),
 		stats,
 	}
+	prefs := CurrentUIPreferences()
+	styles := resolveUIStyles(prefs)
 	return renderScreen(
 		m.width,
 		m.height,
@@ -96,6 +98,8 @@ func (m *TextArea) View() string {
 		m.placeholder,
 		body,
 		"Enter confirm | Esc Back",
+		prefs,
+		styles,
 	)
 }
 

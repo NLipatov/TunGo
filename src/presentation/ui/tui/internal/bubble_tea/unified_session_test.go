@@ -273,7 +273,7 @@ func TestUnifiedSession_ContextDone_SendsExitEvent(t *testing.T) {
 
 // --- RuntimeContextDone in runtime phase ---
 
-func TestUnifiedSession_RuntimeContextDone_SendsExitEvent(t *testing.T) {
+func TestUnifiedSession_RuntimeContextDone_SendsDisconnectedEvent(t *testing.T) {
 	m, events := newTestUnifiedModel(t)
 	m.phase = phaseRuntime
 	m.runtimeSeq = 3
@@ -282,19 +282,25 @@ func TestUnifiedSession_RuntimeContextDone_SendsExitEvent(t *testing.T) {
 	m.runtime = &rt
 
 	result, cmd := m.Update(runtimeContextDoneMsg{seq: 3})
-	_ = result
+	updated := result.(unifiedSessionModel)
 
-	if cmd == nil {
-		t.Fatal("expected tea.Quit cmd")
+	if cmd != nil {
+		t.Fatal("expected nil cmd (no tea.Quit on runtime disconnect)")
+	}
+	if updated.phase != phaseWaitingForRuntime {
+		t.Fatalf("expected phaseWaitingForRuntime, got %d", updated.phase)
+	}
+	if updated.runtime != nil {
+		t.Fatal("expected runtime to be nil after disconnect")
 	}
 
 	select {
 	case event := <-events:
-		if event.kind != unifiedEventExit {
-			t.Fatalf("expected unifiedEventExit, got %d", event.kind)
+		if event.kind != unifiedEventRuntimeDisconnected {
+			t.Fatalf("expected unifiedEventRuntimeDisconnected, got %d", event.kind)
 		}
 	default:
-		t.Fatal("expected exit event on runtime context done")
+		t.Fatal("expected disconnected event on runtime context done")
 	}
 }
 

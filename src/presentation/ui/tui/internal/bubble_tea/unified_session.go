@@ -12,8 +12,9 @@ import (
 
 // Errors returned by the unified session.
 var (
-	ErrUnifiedSessionClosed = errors.New("unified session closed")
-	ErrUnifiedSessionQuit   = errors.New("unified session user quit")
+	ErrUnifiedSessionClosed              = errors.New("unified session closed")
+	ErrUnifiedSessionQuit                = errors.New("unified session user quit")
+	ErrUnifiedSessionRuntimeDisconnected = errors.New("unified session runtime disconnected")
 )
 
 // unifiedPhase represents the current phase of the unified session.
@@ -49,8 +50,9 @@ type runtimeDoneMsg struct {
 type unifiedEventKind int
 
 const (
-	unifiedEventModeSelected unifiedEventKind = iota
+	unifiedEventModeSelected       unifiedEventKind = iota
 	unifiedEventReconfigure
+	unifiedEventRuntimeDisconnected // runtime context cancelled (transient network error)
 	unifiedEventExit
 	unifiedEventError
 )
@@ -107,10 +109,6 @@ func (m unifiedSessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		return m.delegateToActive(msg)
 
-	case tea.QuitMsg:
-		m.stopAllLogWaits()
-		return m, tea.Quit
-
 	case contextDoneMsg:
 		m.stopAllLogWaits()
 		m.sendEvent(unifiedEvent{kind: unifiedEventExit})
@@ -132,12 +130,15 @@ func (m unifiedSessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.runtime.Init()
 
 	case runtimeContextDoneMsg:
-		// Runtime context was cancelled — treat as graceful exit.
+		// Runtime context was cancelled (e.g. network disconnection).
+		// Transition back to waiting so the next ActivateRuntime can reuse the session.
 		// Check seq to ignore stale messages from a previous runtime.
 		if m.phase == phaseRuntime && msg.seq == m.runtimeSeq {
 			m.stopAllLogWaits()
-			m.sendEvent(unifiedEvent{kind: unifiedEventExit})
-			return m, tea.Quit
+			m.runtime = nil
+			m.phase = phaseWaitingForRuntime
+			m.sendEvent(unifiedEvent{kind: unifiedEventRuntimeDisconnected})
+			return m, nil
 		}
 		return m, nil
 	}
@@ -238,15 +239,18 @@ func (m unifiedSessionModel) View() string {
 }
 
 func (m unifiedSessionModel) waitingView() string {
-	styles := resolveUIStyles(CurrentUIPreferences())
+	prefs := CurrentUIPreferences()
+	styles := resolveUIStyles(prefs)
 	body := []string{"Starting..."}
 	return renderScreen(
 		m.width,
 		m.height,
-		renderTabsLine(productLabel(), "configurator", selectorTabs[:], 0, contentWidthForTerminal(m.width), styles),
+		renderTabsLine(productLabel(), "configurator", selectorTabs[:], 0, contentWidthForTerminal(m.width), prefs.Theme, styles),
 		"",
 		body,
 		"",
+		prefs,
+		styles,
 	)
 }
 
@@ -258,10 +262,7 @@ func (m *unifiedSessionModel) stopAllLogWaits() {
 }
 
 func (m unifiedSessionModel) sendEvent(event unifiedEvent) {
-	select {
-	case m.events <- event:
-	default:
-	}
+	m.events <- event
 }
 
 // --- Context done message ---
@@ -279,7 +280,8 @@ func waitForContextDone(ctx context.Context) tea.Cmd {
 }
 
 // filterQuit wraps a tea.Cmd so that any tea.QuitMsg it produces is
-// silently swallowed. The command still runs asynchronously via the
+// silently swallowed. Also handles tea.BatchMsg by recursively filtering
+// each sub-command. The command still runs asynchronously via the
 // Bubble Tea runtime — we never call cmd() on the main goroutine.
 func filterQuit(cmd tea.Cmd) tea.Cmd {
 	if cmd == nil {
@@ -289,6 +291,13 @@ func filterQuit(cmd tea.Cmd) tea.Cmd {
 		msg := cmd()
 		if _, ok := msg.(tea.QuitMsg); ok {
 			return nil
+		}
+		if batch, ok := msg.(tea.BatchMsg); ok {
+			filtered := make(tea.BatchMsg, len(batch))
+			for i, sub := range batch {
+				filtered[i] = filterQuit(sub)
+			}
+			return filtered
 		}
 		return msg
 	}
@@ -326,9 +335,12 @@ func NewUnifiedSession(appCtx context.Context, configOpts ConfiguratorSessionOpt
 
 	go func() {
 		defer close(session.done)
-		_, runErr := program.Run()
+		finalModel, runErr := program.Run()
 		if runErr != nil {
 			session.err = runErr
+		}
+		if m, ok := finalModel.(unifiedSessionModel); ok {
+			m.stopAllLogWaits()
 		}
 	}()
 
@@ -379,6 +391,8 @@ func (s *UnifiedSession) WaitForRuntimeExit() (reconfigure bool, err error) {
 			switch event.kind {
 			case unifiedEventReconfigure:
 				return true, nil
+			case unifiedEventRuntimeDisconnected:
+				return false, ErrUnifiedSessionRuntimeDisconnected
 			case unifiedEventExit:
 				return false, ErrUnifiedSessionQuit
 			case unifiedEventError:

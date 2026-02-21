@@ -340,12 +340,12 @@ func headerLabelStyle() ansiTextStyle {
 	return resolveUIStyles(CurrentUIPreferences()).brand
 }
 
-func renderScreen(width, height int, title, subtitle string, body []string, hint string) string {
-	return renderScreenWithBodyMode(width, height, title, subtitle, body, hint, true)
+func renderScreen(width, height int, title, subtitle string, body []string, hint string, prefs UIPreferences, styles uiStyles) string {
+	return renderScreenWithBodyMode(width, height, title, subtitle, body, hint, true, prefs, styles)
 }
 
-func renderScreenRaw(width, height int, title, subtitle string, body []string, hint string) string {
-	return renderScreenWithBodyMode(width, height, title, subtitle, body, hint, false)
+func renderScreenRaw(width, height int, title, subtitle string, body []string, hint string, prefs UIPreferences, styles uiStyles) string {
+	return renderScreenWithBodyMode(width, height, title, subtitle, body, hint, false, prefs, styles)
 }
 
 func renderScreenWithBodyMode(
@@ -354,10 +354,9 @@ func renderScreenWithBodyMode(
 	body []string,
 	hint string,
 	wrapBodyLines bool,
+	prefs UIPreferences,
+	styles uiStyles,
 ) string {
-	prefs := CurrentUIPreferences()
-	styles := resolveUIStyles(prefs)
-
 	targetWidth := 0
 	contentWidth := 0
 	targetHeight := 0
@@ -619,31 +618,36 @@ func wrapLine(line string, width int) []string {
 
 	var out []string
 	current := ""
+	currentLen := 0
 	for _, word := range words {
 		for utf8.RuneCountInString(word) > width {
-			if current != "" {
+			if currentLen > 0 {
 				out = append(out, current)
 				current = ""
+				currentLen = 0
 			}
 			chunk, rest := splitRunes(word, width)
 			out = append(out, chunk)
 			word = rest
 		}
 
-		if current == "" {
+		wordLen := utf8.RuneCountInString(word)
+		if currentLen == 0 {
 			current = word
+			currentLen = wordLen
 			continue
 		}
-		next := current + " " + word
-		if utf8.RuneCountInString(next) <= width {
-			current = next
+		if currentLen+1+wordLen <= width {
+			current = current + " " + word
+			currentLen += 1 + wordLen
 			continue
 		}
 
 		out = append(out, current)
 		current = word
+		currentLen = wordLen
 	}
-	if current != "" {
+	if currentLen > 0 {
 		out = append(out, current)
 	}
 
@@ -694,7 +698,10 @@ func buildASCIICard(contentLines []string, contentWidth int) string {
 	for _, line := range lines {
 		out.WriteByte('|')
 		out.WriteString(framePadStr)
-		out.WriteString(padRightVisible(line, effectiveWidth))
+		out.WriteString(line)
+		if lineWidth := visibleWidthANSI(line); lineWidth < effectiveWidth {
+			writeSpaces(&out, effectiveWidth-lineWidth)
+		}
 		out.WriteString(framePadStr)
 		out.WriteByte('|')
 		out.WriteByte('\n')
@@ -727,6 +734,7 @@ func placeCardCentered(card string, width, height int) string {
 	topPad := maxInt(0, (height-cardHeight)/2)
 	leftPad := maxInt(0, (width-cardWidth)/2)
 	blank := strings.Repeat(" ", width)
+	leftPadStr := strings.Repeat(" ", leftPad)
 
 	var out strings.Builder
 	out.Grow((width + 1) * maxInt(height, cardHeight))
@@ -746,9 +754,9 @@ func placeCardCentered(card string, width, height int) string {
 		}
 		used := visibleWidthANSI(line)
 		rightPad := maxInt(0, width-leftPad-used)
-		out.WriteString(strings.Repeat(" ", leftPad))
+		out.WriteString(leftPadStr)
 		out.WriteString(line)
-		out.WriteString(strings.Repeat(" ", rightPad))
+		writeSpaces(&out, rightPad)
 		out.WriteByte('\n')
 		renderedCardLines++
 	}
@@ -827,6 +835,18 @@ func visibleWidthANSI(s string) int {
 		}
 	}
 	return width
+}
+
+const spaces64 = "                                                                "
+
+func writeSpaces(out *strings.Builder, n int) {
+	for n >= len(spaces64) {
+		out.WriteString(spaces64)
+		n -= len(spaces64)
+	}
+	if n > 0 {
+		out.WriteString(spaces64[:n])
+	}
 }
 
 func padRightVisible(s string, width int) string {

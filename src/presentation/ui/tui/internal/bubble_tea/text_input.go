@@ -67,6 +67,8 @@ func (m *TextInput) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *TextInput) View() string {
+	prefs := CurrentUIPreferences()
+	styles := resolveUIStyles(prefs)
 	container := inputContainerStyle().Width(m.inputContainerWidth())
 	stats := metaTextStyle().Render("Characters: " + formatCount(utf8.RuneCountInString(m.ti.Value()), m.ti.CharLimit))
 	body := []string{
@@ -80,6 +82,8 @@ func (m *TextInput) View() string {
 		m.placeholder,
 		body,
 		"Enter confirm | Esc Back",
+		prefs,
+		styles,
 	)
 }
 

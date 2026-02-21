@@ -209,6 +209,7 @@ func (m configuratorSessionModel) Init() tea.Cmd {
 
 func (m configuratorSessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.done {
+		m.stopLogWait()
 		return m, tea.Quit
 	}
 
@@ -321,6 +322,8 @@ func (m configuratorSessionModel) View() string {
 			"Name configuration",
 			body,
 			"Enter confirm | Tab switch tabs | Esc back | ctrl+c exit",
+			m.preferences,
+			styles,
 		)
 	case configuratorScreenClientAddJSON:
 		styles := resolveUIStyles(m.preferences)
@@ -342,6 +345,8 @@ func (m configuratorSessionModel) View() string {
 			"Paste configuration",
 			body,
 			"Enter confirm | Tab switch tabs | Esc back | ctrl+c exit",
+			m.preferences,
+			styles,
 		)
 	case configuratorScreenClientInvalid:
 		options := []string{sessionInvalidOK}
@@ -973,6 +978,8 @@ func (m configuratorSessionModel) renderSelectionScreen(
 		screenTitle,
 		body,
 		hint,
+		m.preferences,
+		styles,
 	)
 }
 
@@ -997,6 +1004,8 @@ func (m configuratorSessionModel) settingsTabView() string {
 		"",
 		body,
 		"up/k down/j row | left/right/Enter change | Tab switch tabs | Esc back | ctrl+c exit",
+		m.preferences,
+		styles,
 	)
 }
 
@@ -1010,12 +1019,14 @@ func (m configuratorSessionModel) logsTabView() string {
 		"",
 		body,
 		"up/down scroll | PgUp/PgDn page | Home/End jump | Space follow | Tab switch tabs | Esc back | ctrl+c exit",
+		m.preferences,
+		styles,
 	)
 }
 
 func (m configuratorSessionModel) tabsLine(styles uiStyles) string {
 	contentWidth := contentWidthForTerminal(m.width)
-	return renderTabsLine(productLabel(), "configurator", selectorTabs[:], m.tab, contentWidth, styles)
+	return renderTabsLine(productLabel(), "configurator", selectorTabs[:], m.tab, contentWidth, m.preferences.Theme, styles)
 }
 
 func (m configuratorSessionModel) logsFeed() RuntimeLogFeed {

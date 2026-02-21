@@ -293,11 +293,14 @@ func TestSelector_SettingsToggleFooter(t *testing.T) {
 	m3, _ := m2.(Selector).Update(tea.KeyMsg{Type: tea.KeyDown}) // dataplane stats row
 	m4, _ := m3.(Selector).Update(tea.KeyMsg{Type: tea.KeyDown}) // dataplane graph row
 	m5, _ := m4.(Selector).Update(tea.KeyMsg{Type: tea.KeyDown}) // footer row
-	m6 := m5
-	_, _ = m6.(Selector).Update(tea.KeyMsg{Type: tea.KeyRight}) // toggle
+	m6, _ := m5.(Selector).Update(tea.KeyMsg{Type: tea.KeyRight}) // toggle
+	toggled := m6.(Selector)
 
 	if CurrentUIPreferences().ShowFooter {
-		t.Fatalf("expected ShowFooter to be toggled off")
+		t.Fatalf("expected global ShowFooter to be toggled off")
+	}
+	if toggled.preferences.ShowFooter {
+		t.Fatalf("expected model ShowFooter to be toggled off")
 	}
 }
 
@@ -324,11 +327,14 @@ func TestSelector_SettingsToggleStatsUnits(t *testing.T) {
 	sel, _ := newTestSelector("Main title", "a", "b")
 	m1, _ := sel.Update(tea.KeyMsg{Type: tea.KeyTab})            // settings
 	m2, _ := m1.(Selector).Update(tea.KeyMsg{Type: tea.KeyDown}) // stats units row
-	m3 := m2
-	_, _ = m3.(Selector).Update(tea.KeyMsg{Type: tea.KeyRight}) // toggle
+	m3, _ := m2.(Selector).Update(tea.KeyMsg{Type: tea.KeyRight}) // toggle
+	toggled := m3.(Selector)
 
 	if CurrentUIPreferences().StatsUnits != StatsUnitsBytes {
-		t.Fatalf("expected StatsUnits to be toggled to bytes")
+		t.Fatalf("expected global StatsUnits to be toggled to bytes")
+	}
+	if toggled.preferences.StatsUnits != StatsUnitsBytes {
+		t.Fatalf("expected model StatsUnits to be toggled to bytes")
 	}
 }
 
@@ -388,30 +394,46 @@ func TestSelector_SettingsNavigationBoundsAndMutations(t *testing.T) {
 
 	// Stats row left toggles to bibytes.
 	sel.settingsCursor = settingsStatsUnitsRow
-	_, _ = sel.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	m1, _ = sel.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	sel = m1.(Selector)
 	if CurrentUIPreferences().StatsUnits != StatsUnitsBiBytes {
 		t.Fatalf("expected bibytes after left toggle, got %q", CurrentUIPreferences().StatsUnits)
+	}
+	if sel.preferences.StatsUnits != StatsUnitsBiBytes {
+		t.Fatalf("expected model bibytes after left toggle, got %q", sel.preferences.StatsUnits)
 	}
 
 	// Dataplane stats row select toggles.
 	sel.settingsCursor = settingsDataplaneStatsRow
-	_, _ = sel.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m1, _ = sel.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	sel = m1.(Selector)
 	if CurrentUIPreferences().ShowDataplaneStats {
 		t.Fatalf("expected dataplane stats OFF after toggle")
+	}
+	if sel.preferences.ShowDataplaneStats {
+		t.Fatalf("expected model dataplane stats OFF after toggle")
 	}
 
 	// Dataplane graph row select toggles.
 	sel.settingsCursor = settingsDataplaneGraphRow
-	_, _ = sel.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m1, _ = sel.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	sel = m1.(Selector)
 	if CurrentUIPreferences().ShowDataplaneGraph {
 		t.Fatalf("expected dataplane graph OFF after toggle")
+	}
+	if sel.preferences.ShowDataplaneGraph {
+		t.Fatalf("expected model dataplane graph OFF after toggle")
 	}
 
 	// Footer row select toggles.
 	sel.settingsCursor = settingsFooterRow
-	_, _ = sel.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m1, _ = sel.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	sel = m1.(Selector)
 	if CurrentUIPreferences().ShowFooter {
 		t.Fatalf("expected footer OFF after toggle")
+	}
+	if sel.preferences.ShowFooter {
+		t.Fatalf("expected model footer OFF after toggle")
 	}
 }
 

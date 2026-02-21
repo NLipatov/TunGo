@@ -76,6 +76,7 @@ var (
 	marshalUIPreferences = func(p UIPreferences) ([]byte, error) {
 		return json.MarshalIndent(p, "", "  ")
 	}
+	persistPrefsFunc = persistUIPreferencesToDisk
 )
 
 const uiSettingsPathEnv = "TUNGO_UI_SETTINGS_PATH"
@@ -114,7 +115,7 @@ func UpdateUIPreferences(update func(p *UIPreferences)) UIPreferences {
 	}
 	p = sanitizeUIPreferences(p)
 	preferences.Store(p)
-	_ = persistUIPreferencesToDisk(p)
+	_ = persistPrefsFunc(p)
 	return p
 }
 
@@ -218,6 +219,9 @@ func loadUIPreferencesFromDisk() (UIPreferences, error) {
 	}
 	if _, ok := raw["show_dataplane_graph"]; !ok {
 		p.ShowDataplaneGraph = true
+	}
+	if _, ok := raw["show_footer"]; !ok {
+		p.ShowFooter = true
 	}
 	return sanitizeUIPreferences(p), nil
 }

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -58,7 +59,7 @@ func TestConfigurator_Configure_ClientMode(t *testing.T) {
 		}),
 	}
 
-	gotMode, err := c.Configure()
+	gotMode, err := c.Configure(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -77,7 +78,7 @@ func TestConfigurator_Configure_ServerMode(t *testing.T) {
 		}),
 	}
 
-	gotMode, err := c.Configure()
+	gotMode, err := c.Configure(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -95,7 +96,7 @@ func TestConfigurator_Configure_AppModeError(t *testing.T) {
 	}
 
 	c := &Configurator{appMode: NewAppMode(appSelectorFactory)}
-	gotMode, err := c.Configure()
+	gotMode, err := c.Configure(context.Background())
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -132,7 +133,7 @@ func TestConfigurator_Configure_BackToModeFromClient_ThenServer(t *testing.T) {
 		}),
 	}
 
-	gotMode, err := c.Configure()
+	gotMode, err := c.Configure(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -170,7 +171,7 @@ func TestConfigurator_Configure_BackToModeFromServer_ThenClient(t *testing.T) {
 		serverConfigurator: newServerConfigurator(&mockManager{}, serverSelectorFactory),
 	}
 
-	gotMode, err := c.Configure()
+	gotMode, err := c.Configure(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -207,7 +208,7 @@ func TestConfigurator_Configure_ClientErrorPropagates(t *testing.T) {
 		}),
 	}
 
-	gotMode, err := c.Configure()
+	gotMode, err := c.Configure(context.Background())
 	if err == nil || err.Error() != "client fail" {
 		t.Fatalf("expected client fail, got %v", err)
 	}
@@ -233,7 +234,7 @@ func TestConfigurator_Configure_ServerErrorPropagates(t *testing.T) {
 		serverConfigurator: newServerConfigurator(&mockManager{}, serverSelectorFactory),
 	}
 
-	gotMode, err := c.Configure()
+	gotMode, err := c.Configure(context.Background())
 	if err == nil || err.Error() != "server fail" {
 		t.Fatalf("expected server fail, got %v", err)
 	}
@@ -259,7 +260,7 @@ func TestConfigurator_ConfigureContinuous_NilClientConfigurator(t *testing.T) {
 		clientConfigurator: nil,
 		serverConfigurator: newServerConfigurator(&mockManager{}, &mockSelectorFactory{selector: &queueSelector{}}),
 	}
-	gotMode, err := c.Configure()
+	gotMode, err := c.Configure(context.Background())
 	if err == nil || err.Error() != "continuous configurator is not initialized" {
 		t.Fatalf("expected initialization error, got %v", err)
 	}
@@ -277,7 +278,7 @@ func TestConfigurator_ConfigureContinuous_NilServerConfigurator(t *testing.T) {
 		),
 		serverConfigurator: nil,
 	}
-	gotMode, err := c.Configure()
+	gotMode, err := c.Configure(context.Background())
 	if err == nil || err.Error() != "continuous configurator is not initialized" {
 		t.Fatalf("expected initialization error, got %v", err)
 	}

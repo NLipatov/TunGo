@@ -6,7 +6,6 @@ import (
 	"io"
 	"strings"
 	"testing"
-	"time"
 	"tungo/application/network/routing"
 	serverConfig "tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/settings"
@@ -136,8 +135,8 @@ func TestRun_Interactive_UserExitErrorReturnsCanceled(t *testing.T) {
 }
 
 func TestRun_Interactive_WorkerErrorWinsOverUIError(t *testing.T) {
-	withServerRuntimeHooks(t, true, func(context.Context, tui.RuntimeMode) (bool, error) {
-		time.Sleep(15 * time.Millisecond)
+	withServerRuntimeHooks(t, true, func(ctx context.Context, _ tui.RuntimeMode) (bool, error) {
+		<-ctx.Done()
 		return false, errors.New("ui failed")
 	})
 	deps := &RunnerMockDeps{
@@ -171,7 +170,9 @@ func TestRun_Interactive_WorkerErrorWinsOverUIError(t *testing.T) {
 }
 
 func TestRun_Interactive_UIErrorReturnsWorkerErrWhenWorkerNotCanceled(t *testing.T) {
+	uiStarted := make(chan struct{})
 	withServerRuntimeHooks(t, true, func(context.Context, tui.RuntimeMode) (bool, error) {
+		close(uiStarted)
 		return false, errors.New("ui failed")
 	})
 	deps := &RunnerMockDeps{
@@ -191,7 +192,7 @@ func TestRun_Interactive_UIErrorReturnsWorkerErrWhenWorkerNotCanceled(t *testing
 		make: func(routing.Worker) routing.Router {
 			return RunnerMockRouter{
 				route: func(context.Context) error {
-					time.Sleep(15 * time.Millisecond)
+					<-uiStarted
 					return errors.New("worker explicit")
 				},
 			}
@@ -205,7 +206,9 @@ func TestRun_Interactive_UIErrorReturnsWorkerErrWhenWorkerNotCanceled(t *testing
 }
 
 func TestRun_Interactive_UserQuitReturnsWorkerErrWhenWorkerNotCanceled(t *testing.T) {
+	uiStarted := make(chan struct{})
 	withServerRuntimeHooks(t, true, func(context.Context, tui.RuntimeMode) (bool, error) {
+		close(uiStarted)
 		return true, nil
 	})
 	deps := &RunnerMockDeps{
@@ -225,7 +228,7 @@ func TestRun_Interactive_UserQuitReturnsWorkerErrWhenWorkerNotCanceled(t *testin
 		make: func(routing.Worker) routing.Router {
 			return RunnerMockRouter{
 				route: func(context.Context) error {
-					time.Sleep(15 * time.Millisecond)
+					<-uiStarted
 					return errors.New("worker explicit")
 				},
 			}
@@ -239,7 +242,9 @@ func TestRun_Interactive_UserQuitReturnsWorkerErrWhenWorkerNotCanceled(t *testin
 }
 
 func TestRun_Interactive_UICompletesWithoutQuitReturnsWorkerChannel(t *testing.T) {
+	uiStarted := make(chan struct{})
 	withServerRuntimeHooks(t, true, func(context.Context, tui.RuntimeMode) (bool, error) {
+		close(uiStarted)
 		return false, nil
 	})
 	deps := &RunnerMockDeps{
@@ -259,7 +264,7 @@ func TestRun_Interactive_UICompletesWithoutQuitReturnsWorkerChannel(t *testing.T
 		make: func(routing.Worker) routing.Router {
 			return RunnerMockRouter{
 				route: func(context.Context) error {
-					time.Sleep(15 * time.Millisecond)
+					<-uiStarted
 					return errors.New("worker after ui")
 				},
 			}

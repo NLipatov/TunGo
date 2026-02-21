@@ -25,11 +25,12 @@ type Collector struct {
 	emaAlpha       float64
 
 	// accessed only from the single sampler goroutine in Start()
-	lastRX  uint64
-	lastTX  uint64
-	rxEMA   float64
-	txEMA   float64
-	started atomic.Bool
+	lastRX     uint64
+	lastTX     uint64
+	rxEMA      float64
+	txEMA      float64
+	emaSeeded  bool
+	started    atomic.Bool
 }
 
 func NewCollector(sampleInterval time.Duration, emaAlpha float64) *Collector {
@@ -123,14 +124,12 @@ func (c *Collector) updateRates(interval time.Duration) {
 	txPerSec := float64(txDelta) / seconds
 
 	if c.emaAlpha > 0 {
-		if c.rxEMA == 0 {
+		if !c.emaSeeded {
 			c.rxEMA = rxPerSec
+			c.txEMA = txPerSec
+			c.emaSeeded = true
 		} else {
 			c.rxEMA = c.emaAlpha*rxPerSec + (1-c.emaAlpha)*c.rxEMA
-		}
-		if c.txEMA == 0 {
-			c.txEMA = txPerSec
-		} else {
 			c.txEMA = c.emaAlpha*txPerSec + (1-c.emaAlpha)*c.txEMA
 		}
 		rxPerSec = c.rxEMA

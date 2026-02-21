@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -22,7 +23,7 @@ func NewConfigurator() *Configurator {
 	return &Configurator{}
 }
 
-func (c *Configurator) Configure() (mode.Mode, error) {
+func (c *Configurator) Configure(_ context.Context) (mode.Mode, error) {
 	if len(os.Args) < 2 {
 		c.printUsage()
 		return mode.Unknown, fmt.Errorf("invalid arguments")

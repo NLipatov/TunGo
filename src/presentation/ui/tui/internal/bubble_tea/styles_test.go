@@ -246,7 +246,8 @@ func TestRenderScreen_ANSIAndCanvasFill(t *testing.T) {
 	})
 
 	ansiTitle := "\x1b[31mTitle\x1b[0m"
-	out := renderScreen(80, 24, ansiTitle, "subtitle", []string{"body"}, "hint")
+	prefs := CurrentUIPreferences()
+	out := renderScreen(80, 24, ansiTitle, "subtitle", []string{"body"}, "hint", prefs, resolveUIStyles(prefs))
 	if !strings.Contains(out, ansiTitle) {
 		t.Fatalf("expected ANSI title preserved, got %q", out)
 	}
@@ -296,7 +297,8 @@ func TestRenderScreen_SubtitleANSIAndNoViewportSize(t *testing.T) {
 		p.Theme = ThemeLight
 		p.ShowFooter = false
 	})
-	out := renderScreen(0, 0, "Title", "\x1b[31mansi subtitle\x1b[0m", []string{"body"}, "")
+	prefs := CurrentUIPreferences()
+	out := renderScreen(0, 0, "Title", "\x1b[31mansi subtitle\x1b[0m", []string{"body"}, "", prefs, resolveUIStyles(prefs))
 	if !strings.Contains(out, "ansi subtitle") {
 		t.Fatalf("expected subtitle content, got %q", out)
 	}

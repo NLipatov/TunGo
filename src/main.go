@@ -84,7 +84,7 @@ func main() {
 	configuratorFactory := configuring.NewConfigurationFactory(configurationManager)
 	configurator := configuratorFactory.Configurator()
 	for appCtx.Err() == nil {
-		appMode, appModeErr := configurator.Configure()
+		appMode, appModeErr := configurator.Configure(appCtx)
 		if appModeErr != nil {
 			if errors.Is(appModeErr, configuring.ErrUserExit) {
 				return
@@ -241,7 +241,6 @@ func setupCrashLog(resolver client.Resolver) {
 	if err != nil {
 		return
 	}
-	defer f.Close()
 	info, _ := f.Stat()
 	if info != nil && info.Size() > 0 {
 		_, _ = fmt.Fprintf(f, "\n--- crash at %s ---\n\n", time.Now().Format(time.RFC3339))

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"os"
 	"strings"
@@ -23,7 +24,7 @@ func run(args []string) (out string, got mode.Mode, err error) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	got, err = NewConfigurator().Configure()
+	got, err = NewConfigurator().Configure(context.Background())
 
 	_ = w.Close() // close writer so reader receives EOF
 	var buf bytes.Buffer

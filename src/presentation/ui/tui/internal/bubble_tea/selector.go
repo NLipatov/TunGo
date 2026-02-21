@@ -341,6 +341,8 @@ func (m Selector) mainView(title, subtitle string, preamble []string) string {
 		title,
 		body,
 		"up/k move | down/j move | Enter select | Tab switch tabs | Esc Back | ctrl+c exit",
+		m.preferences,
+		styles,
 	)
 }
 
@@ -365,6 +367,8 @@ func (m Selector) settingsView(title, subtitle string, preamble []string) string
 		"",
 		body,
 		"left/right or Enter change value | Tab switch tabs | Esc Back | ctrl+c exit",
+		m.preferences,
+		styles,
 	)
 }
 
@@ -379,6 +383,8 @@ func (m Selector) logsView() string {
 		"",
 		body,
 		m.logsHint(),
+		m.preferences,
+		styles,
 	)
 }
 
@@ -393,7 +399,7 @@ func (m Selector) logsFeed() RuntimeLogFeed {
 
 func (m Selector) tabsLine(styles uiStyles) string {
 	contentWidth := contentWidthForTerminal(m.width)
-	return renderTabsLine(productLabel(), "selector", selectorTabs[:], int(m.screen), contentWidth, styles)
+	return renderTabsLine(productLabel(), "selector", selectorTabs[:], int(m.screen), contentWidth, m.preferences.Theme, styles)
 }
 
 func (m *Selector) ensureLogsViewport() {

@@ -75,9 +75,9 @@ func NewDefaultConfigurator(serverConfigurationManager server.ConfigurationManag
 	).withContinuousUI()
 }
 
-func (p *Configurator) Configure() (mode.Mode, error) {
+func (p *Configurator) Configure(ctx context.Context) (mode.Mode, error) {
 	if p.useContinuousUI {
-		return p.configureContinuous()
+		return p.configureContinuous(ctx)
 	}
 	return p.configureFromState(configuratorStateModeSelect)
 }
@@ -87,7 +87,7 @@ func (p *Configurator) withContinuousUI() *Configurator {
 	return p
 }
 
-func (p *Configurator) configureContinuous() (mode.Mode, error) {
+func (p *Configurator) configureContinuous(ctx context.Context) (mode.Mode, error) {
 	if p.clientConfigurator == nil || p.serverConfigurator == nil {
 		return mode.Unknown, fmt.Errorf("continuous configurator is not initialized")
 	}
@@ -102,7 +102,7 @@ func (p *Configurator) configureContinuous() (mode.Mode, error) {
 	}
 
 	if activeUnifiedSession == nil {
-		session, err := bubbleTea.NewUnifiedSession(context.Background(), configOpts)
+		session, err := bubbleTea.NewUnifiedSession(ctx, configOpts)
 		if err != nil {
 			return mode.Unknown, err
 		}

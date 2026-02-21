@@ -96,11 +96,14 @@ func TestRuntimeDashboard_TogglesFooterInSettings(t *testing.T) {
 	m3, _ := m2.(RuntimeDashboard).Update(tea.KeyMsg{Type: tea.KeyDown}) // dataplane stats row
 	m4, _ := m3.(RuntimeDashboard).Update(tea.KeyMsg{Type: tea.KeyDown}) // dataplane graph row
 	m5, _ := m4.(RuntimeDashboard).Update(tea.KeyMsg{Type: tea.KeyDown}) // footer row
-	m6 := m5
-	_, _ = m6.(RuntimeDashboard).Update(tea.KeyMsg{Type: tea.KeyRight}) // toggle
+	m6, _ := m5.(RuntimeDashboard).Update(tea.KeyMsg{Type: tea.KeyRight}) // toggle
+	toggled := m6.(RuntimeDashboard)
 
 	if CurrentUIPreferences().ShowFooter {
-		t.Fatalf("expected ShowFooter to be toggled off")
+		t.Fatalf("expected global ShowFooter to be toggled off")
+	}
+	if toggled.preferences.ShowFooter {
+		t.Fatalf("expected model ShowFooter to be toggled off")
 	}
 }
 
@@ -127,11 +130,14 @@ func TestRuntimeDashboard_TogglesStatsUnitsInSettings(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
 	m1, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})                      // settings
 	m2, _ := m1.(RuntimeDashboard).Update(tea.KeyMsg{Type: tea.KeyDown}) // stats units row
-	m3 := m2
-	_, _ = m3.(RuntimeDashboard).Update(tea.KeyMsg{Type: tea.KeyRight}) // toggle
+	m3, _ := m2.(RuntimeDashboard).Update(tea.KeyMsg{Type: tea.KeyRight}) // toggle
+	toggled := m3.(RuntimeDashboard)
 
 	if CurrentUIPreferences().StatsUnits != StatsUnitsBytes {
-		t.Fatalf("expected StatsUnits to be toggled to bytes")
+		t.Fatalf("expected global StatsUnits to be toggled to bytes")
+	}
+	if toggled.preferences.StatsUnits != StatsUnitsBytes {
+		t.Fatalf("expected model StatsUnits to be toggled to bytes")
 	}
 }
 
@@ -517,30 +523,46 @@ func TestRuntimeDashboard_SettingsNavigationAndMutation(t *testing.T) {
 
 	// Stats units row: Enter toggles.
 	m.settingsCursor = settingsStatsUnitsRow
-	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updatedModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updatedModel.(RuntimeDashboard)
 	if CurrentUIPreferences().StatsUnits != StatsUnitsBytes {
 		t.Fatalf("expected stats units bytes, got %q", CurrentUIPreferences().StatsUnits)
+	}
+	if m.preferences.StatsUnits != StatsUnitsBytes {
+		t.Fatalf("expected model stats units bytes, got %q", m.preferences.StatsUnits)
 	}
 
 	// Dataplane stats row: Enter toggles.
 	m.settingsCursor = settingsDataplaneStatsRow
-	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updatedModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updatedModel.(RuntimeDashboard)
 	if CurrentUIPreferences().ShowDataplaneStats {
 		t.Fatalf("expected dataplane stats off after toggle")
+	}
+	if m.preferences.ShowDataplaneStats {
+		t.Fatalf("expected model dataplane stats off after toggle")
 	}
 
 	// Dataplane graph row: Enter toggles.
 	m.settingsCursor = settingsDataplaneGraphRow
-	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updatedModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updatedModel.(RuntimeDashboard)
 	if CurrentUIPreferences().ShowDataplaneGraph {
 		t.Fatalf("expected dataplane graph off after toggle")
+	}
+	if m.preferences.ShowDataplaneGraph {
+		t.Fatalf("expected model dataplane graph off after toggle")
 	}
 
 	// Footer row: Enter toggles.
 	m.settingsCursor = settingsFooterRow
-	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updatedModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updatedModel.(RuntimeDashboard)
 	if CurrentUIPreferences().ShowFooter {
 		t.Fatalf("expected footer off after toggle")
+	}
+	if m.preferences.ShowFooter {
+		t.Fatalf("expected model footer off after toggle")
 	}
 
 	// Unmatched key leaves settings unchanged.

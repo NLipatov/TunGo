@@ -22,7 +22,9 @@ type RuntimeLogChangeFeed interface {
 type RuntimeLogBuffer struct {
 	mu       sync.Mutex
 	capacity int
-	lines    []string
+	lines    []string // pre-allocated at full capacity
+	head     int      // next write position
+	count    int      // valid entries (0..capacity)
 	partial  string
 	changes  chan struct{}
 }
@@ -39,7 +41,7 @@ func NewRuntimeLogBuffer(capacity int) *RuntimeLogBuffer {
 	}
 	return &RuntimeLogBuffer{
 		capacity: capacity,
-		lines:    make([]string, 0, capacity),
+		lines:    make([]string, capacity),
 		changes:  make(chan struct{}, 1),
 	}
 }
@@ -67,15 +69,12 @@ func (b *RuntimeLogBuffer) Tail(limit int) []string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	if limit <= 0 || len(b.lines) == 0 {
+	if limit <= 0 || b.count == 0 {
 		return nil
 	}
-	start := 0
-	if len(b.lines) > limit {
-		start = len(b.lines) - limit
-	}
-	out := make([]string, len(b.lines)-start)
-	copy(out, b.lines[start:])
+	n := minInt(b.count, limit)
+	out := make([]string, n)
+	b.copyTailLocked(out, n)
 	return out
 }
 
@@ -83,29 +82,35 @@ func (b *RuntimeLogBuffer) TailInto(dst []string, limit int) int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	if limit <= 0 || len(dst) == 0 || len(b.lines) == 0 {
+	if limit <= 0 || len(dst) == 0 || b.count == 0 {
 		return 0
 	}
 	if limit > len(dst) {
 		limit = len(dst)
 	}
-	start := 0
-	if len(b.lines) > limit {
-		start = len(b.lines) - limit
-	}
-	n := copy(dst, b.lines[start:])
+	n := minInt(b.count, limit)
+	b.copyTailLocked(dst, n)
 	return n
 }
 
 func (b *RuntimeLogBuffer) appendLineLocked(line string) {
-	if len(b.lines) < b.capacity {
-		b.lines = append(b.lines, line)
-		b.signalChangeLocked()
-		return
+	b.lines[b.head] = line
+	b.head = (b.head + 1) % b.capacity
+	if b.count < b.capacity {
+		b.count++
 	}
-	copy(b.lines, b.lines[1:])
-	b.lines[len(b.lines)-1] = line
 	b.signalChangeLocked()
+}
+
+func (b *RuntimeLogBuffer) copyTailLocked(dst []string, n int) {
+	start := (b.head - n + b.capacity) % b.capacity
+	if start+n <= b.capacity {
+		copy(dst, b.lines[start:start+n])
+	} else {
+		first := b.capacity - start
+		copy(dst, b.lines[start:])
+		copy(dst[first:], b.lines[:n-first])
+	}
 }
 
 func (b *RuntimeLogBuffer) signalChangeLocked() {

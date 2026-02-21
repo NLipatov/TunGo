@@ -254,8 +254,9 @@ func TestRun_CancelDuringReconnectDelay(t *testing.T) {
 }
 
 func TestRunSession_RouteErrorBranch_WaitsUIAndReturnsRouteErr(t *testing.T) {
+	routeStarted := make(chan struct{})
 	withClientRuntimeHooks(t, true, func(context.Context, tui.RuntimeMode) (bool, error) {
-		time.Sleep(10 * time.Millisecond)
+		<-routeStarted
 		return false, errors.New("ui branch error")
 	})
 	deps := &runtimeTestDeps{}
@@ -263,6 +264,7 @@ func TestRunSession_RouteErrorBranch_WaitsUIAndReturnsRouteErr(t *testing.T) {
 		create: func(context.Context, connection.Factory, tun.ClientManager, connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
 			router := runtimeTestRouter{
 				route: func(context.Context) error {
+					close(routeStarted)
 					return errors.New("route early")
 				},
 			}

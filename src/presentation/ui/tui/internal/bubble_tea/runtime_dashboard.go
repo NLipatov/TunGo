@@ -133,6 +133,7 @@ func RunRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions) (
 	if !ok {
 		return false, nil
 	}
+	finalModel.stopLogWait()
 	if finalModel.exitRequested {
 		return false, ErrRuntimeDashboardExitRequested
 	}
@@ -192,9 +193,12 @@ func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case runtimeScreenLogs:
 				m.stopLogWait()
 				m.screen = runtimeScreenDataplane
-				return m, nil
+				m.tickSeq++
+				return m, runtimeTickCmd(m.tickSeq)
 			case runtimeScreenSettings:
 				m.screen = runtimeScreenDataplane
+				m.tickSeq++
+				return m, runtimeTickCmd(m.tickSeq)
 			}
 			return m, nil
 		case key.Matches(msg, m.keys.Tab):
@@ -379,6 +383,8 @@ func (m RuntimeDashboard) mainView() string {
 		"",
 		body,
 		hint,
+		m.preferences,
+		styles,
 	)
 }
 
@@ -398,6 +404,8 @@ func (m RuntimeDashboard) settingsView() string {
 		"",
 		body,
 		"up/k down/j row | left/right/Enter change | Tab switch tabs | ctrl+c exit",
+		m.preferences,
+		styles,
 	)
 }
 
@@ -412,12 +420,14 @@ func (m RuntimeDashboard) logsView() string {
 		"",
 		body,
 		m.logsHint(),
+		m.preferences,
+		styles,
 	)
 }
 
 func (m RuntimeDashboard) tabsLine(styles uiStyles) string {
 	contentWidth := contentWidthForTerminal(m.width)
-	return renderTabsLine(productLabel(), "runtime", runtimeTabs[:], int(m.screen), contentWidth, styles)
+	return renderTabsLine(productLabel(), "runtime", runtimeTabs[:], int(m.screen), contentWidth, m.preferences.Theme, styles)
 }
 
 func (m *RuntimeDashboard) ensureLogsViewport() {

@@ -1,7 +1,6 @@
 package bubble_tea
 
 import (
-	"fmt"
 	"strings"
 	"sync"
 )
@@ -28,12 +27,13 @@ func renderTabsLine(
 	tabs []string,
 	activeIndex int,
 	contentWidth int,
+	theme ThemeOption,
 	styles uiStyles,
 ) string {
 	cacheKey := tabsLineCacheKey{
 		tabsID:       tabsID,
 		productName:  productLabel,
-		theme:        CurrentUIPreferences().Theme,
+		theme:        theme,
 		activeIndex:  activeIndex,
 		contentWidth: contentWidth,
 	}
@@ -104,11 +104,11 @@ func renderSelectableRows(rows []string, cursor int, width int, styles uiStyles)
 
 func uiSettingsRows(prefs UIPreferences) []string {
 	return []string{
-		fmt.Sprintf("Theme      : %s", strings.ToUpper(strings.ReplaceAll(string(prefs.Theme), "_", " "))),
-		fmt.Sprintf("Stats units: %s", statsUnitsLabel(prefs.StatsUnits)),
-		fmt.Sprintf("Dataplane stats: %s", onOff(prefs.ShowDataplaneStats)),
-		fmt.Sprintf("Dataplane graph: %s", onOff(prefs.ShowDataplaneGraph)),
-		fmt.Sprintf("Show footer: %s", onOff(prefs.ShowFooter)),
+		"Theme      : " + strings.ToUpper(strings.ReplaceAll(string(prefs.Theme), "_", " ")),
+		"Stats units: " + statsUnitsLabel(prefs.StatsUnits),
+		"Dataplane stats: " + onOff(prefs.ShowDataplaneStats),
+		"Dataplane graph: " + onOff(prefs.ShowDataplaneGraph),
+		"Show footer: " + onOff(prefs.ShowFooter),
 	}
 }
 
@@ -137,6 +137,7 @@ func renderLogsViewportContent(lines []string, width int, styles uiStyles) strin
 		return "No logs yet"
 	}
 	var body strings.Builder
+	body.Grow(len(lines) * (width + 1))
 	for i, line := range lines {
 		if i > 0 {
 			body.WriteByte('\n')

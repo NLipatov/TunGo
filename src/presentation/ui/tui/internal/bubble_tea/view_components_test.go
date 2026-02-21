@@ -81,6 +81,7 @@ func TestRenderTabsLine_RightAlignsProductLabelWhenWidthAllows(t *testing.T) {
 		[]string{"Main", "Settings", "Logs"},
 		0,
 		60,
+		ThemeDark,
 		styles,
 	)
 
@@ -103,6 +104,7 @@ func TestRenderTabsLine_KeepProductLabelOnVeryNarrowWidth(t *testing.T) {
 		[]string{"Main", "Settings", "Logs"},
 		0,
 		16,
+		ThemeDark,
 		styles,
 	)
 

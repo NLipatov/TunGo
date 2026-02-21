@@ -46,6 +46,11 @@ func (bubbleTeaRuntimeBackend) runRuntimeDashboard(ctx context.Context, mode Run
 				activeUnifiedSession = nil
 				return false, ErrUserExit
 			}
+			if errors.Is(err, bubbleTea.ErrUnifiedSessionRuntimeDisconnected) {
+				// Runtime context cancelled (e.g. network error).
+				// Session stays alive for the next ActivateRuntime call.
+				return false, nil
+			}
 			activeUnifiedSession.Close()
 			activeUnifiedSession = nil
 			return false, err
