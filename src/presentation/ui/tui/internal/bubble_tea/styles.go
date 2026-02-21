@@ -19,6 +19,7 @@ const (
 	statsValueWidth = 12
 	framePadX       = 2
 	framePadY       = 1
+	framePadStr     = "  " // must match framePadX
 	frameBorderX    = 2
 	frameBorderY    = 2
 	frameHorizSize  = frameBorderX + framePadX*2 // 6
@@ -692,9 +693,9 @@ func buildASCIICard(contentLines []string, contentWidth int) string {
 	out.WriteByte('\n')
 	for _, line := range lines {
 		out.WriteByte('|')
-		out.WriteString(strings.Repeat(" ", framePadX))
+		out.WriteString(framePadStr)
 		out.WriteString(padRightVisible(line, effectiveWidth))
-		out.WriteString(strings.Repeat(" ", framePadX))
+		out.WriteString(framePadStr)
 		out.WriteByte('|')
 		out.WriteByte('\n')
 	}

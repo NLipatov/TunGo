@@ -1,7 +1,6 @@
 package bubble_tea
 
 import (
-	"fmt"
 	"strings"
 	"time"
 	"tungo/presentation/ui/tui/internal/ui/contracts/colorization"
@@ -318,7 +317,7 @@ func (m Selector) mainView(title, subtitle string, preamble []string) string {
 		if m.cursor == i {
 			pointer = "> "
 		}
-		line := truncateWithEllipsis(fmt.Sprintf("%s%s", pointer, choice), contentWidth)
+		line := truncateWithEllipsis(pointer+choice, contentWidth)
 		if m.cursor == i {
 			line = styles.active.Render(line)
 		}

@@ -25,12 +25,17 @@ func FormatTotalWithSystem(bytes uint64, system UnitSystem) string {
 	return formatBySystem(float64(bytes), "", system)
 }
 
+var (
+	binaryUnits = [...]string{"B", "KiB", "MiB", "GiB"}
+	siUnits     = [...]string{"B", "KB", "MB", "GB"}
+)
+
 func formatBySystem(value float64, suffix string, system UnitSystem) string {
 	base := 1024.0
-	units := []string{"B", "KiB", "MiB", "GiB"}
+	units := binaryUnits[:]
 	if system == UnitSystemBytes {
 		base = 1000
-		units = []string{"B", "KB", "MB", "GB"}
+		units = siUnits[:]
 	}
 
 	unitIdx := 0
