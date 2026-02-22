@@ -120,6 +120,45 @@ func TestRuntimeLogBuffer_TailInto_LimitGreaterThanDst(t *testing.T) {
 	}
 }
 
+func TestRuntimeLogBuffer_WriteSeparator(t *testing.T) {
+	b := NewRuntimeLogBuffer(8)
+	_, _ = b.Write([]byte("line one\nline two\n"))
+	b.WriteSeparator()
+	_, _ = b.Write([]byte("line three\n"))
+
+	lines := b.Tail(8)
+	if len(lines) != 4 {
+		t.Fatalf("expected 4 lines, got %d: %v", len(lines), lines)
+	}
+	if lines[2] != "---" {
+		t.Fatalf("expected separator '---' at index 2, got %q", lines[2])
+	}
+}
+
+func TestGlobalRuntimeLogWriteSeparator(t *testing.T) {
+	DisableGlobalRuntimeLogCapture()
+	t.Cleanup(DisableGlobalRuntimeLogCapture)
+
+	// Should not panic when no global buffer exists.
+	GlobalRuntimeLogWriteSeparator()
+
+	EnableGlobalRuntimeLogCapture(8)
+	GlobalRuntimeLogWriteSeparator()
+
+	feed := GlobalRuntimeLogFeed()
+	lines := feed.Tail(8)
+	found := false
+	for _, line := range lines {
+		if line == "---" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected '---' separator in global log feed, got %v", lines)
+	}
+}
+
 func TestEnableGlobalRuntimeLogCapture_IdempotentAndDisableSafe(t *testing.T) {
 	DisableGlobalRuntimeLogCapture()
 	DisableGlobalRuntimeLogCapture() // safe when already disabled

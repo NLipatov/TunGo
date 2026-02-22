@@ -166,6 +166,21 @@ func DisableGlobalRuntimeLogCapture() {
 	globalRuntimeLogBuffer = nil
 }
 
+func (b *RuntimeLogBuffer) WriteSeparator() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.appendLineLocked("---")
+}
+
+func GlobalRuntimeLogWriteSeparator() {
+	globalRuntimeLogMu.Lock()
+	buf := globalRuntimeLogBuffer
+	globalRuntimeLogMu.Unlock()
+	if buf != nil {
+		buf.WriteSeparator()
+	}
+}
+
 func GlobalRuntimeLogFeed() RuntimeLogFeed {
 	globalRuntimeLogMu.Lock()
 	defer globalRuntimeLogMu.Unlock()
