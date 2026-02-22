@@ -2788,3 +2788,114 @@ func TestView_UnknownScreen_ReturnsEmptyString(t *testing.T) {
 		t.Fatalf("expected empty string for unknown screen, got %q", view)
 	}
 }
+
+// sessionServerConfigManagerWithFallback wraps the stub to set FallbackServerAddress
+// so confgen.Generate() works even without network connectivity.
+type sessionServerConfigManagerWithFallback struct {
+	*sessionServerConfigManagerStub
+}
+
+func (s *sessionServerConfigManagerWithFallback) Configuration() (*serverConfiguration.Configuration, error) {
+	conf, err := s.sessionServerConfigManagerStub.Configuration()
+	if err != nil {
+		return nil, err
+	}
+	conf.FallbackServerAddress = "127.0.0.1"
+	return conf, nil
+}
+
+func TestUpdateServerSelectScreen_EnterAddClient_WriteFileError(t *testing.T) {
+	prev := writeServerClientConfigFile
+	t.Cleanup(func() { writeServerClientConfigFile = prev })
+	writeServerClientConfigFile = func(_ int, _ []byte) (string, error) {
+		return "", errors.New("disk full")
+	}
+
+	manager := &sessionServerConfigManagerWithFallback{
+		sessionServerConfigManagerStub: &sessionServerConfigManagerStub{
+			peers: []serverConfiguration.AllowedPeer{
+				{Name: "a", ClientID: 1, Enabled: true},
+			},
+		},
+	}
+	model, err := newConfiguratorSessionModel(ConfiguratorSessionOptions{
+		Observer:            sessionObserverStub{},
+		Selector:            sessionSelectorStub{},
+		Creator:             sessionCreatorStub{},
+		Deleter:             sessionDeleterStub{},
+		ClientConfigManager: sessionClientConfigManagerStub{},
+		ServerConfigManager: manager,
+	})
+	if err != nil {
+		t.Fatalf("newConfiguratorSessionModel error: %v", err)
+	}
+	model.screen = configuratorScreenServerSelect
+	model.cursor = 1 // "add client"
+
+	result, cmd := model.updateServerSelectScreen(keyNamed(tea.KeyEnter))
+	s := result.(configuratorSessionModel)
+
+	if !s.done {
+		t.Fatal("expected done=true on writeServerClientConfigFile error")
+	}
+	if s.resultErr == nil || !strings.Contains(s.resultErr.Error(), "disk full") {
+		t.Fatalf("expected disk full error, got %v", s.resultErr)
+	}
+	if cmd == nil {
+		t.Fatal("expected quit cmd")
+	}
+}
+
+func TestUpdateServerSelectScreen_EnterAddClient_Success(t *testing.T) {
+	prev := writeServerClientConfigFile
+	t.Cleanup(func() { writeServerClientConfigFile = prev })
+	writeServerClientConfigFile = func(clientID int, data []byte) (string, error) {
+		return "/tmp/test_client.json", nil
+	}
+
+	manager := &sessionServerConfigManagerWithFallback{
+		sessionServerConfigManagerStub: &sessionServerConfigManagerStub{
+			peers: []serverConfiguration.AllowedPeer{
+				{Name: "a", ClientID: 1, Enabled: true},
+			},
+		},
+	}
+	model, err := newConfiguratorSessionModel(ConfiguratorSessionOptions{
+		Observer:            sessionObserverStub{},
+		Selector:            sessionSelectorStub{},
+		Creator:             sessionCreatorStub{},
+		Deleter:             sessionDeleterStub{},
+		ClientConfigManager: sessionClientConfigManagerStub{},
+		ServerConfigManager: manager,
+	})
+	if err != nil {
+		t.Fatalf("newConfiguratorSessionModel error: %v", err)
+	}
+	model.screen = configuratorScreenServerSelect
+	model.cursor = 1 // "add client"
+
+	result, cmd := model.updateServerSelectScreen(keyNamed(tea.KeyEnter))
+	s := result.(configuratorSessionModel)
+
+	if s.done {
+		t.Fatalf("expected done=false on success, resultErr=%v", s.resultErr)
+	}
+	if !strings.Contains(s.notice, "/tmp/test_client.json") {
+		t.Fatalf("expected notice with path, got %q", s.notice)
+	}
+	if cmd != nil {
+		t.Fatal("expected nil cmd on success")
+	}
+}
+
+func TestConfiguratorLogTickCmd_InnerFuncEmitsMessage(t *testing.T) {
+	cmd := configuratorLogTickCmd(42)
+	msg := cmd()
+	tick, ok := msg.(configuratorLogTickMsg)
+	if !ok {
+		t.Fatalf("expected configuratorLogTickMsg, got %T", msg)
+	}
+	if tick.seq != 42 {
+		t.Fatalf("expected seq=42, got %d", tick.seq)
+	}
+}

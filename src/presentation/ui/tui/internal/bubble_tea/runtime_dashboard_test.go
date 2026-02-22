@@ -1395,6 +1395,85 @@ func TestBrailleRow_ValueEqualsMaxValue(t *testing.T) {
 	}
 }
 
+func TestBrailleRow_MaxValueZero_ReturnsBottomRow(t *testing.T) {
+	if got := brailleRow(0, 0); got != 3 {
+		t.Fatalf("expected brailleRow(0, 0)==3, got %d", got)
+	}
+	if got := brailleRow(100, 0); got != 3 {
+		t.Fatalf("expected brailleRow(100, 0)==3, got %d", got)
+	}
+}
+
+func TestUpdateLogs_PgUpSetsFollowFalse(t *testing.T) {
+	lines := make([]string, 0, 30)
+	for i := 0; i < 30; i++ {
+		lines = append(lines, fmt.Sprintf("line-%02d", i))
+	}
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		LogFeed: testRuntimeLogFeed{lines: lines},
+	})
+	m.width = 120
+	m.height = 24
+	m.screen = runtimeScreenLogs
+	m.refreshLogs()
+	m.logFollow = true
+
+	updatedModel, _ := m.updateLogs(tea.KeyMsg{Type: tea.KeyPgUp})
+	updated := updatedModel.(RuntimeDashboard)
+	if updated.logFollow {
+		t.Fatal("expected logFollow=false after PgUp")
+	}
+}
+
+func TestRefreshLogs_RuntimeDashboard_NotFollowNotAtBottom_PreservesOffset(t *testing.T) {
+	lines := make([]string, 0, 50)
+	for i := 0; i < 50; i++ {
+		lines = append(lines, fmt.Sprintf("line-%02d", i))
+	}
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		LogFeed: testRuntimeLogFeed{lines: lines},
+	})
+	m.width = 80
+	m.height = 30
+	m.screen = runtimeScreenLogs
+	m.refreshLogs()
+
+	m.logViewport.GotoTop()
+	m.logViewport.SetYOffset(3)
+	m.logFollow = false
+
+	m.refreshLogs()
+
+	if m.logFollow {
+		t.Fatal("expected logFollow to remain false")
+	}
+	if m.logViewport.YOffset != 3 {
+		t.Fatalf("expected viewport offset preserved at 3, got %d", m.logViewport.YOffset)
+	}
+}
+
+func TestRuntimeDashboard_Update_TickSeqMismatch_Ignored(t *testing.T) {
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	m.tickSeq = 5
+
+	updatedModel, cmd := m.Update(runtimeTickMsg{seq: 99})
+	_ = updatedModel.(RuntimeDashboard)
+	if cmd != nil {
+		t.Fatal("expected nil cmd for mismatched tick seq")
+	}
+}
+
+func TestRuntimeDashboard_Update_TickOnNonDataplaneScreen_Ignored(t *testing.T) {
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	m.screen = runtimeScreenSettings
+
+	updatedModel, cmd := m.Update(runtimeTickMsg{seq: m.tickSeq})
+	_ = updatedModel.(RuntimeDashboard)
+	if cmd != nil {
+		t.Fatal("expected nil cmd for tick on non-dataplane screen")
+	}
+}
+
 func TestRenderRateBrailleRing_WidthZeroDefaults(t *testing.T) {
 	var samples [runtimeSparklinePoints]uint64
 	for i := 0; i < 5; i++ {
@@ -1411,5 +1490,18 @@ func TestRenderRateBrailleRing_WidthZeroDefaults(t *testing.T) {
 	}
 	if runeCount != 5 {
 		t.Fatalf("expected default width of 5 runes, got %d", runeCount)
+	}
+}
+
+func TestRenderRateBrailleRing_WidthGreaterThanCount_PadsLeft(t *testing.T) {
+	var samples [runtimeSparklinePoints]uint64
+	for i := 0; i < 3; i++ {
+		samples[i] = uint64(i + 1)
+	}
+	// width=8 > count=3 → dataWidth=3, padWidth=5
+	out := renderRateBrailleRing(samples, 3, 3, 8)
+	runeCount := utf8.RuneCountInString(out)
+	if runeCount != 8 {
+		t.Fatalf("expected 8 runes (3 data + 5 pad), got %d: %q", runeCount, out)
 	}
 }

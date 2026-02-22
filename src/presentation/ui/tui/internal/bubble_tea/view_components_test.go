@@ -212,3 +212,43 @@ func TestComputeLogsViewportSize_NonPositiveHeight(t *testing.T) {
 		t.Fatalf("expected default height 8 for negative height, got %d", h)
 	}
 }
+
+func TestComputeLogsViewportSize_PositiveHeight_WithSubtitle(t *testing.T) {
+	prefs := CurrentUIPreferences()
+	prefs.ShowFooter = true
+	w, h := computeLogsViewportSize(100, 40, prefs, "Subtitle text", "hint")
+	if w <= 0 {
+		t.Fatalf("expected positive content width, got %d", w)
+	}
+	if h < 3 {
+		t.Fatalf("expected viewport height >= 3, got %d", h)
+	}
+}
+
+func TestRuntimeLogSnapshot_EmptyFeedWithReusable(t *testing.T) {
+	feed := NewRuntimeLogBuffer(8)
+	// Feed has no lines written.
+	buf := make([]string, 10)
+	reusable := &buf
+	got := runtimeLogSnapshot(feed, reusable)
+	if got != nil {
+		t.Fatalf("expected nil for empty feed with reusable, got %v", got)
+	}
+}
+
+func TestTruncateWithEllipsis_NonASCIIWithinWidth(t *testing.T) {
+	s := "Привет" // 6 Cyrillic runes, fits in width 10
+	got := truncateWithEllipsis(s, 10)
+	if got != s {
+		t.Fatalf("expected unchanged non-ASCII string within width, got %q", got)
+	}
+}
+
+func TestComputeLogsViewportSize_TinyHeight_ClampsTo3(t *testing.T) {
+	prefs := CurrentUIPreferences()
+	prefs.ShowFooter = true
+	_, h := computeLogsViewportSize(100, 10, prefs, "Long subtitle text for testing", "hint")
+	if h < 3 {
+		t.Fatalf("expected viewport height >= 3, got %d", h)
+	}
+}
