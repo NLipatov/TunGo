@@ -14,9 +14,23 @@ import (
 	uifactory "tungo/presentation/ui/tui/internal/ui/factory"
 )
 
+// unifiedSessionHandle is the subset of *bubbleTea.UnifiedSession used by the configurator
+// and runtime backend. Extracted as an interface for testability.
+type unifiedSessionHandle interface {
+	WaitForMode() (mode.Mode, error)
+	ActivateRuntime(ctx context.Context, options bubbleTea.RuntimeDashboardOptions)
+	WaitForRuntimeExit() (reconfigure bool, err error)
+	Close()
+}
+
 // activeUnifiedSession holds the shared unified session across configurator/runtime phases.
 // It is created by configureContinuous() on first call and reused on reconfigure loops.
-var activeUnifiedSession *bubbleTea.UnifiedSession
+var activeUnifiedSession unifiedSessionHandle
+
+// newUnifiedSession creates a new unified session. Replaced in tests.
+var newUnifiedSession = func(ctx context.Context, opts bubbleTea.ConfiguratorSessionOptions) (unifiedSessionHandle, error) {
+	return bubbleTea.NewUnifiedSession(ctx, opts)
+}
 
 type Configurator struct {
 	appMode            AppMode
@@ -102,7 +116,7 @@ func (p *Configurator) configureContinuous(ctx context.Context) (mode.Mode, erro
 	}
 
 	if activeUnifiedSession == nil {
-		session, err := bubbleTea.NewUnifiedSession(ctx, configOpts)
+		session, err := newUnifiedSession(ctx, configOpts)
 		if err != nil {
 			return mode.Unknown, err
 		}

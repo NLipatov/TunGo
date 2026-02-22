@@ -69,6 +69,20 @@ func TestRecorder_DoubleFlush(t *testing.T) {
 	}
 }
 
+func TestRecorder_AutoFlushTXOnThreshold(t *testing.T) {
+	c := NewCollector(time.Second, 0)
+	SetGlobal(c)
+	defer SetGlobal(nil)
+
+	rec := NewRecorder()
+	rec.RecordTX(HotPathFlushThresholdBytes)
+
+	snap := c.Snapshot()
+	if snap.TXBytesTotal != HotPathFlushThresholdBytes {
+		t.Fatalf("expected TX auto-flush at threshold, got %d", snap.TXBytesTotal)
+	}
+}
+
 func TestRecorder_ZeroBytes(t *testing.T) {
 	c := NewCollector(time.Second, 0)
 	SetGlobal(c)

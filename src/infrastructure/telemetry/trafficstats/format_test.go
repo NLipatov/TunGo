@@ -19,3 +19,21 @@ func TestFormatRateWithSystem_Bytes(t *testing.T) {
 		t.Fatalf("unexpected decimal rate format: %q", got)
 	}
 }
+
+func TestFormatTotalWithSystem_SI(t *testing.T) {
+	if got := FormatTotalWithSystem(1500, UnitSystemBytes); got != "1.5 KB" {
+		t.Fatalf("unexpected SI total format: %q", got)
+	}
+}
+
+func TestFormatTotal_SmallValue_StaysInBaseUnit(t *testing.T) {
+	if got := FormatTotalWithSystem(500, UnitSystemBinary); got != "500 B" {
+		t.Fatalf("expected base unit for small value, got %q", got)
+	}
+}
+
+func TestFormatRate_SmallValue_StaysInBaseUnit(t *testing.T) {
+	if got := FormatRateWithSystem(100, UnitSystemBinary); got != "100 B/s" {
+		t.Fatalf("expected base unit for small rate, got %q", got)
+	}
+}

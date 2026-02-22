@@ -79,3 +79,94 @@ func TestBubbleTeaRuntimeBackend_MappingAndHooks(t *testing.T) {
 		t.Fatalf("expected ErrUserExit and reconfigure=false, got reconfigure=%v err=%v", reconfigure, err)
 	}
 }
+
+func TestRunRuntimeDashboard_UnifiedSession_HappyPath_Reconfigure(t *testing.T) {
+	mock := &mockUnifiedSession{waitRuntimeReconfigure: true}
+	withMockUnifiedSession(t, mock)
+
+	backend := bubbleTeaRuntimeBackend{}
+	reconfigure, err := backend.runRuntimeDashboard(context.Background(), RuntimeModeServer)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !reconfigure {
+		t.Fatal("expected reconfigure=true")
+	}
+	if !mock.activateCalled {
+		t.Fatal("expected ActivateRuntime called")
+	}
+}
+
+func TestRunRuntimeDashboard_UnifiedSession_Quit_ReturnsErrUserExit(t *testing.T) {
+	mock := &mockUnifiedSession{waitRuntimeErr: bubbleTea.ErrUnifiedSessionQuit}
+	withMockUnifiedSession(t, mock)
+
+	backend := bubbleTeaRuntimeBackend{}
+	reconfigure, err := backend.runRuntimeDashboard(context.Background(), RuntimeModeClient)
+	if !errors.Is(err, ErrUserExit) {
+		t.Fatalf("expected ErrUserExit, got %v", err)
+	}
+	if reconfigure {
+		t.Fatal("expected reconfigure=false")
+	}
+	if !mock.closeCalled {
+		t.Fatal("expected Close called")
+	}
+	if activeUnifiedSession != nil {
+		t.Fatal("expected activeUnifiedSession cleared")
+	}
+}
+
+func TestRunRuntimeDashboard_UnifiedSession_Disconnected_KeepsSession(t *testing.T) {
+	mock := &mockUnifiedSession{waitRuntimeErr: bubbleTea.ErrUnifiedSessionRuntimeDisconnected}
+	withMockUnifiedSession(t, mock)
+
+	backend := bubbleTeaRuntimeBackend{}
+	reconfigure, err := backend.runRuntimeDashboard(context.Background(), RuntimeModeServer)
+	if err != nil {
+		t.Fatalf("expected nil error for disconnect, got %v", err)
+	}
+	if reconfigure {
+		t.Fatal("expected reconfigure=false for disconnect")
+	}
+	if mock.closeCalled {
+		t.Fatal("expected Close NOT called on disconnect")
+	}
+	if activeUnifiedSession == nil {
+		t.Fatal("expected activeUnifiedSession preserved on disconnect")
+	}
+}
+
+func TestRunRuntimeDashboard_UnifiedSession_GenericError_ClearsSession(t *testing.T) {
+	mock := &mockUnifiedSession{waitRuntimeErr: errors.New("unexpected")}
+	withMockUnifiedSession(t, mock)
+
+	backend := bubbleTeaRuntimeBackend{}
+	reconfigure, err := backend.runRuntimeDashboard(context.Background(), RuntimeModeClient)
+	if err == nil || err.Error() != "unexpected" {
+		t.Fatalf("expected 'unexpected', got %v", err)
+	}
+	if reconfigure {
+		t.Fatal("expected reconfigure=false")
+	}
+	if !mock.closeCalled {
+		t.Fatal("expected Close called")
+	}
+	if activeUnifiedSession != nil {
+		t.Fatal("expected activeUnifiedSession cleared")
+	}
+}
+
+func TestRunRuntimeDashboard_UnifiedSession_NoError_ReturnsReconfigure(t *testing.T) {
+	mock := &mockUnifiedSession{waitRuntimeReconfigure: false}
+	withMockUnifiedSession(t, mock)
+
+	backend := bubbleTeaRuntimeBackend{}
+	reconfigure, err := backend.runRuntimeDashboard(context.Background(), RuntimeModeServer)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if reconfigure {
+		t.Fatal("expected reconfigure=false")
+	}
+}

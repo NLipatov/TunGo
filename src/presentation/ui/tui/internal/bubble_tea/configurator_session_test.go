@@ -2899,3 +2899,136 @@ func TestConfiguratorLogTickCmd_InnerFuncEmitsMessage(t *testing.T) {
 		t.Fatalf("expected seq=42, got %d", tick.seq)
 	}
 }
+
+func TestUpdateServerSelectScreen_ManageClientsListError_Exits(t *testing.T) {
+	manager := &sessionServerConfigManagerStub{
+		peers:   []serverConfiguration.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
+		listErr: errors.New("list failed"),
+	}
+	model, err := newConfiguratorSessionModel(ConfiguratorSessionOptions{
+		Observer:            sessionObserverStub{},
+		Selector:            sessionSelectorStub{},
+		Creator:             sessionCreatorStub{},
+		Deleter:             sessionDeleterStub{},
+		ClientConfigManager: sessionClientConfigManagerStub{},
+		ServerConfigManager: manager,
+	})
+	if err != nil {
+		t.Fatalf("newConfiguratorSessionModel error: %v", err)
+	}
+	model.screen = configuratorScreenServerSelect
+	model.cursor = 2 // "manage clients"
+
+	result, cmd := model.updateServerSelectScreen(keyNamed(tea.KeyEnter))
+	s := result.(configuratorSessionModel)
+	if !s.done {
+		t.Fatal("expected done=true on list error")
+	}
+	if s.resultErr == nil || !strings.Contains(s.resultErr.Error(), "list failed") {
+		t.Fatalf("expected list error, got %v", s.resultErr)
+	}
+	if cmd == nil {
+		t.Fatal("expected quit cmd")
+	}
+}
+
+func TestUpdateClientSelectScreen_SelectConfig_NonInvalidConfigError_Exits(t *testing.T) {
+	manager := &sessionServerConfigManagerStub{
+		peers: []serverConfiguration.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
+	}
+	model, err := newConfiguratorSessionModel(ConfiguratorSessionOptions{
+		Observer:            sessionObserverWithConfigs{configs: []string{"my-config"}},
+		Selector:            sessionSelectorStub{},
+		Creator:             sessionCreatorStub{},
+		Deleter:             sessionDeleterStub{},
+		ClientConfigManager: sessionClientConfigManagerInvalid{err: errors.New("connection refused")},
+		ServerConfigManager: manager,
+	})
+	if err != nil {
+		t.Fatalf("newConfiguratorSessionModel error: %v", err)
+	}
+	model.screen = configuratorScreenClientSelect
+	model.clientMenuOptions = []string{"my-config", sessionClientRemove, sessionClientAdd}
+	model.clientConfigs = []string{"my-config"}
+	model.cursor = 0
+
+	result, cmd := model.updateClientSelectScreen(keyNamed(tea.KeyEnter))
+	s := result.(configuratorSessionModel)
+	if !s.done {
+		t.Fatal("expected done=true for non-invalid config error")
+	}
+	if s.resultErr == nil || !strings.Contains(s.resultErr.Error(), "connection refused") {
+		t.Fatalf("expected connection refused error, got %v", s.resultErr)
+	}
+	if cmd == nil {
+		t.Fatal("expected quit cmd")
+	}
+}
+
+func TestUpdateClientSelectScreen_SelectConfig_ValidConfig_ExitsWithClientMode(t *testing.T) {
+	manager := &sessionServerConfigManagerStub{
+		peers: []serverConfiguration.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
+	}
+	model, err := newConfiguratorSessionModel(ConfiguratorSessionOptions{
+		Observer:            sessionObserverWithConfigs{configs: []string{"my-config"}},
+		Selector:            sessionSelectorStub{},
+		Creator:             sessionCreatorStub{},
+		Deleter:             sessionDeleterStub{},
+		ClientConfigManager: sessionClientConfigManagerStub{},
+		ServerConfigManager: manager,
+	})
+	if err != nil {
+		t.Fatalf("newConfiguratorSessionModel error: %v", err)
+	}
+	model.screen = configuratorScreenClientSelect
+	model.clientMenuOptions = []string{"my-config", sessionClientRemove, sessionClientAdd}
+	model.clientConfigs = []string{"my-config"}
+	model.cursor = 0
+
+	result, cmd := model.updateClientSelectScreen(keyNamed(tea.KeyEnter))
+	s := result.(configuratorSessionModel)
+	if !s.done {
+		t.Fatal("expected done=true for valid config")
+	}
+	if s.resultMode != mode.Client {
+		t.Fatalf("expected mode.Client, got %v", s.resultMode)
+	}
+	if cmd == nil {
+		t.Fatal("expected quit cmd")
+	}
+}
+
+func TestUpdateClientSelectScreen_SelectorError_Exits(t *testing.T) {
+	manager := &sessionServerConfigManagerStub{
+		peers: []serverConfiguration.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
+	}
+	model, err := newConfiguratorSessionModel(ConfiguratorSessionOptions{
+		Observer:            sessionObserverWithConfigs{configs: []string{"my-config"}},
+		Selector:            sessionSelectorStub{},
+		Creator:             sessionCreatorStub{},
+		Deleter:             sessionDeleterStub{},
+		ClientConfigManager: sessionClientConfigManagerStub{},
+		ServerConfigManager: manager,
+	})
+	if err != nil {
+		t.Fatalf("newConfiguratorSessionModel error: %v", err)
+	}
+	// Override selector to one that fails
+	model.options.Selector = sessionSelectorError{err: errors.New("select failed")}
+	model.screen = configuratorScreenClientSelect
+	model.clientMenuOptions = []string{"my-config", sessionClientRemove, sessionClientAdd}
+	model.clientConfigs = []string{"my-config"}
+	model.cursor = 0
+
+	result, cmd := model.updateClientSelectScreen(keyNamed(tea.KeyEnter))
+	s := result.(configuratorSessionModel)
+	if !s.done {
+		t.Fatal("expected done=true on selector error")
+	}
+	if s.resultErr == nil || !strings.Contains(s.resultErr.Error(), "select failed") {
+		t.Fatalf("expected select error, got %v", s.resultErr)
+	}
+	if cmd == nil {
+		t.Fatal("expected quit cmd")
+	}
+}

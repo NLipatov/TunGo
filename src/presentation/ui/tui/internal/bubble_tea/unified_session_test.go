@@ -3,8 +3,10 @@ package bubble_tea
 import (
 	"context"
 	"errors"
+	"io"
 	"strings"
 	"testing"
+	"time"
 
 	"tungo/domain/mode"
 
@@ -795,6 +797,347 @@ func TestUnifiedSession_UpdateRuntime_ReconfigureError(t *testing.T) {
 	default:
 		t.Fatal("expected error event")
 	}
+}
+
+// --- UnifiedSession external handle tests ---
+
+func TestUnifiedSession_WaitForMode_ModeSelected(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	done := make(chan struct{})
+	s := &UnifiedSession{events: events, done: done}
+
+	go func() {
+		events <- unifiedEvent{kind: unifiedEventModeSelected, mode: mode.Server}
+	}()
+
+	m, err := s.WaitForMode()
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if m != mode.Server {
+		t.Fatalf("expected mode.Server, got %v", m)
+	}
+}
+
+func TestUnifiedSession_WaitForMode_ExitEvent(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	done := make(chan struct{})
+	s := &UnifiedSession{events: events, done: done}
+
+	go func() {
+		events <- unifiedEvent{kind: unifiedEventExit}
+	}()
+
+	_, err := s.WaitForMode()
+	if !errors.Is(err, ErrUnifiedSessionQuit) {
+		t.Fatalf("expected ErrUnifiedSessionQuit, got %v", err)
+	}
+}
+
+func TestUnifiedSession_WaitForMode_ErrorEvent(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	done := make(chan struct{})
+	s := &UnifiedSession{events: events, done: done}
+
+	go func() {
+		events <- unifiedEvent{kind: unifiedEventError, err: errors.New("some error")}
+	}()
+
+	_, err := s.WaitForMode()
+	if err == nil || err.Error() != "some error" {
+		t.Fatalf("expected 'some error', got %v", err)
+	}
+}
+
+func TestUnifiedSession_WaitForMode_ReconfigureSkippedThenMode(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	done := make(chan struct{})
+	s := &UnifiedSession{events: events, done: done}
+
+	go func() {
+		events <- unifiedEvent{kind: unifiedEventReconfigure}
+		events <- unifiedEvent{kind: unifiedEventModeSelected, mode: mode.Client}
+	}()
+
+	m, err := s.WaitForMode()
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if m != mode.Client {
+		t.Fatalf("expected mode.Client, got %v", m)
+	}
+}
+
+func TestUnifiedSession_WaitForMode_ChannelClosed(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	done := make(chan struct{})
+	s := &UnifiedSession{events: events, done: done}
+
+	close(events)
+
+	_, err := s.WaitForMode()
+	if !errors.Is(err, ErrUnifiedSessionClosed) {
+		t.Fatalf("expected ErrUnifiedSessionClosed, got %v", err)
+	}
+}
+
+func TestUnifiedSession_WaitForMode_DoneWithError(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	done := make(chan struct{})
+	s := &UnifiedSession{events: events, done: done, err: errors.New("program error")}
+
+	close(done)
+
+	_, err := s.WaitForMode()
+	if err == nil || err.Error() != "program error" {
+		t.Fatalf("expected 'program error', got %v", err)
+	}
+}
+
+func TestUnifiedSession_WaitForMode_DoneWithoutError(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	done := make(chan struct{})
+	s := &UnifiedSession{events: events, done: done}
+
+	close(done)
+
+	_, err := s.WaitForMode()
+	if !errors.Is(err, ErrUnifiedSessionClosed) {
+		t.Fatalf("expected ErrUnifiedSessionClosed, got %v", err)
+	}
+}
+
+func TestUnifiedSession_WaitForRuntimeExit_Reconfigure(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	done := make(chan struct{})
+	s := &UnifiedSession{events: events, done: done}
+
+	go func() {
+		events <- unifiedEvent{kind: unifiedEventReconfigure}
+	}()
+
+	reconfigure, err := s.WaitForRuntimeExit()
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !reconfigure {
+		t.Fatal("expected reconfigure=true")
+	}
+}
+
+func TestUnifiedSession_WaitForRuntimeExit_Disconnected(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	done := make(chan struct{})
+	s := &UnifiedSession{events: events, done: done}
+
+	go func() {
+		events <- unifiedEvent{kind: unifiedEventRuntimeDisconnected}
+	}()
+
+	reconfigure, err := s.WaitForRuntimeExit()
+	if !errors.Is(err, ErrUnifiedSessionRuntimeDisconnected) {
+		t.Fatalf("expected ErrUnifiedSessionRuntimeDisconnected, got %v", err)
+	}
+	if reconfigure {
+		t.Fatal("expected reconfigure=false")
+	}
+}
+
+func TestUnifiedSession_WaitForRuntimeExit_ExitEvent(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	done := make(chan struct{})
+	s := &UnifiedSession{events: events, done: done}
+
+	go func() {
+		events <- unifiedEvent{kind: unifiedEventExit}
+	}()
+
+	_, err := s.WaitForRuntimeExit()
+	if !errors.Is(err, ErrUnifiedSessionQuit) {
+		t.Fatalf("expected ErrUnifiedSessionQuit, got %v", err)
+	}
+}
+
+func TestUnifiedSession_WaitForRuntimeExit_ErrorEvent(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	done := make(chan struct{})
+	s := &UnifiedSession{events: events, done: done}
+
+	go func() {
+		events <- unifiedEvent{kind: unifiedEventError, err: errors.New("runtime error")}
+	}()
+
+	_, err := s.WaitForRuntimeExit()
+	if err == nil || err.Error() != "runtime error" {
+		t.Fatalf("expected 'runtime error', got %v", err)
+	}
+}
+
+func TestUnifiedSession_WaitForRuntimeExit_ModeSelected(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	done := make(chan struct{})
+	s := &UnifiedSession{events: events, done: done}
+
+	go func() {
+		events <- unifiedEvent{kind: unifiedEventModeSelected, mode: mode.Client}
+	}()
+
+	reconfigure, err := s.WaitForRuntimeExit()
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !reconfigure {
+		t.Fatal("expected reconfigure=true for unexpected modeSelected")
+	}
+}
+
+func TestUnifiedSession_WaitForRuntimeExit_ChannelClosed(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	done := make(chan struct{})
+	s := &UnifiedSession{events: events, done: done}
+
+	close(events)
+
+	_, err := s.WaitForRuntimeExit()
+	if !errors.Is(err, ErrUnifiedSessionClosed) {
+		t.Fatalf("expected ErrUnifiedSessionClosed, got %v", err)
+	}
+}
+
+func TestUnifiedSession_WaitForRuntimeExit_DoneWithError(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	done := make(chan struct{})
+	s := &UnifiedSession{events: events, done: done, err: errors.New("program error")}
+
+	close(done)
+
+	_, err := s.WaitForRuntimeExit()
+	if err == nil || err.Error() != "program error" {
+		t.Fatalf("expected 'program error', got %v", err)
+	}
+}
+
+func TestUnifiedSession_WaitForRuntimeExit_DoneWithoutError(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	done := make(chan struct{})
+	s := &UnifiedSession{events: events, done: done}
+
+	close(done)
+
+	_, err := s.WaitForRuntimeExit()
+	if !errors.Is(err, ErrUnifiedSessionClosed) {
+		t.Fatalf("expected ErrUnifiedSessionClosed, got %v", err)
+	}
+}
+
+func TestUnifiedSession_Done_ReturnsChannel(t *testing.T) {
+	done := make(chan struct{})
+	s := &UnifiedSession{done: done}
+
+	ch := s.Done()
+	if ch == nil {
+		t.Fatal("expected non-nil done channel")
+	}
+
+	// Should not be closed initially.
+	select {
+	case <-ch:
+		t.Fatal("expected done channel to be open")
+	default:
+	}
+
+	close(done)
+	select {
+	case <-ch:
+	default:
+		t.Fatal("expected done channel to be closed after close(done)")
+	}
+}
+
+func withNoTTYUnifiedSession(t *testing.T) {
+	t.Helper()
+	prev := newUnifiedSessionProgram
+	newUnifiedSessionProgram = func(model tea.Model) *tea.Program {
+		return tea.NewProgram(model, tea.WithInput(strings.NewReader("")), tea.WithOutput(io.Discard))
+	}
+	t.Cleanup(func() { newUnifiedSessionProgram = prev })
+}
+
+func TestNewUnifiedSession_Success(t *testing.T) {
+	withNoTTYUnifiedSession(t)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	session, err := NewUnifiedSession(ctx, defaultUnifiedConfigOpts())
+	if err != nil {
+		t.Fatalf("NewUnifiedSession error: %v", err)
+	}
+	if session == nil {
+		t.Fatal("expected non-nil session")
+	}
+	if session.Done() == nil {
+		t.Fatal("expected non-nil Done channel")
+	}
+
+	// Cancel context to make the session exit.
+	cancel()
+	select {
+	case <-session.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("session did not complete after context cancel")
+	}
+}
+
+func TestNewUnifiedSession_InvalidOpts(t *testing.T) {
+	_, err := NewUnifiedSession(context.Background(), ConfiguratorSessionOptions{})
+	if err == nil {
+		t.Fatal("expected error for empty opts")
+	}
+}
+
+func TestUnifiedSession_ActivateRuntime_SendsMessage(t *testing.T) {
+	withNoTTYUnifiedSession(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	session, err := NewUnifiedSession(ctx, defaultUnifiedConfigOpts())
+	if err != nil {
+		t.Fatalf("NewUnifiedSession error: %v", err)
+	}
+
+	// ActivateRuntime should not panic even if session is in configuring phase.
+	session.ActivateRuntime(ctx, RuntimeDashboardOptions{Mode: RuntimeDashboardServer})
+
+	cancel()
+	select {
+	case <-session.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("session did not complete")
+	}
+}
+
+func TestUnifiedSession_Close(t *testing.T) {
+	withNoTTYUnifiedSession(t)
+	ctx := context.Background()
+
+	session, err := NewUnifiedSession(ctx, defaultUnifiedConfigOpts())
+	if err != nil {
+		t.Fatalf("NewUnifiedSession error: %v", err)
+	}
+
+	// Close should complete without deadlock.
+	done := make(chan struct{})
+	go func() {
+		session.Close()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close did not complete")
+	}
+
+	// Double close should be safe.
+	session.Close()
 }
 
 func TestUnifiedSession_RuntimePhase_ShowsRuntimeView(t *testing.T) {
