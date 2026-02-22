@@ -32,23 +32,29 @@ func TestTextArea_Init(t *testing.T) {
 	}
 }
 
-func TestTextArea_UpdateEnter(t *testing.T) {
+func TestTextArea_UpdateCtrlD_SubmitsAndQuits(t *testing.T) {
 	ta := NewTextArea("Type here...")
-	msg := tea.KeyMsg{Type: tea.KeyEnter, Runes: []rune("enter")}
+	msg := tea.KeyMsg{Type: tea.KeyCtrlD}
 	model, cmd := ta.Update(msg)
 
-	// Ensure that model is of the correct type
 	updatedTA, ok := model.(*TextArea)
 	if !ok {
 		t.Fatal("Expected model to be *TextArea")
 	}
-	// Check that the command is non-nil (tea.Quit is returned on "enter")
 	if cmd == nil {
-		t.Error("Expected a non-nil quit command on enter")
+		t.Error("Expected a non-nil quit command on ctrl+d")
 	}
-	// The underlying value should remain unchanged if no text was added.
 	if updatedTA.Value() != "" {
 		t.Errorf("Expected value to remain empty, got %q", updatedTA.Value())
+	}
+}
+
+func TestTextArea_EnterDoesNotSubmit(t *testing.T) {
+	ta := NewTextArea("Type here...")
+	model, _ := ta.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updatedTA := model.(*TextArea)
+	if updatedTA.done {
+		t.Error("Enter should not submit textarea (should insert newline)")
 	}
 }
 
@@ -96,7 +102,7 @@ func TestTextArea_View(t *testing.T) {
 
 func TestTextArea_View_WhenDone_Empty(t *testing.T) {
 	ta := NewTextArea("Type here...")
-	_, _ = ta.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_, _ = ta.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
 
 	if view := ta.View(); view != "" {
 		t.Fatalf("expected empty view when done, got %q", view)
