@@ -135,7 +135,7 @@ func (m unifiedSessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Check seq to ignore stale messages from a previous runtime.
 		if m.phase == phaseRuntime && msg.seq == m.runtimeSeq {
 			m.stopAllLogWaits()
-			GlobalRuntimeLogWriteSeparator()
+			GlobalRuntimeLogWriteSeparator("disconnected")
 			m.runtime = nil
 			m.phase = phaseWaitingForRuntime
 			m.sendEvent(unifiedEvent{kind: unifiedEventRuntimeDisconnected})
@@ -199,7 +199,7 @@ func (m unifiedSessionModel) updateRuntime(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	if rtModel.reconfigureRequested {
-		GlobalRuntimeLogWriteSeparator()
+		GlobalRuntimeLogWriteSeparator("reconfigured")
 		// Reset configurator for a fresh cycle.
 		newCfg, err := newConfiguratorSessionModel(m.configOpts)
 		if err != nil {

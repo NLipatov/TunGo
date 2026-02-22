@@ -1,10 +1,12 @@
 package bubble_tea
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"strings"
 	"sync"
+	"time"
 )
 
 const defaultRuntimeLogCapacity = 256
@@ -166,18 +168,19 @@ func DisableGlobalRuntimeLogCapture() {
 	globalRuntimeLogBuffer = nil
 }
 
-func (b *RuntimeLogBuffer) WriteSeparator() {
+func (b *RuntimeLogBuffer) WriteSeparator(reason string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.appendLineLocked("---")
+	line := fmt.Sprintf("--- session ended: %s (%s) ---", reason, time.Now().Format("2006-01-02 15:04:05"))
+	b.appendLineLocked(line)
 }
 
-func GlobalRuntimeLogWriteSeparator() {
+func GlobalRuntimeLogWriteSeparator(reason string) {
 	globalRuntimeLogMu.Lock()
 	buf := globalRuntimeLogBuffer
 	globalRuntimeLogMu.Unlock()
 	if buf != nil {
-		buf.WriteSeparator()
+		buf.WriteSeparator(reason)
 	}
 }
 

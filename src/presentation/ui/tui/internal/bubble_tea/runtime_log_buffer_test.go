@@ -123,15 +123,18 @@ func TestRuntimeLogBuffer_TailInto_LimitGreaterThanDst(t *testing.T) {
 func TestRuntimeLogBuffer_WriteSeparator(t *testing.T) {
 	b := NewRuntimeLogBuffer(8)
 	_, _ = b.Write([]byte("line one\nline two\n"))
-	b.WriteSeparator()
+	b.WriteSeparator("disconnected")
 	_, _ = b.Write([]byte("line three\n"))
 
 	lines := b.Tail(8)
 	if len(lines) != 4 {
 		t.Fatalf("expected 4 lines, got %d: %v", len(lines), lines)
 	}
-	if lines[2] != "---" {
-		t.Fatalf("expected separator '---' at index 2, got %q", lines[2])
+	if !strings.HasPrefix(lines[2], "--- session ended: disconnected (") {
+		t.Fatalf("expected separator with reason and timestamp, got %q", lines[2])
+	}
+	if !strings.HasSuffix(lines[2], ") ---") {
+		t.Fatalf("expected separator to end with ') ---', got %q", lines[2])
 	}
 }
 
@@ -140,22 +143,22 @@ func TestGlobalRuntimeLogWriteSeparator(t *testing.T) {
 	t.Cleanup(DisableGlobalRuntimeLogCapture)
 
 	// Should not panic when no global buffer exists.
-	GlobalRuntimeLogWriteSeparator()
+	GlobalRuntimeLogWriteSeparator("test")
 
 	EnableGlobalRuntimeLogCapture(8)
-	GlobalRuntimeLogWriteSeparator()
+	GlobalRuntimeLogWriteSeparator("reconfigured")
 
 	feed := GlobalRuntimeLogFeed()
 	lines := feed.Tail(8)
 	found := false
 	for _, line := range lines {
-		if line == "---" {
+		if strings.Contains(line, "session ended: reconfigured") {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Fatalf("expected '---' separator in global log feed, got %v", lines)
+		t.Fatalf("expected separator in global log feed, got %v", lines)
 	}
 }
 
