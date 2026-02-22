@@ -913,12 +913,12 @@ func TestUpdateClientAddJSONScreen_EscGoesBack(t *testing.T) {
 	}
 }
 
-func TestUpdateClientAddJSONScreen_EnterInvalidJSON(t *testing.T) {
+func TestUpdateClientAddJSONScreen_CtrlDInvalidJSON(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenClientAddJSON
 	m.addJSONInput.SetValue("not valid json")
 
-	result, _ := m.updateClientAddJSONScreen(keyNamed(tea.KeyEnter))
+	result, _ := m.updateClientAddJSONScreen(keyNamed(tea.KeyCtrlD))
 	s := result.(configuratorSessionModel)
 	if s.screen != configuratorScreenClientInvalid {
 		t.Fatalf("expected invalid screen, got %v", s.screen)
@@ -2313,7 +2313,7 @@ func TestUpdateClientRemoveScreen_ReloadError(t *testing.T) {
 // 5. updateClientAddJSONScreen coverage
 // =========================================================================
 
-func TestUpdateClientAddJSONScreen_EnterValidJSON_CreateSucceeds(t *testing.T) {
+func TestUpdateClientAddJSONScreen_CtrlDValidJSON_CreateSucceeds(t *testing.T) {
 	creator := &sessionCreatorRecorder{}
 	manager := &sessionServerConfigManagerStub{
 		peers: []serverConfiguration.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
@@ -2333,7 +2333,7 @@ func TestUpdateClientAddJSONScreen_EnterValidJSON_CreateSucceeds(t *testing.T) {
 	model.addName = "my-config"
 	model.addJSONInput.SetValue(validClientConfigurationJSON())
 
-	result, _ := model.updateClientAddJSONScreen(keyNamed(tea.KeyEnter))
+	result, _ := model.updateClientAddJSONScreen(keyNamed(tea.KeyCtrlD))
 	s := result.(configuratorSessionModel)
 
 	if s.screen != configuratorScreenClientSelect {
@@ -2347,7 +2347,7 @@ func TestUpdateClientAddJSONScreen_EnterValidJSON_CreateSucceeds(t *testing.T) {
 	}
 }
 
-func TestUpdateClientAddJSONScreen_EnterValidJSON_CreateError(t *testing.T) {
+func TestUpdateClientAddJSONScreen_CtrlDValidJSON_CreateError(t *testing.T) {
 	createErr := errors.New("create failed")
 	creator := &sessionCreatorRecorder{err: createErr}
 	manager := &sessionServerConfigManagerStub{
@@ -2368,7 +2368,7 @@ func TestUpdateClientAddJSONScreen_EnterValidJSON_CreateError(t *testing.T) {
 	model.addName = "my-config"
 	model.addJSONInput.SetValue(validClientConfigurationJSON())
 
-	result, cmd := model.updateClientAddJSONScreen(keyNamed(tea.KeyEnter))
+	result, cmd := model.updateClientAddJSONScreen(keyNamed(tea.KeyCtrlD))
 	s := result.(configuratorSessionModel)
 
 	if !s.done {
@@ -2382,7 +2382,7 @@ func TestUpdateClientAddJSONScreen_EnterValidJSON_CreateError(t *testing.T) {
 	}
 }
 
-func TestUpdateClientAddJSONScreen_EnterValidJSON_ReloadError(t *testing.T) {
+func TestUpdateClientAddJSONScreen_CtrlDValidJSON_ReloadError(t *testing.T) {
 	observeErr := errors.New("observe failed")
 	creator := &sessionCreatorRecorder{}
 	manager := &sessionServerConfigManagerStub{
@@ -2403,7 +2403,7 @@ func TestUpdateClientAddJSONScreen_EnterValidJSON_ReloadError(t *testing.T) {
 	model.addName = "my-config"
 	model.addJSONInput.SetValue(validClientConfigurationJSON())
 
-	result, cmd := model.updateClientAddJSONScreen(keyNamed(tea.KeyEnter))
+	result, cmd := model.updateClientAddJSONScreen(keyNamed(tea.KeyCtrlD))
 	s := result.(configuratorSessionModel)
 
 	if !s.done {

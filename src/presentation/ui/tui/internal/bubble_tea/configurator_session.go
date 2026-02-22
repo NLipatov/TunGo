@@ -357,7 +357,7 @@ func (m configuratorSessionModel) View() string {
 			m.tabsLine(styles),
 			"Paste configuration",
 			body,
-			"Enter confirm | Tab switch tabs | Esc back | ctrl+c exit",
+			"Ctrl+D confirm | Tab switch tabs | Esc back | ctrl+c exit",
 			m.preferences,
 			styles,
 		)
@@ -570,7 +570,7 @@ func (m configuratorSessionModel) updateClientAddJSONScreen(msg tea.KeyMsg) (tea
 		m.screen = configuratorScreenClientAddName
 		m.adjustInputsToViewport()
 		return m, nil
-	case "enter":
+	case "ctrl+d":
 		configuration, parseErr := parseClientConfigurationJSON(m.addJSONInput.Value())
 		if parseErr != nil {
 			m.invalidErr = parseErr
