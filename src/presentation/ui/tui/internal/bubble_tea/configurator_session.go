@@ -29,6 +29,10 @@ type configuratorLogTickMsg struct {
 	seq uint64
 }
 
+type pasteSettledMsg struct {
+	seq uint64
+}
+
 const (
 	configuratorTabMain = iota
 	configuratorTabSettings
@@ -124,6 +128,7 @@ type configuratorSessionModel struct {
 	addJSONInput textarea.Model
 	addName      string
 	lastInputAt  time.Time
+	pasteSeq     uint64
 
 	invalidErr         error
 	invalidConfig      string
@@ -229,6 +234,11 @@ func (m configuratorSessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.refreshLogs()
 		return m, configuratorLogUpdateCmd(m.logsFeed(), m.logWaitStop, m.logTickSeq)
+	case pasteSettledMsg:
+		if m.screen == configuratorScreenClientAddJSON && msg.seq == m.pasteSeq {
+			m.tryFormatJSON()
+		}
+		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c":
@@ -616,11 +626,15 @@ func (m configuratorSessionModel) updateClientAddJSONScreen(msg tea.KeyMsg) (tea
 
 	// Track non-Enter input timing for debounce.
 	m.lastInputAt = time.Now()
+	m.pasteSeq++
+	seq := m.pasteSeq
 
 	// Forward to textarea (paste characters, cursor movement, etc.)
 	var cmd tea.Cmd
 	m.addJSONInput, cmd = m.addJSONInput.Update(msg)
-	return m, cmd
+	return m, tea.Batch(cmd, tea.Tick(pasteDebounce, func(time.Time) tea.Msg {
+		return pasteSettledMsg{seq: seq}
+	}))
 }
 
 func (m configuratorSessionModel) updateClientInvalidScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -958,6 +972,24 @@ func (m *configuratorSessionModel) initNameInput() {
 	ti.SetValue("")
 	ti.Focus()
 	m.addNameInput = ti
+}
+
+func (m *configuratorSessionModel) tryFormatJSON() {
+	raw := m.addJSONInput.Value()
+	if strings.TrimSpace(raw) == "" {
+		return
+	}
+	var obj json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &obj); err != nil {
+		return
+	}
+	pretty, err := json.MarshalIndent(obj, "", "  ")
+	if err != nil {
+		return
+	}
+	if string(pretty) != raw {
+		m.addJSONInput.SetValue(string(pretty))
+	}
 }
 
 func (m *configuratorSessionModel) initJSONInput() {

@@ -3110,6 +3110,34 @@ func TestUpdate_JSONScreen_NonEnterKeySetsLastInputAt(t *testing.T) {
 	}
 }
 
+func TestUpdate_PasteSettledMsg_FormatsJSON(t *testing.T) {
+	m := newTestSessionModel(t)
+	m.screen = configuratorScreenClientAddJSON
+	m.pasteSeq = 5
+	m.addJSONInput.SetValue(`{"a":1,"b":2}`)
+
+	result, _ := m.Update(pasteSettledMsg{seq: 5})
+	s := result.(configuratorSessionModel)
+	got := s.addJSONInput.Value()
+	if !strings.Contains(got, "\n") {
+		t.Fatalf("expected formatted JSON with newlines, got %q", got)
+	}
+}
+
+func TestUpdate_PasteSettledMsg_StaleSeqIgnored(t *testing.T) {
+	m := newTestSessionModel(t)
+	m.screen = configuratorScreenClientAddJSON
+	m.pasteSeq = 5
+	m.addJSONInput.SetValue(`{"a":1}`)
+
+	result, _ := m.Update(pasteSettledMsg{seq: 3}) // stale
+	s := result.(configuratorSessionModel)
+	got := s.addJSONInput.Value()
+	if strings.Contains(got, "\n") {
+		t.Fatalf("stale seq should not reformat, got %q", got)
+	}
+}
+
 func TestUpdate_NonKeyMsg_DroppedOnOtherScreens(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenMode
