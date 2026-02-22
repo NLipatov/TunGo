@@ -17,7 +17,6 @@ import (
 	serverConfiguration "tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/cryptography/primitives"
 
-	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -35,18 +34,6 @@ const (
 	configuratorTabSettings
 	configuratorTabLogs
 )
-
-type clipboardReadMsg struct {
-	content string
-	err     error
-}
-
-type clipboardCooldownDoneMsg struct{}
-
-var readClipboardContent = func() tea.Msg {
-	content, err := clipboard.ReadAll()
-	return clipboardReadMsg{content: content, err: err}
-}
 
 type configuratorSessionProgram interface {
 	Run() (tea.Model, error)
@@ -133,11 +120,10 @@ type configuratorSessionModel struct {
 	serverDeletePeer   serverConfiguration.AllowedPeer
 	serverDeleteCursor int
 
-	addNameInput      textinput.Model
-	addJSONInput      textarea.Model
-	addName           string
-	clipboardLoaded   bool
-	clipboardCooldown bool
+	addNameInput textinput.Model
+	addJSONInput textarea.Model
+	addName      string
+	lastInputAt  time.Time
 
 	invalidErr         error
 	invalidConfig      string
@@ -237,25 +223,6 @@ func (m configuratorSessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.refreshLogs()
 		}
 		return m, nil
-	case clipboardReadMsg:
-		if m.screen == configuratorScreenClientAddJSON {
-			if msg.err != nil {
-				m.notice = "Failed to read clipboard: " + msg.err.Error()
-				m.clipboardLoaded = true
-			} else {
-				content := strings.TrimRight(msg.content, "\r\n\t ")
-				m.addJSONInput.SetValue(content)
-				m.clipboardLoaded = true
-				m.clipboardCooldown = true
-			}
-			return m, tea.Tick(300*time.Millisecond, func(time.Time) tea.Msg {
-				return clipboardCooldownDoneMsg{}
-			})
-		}
-		return m, nil
-	case clipboardCooldownDoneMsg:
-		m.clipboardCooldown = false
-		return m, nil
 	case configuratorLogTickMsg:
 		if msg.seq != m.logTickSeq || m.tab != configuratorTabLogs {
 			return m, nil
@@ -306,9 +273,14 @@ func (m configuratorSessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Forward non-key messages (e.g. clipboard paste results, cursor blink ticks)
 	// to the active input component so they are not silently dropped.
-	if m.screen == configuratorScreenClientAddName {
+	switch m.screen {
+	case configuratorScreenClientAddName:
 		var cmd tea.Cmd
 		m.addNameInput, cmd = m.addNameInput.Update(msg)
+		return m, cmd
+	case configuratorScreenClientAddJSON:
+		var cmd tea.Cmd
+		m.addJSONInput, cmd = m.addJSONInput.Update(msg)
 		return m, cmd
 	}
 
@@ -369,32 +341,24 @@ func (m configuratorSessionModel) View() string {
 		)
 	case configuratorScreenClientAddJSON:
 		styles := resolveUIStyles(m.preferences)
-		var subtitle, hint string
+		container := inputContainerStyle().Width(m.inputContainerWidth())
+		lines := 1
+		if value := m.addJSONInput.Value(); value != "" {
+			lines = len(strings.Split(value, "\n"))
+		}
+		stats := metaTextStyle().Render(fmt.Sprintf("Lines: %d", lines))
 		body := make([]string, 0, 4)
 		if strings.TrimSpace(m.notice) != "" {
 			body = append(body, m.notice, "")
 		}
-		if !m.clipboardLoaded || m.clipboardCooldown {
-			subtitle = "Reading clipboard..."
-			hint = "Esc back | ctrl+c exit"
-		} else {
-			subtitle = "Clipboard content"
-			hint = "Enter confirm | Esc back | ctrl+c exit"
-			container := inputContainerStyle().Width(m.inputContainerWidth())
-			lines := 1
-			if value := m.addJSONInput.Value(); value != "" {
-				lines = len(strings.Split(value, "\n"))
-			}
-			stats := metaTextStyle().Render(fmt.Sprintf("Lines: %d", lines))
-			body = append(body, container.Render(m.addJSONInput.View()), stats)
-		}
+		body = append(body, container.Render(m.addJSONInput.View()), stats)
 		return renderScreen(
 			m.width,
 			m.height,
 			m.tabsLine(styles),
-			subtitle,
+			"Paste configuration",
 			body,
-			hint,
+			"Enter confirm | Esc back | ctrl+c exit",
 			m.preferences,
 			styles,
 		)
@@ -590,11 +554,10 @@ func (m configuratorSessionModel) updateClientAddNameScreen(msg tea.KeyMsg) (tea
 		m.notice = ""
 		m.cursor = 0
 		m.screen = configuratorScreenClientAddJSON
-		m.clipboardLoaded = false
-		m.clipboardCooldown = false
+		m.lastInputAt = time.Time{}
 		m.initJSONInput()
 		m.adjustInputsToViewport()
-		return m, readClipboardContent
+		return m, textarea.Blink
 	}
 
 	var cmd tea.Cmd
@@ -602,8 +565,9 @@ func (m configuratorSessionModel) updateClientAddNameScreen(msg tea.KeyMsg) (tea
 	return m, cmd
 }
 
+const pasteDebounce = 300 * time.Millisecond
+
 func (m configuratorSessionModel) updateClientAddJSONScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Allow Esc at any time.
 	if msg.String() == "esc" {
 		m.notice = ""
 		m.screen = configuratorScreenClientAddName
@@ -611,12 +575,14 @@ func (m configuratorSessionModel) updateClientAddJSONScreen(msg tea.KeyMsg) (tea
 		return m, nil
 	}
 
-	// While clipboard is loading or draining terminal paste chars, ignore all other input.
-	if !m.clipboardLoaded || m.clipboardCooldown {
-		return m, nil
-	}
-
 	if msg.String() == "enter" {
+		// Debounce: ignore Enter that arrives within pasteDebounce of the last
+		// non-Enter keystroke — it is almost certainly a newline from a
+		// character-by-character terminal paste, not a deliberate submit.
+		if !m.lastInputAt.IsZero() && time.Since(m.lastInputAt) < pasteDebounce {
+			return m, nil
+		}
+
 		configuration, parseErr := parseClientConfigurationJSON(m.addJSONInput.Value())
 		if parseErr != nil {
 			m.invalidErr = parseErr
@@ -644,8 +610,13 @@ func (m configuratorSessionModel) updateClientAddJSONScreen(msg tea.KeyMsg) (tea
 		return m, nil
 	}
 
-	// Read-only preview — don't forward input to textarea.
-	return m, nil
+	// Track non-Enter input timing for debounce.
+	m.lastInputAt = time.Now()
+
+	// Forward to textarea (paste characters, cursor movement, etc.)
+	var cmd tea.Cmd
+	m.addJSONInput, cmd = m.addJSONInput.Update(msg)
+	return m, cmd
 }
 
 func (m configuratorSessionModel) updateClientInvalidScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

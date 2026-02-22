@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"tungo/domain/mode"
 	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
@@ -320,17 +321,9 @@ func TestView_MainTab_ClientAddJSONScreen(t *testing.T) {
 	m.width = 80
 	m.height = 30
 
-	// Before clipboard loads, shows loading state.
 	view := m.View()
-	if !strings.Contains(view, "Reading clipboard...") {
-		t.Fatalf("add JSON view should contain 'Reading clipboard...' before load, got: %s", view)
-	}
-
-	// After clipboard loads, shows clipboard content subtitle.
-	m.clipboardLoaded = true
-	view = m.View()
-	if !strings.Contains(view, "Clipboard content") {
-		t.Fatalf("add JSON view should contain 'Clipboard content' after load, got: %s", view)
+	if !strings.Contains(view, "Paste configuration") {
+		t.Fatalf("add JSON view should contain 'Paste configuration', got: %s", view)
 	}
 }
 
@@ -924,7 +917,6 @@ func TestUpdateClientAddJSONScreen_EscGoesBack(t *testing.T) {
 func TestUpdateClientAddJSONScreen_EnterInvalidJSON(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenClientAddJSON
-	m.clipboardLoaded = true
 	m.addJSONInput.SetValue("not valid json")
 
 	result, _ := m.updateClientAddJSONScreen(keyNamed(tea.KeyEnter))
@@ -2339,7 +2331,6 @@ func TestUpdateClientAddJSONScreen_EnterValidJSON_CreateSucceeds(t *testing.T) {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
 	model.screen = configuratorScreenClientAddJSON
-	model.clipboardLoaded = true
 	model.addName = "my-config"
 	model.addJSONInput.SetValue(validClientConfigurationJSON())
 
@@ -2375,7 +2366,6 @@ func TestUpdateClientAddJSONScreen_EnterValidJSON_CreateError(t *testing.T) {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
 	model.screen = configuratorScreenClientAddJSON
-	model.clipboardLoaded = true
 	model.addName = "my-config"
 	model.addJSONInput.SetValue(validClientConfigurationJSON())
 
@@ -2411,7 +2401,6 @@ func TestUpdateClientAddJSONScreen_EnterValidJSON_ReloadError(t *testing.T) {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
 	model.screen = configuratorScreenClientAddJSON
-	model.clipboardLoaded = true
 	model.addName = "my-config"
 	model.addJSONInput.SetValue(validClientConfigurationJSON())
 
@@ -3061,59 +3050,58 @@ func TestUpdate_NonKeyMsg_ForwardedToInput_AddName(t *testing.T) {
 	}
 }
 
-func TestUpdate_ClipboardReadMsg_SetsTextareaValue(t *testing.T) {
+func TestUpdate_NonKeyMsg_ForwardedToInput_AddJSON(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenClientAddJSON
 
-	result, _ := m.Update(clipboardReadMsg{content: "{\"key\":\"value\"}\n\n"})
+	// Any non-key, non-window-size message should be forwarded to the textarea,
+	// not silently dropped. This is required for clipboard paste results and cursor blinks.
+	type customMsg struct{}
+	result, _ := m.Update(customMsg{})
 	s := result.(configuratorSessionModel)
 	if s.screen != configuratorScreenClientAddJSON {
 		t.Fatalf("expected to stay on add JSON screen, got %v", s.screen)
 	}
-	if !s.clipboardLoaded {
-		t.Fatal("expected clipboardLoaded=true")
-	}
-	if !s.clipboardCooldown {
-		t.Fatal("expected clipboardCooldown=true during cooldown")
-	}
-	// Trailing whitespace/newlines should be stripped.
-	if got := s.addJSONInput.Value(); got != "{\"key\":\"value\"}" {
-		t.Fatalf("expected stripped clipboard content, got %q", got)
-	}
 }
 
-func TestUpdate_ClipboardReadMsg_Error(t *testing.T) {
+func TestUpdate_JSONScreen_EnterDebouncedDuringPaste(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenClientAddJSON
+	// Simulate recent non-Enter input (as if paste just happened).
+	m.lastInputAt = time.Now()
 
-	result, _ := m.Update(clipboardReadMsg{err: errors.New("no clipboard")})
-	s := result.(configuratorSessionModel)
-	if !s.clipboardLoaded {
-		t.Fatal("expected clipboardLoaded=true even on error")
-	}
-	if s.notice == "" {
-		t.Fatal("expected error notice")
-	}
-}
-
-func TestUpdate_JSONScreen_IgnoresInputDuringCooldown(t *testing.T) {
-	m := newTestSessionModel(t)
-	m.screen = configuratorScreenClientAddJSON
-	m.clipboardLoaded = true
-	m.clipboardCooldown = true
-
-	// Enter during cooldown should be ignored.
+	// Enter within debounce window should be ignored.
 	result, _ := m.updateClientAddJSONScreen(keyNamed(tea.KeyEnter))
 	s := result.(configuratorSessionModel)
 	if s.screen != configuratorScreenClientAddJSON {
-		t.Fatal("expected Enter to be ignored during cooldown")
+		t.Fatal("expected Enter to be debounced during paste")
 	}
+}
 
-	// Esc should still work during cooldown.
-	result, _ = m.updateClientAddJSONScreen(keyNamed(tea.KeyEsc))
-	s = result.(configuratorSessionModel)
-	if s.screen != configuratorScreenClientAddName {
-		t.Fatal("expected Esc to work during cooldown")
+func TestUpdate_JSONScreen_EnterAcceptedAfterDebounce(t *testing.T) {
+	m := newTestSessionModel(t)
+	m.screen = configuratorScreenClientAddJSON
+	m.addJSONInput.SetValue("not valid json")
+	// No recent input — lastInputAt is zero, Enter should be accepted.
+
+	result, _ := m.updateClientAddJSONScreen(keyNamed(tea.KeyEnter))
+	s := result.(configuratorSessionModel)
+	if s.screen != configuratorScreenClientInvalid {
+		t.Fatalf("expected Enter to be accepted (goes to invalid screen for bad JSON), got %v", s.screen)
+	}
+}
+
+func TestUpdate_JSONScreen_NonEnterKeySetsLastInputAt(t *testing.T) {
+	m := newTestSessionModel(t)
+	m.screen = configuratorScreenClientAddJSON
+
+	if !m.lastInputAt.IsZero() {
+		t.Fatal("expected lastInputAt to be zero initially")
+	}
+	result, _ := m.updateClientAddJSONScreen(keyRunes('x'))
+	s := result.(configuratorSessionModel)
+	if s.lastInputAt.IsZero() {
+		t.Fatal("expected lastInputAt to be set after key input")
 	}
 }
 
