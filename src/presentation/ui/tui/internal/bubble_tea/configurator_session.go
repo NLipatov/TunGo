@@ -576,11 +576,15 @@ func (m configuratorSessionModel) updateClientAddJSONScreen(msg tea.KeyMsg) (tea
 	}
 
 	if msg.String() == "enter" {
-		// Debounce: ignore Enter that arrives within pasteDebounce of the last
-		// non-Enter keystroke — it is almost certainly a newline from a
-		// character-by-character terminal paste, not a deliberate submit.
+		// Debounce: if Enter arrives within pasteDebounce of the last
+		// non-Enter keystroke, it is almost certainly a newline from a
+		// character-by-character terminal paste — insert it as a newline
+		// instead of submitting.
 		if !m.lastInputAt.IsZero() && time.Since(m.lastInputAt) < pasteDebounce {
-			return m, nil
+			m.lastInputAt = time.Now()
+			var cmd tea.Cmd
+			m.addJSONInput, cmd = m.addJSONInput.Update(msg)
+			return m, cmd
 		}
 
 		configuration, parseErr := parseClientConfigurationJSON(m.addJSONInput.Value())

@@ -3070,11 +3070,16 @@ func TestUpdate_JSONScreen_EnterDebouncedDuringPaste(t *testing.T) {
 	// Simulate recent non-Enter input (as if paste just happened).
 	m.lastInputAt = time.Now()
 
-	// Enter within debounce window should be ignored.
+	// Enter within debounce window should be forwarded to textarea as newline,
+	// not treated as submit.
 	result, _ := m.updateClientAddJSONScreen(keyNamed(tea.KeyEnter))
 	s := result.(configuratorSessionModel)
 	if s.screen != configuratorScreenClientAddJSON {
 		t.Fatal("expected Enter to be debounced during paste")
+	}
+	// lastInputAt should be refreshed so the debounce window extends.
+	if s.lastInputAt.IsZero() {
+		t.Fatal("expected lastInputAt to be refreshed during debounce")
 	}
 }
 
