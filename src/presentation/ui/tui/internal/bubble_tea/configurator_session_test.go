@@ -3032,3 +3032,46 @@ func TestUpdateClientSelectScreen_SelectorError_Exits(t *testing.T) {
 		t.Fatal("expected quit cmd")
 	}
 }
+
+// --- Non-key message forwarding to active input (fixes Ctrl+V paste on Windows) ---
+
+func TestUpdate_NonKeyMsg_ForwardedToInput_AddName(t *testing.T) {
+	m := newTestSessionModel(t)
+	m.screen = configuratorScreenClientAddName
+
+	// Any non-key, non-window-size message should be forwarded to the textinput,
+	// not silently dropped. This is required for clipboard paste results and cursor blinks.
+	type customMsg struct{}
+	result, _ := m.Update(customMsg{})
+	s := result.(configuratorSessionModel)
+	if s.screen != configuratorScreenClientAddName {
+		t.Fatalf("expected to stay on add name screen, got %v", s.screen)
+	}
+}
+
+func TestUpdate_NonKeyMsg_ForwardedToInput_AddJSON(t *testing.T) {
+	m := newTestSessionModel(t)
+	m.screen = configuratorScreenClientAddJSON
+
+	type customMsg struct{}
+	result, _ := m.Update(customMsg{})
+	s := result.(configuratorSessionModel)
+	if s.screen != configuratorScreenClientAddJSON {
+		t.Fatalf("expected to stay on add JSON screen, got %v", s.screen)
+	}
+}
+
+func TestUpdate_NonKeyMsg_DroppedOnOtherScreens(t *testing.T) {
+	m := newTestSessionModel(t)
+	m.screen = configuratorScreenMode
+
+	type customMsg struct{}
+	result, cmd := m.Update(customMsg{})
+	s := result.(configuratorSessionModel)
+	if s.screen != configuratorScreenMode {
+		t.Fatalf("expected to stay on mode screen, got %v", s.screen)
+	}
+	if cmd != nil {
+		t.Fatal("expected nil cmd for dropped message")
+	}
+}

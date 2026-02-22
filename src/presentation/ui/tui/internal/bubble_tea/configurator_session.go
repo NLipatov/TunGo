@@ -270,6 +270,19 @@ func (m configuratorSessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// Forward non-key messages (e.g. clipboard paste results, cursor blink ticks)
+	// to the active input component so they are not silently dropped.
+	switch m.screen {
+	case configuratorScreenClientAddName:
+		var cmd tea.Cmd
+		m.addNameInput, cmd = m.addNameInput.Update(msg)
+		return m, cmd
+	case configuratorScreenClientAddJSON:
+		var cmd tea.Cmd
+		m.addJSONInput, cmd = m.addJSONInput.Update(msg)
+		return m, cmd
+	}
+
 	return m, nil
 }
 
