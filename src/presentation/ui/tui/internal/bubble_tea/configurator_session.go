@@ -967,6 +967,7 @@ func (m *configuratorSessionModel) initJSONInput() {
 	ta.SetWidth(80)
 	ta.SetHeight(10)
 	ta.ShowLineNumbers = true
+	ta.FocusedStyle.CursorLine = ta.FocusedStyle.Text
 	ta.SetValue("")
 	ta.Focus()
 	m.addJSONInput = ta
