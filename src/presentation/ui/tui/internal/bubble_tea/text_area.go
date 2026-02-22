@@ -58,7 +58,7 @@ func (m *TextArea) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.KeyMsg:
-		if msg.String() == "ctrl+d" {
+		if msg.String() == "enter" {
 			m.done = true
 			return m, tea.Quit
 		}
@@ -97,7 +97,7 @@ func (m *TextArea) View() string {
 		"Paste configuration",
 		m.placeholder,
 		body,
-		"Ctrl+D confirm | Esc Back",
+		"Enter confirm | Esc Back",
 		prefs,
 		styles,
 	)
