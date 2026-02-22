@@ -72,7 +72,10 @@ func (m *mockMgr) AddAllowedPeer(peer serverConfiguration.AllowedPeer) error {
 	m.addedPeers = append(m.addedPeers, peer)
 	return nil
 }
-func (m *mockMgr) InvalidateCache() {}
+func (m *mockMgr) ListAllowedPeers() ([]serverConfiguration.AllowedPeer, error) { return nil, nil }
+func (m *mockMgr) SetAllowedPeerEnabled(_ int, _ bool) error                    { return nil }
+func (m *mockMgr) RemoveAllowedPeer(_ int) error                                { return nil }
+func (m *mockMgr) InvalidateCache()                                             {}
 
 // mockResolver implements hostResolver for tests.
 type mockResolver struct {

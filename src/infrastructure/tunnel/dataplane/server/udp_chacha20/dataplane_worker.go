@@ -8,6 +8,7 @@ import (
 
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network/ip"
+	"tungo/infrastructure/telemetry/trafficstats"
 	"tungo/infrastructure/tunnel/session"
 )
 
@@ -77,5 +78,6 @@ func (w *udpDataplaneWorker) handleDecrypted(peer *session.Peer, rawPacket, decr
 	if _, err := w.tunWriter.Write(decrypted); err != nil {
 		return fmt.Errorf("failed to write to TUN: %v", err)
 	}
+	trafficstats.AddRX(len(decrypted))
 	return nil
 }

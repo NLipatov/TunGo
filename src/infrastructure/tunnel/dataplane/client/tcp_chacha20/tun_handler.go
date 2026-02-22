@@ -13,6 +13,7 @@ import (
 	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/settings"
+	"tungo/infrastructure/telemetry/trafficstats"
 	"tungo/infrastructure/tunnel/controlplane"
 )
 
@@ -51,6 +52,8 @@ func (t *TunHandler) HandleTun() error {
 	// Buffer layout: [2B epoch reserved][plaintext up to MTU][16B AEAD tag capacity]
 	var buffer [settings.DefaultEthernetMTU + settings.TCPChacha20Overhead]byte
 	payload := buffer[epochPrefixSize : settings.DefaultEthernetMTU+epochPrefixSize]
+	rec := trafficstats.NewRecorder()
+	defer rec.Flush()
 
 	for {
 		select {
@@ -75,6 +78,7 @@ func (t *TunHandler) HandleTun() error {
 				log.Printf("write to TCP failed: %s", err)
 				return err
 			}
+			rec.RecordTX(uint64(n))
 
 			if t.rekeyInit != nil && t.rekeyController != nil {
 				now := time.Now().UTC()

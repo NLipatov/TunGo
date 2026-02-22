@@ -2,8 +2,11 @@ package udp_chacha20
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"log"
+	"net"
 	"net/netip"
 	"time"
 	"tungo/application/network/connection"
@@ -13,6 +16,7 @@ import (
 	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/settings"
+	"tungo/infrastructure/telemetry/trafficstats"
 	"tungo/infrastructure/tunnel/controlplane"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -69,6 +73,8 @@ func (w *TunHandler) HandleTun() error {
 	// +8 route-id +12 nonce +16 AEAD tag
 	var buffer [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
 	payloadStart := chacha20.UDPRouteIDLength + chacha20poly1305.NonceSize
+	rec := trafficstats.NewRecorder()
+	defer rec.Flush()
 
 	// Main loop to read from TUN and send data
 	for {
@@ -86,8 +92,15 @@ func (w *TunHandler) HandleTun() error {
 					if w.ctx.Err() != nil {
 						return nil
 					}
+					var netErr net.Error
+					if errors.As(err, &netErr) {
+						// Transient socket error (e.g. WSAENOBUFS) — packet lost, socket is fine.
+						log.Printf("transient write error (packet dropped): %v", err)
+						continue
+					}
 					return fmt.Errorf("could not send packet to transport: %v", err)
 				}
+				rec.RecordTX(uint64(n))
 			}
 			if err != nil {
 				if w.ctx.Err() != nil {
@@ -99,13 +112,13 @@ func (w *TunHandler) HandleTun() error {
 				payloadBuf := w.controlPacketBuffer[chacha20.UDPRouteIDLength+chacha20poly1305.NonceSize:]
 				servicePayload, ok, pErr := w.rekeyInit.MaybeBuildRekeyInit(time.Now().UTC(), w.rekeyController, payloadBuf)
 				if pErr != nil {
-					fmt.Printf("failed to prepare rekeyInit: %v", pErr)
+					log.Printf("failed to prepare rekeyInit: %v", pErr)
 					continue
 				}
 				if ok {
 					totalLen := chacha20.UDPRouteIDLength + chacha20poly1305.NonceSize + len(servicePayload)
 					if err := w.egress.SendControl(w.controlPacketBuffer[:totalLen]); err != nil {
-						fmt.Printf("failed to send rekeyInit: %v", err)
+						log.Printf("failed to send rekeyInit: %v", err)
 					}
 				}
 			}

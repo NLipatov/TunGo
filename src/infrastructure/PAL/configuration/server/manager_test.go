@@ -439,9 +439,9 @@ func TestManager_AddAllowedPeer_Success(t *testing.T) {
 	}
 
 	peer := AllowedPeer{
-		PublicKey:    bytes.Repeat([]byte{3}, 32),
-		Enabled:     true,
-		ClientID: 9,
+		PublicKey: bytes.Repeat([]byte{3}, 32),
+		Enabled:   true,
+		ClientID:  9,
 	}
 
 	if err := manager.AddAllowedPeer(peer); err != nil {
@@ -508,6 +508,239 @@ func TestManager_AddAllowedPeer_WriteError(t *testing.T) {
 	err := manager.AddAllowedPeer(peer)
 	if err == nil || !strings.Contains(err.Error(), "write fail") {
 		t.Fatalf("expected write error, got %v", err)
+	}
+}
+
+func TestManager_ListAllowedPeers_SuccessReturnsCopy(t *testing.T) {
+	initialConf := NewDefaultConfiguration()
+	initialConf.AllowedPeers = []AllowedPeer{
+		{
+			Name:      "client-1",
+			PublicKey: bytes.Repeat([]byte{1}, 32),
+			Enabled:   true,
+			ClientID:  1,
+		},
+	}
+
+	manager := &Manager{
+		resolver: &ManagerMockResolver{Path: "/fake/path"},
+		stat:     &ManagerMockStat{Err: nil},
+		writer:   &ManagerMockWriter{},
+		reader:   &ManagerMockReader{Config: initialConf},
+	}
+
+	peers, err := manager.ListAllowedPeers()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(peers) != 1 {
+		t.Fatalf("expected 1 peer, got %d", len(peers))
+	}
+	if peers[0].ClientID != 1 || !peers[0].Enabled {
+		t.Fatalf("unexpected peer data: %+v", peers[0])
+	}
+
+	peers[0].Enabled = false
+	peers[0].PublicKey[0] = 99
+	if !initialConf.AllowedPeers[0].Enabled {
+		t.Fatal("expected source config to stay unchanged after modifying returned slice")
+	}
+	if initialConf.AllowedPeers[0].PublicKey[0] == 99 {
+		t.Fatal("expected returned public key copy to be detached from source config")
+	}
+}
+
+func TestManager_ListAllowedPeers_ConfigError(t *testing.T) {
+	manager := &Manager{
+		resolver: &ManagerMockResolver{Path: "/fake/path"},
+		stat:     &ManagerMockStat{Err: nil},
+		writer:   &ManagerMockWriter{},
+		reader:   &ManagerMockReader{Err: errors.New("read error")},
+	}
+
+	_, err := manager.ListAllowedPeers()
+	if err == nil || !strings.Contains(err.Error(), "read error") {
+		t.Fatalf("expected read error, got %v", err)
+	}
+}
+
+func TestManager_SetAllowedPeerEnabled_Success(t *testing.T) {
+	initialConf := NewDefaultConfiguration()
+	initialConf.AllowedPeers = []AllowedPeer{
+		{PublicKey: bytes.Repeat([]byte{2}, 32), Enabled: true, ClientID: 2},
+	}
+	writer := &ManagerMockWriter{}
+	manager := &Manager{
+		resolver: &ManagerMockResolver{Path: "/fake/path"},
+		stat:     &ManagerMockStat{Err: nil},
+		writer:   writer,
+		reader:   &ManagerMockReader{Config: initialConf},
+	}
+
+	if err := manager.SetAllowedPeerEnabled(2, false); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if writer.WriteCalls != 1 {
+		t.Fatalf("expected one write call, got %d", writer.WriteCalls)
+	}
+	written, ok := writer.WrittenData.(Configuration)
+	if !ok {
+		t.Fatalf("written data is not Configuration")
+	}
+	if written.AllowedPeers[0].Enabled {
+		t.Fatal("expected peer to be disabled")
+	}
+}
+
+func TestManager_SetAllowedPeerEnabled_InvalidClientID(t *testing.T) {
+	manager := &Manager{}
+	err := manager.SetAllowedPeerEnabled(0, false)
+	if err == nil || !strings.Contains(err.Error(), "invalid client id") {
+		t.Fatalf("expected invalid client id error, got %v", err)
+	}
+}
+
+func TestManager_SetAllowedPeerEnabled_PeerNotFound(t *testing.T) {
+	initialConf := NewDefaultConfiguration()
+	initialConf.AllowedPeers = []AllowedPeer{
+		{PublicKey: bytes.Repeat([]byte{3}, 32), Enabled: true, ClientID: 1},
+	}
+	manager := &Manager{
+		resolver: &ManagerMockResolver{Path: "/fake/path"},
+		stat:     &ManagerMockStat{Err: nil},
+		writer:   &ManagerMockWriter{},
+		reader:   &ManagerMockReader{Config: initialConf},
+	}
+
+	err := manager.SetAllowedPeerEnabled(7, false)
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("expected not found error, got %v", err)
+	}
+}
+
+func TestManager_SetAllowedPeerEnabled_ConfigError(t *testing.T) {
+	manager := &Manager{
+		resolver: &ManagerMockResolver{Path: "/fake/path"},
+		stat:     &ManagerMockStat{Err: nil},
+		writer:   &ManagerMockWriter{},
+		reader:   &ManagerMockReader{Err: errors.New("read error")},
+	}
+
+	err := manager.SetAllowedPeerEnabled(1, false)
+	if err == nil || !strings.Contains(err.Error(), "read error") {
+		t.Fatalf("expected read error, got %v", err)
+	}
+}
+
+func TestManager_SetAllowedPeerEnabled_WriteError(t *testing.T) {
+	initialConf := NewDefaultConfiguration()
+	initialConf.AllowedPeers = []AllowedPeer{
+		{PublicKey: bytes.Repeat([]byte{4}, 32), Enabled: true, ClientID: 4},
+	}
+	manager := &Manager{
+		resolver: &ManagerMockResolver{Path: "/fake/path"},
+		stat:     &ManagerMockStat{Err: nil},
+		writer:   &ManagerMockWriter{Err: errors.New("write fail")},
+		reader:   &ManagerMockReader{Config: initialConf},
+	}
+
+	err := manager.SetAllowedPeerEnabled(4, false)
+	if err == nil || !strings.Contains(err.Error(), "write fail") {
+		t.Fatalf("expected write fail error, got %v", err)
+	}
+}
+
+func TestManager_RemoveAllowedPeer_Success(t *testing.T) {
+	initialConf := NewDefaultConfiguration()
+	initialConf.ClientCounter = 12
+	initialConf.AllowedPeers = []AllowedPeer{
+		{PublicKey: bytes.Repeat([]byte{5}, 32), Enabled: true, ClientID: 1},
+		{PublicKey: bytes.Repeat([]byte{6}, 32), Enabled: true, ClientID: 2},
+	}
+	writer := &ManagerMockWriter{}
+	manager := &Manager{
+		resolver: &ManagerMockResolver{Path: "/fake/path"},
+		stat:     &ManagerMockStat{Err: nil},
+		writer:   writer,
+		reader:   &ManagerMockReader{Config: initialConf},
+	}
+
+	if err := manager.RemoveAllowedPeer(1); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if writer.WriteCalls != 1 {
+		t.Fatalf("expected one write call, got %d", writer.WriteCalls)
+	}
+	written, ok := writer.WrittenData.(Configuration)
+	if !ok {
+		t.Fatalf("written data is not Configuration")
+	}
+	if len(written.AllowedPeers) != 1 {
+		t.Fatalf("expected one remaining peer, got %d", len(written.AllowedPeers))
+	}
+	if written.AllowedPeers[0].ClientID != 2 {
+		t.Fatalf("expected remaining peer client id 2, got %d", written.AllowedPeers[0].ClientID)
+	}
+	if written.ClientCounter != 12 {
+		t.Fatalf("expected ClientCounter to stay unchanged, got %d", written.ClientCounter)
+	}
+}
+
+func TestManager_RemoveAllowedPeer_InvalidClientID(t *testing.T) {
+	manager := &Manager{}
+	err := manager.RemoveAllowedPeer(0)
+	if err == nil || !strings.Contains(err.Error(), "invalid client id") {
+		t.Fatalf("expected invalid client id error, got %v", err)
+	}
+}
+
+func TestManager_RemoveAllowedPeer_PeerNotFound(t *testing.T) {
+	initialConf := NewDefaultConfiguration()
+	initialConf.AllowedPeers = []AllowedPeer{
+		{PublicKey: bytes.Repeat([]byte{7}, 32), Enabled: true, ClientID: 1},
+	}
+	manager := &Manager{
+		resolver: &ManagerMockResolver{Path: "/fake/path"},
+		stat:     &ManagerMockStat{Err: nil},
+		writer:   &ManagerMockWriter{},
+		reader:   &ManagerMockReader{Config: initialConf},
+	}
+
+	err := manager.RemoveAllowedPeer(9)
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("expected not found error, got %v", err)
+	}
+}
+
+func TestManager_RemoveAllowedPeer_ConfigError(t *testing.T) {
+	manager := &Manager{
+		resolver: &ManagerMockResolver{Path: "/fake/path"},
+		stat:     &ManagerMockStat{Err: nil},
+		writer:   &ManagerMockWriter{},
+		reader:   &ManagerMockReader{Err: errors.New("read error")},
+	}
+
+	err := manager.RemoveAllowedPeer(1)
+	if err == nil || !strings.Contains(err.Error(), "read error") {
+		t.Fatalf("expected read error, got %v", err)
+	}
+}
+
+func TestManager_RemoveAllowedPeer_WriteError(t *testing.T) {
+	initialConf := NewDefaultConfiguration()
+	initialConf.AllowedPeers = []AllowedPeer{
+		{PublicKey: bytes.Repeat([]byte{8}, 32), Enabled: true, ClientID: 8},
+	}
+	manager := &Manager{
+		resolver: &ManagerMockResolver{Path: "/fake/path"},
+		stat:     &ManagerMockStat{Err: nil},
+		writer:   &ManagerMockWriter{Err: errors.New("write fail")},
+		reader:   &ManagerMockReader{Config: initialConf},
+	}
+
+	err := manager.RemoveAllowedPeer(8)
+	if err == nil || !strings.Contains(err.Error(), "write fail") {
+		t.Fatalf("expected write fail error, got %v", err)
 	}
 }
 

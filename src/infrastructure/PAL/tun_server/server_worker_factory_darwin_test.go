@@ -15,10 +15,15 @@ func (d *darwinDummyConfigManager) Configuration() (*serverCfg.Configuration, er
 	return &serverCfg.Configuration{}, nil
 }
 func (d *darwinDummyConfigManager) AddAllowedPeer(_ serverCfg.AllowedPeer) error { return nil }
-func (d *darwinDummyConfigManager) IncrementClientCounter() error                { return nil }
-func (d *darwinDummyConfigManager) InjectX25519Keys(_, _ []byte) error           { return nil }
-func (d *darwinDummyConfigManager) EnsureIPv6Subnets() error                     { return nil }
-func (d *darwinDummyConfigManager) InvalidateCache()                             {}
+func (d *darwinDummyConfigManager) ListAllowedPeers() ([]serverCfg.AllowedPeer, error) {
+	return nil, nil
+}
+func (d *darwinDummyConfigManager) SetAllowedPeerEnabled(_ int, _ bool) error { return nil }
+func (d *darwinDummyConfigManager) RemoveAllowedPeer(_ int) error             { return nil }
+func (d *darwinDummyConfigManager) IncrementClientCounter() error             { return nil }
+func (d *darwinDummyConfigManager) InjectX25519Keys(_, _ []byte) error        { return nil }
+func (d *darwinDummyConfigManager) EnsureIPv6Subnets() error                  { return nil }
+func (d *darwinDummyConfigManager) InvalidateCache()                          {}
 
 type darwinNopReadWriteCloser struct{}
 
