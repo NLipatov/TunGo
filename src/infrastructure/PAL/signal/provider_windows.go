@@ -2,7 +2,10 @@
 
 package signal
 
-import "os"
+import (
+	"os"
+	"syscall"
+)
 
 type DefaultProvider struct {
 }
@@ -12,5 +15,8 @@ func NewDefaultProvider() Provider {
 }
 
 func (p *DefaultProvider) ShutdownSignals() []os.Signal {
-	return []os.Signal{os.Interrupt}
+	return []os.Signal{
+		os.Interrupt,    // Ctrl-C
+		syscall.SIGTERM, // console close / Task Manager stop
+	}
 }
