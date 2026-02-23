@@ -3138,6 +3138,99 @@ func TestUpdate_PasteSettledMsg_StaleSeqIgnored(t *testing.T) {
 	}
 }
 
+func TestTryFormatJSON_EmptyInput(t *testing.T) {
+	m := newTestSessionModel(t)
+	m.screen = configuratorScreenClientAddJSON
+	m.pasteSeq = 1
+	m.addJSONInput.SetValue("")
+
+	// Should not panic or change anything.
+	result, _ := m.Update(pasteSettledMsg{seq: 1})
+	s := result.(configuratorSessionModel)
+	if s.addJSONInput.Value() != "" {
+		t.Fatalf("expected empty value unchanged, got %q", s.addJSONInput.Value())
+	}
+}
+
+func TestTryFormatJSON_InvalidJSON(t *testing.T) {
+	m := newTestSessionModel(t)
+	m.screen = configuratorScreenClientAddJSON
+	m.pasteSeq = 1
+	m.addJSONInput.SetValue("not json at all")
+
+	result, _ := m.Update(pasteSettledMsg{seq: 1})
+	s := result.(configuratorSessionModel)
+	if s.addJSONInput.Value() != "not json at all" {
+		t.Fatalf("expected invalid JSON unchanged, got %q", s.addJSONInput.Value())
+	}
+}
+
+func TestTryFormatJSON_AlreadyFormatted(t *testing.T) {
+	m := newTestSessionModel(t)
+	m.screen = configuratorScreenClientAddJSON
+	m.pasteSeq = 1
+	formatted := "{\n  \"a\": 1\n}"
+	m.addJSONInput.SetValue(formatted)
+
+	result, _ := m.Update(pasteSettledMsg{seq: 1})
+	s := result.(configuratorSessionModel)
+	if s.addJSONInput.Value() != formatted {
+		t.Fatalf("expected already-formatted JSON unchanged, got %q", s.addJSONInput.Value())
+	}
+}
+
+func TestView_ClientAddJSONScreen_MultilineContent(t *testing.T) {
+	m := newTestSessionModel(t)
+	m.screen = configuratorScreenClientAddJSON
+	m.width = 80
+	m.height = 30
+	m.addJSONInput.SetValue("{\n  \"key\": \"value\"\n}")
+
+	view := m.View()
+	if !strings.Contains(view, "Lines: 3") {
+		t.Fatalf("expected 'Lines: 3' in view for multiline content, got: %s", view)
+	}
+}
+
+func TestUpdateClientSelectScreen_EmptyMenuOptions(t *testing.T) {
+	m := newTestSessionModel(t)
+	m.screen = configuratorScreenClientSelect
+	m.clientMenuOptions = nil
+
+	result, _ := m.updateClientSelectScreen(keyNamed(tea.KeyEnter))
+	s := result.(configuratorSessionModel)
+	if s.screen != configuratorScreenClientSelect {
+		t.Fatalf("expected to stay on client select with empty options, got %v", s.screen)
+	}
+}
+
+func TestUpdateServerSelectScreen_DefaultFallthrough(t *testing.T) {
+	m := newTestSessionModel(t)
+	m.screen = configuratorScreenServerSelect
+	// Set options to something that doesn't match any known case.
+	m.serverMenuOptions = []string{"unknown option"}
+	m.cursor = 0
+
+	result, _ := m.updateServerSelectScreen(keyNamed(tea.KeyEnter))
+	s := result.(configuratorSessionModel)
+	// Should fall through to default return m, nil.
+	if s.screen != configuratorScreenServerSelect {
+		t.Fatalf("expected to stay on server select for unknown option, got %v", s.screen)
+	}
+}
+
+func TestUpdateServerManageScreen_EmptyPeersOnEnter(t *testing.T) {
+	m := newTestSessionModel(t)
+	m.screen = configuratorScreenServerManage
+	m.serverManagePeers = nil
+
+	result, _ := m.updateServerManageScreen(keyNamed(tea.KeyEnter))
+	s := result.(configuratorSessionModel)
+	if s.screen != configuratorScreenServerManage {
+		t.Fatalf("expected to stay on manage screen with empty peers, got %v", s.screen)
+	}
+}
+
 func TestUpdate_NonKeyMsg_DroppedOnOtherScreens(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenMode

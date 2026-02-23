@@ -244,6 +244,18 @@ func TestTruncateWithEllipsis_NonASCIIWithinWidth(t *testing.T) {
 	}
 }
 
+func TestTruncateWithEllipsis_NonASCII_SmallWidth(t *testing.T) {
+	s := "АБВГДЕЖЗИК" // 10 runes, needs truncation
+	// width=1 → just first rune, no ellipsis
+	if got := truncateWithEllipsis(s, 1); got != "А" {
+		t.Fatalf("expected single rune for width=1, got %q", got)
+	}
+	// width=3 → exactly 3 runes, no room for ellipsis
+	if got := truncateWithEllipsis(s, 3); got != "АБВ" {
+		t.Fatalf("expected 3 runes for width=3, got %q", got)
+	}
+}
+
 func TestComputeLogsViewportSize_TinyHeight_ClampsTo3(t *testing.T) {
 	prefs := CurrentUIPreferences()
 	prefs.ShowFooter = true

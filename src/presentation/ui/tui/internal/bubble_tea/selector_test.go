@@ -826,6 +826,32 @@ func TestSelector_LogTickMatchingSeqOnLogsScreen(t *testing.T) {
 	_ = m3.(Selector)
 }
 
+func TestSelector_LogTickStaleSeqIgnored(t *testing.T) {
+	DisableGlobalRuntimeLogCapture()
+	t.Cleanup(DisableGlobalRuntimeLogCapture)
+	EnableGlobalRuntimeLogCapture(64)
+
+	sel, _ := newTestSelector("Main title", "a", "b")
+	m1, _ := sel.Update(tea.KeyMsg{Type: tea.KeyTab})  // settings
+	m2, _ := m1.(Selector).Update(tea.KeyMsg{Type: tea.KeyTab}) // logs
+	s := m2.(Selector)
+
+	// Send a stale selectorLogTickMsg (seq doesn't match).
+	_, cmd := s.Update(selectorLogTickMsg{seq: s.logTickSeq + 99})
+	if cmd != nil {
+		t.Fatal("expected nil cmd for stale log tick seq")
+	}
+}
+
+func TestSelector_LogTickOnNonLogsScreenIgnored(t *testing.T) {
+	sel, _ := newTestSelector("Main title", "a", "b")
+	// Stay on main screen (not logs).
+	_, cmd := sel.Update(selectorLogTickMsg{seq: sel.logTickSeq})
+	if cmd != nil {
+		t.Fatal("expected nil cmd for log tick on non-logs screen")
+	}
+}
+
 func TestNextTheme_UnknownTheme_DefaultsToIdx0(t *testing.T) {
 	unknown := ThemeOption("totally_unknown")
 	got := nextTheme(unknown, 1)
