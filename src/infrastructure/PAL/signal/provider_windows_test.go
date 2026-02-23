@@ -4,6 +4,7 @@ package signal
 
 import (
 	"os"
+	"syscall"
 	"testing"
 )
 
@@ -12,7 +13,8 @@ func TestShutdownSignals_Windows_ExactSetAndOrder(t *testing.T) {
 
 	got := NewDefaultProvider().ShutdownSignals()
 	want := []os.Signal{
-		os.Interrupt, // Ctrl-C
+		os.Interrupt,    // Ctrl-C
+		syscall.SIGTERM, // console close / Task Manager stop
 	}
 
 	if len(got) != len(want) {

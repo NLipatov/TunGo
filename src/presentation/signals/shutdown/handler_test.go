@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -74,6 +75,17 @@ func TestShutdownHandler_Handle_TableDriven(t *testing.T) {
 				baseCancel()
 			},
 			expectCancelCalls: 0,
+		},
+		{
+			name:            "SIGTERM triggers cancellation",
+			callHandleTwice: false,
+			trigger: func(t *testing.T, notifier *ShutdownHandlerMockNotifier, baseCancel context.CancelFunc) {
+				if notifier.notifyChan == nil {
+					t.Fatalf("notifyChan must not be nil when trigger is executed")
+				}
+				notifier.notifyChan <- syscall.SIGTERM
+			},
+			expectCancelCalls: 1,
 		},
 		{
 			name:            "handle is idempotent",
