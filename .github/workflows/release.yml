@@ -161,6 +161,9 @@ jobs:
           AppVersion=$env:VER
           AppPublisher=TunGo Contributors
           AppPublisherURL=https://github.com/NLipatov/TunGo
+          AppSupportURL=https://github.com/NLipatov/TunGo/issues
+          AppUpdatesURL=https://github.com/NLipatov/TunGo/releases
+          AppContact=https://github.com/NLipatov/TunGo/issues
           DefaultDirName={pf}\TunGo
           DefaultGroupName=TunGo
           OutputBaseFilename=tungo-windows-x64
@@ -171,11 +174,17 @@ jobs:
           Uninstallable=yes
           UninstallDisplayName=TunGo $env:VER
           UninstallDisplayIcon={app}\TunGo.ico
+          SetupIconFile=TunGo.ico
+          WizardStyle=modern
+          LicenseFile=LICENSE
+          DisableDirPage=yes
+          DisableProgramGroupPage=yes
 
           [Files]
           Source: "wintun.dll"; Flags: dontcopy
           Source: "tungo-windows-x64.exe"; DestDir: "{app}"; Flags: ignoreversion
           Source: "TunGo.ico"; DestDir: "{app}"; Flags: ignoreversion
+          Source: "LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 
           [Icons]
           Name: "{group}\TunGo"; \
@@ -243,6 +252,9 @@ jobs:
           AppVersion=$env:VER
           AppPublisher=TunGo Contributors
           AppPublisherURL=https://github.com/NLipatov/TunGo
+          AppSupportURL=https://github.com/NLipatov/TunGo/issues
+          AppUpdatesURL=https://github.com/NLipatov/TunGo/releases
+          AppContact=https://github.com/NLipatov/TunGo/issues
           DefaultDirName={pf}\TunGo
           DefaultGroupName=TunGo
           OutputBaseFilename=tungo-windows-arm64
@@ -253,11 +265,17 @@ jobs:
           Uninstallable=yes
           UninstallDisplayName=TunGo $env:VER
           UninstallDisplayIcon={app}\TunGo.ico
+          SetupIconFile=TunGo.ico
+          WizardStyle=modern
+          LicenseFile=LICENSE
+          DisableDirPage=yes
+          DisableProgramGroupPage=yes
 
           [Files]
           Source: "wintun.dll"; Flags: dontcopy
           Source: "tungo-windows-arm64.exe"; DestDir: "{app}"; Flags: ignoreversion
           Source: "TunGo.ico"; DestDir: "{app}"; Flags: ignoreversion
+          Source: "LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 
           [Icons]
           Name: "{group}\TunGo"; \
