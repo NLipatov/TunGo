@@ -97,7 +97,7 @@ jobs:
       - name: Upload darwin-amd64
         uses: actions/upload-artifact@v4
         with:
-          name: darwin-amd64
+          name: tungo-darwin-amd64
           path: tungo-darwin-amd64
   
       - name: Build darwin-arm64
@@ -113,7 +113,7 @@ jobs:
       - name: Upload darwin-arm64
         uses: actions/upload-artifact@v4
         with:
-          name: darwin-arm64
+          name: tungo-darwin-arm64
           path: tungo-darwin-arm64
 
   build-windows:
@@ -150,7 +150,7 @@ jobs:
           go build -trimpath -buildvcs=false `
             -tags "netgo,osusergo" `
             -ldflags "-s -w -X tungo/presentation/runners/version.Tag=$env:VER" `
-            -o ../tungo-windows-x64.exe .
+            -o ../tungo-windows-amd64.exe .
 
       - name: Build x64 installer
         run: |
@@ -166,7 +166,7 @@ jobs:
           AppContact=https://github.com/NLipatov/TunGo/issues
           DefaultDirName={pf}\TunGo
           DefaultGroupName=TunGo
-          OutputBaseFilename=tungo-windows-x64
+          OutputBaseFilename=tungo-windows-amd64
           PrivilegesRequired=admin
           ArchitecturesAllowed=x64
           ArchitecturesInstallIn64BitMode=x64
@@ -182,13 +182,13 @@ jobs:
 
           [Files]
           Source: "wintun.dll"; Flags: dontcopy
-          Source: "tungo-windows-x64.exe"; DestDir: "{app}"; Flags: ignoreversion
+          Source: "tungo-windows-amd64.exe"; DestDir: "{app}"; Flags: ignoreversion
           Source: "TunGo.ico"; DestDir: "{app}"; Flags: ignoreversion
           Source: "LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 
           [Icons]
           Name: "{group}\TunGo"; \
-            Filename: "{app}\tungo-windows-x64.exe"; \
+            Filename: "{app}\tungo-windows-amd64.exe"; \
             IconFilename: "{app}\TunGo.ico"; \
             WorkingDir: "{app}"
 
@@ -231,8 +231,8 @@ jobs:
       - name: Upload Windows x64 installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: tungo-windows-x64
-          path: Output/tungo-windows-x64.exe
+          name: tungo-windows-amd64
+          path: Output/tungo-windows-amd64.exe
 
       - name: Build Windows arm64 binary
         run: |
@@ -380,17 +380,17 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: actions/download-artifact@v4
-        with: { name: tungo-linux-amd64, path: linux }
+        with: { name: tungo-linux-amd64, path: artifacts }
       - uses: actions/download-artifact@v4
-        with: { name: tungo-linux-arm64, path: linux-arm64 }
+        with: { name: tungo-linux-arm64, path: artifacts }
       - uses: actions/download-artifact@v4
-        with: { name: darwin-amd64, path: darwin }
+        with: { name: tungo-darwin-amd64, path: artifacts }
       - uses: actions/download-artifact@v4
-        with: { name: darwin-arm64, path: darwin-arm64 }
+        with: { name: tungo-darwin-arm64, path: artifacts }
       - uses: actions/download-artifact@v4
-        with: { name: tungo-windows-x64, path: win }
+        with: { name: tungo-windows-amd64, path: artifacts }
       - uses: actions/download-artifact@v4
-        with: { name: tungo-windows-arm64, path: win-arm64 }
+        with: { name: tungo-windows-arm64, path: artifacts }
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -403,12 +403,12 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            linux/tungo-linux-amd64
-            linux-arm64/tungo-linux-arm64
-            darwin/tungo-darwin-amd64
-            darwin-arm64/tungo-darwin-arm64
-            win/tungo-windows-x64.exe
-            win-arm64/tungo-windows-arm64.exe
+            artifacts/tungo-linux-amd64
+            artifacts/tungo-linux-arm64
+            artifacts/tungo-darwin-amd64
+            artifacts/tungo-darwin-arm64
+            artifacts/tungo-windows-amd64.exe
+            artifacts/tungo-windows-arm64.exe
 
   update-homebrew-tap:
     runs-on: ubuntu-latest
@@ -425,11 +425,11 @@ jobs:
         env:
           VERSION: ${{ needs.version-and-tag.outputs.tag_name }}
         run: |
-          curl -fsSL -o darwin-arm64 "https://github.com/NLipatov/TunGo/releases/download/${VERSION}/tungo-darwin-arm64"
-          curl -fsSL -o darwin-amd64 "https://github.com/NLipatov/TunGo/releases/download/${VERSION}/tungo-darwin-amd64"
+          curl -fsSL -o tungo-darwin-arm64 "https://github.com/NLipatov/TunGo/releases/download/${VERSION}/tungo-darwin-arm64"
+          curl -fsSL -o tungo-darwin-amd64 "https://github.com/NLipatov/TunGo/releases/download/${VERSION}/tungo-darwin-amd64"
 
-          SHA_ARM64=$(sha256sum darwin-arm64 | cut -d' ' -f1)
-          SHA_AMD64=$(sha256sum darwin-amd64 | cut -d' ' -f1)
+          SHA_ARM64=$(sha256sum tungo-darwin-arm64 | cut -d' ' -f1)
+          SHA_AMD64=$(sha256sum tungo-darwin-amd64 | cut -d' ' -f1)
 
           cat > homebrew-tungo/Formula/tungo.rb << 'FORMULA'
           class Tungo < Formula
