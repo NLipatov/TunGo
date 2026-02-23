@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"tungo/domain/mode"
 	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
@@ -3030,5 +3031,217 @@ func TestUpdateClientSelectScreen_SelectorError_Exits(t *testing.T) {
 	}
 	if cmd == nil {
 		t.Fatal("expected quit cmd")
+	}
+}
+
+// --- Non-key message forwarding to active input (fixes Ctrl+V paste on Windows) ---
+
+func TestUpdate_NonKeyMsg_ForwardedToInput_AddName(t *testing.T) {
+	m := newTestSessionModel(t)
+	m.screen = configuratorScreenClientAddName
+
+	// Any non-key, non-window-size message should be forwarded to the textinput,
+	// not silently dropped. This is required for clipboard paste results and cursor blinks.
+	type customMsg struct{}
+	result, _ := m.Update(customMsg{})
+	s := result.(configuratorSessionModel)
+	if s.screen != configuratorScreenClientAddName {
+		t.Fatalf("expected to stay on add name screen, got %v", s.screen)
+	}
+}
+
+func TestUpdate_NonKeyMsg_ForwardedToInput_AddJSON(t *testing.T) {
+	m := newTestSessionModel(t)
+	m.screen = configuratorScreenClientAddJSON
+
+	// Any non-key, non-window-size message should be forwarded to the textarea,
+	// not silently dropped. This is required for clipboard paste results and cursor blinks.
+	type customMsg struct{}
+	result, _ := m.Update(customMsg{})
+	s := result.(configuratorSessionModel)
+	if s.screen != configuratorScreenClientAddJSON {
+		t.Fatalf("expected to stay on add JSON screen, got %v", s.screen)
+	}
+}
+
+func TestUpdate_JSONScreen_EnterDebouncedDuringPaste(t *testing.T) {
+	m := newTestSessionModel(t)
+	m.screen = configuratorScreenClientAddJSON
+	// Simulate recent non-Enter input (as if paste just happened).
+	m.lastInputAt = time.Now()
+
+	// Enter within debounce window should be forwarded to textarea as newline,
+	// not treated as submit.
+	result, _ := m.updateClientAddJSONScreen(keyNamed(tea.KeyEnter))
+	s := result.(configuratorSessionModel)
+	if s.screen != configuratorScreenClientAddJSON {
+		t.Fatal("expected Enter to be debounced during paste")
+	}
+	// lastInputAt should be refreshed so the debounce window extends.
+	if s.lastInputAt.IsZero() {
+		t.Fatal("expected lastInputAt to be refreshed during debounce")
+	}
+}
+
+func TestUpdate_JSONScreen_EnterAcceptedAfterDebounce(t *testing.T) {
+	m := newTestSessionModel(t)
+	m.screen = configuratorScreenClientAddJSON
+	m.addJSONInput.SetValue("not valid json")
+	// No recent input — lastInputAt is zero, Enter should be accepted.
+
+	result, _ := m.updateClientAddJSONScreen(keyNamed(tea.KeyEnter))
+	s := result.(configuratorSessionModel)
+	if s.screen != configuratorScreenClientInvalid {
+		t.Fatalf("expected Enter to be accepted (goes to invalid screen for bad JSON), got %v", s.screen)
+	}
+}
+
+func TestUpdate_JSONScreen_NonEnterKeySetsLastInputAt(t *testing.T) {
+	m := newTestSessionModel(t)
+	m.screen = configuratorScreenClientAddJSON
+
+	if !m.lastInputAt.IsZero() {
+		t.Fatal("expected lastInputAt to be zero initially")
+	}
+	result, _ := m.updateClientAddJSONScreen(keyRunes('x'))
+	s := result.(configuratorSessionModel)
+	if s.lastInputAt.IsZero() {
+		t.Fatal("expected lastInputAt to be set after key input")
+	}
+}
+
+func TestUpdate_PasteSettledMsg_FormatsJSON(t *testing.T) {
+	m := newTestSessionModel(t)
+	m.screen = configuratorScreenClientAddJSON
+	m.pasteSeq = 5
+	m.addJSONInput.SetValue(`{"a":1,"b":2}`)
+
+	result, _ := m.Update(pasteSettledMsg{seq: 5})
+	s := result.(configuratorSessionModel)
+	got := s.addJSONInput.Value()
+	if !strings.Contains(got, "\n") {
+		t.Fatalf("expected formatted JSON with newlines, got %q", got)
+	}
+}
+
+func TestUpdate_PasteSettledMsg_StaleSeqIgnored(t *testing.T) {
+	m := newTestSessionModel(t)
+	m.screen = configuratorScreenClientAddJSON
+	m.pasteSeq = 5
+	m.addJSONInput.SetValue(`{"a":1}`)
+
+	result, _ := m.Update(pasteSettledMsg{seq: 3}) // stale
+	s := result.(configuratorSessionModel)
+	got := s.addJSONInput.Value()
+	if strings.Contains(got, "\n") {
+		t.Fatalf("stale seq should not reformat, got %q", got)
+	}
+}
+
+func TestTryFormatJSON_EmptyInput(t *testing.T) {
+	m := newTestSessionModel(t)
+	m.screen = configuratorScreenClientAddJSON
+	m.pasteSeq = 1
+	m.addJSONInput.SetValue("")
+
+	// Should not panic or change anything.
+	result, _ := m.Update(pasteSettledMsg{seq: 1})
+	s := result.(configuratorSessionModel)
+	if s.addJSONInput.Value() != "" {
+		t.Fatalf("expected empty value unchanged, got %q", s.addJSONInput.Value())
+	}
+}
+
+func TestTryFormatJSON_InvalidJSON(t *testing.T) {
+	m := newTestSessionModel(t)
+	m.screen = configuratorScreenClientAddJSON
+	m.pasteSeq = 1
+	m.addJSONInput.SetValue("not json at all")
+
+	result, _ := m.Update(pasteSettledMsg{seq: 1})
+	s := result.(configuratorSessionModel)
+	if s.addJSONInput.Value() != "not json at all" {
+		t.Fatalf("expected invalid JSON unchanged, got %q", s.addJSONInput.Value())
+	}
+}
+
+func TestTryFormatJSON_AlreadyFormatted(t *testing.T) {
+	m := newTestSessionModel(t)
+	m.screen = configuratorScreenClientAddJSON
+	m.pasteSeq = 1
+	formatted := "{\n  \"a\": 1\n}"
+	m.addJSONInput.SetValue(formatted)
+
+	result, _ := m.Update(pasteSettledMsg{seq: 1})
+	s := result.(configuratorSessionModel)
+	if s.addJSONInput.Value() != formatted {
+		t.Fatalf("expected already-formatted JSON unchanged, got %q", s.addJSONInput.Value())
+	}
+}
+
+func TestView_ClientAddJSONScreen_MultilineContent(t *testing.T) {
+	m := newTestSessionModel(t)
+	m.screen = configuratorScreenClientAddJSON
+	m.width = 80
+	m.height = 30
+	m.addJSONInput.SetValue("{\n  \"key\": \"value\"\n}")
+
+	view := m.View()
+	if !strings.Contains(view, "Lines: 3") {
+		t.Fatalf("expected 'Lines: 3' in view for multiline content, got: %s", view)
+	}
+}
+
+func TestUpdateClientSelectScreen_EmptyMenuOptions(t *testing.T) {
+	m := newTestSessionModel(t)
+	m.screen = configuratorScreenClientSelect
+	m.clientMenuOptions = nil
+
+	result, _ := m.updateClientSelectScreen(keyNamed(tea.KeyEnter))
+	s := result.(configuratorSessionModel)
+	if s.screen != configuratorScreenClientSelect {
+		t.Fatalf("expected to stay on client select with empty options, got %v", s.screen)
+	}
+}
+
+func TestUpdateServerSelectScreen_DefaultFallthrough(t *testing.T) {
+	m := newTestSessionModel(t)
+	m.screen = configuratorScreenServerSelect
+	// Set options to something that doesn't match any known case.
+	m.serverMenuOptions = []string{"unknown option"}
+	m.cursor = 0
+
+	result, _ := m.updateServerSelectScreen(keyNamed(tea.KeyEnter))
+	s := result.(configuratorSessionModel)
+	// Should fall through to default return m, nil.
+	if s.screen != configuratorScreenServerSelect {
+		t.Fatalf("expected to stay on server select for unknown option, got %v", s.screen)
+	}
+}
+
+func TestUpdateServerManageScreen_EmptyPeersOnEnter(t *testing.T) {
+	m := newTestSessionModel(t)
+	m.screen = configuratorScreenServerManage
+	m.serverManagePeers = nil
+
+	result, _ := m.updateServerManageScreen(keyNamed(tea.KeyEnter))
+	s := result.(configuratorSessionModel)
+	if s.screen != configuratorScreenServerManage {
+		t.Fatalf("expected to stay on manage screen with empty peers, got %v", s.screen)
+	}
+}
+
+func TestUpdate_NonKeyMsg_DroppedOnOtherScreens(t *testing.T) {
+	m := newTestSessionModel(t)
+	m.screen = configuratorScreenMode
+
+	type customMsg struct{}
+	result, cmd := m.Update(customMsg{})
+	s := result.(configuratorSessionModel)
+	if s.screen != configuratorScreenMode {
+		t.Fatalf("expected to stay on mode screen, got %v", s.screen)
+	}
+	if cmd != nil {
+		t.Fatal("expected nil cmd for dropped message")
 	}
 }

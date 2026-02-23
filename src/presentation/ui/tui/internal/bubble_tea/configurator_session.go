@@ -29,6 +29,10 @@ type configuratorLogTickMsg struct {
 	seq uint64
 }
 
+type pasteSettledMsg struct {
+	seq uint64
+}
+
 const (
 	configuratorTabMain = iota
 	configuratorTabSettings
@@ -123,6 +127,8 @@ type configuratorSessionModel struct {
 	addNameInput textinput.Model
 	addJSONInput textarea.Model
 	addName      string
+	lastInputAt  time.Time
+	pasteSeq     uint64
 
 	invalidErr         error
 	invalidConfig      string
@@ -228,6 +234,11 @@ func (m configuratorSessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.refreshLogs()
 		return m, configuratorLogUpdateCmd(m.logsFeed(), m.logWaitStop, m.logTickSeq)
+	case pasteSettledMsg:
+		if m.screen == configuratorScreenClientAddJSON && msg.seq == m.pasteSeq {
+			m.tryFormatJSON()
+		}
+		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c":
@@ -268,6 +279,19 @@ func (m configuratorSessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case configuratorScreenServerDeleteConfirm:
 			return m.updateServerDeleteConfirmScreen(msg)
 		}
+	}
+
+	// Forward non-key messages (e.g. clipboard paste results, cursor blink ticks)
+	// to the active input component so they are not silently dropped.
+	switch m.screen {
+	case configuratorScreenClientAddName:
+		var cmd tea.Cmd
+		m.addNameInput, cmd = m.addNameInput.Update(msg)
+		return m, cmd
+	case configuratorScreenClientAddJSON:
+		var cmd tea.Cmd
+		m.addJSONInput, cmd = m.addJSONInput.Update(msg)
+		return m, cmd
 	}
 
 	return m, nil
@@ -344,7 +368,7 @@ func (m configuratorSessionModel) View() string {
 			m.tabsLine(styles),
 			"Paste configuration",
 			body,
-			"Enter confirm | Tab switch tabs | Esc back | ctrl+c exit",
+			"Enter confirm | Esc back | ctrl+c exit",
 			m.preferences,
 			styles,
 		)
@@ -540,6 +564,7 @@ func (m configuratorSessionModel) updateClientAddNameScreen(msg tea.KeyMsg) (tea
 		m.notice = ""
 		m.cursor = 0
 		m.screen = configuratorScreenClientAddJSON
+		m.lastInputAt = time.Time{}
 		m.initJSONInput()
 		m.adjustInputsToViewport()
 		return m, textarea.Blink
@@ -550,14 +575,28 @@ func (m configuratorSessionModel) updateClientAddNameScreen(msg tea.KeyMsg) (tea
 	return m, cmd
 }
 
+const pasteDebounce = 300 * time.Millisecond
+
 func (m configuratorSessionModel) updateClientAddJSONScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
+	if msg.String() == "esc" {
 		m.notice = ""
 		m.screen = configuratorScreenClientAddName
 		m.adjustInputsToViewport()
 		return m, nil
-	case "enter":
+	}
+
+	if msg.String() == "enter" {
+		// Debounce: if Enter arrives within pasteDebounce of the last
+		// non-Enter keystroke, it is almost certainly a newline from a
+		// character-by-character terminal paste — insert it as a newline
+		// instead of submitting.
+		if !m.lastInputAt.IsZero() && time.Since(m.lastInputAt) < pasteDebounce {
+			m.lastInputAt = time.Now()
+			var cmd tea.Cmd
+			m.addJSONInput, cmd = m.addJSONInput.Update(msg)
+			return m, cmd
+		}
+
 		configuration, parseErr := parseClientConfigurationJSON(m.addJSONInput.Value())
 		if parseErr != nil {
 			m.invalidErr = parseErr
@@ -585,9 +624,17 @@ func (m configuratorSessionModel) updateClientAddJSONScreen(msg tea.KeyMsg) (tea
 		return m, nil
 	}
 
+	// Track non-Enter input timing for debounce.
+	m.lastInputAt = time.Now()
+	m.pasteSeq++
+	seq := m.pasteSeq
+
+	// Forward to textarea (paste characters, cursor movement, etc.)
 	var cmd tea.Cmd
 	m.addJSONInput, cmd = m.addJSONInput.Update(msg)
-	return m, cmd
+	return m, tea.Batch(cmd, tea.Tick(pasteDebounce, func(time.Time) tea.Msg {
+		return pasteSettledMsg{seq: seq}
+	}))
 }
 
 func (m configuratorSessionModel) updateClientInvalidScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -927,6 +974,24 @@ func (m *configuratorSessionModel) initNameInput() {
 	m.addNameInput = ti
 }
 
+func (m *configuratorSessionModel) tryFormatJSON() {
+	raw := m.addJSONInput.Value()
+	if strings.TrimSpace(raw) == "" {
+		return
+	}
+	var obj json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &obj); err != nil {
+		return
+	}
+	pretty, err := json.MarshalIndent(obj, "", "  ")
+	if err != nil {
+		return
+	}
+	if string(pretty) != raw {
+		m.addJSONInput.SetValue(string(pretty))
+	}
+}
+
 func (m *configuratorSessionModel) initJSONInput() {
 	ta := textarea.New()
 	ta.Prompt = "> "
@@ -934,6 +999,7 @@ func (m *configuratorSessionModel) initJSONInput() {
 	ta.SetWidth(80)
 	ta.SetHeight(10)
 	ta.ShowLineNumbers = true
+	ta.FocusedStyle.CursorLine = ta.FocusedStyle.Text
 	ta.SetValue("")
 	ta.Focus()
 	m.addJSONInput = ta

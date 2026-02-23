@@ -120,6 +120,48 @@ func TestRuntimeLogBuffer_TailInto_LimitGreaterThanDst(t *testing.T) {
 	}
 }
 
+func TestRuntimeLogBuffer_WriteSeparator(t *testing.T) {
+	b := NewRuntimeLogBuffer(8)
+	_, _ = b.Write([]byte("line one\nline two\n"))
+	b.WriteSeparator("disconnected")
+	_, _ = b.Write([]byte("line three\n"))
+
+	lines := b.Tail(8)
+	if len(lines) != 4 {
+		t.Fatalf("expected 4 lines, got %d: %v", len(lines), lines)
+	}
+	if !strings.HasPrefix(lines[2], "--- session ended: disconnected (") {
+		t.Fatalf("expected separator with reason and timestamp, got %q", lines[2])
+	}
+	if !strings.HasSuffix(lines[2], ") ---") {
+		t.Fatalf("expected separator to end with ') ---', got %q", lines[2])
+	}
+}
+
+func TestGlobalRuntimeLogWriteSeparator(t *testing.T) {
+	DisableGlobalRuntimeLogCapture()
+	t.Cleanup(DisableGlobalRuntimeLogCapture)
+
+	// Should not panic when no global buffer exists.
+	GlobalRuntimeLogWriteSeparator("test")
+
+	EnableGlobalRuntimeLogCapture(8)
+	GlobalRuntimeLogWriteSeparator("reconfigured")
+
+	feed := GlobalRuntimeLogFeed()
+	lines := feed.Tail(8)
+	found := false
+	for _, line := range lines {
+		if strings.Contains(line, "session ended: reconfigured") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected separator in global log feed, got %v", lines)
+	}
+}
+
 func TestEnableGlobalRuntimeLogCapture_IdempotentAndDisableSafe(t *testing.T) {
 	DisableGlobalRuntimeLogCapture()
 	DisableGlobalRuntimeLogCapture() // safe when already disabled
