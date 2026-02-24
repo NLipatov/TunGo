@@ -1157,3 +1157,213 @@ func TestUnifiedSession_RuntimePhase_ShowsRuntimeView(t *testing.T) {
 		t.Fatalf("expected runtime view with server mode, got: %q", view)
 	}
 }
+
+// --- Phase: fatalError ---
+
+func TestUnifiedSession_FatalErrorMsg_TransitionsToFatalError(t *testing.T) {
+	m, _ := newTestUnifiedModel(t)
+	m.width = 100
+	m.height = 30
+
+	result, cmd := m.Update(fatalErrorMsg{title: "Error", message: "something failed"})
+	updated := result.(unifiedSessionModel)
+
+	if updated.phase != phaseFatalError {
+		t.Fatalf("expected phaseFatalError, got %d", updated.phase)
+	}
+	if updated.fatalError == nil {
+		t.Fatal("expected fatalError model to be set")
+	}
+	if updated.fatalError.title != "Error" {
+		t.Fatalf("expected title 'Error', got %q", updated.fatalError.title)
+	}
+	if updated.fatalError.message != "something failed" {
+		t.Fatalf("expected message 'something failed', got %q", updated.fatalError.message)
+	}
+	if updated.fatalError.width != 100 || updated.fatalError.height != 30 {
+		t.Fatalf("expected fatalError dimensions 100x30, got %dx%d", updated.fatalError.width, updated.fatalError.height)
+	}
+	if cmd != nil {
+		t.Fatal("expected nil cmd on fatal error transition")
+	}
+}
+
+func TestUnifiedSession_FatalErrorMsg_FromRuntimePhase(t *testing.T) {
+	m, _ := newTestUnifiedModel(t)
+	m.phase = phaseRuntime
+	rt := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	m.runtime = &rt
+
+	result, _ := m.Update(fatalErrorMsg{title: "Server Error", message: "port in use"})
+	updated := result.(unifiedSessionModel)
+
+	if updated.phase != phaseFatalError {
+		t.Fatalf("expected phaseFatalError, got %d", updated.phase)
+	}
+	if updated.fatalError == nil {
+		t.Fatal("expected fatalError model to be set")
+	}
+}
+
+func TestUnifiedSession_FatalErrorPhase_ViewDelegatesToFatalError(t *testing.T) {
+	m, _ := newTestUnifiedModel(t)
+	fe := newFatalErrorModel("Test Error", "Details here")
+	fe.width = 100
+	fe.height = 30
+	m.fatalError = &fe
+	m.phase = phaseFatalError
+
+	view := m.View()
+	if !strings.Contains(view, "Test Error") {
+		t.Fatalf("expected fatal error title in view, got: %q", view)
+	}
+	if !strings.Contains(view, "Details here") {
+		t.Fatalf("expected fatal error message in view, got: %q", view)
+	}
+}
+
+func TestUnifiedSession_FatalErrorPhase_EnterSendsExitEvent(t *testing.T) {
+	m, events := newTestUnifiedModel(t)
+	fe := newFatalErrorModel("Error", "details")
+	m.fatalError = &fe
+	m.phase = phaseFatalError
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected quit cmd when fatal error dismissed")
+	}
+
+	select {
+	case event := <-events:
+		if event.kind != unifiedEventExit {
+			t.Fatalf("expected unifiedEventExit, got %d", event.kind)
+		}
+	default:
+		t.Fatal("expected exit event on fatal error dismiss")
+	}
+}
+
+func TestUnifiedSession_FatalErrorPhase_EscSendsExitEvent(t *testing.T) {
+	m, events := newTestUnifiedModel(t)
+	fe := newFatalErrorModel("Error", "details")
+	m.fatalError = &fe
+	m.phase = phaseFatalError
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	if cmd == nil {
+		t.Fatal("expected quit cmd when fatal error dismissed via Esc")
+	}
+
+	select {
+	case event := <-events:
+		if event.kind != unifiedEventExit {
+			t.Fatalf("expected unifiedEventExit, got %d", event.kind)
+		}
+	default:
+		t.Fatal("expected exit event on fatal error Esc dismiss")
+	}
+}
+
+func TestUnifiedSession_FatalErrorPhase_QKeySendsExitEvent(t *testing.T) {
+	m, events := newTestUnifiedModel(t)
+	fe := newFatalErrorModel("Error", "details")
+	m.fatalError = &fe
+	m.phase = phaseFatalError
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	if cmd == nil {
+		t.Fatal("expected quit cmd when fatal error dismissed via 'q'")
+	}
+
+	select {
+	case event := <-events:
+		if event.kind != unifiedEventExit {
+			t.Fatalf("expected unifiedEventExit, got %d", event.kind)
+		}
+	default:
+		t.Fatal("expected exit event on fatal error 'q' dismiss")
+	}
+}
+
+func TestUnifiedSession_FatalErrorPhase_ArbitraryKeyNoQuit(t *testing.T) {
+	m, events := newTestUnifiedModel(t)
+	fe := newFatalErrorModel("Error", "details")
+	m.fatalError = &fe
+	m.phase = phaseFatalError
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	if cmd != nil {
+		t.Fatal("expected nil cmd for arbitrary key in fatal error phase")
+	}
+
+	select {
+	case event := <-events:
+		t.Fatalf("expected no event for arbitrary key, got %d", event.kind)
+	default:
+	}
+}
+
+func TestUnifiedSession_FatalErrorPhase_WindowSizeUpdates(t *testing.T) {
+	m, _ := newTestUnifiedModel(t)
+	fe := newFatalErrorModel("Error", "details")
+	m.fatalError = &fe
+	m.phase = phaseFatalError
+
+	result, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	updated := result.(unifiedSessionModel)
+	if updated.fatalError.width != 120 || updated.fatalError.height != 40 {
+		t.Fatalf("expected fatalError dimensions 120x40, got %dx%d", updated.fatalError.width, updated.fatalError.height)
+	}
+}
+
+func TestUnifiedSession_FatalErrorPhase_NilFatalError_View(t *testing.T) {
+	m, _ := newTestUnifiedModel(t)
+	m.phase = phaseFatalError
+	m.fatalError = nil
+
+	view := m.View()
+	if view != "" {
+		t.Fatalf("expected empty view when fatalError is nil, got: %q", view)
+	}
+}
+
+func TestUnifiedSession_FatalErrorPhase_NilFatalError_Update(t *testing.T) {
+	m, _ := newTestUnifiedModel(t)
+	m.phase = phaseFatalError
+	m.fatalError = nil
+
+	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated := result.(unifiedSessionModel)
+	if updated.phase != phaseFatalError {
+		t.Fatalf("expected phase unchanged, got %d", updated.phase)
+	}
+	if cmd != nil {
+		t.Fatal("expected nil cmd when fatalError is nil")
+	}
+}
+
+func TestUnifiedSession_ShowFatalError_BlocksUntilDone(t *testing.T) {
+	withNoTTYUnifiedSession(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	session, err := NewUnifiedSession(ctx, defaultUnifiedConfigOpts())
+	if err != nil {
+		t.Fatalf("NewUnifiedSession error: %v", err)
+	}
+
+	unblocked := make(chan struct{})
+	go func() {
+		session.ShowFatalError("Test Error", "test details")
+		close(unblocked)
+	}()
+
+	// Cancel context to make the program exit, which unblocks ShowFatalError.
+	cancel()
+
+	select {
+	case <-unblocked:
+	case <-time.After(5 * time.Second):
+		t.Fatal("ShowFatalError did not unblock after context cancel")
+	}
+}

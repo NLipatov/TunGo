@@ -24,6 +24,7 @@ const (
 	phaseConfiguring       unifiedPhase = iota
 	phaseWaitingForRuntime              // configurator done, waiting for ActivateRuntime call
 	phaseRuntime                        // runtime dashboard is active
+	phaseFatalError                     // fatal error screen shown, waiting for user dismiss
 )
 
 // --- Messages ---
@@ -43,6 +44,12 @@ type activateRuntimeMsg struct {
 type runtimeDoneMsg struct {
 	reconfigure bool
 	exit        bool
+}
+
+// fatalErrorMsg transitions the session to a fatal error screen.
+type fatalErrorMsg struct {
+	title   string
+	message string
 }
 
 // --- Events (channel-based coordination with external callers) ---
@@ -69,6 +76,7 @@ type unifiedSessionModel struct {
 	phase        unifiedPhase
 	configurator configuratorSessionModel
 	runtime      *RuntimeDashboard
+	fatalError   *fatalErrorModel
 	configOpts   ConfiguratorSessionOptions
 	width        int
 	height       int
@@ -142,6 +150,15 @@ func (m unifiedSessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, nil
+
+	case fatalErrorMsg:
+		m.stopAllLogWaits()
+		fe := newFatalErrorModel(msg.title, msg.message)
+		fe.width = m.width
+		fe.height = m.height
+		m.fatalError = &fe
+		m.phase = phaseFatalError
+		return m, nil
 	}
 
 	return m.delegateToActive(msg)
@@ -156,6 +173,8 @@ func (m unifiedSessionModel) delegateToActive(msg tea.Msg) (tea.Model, tea.Cmd) 
 		return m, nil
 	case phaseRuntime:
 		return m.updateRuntime(msg)
+	case phaseFatalError:
+		return m.updateFatalError(msg)
 	}
 	return m, nil
 }
@@ -225,6 +244,23 @@ func (m unifiedSessionModel) updateRuntime(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m unifiedSessionModel) updateFatalError(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.fatalError == nil {
+		return m, nil
+	}
+	updated, cmd := m.fatalError.Update(msg)
+	fe := updated.(fatalErrorModel)
+	m.fatalError = &fe
+
+	if fe.dismissed {
+		m.sendEvent(unifiedEvent{kind: unifiedEventExit})
+		return m, tea.Quit
+	}
+
+	cmd = filterQuit(cmd)
+	return m, cmd
+}
+
 func (m unifiedSessionModel) View() string {
 	switch m.phase {
 	case phaseConfiguring:
@@ -236,6 +272,11 @@ func (m unifiedSessionModel) View() string {
 			return m.runtime.View()
 		}
 		return m.waitingView()
+	case phaseFatalError:
+		if m.fatalError != nil {
+			return m.fatalError.View()
+		}
+		return ""
 	}
 	return ""
 }
@@ -410,6 +451,13 @@ func (s *UnifiedSession) WaitForRuntimeExit() (reconfigure bool, err error) {
 			return false, ErrUnifiedSessionClosed
 		}
 	}
+}
+
+// ShowFatalError transitions the session to a fatal error screen and blocks
+// until the user dismisses it (Enter / Esc / q) or the program exits.
+func (s *UnifiedSession) ShowFatalError(title, message string) {
+	s.program.Send(fatalErrorMsg{title: title, message: message})
+	<-s.done
 }
 
 // Close gracefully stops the unified session program.

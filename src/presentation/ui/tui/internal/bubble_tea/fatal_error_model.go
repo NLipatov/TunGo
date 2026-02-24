@@ -3,10 +3,11 @@ package bubble_tea
 import tea "github.com/charmbracelet/bubbletea"
 
 type fatalErrorModel struct {
-	title   string
-	message string
-	width   int
-	height  int
+	title     string
+	message   string
+	width     int
+	height    int
+	dismissed bool
 }
 
 func newFatalErrorModel(title, message string) fatalErrorModel {
@@ -29,9 +30,11 @@ func (m fatalErrorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.Type {
 		case tea.KeyEnter, tea.KeyEscape:
+			m.dismissed = true
 			return m, tea.Quit
 		case tea.KeyRunes:
 			if len(msg.Runes) == 1 && msg.Runes[0] == 'q' {
+				m.dismissed = true
 				return m, tea.Quit
 			}
 		}
