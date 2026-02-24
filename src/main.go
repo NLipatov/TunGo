@@ -41,28 +41,28 @@ func main() {
 	exitCode := 0
 	defer func() { os.Exit(exitCode) }()
 
-	appCtx, appCtxCancel := context.WithCancel(context.Background())
-	defer appCtxCancel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	if len(os.Args) < 2 {
+	if isTUIMode() {
 		trafficCollector := trafficstats.NewCollector(time.Second, 0.35)
 		trafficstats.SetGlobal(trafficCollector)
 		defer trafficstats.SetGlobal(nil)
-		go trafficCollector.Start(appCtx)
+		go trafficCollector.Start(ctx)
 
 		tui.EnableRuntimeLogCapture(1200)
 		defer tui.DisableRuntimeLogCapture()
 	}
 
 	shutdownSignalHandler := shutdown.NewHandler(
-		appCtx,
-		appCtxCancel,
+		ctx,
+		cancel,
 		signal.NewDefaultProvider(),
 		shutdown.NewNotifier(),
 	)
 	shutdownSignalHandler.Handle()
 
-	if err := run(appCtx); err != nil {
+	if err := run(ctx); err != nil {
 		exitCode = showFatal(err)
 	}
 }
@@ -181,12 +181,16 @@ func showFatal(err error) int {
 	if !errors.As(err, &fe) {
 		fe = fatalError{title: "Error", message: err.Error(), code: 1}
 	}
-	if len(os.Args) < 2 {
+	if isTUIMode() {
 		tui.ShowFatalError(fe.title, fe.message)
 	} else {
 		log.Printf("%s: %s", fe.title, fe.message)
 	}
 	return fe.code
+}
+
+func isTUIMode() bool {
+	return len(os.Args) < 2
 }
 
 // --- helpers ---
