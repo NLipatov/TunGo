@@ -65,7 +65,10 @@ func main() {
 
 	processElevation := elevation.NewProcessElevation()
 	if !processElevation.IsElevated() {
-		log.Printf("%s must be run with admin privileges", app.Name)
+		showFatal(
+			"Insufficient privileges",
+			fmt.Sprintf("%s must be run with admin privileges.\nPlease restart with elevated permissions (e.g. 'Run as Administrator' on Windows, or 'sudo' on Linux/macOS).", app.Name),
+		)
 		exitCode = 1
 		return
 	}
@@ -76,7 +79,7 @@ func main() {
 		stat.NewDefaultStat(),
 	)
 	if configurationManagerErr != nil {
-		log.Printf("could not instantiate server configuration manager: %s", configurationManagerErr)
+		showFatal("Configuration error", configurationManagerErr.Error())
 		exitCode = 1
 		return
 	}
@@ -89,7 +92,7 @@ func main() {
 			if errors.Is(appModeErr, configuring.ErrUserExit) {
 				return
 			}
-			log.Printf("%v", appModeErr)
+			showFatal("Configuration error", appModeErr.Error())
 			exitCode = 1
 			return
 		}
@@ -98,7 +101,7 @@ func main() {
 		case mode.Server:
 			setupCrashLog(serverResolver)
 			if err := prepareServerKeys(configurationManager); err != nil {
-				log.Printf("%v", err)
+				showFatal("Key preparation failed", err.Error())
 				exitCode = 1
 				return
 			}
@@ -112,27 +115,27 @@ func main() {
 				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 					return
 				}
-				log.Printf("Server finished with error: %v", err)
+				showFatal("Server error", err.Error())
 				exitCode = 2
 				return
 			}
 			return
 		case mode.ServerConfGen:
 			if err := prepareServerKeys(configurationManager); err != nil {
-				log.Printf("%v", err)
+				showFatal("Key preparation failed", err.Error())
 				exitCode = 1
 				return
 			}
 			gen := confgen.NewGenerator(configurationManager, &primitives.DefaultKeyDeriver{})
 			conf, err := gen.Generate()
 			if err != nil {
-				log.Printf("failed to generate client configuration: %v", err)
+				showFatal("Configuration generation failed", err.Error())
 				exitCode = 1
 				return
 			}
 			data, err := json.MarshalIndent(conf, "", "  ")
 			if err != nil {
-				log.Printf("failed to marshal client configuration: %v", err)
+				showFatal("Configuration generation failed", err.Error())
 				exitCode = 1
 				return
 			}
@@ -149,7 +152,7 @@ func main() {
 				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 					return
 				}
-				log.Printf("Client finished with error: %v", err)
+				showFatal("Client error", err.Error())
 				exitCode = 2
 				return
 			}
@@ -158,7 +161,7 @@ func main() {
 			printVersion(appCtx)
 			return
 		default:
-			log.Printf("invalid app mode: %v", appMode)
+			showFatal("Internal error", fmt.Sprintf("invalid app mode: %v", appMode))
 			exitCode = 1
 			return
 		}
@@ -251,4 +254,14 @@ func setupCrashLog(resolver client.Resolver) {
 func printVersion(appCtx context.Context) {
 	runner := version.NewRunner()
 	runner.Run(appCtx)
+}
+
+// showFatal displays a fatal error. In TUI mode it shows a themed, dismissable
+// screen; in CLI mode it logs the error.
+func showFatal(title, message string) {
+	if len(os.Args) < 2 {
+		tui.ShowFatalError(title, message)
+	} else {
+		log.Printf("%s: %s", title, message)
+	}
 }

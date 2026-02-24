@@ -20,6 +20,7 @@ type unifiedSessionHandle interface {
 	WaitForMode() (mode.Mode, error)
 	ActivateRuntime(ctx context.Context, options bubbleTea.RuntimeDashboardOptions)
 	WaitForRuntimeExit() (reconfigure bool, err error)
+	ShowFatalError(title, message string)
 	Close()
 }
 

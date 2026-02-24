@@ -319,6 +319,8 @@ func (m *mockUnifiedSession) WaitForRuntimeExit() (bool, error) {
 	return m.waitRuntimeReconfigure, m.waitRuntimeErr
 }
 
+func (m *mockUnifiedSession) ShowFatalError(_, _ string) {}
+
 func (m *mockUnifiedSession) Close() { m.closeCalled = true }
 
 func withMockUnifiedSession(t *testing.T, session unifiedSessionHandle) {
