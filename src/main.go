@@ -39,10 +39,9 @@ const (
 
 func main() {
 	exitCode := 0
+	defer func() { os.Exit(exitCode) }()
+
 	appCtx, appCtxCancel := context.WithCancel(context.Background())
-	defer func() {
-		os.Exit(exitCode)
-	}()
 	defer appCtxCancel()
 
 	if len(os.Args) < 2 {
@@ -54,7 +53,7 @@ func main() {
 		tui.EnableRuntimeLogCapture(1200)
 		defer tui.DisableRuntimeLogCapture()
 	}
-	// handle shutdown signals
+
 	shutdownSignalHandler := shutdown.NewHandler(
 		appCtx,
 		appCtxCancel,
@@ -63,110 +62,134 @@ func main() {
 	)
 	shutdownSignalHandler.Handle()
 
+	if err := run(appCtx); err != nil {
+		exitCode = showFatal(err)
+	}
+}
+
+func run(ctx context.Context) error {
 	processElevation := elevation.NewProcessElevation()
 	if !processElevation.IsElevated() {
-		showFatal(
+		return fatal(
 			"Insufficient privileges",
-			fmt.Sprintf("%s must be run with admin privileges.\nPlease restart with elevated permissions (e.g. 'Run as Administrator' on Windows, or 'sudo' on Linux/macOS).", app.Name),
+			fmt.Sprintf(
+				"%s must be run with admin privileges.\n"+
+					"Please restart with elevated permissions (e.g. 'Run as Administrator' on Windows, or 'sudo' on Linux/macOS).",
+				app.Name,
+			),
 		)
-		exitCode = 1
-		return
 	}
 
 	serverResolver := serverConf.NewServerResolver()
-	configurationManager, configurationManagerErr := serverConf.NewManager(
-		serverResolver,
-		stat.NewDefaultStat(),
-	)
-	if configurationManagerErr != nil {
-		showFatal("Configuration error", configurationManagerErr.Error())
-		exitCode = 1
-		return
+	configurationManager, err := serverConf.NewManager(serverResolver, stat.NewDefaultStat())
+	if err != nil {
+		return fatal("Configuration error", err.Error())
 	}
 
 	configuratorFactory := configuring.NewConfigurationFactory(configurationManager)
 	configurator := configuratorFactory.Configurator()
-	for appCtx.Err() == nil {
-		appMode, appModeErr := configurator.Configure(appCtx)
-		if appModeErr != nil {
-			if errors.Is(appModeErr, configuring.ErrUserExit) {
-				return
+
+	for ctx.Err() == nil {
+		appMode, err := configurator.Configure(ctx)
+		if err != nil {
+			if errors.Is(err, configuring.ErrUserExit) {
+				return nil
 			}
-			showFatal("Configuration error", appModeErr.Error())
-			exitCode = 1
-			return
+			return fatal("Configuration error", err.Error())
 		}
 
 		switch appMode {
 		case mode.Server:
 			setupCrashLog(serverResolver)
 			if err := prepareServerKeys(configurationManager); err != nil {
-				showFatal("Key preparation failed", err.Error())
-				exitCode = 1
-				return
+				return fatal("Key preparation failed", err.Error())
 			}
 			serverConfigPath, _ := serverResolver.Resolve()
 			log.Printf("Starting server...")
-			err := startServer(appCtx, configurationManager, serverConfigPath)
+			err := startServer(ctx, configurationManager, serverConfigPath)
 			if errors.Is(err, runnersCommon.ErrReconfigureRequested) {
 				continue
 			}
-			if err != nil {
-				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-					return
-				}
-				showFatal("Server error", err.Error())
-				exitCode = 2
-				return
+			if err != nil && ctx.Err() == nil {
+				return fatalWithCode("Server error", err.Error(), 2)
 			}
-			return
+			return nil
+
 		case mode.ServerConfGen:
 			if err := prepareServerKeys(configurationManager); err != nil {
-				showFatal("Key preparation failed", err.Error())
-				exitCode = 1
-				return
+				return fatal("Key preparation failed", err.Error())
 			}
 			gen := confgen.NewGenerator(configurationManager, &primitives.DefaultKeyDeriver{})
 			conf, err := gen.Generate()
 			if err != nil {
-				showFatal("Configuration generation failed", err.Error())
-				exitCode = 1
-				return
+				return fatal("Configuration generation failed", err.Error())
 			}
 			data, err := json.MarshalIndent(conf, "", "  ")
 			if err != nil {
-				showFatal("Configuration generation failed", err.Error())
-				exitCode = 1
-				return
+				return fatal("Configuration generation failed", err.Error())
 			}
 			fmt.Println(string(data))
-			return
+			return nil
+
 		case mode.Client:
 			setupCrashLog(client.NewDefaultResolver())
 			log.Printf("Starting client...")
-			err := startClient(appCtx)
+			err := startClient(ctx)
 			if errors.Is(err, runnersCommon.ErrReconfigureRequested) {
 				continue
 			}
-			if err != nil {
-				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-					return
-				}
-				showFatal("Client error", err.Error())
-				exitCode = 2
-				return
+			if err != nil && ctx.Err() == nil {
+				return fatalWithCode("Client error", err.Error(), 2)
 			}
-			return
+			return nil
+
 		case mode.Version:
-			printVersion(appCtx)
-			return
+			printVersion(ctx)
+			return nil
+
 		default:
-			showFatal("Internal error", fmt.Sprintf("invalid app mode: %v", appMode))
-			exitCode = 1
-			return
+			return fatal("Internal error", fmt.Sprintf("invalid app mode: %v", appMode))
 		}
 	}
+	return nil
 }
+
+// --- fatal error type ---
+
+type fatalError struct {
+	title   string
+	message string
+	code    int
+}
+
+func (e fatalError) Error() string {
+	return e.title + ": " + e.message
+}
+
+func fatal(title, message string) fatalError {
+	return fatalError{title: title, message: message, code: 1}
+}
+
+func fatalWithCode(title, message string, code int) fatalError {
+	return fatalError{title: title, message: message, code: code}
+}
+
+// showFatal displays a fatal error and returns the exit code.
+// In TUI mode it shows a themed, dismissable screen; in CLI mode it logs.
+func showFatal(err error) int {
+	var fe fatalError
+	if !errors.As(err, &fe) {
+		fe = fatalError{title: "Error", message: err.Error(), code: 1}
+	}
+	if len(os.Args) < 2 {
+		tui.ShowFatalError(fe.title, fe.message)
+	} else {
+		log.Printf("%s: %s", fe.title, fe.message)
+	}
+	return fe.code
+}
+
+// --- helpers ---
 
 func prepareServerKeys(configurationManager serverConf.ConfigurationManager) error {
 	keyManager := serverConf.NewX25519KeyManager(configurationManager)
@@ -254,14 +277,4 @@ func setupCrashLog(resolver client.Resolver) {
 func printVersion(appCtx context.Context) {
 	runner := version.NewRunner()
 	runner.Run(appCtx)
-}
-
-// showFatal displays a fatal error. In TUI mode it shows a themed, dismissable
-// screen; in CLI mode it logs the error.
-func showFatal(title, message string) {
-	if len(os.Args) < 2 {
-		tui.ShowFatalError(title, message)
-	} else {
-		log.Printf("%s: %s", title, message)
-	}
 }
