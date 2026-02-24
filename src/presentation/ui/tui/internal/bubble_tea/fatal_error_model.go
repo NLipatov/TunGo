@@ -39,6 +39,12 @@ func (m fatalErrorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// NewFatalErrorProgram creates a standalone tea.Program that displays
+// a themed fatal error screen. The program blocks until the user dismisses it.
+func NewFatalErrorProgram(title, message string) *tea.Program {
+	return tea.NewProgram(newFatalErrorModel(title, message), tea.WithAltScreen())
+}
+
 func (m fatalErrorModel) View() string {
 	prefs := CurrentUIPreferences()
 	styles := resolveUIStyles(prefs)

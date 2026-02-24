@@ -117,3 +117,10 @@ func TestFatalErrorModel_Init_ReturnsNil(t *testing.T) {
 		t.Fatalf("expected nil Init command, got %v", cmd)
 	}
 }
+
+func TestNewFatalErrorProgram_ReturnsNonNil(t *testing.T) {
+	p := NewFatalErrorProgram("Error", "details")
+	if p == nil {
+		t.Fatal("expected non-nil tea.Program")
+	}
+}
