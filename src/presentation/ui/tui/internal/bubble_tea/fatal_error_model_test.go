@@ -9,12 +9,27 @@ import (
 
 func TestFatalErrorModel_View_ContainsTitleAndMessage(t *testing.T) {
 	m := newFatalErrorModel("Test Title", "Something went wrong")
+	m.width = 100
+	m.height = 30
 	view := m.View()
 	if !strings.Contains(view, "Test Title") {
 		t.Fatalf("expected view to contain title, got %q", view)
 	}
 	if !strings.Contains(view, "Something went wrong") {
 		t.Fatalf("expected view to contain message, got %q", view)
+	}
+}
+
+func TestFatalErrorModel_View_HasTabsLineWithProductLabel(t *testing.T) {
+	m := newFatalErrorModel("Error", "details")
+	m.width = 100
+	m.height = 30
+	view := m.View()
+	if !strings.Contains(view, "Error") {
+		t.Fatalf("expected view to contain Error tab, got %q", view)
+	}
+	if !strings.Contains(view, productLabel()) {
+		t.Fatalf("expected view to contain product label %q, got %q", productLabel(), view)
 	}
 }
 

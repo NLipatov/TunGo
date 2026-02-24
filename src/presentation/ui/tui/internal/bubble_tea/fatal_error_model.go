@@ -51,12 +51,17 @@ func NewFatalErrorProgram(title, message string) *tea.Program {
 func (m fatalErrorModel) View() string {
 	prefs := CurrentUIPreferences()
 	styles := resolveUIStyles(prefs)
+	contentWidth := contentWidthForTerminal(m.width)
+	tabsLine := renderTabsLine(
+		productLabel(), "error", []string{"Error"}, 0,
+		contentWidth, prefs.Theme, styles,
+	)
 	return renderScreen(
 		m.width,
 		m.height,
+		tabsLine,
 		m.title,
-		m.message,
-		nil,
+		wrapText(m.message, contentWidth),
 		"Press Enter to exit",
 		prefs,
 		styles,
