@@ -13,22 +13,23 @@ func TestServerTunFactoryDarwin_New(t *testing.T) {
 	}
 }
 
-func TestServerTunFactoryDarwin_CreateDevice_Panics(t *testing.T) {
+func TestServerTunFactoryDarwin_CreateDevice_ReturnsError(t *testing.T) {
 	f := ServerTunFactory{}
-	defer func() {
-		if r := recover(); r == nil {
-			t.Fatal("expected panic")
-		}
-	}()
-	_, _ = f.CreateDevice(settings.Settings{})
+	_, err := f.CreateDevice(settings.Settings{})
+	if err == nil {
+		t.Fatal("expected error on unsupported platform")
+	}
 }
 
-func TestServerTunFactoryDarwin_DisposeDevices_Panics(t *testing.T) {
+func TestServerTunFactoryDarwin_DisposeDevices_NoError(t *testing.T) {
 	f := ServerTunFactory{}
-	defer func() {
-		if r := recover(); r == nil {
-			t.Fatal("expected panic")
-		}
-	}()
-	_ = f.DisposeDevices(settings.Settings{})
+	if err := f.DisposeDevices(settings.Settings{}); err != nil {
+		t.Fatalf("expected nil error from DisposeDevices stub, got %v", err)
+	}
+}
+
+func TestServerSupported_Darwin(t *testing.T) {
+	if ServerSupported() {
+		t.Fatal("expected ServerSupported() == false on darwin")
+	}
 }

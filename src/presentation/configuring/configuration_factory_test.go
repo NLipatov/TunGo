@@ -10,14 +10,14 @@ import (
 )
 
 func TestNewConfigurationFactory(t *testing.T) {
-	f := NewConfigurationFactory(app.CLI, nil)
+	f := NewConfigurationFactory(app.CLI, nil, false)
 	if f == nil {
 		t.Fatal("expected non-nil factory")
 	}
 }
 
 func TestConfigurationFactory_Configurator_CLI(t *testing.T) {
-	f := NewConfigurationFactory(app.CLI, nil)
+	f := NewConfigurationFactory(app.CLI, nil, false)
 
 	got, cleanup := f.Configurator(context.Background())
 	defer cleanup()
@@ -27,7 +27,7 @@ func TestConfigurationFactory_Configurator_CLI(t *testing.T) {
 }
 
 func TestConfigurationFactory_Configurator_TUI(t *testing.T) {
-	f := NewConfigurationFactory(app.TUI, nil)
+	f := NewConfigurationFactory(app.TUI, nil, true)
 
 	got, cleanup := f.Configurator(context.Background())
 	defer cleanup()

@@ -27,6 +27,7 @@ func defaultUnifiedConfigOpts() ConfiguratorSessionOptions {
 				{Name: "test", ClientID: 1, Enabled: true},
 			},
 		},
+		ServerSupported: true,
 	}
 }
 

@@ -37,5 +37,5 @@ func (s *ServerWorkerFactory) CreateWorker(
 	_ io.ReadWriteCloser,
 	_ settings.Settings,
 ) (routing.Worker, error) {
-	panic("not implemented")
+	return nil, errServerNotSupported
 }

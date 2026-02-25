@@ -1,9 +1,12 @@
 package tun_server
 
 import (
+	"errors"
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/settings"
 )
+
+var errServerNotSupported = errors.New("server mode is not supported on this platform")
 
 type ServerTunFactory struct {
 }
@@ -13,9 +16,9 @@ func NewServerTunFactory() tun.ServerManager {
 }
 
 func (s ServerTunFactory) CreateDevice(_ settings.Settings) (tun.Device, error) {
-	panic("not implemented")
+	return nil, errServerNotSupported
 }
 
 func (s ServerTunFactory) DisposeDevices(_ settings.Settings) error {
-	panic("not implemented")
+	return nil
 }

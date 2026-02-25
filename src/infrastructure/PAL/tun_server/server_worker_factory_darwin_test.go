@@ -47,17 +47,14 @@ func TestServerWorkerFactoryDarwin_NewAndAccessors(t *testing.T) {
 	}
 }
 
-func TestServerWorkerFactoryDarwin_CreateWorker_Panics(t *testing.T) {
+func TestServerWorkerFactoryDarwin_CreateWorker_ReturnsError(t *testing.T) {
 	f, err := NewServerWorkerFactory(&darwinDummyConfigManager{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	defer func() {
-		if r := recover(); r == nil {
-			t.Fatal("expected panic")
-		}
-	}()
-
-	_, _ = f.CreateWorker(context.Background(), darwinNopReadWriteCloser{}, settings.Settings{})
+	_, workerErr := f.CreateWorker(context.Background(), darwinNopReadWriteCloser{}, settings.Settings{})
+	if workerErr == nil {
+		t.Fatal("expected error on unsupported platform")
+	}
 }

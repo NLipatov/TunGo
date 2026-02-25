@@ -38,6 +38,7 @@ type Configurator struct {
 	clientConfigurator *clientConfigurator
 	serverConfigurator *serverConfigurator
 	useContinuousUI    bool
+	serverSupported    bool
 }
 
 type configuratorState int
@@ -57,6 +58,7 @@ func NewConfigurator(
 	selectorFactory selector.Factory,
 	textInputFactory text_input.TextInputFactory,
 	textAreaFactory text_area.TextAreaFactory,
+	serverSupported bool,
 ) *Configurator {
 	return &Configurator{
 		clientConfigurator: newClientConfigurator(
@@ -72,10 +74,11 @@ func NewConfigurator(
 		serverConfigurator: newServerConfigurator(serverConfigurationManager, selectorFactory),
 		appMode:            NewAppMode(selectorFactory),
 		useContinuousUI:    false,
+		serverSupported:    serverSupported,
 	}
 }
 
-func NewDefaultConfigurator(serverConfigurationManager server.ConfigurationManager) *Configurator {
+func NewDefaultConfigurator(serverConfigurationManager server.ConfigurationManager, serverSupported bool) *Configurator {
 	clientConfResolver := clientConfiguration.NewDefaultResolver()
 	uiBundle := uifactory.NewDefaultBundle()
 	return NewConfigurator(
@@ -87,6 +90,7 @@ func NewDefaultConfigurator(serverConfigurationManager server.ConfigurationManag
 		uiBundle.SelectorFactory,
 		uiBundle.TextInputFactory,
 		uiBundle.TextAreaFactory,
+		serverSupported,
 	).withContinuousUI()
 }
 
@@ -114,6 +118,7 @@ func (p *Configurator) configureContinuous(ctx context.Context) (mode.Mode, erro
 		Deleter:             p.clientConfigurator.deleter,
 		ClientConfigManager: p.clientConfigurator.configurationManager,
 		ServerConfigManager: p.serverConfigurator.manager,
+		ServerSupported:     p.serverSupported,
 	}
 
 	if activeUnifiedSession == nil {

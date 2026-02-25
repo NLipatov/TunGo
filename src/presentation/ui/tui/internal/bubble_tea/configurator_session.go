@@ -71,6 +71,7 @@ type ConfiguratorSessionOptions struct {
 	Deleter             clientConfiguration.Deleter
 	ClientConfigManager clientConfiguration.ConfigurationManager
 	ServerConfigManager serverConfiguration.ConfigurationManager
+	ServerSupported     bool
 }
 
 type configuratorScreen int
@@ -179,15 +180,17 @@ func RunConfiguratorSession(options ConfiguratorSessionOptions) (selectedMode mo
 }
 
 func newConfiguratorSessionModel(options ConfiguratorSessionOptions, settings *uiPreferencesProvider) (configuratorSessionModel, error) {
+	modeOptions := []string{sessionModeClient}
+	if options.ServerSupported {
+		modeOptions = append(modeOptions, sessionModeServer)
+	}
+
 	model := configuratorSessionModel{
-		settings: settings,
-		options:  options,
-		screen:   configuratorScreenMode,
-		cursor:   0,
-		modeOptions: []string{
-			sessionModeClient,
-			sessionModeServer,
-		},
+		settings:    settings,
+		options:     options,
+		screen:      configuratorScreenMode,
+		cursor:      0,
+		modeOptions: modeOptions,
 		serverMenuOptions: []string{
 			sessionServerStart,
 			sessionServerAdd,

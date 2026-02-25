@@ -66,7 +66,7 @@ func run(ctx context.Context) error {
 	}
 
 	uiMode := app.CurrentUIMode()
-	configuratorFactory := configuring.NewConfigurationFactory(uiMode, configurationManager)
+	configuratorFactory := configuring.NewConfigurationFactory(uiMode, configurationManager, tun_server.ServerSupported())
 	configurator, cleanup := configuratorFactory.Configurator(ctx)
 	defer cleanup()
 

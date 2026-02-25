@@ -13,10 +13,11 @@ import (
 type ConfigurationFactory struct {
 	uiMode            app.UIMode
 	serverConfManager server.ConfigurationManager
+	serverSupported   bool
 }
 
-func NewConfigurationFactory(uiMode app.UIMode, manager server.ConfigurationManager) *ConfigurationFactory {
-	return &ConfigurationFactory{uiMode: uiMode, serverConfManager: manager}
+func NewConfigurationFactory(uiMode app.UIMode, manager server.ConfigurationManager, serverSupported bool) *ConfigurationFactory {
+	return &ConfigurationFactory{uiMode: uiMode, serverConfManager: manager, serverSupported: serverSupported}
 }
 
 func (c *ConfigurationFactory) Configurator(ctx context.Context) (Configurator, func()) {
@@ -43,5 +44,5 @@ func (c *ConfigurationFactory) buildTUIConfigurator(ctx context.Context) (Config
 		trafficstats.SetGlobal(nil)
 	}
 
-	return tui.NewDefaultConfigurator(c.serverConfManager), cleanup
+	return tui.NewDefaultConfigurator(c.serverConfManager, c.serverSupported), cleanup
 }
