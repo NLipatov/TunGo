@@ -5,14 +5,14 @@ import (
 	"testing"
 	"tungo/presentation/ui/tui/internal/ui/contracts/text_input"
 
-	"github.com/charmbracelet/bubbletea"
+	"charm.land/bubbletea/v2"
 )
 
 type TextInputAdapterMockModel struct{}
 
 func (f *TextInputAdapterMockModel) Init() tea.Cmd                       { return nil }
 func (f *TextInputAdapterMockModel) Update(tea.Msg) (tea.Model, tea.Cmd) { return f, nil }
-func (f *TextInputAdapterMockModel) View() string                        { return "" }
+func (f *TextInputAdapterMockModel) View() tea.View                       { return tea.NewView("") }
 
 type textInputAdapterMockRunner struct {
 	result tea.Model

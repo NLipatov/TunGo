@@ -10,13 +10,13 @@ import (
 	"tungo/infrastructure/telemetry/trafficstats"
 	"unicode/utf8"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 func TestRuntimeDashboard_TabSwitchesToSettings(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
-	view := updated.(RuntimeDashboard).View()
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	view := updated.(RuntimeDashboard).View().Content
 
 	if !strings.Contains(view, "Settings") {
 		t.Fatalf("expected settings screen after Tab, got view: %q", view)
@@ -35,9 +35,9 @@ func TestNewRuntimeDashboard_DefaultsNilContextAndMode(t *testing.T) {
 
 func TestRuntimeDashboard_TabSwitchesToLogs(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
-	m1, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab}) // settings
-	m2, _ := m1.(RuntimeDashboard).Update(tea.KeyMsg{Type: tea.KeyTab})
-	view := m2.(RuntimeDashboard).View()
+	m1, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // settings
+	m2, _ := m1.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	view := m2.(RuntimeDashboard).View().Content
 
 	if !strings.Contains(view, "Logs") {
 		t.Fatalf("expected logs screen after second Tab, got view: %q", view)
@@ -46,10 +46,10 @@ func TestRuntimeDashboard_TabSwitchesToLogs(t *testing.T) {
 
 func TestRuntimeDashboard_TabSwitchesBackToDataplane(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
-	m1, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab}) // settings
-	m2, _ := m1.(RuntimeDashboard).Update(tea.KeyMsg{Type: tea.KeyTab})
-	m3, _ := m2.(RuntimeDashboard).Update(tea.KeyMsg{Type: tea.KeyTab})
-	view := m3.(RuntimeDashboard).View()
+	m1, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // settings
+	m2, _ := m1.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	m3, _ := m2.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	view := m3.(RuntimeDashboard).View().Content
 
 	if !strings.Contains(view, "Status: Connected") {
 		t.Fatalf("expected dataplane screen after third Tab, got view: %q", view)
@@ -58,13 +58,13 @@ func TestRuntimeDashboard_TabSwitchesBackToDataplane(t *testing.T) {
 
 func TestRuntimeDashboard_TabSwitch_DoesNotRequestClearScreenCmd(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
-	updatedModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyTab}) // settings
+	updatedModel, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // settings
 	if cmd != nil {
 		t.Fatal("expected no command on tab switch to settings")
 	}
 	updated := updatedModel.(RuntimeDashboard)
 
-	_, cmd = updated.Update(tea.KeyMsg{Type: tea.KeyTab}) // logs
+	_, cmd = updated.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // logs
 	if cmd == nil {
 		t.Fatal("expected logs update command on tab switch to logs")
 	}
@@ -82,12 +82,12 @@ func TestRuntimeDashboard_TogglesFooterInSettings(t *testing.T) {
 	s.update(p)
 
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, s)
-	m1, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})                      // settings
-	m2, _ := m1.(RuntimeDashboard).Update(tea.KeyMsg{Type: tea.KeyDown}) // stats units row
-	m3, _ := m2.(RuntimeDashboard).Update(tea.KeyMsg{Type: tea.KeyDown}) // dataplane stats row
-	m4, _ := m3.(RuntimeDashboard).Update(tea.KeyMsg{Type: tea.KeyDown}) // dataplane graph row
-	m5, _ := m4.(RuntimeDashboard).Update(tea.KeyMsg{Type: tea.KeyDown}) // footer row
-	m6, _ := m5.(RuntimeDashboard).Update(tea.KeyMsg{Type: tea.KeyRight}) // toggle
+	m1, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})                      // settings
+	m2, _ := m1.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyDown}) // stats units row
+	m3, _ := m2.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyDown}) // dataplane stats row
+	m4, _ := m3.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyDown}) // dataplane graph row
+	m5, _ := m4.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyDown}) // footer row
+	m6, _ := m5.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyRight}) // toggle
 	toggled := m6.(RuntimeDashboard)
 
 	if s.Preferences().ShowFooter {
@@ -110,9 +110,9 @@ func TestRuntimeDashboard_TogglesStatsUnitsInSettings(t *testing.T) {
 	s.update(p)
 
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, s)
-	m1, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})                      // settings
-	m2, _ := m1.(RuntimeDashboard).Update(tea.KeyMsg{Type: tea.KeyDown}) // stats units row
-	m3, _ := m2.(RuntimeDashboard).Update(tea.KeyMsg{Type: tea.KeyRight}) // toggle
+	m1, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})                      // settings
+	m2, _ := m1.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyDown}) // stats units row
+	m3, _ := m2.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyRight}) // toggle
 	toggled := m3.(RuntimeDashboard)
 
 	if s.Preferences().StatsUnits != StatsUnitsBytes {
@@ -163,7 +163,7 @@ type nonDashboardModel struct{}
 
 func (nonDashboardModel) Init() tea.Cmd                           { return nil }
 func (nonDashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { return nonDashboardModel{}, nil }
-func (nonDashboardModel) View() string                            { return "x" }
+func (nonDashboardModel) View() tea.View                          { return tea.NewView("x") }
 
 func TestRunRuntimeDashboard_RunErrorWhenContextCanceled_IsIgnored(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -317,9 +317,9 @@ func TestRuntimeDashboard_Update_WindowAndContextDoneAndQuit(t *testing.T) {
 		t.Fatal("expected logs not refreshed while logs screen is inactive")
 	}
 
-	updatedModel, _ = updated.Update(tea.KeyMsg{Type: tea.KeyTab}) // settings
+	updatedModel, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // settings
 	updated = updatedModel.(RuntimeDashboard)
-	updatedModel, _ = updated.Update(tea.KeyMsg{Type: tea.KeyTab}) // logs
+	updatedModel, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // logs
 	updated = updatedModel.(RuntimeDashboard)
 	updatedModel, cmd = updated.Update(runtimeLogTickMsg{seq: updated.logTickSeq})
 	if cmd == nil {
@@ -342,7 +342,7 @@ func TestRuntimeDashboard_Update_WindowAndContextDoneAndQuit(t *testing.T) {
 	}
 	updated = updatedModel.(RuntimeDashboard)
 
-	updatedModel, cmd = updated.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	updatedModel, cmd = updated.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 	if cmd == nil {
 		t.Fatal("expected quit cmd on ctrl+c")
 	}
@@ -353,7 +353,7 @@ func TestRuntimeDashboard_Update_WindowAndContextDoneAndQuit(t *testing.T) {
 
 func TestRuntimeDashboard_Update_IgnoresNonSettingsNavigationKeys(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
-	updatedModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	updatedModel, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
 	updated := updatedModel.(RuntimeDashboard)
 	if updated.screen != runtimeScreenDataplane {
 		t.Fatalf("expected dataplane screen to remain, got %v", updated.screen)
@@ -366,17 +366,17 @@ func TestRuntimeDashboard_Update_IgnoresNonSettingsNavigationKeys(t *testing.T) 
 
 func TestRuntimeDashboard_EscOnDataplane_OpensConfirm_StayCancels(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
-	updatedModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	updatedModel, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	updated := updatedModel.(RuntimeDashboard)
 	if !updated.confirmOpen {
 		t.Fatal("expected confirm to open on esc in dataplane")
 	}
-	view := updated.View()
+	view := updated.View().Content
 	if !strings.Contains(view, "Stop tunnel?") {
 		t.Fatalf("expected confirm prompt in view, got %q", view)
 	}
 
-	updatedModel, cmd := updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updatedModel, cmd := updated.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	updated = updatedModel.(RuntimeDashboard)
 	if cmd != nil {
 		t.Fatal("expected no quit command when selecting Stay")
@@ -391,15 +391,15 @@ func TestRuntimeDashboard_EscOnDataplane_OpensConfirm_StayCancels(t *testing.T) 
 
 func TestRuntimeDashboard_EscOnDataplane_ConfirmReconfigureQuits(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
-	updatedModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	updatedModel, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	updated := updatedModel.(RuntimeDashboard)
-	updatedModel, _ = updated.Update(tea.KeyMsg{Type: tea.KeyRight})
+	updatedModel, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	updated = updatedModel.(RuntimeDashboard)
 	if updated.confirmCursor != 1 {
 		t.Fatalf("expected confirm cursor on reconfigure option, got %d", updated.confirmCursor)
 	}
 
-	updatedModel, cmd := updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updatedModel, cmd := updated.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	updated = updatedModel.(RuntimeDashboard)
 	if cmd == nil {
 		t.Fatal("expected quit command when confirming reconfigure")
@@ -414,25 +414,25 @@ func TestRuntimeDashboard_EscOnDataplane_ConfirmReconfigureQuits(t *testing.T) {
 
 func TestRuntimeDashboard_EscOnSettingsAndLogs_NavigatesBack(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
-	updatedModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab}) // settings
+	updatedModel, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // settings
 	updated := updatedModel.(RuntimeDashboard)
 	if updated.screen != runtimeScreenSettings {
 		t.Fatalf("expected settings screen, got %v", updated.screen)
 	}
-	updatedModel, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	updatedModel, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	updated = updatedModel.(RuntimeDashboard)
 	if updated.screen != runtimeScreenDataplane {
 		t.Fatalf("expected esc to navigate back to dataplane, got %v", updated.screen)
 	}
 
-	updatedModel, _ = updated.Update(tea.KeyMsg{Type: tea.KeyTab}) // settings
+	updatedModel, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // settings
 	updated = updatedModel.(RuntimeDashboard)
-	updatedModel, _ = updated.Update(tea.KeyMsg{Type: tea.KeyTab}) // logs
+	updatedModel, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // logs
 	updated = updatedModel.(RuntimeDashboard)
 	if updated.screen != runtimeScreenLogs {
 		t.Fatalf("expected logs screen, got %v", updated.screen)
 	}
-	updatedModel, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	updatedModel, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	updated = updatedModel.(RuntimeDashboard)
 	if updated.screen != runtimeScreenDataplane {
 		t.Fatalf("expected esc to navigate back to dataplane, got %v", updated.screen)
@@ -454,13 +454,13 @@ func TestRuntimeDashboard_SettingsNavigationAndMutation(t *testing.T) {
 	m.screen = runtimeScreenSettings
 
 	// Up at top should stay at top.
-	updatedModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	updatedModel, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 	m = updatedModel.(RuntimeDashboard)
 	if m.settingsCursor != 0 {
 		t.Fatalf("expected cursor at top, got %d", m.settingsCursor)
 	}
 	m.settingsCursor = 1
-	updatedModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	updatedModel, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 	m = updatedModel.(RuntimeDashboard)
 	if m.settingsCursor != 0 {
 		t.Fatalf("expected up from row 1 to row 0, got %d", m.settingsCursor)
@@ -468,13 +468,13 @@ func TestRuntimeDashboard_SettingsNavigationAndMutation(t *testing.T) {
 
 	// Move to bottom, Down at bottom should stay there.
 	for i := 0; i < settingsRowsCount+1; i++ {
-		updatedModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+		updatedModel, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 		m = updatedModel.(RuntimeDashboard)
 	}
 	if m.settingsCursor != settingsRowsCount-1 {
 		t.Fatalf("expected cursor at bottom, got %d", m.settingsCursor)
 	}
-	updatedModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	updatedModel, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	m = updatedModel.(RuntimeDashboard)
 	if m.settingsCursor != settingsRowsCount-1 {
 		t.Fatalf("expected cursor to stay at bottom, got %d", m.settingsCursor)
@@ -483,12 +483,12 @@ func TestRuntimeDashboard_SettingsNavigationAndMutation(t *testing.T) {
 	// Theme row: Left/Right.
 	m.settingsCursor = settingsThemeRow
 	m.preferences = s.Preferences()
-	updatedModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	updatedModel, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	m = updatedModel.(RuntimeDashboard)
 	if s.Preferences().Theme != ThemeDark {
 		t.Fatalf("expected theme dark after right, got %q", s.Preferences().Theme)
 	}
-	updatedModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	updatedModel, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
 	m = updatedModel.(RuntimeDashboard)
 	if s.Preferences().Theme != ThemeLight {
 		t.Fatalf("expected theme light after left, got %q", s.Preferences().Theme)
@@ -496,7 +496,7 @@ func TestRuntimeDashboard_SettingsNavigationAndMutation(t *testing.T) {
 
 	// Stats units row: Enter toggles.
 	m.settingsCursor = settingsStatsUnitsRow
-	updatedModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updatedModel, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = updatedModel.(RuntimeDashboard)
 	if s.Preferences().StatsUnits != StatsUnitsBytes {
 		t.Fatalf("expected stats units bytes, got %q", s.Preferences().StatsUnits)
@@ -507,7 +507,7 @@ func TestRuntimeDashboard_SettingsNavigationAndMutation(t *testing.T) {
 
 	// Dataplane stats row: Enter toggles.
 	m.settingsCursor = settingsDataplaneStatsRow
-	updatedModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updatedModel, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = updatedModel.(RuntimeDashboard)
 	if s.Preferences().ShowDataplaneStats {
 		t.Fatalf("expected dataplane stats off after toggle")
@@ -518,7 +518,7 @@ func TestRuntimeDashboard_SettingsNavigationAndMutation(t *testing.T) {
 
 	// Dataplane graph row: Enter toggles.
 	m.settingsCursor = settingsDataplaneGraphRow
-	updatedModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updatedModel, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = updatedModel.(RuntimeDashboard)
 	if s.Preferences().ShowDataplaneGraph {
 		t.Fatalf("expected dataplane graph off after toggle")
@@ -529,7 +529,7 @@ func TestRuntimeDashboard_SettingsNavigationAndMutation(t *testing.T) {
 
 	// Footer row: Enter toggles.
 	m.settingsCursor = settingsFooterRow
-	updatedModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updatedModel, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = updatedModel.(RuntimeDashboard)
 	if s.Preferences().ShowFooter {
 		t.Fatalf("expected footer off after toggle")
@@ -540,7 +540,7 @@ func TestRuntimeDashboard_SettingsNavigationAndMutation(t *testing.T) {
 
 	// Unmatched key leaves settings unchanged.
 	prevCursor := m.settingsCursor
-	updatedModel, _ = m.updateSettings(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	updatedModel, _ = m.updateSettings(tea.KeyPressMsg{Code: 'x', Text: "x"})
 	m = updatedModel.(RuntimeDashboard)
 	if m.settingsCursor != prevCursor {
 		t.Fatalf("expected cursor unchanged on unmatched key, got %d", m.settingsCursor)
@@ -560,7 +560,7 @@ func TestRuntimeDashboard_MainView_ServerAndFooterOff(t *testing.T) {
 	}, s)
 	m.width = 120
 	m.height = 30
-	view := m.View()
+	view := m.View().Content
 	if !strings.Contains(view, "Mode: Server") {
 		t.Fatalf("expected server mode label, got %q", view)
 	}
@@ -586,7 +586,7 @@ func TestRuntimeDashboard_MainView_CanHideStatsAndGraph(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, s)
 	m.width = 120
 	m.height = 30
-	view := m.View()
+	view := m.View().Content
 	if strings.Contains(view, "Total RX") || strings.Contains(view, "RX trend:") || strings.Contains(view, "TX trend:") {
 		t.Fatalf("expected stats and trend lines hidden, got %q", view)
 	}
@@ -639,14 +639,14 @@ func TestRuntimeDashboard_SettingsAndLogsView_WithWidth(t *testing.T) {
 	m.width = 100
 	m.height = 30
 	m.screen = runtimeScreenSettings
-	settingsView := m.View()
+	settingsView := m.View().Content
 	if !strings.Contains(settingsView, "Theme") {
 		t.Fatalf("expected settings rows in settings view, got %q", settingsView)
 	}
 
 	m.screen = runtimeScreenLogs
 	m.refreshLogs()
-	logsView := m.View()
+	logsView := m.View().Content
 	if !strings.Contains(logsView, "runtime log line") {
 		t.Fatalf("expected log line in logs view, got %q", logsView)
 	}
@@ -666,7 +666,7 @@ func TestRuntimeDashboard_SettingsThemeChange_RequestsClearScreen(t *testing.T) 
 	m.screen = runtimeScreenSettings
 	m.settingsCursor = settingsThemeRow
 
-	updatedModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	updatedModel, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	updated := updatedModel.(RuntimeDashboard)
 	if cmd == nil {
 		t.Fatal("expected clear-screen command when runtime theme changes")
@@ -687,25 +687,25 @@ func TestRuntimeDashboard_LogsViewportScrollAndFollowToggle(t *testing.T) {
 	updatedModel, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
 	m = updatedModel.(RuntimeDashboard)
 
-	updatedModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab}) // settings
+	updatedModel, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // settings
 	m = updatedModel.(RuntimeDashboard)
-	updatedModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab}) // logs
+	updatedModel, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // logs
 	m = updatedModel.(RuntimeDashboard)
 	if !m.logViewport.AtBottom() {
 		t.Fatal("expected logs viewport to follow tail by default")
 	}
 
-	beforeOffset := m.logViewport.YOffset
-	updatedModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	beforeOffset := m.logViewport.YOffset()
+	updatedModel, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 	m = updatedModel.(RuntimeDashboard)
 	if m.logFollow {
 		t.Fatal("expected follow mode disabled after manual up scroll")
 	}
-	if m.logViewport.YOffset >= beforeOffset {
-		t.Fatalf("expected viewport offset to move up, before=%d after=%d", beforeOffset, m.logViewport.YOffset)
+	if m.logViewport.YOffset() >= beforeOffset {
+		t.Fatalf("expected viewport offset to move up, before=%d after=%d", beforeOffset, m.logViewport.YOffset())
 	}
 
-	updatedModel, _ = m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	updatedModel, _ = m.Update(tea.KeyPressMsg{Code: tea.KeySpace})
 	m = updatedModel.(RuntimeDashboard)
 	if !m.logFollow {
 		t.Fatal("expected follow mode enabled after space toggle")
@@ -799,14 +799,14 @@ func TestUpdateConfirm_UpLeftDownRight(t *testing.T) {
 	m.confirmCursor = 1
 
 	// Up decrements cursor when > 0
-	updatedModel, _ := m.updateConfirm(tea.KeyMsg{Type: tea.KeyUp})
+	updatedModel, _ := m.updateConfirm(tea.KeyPressMsg{Code: tea.KeyUp})
 	updated := updatedModel.(RuntimeDashboard)
 	if updated.confirmCursor != 0 {
 		t.Fatalf("expected cursor 0 after Up, got %d", updated.confirmCursor)
 	}
 
 	// Up at cursor=0 stays at 0
-	updatedModel, _ = updated.updateConfirm(tea.KeyMsg{Type: tea.KeyUp})
+	updatedModel, _ = updated.updateConfirm(tea.KeyPressMsg{Code: tea.KeyUp})
 	updated = updatedModel.(RuntimeDashboard)
 	if updated.confirmCursor != 0 {
 		t.Fatalf("expected cursor to stay at 0 after Up at top, got %d", updated.confirmCursor)
@@ -814,7 +814,7 @@ func TestUpdateConfirm_UpLeftDownRight(t *testing.T) {
 
 	// Left works same as Up
 	m.confirmCursor = 1
-	updatedModel, _ = m.updateConfirm(tea.KeyMsg{Type: tea.KeyLeft})
+	updatedModel, _ = m.updateConfirm(tea.KeyPressMsg{Code: tea.KeyLeft})
 	updated = updatedModel.(RuntimeDashboard)
 	if updated.confirmCursor != 0 {
 		t.Fatalf("expected cursor 0 after Left, got %d", updated.confirmCursor)
@@ -822,14 +822,14 @@ func TestUpdateConfirm_UpLeftDownRight(t *testing.T) {
 
 	// Down increments cursor when < 1
 	m.confirmCursor = 0
-	updatedModel, _ = m.updateConfirm(tea.KeyMsg{Type: tea.KeyDown})
+	updatedModel, _ = m.updateConfirm(tea.KeyPressMsg{Code: tea.KeyDown})
 	updated = updatedModel.(RuntimeDashboard)
 	if updated.confirmCursor != 1 {
 		t.Fatalf("expected cursor 1 after Down, got %d", updated.confirmCursor)
 	}
 
 	// Down at cursor=1 stays at 1
-	updatedModel, _ = updated.updateConfirm(tea.KeyMsg{Type: tea.KeyDown})
+	updatedModel, _ = updated.updateConfirm(tea.KeyPressMsg{Code: tea.KeyDown})
 	updated = updatedModel.(RuntimeDashboard)
 	if updated.confirmCursor != 1 {
 		t.Fatalf("expected cursor to stay at 1 after Down at bottom, got %d", updated.confirmCursor)
@@ -837,7 +837,7 @@ func TestUpdateConfirm_UpLeftDownRight(t *testing.T) {
 
 	// Right works same as Down
 	m.confirmCursor = 0
-	updatedModel, _ = m.updateConfirm(tea.KeyMsg{Type: tea.KeyRight})
+	updatedModel, _ = m.updateConfirm(tea.KeyPressMsg{Code: tea.KeyRight})
 	updated = updatedModel.(RuntimeDashboard)
 	if updated.confirmCursor != 1 {
 		t.Fatalf("expected cursor 1 after Right, got %d", updated.confirmCursor)
@@ -849,7 +849,7 @@ func TestUpdateConfirm_EscClosesConfirm(t *testing.T) {
 	m.confirmOpen = true
 	m.confirmCursor = 1
 
-	updatedModel, _ := m.updateConfirm(tea.KeyMsg{Type: tea.KeyEsc})
+	updatedModel, _ := m.updateConfirm(tea.KeyPressMsg{Code: tea.KeyEscape})
 	updated := updatedModel.(RuntimeDashboard)
 	if updated.confirmOpen {
 		t.Fatal("expected confirmOpen=false after Esc")
@@ -864,7 +864,7 @@ func TestUpdateConfirm_EnterAtCursor0_ClosesConfirm(t *testing.T) {
 	m.confirmOpen = true
 	m.confirmCursor = 0
 
-	updatedModel, cmd := m.updateConfirm(tea.KeyMsg{Type: tea.KeyEnter})
+	updatedModel, cmd := m.updateConfirm(tea.KeyPressMsg{Code: tea.KeyEnter})
 	updated := updatedModel.(RuntimeDashboard)
 	if updated.confirmOpen {
 		t.Fatal("expected confirmOpen=false after Enter at cursor=0 (Stay)")
@@ -879,7 +879,7 @@ func TestUpdateConfirm_EnterAtCursor1_Reconfigures(t *testing.T) {
 	m.confirmOpen = true
 	m.confirmCursor = 1
 
-	updatedModel, cmd := m.updateConfirm(tea.KeyMsg{Type: tea.KeyEnter})
+	updatedModel, cmd := m.updateConfirm(tea.KeyPressMsg{Code: tea.KeyEnter})
 	updated := updatedModel.(RuntimeDashboard)
 	if !updated.reconfigureRequested {
 		t.Fatal("expected reconfigureRequested=true after Enter at cursor=1")
@@ -893,7 +893,7 @@ func TestUpdateConfirm_CtrlCDuringConfirmExits(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
 	m.confirmOpen = true
 
-	updatedModel, cmd := m.updateConfirm(tea.KeyMsg{Type: tea.KeyCtrlC})
+	updatedModel, cmd := m.updateConfirm(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 	updated := updatedModel.(RuntimeDashboard)
 	if !updated.exitRequested {
 		t.Fatal("expected exitRequested=true after ctrl+c during confirm")
@@ -918,7 +918,7 @@ func TestUpdateLogs_DownKeyNotAtBottom(t *testing.T) {
 	m.logViewport.GotoTop()
 	m.logFollow = false
 
-	updatedModel, _ := m.updateLogs(tea.KeyMsg{Type: tea.KeyDown})
+	updatedModel, _ := m.updateLogs(tea.KeyPressMsg{Code: tea.KeyDown})
 	updated := updatedModel.(RuntimeDashboard)
 	if updated.logFollow {
 		t.Fatal("expected logFollow=false when not at bottom after Down")
@@ -939,7 +939,7 @@ func TestUpdateLogs_UpSetFollowFalse(t *testing.T) {
 	m.refreshLogs()
 	m.logFollow = true
 
-	updatedModel, _ := m.updateLogs(tea.KeyMsg{Type: tea.KeyUp})
+	updatedModel, _ := m.updateLogs(tea.KeyPressMsg{Code: tea.KeyUp})
 	updated := updatedModel.(RuntimeDashboard)
 	if updated.logFollow {
 		t.Fatal("expected logFollow=false after Up")
@@ -960,7 +960,7 @@ func TestUpdateLogs_PgDownAtBottomSetsFollow(t *testing.T) {
 	m.refreshLogs()
 	m.logViewport.GotoBottom()
 
-	updatedModel, _ := m.updateLogs(tea.KeyMsg{Type: tea.KeyPgDown})
+	updatedModel, _ := m.updateLogs(tea.KeyPressMsg{Code: tea.KeyPgDown})
 	updated := updatedModel.(RuntimeDashboard)
 	if !updated.logFollow {
 		t.Fatal("expected logFollow=true after PgDown when already at bottom")
@@ -980,13 +980,13 @@ func TestUpdateLogs_HomeGoesToTop(t *testing.T) {
 	m.screen = runtimeScreenLogs
 	m.refreshLogs()
 
-	updatedModel, _ := m.updateLogs(tea.KeyMsg{Type: tea.KeyHome})
+	updatedModel, _ := m.updateLogs(tea.KeyPressMsg{Code: tea.KeyHome})
 	updated := updatedModel.(RuntimeDashboard)
 	if updated.logFollow {
 		t.Fatal("expected logFollow=false after Home")
 	}
-	if updated.logViewport.YOffset != 0 {
-		t.Fatalf("expected viewport offset 0 after Home, got %d", updated.logViewport.YOffset)
+	if updated.logViewport.YOffset() != 0 {
+		t.Fatalf("expected viewport offset 0 after Home, got %d", updated.logViewport.YOffset())
 	}
 }
 
@@ -1004,7 +1004,7 @@ func TestUpdateLogs_EndGoesToBottom(t *testing.T) {
 	m.refreshLogs()
 	m.logViewport.GotoTop()
 
-	updatedModel, _ := m.updateLogs(tea.KeyMsg{Type: tea.KeyEnd})
+	updatedModel, _ := m.updateLogs(tea.KeyPressMsg{Code: tea.KeyEnd})
 	updated := updatedModel.(RuntimeDashboard)
 	if !updated.logFollow {
 		t.Fatal("expected logFollow=true after End")
@@ -1028,13 +1028,13 @@ func TestUpdateLogs_SpaceTogglesFollow(t *testing.T) {
 	m.refreshLogs()
 	m.logFollow = false
 
-	updatedModel, _ := m.updateLogs(tea.KeyMsg{Type: tea.KeySpace})
+	updatedModel, _ := m.updateLogs(tea.KeyPressMsg{Code: tea.KeySpace})
 	updated := updatedModel.(RuntimeDashboard)
 	if !updated.logFollow {
 		t.Fatal("expected logFollow=true after Space toggle from false")
 	}
 
-	updatedModel, _ = updated.updateLogs(tea.KeyMsg{Type: tea.KeySpace})
+	updatedModel, _ = updated.updateLogs(tea.KeyPressMsg{Code: tea.KeySpace})
 	updated = updatedModel.(RuntimeDashboard)
 	if updated.logFollow {
 		t.Fatal("expected logFollow=false after Space toggle from true")
@@ -1214,8 +1214,8 @@ func TestEnsureLogsViewport_WhenLogReadyFalse(t *testing.T) {
 	if !m.logReady {
 		t.Fatal("expected logReady=true after ensureLogsViewport")
 	}
-	if m.logViewport.Width <= 0 {
-		t.Fatalf("expected viewport width > 0, got %d", m.logViewport.Width)
+	if m.logViewport.Width() <= 0 {
+		t.Fatalf("expected viewport width > 0, got %d", m.logViewport.Width())
 	}
 }
 
@@ -1223,12 +1223,12 @@ func TestEnsureLogsViewport_WhenLogReadyTrue_Resizes(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
 	m.width = 80
 	m.height = 20
-	origWidth := m.logViewport.Width
+	origWidth := m.logViewport.Width()
 
 	m.width = 120
 	m.height = 30
 	m.ensureLogsViewport()
-	if m.logViewport.Width == origWidth {
+	if m.logViewport.Width() == origWidth {
 		t.Fatal("expected viewport width to change after resize")
 	}
 }
@@ -1238,8 +1238,8 @@ func TestRuntimeDashboard_Update_LogTickMismatchedSeqOnLogsScreen(t *testing.T) 
 		LogFeed: testRuntimeLogFeed{lines: []string{"one", "two"}},
 	}, testSettings())
 	// Navigate to logs screen.
-	m1, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})  // settings
-	m2, _ := m1.(RuntimeDashboard).Update(tea.KeyMsg{Type: tea.KeyTab}) // logs
+	m1, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})  // settings
+	m2, _ := m1.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyTab}) // logs
 	dash := m2.(RuntimeDashboard)
 
 	// Send a runtimeLogTickMsg with a mismatched seq while on logs screen.
@@ -1264,7 +1264,7 @@ func TestUpdateLogs_DownKeyAtBottom_SetsFollowTrue(t *testing.T) {
 	m.logViewport.GotoBottom()
 	m.logFollow = false
 
-	updatedModel, _ := m.updateLogs(tea.KeyMsg{Type: tea.KeyDown})
+	updatedModel, _ := m.updateLogs(tea.KeyPressMsg{Code: tea.KeyDown})
 	updated := updatedModel.(RuntimeDashboard)
 	if !updated.logFollow {
 		t.Fatal("expected logFollow=true when Down key pressed and viewport is at bottom")
@@ -1372,7 +1372,7 @@ func TestUpdateLogs_PgUpSetsFollowFalse(t *testing.T) {
 	m.refreshLogs()
 	m.logFollow = true
 
-	updatedModel, _ := m.updateLogs(tea.KeyMsg{Type: tea.KeyPgUp})
+	updatedModel, _ := m.updateLogs(tea.KeyPressMsg{Code: tea.KeyPgUp})
 	updated := updatedModel.(RuntimeDashboard)
 	if updated.logFollow {
 		t.Fatal("expected logFollow=false after PgUp")
@@ -1401,8 +1401,8 @@ func TestRefreshLogs_RuntimeDashboard_NotFollowNotAtBottom_PreservesOffset(t *te
 	if m.logFollow {
 		t.Fatal("expected logFollow to remain false")
 	}
-	if m.logViewport.YOffset != 3 {
-		t.Fatalf("expected viewport offset preserved at 3, got %d", m.logViewport.YOffset)
+	if m.logViewport.YOffset() != 3 {
+		t.Fatalf("expected viewport offset preserved at 3, got %d", m.logViewport.YOffset())
 	}
 }
 

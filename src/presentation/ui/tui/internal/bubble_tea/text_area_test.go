@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 func TestNewTextArea(t *testing.T) {
@@ -34,7 +34,7 @@ func TestTextArea_Init(t *testing.T) {
 
 func TestTextArea_UpdateCtrlD_SubmitsAndQuits(t *testing.T) {
 	ta := NewTextArea("Type here...")
-	msg := tea.KeyMsg{Type: tea.KeyCtrlD}
+	msg := tea.KeyPressMsg{Code: 'd', Mod: tea.ModCtrl}
 	model, cmd := ta.Update(msg)
 
 	updatedTA, ok := model.(*TextArea)
@@ -51,7 +51,7 @@ func TestTextArea_UpdateCtrlD_SubmitsAndQuits(t *testing.T) {
 
 func TestTextArea_EnterDoesNotSubmit(t *testing.T) {
 	ta := NewTextArea("Type here...")
-	model, _ := ta.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model, _ := ta.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	updatedTA := model.(*TextArea)
 	if updatedTA.done {
 		t.Error("Enter should not submit textarea (should insert newline)")
@@ -60,7 +60,7 @@ func TestTextArea_EnterDoesNotSubmit(t *testing.T) {
 
 func TestTextArea_UpdateEsc_CancelsAndQuits(t *testing.T) {
 	ta := NewTextArea("Type here...")
-	msg := tea.KeyMsg{Type: tea.KeyEsc}
+	msg := tea.KeyPressMsg{Code: tea.KeyEscape}
 	model, cmd := ta.Update(msg)
 
 	updatedTA, ok := model.(*TextArea)
@@ -78,7 +78,7 @@ func TestTextArea_UpdateEsc_CancelsAndQuits(t *testing.T) {
 func TestTextArea_UpdateOther(t *testing.T) {
 	ta := NewTextArea("Type here...")
 	initialValue := ta.Value()
-	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")}
+	msg := tea.KeyPressMsg{Code: 'a', Text: "a"}
 	model, cmd := ta.Update(msg)
 	_ = cmd // command isn't checked here
 
@@ -94,7 +94,7 @@ func TestTextArea_UpdateOther(t *testing.T) {
 
 func TestTextArea_View(t *testing.T) {
 	ta := NewTextArea("Type here...")
-	view := ta.View()
+	view := ta.View().Content
 	if !strings.Contains(view, ta.ta.Placeholder) {
 		t.Errorf("Expected view to contain placeholder %q, got %q", ta.ta.Placeholder, view)
 	}
@@ -102,9 +102,9 @@ func TestTextArea_View(t *testing.T) {
 
 func TestTextArea_View_WhenDone_Empty(t *testing.T) {
 	ta := NewTextArea("Type here...")
-	_, _ = ta.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
+	_, _ = ta.Update(tea.KeyPressMsg{Code: 'd', Mod: tea.ModCtrl})
 
-	if view := ta.View(); view != "" {
+	if view := ta.View().Content; view != "" {
 		t.Fatalf("expected empty view when done, got %q", view)
 	}
 }
@@ -112,7 +112,7 @@ func TestTextArea_View_WhenDone_Empty(t *testing.T) {
 func TestTextArea_View_ShowsLineCountForMultilineValue(t *testing.T) {
 	ta := NewTextArea("Type here...")
 	ta.ta.SetValue("one\ntwo")
-	view := ta.View()
+	view := ta.View().Content
 	if !strings.Contains(view, "Lines: 2") {
 		t.Fatalf("expected line count in view, got %q", view)
 	}

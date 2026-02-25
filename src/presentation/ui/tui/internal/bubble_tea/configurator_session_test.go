@@ -10,7 +10,7 @@ import (
 	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
 	serverConfiguration "tungo/infrastructure/PAL/configuration/server"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // sessionObserverWithConfigs is a stub that returns predefined client configs.
@@ -154,7 +154,7 @@ func TestUpdate_LogTickMsg_WrongTab_Ignored(t *testing.T) {
 
 func TestUpdate_CtrlC_Exits(t *testing.T) {
 	m := newTestSessionModel(t)
-	result, cmd := m.Update(keyNamed(tea.KeyCtrlC))
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 	updated := result.(configuratorSessionModel)
 	if !updated.done {
 		t.Fatal("expected done=true on ctrl+c")
@@ -255,7 +255,7 @@ func TestView_SettingsTab_ContainsTheme(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.tab = configuratorTabSettings
 
-	view := m.View()
+	view := m.View().Content
 	if !strings.Contains(strings.ToLower(view), "theme") {
 		t.Fatalf("settings view should contain 'Theme', got: %s", view)
 	}
@@ -266,7 +266,7 @@ func TestView_LogsTab_ReturnsNonEmpty(t *testing.T) {
 	m.tab = configuratorTabLogs
 	m.logReady = true
 
-	view := m.View()
+	view := m.View().Content
 	if len(view) == 0 {
 		t.Fatal("logs view should be non-empty")
 	}
@@ -276,7 +276,7 @@ func TestView_MainTab_ModeScreen(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenMode
 
-	view := m.View()
+	view := m.View().Content
 	if !strings.Contains(view, "Select mode") {
 		t.Fatalf("mode screen view should contain 'Select mode', got: %s", view)
 	}
@@ -287,7 +287,7 @@ func TestView_MainTab_ClientSelectScreen(t *testing.T) {
 	m.screen = configuratorScreenClientSelect
 	m.clientMenuOptions = []string{sessionClientAdd}
 
-	view := m.View()
+	view := m.View().Content
 	if !strings.Contains(view, "Select configuration") {
 		t.Fatalf("client select view should contain 'Select configuration', got: %s", view)
 	}
@@ -298,7 +298,7 @@ func TestView_MainTab_ClientRemoveScreen(t *testing.T) {
 	m.screen = configuratorScreenClientRemove
 	m.clientRemovePaths = []string{"config1"}
 
-	view := m.View()
+	view := m.View().Content
 	if !strings.Contains(view, "Choose a configuration to remove") {
 		t.Fatalf("client remove view should contain proper title, got: %s", view)
 	}
@@ -310,7 +310,7 @@ func TestView_MainTab_ClientAddNameScreen(t *testing.T) {
 	m.width = 80
 	m.height = 30
 
-	view := m.View()
+	view := m.View().Content
 	if !strings.Contains(view, "Name configuration") {
 		t.Fatalf("add name view should contain 'Name configuration', got: %s", view)
 	}
@@ -322,7 +322,7 @@ func TestView_MainTab_ClientAddJSONScreen(t *testing.T) {
 	m.width = 80
 	m.height = 30
 
-	view := m.View()
+	view := m.View().Content
 	if !strings.Contains(view, "Paste configuration") {
 		t.Fatalf("add JSON view should contain 'Paste configuration', got: %s", view)
 	}
@@ -333,7 +333,7 @@ func TestView_MainTab_ClientInvalidScreen(t *testing.T) {
 	m.screen = configuratorScreenClientInvalid
 	m.invalidErr = errors.New("bad config")
 
-	view := m.View()
+	view := m.View().Content
 	if !strings.Contains(view, "Configuration error") {
 		t.Fatalf("invalid screen view should contain 'Configuration error', got: %s", view)
 	}
@@ -343,7 +343,7 @@ func TestView_MainTab_ServerSelectScreen(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenServerSelect
 
-	view := m.View()
+	view := m.View().Content
 	if !strings.Contains(view, "Choose an option") {
 		t.Fatalf("server select view should contain 'Choose an option', got: %s", view)
 	}
@@ -354,7 +354,7 @@ func TestView_MainTab_ServerManageScreen(t *testing.T) {
 	m.screen = configuratorScreenServerManage
 	m.serverManageLabels = []string{"#1 test [enabled]"}
 
-	view := m.View()
+	view := m.View().Content
 	if !strings.Contains(view, "Select client to enable/disable or delete") {
 		t.Fatalf("server manage view should contain proper title, got: %s", view)
 	}
@@ -365,7 +365,7 @@ func TestView_MainTab_ServerDeleteConfirmScreen(t *testing.T) {
 	m.screen = configuratorScreenServerDeleteConfirm
 	m.serverDeletePeer = serverConfiguration.AllowedPeer{Name: "alpha", ClientID: 1}
 
-	view := m.View()
+	view := m.View().Content
 	if !strings.Contains(view, "Delete client") {
 		t.Fatalf("delete confirm view should contain 'Delete client', got: %s", view)
 	}
@@ -1255,11 +1255,11 @@ func TestTabsLine_ReturnsNonEmptyWithProductLabel(t *testing.T) {
 func TestAdjustInputsToViewport_ZeroWidthReturnsEarly(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.width = 0
-	origWidth := m.addNameInput.Width
+	origWidth := m.addNameInput.Width()
 
 	m.adjustInputsToViewport()
-	if m.addNameInput.Width != origWidth {
-		t.Fatalf("expected no change to input width, got %d", m.addNameInput.Width)
+	if m.addNameInput.Width() != origWidth {
+		t.Fatalf("expected no change to input width, got %d", m.addNameInput.Width())
 	}
 }
 
@@ -1269,8 +1269,8 @@ func TestAdjustInputsToViewport_PositiveWidthAdjusts(t *testing.T) {
 	m.height = 40
 
 	m.adjustInputsToViewport()
-	if m.addNameInput.Width <= 0 {
-		t.Fatalf("expected positive input width, got %d", m.addNameInput.Width)
+	if m.addNameInput.Width() <= 0 {
+		t.Fatalf("expected positive input width, got %d", m.addNameInput.Width())
 	}
 }
 
@@ -1456,8 +1456,8 @@ func TestEnsureLogsViewport_UpdatesDimensionsWhenReady(t *testing.T) {
 	m.logReady = true
 
 	m.ensureLogsViewport()
-	if m.logViewport.Width <= 0 {
-		t.Fatalf("expected positive viewport width, got %d", m.logViewport.Width)
+	if m.logViewport.Width() <= 0 {
+		t.Fatalf("expected positive viewport width, got %d", m.logViewport.Width())
 	}
 }
 
@@ -1565,7 +1565,7 @@ func TestView_MainTab_AllScreens_ReturnsNonEmpty(t *testing.T) {
 			if tc.setup != nil {
 				tc.setup(&m)
 			}
-			view := m.View()
+			view := m.View().Content
 			if view == "" {
 				t.Fatalf("View for screen %s should be non-empty", tc.name)
 			}
@@ -1582,7 +1582,7 @@ func TestView_ClientAddNameScreen_WithNotice(t *testing.T) {
 	m.height = 30
 	m.notice = "Name cannot be empty."
 
-	view := m.View()
+	view := m.View().Content
 	if !strings.Contains(view, "Name cannot be empty.") {
 		t.Fatalf("expected notice in view, got: %s", view)
 	}
@@ -1595,7 +1595,7 @@ func TestView_ClientAddJSONScreen_WithNotice(t *testing.T) {
 	m.height = 30
 	m.notice = "Invalid JSON"
 
-	view := m.View()
+	view := m.View().Content
 	if !strings.Contains(view, "Invalid JSON") {
 		t.Fatalf("expected notice in view, got: %s", view)
 	}
@@ -1609,7 +1609,7 @@ func TestView_ClientInvalidScreen_WithDeleteAllowed(t *testing.T) {
 	m.invalidErr = errors.New("bad config")
 	m.invalidAllowDelete = true
 
-	view := m.View()
+	view := m.View().Content
 	if !strings.Contains(view, sessionInvalidDelete) {
 		t.Fatalf("expected delete option in view, got: %s", view)
 	}
@@ -2811,7 +2811,7 @@ func TestView_UnknownScreen_ReturnsEmptyString(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreen(999) // unknown screen
 
-	view := m.View()
+	view := m.View().Content
 	if view != "" {
 		t.Fatalf("expected empty string for unknown screen, got %q", view)
 	}
@@ -3219,7 +3219,7 @@ func TestView_ClientAddJSONScreen_MultilineContent(t *testing.T) {
 	m.height = 30
 	m.addJSONInput.SetValue("{\n  \"key\": \"value\"\n}")
 
-	view := m.View()
+	view := m.View().Content
 	if !strings.Contains(view, "Lines: 3") {
 		t.Fatalf("expected 'Lines: 3' in view for multiline content, got: %s", view)
 	}

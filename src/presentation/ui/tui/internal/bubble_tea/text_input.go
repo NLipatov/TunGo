@@ -3,8 +3,8 @@ package bubble_tea
 import (
 	"unicode/utf8"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 )
 
 // TextInput - is a single line text input
@@ -23,7 +23,7 @@ func NewTextInput(placeholder string) *TextInput {
 	ti.Placeholder = placeholder
 	ti.Focus()
 	ti.CharLimit = 256
-	ti.Width = 40
+	ti.SetWidth(40)
 	return &TextInput{
 		settings:    loadUISettingsFromDisk(),
 		ti:          ti,
@@ -51,9 +51,9 @@ func (m *TextInput) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		contentWidth := contentWidthForTerminal(msg.Width)
 		available := maxInt(1, contentWidth-resolveUIStyles(m.settings.Preferences()).inputFrame.GetHorizontalFrameSize())
 		// Keep stable text-input width to avoid visual jumps on first typed symbol.
-		m.ti.Width = minInt(40, available)
+		m.ti.SetWidth(minInt(40, available))
 		return m, nil
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if msg.String() == "enter" {
 			return m, tea.Quit
 		}
@@ -68,7 +68,7 @@ func (m *TextInput) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m *TextInput) View() string {
+func (m *TextInput) View() tea.View {
 	prefs := m.settings.Preferences()
 	styles := resolveUIStyles(prefs)
 	container := styles.inputFrame.Width(m.inputContainerWidth())
@@ -77,7 +77,7 @@ func (m *TextInput) View() string {
 		container.Render(m.ti.View()),
 		stats,
 	}
-	return renderScreen(
+	content := renderScreen(
 		m.width,
 		m.height,
 		"Name configuration",
@@ -87,11 +87,14 @@ func (m *TextInput) View() string {
 		prefs,
 		styles,
 	)
+	v := tea.NewView(content)
+	v.AltScreen = true
+	return v
 }
 
 func (m *TextInput) inputContainerWidth() int {
 	if m.width > 0 {
 		return maxInt(1, contentWidthForTerminal(m.width))
 	}
-	return maxInt(1, m.ti.Width+resolveUIStyles(m.settings.Preferences()).inputFrame.GetHorizontalFrameSize())
+	return maxInt(1, m.ti.Width()+resolveUIStyles(m.settings.Preferences()).inputFrame.GetHorizontalFrameSize())
 }

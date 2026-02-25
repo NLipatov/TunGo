@@ -17,10 +17,10 @@ import (
 	serverConfiguration "tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/cryptography/primitives"
 
-	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textarea"
+	"charm.land/bubbles/v2/textinput"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
 )
 
 var ErrConfiguratorSessionUserExit = errors.New("configurator session user exit")
@@ -44,7 +44,7 @@ type configuratorSessionProgram interface {
 }
 
 var newConfiguratorSessionProgram = func(model tea.Model) configuratorSessionProgram {
-	return tea.NewProgram(model, tea.WithAltScreen())
+	return tea.NewProgram(model)
 }
 
 var resolveServerConfigDir = func() (string, error) {
@@ -197,7 +197,7 @@ func newConfiguratorSessionModel(options ConfiguratorSessionOptions, settings *u
 			sessionServerManage,
 		},
 		preferences: settings.Preferences(),
-		logViewport: viewport.New(1, 8),
+		logViewport: viewport.New(viewport.WithWidth(1), viewport.WithHeight(8)),
 		logReady:    true,
 		logFollow:   true,
 	}
@@ -245,7 +245,7 @@ func (m configuratorSessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.tryFormatJSON()
 		}
 		return m, nil
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "ctrl+c":
 			m.stopLogWait()
@@ -303,14 +303,22 @@ func (m configuratorSessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m configuratorSessionModel) View() string {
+func (m configuratorSessionModel) View() tea.View {
+	var content string
 	switch m.tab {
 	case configuratorTabSettings:
-		return m.settingsTabView()
+		content = m.settingsTabView()
 	case configuratorTabLogs:
-		return m.logsTabView()
+		content = m.logsTabView()
+	default:
+		content = m.mainTabView()
 	}
+	v := tea.NewView(content)
+	v.AltScreen = true
+	return v
+}
 
+func (m configuratorSessionModel) mainTabView() string {
 	switch m.screen {
 	case configuratorScreenMode:
 		return m.renderSelectionScreen(
@@ -424,7 +432,7 @@ func (m configuratorSessionModel) View() string {
 	}
 }
 
-func (m configuratorSessionModel) updateModeScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m configuratorSessionModel) updateModeScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.resultErr = ErrConfiguratorSessionUserExit
@@ -455,7 +463,7 @@ func (m configuratorSessionModel) updateModeScreen(msg tea.KeyMsg) (tea.Model, t
 	return m, nil
 }
 
-func (m configuratorSessionModel) updateClientSelectScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m configuratorSessionModel) updateClientSelectScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.notice = ""
@@ -522,7 +530,7 @@ func (m configuratorSessionModel) updateClientSelectScreen(msg tea.KeyMsg) (tea.
 	}
 }
 
-func (m configuratorSessionModel) updateClientRemoveScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m configuratorSessionModel) updateClientRemoveScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.notice = ""
@@ -553,7 +561,7 @@ func (m configuratorSessionModel) updateClientRemoveScreen(msg tea.KeyMsg) (tea.
 	return m, nil
 }
 
-func (m configuratorSessionModel) updateClientAddNameScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m configuratorSessionModel) updateClientAddNameScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.notice = ""
@@ -583,7 +591,7 @@ func (m configuratorSessionModel) updateClientAddNameScreen(msg tea.KeyMsg) (tea
 
 const pasteDebounce = 300 * time.Millisecond
 
-func (m configuratorSessionModel) updateClientAddJSONScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m configuratorSessionModel) updateClientAddJSONScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "esc" {
 		m.notice = ""
 		m.screen = configuratorScreenClientAddName
@@ -643,7 +651,7 @@ func (m configuratorSessionModel) updateClientAddJSONScreen(msg tea.KeyMsg) (tea
 	}))
 }
 
-func (m configuratorSessionModel) updateClientInvalidScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m configuratorSessionModel) updateClientInvalidScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.notice = ""
@@ -685,7 +693,7 @@ func (m configuratorSessionModel) updateClientInvalidScreen(msg tea.KeyMsg) (tea
 	return m, nil
 }
 
-func (m configuratorSessionModel) updateServerSelectScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m configuratorSessionModel) updateServerSelectScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.notice = ""
@@ -747,7 +755,7 @@ func (m configuratorSessionModel) updateServerSelectScreen(msg tea.KeyMsg) (tea.
 	return m, nil
 }
 
-func (m configuratorSessionModel) updateServerManageScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m configuratorSessionModel) updateServerManageScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.notice = ""
@@ -800,7 +808,7 @@ func (m configuratorSessionModel) updateServerManageScreen(msg tea.KeyMsg) (tea.
 	return m, nil
 }
 
-func (m configuratorSessionModel) updateServerDeleteConfirmScreen(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m configuratorSessionModel) updateServerDeleteConfirmScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		if len(m.serverManagePeers) > 0 {
@@ -884,7 +892,7 @@ func (m configuratorSessionModel) cycleTab() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m configuratorSessionModel) updateSettingsTab(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m configuratorSessionModel) updateSettingsTab(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.tab = configuratorTabMain
@@ -912,14 +920,14 @@ func (m configuratorSessionModel) updateSettingsTab(msg tea.KeyMsg) (tea.Model, 
 	return m, cmd
 }
 
-func (m configuratorSessionModel) updateLogsTab(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m configuratorSessionModel) updateLogsTab(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.stopLogWait()
 		m.tab = configuratorTabMain
 		return m, nil
 	}
-	switch msg.Type {
+	switch msg.Key().Code {
 	case tea.KeyPgUp:
 		m.logViewport.PageUp()
 		m.logFollow = false
@@ -974,7 +982,7 @@ func (m *configuratorSessionModel) initNameInput() {
 	ti.Prompt = "> "
 	ti.Placeholder = "Give it a name"
 	ti.CharLimit = 256
-	ti.Width = 40
+	ti.SetWidth(40)
 	ti.SetValue("")
 	ti.Focus()
 	m.addNameInput = ti
@@ -1005,7 +1013,9 @@ func (m *configuratorSessionModel) initJSONInput() {
 	ta.SetWidth(80)
 	ta.SetHeight(10)
 	ta.ShowLineNumbers = true
-	ta.FocusedStyle.CursorLine = ta.FocusedStyle.Text
+	styles := ta.Styles()
+	styles.Focused.CursorLine = styles.Focused.Text
+	ta.SetStyles(styles)
 	ta.SetValue("")
 	ta.Focus()
 	m.addJSONInput = ta
@@ -1017,7 +1027,7 @@ func (m *configuratorSessionModel) adjustInputsToViewport() {
 	}
 	contentWidth := contentWidthForTerminal(m.width)
 	available := maxInt(1, contentWidth-resolveUIStyles(m.preferences).inputFrame.GetHorizontalFrameSize())
-	m.addNameInput.Width = minInt(40, available)
+	m.addNameInput.SetWidth(minInt(40, available))
 	m.addJSONInput.SetWidth(minInt(80, available))
 	if m.height > 18 {
 		m.addJSONInput.SetHeight(m.height - 18)
@@ -1109,8 +1119,8 @@ func (m *configuratorSessionModel) refreshLogs() {
 	lines := runtimeLogSnapshot(m.logsFeed(), &m.logScratch)
 	m.ensureLogsViewport()
 	wasAtBottom := m.logViewport.AtBottom()
-	offset := m.logViewport.YOffset
-	content := renderLogsViewportContent(lines, m.logViewport.Width, resolveUIStyles(m.preferences))
+	offset := m.logViewport.YOffset()
+	content := renderLogsViewportContent(lines, m.logViewport.Width(), resolveUIStyles(m.preferences))
 	m.logViewport.SetContent(content)
 	if m.logFollow || wasAtBottom {
 		m.logViewport.GotoBottom()
@@ -1130,12 +1140,12 @@ func (m *configuratorSessionModel) ensureLogsViewport() {
 		hint,
 	)
 	if !m.logReady {
-		m.logViewport = viewport.New(contentWidth, viewportHeight)
+		m.logViewport = viewport.New(viewport.WithWidth(contentWidth), viewport.WithHeight(viewportHeight))
 		m.logReady = true
 		return
 	}
-	m.logViewport.Width = contentWidth
-	m.logViewport.Height = viewportHeight
+	m.logViewport.SetWidth(contentWidth)
+	m.logViewport.SetHeight(viewportHeight)
 }
 
 func (m *configuratorSessionModel) restartLogWait() {

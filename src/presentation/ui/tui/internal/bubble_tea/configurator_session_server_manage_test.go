@@ -8,7 +8,7 @@ import (
 	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
 	serverConfiguration "tungo/infrastructure/PAL/configuration/server"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 type sessionObserverStub struct{}
@@ -120,12 +120,12 @@ func newSessionModelForServerManageTests(
 	return model
 }
 
-func keyRunes(r rune) tea.KeyMsg {
-	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}}
+func keyRunes(r rune) tea.KeyPressMsg {
+	return tea.KeyPressMsg{Code: r, Text: string(r)}
 }
 
-func keyNamed(k tea.KeyType) tea.KeyMsg {
-	return tea.KeyMsg{Type: k}
+func keyNamed(k rune) tea.KeyPressMsg {
+	return tea.KeyPressMsg{Code: k}
 }
 
 func TestServerManage_DeleteFlow_ConfirmRemovesPeer(t *testing.T) {

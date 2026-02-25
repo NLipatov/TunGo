@@ -6,9 +6,9 @@ import (
 	"tungo/presentation/ui/tui/internal/ui/contracts/colorization"
 	"tungo/presentation/ui/tui/internal/ui/value_objects"
 
-	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
 )
 
 type selectorKeyMap struct {
@@ -119,7 +119,7 @@ func NewSelector(
 		keys:            defaultSelectorKeyMap(),
 		screen:          selectorScreenMain,
 		preferences:     settings.Preferences(),
-		logViewport:     viewport.New(1, 8),
+		logViewport:     viewport.New(viewport.WithWidth(1), viewport.WithHeight(8)),
 		logReady:        true,
 		logFollow:       true,
 	}
@@ -155,7 +155,7 @@ func (m Selector) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.refreshLogsViewport()
 		return m, selectorLogUpdateCmd(m.logsFeed(), m.logWaitStop, m.logTickSeq)
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch {
 		case msg.String() == "esc":
 			m.stopLogWait()
@@ -193,7 +193,7 @@ func (m Selector) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Selector) updateMain(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Selector) updateMain(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Up):
 		if m.cursor > 0 && !m.done {
@@ -214,7 +214,7 @@ func (m Selector) updateMain(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Selector) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Selector) updateSettings(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	switch {
 	case key.Matches(msg, m.keys.Up):
@@ -274,9 +274,11 @@ func nextStatsUnits(current StatsUnitsOption, step int) StatsUnitsOption {
 	return order[idx]
 }
 
-func (m Selector) View() string {
+func (m Selector) View() tea.View {
 	if m.done {
-		return ""
+		v := tea.NewView("")
+		v.AltScreen = true
+		return v
 	}
 
 	title, details := splitPlaceholder(m.placeholder)
@@ -287,14 +289,18 @@ func (m Selector) View() string {
 		preamble = append(preamble, details[1:]...)
 	}
 
+	var content string
 	if m.screen == selectorScreenSettings {
-		return m.settingsView(preamble)
-	}
-	if m.screen == selectorScreenLogs {
-		return m.logsView()
+		content = m.settingsView(preamble)
+	} else if m.screen == selectorScreenLogs {
+		content = m.logsView()
+	} else {
+		content = m.mainView(title, subtitle, preamble)
 	}
 
-	return m.mainView(title, subtitle, preamble)
+	v := tea.NewView(content)
+	v.AltScreen = true
+	return v
 }
 
 func (m Selector) nextScreen() selectorScreen {
@@ -414,20 +420,20 @@ func (m *Selector) ensureLogsViewport() {
 		m.logsHint(),
 	)
 	if !m.logReady {
-		m.logViewport = viewport.New(contentWidth, viewportHeight)
+		m.logViewport = viewport.New(viewport.WithWidth(contentWidth), viewport.WithHeight(viewportHeight))
 		m.logReady = true
 		return
 	}
-	m.logViewport.Width = contentWidth
-	m.logViewport.Height = viewportHeight
+	m.logViewport.SetWidth(contentWidth)
+	m.logViewport.SetHeight(viewportHeight)
 }
 
 func (m *Selector) refreshLogsViewport() {
 	m.ensureLogsViewport()
 	lines := m.logsTail()
 	wasAtBottom := m.logViewport.AtBottom()
-	offset := m.logViewport.YOffset
-	content := renderLogsViewportContent(lines, m.logViewport.Width, resolveUIStyles(m.preferences))
+	offset := m.logViewport.YOffset()
+	content := renderLogsViewportContent(lines, m.logViewport.Width(), resolveUIStyles(m.preferences))
 	m.logViewport.SetContent(content)
 	if m.logFollow || wasAtBottom {
 		m.logViewport.GotoBottom()
@@ -441,8 +447,8 @@ func (m Selector) logsHint() string {
 	return "up/down scroll | PgUp/PgDn page | Home/End jump | Space follow | Tab switch tabs | Esc back | ctrl+c exit"
 }
 
-func (m Selector) updateLogs(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.Type {
+func (m Selector) updateLogs(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.Key().Code {
 	case tea.KeyPgUp:
 		m.logViewport.PageUp()
 		m.logFollow = false
