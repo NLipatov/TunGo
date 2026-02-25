@@ -5,7 +5,7 @@ import (
 	"os"
 	"tungo/presentation/ui/tui/internal/ui/contracts/text_area"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 type TextAreaAdapter struct {

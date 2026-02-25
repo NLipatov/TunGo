@@ -7,9 +7,9 @@ import (
 	"time"
 	"tungo/infrastructure/telemetry/trafficstats"
 
-	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
 )
 
 type RuntimeDashboardMode string
@@ -85,7 +85,7 @@ type runtimeDashboardProgram interface {
 }
 
 var newRuntimeDashboardProgram = func(model tea.Model) runtimeDashboardProgram {
-	return tea.NewProgram(model, tea.WithAltScreen())
+	return tea.NewProgram(model)
 }
 
 func NewRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions, settings *uiPreferencesProvider) RuntimeDashboard {
@@ -104,7 +104,7 @@ func NewRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions, s
 		screen:      runtimeScreenDataplane,
 		preferences: settings.Preferences(),
 		logFeed:     options.LogFeed,
-		logViewport: viewport.New(1, 8),
+		logViewport: viewport.New(viewport.WithWidth(1), viewport.WithHeight(8)),
 		logReady:    true,
 		logFollow:   true,
 		tickSeq:     1,
@@ -179,7 +179,7 @@ func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case runtimeContextDoneMsg:
 		m.stopLogWait()
 		return m, tea.Quit
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if m.confirmOpen {
 			return m.updateConfirm(msg)
 		}
@@ -236,7 +236,7 @@ func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m RuntimeDashboard) updateConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m RuntimeDashboard) updateConfirm(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Quit):
 		m.stopLogWait()
@@ -266,15 +266,19 @@ func (m RuntimeDashboard) updateConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m RuntimeDashboard) View() string {
+func (m RuntimeDashboard) View() tea.View {
+	var content string
 	switch m.screen {
 	case runtimeScreenSettings:
-		return m.settingsView()
+		content = m.settingsView()
 	case runtimeScreenLogs:
-		return m.logsView()
+		content = m.logsView()
 	default:
-		return m.mainView()
+		content = m.mainView()
 	}
+	v := tea.NewView(content)
+	v.AltScreen = true
+	return v
 }
 
 func (m RuntimeDashboard) nextScreen() runtimeDashboardScreen {
@@ -288,7 +292,7 @@ func (m RuntimeDashboard) nextScreen() runtimeDashboardScreen {
 	}
 }
 
-func (m RuntimeDashboard) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m RuntimeDashboard) updateSettings(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	prevGraphEnabled := m.preferences.ShowDataplaneGraph
 	switch {
@@ -317,8 +321,8 @@ func (m *RuntimeDashboard) refreshLogs() {
 	lines := runtimeLogSnapshot(m.logFeed, &m.logScratch)
 	m.ensureLogsViewport()
 	wasAtBottom := m.logViewport.AtBottom()
-	offset := m.logViewport.YOffset
-	content := renderLogsViewportContent(lines, m.logViewport.Width, resolveUIStyles(m.preferences))
+	offset := m.logViewport.YOffset()
+	content := renderLogsViewportContent(lines, m.logViewport.Width(), resolveUIStyles(m.preferences))
 	m.logViewport.SetContent(content)
 	if m.logFollow || wasAtBottom {
 		m.logViewport.GotoBottom()
@@ -442,20 +446,20 @@ func (m *RuntimeDashboard) ensureLogsViewport() {
 		m.logsHint(),
 	)
 	if !m.logReady {
-		m.logViewport = viewport.New(contentWidth, viewportHeight)
+		m.logViewport = viewport.New(viewport.WithWidth(contentWidth), viewport.WithHeight(viewportHeight))
 		m.logReady = true
 		return
 	}
-	m.logViewport.Width = contentWidth
-	m.logViewport.Height = viewportHeight
+	m.logViewport.SetWidth(contentWidth)
+	m.logViewport.SetHeight(viewportHeight)
 }
 
 func (m RuntimeDashboard) logsHint() string {
 	return "up/down scroll | PgUp/PgDn page | Home/End jump | Space follow | Tab switch tabs | Esc back | ctrl+c exit"
 }
 
-func (m RuntimeDashboard) updateLogs(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.Type {
+func (m RuntimeDashboard) updateLogs(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.Code {
 	case tea.KeyPgUp:
 		m.logViewport.PageUp()
 		m.logFollow = false

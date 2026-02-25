@@ -7,14 +7,14 @@ import (
 	selectorContract "tungo/presentation/ui/tui/internal/ui/contracts/selector"
 	"tungo/presentation/ui/tui/internal/ui/value_objects"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 type selectorAdapterMockModel struct{}
 
 func (f selectorAdapterMockModel) Init() tea.Cmd                         { return nil }
 func (f selectorAdapterMockModel) Update(_ tea.Msg) (tea.Model, tea.Cmd) { return f, nil }
-func (f selectorAdapterMockModel) View() string                          { return "" }
+func (f selectorAdapterMockModel) View() tea.View                         { return tea.NewView("") }
 
 type selectorAdapterMockTeaRunner struct {
 	returnModel tea.Model

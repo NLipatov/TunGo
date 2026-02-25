@@ -1,6 +1,6 @@
 package bubble_tea
 
-import tea "github.com/charmbracelet/bubbletea"
+import tea "charm.land/bubbletea/v2"
 
 type programRunner interface {
 	Run(model tea.Model, opts ...tea.ProgramOption) (tea.Model, error)

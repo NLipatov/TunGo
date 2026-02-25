@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 func testSettings() *uiPreferencesProvider {
@@ -15,7 +15,7 @@ func TestFatalErrorModel_View_ContainsMessage(t *testing.T) {
 	m := newFatalErrorModel("Something went wrong", testSettings())
 	m.width = 100
 	m.height = 30
-	view := m.View()
+	view := m.View().Content
 	if !strings.Contains(view, "Something went wrong") {
 		t.Fatalf("expected view to contain message, got %q", view)
 	}
@@ -25,7 +25,7 @@ func TestFatalErrorModel_View_HasTabsLineWithProductLabel(t *testing.T) {
 	m := newFatalErrorModel("details", testSettings())
 	m.width = 100
 	m.height = 30
-	view := m.View()
+	view := m.View().Content
 	if !strings.Contains(view, "Error") {
 		t.Fatalf("expected view to contain Error tab, got %q", view)
 	}
@@ -37,7 +37,7 @@ func TestFatalErrorModel_View_HasTabsLineWithProductLabel(t *testing.T) {
 func TestFatalErrorModel_View_ContainsANSI(t *testing.T) {
 	forceANSIColorProfile(t, ansiColorProfileTrueColor)
 	m := newFatalErrorModel("details", testSettings())
-	view := m.View()
+	view := m.View().Content
 	if !containsANSI(view) {
 		t.Fatalf("expected view to contain ANSI codes for theming, got %q", view)
 	}
@@ -45,7 +45,7 @@ func TestFatalErrorModel_View_ContainsANSI(t *testing.T) {
 
 func TestFatalErrorModel_View_ContainsDismissHint(t *testing.T) {
 	m := newFatalErrorModel("details", testSettings())
-	view := m.View()
+	view := m.View().Content
 	if !strings.Contains(view, "Press Enter to exit") {
 		t.Fatalf("expected view to contain dismiss hint, got %q", view)
 	}
@@ -53,7 +53,7 @@ func TestFatalErrorModel_View_ContainsDismissHint(t *testing.T) {
 
 func TestFatalErrorModel_Update_EnterQuits(t *testing.T) {
 	m := newFatalErrorModel("details", testSettings())
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("expected quit command on Enter")
 	}
@@ -65,7 +65,7 @@ func TestFatalErrorModel_Update_EnterQuits(t *testing.T) {
 
 func TestFatalErrorModel_Update_EscQuits(t *testing.T) {
 	m := newFatalErrorModel("details", testSettings())
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	if cmd == nil {
 		t.Fatal("expected quit command on Esc")
 	}
@@ -77,7 +77,7 @@ func TestFatalErrorModel_Update_EscQuits(t *testing.T) {
 
 func TestFatalErrorModel_Update_QKeyQuits(t *testing.T) {
 	m := newFatalErrorModel("details", testSettings())
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 'q', Text: "q"})
 	if cmd == nil {
 		t.Fatal("expected quit command on 'q'")
 	}
@@ -89,7 +89,7 @@ func TestFatalErrorModel_Update_QKeyQuits(t *testing.T) {
 
 func TestFatalErrorModel_Update_ArbitraryKeyDoesNotQuit(t *testing.T) {
 	m := newFatalErrorModel("details", testSettings())
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
 	if cmd != nil {
 		t.Fatalf("expected no command on arbitrary key, got %v", cmd)
 	}
@@ -116,7 +116,7 @@ func TestFatalErrorModel_View_RespectsTheme(t *testing.T) {
 		p.Theme = theme
 		s.update(p)
 		m := newFatalErrorModel("details", s)
-		views[i] = m.View()
+		views[i] = m.View().Content
 	}
 
 	// At least light vs dark should produce different output (different ANSI bg codes)

@@ -12,7 +12,7 @@ import (
 
 	serverConfiguration "tungo/infrastructure/PAL/configuration/server"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 func defaultUnifiedConfigOpts() ConfiguratorSessionOptions {
@@ -54,7 +54,7 @@ func TestUnifiedSession_ConfiguratorViewShown(t *testing.T) {
 	m, _ := newTestUnifiedModel(t)
 	m.width = 100
 	m.height = 30
-	view := m.View()
+	view := m.View().Content
 	if !strings.Contains(view, "Select mode") {
 		t.Fatalf("expected configurator view, got: %q", view)
 	}
@@ -77,7 +77,7 @@ func TestUnifiedSession_ModeSelection_TransitionsToWaiting(t *testing.T) {
 	// Navigate to server mode and select "start server".
 	m.configurator.screen = configuratorScreenServerSelect
 	m.configurator.cursor = 0 // "start server"
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	updated := result.(unifiedSessionModel)
 
 	if updated.phase != phaseWaitingForRuntime {
@@ -160,7 +160,7 @@ func TestUnifiedSession_WaitingPhase_ShowsStarting(t *testing.T) {
 	m.phase = phaseWaitingForRuntime
 	m.width = 100
 	m.height = 30
-	view := m.View()
+	view := m.View().Content
 	if !strings.Contains(view, "Starting...") {
 		t.Fatalf("expected waiting view with Starting..., got: %q", view)
 	}
@@ -175,7 +175,7 @@ func TestUnifiedSession_RuntimeExit_QuitsProgram(t *testing.T) {
 	m.runtime = &rt
 
 	// Simulate ctrl+c key press.
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 	updated := result.(unifiedSessionModel)
 	_ = updated
 
@@ -204,13 +204,13 @@ func TestUnifiedSession_RuntimeReconfigure_TransitionsToConfiguring(t *testing.T
 	m.runtime = &rt
 
 	// Simulate esc -> confirm reconfigure.
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	updated := result.(unifiedSessionModel)
 	// Move cursor to "Stop" (index 1).
-	result, _ = updated.Update(tea.KeyMsg{Type: tea.KeyRight})
+	result, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	updated = result.(unifiedSessionModel)
 	// Confirm.
-	result, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	updated = result.(unifiedSessionModel)
 
 	if updated.phase != phaseConfiguring {
@@ -236,7 +236,7 @@ func TestUnifiedSession_ConfiguratorQuit_SendsExitEvent(t *testing.T) {
 	m, events := newTestUnifiedModel(t)
 
 	// Press ctrl+c to quit from configurator.
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 	_ = result
 
 	if cmd == nil {
@@ -414,7 +414,7 @@ func TestUnifiedSession_WaitingPhase_IgnoresKeyMessages(t *testing.T) {
 	m, _ := newTestUnifiedModel(t)
 	m.phase = phaseWaitingForRuntime
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'q', Text: "q"})
 	updated := result.(unifiedSessionModel)
 	if updated.phase != phaseWaitingForRuntime {
 		t.Fatalf("expected phaseWaitingForRuntime, got %d", updated.phase)
@@ -432,7 +432,7 @@ func TestUnifiedSession_RuntimePhase_NilRuntime_ShowsWaitingView(t *testing.T) {
 	m.runtime = nil
 	m.width = 100
 	m.height = 30
-	view := m.View()
+	view := m.View().Content
 	if !strings.Contains(view, "Starting...") {
 		t.Fatalf("expected waiting view when runtime is nil, got: %q", view)
 	}
@@ -441,7 +441,7 @@ func TestUnifiedSession_RuntimePhase_NilRuntime_ShowsWaitingView(t *testing.T) {
 func TestUnifiedSession_View_DefaultPhase(t *testing.T) {
 	m, _ := newTestUnifiedModel(t)
 	m.phase = unifiedPhase(99)
-	view := m.View()
+	view := m.View().Content
 	if view != "" {
 		t.Fatalf("expected empty view for unknown phase, got: %q", view)
 	}
@@ -450,7 +450,7 @@ func TestUnifiedSession_View_DefaultPhase(t *testing.T) {
 func TestUnifiedSession_DelegateToActive_DefaultPhase(t *testing.T) {
 	m, _ := newTestUnifiedModel(t)
 	m.phase = unifiedPhase(99)
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
 	updated := result.(unifiedSessionModel)
 	if updated.phase != unifiedPhase(99) {
 		t.Fatalf("expected phase unchanged, got %d", updated.phase)
@@ -527,7 +527,7 @@ func TestUnifiedSession_UpdateConfigurator_NonUserExitError(t *testing.T) {
 	m.configurator.done = true
 	m.configurator.resultErr = errors.New("unexpected error")
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
 	_ = result.(unifiedSessionModel)
 	if cmd == nil {
 		t.Fatal("expected quit cmd for configurator error")
@@ -547,7 +547,7 @@ func TestUnifiedSession_UpdateRuntime_NilRuntime(t *testing.T) {
 	m.phase = phaseRuntime
 	m.runtime = nil
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
 	updated := result.(unifiedSessionModel)
 	if updated.phase != phaseRuntime {
 		t.Fatalf("expected phaseRuntime, got %d", updated.phase)
@@ -572,7 +572,7 @@ func TestUnifiedSession_UpdateRuntime_ReconfigureRequested(t *testing.T) {
 	rt.reconfigureRequested = true
 	m.runtime = &rt
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
 	updated := result.(unifiedSessionModel)
 	if updated.phase != phaseConfiguring {
 		t.Fatalf("expected phaseConfiguring after reconfigure, got %d", updated.phase)
@@ -600,7 +600,7 @@ func TestUnifiedSession_UpdateRuntime_ExitRequested(t *testing.T) {
 	rt.exitRequested = true
 	m.runtime = &rt
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
 	_ = result.(unifiedSessionModel)
 	if cmd == nil {
 		t.Fatal("expected quit cmd for exit")
@@ -735,7 +735,7 @@ func TestUnifiedSession_Configurator_UserExit(t *testing.T) {
 	m.configurator.done = true
 	m.configurator.resultErr = ErrConfiguratorSessionUserExit
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
 	_ = result.(unifiedSessionModel)
 	if cmd == nil {
 		t.Fatal("expected quit cmd for user exit")
@@ -755,7 +755,7 @@ func TestUnifiedSession_Configurator_ModeSelected(t *testing.T) {
 	m.configurator.done = true
 	m.configurator.resultMode = mode.Client
 
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
 	updated := result.(unifiedSessionModel)
 	if updated.phase != phaseWaitingForRuntime {
 		t.Fatalf("expected phaseWaitingForRuntime, got %d", updated.phase)
@@ -782,7 +782,7 @@ func TestUnifiedSession_UpdateRuntime_ReconfigureError(t *testing.T) {
 	// Make configOpts invalid so newConfiguratorSessionModel fails on reconfigure.
 	m.configOpts.ServerConfigManager = nil
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
 	_ = result.(unifiedSessionModel)
 	if cmd == nil {
 		t.Fatal("expected quit cmd on reconfigure error")
@@ -1153,7 +1153,7 @@ func TestUnifiedSession_RuntimePhase_ShowsRuntimeView(t *testing.T) {
 	rt.height = 30
 	m.runtime = &rt
 
-	view := m.View()
+	view := m.View().Content
 	if !strings.Contains(view, "Mode: Server") {
 		t.Fatalf("expected runtime view with server mode, got: %q", view)
 	}
@@ -1211,7 +1211,7 @@ func TestUnifiedSession_FatalErrorPhase_ViewDelegatesToFatalError(t *testing.T) 
 	m.fatalError = &fe
 	m.phase = phaseFatalError
 
-	view := m.View()
+	view := m.View().Content
 	if !strings.Contains(view, "Details here") {
 		t.Fatalf("expected fatal error message in view, got: %q", view)
 	}
@@ -1223,7 +1223,7 @@ func TestUnifiedSession_FatalErrorPhase_EnterSendsExitEvent(t *testing.T) {
 	m.fatalError = &fe
 	m.phase = phaseFatalError
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("expected quit cmd when fatal error dismissed")
 	}
@@ -1244,7 +1244,7 @@ func TestUnifiedSession_FatalErrorPhase_EscSendsExitEvent(t *testing.T) {
 	m.fatalError = &fe
 	m.phase = phaseFatalError
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	if cmd == nil {
 		t.Fatal("expected quit cmd when fatal error dismissed via Esc")
 	}
@@ -1265,7 +1265,7 @@ func TestUnifiedSession_FatalErrorPhase_QKeySendsExitEvent(t *testing.T) {
 	m.fatalError = &fe
 	m.phase = phaseFatalError
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 'q', Text: "q"})
 	if cmd == nil {
 		t.Fatal("expected quit cmd when fatal error dismissed via 'q'")
 	}
@@ -1286,7 +1286,7 @@ func TestUnifiedSession_FatalErrorPhase_ArbitraryKeyNoQuit(t *testing.T) {
 	m.fatalError = &fe
 	m.phase = phaseFatalError
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
 	if cmd != nil {
 		t.Fatal("expected nil cmd for arbitrary key in fatal error phase")
 	}
@@ -1316,7 +1316,7 @@ func TestUnifiedSession_FatalErrorPhase_NilFatalError_View(t *testing.T) {
 	m.phase = phaseFatalError
 	m.fatalError = nil
 
-	view := m.View()
+	view := m.View().Content
 	if view != "" {
 		t.Fatalf("expected empty view when fatalError is nil, got: %q", view)
 	}
@@ -1327,7 +1327,7 @@ func TestUnifiedSession_FatalErrorPhase_NilFatalError_Update(t *testing.T) {
 	m.phase = phaseFatalError
 	m.fatalError = nil
 
-	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	result, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	updated := result.(unifiedSessionModel)
 	if updated.phase != phaseFatalError {
 		t.Fatalf("expected phase unchanged, got %d", updated.phase)

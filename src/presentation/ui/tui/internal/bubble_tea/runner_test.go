@@ -4,14 +4,14 @@ import (
 	"io"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 type instantQuitModel struct{}
 
 func (m instantQuitModel) Init() tea.Cmd                       { return tea.Quit }
 func (m instantQuitModel) Update(tea.Msg) (tea.Model, tea.Cmd) { return m, nil }
-func (m instantQuitModel) View() string                        { return "" }
+func (m instantQuitModel) View() tea.View                       { return tea.NewView("") }
 
 func TestBubbleProgramRunner_Run(t *testing.T) {
 	r := &bubbleProgramRunner{}

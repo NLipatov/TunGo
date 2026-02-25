@@ -7,7 +7,7 @@ import (
 
 	"tungo/presentation/ui/tui/internal/ui/value_objects"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 type mockColorizer struct {
@@ -55,7 +55,7 @@ func TestSelector_Init(t *testing.T) {
 func TestSelector_UpdateUp(t *testing.T) {
 	sel, _ := newTestSelector("client mode", "server mode")
 	sel.cursor = 1
-	updatedModel, _ := sel.Update(tea.KeyMsg{Type: tea.KeyUp})
+	updatedModel, _ := sel.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 	updatedSel, ok := updatedModel.(Selector)
 	if !ok {
 		t.Fatal("Update did not return Selector")
@@ -68,7 +68,7 @@ func TestSelector_UpdateUp(t *testing.T) {
 func TestSelector_UpdateUp_AtTop_NoChange(t *testing.T) {
 	sel, _ := newTestSelector("a", "b")
 	sel.cursor = 0
-	updatedModel, _ := sel.Update(tea.KeyMsg{Type: tea.KeyUp})
+	updatedModel, _ := sel.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 	updatedSel := updatedModel.(Selector)
 	if updatedSel.cursor != 0 {
 		t.Errorf("expected cursor to stay at 0, got %d", updatedSel.cursor)
@@ -77,7 +77,7 @@ func TestSelector_UpdateUp_AtTop_NoChange(t *testing.T) {
 
 func TestSelector_UpdateDown(t *testing.T) {
 	sel, _ := newTestSelector("client mode", "server mode")
-	updatedModel, _ := sel.Update(tea.KeyMsg{Type: tea.KeyDown})
+	updatedModel, _ := sel.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	updatedSel := updatedModel.(Selector)
 	if updatedSel.cursor != 1 {
 		t.Errorf("expected cursor=1, got %d", updatedSel.cursor)
@@ -87,7 +87,7 @@ func TestSelector_UpdateDown(t *testing.T) {
 func TestSelector_UpdateDown_AtBottom_NoChange(t *testing.T) {
 	sel, _ := newTestSelector("a", "b")
 	sel.cursor = 1
-	updatedModel, _ := sel.Update(tea.KeyMsg{Type: tea.KeyDown})
+	updatedModel, _ := sel.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	updatedSel := updatedModel.(Selector)
 	if updatedSel.cursor != 1 {
 		t.Errorf("expected cursor to stay at 1, got %d", updatedSel.cursor)
@@ -97,7 +97,7 @@ func TestSelector_UpdateDown_AtBottom_NoChange(t *testing.T) {
 func TestSelector_UpdateEnter_FirstTime_SetsChoice_Quits(t *testing.T) {
 	sel, _ := newTestSelector("client", "server")
 	sel.cursor = 0
-	updatedModel, cmd := sel.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updatedModel, cmd := sel.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	updatedSel := updatedModel.(Selector)
 
 	if updatedSel.choice != "client" {
@@ -114,9 +114,9 @@ func TestSelector_UpdateEnter_FirstTime_SetsChoice_Quits(t *testing.T) {
 func TestSelector_UpdateEnter_SecondTime_StillQuits_NoChange(t *testing.T) {
 	sel, _ := newTestSelector("x", "y")
 	sel.cursor = 1
-	m1, _ := sel.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m1, _ := sel.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	afterFirst := m1.(Selector)
-	m2, cmd2 := afterFirst.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m2, cmd2 := afterFirst.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	afterSecond := m2.(Selector)
 
 	if afterSecond.choice != afterFirst.choice {
@@ -129,7 +129,7 @@ func TestSelector_UpdateEnter_SecondTime_StillQuits_NoChange(t *testing.T) {
 
 func TestSelector_UpdateCtrlC_Quits(t *testing.T) {
 	sel, _ := newTestSelector("client mode", "server mode")
-	updatedModel, cmd := sel.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	updatedModel, cmd := sel.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 	updatedSel, ok := updatedModel.(Selector)
 	if !ok {
 		t.Fatal("Update did not return Selector")
@@ -144,7 +144,7 @@ func TestSelector_UpdateCtrlC_Quits(t *testing.T) {
 
 func TestSelector_EnterWithEmptyOptions_NoPanic(t *testing.T) {
 	sel, _ := newTestSelector()
-	updatedModel, _ := sel.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updatedModel, _ := sel.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	updatedSel := updatedModel.(Selector)
 	if updatedSel.done {
 		t.Error("expected done=false with empty options")
@@ -156,7 +156,7 @@ func TestSelector_EnterWithEmptyOptions_NoPanic(t *testing.T) {
 
 func TestSelector_UpdateEsc_Backs(t *testing.T) {
 	sel, _ := newTestSelector("client mode", "server mode")
-	updatedModel, cmd := sel.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	updatedModel, cmd := sel.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	updatedSel := updatedModel.(Selector)
 	if !updatedSel.BackRequested() {
 		t.Error("expected backRequested=true on esc")
@@ -169,7 +169,7 @@ func TestSelector_UpdateEsc_Backs(t *testing.T) {
 func TestSelector_View_Normal_HighlightsCursor(t *testing.T) {
 	sel, _ := newTestSelector("client mode", "server mode")
 	sel.cursor = 0
-	view := sel.View()
+	view := sel.View().Content
 
 	if !strings.Contains(view, sel.placeholder) {
 		t.Errorf("view should contain placeholder %q", sel.placeholder)
@@ -182,7 +182,7 @@ func TestSelector_View_Normal_HighlightsCursor(t *testing.T) {
 func TestSelector_View_Done_IsEmpty(t *testing.T) {
 	sel, _ := newTestSelector("a")
 	sel.done = true
-	if v := sel.View(); v != "" {
+	if v := sel.View().Content; v != "" {
 		t.Errorf("expected empty view when done, got %q", v)
 	}
 }
@@ -210,10 +210,10 @@ func TestSplitPlaceholder_Multiline(t *testing.T) {
 
 func TestSelector_TabSwitchesToSettings(t *testing.T) {
 	sel, _ := newTestSelector("Main title", "a", "b")
-	updatedModel, _ := sel.Update(tea.KeyMsg{Type: tea.KeyTab})
+	updatedModel, _ := sel.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	updatedSel := updatedModel.(Selector)
 
-	view := updatedSel.View()
+	view := updatedSel.View().Content
 	if !strings.Contains(view, "Settings") {
 		t.Fatalf("expected settings screen, got view: %q", view)
 	}
@@ -221,9 +221,9 @@ func TestSelector_TabSwitchesToSettings(t *testing.T) {
 
 func TestSelector_TabSwitchesToLogs(t *testing.T) {
 	sel, _ := newTestSelector("Main title", "a", "b")
-	m1, _ := sel.Update(tea.KeyMsg{Type: tea.KeyTab}) // settings
-	m2, _ := m1.(Selector).Update(tea.KeyMsg{Type: tea.KeyTab})
-	view := m2.(Selector).View()
+	m1, _ := sel.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // settings
+	m2, _ := m1.(Selector).Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	view := m2.(Selector).View().Content
 
 	if !strings.Contains(view, "Logs") {
 		t.Fatalf("expected logs screen, got view: %q", view)
@@ -232,10 +232,10 @@ func TestSelector_TabSwitchesToLogs(t *testing.T) {
 
 func TestSelector_TabSwitchesBackToMain(t *testing.T) {
 	sel, _ := newTestSelector("Main title", "a", "b")
-	m1, _ := sel.Update(tea.KeyMsg{Type: tea.KeyTab}) // settings
-	m2, _ := m1.(Selector).Update(tea.KeyMsg{Type: tea.KeyTab})
-	m3, _ := m2.(Selector).Update(tea.KeyMsg{Type: tea.KeyTab})
-	view := m3.(Selector).View()
+	m1, _ := sel.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // settings
+	m2, _ := m1.(Selector).Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	m3, _ := m2.(Selector).Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	view := m3.(Selector).View().Content
 	if !strings.Contains(view, "Main") {
 		t.Fatalf("expected main screen after third tab, got %q", view)
 	}
@@ -243,13 +243,13 @@ func TestSelector_TabSwitchesBackToMain(t *testing.T) {
 
 func TestSelector_TabSwitch_DoesNotRequestClearScreenCmd(t *testing.T) {
 	sel, _ := newTestSelector("Main title", "a", "b")
-	updatedModel, cmd := sel.Update(tea.KeyMsg{Type: tea.KeyTab}) // settings
+	updatedModel, cmd := sel.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // settings
 	if cmd != nil {
 		t.Fatal("expected no command on tab switch to settings")
 	}
 	updated := updatedModel.(Selector)
 
-	_, cmd = updated.Update(tea.KeyMsg{Type: tea.KeyTab}) // logs
+	_, cmd = updated.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // logs
 	if cmd == nil {
 		t.Fatal("expected logs update command on tab switch to logs")
 	}
@@ -258,9 +258,9 @@ func TestSelector_TabSwitch_DoesNotRequestClearScreenCmd(t *testing.T) {
 func TestSelector_LogsView_EmptyFeedShowsNoLogsYet(t *testing.T) {
 	DisableGlobalRuntimeLogCapture()
 	sel, _ := newTestSelector("Main title", "a", "b")
-	m1, _ := sel.Update(tea.KeyMsg{Type: tea.KeyTab}) // settings
-	m2, _ := m1.(Selector).Update(tea.KeyMsg{Type: tea.KeyTab})
-	view := m2.(Selector).View()
+	m1, _ := sel.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // settings
+	m2, _ := m1.(Selector).Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	view := m2.(Selector).View().Content
 
 	if !strings.Contains(view, "No logs yet") {
 		t.Fatalf("expected empty logs hint, got view: %q", view)
@@ -281,12 +281,12 @@ func TestSelector_SettingsToggleFooter(t *testing.T) {
 	sel, _ := newTestSelector("Main title", "a", "b")
 	sel.settings = s
 	sel.preferences = s.Preferences()
-	m1, _ := sel.Update(tea.KeyMsg{Type: tea.KeyTab})             // settings
-	m2, _ := m1.(Selector).Update(tea.KeyMsg{Type: tea.KeyDown})  // stats units row
-	m3, _ := m2.(Selector).Update(tea.KeyMsg{Type: tea.KeyDown})  // dataplane stats row
-	m4, _ := m3.(Selector).Update(tea.KeyMsg{Type: tea.KeyDown})  // dataplane graph row
-	m5, _ := m4.(Selector).Update(tea.KeyMsg{Type: tea.KeyDown})  // footer row
-	m6, _ := m5.(Selector).Update(tea.KeyMsg{Type: tea.KeyRight}) // toggle
+	m1, _ := sel.Update(tea.KeyPressMsg{Code: tea.KeyTab})             // settings
+	m2, _ := m1.(Selector).Update(tea.KeyPressMsg{Code: tea.KeyDown})  // stats units row
+	m3, _ := m2.(Selector).Update(tea.KeyPressMsg{Code: tea.KeyDown})  // dataplane stats row
+	m4, _ := m3.(Selector).Update(tea.KeyPressMsg{Code: tea.KeyDown})  // dataplane graph row
+	m5, _ := m4.(Selector).Update(tea.KeyPressMsg{Code: tea.KeyDown})  // footer row
+	m6, _ := m5.(Selector).Update(tea.KeyPressMsg{Code: tea.KeyRight}) // toggle
 	toggled := m6.(Selector)
 
 	if s.Preferences().ShowFooter {
@@ -311,9 +311,9 @@ func TestSelector_SettingsToggleStatsUnits(t *testing.T) {
 	sel, _ := newTestSelector("Main title", "a", "b")
 	sel.settings = s
 	sel.preferences = s.Preferences()
-	m1, _ := sel.Update(tea.KeyMsg{Type: tea.KeyTab})             // settings
-	m2, _ := m1.(Selector).Update(tea.KeyMsg{Type: tea.KeyDown})  // stats units row
-	m3, _ := m2.(Selector).Update(tea.KeyMsg{Type: tea.KeyRight}) // toggle
+	m1, _ := sel.Update(tea.KeyPressMsg{Code: tea.KeyTab})             // settings
+	m2, _ := m1.(Selector).Update(tea.KeyPressMsg{Code: tea.KeyDown})  // stats units row
+	m3, _ := m2.(Selector).Update(tea.KeyPressMsg{Code: tea.KeyRight}) // toggle
 	toggled := m3.(Selector)
 
 	if s.Preferences().StatsUnits != StatsUnitsBytes {
@@ -341,13 +341,13 @@ func TestSelector_SettingsNavigationBoundsAndMutations(t *testing.T) {
 	sel.screen = selectorScreenSettings
 
 	// Up at top stays at top.
-	m1, _ := sel.Update(tea.KeyMsg{Type: tea.KeyUp})
+	m1, _ := sel.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 	sel = m1.(Selector)
 	if sel.settingsCursor != 0 {
 		t.Fatalf("expected cursor at top, got %d", sel.settingsCursor)
 	}
 	sel.settingsCursor = 1
-	m1, _ = sel.Update(tea.KeyMsg{Type: tea.KeyUp})
+	m1, _ = sel.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 	sel = m1.(Selector)
 	if sel.settingsCursor != 0 {
 		t.Fatalf("expected up from row 1 to row 0, got %d", sel.settingsCursor)
@@ -355,7 +355,7 @@ func TestSelector_SettingsNavigationBoundsAndMutations(t *testing.T) {
 
 	// Move to bottom and verify lower bound.
 	for i := 0; i < settingsRowsCount+1; i++ {
-		m1, _ = sel.Update(tea.KeyMsg{Type: tea.KeyDown})
+		m1, _ = sel.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 		sel = m1.(Selector)
 	}
 	if sel.settingsCursor != settingsRowsCount-1 {
@@ -364,7 +364,7 @@ func TestSelector_SettingsNavigationBoundsAndMutations(t *testing.T) {
 
 	// Theme row left wraps to dark.
 	sel.settingsCursor = settingsThemeRow
-	m1, _ = sel.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	m1, _ = sel.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
 	sel = m1.(Selector)
 	wantTheme := orderedThemeOptions[len(orderedThemeOptions)-1]
 	if s.Preferences().Theme != wantTheme {
@@ -373,7 +373,7 @@ func TestSelector_SettingsNavigationBoundsAndMutations(t *testing.T) {
 
 	// Stats row left toggles to bibytes.
 	sel.settingsCursor = settingsStatsUnitsRow
-	m1, _ = sel.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	m1, _ = sel.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
 	sel = m1.(Selector)
 	if s.Preferences().StatsUnits != StatsUnitsBiBytes {
 		t.Fatalf("expected bibytes after left toggle, got %q", s.Preferences().StatsUnits)
@@ -384,7 +384,7 @@ func TestSelector_SettingsNavigationBoundsAndMutations(t *testing.T) {
 
 	// Dataplane stats row select toggles.
 	sel.settingsCursor = settingsDataplaneStatsRow
-	m1, _ = sel.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m1, _ = sel.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	sel = m1.(Selector)
 	if s.Preferences().ShowDataplaneStats {
 		t.Fatalf("expected dataplane stats OFF after toggle")
@@ -395,7 +395,7 @@ func TestSelector_SettingsNavigationBoundsAndMutations(t *testing.T) {
 
 	// Dataplane graph row select toggles.
 	sel.settingsCursor = settingsDataplaneGraphRow
-	m1, _ = sel.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m1, _ = sel.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	sel = m1.(Selector)
 	if s.Preferences().ShowDataplaneGraph {
 		t.Fatalf("expected dataplane graph OFF after toggle")
@@ -406,7 +406,7 @@ func TestSelector_SettingsNavigationBoundsAndMutations(t *testing.T) {
 
 	// Footer row select toggles.
 	sel.settingsCursor = settingsFooterRow
-	m1, _ = sel.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m1, _ = sel.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	sel = m1.(Selector)
 	if s.Preferences().ShowFooter {
 		t.Fatalf("expected footer OFF after toggle")
@@ -425,7 +425,7 @@ func TestSelector_ViewIncludesSubtitleAndDetails(t *testing.T) {
 		value_objects.NewDefaultColor(),
 		value_objects.NewTransparentColor(),
 	)
-	view := sel.View()
+	view := sel.View().Content
 	if !strings.Contains(view, "Subtitle") || !strings.Contains(view, "Detail line") {
 		t.Fatalf("expected subtitle/details in view, got %q", view)
 	}
@@ -478,7 +478,7 @@ func TestSelector_SettingsThemeChange_RequestsClearScreen(t *testing.T) {
 	sel.screen = selectorScreenSettings
 	sel.settingsCursor = settingsThemeRow
 
-	updatedModel, cmd := sel.Update(tea.KeyMsg{Type: tea.KeyRight})
+	updatedModel, cmd := sel.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	updated := updatedModel.(Selector)
 	if cmd == nil {
 		t.Fatal("expected clear-screen command when theme changes")
@@ -494,7 +494,7 @@ func TestSelector_View_TruncatesLongOptionToContentWidth(t *testing.T) {
 	updatedModel, _ := sel.Update(tea.WindowSizeMsg{Width: 60, Height: 20})
 	updatedSel := updatedModel.(Selector)
 
-	view := updatedSel.View()
+	view := updatedSel.View().Content
 	if strings.Contains(view, longOption) {
 		t.Fatalf("expected long option to be truncated in view")
 	}
@@ -522,7 +522,7 @@ func TestSelector_UpdateWindowSizeAndQuestionMarkNoOp(t *testing.T) {
 		t.Fatalf("expected window size to be stored, got width=%d height=%d", updated.width, updated.height)
 	}
 
-	m2, _ := updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	m2, _ := updated.Update(tea.KeyPressMsg{Code: '?', Text: "?"})
 	afterQuestion := m2.(Selector)
 	if afterQuestion.done {
 		t.Fatal("expected '?' key to have no side effects")
@@ -583,26 +583,26 @@ func TestSelector_LogsViewportScrollAndFollowToggle(t *testing.T) {
 	sel, _ := newTestSelector("Main title", "a", "b")
 	updatedModel, _ := sel.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
 	sel = updatedModel.(Selector)
-	updatedModel, _ = sel.Update(tea.KeyMsg{Type: tea.KeyTab}) // settings
+	updatedModel, _ = sel.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // settings
 	sel = updatedModel.(Selector)
-	updatedModel, _ = sel.Update(tea.KeyMsg{Type: tea.KeyTab}) // logs
+	updatedModel, _ = sel.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // logs
 	sel = updatedModel.(Selector)
 
 	if !sel.logViewport.AtBottom() {
 		t.Fatal("expected selector logs viewport to start at tail")
 	}
 
-	beforeOffset := sel.logViewport.YOffset
-	updatedModel, _ = sel.Update(tea.KeyMsg{Type: tea.KeyUp})
+	beforeOffset := sel.logViewport.YOffset()
+	updatedModel, _ = sel.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 	sel = updatedModel.(Selector)
 	if sel.logFollow {
 		t.Fatal("expected follow disabled after manual scroll in logs tab")
 	}
-	if sel.logViewport.YOffset >= beforeOffset {
-		t.Fatalf("expected viewport offset to move up, before=%d after=%d", beforeOffset, sel.logViewport.YOffset)
+	if sel.logViewport.YOffset() >= beforeOffset {
+		t.Fatalf("expected viewport offset to move up, before=%d after=%d", beforeOffset, sel.logViewport.YOffset())
 	}
 
-	updatedModel, _ = sel.Update(tea.KeyMsg{Type: tea.KeySpace})
+	updatedModel, _ = sel.Update(tea.KeyPressMsg{Code: tea.KeySpace})
 	sel = updatedModel.(Selector)
 	if !sel.logFollow {
 		t.Fatal("expected follow enabled after pressing space")
@@ -630,13 +630,13 @@ func TestSelector_UpdateLogs_AllNavigationKeys(t *testing.T) {
 	sel, _ := newTestSelector("Main title", "a", "b")
 	updatedModel, _ := sel.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
 	sel = updatedModel.(Selector)
-	updatedModel, _ = sel.Update(tea.KeyMsg{Type: tea.KeyTab}) // settings
+	updatedModel, _ = sel.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // settings
 	sel = updatedModel.(Selector)
-	updatedModel, _ = sel.Update(tea.KeyMsg{Type: tea.KeyTab}) // logs
+	updatedModel, _ = sel.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // logs
 	sel = updatedModel.(Selector)
 
 	// PgUp
-	updatedModel, _ = sel.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	updatedModel, _ = sel.Update(tea.KeyPressMsg{Code: tea.KeyPgUp})
 	sel = updatedModel.(Selector)
 	if sel.logFollow {
 		t.Fatal("expected logFollow=false after PgUp")
@@ -644,21 +644,21 @@ func TestSelector_UpdateLogs_AllNavigationKeys(t *testing.T) {
 
 	// PgDown when at bottom
 	sel.logViewport.GotoBottom()
-	updatedModel, _ = sel.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	updatedModel, _ = sel.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
 	sel = updatedModel.(Selector)
 	if !sel.logFollow {
 		t.Fatal("expected logFollow=true after PgDown at bottom")
 	}
 
 	// Home
-	updatedModel, _ = sel.Update(tea.KeyMsg{Type: tea.KeyHome})
+	updatedModel, _ = sel.Update(tea.KeyPressMsg{Code: tea.KeyHome})
 	sel = updatedModel.(Selector)
 	if sel.logFollow {
 		t.Fatal("expected logFollow=false after Home")
 	}
 
 	// End
-	updatedModel, _ = sel.Update(tea.KeyMsg{Type: tea.KeyEnd})
+	updatedModel, _ = sel.Update(tea.KeyPressMsg{Code: tea.KeyEnd})
 	sel = updatedModel.(Selector)
 	if !sel.logFollow {
 		t.Fatal("expected logFollow=true after End")
@@ -667,7 +667,7 @@ func TestSelector_UpdateLogs_AllNavigationKeys(t *testing.T) {
 	// Down when not at bottom
 	sel.logViewport.GotoTop()
 	sel.logFollow = false
-	updatedModel, _ = sel.Update(tea.KeyMsg{Type: tea.KeyDown})
+	updatedModel, _ = sel.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	sel = updatedModel.(Selector)
 	if sel.logFollow {
 		t.Fatal("expected logFollow=false after Down when not at bottom")
@@ -684,8 +684,8 @@ func TestSelector_EnsureLogsViewport_WhenLogReadyFalse(t *testing.T) {
 	if !sel.logReady {
 		t.Fatal("expected logReady=true after ensureLogsViewport")
 	}
-	if sel.logViewport.Width <= 0 {
-		t.Fatalf("expected viewport width > 0, got %d", sel.logViewport.Width)
+	if sel.logViewport.Width() <= 0 {
+		t.Fatalf("expected viewport width > 0, got %d", sel.logViewport.Width())
 	}
 }
 
@@ -722,7 +722,7 @@ func TestSelector_TabCycleMainSettingsLogsMain_ReturnsLogCmd(t *testing.T) {
 	sel, _ := newTestSelector("Main title", "a", "b")
 
 	// Tab: main -> settings (no cmd)
-	m1, cmd1 := sel.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m1, cmd1 := sel.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	s1 := m1.(Selector)
 	if s1.screen != selectorScreenSettings {
 		t.Fatalf("expected settings screen, got %v", s1.screen)
@@ -732,7 +732,7 @@ func TestSelector_TabCycleMainSettingsLogsMain_ReturnsLogCmd(t *testing.T) {
 	}
 
 	// Tab: settings -> logs (should return cmd)
-	m2, cmd2 := s1.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m2, cmd2 := s1.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	s2 := m2.(Selector)
 	if s2.screen != selectorScreenLogs {
 		t.Fatalf("expected logs screen, got %v", s2.screen)
@@ -742,7 +742,7 @@ func TestSelector_TabCycleMainSettingsLogsMain_ReturnsLogCmd(t *testing.T) {
 	}
 
 	// Tab: logs -> main (no cmd, but logWait should be stopped)
-	m3, cmd3 := s2.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m3, cmd3 := s2.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	s3 := m3.(Selector)
 	if s3.screen != selectorScreenMain {
 		t.Fatalf("expected main screen, got %v", s3.screen)
@@ -763,8 +763,8 @@ func TestSelector_WindowSizeMsgOnLogsScreen(t *testing.T) {
 
 	sel, _ := newTestSelector("Main title", "a", "b")
 	// Navigate to logs screen.
-	m1, _ := sel.Update(tea.KeyMsg{Type: tea.KeyTab})           // settings
-	m2, _ := m1.(Selector).Update(tea.KeyMsg{Type: tea.KeyTab}) // logs
+	m1, _ := sel.Update(tea.KeyPressMsg{Code: tea.KeyTab})           // settings
+	m2, _ := m1.(Selector).Update(tea.KeyPressMsg{Code: tea.KeyTab}) // logs
 	s := m2.(Selector)
 
 	// Send WindowSizeMsg on logs screen.
@@ -787,8 +787,8 @@ func TestSelector_LogTickMatchingSeqOnLogsScreen(t *testing.T) {
 	_, _ = feed.Write([]byte("log line\n"))
 
 	sel, _ := newTestSelector("Main title", "a", "b")
-	m1, _ := sel.Update(tea.KeyMsg{Type: tea.KeyTab})           // settings
-	m2, _ := m1.(Selector).Update(tea.KeyMsg{Type: tea.KeyTab}) // logs
+	m1, _ := sel.Update(tea.KeyPressMsg{Code: tea.KeyTab})           // settings
+	m2, _ := m1.(Selector).Update(tea.KeyPressMsg{Code: tea.KeyTab}) // logs
 	s := m2.(Selector)
 
 	// Send a matching selectorLogTickMsg.
@@ -805,8 +805,8 @@ func TestSelector_LogTickStaleSeqIgnored(t *testing.T) {
 	EnableGlobalRuntimeLogCapture(64)
 
 	sel, _ := newTestSelector("Main title", "a", "b")
-	m1, _ := sel.Update(tea.KeyMsg{Type: tea.KeyTab})           // settings
-	m2, _ := m1.(Selector).Update(tea.KeyMsg{Type: tea.KeyTab}) // logs
+	m1, _ := sel.Update(tea.KeyPressMsg{Code: tea.KeyTab})           // settings
+	m2, _ := m1.(Selector).Update(tea.KeyPressMsg{Code: tea.KeyTab}) // logs
 	s := m2.(Selector)
 
 	// Send a stale selectorLogTickMsg (seq doesn't match).
@@ -860,12 +860,12 @@ func TestSelector_RefreshLogsViewport_SetYOffsetFallback(t *testing.T) {
 
 	// Set a known offset and refresh again.
 	sel.logViewport.SetYOffset(2)
-	savedOffset := sel.logViewport.YOffset
+	savedOffset := sel.logViewport.YOffset()
 
 	sel.refreshLogsViewport()
 	// logFollow is false and was not at bottom, so it should use SetYOffset fallback.
-	if sel.logViewport.YOffset != savedOffset {
-		t.Fatalf("expected viewport offset to be restored to %d, got %d", savedOffset, sel.logViewport.YOffset)
+	if sel.logViewport.YOffset() != savedOffset {
+		t.Fatalf("expected viewport offset to be restored to %d, got %d", savedOffset, sel.logViewport.YOffset())
 	}
 	if sel.logFollow {
 		t.Fatal("expected logFollow to remain false when not at bottom")
@@ -935,7 +935,7 @@ func TestSelector_DownKeyAtBottom_SetsFollowTrue(t *testing.T) {
 	sel.logViewport.GotoBottom()
 	sel.logFollow = false
 
-	updatedModel, _ := sel.Update(tea.KeyMsg{Type: tea.KeyDown})
+	updatedModel, _ := sel.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	updated := updatedModel.(Selector)
 	if !updated.logFollow {
 		t.Fatal("expected logFollow=true when Down key pressed and viewport is already at bottom")

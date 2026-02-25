@@ -1,6 +1,6 @@
 package bubble_tea
 
-import tea "github.com/charmbracelet/bubbletea"
+import tea "charm.land/bubbletea/v2"
 
 type fatalErrorModel struct {
 	settings  UIPreferencesProvider
@@ -27,13 +27,13 @@ func (m fatalErrorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		return m, nil
-	case tea.KeyMsg:
-		switch msg.Type {
-		case tea.KeyEnter, tea.KeyEscape:
+	case tea.KeyPressMsg:
+		switch msg.String() {
+		case "enter", "esc":
 			m.dismissed = true
 			return m, tea.Quit
-		case tea.KeyRunes:
-			if len(msg.Runes) == 1 && msg.Runes[0] == 'q' {
+		default:
+			if msg.Key().Text == "q" {
 				m.dismissed = true
 				return m, tea.Quit
 			}
@@ -46,10 +46,10 @@ func (m fatalErrorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // a themed fatal error screen. The program blocks until the user dismisses it.
 func NewFatalErrorProgram(message string) *tea.Program {
 	settings := loadUISettingsFromDisk()
-	return tea.NewProgram(newFatalErrorModel(message, settings), tea.WithAltScreen())
+	return tea.NewProgram(newFatalErrorModel(message, settings))
 }
 
-func (m fatalErrorModel) View() string {
+func (m fatalErrorModel) View() tea.View {
 	prefs := m.settings.Preferences()
 	styles := resolveUIStyles(prefs)
 	contentWidth := contentWidthForTerminal(m.width)
@@ -57,7 +57,7 @@ func (m fatalErrorModel) View() string {
 		productLabel(), "error", []string{"Error"}, 0,
 		contentWidth, prefs.Theme, styles,
 	)
-	return renderScreen(
+	content := renderScreen(
 		m.width,
 		m.height,
 		tabsLine,
@@ -67,4 +67,7 @@ func (m fatalErrorModel) View() string {
 		prefs,
 		styles,
 	)
+	v := tea.NewView(content)
+	v.AltScreen = true
+	return v
 }

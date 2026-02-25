@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textarea"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textarea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // TextArea - is a multiline text input
@@ -26,7 +26,9 @@ func NewTextArea(placeholder string) *TextArea {
 	ta.SetWidth(80)
 	ta.SetHeight(10)
 	ta.ShowLineNumbers = true
-	ta.FocusedStyle.CursorLine = ta.FocusedStyle.Text
+	styles := ta.Styles()
+	styles.Focused.CursorLine = styles.Focused.Text
+	ta.SetStyles(styles)
 	ta.Focus()
 	return &TextArea{
 		settings:    loadUISettingsFromDisk(),
@@ -60,7 +62,7 @@ func (m *TextArea) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.ta.SetHeight(msg.Height - 18)
 		}
 		return m, nil
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if msg.String() == "ctrl+d" {
 			m.done = true
 			return m, tea.Quit
@@ -76,9 +78,11 @@ func (m *TextArea) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m *TextArea) View() string {
+func (m *TextArea) View() tea.View {
 	if m.done {
-		return ""
+		v := tea.NewView("")
+		v.AltScreen = true
+		return v
 	}
 	value := m.ta.Value()
 	lineCount := 1
@@ -94,7 +98,7 @@ func (m *TextArea) View() string {
 		container.Render(m.ta.View()),
 		stats,
 	}
-	return renderScreen(
+	content := renderScreen(
 		m.width,
 		m.height,
 		"Paste configuration",
@@ -104,6 +108,9 @@ func (m *TextArea) View() string {
 		prefs,
 		styles,
 	)
+	v := tea.NewView(content)
+	v.AltScreen = true
+	return v
 }
 
 func (m *TextArea) inputContainerWidth() int {

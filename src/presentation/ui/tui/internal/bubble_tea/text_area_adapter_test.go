@@ -5,7 +5,7 @@ import (
 	"testing"
 	"tungo/presentation/ui/tui/internal/ui/contracts/text_area"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 type textAreaAdapterMockTeaRunner struct {
@@ -30,7 +30,7 @@ func (f *textAreaMock) Update(_ tea.Msg) (tea.Model, tea.Cmd) {
 	panic("not implemented")
 }
 
-func (f *textAreaMock) View() string {
+func (f *textAreaMock) View() tea.View {
 	panic("not implemented")
 }
 
@@ -43,7 +43,7 @@ type dummyModel struct{}
 
 func (d dummyModel) Init() tea.Cmd                         { return nil }
 func (d dummyModel) Update(_ tea.Msg) (tea.Model, tea.Cmd) { return d, nil }
-func (d dummyModel) View() string                          { return "" }
+func (d dummyModel) View() tea.View                         { return tea.NewView("") }
 
 func TestTextAreaAdapter_NewTextArea_Success(t *testing.T) {
 	fta := &textAreaMock{val: "ok"}

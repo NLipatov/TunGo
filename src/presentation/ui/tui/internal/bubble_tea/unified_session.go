@@ -7,7 +7,7 @@ import (
 
 	"tungo/domain/mode"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // Errors returned by the unified session.
@@ -252,24 +252,30 @@ func (m unifiedSessionModel) updateFatalError(msg tea.Msg) (tea.Model, tea.Cmd) 
 	return m, cmd
 }
 
-func (m unifiedSessionModel) View() string {
+func (m unifiedSessionModel) altScreenView(content string) tea.View {
+	v := tea.NewView(content)
+	v.AltScreen = true
+	return v
+}
+
+func (m unifiedSessionModel) View() tea.View {
 	switch m.phase {
 	case phaseConfiguring:
 		return m.configurator.View()
 	case phaseWaitingForRuntime:
-		return m.waitingView()
+		return m.altScreenView(m.waitingView())
 	case phaseRuntime:
 		if m.runtime != nil {
 			return m.runtime.View()
 		}
-		return m.waitingView()
+		return m.altScreenView(m.waitingView())
 	case phaseFatalError:
 		if m.fatalError != nil {
 			return m.fatalError.View()
 		}
-		return ""
+		return m.altScreenView("")
 	}
-	return ""
+	return m.altScreenView("")
 }
 
 func (m unifiedSessionModel) waitingView() string {
@@ -349,7 +355,7 @@ type UnifiedSession struct {
 }
 
 var newUnifiedSessionProgram = func(model tea.Model) *tea.Program {
-	return tea.NewProgram(model, tea.WithAltScreen())
+	return tea.NewProgram(model)
 }
 
 // NewUnifiedSession creates and starts a unified session.
