@@ -122,7 +122,7 @@ func TestTextArea_UpdateWindowSize_ClampsToCardContentWidth(t *testing.T) {
 	ta := NewTextArea("Type here...")
 	_, _ = ta.Update(tea.WindowSizeMsg{Width: 220, Height: 40})
 
-	maxAllowed := contentWidthForTerminal(220) - inputContainerStyle().GetHorizontalFrameSize()
+	maxAllowed := contentWidthForTerminal(220) - resolveUIStyles(ta.settings.Preferences()).inputFrame.GetHorizontalFrameSize()
 	if ta.ta.Width() > maxAllowed {
 		t.Fatalf("expected width <= %d, got %d", maxAllowed, ta.ta.Width())
 	}
@@ -140,7 +140,7 @@ func TestTextArea_InputContainerWidth_FallbackToTextAreaWidth(t *testing.T) {
 	ta.ta.SetWidth(17)
 
 	got := ta.inputContainerWidth()
-	want := maxInt(1, ta.ta.Width()+inputContainerStyle().GetHorizontalFrameSize())
+	want := maxInt(1, ta.ta.Width()+resolveUIStyles(ta.settings.Preferences()).inputFrame.GetHorizontalFrameSize())
 	if got != want {
 		t.Fatalf("expected fallback width %d, got %d", want, got)
 	}

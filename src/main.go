@@ -19,7 +19,6 @@ import (
 	"tungo/infrastructure/PAL/stat"
 	"tungo/infrastructure/PAL/tun_server"
 	"tungo/infrastructure/cryptography/primitives"
-	"tungo/infrastructure/telemetry/trafficstats"
 	"tungo/infrastructure/tunnel/sessionplane/client_factory"
 	"tungo/presentation/configuring"
 	"tungo/presentation/elevation"
@@ -31,11 +30,6 @@ import (
 	"tungo/presentation/ui/tui"
 )
 
-const (
-	// configWatchInterval is how often the server checks for AllowedPeers changes.
-	// Sessions for removed/disabled peers are revoked on detection.
-	configWatchInterval = 30 * time.Second
-)
 
 func main() {
 	exitCode := 0
@@ -43,16 +37,6 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
-	if isTUIMode() {
-		trafficCollector := trafficstats.NewCollector(time.Second, 0.35)
-		trafficstats.SetGlobal(trafficCollector)
-		defer trafficstats.SetGlobal(nil)
-		go trafficCollector.Start(ctx)
-
-		tui.EnableRuntimeLogCapture(1200)
-		defer tui.DisableRuntimeLogCapture()
-	}
 
 	shutdownSignalHandler := shutdown.NewHandler(
 		ctx,
@@ -68,26 +52,23 @@ func main() {
 }
 
 func run(ctx context.Context) error {
-	processElevation := elevation.NewProcessElevation()
-	if !processElevation.IsElevated() {
-		return fatal(
-			"Insufficient privileges",
-			fmt.Sprintf(
-				"%s must be run with admin privileges.\n"+
-					"Please restart with elevated permissions (e.g. 'Run as Administrator' on Windows, or 'sudo' on Linux/macOS).",
-				app.Name,
-			),
+	if !elevation.IsElevated() {
+		return fmt.Errorf(
+			"%s must be run with admin privileges.\n%s",
+			app.Name, elevation.Hint(),
 		)
 	}
 
 	serverResolver := serverConf.NewServerResolver()
 	configurationManager, err := serverConf.NewManager(serverResolver, stat.NewDefaultStat())
 	if err != nil {
-		return fatal("Configuration error", err.Error())
+		return fmt.Errorf("configuration error: %w", err)
 	}
 
-	configuratorFactory := configuring.NewConfigurationFactory(configurationManager)
-	configurator := configuratorFactory.Configurator()
+	uiMode := app.CurrentUIMode()
+	configuratorFactory := configuring.NewConfigurationFactory(uiMode, configurationManager)
+	configurator, cleanup := configuratorFactory.Configurator(ctx)
+	defer cleanup()
 
 	for ctx.Err() == nil {
 		appMode, err := configurator.Configure(ctx)
@@ -95,135 +76,58 @@ func run(ctx context.Context) error {
 			if errors.Is(err, configuring.ErrUserExit) {
 				return nil
 			}
-			return fatal("Configuration error", err.Error())
+			return fmt.Errorf("configuration error: %w", err)
 		}
 
+		var runErr error
 		switch appMode {
 		case mode.Server:
-			setupCrashLog(serverResolver)
-			if err := prepareServerKeys(configurationManager); err != nil {
-				return fatal("Key preparation failed", err.Error())
-			}
-			serverConfigPath, _ := serverResolver.Resolve()
-			log.Printf("Starting server...")
-			err := startServer(ctx, configurationManager, serverConfigPath)
-			if errors.Is(err, runnersCommon.ErrReconfigureRequested) {
-				continue
-			}
-			if err != nil && ctx.Err() == nil {
-				return fatalWithCode("Server error", err.Error(), 2)
-			}
-			return nil
-
+			runErr = runServer(ctx, uiMode, serverResolver, configurationManager)
 		case mode.ServerConfGen:
-			if err := prepareServerKeys(configurationManager); err != nil {
-				return fatal("Key preparation failed", err.Error())
-			}
-			gen := confgen.NewGenerator(configurationManager, &primitives.DefaultKeyDeriver{})
-			conf, err := gen.Generate()
-			if err != nil {
-				return fatal("Configuration generation failed", err.Error())
-			}
-			data, err := json.MarshalIndent(conf, "", "  ")
-			if err != nil {
-				return fatal("Configuration generation failed", err.Error())
-			}
-			fmt.Println(string(data))
-			return nil
-
+			return runServerConfGen(configurationManager)
 		case mode.Client:
-			setupCrashLog(client.NewDefaultResolver())
-			log.Printf("Starting client...")
-			err := startClient(ctx)
-			if errors.Is(err, runnersCommon.ErrReconfigureRequested) {
-				continue
-			}
-			if err != nil && ctx.Err() == nil {
-				return fatalWithCode("Client error", err.Error(), 2)
-			}
-			return nil
-
+			runErr = runClient(ctx, uiMode)
 		case mode.Version:
 			printVersion(ctx)
 			return nil
-
 		default:
-			return fatal("Internal error", fmt.Sprintf("invalid app mode: %v", appMode))
+			return fmt.Errorf("invalid app mode: %v", appMode)
 		}
+		if errors.Is(runErr, runnersCommon.ErrReconfigureRequested) {
+			continue
+		}
+		if runErr != nil && ctx.Err() == nil {
+			return runErr
+		}
+		return nil
 	}
 	return nil
-}
-
-// --- fatal error type ---
-
-type fatalError struct {
-	title   string
-	message string
-	code    int
-}
-
-func (e fatalError) Error() string {
-	return e.title + ": " + e.message
-}
-
-func fatal(title, message string) fatalError {
-	return fatalError{title: title, message: message, code: 1}
-}
-
-func fatalWithCode(title, message string, code int) fatalError {
-	return fatalError{title: title, message: message, code: code}
 }
 
 // showFatal displays a fatal error and returns the exit code.
 // In TUI mode it shows a themed, dismissable screen; in CLI mode it logs.
 func showFatal(err error) int {
-	var fe fatalError
-	if !errors.As(err, &fe) {
-		fe = fatalError{title: "Error", message: err.Error(), code: 1}
-	}
-	if isTUIMode() {
-		tui.ShowFatalError(fe.title, fe.message)
+	if app.CurrentUIMode() == app.TUI {
+		tui.ShowFatalError(err.Error())
 	} else {
-		log.Printf("%s: %s", fe.title, fe.message)
+		log.Printf("Error: %s", err.Error())
 	}
-	return fe.code
+	return 1
 }
 
-func isTUIMode() bool {
-	return len(os.Args) < 2
-}
+// --- mode runners ---
 
-// --- helpers ---
-
-func prepareServerKeys(configurationManager serverConf.ConfigurationManager) error {
-	keyManager := serverConf.NewX25519KeyManager(configurationManager)
-	if err := keyManager.PrepareKeys(); err != nil {
-		return fmt.Errorf("could not prepare keys: %w", err)
+func runServer(ctx context.Context, uiMode app.UIMode, resolver client.Resolver, manager serverConf.ConfigurationManager) error {
+	setupCrashLog(resolver)
+	if err := prepareServerKeys(manager); err != nil {
+		return fmt.Errorf("key preparation failed: %w", err)
 	}
-	return nil
-}
+	configPath, _ := resolver.Resolve()
+	log.Printf("Starting server...")
 
-func startClient(appCtx context.Context) error {
-	deps := clientConf.NewDependencies(client.NewManager())
-	depsErr := deps.Initialize()
-	if depsErr != nil {
-		return fmt.Errorf("init error: %w", depsErr)
-	}
-
-	routerFactory := client_factory.NewRouterFactory()
-
-	runner := clientConf.NewRunner(deps, routerFactory)
-	return runner.Run(appCtx)
-}
-
-func startServer(
-	ctx context.Context,
-	configurationManager serverConf.ConfigurationManager,
-	configPath string,
-) error {
 	tunFactory := tun_server.NewServerTunFactory()
 
-	conf, confErr := configurationManager.Configuration()
+	conf, confErr := manager.Configuration()
 	if confErr != nil {
 		return fmt.Errorf("failed to load server configuration: %w", confErr)
 	}
@@ -231,22 +135,21 @@ func startServer(
 	deps := server.NewDependencies(
 		tunFactory,
 		*conf,
-		serverConf.NewX25519KeyManager(configurationManager),
-		configurationManager,
+		serverConf.NewX25519KeyManager(manager),
+		manager,
 	)
 
-	workerFactory, err := tun_server.NewServerWorkerFactory(configurationManager)
+	workerFactory, err := tun_server.NewServerWorkerFactory(manager)
 	if err != nil {
 		return fmt.Errorf("failed to create worker factory: %w", err)
 	}
 
-	// Start ConfigWatcher to revoke sessions and update AllowedPeers at runtime
 	configWatcher := serverConf.NewConfigWatcher(
-		configurationManager,
+		manager,
 		workerFactory.SessionRevoker(),
 		workerFactory.AllowedPeersUpdater(),
 		configPath,
-		configWatchInterval,
+		serverConf.DefaultWatchInterval,
 		log.Default(),
 	)
 	watchCtx, watchCancel := context.WithCancel(ctx)
@@ -254,11 +157,53 @@ func startServer(
 	go configWatcher.Watch(watchCtx)
 
 	runner := server.NewRunner(
+		uiMode,
 		deps,
 		workerFactory,
 		tun_server.NewServerTrafficRouterFactory(),
 	)
 	return runner.Run(ctx)
+}
+
+func runServerConfGen(manager serverConf.ConfigurationManager) error {
+	if err := prepareServerKeys(manager); err != nil {
+		return fmt.Errorf("key preparation failed: %w", err)
+	}
+	gen := confgen.NewGenerator(manager, &primitives.DefaultKeyDeriver{})
+	conf, err := gen.Generate()
+	if err != nil {
+		return fmt.Errorf("configuration generation failed: %w", err)
+	}
+	data, err := json.MarshalIndent(conf, "", "  ")
+	if err != nil {
+		return fmt.Errorf("configuration generation failed: %w", err)
+	}
+	fmt.Println(string(data))
+	return nil
+}
+
+func runClient(ctx context.Context, uiMode app.UIMode) error {
+	setupCrashLog(client.NewDefaultResolver())
+	log.Printf("Starting client...")
+
+	deps := clientConf.NewDependencies(client.NewManager())
+	if err := deps.Initialize(); err != nil {
+		return fmt.Errorf("init error: %w", err)
+	}
+
+	routerFactory := client_factory.NewRouterFactory()
+	runner := clientConf.NewRunner(uiMode, deps, routerFactory)
+	return runner.Run(ctx)
+}
+
+// --- helpers ---
+
+func prepareServerKeys(manager serverConf.ConfigurationManager) error {
+	keyManager := serverConf.NewX25519KeyManager(manager)
+	if err := keyManager.PrepareKeys(); err != nil {
+		return fmt.Errorf("could not prepare keys: %w", err)
+	}
+	return nil
 }
 
 func setupCrashLog(resolver client.Resolver) {

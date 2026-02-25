@@ -129,7 +129,7 @@ func TestInputContainerWidth_FallbackToTextInputWidth(t *testing.T) {
 	ti.ti.Width = 19
 
 	got := ti.inputContainerWidth()
-	want := maxInt(1, ti.ti.Width+inputContainerStyle().GetHorizontalFrameSize())
+	want := maxInt(1, ti.ti.Width+resolveUIStyles(ti.settings.Preferences()).inputFrame.GetHorizontalFrameSize())
 	if got != want {
 		t.Fatalf("expected fallback width %d, got %d", want, got)
 	}
@@ -150,7 +150,7 @@ func TestUpdateWindowSize_ClampsToCardContentWidth(t *testing.T) {
 	ti := NewTextInput("Test")
 	_, _ = ti.Update(tea.WindowSizeMsg{Width: 220, Height: 40})
 
-	maxAllowed := contentWidthForTerminal(220) - inputContainerStyle().GetHorizontalFrameSize()
+	maxAllowed := contentWidthForTerminal(220) - resolveUIStyles(ti.settings.Preferences()).inputFrame.GetHorizontalFrameSize()
 	if ti.ti.Width > maxAllowed {
 		t.Fatalf("expected width <= %d, got %d", maxAllowed, ti.ti.Width)
 	}

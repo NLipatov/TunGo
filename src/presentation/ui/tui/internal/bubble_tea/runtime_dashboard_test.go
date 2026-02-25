@@ -14,7 +14,7 @@ import (
 )
 
 func TestRuntimeDashboard_TabSwitchesToSettings(t *testing.T) {
-	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	view := updated.(RuntimeDashboard).View()
 
@@ -24,7 +24,7 @@ func TestRuntimeDashboard_TabSwitchesToSettings(t *testing.T) {
 }
 
 func TestNewRuntimeDashboard_DefaultsNilContextAndMode(t *testing.T) {
-	m := NewRuntimeDashboard(nil, RuntimeDashboardOptions{})
+	m := NewRuntimeDashboard(nil, RuntimeDashboardOptions{}, testSettings())
 	if m.ctx == nil {
 		t.Fatal("expected fallback context when nil is passed")
 	}
@@ -34,7 +34,7 @@ func TestNewRuntimeDashboard_DefaultsNilContextAndMode(t *testing.T) {
 }
 
 func TestRuntimeDashboard_TabSwitchesToLogs(t *testing.T) {
-	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
 	m1, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab}) // settings
 	m2, _ := m1.(RuntimeDashboard).Update(tea.KeyMsg{Type: tea.KeyTab})
 	view := m2.(RuntimeDashboard).View()
@@ -45,7 +45,7 @@ func TestRuntimeDashboard_TabSwitchesToLogs(t *testing.T) {
 }
 
 func TestRuntimeDashboard_TabSwitchesBackToDataplane(t *testing.T) {
-	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
 	m1, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab}) // settings
 	m2, _ := m1.(RuntimeDashboard).Update(tea.KeyMsg{Type: tea.KeyTab})
 	m3, _ := m2.(RuntimeDashboard).Update(tea.KeyMsg{Type: tea.KeyTab})
@@ -57,7 +57,7 @@ func TestRuntimeDashboard_TabSwitchesBackToDataplane(t *testing.T) {
 }
 
 func TestRuntimeDashboard_TabSwitch_DoesNotRequestClearScreenCmd(t *testing.T) {
-	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
 	updatedModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyTab}) // settings
 	if cmd != nil {
 		t.Fatal("expected no command on tab switch to settings")
@@ -71,26 +71,17 @@ func TestRuntimeDashboard_TabSwitch_DoesNotRequestClearScreenCmd(t *testing.T) {
 }
 
 func TestRuntimeDashboard_TogglesFooterInSettings(t *testing.T) {
-	UpdateUIPreferences(func(p *UIPreferences) {
-		p.Theme = ThemeDark
-		p.Language = "en"
-		p.StatsUnits = StatsUnitsBiBytes
-		p.ShowDataplaneStats = true
-		p.ShowDataplaneGraph = true
-		p.ShowFooter = true
-	})
-	t.Cleanup(func() {
-		UpdateUIPreferences(func(p *UIPreferences) {
-			p.Theme = ThemeDark
-			p.Language = "en"
-			p.StatsUnits = StatsUnitsBiBytes
-			p.ShowDataplaneStats = true
-			p.ShowDataplaneGraph = true
-			p.ShowFooter = true
-		})
-	})
+	s := testSettings()
+	p := s.Preferences()
+	p.Theme = ThemeDark
+	p.Language = "en"
+	p.StatsUnits = StatsUnitsBiBytes
+	p.ShowDataplaneStats = true
+	p.ShowDataplaneGraph = true
+	p.ShowFooter = true
+	s.update(p)
 
-	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, s)
 	m1, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})                      // settings
 	m2, _ := m1.(RuntimeDashboard).Update(tea.KeyMsg{Type: tea.KeyDown}) // stats units row
 	m3, _ := m2.(RuntimeDashboard).Update(tea.KeyMsg{Type: tea.KeyDown}) // dataplane stats row
@@ -99,7 +90,7 @@ func TestRuntimeDashboard_TogglesFooterInSettings(t *testing.T) {
 	m6, _ := m5.(RuntimeDashboard).Update(tea.KeyMsg{Type: tea.KeyRight}) // toggle
 	toggled := m6.(RuntimeDashboard)
 
-	if CurrentUIPreferences().ShowFooter {
+	if s.Preferences().ShowFooter {
 		t.Fatalf("expected global ShowFooter to be toggled off")
 	}
 	if toggled.preferences.ShowFooter {
@@ -108,32 +99,23 @@ func TestRuntimeDashboard_TogglesFooterInSettings(t *testing.T) {
 }
 
 func TestRuntimeDashboard_TogglesStatsUnitsInSettings(t *testing.T) {
-	UpdateUIPreferences(func(p *UIPreferences) {
-		p.Theme = ThemeDark
-		p.Language = "en"
-		p.StatsUnits = StatsUnitsBiBytes
-		p.ShowDataplaneStats = true
-		p.ShowDataplaneGraph = true
-		p.ShowFooter = true
-	})
-	t.Cleanup(func() {
-		UpdateUIPreferences(func(p *UIPreferences) {
-			p.Theme = ThemeDark
-			p.Language = "en"
-			p.StatsUnits = StatsUnitsBiBytes
-			p.ShowDataplaneStats = true
-			p.ShowDataplaneGraph = true
-			p.ShowFooter = true
-		})
-	})
+	s := testSettings()
+	p := s.Preferences()
+	p.Theme = ThemeDark
+	p.Language = "en"
+	p.StatsUnits = StatsUnitsBiBytes
+	p.ShowDataplaneStats = true
+	p.ShowDataplaneGraph = true
+	p.ShowFooter = true
+	s.update(p)
 
-	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, s)
 	m1, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})                      // settings
 	m2, _ := m1.(RuntimeDashboard).Update(tea.KeyMsg{Type: tea.KeyDown}) // stats units row
 	m3, _ := m2.(RuntimeDashboard).Update(tea.KeyMsg{Type: tea.KeyRight}) // toggle
 	toggled := m3.(RuntimeDashboard)
 
-	if CurrentUIPreferences().StatsUnits != StatsUnitsBytes {
+	if s.Preferences().StatsUnits != StatsUnitsBytes {
 		t.Fatalf("expected global StatsUnits to be toggled to bytes")
 	}
 	if toggled.preferences.StatsUnits != StatsUnitsBytes {
@@ -297,14 +279,14 @@ func TestRunRuntimeDashboard_NilContext(t *testing.T) {
 }
 
 func TestNewRuntimeDashboardProgram_DefaultFactory(t *testing.T) {
-	program := newRuntimeDashboardProgram(NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}))
+	program := newRuntimeDashboardProgram(NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings()))
 	if program == nil {
 		t.Fatal("expected non-nil runtime dashboard program")
 	}
 }
 
 func TestRuntimeDashboard_InitAndTickCommands(t *testing.T) {
-	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
 	if cmd := m.Init(); cmd == nil {
 		t.Fatal("expected init batch command")
 	}
@@ -319,7 +301,7 @@ func TestRuntimeDashboard_InitAndTickCommands(t *testing.T) {
 func TestRuntimeDashboard_Update_WindowAndContextDoneAndQuit(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
 		LogFeed: testRuntimeLogFeed{lines: []string{"one", "two"}},
-	})
+	}, testSettings())
 	updatedModel, cmd := m.Update(runtimeTickMsg{seq: m.tickSeq})
 	if cmd == nil {
 		t.Fatal("expected follow-up tick cmd on runtimeTickMsg")
@@ -370,7 +352,7 @@ func TestRuntimeDashboard_Update_WindowAndContextDoneAndQuit(t *testing.T) {
 }
 
 func TestRuntimeDashboard_Update_IgnoresNonSettingsNavigationKeys(t *testing.T) {
-	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
 	updatedModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyLeft})
 	updated := updatedModel.(RuntimeDashboard)
 	if updated.screen != runtimeScreenDataplane {
@@ -383,14 +365,14 @@ func TestRuntimeDashboard_Update_IgnoresNonSettingsNavigationKeys(t *testing.T) 
 }
 
 func TestRuntimeDashboard_EscOnDataplane_OpensConfirm_StayCancels(t *testing.T) {
-	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
 	updatedModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	updated := updatedModel.(RuntimeDashboard)
 	if !updated.confirmOpen {
 		t.Fatal("expected confirm to open on esc in dataplane")
 	}
 	view := updated.View()
-	if !strings.Contains(view, "Stop tunnel and reconfigure?") {
+	if !strings.Contains(view, "Stop tunnel?") {
 		t.Fatalf("expected confirm prompt in view, got %q", view)
 	}
 
@@ -408,7 +390,7 @@ func TestRuntimeDashboard_EscOnDataplane_OpensConfirm_StayCancels(t *testing.T) 
 }
 
 func TestRuntimeDashboard_EscOnDataplane_ConfirmReconfigureQuits(t *testing.T) {
-	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
 	updatedModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	updated := updatedModel.(RuntimeDashboard)
 	updatedModel, _ = updated.Update(tea.KeyMsg{Type: tea.KeyRight})
@@ -431,7 +413,7 @@ func TestRuntimeDashboard_EscOnDataplane_ConfirmReconfigureQuits(t *testing.T) {
 }
 
 func TestRuntimeDashboard_EscOnSettingsAndLogs_NavigatesBack(t *testing.T) {
-	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
 	updatedModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab}) // settings
 	updated := updatedModel.(RuntimeDashboard)
 	if updated.screen != runtimeScreenSettings {
@@ -458,26 +440,17 @@ func TestRuntimeDashboard_EscOnSettingsAndLogs_NavigatesBack(t *testing.T) {
 }
 
 func TestRuntimeDashboard_SettingsNavigationAndMutation(t *testing.T) {
-	UpdateUIPreferences(func(p *UIPreferences) {
-		p.Theme = ThemeLight
-		p.Language = "en"
-		p.StatsUnits = StatsUnitsBiBytes
-		p.ShowDataplaneStats = true
-		p.ShowDataplaneGraph = true
-		p.ShowFooter = true
-	})
-	t.Cleanup(func() {
-		UpdateUIPreferences(func(p *UIPreferences) {
-			p.Theme = ThemeLight
-			p.Language = "en"
-			p.StatsUnits = StatsUnitsBiBytes
-			p.ShowDataplaneStats = true
-			p.ShowDataplaneGraph = true
-			p.ShowFooter = true
-		})
-	})
+	s := testSettings()
+	p := s.Preferences()
+	p.Theme = ThemeLight
+	p.Language = "en"
+	p.StatsUnits = StatsUnitsBiBytes
+	p.ShowDataplaneStats = true
+	p.ShowDataplaneGraph = true
+	p.ShowFooter = true
+	s.update(p)
 
-	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, s)
 	m.screen = runtimeScreenSettings
 
 	// Up at top should stay at top.
@@ -509,24 +482,24 @@ func TestRuntimeDashboard_SettingsNavigationAndMutation(t *testing.T) {
 
 	// Theme row: Left/Right.
 	m.settingsCursor = settingsThemeRow
-	m.preferences = CurrentUIPreferences()
+	m.preferences = s.Preferences()
 	updatedModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRight})
 	m = updatedModel.(RuntimeDashboard)
-	if CurrentUIPreferences().Theme != ThemeDark {
-		t.Fatalf("expected theme dark after right, got %q", CurrentUIPreferences().Theme)
+	if s.Preferences().Theme != ThemeDark {
+		t.Fatalf("expected theme dark after right, got %q", s.Preferences().Theme)
 	}
 	updatedModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyLeft})
 	m = updatedModel.(RuntimeDashboard)
-	if CurrentUIPreferences().Theme != ThemeLight {
-		t.Fatalf("expected theme light after left, got %q", CurrentUIPreferences().Theme)
+	if s.Preferences().Theme != ThemeLight {
+		t.Fatalf("expected theme light after left, got %q", s.Preferences().Theme)
 	}
 
 	// Stats units row: Enter toggles.
 	m.settingsCursor = settingsStatsUnitsRow
 	updatedModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updatedModel.(RuntimeDashboard)
-	if CurrentUIPreferences().StatsUnits != StatsUnitsBytes {
-		t.Fatalf("expected stats units bytes, got %q", CurrentUIPreferences().StatsUnits)
+	if s.Preferences().StatsUnits != StatsUnitsBytes {
+		t.Fatalf("expected stats units bytes, got %q", s.Preferences().StatsUnits)
 	}
 	if m.preferences.StatsUnits != StatsUnitsBytes {
 		t.Fatalf("expected model stats units bytes, got %q", m.preferences.StatsUnits)
@@ -536,7 +509,7 @@ func TestRuntimeDashboard_SettingsNavigationAndMutation(t *testing.T) {
 	m.settingsCursor = settingsDataplaneStatsRow
 	updatedModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updatedModel.(RuntimeDashboard)
-	if CurrentUIPreferences().ShowDataplaneStats {
+	if s.Preferences().ShowDataplaneStats {
 		t.Fatalf("expected dataplane stats off after toggle")
 	}
 	if m.preferences.ShowDataplaneStats {
@@ -547,7 +520,7 @@ func TestRuntimeDashboard_SettingsNavigationAndMutation(t *testing.T) {
 	m.settingsCursor = settingsDataplaneGraphRow
 	updatedModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updatedModel.(RuntimeDashboard)
-	if CurrentUIPreferences().ShowDataplaneGraph {
+	if s.Preferences().ShowDataplaneGraph {
 		t.Fatalf("expected dataplane graph off after toggle")
 	}
 	if m.preferences.ShowDataplaneGraph {
@@ -558,7 +531,7 @@ func TestRuntimeDashboard_SettingsNavigationAndMutation(t *testing.T) {
 	m.settingsCursor = settingsFooterRow
 	updatedModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updatedModel.(RuntimeDashboard)
-	if CurrentUIPreferences().ShowFooter {
+	if s.Preferences().ShowFooter {
 		t.Fatalf("expected footer off after toggle")
 	}
 	if m.preferences.ShowFooter {
@@ -575,22 +548,16 @@ func TestRuntimeDashboard_SettingsNavigationAndMutation(t *testing.T) {
 }
 
 func TestRuntimeDashboard_MainView_ServerAndFooterOff(t *testing.T) {
-	UpdateUIPreferences(func(p *UIPreferences) {
-		p.ShowDataplaneStats = true
-		p.ShowDataplaneGraph = true
-		p.ShowFooter = false
-	})
-	t.Cleanup(func() {
-		UpdateUIPreferences(func(p *UIPreferences) {
-			p.ShowDataplaneStats = true
-			p.ShowDataplaneGraph = true
-			p.ShowFooter = true
-		})
-	})
+	s := testSettings()
+	p := s.Preferences()
+	p.ShowDataplaneStats = true
+	p.ShowDataplaneGraph = true
+	p.ShowFooter = false
+	s.update(p)
 
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
 		Mode: RuntimeDashboardServer,
-	})
+	}, s)
 	m.width = 120
 	m.height = 30
 	view := m.View()
@@ -609,20 +576,14 @@ func TestRuntimeDashboard_MainView_ServerAndFooterOff(t *testing.T) {
 }
 
 func TestRuntimeDashboard_MainView_CanHideStatsAndGraph(t *testing.T) {
-	UpdateUIPreferences(func(p *UIPreferences) {
-		p.ShowDataplaneStats = false
-		p.ShowDataplaneGraph = false
-		p.ShowFooter = true
-	})
-	t.Cleanup(func() {
-		UpdateUIPreferences(func(p *UIPreferences) {
-			p.ShowDataplaneStats = true
-			p.ShowDataplaneGraph = true
-			p.ShowFooter = true
-		})
-	})
+	s := testSettings()
+	p := s.Preferences()
+	p.ShowDataplaneStats = false
+	p.ShowDataplaneGraph = false
+	p.ShowFooter = true
+	s.update(p)
 
-	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, s)
 	m.width = 120
 	m.height = 30
 	view := m.View()
@@ -635,7 +596,7 @@ func TestRuntimeDashboard_MainView_CanHideStatsAndGraph(t *testing.T) {
 }
 
 func TestRuntimeDashboard_RefreshLogsNilFeed(t *testing.T) {
-	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
 	m.logViewport.SetContent("stale")
 	m.refreshLogs()
 	if !strings.Contains(m.logViewport.View(), "No logs yet") {
@@ -674,7 +635,7 @@ func TestRuntimeTickCommands_EmitMessages(t *testing.T) {
 func TestRuntimeDashboard_SettingsAndLogsView_WithWidth(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
 		LogFeed: testRuntimeLogFeed{lines: []string{"runtime log line"}},
-	})
+	}, testSettings())
 	m.width = 100
 	m.height = 30
 	m.screen = runtimeScreenSettings
@@ -692,24 +653,16 @@ func TestRuntimeDashboard_SettingsAndLogsView_WithWidth(t *testing.T) {
 }
 
 func TestRuntimeDashboard_SettingsThemeChange_RequestsClearScreen(t *testing.T) {
-	UpdateUIPreferences(func(p *UIPreferences) {
-		p.Theme = ThemeLight
-		p.StatsUnits = StatsUnitsBytes
-		p.ShowDataplaneStats = true
-		p.ShowDataplaneGraph = true
-		p.ShowFooter = true
-	})
-	t.Cleanup(func() {
-		UpdateUIPreferences(func(p *UIPreferences) {
-			p.Theme = ThemeLight
-			p.StatsUnits = StatsUnitsBiBytes
-			p.ShowDataplaneStats = true
-			p.ShowDataplaneGraph = true
-			p.ShowFooter = true
-		})
-	})
+	s := testSettings()
+	p := s.Preferences()
+	p.Theme = ThemeLight
+	p.StatsUnits = StatsUnitsBytes
+	p.ShowDataplaneStats = true
+	p.ShowDataplaneGraph = true
+	p.ShowFooter = true
+	s.update(p)
 
-	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, s)
 	m.screen = runtimeScreenSettings
 	m.settingsCursor = settingsThemeRow
 
@@ -730,7 +683,7 @@ func TestRuntimeDashboard_LogsViewportScrollAndFollowToggle(t *testing.T) {
 	}
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
 		LogFeed: testRuntimeLogFeed{lines: lines},
-	})
+	}, testSettings())
 	updatedModel, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
 	m = updatedModel.(RuntimeDashboard)
 
@@ -841,7 +794,7 @@ func TestBrailleDotMaskAndSetBrailleDot(t *testing.T) {
 }
 
 func TestUpdateConfirm_UpLeftDownRight(t *testing.T) {
-	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
 	m.confirmOpen = true
 	m.confirmCursor = 1
 
@@ -892,7 +845,7 @@ func TestUpdateConfirm_UpLeftDownRight(t *testing.T) {
 }
 
 func TestUpdateConfirm_EscClosesConfirm(t *testing.T) {
-	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
 	m.confirmOpen = true
 	m.confirmCursor = 1
 
@@ -907,7 +860,7 @@ func TestUpdateConfirm_EscClosesConfirm(t *testing.T) {
 }
 
 func TestUpdateConfirm_EnterAtCursor0_ClosesConfirm(t *testing.T) {
-	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
 	m.confirmOpen = true
 	m.confirmCursor = 0
 
@@ -922,7 +875,7 @@ func TestUpdateConfirm_EnterAtCursor0_ClosesConfirm(t *testing.T) {
 }
 
 func TestUpdateConfirm_EnterAtCursor1_Reconfigures(t *testing.T) {
-	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
 	m.confirmOpen = true
 	m.confirmCursor = 1
 
@@ -937,7 +890,7 @@ func TestUpdateConfirm_EnterAtCursor1_Reconfigures(t *testing.T) {
 }
 
 func TestUpdateConfirm_CtrlCDuringConfirmExits(t *testing.T) {
-	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
 	m.confirmOpen = true
 
 	updatedModel, cmd := m.updateConfirm(tea.KeyMsg{Type: tea.KeyCtrlC})
@@ -957,7 +910,7 @@ func TestUpdateLogs_DownKeyNotAtBottom(t *testing.T) {
 	}
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
 		LogFeed: testRuntimeLogFeed{lines: lines},
-	})
+	}, testSettings())
 	m.width = 120
 	m.height = 24
 	m.screen = runtimeScreenLogs
@@ -979,7 +932,7 @@ func TestUpdateLogs_UpSetFollowFalse(t *testing.T) {
 	}
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
 		LogFeed: testRuntimeLogFeed{lines: lines},
-	})
+	}, testSettings())
 	m.width = 120
 	m.height = 24
 	m.screen = runtimeScreenLogs
@@ -1000,7 +953,7 @@ func TestUpdateLogs_PgDownAtBottomSetsFollow(t *testing.T) {
 	}
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
 		LogFeed: testRuntimeLogFeed{lines: lines},
-	})
+	}, testSettings())
 	m.width = 120
 	m.height = 24
 	m.screen = runtimeScreenLogs
@@ -1021,7 +974,7 @@ func TestUpdateLogs_HomeGoesToTop(t *testing.T) {
 	}
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
 		LogFeed: testRuntimeLogFeed{lines: lines},
-	})
+	}, testSettings())
 	m.width = 120
 	m.height = 24
 	m.screen = runtimeScreenLogs
@@ -1044,7 +997,7 @@ func TestUpdateLogs_EndGoesToBottom(t *testing.T) {
 	}
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
 		LogFeed: testRuntimeLogFeed{lines: lines},
-	})
+	}, testSettings())
 	m.width = 120
 	m.height = 24
 	m.screen = runtimeScreenLogs
@@ -1068,7 +1021,7 @@ func TestUpdateLogs_SpaceTogglesFollow(t *testing.T) {
 	}
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
 		LogFeed: testRuntimeLogFeed{lines: lines},
-	})
+	}, testSettings())
 	m.width = 120
 	m.height = 24
 	m.screen = runtimeScreenLogs
@@ -1249,10 +1202,11 @@ func TestHandleGraphPreferenceChange_NoChange(t *testing.T) {
 }
 
 func TestEnsureLogsViewport_WhenLogReadyFalse(t *testing.T) {
+	s := testSettings()
 	m := RuntimeDashboard{
 		width:       100,
 		height:      30,
-		preferences: CurrentUIPreferences(),
+		preferences: s.Preferences(),
 	}
 	m.logReady = false
 
@@ -1266,7 +1220,7 @@ func TestEnsureLogsViewport_WhenLogReadyFalse(t *testing.T) {
 }
 
 func TestEnsureLogsViewport_WhenLogReadyTrue_Resizes(t *testing.T) {
-	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
 	m.width = 80
 	m.height = 20
 	origWidth := m.logViewport.Width
@@ -1282,7 +1236,7 @@ func TestEnsureLogsViewport_WhenLogReadyTrue_Resizes(t *testing.T) {
 func TestRuntimeDashboard_Update_LogTickMismatchedSeqOnLogsScreen(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
 		LogFeed: testRuntimeLogFeed{lines: []string{"one", "two"}},
-	})
+	}, testSettings())
 	// Navigate to logs screen.
 	m1, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})  // settings
 	m2, _ := m1.(RuntimeDashboard).Update(tea.KeyMsg{Type: tea.KeyTab}) // logs
@@ -1301,7 +1255,7 @@ func TestUpdateLogs_DownKeyAtBottom_SetsFollowTrue(t *testing.T) {
 	// Use very few lines so the viewport is already at bottom.
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
 		LogFeed: testRuntimeLogFeed{lines: []string{"a"}},
-	})
+	}, testSettings())
 	m.width = 120
 	m.height = 24
 	m.screen = runtimeScreenLogs
@@ -1411,7 +1365,7 @@ func TestUpdateLogs_PgUpSetsFollowFalse(t *testing.T) {
 	}
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
 		LogFeed: testRuntimeLogFeed{lines: lines},
-	})
+	}, testSettings())
 	m.width = 120
 	m.height = 24
 	m.screen = runtimeScreenLogs
@@ -1432,7 +1386,7 @@ func TestRefreshLogs_RuntimeDashboard_NotFollowNotAtBottom_PreservesOffset(t *te
 	}
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
 		LogFeed: testRuntimeLogFeed{lines: lines},
-	})
+	}, testSettings())
 	m.width = 80
 	m.height = 30
 	m.screen = runtimeScreenLogs
@@ -1453,7 +1407,7 @@ func TestRefreshLogs_RuntimeDashboard_NotFollowNotAtBottom_PreservesOffset(t *te
 }
 
 func TestRuntimeDashboard_Update_TickSeqMismatch_Ignored(t *testing.T) {
-	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
 	m.tickSeq = 5
 
 	updatedModel, cmd := m.Update(runtimeTickMsg{seq: 99})
@@ -1464,7 +1418,7 @@ func TestRuntimeDashboard_Update_TickSeqMismatch_Ignored(t *testing.T) {
 }
 
 func TestRuntimeDashboard_Update_TickOnNonDataplaneScreen_Ignored(t *testing.T) {
-	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
 	m.screen = runtimeScreenSettings
 
 	updatedModel, cmd := m.Update(runtimeTickMsg{seq: m.tickSeq})

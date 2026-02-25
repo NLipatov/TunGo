@@ -21,6 +21,9 @@ type AllowedPeersUpdater interface {
 	Update(peers []AllowedPeer)
 }
 
+// DefaultWatchInterval is the recommended polling interval for ConfigWatcher.
+const DefaultWatchInterval = 30 * time.Second
+
 // ConfigWatcher monitors AllowedPeers configuration changes and:
 // 1. Revokes sessions for peers that are removed or disabled
 // 2. Updates the runtime AllowedPeers map for new peer lookups

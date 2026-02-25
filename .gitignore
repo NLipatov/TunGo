@@ -7,3 +7,4 @@
 src/tungo
 .tool-versions
 .DS_Store
+/src/conductor

@@ -3,17 +3,17 @@ package bubble_tea
 import tea "github.com/charmbracelet/bubbletea"
 
 type fatalErrorModel struct {
-	title     string
+	settings  UIPreferencesProvider
 	message   string
 	width     int
 	height    int
 	dismissed bool
 }
 
-func newFatalErrorModel(title, message string) fatalErrorModel {
+func newFatalErrorModel(message string, settings UIPreferencesProvider) fatalErrorModel {
 	return fatalErrorModel{
-		title:   title,
-		message: message,
+		settings: settings,
+		message:  message,
 	}
 }
 
@@ -44,12 +44,13 @@ func (m fatalErrorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // NewFatalErrorProgram creates a standalone tea.Program that displays
 // a themed fatal error screen. The program blocks until the user dismisses it.
-func NewFatalErrorProgram(title, message string) *tea.Program {
-	return tea.NewProgram(newFatalErrorModel(title, message), tea.WithAltScreen())
+func NewFatalErrorProgram(message string) *tea.Program {
+	settings := loadUISettingsFromDisk()
+	return tea.NewProgram(newFatalErrorModel(message, settings), tea.WithAltScreen())
 }
 
 func (m fatalErrorModel) View() string {
-	prefs := CurrentUIPreferences()
+	prefs := m.settings.Preferences()
 	styles := resolveUIStyles(prefs)
 	contentWidth := contentWidthForTerminal(m.width)
 	tabsLine := renderTabsLine(
@@ -60,7 +61,7 @@ func (m fatalErrorModel) View() string {
 		m.width,
 		m.height,
 		tabsLine,
-		m.title,
+		"",
 		wrapText(m.message, contentWidth),
 		"Press Enter to exit",
 		prefs,

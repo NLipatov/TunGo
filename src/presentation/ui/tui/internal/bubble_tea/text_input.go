@@ -9,6 +9,7 @@ import (
 
 // TextInput - is a single line text input
 type TextInput struct {
+	settings    UIPreferencesProvider
 	ti          textinput.Model
 	placeholder string
 	width       int
@@ -24,6 +25,7 @@ func NewTextInput(placeholder string) *TextInput {
 	ti.CharLimit = 256
 	ti.Width = 40
 	return &TextInput{
+		settings:    loadUISettingsFromDisk(),
 		ti:          ti,
 		placeholder: placeholder,
 	}
@@ -47,7 +49,7 @@ func (m *TextInput) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		contentWidth := contentWidthForTerminal(msg.Width)
-		available := maxInt(1, contentWidth-inputContainerStyle().GetHorizontalFrameSize())
+		available := maxInt(1, contentWidth-resolveUIStyles(m.settings.Preferences()).inputFrame.GetHorizontalFrameSize())
 		// Keep stable text-input width to avoid visual jumps on first typed symbol.
 		m.ti.Width = minInt(40, available)
 		return m, nil
@@ -67,10 +69,10 @@ func (m *TextInput) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *TextInput) View() string {
-	prefs := CurrentUIPreferences()
+	prefs := m.settings.Preferences()
 	styles := resolveUIStyles(prefs)
-	container := inputContainerStyle().Width(m.inputContainerWidth())
-	stats := metaTextStyle().Render("Characters: " + formatCount(utf8.RuneCountInString(m.ti.Value()), m.ti.CharLimit))
+	container := styles.inputFrame.Width(m.inputContainerWidth())
+	stats := styles.meta.Render("Characters: " + formatCount(utf8.RuneCountInString(m.ti.Value()), m.ti.CharLimit))
 	body := []string{
 		container.Render(m.ti.View()),
 		stats,
@@ -91,5 +93,5 @@ func (m *TextInput) inputContainerWidth() int {
 	if m.width > 0 {
 		return maxInt(1, contentWidthForTerminal(m.width))
 	}
-	return maxInt(1, m.ti.Width+inputContainerStyle().GetHorizontalFrameSize())
+	return maxInt(1, m.ti.Width+resolveUIStyles(m.settings.Preferences()).inputFrame.GetHorizontalFrameSize())
 }

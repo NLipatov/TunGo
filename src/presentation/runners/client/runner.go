@@ -5,32 +5,33 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
 	"time"
 	"tungo/application/network/connection"
+	"tungo/domain/app"
 	runnerCommon "tungo/presentation/runners/common"
 	runtimeUI "tungo/presentation/ui/tui"
 )
 
-type Runner struct {
-	deps          AppDependencies
-	routerFactory connection.TrafficRouterFactory
-}
+type RuntimeDashboardFunc func(ctx context.Context, mode runtimeUI.RuntimeMode) (bool, error)
 
-var (
-	isTUIMode           = func() bool { return len(os.Args) < 2 }
-	runRuntimeDashboard = runtimeUI.RunRuntimeDashboard
-)
+type Runner struct {
+	uiMode              app.UIMode
+	deps                AppDependencies
+	routerFactory       connection.TrafficRouterFactory
+	runRuntimeDashboard RuntimeDashboardFunc
+}
 
 type runtimeUIResult struct {
 	userQuit bool
 	err      error
 }
 
-func NewRunner(deps AppDependencies, routerFactory connection.TrafficRouterFactory) *Runner {
+func NewRunner(uiMode app.UIMode, deps AppDependencies, routerFactory connection.TrafficRouterFactory) *Runner {
 	return &Runner{
-		deps:          deps,
-		routerFactory: routerFactory,
+		uiMode:              uiMode,
+		deps:                deps,
+		routerFactory:       routerFactory,
+		runRuntimeDashboard: runtimeUI.RunRuntimeDashboard,
 	}
 }
 
@@ -85,7 +86,7 @@ func (r *Runner) runSession(parentCtx context.Context) error {
 	}()
 
 	log.Printf("tunneling traffic via tun device")
-	if !isTUIMode() {
+	if r.uiMode != app.TUI {
 		return router.RouteTraffic(ctx)
 	}
 	routeErrCh := make(chan error, 1)
@@ -95,7 +96,7 @@ func (r *Runner) runSession(parentCtx context.Context) error {
 
 	uiResultCh := make(chan runtimeUIResult, 1)
 	go func() {
-		userQuit, err := runRuntimeDashboard(ctx, runtimeUI.RuntimeModeClient)
+		userQuit, err := r.runRuntimeDashboard(ctx, runtimeUI.RuntimeModeClient)
 		uiResultCh <- runtimeUIResult{userQuit: userQuit, err: err}
 	}()
 

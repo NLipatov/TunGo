@@ -23,19 +23,21 @@ func settingsCursorDown(cursor int) int {
 	return settingsRowsCount - 1
 }
 
-func applySettingsChange(settingsCursor int, step int) UIPreferences {
-	return UpdateUIPreferences(func(p *UIPreferences) {
-		switch settingsCursor {
-		case settingsThemeRow:
-			p.Theme = nextTheme(p.Theme, step)
-		case settingsStatsUnitsRow:
-			p.StatsUnits = nextStatsUnits(p.StatsUnits, step)
-		case settingsDataplaneStatsRow:
-			p.ShowDataplaneStats = !p.ShowDataplaneStats
-		case settingsDataplaneGraphRow:
-			p.ShowDataplaneGraph = !p.ShowDataplaneGraph
-		case settingsFooterRow:
-			p.ShowFooter = !p.ShowFooter
-		}
-	})
+func applySettingsChange(provider *uiPreferencesProvider, settingsCursor int, step int) UIPreferences {
+	p := provider.Preferences()
+	switch settingsCursor {
+	case settingsThemeRow:
+		p.Theme = nextTheme(p.Theme, step)
+	case settingsStatsUnitsRow:
+		p.StatsUnits = nextStatsUnits(p.StatsUnits, step)
+	case settingsDataplaneStatsRow:
+		p.ShowDataplaneStats = !p.ShowDataplaneStats
+	case settingsDataplaneGraphRow:
+		p.ShowDataplaneGraph = !p.ShowDataplaneGraph
+	case settingsFooterRow:
+		p.ShowFooter = !p.ShowFooter
+	}
+	provider.update(p)
+	_ = savePreferencesToDisk(p)
+	return p
 }

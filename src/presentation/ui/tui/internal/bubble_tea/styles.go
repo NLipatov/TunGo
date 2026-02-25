@@ -272,7 +272,7 @@ func ansiStylePrefix(fgPrefix, bgPrefix string, bold bool) string {
 
 func resolveUIStyles(prefs UIPreferences) uiStyles {
 	theme := prefs.Theme
-	if !isKnownTheme(theme) {
+	if !isValidTheme(theme) {
 		theme = ThemeLight
 	}
 	key := uiStylesCacheKey{theme: theme}
@@ -318,26 +318,6 @@ func resolveUIStyles(prefs UIPreferences) uiStyles {
 	uiStylesCacheMu.Unlock()
 
 	return styles
-}
-
-func optionTextStyle() ansiTextStyle {
-	return resolveUIStyles(CurrentUIPreferences()).option
-}
-
-func activeOptionTextStyle() ansiTextStyle {
-	return resolveUIStyles(CurrentUIPreferences()).active
-}
-
-func inputContainerStyle() ansiFrameStyle {
-	return resolveUIStyles(CurrentUIPreferences()).inputFrame
-}
-
-func metaTextStyle() ansiTextStyle {
-	return resolveUIStyles(CurrentUIPreferences()).meta
-}
-
-func headerLabelStyle() ansiTextStyle {
-	return resolveUIStyles(CurrentUIPreferences()).brand
 }
 
 func renderScreen(width, height int, title, subtitle string, body []string, hint string, prefs UIPreferences, styles uiStyles) string {
@@ -402,7 +382,7 @@ func renderScreenWithBodyMode(
 		mainLines = append(mainLines, body...)
 	}
 
-	footerLines := []string{}
+	var footerLines []string
 	if prefs.ShowFooter {
 		footerLines = buildFooterBlock(styles, prefs, contentWidth, hint)
 	}
@@ -427,7 +407,7 @@ func renderScreenWithBodyMode(
 
 func buildFooterBlock(styles uiStyles, prefs UIPreferences, contentWidth int, hint string) []string {
 	_ = prefs
-	hintLines := []string{}
+	var hintLines []string
 	if strings.TrimSpace(hint) != "" {
 		for _, line := range wrapText(hint, contentWidth) {
 			hintLines = append(hintLines, styles.hint.Render(line))
@@ -1008,7 +988,7 @@ func shouldReapplyBaseAfterSGR(params string) bool {
 
 func baseANSIForTheme(prefs UIPreferences) (bg string, fg string, ok bool) {
 	theme := prefs.Theme
-	if !isKnownTheme(theme) {
+	if !isValidTheme(theme) {
 		theme = ThemeLight
 	}
 	p := paletteForTheme(theme)

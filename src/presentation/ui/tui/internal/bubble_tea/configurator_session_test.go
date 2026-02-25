@@ -70,7 +70,7 @@ func newTestSessionModel(t *testing.T) configuratorSessionModel {
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-	})
+	}, testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -493,7 +493,7 @@ func TestUpdateSettingsTab_ThemeChangeTriggersClearScreen(t *testing.T) {
 	m.tab = configuratorTabSettings
 	m.settingsCursor = settingsThemeRow
 	// Force a known theme so cycling changes it
-	m.preferences = CurrentUIPreferences()
+	m.preferences = testSettings().Preferences()
 
 	_, cmd := m.updateSettingsTab(keyNamed(tea.KeyRight))
 	// cmd may or may not be ClearScreen depending on whether theme actually changed.
@@ -741,7 +741,7 @@ func TestUpdateClientSelectScreen_EnterSelectConfig_NilConfigManager(t *testing.
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: nil,
 		ServerConfigManager: manager,
-	})
+	}, testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -777,7 +777,7 @@ func TestUpdateClientSelectScreen_EnterSelectConfig_InvalidConfig(t *testing.T) 
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerInvalid{err: errors.New("invalid client configuration (test): bad key")},
 		ServerConfigManager: manager,
-	})
+	}, testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -822,7 +822,7 @@ func TestUpdateClientRemoveScreen_EnterRemoves(t *testing.T) {
 		Deleter:             deleter,
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-	})
+	}, testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -980,7 +980,7 @@ func TestUpdateClientInvalidScreen_EnterDeleteWhenAllowed(t *testing.T) {
 		Deleter:             deleter,
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-	})
+	}, testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -1060,7 +1060,7 @@ func TestUpdateServerSelectScreen_EnterManageClientsNoPeers(t *testing.T) {
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-	})
+	}, testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -1090,7 +1090,7 @@ func TestUpdateServerSelectScreen_EnterManageClientsWithPeers(t *testing.T) {
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-	})
+	}, testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -1302,7 +1302,7 @@ func TestReloadClientConfigs_BuildsCorrectMenuOptions(t *testing.T) {
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-	})
+	}, testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -1340,7 +1340,7 @@ func TestReloadClientConfigs_EmptyConfigs(t *testing.T) {
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-	})
+	}, testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -1369,7 +1369,7 @@ func TestReloadClientConfigs_ObserverError(t *testing.T) {
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-	})
+	}, testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -1894,7 +1894,7 @@ func TestUpdateServerManageScreen_SetAllowedPeerEnabledError(t *testing.T) {
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-	})
+	}, testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -1930,7 +1930,7 @@ func TestUpdateServerManageScreen_AfterToggle_ListAllowedPeersError(t *testing.T
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-	})
+	}, testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -2054,7 +2054,7 @@ func TestUpdateServerSelectScreen_EnterAddClient_GenerateError(t *testing.T) {
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-	})
+	}, testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -2091,7 +2091,7 @@ func TestUpdateServerSelectScreen_ManageClients_ListError(t *testing.T) {
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-	})
+	}, testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -2128,7 +2128,7 @@ func TestUpdateClientSelectScreen_EnterConfig_SelectorError(t *testing.T) {
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-	})
+	}, testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -2163,7 +2163,7 @@ func TestUpdateClientSelectScreen_EnterConfig_NonInvalidError(t *testing.T) {
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerNonInvalid{err: nonInvalidErr},
 		ServerConfigManager: manager,
-	})
+	}, testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -2197,7 +2197,7 @@ func TestUpdateClientSelectScreen_EnterConfig_ValidConfig(t *testing.T) {
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerValid{},
 		ServerConfigManager: manager,
-	})
+	}, testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -2254,7 +2254,7 @@ func TestUpdateClientRemoveScreen_DeleterError(t *testing.T) {
 		Deleter:             sessionDeleterError{err: deleterErr},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-	})
+	}, testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -2288,7 +2288,7 @@ func TestUpdateClientRemoveScreen_ReloadError(t *testing.T) {
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-	})
+	}, testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -2326,7 +2326,7 @@ func TestUpdateClientAddJSONScreen_EnterValidJSON_CreateSucceeds(t *testing.T) {
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-	})
+	}, testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -2361,7 +2361,7 @@ func TestUpdateClientAddJSONScreen_EnterValidJSON_CreateError(t *testing.T) {
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-	})
+	}, testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -2396,7 +2396,7 @@ func TestUpdateClientAddJSONScreen_EnterValidJSON_ReloadError(t *testing.T) {
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-	})
+	}, testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -2459,7 +2459,7 @@ func TestUpdateClientInvalidScreen_DeleteDeleterError(t *testing.T) {
 		Deleter:             sessionDeleterError{err: deleterErr},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-	})
+	}, testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -2495,7 +2495,7 @@ func TestUpdateClientInvalidScreen_DeleteReloadError(t *testing.T) {
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-	})
+	}, testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -2559,7 +2559,7 @@ func TestUpdateServerDeleteConfirmScreen_RemoveAllowedPeerError(t *testing.T) {
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-	})
+	}, testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -2596,7 +2596,7 @@ func TestUpdateServerDeleteConfirmScreen_ListAllowedPeersErrorAfterRemove(t *tes
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-	})
+	}, testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -2670,7 +2670,7 @@ func TestUpdateModeScreen_EnterClient_ReloadFails(t *testing.T) {
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-	})
+	}, testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -2826,7 +2826,7 @@ func TestUpdateServerSelectScreen_EnterAddClient_WriteFileError(t *testing.T) {
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-	})
+	}, testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -2868,7 +2868,7 @@ func TestUpdateServerSelectScreen_EnterAddClient_Success(t *testing.T) {
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-	})
+	}, testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -2913,7 +2913,7 @@ func TestUpdateServerSelectScreen_ManageClientsListError_Exits(t *testing.T) {
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-	})
+	}, testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -2944,7 +2944,7 @@ func TestUpdateClientSelectScreen_SelectConfig_NonInvalidConfigError_Exits(t *te
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerInvalid{err: errors.New("connection refused")},
 		ServerConfigManager: manager,
-	})
+	}, testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -2977,7 +2977,7 @@ func TestUpdateClientSelectScreen_SelectConfig_ValidConfig_ExitsWithClientMode(t
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-	})
+	}, testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -3010,7 +3010,7 @@ func TestUpdateClientSelectScreen_SelectorError_Exits(t *testing.T) {
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-	})
+	}, testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}

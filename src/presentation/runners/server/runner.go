@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
 	"tungo/application/network/connection"
+	"tungo/domain/app"
 	"tungo/application/network/routing"
 	"tungo/infrastructure/settings"
 	runnerCommon "tungo/presentation/runners/common"
@@ -15,16 +15,15 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-type Runner struct {
-	deps          AppDependencies
-	workerFactory connection.ServerWorkerFactory
-	routerFactory connection.ServerTrafficRouterFactory
-}
+type RuntimeDashboardFunc func(ctx context.Context, mode runtimeUI.RuntimeMode) (bool, error)
 
-var (
-	isTUIMode           = func() bool { return len(os.Args) < 2 }
-	runRuntimeDashboard = runtimeUI.RunRuntimeDashboard
-)
+type Runner struct {
+	uiMode              app.UIMode
+	deps                AppDependencies
+	workerFactory       connection.ServerWorkerFactory
+	routerFactory       connection.ServerTrafficRouterFactory
+	runRuntimeDashboard RuntimeDashboardFunc
+}
 
 type runtimeUIResult struct {
 	userQuit bool
@@ -32,14 +31,17 @@ type runtimeUIResult struct {
 }
 
 func NewRunner(
+	uiMode app.UIMode,
 	deps AppDependencies,
 	workerFactory connection.ServerWorkerFactory,
 	routerFactory connection.ServerTrafficRouterFactory,
 ) *Runner {
 	return &Runner{
-		deps:          deps,
-		workerFactory: workerFactory,
-		routerFactory: routerFactory,
+		uiMode:              uiMode,
+		deps:                deps,
+		workerFactory:       workerFactory,
+		routerFactory:       routerFactory,
+		runRuntimeDashboard: runtimeUI.RunRuntimeDashboard,
 	}
 }
 
@@ -62,7 +64,7 @@ func (r *Runner) Run(
 		}
 	}()
 
-	if !isTUIMode() {
+	if r.uiMode != app.TUI {
 		return r.runWorkers(ctx)
 	}
 
@@ -76,7 +78,7 @@ func (r *Runner) Run(
 
 	uiResultCh := make(chan runtimeUIResult, 1)
 	go func() {
-		userQuit, err := runRuntimeDashboard(workersCtx, runtimeUI.RuntimeModeServer)
+		userQuit, err := r.runRuntimeDashboard(workersCtx, runtimeUI.RuntimeModeServer)
 		uiResultCh <- runtimeUIResult{userQuit: userQuit, err: err}
 	}()
 
