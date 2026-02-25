@@ -96,7 +96,9 @@ func run(ctx context.Context) error {
 		if errors.Is(runErr, runnersCommon.ErrReconfigureRequested) {
 			continue
 		}
-		if runErr != nil && ctx.Err() == nil {
+		if runErr != nil && ctx.Err() == nil &&
+			!errors.Is(runErr, context.Canceled) &&
+			!errors.Is(runErr, context.DeadlineExceeded) {
 			return runErr
 		}
 		return nil
