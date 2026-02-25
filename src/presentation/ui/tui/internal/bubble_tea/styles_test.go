@@ -234,19 +234,12 @@ func TestContentWidthForTerminal_NonPositiveWidth(t *testing.T) {
 
 func TestRenderScreen_ANSIAndCanvasFill(t *testing.T) {
 	forceANSIColorProfile(t, ansiColorProfileTrueColor)
-	UpdateUIPreferences(func(p *UIPreferences) {
-		p.Theme = ThemeDark
-		p.ShowFooter = true
-	})
-	t.Cleanup(func() {
-		UpdateUIPreferences(func(p *UIPreferences) {
-			p.Theme = ThemeLight
-			p.ShowFooter = true
-		})
-	})
 
+	prefs := UIPreferences{
+		Theme:      ThemeDark,
+		ShowFooter: true,
+	}
 	ansiTitle := "\x1b[31mTitle\x1b[0m"
-	prefs := CurrentUIPreferences()
 	out := renderScreen(80, 24, ansiTitle, "subtitle", []string{"body"}, "hint", prefs, resolveUIStyles(prefs))
 	if !strings.Contains(out, ansiTitle) {
 		t.Fatalf("expected ANSI title preserved, got %q", out)
@@ -293,11 +286,10 @@ func TestBuildFooterBlock_NoHint_ReturnsNil(t *testing.T) {
 }
 
 func TestRenderScreen_SubtitleANSIAndNoViewportSize(t *testing.T) {
-	UpdateUIPreferences(func(p *UIPreferences) {
-		p.Theme = ThemeLight
-		p.ShowFooter = false
-	})
-	prefs := CurrentUIPreferences()
+	prefs := UIPreferences{
+		Theme:      ThemeLight,
+		ShowFooter: false,
+	}
 	out := renderScreen(0, 0, "Title", "\x1b[31mansi subtitle\x1b[0m", []string{"body"}, "", prefs, resolveUIStyles(prefs))
 	if !strings.Contains(out, "ansi subtitle") {
 		t.Fatalf("expected subtitle content, got %q", out)
@@ -434,18 +426,18 @@ func TestAnsiStylePrefix_UsesAnsiConstants(t *testing.T) {
 }
 
 func TestOptionTextStyle_ReturnsNonNil(t *testing.T) {
-	s := optionTextStyle()
-	_ = s.Render("test")
+	styles := resolveUIStyles(UIPreferences{Theme: ThemeLight})
+	_ = styles.option.Render("test")
 }
 
 func TestActiveOptionTextStyle_ReturnsNonNil(t *testing.T) {
-	s := activeOptionTextStyle()
-	_ = s.Render("test")
+	styles := resolveUIStyles(UIPreferences{Theme: ThemeLight})
+	_ = styles.active.Render("test")
 }
 
 func TestHeaderLabelStyle_ReturnsNonNil(t *testing.T) {
-	s := headerLabelStyle()
-	_ = s.Render("test")
+	styles := resolveUIStyles(UIPreferences{Theme: ThemeLight})
+	_ = styles.brand.Render("test")
 }
 
 func TestAnsiTextStyle_Width(t *testing.T) {

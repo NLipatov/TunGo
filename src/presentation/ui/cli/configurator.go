@@ -24,7 +24,7 @@ func NewConfigurator() *Configurator {
 }
 
 func (c *Configurator) Configure(_ context.Context) (mode.Mode, error) {
-	if len(os.Args) < 2 {
+	if app.CurrentUIMode() == app.TUI {
 		c.printUsage()
 		return mode.Unknown, fmt.Errorf("invalid arguments")
 	}

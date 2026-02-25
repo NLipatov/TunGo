@@ -108,7 +108,8 @@ func newSessionModelForServerManageTests(
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-	})
+		ServerSupported:     true,
+	}, testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}

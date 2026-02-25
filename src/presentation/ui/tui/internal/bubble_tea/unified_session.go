@@ -24,14 +24,10 @@ const (
 	phaseConfiguring       unifiedPhase = iota
 	phaseWaitingForRuntime              // configurator done, waiting for ActivateRuntime call
 	phaseRuntime                        // runtime dashboard is active
+	phaseFatalError                     // fatal error screen shown, waiting for user dismiss
 )
 
 // --- Messages ---
-
-// modeSelectedMsg is sent internally when the configurator completes.
-type modeSelectedMsg struct {
-	mode mode.Mode
-}
 
 // activateRuntimeMsg is sent via the tea.Program when ActivateRuntime is called.
 type activateRuntimeMsg struct {
@@ -39,10 +35,9 @@ type activateRuntimeMsg struct {
 	options RuntimeDashboardOptions
 }
 
-// runtimeDoneMsg is sent when the runtime sub-model signals completion.
-type runtimeDoneMsg struct {
-	reconfigure bool
-	exit        bool
+// fatalErrorMsg transitions the session to a fatal error screen.
+type fatalErrorMsg struct {
+	message string
 }
 
 // --- Events (channel-based coordination with external callers) ---
@@ -50,9 +45,9 @@ type runtimeDoneMsg struct {
 type unifiedEventKind int
 
 const (
-	unifiedEventModeSelected       unifiedEventKind = iota
+	unifiedEventModeSelected unifiedEventKind = iota
 	unifiedEventReconfigure
-	unifiedEventRuntimeDisconnected // runtime context cancelled (transient network error)
+	unifiedEventRuntimeDisconnected // runtime context canceled (transient network error)
 	unifiedEventExit
 	unifiedEventError
 )
@@ -66,9 +61,11 @@ type unifiedEvent struct {
 // --- Unified session model ---
 
 type unifiedSessionModel struct {
+	settings     *uiPreferencesProvider
 	phase        unifiedPhase
 	configurator configuratorSessionModel
 	runtime      *RuntimeDashboard
+	fatalError   *fatalErrorModel
 	configOpts   ConfiguratorSessionOptions
 	width        int
 	height       int
@@ -81,12 +78,14 @@ func newUnifiedSessionModel(
 	appCtx context.Context,
 	configOpts ConfiguratorSessionOptions,
 	events chan<- unifiedEvent,
+	settings *uiPreferencesProvider,
 ) (unifiedSessionModel, error) {
-	cfgModel, err := newConfiguratorSessionModel(configOpts)
+	cfgModel, err := newConfiguratorSessionModel(configOpts, settings)
 	if err != nil {
 		return unifiedSessionModel{}, err
 	}
 	return unifiedSessionModel{
+		settings:     settings,
 		phase:        phaseConfiguring,
 		configurator: cfgModel,
 		configOpts:   configOpts,
@@ -119,7 +118,7 @@ func (m unifiedSessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.runtimeSeq++
-		rt := NewRuntimeDashboard(msg.ctx, msg.options)
+		rt := NewRuntimeDashboard(msg.ctx, msg.options, m.settings)
 		rt.runtimeSeq = m.runtimeSeq
 		if m.width > 0 || m.height > 0 {
 			rt.width = m.width
@@ -130,7 +129,7 @@ func (m unifiedSessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.runtime.Init()
 
 	case runtimeContextDoneMsg:
-		// Runtime context was cancelled (e.g. network disconnection).
+		// Runtime context was canceled (e.g. network disconnection).
 		// Transition back to waiting so the next ActivateRuntime can reuse the session.
 		// Check seq to ignore stale messages from a previous runtime.
 		if m.phase == phaseRuntime && msg.seq == m.runtimeSeq {
@@ -141,6 +140,15 @@ func (m unifiedSessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.sendEvent(unifiedEvent{kind: unifiedEventRuntimeDisconnected})
 			return m, nil
 		}
+		return m, nil
+
+	case fatalErrorMsg:
+		m.stopAllLogWaits()
+		fe := newFatalErrorModel(msg.message, m.settings)
+		fe.width = m.width
+		fe.height = m.height
+		m.fatalError = &fe
+		m.phase = phaseFatalError
 		return m, nil
 	}
 
@@ -156,6 +164,8 @@ func (m unifiedSessionModel) delegateToActive(msg tea.Msg) (tea.Model, tea.Cmd) 
 		return m, nil
 	case phaseRuntime:
 		return m.updateRuntime(msg)
+	case phaseFatalError:
+		return m.updateFatalError(msg)
 	}
 	return m, nil
 }
@@ -201,7 +211,7 @@ func (m unifiedSessionModel) updateRuntime(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if rtModel.reconfigureRequested {
 		GlobalRuntimeLogWriteSeparator("reconfigured")
 		// Reset configurator for a fresh cycle.
-		newCfg, err := newConfiguratorSessionModel(m.configOpts)
+		newCfg, err := newConfiguratorSessionModel(m.configOpts, m.settings)
 		if err != nil {
 			m.sendEvent(unifiedEvent{kind: unifiedEventError, err: err})
 			return m, tea.Quit
@@ -225,6 +235,23 @@ func (m unifiedSessionModel) updateRuntime(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m unifiedSessionModel) updateFatalError(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.fatalError == nil {
+		return m, nil
+	}
+	updated, cmd := m.fatalError.Update(msg)
+	fe := updated.(fatalErrorModel)
+	m.fatalError = &fe
+
+	if fe.dismissed {
+		m.sendEvent(unifiedEvent{kind: unifiedEventExit})
+		return m, tea.Quit
+	}
+
+	cmd = filterQuit(cmd)
+	return m, cmd
+}
+
 func (m unifiedSessionModel) View() string {
 	switch m.phase {
 	case phaseConfiguring:
@@ -236,12 +263,17 @@ func (m unifiedSessionModel) View() string {
 			return m.runtime.View()
 		}
 		return m.waitingView()
+	case phaseFatalError:
+		if m.fatalError != nil {
+			return m.fatalError.View()
+		}
+		return ""
 	}
 	return ""
 }
 
 func (m unifiedSessionModel) waitingView() string {
-	prefs := CurrentUIPreferences()
+	prefs := m.settings.Preferences()
 	styles := resolveUIStyles(prefs)
 	body := []string{"Starting..."}
 	return renderScreen(
@@ -309,11 +341,11 @@ func filterQuit(cmd tea.Cmd) tea.Cmd {
 
 // UnifiedSession manages a single tea.Program across configurator and runtime phases.
 type UnifiedSession struct {
-	program *tea.Program
-	events  chan unifiedEvent
-	done    chan struct{}
+	program   *tea.Program
+	events    chan unifiedEvent
+	done      chan struct{}
 	closeOnce sync.Once
-	err     error
+	err       error
 }
 
 var newUnifiedSessionProgram = func(model tea.Model) *tea.Program {
@@ -323,7 +355,8 @@ var newUnifiedSessionProgram = func(model tea.Model) *tea.Program {
 // NewUnifiedSession creates and starts a unified session.
 func NewUnifiedSession(appCtx context.Context, configOpts ConfiguratorSessionOptions) (*UnifiedSession, error) {
 	events := make(chan unifiedEvent, 4)
-	model, err := newUnifiedSessionModel(appCtx, configOpts, events)
+	settings := loadUISettingsFromDisk()
+	model, err := newUnifiedSessionModel(appCtx, configOpts, events, settings)
 	if err != nil {
 		return nil, err
 	}
@@ -410,6 +443,13 @@ func (s *UnifiedSession) WaitForRuntimeExit() (reconfigure bool, err error) {
 			return false, ErrUnifiedSessionClosed
 		}
 	}
+}
+
+// ShowFatalError transitions the session to a fatal error screen and blocks
+// until the user dismisses it (Enter / Esc / q) or the program exits.
+func (s *UnifiedSession) ShowFatalError(message string) {
+	s.program.Send(fatalErrorMsg{message: message})
+	<-s.done
 }
 
 // Close gracefully stops the unified session program.

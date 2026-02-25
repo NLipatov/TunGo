@@ -6,12 +6,13 @@ import (
 )
 
 func TestRenderLogsBody_EmptyAndNonEmpty(t *testing.T) {
-	empty := renderLogsBody(nil, 40)
+	styles := resolveUIStyles(newDefaultUIPreferencesProvider().Preferences())
+	empty := renderLogsBody(nil, 40, styles)
 	if len(empty) != 1 {
 		t.Fatalf("expected one fallback line, got %v", empty)
 	}
 
-	lines := renderLogsBody([]string{"first", "second"}, 8)
+	lines := renderLogsBody([]string{"first", "second"}, 8, styles)
 	if len(lines) != 2 {
 		t.Fatalf("expected two rendered lines, got %v", lines)
 	}
@@ -203,18 +204,21 @@ func TestRuntimeLogSnapshot_NilReusableAndNilFeed(t *testing.T) {
 }
 
 func TestComputeLogsViewportSize_NonPositiveHeight(t *testing.T) {
-	_, h := computeLogsViewportSize(80, 0, CurrentUIPreferences(), "", "hint")
+	s := newDefaultUIPreferencesProvider()
+	prefs := s.Preferences()
+	_, h := computeLogsViewportSize(80, 0, prefs, "", "hint")
 	if h != 8 {
 		t.Fatalf("expected default height 8 for height<=0, got %d", h)
 	}
-	_, h = computeLogsViewportSize(80, -1, CurrentUIPreferences(), "", "hint")
+	_, h = computeLogsViewportSize(80, -1, prefs, "", "hint")
 	if h != 8 {
 		t.Fatalf("expected default height 8 for negative height, got %d", h)
 	}
 }
 
 func TestComputeLogsViewportSize_PositiveHeight_WithSubtitle(t *testing.T) {
-	prefs := CurrentUIPreferences()
+	s := newDefaultUIPreferencesProvider()
+	prefs := s.Preferences()
 	prefs.ShowFooter = true
 	w, h := computeLogsViewportSize(100, 40, prefs, "Subtitle text", "hint")
 	if w <= 0 {
@@ -257,7 +261,8 @@ func TestTruncateWithEllipsis_NonASCII_SmallWidth(t *testing.T) {
 }
 
 func TestComputeLogsViewportSize_TinyHeight_ClampsTo3(t *testing.T) {
-	prefs := CurrentUIPreferences()
+	s := newDefaultUIPreferencesProvider()
+	prefs := s.Preferences()
 	prefs.ShowFooter = true
 	_, h := computeLogsViewportSize(100, 10, prefs, "Long subtitle text for testing", "hint")
 	if h < 3 {

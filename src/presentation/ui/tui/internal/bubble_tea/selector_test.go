@@ -268,36 +268,29 @@ func TestSelector_LogsView_EmptyFeedShowsNoLogsYet(t *testing.T) {
 }
 
 func TestSelector_SettingsToggleFooter(t *testing.T) {
-	UpdateUIPreferences(func(p *UIPreferences) {
-		p.Theme = ThemeDark
-		p.Language = "en"
-		p.StatsUnits = StatsUnitsBiBytes
-		p.ShowDataplaneStats = true
-		p.ShowDataplaneGraph = true
-		p.ShowFooter = true
-	})
-	t.Cleanup(func() {
-		UpdateUIPreferences(func(p *UIPreferences) {
-			p.Theme = ThemeDark
-			p.Language = "en"
-			p.StatsUnits = StatsUnitsBiBytes
-			p.ShowDataplaneStats = true
-			p.ShowDataplaneGraph = true
-			p.ShowFooter = true
-		})
-	})
+	s := testSettings()
+	p := s.Preferences()
+	p.Theme = ThemeDark
+	p.Language = "en"
+	p.StatsUnits = StatsUnitsBiBytes
+	p.ShowDataplaneStats = true
+	p.ShowDataplaneGraph = true
+	p.ShowFooter = true
+	s.update(p)
 
 	sel, _ := newTestSelector("Main title", "a", "b")
-	m1, _ := sel.Update(tea.KeyMsg{Type: tea.KeyTab})            // settings
-	m2, _ := m1.(Selector).Update(tea.KeyMsg{Type: tea.KeyDown}) // stats units row
-	m3, _ := m2.(Selector).Update(tea.KeyMsg{Type: tea.KeyDown}) // dataplane stats row
-	m4, _ := m3.(Selector).Update(tea.KeyMsg{Type: tea.KeyDown}) // dataplane graph row
-	m5, _ := m4.(Selector).Update(tea.KeyMsg{Type: tea.KeyDown}) // footer row
+	sel.settings = s
+	sel.preferences = s.Preferences()
+	m1, _ := sel.Update(tea.KeyMsg{Type: tea.KeyTab})             // settings
+	m2, _ := m1.(Selector).Update(tea.KeyMsg{Type: tea.KeyDown})  // stats units row
+	m3, _ := m2.(Selector).Update(tea.KeyMsg{Type: tea.KeyDown})  // dataplane stats row
+	m4, _ := m3.(Selector).Update(tea.KeyMsg{Type: tea.KeyDown})  // dataplane graph row
+	m5, _ := m4.(Selector).Update(tea.KeyMsg{Type: tea.KeyDown})  // footer row
 	m6, _ := m5.(Selector).Update(tea.KeyMsg{Type: tea.KeyRight}) // toggle
 	toggled := m6.(Selector)
 
-	if CurrentUIPreferences().ShowFooter {
-		t.Fatalf("expected global ShowFooter to be toggled off")
+	if s.Preferences().ShowFooter {
+		t.Fatalf("expected ShowFooter to be toggled off")
 	}
 	if toggled.preferences.ShowFooter {
 		t.Fatalf("expected model ShowFooter to be toggled off")
@@ -305,33 +298,26 @@ func TestSelector_SettingsToggleFooter(t *testing.T) {
 }
 
 func TestSelector_SettingsToggleStatsUnits(t *testing.T) {
-	UpdateUIPreferences(func(p *UIPreferences) {
-		p.Theme = ThemeDark
-		p.Language = "en"
-		p.StatsUnits = StatsUnitsBiBytes
-		p.ShowDataplaneStats = true
-		p.ShowDataplaneGraph = true
-		p.ShowFooter = true
-	})
-	t.Cleanup(func() {
-		UpdateUIPreferences(func(p *UIPreferences) {
-			p.Theme = ThemeDark
-			p.Language = "en"
-			p.StatsUnits = StatsUnitsBiBytes
-			p.ShowDataplaneStats = true
-			p.ShowDataplaneGraph = true
-			p.ShowFooter = true
-		})
-	})
+	s := testSettings()
+	p := s.Preferences()
+	p.Theme = ThemeDark
+	p.Language = "en"
+	p.StatsUnits = StatsUnitsBiBytes
+	p.ShowDataplaneStats = true
+	p.ShowDataplaneGraph = true
+	p.ShowFooter = true
+	s.update(p)
 
 	sel, _ := newTestSelector("Main title", "a", "b")
-	m1, _ := sel.Update(tea.KeyMsg{Type: tea.KeyTab})            // settings
-	m2, _ := m1.(Selector).Update(tea.KeyMsg{Type: tea.KeyDown}) // stats units row
+	sel.settings = s
+	sel.preferences = s.Preferences()
+	m1, _ := sel.Update(tea.KeyMsg{Type: tea.KeyTab})             // settings
+	m2, _ := m1.(Selector).Update(tea.KeyMsg{Type: tea.KeyDown})  // stats units row
 	m3, _ := m2.(Selector).Update(tea.KeyMsg{Type: tea.KeyRight}) // toggle
 	toggled := m3.(Selector)
 
-	if CurrentUIPreferences().StatsUnits != StatsUnitsBytes {
-		t.Fatalf("expected global StatsUnits to be toggled to bytes")
+	if s.Preferences().StatsUnits != StatsUnitsBytes {
+		t.Fatalf("expected StatsUnits to be toggled to bytes")
 	}
 	if toggled.preferences.StatsUnits != StatsUnitsBytes {
 		t.Fatalf("expected model StatsUnits to be toggled to bytes")
@@ -339,26 +325,19 @@ func TestSelector_SettingsToggleStatsUnits(t *testing.T) {
 }
 
 func TestSelector_SettingsNavigationBoundsAndMutations(t *testing.T) {
-	UpdateUIPreferences(func(p *UIPreferences) {
-		p.Theme = ThemeLight
-		p.Language = "en"
-		p.StatsUnits = StatsUnitsBytes
-		p.ShowDataplaneStats = true
-		p.ShowDataplaneGraph = true
-		p.ShowFooter = true
-	})
-	t.Cleanup(func() {
-		UpdateUIPreferences(func(p *UIPreferences) {
-			p.Theme = ThemeLight
-			p.Language = "en"
-			p.StatsUnits = StatsUnitsBiBytes
-			p.ShowDataplaneStats = true
-			p.ShowDataplaneGraph = true
-			p.ShowFooter = true
-		})
-	})
+	s := testSettings()
+	p := s.Preferences()
+	p.Theme = ThemeLight
+	p.Language = "en"
+	p.StatsUnits = StatsUnitsBytes
+	p.ShowDataplaneStats = true
+	p.ShowDataplaneGraph = true
+	p.ShowFooter = true
+	s.update(p)
 
 	sel, _ := newTestSelector("Main title", "a", "b")
+	sel.settings = s
+	sel.preferences = s.Preferences()
 	sel.screen = selectorScreenSettings
 
 	// Up at top stays at top.
@@ -388,16 +367,16 @@ func TestSelector_SettingsNavigationBoundsAndMutations(t *testing.T) {
 	m1, _ = sel.Update(tea.KeyMsg{Type: tea.KeyLeft})
 	sel = m1.(Selector)
 	wantTheme := orderedThemeOptions[len(orderedThemeOptions)-1]
-	if CurrentUIPreferences().Theme != wantTheme {
-		t.Fatalf("expected theme %q after left wrap, got %q", wantTheme, CurrentUIPreferences().Theme)
+	if s.Preferences().Theme != wantTheme {
+		t.Fatalf("expected theme %q after left wrap, got %q", wantTheme, s.Preferences().Theme)
 	}
 
 	// Stats row left toggles to bibytes.
 	sel.settingsCursor = settingsStatsUnitsRow
 	m1, _ = sel.Update(tea.KeyMsg{Type: tea.KeyLeft})
 	sel = m1.(Selector)
-	if CurrentUIPreferences().StatsUnits != StatsUnitsBiBytes {
-		t.Fatalf("expected bibytes after left toggle, got %q", CurrentUIPreferences().StatsUnits)
+	if s.Preferences().StatsUnits != StatsUnitsBiBytes {
+		t.Fatalf("expected bibytes after left toggle, got %q", s.Preferences().StatsUnits)
 	}
 	if sel.preferences.StatsUnits != StatsUnitsBiBytes {
 		t.Fatalf("expected model bibytes after left toggle, got %q", sel.preferences.StatsUnits)
@@ -407,7 +386,7 @@ func TestSelector_SettingsNavigationBoundsAndMutations(t *testing.T) {
 	sel.settingsCursor = settingsDataplaneStatsRow
 	m1, _ = sel.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	sel = m1.(Selector)
-	if CurrentUIPreferences().ShowDataplaneStats {
+	if s.Preferences().ShowDataplaneStats {
 		t.Fatalf("expected dataplane stats OFF after toggle")
 	}
 	if sel.preferences.ShowDataplaneStats {
@@ -418,7 +397,7 @@ func TestSelector_SettingsNavigationBoundsAndMutations(t *testing.T) {
 	sel.settingsCursor = settingsDataplaneGraphRow
 	m1, _ = sel.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	sel = m1.(Selector)
-	if CurrentUIPreferences().ShowDataplaneGraph {
+	if s.Preferences().ShowDataplaneGraph {
 		t.Fatalf("expected dataplane graph OFF after toggle")
 	}
 	if sel.preferences.ShowDataplaneGraph {
@@ -429,7 +408,7 @@ func TestSelector_SettingsNavigationBoundsAndMutations(t *testing.T) {
 	sel.settingsCursor = settingsFooterRow
 	m1, _ = sel.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	sel = m1.(Selector)
-	if CurrentUIPreferences().ShowFooter {
+	if s.Preferences().ShowFooter {
 		t.Fatalf("expected footer OFF after toggle")
 	}
 	if sel.preferences.ShowFooter {
@@ -470,7 +449,7 @@ func TestSelector_SettingsAndLogsView_WithWidth(t *testing.T) {
 	sel.width = 100
 	sel.height = 30
 	sel.screen = selectorScreenSettings
-	settings := sel.settingsView("ignored", "ignored", []string{"detail"})
+	settings := sel.settingsView([]string{"detail"})
 	if !strings.Contains(settings, "detail") || !strings.Contains(settings, "Theme") {
 		t.Fatalf("expected settings details and rows, got %q", settings)
 	}
@@ -484,24 +463,18 @@ func TestSelector_SettingsAndLogsView_WithWidth(t *testing.T) {
 }
 
 func TestSelector_SettingsThemeChange_RequestsClearScreen(t *testing.T) {
-	UpdateUIPreferences(func(p *UIPreferences) {
-		p.Theme = ThemeLight
-		p.StatsUnits = StatsUnitsBytes
-		p.ShowDataplaneStats = true
-		p.ShowDataplaneGraph = true
-		p.ShowFooter = true
-	})
-	t.Cleanup(func() {
-		UpdateUIPreferences(func(p *UIPreferences) {
-			p.Theme = ThemeLight
-			p.StatsUnits = StatsUnitsBiBytes
-			p.ShowDataplaneStats = true
-			p.ShowDataplaneGraph = true
-			p.ShowFooter = true
-		})
-	})
+	s := testSettings()
+	p := s.Preferences()
+	p.Theme = ThemeLight
+	p.StatsUnits = StatsUnitsBytes
+	p.ShowDataplaneStats = true
+	p.ShowDataplaneGraph = true
+	p.ShowFooter = true
+	s.update(p)
 
 	sel, _ := newTestSelector("Main title", "a", "b")
+	sel.settings = s
+	sel.preferences = s.Preferences()
 	sel.screen = selectorScreenSettings
 	sel.settingsCursor = settingsThemeRow
 
@@ -790,7 +763,7 @@ func TestSelector_WindowSizeMsgOnLogsScreen(t *testing.T) {
 
 	sel, _ := newTestSelector("Main title", "a", "b")
 	// Navigate to logs screen.
-	m1, _ := sel.Update(tea.KeyMsg{Type: tea.KeyTab})  // settings
+	m1, _ := sel.Update(tea.KeyMsg{Type: tea.KeyTab})           // settings
 	m2, _ := m1.(Selector).Update(tea.KeyMsg{Type: tea.KeyTab}) // logs
 	s := m2.(Selector)
 
@@ -814,7 +787,7 @@ func TestSelector_LogTickMatchingSeqOnLogsScreen(t *testing.T) {
 	_, _ = feed.Write([]byte("log line\n"))
 
 	sel, _ := newTestSelector("Main title", "a", "b")
-	m1, _ := sel.Update(tea.KeyMsg{Type: tea.KeyTab})  // settings
+	m1, _ := sel.Update(tea.KeyMsg{Type: tea.KeyTab})           // settings
 	m2, _ := m1.(Selector).Update(tea.KeyMsg{Type: tea.KeyTab}) // logs
 	s := m2.(Selector)
 
@@ -832,7 +805,7 @@ func TestSelector_LogTickStaleSeqIgnored(t *testing.T) {
 	EnableGlobalRuntimeLogCapture(64)
 
 	sel, _ := newTestSelector("Main title", "a", "b")
-	m1, _ := sel.Update(tea.KeyMsg{Type: tea.KeyTab})  // settings
+	m1, _ := sel.Update(tea.KeyMsg{Type: tea.KeyTab})           // settings
 	m2, _ := m1.(Selector).Update(tea.KeyMsg{Type: tea.KeyTab}) // logs
 	s := m2.(Selector)
 

@@ -2,14 +2,10 @@ package elevation
 
 import "os"
 
-// ProcessElevationImpl implements ProcessElevation on macOS
-type ProcessElevationImpl struct{}
-
-func NewProcessElevation() ProcessElevation {
-	return &ProcessElevationImpl{}
+func IsElevated() bool {
+	return os.Geteuid() == 0
 }
 
-// IsElevated returns true if we're running as root.
-func (p *ProcessElevationImpl) IsElevated() bool {
-	return os.Geteuid() == 0
+func Hint() string {
+	return "Please restart with 'sudo'."
 }

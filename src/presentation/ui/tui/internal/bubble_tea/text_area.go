@@ -10,6 +10,7 @@ import (
 
 // TextArea - is a multiline text input
 type TextArea struct {
+	settings    UIPreferencesProvider
 	ta          *textarea.Model
 	done        bool
 	cancelled   bool
@@ -28,6 +29,7 @@ func NewTextArea(placeholder string) *TextArea {
 	ta.FocusedStyle.CursorLine = ta.FocusedStyle.Text
 	ta.Focus()
 	return &TextArea{
+		settings:    loadUISettingsFromDisk(),
 		ta:          &ta,
 		done:        false,
 		placeholder: placeholder,
@@ -52,7 +54,7 @@ func (m *TextArea) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		contentWidth := contentWidthForTerminal(msg.Width)
-		available := maxInt(1, contentWidth-inputContainerStyle().GetHorizontalFrameSize())
+		available := maxInt(1, contentWidth-resolveUIStyles(m.settings.Preferences()).inputFrame.GetHorizontalFrameSize())
 		m.ta.SetWidth(minInt(80, available))
 		if msg.Height > 18 {
 			m.ta.SetHeight(msg.Height - 18)
@@ -83,15 +85,15 @@ func (m *TextArea) View() string {
 	if value != "" {
 		lineCount = len(strings.Split(value, "\n"))
 	}
-	stats := metaTextStyle().Render(fmt.Sprintf("Lines: %d", lineCount))
-	container := inputContainerStyle().Width(m.inputContainerWidth())
+	prefs := m.settings.Preferences()
+	styles := resolveUIStyles(prefs)
+	stats := styles.meta.Render(fmt.Sprintf("Lines: %d", lineCount))
+	container := styles.inputFrame.Width(m.inputContainerWidth())
 
 	body := []string{
 		container.Render(m.ta.View()),
 		stats,
 	}
-	prefs := CurrentUIPreferences()
-	styles := resolveUIStyles(prefs)
 	return renderScreen(
 		m.width,
 		m.height,
@@ -108,5 +110,5 @@ func (m *TextArea) inputContainerWidth() int {
 	if m.width > 0 {
 		return maxInt(1, contentWidthForTerminal(m.width))
 	}
-	return maxInt(1, m.ta.Width()+inputContainerStyle().GetHorizontalFrameSize())
+	return maxInt(1, m.ta.Width()+resolveUIStyles(m.settings.Preferences()).inputFrame.GetHorizontalFrameSize())
 }

@@ -20,6 +20,7 @@ func TestNewConfigurator(t *testing.T) {
 		&queuedSelectorFactory{selector: &queuedSelector{options: []string{"client"}}},
 		nil,
 		nil,
+		true,
 	)
 	if c == nil {
 		t.Fatal("expected non-nil configurator")
@@ -30,7 +31,7 @@ func TestNewConfigurator(t *testing.T) {
 }
 
 func TestNewDefaultConfigurator(t *testing.T) {
-	c := NewDefaultConfigurator(&mockManager{})
+	c := NewDefaultConfigurator(&mockManager{}, true)
 	if c == nil {
 		t.Fatal("expected non-nil default configurator")
 	}
@@ -318,6 +319,8 @@ func (m *mockUnifiedSession) ActivateRuntime(_ context.Context, _ bubbleTea.Runt
 func (m *mockUnifiedSession) WaitForRuntimeExit() (bool, error) {
 	return m.waitRuntimeReconfigure, m.waitRuntimeErr
 }
+
+func (m *mockUnifiedSession) ShowFatalError(_ string) {}
 
 func (m *mockUnifiedSession) Close() { m.closeCalled = true }
 

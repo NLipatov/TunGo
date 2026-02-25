@@ -27,13 +27,14 @@ func defaultUnifiedConfigOpts() ConfiguratorSessionOptions {
 				{Name: "test", ClientID: 1, Enabled: true},
 			},
 		},
+		ServerSupported: true,
 	}
 }
 
 func newTestUnifiedModel(t *testing.T) (unifiedSessionModel, chan unifiedEvent) {
 	t.Helper()
 	events := make(chan unifiedEvent, 8)
-	model, err := newUnifiedSessionModel(context.Background(), defaultUnifiedConfigOpts(), events)
+	model, err := newUnifiedSessionModel(context.Background(), defaultUnifiedConfigOpts(), events, testSettings())
 	if err != nil {
 		t.Fatalf("newUnifiedSessionModel: %v", err)
 	}
@@ -170,7 +171,7 @@ func TestUnifiedSession_WaitingPhase_ShowsStarting(t *testing.T) {
 func TestUnifiedSession_RuntimeExit_QuitsProgram(t *testing.T) {
 	m, events := newTestUnifiedModel(t)
 	m.phase = phaseRuntime
-	rt := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	rt := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
 	m.runtime = &rt
 
 	// Simulate ctrl+c key press.
@@ -199,13 +200,13 @@ func TestUnifiedSession_RuntimeReconfigure_TransitionsToConfiguring(t *testing.T
 	m.phase = phaseRuntime
 	m.width = 100
 	m.height = 30
-	rt := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	rt := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
 	m.runtime = &rt
 
 	// Simulate esc -> confirm reconfigure.
 	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	updated := result.(unifiedSessionModel)
-	// Move cursor to "Stop tunnel and reconfigure" (index 1).
+	// Move cursor to "Stop" (index 1).
 	result, _ = updated.Update(tea.KeyMsg{Type: tea.KeyRight})
 	updated = result.(unifiedSessionModel)
 	// Confirm.
@@ -280,7 +281,7 @@ func TestUnifiedSession_RuntimeContextDone_SendsDisconnectedEvent(t *testing.T) 
 	m, events := newTestUnifiedModel(t)
 	m.phase = phaseRuntime
 	m.runtimeSeq = 3
-	rt := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	rt := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
 	rt.runtimeSeq = 3
 	m.runtime = &rt
 
@@ -311,7 +312,7 @@ func TestUnifiedSession_RuntimeContextDone_StaleSeqIgnored(t *testing.T) {
 	m, events := newTestUnifiedModel(t)
 	m.phase = phaseRuntime
 	m.runtimeSeq = 5
-	rt := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	rt := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
 	rt.runtimeSeq = 5
 	m.runtime = &rt
 
@@ -350,7 +351,7 @@ func TestUnifiedSession_ContextDone_StopsLogWaits(t *testing.T) {
 	m, _ := newTestUnifiedModel(t)
 	m.phase = phaseRuntime
 	m.runtimeSeq = 1
-	rt := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	rt := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
 	rt.runtimeSeq = 1
 	rtLogStop := make(chan struct{})
 	rt.logWaitStop = rtLogStop
@@ -492,7 +493,7 @@ func TestFilterQuit_BatchMsg(t *testing.T) {
 func TestNewUnifiedSessionModel_ErrorPath(t *testing.T) {
 	events := make(chan unifiedEvent, 4)
 	// Missing required dependencies → newConfiguratorSessionModel fails.
-	_, err := newUnifiedSessionModel(context.Background(), ConfiguratorSessionOptions{}, events)
+	_, err := newUnifiedSessionModel(context.Background(), ConfiguratorSessionOptions{}, events, testSettings())
 	if err == nil {
 		t.Fatal("expected error when ConfiguratorSessionOptions are empty")
 	}
@@ -567,7 +568,7 @@ func TestUnifiedSessionModel_Init_ReturnsBatchCmd(t *testing.T) {
 func TestUnifiedSession_UpdateRuntime_ReconfigureRequested(t *testing.T) {
 	m, events := newTestUnifiedModel(t)
 	m.phase = phaseRuntime
-	rt := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	rt := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
 	rt.reconfigureRequested = true
 	m.runtime = &rt
 
@@ -595,7 +596,7 @@ func TestUnifiedSession_UpdateRuntime_ReconfigureRequested(t *testing.T) {
 func TestUnifiedSession_UpdateRuntime_ExitRequested(t *testing.T) {
 	m, events := newTestUnifiedModel(t)
 	m.phase = phaseRuntime
-	rt := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	rt := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
 	rt.exitRequested = true
 	m.runtime = &rt
 
@@ -660,7 +661,7 @@ func TestUnifiedSession_RuntimeContextDoneMsg_MatchingSeq(t *testing.T) {
 	m, events := newTestUnifiedModel(t)
 	m.phase = phaseRuntime
 	m.runtimeSeq = 5
-	rt := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	rt := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
 	rt.runtimeSeq = 5
 	m.runtime = &rt
 
@@ -689,7 +690,7 @@ func TestUnifiedSession_RuntimeContextDoneMsg_StaleSeq(t *testing.T) {
 	m, _ := newTestUnifiedModel(t)
 	m.phase = phaseRuntime
 	m.runtimeSeq = 5
-	rt := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	rt := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
 	m.runtime = &rt
 
 	result, cmd := m.Update(runtimeContextDoneMsg{seq: 3})
@@ -775,7 +776,7 @@ func TestUnifiedSession_Configurator_ModeSelected(t *testing.T) {
 func TestUnifiedSession_UpdateRuntime_ReconfigureError(t *testing.T) {
 	m, events := newTestUnifiedModel(t)
 	m.phase = phaseRuntime
-	rt := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
+	rt := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
 	rt.reconfigureRequested = true
 	m.runtime = &rt
 	// Make configOpts invalid so newConfiguratorSessionModel fails on reconfigure.
@@ -1147,7 +1148,7 @@ func TestUnifiedSession_RuntimePhase_ShowsRuntimeView(t *testing.T) {
 	m.height = 30
 	rt := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
 		Mode: RuntimeDashboardServer,
-	})
+	}, testSettings())
 	rt.width = 100
 	rt.height = 30
 	m.runtime = &rt
@@ -1155,5 +1156,209 @@ func TestUnifiedSession_RuntimePhase_ShowsRuntimeView(t *testing.T) {
 	view := m.View()
 	if !strings.Contains(view, "Mode: Server") {
 		t.Fatalf("expected runtime view with server mode, got: %q", view)
+	}
+}
+
+// --- Phase: fatalError ---
+
+func TestUnifiedSession_FatalErrorMsg_TransitionsToFatalError(t *testing.T) {
+	m, _ := newTestUnifiedModel(t)
+	m.width = 100
+	m.height = 30
+
+	result, cmd := m.Update(fatalErrorMsg{message: "something failed"})
+	updated := result.(unifiedSessionModel)
+
+	if updated.phase != phaseFatalError {
+		t.Fatalf("expected phaseFatalError, got %d", updated.phase)
+	}
+	if updated.fatalError == nil {
+		t.Fatal("expected fatalError model to be set")
+	}
+	if updated.fatalError.message != "something failed" {
+		t.Fatalf("expected message 'something failed', got %q", updated.fatalError.message)
+	}
+	if updated.fatalError.width != 100 || updated.fatalError.height != 30 {
+		t.Fatalf("expected fatalError dimensions 100x30, got %dx%d", updated.fatalError.width, updated.fatalError.height)
+	}
+	if cmd != nil {
+		t.Fatal("expected nil cmd on fatal error transition")
+	}
+}
+
+func TestUnifiedSession_FatalErrorMsg_FromRuntimePhase(t *testing.T) {
+	m, _ := newTestUnifiedModel(t)
+	m.phase = phaseRuntime
+	rt := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
+	m.runtime = &rt
+
+	result, _ := m.Update(fatalErrorMsg{message: "port in use"})
+	updated := result.(unifiedSessionModel)
+
+	if updated.phase != phaseFatalError {
+		t.Fatalf("expected phaseFatalError, got %d", updated.phase)
+	}
+	if updated.fatalError == nil {
+		t.Fatal("expected fatalError model to be set")
+	}
+}
+
+func TestUnifiedSession_FatalErrorPhase_ViewDelegatesToFatalError(t *testing.T) {
+	m, _ := newTestUnifiedModel(t)
+	fe := newFatalErrorModel("Details here", testSettings())
+	fe.width = 100
+	fe.height = 30
+	m.fatalError = &fe
+	m.phase = phaseFatalError
+
+	view := m.View()
+	if !strings.Contains(view, "Details here") {
+		t.Fatalf("expected fatal error message in view, got: %q", view)
+	}
+}
+
+func TestUnifiedSession_FatalErrorPhase_EnterSendsExitEvent(t *testing.T) {
+	m, events := newTestUnifiedModel(t)
+	fe := newFatalErrorModel("details", testSettings())
+	m.fatalError = &fe
+	m.phase = phaseFatalError
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected quit cmd when fatal error dismissed")
+	}
+
+	select {
+	case event := <-events:
+		if event.kind != unifiedEventExit {
+			t.Fatalf("expected unifiedEventExit, got %d", event.kind)
+		}
+	default:
+		t.Fatal("expected exit event on fatal error dismiss")
+	}
+}
+
+func TestUnifiedSession_FatalErrorPhase_EscSendsExitEvent(t *testing.T) {
+	m, events := newTestUnifiedModel(t)
+	fe := newFatalErrorModel("details", testSettings())
+	m.fatalError = &fe
+	m.phase = phaseFatalError
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	if cmd == nil {
+		t.Fatal("expected quit cmd when fatal error dismissed via Esc")
+	}
+
+	select {
+	case event := <-events:
+		if event.kind != unifiedEventExit {
+			t.Fatalf("expected unifiedEventExit, got %d", event.kind)
+		}
+	default:
+		t.Fatal("expected exit event on fatal error Esc dismiss")
+	}
+}
+
+func TestUnifiedSession_FatalErrorPhase_QKeySendsExitEvent(t *testing.T) {
+	m, events := newTestUnifiedModel(t)
+	fe := newFatalErrorModel("details", testSettings())
+	m.fatalError = &fe
+	m.phase = phaseFatalError
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	if cmd == nil {
+		t.Fatal("expected quit cmd when fatal error dismissed via 'q'")
+	}
+
+	select {
+	case event := <-events:
+		if event.kind != unifiedEventExit {
+			t.Fatalf("expected unifiedEventExit, got %d", event.kind)
+		}
+	default:
+		t.Fatal("expected exit event on fatal error 'q' dismiss")
+	}
+}
+
+func TestUnifiedSession_FatalErrorPhase_ArbitraryKeyNoQuit(t *testing.T) {
+	m, events := newTestUnifiedModel(t)
+	fe := newFatalErrorModel("details", testSettings())
+	m.fatalError = &fe
+	m.phase = phaseFatalError
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	if cmd != nil {
+		t.Fatal("expected nil cmd for arbitrary key in fatal error phase")
+	}
+
+	select {
+	case event := <-events:
+		t.Fatalf("expected no event for arbitrary key, got %d", event.kind)
+	default:
+	}
+}
+
+func TestUnifiedSession_FatalErrorPhase_WindowSizeUpdates(t *testing.T) {
+	m, _ := newTestUnifiedModel(t)
+	fe := newFatalErrorModel("details", testSettings())
+	m.fatalError = &fe
+	m.phase = phaseFatalError
+
+	result, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	updated := result.(unifiedSessionModel)
+	if updated.fatalError.width != 120 || updated.fatalError.height != 40 {
+		t.Fatalf("expected fatalError dimensions 120x40, got %dx%d", updated.fatalError.width, updated.fatalError.height)
+	}
+}
+
+func TestUnifiedSession_FatalErrorPhase_NilFatalError_View(t *testing.T) {
+	m, _ := newTestUnifiedModel(t)
+	m.phase = phaseFatalError
+	m.fatalError = nil
+
+	view := m.View()
+	if view != "" {
+		t.Fatalf("expected empty view when fatalError is nil, got: %q", view)
+	}
+}
+
+func TestUnifiedSession_FatalErrorPhase_NilFatalError_Update(t *testing.T) {
+	m, _ := newTestUnifiedModel(t)
+	m.phase = phaseFatalError
+	m.fatalError = nil
+
+	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated := result.(unifiedSessionModel)
+	if updated.phase != phaseFatalError {
+		t.Fatalf("expected phase unchanged, got %d", updated.phase)
+	}
+	if cmd != nil {
+		t.Fatal("expected nil cmd when fatalError is nil")
+	}
+}
+
+func TestUnifiedSession_ShowFatalError_BlocksUntilDone(t *testing.T) {
+	withNoTTYUnifiedSession(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	session, err := NewUnifiedSession(ctx, defaultUnifiedConfigOpts())
+	if err != nil {
+		t.Fatalf("NewUnifiedSession error: %v", err)
+	}
+
+	unblocked := make(chan struct{})
+	go func() {
+		session.ShowFatalError("test details")
+		close(unblocked)
+	}()
+
+	// Cancel context to make the program exit, which unblocks ShowFatalError.
+	cancel()
+
+	select {
+	case <-unblocked:
+	case <-time.After(5 * time.Second):
+		t.Fatal("ShowFatalError did not unblock after context cancel")
 	}
 }

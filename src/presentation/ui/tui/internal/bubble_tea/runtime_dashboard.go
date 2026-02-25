@@ -52,6 +52,7 @@ var zeroBrailleSparklineCache = initZeroBrailleSparklineCache()
 var ErrRuntimeDashboardExitRequested = errors.New("runtime dashboard exit requested")
 
 type RuntimeDashboard struct {
+	settings             *uiPreferencesProvider
 	ctx                  context.Context
 	mode                 RuntimeDashboardMode
 	width                int
@@ -87,7 +88,7 @@ var newRuntimeDashboardProgram = func(model tea.Model) runtimeDashboardProgram {
 	return tea.NewProgram(model, tea.WithAltScreen())
 }
 
-func NewRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions) RuntimeDashboard {
+func NewRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions, settings *uiPreferencesProvider) RuntimeDashboard {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -96,11 +97,12 @@ func NewRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions) R
 		mode = RuntimeDashboardClient
 	}
 	model := RuntimeDashboard{
+		settings:    settings,
 		ctx:         ctx,
 		mode:        mode,
 		keys:        defaultSelectorKeyMap(),
 		screen:      runtimeScreenDataplane,
-		preferences: CurrentUIPreferences(),
+		preferences: settings.Preferences(),
 		logFeed:     options.LogFeed,
 		logViewport: viewport.New(1, 8),
 		logReady:    true,
@@ -120,7 +122,8 @@ func RunRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions) (
 	if safeCtx == nil {
 		safeCtx = context.Background()
 	}
-	model := NewRuntimeDashboard(safeCtx, options)
+	settings := loadUISettingsFromDisk()
+	model := NewRuntimeDashboard(safeCtx, options, settings)
 	program := newRuntimeDashboardProgram(model)
 	result, err := program.Run()
 	if err != nil {
@@ -204,7 +207,7 @@ func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Tab):
 			previous := m.screen
 			m.screen = m.nextScreen()
-			m.preferences = CurrentUIPreferences()
+			m.preferences = m.settings.Preferences()
 			if m.screen == runtimeScreenLogs {
 				m.restartLogWait()
 				m.logTickSeq++
@@ -295,13 +298,13 @@ func (m RuntimeDashboard) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.settingsCursor = settingsCursorDown(m.settingsCursor)
 	case key.Matches(msg, m.keys.Left):
 		prevTheme := m.preferences.Theme
-		m.preferences = applySettingsChange(m.settingsCursor, -1)
+		m.preferences = applySettingsChange(m.settings, m.settingsCursor, -1)
 		if m.settingsCursor == settingsThemeRow && m.preferences.Theme != prevTheme {
 			cmd = tea.ClearScreen
 		}
 	case key.Matches(msg, m.keys.Right), key.Matches(msg, m.keys.Select):
 		prevTheme := m.preferences.Theme
-		m.preferences = applySettingsChange(m.settingsCursor, 1)
+		m.preferences = applySettingsChange(m.settings, m.settingsCursor, 1)
 		if m.settingsCursor == settingsThemeRow && m.preferences.Theme != prevTheme {
 			cmd = tea.ClearScreen
 		}
@@ -363,9 +366,9 @@ func (m RuntimeDashboard) mainView() string {
 		body = append(body, "", "Dataplane metrics are hidden in Settings.")
 	}
 	if m.confirmOpen {
-		body = append(body, "", "Stop tunnel and reconfigure?", "")
+		body = append(body, "", "Stop tunnel?", "")
 		body = append(body, renderSelectableRows(
-			[]string{"Stay", "Stop tunnel and reconfigure"},
+			[]string{"Continue", "Stop"},
 			m.confirmCursor,
 			contentWidth,
 			styles,
@@ -479,10 +482,10 @@ func (m RuntimeDashboard) updateLogs(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch {
 	case key.Matches(msg, m.keys.Up):
-		m.logViewport.LineUp(1)
+		m.logViewport.ScrollUp(1)
 		m.logFollow = false
 	case key.Matches(msg, m.keys.Down):
-		m.logViewport.LineDown(1)
+		m.logViewport.ScrollDown(1)
 		m.logFollow = m.logViewport.AtBottom()
 	}
 	return m, nil

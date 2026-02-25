@@ -1,45 +1,36 @@
 package configuring
 
 import (
-	"os"
+	"context"
 	"testing"
 
+	"tungo/domain/app"
 	"tungo/presentation/ui/cli"
 	"tungo/presentation/ui/tui"
 )
 
 func TestNewConfigurationFactory(t *testing.T) {
-	f := NewConfigurationFactory(nil)
+	f := NewConfigurationFactory(app.CLI, nil, false)
 	if f == nil {
 		t.Fatal("expected non-nil factory")
 	}
 }
 
 func TestConfigurationFactory_Configurator_CLI(t *testing.T) {
-	original := os.Args
-	t.Cleanup(func() {
-		os.Args = original
-	})
+	f := NewConfigurationFactory(app.CLI, nil, false)
 
-	os.Args = []string{"tungo", "--help"}
-	f := NewConfigurationFactory(nil)
-
-	got := f.Configurator()
+	got, cleanup := f.Configurator(context.Background())
+	defer cleanup()
 	if _, ok := got.(*cli.Configurator); !ok {
 		t.Fatalf("expected CLI configurator, got %T", got)
 	}
 }
 
 func TestConfigurationFactory_Configurator_TUI(t *testing.T) {
-	original := os.Args
-	t.Cleanup(func() {
-		os.Args = original
-	})
+	f := NewConfigurationFactory(app.TUI, nil, true)
 
-	os.Args = []string{"tungo"}
-	f := NewConfigurationFactory(nil)
-
-	got := f.Configurator()
+	got, cleanup := f.Configurator(context.Background())
+	defer cleanup()
 	if _, ok := got.(*tui.Configurator); !ok {
 		t.Fatalf("expected TUI configurator, got %T", got)
 	}

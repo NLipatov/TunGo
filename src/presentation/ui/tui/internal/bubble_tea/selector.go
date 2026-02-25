@@ -78,6 +78,7 @@ type selectorLogTickMsg struct {
 }
 
 type Selector struct {
+	settings                         *uiPreferencesProvider
 	colorizer                        colorization.Colorizer
 	foregroundColor, backgroundColor value_objects.Color
 	placeholder                      string
@@ -107,7 +108,9 @@ func NewSelector(
 	colorizer colorization.Colorizer,
 	foregroundColor, backgroundColor value_objects.Color,
 ) Selector {
+	settings := loadUISettingsFromDisk()
 	return Selector{
+		settings:        settings,
 		placeholder:     placeholder,
 		options:         choices,
 		colorizer:       colorizer,
@@ -115,7 +118,7 @@ func NewSelector(
 		backgroundColor: backgroundColor,
 		keys:            defaultSelectorKeyMap(),
 		screen:          selectorScreenMain,
-		preferences:     CurrentUIPreferences(),
+		preferences:     settings.Preferences(),
 		logViewport:     viewport.New(1, 8),
 		logReady:        true,
 		logFollow:       true,
@@ -165,7 +168,7 @@ func (m Selector) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Tab):
 			previous := m.screen
 			m.screen = m.nextScreen()
-			m.preferences = CurrentUIPreferences()
+			m.preferences = m.settings.Preferences()
 			if m.screen == selectorScreenLogs {
 				m.restartLogWait()
 				m.logTickSeq++
@@ -220,13 +223,13 @@ func (m Selector) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.settingsCursor = settingsCursorDown(m.settingsCursor)
 	case key.Matches(msg, m.keys.Left):
 		prevTheme := m.preferences.Theme
-		m.preferences = applySettingsChange(m.settingsCursor, -1)
+		m.preferences = applySettingsChange(m.settings, m.settingsCursor, -1)
 		if m.settingsCursor == settingsThemeRow && m.preferences.Theme != prevTheme {
 			cmd = tea.ClearScreen
 		}
 	case key.Matches(msg, m.keys.Right), key.Matches(msg, m.keys.Select):
 		prevTheme := m.preferences.Theme
-		m.preferences = applySettingsChange(m.settingsCursor, 1)
+		m.preferences = applySettingsChange(m.settings, m.settingsCursor, 1)
 		if m.settingsCursor == settingsThemeRow && m.preferences.Theme != prevTheme {
 			cmd = tea.ClearScreen
 		}
@@ -243,7 +246,7 @@ func nextTheme(current ThemeOption, step int) ThemeOption {
 			break
 		}
 	}
-	if !isKnownTheme(current) {
+	if !isValidTheme(current) {
 		idx = 0
 	}
 	if step > 0 {
@@ -285,7 +288,7 @@ func (m Selector) View() string {
 	}
 
 	if m.screen == selectorScreenSettings {
-		return m.settingsView(title, subtitle, preamble)
+		return m.settingsView(preamble)
 	}
 	if m.screen == selectorScreenLogs {
 		return m.logsView()
@@ -346,7 +349,7 @@ func (m Selector) mainView(title, subtitle string, preamble []string) string {
 	)
 }
 
-func (m Selector) settingsView(title, subtitle string, preamble []string) string {
+func (m Selector) settingsView(preamble []string) string {
 	styles := resolveUIStyles(m.preferences)
 	body := make([]string, 0, len(preamble)+8)
 	if len(preamble) > 0 {
@@ -466,10 +469,10 @@ func (m Selector) updateLogs(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch {
 	case key.Matches(msg, m.keys.Up):
-		m.logViewport.LineUp(1)
+		m.logViewport.ScrollUp(1)
 		m.logFollow = false
 	case key.Matches(msg, m.keys.Down):
-		m.logViewport.LineDown(1)
+		m.logViewport.ScrollDown(1)
 		m.logFollow = m.logViewport.AtBottom()
 	}
 	return m, nil

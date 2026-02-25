@@ -119,14 +119,14 @@ func statsUnitsLabel(units StatsUnitsOption) string {
 	return "Binary units (KiB/MiB/GiB)"
 }
 
-func renderLogsBody(lines []string, width int) []string {
+func renderLogsBody(lines []string, width int, styles uiStyles) []string {
 	if len(lines) == 0 {
-		return []string{metaTextStyle().Render("  No logs yet")}
+		return []string{styles.meta.Render("  No logs yet")}
 	}
 	body := make([]string, 0, len(lines))
 	for _, line := range lines {
 		row := truncateWithEllipsis("  "+line, width)
-		body = append(body, metaTextStyle().Render(row))
+		body = append(body, styles.meta.Render(row))
 	}
 	return body
 }

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 	"tungo/application/network/connection"
+	"tungo/domain/app"
 	"tungo/application/network/routing"
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/configuration/client"
@@ -146,7 +147,7 @@ func TestClientRunner_Run_RouteTrafficCanceled(t *testing.T) {
 	}
 	router := &mockRouter{routeErr: context.Canceled}
 	routerFactory := &mockRouterFactory{router: router}
-	runner := clientRunners.NewRunner(deps, routerFactory)
+	runner := clientRunners.NewRunner(app.CLI, deps, routerFactory)
 	setRouterBuilder(runner, routerFactory)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -179,7 +180,7 @@ func TestClientRunner_Run_CreateRouterError(t *testing.T) {
 	routerFactory := &mockRouterFactory{
 		err: errors.New("create router error"),
 	}
-	runner := clientRunners.NewRunner(deps, routerFactory)
+	runner := clientRunners.NewRunner(app.CLI, deps, routerFactory)
 	setRouterBuilder(runner, routerFactory)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)

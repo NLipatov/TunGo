@@ -268,7 +268,7 @@ func TestNewConfiguratorSessionModel_AllDependencies(t *testing.T) {
 		Deleter:             sessionDeleterStub{},
 		ServerConfigManager: &sessionServerConfigManagerStub{},
 	}
-	model, err := newConfiguratorSessionModel(opts)
+	model, err := newConfiguratorSessionModel(opts, testSettings())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -284,7 +284,7 @@ func TestNewConfiguratorSessionModel_MissingObserver(t *testing.T) {
 		Deleter:             sessionDeleterStub{},
 		ServerConfigManager: &sessionServerConfigManagerStub{},
 	}
-	_, err := newConfiguratorSessionModel(opts)
+	_, err := newConfiguratorSessionModel(opts, testSettings())
 	if err == nil {
 		t.Fatal("expected error for missing Observer, got nil")
 	}
@@ -297,7 +297,7 @@ func TestNewConfiguratorSessionModel_MissingSelector(t *testing.T) {
 		Deleter:             sessionDeleterStub{},
 		ServerConfigManager: &sessionServerConfigManagerStub{},
 	}
-	_, err := newConfiguratorSessionModel(opts)
+	_, err := newConfiguratorSessionModel(opts, testSettings())
 	if err == nil {
 		t.Fatal("expected error for missing Selector, got nil")
 	}
@@ -310,7 +310,7 @@ func TestNewConfiguratorSessionModel_MissingCreator(t *testing.T) {
 		Deleter:             sessionDeleterStub{},
 		ServerConfigManager: &sessionServerConfigManagerStub{},
 	}
-	_, err := newConfiguratorSessionModel(opts)
+	_, err := newConfiguratorSessionModel(opts, testSettings())
 	if err == nil {
 		t.Fatal("expected error for missing Creator, got nil")
 	}
@@ -323,7 +323,7 @@ func TestNewConfiguratorSessionModel_MissingDeleter(t *testing.T) {
 		Creator:             sessionCreatorStub{},
 		ServerConfigManager: &sessionServerConfigManagerStub{},
 	}
-	_, err := newConfiguratorSessionModel(opts)
+	_, err := newConfiguratorSessionModel(opts, testSettings())
 	if err == nil {
 		t.Fatal("expected error for missing Deleter, got nil")
 	}
@@ -336,7 +336,7 @@ func TestNewConfiguratorSessionModel_MissingServerConfigManager(t *testing.T) {
 		Creator:  sessionCreatorStub{},
 		Deleter:  sessionDeleterStub{},
 	}
-	_, err := newConfiguratorSessionModel(opts)
+	_, err := newConfiguratorSessionModel(opts, testSettings())
 	if err == nil {
 		t.Fatal("expected error for missing ServerConfigManager, got nil")
 	}

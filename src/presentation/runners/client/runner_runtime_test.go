@@ -15,6 +15,8 @@ import (
 	"tungo/infrastructure/cryptography/chacha20/rekey"
 	runnerCommon "tungo/presentation/runners/common"
 	"tungo/presentation/ui/tui"
+
+	"tungo/domain/app"
 )
 
 type runtimeTestTransport struct {
@@ -94,39 +96,29 @@ func (f runtimeTestRouterFactory) CreateRouter(
 	return f.create(ctx, connectionFactory, tunFactory, workerFactory)
 }
 
-func withClientRuntimeHooks(
-	t *testing.T,
-	interactive bool,
-	runDashboard func(context.Context, tui.RuntimeMode) (bool, error),
-) {
-	t.Helper()
-	prevTUIMode := isTUIMode
-	prevRunDashboard := runRuntimeDashboard
-	isTUIMode = func() bool { return interactive }
-	runRuntimeDashboard = runDashboard
-	t.Cleanup(func() {
-		isTUIMode = prevTUIMode
-		runRuntimeDashboard = prevRunDashboard
-	})
+func newTestRunner(uiMode app.UIMode, deps AppDependencies, factory runtimeTestRouterFactory, dashboard RuntimeDashboardFunc) *Runner {
+	r := NewRunner(uiMode, deps, factory)
+	r.runRuntimeDashboard = dashboard
+	return r
+}
+
+func blockingRouter() runtimeTestRouter {
+	return runtimeTestRouter{
+		route: func(ctx context.Context) error {
+			<-ctx.Done()
+			return ctx.Err()
+		},
+	}
 }
 
 func TestRunSession_Interactive_ReconfigureReturnsBackToModeSelection(t *testing.T) {
-	withClientRuntimeHooks(t, true, func(context.Context, tui.RuntimeMode) (bool, error) {
-		return true, nil
-	})
 	deps := &runtimeTestDeps{}
-	r := NewRunner(deps, runtimeTestRouterFactory{
+	r := newTestRunner(app.TUI, deps, runtimeTestRouterFactory{
 		create: func(_ context.Context, _ connection.Factory, _ tun.ClientManager, _ connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
-			transport := &runtimeTestTransport{}
-			device := &runtimeTestTun{}
-			router := runtimeTestRouter{
-				route: func(ctx context.Context) error {
-					<-ctx.Done()
-					return ctx.Err()
-				},
-			}
-			return router, transport, device, nil
+			return blockingRouter(), &runtimeTestTransport{}, &runtimeTestTun{}, nil
 		},
+	}, func(context.Context, tui.RuntimeMode) (bool, error) {
+		return true, nil
 	})
 
 	err := r.runSession(context.Background())
@@ -136,20 +128,13 @@ func TestRunSession_Interactive_ReconfigureReturnsBackToModeSelection(t *testing
 }
 
 func TestRunSession_Interactive_UIErrorWrappedWhenRouteCanceled(t *testing.T) {
-	withClientRuntimeHooks(t, true, func(context.Context, tui.RuntimeMode) (bool, error) {
-		return false, errors.New("ui failed")
-	})
 	deps := &runtimeTestDeps{}
-	r := NewRunner(deps, runtimeTestRouterFactory{
+	r := newTestRunner(app.TUI, deps, runtimeTestRouterFactory{
 		create: func(ctx context.Context, _ connection.Factory, _ tun.ClientManager, _ connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
-			router := runtimeTestRouter{
-				route: func(ctx context.Context) error {
-					<-ctx.Done()
-					return ctx.Err()
-				},
-			}
-			return router, &runtimeTestTransport{}, &runtimeTestTun{}, nil
+			return blockingRouter(), &runtimeTestTransport{}, &runtimeTestTun{}, nil
 		},
+	}, func(context.Context, tui.RuntimeMode) (bool, error) {
+		return false, errors.New("ui failed")
 	})
 
 	err := r.runSession(context.Background())
@@ -159,20 +144,13 @@ func TestRunSession_Interactive_UIErrorWrappedWhenRouteCanceled(t *testing.T) {
 }
 
 func TestRunSession_Interactive_UserExitErrorCancelsSession(t *testing.T) {
-	withClientRuntimeHooks(t, true, func(context.Context, tui.RuntimeMode) (bool, error) {
-		return false, tui.ErrUserExit
-	})
 	deps := &runtimeTestDeps{}
-	r := NewRunner(deps, runtimeTestRouterFactory{
+	r := newTestRunner(app.TUI, deps, runtimeTestRouterFactory{
 		create: func(_ context.Context, _ connection.Factory, _ tun.ClientManager, _ connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
-			router := runtimeTestRouter{
-				route: func(ctx context.Context) error {
-					<-ctx.Done()
-					return ctx.Err()
-				},
-			}
-			return router, &runtimeTestTransport{}, &runtimeTestTun{}, nil
+			return blockingRouter(), &runtimeTestTransport{}, &runtimeTestTun{}, nil
 		},
+	}, func(context.Context, tui.RuntimeMode) (bool, error) {
+		return false, tui.ErrUserExit
 	})
 
 	err := r.runSession(context.Background())
@@ -182,11 +160,8 @@ func TestRunSession_Interactive_UserExitErrorCancelsSession(t *testing.T) {
 }
 
 func TestRunSession_Interactive_RouteErrorWins(t *testing.T) {
-	withClientRuntimeHooks(t, true, func(context.Context, tui.RuntimeMode) (bool, error) {
-		return false, errors.New("ui failed")
-	})
 	deps := &runtimeTestDeps{}
-	r := NewRunner(deps, runtimeTestRouterFactory{
+	r := newTestRunner(app.TUI, deps, runtimeTestRouterFactory{
 		create: func(context.Context, connection.Factory, tun.ClientManager, connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
 			router := runtimeTestRouter{
 				route: func(context.Context) error {
@@ -195,6 +170,8 @@ func TestRunSession_Interactive_RouteErrorWins(t *testing.T) {
 			}
 			return router, &runtimeTestTransport{}, &runtimeTestTun{}, nil
 		},
+	}, func(context.Context, tui.RuntimeMode) (bool, error) {
+		return false, errors.New("ui failed")
 	})
 
 	err := r.runSession(context.Background())
@@ -204,16 +181,11 @@ func TestRunSession_Interactive_RouteErrorWins(t *testing.T) {
 }
 
 func TestRunSession_NonInteractive_UsesRouterDirectly(t *testing.T) {
-	withClientRuntimeHooks(t, false, func(context.Context, tui.RuntimeMode) (bool, error) {
-		return false, nil
-	})
 	deps := &runtimeTestDeps{}
-	r := NewRunner(deps, runtimeTestRouterFactory{
+	r := NewRunner(app.CLI, deps, runtimeTestRouterFactory{
 		create: func(context.Context, connection.Factory, tun.ClientManager, connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
 			router := runtimeTestRouter{
-				route: func(context.Context) error {
-					return nil
-				},
+				route: func(context.Context) error { return nil },
 			}
 			return router, &runtimeTestTransport{}, &runtimeTestTun{}, nil
 		},
@@ -225,11 +197,8 @@ func TestRunSession_NonInteractive_UsesRouterDirectly(t *testing.T) {
 }
 
 func TestRun_CancelDuringReconnectDelay(t *testing.T) {
-	withClientRuntimeHooks(t, false, func(context.Context, tui.RuntimeMode) (bool, error) {
-		return false, nil
-	})
 	deps := &runtimeTestDeps{}
-	r := NewRunner(deps, runtimeTestRouterFactory{
+	r := NewRunner(app.CLI, deps, runtimeTestRouterFactory{
 		create: func(context.Context, connection.Factory, tun.ClientManager, connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
 			router := runtimeTestRouter{
 				route: func(context.Context) error { return errors.New("boom") },
@@ -255,12 +224,8 @@ func TestRun_CancelDuringReconnectDelay(t *testing.T) {
 
 func TestRunSession_RouteErrorBranch_WaitsUIAndReturnsRouteErr(t *testing.T) {
 	routeStarted := make(chan struct{})
-	withClientRuntimeHooks(t, true, func(context.Context, tui.RuntimeMode) (bool, error) {
-		<-routeStarted
-		return false, errors.New("ui branch error")
-	})
 	deps := &runtimeTestDeps{}
-	r := NewRunner(deps, runtimeTestRouterFactory{
+	r := newTestRunner(app.TUI, deps, runtimeTestRouterFactory{
 		create: func(context.Context, connection.Factory, tun.ClientManager, connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
 			router := runtimeTestRouter{
 				route: func(context.Context) error {
@@ -270,6 +235,9 @@ func TestRunSession_RouteErrorBranch_WaitsUIAndReturnsRouteErr(t *testing.T) {
 			}
 			return router, &runtimeTestTransport{}, &runtimeTestTun{}, nil
 		},
+	}, func(context.Context, tui.RuntimeMode) (bool, error) {
+		<-routeStarted
+		return false, errors.New("ui branch error")
 	})
 
 	err := r.runSession(context.Background())
@@ -279,11 +247,8 @@ func TestRunSession_RouteErrorBranch_WaitsUIAndReturnsRouteErr(t *testing.T) {
 }
 
 func TestRunSession_UserQuitReturnsRouteErrWhenNotCanceled(t *testing.T) {
-	withClientRuntimeHooks(t, true, func(context.Context, tui.RuntimeMode) (bool, error) {
-		return true, nil
-	})
 	deps := &runtimeTestDeps{}
-	r := NewRunner(deps, runtimeTestRouterFactory{
+	r := newTestRunner(app.TUI, deps, runtimeTestRouterFactory{
 		create: func(context.Context, connection.Factory, tun.ClientManager, connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
 			router := runtimeTestRouter{
 				route: func(context.Context) error {
@@ -292,6 +257,8 @@ func TestRunSession_UserQuitReturnsRouteErrWhenNotCanceled(t *testing.T) {
 			}
 			return router, &runtimeTestTransport{}, &runtimeTestTun{}, nil
 		},
+	}, func(context.Context, tui.RuntimeMode) (bool, error) {
+		return true, nil
 	})
 
 	err := r.runSession(context.Background())
@@ -301,11 +268,8 @@ func TestRunSession_UserQuitReturnsRouteErrWhenNotCanceled(t *testing.T) {
 }
 
 func TestRunSession_UICompletesWithoutQuit_ReturnsRouteChannelResult(t *testing.T) {
-	withClientRuntimeHooks(t, true, func(context.Context, tui.RuntimeMode) (bool, error) {
-		return false, nil
-	})
 	deps := &runtimeTestDeps{}
-	r := NewRunner(deps, runtimeTestRouterFactory{
+	r := newTestRunner(app.TUI, deps, runtimeTestRouterFactory{
 		create: func(context.Context, connection.Factory, tun.ClientManager, connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
 			router := runtimeTestRouter{
 				route: func(context.Context) error {
@@ -314,6 +278,8 @@ func TestRunSession_UICompletesWithoutQuit_ReturnsRouteChannelResult(t *testing.
 			}
 			return router, &runtimeTestTransport{}, &runtimeTestTun{}, nil
 		},
+	}, func(context.Context, tui.RuntimeMode) (bool, error) {
+		return false, nil
 	})
 
 	err := r.runSession(context.Background())
@@ -323,11 +289,8 @@ func TestRunSession_UICompletesWithoutQuit_ReturnsRouteChannelResult(t *testing.
 }
 
 func TestRunSession_Interactive_UserExitError_RouteRealError_ReturnsRouteError(t *testing.T) {
-	withClientRuntimeHooks(t, true, func(context.Context, tui.RuntimeMode) (bool, error) {
-		return false, tui.ErrUserExit
-	})
 	deps := &runtimeTestDeps{}
-	r := NewRunner(deps, runtimeTestRouterFactory{
+	r := newTestRunner(app.TUI, deps, runtimeTestRouterFactory{
 		create: func(context.Context, connection.Factory, tun.ClientManager, connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
 			router := runtimeTestRouter{
 				route: func(context.Context) error {
@@ -336,6 +299,8 @@ func TestRunSession_Interactive_UserExitError_RouteRealError_ReturnsRouteError(t
 			}
 			return router, &runtimeTestTransport{}, &runtimeTestTun{}, nil
 		},
+	}, func(context.Context, tui.RuntimeMode) (bool, error) {
+		return false, tui.ErrUserExit
 	})
 
 	err := r.runSession(context.Background())
@@ -346,11 +311,8 @@ func TestRunSession_Interactive_UserExitError_RouteRealError_ReturnsRouteError(t
 
 func TestRun_ReconnectDelayAndReconfigure(t *testing.T) {
 	callCount := 0
-	withClientRuntimeHooks(t, false, func(context.Context, tui.RuntimeMode) (bool, error) {
-		return false, nil
-	})
 	deps := &runtimeTestDeps{}
-	r := NewRunner(deps, runtimeTestRouterFactory{
+	r := NewRunner(app.CLI, deps, runtimeTestRouterFactory{
 		create: func(context.Context, connection.Factory, tun.ClientManager, connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
 			callCount++
 			router := runtimeTestRouter{
@@ -375,20 +337,13 @@ func TestRun_ReconnectDelayAndReconfigure(t *testing.T) {
 }
 
 func TestRun_ReconfigureRequestedPropagates(t *testing.T) {
-	withClientRuntimeHooks(t, true, func(context.Context, tui.RuntimeMode) (bool, error) {
-		return true, nil // reconfigure
-	})
 	deps := &runtimeTestDeps{}
-	r := NewRunner(deps, runtimeTestRouterFactory{
+	r := newTestRunner(app.TUI, deps, runtimeTestRouterFactory{
 		create: func(context.Context, connection.Factory, tun.ClientManager, connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
-			router := runtimeTestRouter{
-				route: func(ctx context.Context) error {
-					<-ctx.Done()
-					return ctx.Err()
-				},
-			}
-			return router, &runtimeTestTransport{}, &runtimeTestTun{}, nil
+			return blockingRouter(), &runtimeTestTransport{}, &runtimeTestTun{}, nil
 		},
+	}, func(context.Context, tui.RuntimeMode) (bool, error) {
+		return true, nil // reconfigure
 	})
 
 	err := r.Run(context.Background())
@@ -398,11 +353,8 @@ func TestRun_ReconfigureRequestedPropagates(t *testing.T) {
 }
 
 func TestRun_ContextAlreadyCanceled(t *testing.T) {
-	withClientRuntimeHooks(t, false, func(context.Context, tui.RuntimeMode) (bool, error) {
-		return false, nil
-	})
 	deps := &runtimeTestDeps{}
-	r := NewRunner(deps, runtimeTestRouterFactory{
+	r := NewRunner(app.CLI, deps, runtimeTestRouterFactory{
 		create: func(context.Context, connection.Factory, tun.ClientManager, connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
 			return runtimeTestRouter{route: func(context.Context) error { return nil }}, &runtimeTestTransport{}, &runtimeTestTun{}, nil
 		},
@@ -419,12 +371,8 @@ func TestRun_ContextAlreadyCanceled(t *testing.T) {
 func TestRunSession_Interactive_UIGenericError_RouteRealError_ReturnsRouteError(t *testing.T) {
 	uiStarted := make(chan struct{})
 	routeBlock := make(chan struct{})
-	withClientRuntimeHooks(t, true, func(context.Context, tui.RuntimeMode) (bool, error) {
-		close(uiStarted)
-		return false, errors.New("ui generic error")
-	})
 	deps := &runtimeTestDeps{}
-	r := NewRunner(deps, runtimeTestRouterFactory{
+	r := newTestRunner(app.TUI, deps, runtimeTestRouterFactory{
 		create: func(context.Context, connection.Factory, tun.ClientManager, connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
 			router := runtimeTestRouter{
 				route: func(context.Context) error {
@@ -435,13 +383,15 @@ func TestRunSession_Interactive_UIGenericError_RouteRealError_ReturnsRouteError(
 			}
 			return router, &runtimeTestTransport{}, &runtimeTestTun{}, nil
 		},
+	}, func(context.Context, tui.RuntimeMode) (bool, error) {
+		close(uiStarted)
+		return false, errors.New("ui generic error")
 	})
 
 	done := make(chan error, 1)
 	go func() {
 		done <- r.runSession(context.Background())
 	}()
-	// Allow route to finish after UI has returned.
 	time.Sleep(50 * time.Millisecond)
 	close(routeBlock)
 
@@ -452,13 +402,10 @@ func TestRunSession_Interactive_UIGenericError_RouteRealError_ReturnsRouteError(
 }
 
 func TestRun_LogsDisposeErrorBranches(t *testing.T) {
-	withClientRuntimeHooks(t, false, func(context.Context, tui.RuntimeMode) (bool, error) {
-		return false, nil
-	})
 	deps := &runtimeTestDeps{
 		tun: runtimeTestTunManager{disposeErr: errors.New("dispose error")},
 	}
-	r := NewRunner(deps, runtimeTestRouterFactory{
+	r := NewRunner(app.CLI, deps, runtimeTestRouterFactory{
 		create: func(context.Context, connection.Factory, tun.ClientManager, connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
 			router := runtimeTestRouter{
 				route: func(context.Context) error { return nil },

@@ -71,6 +71,7 @@ type ConfiguratorSessionOptions struct {
 	Deleter             clientConfiguration.Deleter
 	ClientConfigManager clientConfiguration.ConfigurationManager
 	ServerConfigManager serverConfiguration.ConfigurationManager
+	ServerSupported     bool
 }
 
 type configuratorScreen int
@@ -106,7 +107,8 @@ const (
 )
 
 type configuratorSessionModel struct {
-	options ConfiguratorSessionOptions
+	settings *uiPreferencesProvider
+	options  ConfiguratorSessionOptions
 
 	width  int
 	height int
@@ -155,7 +157,8 @@ type configuratorSessionModel struct {
 func RunConfiguratorSession(options ConfiguratorSessionOptions) (selectedMode mode.Mode, err error) {
 	defer clearTerminalAfterTUI()
 
-	model, err := newConfiguratorSessionModel(options)
+	settings := loadUISettingsFromDisk()
+	model, err := newConfiguratorSessionModel(options, settings)
 	if err != nil {
 		return mode.Unknown, err
 	}
@@ -176,21 +179,24 @@ func RunConfiguratorSession(options ConfiguratorSessionOptions) (selectedMode mo
 	return result.resultMode, nil
 }
 
-func newConfiguratorSessionModel(options ConfiguratorSessionOptions) (configuratorSessionModel, error) {
+func newConfiguratorSessionModel(options ConfiguratorSessionOptions, settings *uiPreferencesProvider) (configuratorSessionModel, error) {
+	modeOptions := []string{sessionModeClient}
+	if options.ServerSupported {
+		modeOptions = append(modeOptions, sessionModeServer)
+	}
+
 	model := configuratorSessionModel{
-		options: options,
-		screen:  configuratorScreenMode,
-		cursor:  0,
-		modeOptions: []string{
-			sessionModeClient,
-			sessionModeServer,
-		},
+		settings:    settings,
+		options:     options,
+		screen:      configuratorScreenMode,
+		cursor:      0,
+		modeOptions: modeOptions,
 		serverMenuOptions: []string{
 			sessionServerStart,
 			sessionServerAdd,
 			sessionServerManage,
 		},
-		preferences: CurrentUIPreferences(),
+		preferences: settings.Preferences(),
 		logViewport: viewport.New(1, 8),
 		logReady:    true,
 		logFollow:   true,
@@ -332,8 +338,8 @@ func (m configuratorSessionModel) View() string {
 		)
 	case configuratorScreenClientAddName:
 		styles := resolveUIStyles(m.preferences)
-		container := inputContainerStyle().Width(m.inputContainerWidth())
-		stats := metaTextStyle().Render("Characters: " + formatCount(utf8.RuneCountInString(m.addNameInput.Value()), m.addNameInput.CharLimit))
+		container := styles.inputFrame.Width(m.inputContainerWidth())
+		stats := styles.meta.Render("Characters: " + formatCount(utf8.RuneCountInString(m.addNameInput.Value()), m.addNameInput.CharLimit))
 		body := make([]string, 0, 4)
 		if strings.TrimSpace(m.notice) != "" {
 			body = append(body, m.notice, "")
@@ -351,12 +357,12 @@ func (m configuratorSessionModel) View() string {
 		)
 	case configuratorScreenClientAddJSON:
 		styles := resolveUIStyles(m.preferences)
-		container := inputContainerStyle().Width(m.inputContainerWidth())
+		container := styles.inputFrame.Width(m.inputContainerWidth())
 		lines := 1
 		if value := m.addJSONInput.Value(); value != "" {
 			lines = len(strings.Split(value, "\n"))
 		}
-		stats := metaTextStyle().Render(fmt.Sprintf("Lines: %d", lines))
+		stats := styles.meta.Render(fmt.Sprintf("Lines: %d", lines))
 		body := make([]string, 0, 4)
 		if strings.TrimSpace(m.notice) != "" {
 			body = append(body, m.notice, "")
@@ -865,7 +871,7 @@ func (m configuratorSessionModel) cycleTab() (tea.Model, tea.Cmd) {
 	default:
 		m.tab = configuratorTabMain
 	}
-	m.preferences = CurrentUIPreferences()
+	m.preferences = m.settings.Preferences()
 	if m.tab == configuratorTabLogs {
 		m.restartLogWait()
 		m.logTickSeq++
@@ -892,13 +898,13 @@ func (m configuratorSessionModel) updateSettingsTab(msg tea.KeyMsg) (tea.Model, 
 		m.settingsCursor = settingsCursorDown(m.settingsCursor)
 	case "left", "h":
 		prevTheme := m.preferences.Theme
-		m.preferences = applySettingsChange(m.settingsCursor, -1)
+		m.preferences = applySettingsChange(m.settings, m.settingsCursor, -1)
 		if m.settingsCursor == settingsThemeRow && m.preferences.Theme != prevTheme {
 			cmd = tea.ClearScreen
 		}
 	case "right", "l", "enter":
 		prevTheme := m.preferences.Theme
-		m.preferences = applySettingsChange(m.settingsCursor, 1)
+		m.preferences = applySettingsChange(m.settings, m.settingsCursor, 1)
 		if m.settingsCursor == settingsThemeRow && m.preferences.Theme != prevTheme {
 			cmd = tea.ClearScreen
 		}
@@ -939,10 +945,10 @@ func (m configuratorSessionModel) updateLogsTab(msg tea.KeyMsg) (tea.Model, tea.
 	}
 	switch msg.String() {
 	case "up", "k":
-		m.logViewport.LineUp(1)
+		m.logViewport.ScrollUp(1)
 		m.logFollow = false
 	case "down", "j":
-		m.logViewport.LineDown(1)
+		m.logViewport.ScrollDown(1)
 		m.logFollow = m.logViewport.AtBottom()
 	}
 	return m, nil
@@ -1010,7 +1016,7 @@ func (m *configuratorSessionModel) adjustInputsToViewport() {
 		return
 	}
 	contentWidth := contentWidthForTerminal(m.width)
-	available := maxInt(1, contentWidth-inputContainerStyle().GetHorizontalFrameSize())
+	available := maxInt(1, contentWidth-resolveUIStyles(m.preferences).inputFrame.GetHorizontalFrameSize())
 	m.addNameInput.Width = minInt(40, available)
 	m.addJSONInput.SetWidth(minInt(80, available))
 	if m.height > 18 {
@@ -1053,7 +1059,7 @@ func (m configuratorSessionModel) inputContainerWidth() int {
 	if m.width > 0 {
 		return maxInt(1, contentWidthForTerminal(m.width))
 	}
-	return 40 + inputContainerStyle().GetHorizontalFrameSize()
+	return 40 + resolveUIStyles(m.preferences).inputFrame.GetHorizontalFrameSize()
 }
 
 func (m configuratorSessionModel) settingsTabView() string {
