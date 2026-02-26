@@ -908,6 +908,39 @@ func TestUnifiedSession_WaitForMode_DoneWithoutError(t *testing.T) {
 	}
 }
 
+func TestUnifiedSession_WaitForMode_DoneDrainsBufferedExitEvent(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	done := make(chan struct{})
+	s := &UnifiedSession{events: events, done: done}
+
+	// Buffer an exit event and close done simultaneously — simulates the race
+	// where the model sends unifiedEventExit right before program.Run returns.
+	events <- unifiedEvent{kind: unifiedEventExit}
+	close(done)
+
+	_, err := s.WaitForMode()
+	if !errors.Is(err, ErrUnifiedSessionQuit) {
+		t.Fatalf("expected ErrUnifiedSessionQuit (drained), got %v", err)
+	}
+}
+
+func TestUnifiedSession_WaitForMode_DoneDrainsBufferedModeEvent(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	done := make(chan struct{})
+	s := &UnifiedSession{events: events, done: done}
+
+	events <- unifiedEvent{kind: unifiedEventModeSelected, mode: mode.Client}
+	close(done)
+
+	m, err := s.WaitForMode()
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if m != mode.Client {
+		t.Fatalf("expected mode.Client (drained), got %v", m)
+	}
+}
+
 func TestUnifiedSession_WaitForRuntimeExit_Reconfigure(t *testing.T) {
 	events := make(chan unifiedEvent, 4)
 	done := make(chan struct{})
@@ -1028,6 +1061,37 @@ func TestUnifiedSession_WaitForRuntimeExit_DoneWithoutError(t *testing.T) {
 	_, err := s.WaitForRuntimeExit()
 	if !errors.Is(err, ErrUnifiedSessionClosed) {
 		t.Fatalf("expected ErrUnifiedSessionClosed, got %v", err)
+	}
+}
+
+func TestUnifiedSession_WaitForRuntimeExit_DoneDrainsBufferedExitEvent(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	done := make(chan struct{})
+	s := &UnifiedSession{events: events, done: done}
+
+	events <- unifiedEvent{kind: unifiedEventExit}
+	close(done)
+
+	_, err := s.WaitForRuntimeExit()
+	if !errors.Is(err, ErrUnifiedSessionQuit) {
+		t.Fatalf("expected ErrUnifiedSessionQuit (drained), got %v", err)
+	}
+}
+
+func TestUnifiedSession_WaitForRuntimeExit_DoneDrainsBufferedReconfigureEvent(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	done := make(chan struct{})
+	s := &UnifiedSession{events: events, done: done}
+
+	events <- unifiedEvent{kind: unifiedEventReconfigure}
+	close(done)
+
+	reconfigure, err := s.WaitForRuntimeExit()
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !reconfigure {
+		t.Fatal("expected reconfigure=true (drained)")
 	}
 }
 

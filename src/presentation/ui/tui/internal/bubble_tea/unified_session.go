@@ -408,6 +408,9 @@ func (s *UnifiedSession) WaitForMode() (mode.Mode, error) {
 				continue
 			}
 		case <-s.done:
+			if m, err := s.drainModeEvent(); m != mode.Unknown || err != nil {
+				return m, err
+			}
 			if s.err != nil {
 				return mode.Unknown, s.err
 			}
@@ -443,10 +446,69 @@ func (s *UnifiedSession) WaitForRuntimeExit() (reconfigure bool, err error) {
 				return true, nil
 			}
 		case <-s.done:
+			if r, err := s.drainRuntimeEvent(); r || err != nil {
+				return r, err
+			}
 			if s.err != nil {
 				return false, s.err
 			}
 			return false, ErrUnifiedSessionClosed
+		}
+	}
+}
+
+// drainModeEvent reads any buffered events that arrived before the done
+// channel was selected. This resolves the race where the model sends an event
+// and the program exits at the same time — Go's select may pick done first.
+// Returns (mode.Unknown, nil) when no relevant event was buffered.
+func (s *UnifiedSession) drainModeEvent() (mode.Mode, error) {
+	for {
+		select {
+		case event, ok := <-s.events:
+			if !ok {
+				return mode.Unknown, nil
+			}
+			switch event.kind {
+			case unifiedEventModeSelected:
+				return event.mode, nil
+			case unifiedEventExit:
+				return mode.Unknown, ErrUnifiedSessionQuit
+			case unifiedEventError:
+				return mode.Unknown, event.err
+			default:
+				continue
+			}
+		default:
+			return mode.Unknown, nil
+		}
+	}
+}
+
+// drainRuntimeEvent reads any buffered events that arrived before the done
+// channel was selected. Returns (false, nil) when no relevant event was buffered.
+func (s *UnifiedSession) drainRuntimeEvent() (reconfigure bool, err error) {
+	for {
+		select {
+		case event, ok := <-s.events:
+			if !ok {
+				return false, nil
+			}
+			switch event.kind {
+			case unifiedEventReconfigure:
+				return true, nil
+			case unifiedEventRuntimeDisconnected:
+				return false, ErrUnifiedSessionRuntimeDisconnected
+			case unifiedEventExit:
+				return false, ErrUnifiedSessionQuit
+			case unifiedEventError:
+				return false, event.err
+			case unifiedEventModeSelected:
+				return true, nil
+			default:
+				continue
+			}
+		default:
+			return false, nil
 		}
 	}
 }
