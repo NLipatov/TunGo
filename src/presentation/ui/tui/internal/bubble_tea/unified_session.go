@@ -305,6 +305,16 @@ func (m unifiedSessionModel) sendEvent(event unifiedEvent) {
 	m.events <- event
 }
 
+// contextDoneChan returns ctx.Done() if ctx is non-nil, or nil otherwise.
+// A nil channel in select is never selected, so this is safe to use in
+// select cases when the context may not be set.
+func contextDoneChan(ctx context.Context) <-chan struct{} {
+	if ctx == nil {
+		return nil
+	}
+	return ctx.Done()
+}
+
 // --- Context done message ---
 
 type contextDoneMsg struct{}
@@ -352,6 +362,7 @@ type UnifiedSession struct {
 	done      chan struct{}
 	closeOnce sync.Once
 	err       error
+	appCtx    context.Context
 }
 
 var newUnifiedSessionProgram = func(model tea.Model) *tea.Program {
@@ -372,6 +383,7 @@ func NewUnifiedSession(appCtx context.Context, configOpts ConfiguratorSessionOpt
 		program: program,
 		events:  events,
 		done:    make(chan struct{}),
+		appCtx:  appCtx,
 	}
 
 	go func() {
@@ -390,6 +402,7 @@ func NewUnifiedSession(appCtx context.Context, configOpts ConfiguratorSessionOpt
 
 // WaitForMode blocks until the user selects a mode in the configurator phase.
 func (s *UnifiedSession) WaitForMode() (mode.Mode, error) {
+	appCtxDone := contextDoneChan(s.appCtx)
 	for {
 		select {
 		case event, ok := <-s.events:
@@ -415,6 +428,8 @@ func (s *UnifiedSession) WaitForMode() (mode.Mode, error) {
 				return mode.Unknown, s.err
 			}
 			return mode.Unknown, ErrUnifiedSessionClosed
+		case <-appCtxDone:
+			return mode.Unknown, ErrUnifiedSessionQuit
 		}
 	}
 }
@@ -426,6 +441,7 @@ func (s *UnifiedSession) ActivateRuntime(ctx context.Context, options RuntimeDas
 
 // WaitForRuntimeExit blocks until the runtime phase ends (reconfigure or exit).
 func (s *UnifiedSession) WaitForRuntimeExit() (reconfigure bool, err error) {
+	appCtxDone := contextDoneChan(s.appCtx)
 	for {
 		select {
 		case event, ok := <-s.events:
@@ -453,6 +469,8 @@ func (s *UnifiedSession) WaitForRuntimeExit() (reconfigure bool, err error) {
 				return false, s.err
 			}
 			return false, ErrUnifiedSessionClosed
+		case <-appCtxDone:
+			return false, ErrUnifiedSessionQuit
 		}
 	}
 }

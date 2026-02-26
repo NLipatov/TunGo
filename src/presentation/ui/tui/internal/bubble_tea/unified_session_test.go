@@ -1463,6 +1463,79 @@ func TestUnifiedSession_Done_ReturnsChannel(t *testing.T) {
 	}
 }
 
+// --- WaitForMode / WaitForRuntimeExit: appCtx cancellation ---
+
+func TestUnifiedSession_WaitForMode_AppCtxCancelled(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	done := make(chan struct{}) // never closed — simulates stuck tea.Program
+	ctx, cancel := context.WithCancel(context.Background())
+	s := &UnifiedSession{events: events, done: done, appCtx: ctx}
+
+	cancel()
+
+	m, err := s.WaitForMode()
+	if !errors.Is(err, ErrUnifiedSessionQuit) {
+		t.Fatalf("expected ErrUnifiedSessionQuit, got %v", err)
+	}
+	if m != mode.Unknown {
+		t.Fatalf("expected mode.Unknown, got %v", m)
+	}
+}
+
+func TestUnifiedSession_WaitForRuntimeExit_AppCtxCancelled(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	done := make(chan struct{}) // never closed — simulates stuck tea.Program
+	ctx, cancel := context.WithCancel(context.Background())
+	s := &UnifiedSession{events: events, done: done, appCtx: ctx}
+
+	cancel()
+
+	reconfigure, err := s.WaitForRuntimeExit()
+	if !errors.Is(err, ErrUnifiedSessionQuit) {
+		t.Fatalf("expected ErrUnifiedSessionQuit, got %v", err)
+	}
+	if reconfigure {
+		t.Fatal("expected reconfigure=false")
+	}
+}
+
+func TestUnifiedSession_WaitForMode_NilAppCtx(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	done := make(chan struct{})
+	s := &UnifiedSession{events: events, done: done} // appCtx is nil
+
+	// With nil appCtx, the context case is never selected — events still work.
+	go func() {
+		events <- unifiedEvent{kind: unifiedEventModeSelected, mode: mode.Client}
+	}()
+
+	m, err := s.WaitForMode()
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if m != mode.Client {
+		t.Fatalf("expected mode.Client, got %v", m)
+	}
+}
+
+func TestUnifiedSession_WaitForRuntimeExit_NilAppCtx(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	done := make(chan struct{})
+	s := &UnifiedSession{events: events, done: done} // appCtx is nil
+
+	go func() {
+		events <- unifiedEvent{kind: unifiedEventReconfigure}
+	}()
+
+	reconfigure, err := s.WaitForRuntimeExit()
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !reconfigure {
+		t.Fatal("expected reconfigure=true")
+	}
+}
+
 func withNoTTYUnifiedSession(t *testing.T) {
 	t.Helper()
 	prev := newUnifiedSessionProgram
