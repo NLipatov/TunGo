@@ -15,6 +15,13 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
+// errReader is an io.Reader that always returns an error.
+type errReader struct{}
+
+func (errReader) Read([]byte) (int, error) {
+	return 0, errors.New("read error")
+}
+
 func defaultUnifiedConfigOpts() ConfiguratorSessionOptions {
 	return ConfiguratorSessionOptions{
 		Observer:            sessionObserverStub{},
@@ -908,6 +915,39 @@ func TestUnifiedSession_WaitForMode_DoneWithoutError(t *testing.T) {
 	}
 }
 
+func TestUnifiedSession_WaitForMode_DoneDrainsBufferedExitEvent(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	done := make(chan struct{})
+	s := &UnifiedSession{events: events, done: done}
+
+	// Buffer an exit event and close done simultaneously — simulates the race
+	// where the model sends unifiedEventExit right before program.Run returns.
+	events <- unifiedEvent{kind: unifiedEventExit}
+	close(done)
+
+	_, err := s.WaitForMode()
+	if !errors.Is(err, ErrUnifiedSessionQuit) {
+		t.Fatalf("expected ErrUnifiedSessionQuit (drained), got %v", err)
+	}
+}
+
+func TestUnifiedSession_WaitForMode_DoneDrainsBufferedModeEvent(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	done := make(chan struct{})
+	s := &UnifiedSession{events: events, done: done}
+
+	events <- unifiedEvent{kind: unifiedEventModeSelected, mode: mode.Client}
+	close(done)
+
+	m, err := s.WaitForMode()
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if m != mode.Client {
+		t.Fatalf("expected mode.Client (drained), got %v", m)
+	}
+}
+
 func TestUnifiedSession_WaitForRuntimeExit_Reconfigure(t *testing.T) {
 	events := make(chan unifiedEvent, 4)
 	done := make(chan struct{})
@@ -1029,6 +1069,374 @@ func TestUnifiedSession_WaitForRuntimeExit_DoneWithoutError(t *testing.T) {
 	if !errors.Is(err, ErrUnifiedSessionClosed) {
 		t.Fatalf("expected ErrUnifiedSessionClosed, got %v", err)
 	}
+}
+
+func TestUnifiedSession_WaitForRuntimeExit_DoneDrainsBufferedExitEvent(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	done := make(chan struct{})
+	s := &UnifiedSession{events: events, done: done}
+
+	events <- unifiedEvent{kind: unifiedEventExit}
+	close(done)
+
+	_, err := s.WaitForRuntimeExit()
+	if !errors.Is(err, ErrUnifiedSessionQuit) {
+		t.Fatalf("expected ErrUnifiedSessionQuit (drained), got %v", err)
+	}
+}
+
+func TestUnifiedSession_WaitForRuntimeExit_DoneDrainsBufferedReconfigureEvent(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	done := make(chan struct{})
+	s := &UnifiedSession{events: events, done: done}
+
+	events <- unifiedEvent{kind: unifiedEventReconfigure}
+	close(done)
+
+	reconfigure, err := s.WaitForRuntimeExit()
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !reconfigure {
+		t.Fatal("expected reconfigure=true (drained)")
+	}
+}
+
+// --- drainModeEvent edge cases ---
+
+func TestUnifiedSession_WaitForMode_DoneDrainsBufferedErrorEvent(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	done := make(chan struct{})
+	s := &UnifiedSession{events: events, done: done}
+
+	events <- unifiedEvent{kind: unifiedEventError, err: errors.New("model error")}
+	close(done)
+
+	_, err := s.WaitForMode()
+	if err == nil || err.Error() != "model error" {
+		t.Fatalf("expected 'model error' (drained), got %v", err)
+	}
+}
+
+func TestUnifiedSession_WaitForMode_DoneDrainsSkipsIrrelevantEvent(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	done := make(chan struct{})
+	s := &UnifiedSession{events: events, done: done}
+
+	// Reconfigure is irrelevant during WaitForMode — drain should skip it
+	// and then find the exit event.
+	events <- unifiedEvent{kind: unifiedEventReconfigure}
+	events <- unifiedEvent{kind: unifiedEventExit}
+	close(done)
+
+	_, err := s.WaitForMode()
+	if !errors.Is(err, ErrUnifiedSessionQuit) {
+		t.Fatalf("expected ErrUnifiedSessionQuit after skipping reconfigure, got %v", err)
+	}
+}
+
+func TestUnifiedSession_WaitForMode_DoneDrainsClosedChannel(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	done := make(chan struct{})
+	s := &UnifiedSession{events: events, done: done}
+
+	close(events)
+	close(done)
+
+	_, err := s.WaitForMode()
+	// Drain reads !ok from closed channel → returns (Unknown, nil) → falls through to ErrUnifiedSessionClosed.
+	if !errors.Is(err, ErrUnifiedSessionClosed) {
+		t.Fatalf("expected ErrUnifiedSessionClosed for closed events channel, got %v", err)
+	}
+}
+
+// --- drainRuntimeEvent edge cases ---
+
+func TestUnifiedSession_WaitForRuntimeExit_DoneDrainsBufferedErrorEvent(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	done := make(chan struct{})
+	s := &UnifiedSession{events: events, done: done}
+
+	events <- unifiedEvent{kind: unifiedEventError, err: errors.New("runtime error")}
+	close(done)
+
+	_, err := s.WaitForRuntimeExit()
+	if err == nil || err.Error() != "runtime error" {
+		t.Fatalf("expected 'runtime error' (drained), got %v", err)
+	}
+}
+
+func TestUnifiedSession_WaitForRuntimeExit_DoneDrainsBufferedDisconnectedEvent(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	done := make(chan struct{})
+	s := &UnifiedSession{events: events, done: done}
+
+	events <- unifiedEvent{kind: unifiedEventRuntimeDisconnected}
+	close(done)
+
+	_, err := s.WaitForRuntimeExit()
+	if !errors.Is(err, ErrUnifiedSessionRuntimeDisconnected) {
+		t.Fatalf("expected ErrUnifiedSessionRuntimeDisconnected (drained), got %v", err)
+	}
+}
+
+func TestUnifiedSession_WaitForRuntimeExit_DoneDrainsBufferedModeSelectedEvent(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	done := make(chan struct{})
+	s := &UnifiedSession{events: events, done: done}
+
+	events <- unifiedEvent{kind: unifiedEventModeSelected, mode: mode.Client}
+	close(done)
+
+	reconfigure, err := s.WaitForRuntimeExit()
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !reconfigure {
+		t.Fatal("expected reconfigure=true for drained modeSelected")
+	}
+}
+
+func TestUnifiedSession_WaitForRuntimeExit_DoneDrainsSkipsIrrelevantEvent(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	done := make(chan struct{})
+	s := &UnifiedSession{events: events, done: done}
+
+	// unifiedEventKind(99) is unknown — drain should skip it via default,
+	// then find the exit event.
+	events <- unifiedEvent{kind: unifiedEventKind(99)}
+	events <- unifiedEvent{kind: unifiedEventExit}
+	close(done)
+
+	_, err := s.WaitForRuntimeExit()
+	if !errors.Is(err, ErrUnifiedSessionQuit) {
+		t.Fatalf("expected ErrUnifiedSessionQuit after skipping unknown event, got %v", err)
+	}
+}
+
+func TestUnifiedSession_WaitForRuntimeExit_DoneDrainsClosedChannel(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	done := make(chan struct{})
+	s := &UnifiedSession{events: events, done: done}
+
+	close(events)
+	close(done)
+
+	_, err := s.WaitForRuntimeExit()
+	if !errors.Is(err, ErrUnifiedSessionClosed) {
+		t.Fatalf("expected ErrUnifiedSessionClosed for closed events channel, got %v", err)
+	}
+}
+
+// --- drainModeEvent direct tests ---
+
+func TestDrainModeEvent_EmptyBuffer(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	s := &UnifiedSession{events: events}
+
+	m, err := s.drainModeEvent()
+	if m != mode.Unknown || err != nil {
+		t.Fatalf("expected (Unknown, nil), got (%v, %v)", m, err)
+	}
+}
+
+func TestDrainModeEvent_ClosedChannel(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	close(events)
+	s := &UnifiedSession{events: events}
+
+	m, err := s.drainModeEvent()
+	if m != mode.Unknown || err != nil {
+		t.Fatalf("expected (Unknown, nil) for closed channel, got (%v, %v)", m, err)
+	}
+}
+
+func TestDrainModeEvent_ModeSelected(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	events <- unifiedEvent{kind: unifiedEventModeSelected, mode: mode.Server}
+	s := &UnifiedSession{events: events}
+
+	m, err := s.drainModeEvent()
+	if err != nil || m != mode.Server {
+		t.Fatalf("expected (Server, nil), got (%v, %v)", m, err)
+	}
+}
+
+func TestDrainModeEvent_ExitEvent(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	events <- unifiedEvent{kind: unifiedEventExit}
+	s := &UnifiedSession{events: events}
+
+	m, err := s.drainModeEvent()
+	if m != mode.Unknown || !errors.Is(err, ErrUnifiedSessionQuit) {
+		t.Fatalf("expected (Unknown, ErrUnifiedSessionQuit), got (%v, %v)", m, err)
+	}
+}
+
+func TestDrainModeEvent_ErrorEvent(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	events <- unifiedEvent{kind: unifiedEventError, err: errors.New("boom")}
+	s := &UnifiedSession{events: events}
+
+	m, err := s.drainModeEvent()
+	if m != mode.Unknown || err == nil || err.Error() != "boom" {
+		t.Fatalf("expected (Unknown, 'boom'), got (%v, %v)", m, err)
+	}
+}
+
+func TestDrainModeEvent_SkipsIrrelevantThenFindsExit(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	events <- unifiedEvent{kind: unifiedEventReconfigure}
+	events <- unifiedEvent{kind: unifiedEventExit}
+	s := &UnifiedSession{events: events}
+
+	m, err := s.drainModeEvent()
+	if m != mode.Unknown || !errors.Is(err, ErrUnifiedSessionQuit) {
+		t.Fatalf("expected (Unknown, ErrUnifiedSessionQuit), got (%v, %v)", m, err)
+	}
+}
+
+func TestDrainModeEvent_SkipsIrrelevantThenEmpty(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	events <- unifiedEvent{kind: unifiedEventReconfigure}
+	s := &UnifiedSession{events: events}
+
+	m, err := s.drainModeEvent()
+	if m != mode.Unknown || err != nil {
+		t.Fatalf("expected (Unknown, nil), got (%v, %v)", m, err)
+	}
+}
+
+// --- drainRuntimeEvent direct tests ---
+
+func TestDrainRuntimeEvent_EmptyBuffer(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	s := &UnifiedSession{events: events}
+
+	r, err := s.drainRuntimeEvent()
+	if r || err != nil {
+		t.Fatalf("expected (false, nil), got (%v, %v)", r, err)
+	}
+}
+
+func TestDrainRuntimeEvent_ClosedChannel(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	close(events)
+	s := &UnifiedSession{events: events}
+
+	r, err := s.drainRuntimeEvent()
+	if r || err != nil {
+		t.Fatalf("expected (false, nil) for closed channel, got (%v, %v)", r, err)
+	}
+}
+
+func TestDrainRuntimeEvent_Reconfigure(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	events <- unifiedEvent{kind: unifiedEventReconfigure}
+	s := &UnifiedSession{events: events}
+
+	r, err := s.drainRuntimeEvent()
+	if !r || err != nil {
+		t.Fatalf("expected (true, nil), got (%v, %v)", r, err)
+	}
+}
+
+func TestDrainRuntimeEvent_Disconnected(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	events <- unifiedEvent{kind: unifiedEventRuntimeDisconnected}
+	s := &UnifiedSession{events: events}
+
+	r, err := s.drainRuntimeEvent()
+	if r || !errors.Is(err, ErrUnifiedSessionRuntimeDisconnected) {
+		t.Fatalf("expected (false, ErrUnifiedSessionRuntimeDisconnected), got (%v, %v)", r, err)
+	}
+}
+
+func TestDrainRuntimeEvent_ExitEvent(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	events <- unifiedEvent{kind: unifiedEventExit}
+	s := &UnifiedSession{events: events}
+
+	r, err := s.drainRuntimeEvent()
+	if r || !errors.Is(err, ErrUnifiedSessionQuit) {
+		t.Fatalf("expected (false, ErrUnifiedSessionQuit), got (%v, %v)", r, err)
+	}
+}
+
+func TestDrainRuntimeEvent_ErrorEvent(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	events <- unifiedEvent{kind: unifiedEventError, err: errors.New("boom")}
+	s := &UnifiedSession{events: events}
+
+	r, err := s.drainRuntimeEvent()
+	if r || err == nil || err.Error() != "boom" {
+		t.Fatalf("expected (false, 'boom'), got (%v, %v)", r, err)
+	}
+}
+
+func TestDrainRuntimeEvent_ModeSelected(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	events <- unifiedEvent{kind: unifiedEventModeSelected, mode: mode.Client}
+	s := &UnifiedSession{events: events}
+
+	r, err := s.drainRuntimeEvent()
+	if !r || err != nil {
+		t.Fatalf("expected (true, nil), got (%v, %v)", r, err)
+	}
+}
+
+func TestDrainRuntimeEvent_SkipsUnknownThenFindsExit(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	events <- unifiedEvent{kind: unifiedEventKind(99)}
+	events <- unifiedEvent{kind: unifiedEventExit}
+	s := &UnifiedSession{events: events}
+
+	r, err := s.drainRuntimeEvent()
+	if r || !errors.Is(err, ErrUnifiedSessionQuit) {
+		t.Fatalf("expected (false, ErrUnifiedSessionQuit), got (%v, %v)", r, err)
+	}
+}
+
+func TestDrainRuntimeEvent_SkipsUnknownThenEmpty(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	events <- unifiedEvent{kind: unifiedEventKind(99)}
+	s := &UnifiedSession{events: events}
+
+	r, err := s.drainRuntimeEvent()
+	if r || err != nil {
+		t.Fatalf("expected (false, nil), got (%v, %v)", r, err)
+	}
+}
+
+// --- NewUnifiedSession goroutine error path ---
+
+func TestNewUnifiedSession_ProgramRunError(t *testing.T) {
+	prev := newUnifiedSessionProgram
+	newUnifiedSessionProgram = func(model tea.Model) *tea.Program {
+		// Input that immediately closes → program.Run() returns quickly.
+		// Use a reader that returns an error to exercise the runErr path.
+		return tea.NewProgram(model, tea.WithInput(&errReader{}), tea.WithOutput(io.Discard))
+	}
+	t.Cleanup(func() { newUnifiedSessionProgram = prev })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	session, err := NewUnifiedSession(ctx, defaultUnifiedConfigOpts())
+	if err != nil {
+		t.Fatalf("NewUnifiedSession error: %v", err)
+	}
+
+	cancel()
+
+	select {
+	case <-session.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("session did not complete")
+	}
+
+	// session.err may or may not be set depending on how Bubble Tea handles the input error,
+	// but the session must have completed without deadlock.
 }
 
 func TestUnifiedSession_Done_ReturnsChannel(t *testing.T) {
