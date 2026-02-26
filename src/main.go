@@ -73,7 +73,7 @@ func run(ctx context.Context) error {
 	for ctx.Err() == nil {
 		appMode, err := configurator.Configure(ctx)
 		if err != nil {
-			if errors.Is(err, configuring.ErrUserExit) {
+			if errors.Is(err, configuring.ErrUserExit) || ctx.Err() != nil {
 				return nil
 			}
 			return fmt.Errorf("configuration error: %w", err)
