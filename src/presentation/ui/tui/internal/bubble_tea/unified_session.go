@@ -534,16 +534,22 @@ func (s *UnifiedSession) drainRuntimeEvent() (reconfigure bool, err error) {
 // ShowFatalError transitions the session to a fatal error screen and blocks
 // until the user dismisses it (Enter / Esc / q) or the program exits.
 func (s *UnifiedSession) ShowFatalError(message string) {
-	s.program.Send(fatalErrorMsg{message: message})
-	<-s.done
+	go s.program.Send(fatalErrorMsg{message: message})
+	select {
+	case <-s.done:
+	case <-contextDoneChan(s.appCtx):
+	}
 }
 
 // Close gracefully stops the unified session program.
 func (s *UnifiedSession) Close() {
 	s.closeOnce.Do(func() {
-		s.program.Quit()
-		<-s.done
-		clearTerminalAfterTUI()
+		go s.program.Quit()
+		select {
+		case <-s.done:
+			clearTerminalAfterTUI()
+		case <-contextDoneChan(s.appCtx):
+		}
 	})
 }
 

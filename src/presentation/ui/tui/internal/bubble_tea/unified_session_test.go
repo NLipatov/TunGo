@@ -15,6 +15,14 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
+// emptyModel is a minimal tea.Model for tests that need a real tea.Program
+// but don't care about its behavior.
+type emptyModel struct{}
+
+func (emptyModel) Init() tea.Cmd                       { return nil }
+func (emptyModel) Update(tea.Msg) (tea.Model, tea.Cmd) { return emptyModel{}, nil }
+func (emptyModel) View() tea.View                      { return tea.NewView("") }
+
 // errReader is an io.Reader that always returns an error.
 type errReader struct{}
 
@@ -1815,6 +1823,58 @@ func TestUnifiedSession_FatalErrorPhase_NilFatalError_Update(t *testing.T) {
 	}
 	if cmd != nil {
 		t.Fatal("expected nil cmd when fatalError is nil")
+	}
+}
+
+func TestUnifiedSession_Close_UnblocksOnAppCtxCancel(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	done := make(chan struct{}) // never closed — simulates stuck tea.Program
+	ctx, cancel := context.WithCancel(context.Background())
+	s := &UnifiedSession{
+		events:  events,
+		done:    done,
+		appCtx:  ctx,
+		program: tea.NewProgram(emptyModel{}, tea.WithInput(strings.NewReader("")), tea.WithOutput(io.Discard)),
+	}
+
+	cancel()
+
+	closed := make(chan struct{})
+	go func() {
+		s.Close()
+		close(closed)
+	}()
+
+	select {
+	case <-closed:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Close did not unblock after context cancel")
+	}
+}
+
+func TestUnifiedSession_ShowFatalError_UnblocksOnAppCtxCancel(t *testing.T) {
+	events := make(chan unifiedEvent, 4)
+	done := make(chan struct{}) // never closed — simulates stuck tea.Program
+	ctx, cancel := context.WithCancel(context.Background())
+	s := &UnifiedSession{
+		events:  events,
+		done:    done,
+		appCtx:  ctx,
+		program: tea.NewProgram(emptyModel{}, tea.WithInput(strings.NewReader("")), tea.WithOutput(io.Discard)),
+	}
+
+	cancel()
+
+	unblocked := make(chan struct{})
+	go func() {
+		s.ShowFatalError("stuck program")
+		close(unblocked)
+	}()
+
+	select {
+	case <-unblocked:
+	case <-time.After(3 * time.Second):
+		t.Fatal("ShowFatalError did not unblock after context cancel")
 	}
 }
 

@@ -30,7 +30,6 @@ import (
 	"tungo/presentation/ui/tui"
 )
 
-
 func main() {
 	exitCode := 0
 	defer func() { os.Exit(exitCode) }()
@@ -75,6 +74,9 @@ func run(ctx context.Context) error {
 		if err != nil {
 			if errors.Is(err, configuring.ErrUserExit) || ctx.Err() != nil {
 				return nil
+			}
+			if errors.Is(err, configuring.ErrSessionClosed) {
+				return fmt.Errorf("ui session ended during shutdown: %w", err)
 			}
 			return fmt.Errorf("configuration error: %w", err)
 		}

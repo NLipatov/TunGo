@@ -300,12 +300,12 @@ func TestConfigurator_WithContinuousUI(t *testing.T) {
 // --- mock unified session for configureContinuous tests ---
 
 type mockUnifiedSession struct {
-	waitModeResult        mode.Mode
-	waitModeErr           error
+	waitModeResult         mode.Mode
+	waitModeErr            error
 	waitRuntimeReconfigure bool
-	waitRuntimeErr        error
-	activateCalled        bool
-	closeCalled           bool
+	waitRuntimeErr         error
+	activateCalled         bool
+	closeCalled            bool
 }
 
 func (m *mockUnifiedSession) WaitForMode() (mode.Mode, error) {
@@ -380,6 +380,23 @@ func TestConfigureContinuous_WaitForModeQuit_ReturnsErrUserExit(t *testing.T) {
 	}
 	if activeUnifiedSession != nil {
 		t.Fatal("expected activeUnifiedSession cleared on quit")
+	}
+}
+
+func TestConfigureContinuous_WaitForModeClosed_ReturnsErrUserExit(t *testing.T) {
+	mock := &mockUnifiedSession{waitModeErr: bubbleTea.ErrUnifiedSessionClosed}
+	withMockUnifiedSession(t, mock)
+
+	c := newContinuousConfigurator()
+	_, err := c.Configure(context.Background())
+	if !errors.Is(err, ErrUserExit) {
+		t.Fatalf("expected ErrUserExit, got %v", err)
+	}
+	if !mock.closeCalled {
+		t.Fatal("expected Close called on closed session")
+	}
+	if activeUnifiedSession != nil {
+		t.Fatal("expected activeUnifiedSession cleared on closed session")
 	}
 }
 

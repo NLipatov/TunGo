@@ -117,6 +117,26 @@ func TestRunRuntimeDashboard_UnifiedSession_Quit_ReturnsErrUserExit(t *testing.T
 	}
 }
 
+func TestRunRuntimeDashboard_UnifiedSession_Closed_ReturnsErrUserExit(t *testing.T) {
+	mock := &mockUnifiedSession{waitRuntimeErr: bubbleTea.ErrUnifiedSessionClosed}
+	withMockUnifiedSession(t, mock)
+
+	backend := bubbleTeaRuntimeBackend{}
+	reconfigure, err := backend.runRuntimeDashboard(context.Background(), RuntimeModeClient)
+	if !errors.Is(err, ErrUserExit) {
+		t.Fatalf("expected ErrUserExit, got %v", err)
+	}
+	if reconfigure {
+		t.Fatal("expected reconfigure=false")
+	}
+	if !mock.closeCalled {
+		t.Fatal("expected Close called")
+	}
+	if activeUnifiedSession != nil {
+		t.Fatal("expected activeUnifiedSession cleared")
+	}
+}
+
 func TestRunRuntimeDashboard_UnifiedSession_Disconnected_KeepsSession(t *testing.T) {
 	mock := &mockUnifiedSession{waitRuntimeErr: bubbleTea.ErrUnifiedSessionRuntimeDisconnected}
 	withMockUnifiedSession(t, mock)

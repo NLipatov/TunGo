@@ -131,7 +131,7 @@ func (p *Configurator) configureContinuous(ctx context.Context) (mode.Mode, erro
 
 	selectedMode, err := activeUnifiedSession.WaitForMode()
 	if err != nil {
-		if errors.Is(err, bubbleTea.ErrUnifiedSessionQuit) {
+		if errors.Is(err, bubbleTea.ErrUnifiedSessionQuit) || errors.Is(err, bubbleTea.ErrUnifiedSessionClosed) {
 			activeUnifiedSession.Close()
 			activeUnifiedSession = nil
 			return mode.Unknown, ErrUserExit
