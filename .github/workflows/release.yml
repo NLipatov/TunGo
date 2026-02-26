@@ -142,6 +142,29 @@ jobs:
       - name: Download TunGo.ico
         run: Invoke-WebRequest -Uri "https://tungo.ethacore.com/img/favicon.ico" -OutFile "TunGo.ico"
 
+      - name: Generate Windows UAC manifest resources
+        run: |
+          go install github.com/tc-hib/go-winres@latest
+          mkdir src\winres
+          @"
+          {
+            "RT_MANIFEST": {
+              "#1": {
+                "0409": {
+                  "identity": {},
+                  "description": "TunGo VPN Tunnel",
+                  "minimum-os": "win7",
+                  "execution-level": "requireAdministrator",
+                  "ui-access": false,
+                  "dpi-awareness": "system"
+                }
+              }
+            }
+          }
+          "@ | Out-File src\winres\winres.json -Encoding utf8
+          cd src
+          go-winres make
+
       - name: Build Windows x64 binary
         run: |
           cd src
