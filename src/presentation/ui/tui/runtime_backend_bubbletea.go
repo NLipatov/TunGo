@@ -41,7 +41,7 @@ func (bubbleTeaRuntimeBackend) runRuntimeDashboard(ctx context.Context, mode Run
 		activeUnifiedSession.ActivateRuntime(ctx, options)
 		reconfigure, err := activeUnifiedSession.WaitForRuntimeExit()
 		if err != nil {
-			if errors.Is(err, bubbleTea.ErrUnifiedSessionQuit) {
+			if errors.Is(err, bubbleTea.ErrUnifiedSessionQuit) || errors.Is(err, bubbleTea.ErrUnifiedSessionClosed) {
 				activeUnifiedSession.Close()
 				activeUnifiedSession = nil
 				return false, ErrUserExit
