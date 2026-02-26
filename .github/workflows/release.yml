@@ -144,7 +144,7 @@ jobs:
 
       - name: Generate Windows UAC manifest resources
         run: |
-          go install github.com/tc-hib/go-winres@latest
+          go install github.com/tc-hib/go-winres@v0.3.3
           mkdir src\winres
           @"
           {
