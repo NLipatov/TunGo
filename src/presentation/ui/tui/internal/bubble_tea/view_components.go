@@ -102,16 +102,18 @@ func renderSelectableRows(rows []string, cursor int, width int, styles uiStyles)
 	return out
 }
 
-func uiSettingsRows(prefs UIPreferences) []string {
+func uiSettingsRows(prefs UIPreferences, serverSupported bool) []string {
 	rows := []string{
 		"Theme      : " + strings.ToUpper(strings.ReplaceAll(string(prefs.Theme), "_", " ")),
 		"Stats units: " + statsUnitsLabel(prefs.StatsUnits),
 		"Dataplane stats: " + onOff(prefs.ShowDataplaneStats),
 		"Dataplane graph: " + onOff(prefs.ShowDataplaneGraph),
 		"Show footer: " + onOff(prefs.ShowFooter),
-		"Mode       : " + modePreferenceLabel(prefs.PreferredMode),
 	}
-	if prefs.PreferredMode == ModePreferenceClient {
+	if serverSupported {
+		rows = append(rows, "Mode       : "+modePreferenceLabel(prefs.PreferredMode))
+	}
+	if prefs.PreferredMode == ModePreferenceClient || !serverSupported {
 		rows = append(rows, "Auto-connect: "+onOff(prefs.AutoConnect))
 	}
 	return rows

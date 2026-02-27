@@ -20,8 +20,9 @@ const (
 )
 
 type RuntimeDashboardOptions struct {
-	Mode    RuntimeDashboardMode
-	LogFeed RuntimeLogFeed
+	Mode            RuntimeDashboardMode
+	LogFeed         RuntimeLogFeed
+	ServerSupported bool
 }
 
 type runtimeTickMsg struct {
@@ -71,6 +72,7 @@ type RuntimeDashboard struct {
 	txSamples            [runtimeSparklinePoints]uint64
 	sampleCount          int
 	sampleCursor         int
+	serverSupported      bool
 	tickSeq              uint64
 	logTickSeq           uint64
 	confirmOpen          bool
@@ -97,13 +99,14 @@ func NewRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions, s
 		mode = RuntimeDashboardClient
 	}
 	model := RuntimeDashboard{
-		settings:    settings,
-		ctx:         ctx,
-		mode:        mode,
-		keys:        defaultSelectorKeyMap(),
-		screen:      runtimeScreenDataplane,
-		preferences: settings.Preferences(),
-		logFeed:     options.LogFeed,
+		settings:        settings,
+		ctx:             ctx,
+		mode:            mode,
+		serverSupported: options.ServerSupported,
+		keys:            defaultSelectorKeyMap(),
+		screen:          runtimeScreenDataplane,
+		preferences:     settings.Preferences(),
+		logFeed:         options.LogFeed,
 		logViewport: viewport.New(viewport.WithWidth(1), viewport.WithHeight(8)),
 		logReady:    true,
 		logFollow:   true,
@@ -299,16 +302,16 @@ func (m RuntimeDashboard) updateSettings(msg tea.KeyPressMsg) (tea.Model, tea.Cm
 	case key.Matches(msg, m.keys.Up):
 		m.settingsCursor = settingsCursorUp(m.settingsCursor)
 	case key.Matches(msg, m.keys.Down):
-		m.settingsCursor = settingsCursorDown(m.settingsCursor, settingsVisibleRowCount(m.preferences))
+		m.settingsCursor = settingsCursorDown(m.settingsCursor, settingsVisibleRowCount(m.preferences, m.serverSupported))
 	case key.Matches(msg, m.keys.Left):
 		prevTheme := m.preferences.Theme
-		m.preferences = applySettingsChange(m.settings, m.settingsCursor, -1)
+		m.preferences = applySettingsChange(m.settings, m.settingsCursor, -1, m.serverSupported)
 		if m.settingsCursor == settingsThemeRow && m.preferences.Theme != prevTheme {
 			cmd = tea.ClearScreen
 		}
 	case key.Matches(msg, m.keys.Right), key.Matches(msg, m.keys.Select):
 		prevTheme := m.preferences.Theme
-		m.preferences = applySettingsChange(m.settings, m.settingsCursor, 1)
+		m.preferences = applySettingsChange(m.settings, m.settingsCursor, 1, m.serverSupported)
 		if m.settingsCursor == settingsThemeRow && m.preferences.Theme != prevTheme {
 			cmd = tea.ClearScreen
 		}
@@ -402,7 +405,7 @@ func (m RuntimeDashboard) settingsView() string {
 	if m.width > 0 {
 		contentWidth = contentWidthForTerminal(m.width)
 	}
-	body = append(body, renderSelectableRows(uiSettingsRows(m.preferences), m.settingsCursor, contentWidth, styles)...)
+	body = append(body, renderSelectableRows(uiSettingsRows(m.preferences, m.serverSupported), m.settingsCursor, contentWidth, styles)...)
 
 	return renderScreen(
 		m.width,

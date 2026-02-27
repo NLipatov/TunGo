@@ -37,7 +37,17 @@ func settingsCursorUp(cursor int) int {
 	return 0
 }
 
-func settingsVisibleRowCount(prefs UIPreferences) int {
+func visibleCursorToSettingsRow(cursor int, serverSupported bool) int {
+	if serverSupported || cursor < settingsModeRow {
+		return cursor
+	}
+	return cursor + 1 // skip hidden Mode row
+}
+
+func settingsVisibleRowCount(prefs UIPreferences, serverSupported bool) int {
+	if !serverSupported {
+		return settingsRowsCount - 1 // Mode row hidden, AutoConnect always visible
+	}
 	if prefs.PreferredMode == ModePreferenceClient {
 		return settingsRowsCount
 	}
@@ -51,9 +61,9 @@ func settingsCursorDown(cursor, rowCount int) int {
 	return rowCount - 1
 }
 
-func applySettingsChange(provider *uiPreferencesProvider, settingsCursor int, step int) UIPreferences {
+func applySettingsChange(provider *uiPreferencesProvider, settingsCursor int, step int, serverSupported bool) UIPreferences {
 	p := provider.Preferences()
-	switch settingsCursor {
+	switch visibleCursorToSettingsRow(settingsCursor, serverSupported) {
 	case settingsThemeRow:
 		p.Theme = nextTheme(p.Theme, step)
 	case settingsStatsUnitsRow:

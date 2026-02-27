@@ -467,8 +467,8 @@ func TestRuntimeDashboard_SettingsNavigationAndMutation(t *testing.T) {
 	}
 
 	// Move to bottom, Down at bottom should stay there.
-	wantBottom := settingsVisibleRowCount(m.preferences) - 1
-	for i := 0; i < settingsVisibleRowCount(m.preferences)+1; i++ {
+	wantBottom := settingsVisibleRowCount(m.preferences, m.serverSupported) - 1
+	for i := 0; i < settingsVisibleRowCount(m.preferences, m.serverSupported)+1; i++ {
 		updatedModel, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 		m = updatedModel.(RuntimeDashboard)
 	}

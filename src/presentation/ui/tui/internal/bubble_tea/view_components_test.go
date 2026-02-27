@@ -53,7 +53,7 @@ func TestUISettingsRows_UsesReadableStatsUnitsLabels(t *testing.T) {
 		ShowDataplaneStats: true,
 		ShowDataplaneGraph: true,
 		ShowFooter:         true,
-	})
+	}, true)
 	if len(rows) != 6 {
 		t.Fatalf("expected 6 settings rows (mode=not set, no auto-connect row), got %d", len(rows))
 	}
@@ -68,7 +68,7 @@ func TestUISettingsRows_UsesReadableStatsUnitsLabels(t *testing.T) {
 		ShowDataplaneStats: true,
 		ShowDataplaneGraph: true,
 		ShowFooter:         true,
-	})
+	}, true)
 	if !strings.Contains(rows[1], "Binary units (KiB/MiB/GiB)") {
 		t.Fatalf("expected binary label, got %q", rows[1])
 	}

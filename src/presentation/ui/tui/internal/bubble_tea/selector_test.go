@@ -354,8 +354,8 @@ func TestSelector_SettingsNavigationBoundsAndMutations(t *testing.T) {
 	}
 
 	// Move to bottom and verify lower bound.
-	wantBottom := settingsVisibleRowCount(sel.preferences) - 1
-	for i := 0; i < settingsVisibleRowCount(sel.preferences)+1; i++ {
+	wantBottom := settingsVisibleRowCount(sel.preferences, sel.serverSupported) - 1
+	for i := 0; i < settingsVisibleRowCount(sel.preferences, sel.serverSupported)+1; i++ {
 		m1, _ = sel.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 		sel = m1.(Selector)
 	}

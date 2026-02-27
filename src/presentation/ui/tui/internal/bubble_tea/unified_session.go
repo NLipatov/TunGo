@@ -164,7 +164,9 @@ func (m unifiedSessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.runtimeSeq++
-		rt := NewRuntimeDashboard(msg.ctx, msg.options, m.settings)
+		opts := msg.options
+		opts.ServerSupported = m.configOpts.ServerSupported
+		rt := NewRuntimeDashboard(msg.ctx, opts, m.settings)
 		rt.runtimeSeq = m.runtimeSeq
 		if m.width > 0 || m.height > 0 {
 			rt.width = m.width
