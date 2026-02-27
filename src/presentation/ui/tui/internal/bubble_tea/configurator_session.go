@@ -212,6 +212,17 @@ func newConfiguratorSessionModel(options ConfiguratorSessionOptions, settings *u
 
 	model.initNameInput()
 	model.initJSONInput()
+
+	switch settings.Preferences().PreferredMode {
+	case ModePreferenceClient:
+		if err := model.reloadClientConfigs(); err != nil {
+			return configuratorSessionModel{}, err
+		}
+		model.screen = configuratorScreenClientSelect
+	case ModePreferenceServer:
+		model.screen = configuratorScreenServerSelect
+	}
+
 	return model, nil
 }
 
@@ -447,6 +458,10 @@ func (m configuratorSessionModel) updateModeScreen(msg tea.KeyPressMsg) (tea.Mod
 
 	switch m.modeOptions[m.cursor] {
 	case sessionModeClient:
+		p := m.settings.Preferences()
+		p.PreferredMode = ModePreferenceClient
+		m.settings.update(p)
+		_ = savePreferencesToDisk(p)
 		if err := m.reloadClientConfigs(); err != nil {
 			m.resultErr = err
 			m.done = true
@@ -456,6 +471,10 @@ func (m configuratorSessionModel) updateModeScreen(msg tea.KeyPressMsg) (tea.Mod
 		m.cursor = 0
 		m.screen = configuratorScreenClientSelect
 	case sessionModeServer:
+		p := m.settings.Preferences()
+		p.PreferredMode = ModePreferenceServer
+		m.settings.update(p)
+		_ = savePreferencesToDisk(p)
 		m.notice = ""
 		m.cursor = 0
 		m.screen = configuratorScreenServerSelect
@@ -497,6 +516,10 @@ func (m configuratorSessionModel) updateClientSelectScreen(msg tea.KeyPressMsg) 
 		m.clientRemovePaths = append([]string(nil), m.clientConfigs...)
 		return m, nil
 	default:
+		p := m.settings.Preferences()
+		p.LastClientConfig = selected
+		m.settings.update(p)
+		_ = savePreferencesToDisk(p)
 		if err := m.options.Selector.Select(selected); err != nil {
 			m.resultErr = err
 			m.done = true
@@ -903,7 +926,7 @@ func (m configuratorSessionModel) updateSettingsTab(msg tea.KeyPressMsg) (tea.Mo
 	case "up", "k":
 		m.settingsCursor = settingsCursorUp(m.settingsCursor)
 	case "down", "j":
-		m.settingsCursor = settingsCursorDown(m.settingsCursor)
+		m.settingsCursor = settingsCursorDown(m.settingsCursor, settingsVisibleRowCount(m.preferences))
 	case "left", "h":
 		prevTheme := m.preferences.Theme
 		m.preferences = applySettingsChange(m.settings, m.settingsCursor, -1)

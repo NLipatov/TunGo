@@ -79,6 +79,15 @@ func loadPreferences(s prefsStorage) (UIPreferences, error) {
 	if _, ok := raw["show_footer"]; ok {
 		result.ShowFooter = p.ShowFooter
 	}
+	if _, ok := raw["preferred_mode"]; ok && isValidModePreference(p.PreferredMode) {
+		result.PreferredMode = p.PreferredMode
+	}
+	if _, ok := raw["auto_connect"]; ok {
+		result.AutoConnect = p.AutoConnect
+	}
+	if _, ok := raw["last_client_config"]; ok {
+		result.LastClientConfig = p.LastClientConfig
+	}
 	return result, nil
 }
 

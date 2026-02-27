@@ -54,8 +54,8 @@ func TestUISettingsRows_UsesReadableStatsUnitsLabels(t *testing.T) {
 		ShowDataplaneGraph: true,
 		ShowFooter:         true,
 	})
-	if len(rows) != 5 {
-		t.Fatalf("expected 5 settings rows, got %d", len(rows))
+	if len(rows) != 6 {
+		t.Fatalf("expected 6 settings rows (mode=not set, no auto-connect row), got %d", len(rows))
 	}
 	if !strings.Contains(rows[1], "Decimal units (KB/MB/GB)") {
 		t.Fatalf("expected bytes label, got %q", rows[1])

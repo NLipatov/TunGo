@@ -299,7 +299,7 @@ func (m RuntimeDashboard) updateSettings(msg tea.KeyPressMsg) (tea.Model, tea.Cm
 	case key.Matches(msg, m.keys.Up):
 		m.settingsCursor = settingsCursorUp(m.settingsCursor)
 	case key.Matches(msg, m.keys.Down):
-		m.settingsCursor = settingsCursorDown(m.settingsCursor)
+		m.settingsCursor = settingsCursorDown(m.settingsCursor, settingsVisibleRowCount(m.preferences))
 	case key.Matches(msg, m.keys.Left):
 		prevTheme := m.preferences.Theme
 		m.preferences = applySettingsChange(m.settings, m.settingsCursor, -1)
