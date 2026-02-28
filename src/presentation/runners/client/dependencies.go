@@ -5,7 +5,7 @@ import (
 	"tungo/application/network/connection"
 	"tungo/application/network/routing/tun"
 	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
-	"tungo/infrastructure/PAL/tun_client"
+	"tungo/infrastructure/PAL/tunnel/tun_client"
 	"tungo/infrastructure/tunnel/sessionplane/client_factory"
 )
 

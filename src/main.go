@@ -17,8 +17,8 @@ import (
 	serverConf "tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/PAL/signal"
 	"tungo/infrastructure/PAL/stat"
-	"tungo/infrastructure/PAL/capabilities"
-	"tungo/infrastructure/PAL/tun_server"
+	"tungo/infrastructure/PAL/platform"
+	"tungo/infrastructure/PAL/tunnel/tun_server"
 	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/tunnel/sessionplane/client_factory"
 	"tungo/presentation/configuring"
@@ -66,7 +66,7 @@ func run(ctx context.Context) error {
 	}
 
 	uiMode := app.CurrentUIMode()
-	configuratorFactory := configuring.NewConfigurationFactory(uiMode, configurationManager, capabilities.ServerSupported())
+	configuratorFactory := configuring.NewConfigurationFactory(uiMode, configurationManager, platform.Capabilities().ServerModeSupported())
 	configurator, cleanup := configuratorFactory.Configurator(ctx)
 	defer cleanup()
 
