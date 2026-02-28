@@ -233,8 +233,21 @@ func newConfiguratorSessionModel(options ConfiguratorSessionOptions, settings *u
 		if autoConfig := settings.Preferences().AutoSelectClientConfig; autoConfig != "" {
 			if slices.Contains(model.client.configs, autoConfig) {
 				if err := model.options.Selector.Select(autoConfig); err == nil {
-					model.resultMode = mode.Client
-					model.done = true
+					if model.options.ClientConfigManager != nil {
+						if _, cfgErr := model.options.ClientConfigManager.Configuration(); isInvalidClientConfigurationError(cfgErr) {
+							model.client.invalidErr = cfgErr
+							model.client.invalidConfig = autoConfig
+							model.client.invalidAllowDelete = true
+							model.cursor = 0
+							model.screen = configuratorScreenClientInvalid
+						} else {
+							model.resultMode = mode.Client
+							model.done = true
+						}
+					} else {
+						model.resultMode = mode.Client
+						model.done = true
+					}
 				} else {
 					model.notice = fmt.Sprintf("Auto-select failed for %q: %v", autoConfig, err)
 				}

@@ -116,6 +116,33 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_SkipsSelection(t *te
 	}
 }
 
+func TestNewConfiguratorSessionModel_AutoSelectClientConfig_InvalidConfig_ShowsInvalidScreen(t *testing.T) {
+	s := settingsForMode(ModePreferenceClient)
+	p := s.Preferences()
+	p.AutoSelectClientConfig = "cfg.json"
+	s.update(p)
+
+	opts := defaultConfiguratorOpts()
+	opts.Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
+	opts.ClientConfigManager = sessionClientConfigManagerInvalid{
+		err: errors.New("invalid client configuration (test): bad key"),
+	}
+
+	model, err := newConfiguratorSessionModel(opts, s)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if model.done {
+		t.Fatal("expected done=false when config is invalid")
+	}
+	if model.screen != configuratorScreenClientInvalid {
+		t.Fatalf("expected configuratorScreenClientInvalid, got %v", model.screen)
+	}
+	if model.client.invalidConfig != "cfg.json" {
+		t.Fatalf("expected invalidConfig=cfg.json, got %q", model.client.invalidConfig)
+	}
+}
+
 func TestNewConfiguratorSessionModel_AutoSelectClientConfig_MissingConfig_ShowsSelection(t *testing.T) {
 	s := settingsForMode(ModePreferenceClient)
 	p := s.Preferences()
