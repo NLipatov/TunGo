@@ -162,7 +162,7 @@ func (m RuntimeDashboard) Init() tea.Cmd {
 		waitForRuntimeContextDone(m.ctx, m.runtimeSeq),
 	}
 	if !m.connected {
-		cmds = append(cmds, waitForReadyCh(m.readyCh, m.runtimeSeq))
+		cmds = append(cmds, waitForReadyCh(m.ctx, m.readyCh, m.runtimeSeq))
 	}
 	return tea.Batch(cmds...)
 }
@@ -468,10 +468,14 @@ func runtimeTickCmd(seq uint64) tea.Cmd {
 	})
 }
 
-func waitForReadyCh(ch <-chan struct{}, seq uint64) tea.Cmd {
+func waitForReadyCh(ctx context.Context, ch <-chan struct{}, seq uint64) tea.Cmd {
 	return func() tea.Msg {
-		<-ch
-		return runtimeReadyMsg{seq: seq}
+		select {
+		case <-ctx.Done():
+			return runtimeContextDoneMsg{seq: seq}
+		case <-ch:
+			return runtimeReadyMsg{seq: seq}
+		}
 	}
 }
 
