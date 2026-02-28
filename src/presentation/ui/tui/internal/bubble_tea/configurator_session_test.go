@@ -105,7 +105,6 @@ func TestUpdate_WindowSizeMsg_UpdatesWidthHeight(t *testing.T) {
 func TestUpdate_WindowSizeMsg_LogsTab_RefreshesViewport(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.tab = configuratorTabLogs
-	m.logReady = true
 	result, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	updated := result.(configuratorSessionModel)
 	if updated.width != 100 || updated.height != 30 {
@@ -116,11 +115,10 @@ func TestUpdate_WindowSizeMsg_LogsTab_RefreshesViewport(t *testing.T) {
 func TestUpdate_LogTickMsg_MatchingSeq(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.tab = configuratorTabLogs
-	m.logTickSeq = 5
-	m.logReady = true
-	m.restartLogWait()
+	m.logs.tickSeq = 5
+	m.logs.restartWait()
 
-	result, cmd := m.Update(configuratorLogTickMsg{seq: 5})
+	result, cmd := m.Update(logViewportTickMsg{seq: 5})
 	updated := result.(configuratorSessionModel)
 	_ = updated
 	if cmd == nil {
@@ -131,9 +129,9 @@ func TestUpdate_LogTickMsg_MatchingSeq(t *testing.T) {
 func TestUpdate_LogTickMsg_MismatchedSeq_Ignored(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.tab = configuratorTabLogs
-	m.logTickSeq = 5
+	m.logs.tickSeq = 5
 
-	result, cmd := m.Update(configuratorLogTickMsg{seq: 99})
+	result, cmd := m.Update(logViewportTickMsg{seq: 99})
 	_ = result.(configuratorSessionModel)
 	if cmd != nil {
 		t.Fatal("expected nil cmd for mismatched log tick seq")
@@ -143,9 +141,9 @@ func TestUpdate_LogTickMsg_MismatchedSeq_Ignored(t *testing.T) {
 func TestUpdate_LogTickMsg_WrongTab_Ignored(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.tab = configuratorTabMain
-	m.logTickSeq = 5
+	m.logs.tickSeq = 5
 
-	result, cmd := m.Update(configuratorLogTickMsg{seq: 5})
+	result, cmd := m.Update(logViewportTickMsg{seq: 5})
 	_ = result.(configuratorSessionModel)
 	if cmd != nil {
 		t.Fatal("expected nil cmd when tab is not Logs")
@@ -218,7 +216,6 @@ func TestUpdate_SettingsTab_DispatchesToSettings(t *testing.T) {
 func TestUpdate_LogsTab_DispatchesToLogs(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.tab = configuratorTabLogs
-	m.logReady = true
 
 	result, _ := m.Update(keyNamed(tea.KeyEsc))
 	updated := result.(configuratorSessionModel)
@@ -264,7 +261,6 @@ func TestView_SettingsTab_ContainsTheme(t *testing.T) {
 func TestView_LogsTab_ReturnsNonEmpty(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.tab = configuratorTabLogs
-	m.logReady = true
 
 	view := m.View().Content
 	if len(view) == 0 {
@@ -394,7 +390,7 @@ func TestCycleTab_MainToSettingsToLogsToMain(t *testing.T) {
 		t.Fatal("expected non-nil cmd when entering Logs tab")
 	}
 
-	s.stopLogWait()
+	s.logs.stopWait()
 	result, _ = s.cycleTab()
 	s = result.(configuratorSessionModel)
 	if s.tab != configuratorTabMain {
@@ -405,8 +401,8 @@ func TestCycleTab_MainToSettingsToLogsToMain(t *testing.T) {
 func TestCycleTab_LeavingLogsStopsLogWait(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.tab = configuratorTabLogs
-	m.restartLogWait()
-	ch := m.logWaitStop
+	m.logs.restartWait()
+	ch := m.logs.waitStop
 
 	result, _ := m.cycleTab()
 	s := result.(configuratorSessionModel)
@@ -507,8 +503,8 @@ func TestUpdateSettingsTab_ThemeChangeTriggersClearScreen(t *testing.T) {
 func TestUpdateLogsTab_EscReturnsToMainAndStopsWait(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.tab = configuratorTabLogs
-	m.restartLogWait()
-	ch := m.logWaitStop
+	m.logs.restartWait()
+	ch := m.logs.waitStop
 
 	result, _ := m.updateLogsTab(keyNamed(tea.KeyEsc))
 	s := result.(configuratorSessionModel)
@@ -526,12 +522,12 @@ func TestUpdateLogsTab_EscReturnsToMainAndStopsWait(t *testing.T) {
 func TestUpdateLogsTab_PgUpSetsFollowFalse(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.tab = configuratorTabLogs
-	m.logFollow = true
+	m.logs.follow = true
 
 	result, _ := m.updateLogsTab(keyNamed(tea.KeyPgUp))
 	s := result.(configuratorSessionModel)
-	if s.logFollow {
-		t.Fatal("expected logFollow=false after PgUp")
+	if s.logs.follow {
+		t.Fatal("expected follow=false after PgUp")
 	}
 }
 
@@ -546,54 +542,54 @@ func TestUpdateLogsTab_PgDown(t *testing.T) {
 func TestUpdateLogsTab_HomeSetsFollowFalse(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.tab = configuratorTabLogs
-	m.logFollow = true
+	m.logs.follow = true
 
 	result, _ := m.updateLogsTab(keyNamed(tea.KeyHome))
 	s := result.(configuratorSessionModel)
-	if s.logFollow {
-		t.Fatal("expected logFollow=false after Home")
+	if s.logs.follow {
+		t.Fatal("expected follow=false after Home")
 	}
 }
 
 func TestUpdateLogsTab_EndSetsFollowTrue(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.tab = configuratorTabLogs
-	m.logFollow = false
+	m.logs.follow = false
 
 	result, _ := m.updateLogsTab(keyNamed(tea.KeyEnd))
 	s := result.(configuratorSessionModel)
-	if !s.logFollow {
-		t.Fatal("expected logFollow=true after End")
+	if !s.logs.follow {
+		t.Fatal("expected follow=true after End")
 	}
 }
 
 func TestUpdateLogsTab_SpaceTogglesFollow(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.tab = configuratorTabLogs
-	m.logFollow = false
+	m.logs.follow = false
 
 	result, _ := m.updateLogsTab(keyNamed(tea.KeySpace))
 	s := result.(configuratorSessionModel)
-	if !s.logFollow {
-		t.Fatal("expected logFollow=true after Space toggle")
+	if !s.logs.follow {
+		t.Fatal("expected follow=true after Space toggle")
 	}
 
 	result, _ = s.updateLogsTab(keyNamed(tea.KeySpace))
 	s = result.(configuratorSessionModel)
-	if s.logFollow {
-		t.Fatal("expected logFollow=false after second Space toggle")
+	if s.logs.follow {
+		t.Fatal("expected follow=false after second Space toggle")
 	}
 }
 
 func TestUpdateLogsTab_UpLineNavigation(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.tab = configuratorTabLogs
-	m.logFollow = true
+	m.logs.follow = true
 
 	result, _ := m.updateLogsTab(keyRunes('k'))
 	s := result.(configuratorSessionModel)
-	if s.logFollow {
-		t.Fatal("expected logFollow=false after up scroll")
+	if s.logs.follow {
+		t.Fatal("expected follow=false after up scroll")
 	}
 }
 
@@ -1225,7 +1221,6 @@ func TestLogsTabView_ReturnsNonEmpty(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.width = 80
 	m.height = 30
-	m.logReady = true
 
 	view := m.logsTabView()
 	if view == "" {
@@ -1389,28 +1384,23 @@ func TestReloadClientConfigs_ObserverError(t *testing.T) {
 	}
 }
 
-// --- 22. Log management ---
+// --- 22. Log management (delegated to logViewport; see log_viewport_test.go for full coverage) ---
 
-func TestRestartLogWait_CreatesNewChannel(t *testing.T) {
+func TestLogsIntegration_RestartAndStopWait(t *testing.T) {
 	m := newTestSessionModel(t)
-	if m.logWaitStop != nil {
-		t.Fatal("expected nil logWaitStop initially")
+	if m.logs.waitStop != nil {
+		t.Fatal("expected nil waitStop initially")
 	}
 
-	m.restartLogWait()
-	if m.logWaitStop == nil {
-		t.Fatal("expected non-nil logWaitStop after restart")
+	m.logs.restartWait()
+	if m.logs.waitStop == nil {
+		t.Fatal("expected non-nil waitStop after restart")
 	}
-}
 
-func TestStopLogWait_ClosesChannel(t *testing.T) {
-	m := newTestSessionModel(t)
-	m.restartLogWait()
-	ch := m.logWaitStop
-
-	m.stopLogWait()
-	if m.logWaitStop != nil {
-		t.Fatal("expected nil logWaitStop after stop")
+	ch := m.logs.waitStop
+	m.logs.stopWait()
+	if m.logs.waitStop != nil {
+		t.Fatal("expected nil waitStop after stop")
 	}
 	select {
 	case <-ch:
@@ -1420,53 +1410,23 @@ func TestStopLogWait_ClosesChannel(t *testing.T) {
 	}
 }
 
-func TestStopLogWait_NilIsNoop(t *testing.T) {
-	m := newTestSessionModel(t)
-	m.logWaitStop = nil
-	m.stopLogWait() // should not panic
-	if m.logWaitStop != nil {
-		t.Fatal("expected logWaitStop to remain nil")
-	}
-}
-
-func TestRefreshLogs_DoesNotPanic(t *testing.T) {
+func TestLogsIntegration_RefreshDoesNotPanic(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.width = 80
 	m.height = 30
-	m.logReady = true
-	m.refreshLogs()
+	m.logs.ensure(m.width, m.height, m.preferences, "", configuratorLogsHint)
+	m.logs.refresh(m.logsFeed(), m.preferences)
 }
 
-func TestEnsureLogsViewport_InitializesWhenNotReady(t *testing.T) {
+func TestLogsIntegration_EnsureSetsReady(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.width = 80
 	m.height = 30
-	m.logReady = false
+	m.logs.ready = false
 
-	m.ensureLogsViewport()
-	if !m.logReady {
-		t.Fatal("expected logReady=true after ensureLogsViewport")
-	}
-}
-
-func TestEnsureLogsViewport_UpdatesDimensionsWhenReady(t *testing.T) {
-	m := newTestSessionModel(t)
-	m.width = 80
-	m.height = 30
-	m.logReady = true
-
-	m.ensureLogsViewport()
-	if m.logViewport.Width() <= 0 {
-		t.Fatalf("expected positive viewport width, got %d", m.logViewport.Width())
-	}
-}
-
-// --- 23. configuratorLogTickCmd ---
-
-func TestConfiguratorLogTickCmd_ReturnsNonNilCmd(t *testing.T) {
-	cmd := configuratorLogTickCmd(42)
-	if cmd == nil {
-		t.Fatal("expected non-nil cmd from configuratorLogTickCmd")
+	m.logs.ensure(m.width, m.height, m.preferences, "", configuratorLogsHint)
+	if !m.logs.ready {
+		t.Fatal("expected ready=true after ensure")
 	}
 }
 
@@ -2719,16 +2679,14 @@ func TestUpdateModeScreen_EnterClient_ReloadFails(t *testing.T) {
 }
 
 // =========================================================================
-// 9. configuratorLogTickCmd coverage
+// 9. logViewportTickCmd coverage (see log_viewport_test.go for full tests)
 // =========================================================================
 
-func TestConfiguratorLogTickCmd_ProducesCorrectMsg(t *testing.T) {
-	cmd := configuratorLogTickCmd(42)
+func TestLogViewportTickCmd_ProducesCorrectMsg(t *testing.T) {
+	cmd := logViewportTickCmd(42)
 	if cmd == nil {
 		t.Fatal("expected non-nil cmd")
 	}
-	// The cmd wraps tea.Tick which won't resolve immediately without time passing,
-	// so we just verify the cmd is non-nil (the function structure is simple).
 }
 
 // =========================================================================
@@ -2747,9 +2705,9 @@ func TestConfiguratorLogUpdateCmd_StopChannelClosed(t *testing.T) {
 	}
 
 	msg := cmd()
-	tick, ok := msg.(configuratorLogTickMsg)
+	tick, ok := msg.(logViewportTickMsg)
 	if !ok {
-		t.Fatalf("expected configuratorLogTickMsg, got %T", msg)
+		t.Fatalf("expected logViewportTickMsg, got %T", msg)
 	}
 	// When stop is closed, seq should be zero (default)
 	if tick.seq != 0 {
@@ -2769,9 +2727,9 @@ func TestConfiguratorLogUpdateCmd_ChangesChannelFires(t *testing.T) {
 	}
 
 	msg := cmd()
-	tick, ok := msg.(configuratorLogTickMsg)
+	tick, ok := msg.(logViewportTickMsg)
 	if !ok {
-		t.Fatalf("expected configuratorLogTickMsg, got %T", msg)
+		t.Fatalf("expected logViewportTickMsg, got %T", msg)
 	}
 	if tick.seq != 7 {
 		t.Fatalf("expected seq=7 when changes fires, got %d", tick.seq)
@@ -2779,27 +2737,24 @@ func TestConfiguratorLogUpdateCmd_ChangesChannelFires(t *testing.T) {
 }
 
 // =========================================================================
-// 11. refreshLogs coverage - logFollow=false, not at bottom
+// 11. logViewport refresh coverage (delegated; see log_viewport_test.go)
 // =========================================================================
 
-func TestRefreshLogs_NotFollowing_PreservesOffset(t *testing.T) {
+func TestLogsIntegration_RefreshNotFollowing_PreservesOffset(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.width = 80
 	m.height = 30
-	m.logReady = true
-	m.logFollow = false
+	m.logs.follow = false
 
-	// Set content with many lines so viewport is not at bottom
-	m.ensureLogsViewport()
+	m.logs.ensure(m.width, m.height, m.preferences, "", configuratorLogsHint)
 	longContent := strings.Repeat("line\n", 200)
-	m.logViewport.SetContent(longContent)
-	m.logViewport.SetYOffset(5) // not at bottom
+	m.logs.viewport.SetContent(longContent)
+	m.logs.viewport.SetYOffset(5) // not at bottom
 
-	m.refreshLogs()
+	m.logs.refresh(m.logsFeed(), m.preferences)
 
-	// logFollow should remain false
-	if m.logFollow {
-		t.Fatal("expected logFollow to remain false")
+	if m.logs.follow {
+		t.Fatal("expected follow to remain false")
 	}
 }
 
@@ -2918,15 +2873,11 @@ func TestUpdateServerSelectScreen_EnterAddClient_Success(t *testing.T) {
 	}
 }
 
-func TestConfiguratorLogTickCmd_InnerFuncEmitsMessage(t *testing.T) {
-	cmd := configuratorLogTickCmd(42)
-	msg := cmd()
-	tick, ok := msg.(configuratorLogTickMsg)
-	if !ok {
-		t.Fatalf("expected configuratorLogTickMsg, got %T", msg)
-	}
-	if tick.seq != 42 {
-		t.Fatalf("expected seq=42, got %d", tick.seq)
+func TestConfiguratorLogUpdateCmd_DelegatesToLogViewport(t *testing.T) {
+	stop := make(chan struct{})
+	cmd := configuratorLogUpdateCmd(nil, stop, 42)
+	if cmd == nil {
+		t.Fatal("expected non-nil cmd")
 	}
 }
 

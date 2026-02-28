@@ -9,14 +9,15 @@ import (
 type SelectorAdapter struct {
 	selector Selector
 	runner   programRunner
+	settings *uiPreferencesProvider
 }
 
 func NewSelectorAdapter() selectorContract.Factory {
-	return newSelectorAdapterWithRunner(newProgramRunner())
+	return newSelectorAdapterWithRunner(newProgramRunner(), loadUISettingsFromDisk())
 }
 
-func newSelectorAdapterWithRunner(runner programRunner) *SelectorAdapter {
-	return &SelectorAdapter{runner: runner}
+func newSelectorAdapterWithRunner(runner programRunner, settings *uiPreferencesProvider) *SelectorAdapter {
+	return &SelectorAdapter{runner: runner, settings: settings}
 }
 
 func (s *SelectorAdapter) NewTuiSelector(
@@ -24,7 +25,7 @@ func (s *SelectorAdapter) NewTuiSelector(
 	options []string,
 	foregroundColor, backgroundColor value_objects.Color,
 ) (selectorContract.Selector, error) {
-	newSelector := NewSelector(placeholder, options, NewColorizer(), foregroundColor, backgroundColor)
+	newSelector := NewSelector(placeholder, options, NewColorizer(), foregroundColor, backgroundColor, s.settings)
 	selectorProgram, selectorProgramErr := s.runner.Run(newSelector)
 	if selectorProgramErr != nil {
 		return nil, selectorProgramErr

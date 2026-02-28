@@ -344,9 +344,9 @@ func (m unifiedSessionModel) waitingView() string {
 }
 
 func (m *unifiedSessionModel) stopAllLogWaits() {
-	m.configurator.stopLogWait()
+	m.configurator.logs.stopWait()
 	if m.runtime != nil {
-		m.runtime.stopLogWait()
+		m.runtime.logs.stopWait()
 	}
 }
 

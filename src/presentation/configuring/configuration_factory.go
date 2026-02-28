@@ -39,10 +39,12 @@ func (c *ConfigurationFactory) buildTUIConfigurator(ctx context.Context) (Config
 
 	tui.EnableRuntimeLogCapture(1200)
 
+	cfg := tui.NewDefaultConfigurator(c.serverConfManager, c.serverSupported)
 	cleanup := func() {
+		cfg.Close()
 		tui.DisableRuntimeLogCapture()
 		trafficstats.SetGlobal(nil)
 	}
 
-	return tui.NewDefaultConfigurator(c.serverConfManager, c.serverSupported), cleanup
+	return cfg, cleanup
 }

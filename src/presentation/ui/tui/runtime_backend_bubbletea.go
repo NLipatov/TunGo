@@ -6,7 +6,9 @@ import (
 	bubbleTea "tungo/presentation/ui/tui/internal/bubble_tea"
 )
 
-type bubbleTeaRuntimeBackend struct{}
+type bubbleTeaRuntimeBackend struct {
+	sh *sessionHolder
+}
 
 var (
 	bubbleRuntimeEnableLogs   = bubbleTea.EnableGlobalRuntimeLogCapture
@@ -16,18 +18,26 @@ var (
 )
 
 func newBubbleTeaRuntimeBackend() runtimeBackend {
-	return bubbleTeaRuntimeBackend{}
+	return &bubbleTeaRuntimeBackend{}
 }
 
-func (bubbleTeaRuntimeBackend) enableRuntimeLogCapture(capacity int) {
+// injectSessionHolder shares the Configurator's session holder with the
+// active runtime backend. Both sides read/write the same holder.
+func injectSessionHolder(sh *sessionHolder) {
+	if bt, ok := activeRuntimeBackend.(*bubbleTeaRuntimeBackend); ok {
+		bt.sh = sh
+	}
+}
+
+func (b *bubbleTeaRuntimeBackend) enableRuntimeLogCapture(capacity int) {
 	bubbleRuntimeEnableLogs(capacity)
 }
 
-func (bubbleTeaRuntimeBackend) disableRuntimeLogCapture() {
+func (b *bubbleTeaRuntimeBackend) disableRuntimeLogCapture() {
 	bubbleRuntimeDisableLogs()
 }
 
-func (bubbleTeaRuntimeBackend) runRuntimeDashboard(ctx context.Context, mode RuntimeMode) (bool, error) {
+func (b *bubbleTeaRuntimeBackend) runRuntimeDashboard(ctx context.Context, mode RuntimeMode) (bool, error) {
 	options := bubbleTea.RuntimeDashboardOptions{
 		Mode:    bubbleTea.RuntimeDashboardClient,
 		LogFeed: bubbleRuntimeLogFeed(),
@@ -37,13 +47,13 @@ func (bubbleTeaRuntimeBackend) runRuntimeDashboard(ctx context.Context, mode Run
 	}
 
 	// Route to unified session when active (eliminates terminal flash).
-	if activeUnifiedSession != nil {
-		activeUnifiedSession.ActivateRuntime(ctx, options)
-		reconfigure, err := activeUnifiedSession.WaitForRuntimeExit()
+	if b.sh != nil && b.sh.handle != nil {
+		b.sh.handle.ActivateRuntime(ctx, options)
+		reconfigure, err := b.sh.handle.WaitForRuntimeExit()
 		if err != nil {
 			if errors.Is(err, bubbleTea.ErrUnifiedSessionQuit) || errors.Is(err, bubbleTea.ErrUnifiedSessionClosed) {
-				activeUnifiedSession.Close()
-				activeUnifiedSession = nil
+				b.sh.handle.Close()
+				b.sh.handle = nil
 				return false, ErrUserExit
 			}
 			if errors.Is(err, bubbleTea.ErrUnifiedSessionRuntimeDisconnected) {
@@ -51,8 +61,8 @@ func (bubbleTeaRuntimeBackend) runRuntimeDashboard(ctx context.Context, mode Run
 				// Session stays alive for the next ActivateRuntime call.
 				return false, nil
 			}
-			activeUnifiedSession.Close()
-			activeUnifiedSession = nil
+			b.sh.handle.Close()
+			b.sh.handle = nil
 			return false, err
 		}
 		return reconfigure, nil

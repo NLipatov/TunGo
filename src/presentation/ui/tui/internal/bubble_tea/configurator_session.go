@@ -19,15 +19,12 @@ import (
 
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/textinput"
-	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 )
 
 var ErrConfiguratorSessionUserExit = errors.New("configurator session user exit")
 
-type configuratorLogTickMsg struct {
-	seq uint64
-}
+const configuratorLogsHint = "up/down scroll | PgUp/PgDn page | Home/End jump | Space follow | Tab switch tabs | Esc back | ctrl+c exit"
 
 type pasteSettledMsg struct {
 	seq uint64
@@ -143,12 +140,7 @@ type configuratorSessionModel struct {
 	settingsCursor int
 	preferences    UIPreferences
 
-	logViewport viewport.Model
-	logReady    bool
-	logFollow   bool
-	logScratch  []string
-	logWaitStop chan struct{}
-	logTickSeq  uint64
+	logs logViewport
 
 	resultMode mode.Mode
 	resultErr  error
@@ -209,9 +201,7 @@ func newConfiguratorSessionModel(options ConfiguratorSessionOptions, settings *u
 			sessionServerManage,
 		},
 		preferences: settings.Preferences(),
-		logViewport: viewport.New(viewport.WithWidth(1), viewport.WithHeight(8)),
-		logReady:    true,
-		logFollow:   true,
+		logs:        newLogViewport(),
 	}
 
 	if options.Observer == nil ||
@@ -244,7 +234,7 @@ func (m configuratorSessionModel) Init() tea.Cmd {
 
 func (m configuratorSessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.done {
-		m.stopLogWait()
+		m.logs.stopWait()
 		return m, tea.Quit
 	}
 
@@ -254,15 +244,16 @@ func (m configuratorSessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.adjustInputsToViewport()
 		if m.tab == configuratorTabLogs {
-			m.refreshLogs()
+			m.logs.ensure(m.width, m.height, m.preferences, "", configuratorLogsHint)
+			m.logs.refresh(m.logsFeed(), m.preferences)
 		}
 		return m, nil
-	case configuratorLogTickMsg:
-		if msg.seq != m.logTickSeq || m.tab != configuratorTabLogs {
+	case logViewportTickMsg:
+		if msg.seq != m.logs.tickSeq || m.tab != configuratorTabLogs {
 			return m, nil
 		}
-		m.refreshLogs()
-		return m, configuratorLogUpdateCmd(m.logsFeed(), m.logWaitStop, m.logTickSeq)
+		m.logs.refresh(m.logsFeed(), m.preferences)
+		return m, configuratorLogUpdateCmd(m.logsFeed(), m.logs.waitStop, m.logs.tickSeq)
 	case pasteSettledMsg:
 		if m.screen == configuratorScreenClientAddJSON && msg.seq == m.pasteSeq {
 			m.tryFormatJSON()
@@ -271,7 +262,7 @@ func (m configuratorSessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "ctrl+c":
-			m.stopLogWait()
+			m.logs.stopWait()
 			m.resultErr = ErrConfiguratorSessionUserExit
 			m.done = true
 			return m, tea.Quit
@@ -904,13 +895,14 @@ func (m configuratorSessionModel) cycleTab() (tea.Model, tea.Cmd) {
 	}
 	m.preferences = m.settings.Preferences()
 	if m.tab == configuratorTabLogs {
-		m.restartLogWait()
-		m.logTickSeq++
-		m.refreshLogs()
-		return m, configuratorLogUpdateCmd(m.logsFeed(), m.logWaitStop, m.logTickSeq)
+		m.logs.restartWait()
+		m.logs.tickSeq++
+		m.logs.ensure(m.width, m.height, m.preferences, "", configuratorLogsHint)
+		m.logs.refresh(m.logsFeed(), m.preferences)
+		return m, configuratorLogUpdateCmd(m.logsFeed(), m.logs.waitStop, m.logs.tickSeq)
 	}
 	if previous == configuratorTabLogs {
-		m.stopLogWait()
+		m.logs.stopWait()
 	}
 	return m, nil
 }
@@ -946,43 +938,11 @@ func (m configuratorSessionModel) updateSettingsTab(msg tea.KeyPressMsg) (tea.Mo
 func (m configuratorSessionModel) updateLogsTab(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
-		m.stopLogWait()
+		m.logs.stopWait()
 		m.tab = configuratorTabMain
 		return m, nil
 	}
-	switch msg.Key().Code {
-	case tea.KeyPgUp:
-		m.logViewport.PageUp()
-		m.logFollow = false
-		return m, nil
-	case tea.KeyPgDown:
-		m.logViewport.PageDown()
-		m.logFollow = m.logViewport.AtBottom()
-		return m, nil
-	case tea.KeyHome:
-		m.logViewport.GotoTop()
-		m.logFollow = false
-		return m, nil
-	case tea.KeyEnd:
-		m.logViewport.GotoBottom()
-		m.logFollow = true
-		return m, nil
-	case tea.KeySpace:
-		m.logFollow = !m.logFollow
-		if m.logFollow {
-			m.logViewport.GotoBottom()
-		}
-		return m, nil
-	}
-	switch msg.String() {
-	case "up", "k":
-		m.logViewport.ScrollUp(1)
-		m.logFollow = false
-	case "down", "j":
-		m.logViewport.ScrollDown(1)
-		m.logFollow = m.logViewport.AtBottom()
-	}
-	return m, nil
+	return m, m.logs.updateKeys(msg, defaultSelectorKeyMap())
 }
 
 func (m *configuratorSessionModel) reloadClientConfigs() error {
@@ -1116,14 +1076,14 @@ func (m configuratorSessionModel) settingsTabView() string {
 
 func (m configuratorSessionModel) logsTabView() string {
 	styles := resolveUIStyles(m.preferences)
-	body := []string{m.logViewport.View()}
+	body := []string{m.logs.view()}
 	return renderScreen(
 		m.width,
 		m.height,
 		m.tabsLine(styles),
 		"",
 		body,
-		"up/down scroll | PgUp/PgDn page | Home/End jump | Space follow | Tab switch tabs | Esc back | ctrl+c exit",
+		configuratorLogsHint,
 		m.preferences,
 		styles,
 	)
@@ -1138,73 +1098,8 @@ func (m configuratorSessionModel) logsFeed() RuntimeLogFeed {
 	return GlobalRuntimeLogFeed()
 }
 
-func (m *configuratorSessionModel) refreshLogs() {
-	lines := runtimeLogSnapshot(m.logsFeed(), &m.logScratch)
-	m.ensureLogsViewport()
-	wasAtBottom := m.logViewport.AtBottom()
-	offset := m.logViewport.YOffset()
-	content := renderLogsViewportContent(lines, m.logViewport.Width(), resolveUIStyles(m.preferences))
-	m.logViewport.SetContent(content)
-	if m.logFollow || wasAtBottom {
-		m.logViewport.GotoBottom()
-		m.logFollow = true
-		return
-	}
-	m.logViewport.SetYOffset(offset)
-}
-
-func (m *configuratorSessionModel) ensureLogsViewport() {
-	hint := "up/down scroll | PgUp/PgDn page | Home/End jump | Space follow | Tab switch tabs | Esc back | ctrl+c exit"
-	contentWidth, viewportHeight := computeLogsViewportSize(
-		m.width,
-		m.height,
-		m.preferences,
-		"",
-		hint,
-	)
-	if !m.logReady {
-		m.logViewport = viewport.New(viewport.WithWidth(contentWidth), viewport.WithHeight(viewportHeight))
-		m.logReady = true
-		return
-	}
-	m.logViewport.SetWidth(contentWidth)
-	m.logViewport.SetHeight(viewportHeight)
-}
-
-func (m *configuratorSessionModel) restartLogWait() {
-	m.stopLogWait()
-	m.logWaitStop = make(chan struct{})
-}
-
-func (m *configuratorSessionModel) stopLogWait() {
-	if m.logWaitStop != nil {
-		close(m.logWaitStop)
-		m.logWaitStop = nil
-	}
-}
-
-func configuratorLogTickCmd(seq uint64) tea.Cmd {
-	return tea.Tick(time.Second, func(time.Time) tea.Msg {
-		return configuratorLogTickMsg{seq: seq}
-	})
-}
-
 func configuratorLogUpdateCmd(feed RuntimeLogFeed, stop <-chan struct{}, seq uint64) tea.Cmd {
-	changeFeed, ok := feed.(RuntimeLogChangeFeed)
-	if ok {
-		changes := changeFeed.Changes()
-		if changes != nil {
-			return func() tea.Msg {
-				select {
-				case <-stop:
-					return configuratorLogTickMsg{}
-				case <-changes:
-					return configuratorLogTickMsg{seq: seq}
-				}
-			}
-		}
-	}
-	return configuratorLogTickCmd(seq)
+	return logViewportUpdateCmd(feed, stop, seq)
 }
 
 func (m *configuratorSessionModel) updateCursor(keyMsg tea.KeyMsg, listSize int) {
