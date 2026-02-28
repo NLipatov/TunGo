@@ -75,7 +75,13 @@ func (s TunFactory) CreateDevice(connSettings settings.Settings) (tun.Device, er
 		return nil, fmt.Errorf("failed to configure a server: %s\n", configureErr)
 	}
 
-	return s.wrapper.Wrap(tunFile)
+	dev, wrapErr := s.wrapper.Wrap(tunFile)
+	if wrapErr != nil {
+		_ = tunFile.Close()
+		_ = s.DisposeDevices(connSettings)
+		return nil, fmt.Errorf("failed to wrap TUN device: %w", wrapErr)
+	}
+	return dev, nil
 }
 
 func (s TunFactory) DisposeDevices(connSettings settings.Settings) error {
