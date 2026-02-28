@@ -849,7 +849,9 @@ func TestV4_DisposeDevices_CleanupRoutes(t *testing.T) {
 	dev := &mockTunDevice{}
 	m.tunDev = dev
 
-	_ = m.DisposeDevices()
+	if err := m.DisposeDevices(); err != nil {
+		t.Fatalf("unexpected dispose error: %v", err)
+	}
 
 	if len(rt.delSplitCalls) != 1 || rt.delSplitCalls[0] != "utun42" {
 		t.Fatalf("expected DelSplit(utun42), got %v", rt.delSplitCalls)
@@ -874,7 +876,9 @@ func TestV4_DisposeDevices_NoResolvedRouteIP_SkipsDel(t *testing.T) {
 	m.ifName = "utun42"
 	m.resolvedRouteIP = ""
 
-	_ = m.DisposeDevices()
+	if err := m.DisposeDevices(); err != nil {
+		t.Fatalf("unexpected dispose error: %v", err)
+	}
 
 	if len(rt.delCalls) != 0 {
 		t.Fatalf("expected no Del calls, got %v", rt.delCalls)
@@ -889,7 +893,9 @@ func TestV4_DisposeDevices_RawUTUNFallback(t *testing.T) {
 	m.rawUTUN = raw
 	// tunDev is nil, so raw should be closed directly
 
-	_ = m.DisposeDevices()
+	if err := m.DisposeDevices(); err != nil {
+		t.Fatalf("unexpected dispose error: %v", err)
+	}
 
 	if !raw.closed {
 		t.Fatal("expected rawUTUN.Close() to be called when tunDev is nil")
@@ -907,7 +913,9 @@ func TestV6_DisposeDevices_CleanupRoutes(t *testing.T) {
 	dev := &mockTunDevice{}
 	m.tunDev = dev
 
-	_ = m.DisposeDevices()
+	if err := m.DisposeDevices(); err != nil {
+		t.Fatalf("unexpected dispose error: %v", err)
+	}
 
 	if len(rt.delSplitCalls) != 1 || rt.delSplitCalls[0] != "utun42" {
 		t.Fatalf("expected DelSplit(utun42), got %v", rt.delSplitCalls)
@@ -927,7 +935,9 @@ func TestV6_DisposeDevices_RawUTUNFallback(t *testing.T) {
 	raw := &mockUTUN{}
 	m.rawUTUN = raw
 
-	_ = m.DisposeDevices()
+	if err := m.DisposeDevices(); err != nil {
+		t.Fatalf("unexpected dispose error: %v", err)
+	}
 
 	if !raw.closed {
 		t.Fatal("expected rawUTUN.Close() to be called when tunDev is nil")
@@ -944,7 +954,9 @@ func TestDualStack_DisposeDevices_CleanupAllRoutes(t *testing.T) {
 	dev := &mockTunDevice{}
 	m.tunDev = dev
 
-	_ = m.DisposeDevices()
+	if err := m.DisposeDevices(); err != nil {
+		t.Fatalf("unexpected dispose error: %v", err)
+	}
 
 	if len(rt4.delSplitCalls) != 1 || rt4.delSplitCalls[0] != "utun42" {
 		t.Fatalf("expected v4 DelSplit(utun42), got %v", rt4.delSplitCalls)
@@ -979,7 +991,9 @@ func TestDualStack_DisposeDevices_NoResolvedIPs_SkipsDel(t *testing.T) {
 	m.ifName = "utun42"
 	// No resolved IPs
 
-	_ = m.DisposeDevices()
+	if err := m.DisposeDevices(); err != nil {
+		t.Fatalf("unexpected dispose error: %v", err)
+	}
 
 	if len(rt4.delCalls) != 0 {
 		t.Fatalf("expected no v4 Del calls, got %v", rt4.delCalls)
@@ -997,7 +1011,9 @@ func TestDualStack_DisposeDevices_RawUTUNFallback(t *testing.T) {
 	raw := &mockUTUN{}
 	m.rawUTUN = raw
 
-	_ = m.DisposeDevices()
+	if err := m.DisposeDevices(); err != nil {
+		t.Fatalf("unexpected dispose error: %v", err)
+	}
 
 	if !raw.closed {
 		t.Fatal("expected rawUTUN.Close() to be called when tunDev is nil")
@@ -1012,7 +1028,9 @@ func TestDualStack_DisposeDevices_OnlyV4Resolved(t *testing.T) {
 	m.resolvedRouteIP4 = "198.51.100.1"
 	m.resolvedRouteIP6 = ""
 
-	_ = m.DisposeDevices()
+	if err := m.DisposeDevices(); err != nil {
+		t.Fatalf("unexpected dispose error: %v", err)
+	}
 
 	if len(rt4.delCalls) != 1 {
 		t.Fatalf("expected 1 v4 Del call, got %d", len(rt4.delCalls))
@@ -1224,7 +1242,9 @@ func TestV4_DisposeDevices_DoubleSafe(t *testing.T) {
 	m.resolvedRouteIP = "198.51.100.1"
 	m.tunDev = &mockTunDevice{}
 
-	_ = m.DisposeDevices()
+	if err := m.DisposeDevices(); err != nil {
+		t.Fatalf("unexpected dispose error: %v", err)
+	}
 	// Second call should not panic or fail
 	if err := m.DisposeDevices(); err != nil {
 		t.Fatalf("unexpected error on double dispose: %v", err)
@@ -1238,7 +1258,9 @@ func TestV6_DisposeDevices_DoubleSafe(t *testing.T) {
 	m.resolvedRouteIP = "2001:db8::1"
 	m.tunDev = &mockTunDevice{}
 
-	_ = m.DisposeDevices()
+	if err := m.DisposeDevices(); err != nil {
+		t.Fatalf("unexpected dispose error: %v", err)
+	}
 	if err := m.DisposeDevices(); err != nil {
 		t.Fatalf("unexpected error on double dispose: %v", err)
 	}
@@ -1253,7 +1275,9 @@ func TestDualStack_DisposeDevices_DoubleSafe(t *testing.T) {
 	m.resolvedRouteIP6 = "2001:db8::1"
 	m.tunDev = &mockTunDevice{}
 
-	_ = m.DisposeDevices()
+	if err := m.DisposeDevices(); err != nil {
+		t.Fatalf("unexpected dispose error: %v", err)
+	}
 	if err := m.DisposeDevices(); err != nil {
 		t.Fatalf("unexpected error on double dispose: %v", err)
 	}

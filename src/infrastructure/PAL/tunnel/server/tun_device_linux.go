@@ -50,7 +50,7 @@ func (d tunDeviceManager) create(s settings.Settings, ipv4, ipv6 bool) (tunFile 
 			return nil, fmt.Errorf("could not derive server IPv4 CIDR: %s", cidr4Err)
 		}
 		if err = d.ip.AddrAddDev(s.TunName, cidr4); err != nil {
-			return nil, fmt.Errorf("failed to convert server ip to CIDR format: %s", err)
+			return nil, fmt.Errorf("failed to assign IPv4 to TUN %s: %s", s.TunName, err)
 		}
 	}
 

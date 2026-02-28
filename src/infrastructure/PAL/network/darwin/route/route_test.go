@@ -104,6 +104,26 @@ func (m *mockCommander) callCount() int {
 	return len(m.calls)
 }
 
+// callIndex returns the index of the first matching call, or -1 if not found.
+func (m *mockCommander) callIndex(name string, args ...string) int {
+	for i, c := range m.allCalls() {
+		if c.name != name || len(c.args) != len(args) {
+			continue
+		}
+		match := true
+		for j := range args {
+			if c.args[j] != args[j] {
+				match = false
+				break
+			}
+		}
+		if match {
+			return i
+		}
+	}
+	return -1
+}
+
 // hasCall returns true if any recorded call matches exactly.
 func (m *mockCommander) hasCall(name string, args ...string) bool {
 	for _, c := range m.allCalls() {
@@ -256,11 +276,16 @@ func TestV4_Get_validIPWithGateway(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	// Verify delete was called before add
-	if !cmd.hasCall("route", "-q", "-n", "delete", "8.8.8.8") {
+	delIdx := cmd.callIndex("route", "-q", "-n", "delete", "8.8.8.8")
+	addIdx := cmd.callIndex("route", "-q", "-n", "add", "8.8.8.8", "192.168.1.1")
+	if delIdx < 0 {
 		t.Error("expected delete call for old route")
 	}
-	if !cmd.hasCall("route", "-q", "-n", "add", "8.8.8.8", "192.168.1.1") {
+	if addIdx < 0 {
 		t.Error("expected add via gateway call")
+	}
+	if delIdx >= 0 && addIdx >= 0 && delIdx >= addIdx {
+		t.Error("expected delete before add")
 	}
 }
 
@@ -374,11 +399,16 @@ func TestV4_Add_success(t *testing.T) {
 	if err := r.Add("10.1.0.0", "utun3"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !cmd.hasCall("route", "-q", "-n", "delete", "10.1.0.0") {
-		t.Error("expected delete before add")
+	delIdx := cmd.callIndex("route", "-q", "-n", "delete", "10.1.0.0")
+	addIdx := cmd.callIndex("route", "-q", "-n", "add", "10.1.0.0", "-interface", "utun3")
+	if delIdx < 0 {
+		t.Error("expected delete call")
 	}
-	if !cmd.hasCall("route", "-q", "-n", "add", "10.1.0.0", "-interface", "utun3") {
+	if addIdx < 0 {
 		t.Error("expected add on-link call")
+	}
+	if delIdx >= 0 && addIdx >= 0 && delIdx >= addIdx {
+		t.Error("expected delete before add")
 	}
 }
 
@@ -787,7 +817,15 @@ func TestV6_Add_success(t *testing.T) {
 	if err := r.Add("2001:db8::1", "utun3"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !cmd.hasCall("route", "-q", "-n", "delete", "-inet6", "2001:db8::1") {
+	delIdx := cmd.callIndex("route", "-q", "-n", "delete", "-inet6", "2001:db8::1")
+	addIdx := cmd.callIndex("route", "-q", "-n", "add", "-inet6", "2001:db8::1", "-interface", "utun3")
+	if delIdx < 0 {
+		t.Error("expected delete call")
+	}
+	if addIdx < 0 {
+		t.Error("expected add on-link call")
+	}
+	if delIdx >= 0 && addIdx >= 0 && delIdx >= addIdx {
 		t.Error("expected delete before add")
 	}
 }

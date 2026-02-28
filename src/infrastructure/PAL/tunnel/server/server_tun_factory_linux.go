@@ -106,7 +106,7 @@ func (s TunFactory) DisposeDevices(connSettings settings.Settings) error {
 func (s TunFactory) Unconfigure(tunFile *os.File) error {
 	tunName, err := s.device.detectName(tunFile)
 	if err != nil {
-		log.Printf("failed to determine tunnel ifName: %s\n", err)
+		return fmt.Errorf("failed to determine tunnel ifName: %w", err)
 	}
 
 	extIface, err := s.device.externalInterface()
