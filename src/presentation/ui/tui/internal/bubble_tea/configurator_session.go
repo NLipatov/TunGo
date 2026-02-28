@@ -103,6 +103,28 @@ const (
 	sessionCancel              = "Cancel"
 )
 
+type clientConfigScreens struct {
+	configs      []string
+	menuOptions  []string
+	removePaths  []string
+	addNameInput textinput.Model
+	addJSONInput textarea.Model
+	addName      string
+	lastInputAt  time.Time
+	pasteSeq     uint64
+	invalidErr         error
+	invalidConfig      string
+	invalidAllowDelete bool
+}
+
+type serverConfigScreens struct {
+	menuOptions  []string
+	managePeers  []serverConfiguration.AllowedPeer
+	manageLabels []string
+	deletePeer   serverConfiguration.AllowedPeer
+	deleteCursor int
+}
+
 type configuratorSessionModel struct {
 	settings        *uiPreferencesProvider
 	options         ConfiguratorSessionOptions
@@ -114,25 +136,9 @@ type configuratorSessionModel struct {
 	screen configuratorScreen
 	cursor int
 
-	modeOptions        []string
-	clientConfigs      []string
-	clientMenuOptions  []string
-	clientRemovePaths  []string
-	serverMenuOptions  []string
-	serverManagePeers  []serverConfiguration.AllowedPeer
-	serverManageLabels []string
-	serverDeletePeer   serverConfiguration.AllowedPeer
-	serverDeleteCursor int
-
-	addNameInput textinput.Model
-	addJSONInput textarea.Model
-	addName      string
-	lastInputAt  time.Time
-	pasteSeq     uint64
-
-	invalidErr         error
-	invalidConfig      string
-	invalidAllowDelete bool
+	modeOptions []string
+	client      clientConfigScreens
+	server      serverConfigScreens
 
 	notice string
 
@@ -195,10 +201,12 @@ func newConfiguratorSessionModel(options ConfiguratorSessionOptions, settings *u
 		screen:          configuratorScreenMode,
 		cursor:          0,
 		modeOptions:     modeOptions,
-		serverMenuOptions: []string{
-			sessionServerStart,
-			sessionServerAdd,
-			sessionServerManage,
+		server: serverConfigScreens{
+			menuOptions: []string{
+				sessionServerStart,
+				sessionServerAdd,
+				sessionServerManage,
+			},
 		},
 		preferences: settings.Preferences(),
 		logs:        newLogViewport(),
@@ -255,7 +263,7 @@ func (m configuratorSessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.logs.refresh(m.logsFeed(), m.preferences)
 		return m, configuratorLogUpdateCmd(m.logsFeed(), m.logs.waitStop, m.logs.tickSeq)
 	case pasteSettledMsg:
-		if m.screen == configuratorScreenClientAddJSON && msg.seq == m.pasteSeq {
+		if m.screen == configuratorScreenClientAddJSON && msg.seq == m.client.pasteSeq {
 			m.tryFormatJSON()
 		}
 		return m, nil
@@ -306,11 +314,11 @@ func (m configuratorSessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m.screen {
 	case configuratorScreenClientAddName:
 		var cmd tea.Cmd
-		m.addNameInput, cmd = m.addNameInput.Update(msg)
+		m.client.addNameInput, cmd = m.client.addNameInput.Update(msg)
 		return m, cmd
 	case configuratorScreenClientAddJSON:
 		var cmd tea.Cmd
-		m.addJSONInput, cmd = m.addJSONInput.Update(msg)
+		m.client.addJSONInput, cmd = m.client.addJSONInput.Update(msg)
 		return m, cmd
 	}
 
@@ -346,7 +354,7 @@ func (m configuratorSessionModel) mainTabView() string {
 		return m.renderSelectionScreen(
 			"Select configuration - or add/remove one:",
 			m.notice,
-			m.clientMenuOptions,
+			m.client.menuOptions,
 			m.cursor,
 			"up/k down/j move | Enter select | Tab switch tabs | Esc back | ctrl+c exit",
 		)
@@ -354,19 +362,19 @@ func (m configuratorSessionModel) mainTabView() string {
 		return m.renderSelectionScreen(
 			"Choose a configuration to remove:",
 			"",
-			m.clientRemovePaths,
+			m.client.removePaths,
 			m.cursor,
 			"up/k down/j move | Enter remove | Tab switch tabs | Esc back | ctrl+c exit",
 		)
 	case configuratorScreenClientAddName:
 		styles := resolveUIStyles(m.preferences)
 		container := styles.inputFrame.Width(m.inputContainerWidth())
-		stats := styles.meta.Render("Characters: " + formatCount(utf8.RuneCountInString(m.addNameInput.Value()), m.addNameInput.CharLimit))
+		stats := styles.meta.Render("Characters: " + formatCount(utf8.RuneCountInString(m.client.addNameInput.Value()), m.client.addNameInput.CharLimit))
 		body := make([]string, 0, 4)
 		if strings.TrimSpace(m.notice) != "" {
 			body = append(body, m.notice, "")
 		}
-		body = append(body, container.Render(m.addNameInput.View()), stats)
+		body = append(body, container.Render(m.client.addNameInput.View()), stats)
 		return renderScreen(
 			m.width,
 			m.height,
@@ -381,7 +389,7 @@ func (m configuratorSessionModel) mainTabView() string {
 		styles := resolveUIStyles(m.preferences)
 		container := styles.inputFrame.Width(m.inputContainerWidth())
 		lines := 1
-		if value := m.addJSONInput.Value(); value != "" {
+		if value := m.client.addJSONInput.Value(); value != "" {
 			lines = len(strings.Split(value, "\n"))
 		}
 		stats := styles.meta.Render(fmt.Sprintf("Lines: %d", lines))
@@ -389,7 +397,7 @@ func (m configuratorSessionModel) mainTabView() string {
 		if strings.TrimSpace(m.notice) != "" {
 			body = append(body, m.notice, "")
 		}
-		body = append(body, container.Render(m.addJSONInput.View()), stats)
+		body = append(body, container.Render(m.client.addJSONInput.View()), stats)
 		return renderScreen(
 			m.width,
 			m.height,
@@ -402,10 +410,10 @@ func (m configuratorSessionModel) mainTabView() string {
 		)
 	case configuratorScreenClientInvalid:
 		options := []string{sessionInvalidOK}
-		if m.invalidAllowDelete {
+		if m.client.invalidAllowDelete {
 			options = []string{sessionInvalidDelete, sessionInvalidOK}
 		}
-		subtitle := "Configuration is invalid: " + summarizeInvalidConfigurationError(m.invalidErr)
+		subtitle := "Configuration is invalid: " + summarizeInvalidConfigurationError(m.client.invalidErr)
 		return m.renderSelectionScreen(
 			"Configuration error",
 			subtitle,
@@ -417,7 +425,7 @@ func (m configuratorSessionModel) mainTabView() string {
 		return m.renderSelectionScreen(
 			"Choose an option",
 			m.notice,
-			m.serverMenuOptions,
+			m.server.menuOptions,
 			m.cursor,
 			"up/k down/j move | Enter select | Tab switch tabs | Esc back | ctrl+c exit",
 		)
@@ -425,7 +433,7 @@ func (m configuratorSessionModel) mainTabView() string {
 		return m.renderSelectionScreen(
 			"Select client to enable/disable or delete",
 			"",
-			m.serverManageLabels,
+			m.server.manageLabels,
 			m.cursor,
 			"up/k down/j move | Enter toggle | d delete | Tab switch tabs | Esc back | ctrl+c exit",
 		)
@@ -433,8 +441,8 @@ func (m configuratorSessionModel) mainTabView() string {
 		return m.renderSelectionScreen(
 			fmt.Sprintf(
 				"Delete client #%d %s?",
-				m.serverDeletePeer.ClientID,
-				serverPeerDisplayName(m.serverDeletePeer),
+				m.server.deletePeer.ClientID,
+				serverPeerDisplayName(m.server.deletePeer),
 			),
 			"This action removes client access from server configuration.",
 			[]string{sessionServerDeleteConfirm, sessionCancel},
@@ -486,12 +494,12 @@ func (m configuratorSessionModel) updateClientSelectScreen(msg tea.KeyPressMsg) 
 		return m, nil
 	}
 
-	m.updateCursor(msg, len(m.clientMenuOptions))
-	if msg.String() != "enter" || len(m.clientMenuOptions) == 0 {
+	m.updateCursor(msg, len(m.client.menuOptions))
+	if msg.String() != "enter" || len(m.client.menuOptions) == 0 {
 		return m, nil
 	}
 
-	selected := m.clientMenuOptions[m.cursor]
+	selected := m.client.menuOptions[m.cursor]
 	switch selected {
 	case sessionClientAdd:
 		m.notice = ""
@@ -501,14 +509,14 @@ func (m configuratorSessionModel) updateClientSelectScreen(msg tea.KeyPressMsg) 
 		m.adjustInputsToViewport()
 		return m, textinput.Blink
 	case sessionClientRemove:
-		if len(m.clientConfigs) == 0 {
+		if len(m.client.configs) == 0 {
 			m.notice = "No configurations available for removal."
 			return m, nil
 		}
 		m.notice = ""
 		m.cursor = 0
 		m.screen = configuratorScreenClientRemove
-		m.clientRemovePaths = append([]string(nil), m.clientConfigs...)
+		m.client.removePaths = append([]string(nil), m.client.configs...)
 		return m, nil
 	default:
 		if err := m.options.Selector.Select(selected); err != nil {
@@ -520,9 +528,9 @@ func (m configuratorSessionModel) updateClientSelectScreen(msg tea.KeyPressMsg) 
 		if m.options.ClientConfigManager != nil {
 			_, cfgErr := m.options.ClientConfigManager.Configuration()
 			if isInvalidClientConfigurationError(cfgErr) {
-				m.invalidErr = cfgErr
-				m.invalidConfig = selected
-				m.invalidAllowDelete = true
+				m.client.invalidErr = cfgErr
+				m.client.invalidConfig = selected
+				m.client.invalidAllowDelete = true
 				m.cursor = 0
 				m.screen = configuratorScreenClientInvalid
 				return m, nil
@@ -553,12 +561,12 @@ func (m configuratorSessionModel) updateClientRemoveScreen(msg tea.KeyPressMsg) 
 		return m, nil
 	}
 
-	m.updateCursor(msg, len(m.clientRemovePaths))
-	if msg.String() != "enter" || len(m.clientRemovePaths) == 0 {
+	m.updateCursor(msg, len(m.client.removePaths))
+	if msg.String() != "enter" || len(m.client.removePaths) == 0 {
 		return m, nil
 	}
 
-	toDelete := m.clientRemovePaths[m.cursor]
+	toDelete := m.client.removePaths[m.cursor]
 	if err := m.options.Deleter.Delete(toDelete); err != nil {
 		m.resultErr = err
 		m.done = true
@@ -583,23 +591,23 @@ func (m configuratorSessionModel) updateClientAddNameScreen(msg tea.KeyPressMsg)
 		m.screen = configuratorScreenClientSelect
 		return m, nil
 	case "enter":
-		name := strings.TrimSpace(m.addNameInput.Value())
+		name := strings.TrimSpace(m.client.addNameInput.Value())
 		if name == "" {
 			m.notice = "Configuration name cannot be empty."
 			return m, nil
 		}
-		m.addName = name
+		m.client.addName = name
 		m.notice = ""
 		m.cursor = 0
 		m.screen = configuratorScreenClientAddJSON
-		m.lastInputAt = time.Time{}
+		m.client.lastInputAt = time.Time{}
 		m.initJSONInput()
 		m.adjustInputsToViewport()
 		return m, textarea.Blink
 	}
 
 	var cmd tea.Cmd
-	m.addNameInput, cmd = m.addNameInput.Update(msg)
+	m.client.addNameInput, cmd = m.client.addNameInput.Update(msg)
 	return m, cmd
 }
 
@@ -618,24 +626,24 @@ func (m configuratorSessionModel) updateClientAddJSONScreen(msg tea.KeyPressMsg)
 		// non-Enter keystroke, it is almost certainly a newline from a
 		// character-by-character terminal paste — insert it as a newline
 		// instead of submitting.
-		if !m.lastInputAt.IsZero() && time.Since(m.lastInputAt) < pasteDebounce {
-			m.lastInputAt = time.Now()
+		if !m.client.lastInputAt.IsZero() && time.Since(m.client.lastInputAt) < pasteDebounce {
+			m.client.lastInputAt = time.Now()
 			var cmd tea.Cmd
-			m.addJSONInput, cmd = m.addJSONInput.Update(msg)
+			m.client.addJSONInput, cmd = m.client.addJSONInput.Update(msg)
 			return m, cmd
 		}
 
-		configuration, parseErr := parseClientConfigurationJSON(m.addJSONInput.Value())
+		configuration, parseErr := parseClientConfigurationJSON(m.client.addJSONInput.Value())
 		if parseErr != nil {
-			m.invalidErr = parseErr
-			m.invalidConfig = ""
-			m.invalidAllowDelete = false
+			m.client.invalidErr = parseErr
+			m.client.invalidConfig = ""
+			m.client.invalidAllowDelete = false
 			m.cursor = 0
 			m.screen = configuratorScreenClientInvalid
 			return m, nil
 		}
 
-		if err := m.options.Creator.Create(configuration, m.addName); err != nil {
+		if err := m.options.Creator.Create(configuration, m.client.addName); err != nil {
 			m.resultErr = err
 			m.done = true
 			return m, tea.Quit
@@ -653,13 +661,13 @@ func (m configuratorSessionModel) updateClientAddJSONScreen(msg tea.KeyPressMsg)
 	}
 
 	// Track non-Enter input timing for debounce.
-	m.lastInputAt = time.Now()
-	m.pasteSeq++
-	seq := m.pasteSeq
+	m.client.lastInputAt = time.Now()
+	m.client.pasteSeq++
+	seq := m.client.pasteSeq
 
 	// Forward to textarea (paste characters, cursor movement, etc.)
 	var cmd tea.Cmd
-	m.addJSONInput, cmd = m.addJSONInput.Update(msg)
+	m.client.addJSONInput, cmd = m.client.addJSONInput.Update(msg)
 	return m, tea.Batch(cmd, tea.Tick(pasteDebounce, func(time.Time) tea.Msg {
 		return pasteSettledMsg{seq: seq}
 	}))
@@ -675,7 +683,7 @@ func (m configuratorSessionModel) updateClientInvalidScreen(msg tea.KeyPressMsg)
 	}
 
 	options := []string{sessionInvalidOK}
-	if m.invalidAllowDelete {
+	if m.client.invalidAllowDelete {
 		options = []string{sessionInvalidDelete, sessionInvalidOK}
 	}
 	m.updateCursor(msg, len(options))
@@ -684,13 +692,13 @@ func (m configuratorSessionModel) updateClientInvalidScreen(msg tea.KeyPressMsg)
 	}
 
 	selected := options[m.cursor]
-	if selected == sessionInvalidDelete && m.invalidAllowDelete {
-		if strings.TrimSpace(m.invalidConfig) == "" {
+	if selected == sessionInvalidDelete && m.client.invalidAllowDelete {
+		if strings.TrimSpace(m.client.invalidConfig) == "" {
 			m.resultErr = errors.New("invalid configuration cannot be deleted")
 			m.done = true
 			return m, tea.Quit
 		}
-		if err := m.options.Deleter.Delete(m.invalidConfig); err != nil {
+		if err := m.options.Deleter.Delete(m.client.invalidConfig); err != nil {
 			m.resultErr = err
 			m.done = true
 			return m, tea.Quit
@@ -716,12 +724,12 @@ func (m configuratorSessionModel) updateServerSelectScreen(msg tea.KeyPressMsg) 
 		return m, nil
 	}
 
-	m.updateCursor(msg, len(m.serverMenuOptions))
-	if msg.String() != "enter" || len(m.serverMenuOptions) == 0 {
+	m.updateCursor(msg, len(m.server.menuOptions))
+	if msg.String() != "enter" || len(m.server.menuOptions) == 0 {
 		return m, nil
 	}
 
-	switch m.serverMenuOptions[m.cursor] {
+	switch m.server.menuOptions[m.cursor] {
 	case sessionServerStart:
 		m.resultMode = mode.Server
 		m.done = true
@@ -759,8 +767,8 @@ func (m configuratorSessionModel) updateServerSelectScreen(msg tea.KeyPressMsg) 
 			m.notice = "No clients configured yet."
 			return m, nil
 		}
-		m.serverManagePeers = peers
-		m.serverManageLabels = buildServerManageLabels(peers)
+		m.server.managePeers = peers
+		m.server.manageLabels = buildServerManageLabels(peers)
 		m.notice = ""
 		m.cursor = 0
 		m.screen = configuratorScreenServerManage
@@ -777,22 +785,22 @@ func (m configuratorSessionModel) updateServerManageScreen(msg tea.KeyPressMsg) 
 		m.screen = configuratorScreenServerSelect
 		return m, nil
 	case "d", "D":
-		if len(m.serverManagePeers) == 0 {
+		if len(m.server.managePeers) == 0 {
 			return m, nil
 		}
-		m.serverDeletePeer = m.serverManagePeers[m.cursor]
-		m.serverDeleteCursor = m.cursor
+		m.server.deletePeer = m.server.managePeers[m.cursor]
+		m.server.deleteCursor = m.cursor
 		m.cursor = 0
 		m.screen = configuratorScreenServerDeleteConfirm
 		return m, nil
 	}
 
-	m.updateCursor(msg, len(m.serverManagePeers))
-	if msg.String() != "enter" || len(m.serverManagePeers) == 0 {
+	m.updateCursor(msg, len(m.server.managePeers))
+	if msg.String() != "enter" || len(m.server.managePeers) == 0 {
 		return m, nil
 	}
 
-	peer := m.serverManagePeers[m.cursor]
+	peer := m.server.managePeers[m.cursor]
 	nextEnabled := !peer.Enabled
 	if err := m.options.ServerConfigManager.SetAllowedPeerEnabled(peer.ClientID, nextEnabled); err != nil {
 		m.notice = fmt.Sprintf("Failed to update client #%d: %v", peer.ClientID, err)
@@ -814,10 +822,10 @@ func (m configuratorSessionModel) updateServerManageScreen(msg tea.KeyPressMsg) 
 		return m, nil
 	}
 
-	m.serverManagePeers = peers
-	m.serverManageLabels = buildServerManageLabels(peers)
-	if m.cursor >= len(m.serverManagePeers) {
-		m.cursor = len(m.serverManagePeers) - 1
+	m.server.managePeers = peers
+	m.server.manageLabels = buildServerManageLabels(peers)
+	if m.cursor >= len(m.server.managePeers) {
+		m.cursor = len(m.server.managePeers) - 1
 	}
 	return m, nil
 }
@@ -825,8 +833,8 @@ func (m configuratorSessionModel) updateServerManageScreen(msg tea.KeyPressMsg) 
 func (m configuratorSessionModel) updateServerDeleteConfirmScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
-		if len(m.serverManagePeers) > 0 {
-			m.cursor = minInt(m.serverDeleteCursor, len(m.serverManagePeers)-1)
+		if len(m.server.managePeers) > 0 {
+			m.cursor = minInt(m.server.deleteCursor, len(m.server.managePeers)-1)
 		} else {
 			m.cursor = 0
 		}
@@ -842,8 +850,8 @@ func (m configuratorSessionModel) updateServerDeleteConfirmScreen(msg tea.KeyPre
 
 	selected := options[m.cursor]
 	if selected == sessionCancel {
-		if len(m.serverManagePeers) > 0 {
-			m.cursor = minInt(m.serverDeleteCursor, len(m.serverManagePeers)-1)
+		if len(m.server.managePeers) > 0 {
+			m.cursor = minInt(m.server.deleteCursor, len(m.server.managePeers)-1)
 		} else {
 			m.cursor = 0
 		}
@@ -851,8 +859,8 @@ func (m configuratorSessionModel) updateServerDeleteConfirmScreen(msg tea.KeyPre
 		return m, nil
 	}
 
-	if err := m.options.ServerConfigManager.RemoveAllowedPeer(m.serverDeletePeer.ClientID); err != nil {
-		m.notice = fmt.Sprintf("Failed to remove client #%d: %v", m.serverDeletePeer.ClientID, err)
+	if err := m.options.ServerConfigManager.RemoveAllowedPeer(m.server.deletePeer.ClientID); err != nil {
+		m.notice = fmt.Sprintf("Failed to remove client #%d: %v", m.server.deletePeer.ClientID, err)
 		m.screen = configuratorScreenServerManage
 		m.cursor = 0
 		return m, nil
@@ -873,12 +881,12 @@ func (m configuratorSessionModel) updateServerDeleteConfirmScreen(msg tea.KeyPre
 
 	m.notice = fmt.Sprintf(
 		"Client #%d %s removed.",
-		m.serverDeletePeer.ClientID,
-		serverPeerDisplayName(m.serverDeletePeer),
+		m.server.deletePeer.ClientID,
+		serverPeerDisplayName(m.server.deletePeer),
 	)
-	m.serverManagePeers = peers
-	m.serverManageLabels = buildServerManageLabels(peers)
-	m.cursor = minInt(m.serverDeleteCursor, len(peers)-1)
+	m.server.managePeers = peers
+	m.server.manageLabels = buildServerManageLabels(peers)
+	m.cursor = minInt(m.server.deleteCursor, len(peers)-1)
 	m.screen = configuratorScreenServerManage
 	return m, nil
 }
@@ -950,13 +958,13 @@ func (m *configuratorSessionModel) reloadClientConfigs() error {
 	if err != nil {
 		return err
 	}
-	m.clientConfigs = configs
-	m.clientMenuOptions = make([]string, 0, len(configs)+2)
-	m.clientMenuOptions = append(m.clientMenuOptions, configs...)
+	m.client.configs = configs
+	m.client.menuOptions = make([]string, 0, len(configs)+2)
+	m.client.menuOptions = append(m.client.menuOptions, configs...)
 	if len(configs) > 0 {
-		m.clientMenuOptions = append(m.clientMenuOptions, sessionClientRemove)
+		m.client.menuOptions = append(m.client.menuOptions, sessionClientRemove)
 	}
-	m.clientMenuOptions = append(m.clientMenuOptions, sessionClientAdd)
+	m.client.menuOptions = append(m.client.menuOptions, sessionClientAdd)
 	return nil
 }
 
@@ -968,11 +976,11 @@ func (m *configuratorSessionModel) initNameInput() {
 	ti.SetWidth(40)
 	ti.SetValue("")
 	ti.Focus()
-	m.addNameInput = ti
+	m.client.addNameInput = ti
 }
 
 func (m *configuratorSessionModel) tryFormatJSON() {
-	raw := m.addJSONInput.Value()
+	raw := m.client.addJSONInput.Value()
 	if strings.TrimSpace(raw) == "" {
 		return
 	}
@@ -985,7 +993,7 @@ func (m *configuratorSessionModel) tryFormatJSON() {
 		return
 	}
 	if string(pretty) != raw {
-		m.addJSONInput.SetValue(string(pretty))
+		m.client.addJSONInput.SetValue(string(pretty))
 	}
 }
 
@@ -1001,7 +1009,7 @@ func (m *configuratorSessionModel) initJSONInput() {
 	ta.SetStyles(styles)
 	ta.SetValue("")
 	ta.Focus()
-	m.addJSONInput = ta
+	m.client.addJSONInput = ta
 }
 
 func (m *configuratorSessionModel) adjustInputsToViewport() {
@@ -1010,10 +1018,10 @@ func (m *configuratorSessionModel) adjustInputsToViewport() {
 	}
 	contentWidth := contentWidthForTerminal(m.width)
 	available := maxInt(1, contentWidth-resolveUIStyles(m.preferences).inputFrame.GetHorizontalFrameSize())
-	m.addNameInput.SetWidth(minInt(40, available))
-	m.addJSONInput.SetWidth(minInt(80, available))
+	m.client.addNameInput.SetWidth(minInt(40, available))
+	m.client.addJSONInput.SetWidth(minInt(80, available))
 	if m.height > 18 {
-		m.addJSONInput.SetHeight(m.height - 18)
+		m.client.addJSONInput.SetHeight(m.height - 18)
 	}
 }
 

@@ -114,8 +114,8 @@ func newSessionModelForServerManageTests(
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
 	model.screen = configuratorScreenServerManage
-	model.serverManagePeers = append([]serverConfiguration.AllowedPeer(nil), manager.peers...)
-	model.serverManageLabels = buildServerManageLabels(model.serverManagePeers)
+	model.server.managePeers = append([]serverConfiguration.AllowedPeer(nil), manager.peers...)
+	model.server.manageLabels = buildServerManageLabels(model.server.managePeers)
 	model.cursor = 0
 	return model
 }
@@ -157,8 +157,8 @@ func TestServerManage_DeleteFlow_ConfirmRemovesPeer(t *testing.T) {
 	if state.screen != configuratorScreenServerManage {
 		t.Fatalf("expected return to manage screen, got %v", state.screen)
 	}
-	if len(state.serverManagePeers) != 1 || state.serverManagePeers[0].ClientID != 2 {
-		t.Fatalf("unexpected peers after delete: %+v", state.serverManagePeers)
+	if len(state.server.managePeers) != 1 || state.server.managePeers[0].ClientID != 2 {
+		t.Fatalf("unexpected peers after delete: %+v", state.server.managePeers)
 	}
 	if !strings.Contains(state.notice, "removed") {
 		t.Fatalf("expected removal notice, got %q", state.notice)
@@ -186,8 +186,8 @@ func TestServerManage_DeleteFlow_CancelKeepsPeer(t *testing.T) {
 	if state.screen != configuratorScreenServerManage {
 		t.Fatalf("expected return to manage screen, got %v", state.screen)
 	}
-	if len(state.serverManagePeers) != 1 || state.serverManagePeers[0].ClientID != 10 {
-		t.Fatalf("unexpected peers after cancel: %+v", state.serverManagePeers)
+	if len(state.server.managePeers) != 1 || state.server.managePeers[0].ClientID != 10 {
+		t.Fatalf("unexpected peers after cancel: %+v", state.server.managePeers)
 	}
 }
 
@@ -264,7 +264,7 @@ func TestServerManage_ToggleEnabled_ListReturnsEmpty_GoesBack(t *testing.T) {
 	}
 	model := newSessionModelForServerManageTests(t, manager)
 	// After toggle, clear all peers so ListAllowedPeers returns empty.
-	model.serverManagePeers = []serverConfiguration.AllowedPeer{
+	model.server.managePeers = []serverConfiguration.AllowedPeer{
 		{Name: "alpha", ClientID: 1, Enabled: true},
 	}
 	// Hack: after SetAllowedPeerEnabled succeeds, the manager has the peer toggled.
@@ -299,8 +299,8 @@ func TestServerManage_ToggleEnabled_ListReturnsEmpty_GoesBack(t *testing.T) {
 		{Name: "alpha", ClientID: 1, Enabled: true},
 		{Name: "beta", ClientID: 2, Enabled: false},
 	}
-	model.serverManagePeers = append([]serverConfiguration.AllowedPeer(nil), manager.peers...)
-	model.serverManageLabels = buildServerManageLabels(model.serverManagePeers)
+	model.server.managePeers = append([]serverConfiguration.AllowedPeer(nil), manager.peers...)
+	model.server.manageLabels = buildServerManageLabels(model.server.managePeers)
 	model.cursor = 1
 
 	nextModel, _ := model.updateServerManageScreen(keyNamed(tea.KeyEnter))
@@ -315,8 +315,8 @@ func TestServerManage_DeleteNoEmptyPeers(t *testing.T) {
 		peers: nil,
 	}
 	model := newSessionModelForServerManageTests(t, manager)
-	model.serverManagePeers = nil
-	model.serverManageLabels = nil
+	model.server.managePeers = nil
+	model.server.manageLabels = nil
 
 	// 'd' with no peers should be a no-op.
 	nextModel, _ := model.updateServerManageScreen(keyRunes('d'))
@@ -332,8 +332,8 @@ func TestServerDeleteConfirm_EscRestoresCursorNoPeers(t *testing.T) {
 	}
 	model := newSessionModelForServerManageTests(t, manager)
 	model.screen = configuratorScreenServerDeleteConfirm
-	model.serverManagePeers = nil
-	model.serverDeleteCursor = 0
+	model.server.managePeers = nil
+	model.server.deleteCursor = 0
 
 	nextModel, _ := model.updateServerDeleteConfirmScreen(keyNamed(tea.KeyEsc))
 	state := nextModel.(configuratorSessionModel)
@@ -354,7 +354,7 @@ func TestServerDeleteConfirm_RemoveError_ShowsNotice(t *testing.T) {
 	}
 	model := newSessionModelForServerManageTests(t, manager)
 	model.screen = configuratorScreenServerDeleteConfirm
-	model.serverDeletePeer = manager.peers[0]
+	model.server.deletePeer = manager.peers[0]
 	model.cursor = 0
 
 	nextModel, _ := model.updateServerDeleteConfirmScreen(keyNamed(tea.KeyEnter))
@@ -375,7 +375,7 @@ func TestServerDeleteConfirm_ListError_Exits(t *testing.T) {
 	}
 	model := newSessionModelForServerManageTests(t, manager)
 	model.screen = configuratorScreenServerDeleteConfirm
-	model.serverDeletePeer = manager.peers[0]
+	model.server.deletePeer = manager.peers[0]
 	model.cursor = 0
 	// After remove, make list fail.
 	// The remove will succeed (removeErr is nil), and the peer is removed from slice.
@@ -402,8 +402,8 @@ func TestServerDeleteConfirm_CancelWithPeers_RestoresCursor(t *testing.T) {
 	}
 	model := newSessionModelForServerManageTests(t, manager)
 	model.screen = configuratorScreenServerDeleteConfirm
-	model.serverDeletePeer = manager.peers[1]
-	model.serverDeleteCursor = 1
+	model.server.deletePeer = manager.peers[1]
+	model.server.deleteCursor = 1
 	model.cursor = 1 // cursor on "Cancel"
 
 	nextModel, _ := model.updateServerDeleteConfirmScreen(keyNamed(tea.KeyEnter))

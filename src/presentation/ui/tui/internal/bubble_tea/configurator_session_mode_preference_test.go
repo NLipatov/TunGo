@@ -95,8 +95,8 @@ func TestUpdateClientSelectScreen_LastClientConfig_SavedOnSuccess(t *testing.T) 
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenClientSelect
-	model.clientConfigs = []string{"cfg.json"}
-	model.clientMenuOptions = []string{"cfg.json", sessionClientRemove, sessionClientAdd}
+	model.client.configs = []string{"cfg.json"}
+	model.client.menuOptions = []string{"cfg.json", sessionClientRemove, sessionClientAdd}
 	model.cursor = 0
 
 	model.updateClientSelectScreen(keyNamed(tea.KeyEnter))
@@ -117,8 +117,8 @@ func TestUpdateClientSelectScreen_LastClientConfig_NotSavedWhenSelectFails(t *te
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenClientSelect
-	model.clientConfigs = []string{"cfg.json"}
-	model.clientMenuOptions = []string{"cfg.json", sessionClientRemove, sessionClientAdd}
+	model.client.configs = []string{"cfg.json"}
+	model.client.menuOptions = []string{"cfg.json", sessionClientRemove, sessionClientAdd}
 	model.cursor = 0
 
 	model.updateClientSelectScreen(keyNamed(tea.KeyEnter))
@@ -141,8 +141,8 @@ func TestUpdateClientSelectScreen_LastClientConfig_NotSavedWhenConfigInvalid(t *
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenClientSelect
-	model.clientConfigs = []string{"cfg.json"}
-	model.clientMenuOptions = []string{"cfg.json", sessionClientRemove, sessionClientAdd}
+	model.client.configs = []string{"cfg.json"}
+	model.client.menuOptions = []string{"cfg.json", sessionClientRemove, sessionClientAdd}
 	model.cursor = 0
 
 	model.updateClientSelectScreen(keyNamed(tea.KeyEnter))
