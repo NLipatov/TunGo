@@ -12,7 +12,7 @@ import (
 	runtimeUI "tungo/presentation/ui/tui"
 )
 
-type RuntimeDashboardFunc func(ctx context.Context, mode runtimeUI.RuntimeMode) (bool, error)
+type RuntimeDashboardFunc func(ctx context.Context, mode runtimeUI.RuntimeMode, readyCh <-chan struct{}) (bool, error)
 
 type Runner struct {
 	uiMode              app.UIMode
@@ -24,6 +24,10 @@ type Runner struct {
 type runtimeUIResult struct {
 	userQuit bool
 	err      error
+}
+
+type connectResult struct {
+	err error
 }
 
 func NewRunner(uiMode app.UIMode, deps AppDependencies, routerFactory connection.TrafficRouterFactory) *Runner {
@@ -73,6 +77,14 @@ func (r *Runner) runSession(parentCtx context.Context) error {
 		log.Printf("error disposing tun devices: %v", err)
 	}
 
+	if r.uiMode != app.TUI {
+		return r.runSessionBlocking(ctx)
+	}
+	return r.runSessionInteractive(ctx)
+}
+
+// runSessionBlocking handles the non-TUI (CLI) path: blocking connect then route.
+func (r *Runner) runSessionBlocking(ctx context.Context) error {
 	router, conn, tun, err := r.routerFactory.
 		CreateRouter(ctx, r.deps.ConnectionFactory(), r.deps.TunManager(), r.deps.WorkerFactory())
 	if err != nil {
@@ -80,62 +92,92 @@ func (r *Runner) runSession(parentCtx context.Context) error {
 	}
 
 	go func() {
-		<-ctx.Done() //blocks until context is cancelled
+		<-ctx.Done()
 		_ = conn.Close()
 		_ = tun.Close()
 	}()
 
 	log.Printf("tunneling traffic via tun device")
-	if r.uiMode != app.TUI {
-		return router.RouteTraffic(ctx)
-	}
-	routeErrCh := make(chan error, 1)
-	go func() {
-		routeErrCh <- router.RouteTraffic(ctx)
-	}()
+	return router.RouteTraffic(ctx)
+}
+
+// runSessionInteractive handles the TUI path: dashboard starts before connection.
+func (r *Runner) runSessionInteractive(ctx context.Context) error {
+	sessionCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	readyCh := make(chan struct{})
 
 	uiResultCh := make(chan runtimeUIResult, 1)
 	go func() {
-		userQuit, err := r.runRuntimeDashboard(ctx, runtimeUI.RuntimeModeClient)
+		userQuit, err := r.runRuntimeDashboard(sessionCtx, runtimeUI.RuntimeModeClient, readyCh)
 		uiResultCh <- runtimeUIResult{userQuit: userQuit, err: err}
 	}()
 
+	connectCh := make(chan connectResult, 1)
+	go func() {
+		router, conn, tun, err := r.routerFactory.
+			CreateRouter(sessionCtx, r.deps.ConnectionFactory(), r.deps.TunManager(), r.deps.WorkerFactory())
+		if err != nil {
+			connectCh <- connectResult{err: err}
+			return
+		}
+
+		close(readyCh)
+		log.Printf("tunneling traffic via tun device")
+
+		go func() {
+			<-sessionCtx.Done()
+			_ = conn.Close()
+			_ = tun.Close()
+		}()
+
+		connectCh <- connectResult{err: router.RouteTraffic(sessionCtx)}
+	}()
+
+	return r.waitForSessionEnd(cancel, uiResultCh, connectCh)
+}
+
+func (r *Runner) waitForSessionEnd(
+	cancel context.CancelFunc,
+	uiResultCh <-chan runtimeUIResult,
+	connectCh <-chan connectResult,
+) error {
 	for {
 		select {
-		case routeErr := <-routeErrCh:
+		case cr := <-connectCh:
+			// Connection/routing finished first — cancel UI, drain it, return route result.
 			cancel()
 			uiResult := <-uiResultCh
 			if uiResult.err != nil && !errors.Is(uiResult.err, runtimeUI.ErrUserExit) {
 				log.Printf("runtime UI error: %v", uiResult.err)
 			}
-			return routeErr
+			return cr.err
 		case uiResult := <-uiResultCh:
 			if uiResult.err != nil {
-				if errors.Is(uiResult.err, runtimeUI.ErrUserExit) {
-					cancel()
-					routeErr := <-routeErrCh
-					if routeErr == nil || errors.Is(routeErr, context.Canceled) {
-						return context.Canceled
-					}
-					return routeErr
-				}
+				// UI failed — cancel route, wait for route result.
 				cancel()
-				routeErr := <-routeErrCh
-				if routeErr == nil || errors.Is(routeErr, context.Canceled) {
-					return fmt.Errorf("runtime UI failed: %w", uiResult.err)
+				cr := <-connectCh
+				if cr.err != nil && !errors.Is(cr.err, context.Canceled) {
+					return cr.err
 				}
-				return routeErr
+				if errors.Is(uiResult.err, runtimeUI.ErrUserExit) {
+					return context.Canceled
+				}
+				return fmt.Errorf("runtime UI failed: %w", uiResult.err)
 			}
 			if uiResult.userQuit {
+				// Reconfigure requested — cancel route, wait for route result.
 				cancel()
-				routeErr := <-routeErrCh
-				if routeErr == nil || errors.Is(routeErr, context.Canceled) {
-					return runnerCommon.ErrReconfigureRequested
+				cr := <-connectCh
+				if cr.err != nil && !errors.Is(cr.err, context.Canceled) {
+					return cr.err
 				}
-				return routeErr
+				return runnerCommon.ErrReconfigureRequested
 			}
-			cancel()
-			return <-routeErrCh
+			// UI exited cleanly without quit — wait for route.
+			cr := <-connectCh
+			return cr.err
 		}
 	}
 }

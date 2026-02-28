@@ -52,7 +52,7 @@ func TestBubbleTeaRuntimeBackend_MappingAndHooks(t *testing.T) {
 		}
 		return true, nil
 	}
-	reconfigure, err := backend.runRuntimeDashboard(context.Background(), RuntimeModeServer)
+	reconfigure, err := backend.runRuntimeDashboard(context.Background(), RuntimeModeServer, nil)
 	if err != nil || !reconfigure {
 		t.Fatalf("expected reconfigure=true nil err, got reconfigure=%v err=%v", reconfigure, err)
 	}
@@ -63,7 +63,7 @@ func TestBubbleTeaRuntimeBackend_MappingAndHooks(t *testing.T) {
 		}
 		return false, errors.New("boom")
 	}
-	reconfigure, err = backend.runRuntimeDashboard(context.Background(), RuntimeModeClient)
+	reconfigure, err = backend.runRuntimeDashboard(context.Background(), RuntimeModeClient, nil)
 	if err == nil || reconfigure {
 		t.Fatalf("expected propagated error and reconfigure=false, got reconfigure=%v err=%v", reconfigure, err)
 	}
@@ -74,7 +74,7 @@ func TestBubbleTeaRuntimeBackend_MappingAndHooks(t *testing.T) {
 		}
 		return false, bubbleTea.ErrRuntimeDashboardExitRequested
 	}
-	reconfigure, err = backend.runRuntimeDashboard(context.Background(), RuntimeModeClient)
+	reconfigure, err = backend.runRuntimeDashboard(context.Background(), RuntimeModeClient, nil)
 	if !errors.Is(err, ErrUserExit) || reconfigure {
 		t.Fatalf("expected ErrUserExit and reconfigure=false, got reconfigure=%v err=%v", reconfigure, err)
 	}
@@ -90,7 +90,7 @@ func TestRunRuntimeDashboard_UnifiedSession_HappyPath_Reconfigure(t *testing.T) 
 	mock := &mockUnifiedSession{waitRuntimeReconfigure: true}
 	backend := backendWithSession(mock)
 
-	reconfigure, err := backend.runRuntimeDashboard(context.Background(), RuntimeModeServer)
+	reconfigure, err := backend.runRuntimeDashboard(context.Background(), RuntimeModeServer, nil)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -106,7 +106,7 @@ func TestRunRuntimeDashboard_UnifiedSession_Quit_ReturnsErrUserExit(t *testing.T
 	mock := &mockUnifiedSession{waitRuntimeErr: bubbleTea.ErrUnifiedSessionQuit}
 	backend := backendWithSession(mock)
 
-	reconfigure, err := backend.runRuntimeDashboard(context.Background(), RuntimeModeClient)
+	reconfigure, err := backend.runRuntimeDashboard(context.Background(), RuntimeModeClient, nil)
 	if !errors.Is(err, ErrUserExit) {
 		t.Fatalf("expected ErrUserExit, got %v", err)
 	}
@@ -125,7 +125,7 @@ func TestRunRuntimeDashboard_UnifiedSession_Closed_ReturnsErrUserExit(t *testing
 	mock := &mockUnifiedSession{waitRuntimeErr: bubbleTea.ErrUnifiedSessionClosed}
 	backend := backendWithSession(mock)
 
-	reconfigure, err := backend.runRuntimeDashboard(context.Background(), RuntimeModeClient)
+	reconfigure, err := backend.runRuntimeDashboard(context.Background(), RuntimeModeClient, nil)
 	if !errors.Is(err, ErrUserExit) {
 		t.Fatalf("expected ErrUserExit, got %v", err)
 	}
@@ -144,7 +144,7 @@ func TestRunRuntimeDashboard_UnifiedSession_Disconnected_KeepsSession(t *testing
 	mock := &mockUnifiedSession{waitRuntimeErr: bubbleTea.ErrUnifiedSessionRuntimeDisconnected}
 	backend := backendWithSession(mock)
 
-	reconfigure, err := backend.runRuntimeDashboard(context.Background(), RuntimeModeServer)
+	reconfigure, err := backend.runRuntimeDashboard(context.Background(), RuntimeModeServer, nil)
 	if err != nil {
 		t.Fatalf("expected nil error for disconnect, got %v", err)
 	}
@@ -163,7 +163,7 @@ func TestRunRuntimeDashboard_UnifiedSession_GenericError_ClearsSession(t *testin
 	mock := &mockUnifiedSession{waitRuntimeErr: errors.New("unexpected")}
 	backend := backendWithSession(mock)
 
-	reconfigure, err := backend.runRuntimeDashboard(context.Background(), RuntimeModeClient)
+	reconfigure, err := backend.runRuntimeDashboard(context.Background(), RuntimeModeClient, nil)
 	if err == nil || err.Error() != "unexpected" {
 		t.Fatalf("expected 'unexpected', got %v", err)
 	}
@@ -182,7 +182,7 @@ func TestRunRuntimeDashboard_UnifiedSession_NoError_ReturnsReconfigure(t *testin
 	mock := &mockUnifiedSession{waitRuntimeReconfigure: false}
 	backend := backendWithSession(mock)
 
-	reconfigure, err := backend.runRuntimeDashboard(context.Background(), RuntimeModeServer)
+	reconfigure, err := backend.runRuntimeDashboard(context.Background(), RuntimeModeServer, nil)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}

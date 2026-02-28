@@ -22,6 +22,7 @@ type RuntimeDashboardOptions struct {
 	Mode            RuntimeDashboardMode
 	LogFeed         RuntimeLogFeed
 	ServerSupported bool
+	ReadyCh         <-chan struct{}
 }
 
 type runtimeTickMsg struct {
@@ -29,6 +30,10 @@ type runtimeTickMsg struct {
 }
 
 type runtimeContextDoneMsg struct {
+	seq uint64
+}
+
+type runtimeReadyMsg struct {
 	seq uint64
 }
 
@@ -71,6 +76,8 @@ type RuntimeDashboard struct {
 	runtimeSeq           uint64
 	exitRequested        bool
 	reconfigureRequested bool
+	readyCh              <-chan struct{}
+	connected            bool
 }
 
 type runtimeDashboardProgram interface {
@@ -89,6 +96,18 @@ func NewRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions, s
 	if mode != RuntimeDashboardServer {
 		mode = RuntimeDashboardClient
 	}
+	readyCh := options.ReadyCh
+	if readyCh == nil {
+		ch := make(chan struct{})
+		close(ch)
+		readyCh = ch
+	}
+	connected := false
+	select {
+	case <-readyCh:
+		connected = true
+	default:
+	}
 	model := RuntimeDashboard{
 		settings:        settings,
 		ctx:             ctx,
@@ -100,6 +119,8 @@ func NewRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions, s
 		logFeed:         options.LogFeed,
 		logs:            newLogViewport(),
 		tickSeq:         1,
+		readyCh:         readyCh,
+		connected:       connected,
 	}
 	if model.preferences.ShowDataplaneGraph {
 		model.recordTrafficSample(trafficstats.SnapshotGlobal())
@@ -136,10 +157,14 @@ func RunRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions) (
 }
 
 func (m RuntimeDashboard) Init() tea.Cmd {
-	return tea.Batch(
+	cmds := []tea.Cmd{
 		runtimeTickCmd(m.tickSeq),
 		waitForRuntimeContextDone(m.ctx, m.runtimeSeq),
-	)
+	}
+	if !m.connected {
+		cmds = append(cmds, waitForReadyCh(m.readyCh, m.runtimeSeq))
+	}
+	return tea.Batch(cmds...)
 }
 
 func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -169,6 +194,11 @@ func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.logs.refresh(m.logFeed, m.preferences)
 		return m, runtimeLogUpdateCmd(m.ctx, m.logFeed, m.logs.waitStop, m.logs.tickSeq, m.runtimeSeq)
+	case runtimeReadyMsg:
+		if msg.seq == m.runtimeSeq {
+			m.connected = true
+		}
+		return m, nil
 	case runtimeContextDoneMsg:
 		m.logs.stopWait()
 		return m, tea.Quit
@@ -184,6 +214,11 @@ func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case msg.String() == "esc":
 			switch m.screen {
 			case runtimeScreenDataplane:
+				if !m.connected {
+					m.logs.stopWait()
+					m.reconfigureRequested = true
+					return m, tea.Quit
+				}
 				m.confirmOpen = true
 				m.confirmCursor = 0
 			case runtimeScreenLogs:
@@ -315,7 +350,10 @@ func (m RuntimeDashboard) mainView() string {
 	styles := resolveUIStyles(m.preferences)
 	title := m.tabsLine(styles)
 	modeLine := "Mode: Client"
-	status := "Status: Connected"
+	status := "Status: Connecting to server..."
+	if m.connected {
+		status = "Status: Connected"
+	}
 	if m.mode == RuntimeDashboardServer {
 		modeLine = "Mode: Server"
 		status = "Status: Running"
@@ -428,6 +466,13 @@ func runtimeTickCmd(seq uint64) tea.Cmd {
 	return tea.Tick(time.Second, func(time.Time) tea.Msg {
 		return runtimeTickMsg{seq: seq}
 	})
+}
+
+func waitForReadyCh(ch <-chan struct{}, seq uint64) tea.Cmd {
+	return func() tea.Msg {
+		<-ch
+		return runtimeReadyMsg{seq: seq}
+	}
 }
 
 func runtimeLogUpdateCmd(

@@ -37,10 +37,11 @@ func (b *bubbleTeaRuntimeBackend) disableRuntimeLogCapture() {
 	bubbleRuntimeDisableLogs()
 }
 
-func (b *bubbleTeaRuntimeBackend) runRuntimeDashboard(ctx context.Context, mode RuntimeMode) (bool, error) {
+func (b *bubbleTeaRuntimeBackend) runRuntimeDashboard(ctx context.Context, mode RuntimeMode, readyCh <-chan struct{}) (bool, error) {
 	options := bubbleTea.RuntimeDashboardOptions{
 		Mode:    bubbleTea.RuntimeDashboardClient,
 		LogFeed: bubbleRuntimeLogFeed(),
+		ReadyCh: readyCh,
 	}
 	if mode == RuntimeModeServer {
 		options.Mode = bubbleTea.RuntimeDashboardServer

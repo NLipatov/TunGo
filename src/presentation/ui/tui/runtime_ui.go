@@ -14,7 +14,7 @@ const (
 type runtimeBackend interface {
 	enableRuntimeLogCapture(capacity int)
 	disableRuntimeLogCapture()
-	runRuntimeDashboard(ctx context.Context, mode RuntimeMode) (bool, error)
+	runRuntimeDashboard(ctx context.Context, mode RuntimeMode, readyCh <-chan struct{}) (bool, error)
 }
 
 var activeRuntimeBackend runtimeBackend = newBubbleTeaRuntimeBackend()
@@ -27,6 +27,6 @@ func DisableRuntimeLogCapture() {
 	activeRuntimeBackend.disableRuntimeLogCapture()
 }
 
-func RunRuntimeDashboard(ctx context.Context, mode RuntimeMode) (bool, error) {
-	return activeRuntimeBackend.runRuntimeDashboard(ctx, mode)
+func RunRuntimeDashboard(ctx context.Context, mode RuntimeMode, readyCh <-chan struct{}) (bool, error) {
+	return activeRuntimeBackend.runRuntimeDashboard(ctx, mode, readyCh)
 }

@@ -1473,3 +1473,191 @@ func TestRenderRateBrailleRing_WidthGreaterThanCount_PadsLeft(t *testing.T) {
 		t.Fatalf("expected 8 runes (3 data + 5 pad), got %d: %q", runeCount, out)
 	}
 }
+
+func TestRuntimeDashboard_OpenReadyCh_InitiallyNotConnected(t *testing.T) {
+	readyCh := make(chan struct{})
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		Mode:    RuntimeDashboardClient,
+		ReadyCh: readyCh,
+	}, testSettings())
+	if m.connected {
+		t.Fatal("expected connected=false when readyCh is open")
+	}
+}
+
+func TestRuntimeDashboard_PreClosedReadyCh_Connected(t *testing.T) {
+	readyCh := make(chan struct{})
+	close(readyCh)
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		Mode:    RuntimeDashboardClient,
+		ReadyCh: readyCh,
+	}, testSettings())
+	if !m.connected {
+		t.Fatal("expected connected=true when readyCh is pre-closed")
+	}
+}
+
+func TestRuntimeDashboard_NilReadyCh_DefaultsToConnected(t *testing.T) {
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		Mode: RuntimeDashboardClient,
+	}, testSettings())
+	if !m.connected {
+		t.Fatal("expected connected=true when ReadyCh is nil (defaults to pre-closed)")
+	}
+}
+
+func TestRuntimeDashboard_ReadyMsg_SetsConnected(t *testing.T) {
+	readyCh := make(chan struct{})
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		Mode:    RuntimeDashboardClient,
+		ReadyCh: readyCh,
+	}, testSettings())
+	if m.connected {
+		t.Fatal("precondition: expected connected=false")
+	}
+
+	updated, _ := m.Update(runtimeReadyMsg{seq: m.runtimeSeq})
+	dash := updated.(RuntimeDashboard)
+	if !dash.connected {
+		t.Fatal("expected connected=true after runtimeReadyMsg")
+	}
+}
+
+func TestRuntimeDashboard_ReadyMsg_WrongSeq_Ignored(t *testing.T) {
+	readyCh := make(chan struct{})
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		Mode:    RuntimeDashboardClient,
+		ReadyCh: readyCh,
+	}, testSettings())
+
+	updated, _ := m.Update(runtimeReadyMsg{seq: m.runtimeSeq + 99})
+	dash := updated.(RuntimeDashboard)
+	if dash.connected {
+		t.Fatal("expected connected=false when seq doesn't match")
+	}
+}
+
+func TestRuntimeDashboard_MainView_ConnectingStatus(t *testing.T) {
+	readyCh := make(chan struct{})
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		Mode:    RuntimeDashboardClient,
+		ReadyCh: readyCh,
+	}, testSettings())
+	m.width = 80
+	m.height = 24
+
+	view := m.mainView()
+	if !strings.Contains(view, "Connecting to server...") {
+		t.Fatalf("expected 'Connecting to server...' in view when not connected, got:\n%s", view)
+	}
+}
+
+func TestRuntimeDashboard_MainView_ConnectedStatus(t *testing.T) {
+	readyCh := make(chan struct{})
+	close(readyCh)
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		Mode:    RuntimeDashboardClient,
+		ReadyCh: readyCh,
+	}, testSettings())
+	m.width = 80
+	m.height = 24
+
+	view := m.mainView()
+	if !strings.Contains(view, "Connected") {
+		t.Fatalf("expected 'Connected' in view when connected, got:\n%s", view)
+	}
+	if strings.Contains(view, "Connecting") {
+		t.Fatalf("should not contain 'Connecting' when already connected, got:\n%s", view)
+	}
+}
+
+func TestRuntimeDashboard_MainView_ServerAlwaysRunning(t *testing.T) {
+	readyCh := make(chan struct{})
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		Mode:    RuntimeDashboardServer,
+		ReadyCh: readyCh,
+	}, testSettings())
+	m.width = 80
+	m.height = 24
+
+	view := m.mainView()
+	if !strings.Contains(view, "Running") {
+		t.Fatalf("expected 'Running' in server view, got:\n%s", view)
+	}
+}
+
+func TestRuntimeDashboard_EscDuringConnecting_ReconfiguresImmediately(t *testing.T) {
+	readyCh := make(chan struct{})
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		Mode:    RuntimeDashboardClient,
+		ReadyCh: readyCh,
+	}, testSettings())
+	m.screen = runtimeScreenDataplane
+
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	dash := updated.(RuntimeDashboard)
+	if !dash.reconfigureRequested {
+		t.Fatal("expected reconfigureRequested=true on Esc during connecting")
+	}
+	if dash.confirmOpen {
+		t.Fatal("expected confirmOpen=false — should skip confirm dialog during connecting")
+	}
+	if cmd == nil {
+		t.Fatal("expected quit command on Esc during connecting")
+	}
+}
+
+func TestRuntimeDashboard_EscWhenConnected_OpensConfirmDialog(t *testing.T) {
+	readyCh := make(chan struct{})
+	close(readyCh)
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		Mode:    RuntimeDashboardClient,
+		ReadyCh: readyCh,
+	}, testSettings())
+	m.screen = runtimeScreenDataplane
+
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	dash := updated.(RuntimeDashboard)
+	if dash.reconfigureRequested {
+		t.Fatal("expected reconfigureRequested=false — should show confirm dialog when connected")
+	}
+	if !dash.confirmOpen {
+		t.Fatal("expected confirmOpen=true when Esc pressed while connected")
+	}
+	if cmd != nil {
+		t.Fatal("expected no quit command — should just open confirm dialog")
+	}
+}
+
+func TestRuntimeDashboard_Init_NotConnected_IncludesReadyCmd(t *testing.T) {
+	readyCh := make(chan struct{})
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		Mode:    RuntimeDashboardClient,
+		ReadyCh: readyCh,
+	}, testSettings())
+
+	cmd := m.Init()
+	if cmd == nil {
+		t.Fatal("expected non-nil batch command from Init")
+	}
+	// Close readyCh so the waitForReadyCh cmd can complete
+	close(readyCh)
+}
+
+func TestRuntimeDashboard_Init_Connected_NoReadyCmd(t *testing.T) {
+	readyCh := make(chan struct{})
+	close(readyCh)
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		Mode:    RuntimeDashboardClient,
+		ReadyCh: readyCh,
+	}, testSettings())
+	if !m.connected {
+		t.Fatal("precondition: expected connected=true")
+	}
+
+	// Init should still return a batch (tick + context), just without the ready cmd
+	cmd := m.Init()
+	if cmd == nil {
+		t.Fatal("expected non-nil batch command from Init even when connected")
+	}
+}
