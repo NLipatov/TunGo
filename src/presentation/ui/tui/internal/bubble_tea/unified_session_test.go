@@ -368,11 +368,11 @@ func TestUnifiedSession_ContextDone_StopsLogWaits(t *testing.T) {
 	m.runtimeSeq = 1
 	rt := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
 	rt.runtimeSeq = 1
-	rtLogStop := make(chan struct{})
-	rt.logWaitStop = rtLogStop
+	rt.logs.restartWait()
+	rtLogStop := rt.logs.waitStop
 	m.runtime = &rt
-	cfgLogStop := make(chan struct{})
-	m.configurator.logWaitStop = cfgLogStop
+	m.configurator.logs.restartWait()
+	cfgLogStop := m.configurator.logs.waitStop
 
 	m.Update(contextDoneMsg{})
 

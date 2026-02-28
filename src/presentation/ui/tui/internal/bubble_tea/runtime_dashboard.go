@@ -8,7 +8,6 @@ import (
 	"tungo/infrastructure/telemetry/trafficstats"
 
 	"charm.land/bubbles/v2/key"
-	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 )
 
@@ -23,16 +22,18 @@ type RuntimeDashboardOptions struct {
 	Mode            RuntimeDashboardMode
 	LogFeed         RuntimeLogFeed
 	ServerSupported bool
+	ReadyCh         <-chan struct{}
 }
 
 type runtimeTickMsg struct {
 	seq uint64
 }
 
-type runtimeLogTickMsg struct {
+type runtimeContextDoneMsg struct {
 	seq uint64
 }
-type runtimeContextDoneMsg struct {
+
+type runtimeReadyMsg struct {
 	seq uint64
 }
 
@@ -63,23 +64,20 @@ type RuntimeDashboard struct {
 	settingsCursor       int
 	preferences          UIPreferences
 	logFeed              RuntimeLogFeed
-	logViewport          viewport.Model
-	logReady             bool
-	logFollow            bool
-	logScratch           []string
-	logWaitStop          chan struct{}
+	logs                 logViewport
 	rxSamples            [runtimeSparklinePoints]uint64
 	txSamples            [runtimeSparklinePoints]uint64
 	sampleCount          int
 	sampleCursor         int
 	serverSupported      bool
 	tickSeq              uint64
-	logTickSeq           uint64
 	confirmOpen          bool
 	confirmCursor        int
 	runtimeSeq           uint64
 	exitRequested        bool
 	reconfigureRequested bool
+	readyCh              <-chan struct{}
+	connected            bool
 }
 
 type runtimeDashboardProgram interface {
@@ -98,6 +96,20 @@ func NewRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions, s
 	if mode != RuntimeDashboardServer {
 		mode = RuntimeDashboardClient
 	}
+	readyCh := options.ReadyCh
+	if readyCh == nil {
+		ch := make(chan struct{})
+		close(ch)
+		readyCh = ch
+	}
+	connected := mode == RuntimeDashboardServer
+	if !connected {
+		select {
+		case <-readyCh:
+			connected = true
+		default:
+		}
+	}
 	model := RuntimeDashboard{
 		settings:        settings,
 		ctx:             ctx,
@@ -107,10 +119,10 @@ func NewRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions, s
 		screen:          runtimeScreenDataplane,
 		preferences:     settings.Preferences(),
 		logFeed:         options.LogFeed,
-		logViewport: viewport.New(viewport.WithWidth(1), viewport.WithHeight(8)),
-		logReady:    true,
-		logFollow:   true,
-		tickSeq:     1,
+		logs:            newLogViewport(),
+		tickSeq:         1,
+		readyCh:         readyCh,
+		connected:       connected,
 	}
 	if model.preferences.ShowDataplaneGraph {
 		model.recordTrafficSample(trafficstats.SnapshotGlobal())
@@ -139,7 +151,7 @@ func RunRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions) (
 	if !ok {
 		return false, nil
 	}
-	finalModel.stopLogWait()
+	finalModel.logs.stopWait()
 	if finalModel.exitRequested {
 		return false, ErrRuntimeDashboardExitRequested
 	}
@@ -147,10 +159,14 @@ func RunRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions) (
 }
 
 func (m RuntimeDashboard) Init() tea.Cmd {
-	return tea.Batch(
+	cmds := []tea.Cmd{
 		runtimeTickCmd(m.tickSeq),
 		waitForRuntimeContextDone(m.ctx, m.runtimeSeq),
-	)
+	}
+	if m.mode == RuntimeDashboardClient && !m.connected {
+		cmds = append(cmds, waitForReadyCh(m.ctx, m.readyCh, m.runtimeSeq))
+	}
+	return tea.Batch(cmds...)
 }
 
 func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -159,7 +175,8 @@ func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		if m.screen == runtimeScreenLogs {
-			m.refreshLogs()
+			m.logs.ensure(m.width, m.height, m.preferences, "", m.logsHint())
+			m.logs.refresh(m.logFeed, m.preferences)
 		}
 		return m, nil
 	case runtimeTickMsg:
@@ -173,14 +190,19 @@ func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.recordTrafficSample(trafficstats.SnapshotGlobal())
 		}
 		return m, runtimeTickCmd(m.tickSeq)
-	case runtimeLogTickMsg:
-		if msg.seq != m.logTickSeq || m.screen != runtimeScreenLogs {
+	case logViewportTickMsg:
+		if msg.seq != m.logs.tickSeq || m.screen != runtimeScreenLogs {
 			return m, nil
 		}
-		m.refreshLogs()
-		return m, runtimeLogUpdateCmd(m.ctx, m.logFeed, m.logWaitStop, m.logTickSeq, m.runtimeSeq)
+		m.logs.refresh(m.logFeed, m.preferences)
+		return m, runtimeLogUpdateCmd(m.ctx, m.logFeed, m.logs.waitStop, m.logs.tickSeq, m.runtimeSeq)
+	case runtimeReadyMsg:
+		if msg.seq == m.runtimeSeq {
+			m.connected = true
+		}
+		return m, nil
 	case runtimeContextDoneMsg:
-		m.stopLogWait()
+		m.logs.stopWait()
 		return m, tea.Quit
 	case tea.KeyPressMsg:
 		if m.confirmOpen {
@@ -188,16 +210,21 @@ func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch {
 		case key.Matches(msg, m.keys.Quit):
-			m.stopLogWait()
+			m.logs.stopWait()
 			m.exitRequested = true
 			return m, tea.Quit
 		case msg.String() == "esc":
 			switch m.screen {
 			case runtimeScreenDataplane:
+				if m.mode == RuntimeDashboardClient && !m.connected {
+					m.logs.stopWait()
+					m.reconfigureRequested = true
+					return m, tea.Quit
+				}
 				m.confirmOpen = true
 				m.confirmCursor = 0
 			case runtimeScreenLogs:
-				m.stopLogWait()
+				m.logs.stopWait()
 				m.screen = runtimeScreenDataplane
 				m.tickSeq++
 				return m, runtimeTickCmd(m.tickSeq)
@@ -212,13 +239,14 @@ func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.screen = m.nextScreen()
 			m.preferences = m.settings.Preferences()
 			if m.screen == runtimeScreenLogs {
-				m.restartLogWait()
-				m.logTickSeq++
-				m.refreshLogs()
-				return m, runtimeLogUpdateCmd(m.ctx, m.logFeed, m.logWaitStop, m.logTickSeq, m.runtimeSeq)
+				m.logs.restartWait()
+				m.logs.tickSeq++
+				m.logs.ensure(m.width, m.height, m.preferences, "", m.logsHint())
+				m.logs.refresh(m.logFeed, m.preferences)
+				return m, runtimeLogUpdateCmd(m.ctx, m.logFeed, m.logs.waitStop, m.logs.tickSeq, m.runtimeSeq)
 			}
 			if previous == runtimeScreenLogs {
-				m.stopLogWait()
+				m.logs.stopWait()
 			}
 			if m.screen == runtimeScreenDataplane && previous != runtimeScreenDataplane {
 				m.tickSeq++
@@ -242,7 +270,7 @@ func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m RuntimeDashboard) updateConfirm(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Quit):
-		m.stopLogWait()
+		m.logs.stopWait()
 		m.exitRequested = true
 		return m, tea.Quit
 	case msg.String() == "esc":
@@ -259,7 +287,7 @@ func (m RuntimeDashboard) updateConfirm(msg tea.KeyPressMsg) (tea.Model, tea.Cmd
 		}
 	case key.Matches(msg, m.keys.Select):
 		if m.confirmCursor == 1 {
-			m.stopLogWait()
+			m.logs.stopWait()
 			m.reconfigureRequested = true
 			return m, tea.Quit
 		}
@@ -320,26 +348,14 @@ func (m RuntimeDashboard) updateSettings(msg tea.KeyPressMsg) (tea.Model, tea.Cm
 	return m, cmd
 }
 
-func (m *RuntimeDashboard) refreshLogs() {
-	lines := runtimeLogSnapshot(m.logFeed, &m.logScratch)
-	m.ensureLogsViewport()
-	wasAtBottom := m.logViewport.AtBottom()
-	offset := m.logViewport.YOffset()
-	content := renderLogsViewportContent(lines, m.logViewport.Width(), resolveUIStyles(m.preferences))
-	m.logViewport.SetContent(content)
-	if m.logFollow || wasAtBottom {
-		m.logViewport.GotoBottom()
-		m.logFollow = true
-		return
-	}
-	m.logViewport.SetYOffset(offset)
-}
-
 func (m RuntimeDashboard) mainView() string {
 	styles := resolveUIStyles(m.preferences)
 	title := m.tabsLine(styles)
 	modeLine := "Mode: Client"
-	status := "Status: Connected"
+	status := "Status: Connecting to server..."
+	if m.connected {
+		status = "Status: Connected"
+	}
 	if m.mode == RuntimeDashboardServer {
 		modeLine = "Mode: Server"
 		status = "Status: Running"
@@ -421,7 +437,7 @@ func (m RuntimeDashboard) settingsView() string {
 
 func (m RuntimeDashboard) logsView() string {
 	styles := resolveUIStyles(m.preferences)
-	body := []string{m.logViewport.View()}
+	body := []string{m.logs.view()}
 
 	return renderScreen(
 		m.width,
@@ -440,68 +456,29 @@ func (m RuntimeDashboard) tabsLine(styles uiStyles) string {
 	return renderTabsLine(productLabel(), "runtime", runtimeTabs[:], int(m.screen), contentWidth, m.preferences.Theme, styles)
 }
 
-func (m *RuntimeDashboard) ensureLogsViewport() {
-	contentWidth, viewportHeight := computeLogsViewportSize(
-		m.width,
-		m.height,
-		m.preferences,
-		"",
-		m.logsHint(),
-	)
-	if !m.logReady {
-		m.logViewport = viewport.New(viewport.WithWidth(contentWidth), viewport.WithHeight(viewportHeight))
-		m.logReady = true
-		return
-	}
-	m.logViewport.SetWidth(contentWidth)
-	m.logViewport.SetHeight(viewportHeight)
-}
-
 func (m RuntimeDashboard) logsHint() string {
 	return "up/down scroll | PgUp/PgDn page | Home/End jump | Space follow | Tab switch tabs | Esc back | ctrl+c exit"
 }
 
 func (m RuntimeDashboard) updateLogs(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	switch msg.Code {
-	case tea.KeyPgUp:
-		m.logViewport.PageUp()
-		m.logFollow = false
-		return m, nil
-	case tea.KeyPgDown:
-		m.logViewport.PageDown()
-		m.logFollow = m.logViewport.AtBottom()
-		return m, nil
-	case tea.KeyHome:
-		m.logViewport.GotoTop()
-		m.logFollow = false
-		return m, nil
-	case tea.KeyEnd:
-		m.logViewport.GotoBottom()
-		m.logFollow = true
-		return m, nil
-	case tea.KeySpace:
-		m.logFollow = !m.logFollow
-		if m.logFollow {
-			m.logViewport.GotoBottom()
-		}
-		return m, nil
-	}
-
-	switch {
-	case key.Matches(msg, m.keys.Up):
-		m.logViewport.ScrollUp(1)
-		m.logFollow = false
-	case key.Matches(msg, m.keys.Down):
-		m.logViewport.ScrollDown(1)
-		m.logFollow = m.logViewport.AtBottom()
-	}
-	return m, nil
+	return m, m.logs.updateKeys(msg, m.keys)
 }
 
 func runtimeTickCmd(seq uint64) tea.Cmd {
 	return tea.Tick(time.Second, func(time.Time) tea.Msg {
 		return runtimeTickMsg{seq: seq}
 	})
+}
+
+func waitForReadyCh(ctx context.Context, ch <-chan struct{}, seq uint64) tea.Cmd {
+	return func() tea.Msg {
+		select {
+		case <-ctx.Done():
+			return runtimeContextDoneMsg{seq: seq}
+		case <-ch:
+			return runtimeReadyMsg{seq: seq}
+		}
+	}
 }
 
 func runtimeLogUpdateCmd(
@@ -520,20 +497,14 @@ func runtimeLogUpdateCmd(
 				case <-ctx.Done():
 					return runtimeContextDoneMsg{seq: runtimeSeq}
 				case <-stop:
-					return runtimeLogTickMsg{}
+					return logViewportTickMsg{}
 				case <-changes:
-					return runtimeLogTickMsg{seq: logSeq}
+					return logViewportTickMsg{seq: logSeq}
 				}
 			}
 		}
 	}
-	return runtimeLogTickCmd(logSeq)
-}
-
-func runtimeLogTickCmd(seq uint64) tea.Cmd {
-	return tea.Tick(time.Second, func(time.Time) tea.Msg {
-		return runtimeLogTickMsg{seq: seq}
-	})
+	return logViewportTickCmd(logSeq)
 }
 
 func waitForRuntimeContextDone(ctx context.Context, seq uint64) tea.Cmd {
@@ -571,18 +542,6 @@ func (m *RuntimeDashboard) clearTrafficSamples() {
 	}
 	m.sampleCount = 0
 	m.sampleCursor = 0
-}
-
-func (m *RuntimeDashboard) restartLogWait() {
-	m.stopLogWait()
-	m.logWaitStop = make(chan struct{})
-}
-
-func (m *RuntimeDashboard) stopLogWait() {
-	if m.logWaitStop != nil {
-		close(m.logWaitStop)
-		m.logWaitStop = nil
-	}
 }
 
 func sparklineWidthForContent(contentWidth int) int {

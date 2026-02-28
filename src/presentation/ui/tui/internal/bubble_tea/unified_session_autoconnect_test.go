@@ -23,12 +23,12 @@ func (s sessionSelectorFailStub) Select(string) error { return s.err }
 
 func TestTryAutoConnect_EmptyLastConfig(t *testing.T) {
 	if tryAutoConnect(UIPreferences{}, ConfiguratorSessionOptions{}) {
-		t.Fatal("expected false for empty LastClientConfig")
+		t.Fatal("expected false for empty AutoSelectClientConfig")
 	}
 }
 
 func TestTryAutoConnect_FileNotFound(t *testing.T) {
-	prefs := UIPreferences{LastClientConfig: "/nonexistent/path/cfg.json"}
+	prefs := UIPreferences{AutoSelectClientConfig: "/nonexistent/path/cfg.json"}
 	if tryAutoConnect(prefs, ConfiguratorSessionOptions{}) {
 		t.Fatal("expected false when config file does not exist")
 	}
@@ -40,7 +40,7 @@ func TestTryAutoConnect_NilSelector(t *testing.T) {
 	if err := os.WriteFile(cfgPath, []byte("{}"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	prefs := UIPreferences{LastClientConfig: cfgPath}
+	prefs := UIPreferences{AutoSelectClientConfig: cfgPath}
 	if tryAutoConnect(prefs, ConfiguratorSessionOptions{Selector: nil}) {
 		t.Fatal("expected false when Selector is nil")
 	}
@@ -52,7 +52,7 @@ func TestTryAutoConnect_SelectFails(t *testing.T) {
 	if err := os.WriteFile(cfgPath, []byte("{}"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	prefs := UIPreferences{LastClientConfig: cfgPath}
+	prefs := UIPreferences{AutoSelectClientConfig: cfgPath}
 	opts := ConfiguratorSessionOptions{
 		Selector: sessionSelectorFailStub{err: errors.New("select failed")},
 	}
@@ -67,7 +67,7 @@ func TestTryAutoConnect_ConfigManagerFails(t *testing.T) {
 	if err := os.WriteFile(cfgPath, []byte("{}"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	prefs := UIPreferences{LastClientConfig: cfgPath}
+	prefs := UIPreferences{AutoSelectClientConfig: cfgPath}
 	opts := ConfiguratorSessionOptions{
 		Selector:            sessionSelectorStub{},
 		ClientConfigManager: sessionClientConfigManagerInvalid{err: errors.New("bad config")},
@@ -83,7 +83,7 @@ func TestTryAutoConnect_NilConfigManager_Succeeds(t *testing.T) {
 	if err := os.WriteFile(cfgPath, []byte("{}"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	prefs := UIPreferences{LastClientConfig: cfgPath}
+	prefs := UIPreferences{AutoSelectClientConfig: cfgPath}
 	opts := ConfiguratorSessionOptions{
 		Selector:            sessionSelectorStub{},
 		ClientConfigManager: nil,
@@ -99,7 +99,7 @@ func TestTryAutoConnect_AllSucceed(t *testing.T) {
 	if err := os.WriteFile(cfgPath, []byte("{}"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	prefs := UIPreferences{LastClientConfig: cfgPath}
+	prefs := UIPreferences{AutoSelectClientConfig: cfgPath}
 	opts := ConfiguratorSessionOptions{
 		Selector:            sessionSelectorStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
@@ -115,9 +115,9 @@ func TestTryAutoConnect_AllSucceed(t *testing.T) {
 
 func settingsWithAutoConnect(cfgPath string) *uiPreferencesProvider {
 	p := newUIPreferences(ThemeLight, "en", StatsUnitsBiBytes)
-	p.PreferredMode = ModePreferenceClient
+	p.AutoSelectMode = ModePreferenceClient
 	p.AutoConnect = true
-	p.LastClientConfig = cfgPath
+	p.AutoSelectClientConfig = cfgPath
 	return newUIPreferencesProvider(p)
 }
 
@@ -170,9 +170,9 @@ func TestNewUnifiedSessionModel_AutoConnect_ModeNone_NoAutoConnect(t *testing.T)
 		t.Fatalf("write: %v", err)
 	}
 	p := newUIPreferences(ThemeLight, "en", StatsUnitsBiBytes)
-	p.PreferredMode = ModePreferenceNone
+	p.AutoSelectMode = ModePreferenceNone
 	p.AutoConnect = true
-	p.LastClientConfig = cfgPath
+	p.AutoSelectClientConfig = cfgPath
 	settings := newUIPreferencesProvider(p)
 	events := make(chan unifiedEvent, 8)
 
@@ -197,9 +197,9 @@ func TestNewUnifiedSessionModel_AutoConnect_Disabled_NoAutoConnect(t *testing.T)
 		t.Fatalf("write: %v", err)
 	}
 	p := newUIPreferences(ThemeLight, "en", StatsUnitsBiBytes)
-	p.PreferredMode = ModePreferenceClient
+	p.AutoSelectMode = ModePreferenceClient
 	p.AutoConnect = false
-	p.LastClientConfig = cfgPath
+	p.AutoSelectClientConfig = cfgPath
 	settings := newUIPreferencesProvider(p)
 	events := make(chan unifiedEvent, 8)
 

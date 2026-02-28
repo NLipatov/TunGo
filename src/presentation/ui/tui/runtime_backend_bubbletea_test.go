@@ -25,7 +25,7 @@ func TestBubbleTeaRuntimeBackend_MappingAndHooks(t *testing.T) {
 		bubbleRuntimeLogFeed = prevFeed
 	})
 
-	backend := bubbleTeaRuntimeBackend{}
+	backend := &bubbleTeaRuntimeBackend{}
 
 	capacity := 0
 	bubbleRuntimeEnableLogs = func(v int) { capacity = v }
@@ -52,7 +52,7 @@ func TestBubbleTeaRuntimeBackend_MappingAndHooks(t *testing.T) {
 		}
 		return true, nil
 	}
-	reconfigure, err := backend.runRuntimeDashboard(context.Background(), RuntimeModeServer)
+	reconfigure, err := backend.runRuntimeDashboard(context.Background(), RuntimeModeServer, nil)
 	if err != nil || !reconfigure {
 		t.Fatalf("expected reconfigure=true nil err, got reconfigure=%v err=%v", reconfigure, err)
 	}
@@ -63,7 +63,7 @@ func TestBubbleTeaRuntimeBackend_MappingAndHooks(t *testing.T) {
 		}
 		return false, errors.New("boom")
 	}
-	reconfigure, err = backend.runRuntimeDashboard(context.Background(), RuntimeModeClient)
+	reconfigure, err = backend.runRuntimeDashboard(context.Background(), RuntimeModeClient, nil)
 	if err == nil || reconfigure {
 		t.Fatalf("expected propagated error and reconfigure=false, got reconfigure=%v err=%v", reconfigure, err)
 	}
@@ -74,18 +74,23 @@ func TestBubbleTeaRuntimeBackend_MappingAndHooks(t *testing.T) {
 		}
 		return false, bubbleTea.ErrRuntimeDashboardExitRequested
 	}
-	reconfigure, err = backend.runRuntimeDashboard(context.Background(), RuntimeModeClient)
+	reconfigure, err = backend.runRuntimeDashboard(context.Background(), RuntimeModeClient, nil)
 	if !errors.Is(err, ErrUserExit) || reconfigure {
 		t.Fatalf("expected ErrUserExit and reconfigure=false, got reconfigure=%v err=%v", reconfigure, err)
 	}
 }
 
+func backendWithSession(session unifiedSessionHandle) *bubbleTeaRuntimeBackend {
+	return &bubbleTeaRuntimeBackend{
+		sh: &sessionHolder{handle: session},
+	}
+}
+
 func TestRunRuntimeDashboard_UnifiedSession_HappyPath_Reconfigure(t *testing.T) {
 	mock := &mockUnifiedSession{waitRuntimeReconfigure: true}
-	withMockUnifiedSession(t, mock)
+	backend := backendWithSession(mock)
 
-	backend := bubbleTeaRuntimeBackend{}
-	reconfigure, err := backend.runRuntimeDashboard(context.Background(), RuntimeModeServer)
+	reconfigure, err := backend.runRuntimeDashboard(context.Background(), RuntimeModeServer, nil)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -99,10 +104,9 @@ func TestRunRuntimeDashboard_UnifiedSession_HappyPath_Reconfigure(t *testing.T) 
 
 func TestRunRuntimeDashboard_UnifiedSession_Quit_ReturnsErrUserExit(t *testing.T) {
 	mock := &mockUnifiedSession{waitRuntimeErr: bubbleTea.ErrUnifiedSessionQuit}
-	withMockUnifiedSession(t, mock)
+	backend := backendWithSession(mock)
 
-	backend := bubbleTeaRuntimeBackend{}
-	reconfigure, err := backend.runRuntimeDashboard(context.Background(), RuntimeModeClient)
+	reconfigure, err := backend.runRuntimeDashboard(context.Background(), RuntimeModeClient, nil)
 	if !errors.Is(err, ErrUserExit) {
 		t.Fatalf("expected ErrUserExit, got %v", err)
 	}
@@ -112,17 +116,16 @@ func TestRunRuntimeDashboard_UnifiedSession_Quit_ReturnsErrUserExit(t *testing.T
 	if !mock.closeCalled {
 		t.Fatal("expected Close called")
 	}
-	if activeUnifiedSession != nil {
-		t.Fatal("expected activeUnifiedSession cleared")
+	if backend.sh.handle != nil {
+		t.Fatal("expected session cleared")
 	}
 }
 
 func TestRunRuntimeDashboard_UnifiedSession_Closed_ReturnsErrUserExit(t *testing.T) {
 	mock := &mockUnifiedSession{waitRuntimeErr: bubbleTea.ErrUnifiedSessionClosed}
-	withMockUnifiedSession(t, mock)
+	backend := backendWithSession(mock)
 
-	backend := bubbleTeaRuntimeBackend{}
-	reconfigure, err := backend.runRuntimeDashboard(context.Background(), RuntimeModeClient)
+	reconfigure, err := backend.runRuntimeDashboard(context.Background(), RuntimeModeClient, nil)
 	if !errors.Is(err, ErrUserExit) {
 		t.Fatalf("expected ErrUserExit, got %v", err)
 	}
@@ -132,17 +135,16 @@ func TestRunRuntimeDashboard_UnifiedSession_Closed_ReturnsErrUserExit(t *testing
 	if !mock.closeCalled {
 		t.Fatal("expected Close called")
 	}
-	if activeUnifiedSession != nil {
-		t.Fatal("expected activeUnifiedSession cleared")
+	if backend.sh.handle != nil {
+		t.Fatal("expected session cleared")
 	}
 }
 
 func TestRunRuntimeDashboard_UnifiedSession_Disconnected_KeepsSession(t *testing.T) {
 	mock := &mockUnifiedSession{waitRuntimeErr: bubbleTea.ErrUnifiedSessionRuntimeDisconnected}
-	withMockUnifiedSession(t, mock)
+	backend := backendWithSession(mock)
 
-	backend := bubbleTeaRuntimeBackend{}
-	reconfigure, err := backend.runRuntimeDashboard(context.Background(), RuntimeModeServer)
+	reconfigure, err := backend.runRuntimeDashboard(context.Background(), RuntimeModeServer, nil)
 	if err != nil {
 		t.Fatalf("expected nil error for disconnect, got %v", err)
 	}
@@ -152,17 +154,16 @@ func TestRunRuntimeDashboard_UnifiedSession_Disconnected_KeepsSession(t *testing
 	if mock.closeCalled {
 		t.Fatal("expected Close NOT called on disconnect")
 	}
-	if activeUnifiedSession == nil {
-		t.Fatal("expected activeUnifiedSession preserved on disconnect")
+	if backend.sh.handle == nil {
+		t.Fatal("expected session preserved on disconnect")
 	}
 }
 
 func TestRunRuntimeDashboard_UnifiedSession_GenericError_ClearsSession(t *testing.T) {
 	mock := &mockUnifiedSession{waitRuntimeErr: errors.New("unexpected")}
-	withMockUnifiedSession(t, mock)
+	backend := backendWithSession(mock)
 
-	backend := bubbleTeaRuntimeBackend{}
-	reconfigure, err := backend.runRuntimeDashboard(context.Background(), RuntimeModeClient)
+	reconfigure, err := backend.runRuntimeDashboard(context.Background(), RuntimeModeClient, nil)
 	if err == nil || err.Error() != "unexpected" {
 		t.Fatalf("expected 'unexpected', got %v", err)
 	}
@@ -172,21 +173,35 @@ func TestRunRuntimeDashboard_UnifiedSession_GenericError_ClearsSession(t *testin
 	if !mock.closeCalled {
 		t.Fatal("expected Close called")
 	}
-	if activeUnifiedSession != nil {
-		t.Fatal("expected activeUnifiedSession cleared")
+	if backend.sh.handle != nil {
+		t.Fatal("expected session cleared")
 	}
 }
 
 func TestRunRuntimeDashboard_UnifiedSession_NoError_ReturnsReconfigure(t *testing.T) {
 	mock := &mockUnifiedSession{waitRuntimeReconfigure: false}
-	withMockUnifiedSession(t, mock)
+	backend := backendWithSession(mock)
 
-	backend := bubbleTeaRuntimeBackend{}
-	reconfigure, err := backend.runRuntimeDashboard(context.Background(), RuntimeModeServer)
+	reconfigure, err := backend.runRuntimeDashboard(context.Background(), RuntimeModeServer, nil)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 	if reconfigure {
 		t.Fatal("expected reconfigure=false")
+	}
+}
+
+func TestInjectSessionHolder(t *testing.T) {
+	prevBackend := activeRuntimeBackend
+	t.Cleanup(func() { activeRuntimeBackend = prevBackend })
+
+	backend := &bubbleTeaRuntimeBackend{}
+	activeRuntimeBackend = backend
+
+	sh := &sessionHolder{handle: &mockUnifiedSession{}}
+	injectSessionHolder(sh)
+
+	if backend.sh != sh {
+		t.Fatal("expected session holder injected into backend")
 	}
 }

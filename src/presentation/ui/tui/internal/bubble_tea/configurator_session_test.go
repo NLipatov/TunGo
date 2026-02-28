@@ -105,7 +105,6 @@ func TestUpdate_WindowSizeMsg_UpdatesWidthHeight(t *testing.T) {
 func TestUpdate_WindowSizeMsg_LogsTab_RefreshesViewport(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.tab = configuratorTabLogs
-	m.logReady = true
 	result, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	updated := result.(configuratorSessionModel)
 	if updated.width != 100 || updated.height != 30 {
@@ -116,11 +115,10 @@ func TestUpdate_WindowSizeMsg_LogsTab_RefreshesViewport(t *testing.T) {
 func TestUpdate_LogTickMsg_MatchingSeq(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.tab = configuratorTabLogs
-	m.logTickSeq = 5
-	m.logReady = true
-	m.restartLogWait()
+	m.logs.tickSeq = 5
+	m.logs.restartWait()
 
-	result, cmd := m.Update(configuratorLogTickMsg{seq: 5})
+	result, cmd := m.Update(logViewportTickMsg{seq: 5})
 	updated := result.(configuratorSessionModel)
 	_ = updated
 	if cmd == nil {
@@ -131,9 +129,9 @@ func TestUpdate_LogTickMsg_MatchingSeq(t *testing.T) {
 func TestUpdate_LogTickMsg_MismatchedSeq_Ignored(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.tab = configuratorTabLogs
-	m.logTickSeq = 5
+	m.logs.tickSeq = 5
 
-	result, cmd := m.Update(configuratorLogTickMsg{seq: 99})
+	result, cmd := m.Update(logViewportTickMsg{seq: 99})
 	_ = result.(configuratorSessionModel)
 	if cmd != nil {
 		t.Fatal("expected nil cmd for mismatched log tick seq")
@@ -143,9 +141,9 @@ func TestUpdate_LogTickMsg_MismatchedSeq_Ignored(t *testing.T) {
 func TestUpdate_LogTickMsg_WrongTab_Ignored(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.tab = configuratorTabMain
-	m.logTickSeq = 5
+	m.logs.tickSeq = 5
 
-	result, cmd := m.Update(configuratorLogTickMsg{seq: 5})
+	result, cmd := m.Update(logViewportTickMsg{seq: 5})
 	_ = result.(configuratorSessionModel)
 	if cmd != nil {
 		t.Fatal("expected nil cmd when tab is not Logs")
@@ -218,7 +216,6 @@ func TestUpdate_SettingsTab_DispatchesToSettings(t *testing.T) {
 func TestUpdate_LogsTab_DispatchesToLogs(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.tab = configuratorTabLogs
-	m.logReady = true
 
 	result, _ := m.Update(keyNamed(tea.KeyEsc))
 	updated := result.(configuratorSessionModel)
@@ -264,7 +261,6 @@ func TestView_SettingsTab_ContainsTheme(t *testing.T) {
 func TestView_LogsTab_ReturnsNonEmpty(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.tab = configuratorTabLogs
-	m.logReady = true
 
 	view := m.View().Content
 	if len(view) == 0 {
@@ -285,7 +281,7 @@ func TestView_MainTab_ModeScreen(t *testing.T) {
 func TestView_MainTab_ClientSelectScreen(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenClientSelect
-	m.clientMenuOptions = []string{sessionClientAdd}
+	m.client.menuOptions = []string{sessionClientAdd}
 
 	view := m.View().Content
 	if !strings.Contains(view, "Select configuration") {
@@ -296,7 +292,7 @@ func TestView_MainTab_ClientSelectScreen(t *testing.T) {
 func TestView_MainTab_ClientRemoveScreen(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenClientRemove
-	m.clientRemovePaths = []string{"config1"}
+	m.client.removePaths = []string{"config1"}
 
 	view := m.View().Content
 	if !strings.Contains(view, "Choose a configuration to remove") {
@@ -331,7 +327,7 @@ func TestView_MainTab_ClientAddJSONScreen(t *testing.T) {
 func TestView_MainTab_ClientInvalidScreen(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenClientInvalid
-	m.invalidErr = errors.New("bad config")
+	m.client.invalidErr = errors.New("bad config")
 
 	view := m.View().Content
 	if !strings.Contains(view, "Configuration error") {
@@ -352,7 +348,7 @@ func TestView_MainTab_ServerSelectScreen(t *testing.T) {
 func TestView_MainTab_ServerManageScreen(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenServerManage
-	m.serverManageLabels = []string{"#1 test [enabled]"}
+	m.server.manageLabels = []string{"#1 test [enabled]"}
 
 	view := m.View().Content
 	if !strings.Contains(view, "Select client to enable/disable or delete") {
@@ -363,7 +359,7 @@ func TestView_MainTab_ServerManageScreen(t *testing.T) {
 func TestView_MainTab_ServerDeleteConfirmScreen(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenServerDeleteConfirm
-	m.serverDeletePeer = serverConfiguration.AllowedPeer{Name: "alpha", ClientID: 1}
+	m.server.deletePeer = serverConfiguration.AllowedPeer{Name: "alpha", ClientID: 1}
 
 	view := m.View().Content
 	if !strings.Contains(view, "Delete client") {
@@ -394,7 +390,7 @@ func TestCycleTab_MainToSettingsToLogsToMain(t *testing.T) {
 		t.Fatal("expected non-nil cmd when entering Logs tab")
 	}
 
-	s.stopLogWait()
+	s.logs.stopWait()
 	result, _ = s.cycleTab()
 	s = result.(configuratorSessionModel)
 	if s.tab != configuratorTabMain {
@@ -405,8 +401,8 @@ func TestCycleTab_MainToSettingsToLogsToMain(t *testing.T) {
 func TestCycleTab_LeavingLogsStopsLogWait(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.tab = configuratorTabLogs
-	m.restartLogWait()
-	ch := m.logWaitStop
+	m.logs.restartWait()
+	ch := m.logs.waitStop
 
 	result, _ := m.cycleTab()
 	s := result.(configuratorSessionModel)
@@ -507,8 +503,8 @@ func TestUpdateSettingsTab_ThemeChangeTriggersClearScreen(t *testing.T) {
 func TestUpdateLogsTab_EscReturnsToMainAndStopsWait(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.tab = configuratorTabLogs
-	m.restartLogWait()
-	ch := m.logWaitStop
+	m.logs.restartWait()
+	ch := m.logs.waitStop
 
 	result, _ := m.updateLogsTab(keyNamed(tea.KeyEsc))
 	s := result.(configuratorSessionModel)
@@ -526,12 +522,12 @@ func TestUpdateLogsTab_EscReturnsToMainAndStopsWait(t *testing.T) {
 func TestUpdateLogsTab_PgUpSetsFollowFalse(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.tab = configuratorTabLogs
-	m.logFollow = true
+	m.logs.follow = true
 
 	result, _ := m.updateLogsTab(keyNamed(tea.KeyPgUp))
 	s := result.(configuratorSessionModel)
-	if s.logFollow {
-		t.Fatal("expected logFollow=false after PgUp")
+	if s.logs.follow {
+		t.Fatal("expected follow=false after PgUp")
 	}
 }
 
@@ -546,54 +542,54 @@ func TestUpdateLogsTab_PgDown(t *testing.T) {
 func TestUpdateLogsTab_HomeSetsFollowFalse(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.tab = configuratorTabLogs
-	m.logFollow = true
+	m.logs.follow = true
 
 	result, _ := m.updateLogsTab(keyNamed(tea.KeyHome))
 	s := result.(configuratorSessionModel)
-	if s.logFollow {
-		t.Fatal("expected logFollow=false after Home")
+	if s.logs.follow {
+		t.Fatal("expected follow=false after Home")
 	}
 }
 
 func TestUpdateLogsTab_EndSetsFollowTrue(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.tab = configuratorTabLogs
-	m.logFollow = false
+	m.logs.follow = false
 
 	result, _ := m.updateLogsTab(keyNamed(tea.KeyEnd))
 	s := result.(configuratorSessionModel)
-	if !s.logFollow {
-		t.Fatal("expected logFollow=true after End")
+	if !s.logs.follow {
+		t.Fatal("expected follow=true after End")
 	}
 }
 
 func TestUpdateLogsTab_SpaceTogglesFollow(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.tab = configuratorTabLogs
-	m.logFollow = false
+	m.logs.follow = false
 
 	result, _ := m.updateLogsTab(keyNamed(tea.KeySpace))
 	s := result.(configuratorSessionModel)
-	if !s.logFollow {
-		t.Fatal("expected logFollow=true after Space toggle")
+	if !s.logs.follow {
+		t.Fatal("expected follow=true after Space toggle")
 	}
 
 	result, _ = s.updateLogsTab(keyNamed(tea.KeySpace))
 	s = result.(configuratorSessionModel)
-	if s.logFollow {
-		t.Fatal("expected logFollow=false after second Space toggle")
+	if s.logs.follow {
+		t.Fatal("expected follow=false after second Space toggle")
 	}
 }
 
 func TestUpdateLogsTab_UpLineNavigation(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.tab = configuratorTabLogs
-	m.logFollow = true
+	m.logs.follow = true
 
 	result, _ := m.updateLogsTab(keyRunes('k'))
 	s := result.(configuratorSessionModel)
-	if s.logFollow {
-		t.Fatal("expected logFollow=false after up scroll")
+	if s.logs.follow {
+		t.Fatal("expected follow=false after up scroll")
 	}
 }
 
@@ -671,7 +667,7 @@ func TestUpdateModeScreen_EnterServer(t *testing.T) {
 func TestUpdateClientSelectScreen_EscGoesBackToMode(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenClientSelect
-	m.clientMenuOptions = []string{sessionClientAdd}
+	m.client.menuOptions = []string{sessionClientAdd}
 
 	result, _ := m.updateClientSelectScreen(keyNamed(tea.KeyEsc))
 	s := result.(configuratorSessionModel)
@@ -683,7 +679,7 @@ func TestUpdateClientSelectScreen_EscGoesBackToMode(t *testing.T) {
 func TestUpdateClientSelectScreen_EnterAdd(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenClientSelect
-	m.clientMenuOptions = []string{sessionClientAdd}
+	m.client.menuOptions = []string{sessionClientAdd}
 	m.cursor = 0
 
 	result, cmd := m.updateClientSelectScreen(keyNamed(tea.KeyEnter))
@@ -699,8 +695,8 @@ func TestUpdateClientSelectScreen_EnterAdd(t *testing.T) {
 func TestUpdateClientSelectScreen_EnterRemoveWithConfigs(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenClientSelect
-	m.clientConfigs = []string{"config1.json", "config2.json"}
-	m.clientMenuOptions = []string{"config1.json", "config2.json", sessionClientRemove, sessionClientAdd}
+	m.client.configs = []string{"config1.json", "config2.json"}
+	m.client.menuOptions = []string{"config1.json", "config2.json", sessionClientRemove, sessionClientAdd}
 	m.cursor = 2 // sessionClientRemove
 
 	result, _ := m.updateClientSelectScreen(keyNamed(tea.KeyEnter))
@@ -708,16 +704,16 @@ func TestUpdateClientSelectScreen_EnterRemoveWithConfigs(t *testing.T) {
 	if s.screen != configuratorScreenClientRemove {
 		t.Fatalf("expected remove screen, got %v", s.screen)
 	}
-	if len(s.clientRemovePaths) != 2 {
-		t.Fatalf("expected 2 remove paths, got %d", len(s.clientRemovePaths))
+	if len(s.client.removePaths) != 2 {
+		t.Fatalf("expected 2 remove paths, got %d", len(s.client.removePaths))
 	}
 }
 
 func TestUpdateClientSelectScreen_EnterRemoveNoConfigs(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenClientSelect
-	m.clientConfigs = []string{}
-	m.clientMenuOptions = []string{sessionClientRemove, sessionClientAdd}
+	m.client.configs = []string{}
+	m.client.menuOptions = []string{sessionClientRemove, sessionClientAdd}
 	m.cursor = 0 // sessionClientRemove
 
 	result, _ := m.updateClientSelectScreen(keyNamed(tea.KeyEnter))
@@ -748,8 +744,8 @@ func TestUpdateClientSelectScreen_EnterSelectConfig_NilConfigManager(t *testing.
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
 	model.screen = configuratorScreenClientSelect
-	model.clientMenuOptions = []string{"my-config", sessionClientRemove, sessionClientAdd}
-	model.clientConfigs = []string{"my-config"}
+	model.client.menuOptions = []string{"my-config", sessionClientRemove, sessionClientAdd}
+	model.client.configs = []string{"my-config"}
 	model.cursor = 0
 
 	result, cmd := model.updateClientSelectScreen(keyNamed(tea.KeyEnter))
@@ -785,8 +781,8 @@ func TestUpdateClientSelectScreen_EnterSelectConfig_InvalidConfig(t *testing.T) 
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
 	model.screen = configuratorScreenClientSelect
-	model.clientMenuOptions = []string{"my-config", sessionClientRemove, sessionClientAdd}
-	model.clientConfigs = []string{"my-config"}
+	model.client.menuOptions = []string{"my-config", sessionClientRemove, sessionClientAdd}
+	model.client.configs = []string{"my-config"}
 	model.cursor = 0
 
 	result, _ := model.updateClientSelectScreen(keyNamed(tea.KeyEnter))
@@ -794,7 +790,7 @@ func TestUpdateClientSelectScreen_EnterSelectConfig_InvalidConfig(t *testing.T) 
 	if s.screen != configuratorScreenClientInvalid {
 		t.Fatalf("expected invalid screen, got %v", s.screen)
 	}
-	if !s.invalidAllowDelete {
+	if !s.client.invalidAllowDelete {
 		t.Fatal("expected invalidAllowDelete=true")
 	}
 }
@@ -804,7 +800,7 @@ func TestUpdateClientSelectScreen_EnterSelectConfig_InvalidConfig(t *testing.T) 
 func TestUpdateClientRemoveScreen_EscGoesBack(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenClientRemove
-	m.clientRemovePaths = []string{"config1"}
+	m.client.removePaths = []string{"config1"}
 
 	result, _ := m.updateClientRemoveScreen(keyNamed(tea.KeyEsc))
 	s := result.(configuratorSessionModel)
@@ -831,7 +827,7 @@ func TestUpdateClientRemoveScreen_EnterRemoves(t *testing.T) {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
 	model.screen = configuratorScreenClientRemove
-	model.clientRemovePaths = []string{"config-to-remove"}
+	model.client.removePaths = []string{"config-to-remove"}
 	model.cursor = 0
 
 	result, _ := model.updateClientRemoveScreen(keyNamed(tea.KeyEnter))
@@ -863,7 +859,7 @@ func TestUpdateClientAddNameScreen_EscGoesBack(t *testing.T) {
 func TestUpdateClientAddNameScreen_EnterEmptyName(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenClientAddName
-	m.addNameInput.SetValue("")
+	m.client.addNameInput.SetValue("")
 
 	result, _ := m.updateClientAddNameScreen(keyNamed(tea.KeyEnter))
 	s := result.(configuratorSessionModel)
@@ -878,15 +874,15 @@ func TestUpdateClientAddNameScreen_EnterEmptyName(t *testing.T) {
 func TestUpdateClientAddNameScreen_EnterValidName(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenClientAddName
-	m.addNameInput.SetValue("my-config")
+	m.client.addNameInput.SetValue("my-config")
 
 	result, cmd := m.updateClientAddNameScreen(keyNamed(tea.KeyEnter))
 	s := result.(configuratorSessionModel)
 	if s.screen != configuratorScreenClientAddJSON {
 		t.Fatalf("expected add JSON screen, got %v", s.screen)
 	}
-	if s.addName != "my-config" {
-		t.Fatalf("expected addName='my-config', got %q", s.addName)
+	if s.client.addName != "my-config" {
+		t.Fatalf("expected addName='my-config', got %q", s.client.addName)
 	}
 	if cmd == nil {
 		t.Fatal("expected textarea.Blink cmd")
@@ -921,14 +917,14 @@ func TestUpdateClientAddJSONScreen_EscGoesBack(t *testing.T) {
 func TestUpdateClientAddJSONScreen_EnterInvalidJSON(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenClientAddJSON
-	m.addJSONInput.SetValue("not valid json")
+	m.client.addJSONInput.SetValue("not valid json")
 
 	result, _ := m.updateClientAddJSONScreen(keyNamed(tea.KeyEnter))
 	s := result.(configuratorSessionModel)
 	if s.screen != configuratorScreenClientInvalid {
 		t.Fatalf("expected invalid screen, got %v", s.screen)
 	}
-	if s.invalidAllowDelete {
+	if s.client.invalidAllowDelete {
 		t.Fatal("expected invalidAllowDelete=false for JSON parse error")
 	}
 }
@@ -949,7 +945,7 @@ func TestUpdateClientAddJSONScreen_OtherKeysPassToInput(t *testing.T) {
 func TestUpdateClientInvalidScreen_EscGoesBack(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenClientInvalid
-	m.invalidErr = errors.New("bad")
+	m.client.invalidErr = errors.New("bad")
 
 	result, _ := m.updateClientInvalidScreen(keyNamed(tea.KeyEsc))
 	s := result.(configuratorSessionModel)
@@ -961,8 +957,8 @@ func TestUpdateClientInvalidScreen_EscGoesBack(t *testing.T) {
 func TestUpdateClientInvalidScreen_EnterOK(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenClientInvalid
-	m.invalidErr = errors.New("bad")
-	m.invalidAllowDelete = false
+	m.client.invalidErr = errors.New("bad")
+	m.client.invalidAllowDelete = false
 	m.cursor = 0 // "OK" is the only option
 
 	result, _ := m.updateClientInvalidScreen(keyNamed(tea.KeyEnter))
@@ -990,9 +986,9 @@ func TestUpdateClientInvalidScreen_EnterDeleteWhenAllowed(t *testing.T) {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
 	model.screen = configuratorScreenClientInvalid
-	model.invalidErr = errors.New("bad config")
-	model.invalidAllowDelete = true
-	model.invalidConfig = "bad-config-file"
+	model.client.invalidErr = errors.New("bad config")
+	model.client.invalidAllowDelete = true
+	model.client.invalidConfig = "bad-config-file"
 	model.cursor = 0 // "Delete invalid configuration" is first option when allowDelete
 
 	result, _ := model.updateClientInvalidScreen(keyNamed(tea.KeyEnter))
@@ -1011,9 +1007,9 @@ func TestUpdateClientInvalidScreen_EnterDeleteWhenAllowed(t *testing.T) {
 func TestUpdateClientInvalidScreen_EnterOKWhenDeleteAllowed(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenClientInvalid
-	m.invalidErr = errors.New("bad")
-	m.invalidAllowDelete = true
-	m.invalidConfig = "some-config"
+	m.client.invalidErr = errors.New("bad")
+	m.client.invalidAllowDelete = true
+	m.client.invalidConfig = "some-config"
 	m.cursor = 1 // "OK" is second option when allowDelete
 
 	result, _ := m.updateClientInvalidScreen(keyNamed(tea.KeyEnter))
@@ -1109,8 +1105,8 @@ func TestUpdateServerSelectScreen_EnterManageClientsWithPeers(t *testing.T) {
 	if s.screen != configuratorScreenServerManage {
 		t.Fatalf("expected server manage screen, got %v", s.screen)
 	}
-	if len(s.serverManagePeers) != 1 {
-		t.Fatalf("expected 1 peer, got %d", len(s.serverManagePeers))
+	if len(s.server.managePeers) != 1 {
+		t.Fatalf("expected 1 peer, got %d", len(s.server.managePeers))
 	}
 }
 
@@ -1225,7 +1221,6 @@ func TestLogsTabView_ReturnsNonEmpty(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.width = 80
 	m.height = 30
-	m.logReady = true
 
 	view := m.logsTabView()
 	if view == "" {
@@ -1255,11 +1250,11 @@ func TestTabsLine_ReturnsNonEmptyWithProductLabel(t *testing.T) {
 func TestAdjustInputsToViewport_ZeroWidthReturnsEarly(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.width = 0
-	origWidth := m.addNameInput.Width()
+	origWidth := m.client.addNameInput.Width()
 
 	m.adjustInputsToViewport()
-	if m.addNameInput.Width() != origWidth {
-		t.Fatalf("expected no change to input width, got %d", m.addNameInput.Width())
+	if m.client.addNameInput.Width() != origWidth {
+		t.Fatalf("expected no change to input width, got %d", m.client.addNameInput.Width())
 	}
 }
 
@@ -1269,8 +1264,8 @@ func TestAdjustInputsToViewport_PositiveWidthAdjusts(t *testing.T) {
 	m.height = 40
 
 	m.adjustInputsToViewport()
-	if m.addNameInput.Width() <= 0 {
-		t.Fatalf("expected positive input width, got %d", m.addNameInput.Width())
+	if m.client.addNameInput.Width() <= 0 {
+		t.Fatalf("expected positive input width, got %d", m.client.addNameInput.Width())
 	}
 }
 
@@ -1319,21 +1314,21 @@ func TestReloadClientConfigs_BuildsCorrectMenuOptions(t *testing.T) {
 		t.Fatalf("reloadClientConfigs error: %v", err)
 	}
 
-	if len(model.clientConfigs) != 2 {
-		t.Fatalf("expected 2 configs, got %d", len(model.clientConfigs))
+	if len(model.client.configs) != 2 {
+		t.Fatalf("expected 2 configs, got %d", len(model.client.configs))
 	}
 	// Expected: config-a, config-b, "- remove configuration", "+ add configuration"
-	if len(model.clientMenuOptions) != 4 {
-		t.Fatalf("expected 4 menu options, got %d: %v", len(model.clientMenuOptions), model.clientMenuOptions)
+	if len(model.client.menuOptions) != 4 {
+		t.Fatalf("expected 4 menu options, got %d: %v", len(model.client.menuOptions), model.client.menuOptions)
 	}
-	if model.clientMenuOptions[0] != "config-a" {
-		t.Fatalf("expected first option to be 'config-a', got %q", model.clientMenuOptions[0])
+	if model.client.menuOptions[0] != "config-a" {
+		t.Fatalf("expected first option to be 'config-a', got %q", model.client.menuOptions[0])
 	}
-	if model.clientMenuOptions[2] != sessionClientRemove {
-		t.Fatalf("expected third option to be remove, got %q", model.clientMenuOptions[2])
+	if model.client.menuOptions[2] != sessionClientRemove {
+		t.Fatalf("expected third option to be remove, got %q", model.client.menuOptions[2])
 	}
-	if model.clientMenuOptions[3] != sessionClientAdd {
-		t.Fatalf("expected fourth option to be add, got %q", model.clientMenuOptions[3])
+	if model.client.menuOptions[3] != sessionClientAdd {
+		t.Fatalf("expected fourth option to be add, got %q", model.client.menuOptions[3])
 	}
 }
 
@@ -1359,11 +1354,11 @@ func TestReloadClientConfigs_EmptyConfigs(t *testing.T) {
 	}
 
 	// No configs => just "+ add configuration" (no remove option)
-	if len(model.clientMenuOptions) != 1 {
-		t.Fatalf("expected 1 menu option, got %d: %v", len(model.clientMenuOptions), model.clientMenuOptions)
+	if len(model.client.menuOptions) != 1 {
+		t.Fatalf("expected 1 menu option, got %d: %v", len(model.client.menuOptions), model.client.menuOptions)
 	}
-	if model.clientMenuOptions[0] != sessionClientAdd {
-		t.Fatalf("expected add option, got %q", model.clientMenuOptions[0])
+	if model.client.menuOptions[0] != sessionClientAdd {
+		t.Fatalf("expected add option, got %q", model.client.menuOptions[0])
 	}
 }
 
@@ -1389,28 +1384,23 @@ func TestReloadClientConfigs_ObserverError(t *testing.T) {
 	}
 }
 
-// --- 22. Log management ---
+// --- 22. Log management (delegated to logViewport; see log_viewport_test.go for full coverage) ---
 
-func TestRestartLogWait_CreatesNewChannel(t *testing.T) {
+func TestLogsIntegration_RestartAndStopWait(t *testing.T) {
 	m := newTestSessionModel(t)
-	if m.logWaitStop != nil {
-		t.Fatal("expected nil logWaitStop initially")
+	if m.logs.waitStop != nil {
+		t.Fatal("expected nil waitStop initially")
 	}
 
-	m.restartLogWait()
-	if m.logWaitStop == nil {
-		t.Fatal("expected non-nil logWaitStop after restart")
+	m.logs.restartWait()
+	if m.logs.waitStop == nil {
+		t.Fatal("expected non-nil waitStop after restart")
 	}
-}
 
-func TestStopLogWait_ClosesChannel(t *testing.T) {
-	m := newTestSessionModel(t)
-	m.restartLogWait()
-	ch := m.logWaitStop
-
-	m.stopLogWait()
-	if m.logWaitStop != nil {
-		t.Fatal("expected nil logWaitStop after stop")
+	ch := m.logs.waitStop
+	m.logs.stopWait()
+	if m.logs.waitStop != nil {
+		t.Fatal("expected nil waitStop after stop")
 	}
 	select {
 	case <-ch:
@@ -1420,53 +1410,23 @@ func TestStopLogWait_ClosesChannel(t *testing.T) {
 	}
 }
 
-func TestStopLogWait_NilIsNoop(t *testing.T) {
-	m := newTestSessionModel(t)
-	m.logWaitStop = nil
-	m.stopLogWait() // should not panic
-	if m.logWaitStop != nil {
-		t.Fatal("expected logWaitStop to remain nil")
-	}
-}
-
-func TestRefreshLogs_DoesNotPanic(t *testing.T) {
+func TestLogsIntegration_RefreshDoesNotPanic(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.width = 80
 	m.height = 30
-	m.logReady = true
-	m.refreshLogs()
+	m.logs.ensure(m.width, m.height, m.preferences, "", configuratorLogsHint)
+	m.logs.refresh(m.logsFeed(), m.preferences)
 }
 
-func TestEnsureLogsViewport_InitializesWhenNotReady(t *testing.T) {
+func TestLogsIntegration_EnsureSetsReady(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.width = 80
 	m.height = 30
-	m.logReady = false
+	m.logs.ready = false
 
-	m.ensureLogsViewport()
-	if !m.logReady {
-		t.Fatal("expected logReady=true after ensureLogsViewport")
-	}
-}
-
-func TestEnsureLogsViewport_UpdatesDimensionsWhenReady(t *testing.T) {
-	m := newTestSessionModel(t)
-	m.width = 80
-	m.height = 30
-	m.logReady = true
-
-	m.ensureLogsViewport()
-	if m.logViewport.Width() <= 0 {
-		t.Fatalf("expected positive viewport width, got %d", m.logViewport.Width())
-	}
-}
-
-// --- 23. configuratorLogTickCmd ---
-
-func TestConfiguratorLogTickCmd_ReturnsNonNilCmd(t *testing.T) {
-	cmd := configuratorLogTickCmd(42)
-	if cmd == nil {
-		t.Fatal("expected non-nil cmd from configuratorLogTickCmd")
+	m.logs.ensure(m.width, m.height, m.preferences, "", configuratorLogsHint)
+	if !m.logs.ready {
+		t.Fatal("expected ready=true after ensure")
 	}
 }
 
@@ -1482,8 +1442,8 @@ func TestConfiguratorLogUpdateCmd_WithNilFeed_ReturnsTick(t *testing.T) {
 
 type stubLogFeed struct{}
 
-func (stubLogFeed) Tail(limit int) []string       { return nil }
-func (stubLogFeed) TailInto([]string, int) int     { return 0 }
+func (stubLogFeed) Tail(limit int) []string    { return nil }
+func (stubLogFeed) TailInto([]string, int) int { return 0 }
 
 type stubLogChangeFeed struct {
 	stubLogFeed
@@ -1533,10 +1493,10 @@ func TestView_MainTab_AllScreens_ReturnsNonEmpty(t *testing.T) {
 	}{
 		{"Mode", configuratorScreenMode, nil},
 		{"ClientSelect", configuratorScreenClientSelect, func(m *configuratorSessionModel) {
-			m.clientMenuOptions = []string{sessionClientAdd}
+			m.client.menuOptions = []string{sessionClientAdd}
 		}},
 		{"ClientRemove", configuratorScreenClientRemove, func(m *configuratorSessionModel) {
-			m.clientRemovePaths = []string{"cfg1"}
+			m.client.removePaths = []string{"cfg1"}
 		}},
 		{"ClientAddName", configuratorScreenClientAddName, func(m *configuratorSessionModel) {
 			m.width = 80
@@ -1547,14 +1507,14 @@ func TestView_MainTab_AllScreens_ReturnsNonEmpty(t *testing.T) {
 			m.height = 30
 		}},
 		{"ClientInvalid", configuratorScreenClientInvalid, func(m *configuratorSessionModel) {
-			m.invalidErr = errors.New("test err")
+			m.client.invalidErr = errors.New("test err")
 		}},
 		{"ServerSelect", configuratorScreenServerSelect, nil},
 		{"ServerManage", configuratorScreenServerManage, func(m *configuratorSessionModel) {
-			m.serverManageLabels = []string{"#1 test [enabled]"}
+			m.server.manageLabels = []string{"#1 test [enabled]"}
 		}},
 		{"ServerDeleteConfirm", configuratorScreenServerDeleteConfirm, func(m *configuratorSessionModel) {
-			m.serverDeletePeer = serverConfiguration.AllowedPeer{Name: "a", ClientID: 1}
+			m.server.deletePeer = serverConfiguration.AllowedPeer{Name: "a", ClientID: 1}
 		}},
 	}
 
@@ -1606,8 +1566,8 @@ func TestView_ClientAddJSONScreen_WithNotice(t *testing.T) {
 func TestView_ClientInvalidScreen_WithDeleteAllowed(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenClientInvalid
-	m.invalidErr = errors.New("bad config")
-	m.invalidAllowDelete = true
+	m.client.invalidErr = errors.New("bad config")
+	m.client.invalidAllowDelete = true
 
 	view := m.View().Content
 	if !strings.Contains(view, sessionInvalidDelete) {
@@ -1620,7 +1580,7 @@ func TestView_ClientInvalidScreen_WithDeleteAllowed(t *testing.T) {
 func TestUpdate_DispatchToClientSelectScreen(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenClientSelect
-	m.clientMenuOptions = []string{sessionClientAdd}
+	m.client.menuOptions = []string{sessionClientAdd}
 	m.cursor = 0
 
 	result, _ := m.Update(keyNamed(tea.KeyEsc))
@@ -1633,7 +1593,7 @@ func TestUpdate_DispatchToClientSelectScreen(t *testing.T) {
 func TestUpdate_DispatchToClientRemoveScreen(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenClientRemove
-	m.clientRemovePaths = []string{"cfg"}
+	m.client.removePaths = []string{"cfg"}
 
 	result, _ := m.Update(keyNamed(tea.KeyEsc))
 	s := result.(configuratorSessionModel)
@@ -1667,7 +1627,7 @@ func TestUpdate_DispatchToClientAddJSONScreen(t *testing.T) {
 func TestUpdate_DispatchToClientInvalidScreen(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenClientInvalid
-	m.invalidErr = errors.New("bad")
+	m.client.invalidErr = errors.New("bad")
 
 	result, _ := m.Update(keyNamed(tea.KeyEsc))
 	s := result.(configuratorSessionModel)
@@ -1690,8 +1650,8 @@ func TestUpdate_DispatchToServerSelectScreen(t *testing.T) {
 func TestUpdate_DispatchToServerManageScreen(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenServerManage
-	m.serverManagePeers = []serverConfiguration.AllowedPeer{{Name: "a", ClientID: 1, Enabled: true}}
-	m.serverManageLabels = []string{"#1 a [enabled]"}
+	m.server.managePeers = []serverConfiguration.AllowedPeer{{Name: "a", ClientID: 1, Enabled: true}}
+	m.server.manageLabels = []string{"#1 a [enabled]"}
 
 	result, _ := m.Update(keyNamed(tea.KeyEsc))
 	s := result.(configuratorSessionModel)
@@ -1703,8 +1663,8 @@ func TestUpdate_DispatchToServerManageScreen(t *testing.T) {
 func TestUpdate_DispatchToServerDeleteConfirmScreen(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenServerDeleteConfirm
-	m.serverManagePeers = []serverConfiguration.AllowedPeer{{Name: "a", ClientID: 1, Enabled: true}}
-	m.serverDeletePeer = serverConfiguration.AllowedPeer{Name: "a", ClientID: 1}
+	m.server.managePeers = []serverConfiguration.AllowedPeer{{Name: "a", ClientID: 1, Enabled: true}}
+	m.server.deletePeer = serverConfiguration.AllowedPeer{Name: "a", ClientID: 1}
 
 	result, _ := m.Update(keyNamed(tea.KeyEsc))
 	s := result.(configuratorSessionModel)
@@ -1838,8 +1798,8 @@ func (s *sessionServerConfigManagerRemoveOKThenListError) ListAllowedPeers() ([]
 func TestUpdateServerManageScreen_D_EmptyPeersList(t *testing.T) {
 	manager := &sessionServerConfigManagerStub{peers: nil}
 	model := newSessionModelForServerManageTests(t, manager)
-	model.serverManagePeers = nil
-	model.serverManageLabels = nil
+	model.server.managePeers = nil
+	model.server.manageLabels = nil
 
 	result, cmd := model.updateServerManageScreen(keyRunes('d'))
 	s := result.(configuratorSessionModel)
@@ -1855,8 +1815,8 @@ func TestUpdateServerManageScreen_D_EmptyPeersList(t *testing.T) {
 func TestUpdateServerManageScreen_D_UpperCase_EmptyPeersList(t *testing.T) {
 	manager := &sessionServerConfigManagerStub{peers: nil}
 	model := newSessionModelForServerManageTests(t, manager)
-	model.serverManagePeers = nil
-	model.serverManageLabels = nil
+	model.server.managePeers = nil
+	model.server.manageLabels = nil
 
 	result, cmd := model.updateServerManageScreen(keyRunes('D'))
 	s := result.(configuratorSessionModel)
@@ -1880,10 +1840,10 @@ func TestUpdateServerManageScreen_EnterTogglesPeerEnabled(t *testing.T) {
 	result, _ := model.updateServerManageScreen(keyNamed(tea.KeyEnter))
 	s := result.(configuratorSessionModel)
 
-	if len(s.serverManagePeers) != 1 {
-		t.Fatalf("expected 1 peer, got %d", len(s.serverManagePeers))
+	if len(s.server.managePeers) != 1 {
+		t.Fatalf("expected 1 peer, got %d", len(s.server.managePeers))
 	}
-	if s.serverManagePeers[0].Enabled {
+	if s.server.managePeers[0].Enabled {
 		t.Fatal("expected peer to be disabled after toggle")
 	}
 }
@@ -1910,8 +1870,8 @@ func TestUpdateServerManageScreen_SetAllowedPeerEnabledError(t *testing.T) {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
 	model.screen = configuratorScreenServerManage
-	model.serverManagePeers = append([]serverConfiguration.AllowedPeer(nil), manager.peers...)
-	model.serverManageLabels = buildServerManageLabels(model.serverManagePeers)
+	model.server.managePeers = append([]serverConfiguration.AllowedPeer(nil), manager.peers...)
+	model.server.manageLabels = buildServerManageLabels(model.server.managePeers)
 	model.cursor = 0
 
 	result, _ := model.updateServerManageScreen(keyNamed(tea.KeyEnter))
@@ -1947,8 +1907,8 @@ func TestUpdateServerManageScreen_AfterToggle_ListAllowedPeersError(t *testing.T
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
 	model.screen = configuratorScreenServerManage
-	model.serverManagePeers = append([]serverConfiguration.AllowedPeer(nil), manager.peers...)
-	model.serverManageLabels = buildServerManageLabels(model.serverManagePeers)
+	model.server.managePeers = append([]serverConfiguration.AllowedPeer(nil), manager.peers...)
+	model.server.manageLabels = buildServerManageLabels(model.server.managePeers)
 	model.cursor = 0
 
 	result, cmd := model.updateServerManageScreen(keyNamed(tea.KeyEnter))
@@ -2013,8 +1973,8 @@ func TestUpdateServerManageScreen_CursorClamping(t *testing.T) {
 		{Name: "a", ClientID: 1, Enabled: true},
 		{Name: "b", ClientID: 2, Enabled: true},
 	}
-	model.serverManagePeers = append([]serverConfiguration.AllowedPeer(nil), manager.peers...)
-	model.serverManageLabels = buildServerManageLabels(model.serverManagePeers)
+	model.server.managePeers = append([]serverConfiguration.AllowedPeer(nil), manager.peers...)
+	model.server.manageLabels = buildServerManageLabels(model.server.managePeers)
 	model.cursor = 1
 
 	// After toggle of peer 2, remove it from manager so list returns fewer
@@ -2032,7 +1992,7 @@ func TestUpdateServerManageScreen_CursorClamping(t *testing.T) {
 		{Name: "a", ClientID: 1, Enabled: true},
 	}
 
-	// But model.serverManagePeers still has 2 peers for the toggle
+	// But model.server.managePeers still has 2 peers for the toggle
 	result, _ := model.updateServerManageScreen(keyNamed(tea.KeyEnter))
 	s := result.(configuratorSessionModel)
 
@@ -2148,8 +2108,8 @@ func TestUpdateClientSelectScreen_EnterConfig_SelectorError(t *testing.T) {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
 	model.screen = configuratorScreenClientSelect
-	model.clientMenuOptions = []string{"my-config", sessionClientRemove, sessionClientAdd}
-	model.clientConfigs = []string{"my-config"}
+	model.client.menuOptions = []string{"my-config", sessionClientRemove, sessionClientAdd}
+	model.client.configs = []string{"my-config"}
 	model.cursor = 0
 
 	result, cmd := model.updateClientSelectScreen(keyNamed(tea.KeyEnter))
@@ -2184,8 +2144,8 @@ func TestUpdateClientSelectScreen_EnterConfig_NonInvalidError(t *testing.T) {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
 	model.screen = configuratorScreenClientSelect
-	model.clientMenuOptions = []string{"my-config", sessionClientRemove, sessionClientAdd}
-	model.clientConfigs = []string{"my-config"}
+	model.client.menuOptions = []string{"my-config", sessionClientRemove, sessionClientAdd}
+	model.client.configs = []string{"my-config"}
 	model.cursor = 0
 
 	result, cmd := model.updateClientSelectScreen(keyNamed(tea.KeyEnter))
@@ -2219,8 +2179,8 @@ func TestUpdateClientSelectScreen_EnterConfig_ValidConfig(t *testing.T) {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
 	model.screen = configuratorScreenClientSelect
-	model.clientMenuOptions = []string{"my-config", sessionClientRemove, sessionClientAdd}
-	model.clientConfigs = []string{"my-config"}
+	model.client.menuOptions = []string{"my-config", sessionClientRemove, sessionClientAdd}
+	model.client.configs = []string{"my-config"}
 	model.cursor = 0
 
 	result, cmd := model.updateClientSelectScreen(keyNamed(tea.KeyEnter))
@@ -2244,7 +2204,7 @@ func TestUpdateClientSelectScreen_EnterConfig_ValidConfig(t *testing.T) {
 func TestUpdateClientRemoveScreen_EnterEmptyPaths(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenClientRemove
-	m.clientRemovePaths = nil
+	m.client.removePaths = nil
 	m.cursor = 0
 
 	result, cmd := m.updateClientRemoveScreen(keyNamed(tea.KeyEnter))
@@ -2277,7 +2237,7 @@ func TestUpdateClientRemoveScreen_DeleterError(t *testing.T) {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
 	model.screen = configuratorScreenClientRemove
-	model.clientRemovePaths = []string{"config-to-remove"}
+	model.client.removePaths = []string{"config-to-remove"}
 	model.cursor = 0
 
 	result, cmd := model.updateClientRemoveScreen(keyNamed(tea.KeyEnter))
@@ -2312,7 +2272,7 @@ func TestUpdateClientRemoveScreen_ReloadError(t *testing.T) {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
 	model.screen = configuratorScreenClientRemove
-	model.clientRemovePaths = []string{"config-to-remove"}
+	model.client.removePaths = []string{"config-to-remove"}
 	model.cursor = 0
 
 	result, cmd := model.updateClientRemoveScreen(keyNamed(tea.KeyEnter))
@@ -2351,8 +2311,8 @@ func TestUpdateClientAddJSONScreen_EnterValidJSON_CreateSucceeds(t *testing.T) {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
 	model.screen = configuratorScreenClientAddJSON
-	model.addName = "my-config"
-	model.addJSONInput.SetValue(validClientConfigurationJSON())
+	model.client.addName = "my-config"
+	model.client.addJSONInput.SetValue(validClientConfigurationJSON())
 
 	result, _ := model.updateClientAddJSONScreen(keyNamed(tea.KeyEnter))
 	s := result.(configuratorSessionModel)
@@ -2387,8 +2347,8 @@ func TestUpdateClientAddJSONScreen_EnterValidJSON_CreateError(t *testing.T) {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
 	model.screen = configuratorScreenClientAddJSON
-	model.addName = "my-config"
-	model.addJSONInput.SetValue(validClientConfigurationJSON())
+	model.client.addName = "my-config"
+	model.client.addJSONInput.SetValue(validClientConfigurationJSON())
 
 	result, cmd := model.updateClientAddJSONScreen(keyNamed(tea.KeyEnter))
 	s := result.(configuratorSessionModel)
@@ -2423,8 +2383,8 @@ func TestUpdateClientAddJSONScreen_EnterValidJSON_ReloadError(t *testing.T) {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
 	model.screen = configuratorScreenClientAddJSON
-	model.addName = "my-config"
-	model.addJSONInput.SetValue(validClientConfigurationJSON())
+	model.client.addName = "my-config"
+	model.client.addJSONInput.SetValue(validClientConfigurationJSON())
 
 	result, cmd := model.updateClientAddJSONScreen(keyNamed(tea.KeyEnter))
 	s := result.(configuratorSessionModel)
@@ -2450,10 +2410,10 @@ func TestUpdateClientAddJSONScreen_EnterValidJSON_ReloadError(t *testing.T) {
 func TestUpdateClientInvalidScreen_DeleteBlankInvalidConfig(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenClientInvalid
-	m.invalidErr = errors.New("bad config")
-	m.invalidAllowDelete = true
-	m.invalidConfig = "   " // blank
-	m.cursor = 0            // "Delete invalid configuration"
+	m.client.invalidErr = errors.New("bad config")
+	m.client.invalidAllowDelete = true
+	m.client.invalidConfig = "   " // blank
+	m.cursor = 0                   // "Delete invalid configuration"
 
 	result, cmd := m.updateClientInvalidScreen(keyNamed(tea.KeyEnter))
 	s := result.(configuratorSessionModel)
@@ -2487,9 +2447,9 @@ func TestUpdateClientInvalidScreen_DeleteDeleterError(t *testing.T) {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
 	model.screen = configuratorScreenClientInvalid
-	model.invalidErr = errors.New("bad config")
-	model.invalidAllowDelete = true
-	model.invalidConfig = "bad-config-file"
+	model.client.invalidErr = errors.New("bad config")
+	model.client.invalidAllowDelete = true
+	model.client.invalidConfig = "bad-config-file"
 	model.cursor = 0 // "Delete invalid configuration"
 
 	result, cmd := model.updateClientInvalidScreen(keyNamed(tea.KeyEnter))
@@ -2524,9 +2484,9 @@ func TestUpdateClientInvalidScreen_DeleteReloadError(t *testing.T) {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
 	model.screen = configuratorScreenClientInvalid
-	model.invalidErr = errors.New("bad config")
-	model.invalidAllowDelete = true
-	model.invalidConfig = "bad-config-file"
+	model.client.invalidErr = errors.New("bad config")
+	model.client.invalidAllowDelete = true
+	model.client.invalidConfig = "bad-config-file"
 	model.cursor = 0 // "Delete invalid configuration"
 
 	result, cmd := model.updateClientInvalidScreen(keyNamed(tea.KeyEnter))
@@ -2546,8 +2506,8 @@ func TestUpdateClientInvalidScreen_DeleteReloadError(t *testing.T) {
 func TestUpdateClientInvalidScreen_NonEnterWithAllowDelete(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenClientInvalid
-	m.invalidErr = errors.New("bad config")
-	m.invalidAllowDelete = true
+	m.client.invalidErr = errors.New("bad config")
+	m.client.invalidAllowDelete = true
 	m.cursor = 0
 
 	// Navigate down
@@ -2589,8 +2549,8 @@ func TestUpdateServerDeleteConfirmScreen_RemoveAllowedPeerError(t *testing.T) {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
 	model.screen = configuratorScreenServerDeleteConfirm
-	model.serverDeletePeer = serverConfiguration.AllowedPeer{Name: "alpha", ClientID: 1, Enabled: true}
-	model.serverManagePeers = append([]serverConfiguration.AllowedPeer(nil), manager.peers...)
+	model.server.deletePeer = serverConfiguration.AllowedPeer{Name: "alpha", ClientID: 1, Enabled: true}
+	model.server.managePeers = append([]serverConfiguration.AllowedPeer(nil), manager.peers...)
 	model.cursor = 0 // "Delete client"
 
 	result, _ := model.updateServerDeleteConfirmScreen(keyNamed(tea.KeyEnter))
@@ -2627,8 +2587,8 @@ func TestUpdateServerDeleteConfirmScreen_ListAllowedPeersErrorAfterRemove(t *tes
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
 	model.screen = configuratorScreenServerDeleteConfirm
-	model.serverDeletePeer = serverConfiguration.AllowedPeer{Name: "alpha", ClientID: 1, Enabled: true}
-	model.serverManagePeers = append([]serverConfiguration.AllowedPeer(nil), manager.peers...)
+	model.server.deletePeer = serverConfiguration.AllowedPeer{Name: "alpha", ClientID: 1, Enabled: true}
+	model.server.managePeers = append([]serverConfiguration.AllowedPeer(nil), manager.peers...)
 	model.cursor = 0 // "Delete client"
 
 	result, cmd := model.updateServerDeleteConfirmScreen(keyNamed(tea.KeyEnter))
@@ -2648,8 +2608,8 @@ func TestUpdateServerDeleteConfirmScreen_ListAllowedPeersErrorAfterRemove(t *tes
 func TestUpdateServerDeleteConfirmScreen_EscWithEmptyPeers(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenServerDeleteConfirm
-	m.serverManagePeers = nil // empty
-	m.serverDeleteCursor = 3
+	m.server.managePeers = nil // empty
+	m.server.deleteCursor = 3
 
 	result, _ := m.updateServerDeleteConfirmScreen(keyNamed(tea.KeyEsc))
 	s := result.(configuratorSessionModel)
@@ -2665,8 +2625,8 @@ func TestUpdateServerDeleteConfirmScreen_EscWithEmptyPeers(t *testing.T) {
 func TestUpdateServerDeleteConfirmScreen_CancelWithEmptyPeers(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenServerDeleteConfirm
-	m.serverManagePeers = nil // empty
-	m.serverDeleteCursor = 3
+	m.server.managePeers = nil // empty
+	m.server.deleteCursor = 3
 	m.cursor = 1 // "Cancel"
 
 	result, _ := m.updateServerDeleteConfirmScreen(keyNamed(tea.KeyEnter))
@@ -2719,16 +2679,14 @@ func TestUpdateModeScreen_EnterClient_ReloadFails(t *testing.T) {
 }
 
 // =========================================================================
-// 9. configuratorLogTickCmd coverage
+// 9. logViewportTickCmd coverage (see log_viewport_test.go for full tests)
 // =========================================================================
 
-func TestConfiguratorLogTickCmd_ProducesCorrectMsg(t *testing.T) {
-	cmd := configuratorLogTickCmd(42)
+func TestLogViewportTickCmd_ProducesCorrectMsg(t *testing.T) {
+	cmd := logViewportTickCmd(42)
 	if cmd == nil {
 		t.Fatal("expected non-nil cmd")
 	}
-	// The cmd wraps tea.Tick which won't resolve immediately without time passing,
-	// so we just verify the cmd is non-nil (the function structure is simple).
 }
 
 // =========================================================================
@@ -2747,9 +2705,9 @@ func TestConfiguratorLogUpdateCmd_StopChannelClosed(t *testing.T) {
 	}
 
 	msg := cmd()
-	tick, ok := msg.(configuratorLogTickMsg)
+	tick, ok := msg.(logViewportTickMsg)
 	if !ok {
-		t.Fatalf("expected configuratorLogTickMsg, got %T", msg)
+		t.Fatalf("expected logViewportTickMsg, got %T", msg)
 	}
 	// When stop is closed, seq should be zero (default)
 	if tick.seq != 0 {
@@ -2769,9 +2727,9 @@ func TestConfiguratorLogUpdateCmd_ChangesChannelFires(t *testing.T) {
 	}
 
 	msg := cmd()
-	tick, ok := msg.(configuratorLogTickMsg)
+	tick, ok := msg.(logViewportTickMsg)
 	if !ok {
-		t.Fatalf("expected configuratorLogTickMsg, got %T", msg)
+		t.Fatalf("expected logViewportTickMsg, got %T", msg)
 	}
 	if tick.seq != 7 {
 		t.Fatalf("expected seq=7 when changes fires, got %d", tick.seq)
@@ -2779,27 +2737,24 @@ func TestConfiguratorLogUpdateCmd_ChangesChannelFires(t *testing.T) {
 }
 
 // =========================================================================
-// 11. refreshLogs coverage - logFollow=false, not at bottom
+// 11. logViewport refresh coverage (delegated; see log_viewport_test.go)
 // =========================================================================
 
-func TestRefreshLogs_NotFollowing_PreservesOffset(t *testing.T) {
+func TestLogsIntegration_RefreshNotFollowing_PreservesOffset(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.width = 80
 	m.height = 30
-	m.logReady = true
-	m.logFollow = false
+	m.logs.follow = false
 
-	// Set content with many lines so viewport is not at bottom
-	m.ensureLogsViewport()
+	m.logs.ensure(m.width, m.height, m.preferences, "", configuratorLogsHint)
 	longContent := strings.Repeat("line\n", 200)
-	m.logViewport.SetContent(longContent)
-	m.logViewport.SetYOffset(5) // not at bottom
+	m.logs.viewport.SetContent(longContent)
+	m.logs.viewport.SetYOffset(5) // not at bottom
 
-	m.refreshLogs()
+	m.logs.refresh(m.logsFeed(), m.preferences)
 
-	// logFollow should remain false
-	if m.logFollow {
-		t.Fatal("expected logFollow to remain false")
+	if m.logs.follow {
+		t.Fatal("expected follow to remain false")
 	}
 }
 
@@ -2918,15 +2873,11 @@ func TestUpdateServerSelectScreen_EnterAddClient_Success(t *testing.T) {
 	}
 }
 
-func TestConfiguratorLogTickCmd_InnerFuncEmitsMessage(t *testing.T) {
-	cmd := configuratorLogTickCmd(42)
-	msg := cmd()
-	tick, ok := msg.(configuratorLogTickMsg)
-	if !ok {
-		t.Fatalf("expected configuratorLogTickMsg, got %T", msg)
-	}
-	if tick.seq != 42 {
-		t.Fatalf("expected seq=42, got %d", tick.seq)
+func TestConfiguratorLogUpdateCmd_DelegatesToLogViewport(t *testing.T) {
+	stop := make(chan struct{})
+	cmd := configuratorLogUpdateCmd(nil, stop, 42)
+	if cmd == nil {
+		t.Fatal("expected non-nil cmd")
 	}
 }
 
@@ -2980,8 +2931,8 @@ func TestUpdateClientSelectScreen_SelectConfig_NonInvalidConfigError_Exits(t *te
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
 	model.screen = configuratorScreenClientSelect
-	model.clientMenuOptions = []string{"my-config", sessionClientRemove, sessionClientAdd}
-	model.clientConfigs = []string{"my-config"}
+	model.client.menuOptions = []string{"my-config", sessionClientRemove, sessionClientAdd}
+	model.client.configs = []string{"my-config"}
 	model.cursor = 0
 
 	result, cmd := model.updateClientSelectScreen(keyNamed(tea.KeyEnter))
@@ -3014,8 +2965,8 @@ func TestUpdateClientSelectScreen_SelectConfig_ValidConfig_ExitsWithClientMode(t
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
 	model.screen = configuratorScreenClientSelect
-	model.clientMenuOptions = []string{"my-config", sessionClientRemove, sessionClientAdd}
-	model.clientConfigs = []string{"my-config"}
+	model.client.menuOptions = []string{"my-config", sessionClientRemove, sessionClientAdd}
+	model.client.configs = []string{"my-config"}
 	model.cursor = 0
 
 	result, cmd := model.updateClientSelectScreen(keyNamed(tea.KeyEnter))
@@ -3050,8 +3001,8 @@ func TestUpdateClientSelectScreen_SelectorError_Exits(t *testing.T) {
 	// Override selector to one that fails
 	model.options.Selector = sessionSelectorError{err: errors.New("select failed")}
 	model.screen = configuratorScreenClientSelect
-	model.clientMenuOptions = []string{"my-config", sessionClientRemove, sessionClientAdd}
-	model.clientConfigs = []string{"my-config"}
+	model.client.menuOptions = []string{"my-config", sessionClientRemove, sessionClientAdd}
+	model.client.configs = []string{"my-config"}
 	model.cursor = 0
 
 	result, cmd := model.updateClientSelectScreen(keyNamed(tea.KeyEnter))
@@ -3101,7 +3052,7 @@ func TestUpdate_JSONScreen_EnterDebouncedDuringPaste(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenClientAddJSON
 	// Simulate recent non-Enter input (as if paste just happened).
-	m.lastInputAt = time.Now()
+	m.client.lastInputAt = time.Now()
 
 	// Enter within debounce window should be forwarded to textarea as newline,
 	// not treated as submit.
@@ -3111,7 +3062,7 @@ func TestUpdate_JSONScreen_EnterDebouncedDuringPaste(t *testing.T) {
 		t.Fatal("expected Enter to be debounced during paste")
 	}
 	// lastInputAt should be refreshed so the debounce window extends.
-	if s.lastInputAt.IsZero() {
+	if s.client.lastInputAt.IsZero() {
 		t.Fatal("expected lastInputAt to be refreshed during debounce")
 	}
 }
@@ -3119,7 +3070,7 @@ func TestUpdate_JSONScreen_EnterDebouncedDuringPaste(t *testing.T) {
 func TestUpdate_JSONScreen_EnterAcceptedAfterDebounce(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenClientAddJSON
-	m.addJSONInput.SetValue("not valid json")
+	m.client.addJSONInput.SetValue("not valid json")
 	// No recent input — lastInputAt is zero, Enter should be accepted.
 
 	result, _ := m.updateClientAddJSONScreen(keyNamed(tea.KeyEnter))
@@ -3133,12 +3084,12 @@ func TestUpdate_JSONScreen_NonEnterKeySetsLastInputAt(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenClientAddJSON
 
-	if !m.lastInputAt.IsZero() {
+	if !m.client.lastInputAt.IsZero() {
 		t.Fatal("expected lastInputAt to be zero initially")
 	}
 	result, _ := m.updateClientAddJSONScreen(keyRunes('x'))
 	s := result.(configuratorSessionModel)
-	if s.lastInputAt.IsZero() {
+	if s.client.lastInputAt.IsZero() {
 		t.Fatal("expected lastInputAt to be set after key input")
 	}
 }
@@ -3146,12 +3097,12 @@ func TestUpdate_JSONScreen_NonEnterKeySetsLastInputAt(t *testing.T) {
 func TestUpdate_PasteSettledMsg_FormatsJSON(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenClientAddJSON
-	m.pasteSeq = 5
-	m.addJSONInput.SetValue(`{"a":1,"b":2}`)
+	m.client.pasteSeq = 5
+	m.client.addJSONInput.SetValue(`{"a":1,"b":2}`)
 
 	result, _ := m.Update(pasteSettledMsg{seq: 5})
 	s := result.(configuratorSessionModel)
-	got := s.addJSONInput.Value()
+	got := s.client.addJSONInput.Value()
 	if !strings.Contains(got, "\n") {
 		t.Fatalf("expected formatted JSON with newlines, got %q", got)
 	}
@@ -3160,12 +3111,12 @@ func TestUpdate_PasteSettledMsg_FormatsJSON(t *testing.T) {
 func TestUpdate_PasteSettledMsg_StaleSeqIgnored(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenClientAddJSON
-	m.pasteSeq = 5
-	m.addJSONInput.SetValue(`{"a":1}`)
+	m.client.pasteSeq = 5
+	m.client.addJSONInput.SetValue(`{"a":1}`)
 
 	result, _ := m.Update(pasteSettledMsg{seq: 3}) // stale
 	s := result.(configuratorSessionModel)
-	got := s.addJSONInput.Value()
+	got := s.client.addJSONInput.Value()
 	if strings.Contains(got, "\n") {
 		t.Fatalf("stale seq should not reformat, got %q", got)
 	}
@@ -3174,41 +3125,41 @@ func TestUpdate_PasteSettledMsg_StaleSeqIgnored(t *testing.T) {
 func TestTryFormatJSON_EmptyInput(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenClientAddJSON
-	m.pasteSeq = 1
-	m.addJSONInput.SetValue("")
+	m.client.pasteSeq = 1
+	m.client.addJSONInput.SetValue("")
 
 	// Should not panic or change anything.
 	result, _ := m.Update(pasteSettledMsg{seq: 1})
 	s := result.(configuratorSessionModel)
-	if s.addJSONInput.Value() != "" {
-		t.Fatalf("expected empty value unchanged, got %q", s.addJSONInput.Value())
+	if s.client.addJSONInput.Value() != "" {
+		t.Fatalf("expected empty value unchanged, got %q", s.client.addJSONInput.Value())
 	}
 }
 
 func TestTryFormatJSON_InvalidJSON(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenClientAddJSON
-	m.pasteSeq = 1
-	m.addJSONInput.SetValue("not json at all")
+	m.client.pasteSeq = 1
+	m.client.addJSONInput.SetValue("not json at all")
 
 	result, _ := m.Update(pasteSettledMsg{seq: 1})
 	s := result.(configuratorSessionModel)
-	if s.addJSONInput.Value() != "not json at all" {
-		t.Fatalf("expected invalid JSON unchanged, got %q", s.addJSONInput.Value())
+	if s.client.addJSONInput.Value() != "not json at all" {
+		t.Fatalf("expected invalid JSON unchanged, got %q", s.client.addJSONInput.Value())
 	}
 }
 
 func TestTryFormatJSON_AlreadyFormatted(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenClientAddJSON
-	m.pasteSeq = 1
+	m.client.pasteSeq = 1
 	formatted := "{\n  \"a\": 1\n}"
-	m.addJSONInput.SetValue(formatted)
+	m.client.addJSONInput.SetValue(formatted)
 
 	result, _ := m.Update(pasteSettledMsg{seq: 1})
 	s := result.(configuratorSessionModel)
-	if s.addJSONInput.Value() != formatted {
-		t.Fatalf("expected already-formatted JSON unchanged, got %q", s.addJSONInput.Value())
+	if s.client.addJSONInput.Value() != formatted {
+		t.Fatalf("expected already-formatted JSON unchanged, got %q", s.client.addJSONInput.Value())
 	}
 }
 
@@ -3217,7 +3168,7 @@ func TestView_ClientAddJSONScreen_MultilineContent(t *testing.T) {
 	m.screen = configuratorScreenClientAddJSON
 	m.width = 80
 	m.height = 30
-	m.addJSONInput.SetValue("{\n  \"key\": \"value\"\n}")
+	m.client.addJSONInput.SetValue("{\n  \"key\": \"value\"\n}")
 
 	view := m.View().Content
 	if !strings.Contains(view, "Lines: 3") {
@@ -3228,7 +3179,7 @@ func TestView_ClientAddJSONScreen_MultilineContent(t *testing.T) {
 func TestUpdateClientSelectScreen_EmptyMenuOptions(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenClientSelect
-	m.clientMenuOptions = nil
+	m.client.menuOptions = nil
 
 	result, _ := m.updateClientSelectScreen(keyNamed(tea.KeyEnter))
 	s := result.(configuratorSessionModel)
@@ -3241,7 +3192,7 @@ func TestUpdateServerSelectScreen_DefaultFallthrough(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenServerSelect
 	// Set options to something that doesn't match any known case.
-	m.serverMenuOptions = []string{"unknown option"}
+	m.server.menuOptions = []string{"unknown option"}
 	m.cursor = 0
 
 	result, _ := m.updateServerSelectScreen(keyNamed(tea.KeyEnter))
@@ -3255,7 +3206,7 @@ func TestUpdateServerSelectScreen_DefaultFallthrough(t *testing.T) {
 func TestUpdateServerManageScreen_EmptyPeersOnEnter(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenServerManage
-	m.serverManagePeers = nil
+	m.server.managePeers = nil
 
 	result, _ := m.updateServerManageScreen(keyNamed(tea.KeyEnter))
 	s := result.(configuratorSessionModel)

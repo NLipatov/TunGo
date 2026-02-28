@@ -324,11 +324,14 @@ func (m *mockUnifiedSession) ShowFatalError(_ string) {}
 
 func (m *mockUnifiedSession) Close() { m.closeCalled = true }
 
-func withMockUnifiedSession(t *testing.T, session unifiedSessionHandle) {
+func withMockUnifiedSession(t *testing.T, c *Configurator, session unifiedSessionHandle) {
 	t.Helper()
-	prev := activeUnifiedSession
-	activeUnifiedSession = session
-	t.Cleanup(func() { activeUnifiedSession = prev })
+	if session != nil {
+		c.sh = &sessionHolder{handle: session}
+		injectSessionHolder(c.sh)
+	} else {
+		c.sh = nil
+	}
 }
 
 func withMockNewUnifiedSession(t *testing.T, factory func(context.Context, bubbleTea.ConfiguratorSessionOptions) (unifiedSessionHandle, error)) {
@@ -351,9 +354,9 @@ func newContinuousConfigurator() *Configurator {
 
 func TestConfigureContinuous_HappyPath_ReturnsMode(t *testing.T) {
 	mock := &mockUnifiedSession{waitModeResult: mode.Server}
-	withMockUnifiedSession(t, mock)
-
 	c := newContinuousConfigurator()
+	withMockUnifiedSession(t, c, mock)
+
 	gotMode, err := c.Configure(context.Background())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
@@ -368,9 +371,9 @@ func TestConfigureContinuous_HappyPath_ReturnsMode(t *testing.T) {
 
 func TestConfigureContinuous_WaitForModeQuit_ReturnsErrUserExit(t *testing.T) {
 	mock := &mockUnifiedSession{waitModeErr: bubbleTea.ErrUnifiedSessionQuit}
-	withMockUnifiedSession(t, mock)
-
 	c := newContinuousConfigurator()
+	withMockUnifiedSession(t, c, mock)
+
 	_, err := c.Configure(context.Background())
 	if !errors.Is(err, ErrUserExit) {
 		t.Fatalf("expected ErrUserExit, got %v", err)
@@ -378,16 +381,16 @@ func TestConfigureContinuous_WaitForModeQuit_ReturnsErrUserExit(t *testing.T) {
 	if !mock.closeCalled {
 		t.Fatal("expected Close called on quit")
 	}
-	if activeUnifiedSession != nil {
-		t.Fatal("expected activeUnifiedSession cleared on quit")
+	if c.sh.handle != nil {
+		t.Fatal("expected session cleared on quit")
 	}
 }
 
 func TestConfigureContinuous_WaitForModeClosed_ReturnsErrUserExit(t *testing.T) {
 	mock := &mockUnifiedSession{waitModeErr: bubbleTea.ErrUnifiedSessionClosed}
-	withMockUnifiedSession(t, mock)
-
 	c := newContinuousConfigurator()
+	withMockUnifiedSession(t, c, mock)
+
 	_, err := c.Configure(context.Background())
 	if !errors.Is(err, ErrUserExit) {
 		t.Fatalf("expected ErrUserExit, got %v", err)
@@ -395,16 +398,16 @@ func TestConfigureContinuous_WaitForModeClosed_ReturnsErrUserExit(t *testing.T) 
 	if !mock.closeCalled {
 		t.Fatal("expected Close called on closed session")
 	}
-	if activeUnifiedSession != nil {
-		t.Fatal("expected activeUnifiedSession cleared on closed session")
+	if c.sh.handle != nil {
+		t.Fatal("expected session cleared on closed session")
 	}
 }
 
 func TestConfigureContinuous_WaitForModeError_Propagates(t *testing.T) {
 	mock := &mockUnifiedSession{waitModeErr: errors.New("unexpected failure")}
-	withMockUnifiedSession(t, mock)
-
 	c := newContinuousConfigurator()
+	withMockUnifiedSession(t, c, mock)
+
 	_, err := c.Configure(context.Background())
 	if err == nil || err.Error() != "unexpected failure" {
 		t.Fatalf("expected 'unexpected failure', got %v", err)
@@ -412,19 +415,19 @@ func TestConfigureContinuous_WaitForModeError_Propagates(t *testing.T) {
 	if !mock.closeCalled {
 		t.Fatal("expected Close called on error")
 	}
-	if activeUnifiedSession != nil {
-		t.Fatal("expected activeUnifiedSession cleared on error")
+	if c.sh.handle != nil {
+		t.Fatal("expected session cleared on error")
 	}
 }
 
 func TestConfigureContinuous_CreatesNewSession_WhenNil(t *testing.T) {
 	mock := &mockUnifiedSession{waitModeResult: mode.Client}
-	withMockUnifiedSession(t, nil) // ensure activeUnifiedSession is nil
+	c := newContinuousConfigurator()
+	// session is nil by default — factory should create new one
 	withMockNewUnifiedSession(t, func(_ context.Context, _ bubbleTea.ConfiguratorSessionOptions) (unifiedSessionHandle, error) {
 		return mock, nil
 	})
 
-	c := newContinuousConfigurator()
 	gotMode, err := c.Configure(context.Background())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
@@ -432,15 +435,18 @@ func TestConfigureContinuous_CreatesNewSession_WhenNil(t *testing.T) {
 	if gotMode != mode.Client {
 		t.Fatalf("expected mode.Client, got %v", gotMode)
 	}
+	if c.sh == nil || c.sh.handle != mock {
+		t.Fatal("expected session stored on configurator")
+	}
 }
 
 func TestConfigureContinuous_NewSessionError_Propagates(t *testing.T) {
-	withMockUnifiedSession(t, nil) // ensure activeUnifiedSession is nil
+	c := newContinuousConfigurator()
+	// session is nil by default — factory will fail
 	withMockNewUnifiedSession(t, func(_ context.Context, _ bubbleTea.ConfiguratorSessionOptions) (unifiedSessionHandle, error) {
 		return nil, errors.New("session creation failed")
 	})
 
-	c := newContinuousConfigurator()
 	_, err := c.Configure(context.Background())
 	if err == nil || err.Error() != "session creation failed" {
 		t.Fatalf("expected 'session creation failed', got %v", err)
@@ -449,14 +455,14 @@ func TestConfigureContinuous_NewSessionError_Propagates(t *testing.T) {
 
 func TestConfigureContinuous_ReusesExistingSession(t *testing.T) {
 	mock := &mockUnifiedSession{waitModeResult: mode.Server}
-	withMockUnifiedSession(t, mock)
+	c := newContinuousConfigurator()
+	withMockUnifiedSession(t, c, mock)
 	factoryCalled := false
 	withMockNewUnifiedSession(t, func(_ context.Context, _ bubbleTea.ConfiguratorSessionOptions) (unifiedSessionHandle, error) {
 		factoryCalled = true
 		return nil, errors.New("should not be called")
 	})
 
-	c := newContinuousConfigurator()
 	gotMode, err := c.Configure(context.Background())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)

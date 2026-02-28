@@ -24,9 +24,11 @@ type unifiedSessionHandle interface {
 	Close()
 }
 
-// activeUnifiedSession holds the shared unified session across configurator/runtime phases.
-// It is created by configureContinuous() on first call and reused on reconfigure loops.
-var activeUnifiedSession unifiedSessionHandle
+// sessionHolder shares session state between Configurator and runtimeBackend.
+// Both hold a pointer to the same holder; when either clears handle, the other sees it.
+type sessionHolder struct {
+	handle unifiedSessionHandle
+}
 
 // newUnifiedSession creates a new unified session. Replaced in tests.
 var newUnifiedSession = func(ctx context.Context, opts bubbleTea.ConfiguratorSessionOptions) (unifiedSessionHandle, error) {
@@ -39,6 +41,7 @@ type Configurator struct {
 	serverConfigurator *serverConfigurator
 	useContinuousUI    bool
 	serverSupported    bool
+	sh                 *sessionHolder
 }
 
 type configuratorState int
@@ -121,26 +124,38 @@ func (p *Configurator) configureContinuous(ctx context.Context) (mode.Mode, erro
 		ServerSupported:     p.serverSupported,
 	}
 
-	if activeUnifiedSession == nil {
+	if p.sh == nil || p.sh.handle == nil {
 		session, err := newUnifiedSession(ctx, configOpts)
 		if err != nil {
 			return mode.Unknown, err
 		}
-		activeUnifiedSession = session
+		p.sh = &sessionHolder{handle: session}
+		injectSessionHolder(p.sh)
 	}
 
-	selectedMode, err := activeUnifiedSession.WaitForMode()
+	selectedMode, err := p.sh.handle.WaitForMode()
 	if err != nil {
 		if errors.Is(err, bubbleTea.ErrUnifiedSessionQuit) || errors.Is(err, bubbleTea.ErrUnifiedSessionClosed) {
-			activeUnifiedSession.Close()
-			activeUnifiedSession = nil
+			p.closeSession()
 			return mode.Unknown, ErrUserExit
 		}
-		activeUnifiedSession.Close()
-		activeUnifiedSession = nil
+		p.closeSession()
 		return mode.Unknown, err
 	}
 	return selectedMode, nil
+}
+
+// closeSession closes the active unified session and clears the holder.
+func (p *Configurator) closeSession() {
+	if p.sh != nil && p.sh.handle != nil {
+		p.sh.handle.Close()
+		p.sh.handle = nil
+	}
+}
+
+// Close releases the active unified session. Safe to call multiple times.
+func (p *Configurator) Close() {
+	p.closeSession()
 }
 
 func (p *Configurator) configureFromState(state configuratorState) (mode.Mode, error) {

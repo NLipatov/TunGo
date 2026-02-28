@@ -16,7 +16,7 @@ func (m *runtimeUITestBackend) enableRuntimeLogCapture(capacity int) { m.enabled
 
 func (m *runtimeUITestBackend) disableRuntimeLogCapture() { m.disabled = true }
 
-func (m *runtimeUITestBackend) runRuntimeDashboard(ctx context.Context, mode RuntimeMode) (bool, error) {
+func (m *runtimeUITestBackend) runRuntimeDashboard(ctx context.Context, mode RuntimeMode, _ <-chan struct{}) (bool, error) {
 	if m.run == nil {
 		return false, nil
 	}
@@ -48,7 +48,7 @@ func TestRuntimeUI_Wrappers(t *testing.T) {
 		}
 		return true, nil
 	}
-	quit, err := RunRuntimeDashboard(context.Background(), RuntimeModeServer)
+	quit, err := RunRuntimeDashboard(context.Background(), RuntimeModeServer, nil)
 	if err != nil || !quit {
 		t.Fatalf("expected quit=true nil err, got quit=%v err=%v", quit, err)
 	}
@@ -59,7 +59,7 @@ func TestRuntimeUI_Wrappers(t *testing.T) {
 		}
 		return false, errors.New("boom")
 	}
-	quit, err = RunRuntimeDashboard(context.Background(), RuntimeModeClient)
+	quit, err = RunRuntimeDashboard(context.Background(), RuntimeModeClient, nil)
 	if err == nil || quit {
 		t.Fatalf("expected propagated error and quit=false, got quit=%v err=%v", quit, err)
 	}
@@ -70,7 +70,7 @@ func TestRuntimeUI_Wrappers(t *testing.T) {
 		}
 		return false, ErrUserExit
 	}
-	quit, err = RunRuntimeDashboard(context.Background(), RuntimeModeClient)
+	quit, err = RunRuntimeDashboard(context.Background(), RuntimeModeClient, nil)
 	if !errors.Is(err, ErrUserExit) || quit {
 		t.Fatalf("expected ErrUserExit and quit=false, got quit=%v err=%v", quit, err)
 	}

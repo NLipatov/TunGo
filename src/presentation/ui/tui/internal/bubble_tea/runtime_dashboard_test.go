@@ -293,8 +293,8 @@ func TestRuntimeDashboard_InitAndTickCommands(t *testing.T) {
 	if cmd := runtimeTickCmd(1); cmd == nil {
 		t.Fatal("expected runtimeTickCmd command")
 	}
-	if cmd := runtimeLogTickCmd(1); cmd == nil {
-		t.Fatal("expected runtimeLogTickCmd command")
+	if cmd := logViewportTickCmd(1); cmd == nil {
+		t.Fatal("expected logViewportTickCmd command")
 	}
 }
 
@@ -308,12 +308,12 @@ func TestRuntimeDashboard_Update_WindowAndContextDoneAndQuit(t *testing.T) {
 	}
 	updated := updatedModel.(RuntimeDashboard)
 
-	updatedModel, cmd = updated.Update(runtimeLogTickMsg{seq: updated.logTickSeq})
+	updatedModel, cmd = updated.Update(logViewportTickMsg{seq: updated.logs.tickSeq})
 	if cmd != nil {
 		t.Fatal("expected no log tick cmd when logs screen is inactive")
 	}
 	updated = updatedModel.(RuntimeDashboard)
-	if updated.logViewport.TotalLineCount() != 0 {
+	if updated.logs.viewport.TotalLineCount() != 0 {
 		t.Fatal("expected logs not refreshed while logs screen is inactive")
 	}
 
@@ -321,9 +321,9 @@ func TestRuntimeDashboard_Update_WindowAndContextDoneAndQuit(t *testing.T) {
 	updated = updatedModel.(RuntimeDashboard)
 	updatedModel, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // logs
 	updated = updatedModel.(RuntimeDashboard)
-	updatedModel, cmd = updated.Update(runtimeLogTickMsg{seq: updated.logTickSeq})
+	updatedModel, cmd = updated.Update(logViewportTickMsg{seq: updated.logs.tickSeq})
 	if cmd == nil {
-		t.Fatal("expected follow-up log tick cmd on runtimeLogTickMsg in logs screen")
+		t.Fatal("expected follow-up log tick cmd on logViewportTickMsg in logs screen")
 	}
 	updated = updatedModel.(RuntimeDashboard)
 
@@ -332,7 +332,7 @@ func TestRuntimeDashboard_Update_WindowAndContextDoneAndQuit(t *testing.T) {
 	if updated.width != 100 || updated.height != 30 {
 		t.Fatalf("unexpected size: %dx%d", updated.width, updated.height)
 	}
-	if updated.logViewport.TotalLineCount() == 0 {
+	if updated.logs.viewport.TotalLineCount() == 0 {
 		t.Fatal("expected logs refreshed on window size message")
 	}
 
@@ -598,10 +598,11 @@ func TestRuntimeDashboard_MainView_CanHideStatsAndGraph(t *testing.T) {
 
 func TestRuntimeDashboard_RefreshLogsNilFeed(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
-	m.logViewport.SetContent("stale")
-	m.refreshLogs()
-	if !strings.Contains(m.logViewport.View(), "No logs yet") {
-		t.Fatalf("expected no logs placeholder when feed is absent, got %q", m.logViewport.View())
+	m.logs.viewport.SetContent("stale")
+	m.logs.ensure(m.width, m.height, m.preferences, "", m.logsHint())
+	m.logs.refresh(m.logFeed, m.preferences)
+	if !strings.Contains(m.logs.viewport.View(), "No logs yet") {
+		t.Fatalf("expected no logs placeholder when feed is absent, got %q", m.logs.viewport.View())
 	}
 }
 
@@ -625,8 +626,8 @@ func TestWaitForRuntimeContextDone(t *testing.T) {
 }
 
 func TestRuntimeTickCommands_EmitMessages(t *testing.T) {
-	if _, ok := runtimeLogTickCmd(1)().(runtimeLogTickMsg); !ok {
-		t.Fatal("expected runtimeLogTickMsg")
+	if _, ok := logViewportTickCmd(1)().(logViewportTickMsg); !ok {
+		t.Fatal("expected logViewportTickMsg")
 	}
 	if _, ok := runtimeTickCmd(1)().(runtimeTickMsg); !ok {
 		t.Fatal("expected runtimeTickMsg")
@@ -646,7 +647,8 @@ func TestRuntimeDashboard_SettingsAndLogsView_WithWidth(t *testing.T) {
 	}
 
 	m.screen = runtimeScreenLogs
-	m.refreshLogs()
+	m.logs.ensure(m.width, m.height, m.preferences, "", m.logsHint())
+	m.logs.refresh(m.logFeed, m.preferences)
 	logsView := m.View().Content
 	if !strings.Contains(logsView, "runtime log line") {
 		t.Fatalf("expected log line in logs view, got %q", logsView)
@@ -692,26 +694,26 @@ func TestRuntimeDashboard_LogsViewportScrollAndFollowToggle(t *testing.T) {
 	m = updatedModel.(RuntimeDashboard)
 	updatedModel, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // logs
 	m = updatedModel.(RuntimeDashboard)
-	if !m.logViewport.AtBottom() {
+	if !m.logs.viewport.AtBottom() {
 		t.Fatal("expected logs viewport to follow tail by default")
 	}
 
-	beforeOffset := m.logViewport.YOffset()
+	beforeOffset := m.logs.viewport.YOffset()
 	updatedModel, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 	m = updatedModel.(RuntimeDashboard)
-	if m.logFollow {
+	if m.logs.follow {
 		t.Fatal("expected follow mode disabled after manual up scroll")
 	}
-	if m.logViewport.YOffset() >= beforeOffset {
-		t.Fatalf("expected viewport offset to move up, before=%d after=%d", beforeOffset, m.logViewport.YOffset())
+	if m.logs.viewport.YOffset() >= beforeOffset {
+		t.Fatalf("expected viewport offset to move up, before=%d after=%d", beforeOffset, m.logs.viewport.YOffset())
 	}
 
 	updatedModel, _ = m.Update(tea.KeyPressMsg{Code: tea.KeySpace})
 	m = updatedModel.(RuntimeDashboard)
-	if !m.logFollow {
+	if !m.logs.follow {
 		t.Fatal("expected follow mode enabled after space toggle")
 	}
-	if !m.logViewport.AtBottom() {
+	if !m.logs.viewport.AtBottom() {
 		t.Fatal("expected viewport to jump to tail when follow mode is enabled")
 	}
 }
@@ -915,13 +917,14 @@ func TestUpdateLogs_DownKeyNotAtBottom(t *testing.T) {
 	m.width = 120
 	m.height = 24
 	m.screen = runtimeScreenLogs
-	m.refreshLogs()
-	m.logViewport.GotoTop()
-	m.logFollow = false
+	m.logs.ensure(m.width, m.height, m.preferences, "", m.logsHint())
+	m.logs.refresh(m.logFeed, m.preferences)
+	m.logs.viewport.GotoTop()
+	m.logs.follow = false
 
 	updatedModel, _ := m.updateLogs(tea.KeyPressMsg{Code: tea.KeyDown})
 	updated := updatedModel.(RuntimeDashboard)
-	if updated.logFollow {
+	if updated.logs.follow {
 		t.Fatal("expected logFollow=false when not at bottom after Down")
 	}
 }
@@ -937,12 +940,13 @@ func TestUpdateLogs_UpSetFollowFalse(t *testing.T) {
 	m.width = 120
 	m.height = 24
 	m.screen = runtimeScreenLogs
-	m.refreshLogs()
-	m.logFollow = true
+	m.logs.ensure(m.width, m.height, m.preferences, "", m.logsHint())
+	m.logs.refresh(m.logFeed, m.preferences)
+	m.logs.follow = true
 
 	updatedModel, _ := m.updateLogs(tea.KeyPressMsg{Code: tea.KeyUp})
 	updated := updatedModel.(RuntimeDashboard)
-	if updated.logFollow {
+	if updated.logs.follow {
 		t.Fatal("expected logFollow=false after Up")
 	}
 }
@@ -958,12 +962,13 @@ func TestUpdateLogs_PgDownAtBottomSetsFollow(t *testing.T) {
 	m.width = 120
 	m.height = 24
 	m.screen = runtimeScreenLogs
-	m.refreshLogs()
-	m.logViewport.GotoBottom()
+	m.logs.ensure(m.width, m.height, m.preferences, "", m.logsHint())
+	m.logs.refresh(m.logFeed, m.preferences)
+	m.logs.viewport.GotoBottom()
 
 	updatedModel, _ := m.updateLogs(tea.KeyPressMsg{Code: tea.KeyPgDown})
 	updated := updatedModel.(RuntimeDashboard)
-	if !updated.logFollow {
+	if !updated.logs.follow {
 		t.Fatal("expected logFollow=true after PgDown when already at bottom")
 	}
 }
@@ -979,15 +984,16 @@ func TestUpdateLogs_HomeGoesToTop(t *testing.T) {
 	m.width = 120
 	m.height = 24
 	m.screen = runtimeScreenLogs
-	m.refreshLogs()
+	m.logs.ensure(m.width, m.height, m.preferences, "", m.logsHint())
+	m.logs.refresh(m.logFeed, m.preferences)
 
 	updatedModel, _ := m.updateLogs(tea.KeyPressMsg{Code: tea.KeyHome})
 	updated := updatedModel.(RuntimeDashboard)
-	if updated.logFollow {
+	if updated.logs.follow {
 		t.Fatal("expected logFollow=false after Home")
 	}
-	if updated.logViewport.YOffset() != 0 {
-		t.Fatalf("expected viewport offset 0 after Home, got %d", updated.logViewport.YOffset())
+	if updated.logs.viewport.YOffset() != 0 {
+		t.Fatalf("expected viewport offset 0 after Home, got %d", updated.logs.viewport.YOffset())
 	}
 }
 
@@ -1002,15 +1008,16 @@ func TestUpdateLogs_EndGoesToBottom(t *testing.T) {
 	m.width = 120
 	m.height = 24
 	m.screen = runtimeScreenLogs
-	m.refreshLogs()
-	m.logViewport.GotoTop()
+	m.logs.ensure(m.width, m.height, m.preferences, "", m.logsHint())
+	m.logs.refresh(m.logFeed, m.preferences)
+	m.logs.viewport.GotoTop()
 
 	updatedModel, _ := m.updateLogs(tea.KeyPressMsg{Code: tea.KeyEnd})
 	updated := updatedModel.(RuntimeDashboard)
-	if !updated.logFollow {
+	if !updated.logs.follow {
 		t.Fatal("expected logFollow=true after End")
 	}
-	if !updated.logViewport.AtBottom() {
+	if !updated.logs.viewport.AtBottom() {
 		t.Fatal("expected viewport at bottom after End")
 	}
 }
@@ -1026,18 +1033,19 @@ func TestUpdateLogs_SpaceTogglesFollow(t *testing.T) {
 	m.width = 120
 	m.height = 24
 	m.screen = runtimeScreenLogs
-	m.refreshLogs()
-	m.logFollow = false
+	m.logs.ensure(m.width, m.height, m.preferences, "", m.logsHint())
+	m.logs.refresh(m.logFeed, m.preferences)
+	m.logs.follow = false
 
 	updatedModel, _ := m.updateLogs(tea.KeyPressMsg{Code: tea.KeySpace})
 	updated := updatedModel.(RuntimeDashboard)
-	if !updated.logFollow {
+	if !updated.logs.follow {
 		t.Fatal("expected logFollow=true after Space toggle from false")
 	}
 
 	updatedModel, _ = updated.updateLogs(tea.KeyPressMsg{Code: tea.KeySpace})
 	updated = updatedModel.(RuntimeDashboard)
-	if updated.logFollow {
+	if updated.logs.follow {
 		t.Fatal("expected logFollow=false after Space toggle from true")
 	}
 }
@@ -1050,10 +1058,10 @@ func TestRuntimeLogUpdateCmd_PlainFeedFallsBackToTick(t *testing.T) {
 		t.Fatal("expected non-nil command")
 	}
 	// The returned command should be a tick cmd (time-based), not a channel wait.
-	// We verify it returns a runtimeLogTickMsg eventually.
+	// We verify it returns a logViewportTickMsg eventually.
 	msg := cmd()
-	if _, ok := msg.(runtimeLogTickMsg); !ok {
-		t.Fatalf("expected runtimeLogTickMsg from plain feed fallback, got %T", msg)
+	if _, ok := msg.(logViewportTickMsg); !ok {
+		t.Fatalf("expected logViewportTickMsg from plain feed fallback, got %T", msg)
 	}
 }
 
@@ -1077,8 +1085,8 @@ func TestRuntimeLogUpdateCmd_ChangeFeedNilChanges_FallsBackToTick(t *testing.T) 
 		t.Fatal("expected non-nil command")
 	}
 	msg := cmd()
-	if _, ok := msg.(runtimeLogTickMsg); !ok {
-		t.Fatalf("expected runtimeLogTickMsg from nil Changes fallback, got %T", msg)
+	if _, ok := msg.(logViewportTickMsg); !ok {
+		t.Fatalf("expected logViewportTickMsg from nil Changes fallback, got %T", msg)
 	}
 }
 
@@ -1202,34 +1210,35 @@ func TestHandleGraphPreferenceChange_NoChange(t *testing.T) {
 	}
 }
 
-func TestEnsureLogsViewport_WhenLogReadyFalse(t *testing.T) {
+func TestLogsEnsure_WhenNotReady(t *testing.T) {
 	s := testSettings()
 	m := RuntimeDashboard{
 		width:       100,
 		height:      30,
 		preferences: s.Preferences(),
+		logs:        newLogViewport(),
 	}
-	m.logReady = false
+	m.logs.ready = false
 
-	m.ensureLogsViewport()
-	if !m.logReady {
-		t.Fatal("expected logReady=true after ensureLogsViewport")
+	m.logs.ensure(m.width, m.height, m.preferences, "", m.logsHint())
+	if !m.logs.ready {
+		t.Fatal("expected ready=true after ensure")
 	}
-	if m.logViewport.Width() <= 0 {
-		t.Fatalf("expected viewport width > 0, got %d", m.logViewport.Width())
+	if m.logs.viewport.Width() <= 0 {
+		t.Fatalf("expected viewport width > 0, got %d", m.logs.viewport.Width())
 	}
 }
 
-func TestEnsureLogsViewport_WhenLogReadyTrue_Resizes(t *testing.T) {
+func TestLogsEnsure_WhenReady_Resizes(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
 	m.width = 80
 	m.height = 20
-	origWidth := m.logViewport.Width()
+	origWidth := m.logs.viewport.Width()
 
 	m.width = 120
 	m.height = 30
-	m.ensureLogsViewport()
-	if m.logViewport.Width() == origWidth {
+	m.logs.ensure(m.width, m.height, m.preferences, "", m.logsHint())
+	if m.logs.viewport.Width() == origWidth {
 		t.Fatal("expected viewport width to change after resize")
 	}
 }
@@ -1243,9 +1252,9 @@ func TestRuntimeDashboard_Update_LogTickMismatchedSeqOnLogsScreen(t *testing.T) 
 	m2, _ := m1.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyTab}) // logs
 	dash := m2.(RuntimeDashboard)
 
-	// Send a runtimeLogTickMsg with a mismatched seq while on logs screen.
-	wrongSeq := dash.logTickSeq + 99
-	updatedModel, cmd := dash.Update(runtimeLogTickMsg{seq: wrongSeq})
+	// Send a logViewportTickMsg with a mismatched seq while on logs screen.
+	wrongSeq := dash.logs.tickSeq + 99
+	updatedModel, cmd := dash.Update(logViewportTickMsg{seq: wrongSeq})
 	if cmd != nil {
 		t.Fatal("expected nil cmd for mismatched log tick seq on logs screen")
 	}
@@ -1260,14 +1269,15 @@ func TestUpdateLogs_DownKeyAtBottom_SetsFollowTrue(t *testing.T) {
 	m.width = 120
 	m.height = 24
 	m.screen = runtimeScreenLogs
-	m.refreshLogs()
+	m.logs.ensure(m.width, m.height, m.preferences, "", m.logsHint())
+	m.logs.refresh(m.logFeed, m.preferences)
 	// Ensure viewport is at bottom.
-	m.logViewport.GotoBottom()
-	m.logFollow = false
+	m.logs.viewport.GotoBottom()
+	m.logs.follow = false
 
 	updatedModel, _ := m.updateLogs(tea.KeyPressMsg{Code: tea.KeyDown})
 	updated := updatedModel.(RuntimeDashboard)
-	if !updated.logFollow {
+	if !updated.logs.follow {
 		t.Fatal("expected logFollow=true when Down key pressed and viewport is at bottom")
 	}
 }
@@ -1287,9 +1297,9 @@ func TestRuntimeLogUpdateCmd_StopClosedReturnsLogTickMsg(t *testing.T) {
 		t.Fatal("expected non-nil command")
 	}
 	msg := cmd()
-	tick, ok := msg.(runtimeLogTickMsg)
+	tick, ok := msg.(logViewportTickMsg)
 	if !ok {
-		t.Fatalf("expected runtimeLogTickMsg when stop is closed, got %T", msg)
+		t.Fatalf("expected logViewportTickMsg when stop is closed, got %T", msg)
 	}
 	// When stop fires, seq should be zero (not the passed-in seq).
 	if tick.seq != 0 {
@@ -1331,9 +1341,9 @@ func TestRuntimeLogUpdateCmd_ChangeFeedSignalReturnsMatchingSeq(t *testing.T) {
 		t.Fatal("expected non-nil command")
 	}
 	msg := cmd()
-	tick, ok := msg.(runtimeLogTickMsg)
+	tick, ok := msg.(logViewportTickMsg)
 	if !ok {
-		t.Fatalf("expected runtimeLogTickMsg from changes signal, got %T", msg)
+		t.Fatalf("expected logViewportTickMsg from changes signal, got %T", msg)
 	}
 	if tick.seq != 42 {
 		t.Fatalf("expected seq=42 from changes signal, got %d", tick.seq)
@@ -1370,12 +1380,13 @@ func TestUpdateLogs_PgUpSetsFollowFalse(t *testing.T) {
 	m.width = 120
 	m.height = 24
 	m.screen = runtimeScreenLogs
-	m.refreshLogs()
-	m.logFollow = true
+	m.logs.ensure(m.width, m.height, m.preferences, "", m.logsHint())
+	m.logs.refresh(m.logFeed, m.preferences)
+	m.logs.follow = true
 
 	updatedModel, _ := m.updateLogs(tea.KeyPressMsg{Code: tea.KeyPgUp})
 	updated := updatedModel.(RuntimeDashboard)
-	if updated.logFollow {
+	if updated.logs.follow {
 		t.Fatal("expected logFollow=false after PgUp")
 	}
 }
@@ -1391,19 +1402,21 @@ func TestRefreshLogs_RuntimeDashboard_NotFollowNotAtBottom_PreservesOffset(t *te
 	m.width = 80
 	m.height = 30
 	m.screen = runtimeScreenLogs
-	m.refreshLogs()
+	m.logs.ensure(m.width, m.height, m.preferences, "", m.logsHint())
+	m.logs.refresh(m.logFeed, m.preferences)
 
-	m.logViewport.GotoTop()
-	m.logViewport.SetYOffset(3)
-	m.logFollow = false
+	m.logs.viewport.GotoTop()
+	m.logs.viewport.SetYOffset(3)
+	m.logs.follow = false
 
-	m.refreshLogs()
+	m.logs.ensure(m.width, m.height, m.preferences, "", m.logsHint())
+	m.logs.refresh(m.logFeed, m.preferences)
 
-	if m.logFollow {
+	if m.logs.follow {
 		t.Fatal("expected logFollow to remain false")
 	}
-	if m.logViewport.YOffset() != 3 {
-		t.Fatalf("expected viewport offset preserved at 3, got %d", m.logViewport.YOffset())
+	if m.logs.viewport.YOffset() != 3 {
+		t.Fatalf("expected viewport offset preserved at 3, got %d", m.logs.viewport.YOffset())
 	}
 }
 
@@ -1458,5 +1471,193 @@ func TestRenderRateBrailleRing_WidthGreaterThanCount_PadsLeft(t *testing.T) {
 	runeCount := utf8.RuneCountInString(out)
 	if runeCount != 8 {
 		t.Fatalf("expected 8 runes (3 data + 5 pad), got %d: %q", runeCount, out)
+	}
+}
+
+func TestRuntimeDashboard_OpenReadyCh_InitiallyNotConnected(t *testing.T) {
+	readyCh := make(chan struct{})
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		Mode:    RuntimeDashboardClient,
+		ReadyCh: readyCh,
+	}, testSettings())
+	if m.connected {
+		t.Fatal("expected connected=false when readyCh is open")
+	}
+}
+
+func TestRuntimeDashboard_PreClosedReadyCh_Connected(t *testing.T) {
+	readyCh := make(chan struct{})
+	close(readyCh)
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		Mode:    RuntimeDashboardClient,
+		ReadyCh: readyCh,
+	}, testSettings())
+	if !m.connected {
+		t.Fatal("expected connected=true when readyCh is pre-closed")
+	}
+}
+
+func TestRuntimeDashboard_NilReadyCh_DefaultsToConnected(t *testing.T) {
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		Mode: RuntimeDashboardClient,
+	}, testSettings())
+	if !m.connected {
+		t.Fatal("expected connected=true when ReadyCh is nil (defaults to pre-closed)")
+	}
+}
+
+func TestRuntimeDashboard_ReadyMsg_SetsConnected(t *testing.T) {
+	readyCh := make(chan struct{})
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		Mode:    RuntimeDashboardClient,
+		ReadyCh: readyCh,
+	}, testSettings())
+	if m.connected {
+		t.Fatal("precondition: expected connected=false")
+	}
+
+	updated, _ := m.Update(runtimeReadyMsg{seq: m.runtimeSeq})
+	dash := updated.(RuntimeDashboard)
+	if !dash.connected {
+		t.Fatal("expected connected=true after runtimeReadyMsg")
+	}
+}
+
+func TestRuntimeDashboard_ReadyMsg_WrongSeq_Ignored(t *testing.T) {
+	readyCh := make(chan struct{})
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		Mode:    RuntimeDashboardClient,
+		ReadyCh: readyCh,
+	}, testSettings())
+
+	updated, _ := m.Update(runtimeReadyMsg{seq: m.runtimeSeq + 99})
+	dash := updated.(RuntimeDashboard)
+	if dash.connected {
+		t.Fatal("expected connected=false when seq doesn't match")
+	}
+}
+
+func TestRuntimeDashboard_MainView_ConnectingStatus(t *testing.T) {
+	readyCh := make(chan struct{})
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		Mode:    RuntimeDashboardClient,
+		ReadyCh: readyCh,
+	}, testSettings())
+	m.width = 80
+	m.height = 24
+
+	view := m.mainView()
+	if !strings.Contains(view, "Connecting to server...") {
+		t.Fatalf("expected 'Connecting to server...' in view when not connected, got:\n%s", view)
+	}
+}
+
+func TestRuntimeDashboard_MainView_ConnectedStatus(t *testing.T) {
+	readyCh := make(chan struct{})
+	close(readyCh)
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		Mode:    RuntimeDashboardClient,
+		ReadyCh: readyCh,
+	}, testSettings())
+	m.width = 80
+	m.height = 24
+
+	view := m.mainView()
+	if !strings.Contains(view, "Connected") {
+		t.Fatalf("expected 'Connected' in view when connected, got:\n%s", view)
+	}
+	if strings.Contains(view, "Connecting") {
+		t.Fatalf("should not contain 'Connecting' when already connected, got:\n%s", view)
+	}
+}
+
+func TestRuntimeDashboard_MainView_ServerAlwaysRunning(t *testing.T) {
+	readyCh := make(chan struct{})
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		Mode:    RuntimeDashboardServer,
+		ReadyCh: readyCh,
+	}, testSettings())
+	m.width = 80
+	m.height = 24
+
+	view := m.mainView()
+	if !strings.Contains(view, "Running") {
+		t.Fatalf("expected 'Running' in server view, got:\n%s", view)
+	}
+}
+
+func TestRuntimeDashboard_EscDuringConnecting_ReconfiguresImmediately(t *testing.T) {
+	readyCh := make(chan struct{})
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		Mode:    RuntimeDashboardClient,
+		ReadyCh: readyCh,
+	}, testSettings())
+	m.screen = runtimeScreenDataplane
+
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	dash := updated.(RuntimeDashboard)
+	if !dash.reconfigureRequested {
+		t.Fatal("expected reconfigureRequested=true on Esc during connecting")
+	}
+	if dash.confirmOpen {
+		t.Fatal("expected confirmOpen=false — should skip confirm dialog during connecting")
+	}
+	if cmd == nil {
+		t.Fatal("expected quit command on Esc during connecting")
+	}
+}
+
+func TestRuntimeDashboard_EscWhenConnected_OpensConfirmDialog(t *testing.T) {
+	readyCh := make(chan struct{})
+	close(readyCh)
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		Mode:    RuntimeDashboardClient,
+		ReadyCh: readyCh,
+	}, testSettings())
+	m.screen = runtimeScreenDataplane
+
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	dash := updated.(RuntimeDashboard)
+	if dash.reconfigureRequested {
+		t.Fatal("expected reconfigureRequested=false — should show confirm dialog when connected")
+	}
+	if !dash.confirmOpen {
+		t.Fatal("expected confirmOpen=true when Esc pressed while connected")
+	}
+	if cmd != nil {
+		t.Fatal("expected no quit command — should just open confirm dialog")
+	}
+}
+
+func TestRuntimeDashboard_Init_NotConnected_IncludesReadyCmd(t *testing.T) {
+	readyCh := make(chan struct{})
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		Mode:    RuntimeDashboardClient,
+		ReadyCh: readyCh,
+	}, testSettings())
+
+	cmd := m.Init()
+	if cmd == nil {
+		t.Fatal("expected non-nil batch command from Init")
+	}
+	// Close readyCh so the waitForReadyCh cmd can complete
+	close(readyCh)
+}
+
+func TestRuntimeDashboard_Init_Connected_NoReadyCmd(t *testing.T) {
+	readyCh := make(chan struct{})
+	close(readyCh)
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		Mode:    RuntimeDashboardClient,
+		ReadyCh: readyCh,
+	}, testSettings())
+	if !m.connected {
+		t.Fatal("precondition: expected connected=true")
+	}
+
+	// Init should still return a batch (tick + context), just without the ready cmd
+	cmd := m.Init()
+	if cmd == nil {
+		t.Fatal("expected non-nil batch command from Init even when connected")
 	}
 }

@@ -214,36 +214,47 @@ func TestIsValidModePreference_InvalidValues(t *testing.T) {
 // Loading of new UIPreferences fields
 // ---------------------------------------------------------------------------
 
-func TestLoadPreferences_PreferredMode_Client_Loaded(t *testing.T) {
+func TestLoadPreferences_AutoSelectMode_Client_Loaded(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tui.json")
+	if err := os.WriteFile(path, []byte(`{"auto_select_mode":"client"}`), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	s := loadTestSettings(t, path)
+	if s.Preferences().AutoSelectMode != ModePreferenceClient {
+		t.Fatalf("expected ModePreferenceClient, got %q", s.Preferences().AutoSelectMode)
+	}
+}
+
+func TestLoadPreferences_AutoSelectMode_Server_Loaded(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tui.json")
+	if err := os.WriteFile(path, []byte(`{"auto_select_mode":"server"}`), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	s := loadTestSettings(t, path)
+	if s.Preferences().AutoSelectMode != ModePreferenceServer {
+		t.Fatalf("expected ModePreferenceServer, got %q", s.Preferences().AutoSelectMode)
+	}
+}
+
+func TestLoadPreferences_AutoSelectMode_InvalidValue_Ignored(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tui.json")
+	if err := os.WriteFile(path, []byte(`{"auto_select_mode":"superuser"}`), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	s := loadTestSettings(t, path)
+	if s.Preferences().AutoSelectMode != ModePreferenceNone {
+		t.Fatalf("expected ModePreferenceNone for invalid value, got %q", s.Preferences().AutoSelectMode)
+	}
+}
+
+func TestLoadPreferences_AutoSelectMode_BackwardCompat_OldKey(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "tui.json")
 	if err := os.WriteFile(path, []byte(`{"preferred_mode":"client"}`), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	s := loadTestSettings(t, path)
-	if s.Preferences().PreferredMode != ModePreferenceClient {
-		t.Fatalf("expected ModePreferenceClient, got %q", s.Preferences().PreferredMode)
-	}
-}
-
-func TestLoadPreferences_PreferredMode_Server_Loaded(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "tui.json")
-	if err := os.WriteFile(path, []byte(`{"preferred_mode":"server"}`), 0o644); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	s := loadTestSettings(t, path)
-	if s.Preferences().PreferredMode != ModePreferenceServer {
-		t.Fatalf("expected ModePreferenceServer, got %q", s.Preferences().PreferredMode)
-	}
-}
-
-func TestLoadPreferences_PreferredMode_InvalidValue_Ignored(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "tui.json")
-	if err := os.WriteFile(path, []byte(`{"preferred_mode":"superuser"}`), 0o644); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	s := loadTestSettings(t, path)
-	if s.Preferences().PreferredMode != ModePreferenceNone {
-		t.Fatalf("expected ModePreferenceNone for invalid value, got %q", s.Preferences().PreferredMode)
+	if s.Preferences().AutoSelectMode != ModePreferenceClient {
+		t.Fatalf("expected backward-compat load from preferred_mode, got %q", s.Preferences().AutoSelectMode)
 	}
 }
 
@@ -269,14 +280,25 @@ func TestLoadPreferences_AutoConnect_MissingKey_DefaultsFalse(t *testing.T) {
 	}
 }
 
-func TestLoadPreferences_LastClientConfig_Loaded(t *testing.T) {
+func TestLoadPreferences_AutoSelectClientConfig_Loaded(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tui.json")
+	if err := os.WriteFile(path, []byte(`{"auto_select_client_config":"/etc/tungo/client.json"}`), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	s := loadTestSettings(t, path)
+	if s.Preferences().AutoSelectClientConfig != "/etc/tungo/client.json" {
+		t.Fatalf("expected /etc/tungo/client.json, got %q", s.Preferences().AutoSelectClientConfig)
+	}
+}
+
+func TestLoadPreferences_AutoSelectClientConfig_BackwardCompat_OldKey(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "tui.json")
 	if err := os.WriteFile(path, []byte(`{"last_client_config":"/etc/tungo/client.json"}`), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	s := loadTestSettings(t, path)
-	if s.Preferences().LastClientConfig != "/etc/tungo/client.json" {
-		t.Fatalf("expected /etc/tungo/client.json, got %q", s.Preferences().LastClientConfig)
+	if s.Preferences().AutoSelectClientConfig != "/etc/tungo/client.json" {
+		t.Fatalf("expected backward-compat load from last_client_config, got %q", s.Preferences().AutoSelectClientConfig)
 	}
 }
 
@@ -284,27 +306,27 @@ func TestUISettings_RoundTrip_NewFields(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "tui.json")
 	st := defaultPrefsStorage{filePath: path}
 	p := UIPreferences{
-		Theme:              ThemeDark,
-		Language:           "en",
-		StatsUnits:         StatsUnitsBytes,
-		ShowDataplaneStats: true,
-		ShowDataplaneGraph: true,
-		ShowFooter:         true,
-		PreferredMode:      ModePreferenceClient,
-		AutoConnect:        true,
-		LastClientConfig:   "/some/path/cfg.json",
+		Theme:                  ThemeDark,
+		Language:               "en",
+		StatsUnits:             StatsUnitsBytes,
+		ShowDataplaneStats:     true,
+		ShowDataplaneGraph:     true,
+		ShowFooter:             true,
+		AutoSelectMode:         ModePreferenceClient,
+		AutoConnect:            true,
+		AutoSelectClientConfig: "/some/path/cfg.json",
 	}
 	if err := savePreferencesTo(st, p); err != nil {
 		t.Fatalf("save: %v", err)
 	}
 	loaded := loadTestSettings(t, path).Preferences()
-	if loaded.PreferredMode != ModePreferenceClient {
-		t.Errorf("PreferredMode: got %q, want client", loaded.PreferredMode)
+	if loaded.AutoSelectMode != ModePreferenceClient {
+		t.Errorf("AutoSelectMode: got %q, want client", loaded.AutoSelectMode)
 	}
 	if !loaded.AutoConnect {
 		t.Error("AutoConnect: expected true")
 	}
-	if loaded.LastClientConfig != "/some/path/cfg.json" {
-		t.Errorf("LastClientConfig: got %q, want /some/path/cfg.json", loaded.LastClientConfig)
+	if loaded.AutoSelectClientConfig != "/some/path/cfg.json" {
+		t.Errorf("AutoSelectClientConfig: got %q, want /some/path/cfg.json", loaded.AutoSelectClientConfig)
 	}
 }

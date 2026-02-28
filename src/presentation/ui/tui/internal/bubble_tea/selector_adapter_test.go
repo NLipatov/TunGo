@@ -33,16 +33,18 @@ func TestSelectorAdapter_NewSelectorAdapter_DefaultRunnerConstructs(t *testing.T
 }
 
 func TestSelectorAdapter_NewTuiSelector_Success(t *testing.T) {
+	settings := testSettings()
 	mockSel := NewSelector(
 		"placeholder",
 		[]string{"opt1", "opt2"},
 		NewColorizer(),
 		value_objects.NewDefaultColor(),
 		value_objects.NewTransparentColor(),
+		settings,
 	)
 
 	mockRunner := &selectorAdapterMockTeaRunner{returnModel: mockSel, returnErr: nil}
-	adapter := newSelectorAdapterWithRunner(mockRunner)
+	adapter := newSelectorAdapterWithRunner(mockRunner, settings)
 
 	sel, err := adapter.NewTuiSelector(
 		"placeholder",
@@ -69,7 +71,7 @@ func TestSelectorAdapter_NewTuiSelector_RunError(t *testing.T) {
 		returnModel: nil,
 		returnErr:   errors.New("run error"),
 	}
-	adapter := newSelectorAdapterWithRunner(mockRunner)
+	adapter := newSelectorAdapterWithRunner(mockRunner, testSettings())
 
 	sel, err := adapter.NewTuiSelector(
 		"placeholder",
@@ -90,7 +92,7 @@ func TestSelectorAdapter_NewTuiSelector_InvalidType(t *testing.T) {
 		returnModel: selectorAdapterMockModel{},
 		returnErr:   nil,
 	}
-	adapter := newSelectorAdapterWithRunner(mockRunner)
+	adapter := newSelectorAdapterWithRunner(mockRunner, testSettings())
 
 	sel, err := adapter.NewTuiSelector(
 		"placeholder",

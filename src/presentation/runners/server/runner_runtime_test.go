@@ -49,7 +49,7 @@ func TestRun_Interactive_ReconfigureReturnsBackToModeSelection(t *testing.T) {
 		},
 	}
 
-	r := newTestServerRunner(deps, wf, rf, func(context.Context, tui.RuntimeMode) (bool, error) {
+	r := newTestServerRunner(deps, wf, rf, func(context.Context, tui.RuntimeMode, <-chan struct{}) (bool, error) {
 		return true, nil
 	})
 	err := r.Run(context.Background())
@@ -78,7 +78,7 @@ func TestRun_Interactive_UIErrorWrappedWhenWorkersCanceled(t *testing.T) {
 		},
 	}
 
-	r := newTestServerRunner(deps, wf, rf, func(context.Context, tui.RuntimeMode) (bool, error) {
+	r := newTestServerRunner(deps, wf, rf, func(context.Context, tui.RuntimeMode, <-chan struct{}) (bool, error) {
 		return false, errors.New("ui failed")
 	})
 	err := r.Run(context.Background())
@@ -107,7 +107,7 @@ func TestRun_Interactive_UserExitErrorReturnsCanceled(t *testing.T) {
 		},
 	}
 
-	r := newTestServerRunner(deps, wf, rf, func(context.Context, tui.RuntimeMode) (bool, error) {
+	r := newTestServerRunner(deps, wf, rf, func(context.Context, tui.RuntimeMode, <-chan struct{}) (bool, error) {
 		return false, tui.ErrUserExit
 	})
 	err := r.Run(context.Background())
@@ -140,7 +140,7 @@ func TestRun_Interactive_WorkerErrorWinsOverUIError(t *testing.T) {
 		},
 	}
 
-	r := newTestServerRunner(deps, wf, rf, func(ctx context.Context, _ tui.RuntimeMode) (bool, error) {
+	r := newTestServerRunner(deps, wf, rf, func(ctx context.Context, _ tui.RuntimeMode, _ <-chan struct{}) (bool, error) {
 		<-ctx.Done()
 		return false, errors.New("ui failed")
 	})
@@ -175,7 +175,7 @@ func TestRun_Interactive_UIErrorReturnsWorkerErrWhenWorkerNotCanceled(t *testing
 			}
 		},
 	}
-	r := newTestServerRunner(deps, wf, rf, func(context.Context, tui.RuntimeMode) (bool, error) {
+	r := newTestServerRunner(deps, wf, rf, func(context.Context, tui.RuntimeMode, <-chan struct{}) (bool, error) {
 		close(uiStarted)
 		return false, errors.New("ui failed")
 	})
@@ -210,7 +210,7 @@ func TestRun_Interactive_UserQuitReturnsWorkerErrWhenWorkerNotCanceled(t *testin
 			}
 		},
 	}
-	r := newTestServerRunner(deps, wf, rf, func(context.Context, tui.RuntimeMode) (bool, error) {
+	r := newTestServerRunner(deps, wf, rf, func(context.Context, tui.RuntimeMode, <-chan struct{}) (bool, error) {
 		close(uiStarted)
 		return true, nil
 	})
@@ -245,7 +245,7 @@ func TestRun_Interactive_UICompletesWithoutQuitReturnsWorkerChannel(t *testing.T
 			}
 		},
 	}
-	r := newTestServerRunner(deps, wf, rf, func(context.Context, tui.RuntimeMode) (bool, error) {
+	r := newTestServerRunner(deps, wf, rf, func(context.Context, tui.RuntimeMode, <-chan struct{}) (bool, error) {
 		close(uiStarted)
 		return false, nil
 	})

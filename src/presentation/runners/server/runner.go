@@ -15,7 +15,13 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-type RuntimeDashboardFunc func(ctx context.Context, mode runtimeUI.RuntimeMode) (bool, error)
+type RuntimeDashboardFunc func(ctx context.Context, mode runtimeUI.RuntimeMode, readyCh <-chan struct{}) (bool, error)
+
+var serverReady = func() <-chan struct{} {
+	ch := make(chan struct{})
+	close(ch)
+	return ch
+}()
 
 type Runner struct {
 	uiMode              app.UIMode
@@ -78,7 +84,7 @@ func (r *Runner) Run(
 
 	uiResultCh := make(chan runtimeUIResult, 1)
 	go func() {
-		userQuit, err := r.runRuntimeDashboard(workersCtx, runtimeUI.RuntimeModeServer)
+		userQuit, err := r.runRuntimeDashboard(workersCtx, runtimeUI.RuntimeModeServer, serverReady)
 		uiResultCh <- runtimeUIResult{userQuit: userQuit, err: err}
 	}()
 

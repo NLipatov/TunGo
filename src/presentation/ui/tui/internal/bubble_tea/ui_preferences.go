@@ -34,15 +34,15 @@ const (
 )
 
 type UIPreferences struct {
-	Theme              ThemeOption      `json:"theme"`
-	Language           string           `json:"language"`
-	StatsUnits         StatsUnitsOption `json:"stats_units"`
-	ShowDataplaneStats bool             `json:"show_dataplane_stats"`
-	ShowDataplaneGraph bool             `json:"show_dataplane_graph"`
-	ShowFooter         bool             `json:"show_footer"`
-	PreferredMode      ModePreference   `json:"preferred_mode,omitempty"`
-	AutoConnect        bool             `json:"auto_connect,omitempty"`
-	LastClientConfig   string           `json:"last_client_config,omitempty"`
+	Theme                  ThemeOption      `json:"theme"`
+	Language               string           `json:"language"`
+	StatsUnits             StatsUnitsOption `json:"stats_units"`
+	ShowDataplaneStats     bool             `json:"show_dataplane_stats"`
+	ShowDataplaneGraph     bool             `json:"show_dataplane_graph"`
+	ShowFooter             bool             `json:"show_footer"`
+	AutoSelectMode         ModePreference   `json:"auto_select_mode,omitempty"`
+	AutoConnect            bool             `json:"auto_connect,omitempty"`
+	AutoSelectClientConfig string           `json:"auto_select_client_config,omitempty"`
 }
 
 var orderedThemeOptions = [...]ThemeOption{
@@ -91,4 +91,3 @@ func isValidLanguage(language string) bool {
 func isValidStatsUnits(units StatsUnitsOption) bool {
 	return units == StatsUnitsBytes || units == StatsUnitsBiBytes
 }
-

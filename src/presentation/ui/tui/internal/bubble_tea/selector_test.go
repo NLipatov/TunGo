@@ -32,6 +32,7 @@ func newTestSelector(options ...string) (Selector, *mockColorizer) {
 		col,
 		value_objects.NewDefaultColor(),
 		value_objects.NewTransparentColor(),
+		testSettings(),
 	), col
 }
 
@@ -425,6 +426,7 @@ func TestSelector_ViewIncludesSubtitleAndDetails(t *testing.T) {
 		col,
 		value_objects.NewDefaultColor(),
 		value_objects.NewTransparentColor(),
+		testSettings(),
 	)
 	view := sel.View().Content
 	if !strings.Contains(view, "Subtitle") || !strings.Contains(view, "Detail line") {
@@ -456,7 +458,8 @@ func TestSelector_SettingsAndLogsView_WithWidth(t *testing.T) {
 	}
 
 	sel.screen = selectorScreenLogs
-	sel.refreshLogsViewport()
+	sel.logs.ensure(sel.width, sel.height, sel.preferences, "", sel.logsHint())
+	sel.logs.refresh(sel.logsFeed(), sel.preferences)
 	logs := sel.logsView()
 	if !strings.Contains(logs, "line one") {
 		t.Fatalf("expected runtime line in logs view, got %q", logs)
@@ -556,7 +559,7 @@ func TestSplitPlaceholder_EmptyAndSingle(t *testing.T) {
 	}
 }
 
-func TestSelector_LogsTail_WithGlobalFeed(t *testing.T) {
+func TestSelector_LogsFeed_WithGlobalFeed(t *testing.T) {
 	DisableGlobalRuntimeLogCapture()
 	t.Cleanup(DisableGlobalRuntimeLogCapture)
 
@@ -566,9 +569,13 @@ func TestSelector_LogsTail_WithGlobalFeed(t *testing.T) {
 
 	sel, _ := newTestSelector("Main title", "a")
 	sel.height = 24
-	lines := sel.logsTail()
+	logFeed := sel.logsFeed()
+	if logFeed == nil {
+		t.Fatal("expected non-nil logsFeed from global feed")
+	}
+	lines := logFeed.Tail(10)
 	if len(lines) == 0 {
-		t.Fatal("expected non-empty logs tail from global feed")
+		t.Fatal("expected non-empty logs from global feed")
 	}
 }
 
@@ -589,33 +596,33 @@ func TestSelector_LogsViewportScrollAndFollowToggle(t *testing.T) {
 	updatedModel, _ = sel.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // logs
 	sel = updatedModel.(Selector)
 
-	if !sel.logViewport.AtBottom() {
+	if !sel.logs.viewport.AtBottom() {
 		t.Fatal("expected selector logs viewport to start at tail")
 	}
 
-	beforeOffset := sel.logViewport.YOffset()
+	beforeOffset := sel.logs.viewport.YOffset()
 	updatedModel, _ = sel.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 	sel = updatedModel.(Selector)
-	if sel.logFollow {
+	if sel.logs.follow {
 		t.Fatal("expected follow disabled after manual scroll in logs tab")
 	}
-	if sel.logViewport.YOffset() >= beforeOffset {
-		t.Fatalf("expected viewport offset to move up, before=%d after=%d", beforeOffset, sel.logViewport.YOffset())
+	if sel.logs.viewport.YOffset() >= beforeOffset {
+		t.Fatalf("expected viewport offset to move up, before=%d after=%d", beforeOffset, sel.logs.viewport.YOffset())
 	}
 
 	updatedModel, _ = sel.Update(tea.KeyPressMsg{Code: tea.KeySpace})
 	sel = updatedModel.(Selector)
-	if !sel.logFollow {
+	if !sel.logs.follow {
 		t.Fatal("expected follow enabled after pressing space")
 	}
-	if !sel.logViewport.AtBottom() {
+	if !sel.logs.viewport.AtBottom() {
 		t.Fatal("expected viewport to jump to tail after enabling follow")
 	}
 }
 
 func TestSelectorLogTickCmd_EmitsMessage(t *testing.T) {
-	if _, ok := selectorLogTickCmd(1)().(selectorLogTickMsg); !ok {
-		t.Fatal("expected selectorLogTickMsg from selector log tick command")
+	if _, ok := logViewportTickCmd(1)().(logViewportTickMsg); !ok {
+		t.Fatal("expected logViewportTickMsg from selector log tick command")
 	}
 }
 
@@ -639,54 +646,54 @@ func TestSelector_UpdateLogs_AllNavigationKeys(t *testing.T) {
 	// PgUp
 	updatedModel, _ = sel.Update(tea.KeyPressMsg{Code: tea.KeyPgUp})
 	sel = updatedModel.(Selector)
-	if sel.logFollow {
+	if sel.logs.follow {
 		t.Fatal("expected logFollow=false after PgUp")
 	}
 
 	// PgDown when at bottom
-	sel.logViewport.GotoBottom()
+	sel.logs.viewport.GotoBottom()
 	updatedModel, _ = sel.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
 	sel = updatedModel.(Selector)
-	if !sel.logFollow {
+	if !sel.logs.follow {
 		t.Fatal("expected logFollow=true after PgDown at bottom")
 	}
 
 	// Home
 	updatedModel, _ = sel.Update(tea.KeyPressMsg{Code: tea.KeyHome})
 	sel = updatedModel.(Selector)
-	if sel.logFollow {
+	if sel.logs.follow {
 		t.Fatal("expected logFollow=false after Home")
 	}
 
 	// End
 	updatedModel, _ = sel.Update(tea.KeyPressMsg{Code: tea.KeyEnd})
 	sel = updatedModel.(Selector)
-	if !sel.logFollow {
+	if !sel.logs.follow {
 		t.Fatal("expected logFollow=true after End")
 	}
 
 	// Down when not at bottom
-	sel.logViewport.GotoTop()
-	sel.logFollow = false
+	sel.logs.viewport.GotoTop()
+	sel.logs.follow = false
 	updatedModel, _ = sel.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	sel = updatedModel.(Selector)
-	if sel.logFollow {
+	if sel.logs.follow {
 		t.Fatal("expected logFollow=false after Down when not at bottom")
 	}
 }
 
 func TestSelector_EnsureLogsViewport_WhenLogReadyFalse(t *testing.T) {
 	sel, _ := newTestSelector("a", "b")
-	sel.logReady = false
+	sel.logs.ready = false
 	sel.width = 100
 	sel.height = 30
 
-	sel.ensureLogsViewport()
-	if !sel.logReady {
+	sel.logs.ensure(sel.width, sel.height, sel.preferences, "", sel.logsHint())
+	if !sel.logs.ready {
 		t.Fatal("expected logReady=true after ensureLogsViewport")
 	}
-	if sel.logViewport.Width() <= 0 {
-		t.Fatalf("expected viewport width > 0, got %d", sel.logViewport.Width())
+	if sel.logs.viewport.Width() <= 0 {
+		t.Fatalf("expected viewport width > 0, got %d", sel.logs.viewport.Width())
 	}
 }
 
@@ -698,8 +705,8 @@ func TestSelectorLogUpdateCmd_PlainFeedFallsBackToTick(t *testing.T) {
 		t.Fatal("expected non-nil command")
 	}
 	msg := cmd()
-	if _, ok := msg.(selectorLogTickMsg); !ok {
-		t.Fatalf("expected selectorLogTickMsg from plain feed fallback, got %T", msg)
+	if _, ok := msg.(logViewportTickMsg); !ok {
+		t.Fatalf("expected logViewportTickMsg from plain feed fallback, got %T", msg)
 	}
 }
 
@@ -714,8 +721,8 @@ func TestSelectorLogUpdateCmd_ChangeFeedNilChanges(t *testing.T) {
 		t.Fatal("expected non-nil command")
 	}
 	msg := cmd()
-	if _, ok := msg.(selectorLogTickMsg); !ok {
-		t.Fatalf("expected selectorLogTickMsg from nil Changes fallback, got %T", msg)
+	if _, ok := msg.(logViewportTickMsg); !ok {
+		t.Fatalf("expected logViewportTickMsg from nil Changes fallback, got %T", msg)
 	}
 }
 
@@ -775,7 +782,7 @@ func TestSelector_WindowSizeMsgOnLogsScreen(t *testing.T) {
 		t.Fatalf("expected updated size, got %dx%d", s3.width, s3.height)
 	}
 	// The logs viewport should have been refreshed.
-	if s3.logViewport.TotalLineCount() == 0 {
+	if s3.logs.viewport.TotalLineCount() == 0 {
 		t.Fatal("expected logs viewport content after WindowSizeMsg on logs screen")
 	}
 }
@@ -792,8 +799,8 @@ func TestSelector_LogTickMatchingSeqOnLogsScreen(t *testing.T) {
 	m2, _ := m1.(Selector).Update(tea.KeyPressMsg{Code: tea.KeyTab}) // logs
 	s := m2.(Selector)
 
-	// Send a matching selectorLogTickMsg.
-	m3, cmd := s.Update(selectorLogTickMsg{seq: s.logTickSeq})
+	// Send a matching logViewportTickMsg.
+	m3, cmd := s.Update(logViewportTickMsg{seq: s.logs.tickSeq})
 	if cmd == nil {
 		t.Fatal("expected follow-up log cmd on matching log tick")
 	}
@@ -810,8 +817,8 @@ func TestSelector_LogTickStaleSeqIgnored(t *testing.T) {
 	m2, _ := m1.(Selector).Update(tea.KeyPressMsg{Code: tea.KeyTab}) // logs
 	s := m2.(Selector)
 
-	// Send a stale selectorLogTickMsg (seq doesn't match).
-	_, cmd := s.Update(selectorLogTickMsg{seq: s.logTickSeq + 99})
+	// Send a stale logViewportTickMsg (seq doesn't match).
+	_, cmd := s.Update(logViewportTickMsg{seq: s.logs.tickSeq + 99})
 	if cmd != nil {
 		t.Fatal("expected nil cmd for stale log tick seq")
 	}
@@ -820,7 +827,7 @@ func TestSelector_LogTickStaleSeqIgnored(t *testing.T) {
 func TestSelector_LogTickOnNonLogsScreenIgnored(t *testing.T) {
 	sel, _ := newTestSelector("Main title", "a", "b")
 	// Stay on main screen (not logs).
-	_, cmd := sel.Update(selectorLogTickMsg{seq: sel.logTickSeq})
+	_, cmd := sel.Update(logViewportTickMsg{seq: sel.logs.tickSeq})
 	if cmd != nil {
 		t.Fatal("expected nil cmd for log tick on non-logs screen")
 	}
@@ -854,21 +861,23 @@ func TestSelector_RefreshLogsViewport_SetYOffsetFallback(t *testing.T) {
 	sel.height = 24
 
 	// Populate viewport initially.
-	sel.refreshLogsViewport()
+	sel.logs.ensure(sel.width, sel.height, sel.preferences, "", sel.logsHint())
+	sel.logs.refresh(sel.logsFeed(), sel.preferences)
 	// Scroll up so we are not at bottom, and disable follow.
-	sel.logViewport.GotoTop()
-	sel.logFollow = false
+	sel.logs.viewport.GotoTop()
+	sel.logs.follow = false
 
 	// Set a known offset and refresh again.
-	sel.logViewport.SetYOffset(2)
-	savedOffset := sel.logViewport.YOffset()
+	sel.logs.viewport.SetYOffset(2)
+	savedOffset := sel.logs.viewport.YOffset()
 
-	sel.refreshLogsViewport()
+	sel.logs.ensure(sel.width, sel.height, sel.preferences, "", sel.logsHint())
+	sel.logs.refresh(sel.logsFeed(), sel.preferences)
 	// logFollow is false and was not at bottom, so it should use SetYOffset fallback.
-	if sel.logViewport.YOffset() != savedOffset {
-		t.Fatalf("expected viewport offset to be restored to %d, got %d", savedOffset, sel.logViewport.YOffset())
+	if sel.logs.viewport.YOffset() != savedOffset {
+		t.Fatalf("expected viewport offset to be restored to %d, got %d", savedOffset, sel.logs.viewport.YOffset())
 	}
-	if sel.logFollow {
+	if sel.logs.follow {
 		t.Fatal("expected logFollow to remain false when not at bottom")
 	}
 }
@@ -887,9 +896,9 @@ func TestSelectorLogUpdateCmd_StopClosedReturnsTick(t *testing.T) {
 		t.Fatal("expected non-nil command")
 	}
 	msg := cmd()
-	tick, ok := msg.(selectorLogTickMsg)
+	tick, ok := msg.(logViewportTickMsg)
 	if !ok {
-		t.Fatalf("expected selectorLogTickMsg when stop is closed, got %T", msg)
+		t.Fatalf("expected logViewportTickMsg when stop is closed, got %T", msg)
 	}
 	// When stop fires, seq should be zero (not the passed-in seq).
 	if tick.seq != 0 {
@@ -911,9 +920,9 @@ func TestSelectorLogUpdateCmd_ChangeFeedSignalReturnsMatchingSeq(t *testing.T) {
 		t.Fatal("expected non-nil command")
 	}
 	msg := cmd()
-	tick, ok := msg.(selectorLogTickMsg)
+	tick, ok := msg.(logViewportTickMsg)
 	if !ok {
-		t.Fatalf("expected selectorLogTickMsg from changes signal, got %T", msg)
+		t.Fatalf("expected logViewportTickMsg from changes signal, got %T", msg)
 	}
 	if tick.seq != 42 {
 		t.Fatalf("expected seq=42 from changes signal, got %d", tick.seq)
@@ -932,13 +941,14 @@ func TestSelector_DownKeyAtBottom_SetsFollowTrue(t *testing.T) {
 	sel.width = 120
 	sel.height = 24
 	sel.screen = selectorScreenLogs
-	sel.refreshLogsViewport()
-	sel.logViewport.GotoBottom()
-	sel.logFollow = false
+	sel.logs.ensure(sel.width, sel.height, sel.preferences, "", sel.logsHint())
+	sel.logs.refresh(sel.logsFeed(), sel.preferences)
+	sel.logs.viewport.GotoBottom()
+	sel.logs.follow = false
 
 	updatedModel, _ := sel.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	updated := updatedModel.(Selector)
-	if !updated.logFollow {
-		t.Fatal("expected logFollow=true when Down key pressed and viewport is already at bottom")
+	if !updated.logs.follow {
+		t.Fatal("expected follow=true when Down key pressed and viewport is already at bottom")
 	}
 }

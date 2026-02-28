@@ -117,7 +117,7 @@ func TestRunSession_Interactive_ReconfigureReturnsBackToModeSelection(t *testing
 		create: func(_ context.Context, _ connection.Factory, _ tun.ClientManager, _ connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
 			return blockingRouter(), &runtimeTestTransport{}, &runtimeTestTun{}, nil
 		},
-	}, func(context.Context, tui.RuntimeMode) (bool, error) {
+	}, func(context.Context, tui.RuntimeMode, <-chan struct{}) (bool, error) {
 		return true, nil
 	})
 
@@ -133,7 +133,7 @@ func TestRunSession_Interactive_UIErrorWrappedWhenRouteCanceled(t *testing.T) {
 		create: func(ctx context.Context, _ connection.Factory, _ tun.ClientManager, _ connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
 			return blockingRouter(), &runtimeTestTransport{}, &runtimeTestTun{}, nil
 		},
-	}, func(context.Context, tui.RuntimeMode) (bool, error) {
+	}, func(context.Context, tui.RuntimeMode, <-chan struct{}) (bool, error) {
 		return false, errors.New("ui failed")
 	})
 
@@ -149,7 +149,7 @@ func TestRunSession_Interactive_UserExitErrorCancelsSession(t *testing.T) {
 		create: func(_ context.Context, _ connection.Factory, _ tun.ClientManager, _ connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
 			return blockingRouter(), &runtimeTestTransport{}, &runtimeTestTun{}, nil
 		},
-	}, func(context.Context, tui.RuntimeMode) (bool, error) {
+	}, func(context.Context, tui.RuntimeMode, <-chan struct{}) (bool, error) {
 		return false, tui.ErrUserExit
 	})
 
@@ -170,7 +170,7 @@ func TestRunSession_Interactive_RouteErrorWins(t *testing.T) {
 			}
 			return router, &runtimeTestTransport{}, &runtimeTestTun{}, nil
 		},
-	}, func(context.Context, tui.RuntimeMode) (bool, error) {
+	}, func(context.Context, tui.RuntimeMode, <-chan struct{}) (bool, error) {
 		return false, errors.New("ui failed")
 	})
 
@@ -235,7 +235,7 @@ func TestRunSession_RouteErrorBranch_WaitsUIAndReturnsRouteErr(t *testing.T) {
 			}
 			return router, &runtimeTestTransport{}, &runtimeTestTun{}, nil
 		},
-	}, func(context.Context, tui.RuntimeMode) (bool, error) {
+	}, func(context.Context, tui.RuntimeMode, <-chan struct{}) (bool, error) {
 		<-routeStarted
 		return false, errors.New("ui branch error")
 	})
@@ -257,7 +257,7 @@ func TestRunSession_UserQuitReturnsRouteErrWhenNotCanceled(t *testing.T) {
 			}
 			return router, &runtimeTestTransport{}, &runtimeTestTun{}, nil
 		},
-	}, func(context.Context, tui.RuntimeMode) (bool, error) {
+	}, func(context.Context, tui.RuntimeMode, <-chan struct{}) (bool, error) {
 		return true, nil
 	})
 
@@ -278,7 +278,7 @@ func TestRunSession_UICompletesWithoutQuit_ReturnsRouteChannelResult(t *testing.
 			}
 			return router, &runtimeTestTransport{}, &runtimeTestTun{}, nil
 		},
-	}, func(context.Context, tui.RuntimeMode) (bool, error) {
+	}, func(context.Context, tui.RuntimeMode, <-chan struct{}) (bool, error) {
 		return false, nil
 	})
 
@@ -299,7 +299,7 @@ func TestRunSession_Interactive_UserExitError_RouteRealError_ReturnsRouteError(t
 			}
 			return router, &runtimeTestTransport{}, &runtimeTestTun{}, nil
 		},
-	}, func(context.Context, tui.RuntimeMode) (bool, error) {
+	}, func(context.Context, tui.RuntimeMode, <-chan struct{}) (bool, error) {
 		return false, tui.ErrUserExit
 	})
 
@@ -342,7 +342,7 @@ func TestRun_ReconfigureRequestedPropagates(t *testing.T) {
 		create: func(context.Context, connection.Factory, tun.ClientManager, connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
 			return blockingRouter(), &runtimeTestTransport{}, &runtimeTestTun{}, nil
 		},
-	}, func(context.Context, tui.RuntimeMode) (bool, error) {
+	}, func(context.Context, tui.RuntimeMode, <-chan struct{}) (bool, error) {
 		return true, nil // reconfigure
 	})
 
@@ -383,7 +383,7 @@ func TestRunSession_Interactive_UIGenericError_RouteRealError_ReturnsRouteError(
 			}
 			return router, &runtimeTestTransport{}, &runtimeTestTun{}, nil
 		},
-	}, func(context.Context, tui.RuntimeMode) (bool, error) {
+	}, func(context.Context, tui.RuntimeMode, <-chan struct{}) (bool, error) {
 		close(uiStarted)
 		return false, errors.New("ui generic error")
 	})
@@ -398,6 +398,24 @@ func TestRunSession_Interactive_UIGenericError_RouteRealError_ReturnsRouteError(
 	err := <-done
 	if err == nil || !strings.Contains(err.Error(), "route real error") {
 		t.Fatalf("expected route real error, got %v", err)
+	}
+}
+
+func TestRunSession_Interactive_UserQuitDuringConnect(t *testing.T) {
+	deps := &runtimeTestDeps{}
+	r := newTestRunner(app.TUI, deps, runtimeTestRouterFactory{
+		create: func(ctx context.Context, _ connection.Factory, _ tun.ClientManager, _ connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
+			// Block until context is cancelled (simulating a slow connection)
+			<-ctx.Done()
+			return nil, nil, nil, ctx.Err()
+		},
+	}, func(context.Context, tui.RuntimeMode, <-chan struct{}) (bool, error) {
+		return false, tui.ErrUserExit
+	})
+
+	err := r.runSession(context.Background())
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled when user quits during connect, got %v", err)
 	}
 }
 

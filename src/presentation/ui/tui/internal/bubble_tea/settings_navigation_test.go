@@ -74,7 +74,7 @@ func TestVisibleCursorToSettingsRow_NoServer_AtModeRow_MapsToAutoConnect(t *test
 // ---------------------------------------------------------------------------
 
 func TestSettingsVisibleRowCount_ServerSupported_ModeClient_AllRowsVisible(t *testing.T) {
-	prefs := UIPreferences{PreferredMode: ModePreferenceClient}
+	prefs := UIPreferences{AutoSelectMode: ModePreferenceClient}
 	got := settingsVisibleRowCount(prefs, true)
 	if got != settingsRowsCount {
 		t.Errorf("got %d, want %d", got, settingsRowsCount)
@@ -82,7 +82,7 @@ func TestSettingsVisibleRowCount_ServerSupported_ModeClient_AllRowsVisible(t *te
 }
 
 func TestSettingsVisibleRowCount_ServerSupported_ModeServer_AutoConnectHidden(t *testing.T) {
-	prefs := UIPreferences{PreferredMode: ModePreferenceServer}
+	prefs := UIPreferences{AutoSelectMode: ModePreferenceServer}
 	got := settingsVisibleRowCount(prefs, true)
 	if got != settingsRowsCount-1 {
 		t.Errorf("got %d, want %d", got, settingsRowsCount-1)
@@ -90,7 +90,7 @@ func TestSettingsVisibleRowCount_ServerSupported_ModeServer_AutoConnectHidden(t 
 }
 
 func TestSettingsVisibleRowCount_ServerSupported_ModeNone_AutoConnectHidden(t *testing.T) {
-	prefs := UIPreferences{PreferredMode: ModePreferenceNone}
+	prefs := UIPreferences{AutoSelectMode: ModePreferenceNone}
 	got := settingsVisibleRowCount(prefs, true)
 	if got != settingsRowsCount-1 {
 		t.Errorf("got %d, want %d", got, settingsRowsCount-1)
@@ -100,7 +100,7 @@ func TestSettingsVisibleRowCount_ServerSupported_ModeNone_AutoConnectHidden(t *t
 func TestSettingsVisibleRowCount_NoServer_AlwaysOneLessThanTotal(t *testing.T) {
 	want := settingsRowsCount - 1
 	for _, m := range []ModePreference{ModePreferenceNone, ModePreferenceClient, ModePreferenceServer} {
-		prefs := UIPreferences{PreferredMode: m}
+		prefs := UIPreferences{AutoSelectMode: m}
 		if got := settingsVisibleRowCount(prefs, false); got != want {
 			t.Errorf("serverSupported=false mode=%q: got %d, want %d", m, got, want)
 		}
@@ -112,18 +112,18 @@ func TestSettingsVisibleRowCount_NoServer_AlwaysOneLessThanTotal(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestApplySettingsChange_ModeRow_CyclesForward(t *testing.T) {
-	p := newUIPreferencesProvider(UIPreferences{PreferredMode: ModePreferenceNone})
+	p := newUIPreferencesProvider(UIPreferences{AutoSelectMode: ModePreferenceNone})
 	got := applySettingsChange(p, settingsModeRow, 1, true)
-	if got.PreferredMode != ModePreferenceClient {
-		t.Errorf("got %q, want ModePreferenceClient", got.PreferredMode)
+	if got.AutoSelectMode != ModePreferenceClient {
+		t.Errorf("got %q, want ModePreferenceClient", got.AutoSelectMode)
 	}
 }
 
 func TestApplySettingsChange_ModeRow_CyclesBackward(t *testing.T) {
-	p := newUIPreferencesProvider(UIPreferences{PreferredMode: ModePreferenceClient})
+	p := newUIPreferencesProvider(UIPreferences{AutoSelectMode: ModePreferenceClient})
 	got := applySettingsChange(p, settingsModeRow, -1, true)
-	if got.PreferredMode != ModePreferenceNone {
-		t.Errorf("got %q, want ModePreferenceNone", got.PreferredMode)
+	if got.AutoSelectMode != ModePreferenceNone {
+		t.Errorf("got %q, want ModePreferenceNone", got.AutoSelectMode)
 	}
 }
 
