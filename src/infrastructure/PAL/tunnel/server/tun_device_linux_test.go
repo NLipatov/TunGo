@@ -137,8 +137,8 @@ func TestTunDeviceManager_Create(t *testing.T) {
 		// After TunTapAddDevTun succeeds, created=true; rollback should call LinkDelete.
 		// Log has: del (initial cleanup) + add + del (rollback) = 2 del calls.
 		log := ip.TunFactoryMockIP.log.String()
-		if strings.Count(log, "del;") < 2 {
-			t.Errorf("expected rollback LinkDelete call, log: %s", log)
+		if count := strings.Count(log, "del;"); count != 2 {
+			t.Errorf("expected exactly 2 delete calls (initial cleanup + rollback), got %d, log: %s", count, log)
 		}
 	})
 
@@ -159,8 +159,8 @@ func TestTunDeviceManager_Create(t *testing.T) {
 			t.Errorf("unexpected error message: %v", err)
 		}
 		log := ip.TunFactoryMockIP.log.String()
-		if strings.Count(log, "del;") < 2 {
-			t.Errorf("expected rollback LinkDelete call, log: %s", log)
+		if count := strings.Count(log, "del;"); count != 2 {
+			t.Errorf("expected exactly 2 delete calls (initial cleanup + rollback), got %d, log: %s", count, log)
 		}
 	})
 
@@ -181,8 +181,8 @@ func TestTunDeviceManager_Create(t *testing.T) {
 			t.Errorf("unexpected error message: %v", err)
 		}
 		log := ip.TunFactoryMockIP.log.String()
-		if strings.Count(log, "del;") < 2 {
-			t.Errorf("expected rollback LinkDelete call, log: %s", log)
+		if count := strings.Count(log, "del;"); count != 2 {
+			t.Errorf("expected exactly 2 delete calls (initial cleanup + rollback), got %d, log: %s", count, log)
 		}
 	})
 
@@ -203,8 +203,8 @@ func TestTunDeviceManager_Create(t *testing.T) {
 			t.Errorf("unexpected error message: %v", err)
 		}
 		log := ip.TunFactoryMockIP.log.String()
-		if strings.Count(log, "del;") < 2 {
-			t.Errorf("expected rollback LinkDelete call, log: %s", log)
+		if count := strings.Count(log, "del;"); count != 2 {
+			t.Errorf("expected exactly 2 delete calls (initial cleanup + rollback), got %d, log: %s", count, log)
 		}
 	})
 
@@ -221,8 +221,8 @@ func TestTunDeviceManager_Create(t *testing.T) {
 			t.Errorf("unexpected error message: %v", err)
 		}
 		log := ip.log.String()
-		if strings.Count(log, "del;") < 2 {
-			t.Errorf("expected rollback LinkDelete call, log: %s", log)
+		if count := strings.Count(log, "del;"); count != 2 {
+			t.Errorf("expected exactly 2 delete calls (initial cleanup + rollback), got %d, log: %s", count, log)
 		}
 	})
 
