@@ -40,9 +40,9 @@ type UIPreferences struct {
 	ShowDataplaneStats bool             `json:"show_dataplane_stats"`
 	ShowDataplaneGraph bool             `json:"show_dataplane_graph"`
 	ShowFooter         bool             `json:"show_footer"`
-	PreferredMode      ModePreference   `json:"preferred_mode,omitempty"`
-	AutoConnect        bool             `json:"auto_connect,omitempty"`
-	LastClientConfig   string           `json:"last_client_config,omitempty"`
+	AutoSelectMode         ModePreference `json:"auto_select_mode,omitempty"`
+	AutoConnect            bool           `json:"auto_connect,omitempty"`
+	AutoSelectClientConfig string         `json:"auto_select_client_config,omitempty"`
 }
 
 var orderedThemeOptions = [...]ThemeOption{

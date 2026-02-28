@@ -48,7 +48,7 @@ func settingsVisibleRowCount(prefs UIPreferences, serverSupported bool) int {
 	if !serverSupported {
 		return settingsRowsCount - 1 // Mode row hidden, AutoConnect always visible
 	}
-	if prefs.PreferredMode == ModePreferenceClient {
+	if prefs.AutoSelectMode == ModePreferenceClient {
 		return settingsRowsCount
 	}
 	return settingsRowsCount - 1 // auto-connect row hidden
@@ -75,7 +75,7 @@ func applySettingsChange(provider *uiPreferencesProvider, settingsCursor int, st
 	case settingsFooterRow:
 		p.ShowFooter = !p.ShowFooter
 	case settingsModeRow:
-		p.PreferredMode = nextModePreference(p.PreferredMode, step)
+		p.AutoSelectMode = nextModePreference(p.AutoSelectMode, step)
 	case settingsAutoConnectRow:
 		p.AutoConnect = !p.AutoConnect
 	}

@@ -303,7 +303,7 @@ func TestModePreferenceLabel_Unknown(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestUISettingsRows_NoServer_HasAutoConnectNoModeRow(t *testing.T) {
-	prefs := UIPreferences{PreferredMode: ModePreferenceNone}
+	prefs := UIPreferences{AutoSelectMode: ModePreferenceNone}
 	rows := uiSettingsRows(prefs, false)
 	if len(rows) != settingsRowsCount-1 {
 		t.Fatalf("expected %d rows, got %d", settingsRowsCount-1, len(rows))
@@ -325,7 +325,7 @@ func TestUISettingsRows_NoServer_HasAutoConnectNoModeRow(t *testing.T) {
 }
 
 func TestUISettingsRows_ServerSupported_ModeClient_HasModeAndAutoConnect(t *testing.T) {
-	prefs := UIPreferences{PreferredMode: ModePreferenceClient}
+	prefs := UIPreferences{AutoSelectMode: ModePreferenceClient}
 	rows := uiSettingsRows(prefs, true)
 	if len(rows) != settingsRowsCount {
 		t.Fatalf("expected %d rows, got %d", settingsRowsCount, len(rows))
@@ -348,7 +348,7 @@ func TestUISettingsRows_ServerSupported_ModeClient_HasModeAndAutoConnect(t *test
 }
 
 func TestUISettingsRows_ServerSupported_ModeServer_ModeRowNoAutoConnect(t *testing.T) {
-	prefs := UIPreferences{PreferredMode: ModePreferenceServer}
+	prefs := UIPreferences{AutoSelectMode: ModePreferenceServer}
 	rows := uiSettingsRows(prefs, true)
 	if len(rows) != settingsRowsCount-1 {
 		t.Fatalf("expected %d rows, got %d", settingsRowsCount-1, len(rows))
@@ -368,7 +368,7 @@ func TestUISettingsRows_ServerSupported_ModeServer_ModeRowNoAutoConnect(t *testi
 }
 
 func TestUISettingsRows_ServerSupported_ModeNone_ModeRowNoAutoConnect(t *testing.T) {
-	prefs := UIPreferences{PreferredMode: ModePreferenceNone}
+	prefs := UIPreferences{AutoSelectMode: ModePreferenceNone}
 	rows := uiSettingsRows(prefs, true)
 	if len(rows) != settingsRowsCount-1 {
 		t.Fatalf("expected %d rows, got %d", settingsRowsCount-1, len(rows))

@@ -76,16 +76,16 @@ type unifiedSessionModel struct {
 }
 
 func tryAutoConnect(prefs UIPreferences, opts ConfiguratorSessionOptions) bool {
-	if prefs.LastClientConfig == "" {
+	if prefs.AutoSelectClientConfig == "" {
 		return false
 	}
-	if _, err := os.Stat(prefs.LastClientConfig); err != nil {
+	if _, err := os.Stat(prefs.AutoSelectClientConfig); err != nil {
 		return false
 	}
 	if opts.Selector == nil {
 		return false
 	}
-	if err := opts.Selector.Select(prefs.LastClientConfig); err != nil {
+	if err := opts.Selector.Select(prefs.AutoSelectClientConfig); err != nil {
 		return false
 	}
 	if opts.ClientConfigManager != nil {
@@ -103,7 +103,7 @@ func newUnifiedSessionModel(
 	settings *uiPreferencesProvider,
 ) (unifiedSessionModel, error) {
 	prefs := settings.Preferences()
-	impliedClient := prefs.PreferredMode == ModePreferenceClient || !configOpts.ServerSupported
+	impliedClient := prefs.AutoSelectMode == ModePreferenceClient || !configOpts.ServerSupported
 	if impliedClient && prefs.AutoConnect {
 		if tryAutoConnect(prefs, configOpts) {
 			events <- unifiedEvent{kind: unifiedEventModeSelected, mode: mode.Client}

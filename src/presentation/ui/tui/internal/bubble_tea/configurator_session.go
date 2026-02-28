@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -187,8 +188,8 @@ func newConfiguratorSessionModel(options ConfiguratorSessionOptions, settings *u
 	// If server is not supported but the saved preference is server, reset to client.
 	if !options.ServerSupported {
 		p := settings.Preferences()
-		if p.PreferredMode == ModePreferenceServer {
-			p.PreferredMode = ModePreferenceClient
+		if p.AutoSelectMode == ModePreferenceServer {
+			p.AutoSelectMode = ModePreferenceClient
 			settings.update(p)
 			_ = savePreferencesToDisk(p)
 		}
@@ -223,12 +224,25 @@ func newConfiguratorSessionModel(options ConfiguratorSessionOptions, settings *u
 	model.initNameInput()
 	model.initJSONInput()
 
-	switch settings.Preferences().PreferredMode {
+	switch settings.Preferences().AutoSelectMode {
 	case ModePreferenceClient:
 		if err := model.reloadClientConfigs(); err != nil {
 			return configuratorSessionModel{}, err
 		}
 		model.screen = configuratorScreenClientSelect
+		if autoConfig := settings.Preferences().AutoSelectClientConfig; autoConfig != "" {
+			if slices.Contains(model.client.configs, autoConfig) {
+				if err := model.options.Selector.Select(autoConfig); err == nil {
+					model.resultMode = mode.Client
+					model.done = true
+				}
+			} else {
+				p := settings.Preferences()
+				p.AutoSelectClientConfig = ""
+				settings.update(p)
+				_ = savePreferencesToDisk(p)
+			}
+		}
 	case ModePreferenceServer:
 		model.screen = configuratorScreenServerSelect
 	}
@@ -543,7 +557,7 @@ func (m configuratorSessionModel) updateClientSelectScreen(msg tea.KeyPressMsg) 
 		}
 
 		p := m.settings.Preferences()
-		p.LastClientConfig = selected
+		p.AutoSelectClientConfig = selected
 		m.settings.update(p)
 		_ = savePreferencesToDisk(p)
 		m.resultMode = mode.Client

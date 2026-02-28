@@ -111,9 +111,9 @@ func uiSettingsRows(prefs UIPreferences, serverSupported bool) []string {
 		"Show footer: " + onOff(prefs.ShowFooter),
 	}
 	if serverSupported {
-		rows = append(rows, "Mode       : "+modePreferenceLabel(prefs.PreferredMode))
+		rows = append(rows, "Mode       : "+modePreferenceLabel(prefs.AutoSelectMode))
 	}
-	if prefs.PreferredMode == ModePreferenceClient || !serverSupported {
+	if prefs.AutoSelectMode == ModePreferenceClient || !serverSupported {
 		rows = append(rows, "Auto-connect: "+onOff(prefs.AutoConnect))
 	}
 	return rows
