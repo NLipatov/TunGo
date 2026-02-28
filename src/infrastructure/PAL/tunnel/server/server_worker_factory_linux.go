@@ -1,4 +1,4 @@
-package tun_server
+package server
 
 import (
 	"context"
@@ -10,7 +10,6 @@ import (
 	"tungo/application/network/routing"
 	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/cryptography/chacha20"
-	"tungo/infrastructure/cryptography/noise"
 	"tungo/infrastructure/network/ip"
 	wsServer "tungo/infrastructure/network/ws/server/factory"
 	"tungo/infrastructure/settings"
@@ -21,76 +20,36 @@ import (
 	"tungo/infrastructure/tunnel/sessionplane/server/udp_registration"
 )
 
-type ServerWorkerFactory struct {
+type WorkerFactory struct {
 	loggerFactory        loggerFactory
 	configurationManager server.ConfigurationManager
-	sessionRevoker       *session.CompositeSessionRevoker
-	allowedPeers         noise.AllowedPeersLookup
-	cookieManager        *noise.CookieManager
-	loadMonitor          *noise.LoadMonitor
+	runtime              *Runtime
 }
 
-func NewServerWorkerFactory(
+func NewWorkerFactory(
+	runtime *Runtime,
 	manager server.ConfigurationManager,
-) (*ServerWorkerFactory, error) {
-	conf, err := manager.Configuration()
-	if err != nil {
-		return nil, fmt.Errorf("failed to load configuration: %w", err)
-	}
-
-	cookieManager, err := noise.NewCookieManager()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create cookie manager: %w", err)
-	}
-
-	return &ServerWorkerFactory{
+) (*WorkerFactory, error) {
+	return &WorkerFactory{
 		loggerFactory:        newDefaultLoggerFactory(),
 		configurationManager: manager,
-		sessionRevoker:       session.NewCompositeSessionRevoker(),
-		allowedPeers:         noise.NewAllowedPeersLookup(conf.AllowedPeers),
-		cookieManager:        cookieManager,
-		loadMonitor:          noise.NewLoadMonitor(noise.DefaultLoadThreshold),
+		runtime:              runtime,
 	}, nil
 }
 
-func NewTestServerWorkerFactory(
+func NewTestWorkerFactory(
 	loggerFactory loggerFactory,
+	runtime *Runtime,
 	manager server.ConfigurationManager,
-) (*ServerWorkerFactory, error) {
-	conf, err := manager.Configuration()
-	if err != nil {
-		return nil, fmt.Errorf("failed to load configuration: %w", err)
-	}
-
-	cookieManager, err := noise.NewCookieManager()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create cookie manager: %w", err)
-	}
-
-	return &ServerWorkerFactory{
+) (*WorkerFactory, error) {
+	return &WorkerFactory{
 		loggerFactory:        loggerFactory,
 		configurationManager: manager,
-		sessionRevoker:       session.NewCompositeSessionRevoker(),
-		allowedPeers:         noise.NewAllowedPeersLookup(conf.AllowedPeers),
-		cookieManager:        cookieManager,
-		loadMonitor:          noise.NewLoadMonitor(noise.DefaultLoadThreshold),
+		runtime:              runtime,
 	}, nil
 }
 
-// SessionRevoker returns the composite session revoker that aggregates
-// all session repositories created by this factory.
-// Used by ConfigWatcher to revoke sessions when AllowedPeers changes.
-func (s *ServerWorkerFactory) SessionRevoker() *session.CompositeSessionRevoker {
-	return s.sessionRevoker
-}
-
-// AllowedPeersUpdater returns the AllowedPeers lookup for runtime updates.
-// Used by ConfigWatcher to update peer map when config changes.
-func (s *ServerWorkerFactory) AllowedPeersUpdater() server.AllowedPeersUpdater {
-	return s.allowedPeers
-}
-
-func (s *ServerWorkerFactory) CreateWorker(
+func (s *WorkerFactory) CreateWorker(
 	ctx context.Context,
 	tun io.ReadWriteCloser,
 	workerSettings settings.Settings,
@@ -107,15 +66,14 @@ func (s *ServerWorkerFactory) CreateWorker(
 	}
 }
 
-func (s *ServerWorkerFactory) createTCPWorker(
+func (s *WorkerFactory) createTCPWorker(
 	ctx context.Context,
 	tun io.ReadWriteCloser,
 	workerSettings settings.Settings,
 ) (routing.Worker, error) {
 	sessionManager := session.NewDefaultRepository()
-	// Register for session revocation on config changes
 	if revocable, ok := sessionManager.(session.RepositoryWithRevocation); ok {
-		s.sessionRevoker.Register(revocable)
+		s.runtime.sessionRevoker.Register(revocable)
 	}
 
 	th := tcp_chacha20.NewTunHandler(
@@ -142,7 +100,7 @@ func (s *ServerWorkerFactory) createTCPWorker(
 
 	logger := s.loggerFactory.newLogger()
 
-	handshakeFactory := NewHandshakeFactory(*conf, s.allowedPeers, s.cookieManager, s.loadMonitor)
+	handshakeFactory := NewHandshakeFactory(*conf, s.runtime.allowedPeers, s.runtime.cookieManager, s.runtime.loadMonitor)
 
 	registrar := tcp_registration.NewRegistrar(
 		logger,
@@ -165,15 +123,14 @@ func (s *ServerWorkerFactory) createTCPWorker(
 	return tcp_chacha20.NewTcpTunWorker(th, tr), nil
 }
 
-func (s *ServerWorkerFactory) createWSWorker(
+func (s *WorkerFactory) createWSWorker(
 	ctx context.Context,
 	tun io.ReadWriteCloser,
 	workerSettings settings.Settings,
 ) (routing.Worker, error) {
 	sessionManager := session.NewDefaultRepository()
-	// Register for session revocation on config changes
 	if revocable, ok := sessionManager.(session.RepositoryWithRevocation); ok {
-		s.sessionRevoker.Register(revocable)
+		s.runtime.sessionRevoker.Register(revocable)
 	}
 
 	th := tcp_chacha20.NewTunHandler(
@@ -207,7 +164,7 @@ func (s *ServerWorkerFactory) createWSWorker(
 
 	logger := s.loggerFactory.newLogger()
 
-	handshakeFactory := NewHandshakeFactory(*conf, s.allowedPeers, s.cookieManager, s.loadMonitor)
+	handshakeFactory := NewHandshakeFactory(*conf, s.runtime.allowedPeers, s.runtime.cookieManager, s.runtime.loadMonitor)
 
 	registrar := tcp_registration.NewRegistrar(
 		logger,
@@ -230,15 +187,14 @@ func (s *ServerWorkerFactory) createWSWorker(
 	return tcp_chacha20.NewTcpTunWorker(th, tr), nil
 }
 
-func (s *ServerWorkerFactory) createUDPWorker(
+func (s *WorkerFactory) createUDPWorker(
 	ctx context.Context,
 	tun io.ReadWriteCloser,
 	workerSettings settings.Settings,
 ) (routing.Worker, error) {
 	sessionManager := session.NewDefaultRepository()
-	// Register for session revocation on config changes
 	if revocable, ok := sessionManager.(session.RepositoryWithRevocation); ok {
-		s.sessionRevoker.Register(revocable)
+		s.runtime.sessionRevoker.Register(revocable)
 	}
 
 	conf, confErr := s.configurationManager.Configuration()
@@ -265,7 +221,7 @@ func (s *ServerWorkerFactory) createUDPWorker(
 		sessionManager,
 	)
 
-	handshakeFactory := NewHandshakeFactory(*conf, s.allowedPeers, s.cookieManager, s.loadMonitor)
+	handshakeFactory := NewHandshakeFactory(*conf, s.runtime.allowedPeers, s.runtime.cookieManager, s.runtime.loadMonitor)
 
 	registrar := udp_registration.NewRegistrar(
 		ctx,
@@ -291,7 +247,7 @@ func (s *ServerWorkerFactory) createUDPWorker(
 	return udp_chacha20.NewUdpTunWorker(th, tr), nil
 }
 
-func (s *ServerWorkerFactory) addrPortToListen(
+func (s *WorkerFactory) addrPortToListen(
 	host settings.Host,
 	port int,
 ) (netip.AddrPort, error) {

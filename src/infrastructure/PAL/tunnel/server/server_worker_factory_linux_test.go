@@ -1,4 +1,4 @@
-package tun_server
+package server
 
 import (
 	"context"
@@ -67,10 +67,29 @@ func mustHost(raw string) settings.Host {
 	return h
 }
 
+// ------------------- helpers -------------------
+
+func newTestWorkerFactory(t *testing.T) (*WorkerFactory, error) {
+	t.Helper()
+	runtime, err := NewRuntime(&dummyConfigManager{})
+	if err != nil {
+		return nil, err
+	}
+	return NewTestWorkerFactory(newDefaultLoggerFactory(), runtime, &dummyConfigManager{})
+}
+
+func newTestWorkerFactoryWithErrorConfig() (*WorkerFactory, error) {
+	runtime, err := NewRuntime(&errorConfigManager{})
+	if err != nil {
+		return nil, err
+	}
+	return NewTestWorkerFactory(newDefaultLoggerFactory(), runtime, &errorConfigManager{})
+}
+
 // ------------------- tests -------------------
 
 func Test_addrPortToListen_ErrorsAndDualStackDefault(t *testing.T) {
-	f := &ServerWorkerFactory{}
+	f := &WorkerFactory{}
 
 	// invalid port string
 	if _, err := f.addrPortToListen(mustHost("127.0.0.1"), 0); err == nil {
@@ -88,21 +107,21 @@ func Test_addrPortToListen_ErrorsAndDualStackDefault(t *testing.T) {
 }
 
 func Test_addrPortToListen_DomainHostNotAllowed(t *testing.T) {
-	f := &ServerWorkerFactory{}
+	f := &WorkerFactory{}
 	if _, err := f.addrPortToListen(mustHost("example.org"), 1234); err == nil {
 		t.Error("expected error for non-IP host")
 	}
 }
 
 func Test_addrPortToListen_InvalidPortNumber(t *testing.T) {
-	f := &ServerWorkerFactory{}
+	f := &WorkerFactory{}
 	if _, err := f.addrPortToListen(mustHost("127.0.0.1"), 99999); err == nil { // >65535
 		t.Error("expected error for invalid port number")
 	}
 }
 
 func Test_CreateWorker_UnsupportedProtocol(t *testing.T) {
-	factory, err := NewTestServerWorkerFactory(newDefaultLoggerFactory(), &dummyConfigManager{})
+	factory, err := newTestWorkerFactory(t)
 	if err != nil {
 		t.Fatalf("unexpected constructor error: %v", err)
 	}
@@ -115,7 +134,7 @@ func Test_CreateWorker_UnsupportedProtocol(t *testing.T) {
 }
 
 func Test_CreateWorker_TCP_ConfigError(t *testing.T) {
-	factory, err := NewTestServerWorkerFactory(newDefaultLoggerFactory(), &errorConfigManager{})
+	factory, err := newTestWorkerFactoryWithErrorConfig()
 	if err == nil {
 		t.Fatal("expected constructor error")
 	}
@@ -126,7 +145,7 @@ func Test_CreateWorker_TCP_ConfigError(t *testing.T) {
 }
 
 func Test_CreateWorker_UDP_ConfigError(t *testing.T) {
-	factory, err := NewTestServerWorkerFactory(newDefaultLoggerFactory(), &errorConfigManager{})
+	factory, err := newTestWorkerFactoryWithErrorConfig()
 	if err == nil {
 		t.Fatal("expected constructor error")
 	}
@@ -137,7 +156,7 @@ func Test_CreateWorker_UDP_ConfigError(t *testing.T) {
 }
 
 func Test_CreateWorker_WS_ConfigError(t *testing.T) {
-	factory, err := NewTestServerWorkerFactory(newDefaultLoggerFactory(), &errorConfigManager{})
+	factory, err := newTestWorkerFactoryWithErrorConfig()
 	if err == nil {
 		t.Fatal("expected constructor error")
 	}
@@ -162,7 +181,7 @@ func Test_CreateWorker_TCP_ListenError(t *testing.T) {
 		t.Fatalf("failed to parse port %q: %v", port, convErr)
 	}
 
-	factory, err := NewTestServerWorkerFactory(newDefaultLoggerFactory(), &dummyConfigManager{})
+	factory, err := newTestWorkerFactory(t)
 	if err != nil {
 		t.Fatalf("unexpected constructor error: %v", err)
 	}
@@ -198,7 +217,7 @@ func Test_CreateWorker_UDP_ListenError(t *testing.T) {
 		t.Fatalf("failed to parse port %q: %v", port, convErr)
 	}
 
-	factory, err := NewTestServerWorkerFactory(newDefaultLoggerFactory(), &dummyConfigManager{})
+	factory, err := newTestWorkerFactory(t)
 	if err != nil {
 		t.Fatalf("unexpected constructor error: %v", err)
 	}
@@ -230,7 +249,7 @@ func Test_CreateWorker_WS_ListenError(t *testing.T) {
 		t.Fatalf("failed to parse port %q: %v", port, convErr)
 	}
 
-	factory, err := NewTestServerWorkerFactory(newDefaultLoggerFactory(), &dummyConfigManager{})
+	factory, err := newTestWorkerFactory(t)
 	if err != nil {
 		t.Fatalf("unexpected constructor error: %v", err)
 	}
@@ -260,7 +279,7 @@ func Test_CreateWorker_WS_ListenerInitError_ClosesTCPListener(t *testing.T) {
 	}
 	_ = ln.Close()
 
-	factory, err := NewTestServerWorkerFactory(newDefaultLoggerFactory(), &dummyConfigManager{})
+	factory, err := newTestWorkerFactory(t)
 	if err != nil {
 		t.Fatalf("unexpected constructor error: %v", err)
 	}
@@ -287,7 +306,7 @@ func Test_CreateWorker_WS_ListenerInitError_ClosesTCPListener(t *testing.T) {
 func Test_CreateWorker_TCP_UDP_WS_Success(t *testing.T) {
 	for _, proto := range []settings.Protocol{settings.TCP, settings.UDP, settings.WS} {
 		ctx, cancel := context.WithCancel(context.Background())
-		factory, err := NewTestServerWorkerFactory(newDefaultLoggerFactory(), &dummyConfigManager{})
+		factory, err := newTestWorkerFactory(t)
 		if err != nil {
 			t.Fatalf("unexpected constructor error for %s: %v", proto, err)
 		}
@@ -340,30 +359,34 @@ func Test_CreateWorker_TCP_UDP_WS_Success(t *testing.T) {
 	}
 }
 
-func Test_NewServerWorkerFactory_Coverage(t *testing.T) {
+func Test_NewWorkerFactory_Coverage(t *testing.T) {
 	dcm := &dummyConfigManager{}
+	runtime, err := NewRuntime(dcm)
+	if err != nil {
+		t.Fatalf("unexpected runtime error: %v", err)
+	}
 	// Production constructor
-	if f, err := NewServerWorkerFactory(dcm); f == nil || err != nil {
+	if f, err := NewWorkerFactory(runtime, dcm); f == nil || err != nil {
 		t.Errorf("nil/error factory (prod): factory=%v err=%v", f, err)
 	}
 	// Test constructor
-	if f, err := NewTestServerWorkerFactory(newDefaultLoggerFactory(), dcm); f == nil || err != nil {
+	if f, err := NewTestWorkerFactory(newDefaultLoggerFactory(), runtime, dcm); f == nil || err != nil {
 		t.Errorf("nil/error factory (test): factory=%v err=%v", f, err)
 	}
 }
 
-func Test_ServerWorkerFactory_SessionRevokerAndAllowedPeersUpdater(t *testing.T) {
-	factory, err := NewTestServerWorkerFactory(newDefaultLoggerFactory(), &dummyConfigManager{})
+func Test_Runtime_SessionRevokerAndAllowedPeersUpdater(t *testing.T) {
+	runtime, err := NewRuntime(&dummyConfigManager{})
 	if err != nil {
-		t.Fatalf("unexpected constructor error: %v", err)
+		t.Fatalf("unexpected runtime error: %v", err)
 	}
 
-	revoker := factory.SessionRevoker()
+	revoker := runtime.SessionRevoker()
 	if revoker == nil {
 		t.Fatal("expected non-nil session revoker")
 	}
 
-	updater := factory.AllowedPeersUpdater()
+	updater := runtime.AllowedPeersUpdater()
 	if updater == nil {
 		t.Fatal("expected non-nil allowed peers updater")
 	}

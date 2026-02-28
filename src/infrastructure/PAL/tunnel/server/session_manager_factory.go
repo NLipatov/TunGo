@@ -1,4 +1,4 @@
-package tun_server
+package server
 
 import "tungo/infrastructure/tunnel/session"
 

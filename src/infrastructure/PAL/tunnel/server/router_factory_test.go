@@ -1,9 +1,9 @@
-package tun_server_test
+package server_test
 
 import (
 	"testing"
 	"tungo/application/network/routing"
-	"tungo/infrastructure/PAL/tunnel/tun_server"
+	tunnelServer "tungo/infrastructure/PAL/tunnel/server"
 )
 
 type dummyWorker struct{}
@@ -11,8 +11,8 @@ type dummyWorker struct{}
 func (dummyWorker) HandleTun() error       { return nil }
 func (dummyWorker) HandleTransport() error { return nil }
 
-func TestServerTrafficRouterFactory_CreateRouter(t *testing.T) {
-	f := tun_server.NewServerTrafficRouterFactory()
+func TestTrafficRouterFactory_CreateRouter(t *testing.T) {
+	f := tunnelServer.NewTrafficRouterFactory()
 	router := f.CreateRouter(dummyWorker{})
 	if router == nil {
 		t.Fatal("expected non-nil router")

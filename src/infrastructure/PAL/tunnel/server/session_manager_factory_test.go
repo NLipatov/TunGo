@@ -1,4 +1,4 @@
-package tun_server
+package server
 
 import (
 	"net/netip"

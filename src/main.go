@@ -13,12 +13,13 @@ import (
 	"tungo/application/confgen"
 	"tungo/domain/app"
 	"tungo/domain/mode"
+	"tungo/infrastructure/PAL/configuration"
 	"tungo/infrastructure/PAL/configuration/client"
 	serverConf "tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/PAL/signal"
 	"tungo/infrastructure/PAL/stat"
 	"tungo/infrastructure/PAL/platform"
-	"tungo/infrastructure/PAL/tunnel/tun_server"
+	tunnelServer "tungo/infrastructure/PAL/tunnel/server"
 	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/tunnel/sessionplane/client_factory"
 	"tungo/presentation/configuring"
@@ -122,7 +123,7 @@ func showFatal(err error) int {
 
 // --- mode runners ---
 
-func runServer(ctx context.Context, uiMode app.UIMode, resolver client.Resolver, manager serverConf.ConfigurationManager) error {
+func runServer(ctx context.Context, uiMode app.UIMode, resolver configuration.Resolver, manager serverConf.ConfigurationManager) error {
 	setupCrashLog(resolver)
 	if err := prepareServerKeys(manager); err != nil {
 		return fmt.Errorf("key preparation failed: %w", err)
@@ -130,7 +131,7 @@ func runServer(ctx context.Context, uiMode app.UIMode, resolver client.Resolver,
 	configPath, _ := resolver.Resolve()
 	log.Printf("Starting server...")
 
-	tunFactory := tun_server.NewServerTunFactory()
+	tunFactory := tunnelServer.NewTunFactory()
 
 	conf, confErr := manager.Configuration()
 	if confErr != nil {
@@ -144,15 +145,20 @@ func runServer(ctx context.Context, uiMode app.UIMode, resolver client.Resolver,
 		manager,
 	)
 
-	workerFactory, err := tun_server.NewServerWorkerFactory(manager)
+	runtime, err := tunnelServer.NewRuntime(manager)
+	if err != nil {
+		return fmt.Errorf("failed to create server runtime: %w", err)
+	}
+
+	workerFactory, err := tunnelServer.NewWorkerFactory(runtime, manager)
 	if err != nil {
 		return fmt.Errorf("failed to create worker factory: %w", err)
 	}
 
 	configWatcher := serverConf.NewConfigWatcher(
 		manager,
-		workerFactory.SessionRevoker(),
-		workerFactory.AllowedPeersUpdater(),
+		runtime.SessionRevoker(),
+		runtime.AllowedPeersUpdater(),
 		configPath,
 		serverConf.DefaultWatchInterval,
 		log.Default(),
@@ -165,7 +171,7 @@ func runServer(ctx context.Context, uiMode app.UIMode, resolver client.Resolver,
 		uiMode,
 		deps,
 		workerFactory,
-		tun_server.NewServerTrafficRouterFactory(),
+		tunnelServer.NewTrafficRouterFactory(),
 	)
 	return runner.Run(ctx)
 }
@@ -211,7 +217,7 @@ func prepareServerKeys(manager serverConf.ConfigurationManager) error {
 	return nil
 }
 
-func setupCrashLog(resolver client.Resolver) {
+func setupCrashLog(resolver configuration.Resolver) {
 	configPath, err := resolver.Resolve()
 	if err != nil {
 		return

@@ -1,4 +1,4 @@
-package tun_server
+package server
 
 import (
 	"context"
@@ -31,24 +31,36 @@ func (darwinNopReadWriteCloser) Read(_ []byte) (int, error)  { return 0, io.EOF 
 func (darwinNopReadWriteCloser) Write(p []byte) (int, error) { return len(p), nil }
 func (darwinNopReadWriteCloser) Close() error                { return nil }
 
-func TestServerWorkerFactoryDarwin_NewAndAccessors(t *testing.T) {
-	f, err := NewServerWorkerFactory(&darwinDummyConfigManager{})
+func TestWorkerFactoryDarwin_NewAndAccessors(t *testing.T) {
+	mgr := &darwinDummyConfigManager{}
+	runtime, err := NewRuntime(mgr)
+	if err != nil {
+		t.Fatalf("unexpected runtime error: %v", err)
+	}
+
+	f, err := NewWorkerFactory(runtime, mgr)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if f == nil {
 		t.Fatal("expected non-nil factory")
 	}
-	if f.SessionRevoker() == nil {
+	if runtime.SessionRevoker() == nil {
 		t.Fatal("expected non-nil session revoker")
 	}
-	if f.AllowedPeersUpdater() != nil {
+	if runtime.AllowedPeersUpdater() != nil {
 		t.Fatal("expected nil allowed peers updater on darwin")
 	}
 }
 
-func TestServerWorkerFactoryDarwin_CreateWorker_ReturnsError(t *testing.T) {
-	f, err := NewServerWorkerFactory(&darwinDummyConfigManager{})
+func TestWorkerFactoryDarwin_CreateWorker_ReturnsError(t *testing.T) {
+	mgr := &darwinDummyConfigManager{}
+	runtime, err := NewRuntime(mgr)
+	if err != nil {
+		t.Fatalf("unexpected runtime error: %v", err)
+	}
+
+	f, err := NewWorkerFactory(runtime, mgr)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

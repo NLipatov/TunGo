@@ -1,6 +1,6 @@
 //go:build darwin
 
-package tun_client
+package client
 
 import (
 	"net/netip"
