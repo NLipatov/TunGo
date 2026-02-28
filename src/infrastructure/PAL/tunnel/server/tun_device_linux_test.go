@@ -111,14 +111,10 @@ func TestTunDeviceManager_Create(t *testing.T) {
 		if !strings.Contains(err.Error(), "could not create tuntap dev") {
 			t.Errorf("unexpected error message: %v", err)
 		}
-		// No rollback expected because created is still false.
-		if strings.Contains(ip.TunFactoryMockIP.log.String(), "del;") {
-			// The initial "delete previous tun" call is expected, but there
-			// should be only that one del call (before the error), not a rollback del.
-			count := strings.Count(ip.TunFactoryMockIP.log.String(), "del;")
-			if count > 1 {
-				t.Errorf("unexpected rollback delete, log: %s", ip.TunFactoryMockIP.log.String())
-			}
+		// Expect exactly one delete: initial cleanup only (no rollback delete).
+		count := strings.Count(ip.TunFactoryMockIP.log.String(), "del;")
+		if count != 1 {
+			t.Errorf("expected exactly one delete call, got %d, log: %s", count, ip.TunFactoryMockIP.log.String())
 		}
 	})
 
@@ -292,7 +288,10 @@ func TestTunDeviceManager_DetectName(t *testing.T) {
 		io := &TunFactoryMockIOCTL{name: "tun42"}
 		dm := tunDeviceManager{ioctl: io}
 
-		f, _ := os.Open(os.DevNull)
+		f, fErr := os.Open(os.DevNull)
+		if fErr != nil {
+			t.Fatalf("failed to open %s: %v", os.DevNull, fErr)
+		}
 		defer f.Close()
 
 		name, err := dm.detectName(f)
@@ -309,7 +308,10 @@ func TestTunDeviceManager_DetectName(t *testing.T) {
 		io := &TunFactoryMockIOCTL{detectErr: injErr}
 		dm := tunDeviceManager{ioctl: io}
 
-		f, _ := os.Open(os.DevNull)
+		f, fErr := os.Open(os.DevNull)
+		if fErr != nil {
+			t.Fatalf("failed to open %s: %v", os.DevNull, fErr)
+		}
 		defer f.Close()
 
 		_, err := dm.detectName(f)

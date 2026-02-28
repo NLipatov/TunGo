@@ -15,6 +15,10 @@ type tunDeviceManager struct {
 }
 
 func (d tunDeviceManager) create(s settings.Settings, ipv4, ipv6 bool) (tunFile *os.File, err error) {
+	if !ipv4 && !ipv6 {
+		return nil, fmt.Errorf("no tunnel IP configuration: both IPv4 and IPv6 are disabled")
+	}
+
 	created := false
 	defer func() {
 		if err != nil && created {
@@ -40,7 +44,6 @@ func (d tunDeviceManager) create(s settings.Settings, ipv4, ipv6 bool) (tunFile 
 		return nil, fmt.Errorf("could not set mtu on tuntap dev: %s", err)
 	}
 
-	hasAddress := false
 	if ipv4 {
 		cidr4, cidr4Err := s.IPv4CIDR()
 		if cidr4Err != nil {
@@ -49,7 +52,6 @@ func (d tunDeviceManager) create(s settings.Settings, ipv4, ipv6 bool) (tunFile 
 		if err = d.ip.AddrAddDev(s.TunName, cidr4); err != nil {
 			return nil, fmt.Errorf("failed to convert server ip to CIDR format: %s", err)
 		}
-		hasAddress = true
 	}
 
 	if ipv6 {
@@ -60,11 +62,6 @@ func (d tunDeviceManager) create(s settings.Settings, ipv4, ipv6 bool) (tunFile 
 		if err = d.ip.AddrAddDev(s.TunName, cidr6); err != nil {
 			return nil, fmt.Errorf("failed to assign IPv6 to TUN %s: %s", s.TunName, err)
 		}
-		hasAddress = true
-	}
-
-	if !hasAddress {
-		return nil, fmt.Errorf("no tunnel IP configuration: both IPv4 and IPv6 are disabled")
 	}
 
 	tunFile, err = d.ioctl.CreateTunInterface(s.TunName)

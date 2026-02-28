@@ -12,6 +12,9 @@ func NewRuntime(manager server.ConfigurationManager) (*Runtime, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to load configuration: %w", err)
 	}
+	if conf == nil {
+		return nil, fmt.Errorf("failed to load configuration: nil configuration")
+	}
 
 	cookieManager, err := noise.NewCookieManager()
 	if err != nil {
