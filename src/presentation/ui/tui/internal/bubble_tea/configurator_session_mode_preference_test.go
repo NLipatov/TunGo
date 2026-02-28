@@ -143,6 +143,33 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_InvalidConfig_ShowsI
 	}
 }
 
+func TestNewConfiguratorSessionModel_AutoSelectClientConfig_NonInvalidError_ShowsNotice(t *testing.T) {
+	s := settingsForMode(ModePreferenceClient)
+	p := s.Preferences()
+	p.AutoSelectClientConfig = "cfg.json"
+	s.update(p)
+
+	opts := defaultConfiguratorOpts()
+	opts.Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
+	opts.ClientConfigManager = sessionClientConfigManagerNonInvalid{
+		err: errors.New("permission denied"),
+	}
+
+	model, err := newConfiguratorSessionModel(opts, s)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if model.done {
+		t.Fatal("expected done=false when config manager returns non-invalid error")
+	}
+	if model.screen != configuratorScreenClientSelect {
+		t.Fatalf("expected configuratorScreenClientSelect, got %v", model.screen)
+	}
+	if model.notice == "" {
+		t.Fatal("expected notice to be set for non-invalid config error")
+	}
+}
+
 func TestNewConfiguratorSessionModel_AutoSelectClientConfig_MissingConfig_ShowsSelection(t *testing.T) {
 	s := settingsForMode(ModePreferenceClient)
 	p := s.Preferences()
