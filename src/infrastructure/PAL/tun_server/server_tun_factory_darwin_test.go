@@ -28,8 +28,3 @@ func TestServerTunFactoryDarwin_DisposeDevices_NoError(t *testing.T) {
 	}
 }
 
-func TestServerSupported_Darwin(t *testing.T) {
-	if ServerSupported() {
-		t.Fatal("expected ServerSupported() == false on darwin")
-	}
-}
