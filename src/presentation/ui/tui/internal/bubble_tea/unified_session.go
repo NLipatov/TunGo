@@ -103,7 +103,8 @@ func newUnifiedSessionModel(
 	settings *uiPreferencesProvider,
 ) (unifiedSessionModel, error) {
 	prefs := settings.Preferences()
-	if prefs.PreferredMode == ModePreferenceClient && prefs.AutoConnect {
+	impliedClient := prefs.PreferredMode == ModePreferenceClient || !configOpts.ServerSupported
+	if impliedClient && prefs.AutoConnect {
 		if tryAutoConnect(prefs, configOpts) {
 			events <- unifiedEvent{kind: unifiedEventModeSelected, mode: mode.Client}
 			cfgModel, err := newConfiguratorSessionModel(configOpts, settings)

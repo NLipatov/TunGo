@@ -520,40 +520,36 @@ func (m configuratorSessionModel) updateClientSelectScreen(msg tea.KeyPressMsg) 
 		m.clientRemovePaths = append([]string(nil), m.clientConfigs...)
 		return m, nil
 	default:
-		p := m.settings.Preferences()
-		p.LastClientConfig = selected
-		m.settings.update(p)
-		_ = savePreferencesToDisk(p)
 		if err := m.options.Selector.Select(selected); err != nil {
 			m.resultErr = err
 			m.done = true
 			return m, tea.Quit
 		}
 
-		if m.options.ClientConfigManager == nil {
-			m.resultMode = mode.Client
-			m.done = true
-			return m, tea.Quit
+		if m.options.ClientConfigManager != nil {
+			_, cfgErr := m.options.ClientConfigManager.Configuration()
+			if isInvalidClientConfigurationError(cfgErr) {
+				m.invalidErr = cfgErr
+				m.invalidConfig = selected
+				m.invalidAllowDelete = true
+				m.cursor = 0
+				m.screen = configuratorScreenClientInvalid
+				return m, nil
+			}
+			if cfgErr != nil {
+				m.resultErr = cfgErr
+				m.done = true
+				return m, tea.Quit
+			}
 		}
 
-		_, cfgErr := m.options.ClientConfigManager.Configuration()
-		if cfgErr == nil {
-			m.resultMode = mode.Client
-			m.done = true
-			return m, tea.Quit
-		}
-		if !isInvalidClientConfigurationError(cfgErr) {
-			m.resultErr = cfgErr
-			m.done = true
-			return m, tea.Quit
-		}
-
-		m.invalidErr = cfgErr
-		m.invalidConfig = selected
-		m.invalidAllowDelete = true
-		m.cursor = 0
-		m.screen = configuratorScreenClientInvalid
-		return m, nil
+		p := m.settings.Preferences()
+		p.LastClientConfig = selected
+		m.settings.update(p)
+		_ = savePreferencesToDisk(p)
+		m.resultMode = mode.Client
+		m.done = true
+		return m, tea.Quit
 	}
 }
 
