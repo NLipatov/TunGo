@@ -467,16 +467,17 @@ func TestRuntimeDashboard_SettingsNavigationAndMutation(t *testing.T) {
 	}
 
 	// Move to bottom, Down at bottom should stay there.
-	for i := 0; i < settingsRowsCount+1; i++ {
+	wantBottom := settingsVisibleRowCount(m.preferences, m.serverSupported) - 1
+	for i := 0; i < settingsVisibleRowCount(m.preferences, m.serverSupported)+1; i++ {
 		updatedModel, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 		m = updatedModel.(RuntimeDashboard)
 	}
-	if m.settingsCursor != settingsRowsCount-1 {
+	if m.settingsCursor != wantBottom {
 		t.Fatalf("expected cursor at bottom, got %d", m.settingsCursor)
 	}
 	updatedModel, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	m = updatedModel.(RuntimeDashboard)
-	if m.settingsCursor != settingsRowsCount-1 {
+	if m.settingsCursor != wantBottom {
 		t.Fatalf("expected cursor to stay at bottom, got %d", m.settingsCursor)
 	}
 

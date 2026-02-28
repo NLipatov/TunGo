@@ -3,6 +3,7 @@ package bubble_tea
 import (
 	"context"
 	"errors"
+	"os"
 	"sync"
 
 	"tungo/domain/mode"
@@ -74,12 +75,58 @@ type unifiedSessionModel struct {
 	runtimeSeq   uint64
 }
 
+func tryAutoConnect(prefs UIPreferences, opts ConfiguratorSessionOptions) bool {
+	if prefs.LastClientConfig == "" {
+		return false
+	}
+	if _, err := os.Stat(prefs.LastClientConfig); err != nil {
+		return false
+	}
+	if opts.Selector == nil {
+		return false
+	}
+	if err := opts.Selector.Select(prefs.LastClientConfig); err != nil {
+		return false
+	}
+	if opts.ClientConfigManager != nil {
+		if _, err := opts.ClientConfigManager.Configuration(); err != nil {
+			return false
+		}
+	}
+	return true
+}
+
 func newUnifiedSessionModel(
 	appCtx context.Context,
 	configOpts ConfiguratorSessionOptions,
 	events chan<- unifiedEvent,
 	settings *uiPreferencesProvider,
 ) (unifiedSessionModel, error) {
+	prefs := settings.Preferences()
+	impliedClient := prefs.PreferredMode == ModePreferenceClient || !configOpts.ServerSupported
+	if impliedClient && prefs.AutoConnect {
+		if tryAutoConnect(prefs, configOpts) {
+			events <- unifiedEvent{kind: unifiedEventModeSelected, mode: mode.Client}
+			cfgModel, err := newConfiguratorSessionModel(configOpts, settings)
+			if err != nil {
+				return unifiedSessionModel{}, err
+			}
+			return unifiedSessionModel{
+				settings:     settings,
+				phase:        phaseWaitingForRuntime,
+				configurator: cfgModel,
+				configOpts:   configOpts,
+				events:       events,
+				appCtx:       appCtx,
+			}, nil
+		}
+		// Last config gone or invalid — reset auto-connect
+		p := settings.Preferences()
+		p.AutoConnect = false
+		settings.update(p)
+		_ = savePreferencesToDisk(p)
+	}
+
 	cfgModel, err := newConfiguratorSessionModel(configOpts, settings)
 	if err != nil {
 		return unifiedSessionModel{}, err
@@ -118,7 +165,9 @@ func (m unifiedSessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.runtimeSeq++
-		rt := NewRuntimeDashboard(msg.ctx, msg.options, m.settings)
+		opts := msg.options
+		opts.ServerSupported = m.configOpts.ServerSupported
+		rt := NewRuntimeDashboard(msg.ctx, opts, m.settings)
 		rt.runtimeSeq = m.runtimeSeq
 		if m.width > 0 || m.height > 0 {
 			rt.width = m.width

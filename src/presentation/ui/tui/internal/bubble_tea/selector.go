@@ -220,16 +220,16 @@ func (m Selector) updateSettings(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Up):
 		m.settingsCursor = settingsCursorUp(m.settingsCursor)
 	case key.Matches(msg, m.keys.Down):
-		m.settingsCursor = settingsCursorDown(m.settingsCursor)
+		m.settingsCursor = settingsCursorDown(m.settingsCursor, settingsVisibleRowCount(m.preferences, false))
 	case key.Matches(msg, m.keys.Left):
 		prevTheme := m.preferences.Theme
-		m.preferences = applySettingsChange(m.settings, m.settingsCursor, -1)
+		m.preferences = applySettingsChange(m.settings, m.settingsCursor, -1, false)
 		if m.settingsCursor == settingsThemeRow && m.preferences.Theme != prevTheme {
 			cmd = tea.ClearScreen
 		}
 	case key.Matches(msg, m.keys.Right), key.Matches(msg, m.keys.Select):
 		prevTheme := m.preferences.Theme
-		m.preferences = applySettingsChange(m.settings, m.settingsCursor, 1)
+		m.preferences = applySettingsChange(m.settings, m.settingsCursor, 1, false)
 		if m.settingsCursor == settingsThemeRow && m.preferences.Theme != prevTheme {
 			cmd = tea.ClearScreen
 		}
@@ -367,7 +367,7 @@ func (m Selector) settingsView(preamble []string) string {
 	if m.width > 0 {
 		contentWidth = contentWidthForTerminal(m.width)
 	}
-	body = append(body, renderSelectableRows(uiSettingsRows(m.preferences), m.settingsCursor, contentWidth, styles)...)
+	body = append(body, renderSelectableRows(uiSettingsRows(m.preferences, false), m.settingsCursor, contentWidth, styles)...)
 
 	return renderScreen(
 		m.width,

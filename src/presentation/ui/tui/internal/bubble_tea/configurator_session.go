@@ -107,8 +107,9 @@ const (
 )
 
 type configuratorSessionModel struct {
-	settings *uiPreferencesProvider
-	options  ConfiguratorSessionOptions
+	settings        *uiPreferencesProvider
+	options         ConfiguratorSessionOptions
+	serverSupported bool
 
 	width  int
 	height int
@@ -185,12 +186,23 @@ func newConfiguratorSessionModel(options ConfiguratorSessionOptions, settings *u
 		modeOptions = append(modeOptions, sessionModeServer)
 	}
 
+	// If server is not supported but the saved preference is server, reset to client.
+	if !options.ServerSupported {
+		p := settings.Preferences()
+		if p.PreferredMode == ModePreferenceServer {
+			p.PreferredMode = ModePreferenceClient
+			settings.update(p)
+			_ = savePreferencesToDisk(p)
+		}
+	}
+
 	model := configuratorSessionModel{
-		settings:    settings,
-		options:     options,
-		screen:      configuratorScreenMode,
-		cursor:      0,
-		modeOptions: modeOptions,
+		settings:        settings,
+		options:         options,
+		serverSupported: options.ServerSupported,
+		screen:          configuratorScreenMode,
+		cursor:          0,
+		modeOptions:     modeOptions,
 		serverMenuOptions: []string{
 			sessionServerStart,
 			sessionServerAdd,
@@ -212,6 +224,17 @@ func newConfiguratorSessionModel(options ConfiguratorSessionOptions, settings *u
 
 	model.initNameInput()
 	model.initJSONInput()
+
+	switch settings.Preferences().PreferredMode {
+	case ModePreferenceClient:
+		if err := model.reloadClientConfigs(); err != nil {
+			return configuratorSessionModel{}, err
+		}
+		model.screen = configuratorScreenClientSelect
+	case ModePreferenceServer:
+		model.screen = configuratorScreenServerSelect
+	}
+
 	return model, nil
 }
 
@@ -503,30 +526,30 @@ func (m configuratorSessionModel) updateClientSelectScreen(msg tea.KeyPressMsg) 
 			return m, tea.Quit
 		}
 
-		if m.options.ClientConfigManager == nil {
-			m.resultMode = mode.Client
-			m.done = true
-			return m, tea.Quit
+		if m.options.ClientConfigManager != nil {
+			_, cfgErr := m.options.ClientConfigManager.Configuration()
+			if isInvalidClientConfigurationError(cfgErr) {
+				m.invalidErr = cfgErr
+				m.invalidConfig = selected
+				m.invalidAllowDelete = true
+				m.cursor = 0
+				m.screen = configuratorScreenClientInvalid
+				return m, nil
+			}
+			if cfgErr != nil {
+				m.resultErr = cfgErr
+				m.done = true
+				return m, tea.Quit
+			}
 		}
 
-		_, cfgErr := m.options.ClientConfigManager.Configuration()
-		if cfgErr == nil {
-			m.resultMode = mode.Client
-			m.done = true
-			return m, tea.Quit
-		}
-		if !isInvalidClientConfigurationError(cfgErr) {
-			m.resultErr = cfgErr
-			m.done = true
-			return m, tea.Quit
-		}
-
-		m.invalidErr = cfgErr
-		m.invalidConfig = selected
-		m.invalidAllowDelete = true
-		m.cursor = 0
-		m.screen = configuratorScreenClientInvalid
-		return m, nil
+		p := m.settings.Preferences()
+		p.LastClientConfig = selected
+		m.settings.update(p)
+		_ = savePreferencesToDisk(p)
+		m.resultMode = mode.Client
+		m.done = true
+		return m, tea.Quit
 	}
 }
 
@@ -903,16 +926,16 @@ func (m configuratorSessionModel) updateSettingsTab(msg tea.KeyPressMsg) (tea.Mo
 	case "up", "k":
 		m.settingsCursor = settingsCursorUp(m.settingsCursor)
 	case "down", "j":
-		m.settingsCursor = settingsCursorDown(m.settingsCursor)
+		m.settingsCursor = settingsCursorDown(m.settingsCursor, settingsVisibleRowCount(m.preferences, m.serverSupported))
 	case "left", "h":
 		prevTheme := m.preferences.Theme
-		m.preferences = applySettingsChange(m.settings, m.settingsCursor, -1)
+		m.preferences = applySettingsChange(m.settings, m.settingsCursor, -1, m.serverSupported)
 		if m.settingsCursor == settingsThemeRow && m.preferences.Theme != prevTheme {
 			cmd = tea.ClearScreen
 		}
 	case "right", "l", "enter":
 		prevTheme := m.preferences.Theme
-		m.preferences = applySettingsChange(m.settings, m.settingsCursor, 1)
+		m.preferences = applySettingsChange(m.settings, m.settingsCursor, 1, m.serverSupported)
 		if m.settingsCursor == settingsThemeRow && m.preferences.Theme != prevTheme {
 			cmd = tea.ClearScreen
 		}
@@ -1078,7 +1101,7 @@ func (m configuratorSessionModel) settingsTabView() string {
 	if m.width > 0 {
 		contentWidth = contentWidthForTerminal(m.width)
 	}
-	body := renderSelectableRows(uiSettingsRows(m.preferences), m.settingsCursor, contentWidth, styles)
+	body := renderSelectableRows(uiSettingsRows(m.preferences, m.serverSupported), m.settingsCursor, contentWidth, styles)
 	return renderScreen(
 		m.width,
 		m.height,

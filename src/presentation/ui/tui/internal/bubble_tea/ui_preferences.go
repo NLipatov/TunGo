@@ -2,6 +2,18 @@ package bubble_tea
 
 import "strings"
 
+type ModePreference string
+
+const (
+	ModePreferenceNone   ModePreference = ""
+	ModePreferenceClient ModePreference = "client"
+	ModePreferenceServer ModePreference = "server"
+)
+
+func isValidModePreference(m ModePreference) bool {
+	return m == ModePreferenceNone || m == ModePreferenceClient || m == ModePreferenceServer
+}
+
 type ThemeOption string
 
 const (
@@ -28,6 +40,9 @@ type UIPreferences struct {
 	ShowDataplaneStats bool             `json:"show_dataplane_stats"`
 	ShowDataplaneGraph bool             `json:"show_dataplane_graph"`
 	ShowFooter         bool             `json:"show_footer"`
+	PreferredMode      ModePreference   `json:"preferred_mode,omitempty"`
+	AutoConnect        bool             `json:"auto_connect,omitempty"`
+	LastClientConfig   string           `json:"last_client_config,omitempty"`
 }
 
 var orderedThemeOptions = [...]ThemeOption{
