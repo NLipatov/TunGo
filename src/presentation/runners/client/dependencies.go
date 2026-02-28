@@ -5,7 +5,7 @@ import (
 	"tungo/application/network/connection"
 	"tungo/application/network/routing/tun"
 	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
-	"tungo/infrastructure/PAL/tun_client"
+	tunnelClient "tungo/infrastructure/PAL/tunnel/client"
 	"tungo/infrastructure/tunnel/sessionplane/client_factory"
 )
 
@@ -41,7 +41,7 @@ func (c *Dependencies) Initialize() error {
 
 	c.conn = client_factory.NewConnectionFactory(*conf)
 	c.worker = client_factory.NewWorkerFactory(*conf)
-	c.tun, err = tun_client.NewPlatformTunManager(*conf)
+	c.tun, err = tunnelClient.NewPlatformTunManager(*conf)
 	if err != nil {
 		return fmt.Errorf("failed to configure tun: %w", err)
 	}

@@ -6,7 +6,7 @@ import (
 	"net/netip"
 	"os"
 	"time"
-	"tungo/infrastructure/PAL/configuration/client"
+	"tungo/infrastructure/PAL/configuration"
 	"tungo/infrastructure/PAL/stat"
 )
 
@@ -23,13 +23,13 @@ type ConfigurationManager interface {
 }
 
 type Manager struct {
-	resolver client.Resolver
+	resolver configuration.Resolver
 	reader   Reader
 	writer   Writer
 	stat     stat.Stat
 }
 
-func NewManager(resolver client.Resolver, stat stat.Stat) (ConfigurationManager, error) {
+func NewManager(resolver configuration.Resolver, stat stat.Stat) (ConfigurationManager, error) {
 	path, pathErr := resolver.Resolve()
 	if pathErr != nil {
 		return nil, fmt.Errorf("failed to resolve server configuration path: %w", pathErr)
@@ -43,7 +43,7 @@ func NewManager(resolver client.Resolver, stat stat.Stat) (ConfigurationManager,
 }
 
 func NewManagerWithReader(
-	resolver client.Resolver,
+	resolver configuration.Resolver,
 	reader Reader,
 	stat stat.Stat,
 ) (ConfigurationManager, error) {
