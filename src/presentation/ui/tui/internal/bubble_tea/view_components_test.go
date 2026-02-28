@@ -269,3 +269,113 @@ func TestComputeLogsViewportSize_TinyHeight_ClampsTo3(t *testing.T) {
 		t.Fatalf("expected viewport height >= 3, got %d", h)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// modePreferenceLabel
+// ---------------------------------------------------------------------------
+
+func TestModePreferenceLabel_Client(t *testing.T) {
+	if got := modePreferenceLabel(ModePreferenceClient); got != "client" {
+		t.Errorf("got %q, want %q", got, "client")
+	}
+}
+
+func TestModePreferenceLabel_Server(t *testing.T) {
+	if got := modePreferenceLabel(ModePreferenceServer); got != "server" {
+		t.Errorf("got %q, want %q", got, "server")
+	}
+}
+
+func TestModePreferenceLabel_None(t *testing.T) {
+	if got := modePreferenceLabel(ModePreferenceNone); got != "not set" {
+		t.Errorf("got %q, want %q", got, "not set")
+	}
+}
+
+func TestModePreferenceLabel_Unknown(t *testing.T) {
+	if got := modePreferenceLabel("unknown"); got != "not set" {
+		t.Errorf("got %q, want %q", got, "not set")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// uiSettingsRows: serverSupported combinations
+// ---------------------------------------------------------------------------
+
+func TestUISettingsRows_NoServer_HasAutoConnectNoModeRow(t *testing.T) {
+	prefs := UIPreferences{PreferredMode: ModePreferenceNone}
+	rows := uiSettingsRows(prefs, false)
+	if len(rows) != settingsRowsCount-1 {
+		t.Fatalf("expected %d rows, got %d", settingsRowsCount-1, len(rows))
+	}
+	for _, r := range rows {
+		if strings.Contains(r, "Mode") {
+			t.Error("Mode row must not appear when serverSupported=false")
+		}
+	}
+	found := false
+	for _, r := range rows {
+		if strings.Contains(r, "Auto-connect") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("Auto-connect row must appear when serverSupported=false")
+	}
+}
+
+func TestUISettingsRows_ServerSupported_ModeClient_HasModeAndAutoConnect(t *testing.T) {
+	prefs := UIPreferences{PreferredMode: ModePreferenceClient}
+	rows := uiSettingsRows(prefs, true)
+	if len(rows) != settingsRowsCount {
+		t.Fatalf("expected %d rows, got %d", settingsRowsCount, len(rows))
+	}
+	hasModeRow, hasAutoConnect := false, false
+	for _, r := range rows {
+		if strings.Contains(r, "Mode") {
+			hasModeRow = true
+		}
+		if strings.Contains(r, "Auto-connect") {
+			hasAutoConnect = true
+		}
+	}
+	if !hasModeRow {
+		t.Error("expected Mode row when serverSupported=true")
+	}
+	if !hasAutoConnect {
+		t.Error("expected Auto-connect row when mode=Client")
+	}
+}
+
+func TestUISettingsRows_ServerSupported_ModeServer_ModeRowNoAutoConnect(t *testing.T) {
+	prefs := UIPreferences{PreferredMode: ModePreferenceServer}
+	rows := uiSettingsRows(prefs, true)
+	if len(rows) != settingsRowsCount-1 {
+		t.Fatalf("expected %d rows, got %d", settingsRowsCount-1, len(rows))
+	}
+	hasModeRow := false
+	for _, r := range rows {
+		if strings.Contains(r, "Mode") {
+			hasModeRow = true
+		}
+		if strings.Contains(r, "Auto-connect") {
+			t.Error("Auto-connect row must not appear when mode=Server")
+		}
+	}
+	if !hasModeRow {
+		t.Error("expected Mode row when serverSupported=true")
+	}
+}
+
+func TestUISettingsRows_ServerSupported_ModeNone_ModeRowNoAutoConnect(t *testing.T) {
+	prefs := UIPreferences{PreferredMode: ModePreferenceNone}
+	rows := uiSettingsRows(prefs, true)
+	if len(rows) != settingsRowsCount-1 {
+		t.Fatalf("expected %d rows, got %d", settingsRowsCount-1, len(rows))
+	}
+	for _, r := range rows {
+		if strings.Contains(r, "Auto-connect") {
+			t.Error("Auto-connect row must not appear when mode=None")
+		}
+	}
+}

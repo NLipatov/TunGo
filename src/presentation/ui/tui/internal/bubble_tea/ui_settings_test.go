@@ -189,3 +189,122 @@ func TestDefaultPrefsStorage_RenameError(t *testing.T) {
 		t.Fatal("expected rename error when destination is directory")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// isValidModePreference
+// ---------------------------------------------------------------------------
+
+func TestIsValidModePreference_ValidValues(t *testing.T) {
+	for _, v := range []ModePreference{ModePreferenceNone, ModePreferenceClient, ModePreferenceServer} {
+		if !isValidModePreference(v) {
+			t.Errorf("expected %q to be valid", v)
+		}
+	}
+}
+
+func TestIsValidModePreference_InvalidValues(t *testing.T) {
+	for _, v := range []ModePreference{"admin", "superuser", "root", "0"} {
+		if isValidModePreference(v) {
+			t.Errorf("expected %q to be invalid", v)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Loading of new UIPreferences fields
+// ---------------------------------------------------------------------------
+
+func TestLoadPreferences_PreferredMode_Client_Loaded(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tui.json")
+	if err := os.WriteFile(path, []byte(`{"preferred_mode":"client"}`), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	s := loadTestSettings(t, path)
+	if s.Preferences().PreferredMode != ModePreferenceClient {
+		t.Fatalf("expected ModePreferenceClient, got %q", s.Preferences().PreferredMode)
+	}
+}
+
+func TestLoadPreferences_PreferredMode_Server_Loaded(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tui.json")
+	if err := os.WriteFile(path, []byte(`{"preferred_mode":"server"}`), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	s := loadTestSettings(t, path)
+	if s.Preferences().PreferredMode != ModePreferenceServer {
+		t.Fatalf("expected ModePreferenceServer, got %q", s.Preferences().PreferredMode)
+	}
+}
+
+func TestLoadPreferences_PreferredMode_InvalidValue_Ignored(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tui.json")
+	if err := os.WriteFile(path, []byte(`{"preferred_mode":"superuser"}`), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	s := loadTestSettings(t, path)
+	if s.Preferences().PreferredMode != ModePreferenceNone {
+		t.Fatalf("expected ModePreferenceNone for invalid value, got %q", s.Preferences().PreferredMode)
+	}
+}
+
+func TestLoadPreferences_AutoConnect_True_Loaded(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tui.json")
+	if err := os.WriteFile(path, []byte(`{"auto_connect":true}`), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	s := loadTestSettings(t, path)
+	if !s.Preferences().AutoConnect {
+		t.Fatal("expected AutoConnect=true")
+	}
+}
+
+func TestLoadPreferences_AutoConnect_MissingKey_DefaultsFalse(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tui.json")
+	if err := os.WriteFile(path, []byte(`{"theme":"dark"}`), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	s := loadTestSettings(t, path)
+	if s.Preferences().AutoConnect {
+		t.Fatal("expected AutoConnect=false when key absent")
+	}
+}
+
+func TestLoadPreferences_LastClientConfig_Loaded(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tui.json")
+	if err := os.WriteFile(path, []byte(`{"last_client_config":"/etc/tungo/client.json"}`), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	s := loadTestSettings(t, path)
+	if s.Preferences().LastClientConfig != "/etc/tungo/client.json" {
+		t.Fatalf("expected /etc/tungo/client.json, got %q", s.Preferences().LastClientConfig)
+	}
+}
+
+func TestUISettings_RoundTrip_NewFields(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tui.json")
+	st := defaultPrefsStorage{filePath: path}
+	p := UIPreferences{
+		Theme:              ThemeDark,
+		Language:           "en",
+		StatsUnits:         StatsUnitsBytes,
+		ShowDataplaneStats: true,
+		ShowDataplaneGraph: true,
+		ShowFooter:         true,
+		PreferredMode:      ModePreferenceClient,
+		AutoConnect:        true,
+		LastClientConfig:   "/some/path/cfg.json",
+	}
+	if err := savePreferencesTo(st, p); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	loaded := loadTestSettings(t, path).Preferences()
+	if loaded.PreferredMode != ModePreferenceClient {
+		t.Errorf("PreferredMode: got %q, want client", loaded.PreferredMode)
+	}
+	if !loaded.AutoConnect {
+		t.Error("AutoConnect: expected true")
+	}
+	if loaded.LastClientConfig != "/some/path/cfg.json" {
+		t.Errorf("LastClientConfig: got %q, want /some/path/cfg.json", loaded.LastClientConfig)
+	}
+}

@@ -1,0 +1,213 @@
+package bubble_tea
+
+import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"tungo/domain/mode"
+)
+
+// sessionSelectorFailStub is a Selector stub that always returns an error from Select.
+type sessionSelectorFailStub struct {
+	err error
+}
+
+func (s sessionSelectorFailStub) Select(string) error { return s.err }
+
+// ---------------------------------------------------------------------------
+// tryAutoConnect
+// ---------------------------------------------------------------------------
+
+func TestTryAutoConnect_EmptyLastConfig(t *testing.T) {
+	if tryAutoConnect(UIPreferences{}, ConfiguratorSessionOptions{}) {
+		t.Fatal("expected false for empty LastClientConfig")
+	}
+}
+
+func TestTryAutoConnect_FileNotFound(t *testing.T) {
+	prefs := UIPreferences{LastClientConfig: "/nonexistent/path/cfg.json"}
+	if tryAutoConnect(prefs, ConfiguratorSessionOptions{}) {
+		t.Fatal("expected false when config file does not exist")
+	}
+}
+
+func TestTryAutoConnect_NilSelector(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "cfg.json")
+	if err := os.WriteFile(cfgPath, []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	prefs := UIPreferences{LastClientConfig: cfgPath}
+	if tryAutoConnect(prefs, ConfiguratorSessionOptions{Selector: nil}) {
+		t.Fatal("expected false when Selector is nil")
+	}
+}
+
+func TestTryAutoConnect_SelectFails(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "cfg.json")
+	if err := os.WriteFile(cfgPath, []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	prefs := UIPreferences{LastClientConfig: cfgPath}
+	opts := ConfiguratorSessionOptions{
+		Selector: sessionSelectorFailStub{err: errors.New("select failed")},
+	}
+	if tryAutoConnect(prefs, opts) {
+		t.Fatal("expected false when Select returns error")
+	}
+}
+
+func TestTryAutoConnect_ConfigManagerFails(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "cfg.json")
+	if err := os.WriteFile(cfgPath, []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	prefs := UIPreferences{LastClientConfig: cfgPath}
+	opts := ConfiguratorSessionOptions{
+		Selector:            sessionSelectorStub{},
+		ClientConfigManager: sessionClientConfigManagerInvalid{err: errors.New("bad config")},
+	}
+	if tryAutoConnect(prefs, opts) {
+		t.Fatal("expected false when ClientConfigManager returns error")
+	}
+}
+
+func TestTryAutoConnect_NilConfigManager_Succeeds(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "cfg.json")
+	if err := os.WriteFile(cfgPath, []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	prefs := UIPreferences{LastClientConfig: cfgPath}
+	opts := ConfiguratorSessionOptions{
+		Selector:            sessionSelectorStub{},
+		ClientConfigManager: nil,
+	}
+	if !tryAutoConnect(prefs, opts) {
+		t.Fatal("expected true when ClientConfigManager is nil and all else succeeds")
+	}
+}
+
+func TestTryAutoConnect_AllSucceed(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "cfg.json")
+	if err := os.WriteFile(cfgPath, []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	prefs := UIPreferences{LastClientConfig: cfgPath}
+	opts := ConfiguratorSessionOptions{
+		Selector:            sessionSelectorStub{},
+		ClientConfigManager: sessionClientConfigManagerStub{},
+	}
+	if !tryAutoConnect(prefs, opts) {
+		t.Fatal("expected true when all conditions are met")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// newUnifiedSessionModel: auto-connect
+// ---------------------------------------------------------------------------
+
+func settingsWithAutoConnect(cfgPath string) *uiPreferencesProvider {
+	p := newUIPreferences(ThemeLight, "en", StatsUnitsBiBytes)
+	p.PreferredMode = ModePreferenceClient
+	p.AutoConnect = true
+	p.LastClientConfig = cfgPath
+	return newUIPreferencesProvider(p)
+}
+
+func TestNewUnifiedSessionModel_AutoConnect_Succeeds_StartsWaiting(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "cfg.json")
+	if err := os.WriteFile(cfgPath, []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	settings := settingsWithAutoConnect(cfgPath)
+	events := make(chan unifiedEvent, 8)
+
+	m, err := newUnifiedSessionModel(context.Background(), defaultUnifiedConfigOpts(), events, settings)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if m.phase != phaseWaitingForRuntime {
+		t.Fatalf("expected phaseWaitingForRuntime, got %d", m.phase)
+	}
+	select {
+	case ev := <-events:
+		if ev.kind != unifiedEventModeSelected || ev.mode != mode.Client {
+			t.Fatalf("expected ModeSelected(Client), got kind=%d mode=%v", ev.kind, ev.mode)
+		}
+	default:
+		t.Fatal("expected event in channel, got none")
+	}
+}
+
+func TestNewUnifiedSessionModel_AutoConnect_FileGone_FallsBackToConfiguring(t *testing.T) {
+	settings := settingsWithAutoConnect("/nonexistent/path.json")
+	events := make(chan unifiedEvent, 8)
+
+	m, err := newUnifiedSessionModel(context.Background(), defaultUnifiedConfigOpts(), events, settings)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if m.phase != phaseConfiguring {
+		t.Fatalf("expected phaseConfiguring when config file is gone, got %d", m.phase)
+	}
+	if settings.Preferences().AutoConnect {
+		t.Fatal("expected AutoConnect reset to false when config file is missing")
+	}
+}
+
+func TestNewUnifiedSessionModel_AutoConnect_ModeNone_NoAutoConnect(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "cfg.json")
+	if err := os.WriteFile(cfgPath, []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	p := newUIPreferences(ThemeLight, "en", StatsUnitsBiBytes)
+	p.PreferredMode = ModePreferenceNone
+	p.AutoConnect = true
+	p.LastClientConfig = cfgPath
+	settings := newUIPreferencesProvider(p)
+	events := make(chan unifiedEvent, 8)
+
+	m, err := newUnifiedSessionModel(context.Background(), defaultUnifiedConfigOpts(), events, settings)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if m.phase != phaseConfiguring {
+		t.Fatalf("expected phaseConfiguring for mode=None with serverSupported=true, got %d", m.phase)
+	}
+	select {
+	case <-events:
+		t.Fatal("expected no events when mode=None")
+	default:
+	}
+}
+
+func TestNewUnifiedSessionModel_AutoConnect_Disabled_NoAutoConnect(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "cfg.json")
+	if err := os.WriteFile(cfgPath, []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	p := newUIPreferences(ThemeLight, "en", StatsUnitsBiBytes)
+	p.PreferredMode = ModePreferenceClient
+	p.AutoConnect = false
+	p.LastClientConfig = cfgPath
+	settings := newUIPreferencesProvider(p)
+	events := make(chan unifiedEvent, 8)
+
+	m, err := newUnifiedSessionModel(context.Background(), defaultUnifiedConfigOpts(), events, settings)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if m.phase != phaseConfiguring {
+		t.Fatalf("expected phaseConfiguring when AutoConnect=false, got %d", m.phase)
+	}
+}
