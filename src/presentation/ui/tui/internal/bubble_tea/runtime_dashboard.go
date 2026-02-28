@@ -102,11 +102,13 @@ func NewRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions, s
 		close(ch)
 		readyCh = ch
 	}
-	connected := false
-	select {
-	case <-readyCh:
-		connected = true
-	default:
+	connected := mode == RuntimeDashboardServer
+	if !connected {
+		select {
+		case <-readyCh:
+			connected = true
+		default:
+		}
 	}
 	model := RuntimeDashboard{
 		settings:        settings,
@@ -161,7 +163,7 @@ func (m RuntimeDashboard) Init() tea.Cmd {
 		runtimeTickCmd(m.tickSeq),
 		waitForRuntimeContextDone(m.ctx, m.runtimeSeq),
 	}
-	if !m.connected {
+	if m.mode == RuntimeDashboardClient && !m.connected {
 		cmds = append(cmds, waitForReadyCh(m.ctx, m.readyCh, m.runtimeSeq))
 	}
 	return tea.Batch(cmds...)
@@ -214,7 +216,7 @@ func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case msg.String() == "esc":
 			switch m.screen {
 			case runtimeScreenDataplane:
-				if !m.connected {
+				if m.mode == RuntimeDashboardClient && !m.connected {
 					m.logs.stopWait()
 					m.reconfigureRequested = true
 					return m, tea.Quit
