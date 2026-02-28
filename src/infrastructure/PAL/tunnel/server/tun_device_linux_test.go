@@ -177,7 +177,7 @@ func TestTunDeviceManager_Create(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected error")
 		}
-		if !strings.Contains(err.Error(), "failed to convert server ip to CIDR format") {
+		if !strings.Contains(err.Error(), "failed to assign IPv4 to TUN") {
 			t.Errorf("unexpected error message: %v", err)
 		}
 		log := ip.TunFactoryMockIP.log.String()

@@ -603,7 +603,7 @@ func TestCreateTunDevice_CreateTunStepErrors(t *testing.T) {
 		{"TunTapAddDevTun", "could not create tuntap dev"},
 		{"LinkSetDevUp", "could not set tuntap dev up"},
 		{"SetMTU", "could not set mtu on tuntap dev"},
-		{"AddrAddDev", "failed to convert server ip to CIDR format"},
+		{"AddrAddDev", "failed to assign IPv4 to TUN"},
 		{"CreateTunInterface", "failed to open TUN interface"},
 	}
 	for _, c := range cases {
@@ -1000,8 +1000,8 @@ func TestDisposeDevices_NonBenignIptablesErrorsAreLoggedButIgnored(t *testing.T)
 	}
 }
 
-func TestUnconfigure_DetectTunNameError_ContinuesToRouteDefault(t *testing.T) {
-	// If DetectTunNameFromFd fails, Unconfigure must continue and then surface RouteDefault error.
+func TestUnconfigure_DetectTunNameError_FailsFast(t *testing.T) {
+	// If DetectTunNameFromFd fails, Unconfigure must return immediately.
 	ioMock := &TunFactoryMockIOCTL{detectErr: errors.New("detect_failed")}
 	tun, _ := ioMock.CreateTunInterface("tunX")
 	f := newFactory(
@@ -1013,8 +1013,8 @@ func TestUnconfigure_DetectTunNameError_ContinuesToRouteDefault(t *testing.T) {
 	)
 
 	err := f.Unconfigure(tun)
-	if err == nil || !strings.Contains(err.Error(), "failed to resolve default interface") {
-		t.Fatalf("expected RouteDefault error after detect failure, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "failed to determine tunnel ifName") {
+		t.Fatalf("expected detectName error, got %v", err)
 	}
 }
 
