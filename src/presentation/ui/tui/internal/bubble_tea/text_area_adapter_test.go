@@ -21,7 +21,7 @@ type dummyModel struct{}
 
 func (d dummyModel) Init() tea.Cmd                         { return nil }
 func (d dummyModel) Update(_ tea.Msg) (tea.Model, tea.Cmd) { return d, nil }
-func (d dummyModel) View() tea.View                         { return tea.NewView("") }
+func (d dummyModel) View() tea.View                        { return tea.NewView("") }
 
 func TestTextAreaAdapter_NewTextArea_Success(t *testing.T) {
 	ta := NewTextArea("ph")

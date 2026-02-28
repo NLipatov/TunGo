@@ -306,12 +306,12 @@ func TestUISettings_RoundTrip_NewFields(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "tui.json")
 	st := defaultPrefsStorage{filePath: path}
 	p := UIPreferences{
-		Theme:              ThemeDark,
-		Language:           "en",
-		StatsUnits:         StatsUnitsBytes,
-		ShowDataplaneStats: true,
-		ShowDataplaneGraph: true,
-		ShowFooter:         true,
+		Theme:                  ThemeDark,
+		Language:               "en",
+		StatsUnits:             StatsUnitsBytes,
+		ShowDataplaneStats:     true,
+		ShowDataplaneGraph:     true,
+		ShowFooter:             true,
 		AutoSelectMode:         ModePreferenceClient,
 		AutoConnect:            true,
 		AutoSelectClientConfig: "/some/path/cfg.json",

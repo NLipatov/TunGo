@@ -26,7 +26,7 @@ func nextModePreference(current ModePreference, step int) ModePreference {
 			break
 		}
 	}
-	idx = ((idx + step) % n + n) % n
+	idx = ((idx+step)%n + n) % n
 	return orderedModePreferences[idx]
 }
 

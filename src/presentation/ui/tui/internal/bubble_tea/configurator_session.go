@@ -105,14 +105,14 @@ const (
 )
 
 type clientConfigScreens struct {
-	configs      []string
-	menuOptions  []string
-	removePaths  []string
-	addNameInput textinput.Model
-	addJSONInput textarea.Model
-	addName      string
-	lastInputAt  time.Time
-	pasteSeq     uint64
+	configs            []string
+	menuOptions        []string
+	removePaths        []string
+	addNameInput       textinput.Model
+	addJSONInput       textarea.Model
+	addName            string
+	lastInputAt        time.Time
+	pasteSeq           uint64
 	invalidErr         error
 	invalidConfig      string
 	invalidAllowDelete bool
@@ -235,6 +235,8 @@ func newConfiguratorSessionModel(options ConfiguratorSessionOptions, settings *u
 				if err := model.options.Selector.Select(autoConfig); err == nil {
 					model.resultMode = mode.Client
 					model.done = true
+				} else {
+					model.notice = fmt.Sprintf("Auto-select failed for %q: %v", autoConfig, err)
 				}
 			} else {
 				p := settings.Preferences()

@@ -1442,8 +1442,8 @@ func TestConfiguratorLogUpdateCmd_WithNilFeed_ReturnsTick(t *testing.T) {
 
 type stubLogFeed struct{}
 
-func (stubLogFeed) Tail(limit int) []string       { return nil }
-func (stubLogFeed) TailInto([]string, int) int     { return 0 }
+func (stubLogFeed) Tail(limit int) []string    { return nil }
+func (stubLogFeed) TailInto([]string, int) int { return 0 }
 
 type stubLogChangeFeed struct {
 	stubLogFeed
@@ -2413,7 +2413,7 @@ func TestUpdateClientInvalidScreen_DeleteBlankInvalidConfig(t *testing.T) {
 	m.client.invalidErr = errors.New("bad config")
 	m.client.invalidAllowDelete = true
 	m.client.invalidConfig = "   " // blank
-	m.cursor = 0            // "Delete invalid configuration"
+	m.cursor = 0                   // "Delete invalid configuration"
 
 	result, cmd := m.updateClientInvalidScreen(keyNamed(tea.KeyEnter))
 	s := result.(configuratorSessionModel)
