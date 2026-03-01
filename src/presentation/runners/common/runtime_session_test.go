@@ -85,3 +85,16 @@ func TestWaitForRuntimeSessionEnd_ReconfigureRequested(t *testing.T) {
 		t.Fatalf("expected ErrReconfigureRequested, got %v", err)
 	}
 }
+
+func TestWaitForRuntimeSessionEnd_AllowsNilCallbacks(t *testing.T) {
+	uiCh := make(chan RuntimeUIResult, 1)
+	workerCh := make(chan error, 1)
+
+	uiCh <- RuntimeUIResult{Err: errors.New("ui failed")}
+	workerCh <- context.Canceled
+
+	err := WaitForRuntimeSessionEnd(nil, uiCh, workerCh, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "runtime UI failed") {
+		t.Fatalf("expected wrapped runtime UI error, got %v", err)
+	}
+}

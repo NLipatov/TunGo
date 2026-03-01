@@ -18,6 +18,13 @@ func WaitForRuntimeSessionEnd(
 	isUserExit func(error) bool,
 	onRuntimeUIError func(error),
 ) error {
+	if cancel == nil {
+		cancel = func() {}
+	}
+	if isUserExit == nil {
+		isUserExit = func(error) bool { return false }
+	}
+
 	for {
 		select {
 		case workerErr := <-workerErrCh:

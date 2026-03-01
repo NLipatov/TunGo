@@ -436,6 +436,26 @@ func TestRuntimeDashboard_EscOnDataplane_StopLabelMentionsAutoconnectDisable(t *
 	}
 }
 
+func TestRuntimeDashboard_DataplaneHint_UsesStopConfirmationCopy(t *testing.T) {
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
+	view := m.View().Content
+	if !strings.Contains(view, "Esc open stop confirmation | Tab switch tabs | ctrl+c exit") {
+		t.Fatalf("expected stop-confirmation hint in dataplane view, got %q", view)
+	}
+}
+
+func TestRuntimeDashboard_DataplaneHint_ConnectingClientUsesReconfigureCopy(t *testing.T) {
+	readyCh := make(chan struct{})
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		Mode:    RuntimeDashboardClient,
+		ReadyCh: readyCh,
+	}, testSettings())
+	view := m.View().Content
+	if !strings.Contains(view, "Esc reconfigure | Tab switch tabs | ctrl+c exit") {
+		t.Fatalf("expected reconfigure hint in connecting client view, got %q", view)
+	}
+}
+
 func TestRuntimeDashboard_EscOnSettingsAndLogs_NavigatesBack(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
 	updatedModel, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // settings

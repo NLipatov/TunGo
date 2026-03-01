@@ -415,7 +415,10 @@ func (m RuntimeDashboard) mainView() string {
 			styles,
 		)...)
 	}
-	hint := "Esc stop tunnel | Tab switch tabs | ctrl+c exit"
+	hint := "Esc open stop confirmation | Tab switch tabs | ctrl+c exit"
+	if m.mode == RuntimeDashboardClient && !m.connected {
+		hint = "Esc reconfigure | Tab switch tabs | ctrl+c exit"
+	}
 	if m.confirmOpen {
 		hint = "left/right choose | Enter confirm | Esc cancel | ctrl+c exit"
 	}
