@@ -231,35 +231,37 @@ func newConfiguratorSessionModel(options ConfiguratorSessionOptions, settings *u
 			return configuratorSessionModel{}, err
 		}
 		model.screen = configuratorScreenClientSelect
-		if autoConfig := settings.Preferences().AutoSelectClientConfig; autoConfig != "" {
-			if slices.Contains(model.client.configs, autoConfig) {
-				if err := model.options.Selector.Select(autoConfig); err == nil {
-					if model.options.ClientConfigManager != nil {
-						_, cfgErr := model.options.ClientConfigManager.Configuration()
-						if isInvalidClientConfigurationError(cfgErr) {
-							model.client.invalidErr = cfgErr
-							model.client.invalidConfig = autoConfig
-							model.client.invalidAllowDelete = true
-							model.cursor = 0
-							model.screen = configuratorScreenClientInvalid
-						} else if cfgErr != nil {
-							model.notice = fmt.Sprintf("Auto-select failed for %q: %v", autoConfig, cfgErr)
+		if settings.Preferences().AutoConnect {
+			if autoConfig := settings.Preferences().AutoSelectClientConfig; autoConfig != "" {
+				if slices.Contains(model.client.configs, autoConfig) {
+					if err := model.options.Selector.Select(autoConfig); err == nil {
+						if model.options.ClientConfigManager != nil {
+							_, cfgErr := model.options.ClientConfigManager.Configuration()
+							if isInvalidClientConfigurationError(cfgErr) {
+								model.client.invalidErr = cfgErr
+								model.client.invalidConfig = autoConfig
+								model.client.invalidAllowDelete = true
+								model.cursor = 0
+								model.screen = configuratorScreenClientInvalid
+							} else if cfgErr != nil {
+								model.notice = fmt.Sprintf("Auto-select failed for %q: %v", autoConfig, cfgErr)
+							} else {
+								model.resultMode = mode.Client
+								model.done = true
+							}
 						} else {
 							model.resultMode = mode.Client
 							model.done = true
 						}
 					} else {
-						model.resultMode = mode.Client
-						model.done = true
+						model.notice = fmt.Sprintf("Auto-select failed for %q: %v", autoConfig, err)
 					}
 				} else {
-					model.notice = fmt.Sprintf("Auto-select failed for %q: %v", autoConfig, err)
+					p := settings.Preferences()
+					p.AutoSelectClientConfig = ""
+					settings.update(p)
+					_ = savePreferencesToDisk(p)
 				}
-			} else {
-				p := settings.Preferences()
-				p.AutoSelectClientConfig = ""
-				settings.update(p)
-				_ = savePreferencesToDisk(p)
 			}
 		}
 	} else if settings.Preferences().AutoSelectMode == ModePreferenceServer {

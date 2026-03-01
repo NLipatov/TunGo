@@ -176,6 +176,7 @@ func TestView_ClientSelectHint_ServerSupported_ShowsEscBack(t *testing.T) {
 func TestNewConfiguratorSessionModel_AutoSelectClientConfig_SkipsSelection(t *testing.T) {
 	s := settingsForMode(ModePreferenceClient)
 	p := s.Preferences()
+	p.AutoConnect = true
 	p.AutoSelectClientConfig = "cfg.json"
 	s.update(p)
 
@@ -202,6 +203,7 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_SkipsSelection(t *te
 func TestNewConfiguratorSessionModel_AutoSelectClientConfig_InvalidConfig_ShowsInvalidScreen(t *testing.T) {
 	s := settingsForMode(ModePreferenceClient)
 	p := s.Preferences()
+	p.AutoConnect = true
 	p.AutoSelectClientConfig = "cfg.json"
 	s.update(p)
 
@@ -229,6 +231,7 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_InvalidConfig_ShowsI
 func TestNewConfiguratorSessionModel_AutoSelectClientConfig_NonInvalidError_ShowsNotice(t *testing.T) {
 	s := settingsForMode(ModePreferenceClient)
 	p := s.Preferences()
+	p.AutoConnect = true
 	p.AutoSelectClientConfig = "cfg.json"
 	s.update(p)
 
@@ -256,6 +259,7 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_NonInvalidError_Show
 func TestNewConfiguratorSessionModel_AutoSelectClientConfig_MissingConfig_ShowsSelection(t *testing.T) {
 	s := settingsForMode(ModePreferenceClient)
 	p := s.Preferences()
+	p.AutoConnect = true
 	p.AutoSelectClientConfig = "missing.json"
 	s.update(p)
 
