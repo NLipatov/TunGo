@@ -33,6 +33,9 @@ func WaitForRuntimeSessionEnd(
 			if uiResult.Err != nil && !isUserExit(uiResult.Err) && onRuntimeUIError != nil {
 				onRuntimeUIError(uiResult.Err)
 			}
+			if uiResult.Err != nil && !isUserExit(uiResult.Err) && (workerErr == nil || errors.Is(workerErr, context.Canceled)) {
+				return fmt.Errorf("runtime UI failed: %w", uiResult.Err)
+			}
 			return workerErr
 		case uiResult := <-uiResultCh:
 			if uiResult.Err != nil {
