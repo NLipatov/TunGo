@@ -31,11 +31,6 @@ type Runner struct {
 	runRuntimeDashboard RuntimeDashboardFunc
 }
 
-type runtimeUIResult struct {
-	userQuit bool
-	err      error
-}
-
 func NewRunner(
 	uiMode app.UIMode,
 	deps AppDependencies,
@@ -82,53 +77,21 @@ func (r *Runner) Run(
 		workerErrCh <- r.runWorkers(workersCtx)
 	}()
 
-	uiResultCh := make(chan runtimeUIResult, 1)
+	uiResultCh := make(chan runnerCommon.RuntimeUIResult, 1)
 	go func() {
 		userQuit, err := r.runRuntimeDashboard(workersCtx, runtimeUI.RuntimeModeServer, runtimeUI.RuntimeUIOptions{
 			ReadyCh: serverReady,
 			Address: runnerCommon.RuntimeAddressInfoFromServerConfiguration(r.deps.Configuration()),
 		})
-		uiResultCh <- runtimeUIResult{userQuit: userQuit, err: err}
+		uiResultCh <- runnerCommon.RuntimeUIResult{UserQuit: userQuit, Err: err}
 	}()
-
-	for {
-		select {
-		case workerErr := <-workerErrCh:
-			cancel()
-			uiResult := <-uiResultCh
-			if uiResult.err != nil && !errors.Is(uiResult.err, runtimeUI.ErrUserExit) {
-				log.Printf("runtime UI error: %v", uiResult.err)
-			}
-			return workerErr
-		case uiResult := <-uiResultCh:
-			if uiResult.err != nil {
-				if errors.Is(uiResult.err, runtimeUI.ErrUserExit) {
-					cancel()
-					workerErr := <-workerErrCh
-					if workerErr == nil || errors.Is(workerErr, context.Canceled) {
-						return context.Canceled
-					}
-					return workerErr
-				}
-				cancel()
-				workerErr := <-workerErrCh
-				if workerErr == nil || errors.Is(workerErr, context.Canceled) {
-					return fmt.Errorf("runtime UI failed: %w", uiResult.err)
-				}
-				return workerErr
-			}
-			if uiResult.userQuit {
-				cancel()
-				workerErr := <-workerErrCh
-				if workerErr == nil || errors.Is(workerErr, context.Canceled) {
-					return runnerCommon.ErrReconfigureRequested
-				}
-				return workerErr
-			}
-			cancel()
-			return <-workerErrCh
-		}
-	}
+	return runnerCommon.WaitForRuntimeSessionEnd(
+		cancel,
+		uiResultCh,
+		workerErrCh,
+		func(err error) bool { return errors.Is(err, runtimeUI.ErrUserExit) },
+		func(err error) { log.Printf("runtime UI error: %v", err) },
+	)
 }
 
 func (r *Runner) cleanup() error {
