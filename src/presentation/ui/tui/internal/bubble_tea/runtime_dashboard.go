@@ -3,6 +3,7 @@ package bubble_tea
 import (
 	"context"
 	"errors"
+	"net/netip"
 	"strings"
 	"time"
 	"tungo/infrastructure/telemetry/trafficstats"
@@ -23,6 +24,10 @@ type RuntimeDashboardOptions struct {
 	LogFeed         RuntimeLogFeed
 	ServerSupported bool
 	ReadyCh         <-chan struct{}
+	ServerIPv4      netip.Addr
+	ServerIPv6      netip.Addr
+	NetworkIPv4     netip.Addr
+	NetworkIPv6     netip.Addr
 }
 
 type runtimeTickMsg struct {
@@ -50,6 +55,7 @@ const (
 )
 
 var zeroBrailleSparklineCache = initZeroBrailleSparklineCache()
+var saveRuntimeDashboardPreferences = savePreferencesToDisk
 
 var ErrRuntimeDashboardExitRequested = errors.New("runtime dashboard exit requested")
 
@@ -78,6 +84,10 @@ type RuntimeDashboard struct {
 	reconfigureRequested bool
 	readyCh              <-chan struct{}
 	connected            bool
+	serverIPv4           netip.Addr
+	serverIPv6           netip.Addr
+	networkIPv4          netip.Addr
+	networkIPv6          netip.Addr
 }
 
 type runtimeDashboardProgram interface {
@@ -123,6 +133,10 @@ func NewRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions, s
 		tickSeq:         1,
 		readyCh:         readyCh,
 		connected:       connected,
+		serverIPv4:      options.ServerIPv4,
+		serverIPv6:      options.ServerIPv6,
+		networkIPv4:     options.NetworkIPv4,
+		networkIPv6:     options.NetworkIPv6,
 	}
 	if model.preferences.ShowDataplaneGraph {
 		model.recordTrafficSample(trafficstats.SnapshotGlobal())
@@ -288,6 +302,7 @@ func (m RuntimeDashboard) updateConfirm(msg tea.KeyPressMsg) (tea.Model, tea.Cmd
 	case key.Matches(msg, m.keys.Select):
 		if m.confirmCursor == 1 {
 			m.logs.stopWait()
+			m.disableAutoConnectOnStop()
 			m.reconfigureRequested = true
 			return m, tea.Quit
 		}
@@ -369,6 +384,12 @@ func (m RuntimeDashboard) mainView() string {
 		modeLine,
 		status,
 	}
+	if connectedTo := m.connectedToLine(); connectedTo != "" {
+		body = append(body, connectedTo)
+	}
+	if tunnelIP := m.tunnelIPLine(); tunnelIP != "" {
+		body = append(body, tunnelIP)
+	}
 	if m.preferences.ShowDataplaneStats || m.preferences.ShowDataplaneGraph {
 		body = append(body, "")
 	}
@@ -412,6 +433,34 @@ func (m RuntimeDashboard) mainView() string {
 		m.preferences,
 		styles,
 	)
+}
+
+func (m RuntimeDashboard) connectedToLine() string {
+	if !m.serverIPv4.IsValid() && !m.serverIPv6.IsValid() {
+		return ""
+	}
+	parts := make([]string, 0, 2)
+	if m.serverIPv4.IsValid() {
+		parts = append(parts, "IPv4 "+m.serverIPv4.String())
+	}
+	if m.serverIPv6.IsValid() {
+		parts = append(parts, "IPv6 "+m.serverIPv6.String())
+	}
+	return "Server IP: " + strings.Join(parts, " | ")
+}
+
+func (m RuntimeDashboard) tunnelIPLine() string {
+	if !m.networkIPv4.IsValid() && !m.networkIPv6.IsValid() {
+		return ""
+	}
+	parts := make([]string, 0, 2)
+	if m.networkIPv4.IsValid() {
+		parts = append(parts, "IPv4 "+m.networkIPv4.String())
+	}
+	if m.networkIPv6.IsValid() {
+		parts = append(parts, "IPv6 "+m.networkIPv6.String())
+	}
+	return "Tunnel IP: " + strings.Join(parts, " | ")
 }
 
 func (m RuntimeDashboard) settingsView() string {
@@ -542,6 +591,22 @@ func (m *RuntimeDashboard) clearTrafficSamples() {
 	}
 	m.sampleCount = 0
 	m.sampleCursor = 0
+}
+
+func (m *RuntimeDashboard) disableAutoConnectOnStop() {
+	if m.mode != RuntimeDashboardClient {
+		return
+	}
+	pref := m.settings.Preferences()
+	if !pref.AutoConnect {
+		return
+	}
+	pref.AutoConnect = false
+	m.settings.update(pref)
+	go func(p UIPreferences) {
+		_ = saveRuntimeDashboardPreferences(p)
+	}(pref)
+	m.preferences = pref
 }
 
 func sparklineWidthForContent(contentWidth int) int {

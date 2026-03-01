@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"log"
 	"tungo/application/network/connection"
-	"tungo/domain/app"
 	"tungo/application/network/routing"
+	"tungo/domain/app"
 	"tungo/infrastructure/settings"
 	runnerCommon "tungo/presentation/runners/common"
 	runtimeUI "tungo/presentation/ui/tui"
@@ -15,7 +15,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-type RuntimeDashboardFunc func(ctx context.Context, mode runtimeUI.RuntimeMode, readyCh <-chan struct{}) (bool, error)
+type RuntimeDashboardFunc func(ctx context.Context, mode runtimeUI.RuntimeMode, options runtimeUI.RuntimeUIOptions) (bool, error)
 
 var serverReady = func() <-chan struct{} {
 	ch := make(chan struct{})
@@ -84,7 +84,10 @@ func (r *Runner) Run(
 
 	uiResultCh := make(chan runtimeUIResult, 1)
 	go func() {
-		userQuit, err := r.runRuntimeDashboard(workersCtx, runtimeUI.RuntimeModeServer, serverReady)
+		userQuit, err := r.runRuntimeDashboard(workersCtx, runtimeUI.RuntimeModeServer, runtimeUI.RuntimeUIOptions{
+			ReadyCh: serverReady,
+			Address: runtimeUI.RuntimeAddressInfoFromServerConfiguration(r.deps.Configuration()),
+		})
 		uiResultCh <- runtimeUIResult{userQuit: userQuit, err: err}
 	}()
 

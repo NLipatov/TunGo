@@ -12,7 +12,7 @@ import (
 	runtimeUI "tungo/presentation/ui/tui"
 )
 
-type RuntimeDashboardFunc func(ctx context.Context, mode runtimeUI.RuntimeMode, readyCh <-chan struct{}) (bool, error)
+type RuntimeDashboardFunc func(ctx context.Context, mode runtimeUI.RuntimeMode, options runtimeUI.RuntimeUIOptions) (bool, error)
 
 type Runner struct {
 	uiMode              app.UIMode
@@ -107,10 +107,14 @@ func (r *Runner) runSessionInteractive(ctx context.Context) error {
 	defer cancel()
 
 	readyCh := make(chan struct{})
+	uiOptions := runtimeUI.RuntimeUIOptions{
+		ReadyCh: readyCh,
+		Address: runtimeUI.RuntimeAddressInfoFromClientConfiguration(r.deps.Configuration()),
+	}
 
 	uiResultCh := make(chan runtimeUIResult, 1)
 	go func() {
-		userQuit, err := r.runRuntimeDashboard(sessionCtx, runtimeUI.RuntimeModeClient, readyCh)
+		userQuit, err := r.runRuntimeDashboard(sessionCtx, runtimeUI.RuntimeModeClient, uiOptions)
 		uiResultCh <- runtimeUIResult{userQuit: userQuit, err: err}
 	}()
 

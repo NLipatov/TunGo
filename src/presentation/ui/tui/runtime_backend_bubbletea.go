@@ -37,19 +37,23 @@ func (b *bubbleTeaRuntimeBackend) disableRuntimeLogCapture() {
 	bubbleRuntimeDisableLogs()
 }
 
-func (b *bubbleTeaRuntimeBackend) runRuntimeDashboard(ctx context.Context, mode RuntimeMode, readyCh <-chan struct{}) (bool, error) {
-	options := bubbleTea.RuntimeDashboardOptions{
-		Mode:    bubbleTea.RuntimeDashboardClient,
-		LogFeed: bubbleRuntimeLogFeed(),
-		ReadyCh: readyCh,
+func (b *bubbleTeaRuntimeBackend) runRuntimeDashboard(ctx context.Context, mode RuntimeMode, options RuntimeUIOptions) (bool, error) {
+	dashboardOptions := bubbleTea.RuntimeDashboardOptions{
+		Mode:        bubbleTea.RuntimeDashboardClient,
+		LogFeed:     bubbleRuntimeLogFeed(),
+		ReadyCh:     options.ReadyCh,
+		ServerIPv4:  options.Address.ServerIPv4,
+		ServerIPv6:  options.Address.ServerIPv6,
+		NetworkIPv4: options.Address.NetworkIPv4,
+		NetworkIPv6: options.Address.NetworkIPv6,
 	}
 	if mode == RuntimeModeServer {
-		options.Mode = bubbleTea.RuntimeDashboardServer
+		dashboardOptions.Mode = bubbleTea.RuntimeDashboardServer
 	}
 
 	// Route to unified session when active (eliminates terminal flash).
 	if b.sh != nil && b.sh.handle != nil {
-		b.sh.handle.ActivateRuntime(ctx, options)
+		b.sh.handle.ActivateRuntime(ctx, dashboardOptions)
 		reconfigure, err := b.sh.handle.WaitForRuntimeExit()
 		if err != nil {
 			if errors.Is(err, bubbleTea.ErrUnifiedSessionQuit) || errors.Is(err, bubbleTea.ErrUnifiedSessionClosed) {
@@ -70,7 +74,7 @@ func (b *bubbleTeaRuntimeBackend) runRuntimeDashboard(ctx context.Context, mode 
 	}
 
 	// Fallback: standalone runtime dashboard (non-unified mode).
-	reconfigureRequested, err := bubbleRuntimeRunDashboard(ctx, options)
+	reconfigureRequested, err := bubbleRuntimeRunDashboard(ctx, dashboardOptions)
 	if err != nil {
 		if errors.Is(err, bubbleTea.ErrRuntimeDashboardExitRequested) {
 			return false, ErrUserExit
