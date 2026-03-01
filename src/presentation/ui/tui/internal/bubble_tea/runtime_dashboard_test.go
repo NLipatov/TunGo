@@ -436,6 +436,21 @@ func TestRuntimeDashboard_EscOnDataplane_ConfirmReconfigureQuits(t *testing.T) {
 	}
 }
 
+func TestRuntimeDashboard_EscOnDataplane_StopLabelMentionsAutoconnectDisable(t *testing.T) {
+	s := testSettings()
+	p := s.Preferences()
+	p.AutoConnect = true
+	s.update(p)
+
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, s)
+	updatedModel, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	view := updatedModel.(RuntimeDashboard).View().Content
+
+	if !strings.Contains(view, "Stop (AutoConnect will be disabled)") {
+		t.Fatalf("expected Stop label to mention AutoConnect disable, got %q", view)
+	}
+}
+
 func TestRuntimeDashboard_EscOnSettingsAndLogs_NavigatesBack(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
 	updatedModel, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // settings

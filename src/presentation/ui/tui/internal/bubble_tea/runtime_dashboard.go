@@ -412,13 +412,13 @@ func (m RuntimeDashboard) mainView() string {
 	if m.confirmOpen {
 		body = append(body, "", "Stop tunnel?", "")
 		body = append(body, renderSelectableRows(
-			[]string{"Continue", "Stop"},
+			[]string{"Continue", m.stopActionLabel()},
 			m.confirmCursor,
 			contentWidth,
 			styles,
 		)...)
 	}
-	hint := "Tab switch tabs | ctrl+c exit"
+	hint := "Esc stop tunnel | Tab switch tabs | ctrl+c exit"
 	if m.confirmOpen {
 		hint = "left/right choose | Enter confirm | Esc cancel | ctrl+c exit"
 	}
@@ -461,6 +461,13 @@ func (m RuntimeDashboard) tunnelIPLine() string {
 		parts = append(parts, "IPv6 "+m.networkIPv6.String())
 	}
 	return "Tunnel IP: " + strings.Join(parts, " | ")
+}
+
+func (m RuntimeDashboard) stopActionLabel() string {
+	if m.mode == RuntimeDashboardClient && m.preferences.AutoConnect {
+		return "Stop (AutoConnect will be disabled)"
+	}
+	return "Stop"
 }
 
 func (m RuntimeDashboard) settingsView() string {
