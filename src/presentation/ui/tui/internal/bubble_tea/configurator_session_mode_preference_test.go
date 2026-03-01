@@ -200,6 +200,54 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_SkipsSelection(t *te
 	}
 }
 
+// TestNewConfiguratorSessionModel_AutoConnect_False_AutoSelectClientConfig_Set_ShowsClientSelect is the
+// direct regression test for the "auto-connects even with AutoConnect=false" bug. If AutoConnect is
+// false, the auto-skip block must not run, even when AutoSelectClientConfig is set and valid.
+func TestNewConfiguratorSessionModel_AutoConnect_False_AutoSelectClientConfig_Set_ShowsClientSelect(t *testing.T) {
+	s := settingsForMode(ModePreferenceClient)
+	p := s.Preferences()
+	p.AutoConnect = false
+	p.AutoSelectClientConfig = "cfg.json"
+	s.update(p)
+
+	opts := defaultConfiguratorOpts()
+	opts.Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
+
+	model, err := newConfiguratorSessionModel(opts, s)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if model.done {
+		t.Fatal("expected done=false when AutoConnect=false, even if AutoSelectClientConfig is set")
+	}
+	if model.screen != configuratorScreenClientSelect {
+		t.Fatalf("expected configuratorScreenClientSelect, got %v", model.screen)
+	}
+}
+
+func TestNewConfiguratorSessionModel_ServerNotSupported_AutoConnect_False_AutoSelectClientConfig_Set_ShowsClientSelect(t *testing.T) {
+	s := settingsForMode(ModePreferenceNone)
+	p := s.Preferences()
+	p.AutoConnect = false
+	p.AutoSelectClientConfig = "cfg.json"
+	s.update(p)
+
+	opts := defaultConfiguratorOpts()
+	opts.ServerSupported = false
+	opts.Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
+
+	model, err := newConfiguratorSessionModel(opts, s)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if model.done {
+		t.Fatal("expected done=false when AutoConnect=false and !serverSupported")
+	}
+	if model.screen != configuratorScreenClientSelect {
+		t.Fatalf("expected configuratorScreenClientSelect, got %v", model.screen)
+	}
+}
+
 func TestNewConfiguratorSessionModel_AutoSelectClientConfig_InvalidConfig_ShowsInvalidScreen(t *testing.T) {
 	s := settingsForMode(ModePreferenceClient)
 	p := s.Preferences()
