@@ -211,3 +211,97 @@ func TestNewUnifiedSessionModel_AutoConnect_Disabled_NoAutoConnect(t *testing.T)
 		t.Fatalf("expected phaseConfiguring when AutoConnect=false, got %d", m.phase)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// newUnifiedSessionModel: auto-connect when ServerSupported=false
+// ---------------------------------------------------------------------------
+
+func serverUnsupportedOpts() ConfiguratorSessionOptions {
+	opts := defaultUnifiedConfigOpts()
+	opts.ServerSupported = false
+	return opts
+}
+
+// settingsWithAutoConnectNoMode sets AutoConnect=true with AutoSelectMode=None.
+// Used to verify that !ServerSupported alone is sufficient to imply client mode.
+func settingsWithAutoConnectNoMode(cfgPath string) *uiPreferencesProvider {
+	p := newUIPreferences(ThemeLight, "en", StatsUnitsBiBytes)
+	p.AutoSelectMode = ModePreferenceNone
+	p.AutoConnect = true
+	p.AutoSelectClientConfig = cfgPath
+	return newUIPreferencesProvider(p)
+}
+
+func TestNewUnifiedSessionModel_ServerNotSupported_AutoConnect_Triggers(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "cfg.json")
+	if err := os.WriteFile(cfgPath, []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	settings := settingsWithAutoConnectNoMode(cfgPath)
+	events := make(chan unifiedEvent, 8)
+
+	m, err := newUnifiedSessionModel(context.Background(), serverUnsupportedOpts(), events, settings)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if m.phase != phaseWaitingForRuntime {
+		t.Fatalf("expected phaseWaitingForRuntime when ServerSupported=false+AutoConnect, got %d", m.phase)
+	}
+	select {
+	case ev := <-events:
+		if ev.kind != unifiedEventModeSelected || ev.mode != mode.Client {
+			t.Fatalf("expected ModeSelected(Client), got kind=%d mode=%v", ev.kind, ev.mode)
+		}
+	default:
+		t.Fatal("expected ModeSelected event in channel, got none")
+	}
+}
+
+func TestNewUnifiedSessionModel_ServerNotSupported_AutoConnect_FileGone_ResetsAutoConnect(t *testing.T) {
+	settings := settingsWithAutoConnectNoMode("/nonexistent/path.json")
+	events := make(chan unifiedEvent, 8)
+
+	m, err := newUnifiedSessionModel(context.Background(), serverUnsupportedOpts(), events, settings)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if m.phase != phaseConfiguring {
+		t.Fatalf("expected phaseConfiguring when config file is gone, got %d", m.phase)
+	}
+	if settings.Preferences().AutoConnect {
+		t.Fatal("expected AutoConnect reset to false when AutoSelectClientConfig file is missing")
+	}
+}
+
+func TestNewUnifiedSessionModel_ServerNotSupported_SavedServerMode_AutoConnect_Triggers(t *testing.T) {
+	// Saved preference is Server, but ServerSupported=false.
+	// The preference should be reset to Client, and auto-connect should still trigger.
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "cfg.json")
+	if err := os.WriteFile(cfgPath, []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	p := newUIPreferences(ThemeLight, "en", StatsUnitsBiBytes)
+	p.AutoSelectMode = ModePreferenceServer
+	p.AutoConnect = true
+	p.AutoSelectClientConfig = cfgPath
+	settings := newUIPreferencesProvider(p)
+	events := make(chan unifiedEvent, 8)
+
+	m, err := newUnifiedSessionModel(context.Background(), serverUnsupportedOpts(), events, settings)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if m.phase != phaseWaitingForRuntime {
+		t.Fatalf("expected phaseWaitingForRuntime after server-mode reset + auto-connect, got %d", m.phase)
+	}
+	select {
+	case ev := <-events:
+		if ev.kind != unifiedEventModeSelected || ev.mode != mode.Client {
+			t.Fatalf("expected ModeSelected(Client), got kind=%d mode=%v", ev.kind, ev.mode)
+		}
+	default:
+		t.Fatal("expected ModeSelected event in channel, got none")
+	}
+}

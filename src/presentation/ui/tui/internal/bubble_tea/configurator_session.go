@@ -224,44 +224,47 @@ func newConfiguratorSessionModel(options ConfiguratorSessionOptions, settings *u
 	model.initNameInput()
 	model.initJSONInput()
 
-	switch settings.Preferences().AutoSelectMode {
-	case ModePreferenceClient:
+	// When server is unsupported, client is the only option — skip mode screen.
+	// Otherwise respect the stored preference.
+	if !options.ServerSupported || settings.Preferences().AutoSelectMode == ModePreferenceClient {
 		if err := model.reloadClientConfigs(); err != nil {
 			return configuratorSessionModel{}, err
 		}
 		model.screen = configuratorScreenClientSelect
-		if autoConfig := settings.Preferences().AutoSelectClientConfig; autoConfig != "" {
-			if slices.Contains(model.client.configs, autoConfig) {
-				if err := model.options.Selector.Select(autoConfig); err == nil {
-					if model.options.ClientConfigManager != nil {
-						_, cfgErr := model.options.ClientConfigManager.Configuration()
-						if isInvalidClientConfigurationError(cfgErr) {
-							model.client.invalidErr = cfgErr
-							model.client.invalidConfig = autoConfig
-							model.client.invalidAllowDelete = true
-							model.cursor = 0
-							model.screen = configuratorScreenClientInvalid
-						} else if cfgErr != nil {
-							model.notice = fmt.Sprintf("Auto-select failed for %q: %v", autoConfig, cfgErr)
+		if settings.Preferences().AutoConnect {
+			if autoConfig := settings.Preferences().AutoSelectClientConfig; autoConfig != "" {
+				if slices.Contains(model.client.configs, autoConfig) {
+					if err := model.options.Selector.Select(autoConfig); err == nil {
+						if model.options.ClientConfigManager != nil {
+							_, cfgErr := model.options.ClientConfigManager.Configuration()
+							if isInvalidClientConfigurationError(cfgErr) {
+								model.client.invalidErr = cfgErr
+								model.client.invalidConfig = autoConfig
+								model.client.invalidAllowDelete = true
+								model.cursor = 0
+								model.screen = configuratorScreenClientInvalid
+							} else if cfgErr != nil {
+								model.notice = fmt.Sprintf("Auto-select failed for %q: %v", autoConfig, cfgErr)
+							} else {
+								model.resultMode = mode.Client
+								model.done = true
+							}
 						} else {
 							model.resultMode = mode.Client
 							model.done = true
 						}
 					} else {
-						model.resultMode = mode.Client
-						model.done = true
+						model.notice = fmt.Sprintf("Auto-select failed for %q: %v", autoConfig, err)
 					}
 				} else {
-					model.notice = fmt.Sprintf("Auto-select failed for %q: %v", autoConfig, err)
+					p := settings.Preferences()
+					p.AutoSelectClientConfig = ""
+					settings.update(p)
+					_ = savePreferencesToDisk(p)
 				}
-			} else {
-				p := settings.Preferences()
-				p.AutoSelectClientConfig = ""
-				settings.update(p)
-				_ = savePreferencesToDisk(p)
 			}
 		}
-	case ModePreferenceServer:
+	} else if settings.Preferences().AutoSelectMode == ModePreferenceServer {
 		model.screen = configuratorScreenServerSelect
 	}
 
@@ -383,12 +386,16 @@ func (m configuratorSessionModel) mainTabView() string {
 			"up/k down/j move | Enter select | Tab switch tabs | Esc exit | ctrl+c exit",
 		)
 	case configuratorScreenClientSelect:
+		clientSelectHint := "up/k down/j move | Enter select | Tab switch tabs | Esc back | ctrl+c exit"
+		if !m.serverSupported {
+			clientSelectHint = "up/k down/j move | Enter select | Tab switch tabs | Esc exit | ctrl+c exit"
+		}
 		return m.renderSelectionScreen(
 			"Select configuration - or add/remove one:",
 			m.notice,
 			m.client.menuOptions,
 			m.cursor,
-			"up/k down/j move | Enter select | Tab switch tabs | Esc back | ctrl+c exit",
+			clientSelectHint,
 		)
 	case configuratorScreenClientRemove:
 		return m.renderSelectionScreen(
@@ -522,6 +529,11 @@ func (m configuratorSessionModel) updateClientSelectScreen(msg tea.KeyPressMsg) 
 	case "esc":
 		m.notice = ""
 		m.cursor = 0
+		if !m.serverSupported {
+			m.resultErr = ErrConfiguratorSessionUserExit
+			m.done = true
+			return m, tea.Quit
+		}
 		m.screen = configuratorScreenMode
 		return m, nil
 	}
