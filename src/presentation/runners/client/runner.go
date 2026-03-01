@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"runtime"
 	"time"
 	"tungo/application/network/connection"
 	"tungo/domain/app"
@@ -12,7 +13,7 @@ import (
 	runtimeUI "tungo/presentation/ui/tui"
 )
 
-type RuntimeDashboardFunc func(ctx context.Context, mode runtimeUI.RuntimeMode) (bool, error)
+type RuntimeDashboardFunc func(ctx context.Context, mode runtimeUI.RuntimeMode, addressInfo runtimeUI.RuntimeAddressInfo) (bool, error)
 
 type Runner struct {
 	uiMode              app.UIMode
@@ -25,6 +26,8 @@ type runtimeUIResult struct {
 	userQuit bool
 	err      error
 }
+
+const runtimeQuickDrainTimeout = 25 * time.Millisecond
 
 func NewRunner(uiMode app.UIMode, deps AppDependencies, routerFactory connection.TrafficRouterFactory) *Runner {
 	return &Runner{
@@ -96,7 +99,7 @@ func (r *Runner) runSession(parentCtx context.Context) error {
 
 	uiResultCh := make(chan runtimeUIResult, 1)
 	go func() {
-		userQuit, err := r.runRuntimeDashboard(ctx, runtimeUI.RuntimeModeClient)
+		userQuit, err := r.runRuntimeDashboard(ctx, runtimeUI.RuntimeModeClient, runtimeUI.RuntimeAddressInfoFromClientConfiguration(r.deps.Configuration()))
 		uiResultCh <- runtimeUIResult{userQuit: userQuit, err: err}
 	}()
 
@@ -113,7 +116,10 @@ func (r *Runner) runSession(parentCtx context.Context) error {
 			if uiResult.err != nil {
 				if errors.Is(uiResult.err, runtimeUI.ErrUserExit) {
 					cancel()
-					routeErr := <-routeErrCh
+					routeErr, ok := tryReceiveClientRouteErr(routeErrCh)
+					if !ok {
+						return context.Canceled
+					}
 					if routeErr == nil || errors.Is(routeErr, context.Canceled) {
 						return context.Canceled
 					}
@@ -128,7 +134,10 @@ func (r *Runner) runSession(parentCtx context.Context) error {
 			}
 			if uiResult.userQuit {
 				cancel()
-				routeErr := <-routeErrCh
+				routeErr, ok := tryReceiveClientRouteErr(routeErrCh)
+				if !ok {
+					return runnerCommon.ErrReconfigureRequested
+				}
 				if routeErr == nil || errors.Is(routeErr, context.Canceled) {
 					return runnerCommon.ErrReconfigureRequested
 				}
@@ -136,6 +145,21 @@ func (r *Runner) runSession(parentCtx context.Context) error {
 			}
 			cancel()
 			return <-routeErrCh
+		}
+	}
+}
+
+func tryReceiveClientRouteErr(routeErrCh <-chan error) (error, bool) {
+	deadline := time.Now().Add(runtimeQuickDrainTimeout)
+	for {
+		select {
+		case routeErr := <-routeErrCh:
+			return routeErr, true
+		default:
+			if time.Now().After(deadline) {
+				return nil, false
+			}
+			runtime.Gosched()
 		}
 	}
 }

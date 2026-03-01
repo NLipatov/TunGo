@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"runtime"
+	"time"
 	"tungo/application/network/connection"
-	"tungo/domain/app"
 	"tungo/application/network/routing"
+	"tungo/domain/app"
 	"tungo/infrastructure/settings"
 	runnerCommon "tungo/presentation/runners/common"
 	runtimeUI "tungo/presentation/ui/tui"
@@ -15,7 +17,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-type RuntimeDashboardFunc func(ctx context.Context, mode runtimeUI.RuntimeMode) (bool, error)
+type RuntimeDashboardFunc func(ctx context.Context, mode runtimeUI.RuntimeMode, addressInfo runtimeUI.RuntimeAddressInfo) (bool, error)
 
 type Runner struct {
 	uiMode              app.UIMode
@@ -29,6 +31,8 @@ type runtimeUIResult struct {
 	userQuit bool
 	err      error
 }
+
+const runtimeQuickDrainTimeout = 25 * time.Millisecond
 
 func NewRunner(
 	uiMode app.UIMode,
@@ -78,7 +82,7 @@ func (r *Runner) Run(
 
 	uiResultCh := make(chan runtimeUIResult, 1)
 	go func() {
-		userQuit, err := r.runRuntimeDashboard(workersCtx, runtimeUI.RuntimeModeServer)
+		userQuit, err := r.runRuntimeDashboard(workersCtx, runtimeUI.RuntimeModeServer, runtimeUI.RuntimeAddressInfoFromServerConfiguration(r.deps.Configuration()))
 		uiResultCh <- runtimeUIResult{userQuit: userQuit, err: err}
 	}()
 
@@ -95,7 +99,10 @@ func (r *Runner) Run(
 			if uiResult.err != nil {
 				if errors.Is(uiResult.err, runtimeUI.ErrUserExit) {
 					cancel()
-					workerErr := <-workerErrCh
+					workerErr, ok := tryReceiveServerWorkerErr(workerErrCh)
+					if !ok {
+						return context.Canceled
+					}
 					if workerErr == nil || errors.Is(workerErr, context.Canceled) {
 						return context.Canceled
 					}
@@ -110,7 +117,10 @@ func (r *Runner) Run(
 			}
 			if uiResult.userQuit {
 				cancel()
-				workerErr := <-workerErrCh
+				workerErr, ok := tryReceiveServerWorkerErr(workerErrCh)
+				if !ok {
+					return runnerCommon.ErrReconfigureRequested
+				}
 				if workerErr == nil || errors.Is(workerErr, context.Canceled) {
 					return runnerCommon.ErrReconfigureRequested
 				}
@@ -118,6 +128,21 @@ func (r *Runner) Run(
 			}
 			cancel()
 			return <-workerErrCh
+		}
+	}
+}
+
+func tryReceiveServerWorkerErr(workerErrCh <-chan error) (error, bool) {
+	deadline := time.Now().Add(runtimeQuickDrainTimeout)
+	for {
+		select {
+		case workerErr := <-workerErrCh:
+			return workerErr, true
+		default:
+			if time.Now().After(deadline) {
+				return nil, false
+			}
+			runtime.Gosched()
 		}
 	}
 }

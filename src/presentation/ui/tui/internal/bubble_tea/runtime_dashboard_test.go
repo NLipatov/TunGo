@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/netip"
 	"strings"
 	"testing"
 	"time"
@@ -82,11 +83,11 @@ func TestRuntimeDashboard_TogglesFooterInSettings(t *testing.T) {
 	s.update(p)
 
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, s)
-	m1, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})                      // settings
-	m2, _ := m1.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyDown}) // stats units row
-	m3, _ := m2.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyDown}) // dataplane stats row
-	m4, _ := m3.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyDown}) // dataplane graph row
-	m5, _ := m4.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyDown}) // footer row
+	m1, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})                       // settings
+	m2, _ := m1.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyDown})  // stats units row
+	m3, _ := m2.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyDown})  // dataplane stats row
+	m4, _ := m3.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyDown})  // dataplane graph row
+	m5, _ := m4.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyDown})  // footer row
 	m6, _ := m5.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyRight}) // toggle
 	toggled := m6.(RuntimeDashboard)
 
@@ -110,8 +111,8 @@ func TestRuntimeDashboard_TogglesStatsUnitsInSettings(t *testing.T) {
 	s.update(p)
 
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, s)
-	m1, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})                      // settings
-	m2, _ := m1.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyDown}) // stats units row
+	m1, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})                       // settings
+	m2, _ := m1.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyDown})  // stats units row
 	m3, _ := m2.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyRight}) // toggle
 	toggled := m3.(RuntimeDashboard)
 
@@ -390,7 +391,22 @@ func TestRuntimeDashboard_EscOnDataplane_OpensConfirm_StayCancels(t *testing.T) 
 }
 
 func TestRuntimeDashboard_EscOnDataplane_ConfirmReconfigureQuits(t *testing.T) {
-	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
+	prevSave := saveRuntimeDashboardPreferences
+	saveDone := make(chan struct{}, 1)
+	saveRuntimeDashboardPreferences = func(UIPreferences) error {
+		saveDone <- struct{}{}
+		return nil
+	}
+	t.Cleanup(func() {
+		saveRuntimeDashboardPreferences = prevSave
+	})
+
+	s := testSettings()
+	p := s.Preferences()
+	p.AutoConnect = true
+	s.update(p)
+
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, s)
 	updatedModel, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	updated := updatedModel.(RuntimeDashboard)
 	updatedModel, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyRight})
@@ -409,6 +425,14 @@ func TestRuntimeDashboard_EscOnDataplane_ConfirmReconfigureQuits(t *testing.T) {
 	}
 	if updated.exitRequested {
 		t.Fatal("did not expect exitRequested=true when confirming reconfigure")
+	}
+	if s.Preferences().AutoConnect {
+		t.Fatal("expected AutoConnect=false after tunnel stop confirmation")
+	}
+	select {
+	case <-saveDone:
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("expected async auto-connect persistence on stop")
 	}
 }
 
@@ -573,6 +597,22 @@ func TestRuntimeDashboard_MainView_ServerAndFooterOff(t *testing.T) {
 	}
 	if !strings.Contains(view, "RX trend:") || !strings.Contains(view, "TX trend:") {
 		t.Fatalf("expected sparkline trend lines in dataplane view, got %q", view)
+	}
+}
+
+func TestRuntimeDashboard_MainView_ShowsServerAndNetworkAddresses(t *testing.T) {
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		ServerIPv4:  netip.MustParseAddr("198.51.100.10"),
+		ServerIPv6:  netip.MustParseAddr("2001:db8::10"),
+		NetworkIPv4: netip.MustParseAddr("10.0.0.2"),
+		NetworkIPv6: netip.MustParseAddr("fd00::2"),
+	}, testSettings())
+	view := m.View().Content
+	if !strings.Contains(view, "Server IP: IPv4 198.51.100.10 | IPv6 2001:db8::10") {
+		t.Fatalf("expected server IPs line in main view, got %q", view)
+	}
+	if !strings.Contains(view, "Tunnel IP: IPv4 10.0.0.2 | IPv6 fd00::2") {
+		t.Fatalf("expected network address line in main view, got %q", view)
 	}
 }
 
@@ -1239,7 +1279,7 @@ func TestRuntimeDashboard_Update_LogTickMismatchedSeqOnLogsScreen(t *testing.T) 
 		LogFeed: testRuntimeLogFeed{lines: []string{"one", "two"}},
 	}, testSettings())
 	// Navigate to logs screen.
-	m1, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})  // settings
+	m1, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})                     // settings
 	m2, _ := m1.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyTab}) // logs
 	dash := m2.(RuntimeDashboard)
 

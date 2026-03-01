@@ -3,24 +3,25 @@ package tui
 import (
 	"context"
 	"errors"
+	"net/netip"
 	"testing"
 )
 
 type runtimeUITestBackend struct {
 	enabledCap int
 	disabled   bool
-	run        func(ctx context.Context, mode RuntimeMode) (bool, error)
+	run        func(ctx context.Context, mode RuntimeMode, addressInfo RuntimeAddressInfo) (bool, error)
 }
 
 func (m *runtimeUITestBackend) enableRuntimeLogCapture(capacity int) { m.enabledCap = capacity }
 
 func (m *runtimeUITestBackend) disableRuntimeLogCapture() { m.disabled = true }
 
-func (m *runtimeUITestBackend) runRuntimeDashboard(ctx context.Context, mode RuntimeMode) (bool, error) {
+func (m *runtimeUITestBackend) runRuntimeDashboard(ctx context.Context, mode RuntimeMode, addressInfo RuntimeAddressInfo) (bool, error) {
 	if m.run == nil {
 		return false, nil
 	}
-	return m.run(ctx, mode)
+	return m.run(ctx, mode, addressInfo)
 }
 
 func TestRuntimeUI_Wrappers(t *testing.T) {
@@ -42,35 +43,40 @@ func TestRuntimeUI_Wrappers(t *testing.T) {
 		t.Fatal("expected disable wrapper to call implementation")
 	}
 
-	mock.run = func(_ context.Context, mode RuntimeMode) (bool, error) {
+	mock.run = func(_ context.Context, mode RuntimeMode, addressInfo RuntimeAddressInfo) (bool, error) {
 		if mode != RuntimeModeServer {
 			t.Fatalf("expected server mode mapping, got %q", mode)
 		}
+		if addressInfo.ServerIPv4 != netip.MustParseAddr("198.51.100.1") {
+			t.Fatalf("expected forwarded server IPv4, got %v", addressInfo.ServerIPv4)
+		}
 		return true, nil
 	}
-	quit, err := RunRuntimeDashboard(context.Background(), RuntimeModeServer)
+	quit, err := RunRuntimeDashboard(context.Background(), RuntimeModeServer, RuntimeAddressInfo{
+		ServerIPv4: netip.MustParseAddr("198.51.100.1"),
+	})
 	if err != nil || !quit {
 		t.Fatalf("expected quit=true nil err, got quit=%v err=%v", quit, err)
 	}
 
-	mock.run = func(_ context.Context, mode RuntimeMode) (bool, error) {
+	mock.run = func(_ context.Context, mode RuntimeMode, _ RuntimeAddressInfo) (bool, error) {
 		if mode != RuntimeModeClient {
 			t.Fatalf("expected client mode mapping, got %q", mode)
 		}
 		return false, errors.New("boom")
 	}
-	quit, err = RunRuntimeDashboard(context.Background(), RuntimeModeClient)
+	quit, err = RunRuntimeDashboard(context.Background(), RuntimeModeClient, RuntimeAddressInfo{})
 	if err == nil || quit {
 		t.Fatalf("expected propagated error and quit=false, got quit=%v err=%v", quit, err)
 	}
 
-	mock.run = func(_ context.Context, mode RuntimeMode) (bool, error) {
+	mock.run = func(_ context.Context, mode RuntimeMode, _ RuntimeAddressInfo) (bool, error) {
 		if mode != RuntimeModeClient {
 			t.Fatalf("expected client mode mapping, got %q", mode)
 		}
 		return false, ErrUserExit
 	}
-	quit, err = RunRuntimeDashboard(context.Background(), RuntimeModeClient)
+	quit, err = RunRuntimeDashboard(context.Background(), RuntimeModeClient, RuntimeAddressInfo{})
 	if !errors.Is(err, ErrUserExit) || quit {
 		t.Fatalf("expected ErrUserExit and quit=false, got quit=%v err=%v", quit, err)
 	}

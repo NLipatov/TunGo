@@ -27,10 +27,14 @@ func (bubbleTeaRuntimeBackend) disableRuntimeLogCapture() {
 	bubbleRuntimeDisableLogs()
 }
 
-func (bubbleTeaRuntimeBackend) runRuntimeDashboard(ctx context.Context, mode RuntimeMode) (bool, error) {
+func (bubbleTeaRuntimeBackend) runRuntimeDashboard(ctx context.Context, mode RuntimeMode, addressInfo RuntimeAddressInfo) (bool, error) {
 	options := bubbleTea.RuntimeDashboardOptions{
-		Mode:    bubbleTea.RuntimeDashboardClient,
-		LogFeed: bubbleRuntimeLogFeed(),
+		Mode:        bubbleTea.RuntimeDashboardClient,
+		LogFeed:     bubbleRuntimeLogFeed(),
+		ServerIPv4:  addressInfo.ServerIPv4,
+		ServerIPv6:  addressInfo.ServerIPv6,
+		NetworkIPv4: addressInfo.NetworkIPv4,
+		NetworkIPv6: addressInfo.NetworkIPv6,
 	}
 	if mode == RuntimeModeServer {
 		options.Mode = bubbleTea.RuntimeDashboardServer
