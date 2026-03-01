@@ -608,6 +608,26 @@ func TestUnifiedSession_UpdateRuntime_ReconfigureRequested(t *testing.T) {
 	}
 }
 
+func TestUnifiedSession_UpdateRuntime_ReconfigureRequested_DisablesAutoConnectInSession(t *testing.T) {
+	m, _ := newTestUnifiedModel(t)
+	m.phase = phaseRuntime
+
+	prefs := m.settings.Preferences()
+	prefs.AutoConnect = true
+	m.settings.update(prefs)
+
+	rt := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, m.settings)
+	rt.mode = RuntimeDashboardClient
+	rt.reconfigureRequested = true
+	m.runtime = &rt
+
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
+	updated := result.(unifiedSessionModel)
+	if updated.settings.Preferences().AutoConnect {
+		t.Fatal("expected AutoConnect=false after runtime stop reconfigure in client mode")
+	}
+}
+
 func TestUnifiedSession_UpdateRuntime_ExitRequested(t *testing.T) {
 	m, events := newTestUnifiedModel(t)
 	m.phase = phaseRuntime

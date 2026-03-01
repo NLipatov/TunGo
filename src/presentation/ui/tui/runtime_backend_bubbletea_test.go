@@ -17,13 +17,11 @@ func (runtimeBackendTestFeed) TailInto([]string, int) int { return 0 }
 func TestBubbleTeaRuntimeBackend_MappingAndHooks(t *testing.T) {
 	prevEnable := bubbleRuntimeEnableLogs
 	prevDisable := bubbleRuntimeDisableLogs
-	prevDisableAuto := bubbleRuntimeDisableAuto
 	prevRun := bubbleRuntimeRunDashboard
 	prevFeed := bubbleRuntimeLogFeed
 	t.Cleanup(func() {
 		bubbleRuntimeEnableLogs = prevEnable
 		bubbleRuntimeDisableLogs = prevDisable
-		bubbleRuntimeDisableAuto = prevDisableAuto
 		bubbleRuntimeRunDashboard = prevRun
 		bubbleRuntimeLogFeed = prevFeed
 	})
@@ -42,10 +40,6 @@ func TestBubbleTeaRuntimeBackend_MappingAndHooks(t *testing.T) {
 	backend.disableRuntimeLogCapture()
 	if !disabled {
 		t.Fatal("expected disable call")
-	}
-	bubbleRuntimeDisableAuto = func() error { return errors.New("disable failed") }
-	if err := backend.disableAutoConnect(); err == nil {
-		t.Fatal("expected disable auto-connect call")
 	}
 
 	feed := runtimeBackendTestFeed{}

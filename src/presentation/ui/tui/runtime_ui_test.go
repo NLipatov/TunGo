@@ -10,15 +10,12 @@ import (
 type runtimeUITestBackend struct {
 	enabledCap int
 	disabled   bool
-	disableErr error
 	run        func(ctx context.Context, mode RuntimeMode, options RuntimeUIOptions) (bool, error)
 }
 
 func (m *runtimeUITestBackend) enableRuntimeLogCapture(capacity int) { m.enabledCap = capacity }
 
 func (m *runtimeUITestBackend) disableRuntimeLogCapture() { m.disabled = true }
-
-func (m *runtimeUITestBackend) disableAutoConnect() error { return m.disableErr }
 
 func (m *runtimeUITestBackend) runRuntimeDashboard(ctx context.Context, mode RuntimeMode, options RuntimeUIOptions) (bool, error) {
 	if m.run == nil {
@@ -44,10 +41,6 @@ func TestRuntimeUI_Wrappers(t *testing.T) {
 	DisableRuntimeLogCapture()
 	if !mock.disabled {
 		t.Fatal("expected disable wrapper to call implementation")
-	}
-	mock.disableErr = errors.New("disable failed")
-	if err := DisableAutoConnect(); err == nil {
-		t.Fatal("expected disable auto-connect wrapper to call implementation")
 	}
 
 	mock.run = func(_ context.Context, mode RuntimeMode, options RuntimeUIOptions) (bool, error) {

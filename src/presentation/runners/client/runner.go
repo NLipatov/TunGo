@@ -19,7 +19,6 @@ type Runner struct {
 	deps                AppDependencies
 	routerFactory       connection.TrafficRouterFactory
 	runRuntimeDashboard RuntimeDashboardFunc
-	disableAutoConnect  func() error
 }
 
 type runtimeUIResult struct {
@@ -37,7 +36,6 @@ func NewRunner(uiMode app.UIMode, deps AppDependencies, routerFactory connection
 		deps:                deps,
 		routerFactory:       routerFactory,
 		runRuntimeDashboard: runtimeUI.RunRuntimeDashboard,
-		disableAutoConnect:  runtimeUI.DisableAutoConnect,
 	}
 }
 
@@ -174,9 +172,6 @@ func (r *Runner) waitForSessionEnd(
 			}
 			if uiResult.userQuit {
 				// Reconfigure requested — cancel route, wait for route result.
-				if err := r.disableAutoConnect(); err != nil {
-					log.Printf("runtime preference update error: %v", err)
-				}
 				cancel()
 				cr := <-connectCh
 				if cr.err != nil && !errors.Is(cr.err, context.Canceled) {

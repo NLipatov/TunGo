@@ -258,6 +258,16 @@ func (m unifiedSessionModel) updateRuntime(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	if rtModel.reconfigureRequested {
+		// Keep in-memory preferences in sync before re-entering configurator;
+		// this prevents immediate auto-connect restart in the same session.
+		if rtModel.mode == RuntimeDashboardClient {
+			prefs := m.settings.Preferences()
+			if prefs.AutoConnect {
+				prefs.AutoConnect = false
+				m.settings.update(prefs)
+				persistAutoConnectDisabled(prefs)
+			}
+		}
 		GlobalRuntimeLogWriteSeparator("reconfigured")
 		// Reset configurator for a fresh cycle.
 		newCfg, err := newConfiguratorSessionModel(m.configOpts, m.settings)
@@ -282,6 +292,12 @@ func (m unifiedSessionModel) updateRuntime(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Filter out tea.Quit from runtime (it uses Quit for both exit and reconfigure).
 	cmd = filterQuit(cmd)
 	return m, cmd
+}
+
+func persistAutoConnectDisabled(prefs UIPreferences) {
+	go func(p UIPreferences) {
+		_ = savePreferencesToDisk(p)
+	}(prefs)
 }
 
 func (m unifiedSessionModel) updateFatalError(msg tea.Msg) (tea.Model, tea.Cmd) {

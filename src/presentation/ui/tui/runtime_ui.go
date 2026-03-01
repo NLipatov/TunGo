@@ -22,7 +22,6 @@ type RuntimeUIOptions struct {
 type runtimeBackend interface {
 	enableRuntimeLogCapture(capacity int)
 	disableRuntimeLogCapture()
-	disableAutoConnect() error
 	runRuntimeDashboard(ctx context.Context, mode RuntimeMode, options RuntimeUIOptions) (bool, error)
 }
 
@@ -34,10 +33,6 @@ func EnableRuntimeLogCapture(capacity int) {
 
 func DisableRuntimeLogCapture() {
 	activeRuntimeBackend.disableRuntimeLogCapture()
-}
-
-func DisableAutoConnect() error {
-	return activeRuntimeBackend.disableAutoConnect()
 }
 
 func RunRuntimeDashboard(ctx context.Context, mode RuntimeMode, options RuntimeUIOptions) (bool, error) {

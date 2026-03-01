@@ -13,7 +13,6 @@ type bubbleTeaRuntimeBackend struct {
 var (
 	bubbleRuntimeEnableLogs   = bubbleTea.EnableGlobalRuntimeLogCapture
 	bubbleRuntimeDisableLogs  = bubbleTea.DisableGlobalRuntimeLogCapture
-	bubbleRuntimeDisableAuto  = bubbleTea.DisableRuntimeAutoConnect
 	bubbleRuntimeRunDashboard = bubbleTea.RunRuntimeDashboard
 	bubbleRuntimeLogFeed      = bubbleTea.GlobalRuntimeLogFeed
 )
@@ -36,10 +35,6 @@ func (b *bubbleTeaRuntimeBackend) enableRuntimeLogCapture(capacity int) {
 
 func (b *bubbleTeaRuntimeBackend) disableRuntimeLogCapture() {
 	bubbleRuntimeDisableLogs()
-}
-
-func (b *bubbleTeaRuntimeBackend) disableAutoConnect() error {
-	return bubbleRuntimeDisableAuto()
 }
 
 func (b *bubbleTeaRuntimeBackend) runRuntimeDashboard(ctx context.Context, mode RuntimeMode, options RuntimeUIOptions) (bool, error) {
