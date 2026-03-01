@@ -295,9 +295,7 @@ func (m unifiedSessionModel) updateRuntime(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func persistAutoConnectDisabled(prefs UIPreferences) {
-	go func(p UIPreferences) {
-		_ = savePreferencesToDisk(p)
-	}(prefs)
+	_ = savePreferencesToDisk(prefs)
 }
 
 func (m unifiedSessionModel) updateFatalError(msg tea.Msg) (tea.Model, tea.Cmd) {
