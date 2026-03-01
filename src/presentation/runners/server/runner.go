@@ -86,7 +86,7 @@ func (r *Runner) Run(
 	go func() {
 		userQuit, err := r.runRuntimeDashboard(workersCtx, runtimeUI.RuntimeModeServer, runtimeUI.RuntimeUIOptions{
 			ReadyCh: serverReady,
-			Address: runtimeUI.RuntimeAddressInfoFromServerConfiguration(r.deps.Configuration()),
+			Address: runnerCommon.RuntimeAddressInfoFromServerConfiguration(r.deps.Configuration()),
 		})
 		uiResultCh <- runtimeUIResult{userQuit: userQuit, err: err}
 	}()

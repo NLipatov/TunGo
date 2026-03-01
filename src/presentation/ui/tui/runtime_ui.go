@@ -2,7 +2,7 @@ package tui
 
 import (
 	"context"
-	"net/netip"
+	runnerCommon "tungo/presentation/runners/common"
 )
 
 type RuntimeMode string
@@ -12,12 +12,7 @@ const (
 	RuntimeModeServer RuntimeMode = "server"
 )
 
-type RuntimeAddressInfo struct {
-	ServerIPv4  netip.Addr
-	ServerIPv6  netip.Addr
-	NetworkIPv4 netip.Addr
-	NetworkIPv6 netip.Addr
-}
+type RuntimeAddressInfo = runnerCommon.RuntimeAddressInfo
 
 type RuntimeUIOptions struct {
 	ReadyCh <-chan struct{}
@@ -27,6 +22,7 @@ type RuntimeUIOptions struct {
 type runtimeBackend interface {
 	enableRuntimeLogCapture(capacity int)
 	disableRuntimeLogCapture()
+	disableAutoConnect() error
 	runRuntimeDashboard(ctx context.Context, mode RuntimeMode, options RuntimeUIOptions) (bool, error)
 }
 
@@ -38,6 +34,10 @@ func EnableRuntimeLogCapture(capacity int) {
 
 func DisableRuntimeLogCapture() {
 	activeRuntimeBackend.disableRuntimeLogCapture()
+}
+
+func DisableAutoConnect() error {
+	return activeRuntimeBackend.disableAutoConnect()
 }
 
 func RunRuntimeDashboard(ctx context.Context, mode RuntimeMode, options RuntimeUIOptions) (bool, error) {

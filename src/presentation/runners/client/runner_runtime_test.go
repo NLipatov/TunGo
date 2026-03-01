@@ -113,6 +113,7 @@ func blockingRouter() runtimeTestRouter {
 
 func TestRunSession_Interactive_ReconfigureReturnsBackToModeSelection(t *testing.T) {
 	deps := &runtimeTestDeps{}
+	disableCalled := false
 	r := newTestRunner(app.TUI, deps, runtimeTestRouterFactory{
 		create: func(_ context.Context, _ connection.Factory, _ tun.ClientManager, _ connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
 			return blockingRouter(), &runtimeTestTransport{}, &runtimeTestTun{}, nil
@@ -120,10 +121,17 @@ func TestRunSession_Interactive_ReconfigureReturnsBackToModeSelection(t *testing
 	}, func(context.Context, tui.RuntimeMode, tui.RuntimeUIOptions) (bool, error) {
 		return true, nil
 	})
+	r.disableAutoConnect = func() error {
+		disableCalled = true
+		return nil
+	}
 
 	err := r.runSession(context.Background())
 	if !errors.Is(err, runnerCommon.ErrReconfigureRequested) {
 		t.Fatalf("expected back-to-mode-selection on reconfigure request, got %v", err)
+	}
+	if !disableCalled {
+		t.Fatal("expected auto-connect to be disabled on tunnel stop request")
 	}
 }
 

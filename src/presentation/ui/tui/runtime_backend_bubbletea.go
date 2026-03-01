@@ -13,6 +13,7 @@ type bubbleTeaRuntimeBackend struct {
 var (
 	bubbleRuntimeEnableLogs   = bubbleTea.EnableGlobalRuntimeLogCapture
 	bubbleRuntimeDisableLogs  = bubbleTea.DisableGlobalRuntimeLogCapture
+	bubbleRuntimeDisableAuto  = bubbleTea.DisableRuntimeAutoConnect
 	bubbleRuntimeRunDashboard = bubbleTea.RunRuntimeDashboard
 	bubbleRuntimeLogFeed      = bubbleTea.GlobalRuntimeLogFeed
 )
@@ -37,15 +38,19 @@ func (b *bubbleTeaRuntimeBackend) disableRuntimeLogCapture() {
 	bubbleRuntimeDisableLogs()
 }
 
+func (b *bubbleTeaRuntimeBackend) disableAutoConnect() error {
+	return bubbleRuntimeDisableAuto()
+}
+
 func (b *bubbleTeaRuntimeBackend) runRuntimeDashboard(ctx context.Context, mode RuntimeMode, options RuntimeUIOptions) (bool, error) {
 	dashboardOptions := bubbleTea.RuntimeDashboardOptions{
-		Mode:        bubbleTea.RuntimeDashboardClient,
-		LogFeed:     bubbleRuntimeLogFeed(),
-		ReadyCh:     options.ReadyCh,
-		ServerIPv4:  options.Address.ServerIPv4,
-		ServerIPv6:  options.Address.ServerIPv6,
-		NetworkIPv4: options.Address.NetworkIPv4,
-		NetworkIPv6: options.Address.NetworkIPv6,
+		Mode:       bubbleTea.RuntimeDashboardClient,
+		LogFeed:    bubbleRuntimeLogFeed(),
+		ReadyCh:    options.ReadyCh,
+		ServerIPv4: options.Address.ServerIPv4,
+		ServerIPv6: options.Address.ServerIPv6,
+		TunnelIPv4: options.Address.TunnelIPv4,
+		TunnelIPv6: options.Address.TunnelIPv6,
 	}
 	if mode == RuntimeModeServer {
 		dashboardOptions.Mode = bubbleTea.RuntimeDashboardServer

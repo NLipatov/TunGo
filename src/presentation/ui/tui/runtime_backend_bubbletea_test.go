@@ -17,11 +17,13 @@ func (runtimeBackendTestFeed) TailInto([]string, int) int { return 0 }
 func TestBubbleTeaRuntimeBackend_MappingAndHooks(t *testing.T) {
 	prevEnable := bubbleRuntimeEnableLogs
 	prevDisable := bubbleRuntimeDisableLogs
+	prevDisableAuto := bubbleRuntimeDisableAuto
 	prevRun := bubbleRuntimeRunDashboard
 	prevFeed := bubbleRuntimeLogFeed
 	t.Cleanup(func() {
 		bubbleRuntimeEnableLogs = prevEnable
 		bubbleRuntimeDisableLogs = prevDisable
+		bubbleRuntimeDisableAuto = prevDisableAuto
 		bubbleRuntimeRunDashboard = prevRun
 		bubbleRuntimeLogFeed = prevFeed
 	})
@@ -41,6 +43,10 @@ func TestBubbleTeaRuntimeBackend_MappingAndHooks(t *testing.T) {
 	if !disabled {
 		t.Fatal("expected disable call")
 	}
+	bubbleRuntimeDisableAuto = func() error { return errors.New("disable failed") }
+	if err := backend.disableAutoConnect(); err == nil {
+		t.Fatal("expected disable auto-connect call")
+	}
 
 	feed := runtimeBackendTestFeed{}
 	bubbleRuntimeLogFeed = func() bubbleTea.RuntimeLogFeed { return feed }
@@ -54,15 +60,15 @@ func TestBubbleTeaRuntimeBackend_MappingAndHooks(t *testing.T) {
 		if options.ServerIPv4 != netip.MustParseAddr("198.51.100.10") {
 			t.Fatalf("expected ServerIPv4 forwarded, got %v", options.ServerIPv4)
 		}
-		if options.NetworkIPv4 != netip.MustParseAddr("10.0.0.2") {
-			t.Fatalf("expected NetworkIPv4 forwarded, got %v", options.NetworkIPv4)
+		if options.TunnelIPv4 != netip.MustParseAddr("10.0.0.2") {
+			t.Fatalf("expected TunnelIPv4 forwarded, got %v", options.TunnelIPv4)
 		}
 		return true, nil
 	}
 	reconfigure, err := backend.runRuntimeDashboard(context.Background(), RuntimeModeServer, RuntimeUIOptions{
 		Address: RuntimeAddressInfo{
-			ServerIPv4:  netip.MustParseAddr("198.51.100.10"),
-			NetworkIPv4: netip.MustParseAddr("10.0.0.2"),
+			ServerIPv4: netip.MustParseAddr("198.51.100.10"),
+			TunnelIPv4: netip.MustParseAddr("10.0.0.2"),
 		},
 	})
 	if err != nil || !reconfigure {

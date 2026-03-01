@@ -391,16 +391,6 @@ func TestRuntimeDashboard_EscOnDataplane_OpensConfirm_StayCancels(t *testing.T) 
 }
 
 func TestRuntimeDashboard_EscOnDataplane_ConfirmReconfigureQuits(t *testing.T) {
-	prevSave := saveRuntimeDashboardPreferences
-	saveDone := make(chan struct{}, 1)
-	saveRuntimeDashboardPreferences = func(UIPreferences) error {
-		saveDone <- struct{}{}
-		return nil
-	}
-	t.Cleanup(func() {
-		saveRuntimeDashboardPreferences = prevSave
-	})
-
 	s := testSettings()
 	p := s.Preferences()
 	p.AutoConnect = true
@@ -426,13 +416,8 @@ func TestRuntimeDashboard_EscOnDataplane_ConfirmReconfigureQuits(t *testing.T) {
 	if updated.exitRequested {
 		t.Fatal("did not expect exitRequested=true when confirming reconfigure")
 	}
-	if s.Preferences().AutoConnect {
-		t.Fatal("expected AutoConnect=false after tunnel stop confirmation")
-	}
-	select {
-	case <-saveDone:
-	case <-time.After(200 * time.Millisecond):
-		t.Fatal("expected async auto-connect persistence on stop")
+	if !s.Preferences().AutoConnect {
+		t.Fatal("expected runtime dashboard not to mutate AutoConnect directly on stop")
 	}
 }
 
@@ -617,10 +602,10 @@ func TestRuntimeDashboard_MainView_ServerAndFooterOff(t *testing.T) {
 
 func TestRuntimeDashboard_MainView_ShowsServerAndNetworkAddresses(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		ServerIPv4:  netip.MustParseAddr("198.51.100.10"),
-		ServerIPv6:  netip.MustParseAddr("2001:db8::10"),
-		NetworkIPv4: netip.MustParseAddr("10.0.0.2"),
-		NetworkIPv6: netip.MustParseAddr("fd00::2"),
+		ServerIPv4: netip.MustParseAddr("198.51.100.10"),
+		ServerIPv6: netip.MustParseAddr("2001:db8::10"),
+		TunnelIPv4: netip.MustParseAddr("10.0.0.2"),
+		TunnelIPv6: netip.MustParseAddr("fd00::2"),
 	}, testSettings())
 	view := m.View().Content
 	if !strings.Contains(view, "Server IP: IPv4 198.51.100.10 | IPv6 2001:db8::10") {
