@@ -267,6 +267,7 @@ func TestNewConfiguratorSessionModel_AllDependencies(t *testing.T) {
 		Creator:             sessionCreatorStub{},
 		Deleter:             sessionDeleterStub{},
 		ServerConfigManager: &sessionServerConfigManagerStub{},
+		ServerSupported:     true,
 	}
 	model, err := newConfiguratorSessionModel(opts, testSettings())
 	if err != nil {

@@ -224,8 +224,9 @@ func newConfiguratorSessionModel(options ConfiguratorSessionOptions, settings *u
 	model.initNameInput()
 	model.initJSONInput()
 
-	switch settings.Preferences().AutoSelectMode {
-	case ModePreferenceClient:
+	// When server is unsupported, client is the only option — skip mode screen.
+	// Otherwise respect the stored preference.
+	if !options.ServerSupported || settings.Preferences().AutoSelectMode == ModePreferenceClient {
 		if err := model.reloadClientConfigs(); err != nil {
 			return configuratorSessionModel{}, err
 		}
@@ -261,7 +262,7 @@ func newConfiguratorSessionModel(options ConfiguratorSessionOptions, settings *u
 				_ = savePreferencesToDisk(p)
 			}
 		}
-	case ModePreferenceServer:
+	} else if settings.Preferences().AutoSelectMode == ModePreferenceServer {
 		model.screen = configuratorScreenServerSelect
 	}
 
@@ -383,12 +384,16 @@ func (m configuratorSessionModel) mainTabView() string {
 			"up/k down/j move | Enter select | Tab switch tabs | Esc exit | ctrl+c exit",
 		)
 	case configuratorScreenClientSelect:
+		clientSelectHint := "up/k down/j move | Enter select | Tab switch tabs | Esc back | ctrl+c exit"
+		if !m.serverSupported {
+			clientSelectHint = "up/k down/j move | Enter select | Tab switch tabs | Esc exit | ctrl+c exit"
+		}
 		return m.renderSelectionScreen(
 			"Select configuration - or add/remove one:",
 			m.notice,
 			m.client.menuOptions,
 			m.cursor,
-			"up/k down/j move | Enter select | Tab switch tabs | Esc back | ctrl+c exit",
+			clientSelectHint,
 		)
 	case configuratorScreenClientRemove:
 		return m.renderSelectionScreen(
@@ -522,6 +527,11 @@ func (m configuratorSessionModel) updateClientSelectScreen(msg tea.KeyPressMsg) 
 	case "esc":
 		m.notice = ""
 		m.cursor = 0
+		if !m.serverSupported {
+			m.resultErr = ErrConfiguratorSessionUserExit
+			m.done = true
+			return m, tea.Quit
+		}
 		m.screen = configuratorScreenMode
 		return m, nil
 	}
