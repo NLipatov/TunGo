@@ -4,25 +4,31 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 )
 
 func TestWaitForRuntimeSessionEnd_WorkerFinishesFirst_LogsUnexpectedUIError(t *testing.T) {
 	uiCh := make(chan RuntimeUIResult, 1)
-	workerCh := make(chan error, 1)
+	workerCh := make(chan error)
 	logged := false
+	canceled := make(chan struct{})
+	var cancelOnce sync.Once
 
 	done := make(chan error, 1)
 	go func() {
 		done <- WaitForRuntimeSessionEnd(
-			func() {},
+			func() { cancelOnce.Do(func() { close(canceled) }) },
 			uiCh,
 			workerCh,
 			func(error) bool { return false },
 			func(error) { logged = true },
 		)
 	}()
-	workerCh <- errors.New("worker failed")
+	go func() {
+		workerCh <- errors.New("worker failed")
+	}()
+	<-canceled
 	uiCh <- RuntimeUIResult{Err: errors.New("ui failed")}
 
 	err := <-done
