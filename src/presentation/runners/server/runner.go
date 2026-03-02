@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"log"
 	"tungo/application/network/connection"
-	"tungo/domain/app"
 	"tungo/application/network/routing"
+	"tungo/domain/app"
 	"tungo/infrastructure/settings"
 	runnerCommon "tungo/presentation/runners/common"
 	runtimeUI "tungo/presentation/ui/tui"
@@ -15,7 +15,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-type RuntimeDashboardFunc func(ctx context.Context, mode runtimeUI.RuntimeMode, readyCh <-chan struct{}) (bool, error)
+type RuntimeDashboardFunc func(ctx context.Context, mode runtimeUI.RuntimeMode, options runtimeUI.RuntimeUIOptions) (bool, error)
 
 var serverReady = func() <-chan struct{} {
 	ch := make(chan struct{})
@@ -29,11 +29,6 @@ type Runner struct {
 	workerFactory       connection.ServerWorkerFactory
 	routerFactory       connection.ServerTrafficRouterFactory
 	runRuntimeDashboard RuntimeDashboardFunc
-}
-
-type runtimeUIResult struct {
-	userQuit bool
-	err      error
 }
 
 func NewRunner(
@@ -82,50 +77,21 @@ func (r *Runner) Run(
 		workerErrCh <- r.runWorkers(workersCtx)
 	}()
 
-	uiResultCh := make(chan runtimeUIResult, 1)
+	uiResultCh := make(chan runnerCommon.RuntimeUIResult, 1)
 	go func() {
-		userQuit, err := r.runRuntimeDashboard(workersCtx, runtimeUI.RuntimeModeServer, serverReady)
-		uiResultCh <- runtimeUIResult{userQuit: userQuit, err: err}
+		userQuit, err := r.runRuntimeDashboard(workersCtx, runtimeUI.RuntimeModeServer, runtimeUI.RuntimeUIOptions{
+			ReadyCh: serverReady,
+			Address: runnerCommon.RuntimeAddressInfoFromServerConfiguration(r.deps.Configuration()),
+		})
+		uiResultCh <- runnerCommon.RuntimeUIResult{UserQuit: userQuit, Err: err}
 	}()
-
-	for {
-		select {
-		case workerErr := <-workerErrCh:
-			cancel()
-			uiResult := <-uiResultCh
-			if uiResult.err != nil && !errors.Is(uiResult.err, runtimeUI.ErrUserExit) {
-				log.Printf("runtime UI error: %v", uiResult.err)
-			}
-			return workerErr
-		case uiResult := <-uiResultCh:
-			if uiResult.err != nil {
-				if errors.Is(uiResult.err, runtimeUI.ErrUserExit) {
-					cancel()
-					workerErr := <-workerErrCh
-					if workerErr == nil || errors.Is(workerErr, context.Canceled) {
-						return context.Canceled
-					}
-					return workerErr
-				}
-				cancel()
-				workerErr := <-workerErrCh
-				if workerErr == nil || errors.Is(workerErr, context.Canceled) {
-					return fmt.Errorf("runtime UI failed: %w", uiResult.err)
-				}
-				return workerErr
-			}
-			if uiResult.userQuit {
-				cancel()
-				workerErr := <-workerErrCh
-				if workerErr == nil || errors.Is(workerErr, context.Canceled) {
-					return runnerCommon.ErrReconfigureRequested
-				}
-				return workerErr
-			}
-			cancel()
-			return <-workerErrCh
-		}
-	}
+	return runnerCommon.WaitForRuntimeSessionEnd(
+		cancel,
+		uiResultCh,
+		workerErrCh,
+		func(err error) bool { return errors.Is(err, runtimeUI.ErrUserExit) },
+		func(err error) { log.Printf("runtime UI error: %v", err) },
+	)
 }
 
 func (r *Runner) cleanup() error {

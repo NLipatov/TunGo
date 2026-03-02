@@ -3,6 +3,7 @@ package bubble_tea
 import (
 	"context"
 	"errors"
+	"net/netip"
 	"strings"
 	"time"
 	"tungo/infrastructure/telemetry/trafficstats"
@@ -23,6 +24,10 @@ type RuntimeDashboardOptions struct {
 	LogFeed         RuntimeLogFeed
 	ServerSupported bool
 	ReadyCh         <-chan struct{}
+	ServerIPv4      netip.Addr
+	ServerIPv6      netip.Addr
+	TunnelIPv4      netip.Addr
+	TunnelIPv6      netip.Addr
 }
 
 type runtimeTickMsg struct {
@@ -47,10 +52,16 @@ const (
 
 const (
 	runtimeSparklinePoints = 40
+
+	runtimeStopConfirmTitleClient = "Stop tunnel?"
+	runtimeStopConfirmTitleServer = "Stop server?"
+
+	runtimeHintDataplaneStopConfirm = "Esc open stop confirmation | Tab switch tabs | ctrl+c exit"
+	runtimeHintDataplaneReconfigure = "Esc reconfigure | Tab switch tabs | ctrl+c exit"
+	runtimeHintDataplaneConfirmOpen = "left/right choose | Enter confirm | Esc cancel | ctrl+c exit"
 )
 
 var zeroBrailleSparklineCache = initZeroBrailleSparklineCache()
-
 var ErrRuntimeDashboardExitRequested = errors.New("runtime dashboard exit requested")
 
 type RuntimeDashboard struct {
@@ -78,6 +89,10 @@ type RuntimeDashboard struct {
 	reconfigureRequested bool
 	readyCh              <-chan struct{}
 	connected            bool
+	serverIPv4           netip.Addr
+	serverIPv6           netip.Addr
+	tunnelIPv4           netip.Addr
+	tunnelIPv6           netip.Addr
 }
 
 type runtimeDashboardProgram interface {
@@ -123,6 +138,10 @@ func NewRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions, s
 		tickSeq:         1,
 		readyCh:         readyCh,
 		connected:       connected,
+		serverIPv4:      options.ServerIPv4,
+		serverIPv6:      options.ServerIPv6,
+		tunnelIPv4:      options.TunnelIPv4,
+		tunnelIPv6:      options.TunnelIPv6,
 	}
 	if model.preferences.ShowDataplaneGraph {
 		model.recordTrafficSample(trafficstats.SnapshotGlobal())
@@ -369,6 +388,12 @@ func (m RuntimeDashboard) mainView() string {
 		modeLine,
 		status,
 	}
+	if connectedTo := m.connectedToLine(); connectedTo != "" {
+		body = append(body, connectedTo)
+	}
+	if tunnelIP := m.tunnelIPLine(); tunnelIP != "" {
+		body = append(body, tunnelIP)
+	}
 	if m.preferences.ShowDataplaneStats || m.preferences.ShowDataplaneGraph {
 		body = append(body, "")
 	}
@@ -389,18 +414,15 @@ func (m RuntimeDashboard) mainView() string {
 		body = append(body, "", "Dataplane metrics are hidden in Settings.")
 	}
 	if m.confirmOpen {
-		body = append(body, "", "Stop tunnel?", "")
+		body = append(body, "", m.stopConfirmTitle(), "")
 		body = append(body, renderSelectableRows(
-			[]string{"Continue", "Stop"},
+			[]string{"Continue", m.stopActionLabel()},
 			m.confirmCursor,
 			contentWidth,
 			styles,
 		)...)
 	}
-	hint := "Tab switch tabs | ctrl+c exit"
-	if m.confirmOpen {
-		hint = "left/right choose | Enter confirm | Esc cancel | ctrl+c exit"
-	}
+	hint := m.dataplaneHint()
 
 	return renderScreenRaw(
 		m.width,
@@ -412,6 +434,58 @@ func (m RuntimeDashboard) mainView() string {
 		m.preferences,
 		styles,
 	)
+}
+
+func (m RuntimeDashboard) connectedToLine() string {
+	if !m.serverIPv4.IsValid() && !m.serverIPv6.IsValid() {
+		return ""
+	}
+	parts := make([]string, 0, 2)
+	if m.serverIPv4.IsValid() {
+		parts = append(parts, "IPv4 "+m.serverIPv4.String())
+	}
+	if m.serverIPv6.IsValid() {
+		parts = append(parts, "IPv6 "+m.serverIPv6.String())
+	}
+	return "Server IP: " + strings.Join(parts, " | ")
+}
+
+func (m RuntimeDashboard) tunnelIPLine() string {
+	if !m.tunnelIPv4.IsValid() && !m.tunnelIPv6.IsValid() {
+		return ""
+	}
+	parts := make([]string, 0, 2)
+	if m.tunnelIPv4.IsValid() {
+		parts = append(parts, "IPv4 "+m.tunnelIPv4.String())
+	}
+	if m.tunnelIPv6.IsValid() {
+		parts = append(parts, "IPv6 "+m.tunnelIPv6.String())
+	}
+	return "Tunnel IP: " + strings.Join(parts, " | ")
+}
+
+func (m RuntimeDashboard) stopActionLabel() string {
+	if m.mode == RuntimeDashboardClient && m.preferences.AutoConnect {
+		return "Stop (AutoConnect will be disabled)"
+	}
+	return "Stop"
+}
+
+func (m RuntimeDashboard) stopConfirmTitle() string {
+	if m.mode == RuntimeDashboardServer {
+		return runtimeStopConfirmTitleServer
+	}
+	return runtimeStopConfirmTitleClient
+}
+
+func (m RuntimeDashboard) dataplaneHint() string {
+	if m.confirmOpen {
+		return runtimeHintDataplaneConfirmOpen
+	}
+	if m.mode == RuntimeDashboardClient && !m.connected {
+		return runtimeHintDataplaneReconfigure
+	}
+	return runtimeHintDataplaneStopConfirm
 }
 
 func (m RuntimeDashboard) settingsView() string {

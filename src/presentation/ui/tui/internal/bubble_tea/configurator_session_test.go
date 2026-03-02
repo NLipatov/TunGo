@@ -56,6 +56,14 @@ func (s sessionClientConfigManagerInvalid) Configuration() (*clientConfiguration
 	return nil, s.err
 }
 
+type testConfiguratorSessionProgram struct {
+	run func() (tea.Model, error)
+}
+
+func (p testConfiguratorSessionProgram) Run() (tea.Model, error) {
+	return p.run()
+}
+
 func newTestSessionModel(t *testing.T) configuratorSessionModel {
 	t.Helper()
 	manager := &sessionServerConfigManagerStub{
@@ -76,6 +84,113 @@ func newTestSessionModel(t *testing.T) configuratorSessionModel {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
 	return model
+}
+
+func validSessionOptions() ConfiguratorSessionOptions {
+	manager := &sessionServerConfigManagerStub{
+		peers: []serverConfiguration.AllowedPeer{
+			{Name: "test", ClientID: 1, Enabled: true},
+		},
+	}
+	return ConfiguratorSessionOptions{
+		Observer:            sessionObserverStub{},
+		Selector:            sessionSelectorStub{},
+		Creator:             sessionCreatorStub{},
+		Deleter:             sessionDeleterStub{},
+		ClientConfigManager: sessionClientConfigManagerStub{},
+		ServerConfigManager: manager,
+		ServerSupported:     true,
+	}
+}
+
+type nonConfiguratorModel struct{}
+
+func (nonConfiguratorModel) Init() tea.Cmd { return nil }
+func (nonConfiguratorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	return nonConfiguratorModel{}, nil
+}
+func (nonConfiguratorModel) View() tea.View { return tea.NewView("x") }
+
+func TestRunConfiguratorSession_NewModelError(t *testing.T) {
+	_, err := RunConfiguratorSession(ConfiguratorSessionOptions{})
+	if err == nil {
+		t.Fatal("expected model construction error")
+	}
+}
+
+func TestRunConfiguratorSession_RunError(t *testing.T) {
+	prev := newConfiguratorSessionProgram
+	t.Cleanup(func() { newConfiguratorSessionProgram = prev })
+	newConfiguratorSessionProgram = func(model tea.Model) configuratorSessionProgram {
+		return testConfiguratorSessionProgram{
+			run: func() (tea.Model, error) {
+				return model, errors.New("run failed")
+			},
+		}
+	}
+
+	_, err := RunConfiguratorSession(validSessionOptions())
+	if err == nil || err.Error() != "run failed" {
+		t.Fatalf("expected run error, got %v", err)
+	}
+}
+
+func TestRunConfiguratorSession_InvalidFinalModelType(t *testing.T) {
+	prev := newConfiguratorSessionProgram
+	t.Cleanup(func() { newConfiguratorSessionProgram = prev })
+	newConfiguratorSessionProgram = func(model tea.Model) configuratorSessionProgram {
+		return testConfiguratorSessionProgram{
+			run: func() (tea.Model, error) {
+				return nonConfiguratorModel{}, nil
+			},
+		}
+	}
+
+	_, err := RunConfiguratorSession(validSessionOptions())
+	if err == nil || err.Error() != "invalid configurator session model" {
+		t.Fatalf("expected invalid model type error, got %v", err)
+	}
+}
+
+func TestRunConfiguratorSession_ResultError(t *testing.T) {
+	prev := newConfiguratorSessionProgram
+	t.Cleanup(func() { newConfiguratorSessionProgram = prev })
+	newConfiguratorSessionProgram = func(model tea.Model) configuratorSessionProgram {
+		return testConfiguratorSessionProgram{
+			run: func() (tea.Model, error) {
+				m := model.(configuratorSessionModel)
+				m.resultErr = errors.New("result failed")
+				return m, nil
+			},
+		}
+	}
+
+	_, err := RunConfiguratorSession(validSessionOptions())
+	if err == nil || err.Error() != "result failed" {
+		t.Fatalf("expected result error, got %v", err)
+	}
+}
+
+func TestRunConfiguratorSession_Success(t *testing.T) {
+	prev := newConfiguratorSessionProgram
+	t.Cleanup(func() { newConfiguratorSessionProgram = prev })
+	newConfiguratorSessionProgram = func(model tea.Model) configuratorSessionProgram {
+		return testConfiguratorSessionProgram{
+			run: func() (tea.Model, error) {
+				m := model.(configuratorSessionModel)
+				m.resultMode = mode.Server
+				return m, nil
+			},
+		}
+	}
+
+	got, err := RunConfiguratorSession(validSessionOptions())
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if got != mode.Server {
+		t.Fatalf("expected mode.Server, got %v", got)
+	}
 }
 
 // --- 1. Init ---

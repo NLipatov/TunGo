@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	runnerCommon "tungo/presentation/runners/common"
 )
 
 type RuntimeMode string
@@ -11,10 +12,17 @@ const (
 	RuntimeModeServer RuntimeMode = "server"
 )
 
+type RuntimeAddressInfo = runnerCommon.RuntimeAddressInfo
+
+type RuntimeUIOptions struct {
+	ReadyCh <-chan struct{}
+	Address RuntimeAddressInfo
+}
+
 type runtimeBackend interface {
 	enableRuntimeLogCapture(capacity int)
 	disableRuntimeLogCapture()
-	runRuntimeDashboard(ctx context.Context, mode RuntimeMode, readyCh <-chan struct{}) (bool, error)
+	runRuntimeDashboard(ctx context.Context, mode RuntimeMode, options RuntimeUIOptions) (bool, error)
 }
 
 var activeRuntimeBackend runtimeBackend = newBubbleTeaRuntimeBackend()
@@ -27,6 +35,6 @@ func DisableRuntimeLogCapture() {
 	activeRuntimeBackend.disableRuntimeLogCapture()
 }
 
-func RunRuntimeDashboard(ctx context.Context, mode RuntimeMode, readyCh <-chan struct{}) (bool, error) {
-	return activeRuntimeBackend.runRuntimeDashboard(ctx, mode, readyCh)
+func RunRuntimeDashboard(ctx context.Context, mode RuntimeMode, options RuntimeUIOptions) (bool, error) {
+	return activeRuntimeBackend.runRuntimeDashboard(ctx, mode, options)
 }

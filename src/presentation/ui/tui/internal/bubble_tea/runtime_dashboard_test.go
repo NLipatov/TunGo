@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/netip"
 	"strings"
 	"testing"
 	"time"
@@ -82,11 +83,11 @@ func TestRuntimeDashboard_TogglesFooterInSettings(t *testing.T) {
 	s.update(p)
 
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, s)
-	m1, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})                      // settings
-	m2, _ := m1.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyDown}) // stats units row
-	m3, _ := m2.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyDown}) // dataplane stats row
-	m4, _ := m3.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyDown}) // dataplane graph row
-	m5, _ := m4.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyDown}) // footer row
+	m1, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})                       // settings
+	m2, _ := m1.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyDown})  // stats units row
+	m3, _ := m2.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyDown})  // dataplane stats row
+	m4, _ := m3.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyDown})  // dataplane graph row
+	m5, _ := m4.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyDown})  // footer row
 	m6, _ := m5.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyRight}) // toggle
 	toggled := m6.(RuntimeDashboard)
 
@@ -110,8 +111,8 @@ func TestRuntimeDashboard_TogglesStatsUnitsInSettings(t *testing.T) {
 	s.update(p)
 
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, s)
-	m1, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})                      // settings
-	m2, _ := m1.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyDown}) // stats units row
+	m1, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})                       // settings
+	m2, _ := m1.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyDown})  // stats units row
 	m3, _ := m2.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyRight}) // toggle
 	toggled := m3.(RuntimeDashboard)
 
@@ -390,7 +391,12 @@ func TestRuntimeDashboard_EscOnDataplane_OpensConfirm_StayCancels(t *testing.T) 
 }
 
 func TestRuntimeDashboard_EscOnDataplane_ConfirmReconfigureQuits(t *testing.T) {
-	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
+	s := testSettings()
+	p := s.Preferences()
+	p.AutoConnect = true
+	s.update(p)
+
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, s)
 	updatedModel, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	updated := updatedModel.(RuntimeDashboard)
 	updatedModel, _ = updated.Update(tea.KeyPressMsg{Code: tea.KeyRight})
@@ -409,6 +415,44 @@ func TestRuntimeDashboard_EscOnDataplane_ConfirmReconfigureQuits(t *testing.T) {
 	}
 	if updated.exitRequested {
 		t.Fatal("did not expect exitRequested=true when confirming reconfigure")
+	}
+	if !s.Preferences().AutoConnect {
+		t.Fatal("expected runtime dashboard not to mutate AutoConnect directly on stop")
+	}
+}
+
+func TestRuntimeDashboard_EscOnDataplane_StopLabelMentionsAutoconnectDisable(t *testing.T) {
+	s := testSettings()
+	p := s.Preferences()
+	p.AutoConnect = true
+	s.update(p)
+
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, s)
+	updatedModel, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	view := updatedModel.(RuntimeDashboard).View().Content
+
+	if !strings.Contains(view, "Stop (AutoConnect will be disabled)") {
+		t.Fatalf("expected Stop label to mention AutoConnect disable, got %q", view)
+	}
+}
+
+func TestRuntimeDashboard_DataplaneHint_UsesStopConfirmationCopy(t *testing.T) {
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
+	view := m.View().Content
+	if !strings.Contains(view, "Esc open stop confirmation | Tab switch tabs | ctrl+c exit") {
+		t.Fatalf("expected stop-confirmation hint in dataplane view, got %q", view)
+	}
+}
+
+func TestRuntimeDashboard_DataplaneHint_ConnectingClientUsesReconfigureCopy(t *testing.T) {
+	readyCh := make(chan struct{})
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		Mode:    RuntimeDashboardClient,
+		ReadyCh: readyCh,
+	}, testSettings())
+	view := m.View().Content
+	if !strings.Contains(view, "Esc reconfigure | Tab switch tabs | ctrl+c exit") {
+		t.Fatalf("expected reconfigure hint in connecting client view, got %q", view)
 	}
 }
 
@@ -573,6 +617,22 @@ func TestRuntimeDashboard_MainView_ServerAndFooterOff(t *testing.T) {
 	}
 	if !strings.Contains(view, "RX trend:") || !strings.Contains(view, "TX trend:") {
 		t.Fatalf("expected sparkline trend lines in dataplane view, got %q", view)
+	}
+}
+
+func TestRuntimeDashboard_MainView_ShowsServerAndNetworkAddresses(t *testing.T) {
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		ServerIPv4: netip.MustParseAddr("198.51.100.10"),
+		ServerIPv6: netip.MustParseAddr("2001:db8::10"),
+		TunnelIPv4: netip.MustParseAddr("10.0.0.2"),
+		TunnelIPv6: netip.MustParseAddr("fd00::2"),
+	}, testSettings())
+	view := m.View().Content
+	if !strings.Contains(view, "Server IP: IPv4 198.51.100.10 | IPv6 2001:db8::10") {
+		t.Fatalf("expected server IPs line in main view, got %q", view)
+	}
+	if !strings.Contains(view, "Tunnel IP: IPv4 10.0.0.2 | IPv6 fd00::2") {
+		t.Fatalf("expected network address line in main view, got %q", view)
 	}
 }
 
@@ -1248,7 +1308,7 @@ func TestRuntimeDashboard_Update_LogTickMismatchedSeqOnLogsScreen(t *testing.T) 
 		LogFeed: testRuntimeLogFeed{lines: []string{"one", "two"}},
 	}, testSettings())
 	// Navigate to logs screen.
-	m1, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})  // settings
+	m1, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})                     // settings
 	m2, _ := m1.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyTab}) // logs
 	dash := m2.(RuntimeDashboard)
 
@@ -1659,5 +1719,50 @@ func TestRuntimeDashboard_Init_Connected_NoReadyCmd(t *testing.T) {
 	cmd := m.Init()
 	if cmd == nil {
 		t.Fatal("expected non-nil batch command from Init even when connected")
+	}
+}
+
+func TestRuntimeDashboard_StopConfirmTitle_ServerMode(t *testing.T) {
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		Mode: RuntimeDashboardServer,
+	}, testSettings())
+	if got := m.stopConfirmTitle(); got != runtimeStopConfirmTitleServer {
+		t.Fatalf("expected %q, got %q", runtimeStopConfirmTitleServer, got)
+	}
+}
+
+func TestWaitForReadyCh_ChannelClosed_ReturnsReadyMsg(t *testing.T) {
+	readyCh := make(chan struct{})
+	close(readyCh)
+
+	cmd := waitForReadyCh(context.Background(), readyCh, 42)
+	if cmd == nil {
+		t.Fatal("expected non-nil wait cmd")
+	}
+	msg := cmd()
+	ready, ok := msg.(runtimeReadyMsg)
+	if !ok {
+		t.Fatalf("expected runtimeReadyMsg, got %T", msg)
+	}
+	if ready.seq != 42 {
+		t.Fatalf("expected seq=42, got %d", ready.seq)
+	}
+}
+
+func TestWaitForReadyCh_ContextCanceled_ReturnsContextDoneMsg(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	cmd := waitForReadyCh(ctx, make(chan struct{}), 7)
+	if cmd == nil {
+		t.Fatal("expected non-nil wait cmd")
+	}
+	msg := cmd()
+	done, ok := msg.(runtimeContextDoneMsg)
+	if !ok {
+		t.Fatalf("expected runtimeContextDoneMsg, got %T", msg)
+	}
+	if done.seq != 7 {
+		t.Fatalf("expected seq=7, got %d", done.seq)
 	}
 }

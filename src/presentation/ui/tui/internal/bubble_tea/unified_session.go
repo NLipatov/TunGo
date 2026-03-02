@@ -3,6 +3,7 @@ package bubble_tea
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"sync"
 
@@ -258,6 +259,27 @@ func (m unifiedSessionModel) updateRuntime(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	if rtModel.reconfigureRequested {
+		// Keep in-memory preferences in sync before re-entering configurator;
+		// this prevents immediate auto-connect restart in the same session.
+		if rtModel.mode == RuntimeDashboardClient {
+			prefs := m.settings.Preferences()
+			if prefs.AutoConnect {
+				prefs.AutoConnect = false
+				m.settings.update(prefs)
+				if err := persistAutoConnectDisabled(prefs); err != nil {
+					m.stopAllLogWaits()
+					fe := newFatalErrorModel(
+						fmt.Sprintf("Failed to persist AutoConnect=false before reconfigure: %v", err),
+						m.settings,
+					)
+					fe.width = m.width
+					fe.height = m.height
+					m.fatalError = &fe
+					m.phase = phaseFatalError
+					return m, nil
+				}
+			}
+		}
 		GlobalRuntimeLogWriteSeparator("reconfigured")
 		// Reset configurator for a fresh cycle.
 		newCfg, err := newConfiguratorSessionModel(m.configOpts, m.settings)
@@ -283,6 +305,12 @@ func (m unifiedSessionModel) updateRuntime(msg tea.Msg) (tea.Model, tea.Cmd) {
 	cmd = filterQuit(cmd)
 	return m, cmd
 }
+
+func persistAutoConnectDisabled(prefs UIPreferences) error {
+	return persistAutoConnectDisabledToDisk(prefs)
+}
+
+var persistAutoConnectDisabledToDisk = savePreferencesToDisk
 
 func (m unifiedSessionModel) updateFatalError(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.fatalError == nil {
