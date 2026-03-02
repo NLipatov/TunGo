@@ -52,6 +52,13 @@ const (
 
 const (
 	runtimeSparklinePoints = 40
+
+	runtimeStopConfirmTitleClient = "Stop tunnel?"
+	runtimeStopConfirmTitleServer = "Stop server?"
+
+	runtimeHintDataplaneStopConfirm = "Esc open stop confirmation | Tab switch tabs | ctrl+c exit"
+	runtimeHintDataplaneReconfigure = "Esc reconfigure | Tab switch tabs | ctrl+c exit"
+	runtimeHintDataplaneConfirmOpen = "left/right choose | Enter confirm | Esc cancel | ctrl+c exit"
 )
 
 var zeroBrailleSparklineCache = initZeroBrailleSparklineCache()
@@ -407,7 +414,7 @@ func (m RuntimeDashboard) mainView() string {
 		body = append(body, "", "Dataplane metrics are hidden in Settings.")
 	}
 	if m.confirmOpen {
-		body = append(body, "", "Stop tunnel?", "")
+		body = append(body, "", m.stopConfirmTitle(), "")
 		body = append(body, renderSelectableRows(
 			[]string{"Continue", m.stopActionLabel()},
 			m.confirmCursor,
@@ -415,13 +422,7 @@ func (m RuntimeDashboard) mainView() string {
 			styles,
 		)...)
 	}
-	hint := "Esc open stop confirmation | Tab switch tabs | ctrl+c exit"
-	if m.mode == RuntimeDashboardClient && !m.connected {
-		hint = "Esc reconfigure | Tab switch tabs | ctrl+c exit"
-	}
-	if m.confirmOpen {
-		hint = "left/right choose | Enter confirm | Esc cancel | ctrl+c exit"
-	}
+	hint := m.dataplaneHint()
 
 	return renderScreenRaw(
 		m.width,
@@ -468,6 +469,23 @@ func (m RuntimeDashboard) stopActionLabel() string {
 		return "Stop (AutoConnect will be disabled)"
 	}
 	return "Stop"
+}
+
+func (m RuntimeDashboard) stopConfirmTitle() string {
+	if m.mode == RuntimeDashboardServer {
+		return runtimeStopConfirmTitleServer
+	}
+	return runtimeStopConfirmTitleClient
+}
+
+func (m RuntimeDashboard) dataplaneHint() string {
+	if m.confirmOpen {
+		return runtimeHintDataplaneConfirmOpen
+	}
+	if m.mode == RuntimeDashboardClient && !m.connected {
+		return runtimeHintDataplaneReconfigure
+	}
+	return runtimeHintDataplaneStopConfirm
 }
 
 func (m RuntimeDashboard) settingsView() string {
