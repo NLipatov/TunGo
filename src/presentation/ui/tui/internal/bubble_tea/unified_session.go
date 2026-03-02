@@ -3,7 +3,7 @@ package bubble_tea
 import (
 	"context"
 	"errors"
-	"log"
+	"fmt"
 	"os"
 	"sync"
 
@@ -267,7 +267,16 @@ func (m unifiedSessionModel) updateRuntime(msg tea.Msg) (tea.Model, tea.Cmd) {
 				prefs.AutoConnect = false
 				m.settings.update(prefs)
 				if err := persistAutoConnectDisabled(prefs); err != nil {
-					log.Printf("persist AutoConnect=false failed: %v", err)
+					m.stopAllLogWaits()
+					fe := newFatalErrorModel(
+						fmt.Sprintf("Failed to persist AutoConnect=false before reconfigure: %v", err),
+						m.settings,
+					)
+					fe.width = m.width
+					fe.height = m.height
+					m.fatalError = &fe
+					m.phase = phaseFatalError
+					return m, nil
 				}
 			}
 		}
@@ -298,8 +307,10 @@ func (m unifiedSessionModel) updateRuntime(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func persistAutoConnectDisabled(prefs UIPreferences) error {
-	return savePreferencesToDisk(prefs)
+	return persistAutoConnectDisabledToDisk(prefs)
 }
+
+var persistAutoConnectDisabledToDisk = savePreferencesToDisk
 
 func (m unifiedSessionModel) updateFatalError(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.fatalError == nil {

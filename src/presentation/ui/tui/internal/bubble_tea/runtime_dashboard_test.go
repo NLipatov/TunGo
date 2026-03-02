@@ -1721,3 +1721,48 @@ func TestRuntimeDashboard_Init_Connected_NoReadyCmd(t *testing.T) {
 		t.Fatal("expected non-nil batch command from Init even when connected")
 	}
 }
+
+func TestRuntimeDashboard_StopConfirmTitle_ServerMode(t *testing.T) {
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		Mode: RuntimeDashboardServer,
+	}, testSettings())
+	if got := m.stopConfirmTitle(); got != runtimeStopConfirmTitleServer {
+		t.Fatalf("expected %q, got %q", runtimeStopConfirmTitleServer, got)
+	}
+}
+
+func TestWaitForReadyCh_ChannelClosed_ReturnsReadyMsg(t *testing.T) {
+	readyCh := make(chan struct{})
+	close(readyCh)
+
+	cmd := waitForReadyCh(context.Background(), readyCh, 42)
+	if cmd == nil {
+		t.Fatal("expected non-nil wait cmd")
+	}
+	msg := cmd()
+	ready, ok := msg.(runtimeReadyMsg)
+	if !ok {
+		t.Fatalf("expected runtimeReadyMsg, got %T", msg)
+	}
+	if ready.seq != 42 {
+		t.Fatalf("expected seq=42, got %d", ready.seq)
+	}
+}
+
+func TestWaitForReadyCh_ContextCanceled_ReturnsContextDoneMsg(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	cmd := waitForReadyCh(ctx, make(chan struct{}), 7)
+	if cmd == nil {
+		t.Fatal("expected non-nil wait cmd")
+	}
+	msg := cmd()
+	done, ok := msg.(runtimeContextDoneMsg)
+	if !ok {
+		t.Fatalf("expected runtimeContextDoneMsg, got %T", msg)
+	}
+	if done.seq != 7 {
+		t.Fatalf("expected seq=7, got %d", done.seq)
+	}
+}

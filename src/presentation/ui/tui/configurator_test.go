@@ -474,3 +474,25 @@ func TestConfigureContinuous_ReusesExistingSession(t *testing.T) {
 		t.Fatal("expected factory NOT called when session exists")
 	}
 }
+
+func TestConfigurator_Close_ClosesAndClearsSession(t *testing.T) {
+	mock := &mockUnifiedSession{}
+	c := newContinuousConfigurator()
+	withMockUnifiedSession(t, c, mock)
+
+	c.Close()
+	if !mock.closeCalled {
+		t.Fatal("expected Close() to call underlying session Close")
+	}
+	if c.sh.handle != nil {
+		t.Fatal("expected session handle to be cleared")
+	}
+}
+
+func TestConfigurator_Close_IdempotentWithNilSession(t *testing.T) {
+	c := newContinuousConfigurator()
+	c.sh = &sessionHolder{handle: nil}
+
+	c.Close()
+	c.Close()
+}

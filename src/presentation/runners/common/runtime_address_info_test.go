@@ -65,3 +65,14 @@ func TestRuntimeAddressInfoFromServerConfiguration(t *testing.T) {
 		t.Fatalf("TunnelIPv6: got %v", got.TunnelIPv6)
 	}
 }
+
+func TestRuntimeAddressInfoFromClientConfiguration_ActiveSettingsErrorReturnsZeroInfo(t *testing.T) {
+	cfg := clientConfiguration.Configuration{
+		Protocol: settings.UNKNOWN,
+	}
+
+	got := RuntimeAddressInfoFromClientConfiguration(cfg)
+	if got.ServerIPv4.IsValid() || got.ServerIPv6.IsValid() || got.TunnelIPv4.IsValid() || got.TunnelIPv6.IsValid() {
+		t.Fatalf("expected zero info when active settings resolution fails, got %+v", got)
+	}
+}
