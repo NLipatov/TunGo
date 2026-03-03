@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/netip"
 	"testing"
+	"tungo/infrastructure/settings"
+	runnerCommon "tungo/presentation/runners/common"
 )
 
 type runtimeUITestBackend struct {
@@ -50,12 +52,16 @@ func TestRuntimeUI_Wrappers(t *testing.T) {
 		if options.Address.ServerIPv4 != netip.MustParseAddr("198.51.100.1") {
 			t.Fatalf("expected forwarded server IPv4, got %v", options.Address.ServerIPv4)
 		}
+		if options.Protocol != settings.UDP {
+			t.Fatalf("expected forwarded protocol UDP, got %v", options.Protocol)
+		}
 		return true, nil
 	}
 	quit, err := RunRuntimeDashboard(context.Background(), RuntimeModeServer, RuntimeUIOptions{
-		Address: RuntimeAddressInfo{
+		Address: runnerCommon.RuntimeAddressInfo{
 			ServerIPv4: netip.MustParseAddr("198.51.100.1"),
 		},
+		Protocol: settings.UDP,
 	})
 	if err != nil || !quit {
 		t.Fatalf("expected quit=true nil err, got quit=%v err=%v", quit, err)
