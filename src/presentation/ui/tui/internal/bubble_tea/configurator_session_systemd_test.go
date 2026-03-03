@@ -153,12 +153,13 @@ func TestUpdateServerSelectScreen_EnterOnSystemdOption_InstallsUnit(t *testing.T
 }
 
 func TestUpdateClientSelectScreen_SelectConfig_ActiveDaemon_ShowsStopPrompt(t *testing.T) {
+	s := settingsForMode(ModePreferenceClient)
 	opts := defaultConfiguratorOpts()
 	opts.Observer = sessionObserverWithConfigs{configs: []string{"cfg-a"}}
 	opts.CheckSystemdUnitActive = func() (bool, error) { return true, nil }
 	opts.StopSystemdUnit = func() error { return nil }
 
-	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
+	model, err := newConfiguratorSessionModel(opts, s)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -180,6 +181,12 @@ func TestUpdateClientSelectScreen_SelectConfig_ActiveDaemon_ShowsStopPrompt(t *t
 	}
 	if updated.pendingStartScreen != configuratorScreenClientSelect {
 		t.Fatalf("expected pending start screen client select, got %v", updated.pendingStartScreen)
+	}
+	if updated.pendingClientConfig != "cfg-a" {
+		t.Fatalf("expected pending client config cfg-a, got %q", updated.pendingClientConfig)
+	}
+	if s.Preferences().AutoSelectClientConfig != "" {
+		t.Fatalf("expected AutoSelectClientConfig unchanged before confirmation, got %q", s.Preferences().AutoSelectClientConfig)
 	}
 }
 
@@ -244,14 +251,20 @@ func TestUpdateSystemdActiveConfirmScreen_EnterStop_StopsDaemonAndStartsMode(t *
 }
 
 func TestUpdateSystemdActiveConfirmScreen_Cancel_ReturnsToPreviousScreen(t *testing.T) {
+	s := settingsForMode(ModePreferenceClient)
+	p := s.Preferences()
+	p.AutoSelectClientConfig = "old-cfg"
+	s.update(p)
+
 	opts := defaultConfiguratorOpts()
-	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
+	model, err := newConfiguratorSessionModel(opts, s)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenSystemdActiveConfirm
 	model.pendingStartMode = mode.Client
 	model.pendingStartScreen = configuratorScreenClientSelect
+	model.pendingClientConfig = "new-cfg"
 	model.cursor = 1 // cancel
 
 	updatedModel, cmd := model.updateSystemdActiveConfirmScreen(keyNamed(tea.KeyEnter))
@@ -268,21 +281,33 @@ func TestUpdateSystemdActiveConfirmScreen_Cancel_ReturnsToPreviousScreen(t *test
 	if updated.pendingStartMode != mode.Unknown {
 		t.Fatalf("expected pending mode cleared, got %v", updated.pendingStartMode)
 	}
+	if updated.pendingClientConfig != "" {
+		t.Fatalf("expected pending client config cleared, got %q", updated.pendingClientConfig)
+	}
 	if !strings.Contains(updated.notice, "cancelled") {
 		t.Fatalf("expected cancellation notice, got %q", updated.notice)
+	}
+	if s.Preferences().AutoSelectClientConfig != "old-cfg" {
+		t.Fatalf("expected AutoSelectClientConfig unchanged on cancel, got %q", s.Preferences().AutoSelectClientConfig)
 	}
 }
 
 func TestUpdateSystemdActiveConfirmScreen_StopFails_ShowsNoticeAndReturns(t *testing.T) {
+	s := settingsForMode(ModePreferenceClient)
+	p := s.Preferences()
+	p.AutoSelectClientConfig = "old-cfg"
+	s.update(p)
+
 	opts := defaultConfiguratorOpts()
 	opts.StopSystemdUnit = func() error { return errors.New("stop failed") }
-	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
+	model, err := newConfiguratorSessionModel(opts, s)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenSystemdActiveConfirm
 	model.pendingStartMode = mode.Client
 	model.pendingStartScreen = configuratorScreenClientSelect
+	model.pendingClientConfig = "new-cfg"
 	model.cursor = 0 // stop and continue
 
 	updatedModel, cmd := model.updateSystemdActiveConfirmScreen(keyNamed(tea.KeyEnter))
@@ -298,6 +323,47 @@ func TestUpdateSystemdActiveConfirmScreen_StopFails_ShowsNoticeAndReturns(t *tes
 	}
 	if !strings.Contains(updated.notice, "Failed to stop systemd daemon") {
 		t.Fatalf("expected stop failure notice, got %q", updated.notice)
+	}
+	if s.Preferences().AutoSelectClientConfig != "old-cfg" {
+		t.Fatalf("expected AutoSelectClientConfig unchanged on stop failure, got %q", s.Preferences().AutoSelectClientConfig)
+	}
+}
+
+func TestUpdateSystemdActiveConfirmScreen_EnterStop_Client_PersistsAutoSelectConfig(t *testing.T) {
+	stopCalls := 0
+	s := settingsForMode(ModePreferenceClient)
+	opts := defaultConfiguratorOpts()
+	opts.StopSystemdUnit = func() error {
+		stopCalls++
+		return nil
+	}
+
+	model, err := newConfiguratorSessionModel(opts, s)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	model.screen = configuratorScreenSystemdActiveConfirm
+	model.pendingStartMode = mode.Client
+	model.pendingStartScreen = configuratorScreenClientSelect
+	model.pendingClientConfig = "cfg-a"
+	model.cursor = 0
+
+	updatedModel, cmd := model.updateSystemdActiveConfirmScreen(keyNamed(tea.KeyEnter))
+	updated := updatedModel.(configuratorSessionModel)
+	if stopCalls != 1 {
+		t.Fatalf("expected one stop call, got %d", stopCalls)
+	}
+	if cmd == nil {
+		t.Fatal("expected non-nil quit cmd")
+	}
+	if !updated.done {
+		t.Fatal("expected done=true after stop and continue")
+	}
+	if updated.resultMode != mode.Client {
+		t.Fatalf("expected mode.Client, got %v", updated.resultMode)
+	}
+	if s.Preferences().AutoSelectClientConfig != "cfg-a" {
+		t.Fatalf("expected AutoSelectClientConfig persisted after confirmation, got %q", s.Preferences().AutoSelectClientConfig)
 	}
 }
 

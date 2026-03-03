@@ -158,8 +158,9 @@ type configuratorSessionModel struct {
 
 	logs logViewport
 
-	pendingStartMode   mode.Mode
-	pendingStartScreen configuratorScreen
+	pendingStartMode    mode.Mode
+	pendingStartScreen  configuratorScreen
+	pendingClientConfig string
 
 	resultMode mode.Mode
 	resultErr  error
@@ -638,13 +639,13 @@ func (m configuratorSessionModel) updateClientSelectScreen(msg tea.KeyPressMsg) 
 			}
 		}
 
-		p := m.settings.Preferences()
-		p.AutoSelectClientConfig = selected
-		m.settings.update(p)
-		_ = savePreferencesToDisk(p)
 		m = m.startModeWithSystemdGuard(mode.Client, configuratorScreenClientSelect)
 		if m.done {
+			m = m.persistAutoSelectClientConfig(selected)
 			return m, tea.Quit
+		}
+		if m.screen == configuratorScreenSystemdActiveConfirm {
+			m.pendingClientConfig = selected
 		}
 		return m, nil
 	}
@@ -1033,7 +1034,11 @@ func (m configuratorSessionModel) updateSystemdActiveConfirmScreen(msg tea.KeyPr
 	}
 
 	targetMode := m.pendingStartMode
+	pendingClientConfig := m.pendingClientConfig
 	m = m.clearPendingSystemdStart()
+	if targetMode == mode.Client {
+		m = m.persistAutoSelectClientConfig(pendingClientConfig)
+	}
 	m.notice = "Daemon stopped. Starting selected mode."
 	m.resultMode = targetMode
 	m.done = true
@@ -1082,6 +1087,18 @@ func (m configuratorSessionModel) cancelPendingSystemdStart(notice string) confi
 func (m configuratorSessionModel) clearPendingSystemdStart() configuratorSessionModel {
 	m.pendingStartMode = mode.Unknown
 	m.pendingStartScreen = configuratorScreenMode
+	m.pendingClientConfig = ""
+	return m
+}
+
+func (m configuratorSessionModel) persistAutoSelectClientConfig(selected string) configuratorSessionModel {
+	if strings.TrimSpace(selected) == "" {
+		return m
+	}
+	p := m.settings.Preferences()
+	p.AutoSelectClientConfig = selected
+	m.settings.update(p)
+	_ = savePreferencesToDisk(p)
 	return m
 }
 
