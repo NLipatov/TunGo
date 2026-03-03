@@ -200,6 +200,41 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_SkipsSelection(t *te
 	}
 }
 
+func TestNewConfiguratorSessionModel_AutoSelectClientConfig_DaemonActive_RequiresConfirmation(t *testing.T) {
+	s := settingsForMode(ModePreferenceClient)
+	p := s.Preferences()
+	p.AutoConnect = true
+	p.AutoSelectClientConfig = "cfg.json"
+	s.update(p)
+
+	selector := &sessionSelectorRecorder{}
+	opts := defaultConfiguratorOpts()
+	opts.Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
+	opts.Selector = selector
+	opts.CheckSystemdUnitActive = func() (bool, error) { return true, nil }
+	opts.StopSystemdUnit = func() error { return nil }
+
+	model, err := newConfiguratorSessionModel(opts, s)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if model.done {
+		t.Fatal("expected done=false when daemon is active")
+	}
+	if model.screen != configuratorScreenSystemdActiveConfirm {
+		t.Fatalf("expected configuratorScreenSystemdActiveConfirm, got %v", model.screen)
+	}
+	if model.pendingStartMode != mode.Client {
+		t.Fatalf("expected pendingStartMode=Client, got %v", model.pendingStartMode)
+	}
+	if model.pendingClientConfig != "cfg.json" {
+		t.Fatalf("expected pendingClientConfig=cfg.json, got %q", model.pendingClientConfig)
+	}
+	if selector.selected != "cfg.json" {
+		t.Fatalf("expected selector to receive cfg.json, got %q", selector.selected)
+	}
+}
+
 // TestNewConfiguratorSessionModel_AutoConnect_False_AutoSelectClientConfig_Set_ShowsClientSelect is the
 // direct regression test for the "auto-connects even with AutoConnect=false" bug. If AutoConnect is
 // false, the auto-skip block must not run, even when AutoSelectClientConfig is set and valid.

@@ -264,12 +264,16 @@ func newConfiguratorSessionModel(options ConfiguratorSessionOptions, settings *u
 							} else if cfgErr != nil {
 								model.notice = fmt.Sprintf("Auto-select failed for %q: %v", autoConfig, cfgErr)
 							} else {
-								model.resultMode = mode.Client
-								model.done = true
+								model = model.startModeWithSystemdGuard(mode.Client, configuratorScreenClientSelect)
+								if !model.done && model.screen == configuratorScreenSystemdActiveConfirm {
+									model.pendingClientConfig = autoConfig
+								}
 							}
 						} else {
-							model.resultMode = mode.Client
-							model.done = true
+							model = model.startModeWithSystemdGuard(mode.Client, configuratorScreenClientSelect)
+							if !model.done && model.screen == configuratorScreenSystemdActiveConfirm {
+								model.pendingClientConfig = autoConfig
+							}
 						}
 					} else {
 						model.notice = fmt.Sprintf("Auto-select failed for %q: %v", autoConfig, err)
