@@ -7,6 +7,8 @@ import (
 	"tungo/domain/mode"
 	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/PAL/configuration/server"
+	"tungo/infrastructure/PAL/exec_commander"
+	"tungo/infrastructure/PAL/systemd"
 	bubbleTea "tungo/presentation/ui/tui/internal/bubble_tea"
 	"tungo/presentation/ui/tui/internal/ui/contracts/selector"
 	"tungo/presentation/ui/tui/internal/ui/contracts/text_area"
@@ -33,6 +35,10 @@ type sessionHolder struct {
 // newUnifiedSession creates a new unified session. Replaced in tests.
 var newUnifiedSession = func(ctx context.Context, opts bubbleTea.ConfiguratorSessionOptions) (unifiedSessionHandle, error) {
 	return bubbleTea.NewUnifiedSession(ctx, opts)
+}
+
+var newSystemdInstaller = func() systemd.Installer {
+	return systemd.NewUnitInstaller(exec_commander.NewExecCommander())
 }
 
 type Configurator struct {
@@ -114,6 +120,8 @@ func (p *Configurator) configureContinuous(ctx context.Context) (mode.Mode, erro
 		return mode.Unknown, fmt.Errorf("continuous configurator is not initialized")
 	}
 
+	systemdInstaller := newSystemdInstaller()
+	systemdSupported := systemdInstaller.Supported()
 	configOpts := bubbleTea.ConfiguratorSessionOptions{
 		Observer:            p.clientConfigurator.observer,
 		Selector:            p.clientConfigurator.selector,
@@ -122,6 +130,15 @@ func (p *Configurator) configureContinuous(ctx context.Context) (mode.Mode, erro
 		ClientConfigManager: p.clientConfigurator.configurationManager,
 		ServerConfigManager: p.serverConfigurator.manager,
 		ServerSupported:     p.serverSupported,
+		SystemdSupported:    systemdSupported,
+	}
+	if systemdSupported {
+		configOpts.InstallClientSystemdUnit = systemdInstaller.InstallClientUnit
+		configOpts.CheckSystemdUnitActive = systemdInstaller.IsUnitActive
+		configOpts.StopSystemdUnit = systemdInstaller.StopUnit
+		if p.serverSupported {
+			configOpts.InstallServerSystemdUnit = systemdInstaller.InstallServerUnit
+		}
 	}
 
 	if p.sh == nil || p.sh.handle == nil {

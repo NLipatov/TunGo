@@ -63,13 +63,18 @@ var writeServerClientConfigFile = func(clientID int, data []byte) (string, error
 }
 
 type ConfiguratorSessionOptions struct {
-	Observer            clientConfiguration.Observer
-	Selector            clientConfiguration.Selector
-	Creator             clientConfiguration.Creator
-	Deleter             clientConfiguration.Deleter
-	ClientConfigManager clientConfiguration.ConfigurationManager
-	ServerConfigManager serverConfiguration.ConfigurationManager
-	ServerSupported     bool
+	Observer                 clientConfiguration.Observer
+	Selector                 clientConfiguration.Selector
+	Creator                  clientConfiguration.Creator
+	Deleter                  clientConfiguration.Deleter
+	ClientConfigManager      clientConfiguration.ConfigurationManager
+	ServerConfigManager      serverConfiguration.ConfigurationManager
+	ServerSupported          bool
+	SystemdSupported         bool
+	InstallClientSystemdUnit func() (string, error)
+	InstallServerSystemdUnit func() (string, error)
+	CheckSystemdUnitActive   func() (bool, error)
+	StopSystemdUnit          func() error
 }
 
 type configuratorScreen int
@@ -84,6 +89,7 @@ const (
 	configuratorScreenServerSelect
 	configuratorScreenServerManage
 	configuratorScreenServerDeleteConfirm
+	configuratorScreenSystemdActiveConfirm
 )
 
 const (
@@ -92,6 +98,7 @@ const (
 
 	sessionClientAdd    = "add configuration"
 	sessionClientRemove = "remove configuration"
+	sessionClientDaemon = "setup systemd daemon"
 
 	sessionInvalidDelete = "Delete invalid configuration"
 	sessionInvalidOK     = "OK"
@@ -99,9 +106,11 @@ const (
 	sessionServerStart  = "start server"
 	sessionServerAdd    = "add client"
 	sessionServerManage = "manage clients"
+	sessionServerDaemon = "setup systemd daemon"
 
 	sessionServerDeleteConfirm = "Delete client"
 	sessionCancel              = "Cancel"
+	sessionStopDaemonContinue  = "stop daemon and continue"
 )
 
 type clientConfigScreens struct {
@@ -149,6 +158,9 @@ type configuratorSessionModel struct {
 
 	logs logViewport
 
+	pendingStartMode   mode.Mode
+	pendingStartScreen configuratorScreen
+
 	resultMode mode.Mode
 	resultErr  error
 	done       bool
@@ -195,6 +207,15 @@ func newConfiguratorSessionModel(options ConfiguratorSessionOptions, settings *u
 		}
 	}
 
+	serverMenuOptions := []string{
+		sessionServerStart,
+		sessionServerAdd,
+		sessionServerManage,
+	}
+	if options.ServerSupported && options.SystemdSupported && options.InstallServerSystemdUnit != nil {
+		serverMenuOptions = append(serverMenuOptions, sessionServerDaemon)
+	}
+
 	model := configuratorSessionModel{
 		settings:        settings,
 		options:         options,
@@ -203,11 +224,7 @@ func newConfiguratorSessionModel(options ConfiguratorSessionOptions, settings *u
 		cursor:          0,
 		modeOptions:     modeOptions,
 		server: serverConfigScreens{
-			menuOptions: []string{
-				sessionServerStart,
-				sessionServerAdd,
-				sessionServerManage,
-			},
+			menuOptions: serverMenuOptions,
 		},
 		preferences: settings.Preferences(),
 		logs:        newLogViewport(),
@@ -341,6 +358,8 @@ func (m configuratorSessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateServerManageScreen(msg)
 		case configuratorScreenServerDeleteConfirm:
 			return m.updateServerDeleteConfirmScreen(msg)
+		case configuratorScreenSystemdActiveConfirm:
+			return m.updateSystemdActiveConfirmScreen(msg)
 		}
 	}
 
@@ -488,6 +507,21 @@ func (m configuratorSessionModel) mainTabView() string {
 			m.cursor,
 			"up/k down/j move | Enter confirm | Tab switch tabs | Esc back | ctrl+c exit",
 		)
+	case configuratorScreenSystemdActiveConfirm:
+		modeLabel := "selected mode"
+		switch m.pendingStartMode {
+		case mode.Client:
+			modeLabel = "client"
+		case mode.Server:
+			modeLabel = "server"
+		}
+		return m.renderSelectionScreen(
+			"Active daemon detected",
+			fmt.Sprintf("tungo.service is active. Stop it before starting %s in TUI mode.", modeLabel),
+			[]string{sessionStopDaemonContinue, sessionCancel},
+			m.cursor,
+			"up/k down/j move | Enter select | Tab switch tabs | Esc back | ctrl+c exit",
+		)
 	default:
 		return ""
 	}
@@ -562,6 +596,24 @@ func (m configuratorSessionModel) updateClientSelectScreen(msg tea.KeyPressMsg) 
 		m.screen = configuratorScreenClientRemove
 		m.client.removePaths = append([]string(nil), m.client.configs...)
 		return m, nil
+	case sessionClientDaemon:
+		if m.options.InstallClientSystemdUnit == nil {
+			m.notice = "Systemd daemon setup is unavailable."
+			return m, nil
+		}
+		if m.options.ClientConfigManager != nil {
+			if _, err := m.options.ClientConfigManager.Configuration(); err != nil {
+				m.notice = fmt.Sprintf("Cannot setup client daemon: %v", err)
+				return m, nil
+			}
+		}
+		path, err := m.options.InstallClientSystemdUnit()
+		if err != nil {
+			m.notice = fmt.Sprintf("Failed to setup client systemd daemon: %v", err)
+			return m, nil
+		}
+		m.notice = fmt.Sprintf("Client systemd unit saved to %s and enabled. Start with: systemctl start tungo.service", path)
+		return m, nil
 	default:
 		if err := m.options.Selector.Select(selected); err != nil {
 			m.resultErr = err
@@ -590,9 +642,11 @@ func (m configuratorSessionModel) updateClientSelectScreen(msg tea.KeyPressMsg) 
 		p.AutoSelectClientConfig = selected
 		m.settings.update(p)
 		_ = savePreferencesToDisk(p)
-		m.resultMode = mode.Client
-		m.done = true
-		return m, tea.Quit
+		m = m.startModeWithSystemdGuard(mode.Client, configuratorScreenClientSelect)
+		if m.done {
+			return m, tea.Quit
+		}
+		return m, nil
 	}
 }
 
@@ -775,9 +829,11 @@ func (m configuratorSessionModel) updateServerSelectScreen(msg tea.KeyPressMsg) 
 
 	switch m.server.menuOptions[m.cursor] {
 	case sessionServerStart:
-		m.resultMode = mode.Server
-		m.done = true
-		return m, tea.Quit
+		m = m.startModeWithSystemdGuard(mode.Server, configuratorScreenServerSelect)
+		if m.done {
+			return m, tea.Quit
+		}
+		return m, nil
 	case sessionServerAdd:
 		gen := confgen.NewGenerator(m.options.ServerConfigManager, &primitives.DefaultKeyDeriver{})
 		conf, err := gen.Generate()
@@ -816,6 +872,18 @@ func (m configuratorSessionModel) updateServerSelectScreen(msg tea.KeyPressMsg) 
 		m.notice = ""
 		m.cursor = 0
 		m.screen = configuratorScreenServerManage
+		return m, nil
+	case sessionServerDaemon:
+		if m.options.InstallServerSystemdUnit == nil {
+			m.notice = "Systemd daemon setup is unavailable."
+			return m, nil
+		}
+		path, err := m.options.InstallServerSystemdUnit()
+		if err != nil {
+			m.notice = fmt.Sprintf("Failed to setup server systemd daemon: %v", err)
+			return m, nil
+		}
+		m.notice = fmt.Sprintf("Server systemd unit saved to %s and enabled. Start with: systemctl start tungo.service", path)
 		return m, nil
 	}
 	return m, nil
@@ -935,6 +1003,88 @@ func (m configuratorSessionModel) updateServerDeleteConfirmScreen(msg tea.KeyPre
 	return m, nil
 }
 
+func (m configuratorSessionModel) updateSystemdActiveConfirmScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m = m.cancelPendingSystemdStart("Start cancelled.")
+		return m, nil
+	}
+
+	options := []string{sessionStopDaemonContinue, sessionCancel}
+	m.updateCursor(msg, len(options))
+	if msg.String() != "enter" {
+		return m, nil
+	}
+
+	selected := options[m.cursor]
+	if selected == sessionCancel {
+		m = m.cancelPendingSystemdStart("Start cancelled.")
+		return m, nil
+	}
+
+	if m.options.StopSystemdUnit == nil {
+		m = m.cancelPendingSystemdStart("Stopping daemon is unavailable.")
+		return m, nil
+	}
+
+	if err := m.options.StopSystemdUnit(); err != nil {
+		m = m.cancelPendingSystemdStart(fmt.Sprintf("Failed to stop systemd daemon: %v", err))
+		return m, nil
+	}
+
+	targetMode := m.pendingStartMode
+	m = m.clearPendingSystemdStart()
+	m.notice = "Daemon stopped. Starting selected mode."
+	m.resultMode = targetMode
+	m.done = true
+	return m, tea.Quit
+}
+
+func (m configuratorSessionModel) startModeWithSystemdGuard(targetMode mode.Mode, returnScreen configuratorScreen) configuratorSessionModel {
+	m = m.clearPendingSystemdStart()
+
+	if m.options.CheckSystemdUnitActive == nil || m.options.StopSystemdUnit == nil {
+		m.resultMode = targetMode
+		m.done = true
+		return m
+	}
+
+	active, err := m.options.CheckSystemdUnitActive()
+	if err != nil {
+		m.notice = fmt.Sprintf("Failed to check systemd daemon status: %v", err)
+		m.cursor = 0
+		m.screen = returnScreen
+		return m
+	}
+	if !active {
+		m.resultMode = targetMode
+		m.done = true
+		return m
+	}
+
+	m.notice = ""
+	m.cursor = 0
+	m.pendingStartMode = targetMode
+	m.pendingStartScreen = returnScreen
+	m.screen = configuratorScreenSystemdActiveConfirm
+	return m
+}
+
+func (m configuratorSessionModel) cancelPendingSystemdStart(notice string) configuratorSessionModel {
+	returnScreen := m.pendingStartScreen
+	m = m.clearPendingSystemdStart()
+	m.notice = notice
+	m.cursor = 0
+	m.screen = returnScreen
+	return m
+}
+
+func (m configuratorSessionModel) clearPendingSystemdStart() configuratorSessionModel {
+	m.pendingStartMode = mode.Unknown
+	m.pendingStartScreen = configuratorScreenMode
+	return m
+}
+
 func (m configuratorSessionModel) cycleTab() (tea.Model, tea.Cmd) {
 	previous := m.tab
 	switch m.tab {
@@ -1003,10 +1153,13 @@ func (m *configuratorSessionModel) reloadClientConfigs() error {
 		return err
 	}
 	m.client.configs = configs
-	m.client.menuOptions = make([]string, 0, len(configs)+2)
+	m.client.menuOptions = make([]string, 0, len(configs)+3)
 	m.client.menuOptions = append(m.client.menuOptions, configs...)
 	if len(configs) > 0 {
 		m.client.menuOptions = append(m.client.menuOptions, sessionClientRemove)
+	}
+	if m.options.SystemdSupported && m.options.InstallClientSystemdUnit != nil {
+		m.client.menuOptions = append(m.client.menuOptions, sessionClientDaemon)
 	}
 	m.client.menuOptions = append(m.client.menuOptions, sessionClientAdd)
 	return nil
