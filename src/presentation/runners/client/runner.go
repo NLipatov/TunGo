@@ -99,8 +99,9 @@ func (r *Runner) runSessionInteractive(ctx context.Context) error {
 
 	readyCh := make(chan struct{})
 	uiOptions := runtimeUI.RuntimeUIOptions{
-		ReadyCh: readyCh,
-		Address: runnerCommon.RuntimeAddressInfoFromClientConfiguration(r.deps.Configuration()),
+		ReadyCh:  readyCh,
+		Address:  runnerCommon.RuntimeAddressInfoFromClientConfiguration(r.deps.Configuration()),
+		Protocol: r.deps.Configuration().Protocol,
 	}
 
 	uiResultCh := make(chan runnerCommon.RuntimeUIResult, 1)
