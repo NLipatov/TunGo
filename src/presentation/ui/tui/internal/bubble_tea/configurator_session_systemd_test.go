@@ -18,11 +18,16 @@ func (m failingClientConfigManager) Configuration() (*clientConfiguration.Config
 	return nil, m.err
 }
 
-func TestReloadClientConfigs_AddsSystemdOptionWhenSupported(t *testing.T) {
+func TestSettingsRows_AddsDaemonRowWhenSupported(t *testing.T) {
 	opts := defaultConfiguratorOpts()
 	opts.SystemdSupported = true
-	opts.InstallClientSystemdUnit = func() (string, error) {
-		return "/etc/systemd/system/tungo.service", nil
+	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
+		return SystemdDaemonStatus{
+			Installed: true,
+			Enabled:   true,
+			Active:    false,
+			Mode:      mode.Client,
+		}, nil
 	}
 
 	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
@@ -30,15 +35,13 @@ func TestReloadClientConfigs_AddsSystemdOptionWhenSupported(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(model.client.menuOptions) != 2 {
-		t.Fatalf("expected two client options (daemon + add), got %v", model.client.menuOptions)
-	}
-	if model.client.menuOptions[0] != sessionClientDaemon || model.client.menuOptions[1] != sessionClientAdd {
-		t.Fatalf("unexpected client options order: %v", model.client.menuOptions)
+	rows := model.settingsRows()
+	if !containsString(rows, "Daemon     : stopped (client)") {
+		t.Fatalf("expected daemon row in settings, got %v", rows)
 	}
 }
 
-func TestReloadClientConfigs_DoesNotAddSystemdOptionWhenUnsupported(t *testing.T) {
+func TestSettingsRows_DoesNotAddDaemonRowWhenUnsupported(t *testing.T) {
 	opts := defaultConfiguratorOpts()
 	opts.SystemdSupported = false
 
@@ -46,15 +49,75 @@ func TestReloadClientConfigs_DoesNotAddSystemdOptionWhenUnsupported(t *testing.T
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(model.client.menuOptions) != 1 || model.client.menuOptions[0] != sessionClientAdd {
-		t.Fatalf("expected only add option when systemd unsupported, got %v", model.client.menuOptions)
+	if containsString(model.settingsRows(), "Daemon") {
+		t.Fatalf("expected no daemon row when unsupported, got %v", model.settingsRows())
 	}
 }
 
-func TestUpdateClientSelectScreen_EnterOnSystemdOption_InstallsUnit(t *testing.T) {
+func TestUpdateSettingsTab_EnterOnDaemonRow_OpensDaemonManageScreen(t *testing.T) {
+	opts := defaultConfiguratorOpts()
+	opts.SystemdSupported = true
+	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
+		return SystemdDaemonStatus{Installed: false}, nil
+	}
+
+	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	model.tab = configuratorTabSettings
+	model.screen = configuratorScreenClientSelect
+	model.settingsCursor = model.daemonSettingsRowIndex()
+
+	updatedModel, _ := model.updateSettingsTab(keyNamed(tea.KeyEnter))
+	updated := updatedModel.(configuratorSessionModel)
+	if updated.tab != configuratorTabMain {
+		t.Fatalf("expected switch to main tab, got %d", updated.tab)
+	}
+	if updated.screen != configuratorScreenDaemonManage {
+		t.Fatalf("expected daemon manage screen, got %v", updated.screen)
+	}
+}
+
+func TestUpdateDaemonManageScreen_NotInstalled_ShowsSetupOptions(t *testing.T) {
+	opts := defaultConfiguratorOpts()
+	opts.SystemdSupported = true
+	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
+		return SystemdDaemonStatus{Installed: false}, nil
+	}
+	opts.InstallClientSystemdUnit = func() (string, error) {
+		return "/etc/systemd/system/tungo.service", nil
+	}
+	opts.InstallServerSystemdUnit = func() (string, error) {
+		return "/etc/systemd/system/tungo.service", nil
+	}
+
+	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceServer))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	model.mainScreenBeforeDaemon = configuratorScreenServerSelect
+	model.screen = configuratorScreenDaemonManage
+	model.refreshDaemonStatus()
+
+	if !containsString(model.daemon.menuOptions, sessionDaemonSetupClient) {
+		t.Fatalf("expected setup client option, got %v", model.daemon.menuOptions)
+	}
+	if !containsString(model.daemon.menuOptions, sessionDaemonSetupServer) {
+		t.Fatalf("expected setup server option, got %v", model.daemon.menuOptions)
+	}
+	if !containsString(model.daemon.menuOptions, sessionDaemonBack) {
+		t.Fatalf("expected back option, got %v", model.daemon.menuOptions)
+	}
+}
+
+func TestUpdateDaemonManageScreen_SetupClient_InstallsUnit(t *testing.T) {
 	opts := defaultConfiguratorOpts()
 	opts.SystemdSupported = true
 	installCalls := 0
+	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
+		return SystemdDaemonStatus{Installed: false}, nil
+	}
 	opts.InstallClientSystemdUnit = func() (string, error) {
 		installCalls++
 		return "/etc/systemd/system/tungo.service", nil
@@ -64,91 +127,100 @@ func TestUpdateClientSelectScreen_EnterOnSystemdOption_InstallsUnit(t *testing.T
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	model.cursor = 0 // daemon option
+	model.screen = configuratorScreenDaemonManage
+	model.daemon.menuOptions = []string{sessionDaemonSetupClient, sessionDaemonBack}
+	model.cursor = 0
 
-	updatedModel, _ := model.updateClientSelectScreen(keyNamed(tea.KeyEnter))
+	updatedModel, _ := model.updateDaemonManageScreen(keyNamed(tea.KeyEnter))
 	updated := updatedModel.(configuratorSessionModel)
 	if installCalls != 1 {
-		t.Fatalf("expected installer to be called once, got %d", installCalls)
+		t.Fatalf("expected one install call, got %d", installCalls)
 	}
-	if !strings.Contains(updated.notice, "systemctl start tungo.service") {
-		t.Fatalf("expected post-install notice with start command, got %q", updated.notice)
-	}
-	if updated.done {
-		t.Fatal("expected configurator to stay open after daemon setup")
+	if !strings.Contains(updated.notice, "Client daemon configured") {
+		t.Fatalf("expected success notice, got %q", updated.notice)
 	}
 }
 
-func TestUpdateClientSelectScreen_SystemdOption_FailsWhenDefaultConfigInvalid(t *testing.T) {
+func TestUpdateDaemonManageScreen_SetupClient_FailsWhenDefaultConfigInvalid(t *testing.T) {
 	opts := defaultConfiguratorOpts()
 	opts.SystemdSupported = true
 	opts.ClientConfigManager = failingClientConfigManager{err: errors.New("invalid default config")}
-	installCalls := 0
-	opts.InstallClientSystemdUnit = func() (string, error) {
-		installCalls++
-		return "/etc/systemd/system/tungo.service", nil
+	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
+		return SystemdDaemonStatus{Installed: false}, nil
 	}
+	opts.InstallClientSystemdUnit = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
 
 	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	model.cursor = 0 // daemon option
+	model.screen = configuratorScreenDaemonManage
+	model.daemon.menuOptions = []string{sessionDaemonSetupClient, sessionDaemonBack}
+	model.cursor = 0
 
-	updatedModel, _ := model.updateClientSelectScreen(keyNamed(tea.KeyEnter))
+	updatedModel, _ := model.updateDaemonManageScreen(keyNamed(tea.KeyEnter))
 	updated := updatedModel.(configuratorSessionModel)
-	if installCalls != 0 {
-		t.Fatalf("expected installer not to be called when default config invalid, got %d", installCalls)
-	}
 	if !strings.Contains(updated.notice, "Cannot setup client daemon") {
 		t.Fatalf("expected validation notice, got %q", updated.notice)
 	}
 }
 
-func TestServerMenu_AddsSystemdOptionWhenSupported(t *testing.T) {
+func TestUpdateDaemonManageScreen_StartEnableDisableStopFlow(t *testing.T) {
+	status := SystemdDaemonStatus{Installed: true, Enabled: false, Active: false, Mode: mode.Client}
 	opts := defaultConfiguratorOpts()
 	opts.SystemdSupported = true
-	opts.InstallServerSystemdUnit = func() (string, error) {
-		return "/etc/systemd/system/tungo.service", nil
+	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) { return status, nil }
+	opts.StartSystemdUnit = func() error {
+		status.Active = true
+		return nil
+	}
+	opts.EnableSystemdUnit = func() error {
+		status.Enabled = true
+		return nil
+	}
+	opts.DisableSystemdUnit = func() error {
+		status.Enabled = false
+		return nil
+	}
+	opts.StopSystemdUnit = func() error {
+		status.Active = false
+		return nil
 	}
 
-	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceServer))
+	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !containsString(model.server.menuOptions, sessionServerDaemon) {
-		t.Fatalf("expected server daemon option in menu, got %v", model.server.menuOptions)
-	}
-}
+	model.screen = configuratorScreenDaemonManage
+	model.refreshDaemonStatus()
 
-func TestUpdateServerSelectScreen_EnterOnSystemdOption_InstallsUnit(t *testing.T) {
-	opts := defaultConfiguratorOpts()
-	opts.SystemdSupported = true
-	installCalls := 0
-	opts.InstallServerSystemdUnit = func() (string, error) {
-		installCalls++
-		return "/etc/systemd/system/tungo.service", nil
+	model.daemon.menuOptions = []string{sessionDaemonStart}
+	model.cursor = 0
+	next, _ := model.updateDaemonManageScreen(keyNamed(tea.KeyEnter))
+	model = next.(configuratorSessionModel)
+	if !status.Active {
+		t.Fatal("expected daemon to be active after start")
 	}
 
-	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceServer))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	model.cursor = indexOfString(model.server.menuOptions, sessionServerDaemon)
-	if model.cursor < 0 {
-		t.Fatalf("server daemon option not found in %v", model.server.menuOptions)
+	model.daemon.menuOptions = []string{sessionDaemonEnable}
+	next, _ = model.updateDaemonManageScreen(keyNamed(tea.KeyEnter))
+	model = next.(configuratorSessionModel)
+	if !status.Enabled {
+		t.Fatal("expected daemon to be enabled")
 	}
 
-	updatedModel, _ := model.updateServerSelectScreen(keyNamed(tea.KeyEnter))
-	updated := updatedModel.(configuratorSessionModel)
-	if installCalls != 1 {
-		t.Fatalf("expected installer call once, got %d", installCalls)
+	model.daemon.menuOptions = []string{sessionDaemonDisable}
+	next, _ = model.updateDaemonManageScreen(keyNamed(tea.KeyEnter))
+	model = next.(configuratorSessionModel)
+	if status.Enabled {
+		t.Fatal("expected daemon to be disabled")
 	}
-	if !strings.Contains(updated.notice, "systemctl start tungo.service") {
-		t.Fatalf("expected post-install notice with start command, got %q", updated.notice)
-	}
-	if updated.done {
-		t.Fatal("expected configurator to stay open after daemon setup")
+
+	model.daemon.menuOptions = []string{sessionDaemonStop}
+	next, _ = model.updateDaemonManageScreen(keyNamed(tea.KeyEnter))
+	model = next.(configuratorSessionModel)
+	if status.Active {
+		t.Fatal("expected daemon to be stopped")
 	}
 }
 

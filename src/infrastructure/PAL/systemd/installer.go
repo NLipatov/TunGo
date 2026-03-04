@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"tungo/infrastructure/PAL/exec_commander"
 )
 
@@ -18,7 +19,23 @@ var (
 	statPath      = os.Stat
 	lookPath      = exec.LookPath
 	writeFilePath = os.WriteFile
+	readFilePath  = os.ReadFile
 )
+
+type UnitRole string
+
+const (
+	UnitRoleUnknown UnitRole = "unknown"
+	UnitRoleClient  UnitRole = "client"
+	UnitRoleServer  UnitRole = "server"
+)
+
+type UnitStatus struct {
+	Installed bool
+	Enabled   bool
+	Active    bool
+	Role      UnitRole
+}
 
 type Installer interface {
 	Supported() bool
@@ -26,6 +43,10 @@ type Installer interface {
 	InstallClientUnit() (string, error)
 	IsUnitActive() (bool, error)
 	StopUnit() error
+	StartUnit() error
+	EnableUnit() error
+	DisableUnit() error
+	Status() (UnitStatus, error)
 }
 
 type UnitInstaller struct {
@@ -96,6 +117,74 @@ func (i *UnitInstaller) StopUnit() error {
 	return nil
 }
 
+func (i *UnitInstaller) StartUnit() error {
+	if !i.Supported() {
+		return fmt.Errorf("systemd is not supported on this platform")
+	}
+	if err := i.commander.Run("systemctl", "start", systemdUnitName); err != nil {
+		return fmt.Errorf("failed to run systemctl start %s: %w", systemdUnitName, err)
+	}
+	return nil
+}
+
+func (i *UnitInstaller) EnableUnit() error {
+	if !i.Supported() {
+		return fmt.Errorf("systemd is not supported on this platform")
+	}
+	if err := i.commander.Run("systemctl", "enable", systemdUnitName); err != nil {
+		return fmt.Errorf("failed to run systemctl enable %s: %w", systemdUnitName, err)
+	}
+	return nil
+}
+
+func (i *UnitInstaller) DisableUnit() error {
+	if !i.Supported() {
+		return fmt.Errorf("systemd is not supported on this platform")
+	}
+	if err := i.commander.Run("systemctl", "disable", systemdUnitName); err != nil {
+		return fmt.Errorf("failed to run systemctl disable %s: %w", systemdUnitName, err)
+	}
+	return nil
+}
+
+func (i *UnitInstaller) Status() (UnitStatus, error) {
+	if !i.Supported() {
+		return UnitStatus{}, fmt.Errorf("systemd is not supported on this platform")
+	}
+
+	status := UnitStatus{
+		Role: UnitRoleUnknown,
+	}
+	if _, err := statPath(systemdUnitPath); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return status, nil
+		}
+		return UnitStatus{}, fmt.Errorf("failed to stat %s: %w", systemdUnitPath, err)
+	}
+	status.Installed = true
+
+	enabledOutput, err := i.commander.CombinedOutput("systemctl", "is-enabled", systemdUnitName)
+	if err != nil {
+		if !isSystemdDisabledError(err) {
+			return UnitStatus{}, fmt.Errorf("failed to run systemctl is-enabled %s: %w", systemdUnitName, err)
+		}
+	}
+	status.Enabled = strings.EqualFold(strings.TrimSpace(string(enabledOutput)), "enabled")
+
+	active, err := i.IsUnitActive()
+	if err != nil {
+		return UnitStatus{}, err
+	}
+	status.Active = active
+
+	unitBody, err := readFilePath(systemdUnitPath)
+	if err != nil {
+		return UnitStatus{}, fmt.Errorf("failed to read %s: %w", systemdUnitPath, err)
+	}
+	status.Role = detectUnitRole(string(unitBody))
+	return status, nil
+}
+
 func isSystemdNotActiveError(err error) bool {
 	var exitErr *exec.ExitError
 	if !errors.As(err, &exitErr) {
@@ -103,6 +192,26 @@ func isSystemdNotActiveError(err error) bool {
 	}
 	code := exitErr.ExitCode()
 	return code == 3 || code == 4
+}
+
+func isSystemdDisabledError(err error) bool {
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		return false
+	}
+	code := exitErr.ExitCode()
+	return code == 1 || code == 3 || code == 4
+}
+
+func detectUnitRole(unitBody string) UnitRole {
+	switch {
+	case strings.Contains(unitBody, "ExecStart=tungo c"):
+		return UnitRoleClient
+	case strings.Contains(unitBody, "ExecStart=tungo s"):
+		return UnitRoleServer
+	default:
+		return UnitRoleUnknown
+	}
 }
 
 func unitFileContent(modeArg string) string {
