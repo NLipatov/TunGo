@@ -111,6 +111,51 @@ func TestUpdateDaemonManageScreen_NotInstalled_ShowsSetupOptions(t *testing.T) {
 	}
 }
 
+func TestUpdateDaemonManageScreen_Installed_ShowsReconfigureOptions(t *testing.T) {
+	opts := defaultConfiguratorOpts()
+	opts.SystemdSupported = true
+	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
+		return SystemdDaemonStatus{
+			Installed: true,
+			Enabled:   false,
+			Active:    false,
+			Mode:      mode.Client,
+		}, nil
+	}
+	opts.InstallClientSystemdUnit = func() (string, error) {
+		return "/etc/systemd/system/tungo.service", nil
+	}
+	opts.InstallServerSystemdUnit = func() (string, error) {
+		return "/etc/systemd/system/tungo.service", nil
+	}
+	opts.StartSystemdUnit = func() error { return nil }
+	opts.EnableSystemdUnit = func() error { return nil }
+
+	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceServer))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	model.mainScreenBeforeDaemon = configuratorScreenServerSelect
+	model.screen = configuratorScreenDaemonManage
+	model.refreshDaemonStatus()
+
+	if containsString(model.daemon.menuOptions, sessionDaemonSetupClient) {
+		t.Fatalf("did not expect setup client option for installed daemon, got %v", model.daemon.menuOptions)
+	}
+	if containsString(model.daemon.menuOptions, sessionDaemonSetupServer) {
+		t.Fatalf("did not expect setup server option for installed daemon, got %v", model.daemon.menuOptions)
+	}
+	if !containsString(model.daemon.menuOptions, sessionDaemonReconfClient) {
+		t.Fatalf("expected reconfigure client option, got %v", model.daemon.menuOptions)
+	}
+	if !containsString(model.daemon.menuOptions, sessionDaemonReconfServer) {
+		t.Fatalf("expected reconfigure server option, got %v", model.daemon.menuOptions)
+	}
+	if !containsString(model.daemon.menuOptions, sessionDaemonBack) {
+		t.Fatalf("expected back option, got %v", model.daemon.menuOptions)
+	}
+}
+
 func TestUpdateDaemonManageScreen_SetupClient_InstallsUnit(t *testing.T) {
 	opts := defaultConfiguratorOpts()
 	opts.SystemdSupported = true
@@ -160,8 +205,158 @@ func TestUpdateDaemonManageScreen_SetupClient_FailsWhenDefaultConfigInvalid(t *t
 
 	updatedModel, _ := model.updateDaemonManageScreen(keyNamed(tea.KeyEnter))
 	updated := updatedModel.(configuratorSessionModel)
-	if !strings.Contains(updated.notice, "Cannot setup client daemon") {
+	if !strings.Contains(updated.notice, "cannot setup client daemon") {
 		t.Fatalf("expected validation notice, got %q", updated.notice)
+	}
+}
+
+func TestUpdateDaemonManageScreen_ReconfigureInactive_AppliesImmediately(t *testing.T) {
+	status := SystemdDaemonStatus{Installed: true, Enabled: false, Active: false, Mode: mode.Client}
+	opts := defaultConfiguratorOpts()
+	opts.SystemdSupported = true
+	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) { return status, nil }
+	reconfigureCalls := 0
+	opts.InstallServerSystemdUnit = func() (string, error) {
+		reconfigureCalls++
+		status.Mode = mode.Server
+		return "/etc/systemd/system/tungo.service", nil
+	}
+	opts.StartSystemdUnit = func() error { return nil }
+	opts.EnableSystemdUnit = func() error { return nil }
+
+	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceServer))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	model.screen = configuratorScreenDaemonManage
+	model.refreshDaemonStatus()
+	model.cursor = indexOfString(model.daemon.menuOptions, sessionDaemonReconfServer)
+	if model.cursor < 0 {
+		t.Fatalf("missing %q in %v", sessionDaemonReconfServer, model.daemon.menuOptions)
+	}
+
+	updatedModel, _ := model.updateDaemonManageScreen(keyNamed(tea.KeyEnter))
+	updated := updatedModel.(configuratorSessionModel)
+	if reconfigureCalls != 1 {
+		t.Fatalf("expected one reconfigure call, got %d", reconfigureCalls)
+	}
+	if updated.screen != configuratorScreenDaemonManage {
+		t.Fatalf("expected to stay on daemon manage screen, got %v", updated.screen)
+	}
+	if !strings.Contains(updated.notice, "Server daemon reconfigured") {
+		t.Fatalf("expected reconfigure notice, got %q", updated.notice)
+	}
+}
+
+func TestUpdateDaemonManageScreen_ReconfigureActive_ShowsMandatoryConfirm(t *testing.T) {
+	status := SystemdDaemonStatus{Installed: true, Enabled: true, Active: true, Mode: mode.Server}
+	opts := defaultConfiguratorOpts()
+	opts.SystemdSupported = true
+	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) { return status, nil }
+	opts.InstallClientSystemdUnit = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
+	opts.StopSystemdUnit = func() error { return nil }
+	opts.StartSystemdUnit = func() error { return nil }
+
+	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	model.screen = configuratorScreenDaemonManage
+	model.refreshDaemonStatus()
+	model.cursor = indexOfString(model.daemon.menuOptions, sessionDaemonReconfClient)
+	if model.cursor < 0 {
+		t.Fatalf("missing %q in %v", sessionDaemonReconfClient, model.daemon.menuOptions)
+	}
+
+	updatedModel, cmd := model.updateDaemonManageScreen(keyNamed(tea.KeyEnter))
+	updated := updatedModel.(configuratorSessionModel)
+	if cmd != nil {
+		t.Fatal("expected nil cmd while waiting confirmation")
+	}
+	if updated.screen != configuratorScreenDaemonReconfigureConfirm {
+		t.Fatalf("expected reconfigure confirm screen, got %v", updated.screen)
+	}
+	if updated.pendingDaemonMode != mode.Client {
+		t.Fatalf("expected pending daemon mode client, got %v", updated.pendingDaemonMode)
+	}
+}
+
+func TestUpdateDaemonReconfigureConfirmScreen_Confirm_RestartsWithNewSetup(t *testing.T) {
+	status := SystemdDaemonStatus{Installed: true, Enabled: true, Active: true, Mode: mode.Server}
+	opts := defaultConfiguratorOpts()
+	opts.SystemdSupported = true
+	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) { return status, nil }
+
+	callOrder := make([]string, 0, 3)
+	opts.StopSystemdUnit = func() error {
+		callOrder = append(callOrder, "stop")
+		status.Active = false
+		return nil
+	}
+	opts.InstallClientSystemdUnit = func() (string, error) {
+		callOrder = append(callOrder, "install-client")
+		status.Mode = mode.Client
+		return "/etc/systemd/system/tungo.service", nil
+	}
+	opts.StartSystemdUnit = func() error {
+		callOrder = append(callOrder, "start")
+		status.Active = true
+		return nil
+	}
+
+	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	model.screen = configuratorScreenDaemonReconfigureConfirm
+	model.pendingDaemonMode = mode.Client
+	model.cursor = 0 // stop and restart
+
+	updatedModel, cmd := model.updateDaemonReconfigureConfirmScreen(keyNamed(tea.KeyEnter))
+	updated := updatedModel.(configuratorSessionModel)
+	if cmd != nil {
+		t.Fatal("expected nil cmd on reconfigure")
+	}
+	if strings.Join(callOrder, ",") != "stop,install-client,start" {
+		t.Fatalf("unexpected call order: %v", callOrder)
+	}
+	if updated.pendingDaemonMode != mode.Unknown {
+		t.Fatalf("expected pending daemon mode cleared, got %v", updated.pendingDaemonMode)
+	}
+	if updated.screen != configuratorScreenDaemonManage {
+		t.Fatalf("expected daemon manage screen, got %v", updated.screen)
+	}
+	if !strings.Contains(updated.notice, "Client daemon reconfigured") || !strings.Contains(updated.notice, "restarted") {
+		t.Fatalf("expected restarted notice, got %q", updated.notice)
+	}
+	if !updated.daemon.status.Active || updated.daemon.status.Mode != mode.Client {
+		t.Fatalf("expected refreshed daemon status (active client), got %+v", updated.daemon.status)
+	}
+}
+
+func TestUpdateDaemonReconfigureConfirmScreen_Cancel_ReturnsToDaemonManage(t *testing.T) {
+	opts := defaultConfiguratorOpts()
+	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	model.screen = configuratorScreenDaemonReconfigureConfirm
+	model.pendingDaemonMode = mode.Server
+	model.cursor = 1 // cancel
+
+	updatedModel, cmd := model.updateDaemonReconfigureConfirmScreen(keyNamed(tea.KeyEnter))
+	updated := updatedModel.(configuratorSessionModel)
+	if cmd != nil {
+		t.Fatal("expected nil cmd on cancel")
+	}
+	if updated.screen != configuratorScreenDaemonManage {
+		t.Fatalf("expected daemon manage screen, got %v", updated.screen)
+	}
+	if updated.pendingDaemonMode != mode.Unknown {
+		t.Fatalf("expected pending daemon mode cleared, got %v", updated.pendingDaemonMode)
+	}
+	if !strings.Contains(updated.notice, "Reconfigure cancelled") {
+		t.Fatalf("expected cancellation notice, got %q", updated.notice)
 	}
 }
 
