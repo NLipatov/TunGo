@@ -133,9 +133,6 @@ func TestUpdateDaemonManageScreen_NotInstalled_ShowsSetupOptions(t *testing.T) {
 	if !containsString(model.daemon.menuOptions, sessionDaemonSetupServer) {
 		t.Fatalf("expected setup server option, got %v", model.daemon.menuOptions)
 	}
-	if !containsString(model.daemon.menuOptions, sessionDaemonBack) {
-		t.Fatalf("expected back option, got %v", model.daemon.menuOptions)
-	}
 }
 
 func TestUpdateDaemonManageScreen_Installed_ShowsReconfigureOptions(t *testing.T) {
@@ -181,9 +178,6 @@ func TestUpdateDaemonManageScreen_Installed_ShowsReconfigureOptions(t *testing.T
 	if !containsString(model.daemon.menuOptions, sessionDaemonDelete) {
 		t.Fatalf("expected delete daemon option, got %v", model.daemon.menuOptions)
 	}
-	if !containsString(model.daemon.menuOptions, sessionDaemonBack) {
-		t.Fatalf("expected back option, got %v", model.daemon.menuOptions)
-	}
 }
 
 func TestUpdateDaemonManageScreen_SetupClient_InstallsUnit(t *testing.T) {
@@ -203,7 +197,7 @@ func TestUpdateDaemonManageScreen_SetupClient_InstallsUnit(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenDaemonManage
-	model.daemon.menuOptions = []string{sessionDaemonSetupClient, sessionDaemonBack}
+	model.daemon.menuOptions = []string{sessionDaemonSetupClient}
 	model.cursor = 0
 
 	updatedModel, _ := model.updateDaemonManageScreen(keyNamed(tea.KeyEnter))
@@ -230,7 +224,7 @@ func TestUpdateDaemonManageScreen_SetupClient_FailsWhenDefaultConfigInvalid(t *t
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenDaemonManage
-	model.daemon.menuOptions = []string{sessionDaemonSetupClient, sessionDaemonBack}
+	model.daemon.menuOptions = []string{sessionDaemonSetupClient}
 	model.cursor = 0
 
 	updatedModel, _ := model.updateDaemonManageScreen(keyNamed(tea.KeyEnter))

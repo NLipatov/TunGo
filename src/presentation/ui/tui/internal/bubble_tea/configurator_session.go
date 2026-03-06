@@ -130,7 +130,6 @@ const (
 	sessionDaemonEnable                = "enable on boot"
 	sessionDaemonDisable               = "disable on boot"
 	sessionDaemonDelete                = "delete daemon"
-	sessionDaemonBack                  = "back to main"
 	sessionDaemonConfirmReconfigureNow = "stop and restart with new setup"
 
 	sessionServerDeleteConfirm = "Delete client"
@@ -1072,8 +1071,6 @@ func (m configuratorSessionModel) updateDaemonManageScreen(msg tea.KeyPressMsg) 
 	selected := m.daemon.menuOptions[m.cursor]
 	var err error
 	switch selected {
-	case sessionDaemonBack:
-		return m.leaveDaemonManageScreen(), nil
 	case sessionDaemonSetupClient:
 		m, err = m.applyDaemonSetup(mode.Client, false)
 		if err != nil {
@@ -1489,7 +1486,7 @@ func (m *configuratorSessionModel) refreshDaemonStatus() {
 	if m.options.GetSystemdDaemonStatus == nil {
 		m.daemon.statusErr = errors.New("daemon management is unavailable")
 		m.daemon.status = SystemdDaemonStatus{}
-		m.daemon.menuOptions = []string{sessionDaemonBack}
+		m.daemon.menuOptions = nil
 		return
 	}
 
@@ -1497,7 +1494,7 @@ func (m *configuratorSessionModel) refreshDaemonStatus() {
 	if err != nil {
 		m.daemon.statusErr = err
 		m.daemon.status = SystemdDaemonStatus{}
-		m.daemon.menuOptions = []string{sessionDaemonBack}
+		m.daemon.menuOptions = nil
 		return
 	}
 	m.daemon.statusErr = nil
@@ -1506,7 +1503,7 @@ func (m *configuratorSessionModel) refreshDaemonStatus() {
 }
 
 func (m configuratorSessionModel) daemonMenuOptions(status SystemdDaemonStatus) []string {
-	options := make([]string, 0, 8)
+	options := make([]string, 0, 7)
 	if !status.Installed {
 		if m.options.InstallClientSystemdUnit != nil {
 			options = append(options, sessionDaemonSetupClient)
@@ -1514,7 +1511,6 @@ func (m configuratorSessionModel) daemonMenuOptions(status SystemdDaemonStatus) 
 		if m.serverSupported && m.options.InstallServerSystemdUnit != nil {
 			options = append(options, sessionDaemonSetupServer)
 		}
-		options = append(options, sessionDaemonBack)
 		return options
 	}
 
@@ -1539,7 +1535,6 @@ func (m configuratorSessionModel) daemonMenuOptions(status SystemdDaemonStatus) 
 	if m.options.RemoveSystemdUnit != nil {
 		options = append(options, sessionDaemonDelete)
 	}
-	options = append(options, sessionDaemonBack)
 	return options
 }
 
