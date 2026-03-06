@@ -109,7 +109,7 @@ const (
 const (
 	sessionModeClient = "client"
 	sessionModeServer = "server"
-	sessionModeDaemon = "daemon manager"
+	sessionModeDaemon = "daemon"
 
 	sessionClientAdd    = "add configuration"
 	sessionClientRemove = "remove configuration"
@@ -275,6 +275,13 @@ func newConfiguratorSessionModel(options ConfiguratorSessionOptions, settings *u
 	if options.SystemdSupported && options.GetSystemdDaemonStatus != nil {
 		model.refreshDaemonStatus()
 	}
+	modeAutoselectNotice := ""
+	switch settings.Preferences().AutoSelectMode {
+	case ModePreferenceClient:
+		modeAutoselectNotice = "Auto-selected mode: client."
+	case ModePreferenceServer:
+		modeAutoselectNotice = "Auto-selected mode: server."
+	}
 
 	// Skip mode screen only when client is the only available option,
 	// or when client is explicitly preferred.
@@ -283,10 +290,12 @@ func newConfiguratorSessionModel(options ConfiguratorSessionOptions, settings *u
 			return configuratorSessionModel{}, err
 		}
 		model.screen = configuratorScreenClientSelect
+		model.notice = appendNotice(model.notice, modeAutoselectNotice)
 		if settings.Preferences().AutoConnect {
 			if autoConfig := settings.Preferences().AutoSelectClientConfig; autoConfig != "" {
 				if slices.Contains(model.client.configs, autoConfig) {
 					if err := model.options.Selector.Select(autoConfig); err == nil {
+						model.notice = appendNotice(model.notice, fmt.Sprintf("Auto-selected config: %s.", autoConfig))
 						if model.options.ClientConfigManager != nil {
 							_, cfgErr := model.options.ClientConfigManager.Configuration()
 							if isInvalidClientConfigurationError(cfgErr) {
@@ -322,6 +331,7 @@ func newConfiguratorSessionModel(options ConfiguratorSessionOptions, settings *u
 		}
 	} else if settings.Preferences().AutoSelectMode == ModePreferenceServer {
 		model.screen = configuratorScreenServerSelect
+		model.notice = appendNotice(model.notice, modeAutoselectNotice)
 	}
 
 	return model, nil
@@ -581,9 +591,13 @@ func (m configuratorSessionModel) mainTabView() string {
 		case mode.Server:
 			modeLabel = "server"
 		}
+		notice := fmt.Sprintf("tungo.service is active. Stop it before starting %s in TUI mode.", modeLabel)
+		if strings.TrimSpace(m.notice) != "" {
+			notice = m.notice + "\n" + notice
+		}
 		return m.renderSelectionScreen(
 			"Active daemon detected",
-			fmt.Sprintf("tungo.service is active. Stop it before starting %s in TUI mode.", modeLabel),
+			notice,
 			[]string{sessionStopDaemonContinue, sessionCancel},
 			m.cursor,
 			"up/k down/j move | Enter select | Tab switch tabs | Esc back | ctrl+c exit",
@@ -1353,7 +1367,9 @@ func (m configuratorSessionModel) startModeWithSystemdGuard(targetMode mode.Mode
 		return m
 	}
 
-	m.notice = ""
+	if !strings.Contains(m.notice, "Auto-selected") {
+		m.notice = ""
+	}
 	m.cursor = 0
 	m.pendingStartMode = targetMode
 	m.pendingStartScreen = returnScreen
@@ -1386,6 +1402,18 @@ func (m configuratorSessionModel) persistAutoSelectClientConfig(selected string)
 	m.settings.update(p)
 	_ = savePreferencesToDisk(p)
 	return m
+}
+
+func appendNotice(existing, next string) string {
+	next = strings.TrimSpace(next)
+	if next == "" {
+		return existing
+	}
+	existing = strings.TrimSpace(existing)
+	if existing == "" {
+		return next
+	}
+	return existing + "\n" + next
 }
 
 func (m configuratorSessionModel) cycleTab() (tea.Model, tea.Cmd) {
