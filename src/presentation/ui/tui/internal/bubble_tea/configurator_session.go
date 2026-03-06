@@ -1508,6 +1508,14 @@ func (m configuratorSessionModel) daemonMenuOptions(status SystemdDaemonStatus) 
 }
 
 func (m configuratorSessionModel) daemonNotice() string {
+	statusLine := m.daemonStatusLine()
+	if strings.TrimSpace(m.notice) == "" {
+		return statusLine
+	}
+	return statusLine + "\n" + m.notice
+}
+
+func (m configuratorSessionModel) daemonStatusLine() string {
 	if m.daemon.statusErr != nil {
 		return "Status error: " + m.daemon.statusErr.Error()
 	}
