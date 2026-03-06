@@ -77,7 +77,15 @@ func TestSupported_TrueWhenRuntimeDirAndSystemctlExist(t *testing.T) {
 	withSystemdHooks(
 		t,
 		func(string) (os.FileInfo, error) { return nil, nil },
-		func(string) (string, error) { return "/bin/systemctl", nil },
+		func(name string) (string, error) {
+			if name == "systemctl" {
+				return "/bin/systemctl", nil
+			}
+			if name == "tungo" {
+				return "/usr/local/bin/tungo", nil
+			}
+			return "", exec.ErrNotFound
+		},
 		func(string, []byte, os.FileMode) error { return nil },
 	)
 	installer := NewUnitInstaller(&mockCommander{})
@@ -90,7 +98,15 @@ func TestSupported_FalseWhenRuntimeDirMissing(t *testing.T) {
 	withSystemdHooks(
 		t,
 		func(string) (os.FileInfo, error) { return nil, os.ErrNotExist },
-		func(string) (string, error) { return "/bin/systemctl", nil },
+		func(name string) (string, error) {
+			if name == "systemctl" {
+				return "/bin/systemctl", nil
+			}
+			if name == "tungo" {
+				return "/usr/local/bin/tungo", nil
+			}
+			return "", exec.ErrNotFound
+		},
 		func(string, []byte, os.FileMode) error { return nil },
 	)
 	installer := NewUnitInstaller(&mockCommander{})
@@ -106,7 +122,15 @@ func TestInstallServerUnit_WritesServerModeAndEnablesService(t *testing.T) {
 	withSystemdHooks(
 		t,
 		func(string) (os.FileInfo, error) { return nil, nil },
-		func(string) (string, error) { return "/bin/systemctl", nil },
+		func(name string) (string, error) {
+			if name == "systemctl" {
+				return "/bin/systemctl", nil
+			}
+			if name == "tungo" {
+				return "/usr/local/bin/tungo", nil
+			}
+			return "", exec.ErrNotFound
+		},
 		func(path string, data []byte, perm os.FileMode) error {
 			gotPath = path
 			gotContent = string(data)
@@ -130,7 +154,7 @@ func TestInstallServerUnit_WritesServerModeAndEnablesService(t *testing.T) {
 	if gotPerm != 0644 {
 		t.Fatalf("write perm: got %v want 0644", gotPerm)
 	}
-	if !strings.Contains(gotContent, "ExecStart=tungo s") {
+	if !strings.Contains(gotContent, "ExecStart=/usr/local/bin/tungo s") {
 		t.Fatalf("expected server unit content, got %q", gotContent)
 	}
 	if len(cmd.runCalls) != 2 {
@@ -149,7 +173,15 @@ func TestInstallClientUnit_WritesClientMode(t *testing.T) {
 	withSystemdHooks(
 		t,
 		func(string) (os.FileInfo, error) { return nil, nil },
-		func(string) (string, error) { return "/bin/systemctl", nil },
+		func(name string) (string, error) {
+			if name == "systemctl" {
+				return "/bin/systemctl", nil
+			}
+			if name == "tungo" {
+				return "/usr/local/bin/tungo", nil
+			}
+			return "", exec.ErrNotFound
+		},
 		func(_ string, data []byte, _ os.FileMode) error {
 			gotContent = string(data)
 			return nil
@@ -162,8 +194,32 @@ func TestInstallClientUnit_WritesClientMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(gotContent, "ExecStart=tungo c") {
+	if !strings.Contains(gotContent, "ExecStart=/usr/local/bin/tungo c") {
 		t.Fatalf("expected client unit content, got %q", gotContent)
+	}
+}
+
+func TestInstallUnit_FailsWhenTungoBinaryNotFound(t *testing.T) {
+	withSystemdHooks(
+		t,
+		func(string) (os.FileInfo, error) { return nil, nil },
+		func(name string) (string, error) {
+			if name == "systemctl" {
+				return "/bin/systemctl", nil
+			}
+			return "", exec.ErrNotFound
+		},
+		func(string, []byte, os.FileMode) error { return nil },
+	)
+	cmd := &mockCommander{}
+	installer := NewUnitInstaller(cmd)
+
+	_, err := installer.InstallClientUnit()
+	if err == nil || !strings.Contains(err.Error(), "tungo executable is not found in PATH") {
+		t.Fatalf("expected missing tungo binary error, got %v", err)
+	}
+	if len(cmd.runCalls) != 0 {
+		t.Fatalf("expected no systemctl calls, got %v", cmd.runCalls)
 	}
 }
 
@@ -171,7 +227,15 @@ func TestInstallUnit_FailsWhenSystemctlCommandFails(t *testing.T) {
 	withSystemdHooks(
 		t,
 		func(string) (os.FileInfo, error) { return nil, nil },
-		func(string) (string, error) { return "/bin/systemctl", nil },
+		func(name string) (string, error) {
+			if name == "systemctl" {
+				return "/bin/systemctl", nil
+			}
+			if name == "tungo" {
+				return "/usr/local/bin/tungo", nil
+			}
+			return "", exec.ErrNotFound
+		},
 		func(string, []byte, os.FileMode) error { return nil },
 	)
 	cmd := &mockCommander{runErr: errors.New("boom")}
@@ -187,7 +251,15 @@ func TestIsUnitActive_ReturnsTrueWhenServiceIsActive(t *testing.T) {
 	withSystemdHooks(
 		t,
 		func(string) (os.FileInfo, error) { return nil, nil },
-		func(string) (string, error) { return "/bin/systemctl", nil },
+		func(name string) (string, error) {
+			if name == "systemctl" {
+				return "/bin/systemctl", nil
+			}
+			if name == "tungo" {
+				return "/usr/local/bin/tungo", nil
+			}
+			return "", exec.ErrNotFound
+		},
 		func(string, []byte, os.FileMode) error { return nil },
 	)
 	cmd := &mockCommander{}
@@ -209,7 +281,15 @@ func TestIsUnitActive_ReturnsFalseWhenServiceIsInactive(t *testing.T) {
 	withSystemdHooks(
 		t,
 		func(string) (os.FileInfo, error) { return nil, nil },
-		func(string) (string, error) { return "/bin/systemctl", nil },
+		func(name string) (string, error) {
+			if name == "systemctl" {
+				return "/bin/systemctl", nil
+			}
+			if name == "tungo" {
+				return "/usr/local/bin/tungo", nil
+			}
+			return "", exec.ErrNotFound
+		},
 		func(string, []byte, os.FileMode) error { return nil },
 	)
 	cmd := &mockCommander{runErr: commandExitError(t, 3)}
@@ -228,7 +308,15 @@ func TestIsUnitActive_ReturnsFalseWhenServiceIsMissing(t *testing.T) {
 	withSystemdHooks(
 		t,
 		func(string) (os.FileInfo, error) { return nil, nil },
-		func(string) (string, error) { return "/bin/systemctl", nil },
+		func(name string) (string, error) {
+			if name == "systemctl" {
+				return "/bin/systemctl", nil
+			}
+			if name == "tungo" {
+				return "/usr/local/bin/tungo", nil
+			}
+			return "", exec.ErrNotFound
+		},
 		func(string, []byte, os.FileMode) error { return nil },
 	)
 	cmd := &mockCommander{runErr: commandExitError(t, 4)}
@@ -247,7 +335,15 @@ func TestIsUnitActive_FailsOnUnexpectedError(t *testing.T) {
 	withSystemdHooks(
 		t,
 		func(string) (os.FileInfo, error) { return nil, nil },
-		func(string) (string, error) { return "/bin/systemctl", nil },
+		func(name string) (string, error) {
+			if name == "systemctl" {
+				return "/bin/systemctl", nil
+			}
+			if name == "tungo" {
+				return "/usr/local/bin/tungo", nil
+			}
+			return "", exec.ErrNotFound
+		},
 		func(string, []byte, os.FileMode) error { return nil },
 	)
 	cmd := &mockCommander{runErr: errors.New("boom")}
@@ -263,7 +359,15 @@ func TestStopUnit_RunsSystemctlStop(t *testing.T) {
 	withSystemdHooks(
 		t,
 		func(string) (os.FileInfo, error) { return nil, nil },
-		func(string) (string, error) { return "/bin/systemctl", nil },
+		func(name string) (string, error) {
+			if name == "systemctl" {
+				return "/bin/systemctl", nil
+			}
+			if name == "tungo" {
+				return "/usr/local/bin/tungo", nil
+			}
+			return "", exec.ErrNotFound
+		},
 		func(string, []byte, os.FileMode) error { return nil },
 	)
 	cmd := &mockCommander{}
@@ -281,7 +385,15 @@ func TestStopUnit_FailsOnCommandError(t *testing.T) {
 	withSystemdHooks(
 		t,
 		func(string) (os.FileInfo, error) { return nil, nil },
-		func(string) (string, error) { return "/bin/systemctl", nil },
+		func(name string) (string, error) {
+			if name == "systemctl" {
+				return "/bin/systemctl", nil
+			}
+			if name == "tungo" {
+				return "/usr/local/bin/tungo", nil
+			}
+			return "", exec.ErrNotFound
+		},
 		func(string, []byte, os.FileMode) error { return nil },
 	)
 	cmd := &mockCommander{runErr: errors.New("boom")}
@@ -297,7 +409,15 @@ func TestStartUnit_RunsSystemctlStart(t *testing.T) {
 	withSystemdHooks(
 		t,
 		func(string) (os.FileInfo, error) { return nil, nil },
-		func(string) (string, error) { return "/bin/systemctl", nil },
+		func(name string) (string, error) {
+			if name == "systemctl" {
+				return "/bin/systemctl", nil
+			}
+			if name == "tungo" {
+				return "/usr/local/bin/tungo", nil
+			}
+			return "", exec.ErrNotFound
+		},
 		func(string, []byte, os.FileMode) error { return nil },
 	)
 	cmd := &mockCommander{}
@@ -315,7 +435,15 @@ func TestEnableUnit_RunsSystemctlEnable(t *testing.T) {
 	withSystemdHooks(
 		t,
 		func(string) (os.FileInfo, error) { return nil, nil },
-		func(string) (string, error) { return "/bin/systemctl", nil },
+		func(name string) (string, error) {
+			if name == "systemctl" {
+				return "/bin/systemctl", nil
+			}
+			if name == "tungo" {
+				return "/usr/local/bin/tungo", nil
+			}
+			return "", exec.ErrNotFound
+		},
 		func(string, []byte, os.FileMode) error { return nil },
 	)
 	cmd := &mockCommander{}
@@ -333,7 +461,15 @@ func TestDisableUnit_RunsSystemctlDisable(t *testing.T) {
 	withSystemdHooks(
 		t,
 		func(string) (os.FileInfo, error) { return nil, nil },
-		func(string) (string, error) { return "/bin/systemctl", nil },
+		func(name string) (string, error) {
+			if name == "systemctl" {
+				return "/bin/systemctl", nil
+			}
+			if name == "tungo" {
+				return "/usr/local/bin/tungo", nil
+			}
+			return "", exec.ErrNotFound
+		},
 		func(string, []byte, os.FileMode) error { return nil },
 	)
 	cmd := &mockCommander{}
@@ -352,7 +488,15 @@ func TestRemoveUnit_StopsDisablesRemovesAndReloads(t *testing.T) {
 	withSystemdHooks(
 		t,
 		func(string) (os.FileInfo, error) { return nil, nil },
-		func(string) (string, error) { return "/bin/systemctl", nil },
+		func(name string) (string, error) {
+			if name == "systemctl" {
+				return "/bin/systemctl", nil
+			}
+			if name == "tungo" {
+				return "/usr/local/bin/tungo", nil
+			}
+			return "", exec.ErrNotFound
+		},
 		func(string, []byte, os.FileMode) error { return nil },
 	)
 	removePath = func(path string) error {
@@ -386,7 +530,15 @@ func TestPrivilegedOperations_FailWithoutAdminRights(t *testing.T) {
 	withSystemdHooks(
 		t,
 		func(string) (os.FileInfo, error) { return nil, nil },
-		func(string) (string, error) { return "/bin/systemctl", nil },
+		func(name string) (string, error) {
+			if name == "systemctl" {
+				return "/bin/systemctl", nil
+			}
+			if name == "tungo" {
+				return "/usr/local/bin/tungo", nil
+			}
+			return "", exec.ErrNotFound
+		},
 		func(string, []byte, os.FileMode) error { return nil },
 	)
 	geteuid = func() int { return 1000 }
@@ -437,7 +589,15 @@ func TestStatus_NotInstalled_ReturnsDefaults(t *testing.T) {
 			}
 			return nil, nil
 		},
-		func(string) (string, error) { return "/bin/systemctl", nil },
+		func(name string) (string, error) {
+			if name == "systemctl" {
+				return "/bin/systemctl", nil
+			}
+			if name == "tungo" {
+				return "/usr/local/bin/tungo", nil
+			}
+			return "", exec.ErrNotFound
+		},
 		func(string, []byte, os.FileMode) error { return nil },
 	)
 	cmd := &mockCommander{}
@@ -462,7 +622,15 @@ func TestStatus_InstalledEnabledActiveClient(t *testing.T) {
 	withSystemdHooks(
 		t,
 		func(string) (os.FileInfo, error) { return nil, nil },
-		func(string) (string, error) { return "/bin/systemctl", nil },
+		func(name string) (string, error) {
+			if name == "systemctl" {
+				return "/bin/systemctl", nil
+			}
+			if name == "tungo" {
+				return "/usr/local/bin/tungo", nil
+			}
+			return "", exec.ErrNotFound
+		},
 		func(string, []byte, os.FileMode) error { return nil },
 		func(string) ([]byte, error) { return []byte("ExecStart=tungo c\n"), nil },
 	)
@@ -487,7 +655,15 @@ func TestStatus_InstalledDisabledInactiveServer(t *testing.T) {
 	withSystemdHooks(
 		t,
 		func(string) (os.FileInfo, error) { return nil, nil },
-		func(string) (string, error) { return "/bin/systemctl", nil },
+		func(name string) (string, error) {
+			if name == "systemctl" {
+				return "/bin/systemctl", nil
+			}
+			if name == "tungo" {
+				return "/usr/local/bin/tungo", nil
+			}
+			return "", exec.ErrNotFound
+		},
 		func(string, []byte, os.FileMode) error { return nil },
 		func(string) ([]byte, error) { return []byte("ExecStart=tungo s\n"), nil },
 	)
@@ -517,7 +693,15 @@ func TestStatus_FailsOnUnexpectedIsEnabledError(t *testing.T) {
 	withSystemdHooks(
 		t,
 		func(string) (os.FileInfo, error) { return nil, nil },
-		func(string) (string, error) { return "/bin/systemctl", nil },
+		func(name string) (string, error) {
+			if name == "systemctl" {
+				return "/bin/systemctl", nil
+			}
+			if name == "tungo" {
+				return "/usr/local/bin/tungo", nil
+			}
+			return "", exec.ErrNotFound
+		},
 		func(string, []byte, os.FileMode) error { return nil },
 		func(string) ([]byte, error) { return []byte("ExecStart=tungo c\n"), nil },
 	)
@@ -538,6 +722,12 @@ func TestDetectUnitRole(t *testing.T) {
 	}
 	if got := detectUnitRole("ExecStart=tungo s\n"); got != UnitRoleServer {
 		t.Fatalf("expected server role, got %q", got)
+	}
+	if got := detectUnitRole("ExecStart=/usr/local/bin/tungo c\n"); got != UnitRoleClient {
+		t.Fatalf("expected client role for absolute path, got %q", got)
+	}
+	if got := detectUnitRole("ExecStart=/usr/local/bin/tungo s\n"); got != UnitRoleServer {
+		t.Fatalf("expected server role for absolute path, got %q", got)
 	}
 	if got := detectUnitRole("ExecStart=/usr/bin/other\n"); got != UnitRoleUnknown {
 		t.Fatalf("expected unknown role, got %q", got)

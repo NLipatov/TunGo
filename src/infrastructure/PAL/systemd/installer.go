@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"tungo/infrastructure/PAL/exec_commander"
 )
@@ -111,7 +112,11 @@ func (i *UnitInstaller) installUnit(modeArg string) (string, error) {
 	if err := requireAdminPrivileges(); err != nil {
 		return "", err
 	}
-	if err := writeFilePath(systemdUnitPath, []byte(unitFileContent(modeArg)), 0644); err != nil {
+	binaryPath, err := resolveTungoBinaryPath()
+	if err != nil {
+		return "", err
+	}
+	if err := writeFilePath(systemdUnitPath, []byte(unitFileContent(binaryPath, modeArg)), 0644); err != nil {
 		return "", fmt.Errorf("failed to write %s: %w", systemdUnitPath, err)
 	}
 	if err := i.commander.Run("systemctl", "daemon-reload"); err != nil {
@@ -245,17 +250,27 @@ func isSystemdDisabledError(err error) bool {
 }
 
 func detectUnitRole(unitBody string) UnitRole {
-	switch {
-	case strings.Contains(unitBody, "ExecStart=tungo c"):
-		return UnitRoleClient
-	case strings.Contains(unitBody, "ExecStart=tungo s"):
-		return UnitRoleServer
-	default:
-		return UnitRoleUnknown
+	for _, line := range strings.Split(unitBody, "\n") {
+		if !strings.HasPrefix(line, "ExecStart=") {
+			continue
+		}
+		command := strings.TrimSpace(strings.TrimPrefix(line, "ExecStart="))
+		command = strings.TrimPrefix(command, "-")
+		fields := strings.Fields(command)
+		if len(fields) == 0 {
+			continue
+		}
+		switch fields[len(fields)-1] {
+		case "c":
+			return UnitRoleClient
+		case "s":
+			return UnitRoleServer
+		}
 	}
+	return UnitRoleUnknown
 }
 
-func unitFileContent(modeArg string) string {
+func unitFileContent(binaryPath string, modeArg string) string {
 	return fmt.Sprintf(`[Unit]
 Description=TunGo VPN Service
 After=network-online.target
@@ -263,14 +278,14 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=tungo %s
+ExecStart=%s %s
 User=root
 Restart=always
 RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
-`, modeArg)
+`, binaryPath, modeArg)
 }
 
 func requireAdminPrivileges() error {
@@ -278,4 +293,19 @@ func requireAdminPrivileges() error {
 		return nil
 	}
 	return errors.New("admin privileges are required to manage tungo systemd service")
+}
+
+func resolveTungoBinaryPath() (string, error) {
+	path, err := lookPath("tungo")
+	if err != nil {
+		return "", errors.New("tungo executable is not found in PATH; install tungo before setting up daemon")
+	}
+	if filepath.IsAbs(path) {
+		return path, nil
+	}
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve tungo executable path: %w", err)
+	}
+	return absPath, nil
 }
