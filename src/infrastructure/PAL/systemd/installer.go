@@ -20,6 +20,7 @@ var (
 	lookPath      = exec.LookPath
 	writeFilePath = os.WriteFile
 	readFilePath  = os.ReadFile
+	geteuid       = os.Geteuid
 )
 
 type UnitRole string
@@ -82,6 +83,9 @@ func (i *UnitInstaller) installUnit(modeArg string) (string, error) {
 	if !i.Supported() {
 		return "", fmt.Errorf("systemd is not supported on this platform")
 	}
+	if err := requireAdminPrivileges(); err != nil {
+		return "", err
+	}
 	if err := writeFilePath(systemdUnitPath, []byte(unitFileContent(modeArg)), 0644); err != nil {
 		return "", fmt.Errorf("failed to write %s: %w", systemdUnitPath, err)
 	}
@@ -111,6 +115,9 @@ func (i *UnitInstaller) StopUnit() error {
 	if !i.Supported() {
 		return fmt.Errorf("systemd is not supported on this platform")
 	}
+	if err := requireAdminPrivileges(); err != nil {
+		return err
+	}
 	if err := i.commander.Run("systemctl", "stop", systemdUnitName); err != nil {
 		return fmt.Errorf("failed to run systemctl stop %s: %w", systemdUnitName, err)
 	}
@@ -120,6 +127,9 @@ func (i *UnitInstaller) StopUnit() error {
 func (i *UnitInstaller) StartUnit() error {
 	if !i.Supported() {
 		return fmt.Errorf("systemd is not supported on this platform")
+	}
+	if err := requireAdminPrivileges(); err != nil {
+		return err
 	}
 	if err := i.commander.Run("systemctl", "start", systemdUnitName); err != nil {
 		return fmt.Errorf("failed to run systemctl start %s: %w", systemdUnitName, err)
@@ -131,6 +141,9 @@ func (i *UnitInstaller) EnableUnit() error {
 	if !i.Supported() {
 		return fmt.Errorf("systemd is not supported on this platform")
 	}
+	if err := requireAdminPrivileges(); err != nil {
+		return err
+	}
 	if err := i.commander.Run("systemctl", "enable", systemdUnitName); err != nil {
 		return fmt.Errorf("failed to run systemctl enable %s: %w", systemdUnitName, err)
 	}
@@ -140,6 +153,9 @@ func (i *UnitInstaller) EnableUnit() error {
 func (i *UnitInstaller) DisableUnit() error {
 	if !i.Supported() {
 		return fmt.Errorf("systemd is not supported on this platform")
+	}
+	if err := requireAdminPrivileges(); err != nil {
+		return err
 	}
 	if err := i.commander.Run("systemctl", "disable", systemdUnitName); err != nil {
 		return fmt.Errorf("failed to run systemctl disable %s: %w", systemdUnitName, err)
@@ -230,4 +246,11 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 `, modeArg)
+}
+
+func requireAdminPrivileges() error {
+	if geteuid() == 0 {
+		return nil
+	}
+	return errors.New("admin privileges are required to manage tungo systemd service")
 }

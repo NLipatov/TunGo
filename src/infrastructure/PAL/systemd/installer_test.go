@@ -51,6 +51,7 @@ func withSystemdHooks(
 	prevLook := lookPath
 	prevWrite := writeFilePath
 	prevRead := readFilePath
+	prevGeteuid := geteuid
 	readHook := func(string) ([]byte, error) { return []byte(""), nil }
 	if len(read) > 0 && read[0] != nil {
 		readHook = read[0]
@@ -59,11 +60,13 @@ func withSystemdHooks(
 	lookPath = look
 	writeFilePath = write
 	readFilePath = readHook
+	geteuid = func() int { return 0 }
 	t.Cleanup(func() {
 		statPath = prevStat
 		lookPath = prevLook
 		writeFilePath = prevWrite
 		readFilePath = prevRead
+		geteuid = prevGeteuid
 	})
 }
 
@@ -338,6 +341,51 @@ func TestDisableUnit_RunsSystemctlDisable(t *testing.T) {
 	}
 	if len(cmd.runCalls) != 1 || cmd.runCalls[0] != [2]string{"systemctl", "disable"} {
 		t.Fatalf("unexpected run calls: %v", cmd.runCalls)
+	}
+}
+
+func TestPrivilegedOperations_FailWithoutAdminRights(t *testing.T) {
+	withSystemdHooks(
+		t,
+		func(string) (os.FileInfo, error) { return nil, nil },
+		func(string) (string, error) { return "/bin/systemctl", nil },
+		func(string, []byte, os.FileMode) error { return nil },
+	)
+	geteuid = func() int { return 1000 }
+
+	operations := []struct {
+		name string
+		run  func(installer Installer) error
+	}{
+		{name: "start", run: func(installer Installer) error { return installer.StartUnit() }},
+		{name: "stop", run: func(installer Installer) error { return installer.StopUnit() }},
+		{name: "enable", run: func(installer Installer) error { return installer.EnableUnit() }},
+		{name: "disable", run: func(installer Installer) error { return installer.DisableUnit() }},
+		{name: "install-client", run: func(installer Installer) error {
+			_, err := installer.InstallClientUnit()
+			return err
+		}},
+		{name: "install-server", run: func(installer Installer) error {
+			_, err := installer.InstallServerUnit()
+			return err
+		}},
+	}
+
+	for _, tc := range operations {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := &mockCommander{}
+			installer := NewUnitInstaller(cmd)
+			err := tc.run(installer)
+			if err == nil {
+				t.Fatalf("expected permission error")
+			}
+			if !strings.Contains(err.Error(), "admin privileges are required") {
+				t.Fatalf("expected admin privileges error, got %v", err)
+			}
+			if len(cmd.runCalls) != 0 {
+				t.Fatalf("expected no systemctl calls when not admin, got %v", cmd.runCalls)
+			}
+		})
 	}
 }
 
