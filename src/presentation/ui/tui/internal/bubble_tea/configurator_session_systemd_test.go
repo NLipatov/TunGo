@@ -18,7 +18,7 @@ func (m failingClientConfigManager) Configuration() (*clientConfiguration.Config
 	return nil, m.err
 }
 
-func TestSettingsRows_AddsDaemonRowWhenSupported(t *testing.T) {
+func TestModeOptions_AddsDaemonWhenSupported(t *testing.T) {
 	opts := defaultConfiguratorOpts()
 	opts.SystemdSupported = true
 	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
@@ -35,13 +35,12 @@ func TestSettingsRows_AddsDaemonRowWhenSupported(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	rows := model.settingsRows()
-	if !containsString(rows, "Daemon     : stopped (client)") {
-		t.Fatalf("expected daemon row in settings, got %v", rows)
+	if !containsString(model.modeOptions, sessionModeDaemon) {
+		t.Fatalf("expected daemon option in mode screen, got %v", model.modeOptions)
 	}
 }
 
-func TestSettingsRows_DoesNotAddDaemonRowWhenUnsupported(t *testing.T) {
+func TestModeOptions_DoesNotAddDaemonWhenUnsupported(t *testing.T) {
 	opts := defaultConfiguratorOpts()
 	opts.SystemdSupported = false
 
@@ -49,12 +48,12 @@ func TestSettingsRows_DoesNotAddDaemonRowWhenUnsupported(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if containsString(model.settingsRows(), "Daemon") {
-		t.Fatalf("expected no daemon row when unsupported, got %v", model.settingsRows())
+	if containsString(model.modeOptions, sessionModeDaemon) {
+		t.Fatalf("expected no daemon option when unsupported, got %v", model.modeOptions)
 	}
 }
 
-func TestUpdateSettingsTab_EnterOnDaemonRow_OpensDaemonManageScreen(t *testing.T) {
+func TestUpdateModeScreen_EnterOnDaemon_OpensDaemonManageScreen(t *testing.T) {
 	opts := defaultConfiguratorOpts()
 	opts.SystemdSupported = true
 	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
@@ -65,17 +64,46 @@ func TestUpdateSettingsTab_EnterOnDaemonRow_OpensDaemonManageScreen(t *testing.T
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	model.tab = configuratorTabSettings
-	model.screen = configuratorScreenClientSelect
-	model.settingsCursor = model.daemonSettingsRowIndex()
-
-	updatedModel, _ := model.updateSettingsTab(keyNamed(tea.KeyEnter))
-	updated := updatedModel.(configuratorSessionModel)
-	if updated.tab != configuratorTabMain {
-		t.Fatalf("expected switch to main tab, got %d", updated.tab)
+	model.screen = configuratorScreenMode
+	model.cursor = indexOfString(model.modeOptions, sessionModeDaemon)
+	if model.cursor < 0 {
+		t.Fatalf("expected daemon option in mode options, got %v", model.modeOptions)
 	}
+
+	updatedModel, _ := model.updateModeScreen(keyNamed(tea.KeyEnter))
+	updated := updatedModel.(configuratorSessionModel)
 	if updated.screen != configuratorScreenDaemonManage {
 		t.Fatalf("expected daemon manage screen, got %v", updated.screen)
+	}
+}
+
+func TestUpdateClientSelectScreen_Esc_ServerUnsupportedWithDaemon_ReturnsToModeScreen(t *testing.T) {
+	opts := defaultConfiguratorOpts()
+	opts.ServerSupported = false
+	opts.SystemdSupported = true
+	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
+		return SystemdDaemonStatus{Installed: false}, nil
+	}
+
+	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceNone))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if model.screen != configuratorScreenMode {
+		t.Fatalf("expected mode screen when daemon option exists, got %v", model.screen)
+	}
+
+	model.screen = configuratorScreenClientSelect
+	updatedModel, cmd := model.updateClientSelectScreen(keyNamed(tea.KeyEsc))
+	updated := updatedModel.(configuratorSessionModel)
+	if cmd != nil {
+		t.Fatalf("expected nil cmd, got %v", cmd)
+	}
+	if updated.done {
+		t.Fatal("expected session to stay open")
+	}
+	if updated.screen != configuratorScreenMode {
+		t.Fatalf("expected return to mode screen, got %v", updated.screen)
 	}
 }
 
@@ -96,7 +124,6 @@ func TestUpdateDaemonManageScreen_NotInstalled_ShowsSetupOptions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	model.mainScreenBeforeDaemon = configuratorScreenServerSelect
 	model.screen = configuratorScreenDaemonManage
 	model.refreshDaemonStatus()
 
@@ -128,6 +155,7 @@ func TestUpdateDaemonManageScreen_Installed_ShowsReconfigureOptions(t *testing.T
 	opts.InstallServerSystemdUnit = func() (string, error) {
 		return "/etc/systemd/system/tungo.service", nil
 	}
+	opts.RemoveSystemdUnit = func() error { return nil }
 	opts.StartSystemdUnit = func() error { return nil }
 	opts.EnableSystemdUnit = func() error { return nil }
 
@@ -135,7 +163,6 @@ func TestUpdateDaemonManageScreen_Installed_ShowsReconfigureOptions(t *testing.T
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	model.mainScreenBeforeDaemon = configuratorScreenServerSelect
 	model.screen = configuratorScreenDaemonManage
 	model.refreshDaemonStatus()
 
@@ -150,6 +177,9 @@ func TestUpdateDaemonManageScreen_Installed_ShowsReconfigureOptions(t *testing.T
 	}
 	if !containsString(model.daemon.menuOptions, sessionDaemonReconfServer) {
 		t.Fatalf("expected reconfigure server option, got %v", model.daemon.menuOptions)
+	}
+	if !containsString(model.daemon.menuOptions, sessionDaemonDelete) {
+		t.Fatalf("expected delete daemon option, got %v", model.daemon.menuOptions)
 	}
 	if !containsString(model.daemon.menuOptions, sessionDaemonBack) {
 		t.Fatalf("expected back option, got %v", model.daemon.menuOptions)
@@ -381,6 +411,10 @@ func TestUpdateDaemonManageScreen_StartEnableDisableStopFlow(t *testing.T) {
 		status.Active = false
 		return nil
 	}
+	opts.RemoveSystemdUnit = func() error {
+		status = SystemdDaemonStatus{}
+		return nil
+	}
 
 	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
 	if err != nil {
@@ -416,6 +450,50 @@ func TestUpdateDaemonManageScreen_StartEnableDisableStopFlow(t *testing.T) {
 	model = next.(configuratorSessionModel)
 	if status.Active {
 		t.Fatal("expected daemon to be stopped")
+	}
+	if model.notice != "" {
+		t.Fatalf("expected no success notice after stop, got %q", model.notice)
+	}
+}
+
+func TestUpdateDaemonManageScreen_Delete_RemovesUnitAndRefreshesStatus(t *testing.T) {
+	status := SystemdDaemonStatus{Installed: true, Enabled: true, Active: false, Mode: mode.Server}
+	opts := defaultConfiguratorOpts()
+	opts.SystemdSupported = true
+	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) { return status, nil }
+	removeCalls := 0
+	opts.RemoveSystemdUnit = func() error {
+		removeCalls++
+		status = SystemdDaemonStatus{}
+		return nil
+	}
+	opts.InstallClientSystemdUnit = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
+	opts.InstallServerSystemdUnit = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
+
+	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceServer))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	model.screen = configuratorScreenDaemonManage
+	model.refreshDaemonStatus()
+	model.cursor = indexOfString(model.daemon.menuOptions, sessionDaemonDelete)
+	if model.cursor < 0 {
+		t.Fatalf("missing %q in %v", sessionDaemonDelete, model.daemon.menuOptions)
+	}
+
+	updatedModel, _ := model.updateDaemonManageScreen(keyNamed(tea.KeyEnter))
+	updated := updatedModel.(configuratorSessionModel)
+	if removeCalls != 1 {
+		t.Fatalf("expected one remove call, got %d", removeCalls)
+	}
+	if updated.notice != "" {
+		t.Fatalf("expected no success notice, got %q", updated.notice)
+	}
+	if updated.daemon.status.Installed {
+		t.Fatalf("expected daemon to be removed, got %+v", updated.daemon.status)
+	}
+	if !containsString(updated.daemon.menuOptions, sessionDaemonSetupClient) {
+		t.Fatalf("expected setup options after delete, got %v", updated.daemon.menuOptions)
 	}
 }
 

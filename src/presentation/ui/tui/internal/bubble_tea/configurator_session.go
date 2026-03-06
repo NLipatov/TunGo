@@ -77,6 +77,7 @@ type ConfiguratorSessionOptions struct {
 	StartSystemdUnit         func() error
 	EnableSystemdUnit        func() error
 	DisableSystemdUnit       func() error
+	RemoveSystemdUnit        func() error
 	CheckSystemdUnitActive   func() (bool, error)
 	StopSystemdUnit          func() error
 }
@@ -108,6 +109,7 @@ const (
 const (
 	sessionModeClient = "client"
 	sessionModeServer = "server"
+	sessionModeDaemon = "daemon manager"
 
 	sessionClientAdd    = "add configuration"
 	sessionClientRemove = "remove configuration"
@@ -127,7 +129,8 @@ const (
 	sessionDaemonStop                  = "stop daemon"
 	sessionDaemonEnable                = "enable on boot"
 	sessionDaemonDisable               = "disable on boot"
-	sessionDaemonBack                  = "back to settings"
+	sessionDaemonDelete                = "delete daemon"
+	sessionDaemonBack                  = "back to main"
 	sessionDaemonConfirmReconfigureNow = "stop and restart with new setup"
 
 	sessionServerDeleteConfirm = "Delete client"
@@ -187,11 +190,10 @@ type configuratorSessionModel struct {
 
 	logs logViewport
 
-	pendingStartMode       mode.Mode
-	pendingStartScreen     configuratorScreen
-	pendingClientConfig    string
-	mainScreenBeforeDaemon configuratorScreen
-	pendingDaemonMode      mode.Mode
+	pendingStartMode    mode.Mode
+	pendingStartScreen  configuratorScreen
+	pendingClientConfig string
+	pendingDaemonMode   mode.Mode
 
 	resultMode mode.Mode
 	resultErr  error
@@ -227,6 +229,9 @@ func newConfiguratorSessionModel(options ConfiguratorSessionOptions, settings *u
 	modeOptions := []string{sessionModeClient}
 	if options.ServerSupported {
 		modeOptions = append(modeOptions, sessionModeServer)
+	}
+	if options.SystemdSupported && options.GetSystemdDaemonStatus != nil {
+		modeOptions = append(modeOptions, sessionModeDaemon)
 	}
 
 	// If server is not supported but the saved preference is server, reset to client.
@@ -271,9 +276,9 @@ func newConfiguratorSessionModel(options ConfiguratorSessionOptions, settings *u
 		model.refreshDaemonStatus()
 	}
 
-	// When server is unsupported, client is the only option — skip mode screen.
-	// Otherwise respect the stored preference.
-	if !options.ServerSupported || settings.Preferences().AutoSelectMode == ModePreferenceClient {
+	// Skip mode screen only when client is the only available option,
+	// or when client is explicitly preferred.
+	if len(modeOptions) == 1 || settings.Preferences().AutoSelectMode == ModePreferenceClient {
 		if err := model.reloadClientConfigs(); err != nil {
 			return configuratorSessionModel{}, err
 		}
@@ -615,6 +620,11 @@ func (m configuratorSessionModel) updateModeScreen(msg tea.KeyPressMsg) (tea.Mod
 		m.notice = ""
 		m.cursor = 0
 		m.screen = configuratorScreenServerSelect
+	case sessionModeDaemon:
+		m.notice = ""
+		m.cursor = 0
+		m.refreshDaemonStatus()
+		m.screen = configuratorScreenDaemonManage
 	}
 	return m, nil
 }
@@ -624,7 +634,7 @@ func (m configuratorSessionModel) updateClientSelectScreen(msg tea.KeyPressMsg) 
 	case "esc":
 		m.notice = ""
 		m.cursor = 0
-		if !m.serverSupported {
+		if len(m.modeOptions) == 1 {
 			m.resultErr = ErrConfiguratorSessionUserExit
 			m.done = true
 			return m, tea.Quit
@@ -1095,7 +1105,7 @@ func (m configuratorSessionModel) updateDaemonManageScreen(msg tea.KeyPressMsg) 
 			m.notice = fmt.Sprintf("Failed to start daemon: %v", err)
 			return m, nil
 		}
-		m.notice = "Daemon started."
+		m.notice = ""
 	case sessionDaemonStop:
 		if m.options.StopSystemdUnit == nil {
 			m.notice = "Daemon stop is unavailable."
@@ -1105,7 +1115,7 @@ func (m configuratorSessionModel) updateDaemonManageScreen(msg tea.KeyPressMsg) 
 			m.notice = fmt.Sprintf("Failed to stop daemon: %v", err)
 			return m, nil
 		}
-		m.notice = "Daemon stopped."
+		m.notice = ""
 	case sessionDaemonEnable:
 		if m.options.EnableSystemdUnit == nil {
 			m.notice = "Daemon enable is unavailable."
@@ -1115,7 +1125,7 @@ func (m configuratorSessionModel) updateDaemonManageScreen(msg tea.KeyPressMsg) 
 			m.notice = fmt.Sprintf("Failed to enable daemon: %v", err)
 			return m, nil
 		}
-		m.notice = "Daemon enabled."
+		m.notice = ""
 	case sessionDaemonDisable:
 		if m.options.DisableSystemdUnit == nil {
 			m.notice = "Daemon disable is unavailable."
@@ -1125,7 +1135,17 @@ func (m configuratorSessionModel) updateDaemonManageScreen(msg tea.KeyPressMsg) 
 			m.notice = fmt.Sprintf("Failed to disable daemon: %v", err)
 			return m, nil
 		}
-		m.notice = "Daemon disabled."
+		m.notice = ""
+	case sessionDaemonDelete:
+		if m.options.RemoveSystemdUnit == nil {
+			m.notice = "Daemon remove is unavailable."
+			return m, nil
+		}
+		if err := m.options.RemoveSystemdUnit(); err != nil {
+			m.notice = fmt.Sprintf("Failed to remove daemon: %v", err)
+			return m, nil
+		}
+		m.notice = ""
 	default:
 		return m, nil
 	}
@@ -1402,7 +1422,6 @@ func (m configuratorSessionModel) updateSettingsTab(msg tea.KeyPressMsg) (tea.Mo
 	if len(rows) == 0 {
 		return m, nil
 	}
-	daemonRow := m.daemonSettingsRowIndex()
 	var cmd tea.Cmd
 	switch msg.String() {
 	case "up", "k":
@@ -1410,26 +1429,12 @@ func (m configuratorSessionModel) updateSettingsTab(msg tea.KeyPressMsg) (tea.Mo
 	case "down", "j":
 		m.settingsCursor = settingsCursorDown(m.settingsCursor, len(rows))
 	case "left", "h":
-		if daemonRow >= 0 && m.settingsCursor == daemonRow {
-			return m, nil
-		}
 		prevTheme := m.preferences.Theme
 		m.preferences = applySettingsChange(m.settings, m.settingsCursor, -1, m.serverSupported)
 		if m.settingsCursor == settingsThemeRow && m.preferences.Theme != prevTheme {
 			cmd = tea.ClearScreen
 		}
 	case "right", "l", "enter":
-		if daemonRow >= 0 && m.settingsCursor == daemonRow {
-			if msg.String() != "enter" {
-				return m, nil
-			}
-			m.mainScreenBeforeDaemon = m.screen
-			m.tab = configuratorTabMain
-			m.screen = configuratorScreenDaemonManage
-			m.cursor = 0
-			m.refreshDaemonStatus()
-			return m, nil
-		}
 		prevTheme := m.preferences.Theme
 		m.preferences = applySettingsChange(m.settings, m.settingsCursor, 1, m.serverSupported)
 		if m.settingsCursor == settingsThemeRow && m.preferences.Theme != prevTheme {
@@ -1473,7 +1478,7 @@ func (m *configuratorSessionModel) refreshDaemonStatus() {
 }
 
 func (m configuratorSessionModel) daemonMenuOptions(status SystemdDaemonStatus) []string {
-	options := make([]string, 0, 6)
+	options := make([]string, 0, 8)
 	if !status.Installed {
 		if m.options.InstallClientSystemdUnit != nil {
 			options = append(options, sessionDaemonSetupClient)
@@ -1503,16 +1508,26 @@ func (m configuratorSessionModel) daemonMenuOptions(status SystemdDaemonStatus) 
 	if m.serverSupported && m.options.InstallServerSystemdUnit != nil {
 		options = append(options, sessionDaemonReconfServer)
 	}
+	if m.options.RemoveSystemdUnit != nil {
+		options = append(options, sessionDaemonDelete)
+	}
 	options = append(options, sessionDaemonBack)
 	return options
 }
 
 func (m configuratorSessionModel) daemonNotice() string {
 	statusLine := m.daemonStatusLine()
-	if strings.TrimSpace(m.notice) == "" {
+	notice := strings.TrimSpace(m.notice)
+	if notice == "" {
 		return statusLine
 	}
-	return statusLine + "\n" + m.notice
+	noticeLower := strings.ToLower(notice)
+	if !strings.Contains(noticeLower, "failed") &&
+		!strings.Contains(noticeLower, "unavailable") &&
+		!strings.Contains(noticeLower, "required") {
+		return statusLine
+	}
+	return statusLine + "\n" + notice
 }
 
 func (m configuratorSessionModel) daemonStatusLine() string {
@@ -1533,51 +1548,20 @@ func (m configuratorSessionModel) daemonStatusLine() string {
 }
 
 func (m configuratorSessionModel) leaveDaemonManageScreen() configuratorSessionModel {
-	m.tab = configuratorTabSettings
-	m.screen = m.mainScreenBeforeDaemon
-	m.settingsCursor = maxInt(0, m.daemonSettingsRowIndex())
-	m.cursor = 0
+	m.tab = configuratorTabMain
+	m.screen = configuratorScreenMode
+	if idx := slices.Index(m.modeOptions, sessionModeDaemon); idx >= 0 {
+		m.cursor = idx
+	} else {
+		m.cursor = 0
+	}
 	m.pendingDaemonMode = mode.Unknown
 	m.refreshDaemonStatus()
 	return m
 }
 
-func (m configuratorSessionModel) daemonSettingsRowIndex() int {
-	if !m.options.SystemdSupported || m.options.GetSystemdDaemonStatus == nil {
-		return -1
-	}
-	return len(uiSettingsRows(m.preferences, m.serverSupported))
-}
-
-func (m configuratorSessionModel) daemonSettingsLabel() string {
-	if !m.options.SystemdSupported || m.options.GetSystemdDaemonStatus == nil {
-		return ""
-	}
-	if m.daemon.statusErr != nil {
-		return "unavailable"
-	}
-	if !m.daemon.status.Installed {
-		return "not installed"
-	}
-	role := "unknown"
-	switch m.daemon.status.Mode {
-	case mode.Client:
-		role = "client"
-	case mode.Server:
-		role = "server"
-	}
-	if m.daemon.status.Active {
-		return "running (" + role + ")"
-	}
-	return "stopped (" + role + ")"
-}
-
 func (m configuratorSessionModel) settingsRows() []string {
-	rows := uiSettingsRows(m.preferences, m.serverSupported)
-	if daemonRow := m.daemonSettingsLabel(); daemonRow != "" {
-		rows = append(rows, "Daemon     : "+daemonRow)
-	}
-	return rows
+	return uiSettingsRows(m.preferences, m.serverSupported)
 }
 
 func (m *configuratorSessionModel) reloadClientConfigs() error {

@@ -51,6 +51,7 @@ func withSystemdHooks(
 	prevLook := lookPath
 	prevWrite := writeFilePath
 	prevRead := readFilePath
+	prevRemove := removePath
 	prevGeteuid := geteuid
 	readHook := func(string) ([]byte, error) { return []byte(""), nil }
 	if len(read) > 0 && read[0] != nil {
@@ -60,12 +61,14 @@ func withSystemdHooks(
 	lookPath = look
 	writeFilePath = write
 	readFilePath = readHook
+	removePath = func(string) error { return nil }
 	geteuid = func() int { return 0 }
 	t.Cleanup(func() {
 		statPath = prevStat
 		lookPath = prevLook
 		writeFilePath = prevWrite
 		readFilePath = prevRead
+		removePath = prevRemove
 		geteuid = prevGeteuid
 	})
 }
@@ -344,6 +347,41 @@ func TestDisableUnit_RunsSystemctlDisable(t *testing.T) {
 	}
 }
 
+func TestRemoveUnit_StopsDisablesRemovesAndReloads(t *testing.T) {
+	removedPath := ""
+	withSystemdHooks(
+		t,
+		func(string) (os.FileInfo, error) { return nil, nil },
+		func(string) (string, error) { return "/bin/systemctl", nil },
+		func(string, []byte, os.FileMode) error { return nil },
+	)
+	removePath = func(path string) error {
+		removedPath = path
+		return nil
+	}
+	cmd := &mockCommander{}
+	installer := NewUnitInstaller(cmd)
+
+	if err := installer.RemoveUnit(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if removedPath != systemdUnitPath {
+		t.Fatalf("remove path: got %q want %q", removedPath, systemdUnitPath)
+	}
+	if len(cmd.runCalls) != 3 {
+		t.Fatalf("expected 3 systemctl calls, got %d", len(cmd.runCalls))
+	}
+	if cmd.runCalls[0] != [2]string{"systemctl", "stop"} {
+		t.Fatalf("unexpected first command: %v", cmd.runCalls[0])
+	}
+	if cmd.runCalls[1] != [2]string{"systemctl", "disable"} {
+		t.Fatalf("unexpected second command: %v", cmd.runCalls[1])
+	}
+	if cmd.runCalls[2] != [2]string{"systemctl", "daemon-reload"} {
+		t.Fatalf("unexpected third command: %v", cmd.runCalls[2])
+	}
+}
+
 func TestPrivilegedOperations_FailWithoutAdminRights(t *testing.T) {
 	withSystemdHooks(
 		t,
@@ -369,6 +407,7 @@ func TestPrivilegedOperations_FailWithoutAdminRights(t *testing.T) {
 			_, err := installer.InstallServerUnit()
 			return err
 		}},
+		{name: "remove", run: func(installer Installer) error { return installer.RemoveUnit() }},
 	}
 
 	for _, tc := range operations {

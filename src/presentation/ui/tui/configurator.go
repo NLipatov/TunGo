@@ -158,6 +158,7 @@ func (p *Configurator) configureContinuous(ctx context.Context) (mode.Mode, erro
 		configOpts.StartSystemdUnit = systemdInstaller.StartUnit
 		configOpts.EnableSystemdUnit = systemdInstaller.EnableUnit
 		configOpts.DisableSystemdUnit = systemdInstaller.DisableUnit
+		configOpts.RemoveSystemdUnit = systemdInstaller.RemoveUnit
 		if p.serverSupported {
 			configOpts.InstallServerSystemdUnit = systemdInstaller.InstallServerUnit
 		}

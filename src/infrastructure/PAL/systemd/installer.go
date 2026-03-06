@@ -20,6 +20,7 @@ var (
 	lookPath      = exec.LookPath
 	writeFilePath = os.WriteFile
 	readFilePath  = os.ReadFile
+	removePath    = os.Remove
 	geteuid       = os.Geteuid
 )
 
@@ -42,6 +43,7 @@ type Installer interface {
 	Supported() bool
 	InstallServerUnit() (string, error)
 	InstallClientUnit() (string, error)
+	RemoveUnit() error
 	IsUnitActive() (bool, error)
 	StopUnit() error
 	StartUnit() error
@@ -77,6 +79,29 @@ func (i *UnitInstaller) InstallServerUnit() (string, error) {
 
 func (i *UnitInstaller) InstallClientUnit() (string, error) {
 	return i.installUnit("c")
+}
+
+func (i *UnitInstaller) RemoveUnit() error {
+	if !i.Supported() {
+		return fmt.Errorf("systemd is not supported on this platform")
+	}
+	if err := requireAdminPrivileges(); err != nil {
+		return err
+	}
+
+	if err := i.commander.Run("systemctl", "stop", systemdUnitName); err != nil && !isSystemdNotActiveError(err) {
+		return fmt.Errorf("failed to run systemctl stop %s: %w", systemdUnitName, err)
+	}
+	if err := i.commander.Run("systemctl", "disable", systemdUnitName); err != nil && !isSystemdDisabledError(err) {
+		return fmt.Errorf("failed to run systemctl disable %s: %w", systemdUnitName, err)
+	}
+	if err := removePath(systemdUnitPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("failed to remove %s: %w", systemdUnitPath, err)
+	}
+	if err := i.commander.Run("systemctl", "daemon-reload"); err != nil {
+		return fmt.Errorf("failed to run systemctl daemon-reload: %w", err)
+	}
+	return nil
 }
 
 func (i *UnitInstaller) installUnit(modeArg string) (string, error) {
