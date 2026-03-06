@@ -307,13 +307,13 @@ func newConfiguratorSessionModel(options ConfiguratorSessionOptions, settings *u
 							} else if cfgErr != nil {
 								model.notice = fmt.Sprintf("Auto-select failed for %q: %v", autoConfig, cfgErr)
 							} else {
-								model = model.startModeWithSystemdGuard(mode.Client, configuratorScreenClientSelect)
+								model = model.startModeWithSystemdGuard(mode.Client, configuratorScreenClientSelect, true)
 								if !model.done && model.screen == configuratorScreenSystemdActiveConfirm {
 									model.pendingClientConfig = autoConfig
 								}
 							}
 						} else {
-							model = model.startModeWithSystemdGuard(mode.Client, configuratorScreenClientSelect)
+							model = model.startModeWithSystemdGuard(mode.Client, configuratorScreenClientSelect, true)
 							if !model.done && model.screen == configuratorScreenSystemdActiveConfirm {
 								model.pendingClientConfig = autoConfig
 							}
@@ -459,7 +459,7 @@ func (m configuratorSessionModel) mainTabView() string {
 		)
 	case configuratorScreenClientSelect:
 		clientSelectHint := "up/k down/j move | Enter select | Tab switch tabs | Esc back | ctrl+c exit"
-		if !m.serverSupported {
+		if len(m.modeOptions) == 1 {
 			clientSelectHint = "up/k down/j move | Enter select | Tab switch tabs | Esc exit | ctrl+c exit"
 		}
 		return m.renderSelectionScreen(
@@ -705,7 +705,7 @@ func (m configuratorSessionModel) updateClientSelectScreen(msg tea.KeyPressMsg) 
 			}
 		}
 
-		m = m.startModeWithSystemdGuard(mode.Client, configuratorScreenClientSelect)
+		m = m.startModeWithSystemdGuard(mode.Client, configuratorScreenClientSelect, false)
 		if m.done {
 			m = m.persistAutoSelectClientConfig(selected)
 			return m, tea.Quit
@@ -896,7 +896,7 @@ func (m configuratorSessionModel) updateServerSelectScreen(msg tea.KeyPressMsg) 
 
 	switch m.server.menuOptions[m.cursor] {
 	case sessionServerStart:
-		m = m.startModeWithSystemdGuard(mode.Server, configuratorScreenServerSelect)
+		m = m.startModeWithSystemdGuard(mode.Server, configuratorScreenServerSelect, false)
 		if m.done {
 			return m, tea.Quit
 		}
@@ -1343,7 +1343,7 @@ func (m configuratorSessionModel) updateSystemdActiveConfirmScreen(msg tea.KeyPr
 	return m, tea.Quit
 }
 
-func (m configuratorSessionModel) startModeWithSystemdGuard(targetMode mode.Mode, returnScreen configuratorScreen) configuratorSessionModel {
+func (m configuratorSessionModel) startModeWithSystemdGuard(targetMode mode.Mode, returnScreen configuratorScreen, preserveNotice bool) configuratorSessionModel {
 	m = m.clearPendingSystemdStart()
 
 	if m.options.CheckSystemdUnitActive == nil || m.options.StopSystemdUnit == nil {
@@ -1365,7 +1365,7 @@ func (m configuratorSessionModel) startModeWithSystemdGuard(targetMode mode.Mode
 		return m
 	}
 
-	if !strings.Contains(m.notice, "Auto-selected") {
+	if !preserveNotice {
 		m.notice = ""
 	}
 	m.cursor = 0
@@ -1543,12 +1543,6 @@ func (m configuratorSessionModel) daemonNotice() string {
 	statusLine := m.daemonStatusLine()
 	notice := strings.TrimSpace(m.notice)
 	if notice == "" {
-		return statusLine
-	}
-	noticeLower := strings.ToLower(notice)
-	if !strings.Contains(noticeLower, "failed") &&
-		!strings.Contains(noticeLower, "unavailable") &&
-		!strings.Contains(noticeLower, "required") {
 		return statusLine
 	}
 	return statusLine + "\n" + notice

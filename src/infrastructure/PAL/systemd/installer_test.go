@@ -760,6 +760,12 @@ func TestDetectUnitRole(t *testing.T) {
 	if got := detectUnitRole("ExecStart=/usr/local/bin/tungo s\n"); got != UnitRoleServer {
 		t.Fatalf("expected server role for absolute path, got %q", got)
 	}
+	if got := detectUnitRole("ExecStart=/usr/bin/env tungo s --foreground\n"); got != UnitRoleServer {
+		t.Fatalf("expected server role for wrapped command, got %q", got)
+	}
+	if got := detectUnitRole("ExecStart=/usr/bin/env ABC=1 /usr/local/bin/tungo c --log-level debug\n"); got != UnitRoleClient {
+		t.Fatalf("expected client role for command with extra args, got %q", got)
+	}
 	if got := detectUnitRole("ExecStart=/usr/bin/other\n"); got != UnitRoleUnknown {
 		t.Fatalf("expected unknown role, got %q", got)
 	}

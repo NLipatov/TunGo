@@ -266,11 +266,18 @@ func detectUnitRole(unitBody string) UnitRole {
 		if len(fields) == 0 {
 			continue
 		}
-		switch fields[len(fields)-1] {
-		case "c":
-			return UnitRoleClient
-		case "s":
-			return UnitRoleServer
+		for i := 0; i < len(fields); i++ {
+			if filepath.Base(fields[i]) != "tungo" {
+				continue
+			}
+			for j := i + 1; j < len(fields); j++ {
+				switch fields[j] {
+				case "c":
+					return UnitRoleClient
+				case "s":
+					return UnitRoleServer
+				}
+			}
 		}
 	}
 	return UnitRoleUnknown

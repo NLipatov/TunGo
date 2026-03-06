@@ -124,6 +124,48 @@ func TestUpdateClientSelectScreen_Esc_ServerUnsupportedWithDaemon_ReturnsToModeS
 	}
 }
 
+func TestView_ClientSelectHint_ServerUnsupportedWithDaemon_ShowsEscBack(t *testing.T) {
+	opts := defaultConfiguratorOpts()
+	opts.ServerSupported = false
+	opts.SystemdSupported = true
+	opts.HasTungoBinary = func() bool { return true }
+	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
+		return SystemdDaemonStatus{Installed: false}, nil
+	}
+
+	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceNone))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	model.screen = configuratorScreenClientSelect
+
+	view := model.View().Content
+	if !strings.Contains(view, "Esc back") {
+		t.Fatalf("expected 'Esc back' in hint when daemon option exists, got: %s", view)
+	}
+	if strings.Contains(view, "Esc exit") {
+		t.Fatalf("expected no 'Esc exit' in hint when daemon option exists, got: %s", view)
+	}
+}
+
+func TestDaemonNotice_ShowsNonErrorNotice(t *testing.T) {
+	opts := defaultConfiguratorOpts()
+	opts.SystemdSupported = true
+	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
+		return SystemdDaemonStatus{Installed: true, Enabled: true, Active: false, Mode: mode.Server}, nil
+	}
+
+	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceServer))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	model.notice = "Reconfigure cancelled."
+	notice := model.daemonNotice()
+	if !strings.Contains(notice, "Reconfigure cancelled.") {
+		t.Fatalf("expected daemon notice to include non-error message, got %q", notice)
+	}
+}
+
 func TestUpdateDaemonManageScreen_NotInstalled_ShowsSetupOptions(t *testing.T) {
 	opts := defaultConfiguratorOpts()
 	opts.SystemdSupported = true
