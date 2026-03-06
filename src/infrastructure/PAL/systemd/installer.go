@@ -45,6 +45,7 @@ type Installer interface {
 	InstallServerUnit() (string, error)
 	InstallClientUnit() (string, error)
 	RemoveUnit() error
+	HasTungoBinary() bool
 	IsUnitActive() (bool, error)
 	StopUnit() error
 	StartUnit() error
@@ -80,6 +81,11 @@ func (i *UnitInstaller) InstallServerUnit() (string, error) {
 
 func (i *UnitInstaller) InstallClientUnit() (string, error) {
 	return i.installUnit("c")
+}
+
+func (i *UnitInstaller) HasTungoBinary() bool {
+	_, err := lookPath("tungo")
+	return err == nil
 }
 
 func (i *UnitInstaller) RemoveUnit() error {

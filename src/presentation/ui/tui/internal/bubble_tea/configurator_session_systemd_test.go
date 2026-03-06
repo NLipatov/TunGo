@@ -53,6 +53,23 @@ func TestModeOptions_DoesNotAddDaemonWhenUnsupported(t *testing.T) {
 	}
 }
 
+func TestModeOptions_DoesNotAddDaemonWhenTungoBinaryMissing(t *testing.T) {
+	opts := defaultConfiguratorOpts()
+	opts.SystemdSupported = true
+	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
+		return SystemdDaemonStatus{Installed: false}, nil
+	}
+	opts.HasTungoBinary = func() bool { return false }
+
+	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceNone))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if containsString(model.modeOptions, sessionModeDaemon) {
+		t.Fatalf("expected no daemon option when tungo binary is missing, got %v", model.modeOptions)
+	}
+}
+
 func TestUpdateModeScreen_EnterOnDaemon_OpensDaemonManageScreen(t *testing.T) {
 	opts := defaultConfiguratorOpts()
 	opts.SystemdSupported = true

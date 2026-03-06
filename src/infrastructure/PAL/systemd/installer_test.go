@@ -115,6 +115,37 @@ func TestSupported_FalseWhenRuntimeDirMissing(t *testing.T) {
 	}
 }
 
+func TestHasTungoBinary(t *testing.T) {
+	withSystemdHooks(
+		t,
+		func(string) (os.FileInfo, error) { return nil, nil },
+		func(name string) (string, error) {
+			if name == "systemctl" {
+				return "/bin/systemctl", nil
+			}
+			if name == "tungo" {
+				return "/usr/local/bin/tungo", nil
+			}
+			return "", exec.ErrNotFound
+		},
+		func(string, []byte, os.FileMode) error { return nil },
+	)
+	installer := NewUnitInstaller(&mockCommander{})
+	if !installer.HasTungoBinary() {
+		t.Fatal("expected HasTungoBinary=true when tungo is found")
+	}
+
+	lookPath = func(name string) (string, error) {
+		if name == "systemctl" {
+			return "/bin/systemctl", nil
+		}
+		return "", exec.ErrNotFound
+	}
+	if installer.HasTungoBinary() {
+		t.Fatal("expected HasTungoBinary=false when tungo is missing")
+	}
+}
+
 func TestInstallServerUnit_WritesServerModeAndEnablesService(t *testing.T) {
 	var gotPath string
 	var gotContent string
