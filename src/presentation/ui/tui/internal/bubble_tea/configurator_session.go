@@ -1068,6 +1068,7 @@ func (m configuratorSessionModel) updateDaemonManageScreen(msg tea.KeyPressMsg) 
 	}
 
 	selected := m.daemon.menuOptions[m.cursor]
+	selectedCursor := m.cursor
 	var err error
 	switch selected {
 	case sessionDaemonSetupClient:
@@ -1161,7 +1162,7 @@ func (m configuratorSessionModel) updateDaemonManageScreen(msg tea.KeyPressMsg) 
 	}
 
 	m.refreshDaemonStatus()
-	m.cursor = 0
+	m.cursor = daemonMenuCursorAfterRefresh(m.daemon.menuOptions, selected, selectedCursor)
 	return m, nil
 }
 
@@ -1544,14 +1545,6 @@ func (m configuratorSessionModel) daemonStatusLine() string {
 	if m.daemon.statusErr != nil {
 		return "Status error: " + m.daemon.statusErr.Error()
 	}
-	installed := onOff(m.daemon.status.Installed)
-	role := "unknown"
-	switch m.daemon.status.Mode {
-	case mode.Client:
-		role = "client"
-	case mode.Server:
-		role = "server"
-	}
 	loadState := normalizeDaemonStateField(m.daemon.status.LoadState)
 	unitFileState := normalizeDaemonStateField(m.daemon.status.UnitFileState)
 	activeState := normalizeDaemonStateField(m.daemon.status.ActiveState)
@@ -1559,14 +1552,12 @@ func (m configuratorSessionModel) daemonStatusLine() string {
 	result := normalizeDaemonStateField(m.daemon.status.Result)
 	execMainStatus := normalizeDaemonStateField(m.daemon.status.ExecMainStatus)
 	return strings.Join([]string{
-		fmt.Sprintf("Installed: %s", installed),
 		fmt.Sprintf("Load: %s", loadState),
 		fmt.Sprintf("UnitFile: %s", unitFileState),
 		fmt.Sprintf("Active: %s", activeState),
 		fmt.Sprintf("Sub: %s", subState),
 		fmt.Sprintf("Result: %s", result),
 		fmt.Sprintf("ExecMainStatus: %s", execMainStatus),
-		fmt.Sprintf("Role: %s", role),
 	}, "\n")
 }
 
@@ -1764,6 +1755,21 @@ func daemonSectionDivider(contentWidth int) string {
 		return strings.Repeat("-", 24)
 	}
 	return strings.Repeat("-", maxInt(12, minInt(40, contentWidth)))
+}
+
+func daemonMenuCursorAfterRefresh(options []string, selected string, fallbackCursor int) int {
+	if len(options) == 0 {
+		return 0
+	}
+	if selected = strings.TrimSpace(selected); selected != "" {
+		if idx := slices.Index(options, selected); idx >= 0 {
+			return idx
+		}
+	}
+	if fallbackCursor < 0 {
+		return 0
+	}
+	return minInt(fallbackCursor, len(options)-1)
 }
 
 func (m configuratorSessionModel) inputContainerWidth() int {

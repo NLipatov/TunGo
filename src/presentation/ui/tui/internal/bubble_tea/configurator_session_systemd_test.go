@@ -474,6 +474,10 @@ func TestUpdateDaemonManageScreen_StartEnableDisableStopFlow(t *testing.T) {
 		status.ActiveState = "active"
 		return nil
 	}
+	opts.StopSystemdUnit = func() error {
+		status.ActiveState = "inactive"
+		return nil
+	}
 	opts.EnableSystemdUnit = func() error {
 		status.UnitFileState = "enabled"
 		return nil
@@ -540,6 +544,41 @@ func TestUpdateDaemonManageScreen_StartEnableDisableStopFlow(t *testing.T) {
 	}
 	if model.notice != "" {
 		t.Fatalf("expected no success notice after stop, got %q", model.notice)
+	}
+}
+
+func TestUpdateDaemonManageScreen_StartPreservesActionCursorAfterRefresh(t *testing.T) {
+	status := SystemdDaemonStatus{Installed: true, UnitFileState: "enabled", ActiveState: "inactive", Mode: mode.Client}
+	opts := defaultConfiguratorOpts()
+	opts.SystemdSupported = true
+	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) { return status, nil }
+	opts.StartSystemdUnit = func() error {
+		status.ActiveState = "active"
+		return nil
+	}
+	opts.StopSystemdUnit = func() error {
+		status.ActiveState = "inactive"
+		return nil
+	}
+	opts.DisableSystemdUnit = func() error { return nil }
+	opts.InstallClientSystemdUnit = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
+	opts.RemoveSystemdUnit = func() error { return nil }
+
+	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	model.screen = configuratorScreenDaemonManage
+	model.daemon.menuOptions = []string{"dummy-before", sessionDaemonStart, "dummy-after"}
+	model.cursor = 1
+
+	updatedModel, _ := model.updateDaemonManageScreen(keyNamed(tea.KeyEnter))
+	updated := updatedModel.(configuratorSessionModel)
+	if len(updated.daemon.menuOptions) == 0 {
+		t.Fatalf("expected daemon options after refresh")
+	}
+	if updated.cursor != 1 {
+		t.Fatalf("expected cursor to stay on same action slot, got %d; options=%v", updated.cursor, updated.daemon.menuOptions)
 	}
 }
 
