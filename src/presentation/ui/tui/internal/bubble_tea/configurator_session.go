@@ -167,6 +167,7 @@ type daemonConfigScreens struct {
 	status      SystemdDaemonStatus
 	statusErr   error
 	menuOptions []string
+	updatedAt   time.Time
 }
 
 type configuratorSessionModel struct {
@@ -564,13 +565,7 @@ func (m configuratorSessionModel) mainTabView() string {
 			"up/k down/j move | Enter confirm | Tab switch tabs | Esc back | ctrl+c exit",
 		)
 	case configuratorScreenDaemonManage:
-		return m.renderSelectionScreen(
-			"Setup/Manage daemon",
-			m.daemonNotice(),
-			m.daemon.menuOptions,
-			m.cursor,
-			"up/k down/j move | Enter select | Esc back | ctrl+c exit",
-		)
+		return m.renderDaemonManageScreen()
 	case configuratorScreenDaemonReconfigureConfirm:
 		roleLabel := "selected role"
 		switch m.pendingDaemonMode {
@@ -1481,6 +1476,7 @@ func (m *configuratorSessionModel) refreshDaemonStatus() {
 		m.daemon.statusErr = errors.New("daemon management is unavailable")
 		m.daemon.status = SystemdDaemonStatus{}
 		m.daemon.menuOptions = nil
+		m.daemon.updatedAt = time.Time{}
 		return
 	}
 
@@ -1489,11 +1485,13 @@ func (m *configuratorSessionModel) refreshDaemonStatus() {
 		m.daemon.statusErr = err
 		m.daemon.status = SystemdDaemonStatus{}
 		m.daemon.menuOptions = nil
+		m.daemon.updatedAt = time.Time{}
 		return
 	}
 	m.daemon.statusErr = nil
 	m.daemon.status = status
 	m.daemon.menuOptions = m.daemonMenuOptions(status)
+	m.daemon.updatedAt = time.Now()
 }
 
 func (m configuratorSessionModel) daemonMenuOptions(status SystemdDaemonStatus) []string {
@@ -1560,17 +1558,16 @@ func (m configuratorSessionModel) daemonStatusLine() string {
 	subState := normalizeDaemonStateField(m.daemon.status.SubState)
 	result := normalizeDaemonStateField(m.daemon.status.Result)
 	execMainStatus := normalizeDaemonStateField(m.daemon.status.ExecMainStatus)
-	return fmt.Sprintf(
-		"Installed: %s | Load: %s | UnitFile: %s | Active: %s | Sub: %s | Result: %s | ExecMainStatus: %s | Role: %s",
-		installed,
-		loadState,
-		unitFileState,
-		activeState,
-		subState,
-		result,
-		execMainStatus,
-		role,
-	)
+	return strings.Join([]string{
+		fmt.Sprintf("Installed: %s", installed),
+		fmt.Sprintf("Load: %s", loadState),
+		fmt.Sprintf("UnitFile: %s", unitFileState),
+		fmt.Sprintf("Active: %s", activeState),
+		fmt.Sprintf("Sub: %s", subState),
+		fmt.Sprintf("Result: %s", result),
+		fmt.Sprintf("ExecMainStatus: %s", execMainStatus),
+		fmt.Sprintf("Role: %s", role),
+	}, "\n")
 }
 
 func normalizeDaemonStateField(value string) string {
@@ -1725,6 +1722,48 @@ func (m configuratorSessionModel) renderSelectionScreen(
 		m.preferences,
 		styles,
 	)
+}
+
+func (m configuratorSessionModel) renderDaemonManageScreen() string {
+	styles := resolveUIStyles(m.preferences)
+	contentWidth := 0
+	if m.width > 0 {
+		contentWidth = contentWidthForTerminal(m.width)
+	}
+
+	rows := renderSelectableRows(m.daemon.menuOptions, m.cursor, contentWidth, styles)
+	body := make([]string, 0, len(rows)+18)
+	body = append(body, styles.title.Render("Daemon Status"))
+	body = append(body, daemonSectionDivider(contentWidth))
+	body = append(body, strings.Split(m.daemonStatusLine(), "\n")...)
+	if !m.daemon.updatedAt.IsZero() {
+		body = append(body, styles.meta.Render("Updated: "+m.daemon.updatedAt.Format("15:04:05")))
+	}
+
+	if notice := strings.TrimSpace(m.notice); notice != "" {
+		body = append(body, "", notice)
+	}
+
+	body = append(body, "", styles.title.Render("Actions"), daemonSectionDivider(contentWidth))
+	body = append(body, rows...)
+
+	return renderScreen(
+		m.width,
+		m.height,
+		m.tabsLine(styles),
+		"Setup/Manage daemon",
+		body,
+		"up/k down/j move | Enter select | Esc back | ctrl+c exit",
+		m.preferences,
+		styles,
+	)
+}
+
+func daemonSectionDivider(contentWidth int) string {
+	if contentWidth <= 0 {
+		return strings.Repeat("-", 24)
+	}
+	return strings.Repeat("-", maxInt(12, minInt(40, contentWidth)))
 }
 
 func (m configuratorSessionModel) inputContainerWidth() int {

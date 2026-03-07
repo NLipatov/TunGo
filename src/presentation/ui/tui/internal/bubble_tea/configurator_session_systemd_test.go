@@ -148,6 +148,46 @@ func TestDaemonNotice_ShowsNonErrorNotice(t *testing.T) {
 	}
 }
 
+func TestMainTabView_DaemonManage_SeparatesStatusAndActions(t *testing.T) {
+	opts := defaultConfiguratorOpts()
+	opts.SystemdSupported = true
+	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
+		return SystemdDaemonStatus{
+			Installed:      true,
+			LoadState:      "loaded",
+			UnitFileState:  "enabled",
+			ActiveState:    "inactive",
+			SubState:       "dead",
+			Result:         "success",
+			ExecMainStatus: "0",
+			Mode:           mode.Server,
+		}, nil
+	}
+	opts.StartSystemdUnit = func() error { return nil }
+	opts.DisableSystemdUnit = func() error { return nil }
+
+	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceServer))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	model.screen = configuratorScreenDaemonManage
+	model.notice = "test notice"
+	view := model.mainTabView()
+
+	if !strings.Contains(view, "Daemon Status") {
+		t.Fatalf("expected status section title, got: %s", view)
+	}
+	if !strings.Contains(view, "Actions") {
+		t.Fatalf("expected actions section title, got: %s", view)
+	}
+	if !strings.Contains(view, "Updated: ") {
+		t.Fatalf("expected updated timestamp in daemon status section, got: %s", view)
+	}
+	if !strings.Contains(view, "test notice") {
+		t.Fatalf("expected daemon notice in body, got: %s", view)
+	}
+}
+
 func TestUpdateDaemonManageScreen_NotInstalled_ShowsSetupOptions(t *testing.T) {
 	opts := defaultConfiguratorOpts()
 	opts.SystemdSupported = true

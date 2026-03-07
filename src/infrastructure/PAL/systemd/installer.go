@@ -443,14 +443,14 @@ func validateTungoBinaryForSystemd() error {
 		return fmt.Errorf("%s is not executable", tungoBinaryPath)
 	}
 	if info.Mode()&0o022 != 0 {
-		return fmt.Errorf("%s must not be writable by group or others", tungoBinaryPath)
+		return fmt.Errorf("%s must not be writable by group or others; run: sudo chmod 0755 %s", tungoBinaryPath, tungoBinaryPath)
 	}
 	uid, ok := fileOwnerUID(info)
 	if !ok {
 		return fmt.Errorf("failed to verify owner of %s", tungoBinaryPath)
 	}
 	if uid != 0 {
-		return fmt.Errorf("%s must be owned by root", tungoBinaryPath)
+		return fmt.Errorf("%s must be owned by root; run: sudo chown root:root %s", tungoBinaryPath, tungoBinaryPath)
 	}
 	return nil
 }
