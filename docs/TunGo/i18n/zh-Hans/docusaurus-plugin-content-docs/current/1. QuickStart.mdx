@@ -13,8 +13,15 @@ import TabItem from '@theme/TabItem';
    <Tabs>
      <TabItem value="linux" label="Linux amd64" default>
      ```bash
-     wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-amd64 -O tungo
-     chmod +x tungo
+     wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-amd64 -O tungo && \
+     chmod +x tungo && \
+     sudo mv tungo /usr/local/bin/
+     ```
+     </TabItem>
+     <TabItem value="linux-arm64" label="Linux arm64">
+     ```bash
+     wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-arm64 -O tungo && \
+     chmod +x tungo && \
      sudo mv tungo /usr/local/bin/
      ```
      </TabItem>
@@ -42,8 +49,8 @@ import TabItem from '@theme/TabItem';
    <Tabs>
      <TabItem value="linux-amd64" label="Linux amd64" default>
          ```bash
-         wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-amd64 -O tungo
-         chmod +x tungo
+         wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-amd64 -O tungo && \
+         chmod +x tungo && \
          sudo mv tungo /usr/local/bin/
          ```
 
@@ -53,8 +60,8 @@ import TabItem from '@theme/TabItem';
      </TabItem>
      <TabItem value="linux-arm64" label="Linux arm64">
          ```bash
-         wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-arm64 -O tungo
-         chmod +x tungo
+         wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-arm64 -O tungo && \
+         chmod +x tungo && \
          sudo mv tungo /usr/local/bin/
          ```
 
@@ -69,17 +76,17 @@ import TabItem from '@theme/TabItem';
     </TabItem>
     <TabItem value="macos-arm64" label="macOS arm64 manual">
         ```bash
-        curl -L -o tungo https://github.com/NLipatov/TunGo/releases/latest/download/tungo-darwin-arm64
-        sudo mkdir -p /usr/local/bin
-        chmod +x tungo
+        curl -fL -o tungo https://github.com/NLipatov/TunGo/releases/latest/download/tungo-darwin-arm64 && \
+        sudo mkdir -p /usr/local/bin && \
+        chmod +x tungo && \
         sudo mv tungo /usr/local/bin/
         ```
     </TabItem>
     <TabItem value="macos-amd64" label="macOS amd64 manual">
         ```bash
-        curl -L -o tungo https://github.com/NLipatov/TunGo/releases/latest/download/tungo-darwin-amd64
-        sudo mkdir -p /usr/local/bin
-        chmod +x tungo
+        curl -fL -o tungo https://github.com/NLipatov/TunGo/releases/latest/download/tungo-darwin-amd64 && \
+        sudo mkdir -p /usr/local/bin && \
+        chmod +x tungo && \
         sudo mv tungo /usr/local/bin/
         ```
     </TabItem>
