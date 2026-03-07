@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
-	"syscall"
 	"tungo/infrastructure/PAL/exec_commander"
 )
 
@@ -349,17 +348,36 @@ func validateTungoBinaryForSystemd() error {
 }
 
 func fileOwnerUID(info os.FileInfo) (uint64, bool) {
-	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok || stat == nil {
+	sys := info.Sys()
+	if sys == nil {
 		return 0, false
 	}
-	v := reflect.ValueOf(stat).Elem().FieldByName("Uid")
-	if !v.IsValid() {
+
+	v := reflect.ValueOf(sys)
+	if v.Kind() == reflect.Pointer {
+		if v.IsNil() {
+			return 0, false
+		}
+		v = v.Elem()
+	}
+	if !v.IsValid() || v.Kind() != reflect.Struct {
 		return 0, false
 	}
-	switch v.Kind() {
+
+	uidField := v.FieldByName("Uid")
+	if !uidField.IsValid() {
+		return 0, false
+	}
+
+	switch uidField.Kind() {
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
-		return v.Uint(), true
+		return uidField.Uint(), true
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		uid := uidField.Int()
+		if uid < 0 {
+			return 0, false
+		}
+		return uint64(uid), true
 	default:
 		return 0, false
 	}
