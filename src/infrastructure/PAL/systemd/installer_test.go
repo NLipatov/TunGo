@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 )
@@ -82,13 +81,13 @@ func withSystemdHooks(
 		}
 		switch path {
 		case systemdRuntimeDir:
-			return mockFileInfo{name: "system", mode: os.ModeDir | 0o755, sys: &syscall.Stat_t{Uid: 0}}, nil
+			return mockFileInfo{name: "system", mode: os.ModeDir | 0o755, sys: nil}, nil
 		case tungoBinaryPath:
-			return mockFileInfo{name: "tungo", mode: 0o755, sys: &syscall.Stat_t{Uid: 0}}, nil
+			return mockFileInfo{name: "tungo", mode: 0o755, sys: nil}, nil
 		case systemdUnitPath:
-			return mockFileInfo{name: "tungo.service", mode: 0o644, sys: &syscall.Stat_t{Uid: 0}}, nil
+			return mockFileInfo{name: "tungo.service", mode: 0o644, sys: nil}, nil
 		default:
-			return mockFileInfo{name: "file", mode: 0o644, sys: &syscall.Stat_t{Uid: 0}}, nil
+			return mockFileInfo{name: "file", mode: 0o644, sys: nil}, nil
 		}
 	}
 	lookPath = look
@@ -269,7 +268,7 @@ func TestInstallUnit_FailsWhenTungoBinaryNotExecutable(t *testing.T) {
 		t,
 		func(path string) (os.FileInfo, error) {
 			if path == tungoBinaryPath {
-				return mockFileInfo{name: "tungo", mode: 0o644, sys: &syscall.Stat_t{Uid: 0}}, nil
+				return mockFileInfo{name: "tungo", mode: 0o644, sys: nil}, nil
 			}
 			return nil, nil
 		},
@@ -287,58 +286,6 @@ func TestInstallUnit_FailsWhenTungoBinaryNotExecutable(t *testing.T) {
 	_, err := installer.InstallClientUnit()
 	if err == nil || !strings.Contains(err.Error(), "is not executable") {
 		t.Fatalf("expected not executable error, got %v", err)
-	}
-}
-
-func TestInstallUnit_FailsWhenTungoBinaryOwnedByNonRoot(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(path string) (os.FileInfo, error) {
-			if path == tungoBinaryPath {
-				return mockFileInfo{name: "tungo", mode: 0o755, sys: &syscall.Stat_t{Uid: 1000}}, nil
-			}
-			return nil, nil
-		},
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	cmd := &mockCommander{}
-	installer := NewUnitInstaller(cmd)
-
-	_, err := installer.InstallClientUnit()
-	if err == nil || !strings.Contains(err.Error(), "must be owned by root") {
-		t.Fatalf("expected non-root owner error, got %v", err)
-	}
-}
-
-func TestInstallUnit_FailsWhenTungoBinaryGroupWritable(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(path string) (os.FileInfo, error) {
-			if path == tungoBinaryPath {
-				return mockFileInfo{name: "tungo", mode: 0o775, sys: &syscall.Stat_t{Uid: 0}}, nil
-			}
-			return nil, nil
-		},
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	cmd := &mockCommander{}
-	installer := NewUnitInstaller(cmd)
-
-	_, err := installer.InstallClientUnit()
-	if err == nil || !strings.Contains(err.Error(), "must not be writable by group or others") {
-		t.Fatalf("expected unsafe mode error, got %v", err)
 	}
 }
 

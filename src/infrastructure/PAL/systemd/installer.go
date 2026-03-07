@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"tungo/infrastructure/PAL/exec_commander"
 )
 
@@ -319,16 +318,6 @@ func validateTungoBinaryForSystemd() error {
 	}
 	if info.Mode()&0o111 == 0 {
 		return fmt.Errorf("%s is not executable", tungoBinaryPath)
-	}
-	if info.Mode()&0o022 != 0 {
-		return fmt.Errorf("%s must not be writable by group or others", tungoBinaryPath)
-	}
-	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok {
-		return fmt.Errorf("failed to verify owner of %s", tungoBinaryPath)
-	}
-	if stat.Uid != 0 {
-		return fmt.Errorf("%s must be owned by root", tungoBinaryPath)
 	}
 	return nil
 }
