@@ -5,9 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"reflect"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 )
@@ -40,16 +38,12 @@ func (m mockFileInfo) ModTime() time.Time { return time.Time{} }
 func (m mockFileInfo) IsDir() bool        { return m.mode.IsDir() }
 func (m mockFileInfo) Sys() interface{}   { return m.sys }
 
+type mockStatWithUID struct {
+	Uid uint64
+}
+
 func statWithUID(uid uint64) interface{} {
-	stat := &syscall.Stat_t{}
-	v := reflect.ValueOf(stat).Elem().FieldByName("Uid")
-	if v.IsValid() && v.CanSet() {
-		switch v.Kind() {
-		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
-			v.SetUint(uid)
-		}
-	}
-	return stat
+	return &mockStatWithUID{Uid: uid}
 }
 
 func (m *mockCommander) CombinedOutput(name string, args ...string) ([]byte, error) {
