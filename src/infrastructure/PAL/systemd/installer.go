@@ -6,7 +6,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
+	"syscall"
 	"tungo/infrastructure/PAL/exec_commander"
 )
 
@@ -19,6 +21,7 @@ const (
 
 var (
 	statPath      = os.Stat
+	lstatPath     = os.Lstat
 	lookPath      = exec.LookPath
 	writeFilePath = os.WriteFile
 	readFilePath  = os.ReadFile
@@ -313,15 +316,18 @@ func requireAdminPrivileges() error {
 }
 
 func validateTungoBinaryForSystemd() error {
-	info, err := statPath(tungoBinaryPath)
+	info, err := lstatPath(tungoBinaryPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return errors.New("tungo executable is not installed at /usr/local/bin/tungo; install it using the official Linux guide")
 		}
-		return fmt.Errorf("failed to stat %s: %w", tungoBinaryPath, err)
+		return fmt.Errorf("failed to lstat %s: %w", tungoBinaryPath, err)
 	}
 	if info == nil {
-		return fmt.Errorf("failed to stat %s: empty file info", tungoBinaryPath)
+		return fmt.Errorf("failed to lstat %s: empty file info", tungoBinaryPath)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%s must not be a symlink", tungoBinaryPath)
 	}
 	if !info.Mode().IsRegular() {
 		return fmt.Errorf("%s is not a regular file", tungoBinaryPath)
@@ -329,5 +335,32 @@ func validateTungoBinaryForSystemd() error {
 	if info.Mode()&0o111 == 0 {
 		return fmt.Errorf("%s is not executable", tungoBinaryPath)
 	}
+	if info.Mode()&0o022 != 0 {
+		return fmt.Errorf("%s must not be writable by group or others", tungoBinaryPath)
+	}
+	uid, ok := fileOwnerUID(info)
+	if !ok {
+		return fmt.Errorf("failed to verify owner of %s", tungoBinaryPath)
+	}
+	if uid != 0 {
+		return fmt.Errorf("%s must be owned by root", tungoBinaryPath)
+	}
 	return nil
+}
+
+func fileOwnerUID(info os.FileInfo) (uint64, bool) {
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || stat == nil {
+		return 0, false
+	}
+	v := reflect.ValueOf(stat).Elem().FieldByName("Uid")
+	if !v.IsValid() {
+		return 0, false
+	}
+	switch v.Kind() {
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return v.Uint(), true
+	default:
+		return 0, false
+	}
 }
