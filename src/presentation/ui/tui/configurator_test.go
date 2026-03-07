@@ -537,10 +537,10 @@ func TestConfigureContinuous_SystemdSupported_WiresCallbacks(t *testing.T) {
 	installer := &systemdInstallerStub{
 		supported: true,
 		statusRet: systemd.UnitStatus{
-			Installed: true,
-			Enabled:   true,
-			Active:    true,
-			Role:      systemd.UnitRoleServer,
+			Installed:     true,
+			UnitFileState: "enabled",
+			ActiveState:   "active",
+			Role:          systemd.UnitRoleServer,
 		},
 	}
 	withMockNewSystemdInstaller(t, func() systemd.Installer { return installer })
@@ -579,7 +579,7 @@ func TestConfigureContinuous_SystemdSupported_WiresCallbacks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected status error: %v", err)
 	}
-	if !status.Installed || !status.Enabled || !status.Active || status.Mode != mode.Server {
+	if !status.Installed || status.UnitFileState != "enabled" || status.ActiveState != "active" || status.Mode != mode.Server {
 		t.Fatalf("unexpected mapped daemon status: %+v", status)
 	}
 

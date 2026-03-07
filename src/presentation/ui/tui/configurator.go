@@ -146,14 +146,24 @@ func (p *Configurator) configureContinuous(ctx context.Context) (mode.Mode, erro
 				daemonMode = mode.Server
 			}
 			return bubbleTea.SystemdDaemonStatus{
-				Installed: status.Installed,
-				Enabled:   status.Enabled,
-				Active:    status.Active,
-				Mode:      daemonMode,
+				Installed:      status.Installed,
+				Mode:           daemonMode,
+				LoadState:      string(status.LoadState),
+				UnitFileState:  string(status.UnitFileState),
+				ActiveState:    string(status.ActiveState),
+				SubState:       status.SubState,
+				Result:         status.Result,
+				ExecMainStatus: status.ExecMainStatus,
 			}, nil
 		}
 		configOpts.InstallClientSystemdUnit = systemdInstaller.InstallClientUnit
-		configOpts.CheckSystemdUnitActive = systemdInstaller.IsUnitActive
+		configOpts.CheckSystemdUnitActive = func() (bool, error) {
+			status, err := systemdInstaller.Status()
+			if err != nil {
+				return false, err
+			}
+			return systemd.ActiveStateBlocksRuntimeStart(status.ActiveState), nil
+		}
 		configOpts.StopSystemdUnit = systemdInstaller.StopUnit
 		configOpts.StartSystemdUnit = systemdInstaller.StartUnit
 		configOpts.EnableSystemdUnit = systemdInstaller.EnableUnit

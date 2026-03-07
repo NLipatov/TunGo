@@ -83,10 +83,14 @@ type ConfiguratorSessionOptions struct {
 }
 
 type SystemdDaemonStatus struct {
-	Installed bool
-	Enabled   bool
-	Active    bool
-	Mode      mode.Mode
+	Installed      bool
+	Mode           mode.Mode
+	LoadState      string
+	UnitFileState  string
+	ActiveState    string
+	SubState       string
+	Result         string
+	ExecMainStatus string
 }
 
 type configuratorScreen int
@@ -1084,7 +1088,7 @@ func (m configuratorSessionModel) updateDaemonManageScreen(msg tea.KeyPressMsg) 
 			return m, nil
 		}
 	case sessionDaemonReconfClient:
-		if m.daemon.status.Active {
+		if daemonStateBlocksRuntimeStart(m.daemon.status.ActiveState) {
 			m.pendingDaemonMode = mode.Client
 			m.cursor = 0
 			m.screen = configuratorScreenDaemonReconfigureConfirm
@@ -1096,7 +1100,7 @@ func (m configuratorSessionModel) updateDaemonManageScreen(msg tea.KeyPressMsg) 
 			return m, nil
 		}
 	case sessionDaemonReconfServer:
-		if m.daemon.status.Active {
+		if daemonStateBlocksRuntimeStart(m.daemon.status.ActiveState) {
 			m.pendingDaemonMode = mode.Server
 			m.cursor = 0
 			m.screen = configuratorScreenDaemonReconfigureConfirm
@@ -1504,16 +1508,17 @@ func (m configuratorSessionModel) daemonMenuOptions(status SystemdDaemonStatus) 
 		return options
 	}
 
-	if status.Active && m.options.StopSystemdUnit != nil {
+	activeBlocksStart := daemonStateBlocksRuntimeStart(status.ActiveState)
+	if activeBlocksStart && m.options.StopSystemdUnit != nil {
 		options = append(options, sessionDaemonStop)
 	}
-	if !status.Active && m.options.StartSystemdUnit != nil {
+	if !activeBlocksStart && daemonStateAllowsStart(status.ActiveState) && m.options.StartSystemdUnit != nil {
 		options = append(options, sessionDaemonStart)
 	}
-	if status.Enabled && m.options.DisableSystemdUnit != nil {
+	if daemonUnitFileStateIsEnabled(status.UnitFileState) && m.options.DisableSystemdUnit != nil {
 		options = append(options, sessionDaemonDisable)
 	}
-	if !status.Enabled && m.options.EnableSystemdUnit != nil {
+	if daemonUnitFileStateIsDisabled(status.UnitFileState) && m.options.EnableSystemdUnit != nil {
 		options = append(options, sessionDaemonEnable)
 	}
 	if m.options.InstallClientSystemdUnit != nil {
@@ -1542,8 +1547,6 @@ func (m configuratorSessionModel) daemonStatusLine() string {
 		return "Status error: " + m.daemon.statusErr.Error()
 	}
 	installed := onOff(m.daemon.status.Installed)
-	enabled := onOff(m.daemon.status.Enabled)
-	active := onOff(m.daemon.status.Active)
 	role := "unknown"
 	switch m.daemon.status.Mode {
 	case mode.Client:
@@ -1551,7 +1554,57 @@ func (m configuratorSessionModel) daemonStatusLine() string {
 	case mode.Server:
 		role = "server"
 	}
-	return fmt.Sprintf("Installed: %s | Enabled: %s | Active: %s | Role: %s", installed, enabled, active, role)
+	loadState := normalizeDaemonStateField(m.daemon.status.LoadState)
+	unitFileState := normalizeDaemonStateField(m.daemon.status.UnitFileState)
+	activeState := normalizeDaemonStateField(m.daemon.status.ActiveState)
+	subState := normalizeDaemonStateField(m.daemon.status.SubState)
+	result := normalizeDaemonStateField(m.daemon.status.Result)
+	execMainStatus := normalizeDaemonStateField(m.daemon.status.ExecMainStatus)
+	return fmt.Sprintf(
+		"Installed: %s | Load: %s | UnitFile: %s | Active: %s | Sub: %s | Result: %s | ExecMainStatus: %s | Role: %s",
+		installed,
+		loadState,
+		unitFileState,
+		activeState,
+		subState,
+		result,
+		execMainStatus,
+		role,
+	)
+}
+
+func normalizeDaemonStateField(value string) string {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	if normalized == "" {
+		return "unknown"
+	}
+	return normalized
+}
+
+func daemonStateBlocksRuntimeStart(activeState string) bool {
+	switch normalizeDaemonStateField(activeState) {
+	case "active", "reloading", "activating", "deactivating":
+		return true
+	default:
+		return false
+	}
+}
+
+func daemonStateAllowsStart(activeState string) bool {
+	switch normalizeDaemonStateField(activeState) {
+	case "inactive", "failed":
+		return true
+	default:
+		return false
+	}
+}
+
+func daemonUnitFileStateIsEnabled(unitFileState string) bool {
+	return normalizeDaemonStateField(unitFileState) == "enabled"
+}
+
+func daemonUnitFileStateIsDisabled(unitFileState string) bool {
+	return normalizeDaemonStateField(unitFileState) == "disabled"
 }
 
 func (m configuratorSessionModel) leaveDaemonManageScreen() configuratorSessionModel {

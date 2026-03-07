@@ -23,10 +23,10 @@ func TestModeOptions_AddsDaemonWhenSupported(t *testing.T) {
 	opts.SystemdSupported = true
 	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
 		return SystemdDaemonStatus{
-			Installed: true,
-			Enabled:   true,
-			Active:    false,
-			Mode:      mode.Client,
+			Installed:     true,
+			UnitFileState: "enabled",
+			ActiveState:   "inactive",
+			Mode:          mode.Client,
 		}, nil
 	}
 
@@ -134,7 +134,7 @@ func TestDaemonNotice_ShowsNonErrorNotice(t *testing.T) {
 	opts := defaultConfiguratorOpts()
 	opts.SystemdSupported = true
 	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
-		return SystemdDaemonStatus{Installed: true, Enabled: true, Active: false, Mode: mode.Server}, nil
+		return SystemdDaemonStatus{Installed: true, UnitFileState: "enabled", ActiveState: "inactive", Mode: mode.Server}, nil
 	}
 
 	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceServer))
@@ -181,10 +181,10 @@ func TestUpdateDaemonManageScreen_Installed_ShowsReconfigureOptions(t *testing.T
 	opts.SystemdSupported = true
 	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
 		return SystemdDaemonStatus{
-			Installed: true,
-			Enabled:   false,
-			Active:    false,
-			Mode:      mode.Client,
+			Installed:     true,
+			UnitFileState: "disabled",
+			ActiveState:   "inactive",
+			Mode:          mode.Client,
 		}, nil
 	}
 	opts.InstallClientSystemdUnit = func() (string, error) {
@@ -276,7 +276,7 @@ func TestUpdateDaemonManageScreen_SetupClient_FailsWhenDefaultConfigInvalid(t *t
 }
 
 func TestUpdateDaemonManageScreen_ReconfigureInactive_AppliesImmediately(t *testing.T) {
-	status := SystemdDaemonStatus{Installed: true, Enabled: false, Active: false, Mode: mode.Client}
+	status := SystemdDaemonStatus{Installed: true, UnitFileState: "disabled", ActiveState: "inactive", Mode: mode.Client}
 	opts := defaultConfiguratorOpts()
 	opts.SystemdSupported = true
 	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) { return status, nil }
@@ -314,7 +314,7 @@ func TestUpdateDaemonManageScreen_ReconfigureInactive_AppliesImmediately(t *test
 }
 
 func TestUpdateDaemonManageScreen_ReconfigureActive_ShowsMandatoryConfirm(t *testing.T) {
-	status := SystemdDaemonStatus{Installed: true, Enabled: true, Active: true, Mode: mode.Server}
+	status := SystemdDaemonStatus{Installed: true, UnitFileState: "enabled", ActiveState: "active", Mode: mode.Server}
 	opts := defaultConfiguratorOpts()
 	opts.SystemdSupported = true
 	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) { return status, nil }
@@ -347,7 +347,7 @@ func TestUpdateDaemonManageScreen_ReconfigureActive_ShowsMandatoryConfirm(t *tes
 }
 
 func TestUpdateDaemonReconfigureConfirmScreen_Confirm_RestartsWithNewSetup(t *testing.T) {
-	status := SystemdDaemonStatus{Installed: true, Enabled: true, Active: true, Mode: mode.Server}
+	status := SystemdDaemonStatus{Installed: true, UnitFileState: "enabled", ActiveState: "active", Mode: mode.Server}
 	opts := defaultConfiguratorOpts()
 	opts.SystemdSupported = true
 	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) { return status, nil }
@@ -355,7 +355,7 @@ func TestUpdateDaemonReconfigureConfirmScreen_Confirm_RestartsWithNewSetup(t *te
 	callOrder := make([]string, 0, 3)
 	opts.StopSystemdUnit = func() error {
 		callOrder = append(callOrder, "stop")
-		status.Active = false
+		status.ActiveState = "inactive"
 		return nil
 	}
 	opts.InstallClientSystemdUnit = func() (string, error) {
@@ -365,7 +365,7 @@ func TestUpdateDaemonReconfigureConfirmScreen_Confirm_RestartsWithNewSetup(t *te
 	}
 	opts.StartSystemdUnit = func() error {
 		callOrder = append(callOrder, "start")
-		status.Active = true
+		status.ActiveState = "active"
 		return nil
 	}
 
@@ -394,7 +394,7 @@ func TestUpdateDaemonReconfigureConfirmScreen_Confirm_RestartsWithNewSetup(t *te
 	if !strings.Contains(updated.notice, "Client daemon reconfigured") || !strings.Contains(updated.notice, "restarted") {
 		t.Fatalf("expected restarted notice, got %q", updated.notice)
 	}
-	if !updated.daemon.status.Active || updated.daemon.status.Mode != mode.Client {
+	if updated.daemon.status.ActiveState != "active" || updated.daemon.status.Mode != mode.Client {
 		t.Fatalf("expected refreshed daemon status (active client), got %+v", updated.daemon.status)
 	}
 }
@@ -426,24 +426,24 @@ func TestUpdateDaemonReconfigureConfirmScreen_Cancel_ReturnsToDaemonManage(t *te
 }
 
 func TestUpdateDaemonManageScreen_StartEnableDisableStopFlow(t *testing.T) {
-	status := SystemdDaemonStatus{Installed: true, Enabled: false, Active: false, Mode: mode.Client}
+	status := SystemdDaemonStatus{Installed: true, UnitFileState: "disabled", ActiveState: "inactive", Mode: mode.Client}
 	opts := defaultConfiguratorOpts()
 	opts.SystemdSupported = true
 	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) { return status, nil }
 	opts.StartSystemdUnit = func() error {
-		status.Active = true
+		status.ActiveState = "active"
 		return nil
 	}
 	opts.EnableSystemdUnit = func() error {
-		status.Enabled = true
+		status.UnitFileState = "enabled"
 		return nil
 	}
 	opts.DisableSystemdUnit = func() error {
-		status.Enabled = false
+		status.UnitFileState = "disabled"
 		return nil
 	}
 	opts.StopSystemdUnit = func() error {
-		status.Active = false
+		status.ActiveState = "inactive"
 		return nil
 	}
 	opts.RemoveSystemdUnit = func() error {
@@ -462,7 +462,7 @@ func TestUpdateDaemonManageScreen_StartEnableDisableStopFlow(t *testing.T) {
 	model.cursor = 0
 	next, _ := model.updateDaemonManageScreen(keyNamed(tea.KeyEnter))
 	model = next.(configuratorSessionModel)
-	if !status.Active {
+	if status.ActiveState != "active" {
 		t.Fatal("expected daemon to be active after start")
 	}
 	if indexOfString(model.daemon.menuOptions, sessionDaemonStop) < 0 {
@@ -475,21 +475,21 @@ func TestUpdateDaemonManageScreen_StartEnableDisableStopFlow(t *testing.T) {
 	model.daemon.menuOptions = []string{sessionDaemonEnable}
 	next, _ = model.updateDaemonManageScreen(keyNamed(tea.KeyEnter))
 	model = next.(configuratorSessionModel)
-	if !status.Enabled {
+	if status.UnitFileState != "enabled" {
 		t.Fatal("expected daemon to be enabled")
 	}
 
 	model.daemon.menuOptions = []string{sessionDaemonDisable}
 	next, _ = model.updateDaemonManageScreen(keyNamed(tea.KeyEnter))
 	model = next.(configuratorSessionModel)
-	if status.Enabled {
+	if status.UnitFileState == "enabled" {
 		t.Fatal("expected daemon to be disabled")
 	}
 
 	model.daemon.menuOptions = []string{sessionDaemonStop}
 	next, _ = model.updateDaemonManageScreen(keyNamed(tea.KeyEnter))
 	model = next.(configuratorSessionModel)
-	if status.Active {
+	if status.ActiveState == "active" {
 		t.Fatal("expected daemon to be stopped")
 	}
 	if indexOfString(model.daemon.menuOptions, sessionDaemonStart) < 0 {
@@ -504,7 +504,7 @@ func TestUpdateDaemonManageScreen_StartEnableDisableStopFlow(t *testing.T) {
 }
 
 func TestUpdateDaemonManageScreen_Delete_RemovesUnitAndRefreshesStatus(t *testing.T) {
-	status := SystemdDaemonStatus{Installed: true, Enabled: true, Active: false, Mode: mode.Server}
+	status := SystemdDaemonStatus{Installed: true, UnitFileState: "enabled", ActiveState: "inactive", Mode: mode.Server}
 	opts := defaultConfiguratorOpts()
 	opts.SystemdSupported = true
 	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) { return status, nil }
@@ -760,7 +760,7 @@ func TestUpdateSystemdActiveConfirmScreen_EnterStop_Client_PersistsAutoSelectCon
 }
 
 func TestUpdateDaemonManageScreen_Esc_LeavesDaemonManageScreen(t *testing.T) {
-	status := SystemdDaemonStatus{Installed: true, Enabled: true, Active: false, Mode: mode.Server}
+	status := SystemdDaemonStatus{Installed: true, UnitFileState: "enabled", ActiveState: "inactive", Mode: mode.Server}
 	opts := defaultConfiguratorOpts()
 	opts.SystemdSupported = true
 	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) { return status, nil }
@@ -799,7 +799,7 @@ func TestRefreshDaemonStatus_UnavailableAndError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	model.daemon.status = SystemdDaemonStatus{Installed: true, Enabled: true, Active: true, Mode: mode.Server}
+	model.daemon.status = SystemdDaemonStatus{Installed: true, UnitFileState: "enabled", ActiveState: "active", Mode: mode.Server}
 	model.daemon.menuOptions = []string{sessionDaemonStop}
 
 	model.refreshDaemonStatus()
@@ -834,7 +834,7 @@ func TestDaemonStatusLineAndNotice_ErrorAndEmptyNotice(t *testing.T) {
 	}
 
 	model.daemon.statusErr = nil
-	model.daemon.status = SystemdDaemonStatus{Installed: true, Enabled: false, Active: true, Mode: mode.Client}
+	model.daemon.status = SystemdDaemonStatus{Installed: true, UnitFileState: "disabled", ActiveState: "active", Mode: mode.Client}
 	model.notice = ""
 	want := model.daemonStatusLine()
 	if got := model.daemonNotice(); got != want {
@@ -865,7 +865,7 @@ func TestUpdateDaemonManageScreen_UnavailableActions_ShowNotice(t *testing.T) {
 			opts := defaultConfiguratorOpts()
 			opts.SystemdSupported = true
 			opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
-				return SystemdDaemonStatus{Installed: true, Active: tc.active, Mode: mode.Client}, nil
+				return SystemdDaemonStatus{Installed: true, ActiveState: boolToActiveState(tc.active), Mode: mode.Client}, nil
 			}
 
 			model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
@@ -873,7 +873,7 @@ func TestUpdateDaemonManageScreen_UnavailableActions_ShowNotice(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 			model.screen = configuratorScreenDaemonManage
-			model.daemon.status.Active = tc.active
+			model.daemon.status.ActiveState = boolToActiveState(tc.active)
 			model.daemon.menuOptions = []string{tc.option}
 			model.cursor = 0
 
@@ -957,7 +957,7 @@ func TestUpdateDaemonManageScreen_ActionFailures_ShowNotice(t *testing.T) {
 			opts := defaultConfiguratorOpts()
 			opts.SystemdSupported = true
 			opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
-				return SystemdDaemonStatus{Installed: true, Active: tc.active, Mode: mode.Client}, nil
+				return SystemdDaemonStatus{Installed: true, ActiveState: boolToActiveState(tc.active), Mode: mode.Client}, nil
 			}
 			tc.configureHooks(&opts)
 
@@ -966,7 +966,7 @@ func TestUpdateDaemonManageScreen_ActionFailures_ShowNotice(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 			model.screen = configuratorScreenDaemonManage
-			model.daemon.status.Active = tc.active
+			model.daemon.status.ActiveState = boolToActiveState(tc.active)
 			model.daemon.menuOptions = []string{tc.option}
 			model.cursor = 0
 
@@ -1034,7 +1034,7 @@ func TestUpdateDaemonReconfigureConfirmScreen_ConfirmServerError_ShowsNotice(t *
 	opts := defaultConfiguratorOpts()
 	opts.SystemdSupported = true
 	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
-		return SystemdDaemonStatus{Installed: true, Active: true, Mode: mode.Client}, nil
+		return SystemdDaemonStatus{Installed: true, ActiveState: "active", Mode: mode.Client}, nil
 	}
 	opts.InstallServerSystemdUnit = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
 
@@ -1390,7 +1390,7 @@ func TestUpdateDaemonManageScreen_NonEnter_DoesNothing(t *testing.T) {
 	opts := defaultConfiguratorOpts()
 	opts.SystemdSupported = true
 	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
-		return SystemdDaemonStatus{Installed: true, Enabled: false, Active: false, Mode: mode.Client}, nil
+		return SystemdDaemonStatus{Installed: true, UnitFileState: "disabled", ActiveState: "inactive", Mode: mode.Client}, nil
 	}
 	startCalls := 0
 	opts.StartSystemdUnit = func() error {
@@ -1420,7 +1420,7 @@ func TestUpdateDaemonManageScreen_NonEnter_DoesNothing(t *testing.T) {
 }
 
 func TestUpdateDaemonManageScreen_ReconfigureServerActive_ShowsMandatoryConfirm(t *testing.T) {
-	status := SystemdDaemonStatus{Installed: true, Enabled: true, Active: true, Mode: mode.Client}
+	status := SystemdDaemonStatus{Installed: true, UnitFileState: "enabled", ActiveState: "active", Mode: mode.Client}
 	opts := defaultConfiguratorOpts()
 	opts.SystemdSupported = true
 	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) { return status, nil }
@@ -1490,12 +1490,12 @@ func TestApplyDaemonSetup_RestartBranchesAndUnknownMode(t *testing.T) {
 	})
 
 	t.Run("server restart success stores notice", func(t *testing.T) {
-		status := SystemdDaemonStatus{Installed: true, Enabled: true, Active: true, Mode: mode.Client}
+		status := SystemdDaemonStatus{Installed: true, UnitFileState: "enabled", ActiveState: "active", Mode: mode.Client}
 		opts := defaultConfiguratorOpts()
 		opts.SystemdSupported = true
 		opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) { return status, nil }
 		opts.StopSystemdUnit = func() error {
-			status.Active = false
+			status.ActiveState = "inactive"
 			return nil
 		}
 		opts.InstallServerSystemdUnit = func() (string, error) {
@@ -1503,7 +1503,7 @@ func TestApplyDaemonSetup_RestartBranchesAndUnknownMode(t *testing.T) {
 			return "/etc/systemd/system/tungo.service", nil
 		}
 		opts.StartSystemdUnit = func() error {
-			status.Active = true
+			status.ActiveState = "active"
 			return nil
 		}
 		model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceServer))
@@ -1567,6 +1567,47 @@ func TestMainTabView_DaemonConfirmScreens_ShowExpectedLabels(t *testing.T) {
 	}
 }
 
+func TestDaemonMenuOptions_DeactivatingStateShowsStopNotStart(t *testing.T) {
+	model := configuratorSessionModel{
+		options: ConfiguratorSessionOptions{
+			StartSystemdUnit: func() error { return nil },
+			StopSystemdUnit:  func() error { return nil },
+		},
+	}
+	options := model.daemonMenuOptions(SystemdDaemonStatus{
+		Installed:     true,
+		ActiveState:   "deactivating",
+		UnitFileState: "disabled",
+		Mode:          mode.Client,
+	})
+
+	if !containsString(options, sessionDaemonStop) {
+		t.Fatalf("expected stop option for deactivating state, got %v", options)
+	}
+	if containsString(options, sessionDaemonStart) {
+		t.Fatalf("did not expect start option for deactivating state, got %v", options)
+	}
+}
+
+func TestDaemonMenuOptions_StaticUnitFileDoesNotMapToEnableDisable(t *testing.T) {
+	model := configuratorSessionModel{
+		options: ConfiguratorSessionOptions{
+			EnableSystemdUnit:  func() error { return nil },
+			DisableSystemdUnit: func() error { return nil },
+		},
+	}
+	options := model.daemonMenuOptions(SystemdDaemonStatus{
+		Installed:     true,
+		ActiveState:   "inactive",
+		UnitFileState: "static",
+		Mode:          mode.Client,
+	})
+
+	if containsString(options, sessionDaemonEnable) || containsString(options, sessionDaemonDisable) {
+		t.Fatalf("did not expect enable/disable options for static unit-file state, got %v", options)
+	}
+}
+
 func containsString(values []string, want string) bool {
 	return indexOfString(values, want) >= 0
 }
@@ -1578,4 +1619,11 @@ func indexOfString(values []string, want string) int {
 		}
 	}
 	return -1
+}
+
+func boolToActiveState(active bool) string {
+	if active {
+		return "active"
+	}
+	return "inactive"
 }

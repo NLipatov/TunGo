@@ -3399,7 +3399,7 @@ func TestUpdate_MainTab_DispatchesSystemdScreens(t *testing.T) {
 		opts := defaultConfiguratorOpts()
 		opts.SystemdSupported = true
 		opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
-			return SystemdDaemonStatus{Installed: true, Active: false, Enabled: false}, nil
+			return SystemdDaemonStatus{Installed: true, ActiveState: "inactive", UnitFileState: "disabled"}, nil
 		}
 		model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
 		if err != nil {
@@ -3450,7 +3450,7 @@ func TestView_MainTab_DaemonManageScreen(t *testing.T) {
 	opts := defaultConfiguratorOpts()
 	opts.SystemdSupported = true
 	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
-		return SystemdDaemonStatus{Installed: true, Enabled: false, Active: false, Mode: mode.Client}, nil
+		return SystemdDaemonStatus{Installed: true, Mode: mode.Client, UnitFileState: "disabled", ActiveState: "inactive"}, nil
 	}
 	opts.StartSystemdUnit = func() error { return nil }
 	opts.EnableSystemdUnit = func() error { return nil }

@@ -1018,7 +1018,10 @@ func TestStatus_NotInstalled_ReturnsDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if status.Installed || status.Enabled || status.Active {
+	if status.Installed ||
+		status.UnitFileState != UnitFileStateDisabled ||
+		status.ActiveState != UnitActiveStateInactive ||
+		status.LoadState != UnitLoadStateNotFound {
 		t.Fatalf("expected empty status for missing unit, got %+v", status)
 	}
 	if status.Role != UnitRoleUnknown {
@@ -1057,8 +1060,10 @@ func TestStatus_InstalledEnabledActiveClient(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !status.Installed || !status.Enabled || !status.Active {
-		t.Fatalf("expected installed+enabled+active, got %+v", status)
+	if !status.Installed ||
+		status.UnitFileState != UnitFileStateEnabled ||
+		status.ActiveState != UnitActiveStateActive {
+		t.Fatalf("expected installed+enabled+active states, got %+v", status)
 	}
 	if status.Role != UnitRoleClient {
 		t.Fatalf("expected client role, got %q", status.Role)
@@ -1093,8 +1098,8 @@ func TestStatus_InstalledEnabledActivatingClient_IsNotActive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if status.Active {
-		t.Fatalf("expected inactive for activating state, got %+v", status)
+	if status.ActiveState != UnitActiveStateActivating {
+		t.Fatalf("expected activating active-state, got %+v", status)
 	}
 }
 
@@ -1129,11 +1134,53 @@ func TestStatus_InstalledDisabledInactiveServer(t *testing.T) {
 	if !status.Installed {
 		t.Fatalf("expected installed status, got %+v", status)
 	}
-	if status.Enabled || status.Active {
-		t.Fatalf("expected disabled+inactive, got %+v", status)
+	if status.UnitFileState != UnitFileStateDisabled || status.ActiveState != UnitActiveStateInactive {
+		t.Fatalf("expected disabled+inactive states, got %+v", status)
 	}
 	if status.Role != UnitRoleServer {
 		t.Fatalf("expected server role, got %q", status.Role)
+	}
+}
+
+func TestStatus_InstalledPreservesRawSystemdStates(t *testing.T) {
+	withSystemdHooks(
+		t,
+		func(string) (os.FileInfo, error) { return nil, nil },
+		func(name string) (string, error) {
+			if name == "systemctl" {
+				return "/bin/systemctl", nil
+			}
+			if name == "tungo" {
+				return "/usr/local/bin/tungo", nil
+			}
+			return "", exec.ErrNotFound
+		},
+		func(string, []byte, os.FileMode) error { return nil },
+		func(string) ([]byte, error) { return []byte("ExecStart=tungo c\n"), nil },
+	)
+	cmd := &mockCommander{
+		combinedOutputByArg: map[string]mockCombinedOutputResult{
+			"is-enabled": {output: []byte("static\n")},
+			"is-active":  {output: []byte("deactivating\n")},
+			"show": {
+				output: []byte("LoadState=loaded\nSubState=stop-sigterm\nResult=exit-code\nExecMainStatus=203\n"),
+			},
+		},
+	}
+	installer := NewUnitInstaller(cmd)
+
+	status, err := installer.Status()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if status.UnitFileState != UnitFileState("static") {
+		t.Fatalf("expected raw unit-file state static, got %q", status.UnitFileState)
+	}
+	if status.ActiveState != UnitActiveStateDeactivating {
+		t.Fatalf("expected active-state deactivating, got %q", status.ActiveState)
+	}
+	if status.LoadState != UnitLoadStateLoaded || status.SubState != "stop-sigterm" || status.Result != "exit-code" || status.ExecMainStatus != "203" {
+		t.Fatalf("expected raw show properties, got %+v", status)
 	}
 }
 

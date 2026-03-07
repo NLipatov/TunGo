@@ -36,11 +36,43 @@ const (
 	UnitRoleServer  UnitRole = "server"
 )
 
+type UnitLoadState string
+
+const (
+	UnitLoadStateUnknown  UnitLoadState = "unknown"
+	UnitLoadStateLoaded   UnitLoadState = "loaded"
+	UnitLoadStateNotFound UnitLoadState = "not-found"
+)
+
+type UnitFileState string
+
+const (
+	UnitFileStateUnknown  UnitFileState = "unknown"
+	UnitFileStateEnabled  UnitFileState = "enabled"
+	UnitFileStateDisabled UnitFileState = "disabled"
+)
+
+type UnitActiveState string
+
+const (
+	UnitActiveStateUnknown      UnitActiveState = "unknown"
+	UnitActiveStateActive       UnitActiveState = "active"
+	UnitActiveStateReloading    UnitActiveState = "reloading"
+	UnitActiveStateInactive     UnitActiveState = "inactive"
+	UnitActiveStateFailed       UnitActiveState = "failed"
+	UnitActiveStateActivating   UnitActiveState = "activating"
+	UnitActiveStateDeactivating UnitActiveState = "deactivating"
+)
+
 type UnitStatus struct {
-	Installed bool
-	Enabled   bool
-	Active    bool
-	Role      UnitRole
+	Installed      bool
+	Role           UnitRole
+	LoadState      UnitLoadState
+	UnitFileState  UnitFileState
+	ActiveState    UnitActiveState
+	SubState       string
+	Result         string
+	ExecMainStatus string
 }
 
 type Installer interface {
@@ -141,7 +173,7 @@ func (i *UnitInstaller) IsUnitActive() (bool, error) {
 		}
 		return false, fmt.Errorf("failed to run systemctl is-active %s: %w", systemdUnitName, err)
 	}
-	return isSystemdActiveState(activeOutput), nil
+	return activeStateIndicatesRunning(parseUnitActiveState(activeOutput, nil)), nil
 }
 
 func (i *UnitInstaller) StopUnit() error {
@@ -202,10 +234,19 @@ func (i *UnitInstaller) Status() (UnitStatus, error) {
 	}
 
 	status := UnitStatus{
-		Role: UnitRoleUnknown,
+		Role:           UnitRoleUnknown,
+		LoadState:      UnitLoadStateUnknown,
+		UnitFileState:  UnitFileStateUnknown,
+		ActiveState:    UnitActiveStateUnknown,
+		SubState:       "unknown",
+		Result:         "unknown",
+		ExecMainStatus: "unknown",
 	}
 	if _, err := statPath(systemdUnitPath); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
+			status.LoadState = UnitLoadStateNotFound
+			status.UnitFileState = UnitFileStateDisabled
+			status.ActiveState = UnitActiveStateInactive
 			return status, nil
 		}
 		return UnitStatus{}, fmt.Errorf("failed to stat %s: %w", systemdUnitPath, err)
@@ -218,13 +259,31 @@ func (i *UnitInstaller) Status() (UnitStatus, error) {
 			return UnitStatus{}, fmt.Errorf("failed to run systemctl is-enabled %s: %w", systemdUnitName, err)
 		}
 	}
-	status.Enabled = strings.EqualFold(strings.TrimSpace(string(enabledOutput)), "enabled")
+	status.UnitFileState = parseUnitFileState(enabledOutput, err)
 
-	active, err := i.IsUnitActive()
-	if err != nil {
-		return UnitStatus{}, err
+	activeOutput, activeErr := i.commander.CombinedOutput("systemctl", "is-active", systemdUnitName)
+	if activeErr != nil {
+		if !isSystemdNotActiveError(activeErr) {
+			return UnitStatus{}, fmt.Errorf("failed to run systemctl is-active %s: %w", systemdUnitName, activeErr)
+		}
 	}
-	status.Active = active
+	status.ActiveState = parseUnitActiveState(activeOutput, activeErr)
+
+	showOutput, showErr := i.commander.CombinedOutput(
+		"systemctl",
+		"show",
+		systemdUnitName,
+		"--property=LoadState,SubState,Result,ExecMainStatus",
+		"--no-page",
+	)
+	if showErr != nil {
+		return UnitStatus{}, fmt.Errorf("failed to run systemctl show %s: %w", systemdUnitName, showErr)
+	}
+	props := parseSystemdShowProperties(showOutput)
+	status.LoadState = UnitLoadState(normalizeSystemdValue(props["LoadState"]))
+	status.SubState = normalizeSystemdValue(props["SubState"])
+	status.Result = normalizeSystemdValue(props["Result"])
+	status.ExecMainStatus = normalizeSystemdValue(props["ExecMainStatus"])
 
 	unitBody, err := readFilePath(systemdUnitPath)
 	if err != nil {
@@ -252,13 +311,62 @@ func isSystemdDisabledError(err error) bool {
 	return code == 1 || code == 3 || code == 4
 }
 
-func isSystemdActiveState(output []byte) bool {
-	switch strings.ToLower(strings.TrimSpace(string(output))) {
-	case "active", "reloading":
+func ActiveStateBlocksRuntimeStart(state UnitActiveState) bool {
+	switch state {
+	case UnitActiveStateActive, UnitActiveStateReloading, UnitActiveStateActivating, UnitActiveStateDeactivating:
 		return true
 	default:
 		return false
 	}
+}
+
+func activeStateIndicatesRunning(state UnitActiveState) bool {
+	switch state {
+	case UnitActiveStateActive, UnitActiveStateReloading:
+		return true
+	default:
+		return false
+	}
+}
+
+func parseUnitFileState(output []byte, err error) UnitFileState {
+	state := UnitFileState(normalizeSystemdValue(string(output)))
+	if state == UnitFileStateUnknown && err != nil && isSystemdDisabledError(err) {
+		return UnitFileStateDisabled
+	}
+	return state
+}
+
+func parseUnitActiveState(output []byte, err error) UnitActiveState {
+	state := UnitActiveState(normalizeSystemdValue(string(output)))
+	if state == UnitActiveStateUnknown && err != nil && isSystemdNotActiveError(err) {
+		return UnitActiveStateInactive
+	}
+	return state
+}
+
+func parseSystemdShowProperties(output []byte) map[string]string {
+	properties := make(map[string]string, 4)
+	for _, line := range strings.Split(string(output), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		properties[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
+	}
+	return properties
+}
+
+func normalizeSystemdValue(value string) string {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	if normalized == "" {
+		return "unknown"
+	}
+	return normalized
 }
 
 func detectUnitRole(unitBody string) UnitRole {
