@@ -1221,14 +1221,9 @@ func (m configuratorSessionModel) applyDaemonSetup(targetMode mode.Mode, restart
 			}
 			m.notice = notice
 		} else {
-			path, err := m.options.InstallClientSystemdUnit()
+			_, err := m.options.InstallClientSystemdUnit()
 			if err != nil {
 				return m, fmt.Errorf("failed to setup client daemon: %v", err)
-			}
-			if m.daemon.status.Installed {
-				m.notice = fmt.Sprintf("Client daemon reconfigured at %s", path)
-			} else {
-				m.notice = fmt.Sprintf("Client daemon configured at %s", path)
 			}
 		}
 	case mode.Server:
@@ -1242,14 +1237,9 @@ func (m configuratorSessionModel) applyDaemonSetup(targetMode mode.Mode, restart
 			}
 			m.notice = notice
 		} else {
-			path, err := m.options.InstallServerSystemdUnit()
+			_, err := m.options.InstallServerSystemdUnit()
 			if err != nil {
 				return m, fmt.Errorf("failed to setup server daemon: %v", err)
-			}
-			if m.daemon.status.Installed {
-				m.notice = fmt.Sprintf("Server daemon reconfigured at %s", path)
-			} else {
-				m.notice = fmt.Sprintf("Server daemon configured at %s", path)
 			}
 		}
 	default:

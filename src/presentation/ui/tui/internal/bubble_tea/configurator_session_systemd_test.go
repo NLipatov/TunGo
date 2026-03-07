@@ -246,8 +246,8 @@ func TestUpdateDaemonManageScreen_SetupClient_InstallsUnit(t *testing.T) {
 	if installCalls != 1 {
 		t.Fatalf("expected one install call, got %d", installCalls)
 	}
-	if !strings.Contains(updated.notice, "Client daemon configured") {
-		t.Fatalf("expected success notice, got %q", updated.notice)
+	if strings.Contains(updated.notice, "daemon configured") || strings.Contains(updated.notice, "daemon reconfigured") {
+		t.Fatalf("expected no setup/reconfigure notice, got %q", updated.notice)
 	}
 }
 
@@ -308,8 +308,8 @@ func TestUpdateDaemonManageScreen_ReconfigureInactive_AppliesImmediately(t *test
 	if updated.screen != configuratorScreenDaemonManage {
 		t.Fatalf("expected to stay on daemon manage screen, got %v", updated.screen)
 	}
-	if !strings.Contains(updated.notice, "Server daemon reconfigured") {
-		t.Fatalf("expected reconfigure notice, got %q", updated.notice)
+	if strings.Contains(updated.notice, "daemon configured") || strings.Contains(updated.notice, "daemon reconfigured") {
+		t.Fatalf("expected no setup/reconfigure notice, got %q", updated.notice)
 	}
 }
 
@@ -465,6 +465,12 @@ func TestUpdateDaemonManageScreen_StartEnableDisableStopFlow(t *testing.T) {
 	if !status.Active {
 		t.Fatal("expected daemon to be active after start")
 	}
+	if indexOfString(model.daemon.menuOptions, sessionDaemonStop) < 0 {
+		t.Fatalf("expected %q option after start, got %v", sessionDaemonStop, model.daemon.menuOptions)
+	}
+	if indexOfString(model.daemon.menuOptions, sessionDaemonStart) >= 0 {
+		t.Fatalf("did not expect %q option after start, got %v", sessionDaemonStart, model.daemon.menuOptions)
+	}
 
 	model.daemon.menuOptions = []string{sessionDaemonEnable}
 	next, _ = model.updateDaemonManageScreen(keyNamed(tea.KeyEnter))
@@ -485,6 +491,12 @@ func TestUpdateDaemonManageScreen_StartEnableDisableStopFlow(t *testing.T) {
 	model = next.(configuratorSessionModel)
 	if status.Active {
 		t.Fatal("expected daemon to be stopped")
+	}
+	if indexOfString(model.daemon.menuOptions, sessionDaemonStart) < 0 {
+		t.Fatalf("expected %q option after stop, got %v", sessionDaemonStart, model.daemon.menuOptions)
+	}
+	if indexOfString(model.daemon.menuOptions, sessionDaemonStop) >= 0 {
+		t.Fatalf("did not expect %q option after stop, got %v", sessionDaemonStop, model.daemon.menuOptions)
 	}
 	if model.notice != "" {
 		t.Fatalf("expected no success notice after stop, got %q", model.notice)
