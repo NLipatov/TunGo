@@ -16,6 +16,12 @@ type mockCommander struct {
 	combinedOutputCalls [][2]string
 	combinedOutput      []byte
 	combinedOutputErr   error
+	combinedOutputByArg map[string]mockCombinedOutputResult
+}
+
+type mockCombinedOutputResult struct {
+	output []byte
+	err    error
 }
 
 type mockFileInfo struct {
@@ -37,6 +43,9 @@ func (m *mockCommander) CombinedOutput(name string, args ...string) ([]byte, err
 		arg0 = args[0]
 	}
 	m.combinedOutputCalls = append(m.combinedOutputCalls, [2]string{name, arg0})
+	if result, ok := m.combinedOutputByArg[arg0]; ok {
+		return result.output, result.err
+	}
 	return m.combinedOutput, m.combinedOutputErr
 }
 
@@ -328,7 +337,7 @@ func TestIsUnitActive_ReturnsTrueWhenServiceIsActive(t *testing.T) {
 		},
 		func(string, []byte, os.FileMode) error { return nil },
 	)
-	cmd := &mockCommander{}
+	cmd := &mockCommander{combinedOutput: []byte("active\n")}
 	installer := NewUnitInstaller(cmd)
 
 	active, err := installer.IsUnitActive()
@@ -338,8 +347,62 @@ func TestIsUnitActive_ReturnsTrueWhenServiceIsActive(t *testing.T) {
 	if !active {
 		t.Fatal("expected active=true")
 	}
-	if len(cmd.runCalls) != 1 || cmd.runCalls[0] != [2]string{"systemctl", "is-active"} {
-		t.Fatalf("unexpected run calls: %v", cmd.runCalls)
+	if len(cmd.combinedOutputCalls) != 1 || cmd.combinedOutputCalls[0] != [2]string{"systemctl", "is-active"} {
+		t.Fatalf("unexpected combined output calls: %v", cmd.combinedOutputCalls)
+	}
+}
+
+func TestIsUnitActive_ReturnsFalseWhenServiceIsActivating(t *testing.T) {
+	withSystemdHooks(
+		t,
+		func(string) (os.FileInfo, error) { return nil, nil },
+		func(name string) (string, error) {
+			if name == "systemctl" {
+				return "/bin/systemctl", nil
+			}
+			if name == "tungo" {
+				return "/usr/local/bin/tungo", nil
+			}
+			return "", exec.ErrNotFound
+		},
+		func(string, []byte, os.FileMode) error { return nil },
+	)
+	cmd := &mockCommander{combinedOutput: []byte("activating\n")}
+	installer := NewUnitInstaller(cmd)
+
+	active, err := installer.IsUnitActive()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if active {
+		t.Fatal("expected active=false when service is activating")
+	}
+}
+
+func TestIsUnitActive_ReturnsTrueWhenServiceIsReloading(t *testing.T) {
+	withSystemdHooks(
+		t,
+		func(string) (os.FileInfo, error) { return nil, nil },
+		func(name string) (string, error) {
+			if name == "systemctl" {
+				return "/bin/systemctl", nil
+			}
+			if name == "tungo" {
+				return "/usr/local/bin/tungo", nil
+			}
+			return "", exec.ErrNotFound
+		},
+		func(string, []byte, os.FileMode) error { return nil },
+	)
+	cmd := &mockCommander{combinedOutput: []byte("reloading\n")}
+	installer := NewUnitInstaller(cmd)
+
+	active, err := installer.IsUnitActive()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !active {
+		t.Fatal("expected active=true when service is reloading")
 	}
 }
 
@@ -358,7 +421,7 @@ func TestIsUnitActive_ReturnsFalseWhenServiceIsInactive(t *testing.T) {
 		},
 		func(string, []byte, os.FileMode) error { return nil },
 	)
-	cmd := &mockCommander{runErr: commandExitError(t, 3)}
+	cmd := &mockCommander{combinedOutputErr: commandExitError(t, 3)}
 	installer := NewUnitInstaller(cmd)
 
 	active, err := installer.IsUnitActive()
@@ -385,7 +448,7 @@ func TestIsUnitActive_ReturnsFalseWhenServiceIsMissing(t *testing.T) {
 		},
 		func(string, []byte, os.FileMode) error { return nil },
 	)
-	cmd := &mockCommander{runErr: commandExitError(t, 4)}
+	cmd := &mockCommander{combinedOutputErr: commandExitError(t, 4)}
 	installer := NewUnitInstaller(cmd)
 
 	active, err := installer.IsUnitActive()
@@ -412,7 +475,7 @@ func TestIsUnitActive_FailsOnUnexpectedError(t *testing.T) {
 		},
 		func(string, []byte, os.FileMode) error { return nil },
 	)
-	cmd := &mockCommander{runErr: errors.New("boom")}
+	cmd := &mockCommander{combinedOutputErr: errors.New("boom")}
 	installer := NewUnitInstaller(cmd)
 
 	_, err := installer.IsUnitActive()
@@ -701,7 +764,10 @@ func TestStatus_InstalledEnabledActiveClient(t *testing.T) {
 		func(string) ([]byte, error) { return []byte("ExecStart=tungo c\n"), nil },
 	)
 	cmd := &mockCommander{
-		combinedOutput: []byte("enabled\n"),
+		combinedOutputByArg: map[string]mockCombinedOutputResult{
+			"is-enabled": {output: []byte("enabled\n")},
+			"is-active":  {output: []byte("active\n")},
+		},
 	}
 	installer := NewUnitInstaller(cmd)
 
@@ -714,6 +780,39 @@ func TestStatus_InstalledEnabledActiveClient(t *testing.T) {
 	}
 	if status.Role != UnitRoleClient {
 		t.Fatalf("expected client role, got %q", status.Role)
+	}
+}
+
+func TestStatus_InstalledEnabledActivatingClient_IsNotActive(t *testing.T) {
+	withSystemdHooks(
+		t,
+		func(string) (os.FileInfo, error) { return nil, nil },
+		func(name string) (string, error) {
+			if name == "systemctl" {
+				return "/bin/systemctl", nil
+			}
+			if name == "tungo" {
+				return "/usr/local/bin/tungo", nil
+			}
+			return "", exec.ErrNotFound
+		},
+		func(string, []byte, os.FileMode) error { return nil },
+		func(string) ([]byte, error) { return []byte("ExecStart=tungo c\n"), nil },
+	)
+	cmd := &mockCommander{
+		combinedOutputByArg: map[string]mockCombinedOutputResult{
+			"is-enabled": {output: []byte("enabled\n")},
+			"is-active":  {output: []byte("activating\n")},
+		},
+	}
+	installer := NewUnitInstaller(cmd)
+
+	status, err := installer.Status()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if status.Active {
+		t.Fatalf("expected inactive for activating state, got %+v", status)
 	}
 }
 
@@ -734,9 +833,10 @@ func TestStatus_InstalledDisabledInactiveServer(t *testing.T) {
 		func(string) ([]byte, error) { return []byte("ExecStart=tungo s\n"), nil },
 	)
 	cmd := &mockCommander{
-		runErr:            commandExitError(t, 3),
-		combinedOutput:    []byte("disabled\n"),
-		combinedOutputErr: commandExitError(t, 1),
+		combinedOutputByArg: map[string]mockCombinedOutputResult{
+			"is-enabled": {output: []byte("disabled\n"), err: commandExitError(t, 1)},
+			"is-active":  {output: []byte("inactive\n"), err: commandExitError(t, 3)},
+		},
 	}
 	installer := NewUnitInstaller(cmd)
 

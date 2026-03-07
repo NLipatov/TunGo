@@ -132,13 +132,14 @@ func (i *UnitInstaller) IsUnitActive() (bool, error) {
 	if !i.Supported() {
 		return false, fmt.Errorf("systemd is not supported on this platform")
 	}
-	if err := i.commander.Run("systemctl", "is-active", "--quiet", systemdUnitName); err != nil {
+	activeOutput, err := i.commander.CombinedOutput("systemctl", "is-active", systemdUnitName)
+	if err != nil {
 		if isSystemdNotActiveError(err) {
 			return false, nil
 		}
 		return false, fmt.Errorf("failed to run systemctl is-active %s: %w", systemdUnitName, err)
 	}
-	return true, nil
+	return isSystemdActiveState(activeOutput), nil
 }
 
 func (i *UnitInstaller) StopUnit() error {
@@ -247,6 +248,15 @@ func isSystemdDisabledError(err error) bool {
 	}
 	code := exitErr.ExitCode()
 	return code == 1 || code == 3 || code == 4
+}
+
+func isSystemdActiveState(output []byte) bool {
+	switch strings.ToLower(strings.TrimSpace(string(output))) {
+	case "active", "reloading":
+		return true
+	default:
+		return false
+	}
 }
 
 func detectUnitRole(unitBody string) UnitRole {
