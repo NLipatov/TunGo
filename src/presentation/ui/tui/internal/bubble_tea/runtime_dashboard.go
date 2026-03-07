@@ -6,6 +6,7 @@ import (
 	"net/netip"
 	"strings"
 	"time"
+	"tungo/infrastructure/settings"
 	"tungo/infrastructure/telemetry/trafficstats"
 
 	"charm.land/bubbles/v2/key"
@@ -24,6 +25,7 @@ type RuntimeDashboardOptions struct {
 	LogFeed         RuntimeLogFeed
 	ServerSupported bool
 	ReadyCh         <-chan struct{}
+	Protocol        settings.Protocol
 	ServerIPv4      netip.Addr
 	ServerIPv6      netip.Addr
 	TunnelIPv4      netip.Addr
@@ -89,6 +91,7 @@ type RuntimeDashboard struct {
 	reconfigureRequested bool
 	readyCh              <-chan struct{}
 	connected            bool
+	protocol             settings.Protocol
 	serverIPv4           netip.Addr
 	serverIPv6           netip.Addr
 	tunnelIPv4           netip.Addr
@@ -138,6 +141,7 @@ func NewRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions, s
 		tickSeq:         1,
 		readyCh:         readyCh,
 		connected:       connected,
+		protocol:        options.Protocol,
 		serverIPv4:      options.ServerIPv4,
 		serverIPv6:      options.ServerIPv6,
 		tunnelIPv4:      options.TunnelIPv4,
@@ -388,6 +392,9 @@ func (m RuntimeDashboard) mainView() string {
 		modeLine,
 		status,
 	}
+	if protocol := m.protocolLine(); protocol != "" {
+		body = append(body, protocol)
+	}
 	if connectedTo := m.connectedToLine(); connectedTo != "" {
 		body = append(body, connectedTo)
 	}
@@ -462,6 +469,13 @@ func (m RuntimeDashboard) tunnelIPLine() string {
 		parts = append(parts, "IPv6 "+m.tunnelIPv6.String())
 	}
 	return "Tunnel IP: " + strings.Join(parts, " | ")
+}
+
+func (m RuntimeDashboard) protocolLine() string {
+	if m.mode != RuntimeDashboardClient || m.protocol == settings.UNKNOWN {
+		return ""
+	}
+	return "Protocol: " + m.protocol.String()
 }
 
 func (m RuntimeDashboard) stopActionLabel() string {

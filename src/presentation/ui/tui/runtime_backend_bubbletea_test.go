@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/netip"
 	"testing"
+	"tungo/infrastructure/settings"
+	runnerCommon "tungo/presentation/runners/common"
 	bubbleTea "tungo/presentation/ui/tui/internal/bubble_tea"
 )
 
@@ -57,13 +59,17 @@ func TestBubbleTeaRuntimeBackend_MappingAndHooks(t *testing.T) {
 		if options.TunnelIPv4 != netip.MustParseAddr("10.0.0.2") {
 			t.Fatalf("expected TunnelIPv4 forwarded, got %v", options.TunnelIPv4)
 		}
+		if options.Protocol != settings.TCP {
+			t.Fatalf("expected protocol forwarded, got %v", options.Protocol)
+		}
 		return true, nil
 	}
 	reconfigure, err := backend.runRuntimeDashboard(context.Background(), RuntimeModeServer, RuntimeUIOptions{
-		Address: RuntimeAddressInfo{
+		Address: runnerCommon.RuntimeAddressInfo{
 			ServerIPv4: netip.MustParseAddr("198.51.100.10"),
 			TunnelIPv4: netip.MustParseAddr("10.0.0.2"),
 		},
+		Protocol: settings.TCP,
 	})
 	if err != nil || !reconfigure {
 		t.Fatalf("expected reconfigure=true nil err, got reconfigure=%v err=%v", reconfigure, err)

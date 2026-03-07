@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"tungo/infrastructure/settings"
 	runnerCommon "tungo/presentation/runners/common"
 )
 
@@ -12,11 +13,10 @@ const (
 	RuntimeModeServer RuntimeMode = "server"
 )
 
-type RuntimeAddressInfo = runnerCommon.RuntimeAddressInfo
-
 type RuntimeUIOptions struct {
-	ReadyCh <-chan struct{}
-	Address RuntimeAddressInfo
+	ReadyCh  <-chan struct{}
+	Address  runnerCommon.RuntimeAddressInfo
+	Protocol settings.Protocol
 }
 
 type runtimeBackend interface {

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"tungo/infrastructure/settings"
 	"tungo/infrastructure/telemetry/trafficstats"
 	"unicode/utf8"
 
@@ -622,12 +623,16 @@ func TestRuntimeDashboard_MainView_ServerAndFooterOff(t *testing.T) {
 
 func TestRuntimeDashboard_MainView_ShowsServerAndNetworkAddresses(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		Protocol:   settings.UDP,
 		ServerIPv4: netip.MustParseAddr("198.51.100.10"),
 		ServerIPv6: netip.MustParseAddr("2001:db8::10"),
 		TunnelIPv4: netip.MustParseAddr("10.0.0.2"),
 		TunnelIPv6: netip.MustParseAddr("fd00::2"),
 	}, testSettings())
 	view := m.View().Content
+	if !strings.Contains(view, "Protocol: UDP") {
+		t.Fatalf("expected protocol line in main view, got %q", view)
+	}
 	if !strings.Contains(view, "Server IP: IPv4 198.51.100.10 | IPv6 2001:db8::10") {
 		t.Fatalf("expected server IPs line in main view, got %q", view)
 	}
