@@ -155,7 +155,6 @@ func (p *Configurator) configureContinuous(ctx context.Context) (mode.Mode, erro
 		configOpts.InstallClientSystemdUnit = systemdInstaller.InstallClientUnit
 		configOpts.CheckSystemdUnitActive = systemdInstaller.IsUnitActive
 		configOpts.StopSystemdUnit = systemdInstaller.StopUnit
-		configOpts.HasTungoBinary = systemdInstaller.HasTungoBinary
 		configOpts.StartSystemdUnit = systemdInstaller.StartUnit
 		configOpts.EnableSystemdUnit = systemdInstaller.EnableUnit
 		configOpts.DisableSystemdUnit = systemdInstaller.DisableUnit

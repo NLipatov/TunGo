@@ -74,7 +74,6 @@ type ConfiguratorSessionOptions struct {
 	GetSystemdDaemonStatus   func() (SystemdDaemonStatus, error)
 	InstallClientSystemdUnit func() (string, error)
 	InstallServerSystemdUnit func() (string, error)
-	HasTungoBinary           func() bool
 	StartSystemdUnit         func() error
 	EnableSystemdUnit        func() error
 	DisableSystemdUnit       func() error
@@ -230,7 +229,7 @@ func newConfiguratorSessionModel(options ConfiguratorSessionOptions, settings *u
 	if options.ServerSupported {
 		modeOptions = append(modeOptions, sessionModeServer)
 	}
-	if options.SystemdSupported && options.GetSystemdDaemonStatus != nil && (options.HasTungoBinary == nil || options.HasTungoBinary()) {
+	if options.SystemdSupported && options.GetSystemdDaemonStatus != nil {
 		modeOptions = append(modeOptions, sessionModeDaemon)
 	}
 

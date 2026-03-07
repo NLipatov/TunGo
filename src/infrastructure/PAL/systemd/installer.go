@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"tungo/infrastructure/PAL/exec_commander"
 )
 
@@ -14,6 +15,7 @@ const (
 	systemdRuntimeDir = "/run/systemd/system"
 	systemdUnitPath   = "/etc/systemd/system/tungo.service"
 	systemdUnitName   = "tungo.service"
+	tungoBinaryPath   = "/usr/local/bin/tungo"
 )
 
 var (
@@ -45,7 +47,6 @@ type Installer interface {
 	InstallServerUnit() (string, error)
 	InstallClientUnit() (string, error)
 	RemoveUnit() error
-	HasTungoBinary() bool
 	IsUnitActive() (bool, error)
 	StopUnit() error
 	StartUnit() error
@@ -83,11 +84,6 @@ func (i *UnitInstaller) InstallClientUnit() (string, error) {
 	return i.installUnit("c")
 }
 
-func (i *UnitInstaller) HasTungoBinary() bool {
-	_, err := lookPath("tungo")
-	return err == nil
-}
-
 func (i *UnitInstaller) RemoveUnit() error {
 	if !i.Supported() {
 		return fmt.Errorf("systemd is not supported on this platform")
@@ -118,11 +114,10 @@ func (i *UnitInstaller) installUnit(modeArg string) (string, error) {
 	if err := requireAdminPrivileges(); err != nil {
 		return "", err
 	}
-	binaryPath, err := resolveTungoBinaryPath()
-	if err != nil {
+	if err := validateTungoBinaryForSystemd(); err != nil {
 		return "", err
 	}
-	if err := writeFilePath(systemdUnitPath, []byte(unitFileContent(binaryPath, modeArg)), 0644); err != nil {
+	if err := writeFilePath(systemdUnitPath, []byte(unitFileContent(modeArg)), 0644); err != nil {
 		return "", fmt.Errorf("failed to write %s: %w", systemdUnitPath, err)
 	}
 	if err := i.commander.Run("systemctl", "daemon-reload"); err != nil {
@@ -283,7 +278,7 @@ func detectUnitRole(unitBody string) UnitRole {
 	return UnitRoleUnknown
 }
 
-func unitFileContent(binaryPath string, modeArg string) string {
+func unitFileContent(modeArg string) string {
 	return fmt.Sprintf(`[Unit]
 Description=TunGo VPN Service
 After=network-online.target
@@ -298,7 +293,7 @@ RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
-`, binaryPath, modeArg)
+`, tungoBinaryPath, modeArg)
 }
 
 func requireAdminPrivileges() error {
@@ -308,17 +303,32 @@ func requireAdminPrivileges() error {
 	return errors.New("admin privileges are required to manage tungo systemd service")
 }
 
-func resolveTungoBinaryPath() (string, error) {
-	path, err := lookPath("tungo")
+func validateTungoBinaryForSystemd() error {
+	info, err := statPath(tungoBinaryPath)
 	if err != nil {
-		return "", errors.New("tungo executable is not found in PATH; install tungo before setting up daemon")
+		if errors.Is(err, os.ErrNotExist) {
+			return errors.New("tungo executable is not installed at /usr/local/bin/tungo; install it using the official Linux guide")
+		}
+		return fmt.Errorf("failed to stat %s: %w", tungoBinaryPath, err)
 	}
-	if filepath.IsAbs(path) {
-		return path, nil
+	if info == nil {
+		return fmt.Errorf("failed to stat %s: empty file info", tungoBinaryPath)
 	}
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return "", fmt.Errorf("failed to resolve tungo executable path: %w", err)
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("%s is not a regular file", tungoBinaryPath)
 	}
-	return absPath, nil
+	if info.Mode()&0o111 == 0 {
+		return fmt.Errorf("%s is not executable", tungoBinaryPath)
+	}
+	if info.Mode()&0o022 != 0 {
+		return fmt.Errorf("%s must not be writable by group or others", tungoBinaryPath)
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return fmt.Errorf("failed to verify owner of %s", tungoBinaryPath)
+	}
+	if stat.Uid != 0 {
+		return fmt.Errorf("%s must be owned by root", tungoBinaryPath)
+	}
+	return nil
 }

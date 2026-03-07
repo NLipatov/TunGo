@@ -6,7 +6,9 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 )
 
 type mockCommander struct {
@@ -16,6 +18,19 @@ type mockCommander struct {
 	combinedOutput      []byte
 	combinedOutputErr   error
 }
+
+type mockFileInfo struct {
+	name string
+	mode os.FileMode
+	sys  interface{}
+}
+
+func (m mockFileInfo) Name() string       { return m.name }
+func (m mockFileInfo) Size() int64        { return 0 }
+func (m mockFileInfo) Mode() os.FileMode  { return m.mode }
+func (m mockFileInfo) ModTime() time.Time { return time.Time{} }
+func (m mockFileInfo) IsDir() bool        { return m.mode.IsDir() }
+func (m mockFileInfo) Sys() interface{}   { return m.sys }
 
 func (m *mockCommander) CombinedOutput(name string, args ...string) ([]byte, error) {
 	arg0 := ""
@@ -57,7 +72,25 @@ func withSystemdHooks(
 	if len(read) > 0 && read[0] != nil {
 		readHook = read[0]
 	}
-	statPath = stat
+	statPath = func(path string) (os.FileInfo, error) {
+		info, err := stat(path)
+		if err != nil {
+			return nil, err
+		}
+		if info != nil {
+			return info, nil
+		}
+		switch path {
+		case systemdRuntimeDir:
+			return mockFileInfo{name: "system", mode: os.ModeDir | 0o755, sys: &syscall.Stat_t{Uid: 0}}, nil
+		case tungoBinaryPath:
+			return mockFileInfo{name: "tungo", mode: 0o755, sys: &syscall.Stat_t{Uid: 0}}, nil
+		case systemdUnitPath:
+			return mockFileInfo{name: "tungo.service", mode: 0o644, sys: &syscall.Stat_t{Uid: 0}}, nil
+		default:
+			return mockFileInfo{name: "file", mode: 0o644, sys: &syscall.Stat_t{Uid: 0}}, nil
+		}
+	}
 	lookPath = look
 	writeFilePath = write
 	readFilePath = readHook
@@ -112,37 +145,6 @@ func TestSupported_FalseWhenRuntimeDirMissing(t *testing.T) {
 	installer := NewUnitInstaller(&mockCommander{})
 	if installer.Supported() {
 		t.Fatal("expected Supported()=false when /run/systemd/system is missing")
-	}
-}
-
-func TestHasTungoBinary(t *testing.T) {
-	withSystemdHooks(
-		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
-		func(name string) (string, error) {
-			if name == "systemctl" {
-				return "/bin/systemctl", nil
-			}
-			if name == "tungo" {
-				return "/usr/local/bin/tungo", nil
-			}
-			return "", exec.ErrNotFound
-		},
-		func(string, []byte, os.FileMode) error { return nil },
-	)
-	installer := NewUnitInstaller(&mockCommander{})
-	if !installer.HasTungoBinary() {
-		t.Fatal("expected HasTungoBinary=true when tungo is found")
-	}
-
-	lookPath = func(name string) (string, error) {
-		if name == "systemctl" {
-			return "/bin/systemctl", nil
-		}
-		return "", exec.ErrNotFound
-	}
-	if installer.HasTungoBinary() {
-		t.Fatal("expected HasTungoBinary=false when tungo is missing")
 	}
 }
 
@@ -230,10 +232,47 @@ func TestInstallClientUnit_WritesClientMode(t *testing.T) {
 	}
 }
 
-func TestInstallUnit_FailsWhenTungoBinaryNotFound(t *testing.T) {
+func TestInstallUnit_FailsWhenTungoBinaryMissing(t *testing.T) {
 	withSystemdHooks(
 		t,
-		func(string) (os.FileInfo, error) { return nil, nil },
+		func(path string) (os.FileInfo, error) {
+			if path == tungoBinaryPath {
+				return nil, os.ErrNotExist
+			}
+			return nil, nil
+		},
+		func(name string) (string, error) {
+			if name == "systemctl" {
+				return "/bin/systemctl", nil
+			}
+			if name == "tungo" {
+				return "/usr/local/bin/tungo", nil
+			}
+			return "", exec.ErrNotFound
+		},
+		func(string, []byte, os.FileMode) error { return nil },
+	)
+	cmd := &mockCommander{}
+	installer := NewUnitInstaller(cmd)
+
+	_, err := installer.InstallClientUnit()
+	if err == nil || !strings.Contains(err.Error(), "tungo executable is not installed at /usr/local/bin/tungo") {
+		t.Fatalf("expected missing /usr/local/bin/tungo error, got %v", err)
+	}
+	if len(cmd.runCalls) != 0 {
+		t.Fatalf("expected no systemctl calls, got %v", cmd.runCalls)
+	}
+}
+
+func TestInstallUnit_FailsWhenTungoBinaryNotExecutable(t *testing.T) {
+	withSystemdHooks(
+		t,
+		func(path string) (os.FileInfo, error) {
+			if path == tungoBinaryPath {
+				return mockFileInfo{name: "tungo", mode: 0o644, sys: &syscall.Stat_t{Uid: 0}}, nil
+			}
+			return nil, nil
+		},
 		func(name string) (string, error) {
 			if name == "systemctl" {
 				return "/bin/systemctl", nil
@@ -246,11 +285,60 @@ func TestInstallUnit_FailsWhenTungoBinaryNotFound(t *testing.T) {
 	installer := NewUnitInstaller(cmd)
 
 	_, err := installer.InstallClientUnit()
-	if err == nil || !strings.Contains(err.Error(), "tungo executable is not found in PATH") {
-		t.Fatalf("expected missing tungo binary error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "is not executable") {
+		t.Fatalf("expected not executable error, got %v", err)
 	}
-	if len(cmd.runCalls) != 0 {
-		t.Fatalf("expected no systemctl calls, got %v", cmd.runCalls)
+}
+
+func TestInstallUnit_FailsWhenTungoBinaryOwnedByNonRoot(t *testing.T) {
+	withSystemdHooks(
+		t,
+		func(path string) (os.FileInfo, error) {
+			if path == tungoBinaryPath {
+				return mockFileInfo{name: "tungo", mode: 0o755, sys: &syscall.Stat_t{Uid: 1000}}, nil
+			}
+			return nil, nil
+		},
+		func(name string) (string, error) {
+			if name == "systemctl" {
+				return "/bin/systemctl", nil
+			}
+			return "", exec.ErrNotFound
+		},
+		func(string, []byte, os.FileMode) error { return nil },
+	)
+	cmd := &mockCommander{}
+	installer := NewUnitInstaller(cmd)
+
+	_, err := installer.InstallClientUnit()
+	if err == nil || !strings.Contains(err.Error(), "must be owned by root") {
+		t.Fatalf("expected non-root owner error, got %v", err)
+	}
+}
+
+func TestInstallUnit_FailsWhenTungoBinaryGroupWritable(t *testing.T) {
+	withSystemdHooks(
+		t,
+		func(path string) (os.FileInfo, error) {
+			if path == tungoBinaryPath {
+				return mockFileInfo{name: "tungo", mode: 0o775, sys: &syscall.Stat_t{Uid: 0}}, nil
+			}
+			return nil, nil
+		},
+		func(name string) (string, error) {
+			if name == "systemctl" {
+				return "/bin/systemctl", nil
+			}
+			return "", exec.ErrNotFound
+		},
+		func(string, []byte, os.FileMode) error { return nil },
+	)
+	cmd := &mockCommander{}
+	installer := NewUnitInstaller(cmd)
+
+	_, err := installer.InstallClientUnit()
+	if err == nil || !strings.Contains(err.Error(), "must not be writable by group or others") {
+		t.Fatalf("expected unsafe mode error, got %v", err)
 	}
 }
 
