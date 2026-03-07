@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"tungo/domain/mode"
+	"tungo/infrastructure/PAL/systemd"
 	bubbleTea "tungo/presentation/ui/tui/internal/bubble_tea"
 	selectorContract "tungo/presentation/ui/tui/internal/ui/contracts/selector"
 )
@@ -341,6 +342,59 @@ func withMockNewUnifiedSession(t *testing.T, factory func(context.Context, bubbl
 	t.Cleanup(func() { newUnifiedSession = prev })
 }
 
+func withMockNewSystemdInstaller(t *testing.T, factory func() systemd.Installer) {
+	t.Helper()
+	prev := newSystemdInstaller
+	newSystemdInstaller = factory
+	t.Cleanup(func() { newSystemdInstaller = prev })
+}
+
+type systemdInstallerStub struct {
+	supported bool
+
+	statusRet systemd.UnitStatus
+	statusErr error
+
+	installServerPath string
+	installServerErr  error
+	installClientPath string
+	installClientErr  error
+
+	activeRet bool
+	activeErr error
+
+	stopErr    error
+	startErr   error
+	enableErr  error
+	disableErr error
+	removeErr  error
+}
+
+func (s *systemdInstallerStub) Supported() bool { return s.supported }
+func (s *systemdInstallerStub) InstallServerUnit() (string, error) {
+	if s.installServerPath == "" && s.installServerErr == nil {
+		return "/etc/systemd/system/tungo.service", nil
+	}
+	return s.installServerPath, s.installServerErr
+}
+func (s *systemdInstallerStub) InstallClientUnit() (string, error) {
+	if s.installClientPath == "" && s.installClientErr == nil {
+		return "/etc/systemd/system/tungo.service", nil
+	}
+	return s.installClientPath, s.installClientErr
+}
+func (s *systemdInstallerStub) RemoveUnit() error { return s.removeErr }
+func (s *systemdInstallerStub) IsUnitActive() (bool, error) {
+	return s.activeRet, s.activeErr
+}
+func (s *systemdInstallerStub) StopUnit() error    { return s.stopErr }
+func (s *systemdInstallerStub) StartUnit() error   { return s.startErr }
+func (s *systemdInstallerStub) EnableUnit() error  { return s.enableErr }
+func (s *systemdInstallerStub) DisableUnit() error { return s.disableErr }
+func (s *systemdInstallerStub) Status() (systemd.UnitStatus, error) {
+	return s.statusRet, s.statusErr
+}
+
 func newContinuousConfigurator() *Configurator {
 	return &Configurator{
 		useContinuousUI: true,
@@ -472,6 +526,122 @@ func TestConfigureContinuous_ReusesExistingSession(t *testing.T) {
 	}
 	if factoryCalled {
 		t.Fatal("expected factory NOT called when session exists")
+	}
+}
+
+func TestConfigureContinuous_SystemdSupported_WiresCallbacks(t *testing.T) {
+	mock := &mockUnifiedSession{waitModeResult: mode.Client}
+	c := newContinuousConfigurator()
+	c.serverSupported = true
+
+	installer := &systemdInstallerStub{
+		supported: true,
+		statusRet: systemd.UnitStatus{
+			Installed: true,
+			Enabled:   true,
+			Active:    true,
+			Role:      systemd.UnitRoleServer,
+		},
+	}
+	withMockNewSystemdInstaller(t, func() systemd.Installer { return installer })
+
+	var captured bubbleTea.ConfiguratorSessionOptions
+	withMockNewUnifiedSession(t, func(_ context.Context, opts bubbleTea.ConfiguratorSessionOptions) (unifiedSessionHandle, error) {
+		captured = opts
+		return mock, nil
+	})
+
+	gotMode, err := c.Configure(context.Background())
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if gotMode != mode.Client {
+		t.Fatalf("expected mode.Client, got %v", gotMode)
+	}
+	if !captured.SystemdSupported {
+		t.Fatal("expected SystemdSupported=true in session options")
+	}
+	if captured.GetSystemdDaemonStatus == nil ||
+		captured.InstallClientSystemdUnit == nil ||
+		captured.CheckSystemdUnitActive == nil ||
+		captured.StopSystemdUnit == nil ||
+		captured.StartSystemdUnit == nil ||
+		captured.EnableSystemdUnit == nil ||
+		captured.DisableSystemdUnit == nil ||
+		captured.RemoveSystemdUnit == nil {
+		t.Fatal("expected systemd callbacks to be wired when supported")
+	}
+	if captured.InstallServerSystemdUnit == nil {
+		t.Fatal("expected server unit installer wired when server is supported")
+	}
+
+	status, err := captured.GetSystemdDaemonStatus()
+	if err != nil {
+		t.Fatalf("unexpected status error: %v", err)
+	}
+	if !status.Installed || !status.Enabled || !status.Active || status.Mode != mode.Server {
+		t.Fatalf("unexpected mapped daemon status: %+v", status)
+	}
+
+	installer.statusRet.Role = systemd.UnitRoleClient
+	status, err = captured.GetSystemdDaemonStatus()
+	if err != nil {
+		t.Fatalf("unexpected status error: %v", err)
+	}
+	if status.Mode != mode.Client {
+		t.Fatalf("expected mapped client mode, got %v", status.Mode)
+	}
+
+	installer.statusRet.Role = systemd.UnitRoleUnknown
+	status, err = captured.GetSystemdDaemonStatus()
+	if err != nil {
+		t.Fatalf("unexpected status error: %v", err)
+	}
+	if status.Mode != mode.Unknown {
+		t.Fatalf("expected mapped unknown mode, got %v", status.Mode)
+	}
+
+	installer.statusErr = errors.New("status failed")
+	_, err = captured.GetSystemdDaemonStatus()
+	if err == nil || err.Error() != "status failed" {
+		t.Fatalf("expected status failure from closure, got %v", err)
+	}
+}
+
+func TestConfigureContinuous_SystemdUnsupported_DoesNotWireCallbacks(t *testing.T) {
+	mock := &mockUnifiedSession{waitModeResult: mode.Server}
+	c := newContinuousConfigurator()
+	c.serverSupported = true
+
+	installer := &systemdInstallerStub{supported: false}
+	withMockNewSystemdInstaller(t, func() systemd.Installer { return installer })
+
+	var captured bubbleTea.ConfiguratorSessionOptions
+	withMockNewUnifiedSession(t, func(_ context.Context, opts bubbleTea.ConfiguratorSessionOptions) (unifiedSessionHandle, error) {
+		captured = opts
+		return mock, nil
+	})
+
+	gotMode, err := c.Configure(context.Background())
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if gotMode != mode.Server {
+		t.Fatalf("expected mode.Server, got %v", gotMode)
+	}
+	if captured.SystemdSupported {
+		t.Fatal("expected SystemdSupported=false in session options")
+	}
+	if captured.GetSystemdDaemonStatus != nil ||
+		captured.InstallClientSystemdUnit != nil ||
+		captured.InstallServerSystemdUnit != nil ||
+		captured.CheckSystemdUnitActive != nil ||
+		captured.StopSystemdUnit != nil ||
+		captured.StartSystemdUnit != nil ||
+		captured.EnableSystemdUnit != nil ||
+		captured.DisableSystemdUnit != nil ||
+		captured.RemoveSystemdUnit != nil {
+		t.Fatal("expected systemd callbacks to be nil when unsupported")
 	}
 }
 

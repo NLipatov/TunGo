@@ -129,6 +129,22 @@ func TestShouldDeferAutoConnectForSystemd_InactiveDaemon(t *testing.T) {
 	}
 }
 
+func TestShouldDeferAutoConnectForSystemd_NoHooks(t *testing.T) {
+	if shouldDeferAutoConnectForSystemd(ConfiguratorSessionOptions{}) {
+		t.Fatal("expected defer=false when systemd hooks are missing")
+	}
+}
+
+func TestShouldDeferAutoConnectForSystemd_StatusCheckError(t *testing.T) {
+	opts := ConfiguratorSessionOptions{
+		CheckSystemdUnitActive: func() (bool, error) { return false, errors.New("boom") },
+		StopSystemdUnit:        func() error { return nil },
+	}
+	if !shouldDeferAutoConnectForSystemd(opts) {
+		t.Fatal("expected defer=true when status check fails")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // newUnifiedSessionModel: auto-connect
 // ---------------------------------------------------------------------------
