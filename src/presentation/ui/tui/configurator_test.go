@@ -541,6 +541,7 @@ func TestConfigureContinuous_SystemdSupported_WiresCallbacks(t *testing.T) {
 			UnitFileState: "enabled",
 			ActiveState:   "active",
 			Role:          systemd.UnitRoleServer,
+			ExecStart:     "/usr/local/bin/tungo s",
 		},
 	}
 	withMockNewSystemdInstaller(t, func() systemd.Installer { return installer })
@@ -579,7 +580,7 @@ func TestConfigureContinuous_SystemdSupported_WiresCallbacks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected status error: %v", err)
 	}
-	if !status.Installed || status.UnitFileState != "enabled" || status.ActiveState != "active" || status.Mode != mode.Server {
+	if !status.Installed || status.UnitFileState != "enabled" || status.ActiveState != "active" || status.Mode != mode.Server || status.ExecStart != "/usr/local/bin/tungo s" {
 		t.Fatalf("unexpected mapped daemon status: %+v", status)
 	}
 

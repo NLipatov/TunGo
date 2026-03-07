@@ -1163,7 +1163,7 @@ func TestStatus_InstalledPreservesRawSystemdStates(t *testing.T) {
 			"is-enabled": {output: []byte("static\n")},
 			"is-active":  {output: []byte("deactivating\n")},
 			"show": {
-				output: []byte("LoadState=loaded\nSubState=stop-sigterm\nResult=exit-code\nExecMainStatus=203\n"),
+				output: []byte("LoadState=loaded\nSubState=stop-sigterm\nResult=exit-code\nExecMainStatus=203\nExecStart={ path=/usr/local/bin/tungo ; argv[]=/usr/local/bin/tungo s ; }\n"),
 			},
 		},
 	}
@@ -1179,7 +1179,11 @@ func TestStatus_InstalledPreservesRawSystemdStates(t *testing.T) {
 	if status.ActiveState != UnitActiveStateDeactivating {
 		t.Fatalf("expected active-state deactivating, got %q", status.ActiveState)
 	}
-	if status.LoadState != UnitLoadStateLoaded || status.SubState != "stop-sigterm" || status.Result != "exit-code" || status.ExecMainStatus != "203" {
+	if status.LoadState != UnitLoadStateLoaded ||
+		status.SubState != "stop-sigterm" ||
+		status.Result != "exit-code" ||
+		status.ExecMainStatus != "203" ||
+		status.ExecStart != "{ path=/usr/local/bin/tungo ; argv[]=/usr/local/bin/tungo s ; }" {
 		t.Fatalf("expected raw show properties, got %+v", status)
 	}
 }

@@ -91,6 +91,7 @@ type SystemdDaemonStatus struct {
 	SubState       string
 	Result         string
 	ExecMainStatus string
+	ExecStart      string
 }
 
 type configuratorScreen int
@@ -1551,13 +1552,17 @@ func (m configuratorSessionModel) daemonStatusLine() string {
 	subState := normalizeDaemonStateField(m.daemon.status.SubState)
 	result := normalizeDaemonStateField(m.daemon.status.Result)
 	execMainStatus := normalizeDaemonStateField(m.daemon.status.ExecMainStatus)
+	execStart := normalizeDaemonRawField(m.daemon.status.ExecStart)
+	derivedRole := daemonRoleFromExecStart(execStart)
 	return strings.Join([]string{
-		fmt.Sprintf("Load: %s", loadState),
-		fmt.Sprintf("UnitFile: %s", unitFileState),
 		fmt.Sprintf("Active: %s", activeState),
 		fmt.Sprintf("Sub: %s", subState),
 		fmt.Sprintf("Result: %s", result),
+		fmt.Sprintf("UnitFile: %s", unitFileState),
+		fmt.Sprintf("Load: %s", loadState),
 		fmt.Sprintf("ExecMainStatus: %s", execMainStatus),
+		fmt.Sprintf("ExecStart: %s", execStart),
+		fmt.Sprintf("DerivedRole: %s (from ExecStart)", derivedRole),
 	}, "\n")
 }
 
@@ -1567,6 +1572,28 @@ func normalizeDaemonStateField(value string) string {
 		return "unknown"
 	}
 	return normalized
+}
+
+func normalizeDaemonRawField(value string) string {
+	normalized := strings.TrimSpace(value)
+	if normalized == "" {
+		return "unknown"
+	}
+	return normalized
+}
+
+func daemonRoleFromExecStart(execStart string) string {
+	raw := strings.ToLower(strings.TrimSpace(execStart))
+	if raw == "" || raw == "unknown" {
+		return "unknown"
+	}
+	if strings.Contains(raw, " tungo c") || strings.Contains(raw, "/tungo c") {
+		return "client"
+	}
+	if strings.Contains(raw, " tungo s") || strings.Contains(raw, "/tungo s") {
+		return "server"
+	}
+	return "unknown"
 }
 
 func daemonStateBlocksRuntimeStart(activeState string) bool {

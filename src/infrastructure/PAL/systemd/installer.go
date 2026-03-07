@@ -73,6 +73,7 @@ type UnitStatus struct {
 	SubState       string
 	Result         string
 	ExecMainStatus string
+	ExecStart      string
 }
 
 type Installer interface {
@@ -241,6 +242,7 @@ func (i *UnitInstaller) Status() (UnitStatus, error) {
 		SubState:       "unknown",
 		Result:         "unknown",
 		ExecMainStatus: "unknown",
+		ExecStart:      "unknown",
 	}
 	if _, err := statPath(systemdUnitPath); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -273,7 +275,7 @@ func (i *UnitInstaller) Status() (UnitStatus, error) {
 		"systemctl",
 		"show",
 		systemdUnitName,
-		"--property=LoadState,SubState,Result,ExecMainStatus",
+		"--property=LoadState,SubState,Result,ExecMainStatus,ExecStart",
 		"--no-page",
 	)
 	if showErr != nil {
@@ -284,6 +286,7 @@ func (i *UnitInstaller) Status() (UnitStatus, error) {
 	status.SubState = normalizeSystemdValue(props["SubState"])
 	status.Result = normalizeSystemdValue(props["Result"])
 	status.ExecMainStatus = normalizeSystemdValue(props["ExecMainStatus"])
+	status.ExecStart = normalizeSystemdRawValue(props["ExecStart"])
 
 	unitBody, err := readFilePath(systemdUnitPath)
 	if err != nil {
@@ -363,6 +366,14 @@ func parseSystemdShowProperties(output []byte) map[string]string {
 
 func normalizeSystemdValue(value string) string {
 	normalized := strings.ToLower(strings.TrimSpace(value))
+	if normalized == "" {
+		return "unknown"
+	}
+	return normalized
+}
+
+func normalizeSystemdRawValue(value string) string {
+	normalized := strings.TrimSpace(value)
 	if normalized == "" {
 		return "unknown"
 	}

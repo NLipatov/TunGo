@@ -160,6 +160,7 @@ func TestMainTabView_DaemonManage_SeparatesStatusAndActions(t *testing.T) {
 			SubState:       "dead",
 			Result:         "success",
 			ExecMainStatus: "0",
+			ExecStart:      "/usr/local/bin/tungo s",
 			Mode:           mode.Server,
 		}, nil
 	}
@@ -182,6 +183,12 @@ func TestMainTabView_DaemonManage_SeparatesStatusAndActions(t *testing.T) {
 	}
 	if !strings.Contains(view, "Updated: ") {
 		t.Fatalf("expected updated timestamp in daemon status section, got: %s", view)
+	}
+	if !strings.Contains(view, "ExecStart: /usr/local/bin/tungo s") {
+		t.Fatalf("expected raw ExecStart in status section, got: %s", view)
+	}
+	if !strings.Contains(view, "DerivedRole: server (from ExecStart)") {
+		t.Fatalf("expected derived role from ExecStart in status section, got: %s", view)
 	}
 	if !strings.Contains(view, "test notice") {
 		t.Fatalf("expected daemon notice in body, got: %s", view)

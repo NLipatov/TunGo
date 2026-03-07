@@ -154,6 +154,7 @@ func (p *Configurator) configureContinuous(ctx context.Context) (mode.Mode, erro
 				SubState:       status.SubState,
 				Result:         status.Result,
 				ExecMainStatus: status.ExecMainStatus,
+				ExecStart:      status.ExecStart,
 			}, nil
 		}
 		configOpts.InstallClientSystemdUnit = systemdInstaller.InstallClientUnit
