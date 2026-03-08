@@ -194,11 +194,7 @@ func TestSupported_FalseWhenSystemctlMissing(t *testing.T) {
 
 func TestNewUnitInstaller_NilCommander_UsesDefault(t *testing.T) {
 	installer := NewUnitInstaller(nil)
-	concrete, ok := installer.(*UnitInstaller)
-	if !ok {
-		t.Fatalf("expected *UnitInstaller, got %T", installer)
-	}
-	if concrete.commander == nil {
+	if installer.commander == nil {
 		t.Fatal("expected default commander when nil commander is provided")
 	}
 }
@@ -978,13 +974,13 @@ func TestOperations_FailWhenSystemdUnsupported(t *testing.T) {
 
 	ops := []struct {
 		name string
-		run  func(Installer) error
+		run  func(*UnitInstaller) error
 	}{
-		{name: "remove", run: func(i Installer) error { return i.RemoveUnit() }},
-		{name: "stop", run: func(i Installer) error { return i.StopUnit() }},
-		{name: "start", run: func(i Installer) error { return i.StartUnit() }},
-		{name: "enable", run: func(i Installer) error { return i.EnableUnit() }},
-		{name: "disable", run: func(i Installer) error { return i.DisableUnit() }},
+		{name: "remove", run: func(i *UnitInstaller) error { return i.RemoveUnit() }},
+		{name: "stop", run: func(i *UnitInstaller) error { return i.StopUnit() }},
+		{name: "start", run: func(i *UnitInstaller) error { return i.StartUnit() }},
+		{name: "enable", run: func(i *UnitInstaller) error { return i.EnableUnit() }},
+		{name: "disable", run: func(i *UnitInstaller) error { return i.DisableUnit() }},
 	}
 	for _, tc := range ops {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1058,21 +1054,21 @@ func TestPrivilegedOperations_FailWithoutAdminRights(t *testing.T) {
 
 	operations := []struct {
 		name string
-		run  func(installer Installer) error
+		run  func(installer *UnitInstaller) error
 	}{
-		{name: "start", run: func(installer Installer) error { return installer.StartUnit() }},
-		{name: "stop", run: func(installer Installer) error { return installer.StopUnit() }},
-		{name: "enable", run: func(installer Installer) error { return installer.EnableUnit() }},
-		{name: "disable", run: func(installer Installer) error { return installer.DisableUnit() }},
-		{name: "install-client", run: func(installer Installer) error {
+		{name: "start", run: func(installer *UnitInstaller) error { return installer.StartUnit() }},
+		{name: "stop", run: func(installer *UnitInstaller) error { return installer.StopUnit() }},
+		{name: "enable", run: func(installer *UnitInstaller) error { return installer.EnableUnit() }},
+		{name: "disable", run: func(installer *UnitInstaller) error { return installer.DisableUnit() }},
+		{name: "install-client", run: func(installer *UnitInstaller) error {
 			_, err := installer.InstallClientUnit()
 			return err
 		}},
-		{name: "install-server", run: func(installer Installer) error {
+		{name: "install-server", run: func(installer *UnitInstaller) error {
 			_, err := installer.InstallServerUnit()
 			return err
 		}},
-		{name: "remove", run: func(installer Installer) error { return installer.RemoveUnit() }},
+		{name: "remove", run: func(installer *UnitInstaller) error { return installer.RemoveUnit() }},
 	}
 
 	for _, tc := range operations {
@@ -1550,34 +1546,34 @@ func TestRemoveUnit_FailsOnDaemonReloadError(t *testing.T) {
 }
 
 func TestDetectUnitRole(t *testing.T) {
-	if got := detectUnitRole("ExecStart=tungo c\n"); got != domain.UnitRoleClient {
+	if got := domain.DetectUnitRole("ExecStart=tungo c\n"); got != domain.UnitRoleClient {
 		t.Fatalf("expected client role, got %q", got)
 	}
-	if got := detectUnitRole("ExecStart=tungo s\n"); got != domain.UnitRoleServer {
+	if got := domain.DetectUnitRole("ExecStart=tungo s\n"); got != domain.UnitRoleServer {
 		t.Fatalf("expected server role, got %q", got)
 	}
-	if got := detectUnitRole("ExecStart=/usr/local/bin/tungo c\n"); got != domain.UnitRoleClient {
+	if got := domain.DetectUnitRole("ExecStart=/usr/local/bin/tungo c\n"); got != domain.UnitRoleClient {
 		t.Fatalf("expected client role for absolute path, got %q", got)
 	}
-	if got := detectUnitRole("ExecStart=/usr/local/bin/tungo s\n"); got != domain.UnitRoleServer {
+	if got := domain.DetectUnitRole("ExecStart=/usr/local/bin/tungo s\n"); got != domain.UnitRoleServer {
 		t.Fatalf("expected server role for absolute path, got %q", got)
 	}
-	if got := detectUnitRole("ExecStart=/usr/bin/env tungo s --foreground\n"); got != domain.UnitRoleServer {
+	if got := domain.DetectUnitRole("ExecStart=/usr/bin/env tungo s --foreground\n"); got != domain.UnitRoleServer {
 		t.Fatalf("expected server role for wrapped command, got %q", got)
 	}
-	if got := detectUnitRole("ExecStart=/usr/bin/env ABC=1 /usr/local/bin/tungo c --log-level debug\n"); got != domain.UnitRoleClient {
+	if got := domain.DetectUnitRole("ExecStart=/usr/bin/env ABC=1 /usr/local/bin/tungo c --log-level debug\n"); got != domain.UnitRoleClient {
 		t.Fatalf("expected client role for command with extra args, got %q", got)
 	}
-	if got := detectUnitRole("ExecStart=/usr/bin/other\n"); got != domain.UnitRoleUnknown {
+	if got := domain.DetectUnitRole("ExecStart=/usr/bin/other\n"); got != domain.UnitRoleUnknown {
 		t.Fatalf("expected unknown role, got %q", got)
 	}
-	if got := detectUnitRole("ExecStart=\n"); got != domain.UnitRoleUnknown {
+	if got := domain.DetectUnitRole("ExecStart=\n"); got != domain.UnitRoleUnknown {
 		t.Fatalf("expected unknown role for empty exec start, got %q", got)
 	}
-	if got := detectUnitRoleFromExecStart("{ path=/usr/local/bin/tungo ; argv[]=/usr/local/bin/tungo ; argv[]=s ; }"); got != domain.UnitRoleServer {
+	if got := domain.DetectUnitRoleFromExecStart("{ path=/usr/local/bin/tungo ; argv[]=/usr/local/bin/tungo ; argv[]=s ; }"); got != domain.UnitRoleServer {
 		t.Fatalf("expected server role for systemctl show ExecStart, got %q", got)
 	}
-	if got := detectUnitRoleFromExecStart("{ path=/usr/local/bin/tungo ; argv[]=/usr/local/bin/tungo ; argv[]=c ; }"); got != domain.UnitRoleClient {
+	if got := domain.DetectUnitRoleFromExecStart("{ path=/usr/local/bin/tungo ; argv[]=/usr/local/bin/tungo ; argv[]=c ; }"); got != domain.UnitRoleClient {
 		t.Fatalf("expected client role for systemctl show ExecStart, got %q", got)
 	}
 }

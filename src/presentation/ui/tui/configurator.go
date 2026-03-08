@@ -27,6 +27,19 @@ type unifiedSessionHandle interface {
 	Close()
 }
 
+type systemdInstaller interface {
+	Supported() bool
+	InstallServerUnit() (string, error)
+	InstallClientUnit() (string, error)
+	RemoveUnit() error
+	IsUnitActive() (bool, error)
+	StopUnit() error
+	StartUnit() error
+	EnableUnit() error
+	DisableUnit() error
+	Status() (systemdDomain.UnitStatus, error)
+}
+
 // sessionHolder shares session state between Configurator and runtimeBackend.
 // Both hold a pointer to the same holder; when either clears handle, the other sees it.
 type sessionHolder struct {
@@ -38,7 +51,7 @@ var newUnifiedSession = func(ctx context.Context, opts bubbleTea.ConfiguratorSes
 	return bubbleTea.NewUnifiedSession(ctx, opts)
 }
 
-var newSystemdInstaller = func() systemd.Installer {
+var newSystemdInstaller = func() systemdInstaller {
 	return systemd.NewUnitInstaller(exec_commander.NewExecCommander())
 }
 
@@ -166,7 +179,7 @@ func (p *Configurator) configureContinuous(ctx context.Context) (mode.Mode, erro
 			if err != nil {
 				return false, err
 			}
-			return systemd.ActiveStateBlocksRuntimeStart(status.ActiveState), nil
+			return systemdDomain.ActiveStateBlocksRuntimeStart(status.ActiveState), nil
 		}
 		configOpts.StopSystemdUnit = systemdInstaller.StopUnit
 		configOpts.StartSystemdUnit = systemdInstaller.StartUnit

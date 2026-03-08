@@ -16,6 +16,7 @@ import (
 	"tungo/domain/mode"
 	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
 	serverConfiguration "tungo/infrastructure/PAL/configuration/server"
+	systemdDomain "tungo/infrastructure/PAL/service_management/linux/systemd/domain"
 	"tungo/infrastructure/cryptography/primitives"
 
 	"charm.land/bubbles/v2/textarea"
@@ -1631,8 +1632,11 @@ func daemonDerivedRole(status SystemdDaemonStatus, execStart string) (string, st
 }
 
 func daemonStateBlocksRuntimeStart(activeState string) bool {
-	switch normalizeDaemonStateField(activeState) {
-	case "active", "reloading", "activating", "deactivating":
+	switch systemdDomain.UnitActiveState(normalizeDaemonStateField(activeState)) {
+	case systemdDomain.UnitActiveStateActive,
+		systemdDomain.UnitActiveStateReloading,
+		systemdDomain.UnitActiveStateActivating,
+		systemdDomain.UnitActiveStateDeactivating:
 		return true
 	default:
 		return false
@@ -1640,8 +1644,8 @@ func daemonStateBlocksRuntimeStart(activeState string) bool {
 }
 
 func daemonStateAllowsStart(activeState string) bool {
-	switch normalizeDaemonStateField(activeState) {
-	case "inactive", "failed":
+	switch systemdDomain.UnitActiveState(normalizeDaemonStateField(activeState)) {
+	case systemdDomain.UnitActiveStateInactive, systemdDomain.UnitActiveStateFailed:
 		return true
 	default:
 		return false
@@ -1649,11 +1653,11 @@ func daemonStateAllowsStart(activeState string) bool {
 }
 
 func daemonUnitFileStateIsEnabled(unitFileState string) bool {
-	return normalizeDaemonStateField(unitFileState) == "enabled"
+	return systemdDomain.UnitFileState(normalizeDaemonStateField(unitFileState)) == systemdDomain.UnitFileStateEnabled
 }
 
 func daemonUnitFileStateIsDisabled(unitFileState string) bool {
-	return normalizeDaemonStateField(unitFileState) == "disabled"
+	return systemdDomain.UnitFileState(normalizeDaemonStateField(unitFileState)) == systemdDomain.UnitFileStateDisabled
 }
 
 func (m configuratorSessionModel) leaveDaemonManageScreen() configuratorSessionModel {

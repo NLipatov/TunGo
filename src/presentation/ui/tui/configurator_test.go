@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"tungo/domain/mode"
-	"tungo/infrastructure/PAL/service_management/linux/systemd"
 	systemdDomain "tungo/infrastructure/PAL/service_management/linux/systemd/domain"
 	bubbleTea "tungo/presentation/ui/tui/internal/bubble_tea"
 	selectorContract "tungo/presentation/ui/tui/internal/ui/contracts/selector"
@@ -343,7 +342,7 @@ func withMockNewUnifiedSession(t *testing.T, factory func(context.Context, bubbl
 	t.Cleanup(func() { newUnifiedSession = prev })
 }
 
-func withMockNewSystemdInstaller(t *testing.T, factory func() systemd.Installer) {
+func withMockNewSystemdInstaller(t *testing.T, factory func() systemdInstaller) {
 	t.Helper()
 	prev := newSystemdInstaller
 	newSystemdInstaller = factory
@@ -547,7 +546,7 @@ func TestConfigureContinuous_SystemdSupported_WiresCallbacks(t *testing.T) {
 			FragmentPath:  "/etc/systemd/system/tungo.service",
 		},
 	}
-	withMockNewSystemdInstaller(t, func() systemd.Installer { return installer })
+	withMockNewSystemdInstaller(t, func() systemdInstaller { return installer })
 
 	var captured bubbleTea.ConfiguratorSessionOptions
 	withMockNewUnifiedSession(t, func(_ context.Context, opts bubbleTea.ConfiguratorSessionOptions) (unifiedSessionHandle, error) {
@@ -624,7 +623,7 @@ func TestConfigureContinuous_SystemdUnsupported_DoesNotWireCallbacks(t *testing.
 	c.serverSupported = true
 
 	installer := &systemdInstallerStub{supported: false}
-	withMockNewSystemdInstaller(t, func() systemd.Installer { return installer })
+	withMockNewSystemdInstaller(t, func() systemdInstaller { return installer })
 
 	var captured bubbleTea.ConfiguratorSessionOptions
 	withMockNewUnifiedSession(t, func(_ context.Context, opts bubbleTea.ConfiguratorSessionOptions) (unifiedSessionHandle, error) {

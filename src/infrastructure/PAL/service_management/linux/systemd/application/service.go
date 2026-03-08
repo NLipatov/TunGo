@@ -13,20 +13,13 @@ type Commander interface {
 	Run(name string, args ...string) error
 }
 
-type Config struct {
-	RuntimeDir string
-	UnitPath   string
-	UnitName   string
-	BinaryPath string
-}
-
 type Service struct {
 	commander Commander
 	hooks     infrastructure.Hooks
-	config    Config
+	config    infrastructure.Config
 }
 
-func NewService(commander Commander, hooks infrastructure.Hooks, config Config) *Service {
+func NewService(commander Commander, hooks infrastructure.Hooks, config infrastructure.Config) *Service {
 	return &Service{commander: commander, hooks: hooks, config: config}
 }
 

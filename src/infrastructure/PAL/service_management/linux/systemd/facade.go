@@ -11,13 +11,17 @@ import (
 // UnitInstaller is a compatibility facade for callers using package systemd.
 type UnitInstaller struct {
 	commander exec_commander.Commander
+	config    infra.Config
 }
 
-func NewUnitInstaller(commander exec_commander.Commander) Installer {
+func NewUnitInstaller(commander exec_commander.Commander) *UnitInstaller {
 	if commander == nil {
 		commander = exec_commander.NewExecCommander()
 	}
-	return &UnitInstaller{commander: commander}
+	return &UnitInstaller{
+		commander: commander,
+		config:    defaultSystemdConfig,
+	}
 }
 
 func (i *UnitInstaller) Supported() bool {
@@ -60,14 +64,9 @@ func (i *UnitInstaller) Status() (domain.UnitStatus, error) {
 	return i.presenter().Status()
 }
 
-func (i *UnitInstaller) presenter() *presentation.InstallerFacade {
-	service := app.NewService(i.commander, i.hooks(), app.Config{
-		RuntimeDir: systemdRuntimeDir,
-		UnitPath:   systemdUnitPath,
-		UnitName:   systemdUnitName,
-		BinaryPath: tungoBinaryPath,
-	})
-	return presentation.NewInstallerFacade(service)
+func (i *UnitInstaller) presenter() *presentation.Systemd {
+	service := app.NewService(i.commander, i.hooks(), i.config)
+	return presentation.NewSystemd(service)
 }
 
 func (i *UnitInstaller) hooks() infra.Hooks {

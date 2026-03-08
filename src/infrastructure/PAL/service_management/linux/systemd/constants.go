@@ -3,13 +3,17 @@ package systemd
 import (
 	"os"
 	"os/exec"
+
+	infra "tungo/infrastructure/PAL/service_management/linux/systemd/infrastructure"
 )
 
-const (
-	systemdRuntimeDir = "/run/systemd/system"
-	systemdUnitPath   = "/etc/systemd/system/tungo.service"
-	systemdUnitName   = "tungo.service"
-	tungoBinaryPath   = "/usr/local/bin/tungo"
+var defaultSystemdConfig = infra.DefaultConfig()
+
+var (
+	systemdRuntimeDir = defaultSystemdConfig.RuntimeDir
+	systemdUnitPath   = defaultSystemdConfig.UnitPath
+	systemdUnitName   = defaultSystemdConfig.UnitName
+	tungoBinaryPath   = defaultSystemdConfig.BinaryPath
 )
 
 var (
