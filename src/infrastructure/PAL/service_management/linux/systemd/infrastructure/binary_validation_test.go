@@ -3,6 +3,7 @@ package infrastructure
 import (
 	"errors"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -37,8 +38,13 @@ func TestValidateTungoBinaryForSystemd(t *testing.T) {
 	t.Run("missing", func(t *testing.T) {
 		h := baseHooks
 		h.Lstat = func(string) (os.FileInfo, error) { return nil, os.ErrNotExist }
-		if err := ValidateTungoBinaryForSystemd(h, binaryPath); err == nil {
+		customPath := "/opt/tungo/bin/tungo"
+		err := ValidateTungoBinaryForSystemd(h, customPath)
+		if err == nil {
 			t.Fatal("expected error")
+		}
+		if !strings.Contains(err.Error(), customPath) {
+			t.Fatalf("expected error to mention custom binary path %q, got %q", customPath, err.Error())
 		}
 	})
 

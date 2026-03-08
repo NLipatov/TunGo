@@ -11,7 +11,7 @@ func ValidateTungoBinaryForSystemd(h Hooks, binaryPath string) error {
 	info, err := h.Lstat(binaryPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return errors.New("tungo executable is not installed at /usr/local/bin/tungo; install it using the official Linux guide")
+			return fmt.Errorf("tungo executable is not installed at %s; install it using the official Linux guide", binaryPath)
 		}
 		return fmt.Errorf("failed to lstat %s: %w", binaryPath, err)
 	}
