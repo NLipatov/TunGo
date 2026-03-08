@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"tungo/infrastructure/PAL/service_management/linux/systemd/domain"
 )
 
 type mockCommander struct {
@@ -1122,12 +1124,12 @@ func TestStatus_NotInstalled_ReturnsDefaults(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if status.Installed ||
-		status.UnitFileState != UnitFileStateDisabled ||
-		status.ActiveState != UnitActiveStateInactive ||
-		status.LoadState != UnitLoadStateNotFound {
+		status.UnitFileState != domain.UnitFileStateDisabled ||
+		status.ActiveState != domain.UnitActiveStateInactive ||
+		status.LoadState != domain.UnitLoadStateNotFound {
 		t.Fatalf("expected empty status for missing unit, got %+v", status)
 	}
-	if status.Role != UnitRoleUnknown {
+	if status.Role != domain.UnitRoleUnknown {
 		t.Fatalf("expected unknown role, got %q", status.Role)
 	}
 	if len(cmd.combinedOutputCalls) == 0 || len(cmd.runCalls) != 0 {
@@ -1164,11 +1166,11 @@ func TestStatus_InstalledEnabledActiveClient(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !status.Installed ||
-		status.UnitFileState != UnitFileStateEnabled ||
-		status.ActiveState != UnitActiveStateActive {
+		status.UnitFileState != domain.UnitFileStateEnabled ||
+		status.ActiveState != domain.UnitActiveStateActive {
 		t.Fatalf("expected installed+enabled+active states, got %+v", status)
 	}
-	if status.Role != UnitRoleClient {
+	if status.Role != domain.UnitRoleClient {
 		t.Fatalf("expected client role, got %q", status.Role)
 	}
 }
@@ -1201,7 +1203,7 @@ func TestStatus_InstalledEnabledActivatingClient_IsNotActive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if status.ActiveState != UnitActiveStateActivating {
+	if status.ActiveState != domain.UnitActiveStateActivating {
 		t.Fatalf("expected activating active-state, got %+v", status)
 	}
 }
@@ -1237,10 +1239,10 @@ func TestStatus_InstalledDisabledInactiveServer(t *testing.T) {
 	if !status.Installed {
 		t.Fatalf("expected installed status, got %+v", status)
 	}
-	if status.UnitFileState != UnitFileStateDisabled || status.ActiveState != UnitActiveStateInactive {
+	if status.UnitFileState != domain.UnitFileStateDisabled || status.ActiveState != domain.UnitActiveStateInactive {
 		t.Fatalf("expected disabled+inactive states, got %+v", status)
 	}
-	if status.Role != UnitRoleServer {
+	if status.Role != domain.UnitRoleServer {
 		t.Fatalf("expected server role, got %q", status.Role)
 	}
 }
@@ -1276,13 +1278,13 @@ func TestStatus_InstalledPreservesRawSystemdStates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if status.UnitFileState != UnitFileState("static") {
+	if status.UnitFileState != domain.UnitFileState("static") {
 		t.Fatalf("expected raw unit-file state static, got %q", status.UnitFileState)
 	}
-	if status.ActiveState != UnitActiveStateDeactivating {
+	if status.ActiveState != domain.UnitActiveStateDeactivating {
 		t.Fatalf("expected active-state deactivating, got %q", status.ActiveState)
 	}
-	if status.LoadState != UnitLoadStateLoaded ||
+	if status.LoadState != domain.UnitLoadStateLoaded ||
 		status.SubState != "stop-sigterm" ||
 		status.Result != "exit-code" ||
 		status.ExecMainStatus != "203" ||
@@ -1450,7 +1452,7 @@ func TestStatus_ReadUnitFailure_DoesNotFail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected status to succeed when unit file is unreadable, got %v", err)
 	}
-	if status.Role != UnitRoleClient {
+	if status.Role != domain.UnitRoleClient {
 		t.Fatalf("expected role from ExecStart fallback, got %q", status.Role)
 	}
 }
@@ -1548,34 +1550,34 @@ func TestRemoveUnit_FailsOnDaemonReloadError(t *testing.T) {
 }
 
 func TestDetectUnitRole(t *testing.T) {
-	if got := detectUnitRole("ExecStart=tungo c\n"); got != UnitRoleClient {
+	if got := detectUnitRole("ExecStart=tungo c\n"); got != domain.UnitRoleClient {
 		t.Fatalf("expected client role, got %q", got)
 	}
-	if got := detectUnitRole("ExecStart=tungo s\n"); got != UnitRoleServer {
+	if got := detectUnitRole("ExecStart=tungo s\n"); got != domain.UnitRoleServer {
 		t.Fatalf("expected server role, got %q", got)
 	}
-	if got := detectUnitRole("ExecStart=/usr/local/bin/tungo c\n"); got != UnitRoleClient {
+	if got := detectUnitRole("ExecStart=/usr/local/bin/tungo c\n"); got != domain.UnitRoleClient {
 		t.Fatalf("expected client role for absolute path, got %q", got)
 	}
-	if got := detectUnitRole("ExecStart=/usr/local/bin/tungo s\n"); got != UnitRoleServer {
+	if got := detectUnitRole("ExecStart=/usr/local/bin/tungo s\n"); got != domain.UnitRoleServer {
 		t.Fatalf("expected server role for absolute path, got %q", got)
 	}
-	if got := detectUnitRole("ExecStart=/usr/bin/env tungo s --foreground\n"); got != UnitRoleServer {
+	if got := detectUnitRole("ExecStart=/usr/bin/env tungo s --foreground\n"); got != domain.UnitRoleServer {
 		t.Fatalf("expected server role for wrapped command, got %q", got)
 	}
-	if got := detectUnitRole("ExecStart=/usr/bin/env ABC=1 /usr/local/bin/tungo c --log-level debug\n"); got != UnitRoleClient {
+	if got := detectUnitRole("ExecStart=/usr/bin/env ABC=1 /usr/local/bin/tungo c --log-level debug\n"); got != domain.UnitRoleClient {
 		t.Fatalf("expected client role for command with extra args, got %q", got)
 	}
-	if got := detectUnitRole("ExecStart=/usr/bin/other\n"); got != UnitRoleUnknown {
+	if got := detectUnitRole("ExecStart=/usr/bin/other\n"); got != domain.UnitRoleUnknown {
 		t.Fatalf("expected unknown role, got %q", got)
 	}
-	if got := detectUnitRole("ExecStart=\n"); got != UnitRoleUnknown {
+	if got := detectUnitRole("ExecStart=\n"); got != domain.UnitRoleUnknown {
 		t.Fatalf("expected unknown role for empty exec start, got %q", got)
 	}
-	if got := detectUnitRoleFromExecStart("{ path=/usr/local/bin/tungo ; argv[]=/usr/local/bin/tungo ; argv[]=s ; }"); got != UnitRoleServer {
+	if got := detectUnitRoleFromExecStart("{ path=/usr/local/bin/tungo ; argv[]=/usr/local/bin/tungo ; argv[]=s ; }"); got != domain.UnitRoleServer {
 		t.Fatalf("expected server role for systemctl show ExecStart, got %q", got)
 	}
-	if got := detectUnitRoleFromExecStart("{ path=/usr/local/bin/tungo ; argv[]=/usr/local/bin/tungo ; argv[]=c ; }"); got != UnitRoleClient {
+	if got := detectUnitRoleFromExecStart("{ path=/usr/local/bin/tungo ; argv[]=/usr/local/bin/tungo ; argv[]=c ; }"); got != domain.UnitRoleClient {
 		t.Fatalf("expected client role for systemctl show ExecStart, got %q", got)
 	}
 }

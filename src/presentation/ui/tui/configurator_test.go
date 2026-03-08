@@ -6,7 +6,8 @@ import (
 	"testing"
 
 	"tungo/domain/mode"
-	"tungo/infrastructure/PAL/systemd"
+	"tungo/infrastructure/PAL/service_management/linux/systemd"
+	systemdDomain "tungo/infrastructure/PAL/service_management/linux/systemd/domain"
 	bubbleTea "tungo/presentation/ui/tui/internal/bubble_tea"
 	selectorContract "tungo/presentation/ui/tui/internal/ui/contracts/selector"
 )
@@ -352,7 +353,7 @@ func withMockNewSystemdInstaller(t *testing.T, factory func() systemd.Installer)
 type systemdInstallerStub struct {
 	supported bool
 
-	statusRet systemd.UnitStatus
+	statusRet systemdDomain.UnitStatus
 	statusErr error
 
 	installServerPath string
@@ -391,7 +392,7 @@ func (s *systemdInstallerStub) StopUnit() error    { return s.stopErr }
 func (s *systemdInstallerStub) StartUnit() error   { return s.startErr }
 func (s *systemdInstallerStub) EnableUnit() error  { return s.enableErr }
 func (s *systemdInstallerStub) DisableUnit() error { return s.disableErr }
-func (s *systemdInstallerStub) Status() (systemd.UnitStatus, error) {
+func (s *systemdInstallerStub) Status() (systemdDomain.UnitStatus, error) {
 	return s.statusRet, s.statusErr
 }
 
@@ -536,12 +537,12 @@ func TestConfigureContinuous_SystemdSupported_WiresCallbacks(t *testing.T) {
 
 	installer := &systemdInstallerStub{
 		supported: true,
-		statusRet: systemd.UnitStatus{
+		statusRet: systemdDomain.UnitStatus{
 			Installed:     true,
 			Managed:       true,
 			UnitFileState: "enabled",
 			ActiveState:   "active",
-			Role:          systemd.UnitRoleServer,
+			Role:          systemdDomain.UnitRoleServer,
 			ExecStart:     "/usr/local/bin/tungo s",
 			FragmentPath:  "/etc/systemd/system/tungo.service",
 		},
@@ -592,7 +593,7 @@ func TestConfigureContinuous_SystemdSupported_WiresCallbacks(t *testing.T) {
 		t.Fatalf("unexpected mapped daemon status: %+v", status)
 	}
 
-	installer.statusRet.Role = systemd.UnitRoleClient
+	installer.statusRet.Role = systemdDomain.UnitRoleClient
 	status, err = captured.GetSystemdDaemonStatus()
 	if err != nil {
 		t.Fatalf("unexpected status error: %v", err)
@@ -601,7 +602,7 @@ func TestConfigureContinuous_SystemdSupported_WiresCallbacks(t *testing.T) {
 		t.Fatalf("expected mapped client mode, got %v", status.Mode)
 	}
 
-	installer.statusRet.Role = systemd.UnitRoleUnknown
+	installer.statusRet.Role = systemdDomain.UnitRoleUnknown
 	status, err = captured.GetSystemdDaemonStatus()
 	if err != nil {
 		t.Fatalf("unexpected status error: %v", err)

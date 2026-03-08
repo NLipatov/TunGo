@@ -8,7 +8,8 @@ import (
 	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/PAL/exec_commander"
-	"tungo/infrastructure/PAL/systemd"
+	"tungo/infrastructure/PAL/service_management/linux/systemd"
+	systemdDomain "tungo/infrastructure/PAL/service_management/linux/systemd/domain"
 	bubbleTea "tungo/presentation/ui/tui/internal/bubble_tea"
 	"tungo/presentation/ui/tui/internal/ui/contracts/selector"
 	"tungo/presentation/ui/tui/internal/ui/contracts/text_area"
@@ -140,9 +141,9 @@ func (p *Configurator) configureContinuous(ctx context.Context) (mode.Mode, erro
 			}
 			daemonMode := mode.Unknown
 			switch status.Role {
-			case systemd.UnitRoleClient:
+			case systemdDomain.UnitRoleClient:
 				daemonMode = mode.Client
-			case systemd.UnitRoleServer:
+			case systemdDomain.UnitRoleServer:
 				daemonMode = mode.Server
 			}
 			return bubbleTea.SystemdDaemonStatus{
