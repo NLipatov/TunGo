@@ -12,4 +12,8 @@ func TestRequireAdminPrivileges(t *testing.T) {
 	if err := RequireAdminPrivileges(hooks); err == nil {
 		t.Fatal("expected error for non-root")
 	}
+
+	if err := RequireAdminPrivileges(Hooks{}); err == nil {
+		t.Fatal("expected error when geteuid hook is unset")
+	}
 }

@@ -175,11 +175,7 @@ func (p *Configurator) configureContinuous(ctx context.Context) (mode.Mode, erro
 		}
 		configOpts.InstallClientSystemdUnit = systemdInstaller.InstallClientUnit
 		configOpts.CheckSystemdUnitActive = func() (bool, error) {
-			status, err := systemdInstaller.Status()
-			if err != nil {
-				return false, err
-			}
-			return systemdDomain.ActiveStateBlocksRuntimeStart(status.ActiveState), nil
+			return systemdInstaller.IsUnitActive()
 		}
 		configOpts.StopSystemdUnit = systemdInstaller.StopUnit
 		configOpts.StartSystemdUnit = systemdInstaller.StartUnit

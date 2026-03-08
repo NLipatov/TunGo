@@ -354,14 +354,16 @@ type systemdInstallerStub struct {
 
 	statusRet systemdDomain.UnitStatus
 	statusErr error
+	statusCalls int
 
 	installServerPath string
 	installServerErr  error
 	installClientPath string
 	installClientErr  error
 
-	activeRet bool
-	activeErr error
+	activeRet   bool
+	activeErr   error
+	activeCalls int
 
 	stopErr    error
 	startErr   error
@@ -385,6 +387,7 @@ func (s *systemdInstallerStub) InstallClientUnit() (string, error) {
 }
 func (s *systemdInstallerStub) RemoveUnit() error { return s.removeErr }
 func (s *systemdInstallerStub) IsUnitActive() (bool, error) {
+	s.activeCalls++
 	return s.activeRet, s.activeErr
 }
 func (s *systemdInstallerStub) StopUnit() error    { return s.stopErr }
@@ -392,6 +395,7 @@ func (s *systemdInstallerStub) StartUnit() error   { return s.startErr }
 func (s *systemdInstallerStub) EnableUnit() error  { return s.enableErr }
 func (s *systemdInstallerStub) DisableUnit() error { return s.disableErr }
 func (s *systemdInstallerStub) Status() (systemdDomain.UnitStatus, error) {
+	s.statusCalls++
 	return s.statusRet, s.statusErr
 }
 
@@ -576,6 +580,21 @@ func TestConfigureContinuous_SystemdSupported_WiresCallbacks(t *testing.T) {
 	}
 	if captured.InstallServerSystemdUnit == nil {
 		t.Fatal("expected server unit installer wired when server is supported")
+	}
+
+	installer.activeRet = true
+	active, err := captured.CheckSystemdUnitActive()
+	if err != nil {
+		t.Fatalf("unexpected active-check error: %v", err)
+	}
+	if !active {
+		t.Fatal("expected active check to reflect installer IsUnitActive result")
+	}
+	if installer.activeCalls != 1 {
+		t.Fatalf("expected exactly one IsUnitActive call, got %d", installer.activeCalls)
+	}
+	if installer.statusCalls != 0 {
+		t.Fatalf("expected active check to avoid Status calls, got %d", installer.statusCalls)
 	}
 
 	status, err := captured.GetSystemdDaemonStatus()
