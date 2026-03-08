@@ -193,6 +193,9 @@ func TestMainTabView_DaemonManage_SeparatesStatusAndActions(t *testing.T) {
 	if !strings.Contains(view, "test notice") {
 		t.Fatalf("expected daemon notice in body, got: %s", view)
 	}
+	if !strings.Contains(view, "Tab switch tabs") {
+		t.Fatalf("expected daemon manage hint to include tab navigation, got: %s", view)
+	}
 }
 
 func TestUpdateDaemonManageScreen_NotInstalled_ShowsSetupOptions(t *testing.T) {
@@ -287,11 +290,15 @@ func TestUpdateDaemonManageScreen_SetupClient_InstallsUnit(t *testing.T) {
 	model.screen = configuratorScreenDaemonManage
 	model.daemon.menuOptions = []string{sessionDaemonSetupClient}
 	model.cursor = 0
+	model.notice = "stale error"
 
 	updatedModel, _ := model.updateDaemonManageScreen(keyNamed(tea.KeyEnter))
 	updated := updatedModel.(configuratorSessionModel)
 	if installCalls != 1 {
 		t.Fatalf("expected one install call, got %d", installCalls)
+	}
+	if updated.notice != "" {
+		t.Fatalf("expected stale notice to be cleared after successful setup, got %q", updated.notice)
 	}
 	if strings.Contains(updated.notice, "daemon configured") || strings.Contains(updated.notice, "daemon reconfigured") {
 		t.Fatalf("expected no setup/reconfigure notice, got %q", updated.notice)
@@ -343,6 +350,7 @@ func TestUpdateDaemonManageScreen_ReconfigureInactive_AppliesImmediately(t *test
 	model.screen = configuratorScreenDaemonManage
 	model.refreshDaemonStatus()
 	model.cursor = indexOfString(model.daemon.menuOptions, sessionDaemonReconfServer)
+	model.notice = "previous failure"
 	if model.cursor < 0 {
 		t.Fatalf("missing %q in %v", sessionDaemonReconfServer, model.daemon.menuOptions)
 	}
@@ -354,6 +362,9 @@ func TestUpdateDaemonManageScreen_ReconfigureInactive_AppliesImmediately(t *test
 	}
 	if updated.screen != configuratorScreenDaemonManage {
 		t.Fatalf("expected to stay on daemon manage screen, got %v", updated.screen)
+	}
+	if updated.notice != "" {
+		t.Fatalf("expected stale notice to be cleared after successful reconfigure, got %q", updated.notice)
 	}
 	if strings.Contains(updated.notice, "daemon configured") || strings.Contains(updated.notice, "daemon reconfigured") {
 		t.Fatalf("expected no setup/reconfigure notice, got %q", updated.notice)
@@ -1439,6 +1450,25 @@ func TestStartModeWithSystemdGuard_CoversBranches(t *testing.T) {
 		}
 	})
 
+	t.Run("active daemon with stop unavailable blocks start", func(t *testing.T) {
+		opts := defaultConfiguratorOpts()
+		opts.CheckSystemdUnitActive = func() (bool, error) { return true, nil }
+		model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		updated := model.startModeWithSystemdGuard(mode.Server, configuratorScreenServerSelect, false)
+		if updated.done {
+			t.Fatal("expected start to be blocked when stop is unavailable")
+		}
+		if updated.screen != configuratorScreenServerSelect {
+			t.Fatalf("expected return to server screen, got %v", updated.screen)
+		}
+		if !strings.Contains(updated.notice, "stopping it is unavailable") {
+			t.Fatalf("expected unavailable-stop notice, got %q", updated.notice)
+		}
+	})
+
 	t.Run("active daemon clears notice when not preserving", func(t *testing.T) {
 		opts := defaultConfiguratorOpts()
 		opts.CheckSystemdUnitActive = func() (bool, error) { return true, nil }
@@ -1631,6 +1661,9 @@ func TestMainTabView_DaemonConfirmScreens_ShowExpectedLabels(t *testing.T) {
 	clientView := model.mainTabView()
 	if !strings.Contains(clientView, "requires restart") || !strings.Contains(clientView, "client daemon setup") {
 		t.Fatalf("expected client reconfigure label in view, got: %s", clientView)
+	}
+	if !strings.Contains(clientView, "Tab switch tabs") {
+		t.Fatalf("expected reconfigure confirm hint to include tab navigation, got: %s", clientView)
 	}
 
 	model.pendingDaemonMode = mode.Server

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -444,6 +445,42 @@ func TestInstallUnit_FailsWhenSystemctlCommandFails(t *testing.T) {
 	}
 }
 
+func TestInstallUnit_DaemonReloadFailure_RollsBackWrittenUnit(t *testing.T) {
+	withSystemdHooks(
+		t,
+		func(string) (os.FileInfo, error) { return nil, nil },
+		func(name string) (string, error) {
+			if name == "systemctl" {
+				return "/bin/systemctl", nil
+			}
+			if name == "tungo" {
+				return "/usr/local/bin/tungo", nil
+			}
+			return "", exec.ErrNotFound
+		},
+		func(string, []byte, os.FileMode) error { return nil },
+	)
+	removedPath := ""
+	removePath = func(path string) error {
+		removedPath = path
+		return nil
+	}
+	cmd := &mockCommander{
+		runErrByArg: map[string]error{
+			"daemon-reload": errors.New("reload failed"),
+		},
+	}
+	installer := NewUnitInstaller(cmd)
+
+	_, err := installer.InstallClientUnit()
+	if err == nil || !strings.Contains(err.Error(), "daemon-reload") {
+		t.Fatalf("expected daemon-reload error, got %v", err)
+	}
+	if removedPath != systemdUnitPath {
+		t.Fatalf("expected rollback remove path %q, got %q", systemdUnitPath, removedPath)
+	}
+}
+
 func TestInstallUnit_FailsWhenSystemdUnsupported(t *testing.T) {
 	withSystemdHooks(
 		t,
@@ -498,6 +535,42 @@ func TestInstallUnit_FailsWhenEnableFails(t *testing.T) {
 	_, err := installer.InstallClientUnit()
 	if err == nil || !strings.Contains(err.Error(), "systemctl enable") {
 		t.Fatalf("expected enable error, got %v", err)
+	}
+}
+
+func TestInstallUnit_EnableFailure_RollsBackWrittenUnit(t *testing.T) {
+	withSystemdHooks(
+		t,
+		func(string) (os.FileInfo, error) { return nil, nil },
+		func(name string) (string, error) {
+			if name == "systemctl" {
+				return "/bin/systemctl", nil
+			}
+			if name == "tungo" {
+				return "/usr/local/bin/tungo", nil
+			}
+			return "", exec.ErrNotFound
+		},
+		func(string, []byte, os.FileMode) error { return nil },
+	)
+	removedPath := ""
+	removePath = func(path string) error {
+		removedPath = path
+		return nil
+	}
+	cmd := &mockCommander{
+		runErrByArg: map[string]error{
+			"enable": errors.New("enable failed"),
+		},
+	}
+	installer := NewUnitInstaller(cmd)
+
+	_, err := installer.InstallClientUnit()
+	if err == nil || !strings.Contains(err.Error(), "systemctl enable") {
+		t.Fatalf("expected enable error, got %v", err)
+	}
+	if removedPath != systemdUnitPath {
+		t.Fatalf("expected rollback remove path %q, got %q", systemdUnitPath, removedPath)
 	}
 }
 
@@ -994,12 +1067,7 @@ func TestPrivilegedOperations_FailWithoutAdminRights(t *testing.T) {
 func TestStatus_NotInstalled_ReturnsDefaults(t *testing.T) {
 	withSystemdHooks(
 		t,
-		func(path string) (os.FileInfo, error) {
-			if path == systemdUnitPath {
-				return nil, os.ErrNotExist
-			}
-			return nil, nil
-		},
+		func(string) (os.FileInfo, error) { return nil, nil },
 		func(name string) (string, error) {
 			if name == "systemctl" {
 				return "/bin/systemctl", nil
@@ -1011,7 +1079,15 @@ func TestStatus_NotInstalled_ReturnsDefaults(t *testing.T) {
 		},
 		func(string, []byte, os.FileMode) error { return nil },
 	)
-	cmd := &mockCommander{}
+	cmd := &mockCommander{
+		combinedOutputByArg: map[string]mockCombinedOutputResult{
+			"is-enabled": {output: []byte("disabled\n"), err: commandExitError(t, 4)},
+			"is-active":  {output: []byte("inactive\n"), err: commandExitError(t, 4)},
+			"show": {
+				output: []byte("LoadState=not-found\nActiveState=inactive\nSubState=dead\nResult=success\nExecMainStatus=0\nExecStart=\n"),
+			},
+		},
+	}
 	installer := NewUnitInstaller(cmd)
 
 	status, err := installer.Status()
@@ -1027,8 +1103,8 @@ func TestStatus_NotInstalled_ReturnsDefaults(t *testing.T) {
 	if status.Role != UnitRoleUnknown {
 		t.Fatalf("expected unknown role, got %q", status.Role)
 	}
-	if len(cmd.combinedOutputCalls) != 0 || len(cmd.runCalls) != 0 {
-		t.Fatalf("expected no systemctl calls for missing unit, got run=%v combined=%v", cmd.runCalls, cmd.combinedOutputCalls)
+	if len(cmd.combinedOutputCalls) == 0 || len(cmd.runCalls) != 0 {
+		t.Fatalf("expected status probing systemctl calls for missing unit, got run=%v combined=%v", cmd.runCalls, cmd.combinedOutputCalls)
 	}
 }
 
@@ -1229,15 +1305,10 @@ func TestStatus_FailsWhenSystemdUnsupported(t *testing.T) {
 	}
 }
 
-func TestStatus_FailsOnUnitStatError(t *testing.T) {
+func TestStatus_FailsWhenShowFails(t *testing.T) {
 	withSystemdHooks(
 		t,
-		func(path string) (os.FileInfo, error) {
-			if path == systemdUnitPath {
-				return nil, errors.New("permission denied")
-			}
-			return nil, nil
-		},
+		func(string) (os.FileInfo, error) { return nil, nil },
 		func(name string) (string, error) {
 			if name == "systemctl" {
 				return "/bin/systemctl", nil
@@ -1246,10 +1317,16 @@ func TestStatus_FailsOnUnitStatError(t *testing.T) {
 		},
 		func(string, []byte, os.FileMode) error { return nil },
 	)
-	installer := NewUnitInstaller(&mockCommander{})
+	installer := NewUnitInstaller(&mockCommander{
+		combinedOutputByArg: map[string]mockCombinedOutputResult{
+			"is-enabled": {output: []byte("enabled\n")},
+			"is-active":  {output: []byte("active\n")},
+			"show":       {err: errors.New("show failed")},
+		},
+	})
 	_, err := installer.Status()
-	if err == nil || !strings.Contains(err.Error(), "failed to stat") {
-		t.Fatalf("expected stat error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "systemctl show") {
+		t.Fatalf("expected show error, got %v", err)
 	}
 }
 
@@ -1279,7 +1356,7 @@ func TestStatus_FailsWhenIsActiveFails(t *testing.T) {
 	}
 }
 
-func TestStatus_FailsWhenReadUnitFails(t *testing.T) {
+func TestStatus_ReadUnitFailure_DoesNotFail(t *testing.T) {
 	withSystemdHooks(
 		t,
 		func(string) (os.FileInfo, error) { return nil, nil },
@@ -1296,12 +1373,18 @@ func TestStatus_FailsWhenReadUnitFails(t *testing.T) {
 		combinedOutputByArg: map[string]mockCombinedOutputResult{
 			"is-enabled": {output: []byte("enabled\n")},
 			"is-active":  {output: []byte("active\n")},
+			"show": {
+				output: []byte("LoadState=loaded\nActiveState=active\nSubState=running\nResult=success\nExecMainStatus=0\nExecStart=/usr/local/bin/tungo c\n"),
+			},
 		},
 	}
 	installer := NewUnitInstaller(cmd)
-	_, err := installer.Status()
-	if err == nil || !strings.Contains(err.Error(), "failed to read") {
-		t.Fatalf("expected read error, got %v", err)
+	status, err := installer.Status()
+	if err != nil {
+		t.Fatalf("expected status to succeed when unit file is unreadable, got %v", err)
+	}
+	if status.Role != UnitRoleClient {
+		t.Fatalf("expected role from ExecStart fallback, got %q", status.Role)
 	}
 }
 
@@ -1422,6 +1505,12 @@ func TestDetectUnitRole(t *testing.T) {
 	if got := detectUnitRole("ExecStart=\n"); got != UnitRoleUnknown {
 		t.Fatalf("expected unknown role for empty exec start, got %q", got)
 	}
+	if got := detectUnitRoleFromExecStart("{ path=/usr/local/bin/tungo ; argv[]=/usr/local/bin/tungo ; argv[]=s ; }"); got != UnitRoleServer {
+		t.Fatalf("expected server role for systemctl show ExecStart, got %q", got)
+	}
+	if got := detectUnitRoleFromExecStart("{ path=/usr/local/bin/tungo ; argv[]=/usr/local/bin/tungo ; argv[]=c ; }"); got != UnitRoleClient {
+		t.Fatalf("expected client role for systemctl show ExecStart, got %q", got)
+	}
 }
 
 func TestInstallUnit_FailsWhenLstatReturnsUnexpectedError(t *testing.T) {
@@ -1524,9 +1613,26 @@ func TestInstallUnit_FailsWhenOwnerCannotBeVerified(t *testing.T) {
 
 func commandExitError(t *testing.T, code int) error {
 	t.Helper()
-	err := exec.Command("sh", "-c", fmt.Sprintf("exit %d", code)).Run()
+	cmd := exec.Command(os.Args[0], "-test.run=TestCommandExitHelperProcess")
+	cmd.Env = append(
+		os.Environ(),
+		"GO_WANT_HELPER_PROCESS=1",
+		fmt.Sprintf("GO_HELPER_EXIT_CODE=%d", code),
+	)
+	err := cmd.Run()
 	if err == nil {
 		t.Fatalf("expected non-zero exit error for code %d", code)
 	}
 	return err
+}
+
+func TestCommandExitHelperProcess(t *testing.T) {
+	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
+		return
+	}
+	code, err := strconv.Atoi(os.Getenv("GO_HELPER_EXIT_CODE"))
+	if err != nil {
+		os.Exit(2)
+	}
+	os.Exit(code)
 }

@@ -155,12 +155,27 @@ func (i *UnitInstaller) installUnit(modeArg string) (string, error) {
 		return "", fmt.Errorf("failed to write %s: %w", systemdUnitPath, err)
 	}
 	if err := i.commander.Run("systemctl", "daemon-reload"); err != nil {
-		return "", fmt.Errorf("failed to run systemctl daemon-reload: %w", err)
+		return "", i.rollbackInstallUnit(fmt.Errorf("failed to run systemctl daemon-reload: %w", err))
 	}
 	if err := i.commander.Run("systemctl", "enable", systemdUnitName); err != nil {
-		return "", fmt.Errorf("failed to run systemctl enable %s: %w", systemdUnitName, err)
+		return "", i.rollbackInstallUnit(fmt.Errorf("failed to run systemctl enable %s: %w", systemdUnitName, err))
 	}
 	return systemdUnitPath, nil
+}
+
+func (i *UnitInstaller) rollbackInstallUnit(installErr error) error {
+	rollbackErrs := make([]error, 0, 2)
+	if err := removePath(systemdUnitPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		rollbackErrs = append(rollbackErrs, fmt.Errorf("failed to rollback %s: %w", systemdUnitPath, err))
+	}
+	if err := i.commander.Run("systemctl", "daemon-reload"); err != nil {
+		rollbackErrs = append(rollbackErrs, fmt.Errorf("failed to rollback systemctl daemon-reload: %w", err))
+	}
+	if len(rollbackErrs) == 0 {
+		return installErr
+	}
+	rollbackErrs = append([]error{installErr}, rollbackErrs...)
+	return errors.Join(rollbackErrs...)
 }
 
 func (i *UnitInstaller) IsUnitActive() (bool, error) {
@@ -244,16 +259,6 @@ func (i *UnitInstaller) Status() (UnitStatus, error) {
 		ExecMainStatus: "unknown",
 		ExecStart:      "unknown",
 	}
-	if _, err := statPath(systemdUnitPath); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			status.LoadState = UnitLoadStateNotFound
-			status.UnitFileState = UnitFileStateDisabled
-			status.ActiveState = UnitActiveStateInactive
-			return status, nil
-		}
-		return UnitStatus{}, fmt.Errorf("failed to stat %s: %w", systemdUnitPath, err)
-	}
-	status.Installed = true
 
 	enabledOutput, err := i.commander.CombinedOutput("systemctl", "is-enabled", systemdUnitName)
 	if err != nil {
@@ -275,7 +280,7 @@ func (i *UnitInstaller) Status() (UnitStatus, error) {
 		"systemctl",
 		"show",
 		systemdUnitName,
-		"--property=LoadState,SubState,Result,ExecMainStatus,ExecStart",
+		"--property=LoadState,ActiveState,SubState,Result,ExecMainStatus,ExecStart",
 		"--no-page",
 	)
 	if showErr != nil {
@@ -283,16 +288,35 @@ func (i *UnitInstaller) Status() (UnitStatus, error) {
 	}
 	props := parseSystemdShowProperties(showOutput)
 	status.LoadState = UnitLoadState(normalizeSystemdValue(props["LoadState"]))
+	if activeFromShow := UnitActiveState(normalizeSystemdValue(props["ActiveState"])); activeFromShow != UnitActiveStateUnknown {
+		status.ActiveState = activeFromShow
+	}
 	status.SubState = normalizeSystemdValue(props["SubState"])
 	status.Result = normalizeSystemdValue(props["Result"])
 	status.ExecMainStatus = normalizeSystemdValue(props["ExecMainStatus"])
 	status.ExecStart = normalizeSystemdRawValue(props["ExecStart"])
 
-	unitBody, err := readFilePath(systemdUnitPath)
-	if err != nil {
-		return UnitStatus{}, fmt.Errorf("failed to read %s: %w", systemdUnitPath, err)
+	switch status.LoadState {
+	case UnitLoadStateNotFound:
+		status.Installed = false
+		if status.UnitFileState == UnitFileStateUnknown {
+			status.UnitFileState = UnitFileStateDisabled
+		}
+		if status.ActiveState == UnitActiveStateUnknown {
+			status.ActiveState = UnitActiveStateInactive
+		}
+	default:
+		status.Installed = status.LoadState != UnitLoadStateUnknown ||
+			status.UnitFileState != UnitFileStateUnknown ||
+			status.ActiveState != UnitActiveStateUnknown
 	}
-	status.Role = detectUnitRole(string(unitBody))
+
+	status.Role = detectUnitRoleFromExecStart(status.ExecStart)
+	if status.Role == UnitRoleUnknown {
+		if unitBody, readErr := readFilePath(systemdUnitPath); readErr == nil {
+			status.Role = detectUnitRole(string(unitBody))
+		}
+	}
 	return status, nil
 }
 
@@ -385,27 +409,48 @@ func detectUnitRole(unitBody string) UnitRole {
 		if !strings.HasPrefix(line, "ExecStart=") {
 			continue
 		}
-		command := strings.TrimSpace(strings.TrimPrefix(line, "ExecStart="))
-		command = strings.TrimPrefix(command, "-")
-		fields := strings.Fields(command)
-		if len(fields) == 0 {
+		if role := detectUnitRoleFromExecStart(strings.TrimSpace(strings.TrimPrefix(line, "ExecStart="))); role != UnitRoleUnknown {
+			return role
+		}
+	}
+	return UnitRoleUnknown
+}
+
+func detectUnitRoleFromExecStart(execStart string) UnitRole {
+	if strings.TrimSpace(execStart) == "" || strings.EqualFold(strings.TrimSpace(execStart), "unknown") {
+		return UnitRoleUnknown
+	}
+	cleaned := strings.NewReplacer("{", " ", "}", " ", ";", " ").Replace(execStart)
+	fields := strings.Fields(cleaned)
+	for i := 0; i < len(fields); i++ {
+		current := normalizeExecStartToken(fields[i])
+		if filepath.Base(current) != "tungo" {
 			continue
 		}
-		for i := 0; i < len(fields); i++ {
-			if filepath.Base(fields[i]) != "tungo" {
-				continue
-			}
-			for j := i + 1; j < len(fields); j++ {
-				switch fields[j] {
-				case "c":
-					return UnitRoleClient
-				case "s":
-					return UnitRoleServer
-				}
+		for j := i + 1; j < len(fields); j++ {
+			switch normalizeExecStartToken(fields[j]) {
+			case "c":
+				return UnitRoleClient
+			case "s":
+				return UnitRoleServer
 			}
 		}
 	}
 	return UnitRoleUnknown
+}
+
+func normalizeExecStartToken(token string) string {
+	normalized := strings.TrimSpace(token)
+	normalized = strings.Trim(normalized, `"'`)
+	normalized = strings.Trim(normalized, ",;")
+	normalized = strings.TrimPrefix(normalized, "-")
+	if idx := strings.LastIndex(normalized, "="); idx >= 0 {
+		normalized = normalized[idx+1:]
+	}
+	normalized = strings.TrimSpace(normalized)
+	normalized = strings.Trim(normalized, `"'`)
+	normalized = strings.Trim(normalized, ",;")
+	return normalized
 }
 
 func unitFileContent(modeArg string) string {

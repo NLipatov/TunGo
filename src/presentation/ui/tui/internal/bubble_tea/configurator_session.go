@@ -580,7 +580,7 @@ func (m configuratorSessionModel) mainTabView() string {
 			fmt.Sprintf("Applying %s daemon setup requires restart. Continue now?", roleLabel),
 			[]string{sessionDaemonConfirmReconfigureNow, sessionCancel},
 			m.cursor,
-			"up/k down/j move | Enter select | Esc back | ctrl+c exit",
+			"up/k down/j move | Enter select | Tab switch tabs | Esc back | ctrl+c exit",
 		)
 	case configuratorScreenSystemdActiveConfirm:
 		modeLabel := "selected mode"
@@ -1247,6 +1247,9 @@ func (m configuratorSessionModel) applyDaemonSetup(targetMode mode.Mode, restart
 		return m, errors.New("unknown daemon mode")
 	}
 
+	if !restartRunning {
+		m.notice = ""
+	}
 	m.refreshDaemonStatus()
 	m.cursor = 0
 	return m, nil
@@ -1336,7 +1339,7 @@ func (m configuratorSessionModel) updateSystemdActiveConfirmScreen(msg tea.KeyPr
 func (m configuratorSessionModel) startModeWithSystemdGuard(targetMode mode.Mode, returnScreen configuratorScreen, preserveNotice bool) configuratorSessionModel {
 	m = m.clearPendingSystemdStart()
 
-	if m.options.CheckSystemdUnitActive == nil || m.options.StopSystemdUnit == nil {
+	if m.options.CheckSystemdUnitActive == nil {
 		m.resultMode = targetMode
 		m.done = true
 		return m
@@ -1352,6 +1355,17 @@ func (m configuratorSessionModel) startModeWithSystemdGuard(targetMode mode.Mode
 	if !active {
 		m.resultMode = targetMode
 		m.done = true
+		return m
+	}
+	if m.options.StopSystemdUnit == nil {
+		message := "tungo.service is active but stopping it is unavailable."
+		if preserveNotice {
+			m.notice = appendNotice(m.notice, message)
+		} else {
+			m.notice = message
+		}
+		m.cursor = 0
+		m.screen = returnScreen
 		return m
 	}
 
@@ -1771,7 +1785,7 @@ func (m configuratorSessionModel) renderDaemonManageScreen() string {
 		m.tabsLine(styles),
 		"Setup/Manage daemon",
 		body,
-		"up/k down/j move | Enter select | Esc back | ctrl+c exit",
+		"up/k down/j move | Enter select | Tab switch tabs | Esc back | ctrl+c exit",
 		m.preferences,
 		styles,
 	)
