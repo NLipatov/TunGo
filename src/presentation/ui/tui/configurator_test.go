@@ -538,10 +538,12 @@ func TestConfigureContinuous_SystemdSupported_WiresCallbacks(t *testing.T) {
 		supported: true,
 		statusRet: systemd.UnitStatus{
 			Installed:     true,
+			Managed:       true,
 			UnitFileState: "enabled",
 			ActiveState:   "active",
 			Role:          systemd.UnitRoleServer,
 			ExecStart:     "/usr/local/bin/tungo s",
+			FragmentPath:  "/etc/systemd/system/tungo.service",
 		},
 	}
 	withMockNewSystemdInstaller(t, func() systemd.Installer { return installer })
@@ -580,7 +582,13 @@ func TestConfigureContinuous_SystemdSupported_WiresCallbacks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected status error: %v", err)
 	}
-	if !status.Installed || status.UnitFileState != "enabled" || status.ActiveState != "active" || status.Mode != mode.Server || status.ExecStart != "/usr/local/bin/tungo s" {
+	if !status.Installed ||
+		!status.Managed ||
+		status.UnitFileState != "enabled" ||
+		status.ActiveState != "active" ||
+		status.Mode != mode.Server ||
+		status.ExecStart != "/usr/local/bin/tungo s" ||
+		status.FragmentPath != "/etc/systemd/system/tungo.service" {
 		t.Fatalf("unexpected mapped daemon status: %+v", status)
 	}
 

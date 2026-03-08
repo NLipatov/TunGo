@@ -147,6 +147,7 @@ func (p *Configurator) configureContinuous(ctx context.Context) (mode.Mode, erro
 			}
 			return bubbleTea.SystemdDaemonStatus{
 				Installed:      status.Installed,
+				Managed:        status.Managed,
 				Mode:           daemonMode,
 				LoadState:      string(status.LoadState),
 				UnitFileState:  string(status.UnitFileState),
@@ -155,6 +156,7 @@ func (p *Configurator) configureContinuous(ctx context.Context) (mode.Mode, erro
 				Result:         status.Result,
 				ExecMainStatus: status.ExecMainStatus,
 				ExecStart:      status.ExecStart,
+				FragmentPath:   status.FragmentPath,
 			}, nil
 		}
 		configOpts.InstallClientSystemdUnit = systemdInstaller.InstallClientUnit

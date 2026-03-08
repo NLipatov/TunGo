@@ -198,6 +198,35 @@ func TestMainTabView_DaemonManage_SeparatesStatusAndActions(t *testing.T) {
 	}
 }
 
+func TestMainTabView_DaemonManage_DerivedRoleFallsBackToMode(t *testing.T) {
+	opts := defaultConfiguratorOpts()
+	opts.SystemdSupported = true
+	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
+		return SystemdDaemonStatus{
+			Installed:      true,
+			LoadState:      "loaded",
+			UnitFileState:  "enabled",
+			ActiveState:    "inactive",
+			SubState:       "dead",
+			Result:         "success",
+			ExecMainStatus: "0",
+			ExecStart:      "unknown",
+			Mode:           mode.Server,
+		}, nil
+	}
+
+	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceServer))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	model.screen = configuratorScreenDaemonManage
+
+	view := model.mainTabView()
+	if !strings.Contains(view, "DerivedRole: server (from Mode)") {
+		t.Fatalf("expected derived role fallback from mode, got: %s", view)
+	}
+}
+
 func TestUpdateDaemonManageScreen_NotInstalled_ShowsSetupOptions(t *testing.T) {
 	opts := defaultConfiguratorOpts()
 	opts.SystemdSupported = true
@@ -232,6 +261,7 @@ func TestUpdateDaemonManageScreen_Installed_ShowsReconfigureOptions(t *testing.T
 	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
 		return SystemdDaemonStatus{
 			Installed:     true,
+			Managed:       true,
 			UnitFileState: "disabled",
 			ActiveState:   "inactive",
 			Mode:          mode.Client,
@@ -601,7 +631,7 @@ func TestUpdateDaemonManageScreen_StartPreservesActionCursorAfterRefresh(t *test
 }
 
 func TestUpdateDaemonManageScreen_Delete_RemovesUnitAndRefreshesStatus(t *testing.T) {
-	status := SystemdDaemonStatus{Installed: true, UnitFileState: "enabled", ActiveState: "inactive", Mode: mode.Server}
+	status := SystemdDaemonStatus{Installed: true, Managed: true, UnitFileState: "enabled", ActiveState: "inactive", Mode: mode.Server}
 	opts := defaultConfiguratorOpts()
 	opts.SystemdSupported = true
 	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) { return status, nil }
@@ -638,6 +668,34 @@ func TestUpdateDaemonManageScreen_Delete_RemovesUnitAndRefreshesStatus(t *testin
 	}
 	if !containsString(updated.daemon.menuOptions, sessionDaemonSetupClient) {
 		t.Fatalf("expected setup options after delete, got %v", updated.daemon.menuOptions)
+	}
+}
+
+func TestUpdateDaemonManageScreen_UnmanagedUnit_HidesDeleteOption(t *testing.T) {
+	opts := defaultConfiguratorOpts()
+	opts.SystemdSupported = true
+	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
+		return SystemdDaemonStatus{
+			Installed:     true,
+			Managed:       false,
+			UnitFileState: "enabled",
+			ActiveState:   "inactive",
+			Mode:          mode.Server,
+		}, nil
+	}
+	opts.RemoveSystemdUnit = func() error { return nil }
+	opts.InstallClientSystemdUnit = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
+	opts.InstallServerSystemdUnit = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
+
+	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceServer))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	model.screen = configuratorScreenDaemonManage
+	model.refreshDaemonStatus()
+
+	if containsString(model.daemon.menuOptions, sessionDaemonDelete) {
+		t.Fatalf("did not expect delete option for unmanaged unit, got %v", model.daemon.menuOptions)
 	}
 }
 

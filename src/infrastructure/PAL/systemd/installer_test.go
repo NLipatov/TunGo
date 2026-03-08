@@ -604,7 +604,7 @@ func TestIsUnitActive_ReturnsTrueWhenServiceIsActive(t *testing.T) {
 	}
 }
 
-func TestIsUnitActive_ReturnsFalseWhenServiceIsActivating(t *testing.T) {
+func TestIsUnitActive_ReturnsTrueWhenServiceIsActivating(t *testing.T) {
 	withSystemdHooks(
 		t,
 		func(string) (os.FileInfo, error) { return nil, nil },
@@ -626,8 +626,35 @@ func TestIsUnitActive_ReturnsFalseWhenServiceIsActivating(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if active {
-		t.Fatal("expected active=false when service is activating")
+	if !active {
+		t.Fatal("expected active=true when service is activating")
+	}
+}
+
+func TestIsUnitActive_ReturnsTrueWhenServiceIsDeactivating(t *testing.T) {
+	withSystemdHooks(
+		t,
+		func(string) (os.FileInfo, error) { return nil, nil },
+		func(name string) (string, error) {
+			if name == "systemctl" {
+				return "/bin/systemctl", nil
+			}
+			if name == "tungo" {
+				return "/usr/local/bin/tungo", nil
+			}
+			return "", exec.ErrNotFound
+		},
+		func(string, []byte, os.FileMode) error { return nil },
+	)
+	cmd := &mockCommander{combinedOutput: []byte("deactivating\n")}
+	installer := NewUnitInstaller(cmd)
+
+	active, err := installer.IsUnitActive()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !active {
+		t.Fatal("expected active=true when service is deactivating")
 	}
 }
 
@@ -1239,7 +1266,7 @@ func TestStatus_InstalledPreservesRawSystemdStates(t *testing.T) {
 			"is-enabled": {output: []byte("static\n")},
 			"is-active":  {output: []byte("deactivating\n")},
 			"show": {
-				output: []byte("LoadState=loaded\nSubState=stop-sigterm\nResult=exit-code\nExecMainStatus=203\nExecStart={ path=/usr/local/bin/tungo ; argv[]=/usr/local/bin/tungo s ; }\n"),
+				output: []byte("LoadState=loaded\nSubState=stop-sigterm\nResult=exit-code\nExecMainStatus=203\nExecStart={ path=/usr/local/bin/tungo ; argv[]=/usr/local/bin/tungo s ; }\nFragmentPath=/usr/lib/systemd/system/tungo.service\n"),
 			},
 		},
 	}
@@ -1259,8 +1286,48 @@ func TestStatus_InstalledPreservesRawSystemdStates(t *testing.T) {
 		status.SubState != "stop-sigterm" ||
 		status.Result != "exit-code" ||
 		status.ExecMainStatus != "203" ||
-		status.ExecStart != "{ path=/usr/local/bin/tungo ; argv[]=/usr/local/bin/tungo s ; }" {
+		status.ExecStart != "{ path=/usr/local/bin/tungo ; argv[]=/usr/local/bin/tungo s ; }" ||
+		status.FragmentPath != "/usr/lib/systemd/system/tungo.service" {
 		t.Fatalf("expected raw show properties, got %+v", status)
+	}
+	if status.Managed {
+		t.Fatalf("expected unmanaged status for non-/etc unit fragment, got %+v", status)
+	}
+}
+
+func TestStatus_ManagedTrueWhenFragmentPathInEtc(t *testing.T) {
+	withSystemdHooks(
+		t,
+		func(string) (os.FileInfo, error) { return nil, nil },
+		func(name string) (string, error) {
+			if name == "systemctl" {
+				return "/bin/systemctl", nil
+			}
+			if name == "tungo" {
+				return "/usr/local/bin/tungo", nil
+			}
+			return "", exec.ErrNotFound
+		},
+		func(string, []byte, os.FileMode) error { return nil },
+		func(string) ([]byte, error) { return []byte("ExecStart=tungo c\n"), nil },
+	)
+	cmd := &mockCommander{
+		combinedOutputByArg: map[string]mockCombinedOutputResult{
+			"is-enabled": {output: []byte("enabled\n")},
+			"is-active":  {output: []byte("active\n")},
+			"show": {
+				output: []byte("LoadState=loaded\nActiveState=active\nSubState=running\nResult=success\nExecMainStatus=0\nExecStart=/usr/local/bin/tungo c\nFragmentPath=/etc/systemd/system/tungo.service\n"),
+			},
+		},
+	}
+	installer := NewUnitInstaller(cmd)
+
+	status, err := installer.Status()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !status.Managed {
+		t.Fatalf("expected managed status for /etc fragment path, got %+v", status)
 	}
 }
 

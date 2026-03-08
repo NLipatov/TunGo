@@ -84,6 +84,7 @@ type ConfiguratorSessionOptions struct {
 
 type SystemdDaemonStatus struct {
 	Installed      bool
+	Managed        bool
 	Mode           mode.Mode
 	LoadState      string
 	UnitFileState  string
@@ -92,6 +93,7 @@ type SystemdDaemonStatus struct {
 	Result         string
 	ExecMainStatus string
 	ExecStart      string
+	FragmentPath   string
 }
 
 type configuratorScreen int
@@ -1542,7 +1544,9 @@ func (m configuratorSessionModel) daemonMenuOptions(status SystemdDaemonStatus) 
 		options = append(options, sessionDaemonReconfServer)
 	}
 	if m.options.RemoveSystemdUnit != nil {
-		options = append(options, sessionDaemonDelete)
+		if status.Managed {
+			options = append(options, sessionDaemonDelete)
+		}
 	}
 	return options
 }
@@ -1567,7 +1571,8 @@ func (m configuratorSessionModel) daemonStatusLine() string {
 	result := normalizeDaemonStateField(m.daemon.status.Result)
 	execMainStatus := normalizeDaemonStateField(m.daemon.status.ExecMainStatus)
 	execStart := normalizeDaemonRawField(m.daemon.status.ExecStart)
-	derivedRole := daemonRoleFromExecStart(execStart)
+	fragmentPath := normalizeDaemonRawField(m.daemon.status.FragmentPath)
+	derivedRole, derivedRoleSource := daemonDerivedRole(m.daemon.status, execStart)
 	return strings.Join([]string{
 		fmt.Sprintf("Active: %s", activeState),
 		fmt.Sprintf("Sub: %s", subState),
@@ -1576,7 +1581,8 @@ func (m configuratorSessionModel) daemonStatusLine() string {
 		fmt.Sprintf("Load: %s", loadState),
 		fmt.Sprintf("ExecMainStatus: %s", execMainStatus),
 		fmt.Sprintf("ExecStart: %s", execStart),
-		fmt.Sprintf("DerivedRole: %s (from ExecStart)", derivedRole),
+		fmt.Sprintf("FragmentPath: %s", fragmentPath),
+		fmt.Sprintf("DerivedRole: %s (from %s)", derivedRole, derivedRoleSource),
 	}, "\n")
 }
 
@@ -1608,6 +1614,20 @@ func daemonRoleFromExecStart(execStart string) string {
 		return "server"
 	}
 	return "unknown"
+}
+
+func daemonDerivedRole(status SystemdDaemonStatus, execStart string) (string, string) {
+	if role := daemonRoleFromExecStart(execStart); role != "unknown" {
+		return role, "ExecStart"
+	}
+	switch status.Mode {
+	case mode.Client:
+		return "client", "Mode"
+	case mode.Server:
+		return "server", "Mode"
+	default:
+		return "unknown", "Mode"
+	}
 }
 
 func daemonStateBlocksRuntimeStart(activeState string) bool {

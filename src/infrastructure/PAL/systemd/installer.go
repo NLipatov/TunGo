@@ -66,6 +66,7 @@ const (
 
 type UnitStatus struct {
 	Installed      bool
+	Managed        bool
 	Role           UnitRole
 	LoadState      UnitLoadState
 	UnitFileState  UnitFileState
@@ -74,6 +75,7 @@ type UnitStatus struct {
 	Result         string
 	ExecMainStatus string
 	ExecStart      string
+	FragmentPath   string
 }
 
 type Installer interface {
@@ -189,7 +191,7 @@ func (i *UnitInstaller) IsUnitActive() (bool, error) {
 		}
 		return false, fmt.Errorf("failed to run systemctl is-active %s: %w", systemdUnitName, err)
 	}
-	return activeStateIndicatesRunning(parseUnitActiveState(activeOutput, nil)), nil
+	return ActiveStateBlocksRuntimeStart(parseUnitActiveState(activeOutput, nil)), nil
 }
 
 func (i *UnitInstaller) StopUnit() error {
@@ -258,6 +260,7 @@ func (i *UnitInstaller) Status() (UnitStatus, error) {
 		Result:         "unknown",
 		ExecMainStatus: "unknown",
 		ExecStart:      "unknown",
+		FragmentPath:   "unknown",
 	}
 
 	enabledOutput, err := i.commander.CombinedOutput("systemctl", "is-enabled", systemdUnitName)
@@ -280,7 +283,7 @@ func (i *UnitInstaller) Status() (UnitStatus, error) {
 		"systemctl",
 		"show",
 		systemdUnitName,
-		"--property=LoadState,ActiveState,SubState,Result,ExecMainStatus,ExecStart",
+		"--property=LoadState,ActiveState,SubState,Result,ExecMainStatus,ExecStart,FragmentPath",
 		"--no-page",
 	)
 	if showErr != nil {
@@ -295,6 +298,8 @@ func (i *UnitInstaller) Status() (UnitStatus, error) {
 	status.Result = normalizeSystemdValue(props["Result"])
 	status.ExecMainStatus = normalizeSystemdValue(props["ExecMainStatus"])
 	status.ExecStart = normalizeSystemdRawValue(props["ExecStart"])
+	status.FragmentPath = normalizeSystemdRawValue(props["FragmentPath"])
+	status.Managed = isInstallerManagedFragmentPath(status.FragmentPath)
 
 	switch status.LoadState {
 	case UnitLoadStateNotFound:
@@ -402,6 +407,14 @@ func normalizeSystemdRawValue(value string) string {
 		return "unknown"
 	}
 	return normalized
+}
+
+func isInstallerManagedFragmentPath(fragmentPath string) bool {
+	normalized := strings.TrimSpace(fragmentPath)
+	if normalized == "" || strings.EqualFold(normalized, "unknown") {
+		return false
+	}
+	return filepath.Clean(normalized) == filepath.Clean(systemdUnitPath)
 }
 
 func detectUnitRole(unitBody string) UnitRole {
