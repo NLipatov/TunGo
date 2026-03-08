@@ -112,6 +112,7 @@ const (
 	configuratorScreenDaemonManage
 	configuratorScreenDaemonReconfigureConfirm
 	configuratorScreenSystemdActiveConfirm
+	configuratorScreenSystemdCheckErrorConfirm
 )
 
 const (
@@ -143,6 +144,8 @@ const (
 	sessionServerDeleteConfirm = "Delete client"
 	sessionCancel              = "Cancel"
 	sessionStopDaemonContinue  = "stop daemon and continue"
+	sessionRetrySystemdCheck   = "Retry check"
+	sessionStartAnywayUnsafe   = "Start anyway (unsafe)"
 )
 
 type clientConfigScreens struct {
@@ -316,13 +319,13 @@ func newConfiguratorSessionModel(options ConfiguratorSessionOptions, settings *u
 								model.notice = fmt.Sprintf("Auto-select failed for %q: %v", autoConfig, cfgErr)
 							} else {
 								model = model.startModeWithSystemdGuard(mode.Client, configuratorScreenClientSelect, true)
-								if !model.done && model.screen == configuratorScreenSystemdActiveConfirm {
+								if !model.done && isSystemdStartConfirmationScreen(model.screen) {
 									model.pendingClientConfig = autoConfig
 								}
 							}
 						} else {
 							model = model.startModeWithSystemdGuard(mode.Client, configuratorScreenClientSelect, true)
-							if !model.done && model.screen == configuratorScreenSystemdActiveConfirm {
+							if !model.done && isSystemdStartConfirmationScreen(model.screen) {
 								model.pendingClientConfig = autoConfig
 							}
 						}
@@ -421,6 +424,8 @@ func (m configuratorSessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateDaemonReconfigureConfirmScreen(msg)
 		case configuratorScreenSystemdActiveConfirm:
 			return m.updateSystemdActiveConfirmScreen(msg)
+		case configuratorScreenSystemdCheckErrorConfirm:
+			return m.updateSystemdCheckErrorConfirmScreen(msg)
 		}
 	}
 
@@ -604,6 +609,18 @@ func (m configuratorSessionModel) mainTabView() string {
 			m.cursor,
 			"up/k down/j move | Enter select | Tab switch tabs | Esc back | ctrl+c exit",
 		)
+	case configuratorScreenSystemdCheckErrorConfirm:
+		subtitle := "Failed to check systemd daemon status."
+		if strings.TrimSpace(m.notice) != "" {
+			subtitle = m.notice
+		}
+		return m.renderSelectionScreen(
+			"Cannot verify daemon status",
+			subtitle,
+			[]string{sessionRetrySystemdCheck, sessionStartAnywayUnsafe, sessionCancel},
+			m.cursor,
+			"up/k down/j move | Enter select | Tab switch tabs | Esc back | ctrl+c exit",
+		)
 	default:
 		return ""
 	}
@@ -712,7 +729,7 @@ func (m configuratorSessionModel) updateClientSelectScreen(msg tea.KeyPressMsg) 
 			m = m.persistAutoSelectClientConfig(selected)
 			return m, tea.Quit
 		}
-		if m.screen == configuratorScreenSystemdActiveConfirm {
+		if isSystemdStartConfirmationScreen(m.screen) {
 			m.pendingClientConfig = selected
 		}
 		return m, nil
@@ -1327,13 +1344,54 @@ func (m configuratorSessionModel) updateSystemdActiveConfirmScreen(msg tea.KeyPr
 		return m, nil
 	}
 
+	return m.completePendingSystemdStart("Daemon stopped. Starting selected mode.")
+}
+
+func (m configuratorSessionModel) updateSystemdCheckErrorConfirmScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m = m.cancelPendingSystemdStart("Start cancelled.")
+		return m, nil
+	}
+
+	options := []string{sessionRetrySystemdCheck, sessionStartAnywayUnsafe, sessionCancel}
+	m.updateCursor(msg, len(options))
+	if msg.String() != "enter" {
+		return m, nil
+	}
+
+	selected := options[m.cursor]
+	switch selected {
+	case sessionCancel:
+		m = m.cancelPendingSystemdStart("Start cancelled.")
+		return m, nil
+	case sessionStartAnywayUnsafe:
+		return m.completePendingSystemdStart("Systemd status check failed. Starting selected mode without daemon guard.")
+	case sessionRetrySystemdCheck:
+		targetMode := m.pendingStartMode
+		returnScreen := m.pendingStartScreen
+		pendingClientConfig := m.pendingClientConfig
+		m = m.startModeWithSystemdGuard(targetMode, returnScreen, true)
+		if m.done {
+			return m, tea.Quit
+		}
+		if !m.done && isSystemdStartConfirmationScreen(m.screen) && targetMode == mode.Client {
+			m.pendingClientConfig = pendingClientConfig
+		}
+		return m, nil
+	default:
+		return m, nil
+	}
+}
+
+func (m configuratorSessionModel) completePendingSystemdStart(notice string) (configuratorSessionModel, tea.Cmd) {
 	targetMode := m.pendingStartMode
 	pendingClientConfig := m.pendingClientConfig
 	m = m.clearPendingSystemdStart()
 	if targetMode == mode.Client {
 		m = m.persistAutoSelectClientConfig(pendingClientConfig)
 	}
-	m.notice = "Daemon stopped. Starting selected mode."
+	m.notice = notice
 	m.resultMode = targetMode
 	m.done = true
 	return m, tea.Quit
@@ -1350,9 +1408,16 @@ func (m configuratorSessionModel) startModeWithSystemdGuard(targetMode mode.Mode
 
 	active, err := m.options.CheckSystemdUnitActive()
 	if err != nil {
-		m.notice = fmt.Sprintf("Failed to check systemd daemon status: %v", err)
+		message := fmt.Sprintf("Failed to check systemd daemon status: %v", err)
+		if preserveNotice {
+			m.notice = appendNotice(m.notice, message)
+		} else {
+			m.notice = message
+		}
 		m.cursor = 0
-		m.screen = returnScreen
+		m.pendingStartMode = targetMode
+		m.pendingStartScreen = returnScreen
+		m.screen = configuratorScreenSystemdCheckErrorConfirm
 		return m
 	}
 	if !active {
@@ -1396,6 +1461,15 @@ func (m configuratorSessionModel) clearPendingSystemdStart() configuratorSession
 	m.pendingStartScreen = configuratorScreenMode
 	m.pendingClientConfig = ""
 	return m
+}
+
+func isSystemdStartConfirmationScreen(screen configuratorScreen) bool {
+	switch screen {
+	case configuratorScreenSystemdActiveConfirm, configuratorScreenSystemdCheckErrorConfirm:
+		return true
+	default:
+		return false
+	}
 }
 
 func (m configuratorSessionModel) persistAutoSelectClientConfig(selected string) configuratorSessionModel {

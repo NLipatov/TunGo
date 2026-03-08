@@ -839,6 +839,96 @@ func TestUpdateSystemdActiveConfirmScreen_Cancel_ReturnsToPreviousScreen(t *test
 	}
 }
 
+func TestUpdateSystemdCheckErrorConfirmScreen_RetryCheck_StartsWhenInactive(t *testing.T) {
+	checkCalls := 0
+	opts := defaultConfiguratorOpts()
+	opts.CheckSystemdUnitActive = func() (bool, error) {
+		checkCalls++
+		if checkCalls == 1 {
+			return false, errors.New("probe failed")
+		}
+		return false, nil
+	}
+	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceServer))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	model = model.startModeWithSystemdGuard(mode.Server, configuratorScreenServerSelect, false)
+	if model.screen != configuratorScreenSystemdCheckErrorConfirm {
+		t.Fatalf("expected check error confirm screen, got %v", model.screen)
+	}
+	model.cursor = 0 // Retry check
+
+	updatedModel, cmd := model.updateSystemdCheckErrorConfirmScreen(keyNamed(tea.KeyEnter))
+	updated := updatedModel.(configuratorSessionModel)
+	if cmd == nil {
+		t.Fatal("expected quit cmd after successful retry")
+	}
+	if !updated.done || updated.resultMode != mode.Server {
+		t.Fatalf("expected done server start after retry, got done=%v mode=%v", updated.done, updated.resultMode)
+	}
+	if checkCalls != 2 {
+		t.Fatalf("expected 2 check calls, got %d", checkCalls)
+	}
+}
+
+func TestUpdateSystemdCheckErrorConfirmScreen_StartAnyway_Client_PersistsAutoSelectConfig(t *testing.T) {
+	s := settingsForMode(ModePreferenceClient)
+	opts := defaultConfiguratorOpts()
+	model, err := newConfiguratorSessionModel(opts, s)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	model.screen = configuratorScreenSystemdCheckErrorConfirm
+	model.pendingStartMode = mode.Client
+	model.pendingStartScreen = configuratorScreenClientSelect
+	model.pendingClientConfig = "cfg-a"
+	model.cursor = 1 // Start anyway (unsafe)
+
+	updatedModel, cmd := model.updateSystemdCheckErrorConfirmScreen(keyNamed(tea.KeyEnter))
+	updated := updatedModel.(configuratorSessionModel)
+	if cmd == nil {
+		t.Fatal("expected quit cmd for start anyway")
+	}
+	if !updated.done || updated.resultMode != mode.Client {
+		t.Fatalf("expected done client start, got done=%v mode=%v", updated.done, updated.resultMode)
+	}
+	if !strings.Contains(updated.notice, "without daemon guard") {
+		t.Fatalf("expected unsafe start notice, got %q", updated.notice)
+	}
+	if s.Preferences().AutoSelectClientConfig != "cfg-a" {
+		t.Fatalf("expected AutoSelectClientConfig persisted, got %q", s.Preferences().AutoSelectClientConfig)
+	}
+}
+
+func TestUpdateSystemdCheckErrorConfirmScreen_Cancel_ReturnsToPreviousScreen(t *testing.T) {
+	opts := defaultConfiguratorOpts()
+	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	model.screen = configuratorScreenSystemdCheckErrorConfirm
+	model.pendingStartMode = mode.Client
+	model.pendingStartScreen = configuratorScreenClientSelect
+	model.cursor = 2 // Cancel
+
+	updatedModel, cmd := model.updateSystemdCheckErrorConfirmScreen(keyNamed(tea.KeyEnter))
+	updated := updatedModel.(configuratorSessionModel)
+	if cmd != nil {
+		t.Fatal("expected nil cmd on cancel")
+	}
+	if updated.done {
+		t.Fatal("expected done=false on cancel")
+	}
+	if updated.screen != configuratorScreenClientSelect {
+		t.Fatalf("expected return to client select, got %v", updated.screen)
+	}
+	if updated.pendingStartMode != mode.Unknown {
+		t.Fatalf("expected pending mode cleared, got %v", updated.pendingStartMode)
+	}
+}
+
 func TestUpdateSystemdActiveConfirmScreen_StopFails_ShowsNoticeAndReturns(t *testing.T) {
 	s := settingsForMode(ModePreferenceClient)
 	p := s.Preferences()
@@ -1486,11 +1576,14 @@ func TestStartModeWithSystemdGuard_CoversBranches(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		updated := model.startModeWithSystemdGuard(mode.Server, configuratorScreenServerSelect, false)
-		if updated.screen != configuratorScreenServerSelect {
-			t.Fatalf("expected return screen after status failure, got %v", updated.screen)
+		if updated.screen != configuratorScreenSystemdCheckErrorConfirm {
+			t.Fatalf("expected systemd check error confirm screen, got %v", updated.screen)
 		}
 		if !strings.Contains(updated.notice, "Failed to check systemd daemon status") {
 			t.Fatalf("expected status failure notice, got %q", updated.notice)
+		}
+		if updated.pendingStartMode != mode.Server || updated.pendingStartScreen != configuratorScreenServerSelect {
+			t.Fatalf("expected pending start to be set, got mode=%v screen=%v", updated.pendingStartMode, updated.pendingStartScreen)
 		}
 	})
 
@@ -1741,6 +1834,18 @@ func TestMainTabView_DaemonConfirmScreens_ShowExpectedLabels(t *testing.T) {
 	startServerView := model.mainTabView()
 	if !strings.Contains(startServerView, "starting server") {
 		t.Fatalf("expected server start label in confirm view, got: %s", startServerView)
+	}
+
+	model.screen = configuratorScreenSystemdCheckErrorConfirm
+	model.notice = "Failed to check systemd daemon status: boom"
+	checkErrorView := model.mainTabView()
+	if !strings.Contains(checkErrorView, "Cannot verify daemon status") {
+		t.Fatalf("expected check-error title in view, got: %s", checkErrorView)
+	}
+	if !strings.Contains(checkErrorView, sessionRetrySystemdCheck) ||
+		!strings.Contains(checkErrorView, sessionStartAnywayUnsafe) ||
+		!strings.Contains(checkErrorView, sessionCancel) {
+		t.Fatalf("expected check-error options in view, got: %s", checkErrorView)
 	}
 }
 
