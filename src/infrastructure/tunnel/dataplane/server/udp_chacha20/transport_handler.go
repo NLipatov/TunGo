@@ -129,17 +129,17 @@ func (t *TransportHandler) handlePacket(
 	addrPort netip.AddrPort,
 	packet []byte,
 ) error {
-	if len(packet) >= chacha20.UDPRouteIDLength {
-		if peer, ok := t.getPeerByRouteID(packet); ok {
-			return t.handleEstablished(addrPort, peer, packet)
-		}
+	if len(packet) < chacha20.UDPRouteIDLength {
+		// Malformed/truncated packet: drop early.
+		return nil
 	}
-
+	if peer, ok := t.getPeerByRouteID(packet); ok {
+		return t.handleEstablished(addrPort, peer, packet)
+	}
 	// No existing session: route into registration queue.
 	if t.registrar != nil {
 		t.registrar.EnqueuePacket(addrPort, packet)
 	}
-
 	return nil
 }
 

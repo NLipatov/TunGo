@@ -281,6 +281,16 @@ type TransportHandlerFakeHandshakeFactory struct{ hs connection.Handshake }
 
 func (f *TransportHandlerFakeHandshakeFactory) NewHandshake() connection.Handshake { return f.hs }
 
+type TransportHandlerCountingHandshakeFactory struct {
+	hs    connection.Handshake
+	calls int
+}
+
+func (f *TransportHandlerCountingHandshakeFactory) NewHandshake() connection.Handshake {
+	f.calls++
+	return f.hs
+}
+
 // TransportHandlerSessionRepo is a minimal repo for tests.
 type TransportHandlerSessionRepo struct {
 	mu       sync.Mutex
@@ -1337,33 +1347,32 @@ func TestRegisterClient_CanceledContextClosesQueue(t *testing.T) {
 	}
 }
 
-func TestHandleTransport_ShortPacket_Logged(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
+func TestHandlePacket_ShortPacket_DroppedBeforeRegistration(t *testing.T) {
+	ctx := context.Background()
 	writer := &TransportHandlerFakeWriter{}
 	logger := &TransportHandlerFakeLogger{}
 	repo := &TransportHandlerSessionRepo{}
-	hsf := &TransportHandlerFakeHandshakeFactory{hs: &TransportHandlerFakeHandshake{}}
+	hsf := &TransportHandlerCountingHandshakeFactory{hs: &TransportHandlerFakeHandshake{}}
 
 	clientAddr := netip.MustParseAddrPort("192.168.1.99:9999")
-	conn := &TransportHandlerFakeUdpListener{
-		readBufs:  [][]byte{{0x01}}, // 1-byte packet: too short for route-id header
-		readAddrs: []netip.AddrPort{clientAddr},
-	}
+	conn := &TransportHandlerFakeUdpListener{}
 
 	registrar := udp_registration.NewRegistrar(ctx, conn, repo, logger,
 		hsf, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
 		netip.MustParsePrefix("10.0.0.0/24"),
 		netip.Prefix{},
 	)
-	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 9999}}, writer, conn, repo, repo, logger, registrar)
+	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 9999}}, writer, conn, repo, repo, logger, registrar).(*TransportHandler)
 
-	done := make(chan struct{})
-	go func() { _ = handler.HandleTransport(); close(done) }()
-	time.Sleep(20 * time.Millisecond)
-	cancel()
-	<-done
+	if err := handler.handlePacket(clientAddr, []byte{0x01}); err != nil {
+		t.Fatalf("expected nil on short packet drop, got %v", err)
+	}
+	if got := len(registrar.Registrations()); got != 0 {
+		t.Fatalf("expected no registration queues for short packet, got %d", got)
+	}
+	if hsf.calls != 0 {
+		t.Fatalf("expected handshake factory not to be called for short packet, got %d calls", hsf.calls)
+	}
 }
 
 func TestHandleTransport_EpochExhausted_LogsError(t *testing.T) {
