@@ -4,20 +4,213 @@
  */
 
 .heroBanner {
-  padding: 4rem 0;
-  text-align: center;
+  background: var(--site-gradient);
+  color: var(--site-hero-ink);
+  padding: 4rem 0 2.75rem;
   position: relative;
   overflow: hidden;
 }
 
-@media screen and (max-width: 996px) {
-  .heroBanner {
-    padding: 2rem;
-  }
+.heroGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(320px, 0.95fr);
+  gap: 1.5rem;
+  align-items: stretch;
+}
+
+.heroCopy {
+  padding: 1rem 0;
+}
+
+.eyebrow,
+.teaserEyebrow {
+  display: inline-block;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.76rem;
+  font-weight: 800;
+  color: var(--ifm-color-primary);
+  margin-bottom: 0.9rem;
+}
+
+.heroTitle {
+  max-width: 11ch;
+  font-size: clamp(2.8rem, 5vw, 5.3rem);
+  line-height: 0.94;
+  margin-bottom: 1rem;
+}
+
+.heroSubtitle {
+  max-width: 62ch;
+  font-size: 1.08rem;
+  line-height: 1.72;
+  color: var(--ifm-color-emphasis-700);
+  margin-bottom: 1.5rem;
 }
 
 .buttons {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.secondaryCta {
+  border-color: var(--site-border);
+  background: var(--site-surface-strong);
+}
+
+.heroPanel,
+.teaserShell,
+.teaserCard {
+  border-radius: 28px;
+  border: 1px solid var(--site-border);
+  background: var(--site-surface);
+  box-shadow: var(--site-shadow);
+  backdrop-filter: blur(14px);
+}
+
+.heroPanel {
+  padding: 1.2rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.heroPanel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, transparent 0, transparent calc(100% - 1px), var(--site-grid-line) calc(100% - 1px)),
+    linear-gradient(transparent 0, transparent calc(100% - 1px), var(--site-grid-line) calc(100% - 1px));
+  background-size: 72px 72px;
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.heroPanelHeader,
+.heroMetric {
+  position: relative;
+  z-index: 1;
+}
+
+.heroPanelHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: baseline;
+  margin-bottom: 1rem;
+}
+
+.heroPanelTag {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--ifm-color-emphasis-600);
+}
+
+.heroPanelValue {
+  font-weight: 800;
+  color: var(--ifm-color-primary);
+}
+
+.heroPanelGrid {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.heroMetric {
+  background: var(--site-surface-strong);
+  border: 1px solid var(--site-border);
+  border-radius: 18px;
+  padding: 0.95rem 1rem;
+}
+
+.heroMetricLabel {
+  display: block;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.72rem;
+  color: var(--ifm-color-emphasis-600);
+  margin-bottom: 0.35rem;
+}
+
+.heroMetricValue {
+  display: block;
+  font-size: 1.5rem;
+  line-height: 1;
+  margin-bottom: 0.35rem;
+}
+
+.heroMetricNote {
+  margin: 0;
+  color: var(--ifm-color-emphasis-700);
+  line-height: 1.55;
+}
+
+.benchmarkTeaser {
+  background: var(--site-gradient);
+  padding: 0 0 4rem;
+}
+
+.teaserShell {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+  gap: 1.5rem;
+  padding: 1.5rem;
+}
+
+.teaserTitle {
+  margin-bottom: 0.8rem;
+}
+
+.teaserText {
+  max-width: 62ch;
+  color: var(--ifm-color-emphasis-700);
+  line-height: 1.7;
+  margin: 0;
+}
+
+.teaserCard {
+  padding: 1.15rem;
+  display: grid;
+  gap: 0.85rem;
+  align-content: start;
+}
+
+.teaserMetric {
+  background: var(--site-surface-strong);
+  border: 1px solid var(--site-border);
+  border-radius: 18px;
+  padding: 0.9rem 1rem;
+}
+
+.teaserMetric span {
+  display: block;
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ifm-color-emphasis-600);
+  margin-bottom: 0.35rem;
+}
+
+.teaserMetric strong {
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+@media screen and (max-width: 996px) {
+  .heroBanner {
+    padding: 2rem 0 2.5rem;
+  }
+
+  .heroGrid,
+  .teaserShell {
+    grid-template-columns: 1fr;
+  }
+
+  .heroTitle {
+    max-width: none;
+  }
 }

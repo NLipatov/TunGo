@@ -19,6 +19,18 @@
 
   /* Code highlight — tied to primary for harmony */
   --docusaurus-highlighted-code-line-bg: rgba(0, 159, 201, 0.08);
+
+  --site-hero-ink: #07131a;
+  --site-surface: rgba(255, 255, 255, 0.86);
+  --site-surface-strong: rgba(255, 255, 255, 0.94);
+  --site-surface-muted: rgba(6, 19, 26, 0.045);
+  --site-border: rgba(6, 19, 26, 0.08);
+  --site-shadow: 0 24px 60px rgba(6, 19, 26, 0.08);
+  --site-grid-line: rgba(0, 159, 201, 0.1);
+  --site-gradient:
+    radial-gradient(circle at top left, rgba(0, 159, 201, 0.16), transparent 28%),
+    radial-gradient(circle at 85% 10%, rgba(0, 159, 201, 0.08), transparent 24%),
+    linear-gradient(180deg, #f4fbfd 0%, #ffffff 35%, #f7fafc 100%);
 }
 
 /* Dark mode — same palette, softer contrast */
@@ -31,6 +43,18 @@
   --ifm-color-primary-lightest: #c7f4fc;
 
   --docusaurus-highlighted-code-line-bg: rgba(0, 159, 201, 0.12);
+
+  --site-hero-ink: #ecf7fb;
+  --site-surface: rgba(12, 23, 34, 0.82);
+  --site-surface-strong: rgba(13, 24, 35, 0.94);
+  --site-surface-muted: rgba(255, 255, 255, 0.05);
+  --site-border: rgba(255, 255, 255, 0.08);
+  --site-shadow: none;
+  --site-grid-line: rgba(79, 195, 227, 0.14);
+  --site-gradient:
+    radial-gradient(circle at top left, rgba(79, 195, 227, 0.16), transparent 28%),
+    radial-gradient(circle at 85% 10%, rgba(79, 195, 227, 0.08), transparent 24%),
+    linear-gradient(180deg, #06131a 0%, #0b1721 35%, #0f172a 100%);
 }
 
 /* Footer — explicit, neutral background */
@@ -45,4 +69,9 @@ footer.footer {
 /* Small UX polish (relative, typography-friendly) */
 a:hover {
   text-decoration-thickness: 0.125em;
+}
+
+.theme-doc-markdown,
+.container {
+  position: relative;
 }

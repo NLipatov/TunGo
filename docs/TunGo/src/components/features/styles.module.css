@@ -1,19 +1,83 @@
 .features {
-  display: grid;
-  padding: 2rem 0;
-  justify-items: center;
+  padding: 1rem 0 3rem;
 }
 
 .featureSvg {
-  height: 12rem;
-  width: 12rem;
+  height: 6.5rem;
+  width: 6.5rem;
 }
 
-.featureDescriptionList {
+.sectionIntro {
+  max-width: 780px;
+  margin: 0 auto 1.4rem;
+  text-align: center;
+}
+
+.eyebrow {
+  display: inline-block;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.76rem;
+  font-weight: 800;
+  color: var(--ifm-color-primary);
+  margin-bottom: 0.8rem;
+}
+
+.sectionTitle {
+  margin-bottom: 0.8rem;
+}
+
+.sectionText {
+  color: var(--ifm-color-emphasis-700);
+  line-height: 1.7;
+  margin: 0;
+}
+
+.featureColumn {
+  margin-bottom: 1.2rem;
+}
+
+.featureCard {
+  height: 100%;
+  border-radius: 24px;
+  border: 1px solid var(--site-border);
+  background: var(--site-surface);
+  box-shadow: var(--site-shadow);
+  overflow: hidden;
+}
+
+.featureVisual {
   display: flex;
-  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  min-height: 220px;
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--feature-accent) 22%, transparent), transparent 44%),
+    linear-gradient(180deg, var(--site-surface-strong) 0%, rgba(255, 255, 255, 0.5) 100%);
+  border-bottom: 1px solid var(--site-border);
 }
 
-.jcCenter {
-  justify-content: center;
+[data-theme='dark'] .featureVisual {
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--feature-accent) 28%, transparent), transparent 44%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.02) 100%);
+}
+
+.featureBody {
+  padding: 1.15rem 1.2rem 1.3rem;
+}
+
+.featureTitle {
+  margin-bottom: 0.55rem;
+}
+
+.featureDescription {
+  color: var(--ifm-color-emphasis-700);
+  line-height: 1.65;
+}
+
+@media screen and (max-width: 996px) {
+  .features {
+    padding: 0 0 3rem;
+  }
 }

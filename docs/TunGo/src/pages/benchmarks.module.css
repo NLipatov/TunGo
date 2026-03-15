@@ -1,15 +1,11 @@
 .page {
-  background:
-    radial-gradient(circle at top left, rgba(0, 159, 201, 0.12), transparent 30%),
-    linear-gradient(180deg, #f6fbfd 0%, #ffffff 32%, #f8fafc 100%);
+  background: var(--site-gradient);
   min-height: 100vh;
   padding: 3rem 0 4rem;
 }
 
 [data-theme='dark'] .page {
-  background:
-    radial-gradient(circle at top left, rgba(79, 195, 227, 0.15), transparent 28%),
-    linear-gradient(180deg, #06131a 0%, #0b1721 35%, #0f172a 100%);
+  background: var(--site-gradient);
 }
 
 .hero,
@@ -58,20 +54,18 @@
 }
 
 .metaPanel {
-  border: 1px solid rgba(0, 159, 201, 0.18);
+  border: 1px solid var(--site-border);
   border-radius: 24px;
   padding: 1.25rem;
-  background: rgba(255, 255, 255, 0.82);
+  background: var(--site-surface);
   backdrop-filter: blur(14px);
-  box-shadow: 0 28px 64px rgba(15, 23, 42, 0.08);
+  box-shadow: var(--site-shadow);
   display: grid;
   gap: 1rem;
 }
 
 [data-theme='dark'] .metaPanel {
-  background: rgba(9, 18, 25, 0.88);
-  border-color: rgba(79, 195, 227, 0.16);
-  box-shadow: none;
+  background: var(--site-surface);
 }
 
 .metaLabel,
@@ -117,17 +111,15 @@
 .chartCard,
 .callout {
   border-radius: 22px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  background: rgba(255, 255, 255, 0.86);
-  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.05);
+  border: 1px solid var(--site-border);
+  background: var(--site-surface);
+  box-shadow: var(--site-shadow);
 }
 
 [data-theme='dark'] .metricCard,
 [data-theme='dark'] .chartCard,
 [data-theme='dark'] .callout {
-  background: rgba(15, 23, 42, 0.76);
-  border-color: rgba(255, 255, 255, 0.08);
-  box-shadow: none;
+  background: var(--site-surface);
 }
 
 .metricCard {
@@ -171,15 +163,13 @@
 .tableWrap {
   overflow-x: auto;
   border-radius: 22px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  background: rgba(255, 255, 255, 0.84);
-  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.05);
+  border: 1px solid var(--site-border);
+  background: var(--site-surface);
+  box-shadow: var(--site-shadow);
 }
 
 [data-theme='dark'] .tableWrap {
-  background: rgba(15, 23, 42, 0.76);
-  border-color: rgba(255, 255, 255, 0.08);
-  box-shadow: none;
+  background: var(--site-surface);
 }
 
 .table {
@@ -250,14 +240,14 @@
 }
 
 .chartFrame {
-  fill: rgba(15, 23, 42, 0.02);
-  stroke: rgba(15, 23, 42, 0.06);
+  fill: var(--site-surface-muted);
+  stroke: var(--site-border);
   stroke-width: 1;
 }
 
 [data-theme='dark'] .chartFrame {
-  fill: rgba(255, 255, 255, 0.02);
-  stroke: rgba(255, 255, 255, 0.08);
+  fill: var(--site-surface-muted);
+  stroke: var(--site-border);
 }
 
 .chartLine {
@@ -291,11 +281,11 @@
 .legendEntry {
   border-radius: 14px;
   padding: 0.65rem 0.8rem;
-  background: rgba(15, 23, 42, 0.04);
+  background: var(--site-surface-muted);
 }
 
 [data-theme='dark'] .legendEntry {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--site-surface-muted);
 }
 
 .legendPeers {
