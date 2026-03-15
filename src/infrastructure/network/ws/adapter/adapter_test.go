@@ -340,8 +340,15 @@ func TestAdapter_Read_FromExistingReader_ErrorMapped(t *testing.T) {
 	if n != 0 {
 		t.Fatalf("expected n=0 on second read, got %d", n)
 	}
-	var ne interface{ Timeout() bool }
-	if !errors.As(err, &ne) || !ne.Timeout() {
+	type errTimeout interface {
+		Timeout() bool
+		Error() string
+	}
+	errTO, ok := errors.AsType[errTimeout](err)
+	if !ok {
+		t.Fatalf("expected a timeout error; got %v", err)
+	}
+	if !errTO.Timeout() {
 		t.Fatalf("expected timeout net.Error, got %v", err)
 	}
 }
