@@ -15,7 +15,9 @@ import (
 // tcpRegLogger is a no-op logger for tests.
 type tcpRegLogger struct{}
 
-func (tcpRegLogger) Printf(string, ...any) {}
+func (tcpRegLogger) Info(string, ...any)  {}
+func (tcpRegLogger) Warn(string, ...any)  {}
+func (tcpRegLogger) Error(string, ...any) {}
 
 // tcpRegHandshake is a mock handshake.
 type tcpRegHandshake struct {

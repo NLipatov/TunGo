@@ -3,10 +3,10 @@ package tcp_chacha20
 import (
 	"errors"
 
-	"tungo/application/logging"
 	"tungo/application/network/connection"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
 	"tungo/infrastructure/cryptography/primitives"
+	"tungo/infrastructure/logging"
 	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/controlplane"
@@ -60,7 +60,7 @@ func (h *controlPlaneHandler) handleRekeyInit(
 	//    but does NOT change the send epoch — outbound frames still use old key).
 	serverPub, epoch, ok, err := controlplane.ServerHandleRekeyInit(h.crypto, fsm, plaindata)
 	if err != nil {
-		h.logger.Printf("rekey init: %v", err)
+		h.logger.Warn("rekey init failed", "err", err)
 		if errors.Is(err, rekey.ErrEpochExhausted) {
 			// Send EpochExhausted to notify client to reconnect.
 			// Session stays alive - client will reconnect, then this session closes.
@@ -79,13 +79,13 @@ func (h *controlPlaneHandler) handleRekeyInit(
 	copy(ackPayload[3:], serverPub)
 	sp, err := service_packet.EncodeV1Header(service_packet.RekeyAck, ackPayload)
 	if err != nil {
-		h.logger.Printf("rekey init: encode ack failed: %v", err)
+		h.logger.Error("rekey init encode ack failed", "err", err)
 		return
 	}
 	// Prepend epoch prefix reservation to the service packet.
 	spWithPrefix := h.ackBuf[:epochPrefixSize+len(sp)]
 	if err := egress.SendControl(spWithPrefix); err != nil {
-		h.logger.Printf("rekey init: send ack failed: %v", err)
+		h.logger.Error("rekey init send ack failed", "err", err)
 		return
 	}
 
@@ -96,12 +96,12 @@ func (h *controlPlaneHandler) handleRekeyInit(
 func (h *controlPlaneHandler) HandlePing(egress connection.Egress) {
 	payload := h.pongBuf[epochPrefixSize : epochPrefixSize+3]
 	if _, err := service_packet.EncodeV1Header(service_packet.Pong, payload); err != nil {
-		h.logger.Printf("pong: failed to encode: %v", err)
+		h.logger.Error("pong encode failed", "err", err)
 		return
 	}
 	spWithPrefix := h.pongBuf[:epochPrefixSize+3]
 	if err := egress.SendControl(spWithPrefix); err != nil {
-		h.logger.Printf("pong: failed to send: %v", err)
+		h.logger.Error("pong send failed", "err", err)
 	}
 }
 

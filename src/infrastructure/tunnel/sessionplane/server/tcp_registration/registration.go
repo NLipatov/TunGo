@@ -6,9 +6,9 @@ import (
 	"net"
 	"net/netip"
 
-	"tungo/application/logging"
 	"tungo/application/network/connection"
 	"tungo/infrastructure/cryptography/noise"
+	"tungo/infrastructure/logging"
 	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/network/tcp/adapters"
 	"tungo/infrastructure/settings"
@@ -54,7 +54,7 @@ func NewRegistrar(
 // the framing transport. The caller is responsible for driving the
 // dataplane loop using the returned peer and transport.
 func (r *Registrar) RegisterClient(conn net.Conn) (*session.Peer, connection.Transport, error) {
-	r.logger.Printf("TCP: %s connected", conn.RemoteAddr())
+	r.logger.Info("TCP client connected", "remote_addr", conn.RemoteAddr())
 
 	// Extract remote address early — needed for cookie IP binding during
 	// the handshake (DoS protection) and later for session tracking.
@@ -94,7 +94,7 @@ func (r *Registrar) RegisterClient(conn net.Conn) (*session.Peer, connection.Tra
 			break
 		}
 		if errors.Is(handshakeErr, noise.ErrCookieRequired) && attempt == 0 {
-			r.logger.Printf("TCP: %s cookie sent, awaiting retry", conn.RemoteAddr())
+			r.logger.Warn("TCP cookie sent, awaiting retry", "remote_addr", conn.RemoteAddr())
 			continue
 		}
 		_ = framingAdapter.Close()
@@ -106,7 +106,7 @@ func (r *Registrar) RegisterClient(conn net.Conn) (*session.Peer, connection.Tra
 		_ = framingAdapter.Close()
 		return nil, nil, fmt.Errorf("client %s IP allocation failed: %w", conn.RemoteAddr(), allocErr)
 	}
-	r.logger.Printf("TCP: %s registered as %s", conn.RemoteAddr(), internalIP)
+	r.logger.Info("TCP client registered", "remote_addr", conn.RemoteAddr(), "internal_ip", internalIP)
 
 	cryptographyService, rekeyCtrl, cryptographyServiceErr := r.cryptographyFactory.FromHandshake(h, true)
 	if cryptographyServiceErr != nil {
@@ -118,7 +118,7 @@ func (r *Registrar) RegisterClient(conn net.Conn) (*session.Peer, connection.Tra
 	existingPeer, getErr := r.sessionManager.GetByInternalAddrPort(internalIP)
 	if getErr == nil {
 		r.sessionManager.Delete(existingPeer)
-		r.logger.Printf("Replacing existing session for %s", internalIP)
+		r.logger.Info("replacing existing session", "internal_ip", internalIP)
 	} else if !errors.Is(getErr, session.ErrNotFound) {
 		_ = framingAdapter.Close()
 		return nil, nil, fmt.Errorf(

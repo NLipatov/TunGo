@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 	"tungo/application/network/connection"
 	"tungo/domain/app"
@@ -33,7 +33,7 @@ func NewRunner(uiMode app.UIMode, deps AppDependencies, routerFactory connection
 func (r *Runner) Run(ctx context.Context) error {
 	defer func() {
 		if err := r.deps.TunManager().DisposeDevices(); err != nil {
-			log.Printf("error disposing tun devices on exit: %s", err)
+			slog.Warn("failed to dispose TUN devices on exit", "err", err)
 		}
 	}()
 
@@ -47,7 +47,7 @@ func (r *Runner) Run(ctx context.Context) error {
 		case errors.Is(err, runnerCommon.ErrReconfigureRequested):
 			return runnerCommon.ErrReconfigureRequested
 		default:
-			log.Printf("session error: %v, reconnecting…", err)
+			slog.Warn("session error, reconnecting", "err", err)
 			timer := time.NewTimer(500 * time.Millisecond)
 			select {
 			case <-ctx.Done():
@@ -65,7 +65,7 @@ func (r *Runner) runSession(parentCtx context.Context) error {
 	defer cancel()
 
 	if err := r.deps.TunManager().DisposeDevices(); err != nil {
-		log.Printf("error disposing tun devices: %v", err)
+		slog.Warn("failed to dispose TUN devices", "err", err)
 	}
 
 	if r.uiMode != app.TUI {
@@ -88,7 +88,7 @@ func (r *Runner) runSessionBlocking(ctx context.Context) error {
 		_ = tun.Close()
 	}()
 
-	log.Printf("tunneling traffic via tun device")
+	slog.Info("tunneling traffic via TUN device")
 	return router.RouteTraffic(ctx)
 }
 
@@ -120,7 +120,7 @@ func (r *Runner) runSessionInteractive(ctx context.Context) error {
 		}
 
 		close(readyCh)
-		log.Printf("tunneling traffic via tun device")
+		slog.Info("tunneling traffic via TUN device")
 
 		go func() {
 			<-sessionCtx.Done()
@@ -136,6 +136,6 @@ func (r *Runner) runSessionInteractive(ctx context.Context) error {
 		uiResultCh,
 		connectCh,
 		func(err error) bool { return errors.Is(err, runtimeUI.ErrUserExit) },
-		func(err error) { log.Printf("runtime UI error: %v", err) },
+		func(err error) { slog.Error("runtime UI error", "err", err) },
 	)
 }

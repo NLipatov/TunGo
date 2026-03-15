@@ -225,10 +225,16 @@ type TransportHandlerFakeLogger struct {
 	logs []string
 }
 
-func (l *TransportHandlerFakeLogger) Printf(format string, _ ...interface{}) {
+func (l *TransportHandlerFakeLogger) Info(msg string, _ ...interface{}) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.logs = append(l.logs, format)
+	l.logs = append(l.logs, msg)
+}
+func (l *TransportHandlerFakeLogger) Warn(msg string, _ ...interface{}) {
+	l.Info(msg)
+}
+func (l *TransportHandlerFakeLogger) Error(msg string, _ ...interface{}) {
+	l.Info(msg)
 }
 func (l *TransportHandlerFakeLogger) contains(sub string) bool {
 	l.mu.Lock()
@@ -274,6 +280,20 @@ func (f *TransportHandlerFakeHandshake) ClientSideHandshake(_ connection.Transpo
 type TransportHandlerFakeHandshakeFactory struct{ hs connection.Handshake }
 
 func (f *TransportHandlerFakeHandshakeFactory) NewHandshake() connection.Handshake { return f.hs }
+
+func registrationTriggerPacket() []byte {
+	return make([]byte, chacha20.UDPRouteIDLength)
+}
+
+type TransportHandlerCountingHandshakeFactory struct {
+	hs    connection.Handshake
+	calls int
+}
+
+func (f *TransportHandlerCountingHandshakeFactory) NewHandshake() connection.Handshake {
+	f.calls++
+	return f.hs
+}
 
 // TransportHandlerSessionRepo is a minimal repo for tests.
 type TransportHandlerSessionRepo struct {
@@ -520,10 +540,6 @@ func TestHandleTransport_EmptyPacket_Dropped(t *testing.T) {
 	time.Sleep(20 * time.Millisecond)
 	cancel()
 	<-done
-
-	if !logger.contains("packet dropped: empty packet") {
-		t.Fatalf("expected empty-packet log, got %v", logger.logs)
-	}
 }
 
 // First packet triggers registration (handshake OK) -> session added.
@@ -544,7 +560,7 @@ func TestTransportHandler_RegistrationPacket(t *testing.T) {
 	handshakeFactory := &TransportHandlerFakeHandshakeFactory{hs: fakeHS}
 
 	conn := &TransportHandlerFakeUdpListener{
-		readBufs:  [][]byte{{0xde, 0xad, 0xbe, 0xef}}, // initial packet
+		readBufs:  [][]byte{registrationTriggerPacket()}, // initial packet
 		readAddrs: []netip.AddrPort{clientAddr},
 	}
 
@@ -588,7 +604,7 @@ func TestTransportHandler_DecryptError(t *testing.T) {
 
 	// First packet -> registration
 	conn := &TransportHandlerFakeUdpListener{
-		readBufs:  [][]byte{{0xde, 0xad, 0xbe, 0xef}},
+		readBufs:  [][]byte{registrationTriggerPacket()},
 		readAddrs: []netip.AddrPort{clientAddr},
 	}
 	sessionRegistered := make(chan struct{})
@@ -617,7 +633,11 @@ func TestTransportHandler_DecryptError(t *testing.T) {
 	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 2222}}, writer, conn, repo, repo, logger, registrar)
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
-	<-sessionRegistered
+	select {
+	case <-sessionRegistered:
+	case <-time.After(time.Second):
+		t.Fatal("timeout: session not registered")
+	}
 	cancel()
 	<-done
 
@@ -718,7 +738,7 @@ func TestTransportHandler_WriteError(t *testing.T) {
 
 	// custom UDP listener: feeds packets one by one on demand
 	conn := &TransportHandlerFakeUdpListener{
-		readBufs:  [][]byte{{0xde, 0xad, 0xbe, 0xef}}, // first: registration
+		readBufs:  [][]byte{registrationTriggerPacket()}, // first: registration
 		readAddrs: []netip.AddrPort{clientAddr},
 	}
 
@@ -936,7 +956,7 @@ func TestTransportHandler_RegisterClient_NegativeClientID_FailsAllocation(t *tes
 	handshakeFactory := &TransportHandlerFakeHandshakeFactory{hs: fakeHS}
 
 	conn := &TransportHandlerFakeUdpListener{
-		readBufs:  [][]byte{{0xde, 0xad}},
+		readBufs:  [][]byte{registrationTriggerPacket()},
 		readAddrs: []netip.AddrPort{clientAddr},
 	}
 	registrar := udp_registration.NewRegistrar(ctx, conn, repo, logger,
@@ -1013,11 +1033,13 @@ func TestTransportHandler_SecondPacketGoesToExistingRegistrationQueue_NoNewGorou
 	// Two packets from same client before handshake finishes
 	conn := &TransportHandlerFakeUdpListener{
 		readBufs: [][]byte{
-			{0x00, 0xaa}, // include epoch byte to pass length check
-			{0x00, 0xbb},
+			append(registrationTriggerPacket()[:0:0], registrationTriggerPacket()...),
+			append(registrationTriggerPacket()[:0:0], registrationTriggerPacket()...),
 		},
 		readAddrs: []netip.AddrPort{clientAddr, clientAddr},
 	}
+	conn.readBufs[0][0] = 0xaa
+	conn.readBufs[1][0] = 0xbb
 
 	fakeHS := &TransportHandlerSlowHandshake{
 		delay:    100 * time.Millisecond, // handshake runs slow, queue remains alive
@@ -1048,15 +1070,15 @@ func TestTransportHandler_SecondPacketGoesToExistingRegistrationQueue_NoNewGorou
 		t.Fatalf("expected registration queue to exist (handshake has not finished yet)")
 	}
 
-	dst := make([]byte, 8)
+	dst := make([]byte, chacha20.UDPRouteIDLength)
 
 	n1, err1 := q.ReadInto(dst)
-	if err1 != nil || n1 != 2 || dst[:n1][0] != 0x00 || dst[:n1][1] != 0xaa {
+	if err1 != nil || n1 != chacha20.UDPRouteIDLength || dst[0] != 0xaa {
 		t.Fatalf("first packet mismatch: %x err=%v", dst[:n1], err1)
 	}
 
 	n2, err2 := q.ReadInto(dst)
-	if err2 != nil || n2 != 2 || dst[:n2][0] != 0x00 || dst[:n2][1] != 0xbb {
+	if err2 != nil || n2 != chacha20.UDPRouteIDLength || dst[0] != 0xbb {
 		t.Fatalf("second packet mismatch: %x err=%v", dst[:n2], err2)
 	}
 }
@@ -1204,9 +1226,10 @@ func TestRegisterClient_CryptoError_LogsAndFails(t *testing.T) {
 	hsf := &TransportHandlerFakeHandshakeFactory{hs: hs}
 
 	conn := &TransportHandlerFakeUdpListener{
-		readBufs:  [][]byte{{0x00, 0x01}}, // include epoch byte
+		readBufs:  [][]byte{registrationTriggerPacket()},
 		readAddrs: []netip.AddrPort{client},
 	}
+	conn.readBufs[0][0] = 0x01
 
 	registrar := udp_registration.NewRegistrar(ctx, conn, repo, logger,
 		hsf, failingCryptoFactory{},
@@ -1335,36 +1358,31 @@ func TestRegisterClient_CanceledContextClosesQueue(t *testing.T) {
 	}
 }
 
-func TestHandleTransport_ShortPacket_Logged(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
+func TestHandlePacket_ShortPacket_DroppedBeforeRegistration(t *testing.T) {
+	ctx := context.Background()
 	writer := &TransportHandlerFakeWriter{}
 	logger := &TransportHandlerFakeLogger{}
 	repo := &TransportHandlerSessionRepo{}
-	hsf := &TransportHandlerFakeHandshakeFactory{hs: &TransportHandlerFakeHandshake{}}
+	hsf := &TransportHandlerCountingHandshakeFactory{hs: &TransportHandlerFakeHandshake{}}
 
 	clientAddr := netip.MustParseAddrPort("192.168.1.99:9999")
-	conn := &TransportHandlerFakeUdpListener{
-		readBufs:  [][]byte{{0x01}}, // 1-byte packet: too short for route-id header
-		readAddrs: []netip.AddrPort{clientAddr},
-	}
+	conn := &TransportHandlerFakeUdpListener{}
 
 	registrar := udp_registration.NewRegistrar(ctx, conn, repo, logger,
 		hsf, chacha20.NewUdpSessionBuilder(TransportHandlerMockAEADBuilder{}),
 		netip.MustParsePrefix("10.0.0.0/24"),
 		netip.Prefix{},
 	)
-	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 9999}}, writer, conn, repo, repo, logger, registrar)
+	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 9999}}, writer, conn, repo, repo, logger, registrar).(*TransportHandler)
 
-	done := make(chan struct{})
-	go func() { _ = handler.HandleTransport(); close(done) }()
-	time.Sleep(20 * time.Millisecond)
-	cancel()
-	<-done
-
-	if !logger.contains("packet too short for route id") {
-		t.Fatalf("expected short packet log, got %v", logger.logs)
+	if err := handler.handlePacket(clientAddr, []byte{0x01}); err != nil {
+		t.Fatalf("expected nil on short packet drop, got %v", err)
+	}
+	if got := len(registrar.Registrations()); got != 0 {
+		t.Fatalf("expected no registration queues for short packet, got %d", got)
+	}
+	if hsf.calls != 0 {
+		t.Fatalf("expected handshake factory not to be called for short packet, got %d calls", hsf.calls)
 	}
 }
 

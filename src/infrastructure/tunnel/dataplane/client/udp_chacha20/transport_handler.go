@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"time"
 	"tungo/application/network/connection"
@@ -139,15 +139,15 @@ func (t *TransportHandler) handleControlplane(plaintext []byte) (handled bool, e
 	switch spType {
 	case service_packet.EpochExhausted:
 		// Server cannot create new epochs - reconnect immediately.
-		log.Printf("received EpochExhausted from server, initiating reconnect")
+		slog.Warn("received EpochExhausted from server, initiating reconnect")
 		return true, ErrEpochExhausted
 	case service_packet.RekeyAck:
 		if t.rekeyController != nil && t.rekeyController.LastRekeyEpoch >= 65000 {
-			log.Printf("rekey ack: epoch exhausted, requesting session reset")
+			slog.Warn("rekey ack exhausted epoch, requesting session reset")
 			return true, ErrEpochExhausted
 		}
 		if _, err := controlplane.ClientHandleRekeyAck(t.handshakeCrypto, t.rekeyController, plaintext); err != nil {
-			log.Printf("rekey ack: install/apply failed: %v", err)
+			slog.Error("rekey ack install/apply failed", "err", err)
 		}
 		return true, nil
 	default:

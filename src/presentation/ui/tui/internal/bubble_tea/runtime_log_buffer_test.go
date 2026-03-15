@@ -1,9 +1,11 @@
 package bubble_tea
 
 import (
-	"log"
+	"log/slog"
 	"strings"
 	"testing"
+
+	"tungo/infrastructure/logging"
 )
 
 func TestRuntimeLogBuffer_Tail(t *testing.T) {
@@ -20,12 +22,12 @@ func TestRuntimeLogBuffer_Tail(t *testing.T) {
 	}
 }
 
-func TestGlobalRuntimeLogCapture_CapturesStandardLogger(t *testing.T) {
+func TestGlobalRuntimeLogCapture_CapturesSlog(t *testing.T) {
 	DisableGlobalRuntimeLogCapture()
 	t.Cleanup(DisableGlobalRuntimeLogCapture)
 
 	EnableGlobalRuntimeLogCapture(8)
-	log.Printf("runtime test line")
+	logging.NewLogger(slog.LevelInfo).Info("runtime test line")
 
 	feed := GlobalRuntimeLogFeed()
 	if feed == nil {
@@ -83,11 +85,11 @@ func TestRedirectStandardLoggerToBuffer_NilBufferNoop(t *testing.T) {
 
 func TestRedirectStandardLoggerToBuffer_RestoresWriter(t *testing.T) {
 	b := NewRuntimeLogBuffer(8)
-	prevWriter := log.Writer()
+	prevWriter := logging.CurrentOutput()
 	restore := RedirectStandardLoggerToBuffer(b)
-	log.Printf("redirected line")
+	logging.NewLogger(slog.LevelInfo).Info("redirected line")
 	restore()
-	if log.Writer() != prevWriter {
+	if logging.CurrentOutput() != prevWriter {
 		t.Fatal("expected logger writer to be restored")
 	}
 	if lines := b.Tail(8); len(lines) == 0 {

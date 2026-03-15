@@ -3,10 +3,11 @@ package bubble_tea
 import (
 	"fmt"
 	"io"
-	"log"
 	"strings"
 	"sync"
 	"time"
+
+	"tungo/infrastructure/logging"
 )
 
 const defaultRuntimeLogCapacity = 256
@@ -132,10 +133,9 @@ func RedirectStandardLoggerToBuffer(buffer *RuntimeLogBuffer) func() {
 	if buffer == nil {
 		return func() {}
 	}
-	previousWriter := log.Writer()
-	log.SetOutput(io.Writer(buffer))
+	previousWriter := logging.SetOutput(io.Writer(buffer))
 	return func() {
-		log.SetOutput(previousWriter)
+		logging.SetOutput(previousWriter)
 	}
 }
 
@@ -148,12 +148,11 @@ func EnableGlobalRuntimeLogCapture(capacity int) {
 	}
 
 	buffer := NewRuntimeLogBuffer(capacity)
-	previousWriter := log.Writer()
-	log.SetOutput(io.Writer(buffer))
+	previousWriter := logging.SetOutput(io.Writer(buffer))
 
 	globalRuntimeLogBuffer = buffer
 	globalRuntimeLogRestore = func() {
-		log.SetOutput(previousWriter)
+		logging.SetOutput(previousWriter)
 	}
 }
 

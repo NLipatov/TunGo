@@ -2,16 +2,16 @@ package client
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"net/netip"
 	"strings"
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/PAL/exec_commander"
+	"tungo/infrastructure/PAL/network/linux/epoll"
 	"tungo/infrastructure/PAL/network/linux/ioctl"
 	"tungo/infrastructure/PAL/network/linux/ip"
 	"tungo/infrastructure/PAL/network/linux/mssclamp"
-	"tungo/infrastructure/PAL/network/linux/epoll"
 	"tungo/infrastructure/settings"
 )
 
@@ -72,7 +72,7 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.Settings) error 
 	if err != nil {
 		return err
 	}
-	log.Printf("created TUN interface: %v", connSettings.TunName)
+	slog.Info("created TUN interface", "name", connSettings.TunName)
 
 	// Assign IPv4 address to the TUN interface
 	cidr4, cidr4Err := connSettings.IPv4CIDR()
@@ -83,7 +83,7 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.Settings) error 
 	if err != nil {
 		return err
 	}
-	log.Printf("assigned IP %s to interface %s", cidr4, connSettings.TunName)
+	slog.Info("assigned IPv4 to interface", "cidr", cidr4, "name", connSettings.TunName)
 
 	// Assign IPv6 address if configured
 	if connSettings.IPv6.IsValid() && connSettings.IPv6Subnet.IsValid() {
@@ -94,7 +94,7 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.Settings) error 
 		if err := t.ip.AddrAddDev(connSettings.TunName, cidr6); err != nil {
 			return err
 		}
-		log.Printf("assigned IPv6 %s to interface %s", cidr6, connSettings.TunName)
+		slog.Info("assigned IPv6 to interface", "cidr", cidr6, "name", connSettings.TunName)
 	}
 
 	serverIP := ""
@@ -142,7 +142,7 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.Settings) error 
 	if err != nil {
 		return fmt.Errorf("failed to add route to server IP: %v", err)
 	}
-	log.Printf("added route to server %s via %s dev %s", serverIP, viaGateway, devInterface)
+	slog.Info("added route to server", "server_ip", serverIP, "via", viaGateway, "device", devInterface)
 
 	// Add route for IPv6 server address (if available)
 	if connSettings.Server.HasIPv6() || (t.routeEndpoint.IsValid() && !t.routeEndpoint.Addr().Unmap().Is4()) {
@@ -172,7 +172,7 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.Settings) error 
 					} else {
 						_ = t.ip.RouteAddViaDev(serverIPv6, dev6, via6)
 					}
-					log.Printf("added route to IPv6 server %s via %s dev %s", serverIPv6, via6, dev6)
+					slog.Info("added route to IPv6 server", "server_ip", serverIPv6, "via", via6, "device", dev6)
 				}
 			}
 		}
@@ -185,14 +185,14 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.Settings) error 
 	if err != nil {
 		return err
 	}
-	log.Printf("set %s as default gateway (split routes)", connSettings.TunName)
+	slog.Info("set interface as default gateway for split routes", "name", connSettings.TunName)
 
 	// Set IPv6 split default routes if configured
 	if connSettings.IPv6.IsValid() {
 		if err := t.ip.Route6AddSplitDefaultDev(connSettings.TunName); err != nil {
 			return err
 		}
-		log.Printf("set %s as IPv6 default gateway (split routes)", connSettings.TunName)
+		slog.Info("set interface as IPv6 default gateway for split routes", "name", connSettings.TunName)
 	}
 
 	// sets client's TUN device maximum transmission unit (MTU)
@@ -217,7 +217,7 @@ func (t *PlatformTunManager) DisposeDevices() error {
 		t.configuration.WSSettings,
 	} {
 		if err := t.mss.Remove(s.TunName); err != nil {
-			log.Printf("failed to remove MSS clamping for %s: %v", s.TunName, err)
+			slog.Warn("failed to remove MSS clamping", "name", s.TunName, "err", err)
 		}
 		// Remove split routes before deleting the device
 		_ = t.ip.RouteDelSplitDefault(s.TunName)

@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"tungo/application/listeners"
-	"tungo/application/logging"
 	"tungo/application/network/connection"
 	"tungo/infrastructure/cryptography/noise"
+	"tungo/infrastructure/logging"
 	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/network/udp/adapters"
 	"tungo/infrastructure/tunnel/session"
@@ -164,22 +164,22 @@ func (r *Registrar) RegisterClient(addrPort netip.AddrPort, queue *udpQueue.Regi
 			break
 		}
 		if errors.Is(handshakeErr, noise.ErrCookieRequired) && attempt == 0 {
-			r.logger.Printf("UDP: %v cookie sent, awaiting retry", addrPort.Addr().AsSlice())
+			r.logger.Warn("UDP cookie sent, awaiting retry", "client", addrPort.Addr().AsSlice())
 			continue
 		}
-		r.logger.Printf("host %v failed registration: %v", addrPort.Addr().AsSlice(), handshakeErr)
+		r.logger.Warn("UDP host failed registration", "client", addrPort.Addr().AsSlice(), "err", handshakeErr)
 		return
 	}
 
 	internalIP, allocErr := ip.AllocateClientIP(r.interfaceSubnet, clientID)
 	if allocErr != nil {
-		r.logger.Printf("host %v IP allocation failed: %v", addrPort.Addr().AsSlice(), allocErr)
+		r.logger.Error("UDP host IP allocation failed", "client", addrPort.Addr().AsSlice(), "err", allocErr)
 		return
 	}
 
 	cryptoSession, controller, cryptoSessionErr := r.cryptographyFactory.FromHandshake(h, true)
 	if cryptoSessionErr != nil {
-		r.logger.Printf("failed to init crypto session for %v: %v", addrPort.Addr().AsSlice(), cryptoSessionErr)
+		r.logger.Error("failed to init UDP crypto session", "client", addrPort.Addr().AsSlice(), "err", cryptoSessionErr)
 		return
 	}
 
@@ -205,14 +205,14 @@ func (r *Registrar) RegisterClient(addrPort netip.AddrPort, queue *udpQueue.Regi
 	existingPeer, getErr := r.sessionRepo.GetByInternalAddrPort(internalIP)
 	if getErr == nil {
 		r.sessionRepo.Delete(existingPeer)
-		r.logger.Printf("UDP: replacing existing session for %s", internalIP)
+		r.logger.Info("UDP replacing existing session", "internal_ip", internalIP)
 	}
 
 	sess := session.NewSessionWithAuth(cryptoSession, controller, internalIP, addrPort, clientPubKey, allowedIPs)
 	egress := connection.NewDefaultEgress(regTransport, cryptoSession)
 	peer := session.NewPeer(sess, egress)
 	r.sessionRepo.Add(peer)
-	r.logger.Printf("UDP: %v registered as: %v", addrPort.Addr(), internalIP)
+	r.logger.Info("UDP client registered", "client", addrPort.Addr(), "internal_ip", internalIP)
 }
 
 // Registrations exposes the internal registrations map for testing.

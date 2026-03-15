@@ -2,7 +2,7 @@ package server
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"tungo/infrastructure/PAL/network/linux/ioctl"
 	"tungo/infrastructure/PAL/network/linux/ip"
@@ -23,7 +23,7 @@ func (d tunDeviceManager) create(s settings.Settings, ipv4, ipv6 bool) (tunFile 
 	defer func() {
 		if err != nil && created {
 			if delErr := d.ip.LinkDelete(s.TunName); delErr != nil {
-				log.Printf("failed to rollback TUN %s after create error: %v", s.TunName, delErr)
+				slog.Warn("failed to rollback TUN after create error", "name", s.TunName, "err", delErr)
 			}
 		}
 	}()

@@ -2,7 +2,7 @@ package shutdown
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"os"
 	"sync"
 	palSignal "tungo/infrastructure/PAL/signal"
@@ -54,7 +54,7 @@ func (h *Handler) listenAndHandleShutdownSignals() {
 		}()
 		select {
 		case <-h.signalChan:
-			log.Printf("Shutdown signal received. Shutting down...")
+			slog.Info("shutdown signal received")
 			h.appCtxCancel()
 		case <-h.appCtx.Done():
 		}

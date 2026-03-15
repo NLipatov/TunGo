@@ -3,8 +3,7 @@ package session
 import (
 	"context"
 	"time"
-
-	"tungo/application/logging"
+	"tungo/infrastructure/logging"
 )
 
 // RunIdleReaperLoop periodically removes sessions that have been idle
@@ -18,7 +17,7 @@ func RunIdleReaperLoop(ctx context.Context, reaper IdleReaper, timeout, interval
 			return
 		case <-ticker.C:
 			if n := reaper.ReapIdle(timeout); n > 0 {
-				logger.Printf("reaped %d idle session(s)", n)
+				logger.Info("reaped idle sessions", "count", n)
 			}
 		}
 	}

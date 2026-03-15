@@ -24,6 +24,18 @@ func newDeviceManager(ipMock *TunFactoryMockIP, ioctlMock *TunFactoryMockIOCTL) 
 	return tunDeviceManager{ip: ipMock, ioctl: ioctlMock}
 }
 
+type tunDeviceRollbackDeleteErrMock struct {
+	*TunFactoryMockIP
+	upErr     error
+	deleteErr error
+}
+
+func (m *tunDeviceRollbackDeleteErrMock) LinkSetDevUp(_ string) error { return m.upErr }
+func (m *tunDeviceRollbackDeleteErrMock) LinkDelete(_ string) error {
+	m.add("del")
+	return m.deleteErr
+}
+
 func TestTunDeviceManager_Create(t *testing.T) {
 	injErr := errors.New("injected")
 
@@ -223,6 +235,25 @@ func TestTunDeviceManager_Create(t *testing.T) {
 		log := ip.log.String()
 		if count := strings.Count(log, "del;"); count != 2 {
 			t.Errorf("expected exactly 2 delete calls (initial cleanup + rollback), got %d, log: %s", count, log)
+		}
+	})
+
+	t.Run("rollback LinkDelete error does not mask create error", func(t *testing.T) {
+		ip := &tunDeviceRollbackDeleteErrMock{
+			TunFactoryMockIP: &TunFactoryMockIP{},
+			upErr:            injErr,
+			deleteErr:        errors.New("delete failed"),
+		}
+		io := &TunFactoryMockIOCTL{}
+		dm := tunDeviceManager{ip: ip, ioctl: io}
+
+		_, err := dm.create(baseCfg, true, false)
+		if err == nil || !strings.Contains(err.Error(), "could not set tuntap dev up") {
+			t.Fatalf("expected original create error, got %v", err)
+		}
+		log := ip.log.String()
+		if count := strings.Count(log, "del;"); count != 2 {
+			t.Errorf("expected rollback delete attempt despite delete error, got %d, log: %s", count, log)
 		}
 	})
 

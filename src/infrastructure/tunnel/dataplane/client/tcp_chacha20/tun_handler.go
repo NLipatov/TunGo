@@ -3,7 +3,7 @@ package tcp_chacha20
 import (
 	"context"
 	"io"
-	"log"
+	"log/slog"
 	"net/netip"
 	"time"
 	"tungo/application/network/connection"
@@ -65,7 +65,7 @@ func (t *TunHandler) HandleTun() error {
 				if t.ctx.Err() != nil {
 					return nil
 				}
-				log.Printf("failed to read from TUN: %v", err)
+				slog.Error("failed to read from TUN", "err", err)
 				return err
 			}
 
@@ -75,7 +75,7 @@ func (t *TunHandler) HandleTun() error {
 
 			// Pass buffer including the 2-byte epoch prefix reservation.
 			if err := t.egress.SendDataIP(buffer[:epochPrefixSize+n]); err != nil {
-				log.Printf("write to TCP failed: %s", err)
+				slog.Error("write to TCP failed", "err", err)
 				return err
 			}
 			rec.RecordTX(uint64(n))
@@ -85,13 +85,13 @@ func (t *TunHandler) HandleTun() error {
 				dst := t.controlPacketBuf[epochPrefixSize : epochPrefixSize+service_packet.RekeyPacketLen]
 				servicePayload, ok, err := t.rekeyInit.MaybeBuildRekeyInit(now, t.rekeyController, dst)
 				if err != nil {
-					log.Printf("failed to prepare rekeyInit: %v", err)
+					slog.Warn("failed to prepare rekey init", "err", err)
 					continue
 				}
 				if ok {
 					spWithPrefix := t.controlPacketBuf[:epochPrefixSize+len(servicePayload)]
 					if err := t.egress.SendControl(spWithPrefix); err != nil {
-						log.Printf("failed to send rekeyInit: %v", err)
+						slog.Warn("failed to send rekey init", "err", err)
 					}
 				}
 			}

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net"
 	"net/netip"
 	"time"
@@ -94,7 +94,7 @@ func (w *TunHandler) HandleTun() error {
 					}
 					if _, ok := errors.AsType[net.Error](err); ok {
 						// Transient socket error (e.g. WSAENOBUFS) — packet lost, socket is fine.
-						log.Printf("transient write error (packet dropped): %v", err)
+						slog.Warn("transient write error, packet dropped", "err", err)
 						continue
 					}
 					return fmt.Errorf("could not send packet to transport: %v", err)
@@ -111,13 +111,13 @@ func (w *TunHandler) HandleTun() error {
 				payloadBuf := w.controlPacketBuffer[chacha20.UDPRouteIDLength+chacha20poly1305.NonceSize:]
 				servicePayload, ok, pErr := w.rekeyInit.MaybeBuildRekeyInit(time.Now().UTC(), w.rekeyController, payloadBuf)
 				if pErr != nil {
-					log.Printf("failed to prepare rekeyInit: %v", pErr)
+					slog.Warn("failed to prepare rekey init", "err", pErr)
 					continue
 				}
 				if ok {
 					totalLen := chacha20.UDPRouteIDLength + chacha20poly1305.NonceSize + len(servicePayload)
 					if err := w.egress.SendControl(w.controlPacketBuffer[:totalLen]); err != nil {
-						log.Printf("failed to send rekeyInit: %v", err)
+						slog.Warn("failed to send rekey init", "err", err)
 					}
 				}
 			}

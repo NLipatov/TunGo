@@ -347,6 +347,26 @@ func TestTransportHandler_SendPing_EgressError(t *testing.T) {
 	impl.sendPing()
 }
 
+func TestTransportHandler_NewTransportHandler_InitializesRecvTime(t *testing.T) {
+	h := NewTransportHandler(context.Background(), rdr(), io.Discard, &TransportHandlerMockCrypto{}, nil, nil)
+	impl := h.(*TransportHandler)
+	if got := impl.lastRecvNano.Load(); got == 0 {
+		t.Fatal("expected initial receive timestamp to be set")
+	}
+}
+
+func TestTransportHandler_HandleRekeyAck_ErrorDoesNotBubble(t *testing.T) {
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, make([]byte, 32), make([]byte, 32), false)
+	h := NewTransportHandler(context.Background(), rdr(), io.Discard, &TransportHandlerMockCrypto{}, ctrl, nil)
+	impl := h.(*TransportHandler)
+
+	shortAck := make([]byte, 3)
+	_, _ = service_packet.EncodeV1Header(service_packet.RekeyAck, shortAck)
+	if err := impl.handleRekeyAck(shortAck); err != nil {
+		t.Fatalf("expected nil on ack install/apply error, got %v", err)
+	}
+}
+
 func TestTransportHandler_KeepaliveLoop_CancelStops(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 

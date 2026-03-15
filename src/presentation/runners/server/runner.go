@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"tungo/application/network/connection"
 	"tungo/application/network/routing"
 	"tungo/domain/app"
@@ -56,12 +56,12 @@ func (r *Runner) Run(
 
 	// Pre-flight cleanup (if anything to clean up)
 	if preflightCleanupErr := r.cleanup(); preflightCleanupErr != nil {
-		log.Printf("preflight cleanup error: %v", preflightCleanupErr)
+		slog.Warn("preflight cleanup error", "err", preflightCleanupErr)
 	}
 	// Post-flight cleanup
 	defer func() {
 		if postflightCleanupErr := r.cleanup(); postflightCleanupErr != nil {
-			log.Printf("postflight cleanup error: %v", postflightCleanupErr)
+			slog.Warn("postflight cleanup error", "err", postflightCleanupErr)
 		}
 	}()
 
@@ -90,7 +90,7 @@ func (r *Runner) Run(
 		uiResultCh,
 		workerErrCh,
 		func(err error) bool { return errors.Is(err, runtimeUI.ErrUserExit) },
-		func(err error) { log.Printf("runtime UI error: %v", err) },
+		func(err error) { slog.Error("runtime UI error", "err", err) },
 	)
 }
 

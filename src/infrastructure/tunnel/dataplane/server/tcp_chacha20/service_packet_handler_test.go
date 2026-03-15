@@ -15,10 +15,18 @@ type tcpTestLogger struct {
 	msgs []string
 }
 
-func (l *tcpTestLogger) Printf(format string, _ ...any) {
+func (l *tcpTestLogger) Info(msg string, _ ...any) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.msgs = append(l.msgs, format)
+	l.msgs = append(l.msgs, msg)
+}
+
+func (l *tcpTestLogger) Warn(msg string, _ ...any) {
+	l.Info(msg)
+}
+
+func (l *tcpTestLogger) Error(msg string, _ ...any) {
+	l.Info(msg)
 }
 
 // tcpTestRekeyer is a controllable mock for rekey.Rekeyer.
@@ -209,6 +217,20 @@ func TestTCPHandlePing_SendsPong(t *testing.T) {
 	hdr := pong[epochPrefixSize:]
 	if hdr[0] != service_packet.Prefix || hdr[1] != service_packet.VersionV1 || hdr[2] != byte(service_packet.Pong) {
 		t.Fatalf("expected Pong header, got: %v", hdr[:3])
+	}
+}
+
+func TestTCPHandlePing_SendError_Logs(t *testing.T) {
+	logger := &tcpTestLogger{}
+	h := newControlPlaneHandler(&primitives.DefaultKeyDeriver{}, logger)
+	eg := &tcpTestEgress{sendErr: errors.New("send failed")}
+
+	h.HandlePing(eg)
+
+	logger.mu.Lock()
+	defer logger.mu.Unlock()
+	if len(logger.msgs) == 0 {
+		t.Fatal("expected logger to capture pong send failure")
 	}
 }
 

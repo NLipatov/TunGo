@@ -6,7 +6,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
-	"tungo/application/logging"
+	"tungo/infrastructure/logging"
 	"tungo/infrastructure/network/ws/adapter"
 	"tungo/infrastructure/network/ws/contracts"
 )
@@ -35,7 +35,7 @@ func (h *DefaultHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	rAddr, err := h.addrFromRequest(r)
 	if err != nil {
 		if h.logger != nil {
-			h.logger.Printf("bad remote addr: %v", err)
+			h.logger.Warn("bad remote addr", "err", err)
 		}
 		http.Error(w, "bad remote addr", http.StatusBadRequest)
 		return
@@ -45,7 +45,7 @@ func (h *DefaultHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	wsConn, uErr := h.upgrader.Upgrade(w, r)
 	if uErr != nil {
 		if h.logger != nil {
-			h.logger.Printf("upgrade failed: %v", uErr)
+			h.logger.Warn("WebSocket upgrade failed", "err", uErr)
 		}
 		return
 	}
