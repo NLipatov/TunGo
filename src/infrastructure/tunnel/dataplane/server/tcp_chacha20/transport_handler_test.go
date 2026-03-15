@@ -673,10 +673,6 @@ func TestHandleClient_BadLength(t *testing.T) {
 	registrar := tcp_registration.NewRegistrar(logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{}, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 	handler := NewTransportHandler(context.Background(), settings.Settings{}, writer, &fakeTcpListener{}, repo, logger, registrar)
 	handler.(*TransportHandler).handleClient(ctx, peer, conn, writer)
-
-	if !logger.contains("invalid ciphertext length") {
-		t.Errorf("expected invalid length log, got %v", logger.logs)
-	}
 }
 
 func TestHandleClient_DecryptError_ClosesConnection(t *testing.T) {

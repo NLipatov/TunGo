@@ -110,7 +110,6 @@ func (t *TransportHandler) HandleTransport() error {
 				continue
 			}
 			if n == 0 {
-				t.logger.Warn("packet dropped: empty packet", "client_addr", clientAddr.String())
 				continue
 			}
 
@@ -130,9 +129,7 @@ func (t *TransportHandler) handlePacket(
 	addrPort netip.AddrPort,
 	packet []byte,
 ) error {
-	if len(packet) < chacha20.UDPRouteIDLength {
-		t.logger.Warn("packet too short for route id", "client_addr", addrPort, "length", len(packet))
-	} else {
+	if len(packet) >= chacha20.UDPRouteIDLength {
 		if peer, ok := t.getPeerByRouteID(packet); ok {
 			return t.handleEstablished(addrPort, peer, packet)
 		}

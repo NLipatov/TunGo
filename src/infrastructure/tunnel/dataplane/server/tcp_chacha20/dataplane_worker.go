@@ -72,7 +72,6 @@ func (w *tcpDataplaneWorker) Run() {
 				return
 			}
 			if n < chacha20poly1305.Overhead || n > settings.DefaultEthernetMTU+settings.TCPChacha20Overhead {
-				w.logger.Warn("invalid ciphertext length", "length", n)
 				continue
 			}
 			// SECURITY: Acquire crypto read lock before decryption.
