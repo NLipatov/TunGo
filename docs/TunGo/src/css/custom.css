@@ -61,11 +61,7 @@
 
 /* Footer — explicit, neutral background */
 footer.footer {
-  background-color: #f7f9fb;
-}
-
-[data-theme='dark'] footer.footer {
-  background-color: #0f172a;
+  background-color: var(--ifm-background-color);
 }
 
 /* Small UX polish (relative, typography-friendly) */

@@ -8,31 +8,13 @@ import Heading from '@theme/Heading';
 import Styles from './index.module.css';
 import Footer from '../components/footer/footer';
 
-const highlights = [
-  {
-    label: 'Dataplane',
-    value: '0 allocs/op',
-    note: 'Allocation-free packet path',
-  },
-  {
-    label: 'Memory',
-    value: '5-15 MB RSS',
-    note: 'Lean enough for small VPS and edge',
-  },
-  {
-    label: 'Crypto',
-    value: 'Noise + ChaCha20',
-    note: 'Modern authenticated encryption',
-  },
-];
-
 function HomepageHeader() {
   return (
     <header className={Clsx(Styles.heroBanner)}>
       <div className={Clsx('container', Styles.heroGrid)}>
         <div className={Styles.heroCopy}>
           <Heading as="h1" className={Styles.heroTitle}>
-            Fast, lightweight userspace VPN
+            Fast, lightweight <span className={Styles.noBreak}>userspace VPN</span>
           </Heading>
           <div className={Styles.buttons}>
             <Link className="button button--primary button--lg" to="/docs/QuickStart">
@@ -41,18 +23,6 @@ function HomepageHeader() {
             <Link className={Clsx('button button--secondary button--lg', Styles.secondaryCta)} to="/benchmarks">
               View benchmarks
             </Link>
-          </div>
-        </div>
-
-        <div className={Styles.heroPanel}>
-          <div className={Styles.heroPanelGrid}>
-            {highlights.map((item) => (
-              <div key={item.label} className={Styles.heroMetric}>
-                <span className={Styles.heroMetricLabel}>{item.label}</span>
-                <strong className={Styles.heroMetricValue}>{item.value}</strong>
-                <p className={Styles.heroMetricNote}>{item.note}</p>
-              </div>
-            ))}
           </div>
         </div>
       </div>

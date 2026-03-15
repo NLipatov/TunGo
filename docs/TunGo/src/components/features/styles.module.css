@@ -1,45 +1,18 @@
 .features {
-  padding: 0.15rem 0 2.2rem;
+  padding: 0.1rem 0 2rem;
 }
 
 .features :global(.container) {
-  display: grid;
-  gap: 0.85rem;
+  display: block;
 }
 
 .featureSvg {
-  height: 4.75rem;
-  width: 4.75rem;
-}
-
-.sectionIntro {
-  max-width: 720px;
-  margin: 0;
-  text-align: left;
-}
-
-.eyebrow {
-  display: inline-block;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  font-size: 0.72rem;
-  font-weight: 800;
-  color: var(--site-accent);
-  margin-bottom: 0.6rem;
-}
-
-.sectionTitle {
-  margin-bottom: 0.55rem;
-}
-
-.sectionText {
-  color: var(--ifm-color-emphasis-700);
-  line-height: 1.55;
-  margin: 0;
+  height: 2.2rem;
+  width: 2.2rem;
 }
 
 .featureColumn {
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.6rem;
 }
 
 .featureCardLink {
@@ -49,110 +22,80 @@
   text-decoration: none;
 }
 
+.featureCardLink:hover,
+.featureCardLink:focus-visible,
+.featureCardLink:hover .featureTitle,
+.featureCardLink:hover .featureDescription,
+.featureCardLink:focus-visible .featureTitle,
+.featureCardLink:focus-visible .featureDescription {
+  text-decoration: none;
+}
+
 .features :global(.row) {
   align-items: stretch;
 }
 
 .featureCard {
   display: grid;
-  grid-template-rows: 124px 1fr auto;
+  grid-template-rows: auto 1fr;
   height: 100%;
-  border-radius: 20px;
-  border: 1px solid var(--site-border);
-  background: var(--site-surface);
-  box-shadow: var(--site-shadow);
-  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid var(--ifm-color-emphasis-200);
+  background: var(--ifm-background-surface-color);
+  box-shadow: none;
+  padding: 0.95rem 0.95rem 1rem;
   transition:
     transform 160ms ease,
     border-color 160ms ease,
-    box-shadow 160ms ease,
     background-color 160ms ease;
 }
 
 .featureVisual {
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
   align-items: center;
-  min-height: 124px;
-  background:
-    radial-gradient(circle at top left, rgba(15, 23, 42, 0.08), transparent 44%),
-    linear-gradient(180deg, var(--site-surface-strong) 0%, rgba(255, 255, 255, 0.5) 100%);
-  border-bottom: 1px solid var(--site-border);
+  min-height: 0;
+  margin-bottom: 0.9rem;
 }
 
 [data-theme='dark'] .featureVisual {
-  background:
-    radial-gradient(circle at top left, rgba(255, 255, 255, 0.07), transparent 44%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.02) 100%);
+  background: transparent;
 }
 
 .featureVisual :global(svg) {
-  color: var(--site-accent);
-  transition: transform 180ms ease, opacity 180ms ease;
+  color: var(--ifm-color-primary);
+  opacity: 0.9;
+  transition: transform 180ms ease, opacity 180ms ease, color 180ms ease;
 }
 
 .featureBody {
-  padding: 0.8rem 0.95rem 0.9rem;
-}
-
-.featureContext {
-  display: inline-block;
-  margin-bottom: 0.35rem;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  font-size: 0.64rem;
-  font-weight: 700;
-  color: var(--ifm-color-emphasis-600);
+  padding: 0;
 }
 
 .featureTitle {
-  margin-bottom: 0.25rem;
-  font-size: 0.98rem;
+  margin-bottom: 0.18rem;
+  font-size: 0.95rem;
+  letter-spacing: -0.015em;
 }
 
 .featureDescription {
   color: var(--ifm-color-emphasis-700);
-  line-height: 1.42;
-  font-size: 0.9rem;
-}
-
-.featureFooter {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.75rem 0.95rem 0.8rem;
-  border-top: 1px solid var(--site-border);
-  color: var(--site-accent);
-}
-
-.featureAction {
-  font-size: 0.82rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-}
-
-.featureArrow {
-  font-size: 1rem;
-  transform: translateX(0);
-  transition: transform 160ms ease;
+  line-height: 1.35;
+  font-size: 0.84rem;
 }
 
 .featureCardLink:hover .featureCard,
 .featureCardLink:focus-visible .featureCard {
-  transform: translateY(-4px);
-  border-color: color-mix(in srgb, var(--site-accent) 32%, var(--site-border));
-  box-shadow: 0 24px 48px rgba(15, 23, 42, 0.12);
+  transform: translateY(-1px);
+  border-color: var(--ifm-color-primary);
+  box-shadow: none;
+  background: var(--ifm-background-surface-color);
 }
 
 .featureCardLink:hover .featureVisual :global(svg),
 .featureCardLink:focus-visible .featureVisual :global(svg) {
-  transform: scale(1.03);
-}
-
-.featureCardLink:hover .featureArrow,
-.featureCardLink:focus-visible .featureArrow {
-  transform: translateX(3px);
+  transform: scale(1.02);
+  opacity: 1;
 }
 
 .featureCardLink:focus-visible {
@@ -161,11 +104,45 @@
 
 [data-theme='dark'] .featureCardLink:hover .featureCard,
 [data-theme='dark'] .featureCardLink:focus-visible .featureCard {
-  box-shadow: 0 28px 56px rgba(2, 6, 23, 0.42);
+  box-shadow: none;
 }
 
 @media screen and (max-width: 996px) {
   .features {
-    padding: 0 0 2.4rem;
+    padding: 0 0 1.7rem;
+  }
+
+  .featureColumn {
+    margin-bottom: 0.5rem;
+  }
+
+  .featureCard {
+    grid-template-columns: 2.2rem minmax(0, 1fr);
+    grid-template-rows: auto;
+    align-items: start;
+    gap: 0.8rem;
+    padding: 0.85rem 0.9rem;
+    border-radius: 14px;
+  }
+
+  .featureVisual {
+    margin-bottom: 0;
+    justify-content: center;
+    padding-top: 0.1rem;
+  }
+
+  .featureSvg {
+    height: 1.7rem;
+    width: 1.7rem;
+  }
+
+  .featureTitle {
+    font-size: 0.92rem;
+    margin-bottom: 0.12rem;
+  }
+
+  .featureDescription {
+    font-size: 0.8rem;
+    line-height: 1.32;
   }
 }
