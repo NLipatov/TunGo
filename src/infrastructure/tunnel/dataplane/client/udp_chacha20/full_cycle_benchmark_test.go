@@ -2,9 +2,12 @@ package udp_chacha20
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"net/netip"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"tungo/application/network/connection"
 	chacha "tungo/infrastructure/cryptography/chacha20"
@@ -38,16 +41,14 @@ func (s *benchmarkPacketSink) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func benchmarkUDPCryptoPair(b *testing.B) (connection.Crypto, connection.Crypto) {
+func benchmarkUDPCryptoPair(b *testing.B, idSeed uint64) (connection.Crypto, connection.Crypto) {
 	b.Helper()
 
+	var id [32]byte
+	binary.BigEndian.PutUint64(id[24:], idSeed)
+
 	hs := &benchmarkHandshake{
-		id: [32]byte{
-			1, 2, 3, 4, 5, 6, 7, 8,
-			9, 10, 11, 12, 13, 14, 15, 16,
-			17, 18, 19, 20, 21, 22, 23, 24,
-			25, 26, 27, 28, 29, 30, 31, 32,
-		},
+		id:  id,
 		c2s: bytes.Repeat([]byte{0x11}, chacha20poly1305.KeySize),
 		s2c: bytes.Repeat([]byte{0x22}, chacha20poly1305.KeySize),
 	}
@@ -82,6 +83,14 @@ func benchmarkIPv4Packet(src, dst netip.Addr, payloadLen int) []byte {
 	return packet
 }
 
+func benchmarkIPv4Addr(a, b, c, d byte) netip.Addr {
+	return netip.AddrFrom4([4]byte{a, b, c, d})
+}
+
+func benchmarkIPv4AddrPort(a, b, c, d byte, port uint16) netip.AddrPort {
+	return netip.AddrPortFrom(benchmarkIPv4Addr(a, b, c, d), port)
+}
+
 func BenchmarkFullCycleServerToClientUDP(b *testing.B) {
 	clientInner := netip.MustParseAddr("10.0.0.2")
 	clientOuter := netip.MustParseAddrPort("203.0.113.10:51820")
@@ -91,7 +100,7 @@ func BenchmarkFullCycleServerToClientUDP(b *testing.B) {
 
 	for _, payloadSize := range payloadSizes {
 		b.Run(fmt.Sprintf("%dB", payloadSize), func(b *testing.B) {
-			clientCrypto, serverCrypto := benchmarkUDPCryptoPair(b)
+			clientCrypto, serverCrypto := benchmarkUDPCryptoPair(b, 1)
 			cipherSink := &benchmarkPacketSink{}
 
 			repo := session.NewDefaultRepository()
@@ -135,6 +144,92 @@ func BenchmarkFullCycleServerToClientUDP(b *testing.B) {
 					b.Fatalf("unexpected payload length: got %d want %d", written, len(packet))
 				}
 			}
+		})
+	}
+}
+
+func BenchmarkFullCycleServerToClientUDPParallelPeers(b *testing.B) {
+	type flow struct {
+		mu     sync.Mutex
+		packet []byte
+		sink   *benchmarkPacketSink
+		egress connection.Egress
+		crypto connection.Crypto
+	}
+
+	const payloadSize = 1400
+	peerCounts := []int{1, 64, 1024}
+	remoteSrc := netip.MustParseAddr("1.1.1.1")
+	parser := appip.NewHeaderParser()
+
+	for _, peerCount := range peerCounts {
+		b.Run(fmt.Sprintf("%dpeers", peerCount), func(b *testing.B) {
+			repo := session.NewDefaultRepository()
+			flows := make([]flow, peerCount)
+
+			for i := 0; i < peerCount; i++ {
+				clientInner := benchmarkIPv4Addr(10, byte(i/256), byte(i%256), 10)
+				clientOuter := benchmarkIPv4AddrPort(203, 0, byte(i/256), byte(i%256), uint16(20000+i))
+				clientCrypto, serverCrypto := benchmarkUDPCryptoPair(b, uint64(i+1))
+				sink := &benchmarkPacketSink{}
+				egress := connection.NewDefaultEgress(sink, serverCrypto)
+				repo.Add(session.NewPeer(
+					session.NewSessionWithAuth(serverCrypto, nil, clientInner, clientOuter, nil, nil),
+					egress,
+				))
+				flows[i] = flow{
+					packet: benchmarkIPv4Packet(remoteSrc, clientInner, payloadSize),
+					sink:   sink,
+					egress: egress,
+					crypto: clientCrypto,
+				}
+			}
+
+			var workerSeq atomic.Uint64
+			prefixLen := chacha.UDPRouteIDLength + chacha20poly1305.NonceSize
+
+			b.ReportAllocs()
+			b.SetBytes(int64(20 + payloadSize))
+			b.ResetTimer()
+
+			b.RunParallel(func(pb *testing.PB) {
+				flowIdx := int(workerSeq.Add(1)-1) % len(flows)
+				f := &flows[flowIdx]
+				sendBuf := make([]byte, prefixLen+len(f.packet), settings.DefaultEthernetMTU+settings.UDPChacha20Overhead)
+				handler := &TransportHandler{
+					writer:              io.Discard,
+					cryptographyService: f.crypto,
+				}
+
+				for pb.Next() {
+					f.mu.Lock()
+					addr, err := parser.DestinationAddress(f.packet)
+					if err != nil {
+						f.mu.Unlock()
+						b.Fatalf("parse destination: %v", err)
+					}
+					peer, err := repo.FindByDestinationIP(addr)
+					if err != nil {
+						f.mu.Unlock()
+						b.Fatalf("find peer: %v", err)
+					}
+					copy(sendBuf[prefixLen:], f.packet)
+					if err := peer.Egress().SendDataIP(sendBuf[:prefixLen+len(f.packet)]); err != nil {
+						f.mu.Unlock()
+						b.Fatalf("server encrypt/send: %v", err)
+					}
+					written, err := handler.handleDatagram(f.sink.buf)
+					if err != nil {
+						f.mu.Unlock()
+						b.Fatalf("client handle datagram: %v", err)
+					}
+					if written != len(f.packet) {
+						f.mu.Unlock()
+						b.Fatalf("unexpected payload length: got %d want %d", written, len(f.packet))
+					}
+					f.mu.Unlock()
+				}
+			})
 		})
 	}
 }
