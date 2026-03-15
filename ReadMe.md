@@ -24,6 +24,30 @@
 
 ---
 
+## 📈 Performance
+
+TunGo includes in-memory full-cycle dataplane benchmarks for both UDP and TCP. These benchmarks measure userspace packet-processing throughput only: encryption, routing/lookup, validation, decryption, and handoff to an in-memory sink.
+
+Example single-run results for **1400-byte packets** on **Apple M4 Pro**:
+
+| Path | ns/op | Throughput | Allocs/op |
+|---|---:|---:|---:|
+| UDP client -> server | ~2.6 us | ~551 MB/s | 0 |
+| UDP server -> client | ~2.9 us | ~494 MB/s | 0 |
+| TCP client -> server | ~2.5 us | ~565 MB/s | 0 |
+| TCP server -> client | ~2.6 us | ~554 MB/s | 0 |
+
+These numbers do **not** include TUN device, socket, kernel, firewall/NAT, or real network overhead. Treat them as dataplane-core benchmarks, not end-to-end VPN throughput claims.
+
+To reproduce:
+
+```bash
+cd src
+GOCACHE=/tmp/go-build-cache go test ./infrastructure/tunnel/dataplane/server/udp_chacha20 ./infrastructure/tunnel/dataplane/client/udp_chacha20 ./infrastructure/tunnel/dataplane/server/tcp_chacha20 ./infrastructure/tunnel/dataplane/client/tcp_chacha20 -run ^$ -bench FullCycle -benchmem
+```
+
+---
+
 ## 🚀 QuickStart
 
 Refer to: [QuickStart](https://tungo.ethacore.com/docs/QuickStart)
