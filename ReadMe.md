@@ -43,7 +43,7 @@ To reproduce:
 
 ```bash
 cd src
-GOCACHE=/tmp/go-build-cache go test ./infrastructure/tunnel/dataplane/server/udp_chacha20 ./infrastructure/tunnel/dataplane/client/udp_chacha20 ./infrastructure/tunnel/dataplane/server/tcp_chacha20 ./infrastructure/tunnel/dataplane/client/tcp_chacha20 -run ^$ -bench FullCycle -benchmem
+go test ./infrastructure/tunnel/dataplane/server/udp_chacha20 ./infrastructure/tunnel/dataplane/client/udp_chacha20 ./infrastructure/tunnel/dataplane/server/tcp_chacha20 ./infrastructure/tunnel/dataplane/client/tcp_chacha20 -run ^$ -bench FullCycle -benchmem
 ```
 
 ---
