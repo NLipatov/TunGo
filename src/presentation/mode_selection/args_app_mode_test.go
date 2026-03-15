@@ -83,25 +83,22 @@ func TestArgsAppMode_Mode(t *testing.T) {
 				if tt.expectedErrMsg != "" && err.Error() != tt.expectedErrMsg {
 					t.Errorf("Mode() error message = %q, want %q", err.Error(), tt.expectedErrMsg)
 				}
-				// Check error type using errors.As
+				// Check error type using errors.AsType
 				if tt.expectedErrType != nil {
 					var noModeProvided mode.NoModeProvided
 					var invalidModeProvided mode.InvalidModeProvided
 					var invalidExecPathProvided mode.InvalidExecPathProvided
 					switch {
 					case errors.As(tt.expectedErrType, &noModeProvided):
-						var target mode.NoModeProvided
-						if !errors.As(err, &target) {
+						if _, ok := errors.AsType[mode.NoModeProvided](err); !ok {
 							t.Errorf("expected error type %T, got %T", tt.expectedErrType, err)
 						}
 					case errors.As(tt.expectedErrType, &invalidModeProvided):
-						var target mode.InvalidModeProvided
-						if !errors.As(err, &target) {
+						if _, ok := errors.AsType[mode.InvalidModeProvided](err); !ok {
 							t.Errorf("expected error type %T, got %T", tt.expectedErrType, err)
 						}
 					case errors.As(tt.expectedErrType, &invalidExecPathProvided):
-						var target mode.InvalidExecPathProvided
-						if !errors.As(err, &target) {
+						if _, ok := errors.AsType[mode.InvalidExecPathProvided](err); !ok {
 							t.Errorf("expected error type %T, got %T", tt.expectedErrType, err)
 						}
 					}

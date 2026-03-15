@@ -40,9 +40,9 @@ func TestErrTimeout_UnwrapAndErrorsIs_As(t *testing.T) {
 		t.Fatalf("errors.Is must see cause through additional wrap")
 	}
 
-	// errors.As to our type
-	var et ErrTimeout
-	if !errors.As(e, &et) {
+	// errors.AsType to our type
+	et, ok := errors.AsType[ErrTimeout](e)
+	if !ok {
 		t.Fatalf("errors.As must match ErrTimeout")
 	}
 	if !errors.Is(et.cause, context.DeadlineExceeded) {
