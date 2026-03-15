@@ -43,6 +43,9 @@ func TestNewConfiguratorSessionModel_AutoSelectModeClient_NavigatesToClientSelec
 	if model.screen != configuratorScreenClientSelect {
 		t.Fatalf("expected configuratorScreenClientSelect, got %v", model.screen)
 	}
+	if !strings.Contains(model.notice, "Auto-selected mode: client.") {
+		t.Fatalf("expected autoselect mode notice, got %q", model.notice)
+	}
 }
 
 func TestNewConfiguratorSessionModel_AutoSelectModeServer_NavigatesToServerSelect(t *testing.T) {
@@ -52,6 +55,9 @@ func TestNewConfiguratorSessionModel_AutoSelectModeServer_NavigatesToServerSelec
 	}
 	if model.screen != configuratorScreenServerSelect {
 		t.Fatalf("expected configuratorScreenServerSelect, got %v", model.screen)
+	}
+	if !strings.Contains(model.notice, "Auto-selected mode: server.") {
+		t.Fatalf("expected autoselect mode notice, got %q", model.notice)
 	}
 }
 
@@ -197,6 +203,53 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_SkipsSelection(t *te
 	}
 	if selector.selected != "cfg.json" {
 		t.Fatalf("expected selector to receive cfg.json, got %q", selector.selected)
+	}
+	if !strings.Contains(model.notice, "Auto-selected mode: client.") {
+		t.Fatalf("expected autoselect mode notice, got %q", model.notice)
+	}
+	if !strings.Contains(model.notice, "Auto-selected config: cfg.json.") {
+		t.Fatalf("expected autoselect config notice, got %q", model.notice)
+	}
+}
+
+func TestNewConfiguratorSessionModel_AutoSelectClientConfig_DaemonActive_RequiresConfirmation(t *testing.T) {
+	s := settingsForMode(ModePreferenceClient)
+	p := s.Preferences()
+	p.AutoConnect = true
+	p.AutoSelectClientConfig = "cfg.json"
+	s.update(p)
+
+	selector := &sessionSelectorRecorder{}
+	opts := defaultConfiguratorOpts()
+	opts.Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
+	opts.Selector = selector
+	opts.CheckSystemdUnitActive = func() (bool, error) { return true, nil }
+	opts.StopSystemdUnit = func() error { return nil }
+
+	model, err := newConfiguratorSessionModel(opts, s)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if model.done {
+		t.Fatal("expected done=false when daemon is active")
+	}
+	if model.screen != configuratorScreenSystemdActiveConfirm {
+		t.Fatalf("expected configuratorScreenSystemdActiveConfirm, got %v", model.screen)
+	}
+	if model.pendingStartMode != mode.Client {
+		t.Fatalf("expected pendingStartMode=Client, got %v", model.pendingStartMode)
+	}
+	if model.pendingClientConfig != "cfg.json" {
+		t.Fatalf("expected pendingClientConfig=cfg.json, got %q", model.pendingClientConfig)
+	}
+	if selector.selected != "cfg.json" {
+		t.Fatalf("expected selector to receive cfg.json, got %q", selector.selected)
+	}
+	if !strings.Contains(model.notice, "Auto-selected mode: client.") {
+		t.Fatalf("expected autoselect mode notice, got %q", model.notice)
+	}
+	if !strings.Contains(model.notice, "Auto-selected config: cfg.json.") {
+		t.Fatalf("expected autoselect config notice, got %q", model.notice)
 	}
 }
 

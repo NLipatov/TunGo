@@ -97,6 +97,17 @@ func tryAutoConnect(prefs UIPreferences, opts ConfiguratorSessionOptions) bool {
 	return true
 }
 
+func shouldDeferAutoConnectForSystemd(opts ConfiguratorSessionOptions) bool {
+	if opts.CheckSystemdUnitActive == nil || opts.StopSystemdUnit == nil {
+		return false
+	}
+	active, err := opts.CheckSystemdUnitActive()
+	if err != nil {
+		return true
+	}
+	return active
+}
+
 func newUnifiedSessionModel(
 	appCtx context.Context,
 	configOpts ConfiguratorSessionOptions,
@@ -106,7 +117,8 @@ func newUnifiedSessionModel(
 	prefs := settings.Preferences()
 	impliedClient := prefs.AutoSelectMode == ModePreferenceClient || !configOpts.ServerSupported
 	if impliedClient && prefs.AutoConnect {
-		if tryAutoConnect(prefs, configOpts) {
+		deferForSystemd := shouldDeferAutoConnectForSystemd(configOpts)
+		if !deferForSystemd && tryAutoConnect(prefs, configOpts) {
 			events <- unifiedEvent{kind: unifiedEventModeSelected, mode: mode.Client}
 			cfgModel, err := newConfiguratorSessionModel(configOpts, settings)
 			if err != nil {
@@ -121,11 +133,13 @@ func newUnifiedSessionModel(
 				appCtx:       appCtx,
 			}, nil
 		}
-		// Last config gone or invalid — reset auto-connect
-		p := settings.Preferences()
-		p.AutoConnect = false
-		settings.update(p)
-		_ = savePreferencesToDisk(p)
+		if !deferForSystemd {
+			// Last config gone or invalid — reset auto-connect
+			p := settings.Preferences()
+			p.AutoConnect = false
+			settings.update(p)
+			_ = savePreferencesToDisk(p)
+		}
 	}
 
 	cfgModel, err := newConfiguratorSessionModel(configOpts, settings)

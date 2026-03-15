@@ -14,15 +14,13 @@ Mettez en place votre serveur et client TunGo en quelques minutes.
      <TabItem value="linux" label="Linux amd64" default>
      ```bash
      wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-amd64 -O tungo && \
-     chmod +x tungo && \
-     sudo mv tungo /usr/local/bin/
+     sudo install -o root -g root -m 0755 tungo /usr/local/bin/tungo
      ```
      </TabItem>
      <TabItem value="linux-arm64" label="Linux arm64">
      ```bash
      wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-arm64 -O tungo && \
-     chmod +x tungo && \
-     sudo mv tungo /usr/local/bin/
+     sudo install -o root -g root -m 0755 tungo /usr/local/bin/tungo
      ```
      </TabItem>
    </Tabs>
@@ -50,8 +48,7 @@ Consultez <a href="/docs/Advanced/Linux/Setup server systemd unit">ce guide</a> 
      <TabItem value="linux-amd64" label="Linux amd64" default>
          ```bash
          wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-amd64 -O tungo && \
-         chmod +x tungo && \
-         sudo mv tungo /usr/local/bin/
+         sudo install -o root -g root -m 0755 tungo /usr/local/bin/tungo
          ```
 
          :::tip Daemon systemd du client (Linux)
@@ -61,8 +58,7 @@ Consultez <a href="/docs/Advanced/Linux/Setup server systemd unit">ce guide</a> 
      <TabItem value="linux-arm64" label="Linux arm64">
          ```bash
          wget https://github.com/NLipatov/TunGo/releases/latest/download/tungo-linux-arm64 -O tungo && \
-         chmod +x tungo && \
-         sudo mv tungo /usr/local/bin/
+         sudo install -o root -g root -m 0755 tungo /usr/local/bin/tungo
          ```
 
          :::tip Daemon systemd du client (Linux)

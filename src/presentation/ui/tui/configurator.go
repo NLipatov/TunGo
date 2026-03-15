@@ -7,6 +7,9 @@ import (
 	"tungo/domain/mode"
 	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/PAL/configuration/server"
+	"tungo/infrastructure/PAL/exec_commander"
+	"tungo/infrastructure/PAL/service_management/linux/systemd"
+	systemdDomain "tungo/infrastructure/PAL/service_management/linux/systemd/domain"
 	bubbleTea "tungo/presentation/ui/tui/internal/bubble_tea"
 	"tungo/presentation/ui/tui/internal/ui/contracts/selector"
 	"tungo/presentation/ui/tui/internal/ui/contracts/text_area"
@@ -24,6 +27,19 @@ type unifiedSessionHandle interface {
 	Close()
 }
 
+type systemdInstaller interface {
+	Supported() bool
+	InstallServerUnit() (string, error)
+	InstallClientUnit() (string, error)
+	RemoveUnit() error
+	IsUnitActive() (bool, error)
+	StopUnit() error
+	StartUnit() error
+	EnableUnit() error
+	DisableUnit() error
+	Status() (systemdDomain.UnitStatus, error)
+}
+
 // sessionHolder shares session state between Configurator and runtimeBackend.
 // Both hold a pointer to the same holder; when either clears handle, the other sees it.
 type sessionHolder struct {
@@ -33,6 +49,10 @@ type sessionHolder struct {
 // newUnifiedSession creates a new unified session. Replaced in tests.
 var newUnifiedSession = func(ctx context.Context, opts bubbleTea.ConfiguratorSessionOptions) (unifiedSessionHandle, error) {
 	return bubbleTea.NewUnifiedSession(ctx, opts)
+}
+
+var newSystemdInstaller = func() systemdInstaller {
+	return systemd.NewUnitInstaller(exec_commander.NewExecCommander())
 }
 
 type Configurator struct {
@@ -114,6 +134,8 @@ func (p *Configurator) configureContinuous(ctx context.Context) (mode.Mode, erro
 		return mode.Unknown, fmt.Errorf("continuous configurator is not initialized")
 	}
 
+	systemdInstaller := newSystemdInstaller()
+	systemdSupported := systemdInstaller.Supported()
 	configOpts := bubbleTea.ConfiguratorSessionOptions{
 		Observer:            p.clientConfigurator.observer,
 		Selector:            p.clientConfigurator.selector,
@@ -122,6 +144,47 @@ func (p *Configurator) configureContinuous(ctx context.Context) (mode.Mode, erro
 		ClientConfigManager: p.clientConfigurator.configurationManager,
 		ServerConfigManager: p.serverConfigurator.manager,
 		ServerSupported:     p.serverSupported,
+		SystemdSupported:    systemdSupported,
+	}
+	if systemdSupported {
+		configOpts.GetSystemdDaemonStatus = func() (bubbleTea.SystemdDaemonStatus, error) {
+			status, err := systemdInstaller.Status()
+			if err != nil {
+				return bubbleTea.SystemdDaemonStatus{}, err
+			}
+			daemonMode := mode.Unknown
+			switch status.Role {
+			case systemdDomain.UnitRoleClient:
+				daemonMode = mode.Client
+			case systemdDomain.UnitRoleServer:
+				daemonMode = mode.Server
+			}
+			return bubbleTea.SystemdDaemonStatus{
+				Installed:      status.Installed,
+				Managed:        status.Managed,
+				Mode:           daemonMode,
+				LoadState:      string(status.LoadState),
+				UnitFileState:  string(status.UnitFileState),
+				ActiveState:    string(status.ActiveState),
+				SubState:       status.SubState,
+				Result:         status.Result,
+				ExecMainStatus: status.ExecMainStatus,
+				ExecStart:      status.ExecStart,
+				FragmentPath:   status.FragmentPath,
+			}, nil
+		}
+		configOpts.InstallClientSystemdUnit = systemdInstaller.InstallClientUnit
+		configOpts.CheckSystemdUnitActive = func() (bool, error) {
+			return systemdInstaller.IsUnitActive()
+		}
+		configOpts.StopSystemdUnit = systemdInstaller.StopUnit
+		configOpts.StartSystemdUnit = systemdInstaller.StartUnit
+		configOpts.EnableSystemdUnit = systemdInstaller.EnableUnit
+		configOpts.DisableSystemdUnit = systemdInstaller.DisableUnit
+		configOpts.RemoveSystemdUnit = systemdInstaller.RemoveUnit
+		if p.serverSupported {
+			configOpts.InstallServerSystemdUnit = systemdInstaller.InstallServerUnit
+		}
 	}
 
 	if p.sh == nil || p.sh.handle == nil {

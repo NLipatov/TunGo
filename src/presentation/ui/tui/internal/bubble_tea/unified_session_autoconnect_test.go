@@ -109,6 +109,42 @@ func TestTryAutoConnect_AllSucceed(t *testing.T) {
 	}
 }
 
+func TestShouldDeferAutoConnectForSystemd_ActiveDaemon(t *testing.T) {
+	opts := ConfiguratorSessionOptions{
+		CheckSystemdUnitActive: func() (bool, error) { return true, nil },
+		StopSystemdUnit:        func() error { return nil },
+	}
+	if !shouldDeferAutoConnectForSystemd(opts) {
+		t.Fatal("expected defer=true when daemon is active")
+	}
+}
+
+func TestShouldDeferAutoConnectForSystemd_InactiveDaemon(t *testing.T) {
+	opts := ConfiguratorSessionOptions{
+		CheckSystemdUnitActive: func() (bool, error) { return false, nil },
+		StopSystemdUnit:        func() error { return nil },
+	}
+	if shouldDeferAutoConnectForSystemd(opts) {
+		t.Fatal("expected defer=false when daemon is inactive")
+	}
+}
+
+func TestShouldDeferAutoConnectForSystemd_NoHooks(t *testing.T) {
+	if shouldDeferAutoConnectForSystemd(ConfiguratorSessionOptions{}) {
+		t.Fatal("expected defer=false when systemd hooks are missing")
+	}
+}
+
+func TestShouldDeferAutoConnectForSystemd_StatusCheckError(t *testing.T) {
+	opts := ConfiguratorSessionOptions{
+		CheckSystemdUnitActive: func() (bool, error) { return false, errors.New("boom") },
+		StopSystemdUnit:        func() error { return nil },
+	}
+	if !shouldDeferAutoConnectForSystemd(opts) {
+		t.Fatal("expected defer=true when status check fails")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // newUnifiedSessionModel: auto-connect
 // ---------------------------------------------------------------------------
@@ -144,6 +180,39 @@ func TestNewUnifiedSessionModel_AutoConnect_Succeeds_StartsWaiting(t *testing.T)
 		}
 	default:
 		t.Fatal("expected event in channel, got none")
+	}
+}
+
+func TestNewUnifiedSessionModel_AutoConnect_DaemonActive_FallsBackToConfiguring(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "cfg.json")
+	if err := os.WriteFile(cfgPath, []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	settings := settingsWithAutoConnect(cfgPath)
+	events := make(chan unifiedEvent, 8)
+	opts := defaultUnifiedConfigOpts()
+	opts.Observer = sessionObserverWithConfigs{configs: []string{cfgPath}}
+	opts.CheckSystemdUnitActive = func() (bool, error) { return true, nil }
+	opts.StopSystemdUnit = func() error { return nil }
+
+	m, err := newUnifiedSessionModel(context.Background(), opts, events, settings)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if m.phase != phaseConfiguring {
+		t.Fatalf("expected phaseConfiguring when daemon is active, got %d", m.phase)
+	}
+	if m.configurator.screen != configuratorScreenSystemdActiveConfirm {
+		t.Fatalf("expected systemd confirmation screen, got %v", m.configurator.screen)
+	}
+	if !settings.Preferences().AutoConnect {
+		t.Fatal("expected AutoConnect to remain true while waiting for user confirmation")
+	}
+	select {
+	case ev := <-events:
+		t.Fatalf("expected no mode-selected event while daemon active, got kind=%d mode=%v", ev.kind, ev.mode)
+	default:
 	}
 }
 

@@ -3344,3 +3344,208 @@ func TestUpdate_NonKeyMsg_DroppedOnOtherScreens(t *testing.T) {
 		t.Fatal("expected nil cmd for dropped message")
 	}
 }
+
+func TestUpdateClientAddJSONScreen_NonEnter_SchedulesPasteSettledTick(t *testing.T) {
+	m := newTestSessionModel(t)
+	m.screen = configuratorScreenClientAddJSON
+	m.client.pasteSeq = 0
+
+	result, cmd := m.updateClientAddJSONScreen(keyRunes('x'))
+	s := result.(configuratorSessionModel)
+	if cmd == nil {
+		t.Fatal("expected non-nil cmd for non-enter input in JSON screen")
+	}
+	if s.client.pasteSeq != 1 {
+		t.Fatalf("expected pasteSeq incremented to 1, got %d", s.client.pasteSeq)
+	}
+}
+
+func TestUpdateServerSelectScreen_NonEnter_OnlyNavigates(t *testing.T) {
+	m := newTestSessionModel(t)
+	m.screen = configuratorScreenServerSelect
+	m.server.menuOptions = []string{sessionServerStart, sessionServerAdd}
+	m.cursor = 0
+
+	result, cmd := m.updateServerSelectScreen(keyNamed(tea.KeyDown))
+	s := result.(configuratorSessionModel)
+	if cmd != nil {
+		t.Fatalf("expected nil cmd on non-enter, got %v", cmd)
+	}
+	if s.cursor != 1 {
+		t.Fatalf("expected cursor moved to 1, got %d", s.cursor)
+	}
+	if s.screen != configuratorScreenServerSelect {
+		t.Fatalf("expected to stay on server select, got %v", s.screen)
+	}
+}
+
+func TestUpdateSettingsTab_ClampsOutOfRangeCursor(t *testing.T) {
+	m := newTestSessionModel(t)
+	rows := m.settingsRows()
+	if len(rows) == 0 {
+		t.Fatal("expected non-empty settings rows")
+	}
+	m.settingsCursor = len(rows) + 10
+
+	result, _ := m.updateSettingsTab(keyRunes('x'))
+	s := result.(configuratorSessionModel)
+	if s.settingsCursor != len(rows)-1 {
+		t.Fatalf("expected cursor clamped to %d, got %d", len(rows)-1, s.settingsCursor)
+	}
+}
+
+func TestUpdate_MainTab_DispatchesSystemdScreens(t *testing.T) {
+	t.Run("daemon manage dispatch", func(t *testing.T) {
+		opts := defaultConfiguratorOpts()
+		opts.SystemdSupported = true
+		opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
+			return SystemdDaemonStatus{Installed: true, ActiveState: "inactive", UnitFileState: "disabled"}, nil
+		}
+		model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		model.screen = configuratorScreenDaemonManage
+		model.daemon.menuOptions = []string{"unknown"}
+		result, _ := model.Update(keyNamed(tea.KeyEnter))
+		updated := result.(configuratorSessionModel)
+		if updated.screen != configuratorScreenDaemonManage {
+			t.Fatalf("expected daemon manage screen, got %v", updated.screen)
+		}
+	})
+
+	t.Run("daemon reconfigure confirm dispatch", func(t *testing.T) {
+		opts := defaultConfiguratorOpts()
+		model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		model.screen = configuratorScreenDaemonReconfigureConfirm
+		model.pendingDaemonMode = mode.Client
+		result, _ := model.Update(keyNamed(tea.KeyDown))
+		updated := result.(configuratorSessionModel)
+		if updated.screen != configuratorScreenDaemonReconfigureConfirm {
+			t.Fatalf("expected daemon reconfigure confirm screen, got %v", updated.screen)
+		}
+	})
+
+	t.Run("systemd active confirm dispatch", func(t *testing.T) {
+		opts := defaultConfiguratorOpts()
+		model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		model.screen = configuratorScreenSystemdActiveConfirm
+		model.pendingStartMode = mode.Client
+		model.pendingStartScreen = configuratorScreenClientSelect
+		result, _ := model.Update(keyNamed(tea.KeyDown))
+		updated := result.(configuratorSessionModel)
+		if updated.screen != configuratorScreenSystemdActiveConfirm {
+			t.Fatalf("expected systemd active confirm screen, got %v", updated.screen)
+		}
+	})
+}
+
+func TestView_MainTab_DaemonManageScreen(t *testing.T) {
+	opts := defaultConfiguratorOpts()
+	opts.SystemdSupported = true
+	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
+		return SystemdDaemonStatus{Installed: true, Mode: mode.Client, UnitFileState: "disabled", ActiveState: "inactive"}, nil
+	}
+	opts.StartSystemdUnit = func() error { return nil }
+	opts.EnableSystemdUnit = func() error { return nil }
+	opts.InstallClientSystemdUnit = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
+
+	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	model.screen = configuratorScreenDaemonManage
+	view := model.mainTabView()
+	if !strings.Contains(view, "Setup/Manage daemon") {
+		t.Fatalf("expected daemon manage title, got: %s", view)
+	}
+}
+
+func TestUpdateClientAddJSONScreen_NonEnter_ExecutesTickClosure(t *testing.T) {
+	m := newTestSessionModel(t)
+	m.screen = configuratorScreenClientAddJSON
+
+	_, cmd := m.updateClientAddJSONScreen(keyRunes('x'))
+	if cmd == nil {
+		t.Fatal("expected non-nil cmd")
+	}
+	msg := cmd()
+	batch, ok := msg.(tea.BatchMsg)
+	if !ok {
+		t.Fatalf("expected tea.BatchMsg, got %T", msg)
+	}
+	foundTick := false
+	for _, nested := range batch {
+		if nested == nil {
+			continue
+		}
+		nestedMsg := nested()
+		if _, ok := nestedMsg.(pasteSettledMsg); ok {
+			foundTick = true
+			break
+		}
+	}
+	if !foundTick {
+		t.Fatal("expected pasteSettledMsg from batched tick command")
+	}
+}
+
+func TestNewConfiguratorSessionModel_AutoSelectClientMode_ObserverError(t *testing.T) {
+	opts := defaultConfiguratorOpts()
+	opts.Observer = sessionObserverError{err: errors.New("observe failed")}
+	_, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
+	if err == nil || !strings.Contains(err.Error(), "observe failed") {
+		t.Fatalf("expected observer error, got %v", err)
+	}
+}
+
+func TestNewConfiguratorSessionModel_AutoSelectConfig_SelectFails_ShowsNotice(t *testing.T) {
+	s := settingsForMode(ModePreferenceClient)
+	p := s.Preferences()
+	p.AutoConnect = true
+	p.AutoSelectClientConfig = "cfg.json"
+	s.update(p)
+
+	opts := defaultConfiguratorOpts()
+	opts.Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
+	opts.Selector = sessionSelectorFailStub{err: errors.New("select failed")}
+
+	model, err := newConfiguratorSessionModel(opts, s)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(model.notice, "Auto-select failed for \"cfg.json\": select failed") {
+		t.Fatalf("expected selector failure notice, got %q", model.notice)
+	}
+}
+
+func TestNewConfiguratorSessionModel_AutoSelectConfig_NilClientManager_UsesSystemdGuard(t *testing.T) {
+	s := settingsForMode(ModePreferenceClient)
+	p := s.Preferences()
+	p.AutoConnect = true
+	p.AutoSelectClientConfig = "cfg.json"
+	s.update(p)
+
+	opts := defaultConfiguratorOpts()
+	opts.Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
+	opts.ClientConfigManager = nil
+	opts.CheckSystemdUnitActive = func() (bool, error) { return true, nil }
+	opts.StopSystemdUnit = func() error { return nil }
+
+	model, err := newConfiguratorSessionModel(opts, s)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if model.screen != configuratorScreenSystemdActiveConfirm {
+		t.Fatalf("expected systemd active confirm screen, got %v", model.screen)
+	}
+	if model.pendingClientConfig != "cfg.json" {
+		t.Fatalf("expected pending client config cfg.json, got %q", model.pendingClientConfig)
+	}
+}
