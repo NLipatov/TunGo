@@ -64,6 +64,20 @@ footer.footer {
   background-color: var(--ifm-background-color);
 }
 
+/* Navbar spacing should read as one even rhythm. */
+.navbar__brand {
+  margin-right: 1rem;
+}
+
+.navbar__items--left {
+  gap: 1rem;
+}
+
+.navbar__items--left .navbar__link {
+  padding-left: 0;
+  padding-right: 0;
+}
+
 /* Small UX polish (relative, typography-friendly) */
 a:hover {
   text-decoration-thickness: 0.125em;

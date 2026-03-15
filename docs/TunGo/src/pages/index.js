@@ -14,14 +14,17 @@ function HomepageHeader() {
       <div className={Clsx('container', Styles.heroGrid)}>
         <div className={Styles.heroCopy}>
           <Heading as="h1" className={Styles.heroTitle}>
-            Fast, lightweight <span className={Styles.noBreak}>userspace VPN</span>
+            <Translate id="homepage.heroTitle.prefix">Fast, lightweight</Translate>{' '}
+            <span className={Styles.noBreak}>
+              <Translate id="homepage.heroTitle.suffix">userspace VPN</Translate>
+            </span>
           </Heading>
           <div className={Styles.buttons}>
             <Link className="button button--primary button--lg" to="/docs/QuickStart">
               <Translate id="homepage.cta">Get started in minutes</Translate>
             </Link>
             <Link className={Clsx('button button--secondary button--lg', Styles.secondaryCta)} to="/benchmarks">
-              View benchmarks
+              <Translate id="homepage.benchmarksCta">View benchmarks</Translate>
             </Link>
           </div>
         </div>

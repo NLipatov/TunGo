@@ -77,6 +77,22 @@
   color: var(--ifm-font-color-base) !important;
 }
 
+[data-theme='dark'] .secondaryCta,
+[data-theme='dark'] .buttons :global(.button--secondary).secondaryCta {
+  border-color: var(--ifm-color-emphasis-400);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--ifm-color-emphasis-0) !important;
+}
+
+[data-theme='dark'] .secondaryCta:hover,
+[data-theme='dark'] .secondaryCta:focus-visible,
+[data-theme='dark'] .buttons :global(.button--secondary).secondaryCta:hover,
+[data-theme='dark'] .buttons :global(.button--secondary).secondaryCta:focus-visible {
+  border-color: var(--ifm-color-primary);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--ifm-color-emphasis-0) !important;
+}
+
 @media screen and (max-width: 996px) {
   .heroBanner {
     padding: 1.55rem 0 0.1rem;

@@ -1,4 +1,5 @@
 import React from 'react';
+import Translate, {translate} from '@docusaurus/Translate';
 import Layout from '@theme/Layout';
 import Heading from '@theme/Heading';
 import Styles from './benchmarks.module.css';
@@ -20,6 +21,62 @@ function formatThroughput(value) {
     return `~${gbit.toFixed(1)} Gbit/s`;
   }
   return `~${Math.round(value * 8)} Mbit/s`;
+}
+
+function translateTransport(id) {
+  const transportById = {
+    'udp-c2s': translate({id: 'bench.transport.udp', message: 'UDP'}),
+    'udp-s2c': translate({id: 'bench.transport.udp', message: 'UDP'}),
+    'tcp-c2s': translate({id: 'bench.transport.tcp', message: 'TCP'}),
+    'tcp-s2c': translate({id: 'bench.transport.tcp', message: 'TCP'}),
+  };
+
+  return transportById[id] || id.toUpperCase();
+}
+
+function translateDirection(id) {
+  const directionById = {
+    'udp-c2s': translate({id: 'bench.direction.clientServer', message: 'Client -> Server'}),
+    'tcp-c2s': translate({id: 'bench.direction.clientServer', message: 'Client -> Server'}),
+    'udp-s2c': translate({id: 'bench.direction.serverClient', message: 'Server -> Client'}),
+    'tcp-s2c': translate({id: 'bench.direction.serverClient', message: 'Server -> Client'}),
+  };
+
+  return directionById[id] || id;
+}
+
+function translateParallelLabel(id) {
+  const labelById = {
+    'udp-c2s-parallel': translate({
+      id: 'bench.parallel.clientServer',
+      message: 'UDP Client -> Server',
+    }),
+    'udp-s2c-parallel': translate({
+      id: 'bench.parallel.serverClient',
+      message: 'UDP Server -> Client',
+    }),
+  };
+
+  return labelById[id] || id;
+}
+
+function translateLookupLabel(id) {
+  const labelById = {
+    'exact-internal': translate({
+      id: 'bench.lookup.exactInternal',
+      message: 'Exact internal lookup',
+    }),
+    'allowed-host': translate({
+      id: 'bench.lookup.allowedHost',
+      message: 'Allowed host lookup',
+    }),
+    'route-id': translate({
+      id: 'bench.lookup.routeId',
+      message: 'Route ID lookup',
+    }),
+  };
+
+  return labelById[id] || id;
 }
 
 function buildPolyline(series, valueKey, width, height, padding) {
@@ -96,7 +153,15 @@ function Sparkline({series, valueKey, color, formatter}) {
       <div className={Styles.sparklineLegend}>
         {series.map((point) => (
           <div key={`${valueKey}-${point.peers}`} className={Styles.legendEntry}>
-            <span className={Styles.legendPeers}>{point.peers} peers</span>
+            <span className={Styles.legendPeers}>
+              {translate(
+                {
+                  id: 'bench.legend.peers',
+                  message: '{count} peers',
+                },
+                {count: point.peers},
+              )}
+            </span>
             <span className={Styles.legendValue}>{formatter(point[valueKey])}</span>
           </div>
         ))}
@@ -115,45 +180,34 @@ function MetricCard({label, value, note, className}) {
   );
 }
 
-function GridTable({columns, header, rows, ariaLabel, className}) {
-  const templateColumns = columns.join(' ');
-  const lastRowIndex = rows.length;
-  const lastColumnIndex = header.length - 1;
-
+function DataTable({colgroup, header, rows, ariaLabel, className, align = 'end'}) {
   return (
-    <div className={Styles.tableWrap}>
-      <div
-        className={`${Styles.matrixTable}${className ? ` ${className}` : ''}`}
-        style={{gridTemplateColumns: templateColumns}}
-        role="table"
-        aria-label={ariaLabel}
-      >
-        {header.map((cell, index) => (
-          <div
-            key={`head-${cell}`}
-            className={`${Styles.matrixCell} ${Styles.matrixHead}`}
-            style={{borderRight: index === lastColumnIndex ? 0 : undefined}}
-            role="columnheader"
-          >
-            {cell}
-          </div>
-        ))}
-        {rows.map((row, rowIndex) =>
-          row.map((cell, columnIndex) => (
-            <div
-              key={`row-${rowIndex}-col-${columnIndex}`}
-              className={Styles.matrixCell}
-              style={{
-                borderRight: columnIndex === lastColumnIndex ? 0 : undefined,
-                borderBottom: rowIndex === lastRowIndex - 1 ? 0 : undefined,
-              }}
-              role="cell"
-            >
-              {cell}
-            </div>
-          )),
-        )}
-      </div>
+    <div className={`${Styles.tableWrap} ${align === 'center' ? Styles.tableWrapCenter : Styles.tableWrapEnd}`}>
+      <table className={`${Styles.dataTable}${className ? ` ${className}` : ''}`} aria-label={ariaLabel}>
+        <colgroup>
+          {colgroup.map((width, index) => (
+            <col key={`col-${index}`} style={{width}} />
+          ))}
+        </colgroup>
+        <thead>
+          <tr>
+            {header.map((cell) => (
+              <th key={cell} scope="col">
+                {cell}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, rowIndex) => (
+            <tr key={`row-${rowIndex}`}>
+              {row.map((cell, columnIndex) => (
+                <td key={`row-${rowIndex}-col-${columnIndex}`}>{cell}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -161,8 +215,8 @@ function GridTable({columns, header, rows, ariaLabel, className}) {
 function FullCycleTable() {
   const rows = benchmarkSnapshot.fullCycle1400.map((entry) => [
     <>
-      <span className={Styles.tablePrimary}>{entry.transport}</span>
-      <span className={Styles.tableSecondary}>{entry.direction}</span>
+      <span className={Styles.tablePrimary}>{translateTransport(entry.id)}</span>
+      <span className={Styles.tableSecondary}>{translateDirection(entry.id)}</span>
     </>,
     formatNs(entry.ns),
     formatThroughput(entry.throughput),
@@ -170,11 +224,20 @@ function FullCycleTable() {
   ]);
 
   return (
-    <GridTable
-      ariaLabel="1400-byte full-cycle dataplane benchmark results"
+    <DataTable
+      ariaLabel={translate({
+        id: 'bench.table.fullCycleAria',
+        message: '1400-byte full-cycle dataplane benchmark results',
+      })}
+      align="end"
       className={Styles.fullCycleTable}
-      columns={['1.35fr', '0.9fr', '1fr', '0.7fr']}
-      header={['Path', 'Latency', 'Throughput', 'Allocs/op']}
+      colgroup={['31%', '18%', '28%', '23%']}
+      header={[
+        translate({id: 'bench.table.path', message: 'Path'}),
+        translate({id: 'bench.table.latency', message: 'Latency'}),
+        translate({id: 'bench.table.throughput', message: 'Throughput'}),
+        translate({id: 'bench.table.allocs', message: 'Allocs/op'}),
+      ]}
       rows={rows}
     />
   );
@@ -184,24 +247,36 @@ function FastPathTable() {
   const peerCounts = benchmarkSnapshot.repository.fastPath[0].series.map((entry) => entry.peers);
   const rows = [
     ...benchmarkSnapshot.repository.fastPath.map((row) => [
-      row.label,
+      translateLookupLabel(row.id),
       ...row.series.map((point) => formatNs(point.ns)),
     ]),
-    ['Miss path', ...benchmarkSnapshot.repository.missPath.map((point) => formatNs(point.ns))],
+    [
+      translate({id: 'bench.lookup.missPath', message: 'Miss path'}),
+      ...benchmarkSnapshot.repository.missPath.map((point) => formatNs(point.ns)),
+    ],
   ];
 
   return (
-    <GridTable
-      ariaLabel="Repository lookup and miss-path benchmark results"
+    <DataTable
+      ariaLabel={translate({
+        id: 'bench.table.lookupAria',
+        message: 'Repository lookup and miss-path benchmark results',
+      })}
+      align="center"
       className={Styles.fastPathTable}
-      columns={[
-        '1.5fr',
-        '0.8fr',
-        '0.8fr',
-        '0.9fr',
-        '0.95fr',
+      colgroup={['30%', '14%', '14%', '18%', '24%']}
+      header={[
+        translate({id: 'bench.table.lookup', message: 'Lookup'}),
+        ...peerCounts.map((count) =>
+          translate(
+            {
+              id: 'bench.table.peerCount',
+              message: '{count} peers',
+            },
+            {count},
+          ),
+        ),
       ]}
-      header={['Lookup', ...peerCounts.map((count) => `${count} peers`)]}
       rows={rows}
     />
   );
@@ -213,40 +288,51 @@ export default function BenchmarksPage() {
 
   return (
     <Layout
-      title="Benchmarks"
-      description="Benchmark dashboard for TunGo dataplane throughput, latency, repository lookup costs, and egress contention."
+      title={translate({id: 'bench.page.title', message: 'Benchmarks'})}
+      description={translate({
+        id: 'bench.page.description',
+        message: 'Benchmark dashboard for TunGo dataplane throughput, latency, repository lookup costs, and egress contention.',
+      })}
     >
       <main className={Styles.page}>
         <section className={Styles.hero}>
           <div className={Styles.heroIntro}>
             <Heading as="h1" className={Styles.title}>
-              Benchmark snapshot
+              <Translate id="bench.hero.title">Benchmark snapshot</Translate>
             </Heading>
-            <p className={Styles.lead}>Manual snapshot measured on {benchmarkSnapshot.machine} with {benchmarkSnapshot.goVersion}.</p>
+            <p className={Styles.lead}>
+              {translate(
+                {
+                  id: 'bench.hero.lead',
+                  message: 'Manual snapshot measured on {machine} with {goVersion}.',
+                },
+                {machine: benchmarkSnapshot.machine, goVersion: benchmarkSnapshot.goVersion},
+              )}
+            </p>
           </div>
         </section>
 
         <section className={Styles.metrics}>
           <MetricCard
             className={Styles.metricCardPrimary}
-            label="Throughput"
+            label={translate({id: 'bench.metric.throughput', message: 'Throughput'})}
             value={formatThroughput(bestFullCycle.throughput)}
-            note="Best full-cycle path"
+            note={translate({id: 'bench.metric.throughputNote', message: 'Best full-cycle path'})}
           />
           <MetricCard
-            label="Latency"
+            label={translate({id: 'bench.metric.latency', message: 'Latency'})}
             value={formatNs(lowestLatency.ns)}
-            note="Lowest full-cycle path"
+            note={translate({id: 'bench.metric.latencyNote', message: 'Lowest full-cycle path'})}
           />
           <MetricCard
-            label="Fast-path lookup"
+            label={translate({id: 'bench.metric.lookup', message: 'Fast-path lookup'})}
             value="~4-15 ns"
-            note="Flat through 10k peers"
+            note={translate({id: 'bench.metric.lookupNote', message: 'Flat through 10k peers'})}
           />
           <MetricCard
-            label="Allocs/op"
+            label={translate({id: 'bench.metric.allocs', message: 'Allocs/op'})}
             value="0"
-            note="Hot path"
+            note={translate({id: 'bench.metric.allocsNote', message: 'Hot path'})}
           />
         </section>
 
@@ -254,10 +340,12 @@ export default function BenchmarksPage() {
           <div className={Styles.splitSection}>
             <div className={Styles.splitCopy}>
               <Heading as="h2" className={Styles.sectionTitle}>
-                1400B full-cycle
+                <Translate id="bench.section.fullCycle.title">Full-cycle dataplane</Translate>
               </Heading>
               <p className={Styles.sectionText}>
-                Encrypt, lookup, validate, decrypt, handoff. Upper-bound for the dataplane core, not end-to-end VPN throughput.
+                <Translate id="bench.section.fullCycle.text">
+                  Encrypt, lookup, validate, decrypt, handoff. Upper-bound for the dataplane core, not end-to-end VPN throughput.
+                </Translate>
               </p>
             </div>
             <div className={Styles.splitTable}>
@@ -269,10 +357,12 @@ export default function BenchmarksPage() {
         <section className={Styles.section}>
           <div className={Styles.sectionHeader}>
             <Heading as="h2" className={Styles.sectionTitle}>
-              Multi-peer UDP scaling
+              <Translate id="bench.section.scaling.title">Multi-peer UDP scaling</Translate>
             </Heading>
             <p className={Styles.sectionText}>
-              Aggregate throughput with work spread across many peers, not one serialized send lane.
+              <Translate id="bench.section.scaling.text">
+                Aggregate throughput with work spread across many peers, not one serialized send lane.
+              </Translate>
             </p>
           </div>
 
@@ -281,9 +371,11 @@ export default function BenchmarksPage() {
               <div key={`${entry.id}-throughput`} className={Styles.chartCard}>
                 <div className={Styles.chartHeader}>
                   <Heading as="h3" className={Styles.chartTitle}>
-                    {entry.label}
+                    {translateParallelLabel(entry.id)}
                   </Heading>
-                  <span className={Styles.chartMetric}>Aggregate throughput</span>
+                  <span className={Styles.chartMetric}>
+                    <Translate id="bench.chart.aggregateThroughput">Aggregate throughput</Translate>
+                  </span>
                 </div>
                 <Sparkline
                   series={entry.series}
@@ -297,27 +389,33 @@ export default function BenchmarksPage() {
         </section>
 
         <section className={Styles.section}>
-          <div className={Styles.sectionHeader}>
-            <Heading as="h2" className={Styles.sectionTitle}>
-              Lookup and serialization
-            </Heading>
-            <p className={Styles.sectionText}>
-              Internal-IP, allowed-host, and route-ID lookups stay flat. Misses and per-peer serialization are the real pressure points.
-            </p>
+          <div className={Styles.splitSection}>
+            <div className={Styles.splitCopy}>
+              <Heading as="h2" className={Styles.sectionTitle}>
+                <Translate id="bench.section.lookup.title">Lookup and serialization</Translate>
+              </Heading>
+              <p className={Styles.sectionText}>
+                <Translate id="bench.section.lookup.text">
+                  Internal-IP, allowed-host, and route-ID lookups stay flat. Misses and per-peer serialization are the real pressure points.
+                </Translate>
+              </p>
+            </div>
+            <div className={Styles.splitTable}>
+              <FastPathTable />
+            </div>
           </div>
-          <FastPathTable />
           <div className={Styles.summaryRow}>
             <MetricCard
               className={Styles.metricCardMuted}
-              label="Egress lane"
+              label={translate({id: 'bench.summary.egress', message: 'Egress lane'})}
               value={`~${benchmarkSnapshot.egress.uncontendedNs.toFixed(1)} ns -> ~${benchmarkSnapshot.egress.contendedNs.toFixed(0)} ns`}
-              note="Uncontended to contended sends"
+              note={translate({id: 'bench.summary.egressNote', message: 'Uncontended to contended sends'})}
             />
             <MetricCard
               className={Styles.metricCardMuted}
-              label="Miss path"
-              value="Linear"
-              note="~35 ns at 1 peer -> ~89.5 μs at 10k peers"
+              label={translate({id: 'bench.summary.missPath', message: 'Miss path'})}
+              value={translate({id: 'bench.summary.linear', message: 'Linear'})}
+              note={translate({id: 'bench.summary.missPathNote', message: '~35 ns at 1 peer -> ~89.5 μs at 10k peers'})}
             />
           </div>
         </section>
