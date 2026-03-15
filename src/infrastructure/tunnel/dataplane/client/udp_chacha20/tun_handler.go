@@ -92,8 +92,7 @@ func (w *TunHandler) HandleTun() error {
 					if w.ctx.Err() != nil {
 						return nil
 					}
-					var netErr net.Error
-					if errors.As(err, &netErr) {
+					if _, ok := errors.AsType[net.Error](err); ok {
 						// Transient socket error (e.g. WSAENOBUFS) — packet lost, socket is fine.
 						slog.Warn("transient write error, packet dropped", "err", err)
 						continue
