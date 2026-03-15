@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
-	"log"
+	"log/slog"
 	"sync/atomic"
 	"time"
 	"tungo/application/network/connection"
@@ -74,18 +74,18 @@ func (t *TransportHandler) HandleTransport() error {
 				if t.ctx.Err() != nil {
 					return nil
 				}
-				log.Printf("read from TCP failed: %v", readErr)
+				slog.Warn("read from TCP failed", "err", readErr)
 				return readErr
 			}
 
 			if n < chacha20poly1305.Overhead || n > settings.DefaultEthernetMTU+settings.TCPChacha20Overhead {
-				log.Printf("invalid ciphertext length: %d", n)
+				slog.Warn("invalid ciphertext length", "length", n)
 				continue
 			}
 
 			payload, payloadErr := t.cryptographyService.Decrypt(buffer[:n])
 			if payloadErr != nil {
-				log.Printf("failed to decrypt data: %s", payloadErr)
+				slog.Warn("failed to decrypt data", "err", payloadErr)
 				return payloadErr
 			}
 
@@ -94,7 +94,7 @@ func (t *TransportHandler) HandleTransport() error {
 			if spType, spOk := service_packet.TryParseHeader(payload); spOk {
 				switch spType {
 				case service_packet.EpochExhausted:
-					log.Printf("received EpochExhausted from server, initiating reconnect")
+					slog.Warn("received EpochExhausted from server, initiating reconnect")
 					return ErrEpochExhausted
 				case service_packet.RekeyAck:
 					if err := t.handleRekeyAck(payload); err != nil {
@@ -106,7 +106,7 @@ func (t *TransportHandler) HandleTransport() error {
 				}
 			}
 			if _, writeErr := t.writer.Write(payload); writeErr != nil {
-				log.Printf("failed to write to TUN: %v", writeErr)
+				slog.Error("failed to write to TUN", "err", writeErr)
 				return writeErr
 			}
 			rec.RecordRX(uint64(len(payload)))
@@ -133,11 +133,11 @@ func (t *TransportHandler) keepaliveLoop() {
 func (t *TransportHandler) sendPing() {
 	payload := t.pingBuf[epochPrefixSize:]
 	if _, err := service_packet.EncodeV1Header(service_packet.Ping, payload); err != nil {
-		log.Printf("keepalive: failed to encode ping: %v", err)
+		slog.Warn("keepalive failed to encode ping", "err", err)
 		return
 	}
 	if err := t.egress.SendControl(t.pingBuf[:]); err != nil {
-		log.Printf("keepalive: failed to send ping: %v", err)
+		slog.Warn("keepalive failed to send ping", "err", err)
 	}
 }
 
@@ -146,12 +146,12 @@ func (t *TransportHandler) handleRekeyAck(payload []byte) error {
 		return nil
 	}
 	if t.rekeyController.LastRekeyEpoch >= 65000 {
-		log.Printf("rekey ack: epoch exhausted, requesting session reset")
+		slog.Warn("rekey ack exhausted epoch, requesting session reset")
 		return ErrEpochExhausted
 	}
 	_, err := controlplane.ClientHandleRekeyAck(t.handshakeCrypto, t.rekeyController, payload)
 	if err != nil {
-		log.Printf("rekey ack: install/apply failed: %v", err)
+		slog.Error("rekey ack install/apply failed", "err", err)
 	}
 	return nil
 }

@@ -3,7 +3,7 @@ package udp_chacha20
 import (
 	"context"
 	"io"
-	"log"
+	"log/slog"
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/settings"
@@ -86,7 +86,7 @@ func (t *TunHandler) HandleTun() error {
 			payload := buffer[payloadStart : payloadStart+n]
 			addr, addrErr := t.ipHeaderParser.DestinationAddress(payload)
 			if addrErr != nil {
-				log.Printf("packet dropped: failed to parse destination address: %v", addrErr)
+				slog.Warn("packet dropped: failed to parse destination address", "err", addrErr)
 				continue
 			}
 
@@ -98,7 +98,7 @@ func (t *TunHandler) HandleTun() error {
 
 			// Encrypt "route-id || nonce || payload".
 			if err := peer.Egress().SendDataIP(buffer[:payloadStart+n]); err != nil {
-				log.Printf("failed to send packet to %v: %v", peer.ExternalAddrPort(), err)
+				slog.Warn("failed to send packet to peer", "peer", peer.ExternalAddrPort(), "err", err)
 				t.peerStore.Delete(peer)
 				continue
 			}

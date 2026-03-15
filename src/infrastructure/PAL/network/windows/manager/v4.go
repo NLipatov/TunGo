@@ -6,7 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"net/netip"
 	"strings"
@@ -180,7 +180,7 @@ func (m *v4Manager) setDNSToTunDevice() error {
 		return err
 	}
 	if err := m.netCfg.FlushDNS(); err != nil {
-		log.Printf("failed to flush IPv4 DNS cache: %v", err)
+		slog.Warn("failed to flush IPv4 DNS cache", "err", err)
 	}
 	return nil
 }
@@ -200,7 +200,7 @@ func (m *v4Manager) DisposeDevices() error {
 		cleanupErrs = append(cleanupErrs, fmt.Errorf("clear DNS: %w", err))
 	}
 	if err := m.netCfg.FlushDNS(); err != nil {
-		log.Printf("failed to flush IPv4 DNS cache during cleanup: %v", err)
+		slog.Warn("failed to flush IPv4 DNS cache during cleanup", "err", err)
 	}
 	if m.tun != nil {
 		if err := m.tun.Close(); err != nil {

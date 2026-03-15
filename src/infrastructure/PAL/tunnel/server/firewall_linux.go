@@ -2,7 +2,7 @@ package server
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"tungo/infrastructure/PAL/network/linux/iptables"
 	"tungo/infrastructure/PAL/network/linux/mssclamp"
@@ -68,17 +68,17 @@ func (f firewallConfigurator) configure(
 
 		if fwdReady {
 			if clearErr := f.clearForwarding(tunName, extIface, ipv4, ipv6); clearErr != nil && !f.isBenignError(clearErr) {
-				log.Printf("rollback: failed to clear forwarding for %s: %v", tunName, clearErr)
+				slog.Warn("rollback failed to clear forwarding", "tun_name", tunName, "err", clearErr)
 			}
 		}
 		if natV4Enabled {
 			if disableErr := f.iptables.DisableDevMasquerade(extIface, natV4CIDR); disableErr != nil && !f.isBenignError(disableErr) {
-				log.Printf("rollback: failed to disable IPv4 NAT on %s (%s): %v", extIface, natV4CIDR, disableErr)
+				slog.Warn("rollback failed to disable IPv4 NAT", "interface", extIface, "cidr", natV4CIDR, "err", disableErr)
 			}
 		}
 		if natV6Enabled {
 			if disableErr := f.iptables.Disable6DevMasquerade(extIface, natV6CIDR); disableErr != nil && !f.isBenignError(disableErr) {
-				log.Printf("rollback: failed to disable IPv6 NAT on %s (%s): %v", extIface, natV6CIDR, disableErr)
+				slog.Warn("rollback failed to disable IPv6 NAT", "interface", extIface, "cidr", natV6CIDR, "err", disableErr)
 			}
 		}
 	}()
@@ -114,7 +114,7 @@ func (f firewallConfigurator) configure(
 		return fmt.Errorf("failed to install MSS clamping for %s: %v", tunName, err)
 	}
 
-	log.Printf("server configured\n")
+	slog.Info("server configured")
 	return nil
 }
 
@@ -123,58 +123,58 @@ func (f firewallConfigurator) teardown(
 	connSettings settings.Settings,
 ) {
 	if extIface == "" {
-		log.Printf("skipping iptables cleanup for %s: external interface unknown", tunName)
+		slog.Warn("skipping iptables cleanup: external interface unknown", "tun_name", tunName)
 	} else {
 		if err := f.iptables.DisableForwardingFromTunToDev(tunName, extIface); err != nil {
 			if !f.isBenignError(err) {
-				log.Printf("disabling forwarding from %s -> %s: %v", tunName, extIface, err)
+				slog.Warn("failed to disable forwarding", "from", tunName, "to", extIface, "err", err)
 			}
 		}
 		if err := f.iptables.DisableForwardingFromDevToTun(tunName, extIface); err != nil {
 			if !f.isBenignError(err) {
-				log.Printf("disabling forwarding to %s <- %s: %v", tunName, extIface, err)
+				slog.Warn("failed to disable reverse forwarding", "to", tunName, "from", extIface, "err", err)
 			}
 		}
 		if err := f.iptables.Disable6ForwardingFromTunToDev(tunName, extIface); err != nil {
 			if !f.isBenignError(err) {
-				log.Printf("disabling IPv6 forwarding from %s -> %s: %v", tunName, extIface, err)
+				slog.Warn("failed to disable IPv6 forwarding", "from", tunName, "to", extIface, "err", err)
 			}
 		}
 		if err := f.iptables.Disable6ForwardingFromDevToTun(tunName, extIface); err != nil {
 			if !f.isBenignError(err) {
-				log.Printf("disabling IPv6 forwarding to %s <- %s: %v", tunName, extIface, err)
+				slog.Warn("failed to disable reverse IPv6 forwarding", "to", tunName, "from", extIface, "err", err)
 			}
 		}
 
 		natV4CIDR, _ := masqueradeCIDR4(connSettings)
 		if err := f.iptables.DisableDevMasquerade(extIface, natV4CIDR); err != nil {
 			if !f.isBenignError(err) {
-				log.Printf("disabling masquerade %s: %v", extIface, err)
+				slog.Warn("failed to disable masquerade", "interface", extIface, "err", err)
 			}
 		}
 
 		natV6CIDR, _ := masqueradeCIDR6(connSettings)
 		if err := f.iptables.Disable6DevMasquerade(extIface, natV6CIDR); err != nil {
 			if !f.isBenignError(err) {
-				log.Printf("disabling IPv6 masquerade %s: %v", extIface, err)
+				slog.Warn("failed to disable IPv6 masquerade", "interface", extIface, "err", err)
 			}
 		}
 	}
 
 	if err := f.iptables.DisableForwardingTunToTun(tunName); err != nil {
 		if !f.isBenignError(err) {
-			log.Printf("disabling client-to-client forwarding for %s: %v", tunName, err)
+			slog.Warn("failed to disable client-to-client forwarding", "tun_name", tunName, "err", err)
 		}
 	}
 	if err := f.iptables.Disable6ForwardingTunToTun(tunName); err != nil {
 		if !f.isBenignError(err) {
-			log.Printf("disabling IPv6 client-to-client forwarding for %s: %v", tunName, err)
+			slog.Warn("failed to disable IPv6 client-to-client forwarding", "tun_name", tunName, "err", err)
 		}
 	}
 
 	if err := f.mss.Remove(tunName); err != nil {
 		if !f.isBenignError(err) {
-			log.Printf("removing MSS clamping for %s: %v", tunName, err)
+			slog.Warn("removing MSS clamping failed", "tun_name", tunName, "err", err)
 		}
 	}
 }
@@ -182,7 +182,7 @@ func (f firewallConfigurator) teardown(
 func (f firewallConfigurator) unconfigure(tunName, extIface string) error {
 	if tunName != "" {
 		if err := f.mss.Remove(tunName); err != nil {
-			log.Printf("failed to remove MSS clamping for %s: %v\n", tunName, err)
+			slog.Warn("failed to remove MSS clamping", "tun_name", tunName, "err", err)
 		}
 		if err := f.clearForwarding(tunName, extIface, true, true); err != nil {
 			return err

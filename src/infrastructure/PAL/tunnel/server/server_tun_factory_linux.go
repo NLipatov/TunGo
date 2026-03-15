@@ -3,7 +3,7 @@ package server
 import (
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"os"
 	"strings"
@@ -122,7 +122,7 @@ func (s TunFactory) Unconfigure(tunFile *os.File) error {
 
 	// Avoid unscoped NAT cleanup here: without settings we cannot safely know
 	// which source subnet rule belongs to this tunnel.
-	log.Printf("skipping NAT cleanup in Unconfigure for %s: source subnet unknown, use DisposeDevices(settings)", extIface)
+	slog.Warn("skipping NAT cleanup in Unconfigure: source subnet unknown", "interface", extIface)
 
 	return s.firewall.unconfigure(tunName, extIface)
 }

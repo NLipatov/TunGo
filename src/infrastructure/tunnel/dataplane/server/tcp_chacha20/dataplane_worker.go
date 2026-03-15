@@ -4,9 +4,9 @@ import (
 	"context"
 	"io"
 
-	"tungo/application/logging"
 	"tungo/application/network/connection"
 	"tungo/infrastructure/cryptography/primitives"
+	"tungo/infrastructure/logging"
 	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/settings"
@@ -52,7 +52,7 @@ func (w *tcpDataplaneWorker) Run() {
 	defer func() {
 		w.peerStore.Delete(w.peer)
 		_ = w.transport.Close()
-		w.logger.Printf("disconnected: %s", w.peer.ExternalAddrPort())
+		w.logger.Info("client disconnected", "peer", w.peer.ExternalAddrPort())
 	}()
 
 	var buffer [settings.DefaultEthernetMTU + settings.TCPChacha20Overhead]byte
@@ -67,25 +67,25 @@ func (w *tcpDataplaneWorker) Run() {
 			n, err := w.transport.Read(buffer[:])
 			if err != nil {
 				if err != io.EOF {
-					w.logger.Printf("failed to read from client: %v", err)
+					w.logger.Warn("failed to read from client", "err", err)
 				}
 				return
 			}
 			if n < chacha20poly1305.Overhead || n > settings.DefaultEthernetMTU+settings.TCPChacha20Overhead {
-				w.logger.Printf("invalid ciphertext length: %d", n)
+				w.logger.Warn("invalid ciphertext length", "length", n)
 				continue
 			}
 			// SECURITY: Acquire crypto read lock before decryption.
 			// This prevents the TOCTOU race where ConfigWatcher or idle reaper
 			// could zeroize crypto between closed check and Decrypt call.
 			if !w.peer.CryptoRLock() {
-				w.logger.Printf("session closed, exiting")
+				w.logger.Info("session closed, exiting")
 				return
 			}
 			pt, err := w.peer.Crypto().Decrypt(buffer[:n])
 			w.peer.CryptoRUnlock()
 			if err != nil {
-				w.logger.Printf("failed to decrypt data: %s", err)
+				w.logger.Warn("failed to decrypt data", "err", err)
 				return
 			}
 			if spType, spOk := service_packet.TryParseHeader(pt); spOk {
@@ -109,12 +109,12 @@ func (w *tcpDataplaneWorker) Run() {
 			}
 			if !w.peer.Session.IsSourceAllowed(srcIP) {
 				// Log violation and drop packet, but do NOT terminate session
-				w.logger.Printf("AllowedIPs violation: source %s not allowed", srcIP)
+				w.logger.Warn("AllowedIPs violation", "source_ip", srcIP)
 				continue
 			}
 
 			if _, err = w.tunFile.Write(pt); err != nil {
-				w.logger.Printf("failed to write to TUN: %v", err)
+				w.logger.Error("failed to write to TUN", "err", err)
 				return
 			}
 			rec.RecordRX(uint64(len(pt)))

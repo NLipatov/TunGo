@@ -225,10 +225,16 @@ type TransportHandlerFakeLogger struct {
 	logs []string
 }
 
-func (l *TransportHandlerFakeLogger) Printf(format string, _ ...interface{}) {
+func (l *TransportHandlerFakeLogger) Info(msg string, _ ...interface{}) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.logs = append(l.logs, format)
+	l.logs = append(l.logs, msg)
+}
+func (l *TransportHandlerFakeLogger) Warn(msg string, _ ...interface{}) {
+	l.Info(msg)
+}
+func (l *TransportHandlerFakeLogger) Error(msg string, _ ...interface{}) {
+	l.Info(msg)
 }
 func (l *TransportHandlerFakeLogger) contains(sub string) bool {
 	l.mu.Lock()

@@ -15,10 +15,18 @@ type tcpTestLogger struct {
 	msgs []string
 }
 
-func (l *tcpTestLogger) Printf(format string, _ ...any) {
+func (l *tcpTestLogger) Info(msg string, _ ...any) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.msgs = append(l.msgs, format)
+	l.msgs = append(l.msgs, msg)
+}
+
+func (l *tcpTestLogger) Warn(msg string, _ ...any) {
+	l.Info(msg)
+}
+
+func (l *tcpTestLogger) Error(msg string, _ ...any) {
+	l.Info(msg)
 }
 
 // tcpTestRekeyer is a controllable mock for rekey.Rekeyer.

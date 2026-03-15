@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -16,11 +16,12 @@ import (
 	"tungo/infrastructure/PAL/configuration"
 	"tungo/infrastructure/PAL/configuration/client"
 	serverConf "tungo/infrastructure/PAL/configuration/server"
+	"tungo/infrastructure/PAL/platform"
 	"tungo/infrastructure/PAL/signal"
 	"tungo/infrastructure/PAL/stat"
-	"tungo/infrastructure/PAL/platform"
 	tunnelServer "tungo/infrastructure/PAL/tunnel/server"
 	"tungo/infrastructure/cryptography/primitives"
+	"tungo/infrastructure/logging"
 	"tungo/infrastructure/tunnel/sessionplane/client_factory"
 	"tungo/presentation/configuring"
 	"tungo/presentation/elevation"
@@ -36,6 +37,8 @@ func main() {
 	exitCode := 0
 	defer func() { os.Exit(exitCode) }()
 
+	setupSlog()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -50,6 +53,11 @@ func main() {
 	if err := run(ctx); err != nil {
 		exitCode = showFatal(err)
 	}
+}
+
+func setupSlog() {
+	logger := logging.NewLogger(slog.LevelInfo)
+	slog.SetDefault(logger)
 }
 
 func run(ctx context.Context) error {
@@ -116,7 +124,7 @@ func showFatal(err error) int {
 	if app.CurrentUIMode() == app.TUI {
 		tui.ShowFatalError(err.Error())
 	} else {
-		log.Printf("Error: %s", err.Error())
+		slog.Error("fatal error", "err", err)
 	}
 	return 1
 }
@@ -129,7 +137,7 @@ func runServer(ctx context.Context, uiMode app.UIMode, resolver configuration.Re
 		return fmt.Errorf("key preparation failed: %w", err)
 	}
 	configPath, _ := resolver.Resolve()
-	log.Printf("Starting server...")
+	slog.Info("starting server", "config_path", configPath)
 
 	tunFactory := tunnelServer.NewTunFactory()
 
@@ -161,7 +169,7 @@ func runServer(ctx context.Context, uiMode app.UIMode, resolver configuration.Re
 		runtime.AllowedPeersUpdater(),
 		configPath,
 		serverConf.DefaultWatchInterval,
-		log.Default(),
+		logging.NewStdLogger(slog.LevelInfo),
 	)
 	watchCtx, watchCancel := context.WithCancel(ctx)
 	defer watchCancel()
@@ -195,7 +203,7 @@ func runServerConfGen(manager serverConf.ConfigurationManager) error {
 
 func runClient(ctx context.Context, uiMode app.UIMode) error {
 	setupCrashLog(client.NewDefaultResolver())
-	log.Printf("Starting client...")
+	slog.Info("starting client")
 
 	deps := clientConf.NewDependencies(client.NewManager())
 	if err := deps.Initialize(); err != nil {

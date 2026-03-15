@@ -3,7 +3,7 @@ package tcp_chacha20
 import (
 	"context"
 	"io"
-	"log"
+	"log/slog"
 	appip "tungo/application/network/ip"
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/settings"
@@ -62,7 +62,7 @@ func (t *TunHandler) HandleTun() error {
 
 			addr, addrErr := t.ipHeaderParser.DestinationAddress(plaintext[:n])
 			if addrErr != nil {
-				log.Printf("packet dropped: failed to parse destination address: %v", addrErr)
+				slog.Warn("packet dropped: failed to parse destination address", "err", addrErr)
 				continue
 			}
 
@@ -74,7 +74,7 @@ func (t *TunHandler) HandleTun() error {
 
 			// Pass buffer including the 2-byte epoch prefix reservation.
 			if err := peer.Egress().SendDataIP(buffer[:epochPrefixSize+n]); err != nil {
-				log.Printf("failed to write to TCP: %v", err)
+				slog.Error("failed to write to TCP", "err", err)
 				_ = peer.Egress().Close()
 				t.peerStore.Delete(peer)
 				continue

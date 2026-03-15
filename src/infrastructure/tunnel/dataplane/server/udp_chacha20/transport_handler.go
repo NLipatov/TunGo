@@ -5,10 +5,10 @@ import (
 	"io"
 	"net/netip"
 	"tungo/application/listeners"
-	"tungo/application/logging"
 	"tungo/application/network/routing/transport"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/primitives"
+	"tungo/infrastructure/logging"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/session"
 	"tungo/infrastructure/tunnel/sessionplane/server/udp_registration"
@@ -69,7 +69,7 @@ func (t *TransportHandler) HandleTransport() error {
 		_ = conn.Close()
 	}(t.listenerConn)
 
-	t.logger.Printf("server listening on port %d (UDP)", t.settings.Port)
+	t.logger.Info("server listening", "protocol", "UDP", "port", t.settings.Port)
 
 	// Start idle session reaper if the repository supports it.
 	if reaper, ok := t.routeLookup.(session.IdleReaper); ok {
@@ -106,18 +106,18 @@ func (t *TransportHandler) HandleTransport() error {
 					}
 					return t.ctx.Err()
 				}
-				t.logger.Printf("failed to read from UDP: %s", readFromUdpErr)
+				t.logger.Warn("failed to read from UDP", "err", readFromUdpErr)
 				continue
 			}
 			if n == 0 {
-				t.logger.Printf("packet dropped: empty packet from %v", clientAddr.String())
+				t.logger.Warn("packet dropped: empty packet", "client_addr", clientAddr.String())
 				continue
 			}
 
 			// Pass the slice view into the handler. The handler will copy it
 			// only when needed (for registration).
 			if err := t.handlePacket(clientAddr, buffer[:n]); err != nil {
-				t.logger.Printf("failed to handle packet: %s", err)
+				t.logger.Warn("failed to handle UDP packet", "err", err)
 			}
 		}
 	}
@@ -131,7 +131,7 @@ func (t *TransportHandler) handlePacket(
 	packet []byte,
 ) error {
 	if len(packet) < chacha20.UDPRouteIDLength {
-		t.logger.Printf("packet too short for route id from %v: %d bytes", addrPort, len(packet))
+		t.logger.Warn("packet too short for route id", "client_addr", addrPort, "length", len(packet))
 	} else {
 		if peer, ok := t.getPeerByRouteID(packet); ok {
 			return t.handleEstablished(addrPort, peer, packet)

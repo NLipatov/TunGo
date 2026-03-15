@@ -16,7 +16,9 @@ import (
 // udpRegLogger is a no-op logger.
 type udpRegLogger struct{}
 
-func (udpRegLogger) Printf(string, ...any) {}
+func (udpRegLogger) Info(string, ...any)  {}
+func (udpRegLogger) Warn(string, ...any)  {}
+func (udpRegLogger) Error(string, ...any) {}
 
 // udpRegRekeyer is a mock rekeyer.
 type udpRegRekeyer struct{}

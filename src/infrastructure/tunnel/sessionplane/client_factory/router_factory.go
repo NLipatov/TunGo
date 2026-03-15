@@ -2,7 +2,7 @@ package client_factory
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net/netip"
 	"tungo/application/network/connection"
 	application "tungo/application/network/routing"
@@ -34,7 +34,7 @@ func (u *RouterFactory) CreateRouter(
 	device, deviceErr := tunManager.CreateDevice()
 	if deviceErr != nil {
 		_ = conn.Close()
-		log.Printf("failed to create TUN device: %s", deviceErr)
+		slog.Error("failed to create TUN device", "err", deviceErr)
 		return nil, nil, nil, deviceErr
 	}
 

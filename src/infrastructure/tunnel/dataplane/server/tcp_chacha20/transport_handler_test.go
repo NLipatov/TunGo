@@ -118,10 +118,16 @@ type fakeLogger struct {
 	mu   sync.Mutex
 }
 
-func (l *fakeLogger) Printf(format string, args ...interface{}) {
+func (l *fakeLogger) Info(msg string, args ...interface{}) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.logs = append(l.logs, fmt.Sprintf(format, args...))
+	l.logs = append(l.logs, msg)
+}
+func (l *fakeLogger) Warn(msg string, args ...interface{}) {
+	l.Info(msg, args...)
+}
+func (l *fakeLogger) Error(msg string, args ...interface{}) {
+	l.Info(msg, args...)
 }
 func (l *fakeLogger) contains(sub string) bool {
 	l.mu.Lock()
@@ -375,7 +381,7 @@ func TestHandleTransport_AcceptError(t *testing.T) {
 	cancel()
 	<-done
 
-	count := logger.count("failed to accept connection: accept fail")
+	count := logger.count("failed to accept connection")
 	if count != maxErrs {
 		t.Errorf("expected %d error logs, got %d (logs=%v)", maxErrs, count, logger.logs)
 	}
@@ -619,7 +625,7 @@ func TestHandleClient_ReadFullError(t *testing.T) {
 	handler := NewTransportHandler(context.Background(), settings.Settings{}, writer, &fakeTcpListener{}, repo, logger, registrar)
 	handler.(*TransportHandler).handleClient(ctx, peer, conn, writer)
 
-	if !logger.contains("failed to read from client: fail read") {
+	if !logger.contains("failed to read from client") {
 		t.Errorf("expected read error log, got %v", logger.logs)
 	}
 	if len(repo.deleted) != 1 {
@@ -668,7 +674,7 @@ func TestHandleClient_BadLength(t *testing.T) {
 	handler := NewTransportHandler(context.Background(), settings.Settings{}, writer, &fakeTcpListener{}, repo, logger, registrar)
 	handler.(*TransportHandler).handleClient(ctx, peer, conn, writer)
 
-	if !logger.contains("invalid ciphertext length:") {
+	if !logger.contains("invalid ciphertext length") {
 		t.Errorf("expected invalid length log, got %v", logger.logs)
 	}
 }
@@ -689,7 +695,7 @@ func TestHandleClient_DecryptError_ClosesConnection(t *testing.T) {
 	handler := NewTransportHandler(context.Background(), settings.Settings{}, writer, &fakeTcpListener{}, repo, logger, registrar)
 	handler.(*TransportHandler).handleClient(ctx, peer, conn, writer)
 
-	if !logger.contains("failed to decrypt data: bad decrypt") {
+	if !logger.contains("failed to decrypt data") {
 		t.Errorf("expected decrypt error log, got %v", logger.logs)
 	}
 	if len(repo.deleted) != 1 {
@@ -717,7 +723,7 @@ func TestHandleClient_WriteTunError(t *testing.T) {
 	handler := NewTransportHandler(context.Background(), settings.Settings{}, writer, &fakeTcpListener{}, repo, logger, registrar)
 	handler.(*TransportHandler).handleClient(ctx, peer, conn, writer)
 
-	if !logger.contains("failed to write to TUN: fail tun") {
+	if !logger.contains("failed to write to TUN") {
 		t.Errorf("expected write-to-tun error log, got %v", logger.logs)
 	}
 }

@@ -40,10 +40,18 @@ type fakeLogger struct {
 	logs []string
 }
 
-func (l *fakeLogger) Printf(format string, args ...interface{}) {
+func (l *fakeLogger) Info(msg string, args ...interface{}) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.logs = append(l.logs, format)
+	l.logs = append(l.logs, msg)
+}
+
+func (l *fakeLogger) Warn(msg string, args ...interface{}) {
+	l.Info(msg, args...)
+}
+
+func (l *fakeLogger) Error(msg string, args ...interface{}) {
+	l.Info(msg, args...)
 }
 
 func (l *fakeLogger) containsSubstring(sub string) bool {
@@ -119,7 +127,7 @@ func TestRunIdleReaperLoop_LogsWhenSessionsReaped(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	cancel()
 
-	if !logger.containsSubstring("reaped %d idle session(s)") {
+	if !logger.containsSubstring("reaped idle sessions") {
 		t.Fatalf("expected reap log message, got %v", logger.logs)
 	}
 }

@@ -52,9 +52,9 @@ func (nopWriteCloser) Close() error                { return nil }
 
 type fakeLogger struct{ msgs []string }
 
-func (l *fakeLogger) Printf(format string, v ...any) {
-	l.msgs = append(l.msgs, fmt.Sprintf(format, v...))
-}
+func (l *fakeLogger) Info(msg string, v ...any)  { l.msgs = append(l.msgs, msg) }
+func (l *fakeLogger) Warn(msg string, v ...any)  { l.msgs = append(l.msgs, msg) }
+func (l *fakeLogger) Error(msg string, v ...any) { l.msgs = append(l.msgs, msg) }
 
 // make sure fakeConn satisfies the contract
 var _ contracts.Conn = (*fakeConn)(nil)
