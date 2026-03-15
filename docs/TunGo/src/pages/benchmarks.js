@@ -24,14 +24,21 @@ function formatThroughput(value) {
 
 function buildPolyline(series, valueKey, width, height, padding) {
   const values = series.map((point) => point[valueKey]);
+  const peerLogs = series.map((point) => Math.log10(point.peers));
   const min = Math.min(...values);
   const max = Math.max(...values);
+  const minPeerLog = Math.min(...peerLogs);
+  const maxPeerLog = Math.max(...peerLogs);
   const innerWidth = width - padding * 2;
   const innerHeight = height - padding * 2;
 
   return series
-    .map((point, index) => {
-      const x = padding + (innerWidth * index) / Math.max(series.length - 1, 1);
+    .map((point) => {
+      const peerLog = Math.log10(point.peers);
+      const x =
+        maxPeerLog === minPeerLog
+          ? padding + innerWidth / 2
+          : padding + ((peerLog - minPeerLog) / (maxPeerLog - minPeerLog)) * innerWidth;
       const y =
         max === min
           ? padding + innerHeight / 2
@@ -43,13 +50,20 @@ function buildPolyline(series, valueKey, width, height, padding) {
 
 function buildDots(series, valueKey, width, height, padding) {
   const values = series.map((point) => point[valueKey]);
+  const peerLogs = series.map((point) => Math.log10(point.peers));
   const min = Math.min(...values);
   const max = Math.max(...values);
+  const minPeerLog = Math.min(...peerLogs);
+  const maxPeerLog = Math.max(...peerLogs);
   const innerWidth = width - padding * 2;
   const innerHeight = height - padding * 2;
 
-  return series.map((point, index) => {
-    const x = padding + (innerWidth * index) / Math.max(series.length - 1, 1);
+  return series.map((point) => {
+    const peerLog = Math.log10(point.peers);
+    const x =
+      maxPeerLog === minPeerLog
+        ? padding + innerWidth / 2
+        : padding + ((peerLog - minPeerLog) / (maxPeerLog - minPeerLog)) * innerWidth;
     const y =
       max === min
         ? padding + innerHeight / 2
