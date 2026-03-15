@@ -611,8 +611,15 @@ func TestRegisterClient_ReplacesExistingSession(t *testing.T) {
 
 	logger.mu.Lock()
 	defer logger.mu.Unlock()
-	if len(logger.msgs) == 0 {
-		t.Fatal("expected logger to capture session replacement")
+	found := false
+	for _, msg := range logger.msgs {
+		if msg == "UDP replacing existing session" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected session replacement log, got %v", logger.msgs)
 	}
 }
 
