@@ -336,6 +336,21 @@ func TestTeardown_NonBenignErrorsLoggedNotFatal(t *testing.T) {
 	fw.teardown("tun0", "eth0", baseCfg)
 }
 
+func TestTeardown_NonBenignIPv6ErrorsLoggedNotFatal(t *testing.T) {
+	ipt := &TunFactoryMockIPTErr{
+		TunFactoryMockIPT: &TunFactoryMockIPT{},
+		errTag:            "Disable6ForwardingFromTunToDev",
+		err:               errors.New("permission denied"),
+	}
+	fw := firewallConfigurator{
+		iptables: ipt,
+		sysctl:   &TunFactoryMockSys{},
+		mss:      &TunFactoryMockMSS{},
+	}
+	// Should not panic when IPv6 cleanup paths produce non-benign errors.
+	fw.teardown("tun0", "eth0", baseCfgIPv6)
+}
+
 // ---------------------------------------------------------------------------
 // unconfigure
 // ---------------------------------------------------------------------------
@@ -388,6 +403,22 @@ func TestUnconfigure_ClearForwardingError_Propagated(t *testing.T) {
 	err := fw.unconfigure("tun0", "eth0")
 	if err == nil || !strings.Contains(err.Error(), "failed to execute iptables command") {
 		t.Fatalf("expected clearForwarding error, got %v", err)
+	}
+}
+
+func TestUnconfigure_MSSRemoveError_DoesNotFail(t *testing.T) {
+	mss := &TunFactoryMockMSSErr{
+		TunFactoryMockMSS: &TunFactoryMockMSS{},
+		errTag:            "Remove",
+		err:               errors.New("remove failed"),
+	}
+	fw := firewallConfigurator{
+		iptables: &TunFactoryMockIPT{},
+		sysctl:   &TunFactoryMockSys{},
+		mss:      mss,
+	}
+	if err := fw.unconfigure("tun0", "eth0"); err != nil {
+		t.Fatalf("expected nil despite MSS remove error, got %v", err)
 	}
 }
 

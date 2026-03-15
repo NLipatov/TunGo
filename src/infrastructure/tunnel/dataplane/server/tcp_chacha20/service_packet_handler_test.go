@@ -220,6 +220,20 @@ func TestTCPHandlePing_SendsPong(t *testing.T) {
 	}
 }
 
+func TestTCPHandlePing_SendError_Logs(t *testing.T) {
+	logger := &tcpTestLogger{}
+	h := newControlPlaneHandler(&primitives.DefaultKeyDeriver{}, logger)
+	eg := &tcpTestEgress{sendErr: errors.New("send failed")}
+
+	h.HandlePing(eg)
+
+	logger.mu.Lock()
+	defer logger.mu.Unlock()
+	if len(logger.msgs) == 0 {
+		t.Fatal("expected logger to capture pong send failure")
+	}
+}
+
 func TestTCPHandlePing_EgressError_DoesNotPanic(t *testing.T) {
 	logger := &tcpTestLogger{}
 	h := newControlPlaneHandler(&primitives.DefaultKeyDeriver{}, logger)

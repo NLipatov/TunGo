@@ -672,6 +672,31 @@ func TestHandleTransport_PingSendError_Swallowed(t *testing.T) {
 	}
 }
 
+func TestHandleDatagram_TooShortPacket_Ignored(t *testing.T) {
+	h := NewTransportHandler(context.Background(), &thTestReader{}, &thTestWriter{}, &thTestCrypto{}, nil, nil).(*TransportHandler)
+	n, err := h.handleDatagram([]byte{0x01})
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("expected 0 written bytes, got %d", n)
+	}
+}
+
+func TestHandleDatagram_WriteErrorAfterCancel_IsSuppressed(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	h := NewTransportHandler(ctx, &thTestReader{}, &thTestWriter{err: errors.New("write fail")}, &thTestCrypto{output: []byte{1, 2}}, nil, nil).(*TransportHandler)
+	n, err := h.handleDatagram([]byte{0x00, 0x01})
+	if err != nil {
+		t.Fatalf("expected nil error after cancel, got %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("expected 0 written bytes, got %d", n)
+	}
+}
+
 func TestHandleTransport_NilRekeyController(t *testing.T) {
 	// With nil rekeyController, handleDatagram should skip epoch/rekey logic.
 	ctx, cancel := context.WithCancel(context.Background())

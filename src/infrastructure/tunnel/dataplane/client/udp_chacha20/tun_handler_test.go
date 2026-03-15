@@ -92,6 +92,25 @@ func (w *tunHandlerTestCancelWriter) Write(_ []byte) (int, error) {
 	return 0, errors.New("write fail")
 }
 
+type tunHandlerFailingControlEgress struct {
+	dataWrites   int
+	controlCalls int
+}
+
+func (e *tunHandlerFailingControlEgress) SendDataIP(_ []byte) error {
+	e.dataWrites++
+	return nil
+}
+
+func (e *tunHandlerFailingControlEgress) SendControl(_ []byte) error {
+	e.controlCalls++
+	return errors.New("send control fail")
+}
+
+func (e *tunHandlerFailingControlEgress) Close() error {
+	return nil
+}
+
 // netErrorWriter simulates a transient network write error (e.g. WSAENOBUFS).
 type netErrorWriter struct {
 	errCount int // number of errors to return before succeeding
@@ -385,6 +404,39 @@ func TestHandleTun_ReusesPendingRekeyKey(t *testing.T) {
 	derivedPub, _ := curve25519.X25519(priv[:], curve25519.Basepoint)
 	if !bytes.Equal(pk1, derivedPub) {
 		t.Fatalf("sent public key does not match pending private key")
+	}
+}
+
+func TestHandleTun_RekeyInitSendError_DoesNotFail(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	reads := 0
+	reader := &fakeReader{readFunc: func(p []byte) (int, error) {
+		reads++
+		if reads == 1 {
+			copy(p, []byte{1, 2, 3})
+			return 3, nil
+		}
+		cancel()
+		return 0, errors.New("done")
+	}}
+	ctrl := rekey.NewStateMachine(dummyRekeyer{}, make([]byte, 32), make([]byte, 32), false)
+	egress := &tunHandlerFailingControlEgress{}
+
+	h := NewTunHandler(ctx, reader, egress, ctrl, nil)
+	th := h.(*TunHandler)
+	th.rekeyInit.SetRotateAt(time.Now().Add(-time.Second))
+	th.rekeyInit.SetInterval(time.Millisecond)
+
+	if err := h.HandleTun(); err != nil {
+		t.Fatalf("expected nil after rekey init send error and cancel, got %v", err)
+	}
+	if reads < 2 {
+		t.Fatalf("expected loop to continue after rekey init send error, got %d reads", reads)
+	}
+	if egress.dataWrites == 0 || egress.controlCalls == 0 {
+		t.Fatalf("expected both data send and control send attempts, got data=%d control=%d", egress.dataWrites, egress.controlCalls)
 	}
 }
 

@@ -78,6 +78,22 @@ func TestHandler_BadRemoteAddr_400_NilLogger_NoPanic(t *testing.T) {
 	}
 }
 
+func TestHandler_BadRemoteAddr_Logged(t *testing.T) {
+	q := make(chan net.Conn, 1)
+	log := &fakeLogger{}
+	h := NewDefaultHandler(&fakeUpgrader{}, q, log)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "http://example/ws", nil)
+	req.RemoteAddr = "not-a-socket-addr"
+
+	h.Handle(rr, req)
+
+	if len(log.msgs) == 0 || !contains(log.msgs[0], "bad remote addr") {
+		t.Fatalf("expected bad remote addr to be logged, got %v", log.msgs)
+	}
+}
+
 func TestHandler_UpgradeError_Logged_NoEnqueue(t *testing.T) {
 	q := make(chan net.Conn, 1)
 	log := &fakeLogger{}

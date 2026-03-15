@@ -9,6 +9,7 @@ import (
 	"time"
 	"tungo/application/network/connection"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/tunnel/controlplane"
 )
 
 // ---- Mocks (prefixed with TunHandler*) ----
@@ -50,6 +51,16 @@ func (m *TunHandlerMockCrypto) Encrypt(b []byte) ([]byte, error) {
 	return append([]byte(nil), b...), m.err
 }
 func (m *TunHandlerMockCrypto) Decrypt([]byte) ([]byte, error) { return nil, nil }
+
+type tunHandlerFailingKeyDeriver struct{ err error }
+
+func (d *tunHandlerFailingKeyDeriver) GenerateX25519KeyPair() ([]byte, [32]byte, error) {
+	return nil, [32]byte{}, d.err
+}
+
+func (d *tunHandlerFailingKeyDeriver) DeriveKey(_, _, _ []byte) ([]byte, error) {
+	return nil, nil
+}
 
 // helper
 func rdr(seq ...struct {
@@ -279,13 +290,12 @@ func TestTunHandler_RekeyInitPrepareError_Continues(t *testing.T) {
 		mockEgress(mockW, &TunHandlerMockCrypto{}), ctrl, nil,
 	)
 	th := h.(*TunHandler)
+	th.rekeyInit = controlplane.NewRekeyInitScheduler(
+		&tunHandlerFailingKeyDeriver{err: errors.New("keygen fail")},
+		time.Millisecond,
+		time.Now().Add(-2*time.Second),
+	)
 	th.rekeyInit.SetRotateAt(time.Now().Add(-time.Second))
-	th.rekeyInit.SetInterval(time.Millisecond)
-
-	// Set the pending key so the reuse branch in MaybeBuildRekeyInit fires,
-	// but truncate controlPacketBuf to force an error (short dst).
-	// Actually, easier: just set rekeyInit to use a nil crypto which returns ok=false.
-	th.rekeyInit = nil // nil rekeyInit -> skip rekey entirely (handles the nil guard)
 
 	if err := th.HandleTun(); err != io.EOF {
 		t.Fatalf("want io.EOF, got %v", err)

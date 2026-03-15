@@ -3,6 +3,7 @@ package udp_registration
 import (
 	"context"
 	"errors"
+	"io"
 	"net/netip"
 	"sync"
 	"testing"
@@ -19,6 +20,25 @@ type udpRegLogger struct{}
 func (udpRegLogger) Info(string, ...any)  {}
 func (udpRegLogger) Warn(string, ...any)  {}
 func (udpRegLogger) Error(string, ...any) {}
+
+type udpRegCaptureLogger struct {
+	mu   sync.Mutex
+	msgs []string
+}
+
+func (l *udpRegCaptureLogger) Info(msg string, _ ...any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.msgs = append(l.msgs, msg)
+}
+
+func (l *udpRegCaptureLogger) Warn(msg string, _ ...any) {
+	l.Info(msg)
+}
+
+func (l *udpRegCaptureLogger) Error(msg string, _ ...any) {
+	l.Info(msg)
+}
 
 // udpRegRekeyer is a mock rekeyer.
 type udpRegRekeyer struct{}
@@ -529,6 +549,70 @@ func TestRegisterClient_CookieRetry_Success(t *testing.T) {
 	}
 	if hf.calls != 2 {
 		t.Fatalf("expected 2 handshake attempts (cookie + retry), got %d", hf.calls)
+	}
+}
+
+func TestRegisterClient_ReplacesExistingSession(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	listener := &udpRegListener{}
+	repo := session.NewDefaultRepository()
+	logger := &udpRegCaptureLogger{}
+
+	hf := &udpRegHandshakeFactory{
+		handshake: &udpRegHandshake{
+			clientID: 1,
+			c2s:      make([]byte, 32),
+			s2c:      make([]byte, 32),
+		},
+	}
+	cf := &udpRegCryptoFactory{
+		crypto: udpRegCrypto{},
+		ctrl:   rekey.NewStateMachine(udpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
+	}
+
+	r := NewRegistrar(ctx, listener, repo, logger, hf, cf, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
+	internalIP := netip.MustParseAddr("10.0.0.2")
+	staleSession := session.NewSessionWithAuth(
+		udpRegCrypto{},
+		rekey.NewStateMachine(udpRegRekeyer{}, []byte("old-c2s"), []byte("old-s2c"), true),
+		internalIP,
+		netip.MustParseAddrPort("192.168.1.10:1234"),
+		nil,
+		nil,
+	)
+	repo.Add(session.NewPeer(staleSession, connection.NewDefaultEgress(io.Discard, udpRegCrypto{})))
+
+	addr := netip.MustParseAddrPort("192.168.1.1:1234")
+	q, _ := r.GetOrCreateRegistrationQueue(addr)
+
+	done := make(chan struct{})
+	go func() {
+		r.RegisterClient(addr, q)
+		close(done)
+	}()
+
+	q.Enqueue([]byte("client-hello"))
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for RegisterClient to complete")
+	}
+
+	peer, err := repo.GetByInternalAddrPort(internalIP)
+	if err != nil {
+		t.Fatalf("expected replacement peer in repo: %v", err)
+	}
+	if peer == nil {
+		t.Fatal("expected non-nil replacement peer")
+	}
+
+	logger.mu.Lock()
+	defer logger.mu.Unlock()
+	if len(logger.msgs) == 0 {
+		t.Fatal("expected logger to capture session replacement")
 	}
 }
 
