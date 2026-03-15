@@ -20,26 +20,20 @@ const highlights = [
     note: 'Lean enough for small VPS and edge',
   },
   {
-    label: 'Transports',
-    value: 'UDP, TCP, WS',
-    note: 'Fast path plus fallback and stealth',
+    label: 'Crypto',
+    value: 'Noise + ChaCha20',
+    note: 'Modern authenticated encryption',
   },
 ];
 
 function HomepageHeader() {
-  const {siteConfig} = UseDocusaurusContext();
   return (
     <header className={Clsx(Styles.heroBanner)}>
       <div className={Clsx('container', Styles.heroGrid)}>
         <div className={Styles.heroCopy}>
-          <span className={Styles.eyebrow}>TunGo VPN</span>
           <Heading as="h1" className={Styles.heroTitle}>
-            Compact userspace VPN with a measured hot path
+            Fast, lightweight userspace VPN
           </Heading>
-          <p className={Styles.heroSubtitle}>
-            {siteConfig.tagline}. TunGo keeps the dataplane small, the control plane explicit, and the performance story
-            visible in code and benchmarks.
-          </p>
           <div className={Styles.buttons}>
             <Link className="button button--primary button--lg" to="/docs/QuickStart">
               <Translate id="homepage.cta">Get started in minutes</Translate>
@@ -51,10 +45,6 @@ function HomepageHeader() {
         </div>
 
         <div className={Styles.heroPanel}>
-          <div className={Styles.heroPanelHeader}>
-            <span className={Styles.heroPanelTag}>Snapshot</span>
-            <span className={Styles.heroPanelValue}>Current posture</span>
-          </div>
           <div className={Styles.heroPanelGrid}>
             {highlights.map((item) => (
               <div key={item.label} className={Styles.heroMetric}>
@@ -81,36 +71,6 @@ export default function Home() {
         <HomepageHeader />
         <main className={Styles.homeMain}>
           <Features />
-          <section className={Styles.benchmarkTeaser}>
-            <div className={Clsx('container', Styles.teaserShell)}>
-              <div className={Styles.teaserCopy}>
-                <p className={Styles.teaserEyebrow}>Benchmark transparency</p>
-                <Heading as="h2" className={Styles.teaserTitle}>
-                  Performance claims link to measurements
-                </Heading>
-                <p className={Styles.teaserText}>
-                  The benchmark dashboard tracks dataplane throughput, latency, lookup cost, and scaling behaviour.
-                </p>
-              </div>
-              <div className={Styles.teaserMetrics}>
-                <div className={Styles.teaserMetric}>
-                  <span>1400B full-cycle latency</span>
-                  <strong>~2.5-2.9 us</strong>
-                </div>
-                <div className={Styles.teaserMetric}>
-                  <span>1400B full-cycle throughput</span>
-                  <strong>~4.0-4.5 Gbit/s</strong>
-                </div>
-                <div className={Styles.teaserMetric}>
-                  <span>Repository fast paths</span>
-                  <strong>~4-15 ns</strong>
-                </div>
-              </div>
-              <Link className={Clsx('button button--primary button--lg', Styles.teaserButton)} to="/benchmarks">
-                Open benchmark dashboard
-              </Link>
-            </div>
-          </section>
         </main>
         <Footer />
       </div>
