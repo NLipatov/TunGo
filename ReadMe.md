@@ -32,10 +32,10 @@ Example single-run results for **1400-byte packets** on **Apple M4 Pro**:
 
 | Path | ns/op | Throughput | Allocs/op |
 |---|---:|---:|---:|
-| UDP client -> server | ~2.6 us | ~551 MB/s | 0 |
-| UDP server -> client | ~2.9 us | ~494 MB/s | 0 |
-| TCP client -> server | ~2.5 us | ~565 MB/s | 0 |
-| TCP server -> client | ~2.6 us | ~554 MB/s | 0 |
+| UDP client -> server | ~2.6 us | ~4.4 Gbit/s | 0 |
+| UDP server -> client | ~2.9 us | ~4.0 Gbit/s | 0 |
+| TCP client -> server | ~2.5 us | ~4.5 Gbit/s | 0 |
+| TCP server -> client | ~2.6 us | ~4.4 Gbit/s | 0 |
 
 These numbers do **not** include TUN device, socket, kernel, firewall/NAT, or real network overhead. Treat them as dataplane-core benchmarks, not end-to-end VPN throughput claims.
 

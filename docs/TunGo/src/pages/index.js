@@ -94,12 +94,12 @@ export default function Home() {
               </div>
               <div className={Styles.teaserMetrics}>
                 <div className={Styles.teaserMetric}>
-                  <span>Full-cycle UDP/TCP</span>
+                  <span>1400B full-cycle latency</span>
                   <strong>~2.5-2.9 us</strong>
                 </div>
                 <div className={Styles.teaserMetric}>
-                  <span>1400B dataplane throughput</span>
-                  <strong>~0.49-0.56 GB/s</strong>
+                  <span>1400B full-cycle throughput</span>
+                  <strong>~4.0-4.5 Gbit/s</strong>
                 </div>
                 <div className={Styles.teaserMetric}>
                   <span>Repository fast paths</span>

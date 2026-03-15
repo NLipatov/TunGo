@@ -16,10 +16,11 @@ function formatNs(ns) {
 }
 
 function formatThroughput(value) {
-  if (value >= 1000) {
-    return `~${(value / 1000).toFixed(1)} GB/s`;
+  const gbit = (value * 8) / 1000;
+  if (gbit >= 1) {
+    return `~${gbit.toFixed(1)} Gbit/s`;
   }
-  return `~${value.toFixed(0)} MB/s`;
+  return `~${Math.round(value * 8)} Mbit/s`;
 }
 
 function buildPolyline(series, valueKey, width, height, padding) {
@@ -206,12 +207,12 @@ export default function BenchmarksPage() {
 
         <section className={Styles.metrics}>
           <MetricCard
-            label="Best full-cycle throughput"
+            label="Best 1400B full-cycle throughput"
             value={formatThroughput(bestFullCycle.throughput)}
             note={`${bestFullCycle.transport} ${bestFullCycle.direction}, 1400B payload`}
           />
           <MetricCard
-            label="Lowest full-cycle latency"
+            label="Lowest 1400B full-cycle latency"
             value={formatNs(lowestLatency.ns)}
             note={`${lowestLatency.transport} ${lowestLatency.direction}, 1400B payload`}
           />
@@ -232,7 +233,7 @@ export default function BenchmarksPage() {
             <div>
               <p className={Styles.sectionEyebrow}>Full-cycle dataplane</p>
               <Heading as="h2" className={Styles.sectionTitle}>
-                1400-byte snapshot
+                1400B snapshot
               </Heading>
             </div>
             <p className={Styles.sectionText}>
@@ -253,8 +254,9 @@ export default function BenchmarksPage() {
             </div>
             <p className={Styles.sectionText}>
               The parallel-peer benchmarks highlight the difference between single-flow serialization and multi-peer
-              aggregate throughput. This is the clearest signal that TunGo scales better across peers than within one
-              peer&apos;s send lane.
+              aggregate throughput. The charts below are not the same dataset as the 1400B full-cycle snapshot above:
+              they show how UDP scales when work is spread across many peers instead of one peer&apos;s serialized send
+              lane.
             </p>
           </div>
 
@@ -265,7 +267,7 @@ export default function BenchmarksPage() {
                   <Heading as="h3" className={Styles.chartTitle}>
                     {entry.label}
                   </Heading>
-                  <span className={Styles.chartMetric}>Throughput</span>
+                  <span className={Styles.chartMetric}>Aggregate throughput</span>
                 </div>
                 <Sparkline
                   series={entry.series}
