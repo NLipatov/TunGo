@@ -14,10 +14,8 @@ type netError interface {
 	Temporary() bool
 }
 
-var _ netError = ErrTimeout{cause: context.DeadlineExceeded}
-
 func TestErrTimeout_ErrorReturnsCauseMessage(t *testing.T) {
-	e := ErrTimeout{cause: context.DeadlineExceeded}
+	e := NewErrTimeout(context.DeadlineExceeded)
 	if e.Error() == "" {
 		t.Fatalf("Error() must return non-empty message")
 	}
@@ -28,7 +26,7 @@ func TestErrTimeout_ErrorReturnsCauseMessage(t *testing.T) {
 }
 
 func TestErrTimeout_UnwrapAndErrorsIs_As(t *testing.T) {
-	e := ErrTimeout{cause: context.DeadlineExceeded}
+	e := NewErrTimeout(context.DeadlineExceeded)
 
 	// Unwrap via errors.Is
 	if !errors.Is(e, context.DeadlineExceeded) {
@@ -41,7 +39,7 @@ func TestErrTimeout_UnwrapAndErrorsIs_As(t *testing.T) {
 	}
 
 	// errors.AsType to our type
-	et, ok := errors.AsType[ErrTimeout](e)
+	et, ok := errors.AsType[*ErrTimeout](e)
 	if !ok {
 		t.Fatalf("errors.As must match ErrTimeout")
 	}
@@ -70,7 +68,7 @@ func TestNewErrTimeout(t *testing.T) {
 }
 
 func TestErrTimeout_TimeoutAndTemporaryFlags(t *testing.T) {
-	e := ErrTimeout{cause: context.DeadlineExceeded}
+	e := NewErrTimeout(context.DeadlineExceeded)
 
 	// Satisfies net.Error semantics
 	var ne netError = e
