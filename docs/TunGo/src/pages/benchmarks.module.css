@@ -29,7 +29,7 @@
   letter-spacing: 0.16em;
   font-size: 0.76rem;
   font-weight: 700;
-  color: var(--ifm-color-primary);
+  color: var(--site-accent);
   margin: 0 0 0.75rem;
 }
 

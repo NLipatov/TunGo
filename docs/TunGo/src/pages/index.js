@@ -12,17 +12,17 @@ const highlights = [
   {
     label: 'Dataplane',
     value: '0 allocs/op',
-    note: 'Full-cycle UDP/TCP packet path stays allocation-free in current benchmark set.',
+    note: 'Allocation-free packet path',
   },
   {
     label: 'Memory',
     value: '5-15 MB RSS',
-    note: 'Lean enough for small VPS instances and constrained edge deployments.',
+    note: 'Lean enough for small VPS and edge',
   },
   {
     label: 'Transports',
     value: 'UDP, TCP, WS',
-    note: 'High-performance default path plus fallback and stealth-oriented options.',
+    note: 'Fast path plus fallback and stealth',
   },
 ];
 
@@ -34,11 +34,11 @@ function HomepageHeader() {
         <div className={Styles.heroCopy}>
           <span className={Styles.eyebrow}>TunGo VPN</span>
           <Heading as="h1" className={Styles.heroTitle}>
-            Lean userspace VPN for fast, readable, modern networking
+            Compact userspace VPN with a measured hot path
           </Heading>
           <p className={Styles.heroSubtitle}>
-            {siteConfig.tagline}. TunGo focuses on a small hot path, explicit control plane, and performance that is
-            easy to reason about from the code up.
+            {siteConfig.tagline}. TunGo keeps the dataplane small, the control plane explicit, and the performance story
+            visible in code and benchmarks.
           </p>
           <div className={Styles.buttons}>
             <Link className="button button--primary button--lg" to="/docs/QuickStart">
@@ -52,8 +52,8 @@ function HomepageHeader() {
 
         <div className={Styles.heroPanel}>
           <div className={Styles.heroPanelHeader}>
-            <span className={Styles.heroPanelTag}>Why it feels light</span>
-            <span className={Styles.heroPanelValue}>Go, not baggage</span>
+            <span className={Styles.heroPanelTag}>Snapshot</span>
+            <span className={Styles.heroPanelValue}>Current posture</span>
           </div>
           <div className={Styles.heroPanelGrid}>
             {highlights.map((item) => (
@@ -77,42 +77,43 @@ export default function Home() {
     <Layout
         title={translate({id: 'homepage.title', message: 'Minimalistic, Fast & Secure Open Source VPN'})}
         description={translate({id: 'homepage.description', message: 'Secure your connection with TunGo: lightweight, fast, open-source VPN built in Go using modern cryptography.'})}>
-      <HomepageHeader />
-      <main>
-        <Features />
-        <section className={Styles.benchmarkTeaser}>
-          <div className={Clsx('container', Styles.teaserShell)}>
-            <div>
-              <p className={Styles.teaserEyebrow}>Performance transparency</p>
-              <Heading as="h2" className={Styles.teaserTitle}>
-                Benchmark numbers are part of the product story
-              </Heading>
-              <p className={Styles.teaserText}>
-                The docs site now includes a dedicated benchmark dashboard with dataplane throughput, latency, repository
-                lookup costs, and scaling behaviour. That makes performance claims auditable instead of decorative.
-              </p>
-            </div>
-            <div className={Styles.teaserCard}>
-              <div className={Styles.teaserMetric}>
-                <span>Full-cycle UDP/TCP</span>
-                <strong>~2.5-2.9 us</strong>
+      <div className={Styles.homeShell}>
+        <HomepageHeader />
+        <main className={Styles.homeMain}>
+          <Features />
+          <section className={Styles.benchmarkTeaser}>
+            <div className={Clsx('container', Styles.teaserShell)}>
+              <div className={Styles.teaserCopy}>
+                <p className={Styles.teaserEyebrow}>Benchmark transparency</p>
+                <Heading as="h2" className={Styles.teaserTitle}>
+                  Performance claims link to measurements
+                </Heading>
+                <p className={Styles.teaserText}>
+                  The benchmark dashboard tracks dataplane throughput, latency, lookup cost, and scaling behaviour.
+                </p>
               </div>
-              <div className={Styles.teaserMetric}>
-                <span>1400B dataplane throughput</span>
-                <strong>~0.49-0.56 GB/s</strong>
+              <div className={Styles.teaserMetrics}>
+                <div className={Styles.teaserMetric}>
+                  <span>Full-cycle UDP/TCP</span>
+                  <strong>~2.5-2.9 us</strong>
+                </div>
+                <div className={Styles.teaserMetric}>
+                  <span>1400B dataplane throughput</span>
+                  <strong>~0.49-0.56 GB/s</strong>
+                </div>
+                <div className={Styles.teaserMetric}>
+                  <span>Repository fast paths</span>
+                  <strong>~4-15 ns</strong>
+                </div>
               </div>
-              <div className={Styles.teaserMetric}>
-                <span>Repository fast paths</span>
-                <strong>~4-15 ns</strong>
-              </div>
-              <Link className="button button--primary button--lg" to="/benchmarks">
+              <Link className={Clsx('button button--primary button--lg', Styles.teaserButton)} to="/benchmarks">
                 Open benchmark dashboard
               </Link>
             </div>
-          </div>
-        </section>
-      </main>
-      <Footer />
+          </section>
+        </main>
+        <Footer />
+      </div>
     </Layout>
   );
 }

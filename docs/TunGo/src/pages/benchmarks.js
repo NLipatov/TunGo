@@ -287,7 +287,7 @@ export default function BenchmarksPage() {
                 <Sparkline
                   series={entry.series}
                   valueKey="ns"
-                  color="#ff7b54"
+                  color="#475569"
                   formatter={(value) => formatNs(value)}
                 />
               </div>

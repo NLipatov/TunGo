@@ -1,16 +1,21 @@
 .features {
-  padding: 1rem 0 3rem;
+  padding: 0.35rem 0 2.4rem;
+}
+
+.features :global(.container) {
+  display: grid;
+  gap: 1rem;
 }
 
 .featureSvg {
-  height: 6.5rem;
-  width: 6.5rem;
+  height: 4.75rem;
+  width: 4.75rem;
 }
 
 .sectionIntro {
-  max-width: 780px;
-  margin: 0 auto 1.4rem;
-  text-align: center;
+  max-width: 720px;
+  margin: 0;
+  text-align: left;
 }
 
 .eyebrow {
@@ -19,7 +24,7 @@
   letter-spacing: 0.14em;
   font-size: 0.76rem;
   font-weight: 800;
-  color: var(--ifm-color-primary);
+  color: var(--site-accent);
   margin-bottom: 0.8rem;
 }
 
@@ -34,12 +39,18 @@
 }
 
 .featureColumn {
-  margin-bottom: 1.2rem;
+  margin-bottom: 0.9rem;
+}
+
+.features :global(.row) {
+  align-items: stretch;
 }
 
 .featureCard {
+  display: grid;
+  grid-template-rows: 136px 1fr;
   height: 100%;
-  border-radius: 24px;
+  border-radius: 20px;
   border: 1px solid var(--site-border);
   background: var(--site-surface);
   box-shadow: var(--site-shadow);
@@ -50,34 +61,40 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  min-height: 220px;
+  min-height: 136px;
   background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--feature-accent) 22%, transparent), transparent 44%),
+    radial-gradient(circle at top left, rgba(15, 23, 42, 0.08), transparent 44%),
     linear-gradient(180deg, var(--site-surface-strong) 0%, rgba(255, 255, 255, 0.5) 100%);
   border-bottom: 1px solid var(--site-border);
 }
 
 [data-theme='dark'] .featureVisual {
   background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--feature-accent) 28%, transparent), transparent 44%),
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.07), transparent 44%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.02) 100%);
 }
 
+.featureVisual :global(svg) {
+  color: var(--site-accent);
+}
+
 .featureBody {
-  padding: 1.15rem 1.2rem 1.3rem;
+  padding: 0.9rem 1rem 1rem;
 }
 
 .featureTitle {
-  margin-bottom: 0.55rem;
+  margin-bottom: 0.4rem;
+  font-size: 1.05rem;
 }
 
 .featureDescription {
   color: var(--ifm-color-emphasis-700);
-  line-height: 1.65;
+  line-height: 1.52;
+  font-size: 0.95rem;
 }
 
 @media screen and (max-width: 996px) {
   .features {
-    padding: 0 0 3rem;
+    padding: 0 0 2.4rem;
   }
 }

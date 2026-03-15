@@ -6,7 +6,7 @@
 
 /* You can override the default Infima variables here. */
 :root {
-  /* Primary color — cyan / Go-like, calm and technical */
+  /* Primary color — restrained Go cyan */
   --ifm-color-primary: #009fc9;
   --ifm-color-primary-dark: #008ab0;
   --ifm-color-primary-darker: #007a9d;
@@ -26,11 +26,12 @@
   --site-surface-muted: rgba(6, 19, 26, 0.045);
   --site-border: rgba(6, 19, 26, 0.08);
   --site-shadow: 0 24px 60px rgba(6, 19, 26, 0.08);
-  --site-grid-line: rgba(0, 159, 201, 0.1);
+  --site-grid-line: rgba(0, 159, 201, 0.08);
+  --site-accent: #009fc9;
   --site-gradient:
-    radial-gradient(circle at top left, rgba(0, 159, 201, 0.16), transparent 28%),
-    radial-gradient(circle at 85% 10%, rgba(0, 159, 201, 0.08), transparent 24%),
-    linear-gradient(180deg, #f4fbfd 0%, #ffffff 35%, #f7fafc 100%);
+    radial-gradient(circle at top left, rgba(0, 159, 201, 0.09), transparent 28%),
+    radial-gradient(circle at 85% 10%, rgba(0, 159, 201, 0.04), transparent 24%),
+    linear-gradient(180deg, #f7f7f5 0%, #ffffff 35%, #f6f6f4 100%);
 }
 
 /* Dark mode — same palette, softer contrast */
@@ -50,11 +51,12 @@
   --site-surface-muted: rgba(255, 255, 255, 0.05);
   --site-border: rgba(255, 255, 255, 0.08);
   --site-shadow: none;
-  --site-grid-line: rgba(79, 195, 227, 0.14);
+  --site-grid-line: rgba(79, 195, 227, 0.12);
+  --site-accent: #4fc3e3;
   --site-gradient:
-    radial-gradient(circle at top left, rgba(79, 195, 227, 0.16), transparent 28%),
-    radial-gradient(circle at 85% 10%, rgba(79, 195, 227, 0.08), transparent 24%),
-    linear-gradient(180deg, #06131a 0%, #0b1721 35%, #0f172a 100%);
+    radial-gradient(circle at top left, rgba(79, 195, 227, 0.12), transparent 28%),
+    radial-gradient(circle at 85% 10%, rgba(79, 195, 227, 0.05), transparent 24%),
+    linear-gradient(180deg, #0b0b0c 0%, #101113 35%, #15171a 100%);
 }
 
 /* Footer — explicit, neutral background */
