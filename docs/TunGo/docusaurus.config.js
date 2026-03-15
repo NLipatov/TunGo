@@ -86,6 +86,11 @@ const config = {
             label: 'Tutorial',
           },
           {
+            to: '/benchmarks',
+            label: 'Benchmarks',
+            position: 'left',
+          },
+          {
             type: 'localeDropdown',
             position: 'right',
           },

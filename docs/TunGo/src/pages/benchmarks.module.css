@@ -1,0 +1,346 @@
+.page {
+  background:
+    radial-gradient(circle at top left, rgba(0, 159, 201, 0.12), transparent 30%),
+    linear-gradient(180deg, #f6fbfd 0%, #ffffff 32%, #f8fafc 100%);
+  min-height: 100vh;
+  padding: 3rem 0 4rem;
+}
+
+[data-theme='dark'] .page {
+  background:
+    radial-gradient(circle at top left, rgba(79, 195, 227, 0.15), transparent 28%),
+    linear-gradient(180deg, #06131a 0%, #0b1721 35%, #0f172a 100%);
+}
+
+.hero,
+.section {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 1.5rem;
+}
+
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.9fr) minmax(280px, 1fr);
+  gap: 1.5rem;
+  align-items: stretch;
+  margin-bottom: 2rem;
+}
+
+.eyebrow,
+.sectionEyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--ifm-color-primary);
+  margin: 0 0 0.75rem;
+}
+
+.title {
+  font-size: clamp(2.3rem, 4vw, 4.5rem);
+  line-height: 0.95;
+  margin-bottom: 1rem;
+  max-width: 12ch;
+}
+
+.lead {
+  font-size: 1.1rem;
+  line-height: 1.7;
+  max-width: 68ch;
+  margin-bottom: 1rem;
+}
+
+.scope {
+  max-width: 65ch;
+  color: var(--ifm-color-emphasis-700);
+  margin: 0;
+}
+
+.metaPanel {
+  border: 1px solid rgba(0, 159, 201, 0.18);
+  border-radius: 24px;
+  padding: 1.25rem;
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 28px 64px rgba(15, 23, 42, 0.08);
+  display: grid;
+  gap: 1rem;
+}
+
+[data-theme='dark'] .metaPanel {
+  background: rgba(9, 18, 25, 0.88);
+  border-color: rgba(79, 195, 227, 0.16);
+  box-shadow: none;
+}
+
+.metaLabel,
+.metricLabel,
+.chartMetric,
+.calloutLabel {
+  display: block;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--ifm-color-emphasis-600);
+  margin-bottom: 0.35rem;
+}
+
+.metaValue {
+  display: block;
+  font-weight: 700;
+}
+
+.metaCode {
+  display: inline-block;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  background: rgba(15, 23, 42, 0.06);
+  padding: 0.55rem 0.65rem;
+  border-radius: 12px;
+}
+
+[data-theme='dark'] .metaCode {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.metrics {
+  max-width: 1200px;
+  margin: 0 auto 2.25rem;
+  padding: 0 1.5rem;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.metricCard,
+.chartCard,
+.callout {
+  border-radius: 22px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.05);
+}
+
+[data-theme='dark'] .metricCard,
+[data-theme='dark'] .chartCard,
+[data-theme='dark'] .callout {
+  background: rgba(15, 23, 42, 0.76);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+}
+
+.metricCard {
+  padding: 1.1rem 1.15rem 1.15rem;
+}
+
+.metricValue {
+  font-size: 1.9rem;
+  font-weight: 800;
+  line-height: 1;
+  margin-bottom: 0.45rem;
+}
+
+.metricNote {
+  color: var(--ifm-color-emphasis-700);
+  line-height: 1.55;
+}
+
+.section {
+  margin-bottom: 2rem;
+}
+
+.sectionHeader {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(260px, 0.9fr);
+  gap: 1.25rem;
+  align-items: end;
+  margin-bottom: 1rem;
+}
+
+.sectionTitle {
+  margin: 0;
+}
+
+.sectionText {
+  margin: 0;
+  color: var(--ifm-color-emphasis-700);
+  line-height: 1.65;
+}
+
+.tableWrap {
+  overflow-x: auto;
+  border-radius: 22px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.05);
+}
+
+[data-theme='dark'] .tableWrap {
+  background: rgba(15, 23, 42, 0.76);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th,
+.table td {
+  padding: 1rem 1.1rem;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  text-align: left;
+  vertical-align: top;
+}
+
+[data-theme='dark'] .table th,
+[data-theme='dark'] .table td {
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+
+.table tr:last-child td {
+  border-bottom: 0;
+}
+
+.tablePrimary {
+  display: block;
+  font-weight: 700;
+}
+
+.tableSecondary {
+  display: block;
+  color: var(--ifm-color-emphasis-600);
+  font-size: 0.9rem;
+  margin-top: 0.2rem;
+}
+
+.chartGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.chartCard {
+  padding: 1rem;
+}
+
+.chartHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.85rem;
+}
+
+.chartTitle {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.sparklineShell {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.sparkline {
+  width: 100%;
+  height: auto;
+}
+
+.chartFrame {
+  fill: rgba(15, 23, 42, 0.02);
+  stroke: rgba(15, 23, 42, 0.06);
+  stroke-width: 1;
+}
+
+[data-theme='dark'] .chartFrame {
+  fill: rgba(255, 255, 255, 0.02);
+  stroke: rgba(255, 255, 255, 0.08);
+}
+
+.chartLine {
+  fill: none;
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.chartDot {
+  stroke: #fff;
+  stroke-width: 3;
+}
+
+[data-theme='dark'] .chartDot {
+  stroke: #08131a;
+}
+
+.chartLabel {
+  fill: var(--ifm-color-emphasis-600);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.sparklineLegend {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.legendEntry {
+  border-radius: 14px;
+  padding: 0.65rem 0.8rem;
+  background: rgba(15, 23, 42, 0.04);
+}
+
+[data-theme='dark'] .legendEntry {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.legendPeers {
+  display: block;
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ifm-color-emphasis-600);
+  margin-bottom: 0.3rem;
+}
+
+.legendValue {
+  display: block;
+  font-weight: 700;
+}
+
+.callout {
+  padding: 1.5rem;
+}
+
+.calloutTitle {
+  margin-bottom: 1rem;
+}
+
+.calloutGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+@media screen and (max-width: 996px) {
+  .hero,
+  .sectionHeader,
+  .metrics,
+  .chartGrid,
+  .calloutGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .title {
+    max-width: none;
+  }
+
+  .sparklineLegend {
+    grid-template-columns: 1fr;
+  }
+}
