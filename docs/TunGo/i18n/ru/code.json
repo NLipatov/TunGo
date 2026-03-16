@@ -9,39 +9,186 @@
     "message": "Защитите своё соединение с TunGo: лёгкий, быстрый VPN с открытым исходным кодом, написанный на Go с использованием современной криптографии."
   },
   "feature.cpuFast.title": {
-    "message": "Быстрый CPU"
+    "message": "Быстрый"
   },
   "feature.cpuFast.description": {
-    "message": "Нет аллокаций во время выполнения. Незначительное использование CPU под нагрузкой."
+    "message": "0 allocs/op на hot path."
   },
   "feature.ramEfficient.title": {
-    "message": "Эффективная RAM"
+    "message": "Память"
   },
   "feature.ramEfficient.description": {
-    "message": "≈5–15 МБ RSS под нагрузкой, ≈5–8 МБ в покое"
+    "message": "≈5–15 МБ RSS под нагрузкой."
   },
   "feature.secure.title": {
-    "message": "Безопасный"
+    "message": "Криптография"
   },
   "feature.secure.description": {
-    "message": "Хендшейк Noise IK, обмен ключами X25519, AEAD ChaCha20-Poly1305"
+    "message": "Noise IK, X25519, ChaCha20-Poly1305."
   },
   "feature.multiTransport.title": {
-    "message": "Поддержка нескольких транспортов"
+    "message": "Транспорты"
   },
   "feature.multiTransport.description": {
-    "message": "UDP — высокая производительность, TCP — надёжный резерв, WebSocket/WSS — режим скрытности"
+    "message": "UDP, TCP, WebSocket/WSS."
   },
   "feature.platforms.title": {
-    "message": "Поддерживаемые платформы"
+    "message": "Платформы"
   },
   "feature.platforms.description": {
-    "message": "Linux (клиент и сервер), macOS (клиент), Windows (клиент)"
+    "message": "Linux, macOS, Windows."
   },
   "feature.openSource.title": {
-    "message": "Открытый исходный код"
+    "message": "Open source"
   },
   "feature.openSource.description": {
-    "message": "Лицензия: AGPLv3"
+    "message": "Лицензия AGPLv3."
+  },
+  "homepage.heroTitle.prefix": {
+    "message": "Быстрый и лёгкий"
+  },
+  "homepage.heroTitle.suffix": {
+    "message": "userspace VPN"
+  },
+  "homepage.benchmarksCta": {
+    "message": "Смотреть бенчмарки"
+  },
+  "bench.hero.title": {
+    "message": "Снимок бенчмарков"
+  },
+  "bench.section.fullCycle.title": {
+    "message": "Полный dataplane-цикл"
+  },
+  "bench.section.fullCycle.text": {
+    "message": "Шифрование, lookup, валидация, дешифрование, handoff. Верхняя граница для ядра dataplane, а не сквозной пропускной способности VPN."
+  },
+  "bench.section.scaling.title": {
+    "message": "Масштабирование UDP по peer"
+  },
+  "bench.section.scaling.text": {
+    "message": "Агрегированная пропускная способность при распределении работы между множеством peer, а не по одной сериализованной send-линии."
+  },
+  "bench.chart.aggregateThroughput": {
+    "message": "Агрегированная пропускная способность"
+  },
+  "bench.section.lookup.title": {
+    "message": "Lookup и сериализация"
+  },
+  "bench.section.lookup.text": {
+    "message": "Lookup по Internal IP, allowed-host и route-ID остаются плоскими. Misses и сериализация на peer — основные точки давления."
+  },
+  "bench.transport.udp": {
+    "message": "UDP"
+  },
+  "bench.transport.tcp": {
+    "message": "TCP"
+  },
+  "bench.direction.clientServer": {
+    "message": "Клиент -> Сервер"
+  },
+  "bench.direction.serverClient": {
+    "message": "Сервер -> Клиент"
+  },
+  "bench.parallel.clientServer": {
+    "message": "UDP Клиент -> Сервер"
+  },
+  "bench.parallel.serverClient": {
+    "message": "UDP Сервер -> Клиент"
+  },
+  "bench.lookup.exactInternal": {
+    "message": "Точный lookup по internal IP"
+  },
+  "bench.lookup.allowedHost": {
+    "message": "Lookup по allowed host"
+  },
+  "bench.lookup.routeId": {
+    "message": "Lookup по Route ID"
+  },
+  "bench.legend.peers": {
+    "message": "{count} peer"
+  },
+  "bench.table.fullCycleAria": {
+    "message": "Результаты бенчмарка полного dataplane-цикла"
+  },
+  "bench.table.path": {
+    "message": "Путь"
+  },
+  "bench.table.latency": {
+    "message": "Задержка"
+  },
+  "bench.table.throughput": {
+    "message": "Пропускная способность"
+  },
+  "bench.table.allocs": {
+    "message": "Allocs/op"
+  },
+  "bench.lookup.missPath": {
+    "message": "Miss path"
+  },
+  "bench.table.lookupAria": {
+    "message": "Результаты бенчмарка repository lookup и miss-path"
+  },
+  "bench.table.lookup": {
+    "message": "Lookup"
+  },
+  "bench.table.peerCount": {
+    "message": "{count} peer"
+  },
+  "bench.page.title": {
+    "message": "Бенчмарки"
+  },
+  "bench.page.description": {
+    "message": "Панель бенчмарков dataplane TunGo: пропускная способность, задержка, стоимость repository lookup и contention на egress."
+  },
+  "bench.hero.lead": {
+    "message": "Ручной снимок, замеренный на {machine} с {goVersion}."
+  },
+  "bench.metric.throughput": {
+    "message": "Пропускная способность"
+  },
+  "bench.metric.throughputNote": {
+    "message": "Лучший full-cycle path"
+  },
+  "bench.metric.latency": {
+    "message": "Задержка"
+  },
+  "bench.metric.latencyNote": {
+    "message": "Минимальный full-cycle path"
+  },
+  "bench.metric.lookup": {
+    "message": "Fast-path lookup"
+  },
+  "bench.metric.lookupNote": {
+    "message": "Плоско до 10k peer"
+  },
+  "bench.metric.allocs": {
+    "message": "Allocs/op"
+  },
+  "bench.metric.allocsNote": {
+    "message": "Hot path"
+  },
+  "bench.summary.egress": {
+    "message": "Egress-линия"
+  },
+  "bench.summary.egressNote": {
+    "message": "От uncontended до contended send"
+  },
+  "bench.summary.missPath": {
+    "message": "Miss path"
+  },
+  "bench.summary.linear": {
+    "message": "Линейно"
+  },
+  "bench.summary.missPathNote": {
+    "message": "~35 нс на 1 peer -> ~89.5 μs на 10k peer"
+  },
+  "footer.iconsBy": {
+    "message": "Иконки от"
+  },
+  "footer.builtWith": {
+    "message": "Собрано на"
+  },
+  "footer.contributors": {
+    "message": "Участники TunGo"
   }
 }

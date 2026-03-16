@@ -60,44 +60,6 @@
   justify-content: center;
 }
 
-.secondaryCta,
-.buttons :global(.button--secondary).secondaryCta {
-  --ifm-button-background-color: var(--ifm-background-surface-color);
-  --ifm-button-border-color: var(--ifm-color-emphasis-300);
-  --ifm-button-color: var(--ifm-font-color-base);
-  color: var(--ifm-button-color) !important;
-  box-shadow: none;
-  opacity: 1;
-}
-
-.secondaryCta:hover,
-.secondaryCta:focus-visible,
-.buttons :global(.button--secondary).secondaryCta:hover,
-.buttons :global(.button--secondary).secondaryCta:focus-visible {
-  --ifm-button-border-color: var(--ifm-color-primary);
-  --ifm-button-background-color: var(--ifm-background-surface-color);
-  --ifm-button-color: var(--ifm-font-color-base);
-  color: var(--ifm-button-color) !important;
-}
-
-[data-theme='dark'] .secondaryCta,
-[data-theme='dark'] .buttons :global(.button--secondary).secondaryCta {
-  --ifm-button-border-color: var(--ifm-color-emphasis-400);
-  --ifm-button-background-color: rgba(255, 255, 255, 0.03);
-  --ifm-button-color: var(--ifm-color-emphasis-0);
-  color: var(--ifm-button-color) !important;
-}
-
-[data-theme='dark'] .secondaryCta:hover,
-[data-theme='dark'] .secondaryCta:focus-visible,
-[data-theme='dark'] .buttons :global(.button--secondary).secondaryCta:hover,
-[data-theme='dark'] .buttons :global(.button--secondary).secondaryCta:focus-visible {
-  --ifm-button-border-color: var(--ifm-color-primary);
-  --ifm-button-background-color: rgba(255, 255, 255, 0.05);
-  --ifm-button-color: var(--ifm-color-emphasis-0);
-  color: var(--ifm-button-color) !important;
-}
-
 @media screen and (max-width: 996px) {
   .heroBanner {
     padding: 1.55rem 0 0.1rem;
@@ -118,12 +80,5 @@
     width: 100%;
     min-height: 2.7rem;
     font-size: 0.95rem;
-  }
-
-  .secondaryCta,
-  .buttons :global(.button--secondary).secondaryCta {
-    background: transparent;
-    border-color: var(--ifm-color-emphasis-300);
-    color: var(--ifm-font-color-base) !important;
   }
 }

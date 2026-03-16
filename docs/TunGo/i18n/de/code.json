@@ -6,42 +6,189 @@
     "message": "Minimalistisches, schnelles & sicheres Open-Source-VPN"
   },
   "homepage.description": {
-    "message": "Sichern Sie Ihre Verbindung mit TunGo: leichtgewichtiges, schnelles, Open-Source-VPN, gebaut in Go mit moderner Kryptographie."
+    "message": "Sichern Sie Ihre Verbindung mit TunGo: leichtgewichtiges, schnelles Open-Source-VPN, gebaut in Go mit moderner Kryptografie."
   },
   "feature.cpuFast.title": {
-    "message": "CPU-Schnell"
+    "message": "Schnell"
   },
   "feature.cpuFast.description": {
-    "message": "Keine Laufzeit-Allokationen. Vernachlässigbare CPU-Nutzung unter Last."
+    "message": "0 Allocs/op auf dem Hot Path."
   },
   "feature.ramEfficient.title": {
-    "message": "RAM-Effizient"
+    "message": "Speicher"
   },
   "feature.ramEfficient.description": {
-    "message": "≈5–15 MB RSS unter Last, ≈5–8 MB im Leerlauf"
+    "message": "≈5–15 MB RSS unter Last."
   },
   "feature.secure.title": {
-    "message": "Sicher"
+    "message": "Krypto"
   },
   "feature.secure.description": {
-    "message": "Noise IK-Handshake, X25519-Schlüsselaustausch, ChaCha20-Poly1305 AEAD"
+    "message": "Noise IK, X25519, ChaCha20-Poly1305."
   },
   "feature.multiTransport.title": {
-    "message": "Multi-Transport-Unterstützung"
+    "message": "Transporte"
   },
   "feature.multiTransport.description": {
-    "message": "UDP — hohe Leistung, TCP — zuverlässiger Fallback, WebSocket/WSS — Stealth-Modus"
+    "message": "UDP, TCP, WebSocket/WSS."
   },
   "feature.platforms.title": {
-    "message": "Unterstützte Plattformen"
+    "message": "Plattformen"
   },
   "feature.platforms.description": {
-    "message": "Linux (Client und Server), macOS (Client), Windows (Client)"
+    "message": "Linux, macOS, Windows."
   },
   "feature.openSource.title": {
-    "message": "Open Source"
+    "message": "OSS"
   },
   "feature.openSource.description": {
-    "message": "Lizenz: AGPLv3"
+    "message": "Unter AGPLv3 lizenziert."
+  },
+  "homepage.heroTitle.prefix": {
+    "message": "Schnell und schlank"
+  },
+  "homepage.heroTitle.suffix": {
+    "message": "Userspace-VPN"
+  },
+  "homepage.benchmarksCta": {
+    "message": "Benchmarks ansehen"
+  },
+  "bench.hero.title": {
+    "message": "Benchmark-Snapshot"
+  },
+  "bench.section.fullCycle.title": {
+    "message": "Vollständiger Dataplane-Zyklus"
+  },
+  "bench.section.fullCycle.text": {
+    "message": "Verschlüsseln, Lookup, Validierung, Entschlüsselung, Handoff. Obergrenze für den Dataplane-Kern, nicht für den End-to-End-VPN-Durchsatz."
+  },
+  "bench.section.scaling.title": {
+    "message": "UDP-Skalierung über mehrere Peers"
+  },
+  "bench.section.scaling.text": {
+    "message": "Aggregierter Durchsatz bei Verteilung der Arbeit über viele Peers, nicht über eine einzelne serialisierte Sendespur."
+  },
+  "bench.chart.aggregateThroughput": {
+    "message": "Aggregierter Durchsatz"
+  },
+  "bench.section.lookup.title": {
+    "message": "Lookup und Serialisierung"
+  },
+  "bench.section.lookup.text": {
+    "message": "Internal-IP-, Allowed-Host- und Route-ID-Lookups bleiben flach. Misses und Serialisierung pro Peer sind die eigentlichen Druckpunkte."
+  },
+  "bench.transport.udp": {
+    "message": "UDP"
+  },
+  "bench.transport.tcp": {
+    "message": "TCP"
+  },
+  "bench.direction.clientServer": {
+    "message": "Client -> Server"
+  },
+  "bench.direction.serverClient": {
+    "message": "Server -> Client"
+  },
+  "bench.parallel.clientServer": {
+    "message": "UDP Client -> Server"
+  },
+  "bench.parallel.serverClient": {
+    "message": "UDP Server -> Client"
+  },
+  "bench.lookup.exactInternal": {
+    "message": "Exakter Internal-Lookup"
+  },
+  "bench.lookup.allowedHost": {
+    "message": "Allowed-Host-Lookup"
+  },
+  "bench.lookup.routeId": {
+    "message": "Route-ID-Lookup"
+  },
+  "bench.legend.peers": {
+    "message": "{count} Peers"
+  },
+  "bench.table.fullCycleAria": {
+    "message": "Benchmark-Ergebnisse des vollständigen Dataplane-Zyklus"
+  },
+  "bench.table.path": {
+    "message": "Pfad"
+  },
+  "bench.table.latency": {
+    "message": "Latenz"
+  },
+  "bench.table.throughput": {
+    "message": "Durchsatz"
+  },
+  "bench.table.allocs": {
+    "message": "Allocs/op"
+  },
+  "bench.lookup.missPath": {
+    "message": "Miss-Pfad"
+  },
+  "bench.table.lookupAria": {
+    "message": "Benchmark-Ergebnisse für Repository-Lookup und Miss-Pfad"
+  },
+  "bench.table.lookup": {
+    "message": "Lookup"
+  },
+  "bench.table.peerCount": {
+    "message": "{count} Peers"
+  },
+  "bench.page.title": {
+    "message": "Benchmarks"
+  },
+  "bench.page.description": {
+    "message": "Benchmark-Dashboard für TunGo-Dataplane-Durchsatz, Latenz, Repository-Lookup-Kosten und Egress-Contention."
+  },
+  "bench.hero.lead": {
+    "message": "Manueller Snapshot, gemessen auf {machine} mit {goVersion}."
+  },
+  "bench.metric.throughput": {
+    "message": "Durchsatz"
+  },
+  "bench.metric.throughputNote": {
+    "message": "Bester Full-Cycle-Pfad"
+  },
+  "bench.metric.latency": {
+    "message": "Latenz"
+  },
+  "bench.metric.latencyNote": {
+    "message": "Niedrigster Full-Cycle-Pfad"
+  },
+  "bench.metric.lookup": {
+    "message": "Fast-Path-Lookup"
+  },
+  "bench.metric.lookupNote": {
+    "message": "Flach bis 10k Peers"
+  },
+  "bench.metric.allocs": {
+    "message": "Allocs/op"
+  },
+  "bench.metric.allocsNote": {
+    "message": "Hot Path"
+  },
+  "bench.summary.egress": {
+    "message": "Egress-Spur"
+  },
+  "bench.summary.egressNote": {
+    "message": "Von uncontended zu contended Sends"
+  },
+  "bench.summary.missPath": {
+    "message": "Miss-Pfad"
+  },
+  "bench.summary.linear": {
+    "message": "Linear"
+  },
+  "bench.summary.missPathNote": {
+    "message": "~35 ns bei 1 Peer -> ~89.5 μs bei 10k Peers"
+  },
+  "footer.iconsBy": {
+    "message": "Symbole von"
+  },
+  "footer.builtWith": {
+    "message": "Erstellt mit"
+  },
+  "footer.contributors": {
+    "message": "TunGo-Mitwirkende"
   }
 }

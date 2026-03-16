@@ -42,7 +42,7 @@
 
 .metricCard,
 .chartCard {
-  border-radius: 16px;
+  border-radius: 14px;
   border: 1px solid var(--ifm-color-emphasis-200);
   background: var(--ifm-background-surface-color);
   box-shadow: none;
@@ -66,6 +66,11 @@
 
 .metricCardMuted .metricNote {
   font-size: 0.82rem;
+}
+
+.metricCardMuted {
+  border-color: var(--ifm-color-emphasis-200);
+  background: transparent;
 }
 
 .metricLabel,
@@ -104,7 +109,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(280px, 0.92fr);
   gap: 1rem;
-  align-items: center;
+  align-items: start;
   margin-bottom: 0.95rem;
 }
 
@@ -123,14 +128,14 @@
 
 .splitSection {
   display: grid;
-  grid-template-columns: minmax(240px, 300px) minmax(620px, 720px);
+  grid-template-columns: minmax(240px, 290px) minmax(620px, 720px);
   justify-content: space-between;
-  gap: 1.2rem;
+  gap: 1rem;
   align-items: start;
 }
 
 .splitCopy {
-  max-width: 17.5rem;
+  max-width: 16.75rem;
   justify-self: start;
 }
 
@@ -201,6 +206,7 @@
   font-weight: 700;
   font-size: 0.89rem;
   line-height: 1.25;
+  background: rgba(15, 23, 42, 0.015);
 }
 
 .dataTable th:not(:first-child),
@@ -228,6 +234,12 @@
   font-size: 0.78rem;
   line-height: 1.32;
   margin-top: 0.14rem;
+  opacity: 0.86;
+}
+
+.chartMetric {
+  color: var(--ifm-color-emphasis-500);
+  letter-spacing: 0.09em;
 }
 
 .chartGrid {

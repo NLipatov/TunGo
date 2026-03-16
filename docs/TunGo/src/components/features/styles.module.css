@@ -1,5 +1,5 @@
 .features {
-  padding: 0.1rem 0 2rem;
+  padding: 0.05rem 0 1.8rem;
 }
 
 .features :global(.container) {
@@ -12,7 +12,7 @@
 }
 
 .featureColumn {
-  margin-bottom: 0.6rem;
+  margin-bottom: 0.55rem;
 }
 
 .featureCardLink {
@@ -39,11 +39,11 @@
   display: grid;
   grid-template-rows: auto 1fr;
   height: 100%;
-  border-radius: 16px;
+  border-radius: 14px;
   border: 1px solid var(--ifm-color-emphasis-200);
   background: var(--ifm-background-surface-color);
   box-shadow: none;
-  padding: 0.95rem 0.95rem 1rem;
+  padding: 0.82rem 0.85rem 0.88rem;
   transition:
     transform 160ms ease,
     border-color 160ms ease,
@@ -55,7 +55,7 @@
   justify-content: flex-start;
   align-items: center;
   min-height: 0;
-  margin-bottom: 0.9rem;
+  margin-bottom: 0.72rem;
 }
 
 [data-theme='dark'] .featureVisual {
@@ -73,15 +73,15 @@
 }
 
 .featureTitle {
-  margin-bottom: 0.18rem;
-  font-size: 0.95rem;
+  margin-bottom: 0.12rem;
+  font-size: 0.92rem;
   letter-spacing: -0.015em;
 }
 
 .featureDescription {
   color: var(--ifm-color-emphasis-700);
-  line-height: 1.35;
-  font-size: 0.84rem;
+  line-height: 1.28;
+  font-size: 0.8rem;
 }
 
 .featureCardLink:hover .featureCard,
@@ -109,20 +109,20 @@
 
 @media screen and (max-width: 996px) {
   .features {
-    padding: 0 0 1.7rem;
+    padding: 0 0 1.55rem;
   }
 
   .featureColumn {
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.42rem;
   }
 
   .featureCard {
     grid-template-columns: 2.2rem minmax(0, 1fr);
     grid-template-rows: auto;
     align-items: start;
-    gap: 0.8rem;
-    padding: 0.85rem 0.9rem;
-    border-radius: 14px;
+    gap: 0.72rem;
+    padding: 0.78rem 0.82rem;
+    border-radius: 13px;
   }
 
   .featureVisual {
@@ -137,12 +137,12 @@
   }
 
   .featureTitle {
-    font-size: 0.92rem;
-    margin-bottom: 0.12rem;
+    font-size: 0.9rem;
+    margin-bottom: 0.08rem;
   }
 
   .featureDescription {
-    font-size: 0.8rem;
-    line-height: 1.32;
+    font-size: 0.78rem;
+    line-height: 1.28;
   }
 }

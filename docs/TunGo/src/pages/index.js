@@ -23,7 +23,7 @@ function HomepageHeader() {
             <Link className="button button--primary button--lg" to="/docs/QuickStart">
               <Translate id="homepage.cta">Get started in minutes</Translate>
             </Link>
-            <Link className={Clsx('button button--secondary button--lg', Styles.secondaryCta)} to="/benchmarks">
+            <Link className="button button--outline button--primary button--lg" to="/benchmarks">
               <Translate id="homepage.benchmarksCta">View benchmarks</Translate>
             </Link>
           </div>
