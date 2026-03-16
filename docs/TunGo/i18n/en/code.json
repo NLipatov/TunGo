@@ -332,39 +332,186 @@
     "description": "The title of the tag list page"
   },
   "feature.cpuFast.title": {
-    "message": "CPU-Fast"
+    "message": "Fast"
   },
   "feature.cpuFast.description": {
-    "message": "No runtime allocations. Negligible CPU usage under load."
+    "message": "0 allocs/op on the hot path."
   },
   "feature.ramEfficient.title": {
-    "message": "RAM-Efficient"
+    "message": "Memory"
   },
   "feature.ramEfficient.description": {
-    "message": "≈5–15 MB RSS under load, ≈5–8 MB idle"
+    "message": "≈5–15 MB RSS under load."
   },
   "feature.secure.title": {
-    "message": "Secure"
+    "message": "Crypto"
   },
   "feature.secure.description": {
-    "message": "Noise IK handshake, X25519 key agreement, ChaCha20-Poly1305 AEAD"
+    "message": "Noise IK, X25519, ChaCha20-Poly1305."
   },
   "feature.multiTransport.title": {
-    "message": "Multi-Transport Support"
+    "message": "Transports"
   },
   "feature.multiTransport.description": {
-    "message": "UDP — high performance, TCP — reliable fallback, WebSocket/WSS — stealth mode"
+    "message": "UDP, TCP, WebSocket/WSS."
   },
   "feature.platforms.title": {
-    "message": "Supported Platforms"
+    "message": "Platforms"
   },
   "feature.platforms.description": {
-    "message": "Linux (client and server), macOS (client), Windows (client)"
+    "message": "Linux, macOS, Windows."
   },
   "feature.openSource.title": {
-    "message": "Open Source"
+    "message": "OSS"
   },
   "feature.openSource.description": {
-    "message": "License: AGPLv3"
+    "message": "AGPLv3-licensed."
+  },
+  "homepage.heroTitle.prefix": {
+    "message": "Fast, lightweight"
+  },
+  "homepage.heroTitle.suffix": {
+    "message": "userspace VPN"
+  },
+  "homepage.benchmarksCta": {
+    "message": "View benchmarks"
+  },
+  "bench.hero.title": {
+    "message": "Benchmark snapshot"
+  },
+  "bench.section.fullCycle.title": {
+    "message": "Full-cycle dataplane"
+  },
+  "bench.section.fullCycle.text": {
+    "message": "Encrypt, lookup, validate, decrypt, handoff. Upper-bound for the dataplane core, not end-to-end VPN throughput."
+  },
+  "bench.section.scaling.title": {
+    "message": "Multi-peer UDP scaling"
+  },
+  "bench.section.scaling.text": {
+    "message": "Aggregate throughput with work spread across many peers, not one serialized send lane."
+  },
+  "bench.chart.aggregateThroughput": {
+    "message": "Aggregate throughput"
+  },
+  "bench.section.lookup.title": {
+    "message": "Lookup and serialization"
+  },
+  "bench.section.lookup.text": {
+    "message": "Internal-IP, allowed-host, and route-ID lookups stay flat. Misses and per-peer serialization are the real pressure points."
+  },
+  "bench.transport.udp": {
+    "message": "UDP"
+  },
+  "bench.transport.tcp": {
+    "message": "TCP"
+  },
+  "bench.direction.clientServer": {
+    "message": "Client -> Server"
+  },
+  "bench.direction.serverClient": {
+    "message": "Server -> Client"
+  },
+  "bench.parallel.clientServer": {
+    "message": "UDP Client -> Server"
+  },
+  "bench.parallel.serverClient": {
+    "message": "UDP Server -> Client"
+  },
+  "bench.lookup.exactInternal": {
+    "message": "Exact internal lookup"
+  },
+  "bench.lookup.allowedHost": {
+    "message": "Allowed host lookup"
+  },
+  "bench.lookup.routeId": {
+    "message": "Route ID lookup"
+  },
+  "bench.legend.peers": {
+    "message": "{count} peers"
+  },
+  "bench.table.fullCycleAria": {
+    "message": "Full-cycle dataplane benchmark results"
+  },
+  "bench.table.path": {
+    "message": "Path"
+  },
+  "bench.table.latency": {
+    "message": "Latency"
+  },
+  "bench.table.throughput": {
+    "message": "Throughput"
+  },
+  "bench.table.allocs": {
+    "message": "Allocs/op"
+  },
+  "bench.lookup.missPath": {
+    "message": "Miss path"
+  },
+  "bench.table.lookupAria": {
+    "message": "Repository lookup and miss-path benchmark results"
+  },
+  "bench.table.lookup": {
+    "message": "Lookup"
+  },
+  "bench.table.peerCount": {
+    "message": "{count} peers"
+  },
+  "bench.page.title": {
+    "message": "Benchmarks"
+  },
+  "bench.page.description": {
+    "message": "Benchmark dashboard for TunGo dataplane throughput, latency, repository lookup costs, and egress contention."
+  },
+  "bench.hero.lead": {
+    "message": "Manual snapshot measured on {machine} with {goVersion}."
+  },
+  "bench.metric.throughput": {
+    "message": "Throughput"
+  },
+  "bench.metric.throughputNote": {
+    "message": "Best full-cycle path"
+  },
+  "bench.metric.latency": {
+    "message": "Latency"
+  },
+  "bench.metric.latencyNote": {
+    "message": "Lowest full-cycle path"
+  },
+  "bench.metric.lookup": {
+    "message": "Fast-path lookup"
+  },
+  "bench.metric.lookupNote": {
+    "message": "Flat through 10k peers"
+  },
+  "bench.metric.allocs": {
+    "message": "Allocs/op"
+  },
+  "bench.metric.allocsNote": {
+    "message": "Hot path"
+  },
+  "bench.summary.egress": {
+    "message": "Egress lane"
+  },
+  "bench.summary.egressNote": {
+    "message": "Uncontended to contended sends"
+  },
+  "bench.summary.missPath": {
+    "message": "Miss path"
+  },
+  "bench.summary.linear": {
+    "message": "Linear"
+  },
+  "bench.summary.missPathNote": {
+    "message": "~35 ns at 1 peer -> ~89.5 μs at 10k peers"
+  },
+  "footer.iconsBy": {
+    "message": "Icons by"
+  },
+  "footer.builtWith": {
+    "message": "Built with"
+  },
+  "footer.contributors": {
+    "message": "TunGo Contributors"
   }
 }

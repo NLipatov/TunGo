@@ -6,23 +6,25 @@ import Layout from '@theme/Layout';
 import Features from '@site/src/components/features';
 import Heading from '@theme/Heading';
 import Styles from './index.module.css';
-import Footer from "../components/footer/footer";
+import Footer from '../components/footer/footer';
 
 function HomepageHeader() {
-  const {siteConfig} = UseDocusaurusContext();
   return (
-    <header className={Clsx('hero hero--primary', Styles.heroBanner)}>
-      <div className="container">
-        <Heading as="h1" className="hero__title" style={{color: "white"}}>
-          {siteConfig.title}
-        </Heading>
-        <p className="hero__subtitle" style={{color: "white"}}>{siteConfig.tagline}</p>
-        <div className={Styles.buttons}>
-          <Link
-            className="button button--secondary button--lg"
-            to="/docs/QuickStart">
-              <Translate id="homepage.cta">Get started in minutes</Translate> ⏱️
-          </Link>
+    <header className={Clsx(Styles.heroBanner)}>
+      <div className={Clsx('container', Styles.heroGrid)}>
+        <div className={Styles.heroCopy}>
+          <Heading as="h1" className={Styles.heroTitle}>
+            <Translate id="homepage.heroTitle.prefix">Fast, lightweight</Translate>{' '}
+            <Translate id="homepage.heroTitle.suffix">userspace VPN</Translate>
+          </Heading>
+          <div className={Styles.buttons}>
+            <Link className="button button--primary button--lg" to="/docs/QuickStart">
+              <Translate id="homepage.cta">Get started in minutes</Translate>
+            </Link>
+            <Link className="button button--outline button--primary button--lg" to="/benchmarks">
+              <Translate id="homepage.benchmarksCta">View benchmarks</Translate>
+            </Link>
+          </div>
         </div>
       </div>
     </header>
@@ -36,11 +38,13 @@ export default function Home() {
     <Layout
         title={translate({id: 'homepage.title', message: 'Minimalistic, Fast & Secure Open Source VPN'})}
         description={translate({id: 'homepage.description', message: 'Secure your connection with TunGo: lightweight, fast, open-source VPN built in Go using modern cryptography.'})}>
-      <HomepageHeader />
-      <main>
-        <Features />
-      </main>
-        <Footer/>
+      <div className={Styles.homeShell}>
+        <HomepageHeader />
+        <main className={Styles.homeMain}>
+          <Features />
+        </main>
+        <Footer />
+      </div>
     </Layout>
   );
 }

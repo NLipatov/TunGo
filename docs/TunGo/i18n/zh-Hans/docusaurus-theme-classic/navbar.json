@@ -1,18 +1,10 @@
 {
-  "title": {
-    "message": "TunGo",
-    "description": "The title in the navbar"
-  },
-  "logo.alt": {
-    "message": "TunGo Logo",
-    "description": "The alt text of navbar logo"
-  },
   "item.label.Tutorial": {
-    "message": "Tutorial",
+    "message": "教程",
     "description": "Navbar item with label Tutorial"
   },
   "item.label.Benchmarks": {
-    "message": "Benchmarks",
+    "message": "基准测试",
     "description": "Navbar item with label Benchmarks"
   },
   "item.label.GitHub": {

@@ -9,39 +9,186 @@
     "message": "Amankan koneksi Anda dengan TunGo: VPN ringan, cepat, open-source yang dibangun dengan Go menggunakan kriptografi modern."
   },
   "feature.cpuFast.title": {
-    "message": "CPU-Cepat"
+    "message": "Cepat"
   },
   "feature.cpuFast.description": {
-    "message": "Tanpa alokasi runtime. Penggunaan CPU dapat diabaikan saat beban."
+    "message": "0 allocs/op pada hot path."
   },
   "feature.ramEfficient.title": {
-    "message": "RAM-Efisien"
+    "message": "Memori"
   },
   "feature.ramEfficient.description": {
-    "message": "≈5–15 MB RSS saat beban, ≈5–8 MB saat idle"
+    "message": "≈5–15 MB RSS saat beban."
   },
   "feature.secure.title": {
-    "message": "Aman"
+    "message": "Kripto"
   },
   "feature.secure.description": {
-    "message": "Handshake Noise IK, pertukaran kunci X25519, AEAD ChaCha20-Poly1305"
+    "message": "Noise IK, X25519, ChaCha20-Poly1305."
   },
   "feature.multiTransport.title": {
-    "message": "Dukungan Multi-Transport"
+    "message": "Transport"
   },
   "feature.multiTransport.description": {
-    "message": "UDP — performa tinggi, TCP — fallback andal, WebSocket/WSS — mode siluman"
+    "message": "UDP, TCP, WebSocket/WSS."
   },
   "feature.platforms.title": {
-    "message": "Platform yang Didukung"
+    "message": "Platform"
   },
   "feature.platforms.description": {
-    "message": "Linux (klien dan server), macOS (klien), Windows (klien)"
+    "message": "Linux, macOS, Windows."
   },
   "feature.openSource.title": {
-    "message": "Open Source"
+    "message": "OSS"
   },
   "feature.openSource.description": {
-    "message": "Lisensi: AGPLv3"
+    "message": "Berlisensi AGPLv3."
+  },
+  "homepage.heroTitle.prefix": {
+    "message": "Cepat dan ringan"
+  },
+  "homepage.heroTitle.suffix": {
+    "message": "VPN userspace"
+  },
+  "homepage.benchmarksCta": {
+    "message": "Lihat benchmark"
+  },
+  "bench.hero.title": {
+    "message": "Snapshot benchmark"
+  },
+  "bench.section.fullCycle.title": {
+    "message": "Dataplane siklus penuh"
+  },
+  "bench.section.fullCycle.text": {
+    "message": "Enkripsi, lookup, validasi, dekripsi, handoff. Batas atas untuk inti dataplane, bukan throughput VPN end-to-end."
+  },
+  "bench.section.scaling.title": {
+    "message": "Penskalaan UDP multi-peer"
+  },
+  "bench.section.scaling.text": {
+    "message": "Throughput agregat dengan pekerjaan yang tersebar di banyak peer, bukan satu jalur kirim terserialisasi."
+  },
+  "bench.chart.aggregateThroughput": {
+    "message": "Throughput agregat"
+  },
+  "bench.section.lookup.title": {
+    "message": "Lookup dan serialisasi"
+  },
+  "bench.section.lookup.text": {
+    "message": "Lookup internal-IP, allowed-host, dan route-ID tetap datar. Misses dan serialisasi per peer adalah titik tekanan yang sebenarnya."
+  },
+  "bench.transport.udp": {
+    "message": "UDP"
+  },
+  "bench.transport.tcp": {
+    "message": "TCP"
+  },
+  "bench.direction.clientServer": {
+    "message": "Klien -> Server"
+  },
+  "bench.direction.serverClient": {
+    "message": "Server -> Klien"
+  },
+  "bench.parallel.clientServer": {
+    "message": "UDP Klien -> Server"
+  },
+  "bench.parallel.serverClient": {
+    "message": "UDP Server -> Klien"
+  },
+  "bench.lookup.exactInternal": {
+    "message": "Lookup internal yang tepat"
+  },
+  "bench.lookup.allowedHost": {
+    "message": "Lookup allowed host"
+  },
+  "bench.lookup.routeId": {
+    "message": "Lookup Route ID"
+  },
+  "bench.legend.peers": {
+    "message": "{count} peer"
+  },
+  "bench.table.fullCycleAria": {
+    "message": "Hasil benchmark dataplane siklus penuh"
+  },
+  "bench.table.path": {
+    "message": "Jalur"
+  },
+  "bench.table.latency": {
+    "message": "Latensi"
+  },
+  "bench.table.throughput": {
+    "message": "Throughput"
+  },
+  "bench.table.allocs": {
+    "message": "Allocs/op"
+  },
+  "bench.lookup.missPath": {
+    "message": "Miss path"
+  },
+  "bench.table.lookupAria": {
+    "message": "Hasil benchmark lookup repositori dan miss path"
+  },
+  "bench.table.lookup": {
+    "message": "Lookup"
+  },
+  "bench.table.peerCount": {
+    "message": "{count} peer"
+  },
+  "bench.page.title": {
+    "message": "Benchmark"
+  },
+  "bench.page.description": {
+    "message": "Dashboard benchmark dataplane TunGo: throughput, latensi, biaya lookup repositori, dan contention pada egress."
+  },
+  "bench.hero.lead": {
+    "message": "Snapshot manual yang diukur pada {machine} dengan {goVersion}."
+  },
+  "bench.metric.throughput": {
+    "message": "Throughput"
+  },
+  "bench.metric.throughputNote": {
+    "message": "Jalur full-cycle terbaik"
+  },
+  "bench.metric.latency": {
+    "message": "Latensi"
+  },
+  "bench.metric.latencyNote": {
+    "message": "Jalur full-cycle terendah"
+  },
+  "bench.metric.lookup": {
+    "message": "Lookup fast-path"
+  },
+  "bench.metric.lookupNote": {
+    "message": "Tetap datar hingga 10k peer"
+  },
+  "bench.metric.allocs": {
+    "message": "Allocs/op"
+  },
+  "bench.metric.allocsNote": {
+    "message": "Hot path"
+  },
+  "bench.summary.egress": {
+    "message": "Jalur egress"
+  },
+  "bench.summary.egressNote": {
+    "message": "Dari kirim tanpa contention ke contention"
+  },
+  "bench.summary.missPath": {
+    "message": "Miss path"
+  },
+  "bench.summary.linear": {
+    "message": "Linear"
+  },
+  "bench.summary.missPathNote": {
+    "message": "~35 ns pada 1 peer -> ~89.5 μs pada 10k peer"
+  },
+  "footer.iconsBy": {
+    "message": "Ikon oleh"
+  },
+  "footer.builtWith": {
+    "message": "Dibangun dengan"
+  },
+  "footer.contributors": {
+    "message": "Kontributor TunGo"
   }
 }

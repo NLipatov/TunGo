@@ -3,21 +3,78 @@
  * and scoped locally.
  */
 
+.homeShell {
+  background: var(--ifm-background-color);
+  min-height: calc(100vh - var(--ifm-navbar-height));
+  display: flex;
+  flex-direction: column;
+}
+
+.homeMain {
+  display: grid;
+  gap: 1.2rem;
+  flex: 1 0 auto;
+  padding-bottom: 2.5rem;
+}
+
 .heroBanner {
-  padding: 4rem 0;
-  text-align: center;
+  color: var(--ifm-font-color-base);
+  padding: 2.8rem 0 0.65rem;
   position: relative;
   overflow: hidden;
 }
 
-@media screen and (max-width: 996px) {
-  .heroBanner {
-    padding: 2rem;
-  }
+.heroGrid {
+  display: block;
+}
+
+.heroCopy {
+  max-width: 780px;
+}
+
+.heroTitle {
+  max-width: 13ch;
+  font-size: clamp(2.5rem, 4.7vw, 4.85rem);
+  line-height: 0.92;
+  letter-spacing: -0.045em;
+  margin: 0 0 1rem;
 }
 
 .buttons {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.buttons :global(.button) {
+  min-width: 0;
+  padding-inline: 1.2rem;
+  min-height: 2.85rem;
+  font-size: 0.98rem;
   justify-content: center;
+}
+
+@media screen and (max-width: 996px) {
+  .heroBanner {
+    padding: 1.55rem 0 0.1rem;
+  }
+
+  .heroTitle {
+    max-width: 11ch;
+    font-size: clamp(2rem, 8.8vw, 3rem);
+    line-height: 0.95;
+    margin-bottom: 0.8rem;
+  }
+
+  .buttons {
+    gap: 0.55rem;
+  }
+
+  .buttons :global(.button) {
+    width: 100%;
+    min-height: 2.7rem;
+    font-size: 0.95rem;
+  }
 }

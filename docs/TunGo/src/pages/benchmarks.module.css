@@ -1,0 +1,407 @@
+.page {
+  background: var(--ifm-background-color);
+  min-height: 100vh;
+  color: var(--ifm-font-color-base);
+  padding: 1.7rem 0 2.5rem;
+}
+
+.hero,
+.section,
+.metrics {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+.hero {
+  margin-bottom: 1.55rem;
+}
+
+.title {
+  font-size: clamp(2.2rem, 4.2vw, 4rem);
+  line-height: 0.94;
+  letter-spacing: -0.04em;
+  margin: 0 0 0.75rem;
+  max-width: 10ch;
+}
+
+.lead {
+  font-size: 0.96rem;
+  line-height: 1.45;
+  max-width: 34rem;
+  margin: 0;
+  color: var(--ifm-color-emphasis-700);
+}
+
+.metrics {
+  margin-bottom: 1.75rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) repeat(3, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+.metricCard,
+.chartCard {
+  border-radius: 14px;
+  border: 1px solid var(--ifm-color-emphasis-200);
+  background: var(--ifm-background-surface-color);
+  box-shadow: none;
+}
+
+.metricCard {
+  padding: 0.8rem 0.9rem 0.85rem;
+}
+
+.metricCardPrimary {
+  padding: 0.9rem 0.98rem 0.95rem;
+}
+
+.metricCardPrimary .metricValue {
+  font-size: 1.78rem;
+}
+
+.metricCardMuted .metricValue {
+  font-size: 1.18rem;
+}
+
+.metricCardMuted .metricNote {
+  font-size: 0.82rem;
+}
+
+.metricCardMuted {
+  border-color: var(--ifm-color-emphasis-200);
+  background: transparent;
+}
+
+.metricLabel,
+.chartMetric {
+  display: block;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.11em;
+  color: var(--ifm-color-emphasis-600);
+  margin-bottom: 0.22rem;
+}
+
+.metricValue {
+  font-size: 1.46rem;
+  font-weight: 800;
+  line-height: 0.98;
+  margin-bottom: 0.2rem;
+}
+
+.metricNote {
+  color: var(--ifm-color-emphasis-700);
+  line-height: 1.35;
+  font-size: 0.84rem;
+}
+
+.section {
+  margin-bottom: 2.1rem;
+}
+
+.section + .section {
+  border-top: 1px solid var(--ifm-color-emphasis-200);
+  padding-top: 1.65rem;
+}
+
+.sectionHeader {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.92fr);
+  gap: 1rem;
+  align-items: start;
+  margin-bottom: 0.95rem;
+}
+
+.sectionTitle {
+  margin: 0;
+  line-height: 1.02;
+  letter-spacing: -0.03em;
+}
+
+.sectionText {
+  margin: 0;
+  color: var(--ifm-color-emphasis-700);
+  line-height: 1.42;
+  max-width: 28rem;
+}
+
+.splitSection {
+  display: grid;
+  grid-template-columns: minmax(240px, 290px) minmax(620px, 720px);
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: start;
+}
+
+.splitCopy {
+  max-width: 16.75rem;
+  justify-self: start;
+}
+
+.splitCopy .sectionTitle {
+  margin-bottom: 0.48rem;
+}
+
+.splitTable {
+  min-width: 0;
+  display: flex;
+  justify-content: flex-end;
+  justify-self: end;
+}
+
+.splitTable .tableWrap {
+  width: auto;
+  max-width: 100%;
+}
+
+.tableWrap {
+  display: flex;
+  width: 100%;
+  max-width: 100%;
+  overflow: visible;
+  padding: 0;
+}
+
+.tableWrapEnd {
+  justify-content: flex-end;
+  justify-self: end;
+}
+
+.tableWrapCenter {
+  justify-content: center;
+  justify-self: center;
+}
+
+.dataTable {
+  flex: none;
+  width: auto;
+  background: transparent;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.fullCycleTable {
+  min-width: 640px;
+}
+
+.fastPathTable {
+  min-width: 760px;
+}
+
+.dataTable th,
+.dataTable td {
+  padding: 0.62rem 0.72rem;
+  border-right: 1px solid rgba(15, 23, 42, 0.08);
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  border-top: 1px solid rgba(15, 23, 42, 0.08);
+  border-left: 1px solid rgba(15, 23, 42, 0.08);
+  text-align: left;
+  vertical-align: top;
+  font-size: 0.84rem;
+  line-height: 1.38;
+  min-width: 0;
+}
+
+.dataTable th {
+  font-weight: 700;
+  font-size: 0.89rem;
+  line-height: 1.25;
+  background: rgba(15, 23, 42, 0.015);
+}
+
+.dataTable th:not(:first-child),
+.dataTable td:not(:first-child) {
+  text-align: right;
+}
+
+[data-theme='dark'] .dataTable th,
+[data-theme='dark'] .dataTable td {
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+  border-right-color: rgba(255, 255, 255, 0.08);
+  border-top-color: rgba(255, 255, 255, 0.08);
+  border-left-color: rgba(255, 255, 255, 0.08);
+}
+
+.tablePrimary {
+  display: block;
+  font-weight: 700;
+  line-height: 1.28;
+}
+
+.tableSecondary {
+  display: block;
+  color: var(--ifm-color-emphasis-600);
+  font-size: 0.78rem;
+  line-height: 1.32;
+  margin-top: 0.14rem;
+  opacity: 0.86;
+}
+
+.chartMetric {
+  color: var(--ifm-color-emphasis-500);
+  letter-spacing: 0.09em;
+}
+
+.chartGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.chartCard {
+  padding: 0.78rem;
+}
+
+.chartHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.8rem;
+  margin-bottom: 0.55rem;
+}
+
+.chartTitle {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.sparklineShell {
+  display: grid;
+  gap: 0.48rem;
+}
+
+.sparkline {
+  width: 100%;
+  height: auto;
+}
+
+.chartFrame {
+  fill: transparent;
+  stroke: var(--ifm-color-emphasis-200);
+  stroke-width: 1;
+}
+
+[data-theme='dark'] .chartFrame {
+  fill: transparent;
+  stroke: var(--ifm-color-emphasis-200);
+}
+
+.chartLine {
+  fill: none;
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.chartDot {
+  stroke: #fff;
+  stroke-width: 3;
+}
+
+[data-theme='dark'] .chartDot {
+  stroke: #08131a;
+}
+
+.chartLabel {
+  fill: var(--ifm-color-emphasis-600);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.sparklineLegend {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.4rem;
+  padding-top: 0;
+}
+
+.legendEntry {
+  padding: 0;
+  background: transparent;
+}
+
+.legendPeers {
+  display: block;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--ifm-color-emphasis-600);
+  margin-bottom: 0.1rem;
+}
+
+.legendValue {
+  display: block;
+  font-weight: 700;
+  font-size: 0.92rem;
+}
+
+.summaryRow {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem;
+  margin-top: 0.9rem;
+}
+
+@media screen and (max-width: 996px) {
+  .hero,
+  .sectionHeader,
+  .metrics,
+  .chartGrid,
+  .summaryRow,
+  .splitSection {
+    grid-template-columns: 1fr;
+    justify-content: initial;
+  }
+
+  .title {
+    max-width: 8ch;
+    font-size: clamp(2rem, 10vw, 2.8rem);
+  }
+
+  .page {
+    padding: 1.35rem 0 1.9rem;
+  }
+
+  .metrics,
+  .section,
+  .hero {
+    margin-bottom: 1.35rem;
+  }
+
+  .section + .section {
+    padding-top: 1.35rem;
+  }
+
+  .sparklineLegend {
+    grid-template-columns: 1fr;
+  }
+
+  .tableWrap {
+    justify-content: flex-start;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .tableWrapEnd,
+  .tableWrapCenter {
+    justify-content: flex-start;
+  }
+
+  .dataTable,
+  .fullCycleTable,
+  .fastPathTable {
+    width: auto;
+  }
+
+  .dataTable th,
+  .dataTable td {
+    padding: 0.6rem 0.64rem;
+    font-size: 0.8rem;
+  }
+
+  .dataTable th {
+    font-size: 0.84rem;
+  }
+}
