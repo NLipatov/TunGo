@@ -63,7 +63,7 @@
     "message": "Enkripsi, lookup, validasi, dekripsi, handoff. Batas atas untuk inti dataplane, bukan throughput VPN end-to-end."
   },
   "bench.section.scaling.title": {
-    "message": "Skalasi UDP multi-peer"
+    "message": "Penskalaan UDP multi-peer"
   },
   "bench.section.scaling.text": {
     "message": "Throughput agregat dengan pekerjaan yang tersebar di banyak peer, bukan satu jalur kirim terserialisasi."

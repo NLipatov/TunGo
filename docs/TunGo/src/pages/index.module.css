@@ -40,10 +40,6 @@
   margin: 0 0 1rem;
 }
 
-.noBreak {
-  white-space: nowrap;
-}
-
 .buttons {
   display: flex;
   align-items: center;

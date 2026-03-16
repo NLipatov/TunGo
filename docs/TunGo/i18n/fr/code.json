@@ -12,7 +12,7 @@
     "message": "Rapide"
   },
   "feature.cpuFast.description": {
-    "message": "0 alloc/op sur le hot path."
+    "message": "0 allocs/op sur le hot path."
   },
   "feature.ramEfficient.title": {
     "message": "Mémoire"

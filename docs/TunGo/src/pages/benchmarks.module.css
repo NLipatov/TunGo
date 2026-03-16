@@ -151,7 +151,8 @@
 }
 
 .splitTable .tableWrap {
-  width: 100%;
+  width: auto;
+  max-width: 100%;
 }
 
 .tableWrap {
@@ -378,6 +379,9 @@
 
   .tableWrap {
     justify-content: flex-start;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
   }
 
   .tableWrapEnd,
@@ -388,8 +392,7 @@
   .dataTable,
   .fullCycleTable,
   .fastPathTable {
-    width: 100%;
-    min-width: 0;
+    width: auto;
   }
 
   .dataTable th,

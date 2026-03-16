@@ -15,9 +15,7 @@ function HomepageHeader() {
         <div className={Styles.heroCopy}>
           <Heading as="h1" className={Styles.heroTitle}>
             <Translate id="homepage.heroTitle.prefix">Fast, lightweight</Translate>{' '}
-            <span className={Styles.noBreak}>
-              <Translate id="homepage.heroTitle.suffix">userspace VPN</Translate>
-            </span>
+            <Translate id="homepage.heroTitle.suffix">userspace VPN</Translate>
           </Heading>
           <div className={Styles.buttons}>
             <Link className="button button--primary button--lg" to="/docs/QuickStart">
