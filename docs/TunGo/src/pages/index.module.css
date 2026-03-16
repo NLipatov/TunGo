@@ -62,35 +62,40 @@
 
 .secondaryCta,
 .buttons :global(.button--secondary).secondaryCta {
-  border-color: var(--ifm-color-emphasis-300);
-  background: var(--ifm-background-surface-color);
-  color: var(--ifm-font-color-base) !important;
+  --ifm-button-background-color: var(--ifm-background-surface-color);
+  --ifm-button-border-color: var(--ifm-color-emphasis-300);
+  --ifm-button-color: var(--ifm-font-color-base);
+  color: var(--ifm-button-color) !important;
   box-shadow: none;
+  opacity: 1;
 }
 
 .secondaryCta:hover,
 .secondaryCta:focus-visible,
 .buttons :global(.button--secondary).secondaryCta:hover,
 .buttons :global(.button--secondary).secondaryCta:focus-visible {
-  border-color: var(--ifm-color-primary);
-  background: var(--ifm-background-surface-color);
-  color: var(--ifm-font-color-base) !important;
+  --ifm-button-border-color: var(--ifm-color-primary);
+  --ifm-button-background-color: var(--ifm-background-surface-color);
+  --ifm-button-color: var(--ifm-font-color-base);
+  color: var(--ifm-button-color) !important;
 }
 
 [data-theme='dark'] .secondaryCta,
 [data-theme='dark'] .buttons :global(.button--secondary).secondaryCta {
-  border-color: var(--ifm-color-emphasis-400);
-  background: rgba(255, 255, 255, 0.02);
-  color: var(--ifm-color-emphasis-0) !important;
+  --ifm-button-border-color: var(--ifm-color-emphasis-400);
+  --ifm-button-background-color: rgba(255, 255, 255, 0.03);
+  --ifm-button-color: var(--ifm-color-emphasis-0);
+  color: var(--ifm-button-color) !important;
 }
 
 [data-theme='dark'] .secondaryCta:hover,
 [data-theme='dark'] .secondaryCta:focus-visible,
 [data-theme='dark'] .buttons :global(.button--secondary).secondaryCta:hover,
 [data-theme='dark'] .buttons :global(.button--secondary).secondaryCta:focus-visible {
-  border-color: var(--ifm-color-primary);
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--ifm-color-emphasis-0) !important;
+  --ifm-button-border-color: var(--ifm-color-primary);
+  --ifm-button-background-color: rgba(255, 255, 255, 0.05);
+  --ifm-button-color: var(--ifm-color-emphasis-0);
+  color: var(--ifm-button-color) !important;
 }
 
 @media screen and (max-width: 996px) {
