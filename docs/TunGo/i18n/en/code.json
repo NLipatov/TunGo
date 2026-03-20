@@ -451,8 +451,8 @@
   "bench.table.lookup": {
     "message": "Lookup"
   },
-  "bench.table.lookupCaption": {
-    "message": "Columns show peer count; cells show lookup latency."
+  "bench.table.peers": {
+    "message": "Peers"
   },
   "bench.page.title": {
     "message": "Benchmarks"

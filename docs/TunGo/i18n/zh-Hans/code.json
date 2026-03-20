@@ -128,8 +128,8 @@
   "bench.table.lookup": {
     "message": "Lookup"
   },
-  "bench.table.lookupCaption": {
-    "message": "列显示对等节点数量，单元格显示 lookup 延迟。"
+  "bench.table.peers": {
+    "message": "对等节点"
   },
   "bench.page.title": {
     "message": "基准测试"

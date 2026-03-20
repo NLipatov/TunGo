@@ -181,15 +181,6 @@
   table-layout: fixed;
 }
 
-.tableCaption {
-  caption-side: top;
-  text-align: left;
-  padding-bottom: 0.48rem;
-  color: var(--ifm-color-emphasis-700);
-  font-size: 0.8rem;
-  line-height: 1.35;
-}
-
 .fullCycleTable {
   min-width: 640px;
 }
@@ -222,6 +213,10 @@
 .dataTable th:not(:first-child),
 .dataTable td:not(:first-child) {
   text-align: right;
+}
+
+.dataTable th.tableGroupHeader {
+  text-align: center;
 }
 
 [data-theme='dark'] .dataTable th,

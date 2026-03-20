@@ -195,11 +195,10 @@ function MetricCard({label, value, note, className}) {
   );
 }
 
-function DataTable({header, rows, ariaLabel, className, caption}) {
+function DataTable({header, rows, ariaLabel, className}) {
   return (
     <div className={Styles.tableWrap}>
       <table className={`${Styles.dataTable}${className ? ` ${className}` : ''}`} aria-label={ariaLabel}>
-        {caption ? <caption className={Styles.tableCaption}>{caption}</caption> : null}
         <thead>
           <tr>
             {header.map((cell) => (
@@ -266,22 +265,42 @@ function FastPathTable({formatInteger, formatNs}) {
   ];
 
   return (
-    <DataTable
-      ariaLabel={translate({
-        id: 'bench.table.lookupAria',
-        message: 'Repository lookup and miss-path benchmark results',
-      })}
-      caption={translate({
-        id: 'bench.table.lookupCaption',
-        message: 'Columns show peer count; cells show lookup latency.',
-      })}
-      className={Styles.fastPathTable}
-      header={[
-        translate({id: 'bench.table.lookup', message: 'Lookup'}),
-        ...peerCounts.map((count) => formatInteger(count)),
-      ]}
-      rows={rows}
-    />
+    <div className={Styles.tableWrap}>
+      <table
+        className={`${Styles.dataTable} ${Styles.fastPathTable}`}
+        aria-label={translate({
+          id: 'bench.table.lookupAria',
+          message: 'Repository lookup and miss-path benchmark results',
+        })}
+      >
+        <thead>
+          <tr>
+            <th rowSpan="2" scope="col">
+              {translate({id: 'bench.table.lookup', message: 'Lookup'})}
+            </th>
+            <th className={Styles.tableGroupHeader} colSpan={peerCounts.length} scope="colgroup">
+              {translate({id: 'bench.table.peers', message: 'Peers'})}
+            </th>
+          </tr>
+          <tr>
+            {peerCounts.map((count) => (
+              <th key={count} scope="col">
+                {formatInteger(count)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, rowIndex) => (
+            <tr key={`row-${rowIndex}`}>
+              {row.map((cell, columnIndex) => (
+                <td key={`row-${rowIndex}-col-${columnIndex}`}>{cell}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

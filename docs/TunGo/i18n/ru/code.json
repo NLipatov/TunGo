@@ -128,8 +128,8 @@
   "bench.table.lookup": {
     "message": "Lookup"
   },
-  "bench.table.lookupCaption": {
-    "message": "Столбцы показывают число пиров, ячейки показывают задержку lookup."
+  "bench.table.peers": {
+    "message": "Пиры"
   },
   "bench.page.title": {
     "message": "Бенчмарки"

@@ -128,8 +128,8 @@
   "bench.table.lookup": {
     "message": "Lookup"
   },
-  "bench.table.lookupCaption": {
-    "message": "Les colonnes montrent le nombre de pairs; les cellules montrent la latence de lookup."
+  "bench.table.peers": {
+    "message": "Pairs"
   },
   "bench.page.title": {
     "message": "Benchmarks"

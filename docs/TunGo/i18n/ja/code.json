@@ -128,8 +128,8 @@
   "bench.table.lookup": {
     "message": "Lookup"
   },
-  "bench.table.lookupCaption": {
-    "message": "列はピア数、セルは lookup レイテンシを示します。"
+  "bench.table.peers": {
+    "message": "ピア"
   },
   "bench.page.title": {
     "message": "ベンチマーク"

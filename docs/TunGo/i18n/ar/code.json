@@ -128,8 +128,8 @@
   "bench.table.lookup": {
     "message": "Lookup"
   },
-  "bench.table.lookupCaption": {
-    "message": "تعرض الأعمدة عدد النظراء، وتعرض الخلايا زمن lookup."
+  "bench.table.peers": {
+    "message": "النظراء"
   },
   "bench.page.title": {
     "message": "القياسات"

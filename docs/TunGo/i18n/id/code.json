@@ -128,8 +128,8 @@
   "bench.table.lookup": {
     "message": "Lookup"
   },
-  "bench.table.lookupCaption": {
-    "message": "Kolom menunjukkan jumlah peer; sel menunjukkan latensi lookup."
+  "bench.table.peers": {
+    "message": "Peer"
   },
   "bench.page.title": {
     "message": "Benchmark"
