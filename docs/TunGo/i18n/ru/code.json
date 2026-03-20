@@ -104,8 +104,8 @@
   "bench.lookup.routeId": {
     "message": "Lookup по Route ID"
   },
-  "bench.legend.peers": {
-    "message": "{count, plural, one {# пир} few {# пира} many {# пиров} other {# пира}}"
+  "bench.peerCount.plurals": {
+    "message": "{countLabel} пир|{countLabel} пира|{countLabel} пиров"
   },
   "bench.table.fullCycleAria": {
     "message": "Результаты бенчмарка полного dataplane-цикла"
@@ -130,9 +130,6 @@
   },
   "bench.table.lookup": {
     "message": "Lookup"
-  },
-  "bench.table.peerCount": {
-    "message": "{count, plural, one {# пир} few {# пира} many {# пиров} other {# пира}}"
   },
   "bench.page.title": {
     "message": "Бенчмарки"
@@ -159,7 +156,7 @@
     "message": "Fast-path lookup"
   },
   "bench.metric.lookupNote": {
-    "message": "Плоско до 10k peer"
+    "message": "Плоско до {peerCount}"
   },
   "bench.metric.allocs": {
     "message": "Allocs/op"
@@ -180,7 +177,7 @@
     "message": "Линейно"
   },
   "bench.summary.missPathNote": {
-    "message": "~35 нс на 1 peer -> ~89.5 μs на 10k peer"
+    "message": "{startLatency} на {firstPeer} -> {endLatency} на {lastPeer}"
   },
   "footer.iconsBy": {
     "message": "Иконки от"

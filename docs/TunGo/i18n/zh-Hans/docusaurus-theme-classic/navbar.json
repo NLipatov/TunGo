@@ -1,4 +1,12 @@
 {
+  "title": {
+    "message": "TunGo",
+    "description": "The title in the navbar"
+  },
+  "logo.alt": {
+    "message": "TunGo 标志",
+    "description": "The alt text of navbar logo"
+  },
   "item.label.Tutorial": {
     "message": "教程",
     "description": "Navbar item with label Tutorial"

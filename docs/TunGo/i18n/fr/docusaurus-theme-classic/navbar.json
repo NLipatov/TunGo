@@ -1,4 +1,12 @@
 {
+  "title": {
+    "message": "TunGo",
+    "description": "The title in the navbar"
+  },
+  "logo.alt": {
+    "message": "Logo TunGo",
+    "description": "The alt text of navbar logo"
+  },
   "item.label.Tutorial": {
     "message": "Tutoriel",
     "description": "Navbar item with label Tutorial"

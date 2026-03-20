@@ -1,26 +1,49 @@
 import React from 'react';
+import Clsx from 'clsx';
 import Translate, {translate} from '@docusaurus/Translate';
+import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import Layout from '@theme/Layout';
 import Heading from '@theme/Heading';
+import {usePluralMessage} from '@site/src/i18n/usePluralMessage';
 import Styles from './benchmarks.module.css';
 import {benchmarkSnapshot} from '@site/src/data/benchmarks';
 
-function formatNs(ns) {
-  if (ns >= 1000) {
-    return `~${(ns / 1000).toFixed(1)} μs`;
-  }
-  if (ns >= 100) {
-    return `~${Math.round(ns)} ns`;
-  }
-  return `~${ns.toFixed(1)} ns`;
-}
+function useBenchmarkFormatting() {
+  const {
+    i18n: {currentLocale},
+  } = useDocusaurusContext();
 
-function formatThroughput(value) {
-  const gbit = (value * 8) / 1000;
-  if (gbit >= 1) {
-    return `~${gbit.toFixed(1)} Gbit/s`;
-  }
-  return `~${Math.round(value * 8)} Mbit/s`;
+  return React.useMemo(() => {
+    const integerFormatter = new Intl.NumberFormat(currentLocale, {
+      maximumFractionDigits: 0,
+    });
+    const oneDecimalFormatter = new Intl.NumberFormat(currentLocale, {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1,
+    });
+
+    return {
+      formatInteger(value) {
+        return integerFormatter.format(value);
+      },
+      formatNs(value) {
+        if (value >= 1000) {
+          return `~${oneDecimalFormatter.format(value / 1000)} μs`;
+        }
+        if (value >= 100) {
+          return `~${integerFormatter.format(Math.round(value))} ns`;
+        }
+        return `~${oneDecimalFormatter.format(value)} ns`;
+      },
+      formatThroughput(value) {
+        const gbit = (value * 8) / 1000;
+        if (gbit >= 1) {
+          return `~${oneDecimalFormatter.format(gbit)} Gbit/s`;
+        }
+        return `~${integerFormatter.format(Math.round(value * 8))} Mbit/s`;
+      },
+    };
+  }, [currentLocale]);
 }
 
 function translateTransport(id) {
@@ -129,7 +152,7 @@ function buildDots(series, valueKey, width, height, padding) {
   });
 }
 
-function Sparkline({series, valueKey, color, formatter}) {
+function Sparkline({series, valueKey, color, formatter, peerLabelFormatter, peerTickFormatter}) {
   const width = 520;
   const height = 180;
   const padding = 18;
@@ -145,7 +168,7 @@ function Sparkline({series, valueKey, color, formatter}) {
           <g key={`${valueKey}-${dot.label}`}>
             <circle cx={dot.x} cy={dot.y} r="5" className={Styles.chartDot} style={{fill: color}} />
             <text x={dot.x} y={height - 6} textAnchor="middle" className={Styles.chartLabel}>
-              {dot.label}
+              {peerTickFormatter(dot.label)}
             </text>
           </g>
         ))}
@@ -153,15 +176,7 @@ function Sparkline({series, valueKey, color, formatter}) {
       <div className={Styles.sparklineLegend}>
         {series.map((point) => (
           <div key={`${valueKey}-${point.peers}`} className={Styles.legendEntry}>
-            <span className={Styles.legendPeers}>
-              {translate(
-                {
-                  id: 'bench.legend.peers',
-                  message: '{count} peers',
-                },
-                {count: point.peers},
-              )}
-            </span>
+            <span className={Styles.legendPeers}>{peerLabelFormatter(point.peers)}</span>
             <span className={Styles.legendValue}>{formatter(point[valueKey])}</span>
           </div>
         ))}
@@ -180,15 +195,10 @@ function MetricCard({label, value, note, className}) {
   );
 }
 
-function DataTable({colgroup, header, rows, ariaLabel, className, align = 'end'}) {
+function DataTable({header, rows, ariaLabel, className}) {
   return (
-    <div className={`${Styles.tableWrap} ${align === 'center' ? Styles.tableWrapCenter : Styles.tableWrapEnd}`}>
+    <div className={Styles.tableWrap}>
       <table className={`${Styles.dataTable}${className ? ` ${className}` : ''}`} aria-label={ariaLabel}>
-        <colgroup>
-          {colgroup.map((width, index) => (
-            <col key={`col-${index}`} style={{width}} />
-          ))}
-        </colgroup>
         <thead>
           <tr>
             {header.map((cell) => (
@@ -212,7 +222,7 @@ function DataTable({colgroup, header, rows, ariaLabel, className, align = 'end'}
   );
 }
 
-function FullCycleTable() {
+function FullCycleTable({formatNs, formatThroughput}) {
   const rows = benchmarkSnapshot.fullCycle1400.map((entry) => [
     <>
       <span className={Styles.tablePrimary}>{translateTransport(entry.id)}</span>
@@ -229,9 +239,7 @@ function FullCycleTable() {
         id: 'bench.table.fullCycleAria',
         message: '1400-byte full-cycle dataplane benchmark results',
       })}
-      align="end"
       className={Styles.fullCycleTable}
-      colgroup={['31%', '18%', '28%', '23%']}
       header={[
         translate({id: 'bench.table.path', message: 'Path'}),
         translate({id: 'bench.table.latency', message: 'Latency'}),
@@ -243,7 +251,7 @@ function FullCycleTable() {
   );
 }
 
-function FastPathTable() {
+function FastPathTable({formatNs, peerLabelFormatter}) {
   const peerCounts = benchmarkSnapshot.repository.fastPath[0].series.map((entry) => entry.peers);
   const rows = [
     ...benchmarkSnapshot.repository.fastPath.map((row) => [
@@ -262,20 +270,10 @@ function FastPathTable() {
         id: 'bench.table.lookupAria',
         message: 'Repository lookup and miss-path benchmark results',
       })}
-      align="center"
       className={Styles.fastPathTable}
-      colgroup={['30%', '14%', '14%', '18%', '24%']}
       header={[
         translate({id: 'bench.table.lookup', message: 'Lookup'}),
-        ...peerCounts.map((count) =>
-          translate(
-            {
-              id: 'bench.table.peerCount',
-              message: '{count} peers',
-            },
-            {count},
-          ),
-        ),
+        ...peerCounts.map((count) => peerLabelFormatter(count)),
       ]}
       rows={rows}
     />
@@ -283,8 +281,25 @@ function FastPathTable() {
 }
 
 export default function BenchmarksPage() {
+  const {formatInteger, formatNs, formatThroughput} = useBenchmarkFormatting();
+  const pluralMessage = usePluralMessage();
   const bestFullCycle = [...benchmarkSnapshot.fullCycle1400].sort((a, b) => b.throughput - a.throughput)[0];
   const lowestLatency = [...benchmarkSnapshot.fullCycle1400].sort((a, b) => a.ns - b.ns)[0];
+  const missPathStart = benchmarkSnapshot.repository.missPath[0];
+  const missPathEnd = benchmarkSnapshot.repository.missPath[benchmarkSnapshot.repository.missPath.length - 1];
+  const maxPeerCount =
+    benchmarkSnapshot.repository.fastPath[0].series[benchmarkSnapshot.repository.fastPath[0].series.length - 1].peers;
+  const formatPeerCount = (count) =>
+    pluralMessage(
+      count,
+      translate(
+        {
+          id: 'bench.peerCount.plurals',
+          message: '{countLabel} peer|{countLabel} peers',
+        },
+        {countLabel: formatInteger(count)},
+      ),
+    );
 
   return (
     <Layout
@@ -295,7 +310,7 @@ export default function BenchmarksPage() {
       })}
     >
       <main className={Styles.page}>
-        <section className={Styles.hero}>
+        <section className={Clsx('container', Styles.hero)}>
           <div className={Styles.heroIntro}>
             <Heading as="h1" className={Styles.title}>
               <Translate id="bench.hero.title">Benchmark snapshot</Translate>
@@ -312,7 +327,7 @@ export default function BenchmarksPage() {
           </div>
         </section>
 
-        <section className={Styles.metrics}>
+        <section className={Clsx('container', Styles.metrics)}>
           <MetricCard
             className={Styles.metricCardPrimary}
             label={translate({id: 'bench.metric.throughput', message: 'Throughput'})}
@@ -327,7 +342,13 @@ export default function BenchmarksPage() {
           <MetricCard
             label={translate({id: 'bench.metric.lookup', message: 'Fast-path lookup'})}
             value="~4-15 ns"
-            note={translate({id: 'bench.metric.lookupNote', message: 'Flat through 10k peers'})}
+            note={translate(
+              {
+                id: 'bench.metric.lookupNote',
+                message: 'Flat through {peerCount}',
+              },
+              {peerCount: formatPeerCount(maxPeerCount)},
+            )}
           />
           <MetricCard
             label={translate({id: 'bench.metric.allocs', message: 'Allocs/op'})}
@@ -336,7 +357,7 @@ export default function BenchmarksPage() {
           />
         </section>
 
-        <section className={Styles.section}>
+        <section className={Clsx('container', Styles.section)}>
           <div className={Styles.splitSection}>
             <div className={Styles.splitCopy}>
               <Heading as="h2" className={Styles.sectionTitle}>
@@ -349,12 +370,12 @@ export default function BenchmarksPage() {
               </p>
             </div>
             <div className={Styles.splitTable}>
-              <FullCycleTable />
+              <FullCycleTable formatNs={formatNs} formatThroughput={formatThroughput} />
             </div>
           </div>
         </section>
 
-        <section className={Styles.section}>
+        <section className={Clsx('container', Styles.section)}>
           <div className={Styles.sectionHeader}>
             <Heading as="h2" className={Styles.sectionTitle}>
               <Translate id="bench.section.scaling.title">Multi-peer UDP scaling</Translate>
@@ -382,13 +403,15 @@ export default function BenchmarksPage() {
                   valueKey="throughput"
                   color="#009fc9"
                   formatter={(value) => formatThroughput(value)}
+                  peerLabelFormatter={formatPeerCount}
+                  peerTickFormatter={formatInteger}
                 />
               </div>
             ))}
           </div>
         </section>
 
-        <section className={Styles.section}>
+        <section className={Clsx('container', Styles.section)}>
           <div className={Styles.splitSection}>
             <div className={Styles.splitCopy}>
               <Heading as="h2" className={Styles.sectionTitle}>
@@ -401,21 +424,32 @@ export default function BenchmarksPage() {
               </p>
             </div>
             <div className={Styles.splitTable}>
-              <FastPathTable />
+              <FastPathTable formatNs={formatNs} peerLabelFormatter={formatPeerCount} />
             </div>
           </div>
           <div className={Styles.summaryRow}>
             <MetricCard
               className={Styles.metricCardMuted}
               label={translate({id: 'bench.summary.egress', message: 'Egress lane'})}
-              value={`~${benchmarkSnapshot.egress.uncontendedNs.toFixed(1)} ns -> ~${benchmarkSnapshot.egress.contendedNs.toFixed(0)} ns`}
+              value={`${formatNs(benchmarkSnapshot.egress.uncontendedNs)} -> ${formatNs(benchmarkSnapshot.egress.contendedNs)}`}
               note={translate({id: 'bench.summary.egressNote', message: 'Uncontended to contended sends'})}
             />
             <MetricCard
               className={Styles.metricCardMuted}
               label={translate({id: 'bench.summary.missPath', message: 'Miss path'})}
               value={translate({id: 'bench.summary.linear', message: 'Linear'})}
-              note={translate({id: 'bench.summary.missPathNote', message: '~35 ns at 1 peer -> ~89.5 μs at 10k peers'})}
+              note={translate(
+                {
+                  id: 'bench.summary.missPathNote',
+                  message: '{startLatency} at {firstPeer} -> {endLatency} at {lastPeer}',
+                },
+                {
+                  startLatency: formatNs(missPathStart.ns),
+                  firstPeer: formatPeerCount(missPathStart.peers),
+                  endLatency: formatNs(missPathEnd.ns),
+                  lastPeer: formatPeerCount(missPathEnd.peers),
+                },
+              )}
             />
           </div>
         </section>

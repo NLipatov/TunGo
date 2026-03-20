@@ -104,8 +104,8 @@
   "bench.lookup.routeId": {
     "message": "Route ID lookup"
   },
-  "bench.legend.peers": {
-    "message": "{count} peers"
+  "bench.peerCount.plurals": {
+    "message": "{countLabel} 个对等节点"
   },
   "bench.table.fullCycleAria": {
     "message": "完整 dataplane 周期基准测试结果"
@@ -130,9 +130,6 @@
   },
   "bench.table.lookup": {
     "message": "Lookup"
-  },
-  "bench.table.peerCount": {
-    "message": "{count} peers"
   },
   "bench.page.title": {
     "message": "基准测试"
@@ -159,7 +156,7 @@
     "message": "Fast-path lookup"
   },
   "bench.metric.lookupNote": {
-    "message": "到 10k peers 仍保持平稳"
+    "message": "到 {peerCount} 仍保持平稳"
   },
   "bench.metric.allocs": {
     "message": "Allocs/op"
@@ -180,7 +177,7 @@
     "message": "线性"
   },
   "bench.summary.missPathNote": {
-    "message": "1 peer 时约 35 ns -> 10k peers 时约 89.5 μs"
+    "message": "{firstPeer} 时 {startLatency} -> {lastPeer} 时 {endLatency}"
   },
   "footer.iconsBy": {
     "message": "图标来自"

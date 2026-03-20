@@ -104,8 +104,8 @@
   "bench.lookup.routeId": {
     "message": "Route-ID-Lookup"
   },
-  "bench.legend.peers": {
-    "message": "{count} Peers"
+  "bench.peerCount.plurals": {
+    "message": "{countLabel} Peer|{countLabel} Peers"
   },
   "bench.table.fullCycleAria": {
     "message": "Benchmark-Ergebnisse des vollständigen Dataplane-Zyklus"
@@ -130,9 +130,6 @@
   },
   "bench.table.lookup": {
     "message": "Lookup"
-  },
-  "bench.table.peerCount": {
-    "message": "{count} Peers"
   },
   "bench.page.title": {
     "message": "Benchmarks"
@@ -159,7 +156,7 @@
     "message": "Fast-Path-Lookup"
   },
   "bench.metric.lookupNote": {
-    "message": "Flach bis 10k Peers"
+    "message": "Flach bis {peerCount}"
   },
   "bench.metric.allocs": {
     "message": "Allocs/op"
@@ -180,7 +177,7 @@
     "message": "Linear"
   },
   "bench.summary.missPathNote": {
-    "message": "~35 ns bei 1 Peer -> ~89.5 μs bei 10k Peers"
+    "message": "{startLatency} bei {firstPeer} -> {endLatency} bei {lastPeer}"
   },
   "footer.iconsBy": {
     "message": "Symbole von"

@@ -104,8 +104,8 @@
   "bench.lookup.routeId": {
     "message": "Lookup Route ID"
   },
-  "bench.legend.peers": {
-    "message": "{count} peer"
+  "bench.peerCount.plurals": {
+    "message": "{countLabel} peer"
   },
   "bench.table.fullCycleAria": {
     "message": "Hasil benchmark dataplane siklus penuh"
@@ -130,9 +130,6 @@
   },
   "bench.table.lookup": {
     "message": "Lookup"
-  },
-  "bench.table.peerCount": {
-    "message": "{count} peer"
   },
   "bench.page.title": {
     "message": "Benchmark"
@@ -159,7 +156,7 @@
     "message": "Lookup fast-path"
   },
   "bench.metric.lookupNote": {
-    "message": "Tetap datar hingga 10k peer"
+    "message": "Tetap datar hingga {peerCount}"
   },
   "bench.metric.allocs": {
     "message": "Allocs/op"
@@ -180,7 +177,7 @@
     "message": "Linear"
   },
   "bench.summary.missPathNote": {
-    "message": "~35 ns pada 1 peer -> ~89.5 μs pada 10k peer"
+    "message": "{startLatency} pada {firstPeer} -> {endLatency} pada {lastPeer}"
   },
   "footer.iconsBy": {
     "message": "Ikon oleh"
