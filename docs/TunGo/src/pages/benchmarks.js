@@ -14,10 +14,11 @@ function useBenchmarkFormatting() {
   } = useDocusaurusContext();
 
   return React.useMemo(() => {
-    const integerFormatter = new Intl.NumberFormat(currentLocale, {
+    const formatLocale = currentLocale.startsWith('ar') ? `${currentLocale}-u-nu-arab` : currentLocale;
+    const integerFormatter = new Intl.NumberFormat(formatLocale, {
       maximumFractionDigits: 0,
     });
-    const oneDecimalFormatter = new Intl.NumberFormat(currentLocale, {
+    const oneDecimalFormatter = new Intl.NumberFormat(formatLocale, {
       minimumFractionDigits: 1,
       maximumFractionDigits: 1,
     });
