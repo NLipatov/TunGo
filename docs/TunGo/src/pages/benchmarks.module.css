@@ -181,6 +181,15 @@
   table-layout: fixed;
 }
 
+.tableCaption {
+  caption-side: top;
+  text-align: left;
+  padding-bottom: 0.48rem;
+  color: var(--ifm-color-emphasis-700);
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
 .fullCycleTable {
   min-width: 640px;
 }

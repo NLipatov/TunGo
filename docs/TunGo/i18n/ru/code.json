@@ -104,9 +104,6 @@
   "bench.lookup.routeId": {
     "message": "Lookup по Route ID"
   },
-  "bench.peerCount.plurals": {
-    "message": "{countLabel} пир|{countLabel} пира|{countLabel} пиров|{countLabel} пира"
-  },
   "bench.table.fullCycleAria": {
     "message": "Результаты бенчмарка полного dataplane-цикла"
   },
@@ -130,6 +127,9 @@
   },
   "bench.table.lookup": {
     "message": "Lookup"
+  },
+  "bench.table.lookupCaption": {
+    "message": "Столбцы показывают число пиров, ячейки показывают задержку lookup."
   },
   "bench.page.title": {
     "message": "Бенчмарки"
@@ -156,7 +156,7 @@
     "message": "Fast-path lookup"
   },
   "bench.metric.lookupNote": {
-    "message": "Плоско до {peerCount}"
+    "message": "Плоско от 1 до {maxCount}"
   },
   "bench.metric.allocs": {
     "message": "Allocs/op"
@@ -177,7 +177,7 @@
     "message": "Линейно"
   },
   "bench.summary.missPathNote": {
-    "message": "{startLatency} на {firstPeer} -> {endLatency} на {lastPeer}"
+    "message": "{startLatency} на {firstCount} -> {endLatency} на {lastCount}"
   },
   "footer.iconsBy": {
     "message": "Иконки от"

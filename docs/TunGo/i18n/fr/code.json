@@ -104,9 +104,6 @@
   "bench.lookup.routeId": {
     "message": "Lookup Route ID"
   },
-  "bench.peerCount.plurals": {
-    "message": "{countLabel} pair|{countLabel} pairs"
-  },
   "bench.table.fullCycleAria": {
     "message": "Résultats du benchmark dataplane en cycle complet"
   },
@@ -130,6 +127,9 @@
   },
   "bench.table.lookup": {
     "message": "Lookup"
+  },
+  "bench.table.lookupCaption": {
+    "message": "Les colonnes montrent le nombre de pairs; les cellules montrent la latence de lookup."
   },
   "bench.page.title": {
     "message": "Benchmarks"
@@ -156,7 +156,7 @@
     "message": "Lookup fast-path"
   },
   "bench.metric.lookupNote": {
-    "message": "Stable jusqu'à {peerCount}"
+    "message": "Stable de 1 à {maxCount}"
   },
   "bench.metric.allocs": {
     "message": "Allocs/op"
@@ -177,7 +177,7 @@
     "message": "Linéaire"
   },
   "bench.summary.missPathNote": {
-    "message": "{startLatency} à {firstPeer} -> {endLatency} à {lastPeer}"
+    "message": "{startLatency} à {firstCount} -> {endLatency} à {lastCount}"
   },
   "footer.iconsBy": {
     "message": "Icônes par"

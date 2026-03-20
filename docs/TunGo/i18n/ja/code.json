@@ -104,9 +104,6 @@
   "bench.lookup.routeId": {
     "message": "Route ID lookup"
   },
-  "bench.peerCount.plurals": {
-    "message": "{countLabel} ピア"
-  },
   "bench.table.fullCycleAria": {
     "message": "フルサイクル dataplane ベンチマーク結果"
   },
@@ -130,6 +127,9 @@
   },
   "bench.table.lookup": {
     "message": "Lookup"
+  },
+  "bench.table.lookupCaption": {
+    "message": "列はピア数、セルは lookup レイテンシを示します。"
   },
   "bench.page.title": {
     "message": "ベンチマーク"
@@ -156,7 +156,7 @@
     "message": "Fast-path lookup"
   },
   "bench.metric.lookupNote": {
-    "message": "{peerCount} まで横ばい"
+    "message": "1 から {maxCount} までフラット"
   },
   "bench.metric.allocs": {
     "message": "Allocs/op"
@@ -177,7 +177,7 @@
     "message": "線形"
   },
   "bench.summary.missPathNote": {
-    "message": "{firstPeer} で {startLatency} -> {lastPeer} で {endLatency}"
+    "message": "{firstCount} で {startLatency} -> {lastCount} で {endLatency}"
   },
   "footer.iconsBy": {
     "message": "アイコン提供"

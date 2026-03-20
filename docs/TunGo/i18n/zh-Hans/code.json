@@ -104,9 +104,6 @@
   "bench.lookup.routeId": {
     "message": "Route ID lookup"
   },
-  "bench.peerCount.plurals": {
-    "message": "{countLabel} 个对等节点"
-  },
   "bench.table.fullCycleAria": {
     "message": "完整 dataplane 周期基准测试结果"
   },
@@ -130,6 +127,9 @@
   },
   "bench.table.lookup": {
     "message": "Lookup"
+  },
+  "bench.table.lookupCaption": {
+    "message": "列显示对等节点数量，单元格显示 lookup 延迟。"
   },
   "bench.page.title": {
     "message": "基准测试"
@@ -156,7 +156,7 @@
     "message": "Fast-path lookup"
   },
   "bench.metric.lookupNote": {
-    "message": "到 {peerCount} 仍保持平稳"
+    "message": "从 1 到 {maxCount} 保持平稳"
   },
   "bench.metric.allocs": {
     "message": "Allocs/op"
@@ -177,7 +177,7 @@
     "message": "线性"
   },
   "bench.summary.missPathNote": {
-    "message": "{firstPeer} 时 {startLatency} -> {lastPeer} 时 {endLatency}"
+    "message": "{firstCount} 时 {startLatency} -> {lastCount} 时 {endLatency}"
   },
   "footer.iconsBy": {
     "message": "图标来自"

@@ -104,9 +104,6 @@
   "bench.lookup.routeId": {
     "message": "Lookup Route ID"
   },
-  "bench.peerCount.plurals": {
-    "message": "{countLabel} نظراء|{countLabel} نظير|{countLabel} نظيران|{countLabel} نظراء|{countLabel} نظيرًا|{countLabel} نظير"
-  },
   "bench.table.fullCycleAria": {
     "message": "نتائج قياس دورة dataplane الكاملة"
   },
@@ -130,6 +127,9 @@
   },
   "bench.table.lookup": {
     "message": "Lookup"
+  },
+  "bench.table.lookupCaption": {
+    "message": "تعرض الأعمدة عدد النظراء، وتعرض الخلايا زمن lookup."
   },
   "bench.page.title": {
     "message": "القياسات"
@@ -156,7 +156,7 @@
     "message": "Fast-path lookup"
   },
   "bench.metric.lookupNote": {
-    "message": "يبقى ثابتًا حتى {peerCount}"
+    "message": "يبقى ثابتًا من 1 إلى {maxCount}"
   },
   "bench.metric.allocs": {
     "message": "Allocs/op"
@@ -177,7 +177,7 @@
     "message": "خطي"
   },
   "bench.summary.missPathNote": {
-    "message": "{startLatency} عند {firstPeer} -> {endLatency} عند {lastPeer}"
+    "message": "{startLatency} عند {firstCount} -> {endLatency} عند {lastCount}"
   },
   "footer.iconsBy": {
     "message": "الأيقونات من"
