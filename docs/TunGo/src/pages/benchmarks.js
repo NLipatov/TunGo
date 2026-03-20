@@ -1,4 +1,5 @@
 import React from 'react';
+import Clsx from 'clsx';
 import Translate, {translate} from '@docusaurus/Translate';
 import Layout from '@theme/Layout';
 import Heading from '@theme/Heading';
@@ -286,7 +287,7 @@ export default function BenchmarksPage() {
       })}
     >
       <main className={Styles.page}>
-        <section className={Styles.hero}>
+        <section className={Clsx('container', Styles.hero)}>
           <div className={Styles.heroIntro}>
             <Heading as="h1" className={Styles.title}>
               <Translate id="bench.hero.title">Benchmark snapshot</Translate>
@@ -303,7 +304,7 @@ export default function BenchmarksPage() {
           </div>
         </section>
 
-        <section className={Styles.metrics}>
+        <section className={Clsx('container', Styles.metrics)}>
           <MetricCard
             className={Styles.metricCardPrimary}
             label={translate({id: 'bench.metric.throughput', message: 'Throughput'})}
@@ -327,7 +328,7 @@ export default function BenchmarksPage() {
           />
         </section>
 
-        <section className={Styles.section}>
+        <section className={Clsx('container', Styles.section)}>
           <div className={Styles.splitSection}>
             <div className={Styles.splitCopy}>
               <Heading as="h2" className={Styles.sectionTitle}>
@@ -345,7 +346,7 @@ export default function BenchmarksPage() {
           </div>
         </section>
 
-        <section className={Styles.section}>
+        <section className={Clsx('container', Styles.section)}>
           <div className={Styles.sectionHeader}>
             <Heading as="h2" className={Styles.sectionTitle}>
               <Translate id="bench.section.scaling.title">Multi-peer UDP scaling</Translate>
@@ -379,7 +380,7 @@ export default function BenchmarksPage() {
           </div>
         </section>
 
-        <section className={Styles.section}>
+        <section className={Clsx('container', Styles.section)}>
           <div className={Styles.splitSection}>
             <div className={Styles.splitCopy}>
               <Heading as="h2" className={Styles.sectionTitle}>
