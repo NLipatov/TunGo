@@ -34,10 +34,11 @@
 }
 
 .metrics {
-  margin-bottom: 1.75rem;
+  margin-bottom: 1.9rem;
   display: grid;
   grid-template-columns: minmax(0, 1.25fr) repeat(3, minmax(0, 1fr));
-  gap: 0.7rem;
+  gap: 0.85rem;
+  align-items: stretch;
 }
 
 .metricCard,
@@ -46,10 +47,13 @@
   border: 1px solid var(--ifm-color-emphasis-200);
   background: var(--ifm-background-surface-color);
   box-shadow: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
 }
 
 .metricCard {
-  padding: 0.8rem 0.9rem 0.85rem;
+  padding: 0.86rem 0.94rem 0.9rem;
 }
 
 .metricCardPrimary {
@@ -94,6 +98,8 @@
   color: var(--ifm-color-emphasis-700);
   line-height: 1.35;
   font-size: 0.84rem;
+  margin-top: auto;
+  padding-top: 0.22rem;
 }
 
 .section {
@@ -108,9 +114,9 @@
 .sectionHeader {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(280px, 0.92fr);
-  gap: 1rem;
+  gap: 1.15rem;
   align-items: start;
-  margin-bottom: 0.95rem;
+  margin-bottom: 1.05rem;
 }
 
 .sectionTitle {
@@ -130,7 +136,7 @@
   display: grid;
   grid-template-columns: minmax(240px, 290px) minmax(620px, 720px);
   justify-content: space-between;
-  gap: 1rem;
+  gap: 1.15rem;
   align-items: start;
 }
 
@@ -148,6 +154,7 @@
   display: flex;
   justify-content: flex-end;
   justify-self: end;
+  align-self: start;
 }
 
 .splitTable .tableWrap {
@@ -197,7 +204,7 @@
   border-top: 1px solid rgba(15, 23, 42, 0.08);
   border-left: 1px solid rgba(15, 23, 42, 0.08);
   text-align: left;
-  vertical-align: top;
+  vertical-align: middle;
   font-size: 0.84rem;
   line-height: 1.38;
   min-width: 0;
@@ -249,6 +256,8 @@
 .chartMetric {
   color: var(--ifm-color-emphasis-500);
   letter-spacing: 0.09em;
+  margin-bottom: 0;
+  align-self: flex-start;
 }
 
 .chartGrid {
@@ -258,15 +267,16 @@
 }
 
 .chartCard {
-  padding: 0.78rem;
+  padding: 0.82rem;
 }
 
 .chartHeader {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 0.8rem;
-  margin-bottom: 0.55rem;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.8rem;
+  margin-bottom: 0.68rem;
 }
 
 .chartTitle {
@@ -276,7 +286,8 @@
 
 .sparklineShell {
   display: grid;
-  gap: 0.48rem;
+  gap: 0.6rem;
+  height: 100%;
 }
 
 .sparkline {
@@ -320,8 +331,9 @@
 .sparklineLegend {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.4rem;
+  gap: 0.45rem 0.6rem;
   padding-top: 0;
+  margin-top: auto;
 }
 
 .legendEntry {
@@ -347,8 +359,8 @@
 .summaryRow {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.7rem;
-  margin-top: 0.9rem;
+  gap: 0.85rem;
+  margin-top: 1rem;
 }
 
 @media screen and (max-width: 996px) {
@@ -375,6 +387,16 @@
   .section,
   .hero {
     margin-bottom: 1.35rem;
+  }
+
+  .sectionHeader {
+    gap: 0.85rem;
+    margin-bottom: 0.9rem;
+  }
+
+  .splitCopy,
+  .sectionText {
+    max-width: none;
   }
 
   .section + .section {
@@ -411,5 +433,10 @@
 
   .dataTable th {
     font-size: 0.84rem;
+  }
+
+  .metricCard,
+  .chartCard {
+    min-height: auto;
   }
 }
