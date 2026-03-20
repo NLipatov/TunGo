@@ -219,6 +219,10 @@
   text-align: center;
 }
 
+.dataTable th.tablePeerHeader {
+  text-align: center;
+}
+
 [data-theme='dark'] .dataTable th,
 [data-theme='dark'] .dataTable td {
   border-bottom-color: rgba(255, 255, 255, 0.08);

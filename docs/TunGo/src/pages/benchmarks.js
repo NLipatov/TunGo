@@ -284,7 +284,7 @@ function FastPathTable({formatInteger, formatNs}) {
           </tr>
           <tr>
             {peerCounts.map((count) => (
-              <th key={count} scope="col">
+              <th key={count} className={Styles.tablePeerHeader} scope="col">
                 {formatInteger(count)}
               </th>
             ))}
