@@ -6,6 +6,7 @@
   --ifm-table-cell-padding: 0.85rem 0.95rem;
   --ifm-table-head-background: transparent;
   --ifm-table-stripe-background: rgba(15, 23, 42, 0.02);
+
   background: var(--ifm-background-color);
   min-height: 100vh;
   color: var(--ifm-font-color-base);
@@ -35,7 +36,7 @@
   line-height: 0.92;
   letter-spacing: -0.045em;
   margin: 0 0 0.85rem;
-  max-width: 13ch;
+  max-inline-size: min(34rem, 100%);
 }
 
 .lead {
@@ -127,10 +128,10 @@
 
 .sectionTitle {
   margin: 0;
-  max-width: 12ch;
   font-size: clamp(1.72rem, 2.75vw, 2.2rem);
   line-height: 0.98;
   letter-spacing: -0.04em;
+  max-inline-size: min(24rem, 100%);
 }
 
 .sectionText {
@@ -170,6 +171,12 @@
   overflow-x: auto;
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
+}
+
+.tableWrap:focus-visible {
+  outline: 2px solid var(--ifm-color-primary);
+  outline-offset: 2px;
+  border-radius: 10px;
 }
 
 .dataTable {
@@ -357,7 +364,6 @@
   }
 
   .title {
-    max-width: 9ch;
     font-size: clamp(2rem, 8.8vw, 3rem);
   }
 

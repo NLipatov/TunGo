@@ -183,7 +183,7 @@ function MetricCard({label, value, note, className}) {
 
 function DataTable({header, rows, ariaLabel, className}) {
   return (
-    <div className={Styles.tableWrap}>
+    <div className={Styles.tableWrap} role="region" aria-label={ariaLabel} tabIndex={0}>
       <table className={`${Styles.dataTable}${className ? ` ${className}` : ''}`} aria-label={ariaLabel}>
         <thead>
           <tr>
