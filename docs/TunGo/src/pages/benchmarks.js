@@ -1,4 +1,5 @@
 import React from 'react';
+import Clsx from 'clsx';
 import Translate, {translate} from '@docusaurus/Translate';
 import Layout from '@theme/Layout';
 import Heading from '@theme/Heading';
@@ -180,15 +181,10 @@ function MetricCard({label, value, note, className}) {
   );
 }
 
-function DataTable({colgroup, header, rows, ariaLabel, className, align = 'end'}) {
+function DataTable({header, rows, ariaLabel, className}) {
   return (
-    <div className={`${Styles.tableWrap} ${align === 'center' ? Styles.tableWrapCenter : Styles.tableWrapEnd}`}>
+    <div className={Styles.tableWrap} role="region" aria-label={ariaLabel} tabIndex={0}>
       <table className={`${Styles.dataTable}${className ? ` ${className}` : ''}`} aria-label={ariaLabel}>
-        <colgroup>
-          {colgroup.map((width, index) => (
-            <col key={`col-${index}`} style={{width}} />
-          ))}
-        </colgroup>
         <thead>
           <tr>
             {header.map((cell) => (
@@ -229,9 +225,7 @@ function FullCycleTable() {
         id: 'bench.table.fullCycleAria',
         message: '1400-byte full-cycle dataplane benchmark results',
       })}
-      align="end"
       className={Styles.fullCycleTable}
-      colgroup={['31%', '18%', '28%', '23%']}
       header={[
         translate({id: 'bench.table.path', message: 'Path'}),
         translate({id: 'bench.table.latency', message: 'Latency'}),
@@ -262,9 +256,7 @@ function FastPathTable() {
         id: 'bench.table.lookupAria',
         message: 'Repository lookup and miss-path benchmark results',
       })}
-      align="center"
       className={Styles.fastPathTable}
-      colgroup={['30%', '14%', '14%', '18%', '24%']}
       header={[
         translate({id: 'bench.table.lookup', message: 'Lookup'}),
         ...peerCounts.map((count) =>
@@ -295,7 +287,7 @@ export default function BenchmarksPage() {
       })}
     >
       <main className={Styles.page}>
-        <section className={Styles.hero}>
+        <section className={Clsx('container', Styles.hero)}>
           <div className={Styles.heroIntro}>
             <Heading as="h1" className={Styles.title}>
               <Translate id="bench.hero.title">Benchmark snapshot</Translate>
@@ -312,7 +304,7 @@ export default function BenchmarksPage() {
           </div>
         </section>
 
-        <section className={Styles.metrics}>
+        <section className={Clsx('container', Styles.metrics)}>
           <MetricCard
             className={Styles.metricCardPrimary}
             label={translate({id: 'bench.metric.throughput', message: 'Throughput'})}
@@ -336,7 +328,7 @@ export default function BenchmarksPage() {
           />
         </section>
 
-        <section className={Styles.section}>
+        <section className={Clsx('container', Styles.section)}>
           <div className={Styles.splitSection}>
             <div className={Styles.splitCopy}>
               <Heading as="h2" className={Styles.sectionTitle}>
@@ -354,7 +346,7 @@ export default function BenchmarksPage() {
           </div>
         </section>
 
-        <section className={Styles.section}>
+        <section className={Clsx('container', Styles.section)}>
           <div className={Styles.sectionHeader}>
             <Heading as="h2" className={Styles.sectionTitle}>
               <Translate id="bench.section.scaling.title">Multi-peer UDP scaling</Translate>
@@ -388,7 +380,7 @@ export default function BenchmarksPage() {
           </div>
         </section>
 
-        <section className={Styles.section}>
+        <section className={Clsx('container', Styles.section)}>
           <div className={Styles.splitSection}>
             <div className={Styles.splitCopy}>
               <Heading as="h2" className={Styles.sectionTitle}>
