@@ -286,6 +286,9 @@ export default function BenchmarksPage() {
   const pluralMessage = usePluralMessage();
   const bestFullCycle = [...benchmarkSnapshot.fullCycle1400].sort((a, b) => b.throughput - a.throughput)[0];
   const lowestLatency = [...benchmarkSnapshot.fullCycle1400].sort((a, b) => a.ns - b.ns)[0];
+  const fastPathLatencies = benchmarkSnapshot.repository.fastPath.flatMap((row) => row.series.map((point) => point.ns));
+  const fastestLookup = Math.min(...fastPathLatencies);
+  const slowestLookup = Math.max(...fastPathLatencies);
   const missPathStart = benchmarkSnapshot.repository.missPath[0];
   const missPathEnd = benchmarkSnapshot.repository.missPath[benchmarkSnapshot.repository.missPath.length - 1];
   const maxPeerCount =
@@ -342,7 +345,7 @@ export default function BenchmarksPage() {
           />
           <MetricCard
             label={translate({id: 'bench.metric.lookup', message: 'Fast-path lookup'})}
-            value="~4-15 ns"
+            value={`${formatNs(fastestLookup)} - ${formatNs(slowestLookup)}`}
             note={translate(
               {
                 id: 'bench.metric.lookupNote',

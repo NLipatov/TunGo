@@ -105,7 +105,7 @@
     "message": "Lookup по Route ID"
   },
   "bench.peerCount.plurals": {
-    "message": "{countLabel} пир|{countLabel} пира|{countLabel} пиров"
+    "message": "{countLabel} пир|{countLabel} пира|{countLabel} пиров|{countLabel} пира"
   },
   "bench.table.fullCycleAria": {
     "message": "Результаты бенчмарка полного dataplane-цикла"

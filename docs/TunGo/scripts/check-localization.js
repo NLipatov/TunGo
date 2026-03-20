@@ -71,6 +71,8 @@ for (const locale of locales) {
     if (key.endsWith('.plurals')) {
       const forms = message.split('|').length;
 
+      // Docusaurus falls back to the last provided form when a locale defines
+      // more plural categories than a message explicitly supplies.
       if (pluralCategories.length > 1 && forms < 2) {
         errors.push(
           `${path.relative(projectRoot, codeJsonPath)}:${key} defines only ${forms} plural form(s) ` +
