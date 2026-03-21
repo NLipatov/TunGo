@@ -176,7 +176,10 @@ function Sparkline({series, valueKey, color, formatter, peerLabelFormatter, peer
       <div className={Styles.sparklineLegend}>
         {series.map((point) => (
           <div key={`${valueKey}-${point.peers}`} className={Styles.legendEntry}>
-            <span className={Styles.legendPeers}>{peerLabelFormatter(point.peers)}</span>
+            <span className={Styles.legendPeers}>
+              <span className={Styles.srOnly}>{`${translate({id: 'bench.table.peers', message: 'Peers'})} `}</span>
+              {peerLabelFormatter(point.peers)}
+            </span>
             <span className={Styles.legendValue}>{formatter(point[valueKey])}</span>
           </div>
         ))}
@@ -211,9 +214,15 @@ function DataTable({header, rows, ariaLabel, className}) {
         <tbody>
           {rows.map((row, rowIndex) => (
             <tr key={`row-${rowIndex}`}>
-              {row.map((cell, columnIndex) => (
-                <td key={`row-${rowIndex}-col-${columnIndex}`}>{cell}</td>
-              ))}
+              {row.map((cell, columnIndex) =>
+                columnIndex === 0 ? (
+                  <th key={`row-${rowIndex}-col-${columnIndex}`} scope="row">
+                    {cell}
+                  </th>
+                ) : (
+                  <td key={`row-${rowIndex}-col-${columnIndex}`}>{cell}</td>
+                ),
+              )}
             </tr>
           ))}
         </tbody>
@@ -222,7 +231,7 @@ function DataTable({header, rows, ariaLabel, className}) {
   );
 }
 
-function FullCycleTable({formatNs, formatThroughput}) {
+function FullCycleTable({formatInteger, formatNs, formatThroughput}) {
   const rows = benchmarkSnapshot.fullCycle1400.map((entry) => [
     <>
       <span className={Styles.tablePrimary}>{translateTransport(entry.id)}</span>
@@ -230,7 +239,7 @@ function FullCycleTable({formatNs, formatThroughput}) {
     </>,
     formatNs(entry.ns),
     formatThroughput(entry.throughput),
-    String(entry.allocs),
+    formatInteger(entry.allocs),
   ]);
 
   return (
@@ -301,9 +310,15 @@ function FastPathTable({formatInteger, formatNs}) {
         <tbody>
           {rows.map((row, rowIndex) => (
             <tr key={`row-${rowIndex}`}>
-              {row.map((cell, columnIndex) => (
-                <td key={`row-${rowIndex}-col-${columnIndex}`}>{cell}</td>
-              ))}
+              {row.map((cell, columnIndex) =>
+                columnIndex === 0 ? (
+                  <th key={`row-${rowIndex}-col-${columnIndex}`} scope="row">
+                    {cell}
+                  </th>
+                ) : (
+                  <td key={`row-${rowIndex}-col-${columnIndex}`}>{cell}</td>
+                ),
+              )}
             </tr>
           ))}
         </tbody>
@@ -393,7 +408,7 @@ export default function BenchmarksPage() {
               </p>
             </div>
             <div className={Styles.splitTable}>
-              <FullCycleTable formatNs={formatNs} formatThroughput={formatThroughput} />
+              <FullCycleTable formatInteger={formatInteger} formatNs={formatNs} formatThroughput={formatThroughput} />
             </div>
           </div>
         </section>
