@@ -1,49 +1,63 @@
 .page {
+  --bench-stack-gap: clamp(1.25rem, 2vw, 1.85rem);
+  --bench-card-padding: 0.82rem 0.85rem 0.88rem;
+  --bench-radius-lg: 14px;
+  --ifm-table-border-color: var(--ifm-color-emphasis-200);
+  --ifm-table-cell-padding: 0.85rem 0.95rem;
+  --ifm-table-head-background: transparent;
+  --ifm-table-stripe-background: rgba(15, 23, 42, 0.02);
+
   background: var(--ifm-background-color);
   min-height: 100vh;
   color: var(--ifm-font-color-base);
-  padding: 1.7rem 0 2.5rem;
+  padding: clamp(1.5rem, 2.4vw, 2rem) 0 2.6rem;
+}
+
+[data-theme='dark'] .page {
+  --ifm-table-stripe-background: rgba(255, 255, 255, 0.04);
 }
 
 .hero,
 .section,
 .metrics {
-  max-width: 1120px;
   margin: 0 auto;
-  padding: 0 1rem;
 }
 
 .hero {
-  margin-bottom: 1.55rem;
+  margin-bottom: var(--bench-stack-gap);
+}
+
+.heroIntro {
+  max-width: 780px;
 }
 
 .title {
-  font-size: clamp(2.2rem, 4.2vw, 4rem);
-  line-height: 0.94;
-  letter-spacing: -0.04em;
-  margin: 0 0 0.75rem;
-  max-width: 10ch;
+  font-size: clamp(2.25rem, 4.7vw, 4.2rem);
+  line-height: 0.92;
+  letter-spacing: -0.045em;
+  margin: 0 0 0.85rem;
+  max-inline-size: min(34rem, 100%);
 }
 
 .lead {
-  font-size: 0.96rem;
-  line-height: 1.45;
-  max-width: 34rem;
+  font-size: clamp(0.98rem, 1.12vw, 1.04rem);
+  line-height: 1.54;
+  max-width: 39rem;
   margin: 0;
   color: var(--ifm-color-emphasis-700);
 }
 
 .metrics {
-  margin-bottom: 1.9rem;
+  margin-bottom: var(--bench-stack-gap);
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) repeat(3, minmax(0, 1fr));
-  gap: 0.85rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: clamp(0.75rem, 1.5vw, 1rem);
   align-items: stretch;
 }
 
 .metricCard,
 .chartCard {
-  border-radius: 14px;
+  border-radius: var(--bench-radius-lg);
   border: 1px solid var(--ifm-color-emphasis-200);
   background: var(--ifm-background-surface-color);
   box-shadow: none;
@@ -53,189 +67,161 @@
 }
 
 .metricCard {
-  padding: 0.86rem 0.94rem 0.9rem;
-}
-
-.metricCardPrimary {
-  padding: 0.9rem 0.98rem 0.95rem;
+  padding: var(--bench-card-padding);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 0.22rem;
 }
 
 .metricCardPrimary .metricValue {
-  font-size: 1.78rem;
+  font-size: clamp(1.82rem, 2.7vw, 2.18rem);
 }
 
 .metricCardMuted .metricValue {
-  font-size: 1.18rem;
+  font-size: clamp(1.15rem, 1.7vw, 1.4rem);
 }
 
 .metricCardMuted .metricNote {
-  font-size: 0.82rem;
+  font-size: 0.8rem;
 }
 
 .metricCardMuted {
-  border-color: var(--ifm-color-emphasis-200);
   background: transparent;
 }
 
 .metricLabel,
 .chartMetric {
   display: block;
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.11em;
   color: var(--ifm-color-emphasis-600);
-  margin-bottom: 0.22rem;
+  margin-bottom: 0;
 }
 
 .metricValue {
-  font-size: 1.46rem;
+  font-size: clamp(1.42rem, 1.95vw, 1.72rem);
   font-weight: 800;
   line-height: 0.98;
-  margin-bottom: 0.2rem;
+  margin: 0;
 }
 
 .metricNote {
   color: var(--ifm-color-emphasis-700);
-  line-height: 1.35;
-  font-size: 0.84rem;
+  line-height: 1.34;
+  font-size: 0.82rem;
   margin-top: auto;
   padding-top: 0.22rem;
 }
 
 .section {
-  margin-bottom: 2.1rem;
+  margin-bottom: var(--bench-stack-gap);
 }
 
 .section + .section {
   border-top: 1px solid var(--ifm-color-emphasis-200);
-  padding-top: 1.65rem;
+  padding-top: clamp(1.25rem, 2.1vw, 1.8rem);
 }
 
 .sectionHeader {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.92fr);
-  gap: 1.15rem;
-  align-items: start;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.96fr);
+  gap: clamp(0.95rem, 1.8vw, 1.5rem);
+  align-items: end;
   margin-bottom: 1.05rem;
 }
 
 .sectionTitle {
   margin: 0;
-  line-height: 1.02;
-  letter-spacing: -0.03em;
+  font-size: clamp(1.72rem, 2.75vw, 2.2rem);
+  line-height: 0.98;
+  letter-spacing: -0.04em;
+  max-inline-size: min(24rem, 100%);
 }
 
 .sectionText {
   margin: 0;
   color: var(--ifm-color-emphasis-700);
-  line-height: 1.42;
-  max-width: 28rem;
+  line-height: 1.55;
+  font-size: 0.96rem;
+  max-width: 33rem;
 }
 
 .splitSection {
   display: grid;
-  grid-template-columns: minmax(240px, 290px) minmax(620px, 720px);
-  justify-content: space-between;
-  gap: 1.15rem;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  gap: clamp(1rem, 1.6vw, 1.4rem);
   align-items: start;
 }
 
 .splitCopy {
-  max-width: 16.75rem;
+  max-width: 19rem;
   justify-self: start;
+  display: grid;
+  gap: 0.5rem;
 }
 
 .splitCopy .sectionTitle {
-  margin-bottom: 0.48rem;
+  margin: 0;
 }
 
 .splitTable {
   min-width: 0;
-  display: flex;
-  justify-content: flex-end;
-  justify-self: end;
   align-self: start;
 }
 
-.splitTable .tableWrap {
-  width: auto;
-  max-width: 100%;
-}
-
 .tableWrap {
-  display: flex;
+  display: block;
   width: 100%;
-  max-width: 100%;
-  overflow: visible;
-  padding: 0;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
 }
 
-.tableWrapEnd {
-  justify-content: flex-end;
-  justify-self: end;
-}
-
-.tableWrapCenter {
-  justify-content: center;
-  justify-self: center;
+.tableWrap:focus-visible {
+  outline: 2px solid var(--ifm-color-primary);
+  outline-offset: 2px;
+  border-radius: 10px;
 }
 
 .dataTable {
-  flex: none;
-  width: auto;
-  background: transparent;
-  border-collapse: collapse;
-  table-layout: fixed;
-}
-
-.fullCycleTable {
-  min-width: 640px;
-}
-
-.fastPathTable {
-  min-width: 760px;
+  width: 100%;
+  min-width: 100%;
+  margin: 0;
+  font-size: 0.9rem;
+  table-layout: auto;
 }
 
 .dataTable th,
 .dataTable td {
-  padding: 0.62rem 0.72rem;
-  border-right: 1px solid rgba(15, 23, 42, 0.08);
-  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
-  border-top: 1px solid rgba(15, 23, 42, 0.08);
-  border-left: 1px solid rgba(15, 23, 42, 0.08);
-  text-align: left;
   vertical-align: middle;
-  font-size: 0.84rem;
-  line-height: 1.38;
-  min-width: 0;
 }
 
 .dataTable th {
+  text-align: left;
+  font-size: 0.84rem;
   font-weight: 700;
-  font-size: 0.89rem;
-  line-height: 1.25;
-  background: rgba(15, 23, 42, 0.015);
+  letter-spacing: -0.01em;
 }
 
-.dataTable th:not(:first-child),
-.dataTable td:not(:first-child) {
+.dataTable th:not(:first-child) {
   text-align: right;
 }
 
-.dataTable th.tableGroupHeader {
-  text-align: center;
+.dataTable td:not(:first-child) {
+  text-align: right;
+  white-space: nowrap;
 }
 
+.dataTable th.tableGroupHeader,
 .dataTable th.tablePeerHeader {
   text-align: center;
 }
 
-[data-theme='dark'] .dataTable th,
-[data-theme='dark'] .dataTable td {
-  border-bottom-color: rgba(255, 255, 255, 0.08);
-  border-right-color: rgba(255, 255, 255, 0.08);
-  border-top-color: rgba(255, 255, 255, 0.08);
-  border-left-color: rgba(255, 255, 255, 0.08);
+.fullCycleTable td:first-child {
+  white-space: normal;
 }
 
 .tablePrimary {
@@ -247,27 +233,28 @@
 .tableSecondary {
   display: block;
   color: var(--ifm-color-emphasis-600);
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   line-height: 1.32;
   margin-top: 0.14rem;
   opacity: 0.86;
 }
 
 .chartMetric {
-  color: var(--ifm-color-emphasis-500);
-  letter-spacing: 0.09em;
-  margin-bottom: 0;
+  color: var(--ifm-color-emphasis-600);
+  letter-spacing: 0.11em;
   align-self: flex-start;
 }
 
 .chartGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.75rem;
+  gap: clamp(0.85rem, 1.6vw, 1.1rem);
 }
 
 .chartCard {
-  padding: 0.82rem;
+  padding: var(--bench-card-padding);
+  display: grid;
+  gap: 0.82rem;
 }
 
 .chartHeader {
@@ -275,18 +262,19 @@
   align-items: flex-start;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 0.35rem 0.8rem;
-  margin-bottom: 0.68rem;
+  gap: 0.9rem;
+  margin-bottom: 0;
 }
 
 .chartTitle {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: 0.98rem;
+  line-height: 1.15;
 }
 
 .sparklineShell {
   display: grid;
-  gap: 0.6rem;
+  gap: 0.8rem;
   height: 100%;
 }
 
@@ -324,19 +312,21 @@
 
 .chartLabel {
   fill: var(--ifm-color-emphasis-600);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
 }
 
 .sparklineLegend {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.45rem 0.6rem;
-  padding-top: 0;
+  gap: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--ifm-color-emphasis-200);
   margin-top: auto;
 }
 
 .legendEntry {
+  min-height: 0;
   padding: 0;
   background: transparent;
 }
@@ -345,15 +335,16 @@
   display: block;
   font-size: 0.68rem;
   text-transform: uppercase;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.08em;
   color: var(--ifm-color-emphasis-600);
-  margin-bottom: 0.1rem;
+  margin-bottom: 0.14rem;
 }
 
 .legendValue {
   display: block;
   font-weight: 700;
-  font-size: 0.92rem;
+  font-size: 0.94rem;
+  line-height: 1.15;
 }
 
 .summaryRow {
@@ -363,8 +354,21 @@
   margin-top: 1rem;
 }
 
+@media screen and (max-width: 1100px) {
+  .metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .splitSection {
+    grid-template-columns: 1fr;
+  }
+
+  .splitCopy {
+    max-width: 34rem;
+  }
+}
+
 @media screen and (max-width: 996px) {
-  .hero,
   .sectionHeader,
   .metrics,
   .chartGrid,
@@ -375,18 +379,17 @@
   }
 
   .title {
-    max-width: 8ch;
-    font-size: clamp(2rem, 10vw, 2.8rem);
+    font-size: clamp(2rem, 8.8vw, 3rem);
   }
 
   .page {
-    padding: 1.35rem 0 1.9rem;
+    padding: 1.35rem 0 2.3rem;
   }
 
   .metrics,
   .section,
   .hero {
-    margin-bottom: 1.35rem;
+    margin-bottom: 1.2rem;
   }
 
   .sectionHeader {
@@ -394,45 +397,64 @@
     margin-bottom: 0.9rem;
   }
 
-  .splitCopy,
-  .sectionText {
-    max-width: none;
-  }
-
   .section + .section {
     padding-top: 1.35rem;
+  }
+
+  .metricCard,
+  .chartCard {
+    border-radius: 13px;
+    min-height: auto;
   }
 
   .sparklineLegend {
     grid-template-columns: 1fr;
   }
 
-  .tableWrap {
-    justify-content: flex-start;
-    overflow-x: auto;
-    overflow-y: hidden;
-    -webkit-overflow-scrolling: touch;
+  .fullCycleTable {
+    min-width: 34rem;
   }
 
-  .tableWrapEnd,
-  .tableWrapCenter {
-    justify-content: flex-start;
-  }
-
-  .dataTable,
-  .fullCycleTable,
   .fastPathTable {
-    width: auto;
+    min-width: 41rem;
   }
 
   .dataTable th,
   .dataTable td {
-    padding: 0.6rem 0.64rem;
-    font-size: 0.8rem;
+    font-size: 0.82rem;
   }
 
   .dataTable th {
-    font-size: 0.84rem;
+    font-size: 0.83rem;
+  }
+
+  .splitCopy,
+  .sectionText,
+  .sectionTitle {
+    max-width: none;
+  }
+
+  .chartCard {
+    gap: 0.78rem;
+  }
+}
+
+@media screen and (max-width: 640px) {
+  .page {
+    --ifm-table-cell-padding: 0.78rem 0.82rem;
+  }
+
+  .metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .metricCard,
+  .chartCard {
+    padding: 0.78rem 0.82rem;
+  }
+
+  .legendEntry {
+    min-height: 0;
   }
 
   .metricCard,

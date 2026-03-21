@@ -197,7 +197,7 @@ function MetricCard({label, value, note, className}) {
 
 function DataTable({header, rows, ariaLabel, className}) {
   return (
-    <div className={Styles.tableWrap}>
+    <div className={Styles.tableWrap} role="region" aria-label={ariaLabel} tabIndex={0}>
       <table className={`${Styles.dataTable}${className ? ` ${className}` : ''}`} aria-label={ariaLabel}>
         <thead>
           <tr>
@@ -265,7 +265,15 @@ function FastPathTable({formatInteger, formatNs}) {
   ];
 
   return (
-    <div className={Styles.tableWrap}>
+    <div
+      className={Styles.tableWrap}
+      role="region"
+      aria-label={translate({
+        id: 'bench.table.lookupAria',
+        message: 'Repository lookup and miss-path benchmark results',
+      })}
+      tabIndex={0}
+    >
       <table
         className={`${Styles.dataTable} ${Styles.fastPathTable}`}
         aria-label={translate({
