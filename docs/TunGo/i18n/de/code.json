@@ -104,9 +104,6 @@
   "bench.lookup.routeId": {
     "message": "Route-ID-Lookup"
   },
-  "bench.legend.peers": {
-    "message": "{count} Peers"
-  },
   "bench.table.fullCycleAria": {
     "message": "Benchmark-Ergebnisse des vollständigen Dataplane-Zyklus"
   },
@@ -129,10 +126,10 @@
     "message": "Benchmark-Ergebnisse für Repository-Lookup und Miss-Pfad"
   },
   "bench.table.lookup": {
-    "message": "Lookup"
+    "message": "Suche"
   },
-  "bench.table.peerCount": {
-    "message": "{count} Peers"
+  "bench.table.peers": {
+    "message": "Peers"
   },
   "bench.page.title": {
     "message": "Benchmarks"
@@ -159,19 +156,19 @@
     "message": "Fast-Path-Lookup"
   },
   "bench.metric.lookupNote": {
-    "message": "Flach bis 10k Peers"
+    "message": "Flach von {minCount} bis {maxCount}"
   },
   "bench.metric.allocs": {
     "message": "Allocs/op"
   },
   "bench.metric.allocsNote": {
-    "message": "Hot Path"
+    "message": "Kritischer Pfad"
   },
   "bench.summary.egress": {
     "message": "Egress-Spur"
   },
   "bench.summary.egressNote": {
-    "message": "Von uncontended zu contended Sends"
+    "message": "Von Sendungen ohne Konkurrenz zu Sendungen mit Konkurrenz"
   },
   "bench.summary.missPath": {
     "message": "Miss-Pfad"
@@ -180,7 +177,7 @@
     "message": "Linear"
   },
   "bench.summary.missPathNote": {
-    "message": "~35 ns bei 1 Peer -> ~89.5 μs bei 10k Peers"
+    "message": "{startLatency} bei {firstCount} -> {endLatency} bei {lastCount}"
   },
   "footer.iconsBy": {
     "message": "Symbole von"

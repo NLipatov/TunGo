@@ -99,13 +99,10 @@
     "message": "Lookup interno exacto"
   },
   "bench.lookup.allowedHost": {
-    "message": "Lookup de allowed host"
+    "message": "Lookup de host permitido"
   },
   "bench.lookup.routeId": {
-    "message": "Lookup de Route ID"
-  },
-  "bench.legend.peers": {
-    "message": "{count} peers"
+    "message": "Lookup de ID de ruta"
   },
   "bench.table.fullCycleAria": {
     "message": "Resultados del benchmark del dataplane de ciclo completo"
@@ -123,16 +120,16 @@
     "message": "Allocs/op"
   },
   "bench.lookup.missPath": {
-    "message": "Miss path"
+    "message": "Ruta de fallo"
   },
   "bench.table.lookupAria": {
     "message": "Resultados del benchmark de lookup de repositorio y miss path"
   },
   "bench.table.lookup": {
-    "message": "Lookup"
+    "message": "Búsqueda"
   },
-  "bench.table.peerCount": {
-    "message": "{count} peers"
+  "bench.table.peers": {
+    "message": "Pares"
   },
   "bench.page.title": {
     "message": "Benchmarks"
@@ -156,31 +153,31 @@
     "message": "Ruta full-cycle más baja"
   },
   "bench.metric.lookup": {
-    "message": "Fast-path lookup"
+    "message": "Lookup de fast-path"
   },
   "bench.metric.lookupNote": {
-    "message": "Plano hasta 10k peers"
+    "message": "Se mantiene estable de {minCount} a {maxCount}"
   },
   "bench.metric.allocs": {
     "message": "Allocs/op"
   },
   "bench.metric.allocsNote": {
-    "message": "Hot path"
+    "message": "Ruta crítica"
   },
   "bench.summary.egress": {
     "message": "Canal de egress"
   },
   "bench.summary.egressNote": {
-    "message": "De envíos sin contención a contención"
+    "message": "De envíos sin contención a envíos con contención"
   },
   "bench.summary.missPath": {
-    "message": "Miss path"
+    "message": "Ruta de fallo"
   },
   "bench.summary.linear": {
     "message": "Lineal"
   },
   "bench.summary.missPathNote": {
-    "message": "~35 ns con 1 peer -> ~89.5 μs con 10k peers"
+    "message": "{startLatency} con {firstCount} -> {endLatency} con {lastCount}"
   },
   "footer.iconsBy": {
     "message": "Iconos de"

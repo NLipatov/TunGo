@@ -99,13 +99,10 @@
     "message": "Lookup internal yang tepat"
   },
   "bench.lookup.allowedHost": {
-    "message": "Lookup allowed host"
+    "message": "Lookup host yang diizinkan"
   },
   "bench.lookup.routeId": {
-    "message": "Lookup Route ID"
-  },
-  "bench.legend.peers": {
-    "message": "{count} peer"
+    "message": "Lookup ID rute"
   },
   "bench.table.fullCycleAria": {
     "message": "Hasil benchmark dataplane siklus penuh"
@@ -123,16 +120,16 @@
     "message": "Allocs/op"
   },
   "bench.lookup.missPath": {
-    "message": "Miss path"
+    "message": "Jalur gagal"
   },
   "bench.table.lookupAria": {
     "message": "Hasil benchmark lookup repositori dan miss path"
   },
   "bench.table.lookup": {
-    "message": "Lookup"
+    "message": "Pencarian"
   },
-  "bench.table.peerCount": {
-    "message": "{count} peer"
+  "bench.table.peers": {
+    "message": "Peer"
   },
   "bench.page.title": {
     "message": "Benchmark"
@@ -156,31 +153,31 @@
     "message": "Jalur full-cycle terendah"
   },
   "bench.metric.lookup": {
-    "message": "Lookup fast-path"
+    "message": "Pencarian fast-path"
   },
   "bench.metric.lookupNote": {
-    "message": "Tetap datar hingga 10k peer"
+    "message": "Tetap datar dari {minCount} sampai {maxCount}"
   },
   "bench.metric.allocs": {
     "message": "Allocs/op"
   },
   "bench.metric.allocsNote": {
-    "message": "Hot path"
+    "message": "Jalur kritis"
   },
   "bench.summary.egress": {
     "message": "Jalur egress"
   },
   "bench.summary.egressNote": {
-    "message": "Dari kirim tanpa contention ke contention"
+    "message": "Dari pengiriman tanpa kontensi ke pengiriman dengan kontensi"
   },
   "bench.summary.missPath": {
-    "message": "Miss path"
+    "message": "Jalur gagal"
   },
   "bench.summary.linear": {
     "message": "Linear"
   },
   "bench.summary.missPathNote": {
-    "message": "~35 ns pada 1 peer -> ~89.5 μs pada 10k peer"
+    "message": "{startLatency} pada {firstCount} -> {endLatency} pada {lastCount}"
   },
   "footer.iconsBy": {
     "message": "Ikon oleh"

@@ -99,13 +99,10 @@
     "message": "Точный lookup по internal IP"
   },
   "bench.lookup.allowedHost": {
-    "message": "Lookup по allowed host"
+    "message": "Lookup по allowed-host"
   },
   "bench.lookup.routeId": {
-    "message": "Lookup по Route ID"
-  },
-  "bench.legend.peers": {
-    "message": "{count, plural, one {# пир} few {# пира} many {# пиров} other {# пира}}"
+    "message": "Lookup по route-ID"
   },
   "bench.table.fullCycleAria": {
     "message": "Результаты бенчмарка полного dataplane-цикла"
@@ -123,16 +120,16 @@
     "message": "Allocs/op"
   },
   "bench.lookup.missPath": {
-    "message": "Miss path"
+    "message": "Путь промаха"
   },
   "bench.table.lookupAria": {
     "message": "Результаты бенчмарка repository lookup и miss-path"
   },
   "bench.table.lookup": {
-    "message": "Lookup"
+    "message": "Поиск"
   },
-  "bench.table.peerCount": {
-    "message": "{count, plural, one {# пир} few {# пира} many {# пиров} other {# пира}}"
+  "bench.table.peers": {
+    "message": "Пиры"
   },
   "bench.page.title": {
     "message": "Бенчмарки"
@@ -156,31 +153,31 @@
     "message": "Минимальный full-cycle path"
   },
   "bench.metric.lookup": {
-    "message": "Fast-path lookup"
+    "message": "Поиск fast-path"
   },
   "bench.metric.lookupNote": {
-    "message": "Плоско до 10k peer"
+    "message": "Плоско от {minCount} до {maxCount}"
   },
   "bench.metric.allocs": {
     "message": "Allocs/op"
   },
   "bench.metric.allocsNote": {
-    "message": "Hot path"
+    "message": "Критический путь"
   },
   "bench.summary.egress": {
     "message": "Egress-линия"
   },
   "bench.summary.egressNote": {
-    "message": "От uncontended до contended send"
+    "message": "От отправки без конкуренции к отправке с конкуренцией"
   },
   "bench.summary.missPath": {
-    "message": "Miss path"
+    "message": "Путь промаха"
   },
   "bench.summary.linear": {
     "message": "Линейно"
   },
   "bench.summary.missPathNote": {
-    "message": "~35 нс на 1 peer -> ~89.5 μs на 10k peer"
+    "message": "{startLatency} на {firstCount} -> {endLatency} на {lastCount}"
   },
   "footer.iconsBy": {
     "message": "Иконки от"

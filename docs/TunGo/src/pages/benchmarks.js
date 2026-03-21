@@ -1,27 +1,49 @@
 import React from 'react';
 import Clsx from 'clsx';
 import Translate, {translate} from '@docusaurus/Translate';
+import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import Layout from '@theme/Layout';
 import Heading from '@theme/Heading';
 import Styles from './benchmarks.module.css';
 import {benchmarkSnapshot} from '@site/src/data/benchmarks';
 
-function formatNs(ns) {
-  if (ns >= 1000) {
-    return `~${(ns / 1000).toFixed(1)} μs`;
-  }
-  if (ns >= 100) {
-    return `~${Math.round(ns)} ns`;
-  }
-  return `~${ns.toFixed(1)} ns`;
-}
+function useBenchmarkFormatting() {
+  const {
+    i18n: {currentLocale},
+  } = useDocusaurusContext();
 
-function formatThroughput(value) {
-  const gbit = (value * 8) / 1000;
-  if (gbit >= 1) {
-    return `~${gbit.toFixed(1)} Gbit/s`;
-  }
-  return `~${Math.round(value * 8)} Mbit/s`;
+  return React.useMemo(() => {
+    const formatLocale = currentLocale.startsWith('ar') ? `${currentLocale}-u-nu-arab` : currentLocale;
+    const integerFormatter = new Intl.NumberFormat(formatLocale, {
+      maximumFractionDigits: 0,
+    });
+    const oneDecimalFormatter = new Intl.NumberFormat(formatLocale, {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1,
+    });
+
+    return {
+      formatInteger(value) {
+        return integerFormatter.format(value);
+      },
+      formatNs(value) {
+        if (value >= 1000) {
+          return `~${oneDecimalFormatter.format(value / 1000)} μs`;
+        }
+        if (value >= 100) {
+          return `~${integerFormatter.format(Math.round(value))} ns`;
+        }
+        return `~${oneDecimalFormatter.format(value)} ns`;
+      },
+      formatThroughput(value) {
+        const gbit = (value * 8) / 1000;
+        if (gbit >= 1) {
+          return `~${oneDecimalFormatter.format(gbit)} Gbit/s`;
+        }
+        return `~${integerFormatter.format(Math.round(value * 8))} Mbit/s`;
+      },
+    };
+  }, [currentLocale]);
 }
 
 function translateTransport(id) {
@@ -130,7 +152,7 @@ function buildDots(series, valueKey, width, height, padding) {
   });
 }
 
-function Sparkline({series, valueKey, color, formatter}) {
+function Sparkline({series, valueKey, color, formatter, peerLabelFormatter, peerTickFormatter}) {
   const width = 520;
   const height = 180;
   const padding = 18;
@@ -146,7 +168,7 @@ function Sparkline({series, valueKey, color, formatter}) {
           <g key={`${valueKey}-${dot.label}`}>
             <circle cx={dot.x} cy={dot.y} r="5" className={Styles.chartDot} style={{fill: color}} />
             <text x={dot.x} y={height - 6} textAnchor="middle" className={Styles.chartLabel}>
-              {dot.label}
+              {peerTickFormatter(dot.label)}
             </text>
           </g>
         ))}
@@ -155,13 +177,8 @@ function Sparkline({series, valueKey, color, formatter}) {
         {series.map((point) => (
           <div key={`${valueKey}-${point.peers}`} className={Styles.legendEntry}>
             <span className={Styles.legendPeers}>
-              {translate(
-                {
-                  id: 'bench.legend.peers',
-                  message: '{count} peers',
-                },
-                {count: point.peers},
-              )}
+              <span className={Styles.srOnly}>{`${translate({id: 'bench.table.peers', message: 'Peers'})} `}</span>
+              {peerLabelFormatter(point.peers)}
             </span>
             <span className={Styles.legendValue}>{formatter(point[valueKey])}</span>
           </div>
@@ -197,9 +214,15 @@ function DataTable({header, rows, ariaLabel, className}) {
         <tbody>
           {rows.map((row, rowIndex) => (
             <tr key={`row-${rowIndex}`}>
-              {row.map((cell, columnIndex) => (
-                <td key={`row-${rowIndex}-col-${columnIndex}`}>{cell}</td>
-              ))}
+              {row.map((cell, columnIndex) =>
+                columnIndex === 0 ? (
+                  <th key={`row-${rowIndex}-col-${columnIndex}`} scope="row">
+                    {cell}
+                  </th>
+                ) : (
+                  <td key={`row-${rowIndex}-col-${columnIndex}`}>{cell}</td>
+                ),
+              )}
             </tr>
           ))}
         </tbody>
@@ -208,7 +231,7 @@ function DataTable({header, rows, ariaLabel, className}) {
   );
 }
 
-function FullCycleTable() {
+function FullCycleTable({formatInteger, formatNs, formatThroughput}) {
   const rows = benchmarkSnapshot.fullCycle1400.map((entry) => [
     <>
       <span className={Styles.tablePrimary}>{translateTransport(entry.id)}</span>
@@ -216,7 +239,7 @@ function FullCycleTable() {
     </>,
     formatNs(entry.ns),
     formatThroughput(entry.throughput),
-    String(entry.allocs),
+    formatInteger(entry.allocs),
   ]);
 
   return (
@@ -237,7 +260,7 @@ function FullCycleTable() {
   );
 }
 
-function FastPathTable() {
+function FastPathTable({formatInteger, formatNs}) {
   const peerCounts = benchmarkSnapshot.repository.fastPath[0].series.map((entry) => entry.peers);
   const rows = [
     ...benchmarkSnapshot.repository.fastPath.map((row) => [
@@ -251,32 +274,71 @@ function FastPathTable() {
   ];
 
   return (
-    <DataTable
-      ariaLabel={translate({
+    <div
+      className={Styles.tableWrap}
+      role="region"
+      aria-label={translate({
         id: 'bench.table.lookupAria',
         message: 'Repository lookup and miss-path benchmark results',
       })}
-      className={Styles.fastPathTable}
-      header={[
-        translate({id: 'bench.table.lookup', message: 'Lookup'}),
-        ...peerCounts.map((count) =>
-          translate(
-            {
-              id: 'bench.table.peerCount',
-              message: '{count} peers',
-            },
-            {count},
-          ),
-        ),
-      ]}
-      rows={rows}
-    />
+      tabIndex={0}
+    >
+      <table
+        className={`${Styles.dataTable} ${Styles.fastPathTable}`}
+        aria-label={translate({
+          id: 'bench.table.lookupAria',
+          message: 'Repository lookup and miss-path benchmark results',
+        })}
+      >
+        <thead>
+          <tr>
+            <th rowSpan="2" scope="col">
+              {translate({id: 'bench.table.lookup', message: 'Lookup'})}
+            </th>
+            <th className={Styles.tableGroupHeader} colSpan={peerCounts.length} scope="colgroup">
+              {translate({id: 'bench.table.peers', message: 'Peers'})}
+            </th>
+          </tr>
+          <tr>
+            {peerCounts.map((count) => (
+              <th key={count} className={Styles.tablePeerHeader} scope="col">
+                {formatInteger(count)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, rowIndex) => (
+            <tr key={`row-${rowIndex}`}>
+              {row.map((cell, columnIndex) =>
+                columnIndex === 0 ? (
+                  <th key={`row-${rowIndex}-col-${columnIndex}`} scope="row">
+                    {cell}
+                  </th>
+                ) : (
+                  <td key={`row-${rowIndex}-col-${columnIndex}`}>{cell}</td>
+                ),
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
 export default function BenchmarksPage() {
+  const {formatInteger, formatNs, formatThroughput} = useBenchmarkFormatting();
   const bestFullCycle = [...benchmarkSnapshot.fullCycle1400].sort((a, b) => b.throughput - a.throughput)[0];
   const lowestLatency = [...benchmarkSnapshot.fullCycle1400].sort((a, b) => a.ns - b.ns)[0];
+  const fastPathLatencies = benchmarkSnapshot.repository.fastPath.flatMap((row) => row.series.map((point) => point.ns));
+  const fastestLookup = Math.min(...fastPathLatencies);
+  const slowestLookup = Math.max(...fastPathLatencies);
+  const missPathStart = benchmarkSnapshot.repository.missPath[0];
+  const missPathEnd = benchmarkSnapshot.repository.missPath[benchmarkSnapshot.repository.missPath.length - 1];
+  const minPeerCount = benchmarkSnapshot.repository.fastPath[0].series[0].peers;
+  const maxPeerCount =
+    benchmarkSnapshot.repository.fastPath[0].series[benchmarkSnapshot.repository.fastPath[0].series.length - 1].peers;
 
   return (
     <Layout
@@ -318,12 +380,18 @@ export default function BenchmarksPage() {
           />
           <MetricCard
             label={translate({id: 'bench.metric.lookup', message: 'Fast-path lookup'})}
-            value="~4-15 ns"
-            note={translate({id: 'bench.metric.lookupNote', message: 'Flat through 10k peers'})}
+            value={`${formatNs(fastestLookup)} - ${formatNs(slowestLookup)}`}
+            note={translate(
+              {
+                id: 'bench.metric.lookupNote',
+                message: 'Flat from {minCount} to {maxCount}',
+              },
+              {minCount: formatInteger(minPeerCount), maxCount: formatInteger(maxPeerCount)},
+            )}
           />
           <MetricCard
             label={translate({id: 'bench.metric.allocs', message: 'Allocs/op'})}
-            value="0"
+            value={formatInteger(0)}
             note={translate({id: 'bench.metric.allocsNote', message: 'Hot path'})}
           />
         </section>
@@ -341,7 +409,7 @@ export default function BenchmarksPage() {
               </p>
             </div>
             <div className={Styles.splitTable}>
-              <FullCycleTable />
+              <FullCycleTable formatInteger={formatInteger} formatNs={formatNs} formatThroughput={formatThroughput} />
             </div>
           </div>
         </section>
@@ -374,6 +442,8 @@ export default function BenchmarksPage() {
                   valueKey="throughput"
                   color="#009fc9"
                   formatter={(value) => formatThroughput(value)}
+                  peerLabelFormatter={formatInteger}
+                  peerTickFormatter={formatInteger}
                 />
               </div>
             ))}
@@ -393,21 +463,32 @@ export default function BenchmarksPage() {
               </p>
             </div>
             <div className={Styles.splitTable}>
-              <FastPathTable />
+              <FastPathTable formatInteger={formatInteger} formatNs={formatNs} />
             </div>
           </div>
           <div className={Styles.summaryRow}>
             <MetricCard
               className={Styles.metricCardMuted}
               label={translate({id: 'bench.summary.egress', message: 'Egress lane'})}
-              value={`~${benchmarkSnapshot.egress.uncontendedNs.toFixed(1)} ns -> ~${benchmarkSnapshot.egress.contendedNs.toFixed(0)} ns`}
+              value={`${formatNs(benchmarkSnapshot.egress.uncontendedNs)} -> ${formatNs(benchmarkSnapshot.egress.contendedNs)}`}
               note={translate({id: 'bench.summary.egressNote', message: 'Uncontended to contended sends'})}
             />
             <MetricCard
               className={Styles.metricCardMuted}
               label={translate({id: 'bench.summary.missPath', message: 'Miss path'})}
               value={translate({id: 'bench.summary.linear', message: 'Linear'})}
-              note={translate({id: 'bench.summary.missPathNote', message: '~35 ns at 1 peer -> ~89.5 μs at 10k peers'})}
+              note={translate(
+                {
+                  id: 'bench.summary.missPathNote',
+                  message: '{startLatency} at {firstCount} -> {endLatency} at {lastCount}',
+                },
+                {
+                  startLatency: formatNs(missPathStart.ns),
+                  firstCount: formatInteger(missPathStart.peers),
+                  endLatency: formatNs(missPathEnd.ns),
+                  lastCount: formatInteger(missPathEnd.peers),
+                },
+              )}
             />
           </div>
         </section>

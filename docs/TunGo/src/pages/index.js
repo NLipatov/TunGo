@@ -1,6 +1,5 @@
 import Clsx from 'clsx';
 import Link from '@docusaurus/Link';
-import UseDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import Translate, {translate} from '@docusaurus/Translate';
 import Layout from '@theme/Layout';
 import Features from '@site/src/components/features';
@@ -33,7 +32,6 @@ function HomepageHeader() {
 
 // noinspection JSUnusedGlobalSymbols
 export default function Home() {
-  const {siteConfig} = UseDocusaurusContext();
   return (
     <Layout
         title={translate({id: 'homepage.title', message: 'Minimalistic, Fast & Secure Open Source VPN'})}
