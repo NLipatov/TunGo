@@ -126,7 +126,7 @@
     "message": "Benchmark-Ergebnisse für Repository-Lookup und Miss-Pfad"
   },
   "bench.table.lookup": {
-    "message": "Lookup"
+    "message": "Suche"
   },
   "bench.table.peers": {
     "message": "Peers"
@@ -156,19 +156,19 @@
     "message": "Fast-Path-Lookup"
   },
   "bench.metric.lookupNote": {
-    "message": "Flach von 1 bis {maxCount}"
+    "message": "Flach von {minCount} bis {maxCount}"
   },
   "bench.metric.allocs": {
     "message": "Allocs/op"
   },
   "bench.metric.allocsNote": {
-    "message": "Hot Path"
+    "message": "Kritischer Pfad"
   },
   "bench.summary.egress": {
     "message": "Egress-Spur"
   },
   "bench.summary.egressNote": {
-    "message": "Von uncontended zu contended Sends"
+    "message": "Von Sendungen ohne Konkurrenz zu Sendungen mit Konkurrenz"
   },
   "bench.summary.missPath": {
     "message": "Miss-Pfad"

@@ -336,6 +336,7 @@ export default function BenchmarksPage() {
   const slowestLookup = Math.max(...fastPathLatencies);
   const missPathStart = benchmarkSnapshot.repository.missPath[0];
   const missPathEnd = benchmarkSnapshot.repository.missPath[benchmarkSnapshot.repository.missPath.length - 1];
+  const minPeerCount = benchmarkSnapshot.repository.fastPath[0].series[0].peers;
   const maxPeerCount =
     benchmarkSnapshot.repository.fastPath[0].series[benchmarkSnapshot.repository.fastPath[0].series.length - 1].peers;
 
@@ -383,14 +384,14 @@ export default function BenchmarksPage() {
             note={translate(
               {
                 id: 'bench.metric.lookupNote',
-                message: 'Flat from 1 to {maxCount}',
+                message: 'Flat from {minCount} to {maxCount}',
               },
-              {maxCount: formatInteger(maxPeerCount)},
+              {minCount: formatInteger(minPeerCount), maxCount: formatInteger(maxPeerCount)},
             )}
           />
           <MetricCard
             label={translate({id: 'bench.metric.allocs', message: 'Allocs/op'})}
-            value="0"
+            value={formatInteger(0)}
             note={translate({id: 'bench.metric.allocsNote', message: 'Hot path'})}
           />
         </section>

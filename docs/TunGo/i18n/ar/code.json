@@ -99,10 +99,10 @@
     "message": "Lookup داخلي دقيق"
   },
   "bench.lookup.allowedHost": {
-    "message": "Lookup allowed host"
+    "message": "بحث المضيف المسموح"
   },
   "bench.lookup.routeId": {
-    "message": "Lookup Route ID"
+    "message": "بحث معرّف المسار"
   },
   "bench.table.fullCycleAria": {
     "message": "نتائج قياس دورة dataplane الكاملة"
@@ -120,13 +120,13 @@
     "message": "Allocs/op"
   },
   "bench.lookup.missPath": {
-    "message": "Miss path"
+    "message": "مسار الإخفاق"
   },
   "bench.table.lookupAria": {
     "message": "نتائج قياس repository lookup و miss path"
   },
   "bench.table.lookup": {
-    "message": "Lookup"
+    "message": "البحث"
   },
   "bench.table.peers": {
     "message": "النظراء"
@@ -153,25 +153,25 @@
     "message": "أقل مسار full-cycle"
   },
   "bench.metric.lookup": {
-    "message": "Fast-path lookup"
+    "message": "بحث المسار السريع"
   },
   "bench.metric.lookupNote": {
-    "message": "يبقى ثابتًا من 1 إلى {maxCount}"
+    "message": "يبقى ثابتًا من {minCount} إلى {maxCount}"
   },
   "bench.metric.allocs": {
     "message": "Allocs/op"
   },
   "bench.metric.allocsNote": {
-    "message": "Hot path"
+    "message": "المسار الحرج"
   },
   "bench.summary.egress": {
     "message": "مسار egress"
   },
   "bench.summary.egressNote": {
-    "message": "من إرسال دون تزاحم إلى إرسال مع تزاحم"
+    "message": "من إرسال بلا تزاحم إلى إرسال مع تزاحم"
   },
   "bench.summary.missPath": {
-    "message": "Miss path"
+    "message": "مسار الإخفاق"
   },
   "bench.summary.linear": {
     "message": "خطي"

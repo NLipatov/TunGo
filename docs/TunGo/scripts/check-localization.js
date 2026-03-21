@@ -12,6 +12,10 @@ function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
 }
 
+function extractPlaceholders(message) {
+  return [...new Set(Array.from(message.matchAll(/\{([a-zA-Z0-9_]+)\}/g), (match) => match[1]))].sort();
+}
+
 function listRelativeFiles(rootPath) {
   const files = [];
 
@@ -99,6 +103,26 @@ for (const locale of locales) {
       errors.push(
         `${path.relative(projectRoot, codeJsonPath)} has extra custom translation key "${extraKey}" missing from ${sourceLocale}/code.json.`,
       );
+    }
+
+    for (const sourceKey of sourceCustomCodeKeys) {
+      const sourceMessage = sourceCodeMessages[sourceKey]?.message;
+      const localeMessage = messages[sourceKey]?.message;
+
+      if (typeof sourceMessage !== 'string' || typeof localeMessage !== 'string') {
+        continue;
+      }
+
+      const sourcePlaceholders = extractPlaceholders(sourceMessage);
+      const localePlaceholders = extractPlaceholders(localeMessage);
+
+      if (sourcePlaceholders.join('|') !== localePlaceholders.join('|')) {
+        errors.push(
+          `${path.relative(projectRoot, codeJsonPath)}:${sourceKey} uses placeholders [` +
+            `${localePlaceholders.join(', ')}] but ${sourceLocale}/code.json expects [` +
+            `${sourcePlaceholders.join(', ')}].`,
+        );
+      }
     }
   }
 }

@@ -99,10 +99,10 @@
     "message": "Lookup interne exact"
   },
   "bench.lookup.allowedHost": {
-    "message": "Lookup allowed host"
+    "message": "Lookup de l'hôte autorisé"
   },
   "bench.lookup.routeId": {
-    "message": "Lookup Route ID"
+    "message": "Lookup de l'identifiant de route"
   },
   "bench.table.fullCycleAria": {
     "message": "Résultats du benchmark dataplane en cycle complet"
@@ -120,13 +120,13 @@
     "message": "Allocs/op"
   },
   "bench.lookup.missPath": {
-    "message": "Miss path"
+    "message": "Chemin d'échec"
   },
   "bench.table.lookupAria": {
     "message": "Résultats du benchmark de lookup du dépôt et du miss path"
   },
   "bench.table.lookup": {
-    "message": "Lookup"
+    "message": "Recherche"
   },
   "bench.table.peers": {
     "message": "Pairs"
@@ -153,25 +153,25 @@
     "message": "Chemin en cycle complet le plus bas"
   },
   "bench.metric.lookup": {
-    "message": "Lookup fast-path"
+    "message": "Recherche fast-path"
   },
   "bench.metric.lookupNote": {
-    "message": "Stable de 1 à {maxCount}"
+    "message": "Stable de {minCount} à {maxCount}"
   },
   "bench.metric.allocs": {
     "message": "Allocs/op"
   },
   "bench.metric.allocsNote": {
-    "message": "Hot path"
+    "message": "Chemin critique"
   },
   "bench.summary.egress": {
     "message": "Voie egress"
   },
   "bench.summary.egressNote": {
-    "message": "Envois sans contention à contention"
+    "message": "Des envois sans contention aux envois avec contention"
   },
   "bench.summary.missPath": {
-    "message": "Miss path"
+    "message": "Chemin d'échec"
   },
   "bench.summary.linear": {
     "message": "Linéaire"

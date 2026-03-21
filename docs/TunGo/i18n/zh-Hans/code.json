@@ -99,10 +99,10 @@
     "message": "精确 internal lookup"
   },
   "bench.lookup.allowedHost": {
-    "message": "allowed host lookup"
+    "message": "allowed host 查找"
   },
   "bench.lookup.routeId": {
-    "message": "Route ID lookup"
+    "message": "Route ID 查找"
   },
   "bench.table.fullCycleAria": {
     "message": "完整 dataplane 周期基准测试结果"
@@ -120,13 +120,13 @@
     "message": "Allocs/op"
   },
   "bench.lookup.missPath": {
-    "message": "Miss path"
+    "message": "未命中路径"
   },
   "bench.table.lookupAria": {
     "message": "仓库 lookup 与 miss path 基准测试结果"
   },
   "bench.table.lookup": {
-    "message": "Lookup"
+    "message": "查找"
   },
   "bench.table.peers": {
     "message": "对等节点"
@@ -153,16 +153,16 @@
     "message": "最低 full-cycle 路径"
   },
   "bench.metric.lookup": {
-    "message": "Fast-path lookup"
+    "message": "Fast-path 查找"
   },
   "bench.metric.lookupNote": {
-    "message": "从 1 到 {maxCount} 保持平稳"
+    "message": "从 {minCount} 到 {maxCount} 保持平稳"
   },
   "bench.metric.allocs": {
     "message": "Allocs/op"
   },
   "bench.metric.allocsNote": {
-    "message": "Hot path"
+    "message": "热点路径"
   },
   "bench.summary.egress": {
     "message": "Egress 通道"
@@ -171,7 +171,7 @@
     "message": "从无争用发送到有争用发送"
   },
   "bench.summary.missPath": {
-    "message": "Miss path"
+    "message": "未命中路径"
   },
   "bench.summary.linear": {
     "message": "线性"

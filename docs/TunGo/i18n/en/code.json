@@ -479,7 +479,7 @@
     "message": "Fast-path lookup"
   },
   "bench.metric.lookupNote": {
-    "message": "Flat from 1 to {maxCount}"
+    "message": "Flat from {minCount} to {maxCount}"
   },
   "bench.metric.allocs": {
     "message": "Allocs/op"

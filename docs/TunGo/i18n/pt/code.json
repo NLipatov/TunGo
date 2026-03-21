@@ -99,10 +99,10 @@
     "message": "Lookup interno exato"
   },
   "bench.lookup.allowedHost": {
-    "message": "Lookup de allowed host"
+    "message": "Lookup de host permitido"
   },
   "bench.lookup.routeId": {
-    "message": "Lookup de Route ID"
+    "message": "Lookup de ID de rota"
   },
   "bench.table.fullCycleAria": {
     "message": "Resultados do benchmark do dataplane de ciclo completo"
@@ -120,13 +120,13 @@
     "message": "Allocs/op"
   },
   "bench.lookup.missPath": {
-    "message": "Miss path"
+    "message": "Caminho de falha"
   },
   "bench.table.lookupAria": {
     "message": "Resultados do benchmark de lookup de repositório e miss path"
   },
   "bench.table.lookup": {
-    "message": "Lookup"
+    "message": "Busca"
   },
   "bench.table.peers": {
     "message": "Pares"
@@ -153,25 +153,25 @@
     "message": "Menor caminho full-cycle"
   },
   "bench.metric.lookup": {
-    "message": "Fast-path lookup"
+    "message": "Lookup de fast-path"
   },
   "bench.metric.lookupNote": {
-    "message": "Estável de 1 a {maxCount}"
+    "message": "Estável de {minCount} a {maxCount}"
   },
   "bench.metric.allocs": {
     "message": "Allocs/op"
   },
   "bench.metric.allocsNote": {
-    "message": "Hot path"
+    "message": "Caminho crítico"
   },
   "bench.summary.egress": {
     "message": "Faixa de egress"
   },
   "bench.summary.egressNote": {
-    "message": "De envios sem contenção a com contenção"
+    "message": "De envios sem contenção para envios com contenção"
   },
   "bench.summary.missPath": {
-    "message": "Miss path"
+    "message": "Caminho de falha"
   },
   "bench.summary.linear": {
     "message": "Linear"
