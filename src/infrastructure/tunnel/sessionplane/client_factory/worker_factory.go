@@ -11,7 +11,7 @@ import (
 	"tungo/application/network/routing"
 	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
-	"tungo/infrastructure/network/udp/adapters"
+	udpAdapter "tungo/infrastructure/network/udp/adapters"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/dataplane/client/tcp_chacha20"
 	"tungo/infrastructure/tunnel/dataplane/client/udp_chacha20"
@@ -39,7 +39,7 @@ func (w *WorkerFactory) CreateWorker(
 			return nil, err
 		}
 		deadline := time.Second
-		transport := adapters.NewClientUDPAdapter(udpConn, deadline, deadline)
+		transport := udpAdapter.NewClientAdapter(udpConn, deadline, deadline)
 		egress := connection.NewDefaultEgress(transport, crypto)
 		// tunHandler reads from tun and writes to transport
 		tunHandler := udp_chacha20.NewTunHandler(

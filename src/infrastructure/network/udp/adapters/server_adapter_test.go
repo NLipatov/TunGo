@@ -8,7 +8,7 @@ import (
 	"tungo/application/network/connection"
 )
 
-// setupConns creates a server and client UDPConns and returns them plus a Transport.
+// setupConns creates a server and client conn pair and returns them plus a Transport.
 func setupConns(t testing.TB) (serverConn *net.UDPConn, clientConn *net.UDPConn, clientAdapter connection.Transport) {
 	t.Helper()
 
@@ -29,7 +29,7 @@ func setupConns(t testing.TB) (serverConn *net.UDPConn, clientConn *net.UDPConn,
 		t.Fatalf("parse server addrport: %v", err)
 	}
 
-	clientAdapter = NewUdpAdapter(clientConn, addrPort)
+	clientAdapter = NewServerAdapter(clientConn, addrPort)
 
 	t.Cleanup(func() {
 		_ = serverConn.Close()
@@ -38,7 +38,7 @@ func setupConns(t testing.TB) (serverConn *net.UDPConn, clientConn *net.UDPConn,
 	return serverConn, clientConn, clientAdapter
 }
 
-func TestUdpAdapter_Write(t *testing.T) {
+func TestServerAdapter_Write(t *testing.T) {
 	serverConn, clientConn, clientAdapter := setupConns(t)
 
 	msg := []byte("ping")
@@ -63,7 +63,7 @@ func TestUdpAdapter_Write(t *testing.T) {
 	_ = clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
 }
 
-func TestUdpAdapter_Read(t *testing.T) {
+func TestServerAdapter_Read(t *testing.T) {
 	serverConn, clientConn, clientAdapter := setupConns(t)
 
 	resp := []byte("pong")
@@ -86,7 +86,7 @@ func TestUdpAdapter_Read(t *testing.T) {
 	}
 }
 
-func TestUdpAdapter_Close_then_Read(t *testing.T) {
+func TestServerAdapter_Close_then_Read(t *testing.T) {
 	_, clientConn, clientAdapter := setupConns(t)
 
 	if err := clientAdapter.Close(); err != nil {
@@ -100,7 +100,7 @@ func TestUdpAdapter_Close_then_Read(t *testing.T) {
 	}
 }
 
-func TestUdpAdapter_WriteAfterClose(t *testing.T) {
+func TestServerAdapter_WriteAfterClose(t *testing.T) {
 	_, _, clientAdapter := setupConns(t)
 
 	if err := clientAdapter.Close(); err != nil {
@@ -111,7 +111,7 @@ func TestUdpAdapter_WriteAfterClose(t *testing.T) {
 	}
 }
 
-func TestUdpAdapter_ReadShortBuffer(t *testing.T) {
+func TestServerAdapter_ReadShortBuffer(t *testing.T) {
 	serverConn, clientConn, clientAdapter := setupConns(t)
 
 	resp := []byte("too big")
