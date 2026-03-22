@@ -212,7 +212,7 @@ func (s *WorkerFactory) createUDPWorker(
 	if err != nil {
 		return nil, fmt.Errorf("failed to listen on port: %s", err)
 	}
-	listener := udpAdapters.NewBatchingServerAdapter(udpConn)
+	reader := udpAdapters.NewBatchingServerIngress(udpConn)
 
 	logger := s.loggerFactory.newLogger()
 
@@ -227,7 +227,7 @@ func (s *WorkerFactory) createUDPWorker(
 
 	registrar := udp_registration.NewRegistrar(
 		ctx,
-		listener,
+		udpConn,
 		sessionManager,
 		logger,
 		handshakeFactory,
@@ -240,7 +240,8 @@ func (s *WorkerFactory) createUDPWorker(
 		ctx,
 		workerSettings,
 		tun,
-		listener,
+		reader,
+		udpConn,
 		sessionManager,
 		sessionManager,
 		logger,

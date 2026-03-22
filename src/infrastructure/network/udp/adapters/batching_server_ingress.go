@@ -1,20 +1,12 @@
 package adapters
 
 import (
-	"io"
 	"net"
 	"net/netip"
-	"sync"
-	"tungo/application/listeners"
-	"tungo/infrastructure/settings"
+	appudp "tungo/application/network/udp"
 
 	"golang.org/x/net/ipv4"
 	"golang.org/x/net/ipv6"
-)
-
-const (
-	serverReadBatchSize = 32
-	serverPacketBufSize = settings.DefaultEthernetMTU + settings.UDPChacha20Overhead
 )
 
 type batchReadMessage struct {
@@ -28,26 +20,17 @@ type batchSource interface {
 	ReadBatch(msgs []batchReadMessage) (int, error)
 }
 
-type batchingServerReader struct {
-	conn   listeners.UdpListener
+type batchingServerIngress struct {
+	conn   *net.UDPConn
 	source batchSource
-
-	mu      sync.Mutex
-	count   int
-	next    int
-	buffers [serverReadBatchSize][serverPacketBufSize]byte
-	batch   [serverReadBatchSize]batchReadMessage
+	batch  []batchReadMessage
 }
 
-func NewBatchingServerAdapter(conn *net.UDPConn) listeners.UdpListener {
-	r := &batchingServerReader{
+func NewBatchingServerIngress(conn *net.UDPConn) appudp.Ingress {
+	return &batchingServerIngress{
 		conn:   conn,
 		source: newBatchSource(conn),
 	}
-	for i := range r.batch {
-		r.batch[i].Buffer = r.buffers[i][:]
-	}
-	return r
 }
 
 func newBatchSource(conn *net.UDPConn) batchSource {
@@ -57,45 +40,42 @@ func newBatchSource(conn *net.UDPConn) batchSource {
 	return &ipv6BatchSource{conn: ipv6.NewPacketConn(conn)}
 }
 
-func (r *batchingServerReader) Close() error {
+func (r *batchingServerIngress) Close() error {
 	return r.conn.Close()
 }
 
-func (r *batchingServerReader) ReadMsgUDPAddrPort(b, oob []byte) (n, oobn, flags int, addr netip.AddrPort, err error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	for r.next >= r.count {
-		if r.source == nil {
-			return r.conn.ReadMsgUDPAddrPort(b, oob)
-		}
-		count, readErr := r.source.ReadBatch(r.batch[:])
-		if readErr != nil {
-			return 0, 0, 0, netip.AddrPort{}, readErr
-		}
-		if count == 0 {
-			return 0, 0, 0, netip.AddrPort{}, io.ErrNoProgress
-		}
-		r.count = count
-		r.next = 0
-	}
-
-	msg := &r.batch[r.next]
-	r.next++
-	n = copy(b, msg.Buffer[:msg.N])
-	return n, 0, msg.Flags, msg.Addr, nil
-}
-
-func (r *batchingServerReader) SetReadBuffer(size int) error {
+func (r *batchingServerIngress) SetReadBuffer(size int) error {
 	return r.conn.SetReadBuffer(size)
 }
 
-func (r *batchingServerReader) SetWriteBuffer(size int) error {
-	return r.conn.SetWriteBuffer(size)
-}
+func (r *batchingServerIngress) ReadBatch(packets []appudp.Packet) (int, error) {
+	if cap(r.batch) < len(packets) {
+		r.batch = make([]batchReadMessage, len(packets))
+	} else {
+		r.batch = r.batch[:len(packets)]
+	}
 
-func (r *batchingServerReader) WriteToUDPAddrPort(data []byte, addr netip.AddrPort) (int, error) {
-	return r.conn.WriteToUDPAddrPort(data, addr)
+	for i := range packets {
+		buffer := packets[i].Data
+		if cap(buffer) > 0 {
+			buffer = buffer[:cap(buffer)]
+		}
+		r.batch[i].Buffer = buffer
+		r.batch[i].N = 0
+		r.batch[i].Addr = netip.AddrPort{}
+		r.batch[i].Flags = 0
+	}
+
+	n, err := r.source.ReadBatch(r.batch)
+	if err != nil {
+		return 0, err
+	}
+	for i := 0; i < n; i++ {
+		packets[i].Data = r.batch[i].Buffer[:r.batch[i].N]
+		packets[i].Addr = r.batch[i].Addr
+		packets[i].Flags = r.batch[i].Flags
+	}
+	return n, nil
 }
 
 type ipv4BatchSource struct {

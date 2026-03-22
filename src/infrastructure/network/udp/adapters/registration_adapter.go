@@ -3,8 +3,8 @@ package adapters
 import (
 	"net/netip"
 	"sync/atomic"
-	"tungo/application/listeners"
 	"tungo/application/network/connection"
+	appudp "tungo/application/network/udp"
 )
 
 type registrationQueue interface {
@@ -18,13 +18,13 @@ type registrationQueue interface {
 // The destination address is stored atomically so that it can be updated
 // after NAT roaming without replacing the writer in the egress pipeline.
 type RegistrationAdapter struct {
-	conn  listeners.UdpListener
+	conn  appudp.Writer
 	addr  atomic.Pointer[netip.AddrPort]
 	queue registrationQueue
 }
 
 func NewRegistrationTransport(
-	conn listeners.UdpListener,
+	conn appudp.Writer,
 	addrPort netip.AddrPort,
 	queue registrationQueue,
 ) connection.Transport {

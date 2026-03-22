@@ -2,20 +2,20 @@ package adapters
 
 import (
 	"net/netip"
-	"tungo/application/listeners"
 	"tungo/application/network/connection"
+	appudp "tungo/application/network/udp"
 	"tungo/infrastructure/settings"
 )
 
 type ServerAdapter struct {
-	conn     listeners.UdpListener
+	conn     appudp.Listener
 	addrPort netip.AddrPort
 
 	readBuffer [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
 	oob        [8 * 1024]byte
 }
 
-func NewServerAdapter(listener listeners.UdpListener, addrPort netip.AddrPort) connection.Transport {
+func NewServerAdapter(listener appudp.Listener, addrPort netip.AddrPort) connection.Transport {
 	return &ServerAdapter{
 		conn:     listener,
 		addrPort: addrPort,

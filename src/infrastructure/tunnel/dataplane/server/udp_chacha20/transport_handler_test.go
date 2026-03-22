@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 	"tungo/application/network/connection"
+	appudp "tungo/application/network/udp"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
 	"tungo/infrastructure/cryptography/primitives"
@@ -116,7 +117,7 @@ func (TransportHandlerMockAEADBuilder) FromHandshake(h connection.Handshake, isS
 	return TransportHandlerFakeAEAD{}, TransportHandlerFakeAEAD{}, nil
 }
 
-// TransportHandlerFakeUdpListener implements listeners.UdpListener.
+// TransportHandlerFakeUdpListener implements appudp.Ingress and appudp.Writer.
 type TransportHandlerFakeUdpListener struct {
 	readMu    sync.Mutex
 	readIdx   int
@@ -157,21 +158,28 @@ func (f *TransportHandlerFakeUdpListener) WriteToUDPAddrPort(data []byte, addr n
 	}
 	return len(data), nil
 }
-func (f *TransportHandlerFakeUdpListener) ReadMsgUDPAddrPort(b, _ []byte) (int, int, int, netip.AddrPort, error) {
+func (f *TransportHandlerFakeUdpListener) ReadBatch(packets []appudp.Packet) (int, error) {
 	f.readMu.Lock()
 	defer f.readMu.Unlock()
 	if f.readIdx >= len(f.readBufs) {
 		time.Sleep(10 * time.Millisecond)
-		return 0, 0, 0, netip.AddrPort{}, io.EOF
+		return 0, io.EOF
 	}
-	data := f.readBufs[f.readIdx]
-	addr := f.readAddrs[f.readIdx]
-	f.readIdx++
-	copy(b, data)
-	return len(data), 0, 0, addr, nil
+	count := 0
+	for count < len(packets) && f.readIdx < len(f.readBufs) {
+		data := f.readBufs[f.readIdx]
+		addr := f.readAddrs[f.readIdx]
+		f.readIdx++
+		copy(packets[count].Data, data)
+		packets[count].Data = packets[count].Data[:len(data)]
+		packets[count].Addr = addr
+		packets[count].Flags = 0
+		count++
+	}
+	return count, nil
 }
 
-// TransportHandlerBlockingUdpListener blocks in ReadMsgUDPAddrPort until Close().
+// TransportHandlerBlockingUdpListener blocks in ReadBatch until Close().
 // This allows testing the path where ctx is canceled during a blocking read,
 // making handler return ctx.Err().
 type TransportHandlerBlockingUdpListener struct {
@@ -192,9 +200,9 @@ func (b *TransportHandlerBlockingUdpListener) SetWriteBuffer(_ int) error { retu
 func (b *TransportHandlerBlockingUdpListener) WriteToUDPAddrPort(_ []byte, _ netip.AddrPort) (int, error) {
 	return 0, nil
 }
-func (b *TransportHandlerBlockingUdpListener) ReadMsgUDPAddrPort(_, _ []byte) (int, int, int, netip.AddrPort, error) {
+func (b *TransportHandlerBlockingUdpListener) ReadBatch(_ []appudp.Packet) (int, error) {
 	<-b.ch // unblock when Close is called
-	return 0, 0, 0, b.addr, io.ErrClosedPipe
+	return 0, io.ErrClosedPipe
 }
 
 // TransportHandlerFakeWriter captures writes and can inject an error.
@@ -428,7 +436,7 @@ func TestHandleTransport_CancelBeforeLoop_ReturnsNil(t *testing.T) {
 		netip.MustParsePrefix("10.0.0.0/24"),
 		netip.Prefix{},
 	)
-	h := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 7777}}, writer, conn, repo, repo, logger, registrar)
+	h := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 7777}}, writer, conn, conn, repo, repo, logger, registrar)
 
 	err := h.HandleTransport()
 	if err != nil {
@@ -459,7 +467,7 @@ func TestHandleTransport_CancelWhileRead_ReturnsCtxErr(t *testing.T) {
 		netip.MustParsePrefix("10.0.0.0/24"),
 		netip.Prefix{},
 	)
-	h := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 9001}}, writer, bl, repo, repo, logger, registrar)
+	h := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 9001}}, writer, bl, bl, repo, repo, logger, registrar)
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- h.HandleTransport() }()
@@ -498,7 +506,7 @@ func TestHandleTransport_ReadMsgUDPAddrPortError_LogsAndContinues(t *testing.T) 
 		netip.MustParsePrefix("10.0.0.0/24"),
 		netip.Prefix{},
 	)
-	h := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 4444}}, writer, conn, repo, repo, logger, registrar)
+	h := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 4444}}, writer, conn, conn, repo, repo, logger, registrar)
 
 	done := make(chan struct{})
 	go func() { _ = h.HandleTransport(); close(done) }()
@@ -533,7 +541,7 @@ func TestHandleTransport_EmptyPacket_Dropped(t *testing.T) {
 		netip.MustParsePrefix("10.0.0.0/24"),
 		netip.Prefix{},
 	)
-	h := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 5555}}, writer, conn, repo, repo, logger, registrar)
+	h := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 5555}}, writer, conn, conn, repo, repo, logger, registrar)
 
 	done := make(chan struct{})
 	go func() { _ = h.HandleTransport(); close(done) }()
@@ -569,7 +577,7 @@ func TestTransportHandler_RegistrationPacket(t *testing.T) {
 		netip.MustParsePrefix("10.0.0.0/24"),
 		netip.Prefix{},
 	)
-	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 9999}}, writer, conn, repo, repo, logger, registrar)
+	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 9999}}, writer, conn, conn, repo, repo, logger, registrar)
 
 	go func() { _ = handler.HandleTransport() }()
 
@@ -630,7 +638,7 @@ func TestTransportHandler_DecryptError(t *testing.T) {
 		netip.MustParsePrefix("10.0.0.0/24"),
 		netip.Prefix{},
 	)
-	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 2222}}, writer, conn, repo, repo, logger, registrar)
+	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 2222}}, writer, conn, conn, repo, repo, logger, registrar)
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
 	select {
@@ -747,7 +755,7 @@ func TestTransportHandler_WriteError(t *testing.T) {
 		netip.MustParsePrefix("10.0.0.0/24"),
 		netip.Prefix{},
 	)
-	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 3333}}, writer, conn, repo, repo, logger, registrar)
+	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 3333}}, writer, conn, conn, repo, repo, logger, registrar)
 
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
@@ -814,7 +822,7 @@ func TestTransportHandler_HappyPath(t *testing.T) {
 		netip.MustParsePrefix("10.0.0.0/24"),
 		netip.Prefix{},
 	)
-	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 5050}}, writer, conn, repo, repo, logger, registrar)
+	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 5050}}, writer, conn, conn, repo, repo, logger, registrar)
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
 	time.Sleep(20 * time.Millisecond)
@@ -865,7 +873,7 @@ func TestTransportHandler_NATRoaming_RouteIDLookup(t *testing.T) {
 		netip.MustParsePrefix("10.0.0.0/24"),
 		netip.Prefix{},
 	)
-	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 6060}}, tunWriter, conn, repo, repo, logger, registrar)
+	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 6060}}, tunWriter, conn, conn, repo, repo, logger, registrar)
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
 	time.Sleep(50 * time.Millisecond)
@@ -924,7 +932,7 @@ func TestTransportHandler_NATRoaming_RouteIDLookupAfterRoam(t *testing.T) {
 		netip.MustParsePrefix("10.0.0.0/24"),
 		netip.Prefix{},
 	)
-	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 7070}}, tunWriter, conn, repo, repo, logger, registrar)
+	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 7070}}, tunWriter, conn, conn, repo, repo, logger, registrar)
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
 	time.Sleep(50 * time.Millisecond)
@@ -964,7 +972,7 @@ func TestTransportHandler_RegisterClient_NegativeClientID_FailsAllocation(t *tes
 		netip.MustParsePrefix("10.0.0.0/24"),
 		netip.Prefix{},
 	)
-	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 6000}}, writer, conn, repo, repo, logger, registrar)
+	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 6000}}, writer, conn, conn, repo, repo, logger, registrar)
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
 
@@ -1053,7 +1061,7 @@ func TestTransportHandler_SecondPacketGoesToExistingRegistrationQueue_NoNewGorou
 		netip.MustParsePrefix("10.0.0.0/24"),
 		netip.Prefix{},
 	)
-	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 7000}}, writer, conn, repo, repo, logger, registrar)
+	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 7000}}, writer, conn, conn, repo, repo, logger, registrar)
 
 	go func() {
 		_ = handler.HandleTransport()
@@ -1115,7 +1123,7 @@ func TestHandleTransport_IgnoreHandlePacketError(t *testing.T) {
 		netip.MustParsePrefix("10.0.0.0/24"),
 		netip.Prefix{},
 	)
-	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 9999}}, writer, conn, repo, repo, logger, registrar)
+	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 9999}}, writer, conn, conn, repo, repo, logger, registrar)
 
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
@@ -1236,7 +1244,7 @@ func TestRegisterClient_CryptoError_LogsAndFails(t *testing.T) {
 		netip.MustParsePrefix("10.0.0.0/24"),
 		netip.Prefix{},
 	)
-	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 5555}}, writer, conn, repo, repo, logger, registrar)
+	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 5555}}, writer, conn, conn, repo, repo, logger, registrar)
 
 	done := make(chan struct{})
 	go func() {
@@ -1373,7 +1381,7 @@ func TestHandlePacket_ShortPacket_DroppedBeforeRegistration(t *testing.T) {
 		netip.MustParsePrefix("10.0.0.0/24"),
 		netip.Prefix{},
 	)
-	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 9999}}, writer, conn, repo, repo, logger, registrar).(*TransportHandler)
+	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 9999}}, writer, conn, conn, repo, repo, logger, registrar).(*TransportHandler)
 
 	if err := handler.handlePacket(clientAddr, []byte{0x01}); err != nil {
 		t.Fatalf("expected nil on short packet drop, got %v", err)
@@ -1425,7 +1433,7 @@ func TestHandleTransport_EpochExhausted_LogsError(t *testing.T) {
 		netip.MustParsePrefix("10.0.0.0/24"),
 		netip.Prefix{},
 	)
-	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 8080}}, writer, conn, repo, repo, logger, registrar)
+	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 8080}}, writer, conn, conn, repo, repo, logger, registrar)
 
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()
@@ -1602,7 +1610,7 @@ func TestHandleTransport_NilRegistrar_NoUnknownPanic(t *testing.T) {
 	}
 
 	// nil registrar — unknown client should not panic.
-	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 9090}}, writer, conn, repo, repo, logger, nil)
+	handler := NewTransportHandler(ctx, settings.Settings{Addressing: settings.Addressing{Port: 9090}}, writer, conn, conn, repo, repo, logger, nil)
 
 	done := make(chan struct{})
 	go func() { _ = handler.HandleTransport(); close(done) }()

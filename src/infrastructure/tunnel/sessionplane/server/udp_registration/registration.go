@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"tungo/application/listeners"
 	"tungo/application/network/connection"
+	appudp "tungo/application/network/udp"
 	"tungo/infrastructure/cryptography/noise"
 	"tungo/infrastructure/logging"
 	"tungo/infrastructure/network/ip"
@@ -32,9 +32,9 @@ const (
 type Registrar struct {
 	ctx context.Context
 
-	listenerConn listeners.UdpListener
-	sessionRepo  udpRegistrationRepo
-	logger       logging.Logger
+	writer      appudp.Writer
+	sessionRepo udpRegistrationRepo
+	logger      logging.Logger
 
 	handshakeFactory    connection.HandshakeFactory
 	cryptographyFactory connection.CryptoFactory
@@ -53,7 +53,7 @@ type udpRegistrationRepo interface {
 
 func NewRegistrar(
 	ctx context.Context,
-	listenerConn listeners.UdpListener,
+	writer appudp.Writer,
 	sessionRepo udpRegistrationRepo,
 	logger logging.Logger,
 	handshakeFactory connection.HandshakeFactory,
@@ -63,7 +63,7 @@ func NewRegistrar(
 ) *Registrar {
 	return &Registrar{
 		ctx:                 ctx,
-		listenerConn:        listenerConn,
+		writer:              writer,
 		sessionRepo:         sessionRepo,
 		logger:              logger,
 		handshakeFactory:    handshakeFactory,
@@ -152,7 +152,7 @@ func (r *Registrar) RegisterClient(addrPort netip.AddrPort, queue *udpQueue.Regi
 
 	// Transport reads from client's RegistrationQueue (fed by dataplane EnqueuePacket)
 	// and writes responses to the shared UDP socket.
-	regTransport := adapters.NewRegistrationTransport(r.listenerConn, addrPort, queue)
+	regTransport := adapters.NewRegistrationTransport(r.writer, addrPort, queue)
 
 	var h connection.Handshake
 	var clientID int
