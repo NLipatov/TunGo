@@ -4,8 +4,8 @@ import (
 	"context"
 	"io"
 	"net/netip"
-	"tungo/application/listeners"
 	"tungo/application/network/routing/transport"
+	appudp "tungo/application/network/udp"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/logging"
@@ -22,13 +22,14 @@ import (
 //
 // For unknown clients, it delegates to session-plane registration via the injected registrar.
 type TransportHandler struct {
-	ctx          context.Context
-	settings     settings.Settings
-	writer       io.Writer
-	routeLookup  session.RouteLookup
-	addrUpdater  session.PeerAddressUpdater
-	logger       logging.Logger
-	listenerConn listeners.UdpListener
+	ctx         context.Context
+	settings    settings.Settings
+	tunWriter   io.Writer
+	routeLookup session.RouteLookup
+	addrUpdater session.PeerAddressUpdater
+	logger      logging.Logger
+	reader      appudp.Ingress
+	writer      appudp.Writer
 	// Session-plane: registration and handshake tracking for not-yet-established sessions.
 	registrar *udp_registration.Registrar
 	// Dataplane worker for established sessions.
@@ -39,8 +40,9 @@ type TransportHandler struct {
 func NewTransportHandler(
 	ctx context.Context,
 	settings settings.Settings,
-	writer io.Writer,
-	listenerConn listeners.UdpListener,
+	tunWriter io.Writer,
+	reader appudp.Ingress,
+	writer appudp.Writer,
 	routeLookup session.RouteLookup,
 	addrUpdater session.PeerAddressUpdater,
 	logger logging.Logger,
@@ -48,26 +50,27 @@ func NewTransportHandler(
 ) transport.Handler {
 	crypto := &primitives.DefaultKeyDeriver{}
 	cp := newServicePacketHandler(crypto)
-	dp := newUdpDataplaneWorker(writer, cp)
+	dp := newUdpDataplaneWorker(tunWriter, cp)
 	return &TransportHandler{
-		ctx:          ctx,
-		settings:     settings,
-		writer:       writer,
-		routeLookup:  routeLookup,
-		addrUpdater:  addrUpdater,
-		logger:       logger,
-		listenerConn: listenerConn,
-		registrar:    registrar,
-		dp:           dp,
+		ctx:         ctx,
+		settings:    settings,
+		tunWriter:   tunWriter,
+		routeLookup: routeLookup,
+		addrUpdater: addrUpdater,
+		logger:      logger,
+		reader:      reader,
+		writer:      writer,
+		registrar:   registrar,
+		dp:          dp,
 	}
 }
 
 // HandleTransport runs the main UDP read loop and dispatches packets either
 // to existing sessions or to the registration pipeline.
 func (t *TransportHandler) HandleTransport() error {
-	defer func(conn listeners.UdpListener) {
-		_ = conn.Close()
-	}(t.listenerConn)
+	defer func(reader appudp.Ingress) {
+		_ = reader.Close()
+	}(t.reader)
 
 	t.logger.Info("server listening", "protocol", "UDP", "port", t.settings.Port)
 
@@ -77,16 +80,21 @@ func (t *TransportHandler) HandleTransport() error {
 	}
 
 	// Size socket buffers for burst absorption under high throughput.
-	_ = t.listenerConn.SetReadBuffer(4 * 1024 * 1024)
-	_ = t.listenerConn.SetWriteBuffer(4 * 1024 * 1024)
+	_ = t.reader.SetReadBuffer(4 * 1024 * 1024)
+	_ = t.writer.SetWriteBuffer(4 * 1024 * 1024)
 
 	go func() {
 		<-t.ctx.Done()
-		_ = t.listenerConn.Close()
+		_ = t.reader.Close()
 	}()
 
-	var buffer [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
-	var oobBuf [1024]byte
+	const transportReadBatchSize = 32
+
+	var packetBuffers [transportReadBatchSize][settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
+	var packets [transportReadBatchSize]appudp.Packet
+	for i := range packets {
+		packets[i].Data = packetBuffers[i][:]
+	}
 
 	for {
 		select {
@@ -98,25 +106,35 @@ func (t *TransportHandler) HandleTransport() error {
 			}
 			return nil
 		default:
-			n, _, _, clientAddr, readFromUdpErr := t.listenerConn.ReadMsgUDPAddrPort(buffer[:], oobBuf[:])
-			if readFromUdpErr != nil {
+			for i := range packets {
+				packets[i].Data = packetBuffers[i][:]
+			}
+
+			n, readErr := t.reader.ReadBatch(packets[:])
+			if readErr != nil {
 				if t.ctx.Err() != nil {
 					if t.registrar != nil {
 						t.registrar.CloseAll()
 					}
 					return t.ctx.Err()
 				}
-				t.logger.Warn("failed to read from UDP", "err", readFromUdpErr)
+				t.logger.Warn("failed to read from UDP", "err", readErr)
 				continue
 			}
 			if n == 0 {
 				continue
 			}
 
-			// Pass the slice view into the handler. The handler will copy it
-			// only when needed (for registration).
-			if err := t.handlePacket(clientAddr, buffer[:n]); err != nil {
-				t.logger.Warn("failed to handle UDP packet", "err", err)
+			for i := 0; i < n; i++ {
+				if len(packets[i].Data) == 0 {
+					continue
+				}
+
+				// Pass the slice view into the handler. The handler will copy it
+				// only when needed (for registration).
+				if err := t.handlePacket(packets[i].Addr, packets[i].Data); err != nil {
+					t.logger.Warn("failed to handle UDP packet", "err", err)
+				}
 			}
 		}
 	}

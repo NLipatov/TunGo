@@ -9,8 +9,8 @@ import (
 	"time"
 )
 
-// helper: returns client-side adapter and matching UDP server socket
-func newPair(tb testing.TB) (*ClientUDPAdapter, *net.UDPConn) {
+// helper: returns client-side adapter and matching server socket
+func newPair(tb testing.TB) (*ClientAdapter, *net.UDPConn) {
 	tb.Helper()
 
 	server, err := net.ListenUDP("udp", nil)
@@ -24,13 +24,13 @@ func newPair(tb testing.TB) (*ClientUDPAdapter, *net.UDPConn) {
 	}
 
 	// 1-second deadlines for tests
-	ad := NewClientUDPAdapter(client, time.Second, time.Second)
-	return ad.(*ClientUDPAdapter), server
+	ad := NewClientAdapter(client, time.Second, time.Second)
+	return ad.(*ClientAdapter), server
 }
 
 func TestWriteReadHappy(t *testing.T) {
 	ad, srv := newPair(t)
-	defer func(ad *ClientUDPAdapter) {
+	defer func(ad *ClientAdapter) {
 		_ = ad.Close()
 	}(ad)
 	defer func(srv *net.UDPConn) {
@@ -64,7 +64,7 @@ func TestWriteReadHappy(t *testing.T) {
 
 func TestReadShortBuffer(t *testing.T) {
 	ad, srv := newPair(t)
-	defer func(ad *ClientUDPAdapter) {
+	defer func(ad *ClientAdapter) {
 		_ = ad.Close()
 	}(ad)
 	defer func(srv *net.UDPConn) {
@@ -90,7 +90,7 @@ func TestWriteAfterClose(t *testing.T) {
 
 func TestReadTimeout(t *testing.T) {
 	ad, _ := newPair(t)
-	defer func(ad *ClientUDPAdapter) {
+	defer func(ad *ClientAdapter) {
 		_ = ad.Close()
 	}(ad)
 

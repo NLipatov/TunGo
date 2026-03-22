@@ -11,6 +11,7 @@ import (
 	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network/ip"
+	udpAdapters "tungo/infrastructure/network/udp/adapters"
 	wsServer "tungo/infrastructure/network/ws/server/factory"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/dataplane/server/tcp_chacha20"
@@ -207,10 +208,11 @@ func (s *WorkerFactory) createUDPWorker(
 		return nil, addrPortErr
 	}
 
-	conn, err := net.ListenUDP("udp", net.UDPAddrFromAddrPort(addrPort))
+	udpConn, err := net.ListenUDP("udp", net.UDPAddrFromAddrPort(addrPort))
 	if err != nil {
 		return nil, fmt.Errorf("failed to listen on port: %s", err)
 	}
+	reader := udpAdapters.NewBatchingServerIngress(udpConn)
 
 	logger := s.loggerFactory.newLogger()
 
@@ -225,7 +227,7 @@ func (s *WorkerFactory) createUDPWorker(
 
 	registrar := udp_registration.NewRegistrar(
 		ctx,
-		conn,
+		udpConn,
 		sessionManager,
 		logger,
 		handshakeFactory,
@@ -238,7 +240,8 @@ func (s *WorkerFactory) createUDPWorker(
 		ctx,
 		workerSettings,
 		tun,
-		conn,
+		reader,
+		udpConn,
 		sessionManager,
 		sessionManager,
 		logger,

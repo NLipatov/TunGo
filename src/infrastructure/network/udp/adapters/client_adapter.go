@@ -8,24 +8,24 @@ import (
 	"tungo/infrastructure/settings"
 )
 
-// ClientUDPAdapter - single goroutine only client UDP adapter
-type ClientUDPAdapter struct {
+// ClientAdapter is a single-goroutine client transport adapter.
+type ClientAdapter struct {
 	conn                        *net.UDPConn
 	buf                         [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
 	readDeadline, writeDeadline time.Duration
 }
 
-func NewClientUDPAdapter(
+func NewClientAdapter(
 	conn *net.UDPConn,
 	readDeadline, writeDeadline time.Duration) connection.Transport {
-	return &ClientUDPAdapter{
+	return &ClientAdapter{
 		conn:          conn,
 		writeDeadline: writeDeadline,
 		readDeadline:  readDeadline,
 	}
 }
 
-func (c *ClientUDPAdapter) Write(buffer []byte) (int, error) {
+func (c *ClientAdapter) Write(buffer []byte) (int, error) {
 	deadline := time.Time{}
 	if c.writeDeadline > 0 {
 		deadline = time.Now().Add(c.writeDeadline)
@@ -37,7 +37,7 @@ func (c *ClientUDPAdapter) Write(buffer []byte) (int, error) {
 	return c.conn.Write(buffer)
 }
 
-func (c *ClientUDPAdapter) Read(buffer []byte) (int, error) {
+func (c *ClientAdapter) Read(buffer []byte) (int, error) {
 	deadline := time.Time{}
 	if c.readDeadline > 0 {
 		deadline = time.Now().Add(c.readDeadline)
@@ -69,6 +69,6 @@ func (c *ClientUDPAdapter) Read(buffer []byte) (int, error) {
 	return n, nil
 }
 
-func (c *ClientUDPAdapter) Close() error {
+func (c *ClientAdapter) Close() error {
 	return c.conn.Close()
 }
