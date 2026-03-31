@@ -28,8 +28,8 @@ func mkValid() *Configuration {
 func TestConfiguration_DefaultSettingsValues(t *testing.T) {
 	c := &Configuration{}
 
-	tcp := c.defaultSettings(settings.TCP, "tcptun0", "10.0.0.0/24", 8080)
-	if tcp.TunName != "tcptun0" ||
+	tcp := c.defaultSettings(settings.TCP, tcpTunName, "10.0.0.0/24", 8080)
+	if tcp.TunName != tcpTunName ||
 		tcp.IPv4Subnet.String() != "10.0.0.0/24" ||
 		tcp.IPv4.String() != "10.0.0.1" ||
 		tcp.Port != 8080 ||
@@ -51,14 +51,15 @@ func TestConfiguration_EnsureDefaults_FillsZeroFieldsOnly(t *testing.T) {
 	_ = c.ApplyServerDefaults()
 
 	for _, tc := range []struct {
-		name string
-		s    settings.Settings
+		name        string
+		s           settings.Settings
+		wantTunName string
 	}{
-		{"TCP", c.TCPSettings},
-		{"UDP", c.UDPSettings},
-		{"WS", c.WSSettings},
+		{"TCP", c.TCPSettings, tcpTunName},
+		{"UDP", c.UDPSettings, udpTunName},
+		{"WS", c.WSSettings, wsTunName},
 	} {
-		if tc.s.TunName == "" ||
+		if tc.s.TunName != tc.wantTunName ||
 			!tc.s.IPv4Subnet.IsValid() ||
 			!tc.s.IPv4.IsValid() ||
 			tc.s.Port == 0 ||
