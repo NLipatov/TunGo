@@ -53,10 +53,10 @@ func NewDefaultConfiguration() *Configuration {
 		EnableUDP:             true,
 		EnableWS:              false,
 	}
-	return configuration.EnsureDefaults()
+	return configuration.ApplyServerDefaults()
 }
 
-func (c *Configuration) EnsureDefaults() *Configuration {
+func (c *Configuration) ApplyServerDefaults() *Configuration {
 	type proto struct {
 		protocol settings.Protocol
 		tunName  string

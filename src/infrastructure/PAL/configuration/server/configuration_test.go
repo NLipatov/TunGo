@@ -23,7 +23,7 @@ func mkValid() *Configuration {
 	return cfg
 }
 
-// --- Tests for defaultSettings and EnsureDefaults/applyDefaults ---
+// --- Tests for defaultSettings and ApplyServerDefaults/applyDefaults ---
 
 func TestConfiguration_DefaultSettingsValues(t *testing.T) {
 	c := &Configuration{}
@@ -48,7 +48,7 @@ func TestConfiguration_DefaultSettingsValues(t *testing.T) {
 func TestConfiguration_EnsureDefaults_FillsZeroFieldsOnly(t *testing.T) {
 	// Start with empty settings so every field should be filled from defaults.
 	c := &Configuration{}
-	_ = c.EnsureDefaults()
+	_ = c.ApplyServerDefaults()
 
 	for _, tc := range []struct {
 		name string
@@ -65,11 +65,11 @@ func TestConfiguration_EnsureDefaults_FillsZeroFieldsOnly(t *testing.T) {
 			tc.s.MTU == 0 ||
 			tc.s.Protocol == settings.UNKNOWN ||
 			tc.s.DialTimeoutMs == 0 {
-			t.Fatalf("EnsureDefaults did not fill %s zero fields: %+v", tc.name, tc.s)
+			t.Fatalf("ApplyServerDefaults did not fill %s zero fields: %+v", tc.name, tc.s)
 		}
-		// IPv6 is opt-in — EnsureDefaults must NOT populate it
+		// IPv6 is opt-in — ApplyServerDefaults must NOT populate it
 		if tc.s.IPv6Subnet.IsValid() || tc.s.IPv6.IsValid() {
-			t.Fatalf("EnsureDefaults should not set IPv6 defaults for %s: %+v", tc.name, tc.s)
+			t.Fatalf("ApplyServerDefaults should not set IPv6 defaults for %s: %+v", tc.name, tc.s)
 		}
 	}
 }
@@ -83,7 +83,7 @@ func TestConfiguration_EnsureDefaults_DerivesIPv6FromSubnet(t *testing.T) {
 			},
 		},
 	}
-	_ = c.EnsureDefaults()
+	_ = c.ApplyServerDefaults()
 
 	if !c.TCPSettings.IPv6.IsValid() {
 		t.Fatal("expected IPv6 to be derived from IPv6Subnet")
@@ -107,7 +107,7 @@ func TestConfiguration_EnsureDefaults_DoesNotOverrideExplicitFields(t *testing.T
 			DialTimeoutMs: 2500,
 		},
 	}
-	_ = c.EnsureDefaults()
+	_ = c.ApplyServerDefaults()
 
 	// Ensure values were not overridden.
 	if c.TCPSettings.TunName != "custom0" ||
@@ -117,7 +117,7 @@ func TestConfiguration_EnsureDefaults_DoesNotOverrideExplicitFields(t *testing.T
 		c.TCPSettings.MTU != 1400 ||
 		c.TCPSettings.Protocol != settings.TCP ||
 		c.TCPSettings.DialTimeoutMs != 2500 {
-		t.Fatalf("EnsureDefaults should not override explicit fields: %+v", c.TCPSettings)
+		t.Fatalf("ApplyServerDefaults should not override explicit fields: %+v", c.TCPSettings)
 	}
 }
 

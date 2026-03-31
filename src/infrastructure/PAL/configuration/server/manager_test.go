@@ -822,7 +822,7 @@ func TestManager_EnsureIPv6Subnets_SetsDefaults(t *testing.T) {
 	if !written.WSSettings.IPv6Subnet.IsValid() {
 		t.Fatal("WSSettings.IPv6Subnet should be set")
 	}
-	// EnsureDefaults should have derived IPv6 from IPv6Subnet
+	// ApplyServerDefaults should have derived IPv6 from IPv6Subnet
 	if !written.TCPSettings.IPv6.IsValid() {
 		t.Fatal("TCPSettings.IPv6 should be derived from IPv6Subnet")
 	}
