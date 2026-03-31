@@ -53,10 +53,10 @@ func NewDefaultConfiguration() *Configuration {
 		EnableUDP:             true,
 		EnableWS:              false,
 	}
-	return configuration.EnsureDefaults()
+	return configuration.ApplyServerDefaults()
 }
 
-func (c *Configuration) EnsureDefaults() *Configuration {
+func (c *Configuration) ApplyServerDefaults() *Configuration {
 	type proto struct {
 		protocol settings.Protocol
 		tunName  string
@@ -64,9 +64,9 @@ func (c *Configuration) EnsureDefaults() *Configuration {
 		port     int
 	}
 	defaults := []proto{
-		{settings.TCP, "tcptun0", "10.0.0.0/24", 8080},
-		{settings.UDP, "udptun0", "10.0.1.0/24", 9090},
-		{settings.WS, "wstun0", "10.0.2.0/24", 1010},
+		{settings.TCP, tcpTunName, "10.0.0.0/24", 8080},
+		{settings.UDP, udpTunName, "10.0.1.0/24", 9090},
+		{settings.WS, wsTunName, "10.0.2.0/24", 1010},
 	}
 	for i, s := range c.AllSettingsPtrs() {
 		d := defaults[i]

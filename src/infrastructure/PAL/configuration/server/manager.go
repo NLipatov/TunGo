@@ -69,8 +69,8 @@ func (c *Manager) Configuration() (*Configuration, error) {
 	_, statErr := c.stat.Stat(path)
 	if statErr != nil {
 		if errors.Is(statErr, os.ErrNotExist) {
-			configuration := NewDefaultConfiguration()
-			writeErr := c.writer.Write(*configuration)
+			defaultConfiguration := NewDefaultConfiguration()
+			writeErr := c.writer.Write(*defaultConfiguration)
 			if writeErr != nil {
 				return nil, fmt.Errorf("could not write default configuration: %w", writeErr)
 			}
@@ -199,7 +199,7 @@ func (c *Manager) EnsureIPv6Subnets() error {
 		return nil
 	}
 
-	conf.EnsureDefaults()
+	conf.ApplyServerDefaults()
 	return c.writer.Write(*conf)
 }
 
