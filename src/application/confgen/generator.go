@@ -2,7 +2,6 @@ package confgen
 
 import (
 	"fmt"
-	"net"
 	"net/netip"
 	"tungo/infrastructure/PAL/configuration/client"
 	serverConfiguration "tungo/infrastructure/PAL/configuration/server"
@@ -16,32 +15,6 @@ type hostResolver interface {
 	ResolveIPv6() (string, error)
 }
 
-// dialHostResolver uses net.Dial to discover the outbound source address
-// the kernel would pick. No traffic is actually sent (UDP dial is local).
-type dialHostResolver struct{}
-
-func (dialHostResolver) ResolveIPv4() (string, error) {
-	conn, err := net.Dial("udp4", "8.8.8.8:80")
-	if err != nil {
-		return "", err
-	}
-	defer func(conn net.Conn) {
-		_ = conn.Close()
-	}(conn)
-	return conn.LocalAddr().(*net.UDPAddr).IP.String(), nil
-}
-
-func (dialHostResolver) ResolveIPv6() (string, error) {
-	conn, err := net.Dial("udp6", "[2001:4860:4860::8888]:80")
-	if err != nil {
-		return "", err
-	}
-	defer func(conn net.Conn) {
-		_ = conn.Close()
-	}(conn)
-	return conn.LocalAddr().(*net.UDPAddr).IP.String(), nil
-}
-
 type Generator struct {
 	resolver                   hostResolver
 	serverConfigurationManager serverConfiguration.ConfigurationManager
@@ -51,9 +24,10 @@ type Generator struct {
 func NewGenerator(
 	serverConfigurationManager serverConfiguration.ConfigurationManager,
 	keyDeriver primitives.KeyDeriver,
+	resolver hostResolver,
 ) *Generator {
 	return &Generator{
-		resolver:                   dialHostResolver{},
+		resolver:                   resolver,
 		serverConfigurationManager: serverConfigurationManager,
 		keyDeriver:                 keyDeriver,
 	}

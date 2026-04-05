@@ -22,6 +22,7 @@ import (
 	tunnelServer "tungo/infrastructure/PAL/tunnel/server"
 	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/logging"
+	"tungo/infrastructure/network/hostresolver"
 	"tungo/infrastructure/tunnel/sessionplane/client_factory"
 	"tungo/presentation/configuring"
 	"tungo/presentation/elevation"
@@ -188,7 +189,7 @@ func runServerConfGen(manager serverConf.ConfigurationManager) error {
 	if err := prepareServerKeys(manager); err != nil {
 		return fmt.Errorf("key preparation failed: %w", err)
 	}
-	gen := confgen.NewGenerator(manager, &primitives.DefaultKeyDeriver{})
+	gen := confgen.NewGenerator(manager, &primitives.DefaultKeyDeriver{}, hostresolver.NewDialResolver())
 	conf, err := gen.Generate()
 	if err != nil {
 		return fmt.Errorf("configuration generation failed: %w", err)

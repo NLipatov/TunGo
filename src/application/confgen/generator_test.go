@@ -136,9 +136,7 @@ func validCfg() *serverConfiguration.Configuration {
 }
 
 func generatorWithMocks(mgr *mockMgr, r mockResolver) *Generator {
-	g := NewGenerator(mgr, &primitives.DefaultKeyDeriver{})
-	g.resolver = r
-	return g
+	return NewGenerator(mgr, &primitives.DefaultKeyDeriver{}, r)
 }
 
 // --------- tests: Generate ---------
@@ -371,11 +369,22 @@ func TestDeriveClientSettings_udp_uses_safe_mtu(t *testing.T) {
 }
 
 func TestDeriveClientSettings_unsupported_protocol(t *testing.T) {
-	for _, protocol := range []settings.Protocol{settings.UNKNOWN, settings.WSS} {
-		_, err := deriveClientSettings(settings.Settings{}, settings.Host{}, protocol)
-		if !errors.Is(err, ErrUnsupportedProtocol) {
-			t.Fatalf("protocol %v: want ErrUnsupportedProtocol, got %v", protocol, err)
-		}
+	_, err := deriveClientSettings(settings.Settings{}, settings.Host{}, settings.UNKNOWN)
+	if !errors.Is(err, ErrUnsupportedProtocol) {
+		t.Fatalf("protocol %v: want ErrUnsupportedProtocol, got %v", settings.UNKNOWN, err)
+	}
+}
+
+func TestDeriveClientSettings_wss_uses_ws_tun_name(t *testing.T) {
+	got, err := deriveClientSettings(settings.Settings{}, settings.Host{}, settings.WSS)
+	if err != nil {
+		t.Fatalf("deriveClientSettings returned error: %v", err)
+	}
+	if got.TunName != clientWSTunName {
+		t.Fatalf("TunName: want %q, got %q", clientWSTunName, got.TunName)
+	}
+	if got.Protocol != settings.WSS {
+		t.Fatalf("Protocol: want %v, got %v", settings.WSS, got.Protocol)
 	}
 }
 
