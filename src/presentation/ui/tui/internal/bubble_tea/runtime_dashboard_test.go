@@ -1822,3 +1822,34 @@ func TestWaitForReadyCh_ContextCanceled_ReturnsContextDoneMsg(t *testing.T) {
 		t.Fatalf("expected seq=7, got %d", done.seq)
 	}
 }
+
+func TestRuntimeDashboard_TunnelIPLines_InvalidSingleAddressReturnsNil(t *testing.T) {
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		TunnelAddresses: []runnerCommon.RuntimeTunnelAddress{{
+			Protocol: settings.TCP,
+		}},
+	}, testSettings())
+
+	if got := m.tunnelIPLines(); got != nil {
+		t.Fatalf("expected nil lines for invalid single tunnel address, got %#v", got)
+	}
+}
+
+func TestFormatRuntimeTunnelAddress_EmptyAddressReturnsEmpty(t *testing.T) {
+	if got := formatRuntimeTunnelAddress(runnerCommon.RuntimeTunnelAddress{Protocol: settings.TCP}); got != "" {
+		t.Fatalf("expected empty line for invalid tunnel address, got %q", got)
+	}
+}
+
+func TestFormatRuntimeTunnelAddress_UnknownProtocolOmitsProtocolLabel(t *testing.T) {
+	got := formatRuntimeTunnelAddress(runnerCommon.RuntimeTunnelAddress{
+		Protocol: settings.UNKNOWN,
+		Address: runnerCommon.RuntimeAddressPair{
+			IPv4: netip.MustParseAddr("10.0.0.2"),
+			IPv6: netip.MustParseAddr("fd00::2"),
+		},
+	})
+	if got != "IPv4 10.0.0.2 | IPv6 fd00::2" {
+		t.Fatalf("unexpected unknown-protocol line: %q", got)
+	}
+}

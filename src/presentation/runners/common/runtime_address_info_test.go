@@ -134,3 +134,13 @@ func TestRuntimeAddressInfoFromClientConfiguration_ActiveSettingsErrorReturnsZer
 		t.Fatalf("expected no tunnel address entries when active settings resolution fails, got %d", len(got.TunnelAddresses))
 	}
 }
+
+func TestNewRuntimeTunnelAddress_InvalidAddressReturnsFalse(t *testing.T) {
+	got, ok := newRuntimeTunnelAddress(settings.TCP, RuntimeAddressPair{})
+	if ok {
+		t.Fatal("expected invalid address pair to be rejected")
+	}
+	if got != (RuntimeTunnelAddress{}) {
+		t.Fatalf("expected zero tunnel address on invalid input, got %+v", got)
+	}
+}
