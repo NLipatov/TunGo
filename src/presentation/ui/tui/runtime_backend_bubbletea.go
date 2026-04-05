@@ -43,10 +43,7 @@ func (b *bubbleTeaRuntimeBackend) runRuntimeDashboard(ctx context.Context, mode 
 		LogFeed:         bubbleRuntimeLogFeed(),
 		ReadyCh:         options.ReadyCh,
 		Protocol:        options.Protocol,
-		ServerIPv4:      options.Address.ServerIPv4,
-		ServerIPv6:      options.Address.ServerIPv6,
-		TunnelIPv4:      options.Address.TunnelIPv4,
-		TunnelIPv6:      options.Address.TunnelIPv6,
+		ServerAddress:   options.Address.ServerAddress,
 		TunnelAddresses: options.Address.TunnelAddresses,
 	}
 	if mode == RuntimeModeServer {
