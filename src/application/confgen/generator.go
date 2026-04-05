@@ -197,7 +197,7 @@ func deriveClientTunName(protocol settings.Protocol) (string, error) {
 		return clientUDPTunName, nil
 	case settings.TCP:
 		return clientTCPTunName, nil
-	case settings.WS | settings.WSS:
+	case settings.WS, settings.WSS:
 		return clientWSTunName, nil
 	default:
 		return "", ErrUnsupportedProtocol
