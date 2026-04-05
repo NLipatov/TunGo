@@ -23,23 +23,23 @@ func TestRuntimeAddressInfoFromClientConfiguration(t *testing.T) {
 	}
 
 	got := RuntimeAddressInfoFromClientConfiguration(cfg)
-	if got.ServerAddress.IPv4 != netip.MustParseAddr("198.51.100.10") {
-		t.Fatalf("ServerAddress.IPv4: got %v", got.ServerAddress.IPv4)
+	if len(got.ProtocolAddresses) != 1 {
+		t.Fatalf("expected one protocol address entry, got %d", len(got.ProtocolAddresses))
 	}
-	if got.ServerAddress.IPv6 != netip.MustParseAddr("2001:db8::10") {
-		t.Fatalf("ServerAddress.IPv6: got %v", got.ServerAddress.IPv6)
+	if got.ProtocolAddresses[0].Protocol != settings.TCP {
+		t.Fatalf("ProtocolAddresses[0].Protocol: got %v", got.ProtocolAddresses[0].Protocol)
 	}
-	if len(got.TunnelAddresses) != 1 {
-		t.Fatalf("expected one tunnel address entry, got %d", len(got.TunnelAddresses))
+	if got.ProtocolAddresses[0].ServerAddress.IPv4 != netip.MustParseAddr("198.51.100.10") {
+		t.Fatalf("ProtocolAddresses[0].ServerAddress.IPv4: got %v", got.ProtocolAddresses[0].ServerAddress.IPv4)
 	}
-	if got.TunnelAddresses[0].Protocol != settings.TCP {
-		t.Fatalf("TunnelAddresses[0].Protocol: got %v", got.TunnelAddresses[0].Protocol)
+	if got.ProtocolAddresses[0].ServerAddress.IPv6 != netip.MustParseAddr("2001:db8::10") {
+		t.Fatalf("ProtocolAddresses[0].ServerAddress.IPv6: got %v", got.ProtocolAddresses[0].ServerAddress.IPv6)
 	}
-	if got.TunnelAddresses[0].Address.IPv4 != netip.MustParseAddr("10.0.0.2") {
-		t.Fatalf("TunnelAddresses[0].Address.IPv4: got %v", got.TunnelAddresses[0].Address.IPv4)
+	if got.ProtocolAddresses[0].TunnelAddress.IPv4 != netip.MustParseAddr("10.0.0.2") {
+		t.Fatalf("ProtocolAddresses[0].TunnelAddress.IPv4: got %v", got.ProtocolAddresses[0].TunnelAddress.IPv4)
 	}
-	if got.TunnelAddresses[0].Address.IPv6 != netip.MustParseAddr("fd00::2") {
-		t.Fatalf("TunnelAddresses[0].Address.IPv6: got %v", got.TunnelAddresses[0].Address.IPv6)
+	if got.ProtocolAddresses[0].TunnelAddress.IPv6 != netip.MustParseAddr("fd00::2") {
+		t.Fatalf("ProtocolAddresses[0].TunnelAddress.IPv6: got %v", got.ProtocolAddresses[0].TunnelAddress.IPv6)
 	}
 }
 
@@ -58,27 +58,27 @@ func TestRuntimeAddressInfoFromServerConfiguration(t *testing.T) {
 	}
 
 	got := RuntimeAddressInfoFromServerConfiguration(cfg)
-	if got.ServerAddress.IPv4 != netip.MustParseAddr("203.0.113.10") {
-		t.Fatalf("ServerAddress.IPv4: got %v", got.ServerAddress.IPv4)
+	if len(got.ProtocolAddresses) != 1 {
+		t.Fatalf("expected one protocol address entry, got %d", len(got.ProtocolAddresses))
 	}
-	if got.ServerAddress.IPv6 != netip.MustParseAddr("2001:db8::20") {
-		t.Fatalf("ServerAddress.IPv6: got %v", got.ServerAddress.IPv6)
+	if got.ProtocolAddresses[0].Protocol != settings.UDP {
+		t.Fatalf("ProtocolAddresses[0].Protocol: got %v", got.ProtocolAddresses[0].Protocol)
 	}
-	if len(got.TunnelAddresses) != 1 {
-		t.Fatalf("expected one tunnel address entry, got %d", len(got.TunnelAddresses))
+	if got.ProtocolAddresses[0].ServerAddress.IPv4 != netip.MustParseAddr("203.0.113.10") {
+		t.Fatalf("ProtocolAddresses[0].ServerAddress.IPv4: got %v", got.ProtocolAddresses[0].ServerAddress.IPv4)
 	}
-	if got.TunnelAddresses[0].Protocol != settings.UDP {
-		t.Fatalf("TunnelAddresses[0].Protocol: got %v", got.TunnelAddresses[0].Protocol)
+	if got.ProtocolAddresses[0].ServerAddress.IPv6 != netip.MustParseAddr("2001:db8::20") {
+		t.Fatalf("ProtocolAddresses[0].ServerAddress.IPv6: got %v", got.ProtocolAddresses[0].ServerAddress.IPv6)
 	}
-	if got.TunnelAddresses[0].Address.IPv4 != netip.MustParseAddr("10.1.0.1") {
-		t.Fatalf("TunnelAddresses[0].Address.IPv4: got %v", got.TunnelAddresses[0].Address.IPv4)
+	if got.ProtocolAddresses[0].TunnelAddress.IPv4 != netip.MustParseAddr("10.1.0.1") {
+		t.Fatalf("ProtocolAddresses[0].TunnelAddress.IPv4: got %v", got.ProtocolAddresses[0].TunnelAddress.IPv4)
 	}
-	if got.TunnelAddresses[0].Address.IPv6 != netip.MustParseAddr("fd01::1") {
-		t.Fatalf("TunnelAddresses[0].Address.IPv6: got %v", got.TunnelAddresses[0].Address.IPv6)
+	if got.ProtocolAddresses[0].TunnelAddress.IPv6 != netip.MustParseAddr("fd01::1") {
+		t.Fatalf("ProtocolAddresses[0].TunnelAddress.IPv6: got %v", got.ProtocolAddresses[0].TunnelAddress.IPv6)
 	}
 }
 
-func TestRuntimeAddressInfoFromServerConfiguration_CollectsAllEnabledTunnelAddresses(t *testing.T) {
+func TestRuntimeAddressInfoFromServerConfiguration_CollectsAllEnabledProtocolAddresses(t *testing.T) {
 	cfg := serverConfiguration.Configuration{
 		EnableTCP: true,
 		EnableUDP: true,
@@ -107,17 +107,17 @@ func TestRuntimeAddressInfoFromServerConfiguration_CollectsAllEnabledTunnelAddre
 	}
 
 	got := RuntimeAddressInfoFromServerConfiguration(cfg)
-	if len(got.TunnelAddresses) != 3 {
-		t.Fatalf("expected three tunnel address entries, got %d", len(got.TunnelAddresses))
+	if len(got.ProtocolAddresses) != 3 {
+		t.Fatalf("expected three protocol address entries, got %d", len(got.ProtocolAddresses))
 	}
-	if got.TunnelAddresses[0].Protocol != settings.TCP || got.TunnelAddresses[0].Address.IPv4 != netip.MustParseAddr("10.0.0.1") || got.TunnelAddresses[0].Address.IPv6 != netip.MustParseAddr("fd00::1") {
-		t.Fatalf("unexpected TCP tunnel address entry: %+v", got.TunnelAddresses[0])
+	if got.ProtocolAddresses[0].Protocol != settings.TCP || got.ProtocolAddresses[0].TunnelAddress.IPv4 != netip.MustParseAddr("10.0.0.1") || got.ProtocolAddresses[0].TunnelAddress.IPv6 != netip.MustParseAddr("fd00::1") {
+		t.Fatalf("unexpected TCP protocol address entry: %+v", got.ProtocolAddresses[0])
 	}
-	if got.TunnelAddresses[1].Protocol != settings.UDP || got.TunnelAddresses[1].Address.IPv4 != netip.MustParseAddr("10.0.1.1") || got.TunnelAddresses[1].Address.IPv6 != netip.MustParseAddr("fd00::2") {
-		t.Fatalf("unexpected UDP tunnel address entry: %+v", got.TunnelAddresses[1])
+	if got.ProtocolAddresses[1].Protocol != settings.UDP || got.ProtocolAddresses[1].TunnelAddress.IPv4 != netip.MustParseAddr("10.0.1.1") || got.ProtocolAddresses[1].TunnelAddress.IPv6 != netip.MustParseAddr("fd00::2") {
+		t.Fatalf("unexpected UDP protocol address entry: %+v", got.ProtocolAddresses[1])
 	}
-	if got.TunnelAddresses[2].Protocol != settings.WS || got.TunnelAddresses[2].Address.IPv4 != netip.MustParseAddr("10.0.2.1") || got.TunnelAddresses[2].Address.IPv6 != netip.MustParseAddr("fd00::3") {
-		t.Fatalf("unexpected WS tunnel address entry: %+v", got.TunnelAddresses[2])
+	if got.ProtocolAddresses[2].Protocol != settings.WS || got.ProtocolAddresses[2].TunnelAddress.IPv4 != netip.MustParseAddr("10.0.2.1") || got.ProtocolAddresses[2].TunnelAddress.IPv6 != netip.MustParseAddr("fd00::3") {
+		t.Fatalf("unexpected WS protocol address entry: %+v", got.ProtocolAddresses[2])
 	}
 }
 
@@ -127,20 +127,49 @@ func TestRuntimeAddressInfoFromClientConfiguration_ActiveSettingsErrorReturnsZer
 	}
 
 	got := RuntimeAddressInfoFromClientConfiguration(cfg)
-	if got.ServerAddress.IsValid() {
-		t.Fatalf("expected zero info when active settings resolution fails, got %+v", got)
-	}
-	if len(got.TunnelAddresses) != 0 {
-		t.Fatalf("expected no tunnel address entries when active settings resolution fails, got %d", len(got.TunnelAddresses))
+	if len(got.ProtocolAddresses) != 0 {
+		t.Fatalf("expected no protocol address entries when active settings resolution fails, got %d", len(got.ProtocolAddresses))
 	}
 }
 
-func TestNewRuntimeTunnelAddress_InvalidAddressReturnsFalse(t *testing.T) {
-	got, ok := newRuntimeTunnelAddress(settings.TCP, RuntimeAddressPair{})
-	if ok {
-		t.Fatal("expected invalid address pair to be rejected")
+func TestRuntimeAddressInfoFromServerConfiguration_PreservesPerProtocolServerAddresses(t *testing.T) {
+	cfg := serverConfiguration.Configuration{
+		EnableTCP: true,
+		EnableUDP: true,
+		TCPSettings: settings.Settings{
+			Protocol: settings.TCP,
+			Addressing: settings.Addressing{
+				Server: settings.Host{}.WithIPv4(netip.MustParseAddr("198.51.100.10")),
+				IPv4:   netip.MustParseAddr("10.0.0.1"),
+			},
+		},
+		UDPSettings: settings.Settings{
+			Protocol: settings.UDP,
+			Addressing: settings.Addressing{
+				Server: settings.Host{}.WithIPv6(netip.MustParseAddr("2001:db8::20")),
+				IPv4:   netip.MustParseAddr("10.0.1.1"),
+			},
+		},
 	}
-	if got != (RuntimeTunnelAddress{}) {
-		t.Fatalf("expected zero tunnel address on invalid input, got %+v", got)
+
+	got := RuntimeAddressInfoFromServerConfiguration(cfg)
+	if len(got.ProtocolAddresses) != 2 {
+		t.Fatalf("expected two protocol address entries, got %d", len(got.ProtocolAddresses))
+	}
+	if got.ProtocolAddresses[0].ServerAddress.IPv4 != netip.MustParseAddr("198.51.100.10") || got.ProtocolAddresses[0].ServerAddress.IPv6.IsValid() {
+		t.Fatalf("unexpected TCP server address: %+v", got.ProtocolAddresses[0].ServerAddress)
+	}
+	if got.ProtocolAddresses[1].ServerAddress.IPv6 != netip.MustParseAddr("2001:db8::20") || got.ProtocolAddresses[1].ServerAddress.IPv4.IsValid() {
+		t.Fatalf("unexpected UDP server address: %+v", got.ProtocolAddresses[1].ServerAddress)
+	}
+}
+
+func TestNewRuntimeProtocolAddress_InvalidAddressesReturnFalse(t *testing.T) {
+	got, ok := newRuntimeProtocolAddress(settings.TCP, RuntimeAddressPair{}, RuntimeAddressPair{})
+	if ok {
+		t.Fatal("expected invalid address pairs to be rejected")
+	}
+	if got != (RuntimeProtocolAddress{}) {
+		t.Fatalf("expected zero protocol address on invalid input, got %+v", got)
 	}
 }

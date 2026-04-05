@@ -16,24 +16,14 @@ func (p RuntimeAddressPair) IsValid() bool {
 	return p.IPv4.IsValid() || p.IPv6.IsValid()
 }
 
-func (p RuntimeAddressPair) MergeMissing(from RuntimeAddressPair) RuntimeAddressPair {
-	if !p.IPv4.IsValid() && from.IPv4.IsValid() {
-		p.IPv4 = from.IPv4
-	}
-	if !p.IPv6.IsValid() && from.IPv6.IsValid() {
-		p.IPv6 = from.IPv6
-	}
-	return p
-}
-
-type RuntimeTunnelAddress struct {
-	Protocol settings.Protocol
-	Address  RuntimeAddressPair
+type RuntimeProtocolAddress struct {
+	Protocol      settings.Protocol
+	ServerAddress RuntimeAddressPair
+	TunnelAddress RuntimeAddressPair
 }
 
 type RuntimeAddressInfo struct {
-	ServerAddress   RuntimeAddressPair
-	TunnelAddresses []RuntimeTunnelAddress
+	ProtocolAddresses []RuntimeProtocolAddress
 }
 
 func RuntimeAddressInfoFromClientConfiguration(conf clientConfiguration.Configuration) RuntimeAddressInfo {
@@ -42,12 +32,12 @@ func RuntimeAddressInfoFromClientConfiguration(conf clientConfiguration.Configur
 	if err != nil {
 		return info
 	}
-	info.ServerAddress = runtimeAddressPairFromHost(activeSettings.Server)
-	if tunnelAddress, ok := newRuntimeTunnelAddress(
+	if protocolAddress, ok := newRuntimeProtocolAddress(
 		protocolOrFallback(activeSettings.Protocol, conf.Protocol),
+		runtimeAddressPairFromHost(activeSettings.Server),
 		runtimeAddressPairFromAddrs(activeSettings.IPv4, activeSettings.IPv6),
 	); ok {
-		info.TunnelAddresses = append(info.TunnelAddresses, tunnelAddress)
+		info.ProtocolAddresses = append(info.ProtocolAddresses, protocolAddress)
 	}
 	return info
 }
@@ -56,12 +46,12 @@ func RuntimeAddressInfoFromServerConfiguration(conf serverConfiguration.Configur
 	info := RuntimeAddressInfo{}
 	for _, enabledSetting := range enabledProtocolSettings(conf) {
 		s := enabledSetting.settings
-		info.ServerAddress = info.ServerAddress.MergeMissing(runtimeAddressPairFromHost(s.Server))
-		if tunnelAddress, ok := newRuntimeTunnelAddress(
+		if protocolAddress, ok := newRuntimeProtocolAddress(
 			protocolOrFallback(s.Protocol, enabledSetting.protocol),
+			runtimeAddressPairFromHost(s.Server),
 			runtimeAddressPairFromAddrs(s.IPv4, s.IPv6),
 		); ok {
-			info.TunnelAddresses = append(info.TunnelAddresses, tunnelAddress)
+			info.ProtocolAddresses = append(info.ProtocolAddresses, protocolAddress)
 		}
 	}
 	return info
@@ -104,13 +94,18 @@ func runtimeAddressPairFromAddrs(ipv4, ipv6 netip.Addr) RuntimeAddressPair {
 	}
 }
 
-func newRuntimeTunnelAddress(protocol settings.Protocol, address RuntimeAddressPair) (RuntimeTunnelAddress, bool) {
-	if !address.IsValid() {
-		return RuntimeTunnelAddress{}, false
+func newRuntimeProtocolAddress(
+	protocol settings.Protocol,
+	serverAddress RuntimeAddressPair,
+	tunnelAddress RuntimeAddressPair,
+) (RuntimeProtocolAddress, bool) {
+	if !serverAddress.IsValid() && !tunnelAddress.IsValid() {
+		return RuntimeProtocolAddress{}, false
 	}
-	return RuntimeTunnelAddress{
-		Protocol: protocol,
-		Address:  address,
+	return RuntimeProtocolAddress{
+		Protocol:      protocol,
+		ServerAddress: serverAddress,
+		TunnelAddress: tunnelAddress,
 	}, true
 }
 

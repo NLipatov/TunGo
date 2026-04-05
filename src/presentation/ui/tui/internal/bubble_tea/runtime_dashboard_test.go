@@ -625,13 +625,13 @@ func TestRuntimeDashboard_MainView_ServerAndFooterOff(t *testing.T) {
 func TestRuntimeDashboard_MainView_ShowsServerAndNetworkAddresses(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
 		Protocol: settings.UDP,
-		ServerAddress: runnerCommon.RuntimeAddressPair{
-			IPv4: netip.MustParseAddr("198.51.100.10"),
-			IPv6: netip.MustParseAddr("2001:db8::10"),
-		},
-		TunnelAddresses: []runnerCommon.RuntimeTunnelAddress{{
+		ProtocolAddresses: []runnerCommon.RuntimeProtocolAddress{{
 			Protocol: settings.UDP,
-			Address: runnerCommon.RuntimeAddressPair{
+			ServerAddress: runnerCommon.RuntimeAddressPair{
+				IPv4: netip.MustParseAddr("198.51.100.10"),
+				IPv6: netip.MustParseAddr("2001:db8::10"),
+			},
+			TunnelAddress: runnerCommon.RuntimeAddressPair{
 				IPv4: netip.MustParseAddr("10.0.0.2"),
 				IPv6: netip.MustParseAddr("fd00::2"),
 			},
@@ -652,24 +652,33 @@ func TestRuntimeDashboard_MainView_ShowsServerAndNetworkAddresses(t *testing.T) 
 func TestRuntimeDashboard_MainView_ServerShowsTunnelAddressesPerProtocol(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
 		Mode: RuntimeDashboardServer,
-		TunnelAddresses: []runnerCommon.RuntimeTunnelAddress{
+		ProtocolAddresses: []runnerCommon.RuntimeProtocolAddress{
 			{
 				Protocol: settings.TCP,
-				Address: runnerCommon.RuntimeAddressPair{
+				ServerAddress: runnerCommon.RuntimeAddressPair{
+					IPv4: netip.MustParseAddr("198.51.100.10"),
+				},
+				TunnelAddress: runnerCommon.RuntimeAddressPair{
 					IPv4: netip.MustParseAddr("10.0.0.1"),
 					IPv6: netip.MustParseAddr("fd00::1"),
 				},
 			},
 			{
 				Protocol: settings.UDP,
-				Address: runnerCommon.RuntimeAddressPair{
+				ServerAddress: runnerCommon.RuntimeAddressPair{
+					IPv4: netip.MustParseAddr("198.51.100.10"),
+				},
+				TunnelAddress: runnerCommon.RuntimeAddressPair{
 					IPv4: netip.MustParseAddr("10.0.1.1"),
 					IPv6: netip.MustParseAddr("fd00::2"),
 				},
 			},
 			{
 				Protocol: settings.WS,
-				Address: runnerCommon.RuntimeAddressPair{
+				ServerAddress: runnerCommon.RuntimeAddressPair{
+					IPv4: netip.MustParseAddr("198.51.100.10"),
+				},
+				TunnelAddress: runnerCommon.RuntimeAddressPair{
 					IPv4: netip.MustParseAddr("10.0.2.1"),
 					IPv6: netip.MustParseAddr("fd00::3"),
 				},
@@ -681,6 +690,9 @@ func TestRuntimeDashboard_MainView_ServerShowsTunnelAddressesPerProtocol(t *test
 	if !strings.Contains(view, "Tunnel IPs:") {
 		t.Fatalf("expected tunnel addresses section in server main view, got %q", view)
 	}
+	if !strings.Contains(view, "Server IP: IPv4 198.51.100.10") {
+		t.Fatalf("expected shared server IP line in server main view, got %q", view)
+	}
 	if !strings.Contains(view, "TCP: IPv4 10.0.0.1 | IPv6 fd00::1") {
 		t.Fatalf("expected TCP tunnel line in server main view, got %q", view)
 	}
@@ -689,6 +701,46 @@ func TestRuntimeDashboard_MainView_ServerShowsTunnelAddressesPerProtocol(t *test
 	}
 	if !strings.Contains(view, "WS: IPv4 10.0.2.1 | IPv6 fd00::3") {
 		t.Fatalf("expected WS tunnel line in server main view, got %q", view)
+	}
+}
+
+func TestRuntimeDashboard_MainView_ServerShowsServerAddressesPerProtocolWhenDifferent(t *testing.T) {
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		Mode: RuntimeDashboardServer,
+		ProtocolAddresses: []runnerCommon.RuntimeProtocolAddress{
+			{
+				Protocol: settings.TCP,
+				ServerAddress: runnerCommon.RuntimeAddressPair{
+					IPv4: netip.MustParseAddr("198.51.100.10"),
+				},
+				TunnelAddress: runnerCommon.RuntimeAddressPair{
+					IPv4: netip.MustParseAddr("10.0.0.1"),
+				},
+			},
+			{
+				Protocol: settings.UDP,
+				ServerAddress: runnerCommon.RuntimeAddressPair{
+					IPv6: netip.MustParseAddr("2001:db8::20"),
+				},
+				TunnelAddress: runnerCommon.RuntimeAddressPair{
+					IPv4: netip.MustParseAddr("10.0.1.1"),
+				},
+			},
+		},
+	}, testSettings())
+
+	view := m.View().Content
+	if !strings.Contains(view, "Server IPs:") {
+		t.Fatalf("expected per-protocol server addresses section, got %q", view)
+	}
+	if !strings.Contains(view, "TCP: IPv4 198.51.100.10") {
+		t.Fatalf("expected TCP server line, got %q", view)
+	}
+	if !strings.Contains(view, "UDP: IPv6 2001:db8::20") {
+		t.Fatalf("expected UDP server line, got %q", view)
+	}
+	if strings.Contains(view, "Server IP: IPv4 198.51.100.10 | IPv6 2001:db8::20") {
+		t.Fatalf("unexpected merged server IP line, got %q", view)
 	}
 }
 
@@ -1825,8 +1877,9 @@ func TestWaitForReadyCh_ContextCanceled_ReturnsContextDoneMsg(t *testing.T) {
 
 func TestRuntimeDashboard_TunnelIPLines_InvalidSingleAddressReturnsNil(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		TunnelAddresses: []runnerCommon.RuntimeTunnelAddress{{
-			Protocol: settings.TCP,
+		ProtocolAddresses: []runnerCommon.RuntimeProtocolAddress{{
+			Protocol:      settings.TCP,
+			TunnelAddress: runnerCommon.RuntimeAddressPair{},
 		}},
 	}, testSettings())
 
@@ -1835,21 +1888,91 @@ func TestRuntimeDashboard_TunnelIPLines_InvalidSingleAddressReturnsNil(t *testin
 	}
 }
 
-func TestFormatRuntimeTunnelAddress_EmptyAddressReturnsEmpty(t *testing.T) {
-	if got := formatRuntimeTunnelAddress(runnerCommon.RuntimeTunnelAddress{Protocol: settings.TCP}); got != "" {
-		t.Fatalf("expected empty line for invalid tunnel address, got %q", got)
+func TestRuntimeDashboard_ServerAddressLines_InvalidSharedAddressReturnsNil(t *testing.T) {
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		Mode: RuntimeDashboardServer,
+		ProtocolAddresses: []runnerCommon.RuntimeProtocolAddress{
+			{Protocol: settings.TCP},
+			{Protocol: settings.UDP},
+		},
+	}, testSettings())
+
+	if got := m.serverAddressLines(); got != nil {
+		t.Fatalf("expected nil lines for invalid shared server addresses, got %#v", got)
 	}
 }
 
-func TestFormatRuntimeTunnelAddress_UnknownProtocolOmitsProtocolLabel(t *testing.T) {
-	got := formatRuntimeTunnelAddress(runnerCommon.RuntimeTunnelAddress{
-		Protocol: settings.UNKNOWN,
-		Address: runnerCommon.RuntimeAddressPair{
-			IPv4: netip.MustParseAddr("10.0.0.2"),
-			IPv6: netip.MustParseAddr("fd00::2"),
-		},
+func TestRuntimeDashboard_ServerAddressLines_InvalidSingleAddressReturnsNil(t *testing.T) {
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		ProtocolAddresses: []runnerCommon.RuntimeProtocolAddress{{
+			Protocol: settings.TCP,
+		}},
+	}, testSettings())
+
+	if got := m.serverAddressLines(); got != nil {
+		t.Fatalf("expected nil lines for invalid single server address, got %#v", got)
+	}
+}
+
+func TestFormatRuntimeProtocolAddress_EmptyAddressReturnsEmpty(t *testing.T) {
+	if got := formatRuntimeProtocolAddress(settings.TCP, runnerCommon.RuntimeAddressPair{}); got != "" {
+		t.Fatalf("expected empty line for invalid runtime address, got %q", got)
+	}
+}
+
+func TestFormatRuntimeProtocolAddress_UnknownProtocolOmitsProtocolLabel(t *testing.T) {
+	got := formatRuntimeProtocolAddress(settings.UNKNOWN, runnerCommon.RuntimeAddressPair{
+		IPv4: netip.MustParseAddr("10.0.0.2"),
+		IPv6: netip.MustParseAddr("fd00::2"),
 	})
 	if got != "IPv4 10.0.0.2 | IPv6 fd00::2" {
 		t.Fatalf("unexpected unknown-protocol line: %q", got)
+	}
+}
+
+func TestSharedServerAddress_RequiresExactMatch(t *testing.T) {
+	if _, ok := sharedServerAddress(nil); ok {
+		t.Fatal("expected empty protocol address list to have no shared server address")
+	}
+
+	if _, ok := sharedServerAddress([]runnerCommon.RuntimeProtocolAddress{
+		{
+			Protocol: settings.TCP,
+			ServerAddress: runnerCommon.RuntimeAddressPair{
+				IPv4: netip.MustParseAddr("198.51.100.10"),
+			},
+		},
+		{
+			Protocol: settings.UDP,
+			ServerAddress: runnerCommon.RuntimeAddressPair{
+				IPv4: netip.MustParseAddr("198.51.100.10"),
+				IPv6: netip.MustParseAddr("2001:db8::20"),
+			},
+		},
+	}); ok {
+		t.Fatal("expected mixed server address pairs to be treated as different")
+	}
+
+	shared, ok := sharedServerAddress([]runnerCommon.RuntimeProtocolAddress{
+		{
+			Protocol: settings.TCP,
+			ServerAddress: runnerCommon.RuntimeAddressPair{
+				IPv4: netip.MustParseAddr("198.51.100.10"),
+			},
+		},
+		{
+			Protocol: settings.UDP,
+			ServerAddress: runnerCommon.RuntimeAddressPair{
+				IPv4: netip.MustParseAddr("198.51.100.10"),
+			},
+		},
+	})
+	if !ok {
+		t.Fatal("expected identical server address pairs to be shared")
+	}
+	if shared != (runnerCommon.RuntimeAddressPair{
+		IPv4: netip.MustParseAddr("198.51.100.10"),
+	}) {
+		t.Fatalf("unexpected shared server address: %+v", shared)
 	}
 }
