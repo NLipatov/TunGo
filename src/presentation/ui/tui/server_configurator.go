@@ -11,7 +11,7 @@ import (
 	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/cryptography/primitives"
-	"tungo/infrastructure/network/hostresolver"
+	"tungo/infrastructure/network/host_resolver"
 	"tungo/presentation/ui/tui/internal/ui/contracts/selector"
 	"tungo/presentation/ui/tui/internal/ui/value_objects"
 )
@@ -35,7 +35,7 @@ type clientConfigGenerator interface {
 
 var (
 	newServerClientConfigGenerator = func(manager server.ConfigurationManager) clientConfigGenerator {
-		return confgen.NewGenerator(manager, &primitives.DefaultKeyDeriver{}, hostresolver.NewDialResolver())
+		return confgen.NewGenerator(manager, &primitives.DefaultKeyDeriver{}, host_resolver.NewDialResolver())
 	}
 	marshalServerClientConfiguration = func(v any) ([]byte, error) {
 		return json.MarshalIndent(v, "", "  ")

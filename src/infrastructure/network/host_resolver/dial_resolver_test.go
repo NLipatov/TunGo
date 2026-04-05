@@ -1,4 +1,4 @@
-package hostresolver
+package host_resolver
 
 import (
 	"errors"
