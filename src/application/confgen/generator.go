@@ -2,7 +2,6 @@ package confgen
 
 import (
 	"fmt"
-	"net"
 	"net/netip"
 	"tungo/infrastructure/PAL/configuration/client"
 	serverConfiguration "tungo/infrastructure/PAL/configuration/server"
@@ -16,28 +15,6 @@ type hostResolver interface {
 	ResolveIPv6() (string, error)
 }
 
-// dialHostResolver uses net.Dial to discover the outbound source address
-// the kernel would pick. No traffic is actually sent (UDP dial is local).
-type dialHostResolver struct{}
-
-func (dialHostResolver) ResolveIPv4() (string, error) {
-	conn, err := net.Dial("udp4", "8.8.8.8:80")
-	if err != nil {
-		return "", err
-	}
-	defer conn.Close()
-	return conn.LocalAddr().(*net.UDPAddr).IP.String(), nil
-}
-
-func (dialHostResolver) ResolveIPv6() (string, error) {
-	conn, err := net.Dial("udp6", "[2001:4860:4860::8888]:80")
-	if err != nil {
-		return "", err
-	}
-	defer conn.Close()
-	return conn.LocalAddr().(*net.UDPAddr).IP.String(), nil
-}
-
 type Generator struct {
 	resolver                   hostResolver
 	serverConfigurationManager serverConfiguration.ConfigurationManager
@@ -47,9 +24,10 @@ type Generator struct {
 func NewGenerator(
 	serverConfigurationManager serverConfiguration.ConfigurationManager,
 	keyDeriver primitives.KeyDeriver,
+	resolver hostResolver,
 ) *Generator {
 	return &Generator{
-		resolver:                   dialHostResolver{},
+		resolver:                   resolver,
 		serverConfigurationManager: serverConfigurationManager,
 		keyDeriver:                 keyDeriver,
 	}
@@ -101,12 +79,23 @@ func (g *Generator) Generate() (*client.Configuration, error) {
 	}
 
 	defaultProtocol := getDefaultProtocol(serverConf)
-
+	tcpSettings, tcpErr := deriveClientSettings(serverConf.TCPSettings, serverHost, settings.TCP)
+	if tcpErr != nil {
+		return nil, fmt.Errorf("failed to derive tcp settings: %w", tcpErr)
+	}
+	udpSettings, udpErr := deriveClientSettings(serverConf.UDPSettings, serverHost, settings.UDP)
+	if udpErr != nil {
+		return nil, fmt.Errorf("failed to derive udp settings: %w", udpErr)
+	}
+	wsSettings, wsErr := deriveClientSettings(serverConf.WSSettings, serverHost, settings.WS)
+	if wsErr != nil {
+		return nil, fmt.Errorf("failed to derive ws settings: %w", wsErr)
+	}
 	conf := client.Configuration{
 		ClientID:         clientID,
-		TCPSettings:      deriveClientSettings(serverConf.TCPSettings, serverHost, settings.TCP),
-		UDPSettings:      deriveClientSettings(serverConf.UDPSettings, serverHost, settings.UDP),
-		WSSettings:       deriveClientSettings(serverConf.WSSettings, serverHost, settings.WS),
+		TCPSettings:      tcpSettings,
+		UDPSettings:      udpSettings,
+		WSSettings:       wsSettings,
 		X25519PublicKey:  serverConf.X25519PublicKey,
 		Protocol:         defaultProtocol,
 		ClientPublicKey:  clientPubKey,
@@ -149,14 +138,18 @@ func deriveClientSettings(
 	serverSettings settings.Settings,
 	serverHost settings.Host,
 	protocol settings.Protocol,
-) settings.Settings {
+) (settings.Settings, error) {
 	mtu := serverSettings.MTU
 	if protocol == settings.UDP {
 		mtu = settings.SafeMTU
 	}
+	tunName, err := deriveClientTunName(protocol)
+	if err != nil {
+		return settings.Settings{}, err
+	}
 	s := settings.Settings{
 		Addressing: settings.Addressing{
-			TunName:    serverSettings.TunName,
+			TunName:    tunName,
 			IPv4Subnet: serverSettings.IPv4Subnet,
 			Server:     serverHost,
 			Port:       serverSettings.Port,
@@ -169,7 +162,20 @@ func deriveClientSettings(
 	if serverSettings.IPv6Subnet.IsValid() {
 		s.IPv6Subnet = serverSettings.IPv6Subnet
 	}
-	return s
+	return s, nil
+}
+
+func deriveClientTunName(protocol settings.Protocol) (string, error) {
+	switch protocol {
+	case settings.UDP:
+		return clientUDPTunName, nil
+	case settings.TCP:
+		return clientTCPTunName, nil
+	case settings.WS, settings.WSS:
+		return clientWSTunName, nil
+	default:
+		return "", ErrUnsupportedProtocol
+	}
 }
 
 func getDefaultProtocol(conf *serverConfiguration.Configuration) settings.Protocol {

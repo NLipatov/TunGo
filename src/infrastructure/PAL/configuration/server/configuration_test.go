@@ -23,13 +23,13 @@ func mkValid() *Configuration {
 	return cfg
 }
 
-// --- Tests for defaultSettings and EnsureDefaults/applyDefaults ---
+// --- Tests for defaultSettings and ApplyServerDefaults/applyDefaults ---
 
 func TestConfiguration_DefaultSettingsValues(t *testing.T) {
 	c := &Configuration{}
 
-	tcp := c.defaultSettings(settings.TCP, "tcptun0", "10.0.0.0/24", 8080)
-	if tcp.TunName != "tcptun0" ||
+	tcp := c.defaultSettings(settings.TCP, tcpTunName, "10.0.0.0/24", 8080)
+	if tcp.TunName != tcpTunName ||
 		tcp.IPv4Subnet.String() != "10.0.0.0/24" ||
 		tcp.IPv4.String() != "10.0.0.1" ||
 		tcp.Port != 8080 ||
@@ -48,28 +48,29 @@ func TestConfiguration_DefaultSettingsValues(t *testing.T) {
 func TestConfiguration_EnsureDefaults_FillsZeroFieldsOnly(t *testing.T) {
 	// Start with empty settings so every field should be filled from defaults.
 	c := &Configuration{}
-	_ = c.EnsureDefaults()
+	_ = c.ApplyServerDefaults()
 
 	for _, tc := range []struct {
-		name string
-		s    settings.Settings
+		name        string
+		s           settings.Settings
+		wantTunName string
 	}{
-		{"TCP", c.TCPSettings},
-		{"UDP", c.UDPSettings},
-		{"WS", c.WSSettings},
+		{"TCP", c.TCPSettings, tcpTunName},
+		{"UDP", c.UDPSettings, udpTunName},
+		{"WS", c.WSSettings, wsTunName},
 	} {
-		if tc.s.TunName == "" ||
+		if tc.s.TunName != tc.wantTunName ||
 			!tc.s.IPv4Subnet.IsValid() ||
 			!tc.s.IPv4.IsValid() ||
 			tc.s.Port == 0 ||
 			tc.s.MTU == 0 ||
 			tc.s.Protocol == settings.UNKNOWN ||
 			tc.s.DialTimeoutMs == 0 {
-			t.Fatalf("EnsureDefaults did not fill %s zero fields: %+v", tc.name, tc.s)
+			t.Fatalf("ApplyServerDefaults did not fill %s zero fields: %+v", tc.name, tc.s)
 		}
-		// IPv6 is opt-in — EnsureDefaults must NOT populate it
+		// IPv6 is opt-in — ApplyServerDefaults must NOT populate it
 		if tc.s.IPv6Subnet.IsValid() || tc.s.IPv6.IsValid() {
-			t.Fatalf("EnsureDefaults should not set IPv6 defaults for %s: %+v", tc.name, tc.s)
+			t.Fatalf("ApplyServerDefaults should not set IPv6 defaults for %s: %+v", tc.name, tc.s)
 		}
 	}
 }
@@ -83,7 +84,7 @@ func TestConfiguration_EnsureDefaults_DerivesIPv6FromSubnet(t *testing.T) {
 			},
 		},
 	}
-	_ = c.EnsureDefaults()
+	_ = c.ApplyServerDefaults()
 
 	if !c.TCPSettings.IPv6.IsValid() {
 		t.Fatal("expected IPv6 to be derived from IPv6Subnet")
@@ -107,7 +108,7 @@ func TestConfiguration_EnsureDefaults_DoesNotOverrideExplicitFields(t *testing.T
 			DialTimeoutMs: 2500,
 		},
 	}
-	_ = c.EnsureDefaults()
+	_ = c.ApplyServerDefaults()
 
 	// Ensure values were not overridden.
 	if c.TCPSettings.TunName != "custom0" ||
@@ -117,7 +118,7 @@ func TestConfiguration_EnsureDefaults_DoesNotOverrideExplicitFields(t *testing.T
 		c.TCPSettings.MTU != 1400 ||
 		c.TCPSettings.Protocol != settings.TCP ||
 		c.TCPSettings.DialTimeoutMs != 2500 {
-		t.Fatalf("EnsureDefaults should not override explicit fields: %+v", c.TCPSettings)
+		t.Fatalf("ApplyServerDefaults should not override explicit fields: %+v", c.TCPSettings)
 	}
 }
 

@@ -136,9 +136,7 @@ func validCfg() *serverConfiguration.Configuration {
 }
 
 func generatorWithMocks(mgr *mockMgr, r mockResolver) *Generator {
-	g := NewGenerator(mgr, &primitives.DefaultKeyDeriver{})
-	g.resolver = r
-	return g
+	return NewGenerator(mgr, &primitives.DefaultKeyDeriver{}, r)
 }
 
 // --------- tests: Generate ---------
@@ -176,6 +174,15 @@ func TestGenerate_success(t *testing.T) {
 	expectedIPv6 := netip.MustParseAddr("2001:db8::1")
 	if ipv6, ok := conf.TCPSettings.Server.IPv6(); !ok || ipv6 != expectedIPv6 {
 		t.Fatalf("TCP Server IPv6: want %s, got %v", expectedIPv6, ipv6)
+	}
+	if conf.TCPSettings.TunName != clientTCPTunName {
+		t.Fatalf("TCP TunName: want %q, got %q", clientTCPTunName, conf.TCPSettings.TunName)
+	}
+	if conf.UDPSettings.TunName != clientUDPTunName {
+		t.Fatalf("UDP TunName: want %q, got %q", clientUDPTunName, conf.UDPSettings.TunName)
+	}
+	if conf.WSSettings.TunName != clientWSTunName {
+		t.Fatalf("WS TunName: want %q, got %q", clientWSTunName, conf.WSSettings.TunName)
 	}
 }
 
@@ -306,10 +313,13 @@ func TestDeriveClientSettings_copies_fields_correctly(t *testing.T) {
 	}
 	host := mustHost("192.0.2.1").WithIPv6(netip.MustParseAddr("2001:db8::1"))
 
-	got := deriveClientSettings(serverS, host, settings.TCP)
+	got, err := deriveClientSettings(serverS, host, settings.TCP)
+	if err != nil {
+		t.Fatalf("deriveClientSettings returned error: %v", err)
+	}
 
-	if got.TunName != serverS.TunName {
-		t.Fatalf("TunName mismatch")
+	if got.TunName != clientTCPTunName {
+		t.Fatalf("TunName: want %q, got %q", clientTCPTunName, got.TunName)
 	}
 	if got.IPv4Subnet != serverS.IPv4Subnet {
 		t.Fatalf("IPv4Subnet mismatch")
@@ -346,9 +356,35 @@ func TestDeriveClientSettings_copies_fields_correctly(t *testing.T) {
 
 func TestDeriveClientSettings_udp_uses_safe_mtu(t *testing.T) {
 	serverS := settings.Settings{MTU: 1400}
-	got := deriveClientSettings(serverS, settings.Host{}, settings.UDP)
+	got, err := deriveClientSettings(serverS, settings.Host{}, settings.UDP)
+	if err != nil {
+		t.Fatalf("deriveClientSettings returned error: %v", err)
+	}
 	if got.MTU != settings.SafeMTU {
 		t.Fatalf("UDP MTU: want SafeMTU (%d), got %d", settings.SafeMTU, got.MTU)
+	}
+	if got.TunName != clientUDPTunName {
+		t.Fatalf("TunName: want %q, got %q", clientUDPTunName, got.TunName)
+	}
+}
+
+func TestDeriveClientSettings_unsupported_protocol(t *testing.T) {
+	_, err := deriveClientSettings(settings.Settings{}, settings.Host{}, settings.UNKNOWN)
+	if !errors.Is(err, ErrUnsupportedProtocol) {
+		t.Fatalf("protocol %v: want ErrUnsupportedProtocol, got %v", settings.UNKNOWN, err)
+	}
+}
+
+func TestDeriveClientSettings_wss_uses_ws_tun_name(t *testing.T) {
+	got, err := deriveClientSettings(settings.Settings{}, settings.Host{}, settings.WSS)
+	if err != nil {
+		t.Fatalf("deriveClientSettings returned error: %v", err)
+	}
+	if got.TunName != clientWSTunName {
+		t.Fatalf("TunName: want %q, got %q", clientWSTunName, got.TunName)
+	}
+	if got.Protocol != settings.WSS {
+		t.Fatalf("Protocol: want %v, got %v", settings.WSS, got.Protocol)
 	}
 }
 

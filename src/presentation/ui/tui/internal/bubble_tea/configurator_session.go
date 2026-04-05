@@ -18,6 +18,7 @@ import (
 	serverConfiguration "tungo/infrastructure/PAL/configuration/server"
 	systemdDomain "tungo/infrastructure/PAL/service_management/linux/systemd/domain"
 	"tungo/infrastructure/cryptography/primitives"
+	"tungo/infrastructure/network/host_resolver"
 
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/textinput"
@@ -921,7 +922,7 @@ func (m configuratorSessionModel) updateServerSelectScreen(msg tea.KeyPressMsg) 
 		}
 		return m, nil
 	case sessionServerAdd:
-		gen := confgen.NewGenerator(m.options.ServerConfigManager, &primitives.DefaultKeyDeriver{})
+		gen := confgen.NewGenerator(m.options.ServerConfigManager, &primitives.DefaultKeyDeriver{}, host_resolver.NewDialResolver())
 		conf, err := gen.Generate()
 		if err != nil {
 			m.resultErr = err
