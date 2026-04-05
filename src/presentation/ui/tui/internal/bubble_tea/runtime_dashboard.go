@@ -3,11 +3,11 @@ package bubble_tea
 import (
 	"context"
 	"errors"
-	"net/netip"
 	"strings"
 	"time"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/telemetry/trafficstats"
+	runnerCommon "tungo/presentation/runners/common"
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
@@ -21,15 +21,12 @@ const (
 )
 
 type RuntimeDashboardOptions struct {
-	Mode            RuntimeDashboardMode
-	LogFeed         RuntimeLogFeed
-	ServerSupported bool
-	ReadyCh         <-chan struct{}
-	Protocol        settings.Protocol
-	ServerIPv4      netip.Addr
-	ServerIPv6      netip.Addr
-	TunnelIPv4      netip.Addr
-	TunnelIPv6      netip.Addr
+	Mode              RuntimeDashboardMode
+	LogFeed           RuntimeLogFeed
+	ServerSupported   bool
+	ReadyCh           <-chan struct{}
+	Protocol          settings.Protocol
+	ProtocolAddresses []runnerCommon.RuntimeProtocolAddress
 }
 
 type runtimeTickMsg struct {
@@ -92,10 +89,7 @@ type RuntimeDashboard struct {
 	readyCh              <-chan struct{}
 	connected            bool
 	protocol             settings.Protocol
-	serverIPv4           netip.Addr
-	serverIPv6           netip.Addr
-	tunnelIPv4           netip.Addr
-	tunnelIPv6           netip.Addr
+	protocolAddresses    []runnerCommon.RuntimeProtocolAddress
 }
 
 type runtimeDashboardProgram interface {
@@ -129,23 +123,20 @@ func NewRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions, s
 		}
 	}
 	model := RuntimeDashboard{
-		settings:        settings,
-		ctx:             ctx,
-		mode:            mode,
-		serverSupported: options.ServerSupported,
-		keys:            defaultSelectorKeyMap(),
-		screen:          runtimeScreenDataplane,
-		preferences:     settings.Preferences(),
-		logFeed:         options.LogFeed,
-		logs:            newLogViewport(),
-		tickSeq:         1,
-		readyCh:         readyCh,
-		connected:       connected,
-		protocol:        options.Protocol,
-		serverIPv4:      options.ServerIPv4,
-		serverIPv6:      options.ServerIPv6,
-		tunnelIPv4:      options.TunnelIPv4,
-		tunnelIPv6:      options.TunnelIPv6,
+		settings:          settings,
+		ctx:               ctx,
+		mode:              mode,
+		serverSupported:   options.ServerSupported,
+		keys:              defaultSelectorKeyMap(),
+		screen:            runtimeScreenDataplane,
+		preferences:       settings.Preferences(),
+		logFeed:           options.LogFeed,
+		logs:              newLogViewport(),
+		tickSeq:           1,
+		readyCh:           readyCh,
+		connected:         connected,
+		protocol:          options.Protocol,
+		protocolAddresses: options.ProtocolAddresses,
 	}
 	if model.preferences.ShowDataplaneGraph {
 		model.recordTrafficSample(trafficstats.SnapshotGlobal())
@@ -395,11 +386,11 @@ func (m RuntimeDashboard) mainView() string {
 	if protocol := m.protocolLine(); protocol != "" {
 		body = append(body, protocol)
 	}
-	if connectedTo := m.connectedToLine(); connectedTo != "" {
-		body = append(body, connectedTo)
+	if serverLines := m.serverAddressLines(); len(serverLines) > 0 {
+		body = append(body, serverLines...)
 	}
-	if tunnelIP := m.tunnelIPLine(); tunnelIP != "" {
-		body = append(body, tunnelIP)
+	if tunnelLines := m.tunnelIPLines(); len(tunnelLines) > 0 {
+		body = append(body, tunnelLines...)
 	}
 	if m.preferences.ShowDataplaneStats || m.preferences.ShowDataplaneGraph {
 		body = append(body, "")
@@ -443,32 +434,50 @@ func (m RuntimeDashboard) mainView() string {
 	)
 }
 
-func (m RuntimeDashboard) connectedToLine() string {
-	if !m.serverIPv4.IsValid() && !m.serverIPv6.IsValid() {
-		return ""
+func (m RuntimeDashboard) serverAddressLines() []string {
+	if len(m.protocolAddresses) == 0 {
+		return nil
 	}
-	parts := make([]string, 0, 2)
-	if m.serverIPv4.IsValid() {
-		parts = append(parts, "IPv4 "+m.serverIPv4.String())
+	if m.mode == RuntimeDashboardServer && len(m.protocolAddresses) > 1 {
+		if sharedAddress, ok := sharedServerAddress(m.protocolAddresses); ok {
+			return []string{formatRuntimeAddressLine("Server IP", sharedAddress)}
+		}
+		lines := []string{"Server IPs:"}
+		for _, protocolAddress := range m.protocolAddresses {
+			if line := formatRuntimeProtocolAddress(protocolAddress.Protocol, protocolAddress.ServerAddress); line != "" {
+				lines = append(lines, "  "+line)
+			}
+		}
+		if len(lines) > 1 {
+			return lines
+		}
+		return nil
 	}
-	if m.serverIPv6.IsValid() {
-		parts = append(parts, "IPv6 "+m.serverIPv6.String())
+	if line := formatRuntimeAddressLine("Server IP", m.protocolAddresses[0].ServerAddress); line != "" {
+		return []string{line}
 	}
-	return "Server IP: " + strings.Join(parts, " | ")
+	return nil
 }
 
-func (m RuntimeDashboard) tunnelIPLine() string {
-	if !m.tunnelIPv4.IsValid() && !m.tunnelIPv6.IsValid() {
-		return ""
+func (m RuntimeDashboard) tunnelIPLines() []string {
+	if len(m.protocolAddresses) == 0 {
+		return nil
 	}
-	parts := make([]string, 0, 2)
-	if m.tunnelIPv4.IsValid() {
-		parts = append(parts, "IPv4 "+m.tunnelIPv4.String())
+	if m.mode == RuntimeDashboardServer && len(m.protocolAddresses) > 1 {
+		lines := []string{"Tunnel IPs:"}
+		for _, protocolAddress := range m.protocolAddresses {
+			if line := formatRuntimeProtocolAddress(protocolAddress.Protocol, protocolAddress.TunnelAddress); line != "" {
+				lines = append(lines, "  "+line)
+			}
+		}
+		if len(lines) > 1 {
+			return lines
+		}
 	}
-	if m.tunnelIPv6.IsValid() {
-		parts = append(parts, "IPv6 "+m.tunnelIPv6.String())
+	if tunnelIP := formatRuntimeAddressLine("Tunnel IP", m.protocolAddresses[0].TunnelAddress); tunnelIP != "" {
+		return []string{tunnelIP}
 	}
-	return "Tunnel IP: " + strings.Join(parts, " | ")
+	return nil
 }
 
 func (m RuntimeDashboard) protocolLine() string {
@@ -476,6 +485,52 @@ func (m RuntimeDashboard) protocolLine() string {
 		return ""
 	}
 	return "Protocol: " + m.protocol.String()
+}
+
+func formatRuntimeAddressLine(label string, address runnerCommon.RuntimeAddressPair) string {
+	parts := formatRuntimeAddressParts(address)
+	if parts == "" {
+		return ""
+	}
+	return label + ": " + parts
+}
+
+func formatRuntimeAddressParts(address runnerCommon.RuntimeAddressPair) string {
+	parts := make([]string, 0, 2)
+	if address.IPv4.IsValid() {
+		parts = append(parts, "IPv4 "+address.IPv4.String())
+	}
+	if address.IPv6.IsValid() {
+		parts = append(parts, "IPv6 "+address.IPv6.String())
+	}
+	return strings.Join(parts, " | ")
+}
+
+func formatRuntimeProtocolAddress(protocol settings.Protocol, address runnerCommon.RuntimeAddressPair) string {
+	parts := formatRuntimeAddressParts(address)
+	if parts == "" {
+		return ""
+	}
+	if protocol == settings.UNKNOWN {
+		return parts
+	}
+	return protocol.String() + ": " + parts
+}
+
+func sharedServerAddress(protocolAddresses []runnerCommon.RuntimeProtocolAddress) (runnerCommon.RuntimeAddressPair, bool) {
+	if len(protocolAddresses) == 0 {
+		return runnerCommon.RuntimeAddressPair{}, false
+	}
+	sharedAddress := protocolAddresses[0].ServerAddress
+	if !sharedAddress.IsValid() {
+		return runnerCommon.RuntimeAddressPair{}, false
+	}
+	for _, protocolAddress := range protocolAddresses[1:] {
+		if protocolAddress.ServerAddress != sharedAddress {
+			return runnerCommon.RuntimeAddressPair{}, false
+		}
+	}
+	return sharedAddress, true
 }
 
 func (m RuntimeDashboard) stopActionLabel() string {

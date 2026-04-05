@@ -4,13 +4,26 @@ import (
 	"net/netip"
 	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
 	serverConfiguration "tungo/infrastructure/PAL/configuration/server"
+	"tungo/infrastructure/settings"
 )
 
+type RuntimeAddressPair struct {
+	IPv4 netip.Addr
+	IPv6 netip.Addr
+}
+
+func (p RuntimeAddressPair) IsValid() bool {
+	return p.IPv4.IsValid() || p.IPv6.IsValid()
+}
+
+type RuntimeProtocolAddress struct {
+	Protocol      settings.Protocol
+	ServerAddress RuntimeAddressPair
+	TunnelAddress RuntimeAddressPair
+}
+
 type RuntimeAddressInfo struct {
-	ServerIPv4 netip.Addr
-	ServerIPv6 netip.Addr
-	TunnelIPv4 netip.Addr
-	TunnelIPv6 netip.Addr
+	ProtocolAddresses []RuntimeProtocolAddress
 }
 
 func RuntimeAddressInfoFromClientConfiguration(conf clientConfiguration.Configuration) RuntimeAddressInfo {
@@ -19,43 +32,86 @@ func RuntimeAddressInfoFromClientConfiguration(conf clientConfiguration.Configur
 	if err != nil {
 		return info
 	}
-	if serverIPv4, ok := activeSettings.Server.IPv4(); ok {
-		info.ServerIPv4 = serverIPv4
-	}
-	if serverIPv6, ok := activeSettings.Server.IPv6(); ok {
-		info.ServerIPv6 = serverIPv6
-	}
-	if activeSettings.IPv4.IsValid() {
-		info.TunnelIPv4 = activeSettings.IPv4
-	}
-	if activeSettings.IPv6.IsValid() {
-		info.TunnelIPv6 = activeSettings.IPv6
+	if protocolAddress, ok := newRuntimeProtocolAddress(
+		protocolOrFallback(activeSettings.Protocol, conf.Protocol),
+		runtimeAddressPairFromHost(activeSettings.Server),
+		runtimeAddressPairFromAddrs(activeSettings.IPv4, activeSettings.IPv6),
+	); ok {
+		info.ProtocolAddresses = append(info.ProtocolAddresses, protocolAddress)
 	}
 	return info
 }
 
 func RuntimeAddressInfoFromServerConfiguration(conf serverConfiguration.Configuration) RuntimeAddressInfo {
 	info := RuntimeAddressInfo{}
-	for _, s := range conf.EnabledSettings() {
-		if !info.ServerIPv4.IsValid() {
-			if serverIPv4, ok := s.Server.IPv4(); ok {
-				info.ServerIPv4 = serverIPv4
-			}
-		}
-		if !info.ServerIPv6.IsValid() {
-			if serverIPv6, ok := s.Server.IPv6(); ok {
-				info.ServerIPv6 = serverIPv6
-			}
-		}
-		if !info.TunnelIPv4.IsValid() && s.IPv4.IsValid() {
-			info.TunnelIPv4 = s.IPv4
-		}
-		if !info.TunnelIPv6.IsValid() && s.IPv6.IsValid() {
-			info.TunnelIPv6 = s.IPv6
-		}
-		if info.ServerIPv4.IsValid() && info.ServerIPv6.IsValid() && info.TunnelIPv4.IsValid() && info.TunnelIPv6.IsValid() {
-			break
+	for _, enabledSetting := range enabledProtocolSettings(conf) {
+		s := enabledSetting.settings
+		if protocolAddress, ok := newRuntimeProtocolAddress(
+			protocolOrFallback(s.Protocol, enabledSetting.protocol),
+			runtimeAddressPairFromHost(s.Server),
+			runtimeAddressPairFromAddrs(s.IPv4, s.IPv6),
+		); ok {
+			info.ProtocolAddresses = append(info.ProtocolAddresses, protocolAddress)
 		}
 	}
 	return info
+}
+
+type protocolSettings struct {
+	protocol settings.Protocol
+	settings settings.Settings
+}
+
+func enabledProtocolSettings(conf serverConfiguration.Configuration) []protocolSettings {
+	result := make([]protocolSettings, 0, 3)
+	if conf.EnableTCP {
+		result = append(result, protocolSettings{protocol: settings.TCP, settings: conf.TCPSettings})
+	}
+	if conf.EnableUDP {
+		result = append(result, protocolSettings{protocol: settings.UDP, settings: conf.UDPSettings})
+	}
+	if conf.EnableWS {
+		result = append(result, protocolSettings{protocol: settings.WS, settings: conf.WSSettings})
+	}
+	return result
+}
+
+func runtimeAddressPairFromHost(host settings.Host) RuntimeAddressPair {
+	var pair RuntimeAddressPair
+	if ipv4, ok := host.IPv4(); ok {
+		pair.IPv4 = ipv4
+	}
+	if ipv6, ok := host.IPv6(); ok {
+		pair.IPv6 = ipv6
+	}
+	return pair
+}
+
+func runtimeAddressPairFromAddrs(ipv4, ipv6 netip.Addr) RuntimeAddressPair {
+	return RuntimeAddressPair{
+		IPv4: ipv4,
+		IPv6: ipv6,
+	}
+}
+
+func newRuntimeProtocolAddress(
+	protocol settings.Protocol,
+	serverAddress RuntimeAddressPair,
+	tunnelAddress RuntimeAddressPair,
+) (RuntimeProtocolAddress, bool) {
+	if !serverAddress.IsValid() && !tunnelAddress.IsValid() {
+		return RuntimeProtocolAddress{}, false
+	}
+	return RuntimeProtocolAddress{
+		Protocol:      protocol,
+		ServerAddress: serverAddress,
+		TunnelAddress: tunnelAddress,
+	}, true
+}
+
+func protocolOrFallback(protocol, fallback settings.Protocol) settings.Protocol {
+	if protocol == settings.UNKNOWN {
+		return fallback
+	}
+	return protocol
 }
