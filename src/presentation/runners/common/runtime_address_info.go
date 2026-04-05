@@ -4,13 +4,21 @@ import (
 	"net/netip"
 	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
 	serverConfiguration "tungo/infrastructure/PAL/configuration/server"
+	"tungo/infrastructure/settings"
 )
 
+type RuntimeTunnelAddress struct {
+	Protocol settings.Protocol
+	IPv4     netip.Addr
+	IPv6     netip.Addr
+}
+
 type RuntimeAddressInfo struct {
-	ServerIPv4 netip.Addr
-	ServerIPv6 netip.Addr
-	TunnelIPv4 netip.Addr
-	TunnelIPv6 netip.Addr
+	ServerIPv4      netip.Addr
+	ServerIPv6      netip.Addr
+	TunnelIPv4      netip.Addr
+	TunnelIPv6      netip.Addr
+	TunnelAddresses []RuntimeTunnelAddress
 }
 
 func RuntimeAddressInfoFromClientConfiguration(conf clientConfiguration.Configuration) RuntimeAddressInfo {
@@ -31,12 +39,16 @@ func RuntimeAddressInfoFromClientConfiguration(conf clientConfiguration.Configur
 	if activeSettings.IPv6.IsValid() {
 		info.TunnelIPv6 = activeSettings.IPv6
 	}
+	if tunnelAddress, ok := newRuntimeTunnelAddress(protocolOrFallback(activeSettings.Protocol, conf.Protocol), activeSettings.IPv4, activeSettings.IPv6); ok {
+		info.TunnelAddresses = append(info.TunnelAddresses, tunnelAddress)
+	}
 	return info
 }
 
 func RuntimeAddressInfoFromServerConfiguration(conf serverConfiguration.Configuration) RuntimeAddressInfo {
 	info := RuntimeAddressInfo{}
-	for _, s := range conf.EnabledSettings() {
+	for _, enabledSetting := range enabledProtocolSettings(conf) {
+		s := enabledSetting.settings
 		if !info.ServerIPv4.IsValid() {
 			if serverIPv4, ok := s.Server.IPv4(); ok {
 				info.ServerIPv4 = serverIPv4
@@ -47,15 +59,52 @@ func RuntimeAddressInfoFromServerConfiguration(conf serverConfiguration.Configur
 				info.ServerIPv6 = serverIPv6
 			}
 		}
-		if !info.TunnelIPv4.IsValid() && s.IPv4.IsValid() {
-			info.TunnelIPv4 = s.IPv4
-		}
-		if !info.TunnelIPv6.IsValid() && s.IPv6.IsValid() {
-			info.TunnelIPv6 = s.IPv6
-		}
-		if info.ServerIPv4.IsValid() && info.ServerIPv6.IsValid() && info.TunnelIPv4.IsValid() && info.TunnelIPv6.IsValid() {
-			break
+		if tunnelAddress, ok := newRuntimeTunnelAddress(protocolOrFallback(s.Protocol, enabledSetting.protocol), s.IPv4, s.IPv6); ok {
+			info.TunnelAddresses = append(info.TunnelAddresses, tunnelAddress)
+			if !info.TunnelIPv4.IsValid() && tunnelAddress.IPv4.IsValid() {
+				info.TunnelIPv4 = tunnelAddress.IPv4
+			}
+			if !info.TunnelIPv6.IsValid() && tunnelAddress.IPv6.IsValid() {
+				info.TunnelIPv6 = tunnelAddress.IPv6
+			}
 		}
 	}
 	return info
+}
+
+type protocolSettings struct {
+	protocol settings.Protocol
+	settings settings.Settings
+}
+
+func enabledProtocolSettings(conf serverConfiguration.Configuration) []protocolSettings {
+	result := make([]protocolSettings, 0, 3)
+	if conf.EnableTCP {
+		result = append(result, protocolSettings{protocol: settings.TCP, settings: conf.TCPSettings})
+	}
+	if conf.EnableUDP {
+		result = append(result, protocolSettings{protocol: settings.UDP, settings: conf.UDPSettings})
+	}
+	if conf.EnableWS {
+		result = append(result, protocolSettings{protocol: settings.WS, settings: conf.WSSettings})
+	}
+	return result
+}
+
+func newRuntimeTunnelAddress(protocol settings.Protocol, ipv4, ipv6 netip.Addr) (RuntimeTunnelAddress, bool) {
+	if !ipv4.IsValid() && !ipv6.IsValid() {
+		return RuntimeTunnelAddress{}, false
+	}
+	return RuntimeTunnelAddress{
+		Protocol: protocol,
+		IPv4:     ipv4,
+		IPv6:     ipv6,
+	}, true
+}
+
+func protocolOrFallback(protocol, fallback settings.Protocol) settings.Protocol {
+	if protocol == settings.UNKNOWN {
+		return fallback
+	}
+	return protocol
 }

@@ -59,6 +59,12 @@ func TestBubbleTeaRuntimeBackend_MappingAndHooks(t *testing.T) {
 		if options.TunnelIPv4 != netip.MustParseAddr("10.0.0.2") {
 			t.Fatalf("expected TunnelIPv4 forwarded, got %v", options.TunnelIPv4)
 		}
+		if len(options.TunnelAddresses) != 1 {
+			t.Fatalf("expected one tunnel address entry forwarded, got %d", len(options.TunnelAddresses))
+		}
+		if options.TunnelAddresses[0].Protocol != settings.TCP {
+			t.Fatalf("expected tunnel address protocol TCP, got %v", options.TunnelAddresses[0].Protocol)
+		}
 		if options.Protocol != settings.TCP {
 			t.Fatalf("expected protocol forwarded, got %v", options.Protocol)
 		}
@@ -68,6 +74,10 @@ func TestBubbleTeaRuntimeBackend_MappingAndHooks(t *testing.T) {
 		Address: runnerCommon.RuntimeAddressInfo{
 			ServerIPv4: netip.MustParseAddr("198.51.100.10"),
 			TunnelIPv4: netip.MustParseAddr("10.0.0.2"),
+			TunnelAddresses: []runnerCommon.RuntimeTunnelAddress{{
+				Protocol: settings.TCP,
+				IPv4:     netip.MustParseAddr("10.0.0.2"),
+			}},
 		},
 		Protocol: settings.TCP,
 	})

@@ -10,6 +10,7 @@ import (
 	"time"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/telemetry/trafficstats"
+	runnerCommon "tungo/presentation/runners/common"
 	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
@@ -638,6 +639,43 @@ func TestRuntimeDashboard_MainView_ShowsServerAndNetworkAddresses(t *testing.T) 
 	}
 	if !strings.Contains(view, "Tunnel IP: IPv4 10.0.0.2 | IPv6 fd00::2") {
 		t.Fatalf("expected network address line in main view, got %q", view)
+	}
+}
+
+func TestRuntimeDashboard_MainView_ServerShowsTunnelAddressesPerProtocol(t *testing.T) {
+	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
+		Mode: RuntimeDashboardServer,
+		TunnelAddresses: []runnerCommon.RuntimeTunnelAddress{
+			{
+				Protocol: settings.TCP,
+				IPv4:     netip.MustParseAddr("10.0.0.1"),
+				IPv6:     netip.MustParseAddr("fd00::1"),
+			},
+			{
+				Protocol: settings.UDP,
+				IPv4:     netip.MustParseAddr("10.0.1.1"),
+				IPv6:     netip.MustParseAddr("fd00::2"),
+			},
+			{
+				Protocol: settings.WS,
+				IPv4:     netip.MustParseAddr("10.0.2.1"),
+				IPv6:     netip.MustParseAddr("fd00::3"),
+			},
+		},
+	}, testSettings())
+
+	view := m.View().Content
+	if !strings.Contains(view, "Tunnel IPs:") {
+		t.Fatalf("expected tunnel addresses section in server main view, got %q", view)
+	}
+	if !strings.Contains(view, "TCP: IPv4 10.0.0.1 | IPv6 fd00::1") {
+		t.Fatalf("expected TCP tunnel line in server main view, got %q", view)
+	}
+	if !strings.Contains(view, "UDP: IPv4 10.0.1.1 | IPv6 fd00::2") {
+		t.Fatalf("expected UDP tunnel line in server main view, got %q", view)
+	}
+	if !strings.Contains(view, "WS: IPv4 10.0.2.1 | IPv6 fd00::3") {
+		t.Fatalf("expected WS tunnel line in server main view, got %q", view)
 	}
 }
 
