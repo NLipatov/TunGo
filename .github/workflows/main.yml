@@ -20,13 +20,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Get repository code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.0
         with:
           fetch-depth: 0
           submodules: 'recursive'
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6.5.0
         with:
           go-version: ${{ env.GO_VERSION }}
 
@@ -44,7 +44,7 @@ jobs:
             go test -coverprofile=coverage.txt ./...
 
       - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7.0.0
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: src/coverage.txt
@@ -69,13 +69,13 @@ jobs:
             goarch: arm64
     steps:
       - name: Get repository code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.0
         with:
           fetch-depth: 0
           submodules: 'recursive'
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6.5.0
         with:
           go-version: ${{ env.GO_VERSION }}
 
@@ -90,26 +90,26 @@ jobs:
     needs: [run-tests, cross-compile-tests]
     if: github.event_name == 'push' # Prevents this job from running in PR. It will only run on push to main.
     outputs:
-      semver: ${{ steps.gitversion.outputs.semver }}
+      semver: ${{ steps.gitversion.outputs.semVer }}
     steps:
       - name: Get repository code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.0
         with:
           fetch-depth: 0
           submodules: 'recursive'
 
       - name: Install GitVersion
-        uses: gittools/actions/gitversion/setup@v0.9
+        uses: gittools/actions/gitversion/setup@v4.5.0
         with:
-          versionSpec: '5.x'
+          versionSpec: '6.8.x'
 
       - name: Generate Version
         id: gitversion
-        uses: gittools/actions/gitversion/execute@v0.9
+        uses: gittools/actions/gitversion/execute@v4.5.0
 
       - name: Tag and Push Version
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git tag $(echo ${{ steps.gitversion.outputs.semver }})
-          git push origin $(echo ${{ steps.gitversion.outputs.semver }})
+          git tag $(echo ${{ steps.gitversion.outputs.semVer }})
+          git push origin $(echo ${{ steps.gitversion.outputs.semVer }})
