@@ -53,9 +53,13 @@ func (c *Configurator) trimArgs(args []string) []string {
 }
 
 func (c *Configurator) printUsage() {
-	fmt.Printf(`Usage: %s <mode>
-Modes:
-  %s  - Server
-  %s  - Client
-`, app.Name, ServerMode, ClientMode)
+	fmt.Printf(`Usage:
+  %s <command>
+
+Commands:
+  %-7s  Start server
+  %-7s  Start client
+  %-7s  Generate client configuration
+  %-7s  Show version
+`, app.Name, ServerMode, ClientMode, ServerConfGenMode, Version)
 }

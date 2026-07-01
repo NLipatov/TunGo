@@ -66,3 +66,20 @@ func TestConfigureErrors(t *testing.T) {
 		t.Fatalf("expected usage banner for invalid args")
 	}
 }
+
+func TestUsageListsSupportedCommands(t *testing.T) {
+	out, _, _ := run(nil)
+	for _, want := range []string{
+		"Usage:",
+		"  tungo <command>",
+		"Commands:",
+		"  s        Start server",
+		"  c        Start client",
+		"  s gen    Generate client configuration",
+		"  version  Show version",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected usage to contain %q, got %q", want, out)
+		}
+	}
+}
