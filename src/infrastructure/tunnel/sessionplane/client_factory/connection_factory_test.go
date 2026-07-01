@@ -1018,6 +1018,44 @@ func TestDialWithFallback_UDP_DualStackUsesPreferredIPv4(t *testing.T) {
 	}
 }
 
+func TestDialWithFallback_UDP_DualStackFallsBackToIPv6WhenPreferredIPv4DialFails(t *testing.T) {
+	t.Parallel()
+	f := &ConnectionFactory{}
+	tr := &cfUnitTransport{}
+
+	s := settings.Settings{
+		Addressing: settings.Addressing{
+			Server: mustHost("198.51.100.10").WithIPv6(netip.MustParseAddr("2001:db8::10")),
+			Port:   9090,
+		},
+		Protocol: settings.UDP,
+	}
+
+	var dialed []netip.AddrPort
+	got, err := f.dialWithFallback(context.Background(), s, func(_ context.Context, ap netip.AddrPort) (connection.Transport, error) {
+		dialed = append(dialed, ap)
+		if ap.Addr().Unmap().Is4() {
+			return nil, errors.New("IPv4 unavailable")
+		}
+		return tr, nil
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != tr {
+		t.Fatal("expected transport from IPv6 fallback")
+	}
+	if len(dialed) != 2 {
+		t.Fatalf("expected IPv4 then IPv6 attempts, got %v", dialed)
+	}
+	if !dialed[0].Addr().Unmap().Is4() {
+		t.Fatalf("expected first UDP attempt to use IPv4, got %v", dialed[0])
+	}
+	if !dialed[1].Addr().Is6() {
+		t.Fatalf("expected second UDP attempt to use IPv6, got %v", dialed[1])
+	}
+}
+
 func TestDialWithFallback_IPv6Only_DialsOnce(t *testing.T) {
 	t.Parallel()
 	f := &ConnectionFactory{}
