@@ -171,6 +171,11 @@ func (f *ConnectionFactory) dialWithFallback(
 		}
 		return nil, preferredErr
 	}
+	// UDP dial only creates a connected socket; it does not prove endpoint reachability.
+	// Use the preferred address directly instead of treating an IPv6 probe as success.
+	if s.Protocol == settings.UDP {
+		return dialFn(ctx, preferredAP)
+	}
 
 	ipv6AP, ipv6Err := resolveIPv6AddrPort(ctx, s)
 	if ipv6Err != nil {
