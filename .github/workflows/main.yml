@@ -89,6 +89,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: [run-tests, cross-compile-tests]
     if: github.event_name == 'push' # Prevents this job from running in PR. It will only run on push to main.
+    concurrency:
+      group: ${{ github.workflow }}-version-and-tag-${{ github.ref }}
+      cancel-in-progress: false
     outputs:
       semver: ${{ steps.gitversion.outputs.majorMinorPatch }}
     steps:
