@@ -90,7 +90,7 @@ jobs:
     needs: [run-tests, cross-compile-tests]
     if: github.event_name == 'push' # Prevents this job from running in PR. It will only run on push to main.
     outputs:
-      semver: ${{ steps.gitversion.outputs.semVer }}
+      semver: ${{ steps.gitversion.outputs.majorMinorPatch }}
     steps:
       - name: Get repository code
         uses: actions/checkout@v7.0.0
@@ -111,5 +111,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git tag $(echo ${{ steps.gitversion.outputs.semVer }})
-          git push origin $(echo ${{ steps.gitversion.outputs.semVer }})
+          VERSION="${{ steps.gitversion.outputs.majorMinorPatch }}"
+          git tag "$VERSION"
+          git push origin "$VERSION"
