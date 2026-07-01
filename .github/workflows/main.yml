@@ -115,5 +115,4 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION="${{ steps.gitversion.outputs.majorMinorPatch }}"
-          git tag "$VERSION"
-          git push origin "$VERSION"
+          git push origin "HEAD:refs/tags/$VERSION"
