@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"tungo/domain/mode"
+	"tungo/domain/command"
 	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
 	serverConfiguration "tungo/infrastructure/PAL/configuration/server"
 
@@ -178,7 +178,7 @@ func TestRunConfiguratorSession_Success(t *testing.T) {
 		return testConfiguratorSessionProgram{
 			run: func() (tea.Model, error) {
 				m := model.(configuratorSessionModel)
-				m.resultMode = mode.Server
+				m.resultMode = command.StartServer
 				return m, nil
 			},
 		}
@@ -188,8 +188,8 @@ func TestRunConfiguratorSession_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if got != mode.Server {
-		t.Fatalf("expected mode.Server, got %v", got)
+	if got != command.StartServer {
+		t.Fatalf("expected command.StartServer, got %v", got)
 	}
 }
 
@@ -868,8 +868,8 @@ func TestUpdateClientSelectScreen_EnterSelectConfig_NilConfigManager(t *testing.
 	if !s.done {
 		t.Fatal("expected done=true when ClientConfigManager is nil")
 	}
-	if s.resultMode != mode.Client {
-		t.Fatalf("expected mode.Client, got %v", s.resultMode)
+	if s.resultMode != command.StartClient {
+		t.Fatalf("expected command.StartClient, got %v", s.resultMode)
 	}
 	if cmd == nil {
 		t.Fatal("expected quit cmd")
@@ -1157,8 +1157,8 @@ func TestUpdateServerSelectScreen_EnterStartServer(t *testing.T) {
 	if !s.done {
 		t.Fatal("expected done=true")
 	}
-	if s.resultMode != mode.Server {
-		t.Fatalf("expected mode.Server, got %v", s.resultMode)
+	if s.resultMode != command.StartServer {
+		t.Fatalf("expected command.StartServer, got %v", s.resultMode)
 	}
 	if cmd == nil {
 		t.Fatal("expected quit cmd")
@@ -2304,8 +2304,8 @@ func TestUpdateClientSelectScreen_EnterConfig_ValidConfig(t *testing.T) {
 	if !s.done {
 		t.Fatal("expected done=true for valid config")
 	}
-	if s.resultMode != mode.Client {
-		t.Fatalf("expected mode.Client, got %v", s.resultMode)
+	if s.resultMode != command.StartClient {
+		t.Fatalf("expected command.StartClient, got %v", s.resultMode)
 	}
 	if cmd == nil {
 		t.Fatal("expected quit cmd")
@@ -3089,8 +3089,8 @@ func TestUpdateClientSelectScreen_SelectConfig_ValidConfig_ExitsWithClientMode(t
 	if !s.done {
 		t.Fatal("expected done=true for valid config")
 	}
-	if s.resultMode != mode.Client {
-		t.Fatalf("expected mode.Client, got %v", s.resultMode)
+	if s.resultMode != command.StartClient {
+		t.Fatalf("expected command.StartClient, got %v", s.resultMode)
 	}
 	if cmd == nil {
 		t.Fatal("expected quit cmd")
@@ -3421,7 +3421,7 @@ func TestUpdate_MainTab_DispatchesSystemdScreens(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		model.screen = configuratorScreenDaemonReconfigureConfirm
-		model.pendingDaemonMode = mode.Client
+		model.pendingDaemonMode = command.StartClient
 		result, _ := model.Update(keyNamed(tea.KeyDown))
 		updated := result.(configuratorSessionModel)
 		if updated.screen != configuratorScreenDaemonReconfigureConfirm {
@@ -3436,7 +3436,7 @@ func TestUpdate_MainTab_DispatchesSystemdScreens(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		model.screen = configuratorScreenSystemdActiveConfirm
-		model.pendingStartMode = mode.Client
+		model.pendingStartMode = command.StartClient
 		model.pendingStartScreen = configuratorScreenClientSelect
 		result, _ := model.Update(keyNamed(tea.KeyDown))
 		updated := result.(configuratorSessionModel)
@@ -3450,7 +3450,7 @@ func TestView_MainTab_DaemonManageScreen(t *testing.T) {
 	opts := defaultConfiguratorOpts()
 	opts.SystemdSupported = true
 	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
-		return SystemdDaemonStatus{Installed: true, Mode: mode.Client, UnitFileState: "disabled", ActiveState: "inactive"}, nil
+		return SystemdDaemonStatus{Installed: true, Mode: command.StartClient, UnitFileState: "disabled", ActiveState: "inactive"}, nil
 	}
 	opts.StartSystemdUnit = func() error { return nil }
 	opts.EnableSystemdUnit = func() error { return nil }

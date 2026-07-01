@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"tungo/domain/mode"
+	"tungo/domain/command"
 	"tungo/presentation/ui/tui"
 	selectorContract "tungo/presentation/ui/tui/internal/ui/contracts/selector"
 	"tungo/presentation/ui/tui/internal/ui/value_objects"
@@ -58,8 +58,8 @@ func TestAppMode_Mode_Client(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if got != mode.Client {
-		t.Fatalf("expected mode.Client, got %v", got)
+	if got != command.StartClient {
+		t.Fatalf("expected command.StartClient, got %v", got)
 	}
 	// assert factory inputs
 	if sf.gotLabel != "Select mode" {
@@ -80,8 +80,8 @@ func TestAppMode_Mode_Server(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if got != mode.Server {
-		t.Fatalf("expected mode.Server, got %v", got)
+	if got != command.StartServer {
+		t.Fatalf("expected command.StartServer, got %v", got)
 	}
 	// sanity check inputs once more
 	if sf.gotLabel != "Select mode" {
@@ -102,10 +102,10 @@ func TestAppMode_Mode_UnknownSelection(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if got != mode.Unknown {
-		t.Fatalf("expected mode.Unknown, got %v", got)
+	if got != command.Unknown {
+		t.Fatalf("expected command.Unknown, got %v", got)
 	}
-	if !strings.Contains(err.Error(), "invalid mode") {
+	if !strings.Contains(err.Error(), "invalid command") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -119,8 +119,8 @@ func TestAppMode_Mode_EscExits(t *testing.T) {
 	if !errors.Is(err, tui.ErrUserExit) {
 		t.Fatalf("expected ErrUserExit, got %v", err)
 	}
-	if got != mode.Unknown {
-		t.Fatalf("expected mode.Unknown, got %v", got)
+	if got != command.Unknown {
+		t.Fatalf("expected command.Unknown, got %v", got)
 	}
 }
 
@@ -133,8 +133,8 @@ func TestAppMode_Mode_SelectorFactoryError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if got != mode.Unknown {
-		t.Fatalf("expected mode.Unknown, got %v", got)
+	if got != command.Unknown {
+		t.Fatalf("expected command.Unknown, got %v", got)
 	}
 	if !strings.Contains(err.Error(), "factory") {
 		t.Fatalf("unexpected error: %v", err)
@@ -150,8 +150,8 @@ func TestAppMode_Mode_SelectorError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if got != mode.Unknown {
-		t.Fatalf("expected mode.Unknown, got %v", got)
+	if got != command.Unknown {
+		t.Fatalf("expected command.Unknown, got %v", got)
 	}
 	if !strings.Contains(err.Error(), "selection") {
 		t.Fatalf("unexpected error: %v", err)

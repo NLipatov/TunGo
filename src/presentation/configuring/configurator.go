@@ -2,9 +2,9 @@ package configuring
 
 import (
 	"context"
-	"tungo/domain/mode"
+	"tungo/domain/command"
 )
 
 type Configurator interface {
-	Configure(ctx context.Context) (mode.Mode, error)
+	Configure(ctx context.Context) (command.Command, error)
 }

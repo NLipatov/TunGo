@@ -3,7 +3,7 @@ package tui
 import (
 	"errors"
 	"fmt"
-	"tungo/domain/mode"
+	"tungo/domain/command"
 	selectorContract "tungo/presentation/ui/tui/internal/ui/contracts/selector"
 	"tungo/presentation/ui/tui/internal/ui/value_objects"
 )
@@ -18,7 +18,7 @@ func NewAppMode(selectorFactory selectorContract.Factory) AppMode {
 	}
 }
 
-func (p *AppMode) Mode() (mode.Mode, error) {
+func (p *AppMode) Mode() (command.Command, error) {
 	clientMode := "client"
 	serverMode := "server"
 	tuiSelector, selectorErr := p.selectorFactory.NewTuiSelector(
@@ -28,22 +28,22 @@ func (p *AppMode) Mode() (mode.Mode, error) {
 		value_objects.NewTransparentColor(),
 	)
 	if selectorErr != nil {
-		return mode.Unknown, selectorErr
+		return command.Unknown, selectorErr
 	}
 
 	selectedOption, selectOneErr := tuiSelector.SelectOne()
 	if selectOneErr != nil {
 		if errors.Is(selectOneErr, selectorContract.ErrNavigateBack) || errors.Is(selectOneErr, selectorContract.ErrUserExit) {
-			return mode.Unknown, ErrUserExit
+			return command.Unknown, ErrUserExit
 		}
-		return mode.Unknown, selectOneErr
+		return command.Unknown, selectOneErr
 	}
 	switch selectedOption {
 	case clientMode:
-		return mode.Client, nil
+		return command.StartClient, nil
 	case serverMode:
-		return mode.Server, nil
+		return command.StartServer, nil
 	default:
-		return mode.Unknown, fmt.Errorf("invalid mode argument")
+		return command.Unknown, fmt.Errorf("invalid command argument")
 	}
 }

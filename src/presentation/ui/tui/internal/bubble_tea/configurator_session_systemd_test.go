@@ -4,7 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
-	"tungo/domain/mode"
+	"tungo/domain/command"
 	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
 
 	tea "charm.land/bubbletea/v2"
@@ -26,7 +26,7 @@ func TestModeOptions_AddsDaemonWhenSupported(t *testing.T) {
 			Installed:     true,
 			UnitFileState: "enabled",
 			ActiveState:   "inactive",
-			Mode:          mode.Client,
+			Mode:          command.StartClient,
 		}, nil
 	}
 
@@ -134,7 +134,7 @@ func TestDaemonNotice_ShowsNonErrorNotice(t *testing.T) {
 	opts := defaultConfiguratorOpts()
 	opts.SystemdSupported = true
 	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
-		return SystemdDaemonStatus{Installed: true, UnitFileState: "enabled", ActiveState: "inactive", Mode: mode.Server}, nil
+		return SystemdDaemonStatus{Installed: true, UnitFileState: "enabled", ActiveState: "inactive", Mode: command.StartServer}, nil
 	}
 
 	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceServer))
@@ -161,7 +161,7 @@ func TestMainTabView_DaemonManage_SeparatesStatusAndActions(t *testing.T) {
 			Result:         "success",
 			ExecMainStatus: "0",
 			ExecStart:      "/usr/local/bin/tungo s",
-			Mode:           mode.Server,
+			Mode:           command.StartServer,
 		}, nil
 	}
 	opts.StartSystemdUnit = func() error { return nil }
@@ -211,7 +211,7 @@ func TestMainTabView_DaemonManage_DerivedRoleFallsBackToMode(t *testing.T) {
 			Result:         "success",
 			ExecMainStatus: "0",
 			ExecStart:      "unknown",
-			Mode:           mode.Server,
+			Mode:           command.StartServer,
 		}, nil
 	}
 
@@ -264,7 +264,7 @@ func TestUpdateDaemonManageScreen_Installed_ShowsReconfigureOptions(t *testing.T
 			Managed:       true,
 			UnitFileState: "disabled",
 			ActiveState:   "inactive",
-			Mode:          mode.Client,
+			Mode:          command.StartClient,
 		}, nil
 	}
 	opts.InstallClientSystemdUnit = func() (string, error) {
@@ -360,14 +360,14 @@ func TestUpdateDaemonManageScreen_SetupClient_FailsWhenDefaultConfigInvalid(t *t
 }
 
 func TestUpdateDaemonManageScreen_ReconfigureInactive_AppliesImmediately(t *testing.T) {
-	status := SystemdDaemonStatus{Installed: true, UnitFileState: "disabled", ActiveState: "inactive", Mode: mode.Client}
+	status := SystemdDaemonStatus{Installed: true, UnitFileState: "disabled", ActiveState: "inactive", Mode: command.StartClient}
 	opts := defaultConfiguratorOpts()
 	opts.SystemdSupported = true
 	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) { return status, nil }
 	reconfigureCalls := 0
 	opts.InstallServerSystemdUnit = func() (string, error) {
 		reconfigureCalls++
-		status.Mode = mode.Server
+		status.Mode = command.StartServer
 		return "/etc/systemd/system/tungo.service", nil
 	}
 	opts.StartSystemdUnit = func() error { return nil }
@@ -402,7 +402,7 @@ func TestUpdateDaemonManageScreen_ReconfigureInactive_AppliesImmediately(t *test
 }
 
 func TestUpdateDaemonManageScreen_ReconfigureActive_ShowsMandatoryConfirm(t *testing.T) {
-	status := SystemdDaemonStatus{Installed: true, UnitFileState: "enabled", ActiveState: "active", Mode: mode.Server}
+	status := SystemdDaemonStatus{Installed: true, UnitFileState: "enabled", ActiveState: "active", Mode: command.StartServer}
 	opts := defaultConfiguratorOpts()
 	opts.SystemdSupported = true
 	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) { return status, nil }
@@ -429,13 +429,13 @@ func TestUpdateDaemonManageScreen_ReconfigureActive_ShowsMandatoryConfirm(t *tes
 	if updated.screen != configuratorScreenDaemonReconfigureConfirm {
 		t.Fatalf("expected reconfigure confirm screen, got %v", updated.screen)
 	}
-	if updated.pendingDaemonMode != mode.Client {
+	if updated.pendingDaemonMode != command.StartClient {
 		t.Fatalf("expected pending daemon mode client, got %v", updated.pendingDaemonMode)
 	}
 }
 
 func TestUpdateDaemonReconfigureConfirmScreen_Confirm_RestartsWithNewSetup(t *testing.T) {
-	status := SystemdDaemonStatus{Installed: true, UnitFileState: "enabled", ActiveState: "active", Mode: mode.Server}
+	status := SystemdDaemonStatus{Installed: true, UnitFileState: "enabled", ActiveState: "active", Mode: command.StartServer}
 	opts := defaultConfiguratorOpts()
 	opts.SystemdSupported = true
 	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) { return status, nil }
@@ -448,7 +448,7 @@ func TestUpdateDaemonReconfigureConfirmScreen_Confirm_RestartsWithNewSetup(t *te
 	}
 	opts.InstallClientSystemdUnit = func() (string, error) {
 		callOrder = append(callOrder, "install-client")
-		status.Mode = mode.Client
+		status.Mode = command.StartClient
 		return "/etc/systemd/system/tungo.service", nil
 	}
 	opts.StartSystemdUnit = func() error {
@@ -462,7 +462,7 @@ func TestUpdateDaemonReconfigureConfirmScreen_Confirm_RestartsWithNewSetup(t *te
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenDaemonReconfigureConfirm
-	model.pendingDaemonMode = mode.Client
+	model.pendingDaemonMode = command.StartClient
 	model.cursor = 0 // stop and restart
 
 	updatedModel, cmd := model.updateDaemonReconfigureConfirmScreen(keyNamed(tea.KeyEnter))
@@ -473,7 +473,7 @@ func TestUpdateDaemonReconfigureConfirmScreen_Confirm_RestartsWithNewSetup(t *te
 	if strings.Join(callOrder, ",") != "stop,install-client,start" {
 		t.Fatalf("unexpected call order: %v", callOrder)
 	}
-	if updated.pendingDaemonMode != mode.Unknown {
+	if updated.pendingDaemonMode != command.Unknown {
 		t.Fatalf("expected pending daemon mode cleared, got %v", updated.pendingDaemonMode)
 	}
 	if updated.screen != configuratorScreenDaemonManage {
@@ -482,7 +482,7 @@ func TestUpdateDaemonReconfigureConfirmScreen_Confirm_RestartsWithNewSetup(t *te
 	if !strings.Contains(updated.notice, "Client daemon reconfigured") || !strings.Contains(updated.notice, "restarted") {
 		t.Fatalf("expected restarted notice, got %q", updated.notice)
 	}
-	if updated.daemon.status.ActiveState != "active" || updated.daemon.status.Mode != mode.Client {
+	if updated.daemon.status.ActiveState != "active" || updated.daemon.status.Mode != command.StartClient {
 		t.Fatalf("expected refreshed daemon status (active client), got %+v", updated.daemon.status)
 	}
 }
@@ -494,7 +494,7 @@ func TestUpdateDaemonReconfigureConfirmScreen_Cancel_ReturnsToDaemonManage(t *te
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenDaemonReconfigureConfirm
-	model.pendingDaemonMode = mode.Server
+	model.pendingDaemonMode = command.StartServer
 	model.cursor = 1 // cancel
 
 	updatedModel, cmd := model.updateDaemonReconfigureConfirmScreen(keyNamed(tea.KeyEnter))
@@ -505,7 +505,7 @@ func TestUpdateDaemonReconfigureConfirmScreen_Cancel_ReturnsToDaemonManage(t *te
 	if updated.screen != configuratorScreenDaemonManage {
 		t.Fatalf("expected daemon manage screen, got %v", updated.screen)
 	}
-	if updated.pendingDaemonMode != mode.Unknown {
+	if updated.pendingDaemonMode != command.Unknown {
 		t.Fatalf("expected pending daemon mode cleared, got %v", updated.pendingDaemonMode)
 	}
 	if !strings.Contains(updated.notice, "Reconfigure cancelled") {
@@ -514,7 +514,7 @@ func TestUpdateDaemonReconfigureConfirmScreen_Cancel_ReturnsToDaemonManage(t *te
 }
 
 func TestUpdateDaemonManageScreen_StartEnableDisableStopFlow(t *testing.T) {
-	status := SystemdDaemonStatus{Installed: true, UnitFileState: "disabled", ActiveState: "inactive", Mode: mode.Client}
+	status := SystemdDaemonStatus{Installed: true, UnitFileState: "disabled", ActiveState: "inactive", Mode: command.StartClient}
 	opts := defaultConfiguratorOpts()
 	opts.SystemdSupported = true
 	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) { return status, nil }
@@ -596,7 +596,7 @@ func TestUpdateDaemonManageScreen_StartEnableDisableStopFlow(t *testing.T) {
 }
 
 func TestUpdateDaemonManageScreen_StartPreservesActionCursorAfterRefresh(t *testing.T) {
-	status := SystemdDaemonStatus{Installed: true, UnitFileState: "enabled", ActiveState: "inactive", Mode: mode.Client}
+	status := SystemdDaemonStatus{Installed: true, UnitFileState: "enabled", ActiveState: "inactive", Mode: command.StartClient}
 	opts := defaultConfiguratorOpts()
 	opts.SystemdSupported = true
 	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) { return status, nil }
@@ -631,7 +631,7 @@ func TestUpdateDaemonManageScreen_StartPreservesActionCursorAfterRefresh(t *test
 }
 
 func TestUpdateDaemonManageScreen_Delete_RemovesUnitAndRefreshesStatus(t *testing.T) {
-	status := SystemdDaemonStatus{Installed: true, Managed: true, UnitFileState: "enabled", ActiveState: "inactive", Mode: mode.Server}
+	status := SystemdDaemonStatus{Installed: true, Managed: true, UnitFileState: "enabled", ActiveState: "inactive", Mode: command.StartServer}
 	opts := defaultConfiguratorOpts()
 	opts.SystemdSupported = true
 	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) { return status, nil }
@@ -680,7 +680,7 @@ func TestUpdateDaemonManageScreen_UnmanagedUnit_HidesDeleteOption(t *testing.T) 
 			Managed:       false,
 			UnitFileState: "enabled",
 			ActiveState:   "inactive",
-			Mode:          mode.Server,
+			Mode:          command.StartServer,
 		}, nil
 	}
 	opts.RemoveSystemdUnit = func() error { return nil }
@@ -723,7 +723,7 @@ func TestUpdateClientSelectScreen_SelectConfig_ActiveDaemon_ShowsStopPrompt(t *t
 	if updated.screen != configuratorScreenSystemdActiveConfirm {
 		t.Fatalf("expected systemd confirm screen, got %v", updated.screen)
 	}
-	if updated.pendingStartMode != mode.Client {
+	if updated.pendingStartMode != command.StartClient {
 		t.Fatalf("expected pending start mode client, got %v", updated.pendingStartMode)
 	}
 	if updated.pendingStartScreen != configuratorScreenClientSelect {
@@ -759,7 +759,7 @@ func TestUpdateServerSelectScreen_Start_ActiveDaemon_ShowsStopPrompt(t *testing.
 	if updated.screen != configuratorScreenSystemdActiveConfirm {
 		t.Fatalf("expected systemd confirm screen, got %v", updated.screen)
 	}
-	if updated.pendingStartMode != mode.Server {
+	if updated.pendingStartMode != command.StartServer {
 		t.Fatalf("expected pending start mode server, got %v", updated.pendingStartMode)
 	}
 }
@@ -777,7 +777,7 @@ func TestUpdateSystemdActiveConfirmScreen_EnterStop_StopsDaemonAndStartsMode(t *
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenSystemdActiveConfirm
-	model.pendingStartMode = mode.Server
+	model.pendingStartMode = command.StartServer
 	model.pendingStartScreen = configuratorScreenServerSelect
 	model.cursor = 0 // stop and continue
 
@@ -792,8 +792,8 @@ func TestUpdateSystemdActiveConfirmScreen_EnterStop_StopsDaemonAndStartsMode(t *
 	if !updated.done {
 		t.Fatal("expected done=true after stop and continue")
 	}
-	if updated.resultMode != mode.Server {
-		t.Fatalf("expected mode.Server, got %v", updated.resultMode)
+	if updated.resultMode != command.StartServer {
+		t.Fatalf("expected command.StartServer, got %v", updated.resultMode)
 	}
 }
 
@@ -809,7 +809,7 @@ func TestUpdateSystemdActiveConfirmScreen_Cancel_ReturnsToPreviousScreen(t *test
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenSystemdActiveConfirm
-	model.pendingStartMode = mode.Client
+	model.pendingStartMode = command.StartClient
 	model.pendingStartScreen = configuratorScreenClientSelect
 	model.pendingClientConfig = "new-cfg"
 	model.cursor = 1 // cancel
@@ -825,7 +825,7 @@ func TestUpdateSystemdActiveConfirmScreen_Cancel_ReturnsToPreviousScreen(t *test
 	if updated.screen != configuratorScreenClientSelect {
 		t.Fatalf("expected return to client select, got %v", updated.screen)
 	}
-	if updated.pendingStartMode != mode.Unknown {
+	if updated.pendingStartMode != command.Unknown {
 		t.Fatalf("expected pending mode cleared, got %v", updated.pendingStartMode)
 	}
 	if updated.pendingClientConfig != "" {
@@ -854,7 +854,7 @@ func TestUpdateSystemdCheckErrorConfirmScreen_RetryCheck_StartsWhenInactive(t *t
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	model = model.startModeWithSystemdGuard(mode.Server, configuratorScreenServerSelect, false)
+	model = model.startModeWithSystemdGuard(command.StartServer, configuratorScreenServerSelect, false)
 	if model.screen != configuratorScreenSystemdCheckErrorConfirm {
 		t.Fatalf("expected check error confirm screen, got %v", model.screen)
 	}
@@ -865,7 +865,7 @@ func TestUpdateSystemdCheckErrorConfirmScreen_RetryCheck_StartsWhenInactive(t *t
 	if cmd == nil {
 		t.Fatal("expected quit cmd after successful retry")
 	}
-	if !updated.done || updated.resultMode != mode.Server {
+	if !updated.done || updated.resultMode != command.StartServer {
 		t.Fatalf("expected done server start after retry, got done=%v mode=%v", updated.done, updated.resultMode)
 	}
 	if checkCalls != 2 {
@@ -881,7 +881,7 @@ func TestUpdateSystemdCheckErrorConfirmScreen_StartAnyway_Client_PersistsAutoSel
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenSystemdCheckErrorConfirm
-	model.pendingStartMode = mode.Client
+	model.pendingStartMode = command.StartClient
 	model.pendingStartScreen = configuratorScreenClientSelect
 	model.pendingClientConfig = "cfg-a"
 	model.cursor = 1 // Start anyway (unsafe)
@@ -891,7 +891,7 @@ func TestUpdateSystemdCheckErrorConfirmScreen_StartAnyway_Client_PersistsAutoSel
 	if cmd == nil {
 		t.Fatal("expected quit cmd for start anyway")
 	}
-	if !updated.done || updated.resultMode != mode.Client {
+	if !updated.done || updated.resultMode != command.StartClient {
 		t.Fatalf("expected done client start, got done=%v mode=%v", updated.done, updated.resultMode)
 	}
 	if !strings.Contains(updated.notice, "without daemon guard") {
@@ -909,7 +909,7 @@ func TestUpdateSystemdCheckErrorConfirmScreen_Cancel_ReturnsToPreviousScreen(t *
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenSystemdCheckErrorConfirm
-	model.pendingStartMode = mode.Client
+	model.pendingStartMode = command.StartClient
 	model.pendingStartScreen = configuratorScreenClientSelect
 	model.cursor = 2 // Cancel
 
@@ -924,7 +924,7 @@ func TestUpdateSystemdCheckErrorConfirmScreen_Cancel_ReturnsToPreviousScreen(t *
 	if updated.screen != configuratorScreenClientSelect {
 		t.Fatalf("expected return to client select, got %v", updated.screen)
 	}
-	if updated.pendingStartMode != mode.Unknown {
+	if updated.pendingStartMode != command.Unknown {
 		t.Fatalf("expected pending mode cleared, got %v", updated.pendingStartMode)
 	}
 }
@@ -942,7 +942,7 @@ func TestUpdateSystemdActiveConfirmScreen_StopFails_ShowsNoticeAndReturns(t *tes
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenSystemdActiveConfirm
-	model.pendingStartMode = mode.Client
+	model.pendingStartMode = command.StartClient
 	model.pendingStartScreen = configuratorScreenClientSelect
 	model.pendingClientConfig = "new-cfg"
 	model.cursor = 0 // stop and continue
@@ -980,7 +980,7 @@ func TestUpdateSystemdActiveConfirmScreen_EnterStop_Client_PersistsAutoSelectCon
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenSystemdActiveConfirm
-	model.pendingStartMode = mode.Client
+	model.pendingStartMode = command.StartClient
 	model.pendingStartScreen = configuratorScreenClientSelect
 	model.pendingClientConfig = "cfg-a"
 	model.cursor = 0
@@ -996,8 +996,8 @@ func TestUpdateSystemdActiveConfirmScreen_EnterStop_Client_PersistsAutoSelectCon
 	if !updated.done {
 		t.Fatal("expected done=true after stop and continue")
 	}
-	if updated.resultMode != mode.Client {
-		t.Fatalf("expected mode.Client, got %v", updated.resultMode)
+	if updated.resultMode != command.StartClient {
+		t.Fatalf("expected command.StartClient, got %v", updated.resultMode)
 	}
 	if s.Preferences().AutoSelectClientConfig != "cfg-a" {
 		t.Fatalf("expected AutoSelectClientConfig persisted after confirmation, got %q", s.Preferences().AutoSelectClientConfig)
@@ -1005,7 +1005,7 @@ func TestUpdateSystemdActiveConfirmScreen_EnterStop_Client_PersistsAutoSelectCon
 }
 
 func TestUpdateDaemonManageScreen_Esc_LeavesDaemonManageScreen(t *testing.T) {
-	status := SystemdDaemonStatus{Installed: true, UnitFileState: "enabled", ActiveState: "inactive", Mode: mode.Server}
+	status := SystemdDaemonStatus{Installed: true, UnitFileState: "enabled", ActiveState: "inactive", Mode: command.StartServer}
 	opts := defaultConfiguratorOpts()
 	opts.SystemdSupported = true
 	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) { return status, nil }
@@ -1021,7 +1021,7 @@ func TestUpdateDaemonManageScreen_Esc_LeavesDaemonManageScreen(t *testing.T) {
 	}
 	model.screen = configuratorScreenDaemonManage
 	model.tab = configuratorTabLogs
-	model.pendingDaemonMode = mode.Server
+	model.pendingDaemonMode = command.StartServer
 
 	updatedModel, _ := model.updateDaemonManageScreen(keyNamed(tea.KeyEsc))
 	updated := updatedModel.(configuratorSessionModel)
@@ -1031,7 +1031,7 @@ func TestUpdateDaemonManageScreen_Esc_LeavesDaemonManageScreen(t *testing.T) {
 	if updated.tab != configuratorTabMain {
 		t.Fatalf("expected main tab after leave, got %v", updated.tab)
 	}
-	if updated.pendingDaemonMode != mode.Unknown {
+	if updated.pendingDaemonMode != command.Unknown {
 		t.Fatalf("expected pending daemon mode cleared, got %v", updated.pendingDaemonMode)
 	}
 	if updated.cursor != indexOfString(updated.modeOptions, sessionModeDaemon) {
@@ -1044,7 +1044,7 @@ func TestRefreshDaemonStatus_UnavailableAndError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	model.daemon.status = SystemdDaemonStatus{Installed: true, UnitFileState: "enabled", ActiveState: "active", Mode: mode.Server}
+	model.daemon.status = SystemdDaemonStatus{Installed: true, UnitFileState: "enabled", ActiveState: "active", Mode: command.StartServer}
 	model.daemon.menuOptions = []string{sessionDaemonStop}
 
 	model.refreshDaemonStatus()
@@ -1079,7 +1079,7 @@ func TestDaemonStatusLineAndNotice_ErrorAndEmptyNotice(t *testing.T) {
 	}
 
 	model.daemon.statusErr = nil
-	model.daemon.status = SystemdDaemonStatus{Installed: true, UnitFileState: "disabled", ActiveState: "active", Mode: mode.Client}
+	model.daemon.status = SystemdDaemonStatus{Installed: true, UnitFileState: "disabled", ActiveState: "active", Mode: command.StartClient}
 	model.notice = ""
 	want := model.daemonStatusLine()
 	if got := model.daemonNotice(); got != want {
@@ -1110,7 +1110,7 @@ func TestUpdateDaemonManageScreen_UnavailableActions_ShowNotice(t *testing.T) {
 			opts := defaultConfiguratorOpts()
 			opts.SystemdSupported = true
 			opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
-				return SystemdDaemonStatus{Installed: true, ActiveState: boolToActiveState(tc.active), Mode: mode.Client}, nil
+				return SystemdDaemonStatus{Installed: true, ActiveState: boolToActiveState(tc.active), Mode: command.StartClient}, nil
 			}
 
 			model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
@@ -1202,7 +1202,7 @@ func TestUpdateDaemonManageScreen_ActionFailures_ShowNotice(t *testing.T) {
 			opts := defaultConfiguratorOpts()
 			opts.SystemdSupported = true
 			opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
-				return SystemdDaemonStatus{Installed: true, ActiveState: boolToActiveState(tc.active), Mode: mode.Client}, nil
+				return SystemdDaemonStatus{Installed: true, ActiveState: boolToActiveState(tc.active), Mode: command.StartClient}, nil
 			}
 			tc.configureHooks(&opts)
 
@@ -1253,7 +1253,7 @@ func TestUpdateDaemonReconfigureConfirmScreen_EscAndNonEnter(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenDaemonReconfigureConfirm
-	model.pendingDaemonMode = mode.Server
+	model.pendingDaemonMode = command.StartServer
 	model.cursor = 0
 
 	updatedModel, _ := model.updateDaemonReconfigureConfirmScreen(keyNamed(tea.KeyDown))
@@ -1267,7 +1267,7 @@ func TestUpdateDaemonReconfigureConfirmScreen_EscAndNonEnter(t *testing.T) {
 	if updated.screen != configuratorScreenDaemonManage {
 		t.Fatalf("expected daemon manage screen on esc, got %v", updated.screen)
 	}
-	if updated.pendingDaemonMode != mode.Unknown {
+	if updated.pendingDaemonMode != command.Unknown {
 		t.Fatalf("expected pending mode cleared on esc, got %v", updated.pendingDaemonMode)
 	}
 	if !strings.Contains(updated.notice, "Reconfigure cancelled.") {
@@ -1279,7 +1279,7 @@ func TestUpdateDaemonReconfigureConfirmScreen_ConfirmServerError_ShowsNotice(t *
 	opts := defaultConfiguratorOpts()
 	opts.SystemdSupported = true
 	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
-		return SystemdDaemonStatus{Installed: true, ActiveState: "active", Mode: mode.Client}, nil
+		return SystemdDaemonStatus{Installed: true, ActiveState: "active", Mode: command.StartClient}, nil
 	}
 	opts.InstallServerSystemdUnit = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
 
@@ -1288,7 +1288,7 @@ func TestUpdateDaemonReconfigureConfirmScreen_ConfirmServerError_ShowsNotice(t *
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenDaemonReconfigureConfirm
-	model.pendingDaemonMode = mode.Server
+	model.pendingDaemonMode = command.StartServer
 	model.cursor = 0
 
 	updatedModel, _ := model.updateDaemonReconfigureConfirmScreen(keyNamed(tea.KeyEnter))
@@ -1397,7 +1397,7 @@ func TestUpdateSystemdActiveConfirmScreen_EscAndStopUnavailable(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenSystemdActiveConfirm
-	model.pendingStartMode = mode.Client
+	model.pendingStartMode = command.StartClient
 	model.pendingStartScreen = configuratorScreenClientSelect
 	model.pendingClientConfig = "cfg-a"
 
@@ -1411,7 +1411,7 @@ func TestUpdateSystemdActiveConfirmScreen_EscAndStopUnavailable(t *testing.T) {
 	}
 
 	model.screen = configuratorScreenSystemdActiveConfirm
-	model.pendingStartMode = mode.Server
+	model.pendingStartMode = command.StartServer
 	model.pendingStartScreen = configuratorScreenServerSelect
 	model.cursor = 0
 	updatedModel, _ = model.updateSystemdActiveConfirmScreen(keyNamed(tea.KeyEnter))
@@ -1434,14 +1434,14 @@ func TestStartModeWithSystemdGuard_PreserveNotice(t *testing.T) {
 	}
 	model.notice = "keep me"
 
-	updated := model.startModeWithSystemdGuard(mode.Server, configuratorScreenServerSelect, true)
+	updated := model.startModeWithSystemdGuard(command.StartServer, configuratorScreenServerSelect, true)
 	if updated.screen != configuratorScreenSystemdActiveConfirm {
 		t.Fatalf("expected confirm screen, got %v", updated.screen)
 	}
 	if updated.notice != "keep me" {
 		t.Fatalf("expected notice to be preserved, got %q", updated.notice)
 	}
-	if updated.pendingStartMode != mode.Server || updated.pendingStartScreen != configuratorScreenServerSelect {
+	if updated.pendingStartMode != command.StartServer || updated.pendingStartScreen != configuratorScreenServerSelect {
 		t.Fatalf("expected pending start to be set, got mode=%v screen=%v", updated.pendingStartMode, updated.pendingStartScreen)
 	}
 }
@@ -1561,8 +1561,8 @@ func TestStartModeWithSystemdGuard_CoversBranches(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		updated := model.startModeWithSystemdGuard(mode.Server, configuratorScreenServerSelect, false)
-		if !updated.done || updated.resultMode != mode.Server {
+		updated := model.startModeWithSystemdGuard(command.StartServer, configuratorScreenServerSelect, false)
+		if !updated.done || updated.resultMode != command.StartServer {
 			t.Fatalf("expected immediate start, got done=%v mode=%v", updated.done, updated.resultMode)
 		}
 	})
@@ -1575,14 +1575,14 @@ func TestStartModeWithSystemdGuard_CoversBranches(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		updated := model.startModeWithSystemdGuard(mode.Server, configuratorScreenServerSelect, false)
+		updated := model.startModeWithSystemdGuard(command.StartServer, configuratorScreenServerSelect, false)
 		if updated.screen != configuratorScreenSystemdCheckErrorConfirm {
 			t.Fatalf("expected systemd check error confirm screen, got %v", updated.screen)
 		}
 		if !strings.Contains(updated.notice, "Failed to check systemd daemon status") {
 			t.Fatalf("expected status failure notice, got %q", updated.notice)
 		}
-		if updated.pendingStartMode != mode.Server || updated.pendingStartScreen != configuratorScreenServerSelect {
+		if updated.pendingStartMode != command.StartServer || updated.pendingStartScreen != configuratorScreenServerSelect {
 			t.Fatalf("expected pending start to be set, got mode=%v screen=%v", updated.pendingStartMode, updated.pendingStartScreen)
 		}
 	})
@@ -1595,8 +1595,8 @@ func TestStartModeWithSystemdGuard_CoversBranches(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		updated := model.startModeWithSystemdGuard(mode.Client, configuratorScreenClientSelect, false)
-		if !updated.done || updated.resultMode != mode.Client {
+		updated := model.startModeWithSystemdGuard(command.StartClient, configuratorScreenClientSelect, false)
+		if !updated.done || updated.resultMode != command.StartClient {
 			t.Fatalf("expected immediate client start, got done=%v mode=%v", updated.done, updated.resultMode)
 		}
 	})
@@ -1608,7 +1608,7 @@ func TestStartModeWithSystemdGuard_CoversBranches(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		updated := model.startModeWithSystemdGuard(mode.Server, configuratorScreenServerSelect, false)
+		updated := model.startModeWithSystemdGuard(command.StartServer, configuratorScreenServerSelect, false)
 		if updated.done {
 			t.Fatal("expected start to be blocked when stop is unavailable")
 		}
@@ -1629,7 +1629,7 @@ func TestStartModeWithSystemdGuard_CoversBranches(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		model.notice = "temporary notice"
-		updated := model.startModeWithSystemdGuard(mode.Server, configuratorScreenServerSelect, false)
+		updated := model.startModeWithSystemdGuard(command.StartServer, configuratorScreenServerSelect, false)
 		if updated.screen != configuratorScreenSystemdActiveConfirm {
 			t.Fatalf("expected confirm screen, got %v", updated.screen)
 		}
@@ -1657,7 +1657,7 @@ func TestUpdateDaemonManageScreen_NonEnter_DoesNothing(t *testing.T) {
 	opts := defaultConfiguratorOpts()
 	opts.SystemdSupported = true
 	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
-		return SystemdDaemonStatus{Installed: true, UnitFileState: "disabled", ActiveState: "inactive", Mode: mode.Client}, nil
+		return SystemdDaemonStatus{Installed: true, UnitFileState: "disabled", ActiveState: "inactive", Mode: command.StartClient}, nil
 	}
 	startCalls := 0
 	opts.StartSystemdUnit = func() error {
@@ -1687,7 +1687,7 @@ func TestUpdateDaemonManageScreen_NonEnter_DoesNothing(t *testing.T) {
 }
 
 func TestUpdateDaemonManageScreen_ReconfigureServerActive_ShowsMandatoryConfirm(t *testing.T) {
-	status := SystemdDaemonStatus{Installed: true, UnitFileState: "enabled", ActiveState: "active", Mode: mode.Client}
+	status := SystemdDaemonStatus{Installed: true, UnitFileState: "enabled", ActiveState: "active", Mode: command.StartClient}
 	opts := defaultConfiguratorOpts()
 	opts.SystemdSupported = true
 	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) { return status, nil }
@@ -1714,7 +1714,7 @@ func TestUpdateDaemonManageScreen_ReconfigureServerActive_ShowsMandatoryConfirm(
 	if updated.screen != configuratorScreenDaemonReconfigureConfirm {
 		t.Fatalf("expected reconfigure confirm screen, got %v", updated.screen)
 	}
-	if updated.pendingDaemonMode != mode.Server {
+	if updated.pendingDaemonMode != command.StartServer {
 		t.Fatalf("expected pending daemon mode server, got %v", updated.pendingDaemonMode)
 	}
 }
@@ -1725,7 +1725,7 @@ func TestUpdateSystemdActiveConfirmScreen_NonEnter_DoesNothing(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenSystemdActiveConfirm
-	model.pendingStartMode = mode.Client
+	model.pendingStartMode = command.StartClient
 	model.pendingStartScreen = configuratorScreenClientSelect
 	model.cursor = 0
 
@@ -1737,7 +1737,7 @@ func TestUpdateSystemdActiveConfirmScreen_NonEnter_DoesNothing(t *testing.T) {
 	if updated.screen != configuratorScreenSystemdActiveConfirm {
 		t.Fatalf("expected to stay on confirm screen, got %v", updated.screen)
 	}
-	if updated.pendingStartMode != mode.Client {
+	if updated.pendingStartMode != command.StartClient {
 		t.Fatalf("expected pending mode to remain unchanged, got %v", updated.pendingStartMode)
 	}
 }
@@ -1750,14 +1750,14 @@ func TestApplyDaemonSetup_RestartBranchesAndUnknownMode(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		_, err = model.applyDaemonSetup(mode.Client, true)
+		_, err = model.applyDaemonSetup(command.StartClient, true)
 		if err == nil || !strings.Contains(err.Error(), "daemon stop is unavailable") {
 			t.Fatalf("expected restart error, got %v", err)
 		}
 	})
 
 	t.Run("server restart success stores notice", func(t *testing.T) {
-		status := SystemdDaemonStatus{Installed: true, UnitFileState: "enabled", ActiveState: "active", Mode: mode.Client}
+		status := SystemdDaemonStatus{Installed: true, UnitFileState: "enabled", ActiveState: "active", Mode: command.StartClient}
 		opts := defaultConfiguratorOpts()
 		opts.SystemdSupported = true
 		opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) { return status, nil }
@@ -1766,7 +1766,7 @@ func TestApplyDaemonSetup_RestartBranchesAndUnknownMode(t *testing.T) {
 			return nil
 		}
 		opts.InstallServerSystemdUnit = func() (string, error) {
-			status.Mode = mode.Server
+			status.Mode = command.StartServer
 			return "/etc/systemd/system/tungo.service", nil
 		}
 		opts.StartSystemdUnit = func() error {
@@ -1777,14 +1777,14 @@ func TestApplyDaemonSetup_RestartBranchesAndUnknownMode(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		updated, err := model.applyDaemonSetup(mode.Server, true)
+		updated, err := model.applyDaemonSetup(command.StartServer, true)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if !strings.Contains(updated.notice, "Server daemon reconfigured") {
 			t.Fatalf("expected server reconfigure notice, got %q", updated.notice)
 		}
-		if updated.daemon.status.Mode != mode.Server {
+		if updated.daemon.status.Mode != command.StartServer {
 			t.Fatalf("expected refreshed server role, got %+v", updated.daemon.status)
 		}
 	})
@@ -1794,7 +1794,7 @@ func TestApplyDaemonSetup_RestartBranchesAndUnknownMode(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		_, err = model.applyDaemonSetup(mode.Unknown, false)
+		_, err = model.applyDaemonSetup(command.Unknown, false)
 		if err == nil || err.Error() != "unknown daemon mode" {
 			t.Fatalf("expected unknown daemon mode error, got %v", err)
 		}
@@ -1808,7 +1808,7 @@ func TestMainTabView_DaemonConfirmScreens_ShowExpectedLabels(t *testing.T) {
 	}
 
 	model.screen = configuratorScreenDaemonReconfigureConfirm
-	model.pendingDaemonMode = mode.Client
+	model.pendingDaemonMode = command.StartClient
 	clientView := model.mainTabView()
 	if !strings.Contains(clientView, "requires restart") || !strings.Contains(clientView, "client daemon setup") {
 		t.Fatalf("expected client reconfigure label in view, got: %s", clientView)
@@ -1817,20 +1817,20 @@ func TestMainTabView_DaemonConfirmScreens_ShowExpectedLabels(t *testing.T) {
 		t.Fatalf("expected reconfigure confirm hint to include tab navigation, got: %s", clientView)
 	}
 
-	model.pendingDaemonMode = mode.Server
+	model.pendingDaemonMode = command.StartServer
 	serverView := model.mainTabView()
 	if !strings.Contains(serverView, "server daemon setup") {
 		t.Fatalf("expected server reconfigure label in view, got: %s", serverView)
 	}
 
 	model.screen = configuratorScreenSystemdActiveConfirm
-	model.pendingStartMode = mode.Client
+	model.pendingStartMode = command.StartClient
 	startClientView := model.mainTabView()
 	if !strings.Contains(startClientView, "starting client") {
 		t.Fatalf("expected client start label in confirm view, got: %s", startClientView)
 	}
 
-	model.pendingStartMode = mode.Server
+	model.pendingStartMode = command.StartServer
 	startServerView := model.mainTabView()
 	if !strings.Contains(startServerView, "starting server") {
 		t.Fatalf("expected server start label in confirm view, got: %s", startServerView)
@@ -1860,7 +1860,7 @@ func TestDaemonMenuOptions_DeactivatingStateShowsStopNotStart(t *testing.T) {
 		Installed:     true,
 		ActiveState:   "deactivating",
 		UnitFileState: "disabled",
-		Mode:          mode.Client,
+		Mode:          command.StartClient,
 	})
 
 	if !containsString(options, sessionDaemonStop) {
@@ -1882,7 +1882,7 @@ func TestDaemonMenuOptions_StaticUnitFileDoesNotMapToEnableDisable(t *testing.T)
 		Installed:     true,
 		ActiveState:   "inactive",
 		UnitFileState: "static",
-		Mode:          mode.Client,
+		Mode:          command.StartClient,
 	})
 
 	if containsString(options, sessionDaemonEnable) || containsString(options, sessionDaemonDisable) {

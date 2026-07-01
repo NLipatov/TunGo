@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"tungo/domain/mode"
+	"tungo/domain/command"
 	systemdDomain "tungo/infrastructure/PAL/service_management/linux/systemd/domain"
 	bubbleTea "tungo/presentation/ui/tui/internal/bubble_tea"
 	selectorContract "tungo/presentation/ui/tui/internal/ui/contracts/selector"
@@ -66,8 +66,8 @@ func TestConfigurator_Configure_ClientMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if gotMode != mode.Client {
-		t.Fatalf("expected mode.Client, got %v", gotMode)
+	if gotMode != command.StartClient {
+		t.Fatalf("expected command.StartClient, got %v", gotMode)
 	}
 }
 
@@ -85,8 +85,8 @@ func TestConfigurator_Configure_ServerMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if gotMode != mode.Server {
-		t.Fatalf("expected mode.Server, got %v", gotMode)
+	if gotMode != command.StartServer {
+		t.Fatalf("expected command.StartServer, got %v", gotMode)
 	}
 }
 
@@ -103,8 +103,8 @@ func TestConfigurator_Configure_AppModeError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if gotMode != mode.Unknown {
-		t.Fatalf("expected mode.Unknown, got %v", gotMode)
+	if gotMode != command.Unknown {
+		t.Fatalf("expected command.Unknown, got %v", gotMode)
 	}
 }
 
@@ -140,8 +140,8 @@ func TestConfigurator_Configure_BackToModeFromClient_ThenServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if gotMode != mode.Server {
-		t.Fatalf("expected mode.Server after back to mode selection, got %v", gotMode)
+	if gotMode != command.StartServer {
+		t.Fatalf("expected command.StartServer after back to mode selection, got %v", gotMode)
 	}
 }
 
@@ -178,8 +178,8 @@ func TestConfigurator_Configure_BackToModeFromServer_ThenClient(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if gotMode != mode.Client {
-		t.Fatalf("expected mode.Client after server back, got %v", gotMode)
+	if gotMode != command.StartClient {
+		t.Fatalf("expected command.StartClient after server back, got %v", gotMode)
 	}
 }
 
@@ -215,7 +215,7 @@ func TestConfigurator_Configure_ClientErrorPropagates(t *testing.T) {
 	if err == nil || err.Error() != "client fail" {
 		t.Fatalf("expected client fail, got %v", err)
 	}
-	if gotMode != mode.Client {
+	if gotMode != command.StartClient {
 		t.Fatalf("expected selected mode client on client error, got %v", gotMode)
 	}
 }
@@ -241,7 +241,7 @@ func TestConfigurator_Configure_ServerErrorPropagates(t *testing.T) {
 	if err == nil || err.Error() != "server fail" {
 		t.Fatalf("expected server fail, got %v", err)
 	}
-	if gotMode != mode.Server {
+	if gotMode != command.StartServer {
 		t.Fatalf("expected selected mode server on server error, got %v", gotMode)
 	}
 }
@@ -252,8 +252,8 @@ func TestConfigurator_ConfigureFromState_UnknownState(t *testing.T) {
 	if err == nil || err.Error() != "unknown configurator state: 99" {
 		t.Fatalf("expected unknown state error, got %v", err)
 	}
-	if gotMode != mode.Unknown {
-		t.Fatalf("expected mode.Unknown, got %v", gotMode)
+	if gotMode != command.Unknown {
+		t.Fatalf("expected command.Unknown, got %v", gotMode)
 	}
 }
 
@@ -267,8 +267,8 @@ func TestConfigurator_ConfigureContinuous_NilClientConfigurator(t *testing.T) {
 	if err == nil || err.Error() != "continuous configurator is not initialized" {
 		t.Fatalf("expected initialization error, got %v", err)
 	}
-	if gotMode != mode.Unknown {
-		t.Fatalf("expected mode.Unknown, got %v", gotMode)
+	if gotMode != command.Unknown {
+		t.Fatalf("expected command.Unknown, got %v", gotMode)
 	}
 }
 
@@ -285,8 +285,8 @@ func TestConfigurator_ConfigureContinuous_NilServerConfigurator(t *testing.T) {
 	if err == nil || err.Error() != "continuous configurator is not initialized" {
 		t.Fatalf("expected initialization error, got %v", err)
 	}
-	if gotMode != mode.Unknown {
-		t.Fatalf("expected mode.Unknown, got %v", gotMode)
+	if gotMode != command.Unknown {
+		t.Fatalf("expected command.Unknown, got %v", gotMode)
 	}
 }
 
@@ -301,7 +301,7 @@ func TestConfigurator_WithContinuousUI(t *testing.T) {
 // --- mock unified session for configureContinuous tests ---
 
 type mockUnifiedSession struct {
-	waitModeResult         mode.Mode
+	waitModeResult         command.Command
 	waitModeErr            error
 	waitRuntimeReconfigure bool
 	waitRuntimeErr         error
@@ -309,7 +309,7 @@ type mockUnifiedSession struct {
 	closeCalled            bool
 }
 
-func (m *mockUnifiedSession) WaitForMode() (mode.Mode, error) {
+func (m *mockUnifiedSession) WaitForMode() (command.Command, error) {
 	return m.waitModeResult, m.waitModeErr
 }
 
@@ -411,7 +411,7 @@ func newContinuousConfigurator() *Configurator {
 }
 
 func TestConfigureContinuous_HappyPath_ReturnsMode(t *testing.T) {
-	mock := &mockUnifiedSession{waitModeResult: mode.Server}
+	mock := &mockUnifiedSession{waitModeResult: command.StartServer}
 	c := newContinuousConfigurator()
 	withMockUnifiedSession(t, c, mock)
 
@@ -419,8 +419,8 @@ func TestConfigureContinuous_HappyPath_ReturnsMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if gotMode != mode.Server {
-		t.Fatalf("expected mode.Server, got %v", gotMode)
+	if gotMode != command.StartServer {
+		t.Fatalf("expected command.StartServer, got %v", gotMode)
 	}
 	if mock.closeCalled {
 		t.Fatal("expected Close not called on success")
@@ -479,7 +479,7 @@ func TestConfigureContinuous_WaitForModeError_Propagates(t *testing.T) {
 }
 
 func TestConfigureContinuous_CreatesNewSession_WhenNil(t *testing.T) {
-	mock := &mockUnifiedSession{waitModeResult: mode.Client}
+	mock := &mockUnifiedSession{waitModeResult: command.StartClient}
 	c := newContinuousConfigurator()
 	// session is nil by default — factory should create new one
 	withMockNewUnifiedSession(t, func(_ context.Context, _ bubbleTea.ConfiguratorSessionOptions) (unifiedSessionHandle, error) {
@@ -490,8 +490,8 @@ func TestConfigureContinuous_CreatesNewSession_WhenNil(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if gotMode != mode.Client {
-		t.Fatalf("expected mode.Client, got %v", gotMode)
+	if gotMode != command.StartClient {
+		t.Fatalf("expected command.StartClient, got %v", gotMode)
 	}
 	if c.sh == nil || c.sh.handle != mock {
 		t.Fatal("expected session stored on configurator")
@@ -512,7 +512,7 @@ func TestConfigureContinuous_NewSessionError_Propagates(t *testing.T) {
 }
 
 func TestConfigureContinuous_ReusesExistingSession(t *testing.T) {
-	mock := &mockUnifiedSession{waitModeResult: mode.Server}
+	mock := &mockUnifiedSession{waitModeResult: command.StartServer}
 	c := newContinuousConfigurator()
 	withMockUnifiedSession(t, c, mock)
 	factoryCalled := false
@@ -525,8 +525,8 @@ func TestConfigureContinuous_ReusesExistingSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if gotMode != mode.Server {
-		t.Fatalf("expected mode.Server, got %v", gotMode)
+	if gotMode != command.StartServer {
+		t.Fatalf("expected command.StartServer, got %v", gotMode)
 	}
 	if factoryCalled {
 		t.Fatal("expected factory NOT called when session exists")
@@ -534,7 +534,7 @@ func TestConfigureContinuous_ReusesExistingSession(t *testing.T) {
 }
 
 func TestConfigureContinuous_SystemdSupported_WiresCallbacks(t *testing.T) {
-	mock := &mockUnifiedSession{waitModeResult: mode.Client}
+	mock := &mockUnifiedSession{waitModeResult: command.StartClient}
 	c := newContinuousConfigurator()
 	c.serverSupported = true
 
@@ -562,8 +562,8 @@ func TestConfigureContinuous_SystemdSupported_WiresCallbacks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if gotMode != mode.Client {
-		t.Fatalf("expected mode.Client, got %v", gotMode)
+	if gotMode != command.StartClient {
+		t.Fatalf("expected command.StartClient, got %v", gotMode)
 	}
 	if !captured.SystemdSupported {
 		t.Fatal("expected SystemdSupported=true in session options")
@@ -605,7 +605,7 @@ func TestConfigureContinuous_SystemdSupported_WiresCallbacks(t *testing.T) {
 		!status.Managed ||
 		status.UnitFileState != "enabled" ||
 		status.ActiveState != "active" ||
-		status.Mode != mode.Server ||
+		status.Mode != command.StartServer ||
 		status.ExecStart != "/usr/local/bin/tungo s" ||
 		status.FragmentPath != "/etc/systemd/system/tungo.service" {
 		t.Fatalf("unexpected mapped daemon status: %+v", status)
@@ -616,7 +616,7 @@ func TestConfigureContinuous_SystemdSupported_WiresCallbacks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected status error: %v", err)
 	}
-	if status.Mode != mode.Client {
+	if status.Mode != command.StartClient {
 		t.Fatalf("expected mapped client mode, got %v", status.Mode)
 	}
 
@@ -625,7 +625,7 @@ func TestConfigureContinuous_SystemdSupported_WiresCallbacks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected status error: %v", err)
 	}
-	if status.Mode != mode.Unknown {
+	if status.Mode != command.Unknown {
 		t.Fatalf("expected mapped unknown mode, got %v", status.Mode)
 	}
 
@@ -637,7 +637,7 @@ func TestConfigureContinuous_SystemdSupported_WiresCallbacks(t *testing.T) {
 }
 
 func TestConfigureContinuous_SystemdUnsupported_DoesNotWireCallbacks(t *testing.T) {
-	mock := &mockUnifiedSession{waitModeResult: mode.Server}
+	mock := &mockUnifiedSession{waitModeResult: command.StartServer}
 	c := newContinuousConfigurator()
 	c.serverSupported = true
 
@@ -654,8 +654,8 @@ func TestConfigureContinuous_SystemdUnsupported_DoesNotWireCallbacks(t *testing.
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if gotMode != mode.Server {
-		t.Fatalf("expected mode.Server, got %v", gotMode)
+	if gotMode != command.StartServer {
+		t.Fatalf("expected command.StartServer, got %v", gotMode)
 	}
 	if captured.SystemdSupported {
 		t.Fatal("expected SystemdSupported=false in session options")

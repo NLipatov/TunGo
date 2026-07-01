@@ -12,7 +12,7 @@ import (
 	"time"
 	"tungo/application/confgen"
 	"tungo/domain/app"
-	"tungo/domain/mode"
+	"tungo/domain/command"
 	"tungo/infrastructure/PAL/configuration"
 	"tungo/infrastructure/PAL/configuration/client"
 	serverConf "tungo/infrastructure/PAL/configuration/server"
@@ -31,6 +31,7 @@ import (
 	"tungo/presentation/runners/server"
 	"tungo/presentation/runners/version"
 	"tungo/presentation/signals/shutdown"
+	cliUI "tungo/presentation/ui/cli"
 	"tungo/presentation/ui/tui"
 )
 
@@ -62,6 +63,11 @@ func setupSlog() {
 }
 
 func run(ctx context.Context) error {
+	if cliUI.IsHelpRequest(os.Args[1:]) {
+		cliUI.PrintHelp()
+		return nil
+	}
+
 	if !elevation.IsElevated() {
 		return fmt.Errorf(
 			"%s must be run with admin privileges.\n%s",
@@ -81,7 +87,7 @@ func run(ctx context.Context) error {
 	defer cleanup()
 
 	for ctx.Err() == nil {
-		appMode, err := configurator.Configure(ctx)
+		appCommand, err := configurator.Configure(ctx)
 		if err != nil {
 			if errors.Is(err, configuring.ErrUserExit) || ctx.Err() != nil {
 				return nil
@@ -93,18 +99,18 @@ func run(ctx context.Context) error {
 		}
 
 		var runErr error
-		switch appMode {
-		case mode.Server:
+		switch appCommand {
+		case command.StartServer:
 			runErr = runServer(ctx, uiMode, serverResolver, configurationManager)
-		case mode.ServerConfGen:
+		case command.GenerateClientConfig:
 			return runServerConfGen(configurationManager)
-		case mode.Client:
+		case command.StartClient:
 			runErr = runClient(ctx, uiMode)
-		case mode.Version:
+		case command.ShowVersion:
 			printVersion(ctx)
 			return nil
 		default:
-			return fmt.Errorf("invalid app mode: %v", appMode)
+			return fmt.Errorf("invalid app command: %v", appCommand)
 		}
 		if errors.Is(runErr, runnersCommon.ErrReconfigureRequested) {
 			continue

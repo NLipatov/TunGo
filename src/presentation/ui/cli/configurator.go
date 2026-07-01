@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 	"tungo/domain/app"
-	"tungo/domain/mode"
+	"tungo/domain/command"
 )
 
 const (
@@ -14,6 +14,9 @@ const (
 	ServerConfGenMode = "s gen"
 	ClientMode        = "c"
 	Version           = "version"
+	Help              = "help"
+	HelpShort         = "-h"
+	HelpLong          = "--help"
 )
 
 type Configurator struct {
@@ -23,24 +26,25 @@ func NewConfigurator() *Configurator {
 	return &Configurator{}
 }
 
-func (c *Configurator) Configure(_ context.Context) (mode.Mode, error) {
+func (c *Configurator) Configure(_ context.Context) (command.Command, error) {
 	if app.CurrentUIMode() == app.TUI {
-		c.printUsage()
-		return mode.Unknown, fmt.Errorf("invalid arguments")
+		c.printHelp()
+		return command.Unknown, fmt.Errorf("invalid arguments")
 	}
 
-	switch strings.Join(c.trimArgs(os.Args[1:]), " ") {
+	args := c.trimArgs(os.Args[1:])
+	switch strings.Join(args, " ") {
 	case ClientMode:
-		return mode.Client, nil
+		return command.StartClient, nil
 	case ServerMode:
-		return mode.Server, nil
+		return command.StartServer, nil
 	case ServerConfGenMode:
-		return mode.ServerConfGen, nil
+		return command.GenerateClientConfig, nil
 	case Version:
-		return mode.Version, nil
+		return command.ShowVersion, nil
 	default:
-		c.printUsage()
-		return mode.Unknown, fmt.Errorf("invalid arguments")
+		c.printHelp()
+		return command.Unknown, fmt.Errorf("invalid arguments")
 	}
 }
 
@@ -52,10 +56,38 @@ func (c *Configurator) trimArgs(args []string) []string {
 	return args
 }
 
-func (c *Configurator) printUsage() {
-	fmt.Printf(`Usage: %s <mode>
-Modes:
-  %s  - Server
-  %s  - Client
-`, app.Name, ServerMode, ClientMode)
+func IsHelpRequest(args []string) bool {
+	if len(args) != 1 {
+		return false
+	}
+	switch strings.TrimSpace(args[0]) {
+	case Help, HelpShort, HelpLong:
+		return true
+	default:
+		return false
+	}
+}
+
+func HelpText() string {
+	return fmt.Sprintf(`Usage:
+  %s <command>
+
+Commands:
+  %-7s  Start a server
+  %-7s  Start a client
+  %-7s  Generate client configuration
+  %-7s  Show version
+  %-7s  Show help
+
+Options:
+  -h, --help  Show help
+`, app.Name, ServerMode, ClientMode, ServerConfGenMode, Version, Help)
+}
+
+func PrintHelp() {
+	fmt.Print(HelpText())
+}
+
+func (c *Configurator) printHelp() {
+	PrintHelp()
 }

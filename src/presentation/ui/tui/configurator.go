@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"tungo/domain/mode"
+	"tungo/domain/command"
 	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/PAL/exec_commander"
@@ -20,7 +20,7 @@ import (
 // unifiedSessionHandle is the subset of *bubbleTea.UnifiedSession used by the configurator
 // and runtime backend. Extracted as an interface for testability.
 type unifiedSessionHandle interface {
-	WaitForMode() (mode.Mode, error)
+	WaitForMode() (command.Command, error)
 	ActivateRuntime(ctx context.Context, options bubbleTea.RuntimeDashboardOptions)
 	WaitForRuntimeExit() (reconfigure bool, err error)
 	ShowFatalError(message string)
@@ -117,7 +117,7 @@ func NewDefaultConfigurator(serverConfigurationManager server.ConfigurationManag
 	).withContinuousUI()
 }
 
-func (p *Configurator) Configure(ctx context.Context) (mode.Mode, error) {
+func (p *Configurator) Configure(ctx context.Context) (command.Command, error) {
 	if p.useContinuousUI {
 		return p.configureContinuous(ctx)
 	}
@@ -129,9 +129,9 @@ func (p *Configurator) withContinuousUI() *Configurator {
 	return p
 }
 
-func (p *Configurator) configureContinuous(ctx context.Context) (mode.Mode, error) {
+func (p *Configurator) configureContinuous(ctx context.Context) (command.Command, error) {
 	if p.clientConfigurator == nil || p.serverConfigurator == nil {
-		return mode.Unknown, fmt.Errorf("continuous configurator is not initialized")
+		return command.Unknown, fmt.Errorf("continuous configurator is not initialized")
 	}
 
 	systemdInstaller := newSystemdInstaller()
@@ -152,12 +152,12 @@ func (p *Configurator) configureContinuous(ctx context.Context) (mode.Mode, erro
 			if err != nil {
 				return bubbleTea.SystemdDaemonStatus{}, err
 			}
-			daemonMode := mode.Unknown
+			daemonMode := command.Unknown
 			switch status.Role {
 			case systemdDomain.UnitRoleClient:
-				daemonMode = mode.Client
+				daemonMode = command.StartClient
 			case systemdDomain.UnitRoleServer:
-				daemonMode = mode.Server
+				daemonMode = command.StartServer
 			}
 			return bubbleTea.SystemdDaemonStatus{
 				Installed:      status.Installed,
@@ -190,7 +190,7 @@ func (p *Configurator) configureContinuous(ctx context.Context) (mode.Mode, erro
 	if p.sh == nil || p.sh.handle == nil {
 		session, err := newUnifiedSession(ctx, configOpts)
 		if err != nil {
-			return mode.Unknown, err
+			return command.Unknown, err
 		}
 		p.sh = &sessionHolder{handle: session}
 		injectSessionHolder(p.sh)
@@ -200,10 +200,10 @@ func (p *Configurator) configureContinuous(ctx context.Context) (mode.Mode, erro
 	if err != nil {
 		if errors.Is(err, bubbleTea.ErrUnifiedSessionQuit) || errors.Is(err, bubbleTea.ErrUnifiedSessionClosed) {
 			p.closeSession()
-			return mode.Unknown, ErrUserExit
+			return command.Unknown, ErrUserExit
 		}
 		p.closeSession()
-		return mode.Unknown, err
+		return command.Unknown, err
 	}
 	return selectedMode, nil
 }
@@ -221,23 +221,23 @@ func (p *Configurator) Close() {
 	p.closeSession()
 }
 
-func (p *Configurator) configureFromState(state configuratorState) (mode.Mode, error) {
-	selectedMode := mode.Unknown
+func (p *Configurator) configureFromState(state configuratorState) (command.Command, error) {
+	selectedMode := command.Unknown
 	for {
 		switch state {
 		case configuratorStateModeSelect:
-			appMode, appModeErr := p.appMode.Mode()
-			if appModeErr != nil {
-				return mode.Unknown, appModeErr
+			appCommand, appCommandErr := p.appMode.Mode()
+			if appCommandErr != nil {
+				return command.Unknown, appCommandErr
 			}
-			selectedMode = appMode
-			switch appMode {
-			case mode.Client:
+			selectedMode = appCommand
+			switch appCommand {
+			case command.StartClient:
 				state = configuratorStateClient
-			case mode.Server:
+			case command.StartServer:
 				state = configuratorStateServer
 			default:
-				return mode.Unknown, fmt.Errorf("invalid mode")
+				return command.Unknown, fmt.Errorf("invalid command")
 			}
 
 		case configuratorStateClient:
@@ -261,7 +261,7 @@ func (p *Configurator) configureFromState(state configuratorState) (mode.Mode, e
 			return selectedMode, nil
 
 		default:
-			return mode.Unknown, fmt.Errorf("unknown configurator state: %d", state)
+			return command.Unknown, fmt.Errorf("unknown configurator state: %d", state)
 		}
 	}
 }
