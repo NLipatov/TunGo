@@ -49,11 +49,11 @@ func TestRuntimeUI_Wrappers(t *testing.T) {
 		if mode != RuntimeModeServer {
 			t.Fatalf("expected server mode mapping, got %q", mode)
 		}
-		if len(options.Address.ProtocolAddresses) != 1 {
-			t.Fatalf("expected one protocol address entry, got %d", len(options.Address.ProtocolAddresses))
+		if len(options.Endpoints) != 1 {
+			t.Fatalf("expected one endpoint entry, got %d", len(options.Endpoints))
 		}
-		if options.Address.ProtocolAddresses[0].ServerAddress.IPv4 != netip.MustParseAddr("198.51.100.1") {
-			t.Fatalf("expected forwarded server IPv4, got %v", options.Address.ProtocolAddresses[0].ServerAddress.IPv4)
+		if ipv4, ok := options.Endpoints[0].Server.IPv4(); !ok || ipv4 != netip.MustParseAddr("198.51.100.1") {
+			t.Fatalf("expected forwarded server IPv4, got %v ok=%v", ipv4, ok)
 		}
 		if options.Protocol != settings.UDP {
 			t.Fatalf("expected forwarded protocol UDP, got %v", options.Protocol)
@@ -61,14 +61,10 @@ func TestRuntimeUI_Wrappers(t *testing.T) {
 		return true, nil
 	}
 	quit, err := RunRuntimeDashboard(context.Background(), RuntimeModeServer, RuntimeUIOptions{
-		Address: runnerCommon.RuntimeAddressInfo{
-			ProtocolAddresses: []runnerCommon.RuntimeProtocolAddress{{
-				Protocol: settings.UDP,
-				ServerAddress: runnerCommon.RuntimeAddressPair{
-					IPv4: netip.MustParseAddr("198.51.100.1"),
-				},
-			}},
-		},
+		Endpoints: []runnerCommon.EndpointInfo{{
+			Protocol: settings.UDP,
+			Server:   settings.Host{}.WithIPv4(netip.MustParseAddr("198.51.100.1")),
+		}},
 		Protocol: settings.UDP,
 	})
 	if err != nil || !quit {

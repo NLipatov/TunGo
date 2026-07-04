@@ -2,47 +2,30 @@ package server
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"tungo/application/network/connection"
 	"tungo/application/network/routing"
-	"tungo/domain/app"
 	"tungo/infrastructure/settings"
-	runtimeUI "tungo/presentation/ui/tui"
-	runnerCommon "tungo/runtime"
 
 	"golang.org/x/sync/errgroup"
 )
 
-type RuntimeDashboardFunc func(ctx context.Context, mode runtimeUI.RuntimeMode, options runtimeUI.RuntimeUIOptions) (bool, error)
-
-var serverReady = func() <-chan struct{} {
-	ch := make(chan struct{})
-	close(ch)
-	return ch
-}()
-
 type Runner struct {
-	uiMode              app.UIMode
-	deps                AppDependencies
-	workerFactory       connection.ServerWorkerFactory
-	routerFactory       connection.ServerTrafficRouterFactory
-	runRuntimeDashboard RuntimeDashboardFunc
+	deps          AppDependencies
+	workerFactory connection.ServerWorkerFactory
+	routerFactory connection.ServerTrafficRouterFactory
 }
 
 func NewRunner(
-	uiMode app.UIMode,
 	deps AppDependencies,
 	workerFactory connection.ServerWorkerFactory,
 	routerFactory connection.ServerTrafficRouterFactory,
 ) *Runner {
 	return &Runner{
-		uiMode:              uiMode,
-		deps:                deps,
-		workerFactory:       workerFactory,
-		routerFactory:       routerFactory,
-		runRuntimeDashboard: runtimeUI.RunRuntimeDashboard,
+		deps:          deps,
+		workerFactory: workerFactory,
+		routerFactory: routerFactory,
 	}
 }
 
@@ -65,33 +48,7 @@ func (r *Runner) Run(
 		}
 	}()
 
-	if r.uiMode != app.TUI {
-		return r.runWorkers(ctx)
-	}
-
-	workersCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	workerErrCh := make(chan error, 1)
-	go func() {
-		workerErrCh <- r.runWorkers(workersCtx)
-	}()
-
-	uiResultCh := make(chan runnerCommon.RuntimeUIResult, 1)
-	go func() {
-		userQuit, err := r.runRuntimeDashboard(workersCtx, runtimeUI.RuntimeModeServer, runtimeUI.RuntimeUIOptions{
-			ReadyCh: serverReady,
-			Address: runnerCommon.RuntimeAddressInfoFromServerConfiguration(r.deps.Configuration()),
-		})
-		uiResultCh <- runnerCommon.RuntimeUIResult{UserQuit: userQuit, Err: err}
-	}()
-	return runnerCommon.WaitForRuntimeSessionEnd(
-		cancel,
-		uiResultCh,
-		workerErrCh,
-		func(err error) bool { return errors.Is(err, runtimeUI.ErrUserExit) },
-		func(err error) { slog.Error("runtime UI error", "err", err) },
-	)
+	return r.runWorkers(ctx)
 }
 
 func (r *Runner) cleanup() error {

@@ -177,11 +177,13 @@ func runServer(ctx context.Context, uiMode app.UIMode, resolver configuration.Re
 	go configWatcher.Watch(watchCtx)
 
 	runner := server.NewRunner(
-		uiMode,
 		deps,
 		workerFactory,
 		tunnelServer.NewTrafficRouterFactory(),
 	)
+	if uiMode == app.TUI {
+		return runServerRuntimeDashboard(ctx, runner, *conf)
+	}
 	return runner.Run(ctx)
 }
 
@@ -212,8 +214,97 @@ func runClient(ctx context.Context, uiMode app.UIMode) error {
 	}
 
 	routerFactory := client_factory.NewRouterFactory()
-	runner := clientConf.NewRunner(uiMode, deps, routerFactory)
+	runner := clientConf.NewRunner(deps, routerFactory)
+	if uiMode == app.TUI {
+		return runClientRuntimeDashboard(ctx, runner, deps.Configuration())
+	}
 	return runner.Run(ctx)
+}
+
+func runClientRuntimeDashboard(ctx context.Context, runner *clientConf.Runner, conf client.Configuration) error {
+	for ctx.Err() == nil {
+		err := runClientRuntimeDashboardSession(ctx, runner, conf)
+		switch {
+		case err == nil:
+			return nil
+		case errors.Is(err, context.Canceled):
+			return context.Canceled
+		case errors.Is(err, runnersCommon.ErrReconfigureRequested):
+			return runnersCommon.ErrReconfigureRequested
+		default:
+			slog.Warn("session error, reconnecting", "err", err)
+			timer := time.NewTimer(500 * time.Millisecond)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return context.Canceled
+			case <-timer.C:
+			}
+		}
+	}
+	return context.Canceled
+}
+
+func runClientRuntimeDashboardSession(ctx context.Context, runner *clientConf.Runner, conf client.Configuration) error {
+	sessionCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	readyCh := make(chan struct{})
+	workerErrCh := make(chan error, 1)
+	go func() {
+		workerErrCh <- runner.RunSession(sessionCtx, clientConf.SessionOptions{ReadyCh: readyCh})
+	}()
+
+	uiResultCh := make(chan tui.RuntimeUIResult, 1)
+	go func() {
+		userQuit, err := tui.RunRuntimeDashboard(sessionCtx, tui.RuntimeModeClient, tui.RuntimeUIOptions{
+			ReadyCh:   readyCh,
+			Endpoints: runnersCommon.EndpointInfoFromClientConfiguration(conf),
+			Protocol:  conf.Protocol,
+		})
+		uiResultCh <- tui.RuntimeUIResult{UserQuit: userQuit, Err: err}
+	}()
+
+	return tui.WaitForRuntimeSessionEnd(
+		cancel,
+		uiResultCh,
+		workerErrCh,
+		func(err error) bool { return errors.Is(err, tui.ErrUserExit) },
+		func(err error) { slog.Error("runtime UI error", "err", err) },
+	)
+}
+
+func runServerRuntimeDashboard(ctx context.Context, runner *server.Runner, conf serverConf.Configuration) error {
+	runtimeCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	workerErrCh := make(chan error, 1)
+	go func() {
+		workerErrCh <- runner.Run(runtimeCtx)
+	}()
+
+	uiResultCh := make(chan tui.RuntimeUIResult, 1)
+	go func() {
+		userQuit, err := tui.RunRuntimeDashboard(runtimeCtx, tui.RuntimeModeServer, tui.RuntimeUIOptions{
+			ReadyCh:   closedReadyCh(),
+			Endpoints: runnersCommon.EndpointInfoFromServerConfiguration(conf),
+		})
+		uiResultCh <- tui.RuntimeUIResult{UserQuit: userQuit, Err: err}
+	}()
+
+	return tui.WaitForRuntimeSessionEnd(
+		cancel,
+		uiResultCh,
+		workerErrCh,
+		func(err error) bool { return errors.Is(err, tui.ErrUserExit) },
+		func(err error) { slog.Error("runtime UI error", "err", err) },
+	)
+}
+
+func closedReadyCh() <-chan struct{} {
+	ch := make(chan struct{})
+	close(ch)
+	return ch
 }
 
 // --- helpers ---

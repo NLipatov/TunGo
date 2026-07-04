@@ -53,17 +53,17 @@ func TestBubbleTeaRuntimeBackend_MappingAndHooks(t *testing.T) {
 		if options.LogFeed != feed {
 			t.Fatal("expected runtime log feed to be forwarded")
 		}
-		if len(options.ProtocolAddresses) != 1 {
-			t.Fatalf("expected one protocol address entry forwarded, got %d", len(options.ProtocolAddresses))
+		if len(options.Endpoints) != 1 {
+			t.Fatalf("expected one endpoint entry forwarded, got %d", len(options.Endpoints))
 		}
-		if options.ProtocolAddresses[0].Protocol != settings.TCP {
-			t.Fatalf("expected protocol address protocol TCP, got %v", options.ProtocolAddresses[0].Protocol)
+		if options.Endpoints[0].Protocol != settings.TCP {
+			t.Fatalf("expected endpoint protocol TCP, got %v", options.Endpoints[0].Protocol)
 		}
-		if options.ProtocolAddresses[0].ServerAddress.IPv4 != netip.MustParseAddr("198.51.100.10") {
-			t.Fatalf("expected server IPv4 forwarded, got %v", options.ProtocolAddresses[0].ServerAddress.IPv4)
+		if ipv4, ok := options.Endpoints[0].Server.IPv4(); !ok || ipv4 != netip.MustParseAddr("198.51.100.10") {
+			t.Fatalf("expected server IPv4 forwarded, got %v ok=%v", ipv4, ok)
 		}
-		if options.ProtocolAddresses[0].TunnelAddress.IPv4 != netip.MustParseAddr("10.0.0.2") {
-			t.Fatalf("expected tunnel IPv4 forwarded, got %v", options.ProtocolAddresses[0].TunnelAddress.IPv4)
+		if options.Endpoints[0].TunnelIPv4 != netip.MustParseAddr("10.0.0.2") {
+			t.Fatalf("expected tunnel IPv4 forwarded, got %v", options.Endpoints[0].TunnelIPv4)
 		}
 		if options.Protocol != settings.TCP {
 			t.Fatalf("expected protocol forwarded, got %v", options.Protocol)
@@ -71,17 +71,11 @@ func TestBubbleTeaRuntimeBackend_MappingAndHooks(t *testing.T) {
 		return true, nil
 	}
 	reconfigure, err := backend.runRuntimeDashboard(context.Background(), RuntimeModeServer, RuntimeUIOptions{
-		Address: runnerCommon.RuntimeAddressInfo{
-			ProtocolAddresses: []runnerCommon.RuntimeProtocolAddress{{
-				Protocol: settings.TCP,
-				ServerAddress: runnerCommon.RuntimeAddressPair{
-					IPv4: netip.MustParseAddr("198.51.100.10"),
-				},
-				TunnelAddress: runnerCommon.RuntimeAddressPair{
-					IPv4: netip.MustParseAddr("10.0.0.2"),
-				},
-			}},
-		},
+		Endpoints: []runnerCommon.EndpointInfo{{
+			Protocol:   settings.TCP,
+			Server:     settings.Host{}.WithIPv4(netip.MustParseAddr("198.51.100.10")),
+			TunnelIPv4: netip.MustParseAddr("10.0.0.2"),
+		}},
 		Protocol: settings.TCP,
 	})
 	if err != nil || !reconfigure {

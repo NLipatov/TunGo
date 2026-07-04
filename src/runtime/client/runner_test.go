@@ -12,7 +12,6 @@ import (
 	"tungo/application/network/connection"
 	"tungo/application/network/routing"
 	"tungo/application/network/routing/tun"
-	"tungo/domain/app"
 	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
 	clientRunners "tungo/runtime/client"
@@ -147,7 +146,7 @@ func TestClientRunner_Run_RouteTrafficCanceled(t *testing.T) {
 	}
 	router := &mockRouter{routeErr: context.Canceled}
 	routerFactory := &mockRouterFactory{router: router}
-	runner := clientRunners.NewRunner(app.CLI, deps, routerFactory)
+	runner := clientRunners.NewRunner(deps, routerFactory)
 	setRouterBuilder(runner, routerFactory)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -180,7 +179,7 @@ func TestClientRunner_Run_CreateRouterError(t *testing.T) {
 	routerFactory := &mockRouterFactory{
 		err: errors.New("create router error"),
 	}
-	runner := clientRunners.NewRunner(app.CLI, deps, routerFactory)
+	runner := clientRunners.NewRunner(deps, routerFactory)
 	setRouterBuilder(runner, routerFactory)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)

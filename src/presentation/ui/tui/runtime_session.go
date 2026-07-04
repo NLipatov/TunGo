@@ -1,9 +1,10 @@
-package runtime
+package tui
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	appRuntime "tungo/runtime"
 )
 
 type RuntimeUIResult struct {
@@ -55,7 +56,7 @@ func WaitForRuntimeSessionEnd(
 				if workerErr != nil && !errors.Is(workerErr, context.Canceled) {
 					return workerErr
 				}
-				return ErrReconfigureRequested
+				return appRuntime.ErrReconfigureRequested
 			}
 			cancel()
 			return <-workerErrCh

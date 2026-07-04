@@ -39,11 +39,11 @@ func (b *bubbleTeaRuntimeBackend) disableRuntimeLogCapture() {
 
 func (b *bubbleTeaRuntimeBackend) runRuntimeDashboard(ctx context.Context, mode RuntimeMode, options RuntimeUIOptions) (bool, error) {
 	dashboardOptions := bubbleTea.RuntimeDashboardOptions{
-		Mode:              bubbleTea.RuntimeDashboardClient,
-		LogFeed:           bubbleRuntimeLogFeed(),
-		ReadyCh:           options.ReadyCh,
-		Protocol:          options.Protocol,
-		ProtocolAddresses: options.Address.ProtocolAddresses,
+		Mode:      bubbleTea.RuntimeDashboardClient,
+		LogFeed:   bubbleRuntimeLogFeed(),
+		ReadyCh:   options.ReadyCh,
+		Protocol:  options.Protocol,
+		Endpoints: options.Endpoints,
 	}
 	if mode == RuntimeModeServer {
 		dashboardOptions.Mode = bubbleTea.RuntimeDashboardServer

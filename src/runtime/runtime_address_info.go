@@ -7,54 +7,46 @@ import (
 	"tungo/infrastructure/settings"
 )
 
-type RuntimeAddressPair struct {
-	IPv4 netip.Addr
-	IPv6 netip.Addr
+type EndpointInfo struct {
+	Protocol   settings.Protocol
+	Server     settings.Host
+	Port       int
+	TunnelIPv4 netip.Addr
+	TunnelIPv6 netip.Addr
 }
 
-func (p RuntimeAddressPair) IsValid() bool {
-	return p.IPv4.IsValid() || p.IPv6.IsValid()
-}
-
-type RuntimeProtocolAddress struct {
-	Protocol      settings.Protocol
-	ServerAddress RuntimeAddressPair
-	TunnelAddress RuntimeAddressPair
-}
-
-type RuntimeAddressInfo struct {
-	ProtocolAddresses []RuntimeProtocolAddress
-}
-
-func RuntimeAddressInfoFromClientConfiguration(conf clientConfiguration.Configuration) RuntimeAddressInfo {
-	info := RuntimeAddressInfo{}
+func EndpointInfoFromClientConfiguration(conf clientConfiguration.Configuration) []EndpointInfo {
 	activeSettings, err := conf.ActiveSettings()
 	if err != nil {
-		return info
+		return nil
 	}
-	if protocolAddress, ok := newRuntimeProtocolAddress(
+	if endpoint, ok := newEndpointInfo(
 		protocolOrFallback(activeSettings.Protocol, conf.Protocol),
-		runtimeAddressPairFromHost(activeSettings.Server),
-		runtimeAddressPairFromAddrs(activeSettings.IPv4, activeSettings.IPv6),
+		activeSettings.Server,
+		activeSettings.Port,
+		activeSettings.IPv4,
+		activeSettings.IPv6,
 	); ok {
-		info.ProtocolAddresses = append(info.ProtocolAddresses, protocolAddress)
+		return []EndpointInfo{endpoint}
 	}
-	return info
+	return nil
 }
 
-func RuntimeAddressInfoFromServerConfiguration(conf serverConfiguration.Configuration) RuntimeAddressInfo {
-	info := RuntimeAddressInfo{}
+func EndpointInfoFromServerConfiguration(conf serverConfiguration.Configuration) []EndpointInfo {
+	endpoints := make([]EndpointInfo, 0, 3)
 	for _, enabledSetting := range enabledProtocolSettings(conf) {
 		s := enabledSetting.settings
-		if protocolAddress, ok := newRuntimeProtocolAddress(
+		if endpoint, ok := newEndpointInfo(
 			protocolOrFallback(s.Protocol, enabledSetting.protocol),
-			runtimeAddressPairFromHost(s.Server),
-			runtimeAddressPairFromAddrs(s.IPv4, s.IPv6),
+			s.Server,
+			s.Port,
+			s.IPv4,
+			s.IPv6,
 		); ok {
-			info.ProtocolAddresses = append(info.ProtocolAddresses, protocolAddress)
+			endpoints = append(endpoints, endpoint)
 		}
 	}
-	return info
+	return endpoints
 }
 
 type protocolSettings struct {
@@ -76,36 +68,22 @@ func enabledProtocolSettings(conf serverConfiguration.Configuration) []protocolS
 	return result
 }
 
-func runtimeAddressPairFromHost(host settings.Host) RuntimeAddressPair {
-	var pair RuntimeAddressPair
-	if ipv4, ok := host.IPv4(); ok {
-		pair.IPv4 = ipv4
-	}
-	if ipv6, ok := host.IPv6(); ok {
-		pair.IPv6 = ipv6
-	}
-	return pair
-}
-
-func runtimeAddressPairFromAddrs(ipv4, ipv6 netip.Addr) RuntimeAddressPair {
-	return RuntimeAddressPair{
-		IPv4: ipv4,
-		IPv6: ipv6,
-	}
-}
-
-func newRuntimeProtocolAddress(
+func newEndpointInfo(
 	protocol settings.Protocol,
-	serverAddress RuntimeAddressPair,
-	tunnelAddress RuntimeAddressPair,
-) (RuntimeProtocolAddress, bool) {
-	if !serverAddress.IsValid() && !tunnelAddress.IsValid() {
-		return RuntimeProtocolAddress{}, false
+	server settings.Host,
+	port int,
+	tunnelIPv4 netip.Addr,
+	tunnelIPv6 netip.Addr,
+) (EndpointInfo, bool) {
+	if server.IsZero() && !tunnelIPv4.IsValid() && !tunnelIPv6.IsValid() {
+		return EndpointInfo{}, false
 	}
-	return RuntimeProtocolAddress{
-		Protocol:      protocol,
-		ServerAddress: serverAddress,
-		TunnelAddress: tunnelAddress,
+	return EndpointInfo{
+		Protocol:   protocol,
+		Server:     server,
+		Port:       port,
+		TunnelIPv4: tunnelIPv4,
+		TunnelIPv6: tunnelIPv6,
 	}, true
 }
 

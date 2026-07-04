@@ -13,10 +13,6 @@ import (
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
-	"tungo/presentation/ui/tui"
-	runnerCommon "tungo/runtime"
-
-	"tungo/domain/app"
 )
 
 type runtimeTestTransport struct {
@@ -96,121 +92,79 @@ func (f runtimeTestRouterFactory) CreateRouter(
 	return f.create(ctx, connectionFactory, tunFactory, workerFactory)
 }
 
-func newTestRunner(uiMode app.UIMode, deps AppDependencies, factory runtimeTestRouterFactory, dashboard RuntimeDashboardFunc) *Runner {
-	r := NewRunner(uiMode, deps, factory)
-	r.runRuntimeDashboard = dashboard
-	return r
-}
-
-func blockingRouter() runtimeTestRouter {
-	return runtimeTestRouter{
-		route: func(ctx context.Context) error {
-			<-ctx.Done()
-			return ctx.Err()
-		},
-	}
-}
-
-func TestRunSession_Interactive_ReconfigureReturnsBackToModeSelection(t *testing.T) {
+func TestRunSession_ClosesReadyAndRoutesTraffic(t *testing.T) {
 	deps := &runtimeTestDeps{}
-	r := newTestRunner(app.TUI, deps, runtimeTestRouterFactory{
-		create: func(_ context.Context, _ connection.Factory, _ tun.ClientManager, _ connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
-			return blockingRouter(), &runtimeTestTransport{}, &runtimeTestTun{}, nil
-		},
-	}, func(context.Context, tui.RuntimeMode, tui.RuntimeUIOptions) (bool, error) {
-		return true, nil
-	})
-
-	err := r.runSession(context.Background())
-	if !errors.Is(err, runnerCommon.ErrReconfigureRequested) {
-		t.Fatalf("expected back-to-mode-selection on reconfigure request, got %v", err)
-	}
-}
-
-func TestRunSession_Interactive_UIErrorWrappedWhenRouteCanceled(t *testing.T) {
-	deps := &runtimeTestDeps{}
-	r := newTestRunner(app.TUI, deps, runtimeTestRouterFactory{
-		create: func(ctx context.Context, _ connection.Factory, _ tun.ClientManager, _ connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
-			return blockingRouter(), &runtimeTestTransport{}, &runtimeTestTun{}, nil
-		},
-	}, func(context.Context, tui.RuntimeMode, tui.RuntimeUIOptions) (bool, error) {
-		return false, errors.New("ui failed")
-	})
-
-	err := r.runSession(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "runtime UI failed: ui failed") {
-		t.Fatalf("expected wrapped ui error, got %v", err)
-	}
-}
-
-func TestRunSession_Interactive_UserExitErrorCancelsSession(t *testing.T) {
-	deps := &runtimeTestDeps{}
-	r := newTestRunner(app.TUI, deps, runtimeTestRouterFactory{
-		create: func(_ context.Context, _ connection.Factory, _ tun.ClientManager, _ connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
-			return blockingRouter(), &runtimeTestTransport{}, &runtimeTestTun{}, nil
-		},
-	}, func(context.Context, tui.RuntimeMode, tui.RuntimeUIOptions) (bool, error) {
-		return false, tui.ErrUserExit
-	})
-
-	err := r.runSession(context.Background())
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("expected context canceled on user exit, got %v", err)
-	}
-}
-
-func TestRunSession_Interactive_RouteErrorWins(t *testing.T) {
-	deps := &runtimeTestDeps{}
-	r := newTestRunner(app.TUI, deps, runtimeTestRouterFactory{
+	routeStarted := make(chan struct{})
+	r := NewRunner(deps, runtimeTestRouterFactory{
 		create: func(context.Context, connection.Factory, tun.ClientManager, connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
-			router := runtimeTestRouter{
-				route: func(context.Context) error {
-					return errors.New("route failed")
+			return runtimeTestRouter{
+				route: func(ctx context.Context) error {
+					close(routeStarted)
+					<-ctx.Done()
+					return ctx.Err()
 				},
-			}
-			return router, &runtimeTestTransport{}, &runtimeTestTun{}, nil
+			}, &runtimeTestTransport{}, &runtimeTestTun{}, nil
 		},
-	}, func(context.Context, tui.RuntimeMode, tui.RuntimeUIOptions) (bool, error) {
-		return false, errors.New("ui failed")
 	})
 
-	err := r.runSession(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "route failed") {
-		t.Fatalf("expected route error, got %v", err)
+	ctx, cancel := context.WithCancel(context.Background())
+	readyCh := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- r.RunSession(ctx, SessionOptions{ReadyCh: readyCh})
+	}()
+
+	select {
+	case <-readyCh:
+	case <-time.After(time.Second):
+		t.Fatal("ready channel was not closed")
+	}
+	select {
+	case <-routeStarted:
+	case <-time.After(time.Second):
+		t.Fatal("route traffic was not started")
+	}
+
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got %v", err)
 	}
 }
 
-func TestRunSession_NonInteractive_UsesRouterDirectly(t *testing.T) {
+func TestRunSession_CreateRouterErrorDoesNotCloseReady(t *testing.T) {
 	deps := &runtimeTestDeps{}
-	r := NewRunner(app.CLI, deps, runtimeTestRouterFactory{
+	r := NewRunner(deps, runtimeTestRouterFactory{
 		create: func(context.Context, connection.Factory, tun.ClientManager, connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
-			router := runtimeTestRouter{
-				route: func(context.Context) error { return nil },
-			}
-			return router, &runtimeTestTransport{}, &runtimeTestTun{}, nil
+			return nil, nil, nil, errors.New("create failed")
 		},
 	})
 
-	if err := r.runSession(context.Background()); err != nil {
-		t.Fatalf("expected nil route error, got %v", err)
+	readyCh := make(chan struct{})
+	err := r.RunSession(context.Background(), SessionOptions{ReadyCh: readyCh})
+	if err == nil || !strings.Contains(err.Error(), "create failed") {
+		t.Fatalf("expected create router error, got %v", err)
+	}
+	select {
+	case <-readyCh:
+		t.Fatal("ready channel must not close when router creation fails")
+	default:
 	}
 }
 
 func TestRun_CancelDuringReconnectDelay(t *testing.T) {
 	deps := &runtimeTestDeps{}
-	r := NewRunner(app.CLI, deps, runtimeTestRouterFactory{
+	r := NewRunner(deps, runtimeTestRouterFactory{
 		create: func(context.Context, connection.Factory, tun.ClientManager, connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
-			router := runtimeTestRouter{
+			return runtimeTestRouter{
 				route: func(context.Context) error { return errors.New("boom") },
-			}
-			return router, &runtimeTestTransport{}, &runtimeTestTun{}, nil
+			}, &runtimeTestTransport{}, &runtimeTestTun{}, nil
 		},
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
-		r.Run(ctx)
+		_ = r.Run(ctx)
 		close(done)
 	}()
 	time.Sleep(80 * time.Millisecond)
@@ -222,108 +176,20 @@ func TestRun_CancelDuringReconnectDelay(t *testing.T) {
 	}
 }
 
-func TestRunSession_RouteErrorBranch_WaitsUIAndReturnsRouteErr(t *testing.T) {
-	routeStarted := make(chan struct{})
-	deps := &runtimeTestDeps{}
-	r := newTestRunner(app.TUI, deps, runtimeTestRouterFactory{
-		create: func(context.Context, connection.Factory, tun.ClientManager, connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
-			router := runtimeTestRouter{
-				route: func(context.Context) error {
-					close(routeStarted)
-					return errors.New("route early")
-				},
-			}
-			return router, &runtimeTestTransport{}, &runtimeTestTun{}, nil
-		},
-	}, func(context.Context, tui.RuntimeMode, tui.RuntimeUIOptions) (bool, error) {
-		<-routeStarted
-		return false, errors.New("ui branch error")
-	})
-
-	err := r.runSession(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "route early") {
-		t.Fatalf("expected early route error, got %v", err)
-	}
-}
-
-func TestRunSession_UserQuitReturnsRouteErrWhenNotCanceled(t *testing.T) {
-	deps := &runtimeTestDeps{}
-	r := newTestRunner(app.TUI, deps, runtimeTestRouterFactory{
-		create: func(context.Context, connection.Factory, tun.ClientManager, connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
-			router := runtimeTestRouter{
-				route: func(context.Context) error {
-					return errors.New("route explicit error")
-				},
-			}
-			return router, &runtimeTestTransport{}, &runtimeTestTun{}, nil
-		},
-	}, func(context.Context, tui.RuntimeMode, tui.RuntimeUIOptions) (bool, error) {
-		return true, nil
-	})
-
-	err := r.runSession(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "route explicit error") {
-		t.Fatalf("expected route error returned from user quit branch, got %v", err)
-	}
-}
-
-func TestRunSession_UICompletesWithoutQuit_ReturnsRouteChannelResult(t *testing.T) {
-	deps := &runtimeTestDeps{}
-	r := newTestRunner(app.TUI, deps, runtimeTestRouterFactory{
-		create: func(context.Context, connection.Factory, tun.ClientManager, connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
-			router := runtimeTestRouter{
-				route: func(context.Context) error {
-					return errors.New("route after ui")
-				},
-			}
-			return router, &runtimeTestTransport{}, &runtimeTestTun{}, nil
-		},
-	}, func(context.Context, tui.RuntimeMode, tui.RuntimeUIOptions) (bool, error) {
-		return false, nil
-	})
-
-	err := r.runSession(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "route after ui") {
-		t.Fatalf("expected route channel result after UI completion, got %v", err)
-	}
-}
-
-func TestRunSession_Interactive_UserExitError_RouteRealError_ReturnsRouteError(t *testing.T) {
-	deps := &runtimeTestDeps{}
-	r := newTestRunner(app.TUI, deps, runtimeTestRouterFactory{
-		create: func(context.Context, connection.Factory, tun.ClientManager, connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
-			router := runtimeTestRouter{
-				route: func(context.Context) error {
-					return errors.New("route real error")
-				},
-			}
-			return router, &runtimeTestTransport{}, &runtimeTestTun{}, nil
-		},
-	}, func(context.Context, tui.RuntimeMode, tui.RuntimeUIOptions) (bool, error) {
-		return false, tui.ErrUserExit
-	})
-
-	err := r.runSession(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "route real error") {
-		t.Fatalf("expected route real error, got %v", err)
-	}
-}
-
-func TestRun_ReconnectDelayAndReconfigure(t *testing.T) {
+func TestRun_ReconnectDelayAndRecovery(t *testing.T) {
 	callCount := 0
 	deps := &runtimeTestDeps{}
-	r := NewRunner(app.CLI, deps, runtimeTestRouterFactory{
+	r := NewRunner(deps, runtimeTestRouterFactory{
 		create: func(context.Context, connection.Factory, tun.ClientManager, connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
 			callCount++
-			router := runtimeTestRouter{
+			return runtimeTestRouter{
 				route: func(context.Context) error {
 					if callCount <= 1 {
 						return errors.New("transient")
 					}
 					return nil
 				},
-			}
-			return router, &runtimeTestTransport{}, &runtimeTestTun{}, nil
+			}, &runtimeTestTransport{}, &runtimeTestTun{}, nil
 		},
 	})
 
@@ -336,25 +202,9 @@ func TestRun_ReconnectDelayAndReconfigure(t *testing.T) {
 	}
 }
 
-func TestRun_ReconfigureRequestedPropagates(t *testing.T) {
-	deps := &runtimeTestDeps{}
-	r := newTestRunner(app.TUI, deps, runtimeTestRouterFactory{
-		create: func(context.Context, connection.Factory, tun.ClientManager, connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
-			return blockingRouter(), &runtimeTestTransport{}, &runtimeTestTun{}, nil
-		},
-	}, func(context.Context, tui.RuntimeMode, tui.RuntimeUIOptions) (bool, error) {
-		return true, nil // reconfigure
-	})
-
-	err := r.Run(context.Background())
-	if !errors.Is(err, runnerCommon.ErrReconfigureRequested) {
-		t.Fatalf("expected ErrReconfigureRequested from Run, got %v", err)
-	}
-}
-
 func TestRun_ContextAlreadyCanceled(t *testing.T) {
 	deps := &runtimeTestDeps{}
-	r := NewRunner(app.CLI, deps, runtimeTestRouterFactory{
+	r := NewRunner(deps, runtimeTestRouterFactory{
 		create: func(context.Context, connection.Factory, tun.ClientManager, connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
 			return runtimeTestRouter{route: func(context.Context) error { return nil }}, &runtimeTestTransport{}, &runtimeTestTun{}, nil
 		},
@@ -368,70 +218,18 @@ func TestRun_ContextAlreadyCanceled(t *testing.T) {
 	}
 }
 
-func TestRunSession_Interactive_UIGenericError_RouteRealError_ReturnsRouteError(t *testing.T) {
-	uiStarted := make(chan struct{})
-	routeBlock := make(chan struct{})
-	deps := &runtimeTestDeps{}
-	r := newTestRunner(app.TUI, deps, runtimeTestRouterFactory{
-		create: func(context.Context, connection.Factory, tun.ClientManager, connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
-			router := runtimeTestRouter{
-				route: func(context.Context) error {
-					<-uiStarted
-					<-routeBlock
-					return errors.New("route real error")
-				},
-			}
-			return router, &runtimeTestTransport{}, &runtimeTestTun{}, nil
-		},
-	}, func(context.Context, tui.RuntimeMode, tui.RuntimeUIOptions) (bool, error) {
-		close(uiStarted)
-		return false, errors.New("ui generic error")
-	})
-
-	done := make(chan error, 1)
-	go func() {
-		done <- r.runSession(context.Background())
-	}()
-	time.Sleep(50 * time.Millisecond)
-	close(routeBlock)
-
-	err := <-done
-	if err == nil || !strings.Contains(err.Error(), "route real error") {
-		t.Fatalf("expected route real error, got %v", err)
-	}
-}
-
-func TestRunSession_Interactive_UserQuitDuringConnect(t *testing.T) {
-	deps := &runtimeTestDeps{}
-	r := newTestRunner(app.TUI, deps, runtimeTestRouterFactory{
-		create: func(ctx context.Context, _ connection.Factory, _ tun.ClientManager, _ connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
-			// Block until context is cancelled (simulating a slow connection)
-			<-ctx.Done()
-			return nil, nil, nil, ctx.Err()
-		},
-	}, func(context.Context, tui.RuntimeMode, tui.RuntimeUIOptions) (bool, error) {
-		return false, tui.ErrUserExit
-	})
-
-	err := r.runSession(context.Background())
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("expected context.Canceled when user quits during connect, got %v", err)
-	}
-}
-
 func TestRun_LogsDisposeErrorBranches(t *testing.T) {
 	deps := &runtimeTestDeps{
 		tun: runtimeTestTunManager{disposeErr: errors.New("dispose error")},
 	}
-	r := NewRunner(app.CLI, deps, runtimeTestRouterFactory{
+	r := NewRunner(deps, runtimeTestRouterFactory{
 		create: func(context.Context, connection.Factory, tun.ClientManager, connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
-			router := runtimeTestRouter{
+			return runtimeTestRouter{
 				route: func(context.Context) error { return nil },
-			}
-			return router, &runtimeTestTransport{}, &runtimeTestTun{}, nil
+			}, &runtimeTestTransport{}, &runtimeTestTun{}, nil
 		},
 	})
-	r.Run(context.Background())
+	_ = r.Run(context.Background())
 	if deps.tun.disposeCalls == 0 {
 		t.Fatal("expected dispose to be called despite errors")
 	}

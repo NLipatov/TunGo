@@ -1,4 +1,4 @@
-package runtime
+package tui
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	appRuntime "tungo/runtime"
 )
 
 func TestWaitForRuntimeSessionEnd_WorkerFinishesFirst_LogsUnexpectedUIError(t *testing.T) {
@@ -81,7 +82,7 @@ func TestWaitForRuntimeSessionEnd_ReconfigureRequested(t *testing.T) {
 	}()
 
 	err := <-done
-	if !errors.Is(err, ErrReconfigureRequested) {
+	if !errors.Is(err, appRuntime.ErrReconfigureRequested) {
 		t.Fatalf("expected ErrReconfigureRequested, got %v", err)
 	}
 }

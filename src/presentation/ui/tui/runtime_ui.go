@@ -14,9 +14,9 @@ const (
 )
 
 type RuntimeUIOptions struct {
-	ReadyCh  <-chan struct{}
-	Address  runnerCommon.RuntimeAddressInfo
-	Protocol settings.Protocol
+	ReadyCh   <-chan struct{}
+	Endpoints []runnerCommon.EndpointInfo
+	Protocol  settings.Protocol
 }
 
 type runtimeBackend interface {

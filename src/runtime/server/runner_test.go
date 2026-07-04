@@ -9,7 +9,6 @@ import (
 	"time"
 	"tungo/application/network/routing"
 	"tungo/application/network/routing/tun"
-	"tungo/domain/app"
 	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/settings"
 )
@@ -157,7 +156,7 @@ func TestRun_Happy_AllProtocols(t *testing.T) {
 			}
 		},
 	}
-	r := NewRunner(app.CLI, deps, wf, rf)
+	r := NewRunner(deps, wf, rf)
 
 	if err := r.Run(context.Background()); err != nil {
 		t.Fatalf("Run error: %v", err)
@@ -180,7 +179,7 @@ func TestRun_KeyManagerError(t *testing.T) {
 		tun: &RunnerMockTunManager{},
 		cfg: server.Configuration{},
 	}
-	r := NewRunner(app.CLI, deps,
+	r := NewRunner(deps,
 		RunnerMockWorkerFactory{create: func(context.Context, io.ReadWriteCloser, settings.Settings) (routing.Worker, error) {
 			return RunnerMockWorker{}, nil
 		}},
@@ -199,7 +198,7 @@ func TestRun_NoProtocolsEnabled(t *testing.T) {
 		tun: &RunnerMockTunManager{},
 		cfg: server.Configuration{}, // all disabled
 	}
-	r := NewRunner(app.CLI, deps,
+	r := NewRunner(deps,
 		RunnerMockWorkerFactory{create: func(context.Context, io.ReadWriteCloser, settings.Settings) (routing.Worker, error) {
 			return RunnerMockWorker{}, nil
 		}},
@@ -245,7 +244,7 @@ func TestRun_WorkerFlagsMatrix(t *testing.T) {
 					WSSettings:  settings.Settings{Protocol: settings.WS},
 				},
 			}
-			r := NewRunner(app.CLI, deps,
+			r := NewRunner(deps,
 				RunnerMockWorkerFactory{create: func(context.Context, io.ReadWriteCloser, settings.Settings) (routing.Worker, error) {
 					return RunnerMockWorker{}, nil
 				}},
@@ -276,7 +275,7 @@ func TestCleanup_ErrorAggregates(t *testing.T) {
 			WSSettings:  settings.Settings{Protocol: settings.WS},
 		},
 	}
-	r := NewRunner(app.CLI, deps,
+	r := NewRunner(deps,
 		RunnerMockWorkerFactory{create: func(context.Context, io.ReadWriteCloser, settings.Settings) (routing.Worker, error) {
 			return RunnerMockWorker{}, nil
 		}},
@@ -297,7 +296,7 @@ func TestRoute_CreateTunError(t *testing.T) {
 		},
 		cfg: server.Configuration{},
 	}
-	r := NewRunner(app.CLI, deps,
+	r := NewRunner(deps,
 		RunnerMockWorkerFactory{create: func(context.Context, io.ReadWriteCloser, settings.Settings) (routing.Worker, error) {
 			return RunnerMockWorker{}, nil
 		}},
@@ -317,7 +316,7 @@ func TestRoute_CreateWorkerError(t *testing.T) {
 		tun: &RunnerMockTunManager{},
 		cfg: server.Configuration{},
 	}
-	r := NewRunner(app.CLI, deps,
+	r := NewRunner(deps,
 		RunnerMockWorkerFactory{create: func(context.Context, io.ReadWriteCloser, settings.Settings) (routing.Worker, error) {
 			return nil, errBoom
 		}},
@@ -356,7 +355,7 @@ func TestRunWorkers_SingleRouteError(t *testing.T) {
 			return RunnerMockRouter{route: func(context.Context) error { return errBoom }}
 		},
 	}
-	r := NewRunner(app.CLI, deps, wf, rf)
+	r := NewRunner(deps, wf, rf)
 	err := r.runWorkers(context.Background())
 	if err == nil {
 		t.Fatalf("expected error from runWorkers, got nil")
@@ -389,7 +388,7 @@ func TestRunWorkers_AggregatesMultipleErrors(t *testing.T) {
 		},
 	}
 
-	r := NewRunner(app.CLI, deps, wf, rf)
+	r := NewRunner(deps, wf, rf)
 	err := r.runWorkers(context.Background())
 	if err == nil {
 		t.Fatal("expected aggregated error, got nil")
@@ -406,7 +405,7 @@ func TestRun_CleanupError_ContinuesRunning(t *testing.T) {
 		tun: &RunnerMockTunManager{disposeErr: errBoom},
 		cfg: server.Configuration{}, // no protocols — runWorkers succeeds immediately
 	}
-	r := NewRunner(app.CLI, deps,
+	r := NewRunner(deps,
 		RunnerMockWorkerFactory{create: func(context.Context, io.ReadWriteCloser, settings.Settings) (routing.Worker, error) {
 			return RunnerMockWorker{}, nil
 		}},
@@ -431,7 +430,7 @@ func TestRunWorkers_CreateRouterError(t *testing.T) {
 			TCPSettings: settings.Settings{Protocol: settings.TCP},
 		},
 	}
-	r := NewRunner(app.CLI, deps,
+	r := NewRunner(deps,
 		RunnerMockWorkerFactory{create: func(context.Context, io.ReadWriteCloser, settings.Settings) (routing.Worker, error) {
 			return RunnerMockWorker{}, nil
 		}},
