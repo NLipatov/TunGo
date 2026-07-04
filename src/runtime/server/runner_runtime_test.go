@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"runtime"
 	"strings"
 	"testing"
 	"tungo/application/network/routing"
@@ -52,7 +53,7 @@ func TestRun_Interactive_ReconfigureReturnsBackToModeSelection(t *testing.T) {
 		return true, nil
 	})
 	err := r.Run(context.Background())
-	if !errors.Is(err, runnerCommon.ErrReconfigureRequested) {
+	if !errors.Is(err, runtime.ErrReconfigureRequested) {
 		t.Fatalf("expected back-to-mode-selection from reconfigure request, got %v", err)
 	}
 }
