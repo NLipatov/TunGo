@@ -5,17 +5,19 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 	"tungo/application/network/connection"
+	"tungo/runtime"
 )
-
-type SessionOptions struct {
-	ReadyCh chan<- struct{}
-}
 
 type Runner struct {
 	deps          AppDependencies
 	routerFactory connection.TrafficRouterFactory
+}
+
+type RunOptions struct {
+	ReadyCh chan<- struct{}
 }
 
 func NewRunner(deps AppDependencies, routerFactory connection.TrafficRouterFactory) *Runner {
@@ -25,18 +27,22 @@ func NewRunner(deps AppDependencies, routerFactory connection.TrafficRouterFacto
 	}
 }
 
-func (r *Runner) Run(ctx context.Context) error {
+func (r *Runner) Run(ctx context.Context, options RunOptions) error {
 	defer func() {
 		if err := r.deps.TunManager().DisposeDevices(); err != nil {
 			slog.Warn("failed to dispose TUN devices on exit", "err", err)
 		}
 	}()
 
+	var readyOnce sync.Once
+
 	for ctx.Err() == nil {
-		err := r.RunSession(ctx, SessionOptions{})
+		err := r.runAttempt(ctx, options.ReadyCh, &readyOnce)
 		switch {
 		case err == nil:
 			return nil
+		case errors.Is(err, runtime.ErrReconfigureRequested):
+			return err
 		case errors.Is(err, context.Canceled):
 			return context.Canceled
 		default:
@@ -53,7 +59,11 @@ func (r *Runner) Run(ctx context.Context) error {
 	return context.Canceled
 }
 
-func (r *Runner) RunSession(parentCtx context.Context, options SessionOptions) error {
+func (r *Runner) runAttempt(
+	parentCtx context.Context,
+	readyCh chan<- struct{},
+	readyOnce *sync.Once,
+) error {
 	ctx, cancel := context.WithCancel(parentCtx)
 	defer cancel()
 
@@ -66,12 +76,13 @@ func (r *Runner) RunSession(parentCtx context.Context, options SessionOptions) e
 	if err != nil {
 		return fmt.Errorf("failed to create router: %s", err)
 	}
-	if options.ReadyCh != nil {
-		close(options.ReadyCh)
+	if readyCh != nil && readyOnce != nil {
+		readyOnce.Do(func() {
+			close(readyCh)
+		})
 	}
 
-	go func() {
-		<-ctx.Done()
+	defer func() {
 		_ = conn.Close()
 		_ = tun.Close()
 	}()

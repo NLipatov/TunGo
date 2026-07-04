@@ -154,7 +154,7 @@ func TestClientRunner_Run_RouteTrafficCanceled(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		runner.Run(ctx)
+		_ = runner.Run(ctx, clientRunners.RunOptions{})
 	}()
 
 	time.Sleep(200 * time.Millisecond)
@@ -184,7 +184,7 @@ func TestClientRunner_Run_CreateRouterError(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
-	runner.Run(ctx)
+	_ = runner.Run(ctx, clientRunners.RunOptions{})
 
 	if tunMgr.disposeCount == 0 {
 		t.Error("expected DisposeDevices to be called even on router creation error")

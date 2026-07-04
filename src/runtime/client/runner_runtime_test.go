@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/netip"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 	"tungo/application/network/connection"
@@ -13,6 +14,7 @@ import (
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	appRuntime "tungo/runtime"
 )
 
 type runtimeTestTransport struct {
@@ -92,7 +94,7 @@ func (f runtimeTestRouterFactory) CreateRouter(
 	return f.create(ctx, connectionFactory, tunFactory, workerFactory)
 }
 
-func TestRunSession_ClosesReadyAndRoutesTraffic(t *testing.T) {
+func TestRunAttempt_ClosesReadyAndRoutesTraffic(t *testing.T) {
 	deps := &runtimeTestDeps{}
 	routeStarted := make(chan struct{})
 	r := NewRunner(deps, runtimeTestRouterFactory{
@@ -109,9 +111,10 @@ func TestRunSession_ClosesReadyAndRoutesTraffic(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	readyCh := make(chan struct{})
+	var readyOnce sync.Once
 	done := make(chan error, 1)
 	go func() {
-		done <- r.RunSession(ctx, SessionOptions{ReadyCh: readyCh})
+		done <- r.runAttempt(ctx, readyCh, &readyOnce)
 	}()
 
 	select {
@@ -131,7 +134,7 @@ func TestRunSession_ClosesReadyAndRoutesTraffic(t *testing.T) {
 	}
 }
 
-func TestRunSession_CreateRouterErrorDoesNotCloseReady(t *testing.T) {
+func TestRunAttempt_CreateRouterErrorDoesNotCloseReady(t *testing.T) {
 	deps := &runtimeTestDeps{}
 	r := NewRunner(deps, runtimeTestRouterFactory{
 		create: func(context.Context, connection.Factory, tun.ClientManager, connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
@@ -140,7 +143,8 @@ func TestRunSession_CreateRouterErrorDoesNotCloseReady(t *testing.T) {
 	})
 
 	readyCh := make(chan struct{})
-	err := r.RunSession(context.Background(), SessionOptions{ReadyCh: readyCh})
+	var readyOnce sync.Once
+	err := r.runAttempt(context.Background(), readyCh, &readyOnce)
 	if err == nil || !strings.Contains(err.Error(), "create failed") {
 		t.Fatalf("expected create router error, got %v", err)
 	}
@@ -164,7 +168,7 @@ func TestRun_CancelDuringReconnectDelay(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
-		_ = r.Run(ctx)
+		_ = r.Run(ctx, RunOptions{})
 		close(done)
 	}()
 	time.Sleep(80 * time.Millisecond)
@@ -193,12 +197,41 @@ func TestRun_ReconnectDelayAndRecovery(t *testing.T) {
 		},
 	})
 
-	err := r.Run(context.Background())
+	readyCh := make(chan struct{})
+	err := r.Run(context.Background(), RunOptions{ReadyCh: readyCh})
 	if err != nil {
 		t.Fatalf("expected nil after recovery, got %v", err)
 	}
 	if callCount < 2 {
 		t.Fatalf("expected at least 2 session attempts, got %d", callCount)
+	}
+	select {
+	case <-readyCh:
+	default:
+		t.Fatal("ready channel was not closed")
+	}
+}
+
+func TestRun_ReconfigureRequestedDoesNotReconnect(t *testing.T) {
+	callCount := 0
+	deps := &runtimeTestDeps{}
+	r := NewRunner(deps, runtimeTestRouterFactory{
+		create: func(context.Context, connection.Factory, tun.ClientManager, connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
+			callCount++
+			return runtimeTestRouter{
+				route: func(context.Context) error {
+					return appRuntime.ErrReconfigureRequested
+				},
+			}, &runtimeTestTransport{}, &runtimeTestTun{}, nil
+		},
+	})
+
+	err := r.Run(context.Background(), RunOptions{})
+	if !errors.Is(err, appRuntime.ErrReconfigureRequested) {
+		t.Fatalf("expected ErrReconfigureRequested, got %v", err)
+	}
+	if callCount != 1 {
+		t.Fatalf("expected no reconnect attempts, got %d calls", callCount)
 	}
 }
 
@@ -212,7 +245,7 @@ func TestRun_ContextAlreadyCanceled(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	err := r.Run(ctx)
+	err := r.Run(ctx, RunOptions{})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled, got %v", err)
 	}
@@ -229,7 +262,7 @@ func TestRun_LogsDisposeErrorBranches(t *testing.T) {
 			}, &runtimeTestTransport{}, &runtimeTestTun{}, nil
 		},
 	})
-	_ = r.Run(context.Background())
+	_ = r.Run(context.Background(), RunOptions{})
 	if deps.tun.disposeCalls == 0 {
 		t.Fatal("expected dispose to be called despite errors")
 	}

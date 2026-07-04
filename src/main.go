@@ -216,43 +216,19 @@ func runClient(ctx context.Context, uiMode app.UIMode) error {
 	routerFactory := client_factory.NewRouterFactory()
 	runner := clientConf.NewRunner(deps, routerFactory)
 	if uiMode == app.TUI {
-		return runClientRuntimeDashboard(ctx, runner, deps.Configuration())
+		return runClientWithDashboard(ctx, runner, deps.Configuration())
 	}
-	return runner.Run(ctx)
+	return runner.Run(ctx, clientConf.RunOptions{})
 }
 
-func runClientRuntimeDashboard(ctx context.Context, runner *clientConf.Runner, conf client.Configuration) error {
-	for ctx.Err() == nil {
-		err := runClientRuntimeDashboardSession(ctx, runner, conf)
-		switch {
-		case err == nil:
-			return nil
-		case errors.Is(err, context.Canceled):
-			return context.Canceled
-		case errors.Is(err, runnersCommon.ErrReconfigureRequested):
-			return runnersCommon.ErrReconfigureRequested
-		default:
-			slog.Warn("session error, reconnecting", "err", err)
-			timer := time.NewTimer(500 * time.Millisecond)
-			select {
-			case <-ctx.Done():
-				timer.Stop()
-				return context.Canceled
-			case <-timer.C:
-			}
-		}
-	}
-	return context.Canceled
-}
-
-func runClientRuntimeDashboardSession(ctx context.Context, runner *clientConf.Runner, conf client.Configuration) error {
+func runClientWithDashboard(ctx context.Context, runner *clientConf.Runner, conf client.Configuration) error {
 	sessionCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	readyCh := make(chan struct{})
 	workerErrCh := make(chan error, 1)
 	go func() {
-		workerErrCh <- runner.RunSession(sessionCtx, clientConf.SessionOptions{ReadyCh: readyCh})
+		workerErrCh <- runner.Run(sessionCtx, clientConf.RunOptions{ReadyCh: readyCh})
 	}()
 
 	uiResultCh := make(chan tui.RuntimeUIResult, 1)
