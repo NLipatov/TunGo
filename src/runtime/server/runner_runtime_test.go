@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"runtime"
 	"strings"
 	"testing"
 	"tungo/application/network/routing"
@@ -12,6 +11,7 @@ import (
 	serverConfig "tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/settings"
 	"tungo/presentation/ui/tui"
+	"tungo/runtime"
 )
 
 func newTestServerRunner(deps AppDependencies, wf RunnerMockWorkerFactory, rf RunnerMockRouterFactory, dashboard RuntimeDashboardFunc) *Runner {
