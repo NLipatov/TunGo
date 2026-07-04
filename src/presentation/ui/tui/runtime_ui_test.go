@@ -6,7 +6,7 @@ import (
 	"net/netip"
 	"testing"
 	"tungo/infrastructure/settings"
-	runnerCommon "tungo/presentation/runners/common"
+	runnerCommon "tungo/runtime"
 )
 
 type runtimeUITestBackend struct {

@@ -10,7 +10,6 @@ import (
 	"tungo/domain/app"
 	serverConfig "tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/settings"
-	runnerCommon "tungo/presentation/runners/common"
 	"tungo/presentation/ui/tui"
 )
 

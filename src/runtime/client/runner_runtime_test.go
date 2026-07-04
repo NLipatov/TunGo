@@ -13,8 +13,8 @@ import (
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
-	runnerCommon "tungo/presentation/runners/common"
 	"tungo/presentation/ui/tui"
+	runnerCommon "tungo/runtime"
 
 	"tungo/domain/app"
 )

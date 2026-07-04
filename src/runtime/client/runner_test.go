@@ -10,12 +10,12 @@ import (
 	"testing"
 	"time"
 	"tungo/application/network/connection"
-	"tungo/domain/app"
 	"tungo/application/network/routing"
 	"tungo/application/network/routing/tun"
+	"tungo/domain/app"
 	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
-	clientRunners "tungo/presentation/runners/client"
+	clientRunners "tungo/runtime/client"
 	"unsafe"
 )
 

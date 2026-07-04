@@ -26,12 +26,12 @@ import (
 	"tungo/infrastructure/tunnel/sessionplane/client_factory"
 	"tungo/presentation/configuring"
 	"tungo/presentation/elevation"
-	clientConf "tungo/presentation/runners/client"
-	runnersCommon "tungo/presentation/runners/common"
-	"tungo/presentation/runners/server"
-	"tungo/presentation/runners/version"
 	"tungo/presentation/signals/shutdown"
 	"tungo/presentation/ui/tui"
+	runnersCommon "tungo/runtime"
+	clientConf "tungo/runtime/client"
+	"tungo/runtime/server"
+	"tungo/runtime/version"
 )
 
 func main() {

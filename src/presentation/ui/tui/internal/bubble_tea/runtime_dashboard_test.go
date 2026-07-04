@@ -10,7 +10,7 @@ import (
 	"time"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/telemetry/trafficstats"
-	runnerCommon "tungo/presentation/runners/common"
+	runnerCommon "tungo/runtime"
 	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"

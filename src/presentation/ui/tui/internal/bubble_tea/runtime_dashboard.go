@@ -7,7 +7,7 @@ import (
 	"time"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/telemetry/trafficstats"
-	runnerCommon "tungo/presentation/runners/common"
+	runnerCommon "tungo/runtime"
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"

@@ -2,7 +2,7 @@ package bubble_tea
 
 import (
 	"testing"
-	"tungo/presentation/runners/version"
+	"tungo/runtime/version"
 )
 
 func TestProductLabel_DefaultWhenVersionUnset(t *testing.T) {

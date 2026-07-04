@@ -6,8 +6,8 @@ import (
 	"net/netip"
 	"testing"
 	"tungo/infrastructure/settings"
-	runnerCommon "tungo/presentation/runners/common"
 	bubbleTea "tungo/presentation/ui/tui/internal/bubble_tea"
+	runnerCommon "tungo/runtime"
 )
 
 type runtimeBackendTestFeed struct{}

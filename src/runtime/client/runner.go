@@ -8,8 +8,8 @@ import (
 	"time"
 	"tungo/application/network/connection"
 	"tungo/domain/app"
-	runnerCommon "tungo/presentation/runners/common"
 	runtimeUI "tungo/presentation/ui/tui"
+	runnerCommon "tungo/runtime"
 )
 
 type RuntimeDashboardFunc func(ctx context.Context, mode runtimeUI.RuntimeMode, options runtimeUI.RuntimeUIOptions) (bool, error)

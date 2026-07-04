@@ -9,8 +9,8 @@ import (
 	"tungo/application/network/routing"
 	"tungo/domain/app"
 	"tungo/infrastructure/settings"
-	runnerCommon "tungo/presentation/runners/common"
 	runtimeUI "tungo/presentation/ui/tui"
+	runnerCommon "tungo/runtime"
 
 	"golang.org/x/sync/errgroup"
 )

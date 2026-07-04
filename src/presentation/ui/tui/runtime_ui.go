@@ -3,7 +3,7 @@ package tui
 import (
 	"context"
 	"tungo/infrastructure/settings"
-	runnerCommon "tungo/presentation/runners/common"
+	runnerCommon "tungo/runtime"
 )
 
 type RuntimeMode string

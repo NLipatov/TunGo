@@ -7,7 +7,7 @@ import (
 	"testing"
 	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/settings"
-	clientRunners "tungo/presentation/runners/client"
+	clientRunners "tungo/runtime/client"
 )
 
 type mockConfigurationManager struct {
