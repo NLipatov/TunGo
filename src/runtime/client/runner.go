@@ -33,7 +33,7 @@ func (r *Runner) Run(ctx context.Context) error {
 	}()
 
 	for ctx.Err() == nil {
-		err := r.runSession(ctx)
+		err := r.RunSession(ctx, SessionOptions{})
 		switch {
 		case err == nil:
 			return nil
