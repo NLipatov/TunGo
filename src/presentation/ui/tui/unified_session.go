@@ -50,22 +50,14 @@ var newSystemdInstaller = func() systemdInstaller {
 }
 
 func (p *Configurator) Configure(ctx context.Context) (runtime.Mode, error) {
-	if p.clientConfigurator == nil || p.serverConfigurator == nil {
+	if !p.initialized() {
 		return 0, fmt.Errorf("configurator is not initialized")
 	}
 
 	systemdInstaller := newSystemdInstaller()
 	systemdSupported := systemdInstaller.Supported()
-	configOpts := bubbleTea.ConfiguratorSessionOptions{
-		Observer:            p.clientConfigurator.observer,
-		Selector:            p.clientConfigurator.selector,
-		Creator:             p.clientConfigurator.creator,
-		Deleter:             p.clientConfigurator.deleter,
-		ClientConfigManager: p.clientConfigurator.configurationManager,
-		ServerConfigManager: p.serverConfigurator.manager,
-		ServerSupported:     p.serverSupported,
-		SystemdSupported:    systemdSupported,
-	}
+	configOpts := p.sessionOptions
+	configOpts.SystemdSupported = systemdSupported
 	if systemdSupported {
 		configOpts.GetSystemdDaemonStatus = func() (bubbleTea.SystemdDaemonStatus, error) {
 			status, err := systemdInstaller.Status()
@@ -102,7 +94,7 @@ func (p *Configurator) Configure(ctx context.Context) (runtime.Mode, error) {
 		configOpts.EnableSystemdUnit = systemdInstaller.EnableUnit
 		configOpts.DisableSystemdUnit = systemdInstaller.DisableUnit
 		configOpts.RemoveSystemdUnit = systemdInstaller.RemoveUnit
-		if p.serverSupported {
+		if configOpts.ServerSupported {
 			configOpts.InstallServerSystemdUnit = systemdInstaller.InstallServerUnit
 		}
 	}
@@ -126,6 +118,17 @@ func (p *Configurator) Configure(ctx context.Context) (runtime.Mode, error) {
 		return 0, err
 	}
 	return selectedMode, nil
+}
+
+func (p *Configurator) initialized() bool {
+	opts := p.sessionOptions
+	return p.runtimeUI != nil &&
+		opts.Observer != nil &&
+		opts.Selector != nil &&
+		opts.Creator != nil &&
+		opts.Deleter != nil &&
+		opts.ClientConfigManager != nil &&
+		opts.ServerConfigManager != nil
 }
 
 // closeSession closes the active unified session and clears the holder.

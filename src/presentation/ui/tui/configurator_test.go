@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
 	systemdDomain "tungo/infrastructure/PAL/service_management/linux/systemd/domain"
 	bubbleTea "tungo/presentation/ui/tui/internal/bubble_tea"
 	"tungo/runtime"
@@ -16,21 +17,20 @@ func TestNewConfigurator(t *testing.T) {
 	if c == nil {
 		t.Fatal("expected non-nil configurator")
 	}
-	if c.clientConfigurator == nil || c.serverConfigurator == nil {
-		t.Fatal("expected inner configurators to be initialized")
+	if !c.initialized() {
+		t.Fatal("expected configurator to be initialized")
 	}
 	if c.runtimeUI != runtimeUI {
 		t.Fatal("expected runtime UI to be wired")
 	}
-	if !c.serverSupported {
+	if !c.sessionOptions.ServerSupported {
 		t.Fatal("expected serverSupported to be forwarded")
 	}
 }
 
-func TestConfigurator_Configure_NilClientConfigurator(t *testing.T) {
+func TestConfigurator_Configure_NilSessionOptions(t *testing.T) {
 	c := &Configurator{
-		clientConfigurator: nil,
-		serverConfigurator: newServerConfigurator(&mockManager{}, &mockSelectorFactory{selector: &queueSelector{}}),
+		runtimeUI: NewRuntimeUI(),
 	}
 	gotMode, err := c.Configure(context.Background())
 	if err == nil || err.Error() != "configurator is not initialized" {
@@ -41,13 +41,9 @@ func TestConfigurator_Configure_NilClientConfigurator(t *testing.T) {
 	}
 }
 
-func TestConfigurator_Configure_NilServerConfigurator(t *testing.T) {
+func TestConfigurator_Configure_NilRuntimeUI(t *testing.T) {
 	c := &Configurator{
-		clientConfigurator: newClientConfigurator(
-			&cfgObserverMock{}, &cfgSelectorMock{}, nil, nil,
-			&queuedSelectorFactory{selector: &queuedSelector{}}, nil, nil, nil,
-		),
-		serverConfigurator: nil,
+		sessionOptions: testSessionOptions(),
 	}
 	gotMode, err := c.Configure(context.Background())
 	if err == nil || err.Error() != "configurator is not initialized" {
@@ -161,12 +157,19 @@ func (s *systemdInstallerStub) Status() (systemdDomain.UnitStatus, error) {
 
 func newTestConfigurator() *Configurator {
 	return &Configurator{
-		clientConfigurator: newClientConfigurator(
-			&cfgObserverMock{}, &cfgSelectorMock{}, nil, nil,
-			&queuedSelectorFactory{selector: &queuedSelector{}}, nil, nil, nil,
-		),
-		serverConfigurator: newServerConfigurator(&mockManager{}, &mockSelectorFactory{selector: &queueSelector{}}),
-		runtimeUI:          NewRuntimeUI(),
+		sessionOptions: testSessionOptions(),
+		runtimeUI:      NewRuntimeUI(),
+	}
+}
+
+func testSessionOptions() bubbleTea.ConfiguratorSessionOptions {
+	return bubbleTea.ConfiguratorSessionOptions{
+		Observer:            &cfgObserverMock{},
+		Selector:            &cfgSelectorMock{},
+		Creator:             &cfgCreatorMock{},
+		Deleter:             &cfgDeleterMock{},
+		ClientConfigManager: clientConfiguration.NewManager(),
+		ServerConfigManager: &mockManager{},
 	}
 }
 
@@ -296,7 +299,7 @@ func TestConfigurator_Configure_ReusesExistingSession(t *testing.T) {
 func TestConfigurator_Configure_SystemdSupported_WiresCallbacks(t *testing.T) {
 	mock := &mockUnifiedSession{waitModeResult: runtime.ModeClient}
 	c := newTestConfigurator()
-	c.serverSupported = true
+	c.sessionOptions.ServerSupported = true
 
 	installer := &systemdInstallerStub{
 		supported: true,
@@ -399,7 +402,7 @@ func TestConfigurator_Configure_SystemdSupported_WiresCallbacks(t *testing.T) {
 func TestConfigurator_Configure_SystemdUnsupported_DoesNotWireCallbacks(t *testing.T) {
 	mock := &mockUnifiedSession{waitModeResult: runtime.ModeServer}
 	c := newTestConfigurator()
-	c.serverSupported = true
+	c.sessionOptions.ServerSupported = true
 
 	installer := &systemdInstallerStub{supported: false}
 	withMockNewSystemdInstaller(t, func() systemdInstaller { return installer })

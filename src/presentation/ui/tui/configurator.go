@@ -3,15 +3,13 @@ package tui
 import (
 	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/PAL/configuration/server"
-	uifactory "tungo/presentation/ui/tui/internal/ui/factory"
+	bubbleTea "tungo/presentation/ui/tui/internal/bubble_tea"
 )
 
 type Configurator struct {
-	clientConfigurator *clientConfigurator
-	serverConfigurator *serverConfigurator
-	serverSupported    bool
-	sh                 *sessionHolder
-	runtimeUI          *RuntimeUI
+	sessionOptions bubbleTea.ConfiguratorSessionOptions
+	sh             *sessionHolder
+	runtimeUI      *RuntimeUI
 }
 
 func NewConfigurator(
@@ -20,24 +18,20 @@ func NewConfigurator(
 	runtimeUI *RuntimeUI,
 ) *Configurator {
 	clientConfResolver := clientConfiguration.NewDefaultResolver()
-	uiBundle := uifactory.NewDefaultBundle()
 	if runtimeUI == nil {
 		runtimeUI = NewRuntimeUI()
 	}
 
 	return &Configurator{
-		clientConfigurator: newClientConfigurator(
-			clientConfiguration.NewDefaultObserver(clientConfResolver),
-			clientConfiguration.NewDefaultSelector(clientConfResolver),
-			clientConfiguration.NewDefaultDeleter(clientConfResolver),
-			clientConfiguration.NewDefaultCreator(clientConfResolver),
-			uiBundle.SelectorFactory,
-			uiBundle.TextInputFactory,
-			uiBundle.TextAreaFactory,
-			clientConfiguration.NewManager(),
-		),
-		serverConfigurator: newServerConfigurator(serverConfigurationManager, uiBundle.SelectorFactory),
-		serverSupported:    serverSupported,
-		runtimeUI:          runtimeUI,
+		sessionOptions: bubbleTea.ConfiguratorSessionOptions{
+			Observer:            clientConfiguration.NewDefaultObserver(clientConfResolver),
+			Selector:            clientConfiguration.NewDefaultSelector(clientConfResolver),
+			Creator:             clientConfiguration.NewDefaultCreator(clientConfResolver),
+			Deleter:             clientConfiguration.NewDefaultDeleter(clientConfResolver),
+			ClientConfigManager: clientConfiguration.NewManager(),
+			ServerConfigManager: serverConfigurationManager,
+			ServerSupported:     serverSupported,
+		},
+		runtimeUI: runtimeUI,
 	}
 }
