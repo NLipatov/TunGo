@@ -11,10 +11,10 @@ func TestParseCommandOK(t *testing.T) {
 		in   []string
 		want Command
 	}{
-		{[]string{"c"}, Command{Kind: CommandRuntime, RuntimeMode: runtime.ModeClient}},
-		{[]string{"s"}, Command{Kind: CommandRuntime, RuntimeMode: runtime.ModeServer}},
-		{[]string{"  c  "}, Command{Kind: CommandRuntime, RuntimeMode: runtime.ModeClient}},
-		{[]string{"s", "gen"}, Command{Kind: CommandServerConfigGenerate}},
+		{[]string{"c"}, Command{Kind: CommandRuntime, RuntimeMode: runtime.ModeClient, RequiresElevation: true}},
+		{[]string{"s"}, Command{Kind: CommandRuntime, RuntimeMode: runtime.ModeServer, RequiresElevation: true}},
+		{[]string{"  c  "}, Command{Kind: CommandRuntime, RuntimeMode: runtime.ModeClient, RequiresElevation: true}},
+		{[]string{"s", "gen"}, Command{Kind: CommandServerConfigGenerate, RequiresElevation: true}},
 		{[]string{" version "}, Command{Kind: CommandVersion}},
 	}
 

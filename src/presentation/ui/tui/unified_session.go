@@ -45,7 +45,7 @@ func newDefaultSystemdInstaller() systemdInstaller {
 	return systemd.NewUnitInstaller(exec_commander.NewExecCommander())
 }
 
-func (t *TUI) Configure(ctx context.Context) (runtime.Mode, error) {
+func (t *TUI) configure(ctx context.Context) (runtime.Mode, error) {
 	if !t.initialized() {
 		return 0, fmt.Errorf("tui is not initialized")
 	}

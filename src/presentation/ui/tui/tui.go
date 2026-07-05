@@ -1,8 +1,11 @@
 package tui
 
 import (
+	"fmt"
 	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
-	"tungo/infrastructure/PAL/configuration/server"
+	serverConfiguration "tungo/infrastructure/PAL/configuration/server"
+	"tungo/infrastructure/PAL/platform"
+	"tungo/infrastructure/PAL/stat"
 	bubbleTea "tungo/presentation/ui/tui/internal/bubble_tea"
 )
 
@@ -13,8 +16,20 @@ type TUI struct {
 	session                 unifiedSessionHandle
 }
 
-func NewTUI(
-	serverConfigurationManager server.ConfigurationManager,
+func New() (*TUI, error) {
+	serverResolver := serverConfiguration.NewServerResolver()
+	serverConfigurationManager, err := serverConfiguration.NewManager(serverResolver, stat.NewDefaultStat())
+	if err != nil {
+		return nil, fmt.Errorf("configuration error: %w", err)
+	}
+	return newTUI(
+		serverConfigurationManager,
+		platform.Capabilities().ServerModeSupported(),
+	), nil
+}
+
+func newTUI(
+	serverConfigurationManager serverConfiguration.ConfigurationManager,
 	serverSupported bool,
 ) *TUI {
 	clientConfResolver := clientConfiguration.NewDefaultResolver()

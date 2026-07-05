@@ -27,7 +27,7 @@ func TestRuntimeDashboard_TabSwitchesToSettings(t *testing.T) {
 }
 
 func TestNewRuntimeDashboard_DefaultsNilContextAndMode(t *testing.T) {
-	m := NewRuntimeDashboard(nil, RuntimeDashboardOptions{}, testSettings())
+	m := NewRuntimeDashboard(nilContext(), RuntimeDashboardOptions{}, testSettings())
 	if m.ctx == nil {
 		t.Fatal("expected fallback context when nil is passed")
 	}
@@ -272,13 +272,17 @@ func TestRunRuntimeDashboard_NilContext(t *testing.T) {
 		}
 	}
 
-	quit, err := RunRuntimeDashboard(nil, RuntimeDashboardOptions{})
+	quit, err := RunRuntimeDashboard(nilContext(), RuntimeDashboardOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if quit {
 		t.Fatal("expected quit=false")
 	}
+}
+
+func nilContext() context.Context {
+	return nil
 }
 
 func TestNewRuntimeDashboardProgram_DefaultFactory(t *testing.T) {

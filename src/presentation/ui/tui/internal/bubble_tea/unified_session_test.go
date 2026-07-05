@@ -515,7 +515,7 @@ func TestNewUnifiedSessionModel_ErrorPath(t *testing.T) {
 }
 
 func TestWaitForContextDone_NilContext(t *testing.T) {
-	cmd := waitForContextDone(nil)
+	cmd := waitForContextDone(nilContext())
 	if cmd != nil {
 		t.Fatal("expected nil cmd for nil context")
 	}

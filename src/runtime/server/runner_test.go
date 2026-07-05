@@ -68,10 +68,9 @@ func (m *RunnerMockTunManager) DisposeDevices(_ settings.Settings) error {
 
 // Matches server.AppDependencies structurally.
 type RunnerMockDeps struct {
-	key  *RunnerMockKeyManager
-	tun  *RunnerMockTunManager
-	cfg  server.Configuration
-	cmgr any
+	key *RunnerMockKeyManager
+	tun *RunnerMockTunManager
+	cfg server.Configuration
 }
 
 func (d *RunnerMockDeps) KeyManager() server.KeyManager { return d.key }
@@ -394,7 +393,7 @@ func TestRunWorkers_AggregatesMultipleErrors(t *testing.T) {
 		t.Fatal("expected aggregated error, got nil")
 	}
 	msg := err.Error()
-	if !(contains(msg, "tcp") || contains(msg, "udp") || contains(msg, "worker failed")) {
+	if !contains(msg, "tcp") && !contains(msg, "udp") && !contains(msg, "worker failed") {
 		t.Fatalf("unexpected aggregated error: %v", err)
 	}
 }

@@ -17,8 +17,9 @@ const (
 )
 
 type Command struct {
-	Kind        CommandKind
-	RuntimeMode runtime.Mode
+	Kind              CommandKind
+	RuntimeMode       runtime.Mode
+	RequiresElevation bool
 }
 
 type commandSpec struct {
@@ -31,17 +32,17 @@ var commands = []commandSpec{
 	{
 		args:        []string{"s"},
 		description: "Start server runtime",
-		command:     Command{Kind: CommandRuntime, RuntimeMode: runtime.ModeServer},
+		command:     Command{Kind: CommandRuntime, RuntimeMode: runtime.ModeServer, RequiresElevation: true},
 	},
 	{
 		args:        []string{"c"},
 		description: "Start client runtime",
-		command:     Command{Kind: CommandRuntime, RuntimeMode: runtime.ModeClient},
+		command:     Command{Kind: CommandRuntime, RuntimeMode: runtime.ModeClient, RequiresElevation: true},
 	},
 	{
 		args:        []string{"s", "gen"},
 		description: "Generate server configuration",
-		command:     Command{Kind: CommandServerConfigGenerate},
+		command:     Command{Kind: CommandServerConfigGenerate, RequiresElevation: true},
 	},
 	{
 		args:        []string{"version"},

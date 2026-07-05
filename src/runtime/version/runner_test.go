@@ -2,7 +2,6 @@ package version
 
 import (
 	"bytes"
-	"context"
 	"io"
 	"os"
 	"strings"
@@ -24,14 +23,14 @@ func capture(f func()) string {
 	return buf.String()
 }
 
-func TestRunner_Run_PrintsVersion(t *testing.T) {
+func TestRun_PrintsVersion(t *testing.T) {
 	prevTag := Tag
 	t.Cleanup(func() { Tag = prevTag })
 
 	wantTag := "v1.2.3-test"
 	Tag = wantTag // imitate ldflags injection
 
-	got := capture(func() { NewRunner().Run(context.Background()) })
+	got := capture(Run)
 
 	want := app.Name + " " + wantTag
 	if !strings.Contains(got, want) {
@@ -39,12 +38,12 @@ func TestRunner_Run_PrintsVersion(t *testing.T) {
 	}
 }
 
-func TestRunner_Run_PrintsDevBuildWhenTagUnset(t *testing.T) {
+func TestRun_PrintsDevBuildWhenTagUnset(t *testing.T) {
 	prevTag := Tag
 	t.Cleanup(func() { Tag = prevTag })
 
 	Tag = "dev-build"
-	got := capture(func() { NewRunner().Run(context.Background()) })
+	got := capture(Run)
 	want := app.Name + " dev-build"
 	if !strings.Contains(got, want) {
 		t.Fatalf("stdout = %q, want substring %q", got, want)
