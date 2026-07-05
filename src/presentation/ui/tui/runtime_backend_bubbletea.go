@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	bubbleTea "tungo/presentation/ui/tui/internal/bubble_tea"
+	"tungo/runtime"
 )
 
 type bubbleTeaRuntimeBackend struct {
@@ -21,12 +22,8 @@ func newBubbleTeaRuntimeBackend() runtimeBackend {
 	return &bubbleTeaRuntimeBackend{}
 }
 
-// injectSessionHolder shares the Configurator's session holder with the
-// active runtime backend. Both sides read/write the same holder.
-func injectSessionHolder(sh *sessionHolder) {
-	if bt, ok := activeRuntimeBackend.(*bubbleTeaRuntimeBackend); ok {
-		bt.sh = sh
-	}
+func (b *bubbleTeaRuntimeBackend) setSessionHolder(sh *sessionHolder) {
+	b.sh = sh
 }
 
 func (b *bubbleTeaRuntimeBackend) enableRuntimeLogCapture(capacity int) {
@@ -37,16 +34,13 @@ func (b *bubbleTeaRuntimeBackend) disableRuntimeLogCapture() {
 	bubbleRuntimeDisableLogs()
 }
 
-func (b *bubbleTeaRuntimeBackend) runRuntimeDashboard(ctx context.Context, mode RuntimeMode, options RuntimeUIOptions) (bool, error) {
+func (b *bubbleTeaRuntimeBackend) runRuntimeDashboard(ctx context.Context, mode runtime.Mode, options RuntimeUIOptions) (bool, error) {
 	dashboardOptions := bubbleTea.RuntimeDashboardOptions{
-		Mode:      bubbleTea.RuntimeDashboardClient,
+		Mode:      mode,
 		LogFeed:   bubbleRuntimeLogFeed(),
 		ReadyCh:   options.ReadyCh,
 		Protocol:  options.Protocol,
 		Endpoints: options.Endpoints,
-	}
-	if mode == RuntimeModeServer {
-		dashboardOptions.Mode = bubbleTea.RuntimeDashboardServer
 	}
 
 	// Route to unified session when active (eliminates terminal flash).

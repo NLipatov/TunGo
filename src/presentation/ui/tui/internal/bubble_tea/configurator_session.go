@@ -13,12 +13,12 @@ import (
 	"unicode/utf8"
 
 	"tungo/application/confgen"
-	"tungo/domain/mode"
 	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
 	serverConfiguration "tungo/infrastructure/PAL/configuration/server"
 	systemdDomain "tungo/infrastructure/PAL/service_management/linux/systemd/domain"
 	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/host_resolver"
+	"tungo/runtime"
 
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/textinput"
@@ -87,7 +87,7 @@ type ConfiguratorSessionOptions struct {
 type SystemdDaemonStatus struct {
 	Installed      bool
 	Managed        bool
-	Mode           mode.Mode
+	Mode           runtime.Mode
 	LoadState      string
 	UnitFileState  string
 	ActiveState    string
@@ -202,37 +202,37 @@ type configuratorSessionModel struct {
 
 	logs logViewport
 
-	pendingStartMode    mode.Mode
+	pendingStartMode    runtime.Mode
 	pendingStartScreen  configuratorScreen
 	pendingClientConfig string
-	pendingDaemonMode   mode.Mode
+	pendingDaemonMode   runtime.Mode
 
-	resultMode mode.Mode
+	resultMode runtime.Mode
 	resultErr  error
 	done       bool
 }
 
-func RunConfiguratorSession(options ConfiguratorSessionOptions) (selectedMode mode.Mode, err error) {
+func RunConfiguratorSession(options ConfiguratorSessionOptions) (selectedMode runtime.Mode, err error) {
 	defer clearTerminalAfterTUI()
 
 	settings := loadUISettingsFromDisk()
 	model, err := newConfiguratorSessionModel(options, settings)
 	if err != nil {
-		return mode.Unknown, err
+		return 0, err
 	}
 
 	program := newConfiguratorSessionProgram(model)
 	finalModel, runErr := program.Run()
 	if runErr != nil {
-		return mode.Unknown, runErr
+		return 0, runErr
 	}
 
 	result, ok := finalModel.(configuratorSessionModel)
 	if !ok {
-		return mode.Unknown, errors.New("invalid configurator session model")
+		return 0, errors.New("invalid configurator session model")
 	}
 	if result.resultErr != nil {
-		return mode.Unknown, result.resultErr
+		return 0, result.resultErr
 	}
 	return result.resultMode, nil
 }
@@ -319,13 +319,13 @@ func newConfiguratorSessionModel(options ConfiguratorSessionOptions, settings *u
 							} else if cfgErr != nil {
 								model.notice = fmt.Sprintf("Auto-select failed for %q: %v", autoConfig, cfgErr)
 							} else {
-								model = model.startModeWithSystemdGuard(mode.Client, configuratorScreenClientSelect, true)
+								model = model.startModeWithSystemdGuard(runtime.ModeClient, configuratorScreenClientSelect, true)
 								if !model.done && isSystemdStartConfirmationScreen(model.screen) {
 									model.pendingClientConfig = autoConfig
 								}
 							}
 						} else {
-							model = model.startModeWithSystemdGuard(mode.Client, configuratorScreenClientSelect, true)
+							model = model.startModeWithSystemdGuard(runtime.ModeClient, configuratorScreenClientSelect, true)
 							if !model.done && isSystemdStartConfirmationScreen(model.screen) {
 								model.pendingClientConfig = autoConfig
 							}
@@ -579,9 +579,9 @@ func (m configuratorSessionModel) mainTabView() string {
 	case configuratorScreenDaemonReconfigureConfirm:
 		roleLabel := "selected role"
 		switch m.pendingDaemonMode {
-		case mode.Client:
+		case runtime.ModeClient:
 			roleLabel = "client"
-		case mode.Server:
+		case runtime.ModeServer:
 			roleLabel = "server"
 		}
 		return m.renderSelectionScreen(
@@ -594,9 +594,9 @@ func (m configuratorSessionModel) mainTabView() string {
 	case configuratorScreenSystemdActiveConfirm:
 		modeLabel := "selected mode"
 		switch m.pendingStartMode {
-		case mode.Client:
+		case runtime.ModeClient:
 			modeLabel = "client"
-		case mode.Server:
+		case runtime.ModeServer:
 			modeLabel = "server"
 		}
 		notice := fmt.Sprintf("tungo.service is active. Stop it before starting %s in TUI mode.", modeLabel)
@@ -725,7 +725,7 @@ func (m configuratorSessionModel) updateClientSelectScreen(msg tea.KeyPressMsg) 
 			}
 		}
 
-		m = m.startModeWithSystemdGuard(mode.Client, configuratorScreenClientSelect, false)
+		m = m.startModeWithSystemdGuard(runtime.ModeClient, configuratorScreenClientSelect, false)
 		if m.done {
 			m = m.persistAutoSelectClientConfig(selected)
 			return m, tea.Quit
@@ -916,7 +916,7 @@ func (m configuratorSessionModel) updateServerSelectScreen(msg tea.KeyPressMsg) 
 
 	switch m.server.menuOptions[m.cursor] {
 	case sessionServerStart:
-		m = m.startModeWithSystemdGuard(mode.Server, configuratorScreenServerSelect, false)
+		m = m.startModeWithSystemdGuard(runtime.ModeServer, configuratorScreenServerSelect, false)
 		if m.done {
 			return m, tea.Quit
 		}
@@ -1094,37 +1094,37 @@ func (m configuratorSessionModel) updateDaemonManageScreen(msg tea.KeyPressMsg) 
 	var err error
 	switch selected {
 	case sessionDaemonSetupClient:
-		m, err = m.applyDaemonSetup(mode.Client, false)
+		m, err = m.applyDaemonSetup(runtime.ModeClient, false)
 		if err != nil {
 			m.notice = err.Error()
 			return m, nil
 		}
 	case sessionDaemonSetupServer:
-		m, err = m.applyDaemonSetup(mode.Server, false)
+		m, err = m.applyDaemonSetup(runtime.ModeServer, false)
 		if err != nil {
 			m.notice = err.Error()
 			return m, nil
 		}
 	case sessionDaemonReconfClient:
 		if daemonStateBlocksRuntimeStart(m.daemon.status.ActiveState) {
-			m.pendingDaemonMode = mode.Client
+			m.pendingDaemonMode = runtime.ModeClient
 			m.cursor = 0
 			m.screen = configuratorScreenDaemonReconfigureConfirm
 			return m, nil
 		}
-		m, err = m.applyDaemonSetup(mode.Client, false)
+		m, err = m.applyDaemonSetup(runtime.ModeClient, false)
 		if err != nil {
 			m.notice = err.Error()
 			return m, nil
 		}
 	case sessionDaemonReconfServer:
 		if daemonStateBlocksRuntimeStart(m.daemon.status.ActiveState) {
-			m.pendingDaemonMode = mode.Server
+			m.pendingDaemonMode = runtime.ModeServer
 			m.cursor = 0
 			m.screen = configuratorScreenDaemonReconfigureConfirm
 			return m, nil
 		}
-		m, err = m.applyDaemonSetup(mode.Server, false)
+		m, err = m.applyDaemonSetup(runtime.ModeServer, false)
 		if err != nil {
 			m.notice = err.Error()
 			return m, nil
@@ -1193,7 +1193,7 @@ func (m configuratorSessionModel) updateDaemonReconfigureConfirmScreen(msg tea.K
 	case "esc":
 		m.screen = configuratorScreenDaemonManage
 		m.cursor = 0
-		m.pendingDaemonMode = mode.Unknown
+		m.pendingDaemonMode = 0
 		m.notice = "Reconfigure cancelled."
 		return m, nil
 	}
@@ -1207,13 +1207,13 @@ func (m configuratorSessionModel) updateDaemonReconfigureConfirmScreen(msg tea.K
 	if options[m.cursor] == sessionCancel {
 		m.screen = configuratorScreenDaemonManage
 		m.cursor = 0
-		m.pendingDaemonMode = mode.Unknown
+		m.pendingDaemonMode = 0
 		m.notice = "Reconfigure cancelled."
 		return m, nil
 	}
 
 	targetMode := m.pendingDaemonMode
-	m.pendingDaemonMode = mode.Unknown
+	m.pendingDaemonMode = 0
 	m.screen = configuratorScreenDaemonManage
 	m.cursor = 0
 
@@ -1225,9 +1225,9 @@ func (m configuratorSessionModel) updateDaemonReconfigureConfirmScreen(msg tea.K
 	return updated, nil
 }
 
-func (m configuratorSessionModel) applyDaemonSetup(targetMode mode.Mode, restartRunning bool) (configuratorSessionModel, error) {
+func (m configuratorSessionModel) applyDaemonSetup(targetMode runtime.Mode, restartRunning bool) (configuratorSessionModel, error) {
 	switch targetMode {
-	case mode.Client:
+	case runtime.ModeClient:
 		if m.options.InstallClientSystemdUnit == nil {
 			return m, errors.New("client daemon setup is unavailable")
 		}
@@ -1248,7 +1248,7 @@ func (m configuratorSessionModel) applyDaemonSetup(targetMode mode.Mode, restart
 				return m, fmt.Errorf("failed to setup client daemon: %v", err)
 			}
 		}
-	case mode.Server:
+	case runtime.ModeServer:
 		if m.options.InstallServerSystemdUnit == nil {
 			return m, errors.New("server daemon setup is unavailable")
 		}
@@ -1376,7 +1376,7 @@ func (m configuratorSessionModel) updateSystemdCheckErrorConfirmScreen(msg tea.K
 		if m.done {
 			return m, tea.Quit
 		}
-		if !m.done && isSystemdStartConfirmationScreen(m.screen) && targetMode == mode.Client {
+		if !m.done && isSystemdStartConfirmationScreen(m.screen) && targetMode == runtime.ModeClient {
 			m.pendingClientConfig = pendingClientConfig
 		}
 		return m, nil
@@ -1389,7 +1389,7 @@ func (m configuratorSessionModel) completePendingSystemdStart(notice string) (co
 	targetMode := m.pendingStartMode
 	pendingClientConfig := m.pendingClientConfig
 	m = m.clearPendingSystemdStart()
-	if targetMode == mode.Client {
+	if targetMode == runtime.ModeClient {
 		m = m.persistAutoSelectClientConfig(pendingClientConfig)
 	}
 	m.notice = notice
@@ -1398,7 +1398,7 @@ func (m configuratorSessionModel) completePendingSystemdStart(notice string) (co
 	return m, tea.Quit
 }
 
-func (m configuratorSessionModel) startModeWithSystemdGuard(targetMode mode.Mode, returnScreen configuratorScreen, preserveNotice bool) configuratorSessionModel {
+func (m configuratorSessionModel) startModeWithSystemdGuard(targetMode runtime.Mode, returnScreen configuratorScreen, preserveNotice bool) configuratorSessionModel {
 	m = m.clearPendingSystemdStart()
 
 	if m.options.CheckSystemdUnitActive == nil {
@@ -1458,7 +1458,7 @@ func (m configuratorSessionModel) cancelPendingSystemdStart(notice string) confi
 }
 
 func (m configuratorSessionModel) clearPendingSystemdStart() configuratorSessionModel {
-	m.pendingStartMode = mode.Unknown
+	m.pendingStartMode = 0
 	m.pendingStartScreen = configuratorScreenMode
 	m.pendingClientConfig = ""
 	return m
@@ -1697,9 +1697,9 @@ func daemonDerivedRole(status SystemdDaemonStatus, execStart string) (string, st
 		return role, "ExecStart"
 	}
 	switch status.Mode {
-	case mode.Client:
+	case runtime.ModeClient:
 		return "client", "Mode"
-	case mode.Server:
+	case runtime.ModeServer:
 		return "server", "Mode"
 	default:
 		return "unknown", "Mode"
@@ -1743,7 +1743,7 @@ func (m configuratorSessionModel) leaveDaemonManageScreen() configuratorSessionM
 	} else {
 		m.cursor = 0
 	}
-	m.pendingDaemonMode = mode.Unknown
+	m.pendingDaemonMode = 0
 	m.refreshDaemonStatus()
 	return m
 }

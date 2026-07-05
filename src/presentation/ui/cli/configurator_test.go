@@ -7,14 +7,14 @@ import (
 	"os"
 	"strings"
 	"testing"
-	"tungo/domain/mode"
+	"tungo/runtime"
 )
 
 /*
 run sets up fake os.Args, redirects stdout to a pipe, calls Configure,
 restores globals, and returns captured output, resulting mode, and error.
 */
-func run(args []string) (out string, got mode.Mode, err error) {
+func run(args []string) (out string, got runtime.Mode, err error) {
 	origArgs, origStd := os.Args, os.Stdout
 	defer func() { os.Args, os.Stdout = origArgs, origStd }()
 
@@ -24,7 +24,7 @@ func run(args []string) (out string, got mode.Mode, err error) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	got, err = NewConfigurator().Configure(context.Background())
+	got, err = Configure(context.Background())
 
 	_ = w.Close() // close writer so reader receives EOF
 	var buf bytes.Buffer
@@ -36,12 +36,10 @@ func run(args []string) (out string, got mode.Mode, err error) {
 func TestConfigureOK(t *testing.T) {
 	cases := []struct {
 		in   []string
-		want mode.Mode
+		want runtime.Mode
 	}{
-		{[]string{"c"}, mode.Client},
-		{[]string{"s"}, mode.Server},
-		{[]string{"s", "gen"}, mode.ServerConfGen},
-		{[]string{"version"}, mode.Version},
+		{[]string{"c"}, runtime.ModeClient},
+		{[]string{"s"}, runtime.ModeServer},
 	}
 
 	for _, c := range cases {
@@ -56,13 +54,13 @@ func TestConfigureOK(t *testing.T) {
 func TestConfigureErrors(t *testing.T) {
 	// no arguments
 	out, got, err := run(nil)
-	if err == nil || got != mode.Unknown || !strings.Contains(out, "Usage:") {
+	if err == nil || got != 0 || !strings.Contains(out, "Usage:") {
 		t.Fatalf("expected usage banner for no args")
 	}
 
 	// unknown arguments
 	out, got, err = run([]string{"???", "abc"})
-	if err == nil || got != mode.Unknown || !strings.Contains(out, "Usage:") {
+	if err == nil || got != 0 || !strings.Contains(out, "Usage:") {
 		t.Fatalf("expected usage banner for invalid args")
 	}
 }

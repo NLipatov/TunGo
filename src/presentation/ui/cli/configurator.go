@@ -6,45 +6,27 @@ import (
 	"os"
 	"strings"
 	"tungo/domain/app"
-	"tungo/domain/mode"
+	"tungo/runtime"
 )
 
 const (
-	ServerMode        = "s"
-	ServerConfGenMode = "s gen"
-	ClientMode        = "c"
-	Version           = "version"
+	serverModeArg = "s"
+	clientModeArg = "c"
 )
 
-type Configurator struct {
-}
-
-func NewConfigurator() *Configurator {
-	return &Configurator{}
-}
-
-func (c *Configurator) Configure(_ context.Context) (mode.Mode, error) {
-	if app.CurrentUIMode() == app.TUI {
-		c.printUsage()
-		return mode.Unknown, fmt.Errorf("invalid arguments")
-	}
-
-	switch strings.Join(c.trimArgs(os.Args[1:]), " ") {
-	case ClientMode:
-		return mode.Client, nil
-	case ServerMode:
-		return mode.Server, nil
-	case ServerConfGenMode:
-		return mode.ServerConfGen, nil
-	case Version:
-		return mode.Version, nil
+func Configure(_ context.Context) (runtime.Mode, error) {
+	switch strings.Join(trimArgs(os.Args[1:]), " ") {
+	case clientModeArg:
+		return runtime.ModeClient, nil
+	case serverModeArg:
+		return runtime.ModeServer, nil
 	default:
-		c.printUsage()
-		return mode.Unknown, fmt.Errorf("invalid arguments")
+		printUsage()
+		return 0, fmt.Errorf("invalid arguments")
 	}
 }
 
-func (c *Configurator) trimArgs(args []string) []string {
+func trimArgs(args []string) []string {
 	for i, v := range args {
 		args[i] = strings.TrimSpace(v)
 	}
@@ -52,10 +34,10 @@ func (c *Configurator) trimArgs(args []string) []string {
 	return args
 }
 
-func (c *Configurator) printUsage() {
+func printUsage() {
 	fmt.Printf(`Usage: %s <mode>
 Modes:
   %s  - Server
   %s  - Client
-`, app.Name, ServerMode, ClientMode)
+`, app.Name, serverModeArg, clientModeArg)
 }

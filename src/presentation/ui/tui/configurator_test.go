@@ -5,276 +5,44 @@ import (
 	"errors"
 	"testing"
 
-	"tungo/domain/mode"
 	systemdDomain "tungo/infrastructure/PAL/service_management/linux/systemd/domain"
 	bubbleTea "tungo/presentation/ui/tui/internal/bubble_tea"
-	selectorContract "tungo/presentation/ui/tui/internal/ui/contracts/selector"
+	"tungo/runtime"
 )
 
 func TestNewConfigurator(t *testing.T) {
-	c := NewConfigurator(
-		&cfgObserverMock{},
-		&cfgSelectorMock{},
-		&cfgCreatorMock{},
-		&cfgDeleterMock{},
-		&mockManager{},
-		&queuedSelectorFactory{selector: &queuedSelector{options: []string{"client"}}},
-		nil,
-		nil,
-		true,
-	)
+	runtimeUI := NewRuntimeUI()
+	c := NewConfigurator(&mockManager{}, true, runtimeUI)
 	if c == nil {
 		t.Fatal("expected non-nil configurator")
 	}
 	if c.clientConfigurator == nil || c.serverConfigurator == nil {
 		t.Fatal("expected inner configurators to be initialized")
 	}
-}
-
-func TestNewDefaultConfigurator(t *testing.T) {
-	c := NewDefaultConfigurator(&mockManager{}, true)
-	if c == nil {
-		t.Fatal("expected non-nil default configurator")
+	if c.runtimeUI != runtimeUI {
+		t.Fatal("expected runtime UI to be wired")
 	}
-	if c.clientConfigurator == nil || c.serverConfigurator == nil {
-		t.Fatal("expected default configurator to initialize internal configurators")
+	if !c.serverSupported {
+		t.Fatal("expected serverSupported to be forwarded")
 	}
 }
 
-func TestConfigurator_Configure_ClientMode(t *testing.T) {
-	appSelectorFactory := &mockSelectorFactory{selector: &queueSelector{options: []string{"client"}}}
-	clientSelectorFactory := &queuedSelectorFactory{selector: &queuedSelector{options: []string{"conf1"}}}
-
+func TestConfigurator_Configure_NilClientConfigurator(t *testing.T) {
 	c := &Configurator{
-		appMode: NewAppMode(appSelectorFactory),
-		clientConfigurator: newClientConfigurator(
-			&cfgObserverMock{results: [][]string{{"conf1"}}},
-			&cfgSelectorMock{},
-			nil,
-			nil,
-			clientSelectorFactory,
-			nil,
-			nil,
-			nil,
-		),
-		serverConfigurator: newServerConfigurator(&mockManager{}, &mockSelectorFactory{
-			selector: &queueSelector{options: []string{startServerOption}},
-		}),
-	}
-
-	gotMode, err := c.Configure(context.Background())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if gotMode != mode.Client {
-		t.Fatalf("expected mode.Client, got %v", gotMode)
-	}
-}
-
-func TestConfigurator_Configure_ServerMode(t *testing.T) {
-	appSelectorFactory := &mockSelectorFactory{selector: &queueSelector{options: []string{"server"}}}
-
-	c := &Configurator{
-		appMode: NewAppMode(appSelectorFactory),
-		serverConfigurator: newServerConfigurator(&mockManager{}, &mockSelectorFactory{
-			selector: &queueSelector{options: []string{startServerOption}},
-		}),
-	}
-
-	gotMode, err := c.Configure(context.Background())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if gotMode != mode.Server {
-		t.Fatalf("expected mode.Server, got %v", gotMode)
-	}
-}
-
-func TestConfigurator_Configure_AppModeError(t *testing.T) {
-	appSelectorFactory := &mockSelectorFactory{
-		selector: &queueSelector{
-			options: []string{""},
-			errs:    []error{errors.New("selection failed")},
-		},
-	}
-
-	c := &Configurator{appMode: NewAppMode(appSelectorFactory)}
-	gotMode, err := c.Configure(context.Background())
-	if err == nil {
-		t.Fatal("expected error")
-	}
-	if gotMode != mode.Unknown {
-		t.Fatalf("expected mode.Unknown, got %v", gotMode)
-	}
-}
-
-func TestConfigurator_Configure_BackToModeFromClient_ThenServer(t *testing.T) {
-	appSelectorFactory := &mockSelectorFactory{
-		selector: &queueSelector{options: []string{"client", "server"}},
-	}
-	clientSelectorFactory := &queuedSelectorFactory{
-		selector: &queuedSelector{
-			options: []string{""},
-			errs:    []error{selectorContract.ErrNavigateBack},
-		},
-	}
-
-	c := &Configurator{
-		appMode: NewAppMode(appSelectorFactory),
-		clientConfigurator: newClientConfigurator(
-			&cfgObserverMock{results: [][]string{{"conf1"}}},
-			&cfgSelectorMock{},
-			nil,
-			nil,
-			clientSelectorFactory,
-			nil,
-			nil,
-			nil,
-		),
-		serverConfigurator: newServerConfigurator(&mockManager{}, &mockSelectorFactory{
-			selector: &queueSelector{options: []string{startServerOption}},
-		}),
-	}
-
-	gotMode, err := c.Configure(context.Background())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if gotMode != mode.Server {
-		t.Fatalf("expected mode.Server after back to mode selection, got %v", gotMode)
-	}
-}
-
-func TestConfigurator_Configure_BackToModeFromServer_ThenClient(t *testing.T) {
-	appSelectorFactory := &mockSelectorFactory{
-		selector: &queueSelector{options: []string{"server", "client"}},
-	}
-	serverSelectorFactory := &mockSelectorFactory{
-		selector: &queueSelector{
-			options: []string{""},
-			errs:    []error{selectorContract.ErrNavigateBack},
-		},
-	}
-	clientSelectorFactory := &queuedSelectorFactory{
-		selector: &queuedSelector{options: []string{"conf1"}},
-	}
-
-	c := &Configurator{
-		appMode: NewAppMode(appSelectorFactory),
-		clientConfigurator: newClientConfigurator(
-			&cfgObserverMock{results: [][]string{{"conf1"}}},
-			&cfgSelectorMock{},
-			nil,
-			nil,
-			clientSelectorFactory,
-			nil,
-			nil,
-			nil,
-		),
-		serverConfigurator: newServerConfigurator(&mockManager{}, serverSelectorFactory),
-	}
-
-	gotMode, err := c.Configure(context.Background())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if gotMode != mode.Client {
-		t.Fatalf("expected mode.Client after server back, got %v", gotMode)
-	}
-}
-
-func TestConfigurator_Configure_ClientErrorPropagates(t *testing.T) {
-	appSelectorFactory := &mockSelectorFactory{
-		selector: &queueSelector{options: []string{"client"}},
-	}
-	clientSelectorFactory := &queuedSelectorFactory{
-		selector: &queuedSelector{
-			options: []string{""},
-			errs:    []error{errors.New("client fail")},
-		},
-	}
-
-	c := &Configurator{
-		appMode: NewAppMode(appSelectorFactory),
-		clientConfigurator: newClientConfigurator(
-			&cfgObserverMock{results: [][]string{{"conf1"}}},
-			&cfgSelectorMock{},
-			nil,
-			nil,
-			clientSelectorFactory,
-			nil,
-			nil,
-			nil,
-		),
-		serverConfigurator: newServerConfigurator(&mockManager{}, &mockSelectorFactory{
-			selector: &queueSelector{options: []string{startServerOption}},
-		}),
-	}
-
-	gotMode, err := c.Configure(context.Background())
-	if err == nil || err.Error() != "client fail" {
-		t.Fatalf("expected client fail, got %v", err)
-	}
-	if gotMode != mode.Client {
-		t.Fatalf("expected selected mode client on client error, got %v", gotMode)
-	}
-}
-
-func TestConfigurator_Configure_ServerErrorPropagates(t *testing.T) {
-	appSelectorFactory := &mockSelectorFactory{
-		selector: &queueSelector{options: []string{"server"}},
-	}
-	serverSelectorFactory := &mockSelectorFactory{
-		selector: &queueSelector{
-			options: []string{""},
-			errs:    []error{errors.New("server fail")},
-		},
-	}
-
-	c := &Configurator{
-		appMode:            NewAppMode(appSelectorFactory),
-		clientConfigurator: newClientConfigurator(&cfgObserverMock{}, &cfgSelectorMock{}, nil, nil, &queuedSelectorFactory{selector: &queuedSelector{}}, nil, nil, nil),
-		serverConfigurator: newServerConfigurator(&mockManager{}, serverSelectorFactory),
-	}
-
-	gotMode, err := c.Configure(context.Background())
-	if err == nil || err.Error() != "server fail" {
-		t.Fatalf("expected server fail, got %v", err)
-	}
-	if gotMode != mode.Server {
-		t.Fatalf("expected selected mode server on server error, got %v", gotMode)
-	}
-}
-
-func TestConfigurator_ConfigureFromState_UnknownState(t *testing.T) {
-	c := &Configurator{}
-	gotMode, err := c.configureFromState(configuratorState(99))
-	if err == nil || err.Error() != "unknown configurator state: 99" {
-		t.Fatalf("expected unknown state error, got %v", err)
-	}
-	if gotMode != mode.Unknown {
-		t.Fatalf("expected mode.Unknown, got %v", gotMode)
-	}
-}
-
-func TestConfigurator_ConfigureContinuous_NilClientConfigurator(t *testing.T) {
-	c := &Configurator{
-		useContinuousUI:    true,
 		clientConfigurator: nil,
 		serverConfigurator: newServerConfigurator(&mockManager{}, &mockSelectorFactory{selector: &queueSelector{}}),
 	}
 	gotMode, err := c.Configure(context.Background())
-	if err == nil || err.Error() != "continuous configurator is not initialized" {
+	if err == nil || err.Error() != "configurator is not initialized" {
 		t.Fatalf("expected initialization error, got %v", err)
 	}
-	if gotMode != mode.Unknown {
-		t.Fatalf("expected mode.Unknown, got %v", gotMode)
+	if gotMode != 0 {
+		t.Fatalf("expected 0, got %v", gotMode)
 	}
 }
 
-func TestConfigurator_ConfigureContinuous_NilServerConfigurator(t *testing.T) {
+func TestConfigurator_Configure_NilServerConfigurator(t *testing.T) {
 	c := &Configurator{
-		useContinuousUI: true,
 		clientConfigurator: newClientConfigurator(
 			&cfgObserverMock{}, &cfgSelectorMock{}, nil, nil,
 			&queuedSelectorFactory{selector: &queuedSelector{}}, nil, nil, nil,
@@ -282,26 +50,18 @@ func TestConfigurator_ConfigureContinuous_NilServerConfigurator(t *testing.T) {
 		serverConfigurator: nil,
 	}
 	gotMode, err := c.Configure(context.Background())
-	if err == nil || err.Error() != "continuous configurator is not initialized" {
+	if err == nil || err.Error() != "configurator is not initialized" {
 		t.Fatalf("expected initialization error, got %v", err)
 	}
-	if gotMode != mode.Unknown {
-		t.Fatalf("expected mode.Unknown, got %v", gotMode)
+	if gotMode != 0 {
+		t.Fatalf("expected 0, got %v", gotMode)
 	}
 }
 
-func TestConfigurator_WithContinuousUI(t *testing.T) {
-	c := &Configurator{}
-	c.withContinuousUI()
-	if !c.useContinuousUI {
-		t.Fatal("expected useContinuousUI=true after withContinuousUI()")
-	}
-}
-
-// --- mock unified session for configureContinuous tests ---
+// --- mock unified session for Configure tests ---
 
 type mockUnifiedSession struct {
-	waitModeResult         mode.Mode
+	waitModeResult         runtime.Mode
 	waitModeErr            error
 	waitRuntimeReconfigure bool
 	waitRuntimeErr         error
@@ -309,7 +69,7 @@ type mockUnifiedSession struct {
 	closeCalled            bool
 }
 
-func (m *mockUnifiedSession) WaitForMode() (mode.Mode, error) {
+func (m *mockUnifiedSession) WaitForMode() (runtime.Mode, error) {
 	return m.waitModeResult, m.waitModeErr
 }
 
@@ -329,7 +89,7 @@ func withMockUnifiedSession(t *testing.T, c *Configurator, session unifiedSessio
 	t.Helper()
 	if session != nil {
 		c.sh = &sessionHolder{handle: session}
-		injectSessionHolder(c.sh)
+		c.runtimeUI.setSessionHolder(c.sh)
 	} else {
 		c.sh = nil
 	}
@@ -352,8 +112,8 @@ func withMockNewSystemdInstaller(t *testing.T, factory func() systemdInstaller) 
 type systemdInstallerStub struct {
 	supported bool
 
-	statusRet systemdDomain.UnitStatus
-	statusErr error
+	statusRet   systemdDomain.UnitStatus
+	statusErr   error
 	statusCalls int
 
 	installServerPath string
@@ -399,37 +159,37 @@ func (s *systemdInstallerStub) Status() (systemdDomain.UnitStatus, error) {
 	return s.statusRet, s.statusErr
 }
 
-func newContinuousConfigurator() *Configurator {
+func newTestConfigurator() *Configurator {
 	return &Configurator{
-		useContinuousUI: true,
 		clientConfigurator: newClientConfigurator(
 			&cfgObserverMock{}, &cfgSelectorMock{}, nil, nil,
 			&queuedSelectorFactory{selector: &queuedSelector{}}, nil, nil, nil,
 		),
 		serverConfigurator: newServerConfigurator(&mockManager{}, &mockSelectorFactory{selector: &queueSelector{}}),
+		runtimeUI:          NewRuntimeUI(),
 	}
 }
 
-func TestConfigureContinuous_HappyPath_ReturnsMode(t *testing.T) {
-	mock := &mockUnifiedSession{waitModeResult: mode.Server}
-	c := newContinuousConfigurator()
+func TestConfigurator_Configure_HappyPath_ReturnsMode(t *testing.T) {
+	mock := &mockUnifiedSession{waitModeResult: runtime.ModeServer}
+	c := newTestConfigurator()
 	withMockUnifiedSession(t, c, mock)
 
 	gotMode, err := c.Configure(context.Background())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if gotMode != mode.Server {
-		t.Fatalf("expected mode.Server, got %v", gotMode)
+	if gotMode != runtime.ModeServer {
+		t.Fatalf("expected runtime.ModeServer, got %v", gotMode)
 	}
 	if mock.closeCalled {
 		t.Fatal("expected Close not called on success")
 	}
 }
 
-func TestConfigureContinuous_WaitForModeQuit_ReturnsErrUserExit(t *testing.T) {
+func TestConfigurator_Configure_WaitForModeQuit_ReturnsErrUserExit(t *testing.T) {
 	mock := &mockUnifiedSession{waitModeErr: bubbleTea.ErrUnifiedSessionQuit}
-	c := newContinuousConfigurator()
+	c := newTestConfigurator()
 	withMockUnifiedSession(t, c, mock)
 
 	_, err := c.Configure(context.Background())
@@ -444,9 +204,9 @@ func TestConfigureContinuous_WaitForModeQuit_ReturnsErrUserExit(t *testing.T) {
 	}
 }
 
-func TestConfigureContinuous_WaitForModeClosed_ReturnsErrUserExit(t *testing.T) {
+func TestConfigurator_Configure_WaitForModeClosed_ReturnsErrUserExit(t *testing.T) {
 	mock := &mockUnifiedSession{waitModeErr: bubbleTea.ErrUnifiedSessionClosed}
-	c := newContinuousConfigurator()
+	c := newTestConfigurator()
 	withMockUnifiedSession(t, c, mock)
 
 	_, err := c.Configure(context.Background())
@@ -461,9 +221,9 @@ func TestConfigureContinuous_WaitForModeClosed_ReturnsErrUserExit(t *testing.T) 
 	}
 }
 
-func TestConfigureContinuous_WaitForModeError_Propagates(t *testing.T) {
+func TestConfigurator_Configure_WaitForModeError_Propagates(t *testing.T) {
 	mock := &mockUnifiedSession{waitModeErr: errors.New("unexpected failure")}
-	c := newContinuousConfigurator()
+	c := newTestConfigurator()
 	withMockUnifiedSession(t, c, mock)
 
 	_, err := c.Configure(context.Background())
@@ -478,9 +238,9 @@ func TestConfigureContinuous_WaitForModeError_Propagates(t *testing.T) {
 	}
 }
 
-func TestConfigureContinuous_CreatesNewSession_WhenNil(t *testing.T) {
-	mock := &mockUnifiedSession{waitModeResult: mode.Client}
-	c := newContinuousConfigurator()
+func TestConfigurator_Configure_CreatesNewSession_WhenNil(t *testing.T) {
+	mock := &mockUnifiedSession{waitModeResult: runtime.ModeClient}
+	c := newTestConfigurator()
 	// session is nil by default — factory should create new one
 	withMockNewUnifiedSession(t, func(_ context.Context, _ bubbleTea.ConfiguratorSessionOptions) (unifiedSessionHandle, error) {
 		return mock, nil
@@ -490,16 +250,16 @@ func TestConfigureContinuous_CreatesNewSession_WhenNil(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if gotMode != mode.Client {
-		t.Fatalf("expected mode.Client, got %v", gotMode)
+	if gotMode != runtime.ModeClient {
+		t.Fatalf("expected runtime.ModeClient, got %v", gotMode)
 	}
 	if c.sh == nil || c.sh.handle != mock {
 		t.Fatal("expected session stored on configurator")
 	}
 }
 
-func TestConfigureContinuous_NewSessionError_Propagates(t *testing.T) {
-	c := newContinuousConfigurator()
+func TestConfigurator_Configure_NewSessionError_Propagates(t *testing.T) {
+	c := newTestConfigurator()
 	// session is nil by default — factory will fail
 	withMockNewUnifiedSession(t, func(_ context.Context, _ bubbleTea.ConfiguratorSessionOptions) (unifiedSessionHandle, error) {
 		return nil, errors.New("session creation failed")
@@ -511,9 +271,9 @@ func TestConfigureContinuous_NewSessionError_Propagates(t *testing.T) {
 	}
 }
 
-func TestConfigureContinuous_ReusesExistingSession(t *testing.T) {
-	mock := &mockUnifiedSession{waitModeResult: mode.Server}
-	c := newContinuousConfigurator()
+func TestConfigurator_Configure_ReusesExistingSession(t *testing.T) {
+	mock := &mockUnifiedSession{waitModeResult: runtime.ModeServer}
+	c := newTestConfigurator()
 	withMockUnifiedSession(t, c, mock)
 	factoryCalled := false
 	withMockNewUnifiedSession(t, func(_ context.Context, _ bubbleTea.ConfiguratorSessionOptions) (unifiedSessionHandle, error) {
@@ -525,17 +285,17 @@ func TestConfigureContinuous_ReusesExistingSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if gotMode != mode.Server {
-		t.Fatalf("expected mode.Server, got %v", gotMode)
+	if gotMode != runtime.ModeServer {
+		t.Fatalf("expected runtime.ModeServer, got %v", gotMode)
 	}
 	if factoryCalled {
 		t.Fatal("expected factory NOT called when session exists")
 	}
 }
 
-func TestConfigureContinuous_SystemdSupported_WiresCallbacks(t *testing.T) {
-	mock := &mockUnifiedSession{waitModeResult: mode.Client}
-	c := newContinuousConfigurator()
+func TestConfigurator_Configure_SystemdSupported_WiresCallbacks(t *testing.T) {
+	mock := &mockUnifiedSession{waitModeResult: runtime.ModeClient}
+	c := newTestConfigurator()
 	c.serverSupported = true
 
 	installer := &systemdInstallerStub{
@@ -562,8 +322,8 @@ func TestConfigureContinuous_SystemdSupported_WiresCallbacks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if gotMode != mode.Client {
-		t.Fatalf("expected mode.Client, got %v", gotMode)
+	if gotMode != runtime.ModeClient {
+		t.Fatalf("expected runtime.ModeClient, got %v", gotMode)
 	}
 	if !captured.SystemdSupported {
 		t.Fatal("expected SystemdSupported=true in session options")
@@ -605,7 +365,7 @@ func TestConfigureContinuous_SystemdSupported_WiresCallbacks(t *testing.T) {
 		!status.Managed ||
 		status.UnitFileState != "enabled" ||
 		status.ActiveState != "active" ||
-		status.Mode != mode.Server ||
+		status.Mode != runtime.ModeServer ||
 		status.ExecStart != "/usr/local/bin/tungo s" ||
 		status.FragmentPath != "/etc/systemd/system/tungo.service" {
 		t.Fatalf("unexpected mapped daemon status: %+v", status)
@@ -616,7 +376,7 @@ func TestConfigureContinuous_SystemdSupported_WiresCallbacks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected status error: %v", err)
 	}
-	if status.Mode != mode.Client {
+	if status.Mode != runtime.ModeClient {
 		t.Fatalf("expected mapped client mode, got %v", status.Mode)
 	}
 
@@ -625,7 +385,7 @@ func TestConfigureContinuous_SystemdSupported_WiresCallbacks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected status error: %v", err)
 	}
-	if status.Mode != mode.Unknown {
+	if status.Mode != 0 {
 		t.Fatalf("expected mapped unknown mode, got %v", status.Mode)
 	}
 
@@ -636,9 +396,9 @@ func TestConfigureContinuous_SystemdSupported_WiresCallbacks(t *testing.T) {
 	}
 }
 
-func TestConfigureContinuous_SystemdUnsupported_DoesNotWireCallbacks(t *testing.T) {
-	mock := &mockUnifiedSession{waitModeResult: mode.Server}
-	c := newContinuousConfigurator()
+func TestConfigurator_Configure_SystemdUnsupported_DoesNotWireCallbacks(t *testing.T) {
+	mock := &mockUnifiedSession{waitModeResult: runtime.ModeServer}
+	c := newTestConfigurator()
 	c.serverSupported = true
 
 	installer := &systemdInstallerStub{supported: false}
@@ -654,8 +414,8 @@ func TestConfigureContinuous_SystemdUnsupported_DoesNotWireCallbacks(t *testing.
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if gotMode != mode.Server {
-		t.Fatalf("expected mode.Server, got %v", gotMode)
+	if gotMode != runtime.ModeServer {
+		t.Fatalf("expected runtime.ModeServer, got %v", gotMode)
 	}
 	if captured.SystemdSupported {
 		t.Fatal("expected SystemdSupported=false in session options")
@@ -675,7 +435,7 @@ func TestConfigureContinuous_SystemdUnsupported_DoesNotWireCallbacks(t *testing.
 
 func TestConfigurator_Close_ClosesAndClearsSession(t *testing.T) {
 	mock := &mockUnifiedSession{}
-	c := newContinuousConfigurator()
+	c := newTestConfigurator()
 	withMockUnifiedSession(t, c, mock)
 
 	c.Close()
@@ -688,7 +448,7 @@ func TestConfigurator_Close_ClosesAndClearsSession(t *testing.T) {
 }
 
 func TestConfigurator_Close_IdempotentWithNilSession(t *testing.T) {
-	c := newContinuousConfigurator()
+	c := newTestConfigurator()
 	c.sh = &sessionHolder{handle: nil}
 
 	c.Close()

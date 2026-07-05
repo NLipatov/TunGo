@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"tungo/domain/mode"
+	"tungo/runtime"
 )
 
 // sessionSelectorFailStub is a Selector stub that always returns an error from Select.
@@ -175,7 +175,7 @@ func TestNewUnifiedSessionModel_AutoConnect_Succeeds_StartsWaiting(t *testing.T)
 	}
 	select {
 	case ev := <-events:
-		if ev.kind != unifiedEventModeSelected || ev.mode != mode.Client {
+		if ev.kind != unifiedEventModeSelected || ev.mode != runtime.ModeClient {
 			t.Fatalf("expected ModeSelected(Client), got kind=%d mode=%v", ev.kind, ev.mode)
 		}
 	default:
@@ -319,7 +319,7 @@ func TestNewUnifiedSessionModel_ServerNotSupported_AutoConnect_Triggers(t *testi
 	}
 	select {
 	case ev := <-events:
-		if ev.kind != unifiedEventModeSelected || ev.mode != mode.Client {
+		if ev.kind != unifiedEventModeSelected || ev.mode != runtime.ModeClient {
 			t.Fatalf("expected ModeSelected(Client), got kind=%d mode=%v", ev.kind, ev.mode)
 		}
 	default:
@@ -367,7 +367,7 @@ func TestNewUnifiedSessionModel_ServerNotSupported_SavedServerMode_AutoConnect_T
 	}
 	select {
 	case ev := <-events:
-		if ev.kind != unifiedEventModeSelected || ev.mode != mode.Client {
+		if ev.kind != unifiedEventModeSelected || ev.mode != runtime.ModeClient {
 			t.Fatalf("expected ModeSelected(Client), got kind=%d mode=%v", ev.kind, ev.mode)
 		}
 	default:

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"tungo/domain/mode"
+	"tungo/runtime"
 
 	serverConfiguration "tungo/infrastructure/PAL/configuration/server"
 
@@ -105,7 +105,7 @@ func TestUnifiedSession_ModeSelection_TransitionsToWaiting(t *testing.T) {
 		if event.kind != unifiedEventModeSelected {
 			t.Fatalf("expected unifiedEventModeSelected, got %d", event.kind)
 		}
-		if event.mode != mode.Server {
+		if event.mode != runtime.ModeServer {
 			t.Fatalf("expected Server mode, got %v", event.mode)
 		}
 	default:
@@ -124,7 +124,7 @@ func TestUnifiedSession_ActivateRuntime_TransitionsToRuntime(t *testing.T) {
 	result, cmd := m.Update(activateRuntimeMsg{
 		ctx: context.Background(),
 		options: RuntimeDashboardOptions{
-			Mode: RuntimeDashboardServer,
+			Mode: runtime.ModeServer,
 		},
 	})
 	updated := result.(unifiedSessionModel)
@@ -135,8 +135,8 @@ func TestUnifiedSession_ActivateRuntime_TransitionsToRuntime(t *testing.T) {
 	if updated.runtime == nil {
 		t.Fatal("expected runtime to be set")
 	}
-	if updated.runtime.mode != RuntimeDashboardServer {
-		t.Fatalf("expected server mode, got %q", updated.runtime.mode)
+	if updated.runtime.mode != runtime.ModeServer {
+		t.Fatalf("expected server mode, got %v", updated.runtime.mode)
 	}
 	if updated.runtime.width != 100 || updated.runtime.height != 30 {
 		t.Fatalf("expected propagated size 100x30, got %dx%d", updated.runtime.width, updated.runtime.height)
@@ -617,7 +617,7 @@ func TestUnifiedSession_UpdateRuntime_ReconfigureRequested_DisablesAutoConnectIn
 	m.settings.update(prefs)
 
 	rt := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, m.settings)
-	rt.mode = RuntimeDashboardClient
+	rt.mode = runtime.ModeClient
 	rt.reconfigureRequested = true
 	m.runtime = &rt
 
@@ -643,7 +643,7 @@ func TestUnifiedSession_UpdateRuntime_ReconfigureRequested_AutoConnectPersistFai
 	m.settings.update(prefs)
 
 	rt := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, m.settings)
-	rt.mode = RuntimeDashboardClient
+	rt.mode = runtime.ModeClient
 	rt.reconfigureRequested = true
 	m.runtime = &rt
 
@@ -705,7 +705,7 @@ func TestUnifiedSession_ActivateRuntimeMsg(t *testing.T) {
 
 	result, cmd := m.Update(activateRuntimeMsg{
 		ctx:     context.Background(),
-		options: RuntimeDashboardOptions{Mode: RuntimeDashboardServer},
+		options: RuntimeDashboardOptions{Mode: runtime.ModeServer},
 	})
 	updated := result.(unifiedSessionModel)
 	if updated.phase != phaseRuntime {
@@ -835,7 +835,7 @@ func TestUnifiedSession_Configurator_UserExit(t *testing.T) {
 func TestUnifiedSession_Configurator_ModeSelected(t *testing.T) {
 	m, events := newTestUnifiedModel(t)
 	m.configurator.done = true
-	m.configurator.resultMode = mode.Client
+	m.configurator.resultMode = runtime.ModeClient
 
 	result, _ := m.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
 	updated := result.(unifiedSessionModel)
@@ -847,8 +847,8 @@ func TestUnifiedSession_Configurator_ModeSelected(t *testing.T) {
 		if event.kind != unifiedEventModeSelected {
 			t.Fatalf("expected unifiedEventModeSelected, got %d", event.kind)
 		}
-		if event.mode != mode.Client {
-			t.Fatalf("expected mode.Client, got %v", event.mode)
+		if event.mode != runtime.ModeClient {
+			t.Fatalf("expected runtime.ModeClient, got %v", event.mode)
 		}
 	default:
 		t.Fatal("expected mode selected event")
@@ -890,15 +890,15 @@ func TestUnifiedSession_WaitForMode_ModeSelected(t *testing.T) {
 	s := &UnifiedSession{events: events, done: done}
 
 	go func() {
-		events <- unifiedEvent{kind: unifiedEventModeSelected, mode: mode.Server}
+		events <- unifiedEvent{kind: unifiedEventModeSelected, mode: runtime.ModeServer}
 	}()
 
 	m, err := s.WaitForMode()
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if m != mode.Server {
-		t.Fatalf("expected mode.Server, got %v", m)
+	if m != runtime.ModeServer {
+		t.Fatalf("expected runtime.ModeServer, got %v", m)
 	}
 }
 
@@ -939,15 +939,15 @@ func TestUnifiedSession_WaitForMode_ReconfigureSkippedThenMode(t *testing.T) {
 
 	go func() {
 		events <- unifiedEvent{kind: unifiedEventReconfigure}
-		events <- unifiedEvent{kind: unifiedEventModeSelected, mode: mode.Client}
+		events <- unifiedEvent{kind: unifiedEventModeSelected, mode: runtime.ModeClient}
 	}()
 
 	m, err := s.WaitForMode()
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if m != mode.Client {
-		t.Fatalf("expected mode.Client, got %v", m)
+	if m != runtime.ModeClient {
+		t.Fatalf("expected runtime.ModeClient, got %v", m)
 	}
 }
 
@@ -1011,15 +1011,15 @@ func TestUnifiedSession_WaitForMode_DoneDrainsBufferedModeEvent(t *testing.T) {
 	done := make(chan struct{})
 	s := &UnifiedSession{events: events, done: done}
 
-	events <- unifiedEvent{kind: unifiedEventModeSelected, mode: mode.Client}
+	events <- unifiedEvent{kind: unifiedEventModeSelected, mode: runtime.ModeClient}
 	close(done)
 
 	m, err := s.WaitForMode()
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if m != mode.Client {
-		t.Fatalf("expected mode.Client (drained), got %v", m)
+	if m != runtime.ModeClient {
+		t.Fatalf("expected runtime.ModeClient (drained), got %v", m)
 	}
 }
 
@@ -1095,7 +1095,7 @@ func TestUnifiedSession_WaitForRuntimeExit_ModeSelected(t *testing.T) {
 	s := &UnifiedSession{events: events, done: done}
 
 	go func() {
-		events <- unifiedEvent{kind: unifiedEventModeSelected, mode: mode.Client}
+		events <- unifiedEvent{kind: unifiedEventModeSelected, mode: runtime.ModeClient}
 	}()
 
 	reconfigure, err := s.WaitForRuntimeExit()
@@ -1260,7 +1260,7 @@ func TestUnifiedSession_WaitForRuntimeExit_DoneDrainsBufferedModeSelectedEvent(t
 	done := make(chan struct{})
 	s := &UnifiedSession{events: events, done: done}
 
-	events <- unifiedEvent{kind: unifiedEventModeSelected, mode: mode.Client}
+	events <- unifiedEvent{kind: unifiedEventModeSelected, mode: runtime.ModeClient}
 	close(done)
 
 	reconfigure, err := s.WaitForRuntimeExit()
@@ -1310,7 +1310,7 @@ func TestDrainModeEvent_EmptyBuffer(t *testing.T) {
 	s := &UnifiedSession{events: events}
 
 	m, err := s.drainModeEvent()
-	if m != mode.Unknown || err != nil {
+	if m != 0 || err != nil {
 		t.Fatalf("expected (Unknown, nil), got (%v, %v)", m, err)
 	}
 }
@@ -1321,18 +1321,18 @@ func TestDrainModeEvent_ClosedChannel(t *testing.T) {
 	s := &UnifiedSession{events: events}
 
 	m, err := s.drainModeEvent()
-	if m != mode.Unknown || err != nil {
+	if m != 0 || err != nil {
 		t.Fatalf("expected (Unknown, nil) for closed channel, got (%v, %v)", m, err)
 	}
 }
 
 func TestDrainModeEvent_ModeSelected(t *testing.T) {
 	events := make(chan unifiedEvent, 4)
-	events <- unifiedEvent{kind: unifiedEventModeSelected, mode: mode.Server}
+	events <- unifiedEvent{kind: unifiedEventModeSelected, mode: runtime.ModeServer}
 	s := &UnifiedSession{events: events}
 
 	m, err := s.drainModeEvent()
-	if err != nil || m != mode.Server {
+	if err != nil || m != runtime.ModeServer {
 		t.Fatalf("expected (Server, nil), got (%v, %v)", m, err)
 	}
 }
@@ -1343,7 +1343,7 @@ func TestDrainModeEvent_ExitEvent(t *testing.T) {
 	s := &UnifiedSession{events: events}
 
 	m, err := s.drainModeEvent()
-	if m != mode.Unknown || !errors.Is(err, ErrUnifiedSessionQuit) {
+	if m != 0 || !errors.Is(err, ErrUnifiedSessionQuit) {
 		t.Fatalf("expected (Unknown, ErrUnifiedSessionQuit), got (%v, %v)", m, err)
 	}
 }
@@ -1354,7 +1354,7 @@ func TestDrainModeEvent_ErrorEvent(t *testing.T) {
 	s := &UnifiedSession{events: events}
 
 	m, err := s.drainModeEvent()
-	if m != mode.Unknown || err == nil || err.Error() != "boom" {
+	if m != 0 || err == nil || err.Error() != "boom" {
 		t.Fatalf("expected (Unknown, 'boom'), got (%v, %v)", m, err)
 	}
 }
@@ -1366,7 +1366,7 @@ func TestDrainModeEvent_SkipsIrrelevantThenFindsExit(t *testing.T) {
 	s := &UnifiedSession{events: events}
 
 	m, err := s.drainModeEvent()
-	if m != mode.Unknown || !errors.Is(err, ErrUnifiedSessionQuit) {
+	if m != 0 || !errors.Is(err, ErrUnifiedSessionQuit) {
 		t.Fatalf("expected (Unknown, ErrUnifiedSessionQuit), got (%v, %v)", m, err)
 	}
 }
@@ -1377,7 +1377,7 @@ func TestDrainModeEvent_SkipsIrrelevantThenEmpty(t *testing.T) {
 	s := &UnifiedSession{events: events}
 
 	m, err := s.drainModeEvent()
-	if m != mode.Unknown || err != nil {
+	if m != 0 || err != nil {
 		t.Fatalf("expected (Unknown, nil), got (%v, %v)", m, err)
 	}
 }
@@ -1451,7 +1451,7 @@ func TestDrainRuntimeEvent_ErrorEvent(t *testing.T) {
 
 func TestDrainRuntimeEvent_ModeSelected(t *testing.T) {
 	events := make(chan unifiedEvent, 4)
-	events <- unifiedEvent{kind: unifiedEventModeSelected, mode: mode.Client}
+	events <- unifiedEvent{kind: unifiedEventModeSelected, mode: runtime.ModeClient}
 	s := &UnifiedSession{events: events}
 
 	r, err := s.drainRuntimeEvent()
@@ -1552,8 +1552,8 @@ func TestUnifiedSession_WaitForMode_AppCtxCancelled(t *testing.T) {
 	if !errors.Is(err, ErrUnifiedSessionQuit) {
 		t.Fatalf("expected ErrUnifiedSessionQuit, got %v", err)
 	}
-	if m != mode.Unknown {
-		t.Fatalf("expected mode.Unknown, got %v", m)
+	if m != 0 {
+		t.Fatalf("expected 0, got %v", m)
 	}
 }
 
@@ -1581,15 +1581,15 @@ func TestUnifiedSession_WaitForMode_NilAppCtx(t *testing.T) {
 
 	// With nil appCtx, the context case is never selected — events still work.
 	go func() {
-		events <- unifiedEvent{kind: unifiedEventModeSelected, mode: mode.Client}
+		events <- unifiedEvent{kind: unifiedEventModeSelected, mode: runtime.ModeClient}
 	}()
 
 	m, err := s.WaitForMode()
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if m != mode.Client {
-		t.Fatalf("expected mode.Client, got %v", m)
+	if m != runtime.ModeClient {
+		t.Fatalf("expected runtime.ModeClient, got %v", m)
 	}
 }
 
@@ -1662,7 +1662,7 @@ func TestUnifiedSession_ActivateRuntime_SendsMessage(t *testing.T) {
 	}
 
 	// ActivateRuntime should not panic even if session is in configuring phase.
-	session.ActivateRuntime(ctx, RuntimeDashboardOptions{Mode: RuntimeDashboardServer})
+	session.ActivateRuntime(ctx, RuntimeDashboardOptions{Mode: runtime.ModeServer})
 
 	cancel()
 	select {
@@ -1703,7 +1703,7 @@ func TestUnifiedSession_RuntimePhase_ShowsRuntimeView(t *testing.T) {
 	m.width = 100
 	m.height = 30
 	rt := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode: RuntimeDashboardServer,
+		Mode: runtime.ModeServer,
 	}, testSettings())
 	rt.width = 100
 	rt.height = 30

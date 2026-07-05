@@ -10,7 +10,7 @@ import (
 	"time"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/telemetry/trafficstats"
-	runnerCommon "tungo/runtime"
+	"tungo/runtime"
 	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
@@ -31,8 +31,8 @@ func TestNewRuntimeDashboard_DefaultsNilContextAndMode(t *testing.T) {
 	if m.ctx == nil {
 		t.Fatal("expected fallback context when nil is passed")
 	}
-	if m.mode != RuntimeDashboardClient {
-		t.Fatalf("expected default client mode, got %q", m.mode)
+	if m.mode != runtime.ModeClient {
+		t.Fatalf("expected default client mode, got %v", m.mode)
 	}
 }
 
@@ -449,7 +449,7 @@ func TestRuntimeDashboard_DataplaneHint_UsesStopConfirmationCopy(t *testing.T) {
 func TestRuntimeDashboard_DataplaneHint_ConnectingClientUsesReconfigureCopy(t *testing.T) {
 	readyCh := make(chan struct{})
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:    RuntimeDashboardClient,
+		Mode:    runtime.ModeClient,
 		ReadyCh: readyCh,
 	}, testSettings())
 	view := m.View().Content
@@ -603,7 +603,7 @@ func TestRuntimeDashboard_MainView_ServerAndFooterOff(t *testing.T) {
 	s.update(p)
 
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode: RuntimeDashboardServer,
+		Mode: runtime.ModeServer,
 	}, s)
 	m.width = 120
 	m.height = 30
@@ -625,7 +625,7 @@ func TestRuntimeDashboard_MainView_ServerAndFooterOff(t *testing.T) {
 func TestRuntimeDashboard_MainView_ShowsServerAndNetworkAddresses(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
 		Protocol: settings.UDP,
-		Endpoints: []runnerCommon.EndpointInfo{{
+		Endpoints: []runtime.EndpointInfo{{
 			Protocol: settings.UDP,
 			Server: settings.Host{}.
 				WithIPv4(netip.MustParseAddr("198.51.100.10")).
@@ -648,8 +648,8 @@ func TestRuntimeDashboard_MainView_ShowsServerAndNetworkAddresses(t *testing.T) 
 
 func TestRuntimeDashboard_MainView_ServerShowsTunnelAddressesPerProtocol(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode: RuntimeDashboardServer,
-		Endpoints: []runnerCommon.EndpointInfo{
+		Mode: runtime.ModeServer,
+		Endpoints: []runtime.EndpointInfo{
 			{
 				Protocol:   settings.TCP,
 				Server:     settings.Host{}.WithIPv4(netip.MustParseAddr("198.51.100.10")),
@@ -691,8 +691,8 @@ func TestRuntimeDashboard_MainView_ServerShowsTunnelAddressesPerProtocol(t *test
 
 func TestRuntimeDashboard_MainView_ServerShowsServerAddressesPerProtocolWhenDifferent(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode: RuntimeDashboardServer,
-		Endpoints: []runnerCommon.EndpointInfo{
+		Mode: runtime.ModeServer,
+		Endpoints: []runtime.EndpointInfo{
 			{
 				Protocol:   settings.TCP,
 				Server:     settings.Host{}.WithIPv4(netip.MustParseAddr("198.51.100.10")),
@@ -1622,7 +1622,7 @@ func TestRenderRateBrailleRing_WidthGreaterThanCount_PadsLeft(t *testing.T) {
 func TestRuntimeDashboard_OpenReadyCh_InitiallyNotConnected(t *testing.T) {
 	readyCh := make(chan struct{})
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:    RuntimeDashboardClient,
+		Mode:    runtime.ModeClient,
 		ReadyCh: readyCh,
 	}, testSettings())
 	if m.connected {
@@ -1634,7 +1634,7 @@ func TestRuntimeDashboard_PreClosedReadyCh_Connected(t *testing.T) {
 	readyCh := make(chan struct{})
 	close(readyCh)
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:    RuntimeDashboardClient,
+		Mode:    runtime.ModeClient,
 		ReadyCh: readyCh,
 	}, testSettings())
 	if !m.connected {
@@ -1644,7 +1644,7 @@ func TestRuntimeDashboard_PreClosedReadyCh_Connected(t *testing.T) {
 
 func TestRuntimeDashboard_NilReadyCh_DefaultsToConnected(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode: RuntimeDashboardClient,
+		Mode: runtime.ModeClient,
 	}, testSettings())
 	if !m.connected {
 		t.Fatal("expected connected=true when ReadyCh is nil (defaults to pre-closed)")
@@ -1654,7 +1654,7 @@ func TestRuntimeDashboard_NilReadyCh_DefaultsToConnected(t *testing.T) {
 func TestRuntimeDashboard_ReadyMsg_SetsConnected(t *testing.T) {
 	readyCh := make(chan struct{})
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:    RuntimeDashboardClient,
+		Mode:    runtime.ModeClient,
 		ReadyCh: readyCh,
 	}, testSettings())
 	if m.connected {
@@ -1671,7 +1671,7 @@ func TestRuntimeDashboard_ReadyMsg_SetsConnected(t *testing.T) {
 func TestRuntimeDashboard_ReadyMsg_WrongSeq_Ignored(t *testing.T) {
 	readyCh := make(chan struct{})
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:    RuntimeDashboardClient,
+		Mode:    runtime.ModeClient,
 		ReadyCh: readyCh,
 	}, testSettings())
 
@@ -1685,7 +1685,7 @@ func TestRuntimeDashboard_ReadyMsg_WrongSeq_Ignored(t *testing.T) {
 func TestRuntimeDashboard_MainView_ConnectingStatus(t *testing.T) {
 	readyCh := make(chan struct{})
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:    RuntimeDashboardClient,
+		Mode:    runtime.ModeClient,
 		ReadyCh: readyCh,
 	}, testSettings())
 	m.width = 80
@@ -1701,7 +1701,7 @@ func TestRuntimeDashboard_MainView_ConnectedStatus(t *testing.T) {
 	readyCh := make(chan struct{})
 	close(readyCh)
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:    RuntimeDashboardClient,
+		Mode:    runtime.ModeClient,
 		ReadyCh: readyCh,
 	}, testSettings())
 	m.width = 80
@@ -1719,7 +1719,7 @@ func TestRuntimeDashboard_MainView_ConnectedStatus(t *testing.T) {
 func TestRuntimeDashboard_MainView_ServerAlwaysRunning(t *testing.T) {
 	readyCh := make(chan struct{})
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:    RuntimeDashboardServer,
+		Mode:    runtime.ModeServer,
 		ReadyCh: readyCh,
 	}, testSettings())
 	m.width = 80
@@ -1734,7 +1734,7 @@ func TestRuntimeDashboard_MainView_ServerAlwaysRunning(t *testing.T) {
 func TestRuntimeDashboard_EscDuringConnecting_ReconfiguresImmediately(t *testing.T) {
 	readyCh := make(chan struct{})
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:    RuntimeDashboardClient,
+		Mode:    runtime.ModeClient,
 		ReadyCh: readyCh,
 	}, testSettings())
 	m.screen = runtimeScreenDataplane
@@ -1756,7 +1756,7 @@ func TestRuntimeDashboard_EscWhenConnected_OpensConfirmDialog(t *testing.T) {
 	readyCh := make(chan struct{})
 	close(readyCh)
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:    RuntimeDashboardClient,
+		Mode:    runtime.ModeClient,
 		ReadyCh: readyCh,
 	}, testSettings())
 	m.screen = runtimeScreenDataplane
@@ -1777,7 +1777,7 @@ func TestRuntimeDashboard_EscWhenConnected_OpensConfirmDialog(t *testing.T) {
 func TestRuntimeDashboard_Init_NotConnected_IncludesReadyCmd(t *testing.T) {
 	readyCh := make(chan struct{})
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:    RuntimeDashboardClient,
+		Mode:    runtime.ModeClient,
 		ReadyCh: readyCh,
 	}, testSettings())
 
@@ -1793,7 +1793,7 @@ func TestRuntimeDashboard_Init_Connected_NoReadyCmd(t *testing.T) {
 	readyCh := make(chan struct{})
 	close(readyCh)
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:    RuntimeDashboardClient,
+		Mode:    runtime.ModeClient,
 		ReadyCh: readyCh,
 	}, testSettings())
 	if !m.connected {
@@ -1809,7 +1809,7 @@ func TestRuntimeDashboard_Init_Connected_NoReadyCmd(t *testing.T) {
 
 func TestRuntimeDashboard_StopConfirmTitle_ServerMode(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode: RuntimeDashboardServer,
+		Mode: runtime.ModeServer,
 	}, testSettings())
 	if got := m.stopConfirmTitle(); got != runtimeStopConfirmTitleServer {
 		t.Fatalf("expected %q, got %q", runtimeStopConfirmTitleServer, got)
@@ -1854,7 +1854,7 @@ func TestWaitForReadyCh_ContextCanceled_ReturnsContextDoneMsg(t *testing.T) {
 
 func TestRuntimeDashboard_TunnelIPLines_InvalidSingleAddressReturnsNil(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Endpoints: []runnerCommon.EndpointInfo{{
+		Endpoints: []runtime.EndpointInfo{{
 			Protocol: settings.TCP,
 		}},
 	}, testSettings())
@@ -1866,8 +1866,8 @@ func TestRuntimeDashboard_TunnelIPLines_InvalidSingleAddressReturnsNil(t *testin
 
 func TestRuntimeDashboard_ServerAddressLines_InvalidSharedAddressReturnsNil(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode: RuntimeDashboardServer,
-		Endpoints: []runnerCommon.EndpointInfo{
+		Mode: runtime.ModeServer,
+		Endpoints: []runtime.EndpointInfo{
 			{Protocol: settings.TCP},
 			{Protocol: settings.UDP},
 		},
@@ -1880,7 +1880,7 @@ func TestRuntimeDashboard_ServerAddressLines_InvalidSharedAddressReturnsNil(t *t
 
 func TestRuntimeDashboard_ServerAddressLines_InvalidSingleAddressReturnsNil(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Endpoints: []runnerCommon.EndpointInfo{{
+		Endpoints: []runtime.EndpointInfo{{
 			Protocol: settings.TCP,
 		}},
 	}, testSettings())
@@ -1908,7 +1908,7 @@ func TestSharedServerAddress_RequiresExactMatch(t *testing.T) {
 		t.Fatal("expected empty protocol address list to have no shared server address")
 	}
 
-	if _, ok := sharedServerAddress([]runnerCommon.EndpointInfo{
+	if _, ok := sharedServerAddress([]runtime.EndpointInfo{
 		{
 			Protocol: settings.TCP,
 			Server:   settings.Host{}.WithIPv4(netip.MustParseAddr("198.51.100.10")),
@@ -1923,7 +1923,7 @@ func TestSharedServerAddress_RequiresExactMatch(t *testing.T) {
 		t.Fatal("expected mixed server address pairs to be treated as different")
 	}
 
-	shared, ok := sharedServerAddress([]runnerCommon.EndpointInfo{
+	shared, ok := sharedServerAddress([]runtime.EndpointInfo{
 		{
 			Protocol: settings.TCP,
 			Server:   settings.Host{}.WithIPv4(netip.MustParseAddr("198.51.100.10")),

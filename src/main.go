@@ -9,10 +9,10 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"strings"
 	"time"
 	"tungo/application/confgen"
 	"tungo/domain/app"
-	"tungo/domain/mode"
 	"tungo/infrastructure/PAL/configuration"
 	"tungo/infrastructure/PAL/configuration/client"
 	serverConf "tungo/infrastructure/PAL/configuration/server"
@@ -23,12 +23,13 @@ import (
 	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/logging"
 	"tungo/infrastructure/network/host_resolver"
+	"tungo/infrastructure/telemetry/trafficstats"
 	"tungo/infrastructure/tunnel/sessionplane/client_factory"
-	"tungo/presentation/configuring"
 	"tungo/presentation/elevation"
 	"tungo/presentation/signals/shutdown"
+	"tungo/presentation/ui/cli"
 	"tungo/presentation/ui/tui"
-	runnersCommon "tungo/runtime"
+	"tungo/runtime"
 	clientConf "tungo/runtime/client"
 	"tungo/runtime/server"
 	"tungo/runtime/version"
@@ -76,37 +77,60 @@ func run(ctx context.Context) error {
 	}
 
 	uiMode := app.CurrentUIMode()
-	configuratorFactory := configuring.NewConfigurationFactory(uiMode, configurationManager, platform.Capabilities().ServerModeSupported())
-	configurator, cleanup := configuratorFactory.Configurator(ctx)
+	if uiMode == app.CLI {
+		handled, err := runStandaloneCLICommand(ctx, configurationManager)
+		if handled {
+			return err
+		}
+	}
+
+	configureRuntimeMode := cli.Configure
+	var runtimeUI *tui.RuntimeUI
+	cleanup := func() {}
+	if uiMode == app.TUI {
+		runtimeUI = tui.NewRuntimeUI()
+		trafficCollector := trafficstats.NewCollector(time.Second, 0.35)
+		trafficstats.SetGlobal(trafficCollector)
+		go trafficCollector.Start(ctx)
+
+		runtimeUI.EnableRuntimeLogCapture(1200)
+
+		tuiConfigurator := tui.NewConfigurator(
+			configurationManager,
+			platform.Capabilities().ServerModeSupported(),
+			runtimeUI,
+		)
+		configureRuntimeMode = tuiConfigurator.Configure
+		cleanup = func() {
+			tuiConfigurator.Close()
+			runtimeUI.DisableRuntimeLogCapture()
+			trafficstats.SetGlobal(nil)
+		}
+	}
 	defer cleanup()
 
 	for ctx.Err() == nil {
-		appMode, err := configurator.Configure(ctx)
+		runtimeMode, err := configureRuntimeMode(ctx)
 		if err != nil {
-			if errors.Is(err, configuring.ErrUserExit) || ctx.Err() != nil {
+			if errors.Is(err, tui.ErrUserExit) || ctx.Err() != nil {
 				return nil
 			}
-			if errors.Is(err, configuring.ErrSessionClosed) {
+			if errors.Is(err, tui.ErrSessionClosed) {
 				return fmt.Errorf("ui session ended during shutdown: %w", err)
 			}
 			return fmt.Errorf("configuration error: %w", err)
 		}
 
 		var runErr error
-		switch appMode {
-		case mode.Server:
-			runErr = runServer(ctx, uiMode, serverResolver, configurationManager)
-		case mode.ServerConfGen:
-			return runServerConfGen(configurationManager)
-		case mode.Client:
-			runErr = runClient(ctx, uiMode)
-		case mode.Version:
-			printVersion(ctx)
-			return nil
+		switch runtimeMode {
+		case runtime.ModeServer:
+			runErr = runServer(ctx, uiMode, runtimeUI, serverResolver, configurationManager)
+		case runtime.ModeClient:
+			runErr = runClient(ctx, uiMode, runtimeUI)
 		default:
-			return fmt.Errorf("invalid app mode: %v", appMode)
+			return fmt.Errorf("invalid runtime mode: %v", runtimeMode)
 		}
-		if errors.Is(runErr, runnersCommon.ErrReconfigureRequested) {
+		if errors.Is(runErr, runtime.ErrReconfigureRequested) {
 			continue
 		}
 		if runErr != nil && ctx.Err() == nil &&
@@ -117,6 +141,26 @@ func run(ctx context.Context) error {
 		return nil
 	}
 	return nil
+}
+
+func runStandaloneCLICommand(ctx context.Context, manager serverConf.ConfigurationManager) (bool, error) {
+	switch normalizedCLICommand(os.Args[1:]) {
+	case "version":
+		printVersion(ctx)
+		return true, nil
+	case "s gen":
+		return true, runServerConfGen(manager)
+	default:
+		return false, nil
+	}
+}
+
+func normalizedCLICommand(args []string) string {
+	trimmed := make([]string, 0, len(args))
+	for _, arg := range args {
+		trimmed = append(trimmed, strings.TrimSpace(arg))
+	}
+	return strings.Join(trimmed, " ")
 }
 
 // showFatal displays a fatal error and returns the exit code.
@@ -132,7 +176,13 @@ func showFatal(err error) int {
 
 // --- mode runners ---
 
-func runServer(ctx context.Context, uiMode app.UIMode, resolver configuration.Resolver, manager serverConf.ConfigurationManager) error {
+func runServer(
+	ctx context.Context,
+	uiMode app.UIMode,
+	runtimeUI *tui.RuntimeUI,
+	resolver configuration.Resolver,
+	manager serverConf.ConfigurationManager,
+) error {
 	setupCrashLog(resolver)
 	if err := prepareServerKeys(manager); err != nil {
 		return fmt.Errorf("key preparation failed: %w", err)
@@ -154,20 +204,20 @@ func runServer(ctx context.Context, uiMode app.UIMode, resolver configuration.Re
 		manager,
 	)
 
-	runtime, err := tunnelServer.NewRuntime(manager)
+	serverRuntime, err := tunnelServer.NewRuntime(manager)
 	if err != nil {
 		return fmt.Errorf("failed to create server runtime: %w", err)
 	}
 
-	workerFactory, err := tunnelServer.NewWorkerFactory(runtime, manager)
+	workerFactory, err := tunnelServer.NewWorkerFactory(serverRuntime, manager)
 	if err != nil {
 		return fmt.Errorf("failed to create worker factory: %w", err)
 	}
 
 	configWatcher := serverConf.NewConfigWatcher(
 		manager,
-		runtime.SessionRevoker(),
-		runtime.AllowedPeersUpdater(),
+		serverRuntime.SessionRevoker(),
+		serverRuntime.AllowedPeersUpdater(),
 		configPath,
 		serverConf.DefaultWatchInterval,
 		logging.NewStdLogger(slog.LevelInfo),
@@ -182,7 +232,7 @@ func runServer(ctx context.Context, uiMode app.UIMode, resolver configuration.Re
 		tunnelServer.NewTrafficRouterFactory(),
 	)
 	if uiMode == app.TUI {
-		return runServerRuntimeDashboard(ctx, runner, *conf)
+		return runServerRuntimeDashboard(ctx, runtimeUI, runner, *conf)
 	}
 	return runner.Run(ctx)
 }
@@ -204,7 +254,7 @@ func runServerConfGen(manager serverConf.ConfigurationManager) error {
 	return nil
 }
 
-func runClient(ctx context.Context, uiMode app.UIMode) error {
+func runClient(ctx context.Context, uiMode app.UIMode, runtimeUI *tui.RuntimeUI) error {
 	setupCrashLog(client.NewDefaultResolver())
 	slog.Info("starting client")
 
@@ -216,12 +266,17 @@ func runClient(ctx context.Context, uiMode app.UIMode) error {
 	routerFactory := client_factory.NewRouterFactory()
 	runner := clientConf.NewRunner(deps, routerFactory)
 	if uiMode == app.TUI {
-		return runClientWithDashboard(ctx, runner, deps.Configuration())
+		return runClientWithDashboard(ctx, runtimeUI, runner, deps.Configuration())
 	}
 	return runner.Run(ctx, clientConf.RunOptions{})
 }
 
-func runClientWithDashboard(ctx context.Context, runner *clientConf.Runner, conf client.Configuration) error {
+func runClientWithDashboard(
+	ctx context.Context,
+	runtimeUI *tui.RuntimeUI,
+	runner *clientConf.Runner,
+	conf client.Configuration,
+) error {
 	sessionCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -233,9 +288,9 @@ func runClientWithDashboard(ctx context.Context, runner *clientConf.Runner, conf
 
 	uiResultCh := make(chan tui.RuntimeUIResult, 1)
 	go func() {
-		userQuit, err := tui.RunRuntimeDashboard(sessionCtx, tui.RuntimeModeClient, tui.RuntimeUIOptions{
+		userQuit, err := runtimeUI.RunRuntimeDashboard(sessionCtx, runtime.ModeClient, tui.RuntimeUIOptions{
 			ReadyCh:   readyCh,
-			Endpoints: runnersCommon.EndpointInfoFromClientConfiguration(conf),
+			Endpoints: runtime.EndpointInfoFromClientConfiguration(conf),
 			Protocol:  conf.Protocol,
 		})
 		uiResultCh <- tui.RuntimeUIResult{UserQuit: userQuit, Err: err}
@@ -250,7 +305,12 @@ func runClientWithDashboard(ctx context.Context, runner *clientConf.Runner, conf
 	)
 }
 
-func runServerRuntimeDashboard(ctx context.Context, runner *server.Runner, conf serverConf.Configuration) error {
+func runServerRuntimeDashboard(
+	ctx context.Context,
+	runtimeUI *tui.RuntimeUI,
+	runner *server.Runner,
+	conf serverConf.Configuration,
+) error {
 	runtimeCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -261,9 +321,9 @@ func runServerRuntimeDashboard(ctx context.Context, runner *server.Runner, conf 
 
 	uiResultCh := make(chan tui.RuntimeUIResult, 1)
 	go func() {
-		userQuit, err := tui.RunRuntimeDashboard(runtimeCtx, tui.RuntimeModeServer, tui.RuntimeUIOptions{
+		userQuit, err := runtimeUI.RunRuntimeDashboard(runtimeCtx, runtime.ModeServer, tui.RuntimeUIOptions{
 			ReadyCh:   closedReadyCh(),
-			Endpoints: runnersCommon.EndpointInfoFromServerConfiguration(conf),
+			Endpoints: runtime.EndpointInfoFromServerConfiguration(conf),
 		})
 		uiResultCh <- tui.RuntimeUIResult{UserQuit: userQuit, Err: err}
 	}()
