@@ -1,7 +1,7 @@
 ![Build](https://github.com/NLipatov/TunGo/actions/workflows/main.yml/badge.svg)
 [![codecov](https://codecov.io/gh/NLipatov/TunGo/branch/main/graph/badge.svg)](https://codecov.io/gh/NLipatov/TunGo)
 [![License](https://img.shields.io/badge/license-AGPL--3.0--only-blue.svg?style=plastic)](./LICENSE)
-![Stars](https://img.shields.io/github/stars/NLipatov/TunGo.svg)
+![Stars](https://img.shields.io/github/stars/nlipatov/tungo.svg)
 ![Forks](https://img.shields.io/github/forks/NLipatov/TunGo.svg)
 ![Issues](https://img.shields.io/github/issues/NLipatov/TunGo.svg)
 
