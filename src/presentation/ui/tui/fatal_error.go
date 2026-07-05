@@ -11,8 +11,8 @@ var runFatalErrorProgram = func(message string) {
 // user dismisses it (Enter / Esc / q). Creates a standalone tea.Program.
 //
 // If a unified session was active, the caller should close it first via
-// Configurator.Close() so the alternate screen is released before this
-// standalone program takes over.
+// TUI.Close() so the alternate screen is released before this standalone
+// program takes over.
 func ShowFatalError(message string) {
 	runFatalErrorProgram(message)
 }

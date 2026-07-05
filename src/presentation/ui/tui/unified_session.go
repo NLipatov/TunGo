@@ -11,8 +11,7 @@ import (
 	"tungo/runtime"
 )
 
-// unifiedSessionHandle is the subset of *bubbleTea.UnifiedSession used by the configurator
-// and runtime backend. Extracted as an interface for testability.
+// unifiedSessionHandle is the subset of *bubbleTea.UnifiedSession used by TUI.
 type unifiedSessionHandle interface {
 	WaitForMode() (runtime.Mode, error)
 	ActivateRuntime(ctx context.Context, options bubbleTea.RuntimeDashboardOptions)
@@ -20,6 +19,8 @@ type unifiedSessionHandle interface {
 	ShowFatalError(message string)
 	Close()
 }
+
+type unifiedSessionFactory func(context.Context, bubbleTea.ConfiguratorSessionOptions) (unifiedSessionHandle, error)
 
 type systemdInstaller interface {
 	Supported() bool
@@ -34,29 +35,24 @@ type systemdInstaller interface {
 	Status() (systemdDomain.UnitStatus, error)
 }
 
-// sessionHolder shares session state between Configurator and runtimeBackend.
-// Both hold a pointer to the same holder; when either clears handle, the other sees it.
-type sessionHolder struct {
-	handle unifiedSessionHandle
-}
-
-// newUnifiedSession creates a new unified session. Replaced in tests.
-var newUnifiedSession = func(ctx context.Context, opts bubbleTea.ConfiguratorSessionOptions) (unifiedSessionHandle, error) {
+func newBubbleTeaUnifiedSession(ctx context.Context, opts bubbleTea.ConfiguratorSessionOptions) (unifiedSessionHandle, error) {
 	return bubbleTea.NewUnifiedSession(ctx, opts)
 }
 
-var newSystemdInstaller = func() systemdInstaller {
+type systemdInstallerFactory func() systemdInstaller
+
+func newDefaultSystemdInstaller() systemdInstaller {
 	return systemd.NewUnitInstaller(exec_commander.NewExecCommander())
 }
 
-func (p *Configurator) Configure(ctx context.Context) (runtime.Mode, error) {
-	if !p.initialized() {
-		return 0, fmt.Errorf("configurator is not initialized")
+func (t *TUI) Configure(ctx context.Context) (runtime.Mode, error) {
+	if !t.initialized() {
+		return 0, fmt.Errorf("tui is not initialized")
 	}
 
-	systemdInstaller := newSystemdInstaller()
+	systemdInstaller := t.systemdInstallerFactory()
 	systemdSupported := systemdInstaller.Supported()
-	configOpts := p.sessionOptions
+	configOpts := t.sessionOptions
 	configOpts.SystemdSupported = systemdSupported
 	if systemdSupported {
 		configOpts.GetSystemdDaemonStatus = func() (bubbleTea.SystemdDaemonStatus, error) {
@@ -99,47 +95,47 @@ func (p *Configurator) Configure(ctx context.Context) (runtime.Mode, error) {
 		}
 	}
 
-	if p.sh == nil || p.sh.handle == nil {
-		session, err := newUnifiedSession(ctx, configOpts)
+	if t.session == nil {
+		session, err := t.sessionFactory(ctx, configOpts)
 		if err != nil {
 			return 0, err
 		}
-		p.sh = &sessionHolder{handle: session}
-		p.runtimeUI.setSessionHolder(p.sh)
+		t.session = session
 	}
 
-	selectedMode, err := p.sh.handle.WaitForMode()
+	selectedMode, err := t.session.WaitForMode()
 	if err != nil {
 		if errors.Is(err, bubbleTea.ErrUnifiedSessionQuit) || errors.Is(err, bubbleTea.ErrUnifiedSessionClosed) {
-			p.closeSession()
+			t.closeSession()
 			return 0, ErrUserExit
 		}
-		p.closeSession()
+		t.closeSession()
 		return 0, err
 	}
 	return selectedMode, nil
 }
 
-func (p *Configurator) initialized() bool {
-	opts := p.sessionOptions
-	return p.runtimeUI != nil &&
-		opts.Observer != nil &&
+func (t *TUI) initialized() bool {
+	opts := t.sessionOptions
+	return opts.Observer != nil &&
 		opts.Selector != nil &&
 		opts.Creator != nil &&
 		opts.Deleter != nil &&
 		opts.ClientConfigManager != nil &&
-		opts.ServerConfigManager != nil
+		opts.ServerConfigManager != nil &&
+		t.sessionFactory != nil &&
+		t.systemdInstallerFactory != nil
 }
 
-// closeSession closes the active unified session and clears the holder.
-func (p *Configurator) closeSession() {
-	if p.sh != nil && p.sh.handle != nil {
-		p.sh.handle.Close()
-		p.sh.handle = nil
+// closeSession closes the active unified session.
+func (t *TUI) closeSession() {
+	if t.session != nil {
+		t.session.Close()
+		t.session = nil
 	}
 }
 
 // Close releases the active unified session. Safe to call multiple times.
-func (p *Configurator) Close() {
-	p.closeSession()
+func (t *TUI) Close() {
+	t.closeSession()
 }

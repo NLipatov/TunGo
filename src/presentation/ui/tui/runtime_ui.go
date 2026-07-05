@@ -2,7 +2,9 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"tungo/infrastructure/settings"
+	bubbleTea "tungo/presentation/ui/tui/internal/bubble_tea"
 	"tungo/runtime"
 )
 
@@ -12,40 +14,46 @@ type RuntimeUIOptions struct {
 	Protocol  settings.Protocol
 }
 
-type runtimeBackend interface {
-	enableRuntimeLogCapture(capacity int)
-	disableRuntimeLogCapture()
-	runRuntimeDashboard(ctx context.Context, mode runtime.Mode, options RuntimeUIOptions) (bool, error)
-	setSessionHolder(sh *sessionHolder)
+func (t *TUI) EnableRuntimeLogCapture(capacity int) {
+	bubbleTea.EnableGlobalRuntimeLogCapture(capacity)
 }
 
-type RuntimeUI struct {
-	backend runtimeBackend
+func (t *TUI) DisableRuntimeLogCapture() {
+	bubbleTea.DisableGlobalRuntimeLogCapture()
 }
 
-func NewRuntimeUI() *RuntimeUI {
-	return newRuntimeUI(newBubbleTeaRuntimeBackend())
-}
-
-func newRuntimeUI(backend runtimeBackend) *RuntimeUI {
-	if backend == nil {
-		backend = newBubbleTeaRuntimeBackend()
+func (t *TUI) RunRuntimeDashboard(ctx context.Context, mode runtime.Mode, options RuntimeUIOptions) (bool, error) {
+	dashboardOptions := bubbleTea.RuntimeDashboardOptions{
+		Mode:      mode,
+		LogFeed:   bubbleTea.GlobalRuntimeLogFeed(),
+		ReadyCh:   options.ReadyCh,
+		Protocol:  options.Protocol,
+		Endpoints: options.Endpoints,
 	}
-	return &RuntimeUI{backend: backend}
-}
 
-func (r *RuntimeUI) EnableRuntimeLogCapture(capacity int) {
-	r.backend.enableRuntimeLogCapture(capacity)
-}
+	if t.session != nil {
+		t.session.ActivateRuntime(ctx, dashboardOptions)
+		reconfigure, err := t.session.WaitForRuntimeExit()
+		if err != nil {
+			if errors.Is(err, bubbleTea.ErrUnifiedSessionQuit) || errors.Is(err, bubbleTea.ErrUnifiedSessionClosed) {
+				t.closeSession()
+				return false, ErrUserExit
+			}
+			if errors.Is(err, bubbleTea.ErrUnifiedSessionRuntimeDisconnected) {
+				return false, nil
+			}
+			t.closeSession()
+			return false, err
+		}
+		return reconfigure, nil
+	}
 
-func (r *RuntimeUI) DisableRuntimeLogCapture() {
-	r.backend.disableRuntimeLogCapture()
-}
-
-func (r *RuntimeUI) RunRuntimeDashboard(ctx context.Context, mode runtime.Mode, options RuntimeUIOptions) (bool, error) {
-	return r.backend.runRuntimeDashboard(ctx, mode, options)
-}
-
-func (r *RuntimeUI) setSessionHolder(sh *sessionHolder) {
-	r.backend.setSessionHolder(sh)
+	reconfigureRequested, err := bubbleTea.RunRuntimeDashboard(ctx, dashboardOptions)
+	if err != nil {
+		if errors.Is(err, bubbleTea.ErrRuntimeDashboardExitRequested) {
+			return false, ErrUserExit
+		}
+		return false, err
+	}
+	return reconfigureRequested, nil
 }

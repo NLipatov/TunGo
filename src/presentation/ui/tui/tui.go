@@ -6,23 +6,20 @@ import (
 	bubbleTea "tungo/presentation/ui/tui/internal/bubble_tea"
 )
 
-type Configurator struct {
-	sessionOptions bubbleTea.ConfiguratorSessionOptions
-	sh             *sessionHolder
-	runtimeUI      *RuntimeUI
+type TUI struct {
+	sessionOptions          bubbleTea.ConfiguratorSessionOptions
+	sessionFactory          unifiedSessionFactory
+	systemdInstallerFactory systemdInstallerFactory
+	session                 unifiedSessionHandle
 }
 
-func NewConfigurator(
+func NewTUI(
 	serverConfigurationManager server.ConfigurationManager,
 	serverSupported bool,
-	runtimeUI *RuntimeUI,
-) *Configurator {
+) *TUI {
 	clientConfResolver := clientConfiguration.NewDefaultResolver()
-	if runtimeUI == nil {
-		runtimeUI = NewRuntimeUI()
-	}
 
-	return &Configurator{
+	return &TUI{
 		sessionOptions: bubbleTea.ConfiguratorSessionOptions{
 			Observer:            clientConfiguration.NewDefaultObserver(clientConfResolver),
 			Selector:            clientConfiguration.NewDefaultSelector(clientConfResolver),
@@ -32,6 +29,7 @@ func NewConfigurator(
 			ServerConfigManager: serverConfigurationManager,
 			ServerSupported:     serverSupported,
 		},
-		runtimeUI: runtimeUI,
+		sessionFactory:          newBubbleTeaUnifiedSession,
+		systemdInstallerFactory: newDefaultSystemdInstaller,
 	}
 }

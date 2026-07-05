@@ -7,33 +7,32 @@ import (
 
 	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
 	systemdDomain "tungo/infrastructure/PAL/service_management/linux/systemd/domain"
+	"tungo/infrastructure/settings"
 	bubbleTea "tungo/presentation/ui/tui/internal/bubble_tea"
 	"tungo/runtime"
 )
 
-func TestNewConfigurator(t *testing.T) {
-	runtimeUI := NewRuntimeUI()
-	c := NewConfigurator(&mockManager{}, true, runtimeUI)
-	if c == nil {
-		t.Fatal("expected non-nil configurator")
+func TestNewTUI(t *testing.T) {
+	ui := NewTUI(&mockManager{}, true)
+	if ui == nil {
+		t.Fatal("expected non-nil TUI")
 	}
-	if !c.initialized() {
-		t.Fatal("expected configurator to be initialized")
+	if !ui.initialized() {
+		t.Fatal("expected TUI to be initialized")
 	}
-	if c.runtimeUI != runtimeUI {
-		t.Fatal("expected runtime UI to be wired")
-	}
-	if !c.sessionOptions.ServerSupported {
+	if !ui.sessionOptions.ServerSupported {
 		t.Fatal("expected serverSupported to be forwarded")
 	}
 }
 
-func TestConfigurator_Configure_NilSessionOptions(t *testing.T) {
-	c := &Configurator{
-		runtimeUI: NewRuntimeUI(),
+func TestTUI_Configure_NilSessionOptions(t *testing.T) {
+	ui := &TUI{
+		sessionFactory:          dummySessionFactory,
+		systemdInstallerFactory: dummySystemdInstallerFactory,
 	}
-	gotMode, err := c.Configure(context.Background())
-	if err == nil || err.Error() != "configurator is not initialized" {
+
+	gotMode, err := ui.Configure(context.Background())
+	if err == nil || err.Error() != "tui is not initialized" {
 		t.Fatalf("expected initialization error, got %v", err)
 	}
 	if gotMode != 0 {
@@ -41,12 +40,13 @@ func TestConfigurator_Configure_NilSessionOptions(t *testing.T) {
 	}
 }
 
-func TestConfigurator_Configure_NilRuntimeUI(t *testing.T) {
-	c := &Configurator{
+func TestTUI_Configure_NilFactories(t *testing.T) {
+	ui := &TUI{
 		sessionOptions: testSessionOptions(),
 	}
-	gotMode, err := c.Configure(context.Background())
-	if err == nil || err.Error() != "configurator is not initialized" {
+
+	gotMode, err := ui.Configure(context.Background())
+	if err == nil || err.Error() != "tui is not initialized" {
 		t.Fatalf("expected initialization error, got %v", err)
 	}
 	if gotMode != 0 {
@@ -54,23 +54,25 @@ func TestConfigurator_Configure_NilRuntimeUI(t *testing.T) {
 	}
 }
 
-// --- mock unified session for Configure tests ---
-
 type mockUnifiedSession struct {
-	waitModeResult         runtime.Mode
-	waitModeErr            error
+	waitModeResult runtime.Mode
+	waitModeErr    error
+
+	activatedOptions       bubbleTea.RuntimeDashboardOptions
 	waitRuntimeReconfigure bool
 	waitRuntimeErr         error
-	activateCalled         bool
-	closeCalled            bool
+
+	activateCalled bool
+	closeCalled    bool
 }
 
 func (m *mockUnifiedSession) WaitForMode() (runtime.Mode, error) {
 	return m.waitModeResult, m.waitModeErr
 }
 
-func (m *mockUnifiedSession) ActivateRuntime(_ context.Context, _ bubbleTea.RuntimeDashboardOptions) {
+func (m *mockUnifiedSession) ActivateRuntime(_ context.Context, options bubbleTea.RuntimeDashboardOptions) {
 	m.activateCalled = true
+	m.activatedOptions = options
 }
 
 func (m *mockUnifiedSession) WaitForRuntimeExit() (bool, error) {
@@ -81,28 +83,19 @@ func (m *mockUnifiedSession) ShowFatalError(_ string) {}
 
 func (m *mockUnifiedSession) Close() { m.closeCalled = true }
 
-func withMockUnifiedSession(t *testing.T, c *Configurator, session unifiedSessionHandle) {
+func withMockUnifiedSession(t *testing.T, ui *TUI, session unifiedSessionHandle) {
 	t.Helper()
-	if session != nil {
-		c.sh = &sessionHolder{handle: session}
-		c.runtimeUI.setSessionHolder(c.sh)
-	} else {
-		c.sh = nil
-	}
+	ui.session = session
 }
 
-func withMockNewUnifiedSession(t *testing.T, factory func(context.Context, bubbleTea.ConfiguratorSessionOptions) (unifiedSessionHandle, error)) {
+func withMockUnifiedSessionFactory(t *testing.T, ui *TUI, factory unifiedSessionFactory) {
 	t.Helper()
-	prev := newUnifiedSession
-	newUnifiedSession = factory
-	t.Cleanup(func() { newUnifiedSession = prev })
+	ui.sessionFactory = factory
 }
 
-func withMockNewSystemdInstaller(t *testing.T, factory func() systemdInstaller) {
+func withMockSystemdInstallerFactory(t *testing.T, ui *TUI, factory systemdInstallerFactory) {
 	t.Helper()
-	prev := newSystemdInstaller
-	newSystemdInstaller = factory
-	t.Cleanup(func() { newSystemdInstaller = prev })
+	ui.systemdInstallerFactory = factory
 }
 
 type systemdInstallerStub struct {
@@ -129,37 +122,54 @@ type systemdInstallerStub struct {
 }
 
 func (s *systemdInstallerStub) Supported() bool { return s.supported }
+
 func (s *systemdInstallerStub) InstallServerUnit() (string, error) {
 	if s.installServerPath == "" && s.installServerErr == nil {
 		return "/etc/systemd/system/tungo.service", nil
 	}
 	return s.installServerPath, s.installServerErr
 }
+
 func (s *systemdInstallerStub) InstallClientUnit() (string, error) {
 	if s.installClientPath == "" && s.installClientErr == nil {
 		return "/etc/systemd/system/tungo.service", nil
 	}
 	return s.installClientPath, s.installClientErr
 }
+
 func (s *systemdInstallerStub) RemoveUnit() error { return s.removeErr }
+
 func (s *systemdInstallerStub) IsUnitActive() (bool, error) {
 	s.activeCalls++
 	return s.activeRet, s.activeErr
 }
+
 func (s *systemdInstallerStub) StopUnit() error    { return s.stopErr }
 func (s *systemdInstallerStub) StartUnit() error   { return s.startErr }
 func (s *systemdInstallerStub) EnableUnit() error  { return s.enableErr }
 func (s *systemdInstallerStub) DisableUnit() error { return s.disableErr }
+
 func (s *systemdInstallerStub) Status() (systemdDomain.UnitStatus, error) {
 	s.statusCalls++
 	return s.statusRet, s.statusErr
 }
 
-func newTestConfigurator() *Configurator {
-	return &Configurator{
+func newTestTUI() *TUI {
+	return &TUI{
 		sessionOptions: testSessionOptions(),
-		runtimeUI:      NewRuntimeUI(),
+		sessionFactory: func(context.Context, bubbleTea.ConfiguratorSessionOptions) (unifiedSessionHandle, error) {
+			return nil, errors.New("session factory not configured")
+		},
+		systemdInstallerFactory: dummySystemdInstallerFactory,
 	}
+}
+
+func dummySessionFactory(context.Context, bubbleTea.ConfiguratorSessionOptions) (unifiedSessionHandle, error) {
+	return nil, errors.New("session factory not configured")
+}
+
+func dummySystemdInstallerFactory() systemdInstaller {
+	return &systemdInstallerStub{}
 }
 
 func testSessionOptions() bubbleTea.ConfiguratorSessionOptions {
@@ -173,12 +183,12 @@ func testSessionOptions() bubbleTea.ConfiguratorSessionOptions {
 	}
 }
 
-func TestConfigurator_Configure_HappyPath_ReturnsMode(t *testing.T) {
+func TestTUI_Configure_HappyPath_ReturnsMode(t *testing.T) {
 	mock := &mockUnifiedSession{waitModeResult: runtime.ModeServer}
-	c := newTestConfigurator()
-	withMockUnifiedSession(t, c, mock)
+	ui := newTestTUI()
+	withMockUnifiedSession(t, ui, mock)
 
-	gotMode, err := c.Configure(context.Background())
+	gotMode, err := ui.Configure(context.Background())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -190,101 +200,99 @@ func TestConfigurator_Configure_HappyPath_ReturnsMode(t *testing.T) {
 	}
 }
 
-func TestConfigurator_Configure_WaitForModeQuit_ReturnsErrUserExit(t *testing.T) {
+func TestTUI_Configure_WaitForModeQuit_ReturnsErrUserExit(t *testing.T) {
 	mock := &mockUnifiedSession{waitModeErr: bubbleTea.ErrUnifiedSessionQuit}
-	c := newTestConfigurator()
-	withMockUnifiedSession(t, c, mock)
+	ui := newTestTUI()
+	withMockUnifiedSession(t, ui, mock)
 
-	_, err := c.Configure(context.Background())
+	_, err := ui.Configure(context.Background())
 	if !errors.Is(err, ErrUserExit) {
 		t.Fatalf("expected ErrUserExit, got %v", err)
 	}
 	if !mock.closeCalled {
 		t.Fatal("expected Close called on quit")
 	}
-	if c.sh.handle != nil {
+	if ui.session != nil {
 		t.Fatal("expected session cleared on quit")
 	}
 }
 
-func TestConfigurator_Configure_WaitForModeClosed_ReturnsErrUserExit(t *testing.T) {
+func TestTUI_Configure_WaitForModeClosed_ReturnsErrUserExit(t *testing.T) {
 	mock := &mockUnifiedSession{waitModeErr: bubbleTea.ErrUnifiedSessionClosed}
-	c := newTestConfigurator()
-	withMockUnifiedSession(t, c, mock)
+	ui := newTestTUI()
+	withMockUnifiedSession(t, ui, mock)
 
-	_, err := c.Configure(context.Background())
+	_, err := ui.Configure(context.Background())
 	if !errors.Is(err, ErrUserExit) {
 		t.Fatalf("expected ErrUserExit, got %v", err)
 	}
 	if !mock.closeCalled {
 		t.Fatal("expected Close called on closed session")
 	}
-	if c.sh.handle != nil {
+	if ui.session != nil {
 		t.Fatal("expected session cleared on closed session")
 	}
 }
 
-func TestConfigurator_Configure_WaitForModeError_Propagates(t *testing.T) {
+func TestTUI_Configure_WaitForModeError_Propagates(t *testing.T) {
 	mock := &mockUnifiedSession{waitModeErr: errors.New("unexpected failure")}
-	c := newTestConfigurator()
-	withMockUnifiedSession(t, c, mock)
+	ui := newTestTUI()
+	withMockUnifiedSession(t, ui, mock)
 
-	_, err := c.Configure(context.Background())
+	_, err := ui.Configure(context.Background())
 	if err == nil || err.Error() != "unexpected failure" {
 		t.Fatalf("expected 'unexpected failure', got %v", err)
 	}
 	if !mock.closeCalled {
 		t.Fatal("expected Close called on error")
 	}
-	if c.sh.handle != nil {
+	if ui.session != nil {
 		t.Fatal("expected session cleared on error")
 	}
 }
 
-func TestConfigurator_Configure_CreatesNewSession_WhenNil(t *testing.T) {
+func TestTUI_Configure_CreatesNewSession_WhenNil(t *testing.T) {
 	mock := &mockUnifiedSession{waitModeResult: runtime.ModeClient}
-	c := newTestConfigurator()
-	// session is nil by default — factory should create new one
-	withMockNewUnifiedSession(t, func(_ context.Context, _ bubbleTea.ConfiguratorSessionOptions) (unifiedSessionHandle, error) {
+	ui := newTestTUI()
+	withMockUnifiedSessionFactory(t, ui, func(_ context.Context, _ bubbleTea.ConfiguratorSessionOptions) (unifiedSessionHandle, error) {
 		return mock, nil
 	})
 
-	gotMode, err := c.Configure(context.Background())
+	gotMode, err := ui.Configure(context.Background())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 	if gotMode != runtime.ModeClient {
 		t.Fatalf("expected runtime.ModeClient, got %v", gotMode)
 	}
-	if c.sh == nil || c.sh.handle != mock {
-		t.Fatal("expected session stored on configurator")
+	if ui.session != mock {
+		t.Fatal("expected session stored on TUI")
 	}
 }
 
-func TestConfigurator_Configure_NewSessionError_Propagates(t *testing.T) {
-	c := newTestConfigurator()
-	// session is nil by default — factory will fail
-	withMockNewUnifiedSession(t, func(_ context.Context, _ bubbleTea.ConfiguratorSessionOptions) (unifiedSessionHandle, error) {
+func TestTUI_Configure_NewSessionError_Propagates(t *testing.T) {
+	ui := newTestTUI()
+	withMockUnifiedSessionFactory(t, ui, func(_ context.Context, _ bubbleTea.ConfiguratorSessionOptions) (unifiedSessionHandle, error) {
 		return nil, errors.New("session creation failed")
 	})
 
-	_, err := c.Configure(context.Background())
+	_, err := ui.Configure(context.Background())
 	if err == nil || err.Error() != "session creation failed" {
 		t.Fatalf("expected 'session creation failed', got %v", err)
 	}
 }
 
-func TestConfigurator_Configure_ReusesExistingSession(t *testing.T) {
+func TestTUI_Configure_ReusesExistingSession(t *testing.T) {
 	mock := &mockUnifiedSession{waitModeResult: runtime.ModeServer}
-	c := newTestConfigurator()
-	withMockUnifiedSession(t, c, mock)
+	ui := newTestTUI()
+	withMockUnifiedSession(t, ui, mock)
 	factoryCalled := false
-	withMockNewUnifiedSession(t, func(_ context.Context, _ bubbleTea.ConfiguratorSessionOptions) (unifiedSessionHandle, error) {
+	withMockUnifiedSessionFactory(t, ui, func(_ context.Context, _ bubbleTea.ConfiguratorSessionOptions) (unifiedSessionHandle, error) {
 		factoryCalled = true
 		return nil, errors.New("should not be called")
 	})
 
-	gotMode, err := c.Configure(context.Background())
+	gotMode, err := ui.Configure(context.Background())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -296,10 +304,10 @@ func TestConfigurator_Configure_ReusesExistingSession(t *testing.T) {
 	}
 }
 
-func TestConfigurator_Configure_SystemdSupported_WiresCallbacks(t *testing.T) {
+func TestTUI_Configure_SystemdSupported_WiresCallbacks(t *testing.T) {
 	mock := &mockUnifiedSession{waitModeResult: runtime.ModeClient}
-	c := newTestConfigurator()
-	c.sessionOptions.ServerSupported = true
+	ui := newTestTUI()
+	ui.sessionOptions.ServerSupported = true
 
 	installer := &systemdInstallerStub{
 		supported: true,
@@ -313,15 +321,15 @@ func TestConfigurator_Configure_SystemdSupported_WiresCallbacks(t *testing.T) {
 			FragmentPath:  "/etc/systemd/system/tungo.service",
 		},
 	}
-	withMockNewSystemdInstaller(t, func() systemdInstaller { return installer })
+	withMockSystemdInstallerFactory(t, ui, func() systemdInstaller { return installer })
 
 	var captured bubbleTea.ConfiguratorSessionOptions
-	withMockNewUnifiedSession(t, func(_ context.Context, opts bubbleTea.ConfiguratorSessionOptions) (unifiedSessionHandle, error) {
+	withMockUnifiedSessionFactory(t, ui, func(_ context.Context, opts bubbleTea.ConfiguratorSessionOptions) (unifiedSessionHandle, error) {
 		captured = opts
 		return mock, nil
 	})
 
-	gotMode, err := c.Configure(context.Background())
+	gotMode, err := ui.Configure(context.Background())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -399,21 +407,21 @@ func TestConfigurator_Configure_SystemdSupported_WiresCallbacks(t *testing.T) {
 	}
 }
 
-func TestConfigurator_Configure_SystemdUnsupported_DoesNotWireCallbacks(t *testing.T) {
+func TestTUI_Configure_SystemdUnsupported_DoesNotWireCallbacks(t *testing.T) {
 	mock := &mockUnifiedSession{waitModeResult: runtime.ModeServer}
-	c := newTestConfigurator()
-	c.sessionOptions.ServerSupported = true
+	ui := newTestTUI()
+	ui.sessionOptions.ServerSupported = true
 
 	installer := &systemdInstallerStub{supported: false}
-	withMockNewSystemdInstaller(t, func() systemdInstaller { return installer })
+	withMockSystemdInstallerFactory(t, ui, func() systemdInstaller { return installer })
 
 	var captured bubbleTea.ConfiguratorSessionOptions
-	withMockNewUnifiedSession(t, func(_ context.Context, opts bubbleTea.ConfiguratorSessionOptions) (unifiedSessionHandle, error) {
+	withMockUnifiedSessionFactory(t, ui, func(_ context.Context, opts bubbleTea.ConfiguratorSessionOptions) (unifiedSessionHandle, error) {
 		captured = opts
 		return mock, nil
 	})
 
-	gotMode, err := c.Configure(context.Background())
+	gotMode, err := ui.Configure(context.Background())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -436,24 +444,142 @@ func TestConfigurator_Configure_SystemdUnsupported_DoesNotWireCallbacks(t *testi
 	}
 }
 
-func TestConfigurator_Close_ClosesAndClearsSession(t *testing.T) {
+func TestTUI_Close_ClosesAndClearsSession(t *testing.T) {
 	mock := &mockUnifiedSession{}
-	c := newTestConfigurator()
-	withMockUnifiedSession(t, c, mock)
+	ui := newTestTUI()
+	withMockUnifiedSession(t, ui, mock)
 
-	c.Close()
+	ui.Close()
 	if !mock.closeCalled {
 		t.Fatal("expected Close() to call underlying session Close")
 	}
-	if c.sh.handle != nil {
+	if ui.session != nil {
 		t.Fatal("expected session handle to be cleared")
 	}
 }
 
-func TestConfigurator_Close_IdempotentWithNilSession(t *testing.T) {
-	c := newTestConfigurator()
-	c.sh = &sessionHolder{handle: nil}
+func TestTUI_Close_IdempotentWithNilSession(t *testing.T) {
+	ui := newTestTUI()
 
-	c.Close()
-	c.Close()
+	ui.Close()
+	ui.Close()
+}
+
+func TestTUI_RunRuntimeDashboard_UnifiedSession_HappyPath_Reconfigure(t *testing.T) {
+	mock := &mockUnifiedSession{waitRuntimeReconfigure: true}
+	ui := newTestTUI()
+	withMockUnifiedSession(t, ui, mock)
+
+	reconfigure, err := ui.RunRuntimeDashboard(context.Background(), runtime.ModeServer, RuntimeUIOptions{
+		Protocol: settings.UDP,
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !reconfigure {
+		t.Fatal("expected reconfigure=true")
+	}
+	if !mock.activateCalled {
+		t.Fatal("expected ActivateRuntime called")
+	}
+	if mock.activatedOptions.Mode != runtime.ModeServer {
+		t.Fatalf("expected server mode mapping, got %v", mock.activatedOptions.Mode)
+	}
+	if mock.activatedOptions.Protocol != settings.UDP {
+		t.Fatalf("expected protocol forwarded, got %v", mock.activatedOptions.Protocol)
+	}
+}
+
+func TestTUI_RunRuntimeDashboard_UnifiedSession_Quit_ReturnsErrUserExit(t *testing.T) {
+	mock := &mockUnifiedSession{waitRuntimeErr: bubbleTea.ErrUnifiedSessionQuit}
+	ui := newTestTUI()
+	withMockUnifiedSession(t, ui, mock)
+
+	reconfigure, err := ui.RunRuntimeDashboard(context.Background(), runtime.ModeClient, RuntimeUIOptions{})
+	if !errors.Is(err, ErrUserExit) {
+		t.Fatalf("expected ErrUserExit, got %v", err)
+	}
+	if reconfigure {
+		t.Fatal("expected reconfigure=false")
+	}
+	if !mock.closeCalled {
+		t.Fatal("expected Close called")
+	}
+	if ui.session != nil {
+		t.Fatal("expected session cleared")
+	}
+}
+
+func TestTUI_RunRuntimeDashboard_UnifiedSession_Closed_ReturnsErrUserExit(t *testing.T) {
+	mock := &mockUnifiedSession{waitRuntimeErr: bubbleTea.ErrUnifiedSessionClosed}
+	ui := newTestTUI()
+	withMockUnifiedSession(t, ui, mock)
+
+	reconfigure, err := ui.RunRuntimeDashboard(context.Background(), runtime.ModeClient, RuntimeUIOptions{})
+	if !errors.Is(err, ErrUserExit) {
+		t.Fatalf("expected ErrUserExit, got %v", err)
+	}
+	if reconfigure {
+		t.Fatal("expected reconfigure=false")
+	}
+	if !mock.closeCalled {
+		t.Fatal("expected Close called")
+	}
+	if ui.session != nil {
+		t.Fatal("expected session cleared")
+	}
+}
+
+func TestTUI_RunRuntimeDashboard_UnifiedSession_Disconnected_KeepsSession(t *testing.T) {
+	mock := &mockUnifiedSession{waitRuntimeErr: bubbleTea.ErrUnifiedSessionRuntimeDisconnected}
+	ui := newTestTUI()
+	withMockUnifiedSession(t, ui, mock)
+
+	reconfigure, err := ui.RunRuntimeDashboard(context.Background(), runtime.ModeServer, RuntimeUIOptions{})
+	if err != nil {
+		t.Fatalf("expected nil error for disconnect, got %v", err)
+	}
+	if reconfigure {
+		t.Fatal("expected reconfigure=false for disconnect")
+	}
+	if mock.closeCalled {
+		t.Fatal("expected Close NOT called on disconnect")
+	}
+	if ui.session == nil {
+		t.Fatal("expected session preserved on disconnect")
+	}
+}
+
+func TestTUI_RunRuntimeDashboard_UnifiedSession_GenericError_ClearsSession(t *testing.T) {
+	mock := &mockUnifiedSession{waitRuntimeErr: errors.New("unexpected")}
+	ui := newTestTUI()
+	withMockUnifiedSession(t, ui, mock)
+
+	reconfigure, err := ui.RunRuntimeDashboard(context.Background(), runtime.ModeClient, RuntimeUIOptions{})
+	if err == nil || err.Error() != "unexpected" {
+		t.Fatalf("expected 'unexpected', got %v", err)
+	}
+	if reconfigure {
+		t.Fatal("expected reconfigure=false")
+	}
+	if !mock.closeCalled {
+		t.Fatal("expected Close called")
+	}
+	if ui.session != nil {
+		t.Fatal("expected session cleared")
+	}
+}
+
+func TestTUI_RunRuntimeDashboard_UnifiedSession_NoError_ReturnsReconfigure(t *testing.T) {
+	mock := &mockUnifiedSession{waitRuntimeReconfigure: false}
+	ui := newTestTUI()
+	withMockUnifiedSession(t, ui, mock)
+
+	reconfigure, err := ui.RunRuntimeDashboard(context.Background(), runtime.ModeServer, RuntimeUIOptions{})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if reconfigure {
+		t.Fatal("expected reconfigure=false")
+	}
 }
