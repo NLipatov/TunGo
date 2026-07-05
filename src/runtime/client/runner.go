@@ -74,7 +74,7 @@ func (r *Runner) runAttempt(
 	router, conn, tun, err := r.routerFactory.
 		CreateRouter(ctx, r.deps.ConnectionFactory(), r.deps.TunManager(), r.deps.WorkerFactory())
 	if err != nil {
-		return fmt.Errorf("failed to create router: %s", err)
+		return fmt.Errorf("failed to create router: %w", err)
 	}
 	if readyCh != nil && readyOnce != nil {
 		readyOnce.Do(func() {
