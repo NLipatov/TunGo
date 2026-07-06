@@ -38,6 +38,37 @@ func TestParseCommandErrors(t *testing.T) {
 	}
 }
 
+func TestRuntimeModeArgs(t *testing.T) {
+	got, err := RuntimeModeArgs(runtime.ModeServer)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Join(got, " ") != "s" {
+		t.Fatalf("expected server args, got %v", got)
+	}
+
+	got[0] = "mutated"
+	got, err = RuntimeModeArgs(runtime.ModeServer)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Join(got, " ") != "s" {
+		t.Fatalf("expected returned args to be isolated, got %v", got)
+	}
+
+	got, err = RuntimeModeArgs(runtime.ModeClient)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Join(got, " ") != "c" {
+		t.Fatalf("expected client args, got %v", got)
+	}
+
+	if _, err := RuntimeModeArgs(0); err == nil {
+		t.Fatal("expected error for invalid runtime mode")
+	}
+}
+
 func TestCommandUsage(t *testing.T) {
 	got := CommandUsage("tungo")
 	if !strings.Contains(got, "Usage: tungo <command>") ||

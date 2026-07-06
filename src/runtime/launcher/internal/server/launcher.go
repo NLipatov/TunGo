@@ -11,6 +11,7 @@ import (
 	"tungo/infrastructure/PAL/stat"
 	tunnelServer "tungo/infrastructure/PAL/tunnel/server"
 	"tungo/infrastructure/logging"
+	"tungo/infrastructure/settings"
 	appRuntime "tungo/runtime"
 	runtimeServer "tungo/runtime/server"
 )
@@ -75,7 +76,7 @@ func start(
 	session := appRuntime.NewRunningSession(
 		appRuntime.Info{
 			Mode:      appRuntime.ModeServer,
-			Endpoints: appRuntime.EndpointInfoFromServerConfiguration(conf),
+			Endpoints: endpointsFromConfiguration(conf),
 		},
 		closedReadyCh(),
 		stop,
@@ -163,4 +164,33 @@ func closedReadyCh() <-chan struct{} {
 	ch := make(chan struct{})
 	close(ch)
 	return ch
+}
+
+type protocolSettings struct {
+	protocol settings.Protocol
+	settings settings.Settings
+}
+
+func endpointsFromConfiguration(conf serverConf.Configuration) []appRuntime.EndpointInfo {
+	endpoints := make([]appRuntime.EndpointInfo, 0, 3)
+	for _, enabledSetting := range enabledProtocolSettings(conf) {
+		if endpoint, ok := appRuntime.EndpointInfoFromSettings(enabledSetting.protocol, enabledSetting.settings); ok {
+			endpoints = append(endpoints, endpoint)
+		}
+	}
+	return endpoints
+}
+
+func enabledProtocolSettings(conf serverConf.Configuration) []protocolSettings {
+	result := make([]protocolSettings, 0, 3)
+	if conf.EnableTCP {
+		result = append(result, protocolSettings{protocol: settings.TCP, settings: conf.TCPSettings})
+	}
+	if conf.EnableUDP {
+		result = append(result, protocolSettings{protocol: settings.UDP, settings: conf.UDPSettings})
+	}
+	if conf.EnableWS {
+		result = append(result, protocolSettings{protocol: settings.WS, settings: conf.WSSettings})
+	}
+	return result
 }

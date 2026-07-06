@@ -60,6 +60,15 @@ func ParseCommand(args []string) (Command, error) {
 	return Command{}, errors.New("invalid arguments")
 }
 
+func RuntimeModeArgs(mode runtime.Mode) ([]string, error) {
+	for _, spec := range commands {
+		if spec.command.Kind == CommandRuntime && spec.command.RuntimeMode == mode {
+			return append([]string(nil), spec.args...), nil
+		}
+	}
+	return nil, fmt.Errorf("unsupported runtime mode: %v", mode)
+}
+
 func matches(got, want []string) bool {
 	if len(got) != len(want) {
 		return false

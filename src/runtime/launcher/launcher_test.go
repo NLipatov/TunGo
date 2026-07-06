@@ -21,7 +21,8 @@ func TestRun_InvalidMode(t *testing.T) {
 }
 
 func TestStart_InvalidMode(t *testing.T) {
-	_, err := New().Start(context.Background(), 0)
+	launcher := New()
+	_, err := launcher.Start(context.Background(), 0)
 	if err == nil {
 		t.Fatal("expected error")
 	}

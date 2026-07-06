@@ -1,10 +1,9 @@
-package infrastructure
+package systemd
 
 import (
 	"errors"
 	"os/exec"
 	"strings"
-	"tungo/infrastructure/PAL/service_management/linux/systemd/domain"
 )
 
 func IsSystemdNotActiveError(err error) bool {
@@ -25,18 +24,18 @@ func IsSystemdDisabledError(err error) bool {
 	return code == 1 || code == 3 || code == 4
 }
 
-func ParseUnitFileState(output []byte, err error) domain.UnitFileState {
-	state := domain.UnitFileState(NormalizeSystemdValue(string(output)))
-	if state == domain.UnitFileStateUnknown && err != nil && IsSystemdDisabledError(err) {
-		return domain.UnitFileStateDisabled
+func ParseUnitFileState(output []byte, err error) UnitFileState {
+	state := UnitFileState(NormalizeSystemdValue(string(output)))
+	if state == UnitFileStateUnknown && err != nil && IsSystemdDisabledError(err) {
+		return UnitFileStateDisabled
 	}
 	return state
 }
 
-func ParseUnitActiveState(output []byte, err error) domain.UnitActiveState {
-	state := domain.UnitActiveState(NormalizeSystemdValue(string(output)))
-	if state == domain.UnitActiveStateUnknown && err != nil && IsSystemdNotActiveError(err) {
-		return domain.UnitActiveStateInactive
+func ParseUnitActiveState(output []byte, err error) UnitActiveState {
+	state := UnitActiveState(NormalizeSystemdValue(string(output)))
+	if state == UnitActiveStateUnknown && err != nil && IsSystemdNotActiveError(err) {
+		return UnitActiveStateInactive
 	}
 	return state
 }

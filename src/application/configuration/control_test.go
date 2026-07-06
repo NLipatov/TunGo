@@ -1,11 +1,12 @@
-package tui
+package configuration
 
 import (
 	"encoding/json"
 	"net/netip"
 	"strings"
 	"testing"
-	"tungo/infrastructure/PAL/configuration/client"
+
+	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/settings"
 )
 
@@ -17,9 +18,8 @@ func mustHostParser(raw string) settings.Host {
 	return h
 }
 
-// makeTestConfig returns a valid Configuration for tests.
-func makeTestConfig() client.Configuration {
-	return client.Configuration{
+func makeTestConfig() clientConfiguration.Configuration {
+	return clientConfiguration.Configuration{
 		ClientID: 1,
 		TCPSettings: settings.Settings{
 			Addressing: settings.Addressing{
@@ -37,12 +37,11 @@ func makeTestConfig() client.Configuration {
 	}
 }
 
-func TestFromJson_Simple(t *testing.T) {
-	parser := NewConfigurationParser()
+func TestParseClientConfigurationJSON_Simple(t *testing.T) {
 	want := makeTestConfig()
 	raw, _ := json.Marshal(want)
 
-	cfg, err := parser.FromJson(string(raw))
+	cfg, err := parseClientConfigurationJSON(string(raw))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -54,14 +53,12 @@ func TestFromJson_Simple(t *testing.T) {
 	}
 }
 
-func TestFromJson_WithBOMAndZeroWidthAndControl(t *testing.T) {
-	parser := NewConfigurationParser()
+func TestParseClientConfigurationJSON_WithBOMAndZeroWidthAndControl(t *testing.T) {
 	want := makeTestConfig()
 	raw, _ := json.Marshal(want)
-	// Surround with BOM, ZWSP, null, bell, vertical tab
 	dirty := "\uFEFF\u200B\x00\x07  " + string(raw) + "  \x0B\u200B\uFEFF"
 
-	cfg, err := parser.FromJson(dirty)
+	cfg, err := parseClientConfigurationJSON(dirty)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -70,14 +67,12 @@ func TestFromJson_WithBOMAndZeroWidthAndControl(t *testing.T) {
 	}
 }
 
-func TestFromJson_PrettyPrint_CRLF(t *testing.T) {
-	parser := NewConfigurationParser()
+func TestParseClientConfigurationJSON_PrettyPrintCRLF(t *testing.T) {
 	want := makeTestConfig()
 	raw, _ := json.MarshalIndent(want, "", "  ")
-	// Replace LF with CRLF to simulate Windows-style line endings.
 	pretty := strings.ReplaceAll(string(raw), "\n", "\r\n")
 
-	cfg, err := parser.FromJson(pretty)
+	cfg, err := parseClientConfigurationJSON(pretty)
 	if err != nil {
 		t.Fatalf("failed to parse CRLF JSON: %v", err)
 	}
@@ -86,14 +81,12 @@ func TestFromJson_PrettyPrint_CRLF(t *testing.T) {
 	}
 }
 
-func TestFromJson_NonBreakingSpaceTrim(t *testing.T) {
-	parser := NewConfigurationParser()
+func TestParseClientConfigurationJSON_NonBreakingSpaceTrim(t *testing.T) {
 	want := makeTestConfig()
 	raw, _ := json.Marshal(want)
-	// Surround with non-breaking spaces
 	dirty := "\u00A0\u00A0" + string(raw) + "\u00A0"
 
-	cfg, err := parser.FromJson(dirty)
+	cfg, err := parseClientConfigurationJSON(dirty)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -102,21 +95,19 @@ func TestFromJson_NonBreakingSpaceTrim(t *testing.T) {
 	}
 }
 
-func TestFromJson_Invalid(t *testing.T) {
-	parser := NewConfigurationParser()
-	_, err := parser.FromJson("not a valid { json")
+func TestParseClientConfigurationJSON_Invalid(t *testing.T) {
+	_, err := parseClientConfigurationJSON("not a valid { json")
 	if err == nil {
 		t.Fatal("expected error for invalid JSON, got nil")
 	}
 }
 
-func TestFromJson_InvalidByValidation(t *testing.T) {
-	parser := NewConfigurationParser()
+func TestParseClientConfigurationJSON_InvalidByValidation(t *testing.T) {
 	cfg := makeTestConfig()
 	cfg.ClientID = 0
 	raw, _ := json.Marshal(cfg)
 
-	_, err := parser.FromJson(string(raw))
+	_, err := parseClientConfigurationJSON(string(raw))
 	if err == nil {
 		t.Fatal("expected validation error for invalid client configuration")
 	}

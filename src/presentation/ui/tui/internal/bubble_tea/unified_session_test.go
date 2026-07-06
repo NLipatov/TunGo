@@ -10,8 +10,6 @@ import (
 
 	"tungo/runtime"
 
-	serverConfiguration "tungo/infrastructure/PAL/configuration/server"
-
 	tea "charm.land/bubbletea/v2"
 )
 
@@ -31,19 +29,7 @@ func (errReader) Read([]byte) (int, error) {
 }
 
 func defaultUnifiedConfigOpts() ConfiguratorSessionOptions {
-	return ConfiguratorSessionOptions{
-		Observer:            sessionObserverStub{},
-		Selector:            sessionSelectorStub{},
-		Creator:             sessionCreatorStub{},
-		Deleter:             sessionDeleterStub{},
-		ClientConfigManager: sessionClientConfigManagerStub{},
-		ServerConfigManager: &sessionServerConfigManagerStub{
-			peers: []serverConfiguration.AllowedPeer{
-				{Name: "test", ClientID: 1, Enabled: true},
-			},
-		},
-		ServerSupported: true,
-	}
+	return sessionOptionsWithControl(defaultSessionConfigurationControl())
 }
 
 func newTestUnifiedModel(t *testing.T) (unifiedSessionModel, chan unifiedEvent) {
@@ -862,7 +848,7 @@ func TestUnifiedSession_UpdateRuntime_ReconfigureError(t *testing.T) {
 	rt.reconfigureRequested = true
 	m.runtime = &rt
 	// Make configOpts invalid so newConfiguratorSessionModel fails on reconfigure.
-	m.configOpts.ServerConfigManager = nil
+	m.configOpts = ConfiguratorSessionOptions{}
 
 	result, cmd := m.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
 	_ = result.(unifiedSessionModel)

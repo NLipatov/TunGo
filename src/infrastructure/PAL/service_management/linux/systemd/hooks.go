@@ -1,4 +1,4 @@
-package infrastructure
+package systemd
 
 import "os"
 
@@ -10,5 +10,4 @@ type Hooks struct {
 	WriteFile func(string, []byte, os.FileMode) error
 	ReadFile  func(string) ([]byte, error)
 	Remove    func(string) error
-	Geteuid   func() int
 }

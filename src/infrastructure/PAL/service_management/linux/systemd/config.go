@@ -1,4 +1,4 @@
-package infrastructure
+package systemd
 
 type Config struct {
 	RuntimeDir string

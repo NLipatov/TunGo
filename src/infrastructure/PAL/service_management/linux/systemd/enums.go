@@ -1,4 +1,4 @@
-package domain
+package systemd
 
 // UnitRole identifies daemon runtime role in unit specification.
 type UnitRole string

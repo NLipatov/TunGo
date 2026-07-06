@@ -1,4 +1,4 @@
-package infrastructure
+package systemd
 
 import (
 	"strings"
@@ -6,7 +6,7 @@ import (
 )
 
 func TestUnitFileContent(t *testing.T) {
-	content := UnitFileContent("/usr/local/bin/tungo", "c")
+	content := UnitFileContent("/usr/local/bin/tungo", []string{"c"})
 	if !strings.Contains(content, "ExecStart=/usr/local/bin/tungo c") {
 		t.Fatalf("expected exec start line, got %q", content)
 	}

@@ -1,4 +1,4 @@
-package domain
+package systemd
 
 // UnitStatus is the aggregate projection of service state.
 type UnitStatus struct {

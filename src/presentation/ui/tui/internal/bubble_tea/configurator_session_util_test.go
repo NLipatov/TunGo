@@ -4,13 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"net/netip"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
+	appConfiguration "tungo/application/configuration"
 	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
-	serverConfiguration "tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/settings"
 )
 
@@ -54,86 +52,6 @@ func mustIPHost(raw string) settings.Host {
 		panic(err)
 	}
 	return h
-}
-
-// ---------------------------------------------------------------------------
-// parseClientConfigurationJSON
-// ---------------------------------------------------------------------------
-
-func TestParseClientConfigurationJSON_ValidJSON(t *testing.T) {
-	input := validClientConfigurationJSON()
-	cfg, err := parseClientConfigurationJSON(input)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if cfg.ClientID != 1 {
-		t.Fatalf("expected ClientID 1, got %d", cfg.ClientID)
-	}
-}
-
-func TestParseClientConfigurationJSON_InvalidJSON(t *testing.T) {
-	_, err := parseClientConfigurationJSON("{not valid json")
-	if err == nil {
-		t.Fatal("expected error for invalid JSON, got nil")
-	}
-}
-
-func TestParseClientConfigurationJSON_ValidJSONFailsValidate(t *testing.T) {
-	// ClientID=0 will fail Validate()
-	input := `{"ClientID":0,"Protocol":"TCP"}`
-	_, err := parseClientConfigurationJSON(input)
-	if err == nil {
-		t.Fatal("expected validation error, got nil")
-	}
-}
-
-func TestParseClientConfigurationJSON_ControlCharacters(t *testing.T) {
-	// Embed zero-width spaces and other control chars around valid JSON.
-	raw := validClientConfigurationJSON()
-	withControl := "\u200b" + raw + "\u200b"
-	cfg, err := parseClientConfigurationJSON(withControl)
-	if err != nil {
-		t.Fatalf("expected control chars to be stripped and parse to succeed, got %v", err)
-	}
-	if cfg.ClientID != 1 {
-		t.Fatalf("expected ClientID 1, got %d", cfg.ClientID)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// sanitizeConfigurationJSON
-// ---------------------------------------------------------------------------
-
-func TestSanitizeConfigurationJSON_NormalString(t *testing.T) {
-	input := `{"key":"value"}`
-	result := sanitizeConfigurationJSON(input)
-	if result != input {
-		t.Fatalf("expected %q, got %q", input, result)
-	}
-}
-
-func TestSanitizeConfigurationJSON_ControlCharsStripped(t *testing.T) {
-	// \x00 (NUL), \x01 (SOH), \u200b (zero-width space, category Cf)
-	input := "abc\x00\x01\u200bdef"
-	result := sanitizeConfigurationJSON(input)
-	if result != "abcdef" {
-		t.Fatalf("expected %q, got %q", "abcdef", result)
-	}
-}
-
-func TestSanitizeConfigurationJSON_WhitespacePreserved(t *testing.T) {
-	input := "{\n  \"key\": \"value\"\n}\t"
-	result := sanitizeConfigurationJSON(input)
-	if result != input {
-		t.Fatalf("expected whitespace preserved %q, got %q", input, result)
-	}
-}
-
-func TestSanitizeConfigurationJSON_EmptyString(t *testing.T) {
-	result := sanitizeConfigurationJSON("")
-	if result != "" {
-		t.Fatalf("expected empty string, got %q", result)
-	}
 }
 
 // ---------------------------------------------------------------------------
@@ -233,7 +151,7 @@ func TestIsInvalidClientConfigurationError_UnrelatedError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestServerPeerDisplayName_WithName(t *testing.T) {
-	peer := serverConfiguration.AllowedPeer{Name: "alpha", ClientID: 1}
+	peer := appConfiguration.ServerPeer{Name: "alpha", ClientID: 1}
 	result := serverPeerDisplayName(peer)
 	if result != "alpha" {
 		t.Fatalf("expected %q, got %q", "alpha", result)
@@ -241,7 +159,7 @@ func TestServerPeerDisplayName_WithName(t *testing.T) {
 }
 
 func TestServerPeerDisplayName_EmptyName(t *testing.T) {
-	peer := serverConfiguration.AllowedPeer{Name: "", ClientID: 42}
+	peer := appConfiguration.ServerPeer{Name: "", ClientID: 42}
 	result := serverPeerDisplayName(peer)
 	if result != "client-42" {
 		t.Fatalf("expected %q, got %q", "client-42", result)
@@ -249,7 +167,7 @@ func TestServerPeerDisplayName_EmptyName(t *testing.T) {
 }
 
 func TestServerPeerDisplayName_WhitespaceOnlyName(t *testing.T) {
-	peer := serverConfiguration.AllowedPeer{Name: "   \t  ", ClientID: 7}
+	peer := appConfiguration.ServerPeer{Name: "   \t  ", ClientID: 7}
 	result := serverPeerDisplayName(peer)
 	if result != "client-7" {
 		t.Fatalf("expected %q, got %q", "client-7", result)
@@ -261,14 +179,7 @@ func TestServerPeerDisplayName_WhitespaceOnlyName(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestNewConfiguratorSessionModel_AllDependencies(t *testing.T) {
-	opts := ConfiguratorSessionOptions{
-		Observer:            sessionObserverStub{},
-		Selector:            sessionSelectorStub{},
-		Creator:             sessionCreatorStub{},
-		Deleter:             sessionDeleterStub{},
-		ServerConfigManager: &sessionServerConfigManagerStub{},
-		ServerSupported:     true,
-	}
+	opts := sessionOptionsWithControl(defaultSessionConfigurationControl())
 	model, err := newConfiguratorSessionModel(opts, testSettings())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
@@ -278,111 +189,10 @@ func TestNewConfiguratorSessionModel_AllDependencies(t *testing.T) {
 	}
 }
 
-func TestNewConfiguratorSessionModel_MissingObserver(t *testing.T) {
-	opts := ConfiguratorSessionOptions{
-		Selector:            sessionSelectorStub{},
-		Creator:             sessionCreatorStub{},
-		Deleter:             sessionDeleterStub{},
-		ServerConfigManager: &sessionServerConfigManagerStub{},
-	}
+func TestNewConfiguratorSessionModel_MissingClientConfigurationControl(t *testing.T) {
+	opts := ConfiguratorSessionOptions{}
 	_, err := newConfiguratorSessionModel(opts, testSettings())
 	if err == nil {
-		t.Fatal("expected error for missing Observer, got nil")
-	}
-}
-
-func TestNewConfiguratorSessionModel_MissingSelector(t *testing.T) {
-	opts := ConfiguratorSessionOptions{
-		Observer:            sessionObserverStub{},
-		Creator:             sessionCreatorStub{},
-		Deleter:             sessionDeleterStub{},
-		ServerConfigManager: &sessionServerConfigManagerStub{},
-	}
-	_, err := newConfiguratorSessionModel(opts, testSettings())
-	if err == nil {
-		t.Fatal("expected error for missing Selector, got nil")
-	}
-}
-
-func TestNewConfiguratorSessionModel_MissingCreator(t *testing.T) {
-	opts := ConfiguratorSessionOptions{
-		Observer:            sessionObserverStub{},
-		Selector:            sessionSelectorStub{},
-		Deleter:             sessionDeleterStub{},
-		ServerConfigManager: &sessionServerConfigManagerStub{},
-	}
-	_, err := newConfiguratorSessionModel(opts, testSettings())
-	if err == nil {
-		t.Fatal("expected error for missing Creator, got nil")
-	}
-}
-
-func TestNewConfiguratorSessionModel_MissingDeleter(t *testing.T) {
-	opts := ConfiguratorSessionOptions{
-		Observer:            sessionObserverStub{},
-		Selector:            sessionSelectorStub{},
-		Creator:             sessionCreatorStub{},
-		ServerConfigManager: &sessionServerConfigManagerStub{},
-	}
-	_, err := newConfiguratorSessionModel(opts, testSettings())
-	if err == nil {
-		t.Fatal("expected error for missing Deleter, got nil")
-	}
-}
-
-func TestNewConfiguratorSessionModel_MissingServerConfigManager(t *testing.T) {
-	opts := ConfiguratorSessionOptions{
-		Observer: sessionObserverStub{},
-		Selector: sessionSelectorStub{},
-		Creator:  sessionCreatorStub{},
-		Deleter:  sessionDeleterStub{},
-	}
-	_, err := newConfiguratorSessionModel(opts, testSettings())
-	if err == nil {
-		t.Fatal("expected error for missing ServerConfigManager, got nil")
-	}
-}
-
-// ---------------------------------------------------------------------------
-// writeServerClientConfigFile
-// ---------------------------------------------------------------------------
-
-func withBubbleTeaResolveServerConfigDir(t *testing.T, fn func() (string, error)) {
-	t.Helper()
-	prev := resolveServerConfigDir
-	resolveServerConfigDir = fn
-	t.Cleanup(func() { resolveServerConfigDir = prev })
-}
-
-func TestDefaultWriteServerClientConfigFile_WritesCorrectPathAndContent(t *testing.T) {
-	tmpDir := t.TempDir()
-	withBubbleTeaResolveServerConfigDir(t, func() (string, error) { return tmpDir, nil })
-
-	data := []byte(`{"clientID":5}`)
-	path, err := writeServerClientConfigFile(5, data)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	expected := filepath.Join(tmpDir, "client_configuration.json.5")
-	if path != expected {
-		t.Fatalf("expected path %s, got %s", expected, path)
-	}
-	got, readErr := os.ReadFile(path)
-	if readErr != nil {
-		t.Fatalf("failed to read written file: %v", readErr)
-	}
-	if string(got) != string(data) {
-		t.Fatalf("expected content %q, got %q", data, got)
-	}
-}
-
-func TestDefaultWriteServerClientConfigFile_ResolverError(t *testing.T) {
-	withBubbleTeaResolveServerConfigDir(t, func() (string, error) {
-		return "", errors.New("resolver broken")
-	})
-
-	_, err := writeServerClientConfigFile(1, []byte("x"))
-	if err == nil || !strings.Contains(err.Error(), "resolver broken") {
-		t.Fatalf("expected resolver error, got %v", err)
+		t.Fatal("expected error for missing client configuration control, got nil")
 	}
 }

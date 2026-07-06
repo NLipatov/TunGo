@@ -1,4 +1,4 @@
-package infrastructure
+package systemd
 
 func Supported(h Hooks, runtimeDir string) bool {
 	if _, err := h.Stat(runtimeDir); err != nil {

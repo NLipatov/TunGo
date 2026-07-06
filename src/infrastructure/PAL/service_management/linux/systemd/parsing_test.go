@@ -1,14 +1,8 @@
-package infrastructure
+package systemd
 
 import (
 	"errors"
-	"fmt"
-	"os"
-	"os/exec"
-	"strconv"
 	"testing"
-
-	"tungo/infrastructure/PAL/service_management/linux/systemd/domain"
 )
 
 func TestIsSystemdNotActiveError(t *testing.T) {
@@ -45,25 +39,25 @@ func TestIsSystemdDisabledError(t *testing.T) {
 }
 
 func TestParseUnitFileState(t *testing.T) {
-	if got := ParseUnitFileState([]byte("enabled\n"), nil); got != domain.UnitFileStateEnabled {
+	if got := ParseUnitFileState([]byte("enabled\n"), nil); got != UnitFileStateEnabled {
 		t.Fatalf("expected enabled, got %q", got)
 	}
-	if got := ParseUnitFileState([]byte("\n"), commandExitError(t, 1)); got != domain.UnitFileStateDisabled {
+	if got := ParseUnitFileState([]byte("\n"), commandExitError(t, 1)); got != UnitFileStateDisabled {
 		t.Fatalf("expected disabled fallback, got %q", got)
 	}
-	if got := ParseUnitFileState([]byte("\n"), commandExitError(t, 2)); got != domain.UnitFileStateUnknown {
+	if got := ParseUnitFileState([]byte("\n"), commandExitError(t, 2)); got != UnitFileStateUnknown {
 		t.Fatalf("expected unknown, got %q", got)
 	}
 }
 
 func TestParseUnitActiveState(t *testing.T) {
-	if got := ParseUnitActiveState([]byte("active\n"), nil); got != domain.UnitActiveStateActive {
+	if got := ParseUnitActiveState([]byte("active\n"), nil); got != UnitActiveStateActive {
 		t.Fatalf("expected active, got %q", got)
 	}
-	if got := ParseUnitActiveState([]byte("\n"), commandExitError(t, 3)); got != domain.UnitActiveStateInactive {
+	if got := ParseUnitActiveState([]byte("\n"), commandExitError(t, 3)); got != UnitActiveStateInactive {
 		t.Fatalf("expected inactive fallback, got %q", got)
 	}
-	if got := ParseUnitActiveState([]byte("\n"), commandExitError(t, 2)); got != domain.UnitActiveStateUnknown {
+	if got := ParseUnitActiveState([]byte("\n"), commandExitError(t, 2)); got != UnitActiveStateUnknown {
 		t.Fatalf("expected unknown, got %q", got)
 	}
 }
@@ -97,30 +91,4 @@ func TestNormalizeSystemdRawValue(t *testing.T) {
 	if got := NormalizeSystemdRawValue("\n"); got != "unknown" {
 		t.Fatalf("expected unknown, got %q", got)
 	}
-}
-
-func commandExitError(t *testing.T, code int) error {
-	t.Helper()
-	cmd := exec.Command(os.Args[0], "-test.run=TestHelperProcessExit")
-	cmd.Env = append(
-		os.Environ(),
-		"GO_WANT_HELPER_PROCESS=1",
-		fmt.Sprintf("GO_HELPER_EXIT_CODE=%d", code),
-	)
-	err := cmd.Run()
-	if err == nil {
-		t.Fatalf("expected non-zero exit for code %d", code)
-	}
-	return err
-}
-
-func TestHelperProcessExit(t *testing.T) {
-	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
-		return
-	}
-	code, err := strconv.Atoi(os.Getenv("GO_HELPER_EXIT_CODE"))
-	if err != nil {
-		os.Exit(2)
-	}
-	os.Exit(code)
 }

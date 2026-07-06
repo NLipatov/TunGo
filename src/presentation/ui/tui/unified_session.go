@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"tungo/infrastructure/PAL/exec_commander"
 	"tungo/infrastructure/PAL/service_management/linux/systemd"
-	systemdDomain "tungo/infrastructure/PAL/service_management/linux/systemd/domain"
 	bubbleTea "tungo/presentation/ui/tui/internal/bubble_tea"
 	"tungo/runtime"
 )
@@ -32,7 +31,7 @@ type systemdInstaller interface {
 	StartUnit() error
 	EnableUnit() error
 	DisableUnit() error
-	Status() (systemdDomain.UnitStatus, error)
+	Status() (systemd.UnitStatus, error)
 }
 
 func newBubbleTeaUnifiedSession(ctx context.Context, opts bubbleTea.ConfiguratorSessionOptions) (unifiedSessionHandle, error) {
@@ -62,9 +61,9 @@ func (t *TUI) configure(ctx context.Context) (runtime.Mode, error) {
 			}
 			var daemonMode runtime.Mode
 			switch status.Role {
-			case systemdDomain.UnitRoleClient:
+			case systemd.UnitRoleClient:
 				daemonMode = runtime.ModeClient
-			case systemdDomain.UnitRoleServer:
+			case systemd.UnitRoleServer:
 				daemonMode = runtime.ModeServer
 			}
 			return bubbleTea.SystemdDaemonStatus{
@@ -117,12 +116,7 @@ func (t *TUI) configure(ctx context.Context) (runtime.Mode, error) {
 
 func (t *TUI) initialized() bool {
 	opts := t.sessionOptions
-	return opts.Observer != nil &&
-		opts.Selector != nil &&
-		opts.Creator != nil &&
-		opts.Deleter != nil &&
-		opts.ClientConfigManager != nil &&
-		opts.ServerConfigManager != nil &&
+	return opts.ClientConfigurationControl != nil &&
 		t.sessionFactory != nil &&
 		t.systemdInstallerFactory != nil
 }

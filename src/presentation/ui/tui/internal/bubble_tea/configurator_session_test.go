@@ -66,20 +66,7 @@ func (p testConfiguratorSessionProgram) Run() (tea.Model, error) {
 
 func newTestSessionModel(t *testing.T) configuratorSessionModel {
 	t.Helper()
-	manager := &sessionServerConfigManagerStub{
-		peers: []serverConfiguration.AllowedPeer{
-			{Name: "test", ClientID: 1, Enabled: true},
-		},
-	}
-	model, err := newConfiguratorSessionModel(ConfiguratorSessionOptions{
-		Observer:            sessionObserverStub{},
-		Selector:            sessionSelectorStub{},
-		Creator:             sessionCreatorStub{},
-		Deleter:             sessionDeleterStub{},
-		ClientConfigManager: sessionClientConfigManagerStub{},
-		ServerConfigManager: manager,
-		ServerSupported:     true,
-	}, testSettings())
+	model, err := newConfiguratorSessionModel(sessionOptionsWithControl(defaultSessionConfigurationControl()), testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -87,20 +74,7 @@ func newTestSessionModel(t *testing.T) configuratorSessionModel {
 }
 
 func validSessionOptions() ConfiguratorSessionOptions {
-	manager := &sessionServerConfigManagerStub{
-		peers: []serverConfiguration.AllowedPeer{
-			{Name: "test", ClientID: 1, Enabled: true},
-		},
-	}
-	return ConfiguratorSessionOptions{
-		Observer:            sessionObserverStub{},
-		Selector:            sessionSelectorStub{},
-		Creator:             sessionCreatorStub{},
-		Deleter:             sessionDeleterStub{},
-		ClientConfigManager: sessionClientConfigManagerStub{},
-		ServerConfigManager: manager,
-		ServerSupported:     true,
-	}
+	return sessionOptionsWithControl(defaultSessionConfigurationControl())
 }
 
 type nonConfiguratorModel struct{}
@@ -474,7 +448,7 @@ func TestView_MainTab_ServerManageScreen(t *testing.T) {
 func TestView_MainTab_ServerDeleteConfirmScreen(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenServerDeleteConfirm
-	m.server.deletePeer = serverConfiguration.AllowedPeer{Name: "alpha", ClientID: 1}
+	m.server.deletePeer = sessionServerPeer(serverConfiguration.AllowedPeer{Name: "alpha", ClientID: 1})
 
 	view := m.View().Content
 	if !strings.Contains(view, "Delete client") {
@@ -846,15 +820,14 @@ func TestUpdateClientSelectScreen_EnterSelectConfig_NilConfigManager(t *testing.
 	manager := &sessionServerConfigManagerStub{
 		peers: []serverConfiguration.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
-	model, err := newConfiguratorSessionModel(ConfiguratorSessionOptions{
+	model, err := newConfiguratorSessionModel(sessionOptionsWithControl(&sessionConfigurationControl{
 		Observer:            sessionObserverWithConfigs{configs: []string{"my-config"}},
 		Selector:            selector,
 		Creator:             sessionCreatorStub{},
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: nil,
 		ServerConfigManager: manager,
-		ServerSupported:     true,
-	}, testSettings())
+	}), testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -883,15 +856,14 @@ func TestUpdateClientSelectScreen_EnterSelectConfig_InvalidConfig(t *testing.T) 
 	manager := &sessionServerConfigManagerStub{
 		peers: []serverConfiguration.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
-	model, err := newConfiguratorSessionModel(ConfiguratorSessionOptions{
+	model, err := newConfiguratorSessionModel(sessionOptionsWithControl(&sessionConfigurationControl{
 		Observer:            sessionObserverWithConfigs{configs: []string{"my-config"}},
 		Selector:            sessionSelectorStub{},
 		Creator:             sessionCreatorStub{},
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerInvalid{err: errors.New("invalid client configuration (test): bad key")},
 		ServerConfigManager: manager,
-		ServerSupported:     true,
-	}, testSettings())
+	}), testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -929,15 +901,14 @@ func TestUpdateClientRemoveScreen_EnterRemoves(t *testing.T) {
 	manager := &sessionServerConfigManagerStub{
 		peers: []serverConfiguration.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
-	model, err := newConfiguratorSessionModel(ConfiguratorSessionOptions{
+	model, err := newConfiguratorSessionModel(sessionOptionsWithControl(&sessionConfigurationControl{
 		Observer:            sessionObserverWithConfigs{configs: []string{"remaining"}},
 		Selector:            sessionSelectorStub{},
 		Creator:             sessionCreatorStub{},
 		Deleter:             deleter,
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-		ServerSupported:     true,
-	}, testSettings())
+	}), testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -1088,15 +1059,14 @@ func TestUpdateClientInvalidScreen_EnterDeleteWhenAllowed(t *testing.T) {
 	manager := &sessionServerConfigManagerStub{
 		peers: []serverConfiguration.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
-	model, err := newConfiguratorSessionModel(ConfiguratorSessionOptions{
+	model, err := newConfiguratorSessionModel(sessionOptionsWithControl(&sessionConfigurationControl{
 		Observer:            sessionObserverWithConfigs{configs: []string{}},
 		Selector:            sessionSelectorStub{},
 		Creator:             sessionCreatorStub{},
 		Deleter:             deleter,
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-		ServerSupported:     true,
-	}, testSettings())
+	}), testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -1169,15 +1139,14 @@ func TestUpdateServerSelectScreen_EnterManageClientsNoPeers(t *testing.T) {
 	manager := &sessionServerConfigManagerStub{
 		peers: []serverConfiguration.AllowedPeer{},
 	}
-	model, err := newConfiguratorSessionModel(ConfiguratorSessionOptions{
+	model, err := newConfiguratorSessionModel(sessionOptionsWithControl(&sessionConfigurationControl{
 		Observer:            sessionObserverStub{},
 		Selector:            sessionSelectorStub{},
 		Creator:             sessionCreatorStub{},
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-		ServerSupported:     true,
-	}, testSettings())
+	}), testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -1200,15 +1169,14 @@ func TestUpdateServerSelectScreen_EnterManageClientsWithPeers(t *testing.T) {
 			{Name: "peer1", ClientID: 1, Enabled: true},
 		},
 	}
-	model, err := newConfiguratorSessionModel(ConfiguratorSessionOptions{
+	model, err := newConfiguratorSessionModel(sessionOptionsWithControl(&sessionConfigurationControl{
 		Observer:            sessionObserverStub{},
 		Selector:            sessionSelectorStub{},
 		Creator:             sessionCreatorStub{},
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-		ServerSupported:     true,
-	}, testSettings())
+	}), testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -1412,15 +1380,14 @@ func TestReloadClientConfigs_BuildsCorrectMenuOptions(t *testing.T) {
 	manager := &sessionServerConfigManagerStub{
 		peers: []serverConfiguration.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
-	model, err := newConfiguratorSessionModel(ConfiguratorSessionOptions{
+	model, err := newConfiguratorSessionModel(sessionOptionsWithControl(&sessionConfigurationControl{
 		Observer:            sessionObserverWithConfigs{configs: []string{"config-a", "config-b"}},
 		Selector:            sessionSelectorStub{},
 		Creator:             sessionCreatorStub{},
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-		ServerSupported:     true,
-	}, testSettings())
+	}), testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -1451,15 +1418,14 @@ func TestReloadClientConfigs_EmptyConfigs(t *testing.T) {
 	manager := &sessionServerConfigManagerStub{
 		peers: []serverConfiguration.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
-	model, err := newConfiguratorSessionModel(ConfiguratorSessionOptions{
+	model, err := newConfiguratorSessionModel(sessionOptionsWithControl(&sessionConfigurationControl{
 		Observer:            sessionObserverWithConfigs{configs: []string{}},
 		Selector:            sessionSelectorStub{},
 		Creator:             sessionCreatorStub{},
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-		ServerSupported:     true,
-	}, testSettings())
+	}), testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -1481,15 +1447,14 @@ func TestReloadClientConfigs_ObserverError(t *testing.T) {
 	manager := &sessionServerConfigManagerStub{
 		peers: []serverConfiguration.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
-	model, err := newConfiguratorSessionModel(ConfiguratorSessionOptions{
+	model, err := newConfiguratorSessionModel(sessionOptionsWithControl(&sessionConfigurationControl{
 		Observer:            sessionObserverError{err: errors.New("observe failed")},
 		Selector:            sessionSelectorStub{},
 		Creator:             sessionCreatorStub{},
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-		ServerSupported:     true,
-	}, testSettings())
+	}), testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -1629,7 +1594,7 @@ func TestView_MainTab_AllScreens_ReturnsNonEmpty(t *testing.T) {
 			m.server.manageLabels = []string{"#1 test [enabled]"}
 		}},
 		{"ServerDeleteConfirm", configuratorScreenServerDeleteConfirm, func(m *configuratorSessionModel) {
-			m.server.deletePeer = serverConfiguration.AllowedPeer{Name: "a", ClientID: 1}
+			m.server.deletePeer = sessionServerPeer(serverConfiguration.AllowedPeer{Name: "a", ClientID: 1})
 		}},
 	}
 
@@ -1765,7 +1730,7 @@ func TestUpdate_DispatchToServerSelectScreen(t *testing.T) {
 func TestUpdate_DispatchToServerManageScreen(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenServerManage
-	m.server.managePeers = []serverConfiguration.AllowedPeer{{Name: "a", ClientID: 1, Enabled: true}}
+	m.server.managePeers = sessionServerPeers([]serverConfiguration.AllowedPeer{{Name: "a", ClientID: 1, Enabled: true}})
 	m.server.manageLabels = []string{"#1 a [enabled]"}
 
 	result, _ := m.Update(keyNamed(tea.KeyEsc))
@@ -1778,8 +1743,8 @@ func TestUpdate_DispatchToServerManageScreen(t *testing.T) {
 func TestUpdate_DispatchToServerDeleteConfirmScreen(t *testing.T) {
 	m := newTestSessionModel(t)
 	m.screen = configuratorScreenServerDeleteConfirm
-	m.server.managePeers = []serverConfiguration.AllowedPeer{{Name: "a", ClientID: 1, Enabled: true}}
-	m.server.deletePeer = serverConfiguration.AllowedPeer{Name: "a", ClientID: 1}
+	m.server.managePeers = sessionServerPeers([]serverConfiguration.AllowedPeer{{Name: "a", ClientID: 1, Enabled: true}})
+	m.server.deletePeer = sessionServerPeer(serverConfiguration.AllowedPeer{Name: "a", ClientID: 1})
 
 	result, _ := m.Update(keyNamed(tea.KeyEsc))
 	s := result.(configuratorSessionModel)
@@ -1857,16 +1822,6 @@ type sessionClientConfigManagerValid struct{}
 func (s sessionClientConfigManagerValid) Configuration() (*clientConfiguration.Configuration, error) {
 	cfg := validClientConfiguration()
 	return &cfg, nil
-}
-
-// sessionServerConfigManagerConfigError returns error from Configuration() (for confgen.Generate).
-type sessionServerConfigManagerConfigError struct {
-	sessionServerConfigManagerStub
-	configErr error
-}
-
-func (s *sessionServerConfigManagerConfigError) Configuration() (*serverConfiguration.Configuration, error) {
-	return nil, s.configErr
 }
 
 // sessionServerConfigManagerRemoveError returns error from RemoveAllowedPeer.
@@ -1972,20 +1927,19 @@ func TestUpdateServerManageScreen_SetAllowedPeerEnabledError(t *testing.T) {
 		},
 		enableErr: errors.New("enable failed"),
 	}
-	model, err := newConfiguratorSessionModel(ConfiguratorSessionOptions{
+	model, err := newConfiguratorSessionModel(sessionOptionsWithControl(&sessionConfigurationControl{
 		Observer:            sessionObserverStub{},
 		Selector:            sessionSelectorStub{},
 		Creator:             sessionCreatorStub{},
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-		ServerSupported:     true,
-	}, testSettings())
+	}), testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
 	model.screen = configuratorScreenServerManage
-	model.server.managePeers = append([]serverConfiguration.AllowedPeer(nil), manager.peers...)
+	model.server.managePeers = sessionServerPeers(manager.peers)
 	model.server.manageLabels = buildServerManageLabels(model.server.managePeers)
 	model.cursor = 0
 
@@ -2009,20 +1963,19 @@ func TestUpdateServerManageScreen_AfterToggle_ListAllowedPeersError(t *testing.T
 		},
 		listErr: errors.New("list failed"),
 	}
-	model, err := newConfiguratorSessionModel(ConfiguratorSessionOptions{
+	model, err := newConfiguratorSessionModel(sessionOptionsWithControl(&sessionConfigurationControl{
 		Observer:            sessionObserverStub{},
 		Selector:            sessionSelectorStub{},
 		Creator:             sessionCreatorStub{},
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-		ServerSupported:     true,
-	}, testSettings())
+	}), testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
 	model.screen = configuratorScreenServerManage
-	model.server.managePeers = append([]serverConfiguration.AllowedPeer(nil), manager.peers...)
+	model.server.managePeers = sessionServerPeers(manager.peers)
 	model.server.manageLabels = buildServerManageLabels(model.server.managePeers)
 	model.cursor = 0
 
@@ -2088,7 +2041,7 @@ func TestUpdateServerManageScreen_CursorClamping(t *testing.T) {
 		{Name: "a", ClientID: 1, Enabled: true},
 		{Name: "b", ClientID: 2, Enabled: true},
 	}
-	model.server.managePeers = append([]serverConfiguration.AllowedPeer(nil), manager.peers...)
+	model.server.managePeers = sessionServerPeers(manager.peers)
 	model.server.manageLabels = buildServerManageLabels(model.server.managePeers)
 	model.cursor = 1
 
@@ -2122,27 +2075,21 @@ func TestUpdateServerManageScreen_CursorClamping(t *testing.T) {
 // =========================================================================
 
 func TestUpdateServerSelectScreen_EnterAddClient_GenerateError(t *testing.T) {
-	// "add client" at cursor=1 calls confgen.Generate which needs
-	// ServerConfigManager.Configuration(). Make Configuration() return error
-	// so that Generate fails immediately.
-	configErr := errors.New("config read failed")
-	manager := &sessionServerConfigManagerConfigError{
-		sessionServerConfigManagerStub: sessionServerConfigManagerStub{
-			peers: []serverConfiguration.AllowedPeer{
-				{Name: "a", ClientID: 1, Enabled: true},
-			},
+	generateErr := errors.New("config read failed")
+	manager := &sessionServerConfigManagerStub{
+		peers: []serverConfiguration.AllowedPeer{
+			{Name: "a", ClientID: 1, Enabled: true},
 		},
-		configErr: configErr,
 	}
-	model, err := newConfiguratorSessionModel(ConfiguratorSessionOptions{
+	model, err := newConfiguratorSessionModel(sessionOptionsWithControl(&sessionConfigurationControl{
 		Observer:            sessionObserverStub{},
 		Selector:            sessionSelectorStub{},
 		Creator:             sessionCreatorStub{},
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-		ServerSupported:     true,
-	}, testSettings())
+		generateErr:         generateErr,
+	}), testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -2153,7 +2100,7 @@ func TestUpdateServerSelectScreen_EnterAddClient_GenerateError(t *testing.T) {
 	s := result.(configuratorSessionModel)
 
 	if !s.done {
-		t.Fatal("expected done=true when confgen.Generate fails")
+		t.Fatal("expected done=true when client configuration generation fails")
 	}
 	if s.resultErr == nil {
 		t.Fatal("expected non-nil resultErr")
@@ -2172,15 +2119,14 @@ func TestUpdateServerSelectScreen_ManageClients_ListError(t *testing.T) {
 		},
 		listErr: errors.New("list error"),
 	}
-	model, err := newConfiguratorSessionModel(ConfiguratorSessionOptions{
+	model, err := newConfiguratorSessionModel(sessionOptionsWithControl(&sessionConfigurationControl{
 		Observer:            sessionObserverStub{},
 		Selector:            sessionSelectorStub{},
 		Creator:             sessionCreatorStub{},
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-		ServerSupported:     true,
-	}, testSettings())
+	}), testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -2210,15 +2156,14 @@ func TestUpdateClientSelectScreen_EnterConfig_SelectorError(t *testing.T) {
 	manager := &sessionServerConfigManagerStub{
 		peers: []serverConfiguration.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
-	model, err := newConfiguratorSessionModel(ConfiguratorSessionOptions{
+	model, err := newConfiguratorSessionModel(sessionOptionsWithControl(&sessionConfigurationControl{
 		Observer:            sessionObserverWithConfigs{configs: []string{"my-config"}},
 		Selector:            sessionSelectorError{err: selectorErr},
 		Creator:             sessionCreatorStub{},
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-		ServerSupported:     true,
-	}, testSettings())
+	}), testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -2246,15 +2191,14 @@ func TestUpdateClientSelectScreen_EnterConfig_NonInvalidError(t *testing.T) {
 	manager := &sessionServerConfigManagerStub{
 		peers: []serverConfiguration.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
-	model, err := newConfiguratorSessionModel(ConfiguratorSessionOptions{
+	model, err := newConfiguratorSessionModel(sessionOptionsWithControl(&sessionConfigurationControl{
 		Observer:            sessionObserverWithConfigs{configs: []string{"my-config"}},
 		Selector:            sessionSelectorStub{},
 		Creator:             sessionCreatorStub{},
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerNonInvalid{err: nonInvalidErr},
 		ServerConfigManager: manager,
-		ServerSupported:     true,
-	}, testSettings())
+	}), testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -2281,15 +2225,14 @@ func TestUpdateClientSelectScreen_EnterConfig_ValidConfig(t *testing.T) {
 	manager := &sessionServerConfigManagerStub{
 		peers: []serverConfiguration.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
-	model, err := newConfiguratorSessionModel(ConfiguratorSessionOptions{
+	model, err := newConfiguratorSessionModel(sessionOptionsWithControl(&sessionConfigurationControl{
 		Observer:            sessionObserverWithConfigs{configs: []string{"my-config"}},
 		Selector:            sessionSelectorStub{},
 		Creator:             sessionCreatorStub{},
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerValid{},
 		ServerConfigManager: manager,
-		ServerSupported:     true,
-	}, testSettings())
+	}), testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -2339,15 +2282,14 @@ func TestUpdateClientRemoveScreen_DeleterError(t *testing.T) {
 	manager := &sessionServerConfigManagerStub{
 		peers: []serverConfiguration.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
-	model, err := newConfiguratorSessionModel(ConfiguratorSessionOptions{
+	model, err := newConfiguratorSessionModel(sessionOptionsWithControl(&sessionConfigurationControl{
 		Observer:            sessionObserverWithConfigs{configs: []string{"remaining"}},
 		Selector:            sessionSelectorStub{},
 		Creator:             sessionCreatorStub{},
 		Deleter:             sessionDeleterError{err: deleterErr},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-		ServerSupported:     true,
-	}, testSettings())
+	}), testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -2374,15 +2316,14 @@ func TestUpdateClientRemoveScreen_ReloadError(t *testing.T) {
 	manager := &sessionServerConfigManagerStub{
 		peers: []serverConfiguration.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
-	model, err := newConfiguratorSessionModel(ConfiguratorSessionOptions{
+	model, err := newConfiguratorSessionModel(sessionOptionsWithControl(&sessionConfigurationControl{
 		Observer:            sessionObserverError{err: observeErr},
 		Selector:            sessionSelectorStub{},
 		Creator:             sessionCreatorStub{},
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-		ServerSupported:     true,
-	}, testSettings())
+	}), testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -2413,15 +2354,14 @@ func TestUpdateClientAddJSONScreen_EnterValidJSON_CreateSucceeds(t *testing.T) {
 	manager := &sessionServerConfigManagerStub{
 		peers: []serverConfiguration.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
-	model, err := newConfiguratorSessionModel(ConfiguratorSessionOptions{
+	model, err := newConfiguratorSessionModel(sessionOptionsWithControl(&sessionConfigurationControl{
 		Observer:            sessionObserverWithConfigs{configs: []string{}},
 		Selector:            sessionSelectorStub{},
 		Creator:             creator,
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-		ServerSupported:     true,
-	}, testSettings())
+	}), testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -2449,15 +2389,14 @@ func TestUpdateClientAddJSONScreen_EnterValidJSON_CreateError(t *testing.T) {
 	manager := &sessionServerConfigManagerStub{
 		peers: []serverConfiguration.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
-	model, err := newConfiguratorSessionModel(ConfiguratorSessionOptions{
+	model, err := newConfiguratorSessionModel(sessionOptionsWithControl(&sessionConfigurationControl{
 		Observer:            sessionObserverWithConfigs{configs: []string{}},
 		Selector:            sessionSelectorStub{},
 		Creator:             creator,
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-		ServerSupported:     true,
-	}, testSettings())
+	}), testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -2485,15 +2424,14 @@ func TestUpdateClientAddJSONScreen_EnterValidJSON_ReloadError(t *testing.T) {
 	manager := &sessionServerConfigManagerStub{
 		peers: []serverConfiguration.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
-	model, err := newConfiguratorSessionModel(ConfiguratorSessionOptions{
+	model, err := newConfiguratorSessionModel(sessionOptionsWithControl(&sessionConfigurationControl{
 		Observer:            sessionObserverError{err: observeErr},
 		Selector:            sessionSelectorStub{},
 		Creator:             creator,
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-		ServerSupported:     true,
-	}, testSettings())
+	}), testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -2549,15 +2487,14 @@ func TestUpdateClientInvalidScreen_DeleteDeleterError(t *testing.T) {
 	manager := &sessionServerConfigManagerStub{
 		peers: []serverConfiguration.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
-	model, err := newConfiguratorSessionModel(ConfiguratorSessionOptions{
+	model, err := newConfiguratorSessionModel(sessionOptionsWithControl(&sessionConfigurationControl{
 		Observer:            sessionObserverWithConfigs{configs: []string{}},
 		Selector:            sessionSelectorStub{},
 		Creator:             sessionCreatorStub{},
 		Deleter:             sessionDeleterError{err: deleterErr},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-		ServerSupported:     true,
-	}, testSettings())
+	}), testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -2586,15 +2523,14 @@ func TestUpdateClientInvalidScreen_DeleteReloadError(t *testing.T) {
 	manager := &sessionServerConfigManagerStub{
 		peers: []serverConfiguration.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
-	model, err := newConfiguratorSessionModel(ConfiguratorSessionOptions{
+	model, err := newConfiguratorSessionModel(sessionOptionsWithControl(&sessionConfigurationControl{
 		Observer:            sessionObserverError{err: observeErr},
 		Selector:            sessionSelectorStub{},
 		Creator:             sessionCreatorStub{},
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-		ServerSupported:     true,
-	}, testSettings())
+	}), testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -2651,21 +2587,20 @@ func TestUpdateServerDeleteConfirmScreen_RemoveAllowedPeerError(t *testing.T) {
 		},
 		removeError: removeErr,
 	}
-	model, err := newConfiguratorSessionModel(ConfiguratorSessionOptions{
+	model, err := newConfiguratorSessionModel(sessionOptionsWithControl(&sessionConfigurationControl{
 		Observer:            sessionObserverStub{},
 		Selector:            sessionSelectorStub{},
 		Creator:             sessionCreatorStub{},
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-		ServerSupported:     true,
-	}, testSettings())
+	}), testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
 	model.screen = configuratorScreenServerDeleteConfirm
-	model.server.deletePeer = serverConfiguration.AllowedPeer{Name: "alpha", ClientID: 1, Enabled: true}
-	model.server.managePeers = append([]serverConfiguration.AllowedPeer(nil), manager.peers...)
+	model.server.deletePeer = sessionServerPeer(serverConfiguration.AllowedPeer{Name: "alpha", ClientID: 1, Enabled: true})
+	model.server.managePeers = sessionServerPeers(manager.peers)
 	model.cursor = 0 // "Delete client"
 
 	result, _ := model.updateServerDeleteConfirmScreen(keyNamed(tea.KeyEnter))
@@ -2689,21 +2624,20 @@ func TestUpdateServerDeleteConfirmScreen_ListAllowedPeersErrorAfterRemove(t *tes
 		},
 		listErr: listErr,
 	}
-	model, err := newConfiguratorSessionModel(ConfiguratorSessionOptions{
+	model, err := newConfiguratorSessionModel(sessionOptionsWithControl(&sessionConfigurationControl{
 		Observer:            sessionObserverStub{},
 		Selector:            sessionSelectorStub{},
 		Creator:             sessionCreatorStub{},
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-		ServerSupported:     true,
-	}, testSettings())
+	}), testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
 	model.screen = configuratorScreenServerDeleteConfirm
-	model.server.deletePeer = serverConfiguration.AllowedPeer{Name: "alpha", ClientID: 1, Enabled: true}
-	model.server.managePeers = append([]serverConfiguration.AllowedPeer(nil), manager.peers...)
+	model.server.deletePeer = sessionServerPeer(serverConfiguration.AllowedPeer{Name: "alpha", ClientID: 1, Enabled: true})
+	model.server.managePeers = sessionServerPeers(manager.peers)
 	model.cursor = 0 // "Delete client"
 
 	result, cmd := model.updateServerDeleteConfirmScreen(keyNamed(tea.KeyEnter))
@@ -2764,15 +2698,14 @@ func TestUpdateModeScreen_EnterClient_ReloadFails(t *testing.T) {
 	manager := &sessionServerConfigManagerStub{
 		peers: []serverConfiguration.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
-	model, err := newConfiguratorSessionModel(ConfiguratorSessionOptions{
+	model, err := newConfiguratorSessionModel(sessionOptionsWithControl(&sessionConfigurationControl{
 		Observer:            sessionObserverError{err: observeErr},
 		Selector:            sessionSelectorStub{},
 		Creator:             sessionCreatorStub{},
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-		ServerSupported:     true,
-	}, testSettings())
+	}), testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -2887,44 +2820,21 @@ func TestView_UnknownScreen_ReturnsEmptyString(t *testing.T) {
 	}
 }
 
-// sessionServerConfigManagerWithFallback wraps the stub to set FallbackServerAddress
-// so confgen.Generate() works even without network connectivity.
-type sessionServerConfigManagerWithFallback struct {
-	*sessionServerConfigManagerStub
-}
-
-func (s *sessionServerConfigManagerWithFallback) Configuration() (*serverConfiguration.Configuration, error) {
-	conf, err := s.sessionServerConfigManagerStub.Configuration()
-	if err != nil {
-		return nil, err
-	}
-	conf.FallbackServerAddress = "127.0.0.1"
-	return conf, nil
-}
-
 func TestUpdateServerSelectScreen_EnterAddClient_WriteFileError(t *testing.T) {
-	prev := writeServerClientConfigFile
-	t.Cleanup(func() { writeServerClientConfigFile = prev })
-	writeServerClientConfigFile = func(_ int, _ []byte) (string, error) {
-		return "", errors.New("disk full")
-	}
-
-	manager := &sessionServerConfigManagerWithFallback{
-		sessionServerConfigManagerStub: &sessionServerConfigManagerStub{
-			peers: []serverConfiguration.AllowedPeer{
-				{Name: "a", ClientID: 1, Enabled: true},
-			},
+	manager := &sessionServerConfigManagerStub{
+		peers: []serverConfiguration.AllowedPeer{
+			{Name: "a", ClientID: 1, Enabled: true},
 		},
 	}
-	model, err := newConfiguratorSessionModel(ConfiguratorSessionOptions{
+	model, err := newConfiguratorSessionModel(sessionOptionsWithControl(&sessionConfigurationControl{
 		Observer:            sessionObserverStub{},
 		Selector:            sessionSelectorStub{},
 		Creator:             sessionCreatorStub{},
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-		ServerSupported:     true,
-	}, testSettings())
+		generateErr:         errors.New("disk full"),
+	}), testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -2935,7 +2845,7 @@ func TestUpdateServerSelectScreen_EnterAddClient_WriteFileError(t *testing.T) {
 	s := result.(configuratorSessionModel)
 
 	if !s.done {
-		t.Fatal("expected done=true on writeServerClientConfigFile error")
+		t.Fatal("expected done=true on client configuration generation error")
 	}
 	if s.resultErr == nil || !strings.Contains(s.resultErr.Error(), "disk full") {
 		t.Fatalf("expected disk full error, got %v", s.resultErr)
@@ -2946,28 +2856,20 @@ func TestUpdateServerSelectScreen_EnterAddClient_WriteFileError(t *testing.T) {
 }
 
 func TestUpdateServerSelectScreen_EnterAddClient_Success(t *testing.T) {
-	prev := writeServerClientConfigFile
-	t.Cleanup(func() { writeServerClientConfigFile = prev })
-	writeServerClientConfigFile = func(clientID int, data []byte) (string, error) {
-		return "/tmp/test_client.json", nil
-	}
-
-	manager := &sessionServerConfigManagerWithFallback{
-		sessionServerConfigManagerStub: &sessionServerConfigManagerStub{
-			peers: []serverConfiguration.AllowedPeer{
-				{Name: "a", ClientID: 1, Enabled: true},
-			},
+	manager := &sessionServerConfigManagerStub{
+		peers: []serverConfiguration.AllowedPeer{
+			{Name: "a", ClientID: 1, Enabled: true},
 		},
 	}
-	model, err := newConfiguratorSessionModel(ConfiguratorSessionOptions{
+	model, err := newConfiguratorSessionModel(sessionOptionsWithControl(&sessionConfigurationControl{
 		Observer:            sessionObserverStub{},
 		Selector:            sessionSelectorStub{},
 		Creator:             sessionCreatorStub{},
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-		ServerSupported:     true,
-	}, testSettings())
+		generatePath:        "/tmp/test_client.json",
+	}), testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -3001,15 +2903,14 @@ func TestUpdateServerSelectScreen_ManageClientsListError_Exits(t *testing.T) {
 		peers:   []serverConfiguration.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 		listErr: errors.New("list failed"),
 	}
-	model, err := newConfiguratorSessionModel(ConfiguratorSessionOptions{
+	model, err := newConfiguratorSessionModel(sessionOptionsWithControl(&sessionConfigurationControl{
 		Observer:            sessionObserverStub{},
 		Selector:            sessionSelectorStub{},
 		Creator:             sessionCreatorStub{},
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-		ServerSupported:     true,
-	}, testSettings())
+	}), testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -3033,15 +2934,14 @@ func TestUpdateClientSelectScreen_SelectConfig_NonInvalidConfigError_Exits(t *te
 	manager := &sessionServerConfigManagerStub{
 		peers: []serverConfiguration.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
-	model, err := newConfiguratorSessionModel(ConfiguratorSessionOptions{
+	model, err := newConfiguratorSessionModel(sessionOptionsWithControl(&sessionConfigurationControl{
 		Observer:            sessionObserverWithConfigs{configs: []string{"my-config"}},
 		Selector:            sessionSelectorStub{},
 		Creator:             sessionCreatorStub{},
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerInvalid{err: errors.New("connection refused")},
 		ServerConfigManager: manager,
-		ServerSupported:     true,
-	}, testSettings())
+	}), testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -3067,15 +2967,14 @@ func TestUpdateClientSelectScreen_SelectConfig_ValidConfig_ExitsWithClientMode(t
 	manager := &sessionServerConfigManagerStub{
 		peers: []serverConfiguration.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
-	model, err := newConfiguratorSessionModel(ConfiguratorSessionOptions{
+	model, err := newConfiguratorSessionModel(sessionOptionsWithControl(&sessionConfigurationControl{
 		Observer:            sessionObserverWithConfigs{configs: []string{"my-config"}},
 		Selector:            sessionSelectorStub{},
 		Creator:             sessionCreatorStub{},
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-		ServerSupported:     true,
-	}, testSettings())
+	}), testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
@@ -3101,20 +3000,19 @@ func TestUpdateClientSelectScreen_SelectorError_Exits(t *testing.T) {
 	manager := &sessionServerConfigManagerStub{
 		peers: []serverConfiguration.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
 	}
-	model, err := newConfiguratorSessionModel(ConfiguratorSessionOptions{
+	model, err := newConfiguratorSessionModel(sessionOptionsWithControl(&sessionConfigurationControl{
 		Observer:            sessionObserverWithConfigs{configs: []string{"my-config"}},
 		Selector:            sessionSelectorStub{},
 		Creator:             sessionCreatorStub{},
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-		ServerSupported:     true,
-	}, testSettings())
+	}), testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
 	// Override selector to one that fails
-	model.options.Selector = sessionSelectorError{err: errors.New("select failed")}
+	model.options.testControl().Selector = sessionSelectorError{err: errors.New("select failed")}
 	model.screen = configuratorScreenClientSelect
 	model.client.menuOptions = []string{"my-config", sessionClientRemove, sessionClientAdd}
 	model.client.configs = []string{"my-config"}
@@ -3498,7 +3396,7 @@ func TestUpdateClientAddJSONScreen_NonEnter_ExecutesTickClosure(t *testing.T) {
 
 func TestNewConfiguratorSessionModel_AutoSelectClientMode_ObserverError(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	opts.Observer = sessionObserverError{err: errors.New("observe failed")}
+	opts.testControl().Observer = sessionObserverError{err: errors.New("observe failed")}
 	_, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
 	if err == nil || !strings.Contains(err.Error(), "observe failed") {
 		t.Fatalf("expected observer error, got %v", err)
@@ -3513,8 +3411,8 @@ func TestNewConfiguratorSessionModel_AutoSelectConfig_SelectFails_ShowsNotice(t 
 	s.update(p)
 
 	opts := defaultConfiguratorOpts()
-	opts.Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
-	opts.Selector = sessionSelectorFailStub{err: errors.New("select failed")}
+	opts.testControl().Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
+	opts.testControl().Selector = sessionSelectorFailStub{err: errors.New("select failed")}
 
 	model, err := newConfiguratorSessionModel(opts, s)
 	if err != nil {
@@ -3533,8 +3431,8 @@ func TestNewConfiguratorSessionModel_AutoSelectConfig_NilClientManager_UsesSyste
 	s.update(p)
 
 	opts := defaultConfiguratorOpts()
-	opts.Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
-	opts.ClientConfigManager = nil
+	opts.testControl().Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
+	opts.testControl().ClientConfigManager = nil
 	opts.CheckSystemdUnitActive = func() (bool, error) { return true, nil }
 	opts.StopSystemdUnit = func() error { return nil }
 

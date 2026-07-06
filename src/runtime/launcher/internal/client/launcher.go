@@ -31,7 +31,7 @@ func Start(ctx context.Context) (appRuntime.Session, error) {
 	session := appRuntime.NewRunningSession(
 		appRuntime.Info{
 			Mode:      appRuntime.ModeClient,
-			Endpoints: appRuntime.EndpointInfoFromClientConfiguration(conf),
+			Endpoints: endpointsFromConfiguration(conf),
 			Protocol:  conf.Protocol,
 		},
 		readyCh,
@@ -63,4 +63,15 @@ func setupCrashLog() {
 		return
 	}
 	logging.SetCrashOutput(filepath.Join(filepath.Dir(configPath), "crash.log"))
+}
+
+func endpointsFromConfiguration(conf palClient.Configuration) []appRuntime.EndpointInfo {
+	activeSettings, err := conf.ActiveSettings()
+	if err != nil {
+		return nil
+	}
+	if endpoint, ok := appRuntime.EndpointInfoFromSettings(conf.Protocol, activeSettings); ok {
+		return []appRuntime.EndpointInfo{endpoint}
+	}
+	return nil
 }

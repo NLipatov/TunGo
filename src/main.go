@@ -6,11 +6,12 @@ import (
 	"log/slog"
 	"os"
 	"time"
+	"tungo/application/commandline"
+	appConfiguration "tungo/application/configuration"
 	"tungo/domain/app"
 	"tungo/infrastructure/PAL/signal"
 	"tungo/infrastructure/logging"
 	"tungo/infrastructure/telemetry/trafficstats"
-	"tungo/presentation/commandline"
 	"tungo/presentation/elevation"
 	"tungo/presentation/signals/shutdown"
 	"tungo/presentation/ui/tui"
@@ -78,10 +79,15 @@ func runTUI(ctx context.Context) error {
 	if err := requireElevation(); err != nil {
 		return err
 	}
-	tuiUI, err := tui.New()
+	configurationControls, err := appConfiguration.NewDefaultControls()
 	if err != nil {
 		return err
 	}
+	tuiUI, err := tui.New(configurationControls)
+	if err != nil {
+		return err
+	}
+	launcher := runtimeLauncher.New()
 	trafficCollector := trafficstats.NewCollector(time.Second, 0.35)
 	trafficstats.SetGlobal(trafficCollector)
 	go trafficCollector.Start(ctx)
@@ -91,7 +97,7 @@ func runTUI(ctx context.Context) error {
 		trafficstats.SetGlobal(nil)
 	}()
 
-	return tuiUI.Run(ctx, runtimeLauncher.New())
+	return tuiUI.Run(ctx, launcher)
 }
 
 func requireElevation() error {

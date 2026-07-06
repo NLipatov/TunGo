@@ -338,7 +338,7 @@ func TestUpdateDaemonManageScreen_SetupClient_InstallsUnit(t *testing.T) {
 func TestUpdateDaemonManageScreen_SetupClient_FailsWhenDefaultConfigInvalid(t *testing.T) {
 	opts := defaultConfiguratorOpts()
 	opts.SystemdSupported = true
-	opts.ClientConfigManager = failingClientConfigManager{err: errors.New("invalid default config")}
+	opts.testControl().ClientConfigManager = failingClientConfigManager{err: errors.New("invalid default config")}
 	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
 		return SystemdDaemonStatus{Installed: false}, nil
 	}
@@ -702,7 +702,7 @@ func TestUpdateDaemonManageScreen_UnmanagedUnit_HidesDeleteOption(t *testing.T) 
 func TestUpdateClientSelectScreen_SelectConfig_ActiveDaemon_ShowsStopPrompt(t *testing.T) {
 	s := settingsForMode(ModePreferenceClient)
 	opts := defaultConfiguratorOpts()
-	opts.Observer = sessionObserverWithConfigs{configs: []string{"cfg-a"}}
+	opts.testControl().Observer = sessionObserverWithConfigs{configs: []string{"cfg-a"}}
 	opts.CheckSystemdUnitActive = func() (bool, error) { return true, nil }
 	opts.StopSystemdUnit = func() error { return nil }
 

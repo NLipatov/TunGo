@@ -1,8 +1,8 @@
-package domain
+package systemd
 
 import "testing"
 
-func TestDetectUnitRole(t *testing.T) {
+func TestDetectUnitRoleFromUnitBody(t *testing.T) {
 	if got := DetectUnitRole("ExecStart=tungo c\n"); got != UnitRoleClient {
 		t.Fatalf("expected client role, got %q", got)
 	}
@@ -23,7 +23,7 @@ func TestDetectUnitRole(t *testing.T) {
 	}
 }
 
-func TestDetectUnitRoleFromExecStart(t *testing.T) {
+func TestDetectUnitRoleFromExecStartCommand(t *testing.T) {
 	cases := []struct {
 		execStart string
 		want      UnitRole

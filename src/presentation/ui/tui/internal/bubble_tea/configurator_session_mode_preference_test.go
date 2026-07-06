@@ -5,24 +5,13 @@ import (
 	"strings"
 	"testing"
 
-	serverConfiguration "tungo/infrastructure/PAL/configuration/server"
 	"tungo/runtime"
 
 	tea "charm.land/bubbletea/v2"
 )
 
 func defaultConfiguratorOpts() ConfiguratorSessionOptions {
-	return ConfiguratorSessionOptions{
-		Observer:            sessionObserverStub{},
-		Selector:            sessionSelectorStub{},
-		Creator:             sessionCreatorStub{},
-		Deleter:             sessionDeleterStub{},
-		ClientConfigManager: sessionClientConfigManagerStub{},
-		ServerConfigManager: &sessionServerConfigManagerStub{
-			peers: []serverConfiguration.AllowedPeer{{Name: "t", ClientID: 1, Enabled: true}},
-		},
-		ServerSupported: true,
-	}
+	return sessionOptionsWithControl(defaultSessionConfigurationControl())
 }
 
 func settingsForMode(m ModePreference) *uiPreferencesProvider {
@@ -188,8 +177,8 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_SkipsSelection(t *te
 
 	selector := &sessionSelectorRecorder{}
 	opts := defaultConfiguratorOpts()
-	opts.Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
-	opts.Selector = selector
+	opts.testControl().Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
+	opts.testControl().Selector = selector
 
 	model, err := newConfiguratorSessionModel(opts, s)
 	if err != nil {
@@ -221,8 +210,8 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_DaemonActive_Require
 
 	selector := &sessionSelectorRecorder{}
 	opts := defaultConfiguratorOpts()
-	opts.Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
-	opts.Selector = selector
+	opts.testControl().Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
+	opts.testControl().Selector = selector
 	opts.CheckSystemdUnitActive = func() (bool, error) { return true, nil }
 	opts.StopSystemdUnit = func() error { return nil }
 
@@ -264,7 +253,7 @@ func TestNewConfiguratorSessionModel_AutoConnect_False_AutoSelectClientConfig_Se
 	s.update(p)
 
 	opts := defaultConfiguratorOpts()
-	opts.Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
+	opts.testControl().Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
 
 	model, err := newConfiguratorSessionModel(opts, s)
 	if err != nil {
@@ -287,7 +276,7 @@ func TestNewConfiguratorSessionModel_ServerNotSupported_AutoConnect_False_AutoSe
 
 	opts := defaultConfiguratorOpts()
 	opts.ServerSupported = false
-	opts.Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
+	opts.testControl().Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
 
 	model, err := newConfiguratorSessionModel(opts, s)
 	if err != nil {
@@ -309,8 +298,8 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_InvalidConfig_ShowsI
 	s.update(p)
 
 	opts := defaultConfiguratorOpts()
-	opts.Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
-	opts.ClientConfigManager = sessionClientConfigManagerInvalid{
+	opts.testControl().Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
+	opts.testControl().ClientConfigManager = sessionClientConfigManagerInvalid{
 		err: errors.New("invalid client configuration (test): bad key"),
 	}
 
@@ -337,8 +326,8 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_NonInvalidError_Show
 	s.update(p)
 
 	opts := defaultConfiguratorOpts()
-	opts.Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
-	opts.ClientConfigManager = sessionClientConfigManagerNonInvalid{
+	opts.testControl().Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
+	opts.testControl().ClientConfigManager = sessionClientConfigManagerNonInvalid{
 		err: errors.New("permission denied"),
 	}
 
@@ -365,7 +354,7 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_MissingConfig_ShowsS
 	s.update(p)
 
 	opts := defaultConfiguratorOpts()
-	opts.Observer = sessionObserverWithConfigs{configs: []string{"other.json"}}
+	opts.testControl().Observer = sessionObserverWithConfigs{configs: []string{"other.json"}}
 
 	model, err := newConfiguratorSessionModel(opts, s)
 	if err != nil {
@@ -386,7 +375,7 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_NotSet_ShowsSelectio
 	s := settingsForMode(ModePreferenceClient)
 
 	opts := defaultConfiguratorOpts()
-	opts.Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
+	opts.testControl().Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
 
 	model, err := newConfiguratorSessionModel(opts, s)
 	if err != nil {
@@ -407,7 +396,7 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_NotSet_ShowsSelectio
 func TestUpdateClientSelectScreen_AutoSelectClientConfig_SavedOnSuccess(t *testing.T) {
 	s := testSettings()
 	opts := defaultConfiguratorOpts()
-	opts.Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
+	opts.testControl().Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
 
 	model, err := newConfiguratorSessionModel(opts, s)
 	if err != nil {
@@ -428,8 +417,8 @@ func TestUpdateClientSelectScreen_AutoSelectClientConfig_SavedOnSuccess(t *testi
 func TestUpdateClientSelectScreen_AutoSelectClientConfig_NotSavedWhenSelectFails(t *testing.T) {
 	s := testSettings()
 	opts := defaultConfiguratorOpts()
-	opts.Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
-	opts.Selector = sessionSelectorFailStub{err: errors.New("select failed")}
+	opts.testControl().Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
+	opts.testControl().Selector = sessionSelectorFailStub{err: errors.New("select failed")}
 
 	model, err := newConfiguratorSessionModel(opts, s)
 	if err != nil {
@@ -450,8 +439,8 @@ func TestUpdateClientSelectScreen_AutoSelectClientConfig_NotSavedWhenSelectFails
 func TestUpdateClientSelectScreen_AutoSelectClientConfig_NotSavedWhenConfigInvalid(t *testing.T) {
 	s := testSettings()
 	opts := defaultConfiguratorOpts()
-	opts.Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
-	opts.ClientConfigManager = sessionClientConfigManagerInvalid{
+	opts.testControl().Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
+	opts.testControl().ClientConfigManager = sessionClientConfigManagerInvalid{
 		err: errors.New("invalid client configuration (test): bad key"),
 	}
 

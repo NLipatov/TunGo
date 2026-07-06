@@ -34,15 +34,15 @@ func TestTryAutoConnect_FileNotFound(t *testing.T) {
 	}
 }
 
-func TestTryAutoConnect_NilSelector(t *testing.T) {
+func TestTryAutoConnect_MissingClientConfigurationControl(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "cfg.json")
 	if err := os.WriteFile(cfgPath, []byte("{}"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	prefs := UIPreferences{AutoSelectClientConfig: cfgPath}
-	if tryAutoConnect(prefs, ConfiguratorSessionOptions{Selector: nil}) {
-		t.Fatal("expected false when Selector is nil")
+	if tryAutoConnect(prefs, ConfiguratorSessionOptions{}) {
+		t.Fatal("expected false when client configuration control is nil")
 	}
 }
 
@@ -53,9 +53,9 @@ func TestTryAutoConnect_SelectFails(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 	prefs := UIPreferences{AutoSelectClientConfig: cfgPath}
-	opts := ConfiguratorSessionOptions{
-		Selector: sessionSelectorFailStub{err: errors.New("select failed")},
-	}
+	control := defaultSessionConfigurationControl()
+	control.Selector = sessionSelectorFailStub{err: errors.New("select failed")}
+	opts := sessionOptionsWithControl(control)
 	if tryAutoConnect(prefs, opts) {
 		t.Fatal("expected false when Select returns error")
 	}
@@ -68,10 +68,9 @@ func TestTryAutoConnect_ConfigManagerFails(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 	prefs := UIPreferences{AutoSelectClientConfig: cfgPath}
-	opts := ConfiguratorSessionOptions{
-		Selector:            sessionSelectorStub{},
-		ClientConfigManager: sessionClientConfigManagerInvalid{err: errors.New("bad config")},
-	}
+	control := defaultSessionConfigurationControl()
+	control.ClientConfigManager = sessionClientConfigManagerInvalid{err: errors.New("bad config")}
+	opts := sessionOptionsWithControl(control)
 	if tryAutoConnect(prefs, opts) {
 		t.Fatal("expected false when ClientConfigManager returns error")
 	}
@@ -84,10 +83,9 @@ func TestTryAutoConnect_NilConfigManager_Succeeds(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 	prefs := UIPreferences{AutoSelectClientConfig: cfgPath}
-	opts := ConfiguratorSessionOptions{
-		Selector:            sessionSelectorStub{},
-		ClientConfigManager: nil,
-	}
+	control := defaultSessionConfigurationControl()
+	control.ClientConfigManager = nil
+	opts := sessionOptionsWithControl(control)
 	if !tryAutoConnect(prefs, opts) {
 		t.Fatal("expected true when ClientConfigManager is nil and all else succeeds")
 	}
@@ -100,10 +98,7 @@ func TestTryAutoConnect_AllSucceed(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 	prefs := UIPreferences{AutoSelectClientConfig: cfgPath}
-	opts := ConfiguratorSessionOptions{
-		Selector:            sessionSelectorStub{},
-		ClientConfigManager: sessionClientConfigManagerStub{},
-	}
+	opts := sessionOptionsWithControl(defaultSessionConfigurationControl())
 	if !tryAutoConnect(prefs, opts) {
 		t.Fatal("expected true when all conditions are met")
 	}
@@ -192,7 +187,7 @@ func TestNewUnifiedSessionModel_AutoConnect_DaemonActive_FallsBackToConfiguring(
 	settings := settingsWithAutoConnect(cfgPath)
 	events := make(chan unifiedEvent, 8)
 	opts := defaultUnifiedConfigOpts()
-	opts.Observer = sessionObserverWithConfigs{configs: []string{cfgPath}}
+	opts.testControl().Observer = sessionObserverWithConfigs{configs: []string{cfgPath}}
 	opts.CheckSystemdUnitActive = func() (bool, error) { return true, nil }
 	opts.StopSystemdUnit = func() error { return nil }
 

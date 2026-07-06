@@ -83,16 +83,14 @@ func tryAutoConnect(prefs UIPreferences, opts ConfiguratorSessionOptions) bool {
 	if _, err := os.Stat(prefs.AutoSelectClientConfig); err != nil {
 		return false
 	}
-	if opts.Selector == nil {
+	if opts.ClientConfigurationControl == nil {
 		return false
 	}
-	if err := opts.Selector.Select(prefs.AutoSelectClientConfig); err != nil {
+	if err := opts.ClientConfigurationControl.Select(prefs.AutoSelectClientConfig); err != nil {
 		return false
 	}
-	if opts.ClientConfigManager != nil {
-		if _, err := opts.ClientConfigManager.Configuration(); err != nil {
-			return false
-		}
+	if err := opts.ClientConfigurationControl.ValidateActive(); err != nil {
+		return false
 	}
 	return true
 }

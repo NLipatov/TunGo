@@ -5,16 +5,14 @@ import (
 	"errors"
 	"testing"
 
-	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
-	"tungo/infrastructure/PAL/platform"
-	systemdDomain "tungo/infrastructure/PAL/service_management/linux/systemd/domain"
+	"tungo/infrastructure/PAL/service_management/linux/systemd"
 	"tungo/infrastructure/settings"
 	bubbleTea "tungo/presentation/ui/tui/internal/bubble_tea"
 	"tungo/runtime"
 )
 
 func TestNewTUI(t *testing.T) {
-	ui, err := New()
+	ui, err := New(configurationControlsMock(true))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -24,8 +22,8 @@ func TestNewTUI(t *testing.T) {
 	if !ui.initialized() {
 		t.Fatal("expected TUI to be initialized")
 	}
-	if ui.sessionOptions.ServerSupported != platform.Capabilities().ServerModeSupported() {
-		t.Fatal("expected serverSupported to match platform capabilities")
+	if !ui.sessionOptions.ServerSupported {
+		t.Fatal("expected serverSupported to come from configuration control")
 	}
 }
 
@@ -105,7 +103,7 @@ func withMockSystemdInstallerFactory(t *testing.T, ui *TUI, factory systemdInsta
 type systemdInstallerStub struct {
 	supported bool
 
-	statusRet   systemdDomain.UnitStatus
+	statusRet   systemd.UnitStatus
 	statusErr   error
 	statusCalls int
 
@@ -153,7 +151,7 @@ func (s *systemdInstallerStub) StartUnit() error   { return s.startErr }
 func (s *systemdInstallerStub) EnableUnit() error  { return s.enableErr }
 func (s *systemdInstallerStub) DisableUnit() error { return s.disableErr }
 
-func (s *systemdInstallerStub) Status() (systemdDomain.UnitStatus, error) {
+func (s *systemdInstallerStub) Status() (systemd.UnitStatus, error) {
 	s.statusCalls++
 	return s.statusRet, s.statusErr
 }
@@ -178,12 +176,9 @@ func dummySystemdInstallerFactory() systemdInstaller {
 
 func testSessionOptions() bubbleTea.ConfiguratorSessionOptions {
 	return bubbleTea.ConfiguratorSessionOptions{
-		Observer:            &cfgObserverMock{},
-		Selector:            &cfgSelectorMock{},
-		Creator:             &cfgCreatorMock{},
-		Deleter:             &cfgDeleterMock{},
-		ClientConfigManager: clientConfiguration.NewManager(),
-		ServerConfigManager: &mockManager{},
+		ClientConfigurationControl: configurationControlMock{},
+		ServerConfigurationControl: configurationControlMock{},
+		ServerSupported:            true,
 	}
 }
 
@@ -315,12 +310,12 @@ func TestTUI_Configure_SystemdSupported_WiresCallbacks(t *testing.T) {
 
 	installer := &systemdInstallerStub{
 		supported: true,
-		statusRet: systemdDomain.UnitStatus{
+		statusRet: systemd.UnitStatus{
 			Installed:     true,
 			Managed:       true,
 			UnitFileState: "enabled",
 			ActiveState:   "active",
-			Role:          systemdDomain.UnitRoleServer,
+			Role:          systemd.UnitRoleServer,
 			ExecStart:     "/usr/local/bin/tungo s",
 			FragmentPath:  "/etc/systemd/system/tungo.service",
 		},
@@ -386,7 +381,7 @@ func TestTUI_Configure_SystemdSupported_WiresCallbacks(t *testing.T) {
 		t.Fatalf("unexpected mapped daemon status: %+v", status)
 	}
 
-	installer.statusRet.Role = systemdDomain.UnitRoleClient
+	installer.statusRet.Role = systemd.UnitRoleClient
 	status, err = captured.GetSystemdDaemonStatus()
 	if err != nil {
 		t.Fatalf("unexpected status error: %v", err)
@@ -395,7 +390,7 @@ func TestTUI_Configure_SystemdSupported_WiresCallbacks(t *testing.T) {
 		t.Fatalf("expected mapped client mode, got %v", status.Mode)
 	}
 
-	installer.statusRet.Role = systemdDomain.UnitRoleUnknown
+	installer.statusRet.Role = systemd.UnitRoleUnknown
 	status, err = captured.GetSystemdDaemonStatus()
 	if err != nil {
 		t.Fatalf("unexpected status error: %v", err)
