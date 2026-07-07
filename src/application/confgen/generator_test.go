@@ -22,8 +22,10 @@ type mockMgr struct {
 	incErr          error
 	addPeerErr      error
 	ensureIPv6Err   error
+	injectErr       error
 	incCalls        int
 	ensureIPv6Calls int
+	injectCalls     int
 	addedPeers      []serverConfiguration.AllowedPeer
 }
 
@@ -57,7 +59,10 @@ func (m *mockMgr) IncrementClientCounter() error {
 	m.cfg.ClientCounter++
 	return nil
 }
-func (m *mockMgr) InjectX25519Keys(_, _ []byte) error { return nil }
+func (m *mockMgr) InjectX25519Keys(_, _ []byte) error {
+	m.injectCalls++
+	return m.injectErr
+}
 func (m *mockMgr) EnsureIPv6Subnets() error {
 	m.ensureIPv6Calls++
 	if m.ensureIPv6Err != nil {

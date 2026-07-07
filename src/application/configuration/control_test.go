@@ -2,6 +2,7 @@ package configuration
 
 import (
 	"encoding/json"
+	"errors"
 	"net/netip"
 	"strings"
 	"testing"
@@ -9,6 +10,24 @@ import (
 	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/settings"
 )
+
+type clientObserverFunc func() ([]string, error)
+
+func (f clientObserverFunc) Observe() ([]string, error) { return f() }
+
+type clientSelectorFunc func(string) error
+
+func (f clientSelectorFunc) Select(path string) error { return f(path) }
+
+type clientCreatorFunc func(clientConfiguration.Configuration, string) error
+
+func (f clientCreatorFunc) Create(cfg clientConfiguration.Configuration, name string) error {
+	return f(cfg, name)
+}
+
+type clientDeleterFunc func(string) error
+
+func (f clientDeleterFunc) Delete(path string) error { return f(path) }
 
 func mustHostParser(raw string) settings.Host {
 	h, err := settings.NewHost(raw)
@@ -110,5 +129,64 @@ func TestParseClientConfigurationJSON_InvalidByValidation(t *testing.T) {
 	_, err := parseClientConfigurationJSON(string(raw))
 	if err == nil {
 		t.Fatal("expected validation error for invalid client configuration")
+	}
+}
+
+func TestClientControlDelegates(t *testing.T) {
+	wantErr := errors.New("delegate failed")
+	selectedPath := ""
+	createdName := ""
+	deletedPath := ""
+	control := clientControl{
+		observer: clientObserverFunc(func() ([]string, error) {
+			return []string{"a", "b"}, nil
+		}),
+		selector: clientSelectorFunc(func(path string) error {
+			selectedPath = path
+			return wantErr
+		}),
+		creator: clientCreatorFunc(func(_ clientConfiguration.Configuration, name string) error {
+			createdName = name
+			return nil
+		}),
+		deleter: clientDeleterFunc(func(path string) error {
+			deletedPath = path
+			return nil
+		}),
+		manager: runtimeInfoClientManager{cfg: &clientConfiguration.Configuration{}},
+	}
+
+	list, err := control.List()
+	if err != nil || len(list) != 2 {
+		t.Fatalf("List() = %v, %v", list, err)
+	}
+	if err := control.Select("selected.json"); !errors.Is(err, wantErr) {
+		t.Fatalf("Select() error = %v, want %v", err, wantErr)
+	}
+	if selectedPath != "selected.json" {
+		t.Fatalf("selected path = %q", selectedPath)
+	}
+
+	raw, _ := json.Marshal(makeTestConfig())
+	if err := control.CreateFromJSON("new-client", string(raw)); err != nil {
+		t.Fatalf("CreateFromJSON() error = %v", err)
+	}
+	if createdName != "new-client" {
+		t.Fatalf("created name = %q", createdName)
+	}
+	if err := control.Delete("old.json"); err != nil {
+		t.Fatalf("Delete() error = %v", err)
+	}
+	if deletedPath != "old.json" {
+		t.Fatalf("deleted path = %q", deletedPath)
+	}
+}
+
+func TestClientControlValidateActive(t *testing.T) {
+	wantErr := errors.New("read failed")
+	control := clientControl{manager: runtimeInfoClientManager{err: wantErr}}
+
+	if err := control.ValidateActive(); !errors.Is(err, wantErr) {
+		t.Fatalf("ValidateActive() error = %v, want %v", err, wantErr)
 	}
 }

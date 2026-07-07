@@ -20,8 +20,15 @@ func (m runtimeInfoClientManager) Configuration() (*clientConfiguration.Configur
 }
 
 type runtimeInfoServerManager struct {
-	cfg *serverConfiguration.Configuration
-	err error
+	cfg        *serverConfiguration.Configuration
+	err        error
+	peers      []serverConfiguration.AllowedPeer
+	peersErr   error
+	setID      int
+	setEnabled bool
+	setErr     error
+	removeID   int
+	removeErr  error
 }
 
 func (m runtimeInfoServerManager) Configuration() (*serverConfiguration.Configuration, error) {
@@ -34,13 +41,20 @@ func (m runtimeInfoServerManager) InjectX25519Keys(_, _ []byte) error {
 func (m runtimeInfoServerManager) AddAllowedPeer(serverConfiguration.AllowedPeer) error {
 	return nil
 }
-func (m runtimeInfoServerManager) ListAllowedPeers() ([]serverConfiguration.AllowedPeer, error) {
-	return nil, nil
+func (m *runtimeInfoServerManager) ListAllowedPeers() ([]serverConfiguration.AllowedPeer, error) {
+	return m.peers, m.peersErr
 }
-func (m runtimeInfoServerManager) SetAllowedPeerEnabled(int, bool) error { return nil }
-func (m runtimeInfoServerManager) RemoveAllowedPeer(int) error           { return nil }
-func (m runtimeInfoServerManager) EnsureIPv6Subnets() error              { return nil }
-func (m runtimeInfoServerManager) InvalidateCache()                      {}
+func (m *runtimeInfoServerManager) SetAllowedPeerEnabled(id int, enabled bool) error {
+	m.setID = id
+	m.setEnabled = enabled
+	return m.setErr
+}
+func (m *runtimeInfoServerManager) RemoveAllowedPeer(id int) error {
+	m.removeID = id
+	return m.removeErr
+}
+func (m *runtimeInfoServerManager) EnsureIPv6Subnets() error { return nil }
+func (m *runtimeInfoServerManager) InvalidateCache()         {}
 
 func TestEndpointInfoFromSettings(t *testing.T) {
 	settingsValue := settings.Settings{
@@ -151,7 +165,7 @@ func TestClientControlRuntimeInfo_ConfigurationError(t *testing.T) {
 
 func TestServerControlRuntimeInfo(t *testing.T) {
 	control := serverControl{
-		manager: runtimeInfoServerManager{
+		manager: &runtimeInfoServerManager{
 			cfg: &serverConfiguration.Configuration{
 				EnableTCP: true,
 				EnableUDP: true,
@@ -185,5 +199,69 @@ func TestServerControlRuntimeInfo(t *testing.T) {
 	}
 	if got.Endpoints[1].Protocol != settings.UDP || got.Endpoints[1].TunnelIPv4 != netip.MustParseAddr("10.0.1.1") {
 		t.Fatalf("unexpected UDP endpoint: %+v", got.Endpoints[1])
+	}
+}
+
+func TestServerControlRuntimeInfo_ConfigurationError(t *testing.T) {
+	want := errors.New("read failed")
+	control := serverControl{manager: &runtimeInfoServerManager{err: want}}
+
+	_, err := control.RuntimeInfo()
+	if !errors.Is(err, want) {
+		t.Fatalf("expected configuration error, got %v", err)
+	}
+}
+
+func TestServerControlListPeersCopiesPublicKey(t *testing.T) {
+	key := []byte{1, 2, 3}
+	manager := &runtimeInfoServerManager{
+		peers: []serverConfiguration.AllowedPeer{{
+			Name:      "client-1",
+			PublicKey: key,
+			Enabled:   true,
+			ClientID:  7,
+		}},
+	}
+	control := serverControl{manager: manager}
+
+	got, err := control.ListPeers()
+	if err != nil {
+		t.Fatalf("ListPeers() error = %v", err)
+	}
+	if len(got) != 1 || got[0].Name != "client-1" || got[0].ClientID != 7 || !got[0].Enabled {
+		t.Fatalf("unexpected peer list: %+v", got)
+	}
+	key[0] = 9
+	if got[0].PublicKey[0] != 1 {
+		t.Fatalf("expected public key copy, got %v", got[0].PublicKey)
+	}
+}
+
+func TestServerControlListPeersError(t *testing.T) {
+	want := errors.New("list failed")
+	control := serverControl{manager: &runtimeInfoServerManager{peersErr: want}}
+
+	_, err := control.ListPeers()
+	if !errors.Is(err, want) {
+		t.Fatalf("expected list error, got %v", err)
+	}
+}
+
+func TestServerControlSetAndRemovePeer(t *testing.T) {
+	manager := &runtimeInfoServerManager{}
+	control := serverControl{manager: manager}
+
+	if err := control.SetPeerEnabled(7, true); err != nil {
+		t.Fatalf("SetPeerEnabled() error = %v", err)
+	}
+	if manager.setID != 7 || !manager.setEnabled {
+		t.Fatalf("unexpected set call: id=%d enabled=%v", manager.setID, manager.setEnabled)
+	}
+
+	if err := control.RemovePeer(8); err != nil {
+		t.Fatalf("RemovePeer() error = %v", err)
+	}
+	if manager.removeID != 8 {
+		t.Fatalf("unexpected remove id: %d", manager.removeID)
 	}
 }

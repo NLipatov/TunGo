@@ -718,3 +718,82 @@ func TestTUI_RunRuntimePhase_NoError_ReturnsReconfigure(t *testing.T) {
 		t.Fatal("expected reconfigure=false")
 	}
 }
+
+func TestTUI_RuntimeInfo_Client(t *testing.T) {
+	ui := newTestTUI()
+
+	got, err := ui.runtimeInfo(runtime.ModeClient)
+	if err != nil {
+		t.Fatalf("runtimeInfo() error = %v", err)
+	}
+	if got.Protocol != settings.TCP {
+		t.Fatalf("expected client protocol TCP, got %v", got.Protocol)
+	}
+}
+
+func TestTUI_RuntimeInfo_Server(t *testing.T) {
+	ui := newTestTUI()
+
+	got, err := ui.runtimeInfo(runtime.ModeServer)
+	if err != nil {
+		t.Fatalf("runtimeInfo() error = %v", err)
+	}
+	if got.Protocol != settings.TCP {
+		t.Fatalf("expected server protocol TCP, got %v", got.Protocol)
+	}
+}
+
+func TestTUI_RuntimeInfo_MissingClientControl(t *testing.T) {
+	ui := newTestTUI()
+	ui.sessionOptions.ClientConfigurationControl = nil
+
+	_, err := ui.runtimeInfo(runtime.ModeClient)
+	if err == nil || err.Error() != "client configuration control is nil" {
+		t.Fatalf("expected missing client control error, got %v", err)
+	}
+}
+
+func TestTUI_RuntimeInfo_MissingServerControl(t *testing.T) {
+	ui := newTestTUI()
+	ui.sessionOptions.ServerConfigurationControl = nil
+
+	_, err := ui.runtimeInfo(runtime.ModeServer)
+	if err == nil || err.Error() != "server configuration control is nil" {
+		t.Fatalf("expected missing server control error, got %v", err)
+	}
+}
+
+func TestTUI_RuntimeInfo_InvalidMode(t *testing.T) {
+	ui := newTestTUI()
+
+	_, err := ui.runtimeInfo(0)
+	if err == nil || err.Error() != "invalid runtime mode: 0" {
+		t.Fatalf("expected invalid runtime mode error, got %v", err)
+	}
+}
+
+func TestRuntimeSessionErrCh(t *testing.T) {
+	session := newMockRuntimeSession(errors.New("runtime failed"))
+
+	errCh := runtimeSessionErrCh(session)
+	session.Stop()
+
+	if err := <-errCh; err == nil || err.Error() != "runtime failed" {
+		t.Fatalf("expected runtime session error, got %v", err)
+	}
+}
+
+func TestRuntimeErrOrNil(t *testing.T) {
+	if err := runtimeErrOrNil(context.Background(), nil); err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if err := runtimeErrOrNil(context.Background(), context.Canceled); err != nil {
+		t.Fatalf("expected canceled error to be suppressed, got %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := runtimeErrOrNil(ctx, errors.New("late error")); err != nil {
+		t.Fatalf("expected error after context cancellation to be suppressed, got %v", err)
+	}
+}
