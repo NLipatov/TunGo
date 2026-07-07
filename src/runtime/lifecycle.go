@@ -2,30 +2,20 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"sync"
-	"tungo/infrastructure/settings"
 )
 
-type Lifecycle interface {
-	Start(ctx context.Context, mode Mode) (Session, error)
-}
-
 type Session interface {
-	Info() Info
 	Ready() <-chan struct{}
 	Done() <-chan struct{}
 	Err() error
 	Stop()
+	Wait() error
 }
 
-type Info struct {
-	Mode      Mode
-	Endpoints []EndpointInfo
-	Protocol  settings.Protocol
-}
-
-type RunningSession struct {
-	info    Info
+type runningSession struct {
+	ctx     context.Context
 	readyCh <-chan struct{}
 	doneCh  chan struct{}
 	stop    context.CancelFunc
@@ -34,42 +24,55 @@ type RunningSession struct {
 	err error
 }
 
-func NewRunningSession(
-	info Info,
+func newRunningSession(
+	ctx context.Context,
 	readyCh <-chan struct{},
 	stop context.CancelFunc,
-) *RunningSession {
-	return &RunningSession{
-		info:    info,
+) *runningSession {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return &runningSession{
+		ctx:     ctx,
 		readyCh: readyCh,
 		doneCh:  make(chan struct{}),
 		stop:    stop,
 	}
 }
 
-func (s *RunningSession) Info() Info {
-	return s.info
-}
-
-func (s *RunningSession) Ready() <-chan struct{} {
+func (s *runningSession) Ready() <-chan struct{} {
 	return s.readyCh
 }
 
-func (s *RunningSession) Done() <-chan struct{} {
+func (s *runningSession) Done() <-chan struct{} {
 	return s.doneCh
 }
 
-func (s *RunningSession) Err() error {
+func (s *runningSession) Err() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.err
 }
 
-func (s *RunningSession) Stop() {
+func (s *runningSession) Stop() {
 	s.stop()
 }
 
-func (s *RunningSession) Finish(err error) {
+func (s *runningSession) Wait() error {
+	<-s.doneCh
+	return terminalErrOrNil(s.ctx, s.Err())
+}
+
+func terminalErrOrNil(ctx context.Context, err error) error {
+	if err != nil && ctx.Err() == nil &&
+		!errors.Is(err, context.Canceled) &&
+		!errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	return nil
+}
+
+func (s *runningSession) finish(err error) {
 	s.mu.Lock()
 	s.err = err
 	s.mu.Unlock()

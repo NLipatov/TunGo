@@ -1,6 +1,9 @@
 package tui
 
-import appConfiguration "tungo/application/configuration"
+import (
+	appConfiguration "tungo/application/configuration"
+	"tungo/infrastructure/settings"
+)
 
 type configurationControlMock struct{}
 
@@ -22,6 +25,10 @@ func (m configurationControlMock) Select(string) error {
 
 func (m configurationControlMock) ValidateActive() error {
 	return nil
+}
+
+func (m configurationControlMock) RuntimeInfo() (appConfiguration.RuntimeInfo, error) {
+	return appConfiguration.RuntimeInfo{Protocol: settings.TCP}, nil
 }
 
 func (m configurationControlMock) CreateFromJSON(string, string) error {

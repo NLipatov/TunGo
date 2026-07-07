@@ -163,6 +163,9 @@ func newTestTUI() *TUI {
 			return nil, errors.New("session factory not configured")
 		},
 		systemdInstallerFactory: dummySystemdInstallerFactory,
+		startRuntime: func(context.Context, runtime.Mode) (runtime.Session, error) {
+			return nil, errors.New("runtime starter not configured")
+		},
 	}
 }
 
@@ -464,13 +467,13 @@ func TestTUI_Close_IdempotentWithNilSession(t *testing.T) {
 	ui.Close()
 }
 
-type mockRuntimeLifecycle struct {
+type mockRuntimeStarter struct {
 	session runtime.Session
 	modes   []runtime.Mode
 	err     error
 }
 
-func (m *mockRuntimeLifecycle) Start(_ context.Context, mode runtime.Mode) (runtime.Session, error) {
+func (m *mockRuntimeStarter) Start(_ context.Context, mode runtime.Mode) (runtime.Session, error) {
 	m.modes = append(m.modes, mode)
 	if m.err != nil {
 		return nil, m.err
@@ -479,26 +482,20 @@ func (m *mockRuntimeLifecycle) Start(_ context.Context, mode runtime.Mode) (runt
 }
 
 type mockRuntimeSession struct {
-	info       runtime.Info
 	readyCh    chan struct{}
 	doneCh     chan struct{}
 	err        error
 	stopCalled bool
 }
 
-func newMockRuntimeSession(info runtime.Info, err error) *mockRuntimeSession {
+func newMockRuntimeSession(err error) *mockRuntimeSession {
 	readyCh := make(chan struct{})
 	close(readyCh)
 	return &mockRuntimeSession{
-		info:    info,
 		readyCh: readyCh,
 		doneCh:  make(chan struct{}),
 		err:     err,
 	}
-}
-
-func (m *mockRuntimeSession) Info() runtime.Info {
-	return m.info
 }
 
 func (m *mockRuntimeSession) Ready() <-chan struct{} {
@@ -520,7 +517,12 @@ func (m *mockRuntimeSession) Stop() {
 	}
 }
 
-func TestTUI_Run_StartsRuntimeLifecycle(t *testing.T) {
+func (m *mockRuntimeSession) Wait() error {
+	<-m.doneCh
+	return m.err
+}
+
+func TestTUI_Run_StartsRuntime(t *testing.T) {
 	uiSession := &mockUnifiedSession{
 		waitModeResult: runtime.ModeClient,
 		waitRuntimeErr: bubbleTea.ErrUnifiedSessionQuit,
@@ -529,15 +531,16 @@ func TestTUI_Run_StartsRuntimeLifecycle(t *testing.T) {
 	ui.sessionOptions.ServerSupported = true
 	withMockUnifiedSession(t, ui, uiSession)
 
-	runtimeSession := newMockRuntimeSession(runtime.Info{Mode: runtime.ModeClient, Protocol: settings.TCP}, context.Canceled)
-	lifecycle := &mockRuntimeLifecycle{session: runtimeSession}
+	runtimeSession := newMockRuntimeSession(context.Canceled)
+	starter := &mockRuntimeStarter{session: runtimeSession}
+	ui.startRuntime = starter.Start
 
-	err := ui.Run(context.Background(), lifecycle)
+	err := ui.Run(context.Background())
 	if err != nil {
 		t.Fatalf("expected clean user exit, got %v", err)
 	}
-	if len(lifecycle.modes) != 1 || lifecycle.modes[0] != runtime.ModeClient {
-		t.Fatalf("expected lifecycle to start client mode, got %v", lifecycle.modes)
+	if len(starter.modes) != 1 || starter.modes[0] != runtime.ModeClient {
+		t.Fatalf("expected starter to start client mode, got %v", starter.modes)
 	}
 	if !uiSession.activateCalled {
 		t.Fatal("expected dashboard activation")
@@ -559,12 +562,13 @@ func TestTUI_Run_StartsRuntimeLifecycle(t *testing.T) {
 	}
 }
 
-func TestTUI_Run_NilLifecycle_ReturnsError(t *testing.T) {
+func TestTUI_Run_NilRuntimeStarter_ReturnsError(t *testing.T) {
 	ui := newTestTUI()
+	ui.startRuntime = nil
 
-	err := ui.Run(context.Background(), nil)
-	if err == nil || err.Error() != "runtime lifecycle is nil" {
-		t.Fatalf("expected nil lifecycle error, got %v", err)
+	err := ui.Run(context.Background())
+	if err == nil || err.Error() != "runtime starter is nil" {
+		t.Fatalf("expected nil runtime starter error, got %v", err)
 	}
 }
 

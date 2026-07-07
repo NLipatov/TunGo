@@ -1,15 +1,18 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	appConfiguration "tungo/application/configuration"
 	bubbleTea "tungo/presentation/ui/tui/internal/bubble_tea"
+	appRuntime "tungo/runtime"
 )
 
 type TUI struct {
 	sessionOptions          bubbleTea.ConfiguratorSessionOptions
 	sessionFactory          unifiedSessionFactory
 	systemdInstallerFactory systemdInstallerFactory
+	startRuntime            func(context.Context, appRuntime.Mode) (appRuntime.Session, error)
 	session                 unifiedSessionHandle
 }
 
@@ -29,5 +32,6 @@ func newTUI(configurationControls appConfiguration.Controls) *TUI {
 		},
 		sessionFactory:          newBubbleTeaUnifiedSession,
 		systemdInstallerFactory: newDefaultSystemdInstaller,
+		startRuntime:            appRuntime.Start,
 	}
 }

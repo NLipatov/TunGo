@@ -30,6 +30,26 @@ func (c *clientControl) ValidateActive() error {
 	return err
 }
 
+func (c *clientControl) RuntimeInfo() (RuntimeInfo, error) {
+	conf, err := c.manager.Configuration()
+	if err != nil {
+		return RuntimeInfo{}, err
+	}
+	if err := conf.ResolveActive(); err != nil {
+		return RuntimeInfo{}, err
+	}
+	activeSettings, err := conf.ActiveSettings()
+	if err != nil {
+		return RuntimeInfo{}, err
+	}
+
+	info := RuntimeInfo{Protocol: conf.Protocol}
+	if endpoint, ok := endpointInfoFromSettings(conf.Protocol, activeSettings); ok {
+		info.Endpoints = []EndpointInfo{endpoint}
+	}
+	return info, nil
+}
+
 func (c *clientControl) CreateFromJSON(name, rawJSON string) error {
 	configuration, err := parseClientConfigurationJSON(rawJSON)
 	if err != nil {

@@ -13,11 +13,13 @@ type ClientConfigurationControl interface {
 	List() ([]string, error)
 	Select(path string) error
 	ValidateActive() error
+	RuntimeInfo() (RuntimeInfo, error)
 	CreateFromJSON(name, rawJSON string) error
 	Delete(path string) error
 }
 
 type ServerConfigurationControl interface {
+	RuntimeInfo() (RuntimeInfo, error)
 	GenerateClientConfiguration() (string, error)
 	ListPeers() ([]ServerPeer, error)
 	SetPeerEnabled(clientID int, enabled bool) error

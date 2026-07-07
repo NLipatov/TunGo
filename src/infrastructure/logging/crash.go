@@ -12,6 +12,7 @@ func SetCrashOutput(path string) {
 	if err != nil {
 		return
 	}
+	defer func() { _ = f.Close() }()
 	info, _ := f.Stat()
 	if info != nil && info.Size() > 0 {
 		_, _ = fmt.Fprintf(f, "\n--- crash at %s ---\n\n", time.Now().Format(time.RFC3339))

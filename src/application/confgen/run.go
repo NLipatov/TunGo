@@ -3,7 +3,6 @@ package confgen
 import (
 	"encoding/json"
 	"fmt"
-	appConfgen "tungo/application/confgen"
 	serverConfiguration "tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/PAL/stat"
 	"tungo/infrastructure/cryptography/primitives"
@@ -18,7 +17,7 @@ func Run() error {
 	if err := prepareServerKeys(manager); err != nil {
 		return fmt.Errorf("key preparation failed: %w", err)
 	}
-	generator := appConfgen.NewGenerator(
+	generator := NewGenerator(
 		manager,
 		&primitives.DefaultKeyDeriver{},
 		host_resolver.NewDialResolver(),

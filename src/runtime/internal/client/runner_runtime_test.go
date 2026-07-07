@@ -14,7 +14,6 @@ import (
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
-	appRuntime "tungo/runtime"
 )
 
 type runtimeTestTransport struct {
@@ -220,15 +219,15 @@ func TestRun_ReconfigureRequestedDoesNotReconnect(t *testing.T) {
 			callCount++
 			return runtimeTestRouter{
 				route: func(context.Context) error {
-					return appRuntime.ErrReconfigureRequested
+					return errReconfigureRequested
 				},
 			}, &runtimeTestTransport{}, &runtimeTestTun{}, nil
 		},
 	})
 
 	err := r.Run(context.Background(), RunOptions{})
-	if !errors.Is(err, appRuntime.ErrReconfigureRequested) {
-		t.Fatalf("expected ErrReconfigureRequested, got %v", err)
+	if !errors.Is(err, errReconfigureRequested) {
+		t.Fatalf("expected errReconfigureRequested, got %v", err)
 	}
 	if callCount != 1 {
 		t.Fatalf("expected no reconnect attempts, got %d calls", callCount)

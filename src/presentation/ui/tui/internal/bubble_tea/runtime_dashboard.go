@@ -6,6 +6,7 @@ import (
 	"net/netip"
 	"strings"
 	"time"
+	appConfiguration "tungo/application/configuration"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/telemetry/trafficstats"
 	"tungo/runtime"
@@ -20,7 +21,7 @@ type RuntimeDashboardOptions struct {
 	ServerSupported bool
 	ReadyCh         <-chan struct{}
 	Protocol        settings.Protocol
-	Endpoints       []runtime.EndpointInfo
+	Endpoints       []appConfiguration.EndpointInfo
 }
 
 type runtimeTickMsg struct {
@@ -83,7 +84,7 @@ type RuntimeDashboard struct {
 	readyCh              <-chan struct{}
 	connected            bool
 	protocol             settings.Protocol
-	endpoints            []runtime.EndpointInfo
+	endpoints            []appConfiguration.EndpointInfo
 }
 
 type runtimeDashboardProgram interface {
@@ -544,7 +545,7 @@ func formatRuntimeProtocolAddress(protocol settings.Protocol, ipv4, ipv6 netip.A
 	return protocol.String() + ": " + parts
 }
 
-func sharedServerAddress(endpoints []runtime.EndpointInfo) (settings.Host, bool) {
+func sharedServerAddress(endpoints []appConfiguration.EndpointInfo) (settings.Host, bool) {
 	if len(endpoints) == 0 {
 		return settings.Host{}, false
 	}

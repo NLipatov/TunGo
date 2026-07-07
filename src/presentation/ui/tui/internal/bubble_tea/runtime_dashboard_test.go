@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	appConfiguration "tungo/application/configuration"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/telemetry/trafficstats"
 	"tungo/runtime"
@@ -629,7 +630,7 @@ func TestRuntimeDashboard_MainView_ServerAndFooterOff(t *testing.T) {
 func TestRuntimeDashboard_MainView_ShowsServerAndNetworkAddresses(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
 		Protocol: settings.UDP,
-		Endpoints: []runtime.EndpointInfo{{
+		Endpoints: []appConfiguration.EndpointInfo{{
 			Protocol: settings.UDP,
 			Server: settings.Host{}.
 				WithIPv4(netip.MustParseAddr("198.51.100.10")).
@@ -653,7 +654,7 @@ func TestRuntimeDashboard_MainView_ShowsServerAndNetworkAddresses(t *testing.T) 
 func TestRuntimeDashboard_MainView_ServerShowsTunnelAddressesPerProtocol(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
 		Mode: runtime.ModeServer,
-		Endpoints: []runtime.EndpointInfo{
+		Endpoints: []appConfiguration.EndpointInfo{
 			{
 				Protocol:   settings.TCP,
 				Server:     settings.Host{}.WithIPv4(netip.MustParseAddr("198.51.100.10")),
@@ -696,7 +697,7 @@ func TestRuntimeDashboard_MainView_ServerShowsTunnelAddressesPerProtocol(t *test
 func TestRuntimeDashboard_MainView_ServerShowsServerAddressesPerProtocolWhenDifferent(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
 		Mode: runtime.ModeServer,
-		Endpoints: []runtime.EndpointInfo{
+		Endpoints: []appConfiguration.EndpointInfo{
 			{
 				Protocol:   settings.TCP,
 				Server:     settings.Host{}.WithIPv4(netip.MustParseAddr("198.51.100.10")),
@@ -1858,7 +1859,7 @@ func TestWaitForReadyCh_ContextCanceled_ReturnsContextDoneMsg(t *testing.T) {
 
 func TestRuntimeDashboard_TunnelIPLines_InvalidSingleAddressReturnsNil(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Endpoints: []runtime.EndpointInfo{{
+		Endpoints: []appConfiguration.EndpointInfo{{
 			Protocol: settings.TCP,
 		}},
 	}, testSettings())
@@ -1871,7 +1872,7 @@ func TestRuntimeDashboard_TunnelIPLines_InvalidSingleAddressReturnsNil(t *testin
 func TestRuntimeDashboard_ServerAddressLines_InvalidSharedAddressReturnsNil(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
 		Mode: runtime.ModeServer,
-		Endpoints: []runtime.EndpointInfo{
+		Endpoints: []appConfiguration.EndpointInfo{
 			{Protocol: settings.TCP},
 			{Protocol: settings.UDP},
 		},
@@ -1884,7 +1885,7 @@ func TestRuntimeDashboard_ServerAddressLines_InvalidSharedAddressReturnsNil(t *t
 
 func TestRuntimeDashboard_ServerAddressLines_InvalidSingleAddressReturnsNil(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Endpoints: []runtime.EndpointInfo{{
+		Endpoints: []appConfiguration.EndpointInfo{{
 			Protocol: settings.TCP,
 		}},
 	}, testSettings())
@@ -1912,7 +1913,7 @@ func TestSharedServerAddress_RequiresExactMatch(t *testing.T) {
 		t.Fatal("expected empty protocol address list to have no shared server address")
 	}
 
-	if _, ok := sharedServerAddress([]runtime.EndpointInfo{
+	if _, ok := sharedServerAddress([]appConfiguration.EndpointInfo{
 		{
 			Protocol: settings.TCP,
 			Server:   settings.Host{}.WithIPv4(netip.MustParseAddr("198.51.100.10")),
@@ -1927,7 +1928,7 @@ func TestSharedServerAddress_RequiresExactMatch(t *testing.T) {
 		t.Fatal("expected mixed server address pairs to be treated as different")
 	}
 
-	shared, ok := sharedServerAddress([]runtime.EndpointInfo{
+	shared, ok := sharedServerAddress([]appConfiguration.EndpointInfo{
 		{
 			Protocol: settings.TCP,
 			Server:   settings.Host{}.WithIPv4(netip.MustParseAddr("198.51.100.10")),

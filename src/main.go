@@ -7,7 +7,9 @@ import (
 	"os"
 	"time"
 	"tungo/application/commandline"
+	"tungo/application/confgen"
 	appConfiguration "tungo/application/configuration"
+	"tungo/application/version"
 	"tungo/domain/app"
 	"tungo/infrastructure/PAL/signal"
 	"tungo/infrastructure/logging"
@@ -15,9 +17,7 @@ import (
 	"tungo/presentation/elevation"
 	"tungo/presentation/signals/shutdown"
 	"tungo/presentation/ui/tui"
-	"tungo/runtime/confgen"
-	runtimeLauncher "tungo/runtime/launcher"
-	"tungo/runtime/version"
+	"tungo/runtime"
 )
 
 func main() {
@@ -69,7 +69,11 @@ func runCLI(ctx context.Context) error {
 	case commandline.CommandServerConfigGenerate:
 		return confgen.Run()
 	case commandline.CommandRuntime:
-		return runtimeLauncher.Run(ctx, command.RuntimeMode)
+		session, err := runtime.Start(ctx, command.RuntimeMode)
+		if err != nil {
+			return err
+		}
+		return session.Wait()
 	default:
 		return fmt.Errorf("unhandled command kind: %v", command.Kind)
 	}
@@ -87,7 +91,6 @@ func runTUI(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	launcher := runtimeLauncher.New()
 	trafficCollector := trafficstats.NewCollector(time.Second, 0.35)
 	trafficstats.SetGlobal(trafficCollector)
 	go trafficCollector.Start(ctx)
@@ -97,7 +100,7 @@ func runTUI(ctx context.Context) error {
 		trafficstats.SetGlobal(nil)
 	}()
 
-	return tuiUI.Run(ctx, launcher)
+	return tuiUI.Run(ctx)
 }
 
 func requireElevation() error {

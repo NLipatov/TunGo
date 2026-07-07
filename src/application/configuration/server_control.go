@@ -10,10 +10,36 @@ import (
 	serverConfiguration "tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/host_resolver"
+	"tungo/infrastructure/settings"
 )
 
 type serverControl struct {
 	manager serverConfiguration.ConfigurationManager
+}
+
+func (c *serverControl) RuntimeInfo() (RuntimeInfo, error) {
+	conf, err := c.manager.Configuration()
+	if err != nil {
+		return RuntimeInfo{}, err
+	}
+
+	endpoints := make([]EndpointInfo, 0, 3)
+	if conf.EnableTCP {
+		if endpoint, ok := endpointInfoFromSettings(settings.TCP, conf.TCPSettings); ok {
+			endpoints = append(endpoints, endpoint)
+		}
+	}
+	if conf.EnableUDP {
+		if endpoint, ok := endpointInfoFromSettings(settings.UDP, conf.UDPSettings); ok {
+			endpoints = append(endpoints, endpoint)
+		}
+	}
+	if conf.EnableWS {
+		if endpoint, ok := endpointInfoFromSettings(settings.WS, conf.WSSettings); ok {
+			endpoints = append(endpoints, endpoint)
+		}
+	}
+	return RuntimeInfo{Endpoints: endpoints}, nil
 }
 
 func (c *serverControl) GenerateClientConfiguration() (string, error) {

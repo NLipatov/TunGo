@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 	"tungo/application/network/connection"
-	"tungo/runtime"
 )
 
 type Runner struct {
@@ -41,7 +40,7 @@ func (r *Runner) Run(ctx context.Context, options RunOptions) error {
 		switch {
 		case err == nil:
 			return nil
-		case errors.Is(err, runtime.ErrReconfigureRequested):
+		case errors.Is(err, errReconfigureRequested):
 			return err
 		case errors.Is(err, context.Canceled):
 			return context.Canceled

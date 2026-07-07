@@ -3,7 +3,7 @@ package bubble_tea
 import (
 	"strings"
 	"sync"
-	"tungo/runtime/version"
+	"tungo/application/version"
 )
 
 const defaultProductLabel = "TunGo"

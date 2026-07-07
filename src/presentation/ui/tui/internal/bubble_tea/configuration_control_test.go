@@ -104,6 +104,10 @@ func (c *sessionConfigurationControl) ValidateActive() error {
 	return err
 }
 
+func (c *sessionConfigurationControl) RuntimeInfo() (appConfiguration.RuntimeInfo, error) {
+	return appConfiguration.RuntimeInfo{}, nil
+}
+
 func (c *sessionConfigurationControl) CreateFromJSON(name, rawJSON string) error {
 	if c.Creator == nil {
 		return nil

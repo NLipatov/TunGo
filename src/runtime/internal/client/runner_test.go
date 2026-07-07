@@ -14,7 +14,7 @@ import (
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
-	clientRunners "tungo/runtime/client"
+	clientRunners "tungo/runtime/internal/client"
 	"unsafe"
 )
 

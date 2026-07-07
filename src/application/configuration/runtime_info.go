@@ -1,9 +1,14 @@
-package runtime
+package configuration
 
 import (
 	"net/netip"
 	"tungo/infrastructure/settings"
 )
+
+type RuntimeInfo struct {
+	Protocol  settings.Protocol
+	Endpoints []EndpointInfo
+}
 
 type EndpointInfo struct {
 	Protocol   settings.Protocol
@@ -13,22 +18,18 @@ type EndpointInfo struct {
 	TunnelIPv6 netip.Addr
 }
 
-func EndpointInfoFromSettings(protocol settings.Protocol, s settings.Settings) (EndpointInfo, bool) {
+func endpointInfoFromSettings(protocol settings.Protocol, s settings.Settings) (EndpointInfo, bool) {
 	if s.Server.IsZero() && !s.IPv4.IsValid() && !s.IPv6.IsValid() {
 		return EndpointInfo{}, false
 	}
+	if s.Protocol != settings.UNKNOWN {
+		protocol = s.Protocol
+	}
 	return EndpointInfo{
-		Protocol:   protocolOrFallback(s.Protocol, protocol),
+		Protocol:   protocol,
 		Server:     s.Server,
 		Port:       s.Port,
 		TunnelIPv4: s.IPv4,
 		TunnelIPv6: s.IPv6,
 	}, true
-}
-
-func protocolOrFallback(protocol, fallback settings.Protocol) settings.Protocol {
-	if protocol == settings.UNKNOWN {
-		return fallback
-	}
-	return protocol
 }

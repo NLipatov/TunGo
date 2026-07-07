@@ -5,15 +5,16 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	appConfiguration "tungo/application/configuration"
 	bubbleTea "tungo/presentation/ui/tui/internal/bubble_tea"
 	appRuntime "tungo/runtime"
 )
 
 const runtimeLogCaptureCapacity = 1200
 
-func (t *TUI) Run(ctx context.Context, lifecycle appRuntime.Lifecycle) error {
-	if lifecycle == nil {
-		return fmt.Errorf("runtime lifecycle is nil")
+func (t *TUI) Run(ctx context.Context) error {
+	if t.startRuntime == nil {
+		return fmt.Errorf("runtime starter is nil")
 	}
 
 	bubbleTea.EnableGlobalRuntimeLogCapture(runtimeLogCaptureCapacity)
@@ -31,8 +32,8 @@ func (t *TUI) Run(ctx context.Context, lifecycle appRuntime.Lifecycle) error {
 			return fmt.Errorf("configuration error: %w", err)
 		}
 
-		err = t.runRuntime(ctx, lifecycle, runtimeMode)
-		if errors.Is(err, appRuntime.ErrReconfigureRequested) {
+		err = t.runRuntime(ctx, runtimeMode)
+		if errors.Is(err, errReconfigureRequested) {
 			continue
 		}
 		if err := runtimeErrOrNil(ctx, err); err != nil {
@@ -43,9 +44,14 @@ func (t *TUI) Run(ctx context.Context, lifecycle appRuntime.Lifecycle) error {
 	return nil
 }
 
-func (t *TUI) runRuntime(ctx context.Context, lifecycle appRuntime.Lifecycle, mode appRuntime.Mode) error {
+func (t *TUI) runRuntime(ctx context.Context, mode appRuntime.Mode) error {
+	info, err := t.runtimeInfo(mode)
+	if err != nil {
+		return fmt.Errorf("runtime info error: %w", err)
+	}
+
 	runtimeCtx, cancel := context.WithCancel(ctx)
-	session, err := lifecycle.Start(runtimeCtx, mode)
+	session, err := t.startRuntime(runtimeCtx, mode)
 	if err != nil {
 		cancel()
 		return err
@@ -53,9 +59,8 @@ func (t *TUI) runRuntime(ctx context.Context, lifecycle appRuntime.Lifecycle, mo
 
 	uiResultCh := make(chan RuntimeUIResult, 1)
 	go func() {
-		info := session.Info()
 		userQuit, err := t.runRuntimePhase(runtimeCtx, bubbleTea.RuntimeDashboardOptions{
-			Mode:            info.Mode,
+			Mode:            mode,
 			ServerSupported: t.sessionOptions.ServerSupported,
 			LogFeed:         bubbleTea.GlobalRuntimeLogFeed(),
 			ReadyCh:         session.Ready(),
@@ -75,6 +80,23 @@ func (t *TUI) runRuntime(ctx context.Context, lifecycle appRuntime.Lifecycle, mo
 		func(err error) bool { return errors.Is(err, ErrUserExit) },
 		func(err error) { slog.Error("runtime UI error", "err", err) },
 	)
+}
+
+func (t *TUI) runtimeInfo(mode appRuntime.Mode) (appConfiguration.RuntimeInfo, error) {
+	switch mode {
+	case appRuntime.ModeClient:
+		if t.sessionOptions.ClientConfigurationControl == nil {
+			return appConfiguration.RuntimeInfo{}, fmt.Errorf("client configuration control is nil")
+		}
+		return t.sessionOptions.ClientConfigurationControl.RuntimeInfo()
+	case appRuntime.ModeServer:
+		if t.sessionOptions.ServerConfigurationControl == nil {
+			return appConfiguration.RuntimeInfo{}, fmt.Errorf("server configuration control is nil")
+		}
+		return t.sessionOptions.ServerConfigurationControl.RuntimeInfo()
+	default:
+		return appConfiguration.RuntimeInfo{}, fmt.Errorf("invalid runtime mode: %v", mode)
+	}
 }
 
 func runtimeSessionErrCh(session appRuntime.Session) <-chan error {
