@@ -182,6 +182,24 @@ func TestClientControlDelegates(t *testing.T) {
 	}
 }
 
+func TestClientControlCreateFromJSON_InvalidInput(t *testing.T) {
+	creatorCalled := false
+	control := clientControl{
+		creator: clientCreatorFunc(func(clientConfiguration.Configuration, string) error {
+			creatorCalled = true
+			return nil
+		}),
+	}
+
+	err := control.CreateFromJSON("bad-client", "not json")
+	if err == nil || !strings.Contains(err.Error(), "invalid client configuration") {
+		t.Fatalf("expected invalid configuration error, got %v", err)
+	}
+	if creatorCalled {
+		t.Fatal("expected creator not to be called for invalid JSON")
+	}
+}
+
 func TestClientControlValidateActive(t *testing.T) {
 	wantErr := errors.New("read failed")
 	control := clientControl{manager: runtimeInfoClientManager{err: wantErr}}

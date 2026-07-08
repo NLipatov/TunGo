@@ -163,12 +163,26 @@ func TestClientControlRuntimeInfo_ConfigurationError(t *testing.T) {
 	}
 }
 
+func TestClientControlRuntimeInfo_ResolveActiveError(t *testing.T) {
+	control := clientControl{
+		manager: runtimeInfoClientManager{
+			cfg: &clientConfiguration.Configuration{Protocol: settings.UNKNOWN},
+		},
+	}
+
+	_, err := control.RuntimeInfo()
+	if err == nil || err.Error() != "unsupported protocol: UNKNOWN" {
+		t.Fatalf("expected unsupported protocol error, got %v", err)
+	}
+}
+
 func TestServerControlRuntimeInfo(t *testing.T) {
 	control := serverControl{
 		manager: &runtimeInfoServerManager{
 			cfg: &serverConfiguration.Configuration{
 				EnableTCP: true,
 				EnableUDP: true,
+				EnableWS:  true,
 				TCPSettings: settings.Settings{
 					Protocol: settings.TCP,
 					Addressing: settings.Addressing{
@@ -183,6 +197,13 @@ func TestServerControlRuntimeInfo(t *testing.T) {
 						IPv4:   netip.MustParseAddr("10.0.1.1"),
 					},
 				},
+				WSSettings: settings.Settings{
+					Protocol: settings.WS,
+					Addressing: settings.Addressing{
+						Server: settings.Host{}.WithIPv4(netip.MustParseAddr("198.51.100.30")),
+						IPv4:   netip.MustParseAddr("10.0.2.1"),
+					},
+				},
 			},
 		},
 	}
@@ -191,14 +212,17 @@ func TestServerControlRuntimeInfo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RuntimeInfo() error = %v", err)
 	}
-	if len(got.Endpoints) != 2 {
-		t.Fatalf("expected two endpoints, got %d", len(got.Endpoints))
+	if len(got.Endpoints) != 3 {
+		t.Fatalf("expected three endpoints, got %d", len(got.Endpoints))
 	}
 	if got.Endpoints[0].Protocol != settings.TCP || got.Endpoints[0].TunnelIPv4 != netip.MustParseAddr("10.0.0.1") {
 		t.Fatalf("unexpected TCP endpoint: %+v", got.Endpoints[0])
 	}
 	if got.Endpoints[1].Protocol != settings.UDP || got.Endpoints[1].TunnelIPv4 != netip.MustParseAddr("10.0.1.1") {
 		t.Fatalf("unexpected UDP endpoint: %+v", got.Endpoints[1])
+	}
+	if got.Endpoints[2].Protocol != settings.WS || got.Endpoints[2].TunnelIPv4 != netip.MustParseAddr("10.0.2.1") {
+		t.Fatalf("unexpected WS endpoint: %+v", got.Endpoints[2])
 	}
 }
 
@@ -209,6 +233,16 @@ func TestServerControlRuntimeInfo_ConfigurationError(t *testing.T) {
 	_, err := control.RuntimeInfo()
 	if !errors.Is(err, want) {
 		t.Fatalf("expected configuration error, got %v", err)
+	}
+}
+
+func TestServerControlGenerateClientConfiguration_ConfigurationError(t *testing.T) {
+	want := errors.New("read failed")
+	control := serverControl{manager: &runtimeInfoServerManager{err: want}}
+
+	_, err := control.GenerateClientConfiguration()
+	if !errors.Is(err, want) {
+		t.Fatalf("expected generation error, got %v", err)
 	}
 }
 

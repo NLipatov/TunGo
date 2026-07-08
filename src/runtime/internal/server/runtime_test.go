@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
 	"strings"
@@ -19,11 +20,18 @@ func (r runtimeResolver) Resolve() (string, error) {
 }
 
 type runtimeConfigManager struct {
-	cfg       *serverConf.Configuration
-	injectErr error
+	cfg          *serverConf.Configuration
+	cfgErr       error
+	cfgErrOnCall int
+	cfgCalls     int
+	injectErr    error
 }
 
 func (m *runtimeConfigManager) Configuration() (*serverConf.Configuration, error) {
+	m.cfgCalls++
+	if m.cfgErrOnCall > 0 && m.cfgCalls == m.cfgErrOnCall {
+		return nil, m.cfgErr
+	}
 	return m.cfg, nil
 }
 func (m *runtimeConfigManager) IncrementClientCounter() error { return nil }
@@ -77,6 +85,90 @@ func TestRuntimeStop(t *testing.T) {
 	runtime.Stop()
 	if !stopped {
 		t.Fatal("expected Stop to cancel config watcher")
+	}
+}
+
+func TestNewRuntime_PrepareKeysError(t *testing.T) {
+	manager := &runtimeConfigManager{
+		cfg:       &serverConf.Configuration{},
+		injectErr: errors.New("inject failed"),
+	}
+
+	runtime, err := NewRuntime(
+		context.Background(),
+		runtimeResolver{path: filepath.Join(t.TempDir(), "server_configuration.json")},
+		manager,
+	)
+	if runtime != nil {
+		t.Fatalf("expected nil runtime, got %+v", runtime)
+	}
+	if err == nil || !strings.Contains(err.Error(), "key preparation failed") {
+		t.Fatalf("expected key preparation error, got %v", err)
+	}
+}
+
+func TestNewRuntime_ConfigurationError(t *testing.T) {
+	manager := &runtimeConfigManager{
+		cfg: &serverConf.Configuration{
+			X25519PublicKey:  make([]byte, 32),
+			X25519PrivateKey: make([]byte, 32),
+		},
+		cfgErr:       errors.New("read failed"),
+		cfgErrOnCall: 2,
+	}
+
+	runtime, err := NewRuntime(
+		context.Background(),
+		runtimeResolver{path: filepath.Join(t.TempDir(), "server_configuration.json")},
+		manager,
+	)
+	if runtime != nil {
+		t.Fatalf("expected nil runtime, got %+v", runtime)
+	}
+	if err == nil || !strings.Contains(err.Error(), "failed to load server configuration") {
+		t.Fatalf("expected configuration error, got %v", err)
+	}
+}
+
+func TestNewRuntime_Success(t *testing.T) {
+	manager := &runtimeConfigManager{
+		cfg: &serverConf.Configuration{
+			X25519PublicKey:  make([]byte, 32),
+			X25519PrivateKey: make([]byte, 32),
+		},
+	}
+
+	runtime, err := NewRuntime(
+		context.Background(),
+		runtimeResolver{path: filepath.Join(t.TempDir(), "server_configuration.json")},
+		manager,
+	)
+	if err != nil {
+		t.Fatalf("NewRuntime() error = %v", err)
+	}
+	if runtime == nil {
+		t.Fatal("expected runtime")
+	}
+	runtime.Stop()
+}
+
+func TestRuntimeRunDelegatesToRunner(t *testing.T) {
+	want := errors.New("prepare failed")
+	runtime := &Runtime{
+		runner: NewRunner(
+			&RunnerMockDeps{
+				key: &RunnerMockKeyManager{err: want},
+				tun: &RunnerMockTunManager{},
+				cfg: serverConf.Configuration{},
+			},
+			RunnerMockWorkerFactory{},
+			RunnerMockRouterFactory{},
+		),
+	}
+
+	err := runtime.Run(context.Background())
+	if !errors.Is(err, want) {
+		t.Fatalf("expected runner error, got %v", err)
 	}
 }
 

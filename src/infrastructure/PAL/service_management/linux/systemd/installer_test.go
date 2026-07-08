@@ -278,6 +278,15 @@ func TestInstallClientUnit_WritesClientMode(t *testing.T) {
 	}
 }
 
+func TestInstallRuntimeUnit_InvalidMode(t *testing.T) {
+	installer := NewUnitInstaller(&mockCommander{})
+
+	_, err := installer.installRuntimeUnit(0)
+	if err == nil || !strings.Contains(err.Error(), "unsupported runtime mode") {
+		t.Fatalf("expected invalid runtime mode error, got %v", err)
+	}
+}
+
 func TestInstallUnit_FailsWhenTungoBinaryMissing(t *testing.T) {
 	withSystemdHooks(
 		t,
@@ -471,6 +480,17 @@ func TestInstallUnit_DaemonReloadFailure_RollsBackWrittenUnit(t *testing.T) {
 	}
 	if removedPath != systemdUnitPath {
 		t.Fatalf("expected rollback remove path %q, got %q", systemdUnitPath, removedPath)
+	}
+}
+
+func TestRollbackInstallUnit_IgnoresMissingUnitFile(t *testing.T) {
+	installer := NewUnitInstaller(&mockCommander{})
+	installer.hooks.Remove = func(string) error { return os.ErrNotExist }
+	want := errors.New("install failed")
+
+	err := installer.rollbackInstallUnit(want)
+	if !errors.Is(err, want) {
+		t.Fatalf("expected original install error, got %v", err)
 	}
 }
 
@@ -1391,6 +1411,78 @@ func TestStatus_ReadUnitFailure_DoesNotFail(t *testing.T) {
 	}
 	if status.Role != UnitRoleClient {
 		t.Fatalf("expected role from ExecStart fallback, got %q", status.Role)
+	}
+}
+
+func TestStatus_DetectsRoleFromUnitFileWhenExecStartUnknown(t *testing.T) {
+	withSystemdHooks(
+		t,
+		func(string) (os.FileInfo, error) { return nil, nil },
+		func(name string) (string, error) {
+			if name == "systemctl" {
+				return "/bin/systemctl", nil
+			}
+			if name == "tungo" {
+				return "/usr/local/bin/tungo", nil
+			}
+			return "", exec.ErrNotFound
+		},
+		func(string, []byte, os.FileMode) error { return nil },
+		func(string) ([]byte, error) { return []byte("[Service]\nExecStart=/usr/local/bin/tungo s\n"), nil },
+	)
+	cmd := &mockCommander{
+		combinedOutputByArg: map[string]mockCombinedOutputResult{
+			"is-enabled": {output: []byte("enabled\n")},
+			"is-active":  {output: []byte("active\n")},
+			"show": {
+				output: []byte("LoadState=loaded\nActiveState=active\nSubState=running\nResult=success\nExecMainStatus=0\nExecStart=\nFragmentPath=/etc/systemd/system/tungo.service\n"),
+			},
+		},
+	}
+	installer := NewUnitInstaller(cmd)
+
+	status, err := installer.Status()
+	if err != nil {
+		t.Fatalf("expected status to succeed, got %v", err)
+	}
+	if status.Role != UnitRoleServer {
+		t.Fatalf("expected server role from unit file, got %q", status.Role)
+	}
+}
+
+func TestStatus_UnknownRoleReadUnitFailureKeepsUnknown(t *testing.T) {
+	withSystemdHooks(
+		t,
+		func(string) (os.FileInfo, error) { return nil, nil },
+		func(name string) (string, error) {
+			if name == "systemctl" {
+				return "/bin/systemctl", nil
+			}
+			if name == "tungo" {
+				return "/usr/local/bin/tungo", nil
+			}
+			return "", exec.ErrNotFound
+		},
+		func(string, []byte, os.FileMode) error { return nil },
+		func(string) ([]byte, error) { return nil, errors.New("read failed") },
+	)
+	cmd := &mockCommander{
+		combinedOutputByArg: map[string]mockCombinedOutputResult{
+			"is-enabled": {output: []byte("enabled\n")},
+			"is-active":  {output: []byte("active\n")},
+			"show": {
+				output: []byte("LoadState=loaded\nActiveState=active\nSubState=running\nResult=success\nExecMainStatus=0\nExecStart=\nFragmentPath=/etc/systemd/system/tungo.service\n"),
+			},
+		},
+	}
+	installer := NewUnitInstaller(cmd)
+
+	status, err := installer.Status()
+	if err != nil {
+		t.Fatalf("expected status to succeed, got %v", err)
+	}
+	if status.Role != UnitRoleUnknown {
+		t.Fatalf("expected unknown role, got %q", status.Role)
 	}
 }
 

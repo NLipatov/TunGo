@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	appConfiguration "tungo/application/configuration"
 	"tungo/infrastructure/PAL/service_management/linux/systemd"
 	"tungo/infrastructure/settings"
 	bubbleTea "tungo/presentation/ui/tui/internal/bubble_tea"
@@ -522,6 +523,15 @@ func (m *mockRuntimeSession) Wait() error {
 	return m.err
 }
 
+type runtimeInfoErrorControl struct {
+	configurationControlMock
+	err error
+}
+
+func (c runtimeInfoErrorControl) RuntimeInfo() (appConfiguration.RuntimeInfo, error) {
+	return appConfiguration.RuntimeInfo{}, c.err
+}
+
 func TestTUI_Run_StartsRuntime(t *testing.T) {
 	uiSession := &mockUnifiedSession{
 		waitModeResult: runtime.ModeClient,
@@ -559,6 +569,77 @@ func TestTUI_Run_StartsRuntime(t *testing.T) {
 	}
 	if !runtimeSession.stopCalled {
 		t.Fatal("expected runtime session stopped after user exit")
+	}
+}
+
+func TestTUI_Run_ConfigureUserExit_ReturnsNil(t *testing.T) {
+	uiSession := &mockUnifiedSession{waitModeErr: bubbleTea.ErrUnifiedSessionQuit}
+	ui := newTestTUI()
+	withMockUnifiedSession(t, ui, uiSession)
+
+	starter := &mockRuntimeStarter{}
+	ui.startRuntime = starter.Start
+
+	err := ui.Run(context.Background())
+	if err != nil {
+		t.Fatalf("expected clean user exit, got %v", err)
+	}
+	if len(starter.modes) != 0 {
+		t.Fatalf("expected runtime not to start, got modes %v", starter.modes)
+	}
+}
+
+func TestTUI_Run_ConfigureError_ReturnsWrappedError(t *testing.T) {
+	uiSession := &mockUnifiedSession{waitModeErr: errors.New("select failed")}
+	ui := newTestTUI()
+	withMockUnifiedSession(t, ui, uiSession)
+
+	err := ui.Run(context.Background())
+	if err == nil || err.Error() != "configuration error: select failed" {
+		t.Fatalf("expected wrapped configuration error, got %v", err)
+	}
+}
+
+func TestTUI_Run_ConfigureSessionClosed_ReturnsShutdownError(t *testing.T) {
+	ui := newTestTUI()
+	withMockUnifiedSessionFactory(t, ui, func(context.Context, bubbleTea.ConfiguratorSessionOptions) (unifiedSessionHandle, error) {
+		return nil, ErrSessionClosed
+	})
+
+	err := ui.Run(context.Background())
+	if err == nil || err.Error() != "ui session ended during shutdown: unified session closed" {
+		t.Fatalf("expected session closed error, got %v", err)
+	}
+}
+
+func TestTUI_RunRuntime_RuntimeInfoError(t *testing.T) {
+	want := errors.New("runtime info failed")
+	ui := newTestTUI()
+	ui.sessionOptions.ClientConfigurationControl = runtimeInfoErrorControl{err: want}
+
+	starter := &mockRuntimeStarter{}
+	ui.startRuntime = starter.Start
+
+	err := ui.runRuntime(context.Background(), runtime.ModeClient)
+	if err == nil || err.Error() != "runtime info error: runtime info failed" {
+		t.Fatalf("expected runtime info error, got %v", err)
+	}
+	if len(starter.modes) != 0 {
+		t.Fatalf("expected runtime not to start, got modes %v", starter.modes)
+	}
+}
+
+func TestTUI_RunRuntime_StartRuntimeError(t *testing.T) {
+	ui := newTestTUI()
+	starter := &mockRuntimeStarter{err: errors.New("start failed")}
+	ui.startRuntime = starter.Start
+
+	err := ui.runRuntime(context.Background(), runtime.ModeClient)
+	if err == nil || err.Error() != "start failed" {
+		t.Fatalf("expected start error, got %v", err)
+	}
+	if len(starter.modes) != 1 || starter.modes[0] != runtime.ModeClient {
+		t.Fatalf("expected client start attempt, got %v", starter.modes)
 	}
 }
 
@@ -789,6 +870,13 @@ func TestRuntimeErrOrNil(t *testing.T) {
 	}
 	if err := runtimeErrOrNil(context.Background(), context.Canceled); err != nil {
 		t.Fatalf("expected canceled error to be suppressed, got %v", err)
+	}
+	if err := runtimeErrOrNil(context.Background(), context.DeadlineExceeded); err != nil {
+		t.Fatalf("expected deadline error to be suppressed, got %v", err)
+	}
+	want := errors.New("fatal")
+	if err := runtimeErrOrNil(context.Background(), want); !errors.Is(err, want) {
+		t.Fatalf("expected fatal error, got %v", err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
