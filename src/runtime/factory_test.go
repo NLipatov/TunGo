@@ -1,13 +1,12 @@
 package runtime
 
 import (
-	"context"
 	"strings"
 	"testing"
 )
 
-func TestStart_InvalidMode(t *testing.T) {
-	_, err := Start(context.Background(), 0)
+func TestNew_InvalidMode(t *testing.T) {
+	_, err := New(0)
 	if err == nil {
 		t.Fatal("expected error")
 	}

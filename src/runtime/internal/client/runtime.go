@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -29,8 +30,18 @@ func NewRuntime() (*Runtime, error) {
 	}, nil
 }
 
-func (r *Runtime) Run(ctx context.Context, onReady func()) error {
-	return r.runner.Run(ctx, RunOptions{OnReady: onReady})
+func (r *Runtime) Run(ctx context.Context) error {
+	err := r.runner.Run(ctx)
+	if err == nil || ctx.Err() != nil ||
+		errors.Is(err, context.Canceled) ||
+		errors.Is(err, context.DeadlineExceeded) {
+		return nil
+	}
+	return err
+}
+
+func (r *Runtime) WaitForReady(ctx context.Context) error {
+	return r.runner.WaitForReady(ctx)
 }
 
 func setupCrashLog() {

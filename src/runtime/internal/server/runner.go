@@ -7,6 +7,7 @@ import (
 	"tungo/application/network/connection"
 	"tungo/application/network/routing"
 	"tungo/infrastructure/settings"
+	"tungo/runtime/internal/readiness"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -15,6 +16,7 @@ type Runner struct {
 	deps          AppDependencies
 	workerFactory connection.ServerWorkerFactory
 	routerFactory connection.ServerTrafficRouterFactory
+	ready         *readiness.Signal
 }
 
 func NewRunner(
@@ -26,12 +28,11 @@ func NewRunner(
 		deps:          deps,
 		workerFactory: workerFactory,
 		routerFactory: routerFactory,
+		ready:         readiness.NewSignal(),
 	}
 }
 
-func (r *Runner) Run(
-	ctx context.Context,
-) error {
+func (r *Runner) Run(ctx context.Context) error {
 	err := r.deps.KeyManager().PrepareKeys()
 	if err != nil {
 		return fmt.Errorf("failed to generate ed25519 keys: %w", err)
@@ -84,7 +85,12 @@ func (r *Runner) runWorkers(
 			return nil
 		})
 	}
+	r.ready.Mark()
 	return errGroup.Wait()
+}
+
+func (r *Runner) WaitForReady(ctx context.Context) error {
+	return r.ready.Wait(ctx)
 }
 
 func (r *Runner) workerSettings() []settings.Settings {

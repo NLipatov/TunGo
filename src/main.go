@@ -2,14 +2,13 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"time"
 	"tungo/application/commandline"
 	"tungo/application/confgen"
-	appConfiguration "tungo/application/configuration"
+	"tungo/application/configuration"
 	"tungo/application/version"
 	"tungo/domain/app"
 	"tungo/infrastructure/PAL/signal"
@@ -70,30 +69,21 @@ func runCLI(ctx context.Context) error {
 	case commandline.CommandServerConfigGenerate:
 		return confgen.Run()
 	case commandline.CommandRuntime:
-		session, err := runtime.Start(ctx, command.RuntimeMode)
+		runtimeInstance, err := runtime.New(command.RuntimeMode)
 		if err != nil {
 			return err
 		}
-		return runtimeErrOrNil(ctx, session.Wait())
+		return runtimeInstance.Run(ctx)
 	default:
 		return fmt.Errorf("unhandled command kind: %v", command.Kind)
 	}
-}
-
-func runtimeErrOrNil(ctx context.Context, err error) error {
-	if err != nil && ctx.Err() == nil &&
-		!errors.Is(err, context.Canceled) &&
-		!errors.Is(err, context.DeadlineExceeded) {
-		return err
-	}
-	return nil
 }
 
 func runTUI(ctx context.Context) error {
 	if err := requireElevation(); err != nil {
 		return err
 	}
-	configurationControls, err := appConfiguration.NewDefaultControls()
+	configurationControls, err := configuration.NewDefaultControls()
 	if err != nil {
 		return err
 	}

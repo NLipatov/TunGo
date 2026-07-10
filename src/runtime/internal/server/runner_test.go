@@ -160,6 +160,9 @@ func TestRun_Happy_AllProtocols(t *testing.T) {
 	if err := r.Run(context.Background()); err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
+	if err := r.WaitForReady(context.Background()); err != nil {
+		t.Fatalf("expected runner to report readiness, got %v", err)
+	}
 	if got := atomic.LoadInt32(&deps.key.calls); got != 1 {
 		t.Fatalf("PrepareKeys calls=%d want=1", got)
 	}
@@ -188,6 +191,11 @@ func TestRun_KeyManagerError(t *testing.T) {
 	)
 	if err := r.Run(context.Background()); err == nil || err.Error() != "failed to generate ed25519 keys: boom" {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	waitCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := r.WaitForReady(waitCtx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected readiness wait to remain blocked, got %v", err)
 	}
 }
 

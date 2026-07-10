@@ -1,17 +1,13 @@
 package tui
 
-import (
-	"context"
-	"errors"
-	"fmt"
-)
+import "fmt"
 
 type RuntimeUIResult struct {
 	UserQuit bool
 	Err      error
 }
 
-func resolveRuntimeSessionEnd(
+func resolveRuntimeEnd(
 	uiResult RuntimeUIResult,
 	workerErr error,
 	isUserExit func(error) bool,
@@ -26,16 +22,16 @@ func resolveRuntimeSessionEnd(
 		if !userExit && onRuntimeUIError != nil {
 			onRuntimeUIError(uiResult.Err)
 		}
-		if workerErr != nil && !errors.Is(workerErr, context.Canceled) {
+		if workerErr != nil {
 			return workerErr
 		}
 		if userExit {
-			return context.Canceled
+			return nil
 		}
 		return fmt.Errorf("runtime UI failed: %w", uiResult.Err)
 	}
 	if uiResult.UserQuit {
-		if workerErr != nil && !errors.Is(workerErr, context.Canceled) {
+		if workerErr != nil {
 			return workerErr
 		}
 		return errReconfigureRequested

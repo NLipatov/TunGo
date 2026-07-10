@@ -108,16 +108,15 @@ func TestRunAttempt_SignalsReadyAndRoutesTraffic(t *testing.T) {
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
-	readyCh := make(chan struct{})
 	done := make(chan error, 1)
 	go func() {
-		done <- r.runAttempt(ctx, func() { close(readyCh) })
+		done <- r.runAttempt(ctx)
 	}()
 
-	select {
-	case <-readyCh:
-	case <-time.After(time.Second):
-		t.Fatal("ready channel was not closed")
+	readyCtx, cancelReady := context.WithTimeout(context.Background(), time.Second)
+	defer cancelReady()
+	if err := r.WaitForReady(readyCtx); err != nil {
+		t.Fatalf("expected runner to become ready, got %v", err)
 	}
 	select {
 	case <-routeStarted:
@@ -139,13 +138,14 @@ func TestRunAttempt_CreateRouterErrorDoesNotSignalReady(t *testing.T) {
 		},
 	})
 
-	readyCalled := false
-	err := r.runAttempt(context.Background(), func() { readyCalled = true })
+	err := r.runAttempt(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "create failed") {
 		t.Fatalf("expected create router error, got %v", err)
 	}
-	if readyCalled {
-		t.Fatal("ready callback must not run when router creation fails")
+	waitCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := r.WaitForReady(waitCtx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected readiness wait to remain blocked, got %v", err)
 	}
 }
 
@@ -162,7 +162,7 @@ func TestRun_CancelDuringReconnectDelay(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
-		_ = r.Run(ctx, RunOptions{})
+		_ = r.Run(ctx)
 		close(done)
 	}()
 	time.Sleep(80 * time.Millisecond)
@@ -191,16 +191,15 @@ func TestRun_ReconnectDelayAndRecovery(t *testing.T) {
 		},
 	})
 
-	readyCalls := 0
-	err := r.Run(context.Background(), RunOptions{OnReady: func() { readyCalls++ }})
+	err := r.Run(context.Background())
 	if err != nil {
 		t.Fatalf("expected nil after recovery, got %v", err)
 	}
 	if callCount < 2 {
 		t.Fatalf("expected at least 2 session attempts, got %d", callCount)
 	}
-	if readyCalls != callCount {
-		t.Fatalf("expected readiness for each successful attempt, got %d signals for %d attempts", readyCalls, callCount)
+	if err := r.WaitForReady(context.Background()); err != nil {
+		t.Fatalf("expected runner to report readiness, got %v", err)
 	}
 }
 
@@ -214,7 +213,7 @@ func TestRun_ContextAlreadyCanceled(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	err := r.Run(ctx, RunOptions{})
+	err := r.Run(ctx)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled, got %v", err)
 	}
@@ -231,8 +230,25 @@ func TestRun_LogsDisposeErrorBranches(t *testing.T) {
 			}, &runtimeTestTransport{}, &runtimeTestTun{}, nil
 		},
 	})
-	_ = r.Run(context.Background(), RunOptions{})
+	_ = r.Run(context.Background())
 	if deps.tun.disposeCalls == 0 {
 		t.Fatal("expected dispose to be called despite errors")
+	}
+}
+
+func TestRuntimeRun_NormalizesCancellation(t *testing.T) {
+	deps := &runtimeTestDeps{}
+	runtimeInstance := &Runtime{
+		runner: NewRunner(deps, runtimeTestRouterFactory{
+			create: func(context.Context, connection.Factory, tun.ClientManager, connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
+				return runtimeTestRouter{
+					route: func(context.Context) error { return context.Canceled },
+				}, &runtimeTestTransport{}, &runtimeTestTun{}, nil
+			},
+		}),
+	}
+
+	if err := runtimeInstance.Run(context.Background()); err != nil {
+		t.Fatalf("expected clean cancellation, got %v", err)
 	}
 }

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"sync"
 	appConfiguration "tungo/application/configuration"
 	bubbleTea "tungo/presentation/ui/tui/internal/bubble_tea"
 	appRuntime "tungo/runtime"
@@ -14,8 +13,8 @@ import (
 const runtimeLogCaptureCapacity = 1200
 
 func (t *TUI) Run(ctx context.Context) error {
-	if t.startRuntime == nil {
-		return fmt.Errorf("runtime starter is nil")
+	if t.newRuntime == nil {
+		return fmt.Errorf("runtime factory is nil")
 	}
 
 	bubbleTea.EnableGlobalRuntimeLogCapture(runtimeLogCaptureCapacity)
@@ -37,7 +36,7 @@ func (t *TUI) Run(ctx context.Context) error {
 		if errors.Is(err, errReconfigureRequested) {
 			continue
 		}
-		if err := runtimeErrOrNil(ctx, err); err != nil {
+		if err != nil {
 			return err
 		}
 		return nil
@@ -51,38 +50,31 @@ func (t *TUI) runRuntime(ctx context.Context, mode appRuntime.Mode) error {
 		return fmt.Errorf("runtime info error: %w", err)
 	}
 
-	runtimeCtx, cancel := context.WithCancel(ctx)
-	session, err := t.startRuntime(runtimeCtx, mode)
+	runtimeInstance, err := t.newRuntime(mode)
 	if err != nil {
-		cancel()
 		return err
 	}
+	runtimeCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
 	uiResultCh := make(chan RuntimeUIResult, 1)
-	var stopOnce sync.Once
-	stop := func() {
-		stopOnce.Do(func() {
-			cancel()
-			session.Stop()
-		})
-	}
 	go func() {
 		userQuit, err := t.runRuntimePhase(runtimeCtx, bubbleTea.RuntimeDashboardOptions{
 			Mode:            mode,
 			ServerSupported: t.sessionOptions.ServerSupported,
 			LogFeed:         bubbleTea.GlobalRuntimeLogFeed(),
-			WaitForReady:    session.WaitForReady,
+			WaitForReady:    runtimeInstance.WaitForReady,
 			Protocol:        info.Protocol,
 			Endpoints:       info.Endpoints,
 		})
-		stop()
+		cancel()
 		uiResultCh <- RuntimeUIResult{UserQuit: userQuit, Err: err}
 	}()
 
-	workerErr := session.Wait()
-	stop()
+	workerErr := runtimeInstance.Run(runtimeCtx)
+	cancel()
 	uiResult := <-uiResultCh
-	return resolveRuntimeSessionEnd(
+	return resolveRuntimeEnd(
 		uiResult,
 		workerErr,
 		func(err error) bool { return errors.Is(err, ErrUserExit) },
@@ -105,15 +97,6 @@ func (t *TUI) runtimeInfo(mode appRuntime.Mode) (appConfiguration.RuntimeInfo, e
 	default:
 		return appConfiguration.RuntimeInfo{}, fmt.Errorf("invalid runtime mode: %v", mode)
 	}
-}
-
-func runtimeErrOrNil(ctx context.Context, err error) error {
-	if err != nil && ctx.Err() == nil &&
-		!errors.Is(err, context.Canceled) &&
-		!errors.Is(err, context.DeadlineExceeded) {
-		return err
-	}
-	return nil
 }
 
 func (t *TUI) runRuntimePhase(

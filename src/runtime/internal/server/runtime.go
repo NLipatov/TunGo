@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -13,8 +14,8 @@ import (
 )
 
 type Runtime struct {
-	runner            *Runner
-	stopConfigWatcher context.CancelFunc
+	runner        *Runner
+	configWatcher *serverConf.ConfigWatcher
 }
 
 func NewDefaultConfiguration() (configuration.Resolver, serverConf.ConfigurationManager, error) {
@@ -27,7 +28,6 @@ func NewDefaultConfiguration() (configuration.Resolver, serverConf.Configuration
 }
 
 func NewRuntime(
-	ctx context.Context,
 	resolver configuration.Resolver,
 	manager serverConf.ConfigurationManager,
 ) (*Runtime, error) {
@@ -69,25 +69,42 @@ func NewRuntime(
 		serverConf.DefaultWatchInterval,
 		logging.NewStdLogger(slog.LevelInfo),
 	)
-	watchCtx, watchCancel := context.WithCancel(ctx)
-	go configWatcher.Watch(watchCtx)
-
 	return &Runtime{
 		runner: NewRunner(
 			deps,
 			workerFactory,
 			tunnelServer.NewTrafficRouterFactory(),
 		),
-		stopConfigWatcher: watchCancel,
+		configWatcher: configWatcher,
 	}, nil
 }
 
 func (r *Runtime) Run(ctx context.Context) error {
-	return r.runner.Run(ctx)
+	runCtx, cancel := context.WithCancel(ctx)
+	var watcherDone chan struct{}
+	if r.configWatcher != nil {
+		watcherDone = make(chan struct{})
+		go func() {
+			defer close(watcherDone)
+			r.configWatcher.Watch(runCtx)
+		}()
+	}
+
+	err := r.runner.Run(runCtx)
+	cancel()
+	if watcherDone != nil {
+		<-watcherDone
+	}
+	if err == nil || ctx.Err() != nil ||
+		errors.Is(err, context.Canceled) ||
+		errors.Is(err, context.DeadlineExceeded) {
+		return nil
+	}
+	return err
 }
 
-func (r *Runtime) Stop() {
-	r.stopConfigWatcher()
+func (r *Runtime) WaitForReady(ctx context.Context) error {
+	return r.runner.WaitForReady(ctx)
 }
 
 func prepareKeys(manager serverConf.ConfigurationManager) error {

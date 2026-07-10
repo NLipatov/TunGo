@@ -231,8 +231,8 @@ func newTestTUI() *TUI {
 			return nil, errors.New("session factory not configured")
 		},
 		systemdInstallerFactory: dummySystemdInstallerFactory,
-		startRuntime: func(context.Context, runtime.Mode) (runtime.Session, error) {
-			return nil, errors.New("runtime starter not configured")
+		newRuntime: func(runtime.Mode) (runtime.Runtime, error) {
+			return nil, errors.New("runtime factory not configured")
 		},
 	}
 }
@@ -535,85 +535,66 @@ func TestTUI_Close_IdempotentWithNilSession(t *testing.T) {
 	ui.Close()
 }
 
-type mockRuntimeStarter struct {
-	session runtime.Session
+type mockRuntimeFactory struct {
+	runtime runtime.Runtime
 	modes   []runtime.Mode
 	err     error
 }
 
-func (m *mockRuntimeStarter) Start(_ context.Context, mode runtime.Mode) (runtime.Session, error) {
+func (m *mockRuntimeFactory) New(mode runtime.Mode) (runtime.Runtime, error) {
 	m.modes = append(m.modes, mode)
 	if m.err != nil {
 		return nil, m.err
 	}
-	return m.session, nil
+	return m.runtime, nil
 }
 
-type mockRuntimeSession struct {
-	doneCh     chan struct{}
-	err        error
-	stopCalled bool
+type mockRuntime struct {
+	err       error
+	runCalled bool
 }
 
-func newMockRuntimeSession(err error) *mockRuntimeSession {
-	return &mockRuntimeSession{
-		doneCh: make(chan struct{}),
-		err:    err,
-	}
+func newMockRuntime(err error) *mockRuntime {
+	return &mockRuntime{err: err}
 }
 
-func (m *mockRuntimeSession) WaitForReady(context.Context) error { return nil }
+func (m *mockRuntime) WaitForReady(context.Context) error { return nil }
 
-func (m *mockRuntimeSession) Stop() {
-	if !m.stopCalled {
-		m.stopCalled = true
-		close(m.doneCh)
-	}
-}
-
-func (m *mockRuntimeSession) Wait() error {
-	<-m.doneCh
+func (m *mockRuntime) Run(ctx context.Context) error {
+	m.runCalled = true
+	<-ctx.Done()
 	return m.err
 }
 
-type closedRuntimeSession struct {
-	doneCh     chan struct{}
-	err        error
-	stopCalled bool
+type completedRuntime struct {
+	err       error
+	runCalled bool
 }
 
-func newClosedRuntimeSession(err error) *closedRuntimeSession {
-	doneCh := make(chan struct{})
-	close(doneCh)
-	return &closedRuntimeSession{
-		doneCh: doneCh,
-		err:    err,
-	}
+func newCompletedRuntime(err error) *completedRuntime {
+	return &completedRuntime{err: err}
 }
 
-func (s *closedRuntimeSession) WaitForReady(context.Context) error { return nil }
+func (r *completedRuntime) WaitForReady(context.Context) error { return nil }
 
-func (s *closedRuntimeSession) Stop() {
-	s.stopCalled = true
+func (r *completedRuntime) Run(context.Context) error {
+	r.runCalled = true
+	return r.err
 }
 
-func (s *closedRuntimeSession) Wait() error {
-	return s.err
-}
-
-type scriptedRuntimeStarter struct {
-	sessions []runtime.Session
+type scriptedRuntimeFactory struct {
+	runtimes []runtime.Runtime
 	modes    []runtime.Mode
 }
 
-func (s *scriptedRuntimeStarter) Start(_ context.Context, mode runtime.Mode) (runtime.Session, error) {
+func (s *scriptedRuntimeFactory) New(mode runtime.Mode) (runtime.Runtime, error) {
 	s.modes = append(s.modes, mode)
-	if len(s.sessions) == 0 {
-		return nil, errors.New("unexpected runtime start call")
+	if len(s.runtimes) == 0 {
+		return nil, errors.New("unexpected runtime factory call")
 	}
-	session := s.sessions[0]
-	s.sessions = s.sessions[1:]
-	return session, nil
+	runtimeInstance := s.runtimes[0]
+	s.runtimes = s.runtimes[1:]
+	return runtimeInstance, nil
 }
 
 type runtimeInfoErrorControl struct {
@@ -625,7 +606,7 @@ func (c runtimeInfoErrorControl) RuntimeInfo() (appConfiguration.RuntimeInfo, er
 	return appConfiguration.RuntimeInfo{}, c.err
 }
 
-func TestTUI_Run_StartsRuntime(t *testing.T) {
+func TestTUI_Run_RunsRuntime(t *testing.T) {
 	uiSession := &mockUnifiedSession{
 		waitModeResult: runtime.ModeClient,
 		waitRuntimeErr: bubbleTea.ErrUnifiedSessionQuit,
@@ -634,16 +615,16 @@ func TestTUI_Run_StartsRuntime(t *testing.T) {
 	ui.sessionOptions.ServerSupported = true
 	withMockUnifiedSession(t, ui, uiSession)
 
-	runtimeSession := newMockRuntimeSession(context.Canceled)
-	starter := &mockRuntimeStarter{session: runtimeSession}
-	ui.startRuntime = starter.Start
+	runtimeInstance := newMockRuntime(nil)
+	factory := &mockRuntimeFactory{runtime: runtimeInstance}
+	ui.newRuntime = factory.New
 
 	err := ui.Run(context.Background())
 	if err != nil {
 		t.Fatalf("expected clean user exit, got %v", err)
 	}
-	if len(starter.modes) != 1 || starter.modes[0] != runtime.ModeClient {
-		t.Fatalf("expected starter to start client mode, got %v", starter.modes)
+	if len(factory.modes) != 1 || factory.modes[0] != runtime.ModeClient {
+		t.Fatalf("expected factory to create client mode, got %v", factory.modes)
 	}
 	if !uiSession.activateCalled {
 		t.Fatal("expected dashboard activation")
@@ -663,8 +644,8 @@ func TestTUI_Run_StartsRuntime(t *testing.T) {
 	if err := uiSession.activatedOptions.WaitForReady(context.Background()); err != nil {
 		t.Fatalf("expected runtime readiness callback to succeed, got %v", err)
 	}
-	if !runtimeSession.stopCalled {
-		t.Fatal("expected runtime session stopped after user exit")
+	if !runtimeInstance.runCalled {
+		t.Fatal("expected runtime to run")
 	}
 }
 
@@ -677,25 +658,25 @@ func TestTUI_Run_ReconfigureStartsNextRuntime(t *testing.T) {
 	ui := newTestTUI()
 	withMockUnifiedSession(t, ui, uiSession)
 
-	clientSession := newMockRuntimeSession(context.Canceled)
-	serverSession := newMockRuntimeSession(context.Canceled)
-	starter := &scriptedRuntimeStarter{sessions: []runtime.Session{clientSession, serverSession}}
-	ui.startRuntime = starter.Start
+	clientRuntime := newMockRuntime(nil)
+	serverRuntime := newMockRuntime(nil)
+	factory := &scriptedRuntimeFactory{runtimes: []runtime.Runtime{clientRuntime, serverRuntime}}
+	ui.newRuntime = factory.New
 
 	err := ui.Run(context.Background())
 	if err != nil {
 		t.Fatalf("expected clean exit after reconfigure, got %v", err)
 	}
-	if len(starter.modes) != 2 ||
-		starter.modes[0] != runtime.ModeClient ||
-		starter.modes[1] != runtime.ModeServer {
-		t.Fatalf("expected client then server runtime starts, got %v", starter.modes)
+	if len(factory.modes) != 2 ||
+		factory.modes[0] != runtime.ModeClient ||
+		factory.modes[1] != runtime.ModeServer {
+		t.Fatalf("expected client then server runtimes, got %v", factory.modes)
 	}
 	if len(uiSession.activatedOptions) != 2 {
 		t.Fatalf("expected two runtime dashboard activations, got %d", len(uiSession.activatedOptions))
 	}
-	if !clientSession.stopCalled || !serverSession.stopCalled {
-		t.Fatal("expected both runtime sessions stopped")
+	if !clientRuntime.runCalled || !serverRuntime.runCalled {
+		t.Fatal("expected both runtimes to run")
 	}
 }
 
@@ -704,15 +685,15 @@ func TestTUI_Run_ConfigureUserExit_ReturnsNil(t *testing.T) {
 	ui := newTestTUI()
 	withMockUnifiedSession(t, ui, uiSession)
 
-	starter := &mockRuntimeStarter{}
-	ui.startRuntime = starter.Start
+	factory := &mockRuntimeFactory{}
+	ui.newRuntime = factory.New
 
 	err := ui.Run(context.Background())
 	if err != nil {
 		t.Fatalf("expected clean user exit, got %v", err)
 	}
-	if len(starter.modes) != 0 {
-		t.Fatalf("expected runtime not to start, got modes %v", starter.modes)
+	if len(factory.modes) != 0 {
+		t.Fatalf("expected runtime not to be created, got modes %v", factory.modes)
 	}
 }
 
@@ -739,20 +720,20 @@ func TestTUI_Run_ConfigureSessionClosed_ReturnsShutdownError(t *testing.T) {
 	}
 }
 
-func TestTUI_Run_RuntimeError_ReturnsError(t *testing.T) {
+func TestTUI_Run_RuntimeCreationError_ReturnsError(t *testing.T) {
 	uiSession := &mockUnifiedSession{waitModeResult: runtime.ModeClient}
 	ui := newTestTUI()
 	withMockUnifiedSession(t, ui, uiSession)
 
-	starter := &mockRuntimeStarter{err: errors.New("start failed")}
-	ui.startRuntime = starter.Start
+	factory := &mockRuntimeFactory{err: errors.New("runtime creation failed")}
+	ui.newRuntime = factory.New
 
 	err := ui.Run(context.Background())
-	if err == nil || err.Error() != "start failed" {
-		t.Fatalf("expected runtime start error, got %v", err)
+	if err == nil || err.Error() != "runtime creation failed" {
+		t.Fatalf("expected runtime creation error, got %v", err)
 	}
-	if len(starter.modes) != 1 || starter.modes[0] != runtime.ModeClient {
-		t.Fatalf("expected client start attempt, got %v", starter.modes)
+	if len(factory.modes) != 1 || factory.modes[0] != runtime.ModeClient {
+		t.Fatalf("expected client creation attempt, got %v", factory.modes)
 	}
 }
 
@@ -772,29 +753,29 @@ func TestTUI_RunRuntime_RuntimeInfoError(t *testing.T) {
 	ui := newTestTUI()
 	ui.sessionOptions.ClientConfigurationControl = runtimeInfoErrorControl{err: want}
 
-	starter := &mockRuntimeStarter{}
-	ui.startRuntime = starter.Start
+	factory := &mockRuntimeFactory{}
+	ui.newRuntime = factory.New
 
 	err := ui.runRuntime(context.Background(), runtime.ModeClient)
 	if err == nil || err.Error() != "runtime info error: runtime info failed" {
 		t.Fatalf("expected runtime info error, got %v", err)
 	}
-	if len(starter.modes) != 0 {
-		t.Fatalf("expected runtime not to start, got modes %v", starter.modes)
+	if len(factory.modes) != 0 {
+		t.Fatalf("expected runtime not to be created, got modes %v", factory.modes)
 	}
 }
 
-func TestTUI_RunRuntime_StartRuntimeError(t *testing.T) {
+func TestTUI_RunRuntime_NewRuntimeError(t *testing.T) {
 	ui := newTestTUI()
-	starter := &mockRuntimeStarter{err: errors.New("start failed")}
-	ui.startRuntime = starter.Start
+	factory := &mockRuntimeFactory{err: errors.New("runtime creation failed")}
+	ui.newRuntime = factory.New
 
 	err := ui.runRuntime(context.Background(), runtime.ModeClient)
-	if err == nil || err.Error() != "start failed" {
-		t.Fatalf("expected start error, got %v", err)
+	if err == nil || err.Error() != "runtime creation failed" {
+		t.Fatalf("expected runtime creation error, got %v", err)
 	}
-	if len(starter.modes) != 1 || starter.modes[0] != runtime.ModeClient {
-		t.Fatalf("expected client start attempt, got %v", starter.modes)
+	if len(factory.modes) != 1 || factory.modes[0] != runtime.ModeClient {
+		t.Fatalf("expected client creation attempt, got %v", factory.modes)
 	}
 }
 
@@ -803,26 +784,26 @@ func TestTUI_RunRuntime_RuntimeUIErrorAfterWorkerExit(t *testing.T) {
 	ui := newTestTUI()
 	withMockUnifiedSession(t, ui, uiSession)
 
-	runtimeSession := newClosedRuntimeSession(context.Canceled)
-	starter := &mockRuntimeStarter{session: runtimeSession}
-	ui.startRuntime = starter.Start
+	runtimeInstance := newCompletedRuntime(nil)
+	factory := &mockRuntimeFactory{runtime: runtimeInstance}
+	ui.newRuntime = factory.New
 
 	err := ui.runRuntime(context.Background(), runtime.ModeClient)
 	if err == nil || err.Error() != "runtime UI failed: dashboard failed" {
 		t.Fatalf("expected runtime UI error, got %v", err)
 	}
-	if !runtimeSession.stopCalled {
-		t.Fatal("expected runtime session stopped")
+	if !runtimeInstance.runCalled {
+		t.Fatal("expected runtime to run")
 	}
 }
 
-func TestTUI_Run_NilRuntimeStarter_ReturnsError(t *testing.T) {
+func TestTUI_Run_NilRuntimeFactory_ReturnsError(t *testing.T) {
 	ui := newTestTUI()
-	ui.startRuntime = nil
+	ui.newRuntime = nil
 
 	err := ui.Run(context.Background())
-	if err == nil || err.Error() != "runtime starter is nil" {
-		t.Fatalf("expected nil runtime starter error, got %v", err)
+	if err == nil || err.Error() != "runtime factory is nil" {
+		t.Fatalf("expected nil runtime factory error, got %v", err)
 	}
 }
 
@@ -1023,27 +1004,5 @@ func TestTUI_RuntimeInfo_InvalidMode(t *testing.T) {
 	_, err := ui.runtimeInfo(0)
 	if err == nil || err.Error() != "invalid runtime mode: 0" {
 		t.Fatalf("expected invalid runtime mode error, got %v", err)
-	}
-}
-
-func TestRuntimeErrOrNil(t *testing.T) {
-	if err := runtimeErrOrNil(context.Background(), nil); err != nil {
-		t.Fatalf("expected nil error, got %v", err)
-	}
-	if err := runtimeErrOrNil(context.Background(), context.Canceled); err != nil {
-		t.Fatalf("expected canceled error to be suppressed, got %v", err)
-	}
-	if err := runtimeErrOrNil(context.Background(), context.DeadlineExceeded); err != nil {
-		t.Fatalf("expected deadline error to be suppressed, got %v", err)
-	}
-	want := errors.New("fatal")
-	if err := runtimeErrOrNil(context.Background(), want); !errors.Is(err, want) {
-		t.Fatalf("expected fatal error, got %v", err)
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	if err := runtimeErrOrNil(ctx, errors.New("late error")); err != nil {
-		t.Fatalf("expected error after context cancellation to be suppressed, got %v", err)
 	}
 }

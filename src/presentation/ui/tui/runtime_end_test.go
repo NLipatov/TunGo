@@ -1,13 +1,12 @@
 package tui
 
 import (
-	"context"
 	"errors"
 	"strings"
 	"testing"
 )
 
-func TestResolveRuntimeSessionEnd(t *testing.T) {
+func TestResolveRuntimeEnd(t *testing.T) {
 	uiErr := errors.New("ui failed")
 	workerErr := errors.New("worker failed")
 
@@ -19,6 +18,8 @@ func TestResolveRuntimeSessionEnd(t *testing.T) {
 		want       error
 		wantText   string
 		wantLogged bool
+		nilLogger  bool
+		wantNil    bool
 	}{
 		{
 			name:       "worker error takes precedence over UI error",
@@ -28,26 +29,32 @@ func TestResolveRuntimeSessionEnd(t *testing.T) {
 			wantLogged: true,
 		},
 		{
-			name:       "UI error replaces canceled worker",
+			name:       "UI error after clean worker",
 			uiResult:   RuntimeUIResult{Err: uiErr},
-			workerErr:  context.Canceled,
 			wantText:   "runtime UI failed: ui failed",
 			wantLogged: true,
 		},
 		{
-			name:      "user exit is cancellation",
-			uiResult:  RuntimeUIResult{Err: errors.New("user exit")},
-			workerErr: context.Canceled,
+			name:     "user exit is clean",
+			uiResult: RuntimeUIResult{Err: errors.New("user exit")},
 			isUserExit: func(err error) bool {
 				return err != nil && err.Error() == "user exit"
 			},
-			want: context.Canceled,
+			wantNil: true,
 		},
 		{
-			name:      "user quit requests reconfiguration",
-			uiResult:  RuntimeUIResult{UserQuit: true},
-			workerErr: context.Canceled,
-			want:      errReconfigureRequested,
+			name:      "worker error takes precedence over user exit",
+			uiResult:  RuntimeUIResult{Err: errors.New("user exit")},
+			workerErr: workerErr,
+			isUserExit: func(err error) bool {
+				return err != nil && err.Error() == "user exit"
+			},
+			want: workerErr,
+		},
+		{
+			name:     "user quit requests reconfiguration",
+			uiResult: RuntimeUIResult{UserQuit: true},
+			want:     errReconfigureRequested,
 		},
 		{
 			name:      "worker error takes precedence over reconfiguration",
@@ -64,8 +71,13 @@ func TestResolveRuntimeSessionEnd(t *testing.T) {
 		{
 			name:      "nil callbacks are allowed",
 			uiResult:  RuntimeUIResult{Err: uiErr},
-			workerErr: context.Canceled,
 			wantText:  "runtime UI failed: ui failed",
+			nilLogger: true,
+		},
+		{
+			name:     "normal clean result",
+			uiResult: RuntimeUIResult{},
+			wantNil:  true,
 		},
 	}
 
@@ -73,16 +85,19 @@ func TestResolveRuntimeSessionEnd(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			logged := false
 			var onRuntimeUIError func(error)
-			if tt.name != "nil callbacks are allowed" {
+			if !tt.nilLogger {
 				onRuntimeUIError = func(error) { logged = true }
 			}
 
-			err := resolveRuntimeSessionEnd(
+			err := resolveRuntimeEnd(
 				tt.uiResult,
 				tt.workerErr,
 				tt.isUserExit,
 				onRuntimeUIError,
 			)
+			if tt.wantNil && err != nil {
+				t.Fatalf("expected nil, got %v", err)
+			}
 			if tt.want != nil && !errors.Is(err, tt.want) {
 				t.Fatalf("expected %v, got %v", tt.want, err)
 			}

@@ -7,25 +7,24 @@ import (
 	"log/slog"
 	"time"
 	"tungo/application/network/connection"
+	"tungo/runtime/internal/readiness"
 )
 
 type Runner struct {
 	deps          AppDependencies
 	routerFactory connection.TrafficRouterFactory
-}
-
-type RunOptions struct {
-	OnReady func()
+	ready         *readiness.Signal
 }
 
 func NewRunner(deps AppDependencies, routerFactory connection.TrafficRouterFactory) *Runner {
 	return &Runner{
 		deps:          deps,
 		routerFactory: routerFactory,
+		ready:         readiness.NewSignal(),
 	}
 }
 
-func (r *Runner) Run(ctx context.Context, options RunOptions) error {
+func (r *Runner) Run(ctx context.Context) error {
 	defer func() {
 		if err := r.deps.TunManager().DisposeDevices(); err != nil {
 			slog.Warn("failed to dispose TUN devices on exit", "err", err)
@@ -33,7 +32,7 @@ func (r *Runner) Run(ctx context.Context, options RunOptions) error {
 	}()
 
 	for ctx.Err() == nil {
-		err := r.runAttempt(ctx, options.OnReady)
+		err := r.runAttempt(ctx)
 		switch {
 		case err == nil:
 			return nil
@@ -55,7 +54,6 @@ func (r *Runner) Run(ctx context.Context, options RunOptions) error {
 
 func (r *Runner) runAttempt(
 	parentCtx context.Context,
-	onReady func(),
 ) error {
 	ctx, cancel := context.WithCancel(parentCtx)
 	defer cancel()
@@ -69,9 +67,7 @@ func (r *Runner) runAttempt(
 	if err != nil {
 		return fmt.Errorf("failed to create router: %w", err)
 	}
-	if onReady != nil {
-		onReady()
-	}
+	r.ready.Mark()
 
 	defer func() {
 		_ = conn.Close()
@@ -80,4 +76,8 @@ func (r *Runner) runAttempt(
 
 	slog.Info("tunneling traffic via TUN device")
 	return router.RouteTraffic(ctx)
+}
+
+func (r *Runner) WaitForReady(ctx context.Context) error {
+	return r.ready.Wait(ctx)
 }

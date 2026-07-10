@@ -3,11 +3,15 @@ package server
 import (
 	"context"
 	"errors"
+	"io"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"tungo/application/network/routing"
 	serverConf "tungo/infrastructure/PAL/configuration/server"
+	"tungo/infrastructure/settings"
 )
 
 type runtimeResolver struct {
@@ -78,16 +82,6 @@ func TestNewDefaultConfiguration(t *testing.T) {
 	}
 }
 
-func TestRuntimeStop(t *testing.T) {
-	stopped := false
-	runtime := &Runtime{stopConfigWatcher: func() { stopped = true }}
-
-	runtime.Stop()
-	if !stopped {
-		t.Fatal("expected Stop to cancel config watcher")
-	}
-}
-
 func TestNewRuntime_PrepareKeysError(t *testing.T) {
 	manager := &runtimeConfigManager{
 		cfg:       &serverConf.Configuration{},
@@ -95,7 +89,6 @@ func TestNewRuntime_PrepareKeysError(t *testing.T) {
 	}
 
 	runtime, err := NewRuntime(
-		context.Background(),
 		runtimeResolver{path: filepath.Join(t.TempDir(), "server_configuration.json")},
 		manager,
 	)
@@ -118,7 +111,6 @@ func TestNewRuntime_ConfigurationError(t *testing.T) {
 	}
 
 	runtime, err := NewRuntime(
-		context.Background(),
 		runtimeResolver{path: filepath.Join(t.TempDir(), "server_configuration.json")},
 		manager,
 	)
@@ -139,7 +131,6 @@ func TestNewRuntime_Success(t *testing.T) {
 	}
 
 	runtime, err := NewRuntime(
-		context.Background(),
 		runtimeResolver{path: filepath.Join(t.TempDir(), "server_configuration.json")},
 		manager,
 	)
@@ -149,11 +140,11 @@ func TestNewRuntime_Success(t *testing.T) {
 	if runtime == nil {
 		t.Fatal("expected runtime")
 	}
-	runtime.Stop()
 }
 
 func TestRuntimeRunDelegatesToRunner(t *testing.T) {
 	want := errors.New("prepare failed")
+	manager := &runtimeConfigManager{cfg: &serverConf.Configuration{}}
 	runtime := &Runtime{
 		runner: NewRunner(
 			&RunnerMockDeps{
@@ -164,11 +155,74 @@ func TestRuntimeRunDelegatesToRunner(t *testing.T) {
 			RunnerMockWorkerFactory{},
 			RunnerMockRouterFactory{},
 		),
+		configWatcher: serverConf.NewConfigWatcher(
+			manager,
+			nil,
+			nil,
+			"",
+			time.Hour,
+			nil,
+		),
 	}
 
 	err := runtime.Run(context.Background())
 	if !errors.Is(err, want) {
 		t.Fatalf("expected runner error, got %v", err)
+	}
+	if manager.cfgCalls == 0 {
+		t.Fatal("expected Run to start and join the config watcher")
+	}
+}
+
+func TestRuntimeRun_NormalizesCancellation(t *testing.T) {
+	deps := &RunnerMockDeps{
+		key: &RunnerMockKeyManager{},
+		tun: &RunnerMockTunManager{},
+		cfg: serverConf.Configuration{
+			EnableTCP:   true,
+			TCPSettings: settings.Settings{Protocol: settings.TCP},
+		},
+	}
+	runtimeInstance := &Runtime{
+		runner: NewRunner(
+			deps,
+			RunnerMockWorkerFactory{
+				create: func(context.Context, io.ReadWriteCloser, settings.Settings) (routing.Worker, error) {
+					return RunnerMockWorker{}, nil
+				},
+			},
+			RunnerMockRouterFactory{
+				make: func(routing.Worker) routing.Router {
+					return RunnerMockRouter{
+						route: func(context.Context) error { return context.Canceled },
+					}
+				},
+			},
+		),
+	}
+
+	if err := runtimeInstance.Run(context.Background()); err != nil {
+		t.Fatalf("expected clean cancellation, got %v", err)
+	}
+}
+
+func TestRuntimeRun_SuppressesLateFailureAfterContextCancellation(t *testing.T) {
+	runtimeInstance := &Runtime{
+		runner: NewRunner(
+			&RunnerMockDeps{
+				key: &RunnerMockKeyManager{err: errors.New("late failure")},
+				tun: &RunnerMockTunManager{},
+				cfg: serverConf.Configuration{},
+			},
+			RunnerMockWorkerFactory{},
+			RunnerMockRouterFactory{},
+		),
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := runtimeInstance.Run(ctx); err != nil {
+		t.Fatalf("expected canceled context to win, got %v", err)
 	}
 }
 
