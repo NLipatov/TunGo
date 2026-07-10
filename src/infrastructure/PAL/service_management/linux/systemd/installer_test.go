@@ -494,6 +494,20 @@ func TestRollbackInstallUnit_IgnoresMissingUnitFile(t *testing.T) {
 	}
 }
 
+func TestRollbackInstallUnit_ReturnsRemoveRollbackError(t *testing.T) {
+	installer := NewUnitInstaller(&mockCommander{})
+	installer.hooks.Remove = func(string) error { return errors.New("remove failed") }
+	want := errors.New("install failed")
+
+	err := installer.rollbackInstallUnit(want)
+	if !errors.Is(err, want) {
+		t.Fatalf("expected original install error, got %v", err)
+	}
+	if err == nil || !strings.Contains(err.Error(), "failed to rollback") {
+		t.Fatalf("expected rollback error, got %v", err)
+	}
+}
+
 func TestInstallUnit_FailsWhenSystemdUnsupported(t *testing.T) {
 	withSystemdHooks(
 		t,
@@ -1091,6 +1105,47 @@ func TestStatus_NotInstalled_ReturnsDefaults(t *testing.T) {
 	}
 	if len(cmd.combinedOutputCalls) == 0 || len(cmd.runCalls) != 0 {
 		t.Fatalf("expected status probing systemctl calls for missing unit, got run=%v combined=%v", cmd.runCalls, cmd.combinedOutputCalls)
+	}
+}
+
+func TestStatus_NotInstalled_DefaultsUnknownStates(t *testing.T) {
+	withSystemdHooks(
+		t,
+		func(string) (os.FileInfo, error) { return nil, nil },
+		func(name string) (string, error) {
+			if name == "systemctl" {
+				return "/bin/systemctl", nil
+			}
+			if name == "tungo" {
+				return "/usr/local/bin/tungo", nil
+			}
+			return "", exec.ErrNotFound
+		},
+		func(string, []byte, os.FileMode) error { return nil },
+	)
+	cmd := &mockCommander{
+		combinedOutputByArg: map[string]mockCombinedOutputResult{
+			"is-enabled": {output: []byte("unknown\n")},
+			"is-active":  {output: []byte("unknown\n")},
+			"show": {
+				output: []byte("LoadState=not-found\nActiveState=unknown\nSubState=dead\nResult=success\nExecMainStatus=0\nExecStart=\n"),
+			},
+		},
+	}
+	installer := NewUnitInstaller(cmd)
+
+	status, err := installer.Status()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if status.Installed {
+		t.Fatalf("expected missing unit to be not installed, got %+v", status)
+	}
+	if status.UnitFileState != UnitFileStateDisabled {
+		t.Fatalf("expected unknown unit-file state to default to disabled, got %+v", status)
+	}
+	if status.ActiveState != UnitActiveStateInactive {
+		t.Fatalf("expected unknown active state to default to inactive, got %+v", status)
 	}
 }
 

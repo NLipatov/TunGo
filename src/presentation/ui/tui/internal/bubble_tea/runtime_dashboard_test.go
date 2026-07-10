@@ -17,6 +17,15 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
+func mustRuntimeDashboardHost(t *testing.T, raw string) settings.Host {
+	t.Helper()
+	host, err := settings.NewHost(raw)
+	if err != nil {
+		t.Fatalf("settings.NewHost(%q): %v", raw, err)
+	}
+	return host
+}
+
 func TestRuntimeDashboard_TabSwitchesToSettings(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
 	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
@@ -723,6 +732,34 @@ func TestRuntimeDashboard_MainView_ServerShowsServerAddressesPerProtocolWhenDiff
 	}
 	if strings.Contains(view, "Server IP: IPv4 198.51.100.10 | IPv6 2001:db8::20") {
 		t.Fatalf("unexpected merged server IP line, got %q", view)
+	}
+}
+
+func TestFormatRuntimeHostParts_DomainIPv4AndIPv6(t *testing.T) {
+	host := mustRuntimeDashboardHost(t, "API.EXAMPLE.COM").
+		WithIPv4(netip.MustParseAddr("198.51.100.10")).
+		WithIPv6(netip.MustParseAddr("2001:db8::10"))
+
+	got := formatRuntimeHostParts(host)
+	want := "Domain api.example.com | IPv4 198.51.100.10 | IPv6 2001:db8::10"
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+func TestFormatRuntimeProtocolHost_UnknownProtocolOmitsPrefix(t *testing.T) {
+	host := settings.Host{}.WithIPv4(netip.MustParseAddr("198.51.100.10"))
+
+	got := formatRuntimeProtocolHost(settings.UNKNOWN, host)
+	want := "IPv4 198.51.100.10"
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+func TestFormatRuntimeProtocolHost_EmptyHost(t *testing.T) {
+	if got := formatRuntimeProtocolHost(settings.TCP, settings.Host{}); got != "" {
+		t.Fatalf("expected empty host line, got %q", got)
 	}
 }
 

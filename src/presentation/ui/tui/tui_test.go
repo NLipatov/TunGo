@@ -86,6 +86,73 @@ func (m *mockUnifiedSession) ShowFatalError(_ string) {}
 
 func (m *mockUnifiedSession) Close() { m.closeCalled = true }
 
+type scriptedUnifiedSession struct {
+	modes                []runtime.Mode
+	modeErrs             []error
+	runtimeReconfigs     []bool
+	runtimeErrs          []error
+	waitModeCalls        int
+	waitRuntimeExitCalls int
+	activatedOptions     []bubbleTea.RuntimeDashboardOptions
+	closeCalled          bool
+}
+
+func (s *scriptedUnifiedSession) WaitForMode() (runtime.Mode, error) {
+	call := s.waitModeCalls
+	s.waitModeCalls++
+	if call < len(s.modeErrs) && s.modeErrs[call] != nil {
+		return 0, s.modeErrs[call]
+	}
+	if call < len(s.modes) {
+		return s.modes[call], nil
+	}
+	return 0, errors.New("unexpected WaitForMode call")
+}
+
+func (s *scriptedUnifiedSession) ActivateRuntime(_ context.Context, options bubbleTea.RuntimeDashboardOptions) {
+	s.activatedOptions = append(s.activatedOptions, options)
+}
+
+func (s *scriptedUnifiedSession) WaitForRuntimeExit() (bool, error) {
+	call := s.waitRuntimeExitCalls
+	s.waitRuntimeExitCalls++
+	if call < len(s.runtimeErrs) && s.runtimeErrs[call] != nil {
+		return false, s.runtimeErrs[call]
+	}
+	if call < len(s.runtimeReconfigs) {
+		return s.runtimeReconfigs[call], nil
+	}
+	return false, errors.New("unexpected WaitForRuntimeExit call")
+}
+
+func (s *scriptedUnifiedSession) ShowFatalError(_ string) {}
+
+func (s *scriptedUnifiedSession) Close() { s.closeCalled = true }
+
+type contextWaitingUnifiedSession struct {
+	ctx context.Context
+	err error
+}
+
+func (s *contextWaitingUnifiedSession) WaitForMode() (runtime.Mode, error) {
+	return runtime.ModeClient, nil
+}
+
+func (s *contextWaitingUnifiedSession) ActivateRuntime(ctx context.Context, _ bubbleTea.RuntimeDashboardOptions) {
+	s.ctx = ctx
+}
+
+func (s *contextWaitingUnifiedSession) WaitForRuntimeExit() (bool, error) {
+	if s.ctx != nil {
+		<-s.ctx.Done()
+	}
+	return false, s.err
+}
+
+func (s *contextWaitingUnifiedSession) ShowFatalError(_ string) {}
+
+func (s *contextWaitingUnifiedSession) Close() {}
+
 func withMockUnifiedSession(t *testing.T, ui *TUI, session unifiedSessionHandle) {
 	t.Helper()
 	ui.session = session
@@ -523,6 +590,60 @@ func (m *mockRuntimeSession) Wait() error {
 	return m.err
 }
 
+type closedRuntimeSession struct {
+	readyCh    chan struct{}
+	doneCh     chan struct{}
+	err        error
+	stopCalled bool
+}
+
+func newClosedRuntimeSession(err error) *closedRuntimeSession {
+	readyCh := make(chan struct{})
+	close(readyCh)
+	doneCh := make(chan struct{})
+	close(doneCh)
+	return &closedRuntimeSession{
+		readyCh: readyCh,
+		doneCh:  doneCh,
+		err:     err,
+	}
+}
+
+func (s *closedRuntimeSession) Ready() <-chan struct{} {
+	return s.readyCh
+}
+
+func (s *closedRuntimeSession) Done() <-chan struct{} {
+	return s.doneCh
+}
+
+func (s *closedRuntimeSession) Err() error {
+	return s.err
+}
+
+func (s *closedRuntimeSession) Stop() {
+	s.stopCalled = true
+}
+
+func (s *closedRuntimeSession) Wait() error {
+	return s.err
+}
+
+type scriptedRuntimeStarter struct {
+	sessions []runtime.Session
+	modes    []runtime.Mode
+}
+
+func (s *scriptedRuntimeStarter) Start(_ context.Context, mode runtime.Mode) (runtime.Session, error) {
+	s.modes = append(s.modes, mode)
+	if len(s.sessions) == 0 {
+		return nil, errors.New("unexpected runtime start call")
+	}
+	session := s.sessions[0]
+	s.sessions = s.sessions[1:]
+	return session, nil
+}
+
 type runtimeInfoErrorControl struct {
 	configurationControlMock
 	err error
@@ -572,6 +693,37 @@ func TestTUI_Run_StartsRuntime(t *testing.T) {
 	}
 }
 
+func TestTUI_Run_ReconfigureStartsNextRuntime(t *testing.T) {
+	uiSession := &scriptedUnifiedSession{
+		modes:            []runtime.Mode{runtime.ModeClient, runtime.ModeServer},
+		runtimeReconfigs: []bool{true},
+		runtimeErrs:      []error{nil, bubbleTea.ErrUnifiedSessionQuit},
+	}
+	ui := newTestTUI()
+	withMockUnifiedSession(t, ui, uiSession)
+
+	clientSession := newMockRuntimeSession(context.Canceled)
+	serverSession := newMockRuntimeSession(context.Canceled)
+	starter := &scriptedRuntimeStarter{sessions: []runtime.Session{clientSession, serverSession}}
+	ui.startRuntime = starter.Start
+
+	err := ui.Run(context.Background())
+	if err != nil {
+		t.Fatalf("expected clean exit after reconfigure, got %v", err)
+	}
+	if len(starter.modes) != 2 ||
+		starter.modes[0] != runtime.ModeClient ||
+		starter.modes[1] != runtime.ModeServer {
+		t.Fatalf("expected client then server runtime starts, got %v", starter.modes)
+	}
+	if len(uiSession.activatedOptions) != 2 {
+		t.Fatalf("expected two runtime dashboard activations, got %d", len(uiSession.activatedOptions))
+	}
+	if !clientSession.stopCalled || !serverSession.stopCalled {
+		t.Fatal("expected both runtime sessions stopped")
+	}
+}
+
 func TestTUI_Run_ConfigureUserExit_ReturnsNil(t *testing.T) {
 	uiSession := &mockUnifiedSession{waitModeErr: bubbleTea.ErrUnifiedSessionQuit}
 	ui := newTestTUI()
@@ -612,6 +764,34 @@ func TestTUI_Run_ConfigureSessionClosed_ReturnsShutdownError(t *testing.T) {
 	}
 }
 
+func TestTUI_Run_RuntimeError_ReturnsError(t *testing.T) {
+	uiSession := &mockUnifiedSession{waitModeResult: runtime.ModeClient}
+	ui := newTestTUI()
+	withMockUnifiedSession(t, ui, uiSession)
+
+	starter := &mockRuntimeStarter{err: errors.New("start failed")}
+	ui.startRuntime = starter.Start
+
+	err := ui.Run(context.Background())
+	if err == nil || err.Error() != "start failed" {
+		t.Fatalf("expected runtime start error, got %v", err)
+	}
+	if len(starter.modes) != 1 || starter.modes[0] != runtime.ModeClient {
+		t.Fatalf("expected client start attempt, got %v", starter.modes)
+	}
+}
+
+func TestTUI_Run_CanceledContext_ReturnsNil(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	ui := newTestTUI()
+
+	err := ui.Run(ctx)
+	if err != nil {
+		t.Fatalf("expected canceled context to stop run loop cleanly, got %v", err)
+	}
+}
+
 func TestTUI_RunRuntime_RuntimeInfoError(t *testing.T) {
 	want := errors.New("runtime info failed")
 	ui := newTestTUI()
@@ -640,6 +820,24 @@ func TestTUI_RunRuntime_StartRuntimeError(t *testing.T) {
 	}
 	if len(starter.modes) != 1 || starter.modes[0] != runtime.ModeClient {
 		t.Fatalf("expected client start attempt, got %v", starter.modes)
+	}
+}
+
+func TestTUI_RunRuntime_RuntimeUIErrorAfterWorkerExit(t *testing.T) {
+	uiSession := &contextWaitingUnifiedSession{err: errors.New("dashboard failed")}
+	ui := newTestTUI()
+	withMockUnifiedSession(t, ui, uiSession)
+
+	runtimeSession := newClosedRuntimeSession(context.Canceled)
+	starter := &mockRuntimeStarter{session: runtimeSession}
+	ui.startRuntime = starter.Start
+
+	err := ui.runRuntime(context.Background(), runtime.ModeClient)
+	if err == nil || err.Error() != "runtime UI failed: dashboard failed" {
+		t.Fatalf("expected runtime UI error, got %v", err)
+	}
+	if !runtimeSession.stopCalled {
+		t.Fatal("expected runtime session stopped")
 	}
 }
 
