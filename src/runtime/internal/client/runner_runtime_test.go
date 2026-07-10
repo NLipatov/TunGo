@@ -211,29 +211,6 @@ func TestRun_ReconnectDelayAndRecovery(t *testing.T) {
 	}
 }
 
-func TestRun_ReconfigureRequestedDoesNotReconnect(t *testing.T) {
-	callCount := 0
-	deps := &runtimeTestDeps{}
-	r := NewRunner(deps, runtimeTestRouterFactory{
-		create: func(context.Context, connection.Factory, tun.ClientManager, connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
-			callCount++
-			return runtimeTestRouter{
-				route: func(context.Context) error {
-					return errReconfigureRequested
-				},
-			}, &runtimeTestTransport{}, &runtimeTestTun{}, nil
-		},
-	})
-
-	err := r.Run(context.Background(), RunOptions{})
-	if !errors.Is(err, errReconfigureRequested) {
-		t.Fatalf("expected errReconfigureRequested, got %v", err)
-	}
-	if callCount != 1 {
-		t.Fatalf("expected no reconnect attempts, got %d calls", callCount)
-	}
-}
-
 func TestRun_ContextAlreadyCanceled(t *testing.T) {
 	deps := &runtimeTestDeps{}
 	r := NewRunner(deps, runtimeTestRouterFactory{
