@@ -11,54 +11,34 @@ type RuntimeUIResult struct {
 	Err      error
 }
 
-func WaitForRuntimeSessionEnd(
-	cancel context.CancelFunc,
-	uiResultCh <-chan RuntimeUIResult,
-	workerErrCh <-chan error,
+func resolveRuntimeSessionEnd(
+	uiResult RuntimeUIResult,
+	workerErr error,
 	isUserExit func(error) bool,
 	onRuntimeUIError func(error),
 ) error {
-	if cancel == nil {
-		cancel = func() {}
-	}
 	if isUserExit == nil {
 		isUserExit = func(error) bool { return false }
 	}
 
-	for {
-		select {
-		case workerErr := <-workerErrCh:
-			cancel()
-			uiResult := <-uiResultCh
-			if uiResult.Err != nil && !isUserExit(uiResult.Err) && onRuntimeUIError != nil {
-				onRuntimeUIError(uiResult.Err)
-			}
-			if uiResult.Err != nil && !isUserExit(uiResult.Err) && (workerErr == nil || errors.Is(workerErr, context.Canceled)) {
-				return fmt.Errorf("runtime UI failed: %w", uiResult.Err)
-			}
-			return workerErr
-		case uiResult := <-uiResultCh:
-			if uiResult.Err != nil {
-				cancel()
-				workerErr := <-workerErrCh
-				if workerErr != nil && !errors.Is(workerErr, context.Canceled) {
-					return workerErr
-				}
-				if isUserExit(uiResult.Err) {
-					return context.Canceled
-				}
-				return fmt.Errorf("runtime UI failed: %w", uiResult.Err)
-			}
-			if uiResult.UserQuit {
-				cancel()
-				workerErr := <-workerErrCh
-				if workerErr != nil && !errors.Is(workerErr, context.Canceled) {
-					return workerErr
-				}
-				return errReconfigureRequested
-			}
-			cancel()
-			return <-workerErrCh
+	if uiResult.Err != nil {
+		userExit := isUserExit(uiResult.Err)
+		if !userExit && onRuntimeUIError != nil {
+			onRuntimeUIError(uiResult.Err)
 		}
+		if workerErr != nil && !errors.Is(workerErr, context.Canceled) {
+			return workerErr
+		}
+		if userExit {
+			return context.Canceled
+		}
+		return fmt.Errorf("runtime UI failed: %w", uiResult.Err)
 	}
+	if uiResult.UserQuit {
+		if workerErr != nil && !errors.Is(workerErr, context.Canceled) {
+			return workerErr
+		}
+		return errReconfigureRequested
+	}
+	return workerErr
 }

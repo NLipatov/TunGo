@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	appConfiguration "tungo/application/configuration"
 	bubbleTea "tungo/presentation/ui/tui/internal/bubble_tea"
 	appRuntime "tungo/runtime"
@@ -58,25 +59,32 @@ func (t *TUI) runRuntime(ctx context.Context, mode appRuntime.Mode) error {
 	}
 
 	uiResultCh := make(chan RuntimeUIResult, 1)
+	var stopOnce sync.Once
+	stop := func() {
+		stopOnce.Do(func() {
+			cancel()
+			session.Stop()
+		})
+	}
 	go func() {
 		userQuit, err := t.runRuntimePhase(runtimeCtx, bubbleTea.RuntimeDashboardOptions{
 			Mode:            mode,
 			ServerSupported: t.sessionOptions.ServerSupported,
 			LogFeed:         bubbleTea.GlobalRuntimeLogFeed(),
-			ReadyCh:         session.Ready(),
+			WaitForReady:    session.WaitForReady,
 			Protocol:        info.Protocol,
 			Endpoints:       info.Endpoints,
 		})
+		stop()
 		uiResultCh <- RuntimeUIResult{UserQuit: userQuit, Err: err}
 	}()
 
-	return WaitForRuntimeSessionEnd(
-		func() {
-			cancel()
-			session.Stop()
-		},
-		uiResultCh,
-		runtimeSessionErrCh(session),
+	workerErr := session.Wait()
+	stop()
+	uiResult := <-uiResultCh
+	return resolveRuntimeSessionEnd(
+		uiResult,
+		workerErr,
 		func(err error) bool { return errors.Is(err, ErrUserExit) },
 		func(err error) { slog.Error("runtime UI error", "err", err) },
 	)
@@ -97,15 +105,6 @@ func (t *TUI) runtimeInfo(mode appRuntime.Mode) (appConfiguration.RuntimeInfo, e
 	default:
 		return appConfiguration.RuntimeInfo{}, fmt.Errorf("invalid runtime mode: %v", mode)
 	}
-}
-
-func runtimeSessionErrCh(session appRuntime.Session) <-chan error {
-	ch := make(chan error, 1)
-	go func() {
-		<-session.Done()
-		ch <- session.Err()
-	}()
-	return ch
 }
 
 func runtimeErrOrNil(ctx context.Context, err error) error {

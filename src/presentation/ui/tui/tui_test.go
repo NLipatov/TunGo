@@ -550,33 +550,19 @@ func (m *mockRuntimeStarter) Start(_ context.Context, mode runtime.Mode) (runtim
 }
 
 type mockRuntimeSession struct {
-	readyCh    chan struct{}
 	doneCh     chan struct{}
 	err        error
 	stopCalled bool
 }
 
 func newMockRuntimeSession(err error) *mockRuntimeSession {
-	readyCh := make(chan struct{})
-	close(readyCh)
 	return &mockRuntimeSession{
-		readyCh: readyCh,
-		doneCh:  make(chan struct{}),
-		err:     err,
+		doneCh: make(chan struct{}),
+		err:    err,
 	}
 }
 
-func (m *mockRuntimeSession) Ready() <-chan struct{} {
-	return m.readyCh
-}
-
-func (m *mockRuntimeSession) Done() <-chan struct{} {
-	return m.doneCh
-}
-
-func (m *mockRuntimeSession) Err() error {
-	return m.err
-}
+func (m *mockRuntimeSession) WaitForReady(context.Context) error { return nil }
 
 func (m *mockRuntimeSession) Stop() {
 	if !m.stopCalled {
@@ -591,35 +577,21 @@ func (m *mockRuntimeSession) Wait() error {
 }
 
 type closedRuntimeSession struct {
-	readyCh    chan struct{}
 	doneCh     chan struct{}
 	err        error
 	stopCalled bool
 }
 
 func newClosedRuntimeSession(err error) *closedRuntimeSession {
-	readyCh := make(chan struct{})
-	close(readyCh)
 	doneCh := make(chan struct{})
 	close(doneCh)
 	return &closedRuntimeSession{
-		readyCh: readyCh,
-		doneCh:  doneCh,
-		err:     err,
+		doneCh: doneCh,
+		err:    err,
 	}
 }
 
-func (s *closedRuntimeSession) Ready() <-chan struct{} {
-	return s.readyCh
-}
-
-func (s *closedRuntimeSession) Done() <-chan struct{} {
-	return s.doneCh
-}
-
-func (s *closedRuntimeSession) Err() error {
-	return s.err
-}
+func (s *closedRuntimeSession) WaitForReady(context.Context) error { return nil }
 
 func (s *closedRuntimeSession) Stop() {
 	s.stopCalled = true
@@ -685,8 +657,11 @@ func TestTUI_Run_StartsRuntime(t *testing.T) {
 	if !uiSession.activatedOptions.ServerSupported {
 		t.Fatal("expected ServerSupported forwarded to dashboard")
 	}
-	if uiSession.activatedOptions.ReadyCh != runtimeSession.readyCh {
-		t.Fatal("expected runtime ready channel forwarded")
+	if uiSession.activatedOptions.WaitForReady == nil {
+		t.Fatal("expected runtime readiness callback forwarded")
+	}
+	if err := uiSession.activatedOptions.WaitForReady(context.Background()); err != nil {
+		t.Fatalf("expected runtime readiness callback to succeed, got %v", err)
 	}
 	if !runtimeSession.stopCalled {
 		t.Fatal("expected runtime session stopped after user exit")
@@ -1048,17 +1023,6 @@ func TestTUI_RuntimeInfo_InvalidMode(t *testing.T) {
 	_, err := ui.runtimeInfo(0)
 	if err == nil || err.Error() != "invalid runtime mode: 0" {
 		t.Fatalf("expected invalid runtime mode error, got %v", err)
-	}
-}
-
-func TestRuntimeSessionErrCh(t *testing.T) {
-	session := newMockRuntimeSession(errors.New("runtime failed"))
-
-	errCh := runtimeSessionErrCh(session)
-	session.Stop()
-
-	if err := <-errCh; err == nil || err.Error() != "runtime failed" {
-		t.Fatalf("expected runtime session error, got %v", err)
 	}
 }
 

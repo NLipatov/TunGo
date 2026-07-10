@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -73,10 +74,19 @@ func runCLI(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		return session.Wait()
+		return runtimeErrOrNil(ctx, session.Wait())
 	default:
 		return fmt.Errorf("unhandled command kind: %v", command.Kind)
 	}
+}
+
+func runtimeErrOrNil(ctx context.Context, err error) error {
+	if err != nil && ctx.Err() == nil &&
+		!errors.Is(err, context.Canceled) &&
+		!errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	return nil
 }
 
 func runTUI(ctx context.Context) error {

@@ -26,6 +26,17 @@ func mustRuntimeDashboardHost(t *testing.T, raw string) settings.Host {
 	return host
 }
 
+func waitForReadyFromChannel(ch <-chan struct{}) func(context.Context) error {
+	return func(ctx context.Context) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ch:
+			return nil
+		}
+	}
+}
+
 func TestRuntimeDashboard_TabSwitchesToSettings(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
 	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
@@ -463,8 +474,8 @@ func TestRuntimeDashboard_DataplaneHint_UsesStopConfirmationCopy(t *testing.T) {
 func TestRuntimeDashboard_DataplaneHint_ConnectingClientUsesReconfigureCopy(t *testing.T) {
 	readyCh := make(chan struct{})
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:    runtime.ModeClient,
-		ReadyCh: readyCh,
+		Mode:         runtime.ModeClient,
+		WaitForReady: waitForReadyFromChannel(readyCh),
 	}, testSettings())
 	view := m.View().Content
 	if !strings.Contains(view, "Esc reconfigure | Tab switch tabs | ctrl+c exit") {
@@ -1661,43 +1672,29 @@ func TestRenderRateBrailleRing_WidthGreaterThanCount_PadsLeft(t *testing.T) {
 	}
 }
 
-func TestRuntimeDashboard_OpenReadyCh_InitiallyNotConnected(t *testing.T) {
-	readyCh := make(chan struct{})
+func TestRuntimeDashboard_WaitForReadyCallbackStartsDisconnected(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:    runtime.ModeClient,
-		ReadyCh: readyCh,
+		Mode:         runtime.ModeClient,
+		WaitForReady: func(context.Context) error { return nil },
 	}, testSettings())
 	if m.connected {
-		t.Fatal("expected connected=false when readyCh is open")
+		t.Fatal("expected connected=false until runtimeReadyMsg is processed")
 	}
 }
 
-func TestRuntimeDashboard_PreClosedReadyCh_Connected(t *testing.T) {
-	readyCh := make(chan struct{})
-	close(readyCh)
-	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:    runtime.ModeClient,
-		ReadyCh: readyCh,
-	}, testSettings())
-	if !m.connected {
-		t.Fatal("expected connected=true when readyCh is pre-closed")
-	}
-}
-
-func TestRuntimeDashboard_NilReadyCh_DefaultsToConnected(t *testing.T) {
+func TestRuntimeDashboard_NilWaitForReadyDefaultsToConnected(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
 		Mode: runtime.ModeClient,
 	}, testSettings())
 	if !m.connected {
-		t.Fatal("expected connected=true when ReadyCh is nil (defaults to pre-closed)")
+		t.Fatal("expected connected=true when WaitForReady is nil")
 	}
 }
 
 func TestRuntimeDashboard_ReadyMsg_SetsConnected(t *testing.T) {
-	readyCh := make(chan struct{})
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:    runtime.ModeClient,
-		ReadyCh: readyCh,
+		Mode:         runtime.ModeClient,
+		WaitForReady: func(context.Context) error { return nil },
 	}, testSettings())
 	if m.connected {
 		t.Fatal("precondition: expected connected=false")
@@ -1711,10 +1708,9 @@ func TestRuntimeDashboard_ReadyMsg_SetsConnected(t *testing.T) {
 }
 
 func TestRuntimeDashboard_ReadyMsg_WrongSeq_Ignored(t *testing.T) {
-	readyCh := make(chan struct{})
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:    runtime.ModeClient,
-		ReadyCh: readyCh,
+		Mode:         runtime.ModeClient,
+		WaitForReady: func(context.Context) error { return nil },
 	}, testSettings())
 
 	updated, _ := m.Update(runtimeReadyMsg{seq: m.runtimeSeq + 99})
@@ -1725,10 +1721,9 @@ func TestRuntimeDashboard_ReadyMsg_WrongSeq_Ignored(t *testing.T) {
 }
 
 func TestRuntimeDashboard_MainView_ConnectingStatus(t *testing.T) {
-	readyCh := make(chan struct{})
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:    runtime.ModeClient,
-		ReadyCh: readyCh,
+		Mode:         runtime.ModeClient,
+		WaitForReady: func(context.Context) error { return nil },
 	}, testSettings())
 	m.width = 80
 	m.height = 24
@@ -1740,12 +1735,12 @@ func TestRuntimeDashboard_MainView_ConnectingStatus(t *testing.T) {
 }
 
 func TestRuntimeDashboard_MainView_ConnectedStatus(t *testing.T) {
-	readyCh := make(chan struct{})
-	close(readyCh)
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:    runtime.ModeClient,
-		ReadyCh: readyCh,
+		Mode:         runtime.ModeClient,
+		WaitForReady: func(context.Context) error { return nil },
 	}, testSettings())
+	updated, _ := m.Update(runtimeReadyMsg{seq: m.runtimeSeq})
+	m = updated.(RuntimeDashboard)
 	m.width = 80
 	m.height = 24
 
@@ -1759,10 +1754,9 @@ func TestRuntimeDashboard_MainView_ConnectedStatus(t *testing.T) {
 }
 
 func TestRuntimeDashboard_MainView_ServerAlwaysRunning(t *testing.T) {
-	readyCh := make(chan struct{})
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:    runtime.ModeServer,
-		ReadyCh: readyCh,
+		Mode:         runtime.ModeServer,
+		WaitForReady: func(context.Context) error { return errors.New("unused") },
 	}, testSettings())
 	m.width = 80
 	m.height = 24
@@ -1774,10 +1768,9 @@ func TestRuntimeDashboard_MainView_ServerAlwaysRunning(t *testing.T) {
 }
 
 func TestRuntimeDashboard_EscDuringConnecting_ReconfiguresImmediately(t *testing.T) {
-	readyCh := make(chan struct{})
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:    runtime.ModeClient,
-		ReadyCh: readyCh,
+		Mode:         runtime.ModeClient,
+		WaitForReady: func(context.Context) error { return nil },
 	}, testSettings())
 	m.screen = runtimeScreenDataplane
 
@@ -1795,16 +1788,16 @@ func TestRuntimeDashboard_EscDuringConnecting_ReconfiguresImmediately(t *testing
 }
 
 func TestRuntimeDashboard_EscWhenConnected_OpensConfirmDialog(t *testing.T) {
-	readyCh := make(chan struct{})
-	close(readyCh)
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:    runtime.ModeClient,
-		ReadyCh: readyCh,
+		Mode:         runtime.ModeClient,
+		WaitForReady: func(context.Context) error { return nil },
 	}, testSettings())
+	updated, _ := m.Update(runtimeReadyMsg{seq: m.runtimeSeq})
+	m = updated.(RuntimeDashboard)
 	m.screen = runtimeScreenDataplane
 
-	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
-	dash := updated.(RuntimeDashboard)
+	updatedModel, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	dash := updatedModel.(RuntimeDashboard)
 	if dash.reconfigureRequested {
 		t.Fatal("expected reconfigureRequested=false — should show confirm dialog when connected")
 	}
@@ -1816,36 +1809,15 @@ func TestRuntimeDashboard_EscWhenConnected_OpensConfirmDialog(t *testing.T) {
 	}
 }
 
-func TestRuntimeDashboard_Init_NotConnected_IncludesReadyCmd(t *testing.T) {
-	readyCh := make(chan struct{})
+func TestRuntimeDashboard_Init_NotConnected_IncludesWaitForReadyCmd(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:    runtime.ModeClient,
-		ReadyCh: readyCh,
+		Mode:         runtime.ModeClient,
+		WaitForReady: func(context.Context) error { return nil },
 	}, testSettings())
 
 	cmd := m.Init()
 	if cmd == nil {
 		t.Fatal("expected non-nil batch command from Init")
-	}
-	// Close readyCh so the waitForReadyCh cmd can complete
-	close(readyCh)
-}
-
-func TestRuntimeDashboard_Init_Connected_NoReadyCmd(t *testing.T) {
-	readyCh := make(chan struct{})
-	close(readyCh)
-	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:    runtime.ModeClient,
-		ReadyCh: readyCh,
-	}, testSettings())
-	if !m.connected {
-		t.Fatal("precondition: expected connected=true")
-	}
-
-	// Init should still return a batch (tick + context), just without the ready cmd
-	cmd := m.Init()
-	if cmd == nil {
-		t.Fatal("expected non-nil batch command from Init even when connected")
 	}
 }
 
@@ -1858,11 +1830,11 @@ func TestRuntimeDashboard_StopConfirmTitle_ServerMode(t *testing.T) {
 	}
 }
 
-func TestWaitForReadyCh_ChannelClosed_ReturnsReadyMsg(t *testing.T) {
+func TestWaitForReady_ReturnsReadyMsg(t *testing.T) {
 	readyCh := make(chan struct{})
 	close(readyCh)
 
-	cmd := waitForReadyCh(context.Background(), readyCh, 42)
+	cmd := waitForReady(context.Background(), waitForReadyFromChannel(readyCh), 42)
 	if cmd == nil {
 		t.Fatal("expected non-nil wait cmd")
 	}
@@ -1876,11 +1848,10 @@ func TestWaitForReadyCh_ChannelClosed_ReturnsReadyMsg(t *testing.T) {
 	}
 }
 
-func TestWaitForReadyCh_ContextCanceled_ReturnsContextDoneMsg(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	cmd := waitForReadyCh(ctx, make(chan struct{}), 7)
+func TestWaitForReady_ErrorReturnsContextDoneMsg(t *testing.T) {
+	cmd := waitForReady(context.Background(), func(context.Context) error {
+		return errors.New("startup failed")
+	}, 7)
 	if cmd == nil {
 		t.Fatal("expected non-nil wait cmd")
 	}

@@ -2,7 +2,6 @@ package start
 
 import (
 	"context"
-	"sync"
 	runtimeClient "tungo/runtime/internal/client"
 	"tungo/runtime/internal/lifecycle"
 	runtimeServer "tungo/runtime/internal/server"
@@ -15,15 +14,11 @@ func Client(ctx context.Context) (*lifecycle.Session, error) {
 	}
 
 	sessionCtx, cancel := context.WithCancel(ctx)
-	readyCh := make(chan struct{})
-	session := lifecycle.New(
-		sessionCtx,
-		readyCh,
-		cancel,
-	)
+	session := lifecycle.New(cancel)
 
 	go func() {
-		session.Finish(clientRuntime.Run(sessionCtx, readyCh))
+		defer session.Stop()
+		session.Finish(clientRuntime.Run(sessionCtx, session.MarkReady))
 	}()
 	return session, nil
 }
@@ -39,22 +34,16 @@ func Server(ctx context.Context) (*lifecycle.Session, error) {
 	}
 
 	sessionCtx, cancel := context.WithCancel(ctx)
-	var stopOnce sync.Once
 	stop := func() {
-		stopOnce.Do(func() {
-			cancel()
-			serverRuntime.Stop()
-		})
+		cancel()
+		serverRuntime.Stop()
 	}
 
-	session := lifecycle.New(
-		sessionCtx,
-		lifecycle.ClosedReadyCh(),
-		stop,
-	)
+	session := lifecycle.New(stop)
+	session.MarkReady()
 
 	go func() {
-		defer stop()
+		defer session.Stop()
 		session.Finish(serverRuntime.Run(sessionCtx))
 	}()
 	return session, nil

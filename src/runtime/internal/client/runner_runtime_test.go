@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/netip"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 	"tungo/application/network/connection"
@@ -93,7 +92,7 @@ func (f runtimeTestRouterFactory) CreateRouter(
 	return f.create(ctx, connectionFactory, tunFactory, workerFactory)
 }
 
-func TestRunAttempt_ClosesReadyAndRoutesTraffic(t *testing.T) {
+func TestRunAttempt_SignalsReadyAndRoutesTraffic(t *testing.T) {
 	deps := &runtimeTestDeps{}
 	routeStarted := make(chan struct{})
 	r := NewRunner(deps, runtimeTestRouterFactory{
@@ -110,10 +109,9 @@ func TestRunAttempt_ClosesReadyAndRoutesTraffic(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	readyCh := make(chan struct{})
-	var readyOnce sync.Once
 	done := make(chan error, 1)
 	go func() {
-		done <- r.runAttempt(ctx, readyCh, &readyOnce)
+		done <- r.runAttempt(ctx, func() { close(readyCh) })
 	}()
 
 	select {
@@ -133,7 +131,7 @@ func TestRunAttempt_ClosesReadyAndRoutesTraffic(t *testing.T) {
 	}
 }
 
-func TestRunAttempt_CreateRouterErrorDoesNotCloseReady(t *testing.T) {
+func TestRunAttempt_CreateRouterErrorDoesNotSignalReady(t *testing.T) {
 	deps := &runtimeTestDeps{}
 	r := NewRunner(deps, runtimeTestRouterFactory{
 		create: func(context.Context, connection.Factory, tun.ClientManager, connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
@@ -141,16 +139,13 @@ func TestRunAttempt_CreateRouterErrorDoesNotCloseReady(t *testing.T) {
 		},
 	})
 
-	readyCh := make(chan struct{})
-	var readyOnce sync.Once
-	err := r.runAttempt(context.Background(), readyCh, &readyOnce)
+	readyCalled := false
+	err := r.runAttempt(context.Background(), func() { readyCalled = true })
 	if err == nil || !strings.Contains(err.Error(), "create failed") {
 		t.Fatalf("expected create router error, got %v", err)
 	}
-	select {
-	case <-readyCh:
-		t.Fatal("ready channel must not close when router creation fails")
-	default:
+	if readyCalled {
+		t.Fatal("ready callback must not run when router creation fails")
 	}
 }
 
@@ -196,18 +191,16 @@ func TestRun_ReconnectDelayAndRecovery(t *testing.T) {
 		},
 	})
 
-	readyCh := make(chan struct{})
-	err := r.Run(context.Background(), RunOptions{ReadyCh: readyCh})
+	readyCalls := 0
+	err := r.Run(context.Background(), RunOptions{OnReady: func() { readyCalls++ }})
 	if err != nil {
 		t.Fatalf("expected nil after recovery, got %v", err)
 	}
 	if callCount < 2 {
 		t.Fatalf("expected at least 2 session attempts, got %d", callCount)
 	}
-	select {
-	case <-readyCh:
-	default:
-		t.Fatal("ready channel was not closed")
+	if readyCalls != callCount {
+		t.Fatalf("expected readiness for each successful attempt, got %d signals for %d attempts", readyCalls, callCount)
 	}
 }
 

@@ -4,320 +4,94 @@ import (
 	"context"
 	"errors"
 	"strings"
-	"sync"
 	"testing"
 )
 
-func TestWaitForRuntimeSessionEnd_WorkerFinishesFirst_LogsUnexpectedUIError(t *testing.T) {
-	uiCh := make(chan RuntimeUIResult, 1)
-	workerCh := make(chan error)
-	logged := false
-	canceled := make(chan struct{})
-	var cancelOnce sync.Once
+func TestResolveRuntimeSessionEnd(t *testing.T) {
+	uiErr := errors.New("ui failed")
+	workerErr := errors.New("worker failed")
 
-	done := make(chan error, 1)
-	go func() {
-		done <- WaitForRuntimeSessionEnd(
-			func() { cancelOnce.Do(func() { close(canceled) }) },
-			uiCh,
-			workerCh,
-			func(error) bool { return false },
-			func(error) { logged = true },
-		)
-	}()
-	go func() {
-		workerCh <- errors.New("worker failed")
-	}()
-	<-canceled
-	uiCh <- RuntimeUIResult{Err: errors.New("ui failed")}
-
-	err := <-done
-	if err == nil || !strings.Contains(err.Error(), "worker failed") {
-		t.Fatalf("expected worker error, got %v", err)
+	tests := []struct {
+		name       string
+		uiResult   RuntimeUIResult
+		workerErr  error
+		isUserExit func(error) bool
+		want       error
+		wantText   string
+		wantLogged bool
+	}{
+		{
+			name:       "worker error takes precedence over UI error",
+			uiResult:   RuntimeUIResult{Err: uiErr},
+			workerErr:  workerErr,
+			want:       workerErr,
+			wantLogged: true,
+		},
+		{
+			name:       "UI error replaces canceled worker",
+			uiResult:   RuntimeUIResult{Err: uiErr},
+			workerErr:  context.Canceled,
+			wantText:   "runtime UI failed: ui failed",
+			wantLogged: true,
+		},
+		{
+			name:      "user exit is cancellation",
+			uiResult:  RuntimeUIResult{Err: errors.New("user exit")},
+			workerErr: context.Canceled,
+			isUserExit: func(err error) bool {
+				return err != nil && err.Error() == "user exit"
+			},
+			want: context.Canceled,
+		},
+		{
+			name:      "user quit requests reconfiguration",
+			uiResult:  RuntimeUIResult{UserQuit: true},
+			workerErr: context.Canceled,
+			want:      errReconfigureRequested,
+		},
+		{
+			name:      "worker error takes precedence over reconfiguration",
+			uiResult:  RuntimeUIResult{UserQuit: true},
+			workerErr: workerErr,
+			want:      workerErr,
+		},
+		{
+			name:      "normal UI result returns worker result",
+			uiResult:  RuntimeUIResult{},
+			workerErr: workerErr,
+			want:      workerErr,
+		},
+		{
+			name:      "nil callbacks are allowed",
+			uiResult:  RuntimeUIResult{Err: uiErr},
+			workerErr: context.Canceled,
+			wantText:  "runtime UI failed: ui failed",
+		},
 	}
-	if !logged {
-		t.Fatal("expected runtime UI error callback to be called")
-	}
-}
 
-func TestWaitForRuntimeSessionEnd_UserExit_ReturnsContextCanceled(t *testing.T) {
-	uiCh := make(chan RuntimeUIResult, 1)
-	workerCh := make(chan error, 1)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logged := false
+			var onRuntimeUIError func(error)
+			if tt.name != "nil callbacks are allowed" {
+				onRuntimeUIError = func(error) { logged = true }
+			}
 
-	uiCh <- RuntimeUIResult{Err: errors.New("user exit")}
-	workerCh <- context.Canceled
-
-	err := WaitForRuntimeSessionEnd(
-		func() {},
-		uiCh,
-		workerCh,
-		func(err error) bool { return err != nil && err.Error() == "user exit" },
-		nil,
-	)
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("expected context.Canceled, got %v", err)
-	}
-}
-
-func TestWaitForRuntimeSessionEnd_ReconfigureRequested(t *testing.T) {
-	uiCh := make(chan RuntimeUIResult, 1)
-	workerCh := make(chan error)
-	canceled := make(chan struct{})
-
-	done := make(chan error, 1)
-	go func() {
-		done <- WaitForRuntimeSessionEnd(
-			func() { close(canceled) },
-			uiCh,
-			workerCh,
-			func(error) bool { return false },
-			nil,
-		)
-	}()
-	uiCh <- RuntimeUIResult{UserQuit: true}
-	go func() {
-		<-canceled
-		workerCh <- nil
-	}()
-
-	err := <-done
-	if !errors.Is(err, errReconfigureRequested) {
-		t.Fatalf("expected errReconfigureRequested, got %v", err)
-	}
-}
-
-func TestWaitForRuntimeSessionEnd_AllowsNilCallbacks(t *testing.T) {
-	uiCh := make(chan RuntimeUIResult, 1)
-	workerCh := make(chan error, 1)
-
-	uiCh <- RuntimeUIResult{Err: errors.New("ui failed")}
-	workerCh <- context.Canceled
-
-	err := WaitForRuntimeSessionEnd(nil, uiCh, workerCh, nil, nil)
-	if err == nil || !strings.Contains(err.Error(), "runtime UI failed") {
-		t.Fatalf("expected wrapped runtime UI error, got %v", err)
-	}
-}
-
-func TestWaitForRuntimeSessionEnd_UIErrorWithWorkerError_ReturnsWorkerError(t *testing.T) {
-	uiCh := make(chan RuntimeUIResult, 1)
-	workerCh := make(chan error, 1)
-
-	uiCh <- RuntimeUIResult{Err: errors.New("ui failed")}
-
-	done := make(chan error, 1)
-	go func() {
-		done <- WaitForRuntimeSessionEnd(
-			func() {},
-			uiCh,
-			workerCh,
-			func(error) bool { return false },
-			nil,
-		)
-	}()
-
-	workerCh <- errors.New("worker failed")
-
-	err := <-done
-	if err == nil || !strings.Contains(err.Error(), "worker failed") {
-		t.Fatalf("expected worker error, got %v", err)
-	}
-}
-
-func TestWaitForRuntimeSessionEnd_UIErrorWithCanceledWorker_WrapsUIError(t *testing.T) {
-	uiCh := make(chan RuntimeUIResult)
-	workerCh := make(chan error)
-
-	done := make(chan error, 1)
-	go func() {
-		done <- WaitForRuntimeSessionEnd(
-			func() {},
-			uiCh,
-			workerCh,
-			func(error) bool { return false },
-			nil,
-		)
-	}()
-
-	// Send UI result first (unbuffered) to force the UI-first branch.
-	uiCh <- RuntimeUIResult{Err: errors.New("ui failed")}
-	workerCh <- context.Canceled
-
-	err := <-done
-	if err == nil || !strings.Contains(err.Error(), "runtime UI failed") {
-		t.Fatalf("expected wrapped runtime UI error, got %v", err)
-	}
-}
-
-func TestWaitForRuntimeSessionEnd_UserQuitWithWorkerError_ReturnsWorkerError(t *testing.T) {
-	uiCh := make(chan RuntimeUIResult, 1)
-	workerCh := make(chan error, 1)
-
-	uiCh <- RuntimeUIResult{UserQuit: true}
-
-	done := make(chan error, 1)
-	go func() {
-		done <- WaitForRuntimeSessionEnd(
-			func() {},
-			uiCh,
-			workerCh,
-			func(error) bool { return false },
-			nil,
-		)
-	}()
-
-	workerCh <- errors.New("worker failed")
-
-	err := <-done
-	if err == nil || !strings.Contains(err.Error(), "worker failed") {
-		t.Fatalf("expected worker error, got %v", err)
-	}
-}
-
-func TestWaitForRuntimeSessionEnd_UIFinishesNormally_ReturnsWorkerError(t *testing.T) {
-	uiCh := make(chan RuntimeUIResult, 1)
-	workerCh := make(chan error, 1)
-
-	uiCh <- RuntimeUIResult{}
-
-	done := make(chan error, 1)
-	go func() {
-		done <- WaitForRuntimeSessionEnd(
-			func() {},
-			uiCh,
-			workerCh,
-			func(error) bool { return false },
-			nil,
-		)
-	}()
-
-	workerCh <- errors.New("worker failed")
-
-	err := <-done
-	if err == nil || !strings.Contains(err.Error(), "worker failed") {
-		t.Fatalf("expected worker error, got %v", err)
-	}
-}
-
-func TestWaitForRuntimeSessionEnd_WorkerFirst_UIErrorWithCanceledWorker_WrapsUIError(t *testing.T) {
-	uiCh := make(chan RuntimeUIResult)
-	workerCh := make(chan error)
-	canceled := make(chan struct{})
-	var once sync.Once
-
-	done := make(chan error, 1)
-	go func() {
-		done <- WaitForRuntimeSessionEnd(
-			func() { once.Do(func() { close(canceled) }) },
-			uiCh,
-			workerCh,
-			func(error) bool { return false },
-			nil,
-		)
-	}()
-
-	workerCh <- context.Canceled
-	<-canceled
-	uiCh <- RuntimeUIResult{Err: errors.New("ui failed")}
-
-	err := <-done
-	if err == nil || !strings.Contains(err.Error(), "runtime UI failed") {
-		t.Fatalf("expected wrapped runtime UI error, got %v", err)
-	}
-}
-
-func TestWaitForRuntimeSessionEnd_UIErrorWithWorkerError_Deterministic(t *testing.T) {
-	uiCh := make(chan RuntimeUIResult)
-	workerCh := make(chan error)
-
-	done := make(chan error, 1)
-	go func() {
-		done <- WaitForRuntimeSessionEnd(
-			func() {},
-			uiCh,
-			workerCh,
-			func(error) bool { return false },
-			nil,
-		)
-	}()
-
-	uiCh <- RuntimeUIResult{Err: errors.New("ui failed")}
-	workerCh <- errors.New("worker failed")
-
-	err := <-done
-	if err == nil || !strings.Contains(err.Error(), "worker failed") {
-		t.Fatalf("expected worker error, got %v", err)
-	}
-}
-
-func TestWaitForRuntimeSessionEnd_UserQuitWithWorkerError_Deterministic(t *testing.T) {
-	uiCh := make(chan RuntimeUIResult)
-	workerCh := make(chan error)
-
-	done := make(chan error, 1)
-	go func() {
-		done <- WaitForRuntimeSessionEnd(
-			func() {},
-			uiCh,
-			workerCh,
-			func(error) bool { return false },
-			nil,
-		)
-	}()
-
-	uiCh <- RuntimeUIResult{UserQuit: true}
-	workerCh <- errors.New("worker failed")
-
-	err := <-done
-	if err == nil || !strings.Contains(err.Error(), "worker failed") {
-		t.Fatalf("expected worker error, got %v", err)
-	}
-}
-
-func TestWaitForRuntimeSessionEnd_UINormalReturn_Deterministic(t *testing.T) {
-	uiCh := make(chan RuntimeUIResult)
-	workerCh := make(chan error)
-
-	done := make(chan error, 1)
-	go func() {
-		done <- WaitForRuntimeSessionEnd(
-			func() {},
-			uiCh,
-			workerCh,
-			func(error) bool { return false },
-			nil,
-		)
-	}()
-
-	uiCh <- RuntimeUIResult{}
-	workerCh <- errors.New("worker failed")
-
-	err := <-done
-	if err == nil || !strings.Contains(err.Error(), "worker failed") {
-		t.Fatalf("expected worker error, got %v", err)
-	}
-}
-
-func TestWaitForRuntimeSessionEnd_UIErrorMarkedAsUserExit_Deterministic(t *testing.T) {
-	uiCh := make(chan RuntimeUIResult)
-	workerCh := make(chan error)
-
-	done := make(chan error, 1)
-	go func() {
-		done <- WaitForRuntimeSessionEnd(
-			func() {},
-			uiCh,
-			workerCh,
-			func(err error) bool { return err != nil && err.Error() == "user exit" },
-			nil,
-		)
-	}()
-
-	uiCh <- RuntimeUIResult{Err: errors.New("user exit")}
-	workerCh <- context.Canceled
-
-	err := <-done
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("expected context.Canceled, got %v", err)
+			err := resolveRuntimeSessionEnd(
+				tt.uiResult,
+				tt.workerErr,
+				tt.isUserExit,
+				onRuntimeUIError,
+			)
+			if tt.want != nil && !errors.Is(err, tt.want) {
+				t.Fatalf("expected %v, got %v", tt.want, err)
+			}
+			if tt.wantText != "" && (err == nil || !strings.Contains(err.Error(), tt.wantText)) {
+				t.Fatalf("expected error containing %q, got %v", tt.wantText, err)
+			}
+			if logged != tt.wantLogged {
+				t.Fatalf("expected logged=%v, got %v", tt.wantLogged, logged)
+			}
+		})
 	}
 }

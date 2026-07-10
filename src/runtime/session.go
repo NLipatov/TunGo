@@ -1,9 +1,9 @@
 package runtime
 
+import "context"
+
 type Session interface {
-	Ready() <-chan struct{}
-	Done() <-chan struct{}
-	Err() error
+	WaitForReady(context.Context) error
 	Stop()
 	Wait() error
 }

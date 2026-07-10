@@ -19,7 +19,7 @@ type RuntimeDashboardOptions struct {
 	Mode            runtime.Mode
 	LogFeed         RuntimeLogFeed
 	ServerSupported bool
-	ReadyCh         <-chan struct{}
+	WaitForReady    func(context.Context) error
 	Protocol        settings.Protocol
 	Endpoints       []appConfiguration.EndpointInfo
 }
@@ -81,7 +81,7 @@ type RuntimeDashboard struct {
 	runtimeSeq           uint64
 	exitRequested        bool
 	reconfigureRequested bool
-	readyCh              <-chan struct{}
+	waitForReady         func(context.Context) error
 	connected            bool
 	protocol             settings.Protocol
 	endpoints            []appConfiguration.EndpointInfo
@@ -103,19 +103,10 @@ func NewRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions, s
 	if mode != runtime.ModeServer {
 		mode = runtime.ModeClient
 	}
-	readyCh := options.ReadyCh
-	if readyCh == nil {
-		ch := make(chan struct{})
-		close(ch)
-		readyCh = ch
-	}
-	connected := mode == runtime.ModeServer
-	if !connected {
-		select {
-		case <-readyCh:
-			connected = true
-		default:
-		}
+	waitForReady := options.WaitForReady
+	connected := mode == runtime.ModeServer || waitForReady == nil
+	if waitForReady == nil {
+		waitForReady = func(context.Context) error { return nil }
 	}
 	model := RuntimeDashboard{
 		settings:        settings,
@@ -128,7 +119,7 @@ func NewRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions, s
 		logFeed:         options.LogFeed,
 		logs:            newLogViewport(),
 		tickSeq:         1,
-		readyCh:         readyCh,
+		waitForReady:    waitForReady,
 		connected:       connected,
 		protocol:        options.Protocol,
 		endpoints:       options.Endpoints,
@@ -173,7 +164,7 @@ func (m RuntimeDashboard) Init() tea.Cmd {
 		waitForRuntimeContextDone(m.ctx, m.runtimeSeq),
 	}
 	if m.mode == runtime.ModeClient && !m.connected {
-		cmds = append(cmds, waitForReadyCh(m.ctx, m.readyCh, m.runtimeSeq))
+		cmds = append(cmds, waitForReady(m.ctx, m.waitForReady, m.runtimeSeq))
 	}
 	return tea.Batch(cmds...)
 }
@@ -641,14 +632,12 @@ func runtimeTickCmd(seq uint64) tea.Cmd {
 	})
 }
 
-func waitForReadyCh(ctx context.Context, ch <-chan struct{}, seq uint64) tea.Cmd {
+func waitForReady(ctx context.Context, waitForReady func(context.Context) error, seq uint64) tea.Cmd {
 	return func() tea.Msg {
-		select {
-		case <-ctx.Done():
+		if err := waitForReady(ctx); err != nil {
 			return runtimeContextDoneMsg{seq: seq}
-		case <-ch:
-			return runtimeReadyMsg{seq: seq}
 		}
+		return runtimeReadyMsg{seq: seq}
 	}
 }
 

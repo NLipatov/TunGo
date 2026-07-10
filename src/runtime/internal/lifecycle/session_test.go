@@ -7,7 +7,7 @@ import (
 )
 
 func TestSessionWait_ReturnsRuntimeError(t *testing.T) {
-	session := New(context.Background(), closedReadyChForTest(), func() {})
+	session := New(func() {})
 	want := errors.New("boom")
 	session.Finish(want)
 
@@ -16,66 +16,61 @@ func TestSessionWait_ReturnsRuntimeError(t *testing.T) {
 	}
 }
 
-func TestSessionWait_SuppressesCancellation(t *testing.T) {
-	session := New(context.Background(), closedReadyChForTest(), func() {})
+func TestSessionWait_ReturnsCancellation(t *testing.T) {
+	session := New(func() {})
 	session.Finish(context.Canceled)
 
-	if got := session.Wait(); got != nil {
-		t.Fatalf("expected nil, got %v", got)
-	}
-}
-
-func TestSessionWait_SuppressesErrorsAfterContextDone(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	session := New(ctx, closedReadyChForTest(), cancel)
-	cancel()
-	session.Finish(errors.New("late error"))
-
-	if got := session.Wait(); got != nil {
-		t.Fatalf("expected nil, got %v", got)
+	if got := session.Wait(); !errors.Is(got, context.Canceled) {
+		t.Fatalf("expected context cancellation, got %v", got)
 	}
 }
 
 func TestSessionAccessorsAndStop(t *testing.T) {
-	readyCh := closedReadyChForTest()
-	stopped := false
-	session := New(context.Background(), readyCh, func() { stopped = true })
-
-	if session.Ready() != readyCh {
-		t.Fatal("expected Ready to return configured channel")
-	}
-	if session.Done() == nil {
-		t.Fatal("expected Done channel")
-	}
-	if session.Err() != nil {
-		t.Fatalf("expected nil initial error, got %v", session.Err())
-	}
+	stopCalls := 0
+	session := New(func() { stopCalls++ })
 
 	session.Stop()
-	if !stopped {
-		t.Fatal("expected Stop to call cancel function")
+	session.Stop()
+	if stopCalls != 1 {
+		t.Fatalf("expected Stop to invoke callback once, got %d", stopCalls)
 	}
 }
 
-func TestSessionNilContext(t *testing.T) {
-	session := New(nil, closedReadyChForTest(), func() {})
-	session.Finish(errors.New("runtime failed"))
+func TestSessionMarkReady_IsIdempotent(t *testing.T) {
+	session := New(func() {})
+	session.MarkReady()
+	session.MarkReady()
 
-	if got := session.Wait(); got == nil || got.Error() != "runtime failed" {
-		t.Fatalf("expected runtime error with fallback context, got %v", got)
+	if err := session.WaitForReady(context.Background()); err != nil {
+		t.Fatalf("expected ready session, got %v", err)
 	}
 }
 
-func TestClosedReadyCh(t *testing.T) {
-	select {
-	case <-ClosedReadyCh():
-	default:
-		t.Fatal("expected ready channel to be closed")
+func TestSessionWaitForReady_ReturnsTerminalErrorBeforeReady(t *testing.T) {
+	session := New(func() {})
+	want := errors.New("startup failed")
+	session.Finish(want)
+
+	if err := session.WaitForReady(context.Background()); !errors.Is(err, want) {
+		t.Fatalf("expected startup error, got %v", err)
 	}
 }
 
-func closedReadyChForTest() <-chan struct{} {
-	ch := make(chan struct{})
-	close(ch)
-	return ch
+func TestSessionWaitForReady_ReturnsStoppedBeforeReady(t *testing.T) {
+	session := New(func() {})
+	session.Finish(nil)
+
+	if err := session.WaitForReady(context.Background()); !errors.Is(err, ErrStoppedBeforeReady) {
+		t.Fatalf("expected ErrStoppedBeforeReady, got %v", err)
+	}
+}
+
+func TestSessionWaitForReady_ReturnsContextError(t *testing.T) {
+	session := New(func() {})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := session.WaitForReady(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context cancellation, got %v", err)
+	}
 }

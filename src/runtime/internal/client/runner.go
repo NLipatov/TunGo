@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"sync"
 	"time"
 	"tungo/application/network/connection"
 )
@@ -16,7 +15,7 @@ type Runner struct {
 }
 
 type RunOptions struct {
-	ReadyCh chan<- struct{}
+	OnReady func()
 }
 
 func NewRunner(deps AppDependencies, routerFactory connection.TrafficRouterFactory) *Runner {
@@ -33,10 +32,8 @@ func (r *Runner) Run(ctx context.Context, options RunOptions) error {
 		}
 	}()
 
-	var readyOnce sync.Once
-
 	for ctx.Err() == nil {
-		err := r.runAttempt(ctx, options.ReadyCh, &readyOnce)
+		err := r.runAttempt(ctx, options.OnReady)
 		switch {
 		case err == nil:
 			return nil
@@ -58,8 +55,7 @@ func (r *Runner) Run(ctx context.Context, options RunOptions) error {
 
 func (r *Runner) runAttempt(
 	parentCtx context.Context,
-	readyCh chan<- struct{},
-	readyOnce *sync.Once,
+	onReady func(),
 ) error {
 	ctx, cancel := context.WithCancel(parentCtx)
 	defer cancel()
@@ -73,10 +69,8 @@ func (r *Runner) runAttempt(
 	if err != nil {
 		return fmt.Errorf("failed to create router: %w", err)
 	}
-	if readyCh != nil && readyOnce != nil {
-		readyOnce.Do(func() {
-			close(readyCh)
-		})
+	if onReady != nil {
+		onReady()
 	}
 
 	defer func() {

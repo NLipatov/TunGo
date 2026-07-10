@@ -29,8 +29,8 @@ func NewRuntime() (*Runtime, error) {
 	}, nil
 }
 
-func (r *Runtime) Run(ctx context.Context, readyCh chan<- struct{}) error {
-	return r.runner.Run(ctx, RunOptions{ReadyCh: readyCh})
+func (r *Runtime) Run(ctx context.Context, onReady func()) error {
+	return r.runner.Run(ctx, RunOptions{OnReady: onReady})
 }
 
 func setupCrashLog() {
