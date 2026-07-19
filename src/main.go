@@ -7,8 +7,8 @@ import (
 	"os"
 	"time"
 	"tungo/application/commandline"
-	"tungo/application/confgen"
 	"tungo/application/configuration"
+	"tungo/application/runtime"
 	"tungo/application/version"
 	"tungo/domain/app"
 	"tungo/infrastructure/PAL/signal"
@@ -17,7 +17,6 @@ import (
 	"tungo/presentation/elevation"
 	"tungo/presentation/signals/shutdown"
 	"tungo/presentation/ui/tui"
-	"tungo/runtime"
 )
 
 func main() {
@@ -67,7 +66,19 @@ func runCLI(ctx context.Context) error {
 		version.Run()
 		return nil
 	case commandline.CommandServerConfigGenerate:
-		return confgen.Run()
+		serverControl, err := configuration.NewDefaultServerControl()
+		if err != nil {
+			return err
+		}
+		if serverControl == nil {
+			return fmt.Errorf("server configuration is not supported")
+		}
+		generated, err := serverControl.GenerateClientConfiguration()
+		if err != nil {
+			return fmt.Errorf("configuration generation failed: %w", err)
+		}
+		fmt.Println(generated.JSON)
+		return nil
 	case commandline.CommandRuntime:
 		runtimeInstance, err := runtime.New(command.RuntimeMode)
 		if err != nil {

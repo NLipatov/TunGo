@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 	appConfiguration "tungo/application/configuration"
+	"tungo/application/runtime"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/telemetry/trafficstats"
-	"tungo/runtime"
 	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"

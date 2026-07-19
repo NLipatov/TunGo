@@ -15,14 +15,21 @@ type hostResolver interface {
 	ResolveIPv6() (string, error)
 }
 
+type serverConfigurationManager interface {
+	Configuration() (*serverConfiguration.Configuration, error)
+	IncrementClientCounter() error
+	AddAllowedPeer(peer serverConfiguration.AllowedPeer) error
+	EnsureIPv6Subnets() error
+}
+
 type Generator struct {
 	resolver                   hostResolver
-	serverConfigurationManager serverConfiguration.ConfigurationManager
+	serverConfigurationManager serverConfigurationManager
 	keyDeriver                 primitives.KeyDeriver
 }
 
 func NewGenerator(
-	serverConfigurationManager serverConfiguration.ConfigurationManager,
+	serverConfigurationManager serverConfigurationManager,
 	keyDeriver primitives.KeyDeriver,
 	resolver hostResolver,
 ) *Generator {

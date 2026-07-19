@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"tungo/runtime"
+	"tungo/application/runtime"
 )
 
 // sessionSelectorFailStub is a Selector stub that always returns an error from Select.

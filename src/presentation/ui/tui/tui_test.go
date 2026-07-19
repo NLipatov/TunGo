@@ -6,10 +6,10 @@ import (
 	"testing"
 
 	appConfiguration "tungo/application/configuration"
+	"tungo/application/runtime"
 	"tungo/infrastructure/PAL/service_management/linux/systemd"
 	"tungo/infrastructure/settings"
 	bubbleTea "tungo/presentation/ui/tui/internal/bubble_tea"
-	"tungo/runtime"
 )
 
 func TestNewTUI(t *testing.T) {

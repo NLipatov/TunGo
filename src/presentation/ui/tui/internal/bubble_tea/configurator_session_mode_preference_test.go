@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"tungo/runtime"
+	"tungo/application/runtime"
 
 	tea "charm.land/bubbletea/v2"
 )

@@ -10,8 +10,8 @@ import (
 	"unicode/utf8"
 
 	appConfiguration "tungo/application/configuration"
+	"tungo/application/runtime"
 	"tungo/infrastructure/PAL/service_management/linux/systemd"
-	"tungo/runtime"
 
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/textinput"
@@ -882,13 +882,13 @@ func (m configuratorSessionModel) updateServerSelectScreen(msg tea.KeyPressMsg) 
 		}
 		return m, nil
 	case sessionServerAdd:
-		path, err := m.options.ServerConfigurationControl.GenerateClientConfiguration()
+		generated, err := m.options.ServerConfigurationControl.GenerateClientConfiguration()
 		if err != nil {
 			m.resultErr = err
 			m.done = true
 			return m, tea.Quit
 		}
-		m.notice = fmt.Sprintf("Client configuration saved to %s", path)
+		m.notice = fmt.Sprintf("Client configuration saved to %s", generated.Path)
 		return m, nil
 	case sessionServerManage:
 		peers, err := m.options.ServerConfigurationControl.ListPeers()

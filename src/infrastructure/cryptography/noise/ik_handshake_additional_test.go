@@ -7,7 +7,7 @@ import (
 	"net/netip"
 	"strings"
 	"testing"
-	"tungo/infrastructure/PAL/configuration/server"
+	appConfiguration "tungo/application/configuration"
 
 	noiselib "github.com/flynn/noise"
 )
@@ -229,7 +229,7 @@ func TestIKHandshake_Server_UnderLoadCookieRequiredBranches(t *testing.T) {
 	clientKP, _ := cipherSuite.GenerateKeypair(nil)
 	cm, _ := NewCookieManager()
 
-	allowedPeers := []server.AllowedPeer{
+	allowedPeers := []appConfiguration.ServerPeer{
 		{PublicKey: clientKP.Public, Enabled: true, ClientID: 2},
 	}
 
@@ -381,7 +381,7 @@ func TestIKHandshake_Server_ErrorBranches(t *testing.T) {
 		h := NewIKHandshakeServer(
 			serverKP.Public,
 			serverKP.Private,
-			NewAllowedPeersLookup([]server.AllowedPeer{
+			NewAllowedPeersLookup([]appConfiguration.ServerPeer{
 				{PublicKey: clientKP.Public, Enabled: true, ClientID: 2},
 			}),
 			cm,
@@ -458,7 +458,7 @@ func TestIKHandshake_Server_ErrorBranches(t *testing.T) {
 		h := NewIKHandshakeServer(
 			serverKP.Public,
 			serverKP.Private,
-			NewAllowedPeersLookup([]server.AllowedPeer{
+			NewAllowedPeersLookup([]appConfiguration.ServerPeer{
 				{PublicKey: clientKP.Public, Enabled: true, ClientID: 2},
 			}),
 			nil,

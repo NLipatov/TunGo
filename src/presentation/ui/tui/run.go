@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	appConfiguration "tungo/application/configuration"
+	appRuntime "tungo/application/runtime"
 	bubbleTea "tungo/presentation/ui/tui/internal/bubble_tea"
-	appRuntime "tungo/runtime"
 )
 
 const runtimeLogCaptureCapacity = 1200

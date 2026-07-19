@@ -3,7 +3,7 @@ package commandline
 import (
 	"strings"
 	"testing"
-	"tungo/runtime"
+	"tungo/application/runtime"
 )
 
 func TestParseCommandOK(t *testing.T) {

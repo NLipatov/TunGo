@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 	appConfiguration "tungo/application/configuration"
+	"tungo/application/runtime"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/telemetry/trafficstats"
-	"tungo/runtime"
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"

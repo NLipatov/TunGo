@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"tungo/runtime"
+	"tungo/application/runtime"
 )
 
 type CommandKind uint8

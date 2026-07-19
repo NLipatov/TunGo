@@ -126,14 +126,14 @@ func (c *sessionConfigurationControl) Delete(path string) error {
 	return c.Deleter.Delete(path)
 }
 
-func (c *sessionConfigurationControl) GenerateClientConfiguration() (string, error) {
+func (c *sessionConfigurationControl) GenerateClientConfiguration() (appConfiguration.GeneratedClientConfiguration, error) {
 	if c.generateErr != nil {
-		return "", c.generateErr
+		return appConfiguration.GeneratedClientConfiguration{}, c.generateErr
 	}
 	if c.generatePath != "" {
-		return c.generatePath, nil
+		return appConfiguration.GeneratedClientConfiguration{Path: c.generatePath}, nil
 	}
-	return "/tmp/client_configuration.json.1", nil
+	return appConfiguration.GeneratedClientConfiguration{Path: "/tmp/client_configuration.json.1"}, nil
 }
 
 func (c *sessionConfigurationControl) ListPeers() ([]appConfiguration.ServerPeer, error) {

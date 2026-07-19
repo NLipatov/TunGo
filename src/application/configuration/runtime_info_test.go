@@ -56,6 +56,76 @@ func (m *runtimeInfoServerManager) RemoveAllowedPeer(id int) error {
 func (m *runtimeInfoServerManager) EnsureIPv6Subnets() error { return nil }
 func (m *runtimeInfoServerManager) InvalidateCache()         {}
 
+type pathResolverStub struct {
+	path string
+	err  error
+}
+
+func (r pathResolverStub) Resolve() (string, error) { return r.path, r.err }
+
+func TestClientControlRuntimeConfiguration(t *testing.T) {
+	publicKey := make([]byte, 32)
+	publicKey[0] = 7
+	conf := &clientConfiguration.Configuration{
+		ClientID: 3,
+		Protocol: settings.UDP,
+		UDPSettings: settings.Settings{
+			Addressing: settings.Addressing{
+				IPv4Subnet: netip.MustParsePrefix("10.0.1.0/24"),
+			},
+		},
+		ClientPublicKey: publicKey,
+	}
+	control := clientControl{
+		manager: runtimeInfoClientManager{cfg: conf},
+	}
+
+	got, err := control.ClientRuntimeConfiguration()
+	if err != nil {
+		t.Fatalf("ClientRuntimeConfiguration() error = %v", err)
+	}
+	if got.UDPSettings.IPv4 != netip.MustParseAddr("10.0.1.4") {
+		t.Fatalf("derived IPv4 = %v", got.UDPSettings.IPv4)
+	}
+	got.ClientPublicKey[0] = 9
+	if conf.ClientPublicKey[0] != 7 {
+		t.Fatal("runtime configuration aliases persisted client key")
+	}
+}
+
+func TestServerControlRuntimeConfiguration(t *testing.T) {
+	peerKey := make([]byte, 32)
+	peerKey[0] = 11
+	conf := &serverConfiguration.Configuration{
+		X25519PublicKey:  make([]byte, 32),
+		X25519PrivateKey: make([]byte, 32),
+		EnableTCP:        true,
+		AllowedPeers: []serverConfiguration.AllowedPeer{{
+			Name:      "client-1",
+			PublicKey: peerKey,
+			Enabled:   true,
+			ClientID:  1,
+		}},
+	}
+	manager := &runtimeInfoServerManager{cfg: conf}
+	control := serverControl{
+		resolver: pathResolverStub{path: "/tmp/server.json"},
+		manager:  manager,
+	}
+
+	got, err := control.ServerRuntimeConfiguration()
+	if err != nil {
+		t.Fatalf("ServerRuntimeConfiguration() error = %v", err)
+	}
+	if !got.EnableTCP || len(got.AllowedPeers) != 1 || got.AllowedPeers[0].ClientID != 1 {
+		t.Fatalf("unexpected runtime configuration: %+v", got)
+	}
+	got.AllowedPeers[0].PublicKey[0] = 12
+	if conf.AllowedPeers[0].PublicKey[0] != 11 {
+		t.Fatal("runtime configuration aliases persisted peer key")
+	}
+}
+
 func TestEndpointInfoFromSettings(t *testing.T) {
 	settingsValue := settings.Settings{
 		Protocol: settings.TCP,

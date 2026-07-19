@@ -6,8 +6,8 @@ import (
 	"os"
 
 	"tungo/application/commandline"
+	"tungo/application/runtime"
 	"tungo/infrastructure/PAL/exec_commander"
-	"tungo/runtime"
 )
 
 type UnitInstaller struct {

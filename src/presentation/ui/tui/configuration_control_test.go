@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	appConfiguration "tungo/application/configuration"
 	"tungo/infrastructure/settings"
 )
@@ -39,8 +40,12 @@ func (m configurationControlMock) Delete(string) error {
 	return nil
 }
 
-func (m configurationControlMock) GenerateClientConfiguration() (string, error) {
-	return "", nil
+func (m configurationControlMock) ClientRuntimeConfiguration() (appConfiguration.ClientRuntimeConfiguration, error) {
+	return appConfiguration.ClientRuntimeConfiguration{}, nil
+}
+
+func (m configurationControlMock) GenerateClientConfiguration() (appConfiguration.GeneratedClientConfiguration, error) {
+	return appConfiguration.GeneratedClientConfiguration{}, nil
 }
 
 func (m configurationControlMock) ListPeers() ([]appConfiguration.ServerPeer, error) {
@@ -53,4 +58,15 @@ func (m configurationControlMock) SetPeerEnabled(int, bool) error {
 
 func (m configurationControlMock) RemovePeer(int) error {
 	return nil
+}
+
+func (m configurationControlMock) ServerRuntimeConfiguration() (appConfiguration.ServerRuntimeConfiguration, error) {
+	return appConfiguration.ServerRuntimeConfiguration{}, nil
+}
+
+func (m configurationControlMock) WatchServerRuntimeConfiguration(
+	context.Context,
+	appConfiguration.ServerSessionRevoker,
+	appConfiguration.ServerAllowedPeersUpdater,
+) {
 }

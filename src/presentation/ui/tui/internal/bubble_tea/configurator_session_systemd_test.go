@@ -4,8 +4,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"tungo/application/runtime"
 	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
-	"tungo/runtime"
 
 	tea "charm.land/bubbletea/v2"
 )

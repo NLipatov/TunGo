@@ -3,13 +3,16 @@ package server
 import (
 	"os"
 	"path/filepath"
-	"tungo/infrastructure/PAL/configuration"
 )
+
+type Resolver interface {
+	Resolve() (string, error)
+}
 
 type resolver struct {
 }
 
-func NewServerResolver() configuration.Resolver {
+func NewServerResolver() Resolver {
 	return &resolver{}
 }
 

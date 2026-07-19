@@ -10,11 +10,51 @@ import (
 )
 
 type clientControl struct {
-	observer clientConfiguration.Observer
-	selector clientConfiguration.Selector
-	creator  clientConfiguration.Creator
-	deleter  clientConfiguration.Deleter
-	manager  clientConfiguration.ConfigurationManager
+	observer clientObserver
+	selector clientSelector
+	creator  clientCreator
+	deleter  clientDeleter
+	manager  clientConfigurationManager
+}
+
+type clientObserver interface {
+	Observe() ([]string, error)
+}
+
+type clientSelector interface {
+	Select(path string) error
+}
+
+type clientCreator interface {
+	Create(configuration clientConfiguration.Configuration, name string) error
+}
+
+type clientDeleter interface {
+	Delete(path string) error
+}
+
+type clientConfigurationManager interface {
+	Configuration() (*clientConfiguration.Configuration, error)
+}
+
+func (c *clientControl) ClientRuntimeConfiguration() (ClientRuntimeConfiguration, error) {
+	conf, err := c.manager.Configuration()
+	if err != nil {
+		return ClientRuntimeConfiguration{}, err
+	}
+	if err := conf.ResolveActive(); err != nil {
+		return ClientRuntimeConfiguration{}, err
+	}
+	return ClientRuntimeConfiguration{
+		ClientID:         conf.ClientID,
+		TCPSettings:      conf.TCPSettings,
+		UDPSettings:      conf.UDPSettings,
+		WSSettings:       conf.WSSettings,
+		X25519PublicKey:  append([]byte(nil), conf.X25519PublicKey...),
+		Protocol:         conf.Protocol,
+		ClientPublicKey:  append([]byte(nil), conf.ClientPublicKey...),
+		ClientPrivateKey: append([]byte(nil), conf.ClientPrivateKey...),
+	}, nil
 }
 
 func (c *clientControl) List() ([]string, error) {

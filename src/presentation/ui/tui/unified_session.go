@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"tungo/application/runtime"
 	"tungo/infrastructure/PAL/exec_commander"
 	"tungo/infrastructure/PAL/service_management/linux/systemd"
 	bubbleTea "tungo/presentation/ui/tui/internal/bubble_tea"
-	"tungo/runtime"
 )
 
 // unifiedSessionHandle is the subset of *bubbleTea.UnifiedSession used by TUI.

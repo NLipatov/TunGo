@@ -2,21 +2,21 @@ package client
 
 import (
 	"net/netip"
+	appConfiguration "tungo/application/configuration"
 	"tungo/application/network/routing/tun"
-	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/PAL/network/windows/manager"
 	"tungo/infrastructure/settings"
 )
 
 type PlatformTunManager struct {
-	configuration      client.Configuration
+	configuration      appConfiguration.ClientRuntimeConfiguration
 	connectionSettings settings.Settings
 	// manager is a backing tun.ClientManager implementation, which handles v4/v6 specific
 	manager tun.ClientManager
 }
 
 func NewPlatformTunManager(
-	configuration client.Configuration,
+	configuration appConfiguration.ClientRuntimeConfiguration,
 ) (tun.ClientManager, error) {
 	connectionSettings, connectionSettingsErr := configuration.ActiveSettings()
 	if connectionSettingsErr != nil {

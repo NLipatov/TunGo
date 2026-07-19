@@ -5,7 +5,7 @@ import (
 	"io"
 	"testing"
 
-	"tungo/infrastructure/PAL/configuration/server"
+	appConfiguration "tungo/application/configuration"
 	"tungo/infrastructure/cryptography/noise"
 )
 
@@ -22,7 +22,7 @@ func TestHandshakeFactory_NewHandshake_MissingServerKey(t *testing.T) {
 	}
 
 	f := NewHandshakeFactory(
-		server.Configuration{},
+		appConfiguration.ServerRuntimeConfiguration{},
 		noise.NewAllowedPeersLookup(nil),
 		cookieManager,
 		noise.NewLoadMonitor(1),
@@ -39,7 +39,7 @@ func TestHandshakeFactory_NewHandshake_MissingServerKey(t *testing.T) {
 }
 
 func TestHandshakeFactory_NewHandshake_MissingAllowedPeers(t *testing.T) {
-	cfg := server.Configuration{
+	cfg := appConfiguration.ServerRuntimeConfiguration{
 		X25519PublicKey:  make([]byte, 32),
 		X25519PrivateKey: make([]byte, 32),
 	}

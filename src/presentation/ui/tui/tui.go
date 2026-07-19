@@ -3,8 +3,8 @@ package tui
 import (
 	"fmt"
 	appConfiguration "tungo/application/configuration"
+	appRuntime "tungo/application/runtime"
 	bubbleTea "tungo/presentation/ui/tui/internal/bubble_tea"
-	appRuntime "tungo/runtime"
 )
 
 type TUI struct {
@@ -22,12 +22,12 @@ func New(configurationControls appConfiguration.Controls) (*TUI, error) {
 	return newTUI(configurationControls), nil
 }
 
-func newTUI(configurationControls appConfiguration.Controls) *TUI {
+func newTUI(controls appConfiguration.Controls) *TUI {
 	return &TUI{
 		sessionOptions: bubbleTea.ConfiguratorSessionOptions{
-			ClientConfigurationControl: configurationControls.Client,
-			ServerConfigurationControl: configurationControls.Server,
-			ServerSupported:            configurationControls.ServerSupported(),
+			ClientConfigurationControl: controls.Client,
+			ServerConfigurationControl: controls.Server,
+			ServerSupported:            controls.ServerSupported(),
 		},
 		sessionFactory:          newBubbleTeaUnifiedSession,
 		systemdInstallerFactory: newDefaultSystemdInstaller,

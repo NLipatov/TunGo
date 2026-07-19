@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"tungo/runtime"
+	"tungo/application/runtime"
 
 	tea "charm.land/bubbletea/v2"
 )

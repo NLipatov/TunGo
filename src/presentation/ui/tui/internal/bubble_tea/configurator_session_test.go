@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"tungo/application/runtime"
 	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
 	serverConfiguration "tungo/infrastructure/PAL/configuration/server"
-	"tungo/runtime"
 
 	tea "charm.land/bubbletea/v2"
 )

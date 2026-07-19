@@ -1,26 +1,26 @@
-package readiness
+package runtime
 
 import (
 	"context"
 	"sync"
 )
 
-type Signal struct {
+type readySignal struct {
 	ch   chan struct{}
 	once sync.Once
 }
 
-func NewSignal() *Signal {
-	return &Signal{ch: make(chan struct{})}
+func newReadySignal() *readySignal {
+	return &readySignal{ch: make(chan struct{})}
 }
 
-func (s *Signal) Mark() {
+func (s *readySignal) mark() {
 	s.once.Do(func() {
 		close(s.ch)
 	})
 }
 
-func (s *Signal) Wait(ctx context.Context) error {
+func (s *readySignal) wait(ctx context.Context) error {
 	select {
 	case <-s.ch:
 		return nil

@@ -4,19 +4,19 @@ package client
 
 import (
 	"net/netip"
+	appConfiguration "tungo/application/configuration"
 	"tungo/application/network/routing/tun"
-	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/PAL/network/darwin/manager"
 	"tungo/infrastructure/settings"
 )
 
 type PlatformTunManager struct {
-	configuration      client.Configuration
+	configuration      appConfiguration.ClientRuntimeConfiguration
 	connectionSettings settings.Settings
 	manager            tun.ClientManager
 }
 
-func NewPlatformTunManager(configuration client.Configuration) (tun.ClientManager, error) {
+func NewPlatformTunManager(configuration appConfiguration.ClientRuntimeConfiguration) (tun.ClientManager, error) {
 	connSettings, err := configuration.ActiveSettings()
 	if err != nil {
 		return nil, err

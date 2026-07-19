@@ -1,14 +1,14 @@
 package server
 
 import (
+	appConfiguration "tungo/application/configuration"
 	"tungo/application/network/connection"
-	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/cryptography/noise"
 )
 
 // HandshakeFactory creates Noise IK handshakes for server-side use.
 type HandshakeFactory struct {
-	configuration server.Configuration
+	configuration appConfiguration.ServerRuntimeConfiguration
 	allowedPeers  noise.AllowedPeersLookup
 	cookieManager *noise.CookieManager
 	loadMonitor   *noise.LoadMonitor
@@ -17,7 +17,7 @@ type HandshakeFactory struct {
 // NewHandshakeFactory creates a new HandshakeFactory with IK handshake support.
 // Uses provided allowedPeers for shared runtime updates across workers.
 func NewHandshakeFactory(
-	configuration server.Configuration,
+	configuration appConfiguration.ServerRuntimeConfiguration,
 	allowedPeers noise.AllowedPeersLookup,
 	cookieManager *noise.CookieManager,
 	loadMonitor *noise.LoadMonitor,

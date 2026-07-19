@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	"net/netip"
 	"strings"
+	appConfiguration "tungo/application/configuration"
 	"tungo/application/network/routing/tun"
-	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/PAL/exec_commander"
 	"tungo/infrastructure/PAL/network/linux/epoll"
 	"tungo/infrastructure/PAL/network/linux/ioctl"
@@ -17,7 +17,7 @@ import (
 
 // PlatformTunManager Linux-specific TunDevice manager
 type PlatformTunManager struct {
-	configuration client.Configuration
+	configuration appConfiguration.ClientRuntimeConfiguration
 	ip            ip.Contract
 	ioctl         ioctl.Contract
 	mss           mssclamp.Contract
@@ -26,7 +26,7 @@ type PlatformTunManager struct {
 }
 
 func NewPlatformTunManager(
-	configuration client.Configuration,
+	configuration appConfiguration.ClientRuntimeConfiguration,
 ) (tun.ClientManager, error) {
 	return &PlatformTunManager{
 		configuration: configuration,

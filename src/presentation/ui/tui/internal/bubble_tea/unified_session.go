@@ -7,7 +7,7 @@ import (
 	"os"
 	"sync"
 
-	"tungo/runtime"
+	"tungo/application/runtime"
 
 	tea "charm.land/bubbletea/v2"
 )

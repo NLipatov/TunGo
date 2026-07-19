@@ -1,4 +1,4 @@
-package readiness
+package runtime
 
 import (
 	"context"
@@ -7,32 +7,32 @@ import (
 )
 
 func TestSignalWait_ReturnsAfterMark(t *testing.T) {
-	signal := NewSignal()
-	signal.Mark()
-	signal.Mark()
+	signal := newReadySignal()
+	signal.mark()
+	signal.mark()
 
-	if err := signal.Wait(context.Background()); err != nil {
+	if err := signal.wait(context.Background()); err != nil {
 		t.Fatalf("expected ready signal, got %v", err)
 	}
 }
 
 func TestSignalWait_ReturnsContextError(t *testing.T) {
-	signal := NewSignal()
+	signal := newReadySignal()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	if err := signal.Wait(ctx); !errors.Is(err, context.Canceled) {
+	if err := signal.wait(ctx); !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context cancellation, got %v", err)
 	}
 }
 
 func TestSignalWait_PrefersReadyOverCanceledContext(t *testing.T) {
-	signal := NewSignal()
-	signal.Mark()
+	signal := newReadySignal()
+	signal.mark()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	if err := signal.Wait(ctx); err != nil {
+	if err := signal.wait(ctx); err != nil {
 		t.Fatalf("expected ready signal to win, got %v", err)
 	}
 }

@@ -9,8 +9,8 @@ import (
 	"net/netip"
 	"sync"
 	"time"
+	appConfiguration "tungo/application/configuration"
 	"tungo/application/network/connection"
-	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
 	"tungo/infrastructure/cryptography/noise"
@@ -23,10 +23,10 @@ import (
 )
 
 type ConnectionFactory struct {
-	conf client.Configuration
+	conf appConfiguration.ClientRuntimeConfiguration
 }
 
-func NewConnectionFactory(conf client.Configuration) connection.Factory {
+func NewConnectionFactory(conf appConfiguration.ClientRuntimeConfiguration) connection.Factory {
 	return &ConnectionFactory{
 		conf: conf,
 	}

@@ -1,4 +1,4 @@
-package client
+package runtime
 
 import (
 	"context"
@@ -11,7 +11,6 @@ import (
 	"tungo/application/network/connection"
 	"tungo/application/network/routing"
 	"tungo/application/network/routing/tun"
-	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
 )
 
@@ -53,13 +52,15 @@ type runtimeTestDeps struct {
 	tun runtimeTestTunManager
 }
 
-func (d *runtimeTestDeps) Initialize() error                     { return nil }
-func (d *runtimeTestDeps) Configuration() client.Configuration   { return client.Configuration{} }
-func (d *runtimeTestDeps) ConnectionFactory() connection.Factory { return runtimeTestConnFactory{} }
-func (d *runtimeTestDeps) WorkerFactory() connection.ClientWorkerFactory {
-	return runtimeTestWorkerFactory{}
+func (d *runtimeTestDeps) newRuntime(routerFactory connection.TrafficRouterFactory) *clientRuntime {
+	return &clientRuntime{
+		connectionFactory: runtimeTestConnFactory{},
+		workerFactory:     runtimeTestWorkerFactory{},
+		tunManager:        &d.tun,
+		routerFactory:     routerFactory,
+		ready:             newReadySignal(),
+	}
 }
-func (d *runtimeTestDeps) TunManager() tun.ClientManager { return &d.tun }
 
 type runtimeTestConnFactory struct{}
 type runtimeTestWorkerFactory struct{}
@@ -95,7 +96,7 @@ func (f runtimeTestRouterFactory) CreateRouter(
 func TestRunAttempt_SignalsReadyAndRoutesTraffic(t *testing.T) {
 	deps := &runtimeTestDeps{}
 	routeStarted := make(chan struct{})
-	r := NewRunner(deps, runtimeTestRouterFactory{
+	r := deps.newRuntime(runtimeTestRouterFactory{
 		create: func(context.Context, connection.Factory, tun.ClientManager, connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
 			return runtimeTestRouter{
 				route: func(ctx context.Context) error {
@@ -116,7 +117,7 @@ func TestRunAttempt_SignalsReadyAndRoutesTraffic(t *testing.T) {
 	readyCtx, cancelReady := context.WithTimeout(context.Background(), time.Second)
 	defer cancelReady()
 	if err := r.WaitForReady(readyCtx); err != nil {
-		t.Fatalf("expected runner to become ready, got %v", err)
+		t.Fatalf("expected runtime to become ready, got %v", err)
 	}
 	select {
 	case <-routeStarted:
@@ -132,7 +133,7 @@ func TestRunAttempt_SignalsReadyAndRoutesTraffic(t *testing.T) {
 
 func TestRunAttempt_CreateRouterErrorDoesNotSignalReady(t *testing.T) {
 	deps := &runtimeTestDeps{}
-	r := NewRunner(deps, runtimeTestRouterFactory{
+	r := deps.newRuntime(runtimeTestRouterFactory{
 		create: func(context.Context, connection.Factory, tun.ClientManager, connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
 			return nil, nil, nil, errors.New("create failed")
 		},
@@ -151,7 +152,7 @@ func TestRunAttempt_CreateRouterErrorDoesNotSignalReady(t *testing.T) {
 
 func TestRun_CancelDuringReconnectDelay(t *testing.T) {
 	deps := &runtimeTestDeps{}
-	r := NewRunner(deps, runtimeTestRouterFactory{
+	r := deps.newRuntime(runtimeTestRouterFactory{
 		create: func(context.Context, connection.Factory, tun.ClientManager, connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
 			return runtimeTestRouter{
 				route: func(context.Context) error { return errors.New("boom") },
@@ -170,14 +171,14 @@ func TestRun_CancelDuringReconnectDelay(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):
-		t.Fatal("runner did not stop after context cancellation")
+		t.Fatal("runtime did not stop after context cancellation")
 	}
 }
 
 func TestRun_ReconnectDelayAndRecovery(t *testing.T) {
 	callCount := 0
 	deps := &runtimeTestDeps{}
-	r := NewRunner(deps, runtimeTestRouterFactory{
+	r := deps.newRuntime(runtimeTestRouterFactory{
 		create: func(context.Context, connection.Factory, tun.ClientManager, connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
 			callCount++
 			return runtimeTestRouter{
@@ -199,13 +200,13 @@ func TestRun_ReconnectDelayAndRecovery(t *testing.T) {
 		t.Fatalf("expected at least 2 session attempts, got %d", callCount)
 	}
 	if err := r.WaitForReady(context.Background()); err != nil {
-		t.Fatalf("expected runner to report readiness, got %v", err)
+		t.Fatalf("expected runtime to report readiness, got %v", err)
 	}
 }
 
 func TestRun_ContextAlreadyCanceled(t *testing.T) {
 	deps := &runtimeTestDeps{}
-	r := NewRunner(deps, runtimeTestRouterFactory{
+	r := deps.newRuntime(runtimeTestRouterFactory{
 		create: func(context.Context, connection.Factory, tun.ClientManager, connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
 			return runtimeTestRouter{route: func(context.Context) error { return nil }}, &runtimeTestTransport{}, &runtimeTestTun{}, nil
 		},
@@ -213,7 +214,7 @@ func TestRun_ContextAlreadyCanceled(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	err := r.Run(ctx)
+	err := r.run(ctx)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled, got %v", err)
 	}
@@ -223,7 +224,7 @@ func TestRun_LogsDisposeErrorBranches(t *testing.T) {
 	deps := &runtimeTestDeps{
 		tun: runtimeTestTunManager{disposeErr: errors.New("dispose error")},
 	}
-	r := NewRunner(deps, runtimeTestRouterFactory{
+	r := deps.newRuntime(runtimeTestRouterFactory{
 		create: func(context.Context, connection.Factory, tun.ClientManager, connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
 			return runtimeTestRouter{
 				route: func(context.Context) error { return nil },
@@ -238,15 +239,13 @@ func TestRun_LogsDisposeErrorBranches(t *testing.T) {
 
 func TestRuntimeRun_NormalizesCancellation(t *testing.T) {
 	deps := &runtimeTestDeps{}
-	runtimeInstance := &Runtime{
-		runner: NewRunner(deps, runtimeTestRouterFactory{
-			create: func(context.Context, connection.Factory, tun.ClientManager, connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
-				return runtimeTestRouter{
-					route: func(context.Context) error { return context.Canceled },
-				}, &runtimeTestTransport{}, &runtimeTestTun{}, nil
-			},
-		}),
-	}
+	runtimeInstance := deps.newRuntime(runtimeTestRouterFactory{
+		create: func(context.Context, connection.Factory, tun.ClientManager, connection.ClientWorkerFactory) (routing.Router, connection.Transport, tun.Device, error) {
+			return runtimeTestRouter{
+				route: func(context.Context) error { return context.Canceled },
+			}, &runtimeTestTransport{}, &runtimeTestTun{}, nil
+		},
+	})
 
 	if err := runtimeInstance.Run(context.Background()); err != nil {
 		t.Fatalf("expected clean cancellation, got %v", err)

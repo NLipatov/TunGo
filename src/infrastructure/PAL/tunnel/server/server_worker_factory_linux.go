@@ -7,8 +7,8 @@ import (
 	"net"
 	"net/netip"
 	"sync"
+	appConfiguration "tungo/application/configuration"
 	"tungo/application/network/routing"
-	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network/ip"
 	wsServer "tungo/infrastructure/network/ws/server/factory"
@@ -21,31 +21,31 @@ import (
 )
 
 type WorkerFactory struct {
-	loggerFactory        loggerFactory
-	configurationManager server.ConfigurationManager
-	runtime              *Runtime
+	loggerFactory loggerFactory
+	configuration appConfiguration.ServerRuntimeConfiguration
+	runtime       *Runtime
 }
 
 func NewWorkerFactory(
 	runtime *Runtime,
-	manager server.ConfigurationManager,
+	configuration appConfiguration.ServerRuntimeConfiguration,
 ) (*WorkerFactory, error) {
 	return &WorkerFactory{
-		loggerFactory:        newDefaultLoggerFactory(),
-		configurationManager: manager,
-		runtime:              runtime,
+		loggerFactory: newDefaultLoggerFactory(),
+		configuration: configuration,
+		runtime:       runtime,
 	}, nil
 }
 
 func NewTestWorkerFactory(
 	loggerFactory loggerFactory,
 	runtime *Runtime,
-	manager server.ConfigurationManager,
+	configuration appConfiguration.ServerRuntimeConfiguration,
 ) (*WorkerFactory, error) {
 	return &WorkerFactory{
-		loggerFactory:        loggerFactory,
-		configurationManager: manager,
-		runtime:              runtime,
+		loggerFactory: loggerFactory,
+		configuration: configuration,
+		runtime:       runtime,
 	}, nil
 }
 
@@ -83,11 +83,6 @@ func (s *WorkerFactory) createTCPWorker(
 		sessionManager,
 	)
 
-	conf, confErr := s.configurationManager.Configuration()
-	if confErr != nil {
-		return nil, confErr
-	}
-
 	addrPort, addrPortErr := s.addrPortToListen(workerSettings.Server, workerSettings.Port)
 	if addrPortErr != nil {
 		return nil, addrPortErr
@@ -100,7 +95,7 @@ func (s *WorkerFactory) createTCPWorker(
 
 	logger := s.loggerFactory.newLogger()
 
-	handshakeFactory := NewHandshakeFactory(*conf, s.runtime.allowedPeers, s.runtime.cookieManager, s.runtime.loadMonitor)
+	handshakeFactory := NewHandshakeFactory(s.configuration, s.runtime.allowedPeers, s.runtime.cookieManager, s.runtime.loadMonitor)
 
 	registrar := tcp_registration.NewRegistrar(
 		logger,
@@ -140,11 +135,6 @@ func (s *WorkerFactory) createWSWorker(
 		sessionManager,
 	)
 
-	conf, confErr := s.configurationManager.Configuration()
-	if confErr != nil {
-		return nil, confErr
-	}
-
 	addrPort, addrPortErr := s.addrPortToListen(workerSettings.Server, workerSettings.Port)
 	if addrPortErr != nil {
 		return nil, addrPortErr
@@ -164,7 +154,7 @@ func (s *WorkerFactory) createWSWorker(
 
 	logger := s.loggerFactory.newLogger()
 
-	handshakeFactory := NewHandshakeFactory(*conf, s.runtime.allowedPeers, s.runtime.cookieManager, s.runtime.loadMonitor)
+	handshakeFactory := NewHandshakeFactory(s.configuration, s.runtime.allowedPeers, s.runtime.cookieManager, s.runtime.loadMonitor)
 
 	registrar := tcp_registration.NewRegistrar(
 		logger,
@@ -197,11 +187,6 @@ func (s *WorkerFactory) createUDPWorker(
 		s.runtime.sessionRevoker.Register(revocable)
 	}
 
-	conf, confErr := s.configurationManager.Configuration()
-	if confErr != nil {
-		return nil, confErr
-	}
-
 	addrPort, addrPortErr := s.addrPortToListen(workerSettings.Server, workerSettings.Port)
 	if addrPortErr != nil {
 		return nil, addrPortErr
@@ -221,7 +206,7 @@ func (s *WorkerFactory) createUDPWorker(
 		sessionManager,
 	)
 
-	handshakeFactory := NewHandshakeFactory(*conf, s.runtime.allowedPeers, s.runtime.cookieManager, s.runtime.loadMonitor)
+	handshakeFactory := NewHandshakeFactory(s.configuration, s.runtime.allowedPeers, s.runtime.cookieManager, s.runtime.loadMonitor)
 
 	registrar := udp_registration.NewRegistrar(
 		ctx,

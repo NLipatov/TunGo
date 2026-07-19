@@ -7,9 +7,9 @@ import (
 	"net"
 	"net/netip"
 	"time"
+	appConfiguration "tungo/application/configuration"
 	"tungo/application/network/connection"
 	"tungo/application/network/routing"
-	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
 	"tungo/infrastructure/network/udp/adapters"
 	"tungo/infrastructure/settings"
@@ -18,10 +18,10 @@ import (
 )
 
 type WorkerFactory struct {
-	conf client.Configuration
+	conf appConfiguration.ClientRuntimeConfiguration
 }
 
-func NewWorkerFactory(configuration client.Configuration) connection.ClientWorkerFactory {
+func NewWorkerFactory(configuration appConfiguration.ClientRuntimeConfiguration) connection.ClientWorkerFactory {
 	return &WorkerFactory{
 		conf: configuration,
 	}
