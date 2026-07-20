@@ -109,11 +109,18 @@ func TestDefaultCreator_Create_Success(t *testing.T) {
 }
 
 func TestDefaultCreator_Create_ResolveError(t *testing.T) {
-	resolver := &creatorTestResolver{path: "", err: errors.New("no path")}
+	wantErr := errors.New("no path")
+	resolver := &creatorTestResolver{path: "", err: wantErr}
 	creator := NewDefaultCreator(resolver)
 	err := creator.Create((&creatorTestConfigProvider{}).mockedConfig(), "x")
-	if err == nil || err.Error() != "no path" {
-		t.Errorf("Expected resolve error \"no path\", got %v", err)
+	if err == nil {
+		t.Fatal("expected resolve error, got nil")
+	}
+	if !errors.Is(err, wantErr) {
+		t.Errorf("expected wrapped resolve error %v, got %v", wantErr, err)
+	}
+	if !strings.Contains(err.Error(), "resolve default client configuration path") {
+		t.Errorf("expected resolve context, got %v", err)
 	}
 }
 
@@ -143,7 +150,10 @@ func TestDefaultCreator_Create_WriteError(t *testing.T) {
 	// Attempting to write should fail due to insufficient permissions
 	err := creator.Create((&creatorTestConfigProvider{}).mockedConfig(), "y")
 	if err == nil {
-		t.Error("expected write error due to read-only directory, got nil")
+		t.Fatal("expected write error due to read-only directory, got nil")
+	}
+	if !strings.Contains(err.Error(), "write client configuration") {
+		t.Errorf("expected write context, got %v", err)
 	}
 }
 
@@ -184,6 +194,9 @@ func TestDefaultCreator_Create_MkdirAllError(t *testing.T) {
 
 	err := creator.Create(cfg, "test")
 	if err == nil {
-		t.Fatal("Expected MkdirAll error, got nil")
+		t.Fatal("expected MkdirAll error, got nil")
+	}
+	if !strings.Contains(err.Error(), "create client configuration directory") {
+		t.Errorf("expected directory creation context, got %v", err)
 	}
 }
