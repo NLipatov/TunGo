@@ -3,6 +3,7 @@ package configuration
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"unicode"
 
@@ -13,7 +14,6 @@ type clientControl struct {
 	observer clientObserver
 	selector clientSelector
 	creator  clientCreator
-	deleter  clientDeleter
 	manager  clientConfigurationManager
 }
 
@@ -27,10 +27,6 @@ type clientSelector interface {
 
 type clientCreator interface {
 	Create(configuration clientConfiguration.Configuration, name string) error
-}
-
-type clientDeleter interface {
-	Delete(path string) error
 }
 
 type clientConfigurationManager interface {
@@ -99,7 +95,7 @@ func (c *clientControl) CreateFromJSON(name, rawJSON string) error {
 }
 
 func (c *clientControl) Delete(path string) error {
-	return c.deleter.Delete(path)
+	return os.Remove(path)
 }
 
 func parseClientConfigurationJSON(input string) (clientConfiguration.Configuration, error) {

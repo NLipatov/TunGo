@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/netip"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -24,10 +26,6 @@ type clientCreatorFunc func(clientConfiguration.Configuration, string) error
 func (f clientCreatorFunc) Create(cfg clientConfiguration.Configuration, name string) error {
 	return f(cfg, name)
 }
-
-type clientDeleterFunc func(string) error
-
-func (f clientDeleterFunc) Delete(path string) error { return f(path) }
 
 func mustHostParser(raw string) settings.Host {
 	h, err := settings.NewHost(raw)
@@ -147,7 +145,6 @@ func TestClientControlDelegates(t *testing.T) {
 	wantErr := errors.New("delegate failed")
 	selectedPath := ""
 	createdName := ""
-	deletedPath := ""
 	control := clientControl{
 		observer: clientObserverFunc(func() ([]string, error) {
 			return []string{"a", "b"}, nil
@@ -158,10 +155,6 @@ func TestClientControlDelegates(t *testing.T) {
 		}),
 		creator: clientCreatorFunc(func(_ clientConfiguration.Configuration, name string) error {
 			createdName = name
-			return nil
-		}),
-		deleter: clientDeleterFunc(func(path string) error {
-			deletedPath = path
 			return nil
 		}),
 		manager: runtimeInfoClientManager{cfg: &clientConfiguration.Configuration{}},
@@ -185,11 +178,20 @@ func TestClientControlDelegates(t *testing.T) {
 	if createdName != "new-client" {
 		t.Fatalf("created name = %q", createdName)
 	}
-	if err := control.Delete("old.json"); err != nil {
+}
+
+func TestClientControlDelete(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "client.json")
+	if err := os.WriteFile(path, []byte("configuration"), 0600); err != nil {
+		t.Fatalf("write test configuration: %v", err)
+	}
+
+	control := NewDefaultClientControl()
+	if err := control.Delete(path); err != nil {
 		t.Fatalf("Delete() error = %v", err)
 	}
-	if deletedPath != "old.json" {
-		t.Fatalf("deleted path = %q", deletedPath)
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected deleted configuration, stat error = %v", err)
 	}
 }
 

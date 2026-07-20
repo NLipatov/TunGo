@@ -24,7 +24,6 @@ func NewDefaultClientControl() ClientControl {
 		observer: clientConfiguration.NewDefaultObserver(clientResolver),
 		selector: clientConfiguration.NewDefaultSelector(clientResolver),
 		creator:  clientConfiguration.NewDefaultCreator(clientResolver),
-		deleter:  clientConfiguration.NewDefaultDeleter(clientResolver),
 		manager:  clientConfiguration.NewManager(),
 	}
 }
