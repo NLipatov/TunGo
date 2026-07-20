@@ -2,34 +2,27 @@ package client
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 )
 
-type reader struct {
-	path string
-}
-
-func newReader(path string) *reader {
-	return &reader{
-		path: path,
-	}
-}
-
-func (c *reader) read() (*Configuration, error) {
+func read(path string) (*Configuration, error) {
 	var configuration Configuration
-	data, err := os.ReadFile(c.path)
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, err
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("client configuration %q does not exist: %w", path, err)
+		}
+		return nil, fmt.Errorf("failed to read client configuration %q: %w", path, err)
 	}
 
-	err = json.Unmarshal(data, &configuration)
-	if err != nil {
-		return nil, err
+	if err := json.Unmarshal(data, &configuration); err != nil {
+		return nil, fmt.Errorf("invalid client configuration %q: %w", path, err)
 	}
 
 	if err := configuration.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid client configuration (%s): %w", c.path, err)
+		return nil, fmt.Errorf("invalid client configuration %q: %w", path, err)
 	}
 
 	return &configuration, nil

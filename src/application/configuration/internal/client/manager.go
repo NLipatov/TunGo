@@ -1,37 +1,19 @@
 package client
 
-import (
-	"fmt"
-	"os"
-)
-
-type ConfigurationManager interface {
-	Configuration() (*Configuration, error)
-}
-
 type Manager struct {
 	resolver Resolver
 }
 
-func NewManager() ConfigurationManager {
+func NewManager() *Manager {
 	return &Manager{
 		resolver: NewDefaultResolver(),
 	}
 }
 
 func (m *Manager) Configuration() (*Configuration, error) {
-	path, pathErr := m.resolver.Resolve()
-	if pathErr != nil {
-		return nil, pathErr
+	path, err := m.resolver.Resolve()
+	if err != nil {
+		return nil, err
 	}
-
-	_, statErr := os.Stat(path)
-	if statErr != nil {
-		if os.IsNotExist(statErr) {
-			return nil, fmt.Errorf("configuration file %s does not exist", path)
-		}
-		return nil, statErr
-	}
-
-	return newReader(path).read()
+	return read(path)
 }

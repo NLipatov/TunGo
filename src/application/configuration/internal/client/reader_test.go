@@ -2,6 +2,7 @@ package client
 
 import (
 	"encoding/json"
+	"errors"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -47,8 +48,7 @@ func validTestConfig() Configuration {
 func TestReaderReadSuccess(t *testing.T) {
 	expectedConfig := validTestConfig()
 	path := createTempClientConfigFile(t, expectedConfig)
-	r := newReader(path)
-	config, err := r.read()
+	config, err := read(path)
 	if err != nil {
 		t.Fatalf("read() returned error: %v", err)
 	}
@@ -60,10 +60,12 @@ func TestReaderReadSuccess(t *testing.T) {
 }
 
 func TestReaderReadFileError(t *testing.T) {
-	r := newReader("/non/existent/file.json")
-	_, err := r.read()
+	_, err := read("/non/existent/file.json")
 	if err == nil {
 		t.Fatal("expected error for non-existent file, got nil")
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected wrapped os.ErrNotExist, got %v", err)
 	}
 }
 
@@ -73,9 +75,12 @@ func TestReaderReadInvalidJSON(t *testing.T) {
 	if err := os.WriteFile(path, []byte("{invalid json"), 0644); err != nil {
 		t.Fatalf("failed to write file: %v", err)
 	}
-	r := newReader(path)
-	_, err := r.read()
+	_, err := read(path)
 	if err == nil {
 		t.Fatal("expected error for invalid JSON, got nil")
+	}
+	var syntaxErr *json.SyntaxError
+	if !errors.As(err, &syntaxErr) {
+		t.Fatalf("expected wrapped json.SyntaxError, got %v", err)
 	}
 }
