@@ -21,8 +21,8 @@ func (f *selectorTestResolver) Resolve() (string, error) {
 	return f.resolvePath, f.err
 }
 
-// TestSelectorStatError checks that Select returns an error when the configuration file does not exist.
-func TestSelectorStatError(t *testing.T) {
+// TestSelectorReadFileNotExist checks that Select returns an error when the configuration file does not exist.
+func TestSelectorReadFileNotExist(t *testing.T) {
 	nonExistingFile := "/non/existent/config.yaml"
 	resolver := &selectorTestResolver{resolvePath: "/dummy/dest.yaml"}
 	selector := NewDefaultSelector(resolver)

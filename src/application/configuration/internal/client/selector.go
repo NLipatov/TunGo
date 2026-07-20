@@ -1,9 +1,6 @@
 package client
 
-import (
-	"fmt"
-	"os"
-)
+import "os"
 
 // Selector is used to choose configuration as active
 type Selector interface {
@@ -21,13 +18,6 @@ func NewDefaultSelector(resolver Resolver) Selector {
 }
 
 func (s *DefaultSelector) Select(confPath string) error {
-	// check if given configuration exists
-	_, statErr := os.Stat(confPath)
-	if statErr != nil {
-		return fmt.Errorf("configuration cannot be used as file %s does not exist", confPath)
-	}
-
-	// read given configuration data
 	confData, confDataErr := os.ReadFile(confPath)
 	if confDataErr != nil {
 		return confDataErr
