@@ -2,11 +2,11 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"tungo/infrastructure/PAL/stat"
 	"tungo/infrastructure/settings"
 )
 
@@ -31,7 +31,7 @@ func createTempConfigFile(t *testing.T, data any) string {
 
 func TestRead_Happy_NoEnv_EnsuresDefaults(t *testing.T) {
 	path := createTempConfigFile(t, struct{}{}) // empty JSON
-	r := newDefaultReader(path, stat.NewDefaultStat())
+	r := newDefaultReader(path)
 
 	// Ensure no env noise
 	_ = os.Unsetenv("ServerIP")
@@ -51,30 +51,19 @@ func TestRead_Happy_NoEnv_EnsuresDefaults(t *testing.T) {
 }
 
 //
-// ---------- Stat() error branches ----------
+// ---------- Read errors ----------
 //
 
 func TestRead_FileDoesNotExist(t *testing.T) {
-	r := newDefaultReader("/definitely/missing/conf.json", stat.NewDefaultStat())
+	r := newDefaultReader("/definitely/missing/conf.json")
 	_, err := r.read()
 	if err == nil || !strings.Contains(err.Error(), "does not exist") {
 		t.Fatalf("expected 'does not exist', got: %v", err)
 	}
-}
-
-func TestRead_StatOtherError(t *testing.T) {
-	// Path with NUL triggers a non-ENOENT error on most systems.
-	bad := string([]byte{0})
-	r := newDefaultReader(bad, stat.NewDefaultStat())
-	_, err := r.read()
-	if err == nil || !strings.Contains(err.Error(), "configuration file not found") {
-		t.Fatalf("expected 'configuration file not found', got: %v", err)
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected wrapped os.ErrNotExist, got: %v", err)
 	}
 }
-
-//
-// ---------- ReadFile / Unmarshal error branches ----------
-//
 
 func TestRead_FileUnreadable_IsDirectory(t *testing.T) {
 	dir := t.TempDir()
@@ -82,7 +71,7 @@ func TestRead_FileUnreadable_IsDirectory(t *testing.T) {
 	if err := os.Mkdir(asDir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	r := newDefaultReader(asDir, stat.NewDefaultStat())
+	r := newDefaultReader(asDir)
 	_, err := r.read()
 	if err == nil || !strings.Contains(err.Error(), "is unreadable") {
 		t.Fatalf("expected 'is unreadable', got: %v", err)
@@ -95,10 +84,14 @@ func TestRead_InvalidJSON(t *testing.T) {
 	if err := os.WriteFile(path, []byte("{invalid json"), 0o644); err != nil {
 		t.Fatalf("write invalid json: %v", err)
 	}
-	r := newDefaultReader(path, stat.NewDefaultStat())
+	r := newDefaultReader(path)
 	_, err := r.read()
 	if err == nil || !strings.Contains(err.Error(), "is invalid") {
 		t.Fatalf("expected 'is invalid', got: %v", err)
+	}
+	var syntaxErr *json.SyntaxError
+	if !errors.As(err, &syntaxErr) {
+		t.Fatalf("expected wrapped json.SyntaxError, got: %v", err)
 	}
 }
 
@@ -116,7 +109,7 @@ func TestRead_ValidateFails_DuplicatePort_IncludesPathAndReason(t *testing.T) {
 		},
 	}
 	path := createTempConfigFile(t, initial)
-	r := newDefaultReader(path, stat.NewDefaultStat())
+	r := newDefaultReader(path)
 
 	_, err := r.read()
 	if err == nil {
@@ -137,7 +130,7 @@ func TestRead_ServerIP_Override_SetAndEmpty(t *testing.T) {
 
 	// Case 1: set
 	t.Setenv("ServerIP", "10.0.0.1")
-	conf, err := newDefaultReader(path, stat.NewDefaultStat()).read()
+	conf, err := newDefaultReader(path).read()
 	if err != nil {
 		t.Fatalf("read error: %v", err)
 	}
@@ -147,7 +140,7 @@ func TestRead_ServerIP_Override_SetAndEmpty(t *testing.T) {
 
 	// Case 2: empty string -> ignored (branch env == "")
 	t.Setenv("ServerIP", "")
-	conf, err = newDefaultReader(path, stat.NewDefaultStat()).read()
+	conf, err = newDefaultReader(path).read()
 	if err != nil {
 		t.Fatalf("read error: %v", err)
 	}
@@ -165,7 +158,7 @@ func TestRead_EnableFlags_Valid_Invalid_Unset_AllBranches(t *testing.T) {
 	t.Setenv("EnableUDP", "meh")
 	t.Setenv("EnableTCP", "nope")
 	t.Setenv("EnableWS", "y")
-	conf, err := newDefaultReader(path, stat.NewDefaultStat()).read()
+	conf, err := newDefaultReader(path).read()
 	if err != nil {
 		t.Fatalf("read error: %v", err)
 	}
@@ -177,7 +170,7 @@ func TestRead_EnableFlags_Valid_Invalid_Unset_AllBranches(t *testing.T) {
 	t.Setenv("EnableUDP", "true")
 	t.Setenv("EnableTCP", "true")
 	t.Setenv("EnableWS", "true")
-	conf, err = newDefaultReader(path, stat.NewDefaultStat()).read()
+	conf, err = newDefaultReader(path).read()
 	if err != nil {
 		t.Fatalf("read error: %v", err)
 	}
@@ -189,7 +182,7 @@ func TestRead_EnableFlags_Valid_Invalid_Unset_AllBranches(t *testing.T) {
 	t.Setenv("EnableUDP", "false")
 	t.Setenv("EnableTCP", "false")
 	t.Setenv("EnableWS", "false")
-	conf, err = newDefaultReader(path, stat.NewDefaultStat()).read()
+	conf, err = newDefaultReader(path).read()
 	if err != nil {
 		t.Fatalf("read error: %v", err)
 	}
@@ -201,7 +194,7 @@ func TestRead_EnableFlags_Valid_Invalid_Unset_AllBranches(t *testing.T) {
 	_ = os.Unsetenv("EnableUDP")
 	_ = os.Unsetenv("EnableTCP")
 	_ = os.Unsetenv("EnableWS")
-	conf, err = newDefaultReader(path, stat.NewDefaultStat()).read()
+	conf, err = newDefaultReader(path).read()
 	if err != nil {
 		t.Fatalf("read error: %v", err)
 	}

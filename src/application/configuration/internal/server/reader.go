@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"tungo/infrastructure/PAL/stat"
 )
 
 type Reader interface {
@@ -15,44 +14,31 @@ type Reader interface {
 
 type defaultReader struct {
 	path string
-	stat stat.Stat
 }
 
-func newDefaultReader(
-	path string,
-	stat stat.Stat,
-) *defaultReader {
-	return &defaultReader{
-		path: path,
-		stat: stat,
-	}
+func newDefaultReader(path string) *defaultReader {
+	return &defaultReader{path: path}
 }
 
 func (c *defaultReader) read() (*Configuration, error) {
-	if _, statErr := c.stat.Stat(c.path); statErr != nil {
-		if errors.Is(statErr, os.ErrNotExist) {
-			return nil, fmt.Errorf("configuration file does not exist: %s", c.path)
+	fileBytes, err := os.ReadFile(c.path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("configuration file %q does not exist: %w", c.path, err)
 		}
-
-		return nil, fmt.Errorf("configuration file not found: %s", c.path)
-	}
-
-	fileBytes, readFileErr := os.ReadFile(c.path)
-	if readFileErr != nil {
-		return nil, fmt.Errorf("configuration file (%s) is unreadable: %s", c.path, readFileErr)
+		return nil, fmt.Errorf("configuration file %q is unreadable: %w", c.path, err)
 	}
 
 	var configuration Configuration
-	deserializationErr := json.Unmarshal(fileBytes, &configuration)
-	if deserializationErr != nil {
-		return nil, fmt.Errorf("configuration file (%s) is invalid: %s", c.path, deserializationErr)
+	if err := json.Unmarshal(fileBytes, &configuration); err != nil {
+		return nil, fmt.Errorf("configuration file %q is invalid: %w", c.path, err)
 	}
 
 	c.setEnvServerAddress(&configuration)
 	c.setEnvEnabledProtocols(&configuration)
 	configuration.ApplyServerDefaults()
 	if err := configuration.Validate(); err != nil {
-		return nil, fmt.Errorf("configuration file (%s) is invalid: %s", c.path, err)
+		return nil, fmt.Errorf("configuration file %q is invalid: %w", c.path, err)
 	}
 
 	return &configuration, nil

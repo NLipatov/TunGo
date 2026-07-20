@@ -31,7 +31,7 @@ type Manager struct {
 func NewManager(path string, stat stat.Stat) ConfigurationManager {
 	return NewManagerWithReader(
 		path,
-		NewTTLReader(newDefaultReader(path, stat), time.Minute*15),
+		NewTTLReader(newDefaultReader(path), time.Minute*15),
 		stat,
 	)
 }
