@@ -108,6 +108,7 @@ func TestRunAttempt_SignalsReadyAndRoutesTraffic(t *testing.T) {
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	done := make(chan error, 1)
 	go func() {
 		done <- r.runAttempt(ctx)
