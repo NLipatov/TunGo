@@ -103,8 +103,9 @@ func (c *clientControl) Delete(path string) error {
 }
 
 func parseClientConfigurationJSON(input string) (clientConfiguration.Configuration, error) {
-	sanitized := sanitizeConfigurationJSON(input)
-	clean := strings.TrimSpace(sanitized)
+	clean := strings.TrimFunc(input, func(r rune) bool {
+		return unicode.IsSpace(r) || unicode.IsControl(r) || unicode.In(r, unicode.Cf)
+	})
 	var cfg clientConfiguration.Configuration
 	if err := json.Unmarshal([]byte(clean), &cfg); err != nil {
 		return clientConfiguration.Configuration{}, fmt.Errorf("invalid client configuration: %w", err)
@@ -113,18 +114,4 @@ func parseClientConfigurationJSON(input string) (clientConfiguration.Configurati
 		return clientConfiguration.Configuration{}, fmt.Errorf("invalid client configuration: %w", err)
 	}
 	return cfg, nil
-}
-
-func sanitizeConfigurationJSON(s string) string {
-	var b strings.Builder
-	for _, r := range s {
-		switch {
-		case r == ' ' || r == '\t' || r == '\n' || r == '\r':
-			b.WriteRune(r)
-		case unicode.IsControl(r) || unicode.In(r, unicode.Cf):
-		default:
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
 }

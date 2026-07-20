@@ -86,6 +86,17 @@ func TestParseClientConfigurationJSON_WithBOMAndZeroWidthAndControl(t *testing.T
 	}
 }
 
+func TestParseClientConfigurationJSON_RejectsFormatCharacterInsideTunName(t *testing.T) {
+	cfg := makeTestConfig()
+	cfg.TCPSettings.TunName = "tun\u200b0"
+	raw, _ := json.Marshal(cfg)
+
+	_, err := parseClientConfigurationJSON(string(raw))
+	if err == nil || !strings.Contains(err.Error(), "TunName contains unsupported characters") {
+		t.Fatalf("expected TunName validation error, got %v", err)
+	}
+}
+
 func TestParseClientConfigurationJSON_PrettyPrintCRLF(t *testing.T) {
 	want := makeTestConfig()
 	raw, _ := json.MarshalIndent(want, "", "  ")
