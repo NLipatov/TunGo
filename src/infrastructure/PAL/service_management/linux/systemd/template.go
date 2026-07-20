@@ -2,11 +2,12 @@ package systemd
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
 func UnitFileContent(binaryPath string, args []string) string {
-	execStart := binaryPath
+	execStart := strconv.Quote(binaryPath)
 	if len(args) > 0 {
 		execStart += " " + strings.Join(args, " ")
 	}

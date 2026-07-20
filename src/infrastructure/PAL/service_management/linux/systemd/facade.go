@@ -233,7 +233,7 @@ func (i *UnitInstaller) Status() (UnitStatus, error) {
 	}
 
 	status.Role = DetectUnitRoleFromExecStart(status.ExecStart)
-	if status.Role == UnitRoleUnknown {
+	if status.Role == UnitRoleUnknown && status.Managed {
 		if unitBody, readErr := i.hooks.ReadFile(i.config.UnitPath); readErr == nil {
 			status.Role = DetectUnitRole(string(unitBody))
 		}

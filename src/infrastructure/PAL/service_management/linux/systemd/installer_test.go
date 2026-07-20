@@ -233,7 +233,7 @@ func TestInstallServerUnit_WritesServerModeAndEnablesService(t *testing.T) {
 	if gotPerm != 0644 {
 		t.Fatalf("write perm: got %v want 0644", gotPerm)
 	}
-	if !strings.Contains(gotContent, "ExecStart=/usr/local/bin/tungo s") {
+	if !strings.Contains(gotContent, `ExecStart="/usr/local/bin/tungo" s`) {
 		t.Fatalf("expected server unit content, got %q", gotContent)
 	}
 	if len(cmd.runCalls) != 2 {
@@ -273,7 +273,7 @@ func TestInstallClientUnit_WritesClientMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(gotContent, "ExecStart=/usr/local/bin/tungo c") {
+	if !strings.Contains(gotContent, `ExecStart="/usr/local/bin/tungo" c`) {
 		t.Fatalf("expected client unit content, got %q", gotContent)
 	}
 }
@@ -1169,6 +1169,9 @@ func TestStatus_InstalledEnabledActiveClient(t *testing.T) {
 		combinedOutputByArg: map[string]mockCombinedOutputResult{
 			"is-enabled": {output: []byte("enabled\n")},
 			"is-active":  {output: []byte("active\n")},
+			"show": {
+				output: []byte("LoadState=loaded\nActiveState=active\nFragmentPath=/etc/systemd/system/tungo.service\n"),
+			},
 		},
 	}
 	installer := NewUnitInstaller(cmd)
@@ -1240,6 +1243,9 @@ func TestStatus_InstalledDisabledInactiveServer(t *testing.T) {
 		combinedOutputByArg: map[string]mockCombinedOutputResult{
 			"is-enabled": {output: []byte("disabled\n"), err: commandExitError(t, 1)},
 			"is-active":  {output: []byte("inactive\n"), err: commandExitError(t, 3)},
+			"show": {
+				output: []byte("LoadState=loaded\nActiveState=inactive\nFragmentPath=/etc/systemd/system/tungo.service\n"),
+			},
 		},
 	}
 	installer := NewUnitInstaller(cmd)
@@ -1280,7 +1286,7 @@ func TestStatus_InstalledPreservesRawSystemdStates(t *testing.T) {
 			"is-enabled": {output: []byte("static\n")},
 			"is-active":  {output: []byte("deactivating\n")},
 			"show": {
-				output: []byte("LoadState=loaded\nSubState=stop-sigterm\nResult=exit-code\nExecMainStatus=203\nExecStart={ path=/usr/local/bin/tungo ; argv[]=/usr/local/bin/tungo s ; }\nFragmentPath=/usr/lib/systemd/system/tungo.service\n"),
+				output: []byte("LoadState=loaded\nSubState=stop-sigterm\nResult=exit-code\nExecMainStatus=203\nExecStart=/usr/bin/other --flag\nFragmentPath=/usr/lib/systemd/system/tungo.service\n"),
 			},
 		},
 	}
@@ -1300,12 +1306,15 @@ func TestStatus_InstalledPreservesRawSystemdStates(t *testing.T) {
 		status.SubState != "stop-sigterm" ||
 		status.Result != "exit-code" ||
 		status.ExecMainStatus != "203" ||
-		status.ExecStart != "{ path=/usr/local/bin/tungo ; argv[]=/usr/local/bin/tungo s ; }" ||
+		status.ExecStart != "/usr/bin/other --flag" ||
 		status.FragmentPath != "/usr/lib/systemd/system/tungo.service" {
 		t.Fatalf("expected raw show properties, got %+v", status)
 	}
 	if status.Managed {
 		t.Fatalf("expected unmanaged status for non-/etc unit fragment, got %+v", status)
+	}
+	if status.Role != UnitRoleUnknown {
+		t.Fatalf("expected stale managed unit role to be ignored, got %q", status.Role)
 	}
 }
 
