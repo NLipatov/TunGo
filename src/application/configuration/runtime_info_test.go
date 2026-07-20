@@ -20,23 +20,28 @@ func (m runtimeInfoClientManager) Configuration() (*clientConfiguration.Configur
 }
 
 type runtimeInfoServerManager struct {
-	cfg        *serverConfiguration.Configuration
-	err        error
-	peers      []serverConfiguration.AllowedPeer
-	peersErr   error
-	setID      int
-	setEnabled bool
-	setErr     error
-	removeID   int
-	removeErr  error
+	cfg           *serverConfiguration.Configuration
+	err           error
+	configuration func() (*serverConfiguration.Configuration, error)
+	injectErr     error
+	peers         []serverConfiguration.AllowedPeer
+	peersErr      error
+	setID         int
+	setEnabled    bool
+	setErr        error
+	removeID      int
+	removeErr     error
 }
 
 func (m runtimeInfoServerManager) Configuration() (*serverConfiguration.Configuration, error) {
+	if m.configuration != nil {
+		return m.configuration()
+	}
 	return m.cfg, m.err
 }
 func (m runtimeInfoServerManager) IncrementClientCounter() error { return nil }
 func (m runtimeInfoServerManager) InjectX25519Keys(_, _ []byte) error {
-	return nil
+	return m.injectErr
 }
 func (m runtimeInfoServerManager) AddAllowedPeer(serverConfiguration.AllowedPeer) error {
 	return nil
@@ -90,6 +95,29 @@ func TestClientControlRuntimeConfiguration(t *testing.T) {
 	got.ClientPublicKey[0] = 9
 	if conf.ClientPublicKey[0] != 7 {
 		t.Fatal("runtime configuration aliases persisted client key")
+	}
+}
+
+func TestClientControlRuntimeConfiguration_ConfigurationError(t *testing.T) {
+	want := errors.New("read failed")
+	control := clientControl{manager: runtimeInfoClientManager{err: want}}
+
+	_, err := control.ClientRuntimeConfiguration()
+	if !errors.Is(err, want) {
+		t.Fatalf("ClientRuntimeConfiguration() error = %v, want %v", err, want)
+	}
+}
+
+func TestClientControlRuntimeConfiguration_ResolveActiveError(t *testing.T) {
+	control := clientControl{
+		manager: runtimeInfoClientManager{
+			cfg: &clientConfiguration.Configuration{Protocol: settings.UNKNOWN},
+		},
+	}
+
+	_, err := control.ClientRuntimeConfiguration()
+	if err == nil || err.Error() != "unsupported protocol: UNKNOWN" {
+		t.Fatalf("expected unsupported protocol error, got %v", err)
 	}
 }
 
