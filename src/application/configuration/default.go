@@ -35,13 +35,13 @@ func NewDefaultServerControl() (ServerControl, error) {
 	}
 
 	serverResolver := serverConfiguration.NewServerResolver()
-	serverManager, err := serverConfiguration.NewManager(serverResolver, stat.NewDefaultStat())
+	configPath, err := serverResolver.Resolve()
 	if err != nil {
-		return nil, fmt.Errorf("configuration error: %w", err)
+		return nil, fmt.Errorf("failed to resolve default server configuration path: %w", err)
 	}
 	return &serverControl{
-		resolver: serverResolver,
-		manager:  serverManager,
+		configPath: configPath,
+		manager:    serverConfiguration.NewManager(configPath, stat.NewDefaultStat()),
 	}, nil
 }
 

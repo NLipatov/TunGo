@@ -2,10 +2,6 @@ package configuration
 
 import "context"
 
-type pathResolver interface {
-	Resolve() (string, error)
-}
-
 type Controls struct {
 	Client ClientControl
 	Server ServerControl

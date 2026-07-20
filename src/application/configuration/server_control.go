@@ -19,8 +19,8 @@ import (
 )
 
 type serverControl struct {
-	resolver pathResolver
-	manager  serverConfigurationManager
+	configPath string
+	manager    serverConfigurationManager
 }
 
 type serverConfigurationManager interface {
@@ -67,12 +67,11 @@ func (c *serverControl) WatchServerRuntimeConfiguration(
 	revoker ServerSessionRevoker,
 	updater ServerAllowedPeersUpdater,
 ) {
-	configPath, _ := c.resolver.Resolve()
 	watcher := serverImplementation.NewConfigWatcher(
 		c.manager,
 		revoker,
 		allowedPeersUpdater{updater: updater},
-		configPath,
+		c.configPath,
 		serverImplementation.DefaultWatchInterval,
 		logging.NewStdLogger(slog.LevelInfo),
 	)
@@ -141,7 +140,7 @@ func (c *serverControl) GenerateClientConfiguration() (GeneratedClientConfigurat
 	if err != nil {
 		return GeneratedClientConfiguration{}, fmt.Errorf("failed to marshal client configuration: %w", err)
 	}
-	path, err := writeServerClientConfigFile(conf.ClientID, data)
+	path, err := writeServerClientConfigFile(c.configPath, conf.ClientID, data)
 	if err != nil {
 		return GeneratedClientConfiguration{}, fmt.Errorf("failed to save client configuration: %w", err)
 	}
@@ -168,11 +167,7 @@ func (c *serverControl) RemovePeer(clientID int) error {
 	return c.manager.RemoveAllowedPeer(clientID)
 }
 
-func writeServerClientConfigFile(clientID int, data []byte) (string, error) {
-	configPath, err := serverImplementation.NewServerResolver().Resolve()
-	if err != nil {
-		return "", fmt.Errorf("failed to resolve server config path: %w", err)
-	}
+func writeServerClientConfigFile(configPath string, clientID int, data []byte) (string, error) {
 	dir := filepath.Dir(configPath)
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return "", fmt.Errorf("failed to create server config directory: %w", err)

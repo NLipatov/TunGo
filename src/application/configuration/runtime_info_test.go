@@ -61,13 +61,6 @@ func (m *runtimeInfoServerManager) RemoveAllowedPeer(id int) error {
 func (m *runtimeInfoServerManager) EnsureIPv6Subnets() error { return nil }
 func (m *runtimeInfoServerManager) InvalidateCache()         {}
 
-type pathResolverStub struct {
-	path string
-	err  error
-}
-
-func (r pathResolverStub) Resolve() (string, error) { return r.path, r.err }
-
 func TestClientControlRuntimeConfiguration(t *testing.T) {
 	publicKey := make([]byte, 32)
 	publicKey[0] = 7
@@ -137,8 +130,8 @@ func TestServerControlRuntimeConfiguration(t *testing.T) {
 	}
 	manager := &runtimeInfoServerManager{cfg: conf}
 	control := serverControl{
-		resolver: pathResolverStub{path: "/tmp/server.json"},
-		manager:  manager,
+		configPath: "/tmp/server.json",
+		manager:    manager,
 	}
 
 	got, err := control.ServerRuntimeConfiguration()

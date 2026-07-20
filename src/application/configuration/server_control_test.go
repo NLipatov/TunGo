@@ -41,7 +41,7 @@ func TestServerControlWatchStopsWithContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	control := serverControl{
-		resolver: pathResolverStub{},
+		configPath: "/tmp/server.json",
 		manager: &runtimeInfoServerManager{
 			cfg: &serverConfiguration.Configuration{},
 		},

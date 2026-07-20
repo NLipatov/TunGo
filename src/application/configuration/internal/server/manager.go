@@ -22,50 +22,35 @@ type ConfigurationManager interface {
 }
 
 type Manager struct {
-	resolver Resolver
-	reader   Reader
-	writer   Writer
-	stat     stat.Stat
+	path   string
+	reader Reader
+	writer Writer
+	stat   stat.Stat
 }
 
-func NewManager(resolver Resolver, stat stat.Stat) (ConfigurationManager, error) {
-	path, pathErr := resolver.Resolve()
-	if pathErr != nil {
-		return nil, fmt.Errorf("failed to resolve server configuration path: %w", pathErr)
-	}
-
+func NewManager(path string, stat stat.Stat) ConfigurationManager {
 	return NewManagerWithReader(
-		resolver,
+		path,
 		NewTTLReader(newDefaultReader(path, stat), time.Minute*15),
 		stat,
 	)
 }
 
 func NewManagerWithReader(
-	resolver Resolver,
+	path string,
 	reader Reader,
 	stat stat.Stat,
-) (ConfigurationManager, error) {
-	path, pathErr := resolver.Resolve()
-	if pathErr != nil {
-		return nil, fmt.Errorf("failed to resolve server configuration path: %w", pathErr)
-	}
-
+) ConfigurationManager {
 	return &Manager{
-		resolver: resolver,
-		writer:   newDefaultWriter(path),
-		reader:   reader,
-		stat:     stat,
-	}, nil
+		path:   path,
+		writer: newDefaultWriter(path),
+		reader: reader,
+		stat:   stat,
+	}
 }
 
 func (c *Manager) Configuration() (*Configuration, error) {
-	path, pathErr := c.resolver.Resolve()
-	if pathErr != nil {
-		return nil, fmt.Errorf("failed to read configuration: %w", pathErr)
-	}
-
-	_, statErr := c.stat.Stat(path)
+	_, statErr := c.stat.Stat(c.path)
 	if statErr != nil {
 		if errors.Is(statErr, os.ErrNotExist) {
 			defaultConfiguration := NewDefaultConfiguration()
