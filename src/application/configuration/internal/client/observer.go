@@ -2,16 +2,11 @@ package client
 
 import "path/filepath"
 
-// Observer is used to observe available configurations
-type Observer interface {
-	Observe() ([]string, error)
-}
-
 type DefaultObserver struct {
 	resolver Resolver
 }
 
-func NewDefaultObserver(resolver Resolver) Observer {
+func NewDefaultObserver(resolver Resolver) *DefaultObserver {
 	return &DefaultObserver{
 		resolver: resolver,
 	}
