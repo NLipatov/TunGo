@@ -32,18 +32,5 @@ func (w *defaultWriter) Write(data interface{}) error {
 		return mkdirErr
 	}
 
-	file, fileErr := os.Create(w.path)
-	if fileErr != nil {
-		return fileErr
-	}
-	defer func(file *os.File) {
-		_ = file.Close()
-	}(file)
-
-	_, writeErr := file.Write(jsonContent)
-	if writeErr != nil {
-		return writeErr
-	}
-
-	return nil
+	return os.WriteFile(w.path, jsonContent, 0600)
 }
