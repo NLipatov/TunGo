@@ -7,6 +7,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"tungo/infrastructure/settings"
@@ -117,6 +118,9 @@ func TestDefaultCreator_Create_ResolveError(t *testing.T) {
 }
 
 func TestDefaultCreator_Create_WriteError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not enforce Unix directory permission bits")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("skipping write-error test as root can write anywhere")
 	}

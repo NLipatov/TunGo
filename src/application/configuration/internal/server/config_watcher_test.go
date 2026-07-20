@@ -485,10 +485,14 @@ func TestConfigWatcher_Watch_LogsWatchDirForBareFilename(t *testing.T) {
 
 	watcher := NewConfigWatcher(configManager, revoker, nil, "server.json", time.Hour, logger)
 	ctx, cancel := context.WithCancel(context.Background())
-	go watcher.Watch(ctx)
+	watchDone := make(chan struct{})
+	go func() {
+		defer close(watchDone)
+		watcher.Watch(ctx)
+	}()
 	time.Sleep(80 * time.Millisecond)
 	cancel()
-	time.Sleep(20 * time.Millisecond)
+	<-watchDone
 
 	if !bytes.Contains(logBuf.Bytes(), []byte("watching directory . for changes to server.json")) {
 		t.Fatalf("expected watch-dir log, got: %s", logBuf.String())
@@ -549,10 +553,14 @@ func TestConfigWatcher_Watch_LogsFsnotifyAddFailure(t *testing.T) {
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	go watcher.Watch(ctx)
+	watchDone := make(chan struct{})
+	go func() {
+		defer close(watchDone)
+		watcher.Watch(ctx)
+	}()
 	time.Sleep(80 * time.Millisecond)
 	cancel()
-	time.Sleep(20 * time.Millisecond)
+	<-watchDone
 
 	if !strings.Contains(logBuf.String(), "fsnotify watch failed") {
 		t.Fatalf("expected fsnotify watch-failed log, got: %s", logBuf.String())

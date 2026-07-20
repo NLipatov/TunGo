@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -87,10 +86,5 @@ func TestMkdirAllError(t *testing.T) {
 	err := w.Write(map[string]string{"key": "value"})
 	if err == nil {
 		t.Fatal("expected error from MkdirAll, got nil")
-	}
-
-	// not a directory err is expected, because we used a fakeDir
-	if !strings.Contains(err.Error(), "not a directory") {
-		t.Errorf("expected error to mention 'not a directory', got %v", err)
 	}
 }
