@@ -129,8 +129,7 @@ func TestConfigWatcher_RevokesDisabledPeer(t *testing.T) {
 
 	watcher := NewConfigWatcher(configManager, revoker, nil, "", 10*time.Millisecond, nil)
 
-	// Initialize state
-	watcher.loadCurrentState()
+	prevPeers := watcher.loadCurrentState()
 
 	// Disable peer1
 	updatedConfig := &Configuration{
@@ -141,8 +140,7 @@ func TestConfigWatcher_RevokesDisabledPeer(t *testing.T) {
 	}
 	configManager.setConfig(updatedConfig)
 
-	// Force check
-	watcher.ForceCheck()
+	watcher.checkAndRevoke(prevPeers)
 
 	// Verify peer1 was revoked
 	revoked := revoker.revokedKeys()
@@ -171,7 +169,7 @@ func TestConfigWatcher_RevokesRemovedPeer(t *testing.T) {
 	revoker := &mockRevoker{}
 
 	watcher := NewConfigWatcher(configManager, revoker, nil, "", 10*time.Millisecond, nil)
-	watcher.loadCurrentState()
+	prevPeers := watcher.loadCurrentState()
 
 	// Remove peer1 entirely
 	updatedConfig := &Configuration{
@@ -181,7 +179,7 @@ func TestConfigWatcher_RevokesRemovedPeer(t *testing.T) {
 	}
 	configManager.setConfig(updatedConfig)
 
-	watcher.ForceCheck()
+	watcher.checkAndRevoke(prevPeers)
 
 	revoked := revoker.revokedKeys()
 	if len(revoked) != 1 {
@@ -207,10 +205,10 @@ func TestConfigWatcher_NoRevokeForAlreadyDisabled(t *testing.T) {
 	revoker := &mockRevoker{}
 
 	watcher := NewConfigWatcher(configManager, revoker, nil, "", 10*time.Millisecond, nil)
-	watcher.loadCurrentState()
+	prevPeers := watcher.loadCurrentState()
 
 	// Keep disabled
-	watcher.ForceCheck()
+	watcher.checkAndRevoke(prevPeers)
 
 	// No revocation should happen - was already disabled
 	revoked := revoker.revokedKeys()
@@ -234,10 +232,10 @@ func TestConfigWatcher_NoRevokeWhenReEnabled(t *testing.T) {
 	revoker := &mockRevoker{}
 
 	watcher := NewConfigWatcher(configManager, revoker, nil, "", 10*time.Millisecond, nil)
-	watcher.loadCurrentState()
+	prevPeers := watcher.loadCurrentState()
 
 	// No change
-	watcher.ForceCheck()
+	watcher.checkAndRevoke(prevPeers)
 
 	revoked := revoker.revokedKeys()
 	if len(revoked) != 0 {
@@ -259,7 +257,7 @@ func TestConfigWatcher_RevokesPeerWhenClientIDChanged(t *testing.T) {
 	revoker := &mockRevoker{}
 
 	watcher := NewConfigWatcher(configManager, revoker, nil, "", 10*time.Millisecond, nil)
-	watcher.loadCurrentState()
+	prevPeers := watcher.loadCurrentState()
 
 	configManager.setConfig(&Configuration{
 		AllowedPeers: []AllowedPeer{
@@ -267,7 +265,7 @@ func TestConfigWatcher_RevokesPeerWhenClientIDChanged(t *testing.T) {
 		},
 	})
 
-	watcher.ForceCheck()
+	watcher.checkAndRevoke(prevPeers)
 
 	revoked := revoker.revokedKeys()
 	if len(revoked) != 1 {
@@ -336,8 +334,8 @@ func TestConfigWatcher_CheckAndRevoke_UpdatesPeersUpdater(t *testing.T) {
 	updater := &mockPeersUpdater{}
 
 	watcher := NewConfigWatcher(configManager, revoker, updater, "", 10*time.Millisecond, nil)
-	watcher.loadCurrentState()
-	watcher.ForceCheck()
+	prevPeers := watcher.loadCurrentState()
+	watcher.checkAndRevoke(prevPeers)
 
 	if updater.updatesCount() != 1 {
 		t.Fatalf("expected one peers update, got %d", updater.updatesCount())
@@ -353,8 +351,8 @@ func TestConfigWatcher_LoadAndCheck_ConfigError_NoPanic(t *testing.T) {
 	watcher := NewConfigWatcher(configManager, revoker, nil, "", 10*time.Millisecond, logger)
 
 	// Should just log and return.
-	watcher.loadCurrentState()
-	watcher.checkAndRevoke()
+	prevPeers := watcher.loadCurrentState()
+	watcher.checkAndRevoke(prevPeers)
 
 	if got := logBuf.String(); got == "" {
 		t.Fatal("expected watcher to log config errors")
@@ -517,7 +515,7 @@ func TestConfigWatcher_CheckAndRevoke_LoggerBranches(t *testing.T) {
 	var logBuf bytes.Buffer
 	logger := log.New(&logBuf, "", 0)
 	watcher := NewConfigWatcher(configManager, revoker, nil, "", 10*time.Millisecond, logger)
-	watcher.loadCurrentState()
+	prevPeers := watcher.loadCurrentState()
 
 	// Remove one peer to trigger revoke log (count > 0) and peer-count-changed log.
 	configManager.setConfig(&Configuration{
@@ -525,7 +523,7 @@ func TestConfigWatcher_CheckAndRevoke_LoggerBranches(t *testing.T) {
 			{PublicKey: pubKey2, Enabled: true, ClientID: 2},
 		},
 	})
-	watcher.checkAndRevoke()
+	watcher.checkAndRevoke(prevPeers)
 
 	logs := logBuf.String()
 	if !strings.Contains(logs, "revoked 1 session(s)") {

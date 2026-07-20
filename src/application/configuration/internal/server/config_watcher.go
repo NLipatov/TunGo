@@ -36,14 +36,10 @@ type ConfigWatcher struct {
 	configPath    string
 	interval      time.Duration
 	logger        *log.Logger
-
-	// prevPeers stores the previous AllowedPeers state for comparison.
-	// Key is string(PublicKey), value is peer access snapshot.
-	prevPeers map[string]peerAccessState
 }
 
 type peerAccessState struct {
-	enabled     bool
+	enabled  bool
 	clientID int
 }
 
@@ -66,7 +62,6 @@ func NewConfigWatcher(
 		configPath:    configPath,
 		interval:      interval,
 		logger:        logger,
-		prevPeers:     make(map[string]peerAccessState),
 	}
 }
 
@@ -74,8 +69,7 @@ func NewConfigWatcher(
 // Uses fsnotify for instant updates, with polling as fallback.
 // Blocks until context is cancelled.
 func (w *ConfigWatcher) Watch(ctx context.Context) {
-	// Initialize with current state
-	w.loadCurrentState()
+	prevPeers := w.loadCurrentState()
 
 	// Try to set up fsnotify - watch directory because atomic writes
 	// (write to temp, then rename) lose the watch on the original inode.
@@ -129,7 +123,7 @@ func (w *ConfigWatcher) Watch(ctx context.Context) {
 				}
 				// Invalidate cache before reading fresh config
 				w.configManager.InvalidateCache()
-				w.checkAndRevoke()
+				prevPeers = w.checkAndRevoke(prevPeers)
 			}
 		case err, ok := <-fsErrors:
 			if !ok {
@@ -141,41 +135,42 @@ func (w *ConfigWatcher) Watch(ctx context.Context) {
 			}
 		case <-ticker.C:
 			w.configManager.InvalidateCache()
-			w.checkAndRevoke()
+			prevPeers = w.checkAndRevoke(prevPeers)
 		}
 	}
 }
 
-// loadCurrentState initializes prevPeers from current configuration.
-func (w *ConfigWatcher) loadCurrentState() {
+// loadCurrentState returns the current peer access snapshot.
+func (w *ConfigWatcher) loadCurrentState() map[string]peerAccessState {
 	conf, err := w.configManager.Configuration()
 	if err != nil {
 		if w.logger != nil {
 			w.logger.Printf("ConfigWatcher: failed to load initial config: %v", err)
 		}
-		return
+		return nil
 	}
 
-	w.prevPeers = make(map[string]peerAccessState, len(conf.AllowedPeers))
+	peers := make(map[string]peerAccessState, len(conf.AllowedPeers))
 	for _, peer := range conf.AllowedPeers {
 		key := string(peer.PublicKey)
-		w.prevPeers[key] = peerAccessState{
-			enabled:     peer.Enabled,
+		peers[key] = peerAccessState{
+			enabled:  peer.Enabled,
 			clientID: peer.ClientID,
 		}
 	}
+	return peers
 }
 
 // checkAndRevoke compares current config with previous state and:
 // 1. Revokes sessions for peers that were removed or disabled
 // 2. Updates the runtime AllowedPeers map for new handshake lookups
-func (w *ConfigWatcher) checkAndRevoke() {
+func (w *ConfigWatcher) checkAndRevoke(prevPeers map[string]peerAccessState) map[string]peerAccessState {
 	conf, err := w.configManager.Configuration()
 	if err != nil {
 		if w.logger != nil {
 			w.logger.Printf("ConfigWatcher: failed to load config: %v", err)
 		}
-		return
+		return prevPeers
 	}
 
 	// Build current state map
@@ -183,7 +178,7 @@ func (w *ConfigWatcher) checkAndRevoke() {
 	for _, peer := range conf.AllowedPeers {
 		key := string(peer.PublicKey)
 		currentPeers[key] = peerAccessState{
-			enabled:     peer.Enabled,
+			enabled:  peer.Enabled,
 			clientID: peer.ClientID,
 		}
 	}
@@ -191,7 +186,7 @@ func (w *ConfigWatcher) checkAndRevoke() {
 	// Find peers to revoke:
 	// 1. Previously existed and enabled, now removed
 	// 2. Previously existed and enabled, now disabled
-	for pubKeyStr, prevState := range w.prevPeers {
+	for pubKeyStr, prevState := range prevPeers {
 		if !prevState.enabled {
 			continue // Was already disabled, nothing to revoke
 		}
@@ -214,17 +209,9 @@ func (w *ConfigWatcher) checkAndRevoke() {
 	}
 
 	// Log only if peer count changed
-	if w.logger != nil && len(currentPeers) != len(w.prevPeers) {
-		w.logger.Printf("ConfigWatcher: AllowedPeers changed (%d -> %d peers)", len(w.prevPeers), len(currentPeers))
+	if w.logger != nil && len(currentPeers) != len(prevPeers) {
+		w.logger.Printf("ConfigWatcher: AllowedPeers changed (%d -> %d peers)", len(prevPeers), len(currentPeers))
 	}
 
-	// Update previous state
-	w.prevPeers = currentPeers
-}
-
-// ForceCheck triggers an immediate configuration check.
-// Useful for testing or manual triggers (e.g., SIGHUP handler).
-func (w *ConfigWatcher) ForceCheck() {
-	w.configManager.InvalidateCache()
-	w.checkAndRevoke()
+	return currentPeers
 }
