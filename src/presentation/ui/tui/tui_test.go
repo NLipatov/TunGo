@@ -551,6 +551,7 @@ func (m *mockRuntimeFactory) New(mode runtime.Mode) (runtime.Runtime, error) {
 
 type mockRuntime struct {
 	err       error
+	ready     bool
 	runCalled bool
 }
 
@@ -558,7 +559,7 @@ func newMockRuntime(err error) *mockRuntime {
 	return &mockRuntime{err: err}
 }
 
-func (m *mockRuntime) WaitForReady(context.Context) error { return nil }
+func (m *mockRuntime) Ready() bool { return m.ready }
 
 func (m *mockRuntime) Run(ctx context.Context) error {
 	m.runCalled = true
@@ -575,7 +576,7 @@ func newCompletedRuntime(err error) *completedRuntime {
 	return &completedRuntime{err: err}
 }
 
-func (r *completedRuntime) WaitForReady(context.Context) error { return nil }
+func (*completedRuntime) Ready() bool { return true }
 
 func (r *completedRuntime) Run(context.Context) error {
 	r.runCalled = true
@@ -616,6 +617,7 @@ func TestTUI_Run_RunsRuntime(t *testing.T) {
 	withMockUnifiedSession(t, ui, uiSession)
 
 	runtimeInstance := newMockRuntime(nil)
+	runtimeInstance.ready = true
 	factory := &mockRuntimeFactory{runtime: runtimeInstance}
 	ui.newRuntime = factory.New
 
@@ -638,11 +640,11 @@ func TestTUI_Run_RunsRuntime(t *testing.T) {
 	if !uiSession.activatedOptions.ServerSupported {
 		t.Fatal("expected ServerSupported forwarded to dashboard")
 	}
-	if uiSession.activatedOptions.WaitForReady == nil {
+	if uiSession.activatedOptions.Ready == nil {
 		t.Fatal("expected runtime readiness callback forwarded")
 	}
-	if err := uiSession.activatedOptions.WaitForReady(context.Background()); err != nil {
-		t.Fatalf("expected runtime readiness callback to succeed, got %v", err)
+	if !uiSession.activatedOptions.Ready() {
+		t.Fatal("forwarded runtime readiness callback returned false")
 	}
 	if !runtimeInstance.runCalled {
 		t.Fatal("expected runtime to run")

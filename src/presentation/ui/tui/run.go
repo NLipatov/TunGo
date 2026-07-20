@@ -63,7 +63,7 @@ func (t *TUI) runRuntime(ctx context.Context, mode appRuntime.Mode) error {
 			Mode:            mode,
 			ServerSupported: t.sessionOptions.ServerSupported,
 			LogFeed:         bubbleTea.GlobalRuntimeLogFeed(),
-			WaitForReady:    runtimeInstance.WaitForReady,
+			Ready:           runtimeInstance.Ready,
 			Protocol:        info.Protocol,
 			Endpoints:       info.Endpoints,
 		})

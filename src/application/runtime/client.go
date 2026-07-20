@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync/atomic"
 	"time"
 
 	"tungo/application/configuration"
@@ -19,7 +20,7 @@ type clientRuntime struct {
 	workerFactory     connection.ClientWorkerFactory
 	tunManager        tun.ClientManager
 	routerFactory     connection.TrafficRouterFactory
-	ready             *readySignal
+	ready             atomic.Bool
 }
 
 func newClient() (*clientRuntime, error) {
@@ -40,7 +41,6 @@ func newClient() (*clientRuntime, error) {
 		workerFactory:     client_factory.NewWorkerFactory(conf),
 		tunManager:        tunManager,
 		routerFactory:     client_factory.NewRouterFactory(),
-		ready:             newReadySignal(),
 	}, nil
 }
 
@@ -93,7 +93,7 @@ func (r *clientRuntime) runAttempt(parentCtx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to create router: %w", err)
 	}
-	r.ready.mark()
+	r.ready.Store(true)
 
 	defer func() {
 		_ = conn.Close()
@@ -104,6 +104,6 @@ func (r *clientRuntime) runAttempt(parentCtx context.Context) error {
 	return router.RouteTraffic(ctx)
 }
 
-func (r *clientRuntime) WaitForReady(ctx context.Context) error {
-	return r.ready.wait(ctx)
+func (r *clientRuntime) Ready() bool {
+	return r.ready.Load()
 }

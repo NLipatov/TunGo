@@ -19,7 +19,7 @@ type RuntimeDashboardOptions struct {
 	Mode            runtime.Mode
 	LogFeed         RuntimeLogFeed
 	ServerSupported bool
-	WaitForReady    func(context.Context) error
+	Ready           func() bool
 	Protocol        settings.Protocol
 	Endpoints       []appConfiguration.EndpointInfo
 }
@@ -29,10 +29,6 @@ type runtimeTickMsg struct {
 }
 
 type runtimeContextDoneMsg struct {
-	seq uint64
-}
-
-type runtimeReadyMsg struct {
 	seq uint64
 }
 
@@ -81,7 +77,7 @@ type RuntimeDashboard struct {
 	runtimeSeq           uint64
 	exitRequested        bool
 	reconfigureRequested bool
-	waitForReady         func(context.Context) error
+	ready                func() bool
 	connected            bool
 	protocol             settings.Protocol
 	endpoints            []appConfiguration.EndpointInfo
@@ -103,11 +99,11 @@ func NewRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions, s
 	if mode != runtime.ModeServer {
 		mode = runtime.ModeClient
 	}
-	waitForReady := options.WaitForReady
-	connected := mode == runtime.ModeServer || waitForReady == nil
-	if waitForReady == nil {
-		waitForReady = func(context.Context) error { return nil }
+	ready := options.Ready
+	if ready == nil {
+		ready = func() bool { return true }
 	}
+	connected := mode == runtime.ModeServer || ready()
 	model := RuntimeDashboard{
 		settings:        settings,
 		ctx:             ctx,
@@ -119,7 +115,7 @@ func NewRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions, s
 		logFeed:         options.LogFeed,
 		logs:            newLogViewport(),
 		tickSeq:         1,
-		waitForReady:    waitForReady,
+		ready:           ready,
 		connected:       connected,
 		protocol:        options.Protocol,
 		endpoints:       options.Endpoints,
@@ -159,14 +155,10 @@ func RunRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions) (
 }
 
 func (m RuntimeDashboard) Init() tea.Cmd {
-	cmds := []tea.Cmd{
+	return tea.Batch(
 		runtimeTickCmd(m.tickSeq),
 		waitForRuntimeContextDone(m.ctx, m.runtimeSeq),
-	}
-	if m.mode == runtime.ModeClient && !m.connected {
-		cmds = append(cmds, waitForReady(m.ctx, m.waitForReady, m.runtimeSeq))
-	}
-	return tea.Batch(cmds...)
+	)
 }
 
 func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -183,6 +175,9 @@ func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.seq != m.tickSeq {
 			return m, nil
 		}
+		if !m.connected && m.ready() {
+			m.connected = true
+		}
 		if m.screen != runtimeScreenDataplane {
 			return m, nil
 		}
@@ -196,11 +191,6 @@ func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.logs.refresh(m.logFeed, m.preferences)
 		return m, runtimeLogUpdateCmd(m.ctx, m.logFeed, m.logs.waitStop, m.logs.tickSeq, m.runtimeSeq)
-	case runtimeReadyMsg:
-		if msg.seq == m.runtimeSeq {
-			m.connected = true
-		}
-		return m, nil
 	case runtimeContextDoneMsg:
 		m.logs.stopWait()
 		return m, tea.Quit
@@ -630,15 +620,6 @@ func runtimeTickCmd(seq uint64) tea.Cmd {
 	return tea.Tick(time.Second, func(time.Time) tea.Msg {
 		return runtimeTickMsg{seq: seq}
 	})
-}
-
-func waitForReady(ctx context.Context, waitForReady func(context.Context) error, seq uint64) tea.Cmd {
-	return func() tea.Msg {
-		if err := waitForReady(ctx); err != nil {
-			return runtimeContextDoneMsg{seq: seq}
-		}
-		return runtimeReadyMsg{seq: seq}
-	}
 }
 
 func runtimeLogUpdateCmd(

@@ -58,7 +58,6 @@ func (d *runtimeTestDeps) newRuntime(routerFactory connection.TrafficRouterFacto
 		workerFactory:     runtimeTestWorkerFactory{},
 		tunManager:        &d.tun,
 		routerFactory:     routerFactory,
-		ready:             newReadySignal(),
 	}
 }
 
@@ -114,15 +113,13 @@ func TestRunAttempt_SignalsReadyAndRoutesTraffic(t *testing.T) {
 		done <- r.runAttempt(ctx)
 	}()
 
-	readyCtx, cancelReady := context.WithTimeout(context.Background(), time.Second)
-	defer cancelReady()
-	if err := r.WaitForReady(readyCtx); err != nil {
-		t.Fatalf("expected runtime to become ready, got %v", err)
-	}
 	select {
 	case <-routeStarted:
 	case <-time.After(time.Second):
 		t.Fatal("route traffic was not started")
+	}
+	if !r.Ready() {
+		t.Fatal("runtime did not become ready")
 	}
 
 	cancel()
@@ -143,10 +140,8 @@ func TestRunAttempt_CreateRouterErrorDoesNotSignalReady(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "create failed") {
 		t.Fatalf("expected create router error, got %v", err)
 	}
-	waitCtx, cancel := context.WithCancel(context.Background())
-	cancel()
-	if err := r.WaitForReady(waitCtx); !errors.Is(err, context.Canceled) {
-		t.Fatalf("expected readiness wait to remain blocked, got %v", err)
+	if r.Ready() {
+		t.Fatal("runtime became ready after router creation failed")
 	}
 }
 
@@ -199,8 +194,8 @@ func TestRun_ReconnectDelayAndRecovery(t *testing.T) {
 	if callCount < 2 {
 		t.Fatalf("expected at least 2 session attempts, got %d", callCount)
 	}
-	if err := r.WaitForReady(context.Background()); err != nil {
-		t.Fatalf("expected runtime to report readiness, got %v", err)
+	if !r.Ready() {
+		t.Fatal("runtime did not report readiness")
 	}
 }
 

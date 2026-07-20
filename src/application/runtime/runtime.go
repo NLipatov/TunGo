@@ -21,9 +21,8 @@ type Runtime interface {
 	// Run blocks until the runtime stops. Context cancellation is a clean stop;
 	// operational failures are returned as errors.
 	Run(context.Context) error
-	// WaitForReady blocks until a concurrent Run call makes the runtime
-	// ready to serve traffic, or until ctx ends. It does not start the runtime.
-	WaitForReady(context.Context) error
+	// Ready reports whether the runtime has successfully started at least once.
+	Ready() bool
 }
 
 func New(mode Mode) (Runtime, error) {

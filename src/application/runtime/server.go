@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync/atomic"
 
 	"tungo/application/configuration"
 	"tungo/application/network/connection"
@@ -21,7 +22,7 @@ type serverRuntime struct {
 	tunManager    tun.ServerManager
 	workerFactory connection.ServerWorkerFactory
 	routerFactory connection.ServerTrafficRouterFactory
-	ready         *readySignal
+	ready         atomic.Bool
 	control       configuration.ServerRuntimeControl
 	revoker       configuration.ServerSessionRevoker
 	updater       configuration.ServerAllowedPeersUpdater
@@ -60,7 +61,6 @@ func newServer() (*serverRuntime, error) {
 		tunManager:    tunFactory,
 		workerFactory: workerFactory,
 		routerFactory: tunnelServer.NewTrafficRouterFactory(),
-		ready:         newReadySignal(),
 		control:       control,
 		revoker:       tunnelRuntime.SessionRevoker(),
 		updater:       tunnelRuntime.AllowedPeersUpdater(),
@@ -126,7 +126,7 @@ func (r *serverRuntime) runWorkers(ctx context.Context) error {
 			return nil
 		})
 	}
-	r.ready.mark()
+	r.ready.Store(true)
 	return group.Wait()
 }
 
@@ -146,6 +146,6 @@ func (r *serverRuntime) createRouter(
 	return r.routerFactory.CreateRouter(worker), nil
 }
 
-func (r *serverRuntime) WaitForReady(ctx context.Context) error {
-	return r.ready.wait(ctx)
+func (r *serverRuntime) Ready() bool {
+	return r.ready.Load()
 }
