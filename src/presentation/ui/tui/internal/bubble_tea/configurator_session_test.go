@@ -92,6 +92,16 @@ func TestRunConfiguratorSession_NewModelError(t *testing.T) {
 	}
 }
 
+func TestNewConfiguratorSessionModel_RequiresServerControlWhenSupported(t *testing.T) {
+	opts := validSessionOptions()
+	opts.ServerConfigurationControl = nil
+
+	_, err := newConfiguratorSessionModel(opts, testSettings())
+	if err == nil || !strings.Contains(err.Error(), "server configuration dependencies") {
+		t.Fatalf("expected missing server control error, got %v", err)
+	}
+}
+
 func TestRunConfiguratorSession_RunError(t *testing.T) {
 	prev := newConfiguratorSessionProgram
 	t.Cleanup(func() { newConfiguratorSessionProgram = prev })

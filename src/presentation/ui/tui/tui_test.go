@@ -28,6 +28,22 @@ func TestNewTUI(t *testing.T) {
 	}
 }
 
+func TestNewTUIRejectsMissingClientControl(t *testing.T) {
+	ui, err := New(appConfiguration.Controls{})
+	if err == nil || ui != nil {
+		t.Fatalf("New() = %v, %v; want nil and error", ui, err)
+	}
+}
+
+func TestDefaultFactories(t *testing.T) {
+	if installer := newDefaultSystemdInstaller(); installer == nil {
+		t.Fatal("newDefaultSystemdInstaller() returned nil")
+	}
+	if _, err := newBubbleTeaUnifiedSession(context.Background(), bubbleTea.ConfiguratorSessionOptions{}); err == nil {
+		t.Fatal("newBubbleTeaUnifiedSession() accepted incomplete options")
+	}
+}
+
 func TestTUI_Configure_NilSessionOptions(t *testing.T) {
 	ui := &TUI{
 		sessionFactory:          dummySessionFactory,

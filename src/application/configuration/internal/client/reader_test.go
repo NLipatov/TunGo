@@ -69,6 +69,19 @@ func TestReaderReadFileError(t *testing.T) {
 	}
 }
 
+func TestReaderReadDirectoryError(t *testing.T) {
+	_, err := read(t.TempDir())
+	if err == nil {
+		t.Fatal("expected directory read error")
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected non-not-exist error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "failed to read client configuration") {
+		t.Fatalf("expected read context, got %v", err)
+	}
+}
+
 func TestReaderReadInvalidJSON(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "client_configuration.json")
@@ -82,5 +95,17 @@ func TestReaderReadInvalidJSON(t *testing.T) {
 	var syntaxErr *json.SyntaxError
 	if !errors.As(err, &syntaxErr) {
 		t.Fatalf("expected wrapped json.SyntaxError, got %v", err)
+	}
+}
+
+func TestReaderReadInvalidConfiguration(t *testing.T) {
+	path := createTempClientConfigFile(t, Configuration{})
+
+	_, err := read(path)
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), "invalid client configuration") {
+		t.Fatalf("expected validation context, got %v", err)
 	}
 }

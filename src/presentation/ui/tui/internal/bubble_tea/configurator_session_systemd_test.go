@@ -873,6 +873,39 @@ func TestUpdateSystemdCheckErrorConfirmScreen_RetryCheck_StartsWhenInactive(t *t
 	}
 }
 
+func TestUpdateSystemdCheckErrorConfirmScreen_RetryCheck_PreservesClientConfig(t *testing.T) {
+	checkCalls := 0
+	opts := defaultConfiguratorOpts()
+	opts.StopSystemdUnit = func() error { return nil }
+	opts.CheckSystemdUnitActive = func() (bool, error) {
+		checkCalls++
+		if checkCalls == 1 {
+			return false, errors.New("probe failed")
+		}
+		return true, nil
+	}
+	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
+	if err != nil {
+		t.Fatalf("newConfiguratorSessionModel() error = %v", err)
+	}
+
+	model = model.startModeWithSystemdGuard(runtime.ModeClient, configuratorScreenClientSelect, false)
+	model.pendingClientConfig = "cfg-a"
+	model.cursor = 0
+
+	updatedModel, cmd := model.updateSystemdCheckErrorConfirmScreen(keyNamed(tea.KeyEnter))
+	updated := updatedModel.(configuratorSessionModel)
+	if cmd != nil {
+		t.Fatal("expected confirmation screen without command")
+	}
+	if updated.screen != configuratorScreenSystemdActiveConfirm {
+		t.Fatalf("screen = %v, want active confirmation", updated.screen)
+	}
+	if updated.pendingClientConfig != "cfg-a" {
+		t.Fatalf("pending client config = %q, want cfg-a", updated.pendingClientConfig)
+	}
+}
+
 func TestUpdateSystemdCheckErrorConfirmScreen_StartAnyway_Client_PersistsAutoSelectConfig(t *testing.T) {
 	s := settingsForMode(ModePreferenceClient)
 	opts := defaultConfiguratorOpts()

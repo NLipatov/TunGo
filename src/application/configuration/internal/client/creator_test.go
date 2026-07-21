@@ -7,7 +7,6 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"tungo/infrastructure/settings"
@@ -125,32 +124,17 @@ func TestDefaultCreator_Create_ResolveError(t *testing.T) {
 }
 
 func TestDefaultCreator_Create_WriteError(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Windows does not enforce Unix directory permission bits")
-	}
-	if os.Geteuid() == 0 {
-		t.Skip("skipping write-error test as root can write anywhere")
-	}
-
 	tmp := t.TempDir()
-
-	// Create a real directory but remove write permissions
-	roDir := filepath.Join(tmp, "readonly")
-	if err := os.MkdirAll(roDir, 0o500); err != nil {
-		t.Fatalf("setup MkdirAll failed: %v", err)
-	}
-
-	// Resolver returns a path inside the read-only directory
-	resolver := &creatorTestResolver{
-		path: filepath.Join(roDir, "cfg"),
-		err:  nil,
+	resolver := &creatorTestResolver{path: filepath.Join(tmp, "config")}
+	confPath := resolver.path + ".y"
+	if err := os.Mkdir(confPath, 0700); err != nil {
+		t.Fatalf("create directory at destination path: %v", err)
 	}
 	creator := NewDefaultCreator(resolver)
 
-	// Attempting to write should fail due to insufficient permissions
 	err := creator.Create((&creatorTestConfigProvider{}).mockedConfig(), "y")
 	if err == nil {
-		t.Fatal("expected write error due to read-only directory, got nil")
+		t.Fatal("expected write error for directory destination")
 	}
 	if !strings.Contains(err.Error(), "write client configuration") {
 		t.Errorf("expected write context, got %v", err)
