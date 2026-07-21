@@ -124,6 +124,18 @@ func TestConfigurationValidate_FailsWhenTunNameIsEmpty(t *testing.T) {
 	}
 }
 
+func TestConfigurationValidate_FailsWhenTunNameContainsUnsupportedCharacters(t *testing.T) {
+	for _, name := range []string{"tun 0", "tun\x000", "tun\u200b0"} {
+		cfg := validClientConfiguration(t)
+		cfg.UDPSettings.TunName = name
+
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "TunName contains unsupported characters") {
+			t.Fatalf("TunName %q: expected unsupported character error, got %v", name, err)
+		}
+	}
+}
+
 func TestConfigurationValidate_FailsWhenDNSv4ContainsIPv6(t *testing.T) {
 	cfg := validClientConfiguration(t)
 	cfg.UDPSettings.DNSv4 = []string{"2001:4860:4860::8888"}

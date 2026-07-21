@@ -7,7 +7,7 @@ import (
 	"os"
 	"sync"
 
-	"tungo/domain/mode"
+	"tungo/application/runtime"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -56,7 +56,7 @@ const (
 
 type unifiedEvent struct {
 	kind unifiedEventKind
-	mode mode.Mode
+	mode runtime.Mode
 	err  error
 }
 
@@ -83,16 +83,14 @@ func tryAutoConnect(prefs UIPreferences, opts ConfiguratorSessionOptions) bool {
 	if _, err := os.Stat(prefs.AutoSelectClientConfig); err != nil {
 		return false
 	}
-	if opts.Selector == nil {
+	if opts.ClientConfigurationControl == nil {
 		return false
 	}
-	if err := opts.Selector.Select(prefs.AutoSelectClientConfig); err != nil {
+	if err := opts.ClientConfigurationControl.Select(prefs.AutoSelectClientConfig); err != nil {
 		return false
 	}
-	if opts.ClientConfigManager != nil {
-		if _, err := opts.ClientConfigManager.Configuration(); err != nil {
-			return false
-		}
+	if err := opts.ClientConfigurationControl.ValidateActive(); err != nil {
+		return false
 	}
 	return true
 }
@@ -119,7 +117,7 @@ func newUnifiedSessionModel(
 	if impliedClient && prefs.AutoConnect {
 		deferForSystemd := shouldDeferAutoConnectForSystemd(configOpts)
 		if !deferForSystemd && tryAutoConnect(prefs, configOpts) {
-			events <- unifiedEvent{kind: unifiedEventModeSelected, mode: mode.Client}
+			events <- unifiedEvent{kind: unifiedEventModeSelected, mode: runtime.ModeClient}
 			cfgModel, err := newConfiguratorSessionModel(configOpts, settings)
 			if err != nil {
 				return unifiedSessionModel{}, err
@@ -275,7 +273,7 @@ func (m unifiedSessionModel) updateRuntime(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if rtModel.reconfigureRequested {
 		// Keep in-memory preferences in sync before re-entering configurator;
 		// this prevents immediate auto-connect restart in the same session.
-		if rtModel.mode == RuntimeDashboardClient {
+		if rtModel.mode == runtime.ModeClient {
 			prefs := m.settings.Preferences()
 			if prefs.AutoConnect {
 				prefs.AutoConnect = false
@@ -492,35 +490,35 @@ func NewUnifiedSession(appCtx context.Context, configOpts ConfiguratorSessionOpt
 }
 
 // WaitForMode blocks until the user selects a mode in the configurator phase.
-func (s *UnifiedSession) WaitForMode() (mode.Mode, error) {
+func (s *UnifiedSession) WaitForMode() (runtime.Mode, error) {
 	appCtxDone := contextDoneChan(s.appCtx)
 	for {
 		select {
 		case event, ok := <-s.events:
 			if !ok {
-				return mode.Unknown, ErrUnifiedSessionClosed
+				return 0, ErrUnifiedSessionClosed
 			}
 			switch event.kind {
 			case unifiedEventModeSelected:
 				return event.mode, nil
 			case unifiedEventExit:
-				return mode.Unknown, ErrUnifiedSessionQuit
+				return 0, ErrUnifiedSessionQuit
 			case unifiedEventError:
-				return mode.Unknown, event.err
+				return 0, event.err
 			case unifiedEventReconfigure:
 				// Shouldn't happen during WaitForMode, but continue listening.
 				continue
 			}
 		case <-s.done:
-			if m, err := s.drainModeEvent(); m != mode.Unknown || err != nil {
+			if m, err := s.drainModeEvent(); m != 0 || err != nil {
 				return m, err
 			}
 			if s.err != nil {
-				return mode.Unknown, s.err
+				return 0, s.err
 			}
-			return mode.Unknown, ErrUnifiedSessionClosed
+			return 0, ErrUnifiedSessionClosed
 		case <-appCtxDone:
-			return mode.Unknown, ErrUnifiedSessionQuit
+			return 0, ErrUnifiedSessionQuit
 		}
 	}
 }
@@ -569,26 +567,26 @@ func (s *UnifiedSession) WaitForRuntimeExit() (reconfigure bool, err error) {
 // drainModeEvent reads any buffered events that arrived before the done
 // channel was selected. This resolves the race where the model sends an event
 // and the program exits at the same time — Go's select may pick done first.
-// Returns (mode.Unknown, nil) when no relevant event was buffered.
-func (s *UnifiedSession) drainModeEvent() (mode.Mode, error) {
+// Returns (0, nil) when no relevant event was buffered.
+func (s *UnifiedSession) drainModeEvent() (runtime.Mode, error) {
 	for {
 		select {
 		case event, ok := <-s.events:
 			if !ok {
-				return mode.Unknown, nil
+				return 0, nil
 			}
 			switch event.kind {
 			case unifiedEventModeSelected:
 				return event.mode, nil
 			case unifiedEventExit:
-				return mode.Unknown, ErrUnifiedSessionQuit
+				return 0, ErrUnifiedSessionQuit
 			case unifiedEventError:
-				return mode.Unknown, event.err
+				return 0, event.err
 			default:
 				continue
 			}
 		default:
-			return mode.Unknown, nil
+			return 0, nil
 		}
 	}
 }

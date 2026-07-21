@@ -1,11 +1,11 @@
 package server
 
 import (
-	"tungo/infrastructure/PAL/configuration/server"
+	appConfiguration "tungo/application/configuration"
 	"tungo/infrastructure/tunnel/session"
 )
 
-func NewRuntime(_ server.ConfigurationManager) (*Runtime, error) {
+func NewRuntime(_ appConfiguration.ServerRuntimeConfiguration) (*Runtime, error) {
 	return &Runtime{
 		sessionRevoker: session.NewCompositeSessionRevoker(),
 	}, nil

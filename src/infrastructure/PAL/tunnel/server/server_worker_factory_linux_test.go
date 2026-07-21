@@ -2,55 +2,16 @@ package server
 
 import (
 	"context"
-	"errors"
 	"io"
 	"net"
 	"strconv"
 	"testing"
 
-	serverCfg "tungo/infrastructure/PAL/configuration/server"
+	appConfiguration "tungo/application/configuration"
 	"tungo/infrastructure/settings"
 )
 
 // ------------------- test doubles -------------------
-
-// Dummy ServerConfigurationManager that returns a valid config.
-type dummyConfigManager struct{}
-
-func (d *dummyConfigManager) Configuration() (*serverCfg.Configuration, error) {
-	return &serverCfg.Configuration{}, nil
-}
-func (d *dummyConfigManager) AddAllowedPeer(_ serverCfg.AllowedPeer) error {
-	return nil
-}
-func (d *dummyConfigManager) ListAllowedPeers() ([]serverCfg.AllowedPeer, error) { return nil, nil }
-func (d *dummyConfigManager) SetAllowedPeerEnabled(_ int, _ bool) error          { return nil }
-func (d *dummyConfigManager) RemoveAllowedPeer(_ int) error                      { return nil }
-func (d *dummyConfigManager) IncrementClientCounter() error                      { return nil }
-func (d *dummyConfigManager) InjectX25519Keys(_, _ []byte) error {
-	return nil
-}
-func (d *dummyConfigManager) EnsureIPv6Subnets() error { return nil }
-func (d *dummyConfigManager) InvalidateCache()         {}
-
-// Erroring ServerConfigurationManager to trigger config error paths.
-type errorConfigManager struct{}
-
-func (e *errorConfigManager) Configuration() (*serverCfg.Configuration, error) {
-	return nil, errors.New("config error")
-}
-func (e *errorConfigManager) AddAllowedPeer(_ serverCfg.AllowedPeer) error {
-	return nil
-}
-func (e *errorConfigManager) ListAllowedPeers() ([]serverCfg.AllowedPeer, error) { return nil, nil }
-func (e *errorConfigManager) SetAllowedPeerEnabled(_ int, _ bool) error          { return nil }
-func (e *errorConfigManager) RemoveAllowedPeer(_ int) error                      { return nil }
-func (e *errorConfigManager) IncrementClientCounter() error                      { return nil }
-func (e *errorConfigManager) InjectX25519Keys(_, _ []byte) error {
-	return nil
-}
-func (e *errorConfigManager) EnsureIPv6Subnets() error { return nil }
-func (e *errorConfigManager) InvalidateCache()         {}
 
 // Nop TUN handle.
 type nopReadWriteCloser struct{}
@@ -71,19 +32,12 @@ func mustHost(raw string) settings.Host {
 
 func newTestWorkerFactory(t *testing.T) (*WorkerFactory, error) {
 	t.Helper()
-	runtime, err := NewRuntime(&dummyConfigManager{})
+	configuration := appConfiguration.ServerRuntimeConfiguration{}
+	runtime, err := NewRuntime(configuration)
 	if err != nil {
 		return nil, err
 	}
-	return NewTestWorkerFactory(newDefaultLoggerFactory(), runtime, &dummyConfigManager{})
-}
-
-func newTestWorkerFactoryWithErrorConfig() (*WorkerFactory, error) {
-	runtime, err := NewRuntime(&errorConfigManager{})
-	if err != nil {
-		return nil, err
-	}
-	return NewTestWorkerFactory(newDefaultLoggerFactory(), runtime, &errorConfigManager{})
+	return NewTestWorkerFactory(newDefaultLoggerFactory(), runtime, configuration)
 }
 
 // ------------------- tests -------------------
@@ -130,39 +84,6 @@ func Test_CreateWorker_UnsupportedProtocol(t *testing.T) {
 	_, err = factory.CreateWorker(context.Background(), nopReadWriteCloser{}, ws)
 	if err == nil || err.Error() != "protocol UNKNOWN not supported" {
 		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func Test_CreateWorker_TCP_ConfigError(t *testing.T) {
-	factory, err := newTestWorkerFactoryWithErrorConfig()
-	if err == nil {
-		t.Fatal("expected constructor error")
-	}
-
-	if factory != nil {
-		t.Fatal("expected nil factory on constructor error")
-	}
-}
-
-func Test_CreateWorker_UDP_ConfigError(t *testing.T) {
-	factory, err := newTestWorkerFactoryWithErrorConfig()
-	if err == nil {
-		t.Fatal("expected constructor error")
-	}
-
-	if factory != nil {
-		t.Fatal("expected nil factory on constructor error")
-	}
-}
-
-func Test_CreateWorker_WS_ConfigError(t *testing.T) {
-	factory, err := newTestWorkerFactoryWithErrorConfig()
-	if err == nil {
-		t.Fatal("expected constructor error")
-	}
-
-	if factory != nil {
-		t.Fatal("expected nil factory on constructor error")
 	}
 }
 
@@ -360,23 +281,23 @@ func Test_CreateWorker_TCP_UDP_WS_Success(t *testing.T) {
 }
 
 func Test_NewWorkerFactory_Coverage(t *testing.T) {
-	dcm := &dummyConfigManager{}
-	runtime, err := NewRuntime(dcm)
+	configuration := appConfiguration.ServerRuntimeConfiguration{}
+	runtime, err := NewRuntime(configuration)
 	if err != nil {
 		t.Fatalf("unexpected runtime error: %v", err)
 	}
 	// Production constructor
-	if f, err := NewWorkerFactory(runtime, dcm); f == nil || err != nil {
+	if f, err := NewWorkerFactory(runtime, configuration); f == nil || err != nil {
 		t.Errorf("nil/error factory (prod): factory=%v err=%v", f, err)
 	}
 	// Test constructor
-	if f, err := NewTestWorkerFactory(newDefaultLoggerFactory(), runtime, dcm); f == nil || err != nil {
+	if f, err := NewTestWorkerFactory(newDefaultLoggerFactory(), runtime, configuration); f == nil || err != nil {
 		t.Errorf("nil/error factory (test): factory=%v err=%v", f, err)
 	}
 }
 
 func Test_Runtime_SessionRevokerAndAllowedPeersUpdater(t *testing.T) {
-	runtime, err := NewRuntime(&dummyConfigManager{})
+	runtime, err := NewRuntime(appConfiguration.ServerRuntimeConfiguration{})
 	if err != nil {
 		t.Fatalf("unexpected runtime error: %v", err)
 	}

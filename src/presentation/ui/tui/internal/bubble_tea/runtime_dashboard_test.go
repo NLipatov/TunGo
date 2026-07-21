@@ -8,13 +8,23 @@ import (
 	"strings"
 	"testing"
 	"time"
+	appConfiguration "tungo/application/configuration"
+	"tungo/application/runtime"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/telemetry/trafficstats"
-	runnerCommon "tungo/presentation/runners/common"
 	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 )
+
+func mustRuntimeDashboardHost(t *testing.T, raw string) settings.Host {
+	t.Helper()
+	host, err := settings.NewHost(raw)
+	if err != nil {
+		t.Fatalf("settings.NewHost(%q): %v", raw, err)
+	}
+	return host
+}
 
 func TestRuntimeDashboard_TabSwitchesToSettings(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
@@ -27,12 +37,12 @@ func TestRuntimeDashboard_TabSwitchesToSettings(t *testing.T) {
 }
 
 func TestNewRuntimeDashboard_DefaultsNilContextAndMode(t *testing.T) {
-	m := NewRuntimeDashboard(nil, RuntimeDashboardOptions{}, testSettings())
+	m := NewRuntimeDashboard(nilContext(), RuntimeDashboardOptions{}, testSettings())
 	if m.ctx == nil {
 		t.Fatal("expected fallback context when nil is passed")
 	}
-	if m.mode != RuntimeDashboardClient {
-		t.Fatalf("expected default client mode, got %q", m.mode)
+	if m.mode != runtime.ModeClient {
+		t.Fatalf("expected default client mode, got %v", m.mode)
 	}
 }
 
@@ -272,13 +282,17 @@ func TestRunRuntimeDashboard_NilContext(t *testing.T) {
 		}
 	}
 
-	quit, err := RunRuntimeDashboard(nil, RuntimeDashboardOptions{})
+	quit, err := RunRuntimeDashboard(nilContext(), RuntimeDashboardOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if quit {
 		t.Fatal("expected quit=false")
 	}
+}
+
+func nilContext() context.Context {
+	return nil
 }
 
 func TestNewRuntimeDashboardProgram_DefaultFactory(t *testing.T) {
@@ -447,10 +461,9 @@ func TestRuntimeDashboard_DataplaneHint_UsesStopConfirmationCopy(t *testing.T) {
 }
 
 func TestRuntimeDashboard_DataplaneHint_ConnectingClientUsesReconfigureCopy(t *testing.T) {
-	readyCh := make(chan struct{})
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:    RuntimeDashboardClient,
-		ReadyCh: readyCh,
+		Mode:  runtime.ModeClient,
+		Ready: func() bool { return false },
 	}, testSettings())
 	view := m.View().Content
 	if !strings.Contains(view, "Esc reconfigure | Tab switch tabs | ctrl+c exit") {
@@ -603,7 +616,7 @@ func TestRuntimeDashboard_MainView_ServerAndFooterOff(t *testing.T) {
 	s.update(p)
 
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode: RuntimeDashboardServer,
+		Mode: runtime.ModeServer,
 	}, s)
 	m.width = 120
 	m.height = 30
@@ -625,16 +638,13 @@ func TestRuntimeDashboard_MainView_ServerAndFooterOff(t *testing.T) {
 func TestRuntimeDashboard_MainView_ShowsServerAndNetworkAddresses(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
 		Protocol: settings.UDP,
-		ProtocolAddresses: []runnerCommon.RuntimeProtocolAddress{{
+		Endpoints: []appConfiguration.EndpointInfo{{
 			Protocol: settings.UDP,
-			ServerAddress: runnerCommon.RuntimeAddressPair{
-				IPv4: netip.MustParseAddr("198.51.100.10"),
-				IPv6: netip.MustParseAddr("2001:db8::10"),
-			},
-			TunnelAddress: runnerCommon.RuntimeAddressPair{
-				IPv4: netip.MustParseAddr("10.0.0.2"),
-				IPv6: netip.MustParseAddr("fd00::2"),
-			},
+			Server: settings.Host{}.
+				WithIPv4(netip.MustParseAddr("198.51.100.10")).
+				WithIPv6(netip.MustParseAddr("2001:db8::10")),
+			TunnelIPv4: netip.MustParseAddr("10.0.0.2"),
+			TunnelIPv6: netip.MustParseAddr("fd00::2"),
 		}},
 	}, testSettings())
 	view := m.View().Content
@@ -651,37 +661,25 @@ func TestRuntimeDashboard_MainView_ShowsServerAndNetworkAddresses(t *testing.T) 
 
 func TestRuntimeDashboard_MainView_ServerShowsTunnelAddressesPerProtocol(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode: RuntimeDashboardServer,
-		ProtocolAddresses: []runnerCommon.RuntimeProtocolAddress{
+		Mode: runtime.ModeServer,
+		Endpoints: []appConfiguration.EndpointInfo{
 			{
-				Protocol: settings.TCP,
-				ServerAddress: runnerCommon.RuntimeAddressPair{
-					IPv4: netip.MustParseAddr("198.51.100.10"),
-				},
-				TunnelAddress: runnerCommon.RuntimeAddressPair{
-					IPv4: netip.MustParseAddr("10.0.0.1"),
-					IPv6: netip.MustParseAddr("fd00::1"),
-				},
+				Protocol:   settings.TCP,
+				Server:     settings.Host{}.WithIPv4(netip.MustParseAddr("198.51.100.10")),
+				TunnelIPv4: netip.MustParseAddr("10.0.0.1"),
+				TunnelIPv6: netip.MustParseAddr("fd00::1"),
 			},
 			{
-				Protocol: settings.UDP,
-				ServerAddress: runnerCommon.RuntimeAddressPair{
-					IPv4: netip.MustParseAddr("198.51.100.10"),
-				},
-				TunnelAddress: runnerCommon.RuntimeAddressPair{
-					IPv4: netip.MustParseAddr("10.0.1.1"),
-					IPv6: netip.MustParseAddr("fd00::2"),
-				},
+				Protocol:   settings.UDP,
+				Server:     settings.Host{}.WithIPv4(netip.MustParseAddr("198.51.100.10")),
+				TunnelIPv4: netip.MustParseAddr("10.0.1.1"),
+				TunnelIPv6: netip.MustParseAddr("fd00::2"),
 			},
 			{
-				Protocol: settings.WS,
-				ServerAddress: runnerCommon.RuntimeAddressPair{
-					IPv4: netip.MustParseAddr("198.51.100.10"),
-				},
-				TunnelAddress: runnerCommon.RuntimeAddressPair{
-					IPv4: netip.MustParseAddr("10.0.2.1"),
-					IPv6: netip.MustParseAddr("fd00::3"),
-				},
+				Protocol:   settings.WS,
+				Server:     settings.Host{}.WithIPv4(netip.MustParseAddr("198.51.100.10")),
+				TunnelIPv4: netip.MustParseAddr("10.0.2.1"),
+				TunnelIPv6: netip.MustParseAddr("fd00::3"),
 			},
 		},
 	}, testSettings())
@@ -706,25 +704,17 @@ func TestRuntimeDashboard_MainView_ServerShowsTunnelAddressesPerProtocol(t *test
 
 func TestRuntimeDashboard_MainView_ServerShowsServerAddressesPerProtocolWhenDifferent(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode: RuntimeDashboardServer,
-		ProtocolAddresses: []runnerCommon.RuntimeProtocolAddress{
+		Mode: runtime.ModeServer,
+		Endpoints: []appConfiguration.EndpointInfo{
 			{
-				Protocol: settings.TCP,
-				ServerAddress: runnerCommon.RuntimeAddressPair{
-					IPv4: netip.MustParseAddr("198.51.100.10"),
-				},
-				TunnelAddress: runnerCommon.RuntimeAddressPair{
-					IPv4: netip.MustParseAddr("10.0.0.1"),
-				},
+				Protocol:   settings.TCP,
+				Server:     settings.Host{}.WithIPv4(netip.MustParseAddr("198.51.100.10")),
+				TunnelIPv4: netip.MustParseAddr("10.0.0.1"),
 			},
 			{
-				Protocol: settings.UDP,
-				ServerAddress: runnerCommon.RuntimeAddressPair{
-					IPv6: netip.MustParseAddr("2001:db8::20"),
-				},
-				TunnelAddress: runnerCommon.RuntimeAddressPair{
-					IPv4: netip.MustParseAddr("10.0.1.1"),
-				},
+				Protocol:   settings.UDP,
+				Server:     settings.Host{}.WithIPv6(netip.MustParseAddr("2001:db8::20")),
+				TunnelIPv4: netip.MustParseAddr("10.0.1.1"),
 			},
 		},
 	}, testSettings())
@@ -741,6 +731,34 @@ func TestRuntimeDashboard_MainView_ServerShowsServerAddressesPerProtocolWhenDiff
 	}
 	if strings.Contains(view, "Server IP: IPv4 198.51.100.10 | IPv6 2001:db8::20") {
 		t.Fatalf("unexpected merged server IP line, got %q", view)
+	}
+}
+
+func TestFormatRuntimeHostParts_DomainIPv4AndIPv6(t *testing.T) {
+	host := mustRuntimeDashboardHost(t, "API.EXAMPLE.COM").
+		WithIPv4(netip.MustParseAddr("198.51.100.10")).
+		WithIPv6(netip.MustParseAddr("2001:db8::10"))
+
+	got := formatRuntimeHostParts(host)
+	want := "Domain api.example.com | IPv4 198.51.100.10 | IPv6 2001:db8::10"
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+func TestFormatRuntimeProtocolHost_UnknownProtocolOmitsPrefix(t *testing.T) {
+	host := settings.Host{}.WithIPv4(netip.MustParseAddr("198.51.100.10"))
+
+	got := formatRuntimeProtocolHost(settings.UNKNOWN, host)
+	want := "IPv4 198.51.100.10"
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+func TestFormatRuntimeProtocolHost_EmptyHost(t *testing.T) {
+	if got := formatRuntimeProtocolHost(settings.TCP, settings.Host{}); got != "" {
+		t.Fatalf("expected empty host line, got %q", got)
 	}
 }
 
@@ -1642,74 +1660,36 @@ func TestRenderRateBrailleRing_WidthGreaterThanCount_PadsLeft(t *testing.T) {
 	}
 }
 
-func TestRuntimeDashboard_OpenReadyCh_InitiallyNotConnected(t *testing.T) {
-	readyCh := make(chan struct{})
+func TestRuntimeDashboard_ReadyStateUpdatesOnTick(t *testing.T) {
+	ready := false
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:    RuntimeDashboardClient,
-		ReadyCh: readyCh,
+		Mode:  runtime.ModeClient,
+		Ready: func() bool { return ready },
 	}, testSettings())
 	if m.connected {
-		t.Fatal("expected connected=false when readyCh is open")
+		t.Fatal("runtime started connected")
+	}
+
+	ready = true
+	updated, _ := m.Update(runtimeTickMsg{seq: m.tickSeq})
+	if !updated.(RuntimeDashboard).connected {
+		t.Fatal("runtime did not become connected on tick")
 	}
 }
 
-func TestRuntimeDashboard_PreClosedReadyCh_Connected(t *testing.T) {
-	readyCh := make(chan struct{})
-	close(readyCh)
+func TestRuntimeDashboard_NilReadyDefaultsToConnected(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:    RuntimeDashboardClient,
-		ReadyCh: readyCh,
+		Mode: runtime.ModeClient,
 	}, testSettings())
 	if !m.connected {
-		t.Fatal("expected connected=true when readyCh is pre-closed")
-	}
-}
-
-func TestRuntimeDashboard_NilReadyCh_DefaultsToConnected(t *testing.T) {
-	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode: RuntimeDashboardClient,
-	}, testSettings())
-	if !m.connected {
-		t.Fatal("expected connected=true when ReadyCh is nil (defaults to pre-closed)")
-	}
-}
-
-func TestRuntimeDashboard_ReadyMsg_SetsConnected(t *testing.T) {
-	readyCh := make(chan struct{})
-	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:    RuntimeDashboardClient,
-		ReadyCh: readyCh,
-	}, testSettings())
-	if m.connected {
-		t.Fatal("precondition: expected connected=false")
-	}
-
-	updated, _ := m.Update(runtimeReadyMsg{seq: m.runtimeSeq})
-	dash := updated.(RuntimeDashboard)
-	if !dash.connected {
-		t.Fatal("expected connected=true after runtimeReadyMsg")
-	}
-}
-
-func TestRuntimeDashboard_ReadyMsg_WrongSeq_Ignored(t *testing.T) {
-	readyCh := make(chan struct{})
-	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:    RuntimeDashboardClient,
-		ReadyCh: readyCh,
-	}, testSettings())
-
-	updated, _ := m.Update(runtimeReadyMsg{seq: m.runtimeSeq + 99})
-	dash := updated.(RuntimeDashboard)
-	if dash.connected {
-		t.Fatal("expected connected=false when seq doesn't match")
+		t.Fatal("nil Ready callback did not default to connected")
 	}
 }
 
 func TestRuntimeDashboard_MainView_ConnectingStatus(t *testing.T) {
-	readyCh := make(chan struct{})
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:    RuntimeDashboardClient,
-		ReadyCh: readyCh,
+		Mode:  runtime.ModeClient,
+		Ready: func() bool { return false },
 	}, testSettings())
 	m.width = 80
 	m.height = 24
@@ -1721,11 +1701,9 @@ func TestRuntimeDashboard_MainView_ConnectingStatus(t *testing.T) {
 }
 
 func TestRuntimeDashboard_MainView_ConnectedStatus(t *testing.T) {
-	readyCh := make(chan struct{})
-	close(readyCh)
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:    RuntimeDashboardClient,
-		ReadyCh: readyCh,
+		Mode:  runtime.ModeClient,
+		Ready: func() bool { return true },
 	}, testSettings())
 	m.width = 80
 	m.height = 24
@@ -1740,10 +1718,9 @@ func TestRuntimeDashboard_MainView_ConnectedStatus(t *testing.T) {
 }
 
 func TestRuntimeDashboard_MainView_ServerAlwaysRunning(t *testing.T) {
-	readyCh := make(chan struct{})
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:    RuntimeDashboardServer,
-		ReadyCh: readyCh,
+		Mode:  runtime.ModeServer,
+		Ready: func() bool { return false },
 	}, testSettings())
 	m.width = 80
 	m.height = 24
@@ -1755,10 +1732,9 @@ func TestRuntimeDashboard_MainView_ServerAlwaysRunning(t *testing.T) {
 }
 
 func TestRuntimeDashboard_EscDuringConnecting_ReconfiguresImmediately(t *testing.T) {
-	readyCh := make(chan struct{})
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:    RuntimeDashboardClient,
-		ReadyCh: readyCh,
+		Mode:  runtime.ModeClient,
+		Ready: func() bool { return false },
 	}, testSettings())
 	m.screen = runtimeScreenDataplane
 
@@ -1776,16 +1752,14 @@ func TestRuntimeDashboard_EscDuringConnecting_ReconfiguresImmediately(t *testing
 }
 
 func TestRuntimeDashboard_EscWhenConnected_OpensConfirmDialog(t *testing.T) {
-	readyCh := make(chan struct{})
-	close(readyCh)
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:    RuntimeDashboardClient,
-		ReadyCh: readyCh,
+		Mode:  runtime.ModeClient,
+		Ready: func() bool { return true },
 	}, testSettings())
 	m.screen = runtimeScreenDataplane
 
-	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
-	dash := updated.(RuntimeDashboard)
+	updatedModel, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	dash := updatedModel.(RuntimeDashboard)
 	if dash.reconfigureRequested {
 		t.Fatal("expected reconfigureRequested=false — should show confirm dialog when connected")
 	}
@@ -1797,89 +1771,19 @@ func TestRuntimeDashboard_EscWhenConnected_OpensConfirmDialog(t *testing.T) {
 	}
 }
 
-func TestRuntimeDashboard_Init_NotConnected_IncludesReadyCmd(t *testing.T) {
-	readyCh := make(chan struct{})
-	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:    RuntimeDashboardClient,
-		ReadyCh: readyCh,
-	}, testSettings())
-
-	cmd := m.Init()
-	if cmd == nil {
-		t.Fatal("expected non-nil batch command from Init")
-	}
-	// Close readyCh so the waitForReadyCh cmd can complete
-	close(readyCh)
-}
-
-func TestRuntimeDashboard_Init_Connected_NoReadyCmd(t *testing.T) {
-	readyCh := make(chan struct{})
-	close(readyCh)
-	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode:    RuntimeDashboardClient,
-		ReadyCh: readyCh,
-	}, testSettings())
-	if !m.connected {
-		t.Fatal("precondition: expected connected=true")
-	}
-
-	// Init should still return a batch (tick + context), just without the ready cmd
-	cmd := m.Init()
-	if cmd == nil {
-		t.Fatal("expected non-nil batch command from Init even when connected")
-	}
-}
-
 func TestRuntimeDashboard_StopConfirmTitle_ServerMode(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode: RuntimeDashboardServer,
+		Mode: runtime.ModeServer,
 	}, testSettings())
 	if got := m.stopConfirmTitle(); got != runtimeStopConfirmTitleServer {
 		t.Fatalf("expected %q, got %q", runtimeStopConfirmTitleServer, got)
 	}
 }
 
-func TestWaitForReadyCh_ChannelClosed_ReturnsReadyMsg(t *testing.T) {
-	readyCh := make(chan struct{})
-	close(readyCh)
-
-	cmd := waitForReadyCh(context.Background(), readyCh, 42)
-	if cmd == nil {
-		t.Fatal("expected non-nil wait cmd")
-	}
-	msg := cmd()
-	ready, ok := msg.(runtimeReadyMsg)
-	if !ok {
-		t.Fatalf("expected runtimeReadyMsg, got %T", msg)
-	}
-	if ready.seq != 42 {
-		t.Fatalf("expected seq=42, got %d", ready.seq)
-	}
-}
-
-func TestWaitForReadyCh_ContextCanceled_ReturnsContextDoneMsg(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	cmd := waitForReadyCh(ctx, make(chan struct{}), 7)
-	if cmd == nil {
-		t.Fatal("expected non-nil wait cmd")
-	}
-	msg := cmd()
-	done, ok := msg.(runtimeContextDoneMsg)
-	if !ok {
-		t.Fatalf("expected runtimeContextDoneMsg, got %T", msg)
-	}
-	if done.seq != 7 {
-		t.Fatalf("expected seq=7, got %d", done.seq)
-	}
-}
-
 func TestRuntimeDashboard_TunnelIPLines_InvalidSingleAddressReturnsNil(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		ProtocolAddresses: []runnerCommon.RuntimeProtocolAddress{{
-			Protocol:      settings.TCP,
-			TunnelAddress: runnerCommon.RuntimeAddressPair{},
+		Endpoints: []appConfiguration.EndpointInfo{{
+			Protocol: settings.TCP,
 		}},
 	}, testSettings())
 
@@ -1890,8 +1794,8 @@ func TestRuntimeDashboard_TunnelIPLines_InvalidSingleAddressReturnsNil(t *testin
 
 func TestRuntimeDashboard_ServerAddressLines_InvalidSharedAddressReturnsNil(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		Mode: RuntimeDashboardServer,
-		ProtocolAddresses: []runnerCommon.RuntimeProtocolAddress{
+		Mode: runtime.ModeServer,
+		Endpoints: []appConfiguration.EndpointInfo{
 			{Protocol: settings.TCP},
 			{Protocol: settings.UDP},
 		},
@@ -1904,7 +1808,7 @@ func TestRuntimeDashboard_ServerAddressLines_InvalidSharedAddressReturnsNil(t *t
 
 func TestRuntimeDashboard_ServerAddressLines_InvalidSingleAddressReturnsNil(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
-		ProtocolAddresses: []runnerCommon.RuntimeProtocolAddress{{
+		Endpoints: []appConfiguration.EndpointInfo{{
 			Protocol: settings.TCP,
 		}},
 	}, testSettings())
@@ -1915,16 +1819,13 @@ func TestRuntimeDashboard_ServerAddressLines_InvalidSingleAddressReturnsNil(t *t
 }
 
 func TestFormatRuntimeProtocolAddress_EmptyAddressReturnsEmpty(t *testing.T) {
-	if got := formatRuntimeProtocolAddress(settings.TCP, runnerCommon.RuntimeAddressPair{}); got != "" {
+	if got := formatRuntimeProtocolAddress(settings.TCP, netip.Addr{}, netip.Addr{}); got != "" {
 		t.Fatalf("expected empty line for invalid runtime address, got %q", got)
 	}
 }
 
 func TestFormatRuntimeProtocolAddress_UnknownProtocolOmitsProtocolLabel(t *testing.T) {
-	got := formatRuntimeProtocolAddress(settings.UNKNOWN, runnerCommon.RuntimeAddressPair{
-		IPv4: netip.MustParseAddr("10.0.0.2"),
-		IPv6: netip.MustParseAddr("fd00::2"),
-	})
+	got := formatRuntimeProtocolAddress(settings.UNKNOWN, netip.MustParseAddr("10.0.0.2"), netip.MustParseAddr("fd00::2"))
 	if got != "IPv4 10.0.0.2 | IPv6 fd00::2" {
 		t.Fatalf("unexpected unknown-protocol line: %q", got)
 	}
@@ -1935,44 +1836,35 @@ func TestSharedServerAddress_RequiresExactMatch(t *testing.T) {
 		t.Fatal("expected empty protocol address list to have no shared server address")
 	}
 
-	if _, ok := sharedServerAddress([]runnerCommon.RuntimeProtocolAddress{
+	if _, ok := sharedServerAddress([]appConfiguration.EndpointInfo{
 		{
 			Protocol: settings.TCP,
-			ServerAddress: runnerCommon.RuntimeAddressPair{
-				IPv4: netip.MustParseAddr("198.51.100.10"),
-			},
+			Server:   settings.Host{}.WithIPv4(netip.MustParseAddr("198.51.100.10")),
 		},
 		{
 			Protocol: settings.UDP,
-			ServerAddress: runnerCommon.RuntimeAddressPair{
-				IPv4: netip.MustParseAddr("198.51.100.10"),
-				IPv6: netip.MustParseAddr("2001:db8::20"),
-			},
+			Server: settings.Host{}.
+				WithIPv4(netip.MustParseAddr("198.51.100.10")).
+				WithIPv6(netip.MustParseAddr("2001:db8::20")),
 		},
 	}); ok {
 		t.Fatal("expected mixed server address pairs to be treated as different")
 	}
 
-	shared, ok := sharedServerAddress([]runnerCommon.RuntimeProtocolAddress{
+	shared, ok := sharedServerAddress([]appConfiguration.EndpointInfo{
 		{
 			Protocol: settings.TCP,
-			ServerAddress: runnerCommon.RuntimeAddressPair{
-				IPv4: netip.MustParseAddr("198.51.100.10"),
-			},
+			Server:   settings.Host{}.WithIPv4(netip.MustParseAddr("198.51.100.10")),
 		},
 		{
 			Protocol: settings.UDP,
-			ServerAddress: runnerCommon.RuntimeAddressPair{
-				IPv4: netip.MustParseAddr("198.51.100.10"),
-			},
+			Server:   settings.Host{}.WithIPv4(netip.MustParseAddr("198.51.100.10")),
 		},
 	})
 	if !ok {
 		t.Fatal("expected identical server address pairs to be shared")
 	}
-	if shared != (runnerCommon.RuntimeAddressPair{
-		IPv4: netip.MustParseAddr("198.51.100.10"),
-	}) {
+	if shared != (settings.Host{}).WithIPv4(netip.MustParseAddr("198.51.100.10")) {
 		t.Fatalf("unexpected shared server address: %+v", shared)
 	}
 }

@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	appConfiguration "tungo/application/configuration"
 	"tungo/application/network/routing/tun"
-	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/settings"
 )
 
@@ -152,7 +152,7 @@ func newMgr(
 	},
 	wrap tun.Wrapper,
 ) *PlatformTunManager {
-	cfg := client.Configuration{
+	cfg := appConfiguration.ClientRuntimeConfiguration{
 		Protocol: proto,
 		UDPSettings: settings.Settings{
 			Addressing: settings.Addressing{

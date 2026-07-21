@@ -3,20 +3,20 @@ package server
 import (
 	"context"
 	"io"
+	appConfiguration "tungo/application/configuration"
 	"tungo/application/network/routing"
-	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/settings"
 )
 
 type WorkerFactory struct {
-	configurationManager server.ConfigurationManager
-	runtime              *Runtime
+	configuration appConfiguration.ServerRuntimeConfiguration
+	runtime       *Runtime
 }
 
-func NewWorkerFactory(runtime *Runtime, manager server.ConfigurationManager) (*WorkerFactory, error) {
+func NewWorkerFactory(runtime *Runtime, configuration appConfiguration.ServerRuntimeConfiguration) (*WorkerFactory, error) {
 	return &WorkerFactory{
-		configurationManager: manager,
-		runtime:              runtime,
+		configuration: configuration,
+		runtime:       runtime,
 	}, nil
 }
 

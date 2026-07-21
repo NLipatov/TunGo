@@ -1,13 +1,12 @@
 package server
 
 import (
-	"tungo/infrastructure/PAL/configuration/server"
+	appConfiguration "tungo/application/configuration"
 	"tungo/infrastructure/cryptography/noise"
 	"tungo/infrastructure/tunnel/session"
 )
 
-// Runtime holds shared state used across server workers and the config watcher.
-// Created once at startup and passed to both WorkerFactory and ConfigWatcher.
+// Runtime holds shared state used across server workers and configuration updates.
 type Runtime struct {
 	sessionRevoker *session.CompositeSessionRevoker
 	allowedPeers   noise.AllowedPeersLookup
@@ -19,7 +18,7 @@ func (r *Runtime) SessionRevoker() *session.CompositeSessionRevoker {
 	return r.sessionRevoker
 }
 
-func (r *Runtime) AllowedPeersUpdater() server.AllowedPeersUpdater {
+func (r *Runtime) AllowedPeersUpdater() appConfiguration.ServerAllowedPeersUpdater {
 	if r.allowedPeers == nil {
 		return nil
 	}

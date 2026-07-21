@@ -3,11 +3,9 @@ package systemd
 import (
 	"os"
 	"os/exec"
-
-	infra "tungo/infrastructure/PAL/service_management/linux/systemd/infrastructure"
 )
 
-var defaultSystemdConfig = infra.DefaultConfig()
+var defaultSystemdConfig = DefaultConfig()
 
 var (
 	systemdRuntimeDir = defaultSystemdConfig.RuntimeDir
@@ -23,5 +21,4 @@ var (
 	writeFilePath = os.WriteFile
 	readFilePath  = os.ReadFile
 	removePath    = os.Remove
-	geteuid       = os.Geteuid
 )

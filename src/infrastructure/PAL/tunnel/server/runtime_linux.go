@@ -2,20 +2,12 @@ package server
 
 import (
 	"fmt"
-	"tungo/infrastructure/PAL/configuration/server"
+	appConfiguration "tungo/application/configuration"
 	"tungo/infrastructure/cryptography/noise"
 	"tungo/infrastructure/tunnel/session"
 )
 
-func NewRuntime(manager server.ConfigurationManager) (*Runtime, error) {
-	conf, err := manager.Configuration()
-	if err != nil {
-		return nil, fmt.Errorf("failed to load configuration: %w", err)
-	}
-	if conf == nil {
-		return nil, fmt.Errorf("failed to load configuration: nil configuration")
-	}
-
+func NewRuntime(conf appConfiguration.ServerRuntimeConfiguration) (*Runtime, error) {
 	cookieManager, err := noise.NewCookieManager()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cookie manager: %w", err)

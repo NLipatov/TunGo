@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
+	appConfiguration "tungo/application/configuration"
 	"tungo/application/network/connection"
-	"tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/network/tcp/adapters"
 	"tungo/infrastructure/settings"
 )
@@ -55,7 +55,7 @@ func (c *WorkerFactoryCryptoMock) Decrypt(ciphertext []byte) ([]byte, error) {
 // -------------------- Tests --------------------
 
 func TestWorkerFactory_CreateWorker_UnsupportedProtocol(t *testing.T) {
-	cfg := client.Configuration{
+	cfg := appConfiguration.ClientRuntimeConfiguration{
 		Protocol: settings.Protocol(0xFFFF), // unknown protocol
 	}
 
@@ -78,7 +78,7 @@ func TestWorkerFactory_CreateWorker_UnsupportedProtocol(t *testing.T) {
 
 func TestWorkerFactory_CreateWorker_TCP(t *testing.T) {
 	// TCP path should produce a non-nil worker (uses tcp_chacha20 constructors internally).
-	cfg := client.Configuration{
+	cfg := appConfiguration.ClientRuntimeConfiguration{
 		Protocol: settings.TCP,
 	}
 
@@ -102,7 +102,7 @@ func TestWorkerFactory_CreateWorker_TCP(t *testing.T) {
 
 func TestWorkerFactory_CreateWorker_WS(t *testing.T) {
 	// WS path reuses TCP logic in implementation — expect non-nil worker.
-	cfg := client.Configuration{
+	cfg := appConfiguration.ClientRuntimeConfiguration{
 		Protocol: settings.WS,
 	}
 
@@ -133,7 +133,7 @@ func TestWorkerFactory_CreateWorker_UDP(t *testing.T) {
 		_ = udpConn.Close()
 	}(udpConn)
 
-	cfg := client.Configuration{
+	cfg := appConfiguration.ClientRuntimeConfiguration{
 		Protocol: settings.UDP,
 	}
 
@@ -163,7 +163,7 @@ func TestWorkerFactory_CreateWorker_UDP_WithWrappedTransport(t *testing.T) {
 		_ = udpConn.Close()
 	}(udpConn)
 
-	cfg := client.Configuration{
+	cfg := appConfiguration.ClientRuntimeConfiguration{
 		Protocol: settings.UDP,
 	}
 	wf := NewWorkerFactory(cfg)
@@ -182,7 +182,7 @@ func TestWorkerFactory_CreateWorker_UDP_WithWrappedTransport(t *testing.T) {
 }
 
 func TestWorkerFactory_CreateWorker_UDP_RejectsNonUDPTransport(t *testing.T) {
-	cfg := client.Configuration{
+	cfg := appConfiguration.ClientRuntimeConfiguration{
 		Protocol: settings.UDP,
 	}
 	wf := NewWorkerFactory(cfg)
@@ -204,7 +204,7 @@ func TestWorkerFactory_CreateWorker_UDP_RejectsNonUDPTransport(t *testing.T) {
 
 func TestWorkerFactory_CreateWorker_TCP_WithAllowedSources(t *testing.T) {
 	// Covers allowedSources() IPv4 and IPv6 branches.
-	cfg := client.Configuration{
+	cfg := appConfiguration.ClientRuntimeConfiguration{
 		Protocol: settings.TCP,
 		TCPSettings: settings.Settings{
 			Addressing: settings.Addressing{

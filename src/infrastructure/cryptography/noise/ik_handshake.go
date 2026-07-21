@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net/netip"
 	"sync/atomic"
+	appConfiguration "tungo/application/configuration"
 	"tungo/application/network/connection"
-	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/cryptography/mem"
 
 	noiselib "github.com/flynn/noise"
@@ -45,7 +45,7 @@ type AllowedPeersLookup interface {
 
 	// Update atomically replaces the peer map with a new configuration.
 	// This allows runtime updates without server restart.
-	Update(peers []server.AllowedPeer)
+	Update(peers []appConfiguration.ServerPeer)
 }
 
 // allowedPeersMap implements AllowedPeersLookup using atomic pointer for lock-free reads.
@@ -59,7 +59,7 @@ type allowedPeerEntry struct {
 }
 
 // NewAllowedPeersLookup creates an AllowedPeersLookup from a slice of AllowedPeer.
-func NewAllowedPeersLookup(peers []server.AllowedPeer) AllowedPeersLookup {
+func NewAllowedPeersLookup(peers []appConfiguration.ServerPeer) AllowedPeersLookup {
 	a := &allowedPeersMap{}
 	a.Update(peers)
 	return a
@@ -77,7 +77,7 @@ func (a *allowedPeersMap) Lookup(pubKey []byte) (int, bool, bool) {
 	return peer.clientID, peer.enabled, true
 }
 
-func (a *allowedPeersMap) Update(peers []server.AllowedPeer) {
+func (a *allowedPeersMap) Update(peers []appConfiguration.ServerPeer) {
 	m := make(map[string]allowedPeerEntry, len(peers))
 	for i := range peers {
 		peer := peers[i]

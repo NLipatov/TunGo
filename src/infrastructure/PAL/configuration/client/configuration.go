@@ -5,6 +5,7 @@ import (
 	"net/netip"
 	"strings"
 	"tungo/infrastructure/settings"
+	"unicode"
 )
 
 type Configuration struct {
@@ -54,6 +55,11 @@ func (c *Configuration) Validate() error {
 	}
 	if strings.TrimSpace(active.TunName) == "" {
 		return fmt.Errorf("active settings: TunName is not configured")
+	}
+	if strings.IndexFunc(active.TunName, func(r rune) bool {
+		return unicode.IsSpace(r) || unicode.IsControl(r) || unicode.In(r, unicode.Cf)
+	}) >= 0 {
+		return fmt.Errorf("active settings: TunName contains unsupported characters")
 	}
 	if active.Server.IsZero() {
 		return fmt.Errorf("active settings: Server is not configured")

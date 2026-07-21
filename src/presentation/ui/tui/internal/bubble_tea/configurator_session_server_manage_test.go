@@ -101,20 +101,19 @@ func newSessionModelForServerManageTests(
 	manager *sessionServerConfigManagerStub,
 ) configuratorSessionModel {
 	t.Helper()
-	model, err := newConfiguratorSessionModel(ConfiguratorSessionOptions{
+	model, err := newConfiguratorSessionModel(sessionOptionsWithControl(&sessionConfigurationControl{
 		Observer:            sessionObserverStub{},
 		Selector:            sessionSelectorStub{},
 		Creator:             sessionCreatorStub{},
 		Deleter:             sessionDeleterStub{},
 		ClientConfigManager: sessionClientConfigManagerStub{},
 		ServerConfigManager: manager,
-		ServerSupported:     true,
-	}, testSettings())
+	}), testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
 	model.screen = configuratorScreenServerManage
-	model.server.managePeers = append([]serverConfiguration.AllowedPeer(nil), manager.peers...)
+	model.server.managePeers = sessionServerPeers(manager.peers)
 	model.server.manageLabels = buildServerManageLabels(model.server.managePeers)
 	model.cursor = 0
 	return model
@@ -256,60 +255,6 @@ func TestServerManage_ToggleEnabled_ListError_Exits(t *testing.T) {
 	}
 }
 
-func TestServerManage_ToggleEnabled_ListReturnsEmpty_GoesBack(t *testing.T) {
-	manager := &sessionServerConfigManagerStub{
-		peers: []serverConfiguration.AllowedPeer{
-			{Name: "alpha", ClientID: 1, Enabled: true},
-		},
-	}
-	model := newSessionModelForServerManageTests(t, manager)
-	// After toggle, clear all peers so ListAllowedPeers returns empty.
-	model.server.managePeers = []serverConfiguration.AllowedPeer{
-		{Name: "alpha", ClientID: 1, Enabled: true},
-	}
-	// Hack: after SetAllowedPeerEnabled succeeds, the manager has the peer toggled.
-	// But let's make ListAllowedPeers return empty by clearing peers post-toggle.
-	// We'll use a different approach: remove the peer inside SetAllowedPeerEnabled side effect.
-
-	// Actually simpler: just remove all peers from manager after the toggle call.
-	// We need to make the list return empty after the toggle. Let's just clear manager.peers
-	// but the stub toggle adds it back. Let me just set peers to empty after a successful toggle.
-	// Best approach: wrap the test by modifying peers to become empty after toggle.
-	manager.peers = []serverConfiguration.AllowedPeer{
-		{Name: "alpha", ClientID: 1, Enabled: true},
-	}
-
-	// Set cursor on the peer
-	model.cursor = 0
-
-	// The toggle will succeed (setEnabledErr is nil), then ListAllowedPeers is called.
-	// To make list return empty, we need to clear peers before list is called.
-	// Since we can't hook between calls, let's just make setEnabledErr nil and remove all peers.
-	// SetAllowedPeerEnabled will toggle, then ListAllowedPeers returns the toggled peer.
-	// For the "list empty" case, the simplest is to have the peer removed during toggle.
-	// Let's just swap peers slice.
-
-	// Alternative: Use setEnabledErr=nil so toggle succeeds, but make the test that
-	// the manage screen handles cursor adjustment when cursor >= len(peers).
-	// That's the line `if m.cursor >= len(m.serverManagePeers)`.
-
-	// Let's test cursor clamping instead: start with 2 peers, cursor at 1, remove peer 0,
-	// then list returns only 1 peer, and cursor should be clamped.
-	manager.peers = []serverConfiguration.AllowedPeer{
-		{Name: "alpha", ClientID: 1, Enabled: true},
-		{Name: "beta", ClientID: 2, Enabled: false},
-	}
-	model.server.managePeers = append([]serverConfiguration.AllowedPeer(nil), manager.peers...)
-	model.server.manageLabels = buildServerManageLabels(model.server.managePeers)
-	model.cursor = 1
-
-	nextModel, _ := model.updateServerManageScreen(keyNamed(tea.KeyEnter))
-	state := nextModel.(configuratorSessionModel)
-	if state.screen != configuratorScreenServerManage {
-		t.Fatalf("expected manage screen, got %v", state.screen)
-	}
-}
-
 func TestServerManage_DeleteNoEmptyPeers(t *testing.T) {
 	manager := &sessionServerConfigManagerStub{
 		peers: nil,
@@ -354,7 +299,7 @@ func TestServerDeleteConfirm_RemoveError_ShowsNotice(t *testing.T) {
 	}
 	model := newSessionModelForServerManageTests(t, manager)
 	model.screen = configuratorScreenServerDeleteConfirm
-	model.server.deletePeer = manager.peers[0]
+	model.server.deletePeer = sessionServerPeer(manager.peers[0])
 	model.cursor = 0
 
 	nextModel, _ := model.updateServerDeleteConfirmScreen(keyNamed(tea.KeyEnter))
@@ -375,7 +320,7 @@ func TestServerDeleteConfirm_ListError_Exits(t *testing.T) {
 	}
 	model := newSessionModelForServerManageTests(t, manager)
 	model.screen = configuratorScreenServerDeleteConfirm
-	model.server.deletePeer = manager.peers[0]
+	model.server.deletePeer = sessionServerPeer(manager.peers[0])
 	model.cursor = 0
 	// After remove, make list fail.
 	// The remove will succeed (removeErr is nil), and the peer is removed from slice.
@@ -402,7 +347,7 @@ func TestServerDeleteConfirm_CancelWithPeers_RestoresCursor(t *testing.T) {
 	}
 	model := newSessionModelForServerManageTests(t, manager)
 	model.screen = configuratorScreenServerDeleteConfirm
-	model.server.deletePeer = manager.peers[1]
+	model.server.deletePeer = sessionServerPeer(manager.peers[1])
 	model.server.deleteCursor = 1
 	model.cursor = 1 // cursor on "Cancel"
 

@@ -3,30 +3,25 @@ package bubble_tea
 import (
 	"context"
 	"errors"
+	"net/netip"
 	"strings"
 	"time"
+	appConfiguration "tungo/application/configuration"
+	"tungo/application/runtime"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/telemetry/trafficstats"
-	runnerCommon "tungo/presentation/runners/common"
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 )
 
-type RuntimeDashboardMode string
-
-const (
-	RuntimeDashboardClient RuntimeDashboardMode = "client"
-	RuntimeDashboardServer RuntimeDashboardMode = "server"
-)
-
 type RuntimeDashboardOptions struct {
-	Mode              RuntimeDashboardMode
-	LogFeed           RuntimeLogFeed
-	ServerSupported   bool
-	ReadyCh           <-chan struct{}
-	Protocol          settings.Protocol
-	ProtocolAddresses []runnerCommon.RuntimeProtocolAddress
+	Mode            runtime.Mode
+	LogFeed         RuntimeLogFeed
+	ServerSupported bool
+	Ready           func() bool
+	Protocol        settings.Protocol
+	Endpoints       []appConfiguration.EndpointInfo
 }
 
 type runtimeTickMsg struct {
@@ -34,10 +29,6 @@ type runtimeTickMsg struct {
 }
 
 type runtimeContextDoneMsg struct {
-	seq uint64
-}
-
-type runtimeReadyMsg struct {
 	seq uint64
 }
 
@@ -66,7 +57,7 @@ var ErrRuntimeDashboardExitRequested = errors.New("runtime dashboard exit reques
 type RuntimeDashboard struct {
 	settings             *uiPreferencesProvider
 	ctx                  context.Context
-	mode                 RuntimeDashboardMode
+	mode                 runtime.Mode
 	width                int
 	height               int
 	keys                 selectorKeyMap
@@ -86,10 +77,10 @@ type RuntimeDashboard struct {
 	runtimeSeq           uint64
 	exitRequested        bool
 	reconfigureRequested bool
-	readyCh              <-chan struct{}
+	ready                func() bool
 	connected            bool
 	protocol             settings.Protocol
-	protocolAddresses    []runnerCommon.RuntimeProtocolAddress
+	endpoints            []appConfiguration.EndpointInfo
 }
 
 type runtimeDashboardProgram interface {
@@ -105,38 +96,29 @@ func NewRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions, s
 		ctx = context.Background()
 	}
 	mode := options.Mode
-	if mode != RuntimeDashboardServer {
-		mode = RuntimeDashboardClient
+	if mode != runtime.ModeServer {
+		mode = runtime.ModeClient
 	}
-	readyCh := options.ReadyCh
-	if readyCh == nil {
-		ch := make(chan struct{})
-		close(ch)
-		readyCh = ch
+	ready := options.Ready
+	if ready == nil {
+		ready = func() bool { return true }
 	}
-	connected := mode == RuntimeDashboardServer
-	if !connected {
-		select {
-		case <-readyCh:
-			connected = true
-		default:
-		}
-	}
+	connected := mode == runtime.ModeServer || ready()
 	model := RuntimeDashboard{
-		settings:          settings,
-		ctx:               ctx,
-		mode:              mode,
-		serverSupported:   options.ServerSupported,
-		keys:              defaultSelectorKeyMap(),
-		screen:            runtimeScreenDataplane,
-		preferences:       settings.Preferences(),
-		logFeed:           options.LogFeed,
-		logs:              newLogViewport(),
-		tickSeq:           1,
-		readyCh:           readyCh,
-		connected:         connected,
-		protocol:          options.Protocol,
-		protocolAddresses: options.ProtocolAddresses,
+		settings:        settings,
+		ctx:             ctx,
+		mode:            mode,
+		serverSupported: options.ServerSupported,
+		keys:            defaultSelectorKeyMap(),
+		screen:          runtimeScreenDataplane,
+		preferences:     settings.Preferences(),
+		logFeed:         options.LogFeed,
+		logs:            newLogViewport(),
+		tickSeq:         1,
+		ready:           ready,
+		connected:       connected,
+		protocol:        options.Protocol,
+		endpoints:       options.Endpoints,
 	}
 	if model.preferences.ShowDataplaneGraph {
 		model.recordTrafficSample(trafficstats.SnapshotGlobal())
@@ -173,14 +155,10 @@ func RunRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions) (
 }
 
 func (m RuntimeDashboard) Init() tea.Cmd {
-	cmds := []tea.Cmd{
+	return tea.Batch(
 		runtimeTickCmd(m.tickSeq),
 		waitForRuntimeContextDone(m.ctx, m.runtimeSeq),
-	}
-	if m.mode == RuntimeDashboardClient && !m.connected {
-		cmds = append(cmds, waitForReadyCh(m.ctx, m.readyCh, m.runtimeSeq))
-	}
-	return tea.Batch(cmds...)
+	)
 }
 
 func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -197,6 +175,9 @@ func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.seq != m.tickSeq {
 			return m, nil
 		}
+		if !m.connected && m.ready() {
+			m.connected = true
+		}
 		if m.screen != runtimeScreenDataplane {
 			return m, nil
 		}
@@ -210,11 +191,6 @@ func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.logs.refresh(m.logFeed, m.preferences)
 		return m, runtimeLogUpdateCmd(m.ctx, m.logFeed, m.logs.waitStop, m.logs.tickSeq, m.runtimeSeq)
-	case runtimeReadyMsg:
-		if msg.seq == m.runtimeSeq {
-			m.connected = true
-		}
-		return m, nil
 	case runtimeContextDoneMsg:
 		m.logs.stopWait()
 		return m, tea.Quit
@@ -230,7 +206,7 @@ func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case msg.String() == "esc":
 			switch m.screen {
 			case runtimeScreenDataplane:
-				if m.mode == RuntimeDashboardClient && !m.connected {
+				if m.mode == runtime.ModeClient && !m.connected {
 					m.logs.stopWait()
 					m.reconfigureRequested = true
 					return m, tea.Quit
@@ -370,7 +346,7 @@ func (m RuntimeDashboard) mainView() string {
 	if m.connected {
 		status = "Status: Connected"
 	}
-	if m.mode == RuntimeDashboardServer {
+	if m.mode == runtime.ModeServer {
 		modeLine = "Mode: Server"
 		status = "Status: Running"
 	}
@@ -435,16 +411,16 @@ func (m RuntimeDashboard) mainView() string {
 }
 
 func (m RuntimeDashboard) serverAddressLines() []string {
-	if len(m.protocolAddresses) == 0 {
+	if len(m.endpoints) == 0 {
 		return nil
 	}
-	if m.mode == RuntimeDashboardServer && len(m.protocolAddresses) > 1 {
-		if sharedAddress, ok := sharedServerAddress(m.protocolAddresses); ok {
-			return []string{formatRuntimeAddressLine("Server IP", sharedAddress)}
+	if m.mode == runtime.ModeServer && len(m.endpoints) > 1 {
+		if sharedAddress, ok := sharedServerAddress(m.endpoints); ok {
+			return []string{formatRuntimeHostLine("Server IP", sharedAddress)}
 		}
 		lines := []string{"Server IPs:"}
-		for _, protocolAddress := range m.protocolAddresses {
-			if line := formatRuntimeProtocolAddress(protocolAddress.Protocol, protocolAddress.ServerAddress); line != "" {
+		for _, endpoint := range m.endpoints {
+			if line := formatRuntimeProtocolHost(endpoint.Protocol, endpoint.Server); line != "" {
 				lines = append(lines, "  "+line)
 			}
 		}
@@ -453,20 +429,20 @@ func (m RuntimeDashboard) serverAddressLines() []string {
 		}
 		return nil
 	}
-	if line := formatRuntimeAddressLine("Server IP", m.protocolAddresses[0].ServerAddress); line != "" {
+	if line := formatRuntimeHostLine("Server IP", m.endpoints[0].Server); line != "" {
 		return []string{line}
 	}
 	return nil
 }
 
 func (m RuntimeDashboard) tunnelIPLines() []string {
-	if len(m.protocolAddresses) == 0 {
+	if len(m.endpoints) == 0 {
 		return nil
 	}
-	if m.mode == RuntimeDashboardServer && len(m.protocolAddresses) > 1 {
+	if m.mode == runtime.ModeServer && len(m.endpoints) > 1 {
 		lines := []string{"Tunnel IPs:"}
-		for _, protocolAddress := range m.protocolAddresses {
-			if line := formatRuntimeProtocolAddress(protocolAddress.Protocol, protocolAddress.TunnelAddress); line != "" {
+		for _, endpoint := range m.endpoints {
+			if line := formatRuntimeProtocolAddress(endpoint.Protocol, endpoint.TunnelIPv4, endpoint.TunnelIPv6); line != "" {
 				lines = append(lines, "  "+line)
 			}
 		}
@@ -474,40 +450,62 @@ func (m RuntimeDashboard) tunnelIPLines() []string {
 			return lines
 		}
 	}
-	if tunnelIP := formatRuntimeAddressLine("Tunnel IP", m.protocolAddresses[0].TunnelAddress); tunnelIP != "" {
+	if tunnelIP := formatRuntimeAddressLine("Tunnel IP", m.endpoints[0].TunnelIPv4, m.endpoints[0].TunnelIPv6); tunnelIP != "" {
 		return []string{tunnelIP}
 	}
 	return nil
 }
 
 func (m RuntimeDashboard) protocolLine() string {
-	if m.mode != RuntimeDashboardClient || m.protocol == settings.UNKNOWN {
+	if m.mode != runtime.ModeClient || m.protocol == settings.UNKNOWN {
 		return ""
 	}
 	return "Protocol: " + m.protocol.String()
 }
 
-func formatRuntimeAddressLine(label string, address runnerCommon.RuntimeAddressPair) string {
-	parts := formatRuntimeAddressParts(address)
+func formatRuntimeHostLine(label string, host settings.Host) string {
+	parts := formatRuntimeHostParts(host)
 	if parts == "" {
 		return ""
 	}
 	return label + ": " + parts
 }
 
-func formatRuntimeAddressParts(address runnerCommon.RuntimeAddressPair) string {
-	parts := make([]string, 0, 2)
-	if address.IPv4.IsValid() {
-		parts = append(parts, "IPv4 "+address.IPv4.String())
+func formatRuntimeHostParts(host settings.Host) string {
+	parts := make([]string, 0, 3)
+	if domain, ok := host.Domain(); ok {
+		parts = append(parts, "Domain "+domain)
 	}
-	if address.IPv6.IsValid() {
-		parts = append(parts, "IPv6 "+address.IPv6.String())
+	if ipv4, ok := host.IPv4(); ok {
+		parts = append(parts, "IPv4 "+ipv4.String())
+	}
+	if ipv6, ok := host.IPv6(); ok {
+		parts = append(parts, "IPv6 "+ipv6.String())
 	}
 	return strings.Join(parts, " | ")
 }
 
-func formatRuntimeProtocolAddress(protocol settings.Protocol, address runnerCommon.RuntimeAddressPair) string {
-	parts := formatRuntimeAddressParts(address)
+func formatRuntimeAddressLine(label string, ipv4, ipv6 netip.Addr) string {
+	parts := formatRuntimeAddressParts(ipv4, ipv6)
+	if parts == "" {
+		return ""
+	}
+	return label + ": " + parts
+}
+
+func formatRuntimeAddressParts(ipv4, ipv6 netip.Addr) string {
+	parts := make([]string, 0, 2)
+	if ipv4.IsValid() {
+		parts = append(parts, "IPv4 "+ipv4.String())
+	}
+	if ipv6.IsValid() {
+		parts = append(parts, "IPv6 "+ipv6.String())
+	}
+	return strings.Join(parts, " | ")
+}
+
+func formatRuntimeProtocolHost(protocol settings.Protocol, host settings.Host) string {
+	parts := formatRuntimeHostParts(host)
 	if parts == "" {
 		return ""
 	}
@@ -517,31 +515,42 @@ func formatRuntimeProtocolAddress(protocol settings.Protocol, address runnerComm
 	return protocol.String() + ": " + parts
 }
 
-func sharedServerAddress(protocolAddresses []runnerCommon.RuntimeProtocolAddress) (runnerCommon.RuntimeAddressPair, bool) {
-	if len(protocolAddresses) == 0 {
-		return runnerCommon.RuntimeAddressPair{}, false
+func formatRuntimeProtocolAddress(protocol settings.Protocol, ipv4, ipv6 netip.Addr) string {
+	parts := formatRuntimeAddressParts(ipv4, ipv6)
+	if parts == "" {
+		return ""
 	}
-	sharedAddress := protocolAddresses[0].ServerAddress
-	if !sharedAddress.IsValid() {
-		return runnerCommon.RuntimeAddressPair{}, false
+	if protocol == settings.UNKNOWN {
+		return parts
 	}
-	for _, protocolAddress := range protocolAddresses[1:] {
-		if protocolAddress.ServerAddress != sharedAddress {
-			return runnerCommon.RuntimeAddressPair{}, false
+	return protocol.String() + ": " + parts
+}
+
+func sharedServerAddress(endpoints []appConfiguration.EndpointInfo) (settings.Host, bool) {
+	if len(endpoints) == 0 {
+		return settings.Host{}, false
+	}
+	sharedAddress := endpoints[0].Server
+	if sharedAddress.IsZero() {
+		return settings.Host{}, false
+	}
+	for _, endpoint := range endpoints[1:] {
+		if endpoint.Server != sharedAddress {
+			return settings.Host{}, false
 		}
 	}
 	return sharedAddress, true
 }
 
 func (m RuntimeDashboard) stopActionLabel() string {
-	if m.mode == RuntimeDashboardClient && m.preferences.AutoConnect {
+	if m.mode == runtime.ModeClient && m.preferences.AutoConnect {
 		return "Stop (AutoConnect will be disabled)"
 	}
 	return "Stop"
 }
 
 func (m RuntimeDashboard) stopConfirmTitle() string {
-	if m.mode == RuntimeDashboardServer {
+	if m.mode == runtime.ModeServer {
 		return runtimeStopConfirmTitleServer
 	}
 	return runtimeStopConfirmTitleClient
@@ -551,7 +560,7 @@ func (m RuntimeDashboard) dataplaneHint() string {
 	if m.confirmOpen {
 		return runtimeHintDataplaneConfirmOpen
 	}
-	if m.mode == RuntimeDashboardClient && !m.connected {
+	if m.mode == runtime.ModeClient && !m.connected {
 		return runtimeHintDataplaneReconfigure
 	}
 	return runtimeHintDataplaneStopConfirm
@@ -611,17 +620,6 @@ func runtimeTickCmd(seq uint64) tea.Cmd {
 	return tea.Tick(time.Second, func(time.Time) tea.Msg {
 		return runtimeTickMsg{seq: seq}
 	})
-}
-
-func waitForReadyCh(ctx context.Context, ch <-chan struct{}, seq uint64) tea.Cmd {
-	return func() tea.Msg {
-		select {
-		case <-ctx.Done():
-			return runtimeContextDoneMsg{seq: seq}
-		case <-ch:
-			return runtimeReadyMsg{seq: seq}
-		}
-	}
 }
 
 func runtimeLogUpdateCmd(
