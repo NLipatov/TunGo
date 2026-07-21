@@ -1,0 +1,4 @@
+module CTunGo {
+    header "tungo_apple.h"
+    export *
+}

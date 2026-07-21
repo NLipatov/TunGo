@@ -17,6 +17,10 @@ type PlatformTunManager struct {
 }
 
 func NewPlatformTunManager(configuration appConfiguration.ClientRuntimeConfiguration) (tun.ClientManager, error) {
+	if networkExtensionManager, ok := newNetworkExtensionTunManager(); ok {
+		return networkExtensionManager, nil
+	}
+
 	connSettings, err := configuration.ActiveSettings()
 	if err != nil {
 		return nil, err
