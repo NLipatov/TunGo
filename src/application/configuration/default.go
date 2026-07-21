@@ -1,14 +1,14 @@
 package configuration
 
 import (
-	"fmt"
 	"path/filepath"
 
 	clientConfiguration "tungo/application/configuration/internal/client"
 	serverConfiguration "tungo/application/configuration/internal/server"
 	"tungo/infrastructure/PAL/platform"
-	"tungo/infrastructure/PAL/stat"
 )
+
+const defaultServerConfigurationPath = "/etc/tungo/server_configuration.json"
 
 func DefaultStorageDirectory() (string, error) {
 	path, err := clientConfiguration.NewDefaultResolver().Resolve()
@@ -28,29 +28,20 @@ func NewDefaultClientControl() ClientControl {
 	}
 }
 
-func NewDefaultServerControl() (ServerControl, error) {
+func NewDefaultServerControl() ServerControl {
 	if !platform.Capabilities().ServerModeSupported() {
-		return nil, nil
+		return nil
 	}
 
-	serverResolver := serverConfiguration.NewServerResolver()
-	configPath, err := serverResolver.Resolve()
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve default server configuration path: %w", err)
-	}
 	return &serverControl{
-		configPath: configPath,
-		manager:    serverConfiguration.NewManager(configPath, stat.NewDefaultStat()),
-	}, nil
+		configPath: defaultServerConfigurationPath,
+		manager:    serverConfiguration.NewManager(defaultServerConfigurationPath),
+	}
 }
 
-func NewDefaultControls() (Controls, error) {
-	server, err := NewDefaultServerControl()
-	if err != nil {
-		return Controls{}, err
-	}
+func NewDefaultControls() Controls {
 	return Controls{
 		Client: NewDefaultClientControl(),
-		Server: server,
-	}, nil
+		Server: NewDefaultServerControl(),
+	}
 }

@@ -59,19 +59,6 @@ func TestFileWriteError(t *testing.T) {
 	}
 }
 
-func TestPathResolverSuccess(t *testing.T) {
-	// NewServerResolver returns a fixed absolute path.
-	resolver := NewServerResolver()
-	resolved, err := resolver.Resolve()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	expected := filepath.Join(string(os.PathSeparator), "etc", "tungo", "server_configuration.json")
-	if resolved != expected {
-		t.Errorf("expected %q, got %q", expected, resolved)
-	}
-}
-
 func TestMkdirAllError(t *testing.T) {
 	// Create a temporary directory.
 	tmpDir := t.TempDir()

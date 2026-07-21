@@ -6,7 +6,6 @@ import (
 	"net/netip"
 	"os"
 	"time"
-	"tungo/infrastructure/PAL/stat"
 )
 
 type ConfigurationManager interface {
@@ -22,45 +21,29 @@ type ConfigurationManager interface {
 }
 
 type Manager struct {
-	path   string
 	reader Reader
 	writer Writer
-	stat   stat.Stat
 }
 
-func NewManager(path string, stat stat.Stat) ConfigurationManager {
-	return NewManagerWithReader(
-		path,
-		NewTTLReader(newDefaultReader(path), time.Minute*15),
-		stat,
-	)
-}
-
-func NewManagerWithReader(
-	path string,
-	reader Reader,
-	stat stat.Stat,
-) ConfigurationManager {
+func NewManager(path string) *Manager {
 	return &Manager{
-		path:   path,
 		writer: newDefaultWriter(path),
-		reader: reader,
-		stat:   stat,
+		reader: NewTTLReader(newDefaultReader(path), time.Minute*15),
 	}
 }
 
 func (c *Manager) Configuration() (*Configuration, error) {
-	_, statErr := c.stat.Stat(c.path)
-	if statErr != nil {
-		if errors.Is(statErr, os.ErrNotExist) {
-			defaultConfiguration := NewDefaultConfiguration()
-			writeErr := c.writer.Write(*defaultConfiguration)
-			if writeErr != nil {
-				return nil, fmt.Errorf("could not write default configuration: %w", writeErr)
-			}
-		} else {
-			return nil, statErr
-		}
+	configuration, err := c.reader.read()
+	if err == nil {
+		return configuration, nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+
+	defaultConfiguration := NewDefaultConfiguration()
+	if err := c.writer.Write(*defaultConfiguration); err != nil {
+		return nil, fmt.Errorf("could not write default configuration: %w", err)
 	}
 
 	return c.reader.read()

@@ -66,10 +66,7 @@ func runCLI(ctx context.Context) error {
 		version.Run()
 		return nil
 	case commandline.CommandServerConfigGenerate:
-		serverControl, err := configuration.NewDefaultServerControl()
-		if err != nil {
-			return err
-		}
+		serverControl := configuration.NewDefaultServerControl()
 		if serverControl == nil {
 			return fmt.Errorf("server configuration is not supported")
 		}
@@ -94,10 +91,7 @@ func runTUI(ctx context.Context) error {
 	if err := requireElevation(); err != nil {
 		return err
 	}
-	configurationControls, err := configuration.NewDefaultControls()
-	if err != nil {
-		return err
-	}
+	configurationControls := configuration.NewDefaultControls()
 	tuiUI, err := tui.New(configurationControls)
 	if err != nil {
 		return err

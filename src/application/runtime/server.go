@@ -29,10 +29,7 @@ type serverRuntime struct {
 }
 
 func newServer() (*serverRuntime, error) {
-	control, err := configuration.NewDefaultServerControl()
-	if err != nil {
-		return nil, err
-	}
+	control := configuration.NewDefaultServerControl()
 	if control == nil {
 		return nil, fmt.Errorf("server runtime is not supported on this platform")
 	}

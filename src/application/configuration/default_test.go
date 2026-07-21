@@ -6,10 +6,7 @@ import (
 )
 
 func TestNewDefaultControls(t *testing.T) {
-	controls, err := NewDefaultControls()
-	if err != nil {
-		t.Fatalf("NewDefaultControls() error = %v", err)
-	}
+	controls := NewDefaultControls()
 	if controls.Client == nil {
 		t.Fatal("expected client control")
 	}

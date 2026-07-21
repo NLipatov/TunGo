@@ -6,19 +6,10 @@ import (
 	"errors"
 	"io/fs"
 	"net/netip"
-	"os"
 	"strings"
 	"testing"
 	"time"
 )
-
-type ManagerMockStat struct {
-	Err error
-}
-
-func (m *ManagerMockStat) Stat(_ string) (os.FileInfo, error) {
-	return nil, m.Err
-}
 
 type ManagerMockWriter struct {
 	WrittenData interface{}
@@ -35,25 +26,29 @@ func (m *ManagerMockWriter) Write(data interface{}) error {
 type ManagerMockReader struct {
 	Config    *Configuration
 	Err       error
+	Errors    []error
 	ReadCalls int
 }
 
 func (m *ManagerMockReader) read() (*Configuration, error) {
 	m.ReadCalls++
+	if m.ReadCalls <= len(m.Errors) && m.Errors[m.ReadCalls-1] != nil {
+		return nil, m.Errors[m.ReadCalls-1]
+	}
 	return m.Config, m.Err
 }
 
 // --- Tests ---
 
 func TestManager_Configuration_FileNotExists_WritesDefault(t *testing.T) {
-	statMock := &ManagerMockStat{Err: fs.ErrNotExist}
 	writer := &ManagerMockWriter{}
 	defaultConf := NewDefaultConfiguration()
-	reader := &ManagerMockReader{Config: defaultConf}
+	reader := &ManagerMockReader{
+		Config: defaultConf,
+		Errors: []error{fs.ErrNotExist},
+	}
 
 	manager := &Manager{
-		path:   "/fake/path",
-		stat:   statMock,
 		writer: writer,
 		reader: reader,
 	}
@@ -92,13 +87,10 @@ func TestManager_Configuration_FileNotExists_WritesDefault(t *testing.T) {
 }
 
 func TestManager_Configuration_WriteDefaultError(t *testing.T) {
-	statMock := &ManagerMockStat{Err: fs.ErrNotExist}
 	writer := &ManagerMockWriter{Err: errors.New("write fail")}
-	reader := &ManagerMockReader{Config: NewDefaultConfiguration()}
+	reader := &ManagerMockReader{Err: fs.ErrNotExist}
 
 	manager := &Manager{
-		path:   "/fake/path",
-		stat:   statMock,
 		writer: writer,
 		reader: reader,
 	}
@@ -109,35 +101,11 @@ func TestManager_Configuration_WriteDefaultError(t *testing.T) {
 	}
 }
 
-func TestManager_Configuration_StatError_ReturnsError(t *testing.T) {
-	statMock := &ManagerMockStat{Err: errors.New("permission denied")}
-	writer := &ManagerMockWriter{}
-	reader := &ManagerMockReader{}
-
-	manager := &Manager{
-		path:   "/fake/path",
-		stat:   statMock,
-		writer: writer,
-		reader: reader,
-	}
-
-	_, err := manager.Configuration()
-	if err == nil {
-		t.Fatal("expected error due to stat error, got nil")
-	}
-	if !strings.Contains(err.Error(), "permission denied") {
-		t.Errorf("unexpected error message: %v", err)
-	}
-}
-
 func TestManager_Configuration_ReaderError_ReturnsError(t *testing.T) {
-	statMock := &ManagerMockStat{Err: nil}
 	writer := &ManagerMockWriter{}
 	reader := &ManagerMockReader{Err: errors.New("read error")}
 
 	manager := &Manager{
-		path:   "/fake/path",
-		stat:   statMock,
 		writer: writer,
 		reader: reader,
 	}
@@ -155,13 +123,10 @@ func TestManager_IncrementClientCounter_Success(t *testing.T) {
 	initialConf := NewDefaultConfiguration()
 	initialValue := initialConf.ClientCounter
 
-	statMock := &ManagerMockStat{Err: nil}
 	writer := &ManagerMockWriter{}
 	reader := &ManagerMockReader{Config: initialConf}
 
 	manager := &Manager{
-		path:   "/fake/path",
-		stat:   statMock,
 		writer: writer,
 		reader: reader,
 	}
@@ -187,13 +152,10 @@ func TestManager_IncrementClientCounter_Success(t *testing.T) {
 }
 
 func TestManager_IncrementClientCounter_ConfigError(t *testing.T) {
-	statMock := &ManagerMockStat{Err: nil}
 	writer := &ManagerMockWriter{}
 	reader := &ManagerMockReader{Err: errors.New("read error")}
 
 	manager := &Manager{
-		path:   "/fake/path",
-		stat:   statMock,
 		writer: writer,
 		reader: reader,
 	}
@@ -209,13 +171,10 @@ func TestManager_IncrementClientCounter_ConfigError(t *testing.T) {
 
 func TestManager_IncrementClientCounter_WriteError(t *testing.T) {
 	initialConf := NewDefaultConfiguration()
-	statMock := &ManagerMockStat{Err: nil}
 	writer := &ManagerMockWriter{Err: errors.New("write fail")}
 	reader := &ManagerMockReader{Config: initialConf}
 
 	manager := &Manager{
-		path:   "/fake/path",
-		stat:   statMock,
 		writer: writer,
 		reader: reader,
 	}
@@ -228,13 +187,10 @@ func TestManager_IncrementClientCounter_WriteError(t *testing.T) {
 
 func TestManager_InjectEdKeys_Success(t *testing.T) {
 	initialConf := NewDefaultConfiguration()
-	statMock := &ManagerMockStat{Err: nil}
 	writer := &ManagerMockWriter{}
 	reader := &ManagerMockReader{Config: initialConf}
 
 	manager := &Manager{
-		path:   "/fake/path",
-		stat:   statMock,
 		writer: writer,
 		reader: reader,
 	}
@@ -265,13 +221,10 @@ func TestManager_InjectEdKeys_Success(t *testing.T) {
 }
 
 func TestManager_InjectX25519Keys_ConfigError(t *testing.T) {
-	statMock := &ManagerMockStat{Err: nil}
 	writer := &ManagerMockWriter{}
 	reader := &ManagerMockReader{Err: errors.New("read error")}
 
 	manager := &Manager{
-		path:   "/fake/path",
-		stat:   statMock,
 		writer: writer,
 		reader: reader,
 	}
@@ -286,13 +239,10 @@ func TestManager_InjectX25519Keys_ConfigError(t *testing.T) {
 }
 
 func TestManager_InjectX25519Keys_InvalidPrivateKeyLength(t *testing.T) {
-	statMock := &ManagerMockStat{Err: nil}
 	writer := &ManagerMockWriter{}
 	reader := &ManagerMockReader{Config: NewDefaultConfiguration()}
 
 	manager := &Manager{
-		path:   "/fake/path",
-		stat:   statMock,
 		writer: writer,
 		reader: reader,
 	}
@@ -316,13 +266,10 @@ func TestManager_InjectX25519Keys_InvalidPublicKeyLength(t *testing.T) {
 
 func TestManager_InjectX25519Keys_WriteError(t *testing.T) {
 	initialConf := NewDefaultConfiguration()
-	statMock := &ManagerMockStat{Err: nil}
 	writer := &ManagerMockWriter{Err: errors.New("write fail")}
 	reader := &ManagerMockReader{Config: initialConf}
 
 	manager := &Manager{
-		path:   "/fake/path",
-		stat:   statMock,
 		writer: writer,
 		reader: reader,
 	}
@@ -338,15 +285,7 @@ func TestManager_InjectX25519Keys_WriteError(t *testing.T) {
 
 func TestNewManager_Success(t *testing.T) {
 	tmp := t.TempDir()
-	m := NewManager(tmp+"/server.json", nil)
-	if m == nil {
-		t.Fatal("expected non-nil manager")
-	}
-}
-
-func TestNewManagerWithReader_Success(t *testing.T) {
-	reader := &ManagerMockReader{Config: NewDefaultConfiguration()}
-	m := NewManagerWithReader("/fake/path", reader, nil)
+	m := NewManager(tmp + "/server.json")
 	if m == nil {
 		t.Fatal("expected non-nil manager")
 	}
@@ -354,13 +293,10 @@ func TestNewManagerWithReader_Success(t *testing.T) {
 
 func TestManager_AddAllowedPeer_Success(t *testing.T) {
 	initialConf := NewDefaultConfiguration()
-	statMock := &ManagerMockStat{Err: nil}
 	writer := &ManagerMockWriter{}
 	reader := &ManagerMockReader{Config: initialConf}
 
 	manager := &Manager{
-		path:   "/fake/path",
-		stat:   statMock,
 		writer: writer,
 		reader: reader,
 	}
@@ -398,13 +334,10 @@ func TestManager_AddAllowedPeer_InvalidKeyLen(t *testing.T) {
 }
 
 func TestManager_AddAllowedPeer_ConfigError(t *testing.T) {
-	statMock := &ManagerMockStat{Err: nil}
 	writer := &ManagerMockWriter{}
 	reader := &ManagerMockReader{Err: errors.New("read error")}
 
 	manager := &Manager{
-		path:   "/fake/path",
-		stat:   statMock,
 		writer: writer,
 		reader: reader,
 	}
@@ -418,13 +351,10 @@ func TestManager_AddAllowedPeer_ConfigError(t *testing.T) {
 
 func TestManager_AddAllowedPeer_WriteError(t *testing.T) {
 	initialConf := NewDefaultConfiguration()
-	statMock := &ManagerMockStat{Err: nil}
 	writer := &ManagerMockWriter{Err: errors.New("write fail")}
 	reader := &ManagerMockReader{Config: initialConf}
 
 	manager := &Manager{
-		path:   "/fake/path",
-		stat:   statMock,
 		writer: writer,
 		reader: reader,
 	}
@@ -448,8 +378,6 @@ func TestManager_ListAllowedPeers_SuccessReturnsCopy(t *testing.T) {
 	}
 
 	manager := &Manager{
-		path:   "/fake/path",
-		stat:   &ManagerMockStat{Err: nil},
 		writer: &ManagerMockWriter{},
 		reader: &ManagerMockReader{Config: initialConf},
 	}
@@ -477,8 +405,6 @@ func TestManager_ListAllowedPeers_SuccessReturnsCopy(t *testing.T) {
 
 func TestManager_ListAllowedPeers_ConfigError(t *testing.T) {
 	manager := &Manager{
-		path:   "/fake/path",
-		stat:   &ManagerMockStat{Err: nil},
 		writer: &ManagerMockWriter{},
 		reader: &ManagerMockReader{Err: errors.New("read error")},
 	}
@@ -496,8 +422,6 @@ func TestManager_SetAllowedPeerEnabled_Success(t *testing.T) {
 	}
 	writer := &ManagerMockWriter{}
 	manager := &Manager{
-		path:   "/fake/path",
-		stat:   &ManagerMockStat{Err: nil},
 		writer: writer,
 		reader: &ManagerMockReader{Config: initialConf},
 	}
@@ -531,8 +455,6 @@ func TestManager_SetAllowedPeerEnabled_PeerNotFound(t *testing.T) {
 		{PublicKey: bytes.Repeat([]byte{3}, 32), Enabled: true, ClientID: 1},
 	}
 	manager := &Manager{
-		path:   "/fake/path",
-		stat:   &ManagerMockStat{Err: nil},
 		writer: &ManagerMockWriter{},
 		reader: &ManagerMockReader{Config: initialConf},
 	}
@@ -545,8 +467,6 @@ func TestManager_SetAllowedPeerEnabled_PeerNotFound(t *testing.T) {
 
 func TestManager_SetAllowedPeerEnabled_ConfigError(t *testing.T) {
 	manager := &Manager{
-		path:   "/fake/path",
-		stat:   &ManagerMockStat{Err: nil},
 		writer: &ManagerMockWriter{},
 		reader: &ManagerMockReader{Err: errors.New("read error")},
 	}
@@ -563,8 +483,6 @@ func TestManager_SetAllowedPeerEnabled_WriteError(t *testing.T) {
 		{PublicKey: bytes.Repeat([]byte{4}, 32), Enabled: true, ClientID: 4},
 	}
 	manager := &Manager{
-		path:   "/fake/path",
-		stat:   &ManagerMockStat{Err: nil},
 		writer: &ManagerMockWriter{Err: errors.New("write fail")},
 		reader: &ManagerMockReader{Config: initialConf},
 	}
@@ -584,8 +502,6 @@ func TestManager_RemoveAllowedPeer_Success(t *testing.T) {
 	}
 	writer := &ManagerMockWriter{}
 	manager := &Manager{
-		path:   "/fake/path",
-		stat:   &ManagerMockStat{Err: nil},
 		writer: writer,
 		reader: &ManagerMockReader{Config: initialConf},
 	}
@@ -625,8 +541,6 @@ func TestManager_RemoveAllowedPeer_PeerNotFound(t *testing.T) {
 		{PublicKey: bytes.Repeat([]byte{7}, 32), Enabled: true, ClientID: 1},
 	}
 	manager := &Manager{
-		path:   "/fake/path",
-		stat:   &ManagerMockStat{Err: nil},
 		writer: &ManagerMockWriter{},
 		reader: &ManagerMockReader{Config: initialConf},
 	}
@@ -639,8 +553,6 @@ func TestManager_RemoveAllowedPeer_PeerNotFound(t *testing.T) {
 
 func TestManager_RemoveAllowedPeer_ConfigError(t *testing.T) {
 	manager := &Manager{
-		path:   "/fake/path",
-		stat:   &ManagerMockStat{Err: nil},
 		writer: &ManagerMockWriter{},
 		reader: &ManagerMockReader{Err: errors.New("read error")},
 	}
@@ -657,8 +569,6 @@ func TestManager_RemoveAllowedPeer_WriteError(t *testing.T) {
 		{PublicKey: bytes.Repeat([]byte{8}, 32), Enabled: true, ClientID: 8},
 	}
 	manager := &Manager{
-		path:   "/fake/path",
-		stat:   &ManagerMockStat{Err: nil},
 		writer: &ManagerMockWriter{Err: errors.New("write fail")},
 		reader: &ManagerMockReader{Config: initialConf},
 	}
@@ -715,13 +625,10 @@ func TestManager_EnsureIPv6Subnets_SetsDefaults(t *testing.T) {
 		t.Fatal("precondition: TCPSettings.IPv6Subnet should not be valid in default config")
 	}
 
-	statMock := &ManagerMockStat{Err: nil}
 	writer := &ManagerMockWriter{}
 	reader := &ManagerMockReader{Config: conf}
 
 	manager := &Manager{
-		path:   "/fake/path",
-		stat:   statMock,
 		writer: writer,
 		reader: reader,
 	}
@@ -758,13 +665,10 @@ func TestManager_EnsureIPv6Subnets_AlreadySet_NoWrite(t *testing.T) {
 	conf.UDPSettings.IPv6Subnet = netip.MustParsePrefix("fd00:1::/64")
 	conf.WSSettings.IPv6Subnet = netip.MustParsePrefix("fd00:2::/64")
 
-	statMock := &ManagerMockStat{Err: nil}
 	writer := &ManagerMockWriter{}
 	reader := &ManagerMockReader{Config: conf}
 
 	manager := &Manager{
-		path:   "/fake/path",
-		stat:   statMock,
 		writer: writer,
 		reader: reader,
 	}
@@ -778,13 +682,10 @@ func TestManager_EnsureIPv6Subnets_AlreadySet_NoWrite(t *testing.T) {
 }
 
 func TestManager_EnsureIPv6Subnets_ConfigError(t *testing.T) {
-	statMock := &ManagerMockStat{Err: nil}
 	writer := &ManagerMockWriter{}
 	reader := &ManagerMockReader{Err: errors.New("read error")}
 
 	manager := &Manager{
-		path:   "/fake/path",
-		stat:   statMock,
 		writer: writer,
 		reader: reader,
 	}
@@ -797,13 +698,10 @@ func TestManager_EnsureIPv6Subnets_ConfigError(t *testing.T) {
 
 func TestManager_EnsureIPv6Subnets_WriteError(t *testing.T) {
 	conf := NewDefaultConfiguration()
-	statMock := &ManagerMockStat{Err: nil}
 	writer := &ManagerMockWriter{Err: errors.New("write fail")}
 	reader := &ManagerMockReader{Config: conf}
 
 	manager := &Manager{
-		path:   "/fake/path",
-		stat:   statMock,
 		writer: writer,
 		reader: reader,
 	}
