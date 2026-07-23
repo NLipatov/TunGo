@@ -14,6 +14,7 @@ import (
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/network/windows/ipcfg"
 	"tungo/infrastructure/PAL/network/windows/wtun"
+	"tungo/infrastructure/network/mtu"
 	"tungo/infrastructure/settings"
 
 	"golang.zx2c4.com/wintun"
@@ -161,14 +162,7 @@ func (m *v6Manager) setRouteToTunDevice() error {
 }
 
 func (m *v6Manager) setMTUToTunDevice() error {
-	mtu := m.s.MTU
-	if mtu == 0 {
-		mtu = settings.SafeMTU
-	}
-	if mtu < settings.MinimumIPv6MTU {
-		mtu = settings.MinimumIPv6MTU
-	}
-	return m.netConfig.SetMTU(m.s.TunName, mtu)
+	return m.netConfig.SetMTU(m.s.TunName, mtu.Effective(m.s))
 }
 
 func (m *v6Manager) setDNSToTunDevice() error {

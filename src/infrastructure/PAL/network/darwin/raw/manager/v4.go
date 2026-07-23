@@ -7,9 +7,10 @@ import (
 	"net/netip"
 
 	"tungo/application/network/routing/tun"
-	"tungo/infrastructure/PAL/network/darwin/ifconfig"
-	"tungo/infrastructure/PAL/network/darwin/route"
+	"tungo/infrastructure/PAL/network/darwin/raw/ifconfig"
+	"tungo/infrastructure/PAL/network/darwin/raw/route"
 	"tungo/infrastructure/PAL/network/darwin/utun"
+	"tungo/infrastructure/network/mtu"
 	"tungo/infrastructure/settings"
 )
 
@@ -44,7 +45,7 @@ func (m *v4) CreateDevice() (tun.Device, error) {
 	if err := m.validateSettings(); err != nil {
 		return nil, err
 	}
-	raw, err := utun.NewDefaultFactory(m.ifc).CreateTUN(m.effectiveMTU())
+	raw, err := createTUN(m.ifc, mtu.Effective(m.s))
 	if err != nil {
 		return nil, fmt.Errorf("create utun: %w", err)
 	}
@@ -118,17 +119,6 @@ func (m *v4) assignIPv4() error {
 		return fmt.Errorf("v4: set addr %s on %s: %w", cidr, m.ifName, err)
 	}
 	return nil
-}
-
-func (m *v4) effectiveMTU() int {
-	mtu := m.s.MTU
-	if mtu <= 0 {
-		mtu = settings.SafeMTU
-	}
-	if mtu < settings.MinimumIPv4MTU {
-		mtu = settings.MinimumIPv4MTU
-	}
-	return mtu
 }
 
 func (m *v4) resolveRouteIPv4() (string, error) {

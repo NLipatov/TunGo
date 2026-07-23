@@ -5,6 +5,7 @@ enum TunGoAppleError: LocalizedError {
     case invalidPrefixLength(Int)
     case tunnelFileDescriptorNotFound
     case invalidState
+    case startupCancelled
 
     var errorDescription: String? {
         switch self {
@@ -16,6 +17,8 @@ enum TunGoAppleError: LocalizedError {
             return "Could not locate the NetworkExtension UTUN file descriptor."
         case .invalidState:
             return "The TunGo backend is not in a valid state for this operation."
+        case .startupCancelled:
+            return "Tunnel startup was cancelled."
         }
     }
 }

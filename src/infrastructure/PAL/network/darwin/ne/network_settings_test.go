@@ -1,4 +1,4 @@
-package apple
+package ne
 
 import (
 	"net/netip"
@@ -9,7 +9,7 @@ import (
 	"tungo/infrastructure/settings"
 )
 
-func TestNew_DualStackFullTunnel(t *testing.T) {
+func TestNewNetworkSettings_DualStackFullTunnel(t *testing.T) {
 	host, err := settings.NewHost("vpn.example.com")
 	if err != nil {
 		t.Fatalf("NewHost() error = %v", err)
@@ -31,12 +31,12 @@ func TestNew_DualStackFullTunnel(t *testing.T) {
 		},
 	}
 
-	got, err := NewTunnelPlan(conf)
+	got, err := NewNetworkSettings(conf)
 	if err != nil {
-		t.Fatalf("New() error = %v", err)
+		t.Fatalf("NewNetworkSettings() error = %v", err)
 	}
 	if got.RemoteAddress != "vpn.example.com" || got.MTU != 1400 {
-		t.Fatalf("plan endpoint/MTU = %q/%d", got.RemoteAddress, got.MTU)
+		t.Fatalf("network settings endpoint/MTU = %q/%d", got.RemoteAddress, got.MTU)
 	}
 	if got.StartupTimeoutMilliseconds != 6000 {
 		t.Fatalf("startup timeout = %d, want 6000", got.StartupTimeoutMilliseconds)
@@ -60,7 +60,7 @@ func TestNew_DualStackFullTunnel(t *testing.T) {
 	}
 }
 
-func TestNew_IPv6ClampsMTU(t *testing.T) {
+func TestNewNetworkSettings_IPv6ClampsMTU(t *testing.T) {
 	host, _ := settings.NewHost("192.0.2.1")
 	conf := configuration.ClientRuntimeConfiguration{
 		Protocol: settings.TCP,
@@ -69,22 +69,22 @@ func TestNew_IPv6ClampsMTU(t *testing.T) {
 			IPv6:   netip.MustParseAddr("fd00::2"),
 		}},
 	}
-	got, err := NewTunnelPlan(conf)
+	got, err := NewNetworkSettings(conf)
 	if err != nil {
-		t.Fatalf("New() error = %v", err)
+		t.Fatalf("NewNetworkSettings() error = %v", err)
 	}
 	if got.MTU != settings.MinimumIPv6MTU {
 		t.Fatalf("MTU = %d, want %d", got.MTU, settings.MinimumIPv6MTU)
 	}
 }
 
-func TestNew_RejectsMissingResolvedAddress(t *testing.T) {
+func TestNewNetworkSettings_RejectsMissingResolvedAddress(t *testing.T) {
 	host, _ := settings.NewHost("192.0.2.1")
 	conf := configuration.ClientRuntimeConfiguration{
 		Protocol:    settings.TCP,
 		TCPSettings: settings.Settings{Addressing: settings.Addressing{Server: host}},
 	}
-	if _, err := NewTunnelPlan(conf); err == nil {
+	if _, err := NewNetworkSettings(conf); err == nil {
 		t.Fatal("expected missing tunnel address error")
 	}
 }

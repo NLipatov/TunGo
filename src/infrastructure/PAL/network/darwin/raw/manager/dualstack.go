@@ -8,9 +8,10 @@ import (
 	"strings"
 
 	"tungo/application/network/routing/tun"
-	"tungo/infrastructure/PAL/network/darwin/ifconfig"
-	"tungo/infrastructure/PAL/network/darwin/route"
+	"tungo/infrastructure/PAL/network/darwin/raw/ifconfig"
+	"tungo/infrastructure/PAL/network/darwin/raw/route"
 	"tungo/infrastructure/PAL/network/darwin/utun"
+	"tungo/infrastructure/network/mtu"
 	"tungo/infrastructure/settings"
 )
 
@@ -55,7 +56,7 @@ func (m *dualStack) CreateDevice() (tun.Device, error) {
 		return nil, err
 	}
 
-	raw, err := utun.NewDefaultFactory(m.ifc4).CreateTUN(m.effectiveMTU())
+	raw, err := createTUN(m.ifc4, mtu.Effective(m.s))
 	if err != nil {
 		return nil, fmt.Errorf("create utun: %w", err)
 	}
@@ -158,18 +159,6 @@ func (m *dualStack) validateSettings() error {
 		return fmt.Errorf("dualstack: invalid IPv6 %q", m.s.IPv6)
 	}
 	return nil
-}
-
-func (m *dualStack) effectiveMTU() int {
-	mtu := m.s.MTU
-	if mtu <= 0 {
-		mtu = settings.SafeMTU
-	}
-	// Must satisfy both IPv4 (68) and IPv6 (1280) minimums.
-	if mtu < settings.MinimumIPv6MTU {
-		mtu = settings.MinimumIPv6MTU
-	}
-	return mtu
 }
 
 func (m *dualStack) resolveRouteIPv4() (string, error) {

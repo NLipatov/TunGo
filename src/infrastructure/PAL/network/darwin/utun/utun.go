@@ -4,6 +4,7 @@ package utun
 
 import (
 	"errors"
+	"fmt"
 
 	"golang.org/x/sys/unix"
 )
@@ -41,7 +42,8 @@ type rawUTUN struct {
 	name string
 }
 
-func newRawUTUN() (*rawUTUN, error) {
+// Open creates a standalone UTUN interface owned by the caller.
+func Open() (UTUN, error) {
 	fd, err := unix.Socket(unix.AF_SYSTEM, unix.SOCK_DGRAM, sysProtoControl)
 	if err != nil {
 		return nil, err
@@ -69,6 +71,21 @@ func newRawUTUN() (*rawUTUN, error) {
 	}
 
 	return &rawUTUN{fd: fd, name: ifName}, nil
+}
+
+// FromFD adapts a borrowed UTUN descriptor. The returned UTUN owns a duplicate
+// and never closes the source descriptor.
+func FromFD(fd int) (UTUN, error) {
+	duplicate, err := unix.Dup(fd)
+	if err != nil {
+		return nil, fmt.Errorf("duplicate UTUN file descriptor: %w", err)
+	}
+	name, err := unix.GetsockoptString(duplicate, sysProtoControl, optIfName)
+	if err != nil {
+		_ = unix.Close(duplicate)
+		return nil, fmt.Errorf("get UTUN interface name: %w", err)
+	}
+	return &rawUTUN{fd: duplicate, name: name}, nil
 }
 
 func (u *rawUTUN) Name() (string, error) { return u.name, nil }

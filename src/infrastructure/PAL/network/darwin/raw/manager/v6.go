@@ -7,9 +7,10 @@ import (
 	"net/netip"
 
 	"tungo/application/network/routing/tun"
-	"tungo/infrastructure/PAL/network/darwin/ifconfig"
-	"tungo/infrastructure/PAL/network/darwin/route"
+	"tungo/infrastructure/PAL/network/darwin/raw/ifconfig"
+	"tungo/infrastructure/PAL/network/darwin/raw/route"
 	"tungo/infrastructure/PAL/network/darwin/utun"
+	"tungo/infrastructure/network/mtu"
 	"tungo/infrastructure/settings"
 )
 
@@ -45,7 +46,7 @@ func (m *v6) CreateDevice() (tun.Device, error) {
 		return nil, err
 	}
 
-	raw, err := utun.NewDefaultFactory(m.ifc).CreateTUN(m.effectiveMTU())
+	raw, err := createTUN(m.ifc, mtu.Effective(m.s))
 	if err != nil {
 		return nil, fmt.Errorf("create utun: %w", err)
 	}
@@ -124,17 +125,6 @@ func (m *v6) assignIPv6() error {
 		return fmt.Errorf("v6: set addr %s on %s: %w", cidr, m.ifName, err)
 	}
 	return nil
-}
-
-func (m *v6) effectiveMTU() int {
-	mtu := m.s.MTU
-	if mtu <= 0 {
-		mtu = settings.SafeMTU
-	}
-	if mtu < 1280 {
-		mtu = 1280
-	}
-	return mtu
 }
 
 func (m *v6) resolveRouteIPv6() (string, error) {

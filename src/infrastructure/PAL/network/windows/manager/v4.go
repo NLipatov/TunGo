@@ -13,6 +13,7 @@ import (
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/network/windows/ipcfg"
 	"tungo/infrastructure/PAL/network/windows/wtun"
+	"tungo/infrastructure/network/mtu"
 	"tungo/infrastructure/settings"
 
 	"golang.zx2c4.com/wintun"
@@ -164,14 +165,7 @@ func (m *v4Manager) setDefaultRouteToTunDevice() error {
 
 // setMTUToTunDevice sets MTU (or safe default).
 func (m *v4Manager) setMTUToTunDevice() error {
-	mtu := m.s.MTU
-	if mtu == 0 {
-		mtu = settings.SafeMTU
-	}
-	if mtu < settings.MinimumIPv4MTU {
-		mtu = settings.MinimumIPv4MTU
-	}
-	return m.netCfg.SetMTU(m.s.TunName, mtu)
+	return m.netCfg.SetMTU(m.s.TunName, mtu.Effective(m.s))
 }
 
 // setDNSToTunDevice applies v4 DNS resolvers and flushes system cache.

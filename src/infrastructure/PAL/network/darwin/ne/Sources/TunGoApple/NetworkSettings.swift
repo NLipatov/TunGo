@@ -1,7 +1,7 @@
 import Foundation
 import NetworkExtension
 
-struct TunnelPlan: Decodable {
+struct NetworkSettings: Decodable {
     struct IPSettings: Decodable {
         let address: String
         let prefixLength: Int
@@ -21,7 +21,7 @@ struct TunnelPlan: Decodable {
     let includedRoutes: [Route]
     let excludedRoutes: [Route]
 
-    func networkSettings() throws -> NEPacketTunnelNetworkSettings {
+    func makeNEPacketTunnelNetworkSettings() throws -> NEPacketTunnelNetworkSettings {
         let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: remoteAddress)
         settings.mtu = NSNumber(value: mtu)
 

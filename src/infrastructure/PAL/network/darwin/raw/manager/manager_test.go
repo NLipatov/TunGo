@@ -7,8 +7,8 @@ import (
 	"net/netip"
 	"testing"
 
-	ifcfg "tungo/infrastructure/PAL/network/darwin/ifconfig"
-	rtpkg "tungo/infrastructure/PAL/network/darwin/route"
+	ifcfg "tungo/infrastructure/PAL/network/darwin/raw/ifconfig"
+	rtpkg "tungo/infrastructure/PAL/network/darwin/raw/route"
 	"tungo/infrastructure/settings"
 )
 
@@ -129,8 +129,8 @@ func (m *mockUTUN) Name() (string, error) { return "utun42", nil }
 type mockCommander struct{}
 
 func (mockCommander) CombinedOutput(string, ...string) ([]byte, error) { return nil, nil }
-func (mockCommander) Output(string, ...string) ([]byte, error)        { return nil, nil }
-func (mockCommander) Run(string, ...string) error                     { return nil }
+func (mockCommander) Output(string, ...string) ([]byte, error)         { return nil, nil }
+func (mockCommander) Run(string, ...string) error                      { return nil }
 
 // newTestFactory creates a Factory with valid sub-factories that will not
 // execute real system commands. The resulting manager objects will have real
@@ -505,119 +505,6 @@ func TestDualStack_ValidateSettings_IPv6InIPv4Field(t *testing.T) {
 		t.Fatal("expected error for IPv6 in IPv4 field")
 	}
 	assertContains(t, err.Error(), "invalid IPv4")
-}
-
-// ---------------------------------------------------------------------------
-// effectiveMTU
-// ---------------------------------------------------------------------------
-
-func TestV4_EffectiveMTU_UsesConfigured(t *testing.T) {
-	s := settingsV4Only(t)
-	s.MTU = 1400
-	m := newV4(s, &mockIfconfig{}, &mockRoute{})
-	if got := m.effectiveMTU(); got != 1400 {
-		t.Fatalf("expected 1400, got %d", got)
-	}
-}
-
-func TestV4_EffectiveMTU_ZeroDefaultsToSafe(t *testing.T) {
-	s := settingsV4Only(t)
-	s.MTU = 0
-	m := newV4(s, &mockIfconfig{}, &mockRoute{})
-	if got := m.effectiveMTU(); got != settings.SafeMTU {
-		t.Fatalf("expected SafeMTU=%d, got %d", settings.SafeMTU, got)
-	}
-}
-
-func TestV4_EffectiveMTU_NegativeDefaultsToSafe(t *testing.T) {
-	s := settingsV4Only(t)
-	s.MTU = -100
-	m := newV4(s, &mockIfconfig{}, &mockRoute{})
-	if got := m.effectiveMTU(); got != settings.SafeMTU {
-		t.Fatalf("expected SafeMTU=%d, got %d", settings.SafeMTU, got)
-	}
-}
-
-func TestV4_EffectiveMTU_BelowMinimumClamped(t *testing.T) {
-	s := settingsV4Only(t)
-	s.MTU = settings.MinimumIPv4MTU - 1
-	m := newV4(s, &mockIfconfig{}, &mockRoute{})
-	if got := m.effectiveMTU(); got != settings.MinimumIPv4MTU {
-		t.Fatalf("expected MinimumIPv4MTU=%d, got %d", settings.MinimumIPv4MTU, got)
-	}
-}
-
-func TestV4_EffectiveMTU_ExactMinimumAccepted(t *testing.T) {
-	s := settingsV4Only(t)
-	s.MTU = settings.MinimumIPv4MTU
-	m := newV4(s, &mockIfconfig{}, &mockRoute{})
-	if got := m.effectiveMTU(); got != settings.MinimumIPv4MTU {
-		t.Fatalf("expected %d, got %d", settings.MinimumIPv4MTU, got)
-	}
-}
-
-func TestV6_EffectiveMTU_UsesConfigured(t *testing.T) {
-	s := settingsV6Only(t)
-	s.MTU = 1500
-	m := newV6(s, &mockIfconfig{}, &mockRoute{})
-	if got := m.effectiveMTU(); got != 1500 {
-		t.Fatalf("expected 1500, got %d", got)
-	}
-}
-
-func TestV6_EffectiveMTU_ZeroDefaultsToSafe(t *testing.T) {
-	s := settingsV6Only(t)
-	s.MTU = 0
-	m := newV6(s, &mockIfconfig{}, &mockRoute{})
-	// SafeMTU < 1280, so clamped to 1280
-	if got := m.effectiveMTU(); got != 1280 {
-		t.Fatalf("expected 1280, got %d", got)
-	}
-}
-
-func TestV6_EffectiveMTU_BelowMinimumClamped(t *testing.T) {
-	s := settingsV6Only(t)
-	s.MTU = 1000
-	m := newV6(s, &mockIfconfig{}, &mockRoute{})
-	if got := m.effectiveMTU(); got != 1280 {
-		t.Fatalf("expected 1280, got %d", got)
-	}
-}
-
-func TestV6_EffectiveMTU_ExactMinimumAccepted(t *testing.T) {
-	s := settingsV6Only(t)
-	s.MTU = 1280
-	m := newV6(s, &mockIfconfig{}, &mockRoute{})
-	if got := m.effectiveMTU(); got != 1280 {
-		t.Fatalf("expected 1280, got %d", got)
-	}
-}
-
-func TestDualStack_EffectiveMTU_UsesConfigured(t *testing.T) {
-	s := settingsDualStack(t)
-	s.MTU = 1400
-	m := newDualStack(s, &mockIfconfig{}, &mockIfconfig{}, &mockRoute{}, &mockRoute{})
-	if got := m.effectiveMTU(); got != 1400 {
-		t.Fatalf("expected 1400, got %d", got)
-	}
-}
-
-func TestDualStack_EffectiveMTU_ZeroDefaultsAndClampsToIPv6Min(t *testing.T) {
-	s := settingsDualStack(t)
-	s.MTU = 0
-	m := newDualStack(s, &mockIfconfig{}, &mockIfconfig{}, &mockRoute{}, &mockRoute{})
-	if got := m.effectiveMTU(); got != settings.MinimumIPv6MTU {
-		t.Fatalf("expected MinimumIPv6MTU=%d, got %d", settings.MinimumIPv6MTU, got)
-	}
-}
-
-func TestDualStack_EffectiveMTU_BelowIPv6MinClamped(t *testing.T) {
-	s := settingsDualStack(t)
-	s.MTU = 800
-	m := newDualStack(s, &mockIfconfig{}, &mockIfconfig{}, &mockRoute{}, &mockRoute{})
-	if got := m.effectiveMTU(); got != settings.MinimumIPv6MTU {
-		t.Fatalf("expected MinimumIPv6MTU=%d, got %d", settings.MinimumIPv6MTU, got)
-	}
 }
 
 // ---------------------------------------------------------------------------
@@ -1280,46 +1167,6 @@ func TestDualStack_DisposeDevices_DoubleSafe(t *testing.T) {
 	}
 	if err := m.DisposeDevices(); err != nil {
 		t.Fatalf("unexpected error on double dispose: %v", err)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Edge cases for effectiveMTU
-// ---------------------------------------------------------------------------
-
-func TestV4_EffectiveMTU_LargeValue(t *testing.T) {
-	s := settingsV4Only(t)
-	s.MTU = 9000
-	m := newV4(s, &mockIfconfig{}, &mockRoute{})
-	if got := m.effectiveMTU(); got != 9000 {
-		t.Fatalf("expected 9000, got %d", got)
-	}
-}
-
-func TestV6_EffectiveMTU_LargeValue(t *testing.T) {
-	s := settingsV6Only(t)
-	s.MTU = 9000
-	m := newV6(s, &mockIfconfig{}, &mockRoute{})
-	if got := m.effectiveMTU(); got != 9000 {
-		t.Fatalf("expected 9000, got %d", got)
-	}
-}
-
-func TestDualStack_EffectiveMTU_LargeValue(t *testing.T) {
-	s := settingsDualStack(t)
-	s.MTU = 9000
-	m := newDualStack(s, &mockIfconfig{}, &mockIfconfig{}, &mockRoute{}, &mockRoute{})
-	if got := m.effectiveMTU(); got != 9000 {
-		t.Fatalf("expected 9000, got %d", got)
-	}
-}
-
-func TestV4_EffectiveMTU_ExactSafeMTU(t *testing.T) {
-	s := settingsV4Only(t)
-	s.MTU = settings.SafeMTU
-	m := newV4(s, &mockIfconfig{}, &mockRoute{})
-	if got := m.effectiveMTU(); got != settings.SafeMTU {
-		t.Fatalf("expected %d, got %d", settings.SafeMTU, got)
 	}
 }
 

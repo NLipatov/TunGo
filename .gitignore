@@ -1,10 +1,15 @@
-# IDE related files
+# IDEs and code quality
 .idea/
 /qodana.yaml
 /.idea/forwardedPorts.xml
 /.idea/inspectionProfiles/Project_Default.xml
 .vscode/
+
+# Local development tooling
+.serena/
+
+# Build artifacts
 src/tungo
-.tool-versions
+
+# OS-generated files
 .DS_Store
-/src/conductor

@@ -1,6 +1,6 @@
 //go:build darwin
 
-package client
+package manager
 
 import (
 	"fmt"
@@ -19,11 +19,10 @@ var networkExtensionDescriptor struct {
 	active     bool
 }
 
-// RegisterNetworkExtensionFileDescriptor makes a system-owned UTUN descriptor
-// available to the normal Darwin client TUN manager. The returned function
-// removes only this registration and never closes the descriptor owned by
-// NetworkExtension.
-func RegisterNetworkExtensionFileDescriptor(fd int) (release func(), err error) {
+// RegisterFileDescriptor makes a system-owned UTUN descriptor available to the
+// Darwin client composition point. The returned function removes only this
+// registration and never closes the descriptor owned by NetworkExtension.
+func RegisterFileDescriptor(fd int) (release func(), err error) {
 	if fd < 0 {
 		return nil, fmt.Errorf("invalid NetworkExtension tunnel file descriptor %d", fd)
 	}
@@ -56,21 +55,21 @@ func RegisterNetworkExtensionFileDescriptor(fd int) (release func(), err error) 
 	}, nil
 }
 
-func newNetworkExtensionTunManager() (tun.ClientManager, bool) {
+func New() (tun.ClientManager, bool) {
 	networkExtensionDescriptor.Lock()
 	defer networkExtensionDescriptor.Unlock()
 	if !networkExtensionDescriptor.active {
 		return nil, false
 	}
-	return &networkExtensionTunManager{fd: networkExtensionDescriptor.fd}, true
+	return &neTunManager{fd: networkExtensionDescriptor.fd}, true
 }
 
-type networkExtensionTunManager struct {
+type neTunManager struct {
 	fd int
 }
 
-func (m *networkExtensionTunManager) CreateDevice() (tun.Device, error) {
-	device, err := newFileDescriptorUTUN(m.fd)
+func (m *neTunManager) CreateDevice() (tun.Device, error) {
+	device, err := utun.FromFD(m.fd)
 	if err != nil {
 		return nil, err
 	}
@@ -78,8 +77,8 @@ func (m *networkExtensionTunManager) CreateDevice() (tun.Device, error) {
 }
 
 // NetworkExtension owns both the source descriptor and interface lifecycle.
-func (m *networkExtensionTunManager) DisposeDevices() error { return nil }
+func (m *neTunManager) DisposeDevices() error { return nil }
 
 // NetworkExtension settings, rather than route(8), keep provider traffic out
 // of the tunnel and install the virtual interface routes.
-func (m *networkExtensionTunManager) SetRouteEndpoint(netip.AddrPort) {}
+func (m *neTunManager) SetRouteEndpoint(netip.AddrPort) {}

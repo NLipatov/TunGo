@@ -12,26 +12,25 @@ targets:
     type: app-extension
     platform: macOS
     sources:
-      - Sources/TunGoApple
-      - Sources/CTunGo
+      - ../../../../infrastructure/PAL/network/darwin/ne/Sources/TunGoApple
+      - ../../../../infrastructure/PAL/network/darwin/ne/Sources/CTunGo
     info:
       path: Config/PacketTunnel-Info.plist
     entitlements:
       path: Config/PacketTunnel.entitlements
     preBuildScripts:
       - name: Build TunGo Go core
-        script: '"${SRCROOT}/build-go-core.sh" macos'
+        script: '"${SRCROOT}/../../../../infrastructure/PAL/network/darwin/ne/build-go-core.sh" macos'
         outputFiles:
-          - "$(SRCROOT)/build/macos/universal/libtungo_apple.a"
+          - "$(SRCROOT)/../../../../infrastructure/PAL/network/darwin/ne/build/macos/universal/libtungo_apple.a"
     settings:
       base:
         APPLICATION_EXTENSION_API_ONLY: true
         PRODUCT_BUNDLE_IDENTIFIER: io.tungo.TunGo.PacketTunnel
         PRODUCT_NAME: TunGoPacketTunnel
-        HEADER_SEARCH_PATHS: "$(SRCROOT)/include"
-        SWIFT_INCLUDE_PATHS: "$(SRCROOT)/include"
-        OTHER_LDFLAGS: "$(SRCROOT)/build/macos/universal/libtungo_apple.a"
+        HEADER_SEARCH_PATHS: "$(SRCROOT)/../../../../infrastructure/PAL/network/darwin/ne/include"
+        SWIFT_INCLUDE_PATHS: "$(SRCROOT)/../../../../infrastructure/PAL/network/darwin/ne/include"
+        OTHER_LDFLAGS: "$(SRCROOT)/../../../../infrastructure/PAL/network/darwin/ne/build/macos/universal/libtungo_apple.a"
     dependencies:
       - sdk: Foundation.framework
-      - sdk: Network.framework
       - sdk: NetworkExtension.framework

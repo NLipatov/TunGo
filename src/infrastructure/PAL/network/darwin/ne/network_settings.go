@@ -1,9 +1,10 @@
-package apple
+package ne
 
 import (
 	"fmt"
 
 	"tungo/application/configuration"
+	"tungo/infrastructure/network/mtu"
 	"tungo/infrastructure/settings"
 )
 
@@ -17,7 +18,7 @@ type Route struct {
 	PrefixLength int    `json:"prefixLength"`
 }
 
-type TunnelPlan struct {
+type NetworkSettings struct {
 	RemoteAddress              string      `json:"remoteAddress"`
 	MTU                        int         `json:"mtu"`
 	StartupTimeoutMilliseconds int         `json:"startupTimeoutMilliseconds"`
@@ -28,42 +29,48 @@ type TunnelPlan struct {
 	ExcludedRoutes             []Route     `json:"excludedRoutes"`
 }
 
-// NewTunnelPlan translates TunGo client settings into the platform-neutral
-// description consumed by the Swift NetworkExtension adapter.
-func NewTunnelPlan(conf configuration.ClientRuntimeConfiguration) (TunnelPlan, error) {
+// NewNetworkSettings translates TunGo client settings into the payload
+// consumed by the Swift NetworkExtension adapter.
+func NewNetworkSettings(conf configuration.ClientRuntimeConfiguration) (NetworkSettings, error) {
 	active, err := conf.ActiveSettings()
 	if err != nil {
-		return TunnelPlan{}, err
+		return NetworkSettings{}, err
 	}
 	if active.Server.IsZero() {
-		return TunnelPlan{}, fmt.Errorf("active settings: Server is not configured")
+		return NetworkSettings{}, fmt.Errorf("active settings: Server is not configured")
 	}
 
-	plan := TunnelPlan{
+	networkSettings := NetworkSettings{
 		RemoteAddress:              active.Server.String(),
-		MTU:                        effectiveMTU(active),
+		MTU:                        mtu.Effective(active),
 		StartupTimeoutMilliseconds: startupTimeoutMilliseconds(active),
 		IncludedRoutes:             make([]Route, 0, 2),
 		ExcludedRoutes:             make([]Route, 0),
 	}
 	if active.IPv4.IsValid() {
-		plan.IPv4 = &IPSettings{Address: active.IPv4.Unmap().String(), PrefixLength: 32}
-		plan.IncludedRoutes = append(plan.IncludedRoutes, Route{Destination: "0.0.0.0", PrefixLength: 0})
-		plan.DNSServers = append(plan.DNSServers, active.DNSv4Resolvers()...)
+		networkSettings.IPv4 = &IPSettings{Address: active.IPv4.Unmap().String(), PrefixLength: 32}
+		networkSettings.IncludedRoutes = append(
+			networkSettings.IncludedRoutes,
+			Route{Destination: "0.0.0.0", PrefixLength: 0},
+		)
+		networkSettings.DNSServers = append(networkSettings.DNSServers, active.DNSv4Resolvers()...)
 	}
 	if active.IPv6.IsValid() {
 		prefixLength := 128
 		if active.IPv6Subnet.IsValid() {
 			prefixLength = active.IPv6Subnet.Bits()
 		}
-		plan.IPv6 = &IPSettings{Address: active.IPv6.String(), PrefixLength: prefixLength}
-		plan.IncludedRoutes = append(plan.IncludedRoutes, Route{Destination: "::", PrefixLength: 0})
-		plan.DNSServers = append(plan.DNSServers, active.DNSv6Resolvers()...)
+		networkSettings.IPv6 = &IPSettings{Address: active.IPv6.String(), PrefixLength: prefixLength}
+		networkSettings.IncludedRoutes = append(
+			networkSettings.IncludedRoutes,
+			Route{Destination: "::", PrefixLength: 0},
+		)
+		networkSettings.DNSServers = append(networkSettings.DNSServers, active.DNSv6Resolvers()...)
 	}
-	if plan.IPv4 == nil && plan.IPv6 == nil {
-		return TunnelPlan{}, fmt.Errorf("active settings: no resolved tunnel address")
+	if networkSettings.IPv4 == nil && networkSettings.IPv6 == nil {
+		return NetworkSettings{}, fmt.Errorf("active settings: no resolved tunnel address")
 	}
-	return plan, nil
+	return networkSettings, nil
 }
 
 func startupTimeoutMilliseconds(active settings.Settings) int {
@@ -72,19 +79,4 @@ func startupTimeoutMilliseconds(active settings.Settings) int {
 		timeout = 5000
 	}
 	return timeout + 1000
-}
-
-func effectiveMTU(active settings.Settings) int {
-	mtu := active.MTU
-	if mtu <= 0 {
-		mtu = settings.SafeMTU
-	}
-	minimum := settings.MinimumIPv4MTU
-	if active.IPv6.IsValid() {
-		minimum = settings.MinimumIPv6MTU
-	}
-	if mtu < minimum {
-		mtu = minimum
-	}
-	return mtu
 }

@@ -7,8 +7,8 @@ import (
 	"tungo/infrastructure/PAL/exec_commander"
 
 	"tungo/application/network/routing/tun"
-	ifcfg "tungo/infrastructure/PAL/network/darwin/ifconfig"
-	rtpkg "tungo/infrastructure/PAL/network/darwin/route"
+	ifcfg "tungo/infrastructure/PAL/network/darwin/raw/ifconfig"
+	rtpkg "tungo/infrastructure/PAL/network/darwin/raw/route"
 	"tungo/infrastructure/settings"
 )
 
