@@ -13,6 +13,14 @@
 
 **TunGo** is a lightweight VPN designed for modern needs: **fast**, **secure**, and **open-source**.
 
+<p align="center">
+  <a href="https://tungo.ethacore.com/docs/QuickStart"><strong>Install and configure</strong></a>
+  ·
+  <a href="https://github.com/NLipatov/TunGo/releases/latest">Download binaries</a>
+  ·
+  <a href="https://tungo.ethacore.com">Documentation</a>
+</p>
+
 ## Features
 
 - UDP, TCP and WebSocket transports
