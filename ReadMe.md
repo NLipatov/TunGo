@@ -5,7 +5,7 @@
 ![Forks](https://img.shields.io/github/forks/NLipatov/TunGo.svg)
 ![Issues](https://img.shields.io/github/issues/NLipatov/TunGo.svg)
 
-# TunGo: What's It All About?
+# TunGo
 
 <p align="center">
   <img alt="TunGo running on a retro CRT terminal" src="docs/TunGo/static/img/tungo-crt.svg" width="100%"/>
