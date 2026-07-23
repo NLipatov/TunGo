@@ -20,7 +20,7 @@
 - 🔒 **End-to-End Encryption** — Noise IK handshake for mutual authentication; X25519 (Curve25519 ECDH) for key agreement; ChaCha20-Poly1305 (AEAD) for traffic encryption.
 - ⚡ **Built from Scratch** — no legacy, no bloat. Clean, readable Go code.
 - 🌐 **IoT & Embedded Ready** — optimized for small devices and constrained environments.
-- 🛡️ **Open Source** — AGPL-3.0-only; commercial licenses available.
+- 🛡️ **Open Source** — AGPL-3.0-only.
 
 ---
 
@@ -70,9 +70,6 @@ See more use cases at https://tungo.ethacore.com, for example:
 
 If users interact with your (modified or unmodified) TunGo over a network (SaaS/hosted), you must provide them the complete corresponding source code of TunGo, including your changes and the scripts used to control compilation and installation.  
 Independent services that only communicate with TunGo over standard protocols (HTTP/gRPC, queues, etc.) do not have to be open-sourced (unless they are part of a derivative work).
-
-### 🔒 Need a closed integration?
-If you need to **embed/link** TunGo into a proprietary product without sharing source, contact <mailto:6stringsohei@gmail.com> for a **commercial license**.
 
 ### ✅ You can
 - Run TunGo for personal or commercial use.
