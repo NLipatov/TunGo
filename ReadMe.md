@@ -42,19 +42,3 @@ To reproduce:
 cd src
 go test ./infrastructure/tunnel/dataplane/server/udp_chacha20 ./infrastructure/tunnel/dataplane/client/udp_chacha20 ./infrastructure/tunnel/dataplane/server/tcp_chacha20 ./infrastructure/tunnel/dataplane/client/tcp_chacha20 -run ^$ -bench FullCycle -benchmem
 ```
-
----
-
-## 🚀 QuickStart
-
-Refer to: [QuickStart](https://tungo.ethacore.com/docs/QuickStart)
-
----
-
-## 🔧 Advanced Use Cases
-
-See more use cases at https://tungo.ethacore.com, for example:
-
-1) [How to run the server in a Docker container](https://tungo.ethacore.com/docs/Advanced/Containerization/Docker/Server)
-2) [How to set up a server systemd unit (auto-start on boot)](https://tungo.ethacore.com/docs/Advanced/Linux/Setup%20server%20systemd%20unit)
-3) [How to set up a client systemd unit (auto-start on boot)](https://tungo.ethacore.com/docs/Advanced/Linux/Setup%20client%20systemd%20unit)
