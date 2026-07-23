@@ -21,24 +21,26 @@
 
 ---
 
-## 📈 Performance
+## Performance
 
-TunGo includes in-memory full-cycle dataplane benchmarks for both UDP and TCP. These benchmarks measure userspace packet-processing throughput only: encryption, routing/lookup, validation, decryption, and handoff to an in-memory sink.
+In-memory dataplane benchmark with 1400-byte packets on an Apple M4 Pro:
 
-Example single-run results for **1400-byte packets** on **Apple M4 Pro**:
-
-| Path | ns/op | Throughput | Allocs/op |
+| Path | Time/packet | Throughput | Allocs/packet |
 |---|---:|---:|---:|
-| UDP client -> server | ~2.7 us | ~4.3 Gbit/s | 0 |
-| UDP server -> client | ~2.6 us | ~4.3 Gbit/s | 0 |
-| TCP client -> server | ~2.6 us | ~4.3 Gbit/s | 0 |
-| TCP server -> client | ~2.6 us | ~4.3 Gbit/s | 0 |
+| UDP client → server | ~2.7 µs | ~4.3 Gbit/s | 0 |
+| UDP server → client | ~2.6 µs | ~4.3 Gbit/s | 0 |
+| TCP client → server | ~2.6 µs | ~4.3 Gbit/s | 0 |
+| TCP server → client | ~2.6 µs | ~4.3 Gbit/s | 0 |
 
-These numbers do **not** include TUN device, socket, kernel, firewall/NAT, or real network overhead. Treat them as dataplane-core benchmarks, not end-to-end VPN throughput claims.
+> Covers encryption, routing, validation and decryption. Excludes TUN,
+> sockets, kernel, firewall/NAT and network I/O; not end-to-end VPN throughput.
 
-To reproduce:
+<details>
+<summary>Reproduce the benchmark</summary>
 
 ```bash
 cd src
-go test ./infrastructure/tunnel/dataplane/server/udp_chacha20 ./infrastructure/tunnel/dataplane/client/udp_chacha20 ./infrastructure/tunnel/dataplane/server/tcp_chacha20 ./infrastructure/tunnel/dataplane/client/tcp_chacha20 -run ^$ -bench FullCycle -benchmem
+go test ./infrastructure/tunnel/dataplane/server/udp_chacha20 ./infrastructure/tunnel/dataplane/client/udp_chacha20 ./infrastructure/tunnel/dataplane/server/tcp_chacha20 ./infrastructure/tunnel/dataplane/client/tcp_chacha20 -run '^$' -bench FullCycle -benchmem
 ```
+
+</details>
