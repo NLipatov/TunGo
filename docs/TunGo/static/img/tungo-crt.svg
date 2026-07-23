@@ -44,7 +44,7 @@
       <feGaussianBlur stdDeviation="10"/>
     </filter>
     <style>
-      .mono{font-family:"DejaVu Sans Mono","Liberation Mono",Consolas,monospace;font-size:24px;font-weight:400}.green{fill:#0ed84a}.cyan{fill:#20cbe8}.frame{fill:none;stroke:#0ed84a;stroke-width:2;stroke-dasharray:7 7}.trend{fill:none;stroke:#0ed84a;stroke-width:4;stroke-linecap:round;stroke-dasharray:1 9}.thin{stroke-width:1.4}.black{fill:#001207}
+      .mono{font-family:"DejaVu Sans Mono","Liberation Mono",Consolas,monospace;font-size:24px;font-weight:400}.green{fill:#0ed84a}.cyan{fill:#20cbe8}.frame{fill:none;stroke:#0ed84a;stroke-width:2;stroke-dasharray:7 7}.thin{stroke-width:1.4}.black{fill:#001207}
     </style>
   </defs>
 
@@ -89,10 +89,8 @@
       <text x="510" y="610">| Total TX</text>
       <text x="742" y="610">1.7 GiB</text>
 
-      <text x="164" y="658">RX trend:</text>
-      <path class="trend" filter="url(#glow)" d="M314 647L349 647 374 654 398 646 426 640 462 648 492 647 523 654 555 652 572 638 606 642 628 650 672 653 702 651 720 638 748 634 769 646 800 653 838 652 883 652 915 651 956 652"/>
-      <text x="164" y="705">TX trend:</text>
-      <path class="trend" filter="url(#glow)" d="M314 700L690 700 709 699 709 678 724 678 724 685 735 685 735 691 758 691 758 697 793 700 956 700"/>
+      <text x="164" y="658">RX trend: ⣀⣀⣠⠴⠲⢤⣀⣸⠹⠤⢤⣀⣀⣰⠲⢤⣀⣸⠙⠲⠤⢤⣀⣠⠴⠲⢤⣀⣀⣸⠹⠤⢤⣀</text>
+      <text x="164" y="705">TX trend: ⣀⣸⠙⠲⢤⣀⣀⣠⠴⠲⢤⣀⣸⠹⠤⢤⣀⣰⠲⢤⣀⣀⣸⠙⠲⢤⣀⣠⠴⠲⢤⣀⣀⣸⠹⢤⣀</text>
 
       <text x="164" y="875">Esc open stop confirmation | Tab switch tabs | ctrl+c exit</text>
 
@@ -102,5 +100,4 @@
   </g>
 
   <rect x="67" y="72" width="1231" height="947" rx="57" fill="none" stroke="#000" stroke-opacity=".6" stroke-width="6"/>
-  <path d="M78 1006C384 1038 983 1040 1286 1001" fill="none" stroke="#bda78d" stroke-opacity=".45" stroke-width="2"/>
 </svg>
