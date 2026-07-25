@@ -18,7 +18,7 @@ type Route struct {
 	PrefixLength int    `json:"prefixLength"`
 }
 
-type NetworkSettings struct {
+type Settings struct {
 	RemoteAddress              string      `json:"remoteAddress"`
 	MTU                        int         `json:"mtu"`
 	StartupTimeoutMilliseconds int         `json:"startupTimeoutMilliseconds"`
@@ -29,18 +29,28 @@ type NetworkSettings struct {
 	ExcludedRoutes             []Route     `json:"excludedRoutes"`
 }
 
-// NewNetworkSettings translates TunGo client settings into the payload
+// LoadSettings loads the active client configuration and translates it
+// into the payload consumed by the Swift NetworkExtension adapter.
+func LoadSettings() (Settings, error) {
+	conf, err := configuration.NewDefaultClientControl().ClientRuntimeConfiguration()
+	if err != nil {
+		return Settings{}, err
+	}
+	return NewSettings(conf)
+}
+
+// NewSettings translates TunGo client settings into the payload
 // consumed by the Swift NetworkExtension adapter.
-func NewNetworkSettings(conf configuration.ClientRuntimeConfiguration) (NetworkSettings, error) {
+func NewSettings(conf configuration.ClientRuntimeConfiguration) (Settings, error) {
 	active, err := conf.ActiveSettings()
 	if err != nil {
-		return NetworkSettings{}, err
+		return Settings{}, err
 	}
 	if active.Server.IsZero() {
-		return NetworkSettings{}, fmt.Errorf("active settings: Server is not configured")
+		return Settings{}, fmt.Errorf("active settings: Server is not configured")
 	}
 
-	networkSettings := NetworkSettings{
+	networkSettings := Settings{
 		RemoteAddress:              active.Server.String(),
 		MTU:                        mtu.Effective(active),
 		StartupTimeoutMilliseconds: startupTimeoutMilliseconds(active),
@@ -68,15 +78,12 @@ func NewNetworkSettings(conf configuration.ClientRuntimeConfiguration) (NetworkS
 		networkSettings.DNSServers = append(networkSettings.DNSServers, active.DNSv6Resolvers()...)
 	}
 	if networkSettings.IPv4 == nil && networkSettings.IPv6 == nil {
-		return NetworkSettings{}, fmt.Errorf("active settings: no resolved tunnel address")
+		return Settings{}, fmt.Errorf("active settings: no resolved tunnel address")
 	}
 	return networkSettings, nil
 }
 
 func startupTimeoutMilliseconds(active settings.Settings) int {
-	timeout := int(active.DialTimeoutMs)
-	if timeout < 5000 {
-		timeout = 5000
-	}
+	timeout := max(int(active.DialTimeoutMs), 5000)
 	return timeout + 1000
 }

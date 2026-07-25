@@ -7,6 +7,7 @@ REPOSITORY_ROOT="$(cd "${SCRIPT_DIR}/../../../../.." && pwd)"
 OUTPUT_ROOT="${TUNGO_APPLE_BUILD_DIR:-${SCRIPT_DIR}/build}"
 DEPLOYMENT_TARGET="${TUNGO_APPLE_DEPLOYMENT_TARGET:-15.0}"
 BRIDGE_PACKAGE="./infrastructure/PAL/network/darwin/ne/cabi"
+BRIDGE_HEADERS="${SCRIPT_DIR}/cabi/include"
 
 build_archive() {
     local goos="$1"
@@ -67,9 +68,9 @@ build_xcframework() {
     build_macos
     build_ios
     xcodebuild -create-xcframework \
-        -library "${OUTPUT_ROOT}/macos/universal/libtungo_apple.a" -headers "${SCRIPT_DIR}/include" \
-        -library "${OUTPUT_ROOT}/ios/device/libtungo_apple.a" -headers "${SCRIPT_DIR}/include" \
-        -library "${OUTPUT_ROOT}/ios/simulator/libtungo_apple.a" -headers "${SCRIPT_DIR}/include" \
+        -library "${OUTPUT_ROOT}/macos/universal/libtungo_apple.a" -headers "${BRIDGE_HEADERS}" \
+        -library "${OUTPUT_ROOT}/ios/device/libtungo_apple.a" -headers "${BRIDGE_HEADERS}" \
+        -library "${OUTPUT_ROOT}/ios/simulator/libtungo_apple.a" -headers "${BRIDGE_HEADERS}" \
         -output "${OUTPUT_ROOT}/TunGoCore.xcframework"
 }
 

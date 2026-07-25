@@ -1,7 +1,7 @@
 import Foundation
 import NetworkExtension
 
-struct NetworkSettings: Decodable {
+struct PacketTunnelSettings: Decodable {
     struct IPSettings: Decodable {
         let address: String
         let prefixLength: Int

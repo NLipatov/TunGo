@@ -56,7 +56,7 @@ final class PacketTunnelAdapter: @unchecked Sendable {
 
             self.lifecycleQueue.async {
                 do {
-                    let networkSettings = try self.backend.networkSettings()
+                    let networkSettings = try TunGoBackend.networkSettings()
                     let packetTunnelSettings =
                         try networkSettings.makeNEPacketTunnelNetworkSettings()
                     self.stateQueue.async {

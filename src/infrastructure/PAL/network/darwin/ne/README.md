@@ -9,7 +9,8 @@ project lives in `presentation/ui/gui/apple`.
 - `Sources/TunGoApple` — Packet Tunnel provider, NetworkExtension settings, and
   lifecycle adapter.
 - `Sources/CTunGo` — UTUN descriptor discovery used by the fd-based backend.
-- `cabi` — the narrow C ABI between Swift and the Go client runtime.
+- `cabi` — the narrow C ABI between Swift and the Go client runtime, including
+  its public header and Clang module map under `cabi/include`.
 - `internal/controller` — owns the embedded client runtime lifecycle.
 - `manager` — adapts the NetworkExtension-owned UTUN descriptor to `tun.ClientManager`.
 - `build-go-core.sh` — builds the Go backend as static Apple archives or an
@@ -27,6 +28,8 @@ project lives in `presentation/ui/gui/apple`.
 The provider starts the normal TunGo client runtime, which reads the selected
 configuration through the existing platform path
 (`/etc/tungo/client_configuration.json` on macOS).
+Each Swift backend owns an opaque C handle whose underlying controller is
+created and retained by Go for the lifetime of that backend.
 
 The fd discovery mirrors the architecture used by WireGuard's Apple client: the
 provider process locates its UTUN control socket and passes the borrowed fd to

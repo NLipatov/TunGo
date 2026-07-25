@@ -8,9 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"tungo/application/configuration"
 	applicationRuntime "tungo/application/runtime"
-	"tungo/infrastructure/PAL/network/darwin/ne"
 	neManager "tungo/infrastructure/PAL/network/darwin/ne/manager"
 )
 
@@ -42,14 +40,6 @@ type session struct {
 
 func New() *Controller {
 	return &Controller{}
-}
-
-func (c *Controller) NetworkSettings() (ne.NetworkSettings, error) {
-	conf, err := configuration.NewDefaultClientControl().ClientRuntimeConfiguration()
-	if err != nil {
-		return ne.NetworkSettings{}, err
-	}
-	return ne.NewNetworkSettings(conf)
 }
 
 func (c *Controller) Start(tunnelFD int) error {

@@ -28,8 +28,8 @@ targets:
         APPLICATION_EXTENSION_API_ONLY: true
         PRODUCT_BUNDLE_IDENTIFIER: io.tungo.TunGo.PacketTunnel
         PRODUCT_NAME: TunGoPacketTunnel
-        HEADER_SEARCH_PATHS: "$(SRCROOT)/../../../../infrastructure/PAL/network/darwin/ne/include"
-        SWIFT_INCLUDE_PATHS: "$(SRCROOT)/../../../../infrastructure/PAL/network/darwin/ne/include"
+        HEADER_SEARCH_PATHS: "$(SRCROOT)/../../../../infrastructure/PAL/network/darwin/ne/cabi/include"
+        SWIFT_INCLUDE_PATHS: "$(SRCROOT)/../../../../infrastructure/PAL/network/darwin/ne/cabi/include"
         OTHER_LDFLAGS: "$(SRCROOT)/../../../../infrastructure/PAL/network/darwin/ne/build/macos/universal/libtungo_apple.a"
     dependencies:
       - sdk: Foundation.framework
