@@ -1,10 +1,13 @@
-# IDE related files
-.idea/
+# Build artifacts
+/src/tungo
+
+# IDEs and editors
+/.idea/
+/.vscode/
 /qodana.yaml
-/.idea/forwardedPorts.xml
-/.idea/inspectionProfiles/Project_Default.xml
-.vscode/
-src/tungo
-.tool-versions
+
+# Local development tools
+.serena/
+
+# Operating system metadata
 .DS_Store
-/src/conductor
