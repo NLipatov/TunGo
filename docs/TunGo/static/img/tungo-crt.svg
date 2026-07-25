@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1365 1088" role="img" aria-labelledby="title desc" shape-rendering="geometricPrecision" text-rendering="optimizeLegibility">
+  <title id="title">Retro CRT terminal showing the TunGo dataplane dashboard</title>
+  <desc id="desc">A beige curved CRT monitor with a dark green terminal screen, connection data, traffic trends and a tmux-style status bar.</desc>
+  <defs>
+    <linearGradient id="case" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#9f856b"/>
+      <stop offset=".46" stop-color="#80664f"/>
+      <stop offset="1" stop-color="#b0987e"/>
+    </linearGradient>
+    <linearGradient id="lip" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#3b2c1d"/>
+      <stop offset=".22" stop-color="#171108"/>
+      <stop offset=".76" stop-color="#0c0a07"/>
+      <stop offset="1" stop-color="#806a53"/>
+    </linearGradient>
+    <radialGradient id="glass" cx="49%" cy="47%" r="72%">
+      <stop stop-color="#00160e"/>
+      <stop offset=".62" stop-color="#00110b"/>
+      <stop offset="1" stop-color="#000604"/>
+    </radialGradient>
+    <linearGradient id="bar" x1="0" x2="1">
+      <stop stop-color="#11d946"/>
+      <stop offset=".48" stop-color="#14df4a"/>
+      <stop offset="1" stop-color="#09be3e"/>
+    </linearGradient>
+    <linearGradient id="reflection" x1="0" y1="0" x2=".8" y2="1">
+      <stop stop-color="#d7ffed" stop-opacity=".075"/>
+      <stop offset=".38" stop-color="#5bf5aa" stop-opacity=".018"/>
+      <stop offset="1" stop-color="#000" stop-opacity="0"/>
+    </linearGradient>
+    <pattern id="casePattern" width="34" height="34" patternUnits="userSpaceOnUse">
+      <path d="M2 8c9-8 11 10 20 2s10 9 10 9M5 27c8-7 10 7 18 0s10 5 10 5" fill="none" stroke="#d9c6ae" stroke-opacity=".12" stroke-width="1"/>
+      <path d="M0 17c7 5 11-6 17-1s10-6 17-2" fill="none" stroke="#493522" stroke-opacity=".12" stroke-width="1"/>
+    </pattern>
+    <pattern id="scan" width="4" height="4" patternUnits="userSpaceOnUse">
+      <path d="M0 .5H1365" stroke="#4cff7e" stroke-opacity=".035"/>
+    </pattern>
+    <clipPath id="screenClip"><rect x="67" y="72" width="1231" height="947" rx="57"/></clipPath>
+    <filter id="glow" x="-10%" y="-20%" width="120%" height="140%" color-interpolation-filters="sRGB">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="softShadow" x="-15%" y="-15%" width="130%" height="140%">
+      <feGaussianBlur stdDeviation="10"/>
+    </filter>
+    <style>
+      .mono{font-family:"DejaVu Sans Mono","Liberation Mono",Consolas,monospace;font-size:24px;font-weight:400}.green{fill:#0ed84a}.cyan{fill:#20cbe8}.frame{fill:none;stroke:#0ed84a;stroke-width:2;stroke-dasharray:7 7}.thin{stroke-width:1.4}.black{fill:#001207}
+    </style>
+  </defs>
+
+  <rect x="7" y="12" width="1351" height="1069" rx="36" fill="#3b2b20" opacity=".45" filter="url(#softShadow)"/>
+  <rect x="1" y="1" width="1363" height="1086" rx="39" fill="url(#case)" stroke="#c6b29d" stroke-width="2"/>
+  <rect x="7" y="7" width="1351" height="1074" rx="35" fill="url(#casePattern)" opacity=".9"/>
+  <rect x="18" y="18" width="1329" height="1052" rx="31" fill="none" stroke="#78604b" stroke-opacity=".5"/>
+
+  <rect x="47" y="48" width="1271" height="992" rx="66" fill="url(#lip)" stroke="#b29a7e" stroke-width="3"/>
+  <rect x="57" y="59" width="1251" height="970" rx="61" fill="#070705" stroke="#312817" stroke-width="4"/>
+  <rect x="66" y="71" width="1233" height="949" rx="58" fill="url(#glass)" stroke="#1b2418" stroke-width="2"/>
+  <rect x="75" y="81" width="1215" height="928" rx="50" fill="none" stroke="#0b2a1a" stroke-opacity=".58"/>
+
+  <g clip-path="url(#screenClip)">
+    <rect x="67" y="72" width="1231" height="947" fill="url(#glass)"/>
+    <rect x="67" y="72" width="1231" height="947" fill="url(#scan)"/>
+    <path d="M72 79H1268C1017 111 640 139 196 122 121 119 87 105 72 79Z" fill="url(#reflection)"/>
+    <path d="M77 858c332 53 849 59 1211-4v169H77Z" fill="#00a63f" opacity=".018"/>
+
+    <g class="mono green">
+      <path class="frame" filter="url(#glow)" d="M121 147H1241M121 161V909M1241 161V909M121 910H1241"/>
+      <path class="frame thin" filter="url(#glow)" d="M154 244H1211M154 821H1211"/>
+
+      <rect x="165" y="176" width="148" height="40" fill="url(#bar)" filter="none"/>
+      <text x="181" y="205" class="black" filter="none">Dataplane</text>
+      <text x="338" y="205">Settings</text>
+      <text x="472" y="205">Logs</text>
+      <text x="1210" y="205" text-anchor="end" class="cyan">TunGo [0.3.22]</text>
+
+      <text x="164" y="325">Mode: Client</text>
+      <text x="164" y="366">Status: Connected</text>
+      <text x="164" y="407">Protocol: UDP</text>
+      <text x="164" y="448">Server IP: IPv4 203.0.113.42 | IPv6 2001:db8::42</text>
+      <text x="164" y="489">Tunnel IP: IPv4 10.0.1.2 | IPv6 fd00:1::2</text>
+
+      <text x="164" y="569">RX</text>
+      <text x="354" y="569">4.8 KiB/s</text>
+      <text x="510" y="569">| TX</text>
+      <text x="716" y="569">1.5 KiB/s</text>
+      <text x="164" y="610">Total RX</text>
+      <text x="367" y="610">26.4 GiB</text>
+      <text x="510" y="610">| Total TX</text>
+      <text x="742" y="610">1.7 GiB</text>
+
+      <text x="164" y="658">RX trend: ⣀⣀⣠⠴⠲⢤⣀⣸⠹⠤⢤⣀⣀⣰⠲⢤⣀⣸⠙⠲⠤⢤⣀⣠⠴⠲⢤⣀⣀⣸⠹⠤⢤⣀</text>
+      <text x="164" y="705">TX trend: ⣀⣸⠙⠲⢤⣀⣀⣠⠴⠲⢤⣀⣸⠹⠤⢤⣀⣰⠲⢤⣀⣀⣸⠙⠲⢤⣀⣠⠴⠲⢤⣀⣀⣸⠹⢤⣀</text>
+
+      <text x="164" y="875">Esc open stop confirmation | Tab switch tabs | ctrl+c exit</text>
+
+      <rect x="119" y="932" width="1124" height="35" fill="url(#bar)" filter="none"/>
+      <text x="141" y="958" class="black" filter="none">[0] tungo*</text>
+    </g>
+  </g>
+
+  <rect x="67" y="72" width="1231" height="947" rx="57" fill="none" stroke="#000" stroke-opacity=".6" stroke-width="6"/>
+</svg>
