@@ -17,6 +17,9 @@ char *tungo_network_settings(char **output);
 char *tungo_start(int32_t tunnel_file_descriptor);
 char *tungo_wait_ready(int64_t timeout_milliseconds);
 char *tungo_stop(void);
+
+// Releases memory returned by the TunGo C ABI.
+// Passing any other pointer results in undefined behavior.
 void tungo_free(void *pointer);
 
 #ifdef __cplusplus

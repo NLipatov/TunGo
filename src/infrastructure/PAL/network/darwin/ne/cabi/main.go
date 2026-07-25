@@ -9,15 +9,15 @@ package main
 import "C"
 
 import (
-	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 	"unsafe"
 
-	"tungo/infrastructure/PAL/network/darwin/ne"
+	control "tungo/infrastructure/PAL/network/darwin/ne/internal/controller"
 )
 
-var controller = ne.NewController()
+var controller = control.New()
 
 //export tungo_network_settings
 func tungo_network_settings(output **C.char) *C.char {
@@ -29,39 +29,33 @@ func tungo_network_settings(output **C.char) *C.char {
 	if err != nil {
 		return errorString(err)
 	}
-	*output = C.CString(string(networkSettings))
+	payload, err := json.Marshal(networkSettings)
+	if err != nil {
+		return errorString(err)
+	}
+	*output = C.CString(string(payload))
 	return nil
 }
 
 //export tungo_start
 func tungo_start(tunnelFileDescriptor C.int32_t) *C.char {
-	if err := controller.Start(int(tunnelFileDescriptor)); err != nil {
-		return errorString(err)
-	}
-	return nil
+	return errorString(controller.Start(int(tunnelFileDescriptor)))
 }
 
 //export tungo_wait_ready
 func tungo_wait_ready(timeoutMilliseconds C.int64_t) *C.char {
-	if timeoutMilliseconds <= 0 || timeoutMilliseconds > 300000 {
-		return errorString(fmt.Errorf("startup timeout %dms is outside the supported range", int64(timeoutMilliseconds)))
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutMilliseconds)*time.Millisecond)
-	defer cancel()
-	if err := controller.WaitReady(ctx); err != nil {
-		return errorString(err)
-	}
-	return nil
+	timeout := time.Duration(timeoutMilliseconds) * time.Millisecond
+	return errorString(controller.WaitReady(timeout))
 }
 
 //export tungo_stop
 func tungo_stop() *C.char {
-	if err := controller.Stop(); err != nil {
-		return errorString(err)
-	}
-	return nil
+	return errorString(controller.Stop())
 }
 
+// tungo_free releases memory returned by the TunGo C ABI.
+// Passing any other pointer results in undefined behavior.
+//
 //export tungo_free
 func tungo_free(pointer unsafe.Pointer) {
 	C.free(pointer)

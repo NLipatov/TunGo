@@ -1,18 +1,20 @@
 //go:build darwin || ios
 
-package ne
+package controller
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
 
 	"tungo/application/configuration"
 	applicationRuntime "tungo/application/runtime"
+	"tungo/infrastructure/PAL/network/darwin/ne"
 	neManager "tungo/infrastructure/PAL/network/darwin/ne/manager"
 )
+
+const maximumStartupTimeout = 5 * time.Minute
 
 type state uint8
 
@@ -38,20 +40,16 @@ type session struct {
 	release func()
 }
 
-func NewController() *Controller {
+func New() *Controller {
 	return &Controller{}
 }
 
-func (c *Controller) NetworkSettings() ([]byte, error) {
+func (c *Controller) NetworkSettings() (ne.NetworkSettings, error) {
 	conf, err := configuration.NewDefaultClientControl().ClientRuntimeConfiguration()
 	if err != nil {
-		return nil, err
+		return ne.NetworkSettings{}, err
 	}
-	networkSettings, err := NewNetworkSettings(conf)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(networkSettings)
+	return ne.NewNetworkSettings(conf)
 }
 
 func (c *Controller) Start(tunnelFD int) error {
@@ -92,7 +90,16 @@ func (c *Controller) Stop() error {
 	return nil
 }
 
-func (c *Controller) WaitReady(ctx context.Context) error {
+func (c *Controller) WaitReady(timeout time.Duration) error {
+	if timeout <= 0 || timeout > maximumStartupTimeout {
+		return fmt.Errorf(
+			"startup timeout %dms is outside the supported range",
+			timeout.Milliseconds(),
+		)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
 	c.mu.Lock()
 	s := c.session
 	c.mu.Unlock()

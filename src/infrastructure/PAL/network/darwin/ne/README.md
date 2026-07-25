@@ -9,7 +9,8 @@ project lives in `presentation/ui/gui/apple`.
 - `Sources/TunGoApple` — Packet Tunnel provider, NetworkExtension settings, and
   lifecycle adapter.
 - `Sources/CTunGo` — UTUN descriptor discovery used by the fd-based backend.
-- `carchive` — the narrow C ABI between Swift and the Go client runtime.
+- `cabi` — the narrow C ABI between Swift and the Go client runtime.
+- `internal/controller` — owns the embedded client runtime lifecycle.
 - `manager` — adapts the NetworkExtension-owned UTUN descriptor to `tun.ClientManager`.
 - `build-go-core.sh` — builds the Go backend as static Apple archives or an
   XCFramework.

@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPOSITORY_ROOT="$(cd "${SCRIPT_DIR}/../../../../.." && pwd)"
 OUTPUT_ROOT="${TUNGO_APPLE_BUILD_DIR:-${SCRIPT_DIR}/build}"
 DEPLOYMENT_TARGET="${TUNGO_APPLE_DEPLOYMENT_TARGET:-15.0}"
-BRIDGE_PACKAGE="./infrastructure/PAL/network/darwin/ne/carchive"
+BRIDGE_PACKAGE="./infrastructure/PAL/network/darwin/ne/cabi"
 
 build_archive() {
     local goos="$1"

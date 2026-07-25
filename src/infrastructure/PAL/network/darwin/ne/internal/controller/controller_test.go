@@ -1,6 +1,6 @@
 //go:build darwin || ios
 
-package ne
+package controller
 
 import (
 	"context"
@@ -26,23 +26,34 @@ func (r *observedNotReadyRuntime) Ready() bool {
 }
 
 func TestControllerStartRejectsInvalidDescriptor(t *testing.T) {
-	controller := NewController()
+	controller := New()
 	if err := controller.Start(-1); err == nil {
 		t.Fatal("expected invalid descriptor error")
 	}
 }
 
 func TestControllerWaitReadyRequiresStart(t *testing.T) {
-	controller := NewController()
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	if err := controller.WaitReady(ctx); err == nil {
+	controller := New()
+	if err := controller.WaitReady(time.Second); err == nil {
 		t.Fatal("expected not-started error")
 	}
 }
 
+func TestControllerWaitReadyRejectsInvalidTimeout(t *testing.T) {
+	controller := New()
+	for _, timeout := range []time.Duration{
+		-time.Millisecond,
+		0,
+		maximumStartupTimeout + time.Millisecond,
+	} {
+		if err := controller.WaitReady(timeout); err == nil {
+			t.Fatalf("WaitReady(%s) unexpectedly succeeded", timeout)
+		}
+	}
+}
+
 func TestControllerStopIsIdempotent(t *testing.T) {
-	controller := NewController()
+	controller := New()
 	if err := controller.Stop(); err != nil {
 		t.Fatalf("first Stop() error = %v", err)
 	}
@@ -70,12 +81,12 @@ func TestControllerStopInterruptsWaitReady(t *testing.T) {
 		close(done)
 	}()
 
-	controller := NewController()
+	controller := New()
 	controller.session = s
 
 	waitDone := make(chan error, 1)
 	go func() {
-		waitDone <- controller.WaitReady(context.Background())
+		waitDone <- controller.WaitReady(time.Minute)
 	}()
 	select {
 	case <-runtime.readyObserved:
