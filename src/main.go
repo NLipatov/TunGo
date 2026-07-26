@@ -11,6 +11,8 @@ import (
 	"tungo/application/runtime"
 	"tungo/application/version"
 	"tungo/domain/app"
+	"tungo/infrastructure/PAL/exec_commander"
+	"tungo/infrastructure/PAL/service_management/linux/systemd"
 	"tungo/infrastructure/PAL/signal"
 	"tungo/infrastructure/logging"
 	"tungo/infrastructure/telemetry/trafficstats"
@@ -92,7 +94,12 @@ func runTUI(ctx context.Context) error {
 		return err
 	}
 	configurationControls := configuration.NewDefaultControls()
-	tuiUI, err := tui.New(configurationControls)
+	var daemonControl systemd.Control
+	systemdControl := systemd.NewUnitInstaller(exec_commander.NewExecCommander())
+	if systemdControl.Available() {
+		daemonControl = systemdControl
+	}
+	tuiUI, err := tui.New(configurationControls, daemonControl)
 	if err != nil {
 		return err
 	}

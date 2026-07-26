@@ -257,7 +257,7 @@ func TestSelector_TabSwitch_DoesNotRequestClearScreenCmd(t *testing.T) {
 }
 
 func TestSelector_LogsView_EmptyFeedShowsNoLogsYet(t *testing.T) {
-	DisableGlobalRuntimeLogCapture()
+	disableGlobalRuntimeLogCapture()
 	sel, _ := newTestSelector("Main title", "a", "b")
 	m1, _ := sel.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // settings
 	m2, _ := m1.(Selector).Update(tea.KeyPressMsg{Code: tea.KeyTab})
@@ -442,10 +442,10 @@ func TestNextStatsUnits_UnknownCurrentFallsBackToBytes(t *testing.T) {
 }
 
 func TestSelector_SettingsAndLogsView_WithWidth(t *testing.T) {
-	DisableGlobalRuntimeLogCapture()
-	t.Cleanup(DisableGlobalRuntimeLogCapture)
-	EnableGlobalRuntimeLogCapture(8)
-	feed := GlobalRuntimeLogFeed().(*RuntimeLogBuffer)
+	disableGlobalRuntimeLogCapture()
+	t.Cleanup(disableGlobalRuntimeLogCapture)
+	enableGlobalRuntimeLogCapture(8)
+	feed := globalRuntimeLogFeed().(*RuntimeLogBuffer)
 	_, _ = feed.Write([]byte("line one\n"))
 
 	sel, _ := newTestSelector("a")
@@ -560,11 +560,11 @@ func TestSplitPlaceholder_EmptyAndSingle(t *testing.T) {
 }
 
 func TestSelector_LogsFeed_WithGlobalFeed(t *testing.T) {
-	DisableGlobalRuntimeLogCapture()
-	t.Cleanup(DisableGlobalRuntimeLogCapture)
+	disableGlobalRuntimeLogCapture()
+	t.Cleanup(disableGlobalRuntimeLogCapture)
 
-	EnableGlobalRuntimeLogCapture(8)
-	feed := GlobalRuntimeLogFeed().(*RuntimeLogBuffer)
+	enableGlobalRuntimeLogCapture(8)
+	feed := globalRuntimeLogFeed().(*RuntimeLogBuffer)
 	_, _ = feed.Write([]byte("line one\nline two\n"))
 
 	sel, _ := newTestSelector("Main title", "a")
@@ -580,10 +580,10 @@ func TestSelector_LogsFeed_WithGlobalFeed(t *testing.T) {
 }
 
 func TestSelector_LogsViewportScrollAndFollowToggle(t *testing.T) {
-	DisableGlobalRuntimeLogCapture()
-	t.Cleanup(DisableGlobalRuntimeLogCapture)
-	EnableGlobalRuntimeLogCapture(64)
-	feed := GlobalRuntimeLogFeed().(*RuntimeLogBuffer)
+	disableGlobalRuntimeLogCapture()
+	t.Cleanup(disableGlobalRuntimeLogCapture)
+	enableGlobalRuntimeLogCapture(64)
+	feed := globalRuntimeLogFeed().(*RuntimeLogBuffer)
 	for i := 0; i < 40; i++ {
 		_, _ = feed.Write([]byte(fmt.Sprintf("line-%02d\n", i)))
 	}
@@ -627,10 +627,10 @@ func TestSelectorLogTickCmd_EmitsMessage(t *testing.T) {
 }
 
 func TestSelector_UpdateLogs_AllNavigationKeys(t *testing.T) {
-	DisableGlobalRuntimeLogCapture()
-	t.Cleanup(DisableGlobalRuntimeLogCapture)
-	EnableGlobalRuntimeLogCapture(64)
-	feed := GlobalRuntimeLogFeed().(*RuntimeLogBuffer)
+	disableGlobalRuntimeLogCapture()
+	t.Cleanup(disableGlobalRuntimeLogCapture)
+	enableGlobalRuntimeLogCapture(64)
+	feed := globalRuntimeLogFeed().(*RuntimeLogBuffer)
 	for i := 0; i < 40; i++ {
 		_, _ = feed.Write([]byte(fmt.Sprintf("line-%02d\n", i)))
 	}
@@ -761,10 +761,10 @@ func TestSelector_TabCycleMainSettingsLogsMain_ReturnsLogCmd(t *testing.T) {
 }
 
 func TestSelector_WindowSizeMsgOnLogsScreen(t *testing.T) {
-	DisableGlobalRuntimeLogCapture()
-	t.Cleanup(DisableGlobalRuntimeLogCapture)
-	EnableGlobalRuntimeLogCapture(64)
-	feed := GlobalRuntimeLogFeed().(*RuntimeLogBuffer)
+	disableGlobalRuntimeLogCapture()
+	t.Cleanup(disableGlobalRuntimeLogCapture)
+	enableGlobalRuntimeLogCapture(64)
+	feed := globalRuntimeLogFeed().(*RuntimeLogBuffer)
 	for i := 0; i < 20; i++ {
 		_, _ = feed.Write([]byte(fmt.Sprintf("line-%02d\n", i)))
 	}
@@ -788,10 +788,10 @@ func TestSelector_WindowSizeMsgOnLogsScreen(t *testing.T) {
 }
 
 func TestSelector_LogTickMatchingSeqOnLogsScreen(t *testing.T) {
-	DisableGlobalRuntimeLogCapture()
-	t.Cleanup(DisableGlobalRuntimeLogCapture)
-	EnableGlobalRuntimeLogCapture(64)
-	feed := GlobalRuntimeLogFeed().(*RuntimeLogBuffer)
+	disableGlobalRuntimeLogCapture()
+	t.Cleanup(disableGlobalRuntimeLogCapture)
+	enableGlobalRuntimeLogCapture(64)
+	feed := globalRuntimeLogFeed().(*RuntimeLogBuffer)
 	_, _ = feed.Write([]byte("log line\n"))
 
 	sel, _ := newTestSelector("Main title", "a", "b")
@@ -808,9 +808,9 @@ func TestSelector_LogTickMatchingSeqOnLogsScreen(t *testing.T) {
 }
 
 func TestSelector_LogTickStaleSeqIgnored(t *testing.T) {
-	DisableGlobalRuntimeLogCapture()
-	t.Cleanup(DisableGlobalRuntimeLogCapture)
-	EnableGlobalRuntimeLogCapture(64)
+	disableGlobalRuntimeLogCapture()
+	t.Cleanup(disableGlobalRuntimeLogCapture)
+	enableGlobalRuntimeLogCapture(64)
 
 	sel, _ := newTestSelector("Main title", "a", "b")
 	m1, _ := sel.Update(tea.KeyPressMsg{Code: tea.KeyTab})           // settings
@@ -848,10 +848,10 @@ func TestNextTheme_UnknownTheme_DefaultsToIdx0(t *testing.T) {
 }
 
 func TestSelector_RefreshLogsViewport_SetYOffsetFallback(t *testing.T) {
-	DisableGlobalRuntimeLogCapture()
-	t.Cleanup(DisableGlobalRuntimeLogCapture)
-	EnableGlobalRuntimeLogCapture(64)
-	feed := GlobalRuntimeLogFeed().(*RuntimeLogBuffer)
+	disableGlobalRuntimeLogCapture()
+	t.Cleanup(disableGlobalRuntimeLogCapture)
+	enableGlobalRuntimeLogCapture(64)
+	feed := globalRuntimeLogFeed().(*RuntimeLogBuffer)
 	for i := 0; i < 40; i++ {
 		_, _ = feed.Write([]byte(fmt.Sprintf("line-%02d\n", i)))
 	}
@@ -930,10 +930,10 @@ func TestSelectorLogUpdateCmd_ChangeFeedSignalReturnsMatchingSeq(t *testing.T) {
 }
 
 func TestSelector_DownKeyAtBottom_SetsFollowTrue(t *testing.T) {
-	DisableGlobalRuntimeLogCapture()
-	t.Cleanup(DisableGlobalRuntimeLogCapture)
-	EnableGlobalRuntimeLogCapture(64)
-	feed := GlobalRuntimeLogFeed().(*RuntimeLogBuffer)
+	disableGlobalRuntimeLogCapture()
+	t.Cleanup(disableGlobalRuntimeLogCapture)
+	enableGlobalRuntimeLogCapture(64)
+	feed := globalRuntimeLogFeed().(*RuntimeLogBuffer)
 	// Write a single line so viewport is at bottom.
 	_, _ = feed.Write([]byte("single line\n"))
 

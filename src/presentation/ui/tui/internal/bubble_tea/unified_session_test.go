@@ -1607,6 +1607,8 @@ func withNoTTYUnifiedSession(t *testing.T) {
 }
 
 func TestNewUnifiedSession_Success(t *testing.T) {
+	disableGlobalRuntimeLogCapture()
+	t.Cleanup(disableGlobalRuntimeLogCapture)
 	withNoTTYUnifiedSession(t)
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -1620,6 +1622,9 @@ func TestNewUnifiedSession_Success(t *testing.T) {
 	if session.Done() == nil {
 		t.Fatal("expected non-nil Done channel")
 	}
+	if globalRuntimeLogFeed() == nil {
+		t.Fatal("expected runtime log capture while session is active")
+	}
 
 	// Cancel context to make the session exit.
 	cancel()
@@ -1628,12 +1633,21 @@ func TestNewUnifiedSession_Success(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("session did not complete after context cancel")
 	}
+	if globalRuntimeLogFeed() != nil {
+		t.Fatal("expected runtime log capture released after session completion")
+	}
 }
 
 func TestNewUnifiedSession_InvalidOpts(t *testing.T) {
+	disableGlobalRuntimeLogCapture()
+	t.Cleanup(disableGlobalRuntimeLogCapture)
+
 	_, err := NewUnifiedSession(context.Background(), ConfiguratorSessionOptions{})
 	if err == nil {
 		t.Fatal("expected error for empty opts")
+	}
+	if globalRuntimeLogFeed() != nil {
+		t.Fatal("expected runtime log capture released after construction error")
 	}
 }
 

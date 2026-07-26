@@ -5,21 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+
 	appConfiguration "tungo/application/configuration"
 	appRuntime "tungo/application/runtime"
 	bubbleTea "tungo/presentation/ui/tui/internal/bubble_tea"
 )
 
-const runtimeLogCaptureCapacity = 1200
-
 func (t *TUI) Run(ctx context.Context) error {
-	if t.newRuntime == nil {
-		return fmt.Errorf("runtime factory is nil")
-	}
-
-	bubbleTea.EnableGlobalRuntimeLogCapture(runtimeLogCaptureCapacity)
-	defer bubbleTea.DisableGlobalRuntimeLogCapture()
-
 	for ctx.Err() == nil {
 		runtimeMode, err := t.configure(ctx)
 		if err != nil {
@@ -49,37 +41,46 @@ func (t *TUI) runRuntime(ctx context.Context, mode appRuntime.Mode) error {
 	if err != nil {
 		return fmt.Errorf("runtime info error: %w", err)
 	}
-
-	runtimeInstance, err := t.newRuntime(mode)
+	runtimeInstance, err := appRuntime.New(mode)
 	if err != nil {
 		return err
 	}
 	runtimeCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	uiResultCh := make(chan RuntimeUIResult, 1)
+	uiErrCh := make(chan error, 1)
 	go func() {
-		userQuit, err := t.runRuntimePhase(runtimeCtx, bubbleTea.RuntimeDashboardOptions{
-			Mode:            mode,
-			ServerSupported: t.sessionOptions.ServerSupported,
-			LogFeed:         bubbleTea.GlobalRuntimeLogFeed(),
-			Ready:           runtimeInstance.Ready,
-			Protocol:        info.Protocol,
-			Endpoints:       info.Endpoints,
+		reconfigure, err := t.runRuntimePhase(runtimeCtx, bubbleTea.RuntimeDashboardOptions{
+			Mode:      mode,
+			Ready:     runtimeInstance.Ready,
+			Protocol:  info.Protocol,
+			Endpoints: info.Endpoints,
 		})
+		if err == nil && reconfigure {
+			err = errReconfigureRequested
+		}
 		cancel()
-		uiResultCh <- RuntimeUIResult{UserQuit: userQuit, Err: err}
+		uiErrCh <- err
 	}()
 
 	workerErr := runtimeInstance.Run(runtimeCtx)
 	cancel()
-	uiResult := <-uiResultCh
-	return resolveRuntimeEnd(
-		uiResult,
-		workerErr,
-		func(err error) bool { return errors.Is(err, ErrUserExit) },
-		func(err error) { slog.Error("runtime UI error", "err", err) },
-	)
+	uiErr := <-uiErrCh
+	if uiErr != nil &&
+		!errors.Is(uiErr, ErrUserExit) &&
+		!errors.Is(uiErr, errReconfigureRequested) {
+		slog.Error("runtime UI error", "err", uiErr)
+	}
+	if workerErr != nil {
+		return workerErr
+	}
+	if uiErr == nil || errors.Is(uiErr, ErrUserExit) {
+		return nil
+	}
+	if errors.Is(uiErr, errReconfigureRequested) {
+		return errReconfigureRequested
+	}
+	return fmt.Errorf("runtime UI failed: %w", uiErr)
 }
 
 func (t *TUI) runtimeInfo(mode appRuntime.Mode) (appConfiguration.RuntimeInfo, error) {

@@ -4,8 +4,10 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
 	"tungo/application/runtime"
 	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
+	"tungo/infrastructure/PAL/service_management/linux/systemd"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -18,15 +20,15 @@ func (m failingClientConfigManager) Configuration() (*clientConfiguration.Config
 	return nil, m.err
 }
 
-func TestModeOptions_AddsDaemonWhenSupported(t *testing.T) {
+func TestModeOptions_AddsDaemonWhenDaemonAvailable(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	opts.SystemdSupported = true
-	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
-		return SystemdDaemonStatus{
+	opts.Daemon = newDaemonControlStub()
+	opts.testDaemon().status = func() (systemd.UnitStatus, error) {
+		return systemd.UnitStatus{
 			Installed:     true,
 			UnitFileState: "enabled",
 			ActiveState:   "inactive",
-			Mode:          runtime.ModeClient,
+			Role:          systemd.UnitRoleClient,
 		}, nil
 	}
 
@@ -40,9 +42,9 @@ func TestModeOptions_AddsDaemonWhenSupported(t *testing.T) {
 	}
 }
 
-func TestModeOptions_DoesNotAddDaemonWhenUnsupported(t *testing.T) {
+func TestModeOptions_DoesNotAddDaemonWhenDaemonUnavailable(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	opts.SystemdSupported = false
+	opts.Daemon = nil
 
 	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
 	if err != nil {
@@ -55,9 +57,9 @@ func TestModeOptions_DoesNotAddDaemonWhenUnsupported(t *testing.T) {
 
 func TestUpdateModeScreen_EnterOnDaemon_OpensDaemonManageScreen(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	opts.SystemdSupported = true
-	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
-		return SystemdDaemonStatus{Installed: false}, nil
+	opts.Daemon = newDaemonControlStub()
+	opts.testDaemon().status = func() (systemd.UnitStatus, error) {
+		return systemd.UnitStatus{Installed: false}, nil
 	}
 
 	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
@@ -79,10 +81,10 @@ func TestUpdateModeScreen_EnterOnDaemon_OpensDaemonManageScreen(t *testing.T) {
 
 func TestUpdateClientSelectScreen_Esc_ServerUnsupportedWithDaemon_ReturnsToModeScreen(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	opts.ServerSupported = false
-	opts.SystemdSupported = true
-	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
-		return SystemdDaemonStatus{Installed: false}, nil
+	opts.ServerConfigurationControl = nil
+	opts.Daemon = newDaemonControlStub()
+	opts.testDaemon().status = func() (systemd.UnitStatus, error) {
+		return systemd.UnitStatus{Installed: false}, nil
 	}
 
 	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceNone))
@@ -109,10 +111,10 @@ func TestUpdateClientSelectScreen_Esc_ServerUnsupportedWithDaemon_ReturnsToModeS
 
 func TestView_ClientSelectHint_ServerUnsupportedWithDaemon_ShowsEscBack(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	opts.ServerSupported = false
-	opts.SystemdSupported = true
-	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
-		return SystemdDaemonStatus{Installed: false}, nil
+	opts.ServerConfigurationControl = nil
+	opts.Daemon = newDaemonControlStub()
+	opts.testDaemon().status = func() (systemd.UnitStatus, error) {
+		return systemd.UnitStatus{Installed: false}, nil
 	}
 
 	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceNone))
@@ -132,9 +134,9 @@ func TestView_ClientSelectHint_ServerUnsupportedWithDaemon_ShowsEscBack(t *testi
 
 func TestDaemonNotice_ShowsNonErrorNotice(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	opts.SystemdSupported = true
-	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
-		return SystemdDaemonStatus{Installed: true, UnitFileState: "enabled", ActiveState: "inactive", Mode: runtime.ModeServer}, nil
+	opts.Daemon = newDaemonControlStub()
+	opts.testDaemon().status = func() (systemd.UnitStatus, error) {
+		return systemd.UnitStatus{Installed: true, UnitFileState: "enabled", ActiveState: "inactive", Role: systemd.UnitRoleServer}, nil
 	}
 
 	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceServer))
@@ -150,9 +152,9 @@ func TestDaemonNotice_ShowsNonErrorNotice(t *testing.T) {
 
 func TestMainTabView_DaemonManage_SeparatesStatusAndActions(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	opts.SystemdSupported = true
-	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
-		return SystemdDaemonStatus{
+	opts.Daemon = newDaemonControlStub()
+	opts.testDaemon().status = func() (systemd.UnitStatus, error) {
+		return systemd.UnitStatus{
 			Installed:      true,
 			LoadState:      "loaded",
 			UnitFileState:  "enabled",
@@ -161,11 +163,11 @@ func TestMainTabView_DaemonManage_SeparatesStatusAndActions(t *testing.T) {
 			Result:         "success",
 			ExecMainStatus: "0",
 			ExecStart:      "/usr/local/bin/tungo s",
-			Mode:           runtime.ModeServer,
+			Role:           systemd.UnitRoleServer,
 		}, nil
 	}
-	opts.StartSystemdUnit = func() error { return nil }
-	opts.DisableSystemdUnit = func() error { return nil }
+	opts.testDaemon().start = func() error { return nil }
+	opts.testDaemon().disable = func() error { return nil }
 
 	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceServer))
 	if err != nil {
@@ -200,9 +202,9 @@ func TestMainTabView_DaemonManage_SeparatesStatusAndActions(t *testing.T) {
 
 func TestMainTabView_DaemonManage_DerivedRoleFallsBackToMode(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	opts.SystemdSupported = true
-	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
-		return SystemdDaemonStatus{
+	opts.Daemon = newDaemonControlStub()
+	opts.testDaemon().status = func() (systemd.UnitStatus, error) {
+		return systemd.UnitStatus{
 			Installed:      true,
 			LoadState:      "loaded",
 			UnitFileState:  "enabled",
@@ -211,7 +213,7 @@ func TestMainTabView_DaemonManage_DerivedRoleFallsBackToMode(t *testing.T) {
 			Result:         "success",
 			ExecMainStatus: "0",
 			ExecStart:      "unknown",
-			Mode:           runtime.ModeServer,
+			Role:           systemd.UnitRoleServer,
 		}, nil
 	}
 
@@ -222,21 +224,21 @@ func TestMainTabView_DaemonManage_DerivedRoleFallsBackToMode(t *testing.T) {
 	model.screen = configuratorScreenDaemonManage
 
 	view := model.mainTabView()
-	if !strings.Contains(view, "DerivedRole: server (from Mode)") {
+	if !strings.Contains(view, "DerivedRole: server (from Role)") {
 		t.Fatalf("expected derived role fallback from mode, got: %s", view)
 	}
 }
 
 func TestUpdateDaemonManageScreen_NotInstalled_ShowsSetupOptions(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	opts.SystemdSupported = true
-	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
-		return SystemdDaemonStatus{Installed: false}, nil
+	opts.Daemon = newDaemonControlStub()
+	opts.testDaemon().status = func() (systemd.UnitStatus, error) {
+		return systemd.UnitStatus{Installed: false}, nil
 	}
-	opts.InstallClientSystemdUnit = func() (string, error) {
+	opts.testDaemon().setupClient = func() (string, error) {
 		return "/etc/systemd/system/tungo.service", nil
 	}
-	opts.InstallServerSystemdUnit = func() (string, error) {
+	opts.testDaemon().setupServer = func() (string, error) {
 		return "/etc/systemd/system/tungo.service", nil
 	}
 
@@ -257,25 +259,25 @@ func TestUpdateDaemonManageScreen_NotInstalled_ShowsSetupOptions(t *testing.T) {
 
 func TestUpdateDaemonManageScreen_Installed_ShowsReconfigureOptions(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	opts.SystemdSupported = true
-	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
-		return SystemdDaemonStatus{
+	opts.Daemon = newDaemonControlStub()
+	opts.testDaemon().status = func() (systemd.UnitStatus, error) {
+		return systemd.UnitStatus{
 			Installed:     true,
 			Managed:       true,
 			UnitFileState: "disabled",
 			ActiveState:   "inactive",
-			Mode:          runtime.ModeClient,
+			Role:          systemd.UnitRoleClient,
 		}, nil
 	}
-	opts.InstallClientSystemdUnit = func() (string, error) {
+	opts.testDaemon().setupClient = func() (string, error) {
 		return "/etc/systemd/system/tungo.service", nil
 	}
-	opts.InstallServerSystemdUnit = func() (string, error) {
+	opts.testDaemon().setupServer = func() (string, error) {
 		return "/etc/systemd/system/tungo.service", nil
 	}
-	opts.RemoveSystemdUnit = func() error { return nil }
-	opts.StartSystemdUnit = func() error { return nil }
-	opts.EnableSystemdUnit = func() error { return nil }
+	opts.testDaemon().delete = func() error { return nil }
+	opts.testDaemon().start = func() error { return nil }
+	opts.testDaemon().enable = func() error { return nil }
 
 	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceServer))
 	if err != nil {
@@ -303,12 +305,12 @@ func TestUpdateDaemonManageScreen_Installed_ShowsReconfigureOptions(t *testing.T
 
 func TestUpdateDaemonManageScreen_SetupClient_InstallsUnit(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	opts.SystemdSupported = true
+	opts.Daemon = newDaemonControlStub()
 	installCalls := 0
-	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
-		return SystemdDaemonStatus{Installed: false}, nil
+	opts.testDaemon().status = func() (systemd.UnitStatus, error) {
+		return systemd.UnitStatus{Installed: false}, nil
 	}
-	opts.InstallClientSystemdUnit = func() (string, error) {
+	opts.testDaemon().setupClient = func() (string, error) {
 		installCalls++
 		return "/etc/systemd/system/tungo.service", nil
 	}
@@ -337,12 +339,13 @@ func TestUpdateDaemonManageScreen_SetupClient_InstallsUnit(t *testing.T) {
 
 func TestUpdateDaemonManageScreen_SetupClient_FailsWhenDefaultConfigInvalid(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	opts.SystemdSupported = true
-	opts.testControl().ClientConfigManager = failingClientConfigManager{err: errors.New("invalid default config")}
-	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
-		return SystemdDaemonStatus{Installed: false}, nil
+	opts.Daemon = newDaemonControlStub()
+	opts.testDaemon().status = func() (systemd.UnitStatus, error) {
+		return systemd.UnitStatus{Installed: false}, nil
 	}
-	opts.InstallClientSystemdUnit = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
+	opts.testDaemon().setupClient = func() (string, error) {
+		return "", errors.New("cannot setup client daemon: invalid default config")
+	}
 
 	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
 	if err != nil {
@@ -360,18 +363,18 @@ func TestUpdateDaemonManageScreen_SetupClient_FailsWhenDefaultConfigInvalid(t *t
 }
 
 func TestUpdateDaemonManageScreen_ReconfigureInactive_AppliesImmediately(t *testing.T) {
-	status := SystemdDaemonStatus{Installed: true, UnitFileState: "disabled", ActiveState: "inactive", Mode: runtime.ModeClient}
+	status := systemd.UnitStatus{Installed: true, UnitFileState: "disabled", ActiveState: "inactive", Role: systemd.UnitRoleClient}
 	opts := defaultConfiguratorOpts()
-	opts.SystemdSupported = true
-	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) { return status, nil }
+	opts.Daemon = newDaemonControlStub()
+	opts.testDaemon().status = func() (systemd.UnitStatus, error) { return status, nil }
 	reconfigureCalls := 0
-	opts.InstallServerSystemdUnit = func() (string, error) {
+	opts.testDaemon().setupServer = func() (string, error) {
 		reconfigureCalls++
-		status.Mode = runtime.ModeServer
+		status.Role = systemd.UnitRoleServer
 		return "/etc/systemd/system/tungo.service", nil
 	}
-	opts.StartSystemdUnit = func() error { return nil }
-	opts.EnableSystemdUnit = func() error { return nil }
+	opts.testDaemon().start = func() error { return nil }
+	opts.testDaemon().enable = func() error { return nil }
 
 	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceServer))
 	if err != nil {
@@ -402,13 +405,13 @@ func TestUpdateDaemonManageScreen_ReconfigureInactive_AppliesImmediately(t *test
 }
 
 func TestUpdateDaemonManageScreen_ReconfigureActive_ShowsMandatoryConfirm(t *testing.T) {
-	status := SystemdDaemonStatus{Installed: true, UnitFileState: "enabled", ActiveState: "active", Mode: runtime.ModeServer}
+	status := systemd.UnitStatus{Installed: true, UnitFileState: "enabled", ActiveState: "active", Role: systemd.UnitRoleServer}
 	opts := defaultConfiguratorOpts()
-	opts.SystemdSupported = true
-	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) { return status, nil }
-	opts.InstallClientSystemdUnit = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
-	opts.StopSystemdUnit = func() error { return nil }
-	opts.StartSystemdUnit = func() error { return nil }
+	opts.Daemon = newDaemonControlStub()
+	opts.testDaemon().status = func() (systemd.UnitStatus, error) { return status, nil }
+	opts.testDaemon().setupClient = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
+	opts.testDaemon().stop = func() error { return nil }
+	opts.testDaemon().start = func() error { return nil }
 
 	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
 	if err != nil {
@@ -435,26 +438,17 @@ func TestUpdateDaemonManageScreen_ReconfigureActive_ShowsMandatoryConfirm(t *tes
 }
 
 func TestUpdateDaemonReconfigureConfirmScreen_Confirm_RestartsWithNewSetup(t *testing.T) {
-	status := SystemdDaemonStatus{Installed: true, UnitFileState: "enabled", ActiveState: "active", Mode: runtime.ModeServer}
+	status := systemd.UnitStatus{Installed: true, UnitFileState: "enabled", ActiveState: "active", Role: systemd.UnitRoleServer}
 	opts := defaultConfiguratorOpts()
-	opts.SystemdSupported = true
-	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) { return status, nil }
+	opts.Daemon = newDaemonControlStub()
+	opts.testDaemon().status = func() (systemd.UnitStatus, error) { return status, nil }
 
-	callOrder := make([]string, 0, 3)
-	opts.StopSystemdUnit = func() error {
-		callOrder = append(callOrder, "stop")
-		status.ActiveState = "inactive"
-		return nil
-	}
-	opts.InstallClientSystemdUnit = func() (string, error) {
-		callOrder = append(callOrder, "install-client")
-		status.Mode = runtime.ModeClient
-		return "/etc/systemd/system/tungo.service", nil
-	}
-	opts.StartSystemdUnit = func() error {
-		callOrder = append(callOrder, "start")
+	callOrder := make([]string, 0, 1)
+	opts.testDaemon().setupClient = func() (string, error) {
+		callOrder = append(callOrder, "setup-client")
+		status.Role = systemd.UnitRoleClient
 		status.ActiveState = "active"
-		return nil
+		return "/etc/systemd/system/tungo.service", nil
 	}
 
 	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
@@ -470,7 +464,7 @@ func TestUpdateDaemonReconfigureConfirmScreen_Confirm_RestartsWithNewSetup(t *te
 	if cmd != nil {
 		t.Fatal("expected nil cmd on reconfigure")
 	}
-	if strings.Join(callOrder, ",") != "stop,install-client,start" {
+	if strings.Join(callOrder, ",") != "setup-client" {
 		t.Fatalf("unexpected call order: %v", callOrder)
 	}
 	if updated.pendingDaemonMode != 0 {
@@ -482,7 +476,7 @@ func TestUpdateDaemonReconfigureConfirmScreen_Confirm_RestartsWithNewSetup(t *te
 	if !strings.Contains(updated.notice, "Client daemon reconfigured") || !strings.Contains(updated.notice, "restarted") {
 		t.Fatalf("expected restarted notice, got %q", updated.notice)
 	}
-	if updated.daemon.status.ActiveState != "active" || updated.daemon.status.Mode != runtime.ModeClient {
+	if updated.daemon.status.ActiveState != "active" || updated.daemon.status.Role != systemd.UnitRoleClient {
 		t.Fatalf("expected refreshed daemon status (active client), got %+v", updated.daemon.status)
 	}
 }
@@ -514,32 +508,32 @@ func TestUpdateDaemonReconfigureConfirmScreen_Cancel_ReturnsToDaemonManage(t *te
 }
 
 func TestUpdateDaemonManageScreen_StartEnableDisableStopFlow(t *testing.T) {
-	status := SystemdDaemonStatus{Installed: true, UnitFileState: "disabled", ActiveState: "inactive", Mode: runtime.ModeClient}
+	status := systemd.UnitStatus{Installed: true, UnitFileState: "disabled", ActiveState: "inactive", Role: systemd.UnitRoleClient}
 	opts := defaultConfiguratorOpts()
-	opts.SystemdSupported = true
-	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) { return status, nil }
-	opts.StartSystemdUnit = func() error {
+	opts.Daemon = newDaemonControlStub()
+	opts.testDaemon().status = func() (systemd.UnitStatus, error) { return status, nil }
+	opts.testDaemon().start = func() error {
 		status.ActiveState = "active"
 		return nil
 	}
-	opts.StopSystemdUnit = func() error {
+	opts.testDaemon().stop = func() error {
 		status.ActiveState = "inactive"
 		return nil
 	}
-	opts.EnableSystemdUnit = func() error {
+	opts.testDaemon().enable = func() error {
 		status.UnitFileState = "enabled"
 		return nil
 	}
-	opts.DisableSystemdUnit = func() error {
+	opts.testDaemon().disable = func() error {
 		status.UnitFileState = "disabled"
 		return nil
 	}
-	opts.StopSystemdUnit = func() error {
+	opts.testDaemon().stop = func() error {
 		status.ActiveState = "inactive"
 		return nil
 	}
-	opts.RemoveSystemdUnit = func() error {
-		status = SystemdDaemonStatus{}
+	opts.testDaemon().delete = func() error {
+		status = systemd.UnitStatus{}
 		return nil
 	}
 
@@ -596,21 +590,21 @@ func TestUpdateDaemonManageScreen_StartEnableDisableStopFlow(t *testing.T) {
 }
 
 func TestUpdateDaemonManageScreen_StartPreservesActionCursorAfterRefresh(t *testing.T) {
-	status := SystemdDaemonStatus{Installed: true, UnitFileState: "enabled", ActiveState: "inactive", Mode: runtime.ModeClient}
+	status := systemd.UnitStatus{Installed: true, UnitFileState: "enabled", ActiveState: "inactive", Role: systemd.UnitRoleClient}
 	opts := defaultConfiguratorOpts()
-	opts.SystemdSupported = true
-	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) { return status, nil }
-	opts.StartSystemdUnit = func() error {
+	opts.Daemon = newDaemonControlStub()
+	opts.testDaemon().status = func() (systemd.UnitStatus, error) { return status, nil }
+	opts.testDaemon().start = func() error {
 		status.ActiveState = "active"
 		return nil
 	}
-	opts.StopSystemdUnit = func() error {
+	opts.testDaemon().stop = func() error {
 		status.ActiveState = "inactive"
 		return nil
 	}
-	opts.DisableSystemdUnit = func() error { return nil }
-	opts.InstallClientSystemdUnit = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
-	opts.RemoveSystemdUnit = func() error { return nil }
+	opts.testDaemon().disable = func() error { return nil }
+	opts.testDaemon().setupClient = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
+	opts.testDaemon().delete = func() error { return nil }
 
 	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
 	if err != nil {
@@ -631,18 +625,18 @@ func TestUpdateDaemonManageScreen_StartPreservesActionCursorAfterRefresh(t *test
 }
 
 func TestUpdateDaemonManageScreen_Delete_RemovesUnitAndRefreshesStatus(t *testing.T) {
-	status := SystemdDaemonStatus{Installed: true, Managed: true, UnitFileState: "enabled", ActiveState: "inactive", Mode: runtime.ModeServer}
+	status := systemd.UnitStatus{Installed: true, Managed: true, UnitFileState: "enabled", ActiveState: "inactive", Role: systemd.UnitRoleServer}
 	opts := defaultConfiguratorOpts()
-	opts.SystemdSupported = true
-	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) { return status, nil }
+	opts.Daemon = newDaemonControlStub()
+	opts.testDaemon().status = func() (systemd.UnitStatus, error) { return status, nil }
 	removeCalls := 0
-	opts.RemoveSystemdUnit = func() error {
+	opts.testDaemon().delete = func() error {
 		removeCalls++
-		status = SystemdDaemonStatus{}
+		status = systemd.UnitStatus{}
 		return nil
 	}
-	opts.InstallClientSystemdUnit = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
-	opts.InstallServerSystemdUnit = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
+	opts.testDaemon().setupClient = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
+	opts.testDaemon().setupServer = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
 
 	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceServer))
 	if err != nil {
@@ -673,19 +667,19 @@ func TestUpdateDaemonManageScreen_Delete_RemovesUnitAndRefreshesStatus(t *testin
 
 func TestUpdateDaemonManageScreen_UnmanagedUnit_HidesDeleteOption(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	opts.SystemdSupported = true
-	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
-		return SystemdDaemonStatus{
+	opts.Daemon = newDaemonControlStub()
+	opts.testDaemon().status = func() (systemd.UnitStatus, error) {
+		return systemd.UnitStatus{
 			Installed:     true,
 			Managed:       false,
 			UnitFileState: "enabled",
 			ActiveState:   "inactive",
-			Mode:          runtime.ModeServer,
+			Role:          systemd.UnitRoleServer,
 		}, nil
 	}
-	opts.RemoveSystemdUnit = func() error { return nil }
-	opts.InstallClientSystemdUnit = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
-	opts.InstallServerSystemdUnit = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
+	opts.testDaemon().delete = func() error { return nil }
+	opts.testDaemon().setupClient = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
+	opts.testDaemon().setupServer = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
 
 	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceServer))
 	if err != nil {
@@ -703,8 +697,8 @@ func TestUpdateClientSelectScreen_SelectConfig_ActiveDaemon_ShowsStopPrompt(t *t
 	s := settingsForMode(ModePreferenceClient)
 	opts := defaultConfiguratorOpts()
 	opts.testControl().Observer = sessionObserverWithConfigs{configs: []string{"cfg-a"}}
-	opts.CheckSystemdUnitActive = func() (bool, error) { return true, nil }
-	opts.StopSystemdUnit = func() error { return nil }
+	opts.testDaemon().isActive = func() (bool, error) { return true, nil }
+	opts.testDaemon().stop = func() error { return nil }
 
 	model, err := newConfiguratorSessionModel(opts, s)
 	if err != nil {
@@ -720,7 +714,7 @@ func TestUpdateClientSelectScreen_SelectConfig_ActiveDaemon_ShowsStopPrompt(t *t
 	if updated.done {
 		t.Fatal("expected configurator to stay open for daemon stop confirmation")
 	}
-	if updated.screen != configuratorScreenSystemdActiveConfirm {
+	if updated.screen != configuratorScreenDaemonActiveConfirm {
 		t.Fatalf("expected systemd confirm screen, got %v", updated.screen)
 	}
 	if updated.pendingStartMode != runtime.ModeClient {
@@ -739,8 +733,8 @@ func TestUpdateClientSelectScreen_SelectConfig_ActiveDaemon_ShowsStopPrompt(t *t
 
 func TestUpdateServerSelectScreen_Start_ActiveDaemon_ShowsStopPrompt(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	opts.CheckSystemdUnitActive = func() (bool, error) { return true, nil }
-	opts.StopSystemdUnit = func() error { return nil }
+	opts.testDaemon().isActive = func() (bool, error) { return true, nil }
+	opts.testDaemon().stop = func() error { return nil }
 
 	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceServer))
 	if err != nil {
@@ -756,7 +750,7 @@ func TestUpdateServerSelectScreen_Start_ActiveDaemon_ShowsStopPrompt(t *testing.
 	if updated.done {
 		t.Fatal("expected configurator to stay open for daemon stop confirmation")
 	}
-	if updated.screen != configuratorScreenSystemdActiveConfirm {
+	if updated.screen != configuratorScreenDaemonActiveConfirm {
 		t.Fatalf("expected systemd confirm screen, got %v", updated.screen)
 	}
 	if updated.pendingStartMode != runtime.ModeServer {
@@ -764,10 +758,10 @@ func TestUpdateServerSelectScreen_Start_ActiveDaemon_ShowsStopPrompt(t *testing.
 	}
 }
 
-func TestUpdateSystemdActiveConfirmScreen_EnterStop_StopsDaemonAndStartsMode(t *testing.T) {
+func TestUpdateDaemonActiveConfirmScreen_EnterStop_StopsDaemonAndStartsMode(t *testing.T) {
 	stopCalls := 0
 	opts := defaultConfiguratorOpts()
-	opts.StopSystemdUnit = func() error {
+	opts.testDaemon().stop = func() error {
 		stopCalls++
 		return nil
 	}
@@ -776,12 +770,12 @@ func TestUpdateSystemdActiveConfirmScreen_EnterStop_StopsDaemonAndStartsMode(t *
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	model.screen = configuratorScreenSystemdActiveConfirm
+	model.screen = configuratorScreenDaemonActiveConfirm
 	model.pendingStartMode = runtime.ModeServer
 	model.pendingStartScreen = configuratorScreenServerSelect
 	model.cursor = 0 // stop and continue
 
-	updatedModel, cmd := model.updateSystemdActiveConfirmScreen(keyNamed(tea.KeyEnter))
+	updatedModel, cmd := model.updateDaemonActiveConfirmScreen(keyNamed(tea.KeyEnter))
 	updated := updatedModel.(configuratorSessionModel)
 	if stopCalls != 1 {
 		t.Fatalf("expected one stop call, got %d", stopCalls)
@@ -797,7 +791,7 @@ func TestUpdateSystemdActiveConfirmScreen_EnterStop_StopsDaemonAndStartsMode(t *
 	}
 }
 
-func TestUpdateSystemdActiveConfirmScreen_Cancel_ReturnsToPreviousScreen(t *testing.T) {
+func TestUpdateDaemonActiveConfirmScreen_Cancel_ReturnsToPreviousScreen(t *testing.T) {
 	s := settingsForMode(ModePreferenceClient)
 	p := s.Preferences()
 	p.AutoSelectClientConfig = "old-cfg"
@@ -808,13 +802,13 @@ func TestUpdateSystemdActiveConfirmScreen_Cancel_ReturnsToPreviousScreen(t *test
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	model.screen = configuratorScreenSystemdActiveConfirm
+	model.screen = configuratorScreenDaemonActiveConfirm
 	model.pendingStartMode = runtime.ModeClient
 	model.pendingStartScreen = configuratorScreenClientSelect
 	model.pendingClientConfig = "new-cfg"
 	model.cursor = 1 // cancel
 
-	updatedModel, cmd := model.updateSystemdActiveConfirmScreen(keyNamed(tea.KeyEnter))
+	updatedModel, cmd := model.updateDaemonActiveConfirmScreen(keyNamed(tea.KeyEnter))
 	updated := updatedModel.(configuratorSessionModel)
 	if cmd != nil {
 		t.Fatal("expected nil cmd on cancel")
@@ -839,10 +833,10 @@ func TestUpdateSystemdActiveConfirmScreen_Cancel_ReturnsToPreviousScreen(t *test
 	}
 }
 
-func TestUpdateSystemdCheckErrorConfirmScreen_RetryCheck_StartsWhenInactive(t *testing.T) {
+func TestUpdateDaemonCheckErrorConfirmScreen_RetryCheck_StartsWhenInactive(t *testing.T) {
 	checkCalls := 0
 	opts := defaultConfiguratorOpts()
-	opts.CheckSystemdUnitActive = func() (bool, error) {
+	opts.testDaemon().isActive = func() (bool, error) {
 		checkCalls++
 		if checkCalls == 1 {
 			return false, errors.New("probe failed")
@@ -854,13 +848,13 @@ func TestUpdateSystemdCheckErrorConfirmScreen_RetryCheck_StartsWhenInactive(t *t
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	model = model.startModeWithSystemdGuard(runtime.ModeServer, configuratorScreenServerSelect, false)
-	if model.screen != configuratorScreenSystemdCheckErrorConfirm {
+	model = model.startModeWithDaemonGuard(runtime.ModeServer, configuratorScreenServerSelect, false)
+	if model.screen != configuratorScreenDaemonCheckErrorConfirm {
 		t.Fatalf("expected check error confirm screen, got %v", model.screen)
 	}
 	model.cursor = 0 // Retry check
 
-	updatedModel, cmd := model.updateSystemdCheckErrorConfirmScreen(keyNamed(tea.KeyEnter))
+	updatedModel, cmd := model.updateDaemonCheckErrorConfirmScreen(keyNamed(tea.KeyEnter))
 	updated := updatedModel.(configuratorSessionModel)
 	if cmd == nil {
 		t.Fatal("expected quit cmd after successful retry")
@@ -873,11 +867,11 @@ func TestUpdateSystemdCheckErrorConfirmScreen_RetryCheck_StartsWhenInactive(t *t
 	}
 }
 
-func TestUpdateSystemdCheckErrorConfirmScreen_RetryCheck_PreservesClientConfig(t *testing.T) {
+func TestUpdateDaemonCheckErrorConfirmScreen_RetryCheck_PreservesClientConfig(t *testing.T) {
 	checkCalls := 0
 	opts := defaultConfiguratorOpts()
-	opts.StopSystemdUnit = func() error { return nil }
-	opts.CheckSystemdUnitActive = func() (bool, error) {
+	opts.testDaemon().stop = func() error { return nil }
+	opts.testDaemon().isActive = func() (bool, error) {
 		checkCalls++
 		if checkCalls == 1 {
 			return false, errors.New("probe failed")
@@ -889,16 +883,16 @@ func TestUpdateSystemdCheckErrorConfirmScreen_RetryCheck_PreservesClientConfig(t
 		t.Fatalf("newConfiguratorSessionModel() error = %v", err)
 	}
 
-	model = model.startModeWithSystemdGuard(runtime.ModeClient, configuratorScreenClientSelect, false)
+	model = model.startModeWithDaemonGuard(runtime.ModeClient, configuratorScreenClientSelect, false)
 	model.pendingClientConfig = "cfg-a"
 	model.cursor = 0
 
-	updatedModel, cmd := model.updateSystemdCheckErrorConfirmScreen(keyNamed(tea.KeyEnter))
+	updatedModel, cmd := model.updateDaemonCheckErrorConfirmScreen(keyNamed(tea.KeyEnter))
 	updated := updatedModel.(configuratorSessionModel)
 	if cmd != nil {
 		t.Fatal("expected confirmation screen without command")
 	}
-	if updated.screen != configuratorScreenSystemdActiveConfirm {
+	if updated.screen != configuratorScreenDaemonActiveConfirm {
 		t.Fatalf("screen = %v, want active confirmation", updated.screen)
 	}
 	if updated.pendingClientConfig != "cfg-a" {
@@ -906,20 +900,20 @@ func TestUpdateSystemdCheckErrorConfirmScreen_RetryCheck_PreservesClientConfig(t
 	}
 }
 
-func TestUpdateSystemdCheckErrorConfirmScreen_StartAnyway_Client_PersistsAutoSelectConfig(t *testing.T) {
+func TestUpdateDaemonCheckErrorConfirmScreen_StartAnyway_Client_PersistsAutoSelectConfig(t *testing.T) {
 	s := settingsForMode(ModePreferenceClient)
 	opts := defaultConfiguratorOpts()
 	model, err := newConfiguratorSessionModel(opts, s)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	model.screen = configuratorScreenSystemdCheckErrorConfirm
+	model.screen = configuratorScreenDaemonCheckErrorConfirm
 	model.pendingStartMode = runtime.ModeClient
 	model.pendingStartScreen = configuratorScreenClientSelect
 	model.pendingClientConfig = "cfg-a"
 	model.cursor = 1 // Start anyway (unsafe)
 
-	updatedModel, cmd := model.updateSystemdCheckErrorConfirmScreen(keyNamed(tea.KeyEnter))
+	updatedModel, cmd := model.updateDaemonCheckErrorConfirmScreen(keyNamed(tea.KeyEnter))
 	updated := updatedModel.(configuratorSessionModel)
 	if cmd == nil {
 		t.Fatal("expected quit cmd for start anyway")
@@ -935,18 +929,18 @@ func TestUpdateSystemdCheckErrorConfirmScreen_StartAnyway_Client_PersistsAutoSel
 	}
 }
 
-func TestUpdateSystemdCheckErrorConfirmScreen_Cancel_ReturnsToPreviousScreen(t *testing.T) {
+func TestUpdateDaemonCheckErrorConfirmScreen_Cancel_ReturnsToPreviousScreen(t *testing.T) {
 	opts := defaultConfiguratorOpts()
 	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	model.screen = configuratorScreenSystemdCheckErrorConfirm
+	model.screen = configuratorScreenDaemonCheckErrorConfirm
 	model.pendingStartMode = runtime.ModeClient
 	model.pendingStartScreen = configuratorScreenClientSelect
 	model.cursor = 2 // Cancel
 
-	updatedModel, cmd := model.updateSystemdCheckErrorConfirmScreen(keyNamed(tea.KeyEnter))
+	updatedModel, cmd := model.updateDaemonCheckErrorConfirmScreen(keyNamed(tea.KeyEnter))
 	updated := updatedModel.(configuratorSessionModel)
 	if cmd != nil {
 		t.Fatal("expected nil cmd on cancel")
@@ -962,25 +956,25 @@ func TestUpdateSystemdCheckErrorConfirmScreen_Cancel_ReturnsToPreviousScreen(t *
 	}
 }
 
-func TestUpdateSystemdActiveConfirmScreen_StopFails_ShowsNoticeAndReturns(t *testing.T) {
+func TestUpdateDaemonActiveConfirmScreen_StopFails_ShowsNoticeAndReturns(t *testing.T) {
 	s := settingsForMode(ModePreferenceClient)
 	p := s.Preferences()
 	p.AutoSelectClientConfig = "old-cfg"
 	s.update(p)
 
 	opts := defaultConfiguratorOpts()
-	opts.StopSystemdUnit = func() error { return errors.New("stop failed") }
+	opts.testDaemon().stop = func() error { return errors.New("stop failed") }
 	model, err := newConfiguratorSessionModel(opts, s)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	model.screen = configuratorScreenSystemdActiveConfirm
+	model.screen = configuratorScreenDaemonActiveConfirm
 	model.pendingStartMode = runtime.ModeClient
 	model.pendingStartScreen = configuratorScreenClientSelect
 	model.pendingClientConfig = "new-cfg"
 	model.cursor = 0 // stop and continue
 
-	updatedModel, cmd := model.updateSystemdActiveConfirmScreen(keyNamed(tea.KeyEnter))
+	updatedModel, cmd := model.updateDaemonActiveConfirmScreen(keyNamed(tea.KeyEnter))
 	updated := updatedModel.(configuratorSessionModel)
 	if cmd != nil {
 		t.Fatal("expected nil cmd when stop fails")
@@ -991,7 +985,7 @@ func TestUpdateSystemdActiveConfirmScreen_StopFails_ShowsNoticeAndReturns(t *tes
 	if updated.screen != configuratorScreenClientSelect {
 		t.Fatalf("expected return to client select, got %v", updated.screen)
 	}
-	if !strings.Contains(updated.notice, "Failed to stop systemd daemon") {
+	if !strings.Contains(updated.notice, "Failed to stop daemon") {
 		t.Fatalf("expected stop failure notice, got %q", updated.notice)
 	}
 	if s.Preferences().AutoSelectClientConfig != "old-cfg" {
@@ -999,11 +993,11 @@ func TestUpdateSystemdActiveConfirmScreen_StopFails_ShowsNoticeAndReturns(t *tes
 	}
 }
 
-func TestUpdateSystemdActiveConfirmScreen_EnterStop_Client_PersistsAutoSelectConfig(t *testing.T) {
+func TestUpdateDaemonActiveConfirmScreen_EnterStop_Client_PersistsAutoSelectConfig(t *testing.T) {
 	stopCalls := 0
 	s := settingsForMode(ModePreferenceClient)
 	opts := defaultConfiguratorOpts()
-	opts.StopSystemdUnit = func() error {
+	opts.testDaemon().stop = func() error {
 		stopCalls++
 		return nil
 	}
@@ -1012,13 +1006,13 @@ func TestUpdateSystemdActiveConfirmScreen_EnterStop_Client_PersistsAutoSelectCon
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	model.screen = configuratorScreenSystemdActiveConfirm
+	model.screen = configuratorScreenDaemonActiveConfirm
 	model.pendingStartMode = runtime.ModeClient
 	model.pendingStartScreen = configuratorScreenClientSelect
 	model.pendingClientConfig = "cfg-a"
 	model.cursor = 0
 
-	updatedModel, cmd := model.updateSystemdActiveConfirmScreen(keyNamed(tea.KeyEnter))
+	updatedModel, cmd := model.updateDaemonActiveConfirmScreen(keyNamed(tea.KeyEnter))
 	updated := updatedModel.(configuratorSessionModel)
 	if stopCalls != 1 {
 		t.Fatalf("expected one stop call, got %d", stopCalls)
@@ -1038,15 +1032,15 @@ func TestUpdateSystemdActiveConfirmScreen_EnterStop_Client_PersistsAutoSelectCon
 }
 
 func TestUpdateDaemonManageScreen_Esc_LeavesDaemonManageScreen(t *testing.T) {
-	status := SystemdDaemonStatus{Installed: true, UnitFileState: "enabled", ActiveState: "inactive", Mode: runtime.ModeServer}
+	status := systemd.UnitStatus{Installed: true, UnitFileState: "enabled", ActiveState: "inactive", Role: systemd.UnitRoleServer}
 	opts := defaultConfiguratorOpts()
-	opts.SystemdSupported = true
-	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) { return status, nil }
-	opts.InstallClientSystemdUnit = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
-	opts.InstallServerSystemdUnit = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
-	opts.RemoveSystemdUnit = func() error { return nil }
-	opts.StartSystemdUnit = func() error { return nil }
-	opts.EnableSystemdUnit = func() error { return nil }
+	opts.Daemon = newDaemonControlStub()
+	opts.testDaemon().status = func() (systemd.UnitStatus, error) { return status, nil }
+	opts.testDaemon().setupClient = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
+	opts.testDaemon().setupServer = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
+	opts.testDaemon().delete = func() error { return nil }
+	opts.testDaemon().start = func() error { return nil }
+	opts.testDaemon().enable = func() error { return nil }
 
 	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
 	if err != nil {
@@ -1077,7 +1071,7 @@ func TestRefreshDaemonStatus_UnavailableAndError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	model.daemon.status = SystemdDaemonStatus{Installed: true, UnitFileState: "enabled", ActiveState: "active", Mode: runtime.ModeServer}
+	model.daemon.status = systemd.UnitStatus{Installed: true, UnitFileState: "enabled", ActiveState: "active", Role: systemd.UnitRoleServer}
 	model.daemon.menuOptions = []string{sessionDaemonStop}
 
 	model.refreshDaemonStatus()
@@ -1089,8 +1083,8 @@ func TestRefreshDaemonStatus_UnavailableAndError(t *testing.T) {
 	}
 
 	opts := defaultConfiguratorOpts()
-	opts.SystemdSupported = true
-	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) { return SystemdDaemonStatus{}, errors.New("status boom") }
+	opts.Daemon = newDaemonControlStub()
+	opts.testDaemon().status = func() (systemd.UnitStatus, error) { return systemd.UnitStatus{}, errors.New("status boom") }
 	model, err = newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -1112,55 +1106,11 @@ func TestDaemonStatusLineAndNotice_ErrorAndEmptyNotice(t *testing.T) {
 	}
 
 	model.daemon.statusErr = nil
-	model.daemon.status = SystemdDaemonStatus{Installed: true, UnitFileState: "disabled", ActiveState: "active", Mode: runtime.ModeClient}
+	model.daemon.status = systemd.UnitStatus{Installed: true, UnitFileState: "disabled", ActiveState: "active", Role: systemd.UnitRoleClient}
 	model.notice = ""
 	want := model.daemonStatusLine()
 	if got := model.daemonNotice(); got != want {
 		t.Fatalf("expected daemonNotice to return status line when notice empty, got %q want %q", got, want)
-	}
-}
-
-func TestUpdateDaemonManageScreen_UnavailableActions_ShowNotice(t *testing.T) {
-	cases := []struct {
-		name    string
-		option  string
-		active  bool
-		wantMsg string
-	}{
-		{name: "setup client unavailable", option: sessionDaemonSetupClient, wantMsg: "client daemon setup is unavailable"},
-		{name: "setup server unavailable", option: sessionDaemonSetupServer, wantMsg: "server daemon setup is unavailable"},
-		{name: "reconfigure client unavailable", option: sessionDaemonReconfClient, wantMsg: "client daemon setup is unavailable"},
-		{name: "reconfigure server unavailable", option: sessionDaemonReconfServer, wantMsg: "server daemon setup is unavailable"},
-		{name: "start unavailable", option: sessionDaemonStart, wantMsg: "Daemon start is unavailable."},
-		{name: "stop unavailable", option: sessionDaemonStop, wantMsg: "Daemon stop is unavailable."},
-		{name: "enable unavailable", option: sessionDaemonEnable, wantMsg: "Daemon enable is unavailable."},
-		{name: "disable unavailable", option: sessionDaemonDisable, wantMsg: "Daemon disable is unavailable."},
-		{name: "delete unavailable", option: sessionDaemonDelete, wantMsg: "Daemon remove is unavailable."},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			opts := defaultConfiguratorOpts()
-			opts.SystemdSupported = true
-			opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
-				return SystemdDaemonStatus{Installed: true, ActiveState: boolToActiveState(tc.active), Mode: runtime.ModeClient}, nil
-			}
-
-			model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			model.screen = configuratorScreenDaemonManage
-			model.daemon.status.ActiveState = boolToActiveState(tc.active)
-			model.daemon.menuOptions = []string{tc.option}
-			model.cursor = 0
-
-			updatedModel, _ := model.updateDaemonManageScreen(keyNamed(tea.KeyEnter))
-			updated := updatedModel.(configuratorSessionModel)
-			if !strings.Contains(updated.notice, tc.wantMsg) {
-				t.Fatalf("expected %q in notice, got %q", tc.wantMsg, updated.notice)
-			}
-		})
 	}
 }
 
@@ -1176,23 +1126,23 @@ func TestUpdateDaemonManageScreen_ActionFailures_ShowNotice(t *testing.T) {
 			name:   "setup client install fails",
 			option: sessionDaemonSetupClient,
 			configureHooks: func(opts *ConfiguratorSessionOptions) {
-				opts.InstallClientSystemdUnit = func() (string, error) { return "", errors.New("install failed") }
+				opts.testDaemon().setupClient = func() (string, error) { return "", errors.New("install failed") }
 			},
-			wantMsg: "failed to setup client daemon",
+			wantMsg: "failed to setup daemon",
 		},
 		{
 			name:   "setup server install fails",
 			option: sessionDaemonSetupServer,
 			configureHooks: func(opts *ConfiguratorSessionOptions) {
-				opts.InstallServerSystemdUnit = func() (string, error) { return "", errors.New("install failed") }
+				opts.testDaemon().setupServer = func() (string, error) { return "", errors.New("install failed") }
 			},
-			wantMsg: "failed to setup server daemon",
+			wantMsg: "failed to setup daemon",
 		},
 		{
 			name:   "start fails",
 			option: sessionDaemonStart,
 			configureHooks: func(opts *ConfiguratorSessionOptions) {
-				opts.StartSystemdUnit = func() error { return errors.New("boom") }
+				opts.testDaemon().start = func() error { return errors.New("boom") }
 			},
 			wantMsg: "Failed to start daemon: boom",
 		},
@@ -1200,7 +1150,7 @@ func TestUpdateDaemonManageScreen_ActionFailures_ShowNotice(t *testing.T) {
 			name:   "stop fails",
 			option: sessionDaemonStop,
 			configureHooks: func(opts *ConfiguratorSessionOptions) {
-				opts.StopSystemdUnit = func() error { return errors.New("boom") }
+				opts.testDaemon().stop = func() error { return errors.New("boom") }
 			},
 			wantMsg: "Failed to stop daemon: boom",
 		},
@@ -1208,7 +1158,7 @@ func TestUpdateDaemonManageScreen_ActionFailures_ShowNotice(t *testing.T) {
 			name:   "enable fails",
 			option: sessionDaemonEnable,
 			configureHooks: func(opts *ConfiguratorSessionOptions) {
-				opts.EnableSystemdUnit = func() error { return errors.New("boom") }
+				opts.testDaemon().enable = func() error { return errors.New("boom") }
 			},
 			wantMsg: "Failed to enable daemon: boom",
 		},
@@ -1216,7 +1166,7 @@ func TestUpdateDaemonManageScreen_ActionFailures_ShowNotice(t *testing.T) {
 			name:   "disable fails",
 			option: sessionDaemonDisable,
 			configureHooks: func(opts *ConfiguratorSessionOptions) {
-				opts.DisableSystemdUnit = func() error { return errors.New("boom") }
+				opts.testDaemon().disable = func() error { return errors.New("boom") }
 			},
 			wantMsg: "Failed to disable daemon: boom",
 		},
@@ -1224,7 +1174,7 @@ func TestUpdateDaemonManageScreen_ActionFailures_ShowNotice(t *testing.T) {
 			name:   "delete fails",
 			option: sessionDaemonDelete,
 			configureHooks: func(opts *ConfiguratorSessionOptions) {
-				opts.RemoveSystemdUnit = func() error { return errors.New("boom") }
+				opts.testDaemon().delete = func() error { return errors.New("boom") }
 			},
 			wantMsg: "Failed to remove daemon: boom",
 		},
@@ -1233,9 +1183,9 @@ func TestUpdateDaemonManageScreen_ActionFailures_ShowNotice(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			opts := defaultConfiguratorOpts()
-			opts.SystemdSupported = true
-			opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
-				return SystemdDaemonStatus{Installed: true, ActiveState: boolToActiveState(tc.active), Mode: runtime.ModeClient}, nil
+			opts.Daemon = newDaemonControlStub()
+			opts.testDaemon().status = func() (systemd.UnitStatus, error) {
+				return systemd.UnitStatus{Installed: true, ActiveState: boolToActiveState(tc.active), Role: systemd.UnitRoleClient}, nil
 			}
 			tc.configureHooks(&opts)
 
@@ -1259,9 +1209,9 @@ func TestUpdateDaemonManageScreen_ActionFailures_ShowNotice(t *testing.T) {
 
 func TestUpdateDaemonManageScreen_UnknownOption_Noop(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	opts.SystemdSupported = true
-	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
-		return SystemdDaemonStatus{Installed: true}, nil
+	opts.Daemon = newDaemonControlStub()
+	opts.testDaemon().status = func() (systemd.UnitStatus, error) {
+		return systemd.UnitStatus{Installed: true}, nil
 	}
 
 	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
@@ -1310,11 +1260,11 @@ func TestUpdateDaemonReconfigureConfirmScreen_EscAndNonEnter(t *testing.T) {
 
 func TestUpdateDaemonReconfigureConfirmScreen_ConfirmServerError_ShowsNotice(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	opts.SystemdSupported = true
-	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
-		return SystemdDaemonStatus{Installed: true, ActiveState: "active", Mode: runtime.ModeClient}, nil
+	opts.Daemon = newDaemonControlStub()
+	opts.testDaemon().status = func() (systemd.UnitStatus, error) {
+		return systemd.UnitStatus{Installed: true, ActiveState: "active", Role: systemd.UnitRoleClient}, nil
 	}
-	opts.InstallServerSystemdUnit = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
+	opts.testDaemon().setupServer = func() (string, error) { return "", errors.New("setup failed") }
 
 	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
 	if err != nil {
@@ -1326,115 +1276,22 @@ func TestUpdateDaemonReconfigureConfirmScreen_ConfirmServerError_ShowsNotice(t *
 
 	updatedModel, _ := model.updateDaemonReconfigureConfirmScreen(keyNamed(tea.KeyEnter))
 	updated := updatedModel.(configuratorSessionModel)
-	if !strings.Contains(updated.notice, "daemon stop is unavailable") {
-		t.Fatalf("expected missing stop capability notice, got %q", updated.notice)
+	if !strings.Contains(updated.notice, "setup failed") {
+		t.Fatalf("expected setup failure notice, got %q", updated.notice)
 	}
 }
 
-func TestStopAndRestartWithServerSetup_CoversBranches(t *testing.T) {
-	t.Run("stop unavailable", func(t *testing.T) {
-		opts := defaultConfiguratorOpts()
-		opts.InstallServerSystemdUnit = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
-		model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceServer))
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		_, err = model.stopAndRestartWithServerSetup()
-		if err == nil || !strings.Contains(err.Error(), "daemon stop is unavailable") {
-			t.Fatalf("expected stop unavailable error, got %v", err)
-		}
-	})
-
-	t.Run("stop fails", func(t *testing.T) {
-		opts := defaultConfiguratorOpts()
-		opts.StopSystemdUnit = func() error { return errors.New("stop failed") }
-		opts.InstallServerSystemdUnit = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
-		model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceServer))
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		_, err = model.stopAndRestartWithServerSetup()
-		if err == nil || !strings.Contains(err.Error(), "failed to stop daemon before reconfigure") {
-			t.Fatalf("expected stop failure error, got %v", err)
-		}
-	})
-
-	t.Run("install fails", func(t *testing.T) {
-		opts := defaultConfiguratorOpts()
-		opts.StopSystemdUnit = func() error { return nil }
-		opts.InstallServerSystemdUnit = func() (string, error) { return "", errors.New("install failed") }
-		model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceServer))
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		_, err = model.stopAndRestartWithServerSetup()
-		if err == nil || !strings.Contains(err.Error(), "failed to setup server daemon") {
-			t.Fatalf("expected setup failure error, got %v", err)
-		}
-	})
-
-	t.Run("start unavailable", func(t *testing.T) {
-		opts := defaultConfiguratorOpts()
-		opts.StopSystemdUnit = func() error { return nil }
-		opts.InstallServerSystemdUnit = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
-		model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceServer))
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		notice, err := model.stopAndRestartWithServerSetup()
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if !strings.Contains(notice, "Start is unavailable") {
-			t.Fatalf("expected start unavailable notice, got %q", notice)
-		}
-	})
-
-	t.Run("start fails", func(t *testing.T) {
-		opts := defaultConfiguratorOpts()
-		opts.StopSystemdUnit = func() error { return nil }
-		opts.InstallServerSystemdUnit = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
-		opts.StartSystemdUnit = func() error { return errors.New("start failed") }
-		model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceServer))
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		_, err = model.stopAndRestartWithServerSetup()
-		if err == nil || !strings.Contains(err.Error(), "failed to restart daemon after reconfigure") {
-			t.Fatalf("expected restart failure error, got %v", err)
-		}
-	})
-
-	t.Run("success", func(t *testing.T) {
-		opts := defaultConfiguratorOpts()
-		opts.StopSystemdUnit = func() error { return nil }
-		opts.InstallServerSystemdUnit = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
-		opts.StartSystemdUnit = func() error { return nil }
-		model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceServer))
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		notice, err := model.stopAndRestartWithServerSetup()
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if !strings.Contains(notice, "Server daemon reconfigured") || !strings.Contains(notice, "restarted") {
-			t.Fatalf("expected success notice, got %q", notice)
-		}
-	})
-}
-
-func TestUpdateSystemdActiveConfirmScreen_EscAndStopUnavailable(t *testing.T) {
+func TestUpdateDaemonActiveConfirmScreen_EscAndStopUnavailable(t *testing.T) {
 	model, err := newConfiguratorSessionModel(defaultConfiguratorOpts(), settingsForMode(ModePreferenceClient))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	model.screen = configuratorScreenSystemdActiveConfirm
+	model.screen = configuratorScreenDaemonActiveConfirm
 	model.pendingStartMode = runtime.ModeClient
 	model.pendingStartScreen = configuratorScreenClientSelect
 	model.pendingClientConfig = "cfg-a"
 
-	updatedModel, _ := model.updateSystemdActiveConfirmScreen(keyNamed(tea.KeyEsc))
+	updatedModel, _ := model.updateDaemonActiveConfirmScreen(keyNamed(tea.KeyEsc))
 	updated := updatedModel.(configuratorSessionModel)
 	if updated.screen != configuratorScreenClientSelect {
 		t.Fatalf("expected return to client select on esc, got %v", updated.screen)
@@ -1443,11 +1300,11 @@ func TestUpdateSystemdActiveConfirmScreen_EscAndStopUnavailable(t *testing.T) {
 		t.Fatalf("expected cancel notice on esc, got %q", updated.notice)
 	}
 
-	model.screen = configuratorScreenSystemdActiveConfirm
+	model.screen = configuratorScreenDaemonActiveConfirm
 	model.pendingStartMode = runtime.ModeServer
 	model.pendingStartScreen = configuratorScreenServerSelect
 	model.cursor = 0
-	updatedModel, _ = model.updateSystemdActiveConfirmScreen(keyNamed(tea.KeyEnter))
+	updatedModel, _ = model.updateDaemonActiveConfirmScreen(keyNamed(tea.KeyEnter))
 	updated = updatedModel.(configuratorSessionModel)
 	if updated.screen != configuratorScreenServerSelect {
 		t.Fatalf("expected return to server select when stop unavailable, got %v", updated.screen)
@@ -1457,18 +1314,18 @@ func TestUpdateSystemdActiveConfirmScreen_EscAndStopUnavailable(t *testing.T) {
 	}
 }
 
-func TestStartModeWithSystemdGuard_PreserveNotice(t *testing.T) {
+func TestStartModeWithDaemonGuard_PreserveNotice(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	opts.CheckSystemdUnitActive = func() (bool, error) { return true, nil }
-	opts.StopSystemdUnit = func() error { return nil }
+	opts.testDaemon().isActive = func() (bool, error) { return true, nil }
+	opts.testDaemon().stop = func() error { return nil }
 	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.notice = "keep me"
 
-	updated := model.startModeWithSystemdGuard(runtime.ModeServer, configuratorScreenServerSelect, true)
-	if updated.screen != configuratorScreenSystemdActiveConfirm {
+	updated := model.startModeWithDaemonGuard(runtime.ModeServer, configuratorScreenServerSelect, true)
+	if updated.screen != configuratorScreenDaemonActiveConfirm {
 		t.Fatalf("expected confirm screen, got %v", updated.screen)
 	}
 	if updated.notice != "keep me" {
@@ -1495,106 +1352,13 @@ func TestPersistAutoSelectClientConfig_EmptyValueIgnored(t *testing.T) {
 	}
 }
 
-func TestStopAndRestartWithClientSetup_CoversBranches(t *testing.T) {
-	t.Run("stop unavailable", func(t *testing.T) {
-		opts := defaultConfiguratorOpts()
-		opts.InstallClientSystemdUnit = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
-		model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		_, err = model.stopAndRestartWithClientSetup()
-		if err == nil || !strings.Contains(err.Error(), "daemon stop is unavailable") {
-			t.Fatalf("expected stop unavailable error, got %v", err)
-		}
-	})
-
-	t.Run("stop fails", func(t *testing.T) {
-		opts := defaultConfiguratorOpts()
-		opts.StopSystemdUnit = func() error { return errors.New("stop failed") }
-		opts.InstallClientSystemdUnit = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
-		model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		_, err = model.stopAndRestartWithClientSetup()
-		if err == nil || !strings.Contains(err.Error(), "failed to stop daemon before reconfigure") {
-			t.Fatalf("expected stop failure error, got %v", err)
-		}
-	})
-
-	t.Run("install fails", func(t *testing.T) {
-		opts := defaultConfiguratorOpts()
-		opts.StopSystemdUnit = func() error { return nil }
-		opts.InstallClientSystemdUnit = func() (string, error) { return "", errors.New("install failed") }
-		model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		_, err = model.stopAndRestartWithClientSetup()
-		if err == nil || !strings.Contains(err.Error(), "failed to setup client daemon") {
-			t.Fatalf("expected setup failure error, got %v", err)
-		}
-	})
-
-	t.Run("start unavailable", func(t *testing.T) {
-		opts := defaultConfiguratorOpts()
-		opts.StopSystemdUnit = func() error { return nil }
-		opts.InstallClientSystemdUnit = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
-		model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		notice, err := model.stopAndRestartWithClientSetup()
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if !strings.Contains(notice, "Start is unavailable") {
-			t.Fatalf("expected start unavailable notice, got %q", notice)
-		}
-	})
-
-	t.Run("start fails", func(t *testing.T) {
-		opts := defaultConfiguratorOpts()
-		opts.StopSystemdUnit = func() error { return nil }
-		opts.InstallClientSystemdUnit = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
-		opts.StartSystemdUnit = func() error { return errors.New("start failed") }
-		model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		_, err = model.stopAndRestartWithClientSetup()
-		if err == nil || !strings.Contains(err.Error(), "failed to restart daemon after reconfigure") {
-			t.Fatalf("expected restart failure error, got %v", err)
-		}
-	})
-
-	t.Run("success", func(t *testing.T) {
-		opts := defaultConfiguratorOpts()
-		opts.StopSystemdUnit = func() error { return nil }
-		opts.InstallClientSystemdUnit = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
-		opts.StartSystemdUnit = func() error { return nil }
-		model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		notice, err := model.stopAndRestartWithClientSetup()
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if !strings.Contains(notice, "Client daemon reconfigured") || !strings.Contains(notice, "restarted") {
-			t.Fatalf("expected success notice, got %q", notice)
-		}
-	})
-}
-
-func TestStartModeWithSystemdGuard_CoversBranches(t *testing.T) {
+func TestStartModeWithDaemonGuard_CoversBranches(t *testing.T) {
 	t.Run("without hooks starts immediately", func(t *testing.T) {
 		model, err := newConfiguratorSessionModel(defaultConfiguratorOpts(), settingsForMode(ModePreferenceClient))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		updated := model.startModeWithSystemdGuard(runtime.ModeServer, configuratorScreenServerSelect, false)
+		updated := model.startModeWithDaemonGuard(runtime.ModeServer, configuratorScreenServerSelect, false)
 		if !updated.done || updated.resultMode != runtime.ModeServer {
 			t.Fatalf("expected immediate start, got done=%v mode=%v", updated.done, updated.resultMode)
 		}
@@ -1602,17 +1366,17 @@ func TestStartModeWithSystemdGuard_CoversBranches(t *testing.T) {
 
 	t.Run("status check error", func(t *testing.T) {
 		opts := defaultConfiguratorOpts()
-		opts.CheckSystemdUnitActive = func() (bool, error) { return false, errors.New("status failed") }
-		opts.StopSystemdUnit = func() error { return nil }
+		opts.testDaemon().isActive = func() (bool, error) { return false, errors.New("status failed") }
+		opts.testDaemon().stop = func() error { return nil }
 		model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		updated := model.startModeWithSystemdGuard(runtime.ModeServer, configuratorScreenServerSelect, false)
-		if updated.screen != configuratorScreenSystemdCheckErrorConfirm {
-			t.Fatalf("expected systemd check error confirm screen, got %v", updated.screen)
+		updated := model.startModeWithDaemonGuard(runtime.ModeServer, configuratorScreenServerSelect, false)
+		if updated.screen != configuratorScreenDaemonCheckErrorConfirm {
+			t.Fatalf("expected daemon check error confirm screen, got %v", updated.screen)
 		}
-		if !strings.Contains(updated.notice, "Failed to check systemd daemon status") {
+		if !strings.Contains(updated.notice, "Failed to check daemon status") {
 			t.Fatalf("expected status failure notice, got %q", updated.notice)
 		}
 		if updated.pendingStartMode != runtime.ModeServer || updated.pendingStartScreen != configuratorScreenServerSelect {
@@ -1622,48 +1386,29 @@ func TestStartModeWithSystemdGuard_CoversBranches(t *testing.T) {
 
 	t.Run("inactive daemon starts immediately", func(t *testing.T) {
 		opts := defaultConfiguratorOpts()
-		opts.CheckSystemdUnitActive = func() (bool, error) { return false, nil }
-		opts.StopSystemdUnit = func() error { return nil }
+		opts.testDaemon().isActive = func() (bool, error) { return false, nil }
+		opts.testDaemon().stop = func() error { return nil }
 		model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		updated := model.startModeWithSystemdGuard(runtime.ModeClient, configuratorScreenClientSelect, false)
+		updated := model.startModeWithDaemonGuard(runtime.ModeClient, configuratorScreenClientSelect, false)
 		if !updated.done || updated.resultMode != runtime.ModeClient {
 			t.Fatalf("expected immediate client start, got done=%v mode=%v", updated.done, updated.resultMode)
 		}
 	})
 
-	t.Run("active daemon with stop unavailable blocks start", func(t *testing.T) {
-		opts := defaultConfiguratorOpts()
-		opts.CheckSystemdUnitActive = func() (bool, error) { return true, nil }
-		model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		updated := model.startModeWithSystemdGuard(runtime.ModeServer, configuratorScreenServerSelect, false)
-		if updated.done {
-			t.Fatal("expected start to be blocked when stop is unavailable")
-		}
-		if updated.screen != configuratorScreenServerSelect {
-			t.Fatalf("expected return to server screen, got %v", updated.screen)
-		}
-		if !strings.Contains(updated.notice, "stopping it is unavailable") {
-			t.Fatalf("expected unavailable-stop notice, got %q", updated.notice)
-		}
-	})
-
 	t.Run("active daemon clears notice when not preserving", func(t *testing.T) {
 		opts := defaultConfiguratorOpts()
-		opts.CheckSystemdUnitActive = func() (bool, error) { return true, nil }
-		opts.StopSystemdUnit = func() error { return nil }
+		opts.testDaemon().isActive = func() (bool, error) { return true, nil }
+		opts.testDaemon().stop = func() error { return nil }
 		model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		model.notice = "temporary notice"
-		updated := model.startModeWithSystemdGuard(runtime.ModeServer, configuratorScreenServerSelect, false)
-		if updated.screen != configuratorScreenSystemdActiveConfirm {
+		updated := model.startModeWithDaemonGuard(runtime.ModeServer, configuratorScreenServerSelect, false)
+		if updated.screen != configuratorScreenDaemonActiveConfirm {
 			t.Fatalf("expected confirm screen, got %v", updated.screen)
 		}
 		if updated.notice != "" {
@@ -1688,12 +1433,12 @@ func TestLeaveDaemonManageScreen_WithoutDaemonModeOption_ResetsCursor(t *testing
 
 func TestUpdateDaemonManageScreen_NonEnter_DoesNothing(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	opts.SystemdSupported = true
-	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
-		return SystemdDaemonStatus{Installed: true, UnitFileState: "disabled", ActiveState: "inactive", Mode: runtime.ModeClient}, nil
+	opts.Daemon = newDaemonControlStub()
+	opts.testDaemon().status = func() (systemd.UnitStatus, error) {
+		return systemd.UnitStatus{Installed: true, UnitFileState: "disabled", ActiveState: "inactive", Role: systemd.UnitRoleClient}, nil
 	}
 	startCalls := 0
-	opts.StartSystemdUnit = func() error {
+	opts.testDaemon().start = func() error {
 		startCalls++
 		return nil
 	}
@@ -1720,13 +1465,13 @@ func TestUpdateDaemonManageScreen_NonEnter_DoesNothing(t *testing.T) {
 }
 
 func TestUpdateDaemonManageScreen_ReconfigureServerActive_ShowsMandatoryConfirm(t *testing.T) {
-	status := SystemdDaemonStatus{Installed: true, UnitFileState: "enabled", ActiveState: "active", Mode: runtime.ModeClient}
+	status := systemd.UnitStatus{Installed: true, UnitFileState: "enabled", ActiveState: "active", Role: systemd.UnitRoleClient}
 	opts := defaultConfiguratorOpts()
-	opts.SystemdSupported = true
-	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) { return status, nil }
-	opts.InstallServerSystemdUnit = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
-	opts.StopSystemdUnit = func() error { return nil }
-	opts.StartSystemdUnit = func() error { return nil }
+	opts.Daemon = newDaemonControlStub()
+	opts.testDaemon().status = func() (systemd.UnitStatus, error) { return status, nil }
+	opts.testDaemon().setupServer = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
+	opts.testDaemon().stop = func() error { return nil }
+	opts.testDaemon().start = func() error { return nil }
 
 	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceServer))
 	if err != nil {
@@ -1752,22 +1497,22 @@ func TestUpdateDaemonManageScreen_ReconfigureServerActive_ShowsMandatoryConfirm(
 	}
 }
 
-func TestUpdateSystemdActiveConfirmScreen_NonEnter_DoesNothing(t *testing.T) {
+func TestUpdateDaemonActiveConfirmScreen_NonEnter_DoesNothing(t *testing.T) {
 	model, err := newConfiguratorSessionModel(defaultConfiguratorOpts(), settingsForMode(ModePreferenceClient))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	model.screen = configuratorScreenSystemdActiveConfirm
+	model.screen = configuratorScreenDaemonActiveConfirm
 	model.pendingStartMode = runtime.ModeClient
 	model.pendingStartScreen = configuratorScreenClientSelect
 	model.cursor = 0
 
-	updatedModel, cmd := model.updateSystemdActiveConfirmScreen(keyNamed(tea.KeyDown))
+	updatedModel, cmd := model.updateDaemonActiveConfirmScreen(keyNamed(tea.KeyDown))
 	updated := updatedModel.(configuratorSessionModel)
 	if cmd != nil {
 		t.Fatalf("expected nil cmd on non-enter, got %v", cmd)
 	}
-	if updated.screen != configuratorScreenSystemdActiveConfirm {
+	if updated.screen != configuratorScreenDaemonActiveConfirm {
 		t.Fatalf("expected to stay on confirm screen, got %v", updated.screen)
 	}
 	if updated.pendingStartMode != runtime.ModeClient {
@@ -1776,35 +1521,28 @@ func TestUpdateSystemdActiveConfirmScreen_NonEnter_DoesNothing(t *testing.T) {
 }
 
 func TestApplyDaemonSetup_RestartBranchesAndUnknownMode(t *testing.T) {
-	t.Run("client restart propagates restart error", func(t *testing.T) {
+	t.Run("client setup error is propagated", func(t *testing.T) {
 		opts := defaultConfiguratorOpts()
-		opts.InstallClientSystemdUnit = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
+		opts.testDaemon().setupClient = func() (string, error) { return "", errors.New("restart failed") }
 		model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		_, err = model.applyDaemonSetup(runtime.ModeClient, true)
-		if err == nil || !strings.Contains(err.Error(), "daemon stop is unavailable") {
-			t.Fatalf("expected restart error, got %v", err)
+		if err == nil || !strings.Contains(err.Error(), "restart failed") {
+			t.Fatalf("expected setup error, got %v", err)
 		}
 	})
 
 	t.Run("server restart success stores notice", func(t *testing.T) {
-		status := SystemdDaemonStatus{Installed: true, UnitFileState: "enabled", ActiveState: "active", Mode: runtime.ModeClient}
+		status := systemd.UnitStatus{Installed: true, UnitFileState: "enabled", ActiveState: "active", Role: systemd.UnitRoleClient}
 		opts := defaultConfiguratorOpts()
-		opts.SystemdSupported = true
-		opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) { return status, nil }
-		opts.StopSystemdUnit = func() error {
-			status.ActiveState = "inactive"
-			return nil
-		}
-		opts.InstallServerSystemdUnit = func() (string, error) {
-			status.Mode = runtime.ModeServer
-			return "/etc/systemd/system/tungo.service", nil
-		}
-		opts.StartSystemdUnit = func() error {
+		opts.Daemon = newDaemonControlStub()
+		opts.testDaemon().status = func() (systemd.UnitStatus, error) { return status, nil }
+		opts.testDaemon().setupServer = func() (string, error) {
+			status.Role = systemd.UnitRoleServer
 			status.ActiveState = "active"
-			return nil
+			return "/etc/systemd/system/tungo.service", nil
 		}
 		model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceServer))
 		if err != nil {
@@ -1817,18 +1555,20 @@ func TestApplyDaemonSetup_RestartBranchesAndUnknownMode(t *testing.T) {
 		if !strings.Contains(updated.notice, "Server daemon reconfigured") {
 			t.Fatalf("expected server reconfigure notice, got %q", updated.notice)
 		}
-		if updated.daemon.status.Mode != runtime.ModeServer {
+		if updated.daemon.status.Role != systemd.UnitRoleServer {
 			t.Fatalf("expected refreshed server role, got %+v", updated.daemon.status)
 		}
 	})
 
 	t.Run("unknown mode returns explicit error", func(t *testing.T) {
-		model, err := newConfiguratorSessionModel(defaultConfiguratorOpts(), settingsForMode(ModePreferenceClient))
+		opts := defaultConfiguratorOpts()
+		opts.testDaemon()
+		model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		_, err = model.applyDaemonSetup(0, false)
-		if err == nil || err.Error() != "unknown daemon mode" {
+		if err == nil || !strings.Contains(err.Error(), "unknown daemon mode") {
 			t.Fatalf("expected unknown daemon mode error, got %v", err)
 		}
 	})
@@ -1856,7 +1596,7 @@ func TestMainTabView_DaemonConfirmScreens_ShowExpectedLabels(t *testing.T) {
 		t.Fatalf("expected server reconfigure label in view, got: %s", serverView)
 	}
 
-	model.screen = configuratorScreenSystemdActiveConfirm
+	model.screen = configuratorScreenDaemonActiveConfirm
 	model.pendingStartMode = runtime.ModeClient
 	startClientView := model.mainTabView()
 	if !strings.Contains(startClientView, "starting client") {
@@ -1869,13 +1609,13 @@ func TestMainTabView_DaemonConfirmScreens_ShowExpectedLabels(t *testing.T) {
 		t.Fatalf("expected server start label in confirm view, got: %s", startServerView)
 	}
 
-	model.screen = configuratorScreenSystemdCheckErrorConfirm
-	model.notice = "Failed to check systemd daemon status: boom"
+	model.screen = configuratorScreenDaemonCheckErrorConfirm
+	model.notice = "Failed to check daemon status: boom"
 	checkErrorView := model.mainTabView()
 	if !strings.Contains(checkErrorView, "Cannot verify daemon status") {
 		t.Fatalf("expected check-error title in view, got: %s", checkErrorView)
 	}
-	if !strings.Contains(checkErrorView, sessionRetrySystemdCheck) ||
+	if !strings.Contains(checkErrorView, sessionRetryDaemonCheck) ||
 		!strings.Contains(checkErrorView, sessionStartAnywayUnsafe) ||
 		!strings.Contains(checkErrorView, sessionCancel) {
 		t.Fatalf("expected check-error options in view, got: %s", checkErrorView)
@@ -1885,15 +1625,14 @@ func TestMainTabView_DaemonConfirmScreens_ShowExpectedLabels(t *testing.T) {
 func TestDaemonMenuOptions_DeactivatingStateShowsStopNotStart(t *testing.T) {
 	model := configuratorSessionModel{
 		options: ConfiguratorSessionOptions{
-			StartSystemdUnit: func() error { return nil },
-			StopSystemdUnit:  func() error { return nil },
+			Daemon: newDaemonControlStub(),
 		},
 	}
-	options := model.daemonMenuOptions(SystemdDaemonStatus{
+	options := model.daemonMenuOptions(systemd.UnitStatus{
 		Installed:     true,
 		ActiveState:   "deactivating",
 		UnitFileState: "disabled",
-		Mode:          runtime.ModeClient,
+		Role:          systemd.UnitRoleClient,
 	})
 
 	if !containsString(options, sessionDaemonStop) {
@@ -1907,15 +1646,14 @@ func TestDaemonMenuOptions_DeactivatingStateShowsStopNotStart(t *testing.T) {
 func TestDaemonMenuOptions_StaticUnitFileDoesNotMapToEnableDisable(t *testing.T) {
 	model := configuratorSessionModel{
 		options: ConfiguratorSessionOptions{
-			EnableSystemdUnit:  func() error { return nil },
-			DisableSystemdUnit: func() error { return nil },
+			Daemon: newDaemonControlStub(),
 		},
 	}
-	options := model.daemonMenuOptions(SystemdDaemonStatus{
+	options := model.daemonMenuOptions(systemd.UnitStatus{
 		Installed:     true,
 		ActiveState:   "inactive",
 		UnitFileState: "static",
-		Mode:          runtime.ModeClient,
+		Role:          systemd.UnitRoleClient,
 	})
 
 	if containsString(options, sessionDaemonEnable) || containsString(options, sessionDaemonDisable) {
@@ -1936,7 +1674,7 @@ func indexOfString(values []string, want string) int {
 	return -1
 }
 
-func boolToActiveState(active bool) string {
+func boolToActiveState(active bool) systemd.UnitActiveState {
 	if active {
 		return "active"
 	}

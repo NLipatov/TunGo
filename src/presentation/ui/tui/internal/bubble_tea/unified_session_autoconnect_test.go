@@ -104,38 +104,41 @@ func TestTryAutoConnect_AllSucceed(t *testing.T) {
 	}
 }
 
-func TestShouldDeferAutoConnectForSystemd_ActiveDaemon(t *testing.T) {
+func TestShouldDeferAutoConnectForDaemon_ActiveDaemon(t *testing.T) {
 	opts := ConfiguratorSessionOptions{
-		CheckSystemdUnitActive: func() (bool, error) { return true, nil },
-		StopSystemdUnit:        func() error { return nil },
+		Daemon: &daemonControlStub{
+			isActive: func() (bool, error) { return true, nil },
+		},
 	}
-	if !shouldDeferAutoConnectForSystemd(opts) {
+	if !shouldDeferAutoConnectForDaemon(opts) {
 		t.Fatal("expected defer=true when daemon is active")
 	}
 }
 
-func TestShouldDeferAutoConnectForSystemd_InactiveDaemon(t *testing.T) {
+func TestShouldDeferAutoConnectForDaemon_InactiveDaemon(t *testing.T) {
 	opts := ConfiguratorSessionOptions{
-		CheckSystemdUnitActive: func() (bool, error) { return false, nil },
-		StopSystemdUnit:        func() error { return nil },
+		Daemon: &daemonControlStub{
+			isActive: func() (bool, error) { return false, nil },
+		},
 	}
-	if shouldDeferAutoConnectForSystemd(opts) {
+	if shouldDeferAutoConnectForDaemon(opts) {
 		t.Fatal("expected defer=false when daemon is inactive")
 	}
 }
 
-func TestShouldDeferAutoConnectForSystemd_NoHooks(t *testing.T) {
-	if shouldDeferAutoConnectForSystemd(ConfiguratorSessionOptions{}) {
-		t.Fatal("expected defer=false when systemd hooks are missing")
+func TestShouldDeferAutoConnectForDaemon_NoHooks(t *testing.T) {
+	if shouldDeferAutoConnectForDaemon(ConfiguratorSessionOptions{}) {
+		t.Fatal("expected defer=false when daemon control are missing")
 	}
 }
 
-func TestShouldDeferAutoConnectForSystemd_StatusCheckError(t *testing.T) {
+func TestShouldDeferAutoConnectForDaemon_StatusCheckError(t *testing.T) {
 	opts := ConfiguratorSessionOptions{
-		CheckSystemdUnitActive: func() (bool, error) { return false, errors.New("boom") },
-		StopSystemdUnit:        func() error { return nil },
+		Daemon: &daemonControlStub{
+			isActive: func() (bool, error) { return false, errors.New("boom") },
+		},
 	}
-	if !shouldDeferAutoConnectForSystemd(opts) {
+	if !shouldDeferAutoConnectForDaemon(opts) {
 		t.Fatal("expected defer=true when status check fails")
 	}
 }
@@ -188,8 +191,8 @@ func TestNewUnifiedSessionModel_AutoConnect_DaemonActive_FallsBackToConfiguring(
 	events := make(chan unifiedEvent, 8)
 	opts := defaultUnifiedConfigOpts()
 	opts.testControl().Observer = sessionObserverWithConfigs{configs: []string{cfgPath}}
-	opts.CheckSystemdUnitActive = func() (bool, error) { return true, nil }
-	opts.StopSystemdUnit = func() error { return nil }
+	opts.testDaemon().isActive = func() (bool, error) { return true, nil }
+	opts.testDaemon().stop = func() error { return nil }
 
 	m, err := newUnifiedSessionModel(context.Background(), opts, events, settings)
 	if err != nil {
@@ -198,8 +201,8 @@ func TestNewUnifiedSessionModel_AutoConnect_DaemonActive_FallsBackToConfiguring(
 	if m.phase != phaseConfiguring {
 		t.Fatalf("expected phaseConfiguring when daemon is active, got %d", m.phase)
 	}
-	if m.configurator.screen != configuratorScreenSystemdActiveConfirm {
-		t.Fatalf("expected systemd confirmation screen, got %v", m.configurator.screen)
+	if m.configurator.screen != configuratorScreenDaemonActiveConfirm {
+		t.Fatalf("expected daemon confirmation screen, got %v", m.configurator.screen)
 	}
 	if !settings.Preferences().AutoConnect {
 		t.Fatal("expected AutoConnect to remain true while waiting for user confirmation")
@@ -277,17 +280,17 @@ func TestNewUnifiedSessionModel_AutoConnect_Disabled_NoAutoConnect(t *testing.T)
 }
 
 // ---------------------------------------------------------------------------
-// newUnifiedSessionModel: auto-connect when ServerSupported=false
+// newUnifiedSessionModel: auto-connect when no server control is registered.
 // ---------------------------------------------------------------------------
 
 func serverUnsupportedOpts() ConfiguratorSessionOptions {
 	opts := defaultUnifiedConfigOpts()
-	opts.ServerSupported = false
+	opts.ServerConfigurationControl = nil
 	return opts
 }
 
 // settingsWithAutoConnectNoMode sets AutoConnect=true with AutoSelectMode=None.
-// Used to verify that !ServerSupported alone is sufficient to imply client mode.
+// Used to verify that a missing server control is sufficient to imply client mode.
 func settingsWithAutoConnectNoMode(cfgPath string) *uiPreferencesProvider {
 	p := newUIPreferences(ThemeLight, "en", StatsUnitsBiBytes)
 	p.AutoSelectMode = ModePreferenceNone
@@ -310,7 +313,7 @@ func TestNewUnifiedSessionModel_ServerNotSupported_AutoConnect_Triggers(t *testi
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if m.phase != phaseWaitingForRuntime {
-		t.Fatalf("expected phaseWaitingForRuntime when ServerSupported=false+AutoConnect, got %d", m.phase)
+		t.Fatalf("expected phaseWaitingForRuntime without server control and with AutoConnect, got %d", m.phase)
 	}
 	select {
 	case ev := <-events:
@@ -339,7 +342,7 @@ func TestNewUnifiedSessionModel_ServerNotSupported_AutoConnect_FileGone_ResetsAu
 }
 
 func TestNewUnifiedSessionModel_ServerNotSupported_SavedServerMode_AutoConnect_Triggers(t *testing.T) {
-	// Saved preference is Server, but ServerSupported=false.
+	// Saved preference is Server, but no server control is registered.
 	// The preference should be reset to Client, and auto-connect should still trigger.
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "cfg.json")

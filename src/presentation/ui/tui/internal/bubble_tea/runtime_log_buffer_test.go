@@ -23,13 +23,13 @@ func TestRuntimeLogBuffer_Tail(t *testing.T) {
 }
 
 func TestGlobalRuntimeLogCapture_CapturesSlog(t *testing.T) {
-	DisableGlobalRuntimeLogCapture()
-	t.Cleanup(DisableGlobalRuntimeLogCapture)
+	disableGlobalRuntimeLogCapture()
+	t.Cleanup(disableGlobalRuntimeLogCapture)
 
-	EnableGlobalRuntimeLogCapture(8)
+	enableGlobalRuntimeLogCapture(8)
 	logging.NewLogger(slog.LevelInfo).Info("runtime test line")
 
-	feed := GlobalRuntimeLogFeed()
+	feed := globalRuntimeLogFeed()
 	if feed == nil {
 		t.Fatal("expected global runtime log feed to be initialized")
 	}
@@ -141,16 +141,16 @@ func TestRuntimeLogBuffer_WriteSeparator(t *testing.T) {
 }
 
 func TestGlobalRuntimeLogWriteSeparator(t *testing.T) {
-	DisableGlobalRuntimeLogCapture()
-	t.Cleanup(DisableGlobalRuntimeLogCapture)
+	disableGlobalRuntimeLogCapture()
+	t.Cleanup(disableGlobalRuntimeLogCapture)
 
 	// Should not panic when no global buffer exists.
-	GlobalRuntimeLogWriteSeparator("test")
+	globalRuntimeLogWriteSeparator("test")
 
-	EnableGlobalRuntimeLogCapture(8)
-	GlobalRuntimeLogWriteSeparator("reconfigured")
+	enableGlobalRuntimeLogCapture(8)
+	globalRuntimeLogWriteSeparator("reconfigured")
 
-	feed := GlobalRuntimeLogFeed()
+	feed := globalRuntimeLogFeed()
 	lines := feed.Tail(8)
 	found := false
 	for _, line := range lines {
@@ -165,22 +165,22 @@ func TestGlobalRuntimeLogWriteSeparator(t *testing.T) {
 }
 
 func TestEnableGlobalRuntimeLogCapture_IdempotentAndDisableSafe(t *testing.T) {
-	DisableGlobalRuntimeLogCapture()
-	DisableGlobalRuntimeLogCapture() // safe when already disabled
+	disableGlobalRuntimeLogCapture()
+	disableGlobalRuntimeLogCapture() // safe when already disabled
 
-	EnableGlobalRuntimeLogCapture(4)
-	first := GlobalRuntimeLogFeed()
+	enableGlobalRuntimeLogCapture(4)
+	first := globalRuntimeLogFeed()
 	if first == nil {
 		t.Fatal("expected initialized feed")
 	}
-	EnableGlobalRuntimeLogCapture(99) // should not replace existing buffer
-	second := GlobalRuntimeLogFeed()
+	enableGlobalRuntimeLogCapture(99) // should not replace existing buffer
+	second := globalRuntimeLogFeed()
 	if first != second {
 		t.Fatal("expected global capture enable to be idempotent")
 	}
 
-	DisableGlobalRuntimeLogCapture()
-	if GlobalRuntimeLogFeed() != nil {
+	disableGlobalRuntimeLogCapture()
+	if globalRuntimeLogFeed() != nil {
 		t.Fatal("expected nil feed after disable")
 	}
 }

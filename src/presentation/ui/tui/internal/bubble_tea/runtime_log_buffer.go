@@ -139,7 +139,7 @@ func RedirectStandardLoggerToBuffer(buffer *RuntimeLogBuffer) func() {
 	}
 }
 
-func EnableGlobalRuntimeLogCapture(capacity int) {
+func enableGlobalRuntimeLogCapture(capacity int) {
 	globalRuntimeLogMu.Lock()
 	defer globalRuntimeLogMu.Unlock()
 
@@ -156,7 +156,7 @@ func EnableGlobalRuntimeLogCapture(capacity int) {
 	}
 }
 
-func DisableGlobalRuntimeLogCapture() {
+func disableGlobalRuntimeLogCapture() {
 	globalRuntimeLogMu.Lock()
 	defer globalRuntimeLogMu.Unlock()
 
@@ -174,7 +174,7 @@ func (b *RuntimeLogBuffer) WriteSeparator(reason string) {
 	b.appendLineLocked(line)
 }
 
-func GlobalRuntimeLogWriteSeparator(reason string) {
+func globalRuntimeLogWriteSeparator(reason string) {
 	globalRuntimeLogMu.Lock()
 	buf := globalRuntimeLogBuffer
 	globalRuntimeLogMu.Unlock()
@@ -183,7 +183,7 @@ func GlobalRuntimeLogWriteSeparator(reason string) {
 	}
 }
 
-func GlobalRuntimeLogFeed() RuntimeLogFeed {
+func globalRuntimeLogFeed() RuntimeLogFeed {
 	globalRuntimeLogMu.Lock()
 	defer globalRuntimeLogMu.Unlock()
 	if globalRuntimeLogBuffer == nil {

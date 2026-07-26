@@ -62,7 +62,7 @@ func TestNewConfiguratorSessionModel_AutoSelectModeNone_StaysAtModeScreen(t *tes
 
 func TestNewConfiguratorSessionModel_ServerNotSupported_ModeNone_NavigatesToClientSelect(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	opts.ServerSupported = false
+	opts.ServerConfigurationControl = nil
 
 	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceNone))
 	if err != nil {
@@ -75,7 +75,7 @@ func TestNewConfiguratorSessionModel_ServerNotSupported_ModeNone_NavigatesToClie
 
 func TestNewConfiguratorSessionModel_ServerNotSupported_ResetsServerModeToClient(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	opts.ServerSupported = false
+	opts.ServerConfigurationControl = nil
 	s := settingsForMode(ModePreferenceServer)
 
 	model, err := newConfiguratorSessionModel(opts, s)
@@ -93,7 +93,7 @@ func TestNewConfiguratorSessionModel_ServerNotSupported_ResetsServerModeToClient
 
 func TestUpdateClientSelectScreen_Esc_ServerNotSupported_Exits(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	opts.ServerSupported = false
+	opts.ServerConfigurationControl = nil
 	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceNone))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -131,7 +131,7 @@ func TestUpdateClientSelectScreen_Esc_ServerSupported_GoesBackToModeScreen(t *te
 
 func TestView_ClientSelectHint_ServerNotSupported_ShowsEscExit(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	opts.ServerSupported = false
+	opts.ServerConfigurationControl = nil
 	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceNone))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -212,8 +212,8 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_DaemonActive_Require
 	opts := defaultConfiguratorOpts()
 	opts.testControl().Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
 	opts.testControl().Selector = selector
-	opts.CheckSystemdUnitActive = func() (bool, error) { return true, nil }
-	opts.StopSystemdUnit = func() error { return nil }
+	opts.testDaemon().isActive = func() (bool, error) { return true, nil }
+	opts.testDaemon().stop = func() error { return nil }
 
 	model, err := newConfiguratorSessionModel(opts, s)
 	if err != nil {
@@ -222,8 +222,8 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_DaemonActive_Require
 	if model.done {
 		t.Fatal("expected done=false when daemon is active")
 	}
-	if model.screen != configuratorScreenSystemdActiveConfirm {
-		t.Fatalf("expected configuratorScreenSystemdActiveConfirm, got %v", model.screen)
+	if model.screen != configuratorScreenDaemonActiveConfirm {
+		t.Fatalf("expected configuratorScreenDaemonActiveConfirm, got %v", model.screen)
 	}
 	if model.pendingStartMode != runtime.ModeClient {
 		t.Fatalf("expected pendingStartMode=Client, got %v", model.pendingStartMode)
@@ -275,7 +275,7 @@ func TestNewConfiguratorSessionModel_ServerNotSupported_AutoConnect_False_AutoSe
 	s.update(p)
 
 	opts := defaultConfiguratorOpts()
-	opts.ServerSupported = false
+	opts.ServerConfigurationControl = nil
 	opts.testControl().Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
 
 	model, err := newConfiguratorSessionModel(opts, s)

@@ -67,7 +67,6 @@ func sessionOptionsWithControl(control *sessionConfigurationControl) Configurato
 	return ConfiguratorSessionOptions{
 		ClientConfigurationControl: control,
 		ServerConfigurationControl: control,
-		ServerSupported:            true,
 	}
 }
 
@@ -77,7 +76,6 @@ func (o *ConfiguratorSessionOptions) testControl() *sessionConfigurationControl 
 		control = defaultSessionConfigurationControl()
 		o.ClientConfigurationControl = control
 		o.ServerConfigurationControl = control
-		o.ServerSupported = true
 	}
 	return control
 }

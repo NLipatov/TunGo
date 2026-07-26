@@ -19,6 +19,8 @@ var (
 	ErrUnifiedSessionRuntimeDisconnected = errors.New("unified session runtime disconnected")
 )
 
+const runtimeLogCaptureCapacity = 1200
+
 // unifiedPhase represents the current phase of the unified session.
 type unifiedPhase int
 
@@ -95,11 +97,11 @@ func tryAutoConnect(prefs UIPreferences, opts ConfiguratorSessionOptions) bool {
 	return true
 }
 
-func shouldDeferAutoConnectForSystemd(opts ConfiguratorSessionOptions) bool {
-	if opts.CheckSystemdUnitActive == nil || opts.StopSystemdUnit == nil {
+func shouldDeferAutoConnectForDaemon(opts ConfiguratorSessionOptions) bool {
+	if opts.Daemon == nil {
 		return false
 	}
-	active, err := opts.CheckSystemdUnitActive()
+	active, err := opts.Daemon.IsUnitActive()
 	if err != nil {
 		return true
 	}
@@ -113,10 +115,11 @@ func newUnifiedSessionModel(
 	settings *uiPreferencesProvider,
 ) (unifiedSessionModel, error) {
 	prefs := settings.Preferences()
-	impliedClient := prefs.AutoSelectMode == ModePreferenceClient || !configOpts.ServerSupported
+	impliedClient := prefs.AutoSelectMode == ModePreferenceClient ||
+		configOpts.ServerConfigurationControl == nil
 	if impliedClient && prefs.AutoConnect {
-		deferForSystemd := shouldDeferAutoConnectForSystemd(configOpts)
-		if !deferForSystemd && tryAutoConnect(prefs, configOpts) {
+		deferForDaemon := shouldDeferAutoConnectForDaemon(configOpts)
+		if !deferForDaemon && tryAutoConnect(prefs, configOpts) {
 			events <- unifiedEvent{kind: unifiedEventModeSelected, mode: runtime.ModeClient}
 			cfgModel, err := newConfiguratorSessionModel(configOpts, settings)
 			if err != nil {
@@ -131,7 +134,7 @@ func newUnifiedSessionModel(
 				appCtx:       appCtx,
 			}, nil
 		}
-		if !deferForSystemd {
+		if !deferForDaemon {
 			// Last config gone or invalid — reset auto-connect
 			p := settings.Preferences()
 			p.AutoConnect = false
@@ -179,7 +182,8 @@ func (m unifiedSessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.runtimeSeq++
 		opts := msg.options
-		opts.ServerSupported = m.configOpts.ServerSupported
+		opts.ServerSupported = m.configOpts.ServerConfigurationControl != nil
+		opts.LogFeed = globalRuntimeLogFeed()
 		rt := NewRuntimeDashboard(msg.ctx, opts, m.settings)
 		rt.runtimeSeq = m.runtimeSeq
 		if m.width > 0 || m.height > 0 {
@@ -196,7 +200,7 @@ func (m unifiedSessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Check seq to ignore stale messages from a previous runtime.
 		if m.phase == phaseRuntime && msg.seq == m.runtimeSeq {
 			m.stopAllLogWaits()
-			GlobalRuntimeLogWriteSeparator("disconnected")
+			globalRuntimeLogWriteSeparator("disconnected")
 			m.runtime = nil
 			m.phase = phaseWaitingForRuntime
 			m.sendEvent(unifiedEvent{kind: unifiedEventRuntimeDisconnected})
@@ -292,7 +296,7 @@ func (m unifiedSessionModel) updateRuntime(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
-		GlobalRuntimeLogWriteSeparator("reconfigured")
+		globalRuntimeLogWriteSeparator("reconfigured")
 		// Reset configurator for a fresh cycle.
 		newCfg, err := newConfiguratorSessionModel(m.configOpts, m.settings)
 		if err != nil {
@@ -460,10 +464,13 @@ var newUnifiedSessionProgram = func(model tea.Model) *tea.Program {
 
 // NewUnifiedSession creates and starts a unified session.
 func NewUnifiedSession(appCtx context.Context, configOpts ConfiguratorSessionOptions) (*UnifiedSession, error) {
+	enableGlobalRuntimeLogCapture(runtimeLogCaptureCapacity)
+
 	events := make(chan unifiedEvent, 4)
 	settings := loadUISettingsFromDisk()
 	model, err := newUnifiedSessionModel(appCtx, configOpts, events, settings)
 	if err != nil {
+		disableGlobalRuntimeLogCapture()
 		return nil, err
 	}
 
@@ -477,6 +484,7 @@ func NewUnifiedSession(appCtx context.Context, configOpts ConfiguratorSessionOpt
 
 	go func() {
 		defer close(session.done)
+		defer disableGlobalRuntimeLogCapture()
 		finalModel, runErr := program.Run()
 		if runErr != nil {
 			session.err = runErr
@@ -633,6 +641,7 @@ func (s *UnifiedSession) ShowFatalError(message string) {
 // Close gracefully stops the unified session program.
 func (s *UnifiedSession) Close() {
 	s.closeOnce.Do(func() {
+		defer disableGlobalRuntimeLogCapture()
 		go s.program.Quit()
 		select {
 		case <-s.done:

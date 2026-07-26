@@ -9,6 +9,7 @@ import (
 	"tungo/application/runtime"
 	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
 	serverConfiguration "tungo/infrastructure/PAL/configuration/server"
+	"tungo/infrastructure/PAL/service_management/linux/systemd"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -89,16 +90,6 @@ func TestRunConfiguratorSession_NewModelError(t *testing.T) {
 	_, err := RunConfiguratorSession(ConfiguratorSessionOptions{})
 	if err == nil {
 		t.Fatal("expected model construction error")
-	}
-}
-
-func TestNewConfiguratorSessionModel_RequiresServerControlWhenSupported(t *testing.T) {
-	opts := validSessionOptions()
-	opts.ServerConfigurationControl = nil
-
-	_, err := newConfiguratorSessionModel(opts, testSettings())
-	if err == nil || !strings.Contains(err.Error(), "server configuration dependencies") {
-		t.Fatalf("expected missing server control error, got %v", err)
 	}
 }
 
@@ -3302,12 +3293,12 @@ func TestUpdateSettingsTab_ClampsOutOfRangeCursor(t *testing.T) {
 	}
 }
 
-func TestUpdate_MainTab_DispatchesSystemdScreens(t *testing.T) {
+func TestUpdate_MainTab_DispatchesDaemonScreens(t *testing.T) {
 	t.Run("daemon manage dispatch", func(t *testing.T) {
 		opts := defaultConfiguratorOpts()
-		opts.SystemdSupported = true
-		opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
-			return SystemdDaemonStatus{Installed: true, ActiveState: "inactive", UnitFileState: "disabled"}, nil
+		opts.Daemon = newDaemonControlStub()
+		opts.testDaemon().status = func() (systemd.UnitStatus, error) {
+			return systemd.UnitStatus{Installed: true, ActiveState: "inactive", UnitFileState: "disabled"}, nil
 		}
 		model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
 		if err != nil {
@@ -3343,12 +3334,12 @@ func TestUpdate_MainTab_DispatchesSystemdScreens(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		model.screen = configuratorScreenSystemdActiveConfirm
+		model.screen = configuratorScreenDaemonActiveConfirm
 		model.pendingStartMode = runtime.ModeClient
 		model.pendingStartScreen = configuratorScreenClientSelect
 		result, _ := model.Update(keyNamed(tea.KeyDown))
 		updated := result.(configuratorSessionModel)
-		if updated.screen != configuratorScreenSystemdActiveConfirm {
+		if updated.screen != configuratorScreenDaemonActiveConfirm {
 			t.Fatalf("expected systemd active confirm screen, got %v", updated.screen)
 		}
 	})
@@ -3356,13 +3347,13 @@ func TestUpdate_MainTab_DispatchesSystemdScreens(t *testing.T) {
 
 func TestView_MainTab_DaemonManageScreen(t *testing.T) {
 	opts := defaultConfiguratorOpts()
-	opts.SystemdSupported = true
-	opts.GetSystemdDaemonStatus = func() (SystemdDaemonStatus, error) {
-		return SystemdDaemonStatus{Installed: true, Mode: runtime.ModeClient, UnitFileState: "disabled", ActiveState: "inactive"}, nil
+	opts.Daemon = newDaemonControlStub()
+	opts.testDaemon().status = func() (systemd.UnitStatus, error) {
+		return systemd.UnitStatus{Installed: true, Role: systemd.UnitRoleClient, UnitFileState: "disabled", ActiveState: "inactive"}, nil
 	}
-	opts.StartSystemdUnit = func() error { return nil }
-	opts.EnableSystemdUnit = func() error { return nil }
-	opts.InstallClientSystemdUnit = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
+	opts.testDaemon().start = func() error { return nil }
+	opts.testDaemon().enable = func() error { return nil }
+	opts.testDaemon().setupClient = func() (string, error) { return "/etc/systemd/system/tungo.service", nil }
 
 	model, err := newConfiguratorSessionModel(opts, settingsForMode(ModePreferenceClient))
 	if err != nil {
@@ -3433,7 +3424,7 @@ func TestNewConfiguratorSessionModel_AutoSelectConfig_SelectFails_ShowsNotice(t 
 	}
 }
 
-func TestNewConfiguratorSessionModel_AutoSelectConfig_NilClientManager_UsesSystemdGuard(t *testing.T) {
+func TestNewConfiguratorSessionModel_AutoSelectConfig_NilClientManager_UsesDaemonGuard(t *testing.T) {
 	s := settingsForMode(ModePreferenceClient)
 	p := s.Preferences()
 	p.AutoConnect = true
@@ -3443,14 +3434,14 @@ func TestNewConfiguratorSessionModel_AutoSelectConfig_NilClientManager_UsesSyste
 	opts := defaultConfiguratorOpts()
 	opts.testControl().Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
 	opts.testControl().ClientConfigManager = nil
-	opts.CheckSystemdUnitActive = func() (bool, error) { return true, nil }
-	opts.StopSystemdUnit = func() error { return nil }
+	opts.testDaemon().isActive = func() (bool, error) { return true, nil }
+	opts.testDaemon().stop = func() error { return nil }
 
 	model, err := newConfiguratorSessionModel(opts, s)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if model.screen != configuratorScreenSystemdActiveConfirm {
+	if model.screen != configuratorScreenDaemonActiveConfirm {
 		t.Fatalf("expected systemd active confirm screen, got %v", model.screen)
 	}
 	if model.pendingClientConfig != "cfg.json" {

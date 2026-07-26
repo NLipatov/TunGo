@@ -387,7 +387,7 @@ func (m Selector) logsView() string {
 }
 
 func (m Selector) logsFeed() RuntimeLogFeed {
-	return GlobalRuntimeLogFeed()
+	return globalRuntimeLogFeed()
 }
 
 func (m Selector) tabsLine(styles uiStyles) string {
