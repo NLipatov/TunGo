@@ -330,3 +330,14 @@ func TestUISettings_RoundTrip_NewFields(t *testing.T) {
 		t.Errorf("AutoSelectClientConfig: got %q, want /some/path/cfg.json", loaded.AutoSelectClientConfig)
 	}
 }
+
+func TestPreferences_DisableAutoConnect_NoOpWhenAlreadyDisabled(t *testing.T) {
+	preferences := newPreferences(UIPreferences{AutoConnect: false})
+
+	if err := preferences.DisableAutoConnect(); err != nil {
+		t.Fatalf("DisableAutoConnect() error = %v", err)
+	}
+	if preferences.Current().AutoConnect {
+		t.Fatal("expected AutoConnect to remain disabled")
+	}
+}

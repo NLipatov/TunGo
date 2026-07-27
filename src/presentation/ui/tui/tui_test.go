@@ -54,6 +54,26 @@ func TestTUI_Run_CanceledContext_ReturnsNil(t *testing.T) {
 	}
 }
 
+func TestTUI_Configure_ReturnsConfiguratorInitializationError(t *testing.T) {
+	ui := newTestTUI(t)
+	ui.configuratorOptions.ClientConfigurationControl = nil
+
+	_, err := ui.configure(context.Background(), bubbleTea.NewRuntimeLogBuffer(8))
+	if err == nil || err.Error() != "configurator dependencies are not initialized" {
+		t.Fatalf("configure() error = %v, want dependency initialization error", err)
+	}
+}
+
+func TestTUI_Run_WrapsConfiguratorInitializationError(t *testing.T) {
+	ui := newTestTUI(t)
+	ui.configuratorOptions.ClientConfigurationControl = nil
+
+	err := ui.Run(context.Background())
+	if err == nil || err.Error() != "configuration error: configurator dependencies are not initialized" {
+		t.Fatalf("Run() error = %q, want wrapped configuration error", err)
+	}
+}
+
 func TestTUI_RunRuntime_RuntimeInfoError(t *testing.T) {
 	want := errors.New("runtime info failed")
 	ui := newTestTUI(t)

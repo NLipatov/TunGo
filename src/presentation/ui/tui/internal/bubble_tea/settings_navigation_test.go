@@ -2,6 +2,28 @@ package bubble_tea
 
 import "testing"
 
+func TestNextTheme_InvalidValueStartsFromFirstTheme(t *testing.T) {
+	if got := nextTheme("invalid", 1); got != orderedThemeOptions[1] {
+		t.Fatalf("nextTheme(invalid, 1) = %q, want %q", got, orderedThemeOptions[1])
+	}
+}
+
+func TestNextTheme_BackwardWrapsFromFirstTheme(t *testing.T) {
+	want := orderedThemeOptions[len(orderedThemeOptions)-1]
+	if got := nextTheme(orderedThemeOptions[0], -1); got != want {
+		t.Fatalf("nextTheme(first, -1) = %q, want %q", got, want)
+	}
+}
+
+func TestNextStatsUnits_CyclesBothDirections(t *testing.T) {
+	if got := nextStatsUnits(StatsUnitsBytes, 1); got != StatsUnitsBiBytes {
+		t.Fatalf("nextStatsUnits(bytes, 1) = %q, want %q", got, StatsUnitsBiBytes)
+	}
+	if got := nextStatsUnits(StatsUnitsBytes, -1); got != StatsUnitsBiBytes {
+		t.Fatalf("nextStatsUnits(bytes, -1) = %q, want %q", got, StatsUnitsBiBytes)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // nextModePreference
 // ---------------------------------------------------------------------------

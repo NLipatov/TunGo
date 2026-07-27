@@ -1130,6 +1130,22 @@ func TestUpdateDaemonManageScreen_ActionFailures_ShowNotice(t *testing.T) {
 			wantMsg: "failed to setup daemon",
 		},
 		{
+			name:   "reconfigure inactive client install fails",
+			option: daemonReconfigureClientLabel,
+			configureHooks: func(opts *ConfiguratorOptions) {
+				opts.testDaemon().setupClient = func() (string, error) { return "", errors.New("install failed") }
+			},
+			wantMsg: "failed to setup daemon",
+		},
+		{
+			name:   "reconfigure inactive server install fails",
+			option: daemonReconfigureServerLabel,
+			configureHooks: func(opts *ConfiguratorOptions) {
+				opts.testDaemon().setupServer = func() (string, error) { return "", errors.New("install failed") }
+			},
+			wantMsg: "failed to setup daemon",
+		},
+		{
 			name:   "start fails",
 			option: daemonStartLabel,
 			configureHooks: func(opts *ConfiguratorOptions) {
@@ -1512,6 +1528,35 @@ func TestUpdateDaemonActiveConfirmScreen_NonEnter_DoesNothing(t *testing.T) {
 }
 
 func TestApplyDaemonSetup_RestartBranchesAndUnknownMode(t *testing.T) {
+	t.Run("unavailable daemon returns explicit error", func(t *testing.T) {
+		opts := defaultConfiguratorOpts()
+		model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		model.options.Daemon = nil
+
+		_, err = model.applyDaemonSetup(runtime.ModeClient, false)
+		if err == nil || !strings.Contains(err.Error(), "daemon setup is unavailable") {
+			t.Fatalf("expected unavailable daemon error, got %v", err)
+		}
+	})
+
+	t.Run("invalid client configuration prevents setup", func(t *testing.T) {
+		opts := defaultConfiguratorOpts()
+		opts.testDaemon()
+		opts.testControl().validateActiveErr = errors.New("invalid client config")
+		model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		_, err = model.applyDaemonSetup(runtime.ModeClient, false)
+		if err == nil || !strings.Contains(err.Error(), "cannot setup client daemon: invalid client config") {
+			t.Fatalf("expected client validation error, got %v", err)
+		}
+	})
+
 	t.Run("client setup error is propagated", func(t *testing.T) {
 		opts := defaultConfiguratorOpts()
 		opts.testDaemon().setupClient = func() (string, error) { return "", errors.New("restart failed") }
@@ -1563,6 +1608,96 @@ func TestApplyDaemonSetup_RestartBranchesAndUnknownMode(t *testing.T) {
 			t.Fatalf("expected unknown daemon mode error, got %v", err)
 		}
 	})
+}
+
+func TestUpdateDaemonCheckErrorConfirmScreen_EscapeAndNavigation(t *testing.T) {
+	opts := defaultConfiguratorOpts()
+	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	model.screen = configuratorScreenDaemonCheckErrorConfirm
+	model.pendingStartMode = runtime.ModeClient
+	model.pendingStartScreen = configuratorScreenClientSelect
+
+	updatedModel, cmd := model.updateDaemonCheckErrorConfirmScreen(keyNamed(tea.KeyDown))
+	updated := updatedModel.(Configurator)
+	if cmd != nil {
+		t.Fatal("expected navigation not to return a command")
+	}
+	if updated.cursor != 1 {
+		t.Fatalf("expected cursor 1 after Down, got %d", updated.cursor)
+	}
+
+	updatedModel, cmd = updated.updateDaemonCheckErrorConfirmScreen(keyNamed(tea.KeyEsc))
+	updated = updatedModel.(Configurator)
+	if cmd != nil {
+		t.Fatal("expected Escape not to return a command")
+	}
+	if updated.screen != configuratorScreenClientSelect {
+		t.Fatalf("expected return to client selection, got %v", updated.screen)
+	}
+	if updated.notice != "Start cancelled." {
+		t.Fatalf("expected cancellation notice, got %q", updated.notice)
+	}
+}
+
+func TestStartModeWithDaemonGuard_PreservesNoticeOnStatusError(t *testing.T) {
+	opts := defaultConfiguratorOpts()
+	opts.testDaemon().isActive = func() (bool, error) {
+		return false, errors.New("status unavailable")
+	}
+	model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	model.notice = "Configuration selected."
+
+	updated := model.startModeWithDaemonGuard(
+		runtime.ModeClient,
+		configuratorScreenClientSelect,
+		true,
+	)
+	if !strings.Contains(updated.notice, "Configuration selected.") ||
+		!strings.Contains(updated.notice, "Failed to check daemon status: status unavailable") {
+		t.Fatalf("expected original and status notices, got %q", updated.notice)
+	}
+	if updated.screen != configuratorScreenDaemonCheckErrorConfirm {
+		t.Fatalf("expected status error confirmation, got %v", updated.screen)
+	}
+}
+
+func TestDaemonPresentationHelpers_Boundaries(t *testing.T) {
+	roleCases := []struct {
+		execStart string
+		want      string
+	}{
+		{execStart: "/usr/local/bin/tungo c", want: "client"},
+		{execStart: "/usr/local/bin/tungo s", want: "server"},
+		{execStart: "/usr/local/bin/tungo unknown", want: "unknown"},
+	}
+	for _, tc := range roleCases {
+		if got := daemonRoleFromExecStart(tc.execStart); got != tc.want {
+			t.Errorf("daemonRoleFromExecStart(%q) = %q, want %q", tc.execStart, got, tc.want)
+		}
+	}
+
+	role, source := daemonDerivedRole(systemd.UnitStatus{}, "")
+	if role != "unknown" || source != "Role" {
+		t.Fatalf("daemonDerivedRole(empty) = %q, %q; want unknown, Role", role, source)
+	}
+	if isDaemonStartConfirmationScreen(configuratorScreenMode) {
+		t.Fatal("mode screen must not be treated as a daemon confirmation")
+	}
+	if got := daemonSectionDivider(20); len(got) != 20 {
+		t.Fatalf("daemonSectionDivider(20) length = %d, want 20", len(got))
+	}
+	if got := daemonMenuCursorAfterRefresh(nil, "", 4); got != 0 {
+		t.Fatalf("empty menu cursor = %d, want 0", got)
+	}
+	if got := daemonMenuCursorAfterRefresh([]string{"start"}, "", -1); got != 0 {
+		t.Fatalf("negative fallback cursor = %d, want 0", got)
+	}
 }
 
 func TestMainTabView_DaemonConfirmScreens_ShowExpectedLabels(t *testing.T) {

@@ -288,7 +288,7 @@ func TestRuntimeDashboard_EscOnDataplane_ConfirmReconfigureQuits(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected quit command when confirming reconfigure")
 	}
-	if !updated.reconfigureRequested {
+	if !updated.ReconfigureRequested() {
 		t.Fatal("expected reconfigureRequested=true when confirming reconfigure")
 	}
 	if !s.Current().AutoConnect {

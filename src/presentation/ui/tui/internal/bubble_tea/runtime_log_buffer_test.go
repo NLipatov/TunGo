@@ -114,3 +114,18 @@ func TestRuntimeLogBuffer_WriteSeparator(t *testing.T) {
 		t.Fatalf("expected separator to end with ') ---', got %q", lines[2])
 	}
 }
+
+func TestRuntimeLogBuffer_ChangesSignalsWrite(t *testing.T) {
+	b := NewRuntimeLogBuffer(8)
+	changes := b.Changes()
+
+	if _, err := b.Write([]byte("line\n")); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+
+	select {
+	case <-changes:
+	default:
+		t.Fatal("expected Changes channel to signal a write")
+	}
+}
