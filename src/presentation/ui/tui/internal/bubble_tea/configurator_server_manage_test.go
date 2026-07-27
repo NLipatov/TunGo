@@ -13,11 +13,11 @@ import (
 func newSessionModelForServerManageTests(
 	t *testing.T,
 	control *testConfigurationControl,
-) configuratorSessionModel {
+) Configurator {
 	t.Helper()
-	model, err := newConfiguratorSessionModel(testSessionOptions(control), testSettings())
+	model, err := NewConfigurator(testConfiguratorOptions(control), testSettings())
 	if err != nil {
-		t.Fatalf("newConfiguratorSessionModel error: %v", err)
+		t.Fatalf("NewConfigurator error: %v", err)
 	}
 	model.screen = configuratorScreenServerManage
 	model.server.managePeers = append([]appConfiguration.ServerPeer(nil), control.peers...)
@@ -44,7 +44,7 @@ func TestServerManage_DeleteFlow_ConfirmRemovesPeer(t *testing.T) {
 	model := newSessionModelForServerManageTests(t, manager)
 
 	nextModel, _ := model.updateServerManageScreen(keyRunes('d'))
-	state, ok := nextModel.(configuratorSessionModel)
+	state, ok := nextModel.(Configurator)
 	if !ok {
 		t.Fatalf("unexpected model type: %T", nextModel)
 	}
@@ -53,7 +53,7 @@ func TestServerManage_DeleteFlow_ConfirmRemovesPeer(t *testing.T) {
 	}
 
 	nextModel, _ = state.updateServerDeleteConfirmScreen(keyNamed(tea.KeyEnter))
-	state, ok = nextModel.(configuratorSessionModel)
+	state, ok = nextModel.(Configurator)
 	if !ok {
 		t.Fatalf("unexpected model type after confirm: %T", nextModel)
 	}
@@ -80,11 +80,11 @@ func TestServerManage_DeleteFlow_CancelKeepsPeer(t *testing.T) {
 	model := newSessionModelForServerManageTests(t, manager)
 
 	nextModel, _ := model.updateServerManageScreen(keyRunes('d'))
-	state := nextModel.(configuratorSessionModel)
+	state := nextModel.(Configurator)
 	nextModel, _ = state.updateServerDeleteConfirmScreen(keyNamed(tea.KeyDown))
-	state = nextModel.(configuratorSessionModel)
+	state = nextModel.(Configurator)
 	nextModel, _ = state.updateServerDeleteConfirmScreen(keyNamed(tea.KeyEnter))
-	state = nextModel.(configuratorSessionModel)
+	state = nextModel.(Configurator)
 
 	if manager.removeCalls != 0 {
 		t.Fatalf("expected no removal call on cancel, got %d", manager.removeCalls)
@@ -106,9 +106,9 @@ func TestServerManage_DeleteFlow_LastPeerReturnsToServerMenu(t *testing.T) {
 	model := newSessionModelForServerManageTests(t, manager)
 
 	nextModel, _ := model.updateServerManageScreen(keyRunes('d'))
-	state := nextModel.(configuratorSessionModel)
+	state := nextModel.(Configurator)
 	nextModel, _ = state.updateServerDeleteConfirmScreen(keyNamed(tea.KeyEnter))
-	state = nextModel.(configuratorSessionModel)
+	state = nextModel.(Configurator)
 
 	if state.screen != configuratorScreenServerSelect {
 		t.Fatalf("expected return to server select when list is empty, got %v", state.screen)
@@ -128,7 +128,7 @@ func TestServerManage_ToggleEnabled_Error_ShowsNotice(t *testing.T) {
 	model := newSessionModelForServerManageTests(t, manager)
 
 	nextModel, _ := model.updateServerManageScreen(keyNamed(tea.KeyEnter))
-	state := nextModel.(configuratorSessionModel)
+	state := nextModel.(Configurator)
 
 	if state.screen != configuratorScreenServerSelect {
 		t.Fatalf("expected return to server select on error, got %v", state.screen)
@@ -149,7 +149,7 @@ func TestServerManage_ToggleEnabled_ListError_Exits(t *testing.T) {
 	manager.listPeersErr = errors.New("list failed")
 
 	nextModel, cmd := model.updateServerManageScreen(keyNamed(tea.KeyEnter))
-	state := nextModel.(configuratorSessionModel)
+	state := nextModel.(Configurator)
 
 	if !state.done {
 		t.Fatal("expected done=true on list error")
@@ -172,7 +172,7 @@ func TestServerManage_DeleteNoEmptyPeers(t *testing.T) {
 
 	// 'd' with no peers should be a no-op.
 	nextModel, _ := model.updateServerManageScreen(keyRunes('d'))
-	state := nextModel.(configuratorSessionModel)
+	state := nextModel.(Configurator)
 	if state.screen != configuratorScreenServerManage {
 		t.Fatalf("expected to stay on manage screen, got %v", state.screen)
 	}
@@ -188,7 +188,7 @@ func TestServerDeleteConfirm_EscRestoresCursorNoPeers(t *testing.T) {
 	model.server.deleteCursor = 0
 
 	nextModel, _ := model.updateServerDeleteConfirmScreen(keyNamed(tea.KeyEsc))
-	state := nextModel.(configuratorSessionModel)
+	state := nextModel.(Configurator)
 	if state.screen != configuratorScreenServerManage {
 		t.Fatalf("expected manage screen, got %v", state.screen)
 	}
@@ -210,7 +210,7 @@ func TestServerDeleteConfirm_RemoveError_ShowsNotice(t *testing.T) {
 	model.cursor = 0
 
 	nextModel, _ := model.updateServerDeleteConfirmScreen(keyNamed(tea.KeyEnter))
-	state := nextModel.(configuratorSessionModel)
+	state := nextModel.(Configurator)
 	if state.screen != configuratorScreenServerManage {
 		t.Fatalf("expected manage screen, got %v", state.screen)
 	}
@@ -236,7 +236,7 @@ func TestServerDeleteConfirm_ListError_Exits(t *testing.T) {
 	manager.listPeersErr = errors.New("list failed after delete")
 
 	nextModel, cmd := model.updateServerDeleteConfirmScreen(keyNamed(tea.KeyEnter))
-	state := nextModel.(configuratorSessionModel)
+	state := nextModel.(Configurator)
 	if !state.done {
 		t.Fatal("expected done=true on list error after delete")
 	}
@@ -259,7 +259,7 @@ func TestServerDeleteConfirm_CancelWithPeers_RestoresCursor(t *testing.T) {
 	model.cursor = 1 // cursor on "Cancel"
 
 	nextModel, _ := model.updateServerDeleteConfirmScreen(keyNamed(tea.KeyEnter))
-	state := nextModel.(configuratorSessionModel)
+	state := nextModel.(Configurator)
 	if state.screen != configuratorScreenServerManage {
 		t.Fatalf("expected manage screen, got %v", state.screen)
 	}

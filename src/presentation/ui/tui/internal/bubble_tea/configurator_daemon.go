@@ -13,7 +13,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-func (m configuratorSessionModel) updateDaemonManageScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m Configurator) updateDaemonManageScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		return m.leaveDaemonManageScreen(), nil
@@ -28,19 +28,19 @@ func (m configuratorSessionModel) updateDaemonManageScreen(msg tea.KeyPressMsg) 
 	selectedCursor := m.cursor
 	var err error
 	switch selected {
-	case sessionDaemonSetupClient:
+	case daemonSetupClientLabel:
 		m, err = m.applyDaemonSetup(runtime.ModeClient, false)
 		if err != nil {
 			m.notice = err.Error()
 			return m, nil
 		}
-	case sessionDaemonSetupServer:
+	case daemonSetupServerLabel:
 		m, err = m.applyDaemonSetup(runtime.ModeServer, false)
 		if err != nil {
 			m.notice = err.Error()
 			return m, nil
 		}
-	case sessionDaemonReconfClient:
+	case daemonReconfigureClientLabel:
 		if daemonStateBlocksRuntimeStart(string(m.daemon.status.ActiveState)) {
 			m.pendingDaemonMode = runtime.ModeClient
 			m.cursor = 0
@@ -52,7 +52,7 @@ func (m configuratorSessionModel) updateDaemonManageScreen(msg tea.KeyPressMsg) 
 			m.notice = err.Error()
 			return m, nil
 		}
-	case sessionDaemonReconfServer:
+	case daemonReconfigureServerLabel:
 		if daemonStateBlocksRuntimeStart(string(m.daemon.status.ActiveState)) {
 			m.pendingDaemonMode = runtime.ModeServer
 			m.cursor = 0
@@ -64,7 +64,7 @@ func (m configuratorSessionModel) updateDaemonManageScreen(msg tea.KeyPressMsg) 
 			m.notice = err.Error()
 			return m, nil
 		}
-	case sessionDaemonStart:
+	case daemonStartLabel:
 		if m.options.Daemon == nil {
 			m.notice = "Daemon start is unavailable."
 			return m, nil
@@ -74,7 +74,7 @@ func (m configuratorSessionModel) updateDaemonManageScreen(msg tea.KeyPressMsg) 
 			return m, nil
 		}
 		m.notice = ""
-	case sessionDaemonStop:
+	case daemonStopLabel:
 		if m.options.Daemon == nil {
 			m.notice = "Daemon stop is unavailable."
 			return m, nil
@@ -84,7 +84,7 @@ func (m configuratorSessionModel) updateDaemonManageScreen(msg tea.KeyPressMsg) 
 			return m, nil
 		}
 		m.notice = ""
-	case sessionDaemonEnable:
+	case daemonEnableLabel:
 		if m.options.Daemon == nil {
 			m.notice = "Daemon enable is unavailable."
 			return m, nil
@@ -94,7 +94,7 @@ func (m configuratorSessionModel) updateDaemonManageScreen(msg tea.KeyPressMsg) 
 			return m, nil
 		}
 		m.notice = ""
-	case sessionDaemonDisable:
+	case daemonDisableLabel:
 		if m.options.Daemon == nil {
 			m.notice = "Daemon disable is unavailable."
 			return m, nil
@@ -104,7 +104,7 @@ func (m configuratorSessionModel) updateDaemonManageScreen(msg tea.KeyPressMsg) 
 			return m, nil
 		}
 		m.notice = ""
-	case sessionDaemonDelete:
+	case daemonDeleteLabel:
 		if m.options.Daemon == nil {
 			m.notice = "Daemon remove is unavailable."
 			return m, nil
@@ -123,7 +123,7 @@ func (m configuratorSessionModel) updateDaemonManageScreen(msg tea.KeyPressMsg) 
 	return m, nil
 }
 
-func (m configuratorSessionModel) updateDaemonReconfigureConfirmScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m Configurator) updateDaemonReconfigureConfirmScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.screen = configuratorScreenDaemonManage
@@ -133,13 +133,13 @@ func (m configuratorSessionModel) updateDaemonReconfigureConfirmScreen(msg tea.K
 		return m, nil
 	}
 
-	options := []string{sessionDaemonConfirmReconfigureNow, sessionCancel}
+	options := []string{daemonConfirmReconfigureNowLabel, cancelLabel}
 	m.updateCursor(msg, len(options))
 	if msg.String() != "enter" {
 		return m, nil
 	}
 
-	if options[m.cursor] == sessionCancel {
+	if options[m.cursor] == cancelLabel {
 		m.screen = configuratorScreenDaemonManage
 		m.cursor = 0
 		m.pendingDaemonMode = 0
@@ -160,7 +160,7 @@ func (m configuratorSessionModel) updateDaemonReconfigureConfirmScreen(msg tea.K
 	return updated, nil
 }
 
-func (m configuratorSessionModel) applyDaemonSetup(targetMode runtime.Mode, restartRunning bool) (configuratorSessionModel, error) {
+func (m Configurator) applyDaemonSetup(targetMode runtime.Mode, restartRunning bool) (Configurator, error) {
 	if m.options.Daemon == nil {
 		return m, errors.New("daemon setup is unavailable")
 	}
@@ -189,21 +189,21 @@ func (m configuratorSessionModel) applyDaemonSetup(targetMode runtime.Mode, rest
 	return m, nil
 }
 
-func (m configuratorSessionModel) updateDaemonActiveConfirmScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m Configurator) updateDaemonActiveConfirmScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m = m.cancelPendingDaemonStart("Start cancelled.")
 		return m, nil
 	}
 
-	options := []string{sessionStopDaemonContinue, sessionCancel}
+	options := []string{stopDaemonContinueLabel, cancelLabel}
 	m.updateCursor(msg, len(options))
 	if msg.String() != "enter" {
 		return m, nil
 	}
 
 	selected := options[m.cursor]
-	if selected == sessionCancel {
+	if selected == cancelLabel {
 		m = m.cancelPendingDaemonStart("Start cancelled.")
 		return m, nil
 	}
@@ -221,14 +221,14 @@ func (m configuratorSessionModel) updateDaemonActiveConfirmScreen(msg tea.KeyPre
 	return m.completePendingDaemonStart("Daemon stopped. Starting selected mode.")
 }
 
-func (m configuratorSessionModel) updateDaemonCheckErrorConfirmScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m Configurator) updateDaemonCheckErrorConfirmScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m = m.cancelPendingDaemonStart("Start cancelled.")
 		return m, nil
 	}
 
-	options := []string{sessionRetryDaemonCheck, sessionStartAnywayUnsafe, sessionCancel}
+	options := []string{retryDaemonCheckLabel, startAnywayUnsafeLabel, cancelLabel}
 	m.updateCursor(msg, len(options))
 	if msg.String() != "enter" {
 		return m, nil
@@ -236,12 +236,12 @@ func (m configuratorSessionModel) updateDaemonCheckErrorConfirmScreen(msg tea.Ke
 
 	selected := options[m.cursor]
 	switch selected {
-	case sessionCancel:
+	case cancelLabel:
 		m = m.cancelPendingDaemonStart("Start cancelled.")
 		return m, nil
-	case sessionStartAnywayUnsafe:
+	case startAnywayUnsafeLabel:
 		return m.completePendingDaemonStart("Daemon status check failed. Starting selected mode without daemon guard.")
-	case sessionRetryDaemonCheck:
+	case retryDaemonCheckLabel:
 		targetMode := m.pendingStartMode
 		returnScreen := m.pendingStartScreen
 		pendingClientConfig := m.pendingClientConfig
@@ -258,7 +258,7 @@ func (m configuratorSessionModel) updateDaemonCheckErrorConfirmScreen(msg tea.Ke
 	}
 }
 
-func (m configuratorSessionModel) completePendingDaemonStart(notice string) (configuratorSessionModel, tea.Cmd) {
+func (m Configurator) completePendingDaemonStart(notice string) (Configurator, tea.Cmd) {
 	targetMode := m.pendingStartMode
 	pendingClientConfig := m.pendingClientConfig
 	m = m.clearPendingDaemonStart()
@@ -271,7 +271,7 @@ func (m configuratorSessionModel) completePendingDaemonStart(notice string) (con
 	return m, tea.Quit
 }
 
-func (m configuratorSessionModel) startModeWithDaemonGuard(targetMode runtime.Mode, returnScreen configuratorScreen, preserveNotice bool) configuratorSessionModel {
+func (m Configurator) startModeWithDaemonGuard(targetMode runtime.Mode, returnScreen configuratorScreen, preserveNotice bool) Configurator {
 	m = m.clearPendingDaemonStart()
 
 	if m.options.Daemon == nil {
@@ -309,7 +309,7 @@ func (m configuratorSessionModel) startModeWithDaemonGuard(targetMode runtime.Mo
 	return m
 }
 
-func (m configuratorSessionModel) cancelPendingDaemonStart(notice string) configuratorSessionModel {
+func (m Configurator) cancelPendingDaemonStart(notice string) Configurator {
 	returnScreen := m.pendingStartScreen
 	m = m.clearPendingDaemonStart()
 	m.notice = notice
@@ -318,7 +318,7 @@ func (m configuratorSessionModel) cancelPendingDaemonStart(notice string) config
 	return m
 }
 
-func (m configuratorSessionModel) clearPendingDaemonStart() configuratorSessionModel {
+func (m Configurator) clearPendingDaemonStart() Configurator {
 	m.pendingStartMode = 0
 	m.pendingStartScreen = configuratorScreenMode
 	m.pendingClientConfig = ""
@@ -334,7 +334,7 @@ func isDaemonStartConfirmationScreen(screen configuratorScreen) bool {
 	}
 }
 
-func (m *configuratorSessionModel) refreshDaemonStatus() {
+func (m *Configurator) refreshDaemonStatus() {
 	if m.options.Daemon == nil {
 		m.daemon.statusErr = errors.New("daemon management is unavailable")
 		m.daemon.status = systemd.UnitStatus{}
@@ -357,43 +357,43 @@ func (m *configuratorSessionModel) refreshDaemonStatus() {
 	m.daemon.updatedAt = time.Now()
 }
 
-func (m configuratorSessionModel) daemonMenuOptions(status systemd.UnitStatus) []string {
+func (m Configurator) daemonMenuOptions(status systemd.UnitStatus) []string {
 	if m.options.Daemon == nil {
 		return nil
 	}
 	options := make([]string, 0, 7)
 	if !status.Installed {
-		options = append(options, sessionDaemonSetupClient)
+		options = append(options, daemonSetupClientLabel)
 		if m.serverSupported {
-			options = append(options, sessionDaemonSetupServer)
+			options = append(options, daemonSetupServerLabel)
 		}
 		return options
 	}
 
 	activeBlocksStart := daemonStateBlocksRuntimeStart(string(status.ActiveState))
 	if activeBlocksStart {
-		options = append(options, sessionDaemonStop)
+		options = append(options, daemonStopLabel)
 	}
 	if !activeBlocksStart && daemonStateAllowsStart(string(status.ActiveState)) {
-		options = append(options, sessionDaemonStart)
+		options = append(options, daemonStartLabel)
 	}
 	switch normalizeDaemonStateField(string(status.UnitFileState)) {
 	case "enabled":
-		options = append(options, sessionDaemonDisable)
+		options = append(options, daemonDisableLabel)
 	case "disabled":
-		options = append(options, sessionDaemonEnable)
+		options = append(options, daemonEnableLabel)
 	}
-	options = append(options, sessionDaemonReconfClient)
+	options = append(options, daemonReconfigureClientLabel)
 	if m.serverSupported {
-		options = append(options, sessionDaemonReconfServer)
+		options = append(options, daemonReconfigureServerLabel)
 	}
 	if status.Managed {
-		options = append(options, sessionDaemonDelete)
+		options = append(options, daemonDeleteLabel)
 	}
 	return options
 }
 
-func (m configuratorSessionModel) daemonNotice() string {
+func (m Configurator) daemonNotice() string {
 	statusLine := m.daemonStatusLine()
 	notice := strings.TrimSpace(m.notice)
 	if notice == "" {
@@ -402,7 +402,7 @@ func (m configuratorSessionModel) daemonNotice() string {
 	return statusLine + "\n" + notice
 }
 
-func (m configuratorSessionModel) daemonStatusLine() string {
+func (m Configurator) daemonStatusLine() string {
 	if m.daemon.statusErr != nil {
 		return "Status error: " + m.daemon.statusErr.Error()
 	}
@@ -490,10 +490,10 @@ func daemonStateAllowsStart(activeState string) bool {
 	}
 }
 
-func (m configuratorSessionModel) leaveDaemonManageScreen() configuratorSessionModel {
+func (m Configurator) leaveDaemonManageScreen() Configurator {
 	m.tab = configuratorTabMain
 	m.screen = configuratorScreenMode
-	if idx := slices.Index(m.modeOptions, sessionModeDaemon); idx >= 0 {
+	if idx := slices.Index(m.modeOptions, modeDaemonLabel); idx >= 0 {
 		m.cursor = idx
 	} else {
 		m.cursor = 0
@@ -503,7 +503,7 @@ func (m configuratorSessionModel) leaveDaemonManageScreen() configuratorSessionM
 	return m
 }
 
-func (m configuratorSessionModel) renderDaemonManageScreen() string {
+func (m Configurator) renderDaemonManageScreen() string {
 	styles := resolveUIStyles(m.preferences)
 	contentWidth := 0
 	if m.width > 0 {

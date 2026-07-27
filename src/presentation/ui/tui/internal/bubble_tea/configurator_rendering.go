@@ -8,7 +8,7 @@ import (
 	"tungo/application/runtime"
 )
 
-func (m configuratorSessionModel) mainTabView() string {
+func (m Configurator) mainTabView() string {
 	switch m.screen {
 	case configuratorScreenMode:
 		return m.renderSelectionScreen(
@@ -81,9 +81,9 @@ func (m configuratorSessionModel) mainTabView() string {
 			styles,
 		)
 	case configuratorScreenClientInvalid:
-		options := []string{sessionInvalidOK}
+		options := []string{invalidOKLabel}
 		if m.client.invalidAllowDelete {
-			options = []string{sessionInvalidDelete, sessionInvalidOK}
+			options = []string{invalidDeleteLabel, invalidOKLabel}
 		}
 		subtitle := "Configuration is invalid: " + summarizeInvalidConfigurationError(m.client.invalidErr)
 		return m.renderSelectionScreen(
@@ -117,7 +117,7 @@ func (m configuratorSessionModel) mainTabView() string {
 				serverPeerDisplayName(m.server.deletePeer),
 			),
 			"This action removes client access from server configuration.",
-			[]string{sessionServerDeleteConfirm, sessionCancel},
+			[]string{serverDeleteConfirmLabel, cancelLabel},
 			m.cursor,
 			"up/k down/j move | Enter confirm | Tab switch tabs | Esc back | ctrl+c exit",
 		)
@@ -134,7 +134,7 @@ func (m configuratorSessionModel) mainTabView() string {
 		return m.renderSelectionScreen(
 			"Daemon is active",
 			fmt.Sprintf("Applying %s daemon setup requires restart. Continue now?", roleLabel),
-			[]string{sessionDaemonConfirmReconfigureNow, sessionCancel},
+			[]string{daemonConfirmReconfigureNowLabel, cancelLabel},
 			m.cursor,
 			"up/k down/j move | Enter select | Tab switch tabs | Esc back | ctrl+c exit",
 		)
@@ -153,7 +153,7 @@ func (m configuratorSessionModel) mainTabView() string {
 		return m.renderSelectionScreen(
 			"Active daemon detected",
 			notice,
-			[]string{sessionStopDaemonContinue, sessionCancel},
+			[]string{stopDaemonContinueLabel, cancelLabel},
 			m.cursor,
 			"up/k down/j move | Enter select | Tab switch tabs | Esc back | ctrl+c exit",
 		)
@@ -165,7 +165,7 @@ func (m configuratorSessionModel) mainTabView() string {
 		return m.renderSelectionScreen(
 			"Cannot verify daemon status",
 			subtitle,
-			[]string{sessionRetryDaemonCheck, sessionStartAnywayUnsafe, sessionCancel},
+			[]string{retryDaemonCheckLabel, startAnywayUnsafeLabel, cancelLabel},
 			m.cursor,
 			"up/k down/j move | Enter select | Tab switch tabs | Esc back | ctrl+c exit",
 		)
@@ -174,7 +174,7 @@ func (m configuratorSessionModel) mainTabView() string {
 	}
 }
 
-func (m configuratorSessionModel) renderSelectionScreen(
+func (m Configurator) renderSelectionScreen(
 	screenTitle string,
 	notice string,
 	options []string,
@@ -205,14 +205,14 @@ func (m configuratorSessionModel) renderSelectionScreen(
 	)
 }
 
-func (m configuratorSessionModel) inputContainerWidth() int {
+func (m Configurator) inputContainerWidth() int {
 	if m.width > 0 {
 		return maxInt(1, contentWidthForTerminal(m.width))
 	}
 	return 40 + resolveUIStyles(m.preferences).inputFrame.GetHorizontalFrameSize()
 }
 
-func (m configuratorSessionModel) settingsTabView() string {
+func (m Configurator) settingsTabView() string {
 	styles := resolveUIStyles(m.preferences)
 	contentWidth := 0
 	if m.width > 0 {
@@ -231,7 +231,7 @@ func (m configuratorSessionModel) settingsTabView() string {
 	)
 }
 
-func (m configuratorSessionModel) logsTabView() string {
+func (m Configurator) logsTabView() string {
 	styles := resolveUIStyles(m.preferences)
 	body := []string{m.logs.view()}
 	return renderScreen(
@@ -246,7 +246,7 @@ func (m configuratorSessionModel) logsTabView() string {
 	)
 }
 
-func (m configuratorSessionModel) tabsLine(styles uiStyles) string {
+func (m Configurator) tabsLine(styles uiStyles) string {
 	contentWidth := contentWidthForTerminal(m.width)
-	return renderTabsLine(productLabel(), "configurator", selectorTabs[:], m.tab, contentWidth, m.preferences.Theme, styles)
+	return renderTabsLine(productLabel(), selectorTabs[:], m.tab, contentWidth, styles)
 }

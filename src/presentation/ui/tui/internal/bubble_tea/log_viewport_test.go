@@ -231,7 +231,6 @@ func TestLogViewportStopWait(t *testing.T) {
 func TestLogViewportUpdateKeys(t *testing.T) {
 	lv := newLogViewport()
 	lv.ensure(80, 24, UIPreferences{}, "", "")
-	keys := defaultSelectorKeyMap()
 
 	tests := []struct {
 		name string
@@ -247,7 +246,7 @@ func TestLogViewportUpdateKeys(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			msg := tea.KeyPressMsg(tea.Key{Code: tt.code})
-			_ = lv.updateKeys(msg, keys)
+			_ = lv.updateKeys(msg)
 		})
 	}
 }
@@ -256,10 +255,9 @@ func TestLogViewportUpdateKeys_ScrollUp(t *testing.T) {
 	lv := newLogViewport()
 	lv.ensure(80, 24, UIPreferences{}, "", "")
 	lv.follow = true
-	keys := defaultSelectorKeyMap()
 
 	msg := tea.KeyPressMsg(tea.Key{Code: 'k'})
-	_ = lv.updateKeys(msg, keys)
+	_ = lv.updateKeys(msg)
 
 	if lv.follow {
 		t.Error("expected follow to be false after scroll up")
@@ -270,25 +268,23 @@ func TestLogViewportUpdateKeys_ScrollDown(t *testing.T) {
 	lv := newLogViewport()
 	lv.ensure(80, 24, UIPreferences{}, "", "")
 	lv.follow = false
-	keys := defaultSelectorKeyMap()
 
 	msg := tea.KeyPressMsg(tea.Key{Code: 'j'})
-	_ = lv.updateKeys(msg, keys)
+	_ = lv.updateKeys(msg)
 }
 
 func TestLogViewportUpdateKeys_SpaceTogglesFollow(t *testing.T) {
 	lv := newLogViewport()
 	lv.ensure(80, 24, UIPreferences{}, "", "")
 	lv.follow = true
-	keys := defaultSelectorKeyMap()
 
 	msg := tea.KeyPressMsg(tea.Key{Code: tea.KeySpace})
-	_ = lv.updateKeys(msg, keys)
+	_ = lv.updateKeys(msg)
 	if lv.follow {
 		t.Error("expected follow to be false after space toggle")
 	}
 
-	_ = lv.updateKeys(msg, keys)
+	_ = lv.updateKeys(msg)
 	if !lv.follow {
 		t.Error("expected follow to be true after second space toggle")
 	}
@@ -314,10 +310,9 @@ func TestLogViewportPageUpSetsFollowFalse(t *testing.T) {
 	lv := newLogViewport()
 	lv.ensure(80, 24, UIPreferences{}, "", "")
 	lv.follow = true
-	keys := defaultSelectorKeyMap()
 
 	msg := tea.KeyPressMsg(tea.Key{Code: tea.KeyPgUp})
-	_ = lv.updateKeys(msg, keys)
+	_ = lv.updateKeys(msg)
 
 	if lv.follow {
 		t.Error("expected follow to be false after PageUp")
@@ -328,10 +323,9 @@ func TestLogViewportHomeSetsFollowFalse(t *testing.T) {
 	lv := newLogViewport()
 	lv.ensure(80, 24, UIPreferences{}, "", "")
 	lv.follow = true
-	keys := defaultSelectorKeyMap()
 
 	msg := tea.KeyPressMsg(tea.Key{Code: tea.KeyHome})
-	_ = lv.updateKeys(msg, keys)
+	_ = lv.updateKeys(msg)
 
 	if lv.follow {
 		t.Error("expected follow to be false after Home")
@@ -342,10 +336,9 @@ func TestLogViewportEndSetsFollowTrue(t *testing.T) {
 	lv := newLogViewport()
 	lv.ensure(80, 24, UIPreferences{}, "", "")
 	lv.follow = false
-	keys := defaultSelectorKeyMap()
 
 	msg := tea.KeyPressMsg(tea.Key{Code: tea.KeyEnd})
-	_ = lv.updateKeys(msg, keys)
+	_ = lv.updateKeys(msg)
 
 	if !lv.follow {
 		t.Error("expected follow to be true after End")

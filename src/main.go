@@ -107,10 +107,7 @@ func runTUI(ctx context.Context) error {
 	trafficstats.SetGlobal(trafficCollector)
 	go trafficCollector.Start(ctx)
 
-	defer func() {
-		tuiUI.Close()
-		trafficstats.SetGlobal(nil)
-	}()
+	defer trafficstats.SetGlobal(nil)
 
 	return tuiUI.Run(ctx)
 }

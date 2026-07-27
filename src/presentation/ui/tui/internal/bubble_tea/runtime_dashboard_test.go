@@ -84,7 +84,7 @@ func TestRuntimeDashboard_TabSwitch_DoesNotRequestClearScreenCmd(t *testing.T) {
 
 func TestRuntimeDashboard_TogglesFooterInSettings(t *testing.T) {
 	s := testSettings()
-	p := s.Preferences()
+	p := s.Current()
 	p.Theme = ThemeDark
 	p.Language = "en"
 	p.StatsUnits = StatsUnitsBiBytes
@@ -102,7 +102,7 @@ func TestRuntimeDashboard_TogglesFooterInSettings(t *testing.T) {
 	m6, _ := m5.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyRight}) // toggle
 	toggled := m6.(RuntimeDashboard)
 
-	if s.Preferences().ShowFooter {
+	if s.Current().ShowFooter {
 		t.Fatalf("expected global ShowFooter to be toggled off")
 	}
 	if toggled.preferences.ShowFooter {
@@ -112,7 +112,7 @@ func TestRuntimeDashboard_TogglesFooterInSettings(t *testing.T) {
 
 func TestRuntimeDashboard_TogglesStatsUnitsInSettings(t *testing.T) {
 	s := testSettings()
-	p := s.Preferences()
+	p := s.Current()
 	p.Theme = ThemeDark
 	p.Language = "en"
 	p.StatsUnits = StatsUnitsBiBytes
@@ -127,7 +127,7 @@ func TestRuntimeDashboard_TogglesStatsUnitsInSettings(t *testing.T) {
 	m3, _ := m2.(RuntimeDashboard).Update(tea.KeyPressMsg{Code: tea.KeyRight}) // toggle
 	toggled := m3.(RuntimeDashboard)
 
-	if s.Preferences().StatsUnits != StatsUnitsBytes {
+	if s.Current().StatsUnits != StatsUnitsBytes {
 		t.Fatalf("expected global StatsUnits to be toggled to bytes")
 	}
 	if toggled.preferences.StatsUnits != StatsUnitsBytes {
@@ -228,9 +228,6 @@ func TestRuntimeDashboard_Update_WindowAndContextDoneAndQuit(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected quit cmd on ctrl+c")
 	}
-	if !updatedModel.(RuntimeDashboard).exitRequested {
-		t.Fatal("expected exitRequested flag on ctrl+c")
-	}
 }
 
 func TestRuntimeDashboard_Update_IgnoresNonSettingsNavigationKeys(t *testing.T) {
@@ -266,14 +263,14 @@ func TestRuntimeDashboard_EscOnDataplane_OpensConfirm_StayCancels(t *testing.T) 
 	if updated.confirmOpen {
 		t.Fatal("expected confirm to close after selecting Stay")
 	}
-	if updated.exitRequested || updated.reconfigureRequested {
-		t.Fatal("did not expect exit or reconfigure flags on Stay")
+	if updated.reconfigureRequested {
+		t.Fatal("did not expect reconfigure flag on Stay")
 	}
 }
 
 func TestRuntimeDashboard_EscOnDataplane_ConfirmReconfigureQuits(t *testing.T) {
 	s := testSettings()
-	p := s.Preferences()
+	p := s.Current()
 	p.AutoConnect = true
 	s.update(p)
 
@@ -294,17 +291,14 @@ func TestRuntimeDashboard_EscOnDataplane_ConfirmReconfigureQuits(t *testing.T) {
 	if !updated.reconfigureRequested {
 		t.Fatal("expected reconfigureRequested=true when confirming reconfigure")
 	}
-	if updated.exitRequested {
-		t.Fatal("did not expect exitRequested=true when confirming reconfigure")
-	}
-	if !s.Preferences().AutoConnect {
+	if !s.Current().AutoConnect {
 		t.Fatal("expected runtime dashboard not to mutate AutoConnect directly on stop")
 	}
 }
 
 func TestRuntimeDashboard_EscOnDataplane_StopLabelMentionsAutoconnectDisable(t *testing.T) {
 	s := testSettings()
-	p := s.Preferences()
+	p := s.Current()
 	p.AutoConnect = true
 	s.update(p)
 
@@ -365,7 +359,7 @@ func TestRuntimeDashboard_EscOnSettingsAndLogs_NavigatesBack(t *testing.T) {
 
 func TestRuntimeDashboard_SettingsNavigationAndMutation(t *testing.T) {
 	s := testSettings()
-	p := s.Preferences()
+	p := s.Current()
 	p.Theme = ThemeLight
 	p.Language = "en"
 	p.StatsUnits = StatsUnitsBiBytes
@@ -407,24 +401,24 @@ func TestRuntimeDashboard_SettingsNavigationAndMutation(t *testing.T) {
 
 	// Theme row: Left/Right.
 	m.settingsCursor = settingsThemeRow
-	m.preferences = s.Preferences()
+	m.preferences = s.Current()
 	updatedModel, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	m = updatedModel.(RuntimeDashboard)
-	if s.Preferences().Theme != ThemeDark {
-		t.Fatalf("expected theme dark after right, got %q", s.Preferences().Theme)
+	if s.Current().Theme != ThemeDark {
+		t.Fatalf("expected theme dark after right, got %q", s.Current().Theme)
 	}
 	updatedModel, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
 	m = updatedModel.(RuntimeDashboard)
-	if s.Preferences().Theme != ThemeLight {
-		t.Fatalf("expected theme light after left, got %q", s.Preferences().Theme)
+	if s.Current().Theme != ThemeLight {
+		t.Fatalf("expected theme light after left, got %q", s.Current().Theme)
 	}
 
 	// Stats units row: Enter toggles.
 	m.settingsCursor = settingsStatsUnitsRow
 	updatedModel, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = updatedModel.(RuntimeDashboard)
-	if s.Preferences().StatsUnits != StatsUnitsBytes {
-		t.Fatalf("expected stats units bytes, got %q", s.Preferences().StatsUnits)
+	if s.Current().StatsUnits != StatsUnitsBytes {
+		t.Fatalf("expected stats units bytes, got %q", s.Current().StatsUnits)
 	}
 	if m.preferences.StatsUnits != StatsUnitsBytes {
 		t.Fatalf("expected model stats units bytes, got %q", m.preferences.StatsUnits)
@@ -434,7 +428,7 @@ func TestRuntimeDashboard_SettingsNavigationAndMutation(t *testing.T) {
 	m.settingsCursor = settingsDataplaneStatsRow
 	updatedModel, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = updatedModel.(RuntimeDashboard)
-	if s.Preferences().ShowDataplaneStats {
+	if s.Current().ShowDataplaneStats {
 		t.Fatalf("expected dataplane stats off after toggle")
 	}
 	if m.preferences.ShowDataplaneStats {
@@ -445,7 +439,7 @@ func TestRuntimeDashboard_SettingsNavigationAndMutation(t *testing.T) {
 	m.settingsCursor = settingsDataplaneGraphRow
 	updatedModel, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = updatedModel.(RuntimeDashboard)
-	if s.Preferences().ShowDataplaneGraph {
+	if s.Current().ShowDataplaneGraph {
 		t.Fatalf("expected dataplane graph off after toggle")
 	}
 	if m.preferences.ShowDataplaneGraph {
@@ -456,7 +450,7 @@ func TestRuntimeDashboard_SettingsNavigationAndMutation(t *testing.T) {
 	m.settingsCursor = settingsFooterRow
 	updatedModel, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = updatedModel.(RuntimeDashboard)
-	if s.Preferences().ShowFooter {
+	if s.Current().ShowFooter {
 		t.Fatalf("expected footer off after toggle")
 	}
 	if m.preferences.ShowFooter {
@@ -474,7 +468,7 @@ func TestRuntimeDashboard_SettingsNavigationAndMutation(t *testing.T) {
 
 func TestRuntimeDashboard_MainView_ServerAndFooterOff(t *testing.T) {
 	s := testSettings()
-	p := s.Preferences()
+	p := s.Current()
 	p.ShowDataplaneStats = true
 	p.ShowDataplaneGraph = true
 	p.ShowFooter = false
@@ -629,7 +623,7 @@ func TestFormatRuntimeProtocolHost_EmptyHost(t *testing.T) {
 
 func TestRuntimeDashboard_MainView_CanHideStatsAndGraph(t *testing.T) {
 	s := testSettings()
-	p := s.Preferences()
+	p := s.Current()
 	p.ShowDataplaneStats = false
 	p.ShowDataplaneGraph = false
 	p.ShowFooter = true
@@ -659,7 +653,7 @@ func TestRuntimeDashboard_RefreshLogsNilFeed(t *testing.T) {
 
 func TestWaitForRuntimeContextDone(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	cmd := waitForRuntimeContextDone(ctx, 0)
+	cmd := waitForRuntimeContextDone(ctx)
 	done := make(chan tea.Msg, 1)
 	go func() {
 		done <- cmd()
@@ -708,7 +702,7 @@ func TestRuntimeDashboard_SettingsAndLogsView_WithWidth(t *testing.T) {
 
 func TestRuntimeDashboard_SettingsThemeChange_RequestsClearScreen(t *testing.T) {
 	s := testSettings()
-	p := s.Preferences()
+	p := s.Current()
 	p.Theme = ThemeLight
 	p.StatsUnits = StatsUnitsBytes
 	p.ShowDataplaneStats = true
@@ -947,11 +941,7 @@ func TestUpdateConfirm_CtrlCDuringConfirmExits(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
 	m.confirmOpen = true
 
-	updatedModel, cmd := m.updateConfirm(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
-	updated := updatedModel.(RuntimeDashboard)
-	if !updated.exitRequested {
-		t.Fatal("expected exitRequested=true after ctrl+c during confirm")
-	}
+	_, cmd := m.updateConfirm(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 	if cmd == nil {
 		t.Fatal("expected quit command on ctrl+c during confirm")
 	}
@@ -1104,7 +1094,7 @@ func TestUpdateLogs_SpaceTogglesFollow(t *testing.T) {
 func TestRuntimeLogUpdateCmd_PlainFeedFallsBackToTick(t *testing.T) {
 	feed := testRuntimeLogFeed{lines: []string{"line"}}
 	stop := make(chan struct{})
-	cmd := runtimeLogUpdateCmd(context.Background(), feed, stop, 1, 0)
+	cmd := runtimeLogUpdateCmd(context.Background(), feed, stop, 1)
 	if cmd == nil {
 		t.Fatal("expected non-nil command")
 	}
@@ -1131,7 +1121,7 @@ func TestRuntimeLogUpdateCmd_ChangeFeedNilChanges_FallsBackToTick(t *testing.T) 
 		changes:            nil,
 	}
 	stop := make(chan struct{})
-	cmd := runtimeLogUpdateCmd(context.Background(), feed, stop, 1, 0)
+	cmd := runtimeLogUpdateCmd(context.Background(), feed, stop, 1)
 	if cmd == nil {
 		t.Fatal("expected non-nil command")
 	}
@@ -1266,7 +1256,7 @@ func TestLogsEnsure_WhenNotReady(t *testing.T) {
 	m := RuntimeDashboard{
 		width:       100,
 		height:      30,
-		preferences: s.Preferences(),
+		preferences: s.Current(),
 		logs:        newLogViewport(),
 	}
 	m.logs.ready = false
@@ -1343,7 +1333,7 @@ func TestRuntimeLogUpdateCmd_StopClosedReturnsLogTickMsg(t *testing.T) {
 	stop := make(chan struct{})
 	close(stop) // close immediately
 
-	cmd := runtimeLogUpdateCmd(context.Background(), feed, stop, 42, 0)
+	cmd := runtimeLogUpdateCmd(context.Background(), feed, stop, 42)
 	if cmd == nil {
 		t.Fatal("expected non-nil command")
 	}
@@ -1368,7 +1358,7 @@ func TestRuntimeLogUpdateCmd_ContextCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel immediately
 
-	cmd := runtimeLogUpdateCmd(ctx, feed, stop, 42, 0)
+	cmd := runtimeLogUpdateCmd(ctx, feed, stop, 42)
 	if cmd == nil {
 		t.Fatal("expected non-nil command")
 	}
@@ -1387,7 +1377,7 @@ func TestRuntimeLogUpdateCmd_ChangeFeedSignalReturnsMatchingSeq(t *testing.T) {
 	}
 	stop := make(chan struct{})
 
-	cmd := runtimeLogUpdateCmd(context.Background(), feed, stop, 42, 0)
+	cmd := runtimeLogUpdateCmd(context.Background(), feed, stop, 42)
 	if cmd == nil {
 		t.Fatal("expected non-nil command")
 	}

@@ -9,8 +9,8 @@ import (
 )
 
 type TUI struct {
-	sessionOptions bubbleTea.ConfiguratorSessionOptions
-	session        *bubbleTea.UnifiedSession
+	configuratorOptions bubbleTea.ConfiguratorOptions
+	preferences         *bubbleTea.Preferences
 }
 
 func New(
@@ -21,10 +21,11 @@ func New(
 		return nil, fmt.Errorf("client configuration control is nil")
 	}
 	return &TUI{
-		sessionOptions: bubbleTea.ConfiguratorSessionOptions{
+		configuratorOptions: bubbleTea.ConfiguratorOptions{
 			ClientConfigurationControl: configurationControls.Client,
 			ServerConfigurationControl: configurationControls.Server,
 			Daemon:                     daemonControl,
 		},
+		preferences: bubbleTea.LoadPreferences(),
 	}, nil
 }

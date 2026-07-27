@@ -112,7 +112,7 @@ func TestSettingsVisibleRowCount_NoServer_AlwaysOneLessThanTotal(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestApplySettingsChange_ModeRow_CyclesForward(t *testing.T) {
-	p := newUIPreferencesProvider(UIPreferences{AutoSelectMode: ModePreferenceNone})
+	p := newPreferences(UIPreferences{AutoSelectMode: ModePreferenceNone})
 	got := applySettingsChange(p, settingsModeRow, 1, true)
 	if got.AutoSelectMode != ModePreferenceClient {
 		t.Errorf("got %q, want ModePreferenceClient", got.AutoSelectMode)
@@ -120,7 +120,7 @@ func TestApplySettingsChange_ModeRow_CyclesForward(t *testing.T) {
 }
 
 func TestApplySettingsChange_ModeRow_CyclesBackward(t *testing.T) {
-	p := newUIPreferencesProvider(UIPreferences{AutoSelectMode: ModePreferenceClient})
+	p := newPreferences(UIPreferences{AutoSelectMode: ModePreferenceClient})
 	got := applySettingsChange(p, settingsModeRow, -1, true)
 	if got.AutoSelectMode != ModePreferenceNone {
 		t.Errorf("got %q, want ModePreferenceNone", got.AutoSelectMode)
@@ -128,7 +128,7 @@ func TestApplySettingsChange_ModeRow_CyclesBackward(t *testing.T) {
 }
 
 func TestApplySettingsChange_AutoConnectRow_TogglesOn(t *testing.T) {
-	p := newUIPreferencesProvider(UIPreferences{AutoConnect: false})
+	p := newPreferences(UIPreferences{AutoConnect: false})
 	got := applySettingsChange(p, settingsAutoConnectRow, 1, true)
 	if !got.AutoConnect {
 		t.Error("expected AutoConnect toggled on")
@@ -136,7 +136,7 @@ func TestApplySettingsChange_AutoConnectRow_TogglesOn(t *testing.T) {
 }
 
 func TestApplySettingsChange_AutoConnectRow_TogglesOff(t *testing.T) {
-	p := newUIPreferencesProvider(UIPreferences{AutoConnect: true})
+	p := newPreferences(UIPreferences{AutoConnect: true})
 	got := applySettingsChange(p, settingsAutoConnectRow, 1, true)
 	if got.AutoConnect {
 		t.Error("expected AutoConnect toggled off")
@@ -145,7 +145,7 @@ func TestApplySettingsChange_AutoConnectRow_TogglesOff(t *testing.T) {
 
 func TestApplySettingsChange_NoServer_VisibleModePosition_MapsToAutoConnect(t *testing.T) {
 	// When !serverSupported, cursor=settingsModeRow → visibleCursorToSettingsRow → settingsAutoConnectRow.
-	p := newUIPreferencesProvider(UIPreferences{AutoConnect: false})
+	p := newPreferences(UIPreferences{AutoConnect: false})
 	got := applySettingsChange(p, settingsModeRow, 1, false)
 	if !got.AutoConnect {
 		t.Error("expected AutoConnect to toggle when cursor is at Mode position with !serverSupported")

@@ -7,23 +7,6 @@ import (
 	"tungo/infrastructure/telemetry/trafficstats"
 )
 
-const (
-	ansiColorProfile16 = iota
-	ansiColorProfile256
-	ansiColorProfileTrueColor
-)
-
-func forceANSIColorProfile(t *testing.T, _ int) {
-	uiStylesCacheMu.Lock()
-	uiStylesCache = map[uiStylesCacheKey]uiStyles{}
-	uiStylesCacheMu.Unlock()
-	t.Cleanup(func() {
-		uiStylesCacheMu.Lock()
-		uiStylesCache = map[uiStylesCacheKey]uiStyles{}
-		uiStylesCacheMu.Unlock()
-	})
-}
-
 func Test_computeCardWidth_ClampedToTerminal(t *testing.T) {
 	if got := computeCardWidth(40); got > 40 {
 		t.Fatalf("card width must not exceed terminal width, got=%d", got)
@@ -121,7 +104,6 @@ func TestHelpers_BasicBranches(t *testing.T) {
 }
 
 func TestResolveUIStyles_DarkBrandUsesLightBlue(t *testing.T) {
-	forceANSIColorProfile(t, ansiColorProfileTrueColor)
 	styles := resolveUIStyles(UIPreferences{
 		Theme:      ThemeDark,
 		StatsUnits: StatsUnitsBiBytes,
@@ -134,7 +116,6 @@ func TestResolveUIStyles_DarkBrandUsesLightBlue(t *testing.T) {
 }
 
 func TestResolveUIStyles_AllDarkThemesKeepBlueBrand(t *testing.T) {
-	forceANSIColorProfile(t, ansiColorProfileTrueColor)
 	for _, theme := range orderedThemeOptions {
 		if !strings.HasPrefix(string(theme), "dark") {
 			continue
@@ -151,7 +132,6 @@ func TestResolveUIStyles_AllDarkThemesKeepBlueBrand(t *testing.T) {
 }
 
 func TestResolveUIStyles_LightThemeUsesLightBlueAndWarmAccent(t *testing.T) {
-	forceANSIColorProfile(t, ansiColorProfileTrueColor)
 	styles := resolveUIStyles(UIPreferences{
 		Theme:      ThemeLight,
 		StatsUnits: StatsUnitsBiBytes,
@@ -167,7 +147,6 @@ func TestResolveUIStyles_LightThemeUsesLightBlueAndWarmAccent(t *testing.T) {
 }
 
 func TestResolveUIStyles_ThemeSwitchChangesStyles(t *testing.T) {
-	forceANSIColorProfile(t, ansiColorProfileTrueColor)
 	light := resolveUIStyles(UIPreferences{
 		Theme:      ThemeLight,
 		StatsUnits: StatsUnitsBiBytes,
@@ -187,7 +166,6 @@ func TestResolveUIStyles_ThemeSwitchChangesStyles(t *testing.T) {
 }
 
 func TestResolveUIStyles_DarkVariantsUseDistinctActiveAccent(t *testing.T) {
-	forceANSIColorProfile(t, ansiColorProfileTrueColor)
 
 	matrix := resolveUIStyles(UIPreferences{
 		Theme:      ThemeDarkMatrix,
@@ -233,7 +211,6 @@ func TestContentWidthForTerminal_NonPositiveWidth(t *testing.T) {
 }
 
 func TestRenderScreen_ANSIAndCanvasFill(t *testing.T) {
-	forceANSIColorProfile(t, ansiColorProfileTrueColor)
 
 	prefs := UIPreferences{
 		Theme:      ThemeDark,
@@ -343,7 +320,6 @@ func TestSplitRunes_NoSplitWhenWithinLimit(t *testing.T) {
 }
 
 func TestEnforceBaseThemeFill_ReappliesAfterAnsiReset(t *testing.T) {
-	forceANSIColorProfile(t, ansiColorProfileTrueColor)
 	out := enforceBaseThemeFill("x"+ansiReset+"y", UIPreferences{Theme: ThemeLight})
 	if !strings.Contains(out, ansiReset) {
 		t.Fatalf("expected reset sequence in output, got %q", out)
@@ -364,7 +340,6 @@ func TestVisibleWidthANSI_AndStripANSI_WithCSI(t *testing.T) {
 }
 
 func TestEnforceBaseThemeFill_ReappliesAfterCommonSGRResets(t *testing.T) {
-	forceANSIColorProfile(t, ansiColorProfileTrueColor)
 	base := ansiBgBlack + ansiFgWhite
 	out := enforceBaseThemeFill("\x1b[mx\x1b[49my\x1b[39mz\x1b[0mw", UIPreferences{Theme: ThemeDark})
 
@@ -383,7 +358,6 @@ func TestEnforceBaseThemeFill_ReappliesAfterCommonSGRResets(t *testing.T) {
 }
 
 func TestEnforceBaseThemeFill_AppliesBasePerLine(t *testing.T) {
-	forceANSIColorProfile(t, ansiColorProfileTrueColor)
 	base := ansiBgBlack + ansiFgWhite
 	out := enforceBaseThemeFill("line1\nline2", UIPreferences{Theme: ThemeDark})
 	if strings.Count(out, base) < 2 {
@@ -608,7 +582,6 @@ func TestPlaceCardCentered_CardTallerThanHeight(t *testing.T) {
 }
 
 func TestResolveUIStyles_UnknownTheme_FallsToLight(t *testing.T) {
-	forceANSIColorProfile(t, ansiColorProfileTrueColor)
 	styles := resolveUIStyles(UIPreferences{
 		Theme:      ThemeOption("imaginary_theme"),
 		StatsUnits: StatsUnitsBiBytes,

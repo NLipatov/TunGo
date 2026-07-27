@@ -6,7 +6,7 @@ import (
 )
 
 func TestRenderLogsBody_EmptyAndNonEmpty(t *testing.T) {
-	styles := resolveUIStyles(newDefaultUIPreferencesProvider().Preferences())
+	styles := resolveUIStyles(newDefaultPreferences().Current())
 	empty := renderLogsBody(nil, 40, styles)
 	if len(empty) != 1 {
 		t.Fatalf("expected one fallback line, got %v", empty)
@@ -78,11 +78,9 @@ func TestRenderTabsLine_RightAlignsProductLabelWhenWidthAllows(t *testing.T) {
 	styles := resolveUIStyles(UIPreferences{Theme: ThemeDark})
 	line := renderTabsLine(
 		"TunGo [v0.9.0]",
-		"selector",
 		[]string{"Main", "Settings", "Logs"},
 		0,
 		60,
-		ThemeDark,
 		styles,
 	)
 
@@ -101,11 +99,9 @@ func TestRenderTabsLine_KeepProductLabelOnVeryNarrowWidth(t *testing.T) {
 	styles := resolveUIStyles(UIPreferences{Theme: ThemeDark})
 	line := renderTabsLine(
 		"TunGo [v0.9.0]",
-		"selector",
 		[]string{"Main", "Settings", "Logs"},
 		0,
 		16,
-		ThemeDark,
 		styles,
 	)
 
@@ -204,8 +200,8 @@ func TestRuntimeLogSnapshot_NilReusableAndNilFeed(t *testing.T) {
 }
 
 func TestComputeLogsViewportSize_NonPositiveHeight(t *testing.T) {
-	s := newDefaultUIPreferencesProvider()
-	prefs := s.Preferences()
+	s := newDefaultPreferences()
+	prefs := s.Current()
 	_, h := computeLogsViewportSize(80, 0, prefs, "", "hint")
 	if h != 8 {
 		t.Fatalf("expected default height 8 for height<=0, got %d", h)
@@ -217,8 +213,8 @@ func TestComputeLogsViewportSize_NonPositiveHeight(t *testing.T) {
 }
 
 func TestComputeLogsViewportSize_PositiveHeight_WithSubtitle(t *testing.T) {
-	s := newDefaultUIPreferencesProvider()
-	prefs := s.Preferences()
+	s := newDefaultPreferences()
+	prefs := s.Current()
 	prefs.ShowFooter = true
 	w, h := computeLogsViewportSize(100, 40, prefs, "Subtitle text", "hint")
 	if w <= 0 {
@@ -261,8 +257,8 @@ func TestTruncateWithEllipsis_NonASCII_SmallWidth(t *testing.T) {
 }
 
 func TestComputeLogsViewportSize_TinyHeight_ClampsTo3(t *testing.T) {
-	s := newDefaultUIPreferencesProvider()
-	prefs := s.Preferences()
+	s := newDefaultPreferences()
+	prefs := s.Current()
 	prefs.ShowFooter = true
 	_, h := computeLogsViewportSize(100, 10, prefs, "Long subtitle text for testing", "hint")
 	if h < 3 {

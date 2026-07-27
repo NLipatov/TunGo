@@ -16,7 +16,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-var ErrConfiguratorSessionUserExit = errors.New("configurator session user exit")
+var ErrConfiguratorUserExit = errors.New("configurator user exit")
 
 const configuratorLogsHint = "up/down scroll | PgUp/PgDn page | Home/End jump | Space follow | Tab switch tabs | Esc back | ctrl+c exit"
 
@@ -30,10 +30,11 @@ const (
 	configuratorTabLogs
 )
 
-type ConfiguratorSessionOptions struct {
+type ConfiguratorOptions struct {
 	ClientConfigurationControl appConfiguration.ClientConfigurationControl
 	ServerConfigurationControl appConfiguration.ServerConfigurationControl
 	Daemon                     systemd.Control
+	LogFeed                    RuntimeLogFeed
 }
 
 type configuratorScreen int
@@ -55,39 +56,39 @@ const (
 )
 
 const (
-	sessionModeClient = "client"
-	sessionModeServer = "server"
-	sessionModeDaemon = "daemon"
+	modeClientLabel = "client"
+	modeServerLabel = "server"
+	modeDaemonLabel = "daemon"
 
-	sessionClientAdd    = "add configuration"
-	sessionClientRemove = "remove configuration"
+	clientAddLabel    = "add configuration"
+	clientRemoveLabel = "remove configuration"
 
-	sessionInvalidDelete = "Delete invalid configuration"
-	sessionInvalidOK     = "OK"
+	invalidDeleteLabel = "Delete invalid configuration"
+	invalidOKLabel     = "OK"
 
-	sessionServerStart  = "start server"
-	sessionServerAdd    = "add client"
-	sessionServerManage = "manage clients"
+	serverStartLabel  = "start server"
+	serverAddLabel    = "add client"
+	serverManageLabel = "manage clients"
 
-	sessionDaemonSetupClient           = "setup client daemon"
-	sessionDaemonSetupServer           = "setup server daemon"
-	sessionDaemonReconfClient          = "reconfigure as client daemon"
-	sessionDaemonReconfServer          = "reconfigure as server daemon"
-	sessionDaemonStart                 = "start daemon"
-	sessionDaemonStop                  = "stop daemon"
-	sessionDaemonEnable                = "enable on boot"
-	sessionDaemonDisable               = "disable on boot"
-	sessionDaemonDelete                = "delete daemon"
-	sessionDaemonConfirmReconfigureNow = "stop and restart with new setup"
+	daemonSetupClientLabel           = "setup client daemon"
+	daemonSetupServerLabel           = "setup server daemon"
+	daemonReconfigureClientLabel     = "reconfigure as client daemon"
+	daemonReconfigureServerLabel     = "reconfigure as server daemon"
+	daemonStartLabel                 = "start daemon"
+	daemonStopLabel                  = "stop daemon"
+	daemonEnableLabel                = "enable on boot"
+	daemonDisableLabel               = "disable on boot"
+	daemonDeleteLabel                = "delete daemon"
+	daemonConfirmReconfigureNowLabel = "stop and restart with new setup"
 
-	sessionServerDeleteConfirm = "Delete client"
-	sessionCancel              = "Cancel"
-	sessionStopDaemonContinue  = "stop daemon and continue"
-	sessionRetryDaemonCheck    = "Retry check"
-	sessionStartAnywayUnsafe   = "Start anyway (unsafe)"
+	serverDeleteConfirmLabel = "Delete client"
+	cancelLabel              = "Cancel"
+	stopDaemonContinueLabel  = "stop daemon and continue"
+	retryDaemonCheckLabel    = "Retry check"
+	startAnywayUnsafeLabel   = "Start anyway (unsafe)"
 )
 
-type clientConfigScreens struct {
+type clientState struct {
 	configs            []string
 	menuOptions        []string
 	removePaths        []string
@@ -101,7 +102,7 @@ type clientConfigScreens struct {
 	invalidAllowDelete bool
 }
 
-type serverConfigScreens struct {
+type serverState struct {
 	menuOptions  []string
 	managePeers  []appConfiguration.ServerPeer
 	manageLabels []string
@@ -109,16 +110,16 @@ type serverConfigScreens struct {
 	deleteCursor int
 }
 
-type daemonConfigScreens struct {
+type daemonState struct {
 	status      systemd.UnitStatus
 	statusErr   error
 	menuOptions []string
 	updatedAt   time.Time
 }
 
-type configuratorSessionModel struct {
-	settings        *uiPreferencesProvider
-	options         ConfiguratorSessionOptions
+type Configurator struct {
+	settings        *Preferences
+	options         ConfiguratorOptions
 	serverSupported bool
 
 	width  int
@@ -128,9 +129,9 @@ type configuratorSessionModel struct {
 	cursor int
 
 	modeOptions []string
-	client      clientConfigScreens
-	server      serverConfigScreens
-	daemon      daemonConfigScreens
+	client      clientState
+	server      serverState
+	daemon      daemonState
 
 	notice string
 
@@ -150,19 +151,19 @@ type configuratorSessionModel struct {
 	done       bool
 }
 
-func newConfiguratorSessionModel(options ConfiguratorSessionOptions, settings *uiPreferencesProvider) (configuratorSessionModel, error) {
+func NewConfigurator(options ConfiguratorOptions, settings *Preferences) (Configurator, error) {
 	serverSupported := options.ServerConfigurationControl != nil
-	modeOptions := []string{sessionModeClient}
+	modeOptions := []string{modeClientLabel}
 	if serverSupported {
-		modeOptions = append(modeOptions, sessionModeServer)
+		modeOptions = append(modeOptions, modeServerLabel)
 	}
 	if options.Daemon != nil {
-		modeOptions = append(modeOptions, sessionModeDaemon)
+		modeOptions = append(modeOptions, modeDaemonLabel)
 	}
 
 	// If server is not supported but the saved preference is server, reset to client.
 	if !serverSupported {
-		p := settings.Preferences()
+		p := settings.Current()
 		if p.AutoSelectMode == ModePreferenceServer {
 			p.AutoSelectMode = ModePreferenceClient
 			settings.update(p)
@@ -170,26 +171,26 @@ func newConfiguratorSessionModel(options ConfiguratorSessionOptions, settings *u
 		}
 	}
 
-	model := configuratorSessionModel{
+	model := Configurator{
 		settings:        settings,
 		options:         options,
 		serverSupported: serverSupported,
 		screen:          configuratorScreenMode,
 		cursor:          0,
 		modeOptions:     modeOptions,
-		server: serverConfigScreens{
+		server: serverState{
 			menuOptions: []string{
-				sessionServerStart,
-				sessionServerAdd,
-				sessionServerManage,
+				serverStartLabel,
+				serverAddLabel,
+				serverManageLabel,
 			},
 		},
-		preferences: settings.Preferences(),
+		preferences: settings.Current(),
 		logs:        newLogViewport(),
 	}
 
 	if options.ClientConfigurationControl == nil {
-		return configuratorSessionModel{}, errors.New("configurator session dependencies are not initialized")
+		return Configurator{}, errors.New("configurator dependencies are not initialized")
 	}
 	model.initNameInput()
 	model.initJSONInput()
@@ -197,7 +198,7 @@ func newConfiguratorSessionModel(options ConfiguratorSessionOptions, settings *u
 		model.refreshDaemonStatus()
 	}
 	modeAutoselectNotice := ""
-	switch settings.Preferences().AutoSelectMode {
+	switch settings.Current().AutoSelectMode {
 	case ModePreferenceClient:
 		modeAutoselectNotice = "Auto-selected mode: client."
 	case ModePreferenceServer:
@@ -206,14 +207,14 @@ func newConfiguratorSessionModel(options ConfiguratorSessionOptions, settings *u
 
 	// Skip mode screen only when client is the only available option,
 	// or when client is explicitly preferred.
-	if len(modeOptions) == 1 || settings.Preferences().AutoSelectMode == ModePreferenceClient {
+	if len(modeOptions) == 1 || settings.Current().AutoSelectMode == ModePreferenceClient {
 		if err := model.reloadClientConfigs(); err != nil {
-			return configuratorSessionModel{}, err
+			return Configurator{}, err
 		}
 		model.screen = configuratorScreenClientSelect
 		model.notice = appendNotice(model.notice, modeAutoselectNotice)
-		if settings.Preferences().AutoConnect {
-			if autoConfig := settings.Preferences().AutoSelectClientConfig; autoConfig != "" {
+		if settings.Current().AutoConnect {
+			if autoConfig := settings.Current().AutoSelectClientConfig; autoConfig != "" {
 				if slices.Contains(model.client.configs, autoConfig) {
 					if err := model.options.ClientConfigurationControl.Select(autoConfig); err == nil {
 						model.notice = appendNotice(model.notice, fmt.Sprintf("Auto-selected config: %s.", autoConfig))
@@ -236,14 +237,14 @@ func newConfiguratorSessionModel(options ConfiguratorSessionOptions, settings *u
 						model.notice = fmt.Sprintf("Auto-select failed for %q: %v", autoConfig, err)
 					}
 				} else {
-					p := settings.Preferences()
+					p := settings.Current()
 					p.AutoSelectClientConfig = ""
 					settings.update(p)
 					_ = savePreferencesToDisk(p)
 				}
 			}
 		}
-	} else if settings.Preferences().AutoSelectMode == ModePreferenceServer {
+	} else if settings.Current().AutoSelectMode == ModePreferenceServer {
 		model.screen = configuratorScreenServerSelect
 		model.notice = appendNotice(model.notice, modeAutoselectNotice)
 	}
@@ -251,11 +252,21 @@ func newConfiguratorSessionModel(options ConfiguratorSessionOptions, settings *u
 	return model, nil
 }
 
-func (m configuratorSessionModel) Init() tea.Cmd {
+func (m Configurator) Init() tea.Cmd {
+	if m.done {
+		return tea.Quit
+	}
 	return nil
 }
 
-func (m configuratorSessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m Configurator) Result() (runtime.Mode, error) {
+	if !m.done {
+		return 0, ErrConfiguratorUserExit
+	}
+	return m.resultMode, m.resultErr
+}
+
+func (m Configurator) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.done {
 		m.logs.stopWait()
 		return m, tea.Quit
@@ -268,14 +279,14 @@ func (m configuratorSessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.adjustInputsToViewport()
 		if m.tab == configuratorTabLogs {
 			m.logs.ensure(m.width, m.height, m.preferences, "", configuratorLogsHint)
-			m.logs.refresh(globalRuntimeLogFeed(), m.preferences)
+			m.logs.refresh(m.options.LogFeed, m.preferences)
 		}
 		return m, nil
 	case logViewportTickMsg:
 		if msg.seq != m.logs.tickSeq || m.tab != configuratorTabLogs {
 			return m, nil
 		}
-		feed := globalRuntimeLogFeed()
+		feed := m.options.LogFeed
 		m.logs.refresh(feed, m.preferences)
 		return m, logViewportUpdateCmd(feed, m.logs.waitStop, m.logs.tickSeq)
 	case pasteSettledMsg:
@@ -287,7 +298,7 @@ func (m configuratorSessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c":
 			m.logs.stopWait()
-			m.resultErr = ErrConfiguratorSessionUserExit
+			m.resultErr = ErrConfiguratorUserExit
 			m.done = true
 			return m, tea.Quit
 		case "tab":
@@ -349,7 +360,7 @@ func (m configuratorSessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m configuratorSessionModel) View() tea.View {
+func (m Configurator) View() tea.View {
 	var content string
 	switch m.tab {
 	case configuratorTabSettings:
@@ -364,10 +375,10 @@ func (m configuratorSessionModel) View() tea.View {
 	return v
 }
 
-func (m configuratorSessionModel) updateModeScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m Configurator) updateModeScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
-		m.resultErr = ErrConfiguratorSessionUserExit
+		m.resultErr = ErrConfiguratorUserExit
 		m.done = true
 		return m, tea.Quit
 	}
@@ -378,7 +389,7 @@ func (m configuratorSessionModel) updateModeScreen(msg tea.KeyPressMsg) (tea.Mod
 	}
 
 	switch m.modeOptions[m.cursor] {
-	case sessionModeClient:
+	case modeClientLabel:
 		if err := m.reloadClientConfigs(); err != nil {
 			m.resultErr = err
 			m.done = true
@@ -387,11 +398,11 @@ func (m configuratorSessionModel) updateModeScreen(msg tea.KeyPressMsg) (tea.Mod
 		m.notice = ""
 		m.cursor = 0
 		m.screen = configuratorScreenClientSelect
-	case sessionModeServer:
+	case modeServerLabel:
 		m.notice = ""
 		m.cursor = 0
 		m.screen = configuratorScreenServerSelect
-	case sessionModeDaemon:
+	case modeDaemonLabel:
 		m.notice = ""
 		m.cursor = 0
 		m.refreshDaemonStatus()
@@ -412,7 +423,7 @@ func appendNotice(existing, next string) string {
 	return existing + "\n" + next
 }
 
-func (m configuratorSessionModel) cycleTab() (tea.Model, tea.Cmd) {
+func (m Configurator) cycleTab() (tea.Model, tea.Cmd) {
 	previous := m.tab
 	switch m.tab {
 	case configuratorTabMain:
@@ -422,12 +433,12 @@ func (m configuratorSessionModel) cycleTab() (tea.Model, tea.Cmd) {
 	default:
 		m.tab = configuratorTabMain
 	}
-	m.preferences = m.settings.Preferences()
+	m.preferences = m.settings.Current()
 	if m.tab == configuratorTabLogs {
 		m.logs.restartWait()
 		m.logs.tickSeq++
 		m.logs.ensure(m.width, m.height, m.preferences, "", configuratorLogsHint)
-		feed := globalRuntimeLogFeed()
+		feed := m.options.LogFeed
 		m.logs.refresh(feed, m.preferences)
 		return m, logViewportUpdateCmd(feed, m.logs.waitStop, m.logs.tickSeq)
 	}
@@ -437,7 +448,7 @@ func (m configuratorSessionModel) cycleTab() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m configuratorSessionModel) updateSettingsTab(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m Configurator) updateSettingsTab(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.tab = configuratorTabMain
@@ -472,21 +483,21 @@ func (m configuratorSessionModel) updateSettingsTab(msg tea.KeyPressMsg) (tea.Mo
 	return m, cmd
 }
 
-func (m configuratorSessionModel) updateLogsTab(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m Configurator) updateLogsTab(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.logs.stopWait()
 		m.tab = configuratorTabMain
 		return m, nil
 	}
-	return m, m.logs.updateKeys(msg, defaultSelectorKeyMap())
+	return m, m.logs.updateKeys(msg)
 }
 
-func (m configuratorSessionModel) settingsRows() []string {
+func (m Configurator) settingsRows() []string {
 	return uiSettingsRows(m.preferences, m.serverSupported)
 }
 
-func (m *configuratorSessionModel) updateCursor(keyMsg tea.KeyMsg, listSize int) {
+func (m *Configurator) updateCursor(keyMsg tea.KeyMsg, listSize int) {
 	if listSize <= 0 {
 		m.cursor = 0
 		return

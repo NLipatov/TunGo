@@ -175,12 +175,12 @@ func TestServerPeerDisplayName_WhitespaceOnlyName(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// newConfiguratorSessionModel
+// NewConfigurator
 // ---------------------------------------------------------------------------
 
 func TestNewConfiguratorSessionModel_AllDependencies(t *testing.T) {
-	opts := testSessionOptions(newTestConfigurationControl())
-	model, err := newConfiguratorSessionModel(opts, testSettings())
+	opts := testConfiguratorOptions(newTestConfigurationControl())
+	model, err := NewConfigurator(opts, testSettings())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -190,8 +190,8 @@ func TestNewConfiguratorSessionModel_AllDependencies(t *testing.T) {
 }
 
 func TestNewConfiguratorSessionModel_MissingClientConfigurationControl(t *testing.T) {
-	opts := ConfiguratorSessionOptions{}
-	_, err := newConfiguratorSessionModel(opts, testSettings())
+	opts := ConfiguratorOptions{}
+	_, err := NewConfigurator(opts, testSettings())
 	if err == nil {
 		t.Fatal("expected error for missing client configuration control, got nil")
 	}

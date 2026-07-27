@@ -98,8 +98,8 @@ func settingsCursorDown(cursor, rowCount int) int {
 	return rowCount - 1
 }
 
-func applySettingsChange(provider *uiPreferencesProvider, settingsCursor int, step int, serverSupported bool) UIPreferences {
-	p := provider.Preferences()
+func applySettingsChange(provider *Preferences, settingsCursor int, step int, serverSupported bool) UIPreferences {
+	p := provider.Current()
 	switch visibleCursorToSettingsRow(settingsCursor, serverSupported) {
 	case settingsThemeRow:
 		p.Theme = nextTheme(p.Theme, step)

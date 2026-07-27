@@ -2,45 +2,20 @@ package bubble_tea
 
 import (
 	"strings"
-	"sync"
 )
 
 const runtimeLogViewportSnapshotLimit = 4096
 
-var (
-	selectorTabs  = [...]string{"Main", "Settings", "Logs"}
-	runtimeTabs   = [...]string{"Dataplane", "Settings", "Logs"}
-	tabsLineCache sync.Map
-)
-
-type tabsLineCacheKey struct {
-	tabsID       string
-	productName  string
-	theme        ThemeOption
-	activeIndex  int
-	contentWidth int
-}
+var selectorTabs = [...]string{"Main", "Settings", "Logs"}
+var runtimeTabs = [...]string{"Dataplane", "Settings", "Logs"}
 
 func renderTabsLine(
 	productLabel string,
-	tabsID string,
 	tabs []string,
 	activeIndex int,
 	contentWidth int,
-	theme ThemeOption,
 	styles uiStyles,
 ) string {
-	cacheKey := tabsLineCacheKey{
-		tabsID:       tabsID,
-		productName:  productLabel,
-		theme:        theme,
-		activeIndex:  activeIndex,
-		contentWidth: contentWidth,
-	}
-	if cached, ok := tabsLineCache.Load(cacheKey); ok {
-		return cached.(string)
-	}
-
 	var tabsOut strings.Builder
 	tabsOut.Grow(len(productLabel) + len(tabs)*16)
 	for i, tab := range tabs {
@@ -81,7 +56,6 @@ func renderTabsLine(
 		out.WriteString(right)
 		rendered = out.String()
 	}
-	tabsLineCache.Store(cacheKey, rendered)
 	return rendered
 }
 

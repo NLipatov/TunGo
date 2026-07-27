@@ -10,7 +10,6 @@ import (
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/telemetry/trafficstats"
 
-	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 )
 
@@ -27,9 +26,7 @@ type runtimeTickMsg struct {
 	seq uint64
 }
 
-type runtimeContextDoneMsg struct {
-	seq uint64
-}
+type runtimeContextDoneMsg struct{}
 
 type runtimeDashboardScreen int
 
@@ -53,12 +50,11 @@ const (
 var zeroBrailleSparklineCache = initZeroBrailleSparklineCache()
 
 type RuntimeDashboard struct {
-	settings             *uiPreferencesProvider
+	settings             *Preferences
 	ctx                  context.Context
 	mode                 runtime.Mode
 	width                int
 	height               int
-	keys                 selectorKeyMap
 	screen               runtimeDashboardScreen
 	settingsCursor       int
 	preferences          UIPreferences
@@ -72,8 +68,6 @@ type RuntimeDashboard struct {
 	tickSeq              uint64
 	confirmOpen          bool
 	confirmCursor        int
-	runtimeSeq           uint64
-	exitRequested        bool
 	reconfigureRequested bool
 	ready                func() bool
 	connected            bool
@@ -81,7 +75,7 @@ type RuntimeDashboard struct {
 	endpoints            []appConfiguration.EndpointInfo
 }
 
-func NewRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions, settings *uiPreferencesProvider) RuntimeDashboard {
+func NewRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions, settings *Preferences) RuntimeDashboard {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -99,9 +93,8 @@ func NewRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions, s
 		ctx:             ctx,
 		mode:            mode,
 		serverSupported: options.ServerSupported,
-		keys:            defaultSelectorKeyMap(),
 		screen:          runtimeScreenDataplane,
-		preferences:     settings.Preferences(),
+		preferences:     settings.Current(),
 		logFeed:         options.LogFeed,
 		logs:            newLogViewport(),
 		tickSeq:         1,
@@ -119,7 +112,7 @@ func NewRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions, s
 func (m RuntimeDashboard) Init() tea.Cmd {
 	return tea.Batch(
 		runtimeTickCmd(m.tickSeq),
-		waitForRuntimeContextDone(m.ctx, m.runtimeSeq),
+		waitForRuntimeContextDone(m.ctx),
 	)
 }
 
@@ -152,7 +145,7 @@ func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.logs.refresh(m.logFeed, m.preferences)
-		return m, runtimeLogUpdateCmd(m.ctx, m.logFeed, m.logs.waitStop, m.logs.tickSeq, m.runtimeSeq)
+		return m, runtimeLogUpdateCmd(m.ctx, m.logFeed, m.logs.waitStop, m.logs.tickSeq)
 	case runtimeContextDoneMsg:
 		m.logs.stopWait()
 		return m, tea.Quit
@@ -160,12 +153,11 @@ func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.confirmOpen {
 			return m.updateConfirm(msg)
 		}
-		switch {
-		case key.Matches(msg, m.keys.Quit):
+		switch msg.String() {
+		case "ctrl+c":
 			m.logs.stopWait()
-			m.exitRequested = true
 			return m, tea.Quit
-		case msg.String() == "esc":
+		case "esc":
 			switch m.screen {
 			case runtimeScreenDataplane:
 				if m.mode == runtime.ModeClient && !m.connected {
@@ -186,16 +178,16 @@ func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, runtimeTickCmd(m.tickSeq)
 			}
 			return m, nil
-		case key.Matches(msg, m.keys.Tab):
+		case "tab":
 			previous := m.screen
 			m.screen = m.nextScreen()
-			m.preferences = m.settings.Preferences()
+			m.preferences = m.settings.Current()
 			if m.screen == runtimeScreenLogs {
 				m.logs.restartWait()
 				m.logs.tickSeq++
 				m.logs.ensure(m.width, m.height, m.preferences, "", m.logsHint())
 				m.logs.refresh(m.logFeed, m.preferences)
-				return m, runtimeLogUpdateCmd(m.ctx, m.logFeed, m.logs.waitStop, m.logs.tickSeq, m.runtimeSeq)
+				return m, runtimeLogUpdateCmd(m.ctx, m.logFeed, m.logs.waitStop, m.logs.tickSeq)
 			}
 			if previous == runtimeScreenLogs {
 				m.logs.stopWait()
@@ -220,24 +212,23 @@ func (m RuntimeDashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m RuntimeDashboard) updateConfirm(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	switch {
-	case key.Matches(msg, m.keys.Quit):
+	switch msg.String() {
+	case "ctrl+c":
 		m.logs.stopWait()
-		m.exitRequested = true
 		return m, tea.Quit
-	case msg.String() == "esc":
+	case "esc":
 		m.confirmOpen = false
 		m.confirmCursor = 0
 		return m, nil
-	case key.Matches(msg, m.keys.Up), key.Matches(msg, m.keys.Left):
+	case "up", "k", "left", "h":
 		if m.confirmCursor > 0 {
 			m.confirmCursor--
 		}
-	case key.Matches(msg, m.keys.Down), key.Matches(msg, m.keys.Right):
+	case "down", "j", "right", "l":
 		if m.confirmCursor < 1 {
 			m.confirmCursor++
 		}
-	case key.Matches(msg, m.keys.Select):
+	case "enter":
 		if m.confirmCursor == 1 {
 			m.logs.stopWait()
 			m.reconfigureRequested = true
@@ -264,6 +255,10 @@ func (m RuntimeDashboard) View() tea.View {
 	return v
 }
 
+func (m RuntimeDashboard) ReconfigureRequested() bool {
+	return m.reconfigureRequested
+}
+
 func (m RuntimeDashboard) nextScreen() runtimeDashboardScreen {
 	switch m.screen {
 	case runtimeScreenDataplane:
@@ -278,18 +273,18 @@ func (m RuntimeDashboard) nextScreen() runtimeDashboardScreen {
 func (m RuntimeDashboard) updateSettings(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	prevGraphEnabled := m.preferences.ShowDataplaneGraph
-	switch {
-	case key.Matches(msg, m.keys.Up):
+	switch msg.String() {
+	case "up", "k":
 		m.settingsCursor = settingsCursorUp(m.settingsCursor)
-	case key.Matches(msg, m.keys.Down):
+	case "down", "j":
 		m.settingsCursor = settingsCursorDown(m.settingsCursor, settingsVisibleRowCount(m.preferences, m.serverSupported))
-	case key.Matches(msg, m.keys.Left):
+	case "left", "h":
 		prevTheme := m.preferences.Theme
 		m.preferences = applySettingsChange(m.settings, m.settingsCursor, -1, m.serverSupported)
 		if m.settingsCursor == settingsThemeRow && m.preferences.Theme != prevTheme {
 			cmd = tea.ClearScreen
 		}
-	case key.Matches(msg, m.keys.Right), key.Matches(msg, m.keys.Select):
+	case "right", "l", "enter":
 		prevTheme := m.preferences.Theme
 		m.preferences = applySettingsChange(m.settings, m.settingsCursor, 1, m.serverSupported)
 		if m.settingsCursor == settingsThemeRow && m.preferences.Theme != prevTheme {
@@ -567,7 +562,7 @@ func (m RuntimeDashboard) logsView() string {
 
 func (m RuntimeDashboard) tabsLine(styles uiStyles) string {
 	contentWidth := contentWidthForTerminal(m.width)
-	return renderTabsLine(productLabel(), "runtime", runtimeTabs[:], int(m.screen), contentWidth, m.preferences.Theme, styles)
+	return renderTabsLine(productLabel(), runtimeTabs[:], int(m.screen), contentWidth, styles)
 }
 
 func (m RuntimeDashboard) logsHint() string {
@@ -575,7 +570,7 @@ func (m RuntimeDashboard) logsHint() string {
 }
 
 func (m RuntimeDashboard) updateLogs(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	return m, m.logs.updateKeys(msg, m.keys)
+	return m, m.logs.updateKeys(msg)
 }
 
 func runtimeTickCmd(seq uint64) tea.Cmd {
@@ -589,7 +584,6 @@ func runtimeLogUpdateCmd(
 	feed RuntimeLogFeed,
 	stop <-chan struct{},
 	logSeq uint64,
-	runtimeSeq uint64,
 ) tea.Cmd {
 	changeFeed, ok := feed.(RuntimeLogChangeFeed)
 	if ok {
@@ -598,7 +592,7 @@ func runtimeLogUpdateCmd(
 			return func() tea.Msg {
 				select {
 				case <-ctx.Done():
-					return runtimeContextDoneMsg{seq: runtimeSeq}
+					return runtimeContextDoneMsg{}
 				case <-stop:
 					return logViewportTickMsg{}
 				case <-changes:
@@ -610,10 +604,10 @@ func runtimeLogUpdateCmd(
 	return logViewportTickCmd(logSeq)
 }
 
-func waitForRuntimeContextDone(ctx context.Context, seq uint64) tea.Cmd {
+func waitForRuntimeContextDone(ctx context.Context) tea.Cmd {
 	return func() tea.Msg {
 		<-ctx.Done()
-		return runtimeContextDoneMsg{seq: seq}
+		return runtimeContextDoneMsg{}
 	}
 }
 

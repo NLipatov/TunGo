@@ -2,7 +2,6 @@ package bubble_tea
 
 import (
 	"strings"
-	"sync"
 )
 
 type uiStyles struct {
@@ -19,10 +18,6 @@ type uiStyles struct {
 	meta        ansiTextStyle
 }
 
-type uiStylesCacheKey struct {
-	theme ThemeOption
-}
-
 type themePalette struct {
 	background       string
 	text             string
@@ -32,11 +27,6 @@ type themePalette struct {
 	activeBackground string
 	activeText       string
 }
-
-var (
-	uiStylesCacheMu sync.RWMutex
-	uiStylesCache   = map[uiStylesCacheKey]uiStyles{}
-)
 
 func paletteForTheme(theme ThemeOption) themePalette {
 	switch theme {
@@ -134,14 +124,6 @@ func resolveUIStyles(prefs UIPreferences) uiStyles {
 	if !isValidTheme(theme) {
 		theme = ThemeLight
 	}
-	key := uiStylesCacheKey{theme: theme}
-
-	uiStylesCacheMu.RLock()
-	cached, ok := uiStylesCache[key]
-	uiStylesCacheMu.RUnlock()
-	if ok {
-		return cached
-	}
 
 	p := paletteForTheme(theme)
 	textColor := p.text
@@ -158,7 +140,7 @@ func resolveUIStyles(prefs UIPreferences) uiStyles {
 	rulePrefix := ansiStylePrefix(accentTextColor, backgroundColor, false)
 	activePrefix := ansiStylePrefix(activeTextColor, activeBackgroundColor, true)
 
-	styles := uiStyles{
+	return uiStyles{
 		headerBar:   ansiTextStyle{prefix: textPrefix},
 		brand:       ansiTextStyle{prefix: brandPrefix},
 		headerTitle: ansiTextStyle{prefix: ansiStylePrefix(textColor, backgroundColor, true)},
@@ -171,10 +153,4 @@ func resolveUIStyles(prefs UIPreferences) uiStyles {
 		inputFrame:  ansiFrameStyle{borderPrefix: rulePrefix},
 		meta:        ansiTextStyle{prefix: mutedPrefix},
 	}
-
-	uiStylesCacheMu.Lock()
-	uiStylesCache[key] = styles
-	uiStylesCacheMu.Unlock()
-
-	return styles
 }

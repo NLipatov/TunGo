@@ -8,6 +8,7 @@ import (
 	appConfiguration "tungo/application/configuration"
 	"tungo/application/runtime"
 	"tungo/infrastructure/settings"
+	bubbleTea "tungo/presentation/ui/tui/internal/bubble_tea"
 )
 
 func TestNewTUI(t *testing.T) {
@@ -18,10 +19,10 @@ func TestNewTUI(t *testing.T) {
 	if ui == nil {
 		t.Fatal("expected non-nil TUI")
 	}
-	if ui.sessionOptions.ClientConfigurationControl == nil {
+	if ui.configuratorOptions.ClientConfigurationControl == nil {
 		t.Fatal("expected client configuration control to be registered")
 	}
-	if ui.sessionOptions.ServerConfigurationControl == nil {
+	if ui.configuratorOptions.ServerConfigurationControl == nil {
 		t.Fatal("expected server configuration control to be registered")
 	}
 }
@@ -56,9 +57,13 @@ func TestTUI_Run_CanceledContext_ReturnsNil(t *testing.T) {
 func TestTUI_RunRuntime_RuntimeInfoError(t *testing.T) {
 	want := errors.New("runtime info failed")
 	ui := newTestTUI(t)
-	ui.sessionOptions.ClientConfigurationControl = runtimeInfoErrorControl{err: want}
+	ui.configuratorOptions.ClientConfigurationControl = runtimeInfoErrorControl{err: want}
 
-	err := ui.runRuntime(context.Background(), runtime.ModeClient)
+	err := ui.runRuntime(
+		context.Background(),
+		runtime.ModeClient,
+		bubbleTea.NewRuntimeLogBuffer(8),
+	)
 	if err == nil || err.Error() != "runtime info error: runtime info failed" {
 		t.Fatalf("expected runtime info error, got %v", err)
 	}
@@ -90,7 +95,7 @@ func TestTUI_RuntimeInfo_Server(t *testing.T) {
 
 func TestTUI_RuntimeInfo_MissingClientControl(t *testing.T) {
 	ui := newTestTUI(t)
-	ui.sessionOptions.ClientConfigurationControl = nil
+	ui.configuratorOptions.ClientConfigurationControl = nil
 
 	_, err := ui.runtimeInfo(runtime.ModeClient)
 	if err == nil || err.Error() != "client configuration control is nil" {
@@ -100,7 +105,7 @@ func TestTUI_RuntimeInfo_MissingClientControl(t *testing.T) {
 
 func TestTUI_RuntimeInfo_MissingServerControl(t *testing.T) {
 	ui := newTestTUI(t)
-	ui.sessionOptions.ServerConfigurationControl = nil
+	ui.configuratorOptions.ServerConfigurationControl = nil
 
 	_, err := ui.runtimeInfo(runtime.ModeServer)
 	if err == nil || err.Error() != "server configuration control is nil" {

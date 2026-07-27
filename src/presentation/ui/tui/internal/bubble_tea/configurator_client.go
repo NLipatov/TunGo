@@ -13,13 +13,13 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-func (m configuratorSessionModel) updateClientSelectScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m Configurator) updateClientSelectScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.notice = ""
 		m.cursor = 0
 		if len(m.modeOptions) == 1 {
-			m.resultErr = ErrConfiguratorSessionUserExit
+			m.resultErr = ErrConfiguratorUserExit
 			m.done = true
 			return m, tea.Quit
 		}
@@ -34,14 +34,14 @@ func (m configuratorSessionModel) updateClientSelectScreen(msg tea.KeyPressMsg) 
 
 	selected := m.client.menuOptions[m.cursor]
 	switch selected {
-	case sessionClientAdd:
+	case clientAddLabel:
 		m.notice = ""
 		m.cursor = 0
 		m.screen = configuratorScreenClientAddName
 		m.initNameInput()
 		m.adjustInputsToViewport()
 		return m, textinput.Blink
-	case sessionClientRemove:
+	case clientRemoveLabel:
 		if len(m.client.configs) == 0 {
 			m.notice = "No configurations available for removal."
 			return m, nil
@@ -85,7 +85,7 @@ func (m configuratorSessionModel) updateClientSelectScreen(msg tea.KeyPressMsg) 
 	}
 }
 
-func (m configuratorSessionModel) updateClientRemoveScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m Configurator) updateClientRemoveScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.notice = ""
@@ -116,7 +116,7 @@ func (m configuratorSessionModel) updateClientRemoveScreen(msg tea.KeyPressMsg) 
 	return m, nil
 }
 
-func (m configuratorSessionModel) updateClientAddNameScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m Configurator) updateClientAddNameScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.notice = ""
@@ -146,7 +146,7 @@ func (m configuratorSessionModel) updateClientAddNameScreen(msg tea.KeyPressMsg)
 
 const pasteDebounce = 300 * time.Millisecond
 
-func (m configuratorSessionModel) updateClientAddJSONScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m Configurator) updateClientAddJSONScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "esc" {
 		m.notice = ""
 		m.screen = configuratorScreenClientAddName
@@ -204,7 +204,7 @@ func (m configuratorSessionModel) updateClientAddJSONScreen(msg tea.KeyPressMsg)
 	}))
 }
 
-func (m configuratorSessionModel) updateClientInvalidScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m Configurator) updateClientInvalidScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.notice = ""
@@ -213,9 +213,9 @@ func (m configuratorSessionModel) updateClientInvalidScreen(msg tea.KeyPressMsg)
 		return m, nil
 	}
 
-	options := []string{sessionInvalidOK}
+	options := []string{invalidOKLabel}
 	if m.client.invalidAllowDelete {
-		options = []string{sessionInvalidDelete, sessionInvalidOK}
+		options = []string{invalidDeleteLabel, invalidOKLabel}
 	}
 	m.updateCursor(msg, len(options))
 	if msg.String() != "enter" || len(options) == 0 {
@@ -223,7 +223,7 @@ func (m configuratorSessionModel) updateClientInvalidScreen(msg tea.KeyPressMsg)
 	}
 
 	selected := options[m.cursor]
-	if selected == sessionInvalidDelete && m.client.invalidAllowDelete {
+	if selected == invalidDeleteLabel && m.client.invalidAllowDelete {
 		if strings.TrimSpace(m.client.invalidConfig) == "" {
 			m.resultErr = errors.New("invalid configuration cannot be deleted")
 			m.done = true
@@ -246,18 +246,18 @@ func (m configuratorSessionModel) updateClientInvalidScreen(msg tea.KeyPressMsg)
 	return m, nil
 }
 
-func (m configuratorSessionModel) persistAutoSelectClientConfig(selected string) configuratorSessionModel {
+func (m Configurator) persistAutoSelectClientConfig(selected string) Configurator {
 	if strings.TrimSpace(selected) == "" {
 		return m
 	}
-	p := m.settings.Preferences()
+	p := m.settings.Current()
 	p.AutoSelectClientConfig = selected
 	m.settings.update(p)
 	_ = savePreferencesToDisk(p)
 	return m
 }
 
-func (m *configuratorSessionModel) reloadClientConfigs() error {
+func (m *Configurator) reloadClientConfigs() error {
 	configs, err := m.options.ClientConfigurationControl.List()
 	if err != nil {
 		return err
@@ -266,13 +266,13 @@ func (m *configuratorSessionModel) reloadClientConfigs() error {
 	m.client.menuOptions = make([]string, 0, len(configs)+3)
 	m.client.menuOptions = append(m.client.menuOptions, configs...)
 	if len(configs) > 0 {
-		m.client.menuOptions = append(m.client.menuOptions, sessionClientRemove)
+		m.client.menuOptions = append(m.client.menuOptions, clientRemoveLabel)
 	}
-	m.client.menuOptions = append(m.client.menuOptions, sessionClientAdd)
+	m.client.menuOptions = append(m.client.menuOptions, clientAddLabel)
 	return nil
 }
 
-func (m *configuratorSessionModel) initNameInput() {
+func (m *Configurator) initNameInput() {
 	ti := textinput.New()
 	ti.Prompt = "> "
 	ti.Placeholder = "Give it a name"
@@ -283,7 +283,7 @@ func (m *configuratorSessionModel) initNameInput() {
 	m.client.addNameInput = ti
 }
 
-func (m *configuratorSessionModel) tryFormatJSON() {
+func (m *Configurator) tryFormatJSON() {
 	raw := m.client.addJSONInput.Value()
 	if strings.TrimSpace(raw) == "" {
 		return
@@ -301,7 +301,7 @@ func (m *configuratorSessionModel) tryFormatJSON() {
 	}
 }
 
-func (m *configuratorSessionModel) initJSONInput() {
+func (m *Configurator) initJSONInput() {
 	ta := textarea.New()
 	ta.Prompt = "> "
 	ta.Placeholder = "Paste it here"
@@ -316,7 +316,7 @@ func (m *configuratorSessionModel) initJSONInput() {
 	m.client.addJSONInput = ta
 }
 
-func (m *configuratorSessionModel) adjustInputsToViewport() {
+func (m *Configurator) adjustInputsToViewport() {
 	if m.width <= 0 {
 		return
 	}

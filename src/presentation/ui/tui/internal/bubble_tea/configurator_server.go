@@ -10,7 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-func (m configuratorSessionModel) updateServerSelectScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m Configurator) updateServerSelectScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.notice = ""
@@ -25,13 +25,13 @@ func (m configuratorSessionModel) updateServerSelectScreen(msg tea.KeyPressMsg) 
 	}
 
 	switch m.server.menuOptions[m.cursor] {
-	case sessionServerStart:
+	case serverStartLabel:
 		m = m.startModeWithDaemonGuard(runtime.ModeServer, configuratorScreenServerSelect, false)
 		if m.done {
 			return m, tea.Quit
 		}
 		return m, nil
-	case sessionServerAdd:
+	case serverAddLabel:
 		generated, err := m.options.ServerConfigurationControl.GenerateClientConfiguration()
 		if err != nil {
 			m.resultErr = err
@@ -40,7 +40,7 @@ func (m configuratorSessionModel) updateServerSelectScreen(msg tea.KeyPressMsg) 
 		}
 		m.notice = fmt.Sprintf("Client configuration saved to %s", generated.Path)
 		return m, nil
-	case sessionServerManage:
+	case serverManageLabel:
 		peers, err := m.options.ServerConfigurationControl.ListPeers()
 		if err != nil {
 			m.resultErr = err
@@ -61,7 +61,7 @@ func (m configuratorSessionModel) updateServerSelectScreen(msg tea.KeyPressMsg) 
 	return m, nil
 }
 
-func (m configuratorSessionModel) updateServerManageScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m Configurator) updateServerManageScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.notice = ""
@@ -114,7 +114,7 @@ func (m configuratorSessionModel) updateServerManageScreen(msg tea.KeyPressMsg) 
 	return m, nil
 }
 
-func (m configuratorSessionModel) updateServerDeleteConfirmScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m Configurator) updateServerDeleteConfirmScreen(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		if len(m.server.managePeers) > 0 {
@@ -126,14 +126,14 @@ func (m configuratorSessionModel) updateServerDeleteConfirmScreen(msg tea.KeyPre
 		return m, nil
 	}
 
-	options := []string{sessionServerDeleteConfirm, sessionCancel}
+	options := []string{serverDeleteConfirmLabel, cancelLabel}
 	m.updateCursor(msg, len(options))
 	if msg.String() != "enter" {
 		return m, nil
 	}
 
 	selected := options[m.cursor]
-	if selected == sessionCancel {
+	if selected == cancelLabel {
 		if len(m.server.managePeers) > 0 {
 			m.cursor = minInt(m.server.deleteCursor, len(m.server.managePeers)-1)
 		} else {

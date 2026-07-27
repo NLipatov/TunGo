@@ -88,7 +88,7 @@ func (s *daemonControlStub) DisableUnit() error {
 	return s.disable()
 }
 
-func (o *ConfiguratorSessionOptions) testDaemon() *daemonControlStub {
+func (o *ConfiguratorOptions) testDaemon() *daemonControlStub {
 	if daemon, ok := o.Daemon.(*daemonControlStub); ok && daemon != nil {
 		return daemon
 	}

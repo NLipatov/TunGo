@@ -3,7 +3,6 @@ package bubble_tea
 import (
 	"time"
 
-	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 )
@@ -66,37 +65,34 @@ func (v *logViewport) stopWait() {
 	}
 }
 
-func (v *logViewport) updateKeys(msg tea.KeyPressMsg, keys selectorKeyMap) tea.Cmd {
-	switch msg.Key().Code {
-	case tea.KeyPgUp:
+func (v *logViewport) updateKeys(msg tea.KeyPressMsg) tea.Cmd {
+	switch msg.String() {
+	case "pgup":
 		v.viewport.PageUp()
 		v.follow = false
 		return nil
-	case tea.KeyPgDown:
+	case "pgdown":
 		v.viewport.PageDown()
 		v.follow = v.viewport.AtBottom()
 		return nil
-	case tea.KeyHome:
+	case "home":
 		v.viewport.GotoTop()
 		v.follow = false
 		return nil
-	case tea.KeyEnd:
+	case "end":
 		v.viewport.GotoBottom()
 		v.follow = true
 		return nil
-	case tea.KeySpace:
+	case "space":
 		v.follow = !v.follow
 		if v.follow {
 			v.viewport.GotoBottom()
 		}
 		return nil
-	}
-
-	switch {
-	case key.Matches(msg, keys.Up):
+	case "up", "k":
 		v.viewport.ScrollUp(1)
 		v.follow = false
-	case key.Matches(msg, keys.Down):
+	case "down", "j":
 		v.viewport.ScrollDown(1)
 		v.follow = v.viewport.AtBottom()
 	}

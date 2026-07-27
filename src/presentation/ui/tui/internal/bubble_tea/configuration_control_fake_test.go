@@ -32,21 +32,21 @@ func newTestConfigurationControl() *testConfigurationControl {
 	}
 }
 
-func testSessionOptions(
+func testConfiguratorOptions(
 	client *testConfigurationControl,
 	server ...*testConfigurationControl,
-) ConfiguratorSessionOptions {
+) ConfiguratorOptions {
 	serverControl := client
 	if len(server) > 0 {
 		serverControl = server[0]
 	}
-	return ConfiguratorSessionOptions{
+	return ConfiguratorOptions{
 		ClientConfigurationControl: client,
 		ServerConfigurationControl: serverControl,
 	}
 }
 
-func (o *ConfiguratorSessionOptions) testControl() *testConfigurationControl {
+func (o *ConfiguratorOptions) testControl() *testConfigurationControl {
 	control, ok := o.ClientConfigurationControl.(*testConfigurationControl)
 	if !ok || control == nil {
 		control = newTestConfigurationControl()
