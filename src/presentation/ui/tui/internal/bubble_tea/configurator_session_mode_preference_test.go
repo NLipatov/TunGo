@@ -11,7 +11,7 @@ import (
 )
 
 func defaultConfiguratorOpts() ConfiguratorSessionOptions {
-	return sessionOptionsWithControl(defaultSessionConfigurationControl())
+	return testSessionOptions(newTestConfigurationControl())
 }
 
 func settingsForMode(m ModePreference) *uiPreferencesProvider {
@@ -175,10 +175,8 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_SkipsSelection(t *te
 	p.AutoSelectClientConfig = "cfg.json"
 	s.update(p)
 
-	selector := &sessionSelectorRecorder{}
 	opts := defaultConfiguratorOpts()
-	opts.testControl().Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
-	opts.testControl().Selector = selector
+	opts.testControl().clientConfigs = []string{"cfg.json"}
 
 	model, err := newConfiguratorSessionModel(opts, s)
 	if err != nil {
@@ -190,8 +188,8 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_SkipsSelection(t *te
 	if model.resultMode != runtime.ModeClient {
 		t.Fatalf("expected resultMode=Client, got %v", model.resultMode)
 	}
-	if selector.selected != "cfg.json" {
-		t.Fatalf("expected selector to receive cfg.json, got %q", selector.selected)
+	if opts.testControl().selected != "cfg.json" {
+		t.Fatalf("expected selector to receive cfg.json, got %q", opts.testControl().selected)
 	}
 	if !strings.Contains(model.notice, "Auto-selected mode: client.") {
 		t.Fatalf("expected autoselect mode notice, got %q", model.notice)
@@ -208,10 +206,8 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_DaemonActive_Require
 	p.AutoSelectClientConfig = "cfg.json"
 	s.update(p)
 
-	selector := &sessionSelectorRecorder{}
 	opts := defaultConfiguratorOpts()
-	opts.testControl().Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
-	opts.testControl().Selector = selector
+	opts.testControl().clientConfigs = []string{"cfg.json"}
 	opts.testDaemon().isActive = func() (bool, error) { return true, nil }
 	opts.testDaemon().stop = func() error { return nil }
 
@@ -231,8 +227,8 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_DaemonActive_Require
 	if model.pendingClientConfig != "cfg.json" {
 		t.Fatalf("expected pendingClientConfig=cfg.json, got %q", model.pendingClientConfig)
 	}
-	if selector.selected != "cfg.json" {
-		t.Fatalf("expected selector to receive cfg.json, got %q", selector.selected)
+	if opts.testControl().selected != "cfg.json" {
+		t.Fatalf("expected selector to receive cfg.json, got %q", opts.testControl().selected)
 	}
 	if !strings.Contains(model.notice, "Auto-selected mode: client.") {
 		t.Fatalf("expected autoselect mode notice, got %q", model.notice)
@@ -253,7 +249,7 @@ func TestNewConfiguratorSessionModel_AutoConnect_False_AutoSelectClientConfig_Se
 	s.update(p)
 
 	opts := defaultConfiguratorOpts()
-	opts.testControl().Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
+	opts.testControl().clientConfigs = []string{"cfg.json"}
 
 	model, err := newConfiguratorSessionModel(opts, s)
 	if err != nil {
@@ -276,7 +272,7 @@ func TestNewConfiguratorSessionModel_ServerNotSupported_AutoConnect_False_AutoSe
 
 	opts := defaultConfiguratorOpts()
 	opts.ServerConfigurationControl = nil
-	opts.testControl().Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
+	opts.testControl().clientConfigs = []string{"cfg.json"}
 
 	model, err := newConfiguratorSessionModel(opts, s)
 	if err != nil {
@@ -298,10 +294,8 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_InvalidConfig_ShowsI
 	s.update(p)
 
 	opts := defaultConfiguratorOpts()
-	opts.testControl().Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
-	opts.testControl().ClientConfigManager = sessionClientConfigManagerInvalid{
-		err: errors.New("invalid client configuration (test): bad key"),
-	}
+	opts.testControl().clientConfigs = []string{"cfg.json"}
+	opts.testControl().validateActiveErr = errors.New("invalid client configuration (test): bad key")
 
 	model, err := newConfiguratorSessionModel(opts, s)
 	if err != nil {
@@ -326,10 +320,8 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_NonInvalidError_Show
 	s.update(p)
 
 	opts := defaultConfiguratorOpts()
-	opts.testControl().Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
-	opts.testControl().ClientConfigManager = sessionClientConfigManagerNonInvalid{
-		err: errors.New("permission denied"),
-	}
+	opts.testControl().clientConfigs = []string{"cfg.json"}
+	opts.testControl().validateActiveErr = errors.New("permission denied")
 
 	model, err := newConfiguratorSessionModel(opts, s)
 	if err != nil {
@@ -354,7 +346,7 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_MissingConfig_ShowsS
 	s.update(p)
 
 	opts := defaultConfiguratorOpts()
-	opts.testControl().Observer = sessionObserverWithConfigs{configs: []string{"other.json"}}
+	opts.testControl().clientConfigs = []string{"other.json"}
 
 	model, err := newConfiguratorSessionModel(opts, s)
 	if err != nil {
@@ -375,7 +367,7 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_NotSet_ShowsSelectio
 	s := settingsForMode(ModePreferenceClient)
 
 	opts := defaultConfiguratorOpts()
-	opts.testControl().Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
+	opts.testControl().clientConfigs = []string{"cfg.json"}
 
 	model, err := newConfiguratorSessionModel(opts, s)
 	if err != nil {
@@ -396,7 +388,7 @@ func TestNewConfiguratorSessionModel_AutoSelectClientConfig_NotSet_ShowsSelectio
 func TestUpdateClientSelectScreen_AutoSelectClientConfig_SavedOnSuccess(t *testing.T) {
 	s := testSettings()
 	opts := defaultConfiguratorOpts()
-	opts.testControl().Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
+	opts.testControl().clientConfigs = []string{"cfg.json"}
 
 	model, err := newConfiguratorSessionModel(opts, s)
 	if err != nil {
@@ -417,8 +409,8 @@ func TestUpdateClientSelectScreen_AutoSelectClientConfig_SavedOnSuccess(t *testi
 func TestUpdateClientSelectScreen_AutoSelectClientConfig_NotSavedWhenSelectFails(t *testing.T) {
 	s := testSettings()
 	opts := defaultConfiguratorOpts()
-	opts.testControl().Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
-	opts.testControl().Selector = sessionSelectorFailStub{err: errors.New("select failed")}
+	opts.testControl().clientConfigs = []string{"cfg.json"}
+	opts.testControl().selectErr = errors.New("select failed")
 
 	model, err := newConfiguratorSessionModel(opts, s)
 	if err != nil {
@@ -439,10 +431,8 @@ func TestUpdateClientSelectScreen_AutoSelectClientConfig_NotSavedWhenSelectFails
 func TestUpdateClientSelectScreen_AutoSelectClientConfig_NotSavedWhenConfigInvalid(t *testing.T) {
 	s := testSettings()
 	opts := defaultConfiguratorOpts()
-	opts.testControl().Observer = sessionObserverWithConfigs{configs: []string{"cfg.json"}}
-	opts.testControl().ClientConfigManager = sessionClientConfigManagerInvalid{
-		err: errors.New("invalid client configuration (test): bad key"),
-	}
+	opts.testControl().clientConfigs = []string{"cfg.json"}
+	opts.testControl().validateActiveErr = errors.New("invalid client configuration (test): bad key")
 
 	model, err := newConfiguratorSessionModel(opts, s)
 	if err != nil {

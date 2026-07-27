@@ -17,6 +17,43 @@ var orderedModePreferences = [...]ModePreference{
 	ModePreferenceServer,
 }
 
+func nextTheme(current ThemeOption, step int) ThemeOption {
+	order := orderedThemeOptions[:]
+	index := 0
+	for i, item := range order {
+		if item == current {
+			index = i
+			break
+		}
+	}
+	if !isValidTheme(current) {
+		index = 0
+	}
+	if step > 0 {
+		index = (index + 1) % len(order)
+	} else {
+		index = (index - 1 + len(order)) % len(order)
+	}
+	return order[index]
+}
+
+func nextStatsUnits(current StatsUnitsOption, step int) StatsUnitsOption {
+	order := []StatsUnitsOption{StatsUnitsBytes, StatsUnitsBiBytes}
+	index := 0
+	for i, item := range order {
+		if item == current {
+			index = i
+			break
+		}
+	}
+	if step > 0 {
+		index = (index + 1) % len(order)
+	} else {
+		index = (index - 1 + len(order)) % len(order)
+	}
+	return order[index]
+}
+
 func nextModePreference(current ModePreference, step int) ModePreference {
 	n := len(orderedModePreferences)
 	idx := 0

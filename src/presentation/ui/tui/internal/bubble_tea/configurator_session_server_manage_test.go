@@ -5,115 +5,22 @@ import (
 	"strings"
 	"testing"
 
-	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
-	serverConfiguration "tungo/infrastructure/PAL/configuration/server"
+	appConfiguration "tungo/application/configuration"
 
 	tea "charm.land/bubbletea/v2"
 )
 
-type sessionObserverStub struct{}
-
-func (sessionObserverStub) Observe() ([]string, error) { return nil, nil }
-
-type sessionSelectorStub struct{}
-
-func (sessionSelectorStub) Select(string) error { return nil }
-
-type sessionCreatorStub struct{}
-
-func (sessionCreatorStub) Create(clientConfiguration.Configuration, string) error { return nil }
-
-type sessionDeleterStub struct{}
-
-func (sessionDeleterStub) Delete(string) error { return nil }
-
-type sessionClientConfigManagerStub struct{}
-
-func (sessionClientConfigManagerStub) Configuration() (*clientConfiguration.Configuration, error) {
-	return nil, nil
-}
-
-type sessionServerConfigManagerStub struct {
-	peers         []serverConfiguration.AllowedPeer
-	removeErr     error
-	removeCalls   int
-	lastRemoved   int
-	setEnabledErr error
-	listErr       error
-}
-
-func (s *sessionServerConfigManagerStub) Configuration() (*serverConfiguration.Configuration, error) {
-	return &serverConfiguration.Configuration{AllowedPeers: append([]serverConfiguration.AllowedPeer(nil), s.peers...)}, nil
-}
-
-func (s *sessionServerConfigManagerStub) IncrementClientCounter() error { return nil }
-
-func (s *sessionServerConfigManagerStub) InjectX25519Keys(_, _ []byte) error { return nil }
-
-func (s *sessionServerConfigManagerStub) AddAllowedPeer(peer serverConfiguration.AllowedPeer) error {
-	s.peers = append(s.peers, peer)
-	return nil
-}
-
-func (s *sessionServerConfigManagerStub) ListAllowedPeers() ([]serverConfiguration.AllowedPeer, error) {
-	if s.listErr != nil {
-		return nil, s.listErr
-	}
-	peers := make([]serverConfiguration.AllowedPeer, len(s.peers))
-	copy(peers, s.peers)
-	return peers, nil
-}
-
-func (s *sessionServerConfigManagerStub) SetAllowedPeerEnabled(clientID int, enabled bool) error {
-	if s.setEnabledErr != nil {
-		return s.setEnabledErr
-	}
-	for i := range s.peers {
-		if s.peers[i].ClientID == clientID {
-			s.peers[i].Enabled = enabled
-			return nil
-		}
-	}
-	return nil
-}
-
-func (s *sessionServerConfigManagerStub) RemoveAllowedPeer(clientID int) error {
-	s.removeCalls++
-	s.lastRemoved = clientID
-	if s.removeErr != nil {
-		return s.removeErr
-	}
-	for i := range s.peers {
-		if s.peers[i].ClientID == clientID {
-			s.peers = append(s.peers[:i], s.peers[i+1:]...)
-			return nil
-		}
-	}
-	return errors.New("not found")
-}
-
-func (s *sessionServerConfigManagerStub) EnsureIPv6Subnets() error { return nil }
-
-func (s *sessionServerConfigManagerStub) InvalidateCache() {}
-
 func newSessionModelForServerManageTests(
 	t *testing.T,
-	manager *sessionServerConfigManagerStub,
+	control *testConfigurationControl,
 ) configuratorSessionModel {
 	t.Helper()
-	model, err := newConfiguratorSessionModel(sessionOptionsWithControl(&sessionConfigurationControl{
-		Observer:            sessionObserverStub{},
-		Selector:            sessionSelectorStub{},
-		Creator:             sessionCreatorStub{},
-		Deleter:             sessionDeleterStub{},
-		ClientConfigManager: sessionClientConfigManagerStub{},
-		ServerConfigManager: manager,
-	}), testSettings())
+	model, err := newConfiguratorSessionModel(testSessionOptions(control), testSettings())
 	if err != nil {
 		t.Fatalf("newConfiguratorSessionModel error: %v", err)
 	}
 	model.screen = configuratorScreenServerManage
-	model.server.managePeers = sessionServerPeers(manager.peers)
+	model.server.managePeers = append([]appConfiguration.ServerPeer(nil), control.peers...)
 	model.server.manageLabels = buildServerManageLabels(model.server.managePeers)
 	model.cursor = 0
 	return model
@@ -128,8 +35,8 @@ func keyNamed(k rune) tea.KeyPressMsg {
 }
 
 func TestServerManage_DeleteFlow_ConfirmRemovesPeer(t *testing.T) {
-	manager := &sessionServerConfigManagerStub{
-		peers: []serverConfiguration.AllowedPeer{
+	manager := &testConfigurationControl{
+		peers: []appConfiguration.ServerPeer{
 			{Name: "alpha", ClientID: 1, Enabled: true},
 			{Name: "beta", ClientID: 2, Enabled: false},
 		},
@@ -165,8 +72,8 @@ func TestServerManage_DeleteFlow_ConfirmRemovesPeer(t *testing.T) {
 }
 
 func TestServerManage_DeleteFlow_CancelKeepsPeer(t *testing.T) {
-	manager := &sessionServerConfigManagerStub{
-		peers: []serverConfiguration.AllowedPeer{
+	manager := &testConfigurationControl{
+		peers: []appConfiguration.ServerPeer{
 			{Name: "alpha", ClientID: 10, Enabled: true},
 		},
 	}
@@ -191,8 +98,8 @@ func TestServerManage_DeleteFlow_CancelKeepsPeer(t *testing.T) {
 }
 
 func TestServerManage_DeleteFlow_LastPeerReturnsToServerMenu(t *testing.T) {
-	manager := &sessionServerConfigManagerStub{
-		peers: []serverConfiguration.AllowedPeer{
+	manager := &testConfigurationControl{
+		peers: []appConfiguration.ServerPeer{
 			{Name: "solo", ClientID: 99, Enabled: true},
 		},
 	}
@@ -212,8 +119,8 @@ func TestServerManage_DeleteFlow_LastPeerReturnsToServerMenu(t *testing.T) {
 }
 
 func TestServerManage_ToggleEnabled_Error_ShowsNotice(t *testing.T) {
-	manager := &sessionServerConfigManagerStub{
-		peers: []serverConfiguration.AllowedPeer{
+	manager := &testConfigurationControl{
+		peers: []appConfiguration.ServerPeer{
 			{Name: "alpha", ClientID: 1, Enabled: true},
 		},
 		setEnabledErr: errors.New("enable failed"),
@@ -232,14 +139,14 @@ func TestServerManage_ToggleEnabled_Error_ShowsNotice(t *testing.T) {
 }
 
 func TestServerManage_ToggleEnabled_ListError_Exits(t *testing.T) {
-	manager := &sessionServerConfigManagerStub{
-		peers: []serverConfiguration.AllowedPeer{
+	manager := &testConfigurationControl{
+		peers: []appConfiguration.ServerPeer{
 			{Name: "alpha", ClientID: 1, Enabled: true},
 		},
 	}
 	model := newSessionModelForServerManageTests(t, manager)
-	// After SetAllowedPeerEnabled succeeds, make ListAllowedPeers fail.
-	manager.listErr = errors.New("list failed")
+	// After SetPeerEnabled succeeds, make ListPeers fail.
+	manager.listPeersErr = errors.New("list failed")
 
 	nextModel, cmd := model.updateServerManageScreen(keyNamed(tea.KeyEnter))
 	state := nextModel.(configuratorSessionModel)
@@ -256,7 +163,7 @@ func TestServerManage_ToggleEnabled_ListError_Exits(t *testing.T) {
 }
 
 func TestServerManage_DeleteNoEmptyPeers(t *testing.T) {
-	manager := &sessionServerConfigManagerStub{
+	manager := &testConfigurationControl{
 		peers: nil,
 	}
 	model := newSessionModelForServerManageTests(t, manager)
@@ -272,7 +179,7 @@ func TestServerManage_DeleteNoEmptyPeers(t *testing.T) {
 }
 
 func TestServerDeleteConfirm_EscRestoresCursorNoPeers(t *testing.T) {
-	manager := &sessionServerConfigManagerStub{
+	manager := &testConfigurationControl{
 		peers: nil,
 	}
 	model := newSessionModelForServerManageTests(t, manager)
@@ -291,15 +198,15 @@ func TestServerDeleteConfirm_EscRestoresCursorNoPeers(t *testing.T) {
 }
 
 func TestServerDeleteConfirm_RemoveError_ShowsNotice(t *testing.T) {
-	manager := &sessionServerConfigManagerStub{
-		peers: []serverConfiguration.AllowedPeer{
+	manager := &testConfigurationControl{
+		peers: []appConfiguration.ServerPeer{
 			{Name: "alpha", ClientID: 1, Enabled: true},
 		},
 		removeErr: errors.New("remove failed"),
 	}
 	model := newSessionModelForServerManageTests(t, manager)
 	model.screen = configuratorScreenServerDeleteConfirm
-	model.server.deletePeer = sessionServerPeer(manager.peers[0])
+	model.server.deletePeer = manager.peers[0]
 	model.cursor = 0
 
 	nextModel, _ := model.updateServerDeleteConfirmScreen(keyNamed(tea.KeyEnter))
@@ -313,20 +220,20 @@ func TestServerDeleteConfirm_RemoveError_ShowsNotice(t *testing.T) {
 }
 
 func TestServerDeleteConfirm_ListError_Exits(t *testing.T) {
-	manager := &sessionServerConfigManagerStub{
-		peers: []serverConfiguration.AllowedPeer{
+	manager := &testConfigurationControl{
+		peers: []appConfiguration.ServerPeer{
 			{Name: "alpha", ClientID: 1, Enabled: true},
 		},
 	}
 	model := newSessionModelForServerManageTests(t, manager)
 	model.screen = configuratorScreenServerDeleteConfirm
-	model.server.deletePeer = sessionServerPeer(manager.peers[0])
+	model.server.deletePeer = manager.peers[0]
 	model.cursor = 0
 	// After remove, make list fail.
 	// The remove will succeed (removeErr is nil), and the peer is removed from slice.
-	// Then ListAllowedPeers will be called. Need to make it fail after remove.
+	// Then ListPeers will be called. Need to make it fail after remove.
 	// Since our stub checks listErr, set it before the call.
-	manager.listErr = errors.New("list failed after delete")
+	manager.listPeersErr = errors.New("list failed after delete")
 
 	nextModel, cmd := model.updateServerDeleteConfirmScreen(keyNamed(tea.KeyEnter))
 	state := nextModel.(configuratorSessionModel)
@@ -339,15 +246,15 @@ func TestServerDeleteConfirm_ListError_Exits(t *testing.T) {
 }
 
 func TestServerDeleteConfirm_CancelWithPeers_RestoresCursor(t *testing.T) {
-	manager := &sessionServerConfigManagerStub{
-		peers: []serverConfiguration.AllowedPeer{
+	manager := &testConfigurationControl{
+		peers: []appConfiguration.ServerPeer{
 			{Name: "alpha", ClientID: 1, Enabled: true},
 			{Name: "beta", ClientID: 2, Enabled: false},
 		},
 	}
 	model := newSessionModelForServerManageTests(t, manager)
 	model.screen = configuratorScreenServerDeleteConfirm
-	model.server.deletePeer = sessionServerPeer(manager.peers[1])
+	model.server.deletePeer = manager.peers[1]
 	model.server.deleteCursor = 1
 	model.cursor = 1 // cursor on "Cancel"
 

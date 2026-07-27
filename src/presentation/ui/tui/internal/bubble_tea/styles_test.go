@@ -313,17 +313,6 @@ func TestWrapBody_EmptyWrappedLineBranch(t *testing.T) {
 	}
 }
 
-func TestWrapBody_EmptyWrappedFromHook(t *testing.T) {
-	prev := wrapTextForBody
-	t.Cleanup(func() { wrapTextForBody = prev })
-	wrapTextForBody = func(string, int) []string { return nil }
-
-	lines := wrapBody([]string{"x"}, 10)
-	if len(lines) != 1 || lines[0] != "" {
-		t.Fatalf("expected fallback empty line for nil wrap result, got %v", lines)
-	}
-}
-
 func TestWrapLine_WhitespaceOnly(t *testing.T) {
 	lines := wrapLine("      ", 2)
 	if len(lines) != 1 || lines[0] != "" {
@@ -361,19 +350,6 @@ func TestEnforceBaseThemeFill_ReappliesAfterAnsiReset(t *testing.T) {
 	}
 	if !strings.Contains(out, ansiBgBrightWhite) {
 		t.Fatalf("expected light background sequence, got %q", out)
-	}
-}
-
-func TestEnforceBaseThemeFill_NoBaseThemeAvailable(t *testing.T) {
-	prev := baseANSIForThemeFunc
-	t.Cleanup(func() { baseANSIForThemeFunc = prev })
-	baseANSIForThemeFunc = func(UIPreferences) (string, string, bool) {
-		return "", "", false
-	}
-
-	const input = "plain"
-	if out := enforceBaseThemeFill(input, UIPreferences{Theme: ThemeLight}); out != input {
-		t.Fatalf("expected unchanged string when base theme is unavailable, got %q", out)
 	}
 }
 
@@ -545,10 +521,7 @@ func TestTruncateVisible_WidthZero(t *testing.T) {
 }
 
 func TestBaseANSIForTheme_UnknownTheme(t *testing.T) {
-	bg, fg, ok := baseANSIForTheme(UIPreferences{Theme: ThemeOption("unknown_theme")})
-	if !ok {
-		t.Fatal("expected ok=true even for unknown theme (falls back to light)")
-	}
+	bg, fg := baseANSIForTheme(UIPreferences{Theme: ThemeOption("unknown_theme")})
 	if bg == "" || fg == "" {
 		t.Fatalf("expected non-empty bg/fg for fallback theme, got bg=%q fg=%q", bg, fg)
 	}
@@ -576,7 +549,7 @@ func TestAnsiFrameStyle_Render_WidthZero_AutoWidth(t *testing.T) {
 	topBorder := lines[0]
 	// The inner width should be at least as wide as "longer line here" (16 chars).
 	innerWidth := len(topBorder) - 2 // minus the two '+' chars
-	if innerWidth < 18 { // 16 + 2 padding
+	if innerWidth < 18 {             // 16 + 2 padding
 		t.Fatalf("expected inner width >= 18, got %d from border: %q", innerWidth, topBorder)
 	}
 }
@@ -780,16 +753,5 @@ func TestAppendWrappedBody_WidthZeroNoNewline(t *testing.T) {
 	got := appendWrappedBody(nil, []string{"hello world"}, 0)
 	if len(got) != 1 || got[0] != "hello world" {
 		t.Fatalf("expected passthrough for width<=0, got %v", got)
-	}
-}
-
-func TestAppendWrappedBody_WrappedReturnsEmpty(t *testing.T) {
-	prev := wrapTextForBody
-	t.Cleanup(func() { wrapTextForBody = prev })
-	wrapTextForBody = func(string, int) []string { return nil }
-
-	got := appendWrappedBody(nil, []string{"some text"}, 10)
-	if len(got) != 1 || got[0] != "" {
-		t.Fatalf("expected empty fallback for nil wrapped result, got %v", got)
 	}
 }

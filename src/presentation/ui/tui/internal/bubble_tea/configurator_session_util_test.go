@@ -179,7 +179,7 @@ func TestServerPeerDisplayName_WhitespaceOnlyName(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestNewConfiguratorSessionModel_AllDependencies(t *testing.T) {
-	opts := sessionOptionsWithControl(defaultSessionConfigurationControl())
+	opts := testSessionOptions(newTestConfigurationControl())
 	model, err := newConfiguratorSessionModel(opts, testSettings())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)

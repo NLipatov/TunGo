@@ -2,7 +2,6 @@ package bubble_tea
 
 import (
 	"context"
-	"errors"
 	"net/netip"
 	"strings"
 	"time"
@@ -52,7 +51,6 @@ const (
 )
 
 var zeroBrailleSparklineCache = initZeroBrailleSparklineCache()
-var ErrRuntimeDashboardExitRequested = errors.New("runtime dashboard exit requested")
 
 type RuntimeDashboard struct {
 	settings             *uiPreferencesProvider
@@ -81,14 +79,6 @@ type RuntimeDashboard struct {
 	connected            bool
 	protocol             settings.Protocol
 	endpoints            []appConfiguration.EndpointInfo
-}
-
-type runtimeDashboardProgram interface {
-	Run() (tea.Model, error)
-}
-
-var newRuntimeDashboardProgram = func(model tea.Model) runtimeDashboardProgram {
-	return tea.NewProgram(model)
 }
 
 func NewRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions, settings *uiPreferencesProvider) RuntimeDashboard {
@@ -124,34 +114,6 @@ func NewRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions, s
 		model.recordTrafficSample(trafficstats.SnapshotGlobal())
 	}
 	return model
-}
-
-func RunRuntimeDashboard(ctx context.Context, options RuntimeDashboardOptions) (reconfigure bool, err error) {
-	defer clearTerminalAfterTUI()
-
-	safeCtx := ctx
-	if safeCtx == nil {
-		safeCtx = context.Background()
-	}
-	settings := loadUISettingsFromDisk()
-	model := NewRuntimeDashboard(safeCtx, options, settings)
-	program := newRuntimeDashboardProgram(model)
-	result, err := program.Run()
-	if err != nil {
-		if errors.Is(safeCtx.Err(), context.Canceled) {
-			return false, nil
-		}
-		return false, err
-	}
-	finalModel, ok := result.(RuntimeDashboard)
-	if !ok {
-		return false, nil
-	}
-	finalModel.logs.stopWait()
-	if finalModel.exitRequested {
-		return false, ErrRuntimeDashboardExitRequested
-	}
-	return finalModel.reconfigureRequested, nil
 }
 
 func (m RuntimeDashboard) Init() tea.Cmd {

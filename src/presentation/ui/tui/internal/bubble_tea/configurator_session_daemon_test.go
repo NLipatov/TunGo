@@ -6,19 +6,10 @@ import (
 	"testing"
 
 	"tungo/application/runtime"
-	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
 	"tungo/infrastructure/PAL/service_management/linux/systemd"
 
 	tea "charm.land/bubbletea/v2"
 )
-
-type failingClientConfigManager struct {
-	err error
-}
-
-func (m failingClientConfigManager) Configuration() (*clientConfiguration.Configuration, error) {
-	return nil, m.err
-}
 
 func TestModeOptions_AddsDaemonWhenDaemonAvailable(t *testing.T) {
 	opts := defaultConfiguratorOpts()
@@ -696,7 +687,7 @@ func TestUpdateDaemonManageScreen_UnmanagedUnit_HidesDeleteOption(t *testing.T) 
 func TestUpdateClientSelectScreen_SelectConfig_ActiveDaemon_ShowsStopPrompt(t *testing.T) {
 	s := settingsForMode(ModePreferenceClient)
 	opts := defaultConfiguratorOpts()
-	opts.testControl().Observer = sessionObserverWithConfigs{configs: []string{"cfg-a"}}
+	opts.testControl().clientConfigs = []string{"cfg-a"}
 	opts.testDaemon().isActive = func() (bool, error) { return true, nil }
 	opts.testDaemon().stop = func() error { return nil }
 

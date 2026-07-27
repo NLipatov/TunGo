@@ -10,13 +10,6 @@ import (
 	"tungo/application/runtime"
 )
 
-// sessionSelectorFailStub is a Selector stub that always returns an error from Select.
-type sessionSelectorFailStub struct {
-	err error
-}
-
-func (s sessionSelectorFailStub) Select(string) error { return s.err }
-
 // ---------------------------------------------------------------------------
 // tryAutoConnect
 // ---------------------------------------------------------------------------
@@ -53,41 +46,40 @@ func TestTryAutoConnect_SelectFails(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 	prefs := UIPreferences{AutoSelectClientConfig: cfgPath}
-	control := defaultSessionConfigurationControl()
-	control.Selector = sessionSelectorFailStub{err: errors.New("select failed")}
-	opts := sessionOptionsWithControl(control)
+	control := newTestConfigurationControl()
+	control.selectErr = errors.New("select failed")
+	opts := testSessionOptions(control)
 	if tryAutoConnect(prefs, opts) {
 		t.Fatal("expected false when Select returns error")
 	}
 }
 
-func TestTryAutoConnect_ConfigManagerFails(t *testing.T) {
+func TestTryAutoConnect_ValidateActiveFails(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "cfg.json")
 	if err := os.WriteFile(cfgPath, []byte("{}"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	prefs := UIPreferences{AutoSelectClientConfig: cfgPath}
-	control := defaultSessionConfigurationControl()
-	control.ClientConfigManager = sessionClientConfigManagerInvalid{err: errors.New("bad config")}
-	opts := sessionOptionsWithControl(control)
+	control := newTestConfigurationControl()
+	control.validateActiveErr = errors.New("bad config")
+	opts := testSessionOptions(control)
 	if tryAutoConnect(prefs, opts) {
-		t.Fatal("expected false when ClientConfigManager returns error")
+		t.Fatal("expected false when active configuration validation fails")
 	}
 }
 
-func TestTryAutoConnect_NilConfigManager_Succeeds(t *testing.T) {
+func TestTryAutoConnect_ValidationSucceeds(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "cfg.json")
 	if err := os.WriteFile(cfgPath, []byte("{}"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	prefs := UIPreferences{AutoSelectClientConfig: cfgPath}
-	control := defaultSessionConfigurationControl()
-	control.ClientConfigManager = nil
-	opts := sessionOptionsWithControl(control)
+	control := newTestConfigurationControl()
+	opts := testSessionOptions(control)
 	if !tryAutoConnect(prefs, opts) {
-		t.Fatal("expected true when ClientConfigManager is nil and all else succeeds")
+		t.Fatal("expected true when validation succeeds")
 	}
 }
 
@@ -98,7 +90,7 @@ func TestTryAutoConnect_AllSucceed(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 	prefs := UIPreferences{AutoSelectClientConfig: cfgPath}
-	opts := sessionOptionsWithControl(defaultSessionConfigurationControl())
+	opts := testSessionOptions(newTestConfigurationControl())
 	if !tryAutoConnect(prefs, opts) {
 		t.Fatal("expected true when all conditions are met")
 	}
@@ -190,7 +182,7 @@ func TestNewUnifiedSessionModel_AutoConnect_DaemonActive_FallsBackToConfiguring(
 	settings := settingsWithAutoConnect(cfgPath)
 	events := make(chan unifiedEvent, 8)
 	opts := defaultUnifiedConfigOpts()
-	opts.testControl().Observer = sessionObserverWithConfigs{configs: []string{cfgPath}}
+	opts.testControl().clientConfigs = []string{cfgPath}
 	opts.testDaemon().isActive = func() (bool, error) { return true, nil }
 	opts.testDaemon().stop = func() error { return nil }
 

@@ -119,6 +119,13 @@ func uiSettingsRows(prefs UIPreferences, serverSupported bool) []string {
 	return rows
 }
 
+func onOff(value bool) string {
+	if value {
+		return "ON"
+	}
+	return "OFF"
+}
+
 func modePreferenceLabel(m ModePreference) string {
 	switch m {
 	case ModePreferenceClient:

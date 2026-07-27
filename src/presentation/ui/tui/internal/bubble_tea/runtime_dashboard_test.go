@@ -2,7 +2,6 @@ package bubble_tea
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/netip"
 	"strings"
@@ -136,14 +135,6 @@ func TestRuntimeDashboard_TogglesStatsUnitsInSettings(t *testing.T) {
 	}
 }
 
-type testRuntimeProgram struct {
-	run func() (tea.Model, error)
-}
-
-func (p testRuntimeProgram) Run() (tea.Model, error) {
-	return p.run()
-}
-
 type testRuntimeLogFeed struct {
 	lines []string
 }
@@ -172,134 +163,8 @@ func (f testRuntimeLogFeed) TailInto(dst []string, limit int) int {
 	return copy(dst, f.lines[start:])
 }
 
-type nonDashboardModel struct{}
-
-func (nonDashboardModel) Init() tea.Cmd                           { return nil }
-func (nonDashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { return nonDashboardModel{}, nil }
-func (nonDashboardModel) View() tea.View                          { return tea.NewView("x") }
-
-func TestRunRuntimeDashboard_RunErrorWhenContextCanceled_IsIgnored(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	oldFactory := newRuntimeDashboardProgram
-	t.Cleanup(func() { newRuntimeDashboardProgram = oldFactory })
-	newRuntimeDashboardProgram = func(model tea.Model) runtimeDashboardProgram {
-		return testRuntimeProgram{
-			run: func() (tea.Model, error) {
-				return model, errors.New("boom")
-			},
-		}
-	}
-
-	quit, err := RunRuntimeDashboard(ctx, RuntimeDashboardOptions{})
-	if err != nil {
-		t.Fatalf("expected nil error when context already canceled, got %v", err)
-	}
-	if quit {
-		t.Fatal("expected quit=false")
-	}
-}
-
-func TestRunRuntimeDashboard_RunErrorReturnedWhenContextActive(t *testing.T) {
-	oldFactory := newRuntimeDashboardProgram
-	t.Cleanup(func() { newRuntimeDashboardProgram = oldFactory })
-	newRuntimeDashboardProgram = func(model tea.Model) runtimeDashboardProgram {
-		return testRuntimeProgram{
-			run: func() (tea.Model, error) {
-				return model, errors.New("boom")
-			},
-		}
-	}
-
-	_, err := RunRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
-	if err == nil {
-		t.Fatal("expected run error to be returned")
-	}
-}
-
-func TestRunRuntimeDashboard_FinalModelTypeAndFlags(t *testing.T) {
-	oldFactory := newRuntimeDashboardProgram
-	t.Cleanup(func() { newRuntimeDashboardProgram = oldFactory })
-	newRuntimeDashboardProgram = func(model tea.Model) runtimeDashboardProgram {
-		return testRuntimeProgram{
-			run: func() (tea.Model, error) {
-				return nonDashboardModel{}, nil
-			},
-		}
-	}
-	quit, err := RunRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if quit {
-		t.Fatal("expected quit=false for non-dashboard final model")
-	}
-
-	newRuntimeDashboardProgram = func(model tea.Model) runtimeDashboardProgram {
-		return testRuntimeProgram{
-			run: func() (tea.Model, error) {
-				m := model.(RuntimeDashboard)
-				m.reconfigureRequested = true
-				return m, nil
-			},
-		}
-	}
-	quit, err = RunRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !quit {
-		t.Fatal("expected quit=true when final model requested quit")
-	}
-
-	newRuntimeDashboardProgram = func(model tea.Model) runtimeDashboardProgram {
-		return testRuntimeProgram{
-			run: func() (tea.Model, error) {
-				m := model.(RuntimeDashboard)
-				m.exitRequested = true
-				return m, nil
-			},
-		}
-	}
-	quit, err = RunRuntimeDashboard(context.Background(), RuntimeDashboardOptions{})
-	if err == nil || !errors.Is(err, ErrRuntimeDashboardExitRequested) {
-		t.Fatalf("expected ErrRuntimeDashboardExitRequested, got %v", err)
-	}
-	if quit {
-		t.Fatal("expected quit=false on explicit exit request")
-	}
-}
-
-func TestRunRuntimeDashboard_NilContext(t *testing.T) {
-	oldFactory := newRuntimeDashboardProgram
-	t.Cleanup(func() { newRuntimeDashboardProgram = oldFactory })
-	newRuntimeDashboardProgram = func(model tea.Model) runtimeDashboardProgram {
-		return testRuntimeProgram{
-			run: func() (tea.Model, error) {
-				return model, nil
-			},
-		}
-	}
-
-	quit, err := RunRuntimeDashboard(nilContext(), RuntimeDashboardOptions{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if quit {
-		t.Fatal("expected quit=false")
-	}
-}
-
 func nilContext() context.Context {
 	return nil
-}
-
-func TestNewRuntimeDashboardProgram_DefaultFactory(t *testing.T) {
-	program := newRuntimeDashboardProgram(NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings()))
-	if program == nil {
-		t.Fatal("expected non-nil runtime dashboard program")
-	}
 }
 
 func TestRuntimeDashboard_InitAndTickCommands(t *testing.T) {

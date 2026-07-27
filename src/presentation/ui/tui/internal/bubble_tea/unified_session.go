@@ -282,7 +282,7 @@ func (m unifiedSessionModel) updateRuntime(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if prefs.AutoConnect {
 				prefs.AutoConnect = false
 				m.settings.update(prefs)
-				if err := persistAutoConnectDisabled(prefs); err != nil {
+				if err := savePreferencesToDisk(prefs); err != nil {
 					m.stopAllLogWaits()
 					fe := newFatalErrorModel(
 						fmt.Sprintf("Failed to persist AutoConnect=false before reconfigure: %v", err),
@@ -321,12 +321,6 @@ func (m unifiedSessionModel) updateRuntime(msg tea.Msg) (tea.Model, tea.Cmd) {
 	cmd = filterQuit(cmd)
 	return m, cmd
 }
-
-func persistAutoConnectDisabled(prefs UIPreferences) error {
-	return persistAutoConnectDisabledToDisk(prefs)
-}
-
-var persistAutoConnectDisabledToDisk = savePreferencesToDisk
 
 func (m unifiedSessionModel) updateFatalError(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.fatalError == nil {
