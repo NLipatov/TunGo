@@ -125,3 +125,68 @@ func newTestTUI(t *testing.T) *TUI {
 	}
 	return ui
 }
+
+type configurationControlMock struct{}
+
+func configurationControlsMock(serverSupported bool) appConfiguration.Controls {
+	controls := appConfiguration.Controls{Client: configurationControlMock{}}
+	if serverSupported {
+		controls.Server = configurationControlMock{}
+	}
+	return controls
+}
+
+func (configurationControlMock) List() ([]string, error) {
+	return nil, nil
+}
+
+func (configurationControlMock) Select(string) error {
+	return nil
+}
+
+func (configurationControlMock) ValidateActive() error {
+	return nil
+}
+
+func (configurationControlMock) RuntimeInfo() (appConfiguration.RuntimeInfo, error) {
+	return appConfiguration.RuntimeInfo{Protocol: settings.TCP}, nil
+}
+
+func (configurationControlMock) CreateFromJSON(string, string) error {
+	return nil
+}
+
+func (configurationControlMock) Delete(string) error {
+	return nil
+}
+
+func (configurationControlMock) ClientRuntimeConfiguration() (appConfiguration.ClientRuntimeConfiguration, error) {
+	return appConfiguration.ClientRuntimeConfiguration{}, nil
+}
+
+func (configurationControlMock) GenerateClientConfiguration() (appConfiguration.GeneratedClientConfiguration, error) {
+	return appConfiguration.GeneratedClientConfiguration{}, nil
+}
+
+func (configurationControlMock) ListPeers() ([]appConfiguration.ServerPeer, error) {
+	return nil, nil
+}
+
+func (configurationControlMock) SetPeerEnabled(int, bool) error {
+	return nil
+}
+
+func (configurationControlMock) RemovePeer(int) error {
+	return nil
+}
+
+func (configurationControlMock) ServerRuntimeConfiguration() (appConfiguration.ServerRuntimeConfiguration, error) {
+	return appConfiguration.ServerRuntimeConfiguration{}, nil
+}
+
+func (configurationControlMock) WatchServerRuntimeConfiguration(
+	context.Context,
+	appConfiguration.ServerSessionRevoker,
+	appConfiguration.ServerAllowedPeersUpdater,
+) {
+}
