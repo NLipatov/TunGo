@@ -32,12 +32,6 @@ type RuntimeLogBuffer struct {
 	changes  chan struct{}
 }
 
-var (
-	globalRuntimeLogMu      sync.Mutex
-	globalRuntimeLogBuffer  *RuntimeLogBuffer
-	globalRuntimeLogRestore func()
-)
-
 func NewRuntimeLogBuffer(capacity int) *RuntimeLogBuffer {
 	if capacity <= 0 {
 		capacity = defaultRuntimeLogCapacity
@@ -139,55 +133,9 @@ func RedirectStandardLoggerToBuffer(buffer *RuntimeLogBuffer) func() {
 	}
 }
 
-func EnableGlobalRuntimeLogCapture(capacity int) {
-	globalRuntimeLogMu.Lock()
-	defer globalRuntimeLogMu.Unlock()
-
-	if globalRuntimeLogBuffer != nil {
-		return
-	}
-
-	buffer := NewRuntimeLogBuffer(capacity)
-	previousWriter := logging.SetOutput(io.Writer(buffer))
-
-	globalRuntimeLogBuffer = buffer
-	globalRuntimeLogRestore = func() {
-		logging.SetOutput(previousWriter)
-	}
-}
-
-func DisableGlobalRuntimeLogCapture() {
-	globalRuntimeLogMu.Lock()
-	defer globalRuntimeLogMu.Unlock()
-
-	if globalRuntimeLogRestore != nil {
-		globalRuntimeLogRestore()
-	}
-	globalRuntimeLogRestore = nil
-	globalRuntimeLogBuffer = nil
-}
-
 func (b *RuntimeLogBuffer) WriteSeparator(reason string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	line := fmt.Sprintf("--- session ended: %s (%s) ---", reason, time.Now().Format("2006-01-02 15:04:05"))
 	b.appendLineLocked(line)
-}
-
-func GlobalRuntimeLogWriteSeparator(reason string) {
-	globalRuntimeLogMu.Lock()
-	buf := globalRuntimeLogBuffer
-	globalRuntimeLogMu.Unlock()
-	if buf != nil {
-		buf.WriteSeparator(reason)
-	}
-}
-
-func GlobalRuntimeLogFeed() RuntimeLogFeed {
-	globalRuntimeLogMu.Lock()
-	defer globalRuntimeLogMu.Unlock()
-	if globalRuntimeLogBuffer == nil {
-		return nil
-	}
-	return globalRuntimeLogBuffer
 }

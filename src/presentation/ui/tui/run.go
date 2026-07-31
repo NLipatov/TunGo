@@ -5,34 +5,31 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+
 	appConfiguration "tungo/application/configuration"
 	appRuntime "tungo/application/runtime"
 	bubbleTea "tungo/presentation/ui/tui/internal/bubble_tea"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 const runtimeLogCaptureCapacity = 1200
 
 func (t *TUI) Run(ctx context.Context) error {
-	if t.newRuntime == nil {
-		return fmt.Errorf("runtime factory is nil")
-	}
-
-	bubbleTea.EnableGlobalRuntimeLogCapture(runtimeLogCaptureCapacity)
-	defer bubbleTea.DisableGlobalRuntimeLogCapture()
+	logBuffer := bubbleTea.NewRuntimeLogBuffer(runtimeLogCaptureCapacity)
+	restoreLogger := bubbleTea.RedirectStandardLoggerToBuffer(logBuffer)
+	defer restoreLogger()
 
 	for ctx.Err() == nil {
-		runtimeMode, err := t.configure(ctx)
+		runtimeMode, err := t.configure(ctx, logBuffer)
 		if err != nil {
 			if errors.Is(err, ErrUserExit) || ctx.Err() != nil {
 				return nil
 			}
-			if errors.Is(err, ErrSessionClosed) {
-				return fmt.Errorf("ui session ended during shutdown: %w", err)
-			}
 			return fmt.Errorf("configuration error: %w", err)
 		}
 
-		err = t.runRuntime(ctx, runtimeMode)
+		err = t.runRuntime(ctx, runtimeMode, logBuffer)
 		if errors.Is(err, errReconfigureRequested) {
 			continue
 		}
@@ -44,56 +41,71 @@ func (t *TUI) Run(ctx context.Context) error {
 	return nil
 }
 
-func (t *TUI) runRuntime(ctx context.Context, mode appRuntime.Mode) error {
+func (t *TUI) runRuntime(
+	ctx context.Context,
+	mode appRuntime.Mode,
+	logBuffer *bubbleTea.RuntimeLogBuffer,
+) error {
 	info, err := t.runtimeInfo(mode)
 	if err != nil {
 		return fmt.Errorf("runtime info error: %w", err)
 	}
-
-	runtimeInstance, err := t.newRuntime(mode)
+	runtimeInstance, err := appRuntime.New(mode)
 	if err != nil {
 		return err
 	}
 	runtimeCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	uiResultCh := make(chan RuntimeUIResult, 1)
+	uiErrCh := make(chan error, 1)
 	go func() {
-		userQuit, err := t.runRuntimePhase(runtimeCtx, bubbleTea.RuntimeDashboardOptions{
+		reconfigure, err := t.runRuntimePhase(runtimeCtx, bubbleTea.RuntimeDashboardOptions{
 			Mode:            mode,
-			ServerSupported: t.sessionOptions.ServerSupported,
-			LogFeed:         bubbleTea.GlobalRuntimeLogFeed(),
+			LogFeed:         logBuffer,
+			ServerSupported: t.configuratorOptions.ServerConfigurationControl != nil,
 			Ready:           runtimeInstance.Ready,
 			Protocol:        info.Protocol,
 			Endpoints:       info.Endpoints,
 		})
+		if err == nil && reconfigure {
+			err = errReconfigureRequested
+		}
 		cancel()
-		uiResultCh <- RuntimeUIResult{UserQuit: userQuit, Err: err}
+		uiErrCh <- err
 	}()
 
 	workerErr := runtimeInstance.Run(runtimeCtx)
 	cancel()
-	uiResult := <-uiResultCh
-	return resolveRuntimeEnd(
-		uiResult,
-		workerErr,
-		func(err error) bool { return errors.Is(err, ErrUserExit) },
-		func(err error) { slog.Error("runtime UI error", "err", err) },
-	)
+	uiErr := <-uiErrCh
+	if uiErr != nil && !errors.Is(uiErr, errReconfigureRequested) {
+		slog.Error("runtime UI error", "err", uiErr)
+	}
+	if workerErr != nil {
+		logBuffer.WriteSeparator("disconnected")
+		return workerErr
+	}
+	if uiErr == nil {
+		return nil
+	}
+	if errors.Is(uiErr, errReconfigureRequested) {
+		logBuffer.WriteSeparator("reconfigured")
+		return errReconfigureRequested
+	}
+	return fmt.Errorf("runtime UI failed: %w", uiErr)
 }
 
 func (t *TUI) runtimeInfo(mode appRuntime.Mode) (appConfiguration.RuntimeInfo, error) {
 	switch mode {
 	case appRuntime.ModeClient:
-		if t.sessionOptions.ClientConfigurationControl == nil {
+		if t.configuratorOptions.ClientConfigurationControl == nil {
 			return appConfiguration.RuntimeInfo{}, fmt.Errorf("client configuration control is nil")
 		}
-		return t.sessionOptions.ClientConfigurationControl.RuntimeInfo()
+		return t.configuratorOptions.ClientConfigurationControl.RuntimeInfo()
 	case appRuntime.ModeServer:
-		if t.sessionOptions.ServerConfigurationControl == nil {
+		if t.configuratorOptions.ServerConfigurationControl == nil {
 			return appConfiguration.RuntimeInfo{}, fmt.Errorf("server configuration control is nil")
 		}
-		return t.sessionOptions.ServerConfigurationControl.RuntimeInfo()
+		return t.configuratorOptions.ServerConfigurationControl.RuntimeInfo()
 	default:
 		return appConfiguration.RuntimeInfo{}, fmt.Errorf("invalid runtime mode: %v", mode)
 	}
@@ -103,22 +115,25 @@ func (t *TUI) runRuntimePhase(
 	ctx context.Context,
 	options bubbleTea.RuntimeDashboardOptions,
 ) (bool, error) {
-	if t.session == nil {
-		return false, fmt.Errorf("runtime dashboard requires active tui session")
-	}
-
-	t.session.ActivateRuntime(ctx, options)
-	reconfigure, err := t.session.WaitForRuntimeExit()
+	model := bubbleTea.NewRuntimeDashboard(ctx, options, t.preferences)
+	program := tea.NewProgram(model)
+	stopQuit := context.AfterFunc(ctx, program.Quit)
+	finalModel, err := program.Run()
+	stopQuit()
 	if err != nil {
-		if errors.Is(err, bubbleTea.ErrUnifiedSessionQuit) || errors.Is(err, bubbleTea.ErrUnifiedSessionClosed) {
-			t.closeSession()
-			return false, ErrUserExit
-		}
-		if errors.Is(err, bubbleTea.ErrUnifiedSessionRuntimeDisconnected) {
-			return false, nil
-		}
-		t.closeSession()
 		return false, err
 	}
-	return reconfigure, nil
+	dashboard, ok := finalModel.(bubbleTea.RuntimeDashboard)
+	if !ok {
+		return false, fmt.Errorf("unexpected runtime dashboard model: %T", finalModel)
+	}
+	if !dashboard.ReconfigureRequested() {
+		return false, nil
+	}
+	if options.Mode == appRuntime.ModeClient {
+		if err := t.preferences.DisableAutoConnect(); err != nil {
+			return false, fmt.Errorf("persist AutoConnect=false: %w", err)
+		}
+	}
+	return true, nil
 }

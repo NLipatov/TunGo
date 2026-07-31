@@ -121,3 +121,67 @@ func TestWrapper_IPv6_Errors(t *testing.T) {
 		})
 	}
 }
+
+func TestWrapper_IPv4_Errors(t *testing.T) {
+	const dev = "eth0"
+	const tun = "tun0"
+	const cidr = "10.0.0.0/24"
+
+	errFail := errors.New("fail")
+	failAll := &mockCommander{
+		outputMap: map[string][]byte{},
+		errMap:    make(map[string]error),
+	}
+	for _, cmd := range []string{
+		"iptables -t nat -A POSTROUTING -s " + cidr + " -o " + dev + " -j MASQUERADE",
+		"iptables -t nat -D POSTROUTING -s " + cidr + " -o " + dev + " -j MASQUERADE",
+		"iptables -A FORWARD -i " + tun + " -o " + dev + " -j ACCEPT",
+		"iptables -D FORWARD -i " + tun + " -o " + dev + " -j ACCEPT",
+		"iptables -A FORWARD -i " + dev + " -o " + tun + " -m state --state RELATED,ESTABLISHED -j ACCEPT",
+		"iptables -D FORWARD -i " + dev + " -o " + tun + " -m state --state RELATED,ESTABLISHED -j ACCEPT",
+		"iptables -A FORWARD -i " + tun + " -o " + tun + " -j ACCEPT",
+		"iptables -D FORWARD -i " + tun + " -o " + tun + " -j ACCEPT",
+	} {
+		failAll.errMap[cmd] = errFail
+	}
+	w := &Wrapper{commander: failAll}
+
+	tests := []struct {
+		name string
+		call func() error
+	}{
+		{"EnableDevMasquerade", func() error { return w.EnableDevMasquerade(dev, cidr) }},
+		{"DisableDevMasquerade", func() error { return w.DisableDevMasquerade(dev, cidr) }},
+		{"EnableForwardingFromTunToDev", func() error { return w.EnableForwardingFromTunToDev(tun, dev) }},
+		{"DisableForwardingFromTunToDev", func() error { return w.DisableForwardingFromTunToDev(tun, dev) }},
+		{"EnableForwardingFromDevToTun", func() error { return w.EnableForwardingFromDevToTun(tun, dev) }},
+		{"DisableForwardingFromDevToTun", func() error { return w.DisableForwardingFromDevToTun(tun, dev) }},
+		{"EnableForwardingTunToTun", func() error { return w.EnableForwardingTunToTun(tun) }},
+		{"DisableForwardingTunToTun", func() error { return w.DisableForwardingTunToTun(tun) }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := tt.call(); err == nil {
+				t.Error("expected error")
+			}
+		})
+	}
+}
+
+func TestWrapper_MasqueradeWithoutSourceCIDR(t *testing.T) {
+	w := newWrapperWithMocks(map[string][]byte{}, map[string]error{})
+
+	if err := w.EnableDevMasquerade("eth0", ""); err != nil {
+		t.Fatalf("EnableDevMasquerade() error = %v", err)
+	}
+	if err := w.DisableDevMasquerade("eth0", ""); err != nil {
+		t.Fatalf("DisableDevMasquerade() error = %v", err)
+	}
+	if err := w.Enable6DevMasquerade("eth0", ""); err != nil {
+		t.Fatalf("Enable6DevMasquerade() error = %v", err)
+	}
+	if err := w.Disable6DevMasquerade("eth0", ""); err != nil {
+		t.Fatalf("Disable6DevMasquerade() error = %v", err)
+	}
+}

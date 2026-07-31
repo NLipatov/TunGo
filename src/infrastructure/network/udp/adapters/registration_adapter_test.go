@@ -229,3 +229,17 @@ func TestRegistrationAdapter_Close_NoEffect(t *testing.T) {
 		t.Fatalf("Close() on adapter must NOT close UDP listener")
 	}
 }
+
+func TestRegistrationAdapter_SetAddrPort(t *testing.T) {
+	q := &mockQueue{}
+	ul := &mockUdpListener{}
+	original := netip.MustParseAddrPort("10.0.0.1:9999")
+	updated := netip.MustParseAddrPort("10.0.0.2:8888")
+	adapter := NewRegistrationTransport(ul, original, q).(*RegistrationAdapter)
+
+	adapter.SetAddrPort(updated)
+
+	if got := adapter.RemoteAddrPort(); got != updated {
+		t.Fatalf("RemoteAddrPort() = %v, want %v", got, updated)
+	}
+}

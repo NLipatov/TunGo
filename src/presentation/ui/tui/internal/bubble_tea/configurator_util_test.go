@@ -85,6 +85,19 @@ func TestSummarizeInvalidConfigurationError_LongMessageTruncated(t *testing.T) {
 	}
 }
 
+func TestSummarizeInvalidConfigurationError_TruncatesUTF8ByRunes(t *testing.T) {
+	long := strings.Repeat("я", 200)
+	result := summarizeInvalidConfigurationError(errors.New(long))
+
+	want := strings.Repeat("я", 117) + "..."
+	if result != want {
+		t.Fatalf("summarizeInvalidConfigurationError() = %q, want %q", result, want)
+	}
+	if got := len([]rune(result)); got != 120 {
+		t.Fatalf("truncated rune count = %d, want 120", got)
+	}
+}
+
 func TestSummarizeInvalidConfigurationError_StripsPrefix(t *testing.T) {
 	err := errors.New("invalid client configuration (tcp): port must be > 0")
 	result := summarizeInvalidConfigurationError(err)
@@ -175,12 +188,12 @@ func TestServerPeerDisplayName_WhitespaceOnlyName(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// newConfiguratorSessionModel
+// NewConfigurator
 // ---------------------------------------------------------------------------
 
 func TestNewConfiguratorSessionModel_AllDependencies(t *testing.T) {
-	opts := sessionOptionsWithControl(defaultSessionConfigurationControl())
-	model, err := newConfiguratorSessionModel(opts, testSettings())
+	opts := testConfiguratorOptions(newTestConfigurationControl())
+	model, err := NewConfigurator(opts, testSettings())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -190,8 +203,8 @@ func TestNewConfiguratorSessionModel_AllDependencies(t *testing.T) {
 }
 
 func TestNewConfiguratorSessionModel_MissingClientConfigurationControl(t *testing.T) {
-	opts := ConfiguratorSessionOptions{}
-	_, err := newConfiguratorSessionModel(opts, testSettings())
+	opts := ConfiguratorOptions{}
+	_, err := NewConfigurator(opts, testSettings())
 	if err == nil {
 		t.Fatal("expected error for missing client configuration control, got nil")
 	}

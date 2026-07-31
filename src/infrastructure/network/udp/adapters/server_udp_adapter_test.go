@@ -136,3 +136,34 @@ func TestUdpAdapter_ReadShortBuffer(t *testing.T) {
 		t.Errorf("expected %q, got %q", resp[:len(buf)], buf[:n])
 	}
 }
+
+func TestUdpAdapter_ReadFastPath(t *testing.T) {
+	serverConn, clientConn, clientAdapter := setupConns(t)
+
+	resp := []byte("fast path")
+	clientAddrPort, err := netip.ParseAddrPort(clientConn.LocalAddr().String())
+	if err != nil {
+		t.Fatalf("parse client addrport: %v", err)
+	}
+	if _, err := serverConn.WriteToUDPAddrPort(resp, clientAddrPort); err != nil {
+		t.Fatalf("server WriteToUDPAddrPort: %v", err)
+	}
+
+	adapter := clientAdapter.(*ServerUdpAdapter)
+	buffer := make([]byte, len(adapter.readBuffer))
+	if n, readErr := adapter.Read(buffer); readErr != nil || string(buffer[:n]) != string(resp) {
+		t.Fatalf("Read = (%q, %v), want (%q, nil)", buffer[:n], readErr, resp)
+	}
+}
+
+func TestUdpAdapter_ReadFastPathAfterClose(t *testing.T) {
+	_, _, clientAdapter := setupConns(t)
+	adapter := clientAdapter.(*ServerUdpAdapter)
+	if err := adapter.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	if _, err := adapter.Read(make([]byte, len(adapter.readBuffer))); err == nil {
+		t.Fatal("expected read error after close")
+	}
+}

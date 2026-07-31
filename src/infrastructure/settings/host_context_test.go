@@ -57,3 +57,57 @@ func TestHost_RouteIPContext_PropagatesContextCancel(t *testing.T) {
 		t.Fatalf("expected context canceled error, got %v", routeErr)
 	}
 }
+
+func TestHost_RouteIPContext_NilContext(t *testing.T) {
+	orig := lookupHostContext
+	t.Cleanup(func() { lookupHostContext = orig })
+
+	lookupHostContext = func(ctx context.Context, _ string) ([]string, error) {
+		if ctx == nil {
+			t.Fatal("resolver received nil context")
+		}
+		return []string{"198.51.100.20"}, nil
+	}
+
+	h, err := DomainHost("vpn.example.com")
+	if err != nil {
+		t.Fatalf("DomainHost failed: %v", err)
+	}
+	if ip, routeErr := h.RouteIPContext(nil); routeErr != nil || ip != "198.51.100.20" {
+		t.Fatalf("RouteIPContext(nil) = (%q, %v)", ip, routeErr)
+	}
+}
+
+func TestHost_RouteIPv6Context_SkipsInvalidAndIPv4Addresses(t *testing.T) {
+	orig := lookupHostContext
+	t.Cleanup(func() { lookupHostContext = orig })
+
+	lookupHostContext = func(_ context.Context, _ string) ([]string, error) {
+		return []string{"not-an-ip", "198.51.100.20"}, nil
+	}
+
+	h, err := DomainHost("vpn.example.com")
+	if err != nil {
+		t.Fatalf("DomainHost failed: %v", err)
+	}
+	if _, routeErr := h.RouteIPv6Context(context.Background()); routeErr == nil {
+		t.Fatal("expected no matching address family error")
+	}
+}
+
+func TestHost_RouteIPv6Context_ResolvesIPv6(t *testing.T) {
+	orig := lookupHostContext
+	t.Cleanup(func() { lookupHostContext = orig })
+
+	lookupHostContext = func(_ context.Context, _ string) ([]string, error) {
+		return []string{"2001:db8::20"}, nil
+	}
+
+	h, err := DomainHost("vpn.example.com")
+	if err != nil {
+		t.Fatalf("DomainHost failed: %v", err)
+	}
+	if ip, routeErr := h.RouteIPv6Context(context.Background()); routeErr != nil || ip != "2001:db8::20" {
+		t.Fatalf("RouteIPv6Context() = (%q, %v)", ip, routeErr)
+	}
+}

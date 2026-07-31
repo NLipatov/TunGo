@@ -2,35 +2,30 @@ package tui
 
 import (
 	"fmt"
+
 	appConfiguration "tungo/application/configuration"
-	appRuntime "tungo/application/runtime"
+	"tungo/infrastructure/PAL/service_management/linux/systemd"
 	bubbleTea "tungo/presentation/ui/tui/internal/bubble_tea"
 )
 
 type TUI struct {
-	sessionOptions          bubbleTea.ConfiguratorSessionOptions
-	sessionFactory          unifiedSessionFactory
-	systemdInstallerFactory systemdInstallerFactory
-	newRuntime              func(appRuntime.Mode) (appRuntime.Runtime, error)
-	session                 unifiedSessionHandle
+	configuratorOptions bubbleTea.ConfiguratorOptions
+	preferences         *bubbleTea.Preferences
 }
 
-func New(configurationControls appConfiguration.Controls) (*TUI, error) {
+func New(
+	configurationControls appConfiguration.Controls,
+	daemonControl systemd.Control,
+) (*TUI, error) {
 	if configurationControls.Client == nil {
 		return nil, fmt.Errorf("client configuration control is nil")
 	}
-	return newTUI(configurationControls), nil
-}
-
-func newTUI(controls appConfiguration.Controls) *TUI {
 	return &TUI{
-		sessionOptions: bubbleTea.ConfiguratorSessionOptions{
-			ClientConfigurationControl: controls.Client,
-			ServerConfigurationControl: controls.Server,
-			ServerSupported:            controls.ServerSupported(),
+		configuratorOptions: bubbleTea.ConfiguratorOptions{
+			ClientConfigurationControl: configurationControls.Client,
+			ServerConfigurationControl: configurationControls.Server,
+			Daemon:                     daemonControl,
 		},
-		sessionFactory:          newBubbleTeaUnifiedSession,
-		systemdInstallerFactory: newDefaultSystemdInstaller,
-		newRuntime:              appRuntime.New,
-	}
+		preferences: bubbleTea.LoadPreferences(),
+	}, nil
 }

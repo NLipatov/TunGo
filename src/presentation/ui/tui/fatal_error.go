@@ -2,17 +2,8 @@ package tui
 
 import bubbleTea "tungo/presentation/ui/tui/internal/bubble_tea"
 
-var runFatalErrorProgram = func(message string) {
-	p := bubbleTea.NewFatalErrorProgram(message)
-	_, _ = p.Run()
-}
-
 // ShowFatalError displays a themed fatal error screen and blocks until the
-// user dismisses it (Enter / Esc / q). Creates a standalone tea.Program.
-//
-// If a unified session was active, the caller should close it first via
-// TUI.Close() so the alternate screen is released before this standalone
-// program takes over.
+// user dismisses it (Enter / Esc / q).
 func ShowFatalError(message string) {
-	runFatalErrorProgram(message)
+	_, _ = bubbleTea.NewFatalErrorProgram(message).Run()
 }

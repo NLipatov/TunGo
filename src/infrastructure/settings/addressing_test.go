@@ -68,6 +68,28 @@ func TestDeriveIP_InvalidSubnet(t *testing.T) {
 	}
 }
 
+func TestDeriveIP_AllocationErrors(t *testing.T) {
+	t.Run("IPv4", func(t *testing.T) {
+		a := Addressing{IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24")}
+		if err := a.DeriveIP(-1); err == nil {
+			t.Fatal("expected IPv4 allocation error")
+		}
+	})
+
+	t.Run("IPv6", func(t *testing.T) {
+		a := Addressing{IPv6Subnet: netip.MustParsePrefix("fd00::/64")}
+		if err := a.DeriveIP(-1); err == nil {
+			t.Fatal("expected IPv6 allocation error")
+		}
+	})
+}
+
+func TestAllocateIP_InvalidSubnet(t *testing.T) {
+	if _, err := allocateIP(netip.Prefix{}, 0); err == nil {
+		t.Fatal("expected invalid subnet error")
+	}
+}
+
 func TestIPv4CIDR(t *testing.T) {
 	a := Addressing{
 		IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24"),
@@ -108,6 +130,22 @@ func TestIPv6CIDR_NoAddr(t *testing.T) {
 	if _, err := a.IPv6CIDR(); err == nil {
 		t.Fatal("expected error for missing IPv6")
 	}
+}
+
+func TestCIDR_NoSubnet(t *testing.T) {
+	t.Run("IPv4", func(t *testing.T) {
+		a := Addressing{IPv4: netip.MustParseAddr("10.0.0.2")}
+		if _, err := a.IPv4CIDR(); err == nil {
+			t.Fatal("expected error for missing IPv4 subnet")
+		}
+	})
+
+	t.Run("IPv6", func(t *testing.T) {
+		a := Addressing{IPv6: netip.MustParseAddr("fd00::2")}
+		if _, err := a.IPv6CIDR(); err == nil {
+			t.Fatal("expected error for missing IPv6 subnet")
+		}
+	})
 }
 
 func TestIsZero(t *testing.T) {

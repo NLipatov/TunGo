@@ -22,31 +22,6 @@ func TestRuntimeLogBuffer_Tail(t *testing.T) {
 	}
 }
 
-func TestGlobalRuntimeLogCapture_CapturesSlog(t *testing.T) {
-	DisableGlobalRuntimeLogCapture()
-	t.Cleanup(DisableGlobalRuntimeLogCapture)
-
-	EnableGlobalRuntimeLogCapture(8)
-	logging.NewLogger(slog.LevelInfo).Info("runtime test line")
-
-	feed := GlobalRuntimeLogFeed()
-	if feed == nil {
-		t.Fatal("expected global runtime log feed to be initialized")
-	}
-
-	lines := feed.Tail(8)
-	found := false
-	for _, line := range lines {
-		if strings.Contains(line, "runtime test line") {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatalf("expected log line in runtime feed, got %v", lines)
-	}
-}
-
 func TestRuntimeLogBuffer_DefaultCapacityAndPartialLine(t *testing.T) {
 	b := NewRuntimeLogBuffer(0)
 	_, _ = b.Write([]byte("partial"))
@@ -140,47 +115,17 @@ func TestRuntimeLogBuffer_WriteSeparator(t *testing.T) {
 	}
 }
 
-func TestGlobalRuntimeLogWriteSeparator(t *testing.T) {
-	DisableGlobalRuntimeLogCapture()
-	t.Cleanup(DisableGlobalRuntimeLogCapture)
+func TestRuntimeLogBuffer_ChangesSignalsWrite(t *testing.T) {
+	b := NewRuntimeLogBuffer(8)
+	changes := b.Changes()
 
-	// Should not panic when no global buffer exists.
-	GlobalRuntimeLogWriteSeparator("test")
-
-	EnableGlobalRuntimeLogCapture(8)
-	GlobalRuntimeLogWriteSeparator("reconfigured")
-
-	feed := GlobalRuntimeLogFeed()
-	lines := feed.Tail(8)
-	found := false
-	for _, line := range lines {
-		if strings.Contains(line, "session ended: reconfigured") {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatalf("expected separator in global log feed, got %v", lines)
-	}
-}
-
-func TestEnableGlobalRuntimeLogCapture_IdempotentAndDisableSafe(t *testing.T) {
-	DisableGlobalRuntimeLogCapture()
-	DisableGlobalRuntimeLogCapture() // safe when already disabled
-
-	EnableGlobalRuntimeLogCapture(4)
-	first := GlobalRuntimeLogFeed()
-	if first == nil {
-		t.Fatal("expected initialized feed")
-	}
-	EnableGlobalRuntimeLogCapture(99) // should not replace existing buffer
-	second := GlobalRuntimeLogFeed()
-	if first != second {
-		t.Fatal("expected global capture enable to be idempotent")
+	if _, err := b.Write([]byte("line\n")); err != nil {
+		t.Fatalf("Write() error = %v", err)
 	}
 
-	DisableGlobalRuntimeLogCapture()
-	if GlobalRuntimeLogFeed() != nil {
-		t.Fatal("expected nil feed after disable")
+	select {
+	case <-changes:
+	default:
+		t.Fatal("expected Changes channel to signal a write")
 	}
 }

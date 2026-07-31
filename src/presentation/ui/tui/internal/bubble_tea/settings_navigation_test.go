@@ -2,6 +2,28 @@ package bubble_tea
 
 import "testing"
 
+func TestNextTheme_InvalidValueStartsFromFirstTheme(t *testing.T) {
+	if got := nextTheme("invalid", 1); got != orderedThemeOptions[1] {
+		t.Fatalf("nextTheme(invalid, 1) = %q, want %q", got, orderedThemeOptions[1])
+	}
+}
+
+func TestNextTheme_BackwardWrapsFromFirstTheme(t *testing.T) {
+	want := orderedThemeOptions[len(orderedThemeOptions)-1]
+	if got := nextTheme(orderedThemeOptions[0], -1); got != want {
+		t.Fatalf("nextTheme(first, -1) = %q, want %q", got, want)
+	}
+}
+
+func TestNextStatsUnits_CyclesBothDirections(t *testing.T) {
+	if got := nextStatsUnits(StatsUnitsBytes, 1); got != StatsUnitsBiBytes {
+		t.Fatalf("nextStatsUnits(bytes, 1) = %q, want %q", got, StatsUnitsBiBytes)
+	}
+	if got := nextStatsUnits(StatsUnitsBytes, -1); got != StatsUnitsBiBytes {
+		t.Fatalf("nextStatsUnits(bytes, -1) = %q, want %q", got, StatsUnitsBiBytes)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // nextModePreference
 // ---------------------------------------------------------------------------
@@ -112,7 +134,7 @@ func TestSettingsVisibleRowCount_NoServer_AlwaysOneLessThanTotal(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestApplySettingsChange_ModeRow_CyclesForward(t *testing.T) {
-	p := newUIPreferencesProvider(UIPreferences{AutoSelectMode: ModePreferenceNone})
+	p := newPreferences(UIPreferences{AutoSelectMode: ModePreferenceNone})
 	got := applySettingsChange(p, settingsModeRow, 1, true)
 	if got.AutoSelectMode != ModePreferenceClient {
 		t.Errorf("got %q, want ModePreferenceClient", got.AutoSelectMode)
@@ -120,7 +142,7 @@ func TestApplySettingsChange_ModeRow_CyclesForward(t *testing.T) {
 }
 
 func TestApplySettingsChange_ModeRow_CyclesBackward(t *testing.T) {
-	p := newUIPreferencesProvider(UIPreferences{AutoSelectMode: ModePreferenceClient})
+	p := newPreferences(UIPreferences{AutoSelectMode: ModePreferenceClient})
 	got := applySettingsChange(p, settingsModeRow, -1, true)
 	if got.AutoSelectMode != ModePreferenceNone {
 		t.Errorf("got %q, want ModePreferenceNone", got.AutoSelectMode)
@@ -128,7 +150,7 @@ func TestApplySettingsChange_ModeRow_CyclesBackward(t *testing.T) {
 }
 
 func TestApplySettingsChange_AutoConnectRow_TogglesOn(t *testing.T) {
-	p := newUIPreferencesProvider(UIPreferences{AutoConnect: false})
+	p := newPreferences(UIPreferences{AutoConnect: false})
 	got := applySettingsChange(p, settingsAutoConnectRow, 1, true)
 	if !got.AutoConnect {
 		t.Error("expected AutoConnect toggled on")
@@ -136,7 +158,7 @@ func TestApplySettingsChange_AutoConnectRow_TogglesOn(t *testing.T) {
 }
 
 func TestApplySettingsChange_AutoConnectRow_TogglesOff(t *testing.T) {
-	p := newUIPreferencesProvider(UIPreferences{AutoConnect: true})
+	p := newPreferences(UIPreferences{AutoConnect: true})
 	got := applySettingsChange(p, settingsAutoConnectRow, 1, true)
 	if got.AutoConnect {
 		t.Error("expected AutoConnect toggled off")
@@ -145,7 +167,7 @@ func TestApplySettingsChange_AutoConnectRow_TogglesOff(t *testing.T) {
 
 func TestApplySettingsChange_NoServer_VisibleModePosition_MapsToAutoConnect(t *testing.T) {
 	// When !serverSupported, cursor=settingsModeRow → visibleCursorToSettingsRow → settingsAutoConnectRow.
-	p := newUIPreferencesProvider(UIPreferences{AutoConnect: false})
+	p := newPreferences(UIPreferences{AutoConnect: false})
 	got := applySettingsChange(p, settingsModeRow, 1, false)
 	if !got.AutoConnect {
 		t.Error("expected AutoConnect to toggle when cursor is at Mode position with !serverSupported")

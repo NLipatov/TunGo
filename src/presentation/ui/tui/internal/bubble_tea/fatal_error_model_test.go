@@ -7,8 +7,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-func testSettings() *uiPreferencesProvider {
-	return newDefaultUIPreferencesProvider()
+func testSettings() *Preferences {
+	return newDefaultPreferences()
 }
 
 func TestFatalErrorModel_View_ContainsMessage(t *testing.T) {
@@ -35,7 +35,6 @@ func TestFatalErrorModel_View_HasTabsLineWithProductLabel(t *testing.T) {
 }
 
 func TestFatalErrorModel_View_ContainsANSI(t *testing.T) {
-	forceANSIColorProfile(t, ansiColorProfileTrueColor)
 	m := newFatalErrorModel("details", testSettings())
 	view := m.View().Content
 	if !containsANSI(view) {
@@ -105,14 +104,13 @@ func TestFatalErrorModel_Update_WindowSizeUpdates(t *testing.T) {
 }
 
 func TestFatalErrorModel_View_RespectsTheme(t *testing.T) {
-	forceANSIColorProfile(t, ansiColorProfileTrueColor)
 
 	themes := []ThemeOption{ThemeLight, ThemeDark, ThemeDarkHighContrast, ThemeDarkMatrix}
 	views := make([]string, len(themes))
 
 	s := testSettings()
 	for i, theme := range themes {
-		p := s.Preferences()
+		p := s.Current()
 		p.Theme = theme
 		s.update(p)
 		m := newFatalErrorModel("details", s)

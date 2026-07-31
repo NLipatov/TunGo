@@ -113,10 +113,10 @@ func savePreferencesToDisk(p UIPreferences) error {
 	return savePreferencesTo(newDefaultPrefsStorage(), p)
 }
 
-func loadUISettingsFromDisk() *uiPreferencesProvider {
+func LoadPreferences() *Preferences {
 	loaded, err := loadPreferences(newDefaultPrefsStorage())
 	if err != nil {
-		return newDefaultUIPreferencesProvider()
+		return newDefaultPreferences()
 	}
-	return newUIPreferencesProvider(loaded)
+	return newPreferences(loaded)
 }

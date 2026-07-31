@@ -10,6 +10,18 @@ import (
 	"tungo/infrastructure/PAL/exec_commander"
 )
 
+// Control exposes systemd unit management operations.
+type Control interface {
+	Setup(runtime.Mode) (string, error)
+	RemoveUnit() error
+	IsUnitActive() (bool, error)
+	StopUnit() error
+	StartUnit() error
+	EnableUnit() error
+	DisableUnit() error
+	Status() (UnitStatus, error)
+}
+
 type UnitInstaller struct {
 	commander exec_commander.Commander
 	hooks     Hooks
@@ -34,16 +46,43 @@ func NewUnitInstaller(commander exec_commander.Commander) *UnitInstaller {
 	}
 }
 
-func (i *UnitInstaller) Supported() bool {
-	return Supported(i.hooks, i.config.RuntimeDir)
+func (i *UnitInstaller) Available() bool {
+	return Available(i.hooks, i.config.RuntimeDir)
 }
 
-func (i *UnitInstaller) InstallServerUnit() (string, error) {
-	return i.installRuntimeUnit(runtime.ModeServer)
-}
+// Setup installs the selected runtime unit and preserves its running state.
+func (i *UnitInstaller) Setup(mode runtime.Mode) (string, error) {
+	switch mode {
+	case runtime.ModeClient, runtime.ModeServer:
+	default:
+		return "", fmt.Errorf("invalid daemon mode: %v", mode)
+	}
 
-func (i *UnitInstaller) InstallClientUnit() (string, error) {
-	return i.installRuntimeUnit(runtime.ModeClient)
+	wasActive, err := i.IsUnitActive()
+	if err != nil {
+		return "", fmt.Errorf("failed to check daemon status: %w", err)
+	}
+	if wasActive {
+		if err := i.StopUnit(); err != nil {
+			return "", fmt.Errorf("failed to stop daemon before setup: %w", err)
+		}
+	}
+
+	path, err := i.installRuntimeUnit(mode)
+	if err != nil {
+		if wasActive {
+			if startErr := i.StartUnit(); startErr != nil {
+				return "", fmt.Errorf("%w (daemon restart also failed: %v)", err, startErr)
+			}
+		}
+		return "", err
+	}
+	if wasActive {
+		if err := i.StartUnit(); err != nil {
+			return "", fmt.Errorf("failed to restart daemon after setup: %w", err)
+		}
+	}
+	return path, nil
 }
 
 func (i *UnitInstaller) installRuntimeUnit(mode runtime.Mode) (string, error) {
@@ -55,8 +94,8 @@ func (i *UnitInstaller) installRuntimeUnit(mode runtime.Mode) (string, error) {
 }
 
 func (i *UnitInstaller) installUnit(args []string) (string, error) {
-	if !i.Supported() {
-		return "", fmt.Errorf("systemd is not supported on this platform")
+	if !i.Available() {
+		return "", fmt.Errorf("systemd is not available")
 	}
 	if err := ValidateTungoBinaryForSystemd(i.hooks, i.config.BinaryPath); err != nil {
 		return "", err
@@ -89,8 +128,8 @@ func (i *UnitInstaller) rollbackInstallUnit(installErr error) error {
 }
 
 func (i *UnitInstaller) RemoveUnit() error {
-	if !i.Supported() {
-		return fmt.Errorf("systemd is not supported on this platform")
+	if !i.Available() {
+		return fmt.Errorf("systemd is not available")
 	}
 
 	if err := i.commander.Run("systemctl", "stop", i.config.UnitName); err != nil && !IsSystemdNotActiveError(err) {
@@ -109,8 +148,8 @@ func (i *UnitInstaller) RemoveUnit() error {
 }
 
 func (i *UnitInstaller) IsUnitActive() (bool, error) {
-	if !i.Supported() {
-		return false, fmt.Errorf("systemd is not supported on this platform")
+	if !i.Available() {
+		return false, fmt.Errorf("systemd is not available")
 	}
 	activeOutput, err := i.commander.CombinedOutput("systemctl", "is-active", i.config.UnitName)
 	if err != nil {
@@ -123,8 +162,8 @@ func (i *UnitInstaller) IsUnitActive() (bool, error) {
 }
 
 func (i *UnitInstaller) StopUnit() error {
-	if !i.Supported() {
-		return fmt.Errorf("systemd is not supported on this platform")
+	if !i.Available() {
+		return fmt.Errorf("systemd is not available")
 	}
 	if err := i.commander.Run("systemctl", "stop", i.config.UnitName); err != nil {
 		return fmt.Errorf("failed to run systemctl stop %s: %w", i.config.UnitName, err)
@@ -133,8 +172,8 @@ func (i *UnitInstaller) StopUnit() error {
 }
 
 func (i *UnitInstaller) StartUnit() error {
-	if !i.Supported() {
-		return fmt.Errorf("systemd is not supported on this platform")
+	if !i.Available() {
+		return fmt.Errorf("systemd is not available")
 	}
 	if err := i.commander.Run("systemctl", "start", i.config.UnitName); err != nil {
 		return fmt.Errorf("failed to run systemctl start %s: %w", i.config.UnitName, err)
@@ -143,8 +182,8 @@ func (i *UnitInstaller) StartUnit() error {
 }
 
 func (i *UnitInstaller) EnableUnit() error {
-	if !i.Supported() {
-		return fmt.Errorf("systemd is not supported on this platform")
+	if !i.Available() {
+		return fmt.Errorf("systemd is not available")
 	}
 	if err := i.commander.Run("systemctl", "enable", i.config.UnitName); err != nil {
 		return fmt.Errorf("failed to run systemctl enable %s: %w", i.config.UnitName, err)
@@ -153,8 +192,8 @@ func (i *UnitInstaller) EnableUnit() error {
 }
 
 func (i *UnitInstaller) DisableUnit() error {
-	if !i.Supported() {
-		return fmt.Errorf("systemd is not supported on this platform")
+	if !i.Available() {
+		return fmt.Errorf("systemd is not available")
 	}
 	if err := i.commander.Run("systemctl", "disable", i.config.UnitName); err != nil {
 		return fmt.Errorf("failed to run systemctl disable %s: %w", i.config.UnitName, err)
@@ -163,8 +202,8 @@ func (i *UnitInstaller) DisableUnit() error {
 }
 
 func (i *UnitInstaller) Status() (UnitStatus, error) {
-	if !i.Supported() {
-		return UnitStatus{}, fmt.Errorf("systemd is not supported on this platform")
+	if !i.Available() {
+		return UnitStatus{}, fmt.Errorf("systemd is not available")
 	}
 
 	status := UnitStatus{

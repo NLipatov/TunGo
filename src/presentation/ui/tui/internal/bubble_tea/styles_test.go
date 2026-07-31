@@ -7,23 +7,6 @@ import (
 	"tungo/infrastructure/telemetry/trafficstats"
 )
 
-const (
-	ansiColorProfile16 = iota
-	ansiColorProfile256
-	ansiColorProfileTrueColor
-)
-
-func forceANSIColorProfile(t *testing.T, _ int) {
-	uiStylesCacheMu.Lock()
-	uiStylesCache = map[uiStylesCacheKey]uiStyles{}
-	uiStylesCacheMu.Unlock()
-	t.Cleanup(func() {
-		uiStylesCacheMu.Lock()
-		uiStylesCache = map[uiStylesCacheKey]uiStyles{}
-		uiStylesCacheMu.Unlock()
-	})
-}
-
 func Test_computeCardWidth_ClampedToTerminal(t *testing.T) {
 	if got := computeCardWidth(40); got > 40 {
 		t.Fatalf("card width must not exceed terminal width, got=%d", got)
@@ -121,7 +104,6 @@ func TestHelpers_BasicBranches(t *testing.T) {
 }
 
 func TestResolveUIStyles_DarkBrandUsesLightBlue(t *testing.T) {
-	forceANSIColorProfile(t, ansiColorProfileTrueColor)
 	styles := resolveUIStyles(UIPreferences{
 		Theme:      ThemeDark,
 		StatsUnits: StatsUnitsBiBytes,
@@ -134,7 +116,6 @@ func TestResolveUIStyles_DarkBrandUsesLightBlue(t *testing.T) {
 }
 
 func TestResolveUIStyles_AllDarkThemesKeepBlueBrand(t *testing.T) {
-	forceANSIColorProfile(t, ansiColorProfileTrueColor)
 	for _, theme := range orderedThemeOptions {
 		if !strings.HasPrefix(string(theme), "dark") {
 			continue
@@ -151,7 +132,6 @@ func TestResolveUIStyles_AllDarkThemesKeepBlueBrand(t *testing.T) {
 }
 
 func TestResolveUIStyles_LightThemeUsesLightBlueAndWarmAccent(t *testing.T) {
-	forceANSIColorProfile(t, ansiColorProfileTrueColor)
 	styles := resolveUIStyles(UIPreferences{
 		Theme:      ThemeLight,
 		StatsUnits: StatsUnitsBiBytes,
@@ -167,7 +147,6 @@ func TestResolveUIStyles_LightThemeUsesLightBlueAndWarmAccent(t *testing.T) {
 }
 
 func TestResolveUIStyles_ThemeSwitchChangesStyles(t *testing.T) {
-	forceANSIColorProfile(t, ansiColorProfileTrueColor)
 	light := resolveUIStyles(UIPreferences{
 		Theme:      ThemeLight,
 		StatsUnits: StatsUnitsBiBytes,
@@ -187,7 +166,6 @@ func TestResolveUIStyles_ThemeSwitchChangesStyles(t *testing.T) {
 }
 
 func TestResolveUIStyles_DarkVariantsUseDistinctActiveAccent(t *testing.T) {
-	forceANSIColorProfile(t, ansiColorProfileTrueColor)
 
 	matrix := resolveUIStyles(UIPreferences{
 		Theme:      ThemeDarkMatrix,
@@ -233,7 +211,6 @@ func TestContentWidthForTerminal_NonPositiveWidth(t *testing.T) {
 }
 
 func TestRenderScreen_ANSIAndCanvasFill(t *testing.T) {
-	forceANSIColorProfile(t, ansiColorProfileTrueColor)
 
 	prefs := UIPreferences{
 		Theme:      ThemeDark,
@@ -313,17 +290,6 @@ func TestWrapBody_EmptyWrappedLineBranch(t *testing.T) {
 	}
 }
 
-func TestWrapBody_EmptyWrappedFromHook(t *testing.T) {
-	prev := wrapTextForBody
-	t.Cleanup(func() { wrapTextForBody = prev })
-	wrapTextForBody = func(string, int) []string { return nil }
-
-	lines := wrapBody([]string{"x"}, 10)
-	if len(lines) != 1 || lines[0] != "" {
-		t.Fatalf("expected fallback empty line for nil wrap result, got %v", lines)
-	}
-}
-
 func TestWrapLine_WhitespaceOnly(t *testing.T) {
 	lines := wrapLine("      ", 2)
 	if len(lines) != 1 || lines[0] != "" {
@@ -354,26 +320,12 @@ func TestSplitRunes_NoSplitWhenWithinLimit(t *testing.T) {
 }
 
 func TestEnforceBaseThemeFill_ReappliesAfterAnsiReset(t *testing.T) {
-	forceANSIColorProfile(t, ansiColorProfileTrueColor)
 	out := enforceBaseThemeFill("x"+ansiReset+"y", UIPreferences{Theme: ThemeLight})
 	if !strings.Contains(out, ansiReset) {
 		t.Fatalf("expected reset sequence in output, got %q", out)
 	}
 	if !strings.Contains(out, ansiBgBrightWhite) {
 		t.Fatalf("expected light background sequence, got %q", out)
-	}
-}
-
-func TestEnforceBaseThemeFill_NoBaseThemeAvailable(t *testing.T) {
-	prev := baseANSIForThemeFunc
-	t.Cleanup(func() { baseANSIForThemeFunc = prev })
-	baseANSIForThemeFunc = func(UIPreferences) (string, string, bool) {
-		return "", "", false
-	}
-
-	const input = "plain"
-	if out := enforceBaseThemeFill(input, UIPreferences{Theme: ThemeLight}); out != input {
-		t.Fatalf("expected unchanged string when base theme is unavailable, got %q", out)
 	}
 }
 
@@ -388,7 +340,6 @@ func TestVisibleWidthANSI_AndStripANSI_WithCSI(t *testing.T) {
 }
 
 func TestEnforceBaseThemeFill_ReappliesAfterCommonSGRResets(t *testing.T) {
-	forceANSIColorProfile(t, ansiColorProfileTrueColor)
 	base := ansiBgBlack + ansiFgWhite
 	out := enforceBaseThemeFill("\x1b[mx\x1b[49my\x1b[39mz\x1b[0mw", UIPreferences{Theme: ThemeDark})
 
@@ -407,7 +358,6 @@ func TestEnforceBaseThemeFill_ReappliesAfterCommonSGRResets(t *testing.T) {
 }
 
 func TestEnforceBaseThemeFill_AppliesBasePerLine(t *testing.T) {
-	forceANSIColorProfile(t, ansiColorProfileTrueColor)
 	base := ansiBgBlack + ansiFgWhite
 	out := enforceBaseThemeFill("line1\nline2", UIPreferences{Theme: ThemeDark})
 	if strings.Count(out, base) < 2 {
@@ -545,10 +495,7 @@ func TestTruncateVisible_WidthZero(t *testing.T) {
 }
 
 func TestBaseANSIForTheme_UnknownTheme(t *testing.T) {
-	bg, fg, ok := baseANSIForTheme(UIPreferences{Theme: ThemeOption("unknown_theme")})
-	if !ok {
-		t.Fatal("expected ok=true even for unknown theme (falls back to light)")
-	}
+	bg, fg := baseANSIForTheme(UIPreferences{Theme: ThemeOption("unknown_theme")})
 	if bg == "" || fg == "" {
 		t.Fatalf("expected non-empty bg/fg for fallback theme, got bg=%q fg=%q", bg, fg)
 	}
@@ -576,7 +523,7 @@ func TestAnsiFrameStyle_Render_WidthZero_AutoWidth(t *testing.T) {
 	topBorder := lines[0]
 	// The inner width should be at least as wide as "longer line here" (16 chars).
 	innerWidth := len(topBorder) - 2 // minus the two '+' chars
-	if innerWidth < 18 { // 16 + 2 padding
+	if innerWidth < 18 {             // 16 + 2 padding
 		t.Fatalf("expected inner width >= 18, got %d from border: %q", innerWidth, topBorder)
 	}
 }
@@ -635,7 +582,6 @@ func TestPlaceCardCentered_CardTallerThanHeight(t *testing.T) {
 }
 
 func TestResolveUIStyles_UnknownTheme_FallsToLight(t *testing.T) {
-	forceANSIColorProfile(t, ansiColorProfileTrueColor)
 	styles := resolveUIStyles(UIPreferences{
 		Theme:      ThemeOption("imaginary_theme"),
 		StatsUnits: StatsUnitsBiBytes,
@@ -783,13 +729,19 @@ func TestAppendWrappedBody_WidthZeroNoNewline(t *testing.T) {
 	}
 }
 
-func TestAppendWrappedBody_WrappedReturnsEmpty(t *testing.T) {
-	prev := wrapTextForBody
-	t.Cleanup(func() { wrapTextForBody = prev })
-	wrapTextForBody = func(string, int) []string { return nil }
+func TestANSIHelpers_UnknownEscapeReturnsToNormalText(t *testing.T) {
+	const input = "\x1bXz"
 
-	got := appendWrappedBody(nil, []string{"some text"}, 10)
-	if len(got) != 1 || got[0] != "" {
-		t.Fatalf("expected empty fallback for nil wrapped result, got %v", got)
+	if got := visibleWidthANSI(input); got != 1 {
+		t.Fatalf("visibleWidthANSI() = %d, want 1", got)
+	}
+	if got := stripANSI(input); got != "z" {
+		t.Fatalf("stripANSI() = %q, want %q", got, "z")
+	}
+}
+
+func TestPlaceCardCentered_EmptyCardUsesMinimumWidth(t *testing.T) {
+	if got := placeCardCentered("", 4, 1); got != "    \n" {
+		t.Fatalf("placeCardCentered() = %q, want four spaces and newline", got)
 	}
 }

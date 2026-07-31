@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"tungo/application/runtime"
 )
 
 type mockCommander struct {
@@ -127,7 +129,7 @@ func withSystemdHooks(
 	})
 }
 
-func TestSupported_TrueWhenRuntimeDirAndSystemctlExist(t *testing.T) {
+func TestAvailable_TrueWhenRuntimeDirAndSystemctlExist(t *testing.T) {
 	withSystemdHooks(
 		t,
 		func(string) (os.FileInfo, error) { return nil, nil },
@@ -143,12 +145,12 @@ func TestSupported_TrueWhenRuntimeDirAndSystemctlExist(t *testing.T) {
 		func(string, []byte, os.FileMode) error { return nil },
 	)
 	installer := NewUnitInstaller(&mockCommander{})
-	if !installer.Supported() {
-		t.Fatal("expected Supported()=true")
+	if !installer.Available() {
+		t.Fatal("expected Available()=true")
 	}
 }
 
-func TestSupported_FalseWhenRuntimeDirMissing(t *testing.T) {
+func TestAvailable_FalseWhenRuntimeDirMissing(t *testing.T) {
 	withSystemdHooks(
 		t,
 		func(string) (os.FileInfo, error) { return nil, os.ErrNotExist },
@@ -164,12 +166,12 @@ func TestSupported_FalseWhenRuntimeDirMissing(t *testing.T) {
 		func(string, []byte, os.FileMode) error { return nil },
 	)
 	installer := NewUnitInstaller(&mockCommander{})
-	if installer.Supported() {
-		t.Fatal("expected Supported()=false when /run/systemd/system is missing")
+	if installer.Available() {
+		t.Fatal("expected Available()=false when /run/systemd/system is missing")
 	}
 }
 
-func TestSupported_FalseWhenSystemctlMissing(t *testing.T) {
+func TestAvailable_FalseWhenSystemctlMissing(t *testing.T) {
 	withSystemdHooks(
 		t,
 		func(string) (os.FileInfo, error) { return nil, nil },
@@ -182,8 +184,8 @@ func TestSupported_FalseWhenSystemctlMissing(t *testing.T) {
 		func(string, []byte, os.FileMode) error { return nil },
 	)
 	installer := NewUnitInstaller(&mockCommander{})
-	if installer.Supported() {
-		t.Fatal("expected Supported()=false when systemctl is missing")
+	if installer.Available() {
+		t.Fatal("expected Available()=false when systemctl is missing")
 	}
 }
 
@@ -194,7 +196,7 @@ func TestNewUnitInstaller_NilCommander_UsesDefault(t *testing.T) {
 	}
 }
 
-func TestInstallServerUnit_WritesServerModeAndEnablesService(t *testing.T) {
+func TestInstallRuntimeUnit_ServerWritesServerModeAndEnablesService(t *testing.T) {
 	var gotPath string
 	var gotContent string
 	var gotPerm os.FileMode
@@ -220,7 +222,7 @@ func TestInstallServerUnit_WritesServerModeAndEnablesService(t *testing.T) {
 	cmd := &mockCommander{}
 	installer := NewUnitInstaller(cmd)
 
-	path, err := installer.InstallServerUnit()
+	path, err := installer.installRuntimeUnit(runtime.ModeServer)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -247,7 +249,7 @@ func TestInstallServerUnit_WritesServerModeAndEnablesService(t *testing.T) {
 	}
 }
 
-func TestInstallClientUnit_WritesClientMode(t *testing.T) {
+func TestInstallRuntimeUnit_ClientWritesClientMode(t *testing.T) {
 	var gotContent string
 	withSystemdHooks(
 		t,
@@ -269,7 +271,7 @@ func TestInstallClientUnit_WritesClientMode(t *testing.T) {
 	cmd := &mockCommander{}
 	installer := NewUnitInstaller(cmd)
 
-	_, err := installer.InstallClientUnit()
+	_, err := installer.installRuntimeUnit(runtime.ModeClient)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -310,7 +312,7 @@ func TestInstallUnit_FailsWhenTungoBinaryMissing(t *testing.T) {
 	cmd := &mockCommander{}
 	installer := NewUnitInstaller(cmd)
 
-	_, err := installer.InstallClientUnit()
+	_, err := installer.installRuntimeUnit(runtime.ModeClient)
 	if err == nil || !strings.Contains(err.Error(), "tungo executable is not installed at /usr/local/bin/tungo") {
 		t.Fatalf("expected missing /usr/local/bin/tungo error, got %v", err)
 	}
@@ -339,7 +341,7 @@ func TestInstallUnit_FailsWhenTungoBinaryNotExecutable(t *testing.T) {
 	cmd := &mockCommander{}
 	installer := NewUnitInstaller(cmd)
 
-	_, err := installer.InstallClientUnit()
+	_, err := installer.installRuntimeUnit(runtime.ModeClient)
 	if err == nil || !strings.Contains(err.Error(), "is not executable") {
 		t.Fatalf("expected not executable error, got %v", err)
 	}
@@ -365,7 +367,7 @@ func TestInstallUnit_FailsWhenTungoBinaryIsSymlink(t *testing.T) {
 	cmd := &mockCommander{}
 	installer := NewUnitInstaller(cmd)
 
-	_, err := installer.InstallClientUnit()
+	_, err := installer.installRuntimeUnit(runtime.ModeClient)
 	if err == nil || !strings.Contains(err.Error(), "must not be a symlink") {
 		t.Fatalf("expected symlink error, got %v", err)
 	}
@@ -391,7 +393,7 @@ func TestInstallUnit_FailsWhenTungoBinaryOwnedByNonRoot(t *testing.T) {
 	cmd := &mockCommander{}
 	installer := NewUnitInstaller(cmd)
 
-	_, err := installer.InstallClientUnit()
+	_, err := installer.installRuntimeUnit(runtime.ModeClient)
 	if err == nil || !strings.Contains(err.Error(), "must be owned by root") {
 		t.Fatalf("expected non-root owner error, got %v", err)
 	}
@@ -417,7 +419,7 @@ func TestInstallUnit_FailsWhenTungoBinaryGroupWritable(t *testing.T) {
 	cmd := &mockCommander{}
 	installer := NewUnitInstaller(cmd)
 
-	_, err := installer.InstallClientUnit()
+	_, err := installer.installRuntimeUnit(runtime.ModeClient)
 	if err == nil || !strings.Contains(err.Error(), "must not be writable by group or others") {
 		t.Fatalf("expected unsafe mode error, got %v", err)
 	}
@@ -441,7 +443,7 @@ func TestInstallUnit_FailsWhenSystemctlCommandFails(t *testing.T) {
 	cmd := &mockCommander{runErr: errors.New("boom")}
 	installer := NewUnitInstaller(cmd)
 
-	_, err := installer.InstallServerUnit()
+	_, err := installer.installRuntimeUnit(runtime.ModeServer)
 	if err == nil || !strings.Contains(err.Error(), "daemon-reload") {
 		t.Fatalf("expected daemon-reload error, got %v", err)
 	}
@@ -474,7 +476,7 @@ func TestInstallUnit_DaemonReloadFailure_RollsBackWrittenUnit(t *testing.T) {
 	}
 	installer := NewUnitInstaller(cmd)
 
-	_, err := installer.InstallClientUnit()
+	_, err := installer.installRuntimeUnit(runtime.ModeClient)
 	if err == nil || !strings.Contains(err.Error(), "daemon-reload") {
 		t.Fatalf("expected daemon-reload error, got %v", err)
 	}
@@ -508,7 +510,7 @@ func TestRollbackInstallUnit_ReturnsRemoveRollbackError(t *testing.T) {
 	}
 }
 
-func TestInstallUnit_FailsWhenSystemdUnsupported(t *testing.T) {
+func TestInstallUnit_FailsWhenSystemdUnavailable(t *testing.T) {
 	withSystemdHooks(
 		t,
 		func(string) (os.FileInfo, error) { return nil, os.ErrNotExist },
@@ -516,9 +518,9 @@ func TestInstallUnit_FailsWhenSystemdUnsupported(t *testing.T) {
 		func(string, []byte, os.FileMode) error { return nil },
 	)
 	installer := NewUnitInstaller(&mockCommander{})
-	_, err := installer.InstallClientUnit()
-	if err == nil || !strings.Contains(err.Error(), "systemd is not supported") {
-		t.Fatalf("expected unsupported systemd error, got %v", err)
+	_, err := installer.installRuntimeUnit(runtime.ModeClient)
+	if err == nil || !strings.Contains(err.Error(), "systemd is not available") {
+		t.Fatalf("expected unavailable systemd error, got %v", err)
 	}
 }
 
@@ -535,7 +537,7 @@ func TestInstallUnit_FailsWhenWriteFails(t *testing.T) {
 		func(string, []byte, os.FileMode) error { return errors.New("write failed") },
 	)
 	installer := NewUnitInstaller(&mockCommander{})
-	_, err := installer.InstallClientUnit()
+	_, err := installer.installRuntimeUnit(runtime.ModeClient)
 	if err == nil || !strings.Contains(err.Error(), "failed to write") {
 		t.Fatalf("expected write error, got %v", err)
 	}
@@ -559,7 +561,7 @@ func TestInstallUnit_FailsWhenEnableFails(t *testing.T) {
 		},
 	}
 	installer := NewUnitInstaller(cmd)
-	_, err := installer.InstallClientUnit()
+	_, err := installer.installRuntimeUnit(runtime.ModeClient)
 	if err == nil || !strings.Contains(err.Error(), "systemctl enable") {
 		t.Fatalf("expected enable error, got %v", err)
 	}
@@ -592,7 +594,7 @@ func TestInstallUnit_EnableFailure_RollsBackWrittenUnit(t *testing.T) {
 	}
 	installer := NewUnitInstaller(cmd)
 
-	_, err := installer.InstallClientUnit()
+	_, err := installer.installRuntimeUnit(runtime.ModeClient)
 	if err == nil || !strings.Contains(err.Error(), "systemctl enable") {
 		t.Fatalf("expected enable error, got %v", err)
 	}
@@ -790,7 +792,7 @@ func TestIsUnitActive_FailsOnUnexpectedError(t *testing.T) {
 	}
 }
 
-func TestIsUnitActive_FailsWhenSystemdUnsupported(t *testing.T) {
+func TestIsUnitActive_FailsWhenSystemdUnavailable(t *testing.T) {
 	withSystemdHooks(
 		t,
 		func(string) (os.FileInfo, error) { return nil, os.ErrNotExist },
@@ -799,8 +801,8 @@ func TestIsUnitActive_FailsWhenSystemdUnsupported(t *testing.T) {
 	)
 	installer := NewUnitInstaller(&mockCommander{})
 	_, err := installer.IsUnitActive()
-	if err == nil || !strings.Contains(err.Error(), "systemd is not supported") {
-		t.Fatalf("expected unsupported error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "systemd is not available") {
+		t.Fatalf("expected unavailable error, got %v", err)
 	}
 }
 
@@ -992,7 +994,7 @@ func TestDisableUnit_FailsOnCommandError(t *testing.T) {
 	}
 }
 
-func TestOperations_FailWhenSystemdUnsupported(t *testing.T) {
+func TestOperations_FailWhenSystemdUnavailable(t *testing.T) {
 	withSystemdHooks(
 		t,
 		func(string) (os.FileInfo, error) { return nil, os.ErrNotExist },
@@ -1014,8 +1016,8 @@ func TestOperations_FailWhenSystemdUnsupported(t *testing.T) {
 	for _, tc := range ops {
 		t.Run(tc.name, func(t *testing.T) {
 			err := tc.run(installer)
-			if err == nil || !strings.Contains(err.Error(), "systemd is not supported") {
-				t.Fatalf("expected unsupported error, got %v", err)
+			if err == nil || !strings.Contains(err.Error(), "systemd is not available") {
+				t.Fatalf("expected unavailable error, got %v", err)
 			}
 		})
 	}
@@ -1381,7 +1383,7 @@ func TestStatus_FailsOnUnexpectedIsEnabledError(t *testing.T) {
 	}
 }
 
-func TestStatus_FailsWhenSystemdUnsupported(t *testing.T) {
+func TestStatus_FailsWhenSystemdUnavailable(t *testing.T) {
 	withSystemdHooks(
 		t,
 		func(string) (os.FileInfo, error) { return nil, os.ErrNotExist },
@@ -1390,8 +1392,8 @@ func TestStatus_FailsWhenSystemdUnsupported(t *testing.T) {
 	)
 	installer := NewUnitInstaller(&mockCommander{})
 	_, err := installer.Status()
-	if err == nil || !strings.Contains(err.Error(), "systemd is not supported") {
-		t.Fatalf("expected unsupported error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "systemd is not available") {
+		t.Fatalf("expected unavailable error, got %v", err)
 	}
 }
 
@@ -1694,7 +1696,7 @@ func TestInstallUnit_FailsWhenLstatReturnsUnexpectedError(t *testing.T) {
 		return nil, nil
 	}
 	installer := NewUnitInstaller(&mockCommander{})
-	_, err := installer.InstallClientUnit()
+	_, err := installer.installRuntimeUnit(runtime.ModeClient)
 	if err == nil || !strings.Contains(err.Error(), "failed to lstat") {
 		t.Fatalf("expected lstat error, got %v", err)
 	}
@@ -1719,7 +1721,7 @@ func TestInstallUnit_FailsWhenLstatReturnsNilInfo(t *testing.T) {
 		return nil, nil
 	}
 	installer := NewUnitInstaller(&mockCommander{})
-	_, err := installer.InstallClientUnit()
+	_, err := installer.installRuntimeUnit(runtime.ModeClient)
 	if err == nil || !strings.Contains(err.Error(), "empty file info") {
 		t.Fatalf("expected empty file info error, got %v", err)
 	}
@@ -1743,7 +1745,7 @@ func TestInstallUnit_FailsWhenTungoBinaryIsNotRegular(t *testing.T) {
 		func(string, []byte, os.FileMode) error { return nil },
 	)
 	installer := NewUnitInstaller(&mockCommander{})
-	_, err := installer.InstallClientUnit()
+	_, err := installer.installRuntimeUnit(runtime.ModeClient)
 	if err == nil || !strings.Contains(err.Error(), "is not a regular file") {
 		t.Fatalf("expected non-regular file error, got %v", err)
 	}
@@ -1767,7 +1769,7 @@ func TestInstallUnit_FailsWhenOwnerCannotBeVerified(t *testing.T) {
 		func(string, []byte, os.FileMode) error { return nil },
 	)
 	installer := NewUnitInstaller(&mockCommander{})
-	_, err := installer.InstallClientUnit()
+	_, err := installer.installRuntimeUnit(runtime.ModeClient)
 	if err == nil || !strings.Contains(err.Error(), "failed to verify owner") {
 		t.Fatalf("expected owner verification error, got %v", err)
 	}
