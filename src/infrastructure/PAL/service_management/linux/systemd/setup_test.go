@@ -89,6 +89,39 @@ func TestSetupReturnsInstallError(t *testing.T) {
 	}
 }
 
+func TestSetupRestartsActiveUnitAfterInstallError(t *testing.T) {
+	wantErr := errors.New("write failed")
+	withAvailableSetupHooks(t, func(string, []byte, os.FileMode) error { return wantErr })
+	commander := &mockCommander{combinedOutput: []byte("active\n")}
+	installer := NewUnitInstaller(commander)
+
+	_, err := installer.Setup(runtime.ModeServer)
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("Setup() error = %v, want wrapping %v", err, wantErr)
+	}
+	assertSystemctlCalls(t, commander.runCalls, "stop", "start")
+}
+
+func TestSetupPreservesInstallErrorWhenRecoveryRestartFails(t *testing.T) {
+	installErr := errors.New("write failed")
+	restartErr := errors.New("restart failed")
+	withAvailableSetupHooks(t, func(string, []byte, os.FileMode) error { return installErr })
+	commander := &mockCommander{
+		combinedOutput: []byte("active\n"),
+		runErrByArg:    map[string]error{"start": restartErr},
+	}
+	installer := NewUnitInstaller(commander)
+
+	_, err := installer.Setup(runtime.ModeServer)
+	if !errors.Is(err, installErr) {
+		t.Fatalf("Setup() error = %v, want wrapping %v", err, installErr)
+	}
+	if !strings.Contains(err.Error(), restartErr.Error()) {
+		t.Fatalf("Setup() error = %v, want recovery error %v", err, restartErr)
+	}
+	assertSystemctlCalls(t, commander.runCalls, "stop", "start")
+}
+
 func TestSetupStopsWhenActiveUnitCannotBeStopped(t *testing.T) {
 	wantErr := errors.New("stop failed")
 	withAvailableSetupHooks(t, func(string, []byte, os.FileMode) error { return nil })

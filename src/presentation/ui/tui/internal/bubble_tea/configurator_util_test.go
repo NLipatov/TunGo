@@ -85,6 +85,19 @@ func TestSummarizeInvalidConfigurationError_LongMessageTruncated(t *testing.T) {
 	}
 }
 
+func TestSummarizeInvalidConfigurationError_TruncatesUTF8ByRunes(t *testing.T) {
+	long := strings.Repeat("я", 200)
+	result := summarizeInvalidConfigurationError(errors.New(long))
+
+	want := strings.Repeat("я", 117) + "..."
+	if result != want {
+		t.Fatalf("summarizeInvalidConfigurationError() = %q, want %q", result, want)
+	}
+	if got := len([]rune(result)); got != 120 {
+		t.Fatalf("truncated rune count = %d, want 120", got)
+	}
+}
+
 func TestSummarizeInvalidConfigurationError_StripsPrefix(t *testing.T) {
 	err := errors.New("invalid client configuration (tcp): port must be > 0")
 	result := summarizeInvalidConfigurationError(err)

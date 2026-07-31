@@ -70,6 +70,11 @@ func (i *UnitInstaller) Setup(mode runtime.Mode) (string, error) {
 
 	path, err := i.installRuntimeUnit(mode)
 	if err != nil {
+		if wasActive {
+			if startErr := i.StartUnit(); startErr != nil {
+				return "", fmt.Errorf("%w (daemon restart also failed: %v)", err, startErr)
+			}
+		}
 		return "", err
 	}
 	if wasActive {

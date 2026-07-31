@@ -342,8 +342,9 @@ func summarizeInvalidConfigurationError(err error) string {
 		}
 	}
 	message = strings.Join(strings.Fields(message), " ")
-	if len(message) > 120 {
-		return message[:117] + "..."
+	runes := []rune(message)
+	if len(runes) > 120 {
+		return string(runes[:117]) + "..."
 	}
 	return message
 }
