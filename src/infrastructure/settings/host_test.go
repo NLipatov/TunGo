@@ -274,6 +274,16 @@ func TestHost_IPv6Endpoint_NoIPv6_Error(t *testing.T) {
 	}
 }
 
+func TestHost_IPv6Endpoint_InvalidPort(t *testing.T) {
+	h, err := NewHost("2001:db8::1")
+	if err != nil {
+		t.Fatalf("NewHost failed: %v", err)
+	}
+	if _, endpointErr := h.IPv6Endpoint(0); endpointErr == nil {
+		t.Fatal("expected invalid port error")
+	}
+}
+
 func TestHost_AddrPort(t *testing.T) {
 	h, _ := NewHost("[2001:db8::1]")
 	ap, err := h.AddrPort(443)
@@ -324,6 +334,16 @@ func TestHost_IPv6AddrPort_NoIPv6_Error(t *testing.T) {
 	_, err := h.IPv6AddrPort(443)
 	if err == nil {
 		t.Fatal("expected error for host without IPv6")
+	}
+}
+
+func TestHost_IPv6AddrPort_InvalidPort(t *testing.T) {
+	h, err := NewHost("2001:db8::1")
+	if err != nil {
+		t.Fatalf("NewHost failed: %v", err)
+	}
+	if _, addrErr := h.IPv6AddrPort(0); addrErr == nil {
+		t.Fatal("expected invalid port error")
 	}
 }
 

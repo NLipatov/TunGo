@@ -105,6 +105,45 @@ func TestReadTimeout(t *testing.T) {
 	}
 }
 
+func TestReadFastPath(t *testing.T) {
+	ad, srv := newPair(t)
+	defer func() { _ = ad.Close() }()
+	defer func() { _ = srv.Close() }()
+
+	msg := []byte("fast path")
+	if _, err := srv.WriteToUDP(msg, ad.conn.LocalAddr().(*net.UDPAddr)); err != nil {
+		t.Fatalf("server write: %v", err)
+	}
+
+	buffer := make([]byte, len(ad.buf))
+	if n, err := ad.Read(buffer); err != nil || string(buffer[:n]) != string(msg) {
+		t.Fatalf("Read = (%q, %v), want (%q, nil)", buffer[:n], err, msg)
+	}
+}
+
+func TestReadFastPathTimeout(t *testing.T) {
+	ad, srv := newPair(t)
+	defer func() { _ = ad.Close() }()
+	defer func() { _ = srv.Close() }()
+	ad.readDeadline = 5 * time.Millisecond
+
+	if _, err := ad.Read(make([]byte, len(ad.buf))); err == nil {
+		t.Fatal("expected timeout")
+	}
+}
+
+func TestReadAfterClose(t *testing.T) {
+	ad, srv := newPair(t)
+	defer func() { _ = srv.Close() }()
+	if err := ad.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	if _, err := ad.Read(make([]byte, 1)); err == nil {
+		t.Fatal("expected read error after close")
+	}
+}
+
 func TestMain(m *testing.M) {
 	// small pause to avoid flakiness on slow CI runners
 	time.Sleep(10 * time.Millisecond)
