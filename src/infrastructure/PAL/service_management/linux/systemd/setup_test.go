@@ -65,6 +65,30 @@ func TestSetupRejectsInvalidModeBeforeSystemdCalls(t *testing.T) {
 	}
 }
 
+func TestSetupReturnsStatusCheckError(t *testing.T) {
+	wantErr := errors.New("status failed")
+	withAvailableSetupHooks(t, func(string, []byte, os.FileMode) error { return nil })
+	commander := &mockCommander{combinedOutputErr: wantErr}
+	installer := NewUnitInstaller(commander)
+
+	_, err := installer.Setup(runtime.ModeClient)
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("Setup() error = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestSetupReturnsInstallError(t *testing.T) {
+	wantErr := errors.New("write failed")
+	withAvailableSetupHooks(t, func(string, []byte, os.FileMode) error { return wantErr })
+	commander := &mockCommander{combinedOutput: []byte("inactive\n")}
+	installer := NewUnitInstaller(commander)
+
+	_, err := installer.Setup(runtime.ModeServer)
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("Setup() error = %v, want wrapping %v", err, wantErr)
+	}
+}
+
 func TestSetupStopsWhenActiveUnitCannotBeStopped(t *testing.T) {
 	wantErr := errors.New("stop failed")
 	withAvailableSetupHooks(t, func(string, []byte, os.FileMode) error { return nil })

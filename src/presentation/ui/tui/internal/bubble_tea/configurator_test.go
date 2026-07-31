@@ -2843,6 +2843,22 @@ func TestUpdate_MainTab_DispatchesDaemonScreens(t *testing.T) {
 			t.Fatalf("expected systemd active confirm screen, got %v", updated.screen)
 		}
 	})
+
+	t.Run("systemd check error confirm dispatch", func(t *testing.T) {
+		opts := defaultConfiguratorOpts()
+		model, err := NewConfigurator(opts, settingsForMode(ModePreferenceClient))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		model.screen = configuratorScreenDaemonCheckErrorConfirm
+		model.pendingStartMode = runtime.ModeClient
+		model.pendingStartScreen = configuratorScreenClientSelect
+		result, _ := model.Update(keyNamed(tea.KeyDown))
+		updated := result.(Configurator)
+		if updated.screen != configuratorScreenDaemonCheckErrorConfirm {
+			t.Fatalf("expected systemd check error confirm screen, got %v", updated.screen)
+		}
+	})
 }
 
 func TestView_MainTab_DaemonManageScreen(t *testing.T) {
@@ -2860,6 +2876,7 @@ func TestView_MainTab_DaemonManageScreen(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	model.screen = configuratorScreenDaemonManage
+	model.width = 80
 	view := model.mainTabView()
 	if !strings.Contains(view, "Setup/Manage daemon") {
 		t.Fatalf("expected daemon manage title, got: %s", view)

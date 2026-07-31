@@ -1787,6 +1787,43 @@ func TestDaemonMenuOptions_StaticUnitFileDoesNotMapToEnableDisable(t *testing.T)
 	}
 }
 
+func TestUpdateDaemonManageScreen_ReportsUnavailableActions(t *testing.T) {
+	tests := []struct {
+		name   string
+		action string
+		notice string
+	}{
+		{name: "start", action: daemonStartLabel, notice: "Daemon start is unavailable."},
+		{name: "stop", action: daemonStopLabel, notice: "Daemon stop is unavailable."},
+		{name: "enable", action: daemonEnableLabel, notice: "Daemon enable is unavailable."},
+		{name: "disable", action: daemonDisableLabel, notice: "Daemon disable is unavailable."},
+		{name: "remove", action: daemonDeleteLabel, notice: "Daemon remove is unavailable."},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			model := Configurator{
+				daemon: daemonState{menuOptions: []string{tt.action}},
+			}
+
+			result, cmd := model.updateDaemonManageScreen(keyNamed(tea.KeyEnter))
+			updated := result.(Configurator)
+			if cmd != nil {
+				t.Fatal("expected no command")
+			}
+			if updated.notice != tt.notice {
+				t.Fatalf("notice = %q, want %q", updated.notice, tt.notice)
+			}
+		})
+	}
+}
+
+func TestDaemonMenuOptions_NoDaemonReturnsNil(t *testing.T) {
+	if options := (Configurator{}).daemonMenuOptions(systemd.UnitStatus{}); options != nil {
+		t.Fatalf("daemonMenuOptions() = %v, want nil", options)
+	}
+}
+
 func containsString(values []string, want string) bool {
 	return indexOfString(values, want) >= 0
 }

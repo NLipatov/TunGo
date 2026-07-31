@@ -728,3 +728,20 @@ func TestAppendWrappedBody_WidthZeroNoNewline(t *testing.T) {
 		t.Fatalf("expected passthrough for width<=0, got %v", got)
 	}
 }
+
+func TestANSIHelpers_UnknownEscapeReturnsToNormalText(t *testing.T) {
+	const input = "\x1bXz"
+
+	if got := visibleWidthANSI(input); got != 1 {
+		t.Fatalf("visibleWidthANSI() = %d, want 1", got)
+	}
+	if got := stripANSI(input); got != "z" {
+		t.Fatalf("stripANSI() = %q, want %q", got, "z")
+	}
+}
+
+func TestPlaceCardCentered_EmptyCardUsesMinimumWidth(t *testing.T) {
+	if got := placeCardCentered("", 4, 1); got != "    \n" {
+		t.Fatalf("placeCardCentered() = %q, want four spaces and newline", got)
+	}
+}

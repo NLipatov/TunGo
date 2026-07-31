@@ -3,12 +3,15 @@ package tui
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	appConfiguration "tungo/application/configuration"
 	"tungo/application/runtime"
 	"tungo/infrastructure/settings"
 	bubbleTea "tungo/presentation/ui/tui/internal/bubble_tea"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 func TestNewTUI(t *testing.T) {
@@ -64,6 +67,16 @@ func TestTUI_Configure_ReturnsConfiguratorInitializationError(t *testing.T) {
 	}
 }
 
+func TestTUI_Configure_PropagatesProgramRunErrorWithoutTTY(t *testing.T) {
+	requireNoTTY(t)
+	ui := newTestTUI(t)
+
+	_, err := ui.configure(context.Background(), bubbleTea.NewRuntimeLogBuffer(8))
+	if err == nil || !strings.Contains(err.Error(), "opening TTY") {
+		t.Fatalf("configure() error = %v, want TTY initialization error", err)
+	}
+}
+
 func TestTUI_Run_WrapsConfiguratorInitializationError(t *testing.T) {
 	ui := newTestTUI(t)
 	ui.configuratorOptions.ClientConfigurationControl = nil
@@ -87,6 +100,43 @@ func TestTUI_RunRuntime_RuntimeInfoError(t *testing.T) {
 	if err == nil || err.Error() != "runtime info error: runtime info failed" {
 		t.Fatalf("expected runtime info error, got %v", err)
 	}
+}
+
+func TestTUI_RunRuntime_PropagatesRuntimeConstructionError(t *testing.T) {
+	if _, err := appConfiguration.NewDefaultClientControl().ClientRuntimeConfiguration(); err == nil {
+		t.Skip("default client runtime configuration is available")
+	}
+	ui := newTestTUI(t)
+
+	err := ui.runRuntime(
+		context.Background(),
+		runtime.ModeClient,
+		bubbleTea.NewRuntimeLogBuffer(8),
+	)
+	if err == nil {
+		t.Fatal("runRuntime() error = nil, want runtime construction error")
+	}
+}
+
+func TestTUI_RunRuntimePhase_PropagatesProgramRunErrorWithoutTTY(t *testing.T) {
+	requireNoTTY(t)
+	ui := newTestTUI(t)
+
+	reconfigure, err := ui.runRuntimePhase(context.Background(), bubbleTea.RuntimeDashboardOptions{
+		Mode: runtime.ModeClient,
+	})
+	if err == nil || !strings.Contains(err.Error(), "opening TTY") {
+		t.Fatalf("runRuntimePhase() error = %v, want TTY initialization error", err)
+	}
+	if reconfigure {
+		t.Fatal("runRuntimePhase() reconfigure = true, want false")
+	}
+}
+
+func TestShowFatalError_ReturnsWhenProgramCannotOpenTTY(t *testing.T) {
+	requireNoTTY(t)
+
+	ShowFatalError("fatal")
 }
 
 func TestTUI_RuntimeInfo_Client(t *testing.T) {
@@ -149,6 +199,17 @@ func newTestTUI(t *testing.T) *TUI {
 		t.Fatalf("New() error = %v", err)
 	}
 	return ui
+}
+
+func requireNoTTY(t *testing.T) {
+	t.Helper()
+	in, out, err := tea.OpenTTY()
+	if err != nil {
+		return
+	}
+	_ = in.Close()
+	_ = out.Close()
+	t.Skip("test requires a headless process without a controlling TTY")
 }
 
 type configurationControlMock struct{}
