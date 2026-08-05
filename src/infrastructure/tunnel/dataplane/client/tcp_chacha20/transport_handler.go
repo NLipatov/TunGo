@@ -2,6 +2,7 @@ package tcp_chacha20
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"io"
 	"log/slog"
@@ -9,12 +10,10 @@ import (
 	"time"
 	"tungo/application/network/connection"
 	"tungo/application/network/routing/transport"
-	"tungo/infrastructure/cryptography/chacha20/rekey"
-	"tungo/infrastructure/cryptography/primitives"
+	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/telemetry/trafficstats"
-	"tungo/infrastructure/tunnel/controlplane"
 
 	"golang.org/x/crypto/chacha20poly1305"
 )
@@ -23,13 +22,21 @@ import (
 // Client should reconnect with a fresh handshake.
 var ErrEpochExhausted = errors.New("epoch exhausted; reconnect required")
 
+type transportRekeyController interface {
+	ObservePeerEpoch(epoch uint16)
+}
+
+type rekeyAckHandler interface {
+	HandleRekeyAck(carrierEpoch uint16, plaindata []byte) (ok bool, err error)
+}
+
 type TransportHandler struct {
 	ctx                 context.Context
 	reader              io.Reader
 	writer              io.Writer
 	cryptographyService connection.Crypto
-	rekeyController     *rekey.StateMachine
-	handshakeCrypto     primitives.KeyDeriver
+	rekeyController     transportRekeyController
+	rekeyAck            rekeyAckHandler
 	egress              connection.Egress
 	lastRecvNano        atomic.Int64
 	pingBuf             []byte
@@ -40,7 +47,8 @@ func NewTransportHandler(
 	reader io.Reader,
 	writer io.Writer,
 	cryptographyService connection.Crypto,
-	rekeyController *rekey.StateMachine,
+	rekeyController transportRekeyController,
+	rekeyAck rekeyAckHandler,
 	egress connection.Egress,
 ) transport.Handler {
 	t := &TransportHandler{
@@ -49,7 +57,7 @@ func NewTransportHandler(
 		writer:              writer,
 		cryptographyService: cryptographyService,
 		rekeyController:     rekeyController,
-		handshakeCrypto:     &primitives.DefaultKeyDeriver{},
+		rekeyAck:            rekeyAck,
 		egress:              egress,
 		pingBuf:             make([]byte, epochPrefixSize+3, epochPrefixSize+3+settings.TCPChacha20Overhead),
 	}
@@ -87,6 +95,10 @@ func (t *TransportHandler) HandleTransport() error {
 				slog.Warn("failed to decrypt data", "err", payloadErr)
 				return payloadErr
 			}
+			carrierEpoch := binary.BigEndian.Uint16(buffer[:epochPrefixSize])
+			if t.rekeyController != nil {
+				t.rekeyController.ObservePeerEpoch(carrierEpoch)
+			}
 
 			t.lastRecvNano.Store(time.Now().UnixNano())
 
@@ -96,7 +108,7 @@ func (t *TransportHandler) HandleTransport() error {
 					slog.Warn("received EpochExhausted from server, initiating reconnect")
 					return ErrEpochExhausted
 				case service_packet.RekeyAck:
-					if err := t.handleRekeyAck(payload); err != nil {
+					if err := t.handleRekeyAck(carrierEpoch, payload); err != nil {
 						return err
 					}
 					continue
@@ -140,17 +152,16 @@ func (t *TransportHandler) sendPing() {
 	}
 }
 
-func (t *TransportHandler) handleRekeyAck(payload []byte) error {
-	if t.rekeyController == nil {
+func (t *TransportHandler) handleRekeyAck(carrierEpoch uint16, payload []byte) error {
+	if t.rekeyAck == nil {
 		return nil
 	}
-	if t.rekeyController.LastRekeyEpoch >= 65000 {
-		slog.Warn("rekey ack exhausted epoch, requesting session reset")
-		return ErrEpochExhausted
-	}
-	_, err := controlplane.ClientHandleRekeyAck(t.handshakeCrypto, t.rekeyController, payload)
+	_, err := t.rekeyAck.HandleRekeyAck(carrierEpoch, payload)
 	if err != nil {
 		slog.Error("rekey ack install/apply failed", "err", err)
+		if errors.Is(err, chacha20.ErrEpochExhausted) {
+			return ErrEpochExhausted
+		}
 	}
 	return nil
 }

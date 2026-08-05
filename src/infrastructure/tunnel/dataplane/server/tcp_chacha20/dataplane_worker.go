@@ -2,6 +2,7 @@ package tcp_chacha20
 
 import (
 	"context"
+	"encoding/binary"
 	"io"
 
 	"tungo/application/network/connection"
@@ -87,11 +88,18 @@ func (w *tcpDataplaneWorker) Run() {
 				w.logger.Warn("failed to decrypt data", "err", err)
 				return
 			}
+			carrierEpoch := binary.BigEndian.Uint16(buffer[:epochPrefixSize])
+			if rekeyCtrl := w.peer.RekeyController(); rekeyCtrl != nil {
+				rekeyCtrl.ObservePeerEpoch(carrierEpoch)
+			}
 			if spType, spOk := service_packet.TryParseHeader(pt); spOk {
 				switch spType {
 				case service_packet.RekeyInit:
-					if rc := w.peer.RekeyController(); rc != nil {
-						w.cp.Handle(pt, w.peer.Egress(), rc)
+					if rc, ok := w.peer.RekeyController().(rekeyController); ok {
+						if _, err := w.cp.Handle(carrierEpoch, pt, w.peer.Egress(), rc); err != nil {
+							w.logger.Warn("failed to send rekey ack", "err", err)
+							return
+						}
 					}
 				case service_packet.Ping:
 					w.cp.HandlePing(w.peer.Egress())

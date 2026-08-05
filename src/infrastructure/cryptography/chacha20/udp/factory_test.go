@@ -1,4 +1,4 @@
-package chacha20
+package udp
 
 import (
 	"bytes"
@@ -9,37 +9,37 @@ import (
 )
 
 // --- mock handshake ---
-type mockUdpHandshake struct {
+type mockHandshake struct {
 	id     [32]byte
 	server []byte
 	client []byte
 }
 
-func (m *mockUdpHandshake) Id() [32]byte              { return m.id }
-func (m *mockUdpHandshake) KeyServerToClient() []byte { return m.server }
-func (m *mockUdpHandshake) KeyClientToServer() []byte { return m.client }
-func (m *mockUdpHandshake) ServerSideHandshake(_ connection.Transport) (int, error) {
+func (m *mockHandshake) Id() [32]byte              { return m.id }
+func (m *mockHandshake) KeyServerToClient() []byte { return m.server }
+func (m *mockHandshake) KeyClientToServer() []byte { return m.client }
+func (m *mockHandshake) ServerSideHandshake(_ connection.Transport) (int, error) {
 	return 0, nil
 }
-func (m *mockUdpHandshake) ClientSideHandshake(_ connection.Transport) error {
+func (m *mockHandshake) ClientSideHandshake(_ connection.Transport) error {
 	return nil
 }
 
-type udpSessionTestKeyGenerator struct {
+type testKeyGenerator struct {
 }
 
-func (k *udpSessionTestKeyGenerator) validKey() []byte {
+func (k *testKeyGenerator) validKey() []byte {
 	return bytes.Repeat([]byte{1}, chacha20poly1305.KeySize)
 }
 
-func (k *udpSessionTestKeyGenerator) invalidKey() []byte {
+func (k *testKeyGenerator) invalidKey() []byte {
 	return []byte("short")
 }
 
-func TestUdpSessionBuilder_FromHandshake_Server_Success(t *testing.T) {
-	b := NewUdpSessionBuilder(&fakeAEADBuilder{})
-	keyGen := udpSessionTestKeyGenerator{}
-	hs := &mockUdpHandshake{
+func TestFactory_FromHandshake_Server_Success(t *testing.T) {
+	b := NewFactory()
+	keyGen := testKeyGenerator{}
+	hs := &mockHandshake{
 		id:     [32]byte{1, 2, 3},
 		server: keyGen.validKey(),
 		client: keyGen.validKey(),
@@ -56,10 +56,10 @@ func TestUdpSessionBuilder_FromHandshake_Server_Success(t *testing.T) {
 	}
 }
 
-func TestUdpSessionBuilder_FromHandshake_Client_Success(t *testing.T) {
-	b := NewUdpSessionBuilder(&fakeAEADBuilder{})
-	keyGen := udpSessionTestKeyGenerator{}
-	hs := &mockUdpHandshake{
+func TestFactory_FromHandshake_Client_Success(t *testing.T) {
+	b := NewFactory()
+	keyGen := testKeyGenerator{}
+	hs := &mockHandshake{
 		id:     [32]byte{4, 5, 6},
 		server: keyGen.validKey(),
 		client: keyGen.validKey(),
@@ -76,10 +76,10 @@ func TestUdpSessionBuilder_FromHandshake_Client_Success(t *testing.T) {
 	}
 }
 
-func TestUdpSessionBuilder_FromHandshake_Server_InvalidServerKey(t *testing.T) {
-	b := NewUdpSessionBuilder(&fakeAEADBuilder{})
-	keyGen := udpSessionTestKeyGenerator{}
-	hs := &mockUdpHandshake{
+func TestFactory_FromHandshake_Server_InvalidServerKey(t *testing.T) {
+	b := NewFactory()
+	keyGen := testKeyGenerator{}
+	hs := &mockHandshake{
 		id:     [32]byte{7, 8, 9},
 		server: keyGen.invalidKey(),
 		client: keyGen.validKey(),
@@ -96,10 +96,10 @@ func TestUdpSessionBuilder_FromHandshake_Server_InvalidServerKey(t *testing.T) {
 	}
 }
 
-func TestUdpSessionBuilder_FromHandshake_Server_InvalidClientKey(t *testing.T) {
-	b := NewUdpSessionBuilder(&fakeAEADBuilder{})
-	keyGen := udpSessionTestKeyGenerator{}
-	hs := &mockUdpHandshake{
+func TestFactory_FromHandshake_Server_InvalidClientKey(t *testing.T) {
+	b := NewFactory()
+	keyGen := testKeyGenerator{}
+	hs := &mockHandshake{
 		id:     [32]byte{10, 11, 12},
 		server: keyGen.validKey(),
 		client: keyGen.invalidKey(),
@@ -116,10 +116,10 @@ func TestUdpSessionBuilder_FromHandshake_Server_InvalidClientKey(t *testing.T) {
 	}
 }
 
-func TestUdpSessionBuilder_FromHandshake_Client_InvalidClientKey(t *testing.T) {
-	b := NewUdpSessionBuilder(&fakeAEADBuilder{})
-	keyGen := udpSessionTestKeyGenerator{}
-	hs := &mockUdpHandshake{
+func TestFactory_FromHandshake_Client_InvalidClientKey(t *testing.T) {
+	b := NewFactory()
+	keyGen := testKeyGenerator{}
+	hs := &mockHandshake{
 		id:     [32]byte{13, 14, 15},
 		server: keyGen.validKey(),
 		client: keyGen.invalidKey(),
@@ -136,10 +136,10 @@ func TestUdpSessionBuilder_FromHandshake_Client_InvalidClientKey(t *testing.T) {
 	}
 }
 
-func TestUdpSessionBuilder_FromHandshake_Client_InvalidServerKey(t *testing.T) {
-	b := NewUdpSessionBuilder(&fakeAEADBuilder{})
-	keyGen := udpSessionTestKeyGenerator{}
-	hs := &mockUdpHandshake{
+func TestFactory_FromHandshake_Client_InvalidServerKey(t *testing.T) {
+	b := NewFactory()
+	keyGen := testKeyGenerator{}
+	hs := &mockHandshake{
 		id:     [32]byte{16, 17, 18},
 		server: keyGen.invalidKey(),
 		client: keyGen.validKey(),

@@ -11,7 +11,6 @@ import (
 	"tungo/application/network/connection"
 	"tungo/application/network/routing"
 	"tungo/application/network/routing/tun"
-	"tungo/infrastructure/cryptography/chacha20/rekey"
 )
 
 type runtimeTestTransport struct {
@@ -64,10 +63,10 @@ func (d *runtimeTestDeps) newRuntime(routerFactory connection.TrafficRouterFacto
 type runtimeTestConnFactory struct{}
 type runtimeTestWorkerFactory struct{}
 
-func (runtimeTestConnFactory) EstablishConnection(context.Context) (connection.Transport, connection.Crypto, *rekey.StateMachine, error) {
+func (runtimeTestConnFactory) EstablishConnection(context.Context) (connection.Transport, connection.Crypto, connection.RekeyController, error) {
 	return nil, nil, nil, nil
 }
-func (runtimeTestWorkerFactory) CreateWorker(context.Context, connection.Transport, io.ReadWriteCloser, connection.Crypto, *rekey.StateMachine) (routing.Worker, error) {
+func (runtimeTestWorkerFactory) CreateWorker(context.Context, connection.Transport, io.ReadWriteCloser, connection.Crypto, connection.RekeyController) (routing.Worker, error) {
 	return nil, nil
 }
 

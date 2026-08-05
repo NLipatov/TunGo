@@ -1,4 +1,4 @@
-package chacha20
+package udp
 
 import (
 	"encoding/binary"

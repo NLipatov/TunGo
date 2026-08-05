@@ -11,41 +11,39 @@ import (
 	"time"
 	"tungo/application/network/connection"
 	"tungo/application/network/routing/tun"
-	"tungo/infrastructure/cryptography/chacha20"
-	"tungo/infrastructure/cryptography/chacha20/rekey"
-	"tungo/infrastructure/cryptography/primitives"
+	chacha20 "tungo/infrastructure/cryptography/chacha20/udp"
 	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/telemetry/trafficstats"
-	"tungo/infrastructure/tunnel/controlplane"
 
 	"golang.org/x/crypto/chacha20poly1305"
 )
+
+type rekeyInitiator interface {
+	MaybeBuildRekeyInit(now time.Time, dst []byte) (payload []byte, ok bool, err error)
+}
 
 type TunHandler struct {
 	ctx                 context.Context
 	reader              io.Reader // abstraction over TUN device
 	egress              connection.Egress
-	rekeyController     *rekey.StateMachine
 	allowedSources      map[netip.Addr]struct{}
 	controlPacketBuffer [128]byte
-	rekeyInit           *controlplane.RekeyInitScheduler
+	rekeyInit           rekeyInitiator
 }
 
 func NewTunHandler(ctx context.Context,
 	reader io.Reader,
 	egress connection.Egress,
-	rekeyController *rekey.StateMachine,
+	rekeyInit rekeyInitiator,
 	allowedSources map[netip.Addr]struct{},
 ) tun.Handler {
-	now := time.Now().UTC()
 	return &TunHandler{
-		ctx:             ctx,
-		reader:          reader,
-		egress:          egress,
-		rekeyController: rekeyController,
-		rekeyInit:       controlplane.NewRekeyInitScheduler(&primitives.DefaultKeyDeriver{}, settings.DefaultRekeyInterval, now),
-		allowedSources:  allowedSources,
+		ctx:            ctx,
+		reader:         reader,
+		egress:         egress,
+		rekeyInit:      rekeyInit,
+		allowedSources: allowedSources,
 	}
 }
 
@@ -72,7 +70,7 @@ func NewTunHandler(ctx context.Context,
 func (w *TunHandler) HandleTun() error {
 	// +8 route-id +12 nonce +16 AEAD tag
 	var buffer [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
-	payloadStart := chacha20.UDPRouteIDLength + chacha20poly1305.NonceSize
+	payloadStart := chacha20.RouteIDLength + chacha20poly1305.NonceSize
 	rec := trafficstats.NewRecorder()
 	defer rec.Flush()
 
@@ -107,15 +105,15 @@ func (w *TunHandler) HandleTun() error {
 				}
 				return fmt.Errorf("could not read a packet from TUN: %v", err)
 			}
-			if w.rekeyInit != nil && w.rekeyController != nil {
-				payloadBuf := w.controlPacketBuffer[chacha20.UDPRouteIDLength+chacha20poly1305.NonceSize:]
-				servicePayload, ok, pErr := w.rekeyInit.MaybeBuildRekeyInit(time.Now().UTC(), w.rekeyController, payloadBuf)
+			if w.rekeyInit != nil {
+				payloadBuf := w.controlPacketBuffer[chacha20.RouteIDLength+chacha20poly1305.NonceSize:]
+				servicePayload, ok, pErr := w.rekeyInit.MaybeBuildRekeyInit(time.Now().UTC(), payloadBuf)
 				if pErr != nil {
 					slog.Warn("failed to prepare rekey init", "err", pErr)
 					continue
 				}
 				if ok {
-					totalLen := chacha20.UDPRouteIDLength + chacha20poly1305.NonceSize + len(servicePayload)
+					totalLen := chacha20.RouteIDLength + chacha20poly1305.NonceSize + len(servicePayload)
 					if err := w.egress.SendControl(w.controlPacketBuffer[:totalLen]); err != nil {
 						slog.Warn("failed to send rekey init", "err", err)
 					}

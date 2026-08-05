@@ -1,4 +1,4 @@
-package chacha20
+package udp
 
 import (
 	"testing"
@@ -6,11 +6,11 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
-func testSession(epoch Epoch) *DefaultUdpSession {
+func testSession(epoch uint16) *Session {
 	key := make([]byte, chacha20poly1305.KeySize)
 	key[0] = byte(epoch)
 	aead, _ := chacha20poly1305.New(key)
-	return NewUdpSessionWithCiphers([32]byte{}, aead, aead, false, epoch)
+	return newSessionWithCiphers([32]byte{}, aead, aead, false, epoch)
 }
 
 func TestEpochRing_NewWithInitialSession(t *testing.T) {
@@ -50,7 +50,7 @@ func TestEpochRing_ResolveFindsInserted(t *testing.T) {
 	r.Insert(1, testSession(1))
 	r.Insert(2, testSession(2))
 
-	for _, e := range []Epoch{0, 1, 2} {
+	for _, e := range []uint16{0, 1, 2} {
 		s, ok := r.Resolve(e)
 		if !ok {
 			t.Fatalf("expected Resolve(%d) to succeed", e)

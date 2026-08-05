@@ -15,11 +15,11 @@ type fakeSession struct {
 	external netip.AddrPort
 }
 
-func (f *fakeSession) InternalAddr() netip.Addr         { return f.internal }
-func (f *fakeSession) ExternalAddrPort() netip.AddrPort { return f.external }
-func (f *fakeSession) Crypto() connection.Crypto        { return nil }
-func (f *fakeSession) RekeyController() rekey.FSM       { return nil }
-func (f *fakeSession) IsSourceAllowed(netip.Addr) bool  { return true }
+func (f *fakeSession) InternalAddr() netip.Addr                    { return f.internal }
+func (f *fakeSession) ExternalAddrPort() netip.AddrPort            { return f.external }
+func (f *fakeSession) Crypto() connection.Crypto                   { return nil }
+func (f *fakeSession) RekeyController() connection.RekeyController { return nil }
+func (f *fakeSession) IsSourceAllowed(netip.Addr) bool             { return true }
 
 type fakeSessionWithCrypto struct {
 	fakeSession
@@ -144,20 +144,20 @@ func TestPeer_Egress(t *testing.T) {
 }
 
 func TestSession_RekeyController(t *testing.T) {
-	rk := &fakeRekeyer{}
-	fsm := rekey.NewStateMachine(rk, []byte("c2s"), []byte("s2c"), true)
+	rk := &fakeEpochManager{}
+	fsm := rekey.NewStateMachine(rk, []byte("c2s"), []byte("s2c"))
 	s := NewSession(nil, fsm, netip.MustParseAddr("10.0.0.1"), netip.MustParseAddrPort("1.2.3.4:5000"))
 	if s.RekeyController() != fsm {
 		t.Fatal("expected RekeyController() to return the injected FSM")
 	}
 }
 
-// fakeRekeyer implements rekey.Rekeyer for session tests.
-type fakeRekeyer struct{}
+// fakeEpochManager implements rekey.EpochManager for session tests.
+type fakeEpochManager struct{}
 
-func (fakeRekeyer) Rekey(_, _ []byte) (uint16, error) { return 0, nil }
-func (fakeRekeyer) SetSendEpoch(uint16)               {}
-func (fakeRekeyer) RemoveEpoch(uint16) bool           { return true }
+func (fakeEpochManager) StageEpoch(_, _ []byte) (uint16, error) { return 0, nil }
+func (fakeEpochManager) PromoteSendEpoch(uint16)                {}
+func (fakeEpochManager) RetirePreviousEpoch() bool              { return true }
 
 // fakeSessionWithIdentity implements SessionIdentity for testing TerminateByPubKey.
 type fakeSessionWithIdentity struct {

@@ -3,11 +3,10 @@ package network
 import (
 	"fmt"
 	"tungo/application/network/connection"
-	"tungo/infrastructure/cryptography/chacha20/rekey"
 )
 
 type Secret interface {
-	Exchange(transport connection.Transport) (connection.Crypto, *rekey.StateMachine, error)
+	Exchange(transport connection.Transport) (connection.Crypto, connection.RekeyController, error)
 }
 
 type DefaultSecret struct {
@@ -26,7 +25,7 @@ func NewDefaultSecret(handshake connection.Handshake,
 
 func (s *DefaultSecret) Exchange(
 	transport connection.Transport,
-) (connection.Crypto, *rekey.StateMachine, error) {
+) (connection.Crypto, connection.RekeyController, error) {
 	if handshakeErr := s.handshake.ClientSideHandshake(transport); handshakeErr != nil {
 		return nil, nil, handshakeErr
 	}

@@ -13,6 +13,7 @@ import (
 	"tungo/infrastructure/logging"
 	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/network/udp/adapters"
+	"tungo/infrastructure/tunnel/controlplane"
 	"tungo/infrastructure/tunnel/session"
 	udpQueue "tungo/infrastructure/tunnel/sessionplane/server/udp_registration/queue"
 )
@@ -181,6 +182,9 @@ func (r *Registrar) RegisterClient(addrPort netip.AddrPort, queue *udpQueue.Regi
 	if cryptoSessionErr != nil {
 		r.logger.Error("failed to init UDP crypto session", "client", addrPort.Addr().AsSlice(), "err", cryptoSessionErr)
 		return
+	}
+	if controller != nil {
+		controller = controlplane.NewServerRekeyCoordinator(controller)
 	}
 
 	// Extract authentication info from IK handshake result if available

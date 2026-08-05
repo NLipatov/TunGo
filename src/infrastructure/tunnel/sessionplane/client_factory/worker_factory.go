@@ -10,9 +10,10 @@ import (
 	appConfiguration "tungo/application/configuration"
 	"tungo/application/network/connection"
 	"tungo/application/network/routing"
-	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/udp/adapters"
 	"tungo/infrastructure/settings"
+	"tungo/infrastructure/tunnel/controlplane"
 	"tungo/infrastructure/tunnel/dataplane/client/tcp_chacha20"
 	"tungo/infrastructure/tunnel/dataplane/client/udp_chacha20"
 )
@@ -28,9 +29,15 @@ func NewWorkerFactory(configuration appConfiguration.ClientRuntimeConfiguration)
 }
 
 func (w *WorkerFactory) CreateWorker(
-	ctx context.Context, conn connection.Transport, tun io.ReadWriteCloser, crypto connection.Crypto, controller *rekey.StateMachine,
+	ctx context.Context, conn connection.Transport, tun io.ReadWriteCloser, crypto connection.Crypto, controller connection.RekeyController,
 ) (routing.Worker, error) {
 	allowed := w.allowedSources()
+	rekeyCoordinator := controlplane.NewClientRekeyCoordinator(
+		&primitives.DefaultKeyDeriver{},
+		controller,
+		settings.DefaultRekeyInterval,
+		time.Now().UTC(),
+	)
 
 	switch w.conf.Protocol {
 	case settings.UDP:
@@ -46,7 +53,7 @@ func (w *WorkerFactory) CreateWorker(
 			ctx,
 			tun,
 			egress,
-			controller,
+			rekeyCoordinator,
 			allowed,
 		)
 		// transportHandler reads from transport and writes to tun
@@ -56,14 +63,15 @@ func (w *WorkerFactory) CreateWorker(
 			tun,
 			crypto,
 			controller,
+			rekeyCoordinator,
 			egress,
 		)
 		return udp_chacha20.NewUdpWorker(transportHandler, tunHandler), nil
 	case settings.TCP, settings.WS, settings.WSS:
 		egress := connection.NewDefaultEgress(conn, crypto)
-		tunHandler := tcp_chacha20.NewTunHandler(ctx, tun, egress, controller, allowed)
-		transportHandler := tcp_chacha20.NewTransportHandler(ctx, conn, tun, crypto, controller, egress)
-		return tcp_chacha20.NewTcpTunWorker(ctx, tunHandler, transportHandler, crypto, controller), nil
+		tunHandler := tcp_chacha20.NewTunHandler(ctx, tun, egress, rekeyCoordinator, allowed)
+		transportHandler := tcp_chacha20.NewTransportHandler(ctx, conn, tun, crypto, controller, rekeyCoordinator, egress)
+		return tcp_chacha20.NewTcpTunWorker(tunHandler, transportHandler), nil
 	default:
 		return nil, fmt.Errorf("unsupported protocol")
 	}

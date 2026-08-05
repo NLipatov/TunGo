@@ -3,6 +3,7 @@ package udp_chacha20
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -12,21 +13,23 @@ import (
 	"testing"
 	"time"
 	"tungo/application/network/connection"
-	"tungo/infrastructure/cryptography/chacha20"
+	corechacha20 "tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	chacha20 "tungo/infrastructure/cryptography/chacha20/udp"
 	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/settings"
+	"tungo/infrastructure/tunnel/controlplane"
 
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/curve25519"
 )
 
-type dummyRekeyer struct{}
+type dummyEpochManager struct{}
 
-func (dummyRekeyer) Rekey(_, _ []byte) (uint16, error) { return 0, nil }
-func (dummyRekeyer) SetSendEpoch(uint16)               {}
-func (dummyRekeyer) RemoveEpoch(uint16) bool           { return true }
+func (dummyEpochManager) StageEpoch(_, _ []byte) (uint16, error) { return 0, nil }
+func (dummyEpochManager) PromoteSendEpoch(uint16)                {}
+func (dummyEpochManager) RetirePreviousEpoch() bool              { return true }
 
 // thTestCrypto implements application.crypto for testing TransportHandler
 // Only Decrypt is used in tests.
@@ -45,30 +48,57 @@ func (m *thTestCrypto) Decrypt([]byte) ([]byte, error) {
 	return m.output, nil
 }
 
-// thAckCrypto returns payload without the leading epoch bytes.
+// thAckCrypto returns payload without the UDP route ID and nonce.
 type thAckCrypto struct{}
 
 func (thAckCrypto) Encrypt(b []byte) ([]byte, error) { return b, nil }
 func (thAckCrypto) Decrypt(b []byte) ([]byte, error) {
-	if len(b) <= 2 {
+	payloadOffset := chacha20.RouteIDLength + chacha20poly1305.NonceSize
+	if len(b) <= payloadOffset {
 		return nil, fmt.Errorf("cipher too short")
 	}
-	out := make([]byte, len(b)-2)
-	copy(out, b[2:])
+	out := make([]byte, len(b)-payloadOffset)
+	copy(out, b[payloadOffset:])
 	return out, nil
 }
 
-// incRekeyer yields monotonically increasing epochs for rekey tests.
-type incRekeyer struct {
-	next uint16
+func buildTestUDPPacket(epoch uint16, payload []byte) []byte {
+	payloadOffset := chacha20.RouteIDLength + chacha20poly1305.NonceSize
+	packet := make([]byte, payloadOffset+len(payload))
+	binary.BigEndian.PutUint16(packet[chacha20.EpochOffset:chacha20.EpochOffset+2], epoch)
+	copy(packet[payloadOffset:], payload)
+	return packet
 }
 
-func (r *incRekeyer) Rekey(_, _ []byte) (uint16, error) {
+func buildTestRekeyAck(t *testing.T, crypto primitives.KeyDeriver) []byte {
+	t.Helper()
+	serverPub, _, err := crypto.GenerateX25519KeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := make([]byte, service_packet.RekeyPacketLen)
+	if _, err := service_packet.EncodeV1Header(service_packet.RekeyAck, payload); err != nil {
+		t.Fatal(err)
+	}
+	copy(payload[3:], serverPub)
+	return payload
+}
+
+// incEpochManager yields monotonically increasing epochs for rekey tests.
+type incEpochManager struct {
+	next uint16
+	err  error
+}
+
+func (r *incEpochManager) StageEpoch(_, _ []byte) (uint16, error) {
+	if r.err != nil {
+		return 0, r.err
+	}
 	r.next++
 	return r.next, nil
 }
-func (r *incRekeyer) SetSendEpoch(uint16)     {}
-func (r *incRekeyer) RemoveEpoch(uint16) bool { return true }
+func (r *incEpochManager) PromoteSendEpoch(uint16)   {}
+func (r *incEpochManager) RetirePreviousEpoch() bool { return true }
 
 // thTestReader simulates a sequence of Read calls for TransportHandler
 type thTestReader struct {
@@ -108,8 +138,8 @@ func TestHandleTransport_ImmediateCancel(t *testing.T) {
 		func(p []byte) (int, error) { t.Fatal("Read called despite cancel"); return 0, nil },
 	}}
 	w := &thTestWriter{}
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTransportHandler(ctx, r, w, &thTestCrypto{}, ctrl, nil)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
+	h := NewTransportHandler(ctx, r, w, &thTestCrypto{}, ctrl, nil, nil)
 	if err := h.HandleTransport(); err != nil {
 		t.Errorf("expected nil on immediate cancel, got %v", err)
 	}
@@ -121,8 +151,8 @@ func TestHandleTransport_ReadErrorOther(t *testing.T) {
 		func(p []byte) (int, error) { return 0, errRead },
 	}}
 	w := &thTestWriter{}
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTransportHandler(context.Background(), r, w, &thTestCrypto{}, ctrl, nil)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
+	h := NewTransportHandler(context.Background(), r, w, &thTestCrypto{}, ctrl, nil, nil)
 	exp := fmt.Sprintf("could not read a packet from adapter: %v", errRead)
 	if err := h.HandleTransport(); err == nil || err.Error() != exp {
 		t.Errorf("expected %q, got %v", exp, err)
@@ -138,8 +168,8 @@ func TestHandleTransport_ReadDeadlineExceededSkip(t *testing.T) {
 		func(p []byte) (int, error) { <-ctx.Done(); return 0, errors.New("stop") },
 	}}
 	w := &thTestWriter{}
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTransportHandler(ctx, r, w, &thTestCrypto{}, ctrl, nil)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
+	h := NewTransportHandler(ctx, r, w, &thTestCrypto{}, ctrl, nil, nil)
 
 	done := make(chan error)
 	go func() { done <- h.HandleTransport() }()
@@ -164,8 +194,8 @@ func TestHandleTransport_DecryptNonUniqueNonceSkip(t *testing.T) {
 	}}
 	w := &thTestWriter{}
 	crypto := &thTestCrypto{err: chacha20.ErrNonUniqueNonce}
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTransportHandler(ctx, r, w, crypto, ctrl, nil)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
+	h := NewTransportHandler(ctx, r, w, crypto, ctrl, nil, nil)
 
 	done := make(chan error)
 	go func() { done <- h.HandleTransport() }()
@@ -187,8 +217,8 @@ func TestHandleTransport_DecryptErrorDropped(t *testing.T) {
 	}}
 	w := &thTestWriter{}
 	crypto := &thTestCrypto{err: errDec}
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTransportHandler(context.Background(), r, w, crypto, ctrl, nil)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
+	h := NewTransportHandler(context.Background(), r, w, crypto, ctrl, nil, nil)
 	// Should exit with read error (EOF), not decrypt error
 	err := h.HandleTransport()
 	if err == nil || !strings.Contains(err.Error(), "EOF") {
@@ -204,8 +234,8 @@ func TestHandleTransport_WriteError(t *testing.T) {
 	errWrite := errors.New("write fail")
 	w := &thTestWriter{err: errWrite}
 	crypto := &thTestCrypto{output: d[1:]} // decrypted payload
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTransportHandler(context.Background(), r, w, crypto, ctrl, nil)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
+	h := NewTransportHandler(context.Background(), r, w, crypto, ctrl, nil, nil)
 	exp := fmt.Sprintf("failed to write to TUN: %v", errWrite)
 	if err := h.HandleTransport(); err == nil || err.Error() != exp {
 		t.Errorf("expected %q, got %v", exp, err)
@@ -224,8 +254,8 @@ func TestHandleTransport_SuccessThenCancel(t *testing.T) {
 	}}
 	w := &thTestWriter{}
 	crypto := &thTestCrypto{output: decrypted}
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTransportHandler(ctx, r, w, crypto, ctrl, nil)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
+	h := NewTransportHandler(ctx, r, w, crypto, ctrl, nil, nil)
 
 	done := make(chan error)
 	go func() { done <- h.HandleTransport() }()
@@ -249,8 +279,8 @@ func TestHandleTransport_RekeyAckAfterDoubleInit_UsesOriginalPendingKey(t *testi
 	defer cancel()
 
 	// Shared controller for TunHandler and TransportHandler.
-	rekeyer := &incRekeyer{}
-	ctrl := rekey.NewStateMachine(rekeyer, []byte("c2s0"), []byte("s2c0"), false)
+	epochManager := &incEpochManager{}
+	ctrl := rekey.NewStateMachine(epochManager, []byte("c2s0"), []byte("s2c0"))
 
 	// --- Step 1: fire two RekeyInit sends without ACK in between.
 	reader := &fakeReader{readFunc: func(p []byte) (int, error) {
@@ -258,9 +288,10 @@ func TestHandleTransport_RekeyAckAfterDoubleInit_UsesOriginalPendingKey(t *testi
 	}}
 	writer := &fakeWriter{}
 	crypto := &tunhandlerTestRakeCrypto{} // passthrough
-	tunHandler := NewTunHandler(ctx, reader, connection.NewDefaultEgress(writer, crypto), ctrl, nil).(*TunHandler)
-	tunHandler.rekeyInit.SetInterval(5 * time.Millisecond)
-	tunHandler.rekeyInit.SetRotateAt(time.Now().UTC().Add(tunHandler.rekeyInit.Interval()))
+	coordinator := controlplane.NewClientRekeyCoordinator(
+		&primitives.DefaultKeyDeriver{}, ctrl, 5*time.Millisecond, time.Now(),
+	)
+	tunHandler := NewTunHandler(ctx, reader, connection.NewDefaultEgress(writer, crypto), coordinator, nil).(*TunHandler)
 
 	doneTun := make(chan struct{})
 	go func() {
@@ -270,7 +301,7 @@ func TestHandleTransport_RekeyAckAfterDoubleInit_UsesOriginalPendingKey(t *testi
 
 	waitForWrites := func(w *fakeWriter, want int) {
 		deadline := time.Now().Add(300 * time.Millisecond)
-		for len(w.data) < want && time.Now().Before(deadline) {
+		for w.packetCount() < want && time.Now().Before(deadline) {
 			time.Sleep(5 * time.Millisecond)
 		}
 	}
@@ -281,13 +312,9 @@ func TestHandleTransport_RekeyAckAfterDoubleInit_UsesOriginalPendingKey(t *testi
 		t.Fatalf("expected at least two RekeyInit packets, got %d", len(writer.data))
 	}
 
-	// Extract pending priv and first public key for expected derivation.
-	pendingPriv, ok := ctrl.PendingRekeyPrivateKey()
-	if !ok {
-		t.Fatal("pending priv key missing")
-	}
+	// Extract the retried client public key for expected derivation.
 	firstPub := func(pkt []byte) []byte {
-		start := chacha20.UDPRouteIDLength + chacha20poly1305.NonceSize + 3
+		start := chacha20.RouteIDLength + chacha20poly1305.NonceSize + 3
 		end := start + service_packet.RekeyPublicKeyLen
 		if len(pkt) < end {
 			t.Fatalf("rekey packet too short: %d", len(pkt))
@@ -297,7 +324,7 @@ func TestHandleTransport_RekeyAckAfterDoubleInit_UsesOriginalPendingKey(t *testi
 		return out
 	}(writer.data[0])
 	secondPub := func(pkt []byte) []byte {
-		start := chacha20.UDPRouteIDLength + chacha20poly1305.NonceSize + 3
+		start := chacha20.RouteIDLength + chacha20poly1305.NonceSize + 3
 		end := start + service_packet.RekeyPublicKeyLen
 		if len(pkt) < end {
 			t.Fatalf("rekey packet too short: %d", len(pkt))
@@ -312,19 +339,20 @@ func TestHandleTransport_RekeyAckAfterDoubleInit_UsesOriginalPendingKey(t *testi
 
 	// --- Step 2: craft RekeyAck for the FIRST pubkey and feed TransportHandler.
 	hc := &primitives.DefaultKeyDeriver{}
-	serverPub, _, err := hc.GenerateX25519KeyPair()
+	serverPub, serverPriv, err := hc.GenerateX25519KeyPair()
 	if err != nil {
 		t.Fatalf("failed to gen server key: %v", err)
 	}
-	shared, err := curve25519.X25519(pendingPriv[:], serverPub)
+	shared, err := curve25519.X25519(serverPriv[:], firstPub)
 	if err != nil {
 		t.Fatalf("shared derivation failed: %v", err)
 	}
-	expectedC2S, err := hc.DeriveKey(shared, ctrl.CurrentClientToServerKey(), []byte("tungo-rekey-c2s"))
+	currentC2S, currentS2C := ctrl.CurrentKeys()
+	expectedC2S, err := hc.DeriveKey(shared, currentC2S, []byte("tungo-rekey-c2s"))
 	if err != nil {
 		t.Fatalf("derive c2s failed: %v", err)
 	}
-	expectedS2C, err := hc.DeriveKey(shared, ctrl.CurrentServerToClientKey(), []byte("tungo-rekey-s2c"))
+	expectedS2C, err := hc.DeriveKey(shared, currentS2C, []byte("tungo-rekey-s2c"))
 	if err != nil {
 		t.Fatalf("derive s2c failed: %v", err)
 	}
@@ -335,8 +363,8 @@ func TestHandleTransport_RekeyAckAfterDoubleInit_UsesOriginalPendingKey(t *testi
 	}
 	copy(ackPayload[3:], serverPub)
 
-	// Ciphertext: epoch bytes + plaintext (Decrypt stub will strip the epoch).
-	cipherAck := append([]byte{0, 42}, ackPayload...)
+	// The server sends the ACK under the epoch that carried the Init.
+	cipherAck := buildTestUDPPacket(0, ackPayload)
 	r := &thTestReader{reads: []func(p []byte) (int, error){
 		func(p []byte) (int, error) { copy(p, cipherAck); return len(cipherAck), nil },
 		func(p []byte) (int, error) { <-ctx.Done(); return 0, errors.New("stop") },
@@ -345,8 +373,7 @@ func TestHandleTransport_RekeyAckAfterDoubleInit_UsesOriginalPendingKey(t *testi
 
 	transportCtx, transportCancel := context.WithCancel(context.Background())
 	defer transportCancel()
-	h := NewTransportHandler(transportCtx, r, w, &thAckCrypto{}, ctrl, nil).(*TransportHandler)
-	h.handshakeCrypto = hc
+	h := NewTransportHandler(transportCtx, r, w, &thAckCrypto{}, ctrl, coordinator, nil).(*TransportHandler)
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- h.HandleTransport() }()
@@ -354,11 +381,12 @@ func TestHandleTransport_RekeyAckAfterDoubleInit_UsesOriginalPendingKey(t *testi
 	// Wait for rekey to apply.
 	deadline := time.Now().Add(300 * time.Millisecond)
 	for {
-		if ctrl.State() == rekey.StateStable && ctrl.LastRekeyEpoch == 1 {
+		gotC2S, gotS2C := ctrl.CurrentKeys()
+		if bytes.Equal(gotC2S, expectedC2S) && bytes.Equal(gotS2C, expectedS2C) {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("timeout waiting for rekey apply; state=%v epoch=%d", ctrl.State(), ctrl.LastRekeyEpoch)
+			t.Fatalf("timeout waiting for rekey apply; c2s=%x s2c=%x", gotC2S, gotS2C)
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
@@ -366,14 +394,65 @@ func TestHandleTransport_RekeyAckAfterDoubleInit_UsesOriginalPendingKey(t *testi
 	_ = <-errCh
 
 	// Validate derived keys match the ones expected from the ORIGINAL pending priv.
-	if got := ctrl.CurrentClientToServerKey(); !bytes.Equal(got, expectedC2S) {
-		t.Fatalf("C2S key mismatch; got %x want %x", got, expectedC2S)
+	gotC2S, gotS2C := ctrl.CurrentKeys()
+	if !bytes.Equal(gotC2S, expectedC2S) {
+		t.Fatalf("C2S key mismatch; got %x want %x", gotC2S, expectedC2S)
 	}
-	if got := ctrl.CurrentServerToClientKey(); !bytes.Equal(got, expectedS2C) {
-		t.Fatalf("S2C key mismatch; got %x want %x", got, expectedS2C)
+	if !bytes.Equal(gotS2C, expectedS2C) {
+		t.Fatalf("S2C key mismatch; got %x want %x", gotS2C, expectedS2C)
 	}
-	if _, ok := ctrl.PendingRekeyPrivateKey(); ok {
-		t.Fatalf("pending priv should be cleared after ack")
+}
+
+func TestHandleDatagram_RejectsStaleRekeyAckAcrossTransactions(t *testing.T) {
+	crypto := &primitives.DefaultKeyDeriver{}
+	epochManager := &incEpochManager{}
+	controller := rekey.NewStateMachine(epochManager, make([]byte, 32), make([]byte, 32))
+	now := time.Now()
+	coordinator := controlplane.NewClientRekeyCoordinator(crypto, controller, time.Millisecond, now)
+	handler := NewTransportHandler(
+		context.Background(),
+		&thTestReader{},
+		&thTestWriter{},
+		&thAckCrypto{},
+		controller,
+		coordinator,
+		nil,
+	).(*TransportHandler)
+
+	if _, ok, err := coordinator.MaybeBuildRekeyInit(
+		now.Add(time.Second), make([]byte, service_packet.RekeyPacketLen),
+	); err != nil || !ok {
+		t.Fatalf("first init: ok=%v err=%v", ok, err)
+	}
+	firstAck := buildTestRekeyAck(t, crypto)
+	if _, err := handler.handleDatagram(buildTestUDPPacket(0, firstAck)); err != nil {
+		t.Fatalf("first ack: %v", err)
+	}
+	if got := controller.SendEpoch(); got != 1 {
+		t.Fatalf("first send epoch = %d, want 1", got)
+	}
+	if _, err := handler.handleDatagram(buildTestUDPPacket(1, []byte{0xff})); err != nil {
+		t.Fatalf("peer confirmation for first rekey: %v", err)
+	}
+
+	if _, ok, err := coordinator.MaybeBuildRekeyInit(
+		now.Add(2*time.Second), make([]byte, service_packet.RekeyPacketLen),
+	); err != nil || !ok {
+		t.Fatalf("second init: ok=%v err=%v", ok, err)
+	}
+	if _, err := handler.handleDatagram(buildTestUDPPacket(0, firstAck)); err != nil {
+		t.Fatalf("stale first ack: %v", err)
+	}
+	if got := controller.SendEpoch(); got != 1 {
+		t.Fatalf("stale ack changed send epoch to %d, want 1", got)
+	}
+
+	secondAck := buildTestRekeyAck(t, crypto)
+	if _, err := handler.handleDatagram(buildTestUDPPacket(1, secondAck)); err != nil {
+		t.Fatalf("second ack: %v", err)
+	}
+	if got := controller.SendEpoch(); got != 2 {
+		t.Fatalf("second send epoch = %d, want 2", got)
 	}
 }
 
@@ -425,9 +504,9 @@ func TestHandleTransport_PingRestartTimeout(t *testing.T) {
 		})
 	}
 	w := &thTestWriter{}
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 	eg := &capturingEgress{}
-	h := NewTransportHandler(context.Background(), r, w, &thTestCrypto{}, ctrl, eg).(*TransportHandler)
+	h := NewTransportHandler(context.Background(), r, w, &thTestCrypto{}, ctrl, nil, eg).(*TransportHandler)
 	// Set lastRecvAt far in the past to trigger timeout immediately.
 	h.lastRecvAt = time.Now().Add(-settings.PingRestartTimeout - time.Second)
 
@@ -451,9 +530,9 @@ func TestHandleTransport_PingSentOnIdle(t *testing.T) {
 		func(p []byte) (int, error) { <-ctx.Done(); return 0, errors.New("stop") },
 	}}
 	w := &thTestWriter{}
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 	eg := &capturingEgress{}
-	h := NewTransportHandler(ctx, r, w, &thTestCrypto{}, ctrl, eg).(*TransportHandler)
+	h := NewTransportHandler(ctx, r, w, &thTestCrypto{}, ctrl, nil, eg).(*TransportHandler)
 	// Set lastRecvAt so that PingInterval is exceeded but PingRestartTimeout is not.
 	h.lastRecvAt = time.Now().Add(-settings.PingInterval - time.Second)
 
@@ -470,7 +549,7 @@ func TestHandleTransport_PingSentOnIdle(t *testing.T) {
 	}
 	// Verify the captured packet contains a valid Ping V1 header.
 	pkt := pkts[0]
-	payload := pkt[chacha20.UDPRouteIDLength+chacha20poly1305.NonceSize:]
+	payload := pkt[chacha20.RouteIDLength+chacha20poly1305.NonceSize:]
 	if len(payload) < 3 {
 		t.Fatalf("ping packet payload too short: %d", len(payload))
 	}
@@ -498,8 +577,8 @@ func TestHandleTransport_RecvResetsPingTimer(t *testing.T) {
 	}}
 	w := &thTestWriter{}
 	crypto := &thTestCrypto{output: decrypted}
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTransportHandler(ctx, r, w, crypto, ctrl, nil)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
+	h := NewTransportHandler(ctx, r, w, crypto, ctrl, nil, nil)
 
 	done := make(chan error)
 	go func() { done <- h.HandleTransport() }()
@@ -523,8 +602,8 @@ func TestHandleTransport_ShortPacket_SkippedAfterServiceCheck(t *testing.T) {
 	}}
 	w := &thTestWriter{}
 	crypto := &thTestCrypto{output: []byte{42}} // should not be reached
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTransportHandler(ctx, r, w, crypto, ctrl, nil)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
+	h := NewTransportHandler(ctx, r, w, crypto, ctrl, nil, nil)
 
 	done := make(chan error)
 	go func() { done <- h.HandleTransport() }()
@@ -537,28 +616,35 @@ func TestHandleTransport_ShortPacket_SkippedAfterServiceCheck(t *testing.T) {
 }
 
 func TestHandleTransport_EpochExhausted_ReturnsError(t *testing.T) {
-	// When rekeyController.LastRekeyEpoch >= 65000 and a RekeyAck arrives,
-	// handleControlplane should return an error about epoch exhaustion.
-	rk := &incRekeyer{}
-	ctrl := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32), false)
+	keyDeriver := &primitives.DefaultKeyDeriver{}
+	serverPub, _, err := keyDeriver.GenerateX25519KeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	// Force LastRekeyEpoch to exhausted state.
-	ctrl.LastRekeyEpoch = 65001
+	rk := &incEpochManager{err: corechacha20.ErrEpochExhausted}
+	ctrl := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32))
+	coordinator := newDueTestRekeyCoordinator(ctrl)
+	if _, ok, buildErr := coordinator.MaybeBuildRekeyInit(
+		time.Now(), make([]byte, service_packet.RekeyPacketLen),
+	); buildErr != nil || !ok {
+		t.Fatalf("seed pending rekey: ok=%v err=%v", ok, buildErr)
+	}
 
 	// Build a RekeyAck plaintext that will be "decrypted" by thTestCrypto.
 	ackPayload := make([]byte, service_packet.RekeyPacketLen)
 	_, _ = service_packet.EncodeV1Header(service_packet.RekeyAck, ackPayload)
+	copy(ackPayload[3:], serverPub)
 
-	// Ciphertext: 2 bytes epoch + ack payload.
-	cipher := append([]byte{0, 0}, ackPayload...)
+	cipher := buildTestUDPPacket(0, ackPayload)
 	r := &thTestReader{reads: []func(p []byte) (int, error){
 		func(p []byte) (int, error) { copy(p, cipher); return len(cipher), nil },
 	}}
 	w := &thTestWriter{}
 	crypto := &thAckCrypto{}
-	h := NewTransportHandler(context.Background(), r, w, crypto, ctrl, nil)
+	h := NewTransportHandler(context.Background(), r, w, crypto, ctrl, coordinator, nil)
 
-	err := h.HandleTransport()
+	err = h.HandleTransport()
 	if err == nil {
 		t.Fatal("expected epoch exhaustion error")
 	}
@@ -577,8 +663,8 @@ func TestHandleTransport_NilEgress_NoIdlePing(t *testing.T) {
 		func(p []byte) (int, error) { <-ctx.Done(); return 0, errors.New("stop") },
 	}}
 	w := &thTestWriter{}
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTransportHandler(ctx, r, w, &thTestCrypto{}, ctrl, nil).(*TransportHandler)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
+	h := NewTransportHandler(ctx, r, w, &thTestCrypto{}, ctrl, nil, nil).(*TransportHandler)
 	// Set lastRecvAt so PingInterval is exceeded but not PingRestartTimeout.
 	h.lastRecvAt = time.Now().Add(-settings.PingInterval - time.Second)
 
@@ -608,8 +694,8 @@ func TestHandleTransport_DecryptErrorAfterCancel(t *testing.T) {
 	}}
 	w := &thTestWriter{}
 	crypto := &thTestCrypto{err: errDec}
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTransportHandler(ctx, r, w, crypto, ctrl, nil)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
+	h := NewTransportHandler(ctx, r, w, crypto, ctrl, nil, nil)
 
 	err := h.HandleTransport()
 	if err != nil {
@@ -617,24 +703,24 @@ func TestHandleTransport_DecryptErrorAfterCancel(t *testing.T) {
 	}
 }
 
-func TestHandleTransport_RekeyAckInstallError_LoggedAndContinues(t *testing.T) {
-	// When ClientHandleRekeyAck returns an error (e.g., short ack packet),
-	// the handler should log and continue (not return the error).
+func TestHandleTransport_ShortRekeyAck_IgnoredAndContinues(t *testing.T) {
+	// A malformed ACK is consumed without terminating the transport loop.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Build a short RekeyAck that won't have enough data for ClientHandleRekeyAck.
+	// Build an ACK with a valid header but no public key.
 	ackPayload := make([]byte, 3) // only header, no public key
 	_, _ = service_packet.EncodeV1Header(service_packet.RekeyAck, ackPayload)
 
-	cipher := append([]byte{0, 0}, ackPayload...)
+	cipher := buildTestUDPPacket(0, ackPayload)
 	r := &thTestReader{reads: []func(p []byte) (int, error){
 		func(p []byte) (int, error) { copy(p, cipher); return len(cipher), nil },
 		func(p []byte) (int, error) { <-ctx.Done(); return 0, errors.New("stop") },
 	}}
 	w := &thTestWriter{}
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, make([]byte, 32), make([]byte, 32), false)
-	h := NewTransportHandler(ctx, r, w, &thAckCrypto{}, ctrl, nil)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, make([]byte, 32), make([]byte, 32))
+	coordinator := newTestRekeyCoordinator(ctrl)
+	h := NewTransportHandler(ctx, r, w, &thAckCrypto{}, ctrl, coordinator, nil)
 
 	done := make(chan error)
 	go func() { done <- h.HandleTransport() }()
@@ -643,7 +729,7 @@ func TestHandleTransport_RekeyAckInstallError_LoggedAndContinues(t *testing.T) {
 	cancel()
 	err := <-done
 	if err != nil {
-		t.Fatalf("expected nil (ack error should be logged, not returned), got %v", err)
+		t.Fatalf("expected nil after malformed ack, got %v", err)
 	}
 }
 
@@ -657,9 +743,9 @@ func TestHandleTransport_PingSendError_Swallowed(t *testing.T) {
 		func(p []byte) (int, error) { <-ctx.Done(); return 0, errors.New("stop") },
 	}}
 	w := &thTestWriter{}
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 	eg := &capturingEgress{sendErr: errors.New("send failed")}
-	h := NewTransportHandler(ctx, r, w, &thTestCrypto{}, ctrl, eg).(*TransportHandler)
+	h := NewTransportHandler(ctx, r, w, &thTestCrypto{}, ctrl, nil, eg).(*TransportHandler)
 	h.lastRecvAt = time.Now().Add(-settings.PingInterval - time.Second)
 
 	done := make(chan error)
@@ -673,7 +759,7 @@ func TestHandleTransport_PingSendError_Swallowed(t *testing.T) {
 }
 
 func TestHandleDatagram_TooShortPacket_Ignored(t *testing.T) {
-	h := NewTransportHandler(context.Background(), &thTestReader{}, &thTestWriter{}, &thTestCrypto{}, nil, nil).(*TransportHandler)
+	h := NewTransportHandler(context.Background(), &thTestReader{}, &thTestWriter{}, &thTestCrypto{}, nil, nil, nil).(*TransportHandler)
 	n, err := h.handleDatagram([]byte{0x01})
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
@@ -687,7 +773,7 @@ func TestHandleDatagram_WriteErrorAfterCancel_IsSuppressed(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	h := NewTransportHandler(ctx, &thTestReader{}, &thTestWriter{err: errors.New("write fail")}, &thTestCrypto{output: []byte{1, 2}}, nil, nil).(*TransportHandler)
+	h := NewTransportHandler(ctx, &thTestReader{}, &thTestWriter{err: errors.New("write fail")}, &thTestCrypto{output: []byte{1, 2}}, nil, nil, nil).(*TransportHandler)
 	n, err := h.handleDatagram([]byte{0x00, 0x01})
 	if err != nil {
 		t.Fatalf("expected nil error after cancel, got %v", err)
@@ -710,7 +796,7 @@ func TestHandleTransport_NilRekeyController(t *testing.T) {
 	}}
 	w := &thTestWriter{}
 	crypto := &thTestCrypto{output: decrypted}
-	h := NewTransportHandler(ctx, r, w, crypto, nil, nil)
+	h := NewTransportHandler(ctx, r, w, crypto, nil, nil, nil)
 
 	done := make(chan error)
 	go func() { done <- h.HandleTransport() }()
@@ -732,15 +818,15 @@ func TestHandleTransport_EncryptedPong_ConsumedSilently(t *testing.T) {
 	defer cancel()
 
 	pongSP := []byte{0xFF, 0x01, byte(service_packet.Pong)}
-	cipher := append([]byte{0, 0}, pongSP...) // epoch prefix + payload
+	cipher := buildTestUDPPacket(0, pongSP)
 	r := &thTestReader{reads: []func(p []byte) (int, error){
 		func(p []byte) (int, error) { copy(p, cipher); return len(cipher), nil },
 		func(p []byte) (int, error) { <-ctx.Done(); return 0, errors.New("stop") },
 	}}
 	w := &thTestWriter{}
 	crypto := &thTestCrypto{output: pongSP}
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTransportHandler(ctx, r, w, crypto, ctrl, nil)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
+	h := NewTransportHandler(ctx, r, w, crypto, ctrl, nil, nil)
 
 	done := make(chan error)
 	go func() { done <- h.HandleTransport() }()
@@ -768,9 +854,9 @@ func TestHandleTransport_WriteErrorAfterCancel(t *testing.T) {
 	errWrite := errors.New("write fail")
 	w := &thTestWriter{err: errWrite}
 	crypto := &thTestCrypto{output: decrypted}
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 
-	h := NewTransportHandler(ctx, r, w, crypto, ctrl, nil).(*TransportHandler)
+	h := NewTransportHandler(ctx, r, w, crypto, ctrl, nil, nil).(*TransportHandler)
 	// Force context done before write error check.
 	cancel()
 

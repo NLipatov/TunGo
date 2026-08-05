@@ -8,25 +8,25 @@ import (
 	"time"
 	"tungo/application/network/connection"
 	"tungo/application/network/routing/tun"
-	"tungo/infrastructure/cryptography/chacha20/rekey"
-	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/telemetry/trafficstats"
-	"tungo/infrastructure/tunnel/controlplane"
 )
 
 // epochPrefixSize is the number of bytes reserved at the start of the buffer
 // for the 2-byte epoch tag prepended to every TCP ciphertext frame.
 const epochPrefixSize = 2
 
+type rekeyInitiator interface {
+	MaybeBuildRekeyInit(now time.Time, dst []byte) (payload []byte, ok bool, err error)
+}
+
 type TunHandler struct {
 	ctx              context.Context
 	reader           io.Reader // abstraction over TUN device
 	egress           connection.Egress
-	rekeyController  *rekey.StateMachine
-	rekeyInit        *controlplane.RekeyInitScheduler
+	rekeyInit        rekeyInitiator
 	allowedSources   map[netip.Addr]struct{}
 	controlPacketBuf [epochPrefixSize + service_packet.RekeyPacketLen + settings.TCPChacha20Overhead]byte
 }
@@ -34,17 +34,15 @@ type TunHandler struct {
 func NewTunHandler(ctx context.Context,
 	reader io.Reader,
 	egress connection.Egress,
-	rekeyController *rekey.StateMachine,
+	rekeyInit rekeyInitiator,
 	allowedSources map[netip.Addr]struct{},
 ) tun.Handler {
-	now := time.Now().UTC()
 	return &TunHandler{
-		ctx:             ctx,
-		reader:          reader,
-		egress:          egress,
-		rekeyController: rekeyController,
-		rekeyInit:       controlplane.NewRekeyInitScheduler(&primitives.DefaultKeyDeriver{}, settings.DefaultRekeyInterval, now),
-		allowedSources:  allowedSources,
+		ctx:            ctx,
+		reader:         reader,
+		egress:         egress,
+		rekeyInit:      rekeyInit,
+		allowedSources: allowedSources,
 	}
 }
 
@@ -80,10 +78,10 @@ func (t *TunHandler) HandleTun() error {
 			}
 			rec.RecordTX(uint64(n))
 
-			if t.rekeyInit != nil && t.rekeyController != nil {
+			if t.rekeyInit != nil {
 				now := time.Now().UTC()
 				dst := t.controlPacketBuf[epochPrefixSize : epochPrefixSize+service_packet.RekeyPacketLen]
-				servicePayload, ok, err := t.rekeyInit.MaybeBuildRekeyInit(now, t.rekeyController, dst)
+				servicePayload, ok, err := t.rekeyInit.MaybeBuildRekeyInit(now, dst)
 				if err != nil {
 					slog.Warn("failed to prepare rekey init", "err", err)
 					continue

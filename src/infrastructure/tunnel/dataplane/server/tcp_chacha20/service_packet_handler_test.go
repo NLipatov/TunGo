@@ -4,9 +4,11 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
 	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/service_packet"
+	"tungo/infrastructure/tunnel/controlplane"
 )
 
 // tcpTestLogger captures log output for assertions.
@@ -29,17 +31,22 @@ func (l *tcpTestLogger) Error(msg string, _ ...any) {
 	l.Info(msg)
 }
 
-// tcpTestRekeyer is a controllable mock for rekey.Rekeyer.
-type tcpTestRekeyer struct {
-	nextEpoch uint16
+// tcpTestEpochManager is a controllable mock for rekey.EpochManager.
+type tcpTestEpochManager struct {
+	nextEpoch     uint16
+	promotedEpoch uint16
+	err           error
 }
 
-func (r *tcpTestRekeyer) Rekey(_, _ []byte) (uint16, error) {
+func (r *tcpTestEpochManager) StageEpoch(_, _ []byte) (uint16, error) {
+	if r.err != nil {
+		return 0, r.err
+	}
 	r.nextEpoch++
 	return r.nextEpoch, nil
 }
-func (r *tcpTestRekeyer) SetSendEpoch(uint16)     {}
-func (r *tcpTestRekeyer) RemoveEpoch(uint16) bool { return true }
+func (r *tcpTestEpochManager) PromoteSendEpoch(epoch uint16) { r.promotedEpoch = epoch }
+func (r *tcpTestEpochManager) RetirePreviousEpoch() bool     { return true }
 
 // tcpTestEgress captures packets sent through egress.
 type tcpTestEgress struct {
@@ -84,7 +91,10 @@ func TestTCPHandle_NonServicePacket_ReturnsFalse(t *testing.T) {
 	eg := &tcpTestEgress{}
 
 	// Random data that is not a service packet.
-	handled := h.Handle([]byte{0x45, 0x00, 0x00, 0x28}, eg, nil)
+	handled, err := h.Handle(0, []byte{0x45, 0x00, 0x00, 0x28}, eg, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if handled {
 		t.Fatal("expected Handle to return false for non-service packet")
 	}
@@ -99,7 +109,10 @@ func TestTCPHandle_UnknownServicePacket_ReturnsTrue(t *testing.T) {
 	pkt := make([]byte, 3)
 	_, _ = service_packet.EncodeV1Header(service_packet.Ping, pkt)
 
-	handled := h.Handle(pkt, eg, nil)
+	handled, err := h.Handle(0, pkt, eg, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if !handled {
 		t.Fatal("expected Handle to return true for recognized service packet")
 	}
@@ -110,12 +123,16 @@ func TestTCPHandle_RekeyInit_Success_SendsAckAndActivates(t *testing.T) {
 	crypto := &primitives.DefaultKeyDeriver{}
 	h := newControlPlaneHandler(crypto, logger)
 
-	rk := &tcpTestRekeyer{}
-	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32), true)
+	rk := &tcpTestEpochManager{}
+	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32))
+	coordinator := controlplane.NewServerRekeyCoordinator(fsm)
 	eg := &tcpTestEgress{}
 
 	pkt := buildTCPRekeyInitPacket(t, crypto)
-	handled := h.Handle(pkt, eg, fsm)
+	handled, err := h.Handle(0, pkt, eg, coordinator)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if !handled {
 		t.Fatal("expected Handle to return true for RekeyInit")
 	}
@@ -143,9 +160,12 @@ func TestTCPHandle_RekeyInit_ShortPacket_NilFSM(t *testing.T) {
 	h := newControlPlaneHandler(crypto, logger)
 	eg := &tcpTestEgress{}
 
-	// RekeyInit packet with nil FSM — ServerHandleRekeyInit returns ok=false.
+	// RekeyInit packet with no coordinator is consumed without an ACK.
 	pkt := buildTCPRekeyInitPacket(t, crypto)
-	handled := h.Handle(pkt, eg, nil)
+	handled, err := h.Handle(0, pkt, eg, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if !handled {
 		t.Fatal("expected Handle to return true (RekeyInit parsed)")
 	}
@@ -162,14 +182,16 @@ func TestTCPHandle_RekeyInit_EpochExhausted_SendsEpochExhausted(t *testing.T) {
 	crypto := &primitives.DefaultKeyDeriver{}
 	h := newControlPlaneHandler(crypto, logger)
 
-	rk := &tcpTestRekeyer{}
-	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32), true)
-	// Force epoch exhaustion so ServerHandleRekeyInit returns ErrEpochExhausted.
-	fsm.LastRekeyEpoch = 65001
+	rk := &tcpTestEpochManager{err: chacha20.ErrEpochExhausted}
+	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32))
+	coordinator := controlplane.NewServerRekeyCoordinator(fsm)
 
 	eg := &tcpTestEgress{}
 	pkt := buildTCPRekeyInitPacket(t, crypto)
-	handled := h.Handle(pkt, eg, fsm)
+	handled, err := h.Handle(0, pkt, eg, coordinator)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if !handled {
 		t.Fatal("expected Handle to return true for RekeyInit")
 	}
@@ -243,19 +265,23 @@ func TestTCPHandlePing_EgressError_DoesNotPanic(t *testing.T) {
 	h.HandlePing(eg)
 }
 
-func TestTCPHandle_RekeyInit_EgressError_Logs(t *testing.T) {
+func TestTCPHandle_RekeyInit_EgressError_ReturnsError(t *testing.T) {
 	logger := &tcpTestLogger{}
 	crypto := &primitives.DefaultKeyDeriver{}
 	h := newControlPlaneHandler(crypto, logger)
 
-	rk := &tcpTestRekeyer{}
-	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32), true)
+	rk := &tcpTestEpochManager{}
+	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32))
+	coordinator := controlplane.NewServerRekeyCoordinator(fsm)
 	eg := &tcpTestEgress{sendErr: errors.New("send failed")}
 
 	pkt := buildTCPRekeyInitPacket(t, crypto)
-	handled := h.Handle(pkt, eg, fsm)
+	handled, err := h.Handle(0, pkt, eg, coordinator)
 	if !handled {
 		t.Fatal("expected Handle to return true for RekeyInit (even with egress error)")
+	}
+	if err == nil {
+		t.Fatal("expected send error")
 	}
 
 	logger.mu.Lock()

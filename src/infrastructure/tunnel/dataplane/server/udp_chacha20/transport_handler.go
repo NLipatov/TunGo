@@ -6,7 +6,7 @@ import (
 	"net/netip"
 	"tungo/application/listeners"
 	"tungo/application/network/routing/transport"
-	"tungo/infrastructure/cryptography/chacha20"
+	chacha20 "tungo/infrastructure/cryptography/chacha20/udp"
 	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/logging"
 	"tungo/infrastructure/settings"
@@ -129,7 +129,7 @@ func (t *TransportHandler) handlePacket(
 	addrPort netip.AddrPort,
 	packet []byte,
 ) error {
-	if len(packet) < chacha20.UDPRouteIDLength {
+	if len(packet) < chacha20.RouteIDLength {
 		// Malformed/truncated packet: drop early.
 		return nil
 	}
@@ -144,7 +144,7 @@ func (t *TransportHandler) handlePacket(
 }
 
 func (t *TransportHandler) getPeerByRouteID(packet []byte) (*session.Peer, bool) {
-	routeID, ok := chacha20.ReadUDPRouteID(packet)
+	routeID, ok := chacha20.ReadRouteID(packet)
 	if !ok {
 		return nil, false
 	}

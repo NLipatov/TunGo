@@ -17,8 +17,7 @@ import (
 	appConfiguration "tungo/application/configuration"
 	"tungo/application/network/connection"
 	framelimit "tungo/domain/network/ip/frame_limit"
-	"tungo/infrastructure/cryptography/chacha20"
-	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/cryptography/chacha20/tcp"
 	"tungo/infrastructure/cryptography/noise"
 	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/tcp/adapters"
@@ -585,7 +584,7 @@ type cfUnitCryptoFactory struct {
 	called bool
 }
 
-func (f *cfUnitCryptoFactory) FromHandshake(connection.Handshake, bool) (connection.Crypto, *rekey.StateMachine, error) {
+func (f *cfUnitCryptoFactory) FromHandshake(connection.Handshake, bool) (connection.Crypto, connection.RekeyController, error) {
 	f.called = true
 	return nil, nil, errors.New("unexpected factory call")
 }
@@ -939,7 +938,7 @@ func TestConnectionFactoryUnit_establishSecuredConnection_Success(t *testing.T) 
 	adapter, crypto, _, err := f.establishSecuredConnection(
 		context.Background(),
 		clientAdapter,
-		chacha20.NewTcpSessionBuilder(chacha20.NewDefaultAEADBuilder()),
+		tcp.NewFactory(),
 	)
 	if err != nil {
 		t.Fatalf("establishSecuredConnection failed: %v", err)

@@ -5,7 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"tungo/application/network/routing/tun"
-	"tungo/infrastructure/cryptography/chacha20"
+	chacha20 "tungo/infrastructure/cryptography/chacha20/udp"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/telemetry/trafficstats"
 
@@ -59,7 +59,7 @@ func NewTunHandler(
 func (t *TunHandler) HandleTun() error {
 	// Reserve space for route-id + nonce + payload + AEAD tag.
 	var buffer [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
-	payloadStart := chacha20.UDPRouteIDLength + chacha20poly1305.NonceSize
+	payloadStart := chacha20.RouteIDLength + chacha20poly1305.NonceSize
 	plaintext := buffer[payloadStart : payloadStart+settings.DefaultEthernetMTU]
 	rec := trafficstats.NewRecorder()
 	defer rec.Flush()

@@ -1,4 +1,4 @@
-package chacha20
+package core
 
 import (
 	"encoding/binary"
@@ -14,47 +14,47 @@ const NonceEpochOffset = 10
 // Epoch is immutable per session. Counter is per-session monotonic.
 // Not concurrency-safe by design; each session owns a single instance.
 type Nonce struct {
-	epoch       Epoch
-	counterLow  uint64
-	counterHigh uint16
+	epoch       uint16
+	CounterLow  uint64
+	CounterHigh uint16
 }
 
-func NewNonce(epoch Epoch) *Nonce {
+func NewNonce(epoch uint16) *Nonce {
 	return &Nonce{
 		epoch: epoch,
 	}
 }
 
-func (n *Nonce) incrementNonce() error {
+func (n *Nonce) Increment() error {
 	// Ensure counter does not overflow.
-	if n.counterHigh == ^uint16(0) && n.counterLow == ^uint64(0) {
+	if n.CounterHigh == ^uint16(0) && n.CounterLow == ^uint64(0) {
 		return fmt.Errorf("nonce overflow: maximum number of messages reached")
 	}
 
-	if n.counterLow == ^uint64(0) {
-		n.counterHigh++
-		n.counterLow = 0
+	if n.CounterLow == ^uint64(0) {
+		n.CounterHigh++
+		n.CounterLow = 0
 	} else {
-		n.counterLow++
+		n.CounterLow++
 	}
 
 	return nil
 }
 
-// peekEncode computes the next nonce value (without incrementing the receiver)
+// PeekEncode computes the next nonce value (without incrementing the receiver)
 // and encodes it directly into buf. Returns buf as a convenience.
 // Zero allocation — avoids the heap-allocated *Nonce that peek() required.
-func (n *Nonce) peekEncode(buf []byte) ([]byte, error) {
-	if n.counterHigh == ^uint16(0) && n.counterLow == ^uint64(0) {
+func (n *Nonce) PeekEncode(buf []byte) ([]byte, error) {
+	if n.CounterHigh == ^uint16(0) && n.CounterLow == ^uint64(0) {
 		return nil, fmt.Errorf("nonce overflow: maximum number of messages reached")
 	}
 
-	if n.counterLow == ^uint64(0) {
+	if n.CounterLow == ^uint64(0) {
 		binary.BigEndian.PutUint64(buf[0:8], 0)
-		binary.BigEndian.PutUint16(buf[8:10], n.counterHigh+1)
+		binary.BigEndian.PutUint16(buf[8:10], n.CounterHigh+1)
 	} else {
-		binary.BigEndian.PutUint64(buf[0:8], n.counterLow+1)
-		binary.BigEndian.PutUint16(buf[8:10], n.counterHigh)
+		binary.BigEndian.PutUint64(buf[0:8], n.CounterLow+1)
+		binary.BigEndian.PutUint16(buf[8:10], n.CounterHigh)
 	}
 	binary.BigEndian.PutUint16(buf[10:12], uint16(n.epoch))
 
@@ -62,8 +62,8 @@ func (n *Nonce) peekEncode(buf []byte) ([]byte, error) {
 }
 
 func (n *Nonce) Encode(buffer []byte) []byte {
-	binary.BigEndian.PutUint64(buffer[0:8], n.counterLow)
-	binary.BigEndian.PutUint16(buffer[8:10], n.counterHigh)
+	binary.BigEndian.PutUint64(buffer[0:8], n.CounterLow)
+	binary.BigEndian.PutUint16(buffer[8:10], n.CounterHigh)
 	binary.BigEndian.PutUint16(buffer[10:12], uint16(n.epoch))
 	return buffer
 }
@@ -71,6 +71,6 @@ func (n *Nonce) Encode(buffer []byte) []byte {
 // Zeroize zeros the nonce state.
 func (n *Nonce) Zeroize() {
 	n.epoch = 0
-	n.counterLow = 0
-	n.counterHigh = 0
+	n.CounterLow = 0
+	n.CounterHigh = 0
 }

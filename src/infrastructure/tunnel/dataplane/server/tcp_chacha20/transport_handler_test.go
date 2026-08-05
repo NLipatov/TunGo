@@ -20,6 +20,7 @@ import (
 	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/settings"
+	"tungo/infrastructure/tunnel/controlplane"
 	"tungo/infrastructure/tunnel/session"
 	"tungo/infrastructure/tunnel/sessionplane/server/tcp_registration"
 )
@@ -187,7 +188,7 @@ func (f *fakeCrypto) Decrypt(in []byte) ([]byte, error) {
 
 type fakeCryptoFactory struct{ err error }
 
-func (f *fakeCryptoFactory) FromHandshake(_ connection.Handshake, _ bool) (connection.Crypto, *rekey.StateMachine, error) {
+func (f *fakeCryptoFactory) FromHandshake(_ connection.Handshake, _ bool) (connection.Crypto, connection.RekeyController, error) {
 	if f.err != nil {
 		return nil, nil, f.err
 	}
@@ -274,11 +275,11 @@ type testSession struct {
 	externalIP netip.AddrPort
 }
 
-func (s *testSession) Crypto() connection.Crypto        { return s.crypto }
-func (s *testSession) InternalAddr() netip.Addr         { return s.internalIP }
-func (s *testSession) ExternalAddrPort() netip.AddrPort { return s.externalIP }
-func (s *testSession) RekeyController() rekey.FSM       { return nil }
-func (s *testSession) IsSourceAllowed(netip.Addr) bool  { return true }
+func (s *testSession) Crypto() connection.Crypto                   { return s.crypto }
+func (s *testSession) InternalAddr() netip.Addr                    { return s.internalIP }
+func (s *testSession) ExternalAddrPort() netip.AddrPort            { return s.externalIP }
+func (s *testSession) RekeyController() connection.RekeyController { return nil }
+func (s *testSession) IsSourceAllowed(netip.Addr) bool             { return true }
 
 // makeValidIPv4Packet creates a minimal valid IPv4 packet with the given source IP.
 // Used in tests to satisfy AllowedIPs validation.
@@ -555,8 +556,9 @@ func TestHandleClient_RekeyInit_DispatchedToControlPlane(t *testing.T) {
 	_, _ = service_packet.EncodeV1Header(service_packet.RekeyInit, rekeyPkt)
 	copy(rekeyPkt[3:], pub)
 
-	rk := &tcpTestRekeyer{}
-	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32), true)
+	rk := &tcpTestEpochManager{}
+	fsm := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32))
+	coordinator := controlplane.NewServerRekeyCoordinator(fsm)
 
 	conn := &fakeConn{
 		addr:     tcpAddr("1.2.3.4", 5559),
@@ -572,7 +574,7 @@ func TestHandleClient_RekeyInit_DispatchedToControlPlane(t *testing.T) {
 	eg := &noopEgress{}
 	peer := session.NewPeer(sess, eg)
 	// Set rekey controller on the real Session so RekeyController() returns non-nil.
-	realSess := session.NewSession(&fakeCrypto{}, fsm, netip.MustParseAddr("10.0.0.9"), mustAddrPort("1.2.3.4:5559"))
+	realSess := session.NewSession(&fakeCrypto{}, coordinator, netip.MustParseAddr("10.0.0.9"), mustAddrPort("1.2.3.4:5559"))
 	peer = session.NewPeer(realSess, eg)
 
 	repo := &fakeSessionRepo{}
@@ -585,8 +587,8 @@ func TestHandleClient_RekeyInit_DispatchedToControlPlane(t *testing.T) {
 	if len(writer.wrote) != 0 {
 		t.Fatalf("expected no TUN writes for RekeyInit (should be consumed by controlplane), got %d", len(writer.wrote))
 	}
-	if fsm.LastRekeyEpoch == 0 {
-		t.Fatalf("expected rekey to be processed and epoch activated, got LastRekeyEpoch=%d", fsm.LastRekeyEpoch)
+	if rk.nextEpoch != 1 || rk.promotedEpoch != 1 {
+		t.Fatalf("expected epoch 1 to be staged and promoted, got staged=%d promoted=%d", rk.nextEpoch, rk.promotedEpoch)
 	}
 }
 

@@ -1,10 +1,12 @@
-package chacha20
+package udp
 
 import (
 	"crypto/cipher"
 	"encoding/binary"
 	"fmt"
 	"sync"
+	"tungo/infrastructure/cryptography/chacha20"
+	"tungo/infrastructure/cryptography/chacha20/internal/core"
 	"tungo/infrastructure/cryptography/mem"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -12,27 +14,28 @@ import (
 
 const defaultEpochRingCapacity = 4
 
-// EpochUdpCrypto manages immutable UDP sessions and resolves them via an EpochRing.
+// Crypto manages immutable UDP sessions and resolves them via an EpochRing.
 // It implements connection.Crypto. It holds no raw keys or handshake state.
-type EpochUdpCrypto struct {
-	ring      EpochRing
-	isServer  bool
-	sessionId [32]byte
-	routeID   uint64
-	mu        sync.RWMutex
-	rekeyMu   sync.Mutex
-	sendEpoch Epoch
+type Crypto struct {
+	ring         EpochRing
+	isServer     bool
+	sessionId    [32]byte
+	routeID      uint64
+	mu           sync.RWMutex
+	rekeyMu      sync.Mutex
+	sendEpoch    uint16
+	epochCounter uint16
 }
 
-func NewEpochUdpCrypto(
+func NewCrypto(
 	sessionId [32]byte,
 	sendCipher, recvCipher cipher.AEAD,
 	isServer bool,
-) *EpochUdpCrypto {
-	initialEpoch := Epoch(0)
-	initialSession := NewUdpSessionWithCiphers(sessionId, sendCipher, recvCipher, isServer, initialEpoch)
+) *Crypto {
+	const initialEpoch uint16 = 0
+	initialSession := newSessionWithCiphers(sessionId, sendCipher, recvCipher, isServer, initialEpoch)
 
-	return &EpochUdpCrypto{
+	return &Crypto{
 		ring:      NewEpochRing(defaultEpochRingCapacity, initialEpoch, initialSession),
 		isServer:  isServer,
 		sessionId: sessionId,
@@ -41,8 +44,8 @@ func NewEpochUdpCrypto(
 	}
 }
 
-func (c *EpochUdpCrypto) Encrypt(plaintext []byte) ([]byte, error) {
-	if len(plaintext) < UDPRouteIDLength+chacha20poly1305.NonceSize {
+func (c *Crypto) Encrypt(plaintext []byte) ([]byte, error) {
+	if len(plaintext) < RouteIDLength+chacha20poly1305.NonceSize {
 		return nil, fmt.Errorf("buffer too short for route-id+nonce prefix: %d", len(plaintext))
 	}
 
@@ -62,19 +65,19 @@ func (c *EpochUdpCrypto) Encrypt(plaintext []byte) ([]byte, error) {
 	// [8B route-id reserved][12B nonce reserved][payload]
 	//
 	// The session encryptor works over the nonce+payload segment.
-	encrypted, err := session.Encrypt(plaintext[UDPRouteIDLength:])
+	encrypted, err := session.Encrypt(plaintext[RouteIDLength:])
 	if err != nil {
 		return nil, err
 	}
-	binary.BigEndian.PutUint64(plaintext[:UDPRouteIDLength], c.routeID)
-	return plaintext[:UDPRouteIDLength+len(encrypted)], nil
+	binary.BigEndian.PutUint64(plaintext[:RouteIDLength], c.routeID)
+	return plaintext[:RouteIDLength+len(encrypted)], nil
 }
 
-func (c *EpochUdpCrypto) Decrypt(ciphertext []byte) ([]byte, error) {
-	if len(ciphertext) < UDPMinPacketSize {
+func (c *Crypto) Decrypt(ciphertext []byte) ([]byte, error) {
+	if len(ciphertext) < MinPacketSize {
 		return nil, fmt.Errorf("cipher too short: %d", len(ciphertext))
 	}
-	routeID, ok := ReadUDPRouteID(ciphertext)
+	routeID, ok := ReadRouteID(ciphertext)
 	if !ok {
 		return nil, fmt.Errorf("cipher too short: %d", len(ciphertext))
 	}
@@ -82,8 +85,8 @@ func (c *EpochUdpCrypto) Decrypt(ciphertext []byte) ([]byte, error) {
 		return nil, ErrUnknownRouteID
 	}
 
-	cipherPayload := ciphertext[UDPNonceOffset:]
-	epoch := Epoch(binary.BigEndian.Uint16(cipherPayload[NonceEpochOffset : NonceEpochOffset+2]))
+	cipherPayload := ciphertext[NonceOffset:]
+	epoch := binary.BigEndian.Uint16(cipherPayload[NonceEpochOffset : NonceEpochOffset+2])
 	session, ok := c.ring.Resolve(epoch)
 	if !ok {
 		return nil, ErrUnknownEpoch
@@ -94,13 +97,16 @@ func (c *EpochUdpCrypto) Decrypt(ciphertext []byte) ([]byte, error) {
 	return session.Decrypt(cipherPayload)
 }
 
-// Rekey installs a new immutable session with fresh nonce/replay state.
-// It inserts the session into the ring with epoch = Current()+1.
+// StageEpoch installs a new immutable session with fresh nonce/replay state.
+// It inserts the session into the ring with a monotonically allocated epoch.
 // Returns the new epoch value.
-func (c *EpochUdpCrypto) Rekey(sendKey, recvKey []byte) (uint16, error) {
+func (c *Crypto) StageEpoch(c2s, s2c []byte) (uint16, error) {
 	c.rekeyMu.Lock()
 	defer c.rekeyMu.Unlock()
-
+	if c.epochCounter >= core.MaxEpoch {
+		return 0, chacha20.ErrEpochExhausted
+	}
+	nextEpoch := c.epochCounter + 1
 	// Protect against evicting the active send epoch when the ring is full.
 	sendEpoch := c.currentSendEpoch()
 	if oldest, ok := c.ring.Oldest(); ok &&
@@ -111,6 +117,10 @@ func (c *EpochUdpCrypto) Rekey(sendKey, recvKey []byte) (uint16, error) {
 		return 0, fmt.Errorf("rekey refused: wait for confirmation before next rekey")
 	}
 
+	sendKey, recvKey := c2s, s2c
+	if c.isServer {
+		sendKey, recvKey = recvKey, sendKey
+	}
 	sendCipher, err := chacha20poly1305.New(sendKey)
 	if err != nil {
 		return 0, fmt.Errorf("rekey: build send cipher: %w", err)
@@ -119,42 +129,34 @@ func (c *EpochUdpCrypto) Rekey(sendKey, recvKey []byte) (uint16, error) {
 	if err != nil {
 		return 0, fmt.Errorf("rekey: build recv cipher: %w", err)
 	}
-
-	nextEpoch := c.ring.Current() + 1
-	newSession := NewUdpSessionWithCiphers(c.sessionId, sendCipher, recvCipher, c.isServer, nextEpoch)
+	newSession := newSessionWithCiphers(c.sessionId, sendCipher, recvCipher, c.isServer, nextEpoch)
 	c.ring.Insert(nextEpoch, newSession)
-	return uint16(nextEpoch), nil
+	c.epochCounter = nextEpoch
+	// sendEpoch is intentionally NOT updated here.
+	return nextEpoch, nil
 }
 
-// SetSendEpoch switches the epoch used for outbound encryption.
-func (c *EpochUdpCrypto) SetSendEpoch(epoch uint16) {
+// PromoteSendEpoch switches outbound encryption to a staged epoch.
+func (c *Crypto) PromoteSendEpoch(epoch uint16) {
 	c.mu.Lock()
-	c.sendEpoch = Epoch(epoch)
+	c.sendEpoch = epoch
 	c.mu.Unlock()
 }
 
-func (c *EpochUdpCrypto) currentSendEpoch() Epoch {
+func (c *Crypto) currentSendEpoch() uint16 {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.sendEpoch
 }
 
-func (c *EpochUdpCrypto) RouteID() uint64 {
+func (c *Crypto) RouteID() uint64 {
 	return c.routeID
 }
 
-// RemoveEpoch removes a session for the specified epoch, if present.
-// Returns true if removed.
-func (c *EpochUdpCrypto) RemoveEpoch(epoch uint16) bool {
-	// Never remove active send epoch; never remove last remaining entry.
-	if Epoch(epoch) == c.currentSendEpoch() {
-		return false
-	}
-	if c.ring.Len() <= 1 {
-		return false
-	}
-	return c.ring.Remove(Epoch(epoch))
-}
+// RetirePreviousEpoch acknowledges the completed logical transition. UDP keeps older
+// sessions in its bounded ring to accept reordered datagrams and retires them
+// through normal ring eviction.
+func (c *Crypto) RetirePreviousEpoch() bool { return true }
 
 // Zeroize overwrites all key material with zeros.
 // After this call, the crypto instance is unusable.
@@ -162,11 +164,11 @@ func (c *EpochUdpCrypto) RemoveEpoch(epoch uint16) bool {
 //
 // SECURITY INVARIANT: All session keys in the EpochRing are zeroed.
 // This is guaranteed by the EpochRing interface (ZeroizeAll is mandatory).
-func (c *EpochUdpCrypto) Zeroize() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+func (c *Crypto) Zeroize() {
 	c.rekeyMu.Lock()
 	defer c.rekeyMu.Unlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
 	// Zero the session ID
 	mem.ZeroBytes(c.sessionId[:])

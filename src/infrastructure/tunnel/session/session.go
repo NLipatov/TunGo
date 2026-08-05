@@ -3,13 +3,12 @@ package session
 import (
 	"net/netip"
 	"tungo/application/network/connection"
-	"tungo/infrastructure/cryptography/chacha20/rekey"
 )
 
 // Session represents a single encrypted session between a VPN client and server.
 type Session struct {
 	crypto     connection.Crypto
-	fsm        rekey.FSM
+	fsm        connection.RekeyController
 	internalIP netip.Addr
 	externalIP netip.AddrPort
 
@@ -27,7 +26,7 @@ type Session struct {
 
 func NewSession(
 	crypto connection.Crypto,
-	fsm rekey.FSM,
+	fsm connection.RekeyController,
 	internalIP netip.Addr,
 	externalIP netip.AddrPort,
 ) connection.Session {
@@ -44,7 +43,7 @@ func NewSession(
 // source IP validation in IsSourceAllowed.
 func NewSessionWithAuth(
 	crypto connection.Crypto,
-	fsm rekey.FSM,
+	fsm connection.RekeyController,
 	internalIP netip.Addr,
 	externalIP netip.AddrPort,
 	clientPubKey []byte,
@@ -82,7 +81,7 @@ func (s *Session) Crypto() connection.Crypto {
 	return s.crypto
 }
 
-func (s *Session) RekeyController() rekey.FSM {
+func (s *Session) RekeyController() connection.RekeyController {
 	return s.fsm
 }
 

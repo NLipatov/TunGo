@@ -9,6 +9,7 @@ import (
 	"tungo/application/network/connection"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
 	"tungo/infrastructure/cryptography/noise"
+	"tungo/infrastructure/tunnel/controlplane"
 	"tungo/infrastructure/tunnel/session"
 )
 
@@ -55,21 +56,21 @@ type tcpRegCrypto struct{}
 func (tcpRegCrypto) Encrypt(b []byte) ([]byte, error) { return b, nil }
 func (tcpRegCrypto) Decrypt(b []byte) ([]byte, error) { return b, nil }
 
-// tcpRegRekeyer is a mock rekeyer.
-type tcpRegRekeyer struct{}
+// tcpRegEpochManager is a mock epoch manager.
+type tcpRegEpochManager struct{}
 
-func (tcpRegRekeyer) Rekey(_, _ []byte) (uint16, error) { return 0, nil }
-func (tcpRegRekeyer) SetSendEpoch(uint16)               {}
-func (tcpRegRekeyer) RemoveEpoch(uint16) bool           { return true }
+func (tcpRegEpochManager) StageEpoch(_, _ []byte) (uint16, error) { return 0, nil }
+func (tcpRegEpochManager) PromoteSendEpoch(uint16)                {}
+func (tcpRegEpochManager) RetirePreviousEpoch() bool              { return true }
 
 // tcpRegCryptoFactory returns a pre-configured crypto.
 type tcpRegCryptoFactory struct {
 	crypto connection.Crypto
-	ctrl   *rekey.StateMachine
+	ctrl   connection.RekeyController
 	err    error
 }
 
-func (f *tcpRegCryptoFactory) FromHandshake(connection.Handshake, bool) (connection.Crypto, *rekey.StateMachine, error) {
+func (f *tcpRegCryptoFactory) FromHandshake(connection.Handshake, bool) (connection.Crypto, connection.RekeyController, error) {
 	if f.err != nil {
 		return nil, nil, f.err
 	}
@@ -112,7 +113,7 @@ func TestRegisterClient_HandshakeError_ClosesConn(t *testing.T) {
 	}
 	cf := &tcpRegCryptoFactory{
 		crypto: tcpRegCrypto{},
-		ctrl:   rekey.NewStateMachine(tcpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
+		ctrl:   rekey.NewStateMachine(tcpRegEpochManager{}, []byte("c2s"), []byte("s2c")),
 	}
 	repo := session.NewDefaultRepository()
 	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
@@ -172,7 +173,7 @@ func TestRegisterClient_Success(t *testing.T) {
 	}
 	cf := &tcpRegCryptoFactory{
 		crypto: tcpRegCrypto{},
-		ctrl:   rekey.NewStateMachine(tcpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
+		ctrl:   rekey.NewStateMachine(tcpRegEpochManager{}, []byte("c2s"), []byte("s2c")),
 	}
 	repo := session.NewDefaultRepository()
 	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
@@ -190,6 +191,9 @@ func TestRegisterClient_Success(t *testing.T) {
 	}
 	if transport == nil {
 		t.Fatal("expected non-nil transport")
+	}
+	if _, ok := peer.RekeyController().(*controlplane.ServerRekeyCoordinator); !ok {
+		t.Fatalf("expected server rekey coordinator, got %T", peer.RekeyController())
 	}
 
 	// Verify peer is in repo. AllocateClientIP(10.0.0.0/24, 1) → 10.0.0.2
@@ -222,7 +226,7 @@ func TestRegisterClient_ReplacesExistingSession(t *testing.T) {
 	}
 	cf := &tcpRegCryptoFactory{
 		crypto: tcpRegCrypto{},
-		ctrl:   rekey.NewStateMachine(tcpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
+		ctrl:   rekey.NewStateMachine(tcpRegEpochManager{}, []byte("c2s"), []byte("s2c")),
 	}
 	repo := session.NewDefaultRepository()
 
@@ -278,7 +282,7 @@ func TestRegisterClient_NonTCPAddr_ClosesConn(t *testing.T) {
 	}
 	cf := &tcpRegCryptoFactory{
 		crypto: tcpRegCrypto{},
-		ctrl:   rekey.NewStateMachine(tcpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
+		ctrl:   rekey.NewStateMachine(tcpRegEpochManager{}, []byte("c2s"), []byte("s2c")),
 	}
 	repo := session.NewDefaultRepository()
 	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
@@ -327,7 +331,7 @@ func TestRegisterClient_LookupError_ClosesConn(t *testing.T) {
 	}
 	cf := &tcpRegCryptoFactory{
 		crypto: tcpRegCrypto{},
-		ctrl:   rekey.NewStateMachine(tcpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
+		ctrl:   rekey.NewStateMachine(tcpRegEpochManager{}, []byte("c2s"), []byte("s2c")),
 	}
 	repo := &tcpRegFailingRepo{err: errors.New("database unavailable")}
 	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
@@ -359,7 +363,7 @@ func TestRegisterClient_NegativeClientID_FailsAllocation(t *testing.T) {
 	}
 	cf := &tcpRegCryptoFactory{
 		crypto: tcpRegCrypto{},
-		ctrl:   rekey.NewStateMachine(tcpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
+		ctrl:   rekey.NewStateMachine(tcpRegEpochManager{}, []byte("c2s"), []byte("s2c")),
 	}
 	repo := session.NewDefaultRepository()
 	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
@@ -426,7 +430,7 @@ func TestRegisterClient_CookieRetry_Success(t *testing.T) {
 	hf := &tcpRegCookieHandshakeFactory{clientID: 1}
 	cf := &tcpRegCryptoFactory{
 		crypto: tcpRegCrypto{},
-		ctrl:   rekey.NewStateMachine(tcpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
+		ctrl:   rekey.NewStateMachine(tcpRegEpochManager{}, []byte("c2s"), []byte("s2c")),
 	}
 	repo := session.NewDefaultRepository()
 	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
@@ -457,7 +461,7 @@ func TestRegisterClient_CookieRetry_SecondFailure_ClosesConn(t *testing.T) {
 	}
 	cf := &tcpRegCryptoFactory{
 		crypto: tcpRegCrypto{},
-		ctrl:   rekey.NewStateMachine(tcpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
+		ctrl:   rekey.NewStateMachine(tcpRegEpochManager{}, []byte("c2s"), []byte("s2c")),
 	}
 	repo := session.NewDefaultRepository()
 	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
@@ -491,7 +495,7 @@ func TestRegisterClient_HandshakeWithResult_IPv6(t *testing.T) {
 	}
 	cf := &tcpRegCryptoFactory{
 		crypto: tcpRegCrypto{},
-		ctrl:   rekey.NewStateMachine(tcpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
+		ctrl:   rekey.NewStateMachine(tcpRegEpochManager{}, []byte("c2s"), []byte("s2c")),
 	}
 	repo := session.NewDefaultRepository()
 	reg := NewRegistrar(tcpRegLogger{}, hf, cf, repo,

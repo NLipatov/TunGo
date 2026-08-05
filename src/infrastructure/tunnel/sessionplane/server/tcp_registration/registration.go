@@ -12,6 +12,7 @@ import (
 	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/network/tcp/adapters"
 	"tungo/infrastructure/settings"
+	"tungo/infrastructure/tunnel/controlplane"
 	"tungo/infrastructure/tunnel/session"
 )
 
@@ -112,6 +113,9 @@ func (r *Registrar) RegisterClient(conn net.Conn) (*session.Peer, connection.Tra
 	if cryptographyServiceErr != nil {
 		_ = framingAdapter.Close()
 		return nil, nil, fmt.Errorf("client %s failed registration: %w", conn.RemoteAddr(), cryptographyServiceErr)
+	}
+	if rekeyCtrl != nil {
+		rekeyCtrl = controlplane.NewServerRekeyCoordinator(rekeyCtrl)
 	}
 
 	// If session not found, or client is using a new (IP, port) address (e.g., after NAT rebinding), re-register the client.

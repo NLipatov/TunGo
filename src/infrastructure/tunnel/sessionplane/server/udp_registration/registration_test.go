@@ -11,6 +11,7 @@ import (
 	"tungo/application/network/connection"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
 	"tungo/infrastructure/cryptography/noise"
+	"tungo/infrastructure/tunnel/controlplane"
 	"tungo/infrastructure/tunnel/session"
 )
 
@@ -40,12 +41,12 @@ func (l *udpRegCaptureLogger) Error(msg string, _ ...any) {
 	l.Info(msg)
 }
 
-// udpRegRekeyer is a mock rekeyer.
-type udpRegRekeyer struct{}
+// udpRegEpochManager is a mock epoch manager.
+type udpRegEpochManager struct{}
 
-func (udpRegRekeyer) Rekey(_, _ []byte) (uint16, error) { return 0, nil }
-func (udpRegRekeyer) SetSendEpoch(uint16)               {}
-func (udpRegRekeyer) RemoveEpoch(uint16) bool           { return true }
+func (udpRegEpochManager) StageEpoch(_, _ []byte) (uint16, error) { return 0, nil }
+func (udpRegEpochManager) PromoteSendEpoch(uint16)                {}
+func (udpRegEpochManager) RetirePreviousEpoch() bool              { return true }
 
 // udpRegCrypto is a mock crypto.
 type udpRegCrypto struct{}
@@ -92,11 +93,11 @@ func (f *udpRegHandshakeFactory) NewHandshake() connection.Handshake {
 
 type udpRegCryptoFactory struct {
 	crypto connection.Crypto
-	ctrl   *rekey.StateMachine
+	ctrl   connection.RekeyController
 	err    error
 }
 
-func (f *udpRegCryptoFactory) FromHandshake(connection.Handshake, bool) (connection.Crypto, *rekey.StateMachine, error) {
+func (f *udpRegCryptoFactory) FromHandshake(connection.Handshake, bool) (connection.Crypto, connection.RekeyController, error) {
 	if f.err != nil {
 		return nil, nil, f.err
 	}
@@ -196,7 +197,7 @@ func TestEnqueuePacket_CreatesQueueAndStartsRegistration(t *testing.T) {
 	}
 	cf := &udpRegCryptoFactory{
 		crypto: udpRegCrypto{},
-		ctrl:   rekey.NewStateMachine(udpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
+		ctrl:   rekey.NewStateMachine(udpRegEpochManager{}, []byte("c2s"), []byte("s2c")),
 	}
 
 	r := NewRegistrar(ctx, listener, repo, udpRegLogger{}, hf, cf, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
@@ -228,7 +229,7 @@ func TestRegisterClient_Success(t *testing.T) {
 	}
 	cf := &udpRegCryptoFactory{
 		crypto: udpRegCrypto{},
-		ctrl:   rekey.NewStateMachine(udpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
+		ctrl:   rekey.NewStateMachine(udpRegEpochManager{}, []byte("c2s"), []byte("s2c")),
 	}
 
 	r := NewRegistrar(ctx, listener, repo, udpRegLogger{}, hf, cf, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
@@ -259,6 +260,9 @@ func TestRegisterClient_Success(t *testing.T) {
 	}
 	if peer == nil {
 		t.Fatal("expected non-nil peer")
+	}
+	if _, ok := peer.RekeyController().(*controlplane.ServerRekeyCoordinator); !ok {
+		t.Fatalf("expected server rekey coordinator, got %T", peer.RekeyController())
 	}
 }
 
@@ -324,7 +328,7 @@ func TestRegisterClient_NegativeClientID_FailsAllocation(t *testing.T) {
 	}
 	cf := &udpRegCryptoFactory{
 		crypto: udpRegCrypto{},
-		ctrl:   rekey.NewStateMachine(udpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
+		ctrl:   rekey.NewStateMachine(udpRegEpochManager{}, []byte("c2s"), []byte("s2c")),
 	}
 
 	r := NewRegistrar(ctx, listener, repo, udpRegLogger{}, hf, cf, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
@@ -425,7 +429,7 @@ func TestRegisterClient_HandshakeWithResult_IPv6(t *testing.T) {
 	}
 	cf := &udpRegCryptoFactory{
 		crypto: udpRegCrypto{},
-		ctrl:   rekey.NewStateMachine(udpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
+		ctrl:   rekey.NewStateMachine(udpRegEpochManager{}, []byte("c2s"), []byte("s2c")),
 	}
 
 	r := NewRegistrar(ctx, listener, repo, udpRegLogger{}, hf, cf,
@@ -514,7 +518,7 @@ func TestRegisterClient_CookieRetry_Success(t *testing.T) {
 	hf := &udpRegCookieHandshakeFactory{clientID: 1}
 	cf := &udpRegCryptoFactory{
 		crypto: udpRegCrypto{},
-		ctrl:   rekey.NewStateMachine(udpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
+		ctrl:   rekey.NewStateMachine(udpRegEpochManager{}, []byte("c2s"), []byte("s2c")),
 	}
 
 	r := NewRegistrar(ctx, listener, repo, udpRegLogger{}, hf, cf, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
@@ -569,14 +573,14 @@ func TestRegisterClient_ReplacesExistingSession(t *testing.T) {
 	}
 	cf := &udpRegCryptoFactory{
 		crypto: udpRegCrypto{},
-		ctrl:   rekey.NewStateMachine(udpRegRekeyer{}, []byte("c2s"), []byte("s2c"), true),
+		ctrl:   rekey.NewStateMachine(udpRegEpochManager{}, []byte("c2s"), []byte("s2c")),
 	}
 
 	r := NewRegistrar(ctx, listener, repo, logger, hf, cf, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 	internalIP := netip.MustParseAddr("10.0.0.2")
 	staleSession := session.NewSessionWithAuth(
 		udpRegCrypto{},
-		rekey.NewStateMachine(udpRegRekeyer{}, []byte("old-c2s"), []byte("old-s2c"), true),
+		rekey.NewStateMachine(udpRegEpochManager{}, []byte("old-c2s"), []byte("old-s2c")),
 		internalIP,
 		netip.MustParseAddrPort("192.168.1.10:1234"),
 		nil,

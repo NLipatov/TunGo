@@ -9,7 +9,8 @@ import (
 	"sync"
 	appConfiguration "tungo/application/configuration"
 	"tungo/application/network/routing"
-	"tungo/infrastructure/cryptography/chacha20"
+	"tungo/infrastructure/cryptography/chacha20/tcp"
+	"tungo/infrastructure/cryptography/chacha20/udp"
 	"tungo/infrastructure/network/ip"
 	wsServer "tungo/infrastructure/network/ws/server/factory"
 	"tungo/infrastructure/settings"
@@ -100,7 +101,7 @@ func (s *WorkerFactory) createTCPWorker(
 	registrar := tcp_registration.NewRegistrar(
 		logger,
 		handshakeFactory,
-		chacha20.NewTcpSessionBuilder(chacha20.NewDefaultAEADBuilder()),
+		tcp.NewFactory(),
 		sessionManager,
 		workerSettings.IPv4Subnet,
 		workerSettings.IPv6Subnet,
@@ -159,7 +160,7 @@ func (s *WorkerFactory) createWSWorker(
 	registrar := tcp_registration.NewRegistrar(
 		logger,
 		handshakeFactory,
-		chacha20.NewTcpSessionBuilder(chacha20.NewDefaultAEADBuilder()),
+		tcp.NewFactory(),
 		sessionManager,
 		workerSettings.IPv4Subnet,
 		workerSettings.IPv6Subnet,
@@ -214,7 +215,7 @@ func (s *WorkerFactory) createUDPWorker(
 		sessionManager,
 		logger,
 		handshakeFactory,
-		chacha20.NewUdpSessionBuilder(chacha20.NewDefaultAEADBuilder()),
+		udp.NewFactory(),
 		workerSettings.IPv4Subnet,
 		workerSettings.IPv6Subnet,
 	)

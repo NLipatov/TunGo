@@ -4,7 +4,6 @@ import (
 	"net/netip"
 	"testing"
 	"tungo/application/network/connection"
-	"tungo/infrastructure/cryptography/chacha20/rekey"
 	"tungo/infrastructure/tunnel/session"
 )
 
@@ -22,7 +21,7 @@ func (d sessionManagerFactoryDummySession) ExternalAddrPort() netip.AddrPort {
 func (d sessionManagerFactoryDummySession) Crypto() connection.Crypto {
 	return nil
 }
-func (d sessionManagerFactoryDummySession) RekeyController() rekey.FSM {
+func (d sessionManagerFactoryDummySession) RekeyController() connection.RekeyController {
 	return nil
 }
 func (d sessionManagerFactoryDummySession) IsSourceAllowed(netip.Addr) bool {
@@ -64,4 +63,3 @@ func TestSessionManagerFactory_CreateManager(t *testing.T) {
 		t.Error("after Delete, GetByInternalAddrPort should return error, got nil")
 	}
 }
-

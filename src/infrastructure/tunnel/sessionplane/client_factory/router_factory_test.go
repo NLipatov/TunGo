@@ -9,7 +9,6 @@ import (
 	"tungo/application/network/connection"
 	"tungo/application/network/routing"
 	"tungo/application/network/routing/tun"
-	"tungo/infrastructure/cryptography/chacha20/rekey"
 )
 
 // -------------------- Mocks (prefixed with "RouterFactory") --------------------
@@ -23,7 +22,7 @@ type RouterFactoryConnectionFactoryMock struct {
 	Called bool
 }
 
-func (m *RouterFactoryConnectionFactoryMock) EstablishConnection(_ context.Context) (connection.Transport, connection.Crypto, *rekey.StateMachine, error) {
+func (m *RouterFactoryConnectionFactoryMock) EstablishConnection(_ context.Context) (connection.Transport, connection.Crypto, connection.RekeyController, error) {
 	m.Called = true
 	return m.Conn, m.Crypto, nil, m.Err
 }
@@ -65,7 +64,7 @@ type RouterFactoryClientWorkerFactoryMock struct {
 	Conn   connection.Transport
 	Tun    io.ReadWriteCloser
 	Crypto connection.Crypto
-	Ctrl   *rekey.StateMachine
+	Ctrl   connection.RekeyController
 
 	Called bool
 }
@@ -75,7 +74,7 @@ func (m *RouterFactoryClientWorkerFactoryMock) CreateWorker(
 	conn connection.Transport,
 	tun io.ReadWriteCloser,
 	cryptographyService connection.Crypto,
-	controller *rekey.StateMachine,
+	controller connection.RekeyController,
 ) (routing.Worker, error) {
 	m.Called = true
 	m.Ctx = ctx

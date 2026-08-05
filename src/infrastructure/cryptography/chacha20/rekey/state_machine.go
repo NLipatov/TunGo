@@ -3,345 +3,173 @@ package rekey
 import (
 	"fmt"
 	"sync"
-	"time"
 	"tungo/infrastructure/cryptography/mem"
+
+	"golang.org/x/crypto/chacha20poly1305"
 )
 
-// Rekeyer is the minimal interface the controller needs from the crypto layer.
+// EpochManager owns the lifecycle of transport crypto epochs.
 // It returns the new epoch so callers can keep control-plane state consistent.
-type Rekeyer interface {
-	Rekey(sendKey, recvKey []byte) (uint16, error)
-	SetSendEpoch(epoch uint16)
-	RemoveEpoch(epoch uint16) bool
+type EpochManager interface {
+	// StageEpoch reads canonical-direction keys only for the duration of the call
+	// and returns a newly allocated, monotonically increasing epoch.
+	StageEpoch(c2s, s2c []byte) (uint16, error)
+	// PromoteSendEpoch switches outgoing traffic to the previously staged epoch.
+	PromoteSendEpoch(epoch uint16)
+	// RetirePreviousEpoch releases the previous epoch according to transport policy.
+	RetirePreviousEpoch() bool
 }
 
-type State int
+type keys struct {
+	c2s   []byte
+	s2c   []byte
+	epoch uint16
+}
+
+type transitionPhase uint8
 
 const (
-	StateStable State = iota
-	// StateRekeying means we started Rekey() but have not yet applied keys.
-	StateRekeying
-	// StatePending means new keys are installed for receive; send switch awaits confirmation.
-	StatePending
+	phaseIdle transitionPhase = iota
+	phaseStaged
+	phaseRetiring
 )
 
-type FSM interface {
-	State() State
-	StartRekey(sendKey, recvKey []byte) (uint16, error)
-	ActivateSendEpoch(epoch uint16)
-	AbortPendingIfExpired(now time.Time)
-	CurrentServerToClientKey() []byte
-	CurrentClientToServerKey() []byte
-	IsServer() bool
+type state struct {
+	current              keys
+	staged               keys
+	maxObservedPeerEpoch uint16
+	phase                transitionPhase
 }
 
-// StateMachine holds control-plane rekey state; crypto remains immutable and handshake-agnostic.
-// It is intentionally not in the cryptography package to separate concerns.
+// StateMachine holds canonical control-plane keys and coordinates epoch lifecycle.
 type StateMachine struct {
-	mu     sync.Mutex
-	crypto Rekeyer
-	// now is injectable for tests; defaults to time.Now.
-	now        func() time.Time
-	isServer   bool
-	CurrentC2S []byte
-	CurrentS2C []byte
-	// Pending key material is promoted to Current* only after ActivateSendEpoch confirms peer installed it.
-	pendingC2S     []byte
-	pendingS2C     []byte
-	PendingPriv    *[32]byte
-	LastRekeyEpoch uint16
-	sendEpoch      uint16
-	// Pending epoch bookkeeping.
-	hasPending       bool
-	pendingSendEpoch uint16
-	pendingSince     time.Time
-	state            State
-	pendingTimeout   time.Duration
-	// Highest epoch observed from peer on successfully processed traffic.
-	// Needed to avoid losing "early ack" arriving while we're still in StateRekeying.
-	peerEpochSeenMax uint16
+	mu           sync.Mutex
+	epochManager EpochManager
+	state        state
 }
 
-const maxEpochSafety = 65000
-
-var (
-	ErrEpochExhausted = fmt.Errorf("epoch exhausted; requires full re-handshake")
-)
-
-// State Machine (single in-flight rekey):
-// States:
-//
-//	Stable: no pending epoch, sendEpoch active.
-//	Rekeying: Rekey() in progress, keys not yet applied.
-//	Pending: new epoch installed for recv, waiting for ActivateSendEpoch (data) or timeout AbortPending.
-//
-// Allowed transitions:
-//
-//	Stable --StartRekey--> Rekeying --installPendingKeys--> Pending --ActivateSendEpoch--> Stable
-//	Pending --AbortPendingIfExpired(timeout)--> Stable
-//
-// Forbidden (must error/no-op):
-//
-//	StartRekey when not Stable
-//	ActivateSendEpoch does not transition unless we are Pending (but it always records peerEpochSeenMax)
-//	second pending creation (hasPending == true)
-//	transitions that would remove last/active epoch (enforced in Rekeyer.RemoveEpoch/Rekey guards)
-
-func NewStateMachine(core Rekeyer, c2s, s2c []byte, isServer bool) *StateMachine {
+func NewStateMachine(epochManager EpochManager, c2s, s2c []byte) *StateMachine {
 	return &StateMachine{
-		crypto:         core,
-		now:            time.Now,
-		isServer:       isServer,
-		CurrentC2S:     append([]byte(nil), c2s...),
-		CurrentS2C:     append([]byte(nil), s2c...),
-		sendEpoch:      0,
-		state:          StateStable,
-		pendingTimeout: 5 * time.Second,
+		epochManager: epochManager,
+		state: state{
+			current: keys{
+				c2s: cloneKey(c2s),
+				s2c: cloneKey(s2c),
+			},
+			staged: keys{
+				c2s: make([]byte, chacha20poly1305.KeySize),
+				s2c: make([]byte, chacha20poly1305.KeySize),
+			},
+		},
 	}
 }
 
-// SetPendingTimeout overrides the timeout used to auto-abort pending rekeys.
-// Primarily for tests; production should tune based on network conditions.
-func (c *StateMachine) SetPendingTimeout(d time.Duration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.pendingTimeout = d
+func cloneKey(key []byte) []byte {
+	capacity := max(len(key), chacha20poly1305.KeySize)
+	cloned := make([]byte, len(key), capacity)
+	copy(cloned, key)
+	return cloned
 }
 
-// SetNowFunc injects a time source (useful for deterministic tests).
-func (c *StateMachine) SetNowFunc(fn func() time.Time) {
-	if fn == nil {
-		return
-	}
+// CurrentKeys returns caller-owned snapshots of both directional keys.
+func (c *StateMachine) CurrentKeys() (clientToServer, serverToClient []byte) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.now = fn
+	return append([]byte(nil), c.state.current.c2s...), append([]byte(nil), c.state.current.s2c...)
 }
 
-func (c *StateMachine) SetPendingRekeyPrivateKey(priv [32]byte) {
+func (c *StateMachine) ReadyForRekey() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.PendingPriv = &priv
+	return c.state.phase == phaseIdle
 }
 
-func (c *StateMachine) PendingRekeyPrivateKey() ([32]byte, bool) {
+// SendEpoch returns the epoch currently used for outbound packets. Control-plane
+// transactions use it to bind a response to the epoch that carried its request.
+func (c *StateMachine) SendEpoch() uint16 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.PendingPriv == nil {
-		return [32]byte{}, false
-	}
-	return *c.PendingPriv, true
-}
-
-func (c *StateMachine) ClearPendingRekeyPrivateKey() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.PendingPriv != nil {
-		mem.ZeroBytes(c.PendingPriv[:])
-	}
-	c.PendingPriv = nil
-}
-
-func (c *StateMachine) CurrentClientToServerKey() []byte {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return append([]byte(nil), c.CurrentC2S...)
-}
-
-func (c *StateMachine) CurrentServerToClientKey() []byte {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return append([]byte(nil), c.CurrentS2C...)
-}
-
-func (c *StateMachine) IsServer() bool {
-	return c.isServer
-}
-
-// State returns the current FSM state.
-func (c *StateMachine) State() State {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.state
+	return c.state.current.epoch
 }
 
 // StartRekey performs an atomic control-plane update:
-// 1) ensures no rekey is already pending
+// 1) ensures no epoch is already staged
 // 2) asks crypto to install a new session
-// 3) records the new keys and marks the epoch pending for send confirmation
+// 3) records the staged keys and epoch for send activation
 // If any step fails, no control-plane state is mutated.
-func (c *StateMachine) StartRekey(sendKey, recvKey []byte) (uint16, error) {
-	var sendCopy, recvCopy []byte
-	var effects []fsmEffect
+func (c *StateMachine) StartRekey(c2s, s2c []byte) (uint16, error) {
 	c.mu.Lock()
-	if c.state != StateStable {
-		c.mu.Unlock()
-		return 0, fmt.Errorf("rekey not allowed in state %v", c.state)
+	defer c.mu.Unlock()
+	if len(c2s) != chacha20poly1305.KeySize || len(s2c) != chacha20poly1305.KeySize {
+		return 0, fmt.Errorf(
+			"invalid rekey key size: c2s=%d s2c=%d want=%d",
+			len(c2s),
+			len(s2c),
+			chacha20poly1305.KeySize,
+		)
 	}
-	if c.LastRekeyEpoch >= maxEpochSafety {
-		c.mu.Unlock()
-		return 0, ErrEpochExhausted
+	if c.state.phase != phaseIdle {
+		return 0, fmt.Errorf("rekey already in progress")
 	}
-	// Copy inputs before releasing the mutex to avoid races/external mutation of slices.
-	sendCopy = append([]byte(nil), sendKey...)
-	recvCopy = append([]byte(nil), recvKey...)
-	c.state = StateRekeying
-	c.mu.Unlock() // Allow FSM to process other events while waiting for crypto.
-	epoch, err := c.crypto.Rekey(sendCopy, recvCopy)
+	staged := &c.state.staged
+	epoch, err := c.epochManager.StageEpoch(c2s, s2c)
 	if err != nil {
-		c.mu.Lock()
-		c.state = StateStable
-		c.mu.Unlock()
 		return 0, err
 	}
-	c.mu.Lock()
-	if c.state != StateRekeying {
-		// Unexpected; avoid leaking epochs in crypto.
-		prev := c.state
-		c.state = StateStable
-		c.mu.Unlock()
-		c.applyEffects([]fsmEffect{effectRemoveEpoch{epoch: epoch}})
-		return 0, fmt.Errorf("unexpected state after rekey: %v", prev)
-	}
-	// Also guard based on the epoch returned by crypto (LastRekeyEpoch is updated only on activation).
-	if epoch >= maxEpochSafety {
-		c.state = StateStable
-		c.mu.Unlock()
-		c.applyEffects([]fsmEffect{effectRemoveEpoch{epoch: epoch}})
-		return 0, ErrEpochExhausted
-	}
-	if err := c.installPendingKeysLocked(sendCopy, recvCopy, epoch); err != nil {
-		c.clearPendingLocked()
-		c.state = StateStable
-		c.mu.Unlock()
-		c.applyEffects([]fsmEffect{effectRemoveEpoch{epoch: epoch}})
-		return 0, err
-	}
-	c.state = StatePending
-	// Handle "early ack": if peer's packet with this epoch arrived during StateRekeying,
-	// ActivateSendEpoch may have been called already; try to activate now.
-	activateEpoch := c.maybeActivatePendingLocked()
-	if activateEpoch != 0 {
-		effects = append(effects, effectSetSendEpoch{epoch: activateEpoch})
-	}
-	c.mu.Unlock()
-	c.applyEffects(effects)
+	copy(staged.c2s, c2s)
+	copy(staged.s2c, s2c)
+	staged.epoch = epoch
+	c.state.phase = phaseStaged
 	return epoch, nil
 }
 
-func (c *StateMachine) installPendingKeysLocked(sendKey, recvKey []byte, epoch uint16) error {
-	// Only one pending rekey is allowed.
-	if c.hasPending {
-		return fmt.Errorf("pending rekey already exists")
-	}
-	// Epoch should monotonically increase across successful activations.
-	if epoch <= c.LastRekeyEpoch || epoch <= c.sendEpoch {
-		return fmt.Errorf("non-monotonic epoch: got %d, last %d", epoch, c.LastRekeyEpoch)
-	}
-	// Do not overwrite Current* until peer confirmation; keep pending separately.
-	if c.isServer {
-		c.pendingS2C = append([]byte(nil), sendKey...)
-		c.pendingC2S = append([]byte(nil), recvKey...)
-	} else {
-		c.pendingC2S = append([]byte(nil), sendKey...)
-		c.pendingS2C = append([]byte(nil), recvKey...)
-	}
-	c.hasPending = true
-	c.pendingSendEpoch = epoch
-	c.pendingSince = c.now()
-	return nil
-}
-
-func (c *StateMachine) maybeActivatePendingLocked() uint16 {
-	if c.state != StatePending {
-		return 0
-	}
-	if !c.hasPending {
-		return 0
-	}
-	if c.pendingSendEpoch <= c.sendEpoch {
-		return 0
-	}
-	// Confirmed when we've observed any valid traffic from peer at >= pending epoch.
-	if c.peerEpochSeenMax < c.pendingSendEpoch {
-		return 0
-	}
-	epoch := c.pendingSendEpoch
-	c.sendEpoch = epoch
-	c.LastRekeyEpoch = epoch
-	// Promote pending keys to active; zero old keys first.
-	mem.ZeroBytes(c.CurrentC2S)
-	mem.ZeroBytes(c.CurrentS2C)
-	c.CurrentC2S = append([]byte(nil), c.pendingC2S...)
-	c.CurrentS2C = append([]byte(nil), c.pendingS2C...)
-	c.clearPendingLocked()
-	c.state = StateStable
-	return epoch
-}
-
-func (c *StateMachine) clearPendingLocked() {
-	mem.ZeroBytes(c.pendingC2S)
-	mem.ZeroBytes(c.pendingS2C)
-	c.pendingC2S = nil
-	c.pendingS2C = nil
-	c.hasPending = false
-	c.pendingSendEpoch = 0
-	c.pendingSince = time.Time{}
-}
-
-// ActivateSendEpoch switches the local send side to the given epoch.
-//
-// IMPORTANT: This must be called only after a packet was successfully authenticated/decrypted
-// using the key material for that epoch (i.e., the epoch confirmation must be cryptographically proven).
+// ActivateSendEpoch commits the staged epoch for outbound encryption.
+// The caller owns the protocol decision to activate; authenticated inbound
+// observations are reported separately through ObservePeerEpoch.
 func (c *StateMachine) ActivateSendEpoch(epoch uint16) {
-	var effects []fsmEffect
 	c.mu.Lock()
-	// Always record peer confirmation, even if we are not yet in StatePending.
-	if epoch > c.peerEpochSeenMax {
-		c.peerEpochSeenMax = epoch
+	defer c.mu.Unlock()
+	if !c.activateStagedLocked(epoch) {
+		return
 	}
-	// If we're pending, try to activate (covers both normal and early-ack cases).
-	activateEpoch := c.maybeActivatePendingLocked()
-	if activateEpoch != 0 {
-		effects = append(effects, effectSetSendEpoch{epoch: activateEpoch})
-	}
-	c.mu.Unlock()
-	c.applyEffects(effects)
+	c.epochManager.PromoteSendEpoch(epoch)
+	c.retirePreviousEpochLocked()
 }
 
-// AbortPendingIfExpired aborts if the pending timeout has elapsed.
-func (c *StateMachine) AbortPendingIfExpired(now time.Time) {
-	var (
-		pendingEpoch uint16
-		doAbort      bool
-	)
-	c.mu.Lock()
-	if c.state != StatePending || !c.hasPending {
-		c.mu.Unlock()
+func (c *StateMachine) retirePreviousEpochLocked() {
+	state := &c.state
+	if state.phase != phaseRetiring || state.maxObservedPeerEpoch < state.current.epoch {
 		return
 	}
-	if now.Sub(c.pendingSince) >= c.pendingTimeout {
-		pendingEpoch = c.pendingSendEpoch
-		c.clearPendingLocked()
-		c.state = StateStable
-		doAbort = true
+	if c.epochManager.RetirePreviousEpoch() {
+		state.phase = phaseIdle
 	}
-	c.mu.Unlock()
-
-	if !doAbort {
-		return
-	}
-	c.applyEffects([]fsmEffect{effectRemoveEpoch{epoch: pendingEpoch}})
 }
 
-func (c *StateMachine) applyEffects(effects []fsmEffect) {
-	if c.crypto == nil {
-		return
+// ObservePeerEpoch records an epoch only after its packet was successfully
+// authenticated. Once local send and peer receive have both moved forward,
+// the previous epoch can be retired by the crypto implementation.
+func (c *StateMachine) ObservePeerEpoch(epoch uint16) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.state.maxObservedPeerEpoch = max(c.state.maxObservedPeerEpoch, epoch)
+	c.retirePreviousEpochLocked()
+}
+
+func (c *StateMachine) activateStagedLocked(epoch uint16) bool {
+	if c.state.phase != phaseStaged || epoch != c.state.staged.epoch {
+		return false
 	}
-	for _, e := range effects {
-		if e == nil {
-			continue
-		}
-		e.apply(c.crypto)
-	}
+	c.state.current, c.state.staged = c.state.staged, c.state.current
+	c.clearStagedLocked()
+	c.state.phase = phaseRetiring
+	return true
+}
+
+func (c *StateMachine) clearStagedLocked() {
+	staged := &c.state.staged
+	staged.c2s = staged.c2s[:chacha20poly1305.KeySize]
+	staged.s2c = staged.s2c[:chacha20poly1305.KeySize]
+	mem.ZeroBytes(staged.c2s)
+	mem.ZeroBytes(staged.s2c)
 }

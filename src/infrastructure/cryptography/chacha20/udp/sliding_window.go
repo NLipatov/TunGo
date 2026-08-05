@@ -1,4 +1,4 @@
-package chacha20
+package udp
 
 const slidingWindowWords = 16 // 16 × 64 = 1024-bit replay window
 

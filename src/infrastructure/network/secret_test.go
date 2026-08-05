@@ -4,7 +4,6 @@ import (
 	"errors"
 	"testing"
 	"tungo/application/network/connection"
-	"tungo/infrastructure/cryptography/chacha20/rekey"
 )
 
 // secretTestMockHandshake implements application.Handshake for testing DefaultSecret.Exchange.
@@ -28,7 +27,7 @@ type secretTestMockBuilder struct {
 	err error
 }
 
-func (m *secretTestMockBuilder) FromHandshake(_ connection.Handshake, _ bool) (connection.Crypto, *rekey.StateMachine, error) {
+func (m *secretTestMockBuilder) FromHandshake(_ connection.Handshake, _ bool) (connection.Crypto, connection.RekeyController, error) {
 	return m.svc, nil, m.err
 }
 

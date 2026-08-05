@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"tungo/application/network/connection"
-	chacha "tungo/infrastructure/cryptography/chacha20"
+	chachaudp "tungo/infrastructure/cryptography/chacha20/udp"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/session"
 
@@ -52,7 +52,7 @@ func benchmarkUDPCryptoPair(b *testing.B, idSeed uint64) (connection.Crypto, con
 		s2c: bytes.Repeat([]byte{0x22}, chacha20poly1305.KeySize),
 	}
 
-	builder := chacha.NewUdpSessionBuilder(chacha.NewDefaultAEADBuilder())
+	builder := chachaudp.NewFactory()
 	clientCrypto, _, err := builder.FromHandshake(hs, false)
 	if err != nil {
 		b.Fatalf("build client crypto: %v", err)
@@ -116,7 +116,7 @@ func BenchmarkFullCycleClientToServerUDP(b *testing.B) {
 			}
 
 			packet := benchmarkIPv4Packet(clientInner, remoteDst, payloadSize)
-			prefixLen := chacha.UDPRouteIDLength + chacha20poly1305.NonceSize
+			prefixLen := chachaudp.RouteIDLength + chacha20poly1305.NonceSize
 			sendBuf := make([]byte, prefixLen+len(packet), settings.DefaultEthernetMTU+settings.UDPChacha20Overhead)
 
 			b.ReportAllocs()
@@ -181,7 +181,7 @@ func BenchmarkFullCycleClientToServerUDPParallelPeers(b *testing.B) {
 			}
 
 			var workerSeq atomic.Uint64
-			prefixLen := chacha.UDPRouteIDLength + chacha20poly1305.NonceSize
+			prefixLen := chachaudp.RouteIDLength + chacha20poly1305.NonceSize
 
 			b.ReportAllocs()
 			b.SetBytes(int64(20 + payloadSize))

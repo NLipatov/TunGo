@@ -1,29 +1,39 @@
-package chacha20
+package udp
 
 import (
 	"crypto/cipher"
 	"encoding/binary"
 	"fmt"
+	"tungo/infrastructure/cryptography/chacha20/internal/core"
 	"tungo/infrastructure/cryptography/mem"
 
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
-type (
-	DefaultUdpSession struct {
-		SessionId        [32]byte
-		sendCipher       cipher.AEAD
-		recvCipher       cipher.AEAD
-		nonce            *Nonce
-		isServer         bool
-		nonceValidator   *SlidingWindow
-		epoch            Epoch
-		encryptionAadBuf [60]byte //32 bytes for sessionId, 16 bytes for direction, 12 bytes for nonce. 60 bytes total.
-		decryptionAadBuf [60]byte //32 bytes for sessionId, 16 bytes for direction, 12 bytes for nonce. 60 bytes total.
-	}
+const (
+	sessionIdentifierLength = core.SessionIdentifierLength
+	directionLength         = core.DirectionLength
+	aadLength               = core.AADLength
 )
 
-func NewUdpSession(id [32]byte, sendKey, recvKey []byte, isServer bool, epoch Epoch) (*DefaultUdpSession, error) {
+var (
+	dirC2S = core.DirectionClientToServer
+	dirS2C = core.DirectionServerToClient
+)
+
+type Session struct {
+	SessionId        [32]byte
+	sendCipher       cipher.AEAD
+	recvCipher       cipher.AEAD
+	nonce            *core.Nonce
+	isServer         bool
+	nonceValidator   *SlidingWindow
+	epoch            uint16
+	encryptionAadBuf [aadLength]byte
+	decryptionAadBuf [aadLength]byte
+}
+
+func NewSession(id [32]byte, sendKey, recvKey []byte, isServer bool, epoch uint16) (*Session, error) {
 	sendCipher, err := chacha20poly1305.New(sendKey)
 	if err != nil {
 		return nil, err
@@ -34,15 +44,15 @@ func NewUdpSession(id [32]byte, sendKey, recvKey []byte, isServer bool, epoch Ep
 		return nil, err
 	}
 
-	return NewUdpSessionWithCiphers(id, sendCipher, recvCipher, isServer, epoch), nil
+	return newSessionWithCiphers(id, sendCipher, recvCipher, isServer, epoch), nil
 }
 
-func NewUdpSessionWithCiphers(id [32]byte, sendCipher, recvCipher cipher.AEAD, isServer bool, epoch Epoch) *DefaultUdpSession {
-	s := &DefaultUdpSession{
+func newSessionWithCiphers(id [32]byte, sendCipher, recvCipher cipher.AEAD, isServer bool, epoch uint16) *Session {
+	s := &Session{
 		SessionId:      id,
 		sendCipher:     sendCipher,
 		recvCipher:     recvCipher,
-		nonce:          NewNonce(epoch),
+		nonce:          core.NewNonce(epoch),
 		isServer:       isServer,
 		epoch:          epoch,
 		nonceValidator: NewSlidingWindow(),
@@ -63,7 +73,7 @@ func NewUdpSessionWithCiphers(id [32]byte, sendCipher, recvCipher cipher.AEAD, i
 	return s
 }
 
-func (s *DefaultUdpSession) Encrypt(plaintext []byte) ([]byte, error) {
+func (s *Session) Encrypt(plaintext []byte) ([]byte, error) {
 	// guarantee inplace encryption
 	if cap(plaintext) < len(plaintext)+chacha20poly1305.Overhead {
 		return nil, fmt.Errorf("insufficient capacity for in-place encryption: len=%d, cap=%d",
@@ -75,7 +85,7 @@ func (s *DefaultUdpSession) Encrypt(plaintext []byte) ([]byte, error) {
 		return nil, fmt.Errorf("encrypt: buffer too short: %d", len(plaintext))
 	}
 
-	if err := s.nonce.incrementNonce(); err != nil {
+	if err := s.nonce.Increment(); err != nil {
 		return nil, err
 	}
 
@@ -97,7 +107,7 @@ func (s *DefaultUdpSession) Encrypt(plaintext []byte) ([]byte, error) {
 	return plaintext[:chacha20poly1305.NonceSize+len(ct)], nil
 }
 
-func (s *DefaultUdpSession) Decrypt(ciphertext []byte) ([]byte, error) {
+func (s *Session) Decrypt(ciphertext []byte) ([]byte, error) {
 	if len(ciphertext) < chacha20poly1305.NonceSize+chacha20poly1305.Overhead {
 		return nil, fmt.Errorf("cipher too short: %d", len(ciphertext))
 	}
@@ -127,14 +137,14 @@ func (s *DefaultUdpSession) Decrypt(ciphertext []byte) ([]byte, error) {
 	return pt, nil
 }
 
-func (s *DefaultUdpSession) Epoch() Epoch {
+func (s *Session) Epoch() uint16 {
 	return s.epoch
 }
 
-func (s *DefaultUdpSession) CreateAAD(isServerToClient bool, nonce, aad []byte) []byte {
+func (s *Session) CreateAAD(isServerToClient bool, nonce, aad []byte) []byte {
 	// SessionId and direction are pre-filled in the buffer at session creation.
 	// Only copy the 12-byte nonce (saves 48 bytes of copying per packet).
-	_ = isServerToClient // direction already set in buffer
+	_ = isServerToClient                                                // direction already set in buffer
 	copy(aad[sessionIdentifierLength+directionLength:aadLength], nonce) // 48..60
 	return aad[:aadLength]
 }
@@ -144,7 +154,7 @@ func (s *DefaultUdpSession) CreateAAD(isServerToClient bool, nonce, aad []byte) 
 //
 // SECURITY INVARIANT: All session state including replay window is zeroed.
 // This reduces forensic exposure of key material and packet patterns.
-func (s *DefaultUdpSession) Zeroize() {
+func (s *Session) Zeroize() {
 	mem.ZeroBytes(s.SessionId[:])
 	mem.ZeroBytes(s.encryptionAadBuf[:])
 	mem.ZeroBytes(s.decryptionAadBuf[:])

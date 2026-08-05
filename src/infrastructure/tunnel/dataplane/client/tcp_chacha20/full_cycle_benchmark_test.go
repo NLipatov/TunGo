@@ -7,7 +7,7 @@ import (
 	"net/netip"
 	"testing"
 	"tungo/application/network/connection"
-	chacha "tungo/infrastructure/cryptography/chacha20"
+	chachatcp "tungo/infrastructure/cryptography/chacha20/tcp"
 	appip "tungo/infrastructure/network/ip"
 	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/settings"
@@ -53,7 +53,7 @@ func benchmarkTCPCryptoPair(b *testing.B) (connection.Crypto, connection.Crypto)
 		s2c: bytes.Repeat([]byte{0x22}, chacha20poly1305.KeySize),
 	}
 
-	builder := chacha.NewTcpSessionBuilder(chacha.NewDefaultAEADBuilder())
+	builder := chachatcp.NewFactory()
 	clientCrypto, _, err := builder.FromHandshake(hs, false)
 	if err != nil {
 		b.Fatalf("build client crypto: %v", err)

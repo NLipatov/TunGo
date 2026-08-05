@@ -12,23 +12,30 @@ import (
 	"tungo/application/network/connection"
 	"tungo/application/network/routing/transport"
 	"tungo/infrastructure/cryptography/chacha20"
-	"tungo/infrastructure/cryptography/chacha20/rekey"
-	"tungo/infrastructure/cryptography/primitives"
+	"tungo/infrastructure/cryptography/chacha20/udp"
 	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/telemetry/trafficstats"
-	"tungo/infrastructure/tunnel/controlplane"
 
 	"golang.org/x/crypto/chacha20poly1305"
 )
+
+type transportRekeyController interface {
+	ObservePeerEpoch(epoch uint16)
+	ActivateSendEpoch(epoch uint16)
+}
+
+type rekeyAckHandler interface {
+	HandleRekeyAck(carrierEpoch uint16, plaindata []byte) (ok bool, err error)
+}
 
 type TransportHandler struct {
 	ctx                 context.Context
 	reader              io.Reader
 	writer              io.Writer
 	cryptographyService connection.Crypto
-	rekeyController     *rekey.StateMachine
-	handshakeCrypto     primitives.KeyDeriver
+	rekeyController     transportRekeyController
+	rekeyAck            rekeyAckHandler
 	egress              connection.Egress
 	lastRecvAt          time.Time
 	lastPingSentAt      time.Time
@@ -40,17 +47,18 @@ func NewTransportHandler(
 	reader io.Reader,
 	writer io.Writer,
 	cryptographyService connection.Crypto,
-	rekeyController *rekey.StateMachine,
+	rekeyController transportRekeyController,
+	rekeyAck rekeyAckHandler,
 	egress connection.Egress,
 ) transport.Handler {
-	const pingLen = chacha20.UDPRouteIDLength + chacha20poly1305.NonceSize + 3
+	const pingLen = udp.RouteIDLength + chacha20poly1305.NonceSize + 3
 	return &TransportHandler{
 		ctx:                 ctx,
 		reader:              reader,
 		writer:              writer,
 		cryptographyService: cryptographyService,
 		rekeyController:     rekeyController,
-		handshakeCrypto:     &primitives.DefaultKeyDeriver{},
+		rekeyAck:            rekeyAck,
 		egress:              egress,
 		lastRecvAt:          time.Now(),
 		pingBuf:             make([]byte, pingLen, pingLen+chacha20poly1305.Overhead),
@@ -102,17 +110,18 @@ func (t *TransportHandler) handleDatagram(pkt []byte) (int, error) {
 		return 0, nil
 	}
 	t.lastRecvAt = time.Now()
-
-	if t.rekeyController != nil {
-		if len(pkt) >= chacha20.UDPEpochOffset+2 {
-			epoch := binary.BigEndian.Uint16(pkt[chacha20.UDPEpochOffset : chacha20.UDPEpochOffset+2])
-			// Data was successfully decrypted with epoch; allow encrypt with this epoch by promoting.
-			t.rekeyController.ActivateSendEpoch(epoch)
-		}
-		t.rekeyController.AbortPendingIfExpired(time.Now())
+	var carrierEpoch uint16
+	if len(pkt) >= udp.EpochOffset+2 {
+		carrierEpoch = binary.BigEndian.Uint16(pkt[udp.EpochOffset : udp.EpochOffset+2])
 	}
 
-	if handled, err := t.handleControlplane(decrypted); handled {
+	if t.rekeyController != nil {
+		// Authentication proves the peer epoch; UDP uses the same event to promote send.
+		t.rekeyController.ObservePeerEpoch(carrierEpoch)
+		t.rekeyController.ActivateSendEpoch(carrierEpoch)
+	}
+
+	if handled, err := t.handleControlplane(carrierEpoch, decrypted); handled {
 		return 0, err
 	}
 
@@ -130,7 +139,10 @@ func (t *TransportHandler) handleDatagram(pkt []byte) (int, error) {
 // Client should reconnect with a fresh handshake.
 var ErrEpochExhausted = errors.New("epoch exhausted; reconnect required")
 
-func (t *TransportHandler) handleControlplane(plaintext []byte) (handled bool, err error) {
+func (t *TransportHandler) handleControlplane(
+	carrierEpoch uint16,
+	plaintext []byte,
+) (handled bool, err error) {
 	spType, spOk := service_packet.TryParseHeader(plaintext)
 	if !spOk {
 		return false, nil
@@ -142,12 +154,14 @@ func (t *TransportHandler) handleControlplane(plaintext []byte) (handled bool, e
 		slog.Warn("received EpochExhausted from server, initiating reconnect")
 		return true, ErrEpochExhausted
 	case service_packet.RekeyAck:
-		if t.rekeyController != nil && t.rekeyController.LastRekeyEpoch >= 65000 {
-			slog.Warn("rekey ack exhausted epoch, requesting session reset")
-			return true, ErrEpochExhausted
+		if t.rekeyAck == nil {
+			return true, nil
 		}
-		if _, err := controlplane.ClientHandleRekeyAck(t.handshakeCrypto, t.rekeyController, plaintext); err != nil {
+		if _, err := t.rekeyAck.HandleRekeyAck(carrierEpoch, plaintext); err != nil {
 			slog.Error("rekey ack install/apply failed", "err", err)
+			if errors.Is(err, chacha20.ErrEpochExhausted) {
+				return true, ErrEpochExhausted
+			}
 		}
 		return true, nil
 	default:
@@ -167,7 +181,7 @@ func (t *TransportHandler) handleIdle() error {
 }
 
 func (t *TransportHandler) sendPing() {
-	payload := t.pingBuf[chacha20.UDPRouteIDLength+chacha20poly1305.NonceSize:]
+	payload := t.pingBuf[udp.RouteIDLength+chacha20poly1305.NonceSize:]
 	if _, err := service_packet.EncodeV1Header(service_packet.Ping, payload); err != nil {
 		return
 	}

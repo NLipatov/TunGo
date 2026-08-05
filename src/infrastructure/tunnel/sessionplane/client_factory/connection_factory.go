@@ -11,8 +11,8 @@ import (
 	"time"
 	appConfiguration "tungo/application/configuration"
 	"tungo/application/network/connection"
-	"tungo/infrastructure/cryptography/chacha20"
-	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/cryptography/chacha20/tcp"
+	"tungo/infrastructure/cryptography/chacha20/udp"
 	"tungo/infrastructure/cryptography/noise"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/network/tcp/adapters"
@@ -34,7 +34,7 @@ func NewConnectionFactory(conf appConfiguration.ClientRuntimeConfiguration) conn
 
 func (f *ConnectionFactory) EstablishConnection(
 	ctx context.Context,
-) (connection.Transport, connection.Crypto, *rekey.StateMachine, error) {
+) (connection.Transport, connection.Crypto, connection.RekeyController, error) {
 	connSettings, connSettingsErr := f.conf.ActiveSettings()
 	if connSettingsErr != nil {
 		return nil, nil, nil, connSettingsErr
@@ -76,16 +76,16 @@ func (f *ConnectionFactory) dial(
 
 func (f *ConnectionFactory) sessionBuilder(proto settings.Protocol) connection.CryptoFactory {
 	if proto == settings.UDP {
-		return chacha20.NewUdpSessionBuilder(chacha20.NewDefaultAEADBuilder())
+		return udp.NewFactory()
 	}
-	return chacha20.NewTcpSessionBuilder(chacha20.NewDefaultAEADBuilder())
+	return tcp.NewFactory()
 }
 
 func (f *ConnectionFactory) establishSecuredConnection(
 	ctx context.Context,
 	adapter connection.Transport,
 	cryptoFactory connection.CryptoFactory,
-) (connection.Transport, connection.Crypto, *rekey.StateMachine, error) {
+) (connection.Transport, connection.Crypto, connection.RekeyController, error) {
 	// IK handshake requires client keys
 	if len(f.conf.ClientPublicKey) != 32 || len(f.conf.ClientPrivateKey) != 32 {
 		_ = adapter.Close()

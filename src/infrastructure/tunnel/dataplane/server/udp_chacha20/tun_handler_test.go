@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 	"tungo/application/network/connection"
-	"tungo/infrastructure/cryptography/chacha20/rekey"
 	"tungo/infrastructure/tunnel/session"
 )
 
@@ -86,11 +85,11 @@ type mockSession struct {
 	external netip.AddrPort
 }
 
-func (m *mockSession) Crypto() connection.Crypto        { return m.crypto }
-func (m *mockSession) ExternalAddrPort() netip.AddrPort { return m.external }
-func (m *mockSession) InternalAddr() netip.Addr         { return m.internal }
-func (m *mockSession) RekeyController() rekey.FSM       { return nil }
-func (m *mockSession) IsSourceAllowed(netip.Addr) bool  { return true }
+func (m *mockSession) Crypto() connection.Crypto                   { return m.crypto }
+func (m *mockSession) ExternalAddrPort() netip.AddrPort            { return m.external }
+func (m *mockSession) InternalAddr() netip.Addr                    { return m.internal }
+func (m *mockSession) RekeyController() connection.RekeyController { return nil }
+func (m *mockSession) IsSourceAllowed(netip.Addr) bool             { return true }
 
 // helper to build a peer that matches the handler expectations
 func mkPeer(c *TunHandlerMockConn, crypto *TunHandlerMockCrypto) *session.Peer {

@@ -9,8 +9,21 @@ import (
 	"time"
 	"tungo/application/network/connection"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/tunnel/controlplane"
 )
+
+func newTestRekeyCoordinator(controller connection.RekeyController) *controlplane.ClientRekeyCoordinator {
+	return controlplane.NewClientRekeyCoordinator(
+		&primitives.DefaultKeyDeriver{}, controller, time.Hour, time.Now(),
+	)
+}
+
+func newDueTestRekeyCoordinator(controller connection.RekeyController) *controlplane.ClientRekeyCoordinator {
+	return controlplane.NewClientRekeyCoordinator(
+		&primitives.DefaultKeyDeriver{}, controller, time.Millisecond, time.Now().Add(-time.Second),
+	)
+}
 
 // ---- Mocks (prefixed with TunHandler*) ----
 
@@ -80,22 +93,24 @@ func TestTunHandler_ContextDone(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // canceled before entering the loop
 
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTunHandler(ctx, rdr(), mockEgress(io.Discard, &TunHandlerMockCrypto{}), ctrl, nil)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
+	h := NewTunHandler(ctx, rdr(), mockEgress(io.Discard, &TunHandlerMockCrypto{}), newTestRekeyCoordinator(ctrl), nil)
 	if err := h.HandleTun(); err != nil {
 		t.Fatalf("want nil, got %v", err)
 	}
 }
 
 func TestTunHandler_EOF(t *testing.T) {
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 	h := NewTunHandler(context.Background(),
 		rdr(struct {
 			data []byte
 			err  error
 		}{nil, io.EOF}),
-		mockEgress(io.Discard, &TunHandlerMockCrypto{}), ctrl, nil,
-	)
+		mockEgress(io.Discard, &TunHandlerMockCrypto{}), newTestRekeyCoordinator(ctrl),
+
+		nil)
+
 	if err := h.HandleTun(); err != io.EOF {
 		t.Fatalf("want io.EOF, got %v", err)
 	}
@@ -103,14 +118,16 @@ func TestTunHandler_EOF(t *testing.T) {
 
 func TestTunHandler_ReadError(t *testing.T) {
 	readErr := errors.New("read fail")
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 	h := NewTunHandler(context.Background(),
 		rdr(struct {
 			data []byte
 			err  error
 		}{nil, readErr}),
-		mockEgress(io.Discard, &TunHandlerMockCrypto{}), ctrl, nil,
-	)
+		mockEgress(io.Discard, &TunHandlerMockCrypto{}), newTestRekeyCoordinator(ctrl),
+
+		nil)
+
 	if err := h.HandleTun(); !errors.Is(err, readErr) {
 		t.Fatalf("want read error, got %v", err)
 	}
@@ -118,7 +135,7 @@ func TestTunHandler_ReadError(t *testing.T) {
 
 func TestTunHandler_EncryptError(t *testing.T) {
 	encErr := errors.New("encrypt fail")
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 	h := NewTunHandler(context.Background(),
 		rdr(
 			struct {
@@ -126,8 +143,10 @@ func TestTunHandler_EncryptError(t *testing.T) {
 				err  error
 			}{[]byte{1, 2, 3}, nil},
 		),
-		mockEgress(io.Discard, &TunHandlerMockCrypto{err: encErr}), ctrl, nil,
-	)
+		mockEgress(io.Discard, &TunHandlerMockCrypto{err: encErr}), newTestRekeyCoordinator(ctrl),
+
+		nil)
+
 	if err := h.HandleTun(); !errors.Is(err, encErr) {
 		t.Fatalf("want encrypt error, got %v", err)
 	}
@@ -136,14 +155,16 @@ func TestTunHandler_EncryptError(t *testing.T) {
 func TestTunHandler_WriteError(t *testing.T) {
 	wErr := errors.New("write fail")
 	w := &TunHandlerMockWriter{err: wErr}
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 	h := NewTunHandler(context.Background(),
 		rdr(struct {
 			data []byte
 			err  error
 		}{[]byte{9, 9}, nil}),
-		mockEgress(w, &TunHandlerMockCrypto{}), ctrl, nil,
-	)
+		mockEgress(w, &TunHandlerMockCrypto{}), newTestRekeyCoordinator(ctrl),
+
+		nil)
+
 	if err := h.HandleTun(); !errors.Is(err, wErr) {
 		t.Fatalf("want write error, got %v", err)
 	}
@@ -155,20 +176,21 @@ func TestTunHandler_WriteError(t *testing.T) {
 
 func TestTunHandler_HappyPath_SinglePacket_ThenEOF(t *testing.T) {
 	w := &TunHandlerMockWriter{}
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 	h := NewTunHandler(context.Background(),
 		rdr(
 			struct {
 				data []byte
 				err  error
-			}{[]byte{0xAA, 0xBB}, nil}, // one payload
+			}{[]byte{0xAA, 0xBB}, nil},
 			struct {
 				data []byte
 				err  error
-			}{nil, io.EOF}, // exit
+			}{nil, io.EOF},
 		),
-		mockEgress(w, &TunHandlerMockCrypto{}), ctrl, nil,
-	)
+		mockEgress(w, &TunHandlerMockCrypto{}), newTestRekeyCoordinator(ctrl),
+
+		nil)
 
 	if err := h.HandleTun(); err != io.EOF {
 		t.Fatalf("want io.EOF, got %v", err)
@@ -183,15 +205,16 @@ func TestTunHandler_ReadError_WhenContextCanceled_ReturnsNil(t *testing.T) {
 	cancel() // context already canceled before read
 
 	readErr := errors.New("any read error")
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 	h := NewTunHandler(
 		ctx,
 		rdr(struct {
 			data []byte
 			err  error
-		}{nil, readErr}), // reader returns an error
-		mockEgress(io.Discard, &TunHandlerMockCrypto{}), ctrl, nil,
-	)
+		}{nil, readErr}),
+		mockEgress(io.Discard, &TunHandlerMockCrypto{}), newTestRekeyCoordinator(ctrl),
+
+		nil)
 
 	// When ctx is canceled, the read error path should return nil.
 	if err := h.HandleTun(); err != nil {
@@ -201,7 +224,7 @@ func TestTunHandler_ReadError_WhenContextCanceled_ReturnsNil(t *testing.T) {
 
 func TestTunHandler_RekeyInitSentAfterPayload(t *testing.T) {
 	w := &TunHandlerMockWriter{}
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, make([]byte, 32), make([]byte, 32), false)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, make([]byte, 32), make([]byte, 32))
 	h := NewTunHandler(context.Background(),
 		rdr(
 			struct {
@@ -213,13 +236,11 @@ func TestTunHandler_RekeyInitSentAfterPayload(t *testing.T) {
 				err  error
 			}{nil, io.EOF},
 		),
-		mockEgress(w, &TunHandlerMockCrypto{}), ctrl, nil,
-	)
+		mockEgress(w, &TunHandlerMockCrypto{}), newDueTestRekeyCoordinator(ctrl),
 
-	// Force rekey to fire by setting rotateAt to the past.
+		nil)
+
 	th := h.(*TunHandler)
-	th.rekeyInit.SetRotateAt(time.Now().Add(-time.Second))
-	th.rekeyInit.SetInterval(time.Millisecond)
 
 	if err := th.HandleTun(); err != io.EOF {
 		t.Fatalf("want io.EOF, got %v", err)
@@ -232,7 +253,7 @@ func TestTunHandler_RekeyInitSentAfterPayload(t *testing.T) {
 
 func TestTunHandler_RekeyInitSendError_Continues(t *testing.T) {
 	// When sending a rekey init via egress fails, the handler should log and continue.
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, make([]byte, 32), make([]byte, 32), false)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, make([]byte, 32), make([]byte, 32))
 	h := NewTunHandler(context.Background(),
 		rdr(
 			struct {
@@ -244,11 +265,11 @@ func TestTunHandler_RekeyInitSendError_Continues(t *testing.T) {
 				err  error
 			}{nil, io.EOF},
 		),
-		mockEgress(io.Discard, &TunHandlerMockCrypto{}), ctrl, nil,
-	)
+		mockEgress(io.Discard, &TunHandlerMockCrypto{}), newDueTestRekeyCoordinator(ctrl),
+
+		nil)
+
 	th := h.(*TunHandler)
-	th.rekeyInit.SetRotateAt(time.Now().Add(-time.Second))
-	th.rekeyInit.SetInterval(time.Millisecond)
 
 	// Replace egress with one that fails on SendControl.
 	th.egress = &failingControlEgress{dataErr: nil, controlErr: errors.New("send fail")}
@@ -270,7 +291,7 @@ func (e *failingControlEgress) Close() error               { return nil }
 
 func TestTunHandler_RekeyInitPrepareError_Continues(t *testing.T) {
 	// When MaybeBuildRekeyInit returns an error, the handler should log and continue (not exit).
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, make([]byte, 32), make([]byte, 32), false)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, make([]byte, 32), make([]byte, 32))
 	mockW := &TunHandlerMockWriter{}
 	h := NewTunHandler(context.Background(),
 		rdr(
@@ -287,15 +308,17 @@ func TestTunHandler_RekeyInitPrepareError_Continues(t *testing.T) {
 				err  error
 			}{nil, io.EOF},
 		),
-		mockEgress(mockW, &TunHandlerMockCrypto{}), ctrl, nil,
-	)
+		mockEgress(mockW, &TunHandlerMockCrypto{}), newTestRekeyCoordinator(ctrl),
+
+		nil)
+
 	th := h.(*TunHandler)
-	th.rekeyInit = controlplane.NewRekeyInitScheduler(
+	th.rekeyInit = controlplane.NewClientRekeyCoordinator(
 		&tunHandlerFailingKeyDeriver{err: errors.New("keygen fail")},
+		ctrl,
 		time.Millisecond,
 		time.Now().Add(-2*time.Second),
 	)
-	th.rekeyInit.SetRotateAt(time.Now().Add(-time.Second))
 
 	if err := th.HandleTun(); err != io.EOF {
 		t.Fatalf("want io.EOF, got %v", err)
@@ -308,21 +331,22 @@ func TestTunHandler_RekeyInitPrepareError_Continues(t *testing.T) {
 
 func TestTunHandler_ZeroLengthPayload_ThenEOF(t *testing.T) {
 	w := &TunHandlerMockWriter{}
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 	h := NewTunHandler(
 		context.Background(),
 		rdr(
 			struct {
 				data []byte
 				err  error
-			}{[]byte{}, nil}, // zero-length read, still processed
+			}{[]byte{}, nil},
 			struct {
 				data []byte
 				err  error
-			}{nil, io.EOF}, // then exit
+			}{nil, io.EOF},
 		),
-		mockEgress(w, &TunHandlerMockCrypto{}), ctrl, nil,
-	)
+		mockEgress(w, &TunHandlerMockCrypto{}), newTestRekeyCoordinator(ctrl),
+
+		nil)
 
 	if err := h.HandleTun(); err != io.EOF {
 		t.Fatalf("want io.EOF, got %v", err)
@@ -354,11 +378,12 @@ func (r *tunBlockingReader) Read(_ []byte) (int, error) {
 func TestTunHandler_ReadError_ContextCanceledDuringRead(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 	h := NewTunHandler(ctx,
 		&tunBlockingReader{ctx: ctx},
-		mockEgress(io.Discard, &TunHandlerMockCrypto{}), ctrl, nil,
-	)
+		mockEgress(io.Discard, &TunHandlerMockCrypto{}), newTestRekeyCoordinator(ctrl),
+
+		nil)
 
 	done := make(chan error, 1)
 	go func() { done <- h.HandleTun() }()
@@ -381,7 +406,7 @@ func TestTunHandler_SourceFilter_DropsNonVPN(t *testing.T) {
 	lanPacket := testIPv4Pkt(netip.MustParseAddr("192.168.64.5"))
 
 	w := &TunHandlerMockWriter{}
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 	allowed := map[netip.Addr]struct{}{netip.MustParseAddr("10.0.0.2"): {}}
 
 	h := NewTunHandler(context.Background(),
@@ -389,18 +414,19 @@ func TestTunHandler_SourceFilter_DropsNonVPN(t *testing.T) {
 			struct {
 				data []byte
 				err  error
-			}{lanPacket, nil}, // dropped by filter
+			}{lanPacket, nil},
 			struct {
 				data []byte
 				err  error
-			}{vpnPacket, nil}, // passes filter
+			}{vpnPacket, nil},
 			struct {
 				data []byte
 				err  error
 			}{nil, io.EOF},
 		),
-		mockEgress(w, &TunHandlerMockCrypto{}), ctrl, allowed,
-	)
+		mockEgress(w, &TunHandlerMockCrypto{}), newTestRekeyCoordinator(ctrl),
+
+		allowed)
 
 	if err := h.HandleTun(); err != io.EOF {
 		t.Fatalf("want io.EOF, got %v", err)

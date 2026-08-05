@@ -1,23 +1,20 @@
-package chacha20
+package udp
 
 import "sync"
-
-// Epoch is encoded into the nonce prefix. We use uint16 for a compact, fixed width field.
-type Epoch uint16
 
 // EpochRing manages a fixed-capacity ring of UDP sessions indexed by epoch.
 //
 // SECURITY INVARIANT: ZeroizeAll MUST be called when the crypto instance is
 // destroyed. This is enforced by the interface - implementations cannot omit it.
 type EpochRing interface {
-	Current() Epoch
-	Resolve(epoch Epoch) (*DefaultUdpSession, bool)
-	Insert(epoch Epoch, session *DefaultUdpSession)
-	ResolveCurrent() (*DefaultUdpSession, bool)
-	Oldest() (Epoch, bool)
+	Current() uint16
+	Resolve(epoch uint16) (*Session, bool)
+	Insert(epoch uint16, session *Session)
+	ResolveCurrent() (*Session, bool)
+	Oldest() (uint16, bool)
 	Len() int
 	Capacity() int
-	Remove(epoch Epoch) bool
+	Remove(epoch uint16) bool
 	// ZeroizeAll zeros all sessions in the ring.
 	// MUST be called during crypto teardown to ensure key material is cleared.
 	// After this call, all sessions in the ring are unusable.
@@ -25,8 +22,8 @@ type EpochRing interface {
 }
 
 type epochEntry struct {
-	epoch   Epoch
-	session *DefaultUdpSession
+	epoch   uint16
+	session *Session
 }
 
 // defaultEpochRing is a fixed-capacity FIFO ring safe for concurrent Resolve calls.
@@ -37,7 +34,7 @@ type defaultEpochRing struct {
 	entries  []epochEntry
 }
 
-func NewEpochRing(capacity int, initialEpoch Epoch, initial *DefaultUdpSession) EpochRing {
+func NewEpochRing(capacity int, initialEpoch uint16, initial *Session) EpochRing {
 	r := &defaultEpochRing{
 		capacity: capacity,
 	}
@@ -47,7 +44,7 @@ func NewEpochRing(capacity int, initialEpoch Epoch, initial *DefaultUdpSession) 
 	return r
 }
 
-func (r *defaultEpochRing) Current() Epoch {
+func (r *defaultEpochRing) Current() uint16 {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	if len(r.entries) == 0 {
@@ -56,7 +53,7 @@ func (r *defaultEpochRing) Current() Epoch {
 	return r.entries[len(r.entries)-1].epoch
 }
 
-func (r *defaultEpochRing) Resolve(epoch Epoch) (*DefaultUdpSession, bool) {
+func (r *defaultEpochRing) Resolve(epoch uint16) (*Session, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	for _, e := range r.entries {
@@ -67,7 +64,7 @@ func (r *defaultEpochRing) Resolve(epoch Epoch) (*DefaultUdpSession, bool) {
 	return nil, false
 }
 
-func (r *defaultEpochRing) Insert(epoch Epoch, session *DefaultUdpSession) {
+func (r *defaultEpochRing) Insert(epoch uint16, session *Session) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -81,7 +78,7 @@ func (r *defaultEpochRing) Insert(epoch Epoch, session *DefaultUdpSession) {
 	r.entries = append(r.entries, epochEntry{epoch: epoch, session: session})
 }
 
-func (r *defaultEpochRing) ResolveCurrent() (*DefaultUdpSession, bool) {
+func (r *defaultEpochRing) ResolveCurrent() (*Session, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	if len(r.entries) == 0 {
@@ -90,7 +87,7 @@ func (r *defaultEpochRing) ResolveCurrent() (*DefaultUdpSession, bool) {
 	return r.entries[len(r.entries)-1].session, true
 }
 
-func (r *defaultEpochRing) Oldest() (Epoch, bool) {
+func (r *defaultEpochRing) Oldest() (uint16, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	if len(r.entries) == 0 {
@@ -109,7 +106,7 @@ func (r *defaultEpochRing) Capacity() int {
 	return r.capacity
 }
 
-func (r *defaultEpochRing) Remove(epoch Epoch) bool {
+func (r *defaultEpochRing) Remove(epoch uint16) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for i, e := range r.entries {

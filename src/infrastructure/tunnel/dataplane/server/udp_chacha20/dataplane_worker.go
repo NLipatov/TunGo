@@ -4,9 +4,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"time"
 
-	"tungo/infrastructure/cryptography/chacha20"
+	chacha20 "tungo/infrastructure/cryptography/chacha20/udp"
 	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/telemetry/trafficstats"
 	"tungo/infrastructure/tunnel/session"
@@ -18,14 +17,12 @@ import (
 type udpDataplaneWorker struct {
 	tunWriter io.Writer
 	cp        controlPlaneHandler
-	now       func() time.Time
 }
 
 func newUdpDataplaneWorker(tunWriter io.Writer, cp controlPlaneHandler) *udpDataplaneWorker {
 	return &udpDataplaneWorker{
 		tunWriter: tunWriter,
 		cp:        cp,
-		now:       time.Now,
 	}
 }
 
@@ -50,15 +47,17 @@ func (w *udpDataplaneWorker) handleDecrypted(peer *session.Peer, rawPacket, decr
 
 	rekeyCtrl := peer.RekeyController()
 	if rekeyCtrl != nil {
-		// Data was successfully decrypted with epoch.
-		// Epoch can now be used to encrypt. Allow to encrypt with this epoch by promoting.
-		rekeyCtrl.ActivateSendEpoch(binary.BigEndian.Uint16(rawPacket[chacha20.UDPEpochOffset : chacha20.UDPEpochOffset+2]))
-		rekeyCtrl.AbortPendingIfExpired(w.now())
+		// Authentication proves the peer epoch; UDP uses the same event to promote send.
+		epoch := binary.BigEndian.Uint16(rawPacket[chacha20.EpochOffset : chacha20.EpochOffset+2])
+		rekeyCtrl.ObservePeerEpoch(epoch)
+		rekeyCtrl.ActivateSendEpoch(epoch)
 		// If service_packet packet - handle it.
 		// Note: On EpochExhausted, server sends EpochExhausted packet to client.
 		// Session stays alive until client reconnects with fresh handshake.
-		if handled, _ := w.cp.Handle(decrypted, peer.Egress(), rekeyCtrl); handled {
-			return nil
+		if coordinator, ok := rekeyCtrl.(rekeyController); ok {
+			if handled, _ := w.cp.Handle(epoch, decrypted, peer.Egress(), coordinator); handled {
+				return nil
+			}
 		}
 	}
 

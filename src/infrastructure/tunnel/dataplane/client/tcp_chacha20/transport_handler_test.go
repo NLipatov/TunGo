@@ -7,7 +7,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
+	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/service_packet"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -38,11 +40,23 @@ func (m *TransportHandlerMockCrypto) Decrypt(_ []byte) ([]byte, error) {
 	return m.decOut, m.decErr
 }
 
-type dummyRekeyer struct{}
+type TransportHandlerMockRekeyAck struct {
+	calls int
+}
 
-func (dummyRekeyer) Rekey(_, _ []byte) (uint16, error) { return 0, nil }
-func (dummyRekeyer) SetSendEpoch(uint16)               {}
-func (dummyRekeyer) RemoveEpoch(uint16) bool           { return true }
+func (m *TransportHandlerMockRekeyAck) HandleRekeyAck(uint16, []byte) (bool, error) {
+	m.calls++
+	return true, nil
+}
+
+type dummyEpochManager struct {
+	epoch uint16
+	err   error
+}
+
+func (d dummyEpochManager) StageEpoch(_, _ []byte) (uint16, error) { return d.epoch, d.err }
+func (dummyEpochManager) PromoteSendEpoch(uint16)                  {}
+func (dummyEpochManager) RetirePreviousEpoch() bool                { return true }
 
 /* --- Tests --- */
 
@@ -50,8 +64,8 @@ func TestTransportHandler_ContextDone(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	h := NewTransportHandler(ctx, rdr(), io.Discard, &TransportHandlerMockCrypto{}, ctrl, nil)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
+	h := NewTransportHandler(ctx, rdr(), io.Discard, &TransportHandlerMockCrypto{}, ctrl, nil, nil)
 	if err := h.HandleTransport(); err != nil {
 		t.Fatalf("want nil, got %v", err)
 	}
@@ -59,15 +73,15 @@ func TestTransportHandler_ContextDone(t *testing.T) {
 
 func TestTransportHandler_ReadError(t *testing.T) {
 	readErr := errors.New("read fail")
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 	h := NewTransportHandler(context.Background(),
 		rdr(struct {
 			data []byte
 			err  error
 		}{nil, readErr}),
 		io.Discard,
-		&TransportHandlerMockCrypto{}, ctrl, nil,
-	)
+		&TransportHandlerMockCrypto{}, ctrl, nil, nil)
+
 	if err := h.HandleTransport(); !errors.Is(err, readErr) {
 		t.Fatalf("want read error, got %v", err)
 	}
@@ -76,15 +90,15 @@ func TestTransportHandler_ReadError(t *testing.T) {
 func TestTransportHandler_ReadErrorAfterCancel_ReturnsNil(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 	h := NewTransportHandler(ctx,
 		rdr(struct {
 			data []byte
 			err  error
 		}{nil, errors.New("any")}),
 		io.Discard,
-		&TransportHandlerMockCrypto{}, ctrl, nil,
-	)
+		&TransportHandlerMockCrypto{}, ctrl, nil, nil)
+
 	if err := h.HandleTransport(); err != nil {
 		t.Fatalf("want nil when ctx canceled, got %v", err)
 	}
@@ -92,7 +106,7 @@ func TestTransportHandler_ReadErrorAfterCancel_ReturnsNil(t *testing.T) {
 
 func TestTransportHandler_InvalidTooShort_ThenEOF(t *testing.T) {
 	short := make([]byte, chacha20poly1305.Overhead-1) // triggers "invalid length"
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 	h := NewTransportHandler(context.Background(),
 		rdr(
 			struct {
@@ -105,8 +119,8 @@ func TestTransportHandler_InvalidTooShort_ThenEOF(t *testing.T) {
 			}{nil, io.EOF},
 		),
 		io.Discard,
-		&TransportHandlerMockCrypto{}, ctrl, nil,
-	)
+		&TransportHandlerMockCrypto{}, ctrl, nil, nil)
+
 	if err := h.HandleTransport(); err != io.EOF {
 		t.Fatalf("want io.EOF after invalid short frame, got %v", err)
 	}
@@ -115,15 +129,15 @@ func TestTransportHandler_InvalidTooShort_ThenEOF(t *testing.T) {
 func TestTransportHandler_DecryptError(t *testing.T) {
 	cipher := make([]byte, chacha20poly1305.Overhead+8)
 	decErr := errors.New("decrypt fail")
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 	h := NewTransportHandler(context.Background(),
 		rdr(struct {
 			data []byte
 			err  error
 		}{cipher, nil}),
 		io.Discard,
-		&TransportHandlerMockCrypto{decErr: decErr}, ctrl, nil,
-	)
+		&TransportHandlerMockCrypto{decErr: decErr}, ctrl, nil, nil)
+
 	if err := h.HandleTransport(); !errors.Is(err, decErr) {
 		t.Fatalf("want decrypt error, got %v", err)
 	}
@@ -135,15 +149,15 @@ func TestTransportHandler_WriteError(t *testing.T) {
 	w := &TransportHandlerMockWriter{err: wErr}
 	plain := []byte{1, 2, 3, 4}
 
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 	h := NewTransportHandler(context.Background(),
 		rdr(struct {
 			data []byte
 			err  error
 		}{cipher, nil}),
 		w,
-		&TransportHandlerMockCrypto{decOut: plain}, ctrl, nil,
-	)
+		&TransportHandlerMockCrypto{decOut: plain}, ctrl, nil, nil)
+
 	if err := h.HandleTransport(); !errors.Is(err, wErr) {
 		t.Fatalf("want write error, got %v", err)
 	}
@@ -157,21 +171,21 @@ func TestTransportHandler_Happy_ThenEOF(t *testing.T) {
 	w := &TransportHandlerMockWriter{}
 	plain := []byte{9, 9, 9, 9, 9, 9}
 
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 	h := NewTransportHandler(context.Background(),
 		rdr(
 			struct {
 				data []byte
 				err  error
-			}{cipher, nil}, // one decrypted packet
+			}{cipher, nil},
 			struct {
 				data []byte
 				err  error
-			}{nil, io.EOF}, // then EOF
+			}{nil, io.EOF},
 		),
 		w,
-		&TransportHandlerMockCrypto{decOut: plain}, ctrl, nil,
-	)
+		&TransportHandlerMockCrypto{decOut: plain}, ctrl, nil, nil)
+
 	if err := h.HandleTransport(); err != io.EOF {
 		t.Fatalf("want io.EOF, got %v", err)
 	}
@@ -186,7 +200,8 @@ func TestTransportHandler_RekeyAck_Handled(t *testing.T) {
 
 	cipher := make([]byte, chacha20poly1305.Overhead+len(ackPayload))
 
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
+	rekeyAck := &TransportHandlerMockRekeyAck{}
 	h := NewTransportHandler(context.Background(),
 		rdr(
 			struct {
@@ -199,15 +214,18 @@ func TestTransportHandler_RekeyAck_Handled(t *testing.T) {
 			}{nil, io.EOF},
 		),
 		io.Discard,
-		&TransportHandlerMockCrypto{decOut: ackPayload}, ctrl, nil,
-	)
+		&TransportHandlerMockCrypto{decOut: ackPayload}, ctrl, rekeyAck, nil)
+
 	// RekeyAck is consumed; handler continues to next read which is EOF.
 	if err := h.HandleTransport(); err != io.EOF {
 		t.Fatalf("want io.EOF after RekeyAck, got %v", err)
 	}
+	if rekeyAck.calls != 1 {
+		t.Fatalf("rekey ack calls=%d, want 1", rekeyAck.calls)
+	}
 }
 
-func TestTransportHandler_RekeyAck_NilController(t *testing.T) {
+func TestTransportHandler_RekeyAck_NilHandler(t *testing.T) {
 	ackPayload := make([]byte, service_packet.RekeyPacketLen)
 	_, _ = service_packet.EncodeV1Header(service_packet.RekeyAck, ackPayload)
 
@@ -226,8 +244,10 @@ func TestTransportHandler_RekeyAck_NilController(t *testing.T) {
 		),
 		io.Discard,
 		&TransportHandlerMockCrypto{decOut: ackPayload}, nil, nil,
-	)
-	// With nil controller, handleRekeyAck returns immediately; handler continues to EOF.
+
+		nil)
+
+	// With no ACK handler, the control packet is consumed and processing continues.
 	if err := h.HandleTransport(); err != io.EOF {
 		t.Fatalf("want io.EOF, got %v", err)
 	}
@@ -238,15 +258,15 @@ func TestTransportHandler_TCPDecryptErrorAfterCancel(t *testing.T) {
 	cancel()
 	decErr := errors.New("decrypt fail")
 	cipher := make([]byte, chacha20poly1305.Overhead+8)
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 	h := NewTransportHandler(ctx,
 		rdr(struct {
 			data []byte
 			err  error
 		}{cipher, nil}),
 		io.Discard,
-		&TransportHandlerMockCrypto{decErr: decErr}, ctrl, nil,
-	)
+		&TransportHandlerMockCrypto{decErr: decErr}, ctrl, nil, nil)
+
 	// ctx already canceled -> decrypt error is suppressed, returns nil.
 	if err := h.HandleTransport(); err != nil {
 		t.Fatalf("want nil when ctx canceled, got %v", err)
@@ -259,15 +279,15 @@ func TestTransportHandler_EpochExhausted_ReturnsError(t *testing.T) {
 
 	cipher := make([]byte, chacha20poly1305.Overhead+len(epochPayload))
 
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 	h := NewTransportHandler(context.Background(),
 		rdr(struct {
 			data []byte
 			err  error
 		}{cipher, nil}),
 		io.Discard,
-		&TransportHandlerMockCrypto{decOut: epochPayload}, ctrl, nil,
-	)
+		&TransportHandlerMockCrypto{decOut: epochPayload}, ctrl, nil, nil)
+
 	err := h.HandleTransport()
 	if !errors.Is(err, ErrEpochExhausted) {
 		t.Fatalf("want ErrEpochExhausted, got %v", err)
@@ -275,13 +295,25 @@ func TestTransportHandler_EpochExhausted_ReturnsError(t *testing.T) {
 }
 
 func TestTransportHandler_HandleRekeyAck_EpochExhausted(t *testing.T) {
+	keyDeriver := &primitives.DefaultKeyDeriver{}
+	serverPub, _, err := keyDeriver.GenerateX25519KeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	ackPayload := make([]byte, service_packet.RekeyPacketLen)
 	_, _ = service_packet.EncodeV1Header(service_packet.RekeyAck, ackPayload)
+	copy(ackPayload[3:], serverPub)
 
 	cipher := make([]byte, chacha20poly1305.Overhead+len(ackPayload))
 
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
-	ctrl.LastRekeyEpoch = 65001 // >= 65000 triggers epoch exhaustion
+	ctrl := rekey.NewStateMachine(dummyEpochManager{err: chacha20.ErrEpochExhausted}, []byte("c2s"), []byte("s2c"))
+	coordinator := newDueTestRekeyCoordinator(ctrl)
+	if _, ok, buildErr := coordinator.MaybeBuildRekeyInit(
+		time.Now(), make([]byte, service_packet.RekeyPacketLen),
+	); buildErr != nil || !ok {
+		t.Fatalf("seed pending rekey: ok=%v err=%v", ok, buildErr)
+	}
 
 	h := NewTransportHandler(context.Background(),
 		rdr(struct {
@@ -289,9 +321,11 @@ func TestTransportHandler_HandleRekeyAck_EpochExhausted(t *testing.T) {
 			err  error
 		}{cipher, nil}),
 		io.Discard,
-		&TransportHandlerMockCrypto{decOut: ackPayload}, ctrl, nil,
-	)
-	err := h.HandleTransport()
+		&TransportHandlerMockCrypto{decOut: ackPayload}, ctrl, coordinator,
+
+		nil)
+
+	err = h.HandleTransport()
 	if !errors.Is(err, ErrEpochExhausted) {
 		t.Fatalf("want ErrEpochExhausted on epoch exhaustion, got %v", err)
 	}
@@ -320,12 +354,14 @@ func (e *TransportHandlerMockEgress) pingCount() int {
 
 func TestTransportHandler_SendPing_Success(t *testing.T) {
 	egress := &TransportHandlerMockEgress{}
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 
 	h := NewTransportHandler(context.Background(),
 		rdr(), io.Discard,
-		&TransportHandlerMockCrypto{}, ctrl, egress,
-	)
+		&TransportHandlerMockCrypto{}, ctrl, nil,
+
+		egress)
+
 	impl := h.(*TransportHandler)
 	impl.sendPing()
 
@@ -336,19 +372,21 @@ func TestTransportHandler_SendPing_Success(t *testing.T) {
 
 func TestTransportHandler_SendPing_EgressError(t *testing.T) {
 	egress := &TransportHandlerMockEgress{err: errors.New("send fail")}
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 
 	h := NewTransportHandler(context.Background(),
 		rdr(), io.Discard,
-		&TransportHandlerMockCrypto{}, ctrl, egress,
-	)
+		&TransportHandlerMockCrypto{}, ctrl, nil,
+
+		egress)
+
 	impl := h.(*TransportHandler)
 	// Should not panic
 	impl.sendPing()
 }
 
 func TestTransportHandler_NewTransportHandler_InitializesRecvTime(t *testing.T) {
-	h := NewTransportHandler(context.Background(), rdr(), io.Discard, &TransportHandlerMockCrypto{}, nil, nil)
+	h := NewTransportHandler(context.Background(), rdr(), io.Discard, &TransportHandlerMockCrypto{}, nil, nil, nil)
 	impl := h.(*TransportHandler)
 	if got := impl.lastRecvNano.Load(); got == 0 {
 		t.Fatal("expected initial receive timestamp to be set")
@@ -356,13 +394,13 @@ func TestTransportHandler_NewTransportHandler_InitializesRecvTime(t *testing.T) 
 }
 
 func TestTransportHandler_HandleRekeyAck_ErrorDoesNotBubble(t *testing.T) {
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, make([]byte, 32), make([]byte, 32), false)
-	h := NewTransportHandler(context.Background(), rdr(), io.Discard, &TransportHandlerMockCrypto{}, ctrl, nil)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, make([]byte, 32), make([]byte, 32))
+	h := NewTransportHandler(context.Background(), rdr(), io.Discard, &TransportHandlerMockCrypto{}, ctrl, nil, nil)
 	impl := h.(*TransportHandler)
 
 	shortAck := make([]byte, 3)
 	_, _ = service_packet.EncodeV1Header(service_packet.RekeyAck, shortAck)
-	if err := impl.handleRekeyAck(shortAck); err != nil {
+	if err := impl.handleRekeyAck(0, shortAck); err != nil {
 		t.Fatalf("expected nil on ack install/apply error, got %v", err)
 	}
 }
@@ -371,12 +409,14 @@ func TestTransportHandler_KeepaliveLoop_CancelStops(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	egress := &TransportHandlerMockEgress{}
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 
 	h := NewTransportHandler(ctx,
 		rdr(), io.Discard,
-		&TransportHandlerMockCrypto{}, ctrl, egress,
-	)
+		&TransportHandlerMockCrypto{}, ctrl, nil,
+
+		egress)
+
 	impl := h.(*TransportHandler)
 
 	done := make(chan struct{})
@@ -397,7 +437,7 @@ func TestTransportHandler_KeepaliveLoop_CancelStops(t *testing.T) {
 
 func TestTransportHandler_InvalidTooLong_ThenEOF(t *testing.T) {
 	long := make([]byte, 1500+18+1) // DefaultEthernetMTU + TCPChacha20Overhead + 1
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 	h := NewTransportHandler(context.Background(),
 		rdr(
 			struct {
@@ -410,8 +450,8 @@ func TestTransportHandler_InvalidTooLong_ThenEOF(t *testing.T) {
 			}{nil, io.EOF},
 		),
 		io.Discard,
-		&TransportHandlerMockCrypto{}, ctrl, nil,
-	)
+		&TransportHandlerMockCrypto{}, ctrl, nil, nil)
+
 	if err := h.HandleTransport(); err != io.EOF {
 		t.Fatalf("want io.EOF after invalid long frame, got %v", err)
 	}
@@ -431,12 +471,11 @@ func (r *blockingReader) Read(_ []byte) (int, error) {
 func TestTransportHandler_ReadError_ContextCanceledDuringRead(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 	h := NewTransportHandler(ctx,
 		&blockingReader{ctx: ctx},
 		io.Discard,
-		&TransportHandlerMockCrypto{}, ctrl, nil,
-	)
+		&TransportHandlerMockCrypto{}, ctrl, nil, nil)
 
 	done := make(chan error, 1)
 	go func() { done <- h.HandleTransport() }()
@@ -461,7 +500,7 @@ func TestTransportHandler_Pong_Consumed(t *testing.T) {
 
 	cipher := make([]byte, chacha20poly1305.Overhead+len(pongPayload))
 
-	ctrl := rekey.NewStateMachine(dummyRekeyer{}, []byte("c2s"), []byte("s2c"), false)
+	ctrl := rekey.NewStateMachine(dummyEpochManager{}, []byte("c2s"), []byte("s2c"))
 	h := NewTransportHandler(context.Background(),
 		rdr(
 			struct {
@@ -474,8 +513,8 @@ func TestTransportHandler_Pong_Consumed(t *testing.T) {
 			}{nil, io.EOF},
 		),
 		io.Discard,
-		&TransportHandlerMockCrypto{decOut: pongPayload}, ctrl, nil,
-	)
+		&TransportHandlerMockCrypto{decOut: pongPayload}, ctrl, nil, nil)
+
 	// Pong is consumed silently; handler continues to next read which is EOF.
 	if err := h.HandleTransport(); err != io.EOF {
 		t.Fatalf("want io.EOF after Pong, got %v", err)

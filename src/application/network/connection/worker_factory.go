@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"tungo/application/network/routing"
-	"tungo/infrastructure/cryptography/chacha20/rekey"
 	"tungo/infrastructure/settings"
 )
 
@@ -14,7 +13,7 @@ type ClientWorkerFactory interface {
 		conn Transport,
 		tun io.ReadWriteCloser,
 		cryptographyService Crypto,
-		controller *rekey.StateMachine,
+		controller RekeyController,
 	) (routing.Worker, error)
 }
 

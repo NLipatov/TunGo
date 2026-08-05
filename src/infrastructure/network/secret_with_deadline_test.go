@@ -6,19 +6,18 @@ import (
 	"testing"
 	"time"
 	"tungo/application/network/connection"
-	"tungo/infrastructure/cryptography/chacha20/rekey"
 )
 
 // secretWithDeadlineTestMockSecret implements Secret for testing.
 // If block==true, Exchange will hang forever; otherwise returns svc, err.
 type secretWithDeadlineTestMockSecret struct {
 	svc   connection.Crypto
-	ctrl  *rekey.StateMachine
+	ctrl  connection.RekeyController
 	err   error
 	block bool
 }
 
-func (m *secretWithDeadlineTestMockSecret) Exchange(_ connection.Transport) (connection.Crypto, *rekey.StateMachine, error) {
+func (m *secretWithDeadlineTestMockSecret) Exchange(_ connection.Transport) (connection.Crypto, connection.RekeyController, error) {
 	if m.block {
 		select {} // hang
 	}
@@ -82,7 +81,7 @@ func TestSecretWithDeadline_Cancel(t *testing.T) {
 	wrapper := NewSecretWithDeadline(ctx, underlying)
 
 	var svcRes connection.Crypto
-	var ctrlRes *rekey.StateMachine
+	var ctrlRes connection.RekeyController
 	var errRes error
 	done := make(chan struct{})
 

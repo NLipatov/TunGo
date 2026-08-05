@@ -2,7 +2,6 @@ package network
 
 import (
 	"context"
-	"tungo/infrastructure/cryptography/chacha20/rekey"
 
 	"tungo/application/network/connection"
 )
@@ -20,10 +19,10 @@ func NewSecretWithDeadline(ctx context.Context, secret Secret) SecretWithDeadlin
 	}
 }
 
-func (s SecretWithDeadline) Exchange(transport connection.Transport) (connection.Crypto, *rekey.StateMachine, error) {
+func (s SecretWithDeadline) Exchange(transport connection.Transport) (connection.Crypto, connection.RekeyController, error) {
 	type result struct {
 		cryptographyService connection.Crypto
-		controller          *rekey.StateMachine
+		controller          connection.RekeyController
 		err                 error
 	}
 

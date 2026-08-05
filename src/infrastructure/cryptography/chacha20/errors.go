@@ -1,9 +1,7 @@
 package chacha20
 
-import (
-	"errors"
-)
+import "fmt"
 
-var ErrNonUniqueNonce = errors.New("critical decryption error: nonce was not unique")
-var ErrUnknownEpoch = errors.New("unknown or expired epoch")
-var ErrUnknownRouteID = errors.New("unknown route id")
+var (
+	ErrEpochExhausted = fmt.Errorf("epoch exhausted; requires full re-handshake")
+)

@@ -1,9 +1,6 @@
 package connection
 
-import (
-	"net/netip"
-	"tungo/infrastructure/cryptography/chacha20/rekey"
-)
+import "net/netip"
 
 // Session is abstraction over established secure session of data-transfer between 2 hosts.
 type SessionMeta interface {
@@ -23,7 +20,7 @@ type SessionCrypto interface {
 
 type SessionRekey interface {
 	// RekeyController returns control-plane rekey state; may be nil for protocols without rekey.
-	RekeyController() rekey.FSM
+	RekeyController() RekeyController
 }
 
 // SessionAuth provides AllowedIPs enforcement functionality.
