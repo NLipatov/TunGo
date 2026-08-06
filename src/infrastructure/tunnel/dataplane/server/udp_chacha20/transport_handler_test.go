@@ -245,16 +245,6 @@ func (l *TransportHandlerFakeLogger) Warn(msg string, _ ...interface{}) {
 func (l *TransportHandlerFakeLogger) Error(msg string, _ ...interface{}) {
 	l.Info(msg)
 }
-func (l *TransportHandlerFakeLogger) contains(sub string) bool {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	for _, s := range l.logs {
-		if bytes.Contains([]byte(s), []byte(sub)) {
-			return true
-		}
-	}
-	return false
-}
 func (l *TransportHandlerFakeLogger) count(sub string) int {
 	l.mu.Lock()
 	defer l.mu.Unlock()

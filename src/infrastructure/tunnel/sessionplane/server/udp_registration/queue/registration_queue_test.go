@@ -200,7 +200,7 @@ func TestRegistrationQueue_Table(t *testing.T) {
 					wg.Add(1)
 					go func() {
 						defer wg.Done()
-						q.ReadInto(dst)
+						_, _ = q.ReadInto(dst)
 					}()
 				}
 

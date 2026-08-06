@@ -164,7 +164,7 @@ func TestCreateTunInterface_CloseOnError(t *testing.T) {
 
 	// now call Close ourselves to detect
 	closed = true
-	_ = tmp.File.Close()
+	_ = tmp.Close()
 }
 
 // osOpenFile allows us to stub os.OpenFile in tests

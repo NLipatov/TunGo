@@ -72,7 +72,7 @@ func (s TunFactory) CreateDevice(connSettings settings.Settings) (tun.Device, er
 		if cleanupErr := s.DisposeDevices(connSettings); cleanupErr != nil {
 			return nil, fmt.Errorf("failed to configure a server: %s; cleanup failed: %v", configureErr, cleanupErr)
 		}
-		return nil, fmt.Errorf("failed to configure a server: %s\n", configureErr)
+		return nil, fmt.Errorf("failed to configure a server: %s", configureErr)
 	}
 
 	dev, wrapErr := s.wrapper.Wrap(tunFile)

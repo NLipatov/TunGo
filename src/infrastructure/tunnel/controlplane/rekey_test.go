@@ -109,8 +109,8 @@ func TestServerRekeyCoordinator_HandleRekeyInit_Success(t *testing.T) {
 	if !ok {
 		t.Fatal("expected ok=true")
 	}
-	if len(serverPub) != service_packet.RekeyPublicKeyLen {
-		t.Fatalf("expected server pub len=%d, got %d", service_packet.RekeyPublicKeyLen, len(serverPub))
+	if serverPub == ([service_packet.RekeyPublicKeyLen]byte{}) {
+		t.Fatal("expected non-zero server public key")
 	}
 	if epoch == 0 {
 		t.Fatal("expected non-zero epoch")

@@ -68,7 +68,7 @@ func (w *udpDataplaneWorker) handleDecrypted(peer *session.Peer, rawPacket, decr
 		// Malformed IP header - drop to prevent AllowedIPs bypass
 		return nil
 	}
-	if !peer.Session.IsSourceAllowed(srcIP) {
+	if !peer.IsSourceAllowed(srcIP) {
 		// AllowedIPs violation - silently drop for UDP
 		return nil
 	}

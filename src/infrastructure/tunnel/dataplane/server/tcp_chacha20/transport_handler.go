@@ -56,7 +56,6 @@ func (t *TransportHandler) HandleTransport() error {
 	go func() {
 		<-t.ctx.Done() //blocks till ctx.Done signal comes in
 		_ = t.listener.Close()
-		return
 	}()
 
 	for {

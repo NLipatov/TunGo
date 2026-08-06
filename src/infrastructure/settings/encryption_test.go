@@ -33,7 +33,7 @@ func TestEncryption_MarshalJSON(t *testing.T) {
 
 func TestEncryption_UnmarshalJSON(t *testing.T) {
 	t.Run("valid ChaCha20Poly1305", func(t *testing.T) {
-		var e Encryption
+		e := Encryption(99)
 		err := e.UnmarshalJSON([]byte(`"ChaCha20Poly1305"`))
 		if err != nil {
 			t.Fatalf("UnmarshalJSON() error = %v, want nil", err)

@@ -21,13 +21,13 @@ func (e Encryption) MarshalJSON() ([]byte, error) {
 	}
 }
 
-func (e Encryption) UnmarshalJSON(data []byte) error {
+func (e *Encryption) UnmarshalJSON(data []byte) error {
 	var s string
 	if err := json.Unmarshal(data, &s); err != nil {
 		return err
 	}
 	if s == "ChaCha20Poly1305" {
-		e = ChaCha20Poly1305
+		*e = ChaCha20Poly1305
 		return nil
 	}
 	return errors.New("invalid encryption")

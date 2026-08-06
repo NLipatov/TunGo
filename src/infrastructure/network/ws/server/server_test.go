@@ -78,6 +78,7 @@ func TestNewHttpServer_ValidationErrors(t *testing.T) {
 	ln := NewHttpServerMockErrorListener(errors.New("x"))
 	h := &HttpServerMockHandler{}
 
+	//nolint:staticcheck // This test verifies that a nil context is rejected.
 	if _, err := NewDefaultServer(nil, ln, time.Second, time.Second, time.Second, h, "/ws"); err == nil {
 		t.Fatal("want error on nil context")
 	}

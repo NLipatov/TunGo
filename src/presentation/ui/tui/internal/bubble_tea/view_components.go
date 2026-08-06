@@ -32,7 +32,7 @@ func renderTabsLine(
 	left := tabsOut.String()
 	right := styles.brand.Render(productLabel)
 
-	rendered := left
+	var rendered string
 	if contentWidth > 1 {
 		leftWidth := visibleWidthANSI(left)
 		rightWidth := visibleWidthANSI(right)

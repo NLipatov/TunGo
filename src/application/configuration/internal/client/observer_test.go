@@ -88,11 +88,9 @@ func TestObserverReturnsMatches(t *testing.T) {
 		matchesMap[res] = true
 	}
 
-	expected := extraFiles
-	expected = append(expected, defaultFilename)
-	for _, expected := range extraFiles {
-		if !matchesMap[expected] {
-			t.Errorf("expected file %s not found in results", expected)
+	for _, expectedFile := range extraFiles {
+		if !matchesMap[expectedFile] {
+			t.Errorf("expected file %s not found in results", expectedFile)
 		}
 	}
 }

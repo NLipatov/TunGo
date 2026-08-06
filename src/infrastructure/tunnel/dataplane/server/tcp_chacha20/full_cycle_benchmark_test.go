@@ -102,7 +102,7 @@ func benchmarkHandleTCPServerIngress(peer *session.Peer, tunWriter io.Writer, pa
 		}
 	}
 	srcIP, srcOk := ip.ExtractSourceIP(pt)
-	if !srcOk || !peer.Session.IsSourceAllowed(srcIP) {
+	if !srcOk || !peer.IsSourceAllowed(srcIP) {
 		return nil
 	}
 	_, err = tunWriter.Write(pt)

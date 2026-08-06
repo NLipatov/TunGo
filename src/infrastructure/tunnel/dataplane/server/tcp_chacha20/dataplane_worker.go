@@ -114,7 +114,7 @@ func (w *tcpDataplaneWorker) Run() {
 				// Malformed IP header - drop to prevent AllowedIPs bypass
 				continue
 			}
-			if !w.peer.Session.IsSourceAllowed(srcIP) {
+			if !w.peer.IsSourceAllowed(srcIP) {
 				// Log violation and drop packet, but do NOT terminate session
 				w.logger.Warn("AllowedIPs violation", "source_ip", srcIP)
 				continue

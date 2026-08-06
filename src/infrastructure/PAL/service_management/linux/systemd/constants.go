@@ -10,7 +10,6 @@ var defaultSystemdConfig = DefaultConfig()
 var (
 	systemdRuntimeDir = defaultSystemdConfig.RuntimeDir
 	systemdUnitPath   = defaultSystemdConfig.UnitPath
-	systemdUnitName   = defaultSystemdConfig.UnitName
 	tungoBinaryPath   = defaultSystemdConfig.BinaryPath
 )
 

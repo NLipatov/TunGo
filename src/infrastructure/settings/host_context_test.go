@@ -73,6 +73,7 @@ func TestHost_RouteIPContext_NilContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DomainHost failed: %v", err)
 	}
+	//nolint:staticcheck // This test verifies the nil-context fallback.
 	if ip, routeErr := h.RouteIPContext(nil); routeErr != nil || ip != "198.51.100.20" {
 		t.Fatalf("RouteIPContext(nil) = (%q, %v)", ip, routeErr)
 	}

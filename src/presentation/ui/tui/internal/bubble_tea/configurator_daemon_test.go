@@ -1353,7 +1353,7 @@ func TestPersistAutoSelectClientConfig_EmptyValueIgnored(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	model = model.persistAutoSelectClientConfig("   ")
+	_ = model.persistAutoSelectClientConfig("   ")
 	if s.Current().AutoSelectClientConfig != "old-cfg" {
 		t.Fatalf("expected old config to remain unchanged, got %q", s.Current().AutoSelectClientConfig)
 	}

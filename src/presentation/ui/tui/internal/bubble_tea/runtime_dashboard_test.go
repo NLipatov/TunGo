@@ -224,7 +224,7 @@ func TestRuntimeDashboard_Update_WindowAndContextDoneAndQuit(t *testing.T) {
 	}
 	updated = updatedModel.(RuntimeDashboard)
 
-	updatedModel, cmd = updated.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	_, cmd = updated.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 	if cmd == nil {
 		t.Fatal("expected quit cmd on ctrl+c")
 	}

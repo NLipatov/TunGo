@@ -566,16 +566,10 @@ func TestHandleClient_RekeyInit_DispatchedToControlPlane(t *testing.T) {
 	}
 	writer := &fakeWriter{}
 	logger := &fakeLogger{}
-	sess := &testSession{
-		crypto:     &fakeCrypto{},
-		internalIP: netip.MustParseAddr("10.0.0.9"),
-		externalIP: mustAddrPort("1.2.3.4:5559"),
-	}
 	eg := &noopEgress{}
-	peer := session.NewPeer(sess, eg)
 	// Set rekey controller on the real Session so RekeyController() returns non-nil.
 	realSess := session.NewSession(&fakeCrypto{}, coordinator, netip.MustParseAddr("10.0.0.9"), mustAddrPort("1.2.3.4:5559"))
-	peer = session.NewPeer(realSess, eg)
+	peer := session.NewPeer(realSess, eg)
 
 	repo := &fakeSessionRepo{}
 	registrar := tcp_registration.NewRegistrar(logger, &fakeHandshakeFactory{}, &fakeCryptoFactory{}, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})

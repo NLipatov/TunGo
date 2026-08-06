@@ -462,7 +462,7 @@ var baseCfgIPv6Only = settings.Settings{
 }
 
 // TunFactoryMockIPTBenign simulates benign iptables errors that must be ignored.
-type TunFactoryMockIPTBenign struct{ log bytes.Buffer }
+type TunFactoryMockIPTBenign struct{}
 
 func (m *TunFactoryMockIPTBenign) EnableDevMasquerade(_, _ string) error { return nil }
 func (m *TunFactoryMockIPTBenign) DisableDevMasquerade(_, _ string) error {
@@ -615,8 +615,8 @@ func TestCreateTunDevice_CreateTunStepErrors(t *testing.T) {
 		} else {
 			ipMock = &TunFactoryMockIPErr{
 				TunFactoryMockIP: &TunFactoryMockIP{},
-				errTag:                 c.tag,
-				err:                    errors.New("ip_err"),
+				errTag:           c.tag,
+				err:              errors.New("ip_err"),
 			}
 		}
 		f := newFactory(ipMock, &TunFactoryMockIPT{}, nil, ioMock, &TunFactoryMockSys{})
@@ -752,8 +752,8 @@ func TestCreateDevice_ConfigureError_TriggersCleanup(t *testing.T) {
 	iptBase := &TunFactoryMockIPT{}
 	iptErr := &TunFactoryMockIPTErr{
 		TunFactoryMockIPT: iptBase,
-		errTag:                  "EnableForwardingFromTunToDev",
-		err:                     errors.New("fwd_err"),
+		errTag:            "EnableForwardingFromTunToDev",
+		err:               errors.New("fwd_err"),
 	}
 	f := newFactory(ipMock, iptErr, nil, &TunFactoryMockIOCTL{}, &TunFactoryMockSys{})
 
@@ -1139,8 +1139,8 @@ func TestCreateTunDevice_WithIPv6Subnet_AddrAddError(t *testing.T) {
 	cfg.IPv6 = netip.MustParseAddr("fd00::1")
 	ipMock := &TunFactoryMockIPErrNthAddr{
 		TunFactoryMockIP: &TunFactoryMockIP{},
-		failOnCall:             2, // second AddrAddDev call (IPv6)
-		err:                    errors.New("v6_addr_err"),
+		failOnCall:       2, // second AddrAddDev call (IPv6)
+		err:              errors.New("v6_addr_err"),
 	}
 	f := newFactory(ipMock, &TunFactoryMockIPT{}, nil, &TunFactoryMockIOCTL{}, &TunFactoryMockSys{})
 	_, err := f.CreateDevice(cfg)
@@ -1152,8 +1152,8 @@ func TestCreateTunDevice_WithIPv6Subnet_AddrAddError(t *testing.T) {
 func TestCreateTunDevice_IPv6Only_AddrAddError(t *testing.T) {
 	ipMock := &TunFactoryMockIPErrNthAddr{
 		TunFactoryMockIP: &TunFactoryMockIP{},
-		failOnCall:             1, // first AddrAddDev call must be IPv6 in IPv6-only mode
-		err:                    errors.New("v6_addr_err"),
+		failOnCall:       1, // first AddrAddDev call must be IPv6 in IPv6-only mode
+		err:              errors.New("v6_addr_err"),
 	}
 	f := newFactory(ipMock, &TunFactoryMockIPT{}, nil, &TunFactoryMockIOCTL{}, &TunFactoryMockSys{})
 	_, err := f.CreateDevice(baseCfgIPv6Only)
@@ -1174,8 +1174,8 @@ func TestSetupForwarding_IPv6Errors(t *testing.T) {
 	for _, c := range cases {
 		iptErr := &TunFactoryMockIPTErr{
 			TunFactoryMockIPT: &TunFactoryMockIPT{},
-			errTag:                  c.errTag,
-			err:                     errors.New("v6_err"),
+			errTag:            c.errTag,
+			err:               errors.New("v6_err"),
 		}
 		f := newFactory(&TunFactoryMockIP{}, iptErr, nil, &TunFactoryMockIOCTL{}, &TunFactoryMockSys{})
 		if err := f.firewall.setupForwarding("tun0", "eth0", true, true); err == nil || !strings.Contains(err.Error(), c.want) {
@@ -1196,8 +1196,8 @@ func TestClearForwarding_IPv6Errors(t *testing.T) {
 	for _, c := range cases {
 		iptErr := &TunFactoryMockIPTErr{
 			TunFactoryMockIPT: &TunFactoryMockIPT{},
-			errTag:                  c.errTag,
-			err:                     errors.New("v6_err"),
+			errTag:            c.errTag,
+			err:               errors.New("v6_err"),
 		}
 		f := newFactory(&TunFactoryMockIP{}, iptErr, nil, &TunFactoryMockIOCTL{}, &TunFactoryMockSys{})
 		if err := f.firewall.clearForwarding("tun0", "eth0", true, true); err == nil || !strings.Contains(err.Error(), c.want) {
@@ -1211,8 +1211,8 @@ func TestConfigure_Enable6DevMasqueradeError(t *testing.T) {
 		&TunFactoryMockIP{},
 		&TunFactoryMockIPTErr{
 			TunFactoryMockIPT: &TunFactoryMockIPT{},
-			errTag:                  "Enable6DevMasquerade",
-			err:                     errors.New("v6_masq_err"),
+			errTag:            "Enable6DevMasquerade",
+			err:               errors.New("v6_masq_err"),
 		},
 		nil,
 		&TunFactoryMockIOCTL{},
@@ -1276,8 +1276,8 @@ func TestDisposeDevices_MasqueradeCleanupUsesSubnetScopedRules(t *testing.T) {
 func TestEnableForwarding_ForwardingFromDevToTun_Error(t *testing.T) {
 	iptErr := &TunFactoryMockIPTErr{
 		TunFactoryMockIPT: &TunFactoryMockIPT{},
-		errTag:                  "EnableForwardingFromDevToTun",
-		err:                     errors.New("fwd_dt_err"),
+		errTag:            "EnableForwardingFromDevToTun",
+		err:               errors.New("fwd_dt_err"),
 	}
 	f := newFactory(&TunFactoryMockIP{}, iptErr, nil, &TunFactoryMockIOCTL{}, &TunFactoryMockSys{})
 	if err := f.firewall.setupForwarding("tun0", "eth0", true, true); err == nil || !strings.Contains(err.Error(), "failed to setup forwarding rule") {
@@ -1288,8 +1288,8 @@ func TestEnableForwarding_ForwardingFromDevToTun_Error(t *testing.T) {
 func TestEnableForwarding_ForwardingTunToTun_Error(t *testing.T) {
 	iptErr := &TunFactoryMockIPTErr{
 		TunFactoryMockIPT: &TunFactoryMockIPT{},
-		errTag:                  "EnableForwardingTunToTun",
-		err:                     errors.New("fwd_tt_err"),
+		errTag:            "EnableForwardingTunToTun",
+		err:               errors.New("fwd_tt_err"),
 	}
 	f := newFactory(&TunFactoryMockIP{}, iptErr, nil, &TunFactoryMockIOCTL{}, &TunFactoryMockSys{})
 	if err := f.firewall.setupForwarding("tun0", "eth0", true, true); err == nil || !strings.Contains(err.Error(), "failed to setup client-to-client forwarding rule") {
@@ -1300,8 +1300,8 @@ func TestEnableForwarding_ForwardingTunToTun_Error(t *testing.T) {
 func TestClearForwarding_DisableForwardingFromDevToTun_Error(t *testing.T) {
 	iptErr := &TunFactoryMockIPTErr{
 		TunFactoryMockIPT: &TunFactoryMockIPT{},
-		errTag:                  "DisableForwardingFromDevToTun",
-		err:                     errors.New("dtd_err"),
+		errTag:            "DisableForwardingFromDevToTun",
+		err:               errors.New("dtd_err"),
 	}
 	f := newFactory(&TunFactoryMockIP{}, iptErr, nil, &TunFactoryMockIOCTL{}, &TunFactoryMockSys{})
 	if err := f.firewall.clearForwarding("tun0", "eth0", true, true); err == nil || !strings.Contains(err.Error(), "failed to execute iptables command") {
@@ -1312,8 +1312,8 @@ func TestClearForwarding_DisableForwardingFromDevToTun_Error(t *testing.T) {
 func TestClearForwarding_DisableForwardingTunToTun_Error(t *testing.T) {
 	iptErr := &TunFactoryMockIPTErr{
 		TunFactoryMockIPT: &TunFactoryMockIPT{},
-		errTag:                  "DisableForwardingTunToTun",
-		err:                     errors.New("dtt_err"),
+		errTag:            "DisableForwardingTunToTun",
+		err:               errors.New("dtt_err"),
 	}
 	f := newFactory(&TunFactoryMockIP{}, iptErr, nil, &TunFactoryMockIOCTL{}, &TunFactoryMockSys{})
 	if err := f.firewall.clearForwarding("tun0", "eth0", true, true); err == nil || !strings.Contains(err.Error(), "failed to execute iptables command") {

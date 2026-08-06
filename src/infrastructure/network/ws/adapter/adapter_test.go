@@ -332,8 +332,8 @@ func TestAdapter_Read_FromExistingReader_ErrorMapped(t *testing.T) {
 	a := NewAdapter(context.Background(), &AdapterMockConn{}, r, nil, nil, time.Time{}, time.Time{})
 	buf := make([]byte, 8)
 	n, err := a.Read(buf)
-	if n != 1 {
-		t.Fatalf("expected n=1, got %d", n)
+	if n != 1 || err != nil {
+		t.Fatalf("expected (n=1, err=nil), got (%d, %v)", n, err)
 	}
 	// After first call, second Read hits errAtEnd through adapter path:
 	n, err = a.Read(buf)

@@ -87,11 +87,11 @@ func (c *Configuration) applyDefaults(
 	}
 	// Derive server IPv4 from subnet if not already set.
 	if to.IPv4Subnet.IsValid() && !to.IPv4.IsValid() {
-		_ = to.Addressing.DeriveIP(0)
+		_ = to.DeriveIP(0)
 	}
 	// IPv6 is opt-in: admin sets IPv6Subnet, server IP is derived automatically.
 	if to.IPv6Subnet.IsValid() && !to.IPv6.IsValid() {
-		_ = to.Addressing.DeriveIP(0)
+		_ = to.DeriveIP(0)
 	}
 	if to.Port == 0 {
 		to.Port = from.Port
@@ -124,7 +124,7 @@ func (c *Configuration) defaultSettings(
 		DialTimeoutMs: 5000,
 	}
 	// Derive server IP from subnet.
-	_ = s.Addressing.DeriveIP(0)
+	_ = s.DeriveIP(0)
 	return s
 }
 

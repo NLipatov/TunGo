@@ -409,9 +409,6 @@ func TestAnsiTextStyle_Width(t *testing.T) {
 	if !strings.Contains(rendered, "hi") {
 		t.Fatalf("expected rendered text to contain 'hi', got %q", rendered)
 	}
-	if len(rendered) < 10 {
-		// The padding should make it wider
-	}
 }
 
 func TestAnsiTextStyle_RenderWithWidthPadsOrTruncates(t *testing.T) {

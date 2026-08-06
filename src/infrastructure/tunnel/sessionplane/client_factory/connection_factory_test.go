@@ -898,8 +898,8 @@ func TestConnectionFactoryUnit_establishSecuredConnection_Success(t *testing.T) 
 	}
 
 	clientConn, serverConn := net.Pipe()
-	defer clientConn.Close()
-	defer serverConn.Close()
+	defer func() { _ = clientConn.Close() }()
+	defer func() { _ = serverConn.Close() }()
 
 	clientAdapter, err := adapters.NewLengthPrefixFramingAdapter(clientConn, framelimit.Cap(2048))
 	if err != nil {

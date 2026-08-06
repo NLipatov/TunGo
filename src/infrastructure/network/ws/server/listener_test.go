@@ -83,6 +83,7 @@ func TestNewListener_Guards(t *testing.T) {
 	s := newMockServer()
 	q := make(chan net.Conn, 1)
 
+	//nolint:staticcheck // This test verifies that a nil context is rejected.
 	if _, err := NewListener(nil, s, q); err == nil || err.Error() != "ctx must not be nil" {
 		t.Fatalf("expected ctx guard error, got %v", err)
 	}

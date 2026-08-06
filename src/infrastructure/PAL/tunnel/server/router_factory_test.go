@@ -2,7 +2,6 @@ package server_test
 
 import (
 	"testing"
-	"tungo/application/network/routing"
 	tunnelServer "tungo/infrastructure/PAL/tunnel/server"
 )
 
@@ -16,8 +15,5 @@ func TestTrafficRouterFactory_CreateRouter(t *testing.T) {
 	router := f.CreateRouter(dummyWorker{})
 	if router == nil {
 		t.Fatal("expected non-nil router")
-	}
-	if _, ok := router.(routing.Router); !ok {
-		t.Errorf("expected application.Router, got %T", router)
 	}
 }

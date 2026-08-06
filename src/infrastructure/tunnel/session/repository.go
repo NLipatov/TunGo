@@ -249,8 +249,7 @@ func (s *DefaultRepository) TerminateByPubKey(pubKey []byte) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	key := string(pubKey)
-	peers := s.pubKeyToPeers[key]
+	peers := s.pubKeyToPeers[string(pubKey)]
 	if len(peers) == 0 {
 		return 0
 	}

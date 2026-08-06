@@ -23,8 +23,8 @@ func TestDefaultKeyDeriver_GenerateX25519KeyPair_Success(t *testing.T) {
 	if len(pub) != 32 {
 		t.Fatalf("expected public key length 32, got %d", len(pub))
 	}
-	if len(priv) != 32 {
-		t.Fatalf("expected private key length 32, got %d", len(priv))
+	if priv == ([32]byte{}) {
+		t.Fatal("expected non-zero private key")
 	}
 }
 

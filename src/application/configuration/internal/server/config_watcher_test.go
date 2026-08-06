@@ -80,12 +80,6 @@ func (m *mockConfigManager) setConfig(c *Configuration) {
 	m.config = c
 }
 
-func (m *mockConfigManager) setConfigError(err error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.configErr = err
-}
-
 func (m *mockConfigManager) invalidateCount() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()

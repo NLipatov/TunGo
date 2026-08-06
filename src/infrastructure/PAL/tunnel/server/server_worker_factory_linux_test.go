@@ -213,6 +213,7 @@ func Test_CreateWorker_WS_ListenerInitError_ClosesTCPListener(t *testing.T) {
 	}
 
 	// nil ctx makes ws listener creation fail; underlying TCP listener must be closed.
+	//nolint:staticcheck // This test verifies nil-context cleanup.
 	if _, err := factory.CreateWorker(nil, nopReadWriteCloser{}, ws); err == nil {
 		t.Fatal("expected ws listener init error for nil context")
 	}

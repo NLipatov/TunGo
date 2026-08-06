@@ -66,7 +66,7 @@ func (c *Configuration) Validate() error {
 	}
 	if active.Port < 1 || active.Port > 65535 {
 		// WSS: zero means "use default 443" in connection factory.
-		if !(c.Protocol == settings.WSS && active.Port == 0) {
+		if c.Protocol != settings.WSS || active.Port != 0 {
 			return fmt.Errorf("active settings: invalid Port %d", active.Port)
 		}
 	}
@@ -85,7 +85,7 @@ func (c *Configuration) Validate() error {
 // Resolve derives IPv4/IPv6 addresses for all protocol settings from subnets + ClientID.
 func (c *Configuration) Resolve() error {
 	for _, s := range []*settings.Settings{&c.TCPSettings, &c.UDPSettings, &c.WSSettings} {
-		if err := s.Addressing.DeriveIP(c.ClientID); err != nil {
+		if err := s.DeriveIP(c.ClientID); err != nil {
 			return err
 		}
 	}
@@ -99,7 +99,7 @@ func (c *Configuration) ResolveActive() error {
 	if err != nil {
 		return err
 	}
-	return active.Addressing.DeriveIP(c.ClientID)
+	return active.DeriveIP(c.ClientID)
 }
 
 func (c *Configuration) ActiveSettings() (settings.Settings, error) {

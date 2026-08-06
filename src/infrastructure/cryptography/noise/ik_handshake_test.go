@@ -8,11 +8,35 @@ import (
 	"testing"
 
 	appConfiguration "tungo/application/configuration"
+	"tungo/application/network/connection"
 	framelimit "tungo/domain/network/ip/frame_limit"
 	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/network/tcp/adapters"
 	"tungo/infrastructure/settings"
 )
+
+func closeTestConn(conn net.Conn) {
+	_ = conn.Close()
+}
+
+func completeTestHandshake(
+	t *testing.T,
+	server, client connection.Handshake,
+	serverTransport, clientTransport connection.Transport,
+) {
+	t.Helper()
+	serverErr := make(chan error, 1)
+	go func() {
+		_, err := server.ServerSideHandshake(serverTransport)
+		serverErr <- err
+	}()
+	if err := client.ClientSideHandshake(clientTransport); err != nil {
+		t.Fatalf("client handshake: %v", err)
+	}
+	if err := <-serverErr; err != nil {
+		t.Fatalf("server handshake: %v", err)
+	}
+}
 
 func TestIKHandshake_Success(t *testing.T) {
 	// Generate server and client keypairs
@@ -55,8 +79,8 @@ func TestIKHandshake_Success(t *testing.T) {
 
 	// Connected pair with framing
 	clientConn, serverConn := net.Pipe()
-	defer clientConn.Close()
-	defer serverConn.Close()
+	defer closeTestConn(clientConn)
+	defer closeTestConn(serverConn)
 
 	clientAdapter, _ := adapters.NewLengthPrefixFramingAdapter(clientConn, framelimit.Cap(2048))
 	serverAdapter, _ := adapters.NewLengthPrefixFramingAdapter(serverConn, framelimit.Cap(2048))
@@ -141,8 +165,8 @@ func TestIKHandshake_UnknownClient(t *testing.T) {
 	)
 
 	clientConn, serverConn := net.Pipe()
-	defer clientConn.Close()
-	defer serverConn.Close()
+	defer closeTestConn(clientConn)
+	defer closeTestConn(serverConn)
 
 	clientAdapter, _ := adapters.NewLengthPrefixFramingAdapter(clientConn, framelimit.Cap(2048))
 	serverAdapter, _ := adapters.NewLengthPrefixFramingAdapter(serverConn, framelimit.Cap(2048))
@@ -192,8 +216,8 @@ func TestIKHandshake_DisabledClient(t *testing.T) {
 	)
 
 	clientConn, serverConn := net.Pipe()
-	defer clientConn.Close()
-	defer serverConn.Close()
+	defer closeTestConn(clientConn)
+	defer closeTestConn(serverConn)
 
 	clientAdapter, _ := adapters.NewLengthPrefixFramingAdapter(clientConn, framelimit.Cap(2048))
 	serverAdapter, _ := adapters.NewLengthPrefixFramingAdapter(serverConn, framelimit.Cap(2048))
@@ -243,8 +267,8 @@ func TestIKHandshake_KeyMismatch(t *testing.T) {
 	)
 
 	clientConn, serverConn := net.Pipe()
-	defer clientConn.Close()
-	defer serverConn.Close()
+	defer closeTestConn(clientConn)
+	defer closeTestConn(serverConn)
 
 	clientAdapter, _ := adapters.NewLengthPrefixFramingAdapter(clientConn, framelimit.Cap(2048))
 	serverAdapter, _ := adapters.NewLengthPrefixFramingAdapter(serverConn, framelimit.Cap(2048))
@@ -256,12 +280,12 @@ func TestIKHandshake_KeyMismatch(t *testing.T) {
 		_, err := serverHS.ServerSideHandshake(serverAdapter)
 		srvCh <- err
 		// Close server's side when it's done to unblock client
-		serverConn.Close()
+		closeTestConn(serverConn)
 	}()
 	go func() {
 		cliCh <- clientHS.ClientSideHandshake(clientAdapter)
 		// Close client's side when it's done to unblock server
-		clientConn.Close()
+		closeTestConn(clientConn)
 	}()
 
 	// Wait for both with a timeout
@@ -313,16 +337,10 @@ func TestIKHandshake_FreshEphemeralPerHandshake(t *testing.T) {
 		clientAdapter, _ := adapters.NewLengthPrefixFramingAdapter(clientConn, framelimit.Cap(2048))
 		serverAdapter, _ := adapters.NewLengthPrefixFramingAdapter(serverConn, framelimit.Cap(2048))
 
-		done := make(chan struct{})
-		go func() {
-			serverHS.ServerSideHandshake(serverAdapter)
-			close(done)
-		}()
-		clientHS.ClientSideHandshake(clientAdapter)
-		<-done
+		completeTestHandshake(t, serverHS, clientHS, serverAdapter, clientAdapter)
 
-		clientConn.Close()
-		serverConn.Close()
+		closeTestConn(clientConn)
+		closeTestConn(serverConn)
 
 		if i == 0 {
 			sessionKey1 = make([]byte, len(clientHS.clientKey))
@@ -346,7 +364,7 @@ func TestIKHandshake_MissingClientKey(t *testing.T) {
 
 	// Create a mock transport
 	clientConn, _ := net.Pipe()
-	defer clientConn.Close()
+	defer closeTestConn(clientConn)
 	clientAdapter, _ := adapters.NewLengthPrefixFramingAdapter(clientConn, framelimit.Cap(2048))
 
 	err := clientHS.ClientSideHandshake(clientAdapter)
@@ -362,7 +380,7 @@ func TestIKHandshake_MissingServerKey(t *testing.T) {
 	clientHS := NewIKHandshakeClient(clientKP.Public, clientKP.Private, nil)
 
 	clientConn, _ := net.Pipe()
-	defer clientConn.Close()
+	defer closeTestConn(clientConn)
 	clientAdapter, _ := adapters.NewLengthPrefixFramingAdapter(clientConn, framelimit.Cap(2048))
 
 	err := clientHS.ClientSideHandshake(clientAdapter)
@@ -381,7 +399,7 @@ func TestIKHandshake_ServerMissingAllowedPeers(t *testing.T) {
 	)
 
 	serverConn, _ := net.Pipe()
-	defer serverConn.Close()
+	defer closeTestConn(serverConn)
 	serverAdapter, _ := adapters.NewLengthPrefixFramingAdapter(serverConn, framelimit.Cap(2048))
 
 	_, err := serverHS.ServerSideHandshake(serverAdapter)
@@ -407,8 +425,8 @@ func TestIKHandshake_InvalidMAC1(t *testing.T) {
 
 	// Create a transport that sends garbage
 	clientConn, serverConn := net.Pipe()
-	defer clientConn.Close()
-	defer serverConn.Close()
+	defer closeTestConn(clientConn)
+	defer closeTestConn(serverConn)
 
 	serverAdapter, _ := adapters.NewLengthPrefixFramingAdapter(serverConn, framelimit.Cap(2048))
 	clientAdapter, _ := adapters.NewLengthPrefixFramingAdapter(clientConn, framelimit.Cap(2048))
@@ -418,7 +436,7 @@ func TestIKHandshake_InvalidMAC1(t *testing.T) {
 		garbage := make([]byte, MinTotalSizeWithVersion)
 		garbage[0] = ProtocolVersion // Valid version prefix
 		// Rest is zeros - invalid MAC1
-		clientAdapter.Write(garbage)
+		_, _ = clientAdapter.Write(garbage)
 	}()
 
 	_, err := serverHS.ServerSideHandshake(serverAdapter)
@@ -547,19 +565,13 @@ func TestIKHandshake_AllowedIPsInResult(t *testing.T) {
 	clientHS := NewIKHandshakeClient(clientKP.Public, clientKP.Private, serverKP.Public)
 
 	clientConn, serverConn := net.Pipe()
-	defer clientConn.Close()
-	defer serverConn.Close()
+	defer closeTestConn(clientConn)
+	defer closeTestConn(serverConn)
 
 	clientAdapter, _ := adapters.NewLengthPrefixFramingAdapter(clientConn, framelimit.Cap(2048))
 	serverAdapter, _ := adapters.NewLengthPrefixFramingAdapter(serverConn, framelimit.Cap(2048))
 
-	done := make(chan struct{})
-	go func() {
-		serverHS.ServerSideHandshake(serverAdapter)
-		close(done)
-	}()
-	clientHS.ClientSideHandshake(clientAdapter)
-	<-done
+	completeTestHandshake(t, serverHS, clientHS, serverAdapter, clientAdapter)
 
 	result := serverHS.Result()
 	if result == nil {
@@ -597,16 +609,10 @@ func TestSecurity_HandshakeReplayMsg1(t *testing.T) {
 	clientAdapter1, _ := adapters.NewLengthPrefixFramingAdapter(clientConn1, framelimit.Cap(2048))
 	serverAdapter1, _ := adapters.NewLengthPrefixFramingAdapter(serverConn1, framelimit.Cap(2048))
 
-	done1 := make(chan struct{})
-	go func() {
-		serverHS1.ServerSideHandshake(serverAdapter1)
-		close(done1)
-	}()
-	clientHS1.ClientSideHandshake(clientAdapter1)
-	<-done1
+	completeTestHandshake(t, serverHS1, clientHS1, serverAdapter1, clientAdapter1)
 
-	clientConn1.Close()
-	serverConn1.Close()
+	closeTestConn(clientConn1)
+	closeTestConn(serverConn1)
 
 	sessionKey1 := make([]byte, len(clientHS1.clientKey))
 	copy(sessionKey1, clientHS1.clientKey)
@@ -623,16 +629,10 @@ func TestSecurity_HandshakeReplayMsg1(t *testing.T) {
 	clientAdapter2, _ := adapters.NewLengthPrefixFramingAdapter(clientConn2, framelimit.Cap(2048))
 	serverAdapter2, _ := adapters.NewLengthPrefixFramingAdapter(serverConn2, framelimit.Cap(2048))
 
-	done2 := make(chan struct{})
-	go func() {
-		serverHS2.ServerSideHandshake(serverAdapter2)
-		close(done2)
-	}()
-	clientHS2.ClientSideHandshake(clientAdapter2)
-	<-done2
+	completeTestHandshake(t, serverHS2, clientHS2, serverAdapter2, clientAdapter2)
 
-	clientConn2.Close()
-	serverConn2.Close()
+	closeTestConn(clientConn2)
+	closeTestConn(serverConn2)
 
 	sessionKey2 := make([]byte, len(clientHS2.clientKey))
 	copy(sessionKey2, clientHS2.clientKey)
@@ -668,8 +668,8 @@ func TestSecurity_RejectUnknownProtocolVersions(t *testing.T) {
 		)
 
 		clientConn, serverConn := net.Pipe()
-		defer clientConn.Close()
-		defer serverConn.Close()
+		defer closeTestConn(clientConn)
+		defer closeTestConn(serverConn)
 
 		clientAdapter, _ := adapters.NewLengthPrefixFramingAdapter(clientConn, framelimit.Cap(2048))
 		serverAdapter, _ := adapters.NewLengthPrefixFramingAdapter(serverConn, framelimit.Cap(2048))
@@ -683,7 +683,7 @@ func TestSecurity_RejectUnknownProtocolVersions(t *testing.T) {
 			// Send message with version=0 (reserved)
 			msg := make([]byte, MinTotalSizeWithVersion)
 			msg[0] = 0 // Version 0 = reserved
-			clientAdapter.Write(msg)
+			_, _ = clientAdapter.Write(msg)
 		}()
 
 		err := <-srvCh
@@ -700,8 +700,8 @@ func TestSecurity_RejectUnknownProtocolVersions(t *testing.T) {
 		)
 
 		clientConn, serverConn := net.Pipe()
-		defer clientConn.Close()
-		defer serverConn.Close()
+		defer closeTestConn(clientConn)
+		defer closeTestConn(serverConn)
 
 		clientAdapter, _ := adapters.NewLengthPrefixFramingAdapter(clientConn, framelimit.Cap(2048))
 		serverAdapter, _ := adapters.NewLengthPrefixFramingAdapter(serverConn, framelimit.Cap(2048))
@@ -715,7 +715,7 @@ func TestSecurity_RejectUnknownProtocolVersions(t *testing.T) {
 			// Send message with future version
 			msg := make([]byte, MinTotalSizeWithVersion)
 			msg[0] = 2 // Version 2 = future/reserved
-			clientAdapter.Write(msg)
+			_, _ = clientAdapter.Write(msg)
 		}()
 
 		err := <-srvCh
@@ -732,8 +732,8 @@ func TestSecurity_RejectUnknownProtocolVersions(t *testing.T) {
 		)
 
 		clientConn, serverConn := net.Pipe()
-		defer clientConn.Close()
-		defer serverConn.Close()
+		defer closeTestConn(clientConn)
+		defer closeTestConn(serverConn)
 
 		clientAdapter, _ := adapters.NewLengthPrefixFramingAdapter(clientConn, framelimit.Cap(2048))
 		serverAdapter, _ := adapters.NewLengthPrefixFramingAdapter(serverConn, framelimit.Cap(2048))
@@ -746,7 +746,7 @@ func TestSecurity_RejectUnknownProtocolVersions(t *testing.T) {
 		go func() {
 			// Send message that's too short
 			msg := make([]byte, 10)
-			clientAdapter.Write(msg)
+			_, _ = clientAdapter.Write(msg)
 		}()
 
 		err := <-srvCh
@@ -783,19 +783,13 @@ func TestSecurity_SpoofedSourceIP(t *testing.T) {
 	clientHS := NewIKHandshakeClient(clientKP.Public, clientKP.Private, serverKP.Public)
 
 	clientConn, serverConn := net.Pipe()
-	defer clientConn.Close()
-	defer serverConn.Close()
+	defer closeTestConn(clientConn)
+	defer closeTestConn(serverConn)
 
 	clientAdapter, _ := adapters.NewLengthPrefixFramingAdapter(clientConn, framelimit.Cap(2048))
 	serverAdapter, _ := adapters.NewLengthPrefixFramingAdapter(serverConn, framelimit.Cap(2048))
 
-	done := make(chan struct{})
-	go func() {
-		serverHS.ServerSideHandshake(serverAdapter)
-		close(done)
-	}()
-	clientHS.ClientSideHandshake(clientAdapter)
-	<-done
+	completeTestHandshake(t, serverHS, clientHS, serverAdapter, clientAdapter)
 
 	result := serverHS.Result()
 	if result == nil {
@@ -960,7 +954,7 @@ func TestIKHandshake_ServerMissingKeys(t *testing.T) {
 	// Server with nil keys
 	serverHS := NewIKHandshakeServer(nil, nil, NewAllowedPeersLookup(nil), nil, nil)
 	serverConn, _ := net.Pipe()
-	defer serverConn.Close()
+	defer closeTestConn(serverConn)
 	serverAdapter, _ := adapters.NewLengthPrefixFramingAdapter(serverConn, framelimit.Cap(2048))
 
 	_, err := serverHS.ServerSideHandshake(serverAdapter)
@@ -1020,8 +1014,8 @@ func TestSecurity_MAC1VerifiedBeforeAllocation(t *testing.T) {
 
 	// Send a message with invalid MAC1 - should be rejected immediately
 	clientConn, serverConn := net.Pipe()
-	defer clientConn.Close()
-	defer serverConn.Close()
+	defer closeTestConn(clientConn)
+	defer closeTestConn(serverConn)
 
 	serverAdapter, _ := adapters.NewLengthPrefixFramingAdapter(serverConn, framelimit.Cap(2048))
 	clientAdapter, _ := adapters.NewLengthPrefixFramingAdapter(clientConn, framelimit.Cap(2048))
@@ -1040,7 +1034,7 @@ func TestSecurity_MAC1VerifiedBeforeAllocation(t *testing.T) {
 
 	// Send the fake message
 	go func() {
-		clientAdapter.Write(fakeMsg)
+		_, _ = clientAdapter.Write(fakeMsg)
 	}()
 
 	err := <-errCh

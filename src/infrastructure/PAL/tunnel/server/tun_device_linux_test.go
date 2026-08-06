@@ -51,7 +51,7 @@ func TestTunDeviceManager_Create(t *testing.T) {
 		if f == nil {
 			t.Fatal("expected non-nil file")
 		}
-		f.Close()
+		_ = f.Close()
 
 		log := ip.log.String()
 		if !strings.Contains(log, "add;") {
@@ -80,7 +80,7 @@ func TestTunDeviceManager_Create(t *testing.T) {
 		if f == nil {
 			t.Fatal("expected non-nil file")
 		}
-		f.Close()
+		_ = f.Close()
 
 		// Should have two addr calls (IPv4 + IPv6).
 		if count := strings.Count(ip.log.String(), "addr;"); count != 2 {
@@ -100,7 +100,7 @@ func TestTunDeviceManager_Create(t *testing.T) {
 		if f == nil {
 			t.Fatal("expected non-nil file")
 		}
-		f.Close()
+		_ = f.Close()
 
 		if count := strings.Count(ip.log.String(), "addr;"); count != 1 {
 			t.Errorf("expected 1 AddrAddDev call, got %d", count)
@@ -124,9 +124,9 @@ func TestTunDeviceManager_Create(t *testing.T) {
 			t.Errorf("unexpected error message: %v", err)
 		}
 		// Expect exactly one delete: initial cleanup only (no rollback delete).
-		count := strings.Count(ip.TunFactoryMockIP.log.String(), "del;")
+		count := strings.Count(ip.log.String(), "del;")
 		if count != 1 {
-			t.Errorf("expected exactly one delete call, got %d, log: %s", count, ip.TunFactoryMockIP.log.String())
+			t.Errorf("expected exactly one delete call, got %d, log: %s", count, ip.log.String())
 		}
 	})
 
@@ -148,7 +148,7 @@ func TestTunDeviceManager_Create(t *testing.T) {
 		}
 		// After TunTapAddDevTun succeeds, created=true; rollback should call LinkDelete.
 		// Log has: del (initial cleanup) + add + del (rollback) = 2 del calls.
-		log := ip.TunFactoryMockIP.log.String()
+		log := ip.log.String()
 		if count := strings.Count(log, "del;"); count != 2 {
 			t.Errorf("expected exactly 2 delete calls (initial cleanup + rollback), got %d, log: %s", count, log)
 		}
@@ -170,7 +170,7 @@ func TestTunDeviceManager_Create(t *testing.T) {
 		if !strings.Contains(err.Error(), "could not set mtu on tuntap dev") {
 			t.Errorf("unexpected error message: %v", err)
 		}
-		log := ip.TunFactoryMockIP.log.String()
+		log := ip.log.String()
 		if count := strings.Count(log, "del;"); count != 2 {
 			t.Errorf("expected exactly 2 delete calls (initial cleanup + rollback), got %d, log: %s", count, log)
 		}
@@ -192,7 +192,7 @@ func TestTunDeviceManager_Create(t *testing.T) {
 		if !strings.Contains(err.Error(), "failed to assign IPv4 to TUN") {
 			t.Errorf("unexpected error message: %v", err)
 		}
-		log := ip.TunFactoryMockIP.log.String()
+		log := ip.log.String()
 		if count := strings.Count(log, "del;"); count != 2 {
 			t.Errorf("expected exactly 2 delete calls (initial cleanup + rollback), got %d, log: %s", count, log)
 		}
@@ -214,7 +214,7 @@ func TestTunDeviceManager_Create(t *testing.T) {
 		if !strings.Contains(err.Error(), "failed to assign IPv6 to TUN") {
 			t.Errorf("unexpected error message: %v", err)
 		}
-		log := ip.TunFactoryMockIP.log.String()
+		log := ip.log.String()
 		if count := strings.Count(log, "del;"); count != 2 {
 			t.Errorf("expected exactly 2 delete calls (initial cleanup + rollback), got %d, log: %s", count, log)
 		}
@@ -323,7 +323,7 @@ func TestTunDeviceManager_DetectName(t *testing.T) {
 		if fErr != nil {
 			t.Fatalf("failed to open %s: %v", os.DevNull, fErr)
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 
 		name, err := dm.detectName(f)
 		if err != nil {
@@ -343,7 +343,7 @@ func TestTunDeviceManager_DetectName(t *testing.T) {
 		if fErr != nil {
 			t.Fatalf("failed to open %s: %v", os.DevNull, fErr)
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 
 		_, err := dm.detectName(f)
 		if !errors.Is(err, injErr) {

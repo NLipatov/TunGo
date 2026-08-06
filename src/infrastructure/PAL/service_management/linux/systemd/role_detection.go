@@ -54,12 +54,8 @@ func normalizeExecStartToken(token string) string {
 	normalized := strings.TrimSpace(token)
 	normalized = strings.Trim(normalized, `"'`)
 	normalized = strings.Trim(normalized, ",;")
-	if strings.HasPrefix(normalized, "path=") {
-		normalized = strings.TrimPrefix(normalized, "path=")
-	}
-	if strings.HasPrefix(normalized, "argv[]=") {
-		normalized = strings.TrimPrefix(normalized, "argv[]=")
-	}
+	normalized = strings.TrimPrefix(normalized, "path=")
+	normalized = strings.TrimPrefix(normalized, "argv[]=")
 	normalized = strings.TrimSpace(normalized)
 	normalized = strings.Trim(normalized, `"'`)
 	normalized = strings.Trim(normalized, ",;")
