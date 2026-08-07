@@ -1268,9 +1268,10 @@ func TestDialWSWithFallback_IPv6Success(t *testing.T) {
 			Server: mustHost("127.0.0.1").WithIPv6(netip.MustParseAddr("::1")),
 			Port:   portInt,
 		},
+		Protocol: settings.WS,
 	}
 
-	adapter, dialErr := f.dialWSWithFallback(context.Background(), context.Background(), s, "ws")
+	adapter, dialErr := f.dialWSWithFallback(context.Background(), context.Background(), s)
 	if dialErr != nil {
 		t.Fatalf("unexpected error: %v", dialErr)
 	}

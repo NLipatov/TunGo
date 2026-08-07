@@ -64,10 +64,8 @@ func (f *ConnectionFactory) dial(
 		return f.dialWithFallback(establishCtx, s, f.dialUDP)
 	case settings.TCP:
 		return f.dialWithFallback(establishCtx, s, f.dialTCP)
-	case settings.WS:
-		return f.dialWSWithFallback(establishCtx, connCtx, s, "ws")
-	case settings.WSS:
-		return f.dialWSWithFallback(establishCtx, connCtx, s, "wss")
+	case settings.WS, settings.WSS:
+		return f.dialWSWithFallback(establishCtx, connCtx, s)
 	default:
 		return nil, fmt.Errorf("unsupported protocol: %v", s.Protocol)
 	}
@@ -220,8 +218,12 @@ func (f *ConnectionFactory) dialWithFallback(
 func (f *ConnectionFactory) dialWSWithFallback(
 	establishCtx, connCtx context.Context,
 	s settings.Settings,
-	scheme string,
 ) (connection.Transport, error) {
+	scheme := "ws"
+	if s.Protocol == settings.WSS {
+		scheme = "wss"
+	}
+
 	port := s.Port
 	if scheme == "wss" && port == 0 {
 		port = 443
