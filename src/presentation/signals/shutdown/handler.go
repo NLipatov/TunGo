@@ -18,8 +18,6 @@ type Handler struct {
 	// signalChan - channel of signals that handler is supposed to handle (shutdown signals in this case)
 	signalChan chan os.Signal
 	once       sync.Once
-	// signalProvider is used to provide shutdown signal set for current platform.
-	signalProvider palSignal.Provider
 	// notifier used to subscribe to OS Signal and to unsubscribe from it
 	notifier signals.Notifier
 }
@@ -27,16 +25,14 @@ type Handler struct {
 func NewHandler(
 	appCtx context.Context,
 	appCtxCancel context.CancelFunc,
-	signalProvider palSignal.Provider,
 	notifier signals.Notifier,
 ) signals.Handler {
 	return &Handler{
 		appCtx:       appCtx,
 		appCtxCancel: appCtxCancel,
 		// Note: 1-sized buffer used as os/signal uses non-blocking sends and may drop signals if unbuffered.
-		signalChan:     make(chan os.Signal, 1),
-		signalProvider: signalProvider,
-		notifier:       notifier,
+		signalChan: make(chan os.Signal, 1),
+		notifier:   notifier,
 	}
 }
 
@@ -62,7 +58,7 @@ func (h *Handler) listenAndHandleShutdownSignals() {
 }
 
 func (h *Handler) subscribe() {
-	h.notifier.Notify(h.signalChan, h.signalProvider.ShutdownSignals()...)
+	h.notifier.Notify(h.signalChan, palSignal.ShutdownSignals[:]...)
 }
 
 func (h *Handler) unsubscribe() {

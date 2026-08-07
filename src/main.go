@@ -13,7 +13,6 @@ import (
 	"tungo/domain/app"
 	"tungo/infrastructure/PAL/exec_commander"
 	"tungo/infrastructure/PAL/service_management/linux/systemd"
-	"tungo/infrastructure/PAL/signal"
 	"tungo/infrastructure/logging"
 	"tungo/infrastructure/telemetry/trafficstats"
 	"tungo/presentation/elevation"
@@ -34,7 +33,6 @@ func main() {
 	shutdownSignalHandler := shutdown.NewHandler(
 		ctx,
 		cancel,
-		signal.NewDefaultProvider(),
 		shutdown.NewNotifier(),
 	)
 	shutdownSignalHandler.Handle()

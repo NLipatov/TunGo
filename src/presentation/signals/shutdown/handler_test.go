@@ -7,6 +7,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	palSignal "tungo/infrastructure/PAL/signal"
 )
 
 //
@@ -20,6 +22,7 @@ type ShutdownHandlerMockNotifier struct {
 	notifyChan    chan<- os.Signal
 	stopChan      chan<- os.Signal
 	notifySignals []os.Signal
+	stopped       chan struct{}
 }
 
 func (m *ShutdownHandlerMockNotifier) Notify(c chan<- os.Signal, sig ...os.Signal) {
@@ -31,15 +34,7 @@ func (m *ShutdownHandlerMockNotifier) Notify(c chan<- os.Signal, sig ...os.Signa
 func (m *ShutdownHandlerMockNotifier) Stop(c chan<- os.Signal) {
 	atomic.AddInt32(&m.stopCalled, 1)
 	m.stopChan = c
-}
-
-// ShutdownHandlerMockProvider mocks palSignal.Provider.
-type ShutdownHandlerMockProvider struct {
-	signals []os.Signal
-}
-
-func (p *ShutdownHandlerMockProvider) ShutdownSignals() []os.Signal {
-	return p.signals
+	close(m.stopped)
 }
 
 //
@@ -104,9 +99,8 @@ func TestShutdownHandler_Handle_TableDriven(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			notifier := &ShutdownHandlerMockNotifier{}
-			provider := &ShutdownHandlerMockProvider{
-				signals: []os.Signal{os.Interrupt},
+			notifier := &ShutdownHandlerMockNotifier{
+				stopped: make(chan struct{}),
 			}
 
 			ctx, baseCancel := context.WithCancel(context.Background())
@@ -117,7 +111,7 @@ func TestShutdownHandler_Handle_TableDriven(t *testing.T) {
 				baseCancel()
 			}
 
-			handler := NewHandler(ctx, wrappedCancel, provider, notifier)
+			handler := NewHandler(ctx, wrappedCancel, notifier)
 
 			// First Handle call must register subscription and start goroutine.
 			handler.Handle()
@@ -136,16 +130,23 @@ func TestShutdownHandler_Handle_TableDriven(t *testing.T) {
 				t.Fatalf("Notify must set notifyChan")
 			}
 
-			// Verify that signals from provider are passed to notifier.
-			if len(notifier.notifySignals) != 1 || notifier.notifySignals[0] != os.Interrupt {
-				t.Fatalf("Notify must be called with expected signals, got %#v", notifier.notifySignals)
+			if len(notifier.notifySignals) != len(palSignal.ShutdownSignals) {
+				t.Fatalf("Notify signal count = %d, want %d", len(notifier.notifySignals), len(palSignal.ShutdownSignals))
+			}
+			for i, want := range palSignal.ShutdownSignals {
+				if notifier.notifySignals[i] != want {
+					t.Fatalf("Notify signal %d = %v, want %v", i, notifier.notifySignals[i], want)
+				}
 			}
 
 			// Trigger scenario-specific behavior (signal or external context cancel).
 			tt.trigger(t, notifier, baseCancel)
 
-			// Give goroutine some time to react.
-			time.Sleep(30 * time.Millisecond)
+			select {
+			case <-notifier.stopped:
+			case <-time.After(time.Second):
+				t.Fatal("handler did not stop")
+			}
 
 			// Check how many times appCtxCancel (wrappedCancel) was called.
 			if atomic.LoadInt32(&cancelCalled) != tt.expectCancelCalls {
