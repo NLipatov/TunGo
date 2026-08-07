@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"os"
 	"sync"
-	palSignal "tungo/infrastructure/PAL/signal"
 	"tungo/presentation/signals"
 )
 
@@ -58,7 +57,7 @@ func (h *Handler) listenAndHandleShutdownSignals() {
 }
 
 func (h *Handler) subscribe() {
-	h.notifier.Notify(h.signalChan, palSignal.ShutdownSignals[:]...)
+	h.notifier.Notify(h.signalChan, shutdownSignals[:]...)
 }
 
 func (h *Handler) unsubscribe() {

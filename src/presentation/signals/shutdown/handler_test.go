@@ -7,8 +7,6 @@ import (
 	"syscall"
 	"testing"
 	"time"
-
-	palSignal "tungo/infrastructure/PAL/signal"
 )
 
 //
@@ -130,10 +128,10 @@ func TestShutdownHandler_Handle_TableDriven(t *testing.T) {
 				t.Fatalf("Notify must set notifyChan")
 			}
 
-			if len(notifier.notifySignals) != len(palSignal.ShutdownSignals) {
-				t.Fatalf("Notify signal count = %d, want %d", len(notifier.notifySignals), len(palSignal.ShutdownSignals))
+			if len(notifier.notifySignals) != len(shutdownSignals) {
+				t.Fatalf("Notify signal count = %d, want %d", len(notifier.notifySignals), len(shutdownSignals))
 			}
-			for i, want := range palSignal.ShutdownSignals {
+			for i, want := range shutdownSignals {
 				if notifier.notifySignals[i] != want {
 					t.Fatalf("Notify signal %d = %v, want %v", i, notifier.notifySignals[i], want)
 				}
