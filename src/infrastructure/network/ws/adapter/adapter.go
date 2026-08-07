@@ -6,7 +6,6 @@ import (
 	"io"
 	"net"
 	"time"
-	"tungo/domain/network"
 	"tungo/infrastructure/network/ws/contracts"
 
 	"github.com/coder/websocket"
@@ -222,10 +221,6 @@ func (a *Adapter) mapReadErr(err error) error {
 		// other close codes: return as-is for caller to diagnose
 		return err
 	}
-	// Translate context deadline into net.Error timeout.
-	if errors.Is(err, context.DeadlineExceeded) {
-		return network.NewErrTimeout(err)
-	}
 	return err
 }
 
@@ -237,9 +232,6 @@ func (a *Adapter) mapWriteErr(err error) error {
 	if _, ok := errors.AsType[*websocket.CloseError](err); ok {
 		// For writes after close, most net.Conn impls return net.ErrClosed.
 		return net.ErrClosed
-	}
-	if errors.Is(err, context.DeadlineExceeded) {
-		return network.NewErrTimeout(err)
 	}
 	return err
 }

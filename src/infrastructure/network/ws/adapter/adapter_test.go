@@ -9,7 +9,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-	"tungo/domain/network"
 
 	"github.com/coder/websocket"
 )
@@ -577,24 +576,6 @@ func TestAdapter_mapWriteErr_Variants(t *testing.T) {
 	other := errors.New("y")
 	if !errors.Is(other, a.mapWriteErr(other)) {
 		t.Fatalf("other errors must remain unchanged")
-	}
-}
-
-func TestErrTimeout_ImplementsNetError(t *testing.T) {
-	cause := context.DeadlineExceeded
-	e := network.NewErrTimeout(cause)
-	if e.Error() == "" {
-		t.Fatalf("empty Error string")
-	}
-	if !errors.Is(e, cause) {
-		t.Fatalf("Unwrap must expose cause")
-	}
-	type timeoutIface interface {
-		Timeout() bool
-	}
-	var ne timeoutIface
-	if !errors.As(e, &ne) || !ne.Timeout() {
-		t.Fatalf("errTimeout must satisfy net.Error Timeout()==true")
 	}
 }
 
