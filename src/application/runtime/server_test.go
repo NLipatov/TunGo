@@ -50,24 +50,25 @@ func (m *serverTestTunManager) DisposeDevices(settings.Settings) error {
 	return m.disposeErr
 }
 
-type serverTestWorker struct{}
-
-func (serverTestWorker) HandleTun() error       { return nil }
-func (serverTestWorker) HandleTransport() error { return nil }
+func serverTestEndpoints() routing.Endpoints {
+	return routing.Endpoints{
+		RunTun: func() error { return nil }, RunTransport: func() error { return nil },
+	}
+}
 
 type serverTestWorkerFactory struct {
-	create func(context.Context, io.ReadWriteCloser, settings.Settings) (routing.Worker, error)
+	create func(context.Context, io.ReadWriteCloser, settings.Settings) (routing.Endpoints, error)
 }
 
 func (f serverTestWorkerFactory) CreateWorker(
 	ctx context.Context,
 	device io.ReadWriteCloser,
 	settings settings.Settings,
-) (routing.Worker, error) {
+) (routing.Endpoints, error) {
 	if f.create != nil {
 		return f.create(ctx, device, settings)
 	}
-	return serverTestWorker{}, nil
+	return serverTestEndpoints(), nil
 }
 
 type serverTestRouter struct {
@@ -82,10 +83,10 @@ func (r serverTestRouter) RouteTraffic(ctx context.Context) error {
 }
 
 type serverTestRouterFactory struct {
-	make func(routing.Worker) routing.Router
+	make func(routing.Endpoints) routing.Router
 }
 
-func (f serverTestRouterFactory) CreateRouter(worker routing.Worker) routing.Router {
+func (f serverTestRouterFactory) CreateRouter(worker routing.Endpoints) routing.Router {
 	if f.make != nil {
 		return f.make(worker)
 	}
@@ -174,8 +175,8 @@ func TestServerCreateRouter_ClosesTunAfterWorkerError(t *testing.T) {
 	manager := &serverTestTunManager{}
 	runtime := newServerTestRuntime(manager, configuration.ServerRuntimeConfiguration{})
 	runtime.workerFactory = serverTestWorkerFactory{
-		create: func(context.Context, io.ReadWriteCloser, settings.Settings) (routing.Worker, error) {
-			return nil, errServerTest
+		create: func(context.Context, io.ReadWriteCloser, settings.Settings) (routing.Endpoints, error) {
+			return routing.Endpoints{}, errServerTest
 		},
 	}
 
@@ -197,7 +198,7 @@ func TestServerRunWorkers_WrapsRouteError(t *testing.T) {
 		},
 	)
 	runtime.routerFactory = serverTestRouterFactory{
-		make: func(routing.Worker) routing.Router {
+		make: func(routing.Endpoints) routing.Router {
 			return serverTestRouter{route: func(context.Context) error { return errServerTest }}
 		},
 	}
@@ -284,12 +285,12 @@ func TestServerRun_NormalizesCancellation(t *testing.T) {
 		},
 	)
 	runtime.workerFactory = serverTestWorkerFactory{
-		create: func(context.Context, io.ReadWriteCloser, settings.Settings) (routing.Worker, error) {
-			return serverTestWorker{}, nil
+		create: func(context.Context, io.ReadWriteCloser, settings.Settings) (routing.Endpoints, error) {
+			return serverTestEndpoints(), nil
 		},
 	}
 	runtime.routerFactory = serverTestRouterFactory{
-		make: func(routing.Worker) routing.Router {
+		make: func(routing.Endpoints) routing.Router {
 			return serverTestRouter{route: func(context.Context) error { return context.Canceled }}
 		},
 	}

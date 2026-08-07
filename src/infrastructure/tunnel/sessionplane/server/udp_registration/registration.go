@@ -3,6 +3,7 @@ package udp_registration
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/netip"
 	"sync"
 	"time"
@@ -10,7 +11,6 @@ import (
 	"tungo/application/listeners"
 	"tungo/application/network/connection"
 	"tungo/infrastructure/cryptography/noise"
-	"tungo/infrastructure/logging"
 	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/network/udp/adapters"
 	"tungo/infrastructure/tunnel/controlplane"
@@ -35,7 +35,6 @@ type Registrar struct {
 
 	listenerConn listeners.UdpListener
 	sessionRepo  udpRegistrationRepo
-	logger       logging.Logger
 
 	handshakeFactory    connection.HandshakeFactory
 	cryptographyFactory connection.CryptoFactory
@@ -48,15 +47,15 @@ type Registrar struct {
 }
 
 type udpRegistrationRepo interface {
-	session.PeerStore
-	session.InternalLookup
+	Add(*session.Peer)
+	Delete(*session.Peer)
+	GetByInternalAddrPort(netip.Addr) (*session.Peer, error)
 }
 
 func NewRegistrar(
 	ctx context.Context,
 	listenerConn listeners.UdpListener,
 	sessionRepo udpRegistrationRepo,
-	logger logging.Logger,
 	handshakeFactory connection.HandshakeFactory,
 	cryptographyFactory connection.CryptoFactory,
 	interfaceSubnet netip.Prefix,
@@ -66,7 +65,6 @@ func NewRegistrar(
 		ctx:                 ctx,
 		listenerConn:        listenerConn,
 		sessionRepo:         sessionRepo,
-		logger:              logger,
 		handshakeFactory:    handshakeFactory,
 		cryptographyFactory: cryptographyFactory,
 		interfaceSubnet:     interfaceSubnet,
@@ -165,26 +163,27 @@ func (r *Registrar) RegisterClient(addrPort netip.AddrPort, queue *udpQueue.Regi
 			break
 		}
 		if errors.Is(handshakeErr, noise.ErrCookieRequired) && attempt == 0 {
-			r.logger.Warn("UDP cookie sent, awaiting retry", "client", addrPort.Addr().AsSlice())
+			slog.Warn("UDP cookie sent, awaiting retry", "client", addrPort.Addr().AsSlice())
 			continue
 		}
-		r.logger.Warn("UDP host failed registration", "client", addrPort.Addr().AsSlice(), "err", handshakeErr)
+		slog.Warn("UDP host failed registration", "client", addrPort.Addr().AsSlice(), "err", handshakeErr)
 		return
 	}
 
 	internalIP, allocErr := ip.AllocateClientIP(r.interfaceSubnet, clientID)
 	if allocErr != nil {
-		r.logger.Error("UDP host IP allocation failed", "client", addrPort.Addr().AsSlice(), "err", allocErr)
+		slog.Error("UDP host IP allocation failed", "client", addrPort.Addr().AsSlice(), "err", allocErr)
 		return
 	}
 
-	cryptoSession, controller, cryptoSessionErr := r.cryptographyFactory.FromHandshake(h, true)
+	cryptoSession, epochController, cryptoSessionErr := r.cryptographyFactory.FromHandshake(h, true)
 	if cryptoSessionErr != nil {
-		r.logger.Error("failed to init UDP crypto session", "client", addrPort.Addr().AsSlice(), "err", cryptoSessionErr)
+		slog.Error("failed to init UDP crypto session", "client", addrPort.Addr().AsSlice(), "err", cryptoSessionErr)
 		return
 	}
-	if controller != nil {
-		controller = controlplane.NewServerRekeyCoordinator(controller)
+	var rekeyCoordinator *controlplane.ServerRekeyCoordinator
+	if epochController != nil {
+		rekeyCoordinator = controlplane.NewServerRekeyCoordinator(epochController)
 	}
 
 	// Extract authentication info from IK handshake result if available
@@ -209,14 +208,15 @@ func (r *Registrar) RegisterClient(addrPort netip.AddrPort, queue *udpQueue.Regi
 	existingPeer, getErr := r.sessionRepo.GetByInternalAddrPort(internalIP)
 	if getErr == nil {
 		r.sessionRepo.Delete(existingPeer)
-		r.logger.Info("UDP replacing existing session", "internal_ip", internalIP)
+		slog.Info("UDP replacing existing session", "internal_ip", internalIP)
 	}
 
-	sess := session.NewSessionWithAuth(cryptoSession, controller, internalIP, addrPort, clientPubKey, allowedIPs)
 	egress := connection.NewDefaultEgress(regTransport, cryptoSession)
-	peer := session.NewPeer(sess, egress)
+	peer := session.NewPeerWithAuth(
+		cryptoSession, rekeyCoordinator, internalIP, addrPort, clientPubKey, allowedIPs, egress,
+	)
 	r.sessionRepo.Add(peer)
-	r.logger.Info("UDP client registered", "client", addrPort.Addr(), "internal_ip", internalIP)
+	slog.Info("UDP client registered", "client", addrPort.Addr(), "internal_ip", internalIP)
 }
 
 // Registrations exposes the internal registrations map for testing.

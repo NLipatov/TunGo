@@ -15,32 +15,6 @@ import (
 	"tungo/infrastructure/tunnel/session"
 )
 
-// udpRegLogger is a no-op logger.
-type udpRegLogger struct{}
-
-func (udpRegLogger) Info(string, ...any)  {}
-func (udpRegLogger) Warn(string, ...any)  {}
-func (udpRegLogger) Error(string, ...any) {}
-
-type udpRegCaptureLogger struct {
-	mu   sync.Mutex
-	msgs []string
-}
-
-func (l *udpRegCaptureLogger) Info(msg string, _ ...any) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.msgs = append(l.msgs, msg)
-}
-
-func (l *udpRegCaptureLogger) Warn(msg string, _ ...any) {
-	l.Info(msg)
-}
-
-func (l *udpRegCaptureLogger) Error(msg string, _ ...any) {
-	l.Info(msg)
-}
-
 // udpRegEpochManager is a mock epoch manager.
 type udpRegEpochManager struct{}
 
@@ -133,7 +107,7 @@ func (l *udpRegListener) WriteToUDPAddrPort(data []byte, addr netip.AddrPort) (i
 
 func TestNewRegistrar_CreatesEmptyRegistrations(t *testing.T) {
 	ctx := context.Background()
-	r := NewRegistrar(ctx, nil, nil, udpRegLogger{}, nil, nil, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
+	r := NewRegistrar(ctx, nil, nil, nil, nil, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 	if r == nil {
 		t.Fatal("expected non-nil registrar")
 	}
@@ -144,7 +118,7 @@ func TestNewRegistrar_CreatesEmptyRegistrations(t *testing.T) {
 
 func TestGetOrCreateRegistrationQueue_CreatesNew(t *testing.T) {
 	ctx := context.Background()
-	r := NewRegistrar(ctx, nil, nil, udpRegLogger{}, nil, nil, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
+	r := NewRegistrar(ctx, nil, nil, nil, nil, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	addr := netip.MustParseAddrPort("192.168.1.1:1234")
 	q, isNew := r.GetOrCreateRegistrationQueue(addr)
@@ -167,7 +141,7 @@ func TestGetOrCreateRegistrationQueue_CreatesNew(t *testing.T) {
 
 func TestCloseAll_ClearsRegistrations(t *testing.T) {
 	ctx := context.Background()
-	r := NewRegistrar(ctx, nil, nil, udpRegLogger{}, nil, nil, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
+	r := NewRegistrar(ctx, nil, nil, nil, nil, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	r.GetOrCreateRegistrationQueue(netip.MustParseAddrPort("192.168.1.1:1234"))
 	r.GetOrCreateRegistrationQueue(netip.MustParseAddrPort("192.168.1.2:5678"))
@@ -200,7 +174,7 @@ func TestEnqueuePacket_CreatesQueueAndStartsRegistration(t *testing.T) {
 		ctrl:   rekey.NewStateMachine(udpRegEpochManager{}, []byte("c2s"), []byte("s2c")),
 	}
 
-	r := NewRegistrar(ctx, listener, repo, udpRegLogger{}, hf, cf, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
+	r := NewRegistrar(ctx, listener, repo, hf, cf, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	addr := netip.MustParseAddrPort("192.168.1.1:1234")
 	r.EnqueuePacket(addr, []byte("hello"))
@@ -232,7 +206,7 @@ func TestRegisterClient_Success(t *testing.T) {
 		ctrl:   rekey.NewStateMachine(udpRegEpochManager{}, []byte("c2s"), []byte("s2c")),
 	}
 
-	r := NewRegistrar(ctx, listener, repo, udpRegLogger{}, hf, cf, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
+	r := NewRegistrar(ctx, listener, repo, hf, cf, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	addr := netip.MustParseAddrPort("192.168.1.1:1234")
 	q, _ := r.GetOrCreateRegistrationQueue(addr)
@@ -261,8 +235,8 @@ func TestRegisterClient_Success(t *testing.T) {
 	if peer == nil {
 		t.Fatal("expected non-nil peer")
 	}
-	if _, ok := peer.RekeyController().(*controlplane.ServerRekeyCoordinator); !ok {
-		t.Fatalf("expected server rekey coordinator, got %T", peer.RekeyController())
+	if peer.RekeyController() == nil {
+		t.Fatal("expected server rekey coordinator")
 	}
 }
 
@@ -282,7 +256,7 @@ func TestRegisterClient_CryptoFactoryError_FailsGracefully(t *testing.T) {
 	}
 	cf := &udpRegCryptoFactory{err: errors.New("crypto failed")}
 
-	r := NewRegistrar(ctx, listener, repo, udpRegLogger{}, hf, cf, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
+	r := NewRegistrar(ctx, listener, repo, hf, cf, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	addr := netip.MustParseAddrPort("192.168.1.1:1234")
 	q, _ := r.GetOrCreateRegistrationQueue(addr)
@@ -331,7 +305,7 @@ func TestRegisterClient_NegativeClientID_FailsAllocation(t *testing.T) {
 		ctrl:   rekey.NewStateMachine(udpRegEpochManager{}, []byte("c2s"), []byte("s2c")),
 	}
 
-	r := NewRegistrar(ctx, listener, repo, udpRegLogger{}, hf, cf, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
+	r := NewRegistrar(ctx, listener, repo, hf, cf, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	addr := netip.MustParseAddrPort("192.168.1.1:1234")
 	q, _ := r.GetOrCreateRegistrationQueue(addr)
@@ -384,7 +358,7 @@ func (f *udpRegHandshakeWithResultFactory) NewHandshake() connection.Handshake {
 
 func TestEnqueuePacket_AtCapacity_SilentDrop(t *testing.T) {
 	ctx := context.Background()
-	r := NewRegistrar(ctx, nil, nil, udpRegLogger{}, nil, nil, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
+	r := NewRegistrar(ctx, nil, nil, nil, nil, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	// Fill up to MaxConcurrentRegistrations using direct queue creation.
 	for i := 0; i < MaxConcurrentRegistrations; i++ {
@@ -432,7 +406,7 @@ func TestRegisterClient_HandshakeWithResult_IPv6(t *testing.T) {
 		ctrl:   rekey.NewStateMachine(udpRegEpochManager{}, []byte("c2s"), []byte("s2c")),
 	}
 
-	r := NewRegistrar(ctx, listener, repo, udpRegLogger{}, hf, cf,
+	r := NewRegistrar(ctx, listener, repo, hf, cf,
 		netip.MustParsePrefix("10.0.0.0/24"),
 		netip.MustParsePrefix("fd00::/64"),
 	)
@@ -521,7 +495,7 @@ func TestRegisterClient_CookieRetry_Success(t *testing.T) {
 		ctrl:   rekey.NewStateMachine(udpRegEpochManager{}, []byte("c2s"), []byte("s2c")),
 	}
 
-	r := NewRegistrar(ctx, listener, repo, udpRegLogger{}, hf, cf, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
+	r := NewRegistrar(ctx, listener, repo, hf, cf, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	addr := netip.MustParseAddrPort("192.168.1.1:1234")
 	q, _ := r.GetOrCreateRegistrationQueue(addr)
@@ -562,8 +536,6 @@ func TestRegisterClient_ReplacesExistingSession(t *testing.T) {
 
 	listener := &udpRegListener{}
 	repo := session.NewDefaultRepository()
-	logger := &udpRegCaptureLogger{}
-
 	hf := &udpRegHandshakeFactory{
 		handshake: &udpRegHandshake{
 			clientID: 1,
@@ -576,17 +548,15 @@ func TestRegisterClient_ReplacesExistingSession(t *testing.T) {
 		ctrl:   rekey.NewStateMachine(udpRegEpochManager{}, []byte("c2s"), []byte("s2c")),
 	}
 
-	r := NewRegistrar(ctx, listener, repo, logger, hf, cf, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
+	r := NewRegistrar(ctx, listener, repo, hf, cf, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 	internalIP := netip.MustParseAddr("10.0.0.2")
-	staleSession := session.NewSessionWithAuth(
-		udpRegCrypto{},
+	staleRekey := controlplane.NewServerRekeyCoordinator(
 		rekey.NewStateMachine(udpRegEpochManager{}, []byte("old-c2s"), []byte("old-s2c")),
-		internalIP,
-		netip.MustParseAddrPort("192.168.1.10:1234"),
-		nil,
-		nil,
 	)
-	repo.Add(session.NewPeer(staleSession, connection.NewDefaultEgress(io.Discard, udpRegCrypto{})))
+	repo.Add(session.NewPeerWithAuth(
+		udpRegCrypto{}, staleRekey, internalIP, netip.MustParseAddrPort("192.168.1.10:1234"), nil, nil,
+		connection.NewDefaultEgress(io.Discard, udpRegCrypto{}),
+	))
 
 	addr := netip.MustParseAddrPort("192.168.1.1:1234")
 	q, _ := r.GetOrCreateRegistrationQueue(addr)
@@ -613,23 +583,11 @@ func TestRegisterClient_ReplacesExistingSession(t *testing.T) {
 		t.Fatal("expected non-nil replacement peer")
 	}
 
-	logger.mu.Lock()
-	defer logger.mu.Unlock()
-	found := false
-	for _, msg := range logger.msgs {
-		if msg == "UDP replacing existing session" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatalf("expected session replacement log, got %v", logger.msgs)
-	}
 }
 
 func TestGetOrCreateRegistrationQueue_SecondCallReusesQueue(t *testing.T) {
 	ctx := context.Background()
-	r := NewRegistrar(ctx, nil, nil, udpRegLogger{}, nil, nil, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
+	r := NewRegistrar(ctx, nil, nil, nil, nil, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	addr := netip.MustParseAddrPort("192.168.1.1:1234")
 

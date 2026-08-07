@@ -7,6 +7,7 @@ import (
 	"tungo/application/network/connection"
 	application "tungo/application/network/routing"
 	"tungo/application/network/routing/tun"
+	"tungo/infrastructure/telemetry/trafficstats"
 	implementation "tungo/infrastructure/tunnel"
 )
 
@@ -37,6 +38,7 @@ func (u *RouterFactory) CreateRouter(
 		slog.Error("failed to create TUN device", "err", deviceErr)
 		return nil, nil, nil, deviceErr
 	}
+	device = trafficstats.WrapTun(device)
 
 	worker, workerErr := workerFactory.CreateWorker(ctx, conn, device, cryptographyService, controller)
 	if workerErr != nil {

@@ -15,7 +15,6 @@ import (
 	"tungo/infrastructure/cryptography/chacha20/udp"
 	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/settings"
-	"tungo/infrastructure/telemetry/trafficstats"
 
 	"golang.org/x/crypto/chacha20poly1305"
 )
@@ -51,7 +50,7 @@ func NewTransportHandler(
 	rekeyAck rekeyAckHandler,
 	egress connection.Egress,
 ) transport.Handler {
-	const pingLen = udp.RouteIDLength + chacha20poly1305.NonceSize + 3
+	const pingLen = udpPayloadOffset + 3
 	return &TransportHandler{
 		ctx:                 ctx,
 		reader:              reader,
@@ -67,8 +66,6 @@ func NewTransportHandler(
 
 func (t *TransportHandler) HandleTransport() error {
 	var buffer [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
-	rec := trafficstats.NewRecorder()
-	defer rec.Flush()
 
 	for {
 		select {
@@ -88,11 +85,10 @@ func (t *TransportHandler) HandleTransport() error {
 				}
 				return fmt.Errorf("could not read a packet from adapter: %v", readErr)
 			}
-			writtenBytes, err := t.handleDatagram(buffer[:n])
+			_, err := t.handleDatagram(buffer[:n])
 			if err != nil {
 				return err
 			}
-			rec.RecordRX(uint64(writtenBytes))
 		}
 	}
 }
@@ -181,11 +177,11 @@ func (t *TransportHandler) handleIdle() error {
 }
 
 func (t *TransportHandler) sendPing() {
-	payload := t.pingBuf[udp.RouteIDLength+chacha20poly1305.NonceSize:]
+	payload := t.pingBuf[udpPayloadOffset:]
 	if _, err := service_packet.EncodeV1Header(service_packet.Ping, payload); err != nil {
 		return
 	}
-	if err := t.egress.SendControl(t.pingBuf[:]); err != nil {
+	if err := t.egress.Send(t.pingBuf[:]); err != nil {
 		return
 	}
 	t.lastPingSentAt = time.Now()

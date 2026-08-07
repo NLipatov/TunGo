@@ -271,23 +271,28 @@ func TestTunHandler_RekeyInitSendError_Continues(t *testing.T) {
 
 	th := h.(*TunHandler)
 
-	// Replace egress with one that fails on SendControl.
-	th.egress = &failingControlEgress{dataErr: nil, controlErr: errors.New("send fail")}
+	// Replace egress with one that fails on the second Send (the control packet).
+	th.egress = &failingControlEgress{err: errors.New("send fail")}
 
 	if err := th.HandleTun(); err != io.EOF {
 		t.Fatalf("want io.EOF, got %v", err)
 	}
 }
 
-// failingControlEgress is an egress that fails on SendControl.
+// failingControlEgress succeeds for data and fails on the following control send.
 type failingControlEgress struct {
-	dataErr    error
-	controlErr error
+	calls int
+	err   error
 }
 
-func (e *failingControlEgress) SendDataIP(_ []byte) error  { return e.dataErr }
-func (e *failingControlEgress) SendControl(_ []byte) error { return e.controlErr }
-func (e *failingControlEgress) Close() error               { return nil }
+func (e *failingControlEgress) Send(_ []byte) error {
+	e.calls++
+	if e.calls > 1 {
+		return e.err
+	}
+	return nil
+}
+func (e *failingControlEgress) Close() error { return nil }
 
 func TestTunHandler_RekeyInitPrepareError_Continues(t *testing.T) {
 	// When MaybeBuildRekeyInit returns an error, the handler should log and continue (not exit).

@@ -30,7 +30,7 @@ func NewWorkerFactory(configuration appConfiguration.ClientRuntimeConfiguration)
 
 func (w *WorkerFactory) CreateWorker(
 	ctx context.Context, conn connection.Transport, tun io.ReadWriteCloser, crypto connection.Crypto, controller connection.RekeyController,
-) (routing.Worker, error) {
+) (routing.Endpoints, error) {
 	allowed := w.allowedSources()
 	rekeyCoordinator := controlplane.NewClientRekeyCoordinator(
 		&primitives.DefaultKeyDeriver{},
@@ -43,7 +43,7 @@ func (w *WorkerFactory) CreateWorker(
 	case settings.UDP:
 		udpConn, err := unwrapUDPConn(conn)
 		if err != nil {
-			return nil, err
+			return routing.Endpoints{}, err
 		}
 		deadline := time.Second
 		transport := adapters.NewClientUDPAdapter(udpConn, deadline, deadline)
@@ -66,14 +66,14 @@ func (w *WorkerFactory) CreateWorker(
 			rekeyCoordinator,
 			egress,
 		)
-		return udp_chacha20.NewUdpWorker(transportHandler, tunHandler), nil
+		return routing.Endpoints{RunTun: tunHandler.HandleTun, RunTransport: transportHandler.HandleTransport}, nil
 	case settings.TCP, settings.WS, settings.WSS:
 		egress := connection.NewDefaultEgress(conn, crypto)
 		tunHandler := tcp_chacha20.NewTunHandler(ctx, tun, egress, rekeyCoordinator, allowed)
 		transportHandler := tcp_chacha20.NewTransportHandler(ctx, conn, tun, crypto, controller, rekeyCoordinator, egress)
-		return tcp_chacha20.NewTcpTunWorker(tunHandler, transportHandler), nil
+		return routing.Endpoints{RunTun: tunHandler.HandleTun, RunTransport: transportHandler.HandleTransport}, nil
 	default:
-		return nil, fmt.Errorf("unsupported protocol")
+		return routing.Endpoints{}, fmt.Errorf("unsupported protocol")
 	}
 }
 

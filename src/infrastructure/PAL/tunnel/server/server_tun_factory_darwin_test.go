@@ -27,4 +27,3 @@ func TestTunFactoryDarwin_DisposeDevices_NoError(t *testing.T) {
 		t.Fatalf("expected nil error from DisposeDevices stub, got %v", err)
 	}
 }
-

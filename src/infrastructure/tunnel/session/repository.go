@@ -8,63 +8,6 @@ import (
 	"tungo/application/network/connection"
 )
 
-type Repository interface {
-	PeerStore
-	InternalLookup
-	RouteLookup
-	PeerAddressUpdater
-
-	// GetByExternalAddrPort tries to retrieve peer by external(outside of vpn) ip and port combination.
-	GetByExternalAddrPort(addrPort netip.AddrPort) (*Peer, error)
-	// AllPeers returns a snapshot slice of all peers in the repository.
-	AllPeers() []*Peer
-}
-
-// RouteLookup provides O(1) lookup by stable UDP route identifier.
-type RouteLookup interface {
-	GetByRouteID(routeID uint64) (*Peer, error)
-}
-
-// InternalLookup resolves a peer by internal tunnel IP.
-type InternalLookup interface {
-	GetByInternalAddrPort(addr netip.Addr) (*Peer, error)
-}
-
-// PeerStore is the minimal read/write capability used by dataplane/sessionplane.
-type PeerStore interface {
-	// Add adds peer to the repository.
-	Add(peer *Peer)
-	// Delete deletes peer from the repository and zeroes key material.
-	Delete(peer *Peer)
-	// FindByDestinationIP finds the peer that should receive packets destined for addr.
-	// Checks both internal IP (exact match) and AllowedIPs (prefix match).
-	// Used for egress routing (TUN → client).
-	FindByDestinationIP(addr netip.Addr) (*Peer, error)
-}
-
-// PeerAddressUpdater re-indexes a peer when client external endpoint changes.
-type PeerAddressUpdater interface {
-	UpdateExternalAddr(peer *Peer, newAddr netip.AddrPort)
-}
-
-// RepositoryWithRevocation extends Repository with session revocation capability.
-// Used when AllowedPeers configuration changes require terminating existing sessions.
-type RepositoryWithRevocation interface {
-	Repository
-	// TerminateByPubKey finds and terminates all sessions for the given public key.
-	// Returns the number of sessions terminated.
-	// SECURITY: Must be called after AllowedPeers config changes to prevent
-	// stale AllowedIPs snapshots from persisting.
-	TerminateByPubKey(pubKey []byte) int
-}
-
-// IdleReaper is implemented by repositories that support idle session cleanup.
-type IdleReaper interface {
-	// ReapIdle deletes all sessions whose last activity is older than timeout.
-	// Returns the number of sessions reaped.
-	ReapIdle(timeout time.Duration) int
-}
-
 // DefaultRepository is a thread-safe session repository.
 //
 // CONCURRENCY INVARIANT: All map operations are protected by RWMutex.
@@ -76,7 +19,6 @@ type IdleReaper interface {
 type DefaultRepository struct {
 	mu                sync.RWMutex
 	internalIpToPeer  map[netip.Addr]*Peer
-	externalIPToPeer  map[netip.AddrPort]*Peer
 	routeIDToPeer     map[uint64]*Peer
 	allowedAddrToPeer map[netip.Addr]*Peer // host-route (/32, /128) from AllowedIPs for O(1) lookup
 	// pubKeyToPeers tracks sessions by client public key for revocation support.
@@ -84,10 +26,9 @@ type DefaultRepository struct {
 	pubKeyToPeers map[string][]*Peer
 }
 
-func NewDefaultRepository() Repository {
+func NewDefaultRepository() *DefaultRepository {
 	return &DefaultRepository{
 		internalIpToPeer:  make(map[netip.Addr]*Peer),
-		externalIPToPeer:  make(map[netip.AddrPort]*Peer),
 		routeIDToPeer:     make(map[uint64]*Peer),
 		allowedAddrToPeer: make(map[netip.Addr]*Peer),
 		pubKeyToPeers:     make(map[string][]*Peer),
@@ -99,36 +40,26 @@ func (s *DefaultRepository) Add(peer *Peer) {
 	defer s.mu.Unlock()
 
 	s.internalIpToPeer[peer.InternalAddr().Unmap()] = peer
-	s.externalIPToPeer[s.canonicalAP(peer.ExternalAddrPort())] = peer
 	if routeID, ok := peerRouteID(peer); ok {
 		s.routeIDToPeer[routeID] = peer
 	}
 
 	// Index allowed addresses for O(1) peer lookup (e.g. IPv6 address)
-	if sess, ok := peer.Session.(*Session); ok {
-		for addr := range sess.AllowedAddrs() {
-			s.allowedAddrToPeer[addr] = peer
-		}
+	for addr := range peer.allowedAddrs {
+		s.allowedAddrToPeer[addr] = peer
 	}
 
 	// Track by public key for revocation support
-	if identity, ok := peer.Session.(connection.SessionIdentity); ok {
-		if pubKey := identity.ClientPubKey(); len(pubKey) > 0 {
-			key := string(pubKey)
-			s.pubKeyToPeers[key] = append(s.pubKeyToPeers[key], peer)
-		}
+	if len(peer.clientPubKey) > 0 {
+		key := string(peer.clientPubKey)
+		s.pubKeyToPeers[key] = append(s.pubKeyToPeers[key], peer)
 	}
 }
 
 // Delete removes peer from repository and zeroes key material.
 //
-// LIFECYCLE INVARIANT: Operations happen in this order to prevent use-after-free:
-// 1. Close egress (signals TCP workers to exit, prevents new writes)
-// 2. Remove from maps (prevents new lookups returning this peer)
-// 3. Zero key material (safe because no new operations can start)
-//
-// For UDP: mutex serializes Delete with packet processing
-// For TCP: closing egress causes worker's Read to fail and exit
+// LIFECYCLE INVARIANT: mark closed, close egress, remove routes, then wait for
+// in-flight Peer.Send/Decrypt calls before zeroing key material.
 func (s *DefaultRepository) Delete(peer *Peer) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -146,17 +77,6 @@ func (s *DefaultRepository) GetByInternalAddrPort(addr netip.Addr) (*Peer, error
 	return value, nil
 }
 
-func (s *DefaultRepository) GetByExternalAddrPort(addr netip.AddrPort) (*Peer, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	value, found := s.externalIPToPeer[s.canonicalAP(addr)]
-	if !found {
-		return nil, ErrNotFound
-	}
-	return value, nil
-}
-
 func (s *DefaultRepository) GetByRouteID(routeID uint64) (*Peer, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -168,40 +88,17 @@ func (s *DefaultRepository) GetByRouteID(routeID uint64) (*Peer, error) {
 	return value, nil
 }
 
-func (s *DefaultRepository) canonicalAP(ap netip.AddrPort) netip.AddrPort {
-	ip := ap.Addr().Unmap()
-	return netip.AddrPortFrom(ip, ap.Port())
-}
-
-func (s *DefaultRepository) AllPeers() []*Peer {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	peers := make([]*Peer, 0, len(s.internalIpToPeer))
-	for _, p := range s.internalIpToPeer {
-		peers = append(peers, p)
-	}
-	return peers
-}
-
 func (s *DefaultRepository) UpdateExternalAddr(peer *Peer, newAddr netip.AddrPort) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	// Guard against re-inserting a peer that was concurrently deleted.
-	// Without this check, a zombie entry would persist in externalIPToPeer.
 	if peer.IsClosed() {
 		return
 	}
 
-	// Remove old external address index entry
-	delete(s.externalIPToPeer, s.canonicalAP(peer.ExternalAddrPort()))
-	// Update the peer's external address
 	peer.SetExternalAddrPort(newAddr)
-	// Update the egress writer's destination so replies go to the new address.
 	peer.updateEgressAddr(newAddr)
-	// Re-index under the new address
-	s.externalIPToPeer[s.canonicalAP(newAddr)] = peer
 }
 
 // FindByDestinationIP finds the peer that should receive packets destined for addr.
@@ -273,6 +170,9 @@ func (s *DefaultRepository) TerminateByPubKey(pubKey []byte) int {
 // 3. Remove from maps (no new lookups can find this peer)
 // 4. Zero key material (safe - no active users possible)
 func (s *DefaultRepository) deleteLocked(peer *Peer) {
+	if peer.IsClosed() {
+		return
+	}
 	// Step 1: Mark closed FIRST - this is checked by packet handlers
 	// to abort before using crypto. Atomic operation visible immediately.
 	peer.markClosed()
@@ -284,7 +184,6 @@ func (s *DefaultRepository) deleteLocked(peer *Peer) {
 
 	// Step 3: Remove from all maps
 	delete(s.internalIpToPeer, peer.InternalAddr().Unmap())
-	delete(s.externalIPToPeer, s.canonicalAP(peer.ExternalAddrPort()))
 	if routeID, ok := peerRouteID(peer); ok {
 		if indexed := s.routeIDToPeer[routeID]; indexed == peer {
 			delete(s.routeIDToPeer, routeID)
@@ -292,36 +191,31 @@ func (s *DefaultRepository) deleteLocked(peer *Peer) {
 	}
 
 	// Remove allowed address entries from index
-	if sess, ok := peer.Session.(*Session); ok {
-		for addr := range sess.AllowedAddrs() {
-			if s.allowedAddrToPeer[addr] == peer {
-				delete(s.allowedAddrToPeer, addr)
-			}
+	for addr := range peer.allowedAddrs {
+		if s.allowedAddrToPeer[addr] == peer {
+			delete(s.allowedAddrToPeer, addr)
 		}
 	}
 
 	// Remove from pubkey index
-	if identity, ok := peer.Session.(connection.SessionIdentity); ok {
-		if pubKey := identity.ClientPubKey(); len(pubKey) > 0 {
-			key := string(pubKey)
-			peers := s.pubKeyToPeers[key]
-			for i, p := range peers {
-				if p == peer {
-					peers[i] = peers[len(peers)-1]
-					s.pubKeyToPeers[key] = peers[:len(peers)-1]
-					break
-				}
+	if len(peer.clientPubKey) > 0 {
+		key := string(peer.clientPubKey)
+		peers := s.pubKeyToPeers[key]
+		for i, p := range peers {
+			if p == peer {
+				peers[i] = peers[len(peers)-1]
+				s.pubKeyToPeers[key] = peers[:len(peers)-1]
+				break
 			}
-			if len(s.pubKeyToPeers[key]) == 0 {
-				delete(s.pubKeyToPeers, key)
-			}
+		}
+		if len(s.pubKeyToPeers[key]) == 0 {
+			delete(s.pubKeyToPeers, key)
 		}
 	}
 
-	// Step 4: Zero key material — wait for active decrypts to finish.
-	// cryptoMu.Lock blocks until all in-flight CryptoRLock holders release.
+	// Step 4: Zero key material after all in-flight Send/Decrypt calls finish.
 	peer.cryptoMu.Lock()
-	if crypto := peer.Crypto(); crypto != nil {
+	if crypto := peer.crypto; crypto != nil {
 		if zeroizer, ok := crypto.(connection.CryptoZeroizer); ok {
 			zeroizer.Zeroize()
 		}
@@ -334,7 +228,7 @@ func peerRouteID(peer *Peer) (uint64, bool) {
 		RouteID() uint64
 	}
 
-	crypto := peer.Crypto()
+	crypto := peer.crypto
 	if crypto == nil {
 		return 0, false
 	}

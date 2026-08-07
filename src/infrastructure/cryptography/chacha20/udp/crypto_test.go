@@ -135,6 +135,15 @@ func TestCrypto_EncryptDecrypt_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Encrypt failed: %v", err)
 	}
+	if want := RouteIDLength + chacha20poly1305.NonceSize + len(payload) + chacha20poly1305.Overhead; len(encrypted) != want {
+		t.Fatalf("encrypted length = %d, want UDP layout length %d", len(encrypted), want)
+	}
+	if routeID := binary.BigEndian.Uint64(encrypted[:RouteIDLength]); routeID != client.RouteID() {
+		t.Fatalf("route id = %#x, want %#x", routeID, client.RouteID())
+	}
+	if counter := binary.BigEndian.Uint64(encrypted[NonceOffset : NonceOffset+8]); counter != 1 {
+		t.Fatalf("nonce counter = %d, want 1", counter)
+	}
 
 	decrypted, err := server.Decrypt(encrypted)
 	if err != nil {
@@ -200,6 +209,7 @@ func TestCrypto_Decrypt_UnknownEpoch(t *testing.T) {
 
 	// Craft a packet with matching route-id and unknown epoch.
 	buf := make([]byte, MinPacketSize)
+	binary.BigEndian.PutUint64(buf[:RouteIDLength], c.RouteID())
 	binary.BigEndian.PutUint16(buf[EpochOffset:EpochOffset+2], 99)
 
 	_, err := c.Decrypt(buf)

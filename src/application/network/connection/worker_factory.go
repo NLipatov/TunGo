@@ -14,7 +14,7 @@ type ClientWorkerFactory interface {
 		tun io.ReadWriteCloser,
 		cryptographyService Crypto,
 		controller RekeyController,
-	) (routing.Worker, error)
+	) (routing.Endpoints, error)
 }
 
 type ServerWorkerFactory interface {
@@ -22,5 +22,5 @@ type ServerWorkerFactory interface {
 		ctx context.Context,
 		tun io.ReadWriteCloser,
 		workerSettings settings.Settings,
-	) (routing.Worker, error)
+	) (routing.Endpoints, error)
 }

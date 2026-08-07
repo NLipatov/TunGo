@@ -37,7 +37,7 @@ func newTestWorkerFactory(t *testing.T) (*WorkerFactory, error) {
 	if err != nil {
 		return nil, err
 	}
-	return NewTestWorkerFactory(newDefaultLoggerFactory(), runtime, configuration)
+	return NewWorkerFactory(runtime, configuration)
 }
 
 // ------------------- tests -------------------
@@ -274,7 +274,7 @@ func Test_CreateWorker_TCP_UDP_WS_Success(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error for %s: %v", proto, err)
 		}
-		if w == nil {
+		if w.RunTun == nil || w.RunTransport == nil {
 			t.Fatalf("expected worker for %s, got nil", proto)
 		}
 		cancel()
@@ -290,10 +290,6 @@ func Test_NewWorkerFactory_Coverage(t *testing.T) {
 	// Production constructor
 	if f, err := NewWorkerFactory(runtime, configuration); f == nil || err != nil {
 		t.Errorf("nil/error factory (prod): factory=%v err=%v", f, err)
-	}
-	// Test constructor
-	if f, err := NewTestWorkerFactory(newDefaultLoggerFactory(), runtime, configuration); f == nil || err != nil {
-		t.Errorf("nil/error factory (test): factory=%v err=%v", f, err)
 	}
 }
 

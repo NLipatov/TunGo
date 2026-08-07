@@ -2,7 +2,6 @@ package session
 
 import (
 	"context"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -34,45 +33,13 @@ func (f *fakeReaper) callCount() int {
 	return len(f.calls)
 }
 
-// fakeLogger captures log output.
-type fakeLogger struct {
-	mu   sync.Mutex
-	logs []string
-}
-
-func (l *fakeLogger) Info(msg string, args ...interface{}) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.logs = append(l.logs, msg)
-}
-
-func (l *fakeLogger) Warn(msg string, args ...interface{}) {
-	l.Info(msg, args...)
-}
-
-func (l *fakeLogger) Error(msg string, args ...interface{}) {
-	l.Info(msg, args...)
-}
-
-func (l *fakeLogger) containsSubstring(sub string) bool {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	for _, s := range l.logs {
-		if strings.Contains(s, sub) {
-			return true
-		}
-	}
-	return false
-}
-
 func TestRunIdleReaperLoop_StopsOnContextCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	reaper := &fakeReaper{}
-	logger := &fakeLogger{}
 
 	done := make(chan struct{})
 	go func() {
-		RunIdleReaperLoop(ctx, reaper, 30*time.Second, 10*time.Millisecond, logger)
+		RunIdleReaperLoop(ctx, reaper.ReapIdle, 30*time.Second, 10*time.Millisecond)
 		close(done)
 	}()
 
@@ -92,10 +59,9 @@ func TestRunIdleReaperLoop_CallsReapIdleWithCorrectTimeout(t *testing.T) {
 	defer cancel()
 
 	reaper := &fakeReaper{}
-	logger := &fakeLogger{}
 	timeout := 42 * time.Second
 
-	go RunIdleReaperLoop(ctx, reaper, timeout, 10*time.Millisecond, logger)
+	go RunIdleReaperLoop(ctx, reaper.ReapIdle, timeout, 10*time.Millisecond)
 
 	// Wait for at least one tick
 	time.Sleep(30 * time.Millisecond)
@@ -114,51 +80,13 @@ func TestRunIdleReaperLoop_CallsReapIdleWithCorrectTimeout(t *testing.T) {
 	}
 }
 
-func TestRunIdleReaperLoop_LogsWhenSessionsReaped(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	reaper := &fakeReaper{results: []int{3, 0, 2}}
-	logger := &fakeLogger{}
-
-	go RunIdleReaperLoop(ctx, reaper, 30*time.Second, 10*time.Millisecond, logger)
-
-	// Wait for enough ticks
-	time.Sleep(50 * time.Millisecond)
-	cancel()
-
-	if !logger.containsSubstring("reaped idle sessions") {
-		t.Fatalf("expected reap log message, got %v", logger.logs)
-	}
-}
-
-func TestRunIdleReaperLoop_DoesNotLogWhenNothingReaped(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	reaper := &fakeReaper{results: []int{0, 0, 0}}
-	logger := &fakeLogger{}
-
-	go RunIdleReaperLoop(ctx, reaper, 30*time.Second, 10*time.Millisecond, logger)
-
-	time.Sleep(50 * time.Millisecond)
-	cancel()
-
-	logger.mu.Lock()
-	defer logger.mu.Unlock()
-	if len(logger.logs) != 0 {
-		t.Fatalf("expected no logs when nothing reaped, got %v", logger.logs)
-	}
-}
-
 func TestRunIdleReaperLoop_MultipleTicksAccumulate(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	reaper := &fakeReaper{}
-	logger := &fakeLogger{}
 
-	go RunIdleReaperLoop(ctx, reaper, 30*time.Second, 5*time.Millisecond, logger)
+	go RunIdleReaperLoop(ctx, reaper.ReapIdle, 30*time.Second, 5*time.Millisecond)
 
 	time.Sleep(40 * time.Millisecond)
 	cancel()

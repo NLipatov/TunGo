@@ -12,12 +12,8 @@ import (
 // are not safe for concurrent Encrypt due to internal nonce/counter and scratch buffers),
 // and also avoids concurrent writes to the underlying transport where ordering matters.
 type Egress interface {
-	// SendDataIP sends a data-plane (IP) packet over the encrypted transport.
-	// The plaintext buffer is passed to Crypto.Encrypt as-is.
-	SendDataIP(plaintext []byte) error
-	// SendControl sends a control-plane packet (e.g. rekey) over the encrypted transport.
-	// The plaintext buffer is passed to Crypto.Encrypt as-is.
-	SendControl(plaintext []byte) error
+	// Send serializes encryption and transport writes for this session.
+	Send(plaintext []byte) error
 	// Close tears down the underlying transport. Safe to call multiple times.
 	Close() error
 }
@@ -30,14 +26,6 @@ type DefaultEgress struct {
 
 func NewDefaultEgress(w io.Writer, c Crypto) *DefaultEgress {
 	return &DefaultEgress{w: w, c: c}
-}
-
-func (o *DefaultEgress) SendDataIP(plaintext []byte) error {
-	return o.send(plaintext)
-}
-
-func (o *DefaultEgress) SendControl(plaintext []byte) error {
-	return o.send(plaintext)
 }
 
 func (o *DefaultEgress) Close() error {
@@ -58,7 +46,7 @@ func (o *DefaultEgress) SetAddrPort(addr netip.AddrPort) {
 	}
 }
 
-func (o *DefaultEgress) send(plaintext []byte) error {
+func (o *DefaultEgress) Send(plaintext []byte) error {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 

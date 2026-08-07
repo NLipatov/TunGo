@@ -2,13 +2,17 @@ package session
 
 import (
 	"context"
+	"log/slog"
 	"time"
-	"tungo/infrastructure/logging"
 )
 
 // RunIdleReaperLoop periodically removes sessions that have been idle
 // for longer than timeout. It blocks until ctx is cancelled.
-func RunIdleReaperLoop(ctx context.Context, reaper IdleReaper, timeout, interval time.Duration, logger logging.Logger) {
+func RunIdleReaperLoop(
+	ctx context.Context,
+	reap func(time.Duration) int,
+	timeout, interval time.Duration,
+) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -16,8 +20,8 @@ func RunIdleReaperLoop(ctx context.Context, reaper IdleReaper, timeout, interval
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if n := reaper.ReapIdle(timeout); n > 0 {
-				logger.Info("reaped idle sessions", "count", n)
+			if n := reap(timeout); n > 0 {
+				slog.Info("reaped idle sessions", "count", n)
 			}
 		}
 	}

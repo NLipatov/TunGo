@@ -8,15 +8,11 @@ import (
 	"time"
 	"tungo/application/network/connection"
 	"tungo/application/network/routing/tun"
+	"tungo/infrastructure/cryptography/chacha20/tcp"
 	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/settings"
-	"tungo/infrastructure/telemetry/trafficstats"
 )
-
-// epochPrefixSize is the number of bytes reserved at the start of the buffer
-// for the 2-byte epoch tag prepended to every TCP ciphertext frame.
-const epochPrefixSize = 2
 
 type rekeyInitiator interface {
 	MaybeBuildRekeyInit(now time.Time, dst []byte) (payload []byte, ok bool, err error)
@@ -28,7 +24,7 @@ type TunHandler struct {
 	egress           connection.Egress
 	rekeyInit        rekeyInitiator
 	allowedSources   map[netip.Addr]struct{}
-	controlPacketBuf [epochPrefixSize + service_packet.RekeyPacketLen + settings.TCPChacha20Overhead]byte
+	controlPacketBuf [tcp.EpochPrefixSize + service_packet.RekeyPacketLen + settings.TCPChacha20Overhead]byte
 }
 
 func NewTunHandler(ctx context.Context,
@@ -49,9 +45,7 @@ func NewTunHandler(ctx context.Context,
 func (t *TunHandler) HandleTun() error {
 	// Buffer layout: [2B epoch reserved][plaintext up to MTU][16B AEAD tag capacity]
 	var buffer [settings.DefaultEthernetMTU + settings.TCPChacha20Overhead]byte
-	payload := buffer[epochPrefixSize : settings.DefaultEthernetMTU+epochPrefixSize]
-	rec := trafficstats.NewRecorder()
-	defer rec.Flush()
+	payload := buffer[tcp.EpochPrefixSize : settings.DefaultEthernetMTU+tcp.EpochPrefixSize]
 
 	for {
 		select {
@@ -72,23 +66,22 @@ func (t *TunHandler) HandleTun() error {
 			}
 
 			// Pass buffer including the 2-byte epoch prefix reservation.
-			if err := t.egress.SendDataIP(buffer[:epochPrefixSize+n]); err != nil {
+			if err := t.egress.Send(buffer[:tcp.EpochPrefixSize+n]); err != nil {
 				slog.Error("write to TCP failed", "err", err)
 				return err
 			}
-			rec.RecordTX(uint64(n))
 
 			if t.rekeyInit != nil {
 				now := time.Now().UTC()
-				dst := t.controlPacketBuf[epochPrefixSize : epochPrefixSize+service_packet.RekeyPacketLen]
+				dst := t.controlPacketBuf[tcp.EpochPrefixSize : tcp.EpochPrefixSize+service_packet.RekeyPacketLen]
 				servicePayload, ok, err := t.rekeyInit.MaybeBuildRekeyInit(now, dst)
 				if err != nil {
 					slog.Warn("failed to prepare rekey init", "err", err)
 					continue
 				}
 				if ok {
-					spWithPrefix := t.controlPacketBuf[:epochPrefixSize+len(servicePayload)]
-					if err := t.egress.SendControl(spWithPrefix); err != nil {
+					spWithPrefix := t.controlPacketBuf[:tcp.EpochPrefixSize+len(servicePayload)]
+					if err := t.egress.Send(spWithPrefix); err != nil {
 						slog.Warn("failed to send rekey init", "err", err)
 					}
 				}

@@ -1,9 +1,8 @@
 package routing
 
-// Worker does the TUN->CONN and CONN->TUN operations
-type Worker interface {
-	// HandleTun handles packets from TUN-like interface
-	HandleTun() error
-	// HandleTransport handles packets from transport connection
-	HandleTransport() error
+// Endpoints are the two directions of a tunnel. The protocol implementation
+// owns both functions; Router only runs them concurrently.
+type Endpoints struct {
+	RunTun       func() error
+	RunTransport func() error
 }

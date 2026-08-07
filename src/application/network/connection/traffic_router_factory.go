@@ -15,5 +15,5 @@ type TrafficRouterFactory interface {
 }
 
 type ServerTrafficRouterFactory interface {
-	CreateRouter(worker routing.Worker) routing.Router
+	CreateRouter(endpoints routing.Endpoints) routing.Router
 }

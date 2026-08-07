@@ -11,9 +11,9 @@ import (
 	"tungo/application/network/connection"
 	"tungo/application/network/routing/transport"
 	"tungo/infrastructure/cryptography/chacha20"
+	"tungo/infrastructure/cryptography/chacha20/tcp"
 	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/settings"
-	"tungo/infrastructure/telemetry/trafficstats"
 
 	"golang.org/x/crypto/chacha20poly1305"
 )
@@ -59,7 +59,7 @@ func NewTransportHandler(
 		rekeyController:     rekeyController,
 		rekeyAck:            rekeyAck,
 		egress:              egress,
-		pingBuf:             make([]byte, epochPrefixSize+3, epochPrefixSize+3+settings.TCPChacha20Overhead),
+		pingBuf:             make([]byte, tcp.EpochPrefixSize+3, tcp.EpochPrefixSize+3+settings.TCPChacha20Overhead),
 	}
 	t.lastRecvNano.Store(time.Now().UnixNano())
 	return t
@@ -69,8 +69,6 @@ func (t *TransportHandler) HandleTransport() error {
 	go t.keepaliveLoop()
 
 	var buffer [settings.DefaultEthernetMTU + settings.TCPChacha20Overhead]byte
-	rec := trafficstats.NewRecorder()
-	defer rec.Flush()
 
 	for {
 		select {
@@ -95,7 +93,7 @@ func (t *TransportHandler) HandleTransport() error {
 				slog.Warn("failed to decrypt data", "err", payloadErr)
 				return payloadErr
 			}
-			carrierEpoch := binary.BigEndian.Uint16(buffer[:epochPrefixSize])
+			carrierEpoch := binary.BigEndian.Uint16(buffer[:tcp.EpochPrefixSize])
 			if t.rekeyController != nil {
 				t.rekeyController.ObservePeerEpoch(carrierEpoch)
 			}
@@ -120,7 +118,6 @@ func (t *TransportHandler) HandleTransport() error {
 				slog.Error("failed to write to TUN", "err", writeErr)
 				return writeErr
 			}
-			rec.RecordRX(uint64(len(payload)))
 		}
 	}
 }
@@ -142,12 +139,12 @@ func (t *TransportHandler) keepaliveLoop() {
 }
 
 func (t *TransportHandler) sendPing() {
-	payload := t.pingBuf[epochPrefixSize:]
+	payload := t.pingBuf[tcp.EpochPrefixSize:]
 	if _, err := service_packet.EncodeV1Header(service_packet.Ping, payload); err != nil {
 		slog.Warn("keepalive failed to encode ping", "err", err)
 		return
 	}
-	if err := t.egress.SendControl(t.pingBuf[:]); err != nil {
+	if err := t.egress.Send(t.pingBuf[:]); err != nil {
 		slog.Warn("keepalive failed to send ping", "err", err)
 	}
 }

@@ -3,12 +3,12 @@ package tcp_registration
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/netip"
 
 	"tungo/application/network/connection"
 	"tungo/infrastructure/cryptography/noise"
-	"tungo/infrastructure/logging"
 	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/network/tcp/adapters"
 	"tungo/infrastructure/settings"
@@ -19,7 +19,6 @@ import (
 // Registrar turns an untrusted net.Conn into an established Peer
 // (handshake + crypto init + session repo add).
 type Registrar struct {
-	logger              logging.Logger
 	handshakeFactory    connection.HandshakeFactory
 	cryptographyFactory connection.CryptoFactory
 	sessionManager      tcpRegistrationRepo
@@ -28,12 +27,12 @@ type Registrar struct {
 }
 
 type tcpRegistrationRepo interface {
-	session.PeerStore
-	session.InternalLookup
+	Add(*session.Peer)
+	Delete(*session.Peer)
+	GetByInternalAddrPort(netip.Addr) (*session.Peer, error)
 }
 
 func NewRegistrar(
-	logger logging.Logger,
 	handshakeFactory connection.HandshakeFactory,
 	cryptographyFactory connection.CryptoFactory,
 	sessionManager tcpRegistrationRepo,
@@ -41,7 +40,6 @@ func NewRegistrar(
 	ipv6Subnet netip.Prefix,
 ) *Registrar {
 	return &Registrar{
-		logger:              logger,
 		handshakeFactory:    handshakeFactory,
 		cryptographyFactory: cryptographyFactory,
 		sessionManager:      sessionManager,
@@ -55,7 +53,7 @@ func NewRegistrar(
 // the framing transport. The caller is responsible for driving the
 // dataplane loop using the returned peer and transport.
 func (r *Registrar) RegisterClient(conn net.Conn) (*session.Peer, connection.Transport, error) {
-	r.logger.Info("TCP client connected", "remote_addr", conn.RemoteAddr())
+	slog.Info("TCP client connected", "remote_addr", conn.RemoteAddr())
 
 	// Extract remote address early — needed for cookie IP binding during
 	// the handshake (DoS protection) and later for session tracking.
@@ -95,7 +93,7 @@ func (r *Registrar) RegisterClient(conn net.Conn) (*session.Peer, connection.Tra
 			break
 		}
 		if errors.Is(handshakeErr, noise.ErrCookieRequired) && attempt == 0 {
-			r.logger.Warn("TCP cookie sent, awaiting retry", "remote_addr", conn.RemoteAddr())
+			slog.Warn("TCP cookie sent, awaiting retry", "remote_addr", conn.RemoteAddr())
 			continue
 		}
 		_ = framingAdapter.Close()
@@ -107,22 +105,23 @@ func (r *Registrar) RegisterClient(conn net.Conn) (*session.Peer, connection.Tra
 		_ = framingAdapter.Close()
 		return nil, nil, fmt.Errorf("client %s IP allocation failed: %w", conn.RemoteAddr(), allocErr)
 	}
-	r.logger.Info("TCP client registered", "remote_addr", conn.RemoteAddr(), "internal_ip", internalIP)
+	slog.Info("TCP client registered", "remote_addr", conn.RemoteAddr(), "internal_ip", internalIP)
 
-	cryptographyService, rekeyCtrl, cryptographyServiceErr := r.cryptographyFactory.FromHandshake(h, true)
+	cryptographyService, epochController, cryptographyServiceErr := r.cryptographyFactory.FromHandshake(h, true)
 	if cryptographyServiceErr != nil {
 		_ = framingAdapter.Close()
 		return nil, nil, fmt.Errorf("client %s failed registration: %w", conn.RemoteAddr(), cryptographyServiceErr)
 	}
-	if rekeyCtrl != nil {
-		rekeyCtrl = controlplane.NewServerRekeyCoordinator(rekeyCtrl)
+	var rekeyCoordinator *controlplane.ServerRekeyCoordinator
+	if epochController != nil {
+		rekeyCoordinator = controlplane.NewServerRekeyCoordinator(epochController)
 	}
 
 	// If session not found, or client is using a new (IP, port) address (e.g., after NAT rebinding), re-register the client.
 	existingPeer, getErr := r.sessionManager.GetByInternalAddrPort(internalIP)
 	if getErr == nil {
 		r.sessionManager.Delete(existingPeer)
-		r.logger.Info("replacing existing session", "internal_ip", internalIP)
+		slog.Info("replacing existing session", "internal_ip", internalIP)
 	} else if !errors.Is(getErr, session.ErrNotFound) {
 		_ = framingAdapter.Close()
 		return nil, nil, fmt.Errorf(
@@ -151,9 +150,10 @@ func (r *Registrar) RegisterClient(conn net.Conn) (*session.Peer, connection.Tra
 		}
 	}
 
-	sess := session.NewSessionWithAuth(cryptographyService, rekeyCtrl, internalIP, tcpAddr.AddrPort(), clientPubKey, allowedIPs)
 	egress := connection.NewDefaultEgress(framingAdapter, cryptographyService)
-	peer := session.NewPeer(sess, egress)
+	peer := session.NewPeerWithAuth(
+		cryptographyService, rekeyCoordinator, internalIP, tcpAddr.AddrPort(), clientPubKey, allowedIPs, egress,
+	)
 	r.sessionManager.Add(peer)
 
 	return peer, framingAdapter, nil

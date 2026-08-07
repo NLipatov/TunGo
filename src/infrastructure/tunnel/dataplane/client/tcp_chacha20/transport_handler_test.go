@@ -337,8 +337,7 @@ type TransportHandlerMockEgress struct {
 	err   error
 }
 
-func (e *TransportHandlerMockEgress) SendDataIP(_ []byte) error { return nil }
-func (e *TransportHandlerMockEgress) SendControl(p []byte) error {
+func (e *TransportHandlerMockEgress) Send(p []byte) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.pings = append(e.pings, append([]byte(nil), p...))

@@ -6,24 +6,22 @@ import (
 )
 
 type Router struct {
-	worker routing.Worker
+	endpoints routing.Endpoints
 }
 
-func NewRouter(worker routing.Worker) routing.Router {
-	return &Router{
-		worker: worker,
-	}
+func NewRouter(endpoints routing.Endpoints) routing.Router {
+	return &Router{endpoints: endpoints}
 }
 
 func (r *Router) RouteTraffic(ctx context.Context) error {
 	routingErr := make(chan error, 2)
 
 	go func() {
-		routingErr <- r.worker.HandleTun()
+		routingErr <- r.endpoints.RunTun()
 	}()
 
 	go func() {
-		routingErr <- r.worker.HandleTransport()
+		routingErr <- r.endpoints.RunTransport()
 	}()
 
 	select {

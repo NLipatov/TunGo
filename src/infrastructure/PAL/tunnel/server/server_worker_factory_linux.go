@@ -11,9 +11,9 @@ import (
 	"tungo/application/network/routing"
 	"tungo/infrastructure/cryptography/chacha20/tcp"
 	"tungo/infrastructure/cryptography/chacha20/udp"
-	"tungo/infrastructure/network/ip"
 	wsServer "tungo/infrastructure/network/ws/server/factory"
 	"tungo/infrastructure/settings"
+	"tungo/infrastructure/telemetry/trafficstats"
 	"tungo/infrastructure/tunnel/dataplane/server/tcp_chacha20"
 	"tungo/infrastructure/tunnel/dataplane/server/udp_chacha20"
 	"tungo/infrastructure/tunnel/session"
@@ -22,7 +22,6 @@ import (
 )
 
 type WorkerFactory struct {
-	loggerFactory loggerFactory
 	configuration appConfiguration.ServerRuntimeConfiguration
 	runtime       *Runtime
 }
@@ -32,19 +31,6 @@ func NewWorkerFactory(
 	configuration appConfiguration.ServerRuntimeConfiguration,
 ) (*WorkerFactory, error) {
 	return &WorkerFactory{
-		loggerFactory: newDefaultLoggerFactory(),
-		configuration: configuration,
-		runtime:       runtime,
-	}, nil
-}
-
-func NewTestWorkerFactory(
-	loggerFactory loggerFactory,
-	runtime *Runtime,
-	configuration appConfiguration.ServerRuntimeConfiguration,
-) (*WorkerFactory, error) {
-	return &WorkerFactory{
-		loggerFactory: loggerFactory,
 		configuration: configuration,
 		runtime:       runtime,
 	}, nil
@@ -54,7 +40,8 @@ func (s *WorkerFactory) CreateWorker(
 	ctx context.Context,
 	tun io.ReadWriteCloser,
 	workerSettings settings.Settings,
-) (routing.Worker, error) {
+) (routing.Endpoints, error) {
+	tun = trafficstats.WrapTun(tun)
 	switch workerSettings.Protocol {
 	case settings.TCP:
 		return s.createTCPWorker(ctx, tun, workerSettings)
@@ -63,7 +50,7 @@ func (s *WorkerFactory) CreateWorker(
 	case settings.WS, settings.WSS:
 		return s.createWSWorker(ctx, tun, workerSettings)
 	default:
-		return nil, fmt.Errorf("protocol %v not supported", workerSettings.Protocol)
+		return routing.Endpoints{}, fmt.Errorf("protocol %v not supported", workerSettings.Protocol)
 	}
 }
 
@@ -71,35 +58,23 @@ func (s *WorkerFactory) createTCPWorker(
 	ctx context.Context,
 	tun io.ReadWriteCloser,
 	workerSettings settings.Settings,
-) (routing.Worker, error) {
+) (routing.Endpoints, error) {
 	sessionManager := session.NewDefaultRepository()
-	if revocable, ok := sessionManager.(session.RepositoryWithRevocation); ok {
-		s.runtime.sessionRevoker.Register(revocable)
-	}
-
-	th := tcp_chacha20.NewTunHandler(
-		ctx,
-		tun,
-		ip.NewHeaderParser(),
-		sessionManager,
-	)
+	s.runtime.sessionRevoker.Register(sessionManager)
 
 	addrPort, addrPortErr := s.addrPortToListen(workerSettings.Server, workerSettings.Port)
 	if addrPortErr != nil {
-		return nil, addrPortErr
+		return routing.Endpoints{}, addrPortErr
 	}
 
 	listener, err := net.Listen("tcp", addrPort.String())
 	if err != nil {
-		return nil, fmt.Errorf("failed to listen TCP: %w", err)
+		return routing.Endpoints{}, fmt.Errorf("failed to listen TCP: %w", err)
 	}
-
-	logger := s.loggerFactory.newLogger()
 
 	handshakeFactory := NewHandshakeFactory(s.configuration, s.runtime.allowedPeers, s.runtime.cookieManager, s.runtime.loadMonitor)
 
 	registrar := tcp_registration.NewRegistrar(
-		logger,
 		handshakeFactory,
 		tcp.NewFactory(),
 		sessionManager,
@@ -107,58 +82,38 @@ func (s *WorkerFactory) createTCPWorker(
 		workerSettings.IPv6Subnet,
 	)
 
-	tr := tcp_chacha20.NewTransportHandler(
-		ctx,
-		workerSettings,
-		tun,
-		listener,
-		sessionManager,
-		logger,
-		registrar,
-	)
-	return tcp_chacha20.NewTcpTunWorker(th, tr), nil
+	server := tcp_chacha20.NewServer(ctx, workerSettings, tun, listener, sessionManager, registrar)
+	return routing.Endpoints{RunTun: server.RunTun, RunTransport: server.RunTransport}, nil
 }
 
 func (s *WorkerFactory) createWSWorker(
 	ctx context.Context,
 	tun io.ReadWriteCloser,
 	workerSettings settings.Settings,
-) (routing.Worker, error) {
+) (routing.Endpoints, error) {
 	sessionManager := session.NewDefaultRepository()
-	if revocable, ok := sessionManager.(session.RepositoryWithRevocation); ok {
-		s.runtime.sessionRevoker.Register(revocable)
-	}
-
-	th := tcp_chacha20.NewTunHandler(
-		ctx,
-		tun,
-		ip.NewHeaderParser(),
-		sessionManager,
-	)
+	s.runtime.sessionRevoker.Register(sessionManager)
 
 	addrPort, addrPortErr := s.addrPortToListen(workerSettings.Server, workerSettings.Port)
 	if addrPortErr != nil {
-		return nil, addrPortErr
+		return routing.Endpoints{}, addrPortErr
 	}
 
 	tcpListener, tcpListenerErr := net.Listen("tcp", addrPort.String())
 	if tcpListenerErr != nil {
-		return nil, fmt.Errorf("failed to listen TCP: %w", tcpListenerErr)
+		return routing.Endpoints{}, fmt.Errorf("failed to listen TCP: %w", tcpListenerErr)
 	}
 
 	wsListenerFactory := wsServer.NewDefaultListenerFactory()
 	wsListener, wsListenerErr := wsListenerFactory.NewListener(ctx, tcpListener)
 	if wsListenerErr != nil {
 		_ = tcpListener.Close()
-		return nil, fmt.Errorf("failed to listen WebSocket: %w", wsListenerErr)
+		return routing.Endpoints{}, fmt.Errorf("failed to listen WebSocket: %w", wsListenerErr)
 	}
-
-	logger := s.loggerFactory.newLogger()
 
 	handshakeFactory := NewHandshakeFactory(s.configuration, s.runtime.allowedPeers, s.runtime.cookieManager, s.runtime.loadMonitor)
 
 	registrar := tcp_registration.NewRegistrar(
-		logger,
 		handshakeFactory,
 		tcp.NewFactory(),
 		sessionManager,
@@ -166,46 +121,27 @@ func (s *WorkerFactory) createWSWorker(
 		workerSettings.IPv6Subnet,
 	)
 
-	tr := tcp_chacha20.NewTransportHandler(
-		ctx,
-		workerSettings,
-		tun,
-		wsListener,
-		sessionManager,
-		logger,
-		registrar,
-	)
-	return tcp_chacha20.NewTcpTunWorker(th, tr), nil
+	server := tcp_chacha20.NewServer(ctx, workerSettings, tun, wsListener, sessionManager, registrar)
+	return routing.Endpoints{RunTun: server.RunTun, RunTransport: server.RunTransport}, nil
 }
 
 func (s *WorkerFactory) createUDPWorker(
 	ctx context.Context,
 	tun io.ReadWriteCloser,
 	workerSettings settings.Settings,
-) (routing.Worker, error) {
+) (routing.Endpoints, error) {
 	sessionManager := session.NewDefaultRepository()
-	if revocable, ok := sessionManager.(session.RepositoryWithRevocation); ok {
-		s.runtime.sessionRevoker.Register(revocable)
-	}
+	s.runtime.sessionRevoker.Register(sessionManager)
 
 	addrPort, addrPortErr := s.addrPortToListen(workerSettings.Server, workerSettings.Port)
 	if addrPortErr != nil {
-		return nil, addrPortErr
+		return routing.Endpoints{}, addrPortErr
 	}
 
 	conn, err := net.ListenUDP("udp", net.UDPAddrFromAddrPort(addrPort))
 	if err != nil {
-		return nil, fmt.Errorf("failed to listen on port: %s", err)
+		return routing.Endpoints{}, fmt.Errorf("failed to listen on port: %s", err)
 	}
-
-	logger := s.loggerFactory.newLogger()
-
-	th := udp_chacha20.NewTunHandler(
-		ctx,
-		tun,
-		ip.NewHeaderParser(),
-		sessionManager,
-	)
 
 	handshakeFactory := NewHandshakeFactory(s.configuration, s.runtime.allowedPeers, s.runtime.cookieManager, s.runtime.loadMonitor)
 
@@ -213,24 +149,14 @@ func (s *WorkerFactory) createUDPWorker(
 		ctx,
 		conn,
 		sessionManager,
-		logger,
 		handshakeFactory,
 		udp.NewFactory(),
 		workerSettings.IPv4Subnet,
 		workerSettings.IPv6Subnet,
 	)
 
-	tr := udp_chacha20.NewTransportHandler(
-		ctx,
-		workerSettings,
-		tun,
-		conn,
-		sessionManager,
-		sessionManager,
-		logger,
-		registrar,
-	)
-	return udp_chacha20.NewUdpTunWorker(th, tr), nil
+	server := udp_chacha20.NewServer(ctx, workerSettings, tun, conn, sessionManager, registrar)
+	return routing.Endpoints{RunTun: server.RunTun, RunTransport: server.RunTransport}, nil
 }
 
 func (s *WorkerFactory) addrPortToListen(

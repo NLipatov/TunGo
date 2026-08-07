@@ -8,6 +8,6 @@ func newSessionManagerFactory() sessionManagerFactory {
 	return sessionManagerFactory{}
 }
 
-func (c *sessionManagerFactory) createManager() session.Repository {
+func (c *sessionManagerFactory) createManager() *session.DefaultRepository {
 	return session.NewDefaultRepository()
 }

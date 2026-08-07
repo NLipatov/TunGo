@@ -13,12 +13,9 @@ import (
 	"time"
 	"tungo/application/network/connection"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
-	chacha20 "tungo/infrastructure/cryptography/chacha20/udp"
 	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/service_packet"
 	"tungo/infrastructure/tunnel/controlplane"
-
-	"golang.org/x/crypto/chacha20poly1305"
 )
 
 func newTestRekeyCoordinator(controller connection.RekeyController) *controlplane.ClientRekeyCoordinator {
@@ -116,18 +113,15 @@ func (w *tunHandlerTestCancelWriter) Write(_ []byte) (int, error) {
 }
 
 type tunHandlerFailingControlEgress struct {
-	dataWrites   int
-	controlCalls int
+	calls int
 }
 
-func (e *tunHandlerFailingControlEgress) SendDataIP(_ []byte) error {
-	e.dataWrites++
+func (e *tunHandlerFailingControlEgress) Send(_ []byte) error {
+	e.calls++
+	if e.calls > 1 {
+		return errors.New("send control fail")
+	}
 	return nil
-}
-
-func (e *tunHandlerFailingControlEgress) SendControl(_ []byte) error {
-	e.controlCalls++
-	return errors.New("send control fail")
 }
 
 func (e *tunHandlerFailingControlEgress) Close() error {
@@ -284,7 +278,7 @@ func TestHandleTun_SuccessThenCancel(t *testing.T) {
 	}
 
 	// verify written
-	zeros := make([]byte, chacha20.RouteIDLength+chacha20poly1305.NonceSize)
+	zeros := make([]byte, udpPayloadOffset)
 	want := append([]byte("pre-"), append(zeros, dummyData...)...)
 	if len(writer.data) != 1 || !bytes.Equal(writer.data[0], want) {
 		t.Errorf("expected written %v, got %v", want, writer.data)
@@ -369,7 +363,7 @@ func TestHandleTun_ReadReturnsNAndEOF_OneWriteThenEOF(t *testing.T) {
 		t.Fatalf("expected exactly one write, got %d", len(w.data))
 	}
 	// payload layout: prefix || 12B nonce || [7,8,9]
-	zeros := make([]byte, chacha20.RouteIDLength+chacha20poly1305.NonceSize)
+	zeros := make([]byte, udpPayloadOffset)
 	want := append([]byte("pre-"), append(zeros, []byte{7, 8, 9}...)...)
 	if !bytes.Equal(w.data[0], want) {
 		t.Fatalf("written mismatch: got %v, want %v", w.data[0], want)
@@ -408,7 +402,7 @@ func TestHandleTun_ReusesPendingRekeyKey(t *testing.T) {
 	}
 
 	extractPub := func(pkt []byte) []byte {
-		start := chacha20.RouteIDLength + chacha20poly1305.NonceSize + 3
+		start := udpPayloadOffset + 3
 		end := start + service_packet.RekeyPublicKeyLen
 		if len(pkt) < end {
 			t.Fatalf("rekey packet too short: %d bytes", len(pkt))
@@ -454,8 +448,8 @@ func TestHandleTun_RekeyInitSendError_DoesNotFail(t *testing.T) {
 	if reads < 2 {
 		t.Fatalf("expected loop to continue after rekey init send error, got %d reads", reads)
 	}
-	if egress.dataWrites == 0 || egress.controlCalls == 0 {
-		t.Fatalf("expected both data send and control send attempts, got data=%d control=%d", egress.dataWrites, egress.controlCalls)
+	if egress.calls < 2 {
+		t.Fatalf("expected both data and control send attempts, got %d", egress.calls)
 	}
 }
 

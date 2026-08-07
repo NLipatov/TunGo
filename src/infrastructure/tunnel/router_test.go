@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"tungo/application/network/routing"
 )
 
 // mockRouterTestTunWorker implements the application.TunWorker interface for testing.
@@ -17,6 +19,10 @@ type mockRouterTestTunWorker struct {
 	transportCalled bool
 	// delay simulates work duration; if > 0, the method will wait for the delay or context cancellation.
 	delay time.Duration
+}
+
+func endpoints(worker *mockRouterTestTunWorker) routing.Endpoints {
+	return routing.Endpoints{RunTun: worker.HandleTun, RunTransport: worker.HandleTransport}
 }
 
 func (m *mockRouterTestTunWorker) HandleTun() error {
@@ -47,7 +53,7 @@ func (m *mockRouterTestTunWorker) HandleTransport() error {
 
 func TestRouteTraffic_AllSucceed(t *testing.T) {
 	worker := &mockRouterTestTunWorker{ctx: context.Background()}
-	router := NewRouter(worker)
+	router := NewRouter(endpoints(worker))
 
 	err := router.RouteTraffic(context.Background())
 	if err != nil {
@@ -63,7 +69,7 @@ func TestRouteTraffic_HandleTunError(t *testing.T) {
 	testErr := errors.New("tun error")
 	// Both handlers return the same error to avoid race ordering issues
 	worker := &mockRouterTestTunWorker{ctx: context.Background(), errTun: testErr, errTransport: testErr}
-	router := NewRouter(worker)
+	router := NewRouter(endpoints(worker))
 
 	err := router.RouteTraffic(context.Background())
 	if err == nil {
@@ -78,7 +84,7 @@ func TestRouteTraffic_HandleTransportError(t *testing.T) {
 	testErr := errors.New("transport error")
 	// Both handlers return the same error to avoid race ordering issues
 	worker := &mockRouterTestTunWorker{ctx: context.Background(), errTun: testErr, errTransport: testErr}
-	router := NewRouter(worker)
+	router := NewRouter(endpoints(worker))
 
 	err := router.RouteTraffic(context.Background())
 	if err == nil {
@@ -93,7 +99,7 @@ func TestRouteTraffic_BothErrors(t *testing.T) {
 	tunErr := errors.New("tun error")
 	transportErr := errors.New("transport error")
 	worker := &mockRouterTestTunWorker{ctx: context.Background(), errTun: tunErr, errTransport: transportErr}
-	router := NewRouter(worker)
+	router := NewRouter(endpoints(worker))
 
 	err := router.RouteTraffic(context.Background())
 	if err == nil {
@@ -112,7 +118,7 @@ func TestRouteTraffic_ExternalContextCancel(t *testing.T) {
 	}()
 
 	worker := &mockRouterTestTunWorker{ctx: ctx, delay: 100 * time.Millisecond}
-	router := NewRouter(worker)
+	router := NewRouter(endpoints(worker))
 	err := router.RouteTraffic(ctx)
 	if err == nil {
 		t.Fatal("expected error due to external context cancellation, got nil")

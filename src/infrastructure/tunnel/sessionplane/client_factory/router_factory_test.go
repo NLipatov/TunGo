@@ -56,7 +56,7 @@ func (m *RouterFactoryTunClientManagerMock) SetRouteEndpoint(addr netip.AddrPort
 
 // RouterFactoryClientWorkerFactoryMock mocks connection.ClientWorkerFactory.
 type RouterFactoryClientWorkerFactoryMock struct {
-	Worker routing.Worker
+	Worker routing.Endpoints
 	Err    error
 
 	// captured args for assertions
@@ -75,7 +75,7 @@ func (m *RouterFactoryClientWorkerFactoryMock) CreateWorker(
 	tun io.ReadWriteCloser,
 	cryptographyService connection.Crypto,
 	controller connection.RekeyController,
-) (routing.Worker, error) {
+) (routing.Endpoints, error) {
 	m.Called = true
 	m.Ctx = ctx
 	m.Conn = conn
@@ -265,7 +265,9 @@ func TestRouterFactory_CreateRouter_Success(t *testing.T) {
 
 	connFactoryMock := &RouterFactoryConnectionFactoryMock{Conn: connMock, Crypto: cryptoMock, Err: nil}
 	tunManager := &RouterFactoryTunClientManagerMock{Device: deviceMock}
-	workerFactory := &RouterFactoryClientWorkerFactoryMock{Worker: workerMock}
+	workerFactory := &RouterFactoryClientWorkerFactoryMock{Worker: routing.Endpoints{
+		RunTun: workerMock.HandleTun, RunTransport: workerMock.HandleTransport,
+	}}
 
 	ctx := context.Background()
 	router, conn, device, err := factory.CreateRouter(ctx, connFactoryMock, tunManager, workerFactory)
@@ -310,7 +312,9 @@ func TestRouterFactory_CreateRouter_AttachesRouteEndpointFromConnection(t *testi
 
 	connFactoryMock := &RouterFactoryConnectionFactoryMock{Conn: connMock, Crypto: cryptoMock, Err: nil}
 	tunManager := &RouterFactoryTunClientManagerMock{Device: deviceMock}
-	workerFactory := &RouterFactoryClientWorkerFactoryMock{Worker: workerMock}
+	workerFactory := &RouterFactoryClientWorkerFactoryMock{Worker: routing.Endpoints{
+		RunTun: workerMock.HandleTun, RunTransport: workerMock.HandleTransport,
+	}}
 
 	_, _, _, err := factory.CreateRouter(context.Background(), connFactoryMock, tunManager, workerFactory)
 	if err != nil {
@@ -339,7 +343,9 @@ func TestRouterFactory_CreateRouter_ClearsStaleRouteEndpointWhenConnectionHasNoR
 		Device:        deviceMock,
 		RouteEndpoint: netip.MustParseAddrPort("203.0.113.55:443"),
 	}
-	workerFactory := &RouterFactoryClientWorkerFactoryMock{Worker: workerMock}
+	workerFactory := &RouterFactoryClientWorkerFactoryMock{Worker: routing.Endpoints{
+		RunTun: workerMock.HandleTun, RunTransport: workerMock.HandleTransport,
+	}}
 
 	_, _, _, err := factory.CreateRouter(context.Background(), connFactoryMock, tunManager, workerFactory)
 	if err != nil {

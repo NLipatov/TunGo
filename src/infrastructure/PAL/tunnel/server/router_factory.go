@@ -13,7 +13,7 @@ func NewTrafficRouterFactory() *TrafficRouterFactory {
 }
 
 func (s *TrafficRouterFactory) CreateRouter(
-	worker application.Worker,
+	endpoints application.Endpoints,
 ) application.Router {
-	return implementation.NewRouter(worker)
+	return implementation.NewRouter(endpoints)
 }

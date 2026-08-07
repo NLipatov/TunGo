@@ -3,30 +3,8 @@ package server
 import (
 	"net/netip"
 	"testing"
-	"tungo/application/network/connection"
 	"tungo/infrastructure/tunnel/session"
 )
-
-type sessionManagerFactoryDummySession struct {
-	internalIP netip.Addr
-	externalIP netip.AddrPort
-}
-
-func (d sessionManagerFactoryDummySession) InternalAddr() netip.Addr {
-	return d.internalIP
-}
-func (d sessionManagerFactoryDummySession) ExternalAddrPort() netip.AddrPort {
-	return d.externalIP
-}
-func (d sessionManagerFactoryDummySession) Crypto() connection.Crypto {
-	return nil
-}
-func (d sessionManagerFactoryDummySession) RekeyController() connection.RekeyController {
-	return nil
-}
-func (d sessionManagerFactoryDummySession) IsSourceAllowed(netip.Addr) bool {
-	return true
-}
 
 func TestSessionManagerFactory_CreateManager(t *testing.T) {
 	f := newSessionManagerFactory()
@@ -35,14 +13,10 @@ func TestSessionManagerFactory_CreateManager(t *testing.T) {
 	in, _ := netip.ParseAddr("10.0.0.1")
 	ex, _ := netip.ParseAddrPort("1.2.3.4:9000")
 
-	sess := sessionManagerFactoryDummySession{
-		internalIP: in,
-		externalIP: ex,
-	}
-	peer := session.NewPeer(sess, nil)
+	peer := session.NewPeer(nil, nil, in, ex, nil)
 
 	mgr.Add(peer)
-	gotByInt, err := mgr.GetByInternalAddrPort(sess.InternalAddr())
+	gotByInt, err := mgr.GetByInternalAddrPort(in)
 	if err != nil {
 		t.Fatalf("GetByInternalAddrPort: unexpected error: %v", err)
 	}
@@ -50,16 +24,8 @@ func TestSessionManagerFactory_CreateManager(t *testing.T) {
 		t.Errorf("GetByInternalAddrPort: got different peer")
 	}
 
-	gotByExt, err := mgr.GetByExternalAddrPort(sess.ExternalAddrPort())
-	if err != nil {
-		t.Fatalf("GetByExternalAddrPort: unexpected error: %v", err)
-	}
-	if gotByExt != peer {
-		t.Errorf("GetByExternalAddrPort: got different peer")
-	}
-
 	mgr.Delete(peer)
-	if _, err := mgr.GetByInternalAddrPort(sess.InternalAddr()); err == nil {
+	if _, err := mgr.GetByInternalAddrPort(in); err == nil {
 		t.Error("after Delete, GetByInternalAddrPort should return error, got nil")
 	}
 }

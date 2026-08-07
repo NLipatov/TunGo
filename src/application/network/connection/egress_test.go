@@ -70,12 +70,12 @@ func TestNewDefaultEgress(t *testing.T) {
 	}
 }
 
-func TestDefaultEgress_SendDataIP_Success(t *testing.T) {
+func TestDefaultEgress_Send_Success(t *testing.T) {
 	w := &egressMockWriter{}
 	e := NewDefaultEgress(w, &egressMockCrypto{})
 
 	data := []byte("hello")
-	if err := e.SendDataIP(data); err != nil {
+	if err := e.Send(data); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(w.data) != 1 || !bytes.Equal(w.data[0], data) {
@@ -83,25 +83,12 @@ func TestDefaultEgress_SendDataIP_Success(t *testing.T) {
 	}
 }
 
-func TestDefaultEgress_SendControl_Success(t *testing.T) {
-	w := &egressMockWriter{}
-	e := NewDefaultEgress(w, &egressMockCrypto{})
-
-	data := []byte("ctrl")
-	if err := e.SendControl(data); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(w.data) != 1 || !bytes.Equal(w.data[0], data) {
-		t.Fatalf("expected write of %v, got %v", data, w.data)
-	}
-}
-
-func TestDefaultEgress_SendDataIP_EncryptError(t *testing.T) {
+func TestDefaultEgress_Send_EncryptError(t *testing.T) {
 	encErr := errors.New("encrypt failed")
 	w := &egressMockWriter{}
 	e := NewDefaultEgress(w, &egressMockCrypto{encErr: encErr})
 
-	if err := e.SendDataIP([]byte("data")); !errors.Is(err, encErr) {
+	if err := e.Send([]byte("data")); !errors.Is(err, encErr) {
 		t.Fatalf("expected encrypt error, got %v", err)
 	}
 	if len(w.data) != 0 {
@@ -109,12 +96,12 @@ func TestDefaultEgress_SendDataIP_EncryptError(t *testing.T) {
 	}
 }
 
-func TestDefaultEgress_SendControl_WriteError(t *testing.T) {
+func TestDefaultEgress_Send_WriteError(t *testing.T) {
 	writeErr := errors.New("write failed")
 	w := &egressMockWriter{err: writeErr}
 	e := NewDefaultEgress(w, &egressMockCrypto{})
 
-	if err := e.SendControl([]byte("data")); !errors.Is(err, writeErr) {
+	if err := e.Send([]byte("data")); !errors.Is(err, writeErr) {
 		t.Fatalf("expected write error, got %v", err)
 	}
 }
@@ -171,7 +158,7 @@ func TestDefaultEgress_ConcurrentSend(t *testing.T) {
 		wg.Add(1)
 		go func(n int) {
 			defer wg.Done()
-			_ = e.SendDataIP([]byte{byte(n)})
+			_ = e.Send([]byte{byte(n)})
 		}(i)
 	}
 	wg.Wait()

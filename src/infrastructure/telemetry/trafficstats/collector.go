@@ -13,8 +13,6 @@ type Snapshot struct {
 	TXRate       uint64 // bytes/sec
 }
 
-const HotPathFlushThresholdBytes uint64 = 64 * 1024
-
 type Collector struct {
 	rxBytesTotal atomic.Uint64
 	txBytesTotal atomic.Uint64
@@ -25,12 +23,12 @@ type Collector struct {
 	emaAlpha       float64
 
 	// accessed only from the single sampler goroutine in Start()
-	lastRX     uint64
-	lastTX     uint64
-	rxEMA      float64
-	txEMA      float64
-	emaSeeded  bool
-	started    atomic.Bool
+	lastRX    uint64
+	lastTX    uint64
+	rxEMA     float64
+	txEMA     float64
+	emaSeeded bool
+	started   atomic.Bool
 }
 
 func NewCollector(sampleInterval time.Duration, emaAlpha float64) *Collector {

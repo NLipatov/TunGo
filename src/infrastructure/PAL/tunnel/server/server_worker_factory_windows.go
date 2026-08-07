@@ -24,6 +24,6 @@ func (s *WorkerFactory) CreateWorker(
 	_ context.Context,
 	_ io.ReadWriteCloser,
 	_ settings.Settings,
-) (routing.Worker, error) {
-	return nil, errServerNotSupported
+) (routing.Endpoints, error) {
+	return routing.Endpoints{}, errServerNotSupported
 }

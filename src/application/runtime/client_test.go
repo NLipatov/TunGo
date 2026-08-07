@@ -66,8 +66,8 @@ type runtimeTestWorkerFactory struct{}
 func (runtimeTestConnFactory) EstablishConnection(context.Context) (connection.Transport, connection.Crypto, connection.RekeyController, error) {
 	return nil, nil, nil, nil
 }
-func (runtimeTestWorkerFactory) CreateWorker(context.Context, connection.Transport, io.ReadWriteCloser, connection.Crypto, connection.RekeyController) (routing.Worker, error) {
-	return nil, nil
+func (runtimeTestWorkerFactory) CreateWorker(context.Context, connection.Transport, io.ReadWriteCloser, connection.Crypto, connection.RekeyController) (routing.Endpoints, error) {
+	return routing.Endpoints{}, nil
 }
 
 type runtimeTestRouter struct {

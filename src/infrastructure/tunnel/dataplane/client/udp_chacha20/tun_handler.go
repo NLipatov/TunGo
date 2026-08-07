@@ -11,13 +11,12 @@ import (
 	"time"
 	"tungo/application/network/connection"
 	"tungo/application/network/routing/tun"
-	chacha20 "tungo/infrastructure/cryptography/chacha20/udp"
+	udpcrypto "tungo/infrastructure/cryptography/chacha20/udp"
 	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/settings"
-	"tungo/infrastructure/telemetry/trafficstats"
-
-	"golang.org/x/crypto/chacha20poly1305"
 )
+
+const udpPayloadOffset = udpcrypto.PayloadOffset
 
 type rekeyInitiator interface {
 	MaybeBuildRekeyInit(now time.Time, dst []byte) (payload []byte, ok bool, err error)
@@ -60,19 +59,17 @@ func NewTunHandler(ctx context.Context,
 //
 // Step 1 – read plaintext from TUN:
 // - reader.Read writes at most MTU bytes into buffer[20:1520].
-// - first 8 bytes are reserved for route-id, next 12 for nonce
+// - first 20 bytes are reserved for Route ID and nonce
 // - trailing headroom is used by Encrypt for Poly1305 tag (+16)
 //
 // Step 2 – encrypt plaintext in place:
-//   - encryption operates on buffer[0 : 20+n] (route-id + nonce + payload)
+//   - encryption operates on buffer[0 : 20+n] (Route ID + nonce + payload)
 //   - ciphertext and authentication tag are written back in place
 //   - no additional allocations are required since all prefixes and suffix headroom are reserved.
 func (w *TunHandler) HandleTun() error {
-	// +8 route-id +12 nonce +16 AEAD tag
+	// +8 Route ID +12 nonce +16 AEAD tag
 	var buffer [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
-	payloadStart := chacha20.RouteIDLength + chacha20poly1305.NonceSize
-	rec := trafficstats.NewRecorder()
-	defer rec.Flush()
+	payloadStart := udpPayloadOffset
 
 	// Main loop to read from TUN and send data
 	for {
@@ -85,8 +82,8 @@ func (w *TunHandler) HandleTun() error {
 				n = 0 // drop; fall through to error check
 			}
 			if n > 0 {
-				// Encrypt expects route-id+nonce+payload (20+n).
-				if err := w.egress.SendDataIP(buffer[:payloadStart+n]); err != nil {
+				// Encrypt expects Route ID + nonce + payload (20+n).
+				if err := w.egress.Send(buffer[:payloadStart+n]); err != nil {
 					if w.ctx.Err() != nil {
 						return nil
 					}
@@ -97,7 +94,6 @@ func (w *TunHandler) HandleTun() error {
 					}
 					return fmt.Errorf("could not send packet to transport: %v", err)
 				}
-				rec.RecordTX(uint64(n))
 			}
 			if err != nil {
 				if w.ctx.Err() != nil {
@@ -106,15 +102,15 @@ func (w *TunHandler) HandleTun() error {
 				return fmt.Errorf("could not read a packet from TUN: %v", err)
 			}
 			if w.rekeyInit != nil {
-				payloadBuf := w.controlPacketBuffer[chacha20.RouteIDLength+chacha20poly1305.NonceSize:]
+				payloadBuf := w.controlPacketBuffer[udpPayloadOffset:]
 				servicePayload, ok, pErr := w.rekeyInit.MaybeBuildRekeyInit(time.Now().UTC(), payloadBuf)
 				if pErr != nil {
 					slog.Warn("failed to prepare rekey init", "err", pErr)
 					continue
 				}
 				if ok {
-					totalLen := chacha20.RouteIDLength + chacha20poly1305.NonceSize + len(servicePayload)
-					if err := w.egress.SendControl(w.controlPacketBuffer[:totalLen]); err != nil {
+					totalLen := udpPayloadOffset + len(servicePayload)
+					if err := w.egress.Send(w.controlPacketBuffer[:totalLen]); err != nil {
 						slog.Warn("failed to send rekey init", "err", err)
 					}
 				}

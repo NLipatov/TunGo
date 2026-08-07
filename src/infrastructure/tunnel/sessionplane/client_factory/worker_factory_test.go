@@ -10,9 +10,14 @@ import (
 
 	appConfiguration "tungo/application/configuration"
 	"tungo/application/network/connection"
+	"tungo/application/network/routing"
 	"tungo/infrastructure/network/tcp/adapters"
 	"tungo/infrastructure/settings"
 )
+
+func endpointsEmpty(endpoints routing.Endpoints) bool {
+	return endpoints.RunTun == nil && endpoints.RunTransport == nil
+}
 
 // -------------------- Small test helpers / mocks (prefix WorkerFactory) --------------------
 
@@ -71,7 +76,7 @@ func TestWorkerFactory_CreateWorker_UnsupportedProtocol(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error for unsupported protocol, got nil and worker=%v", worker)
 	}
-	if worker != nil {
+	if !endpointsEmpty(worker) {
 		t.Fatalf("expected nil worker on unsupported protocol, got %v", worker)
 	}
 }
@@ -95,7 +100,7 @@ func TestWorkerFactory_CreateWorker_TCP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error for TCP protocol, got: %v", err)
 	}
-	if worker == nil {
+	if endpointsEmpty(worker) {
 		t.Fatalf("expected non-nil worker for TCP")
 	}
 }
@@ -117,7 +122,7 @@ func TestWorkerFactory_CreateWorker_WS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error for WS protocol, got: %v", err)
 	}
-	if worker == nil {
+	if endpointsEmpty(worker) {
 		t.Fatalf("expected non-nil worker for WS")
 	}
 }
@@ -148,7 +153,7 @@ func TestWorkerFactory_CreateWorker_UDP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error for UDP protocol, got: %v", err)
 	}
-	if worker == nil {
+	if endpointsEmpty(worker) {
 		t.Fatalf("expected non-nil worker for UDP")
 	}
 }
@@ -176,7 +181,7 @@ func TestWorkerFactory_CreateWorker_UDP_WithWrappedTransport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error for wrapped UDP transport, got: %v", err)
 	}
-	if worker == nil {
+	if endpointsEmpty(worker) {
 		t.Fatalf("expected non-nil worker for wrapped UDP transport")
 	}
 }
@@ -197,7 +202,7 @@ func TestWorkerFactory_CreateWorker_UDP_RejectsNonUDPTransport(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error for non-UDP transport, got nil and worker=%v", worker)
 	}
-	if worker != nil {
+	if !endpointsEmpty(worker) {
 		t.Fatalf("expected nil worker when non-UDP transport provided, got %v", worker)
 	}
 }
@@ -227,7 +232,7 @@ func TestWorkerFactory_CreateWorker_TCP_WithAllowedSources(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
-	if worker == nil {
+	if endpointsEmpty(worker) {
 		t.Fatal("expected non-nil worker")
 	}
 }

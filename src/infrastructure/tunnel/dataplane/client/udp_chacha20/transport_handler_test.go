@@ -21,7 +21,6 @@ import (
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/controlplane"
 
-	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/curve25519"
 )
 
@@ -53,7 +52,7 @@ type thAckCrypto struct{}
 
 func (thAckCrypto) Encrypt(b []byte) ([]byte, error) { return b, nil }
 func (thAckCrypto) Decrypt(b []byte) ([]byte, error) {
-	payloadOffset := chacha20.RouteIDLength + chacha20poly1305.NonceSize
+	payloadOffset := udpPayloadOffset
 	if len(b) <= payloadOffset {
 		return nil, fmt.Errorf("cipher too short")
 	}
@@ -63,7 +62,7 @@ func (thAckCrypto) Decrypt(b []byte) ([]byte, error) {
 }
 
 func buildTestUDPPacket(epoch uint16, payload []byte) []byte {
-	payloadOffset := chacha20.RouteIDLength + chacha20poly1305.NonceSize
+	payloadOffset := udpPayloadOffset
 	packet := make([]byte, payloadOffset+len(payload))
 	binary.BigEndian.PutUint16(packet[chacha20.EpochOffset:chacha20.EpochOffset+2], epoch)
 	copy(packet[payloadOffset:], payload)
@@ -314,7 +313,7 @@ func TestHandleTransport_RekeyAckAfterDoubleInit_UsesOriginalPendingKey(t *testi
 
 	// Extract the retried client public key for expected derivation.
 	firstPub := func(pkt []byte) []byte {
-		start := chacha20.RouteIDLength + chacha20poly1305.NonceSize + 3
+		start := udpPayloadOffset + 3
 		end := start + service_packet.RekeyPublicKeyLen
 		if len(pkt) < end {
 			t.Fatalf("rekey packet too short: %d", len(pkt))
@@ -324,7 +323,7 @@ func TestHandleTransport_RekeyAckAfterDoubleInit_UsesOriginalPendingKey(t *testi
 		return out
 	}(writer.data[0])
 	secondPub := func(pkt []byte) []byte {
-		start := chacha20.RouteIDLength + chacha20poly1305.NonceSize + 3
+		start := udpPayloadOffset + 3
 		end := start + service_packet.RekeyPublicKeyLen
 		if len(pkt) < end {
 			t.Fatalf("rekey packet too short: %d", len(pkt))
@@ -456,18 +455,14 @@ func TestHandleDatagram_RejectsStaleRekeyAckAcrossTransactions(t *testing.T) {
 	}
 }
 
-// capturingEgress records SendControl calls for test assertions.
+// capturingEgress records Send calls for test assertions.
 type capturingEgress struct {
 	mu      sync.Mutex
 	packets [][]byte
 	sendErr error
 }
 
-func (e *capturingEgress) SendDataIP(plaintext []byte) error {
-	return e.send(plaintext)
-}
-
-func (e *capturingEgress) SendControl(plaintext []byte) error {
+func (e *capturingEgress) Send(plaintext []byte) error {
 	return e.send(plaintext)
 }
 
@@ -549,7 +544,7 @@ func TestHandleTransport_PingSentOnIdle(t *testing.T) {
 	}
 	// Verify the captured packet contains a valid Ping V1 header.
 	pkt := pkts[0]
-	payload := pkt[chacha20.RouteIDLength+chacha20poly1305.NonceSize:]
+	payload := pkt[udpPayloadOffset:]
 	if len(payload) < 3 {
 		t.Fatalf("ping packet payload too short: %d", len(payload))
 	}
@@ -734,7 +729,7 @@ func TestHandleTransport_ShortRekeyAck_IgnoredAndContinues(t *testing.T) {
 }
 
 func TestHandleTransport_PingSendError_Swallowed(t *testing.T) {
-	// When egress.SendControl returns an error during Ping, sendPing returns early without panic.
+	// When egress.Send returns an error during Ping, sendPing returns early without panic.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
