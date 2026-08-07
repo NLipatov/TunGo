@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -555,6 +556,35 @@ type cfUnitNoDeadlineTransport struct {
 	closed   bool
 }
 
+type cfBlockingTransport struct {
+	readStarted chan struct{}
+	closed      chan struct{}
+	readOnce    sync.Once
+	closeOnce   sync.Once
+}
+
+func newCFBlockingTransport() *cfBlockingTransport {
+	return &cfBlockingTransport{
+		readStarted: make(chan struct{}),
+		closed:      make(chan struct{}),
+	}
+}
+
+func (t *cfBlockingTransport) Read([]byte) (int, error) {
+	t.readOnce.Do(func() { close(t.readStarted) })
+	<-t.closed
+	return 0, net.ErrClosed
+}
+
+func (*cfBlockingTransport) Write(p []byte) (int, error) {
+	return len(p), nil
+}
+
+func (t *cfBlockingTransport) Close() error {
+	t.closeOnce.Do(func() { close(t.closed) })
+	return nil
+}
+
 func (t *cfUnitNoDeadlineTransport) Read(p []byte) (int, error) {
 	if len(t.readBuf) > 0 {
 		n := copy(p, t.readBuf)
@@ -684,6 +714,51 @@ func TestConnectionFactoryUnit_establishSecuredConnection_HandshakeError_ClosesA
 	}
 	if cryptoFactory.called {
 		t.Fatal("crypto factory should not be called when handshake fails")
+	}
+}
+
+func TestConnectionFactoryUnit_establishSecuredConnection_CancelClosesAdapter(t *testing.T) {
+	clientPub := make([]byte, 32)
+	clientPriv := make([]byte, 32)
+	serverPub := make([]byte, 32)
+	clientPub[0], clientPriv[0], serverPub[0] = 1, 2, 3
+
+	f := &ConnectionFactory{
+		conf: appConfiguration.ClientRuntimeConfiguration{
+			ClientPublicKey:  clientPub,
+			ClientPrivateKey: clientPriv,
+			X25519PublicKey:  serverPub,
+		},
+	}
+	transport := newCFBlockingTransport()
+	cryptoFactory := &cfUnitCryptoFactory{}
+	ctx, cancel := context.WithCancel(context.Background())
+
+	errCh := make(chan error, 1)
+	go func() {
+		_, _, _, err := f.establishSecuredConnection(ctx, transport, cryptoFactory)
+		errCh <- err
+	}()
+
+	<-transport.readStarted
+	cancel()
+
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected context cancellation, got %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("handshake did not stop after context cancellation")
+	}
+
+	select {
+	case <-transport.closed:
+	default:
+		t.Fatal("expected adapter to be closed on context cancellation")
+	}
+	if cryptoFactory.called {
+		t.Fatal("crypto factory should not be called after context cancellation")
 	}
 }
 

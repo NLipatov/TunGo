@@ -14,7 +14,6 @@ import (
 	"tungo/infrastructure/cryptography/chacha20/tcp"
 	"tungo/infrastructure/cryptography/chacha20/udp"
 	"tungo/infrastructure/cryptography/noise"
-	"tungo/infrastructure/network"
 	"tungo/infrastructure/network/tcp/adapters"
 	"tungo/infrastructure/network/ws"
 	"tungo/infrastructure/settings"
@@ -102,15 +101,30 @@ func (f *ConnectionFactory) establishSecuredConnection(
 		f.conf.X25519PublicKey,
 	)
 
-	secret := network.NewDefaultSecret(
-		handshake,
-		cryptoFactory,
-	)
-	cancellableSecret := network.NewSecretWithDeadline(ctx, secret)
-	cr, ctrl, err := cancellableSecret.Exchange(adapter)
-	if err != nil {
-		_ = adapter.Close()
+	var closeOnce sync.Once
+	closeAdapter := func() {
+		closeOnce.Do(func() { _ = adapter.Close() })
+	}
+	cancelCloseOnContextDone := context.AfterFunc(ctx, closeAdapter)
+
+	if err := handshake.ClientSideHandshake(adapter); err != nil {
+		cancelCloseOnContextDone()
+		closeAdapter()
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, nil, nil, ctxErr
+		}
 		return nil, nil, nil, err
+	}
+
+	cr, ctrl, err := cryptoFactory.FromHandshake(handshake, false)
+	cancelCloseOnContextDone()
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		closeAdapter()
+		return nil, nil, nil, ctxErr
+	}
+	if err != nil {
+		closeAdapter()
+		return nil, nil, nil, fmt.Errorf("failed to create client crypto: %w", err)
 	}
 	return adapter, cr, ctrl, nil
 }
