@@ -16,7 +16,7 @@ import (
 	"tungo/infrastructure/cryptography/noise"
 	"tungo/infrastructure/network"
 	"tungo/infrastructure/network/tcp/adapters"
-	wsAdapters "tungo/infrastructure/network/ws/adapter"
+	"tungo/infrastructure/network/ws"
 	"tungo/infrastructure/settings"
 
 	"github.com/coder/websocket"
@@ -260,7 +260,7 @@ func (f *ConnectionFactory) dialWS(
 	}
 
 	wrapped, wrapErr := adapters.NewLengthPrefixFramingAdapter(
-		adapters.NewReadDeadlineTransport(wsAdapters.NewDefaultAdapter(connCtx, conn, nil, nil), settings.PingRestartTimeout),
+		adapters.NewReadDeadlineTransport(ws.NewConn(connCtx, conn, nil, nil), settings.PingRestartTimeout),
 		settings.DefaultEthernetMTU+settings.TCPChacha20Overhead,
 	)
 	if wrapErr != nil {

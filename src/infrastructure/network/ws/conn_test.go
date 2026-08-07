@@ -1,4 +1,4 @@
-package adapter
+package ws
 
 import (
 	"bytes"
@@ -13,7 +13,7 @@ import (
 	"github.com/coder/websocket"
 )
 
-// AdapterMockConn is a controllable mock for ws.Conn used by Adapter.
+// AdapterMockConn is a controllable mock for ws.Conn used by Conn.
 type AdapterMockConn struct {
 	mu sync.Mutex
 
@@ -138,6 +138,24 @@ func (r *AdapterMockReader) Read(p []byte) (int, error) {
 
 // ---------- Helpers ----------
 
+func newTestConn(
+	ctx context.Context,
+	conn socket,
+	reader io.Reader,
+	lAddr, rAddr net.Addr,
+	readDeadline, writeDeadline time.Time,
+) *Conn {
+	c := newMockConn(ctx, conn, lAddr, rAddr)
+	c.reader = reader
+	c.readDeadline = readDeadline
+	c.writeDeadline = writeDeadline
+	return c
+}
+
+func newMockConn(ctx context.Context, conn socket, lAddr, rAddr net.Addr) *Conn {
+	return &Conn{ctx: ctx, conn: conn, lAddr: lAddr, rAddr: rAddr}
+}
+
 func mustDeadlineSet(t *testing.T, ctx context.Context) {
 	t.Helper()
 	if d, ok := ctx.Deadline(); !ok || d.IsZero() {
@@ -153,15 +171,15 @@ func mustNoDeadline(t *testing.T, ctx context.Context) {
 
 // ---------- Tests: Write ----------
 
-func TestAdapter_Write_ZeroLen(t *testing.T) {
-	a := NewDefaultAdapter(context.Background(), &AdapterMockConn{}, nil, nil)
+func TestConn_Write_ZeroLen(t *testing.T) {
+	a := newMockConn(context.Background(), &AdapterMockConn{}, nil, nil)
 	n, err := a.Write(nil)
 	if n != 0 || err != nil {
 		t.Fatalf("expected (0,nil), got (%d,%v)", n, err)
 	}
 }
 
-func TestAdapter_Write_AllAtOnce_NoDeadline(t *testing.T) {
+func TestConn_Write_AllAtOnce_NoDeadline(t *testing.T) {
 	wc := &AdapterMockWriteCloser{}
 	conn := &AdapterMockConn{
 		writerFactory: func(ctx context.Context, mt websocket.MessageType) (io.WriteCloser, error) {
@@ -173,7 +191,7 @@ func TestAdapter_Write_AllAtOnce_NoDeadline(t *testing.T) {
 			return wc, nil
 		},
 	}
-	a := NewDefaultAdapter(context.Background(), conn, nil, nil)
+	a := newMockConn(context.Background(), conn, nil, nil)
 
 	data := []byte("hello world")
 	n, err := a.Write(data)
@@ -185,7 +203,7 @@ func TestAdapter_Write_AllAtOnce_NoDeadline(t *testing.T) {
 	}
 }
 
-func TestAdapter_Write_PartialThenError(t *testing.T) {
+func TestConn_Write_PartialThenError(t *testing.T) {
 	errBoom := errors.New("boom")
 	idx := 1
 	wc := &AdapterMockWriteCloser{
@@ -198,7 +216,7 @@ func TestAdapter_Write_PartialThenError(t *testing.T) {
 			return wc, nil
 		},
 	}
-	a := NewDefaultAdapter(context.Background(), conn, nil, nil)
+	a := newMockConn(context.Background(), conn, nil, nil)
 
 	data := []byte("abcdef")
 	n, err := a.Write(data)
@@ -210,14 +228,14 @@ func TestAdapter_Write_PartialThenError(t *testing.T) {
 	}
 }
 
-func TestAdapter_Write_CloseError(t *testing.T) {
+func TestConn_Write_CloseError(t *testing.T) {
 	wc := &AdapterMockWriteCloser{closeErr: errors.New("close failed")}
 	conn := &AdapterMockConn{
 		writerFactory: func(ctx context.Context, mt websocket.MessageType) (io.WriteCloser, error) {
 			return wc, nil
 		},
 	}
-	a := NewDefaultAdapter(context.Background(), conn, nil, nil)
+	a := newMockConn(context.Background(), conn, nil, nil)
 
 	n, err := a.Write([]byte("abc"))
 	if n != 3 || err == nil {
@@ -225,7 +243,7 @@ func TestAdapter_Write_CloseError(t *testing.T) {
 	}
 }
 
-func TestAdapter_Write_RespectsWriteDeadline(t *testing.T) {
+func TestConn_Write_RespectsWriteDeadline(t *testing.T) {
 	wc := &AdapterMockWriteCloser{}
 	captured := make(chan context.Context, 1)
 	conn := &AdapterMockConn{
@@ -234,7 +252,7 @@ func TestAdapter_Write_RespectsWriteDeadline(t *testing.T) {
 			return wc, nil
 		},
 	}
-	a := NewDefaultAdapter(context.Background(), conn, nil, nil)
+	a := newMockConn(context.Background(), conn, nil, nil)
 	_ = a.SetWriteDeadline(time.Now().Add(5 * time.Second))
 
 	if _, err := a.Write([]byte("x")); err != nil {
@@ -248,7 +266,7 @@ func TestAdapter_Write_RespectsWriteDeadline(t *testing.T) {
 	}
 }
 
-func TestAdapter_Write_MapWriteErr_CloseErrorToNetErrClosed(t *testing.T) {
+func TestConn_Write_MapWriteErr_CloseErrorToNetErrClosed(t *testing.T) {
 	// Writer returns CloseError on Write() to trigger mapWriteErr Close branch.
 	closeErr := &websocket.CloseError{Code: websocket.StatusNormalClosure}
 	idx := 0
@@ -262,7 +280,7 @@ func TestAdapter_Write_MapWriteErr_CloseErrorToNetErrClosed(t *testing.T) {
 			return wc, nil
 		},
 	}
-	a := NewDefaultAdapter(context.Background(), conn, nil, nil)
+	a := newMockConn(context.Background(), conn, nil, nil)
 
 	n, err := a.Write([]byte("abcd"))
 	if n != 0 || !errors.Is(err, net.ErrClosed) {
@@ -270,7 +288,7 @@ func TestAdapter_Write_MapWriteErr_CloseErrorToNetErrClosed(t *testing.T) {
 	}
 }
 
-func TestAdapter_Write_ErrNoProgressOnZeroNil(t *testing.T) {
+func TestConn_Write_ErrNoProgressOnZeroNil(t *testing.T) {
 	wc := &AdapterMockWriteCloser{
 		chunks: []int{0}, // first write returns 0, nil
 	}
@@ -279,7 +297,7 @@ func TestAdapter_Write_ErrNoProgressOnZeroNil(t *testing.T) {
 			return wc, nil
 		},
 	}
-	a := NewDefaultAdapter(context.Background(), conn, nil, nil)
+	a := newMockConn(context.Background(), conn, nil, nil)
 	n, err := a.Write([]byte("zzz"))
 	if n != 0 || !errors.Is(err, io.ErrNoProgress) {
 		t.Fatalf("expected (0, io.ErrNoProgress), got (%d,%v)", n, err)
@@ -288,17 +306,17 @@ func TestAdapter_Write_ErrNoProgressOnZeroNil(t *testing.T) {
 
 // ---------- Tests: Read ----------
 
-func TestAdapter_Read_ZeroLen(t *testing.T) {
-	a := NewDefaultAdapter(context.Background(), &AdapterMockConn{}, nil, nil)
+func TestConn_Read_ZeroLen(t *testing.T) {
+	a := newMockConn(context.Background(), &AdapterMockConn{}, nil, nil)
 	n, err := a.Read(nil)
 	if n != 0 || err != nil {
 		t.Fatalf("expected (0,nil), got (%d,%v)", n, err)
 	}
 }
 
-func TestAdapter_Read_FromExistingReader_Success(t *testing.T) {
+func TestConn_Read_FromExistingReader_Success(t *testing.T) {
 	r := &AdapterMockReader{chunks: [][]byte{[]byte("abc")}}
-	a := NewAdapter(context.Background(), &AdapterMockConn{}, r, nil, nil, time.Time{}, time.Time{})
+	a := newTestConn(context.Background(), &AdapterMockConn{}, r, nil, nil, time.Time{}, time.Time{})
 	buf := make([]byte, 8)
 	n, err := a.Read(buf)
 	if err != nil || string(buf[:n]) != "abc" {
@@ -306,19 +324,19 @@ func TestAdapter_Read_FromExistingReader_Success(t *testing.T) {
 	}
 }
 
-func TestAdapter_Read_FromExistingReader_ZeroNil_NoProgress(t *testing.T) {
+func TestConn_Read_FromExistingReader_ZeroNil_NoProgress(t *testing.T) {
 	r := &AdapterMockReader{chunks: [][]byte{nil}}
-	a := NewAdapter(context.Background(), &AdapterMockConn{}, r, nil, nil, time.Time{}, time.Time{})
+	a := newTestConn(context.Background(), &AdapterMockConn{}, r, nil, nil, time.Time{}, time.Time{})
 	_, err := a.Read(make([]byte, 8))
 	if !errors.Is(err, io.ErrNoProgress) {
 		t.Fatalf("expected io.ErrNoProgress, got %v", err)
 	}
 }
 
-func TestAdapter_Read_FromExistingReader_SomeThenEOF_SuppressesEOF(t *testing.T) {
+func TestConn_Read_FromExistingReader_SomeThenEOF_SuppressesEOF(t *testing.T) {
 	// Use bytes.Reader behavior: read returns (n>0, io.EOF) at the end.
 	br := bytes.NewReader([]byte("hi"))
-	a := NewAdapter(context.Background(), &AdapterMockConn{}, br, nil, nil, time.Time{}, time.Time{})
+	a := newTestConn(context.Background(), &AdapterMockConn{}, br, nil, nil, time.Time{}, time.Time{})
 	buf := make([]byte, 8)
 	n, err := a.Read(buf)
 	if err != nil || string(buf[:n]) != "hi" {
@@ -326,9 +344,9 @@ func TestAdapter_Read_FromExistingReader_SomeThenEOF_SuppressesEOF(t *testing.T)
 	}
 }
 
-func TestAdapter_Read_FromExistingReader_ErrorMapped(t *testing.T) {
+func TestConn_Read_FromExistingReader_ErrorMapped(t *testing.T) {
 	r := &AdapterMockReader{chunks: [][]byte{[]byte("a")}, errAtEnd: context.DeadlineExceeded}
-	a := NewAdapter(context.Background(), &AdapterMockConn{}, r, nil, nil, time.Time{}, time.Time{})
+	a := newTestConn(context.Background(), &AdapterMockConn{}, r, nil, nil, time.Time{}, time.Time{})
 	buf := make([]byte, 8)
 	n, err := a.Read(buf)
 	if n != 1 || err != nil {
@@ -352,14 +370,14 @@ func TestAdapter_Read_FromExistingReader_ErrorMapped(t *testing.T) {
 	}
 }
 
-func TestAdapter_Read_ReaderFactoryError_MappedVariants(t *testing.T) {
+func TestConn_Read_ReaderFactoryError_MappedVariants(t *testing.T) {
 	// Test mapping of CloseError -> io.EOF
 	conn1 := &AdapterMockConn{
 		readerFactory: func(ctx context.Context) (websocket.MessageType, io.Reader, error) {
 			return 0, nil, &websocket.CloseError{Code: websocket.StatusNormalClosure}
 		},
 	}
-	a1 := NewDefaultAdapter(context.Background(), conn1, nil, nil)
+	a1 := newMockConn(context.Background(), conn1, nil, nil)
 	n, err := a1.Read(make([]byte, 8))
 	if n != 0 || !errors.Is(err, io.EOF) {
 		t.Fatalf("expected (0, io.EOF), got (%d, %v)", n, err)
@@ -371,7 +389,7 @@ func TestAdapter_Read_ReaderFactoryError_MappedVariants(t *testing.T) {
 			return 0, nil, &websocket.CloseError{Code: websocket.StatusAbnormalClosure}
 		},
 	}
-	a2 := NewDefaultAdapter(context.Background(), conn2, nil, nil)
+	a2 := newMockConn(context.Background(), conn2, nil, nil)
 	n, err = a2.Read(make([]byte, 8))
 	if n != 0 || !errors.Is(err, io.ErrUnexpectedEOF) {
 		t.Fatalf("expected (0, io.ErrUnexpectedEOF), got (%d, %v)", n, err)
@@ -383,7 +401,7 @@ func TestAdapter_Read_ReaderFactoryError_MappedVariants(t *testing.T) {
 			return 0, nil, context.DeadlineExceeded
 		},
 	}
-	a3 := NewDefaultAdapter(context.Background(), conn3, nil, nil)
+	a3 := newMockConn(context.Background(), conn3, nil, nil)
 	_, err = a3.Read(make([]byte, 8))
 	var ne interface{ Timeout() bool }
 	if !errors.As(err, &ne) || !ne.Timeout() {
@@ -391,7 +409,7 @@ func TestAdapter_Read_ReaderFactoryError_MappedVariants(t *testing.T) {
 	}
 }
 
-func TestAdapter_Read_NonBinaryFramesAreDrained_ThenBinaryRead(t *testing.T) {
+func TestConn_Read_NonBinaryFramesAreDrained_ThenBinaryRead(t *testing.T) {
 	drained := false
 	conn := &AdapterMockConn{
 		readerFactory: func(ctx context.Context) (websocket.MessageType, io.Reader, error) {
@@ -405,7 +423,7 @@ func TestAdapter_Read_NonBinaryFramesAreDrained_ThenBinaryRead(t *testing.T) {
 			return websocket.MessageBinary, bytes.NewReader([]byte("abc")), nil
 		},
 	}
-	a := NewDefaultAdapter(context.Background(), conn, nil, nil)
+	a := newMockConn(context.Background(), conn, nil, nil)
 	buf := make([]byte, 8)
 	n, err := a.Read(buf)
 	if err != nil || string(buf[:n]) != "abc" {
@@ -413,7 +431,7 @@ func TestAdapter_Read_NonBinaryFramesAreDrained_ThenBinaryRead(t *testing.T) {
 	}
 }
 
-func TestAdapter_Read_RespectsReadDeadlineOnFrameCtx(t *testing.T) {
+func TestConn_Read_RespectsReadDeadlineOnFrameCtx(t *testing.T) {
 	captured := make(chan context.Context, 1)
 	conn := &AdapterMockConn{
 		readerFactory: func(ctx context.Context) (websocket.MessageType, io.Reader, error) {
@@ -422,7 +440,7 @@ func TestAdapter_Read_RespectsReadDeadlineOnFrameCtx(t *testing.T) {
 			return 0, nil, context.DeadlineExceeded
 		},
 	}
-	a := NewDefaultAdapter(context.Background(), conn, nil, nil)
+	a := newMockConn(context.Background(), conn, nil, nil)
 	_ = a.SetReadDeadline(time.Now().Add(2 * time.Second))
 	_, _ = a.Read(make([]byte, 1))
 	select {
@@ -435,7 +453,7 @@ func TestAdapter_Read_RespectsReadDeadlineOnFrameCtx(t *testing.T) {
 
 // ---------- Tests: cancelOnEOF ----------
 
-func TestAdapter_cancelOnEOF_CallsCancelExactlyOnce(t *testing.T) {
+func TestConn_cancelOnEOF_CallsCancelExactlyOnce(t *testing.T) {
 	var calls int
 	c := &cancelOnEOF{
 		r: io.MultiReader(bytes.NewReader([]byte("x")), bytes.NewReader(nil)), // will hit EOF after read
@@ -463,9 +481,9 @@ func TestAdapter_cancelOnEOF_CallsCancelExactlyOnce(t *testing.T) {
 
 // ---------- Tests: Close & addresses ----------
 
-func TestAdapter_Close_NormalClosure(t *testing.T) {
+func TestConn_Close_NormalClosure(t *testing.T) {
 	conn := &AdapterMockConn{}
-	a := NewDefaultAdapter(context.Background(), conn, nil, nil)
+	a := newMockConn(context.Background(), conn, nil, nil)
 	if err := a.Close(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -474,8 +492,8 @@ func TestAdapter_Close_NormalClosure(t *testing.T) {
 	}
 }
 
-func TestAdapter_LocalAddr_DefaultAndCustom(t *testing.T) {
-	a := NewDefaultAdapter(context.Background(), &AdapterMockConn{}, nil, nil)
+func TestConn_LocalAddr_DefaultAndCustom(t *testing.T) {
+	a := newMockConn(context.Background(), &AdapterMockConn{}, nil, nil)
 	if _, ok := a.LocalAddr().(*net.TCPAddr); !ok {
 		t.Fatalf("expected default *net.TCPAddr")
 	}
@@ -486,8 +504,8 @@ func TestAdapter_LocalAddr_DefaultAndCustom(t *testing.T) {
 	}
 }
 
-func TestAdapter_RemoteAddr_DefaultAndCustom(t *testing.T) {
-	a := NewDefaultAdapter(context.Background(), &AdapterMockConn{}, nil, nil)
+func TestConn_RemoteAddr_DefaultAndCustom(t *testing.T) {
+	a := newMockConn(context.Background(), &AdapterMockConn{}, nil, nil)
 	if _, ok := a.RemoteAddr().(*net.TCPAddr); !ok {
 		t.Fatalf("expected default *net.TCPAddr")
 	}
@@ -500,8 +518,8 @@ func TestAdapter_RemoteAddr_DefaultAndCustom(t *testing.T) {
 
 // ---------- Tests: Deadlines setters ----------
 
-func TestAdapter_SetDeadlines(t *testing.T) {
-	a := NewDefaultAdapter(context.Background(), &AdapterMockConn{}, nil, nil)
+func TestConn_SetDeadlines(t *testing.T) {
+	a := newMockConn(context.Background(), &AdapterMockConn{}, nil, nil)
 
 	d := time.Now().Add(10 * time.Second)
 	if err := a.SetDeadline(d); err != nil {
@@ -530,8 +548,8 @@ func TestAdapter_SetDeadlines(t *testing.T) {
 
 // ---------- Tests: map*Err & errTimeout ----------
 
-func TestAdapter_mapReadErr_Variants(t *testing.T) {
-	a := NewDefaultAdapter(context.Background(), &AdapterMockConn{}, nil, nil)
+func TestConn_mapReadErr_Variants(t *testing.T) {
+	a := newMockConn(context.Background(), &AdapterMockConn{}, nil, nil)
 
 	if got := a.mapReadErr(nil); got != nil {
 		t.Fatalf("nil -> %v", got)
@@ -559,8 +577,8 @@ func TestAdapter_mapReadErr_Variants(t *testing.T) {
 	}
 }
 
-func TestAdapter_mapWriteErr_Variants(t *testing.T) {
-	a := NewDefaultAdapter(context.Background(), &AdapterMockConn{}, nil, nil)
+func TestConn_mapWriteErr_Variants(t *testing.T) {
+	a := newMockConn(context.Background(), &AdapterMockConn{}, nil, nil)
 
 	if got := a.mapWriteErr(nil); got != nil {
 		t.Fatalf("nil -> %v", got)
@@ -581,14 +599,14 @@ func TestAdapter_mapWriteErr_Variants(t *testing.T) {
 
 // ---------- Extra tests to reach 100% ----------
 
-func TestAdapter_Write_WriterFactoryError_Timeout(t *testing.T) {
+func TestConn_Write_WriterFactoryError_Timeout(t *testing.T) {
 	// Writer(...) returns context.DeadlineExceeded -> must be mapped to net.Error timeout.
 	conn := &AdapterMockConn{
 		writerFactory: func(ctx context.Context, mt websocket.MessageType) (io.WriteCloser, error) {
 			return nil, context.DeadlineExceeded
 		},
 	}
-	a := NewDefaultAdapter(context.Background(), conn, nil, nil)
+	a := newMockConn(context.Background(), conn, nil, nil)
 	_ = a.SetWriteDeadline(time.Now().Add(50 * time.Millisecond))
 
 	n, err := a.Write([]byte("x"))
@@ -601,7 +619,7 @@ func TestAdapter_Write_WriterFactoryError_Timeout(t *testing.T) {
 	}
 }
 
-func TestAdapter_Write_WriterFactoryError_Other(t *testing.T) {
+func TestConn_Write_WriterFactoryError_Other(t *testing.T) {
 	// Writer(...) returns arbitrary error -> must bubble up unchanged.
 	want := errors.New("boom")
 	conn := &AdapterMockConn{
@@ -609,14 +627,14 @@ func TestAdapter_Write_WriterFactoryError_Other(t *testing.T) {
 			return nil, want
 		},
 	}
-	a := NewDefaultAdapter(context.Background(), conn, nil, nil)
+	a := newMockConn(context.Background(), conn, nil, nil)
 	n, err := a.Write([]byte("x"))
 	if n != 0 || !errors.Is(err, want) {
 		t.Fatalf("expected (0, boom), got (%d, %v)", n, err)
 	}
 }
 
-func TestAdapter_Read_NoDeadlineOnFrameCtx(t *testing.T) {
+func TestConn_Read_NoDeadlineOnFrameCtx(t *testing.T) {
 	// No read deadline set -> frame ctx must not have a deadline.
 	captured := make(chan context.Context, 1)
 	conn := &AdapterMockConn{
@@ -625,7 +643,7 @@ func TestAdapter_Read_NoDeadlineOnFrameCtx(t *testing.T) {
 			return 0, nil, context.DeadlineExceeded
 		},
 	}
-	a := NewDefaultAdapter(context.Background(), conn, nil, nil)
+	a := newMockConn(context.Background(), conn, nil, nil)
 	_, _ = a.Read(make([]byte, 1))
 	select {
 	case ctx := <-captured:
@@ -635,7 +653,7 @@ func TestAdapter_Read_NoDeadlineOnFrameCtx(t *testing.T) {
 	}
 }
 
-func TestAdapter_Read_ExistingReader_EOFZero_ThenNextBinaryFrame(t *testing.T) {
+func TestConn_Read_ExistingReader_EOFZero_ThenNextBinaryFrame(t *testing.T) {
 	// Existing reader returns (0, EOF) -> must NOT bubble up; adapter fetches next frame.
 	conn := &AdapterMockConn{
 		readerFactory: func(ctx context.Context) (websocket.MessageType, io.Reader, error) {
@@ -643,7 +661,7 @@ func TestAdapter_Read_ExistingReader_EOFZero_ThenNextBinaryFrame(t *testing.T) {
 		},
 	}
 	// Start with a reader that immediately returns EOF with n==0.
-	a := NewAdapter(context.Background(), conn, bytes.NewReader(nil), nil, nil, time.Time{}, time.Time{})
+	a := newTestConn(context.Background(), conn, bytes.NewReader(nil), nil, nil, time.Time{}, time.Time{})
 	buf := make([]byte, 4)
 	n, err := a.Read(buf)
 	if err != nil || string(buf[:n]) != "ok" {
@@ -651,10 +669,10 @@ func TestAdapter_Read_ExistingReader_EOFZero_ThenNextBinaryFrame(t *testing.T) {
 	}
 }
 
-func TestAdapter_Close_PropagatesUnderlyingError(t *testing.T) {
+func TestConn_Close_PropagatesUnderlyingError(t *testing.T) {
 	want := errors.New("close-fail")
 	conn := &AdapterMockConn{closeErr: want}
-	a := NewDefaultAdapter(context.Background(), conn, nil, nil)
+	a := newMockConn(context.Background(), conn, nil, nil)
 	if err := a.Close(); !errors.Is(err, want) {
 		t.Fatalf("expected %v, got %v", want, err)
 	}
@@ -663,8 +681,8 @@ func TestAdapter_Close_PropagatesUnderlyingError(t *testing.T) {
 	}
 }
 
-func TestAdapter_mapReadErr_OtherCloseCode_BubblesAsIs(t *testing.T) {
-	a := NewDefaultAdapter(context.Background(), &AdapterMockConn{}, nil, nil)
+func TestConn_mapReadErr_OtherCloseCode_BubblesAsIs(t *testing.T) {
+	a := newMockConn(context.Background(), &AdapterMockConn{}, nil, nil)
 	orig := &websocket.CloseError{Code: websocket.StatusPolicyViolation}
 	got := a.mapReadErr(orig)
 	// Must return the same error instance (not wrapped/mapped).

@@ -1,4 +1,4 @@
-package adapter
+package ws
 
 import (
 	"context"
@@ -6,14 +6,21 @@ import (
 	"io"
 	"net"
 	"time"
-	"tungo/infrastructure/network/ws/contracts"
 
 	"github.com/coder/websocket"
 )
 
-// Adapter is a ws.Conn adaptation to net.Conn
-type Adapter struct {
-	conn                        contracts.Conn
+type socket interface {
+	Reader(context.Context) (websocket.MessageType, io.Reader, error)
+	Writer(context.Context, websocket.MessageType) (io.WriteCloser, error)
+	Close(websocket.StatusCode, string) error
+}
+
+var _ net.Conn = (*Conn)(nil)
+
+// Conn adapts a WebSocket connection to net.Conn.
+type Conn struct {
+	conn                        socket
 	ctx                         context.Context
 	reader                      io.Reader
 	lAddr                       net.Addr
@@ -21,40 +28,20 @@ type Adapter struct {
 	readDeadline, writeDeadline time.Time
 }
 
-func NewDefaultAdapter(
+func NewConn(
 	ctx context.Context,
-	conn contracts.Conn,
+	conn *websocket.Conn,
 	lAddr, rAddr net.Addr,
-) *Adapter {
-	return &Adapter{
-		ctx:           ctx,
-		conn:          conn,
-		lAddr:         lAddr,
-		rAddr:         rAddr,
-		readDeadline:  time.Time{},
-		writeDeadline: time.Time{},
+) *Conn {
+	return &Conn{
+		ctx:   ctx,
+		conn:  conn,
+		lAddr: lAddr,
+		rAddr: rAddr,
 	}
 }
 
-func NewAdapter(
-	ctx context.Context,
-	conn contracts.Conn,
-	reader io.Reader,
-	lAddr, rAddr net.Addr,
-	readDeadline, writeDeadline time.Time,
-) *Adapter {
-	return &Adapter{
-		ctx:           ctx,
-		conn:          conn,
-		reader:        reader,
-		lAddr:         lAddr,
-		rAddr:         rAddr,
-		readDeadline:  readDeadline,
-		writeDeadline: writeDeadline,
-	}
-}
-
-func (a *Adapter) Write(data []byte) (int, error) {
+func (a *Conn) Write(data []byte) (int, error) {
 	if len(data) == 0 {
 		return 0, nil
 	}
@@ -101,7 +88,7 @@ func (a *Adapter) Write(data []byte) (int, error) {
 
 // Read reads from the current binary WebSocket frame (or fetches the next one).
 // Non-binary frames are drained. EOF at frame boundary does not bubble up.
-func (a *Adapter) Read(buf []byte) (int, error) {
+func (a *Conn) Read(buf []byte) (int, error) {
 	if len(buf) == 0 {
 		return 0, nil
 	}
@@ -171,42 +158,42 @@ func (c *cancelOnEOF) Read(p []byte) (int, error) {
 	return n, err
 }
 
-func (a *Adapter) Close() error {
+func (a *Conn) Close() error {
 	return a.conn.Close(websocket.StatusNormalClosure, "")
 }
 
-func (a *Adapter) LocalAddr() net.Addr {
+func (a *Conn) LocalAddr() net.Addr {
 	if a.lAddr != nil {
 		return a.lAddr
 	}
 	return &net.TCPAddr{}
 }
 
-func (a *Adapter) RemoteAddr() net.Addr {
+func (a *Conn) RemoteAddr() net.Addr {
 	if a.rAddr != nil {
 		return a.rAddr
 	}
 	return &net.TCPAddr{}
 }
 
-func (a *Adapter) SetDeadline(deadline time.Time) error {
+func (a *Conn) SetDeadline(deadline time.Time) error {
 	a.readDeadline = deadline
 	a.writeDeadline = deadline
 	return nil
 }
 
-func (a *Adapter) SetReadDeadline(deadline time.Time) error {
+func (a *Conn) SetReadDeadline(deadline time.Time) error {
 	a.readDeadline = deadline
 	return nil
 }
 
-func (a *Adapter) SetWriteDeadline(deadline time.Time) error {
+func (a *Conn) SetWriteDeadline(deadline time.Time) error {
 	a.writeDeadline = deadline
 	return nil
 }
 
 // mapReadErr normalizes read-side errors to net.Conn semantics.
-func (a *Adapter) mapReadErr(err error) error {
+func (a *Conn) mapReadErr(err error) error {
 	if err == nil {
 		return nil
 	}
@@ -225,7 +212,7 @@ func (a *Adapter) mapReadErr(err error) error {
 }
 
 // mapWriteErr normalizes write-side errors to net.Conn semantics.
-func (a *Adapter) mapWriteErr(err error) error {
+func (a *Conn) mapWriteErr(err error) error {
 	if err == nil {
 		return nil
 	}

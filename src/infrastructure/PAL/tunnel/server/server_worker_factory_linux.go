@@ -11,7 +11,7 @@ import (
 	"tungo/application/network/routing"
 	"tungo/infrastructure/cryptography/chacha20/tcp"
 	"tungo/infrastructure/cryptography/chacha20/udp"
-	wsServer "tungo/infrastructure/network/ws/server/factory"
+	"tungo/infrastructure/network/ws"
 	"tungo/infrastructure/settings"
 	"tungo/infrastructure/telemetry/trafficstats"
 	"tungo/infrastructure/tunnel/dataplane/server/tcp_chacha20"
@@ -104,8 +104,7 @@ func (s *WorkerFactory) createWSWorker(
 		return routing.Endpoints{}, fmt.Errorf("failed to listen TCP: %w", tcpListenerErr)
 	}
 
-	wsListenerFactory := wsServer.NewDefaultListenerFactory()
-	wsListener, wsListenerErr := wsListenerFactory.NewListener(ctx, tcpListener)
+	wsListener, wsListenerErr := ws.NewListener(ctx, tcpListener)
 	if wsListenerErr != nil {
 		_ = tcpListener.Close()
 		return routing.Endpoints{}, fmt.Errorf("failed to listen WebSocket: %w", wsListenerErr)

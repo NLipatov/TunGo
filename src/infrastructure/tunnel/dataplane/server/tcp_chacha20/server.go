@@ -10,7 +10,6 @@ import (
 
 	"golang.org/x/crypto/chacha20poly1305"
 
-	"tungo/application/listeners"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/tcp"
 	"tungo/infrastructure/cryptography/primitives"
@@ -27,7 +26,7 @@ type Server struct {
 	ctx       context.Context
 	settings  settings.Settings
 	tun       io.ReadWriter
-	listener  listeners.TcpListener
+	listener  net.Listener
 	peers     *session.DefaultRepository
 	registrar *tcp_registration.Registrar
 	deriver   primitives.DefaultKeyDeriver
@@ -37,7 +36,7 @@ func NewServer(
 	ctx context.Context,
 	settings settings.Settings,
 	tun io.ReadWriter,
-	listener listeners.TcpListener,
+	listener net.Listener,
 	peers *session.DefaultRepository,
 	registrar *tcp_registration.Registrar,
 ) *Server {
