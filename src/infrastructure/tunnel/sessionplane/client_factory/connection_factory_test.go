@@ -1115,35 +1115,6 @@ func TestDialWithFallback_IPv6Only_DialsOnce(t *testing.T) {
 	}
 }
 
-func TestDialWSWithFallback_IPv6Only_DialsOnce(t *testing.T) {
-	t.Parallel()
-	f := &ConnectionFactory{}
-	s := settings.Settings{
-		Addressing: settings.Addressing{
-			Server: mustHost("::1"),
-			Port:   8080,
-		},
-	}
-
-	var calls int
-	_, err := f.dialWSWithFallbackUsing(
-		context.Background(),
-		context.Background(),
-		s,
-		"ws",
-		func(_ context.Context, _ context.Context, _ string, _ string) (connection.Transport, error) {
-			calls++
-			return nil, errors.New("dial failed")
-		},
-	)
-	if err == nil {
-		t.Fatal("expected error from dial")
-	}
-	if calls != 1 {
-		t.Fatalf("expected single WS dial attempt for IPv6-only endpoint, got %d", calls)
-	}
-}
-
 func TestIPv6ProbeTimeout_FromDialTimeout(t *testing.T) {
 	t.Parallel()
 

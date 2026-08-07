@@ -208,15 +208,6 @@ func (f *ConnectionFactory) dialWSWithFallback(
 	s settings.Settings,
 	scheme string,
 ) (connection.Transport, error) {
-	return f.dialWSWithFallbackUsing(establishCtx, connCtx, s, scheme, f.dialWS)
-}
-
-func (f *ConnectionFactory) dialWSWithFallbackUsing(
-	establishCtx, connCtx context.Context,
-	s settings.Settings,
-	scheme string,
-	dialFn func(context.Context, context.Context, string, string) (connection.Transport, error),
-) (connection.Transport, error) {
 	port := s.Port
 	if scheme == "wss" && port == 0 {
 		port = 443
@@ -232,17 +223,17 @@ func (f *ConnectionFactory) dialWSWithFallbackUsing(
 		if err == nil {
 			// IPv6-only path: no reason to probe then retry the same endpoint.
 			if ipv6Endpoint == endpoint {
-				return dialFn(establishCtx, connCtx, scheme, endpoint)
+				return f.dialWS(establishCtx, connCtx, scheme, endpoint)
 			}
 			ipv6Ctx, cancel := context.WithTimeout(establishCtx, ipv6ProbeTimeout(s))
-			adapter, dialErr := dialFn(ipv6Ctx, connCtx, scheme, ipv6Endpoint)
+			adapter, dialErr := f.dialWS(ipv6Ctx, connCtx, scheme, ipv6Endpoint)
 			cancel()
 			if dialErr == nil {
 				return adapter, nil
 			}
 		}
 	}
-	return dialFn(establishCtx, connCtx, scheme, endpoint)
+	return f.dialWS(establishCtx, connCtx, scheme, endpoint)
 }
 
 func (f *ConnectionFactory) dialWS(
