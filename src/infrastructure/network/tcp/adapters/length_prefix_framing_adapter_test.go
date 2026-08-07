@@ -7,8 +7,6 @@ import (
 	"io"
 	"math"
 	"testing"
-
-	framelimit "tungo/domain/network/ip/frame_limit"
 )
 
 // --- Test helpers / mock ---
@@ -95,30 +93,30 @@ func mkFrame(payload []byte) []byte {
 // --- Constructor tests ---
 
 func TestNewLengthPrefixFramingAdapter_ErrNilAdapter(t *testing.T) {
-	capv, _ := framelimit.NewCap(10)
+	capv := 10
 	if _, err := NewLengthPrefixFramingAdapter(nil, capv); err == nil {
 		t.Fatal("expected error for nil adapter")
 	}
 }
 
 func TestNewLengthPrefixFramingAdapter_ErrNonPositiveCap(t *testing.T) {
-	// Bypass domain constructor intentionally to hit adapter check.
-	if _, err := NewLengthPrefixFramingAdapter(&LengthPrefixFramingAdapterMockConn{}, framelimit.Cap(0)); err == nil {
+	// The adapter owns frame-cap validation.
+	if _, err := NewLengthPrefixFramingAdapter(&LengthPrefixFramingAdapterMockConn{}, 0); err == nil {
 		t.Fatal("expected error for non-positive cap")
 	}
-	if _, err := NewLengthPrefixFramingAdapter(&LengthPrefixFramingAdapterMockConn{}, framelimit.Cap(-1)); err == nil {
+	if _, err := NewLengthPrefixFramingAdapter(&LengthPrefixFramingAdapterMockConn{}, -1); err == nil {
 		t.Fatal("expected error for negative cap")
 	}
 }
 
 func TestNewLengthPrefixFramingAdapter_ErrCapExceedsU16(t *testing.T) {
-	if _, err := NewLengthPrefixFramingAdapter(&LengthPrefixFramingAdapterMockConn{}, framelimit.Cap(math.MaxUint16+1)); err == nil {
+	if _, err := NewLengthPrefixFramingAdapter(&LengthPrefixFramingAdapterMockConn{}, math.MaxUint16+1); err == nil {
 		t.Fatal("expected error for cap > u16")
 	}
 }
 
 func TestNewLengthPrefixFramingAdapter_OK(t *testing.T) {
-	capv, _ := framelimit.NewCap(1024)
+	capv := 1024
 	a, err := NewLengthPrefixFramingAdapter(&LengthPrefixFramingAdapterMockConn{}, capv)
 	if err != nil || a == nil {
 		t.Fatalf("unexpected constructor result: a=%v err=%v", a, err)
@@ -133,7 +131,7 @@ func TestWrite_Success_WithPartialPrefixAndPayload(t *testing.T) {
 		// prefix: 1 + 1; payload: 2 + rest
 		writeChunks: []int{1, 1, 2, len(payload) - 2},
 	}
-	capv, _ := framelimit.NewCap(65535)
+	capv := 65535
 	a, _ := NewLengthPrefixFramingAdapter(mock, capv)
 
 	n, err := a.Write(payload)
@@ -151,7 +149,7 @@ func TestWrite_Success_WithPartialPrefixAndPayload(t *testing.T) {
 
 func TestWrite_ZeroLengthFrame(t *testing.T) {
 	mock := &LengthPrefixFramingAdapterMockConn{}
-	capv, _ := framelimit.NewCap(10)
+	capv := 10
 	a, _ := NewLengthPrefixFramingAdapter(mock, capv)
 
 	if _, err := a.Write(nil); !errors.Is(err, ErrZeroLengthFrame) {
@@ -159,24 +157,24 @@ func TestWrite_ZeroLengthFrame(t *testing.T) {
 	}
 }
 
-func TestWrite_ExceedsDomainCap(t *testing.T) {
+func TestWrite_ExceedsFrameCap(t *testing.T) {
 	mock := &LengthPrefixFramingAdapterMockConn{}
-	capv, _ := framelimit.NewCap(10)
+	capv := 10
 	a, _ := NewLengthPrefixFramingAdapter(mock, capv)
 
-	if _, err := a.Write(make([]byte, 11)); !errors.Is(err, framelimit.ErrCapExceeded) {
-		t.Fatalf("expected framelimit.ErrCapExceeded, got %v", err)
+	if _, err := a.Write(make([]byte, 11)); !errors.Is(err, ErrFrameCapExceeded) {
+		t.Fatalf("expected ErrFrameCapExceeded, got %v", err)
 	}
 }
 
 func TestWrite_ExceedsU16ByPayloadLen(t *testing.T) {
-	// cap == u16, but payload > u16 -> should fail domain cap check before writing header
+	// cap == u16, but payload > u16 -> should fail frame-cap check before writing header
 	mock := &LengthPrefixFramingAdapterMockConn{}
-	capv, _ := framelimit.NewCap(math.MaxUint16)
+	capv := math.MaxUint16
 	a, _ := NewLengthPrefixFramingAdapter(mock, capv)
 
-	if _, err := a.Write(make([]byte, math.MaxUint16+1)); !errors.Is(err, framelimit.ErrCapExceeded) {
-		t.Fatalf("expected framelimit.ErrCapExceeded, got %v", err)
+	if _, err := a.Write(make([]byte, math.MaxUint16+1)); !errors.Is(err, ErrFrameCapExceeded) {
+		t.Fatalf("expected ErrFrameCapExceeded, got %v", err)
 	}
 }
 
@@ -185,7 +183,7 @@ func TestWrite_PrefixShortWriteZero(t *testing.T) {
 	mock := &LengthPrefixFramingAdapterMockConn{
 		writeChunks: []int{0}, // first Write returns (0, nil) -> io.ErrShortWrite
 	}
-	capv, _ := framelimit.NewCap(10)
+	capv := 10
 	a, _ := NewLengthPrefixFramingAdapter(mock, capv)
 
 	if _, err := a.Write(payload); !errors.Is(err, io.ErrShortWrite) {
@@ -199,7 +197,7 @@ func TestWrite_PrefixWriteError(t *testing.T) {
 		writeErrAt: 1,
 		writeErr:   io.ErrClosedPipe,
 	}
-	capv, _ := framelimit.NewCap(10)
+	capv := 10
 	a, _ := NewLengthPrefixFramingAdapter(mock, capv)
 
 	if _, err := a.Write(payload); !errors.Is(err, io.ErrClosedPipe) {
@@ -215,7 +213,7 @@ func TestWrite_PayloadWriteErrorAfterSomeBytes(t *testing.T) {
 		writeErrAt:  3,
 		writeErr:    io.ErrClosedPipe,
 	}
-	capv, _ := framelimit.NewCap(10)
+	capv := 10
 	a, _ := NewLengthPrefixFramingAdapter(mock, capv)
 
 	if _, err := a.Write(payload); !errors.Is(err, io.ErrClosedPipe) {
@@ -232,7 +230,7 @@ func TestRead_Success_WithPartials(t *testing.T) {
 		readData:   frame,
 		readChunks: []int{1, 1, 3, 2, len(payload) - 5}, // split hdr+payload into several reads
 	}
-	capv, _ := framelimit.NewCap(1024)
+	capv := 1024
 	a, _ := NewLengthPrefixFramingAdapter(mock, capv)
 
 	buf := make([]byte, len(payload))
@@ -254,7 +252,7 @@ func TestRead_PrefixError_Wrapped(t *testing.T) {
 		readData:   []byte{0x00},
 		readChunks: []int{1},
 	}
-	capv, _ := framelimit.NewCap(10)
+	capv := 10
 	a, _ := NewLengthPrefixFramingAdapter(mock, capv)
 
 	_, err := a.Read(make([]byte, 10))
@@ -265,7 +263,7 @@ func TestRead_PrefixError_Wrapped(t *testing.T) {
 
 func TestRead_ZeroLengthFrame(t *testing.T) {
 	mock := &LengthPrefixFramingAdapterMockConn{readData: []byte{0x00, 0x00}}
-	capv, _ := framelimit.NewCap(10)
+	capv := 10
 	a, _ := NewLengthPrefixFramingAdapter(mock, capv)
 
 	if _, err := a.Read(make([]byte, 1)); !errors.Is(err, ErrZeroLengthFrame) {
@@ -273,15 +271,15 @@ func TestRead_ZeroLengthFrame(t *testing.T) {
 	}
 }
 
-func TestRead_ExceedsDomainCap_NoDrain(t *testing.T) {
-	// header says 3 bytes, but domain cap is 2 -> expect domain error, payload not consumed by Read.
+func TestRead_ExceedsFrameCap_NoDrain(t *testing.T) {
+	// Header says 3 bytes, but frame cap is 2; payload must remain unread.
 	frame := mkFrame([]byte("xyz")) // len=3
 	mock := &LengthPrefixFramingAdapterMockConn{readData: frame}
-	capv, _ := framelimit.NewCap(2)
+	capv := 2
 	a, _ := NewLengthPrefixFramingAdapter(mock, capv)
 
-	if _, err := a.Read(make([]byte, 3)); !errors.Is(err, framelimit.ErrCapExceeded) {
-		t.Fatalf("expected framelimit.ErrCapExceeded, got %v", err)
+	if _, err := a.Read(make([]byte, 3)); !errors.Is(err, ErrFrameCapExceeded) {
+		t.Fatalf("expected ErrFrameCapExceeded, got %v", err)
 	}
 	// Contract: adapter does NOT drain payload on error; caller must close.
 	// (With buffering, mock data may be consumed into bufReader — that's fine,
@@ -292,7 +290,7 @@ func TestRead_ShortBuffer_NoDrain(t *testing.T) {
 	payload := []byte("some-long-payload")
 	frame := mkFrame(payload)
 	mock := &LengthPrefixFramingAdapterMockConn{readData: frame}
-	capv, _ := framelimit.NewCap(1024)
+	capv := 1024
 	a, _ := NewLengthPrefixFramingAdapter(mock, capv)
 
 	if _, err := a.Read(make([]byte, 4)); !errors.Is(err, io.ErrShortBuffer) {
@@ -306,7 +304,7 @@ func TestRead_PayloadReadError(t *testing.T) {
 	hdr := []byte{0x00, 0x05}
 	data := append(hdr, []byte("abc")...)
 	mock := &LengthPrefixFramingAdapterMockConn{readData: data}
-	capv, _ := framelimit.NewCap(10)
+	capv := 10
 	a, _ := NewLengthPrefixFramingAdapter(mock, capv)
 
 	if _, err := a.Read(make([]byte, 5)); err == nil {
@@ -318,7 +316,7 @@ func TestRead_PayloadReadError(t *testing.T) {
 
 func TestClose_OK(t *testing.T) {
 	mock := &LengthPrefixFramingAdapterMockConn{}
-	capv, _ := framelimit.NewCap(10)
+	capv := 10
 	a, _ := NewLengthPrefixFramingAdapter(mock, capv)
 
 	if err := a.Close(); err != nil {
@@ -328,7 +326,7 @@ func TestClose_OK(t *testing.T) {
 
 func TestClose_Err(t *testing.T) {
 	mock := &LengthPrefixFramingAdapterMockConn{closeErr: io.ErrClosedPipe}
-	capv, _ := framelimit.NewCap(10)
+	capv := 10
 	a, _ := NewLengthPrefixFramingAdapter(mock, capv)
 
 	if err := a.Close(); !errors.Is(err, io.ErrClosedPipe) {
@@ -345,7 +343,7 @@ func TestRead_BufferedReducesSyscalls(t *testing.T) {
 	mock := &LengthPrefixFramingAdapterMockConn{
 		readData: append(frame1, frame2...),
 	}
-	capv, _ := framelimit.NewCap(1024)
+	capv := 1024
 	a, _ := NewLengthPrefixFramingAdapter(mock, capv)
 
 	buf := make([]byte, 1024)

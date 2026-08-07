@@ -16,7 +16,6 @@ import (
 
 	appConfiguration "tungo/application/configuration"
 	"tungo/application/network/connection"
-	framelimit "tungo/domain/network/ip/frame_limit"
 	"tungo/infrastructure/cryptography/chacha20/tcp"
 	"tungo/infrastructure/cryptography/noise"
 	"tungo/infrastructure/cryptography/primitives"
@@ -901,11 +900,11 @@ func TestConnectionFactoryUnit_establishSecuredConnection_Success(t *testing.T) 
 	defer func() { _ = clientConn.Close() }()
 	defer func() { _ = serverConn.Close() }()
 
-	clientAdapter, err := adapters.NewLengthPrefixFramingAdapter(clientConn, framelimit.Cap(2048))
+	clientAdapter, err := adapters.NewLengthPrefixFramingAdapter(clientConn, 2048)
 	if err != nil {
 		t.Fatalf("client framing adapter failed: %v", err)
 	}
-	serverAdapter, err := adapters.NewLengthPrefixFramingAdapter(serverConn, framelimit.Cap(2048))
+	serverAdapter, err := adapters.NewLengthPrefixFramingAdapter(serverConn, 2048)
 	if err != nil {
 		t.Fatalf("server framing adapter failed: %v", err)
 	}

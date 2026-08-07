@@ -3,8 +3,6 @@ package adapters
 import (
 	"net/netip"
 	"testing"
-
-	framelimit "tungo/domain/network/ip/frame_limit"
 )
 
 type plainTransport struct {
@@ -48,7 +46,7 @@ func TestLengthPrefixFramingAdapter_RemoteAddrPort_Delegates(t *testing.T) {
 	addr := netip.MustParseAddrPort("203.0.113.5:9999")
 	inner := &plainTransport{}
 	rat := NewRemoteAddrTransport(inner, addr)
-	fa, err := NewLengthPrefixFramingAdapter(rat, framelimit.Cap(1500))
+	fa, err := NewLengthPrefixFramingAdapter(rat, 1500)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +58,7 @@ func TestLengthPrefixFramingAdapter_RemoteAddrPort_Delegates(t *testing.T) {
 
 func TestLengthPrefixFramingAdapter_RemoteAddrPort_NoInner(t *testing.T) {
 	inner := &plainTransport{}
-	fa, err := NewLengthPrefixFramingAdapter(inner, framelimit.Cap(1500))
+	fa, err := NewLengthPrefixFramingAdapter(inner, 1500)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -8,13 +8,12 @@ import (
 	"math"
 	"net/netip"
 	"tungo/application/network/connection"
-	framelimit "tungo/domain/network/ip/frame_limit"
 )
 
 // LengthPrefixFramingAdapter is not safe for concurrent Read/Write without external synchronization.
 type LengthPrefixFramingAdapter struct {
 	adapter  connection.Transport
-	frameCap framelimit.Cap
+	frameCap int
 
 	// bufReader amortizes underlying Read syscalls: header + payload served from a single buffer refill.
 	bufReader *bufio.Reader
@@ -24,16 +23,16 @@ type LengthPrefixFramingAdapter struct {
 
 func NewLengthPrefixFramingAdapter(
 	adapter connection.Transport,
-	frameCap framelimit.Cap,
+	frameCap int,
 ) (*LengthPrefixFramingAdapter, error) {
 	if adapter == nil {
 		return nil, fmt.Errorf("adapter must not be nil")
 	}
-	if int(frameCap) <= 0 {
+	if frameCap <= 0 {
 		return nil, fmt.Errorf("frame cap must be > 0")
 	}
-	if int(frameCap) > math.MaxUint16 {
-		return nil, fmt.Errorf("frame cap %d exceeds u16 transport cap %d", int(frameCap), math.MaxUint16)
+	if frameCap > math.MaxUint16 {
+		return nil, fmt.Errorf("frame cap %d exceeds u16 transport cap %d", frameCap, math.MaxUint16)
 	}
 	return &LengthPrefixFramingAdapter{
 		adapter:   adapter,
@@ -49,8 +48,8 @@ func (a *LengthPrefixFramingAdapter) Write(data []byte) (int, error) {
 	if len(data) == 0 {
 		return 0, ErrZeroLengthFrame
 	}
-	if capErr := a.frameCap.ValidateLen(len(data)); capErr != nil {
-		return 0, capErr
+	if len(data) > a.frameCap {
+		return 0, ErrFrameCapExceeded
 	}
 	var header [2]byte
 	binary.BigEndian.PutUint16(header[:], uint16(len(data)))
@@ -89,8 +88,8 @@ func (a *LengthPrefixFramingAdapter) Read(buffer []byte) (int, error) {
 	if length == 0 {
 		return 0, ErrZeroLengthFrame
 	}
-	if capErr := a.frameCap.ValidateLen(length); capErr != nil {
-		return 0, capErr
+	if length > a.frameCap {
+		return 0, ErrFrameCapExceeded
 	}
 	if length > len(buffer) {
 		return 0, io.ErrShortBuffer
