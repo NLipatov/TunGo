@@ -23,6 +23,7 @@ type DefaultServer struct {
 	handler                                         contracts.Handler
 	path                                            string
 	startOnce, closeOnce                            sync.Once
+	serverMu                                        sync.RWMutex
 	closed                                          chan struct{}
 	serveErrChan                                    chan error
 }
@@ -71,7 +72,7 @@ func (s *DefaultServer) Serve() error {
 		started = true
 		mux := http.NewServeMux()
 		mux.HandleFunc(s.path, s.handler.Handle)
-		s.server = &http.Server{
+		server := &http.Server{
 			Handler: mux,
 			BaseContext: func(_ net.Listener) context.Context {
 				return s.ctx
@@ -79,11 +80,14 @@ func (s *DefaultServer) Serve() error {
 			ReadHeaderTimeout: s.readHeaderTimeout,
 			IdleTimeout:       s.idleTimeout,
 		}
+		s.serverMu.Lock()
+		s.server = server
+		s.serverMu.Unlock()
 		go func() {
 			<-s.ctx.Done()
 			_ = s.Shutdown()
 		}()
-		if sErr := s.server.Serve(s.listener); sErr != nil && !errors.Is(sErr, http.ErrServerClosed) {
+		if sErr := server.Serve(s.listener); sErr != nil && !errors.Is(sErr, http.ErrServerClosed) {
 			err = sErr
 		}
 		select {
@@ -102,7 +106,10 @@ func (s *DefaultServer) Serve() error {
 func (s *DefaultServer) Shutdown() error {
 	var err error
 	s.closeOnce.Do(func() {
-		if s.server == nil {
+		s.serverMu.RLock()
+		server := s.server
+		s.serverMu.RUnlock()
+		if server == nil {
 			if s.listener != nil {
 				err = s.listener.Close()
 			}
@@ -110,7 +117,7 @@ func (s *DefaultServer) Shutdown() error {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), s.shutdownTimeout)
 		defer cancel()
-		err = s.server.Shutdown(ctx)
+		err = server.Shutdown(ctx)
 	})
 	return err
 }
