@@ -534,8 +534,8 @@ func TestV6SetMTU_CommanderError(t *testing.T) {
 
 func TestSetMTU_BoundaryValues(t *testing.T) {
 	constructors := []struct {
-		name   string
-		newFn  func(*mockCommander) Contract
+		name  string
+		newFn func(*mockCommander) Contract
 	}{
 		{"v4", func(m *mockCommander) Contract { return newV4(m) }},
 		{"v6", func(m *mockCommander) Contract { return newV6(m) }},

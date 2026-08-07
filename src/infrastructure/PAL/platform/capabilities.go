@@ -4,4 +4,3 @@ package platform
 type Caps interface {
 	ServerModeSupported() bool
 }
-

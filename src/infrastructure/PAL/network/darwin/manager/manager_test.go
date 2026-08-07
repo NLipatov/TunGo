@@ -129,8 +129,8 @@ func (m *mockUTUN) Name() (string, error) { return "utun42", nil }
 type mockCommander struct{}
 
 func (mockCommander) CombinedOutput(string, ...string) ([]byte, error) { return nil, nil }
-func (mockCommander) Output(string, ...string) ([]byte, error)        { return nil, nil }
-func (mockCommander) Run(string, ...string) error                     { return nil }
+func (mockCommander) Output(string, ...string) ([]byte, error)         { return nil, nil }
+func (mockCommander) Run(string, ...string) error                      { return nil }
 
 // newTestFactory creates a Factory with valid sub-factories that will not
 // execute real system commands. The resulting manager objects will have real
