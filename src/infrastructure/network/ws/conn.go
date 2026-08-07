@@ -41,7 +41,7 @@ func NewConn(
 	}
 }
 
-func (a *Conn) Write(data []byte) (int, error) {
+func (a *Conn) Write(data []byte) (written int, err error) {
 	if len(data) == 0 {
 		return 0, nil
 	}
@@ -55,34 +55,29 @@ func (a *Conn) Write(data []byte) (int, error) {
 	}
 	defer cancel()
 
-	writer, writerErr := a.conn.Writer(ctx, websocket.MessageBinary)
-	if writerErr != nil {
-		return 0, a.mapWriteErr(writerErr)
+	writer, err := a.conn.Writer(ctx, websocket.MessageBinary)
+	if err != nil {
+		return 0, a.mapWriteErr(err)
 	}
 
-	closed := false
 	defer func() {
-		if !closed {
-			_ = writer.Close()
+		closeErr := writer.Close()
+		if err == nil && closeErr != nil {
+			err = a.mapWriteErr(closeErr)
 		}
 	}()
 
-	var written int
 	for written < len(data) {
-		n, wErr := writer.Write(data[written:])
-		if n == 0 && wErr == nil {
-			return written, io.ErrNoProgress
-		}
+		n, writeErr := writer.Write(data[written:])
 		written += n
-		if wErr != nil {
-			return written, a.mapWriteErr(wErr)
+		if writeErr != nil {
+			return written, a.mapWriteErr(writeErr)
+		}
+		if n == 0 {
+			return written, io.ErrNoProgress
 		}
 	}
 
-	if cErr := writer.Close(); cErr != nil {
-		return written, a.mapWriteErr(cErr)
-	}
-	closed = true
 	return written, nil
 }
 
