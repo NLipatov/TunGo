@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"tungo/application/version"
 	"tungo/presentation/elevation"
 )
 
@@ -82,6 +83,10 @@ func TestMain_Version(t *testing.T) {
 
 func TestRunCLI_Version(t *testing.T) {
 	setCommandLine(t, "version")
+	previousTag := version.Tag
+	version.Tag = "v-test"
+	t.Cleanup(func() { version.Tag = previousTag })
+
 	var runErr error
 	output := captureStdout(t, func() {
 		runErr = runCLI(context.Background())
@@ -90,8 +95,9 @@ func TestRunCLI_Version(t *testing.T) {
 	if runErr != nil {
 		t.Fatalf("runCLI() error = %v", runErr)
 	}
-	if strings.TrimSpace(output) == "" {
-		t.Fatal("expected version output")
+	want := appName + " v-test\n"
+	if output != want {
+		t.Fatalf("version output = %q, want %q", output, want)
 	}
 }
 

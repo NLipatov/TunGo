@@ -10,7 +10,6 @@ import (
 	"tungo/application/configuration"
 	"tungo/application/runtime"
 	"tungo/application/version"
-	"tungo/domain/app"
 	"tungo/infrastructure/PAL/exec_commander"
 	"tungo/infrastructure/PAL/service_management/linux/systemd"
 	"tungo/infrastructure/logging"
@@ -19,6 +18,8 @@ import (
 	"tungo/presentation/signals/shutdown"
 	"tungo/presentation/ui/tui"
 )
+
+const appName = "tungo"
 
 func main() {
 	exitCode := 0
@@ -37,13 +38,10 @@ func main() {
 	)
 	shutdownSignalHandler.Handle()
 	var err error
-	switch uiMode := app.CurrentUIMode(); uiMode {
-	case app.CLI:
-		err = runCLI(ctx)
-	case app.TUI:
+	if isTUI() {
 		err = runTUI(ctx)
-	default:
-		err = fmt.Errorf("unknown UI mode: %v", uiMode)
+	} else {
+		err = runCLI(ctx)
 	}
 	if err != nil {
 		exitCode = showFatal(err)
@@ -53,7 +51,7 @@ func main() {
 func runCLI(ctx context.Context) error {
 	command, err := commandline.ParseCommand(os.Args[1:])
 	if err != nil {
-		fmt.Print(commandline.CommandUsage(app.Name))
+		fmt.Print(commandline.CommandUsage(appName))
 		return fmt.Errorf("configuration error: %w", err)
 	}
 	if command.RequiresElevation {
@@ -63,7 +61,7 @@ func runCLI(ctx context.Context) error {
 	}
 	switch command.Kind {
 	case commandline.CommandVersion:
-		version.Run()
+		fmt.Printf("%s %s\n", appName, version.Current())
 		return nil
 	case commandline.CommandServerConfigGenerate:
 		serverControl := configuration.NewDefaultServerControl()
@@ -116,17 +114,21 @@ func requireElevation() error {
 	}
 	return fmt.Errorf(
 		"%s must be run with admin privileges.\n%s",
-		app.Name, elevation.Hint(),
+		appName, elevation.Hint(),
 	)
 }
 
 // showFatal displays a fatal error and returns the exit code.
 // In TUI mode it shows a themed, dismissable screen; in CLI mode it logs.
 func showFatal(err error) int {
-	if app.CurrentUIMode() == app.TUI {
+	if isTUI() {
 		tui.ShowFatalError(err.Error())
 	} else {
 		slog.Error("fatal error", "err", err)
 	}
 	return 1
+}
+
+func isTUI() bool {
+	return len(os.Args) < 2
 }
