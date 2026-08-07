@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +12,16 @@ import (
 	"testing"
 	"time"
 )
+
+func captureSlog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+
+	buf := &bytes.Buffer{}
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	return buf
+}
 
 // mockRevoker tracks revoked public keys for testing.
 type mockRevoker struct {
@@ -121,7 +131,7 @@ func TestConfigWatcher_RevokesDisabledPeer(t *testing.T) {
 	configManager := &mockConfigManager{config: initialConfig}
 	revoker := &mockRevoker{}
 
-	watcher := NewConfigWatcher(configManager, revoker, nil, "", 10*time.Millisecond, nil)
+	watcher := NewConfigWatcher(configManager, revoker, nil, "", 10*time.Millisecond)
 
 	prevPeers := watcher.loadCurrentState()
 
@@ -162,7 +172,7 @@ func TestConfigWatcher_RevokesRemovedPeer(t *testing.T) {
 	configManager := &mockConfigManager{config: initialConfig}
 	revoker := &mockRevoker{}
 
-	watcher := NewConfigWatcher(configManager, revoker, nil, "", 10*time.Millisecond, nil)
+	watcher := NewConfigWatcher(configManager, revoker, nil, "", 10*time.Millisecond)
 	prevPeers := watcher.loadCurrentState()
 
 	// Remove peer1 entirely
@@ -198,7 +208,7 @@ func TestConfigWatcher_NoRevokeForAlreadyDisabled(t *testing.T) {
 	configManager := &mockConfigManager{config: initialConfig}
 	revoker := &mockRevoker{}
 
-	watcher := NewConfigWatcher(configManager, revoker, nil, "", 10*time.Millisecond, nil)
+	watcher := NewConfigWatcher(configManager, revoker, nil, "", 10*time.Millisecond)
 	prevPeers := watcher.loadCurrentState()
 
 	// Keep disabled
@@ -225,7 +235,7 @@ func TestConfigWatcher_NoRevokeWhenReEnabled(t *testing.T) {
 	configManager := &mockConfigManager{config: initialConfig}
 	revoker := &mockRevoker{}
 
-	watcher := NewConfigWatcher(configManager, revoker, nil, "", 10*time.Millisecond, nil)
+	watcher := NewConfigWatcher(configManager, revoker, nil, "", 10*time.Millisecond)
 	prevPeers := watcher.loadCurrentState()
 
 	// No change
@@ -250,7 +260,7 @@ func TestConfigWatcher_RevokesPeerWhenClientIDChanged(t *testing.T) {
 	configManager := &mockConfigManager{config: initialConfig}
 	revoker := &mockRevoker{}
 
-	watcher := NewConfigWatcher(configManager, revoker, nil, "", 10*time.Millisecond, nil)
+	watcher := NewConfigWatcher(configManager, revoker, nil, "", 10*time.Millisecond)
 	prevPeers := watcher.loadCurrentState()
 
 	configManager.setConfig(&Configuration{
@@ -283,7 +293,7 @@ func TestConfigWatcher_WatchLoop(t *testing.T) {
 	configManager := &mockConfigManager{config: initialConfig}
 	revoker := &mockRevoker{}
 
-	watcher := NewConfigWatcher(configManager, revoker, nil, "", 50*time.Millisecond, nil)
+	watcher := NewConfigWatcher(configManager, revoker, nil, "", 50*time.Millisecond)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -327,7 +337,7 @@ func TestConfigWatcher_CheckAndRevoke_UpdatesPeersUpdater(t *testing.T) {
 	revoker := &mockRevoker{}
 	updater := &mockPeersUpdater{}
 
-	watcher := NewConfigWatcher(configManager, revoker, updater, "", 10*time.Millisecond, nil)
+	watcher := NewConfigWatcher(configManager, revoker, updater, "", 10*time.Millisecond)
 	prevPeers := watcher.loadCurrentState()
 	watcher.checkAndRevoke(prevPeers)
 
@@ -340,9 +350,8 @@ func TestConfigWatcher_LoadAndCheck_ConfigError_NoPanic(t *testing.T) {
 	configManager := &mockConfigManager{configErr: errors.New("boom")}
 	revoker := &mockRevoker{}
 
-	var logBuf bytes.Buffer
-	logger := log.New(&logBuf, "", 0)
-	watcher := NewConfigWatcher(configManager, revoker, nil, "", 10*time.Millisecond, logger)
+	logBuf := captureSlog(t)
+	watcher := NewConfigWatcher(configManager, revoker, nil, "", 10*time.Millisecond)
 
 	// Should just log and return.
 	prevPeers := watcher.loadCurrentState()
@@ -374,7 +383,7 @@ func TestConfigWatcher_Watch_FsnotifyEventTriggersInvalidateAndRevoke(t *testing
 		t.Fatalf("write initial file: %v", err)
 	}
 
-	watcher := NewConfigWatcher(configManager, revoker, nil, configPath, time.Hour, nil)
+	watcher := NewConfigWatcher(configManager, revoker, nil, configPath, time.Hour)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -422,7 +431,6 @@ func TestConfigWatcher_Watch_InvalidPathFallsBackToPolling(t *testing.T) {
 		nil,
 		filepath.Join(t.TempDir(), "missing", "server.json"), // watcher.Add(dir) fails
 		40*time.Millisecond,
-		nil,
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -459,8 +467,7 @@ func TestConfigWatcher_Watch_LogsWatchDirForBareFilename(t *testing.T) {
 		},
 	}
 	revoker := &mockRevoker{}
-	var logBuf bytes.Buffer
-	logger := log.New(&logBuf, "", 0)
+	logBuf := captureSlog(t)
 
 	wd, err := os.Getwd()
 	if err != nil {
@@ -475,7 +482,7 @@ func TestConfigWatcher_Watch_LogsWatchDirForBareFilename(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 
-	watcher := NewConfigWatcher(configManager, revoker, nil, "server.json", time.Hour, logger)
+	watcher := NewConfigWatcher(configManager, revoker, nil, "server.json", time.Hour)
 	ctx, cancel := context.WithCancel(context.Background())
 	watchDone := make(chan struct{})
 	go func() {
@@ -486,7 +493,9 @@ func TestConfigWatcher_Watch_LogsWatchDirForBareFilename(t *testing.T) {
 	cancel()
 	<-watchDone
 
-	if !bytes.Contains(logBuf.Bytes(), []byte("watching directory . for changes to server.json")) {
+	if !bytes.Contains(logBuf.Bytes(), []byte("ConfigWatcher watching directory")) ||
+		!bytes.Contains(logBuf.Bytes(), []byte("directory=.")) ||
+		!bytes.Contains(logBuf.Bytes(), []byte("file=server.json")) {
 		t.Fatalf("expected watch-dir log, got: %s", logBuf.String())
 	}
 }
@@ -506,9 +515,8 @@ func TestConfigWatcher_CheckAndRevoke_LoggerBranches(t *testing.T) {
 		},
 	}
 	revoker := &mockRevoker{}
-	var logBuf bytes.Buffer
-	logger := log.New(&logBuf, "", 0)
-	watcher := NewConfigWatcher(configManager, revoker, nil, "", 10*time.Millisecond, logger)
+	logBuf := captureSlog(t)
+	watcher := NewConfigWatcher(configManager, revoker, nil, "", 10*time.Millisecond)
 	prevPeers := watcher.loadCurrentState()
 
 	// Remove one peer to trigger revoke log (count > 0) and peer-count-changed log.
@@ -520,10 +528,11 @@ func TestConfigWatcher_CheckAndRevoke_LoggerBranches(t *testing.T) {
 	watcher.checkAndRevoke(prevPeers)
 
 	logs := logBuf.String()
-	if !strings.Contains(logs, "revoked 1 session(s)") {
+	if !strings.Contains(logs, "ConfigWatcher revoked sessions for peer") || !strings.Contains(logs, "count=1") {
 		t.Fatalf("expected revoke log, got: %s", logs)
 	}
-	if !strings.Contains(logs, "AllowedPeers changed (2 -> 1 peers)") {
+	if !strings.Contains(logs, "ConfigWatcher AllowedPeers changed") ||
+		!strings.Contains(logs, "previous=2") || !strings.Contains(logs, "current=1") {
 		t.Fatalf("expected peer-count-change log, got: %s", logs)
 	}
 }
@@ -531,8 +540,7 @@ func TestConfigWatcher_CheckAndRevoke_LoggerBranches(t *testing.T) {
 func TestConfigWatcher_Watch_LogsFsnotifyAddFailure(t *testing.T) {
 	configManager := &mockConfigManager{config: &Configuration{}}
 	revoker := &mockRevoker{}
-	var logBuf bytes.Buffer
-	logger := log.New(&logBuf, "", 0)
+	logBuf := captureSlog(t)
 
 	// Missing directory -> watcher.Add(dir) fails, should log fallback message.
 	watcher := NewConfigWatcher(
@@ -541,7 +549,6 @@ func TestConfigWatcher_Watch_LogsFsnotifyAddFailure(t *testing.T) {
 		nil,
 		filepath.Join(t.TempDir(), "missing", "server.json"),
 		20*time.Millisecond,
-		logger,
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -574,8 +581,7 @@ func TestConfigWatcher_Watch_IgnoresOtherFilesAndLogsOwnFile(t *testing.T) {
 		},
 	}
 	revoker := &mockRevoker{}
-	var logBuf bytes.Buffer
-	logger := log.New(&logBuf, "", 0)
+	logBuf := captureSlog(t)
 
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "server.json")
@@ -587,7 +593,7 @@ func TestConfigWatcher_Watch_IgnoresOtherFilesAndLogsOwnFile(t *testing.T) {
 		t.Fatalf("write other: %v", err)
 	}
 
-	watcher := NewConfigWatcher(configManager, revoker, nil, configPath, time.Hour, logger)
+	watcher := NewConfigWatcher(configManager, revoker, nil, configPath, time.Hour)
 	ctx, cancel := context.WithCancel(context.Background())
 	watchDone := make(chan struct{})
 	go func() {

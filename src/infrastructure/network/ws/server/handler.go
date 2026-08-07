@@ -3,10 +3,10 @@ package server
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
-	"tungo/infrastructure/logging"
 	"tungo/infrastructure/network/ws/adapter"
 	"tungo/infrastructure/network/ws/contracts"
 )
@@ -15,18 +15,15 @@ import (
 type DefaultHandler struct {
 	upgrader contracts.Upgrader
 	queue    chan net.Conn
-	logger   logging.Logger
 }
 
 func NewDefaultHandler(
 	upgrader contracts.Upgrader,
 	queue chan net.Conn,
-	logger logging.Logger,
 ) *DefaultHandler {
 	return &DefaultHandler{
 		upgrader: upgrader,
 		queue:    queue,
-		logger:   logger,
 	}
 }
 
@@ -34,9 +31,7 @@ func (h *DefaultHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	// Try parse remote address.
 	rAddr, err := h.addrFromRequest(r)
 	if err != nil {
-		if h.logger != nil {
-			h.logger.Warn("bad remote addr", "err", err)
-		}
+		slog.Warn("bad remote addr", "err", err)
 		http.Error(w, "bad remote addr", http.StatusBadRequest)
 		return
 	}
@@ -44,9 +39,7 @@ func (h *DefaultHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	// Upgrade HTTP to WebSocket.
 	wsConn, uErr := h.upgrader.Upgrade(w, r)
 	if uErr != nil {
-		if h.logger != nil {
-			h.logger.Warn("WebSocket upgrade failed", "err", uErr)
-		}
+		slog.Warn("WebSocket upgrade failed", "err", uErr)
 		return
 	}
 

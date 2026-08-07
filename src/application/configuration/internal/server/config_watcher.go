@@ -2,7 +2,7 @@ package server
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"path/filepath"
 	"time"
 
@@ -35,7 +35,6 @@ type ConfigWatcher struct {
 	peersUpdater  AllowedPeersUpdater
 	configPath    string
 	interval      time.Duration
-	logger        *log.Logger
 }
 
 type peerAccessState struct {
@@ -53,7 +52,6 @@ func NewConfigWatcher(
 	peersUpdater AllowedPeersUpdater,
 	configPath string,
 	interval time.Duration,
-	logger *log.Logger,
 ) *ConfigWatcher {
 	return &ConfigWatcher{
 		configManager: configManager,
@@ -61,7 +59,6 @@ func NewConfigWatcher(
 		peersUpdater:  peersUpdater,
 		configPath:    configPath,
 		interval:      interval,
-		logger:        logger,
 	}
 }
 
@@ -89,14 +86,12 @@ func (w *ConfigWatcher) Watch(ctx context.Context) {
 		if err := watcher.Add(dir); err == nil {
 			fsEvents = watcher.Events
 			fsErrors = watcher.Errors
-			if w.logger != nil {
-				w.logger.Printf("ConfigWatcher: watching directory %s for changes to %s", dir, file)
-			}
-		} else if w.logger != nil {
-			w.logger.Printf("ConfigWatcher: fsnotify watch failed: %v (using polling)", err)
+			slog.Info("ConfigWatcher watching directory", "directory", dir, "file", file)
+		} else {
+			slog.Warn("ConfigWatcher fsnotify watch failed; using polling", "err", err)
 		}
-	} else if w.logger != nil && err != nil {
-		w.logger.Printf("ConfigWatcher: fsnotify unavailable: %v (using polling)", err)
+	} else if err != nil {
+		slog.Warn("ConfigWatcher fsnotify unavailable; using polling", "err", err)
 	}
 
 	ticker := time.NewTicker(w.interval)
@@ -118,9 +113,7 @@ func (w *ConfigWatcher) Watch(ctx context.Context) {
 			}
 			// Watch for Write, Create, and Rename (atomic writes use rename)
 			if event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Rename) != 0 {
-				if w.logger != nil {
-					w.logger.Printf("ConfigWatcher: detected config change (op=%s)", event.Op)
-				}
+				slog.Info("ConfigWatcher detected config change", "op", event.Op)
 				// Invalidate cache before reading fresh config
 				w.configManager.InvalidateCache()
 				prevPeers = w.checkAndRevoke(prevPeers)
@@ -130,9 +123,7 @@ func (w *ConfigWatcher) Watch(ctx context.Context) {
 				fsErrors = nil
 				continue
 			}
-			if w.logger != nil {
-				w.logger.Printf("ConfigWatcher: fsnotify error: %v", err)
-			}
+			slog.Warn("ConfigWatcher fsnotify error", "err", err)
 		case <-ticker.C:
 			w.configManager.InvalidateCache()
 			prevPeers = w.checkAndRevoke(prevPeers)
@@ -144,9 +135,7 @@ func (w *ConfigWatcher) Watch(ctx context.Context) {
 func (w *ConfigWatcher) loadCurrentState() map[string]peerAccessState {
 	conf, err := w.configManager.Configuration()
 	if err != nil {
-		if w.logger != nil {
-			w.logger.Printf("ConfigWatcher: failed to load initial config: %v", err)
-		}
+		slog.Warn("ConfigWatcher failed to load initial config", "err", err)
 		return nil
 	}
 
@@ -167,9 +156,7 @@ func (w *ConfigWatcher) loadCurrentState() map[string]peerAccessState {
 func (w *ConfigWatcher) checkAndRevoke(prevPeers map[string]peerAccessState) map[string]peerAccessState {
 	conf, err := w.configManager.Configuration()
 	if err != nil {
-		if w.logger != nil {
-			w.logger.Printf("ConfigWatcher: failed to load config: %v", err)
-		}
+		slog.Warn("ConfigWatcher failed to load config", "err", err)
 		return prevPeers
 	}
 
@@ -197,8 +184,8 @@ func (w *ConfigWatcher) checkAndRevoke(prevPeers map[string]peerAccessState) map
 		if shouldRevoke {
 			pubKey := []byte(pubKeyStr)
 			count := w.revoker.RevokeByPubKey(pubKey)
-			if w.logger != nil && count > 0 {
-				w.logger.Printf("ConfigWatcher: revoked %d session(s) for peer (ACL changed/removed/disabled)", count)
+			if count > 0 {
+				slog.Info("ConfigWatcher revoked sessions for peer", "count", count, "reason", "ACL changed/removed/disabled")
 			}
 		}
 	}
@@ -208,9 +195,8 @@ func (w *ConfigWatcher) checkAndRevoke(prevPeers map[string]peerAccessState) map
 		w.peersUpdater.Update(conf.AllowedPeers)
 	}
 
-	// Log only if peer count changed
-	if w.logger != nil && len(currentPeers) != len(prevPeers) {
-		w.logger.Printf("ConfigWatcher: AllowedPeers changed (%d -> %d peers)", len(prevPeers), len(currentPeers))
+	if len(currentPeers) != len(prevPeers) {
+		slog.Info("ConfigWatcher AllowedPeers changed", "previous", len(prevPeers), "current", len(currentPeers))
 	}
 
 	return currentPeers

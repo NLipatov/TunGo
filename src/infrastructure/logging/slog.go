@@ -2,7 +2,6 @@ package logging
 
 import (
 	"io"
-	"log"
 	"log/slog"
 	"os"
 	"sync"
@@ -14,12 +13,6 @@ var (
 )
 
 type dynamicWriter struct{}
-
-type Logger interface {
-	Info(msg string, args ...any)
-	Warn(msg string, args ...any)
-	Error(msg string, args ...any)
-}
 
 func (dynamicWriter) Write(p []byte) (int, error) {
 	outputMu.RLock()
@@ -57,8 +50,4 @@ func NewLogger(level slog.Leveler) *slog.Logger {
 	return slog.New(slog.NewTextHandler(Writer(), &slog.HandlerOptions{
 		Level: level,
 	}))
-}
-
-func NewStdLogger(level slog.Leveler) *log.Logger {
-	return slog.NewLogLogger(NewLogger(level).Handler(), level.Level())
 }

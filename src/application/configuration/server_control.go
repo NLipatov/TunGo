@@ -11,11 +11,8 @@ import (
 	serverImplementation "tungo/application/configuration/internal/server"
 	serverConfiguration "tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/cryptography/primitives"
-	"tungo/infrastructure/logging"
 	"tungo/infrastructure/network/host_resolver"
 	"tungo/infrastructure/settings"
-
-	"log/slog"
 )
 
 type serverControl struct {
@@ -73,7 +70,6 @@ func (c *serverControl) WatchServerRuntimeConfiguration(
 		allowedPeersUpdater{updater: updater},
 		c.configPath,
 		serverImplementation.DefaultWatchInterval,
-		logging.NewStdLogger(slog.LevelInfo),
 	)
 	watcher.Watch(ctx)
 }

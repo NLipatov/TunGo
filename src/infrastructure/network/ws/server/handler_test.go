@@ -50,19 +50,13 @@ type nopWriteCloser struct{}
 func (nopWriteCloser) Write(p []byte) (int, error) { return len(p), nil }
 func (nopWriteCloser) Close() error                { return nil }
 
-type fakeLogger struct{ msgs []string }
-
-func (l *fakeLogger) Info(msg string, v ...any)  { l.msgs = append(l.msgs, msg) }
-func (l *fakeLogger) Warn(msg string, v ...any)  { l.msgs = append(l.msgs, msg) }
-func (l *fakeLogger) Error(msg string, v ...any) { l.msgs = append(l.msgs, msg) }
-
 // make sure fakeConn satisfies the contract
 var _ contracts.Conn = (*fakeConn)(nil)
 
 // --- tests -------------------------------------------------------------------
 
-func TestHandler_BadRemoteAddr_400_NilLogger_NoPanic(t *testing.T) {
-	h := NewDefaultHandler(&fakeUpgrader{}, make(chan net.Conn, 1), nil)
+func TestHandler_BadRemoteAddr_400(t *testing.T) {
+	h := NewDefaultHandler(&fakeUpgrader{}, make(chan net.Conn, 1))
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "http://example/ws", nil)
@@ -78,26 +72,9 @@ func TestHandler_BadRemoteAddr_400_NilLogger_NoPanic(t *testing.T) {
 	}
 }
 
-func TestHandler_BadRemoteAddr_Logged(t *testing.T) {
+func TestHandler_UpgradeError_NoEnqueue(t *testing.T) {
 	q := make(chan net.Conn, 1)
-	log := &fakeLogger{}
-	h := NewDefaultHandler(&fakeUpgrader{}, q, log)
-
-	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "http://example/ws", nil)
-	req.RemoteAddr = "not-a-socket-addr"
-
-	h.Handle(rr, req)
-
-	if len(log.msgs) == 0 || !contains(log.msgs[0], "bad remote addr") {
-		t.Fatalf("expected bad remote addr to be logged, got %v", log.msgs)
-	}
-}
-
-func TestHandler_UpgradeError_Logged_NoEnqueue(t *testing.T) {
-	q := make(chan net.Conn, 1)
-	log := &fakeLogger{}
-	h := NewDefaultHandler(&fakeUpgrader{err: fmt.Errorf("boom")}, q, log)
+	h := NewDefaultHandler(&fakeUpgrader{err: fmt.Errorf("boom")}, q)
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "http://example/ws", nil)
@@ -111,9 +88,6 @@ func TestHandler_UpgradeError_Logged_NoEnqueue(t *testing.T) {
 	default:
 		// ok, nothing enqueued
 	}
-	if len(log.msgs) == 0 || !contains(log.msgs[0], "upgrade failed") {
-		t.Fatalf("expected upgrade error to be logged, got %v", log.msgs)
-	}
 	// handler doesn't write a response on upgrade error; default 200 is fine
 	if rr.Code != 200 {
 		t.Fatalf("unexpected code %d", rr.Code)
@@ -122,7 +96,7 @@ func TestHandler_UpgradeError_Logged_NoEnqueue(t *testing.T) {
 
 func TestHandler_Success_Enqueue_WithLocalAddr(t *testing.T) {
 	q := make(chan net.Conn, 1)
-	h := NewDefaultHandler(&fakeUpgrader{conn: &fakeConn{}}, q, nil)
+	h := NewDefaultHandler(&fakeUpgrader{conn: &fakeConn{}}, q)
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "http://example/ws", nil)
@@ -151,7 +125,7 @@ func TestHandler_Overflow_ClosesWsConn(t *testing.T) {
 	// unbuffered channel => send would block => default branch taken
 	q := make(chan net.Conn)
 	fc := &fakeConn{}
-	h := NewDefaultHandler(&fakeUpgrader{conn: fc}, q, nil)
+	h := NewDefaultHandler(&fakeUpgrader{conn: fc}, q)
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "http://example/ws", nil)
@@ -171,7 +145,7 @@ func TestHandler_Overflow_ClosesWsConn(t *testing.T) {
 }
 
 func TestHandler_BadRemoteAddr_InvalidIP_400_Body(t *testing.T) {
-	h := NewDefaultHandler(&fakeUpgrader{}, make(chan net.Conn, 1), nil)
+	h := NewDefaultHandler(&fakeUpgrader{}, make(chan net.Conn, 1))
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "http://example/ws", nil)
@@ -188,7 +162,7 @@ func TestHandler_BadRemoteAddr_InvalidIP_400_Body(t *testing.T) {
 }
 
 func TestHandler_BadRemoteAddr_InvalidPort_400_Body(t *testing.T) {
-	h := NewDefaultHandler(&fakeUpgrader{}, make(chan net.Conn, 1), nil)
+	h := NewDefaultHandler(&fakeUpgrader{}, make(chan net.Conn, 1))
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "http://example/ws", nil)

@@ -2,7 +2,6 @@ package factory
 
 import (
 	"context"
-	"log/slog"
 	"net"
 	"time"
 	"tungo/infrastructure/network/ws/server"
@@ -51,7 +50,6 @@ func (h *serverFactory) NewServer(
 		server.NewDefaultHandler(
 			server.NewDefaultUpgrader(),
 			connectionQueue,
-			slog.Default(),
 		),
 		h.path,
 	)

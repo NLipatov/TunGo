@@ -26,17 +26,6 @@ func TestNewLogger_WritesToConfiguredOutput(t *testing.T) {
 	}
 }
 
-func TestNewStdLogger_WritesToConfiguredOutput(t *testing.T) {
-	var buf bytes.Buffer
-	prev := SetOutput(&buf)
-	t.Cleanup(func() { SetOutput(prev) })
-
-	NewStdLogger(slog.LevelInfo).Print("legacy hello")
-	if !strings.Contains(buf.String(), "legacy hello") {
-		t.Fatalf("expected legacy log output to contain message, got %q", buf.String())
-	}
-}
-
 func TestSetOutput_NilRestoresStderrAndCurrentOutput(t *testing.T) {
 	var buf bytes.Buffer
 	prev := SetOutput(&buf)
