@@ -30,17 +30,16 @@ func (c ClientRuntimeConfiguration) ActiveSettings() (settings.Settings, error) 
 }
 
 type ServerRuntimeConfiguration struct {
-	TCPSettings           settings.Settings
-	UDPSettings           settings.Settings
-	WSSettings            settings.Settings
-	FallbackServerAddress string
-	X25519PublicKey       []byte
-	X25519PrivateKey      []byte
-	ClientCounter         int
-	EnableTCP             bool
-	EnableUDP             bool
-	EnableWS              bool
-	AllowedPeers          []ServerPeer
+	TCPSettings      settings.Settings
+	UDPSettings      settings.Settings
+	WSSettings       settings.Settings
+	X25519PublicKey  []byte
+	X25519PrivateKey []byte
+	ClientCounter    int
+	EnableTCP        bool
+	EnableUDP        bool
+	EnableWS         bool
+	AllowedPeers     []ServerPeer
 }
 
 func (c ServerRuntimeConfiguration) AllSettings() []settings.Settings {

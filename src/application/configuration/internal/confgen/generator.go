@@ -48,7 +48,7 @@ func (g *Generator) Generate() (*client.Configuration, error) {
 		return nil, fmt.Errorf("failed to read server configuration: %w", err)
 	}
 
-	serverHost, err := g.resolveServerHost(serverConf.FallbackServerAddress)
+	serverHost, err := g.resolveServerHost(serverConf.Host)
 	if err != nil {
 		return nil, err
 	}
@@ -112,28 +112,42 @@ func (g *Generator) Generate() (*client.Configuration, error) {
 	return &conf, nil
 }
 
-func (g *Generator) resolveServerHost(fallback string) (settings.Host, error) {
-	ipv4Str, ipv4Err := g.resolver.ResolveIPv4()
-	if ipv4Err != nil {
-		if fallback == "" {
-			return settings.Host{}, fmt.Errorf(
-				"failed to resolve server IP and no fallback address provided in server configuration: %w",
-				ipv4Err,
-			)
+func (g *Generator) resolveServerHost(configured string) (settings.Host, error) {
+	if configured != "" {
+		host, err := settings.NewHost(configured)
+		if err != nil {
+			return settings.Host{}, fmt.Errorf("invalid server host %q: %w", configured, err)
 		}
-		ipv4Str = fallback
+		return host, nil
 	}
 
-	host, err := settings.NewHost(ipv4Str)
-	if err != nil {
-		return settings.Host{}, fmt.Errorf("invalid server host %q: %w", ipv4Str, err)
+	var host settings.Host
+	ipv4Str, ipv4Err := g.resolver.ResolveIPv4()
+	if ipv4Err == nil {
+		ipv4, parseErr := netip.ParseAddr(ipv4Str)
+		if parseErr != nil || !ipv4.Unmap().Is4() {
+			ipv4Err = fmt.Errorf("invalid detected IPv4 %q", ipv4Str)
+		} else {
+			host = host.WithIPv4(ipv4)
+		}
 	}
 
 	ipv6Str, ipv6Err := g.resolver.ResolveIPv6()
 	if ipv6Err == nil {
-		if ipv6Addr, parseErr := netip.ParseAddr(ipv6Str); parseErr == nil {
-			host = host.WithIPv6(ipv6Addr)
+		ipv6, parseErr := netip.ParseAddr(ipv6Str)
+		if parseErr != nil || ipv6.Unmap().Is4() {
+			ipv6Err = fmt.Errorf("invalid detected IPv6 %q", ipv6Str)
+		} else {
+			host = host.WithIPv6(ipv6)
 		}
+	}
+
+	if host.IsZero() {
+		return settings.Host{}, fmt.Errorf(
+			"failed to detect server host: IPv4: %v; IPv6: %v",
+			ipv4Err,
+			ipv6Err,
+		)
 	}
 
 	return host, nil

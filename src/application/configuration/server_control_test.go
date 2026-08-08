@@ -162,7 +162,7 @@ func TestServerControlGenerateClientConfiguration_KeyPreparationError(t *testing
 
 func TestServerControlGenerateClientConfiguration(t *testing.T) {
 	conf := serverConfiguration.NewDefaultConfiguration()
-	conf.FallbackServerAddress = "127.0.0.1"
+	conf.Host = "127.0.0.1"
 	conf.X25519PublicKey = make([]byte, 32)
 	conf.X25519PrivateKey = make([]byte, 32)
 	manager := &runtimeInfoServerManager{cfg: conf}

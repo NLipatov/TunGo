@@ -27,16 +27,18 @@ type AllowedPeer struct {
 }
 
 type Configuration struct {
-	TCPSettings           settings.Settings `json:"TCPSettings"`
-	UDPSettings           settings.Settings `json:"UDPSettings"`
-	WSSettings            settings.Settings `json:"WSSettings"`
-	FallbackServerAddress string            `json:"FallbackServerAddress"`
-	X25519PublicKey       []byte            `json:"X25519PublicKey"`
-	X25519PrivateKey      []byte            `json:"X25519PrivateKey"`
-	ClientCounter         int               `json:"ClientCounter"`
-	EnableTCP             bool              `json:"EnableTCP"`
-	EnableUDP             bool              `json:"EnableUDP"`
-	EnableWS              bool              `json:"EnableWS"`
+	TCPSettings settings.Settings `json:"TCPSettings"`
+	UDPSettings settings.Settings `json:"UDPSettings"`
+	WSSettings  settings.Settings `json:"WSSettings"`
+	// Host is written to generated client configurations.
+	// A zero value enables automatic address detection.
+	Host             string `json:"Host"`
+	X25519PublicKey  []byte `json:"X25519PublicKey"`
+	X25519PrivateKey []byte `json:"X25519PrivateKey"`
+	ClientCounter    int    `json:"ClientCounter"`
+	EnableTCP        bool   `json:"EnableTCP"`
+	EnableUDP        bool   `json:"EnableUDP"`
+	EnableWS         bool   `json:"EnableWS"`
 
 	// AllowedPeers is the list of authorized clients.
 	// Each peer is identified by their X25519 static public key.
@@ -45,13 +47,12 @@ type Configuration struct {
 
 func NewDefaultConfiguration() *Configuration {
 	configuration := &Configuration{
-		FallbackServerAddress: "",
-		X25519PublicKey:       nil,
-		X25519PrivateKey:      nil,
-		ClientCounter:         0,
-		EnableTCP:             false,
-		EnableUDP:             true,
-		EnableWS:              false,
+		X25519PublicKey:  nil,
+		X25519PrivateKey: nil,
+		ClientCounter:    0,
+		EnableTCP:        false,
+		EnableUDP:        true,
+		EnableWS:         false,
 	}
 	return configuration.ApplyServerDefaults()
 }
@@ -154,6 +155,12 @@ func (c *Configuration) AllSettingsPtrs() []*settings.Settings {
 }
 
 func (c *Configuration) Validate() error {
+	if c.Host != "" {
+		if _, err := settings.NewHost(c.Host); err != nil {
+			return fmt.Errorf("invalid Host %q: %w", c.Host, err)
+		}
+	}
+
 	// interface names (ifNames) should be unique
 	ifNames := map[string]struct{}{}
 	for _, s := range c.AllSettings() {

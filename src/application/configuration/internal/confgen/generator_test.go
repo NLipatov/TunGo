@@ -97,13 +97,13 @@ func (m mockResolver) ResolveIPv6() (string, error) { return m.ipv6, m.ipv6Err }
 
 func validCfg() *serverConfiguration.Configuration {
 	return &serverConfiguration.Configuration{
-		FallbackServerAddress: "198.51.100.10",
-		ClientCounter:         7,
-		EnableUDP:             false,
-		EnableTCP:             false,
-		EnableWS:              true,
-		X25519PublicKey:       []byte("PUB"),
-		X25519PrivateKey:      []byte("PRIV"),
+		Host:             "198.51.100.10",
+		ClientCounter:    7,
+		EnableUDP:        false,
+		EnableTCP:        false,
+		EnableWS:         true,
+		X25519PublicKey:  []byte("PUB"),
+		X25519PrivateKey: []byte("PRIV"),
 		TCPSettings: settings.Settings{
 			Addressing: settings.Addressing{
 				TunName:    "tun-tcp0",
@@ -148,6 +148,7 @@ func generatorWithMocks(mgr *mockMgr, r mockResolver) *Generator {
 
 func TestGenerate_success(t *testing.T) {
 	mgr := &mockMgr{cfg: validCfg()}
+	mgr.cfg.Host = ""
 	g := generatorWithMocks(mgr, mockResolver{
 		ipv4: "192.0.2.10",
 		ipv6: "2001:db8::1",
@@ -201,21 +202,44 @@ func TestGenerate_config_error(t *testing.T) {
 	}
 }
 
-func TestGenerate_resolve_error_no_fallback(t *testing.T) {
+func TestGenerate_detect_server_host_error(t *testing.T) {
 	cfg := validCfg()
-	cfg.FallbackServerAddress = ""
+	cfg.Host = ""
 	mgr := &mockMgr{cfg: cfg}
 	g := generatorWithMocks(mgr, mockResolver{
 		ipv4Err: errors.New("resolve-fail"),
+		ipv6Err: errors.New("resolve-fail"),
 	})
 
 	_, err := g.Generate()
-	if err == nil || !strings.Contains(err.Error(), "no fallback address") {
-		t.Fatalf("want no-fallback error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "failed to detect server host") {
+		t.Fatalf("want server host detection error, got %v", err)
 	}
 }
 
-func TestGenerate_resolve_error_with_fallback_success(t *testing.T) {
+func TestGenerate_detects_ipv6_only_server_host(t *testing.T) {
+	cfg := validCfg()
+	cfg.Host = ""
+	mgr := &mockMgr{cfg: cfg}
+	g := generatorWithMocks(mgr, mockResolver{
+		ipv4Err: errors.New("no-ipv4"),
+		ipv6:    "2001:db8::1",
+	})
+
+	conf, err := g.Generate()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	server := conf.WSSettings.Server
+	if server.HasIPv4() {
+		t.Fatal("IPv6-only server host must not contain IPv4")
+	}
+	if ipv6, ok := server.IPv6(); !ok || ipv6 != netip.MustParseAddr("2001:db8::1") {
+		t.Fatalf("unexpected IPv6 server host: %v", server)
+	}
+}
+
+func TestGenerate_configured_server_host_has_priority(t *testing.T) {
 	mgr := &mockMgr{cfg: validCfg()}
 	g := generatorWithMocks(mgr, mockResolver{
 		ipv4Err: errors.New("no-ip"),
@@ -226,8 +250,8 @@ func TestGenerate_resolve_error_with_fallback_success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected: %v", err)
 	}
-	if conf.WSSettings.Server != mustHost(mgr.cfg.FallbackServerAddress) {
-		t.Fatalf("expected fallback Server, got %q", conf.WSSettings.Server)
+	if conf.WSSettings.Server != mustHost(mgr.cfg.Host) {
+		t.Fatalf("expected configured Host, got %q", conf.WSSettings.Server)
 	}
 	if mgr.incCalls != 1 {
 		t.Fatalf("IncrementClientCounter not called")
@@ -397,6 +421,7 @@ func TestDeriveClientSettings_wss_uses_ws_tun_name(t *testing.T) {
 
 func TestGenerate_no_ipv6_on_server(t *testing.T) {
 	mgr := &mockMgr{cfg: validCfg()}
+	mgr.cfg.Host = ""
 	g := generatorWithMocks(mgr, mockResolver{
 		ipv4:    "192.0.2.10",
 		ipv6Err: errors.New("no-ipv6"),
@@ -434,6 +459,7 @@ func TestGenerate_ensure_ipv6_subnets_error(t *testing.T) {
 		cfg:           validCfg(),
 		ensureIPv6Err: errors.New("ensure-fail"),
 	}
+	mgr.cfg.Host = ""
 	g := generatorWithMocks(mgr, mockResolver{
 		ipv4: "192.0.2.10",
 		ipv6: "2001:db8::1",
@@ -451,6 +477,7 @@ func TestGenerate_reread_config_error(t *testing.T) {
 		cfgErr:       errors.New("reread-fail"),
 		cfgErrOnCall: 2,
 	}
+	mgr.cfg.Host = ""
 	g := generatorWithMocks(mgr, mockResolver{
 		ipv4: "192.0.2.10",
 		ipv6: "2001:db8::1",
@@ -494,10 +521,8 @@ func TestGenerate_add_peer_error(t *testing.T) {
 
 func TestGenerate_invalid_host_error(t *testing.T) {
 	mgr := &mockMgr{cfg: validCfg()}
-	g := generatorWithMocks(mgr, mockResolver{
-		ipv4:    "http://bad",
-		ipv6Err: errors.New("no-ipv6"),
-	})
+	mgr.cfg.Host = "http://bad"
+	g := generatorWithMocks(mgr, mockResolver{})
 
 	_, err := g.Generate()
 	if err == nil || !strings.Contains(err.Error(), "invalid server host") {

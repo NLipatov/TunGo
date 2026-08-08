@@ -45,17 +45,16 @@ func (c *serverControl) ServerRuntimeConfiguration() (ServerRuntimeConfiguration
 		peers[i] = serverPeer(conf.AllowedPeers[i])
 	}
 	return ServerRuntimeConfiguration{
-		TCPSettings:           conf.TCPSettings,
-		UDPSettings:           conf.UDPSettings,
-		WSSettings:            conf.WSSettings,
-		FallbackServerAddress: conf.FallbackServerAddress,
-		X25519PublicKey:       append([]byte(nil), conf.X25519PublicKey...),
-		X25519PrivateKey:      append([]byte(nil), conf.X25519PrivateKey...),
-		ClientCounter:         conf.ClientCounter,
-		EnableTCP:             conf.EnableTCP,
-		EnableUDP:             conf.EnableUDP,
-		EnableWS:              conf.EnableWS,
-		AllowedPeers:          peers,
+		TCPSettings:      conf.TCPSettings,
+		UDPSettings:      conf.UDPSettings,
+		WSSettings:       conf.WSSettings,
+		X25519PublicKey:  append([]byte(nil), conf.X25519PublicKey...),
+		X25519PrivateKey: append([]byte(nil), conf.X25519PrivateKey...),
+		ClientCounter:    conf.ClientCounter,
+		EnableTCP:        conf.EnableTCP,
+		EnableUDP:        conf.EnableUDP,
+		EnableWS:         conf.EnableWS,
+		AllowedPeers:     peers,
 	}, nil
 }
 

@@ -125,7 +125,7 @@ func TestRead_ValidateFails_DuplicatePort_IncludesPathAndReason(t *testing.T) {
 //
 
 func TestRead_ServerIP_Override_SetAndEmpty(t *testing.T) {
-	initial := Configuration{FallbackServerAddress: "1.2.3.4"}
+	initial := Configuration{Host: "1.2.3.4"}
 	path := createTempConfigFile(t, initial)
 
 	// Case 1: set
@@ -134,8 +134,8 @@ func TestRead_ServerIP_Override_SetAndEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read error: %v", err)
 	}
-	if conf.FallbackServerAddress != "10.0.0.1" {
-		t.Fatalf("ServerIP override failed: %q", conf.FallbackServerAddress)
+	if conf.Host != "10.0.0.1" {
+		t.Fatalf("ServerIP override failed: %q", conf.Host)
 	}
 
 	// Case 2: empty string -> ignored (branch env == "")
@@ -144,8 +144,18 @@ func TestRead_ServerIP_Override_SetAndEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read error: %v", err)
 	}
-	if conf.FallbackServerAddress != "1.2.3.4" {
-		t.Fatalf("empty env should not override, got %q", conf.FallbackServerAddress)
+	if conf.Host != "1.2.3.4" {
+		t.Fatalf("empty env should not override, got %q", conf.Host)
+	}
+}
+
+func TestRead_ServerIP_Invalid(t *testing.T) {
+	path := createTempConfigFile(t, Configuration{})
+	t.Setenv("ServerIP", "http://bad")
+
+	_, err := newDefaultReader(path).read()
+	if err == nil || !strings.Contains(err.Error(), "invalid ServerIP") {
+		t.Fatalf("expected invalid ServerIP error, got %v", err)
 	}
 }
 
