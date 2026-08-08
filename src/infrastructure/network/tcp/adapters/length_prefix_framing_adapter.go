@@ -7,12 +7,15 @@ import (
 	"io"
 	"math"
 	"net/netip"
-	"tungo/application/network/connection"
 )
+
+type remoteAddrProvider interface {
+	RemoteAddrPort() netip.AddrPort
+}
 
 // LengthPrefixFramingAdapter is not safe for concurrent Read/Write without external synchronization.
 type LengthPrefixFramingAdapter struct {
-	adapter  connection.Transport
+	adapter  io.ReadWriteCloser
 	frameCap int
 
 	// bufReader amortizes underlying Read syscalls: header + payload served from a single buffer refill.
@@ -22,7 +25,7 @@ type LengthPrefixFramingAdapter struct {
 }
 
 func NewLengthPrefixFramingAdapter(
-	adapter connection.Transport,
+	adapter io.ReadWriteCloser,
 	frameCap int,
 ) (*LengthPrefixFramingAdapter, error) {
 	if adapter == nil {
@@ -107,7 +110,7 @@ func (a *LengthPrefixFramingAdapter) Close() error { return a.adapter.Close() }
 // the Noise handshake to extract the client IP for cookie binding
 // through the adapter chain.
 func (a *LengthPrefixFramingAdapter) RemoteAddrPort() netip.AddrPort {
-	if t, ok := a.adapter.(connection.TransportWithRemoteAddr); ok {
+	if t, ok := a.adapter.(remoteAddrProvider); ok {
 		return t.RemoteAddrPort()
 	}
 	return netip.AddrPort{}

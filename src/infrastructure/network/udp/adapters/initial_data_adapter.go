@@ -1,16 +1,16 @@
 package adapters
 
 import (
-	"tungo/application/network/connection"
+	"io"
 )
 
 type InitialDataAdapter struct {
-	adapter     connection.Transport
+	adapter     io.ReadWriteCloser
 	initialData []byte
 }
 
 func NewInitialDataAdapter(
-	adapter connection.Transport,
+	adapter io.ReadWriteCloser,
 	initialData []byte,
 ) *InitialDataAdapter {
 	return &InitialDataAdapter{

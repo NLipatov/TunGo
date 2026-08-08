@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/hex"
+	"io"
 	"testing"
-	"tungo/application/network/connection"
 
 	"golang.org/x/crypto/chacha20poly1305"
 )
@@ -15,15 +15,15 @@ type fakeHandshake struct {
 	c2s []byte
 }
 
-func (f fakeHandshake) Id() [32]byte {
+func (f fakeHandshake) ID() [32]byte {
 	panic("not implemented")
 }
 
-func (f fakeHandshake) ServerSideHandshake(_ connection.Transport) (int, error) {
+func (f fakeHandshake) ServerSideHandshake(_ io.ReadWriter) (int, error) {
 	panic("not implemented")
 }
 
-func (f fakeHandshake) ClientSideHandshake(_ connection.Transport) error {
+func (f fakeHandshake) ClientSideHandshake(_ io.ReadWriter) error {
 	panic("not implemented")
 }
 

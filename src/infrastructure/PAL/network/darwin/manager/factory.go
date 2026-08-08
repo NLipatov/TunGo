@@ -4,13 +4,20 @@ package manager
 
 import (
 	"fmt"
+	"io"
+	"net/netip"
 	"tungo/infrastructure/PAL/exec_commander"
 
-	"tungo/application/network/routing/tun"
+	"tungo/application/configuration/settings"
 	ifcfg "tungo/infrastructure/PAL/network/darwin/ifconfig"
 	rtpkg "tungo/infrastructure/PAL/network/darwin/route"
-	"tungo/application/configuration/settings"
 )
+
+type clientManager interface {
+	CreateDevice() (io.ReadWriteCloser, error)
+	DisposeDevices() error
+	SetRouteEndpoint(netip.AddrPort)
+}
 
 // Factory builds a TUN manager for darwin: dual-stack, IPv4-only, or IPv6-only.
 type Factory struct {
@@ -28,9 +35,9 @@ func NewFactory(s settings.Settings) *Factory {
 	}
 }
 
-// Create returns a tun.ClientManager for the configured address families.
+// Create returns the manager for the configured address families.
 // Dual-stack is used when both a valid IPv4 and a valid IPv6 are configured.
-func (f *Factory) Create() (tun.ClientManager, error) {
+func (f *Factory) Create() (clientManager, error) {
 	has4 := f.s.IPv4.IsValid() && !f.s.IPv4.IsUnspecified() && f.s.IPv4.Unmap().Is4() ||
 		f.s.IPv4Subnet.IsValid() && f.s.IPv4Subnet.Addr().Unmap().Is4()
 	has6 := f.s.IPv6.IsValid() && !f.s.IPv6.IsUnspecified() && !f.s.IPv6.Unmap().Is4() ||

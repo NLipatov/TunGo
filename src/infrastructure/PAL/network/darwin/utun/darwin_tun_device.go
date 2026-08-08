@@ -5,12 +5,12 @@ package utun
 import (
 	"encoding/binary"
 	"errors"
+	"io"
 
 	"golang.org/x/sys/unix"
-	"tungo/application/network/routing/tun"
 )
 
-// DarwinTunDevice adapts UTUN to the portable tun.Device API.
+// DarwinTunDevice adapts UTUN to io.ReadWriteCloser.
 // It uses vectored I/O ([hdr(4), payload]) with preallocated iovecs to avoid heap allocs.
 type DarwinTunDevice struct {
 	device UTUN
@@ -26,7 +26,7 @@ type DarwinTunDevice struct {
 	writeSizes [1]int    // (not used by write, but kept symmetric)
 }
 
-func NewDarwinTunDevice(dev UTUN) tun.Device {
+func NewDarwinTunDevice(dev UTUN) io.ReadWriteCloser {
 	return &DarwinTunDevice{device: dev}
 }
 

@@ -6,16 +6,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/netip"
 	"strconv"
 	"strings"
-	"tungo/application/network/routing/tun"
+	"tungo/application/configuration/settings"
 	"tungo/infrastructure/PAL/network/windows/ipcfg"
 	"tungo/infrastructure/PAL/network/windows/wtun"
 	"tungo/infrastructure/network/host_resolver"
-	"tungo/application/configuration/settings"
 
 	"golang.zx2c4.com/wintun"
 )
@@ -23,10 +23,10 @@ import (
 // v6Manager configures a Wintun adapter and the host stack for IPv6.
 type v6Manager struct {
 	s                  settings.Settings
-	tun                tun.Device
+	tun                io.ReadWriteCloser
 	netConfig          ipcfg.Contract
 	routeEndpoint      netip.AddrPort
-	createTunDeviceFn  func() (tun.Device, error)
+	createTunDeviceFn  func() (io.ReadWriteCloser, error)
 	resolveRouteIPv6Fn func() (string, error)
 	resolvedRouteIP    string // cached resolved server IP for consistent teardown
 	resolvedRouteIf    string // cached egress interface used for host route
@@ -44,7 +44,7 @@ func newV6Manager(
 
 // CreateDevice creates/configures the TUN adapter and system routes/DNS for IPv6.
 // Safe order mirrors v4 with IPv6-specific details.
-func (m *v6Manager) CreateDevice() (tun.Device, error) {
+func (m *v6Manager) CreateDevice() (io.ReadWriteCloser, error) {
 	if err := m.validateSettings(); err != nil {
 		return nil, err
 	}
@@ -98,7 +98,7 @@ func (m *v6Manager) validateSettings() error {
 	return nil
 }
 
-func (m *v6Manager) createTunDevice() (tun.Device, error) {
+func (m *v6Manager) createTunDevice() (io.ReadWriteCloser, error) {
 	adapter, err := wintun.CreateAdapter(m.s.TunName, tunnelType, nil)
 	if err != nil {
 		if existing, openErr := wintun.OpenAdapter(m.s.TunName); openErr == nil {

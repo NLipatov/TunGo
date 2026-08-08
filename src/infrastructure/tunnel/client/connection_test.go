@@ -1,0 +1,1029 @@
+package client
+
+import (
+	"context"
+	"errors"
+	"io"
+	"net"
+	"net/http"
+	"net/netip"
+	"strconv"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/coder/websocket"
+
+	appConfiguration "tungo/application/configuration"
+	"tungo/application/configuration/settings"
+	"tungo/infrastructure/cryptography/chacha20"
+	"tungo/infrastructure/cryptography/noise"
+	"tungo/infrastructure/cryptography/primitives"
+	"tungo/infrastructure/network/tcp/adapters"
+)
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func mustHost(raw string) settings.Host {
+	ip, err := netip.ParseAddr(raw)
+	if err != nil {
+		return settings.Host{Domain: raw}
+	}
+	if ip.Unmap().Is4() {
+		return settings.Host{IPv4: ip.Unmap().String()}
+	}
+	return settings.Host{IPv6: ip.String()}
+}
+
+// mkTCPSettings returns minimal TCP settings for a given port.
+func mkTCPSettings(port int) settings.Settings {
+	return settings.Settings{
+		Addressing: settings.Addressing{
+			Server: mustHost("127.0.0.1"),
+			Port:   port,
+		},
+		Protocol:      settings.TCP,
+		DialTimeoutMs: 100,
+	}
+}
+
+// mkUDPSettings returns minimal UDP settings for a given port.
+func mkUDPSettings(port int) settings.Settings {
+	return settings.Settings{
+		Addressing: settings.Addressing{
+			Server: mustHost("127.0.0.1"),
+			Port:   port,
+		},
+		Protocol:      settings.UDP,
+		DialTimeoutMs: 100,
+	}
+}
+
+// mkWSSettings returns minimal WS/WSS settings.
+func mkWSSettings(host string, port int, proto settings.Protocol) settings.Settings {
+	return settings.Settings{
+		Addressing: settings.Addressing{
+			Server: mustHost(host),
+			Port:   port,
+		},
+		Protocol:      proto,
+		DialTimeoutMs: 200,
+	}
+}
+
+// ConnectionFactoryMockWSServer spins up a barebones WS echo server at /ws.
+func ConnectionFactoryMockWSServer(t *testing.T) (host string, port string, shutdown func()) {
+	t.Helper()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	addr := ln.Addr().String()
+	h, p, _ := strings.Cut(addr, ":")
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+		c, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer func(c *websocket.Conn, code websocket.StatusCode, reason string) {
+			_ = c.Close(code, reason)
+		}(c, websocket.StatusNormalClosure, "")
+		// simple echo loop
+		for {
+			typ, data, err := c.Read(r.Context())
+			if err != nil {
+				return
+			}
+			_ = c.Write(r.Context(), typ, data)
+		}
+	})
+	srv := &http.Server{Handler: mux}
+
+	go func() {
+		_ = srv.Serve(ln)
+	}()
+
+	return h, p, func() {
+		_ = srv.Shutdown(context.Background())
+		_ = ln.Close()
+	}
+}
+
+// ---- tests ----
+
+func TestSessionBuilder_ByProtocol(t *testing.T) {
+	f := &connectionFactory{}
+
+	udpBuilder := f.sessionBuilder(settings.UDP)
+	if udpBuilder == nil {
+		t.Fatal("expected non-nil UDP session builder")
+	}
+
+	tcpBuilder := f.sessionBuilder(settings.TCP)
+	if tcpBuilder == nil {
+		t.Fatal("expected non-nil TCP session builder")
+	}
+}
+
+func TestEstablishConnection_InvalidPort_TCP_ParseError(t *testing.T) {
+	t.Parallel()
+	// Out-of-range port should fail during addr:port parsing.
+	conf := appConfiguration.ClientRuntimeConfiguration{
+		Settings: mkTCPSettings(70000),
+	}
+	f := &connectionFactory{conf: conf}
+
+	_, _, _, err := f.EstablishConnection(context.Background())
+	if err == nil {
+		t.Fatalf("expected parse error for bad port")
+	}
+}
+
+func TestEstablishConnection_InvalidPort_UDP_ParseError(t *testing.T) {
+	t.Parallel()
+	conf := appConfiguration.ClientRuntimeConfiguration{
+		Settings: mkUDPSettings(70000),
+	}
+	f := &connectionFactory{conf: conf}
+
+	_, _, _, err := f.EstablishConnection(context.Background())
+	if err == nil {
+		t.Fatalf("expected parse error for bad UDP port")
+	}
+}
+
+func TestDialTCP_Success(t *testing.T) {
+	t.Parallel()
+	// Start a temporary TCP listener
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen tcp: %v", err)
+	}
+	defer func(ln net.Listener) { _ = ln.Close() }(ln)
+
+	// Accept one connection in the background
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if conn, err := ln.Accept(); err == nil {
+			_ = conn.Close()
+		}
+	}()
+
+	ap := netip.MustParseAddrPort(ln.Addr().String())
+	f := &connectionFactory{}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	adapter, err := f.dialTCP(ctx, ap)
+	if err != nil {
+		t.Fatalf("dialTCP failed: %v", err)
+	}
+	if adapter == nil {
+		t.Fatalf("adapter must not be nil on success")
+	}
+	if remote, ok := adapter.(interface{ RemoteAddrPort() netip.AddrPort }); !ok || !remote.RemoteAddrPort().IsValid() {
+		t.Fatalf("expected transport with valid remote address, got %T", adapter)
+	}
+	_ = adapter.Close()
+	<-done
+}
+
+func TestDialTCP_Refused(t *testing.T) {
+	t.Parallel()
+	// Port 1 on localhost is almost always closed -> should return an error quickly.
+	ap := netip.MustParseAddrPort("127.0.0.1:1")
+	f := &connectionFactory{}
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	adapter, err := f.dialTCP(ctx, ap)
+	if err == nil {
+		_ = adapter.Close()
+		t.Fatalf("expected error dialing to closed port")
+	}
+}
+
+func TestDialUDP_Success_NoServerNeeded(t *testing.T) {
+	t.Parallel()
+	// UDP "dial" does not require a server to succeed in most cases.
+	ap := netip.MustParseAddrPort("127.0.0.1:9") // discard port
+	f := &connectionFactory{}
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	conn, err := f.dialUDP(ctx, ap)
+	if err != nil {
+		t.Fatalf("dialUDP failed: %v", err)
+	}
+	if conn == nil {
+		t.Fatalf("conn must not be nil")
+	}
+	if remote, ok := conn.(interface{ RemoteAddrPort() netip.AddrPort }); !ok || !remote.RemoteAddrPort().IsValid() {
+		t.Fatalf("expected UDP transport with valid remote address, got %T", conn)
+	}
+	_ = conn.Close()
+}
+
+func TestDialWS_Success(t *testing.T) {
+	t.Parallel()
+	host, port, shutdown := ConnectionFactoryMockWSServer(t)
+	defer shutdown()
+
+	f := &connectionFactory{}
+	adapter, err := f.dialWS(context.Background(), context.Background(), "ws", net.JoinHostPort(host, port))
+	if err != nil {
+		t.Fatalf("dialWS failed: %v", err)
+	}
+	if adapter == nil {
+		t.Fatalf("adapter must not be nil")
+	}
+	if remote, ok := adapter.(interface{ RemoteAddrPort() netip.AddrPort }); !ok || !remote.RemoteAddrPort().IsValid() {
+		t.Fatalf("expected WS transport with valid remote address, got %T", adapter)
+	}
+	_ = adapter.Close()
+}
+
+func TestDialWS_Success_DomainEndpointHasRemoteAddr(t *testing.T) {
+	t.Parallel()
+	_, port, shutdown := ConnectionFactoryMockWSServer(t)
+	defer shutdown()
+
+	f := &connectionFactory{}
+	adapter, err := f.dialWS(context.Background(), context.Background(), "ws", net.JoinHostPort("localhost", port))
+	if err != nil {
+		t.Fatalf("dialWS failed: %v", err)
+	}
+	if adapter == nil {
+		t.Fatalf("adapter must not be nil")
+	}
+	remote, ok := adapter.(interface{ RemoteAddrPort() netip.AddrPort })
+	if !ok || !remote.RemoteAddrPort().IsValid() {
+		t.Fatalf("expected WS transport with valid remote address for domain endpoint, got %T", adapter)
+	}
+	_ = adapter.Close()
+}
+
+func TestDialWS_Error_NoServer(t *testing.T) {
+	t.Parallel()
+	f := &connectionFactory{}
+	// Use a port with no WS server
+	adapter, err := f.dialWS(context.Background(), context.Background(), "ws", net.JoinHostPort("127.0.0.1", "1"))
+	if err == nil {
+		_ = adapter.Close()
+		t.Fatalf("expected error when no WS server is listening")
+	}
+}
+
+func TestEstablishConnection_WSS_DefaultPort443_And_WrappedError(t *testing.T) {
+	t.Parallel()
+	// No port -> defaults to 443; since nothing listens, expect wrapped WS dial error.
+	conf := appConfiguration.ClientRuntimeConfiguration{
+		Settings: mkWSSettings("127.0.0.1", 0, settings.WSS),
+	}
+	f := &connectionFactory{conf: conf}
+	_, _, _, err := f.EstablishConnection(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "unable to establish WSS") {
+		t.Fatalf("expected wrapped WS connect error, got: %v", err)
+	}
+}
+
+func TestEstablishConnection_UnsupportedProtocol(t *testing.T) {
+	t.Parallel()
+	conf := appConfiguration.ClientRuntimeConfiguration{Settings: settings.Settings{Protocol: 999}}
+	f := &connectionFactory{conf: conf}
+	_, _, _, err := f.EstablishConnection(context.Background())
+	if err == nil {
+		t.Fatalf("expected error for unsupported protocol")
+	}
+}
+
+// Verifies the error wrapping path for TCP.
+func TestEstablishConnection_TCP_DialError_IsWrapped(t *testing.T) {
+	t.Parallel()
+	conf := appConfiguration.ClientRuntimeConfiguration{
+		Settings: mkTCPSettings(1), // likely closed → Dial error
+	}
+	f := &connectionFactory{conf: conf}
+
+	_, _, _, err := f.EstablishConnection(context.Background())
+	if err == nil {
+		t.Fatalf("expected dial error")
+	}
+	if !strings.Contains(err.Error(), "unable to establish TCP connection") {
+		t.Fatalf("expected wrapped TCP dial error, got: %v", err)
+	}
+}
+
+// Verifies the error wrapping path for WS with provided Host fallback.
+func TestEstablishConnection_WS_DialError_IsWrapped(t *testing.T) {
+	t.Parallel()
+	conf := appConfiguration.ClientRuntimeConfiguration{
+		Settings: mkWSSettings("127.0.0.1", 9, settings.WS),
+	}
+	f := &connectionFactory{conf: conf}
+	_, _, _, err := f.EstablishConnection(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "unable to establish WS") {
+		t.Fatalf("expected wrapped WS dial error, got: %v", err)
+	}
+}
+
+type cfUnitTransport struct {
+	readErr      error
+	readBuf      []byte
+	writeErr     error
+	closed       bool
+	deadlineHits int
+}
+
+func (t *cfUnitTransport) Read(p []byte) (int, error) {
+	if len(t.readBuf) > 0 {
+		n := copy(p, t.readBuf)
+		t.readBuf = t.readBuf[n:]
+		return n, nil
+	}
+	if t.readErr != nil {
+		return 0, t.readErr
+	}
+	return 0, io.EOF
+}
+
+func (t *cfUnitTransport) Write(p []byte) (int, error) {
+	if t.writeErr != nil {
+		return 0, t.writeErr
+	}
+	return len(p), nil
+}
+
+func (t *cfUnitTransport) Close() error {
+	t.closed = true
+	return nil
+}
+
+func (t *cfUnitTransport) SetReadDeadline(time.Time) error {
+	t.deadlineHits++
+	return nil
+}
+
+type cfUnitNoDeadlineTransport struct {
+	readErr  error
+	readBuf  []byte
+	writeErr error
+	closed   bool
+}
+
+type cfBlockingTransport struct {
+	readStarted chan struct{}
+	closed      chan struct{}
+	readOnce    sync.Once
+	closeOnce   sync.Once
+}
+
+func newCFBlockingTransport() *cfBlockingTransport {
+	return &cfBlockingTransport{
+		readStarted: make(chan struct{}),
+		closed:      make(chan struct{}),
+	}
+}
+
+func (t *cfBlockingTransport) Read([]byte) (int, error) {
+	t.readOnce.Do(func() { close(t.readStarted) })
+	<-t.closed
+	return 0, net.ErrClosed
+}
+
+func (*cfBlockingTransport) Write(p []byte) (int, error) {
+	return len(p), nil
+}
+
+func (t *cfBlockingTransport) Close() error {
+	t.closeOnce.Do(func() { close(t.closed) })
+	return nil
+}
+
+func (t *cfUnitNoDeadlineTransport) Read(p []byte) (int, error) {
+	if len(t.readBuf) > 0 {
+		n := copy(p, t.readBuf)
+		t.readBuf = t.readBuf[n:]
+		return n, nil
+	}
+	if t.readErr != nil {
+		return 0, t.readErr
+	}
+	return 0, io.EOF
+}
+
+func (t *cfUnitNoDeadlineTransport) Write(p []byte) (int, error) {
+	if t.writeErr != nil {
+		return 0, t.writeErr
+	}
+	return len(p), nil
+}
+
+func (t *cfUnitNoDeadlineTransport) Close() error {
+	t.closed = true
+	return nil
+}
+
+type cfUnitCryptoFactory struct {
+	called bool
+}
+
+func (f *cfUnitCryptoFactory) FromHandshake(chacha20.KeyMaterial, bool) (crypto, rekeyController, error) {
+	f.called = true
+	return nil, nil, errors.New("unexpected factory call")
+}
+
+func TestConnectionFactoryUnit_establishSecuredConnection_MissingClientKeys_ClosesAdapter(t *testing.T) {
+	f := &connectionFactory{
+		conf: appConfiguration.ClientRuntimeConfiguration{
+			ClientPublicKey:  []byte{1, 2, 3}, // invalid length
+			ClientPrivateKey: []byte{4, 5, 6}, // invalid length
+		},
+	}
+	tr := &cfUnitTransport{}
+	cryptoFactory := &cfUnitCryptoFactory{}
+
+	_, _, _, err := f.establishSecuredConnection(
+		context.Background(),
+		tr,
+		cryptoFactory.FromHandshake,
+	)
+	if err == nil || !strings.Contains(err.Error(), "client keys not configured") {
+		t.Fatalf("expected client keys error, got %v", err)
+	}
+	if !tr.closed {
+		t.Fatal("expected adapter to be closed on missing keys")
+	}
+	if cryptoFactory.called {
+		t.Fatal("crypto factory should not be called when keys are missing")
+	}
+}
+
+func TestConnectionFactoryUnit_establishSecuredConnection_MissingServerPublicKey_ClosesAdapter(t *testing.T) {
+	clientPub := make([]byte, 32)
+	clientPriv := make([]byte, 32)
+
+	f := &connectionFactory{
+		conf: appConfiguration.ClientRuntimeConfiguration{
+			ClientPublicKey:  clientPub,
+			ClientPrivateKey: clientPriv,
+			X25519PublicKey:  []byte{7, 8, 9}, // invalid length
+		},
+	}
+	tr := &cfUnitTransport{}
+	cryptoFactory := &cfUnitCryptoFactory{}
+
+	_, _, _, err := f.establishSecuredConnection(
+		context.Background(),
+		tr,
+		cryptoFactory.FromHandshake,
+	)
+	if err == nil || !strings.Contains(err.Error(), "server public key not configured") {
+		t.Fatalf("expected server public key error, got %v", err)
+	}
+	if !tr.closed {
+		t.Fatal("expected adapter to be closed on missing server public key")
+	}
+	if cryptoFactory.called {
+		t.Fatal("crypto factory should not be called when server key is missing")
+	}
+}
+
+func TestConnectionFactoryUnit_establishSecuredConnection_HandshakeError_ClosesAdapter(t *testing.T) {
+	clientPub := make([]byte, 32)
+	clientPriv := make([]byte, 32)
+	serverPub := make([]byte, 32)
+	clientPub[0], clientPriv[0], serverPub[0] = 1, 2, 3
+
+	f := &connectionFactory{
+		conf: appConfiguration.ClientRuntimeConfiguration{
+			ClientPublicKey:  clientPub,
+			ClientPrivateKey: clientPriv,
+			X25519PublicKey:  serverPub,
+		},
+	}
+	tr := &cfUnitTransport{readErr: io.ErrUnexpectedEOF}
+	cryptoFactory := &cfUnitCryptoFactory{}
+
+	_, _, _, err := f.establishSecuredConnection(
+		context.Background(),
+		tr,
+		cryptoFactory.FromHandshake,
+	)
+	if err == nil {
+		t.Fatal("expected handshake error")
+	}
+	if !tr.closed {
+		t.Fatal("expected adapter to be closed on handshake error")
+	}
+	if cryptoFactory.called {
+		t.Fatal("crypto factory should not be called when handshake fails")
+	}
+}
+
+func TestConnectionFactoryUnit_establishSecuredConnection_CancelClosesAdapter(t *testing.T) {
+	clientPub := make([]byte, 32)
+	clientPriv := make([]byte, 32)
+	serverPub := make([]byte, 32)
+	clientPub[0], clientPriv[0], serverPub[0] = 1, 2, 3
+
+	f := &connectionFactory{
+		conf: appConfiguration.ClientRuntimeConfiguration{
+			ClientPublicKey:  clientPub,
+			ClientPrivateKey: clientPriv,
+			X25519PublicKey:  serverPub,
+		},
+	}
+	transport := newCFBlockingTransport()
+	cryptoFactory := &cfUnitCryptoFactory{}
+	ctx, cancel := context.WithCancel(context.Background())
+
+	errCh := make(chan error, 1)
+	go func() {
+		_, _, _, err := f.establishSecuredConnection(ctx, transport, cryptoFactory.FromHandshake)
+		errCh <- err
+	}()
+
+	<-transport.readStarted
+	cancel()
+
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected context cancellation, got %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("handshake did not stop after context cancellation")
+	}
+
+	select {
+	case <-transport.closed:
+	default:
+		t.Fatal("expected adapter to be closed on context cancellation")
+	}
+	if cryptoFactory.called {
+		t.Fatal("crypto factory should not be called after context cancellation")
+	}
+}
+
+func TestConnectionFactoryUnit_NewReadDeadlineTransport_NoDeadlineSupport_ReturnsSame(t *testing.T) {
+	tr := &cfUnitNoDeadlineTransport{}
+	wrapped := adapters.NewReadDeadlineTransport(tr, time.Second)
+	if wrapped != tr {
+		t.Fatal("expected same transport when SetReadDeadline is not supported")
+	}
+}
+
+func TestConnectionFactoryUnit_NewReadDeadlineTransport_WithDeadlineSupport_WrapsAndSetsDeadline(t *testing.T) {
+	tr := &cfUnitTransport{readBuf: []byte("abc")}
+	wrapped := adapters.NewReadDeadlineTransport(tr, time.Second)
+
+	if wrapped == tr {
+		t.Fatal("expected wrapped transport")
+	}
+	buf := make([]byte, 3)
+	n, err := wrapped.Read(buf)
+	if err != nil {
+		t.Fatalf("unexpected read error: %v", err)
+	}
+	if n != 3 || string(buf) != "abc" {
+		t.Fatalf("unexpected read result n=%d buf=%q", n, string(buf))
+	}
+	if tr.deadlineHits == 0 {
+		t.Fatal("expected SetReadDeadline to be called")
+	}
+}
+
+func TestConnectionFactoryUnit_EstablishConnection_ErrorBranches(t *testing.T) {
+	t.Run("unsupported protocol", func(t *testing.T) {
+		f := &connectionFactory{conf: appConfiguration.ClientRuntimeConfiguration{Settings: settings.Settings{Protocol: settings.UNKNOWN}}}
+		_, _, _, err := f.EstablishConnection(context.Background())
+		if err == nil {
+			t.Fatal("expected unsupported protocol error")
+		}
+	})
+
+	t.Run("tcp parse addr error", func(t *testing.T) {
+		f := &connectionFactory{conf: appConfiguration.ClientRuntimeConfiguration{
+			Settings: mkTCPSettings(70000),
+		}}
+		_, _, _, err := f.EstablishConnection(context.Background())
+		if err == nil {
+			t.Fatal("expected parse error")
+		}
+	})
+
+	t.Run("udp parse addr error", func(t *testing.T) {
+		f := &connectionFactory{conf: appConfiguration.ClientRuntimeConfiguration{
+			Settings: mkUDPSettings(70000),
+		}}
+		_, _, _, err := f.EstablishConnection(context.Background())
+		if err == nil {
+			t.Fatal("expected parse error")
+		}
+	})
+
+}
+
+func TestConnectionFactoryUnit_dial_ErrorBranches(t *testing.T) {
+	f := &connectionFactory{}
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	t.Run("dialTCP error", func(t *testing.T) {
+		_, err := f.dialTCP(ctx, netip.MustParseAddrPort("127.0.0.1:1"))
+		if err == nil {
+			t.Fatal("expected dialTCP error")
+		}
+	})
+
+	t.Run("dialUDP error", func(t *testing.T) {
+		conn, err := f.dialUDP(ctx, netip.MustParseAddrPort("127.0.0.1:9"))
+		// Environment-dependent: some sandboxes deny UDP connect, others allow it.
+		if err == nil {
+			if conn == nil {
+				t.Fatal("expected non-nil conn when dialUDP succeeds")
+			}
+			_ = conn.Close()
+		}
+	})
+
+	t.Run("dialWS error", func(t *testing.T) {
+		_, err := f.dialWS(ctx, context.Background(), "ws", net.JoinHostPort("127.0.0.1", "1"))
+		if err == nil {
+			t.Fatal("expected dialWS error")
+		}
+	})
+}
+
+func TestConnectionFactoryUnit_establishSecuredConnection_Success(t *testing.T) {
+	deriver := &primitives.DefaultKeyDeriver{}
+
+	serverPub, serverPrivArr, err := deriver.GenerateX25519KeyPair()
+	if err != nil {
+		t.Fatalf("server keygen failed: %v", err)
+	}
+	clientPub, clientPrivArr, err := deriver.GenerateX25519KeyPair()
+	if err != nil {
+		t.Fatalf("client keygen failed: %v", err)
+	}
+
+	f := &connectionFactory{
+		conf: appConfiguration.ClientRuntimeConfiguration{
+			ClientPublicKey:  clientPub,
+			ClientPrivateKey: clientPrivArr[:],
+			X25519PublicKey:  serverPub,
+		},
+	}
+
+	clientConn, serverConn := net.Pipe()
+	defer func() { _ = clientConn.Close() }()
+	defer func() { _ = serverConn.Close() }()
+
+	clientAdapter, err := adapters.NewLengthPrefixFramingAdapter(clientConn, 2048)
+	if err != nil {
+		t.Fatalf("client framing adapter failed: %v", err)
+	}
+	serverAdapter, err := adapters.NewLengthPrefixFramingAdapter(serverConn, 2048)
+	if err != nil {
+		t.Fatalf("server framing adapter failed: %v", err)
+	}
+
+	cookieManager, err := noise.NewCookieManager()
+	if err != nil {
+		t.Fatalf("cookie manager failed: %v", err)
+	}
+	allowedPeers := []appConfiguration.ServerPeer{
+		{
+			PublicKey: clientPub,
+			Enabled:   true,
+			ClientID:  1,
+		},
+	}
+	serverHS := noise.NewIKHandshakeServer(
+		serverPub,
+		serverPrivArr[:],
+		noise.NewAllowedPeersLookup(allowedPeers),
+		cookieManager,
+		noise.NewLoadMonitor(10000),
+	)
+
+	serverErrCh := make(chan error, 1)
+	go func() {
+		_, serr := serverHS.ServerSideHandshake(serverAdapter)
+		serverErrCh <- serr
+	}()
+
+	adapter, crypto, _, err := f.establishSecuredConnection(
+		context.Background(),
+		clientAdapter,
+		f.sessionBuilder(settings.TCP),
+	)
+	if err != nil {
+		t.Fatalf("establishSecuredConnection failed: %v", err)
+	}
+	if adapter == nil || crypto == nil {
+		t.Fatal("expected non-nil adapter and crypto")
+	}
+	if serr := <-serverErrCh; serr != nil {
+		t.Fatalf("server handshake failed: %v", serr)
+	}
+}
+
+func TestDialWithFallback_IPv6Success(t *testing.T) {
+	t.Parallel()
+	f := &connectionFactory{}
+	tr := &cfUnitTransport{}
+
+	s := settings.Settings{
+		Addressing: settings.Addressing{
+			Server: settings.Host{IPv4: "127.0.0.1", IPv6: "::1"},
+			Port:   8080,
+		},
+	}
+
+	var dialedAddr netip.AddrPort
+	got, err := f.dialWithFallback(context.Background(), s, func(_ context.Context, ap netip.AddrPort) (io.ReadWriteCloser, error) {
+		dialedAddr = ap
+		return tr, nil
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != tr {
+		t.Fatal("expected transport from IPv6 dial")
+	}
+	// Should have dialed the IPv6 address, not IPv4.
+	if !dialedAddr.Addr().Is6() {
+		t.Fatalf("expected IPv6 dial address, got %v", dialedAddr)
+	}
+}
+
+func TestAddrPort(t *testing.T) {
+	t.Parallel()
+
+	ap, err := addrPort(netip.MustParseAddr("2001:db8::1"), 443)
+	if err != nil {
+		t.Fatalf("addrPort: %v", err)
+	}
+	if got, want := ap.String(), "[2001:db8::1]:443"; got != want {
+		t.Fatalf("addrPort = %q, want %q", got, want)
+	}
+	if _, err := addrPort(netip.Addr{}, 443); err == nil {
+		t.Fatal("expected invalid IP error")
+	}
+	if _, err := addrPort(netip.MustParseAddr("192.0.2.1"), 65536); err == nil {
+		t.Fatal("expected invalid port error")
+	}
+}
+
+func TestDialWithFallback_UDP_DualStackUsesPreferredIPv4(t *testing.T) {
+	t.Parallel()
+	f := &connectionFactory{}
+	tr := &cfUnitTransport{}
+
+	s := settings.Settings{
+		Addressing: settings.Addressing{
+			Server: settings.Host{IPv4: "198.51.100.10", IPv6: "2001:db8::10"},
+			Port:   9090,
+		},
+		Protocol: settings.UDP,
+	}
+
+	var (
+		calls      int
+		dialedAddr netip.AddrPort
+	)
+	got, err := f.dialWithFallback(context.Background(), s, func(_ context.Context, ap netip.AddrPort) (io.ReadWriteCloser, error) {
+		calls++
+		dialedAddr = ap
+		return tr, nil
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != tr {
+		t.Fatal("expected transport from UDP dial")
+	}
+	if calls != 1 {
+		t.Fatalf("expected one UDP dial attempt, got %d", calls)
+	}
+	if !dialedAddr.Addr().Unmap().Is4() {
+		t.Fatalf("expected UDP to prefer IPv4, got %v", dialedAddr)
+	}
+}
+
+func TestDialWithFallback_UDP_DualStackFallsBackToIPv6WhenPreferredIPv4DialFails(t *testing.T) {
+	t.Parallel()
+	f := &connectionFactory{}
+	tr := &cfUnitTransport{}
+
+	s := settings.Settings{
+		Addressing: settings.Addressing{
+			Server: settings.Host{IPv4: "198.51.100.10", IPv6: "2001:db8::10"},
+			Port:   9090,
+		},
+		Protocol: settings.UDP,
+	}
+
+	var dialed []netip.AddrPort
+	got, err := f.dialWithFallback(context.Background(), s, func(_ context.Context, ap netip.AddrPort) (io.ReadWriteCloser, error) {
+		dialed = append(dialed, ap)
+		if ap.Addr().Unmap().Is4() {
+			return nil, errors.New("IPv4 unavailable")
+		}
+		return tr, nil
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != tr {
+		t.Fatal("expected transport from IPv6 fallback")
+	}
+	if len(dialed) != 2 {
+		t.Fatalf("expected IPv4 then IPv6 attempts, got %v", dialed)
+	}
+	if !dialed[0].Addr().Unmap().Is4() {
+		t.Fatalf("expected first UDP attempt to use IPv4, got %v", dialed[0])
+	}
+	if !dialed[1].Addr().Is6() {
+		t.Fatalf("expected second UDP attempt to use IPv6, got %v", dialed[1])
+	}
+}
+
+func TestDialWithFallback_UDP_ReturnsPreferredDialErrorWhenIPv6FallbackUnavailable(t *testing.T) {
+	t.Parallel()
+	f := &connectionFactory{}
+
+	s := settings.Settings{
+		Addressing: settings.Addressing{
+			Server: mustHost("198.51.100.10"),
+			Port:   9090,
+		},
+		Protocol: settings.UDP,
+	}
+
+	wantErr := errors.New("IPv4 unavailable")
+	var calls int
+	got, err := f.dialWithFallback(context.Background(), s, func(_ context.Context, ap netip.AddrPort) (io.ReadWriteCloser, error) {
+		calls++
+		if !ap.Addr().Unmap().Is4() {
+			t.Fatalf("expected only IPv4 attempt, got %v", ap)
+		}
+		return nil, wantErr
+	})
+	if got != nil {
+		t.Fatalf("expected nil transport, got %T", got)
+	}
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("expected preferred dial error %v, got %v", wantErr, err)
+	}
+	if calls != 1 {
+		t.Fatalf("expected one UDP dial attempt, got %d", calls)
+	}
+}
+
+func TestDialWithFallback_IPv6Only_DialsOnce(t *testing.T) {
+	t.Parallel()
+	f := &connectionFactory{}
+	s := settings.Settings{
+		Addressing: settings.Addressing{
+			Server: mustHost("::1"),
+			Port:   8080,
+		},
+	}
+
+	var (
+		calls int
+		last  netip.AddrPort
+	)
+	_, err := f.dialWithFallback(context.Background(), s, func(_ context.Context, ap netip.AddrPort) (io.ReadWriteCloser, error) {
+		calls++
+		last = ap
+		return nil, errors.New("dial failed")
+	})
+	if err == nil {
+		t.Fatal("expected error from dial")
+	}
+	if calls != 1 {
+		t.Fatalf("expected single dial attempt for IPv6-only endpoint, got %d", calls)
+	}
+	if !last.IsValid() || !last.Addr().Is6() {
+		t.Fatalf("expected IPv6 dial target, got %v", last)
+	}
+}
+
+func TestIPv6ProbeTimeout_FromDialTimeout(t *testing.T) {
+	t.Parallel()
+
+	if got := ipv6ProbeTimeout(settings.Settings{}); got != 2500*time.Millisecond {
+		t.Fatalf("unexpected default probe timeout: got %v want %v", got, 2500*time.Millisecond)
+	}
+	if got := ipv6ProbeTimeout(settings.Settings{DialTimeoutMs: 1000}); got != 2*time.Second {
+		t.Fatalf("unexpected clamped probe timeout for short dial timeout: got %v", got)
+	}
+	if got := ipv6ProbeTimeout(settings.Settings{DialTimeoutMs: 12000}); got != 6*time.Second {
+		t.Fatalf("unexpected probe timeout: got %v want 6s", got)
+	}
+}
+
+func TestDialWithFallback_DomainTCP_Succeeds(t *testing.T) {
+	t.Parallel()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen tcp: %v", err)
+	}
+	defer func() { _ = ln.Close() }()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if conn, acceptErr := ln.Accept(); acceptErr == nil {
+			_ = conn.Close()
+		}
+	}()
+
+	port := ln.Addr().(*net.TCPAddr).Port
+	f := &connectionFactory{}
+	s := settings.Settings{
+		Addressing: settings.Addressing{
+			Server: mustHost("localhost"),
+			Port:   port,
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	conn, dialErr := f.dialWithFallback(ctx, s, f.dialTCP)
+	if dialErr != nil {
+		t.Fatalf("expected domain dial success, got %v", dialErr)
+	}
+	_ = conn.Close()
+	<-done
+}
+
+func TestDialWSWithFallback_IPv6Success(t *testing.T) {
+	t.Parallel()
+	// Start WS server on IPv6 loopback.
+	ln, err := net.Listen("tcp", "[::1]:0")
+	if err != nil {
+		t.Skipf("IPv6 loopback unavailable: %v", err)
+	}
+	_, portStr, _ := strings.Cut(ln.Addr().String(), "]:")
+	portInt, _ := strconv.Atoi(portStr)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+		c, acceptErr := websocket.Accept(w, r, nil)
+		if acceptErr != nil {
+			return
+		}
+		_ = c.Close(websocket.StatusNormalClosure, "")
+	})
+	srv := &http.Server{Handler: mux}
+	go func() { _ = srv.Serve(ln) }()
+	defer func() { _ = srv.Shutdown(context.Background()); _ = ln.Close() }()
+
+	f := &connectionFactory{}
+	s := settings.Settings{
+		Addressing: settings.Addressing{
+			Server: settings.Host{IPv4: "127.0.0.1", IPv6: "::1"},
+			Port:   portInt,
+		},
+		Protocol: settings.WS,
+	}
+
+	adapter, dialErr := f.dialWSWithFallback(context.Background(), context.Background(), s)
+	if dialErr != nil {
+		t.Fatalf("unexpected error: %v", dialErr)
+	}
+	if adapter == nil {
+		t.Fatal("expected non-nil adapter from IPv6 WS dial")
+	}
+	_ = adapter.Close()
+}
+
+func TestCloneDefaultTransport_WhenGlobalDefaultIsCustomRoundTripper(t *testing.T) {
+	old := http.DefaultTransport
+	http.DefaultTransport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("not used")
+	})
+	t.Cleanup(func() {
+		http.DefaultTransport = old
+	})
+
+	tr := cloneDefaultTransport()
+	if tr == nil {
+		t.Fatal("expected non-nil transport clone")
+	}
+}

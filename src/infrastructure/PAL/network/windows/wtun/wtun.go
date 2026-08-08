@@ -5,11 +5,10 @@ package wtun
 import (
 	"errors"
 	"fmt"
+	"io"
 	"sync"
 	"sync/atomic"
 	"syscall"
-
-	"tungo/application/network/routing/tun"
 
 	"golang.org/x/sys/windows"
 	"golang.zx2c4.com/wintun"
@@ -24,7 +23,7 @@ import (
 const ringSize = 8 << 20 // 8 MiB (within wintun's RingCapacityMin..Max)
 
 // Ensure interface conformance at compile time.
-var _ tun.Device = (*TUN)(nil)
+var _ io.ReadWriteCloser = (*TUN)(nil)
 
 // sessionRef pairs a Wintun session with an in-flight counter and an OS event
 // that is signaled when inflight becomes zero while draining is requested.
@@ -49,7 +48,7 @@ type TUN struct {
 }
 
 // NewTUN creates the device and starts an initial Wintun session.
-func NewTUN(adapter *wintun.Adapter) (tun.Device, error) {
+func NewTUN(adapter *wintun.Adapter) (io.ReadWriteCloser, error) {
 	// Manual-reset event to wake ALL potential waiters on Close().
 	ev, err := windows.CreateEvent(nil, 1, 0, nil)
 	if err != nil {

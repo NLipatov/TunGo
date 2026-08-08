@@ -14,8 +14,6 @@ import (
 	"runtime"
 	"sync/atomic"
 
-	application "tungo/application/network/routing/tun"
-
 	"golang.org/x/sys/unix"
 )
 
@@ -35,7 +33,7 @@ type tun struct {
 
 // newTUN takes ownership of f on success (it closes f before returning).
 // On error, ownership remains with the caller (f is not closed).
-func newTUN(f *os.File) (application.Device, error) {
+func newTUN(f *os.File) (io.ReadWriteCloser, error) {
 	if f == nil {
 		return nil, errors.New("nil file")
 	}

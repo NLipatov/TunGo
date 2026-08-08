@@ -7,9 +7,9 @@ import (
 	"net/netip"
 	"testing"
 
+	"tungo/application/configuration/settings"
 	ifcfg "tungo/infrastructure/PAL/network/darwin/ifconfig"
 	rtpkg "tungo/infrastructure/PAL/network/darwin/route"
-	"tungo/application/configuration/settings"
 )
 
 // ---------------------------------------------------------------------------

@@ -5,22 +5,22 @@ package manager
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/netip"
 	"strings"
 
-	"tungo/application/network/routing/tun"
+	"tungo/application/configuration/settings"
 	"tungo/infrastructure/PAL/network/darwin/ifconfig"
 	"tungo/infrastructure/PAL/network/darwin/route"
 	"tungo/infrastructure/PAL/network/darwin/utun"
 	"tungo/infrastructure/network/host_resolver"
-	"tungo/application/configuration/settings"
 )
 
 // dualStack manages a single utun device with both IPv4 and IPv6 addresses and routes.
 // macOS utun natively supports dual-stack via its AF header — no need for two devices.
 type dualStack struct {
 	s                settings.Settings
-	tunDev           tun.Device
+	tunDev           io.ReadWriteCloser
 	rawUTUN          utun.UTUN
 	ifc4             ifconfig.Contract
 	ifc6             ifconfig.Contract
@@ -52,7 +52,7 @@ func newDualStack(
 	}
 }
 
-func (m *dualStack) CreateDevice() (tun.Device, error) {
+func (m *dualStack) CreateDevice() (io.ReadWriteCloser, error) {
 	if err := m.validateSettings(); err != nil {
 		return nil, err
 	}

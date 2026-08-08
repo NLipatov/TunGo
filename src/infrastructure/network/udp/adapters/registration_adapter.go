@@ -1,10 +1,10 @@
 package adapters
 
 import (
+	"io"
 	"net/netip"
 	"sync/atomic"
 	"tungo/application/listeners"
-	"tungo/application/network/connection"
 )
 
 type registrationQueue interface {
@@ -12,8 +12,7 @@ type registrationQueue interface {
 	Close()
 }
 
-// RegistrationAdapter adapts registrationQueue to connection.Transport
-// so that handshake implementation can use its usual Read/Write interface.
+// RegistrationAdapter adapts registrationQueue to the handshake's Read/Write interface.
 //
 // The destination address is stored atomically so that it can be updated
 // after NAT roaming without replacing the writer in the egress pipeline.
@@ -27,7 +26,7 @@ func NewRegistrationTransport(
 	conn listeners.UdpListener,
 	addrPort netip.AddrPort,
 	queue registrationQueue,
-) connection.Transport {
+) io.ReadWriteCloser {
 	a := &RegistrationAdapter{
 		conn:  conn,
 		queue: queue,
@@ -46,7 +45,7 @@ func (t *RegistrationAdapter) Write(p []byte) (int, error) {
 
 func (t *RegistrationAdapter) Close() error {
 	// Do not close the shared UDP socket; its lifecycle is controlled by
-	// TransportHandler. The queue is closed by removeRegistrationQueue.
+	// The queue is closed by the server registration lifecycle.
 	return nil
 }
 

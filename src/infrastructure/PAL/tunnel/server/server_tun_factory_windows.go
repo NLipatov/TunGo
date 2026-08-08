@@ -2,8 +2,8 @@ package server
 
 import (
 	"errors"
+	"io"
 	"tungo/application/configuration/settings"
-	"tungo/application/network/routing/tun"
 )
 
 var errServerNotSupported = errors.New("server mode is not supported on this platform")
@@ -11,11 +11,11 @@ var errServerNotSupported = errors.New("server mode is not supported on this pla
 type TunFactory struct {
 }
 
-func NewTunFactory() tun.ServerManager {
+func NewTunFactory() *TunFactory {
 	return &TunFactory{}
 }
 
-func (s TunFactory) CreateDevice(_ settings.Settings) (tun.Device, error) {
+func (s TunFactory) CreateDevice(_ settings.Settings) (io.ReadWriteCloser, error) {
 	return nil, errServerNotSupported
 }
 

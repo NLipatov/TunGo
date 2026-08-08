@@ -1,15 +1,15 @@
 package adapters
 
 import (
+	"io"
 	"net"
 	"net/netip"
 	"testing"
 	"time"
-	"tungo/application/network/connection"
 )
 
 // setupConns creates a server and client UDPConns and returns them plus a Transport.
-func setupConns(t testing.TB) (serverConn *net.UDPConn, clientConn *net.UDPConn, clientAdapter connection.Transport) {
+func setupConns(t testing.TB) (serverConn *net.UDPConn, clientConn *net.UDPConn, clientAdapter io.ReadWriteCloser) {
 	t.Helper()
 
 	serverConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})

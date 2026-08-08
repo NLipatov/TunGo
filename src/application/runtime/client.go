@@ -9,18 +9,14 @@ import (
 	"time"
 
 	"tungo/application/configuration"
-	"tungo/application/network/connection"
-	"tungo/application/network/routing/tun"
 	tunnelClient "tungo/infrastructure/PAL/tunnel/client"
-	"tungo/infrastructure/tunnel/sessionplane/client_factory"
+	"tungo/infrastructure/tunnel/client"
 )
 
 type clientRuntime struct {
-	connectionFactory connection.Factory
-	workerFactory     connection.ClientWorkerFactory
-	tunManager        tun.ClientManager
-	routerFactory     connection.TrafficRouterFactory
-	ready             atomic.Bool
+	runSession     func(context.Context, func()) error
+	disposeDevices func() error
+	ready          atomic.Bool
 }
 
 func newClient() (*clientRuntime, error) {
@@ -36,12 +32,8 @@ func newClient() (*clientRuntime, error) {
 		return nil, fmt.Errorf("init error: failed to configure tun: %w", err)
 	}
 
-	return &clientRuntime{
-		connectionFactory: client_factory.NewConnectionFactory(conf),
-		workerFactory:     client_factory.NewWorkerFactory(conf),
-		tunManager:        tunManager,
-		routerFactory:     client_factory.NewRouterFactory(),
-	}, nil
+	tunnel := client.New(conf, tunManager)
+	return &clientRuntime{runSession: tunnel.Run, disposeDevices: tunManager.DisposeDevices}, nil
 }
 
 func (r *clientRuntime) Run(ctx context.Context) error {
@@ -54,7 +46,7 @@ func (r *clientRuntime) Run(ctx context.Context) error {
 
 func (r *clientRuntime) run(ctx context.Context) error {
 	defer func() {
-		if err := r.tunManager.DisposeDevices(); err != nil {
+		if err := r.disposeDevices(); err != nil {
 			slog.Warn("failed to dispose TUN devices on exit", "err", err)
 		}
 	}()
@@ -84,24 +76,11 @@ func (r *clientRuntime) runAttempt(parentCtx context.Context) error {
 	ctx, cancel := context.WithCancel(parentCtx)
 	defer cancel()
 
-	if err := r.tunManager.DisposeDevices(); err != nil {
+	if err := r.disposeDevices(); err != nil {
 		slog.Warn("failed to dispose TUN devices", "err", err)
 	}
 
-	router, conn, tun, err := r.routerFactory.
-		CreateRouter(ctx, r.connectionFactory, r.tunManager, r.workerFactory)
-	if err != nil {
-		return fmt.Errorf("failed to create router: %w", err)
-	}
-	r.ready.Store(true)
-
-	defer func() {
-		_ = conn.Close()
-		_ = tun.Close()
-	}()
-
-	slog.Info("tunneling traffic via TUN device")
-	return router.RouteTraffic(ctx)
+	return r.runSession(ctx, func() { r.ready.Store(true) })
 }
 
 func (r *clientRuntime) Ready() bool {

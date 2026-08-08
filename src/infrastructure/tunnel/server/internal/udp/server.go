@@ -1,0 +1,264 @@
+package udp
+
+import (
+	"context"
+	"encoding/binary"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/netip"
+	"time"
+
+	"golang.org/x/crypto/chacha20poly1305"
+
+	"tungo/application/configuration/settings"
+	"tungo/application/listeners"
+	"tungo/infrastructure/cryptography/chacha20"
+	udpcrypto "tungo/infrastructure/cryptography/chacha20/udp"
+	"tungo/infrastructure/cryptography/noise"
+	"tungo/infrastructure/cryptography/primitives"
+	"tungo/infrastructure/network/ip"
+	"tungo/infrastructure/network/service_packet"
+	"tungo/infrastructure/tunnel/server/internal/session"
+)
+
+const udpPayloadOffset = udpcrypto.PayloadOffset
+
+// Server moves packets between a TUN device and UDP client transports.
+type Server struct {
+	ctx       context.Context
+	tun       io.ReadWriter
+	conn      listeners.UdpListener
+	peers     *session.Repository
+	registrar *registrar
+	deriver   primitives.DefaultKeyDeriver
+}
+
+func New(
+	ctx context.Context,
+	tun io.ReadWriter,
+	conn listeners.UdpListener,
+	peers *session.Repository,
+	newHandshake func() *noise.IKHandshake,
+	ipv4Subnet netip.Prefix,
+	ipv6Subnet netip.Prefix,
+) *Server {
+	return &Server{
+		ctx: ctx, tun: tun, conn: conn,
+		peers: peers,
+		registrar: newRegistrar(
+			ctx,
+			conn,
+			peers,
+			func() handshake { return newHandshake() },
+			func(material chacha20.KeyMaterial, isServer bool) (crypto, rekeyController, error) {
+				return udpcrypto.NewFromHandshake(material, isServer)
+			},
+			ipv4Subnet,
+			ipv6Subnet,
+		),
+	}
+}
+
+// Run moves packets in both directions until the context is cancelled or one
+// direction fails.
+func (s *Server) Run() error {
+	errCh := make(chan error, 2)
+	go func() { errCh <- s.runTun() }()
+	go func() { errCh <- s.runTransport() }()
+
+	select {
+	case <-s.ctx.Done():
+		return s.ctx.Err()
+	case err := <-errCh:
+		return err
+	}
+}
+
+func (s *Server) runTransport() error {
+	defer func() { _ = s.conn.Close() }()
+
+	go s.reapIdlePeers()
+	_ = s.conn.SetReadBuffer(4 * 1024 * 1024)
+	_ = s.conn.SetWriteBuffer(4 * 1024 * 1024)
+	go func() {
+		<-s.ctx.Done()
+		_ = s.conn.Close()
+	}()
+
+	var frame [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
+	var oob [1024]byte
+	for {
+		n, _, _, addr, err := s.conn.ReadMsgUDPAddrPort(frame[:], oob[:])
+		if err != nil {
+			if s.ctx.Err() != nil {
+				s.closeRegistrations()
+				return nil
+			}
+			slog.Warn("failed to read from UDP", "err", err)
+			continue
+		}
+		if n == 0 {
+			continue
+		}
+		if err := s.handleDatagram(addr, frame[:n]); err != nil {
+			slog.Warn("failed to handle UDP packet", "err", err)
+		}
+	}
+}
+
+func (s *Server) reapIdlePeers() {
+	ticker := time.NewTicker(settings.IdleReaperInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-s.ctx.Done():
+			return
+		case <-ticker.C:
+			if count := s.peers.ReapIdle(settings.ServerIdleTimeout); count > 0 {
+				slog.Info("reaped idle sessions", "count", count)
+			}
+		}
+	}
+}
+
+func (s *Server) closeRegistrations() {
+	if s.registrar != nil {
+		s.registrar.closeAll()
+	}
+}
+
+func (s *Server) handleDatagram(addr netip.AddrPort, frame []byte) error {
+	routeID, ok := udpcrypto.ReadRouteID(frame)
+	if !ok {
+		return nil
+	}
+	peer, err := s.peers.GetByRouteID(routeID)
+	if err != nil {
+		if s.registrar != nil {
+			s.registrar.enqueuePacket(addr, frame)
+		}
+		return nil
+	}
+	return s.handleEstablished(addr, peer, frame)
+}
+
+func (s *Server) handleEstablished(addr netip.AddrPort, peer *session.Peer, frame []byte) error {
+	plaintext, err := peer.Decrypt(frame)
+	if err != nil {
+		return nil
+	}
+	if peer.ExternalAddrPort() != addr {
+		s.peers.UpdateExternalAddr(peer, addr)
+	}
+	return s.handleDecrypted(peer, frame, plaintext)
+}
+
+func (s *Server) handleDecrypted(
+	peer *session.Peer,
+	frame, plaintext []byte,
+) error {
+	if peer.IsClosed() {
+		return nil
+	}
+	peer.TouchActivity()
+
+	if len(frame) < udpcrypto.EpochOffset+2 {
+		return nil
+	}
+	epoch := binary.BigEndian.Uint16(frame[udpcrypto.EpochOffset : udpcrypto.EpochOffset+2])
+	if rekey := peer.RekeyController(); rekey != nil {
+		rekey.ObservePeerEpoch(epoch)
+		rekey.ActivateSendEpoch(epoch)
+	}
+	if handled, err := s.handleService(peer, epoch, plaintext); handled {
+		return err
+	}
+
+	source, ok := ip.ExtractSourceIP(plaintext)
+	if !ok || !peer.IsSourceAllowed(source) {
+		return nil
+	}
+	if _, err := s.tun.Write(plaintext); err != nil {
+		return fmt.Errorf("write to TUN: %w", err)
+	}
+	return nil
+}
+
+func (s *Server) runTun() error {
+	var frame [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
+	plaintext := frame[udpPayloadOffset : udpPayloadOffset+settings.DefaultEthernetMTU]
+
+	for {
+		if s.ctx.Err() != nil {
+			return nil
+		}
+		n, err := s.tun.Read(plaintext)
+		if err != nil {
+			if temporary, ok := err.(interface{ Temporary() bool }); ok && temporary.Temporary() {
+				continue
+			}
+			return err
+		}
+		if n == 0 {
+			continue
+		}
+		destination, ok := ip.ExtractDestIP(plaintext[:n])
+		if !ok {
+			continue
+		}
+		peer, err := s.peers.FindByDestinationIP(destination)
+		if err != nil {
+			continue
+		}
+		if err := peer.Send(frame[:udpPayloadOffset+n]); err != nil {
+			slog.Warn("failed to send packet to peer", "peer", peer.ExternalAddrPort(), "err", err)
+			s.peers.Delete(peer)
+			continue
+		}
+	}
+}
+
+func (s *Server) handleService(peer *session.Peer, carrierEpoch uint16, plaintext []byte) (bool, error) {
+	kind, ok := service_packet.TryParseHeader(plaintext)
+	if !ok {
+		return false, nil
+	}
+	switch kind {
+	case service_packet.RekeyInit:
+		return true, s.handleRekey(peer, carrierEpoch, plaintext)
+	case service_packet.Ping:
+		return true, s.sendService(peer, service_packet.Pong, nil)
+	}
+	return true, nil
+}
+
+func (s *Server) handleRekey(peer *session.Peer, carrierEpoch uint16, plaintext []byte) error {
+	controller := peer.RekeyController()
+	if controller == nil {
+		return nil
+	}
+	serverPub, _, ok, err := controller.HandleRekeyInit(carrierEpoch, &s.deriver, plaintext)
+	if err != nil {
+		if errors.Is(err, chacha20.ErrEpochExhausted) {
+			_ = s.sendService(peer, service_packet.EpochExhausted, nil)
+		}
+		return nil
+	}
+	if !ok {
+		return nil
+	}
+	return s.sendService(peer, service_packet.RekeyAck, serverPub[:])
+}
+
+func (s *Server) sendService(peer *session.Peer, kind service_packet.HeaderType, body []byte) error {
+	var frame [udpPayloadOffset + service_packet.RekeyPacketLen + chacha20poly1305.Overhead]byte
+	payloadLen := 3 + len(body)
+	payload := frame[udpPayloadOffset : udpPayloadOffset+payloadLen]
+	copy(payload[3:], body)
+	if _, err := service_packet.EncodeV1Header(kind, payload); err != nil {
+		return err
+	}
+	return peer.Send(frame[:udpPayloadOffset+payloadLen])
+}

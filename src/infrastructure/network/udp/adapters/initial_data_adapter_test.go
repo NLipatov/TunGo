@@ -4,7 +4,6 @@ import (
 	"errors"
 	"io"
 	"testing"
-	"tungo/application/network/connection"
 )
 
 // InitialDataAdapter implements application.Transport
@@ -109,7 +108,7 @@ func TestRead_NoInitialData(t *testing.T) {
 
 func TestWriteAndClose(t *testing.T) {
 	under := &mockInitialDataAdapter{}
-	var transport connection.Transport = NewInitialDataAdapter(under, nil)
+	var transport io.ReadWriteCloser = NewInitialDataAdapter(under, nil)
 
 	// Write should delegate to the underlying adapter
 	n, err := transport.Write([]byte("abc"))

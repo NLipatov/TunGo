@@ -6,16 +6,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/netip"
 	"strconv"
 	"strings"
-	"tungo/application/network/routing/tun"
+	"tungo/application/configuration/settings"
 	"tungo/infrastructure/PAL/network/windows/ipcfg"
 	"tungo/infrastructure/PAL/network/windows/wtun"
 	"tungo/infrastructure/network/host_resolver"
-	"tungo/application/configuration/settings"
 
 	"golang.zx2c4.com/wintun"
 )
@@ -23,13 +23,13 @@ import (
 // dualStackManager configures one Wintun adapter for both IPv4 and IPv6 stacks.
 type dualStackManager struct {
 	s   settings.Settings
-	tun tun.Device
+	tun io.ReadWriteCloser
 
 	netCfg4 ipcfg.Contract
 	netCfg6 ipcfg.Contract
 
 	// test hooks
-	createTunDeviceFn  func() (tun.Device, error)
+	createTunDeviceFn  func() (io.ReadWriteCloser, error)
 	resolveRouteIPv4Fn func() (string, error)
 	resolveRouteIPv6Fn func() (string, error)
 	routeEndpoint      netip.AddrPort
@@ -50,7 +50,7 @@ func newDualStackManager(
 	}
 }
 
-func (m *dualStackManager) CreateDevice() (tun.Device, error) {
+func (m *dualStackManager) CreateDevice() (io.ReadWriteCloser, error) {
 	if err := m.validateSettings(); err != nil {
 		return nil, err
 	}
@@ -119,7 +119,7 @@ func (m *dualStackManager) validateSettings() error {
 	return nil
 }
 
-func (m *dualStackManager) createOrOpenTunDevice() (tun.Device, error) {
+func (m *dualStackManager) createOrOpenTunDevice() (io.ReadWriteCloser, error) {
 	adapter, err := wintun.CreateAdapter(m.s.TunName, tunnelType, nil)
 	if err != nil {
 		if existing, openErr := wintun.OpenAdapter(m.s.TunName); openErr == nil {

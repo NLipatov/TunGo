@@ -2,14 +2,14 @@ package noise
 
 import (
 	"bytes"
+	"io"
 	"net"
 	"net/netip"
 	"strings"
 	"testing"
 
-	appConfiguration "tungo/application/configuration"
+	"tungo/application/configuration"
 	"tungo/application/configuration/server"
-	"tungo/application/network/connection"
 	"tungo/infrastructure/network/tcp/adapters"
 )
 
@@ -19,8 +19,8 @@ func closeTestConn(conn net.Conn) {
 
 func completeTestHandshake(
 	t *testing.T,
-	server, client connection.Handshake,
-	serverTransport, clientTransport connection.Transport,
+	server, client *IKHandshake,
+	serverTransport, clientTransport io.ReadWriteCloser,
 ) {
 	t.Helper()
 	serverErr := make(chan error, 1)
@@ -49,7 +49,7 @@ func TestIKHandshake_Success(t *testing.T) {
 	}
 
 	// Configure allowed peers
-	allowedPeers := []appConfiguration.ServerPeer{
+	allowedPeers := []configuration.ServerPeer{
 		{
 			PublicKey: clientKP.Public,
 			Enabled:   true,
@@ -123,12 +123,7 @@ func TestIKHandshake_Success(t *testing.T) {
 		t.Fatalf("expected client index 5, got %d", srvClientID)
 	}
 
-	// Verify result is populated
-	result := serverHS.Result()
-	if result == nil {
-		t.Fatal("server result should not be nil")
-	}
-	if !bytes.Equal(result.ClientPubKey(), clientKP.Public) {
+	if !bytes.Equal(serverHS.ClientPubKey(), clientKP.Public) {
 		t.Fatal("result client pub key mismatch")
 	}
 }
@@ -139,7 +134,7 @@ func TestIKHandshake_UnknownClient(t *testing.T) {
 	unknownKP, _ := cipherSuite.GenerateKeypair(nil)
 
 	// Only allow clientKP
-	allowedPeers := []appConfiguration.ServerPeer{
+	allowedPeers := []configuration.ServerPeer{
 		{
 			PublicKey: clientKP.Public,
 			Enabled:   true,
@@ -191,7 +186,7 @@ func TestIKHandshake_DisabledClient(t *testing.T) {
 	clientKP, _ := cipherSuite.GenerateKeypair(nil)
 
 	// Client is disabled
-	allowedPeers := []appConfiguration.ServerPeer{
+	allowedPeers := []configuration.ServerPeer{
 		{
 			PublicKey: clientKP.Public,
 			Enabled:   false, // Disabled
@@ -240,7 +235,7 @@ func TestIKHandshake_KeyMismatch(t *testing.T) {
 	impostorKP, _ := cipherSuite.GenerateKeypair(nil)
 	clientKP, _ := cipherSuite.GenerateKeypair(nil)
 
-	allowedPeers := []appConfiguration.ServerPeer{
+	allowedPeers := []configuration.ServerPeer{
 		{
 			PublicKey: clientKP.Public,
 			Enabled:   true,
@@ -306,7 +301,7 @@ func TestIKHandshake_FreshEphemeralPerHandshake(t *testing.T) {
 	serverKP, _ := cipherSuite.GenerateKeypair(nil)
 	clientKP, _ := cipherSuite.GenerateKeypair(nil)
 
-	allowedPeers := []appConfiguration.ServerPeer{
+	allowedPeers := []configuration.ServerPeer{
 		{
 			PublicKey: clientKP.Public,
 			Enabled:   true,
@@ -410,7 +405,7 @@ func TestIKHandshake_InvalidMAC1(t *testing.T) {
 	serverKP, _ := cipherSuite.GenerateKeypair(nil)
 	clientKP, _ := cipherSuite.GenerateKeypair(nil)
 
-	allowedPeers := []appConfiguration.ServerPeer{
+	allowedPeers := []configuration.ServerPeer{
 		{PublicKey: clientKP.Public, Enabled: true, ClientID: 5},
 	}
 
@@ -449,7 +444,7 @@ func TestAllowedPeersLookup(t *testing.T) {
 	pubKey2 := make([]byte, 32)
 	pubKey2[0] = 2
 
-	peers := []appConfiguration.ServerPeer{
+	peers := []configuration.ServerPeer{
 		{PublicKey: pubKey1, Enabled: true, ClientID: 1},
 		{PublicKey: pubKey2, Enabled: false, ClientID: 2},
 	}
@@ -497,7 +492,7 @@ func TestAllowedPeersLookup_DynamicUpdate(t *testing.T) {
 	pubKey3[0] = 3
 
 	// Initial peers
-	peers := []appConfiguration.ServerPeer{
+	peers := []configuration.ServerPeer{
 		{PublicKey: pubKey1, Enabled: true, ClientID: 1},
 	}
 
@@ -512,7 +507,7 @@ func TestAllowedPeersLookup_DynamicUpdate(t *testing.T) {
 	}
 
 	// Update with new peers
-	newPeers := []appConfiguration.ServerPeer{
+	newPeers := []configuration.ServerPeer{
 		{PublicKey: pubKey2, Enabled: true, ClientID: 2},
 		{PublicKey: pubKey3, Enabled: true, ClientID: 3},
 	}
@@ -545,7 +540,7 @@ func TestIKHandshake_AllowedIPsInResult(t *testing.T) {
 	serverKP, _ := cipherSuite.GenerateKeypair(nil)
 	clientKP, _ := cipherSuite.GenerateKeypair(nil)
 
-	allowedPeers := []appConfiguration.ServerPeer{
+	allowedPeers := []configuration.ServerPeer{
 		{
 			PublicKey: clientKP.Public,
 			Enabled:   true,
@@ -571,12 +566,7 @@ func TestIKHandshake_AllowedIPsInResult(t *testing.T) {
 
 	completeTestHandshake(t, serverHS, clientHS, serverAdapter, clientAdapter)
 
-	result := serverHS.Result()
-	if result == nil {
-		t.Fatal("result should not be nil")
-	}
-
-	allowedIPs := result.AllowedIPs()
+	allowedIPs := serverHS.AllowedIPs()
 	if len(allowedIPs) != 0 {
 		t.Fatalf("expected no additional allowed IPs, got %d", len(allowedIPs))
 	}
@@ -588,7 +578,7 @@ func TestSecurity_HandshakeReplayMsg1(t *testing.T) {
 	serverKP, _ := cipherSuite.GenerateKeypair(nil)
 	clientKP, _ := cipherSuite.GenerateKeypair(nil)
 
-	allowedPeers := []appConfiguration.ServerPeer{
+	allowedPeers := []configuration.ServerPeer{
 		{PublicKey: clientKP.Public, Enabled: true, ClientID: 5},
 	}
 
@@ -652,7 +642,7 @@ func TestSecurity_RejectUnknownProtocolVersions(t *testing.T) {
 	serverKP, _ := cipherSuite.GenerateKeypair(nil)
 	clientKP, _ := cipherSuite.GenerateKeypair(nil)
 
-	allowedPeers := []appConfiguration.ServerPeer{
+	allowedPeers := []configuration.ServerPeer{
 		{PublicKey: clientKP.Public, Enabled: true, ClientID: 5},
 	}
 
@@ -763,7 +753,7 @@ func TestSecurity_SpoofedSourceIP(t *testing.T) {
 	serverKP, _ := cipherSuite.GenerateKeypair(nil)
 	clientKP, _ := cipherSuite.GenerateKeypair(nil)
 
-	allowedPeers := []appConfiguration.ServerPeer{
+	allowedPeers := []configuration.ServerPeer{
 		{
 			PublicKey: clientKP.Public,
 			Enabled:   true,
@@ -789,9 +779,8 @@ func TestSecurity_SpoofedSourceIP(t *testing.T) {
 
 	completeTestHandshake(t, serverHS, clientHS, serverAdapter, clientAdapter)
 
-	result := serverHS.Result()
-	if result == nil {
-		t.Fatal("result should not be nil after successful handshake")
+	if serverHS.ClientPubKey() == nil {
+		t.Fatal("authenticated client key should be set after successful handshake")
 	}
 
 	// Test cases for source IP validation
@@ -954,25 +943,23 @@ func TestIKHandshake_ServerMissingKeys(t *testing.T) {
 	}
 }
 
-func TestIKHandshake_Result_NilBeforeHandshake(t *testing.T) {
+func TestIKHandshake_AuthResult_NilBeforeHandshake(t *testing.T) {
 	serverKP, _ := cipherSuite.GenerateKeypair(nil)
 	serverHS := NewIKHandshakeServer(
 		serverKP.Public, serverKP.Private,
 		NewAllowedPeersLookup(nil), nil, nil,
 	)
-	result := serverHS.Result()
-	if result != nil {
-		t.Fatal("expected nil result before handshake")
+	if serverHS.ClientPubKey() != nil || serverHS.AllowedIPs() != nil {
+		t.Fatal("expected nil authentication result before handshake")
 	}
 }
 
-func TestIKHandshake_ClientResult_AlwaysNil(t *testing.T) {
+func TestIKHandshake_ClientAuthResult_AlwaysNil(t *testing.T) {
 	clientKP, _ := cipherSuite.GenerateKeypair(nil)
 	serverKP, _ := cipherSuite.GenerateKeypair(nil)
 	clientHS := NewIKHandshakeClient(clientKP.Public, clientKP.Private, serverKP.Public)
-	result := clientHS.Result()
-	if result != nil {
-		t.Fatal("expected nil result for client handshake")
+	if clientHS.ClientPubKey() != nil || clientHS.AllowedIPs() != nil {
+		t.Fatal("expected nil authentication result for client handshake")
 	}
 }
 
@@ -992,7 +979,7 @@ func TestSecurity_MAC1VerifiedBeforeAllocation(t *testing.T) {
 	serverKP, _ := cipherSuite.GenerateKeypair(nil)
 	clientKP, _ := cipherSuite.GenerateKeypair(nil)
 
-	allowedPeers := []appConfiguration.ServerPeer{
+	allowedPeers := []configuration.ServerPeer{
 		{PublicKey: clientKP.Public, Enabled: true, ClientID: 5},
 	}
 

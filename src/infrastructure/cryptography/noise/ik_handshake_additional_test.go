@@ -7,9 +7,9 @@ import (
 	"net/netip"
 	"strings"
 	"testing"
-	appConfiguration "tungo/application/configuration"
+	"tungo/application/configuration"
 
-	noiselib "github.com/flynn/noise"
+	"github.com/flynn/noise"
 )
 
 type queueTransport struct {
@@ -105,11 +105,11 @@ func (t *cookieRetryTransport) Write(p []byte) (int, error) {
 		return len(p), nil
 	}
 
-	hs, err := noiselib.NewHandshakeState(noiselib.Config{
+	hs, err := noise.NewHandshakeState(noise.Config{
 		CipherSuite: cipherSuite,
-		Pattern:     noiselib.HandshakeIK,
+		Pattern:     noise.HandshakeIK,
 		Initiator:   false,
-		StaticKeypair: noiselib.DHKey{
+		StaticKeypair: noise.DHKey{
 			Private: t.serverPriv,
 			Public:  t.serverPub,
 		},
@@ -135,11 +135,11 @@ func (t *cookieRetryTransport) Close() error { return nil }
 
 func newClientMsg1WithVersion(t *testing.T, clientPriv, clientPub, serverPub []byte) []byte {
 	t.Helper()
-	hs, err := noiselib.NewHandshakeState(noiselib.Config{
+	hs, err := noise.NewHandshakeState(noise.Config{
 		CipherSuite: cipherSuite,
-		Pattern:     noiselib.HandshakeIK,
+		Pattern:     noise.HandshakeIK,
 		Initiator:   true,
-		StaticKeypair: noiselib.DHKey{
+		StaticKeypair: noise.DHKey{
 			Private: clientPriv,
 			Public:  clientPub,
 		},
@@ -169,10 +169,10 @@ func TestIKHandshake_Extra_GettersAndNilResult(t *testing.T) {
 		serverKey: []byte{4, 5, 6},
 	}
 
-	if h.Result() != nil {
-		t.Fatal("expected nil result when handshake result not set")
+	if h.ClientPubKey() != nil || h.AllowedIPs() != nil {
+		t.Fatal("expected nil authentication result when handshake result not set")
 	}
-	if h.Id() != id {
+	if h.ID() != id {
 		t.Fatal("unexpected handshake ID")
 	}
 	if !bytes.Equal(h.KeyClientToServer(), []byte{1, 2, 3}) {
@@ -182,13 +182,9 @@ func TestIKHandshake_Extra_GettersAndNilResult(t *testing.T) {
 		t.Fatal("unexpected server key")
 	}
 
-	h.result = &ikHandshakeResult{clientID: 9}
-	result, ok := h.Result().(*ikHandshakeResult)
-	if !ok {
-		t.Fatal("expected ikHandshakeResult type")
-	}
-	if got := result.clientID; got != 9 {
-		t.Fatalf("expected client index 9, got %d", got)
+	h.authenticatedClientPubKey = []byte{9}
+	if got := h.ClientPubKey(); !bytes.Equal(got, []byte{9}) {
+		t.Fatalf("unexpected authenticated client key: %v", got)
 	}
 }
 
@@ -229,7 +225,7 @@ func TestIKHandshake_Server_UnderLoadCookieRequiredBranches(t *testing.T) {
 	clientKP, _ := cipherSuite.GenerateKeypair(nil)
 	cm, _ := NewCookieManager()
 
-	allowedPeers := []appConfiguration.ServerPeer{
+	allowedPeers := []configuration.ServerPeer{
 		{PublicKey: clientKP.Public, Enabled: true, ClientID: 2},
 	}
 
@@ -381,7 +377,7 @@ func TestIKHandshake_Server_ErrorBranches(t *testing.T) {
 		h := NewIKHandshakeServer(
 			serverKP.Public,
 			serverKP.Private,
-			NewAllowedPeersLookup([]appConfiguration.ServerPeer{
+			NewAllowedPeersLookup([]configuration.ServerPeer{
 				{PublicKey: clientKP.Public, Enabled: true, ClientID: 2},
 			}),
 			cm,
@@ -458,7 +454,7 @@ func TestIKHandshake_Server_ErrorBranches(t *testing.T) {
 		h := NewIKHandshakeServer(
 			serverKP.Public,
 			serverKP.Private,
-			NewAllowedPeersLookup([]appConfiguration.ServerPeer{
+			NewAllowedPeersLookup([]configuration.ServerPeer{
 				{PublicKey: clientKP.Public, Enabled: true, ClientID: 2},
 			}),
 			nil,
@@ -544,11 +540,11 @@ func TestIKHandshake_EnforceCookieIfNeeded_ValidMAC2(t *testing.T) {
 	lm := NewLoadMonitor(1)
 	lm.handshakesPerSecond.Store(2) // force UnderLoad
 
-	hs, err := noiselib.NewHandshakeState(noiselib.Config{
+	hs, err := noise.NewHandshakeState(noise.Config{
 		CipherSuite: cipherSuite,
-		Pattern:     noiselib.HandshakeIK,
+		Pattern:     noise.HandshakeIK,
 		Initiator:   true,
-		StaticKeypair: noiselib.DHKey{
+		StaticKeypair: noise.DHKey{
 			Private: clientKP.Private,
 			Public:  clientKP.Public,
 		},
@@ -623,11 +619,11 @@ func (t *msg2OnlyTransport) Write(p []byte) (int, error) {
 	if err != nil {
 		t.t.Fatalf("unexpected version parse error in msg2OnlyTransport: %v", err)
 	}
-	hs, err := noiselib.NewHandshakeState(noiselib.Config{
+	hs, err := noise.NewHandshakeState(noise.Config{
 		CipherSuite: cipherSuite,
-		Pattern:     noiselib.HandshakeIK,
+		Pattern:     noise.HandshakeIK,
 		Initiator:   false,
-		StaticKeypair: noiselib.DHKey{
+		StaticKeypair: noise.DHKey{
 			Private: t.serverPriv,
 			Public:  t.serverPub,
 		},

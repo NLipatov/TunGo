@@ -1,16 +1,21 @@
 package client
 
 import (
+	"io"
 	"log/slog"
 	"net/netip"
 	"tungo/application/configuration/settings"
-	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/network/windows/manager"
 )
 
+type clientManager interface {
+	CreateDevice() (io.ReadWriteCloser, error)
+	DisposeDevices() error
+	SetRouteEndpoint(netip.AddrPort)
+}
+
 type PlatformTunManager struct {
-	// manager is a backing tun.ClientManager implementation, which handles v4/v6 specific
-	manager         tun.ClientManager
+	manager         clientManager
 	activeTunName   string
 	cleanupSettings []settings.Settings
 }
@@ -18,7 +23,7 @@ type PlatformTunManager struct {
 func NewPlatformTunManager(
 	connectionSettings settings.Settings,
 	cleanupSettings []settings.Settings,
-) (tun.ClientManager, error) {
+) (*PlatformTunManager, error) {
 	factory := manager.NewFactory(
 		connectionSettings,
 	)
@@ -33,7 +38,7 @@ func NewPlatformTunManager(
 	}, nil
 }
 
-func (m *PlatformTunManager) CreateDevice() (tun.Device, error) {
+func (m *PlatformTunManager) CreateDevice() (io.ReadWriteCloser, error) {
 	return m.manager.CreateDevice()
 }
 

@@ -3,39 +3,16 @@ package noise
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"net/netip"
 	"sync/atomic"
-	appConfiguration "tungo/application/configuration"
-	"tungo/application/network/connection"
+	"tungo/application/configuration"
 	"tungo/infrastructure/cryptography/mem"
 
 	noiselib "github.com/flynn/noise"
 )
 
 var cipherSuite = noiselib.NewCipherSuite(noiselib.DH25519, noiselib.CipherChaChaPoly, noiselib.HashSHA256)
-
-// ikHandshakeResult contains the result of a successful server-side IK handshake.
-// Implements connection.HandshakeResult interface.
-type ikHandshakeResult struct {
-	// clientID is the 1-based ordinal for AllocateClientIP.
-	clientID int
-
-	// clientPubKey is the client's X25519 static public key.
-	clientPubKey []byte
-
-	// allowedIPs are the additional prefixes this client may use as source IP.
-	allowedIPs []netip.Prefix
-}
-
-// ClientPubKey returns the client's X25519 static public key.
-func (r *ikHandshakeResult) ClientPubKey() []byte {
-	return r.clientPubKey
-}
-
-// AllowedIPs returns the additional prefixes this client may use as source IP.
-func (r *ikHandshakeResult) AllowedIPs() []netip.Prefix {
-	return r.allowedIPs
-}
 
 // AllowedPeersLookup provides lookup functionality for AllowedPeers.
 type AllowedPeersLookup interface {
@@ -45,7 +22,7 @@ type AllowedPeersLookup interface {
 
 	// Update atomically replaces the peer map with a new configuration.
 	// This allows runtime updates without server restart.
-	Update(peers []appConfiguration.ServerPeer)
+	Update(peers []configuration.ServerPeer)
 }
 
 // allowedPeersMap implements AllowedPeersLookup using atomic pointer for lock-free reads.
@@ -59,7 +36,7 @@ type allowedPeerEntry struct {
 }
 
 // NewAllowedPeersLookup creates an AllowedPeersLookup from a slice of AllowedPeer.
-func NewAllowedPeersLookup(peers []appConfiguration.ServerPeer) AllowedPeersLookup {
+func NewAllowedPeersLookup(peers []configuration.ServerPeer) AllowedPeersLookup {
 	a := &allowedPeersMap{}
 	a.Update(peers)
 	return a
@@ -77,7 +54,7 @@ func (a *allowedPeersMap) Lookup(pubKey []byte) (int, bool, bool) {
 	return peer.clientID, peer.enabled, true
 }
 
-func (a *allowedPeersMap) Update(peers []appConfiguration.ServerPeer) {
+func (a *allowedPeersMap) Update(peers []configuration.ServerPeer) {
 	m := make(map[string]allowedPeerEntry, len(peers))
 	for i := range peers {
 		peer := peers[i]
@@ -107,8 +84,9 @@ type IKHandshake struct {
 	clientPrivKey []byte
 	peerPubKey    []byte // Server's public key (client perspective)
 
-	// Handshake result (server-side)
-	result *ikHandshakeResult
+	// Authentication result (server-side)
+	authenticatedClientPubKey []byte
+	allowedIPs                []netip.Prefix
 
 	// Cookie for retry (client-side)
 	cookie []byte
@@ -154,22 +132,23 @@ func NewIKHandshakeClient(
 	}
 }
 
-func (h *IKHandshake) Id() [32]byte              { return h.id }
+func (h *IKHandshake) ID() [32]byte              { return h.id }
 func (h *IKHandshake) KeyClientToServer() []byte { return h.clientKey }
 func (h *IKHandshake) KeyServerToClient() []byte { return h.serverKey }
 
-// Result returns the handshake result (server-side only).
-// Implements connection.HandshakeWithResult interface.
-func (h *IKHandshake) Result() connection.HandshakeResult {
-	if h.result == nil {
-		return nil
-	}
-	return h.result
+// ClientPubKey returns the authenticated client's static public key.
+func (h *IKHandshake) ClientPubKey() []byte {
+	return h.authenticatedClientPubKey
+}
+
+// AllowedIPs returns additional source prefixes authorized for the client.
+func (h *IKHandshake) AllowedIPs() []netip.Prefix {
+	return h.allowedIPs
 }
 
 // ServerSideHandshake performs Noise IK as responder with DoS protection.
 // Returns the client's ClientID for IP allocation at registration time.
-func (h *IKHandshake) ServerSideHandshake(transport connection.Transport) (int, error) {
+func (h *IKHandshake) ServerSideHandshake(transport io.ReadWriter) (int, error) {
 	if err := h.validateServerConfig(); err != nil {
 		return 0, err
 	}
@@ -198,12 +177,12 @@ func (h *IKHandshake) ServerSideHandshake(transport connection.Transport) (int, 
 		return 0, err
 	}
 	h.applySessionMaterial(outcome.material)
-	h.result = newIKHandshakeResult(outcome.clientID, outcome.clientPubKey)
+	h.authenticatedClientPubKey = append(h.authenticatedClientPubKey[:0], outcome.clientPubKey...)
 	return outcome.clientID, nil
 }
 
 // ClientSideHandshake performs Noise IK as initiator.
-func (h *IKHandshake) ClientSideHandshake(transport connection.Transport) error {
+func (h *IKHandshake) ClientSideHandshake(transport io.ReadWriter) error {
 	if err := h.validateClientConfig(); err != nil {
 		return err
 	}
@@ -267,7 +246,7 @@ func (h *IKHandshake) validateClientConfig() error {
 }
 
 func (h *IKHandshake) enforceCookieIfNeeded(
-	transport connection.Transport,
+	transport io.ReadWriter,
 	msg1WithMAC []byte,
 ) error {
 	if h.loadMonitor == nil || !h.loadMonitor.UnderLoad() || h.cookieManager == nil {
@@ -297,8 +276,8 @@ func (h *IKHandshake) enforceCookieIfNeeded(
 	return ErrCookieRequired
 }
 
-func (h *IKHandshake) transportRemoteIP(transport connection.Transport) (netip.Addr, bool) {
-	tr, ok := transport.(connection.TransportWithRemoteAddr)
+func (h *IKHandshake) transportRemoteIP(transport io.ReadWriter) (netip.Addr, bool) {
+	tr, ok := transport.(interface{ RemoteAddrPort() netip.AddrPort })
 	if !ok {
 		return netip.Addr{}, false
 	}
@@ -323,7 +302,7 @@ func (h *IKHandshake) newResponderState() (*noiselib.HandshakeState, error) {
 }
 
 func (h *IKHandshake) runResponderNoise(
-	transport connection.Transport,
+	transport io.ReadWriter,
 	msg1WithMAC []byte,
 ) (serverHandshakeOutcome, error) {
 	hs, err := h.newResponderState()
@@ -385,7 +364,7 @@ func (h *IKHandshake) newInitiatorState() (*noiselib.HandshakeState, error) {
 }
 
 func (h *IKHandshake) initiatorAttempt(
-	transport connection.Transport,
+	transport io.ReadWriter,
 	sendErrPrefix string,
 	readErrPrefix string,
 ) (*noiselib.HandshakeState, []byte, error) {
@@ -460,18 +439,8 @@ func (h *IKHandshake) applySessionMaterial(material sessionMaterial) {
 	h.id = material.id
 }
 
-func newIKHandshakeResult(clientID int, clientPubKey []byte) *ikHandshakeResult {
-	pubKeyCopy := make([]byte, len(clientPubKey))
-	copy(pubKeyCopy, clientPubKey)
-	return &ikHandshakeResult{
-		clientID:     clientID,
-		clientPubKey: pubKeyCopy,
-		allowedIPs:   nil,
-	}
-}
-
 func readHandshakeMessage(
-	transport connection.Transport,
+	transport io.ReadWriter,
 	errPrefix string,
 ) ([]byte, error) {
 	buf := make([]byte, 2048)

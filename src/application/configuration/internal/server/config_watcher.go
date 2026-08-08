@@ -10,7 +10,7 @@ import (
 )
 
 // SessionRevoker revokes sessions by public key.
-// Implemented by session.CompositeSessionRevoker.
+// Implemented by the server tunnel runtime.
 type SessionRevoker interface {
 	RevokeByPubKey(pubKey []byte) int
 }

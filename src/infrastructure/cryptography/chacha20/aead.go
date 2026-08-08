@@ -3,14 +3,21 @@ package chacha20
 import (
 	"crypto/cipher"
 	"fmt"
-	"tungo/application/network/connection"
 
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
+// KeyMaterial is the part of a completed handshake needed to start an
+// encrypted session. The interface lives here because ChaCha20 consumes it.
+type KeyMaterial interface {
+	ID() [32]byte
+	KeyClientToServer() []byte
+	KeyServerToClient() []byte
+}
+
 // NewAEADsFromHandshake creates send and receive ciphers for the local peer.
 func NewAEADsFromHandshake(
-	h connection.Handshake,
+	h KeyMaterial,
 	isServer bool,
 ) (send cipher.AEAD, recv cipher.AEAD, err error) {
 	c2s := h.KeyClientToServer()

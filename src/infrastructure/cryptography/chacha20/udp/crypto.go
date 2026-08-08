@@ -15,7 +15,7 @@ import (
 const defaultEpochRingCapacity = 4
 
 // Crypto manages immutable UDP sessions and resolves them via an EpochRing.
-// It implements connection.Crypto. It holds no raw keys or handshake state.
+// It holds no raw keys or handshake state.
 type Crypto struct {
 	ring         EpochRing
 	isServer     bool
@@ -160,8 +160,6 @@ func (c *Crypto) RetirePreviousEpoch() bool { return true }
 
 // Zeroize overwrites all key material with zeros.
 // After this call, the crypto instance is unusable.
-// Implements connection.CryptoZeroizer.
-//
 // SECURITY INVARIANT: All session keys in the EpochRing are zeroed.
 // This is guaranteed by the EpochRing interface (ZeroizeAll is mandatory).
 func (c *Crypto) Zeroize() {

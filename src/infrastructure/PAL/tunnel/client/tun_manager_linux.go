@@ -3,11 +3,12 @@ package client
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/netip"
+	"os"
 	"strings"
 	"tungo/application/configuration/settings"
-	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/exec_commander"
 	"tungo/infrastructure/PAL/network/linux/epoll"
 	"tungo/infrastructure/PAL/network/linux/ioctl"
@@ -16,6 +17,10 @@ import (
 	"tungo/infrastructure/network/host_resolver"
 )
 
+type tunWrapper interface {
+	Wrap(*os.File) (io.ReadWriteCloser, error)
+}
+
 // PlatformTunManager Linux-specific TunDevice manager
 type PlatformTunManager struct {
 	connectionSettings settings.Settings
@@ -23,14 +28,14 @@ type PlatformTunManager struct {
 	ip                 ip.Contract
 	ioctl              ioctl.Contract
 	mss                mssclamp.Contract
-	wrapper            tun.Wrapper
+	wrapper            tunWrapper
 	routeEndpoint      netip.AddrPort
 }
 
 func NewPlatformTunManager(
 	connectionSettings settings.Settings,
 	cleanupSettings []settings.Settings,
-) (tun.ClientManager, error) {
+) (*PlatformTunManager, error) {
 	return &PlatformTunManager{
 		connectionSettings: connectionSettings,
 		cleanupSettings:    append([]settings.Settings(nil), cleanupSettings...),
@@ -41,7 +46,7 @@ func NewPlatformTunManager(
 	}, nil
 }
 
-func (t *PlatformTunManager) CreateDevice() (tun.Device, error) {
+func (t *PlatformTunManager) CreateDevice() (io.ReadWriteCloser, error) {
 	connectionSettings := t.connectionSettings
 
 	// configureTUN client

@@ -4,11 +4,18 @@ package manager
 
 import (
 	"fmt"
+	"io"
+	"net/netip"
 	"tungo/infrastructure/PAL/network/windows/ipcfg"
 
-	"tungo/application/network/routing/tun"
 	"tungo/application/configuration/settings"
 )
+
+type clientManager interface {
+	CreateDevice() (io.ReadWriteCloser, error)
+	DisposeDevices() error
+	SetRouteEndpoint(netip.AddrPort)
+}
 
 // Factory builds a family-specific TUN manager (IPv4, IPv6, or dual-stack) based on configured addresses.
 type Factory struct {
@@ -25,8 +32,8 @@ func NewFactory(
 	}
 }
 
-// Create returns a tun.ClientManager for the configured address families.
-func (f *Factory) Create() (tun.ClientManager, error) {
+// Create returns the manager for the configured address families.
+func (f *Factory) Create() (clientManager, error) {
 	has4 := f.connectionSettings.IPv4.IsValid() && !f.connectionSettings.IPv4.IsUnspecified() && f.connectionSettings.IPv4.Unmap().Is4() ||
 		f.connectionSettings.IPv4Subnet.IsValid() && f.connectionSettings.IPv4Subnet.Addr().Unmap().Is4()
 	has6 := f.connectionSettings.IPv6.IsValid() && !f.connectionSettings.IPv6.IsUnspecified() && !f.connectionSettings.IPv6.Unmap().Is4() ||

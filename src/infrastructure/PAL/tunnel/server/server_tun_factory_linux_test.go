@@ -3,13 +3,13 @@ package server
 import (
 	"bytes"
 	"errors"
+	"io"
 	"net"
 	"net/netip"
 	"os"
 	"strings"
 	"syscall"
 	"testing"
-	application "tungo/application/network/routing/tun"
 
 	"tungo/application/configuration/settings"
 	"tungo/infrastructure/PAL/network/linux/ioctl"
@@ -30,14 +30,14 @@ type testPlainWrapper struct{}
 
 type testPlainDev struct{ f *os.File }
 
-// Implement tun.Device on top of *os.File.
+// Implement io.ReadWriteCloser on top of *os.File.
 func (d *testPlainDev) Read(p []byte) (int, error)  { return d.f.Read(p) }
 func (d *testPlainDev) Write(p []byte) (int, error) { return d.f.Write(p) }
 func (d *testPlainDev) Close() error                { return d.f.Close() }
 func (d *testPlainDev) Fd() uintptr                 { return d.f.Fd() }
 
-// testPlainWrapper implements tun.Wrapper.
-func (testPlainWrapper) Wrap(f *os.File) (application.Device, error) {
+// testPlainWrapper injects a plain file-backed device.
+func (testPlainWrapper) Wrap(f *os.File) (io.ReadWriteCloser, error) {
 	return &testPlainDev{f: f}, nil
 }
 

@@ -6,15 +6,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/netip"
 	"strings"
-	"tungo/application/network/routing/tun"
+	"tungo/application/configuration/settings"
 	"tungo/infrastructure/PAL/network/windows/ipcfg"
 	"tungo/infrastructure/PAL/network/windows/wtun"
 	"tungo/infrastructure/network/host_resolver"
-	"tungo/application/configuration/settings"
 
 	"golang.zx2c4.com/wintun"
 )
@@ -22,10 +22,10 @@ import (
 // v4Manager configures a Wintun adapter and the host stack for IPv4.
 type v4Manager struct {
 	s                  settings.Settings
-	tun                tun.Device
+	tun                io.ReadWriteCloser
 	netCfg             ipcfg.Contract
 	routeEndpoint      netip.AddrPort
-	createTunDeviceFn  func() (tun.Device, error)
+	createTunDeviceFn  func() (io.ReadWriteCloser, error)
 	resolveRouteIPv4Fn func() (string, error)
 	resolvedRouteIP    string // cached resolved server IP for consistent teardown
 	resolvedRouteIf    string // cached egress interface used for host route
@@ -44,7 +44,7 @@ func newV4Manager(
 // CreateDevice creates/configures the TUN adapter and system netCfgs/DNS for IPv4.
 // Safe order: create adapter → host netCfg to server → assign IP → split default → MTU → DNS.
 // On any error after adapter creation we call DisposeDevices() to leave the host clean.
-func (m *v4Manager) CreateDevice() (tun.Device, error) {
+func (m *v4Manager) CreateDevice() (io.ReadWriteCloser, error) {
 	if sErr := m.validateSettings(); sErr != nil {
 		return nil, sErr
 	}
@@ -97,7 +97,7 @@ func (m *v4Manager) validateSettings() error {
 }
 
 // createOrOpenTunDevice creates or opening existing wintun adapter (idempotent behavior).
-func (m *v4Manager) createOrOpenTunDevice() (tun.Device, error) {
+func (m *v4Manager) createOrOpenTunDevice() (io.ReadWriteCloser, error) {
 	adapter, err := wintun.CreateAdapter(m.s.TunName, tunnelType, nil)
 	if err != nil {
 		if existing, openErr := wintun.OpenAdapter(m.s.TunName); openErr == nil {

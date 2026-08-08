@@ -4,28 +4,28 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"net/netip"
 	"os"
 	"strings"
 	"testing"
 
 	"tungo/application/configuration/settings"
-	"tungo/application/network/routing/tun"
 )
 
-// platformTunManagerPlainDev is a minimal tun.Device over *os.File.
+// platformTunManagerPlainDev is a minimal device over *os.File.
 type platformTunManagerPlainDev struct{ f *os.File }
 
 func (d *platformTunManagerPlainDev) Read(p []byte) (int, error)  { return d.f.Read(p) }
 func (d *platformTunManagerPlainDev) Write(p []byte) (int, error) { return d.f.Write(p) }
 func (d *platformTunManagerPlainDev) Close() error                { return d.f.Close() }
 
-// platformTunManagerPlainWrapper implements tun.Wrapper and can inject an error.
+// platformTunManagerPlainWrapper can inject a wrapping error.
 type platformTunManagerPlainWrapper struct {
 	err error
 }
 
-func (w platformTunManagerPlainWrapper) Wrap(f *os.File) (tun.Device, error) {
+func (w platformTunManagerPlainWrapper) Wrap(f *os.File) (io.ReadWriteCloser, error) {
 	if w.err != nil {
 		return nil, w.err
 	}
@@ -152,7 +152,7 @@ func newMgr(
 		Install(string) error
 		Remove(string) error
 	},
-	wrap tun.Wrapper,
+	wrap tunWrapper,
 ) *PlatformTunManager {
 	profiles := map[settings.Protocol]settings.Settings{
 		settings.UDP: {

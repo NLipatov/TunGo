@@ -4,11 +4,11 @@ package manager
 
 import (
 	"errors"
+	"io"
 	"net/netip"
 	"reflect"
 	"strings"
 	"testing"
-	"tungo/application/network/routing/tun"
 	"tungo/application/configuration/settings"
 )
 
@@ -27,7 +27,7 @@ func TestV4Manager_CreateDevice_RollbackOnSplitRouteError(t *testing.T) {
 	}
 
 	m := newV4Manager(s, cfg)
-	m.createTunDeviceFn = func() (tun.Device, error) { return tunDev, nil }
+	m.createTunDeviceFn = func() (io.ReadWriteCloser, error) { return tunDev, nil }
 	m.resolveRouteIPv4Fn = func() (string, error) { return "198.51.100.10", nil }
 
 	_, err := m.CreateDevice()
@@ -66,7 +66,7 @@ func TestV6Manager_CreateDevice_RollbackOnSplitRouteError(t *testing.T) {
 	}
 
 	m := newV6Manager(s, cfg)
-	m.createTunDeviceFn = func() (tun.Device, error) { return tunDev, nil }
+	m.createTunDeviceFn = func() (io.ReadWriteCloser, error) { return tunDev, nil }
 	m.resolveRouteIPv6Fn = func() (string, error) { return "2001:db8::1", nil }
 
 	_, err := m.CreateDevice()
@@ -382,7 +382,7 @@ func TestV4Manager_CreateDevice_UsesConfiguredDNS(t *testing.T) {
 	}
 
 	m := newV4Manager(s, cfg)
-	m.createTunDeviceFn = func() (tun.Device, error) { return tunDev, nil }
+	m.createTunDeviceFn = func() (io.ReadWriteCloser, error) { return tunDev, nil }
 	m.resolveRouteIPv4Fn = func() (string, error) { return "198.51.100.10", nil }
 
 	if _, err := m.CreateDevice(); err != nil {
@@ -415,7 +415,7 @@ func TestV6Manager_CreateDevice_UsesConfiguredDNS(t *testing.T) {
 	}
 
 	m := newV6Manager(s, cfg)
-	m.createTunDeviceFn = func() (tun.Device, error) { return tunDev, nil }
+	m.createTunDeviceFn = func() (io.ReadWriteCloser, error) { return tunDev, nil }
 	m.resolveRouteIPv6Fn = func() (string, error) { return "2001:db8::1", nil }
 
 	if _, err := m.CreateDevice(); err != nil {
@@ -450,7 +450,7 @@ func TestV4Manager_CreateDevice_IgnoresDNSErrorOnFlushFailure(t *testing.T) {
 	}
 
 	m := newV4Manager(s, cfg)
-	m.createTunDeviceFn = func() (tun.Device, error) { return tunDev, nil }
+	m.createTunDeviceFn = func() (io.ReadWriteCloser, error) { return tunDev, nil }
 	m.resolveRouteIPv4Fn = func() (string, error) { return "198.51.100.10", nil }
 
 	if _, err := m.CreateDevice(); err != nil {
@@ -479,7 +479,7 @@ func TestV6Manager_CreateDevice_IgnoresDNSErrorOnFlushFailure(t *testing.T) {
 	}
 
 	m := newV6Manager(s, cfg)
-	m.createTunDeviceFn = func() (tun.Device, error) { return tunDev, nil }
+	m.createTunDeviceFn = func() (io.ReadWriteCloser, error) { return tunDev, nil }
 	m.resolveRouteIPv6Fn = func() (string, error) { return "2001:db8::1", nil }
 
 	if _, err := m.CreateDevice(); err != nil {

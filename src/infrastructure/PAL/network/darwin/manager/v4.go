@@ -5,19 +5,19 @@ package manager
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/netip"
 
-	"tungo/application/network/routing/tun"
+	"tungo/application/configuration/settings"
 	"tungo/infrastructure/PAL/network/darwin/ifconfig"
 	"tungo/infrastructure/PAL/network/darwin/route"
 	"tungo/infrastructure/PAL/network/darwin/utun"
 	"tungo/infrastructure/network/host_resolver"
-	"tungo/application/configuration/settings"
 )
 
 type v4 struct {
 	s               settings.Settings
-	tunDev          tun.Device
+	tunDev          io.ReadWriteCloser
 	rawUTUN         utun.UTUN
 	ifc             ifconfig.Contract // v4 ifconfig.Contract implementation
 	rtc             route.Contract    // v4 route.Contract implementation
@@ -42,7 +42,7 @@ func newV4(
 	}
 }
 
-func (m *v4) CreateDevice() (tun.Device, error) {
+func (m *v4) CreateDevice() (io.ReadWriteCloser, error) {
 	if err := m.validateSettings(); err != nil {
 		return nil, err
 	}

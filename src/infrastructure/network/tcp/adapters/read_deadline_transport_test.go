@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// noDeadlineTransport implements connection.Transport but NOT SetReadDeadline.
+// noDeadlineTransport does not implement SetReadDeadline.
 type noDeadlineTransport struct {
 	readData []byte
 }
@@ -18,7 +18,7 @@ func (t *noDeadlineTransport) Read(p []byte) (int, error) {
 func (t *noDeadlineTransport) Write(p []byte) (int, error) { return len(p), nil }
 func (t *noDeadlineTransport) Close() error                { return nil }
 
-// deadlineTransport implements connection.Transport AND SetReadDeadline.
+// deadlineTransport implements SetReadDeadline.
 type deadlineTransport struct {
 	readData     []byte
 	writeData    []byte

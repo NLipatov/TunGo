@@ -4,11 +4,11 @@ package manager
 
 import (
 	"errors"
+	"io"
 	"net/netip"
 	"reflect"
 	"strings"
 	"testing"
-	"tungo/application/network/routing/tun"
 	"tungo/application/configuration/settings"
 )
 
@@ -294,7 +294,7 @@ func TestDualStackManager_CreateDevice_RollbackOnIPv6SplitRouteError(t *testing.
 	}
 
 	m := newDualStackManager(s, cfg4, cfg6)
-	m.createTunDeviceFn = func() (tun.Device, error) { return tunDev, nil }
+	m.createTunDeviceFn = func() (io.ReadWriteCloser, error) { return tunDev, nil }
 	m.resolveRouteIPv4Fn = func() (string, error) { return "198.51.100.10", nil }
 	m.resolveRouteIPv6Fn = func() (string, error) { return "2001:db8::1", nil }
 
@@ -343,7 +343,7 @@ func TestDualStackManager_CreateDevice_RollbackClearsDNSOnIPv6DNSError(t *testin
 	}
 
 	m := newDualStackManager(s, cfg4, cfg6)
-	m.createTunDeviceFn = func() (tun.Device, error) { return tunDev, nil }
+	m.createTunDeviceFn = func() (io.ReadWriteCloser, error) { return tunDev, nil }
 	m.resolveRouteIPv4Fn = func() (string, error) { return "198.51.100.10", nil }
 	m.resolveRouteIPv6Fn = func() (string, error) { return "2001:db8::1", nil }
 
@@ -427,7 +427,7 @@ func TestDualStackManager_CreateDevice_UsesConfiguredDNS(t *testing.T) {
 	}
 
 	m := newDualStackManager(s, cfg4, cfg6)
-	m.createTunDeviceFn = func() (tun.Device, error) { return tunDev, nil }
+	m.createTunDeviceFn = func() (io.ReadWriteCloser, error) { return tunDev, nil }
 	m.resolveRouteIPv4Fn = func() (string, error) { return "198.51.100.10", nil }
 	m.resolveRouteIPv6Fn = func() (string, error) { return "2001:db8::1", nil }
 
@@ -466,7 +466,7 @@ func TestDualStackManager_CreateDevice_IgnoresDNSErrorOnIPv6FlushFailure(t *test
 	}
 
 	m := newDualStackManager(s, cfg4, cfg6)
-	m.createTunDeviceFn = func() (tun.Device, error) { return tunDev, nil }
+	m.createTunDeviceFn = func() (io.ReadWriteCloser, error) { return tunDev, nil }
 	m.resolveRouteIPv4Fn = func() (string, error) { return "198.51.100.10", nil }
 	m.resolveRouteIPv6Fn = func() (string, error) { return "2001:db8::1", nil }
 

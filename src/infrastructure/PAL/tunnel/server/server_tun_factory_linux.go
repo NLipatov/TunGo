@@ -3,13 +3,13 @@ package server
 import (
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"os"
 	"strings"
 	"syscall"
 	"tungo/application/configuration/settings"
-	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/exec_commander"
 	"tungo/infrastructure/PAL/network/linux/epoll"
 	"tungo/infrastructure/PAL/network/linux/ioctl"
@@ -19,13 +19,17 @@ import (
 	"tungo/infrastructure/PAL/network/linux/sysctl"
 )
 
+type tunWrapper interface {
+	Wrap(*os.File) (io.ReadWriteCloser, error)
+}
+
 type TunFactory struct {
 	device   tunDeviceManager
 	firewall firewallConfigurator
-	wrapper  tun.Wrapper
+	wrapper  tunWrapper
 }
 
-func NewTunFactory() tun.ServerManager {
+func NewTunFactory() *TunFactory {
 	return &TunFactory{
 		device: tunDeviceManager{
 			ip:    ip.NewWrapper(exec_commander.NewExecCommander()),
@@ -40,7 +44,7 @@ func NewTunFactory() tun.ServerManager {
 	}
 }
 
-func (s TunFactory) CreateDevice(connSettings settings.Settings) (tun.Device, error) {
+func (s TunFactory) CreateDevice(connSettings settings.Settings) (io.ReadWriteCloser, error) {
 	ipv4 := connSettings.IPv4Subnet.IsValid() && connSettings.IPv4Subnet.Addr().Is4()
 	ipv6 := connSettings.IPv6Subnet.IsValid()
 

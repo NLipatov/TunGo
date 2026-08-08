@@ -3,17 +3,17 @@
 package epoll
 
 import (
+	"io"
 	"os"
-	application "tungo/application/network/routing/tun"
 )
 
 type Wrapper struct {
 }
 
-func NewWrapper() application.Wrapper {
+func NewWrapper() *Wrapper {
 	return &Wrapper{}
 }
 
-func (e *Wrapper) Wrap(f *os.File) (application.Device, error) {
+func (e *Wrapper) Wrap(f *os.File) (io.ReadWriteCloser, error) {
 	return newTUN(f)
 }

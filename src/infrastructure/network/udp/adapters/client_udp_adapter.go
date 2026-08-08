@@ -5,7 +5,6 @@ import (
 	"net"
 	"time"
 	"tungo/application/configuration/settings"
-	"tungo/application/network/connection"
 )
 
 // ClientUDPAdapter - single goroutine only client UDP adapter
@@ -17,7 +16,7 @@ type ClientUDPAdapter struct {
 
 func NewClientUDPAdapter(
 	conn *net.UDPConn,
-	readDeadline, writeDeadline time.Duration) connection.Transport {
+	readDeadline, writeDeadline time.Duration) io.ReadWriteCloser {
 	return &ClientUDPAdapter{
 		conn:          conn,
 		writeDeadline: writeDeadline,
@@ -46,7 +45,7 @@ func (c *ClientUDPAdapter) Read(buffer []byte) (int, error) {
 		return 0, err
 	}
 
-	// Fast path: hot dataplane buffers are already max-sized, so read directly
+	// Fast path: packet-loop buffers are already max-sized, so read directly
 	// into caller memory and avoid an extra copy.
 	if len(buffer) >= len(c.buf) {
 		n, _, _, _, err := c.conn.ReadMsgUDPAddrPort(buffer[:len(c.buf)], nil)

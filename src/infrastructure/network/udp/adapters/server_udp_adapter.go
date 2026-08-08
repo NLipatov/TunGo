@@ -1,10 +1,10 @@
 package adapters
 
 import (
+	"io"
 	"net/netip"
 	"tungo/application/configuration/settings"
 	"tungo/application/listeners"
-	"tungo/application/network/connection"
 )
 
 type ServerUdpAdapter struct {
@@ -15,7 +15,7 @@ type ServerUdpAdapter struct {
 	oob        [8 * 1024]byte
 }
 
-func NewUdpAdapter(udpConn listeners.UdpListener, addrPort netip.AddrPort) connection.Transport {
+func NewUdpAdapter(udpConn listeners.UdpListener, addrPort netip.AddrPort) io.ReadWriteCloser {
 	return &ServerUdpAdapter{
 		conn:     udpConn,
 		addrPort: addrPort,
@@ -27,7 +27,7 @@ func (ua *ServerUdpAdapter) Write(data []byte) (int, error) {
 }
 
 func (ua *ServerUdpAdapter) Read(buffer []byte) (int, error) {
-	// Fast path: dataplane supplies max-sized buffers; read directly and avoid copy.
+	// Fast path: packet loops supply max-sized buffers; read directly and avoid copy.
 	if len(buffer) >= len(ua.readBuffer) {
 		n, _, _, _, err := ua.conn.ReadMsgUDPAddrPort(buffer[:len(ua.readBuffer)], ua.oob[:])
 		if err != nil {
