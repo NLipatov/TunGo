@@ -7,11 +7,11 @@ import (
 	"net"
 	"net/netip"
 
+	"tungo/application/configuration/settings"
 	"tungo/application/network/connection"
+	"tungo/application/network/ip"
 	"tungo/infrastructure/cryptography/noise"
-	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/network/tcp/adapters"
-	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/controlplane"
 	"tungo/infrastructure/tunnel/session"
 )
@@ -150,7 +150,7 @@ func (r *Registrar) RegisterClient(conn net.Conn) (*session.Peer, connection.Tra
 		}
 	}
 
-	egress := connection.NewDefaultEgress(framingAdapter, cryptographyService)
+	egress := connection.NewEgress(framingAdapter, cryptographyService)
 	peer := session.NewPeerWithAuth(
 		cryptographyService, rekeyCoordinator, internalIP, tcpAddr.AddrPort(), clientPubKey, allowedIPs, egress,
 	)

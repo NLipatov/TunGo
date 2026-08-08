@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"tungo/application/configuration/settings"
 	"tungo/infrastructure/PAL/network/linux/iptables"
 	"tungo/infrastructure/PAL/network/linux/mssclamp"
 	"tungo/infrastructure/PAL/network/linux/sysctl"
-	"tungo/infrastructure/settings"
 )
 
 type firewallConfigurator struct {

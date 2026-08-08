@@ -97,7 +97,7 @@ func TestPeer_AuthAndLifecycle(t *testing.T) {
 }
 
 func TestRepository_AddRouteUpdateAndDelete(t *testing.T) {
-	repo := NewDefaultRepository()
+	repo := NewRepository()
 	internal := netip.MustParseAddr("10.0.0.2")
 	external := netip.MustParseAddrPort("192.0.2.1:1000")
 	updated := netip.MustParseAddrPort("192.0.2.2:2000")
@@ -148,7 +148,7 @@ func TestRepository_AddRouteUpdateAndDelete(t *testing.T) {
 func TestRepository_DeleteWaitsForDecrypt(t *testing.T) {
 	crypto := &testCrypto{decryptCh: make(chan struct{}), releaseCh: make(chan struct{})}
 	peer := NewPeer(crypto, nil, netip.MustParseAddr("10.0.0.2"), netip.MustParseAddrPort("192.0.2.1:1"), nil)
-	repo := NewDefaultRepository()
+	repo := NewRepository()
 	repo.Add(peer)
 
 	decryptDone := make(chan struct{})
@@ -181,7 +181,7 @@ func TestRepository_DeleteWaitsForSend(t *testing.T) {
 	peer := NewPeer(
 		crypto, nil, netip.MustParseAddr("10.0.0.2"), netip.MustParseAddrPort("192.0.2.1:1"), egress,
 	)
-	repo := NewDefaultRepository()
+	repo := NewRepository()
 	repo.Add(peer)
 
 	sendDone := make(chan struct{})
@@ -209,7 +209,7 @@ func TestRepository_DeleteWaitsForSend(t *testing.T) {
 }
 
 func TestRepository_RevocationAndIdleReaping(t *testing.T) {
-	repo := NewDefaultRepository()
+	repo := NewRepository()
 	pubKey := []byte("client-key")
 	active := NewPeerWithAuth(nil, nil, netip.MustParseAddr("10.0.0.2"), netip.MustParseAddrPort("192.0.2.1:1"), pubKey, nil, nil)
 	idle := NewPeerWithAuth(nil, nil, netip.MustParseAddr("10.0.0.3"), netip.MustParseAddrPort("192.0.2.2:2"), []byte("other"), nil, nil)
@@ -226,8 +226,8 @@ func TestRepository_RevocationAndIdleReaping(t *testing.T) {
 }
 
 func TestCompositeSessionRevoker(t *testing.T) {
-	repo1 := NewDefaultRepository()
-	repo2 := NewDefaultRepository()
+	repo1 := NewRepository()
+	repo2 := NewRepository()
 	key := []byte("same-client")
 	repo1.Add(NewPeerWithAuth(nil, nil, netip.MustParseAddr("10.0.0.2"), netip.MustParseAddrPort("192.0.2.1:1"), key, nil, nil))
 	repo2.Add(NewPeerWithAuth(nil, nil, netip.MustParseAddr("10.0.0.3"), netip.MustParseAddrPort("192.0.2.2:2"), key, nil, nil))

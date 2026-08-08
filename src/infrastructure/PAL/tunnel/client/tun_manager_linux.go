@@ -1,47 +1,48 @@
 package client
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/netip"
 	"strings"
-	appConfiguration "tungo/application/configuration"
+	"tungo/application/configuration/settings"
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/exec_commander"
 	"tungo/infrastructure/PAL/network/linux/epoll"
 	"tungo/infrastructure/PAL/network/linux/ioctl"
 	"tungo/infrastructure/PAL/network/linux/ip"
 	"tungo/infrastructure/PAL/network/linux/mssclamp"
-	"tungo/infrastructure/settings"
+	"tungo/infrastructure/network/host_resolver"
 )
 
 // PlatformTunManager Linux-specific TunDevice manager
 type PlatformTunManager struct {
-	configuration appConfiguration.ClientRuntimeConfiguration
-	ip            ip.Contract
-	ioctl         ioctl.Contract
-	mss           mssclamp.Contract
-	wrapper       tun.Wrapper
-	routeEndpoint netip.AddrPort
+	connectionSettings settings.Settings
+	cleanupSettings    []settings.Settings
+	ip                 ip.Contract
+	ioctl              ioctl.Contract
+	mss                mssclamp.Contract
+	wrapper            tun.Wrapper
+	routeEndpoint      netip.AddrPort
 }
 
 func NewPlatformTunManager(
-	configuration appConfiguration.ClientRuntimeConfiguration,
+	connectionSettings settings.Settings,
+	cleanupSettings []settings.Settings,
 ) (tun.ClientManager, error) {
 	return &PlatformTunManager{
-		configuration: configuration,
-		ip:            ip.NewWrapper(exec_commander.NewExecCommander()),
-		ioctl:         ioctl.NewWrapper(ioctl.NewLinuxIoctlCommander(), "/dev/net/tun"),
-		mss:           mssclamp.NewManager(exec_commander.NewExecCommander()),
-		wrapper:       epoll.NewWrapper(),
+		connectionSettings: connectionSettings,
+		cleanupSettings:    append([]settings.Settings(nil), cleanupSettings...),
+		ip:                 ip.NewWrapper(exec_commander.NewExecCommander()),
+		ioctl:              ioctl.NewWrapper(ioctl.NewLinuxIoctlCommander(), "/dev/net/tun"),
+		mss:                mssclamp.NewManager(exec_commander.NewExecCommander()),
+		wrapper:            epoll.NewWrapper(),
 	}, nil
 }
 
 func (t *PlatformTunManager) CreateDevice() (tun.Device, error) {
-	connectionSettings, connectionSettingsErr := t.configuration.ActiveSettings()
-	if connectionSettingsErr != nil {
-		return nil, connectionSettingsErr
-	}
+	connectionSettings := t.connectionSettings
 
 	// configureTUN client
 	if udpConfigurationErr := t.configureTUN(connectionSettings); udpConfigurationErr != nil {
@@ -108,7 +109,7 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.Settings) error 
 	}
 	if serverIP == "" {
 		var hostErr error
-		serverIP, hostErr = connSettings.Server.RouteIP()
+		serverIP, hostErr = host_resolver.ResolveIP(context.Background(), connSettings.Server)
 		if hostErr != nil {
 			return fmt.Errorf("failed to resolve route target host: %w", hostErr)
 		}
@@ -145,13 +146,13 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.Settings) error 
 	slog.Info("added route to server", "server_ip", serverIP, "via", viaGateway, "device", devInterface)
 
 	// Add route for IPv6 server address (if available)
-	if connSettings.Server.HasIPv6() || (t.routeEndpoint.IsValid() && !t.routeEndpoint.Addr().Unmap().Is4()) {
+	if connSettings.Server.IPv6 != "" || (t.routeEndpoint.IsValid() && !t.routeEndpoint.Addr().Unmap().Is4()) {
 		serverIPv6 := ""
 		if t.routeEndpoint.IsValid() && !t.routeEndpoint.Addr().Unmap().Is4() {
 			serverIPv6 = t.routeEndpoint.Addr().String()
 		}
 		if serverIPv6 == "" {
-			serverIPv6, _ = connSettings.Server.RouteIPv6()
+			serverIPv6, _ = host_resolver.ResolveIPv6(context.Background(), connSettings.Server)
 		}
 		if serverIPv6 != "" {
 			routeInfo6, routeErr6 := t.ip.RouteGet(serverIPv6)
@@ -211,22 +212,18 @@ func (t *PlatformTunManager) configureTUN(connSettings settings.Settings) error 
 }
 
 func (t *PlatformTunManager) DisposeDevices() error {
-	for _, s := range []settings.Settings{
-		t.configuration.UDPSettings,
-		t.configuration.TCPSettings,
-		t.configuration.WSSettings,
-	} {
+	for _, s := range t.cleanupSettings {
 		if err := t.mss.Remove(s.TunName); err != nil {
 			slog.Warn("failed to remove MSS clamping", "name", s.TunName, "err", err)
 		}
 		// Remove split routes before deleting the device
 		_ = t.ip.RouteDelSplitDefault(s.TunName)
 		_ = t.ip.Route6DelSplitDefault(s.TunName)
-		if routeTarget, routeErr := s.Server.RouteIP(); routeErr == nil {
+		if routeTarget, routeErr := host_resolver.ResolveIP(context.Background(), s.Server); routeErr == nil {
 			_ = t.ip.RouteDel(routeTarget)
 		}
-		if s.Server.HasIPv6() {
-			if routeTarget, routeErr := s.Server.RouteIPv6(); routeErr == nil {
+		if s.Server.IPv6 != "" {
+			if routeTarget, routeErr := host_resolver.ResolveIPv6(context.Background(), s.Server); routeErr == nil {
 				_ = t.ip.RouteDel(routeTarget)
 			}
 		}

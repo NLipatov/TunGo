@@ -10,8 +10,8 @@ import (
 
 	"tungo/application/listeners"
 	"tungo/application/network/connection"
+	"tungo/application/network/ip"
 	"tungo/infrastructure/cryptography/noise"
-	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/network/udp/adapters"
 	"tungo/infrastructure/tunnel/controlplane"
 	"tungo/infrastructure/tunnel/session"
@@ -211,7 +211,7 @@ func (r *Registrar) RegisterClient(addrPort netip.AddrPort, queue *udpQueue.Regi
 		slog.Info("UDP replacing existing session", "internal_ip", internalIP)
 	}
 
-	egress := connection.NewDefaultEgress(regTransport, cryptoSession)
+	egress := connection.NewEgress(regTransport, cryptoSession)
 	peer := session.NewPeerWithAuth(
 		cryptoSession, rekeyCoordinator, internalIP, addrPort, clientPubKey, allowedIPs, egress,
 	)

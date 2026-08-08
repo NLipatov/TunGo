@@ -1,6 +1,6 @@
 package queue
 
-import "tungo/infrastructure/settings"
+import "tungo/application/configuration/settings"
 
 // RegistrationPacket holds a single UDP datagram for a registering client.
 // The buffer is pre-allocated and reused, so no per-packet allocations happen

@@ -9,10 +9,10 @@ import (
 
 	appConfgen "tungo/application/configuration/internal/confgen"
 	serverImplementation "tungo/application/configuration/internal/server"
-	serverConfiguration "tungo/infrastructure/PAL/configuration/server"
+	serverConfiguration "tungo/application/configuration/server"
+	"tungo/application/configuration/settings"
 	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/host_resolver"
-	"tungo/infrastructure/settings"
 )
 
 type serverControl struct {

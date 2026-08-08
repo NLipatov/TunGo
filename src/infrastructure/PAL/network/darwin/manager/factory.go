@@ -9,7 +9,7 @@ import (
 	"tungo/application/network/routing/tun"
 	ifcfg "tungo/infrastructure/PAL/network/darwin/ifconfig"
 	rtpkg "tungo/infrastructure/PAL/network/darwin/route"
-	"tungo/infrastructure/settings"
+	"tungo/application/configuration/settings"
 )
 
 // Factory builds a TUN manager for darwin: dual-stack, IPv4-only, or IPv6-only.
@@ -31,8 +31,10 @@ func NewFactory(s settings.Settings) *Factory {
 // Create returns a tun.ClientManager for the configured address families.
 // Dual-stack is used when both a valid IPv4 and a valid IPv6 are configured.
 func (f *Factory) Create() (tun.ClientManager, error) {
-	has4 := f.s.IPv4.IsValid() && !f.s.IPv4.IsUnspecified() && f.s.IPv4.Unmap().Is4()
-	has6 := f.s.IPv6.IsValid() && !f.s.IPv6.IsUnspecified() && !f.s.IPv6.Unmap().Is4()
+	has4 := f.s.IPv4.IsValid() && !f.s.IPv4.IsUnspecified() && f.s.IPv4.Unmap().Is4() ||
+		f.s.IPv4Subnet.IsValid() && f.s.IPv4Subnet.Addr().Unmap().Is4()
+	has6 := f.s.IPv6.IsValid() && !f.s.IPv6.IsUnspecified() && !f.s.IPv6.Unmap().Is4() ||
+		f.s.IPv6Subnet.IsValid() && !f.s.IPv6Subnet.Addr().Unmap().Is4()
 
 	if has4 && has6 {
 		return newDualStack(

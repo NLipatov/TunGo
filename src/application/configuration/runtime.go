@@ -1,32 +1,13 @@
 package configuration
 
-import (
-	"fmt"
-	"tungo/infrastructure/settings"
-)
+import "tungo/application/configuration/settings"
 
 type ClientRuntimeConfiguration struct {
-	ClientID         int
-	TCPSettings      settings.Settings
-	UDPSettings      settings.Settings
-	WSSettings       settings.Settings
+	Settings         settings.Settings
+	CleanupSettings  []settings.Settings
 	X25519PublicKey  []byte
-	Protocol         settings.Protocol
 	ClientPublicKey  []byte
 	ClientPrivateKey []byte
-}
-
-func (c ClientRuntimeConfiguration) ActiveSettings() (settings.Settings, error) {
-	switch c.Protocol {
-	case settings.UDP:
-		return c.UDPSettings, nil
-	case settings.TCP:
-		return c.TCPSettings, nil
-	case settings.WS, settings.WSS:
-		return c.WSSettings, nil
-	default:
-		return settings.Settings{}, fmt.Errorf("unsupported protocol: %v", c.Protocol)
-	}
 }
 
 type ServerRuntimeConfiguration struct {
@@ -42,20 +23,10 @@ type ServerRuntimeConfiguration struct {
 	AllowedPeers     []ServerPeer
 }
 
-func (c ServerRuntimeConfiguration) AllSettings() []settings.Settings {
-	return []settings.Settings{c.TCPSettings, c.UDPSettings, c.WSSettings}
-}
-
-func (c ServerRuntimeConfiguration) EnabledSettings() []settings.Settings {
-	result := make([]settings.Settings, 0, 3)
-	if c.EnableTCP {
-		result = append(result, c.TCPSettings)
+func (c ServerRuntimeConfiguration) Profiles() [3]settings.Profile {
+	return [3]settings.Profile{
+		{Settings: c.TCPSettings, Enabled: c.EnableTCP},
+		{Settings: c.UDPSettings, Enabled: c.EnableUDP},
+		{Settings: c.WSSettings, Enabled: c.EnableWS},
 	}
-	if c.EnableUDP {
-		result = append(result, c.UDPSettings)
-	}
-	if c.EnableWS {
-		result = append(result, c.WSSettings)
-	}
-	return result
 }

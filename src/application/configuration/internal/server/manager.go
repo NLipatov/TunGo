@@ -41,7 +41,7 @@ func (c *Manager) Configuration() (*Configuration, error) {
 		return nil, err
 	}
 
-	defaultConfiguration := NewDefaultConfiguration()
+	defaultConfiguration := NewConfiguration()
 	if err := c.writer.Write(*defaultConfiguration); err != nil {
 		return nil, fmt.Errorf("could not write default configuration: %w", err)
 	}

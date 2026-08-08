@@ -5,9 +5,9 @@ import (
 	"net/netip"
 	"testing"
 
-	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
-	serverConfiguration "tungo/infrastructure/PAL/configuration/server"
-	"tungo/infrastructure/settings"
+	clientConfiguration "tungo/application/configuration/client"
+	serverConfiguration "tungo/application/configuration/server"
+	"tungo/application/configuration/settings"
 )
 
 type runtimeInfoClientManager struct {
@@ -67,10 +67,17 @@ func TestClientControlRuntimeConfiguration(t *testing.T) {
 	conf := &clientConfiguration.Configuration{
 		ClientID: 3,
 		Protocol: settings.UDP,
+		TCPSettings: settings.Settings{
+			Addressing: settings.Addressing{TunName: "tcp0"},
+		},
 		UDPSettings: settings.Settings{
 			Addressing: settings.Addressing{
+				TunName:    "udp0",
 				IPv4Subnet: netip.MustParsePrefix("10.0.1.0/24"),
 			},
+		},
+		WSSettings: settings.Settings{
+			Addressing: settings.Addressing{TunName: "ws0"},
 		},
 		ClientPublicKey: publicKey,
 	}
@@ -82,12 +89,44 @@ func TestClientControlRuntimeConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ClientRuntimeConfiguration() error = %v", err)
 	}
-	if got.UDPSettings.IPv4 != netip.MustParseAddr("10.0.1.4") {
-		t.Fatalf("derived IPv4 = %v", got.UDPSettings.IPv4)
+	if got.Settings.IPv4 != netip.MustParseAddr("10.0.1.4") {
+		t.Fatalf("derived IPv4 = %v", got.Settings.IPv4)
+	}
+	if got.Settings.Protocol != settings.UDP {
+		t.Fatalf("runtime protocol = %v", got.Settings.Protocol)
+	}
+	if len(got.CleanupSettings) != 3 ||
+		got.CleanupSettings[0].TunName != "tcp0" ||
+		got.CleanupSettings[1].TunName != "udp0" ||
+		got.CleanupSettings[2].TunName != "ws0" {
+		t.Fatalf("cleanup settings = %+v", got.CleanupSettings)
 	}
 	got.ClientPublicKey[0] = 9
 	if conf.ClientPublicKey[0] != 7 {
 		t.Fatal("runtime configuration aliases persisted client key")
+	}
+}
+
+func TestClientControlRuntimeConfiguration_UsesSelectedWSSProtocol(t *testing.T) {
+	control := clientControl{
+		manager: runtimeInfoClientManager{cfg: &clientConfiguration.Configuration{
+			ClientID: 1,
+			Protocol: settings.WSS,
+			WSSettings: settings.Settings{
+				Protocol: settings.WS,
+				Addressing: settings.Addressing{
+					IPv4Subnet: netip.MustParsePrefix("10.0.2.0/24"),
+				},
+			},
+		}},
+	}
+
+	got, err := control.ClientRuntimeConfiguration()
+	if err != nil {
+		t.Fatalf("ClientRuntimeConfiguration() error = %v", err)
+	}
+	if got.Settings.Protocol != settings.WSS {
+		t.Fatalf("runtime protocol = %v, want WSS", got.Settings.Protocol)
 	}
 }
 
@@ -101,7 +140,7 @@ func TestClientControlRuntimeConfiguration_ConfigurationError(t *testing.T) {
 	}
 }
 
-func TestClientControlRuntimeConfiguration_ResolveActiveError(t *testing.T) {
+func TestClientControlRuntimeConfiguration_ActiveSettingsError(t *testing.T) {
 	control := clientControl{
 		manager: runtimeInfoClientManager{
 			cfg: &clientConfiguration.Configuration{Protocol: settings.UNKNOWN},
@@ -151,12 +190,10 @@ func TestEndpointInfoFromSettings(t *testing.T) {
 	settingsValue := settings.Settings{
 		Protocol: settings.TCP,
 		Addressing: settings.Addressing{
-			Server: settings.Host{}.
-				WithIPv4(netip.MustParseAddr("198.51.100.10")).
-				WithIPv6(netip.MustParseAddr("2001:db8::10")),
-			Port: 443,
-			IPv4: netip.MustParseAddr("10.0.0.2"),
-			IPv6: netip.MustParseAddr("fd00::2"),
+			Server: settings.Host{IPv4: "198.51.100.10", IPv6: "2001:db8::10"},
+			Port:   443,
+			IPv4:   netip.MustParseAddr("10.0.0.2"),
+			IPv6:   netip.MustParseAddr("fd00::2"),
 		},
 	}
 
@@ -167,11 +204,11 @@ func TestEndpointInfoFromSettings(t *testing.T) {
 	if got.Protocol != settings.TCP {
 		t.Fatalf("Protocol: got %v", got.Protocol)
 	}
-	if ipv4, ok := got.Server.IPv4(); !ok || ipv4 != netip.MustParseAddr("198.51.100.10") {
-		t.Fatalf("Server.IPv4: got %v ok=%v", ipv4, ok)
+	if got.Server.IPv4 != "198.51.100.10" {
+		t.Fatalf("Server.IPv4: got %s", got.Server.IPv4)
 	}
-	if ipv6, ok := got.Server.IPv6(); !ok || ipv6 != netip.MustParseAddr("2001:db8::10") {
-		t.Fatalf("Server.IPv6: got %v ok=%v", ipv6, ok)
+	if got.Server.IPv6 != "2001:db8::10" {
+		t.Fatalf("Server.IPv6: got %s", got.Server.IPv6)
 	}
 	if got.Port != 443 {
 		t.Fatalf("Port: got %v", got.Port)
@@ -220,7 +257,7 @@ func TestClientControlRuntimeInfo(t *testing.T) {
 				TCPSettings: settings.Settings{
 					Protocol: settings.TCP,
 					Addressing: settings.Addressing{
-						Server:     settings.Host{}.WithIPv4(netip.MustParseAddr("198.51.100.10")),
+						Server:     settings.Host{IPv4: "198.51.100.10"},
 						Port:       443,
 						IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24"),
 					},
@@ -254,7 +291,7 @@ func TestClientControlRuntimeInfo_ConfigurationError(t *testing.T) {
 	}
 }
 
-func TestClientControlRuntimeInfo_ResolveActiveError(t *testing.T) {
+func TestClientControlRuntimeInfo_ActiveSettingsError(t *testing.T) {
 	control := clientControl{
 		manager: runtimeInfoClientManager{
 			cfg: &clientConfiguration.Configuration{Protocol: settings.UNKNOWN},
@@ -277,21 +314,21 @@ func TestServerControlRuntimeInfo(t *testing.T) {
 				TCPSettings: settings.Settings{
 					Protocol: settings.TCP,
 					Addressing: settings.Addressing{
-						Server: settings.Host{}.WithIPv4(netip.MustParseAddr("198.51.100.10")),
+						Server: settings.Host{IPv4: "198.51.100.10"},
 						IPv4:   netip.MustParseAddr("10.0.0.1"),
 					},
 				},
 				UDPSettings: settings.Settings{
 					Protocol: settings.UDP,
 					Addressing: settings.Addressing{
-						Server: settings.Host{}.WithIPv6(netip.MustParseAddr("2001:db8::20")),
+						Server: settings.Host{IPv6: "2001:db8::20"},
 						IPv4:   netip.MustParseAddr("10.0.1.1"),
 					},
 				},
 				WSSettings: settings.Settings{
 					Protocol: settings.WS,
 					Addressing: settings.Addressing{
-						Server: settings.Host{}.WithIPv4(netip.MustParseAddr("198.51.100.30")),
+						Server: settings.Host{IPv4: "198.51.100.30"},
 						IPv4:   netip.MustParseAddr("10.0.2.1"),
 					},
 				},

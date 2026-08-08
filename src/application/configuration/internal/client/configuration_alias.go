@@ -1,5 +1,5 @@
 package client
 
-import clientConfiguration "tungo/infrastructure/PAL/configuration/client"
+import clientConfiguration "tungo/application/configuration/client"
 
 type Configuration = clientConfiguration.Configuration

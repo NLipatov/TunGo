@@ -5,7 +5,7 @@ package manager
 import (
 	"net/netip"
 	"testing"
-	"tungo/infrastructure/settings"
+	"tungo/application/configuration/settings"
 )
 
 func TestFactory_Create_SelectsManagerByAddressFamilies(t *testing.T) {
@@ -73,9 +73,12 @@ func TestFactory_Create_NoValidAddresses(t *testing.T) {
 
 func mustHost(t *testing.T, raw string) settings.Host {
 	t.Helper()
-	h, err := settings.NewHost(raw)
+	ip, err := netip.ParseAddr(raw)
 	if err != nil {
-		t.Fatalf("NewHost(%q): %v", raw, err)
+		return settings.Host{Domain: raw}
 	}
-	return h
+	if ip.Unmap().Is4() {
+		return settings.Host{IPv4: ip.Unmap().String()}
+	}
+	return settings.Host{IPv6: ip.String()}
 }

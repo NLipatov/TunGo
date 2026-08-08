@@ -3,10 +3,11 @@ package confgen
 import (
 	"fmt"
 	"net/netip"
-	"tungo/infrastructure/PAL/configuration/client"
-	serverConfiguration "tungo/infrastructure/PAL/configuration/server"
+	"strings"
+	"tungo/application/configuration/client"
+	serverConfiguration "tungo/application/configuration/server"
+	"tungo/application/configuration/settings"
 	"tungo/infrastructure/cryptography/primitives"
-	"tungo/infrastructure/settings"
 )
 
 // hostResolver resolves the server's outbound IPv4 and IPv6 addresses.
@@ -53,7 +54,7 @@ func (g *Generator) Generate() (*client.Configuration, error) {
 		return nil, err
 	}
 
-	if serverHost.HasIPv6() {
+	if serverHost.IPv6 != "" {
 		if err := g.serverConfigurationManager.EnsureIPv6Subnets(); err != nil {
 			return nil, fmt.Errorf("failed to auto-enable IPv6 subnets: %w", err)
 		}
@@ -114,11 +115,15 @@ func (g *Generator) Generate() (*client.Configuration, error) {
 
 func (g *Generator) resolveServerHost(configured string) (settings.Host, error) {
 	if configured != "" {
-		host, err := settings.NewHost(configured)
-		if err != nil {
-			return settings.Host{}, fmt.Errorf("invalid server host %q: %w", configured, err)
+		value := strings.TrimSpace(configured)
+		if ip, parseErr := netip.ParseAddr(strings.Trim(value, "[]")); parseErr == nil {
+			ip = ip.Unmap()
+			if ip.Is4() {
+				return settings.Host{IPv4: ip.String()}, nil
+			}
+			return settings.Host{IPv6: ip.String()}, nil
 		}
-		return host, nil
+		return settings.Host{Domain: value}, nil
 	}
 
 	var host settings.Host
@@ -128,7 +133,7 @@ func (g *Generator) resolveServerHost(configured string) (settings.Host, error) 
 		if parseErr != nil || !ipv4.Unmap().Is4() {
 			ipv4Err = fmt.Errorf("invalid detected IPv4 %q", ipv4Str)
 		} else {
-			host = host.WithIPv4(ipv4)
+			host.IPv4 = ipv4.Unmap().String()
 		}
 	}
 
@@ -138,11 +143,11 @@ func (g *Generator) resolveServerHost(configured string) (settings.Host, error) 
 		if parseErr != nil || ipv6.Unmap().Is4() {
 			ipv6Err = fmt.Errorf("invalid detected IPv6 %q", ipv6Str)
 		} else {
-			host = host.WithIPv6(ipv6)
+			host.IPv6 = ipv6.String()
 		}
 	}
 
-	if host.IsZero() {
+	if host == (settings.Host{}) {
 		return settings.Host{}, fmt.Errorf(
 			"failed to detect server host: IPv4: %v; IPv6: %v",
 			ipv4Err,

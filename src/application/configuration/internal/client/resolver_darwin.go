@@ -5,13 +5,12 @@ import (
 	"path/filepath"
 )
 
-type DefaultResolver struct {
+type pathResolver struct{}
+
+func NewResolver() Resolver {
+	return pathResolver{}
 }
 
-func NewDefaultResolver() Resolver {
-	return DefaultResolver{}
-}
-
-func (r DefaultResolver) Resolve() (string, error) {
+func (r pathResolver) Resolve() (string, error) {
 	return filepath.Join(string(os.PathSeparator), "etc", "tungo", "client_configuration.json"), nil
 }

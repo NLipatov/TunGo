@@ -9,11 +9,11 @@ import (
 	"net"
 	"net/netip"
 	"time"
+	"tungo/application/configuration/settings"
 	"tungo/application/network/connection"
 	"tungo/application/network/routing/tun"
 	udpcrypto "tungo/infrastructure/cryptography/chacha20/udp"
 	"tungo/infrastructure/network/ip"
-	"tungo/infrastructure/settings"
 )
 
 const udpPayloadOffset = udpcrypto.PayloadOffset

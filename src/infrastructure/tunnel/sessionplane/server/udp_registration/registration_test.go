@@ -162,7 +162,7 @@ func TestEnqueuePacket_CreatesQueueAndStartsRegistration(t *testing.T) {
 	defer cancel()
 
 	listener := &udpRegListener{}
-	repo := session.NewDefaultRepository()
+	repo := session.NewRepository()
 
 	hf := &udpRegHandshakeFactory{
 		handshake: &udpRegHandshake{
@@ -192,7 +192,7 @@ func TestRegisterClient_Success(t *testing.T) {
 	defer cancel()
 
 	listener := &udpRegListener{}
-	repo := session.NewDefaultRepository()
+	repo := session.NewRepository()
 
 	hf := &udpRegHandshakeFactory{
 		handshake: &udpRegHandshake{
@@ -245,7 +245,7 @@ func TestRegisterClient_CryptoFactoryError_FailsGracefully(t *testing.T) {
 	defer cancel()
 
 	listener := &udpRegListener{}
-	repo := session.NewDefaultRepository()
+	repo := session.NewRepository()
 
 	hf := &udpRegHandshakeFactory{
 		handshake: &udpRegHandshake{
@@ -291,7 +291,7 @@ func TestRegisterClient_NegativeClientID_FailsAllocation(t *testing.T) {
 	defer cancel()
 
 	listener := &udpRegListener{}
-	repo := session.NewDefaultRepository()
+	repo := session.NewRepository()
 
 	hf := &udpRegHandshakeFactory{
 		handshake: &udpRegHandshake{
@@ -386,7 +386,7 @@ func TestRegisterClient_HandshakeWithResult_IPv6(t *testing.T) {
 	defer cancel()
 
 	listener := &udpRegListener{}
-	repo := session.NewDefaultRepository()
+	repo := session.NewRepository()
 
 	hf := &udpRegHandshakeWithResultFactory{
 		handshake: &udpRegHandshakeWithResult{
@@ -487,7 +487,7 @@ func TestRegisterClient_CookieRetry_Success(t *testing.T) {
 	defer cancel()
 
 	listener := &udpRegListener{}
-	repo := session.NewDefaultRepository()
+	repo := session.NewRepository()
 
 	hf := &udpRegCookieHandshakeFactory{clientID: 1}
 	cf := &udpRegCryptoFactory{
@@ -535,7 +535,7 @@ func TestRegisterClient_ReplacesExistingSession(t *testing.T) {
 	defer cancel()
 
 	listener := &udpRegListener{}
-	repo := session.NewDefaultRepository()
+	repo := session.NewRepository()
 	hf := &udpRegHandshakeFactory{
 		handshake: &udpRegHandshake{
 			clientID: 1,
@@ -555,7 +555,7 @@ func TestRegisterClient_ReplacesExistingSession(t *testing.T) {
 	)
 	repo.Add(session.NewPeerWithAuth(
 		udpRegCrypto{}, staleRekey, internalIP, netip.MustParseAddrPort("192.168.1.10:1234"), nil, nil,
-		connection.NewDefaultEgress(io.Discard, udpRegCrypto{}),
+		connection.NewEgress(io.Discard, udpRegCrypto{}),
 	))
 
 	addr := netip.MustParseAddrPort("192.168.1.1:1234")

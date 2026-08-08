@@ -14,7 +14,8 @@ import (
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/network/windows/ipcfg"
 	"tungo/infrastructure/PAL/network/windows/wtun"
-	"tungo/infrastructure/settings"
+	"tungo/infrastructure/network/host_resolver"
+	"tungo/application/configuration/settings"
 
 	"golang.zx2c4.com/wintun"
 )
@@ -100,7 +101,7 @@ func (m *dualStackManager) validateSettings() error {
 	if strings.TrimSpace(m.s.TunName) == "" {
 		return fmt.Errorf("empty TunName")
 	}
-	if m.s.Server.IsZero() {
+	if m.s.Server == (settings.Host{}) {
 		return fmt.Errorf("empty Server")
 	}
 	if !m.s.IPv4Subnet.IsValid() {
@@ -275,10 +276,18 @@ func (m *dualStackManager) DisposeDevices() error {
 		if err := m.netCfg4.DeleteRouteOnInterface(m.resolvedRouteIP4, m.resolvedRouteIf4); err != nil {
 			cleanupErrs = append(cleanupErrs, fmt.Errorf("delete IPv4 route %s on %s: %w", m.resolvedRouteIP4, m.resolvedRouteIf4, err))
 		}
+	} else if routeIP, err := m.resolveRouteIPv4(); err == nil {
+		if err := m.netCfg4.DeleteRoute(routeIP); err != nil {
+			cleanupErrs = append(cleanupErrs, fmt.Errorf("delete stale IPv4 route %s: %w", routeIP, err))
+		}
 	}
 	if m.resolvedRouteIP6 != "" {
 		if err := m.netCfg6.DeleteRouteOnInterface(m.resolvedRouteIP6, m.resolvedRouteIf6); err != nil {
 			cleanupErrs = append(cleanupErrs, fmt.Errorf("delete IPv6 route %s on %s: %w", m.resolvedRouteIP6, m.resolvedRouteIf6, err))
+		}
+	} else if routeIP, err := m.resolveRouteIPv6(); err == nil {
+		if err := m.netCfg6.DeleteRoute(routeIP); err != nil {
+			cleanupErrs = append(cleanupErrs, fmt.Errorf("delete stale IPv6 route %s: %w", routeIP, err))
 		}
 	}
 	// Best-effort DNS cleanup to avoid leaving partial resolver state on rollback.
@@ -316,7 +325,7 @@ func (m *dualStackManager) resolveRouteIPv4() (string, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), routeResolveTimeout(m.s))
 	defer cancel()
-	return m.s.Server.RouteIPv4Context(ctx)
+	return host_resolver.ResolveIPv4(ctx, m.s.Server)
 }
 
 func (m *dualStackManager) resolveRouteIPv6() (string, error) {
@@ -332,7 +341,7 @@ func (m *dualStackManager) resolveRouteIPv6() (string, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), routeResolveTimeout(m.s))
 	defer cancel()
-	return m.s.Server.RouteIPv6Context(ctx)
+	return host_resolver.ResolveIPv6(ctx, m.s.Server)
 }
 
 func (m *dualStackManager) SetRouteEndpoint(addr netip.AddrPort) {
@@ -340,16 +349,16 @@ func (m *dualStackManager) SetRouteEndpoint(addr netip.AddrPort) {
 }
 
 func (m *dualStackManager) shouldSkipIPv4RouteOnResolveError() bool {
-	if _, isDomain := m.s.Server.Domain(); !isDomain {
-		return m.s.Server.HasIPv6() && !m.s.Server.HasIPv4()
+	if m.s.Server.Domain == "" {
+		return m.s.Server.IPv6 != "" && m.s.Server.IPv4 == ""
 	}
 	_, err := m.resolveRouteIPv6()
 	return err == nil
 }
 
 func (m *dualStackManager) shouldSkipIPv6RouteOnResolveError() bool {
-	if _, isDomain := m.s.Server.Domain(); !isDomain {
-		return m.s.Server.HasIPv4() && !m.s.Server.HasIPv6()
+	if m.s.Server.Domain == "" {
+		return m.s.Server.IPv4 != "" && m.s.Server.IPv6 == ""
 	}
 	_, err := m.resolveRouteIPv4()
 	return err == nil

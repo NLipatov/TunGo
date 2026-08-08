@@ -2,8 +2,8 @@ package server
 
 import (
 	"errors"
+	"tungo/application/configuration/settings"
 	"tungo/application/network/routing/tun"
-	"tungo/infrastructure/settings"
 )
 
 var errServerNotSupported = errors.New("server mode is not supported on this platform")

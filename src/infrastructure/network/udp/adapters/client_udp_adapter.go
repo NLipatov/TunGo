@@ -4,8 +4,8 @@ import (
 	"io"
 	"net"
 	"time"
+	"tungo/application/configuration/settings"
 	"tungo/application/network/connection"
-	"tungo/infrastructure/settings"
 )
 
 // ClientUDPAdapter - single goroutine only client UDP adapter

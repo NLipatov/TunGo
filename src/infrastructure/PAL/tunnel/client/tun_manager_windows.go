@@ -1,27 +1,24 @@
 package client
 
 import (
+	"log/slog"
 	"net/netip"
-	appConfiguration "tungo/application/configuration"
+	"tungo/application/configuration/settings"
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/network/windows/manager"
-	"tungo/infrastructure/settings"
 )
 
 type PlatformTunManager struct {
-	configuration      appConfiguration.ClientRuntimeConfiguration
-	connectionSettings settings.Settings
 	// manager is a backing tun.ClientManager implementation, which handles v4/v6 specific
-	manager tun.ClientManager
+	manager         tun.ClientManager
+	activeTunName   string
+	cleanupSettings []settings.Settings
 }
 
 func NewPlatformTunManager(
-	configuration appConfiguration.ClientRuntimeConfiguration,
+	connectionSettings settings.Settings,
+	cleanupSettings []settings.Settings,
 ) (tun.ClientManager, error) {
-	connectionSettings, connectionSettingsErr := configuration.ActiveSettings()
-	if connectionSettingsErr != nil {
-		return nil, connectionSettingsErr
-	}
 	factory := manager.NewFactory(
 		connectionSettings,
 	)
@@ -30,9 +27,9 @@ func NewPlatformTunManager(
 		return nil, concreteManagerErr
 	}
 	return &PlatformTunManager{
-		configuration:      configuration,
-		connectionSettings: connectionSettings,
-		manager:            concreteManager,
+		manager:         concreteManager,
+		activeTunName:   connectionSettings.TunName,
+		cleanupSettings: append([]settings.Settings(nil), cleanupSettings...),
 	}, nil
 }
 
@@ -41,7 +38,21 @@ func (m *PlatformTunManager) CreateDevice() (tun.Device, error) {
 }
 
 func (m *PlatformTunManager) DisposeDevices() error {
-	return m.manager.DisposeDevices()
+	activeErr := m.manager.DisposeDevices()
+	for _, s := range m.cleanupSettings {
+		if s.TunName == "" || s.TunName == m.activeTunName {
+			continue
+		}
+		cleanupManager, err := manager.NewFactory(s).Create()
+		if err != nil {
+			slog.Warn("failed to prepare stale TUN cleanup", "name", s.TunName, "err", err)
+			continue
+		}
+		if err := cleanupManager.DisposeDevices(); err != nil {
+			slog.Warn("failed to clean stale TUN configuration", "name", s.TunName, "err", err)
+		}
+	}
+	return activeErr
 }
 
 func (m *PlatformTunManager) SetRouteEndpoint(addr netip.AddrPort) {

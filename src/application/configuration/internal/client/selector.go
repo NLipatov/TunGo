@@ -2,22 +2,18 @@ package client
 
 import "os"
 
-// Selector is used to choose configuration as active
-type Selector interface {
-	Select(confPath string) error
-}
-
-type DefaultSelector struct {
+// Selector chooses a configuration as active.
+type Selector struct {
 	resolver Resolver
 }
 
-func NewDefaultSelector(resolver Resolver) Selector {
-	return &DefaultSelector{
+func NewSelector(resolver Resolver) *Selector {
+	return &Selector{
 		resolver: resolver,
 	}
 }
 
-func (s *DefaultSelector) Select(confPath string) error {
+func (s *Selector) Select(confPath string) error {
 	confData, confDataErr := os.ReadFile(confPath)
 	if confDataErr != nil {
 		return confDataErr

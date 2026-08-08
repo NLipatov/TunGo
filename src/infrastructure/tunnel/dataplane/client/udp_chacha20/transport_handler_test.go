@@ -12,13 +12,13 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"tungo/application/configuration/settings"
 	"tungo/application/network/connection"
 	corechacha20 "tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/rekey"
 	chacha20 "tungo/infrastructure/cryptography/chacha20/udp"
 	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/service_packet"
-	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/controlplane"
 
 	"golang.org/x/crypto/curve25519"
@@ -290,7 +290,7 @@ func TestHandleTransport_RekeyAckAfterDoubleInit_UsesOriginalPendingKey(t *testi
 	coordinator := controlplane.NewClientRekeyCoordinator(
 		&primitives.DefaultKeyDeriver{}, ctrl, 5*time.Millisecond, time.Now(),
 	)
-	tunHandler := NewTunHandler(ctx, reader, connection.NewDefaultEgress(writer, crypto), coordinator, nil).(*TunHandler)
+	tunHandler := NewTunHandler(ctx, reader, connection.NewEgress(writer, crypto), coordinator, nil).(*TunHandler)
 
 	doneTun := make(chan struct{})
 	go func() {

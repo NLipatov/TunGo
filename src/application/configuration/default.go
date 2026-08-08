@@ -11,24 +11,24 @@ import (
 const defaultServerConfigurationPath = "/etc/tungo/server_configuration.json"
 
 func DefaultStorageDirectory() (string, error) {
-	path, err := clientConfiguration.NewDefaultResolver().Resolve()
+	path, err := clientConfiguration.NewResolver().Resolve()
 	if err != nil {
 		return "", err
 	}
 	return filepath.Dir(path), nil
 }
 
-func NewDefaultClientControl() ClientControl {
-	clientResolver := clientConfiguration.NewDefaultResolver()
+func NewClientControl() ClientControl {
+	clientResolver := clientConfiguration.NewResolver()
 	return &clientControl{
-		observer: clientConfiguration.NewDefaultObserver(clientResolver),
-		selector: clientConfiguration.NewDefaultSelector(clientResolver),
-		creator:  clientConfiguration.NewDefaultCreator(clientResolver),
+		observer: clientConfiguration.NewObserver(clientResolver),
+		selector: clientConfiguration.NewSelector(clientResolver),
+		creator:  clientConfiguration.NewCreator(clientResolver),
 		manager:  clientConfiguration.NewManager(),
 	}
 }
 
-func NewDefaultServerControl() ServerControl {
+func NewServerControl() ServerControl {
 	if !platform.Capabilities().ServerModeSupported() {
 		return nil
 	}
@@ -39,9 +39,9 @@ func NewDefaultServerControl() ServerControl {
 	}
 }
 
-func NewDefaultControls() Controls {
+func NewControls() Controls {
 	return Controls{
-		Client: NewDefaultClientControl(),
-		Server: NewDefaultServerControl(),
+		Client: NewClientControl(),
+		Server: NewServerControl(),
 	}
 }

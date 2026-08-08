@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
-	"tungo/infrastructure/settings"
+	serverConfiguration "tungo/application/configuration/server"
 )
 
 type Reader interface {
@@ -41,7 +42,7 @@ func (c *defaultReader) read() (*Configuration, error) {
 	}
 	c.setEnvEnabledProtocols(&configuration)
 	configuration.ApplyServerDefaults()
-	if err := configuration.Validate(); err != nil {
+	if err := serverConfiguration.Validate(configuration); err != nil {
 		return nil, fmt.Errorf("configuration file %q is invalid: %w", c.path, err)
 	}
 
@@ -53,11 +54,7 @@ func (c *defaultReader) setEnvServerHost(conf *Configuration) error {
 	if raw == "" {
 		return nil
 	}
-	host, err := settings.NewHost(raw)
-	if err != nil {
-		return fmt.Errorf("invalid ServerIP %q: %w", raw, err)
-	}
-	conf.Host = host.String()
+	conf.Host = strings.TrimSpace(raw)
 	return nil
 }
 

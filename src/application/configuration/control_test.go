@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
-	"tungo/infrastructure/settings"
+	clientConfiguration "tungo/application/configuration/client"
+	"tungo/application/configuration/settings"
 )
 
 type clientObserverFunc func() ([]string, error)
@@ -28,11 +28,14 @@ func (f clientCreatorFunc) Create(cfg clientConfiguration.Configuration, name st
 }
 
 func mustHostParser(raw string) settings.Host {
-	h, err := settings.NewHost(raw)
+	ip, err := netip.ParseAddr(raw)
 	if err != nil {
-		panic(err)
+		return settings.Host{Domain: raw}
 	}
-	return h
+	if ip.Unmap().Is4() {
+		return settings.Host{IPv4: ip.Unmap().String()}
+	}
+	return settings.Host{IPv6: ip.String()}
 }
 
 func makeTestConfig() clientConfiguration.Configuration {
@@ -186,7 +189,7 @@ func TestClientControlDelete(t *testing.T) {
 		t.Fatalf("write test configuration: %v", err)
 	}
 
-	control := NewDefaultClientControl()
+	control := NewClientControl()
 	if err := control.Delete(path); err != nil {
 		t.Fatalf("Delete() error = %v", err)
 	}

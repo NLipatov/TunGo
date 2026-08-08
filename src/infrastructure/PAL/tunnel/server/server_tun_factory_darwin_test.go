@@ -3,7 +3,7 @@ package server
 import (
 	"testing"
 
-	"tungo/infrastructure/settings"
+	"tungo/application/configuration/settings"
 )
 
 func TestTunFactoryDarwin_New(t *testing.T) {

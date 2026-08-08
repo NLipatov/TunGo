@@ -2,7 +2,7 @@ package configuration
 
 import (
 	"net/netip"
-	"tungo/infrastructure/settings"
+	"tungo/application/configuration/settings"
 )
 
 type RuntimeInfo struct {
@@ -19,7 +19,7 @@ type EndpointInfo struct {
 }
 
 func endpointInfoFromSettings(protocol settings.Protocol, s settings.Settings) (EndpointInfo, bool) {
-	if s.Server.IsZero() && !s.IPv4.IsValid() && !s.IPv6.IsValid() {
+	if s.Server == (settings.Host{}) && !s.IPv4.IsValid() && !s.IPv6.IsValid() {
 		return EndpointInfo{}, false
 	}
 	if s.Protocol != settings.UNKNOWN {

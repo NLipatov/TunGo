@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	appConfiguration "tungo/application/configuration"
-	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
-	"tungo/infrastructure/settings"
+	clientConfiguration "tungo/application/configuration/client"
+	"tungo/application/configuration/settings"
 )
 
 // validClientConfigurationJSON returns a JSON string for a minimal valid client Configuration.
@@ -47,11 +47,14 @@ func validClientConfiguration() clientConfiguration.Configuration {
 }
 
 func mustIPHost(raw string) settings.Host {
-	h, err := settings.IPHost(raw)
+	ip, err := netip.ParseAddr(raw)
 	if err != nil {
-		panic(err)
+		return settings.Host{Domain: raw}
 	}
-	return h
+	if ip.Unmap().Is4() {
+		return settings.Host{IPv4: ip.Unmap().String()}
+	}
+	return settings.Host{IPv6: ip.String()}
 }
 
 // ---------------------------------------------------------------------------

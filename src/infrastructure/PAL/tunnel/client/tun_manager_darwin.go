@@ -3,33 +3,32 @@
 package client
 
 import (
+	"log/slog"
 	"net/netip"
-	appConfiguration "tungo/application/configuration"
+	"tungo/application/configuration/settings"
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/network/darwin/manager"
-	"tungo/infrastructure/settings"
 )
 
 type PlatformTunManager struct {
-	configuration      appConfiguration.ClientRuntimeConfiguration
-	connectionSettings settings.Settings
-	manager            tun.ClientManager
+	manager         tun.ClientManager
+	activeTunName   string
+	cleanupSettings []settings.Settings
 }
 
-func NewPlatformTunManager(configuration appConfiguration.ClientRuntimeConfiguration) (tun.ClientManager, error) {
-	connSettings, err := configuration.ActiveSettings()
-	if err != nil {
-		return nil, err
-	}
-	factory := manager.NewFactory(connSettings)
+func NewPlatformTunManager(
+	connectionSettings settings.Settings,
+	cleanupSettings []settings.Settings,
+) (tun.ClientManager, error) {
+	factory := manager.NewFactory(connectionSettings)
 	concrete, err := factory.Create()
 	if err != nil {
 		return nil, err
 	}
 	return &PlatformTunManager{
-		configuration:      configuration,
-		connectionSettings: connSettings,
-		manager:            concrete,
+		manager:         concrete,
+		activeTunName:   connectionSettings.TunName,
+		cleanupSettings: append([]settings.Settings(nil), cleanupSettings...),
 	}, nil
 }
 
@@ -38,7 +37,21 @@ func (m *PlatformTunManager) CreateDevice() (tun.Device, error) {
 }
 
 func (m *PlatformTunManager) DisposeDevices() error {
-	return m.manager.DisposeDevices()
+	activeErr := m.manager.DisposeDevices()
+	for _, s := range m.cleanupSettings {
+		if s.TunName == "" || s.TunName == m.activeTunName {
+			continue
+		}
+		cleanupManager, err := manager.NewFactory(s).Create()
+		if err != nil {
+			slog.Warn("failed to prepare stale TUN cleanup", "name", s.TunName, "err", err)
+			continue
+		}
+		if err := cleanupManager.DisposeDevices(); err != nil {
+			slog.Warn("failed to clean stale TUN configuration", "name", s.TunName, "err", err)
+		}
+	}
+	return activeErr
 }
 
 func (m *PlatformTunManager) SetRouteEndpoint(addr netip.AddrPort) {

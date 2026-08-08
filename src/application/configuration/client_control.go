@@ -7,7 +7,8 @@ import (
 	"strings"
 	"unicode"
 
-	clientConfiguration "tungo/infrastructure/PAL/configuration/client"
+	clientConfiguration "tungo/application/configuration/client"
+	"tungo/application/configuration/settings"
 )
 
 type clientControl struct {
@@ -38,16 +39,21 @@ func (c *clientControl) ClientRuntimeConfiguration() (ClientRuntimeConfiguration
 	if err != nil {
 		return ClientRuntimeConfiguration{}, err
 	}
-	if err := conf.ResolveActive(); err != nil {
+	activeSettings, err := runtimeClientSettings(conf)
+	if err != nil {
 		return ClientRuntimeConfiguration{}, err
 	}
+	cleanupSettings := make([]settings.Settings, 0, 3)
+	for _, profile := range []settings.Settings{conf.TCPSettings, conf.UDPSettings, conf.WSSettings} {
+		if profile.TunName == "" {
+			continue
+		}
+		cleanupSettings = append(cleanupSettings, profile)
+	}
 	return ClientRuntimeConfiguration{
-		ClientID:         conf.ClientID,
-		TCPSettings:      conf.TCPSettings,
-		UDPSettings:      conf.UDPSettings,
-		WSSettings:       conf.WSSettings,
+		Settings:         activeSettings,
+		CleanupSettings:  cleanupSettings,
 		X25519PublicKey:  append([]byte(nil), conf.X25519PublicKey...),
-		Protocol:         conf.Protocol,
 		ClientPublicKey:  append([]byte(nil), conf.ClientPublicKey...),
 		ClientPrivateKey: append([]byte(nil), conf.ClientPrivateKey...),
 	}, nil
@@ -71,10 +77,7 @@ func (c *clientControl) RuntimeInfo() (RuntimeInfo, error) {
 	if err != nil {
 		return RuntimeInfo{}, err
 	}
-	if err := conf.ResolveActive(); err != nil {
-		return RuntimeInfo{}, err
-	}
-	activeSettings, err := conf.ActiveSettings()
+	activeSettings, err := runtimeClientSettings(conf)
 	if err != nil {
 		return RuntimeInfo{}, err
 	}
@@ -84,6 +87,18 @@ func (c *clientControl) RuntimeInfo() (RuntimeInfo, error) {
 		info.Endpoints = []EndpointInfo{endpoint}
 	}
 	return info, nil
+}
+
+func runtimeClientSettings(conf *clientConfiguration.Configuration) (settings.Settings, error) {
+	active, err := conf.ActiveSettings()
+	if err != nil {
+		return settings.Settings{}, err
+	}
+	active.Protocol = conf.Protocol
+	if err := active.DeriveIP(conf.ClientID); err != nil {
+		return settings.Settings{}, err
+	}
+	return active, nil
 }
 
 func (c *clientControl) CreateFromJSON(name, rawJSON string) error {
@@ -106,7 +121,7 @@ func parseClientConfigurationJSON(input string) (clientConfiguration.Configurati
 	if err := json.Unmarshal([]byte(clean), &cfg); err != nil {
 		return clientConfiguration.Configuration{}, fmt.Errorf("invalid client configuration: %w", err)
 	}
-	if err := cfg.Validate(); err != nil {
+	if err := clientConfiguration.Validate(cfg); err != nil {
 		return clientConfiguration.Configuration{}, fmt.Errorf("invalid client configuration: %w", err)
 	}
 	return cfg, nil

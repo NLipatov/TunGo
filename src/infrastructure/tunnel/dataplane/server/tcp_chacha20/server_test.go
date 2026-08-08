@@ -77,7 +77,7 @@ func TestServer_RunTunRoutesPacketDirectlyToPeer(t *testing.T) {
 	tun := &onePacketTun{packet: ipv4Packet(netip.MustParseAddr("1.1.1.1"), internal)}
 	egress := &captureEgress{}
 	peer := session.NewPeer(nil, nil, internal, netip.MustParseAddrPort("192.0.2.1:1"), egress)
-	peers := session.NewDefaultRepository()
+	peers := session.NewRepository()
 	peers.Add(peer)
 	server := &Server{ctx: context.Background(), tun: tun, peers: peers}
 

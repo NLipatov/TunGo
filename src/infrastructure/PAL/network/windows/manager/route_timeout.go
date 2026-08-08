@@ -4,7 +4,7 @@ package manager
 
 import (
 	"time"
-	"tungo/infrastructure/settings"
+	"tungo/application/configuration/settings"
 )
 
 func routeResolveTimeout(s settings.Settings) time.Duration {

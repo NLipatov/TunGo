@@ -13,7 +13,8 @@ import (
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/network/windows/ipcfg"
 	"tungo/infrastructure/PAL/network/windows/wtun"
-	"tungo/infrastructure/settings"
+	"tungo/infrastructure/network/host_resolver"
+	"tungo/application/configuration/settings"
 
 	"golang.zx2c4.com/wintun"
 )
@@ -83,7 +84,7 @@ func (m *v4Manager) validateSettings() error {
 	if strings.TrimSpace(m.s.TunName) == "" {
 		return fmt.Errorf("empty TunName")
 	}
-	if m.s.Server.IsZero() {
+	if m.s.Server == (settings.Host{}) {
 		return fmt.Errorf("empty Server")
 	}
 	if !m.s.IPv4Subnet.IsValid() {
@@ -195,6 +196,10 @@ func (m *v4Manager) DisposeDevices() error {
 		if err := m.netCfg.DeleteRouteOnInterface(m.resolvedRouteIP, m.resolvedRouteIf); err != nil {
 			cleanupErrs = append(cleanupErrs, fmt.Errorf("delete route %s on %s: %w", m.resolvedRouteIP, m.resolvedRouteIf, err))
 		}
+	} else if routeIP, err := m.resolveRouteIPv4(); err == nil {
+		if err := m.netCfg.DeleteRoute(routeIP); err != nil {
+			cleanupErrs = append(cleanupErrs, fmt.Errorf("delete stale route %s: %w", routeIP, err))
+		}
 	}
 	if err := m.netCfg.SetDNS(m.s.TunName, nil); err != nil {
 		cleanupErrs = append(cleanupErrs, fmt.Errorf("clear DNS: %w", err))
@@ -227,5 +232,5 @@ func (m *v4Manager) resolveRouteIPv4() (string, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), routeResolveTimeout(m.s))
 	defer cancel()
-	return m.s.Server.RouteIPv4Context(ctx)
+	return host_resolver.ResolveIPv4(ctx, m.s.Server)
 }

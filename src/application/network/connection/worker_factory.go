@@ -3,8 +3,8 @@ package connection
 import (
 	"context"
 	"io"
+	"tungo/application/configuration/settings"
 	"tungo/application/network/routing"
-	"tungo/infrastructure/settings"
 )
 
 type ClientWorkerFactory interface {

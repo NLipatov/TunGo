@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 	"tungo/application/network/routing/tun"
-	"tungo/infrastructure/settings"
+	"tungo/application/configuration/settings"
 )
 
 type dualStackTunMock struct {
@@ -288,7 +288,7 @@ func TestDualStackManager_CreateDevice_RollbackOnIPv6SplitRouteError(t *testing.
 			IPv6Subnet: netip.MustParsePrefix("fd00::/64"),
 			IPv4:       netip.MustParseAddr("10.0.0.2"),
 			IPv6:       netip.MustParseAddr("fd00::2"),
-			Server:     mustHost(t, "198.51.100.10").WithIPv6(netip.MustParseAddr("2001:db8::1")),
+			Server:     settings.Host{IPv4: "198.51.100.10", IPv6: "2001:db8::1"},
 		},
 		MTU: settings.SafeMTU,
 	}
@@ -337,7 +337,7 @@ func TestDualStackManager_CreateDevice_RollbackClearsDNSOnIPv6DNSError(t *testin
 			IPv6Subnet: netip.MustParsePrefix("fd00::/64"),
 			IPv4:       netip.MustParseAddr("10.0.0.2"),
 			IPv6:       netip.MustParseAddr("fd00::2"),
-			Server:     mustHost(t, "198.51.100.10").WithIPv6(netip.MustParseAddr("2001:db8::1")),
+			Server:     settings.Host{IPv4: "198.51.100.10", IPv6: "2001:db8::1"},
 		},
 		MTU: settings.SafeMTU,
 	}
@@ -419,7 +419,7 @@ func TestDualStackManager_CreateDevice_UsesConfiguredDNS(t *testing.T) {
 			IPv6Subnet: netip.MustParsePrefix("fd00::/64"),
 			IPv4:       netip.MustParseAddr("10.0.0.2"),
 			IPv6:       netip.MustParseAddr("fd00::2"),
-			Server:     mustHost(t, "198.51.100.10").WithIPv6(netip.MustParseAddr("2001:db8::1")),
+			Server:     settings.Host{IPv4: "198.51.100.10", IPv6: "2001:db8::1"},
 			DNSv4:      []string{"9.9.9.9", "1.0.0.1"},
 			DNSv6:      []string{"2620:fe::9", "2001:4860:4860::8844"},
 		},
@@ -460,7 +460,7 @@ func TestDualStackManager_CreateDevice_IgnoresDNSErrorOnIPv6FlushFailure(t *test
 			IPv6Subnet: netip.MustParsePrefix("fd00::/64"),
 			IPv4:       netip.MustParseAddr("10.0.0.2"),
 			IPv6:       netip.MustParseAddr("fd00::2"),
-			Server:     mustHost(t, "198.51.100.10").WithIPv6(netip.MustParseAddr("2001:db8::1")),
+			Server:     settings.Host{IPv4: "198.51.100.10", IPv6: "2001:db8::1"},
 		},
 		MTU: settings.SafeMTU,
 	}

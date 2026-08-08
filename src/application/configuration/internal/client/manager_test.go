@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"tungo/infrastructure/settings"
+	"tungo/application/configuration/settings"
 )
 
 type managerTestMockResolver struct {
@@ -77,7 +77,7 @@ func TestManagerConfigurationInvalidJSON(t *testing.T) {
 }
 
 func TestManagerConfigurationSuccess(t *testing.T) {
-	host, _ := settings.NewHost("127.0.0.1")
+	host := settings.Host{IPv4: "127.0.0.1"}
 	defaultConfig := Configuration{
 		ClientID: 1,
 		TCPSettings: settings.Settings{

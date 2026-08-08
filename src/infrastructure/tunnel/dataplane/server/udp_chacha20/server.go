@@ -11,13 +11,13 @@ import (
 
 	"golang.org/x/crypto/chacha20poly1305"
 
+	"tungo/application/configuration/settings"
 	"tungo/application/listeners"
 	"tungo/infrastructure/cryptography/chacha20"
 	udpcrypto "tungo/infrastructure/cryptography/chacha20/udp"
 	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/network/service_packet"
-	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/session"
 	"tungo/infrastructure/tunnel/sessionplane/server/udp_registration"
 )
@@ -28,31 +28,28 @@ const udpPayloadOffset = udpcrypto.PayloadOffset
 // datagrams to TUN; RunTun routes TUN packets to established peers.
 type Server struct {
 	ctx       context.Context
-	settings  settings.Settings
 	tun       io.ReadWriter
 	conn      listeners.UdpListener
-	peers     *session.DefaultRepository
+	peers     *session.Repository
 	registrar *udp_registration.Registrar
 	deriver   primitives.DefaultKeyDeriver
 }
 
 func NewServer(
 	ctx context.Context,
-	settings settings.Settings,
 	tun io.ReadWriter,
 	conn listeners.UdpListener,
-	peers *session.DefaultRepository,
+	peers *session.Repository,
 	registrar *udp_registration.Registrar,
 ) *Server {
 	return &Server{
-		ctx: ctx, settings: settings, tun: tun, conn: conn,
+		ctx: ctx, tun: tun, conn: conn,
 		peers: peers, registrar: registrar,
 	}
 }
 
 func (s *Server) RunTransport() error {
 	defer func() { _ = s.conn.Close() }()
-	slog.Info("server listening", "protocol", "UDP", "port", s.settings.Port)
 
 	go session.RunIdleReaperLoop(
 		s.ctx, s.peers.ReapIdle, settings.ServerIdleTimeout, settings.IdleReaperInterval,

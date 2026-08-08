@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 	"tungo/application/network/routing/tun"
-	"tungo/infrastructure/settings"
+	"tungo/application/configuration/settings"
 )
 
 func TestV4Manager_CreateDevice_RollbackOnSplitRouteError(t *testing.T) {

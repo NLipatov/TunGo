@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"tungo/application/configuration/settings"
 	"tungo/infrastructure/PAL/network/linux/ioctl"
 	"tungo/infrastructure/PAL/network/linux/ip"
-	"tungo/infrastructure/settings"
 )
 
 type tunDeviceManager struct {

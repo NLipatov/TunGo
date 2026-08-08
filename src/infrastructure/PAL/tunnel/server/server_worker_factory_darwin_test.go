@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	appConfiguration "tungo/application/configuration"
-	"tungo/infrastructure/settings"
+	"tungo/application/configuration/settings"
 )
 
 type darwinNopReadWriteCloser struct{}

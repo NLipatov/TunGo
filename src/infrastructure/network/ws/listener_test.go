@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"tungo/infrastructure/settings"
+	"tungo/application/configuration/settings"
 
 	"github.com/coder/websocket"
 )

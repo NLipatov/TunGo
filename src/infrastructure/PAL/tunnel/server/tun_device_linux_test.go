@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"tungo/infrastructure/settings"
+	"tungo/application/configuration/settings"
 )
 
 // cfgNoIPv4Addr has a valid IPv4Subnet but no IPv4 address set,

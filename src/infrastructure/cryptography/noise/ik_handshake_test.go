@@ -8,10 +8,9 @@ import (
 	"testing"
 
 	appConfiguration "tungo/application/configuration"
+	"tungo/application/configuration/server"
 	"tungo/application/network/connection"
-	"tungo/infrastructure/PAL/configuration/server"
 	"tungo/infrastructure/network/tcp/adapters"
-	"tungo/infrastructure/settings"
 )
 
 func closeTestConn(conn net.Conn) {
@@ -922,17 +921,10 @@ func TestSecurity_ClientIDConflictRejectedAtConfig(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := &server.Configuration{
-				EnableUDP: true,
-				UDPSettings: settings.Settings{
-					Addressing: settings.Addressing{
-						IPv4Subnet: netip.MustParsePrefix("10.0.0.0/24"),
-					},
-				},
-				AllowedPeers: tc.peers,
-			}
+			cfg := server.New()
+			cfg.AllowedPeers = tc.peers
 
-			err := cfg.ValidateAllowedPeers()
+			err := server.Validate(*cfg)
 
 			if tc.expectErr && err == nil {
 				t.Fatal("expected validation error but got none")

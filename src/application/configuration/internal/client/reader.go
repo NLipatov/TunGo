@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+
+	clientConfiguration "tungo/application/configuration/client"
 )
 
 func read(path string) (*Configuration, error) {
@@ -21,7 +23,7 @@ func read(path string) (*Configuration, error) {
 		return nil, fmt.Errorf("invalid client configuration %q: %w", path, err)
 	}
 
-	if err := configuration.Validate(); err != nil {
+	if err := clientConfiguration.Validate(configuration); err != nil {
 		return nil, fmt.Errorf("invalid client configuration %q: %w", path, err)
 	}
 

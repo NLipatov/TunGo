@@ -9,9 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	appConfiguration "tungo/application/configuration"
+	"tungo/application/configuration/settings"
 	"tungo/application/network/routing/tun"
-	"tungo/infrastructure/settings"
 )
 
 // platformTunManagerPlainDev is a minimal tun.Device over *os.File.
@@ -94,11 +93,14 @@ type platformTunManagerMSSMock struct {
 }
 
 func mustHost(raw string) settings.Host {
-	h, err := settings.NewHost(raw)
+	ip, err := netip.ParseAddr(raw)
 	if err != nil {
-		panic(err)
+		return settings.Host{Domain: raw}
 	}
-	return h
+	if ip.Unmap().Is4() {
+		return settings.Host{IPv4: ip.Unmap().String()}
+	}
+	return settings.Host{IPv6: ip.String()}
 }
 
 func mustPrefix(raw string) netip.Prefix {
@@ -152,42 +154,49 @@ func newMgr(
 	},
 	wrap tun.Wrapper,
 ) *PlatformTunManager {
-	cfg := appConfiguration.ClientRuntimeConfiguration{
-		Protocol: proto,
-		UDPSettings: settings.Settings{
+	profiles := map[settings.Protocol]settings.Settings{
+		settings.UDP: {
 			Addressing: settings.Addressing{
 				TunName:    "tun0",
 				IPv4Subnet: mustPrefix("10.0.0.0/30"),
 				IPv4:       mustAddr("10.0.0.2"),
 				Server:     mustHost("198.51.100.1"),
 			},
-			MTU: 1400,
+			MTU:      1400,
+			Protocol: settings.UDP,
 		},
-		TCPSettings: settings.Settings{
+		settings.TCP: {
 			Addressing: settings.Addressing{
 				TunName:    "tun1",
 				IPv4Subnet: mustPrefix("10.0.0.4/30"),
 				IPv4:       mustAddr("10.0.0.6"),
 				Server:     mustHost("203.0.113.1"),
 			},
-			MTU: 1400,
+			MTU:      1400,
+			Protocol: settings.TCP,
 		},
-		WSSettings: settings.Settings{
+		settings.WS: {
 			Addressing: settings.Addressing{
 				TunName:    "tun2",
 				IPv4Subnet: mustPrefix("10.0.0.8/30"),
 				IPv4:       mustAddr("10.0.0.10"),
 				Server:     mustHost("203.0.113.2"),
 			},
-			MTU: 1250,
+			MTU:      1250,
+			Protocol: settings.WS,
 		},
 	}
 	return &PlatformTunManager{
-		configuration: cfg,
-		ip:            ipMock,
-		ioctl:         ioctlMock,
-		mss:           mssMock,
-		wrapper:       wrap,
+		connectionSettings: profiles[proto],
+		cleanupSettings: []settings.Settings{
+			profiles[settings.UDP],
+			profiles[settings.TCP],
+			profiles[settings.WS],
+		},
+		ip:      ipMock,
+		ioctl:   ioctlMock,
+		mss:     mssMock,
+		wrapper: wrap,
 	}
 }
 
@@ -245,17 +254,6 @@ func TestCreateDevice_WS_Path(t *testing.T) {
 		t.Fatal("nil device returned")
 	}
 	_ = dev.Close()
-}
-
-func TestCreateDevice_UnsupportedProtocol(t *testing.T) {
-	ipMock := &platformTunManagerIPMock{routeReply: "198.51.100.1 dev eth0"}
-	m := newMgr(settings.Protocol(255), ipMock, platformTunManagerIOCTLMock{}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{})
-
-	if _, err := m.CreateDevice(); err == nil {
-		t.Fatal("expected unsupported protocol error")
-	} else if !strings.Contains(err.Error(), "unsupported protocol") {
-		t.Fatalf("unexpected error: %v", err)
-	}
 }
 
 func TestCreateDevice_ParseRouteError_NoDev(t *testing.T) {
@@ -353,9 +351,9 @@ func TestCreateDevice_IPv6_FullPath(t *testing.T) {
 	mgr := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{})
 
 	// Enable IPv6 on the active protocol's settings.
-	mgr.configuration.UDPSettings.IPv6 = mustAddr("fd00::2")
-	mgr.configuration.UDPSettings.IPv6Subnet = mustPrefix("fd00::/64")
-	mgr.configuration.UDPSettings.Server = mgr.configuration.UDPSettings.Server.WithIPv6(netip.MustParseAddr("2001:db8::1"))
+	mgr.connectionSettings.IPv6 = mustAddr("fd00::2")
+	mgr.connectionSettings.IPv6Subnet = mustPrefix("fd00::/64")
+	mgr.connectionSettings.Server.IPv6 = "2001:db8::1"
 
 	dev, err := mgr.CreateDevice()
 	if err != nil {
@@ -387,8 +385,8 @@ func TestCreateDevice_IPv6_AddrAddError(t *testing.T) {
 		callCount:                &calls,
 	}, platformTunManagerIOCTLMock{}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{})
 
-	mgr.configuration.UDPSettings.IPv6 = mustAddr("fd00::2")
-	mgr.configuration.UDPSettings.IPv6Subnet = mustPrefix("fd00::/64")
+	mgr.connectionSettings.IPv6 = mustAddr("fd00::2")
+	mgr.connectionSettings.IPv6Subnet = mustPrefix("fd00::/64")
 
 	_, err := mgr.CreateDevice()
 	if err == nil {
@@ -402,8 +400,8 @@ func TestCreateDevice_IPv6_Route6DefaultError(t *testing.T) {
 		failStep:   "splitdef6",
 	}
 	mgr := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{})
-	mgr.configuration.UDPSettings.IPv6 = mustAddr("fd00::2")
-	mgr.configuration.UDPSettings.IPv6Subnet = mustPrefix("fd00::/64")
+	mgr.connectionSettings.IPv6 = mustAddr("fd00::2")
+	mgr.connectionSettings.IPv6Subnet = mustPrefix("fd00::/64")
 
 	_, err := mgr.CreateDevice()
 	if err == nil {
@@ -414,15 +412,15 @@ func TestCreateDevice_IPv6_Route6DefaultError(t *testing.T) {
 func TestDisposeDevices_IPv6HostRouteCleanup(t *testing.T) {
 	ipMock := &platformTunManagerIPMock{}
 	mgr := newMgr(settings.UDP, ipMock, platformTunManagerIOCTLMock{}, platformTunManagerMSSMock{}, platformTunManagerPlainWrapper{})
-	mgr.configuration.UDPSettings.Server = mgr.configuration.UDPSettings.Server.WithIPv6(netip.MustParseAddr("2001:db8::1"))
-	mgr.configuration.TCPSettings.Server = mgr.configuration.TCPSettings.Server.WithIPv6(netip.MustParseAddr("2001:db8::2"))
-	mgr.configuration.WSSettings.Server = mgr.configuration.WSSettings.Server.WithIPv6(netip.MustParseAddr("2001:db8::3"))
+	for i := range mgr.cleanupSettings {
+		mgr.cleanupSettings[i].Server.IPv6 = fmt.Sprintf("2001:db8::%d", i+1)
+	}
 
 	if err := mgr.DisposeDevices(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Each protocol should have rdel for IPv4 host + rdel for IPv6 host + ldel.
+	// Each configured interface has one IPv4 and one IPv6 host route.
 	got := ipMock.log.String()
 	if strings.Count(got, "rdel;") != 6 {
 		t.Fatalf("expected 6 route deletions (3 IPv4 + 3 IPv6), got: %s", got)

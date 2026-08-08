@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net/netip"
 
-	nip "tungo/infrastructure/network/ip"
+	nip "tungo/application/network/ip"
 )
 
 // Addressing groups the network identity fields of a tunnel interface.
@@ -61,7 +61,7 @@ func (a Addressing) IsZero() bool {
 	return a.TunName == "" &&
 		!a.IPv4Subnet.IsValid() &&
 		!a.IPv6Subnet.IsValid() &&
-		a.Server.IsZero() &&
+		a.Server == (Host{}) &&
 		a.Port == 0 &&
 		len(a.DNSv4) == 0 &&
 		len(a.DNSv6) == 0 &&

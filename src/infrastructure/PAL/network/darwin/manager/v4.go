@@ -3,6 +3,7 @@
 package manager
 
 import (
+	"context"
 	"fmt"
 	"net/netip"
 
@@ -10,7 +11,8 @@ import (
 	"tungo/infrastructure/PAL/network/darwin/ifconfig"
 	"tungo/infrastructure/PAL/network/darwin/route"
 	"tungo/infrastructure/PAL/network/darwin/utun"
-	"tungo/infrastructure/settings"
+	"tungo/infrastructure/network/host_resolver"
+	"tungo/application/configuration/settings"
 )
 
 type v4 struct {
@@ -44,7 +46,7 @@ func (m *v4) CreateDevice() (tun.Device, error) {
 	if err := m.validateSettings(); err != nil {
 		return nil, err
 	}
-	raw, err := utun.NewDefaultFactory(m.ifc).CreateTUN(m.effectiveMTU())
+	raw, err := utun.NewFactory(m.ifc).CreateTUN(m.effectiveMTU())
 	if err != nil {
 		return nil, fmt.Errorf("create utun: %w", err)
 	}
@@ -84,9 +86,15 @@ func (m *v4) CreateDevice() (tun.Device, error) {
 }
 
 func (m *v4) DisposeDevices() error {
-	_ = m.rtc.DelSplit(m.ifName)
-	if m.resolvedRouteIP != "" {
-		_ = m.rtc.Del(m.resolvedRouteIP)
+	if m.ifName != "" {
+		_ = m.rtc.DelSplit(m.ifName)
+	}
+	routeIP := m.resolvedRouteIP
+	if routeIP == "" {
+		routeIP, _ = m.resolveRouteIPv4()
+	}
+	if routeIP != "" {
+		_ = m.rtc.Del(routeIP)
 	}
 	if m.tunDev != nil {
 		_ = m.tunDev.Close() // closes underlying rawUTUN
@@ -100,7 +108,7 @@ func (m *v4) DisposeDevices() error {
 }
 
 func (m *v4) validateSettings() error {
-	if m.s.Server.IsZero() {
+	if m.s.Server == (settings.Host{}) {
 		return fmt.Errorf("v4: empty Server")
 	}
 	if !m.s.IPv4.IsValid() || !m.s.IPv4.Unmap().Is4() {
@@ -139,5 +147,5 @@ func (m *v4) resolveRouteIPv4() (string, error) {
 		}
 		return "", fmt.Errorf("route endpoint %s is IPv6, expected IPv4", ip)
 	}
-	return m.s.Server.RouteIPv4()
+	return host_resolver.ResolveIPv4(context.Background(), m.s.Server)
 }

@@ -9,9 +9,9 @@ import (
 	"testing"
 
 	"tungo/application/configuration"
+	"tungo/application/configuration/settings"
 	"tungo/application/network/routing"
 	"tungo/application/network/routing/tun"
-	"tungo/infrastructure/settings"
 )
 
 var errServerTest = errors.New("boom")

@@ -63,16 +63,16 @@ func (w *egressMockAddrPortWriter) SetAddrPort(addr netip.AddrPort) {
 	w.set = true
 }
 
-func TestNewDefaultEgress(t *testing.T) {
-	e := NewDefaultEgress(&egressMockWriter{}, &egressMockCrypto{})
+func TestNewEgress(t *testing.T) {
+	e := NewEgress(&egressMockWriter{}, &egressMockCrypto{})
 	if e == nil {
 		t.Fatal("expected non-nil egress")
 	}
 }
 
-func TestDefaultEgress_Send_Success(t *testing.T) {
+func TestEgress_Send_Success(t *testing.T) {
 	w := &egressMockWriter{}
-	e := NewDefaultEgress(w, &egressMockCrypto{})
+	e := NewEgress(w, &egressMockCrypto{})
 
 	data := []byte("hello")
 	if err := e.Send(data); err != nil {
@@ -83,10 +83,10 @@ func TestDefaultEgress_Send_Success(t *testing.T) {
 	}
 }
 
-func TestDefaultEgress_Send_EncryptError(t *testing.T) {
+func TestEgress_Send_EncryptError(t *testing.T) {
 	encErr := errors.New("encrypt failed")
 	w := &egressMockWriter{}
-	e := NewDefaultEgress(w, &egressMockCrypto{encErr: encErr})
+	e := NewEgress(w, &egressMockCrypto{encErr: encErr})
 
 	if err := e.Send([]byte("data")); !errors.Is(err, encErr) {
 		t.Fatalf("expected encrypt error, got %v", err)
@@ -96,19 +96,19 @@ func TestDefaultEgress_Send_EncryptError(t *testing.T) {
 	}
 }
 
-func TestDefaultEgress_Send_WriteError(t *testing.T) {
+func TestEgress_Send_WriteError(t *testing.T) {
 	writeErr := errors.New("write failed")
 	w := &egressMockWriter{err: writeErr}
-	e := NewDefaultEgress(w, &egressMockCrypto{})
+	e := NewEgress(w, &egressMockCrypto{})
 
 	if err := e.Send([]byte("data")); !errors.Is(err, writeErr) {
 		t.Fatalf("expected write error, got %v", err)
 	}
 }
 
-func TestDefaultEgress_Close_WithCloser(t *testing.T) {
+func TestEgress_Close_WithCloser(t *testing.T) {
 	wc := &egressMockWriteCloser{}
-	e := NewDefaultEgress(wc, &egressMockCrypto{})
+	e := NewEgress(wc, &egressMockCrypto{})
 
 	if err := e.Close(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -118,18 +118,18 @@ func TestDefaultEgress_Close_WithCloser(t *testing.T) {
 	}
 }
 
-func TestDefaultEgress_Close_WithoutCloser(t *testing.T) {
+func TestEgress_Close_WithoutCloser(t *testing.T) {
 	w := &egressMockWriter{}
-	e := NewDefaultEgress(w, &egressMockCrypto{})
+	e := NewEgress(w, &egressMockCrypto{})
 
 	if err := e.Close(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestDefaultEgress_SetAddrPort_WithSetter(t *testing.T) {
+func TestEgress_SetAddrPort_WithSetter(t *testing.T) {
 	w := &egressMockAddrPortWriter{}
-	e := NewDefaultEgress(w, &egressMockCrypto{})
+	e := NewEgress(w, &egressMockCrypto{})
 	want := netip.MustParseAddrPort("203.0.113.7:51820")
 
 	e.SetAddrPort(want)
@@ -142,16 +142,16 @@ func TestDefaultEgress_SetAddrPort_WithSetter(t *testing.T) {
 	}
 }
 
-func TestDefaultEgress_SetAddrPort_WithoutSetter(t *testing.T) {
+func TestEgress_SetAddrPort_WithoutSetter(t *testing.T) {
 	w := &egressMockWriter{}
-	e := NewDefaultEgress(w, &egressMockCrypto{})
+	e := NewEgress(w, &egressMockCrypto{})
 
 	e.SetAddrPort(netip.MustParseAddrPort("203.0.113.8:51820"))
 }
 
-func TestDefaultEgress_ConcurrentSend(t *testing.T) {
+func TestEgress_ConcurrentSend(t *testing.T) {
 	w := &egressMockWriter{}
-	e := NewDefaultEgress(w, &egressMockCrypto{})
+	e := NewEgress(w, &egressMockCrypto{})
 
 	var wg sync.WaitGroup
 	for i := 0; i < 100; i++ {

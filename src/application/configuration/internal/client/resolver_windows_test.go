@@ -6,7 +6,7 @@ import (
 )
 
 func TestClientResolverResolve(t *testing.T) {
-	resolved, err := NewDefaultResolver().Resolve()
+	resolved, err := NewResolver().Resolve()
 	if err != nil {
 		t.Fatalf("Resolve() returned error: %v", err)
 	}

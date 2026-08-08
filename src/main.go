@@ -64,7 +64,7 @@ func runCLI(ctx context.Context) error {
 		fmt.Printf("%s %s\n", appName, version.Current())
 		return nil
 	case commandline.CommandServerConfigGenerate:
-		serverControl := configuration.NewDefaultServerControl()
+		serverControl := configuration.NewServerControl()
 		if serverControl == nil {
 			return fmt.Errorf("server configuration is not supported")
 		}
@@ -89,7 +89,7 @@ func runTUI(ctx context.Context) error {
 	if err := requireElevation(); err != nil {
 		return err
 	}
-	configurationControls := configuration.NewDefaultControls()
+	configurationControls := configuration.NewControls()
 	var daemonControl systemd.Control
 	systemdControl := systemd.NewUnitInstaller(exec_commander.NewExecCommander())
 	if systemdControl.Available() {

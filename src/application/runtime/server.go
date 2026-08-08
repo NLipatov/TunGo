@@ -8,11 +8,11 @@ import (
 	"sync/atomic"
 
 	"tungo/application/configuration"
+	"tungo/application/configuration/settings"
 	"tungo/application/network/connection"
 	"tungo/application/network/routing"
 	"tungo/application/network/routing/tun"
 	tunnelServer "tungo/infrastructure/PAL/tunnel/server"
-	"tungo/infrastructure/settings"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -29,7 +29,7 @@ type serverRuntime struct {
 }
 
 func newServer() (*serverRuntime, error) {
-	control := configuration.NewDefaultServerControl()
+	control := configuration.NewServerControl()
 	if control == nil {
 		return nil, fmt.Errorf("server runtime is not supported on this platform")
 	}
@@ -96,9 +96,9 @@ func (r *serverRuntime) run(ctx context.Context) error {
 
 func (r *serverRuntime) cleanup() error {
 	var group errgroup.Group
-	for _, workerSettings := range r.config.AllSettings() {
+	for _, profile := range r.config.Profiles() {
 		group.Go(func() error {
-			return r.tunManager.DisposeDevices(workerSettings)
+			return r.tunManager.DisposeDevices(profile.Settings)
 		})
 	}
 	return group.Wait()
@@ -108,7 +108,11 @@ func (r *serverRuntime) runWorkers(ctx context.Context) error {
 	workersCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	group, groupCtx := errgroup.WithContext(workersCtx)
-	for _, workerSettings := range r.config.EnabledSettings() {
+	for _, profile := range r.config.Profiles() {
+		if !profile.Enabled {
+			continue
+		}
+		workerSettings := profile.Settings
 		router, err := r.createRouter(groupCtx, workerSettings)
 		if err != nil {
 			cancel()

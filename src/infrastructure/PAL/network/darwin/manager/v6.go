@@ -3,6 +3,7 @@
 package manager
 
 import (
+	"context"
 	"fmt"
 	"net/netip"
 
@@ -10,7 +11,8 @@ import (
 	"tungo/infrastructure/PAL/network/darwin/ifconfig"
 	"tungo/infrastructure/PAL/network/darwin/route"
 	"tungo/infrastructure/PAL/network/darwin/utun"
-	"tungo/infrastructure/settings"
+	"tungo/infrastructure/network/host_resolver"
+	"tungo/application/configuration/settings"
 )
 
 type v6 struct {
@@ -45,7 +47,7 @@ func (m *v6) CreateDevice() (tun.Device, error) {
 		return nil, err
 	}
 
-	raw, err := utun.NewDefaultFactory(m.ifc).CreateTUN(m.effectiveMTU())
+	raw, err := utun.NewFactory(m.ifc).CreateTUN(m.effectiveMTU())
 	if err != nil {
 		return nil, fmt.Errorf("create utun: %w", err)
 	}
@@ -87,9 +89,15 @@ func (m *v6) CreateDevice() (tun.Device, error) {
 }
 
 func (m *v6) DisposeDevices() error {
-	_ = m.rt.DelSplit(m.ifName)
-	if m.resolvedRouteIP != "" {
-		_ = m.rt.Del(m.resolvedRouteIP)
+	if m.ifName != "" {
+		_ = m.rt.DelSplit(m.ifName)
+	}
+	routeIP := m.resolvedRouteIP
+	if routeIP == "" {
+		routeIP, _ = m.resolveRouteIPv6()
+	}
+	if routeIP != "" {
+		_ = m.rt.Del(routeIP)
 	}
 	if m.tunDev != nil {
 		_ = m.tunDev.Close() // closes underlying rawUTUN
@@ -107,7 +115,7 @@ func (m *v6) validateSettings() error {
 	if !ip.IsValid() || ip.Is4() {
 		return fmt.Errorf("v6: invalid IPv6 %q", m.s.IPv6)
 	}
-	if m.s.Server.IsZero() {
+	if m.s.Server == (settings.Host{}) {
 		return fmt.Errorf("v6: empty Server")
 	}
 	return nil
@@ -145,5 +153,5 @@ func (m *v6) resolveRouteIPv6() (string, error) {
 		}
 		return "", fmt.Errorf("route endpoint %s is IPv4, expected IPv6", ip)
 	}
-	return m.s.Server.RouteIPv6()
+	return host_resolver.ResolveIPv6(context.Background(), m.s.Server)
 }

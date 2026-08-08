@@ -2,17 +2,17 @@ package client
 
 import "path/filepath"
 
-type DefaultObserver struct {
+type Observer struct {
 	resolver Resolver
 }
 
-func NewDefaultObserver(resolver Resolver) *DefaultObserver {
-	return &DefaultObserver{
+func NewObserver(resolver Resolver) *Observer {
+	return &Observer{
 		resolver: resolver,
 	}
 }
 
-func (o *DefaultObserver) Observe() ([]string, error) {
+func (o *Observer) Observe() ([]string, error) {
 	defaultConfPath, defaultConfPathErr := o.resolver.Resolve()
 	if defaultConfPathErr != nil {
 		return nil, defaultConfPathErr

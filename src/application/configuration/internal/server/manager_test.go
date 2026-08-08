@@ -42,7 +42,7 @@ func (m *ManagerMockReader) read() (*Configuration, error) {
 
 func TestManager_Configuration_FileNotExists_WritesDefault(t *testing.T) {
 	writer := &ManagerMockWriter{}
-	defaultConf := NewDefaultConfiguration()
+	defaultConf := NewConfiguration()
 	reader := &ManagerMockReader{
 		Config: defaultConf,
 		Errors: []error{fs.ErrNotExist},
@@ -120,7 +120,7 @@ func TestManager_Configuration_ReaderError_ReturnsError(t *testing.T) {
 }
 
 func TestManager_IncrementClientCounter_Success(t *testing.T) {
-	initialConf := NewDefaultConfiguration()
+	initialConf := NewConfiguration()
 	initialValue := initialConf.ClientCounter
 
 	writer := &ManagerMockWriter{}
@@ -170,7 +170,7 @@ func TestManager_IncrementClientCounter_ConfigError(t *testing.T) {
 }
 
 func TestManager_IncrementClientCounter_WriteError(t *testing.T) {
-	initialConf := NewDefaultConfiguration()
+	initialConf := NewConfiguration()
 	writer := &ManagerMockWriter{Err: errors.New("write fail")}
 	reader := &ManagerMockReader{Config: initialConf}
 
@@ -186,7 +186,7 @@ func TestManager_IncrementClientCounter_WriteError(t *testing.T) {
 }
 
 func TestManager_InjectEdKeys_Success(t *testing.T) {
-	initialConf := NewDefaultConfiguration()
+	initialConf := NewConfiguration()
 	writer := &ManagerMockWriter{}
 	reader := &ManagerMockReader{Config: initialConf}
 
@@ -240,7 +240,7 @@ func TestManager_InjectX25519Keys_ConfigError(t *testing.T) {
 
 func TestManager_InjectX25519Keys_InvalidPrivateKeyLength(t *testing.T) {
 	writer := &ManagerMockWriter{}
-	reader := &ManagerMockReader{Config: NewDefaultConfiguration()}
+	reader := &ManagerMockReader{Config: NewConfiguration()}
 
 	manager := &Manager{
 		writer: writer,
@@ -265,7 +265,7 @@ func TestManager_InjectX25519Keys_InvalidPublicKeyLength(t *testing.T) {
 }
 
 func TestManager_InjectX25519Keys_WriteError(t *testing.T) {
-	initialConf := NewDefaultConfiguration()
+	initialConf := NewConfiguration()
 	writer := &ManagerMockWriter{Err: errors.New("write fail")}
 	reader := &ManagerMockReader{Config: initialConf}
 
@@ -292,7 +292,7 @@ func TestNewManager_Success(t *testing.T) {
 }
 
 func TestManager_AddAllowedPeer_Success(t *testing.T) {
-	initialConf := NewDefaultConfiguration()
+	initialConf := NewConfiguration()
 	writer := &ManagerMockWriter{}
 	reader := &ManagerMockReader{Config: initialConf}
 
@@ -350,7 +350,7 @@ func TestManager_AddAllowedPeer_ConfigError(t *testing.T) {
 }
 
 func TestManager_AddAllowedPeer_WriteError(t *testing.T) {
-	initialConf := NewDefaultConfiguration()
+	initialConf := NewConfiguration()
 	writer := &ManagerMockWriter{Err: errors.New("write fail")}
 	reader := &ManagerMockReader{Config: initialConf}
 
@@ -367,7 +367,7 @@ func TestManager_AddAllowedPeer_WriteError(t *testing.T) {
 }
 
 func TestManager_ListAllowedPeers_SuccessReturnsCopy(t *testing.T) {
-	initialConf := NewDefaultConfiguration()
+	initialConf := NewConfiguration()
 	initialConf.AllowedPeers = []AllowedPeer{
 		{
 			Name:      "client-1",
@@ -416,7 +416,7 @@ func TestManager_ListAllowedPeers_ConfigError(t *testing.T) {
 }
 
 func TestManager_SetAllowedPeerEnabled_Success(t *testing.T) {
-	initialConf := NewDefaultConfiguration()
+	initialConf := NewConfiguration()
 	initialConf.AllowedPeers = []AllowedPeer{
 		{PublicKey: bytes.Repeat([]byte{2}, 32), Enabled: true, ClientID: 2},
 	}
@@ -450,7 +450,7 @@ func TestManager_SetAllowedPeerEnabled_InvalidClientID(t *testing.T) {
 }
 
 func TestManager_SetAllowedPeerEnabled_PeerNotFound(t *testing.T) {
-	initialConf := NewDefaultConfiguration()
+	initialConf := NewConfiguration()
 	initialConf.AllowedPeers = []AllowedPeer{
 		{PublicKey: bytes.Repeat([]byte{3}, 32), Enabled: true, ClientID: 1},
 	}
@@ -478,7 +478,7 @@ func TestManager_SetAllowedPeerEnabled_ConfigError(t *testing.T) {
 }
 
 func TestManager_SetAllowedPeerEnabled_WriteError(t *testing.T) {
-	initialConf := NewDefaultConfiguration()
+	initialConf := NewConfiguration()
 	initialConf.AllowedPeers = []AllowedPeer{
 		{PublicKey: bytes.Repeat([]byte{4}, 32), Enabled: true, ClientID: 4},
 	}
@@ -494,7 +494,7 @@ func TestManager_SetAllowedPeerEnabled_WriteError(t *testing.T) {
 }
 
 func TestManager_RemoveAllowedPeer_Success(t *testing.T) {
-	initialConf := NewDefaultConfiguration()
+	initialConf := NewConfiguration()
 	initialConf.ClientCounter = 12
 	initialConf.AllowedPeers = []AllowedPeer{
 		{PublicKey: bytes.Repeat([]byte{5}, 32), Enabled: true, ClientID: 1},
@@ -536,7 +536,7 @@ func TestManager_RemoveAllowedPeer_InvalidClientID(t *testing.T) {
 }
 
 func TestManager_RemoveAllowedPeer_PeerNotFound(t *testing.T) {
-	initialConf := NewDefaultConfiguration()
+	initialConf := NewConfiguration()
 	initialConf.AllowedPeers = []AllowedPeer{
 		{PublicKey: bytes.Repeat([]byte{7}, 32), Enabled: true, ClientID: 1},
 	}
@@ -564,7 +564,7 @@ func TestManager_RemoveAllowedPeer_ConfigError(t *testing.T) {
 }
 
 func TestManager_RemoveAllowedPeer_WriteError(t *testing.T) {
-	initialConf := NewDefaultConfiguration()
+	initialConf := NewConfiguration()
 	initialConf.AllowedPeers = []AllowedPeer{
 		{PublicKey: bytes.Repeat([]byte{8}, 32), Enabled: true, ClientID: 8},
 	}
@@ -580,7 +580,7 @@ func TestManager_RemoveAllowedPeer_WriteError(t *testing.T) {
 }
 
 func TestManager_InvalidateCache(t *testing.T) {
-	inner := &ManagerMockReader{Config: NewDefaultConfiguration()}
+	inner := &ManagerMockReader{Config: NewConfiguration()}
 	ttl := NewTTLReader(inner, time.Hour)
 	manager := &Manager{reader: ttl}
 
@@ -612,14 +612,14 @@ func TestManager_InvalidateCache(t *testing.T) {
 }
 
 func TestManager_InvalidateCache_NonTTLReader_NoPanic(t *testing.T) {
-	manager := &Manager{reader: &ManagerMockReader{Config: NewDefaultConfiguration()}}
+	manager := &Manager{reader: &ManagerMockReader{Config: NewConfiguration()}}
 	manager.InvalidateCache()
 }
 
 // --- EnsureIPv6Subnets ---
 
 func TestManager_EnsureIPv6Subnets_SetsDefaults(t *testing.T) {
-	conf := NewDefaultConfiguration()
+	conf := NewConfiguration()
 	// Ensure no IPv6 subnets are set
 	if conf.TCPSettings.IPv6Subnet.IsValid() {
 		t.Fatal("precondition: TCPSettings.IPv6Subnet should not be valid in default config")
@@ -660,7 +660,7 @@ func TestManager_EnsureIPv6Subnets_SetsDefaults(t *testing.T) {
 }
 
 func TestManager_EnsureIPv6Subnets_AlreadySet_NoWrite(t *testing.T) {
-	conf := NewDefaultConfiguration()
+	conf := NewConfiguration()
 	conf.TCPSettings.IPv6Subnet = netip.MustParsePrefix("fd00::/64")
 	conf.UDPSettings.IPv6Subnet = netip.MustParsePrefix("fd00:1::/64")
 	conf.WSSettings.IPv6Subnet = netip.MustParsePrefix("fd00:2::/64")
@@ -697,7 +697,7 @@ func TestManager_EnsureIPv6Subnets_ConfigError(t *testing.T) {
 }
 
 func TestManager_EnsureIPv6Subnets_WriteError(t *testing.T) {
-	conf := NewDefaultConfiguration()
+	conf := NewConfiguration()
 	writer := &ManagerMockWriter{Err: errors.New("write fail")}
 	reader := &ManagerMockReader{Config: conf}
 

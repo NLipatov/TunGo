@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"syscall"
+	"tungo/application/configuration/settings"
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/PAL/exec_commander"
 	"tungo/infrastructure/PAL/network/linux/epoll"
@@ -16,7 +17,6 @@ import (
 	"tungo/infrastructure/PAL/network/linux/iptables"
 	"tungo/infrastructure/PAL/network/linux/mssclamp"
 	"tungo/infrastructure/PAL/network/linux/sysctl"
-	"tungo/infrastructure/settings"
 )
 
 type TunFactory struct {

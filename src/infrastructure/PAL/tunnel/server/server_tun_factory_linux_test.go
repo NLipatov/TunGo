@@ -11,12 +11,12 @@ import (
 	"testing"
 	application "tungo/application/network/routing/tun"
 
+	"tungo/application/configuration/settings"
 	"tungo/infrastructure/PAL/network/linux/ioctl"
 	"tungo/infrastructure/PAL/network/linux/ip"
 	"tungo/infrastructure/PAL/network/linux/iptables"
 	"tungo/infrastructure/PAL/network/linux/mssclamp"
 	"tungo/infrastructure/PAL/network/linux/sysctl"
-	"tungo/infrastructure/settings"
 )
 
 /*

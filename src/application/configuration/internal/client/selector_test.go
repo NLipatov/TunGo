@@ -25,7 +25,7 @@ func (f *selectorTestResolver) Resolve() (string, error) {
 func TestSelectorReadFileNotExist(t *testing.T) {
 	nonExistingFile := "/non/existent/config.yaml"
 	resolver := &selectorTestResolver{resolvePath: "/dummy/dest.yaml"}
-	selector := NewDefaultSelector(resolver)
+	selector := NewSelector(resolver)
 
 	err := selector.Select(nonExistingFile)
 	if err == nil || !strings.Contains(err.Error(), nonExistingFile) {
@@ -44,7 +44,7 @@ func TestSelectorReadFileError(t *testing.T) {
 	}
 
 	resolver := &selectorTestResolver{resolvePath: filepath.Join(tempDir, "dest.yaml")}
-	selector := NewDefaultSelector(resolver)
+	selector := NewSelector(resolver)
 
 	err := selector.Select(dirAsFile)
 	if err == nil {
@@ -63,7 +63,7 @@ func TestSelectorResolverError(t *testing.T) {
 
 	expectedErr := errors.New("resolver error")
 	resolver := &selectorTestResolver{err: expectedErr}
-	selector := NewDefaultSelector(resolver)
+	selector := NewSelector(resolver)
 
 	err := selector.Select(filePath)
 	if err == nil || err.Error() != expectedErr.Error() {
@@ -84,7 +84,7 @@ func TestSelectorWriteFileError(t *testing.T) {
 	// Use the temporary directory as the destination, which will cause a write error
 	// because os.WriteFile expects a file path, not a directory.
 	resolver := &selectorTestResolver{resolvePath: tempDir}
-	selector := NewDefaultSelector(resolver)
+	selector := NewSelector(resolver)
 
 	err := selector.Select(filePath)
 	if err == nil {
@@ -105,7 +105,7 @@ func TestSelectorSuccess(t *testing.T) {
 	// Define a valid destination path within the temporary directory.
 	destPath := filepath.Join(tempDir, "dest.yaml")
 	resolver := &selectorTestResolver{resolvePath: destPath}
-	selector := NewDefaultSelector(resolver)
+	selector := NewSelector(resolver)
 
 	if err := selector.Select(filePath); err != nil {
 		t.Fatalf("unexpected error: %v", err)

@@ -16,12 +16,12 @@ import (
 	"github.com/coder/websocket"
 
 	appConfiguration "tungo/application/configuration"
+	"tungo/application/configuration/settings"
 	"tungo/application/network/connection"
 	"tungo/infrastructure/cryptography/chacha20/tcp"
 	"tungo/infrastructure/cryptography/noise"
 	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/tcp/adapters"
-	"tungo/infrastructure/settings"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -31,11 +31,14 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 func mustHost(raw string) settings.Host {
-	h, err := settings.NewHost(raw)
+	ip, err := netip.ParseAddr(raw)
 	if err != nil {
-		panic(err)
+		return settings.Host{Domain: raw}
 	}
-	return h
+	if ip.Unmap().Is4() {
+		return settings.Host{IPv4: ip.Unmap().String()}
+	}
+	return settings.Host{IPv6: ip.String()}
 }
 
 // mkTCPSettings returns minimal TCP settings for a given port.
@@ -117,22 +120,6 @@ func ConnectionFactoryMockWSServer(t *testing.T) (host string, port string, shut
 
 // ---- tests ----
 
-func Test_connectionSettings_TCP(t *testing.T) {
-	t.Parallel()
-	conf := appConfiguration.ClientRuntimeConfiguration{
-		Protocol:    settings.TCP,
-		TCPSettings: mkTCPSettings(443),
-	}
-	f := &ConnectionFactory{conf: conf}
-	got, err := f.conf.ActiveSettings()
-	if err != nil {
-		t.Fatalf("unexpected err: %v", err)
-	}
-	if got.Protocol != settings.TCP || got.Port != 443 {
-		t.Fatalf("wrong settings returned: %+v", got)
-	}
-}
-
 func TestSessionBuilder_ByProtocol(t *testing.T) {
 	f := &ConnectionFactory{}
 
@@ -147,70 +134,11 @@ func TestSessionBuilder_ByProtocol(t *testing.T) {
 	}
 }
 
-func Test_connectionSettings_UDP(t *testing.T) {
-	t.Parallel()
-	conf := appConfiguration.ClientRuntimeConfiguration{
-		Protocol:    settings.UDP,
-		UDPSettings: mkUDPSettings(53),
-	}
-	f := &ConnectionFactory{conf: conf}
-	got, err := f.conf.ActiveSettings()
-	if err != nil {
-		t.Fatalf("unexpected err: %v", err)
-	}
-	if got.Protocol != settings.UDP || got.Port != 53 {
-		t.Fatalf("wrong settings returned: %+v", got)
-	}
-}
-
-func Test_connectionSettings_WS(t *testing.T) {
-	t.Parallel()
-	conf := appConfiguration.ClientRuntimeConfiguration{
-		Protocol:   settings.WS,
-		WSSettings: mkWSSettings("example.org", 80, settings.WS),
-	}
-	f := &ConnectionFactory{conf: conf}
-	got, err := f.conf.ActiveSettings()
-	if err != nil {
-		t.Fatalf("unexpected err: %v", err)
-	}
-	if got.Protocol != settings.WS || got.Port != 80 || got.Server != mustHost("example.org") {
-		t.Fatalf("wrong settings returned: %+v", got)
-	}
-}
-
-func Test_connectionSettings_WSS_UsesWSSettingsBucket(t *testing.T) {
-	t.Parallel()
-	conf := appConfiguration.ClientRuntimeConfiguration{
-		Protocol:   settings.WSS,
-		WSSettings: mkWSSettings("secure.example", 443, settings.WSS),
-	}
-	f := &ConnectionFactory{conf: conf}
-	got, err := f.conf.ActiveSettings()
-	if err != nil {
-		t.Fatalf("unexpected err: %v", err)
-	}
-	if got.Protocol != settings.WSS || got.Port != 443 || got.Server != mustHost("secure.example") {
-		t.Fatalf("wrong settings returned: %+v", got)
-	}
-}
-
-func Test_connectionSettings_Unsupported(t *testing.T) {
-	t.Parallel()
-	conf := appConfiguration.ClientRuntimeConfiguration{Protocol: 999}
-	f := &ConnectionFactory{conf: conf}
-	_, err := f.conf.ActiveSettings()
-	if err == nil {
-		t.Fatalf("expected error for unsupported protocol")
-	}
-}
-
 func TestEstablishConnection_InvalidPort_TCP_ParseError(t *testing.T) {
 	t.Parallel()
 	// Out-of-range port should fail during addr:port parsing.
 	conf := appConfiguration.ClientRuntimeConfiguration{
-		Protocol:    settings.TCP,
-		TCPSettings: mkTCPSettings(70000),
+		Settings: mkTCPSettings(70000),
 	}
 	f := &ConnectionFactory{conf: conf}
 
@@ -223,8 +151,7 @@ func TestEstablishConnection_InvalidPort_TCP_ParseError(t *testing.T) {
 func TestEstablishConnection_InvalidPort_UDP_ParseError(t *testing.T) {
 	t.Parallel()
 	conf := appConfiguration.ClientRuntimeConfiguration{
-		Protocol:    settings.UDP,
-		UDPSettings: mkUDPSettings(70000),
+		Settings: mkUDPSettings(70000),
 	}
 	f := &ConnectionFactory{conf: conf}
 
@@ -357,77 +284,11 @@ func TestDialWS_Error_NoServer(t *testing.T) {
 	}
 }
 
-func TestEstablishConnection_WS_EmptyHost_And_EmptyHost(t *testing.T) {
-	t.Parallel()
-	conf := appConfiguration.ClientRuntimeConfiguration{
-		Protocol:   settings.WS,
-		WSSettings: mkWSSettings("", 8080, settings.WS),
-	}
-	f := &ConnectionFactory{conf: conf}
-	_, _, _, err := f.EstablishConnection(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "empty host") {
-		t.Fatalf("expected empty host error, got: %v", err)
-	}
-}
-
-func TestEstablishConnection_WS_ZeroPort(t *testing.T) {
-	t.Parallel()
-	conf := appConfiguration.ClientRuntimeConfiguration{
-		Protocol:   settings.WS,
-		WSSettings: mkWSSettings("127.0.0.1", 0, settings.WS),
-	}
-	f := &ConnectionFactory{conf: conf}
-	_, _, _, err := f.EstablishConnection(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "invalid port") {
-		t.Fatalf("expected invalid port error, got: %v", err)
-	}
-}
-
-func TestEstablishConnection_WS_InvalidPort_Zero(t *testing.T) {
-	t.Parallel()
-	conf := appConfiguration.ClientRuntimeConfiguration{
-		Protocol:   settings.WS,
-		WSSettings: mkWSSettings("127.0.0.1", 0, settings.WS),
-	}
-	f := &ConnectionFactory{conf: conf}
-	_, _, _, err := f.EstablishConnection(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "invalid port") {
-		t.Fatalf("expected invalid port error, got: %v", err)
-	}
-}
-
-func TestEstablishConnection_WS_InvalidPort_OutOfRange(t *testing.T) {
-	t.Parallel()
-	conf := appConfiguration.ClientRuntimeConfiguration{
-		Protocol:   settings.WS,
-		WSSettings: mkWSSettings("127.0.0.1", 70000, settings.WS),
-	}
-	f := &ConnectionFactory{conf: conf}
-	_, _, _, err := f.EstablishConnection(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "invalid port") {
-		t.Fatalf("expected invalid port error, got: %v", err)
-	}
-}
-
-func TestEstablishConnection_WSS_EmptyHost(t *testing.T) {
-	t.Parallel()
-	conf := appConfiguration.ClientRuntimeConfiguration{
-		Protocol:   settings.WSS,
-		WSSettings: mkWSSettings("", 443, settings.WSS),
-	}
-	f := &ConnectionFactory{conf: conf}
-	_, _, _, err := f.EstablishConnection(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "empty host") {
-		t.Fatalf("expected empty host error, got: %v", err)
-	}
-}
-
 func TestEstablishConnection_WSS_DefaultPort443_And_WrappedError(t *testing.T) {
 	t.Parallel()
 	// No port -> defaults to 443; since nothing listens, expect wrapped WS dial error.
 	conf := appConfiguration.ClientRuntimeConfiguration{
-		Protocol:   settings.WSS,
-		WSSettings: mkWSSettings("127.0.0.1", 0, settings.WSS),
+		Settings: mkWSSettings("127.0.0.1", 0, settings.WSS),
 	}
 	f := &ConnectionFactory{conf: conf}
 	_, _, _, err := f.EstablishConnection(context.Background())
@@ -436,43 +297,9 @@ func TestEstablishConnection_WSS_DefaultPort443_And_WrappedError(t *testing.T) {
 	}
 }
 
-func TestEstablishConnection_WSS_UsesSelectedProtocolWhenBucketProtocolIsWS(t *testing.T) {
-	t.Parallel()
-
-	conf := appConfiguration.ClientRuntimeConfiguration{
-		Protocol:   settings.WSS,
-		WSSettings: mkWSSettings("127.0.0.1", 0, settings.WS),
-	}
-	f := &ConnectionFactory{conf: conf}
-
-	_, _, _, err := f.EstablishConnection(context.Background())
-	if err == nil {
-		t.Fatal("expected dial error")
-	}
-	if strings.Contains(err.Error(), "invalid port") {
-		t.Fatalf("expected selected WSS behavior (default 443), got invalid-port error: %v", err)
-	}
-	if !strings.Contains(err.Error(), "unable to establish WSS") {
-		t.Fatalf("expected wrapped WSS dial error, got: %v", err)
-	}
-}
-
-func TestEstablishConnection_WSS_InvalidPort_OutOfRange(t *testing.T) {
-	t.Parallel()
-	conf := appConfiguration.ClientRuntimeConfiguration{
-		Protocol:   settings.WSS,
-		WSSettings: mkWSSettings("127.0.0.1", 70000, settings.WSS),
-	}
-	f := &ConnectionFactory{conf: conf}
-	_, _, _, err := f.EstablishConnection(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "invalid port") {
-		t.Fatalf("expected invalid port error, got: %v", err)
-	}
-}
-
 func TestEstablishConnection_UnsupportedProtocol(t *testing.T) {
 	t.Parallel()
-	conf := appConfiguration.ClientRuntimeConfiguration{Protocol: 999}
+	conf := appConfiguration.ClientRuntimeConfiguration{Settings: settings.Settings{Protocol: 999}}
 	f := &ConnectionFactory{conf: conf}
 	_, _, _, err := f.EstablishConnection(context.Background())
 	if err == nil {
@@ -484,8 +311,7 @@ func TestEstablishConnection_UnsupportedProtocol(t *testing.T) {
 func TestEstablishConnection_TCP_DialError_IsWrapped(t *testing.T) {
 	t.Parallel()
 	conf := appConfiguration.ClientRuntimeConfiguration{
-		Protocol:    settings.TCP,
-		TCPSettings: mkTCPSettings(1), // likely closed → Dial error
+		Settings: mkTCPSettings(1), // likely closed → Dial error
 	}
 	f := &ConnectionFactory{conf: conf}
 
@@ -502,8 +328,7 @@ func TestEstablishConnection_TCP_DialError_IsWrapped(t *testing.T) {
 func TestEstablishConnection_WS_DialError_IsWrapped(t *testing.T) {
 	t.Parallel()
 	conf := appConfiguration.ClientRuntimeConfiguration{
-		Protocol:   settings.WS,
-		WSSettings: mkWSSettings("127.0.0.1", 9, settings.WS),
+		Settings: mkWSSettings("127.0.0.1", 9, settings.WS),
 	}
 	f := &ConnectionFactory{conf: conf}
 	_, _, _, err := f.EstablishConnection(context.Background())
@@ -619,7 +444,7 @@ func (f *cfUnitCryptoFactory) FromHandshake(connection.Handshake, bool) (connect
 }
 
 func TestConnectionFactoryUnit_NewConnectionFactory_ReturnsImpl(t *testing.T) {
-	conf := appConfiguration.ClientRuntimeConfiguration{Protocol: settings.TCP}
+	conf := appConfiguration.ClientRuntimeConfiguration{Settings: settings.Settings{Protocol: settings.TCP}}
 	got := NewConnectionFactory(conf)
 	if got == nil {
 		t.Fatal("expected non-nil factory")
@@ -790,63 +615,9 @@ func TestConnectionFactoryUnit_NewReadDeadlineTransport_WithDeadlineSupport_Wrap
 	}
 }
 
-func TestConnectionFactoryUnit_connectionSettings_AllBranches(t *testing.T) {
-	t.Run("tcp", func(t *testing.T) {
-		f := &ConnectionFactory{conf: appConfiguration.ClientRuntimeConfiguration{
-			Protocol:    settings.TCP,
-			TCPSettings: settings.Settings{Addressing: settings.Addressing{Port: 1}, Protocol: settings.TCP},
-		}}
-		s, err := f.conf.ActiveSettings()
-		if err != nil || s.Protocol != settings.TCP {
-			t.Fatalf("unexpected result: s=%+v err=%v", s, err)
-		}
-	})
-
-	t.Run("udp", func(t *testing.T) {
-		f := &ConnectionFactory{conf: appConfiguration.ClientRuntimeConfiguration{
-			Protocol:    settings.UDP,
-			UDPSettings: settings.Settings{Addressing: settings.Addressing{Port: 2}, Protocol: settings.UDP},
-		}}
-		s, err := f.conf.ActiveSettings()
-		if err != nil || s.Protocol != settings.UDP {
-			t.Fatalf("unexpected result: s=%+v err=%v", s, err)
-		}
-	})
-
-	t.Run("ws", func(t *testing.T) {
-		f := &ConnectionFactory{conf: appConfiguration.ClientRuntimeConfiguration{
-			Protocol:   settings.WS,
-			WSSettings: settings.Settings{Addressing: settings.Addressing{Port: 80}, Protocol: settings.WS},
-		}}
-		s, err := f.conf.ActiveSettings()
-		if err != nil || s.Protocol != settings.WS {
-			t.Fatalf("unexpected result: s=%+v err=%v", s, err)
-		}
-	})
-
-	t.Run("wss", func(t *testing.T) {
-		f := &ConnectionFactory{conf: appConfiguration.ClientRuntimeConfiguration{
-			Protocol:   settings.WSS,
-			WSSettings: settings.Settings{Addressing: settings.Addressing{Port: 443}, Protocol: settings.WSS},
-		}}
-		s, err := f.conf.ActiveSettings()
-		if err != nil || s.Protocol != settings.WSS {
-			t.Fatalf("unexpected result: s=%+v err=%v", s, err)
-		}
-	})
-
-	t.Run("unsupported", func(t *testing.T) {
-		f := &ConnectionFactory{conf: appConfiguration.ClientRuntimeConfiguration{Protocol: settings.UNKNOWN}}
-		_, err := f.conf.ActiveSettings()
-		if err == nil {
-			t.Fatal("expected unsupported protocol error")
-		}
-	})
-}
-
 func TestConnectionFactoryUnit_EstablishConnection_ErrorBranches(t *testing.T) {
 	t.Run("unsupported protocol", func(t *testing.T) {
-		f := &ConnectionFactory{conf: appConfiguration.ClientRuntimeConfiguration{Protocol: settings.UNKNOWN}}
+		f := &ConnectionFactory{conf: appConfiguration.ClientRuntimeConfiguration{Settings: settings.Settings{Protocol: settings.UNKNOWN}}}
 		_, _, _, err := f.EstablishConnection(context.Background())
 		if err == nil {
 			t.Fatal("expected unsupported protocol error")
@@ -855,8 +626,7 @@ func TestConnectionFactoryUnit_EstablishConnection_ErrorBranches(t *testing.T) {
 
 	t.Run("tcp parse addr error", func(t *testing.T) {
 		f := &ConnectionFactory{conf: appConfiguration.ClientRuntimeConfiguration{
-			Protocol:    settings.TCP,
-			TCPSettings: mkTCPSettings(70000),
+			Settings: mkTCPSettings(70000),
 		}}
 		_, _, _, err := f.EstablishConnection(context.Background())
 		if err == nil {
@@ -866,8 +636,7 @@ func TestConnectionFactoryUnit_EstablishConnection_ErrorBranches(t *testing.T) {
 
 	t.Run("udp parse addr error", func(t *testing.T) {
 		f := &ConnectionFactory{conf: appConfiguration.ClientRuntimeConfiguration{
-			Protocol:    settings.UDP,
-			UDPSettings: mkUDPSettings(70000),
+			Settings: mkUDPSettings(70000),
 		}}
 		_, _, _, err := f.EstablishConnection(context.Background())
 		if err == nil {
@@ -875,49 +644,6 @@ func TestConnectionFactoryUnit_EstablishConnection_ErrorBranches(t *testing.T) {
 		}
 	})
 
-	t.Run("ws empty host", func(t *testing.T) {
-		f := &ConnectionFactory{conf: appConfiguration.ClientRuntimeConfiguration{
-			Protocol:   settings.WS,
-			WSSettings: mkWSSettings("", 8080, settings.WS),
-		}}
-		_, _, _, err := f.EstablishConnection(context.Background())
-		if err == nil || !strings.Contains(err.Error(), "empty host") {
-			t.Fatalf("expected empty host error, got %v", err)
-		}
-	})
-
-	t.Run("ws invalid port", func(t *testing.T) {
-		f := &ConnectionFactory{conf: appConfiguration.ClientRuntimeConfiguration{
-			Protocol:   settings.WS,
-			WSSettings: mkWSSettings("127.0.0.1", 70000, settings.WS),
-		}}
-		_, _, _, err := f.EstablishConnection(context.Background())
-		if err == nil || !strings.Contains(err.Error(), "invalid port") {
-			t.Fatalf("expected invalid ws port error, got %v", err)
-		}
-	})
-
-	t.Run("wss empty host", func(t *testing.T) {
-		f := &ConnectionFactory{conf: appConfiguration.ClientRuntimeConfiguration{
-			Protocol:   settings.WSS,
-			WSSettings: mkWSSettings("", 443, settings.WSS),
-		}}
-		_, _, _, err := f.EstablishConnection(context.Background())
-		if err == nil || !strings.Contains(err.Error(), "empty host") {
-			t.Fatalf("expected empty wss host error, got %v", err)
-		}
-	})
-
-	t.Run("wss invalid port", func(t *testing.T) {
-		f := &ConnectionFactory{conf: appConfiguration.ClientRuntimeConfiguration{
-			Protocol:   settings.WSS,
-			WSSettings: mkWSSettings("127.0.0.1", 70000, settings.WSS),
-		}}
-		_, _, _, err := f.EstablishConnection(context.Background())
-		if err == nil || !strings.Contains(err.Error(), "invalid port") {
-			t.Fatalf("expected wss invalid port error, got %v", err)
-		}
-	})
 }
 
 func TestConnectionFactoryUnit_dial_ErrorBranches(t *testing.T) {
@@ -1032,7 +758,7 @@ func TestDialWithFallback_IPv6Success(t *testing.T) {
 
 	s := settings.Settings{
 		Addressing: settings.Addressing{
-			Server: mustHost("127.0.0.1").WithIPv6(netip.MustParseAddr("::1")),
+			Server: settings.Host{IPv4: "127.0.0.1", IPv6: "::1"},
 			Port:   8080,
 		},
 	}
@@ -1054,6 +780,24 @@ func TestDialWithFallback_IPv6Success(t *testing.T) {
 	}
 }
 
+func TestAddrPort(t *testing.T) {
+	t.Parallel()
+
+	ap, err := addrPort(netip.MustParseAddr("2001:db8::1"), 443)
+	if err != nil {
+		t.Fatalf("addrPort: %v", err)
+	}
+	if got, want := ap.String(), "[2001:db8::1]:443"; got != want {
+		t.Fatalf("addrPort = %q, want %q", got, want)
+	}
+	if _, err := addrPort(netip.Addr{}, 443); err == nil {
+		t.Fatal("expected invalid IP error")
+	}
+	if _, err := addrPort(netip.MustParseAddr("192.0.2.1"), 65536); err == nil {
+		t.Fatal("expected invalid port error")
+	}
+}
+
 func TestDialWithFallback_UDP_DualStackUsesPreferredIPv4(t *testing.T) {
 	t.Parallel()
 	f := &ConnectionFactory{}
@@ -1061,7 +805,7 @@ func TestDialWithFallback_UDP_DualStackUsesPreferredIPv4(t *testing.T) {
 
 	s := settings.Settings{
 		Addressing: settings.Addressing{
-			Server: mustHost("198.51.100.10").WithIPv6(netip.MustParseAddr("2001:db8::10")),
+			Server: settings.Host{IPv4: "198.51.100.10", IPv6: "2001:db8::10"},
 			Port:   9090,
 		},
 		Protocol: settings.UDP,
@@ -1097,7 +841,7 @@ func TestDialWithFallback_UDP_DualStackFallsBackToIPv6WhenPreferredIPv4DialFails
 
 	s := settings.Settings{
 		Addressing: settings.Addressing{
-			Server: mustHost("198.51.100.10").WithIPv6(netip.MustParseAddr("2001:db8::10")),
+			Server: settings.Host{IPv4: "198.51.100.10", IPv6: "2001:db8::10"},
 			Port:   9090,
 		},
 		Protocol: settings.UDP,
@@ -1265,7 +1009,7 @@ func TestDialWSWithFallback_IPv6Success(t *testing.T) {
 	f := &ConnectionFactory{}
 	s := settings.Settings{
 		Addressing: settings.Addressing{
-			Server: mustHost("127.0.0.1").WithIPv6(netip.MustParseAddr("::1")),
+			Server: settings.Host{IPv4: "127.0.0.1", IPv6: "::1"},
 			Port:   portInt,
 		},
 		Protocol: settings.WS,

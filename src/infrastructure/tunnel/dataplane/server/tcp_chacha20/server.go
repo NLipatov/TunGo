@@ -10,12 +10,12 @@ import (
 
 	"golang.org/x/crypto/chacha20poly1305"
 
+	"tungo/application/configuration/settings"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/tcp"
 	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/network/service_packet"
-	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/session"
 	"tungo/infrastructure/tunnel/sessionplane/server/tcp_registration"
 )
@@ -24,31 +24,28 @@ import (
 // from client transports to TUN; RunTun routes TUN packets back to client transports.
 type Server struct {
 	ctx       context.Context
-	settings  settings.Settings
 	tun       io.ReadWriter
 	listener  net.Listener
-	peers     *session.DefaultRepository
+	peers     *session.Repository
 	registrar *tcp_registration.Registrar
 	deriver   primitives.DefaultKeyDeriver
 }
 
 func NewServer(
 	ctx context.Context,
-	settings settings.Settings,
 	tun io.ReadWriter,
 	listener net.Listener,
-	peers *session.DefaultRepository,
+	peers *session.Repository,
 	registrar *tcp_registration.Registrar,
 ) *Server {
 	return &Server{
-		ctx: ctx, settings: settings, tun: tun, listener: listener,
+		ctx: ctx, tun: tun, listener: listener,
 		peers: peers, registrar: registrar,
 	}
 }
 
 func (s *Server) RunTransport() error {
 	defer func() { _ = s.listener.Close() }()
-	slog.Info("server listening", "protocol", "TCP", "port", s.settings.Port)
 
 	go func() {
 		<-s.ctx.Done()

@@ -6,8 +6,8 @@ import (
 	"tungo/infrastructure/PAL/platform"
 )
 
-func TestNewDefaultControls(t *testing.T) {
-	controls := NewDefaultControls()
+func TestNewControls(t *testing.T) {
+	controls := NewControls()
 	if controls.Client == nil {
 		t.Fatal("expected client control")
 	}

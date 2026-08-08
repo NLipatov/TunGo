@@ -8,17 +8,17 @@ import (
 	"strings"
 )
 
-type DefaultCreator struct {
+type Creator struct {
 	resolver Resolver
 }
 
-func NewDefaultCreator(resolver Resolver) *DefaultCreator {
-	return &DefaultCreator{
+func NewCreator(resolver Resolver) *Creator {
+	return &Creator{
 		resolver: resolver,
 	}
 }
 
-func (d *DefaultCreator) Create(configuration Configuration, name string) error {
+func (d *Creator) Create(configuration Configuration, name string) error {
 	if strings.ContainsAny(name, `/\`) || name == "." || name == ".." || strings.ContainsAny(name, "\x00") {
 		return fmt.Errorf("invalid configuration name %q: must not contain path separators", name)
 	}

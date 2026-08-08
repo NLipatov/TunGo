@@ -2,9 +2,9 @@ package adapters
 
 import (
 	"net/netip"
+	"tungo/application/configuration/settings"
 	"tungo/application/listeners"
 	"tungo/application/network/connection"
-	"tungo/infrastructure/settings"
 )
 
 type ServerUdpAdapter struct {

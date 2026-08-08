@@ -2,7 +2,7 @@ package tun
 
 import (
 	"net/netip"
-	"tungo/infrastructure/settings"
+	"tungo/application/configuration/settings"
 )
 
 type ClientManager interface {

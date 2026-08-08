@@ -18,17 +18,17 @@ type Egress interface {
 	Close() error
 }
 
-type DefaultEgress struct {
+type egress struct {
 	w  io.Writer
 	c  Crypto
 	mu sync.Mutex
 }
 
-func NewDefaultEgress(w io.Writer, c Crypto) *DefaultEgress {
-	return &DefaultEgress{w: w, c: c}
+func NewEgress(w io.Writer, c Crypto) *egress {
+	return &egress{w: w, c: c}
 }
 
-func (o *DefaultEgress) Close() error {
+func (o *egress) Close() error {
 	if c, ok := o.w.(io.Closer); ok {
 		return c.Close()
 	}
@@ -37,7 +37,7 @@ func (o *DefaultEgress) Close() error {
 
 // SetAddrPort updates the destination address of the underlying writer,
 // if it supports address updates (e.g. UDP RegistrationAdapter after NAT roaming).
-func (o *DefaultEgress) SetAddrPort(addr netip.AddrPort) {
+func (o *egress) SetAddrPort(addr netip.AddrPort) {
 	type addrPortSetter interface {
 		SetAddrPort(netip.AddrPort)
 	}
@@ -46,7 +46,7 @@ func (o *DefaultEgress) SetAddrPort(addr netip.AddrPort) {
 	}
 }
 
-func (o *DefaultEgress) Send(plaintext []byte) error {
+func (o *egress) Send(plaintext []byte) error {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 

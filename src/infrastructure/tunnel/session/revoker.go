@@ -14,19 +14,19 @@ type SessionRevoker interface {
 // sessions across all of them. Thread-safe for concurrent registration.
 type CompositeSessionRevoker struct {
 	mu    sync.RWMutex
-	repos []*DefaultRepository
+	repos []*Repository
 }
 
 // NewCompositeSessionRevoker creates a new composite revoker.
 func NewCompositeSessionRevoker() *CompositeSessionRevoker {
 	return &CompositeSessionRevoker{
-		repos: make([]*DefaultRepository, 0),
+		repos: make([]*Repository, 0),
 	}
 }
 
 // Register adds a repository to the composite revoker.
 // Thread-safe, can be called while RevokeByPubKey is running.
-func (c *CompositeSessionRevoker) Register(repo *DefaultRepository) {
+func (c *CompositeSessionRevoker) Register(repo *Repository) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.repos = append(c.repos, repo)
@@ -36,7 +36,7 @@ func (c *CompositeSessionRevoker) Register(repo *DefaultRepository) {
 // registered repositories. Returns total count of terminated sessions.
 func (c *CompositeSessionRevoker) RevokeByPubKey(pubKey []byte) int {
 	c.mu.RLock()
-	repos := make([]*DefaultRepository, len(c.repos))
+	repos := make([]*Repository, len(c.repos))
 	copy(repos, c.repos)
 	c.mu.RUnlock()
 

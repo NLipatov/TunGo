@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	appConfiguration "tungo/application/configuration"
+	"tungo/application/configuration/settings"
 	"tungo/application/runtime"
-	"tungo/infrastructure/settings"
 	bubbleTea "tungo/presentation/ui/tui/internal/bubble_tea"
 
 	tea "charm.land/bubbletea/v2"
@@ -103,7 +103,7 @@ func TestTUI_RunRuntime_RuntimeInfoError(t *testing.T) {
 }
 
 func TestTUI_RunRuntime_PropagatesRuntimeConstructionError(t *testing.T) {
-	if _, err := appConfiguration.NewDefaultClientControl().ClientRuntimeConfiguration(); err == nil {
+	if _, err := appConfiguration.NewClientControl().ClientRuntimeConfiguration(); err == nil {
 		t.Skip("default client runtime configuration is available")
 	}
 	ui := newTestTUI(t)

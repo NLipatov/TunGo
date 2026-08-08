@@ -4,11 +4,12 @@ import (
 	"context"
 	"io"
 	"net"
+	"net/netip"
 	"strconv"
 	"testing"
 
 	appConfiguration "tungo/application/configuration"
-	"tungo/infrastructure/settings"
+	"tungo/application/configuration/settings"
 )
 
 // ------------------- test doubles -------------------
@@ -21,11 +22,14 @@ func (nopReadWriteCloser) Write(p []byte) (int, error) { return len(p), nil }
 func (nopReadWriteCloser) Close() error                { return nil }
 
 func mustHost(raw string) settings.Host {
-	h, err := settings.NewHost(raw)
+	ip, err := netip.ParseAddr(raw)
 	if err != nil {
-		panic(err)
+		return settings.Host{Domain: raw}
 	}
-	return h
+	if ip.Unmap().Is4() {
+		return settings.Host{IPv4: ip.Unmap().String()}
+	}
+	return settings.Host{IPv6: ip.String()}
 }
 
 // ------------------- helpers -------------------

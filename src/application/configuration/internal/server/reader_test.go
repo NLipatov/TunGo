@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"tungo/infrastructure/settings"
+	"tungo/application/configuration/settings"
 )
 
 // createTempConfigFile writes JSON-serialized config to a temp file and returns its path.
@@ -146,16 +146,6 @@ func TestRead_ServerIP_Override_SetAndEmpty(t *testing.T) {
 	}
 	if conf.Host != "1.2.3.4" {
 		t.Fatalf("empty env should not override, got %q", conf.Host)
-	}
-}
-
-func TestRead_ServerIP_Invalid(t *testing.T) {
-	path := createTempConfigFile(t, Configuration{})
-	t.Setenv("ServerIP", "http://bad")
-
-	_, err := newDefaultReader(path).read()
-	if err == nil || !strings.Contains(err.Error(), "invalid ServerIP") {
-		t.Fatalf("expected invalid ServerIP error, got %v", err)
 	}
 }
 

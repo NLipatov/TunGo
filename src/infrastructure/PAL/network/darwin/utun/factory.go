@@ -4,22 +4,18 @@ package utun
 
 import "tungo/infrastructure/PAL/network/darwin/ifconfig"
 
-type Factory interface {
-	CreateTUN(mtu int) (UTUN, error)
-}
-
-type DefaultFactory struct {
+type Factory struct {
 	ifConfig ifconfig.Contract
 }
 
-func NewDefaultFactory(ifConfig ifconfig.Contract) *DefaultFactory {
-	return &DefaultFactory{
+func NewFactory(ifConfig ifconfig.Contract) *Factory {
+	return &Factory{
 		ifConfig: ifConfig,
 	}
 }
 
 // CreateTUN mimics the API of wireguard/tun.CreateTUN on darwin.
-func (d *DefaultFactory) CreateTUN(mtu int) (UTUN, error) {
+func (d *Factory) CreateTUN(mtu int) (UTUN, error) {
 	u, err := newRawUTUN()
 	if err != nil {
 		return nil, err

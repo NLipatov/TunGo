@@ -68,7 +68,7 @@ func TestNewDefaultRuntimesOnCleanSystem(t *testing.T) {
 		t.Fatal("new server runtime reported ready before Run")
 	}
 
-	control := configuration.NewDefaultServerControl()
+	control := configuration.NewServerControl()
 	generated, err := control.GenerateClientConfiguration()
 	if err != nil {
 		t.Fatalf("GenerateClientConfiguration() error = %v", err)

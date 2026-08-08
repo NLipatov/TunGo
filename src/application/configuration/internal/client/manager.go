@@ -6,7 +6,7 @@ type Manager struct {
 
 func NewManager() *Manager {
 	return &Manager{
-		resolver: NewDefaultResolver(),
+		resolver: NewResolver(),
 	}
 }
 

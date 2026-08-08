@@ -4,8 +4,8 @@ import (
 	"context"
 	"io"
 	appConfiguration "tungo/application/configuration"
+	"tungo/application/configuration/settings"
 	"tungo/application/network/routing"
-	"tungo/infrastructure/settings"
 )
 
 type WorkerFactory struct {

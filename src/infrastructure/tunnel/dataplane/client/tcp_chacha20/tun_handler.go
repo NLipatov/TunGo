@@ -6,12 +6,12 @@ import (
 	"log/slog"
 	"net/netip"
 	"time"
+	"tungo/application/configuration/settings"
 	"tungo/application/network/connection"
 	"tungo/application/network/routing/tun"
 	"tungo/infrastructure/cryptography/chacha20/tcp"
 	"tungo/infrastructure/network/ip"
 	"tungo/infrastructure/network/service_packet"
-	"tungo/infrastructure/settings"
 )
 
 type rekeyInitiator interface {

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"tungo/infrastructure/settings"
+	"tungo/application/configuration/settings"
 )
 
 // ---------------------------------------------------------------------------

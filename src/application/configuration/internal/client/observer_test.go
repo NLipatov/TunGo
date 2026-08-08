@@ -25,7 +25,7 @@ func (f *observerTestResolver) Resolve() (string, error) {
 func TestObserverResolveError(t *testing.T) {
 	expectedErr := errors.New("resolve error")
 	resolver := &observerTestResolver{err: expectedErr}
-	observer := NewDefaultObserver(resolver)
+	observer := NewObserver(resolver)
 
 	_, err := observer.Observe()
 	if err == nil || err.Error() != expectedErr.Error() {
@@ -39,7 +39,7 @@ func TestObserverGlobError(t *testing.T) {
 	// This path is used to form an invalid pattern.
 	invalidPath := "/tmp/config["
 	resolver := &observerTestResolver{resolvePath: invalidPath}
-	observer := NewDefaultObserver(resolver)
+	observer := NewObserver(resolver)
 
 	_, err := observer.Observe()
 	if err == nil {
@@ -47,7 +47,7 @@ func TestObserverGlobError(t *testing.T) {
 	}
 }
 
-// TestObserverReturnsMatches checks that DefaultObserver correctly filters out the default configuration file.
+// TestObserverReturnsMatches checks that Observer correctly filters out the default configuration file.
 func TestObserverReturnsMatches(t *testing.T) {
 	// Create a temporary directory.
 	tempDir := t.TempDir()
@@ -75,7 +75,7 @@ func TestObserverReturnsMatches(t *testing.T) {
 
 	// Use observerTestResolver to return the default configuration file path.
 	resolver := &observerTestResolver{resolvePath: defaultPath}
-	observer := NewDefaultObserver(resolver)
+	observer := NewObserver(resolver)
 
 	results, err := observer.Observe()
 	if err != nil {

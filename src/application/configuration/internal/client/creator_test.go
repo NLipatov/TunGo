@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"tungo/infrastructure/settings"
+	"tungo/application/configuration/settings"
 )
 
 type creatorTestResolver struct {
@@ -24,11 +24,14 @@ func (f *creatorTestResolver) Resolve() (string, error) {
 type creatorTestConfigProvider struct{}
 
 func mustHost(raw string) settings.Host {
-	h, err := settings.NewHost(raw)
+	ip, err := netip.ParseAddr(raw)
 	if err != nil {
-		panic(err)
+		return settings.Host{Domain: raw}
 	}
-	return h
+	if ip.Unmap().Is4() {
+		return settings.Host{IPv4: ip.Unmap().String()}
+	}
+	return settings.Host{IPv6: ip.String()}
 }
 
 func mustPrefix(raw string) netip.Prefix {
@@ -77,10 +80,10 @@ func (c *creatorTestConfigProvider) mockedConfig() Configuration {
 	}
 }
 
-func TestDefaultCreator_Create_Success(t *testing.T) {
+func TestCreator_Create_Success(t *testing.T) {
 	tmp := t.TempDir()
 	resolver := &creatorTestResolver{path: filepath.Join(tmp, "config"), err: nil}
-	creator := NewDefaultCreator(resolver)
+	creator := NewCreator(resolver)
 	cfg := (&creatorTestConfigProvider{}).mockedConfig()
 
 	if err := creator.Create(cfg, "test"); err != nil {
@@ -107,10 +110,10 @@ func TestDefaultCreator_Create_Success(t *testing.T) {
 	}
 }
 
-func TestDefaultCreator_Create_ResolveError(t *testing.T) {
+func TestCreator_Create_ResolveError(t *testing.T) {
 	wantErr := errors.New("no path")
 	resolver := &creatorTestResolver{path: "", err: wantErr}
-	creator := NewDefaultCreator(resolver)
+	creator := NewCreator(resolver)
 	err := creator.Create((&creatorTestConfigProvider{}).mockedConfig(), "x")
 	if err == nil {
 		t.Fatal("expected resolve error, got nil")
@@ -123,14 +126,14 @@ func TestDefaultCreator_Create_ResolveError(t *testing.T) {
 	}
 }
 
-func TestDefaultCreator_Create_WriteError(t *testing.T) {
+func TestCreator_Create_WriteError(t *testing.T) {
 	tmp := t.TempDir()
 	resolver := &creatorTestResolver{path: filepath.Join(tmp, "config")}
 	confPath := resolver.path + ".y"
 	if err := os.Mkdir(confPath, 0700); err != nil {
 		t.Fatalf("create directory at destination path: %v", err)
 	}
-	creator := NewDefaultCreator(resolver)
+	creator := NewCreator(resolver)
 
 	err := creator.Create((&creatorTestConfigProvider{}).mockedConfig(), "y")
 	if err == nil {
@@ -141,10 +144,10 @@ func TestDefaultCreator_Create_WriteError(t *testing.T) {
 	}
 }
 
-func TestDefaultCreator_Create_RejectsPathTraversal(t *testing.T) {
+func TestCreator_Create_RejectsPathTraversal(t *testing.T) {
 	tmp := t.TempDir()
 	resolver := &creatorTestResolver{path: filepath.Join(tmp, "config"), err: nil}
-	creator := NewDefaultCreator(resolver)
+	creator := NewCreator(resolver)
 	cfg := (&creatorTestConfigProvider{}).mockedConfig()
 
 	badNames := []string{
@@ -162,7 +165,7 @@ func TestDefaultCreator_Create_RejectsPathTraversal(t *testing.T) {
 	}
 }
 
-func TestDefaultCreator_Create_MkdirAllError(t *testing.T) {
+func TestCreator_Create_MkdirAllError(t *testing.T) {
 	tmp := t.TempDir()
 
 	// Create a file where a directory should be
@@ -173,7 +176,7 @@ func TestDefaultCreator_Create_MkdirAllError(t *testing.T) {
 
 	// Resolver returns a path under the file, so MkdirAll should fail
 	resolver := &creatorTestResolver{path: filepath.Join(parentFile, "conf"), err: nil}
-	creator := NewDefaultCreator(resolver)
+	creator := NewCreator(resolver)
 	cfg := (&creatorTestConfigProvider{}).mockedConfig()
 
 	err := creator.Create(cfg, "test")

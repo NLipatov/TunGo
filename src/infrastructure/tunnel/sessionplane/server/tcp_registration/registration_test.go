@@ -107,7 +107,7 @@ func TestRegisterClient_HandshakeError_ClosesConn(t *testing.T) {
 		crypto: tcpRegCrypto{},
 		ctrl:   rekey.NewStateMachine(tcpRegEpochManager{}, []byte("c2s"), []byte("s2c")),
 	}
-	repo := session.NewDefaultRepository()
+	repo := session.NewRepository()
 	reg := NewRegistrar(hf, cf, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	conn := &tcpRegConn{
@@ -136,7 +136,7 @@ func TestRegisterClient_CryptoFactoryError_ClosesConn(t *testing.T) {
 	}
 	cryptoErr := errors.New("crypto init failed")
 	cf := &tcpRegCryptoFactory{err: cryptoErr}
-	repo := session.NewDefaultRepository()
+	repo := session.NewRepository()
 	reg := NewRegistrar(hf, cf, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	conn := &tcpRegConn{
@@ -167,7 +167,7 @@ func TestRegisterClient_Success(t *testing.T) {
 		crypto: tcpRegCrypto{},
 		ctrl:   rekey.NewStateMachine(tcpRegEpochManager{}, []byte("c2s"), []byte("s2c")),
 	}
-	repo := session.NewDefaultRepository()
+	repo := session.NewRepository()
 	reg := NewRegistrar(hf, cf, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	conn := &tcpRegConn{
@@ -219,7 +219,7 @@ func TestRegisterClient_ReplacesExistingSession(t *testing.T) {
 		crypto: tcpRegCrypto{},
 		ctrl:   rekey.NewStateMachine(tcpRegEpochManager{}, []byte("c2s"), []byte("s2c")),
 	}
-	repo := session.NewDefaultRepository()
+	repo := session.NewRepository()
 
 	// Pre-populate repo with an existing session for the same internal IP.
 	// AllocateClientIP(10.0.0.0/24, 1) → 10.0.0.2
@@ -276,7 +276,7 @@ func TestRegisterClient_NonTCPAddr_ClosesConn(t *testing.T) {
 		crypto: tcpRegCrypto{},
 		ctrl:   rekey.NewStateMachine(tcpRegEpochManager{}, []byte("c2s"), []byte("s2c")),
 	}
-	repo := session.NewDefaultRepository()
+	repo := session.NewRepository()
 	reg := NewRegistrar(hf, cf, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	// Use a UDP address instead of TCP.
@@ -355,7 +355,7 @@ func TestRegisterClient_NegativeClientID_FailsAllocation(t *testing.T) {
 		crypto: tcpRegCrypto{},
 		ctrl:   rekey.NewStateMachine(tcpRegEpochManager{}, []byte("c2s"), []byte("s2c")),
 	}
-	repo := session.NewDefaultRepository()
+	repo := session.NewRepository()
 	reg := NewRegistrar(hf, cf, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	conn := &tcpRegConn{
@@ -422,7 +422,7 @@ func TestRegisterClient_CookieRetry_Success(t *testing.T) {
 		crypto: tcpRegCrypto{},
 		ctrl:   rekey.NewStateMachine(tcpRegEpochManager{}, []byte("c2s"), []byte("s2c")),
 	}
-	repo := session.NewDefaultRepository()
+	repo := session.NewRepository()
 	reg := NewRegistrar(hf, cf, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	conn := &tcpRegConn{
@@ -453,7 +453,7 @@ func TestRegisterClient_CookieRetry_SecondFailure_ClosesConn(t *testing.T) {
 		crypto: tcpRegCrypto{},
 		ctrl:   rekey.NewStateMachine(tcpRegEpochManager{}, []byte("c2s"), []byte("s2c")),
 	}
-	repo := session.NewDefaultRepository()
+	repo := session.NewRepository()
 	reg := NewRegistrar(hf, cf, repo, netip.MustParsePrefix("10.0.0.0/24"), netip.Prefix{})
 
 	conn := &tcpRegConn{
@@ -487,7 +487,7 @@ func TestRegisterClient_HandshakeWithResult_IPv6(t *testing.T) {
 		crypto: tcpRegCrypto{},
 		ctrl:   rekey.NewStateMachine(tcpRegEpochManager{}, []byte("c2s"), []byte("s2c")),
 	}
-	repo := session.NewDefaultRepository()
+	repo := session.NewRepository()
 	reg := NewRegistrar(hf, cf, repo,
 		netip.MustParsePrefix("10.0.0.0/24"),
 		netip.MustParsePrefix("fd00::/64"),

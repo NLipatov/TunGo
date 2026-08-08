@@ -8,12 +8,12 @@ import (
 	"log/slog"
 	"sync/atomic"
 	"time"
+	"tungo/application/configuration/settings"
 	"tungo/application/network/connection"
 	"tungo/application/network/routing/transport"
 	"tungo/infrastructure/cryptography/chacha20"
 	"tungo/infrastructure/cryptography/chacha20/tcp"
 	"tungo/infrastructure/network/service_packet"
-	"tungo/infrastructure/settings"
 
 	"golang.org/x/crypto/chacha20poly1305"
 )

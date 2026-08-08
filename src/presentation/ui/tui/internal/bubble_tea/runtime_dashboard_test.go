@@ -8,22 +8,13 @@ import (
 	"testing"
 	"time"
 	appConfiguration "tungo/application/configuration"
+	"tungo/application/configuration/settings"
 	"tungo/application/runtime"
-	"tungo/infrastructure/settings"
 	"tungo/infrastructure/telemetry/trafficstats"
 	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 )
-
-func mustRuntimeDashboardHost(t *testing.T, raw string) settings.Host {
-	t.Helper()
-	host, err := settings.NewHost(raw)
-	if err != nil {
-		t.Fatalf("settings.NewHost(%q): %v", raw, err)
-	}
-	return host
-}
 
 func TestRuntimeDashboard_TabSwitchesToSettings(t *testing.T) {
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{}, testSettings())
@@ -498,10 +489,8 @@ func TestRuntimeDashboard_MainView_ShowsServerAndNetworkAddresses(t *testing.T) 
 	m := NewRuntimeDashboard(context.Background(), RuntimeDashboardOptions{
 		Protocol: settings.UDP,
 		Endpoints: []appConfiguration.EndpointInfo{{
-			Protocol: settings.UDP,
-			Server: settings.Host{}.
-				WithIPv4(netip.MustParseAddr("198.51.100.10")).
-				WithIPv6(netip.MustParseAddr("2001:db8::10")),
+			Protocol:   settings.UDP,
+			Server:     settings.Host{IPv4: "198.51.100.10", IPv6: "2001:db8::10"},
 			TunnelIPv4: netip.MustParseAddr("10.0.0.2"),
 			TunnelIPv6: netip.MustParseAddr("fd00::2"),
 		}},
@@ -524,19 +513,19 @@ func TestRuntimeDashboard_MainView_ServerShowsTunnelAddressesPerProtocol(t *test
 		Endpoints: []appConfiguration.EndpointInfo{
 			{
 				Protocol:   settings.TCP,
-				Server:     settings.Host{}.WithIPv4(netip.MustParseAddr("198.51.100.10")),
+				Server:     settings.Host{IPv4: "198.51.100.10"},
 				TunnelIPv4: netip.MustParseAddr("10.0.0.1"),
 				TunnelIPv6: netip.MustParseAddr("fd00::1"),
 			},
 			{
 				Protocol:   settings.UDP,
-				Server:     settings.Host{}.WithIPv4(netip.MustParseAddr("198.51.100.10")),
+				Server:     settings.Host{IPv4: "198.51.100.10"},
 				TunnelIPv4: netip.MustParseAddr("10.0.1.1"),
 				TunnelIPv6: netip.MustParseAddr("fd00::2"),
 			},
 			{
 				Protocol:   settings.WS,
-				Server:     settings.Host{}.WithIPv4(netip.MustParseAddr("198.51.100.10")),
+				Server:     settings.Host{IPv4: "198.51.100.10"},
 				TunnelIPv4: netip.MustParseAddr("10.0.2.1"),
 				TunnelIPv6: netip.MustParseAddr("fd00::3"),
 			},
@@ -567,12 +556,12 @@ func TestRuntimeDashboard_MainView_ServerShowsServerAddressesPerProtocolWhenDiff
 		Endpoints: []appConfiguration.EndpointInfo{
 			{
 				Protocol:   settings.TCP,
-				Server:     settings.Host{}.WithIPv4(netip.MustParseAddr("198.51.100.10")),
+				Server:     settings.Host{IPv4: "198.51.100.10"},
 				TunnelIPv4: netip.MustParseAddr("10.0.0.1"),
 			},
 			{
 				Protocol:   settings.UDP,
-				Server:     settings.Host{}.WithIPv6(netip.MustParseAddr("2001:db8::20")),
+				Server:     settings.Host{IPv6: "2001:db8::20"},
 				TunnelIPv4: netip.MustParseAddr("10.0.1.1"),
 			},
 		},
@@ -594,9 +583,7 @@ func TestRuntimeDashboard_MainView_ServerShowsServerAddressesPerProtocolWhenDiff
 }
 
 func TestFormatRuntimeHostParts_DomainIPv4AndIPv6(t *testing.T) {
-	host := mustRuntimeDashboardHost(t, "API.EXAMPLE.COM").
-		WithIPv4(netip.MustParseAddr("198.51.100.10")).
-		WithIPv6(netip.MustParseAddr("2001:db8::10"))
+	host := settings.Host{Domain: "api.example.com", IPv4: "198.51.100.10", IPv6: "2001:db8::10"}
 
 	got := formatRuntimeHostParts(host)
 	want := "Domain api.example.com | IPv4 198.51.100.10 | IPv6 2001:db8::10"
@@ -606,7 +593,7 @@ func TestFormatRuntimeHostParts_DomainIPv4AndIPv6(t *testing.T) {
 }
 
 func TestFormatRuntimeProtocolHost_UnknownProtocolOmitsPrefix(t *testing.T) {
-	host := settings.Host{}.WithIPv4(netip.MustParseAddr("198.51.100.10"))
+	host := settings.Host{IPv4: "198.51.100.10"}
 
 	got := formatRuntimeProtocolHost(settings.UNKNOWN, host)
 	want := "IPv4 198.51.100.10"
@@ -1694,13 +1681,11 @@ func TestSharedServerAddress_RequiresExactMatch(t *testing.T) {
 	if _, ok := sharedServerAddress([]appConfiguration.EndpointInfo{
 		{
 			Protocol: settings.TCP,
-			Server:   settings.Host{}.WithIPv4(netip.MustParseAddr("198.51.100.10")),
+			Server:   settings.Host{IPv4: "198.51.100.10"},
 		},
 		{
 			Protocol: settings.UDP,
-			Server: settings.Host{}.
-				WithIPv4(netip.MustParseAddr("198.51.100.10")).
-				WithIPv6(netip.MustParseAddr("2001:db8::20")),
+			Server:   settings.Host{IPv4: "198.51.100.10", IPv6: "2001:db8::20"},
 		},
 	}); ok {
 		t.Fatal("expected mixed server address pairs to be treated as different")
@@ -1709,17 +1694,17 @@ func TestSharedServerAddress_RequiresExactMatch(t *testing.T) {
 	shared, ok := sharedServerAddress([]appConfiguration.EndpointInfo{
 		{
 			Protocol: settings.TCP,
-			Server:   settings.Host{}.WithIPv4(netip.MustParseAddr("198.51.100.10")),
+			Server:   settings.Host{IPv4: "198.51.100.10"},
 		},
 		{
 			Protocol: settings.UDP,
-			Server:   settings.Host{}.WithIPv4(netip.MustParseAddr("198.51.100.10")),
+			Server:   settings.Host{IPv4: "198.51.100.10"},
 		},
 	})
 	if !ok {
 		t.Fatal("expected identical server address pairs to be shared")
 	}
-	if shared != (settings.Host{}).WithIPv4(netip.MustParseAddr("198.51.100.10")) {
+	if shared != (settings.Host{IPv4: "198.51.100.10"}) {
 		t.Fatalf("unexpected shared server address: %+v", shared)
 	}
 }

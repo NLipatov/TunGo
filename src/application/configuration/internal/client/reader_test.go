@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"tungo/infrastructure/settings"
+	"tungo/application/configuration/settings"
 )
 
 func createTempClientConfigFile(t *testing.T, data interface{}) string {
@@ -26,7 +26,7 @@ func createTempClientConfigFile(t *testing.T, data interface{}) string {
 }
 
 func validTestConfig() Configuration {
-	host, _ := settings.NewHost("127.0.0.1")
+	host := settings.Host{IPv4: "127.0.0.1"}
 	return Configuration{
 		ClientID: 1,
 		UDPSettings: settings.Settings{

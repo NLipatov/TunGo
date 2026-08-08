@@ -84,7 +84,7 @@ func rdr(seq ...struct {
 }
 
 func mockEgress(w io.Writer, c connection.Crypto) connection.Egress {
-	return connection.NewDefaultEgress(w, c)
+	return connection.NewEgress(w, c)
 }
 
 // ---- Tests ----

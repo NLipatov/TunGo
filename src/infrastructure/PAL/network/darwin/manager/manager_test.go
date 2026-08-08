@@ -9,7 +9,7 @@ import (
 
 	ifcfg "tungo/infrastructure/PAL/network/darwin/ifconfig"
 	rtpkg "tungo/infrastructure/PAL/network/darwin/route"
-	"tungo/infrastructure/settings"
+	"tungo/application/configuration/settings"
 )
 
 // ---------------------------------------------------------------------------
@@ -151,11 +151,14 @@ func newTestFactory(s settings.Settings) *Factory {
 
 func mustIPHost(t *testing.T, raw string) settings.Host {
 	t.Helper()
-	h, err := settings.IPHost(raw)
+	ip, err := netip.ParseAddr(raw)
 	if err != nil {
-		t.Fatalf("IPHost(%q): %v", raw, err)
+		return settings.Host{Domain: raw}
 	}
-	return h
+	if ip.Unmap().Is4() {
+		return settings.Host{IPv4: ip.Unmap().String()}
+	}
+	return settings.Host{IPv6: ip.String()}
 }
 
 func settingsV4Only(t *testing.T) settings.Settings {
@@ -1210,7 +1213,7 @@ func TestDualStack_DisposeDevices_Fresh(t *testing.T) {
 
 func TestDualStack_ResolveRouteIPv6_FromDualStackServer(t *testing.T) {
 	host := mustIPHost(t, "198.51.100.1")
-	host = host.WithIPv6(netip.MustParseAddr("2001:db8::1"))
+	host.IPv6 = "2001:db8::1"
 	s := settings.Settings{
 		Addressing: settings.Addressing{
 			Server:     host,

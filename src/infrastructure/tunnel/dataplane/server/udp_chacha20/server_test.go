@@ -85,7 +85,7 @@ func TestServer_HandleEstablishedWritesPlaintextToTun(t *testing.T) {
 	crypto := &passthroughCrypto{plaintext: plaintext}
 	peer := session.NewPeer(crypto, nil, internal, netip.MustParseAddrPort("192.0.2.1:1"), nil)
 	tun := &testTun{}
-	server := &Server{tun: tun, peers: session.NewDefaultRepository()}
+	server := &Server{tun: tun, peers: session.NewRepository()}
 	frame := make([]byte, udpcrypto.EpochOffset+2)
 	binary.BigEndian.PutUint16(frame[udpcrypto.EpochOffset:], 7)
 
@@ -106,7 +106,7 @@ func TestServer_HandleDatagramLooksUpPeerByRouteID(t *testing.T) {
 		routeID:   routeID,
 	}
 	peer := session.NewPeer(crypto, nil, internal, external, nil)
-	peers := session.NewDefaultRepository()
+	peers := session.NewRepository()
 	peers.Add(peer)
 	tun := &testTun{}
 	server := &Server{tun: tun, peers: peers}
@@ -137,7 +137,7 @@ func TestServer_RunTunRoutesPacketDirectlyToPeer(t *testing.T) {
 	tun := &testTun{packet: ipv4Packet(netip.MustParseAddr("1.1.1.1"), internal)}
 	egress := &captureEgress{}
 	peer := session.NewPeer(nil, nil, internal, netip.MustParseAddrPort("192.0.2.1:1"), egress)
-	peers := session.NewDefaultRepository()
+	peers := session.NewRepository()
 	peers.Add(peer)
 	server := &Server{ctx: context.Background(), tun: tun, peers: peers}
 

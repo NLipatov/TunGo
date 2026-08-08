@@ -3,6 +3,7 @@
 package manager
 
 import (
+	"context"
 	"fmt"
 	"net/netip"
 	"strings"
@@ -11,7 +12,8 @@ import (
 	"tungo/infrastructure/PAL/network/darwin/ifconfig"
 	"tungo/infrastructure/PAL/network/darwin/route"
 	"tungo/infrastructure/PAL/network/darwin/utun"
-	"tungo/infrastructure/settings"
+	"tungo/infrastructure/network/host_resolver"
+	"tungo/application/configuration/settings"
 )
 
 // dualStack manages a single utun device with both IPv4 and IPv6 addresses and routes.
@@ -55,7 +57,7 @@ func (m *dualStack) CreateDevice() (tun.Device, error) {
 		return nil, err
 	}
 
-	raw, err := utun.NewDefaultFactory(m.ifc4).CreateTUN(m.effectiveMTU())
+	raw, err := utun.NewFactory(m.ifc4).CreateTUN(m.effectiveMTU())
 	if err != nil {
 		return nil, fmt.Errorf("create utun: %w", err)
 	}
@@ -128,13 +130,23 @@ func (m *dualStack) CreateDevice() (tun.Device, error) {
 }
 
 func (m *dualStack) DisposeDevices() error {
-	_ = m.rtc4.DelSplit(m.ifName)
-	_ = m.rtc6.DelSplit(m.ifName)
-	if m.resolvedRouteIP4 != "" {
-		_ = m.rtc4.Del(m.resolvedRouteIP4)
+	if m.ifName != "" {
+		_ = m.rtc4.DelSplit(m.ifName)
+		_ = m.rtc6.DelSplit(m.ifName)
 	}
-	if m.resolvedRouteIP6 != "" {
-		_ = m.rtc6.Del(m.resolvedRouteIP6)
+	routeIP4 := m.resolvedRouteIP4
+	if routeIP4 == "" {
+		routeIP4, _ = m.resolveRouteIPv4()
+	}
+	if routeIP4 != "" {
+		_ = m.rtc4.Del(routeIP4)
+	}
+	routeIP6 := m.resolvedRouteIP6
+	if routeIP6 == "" {
+		routeIP6, _ = m.resolveRouteIPv6()
+	}
+	if routeIP6 != "" {
+		_ = m.rtc6.Del(routeIP6)
 	}
 	if m.tunDev != nil {
 		_ = m.tunDev.Close() // closes underlying rawUTUN
@@ -148,7 +160,7 @@ func (m *dualStack) DisposeDevices() error {
 }
 
 func (m *dualStack) validateSettings() error {
-	if m.s.Server.IsZero() {
+	if m.s.Server == (settings.Host{}) {
 		return fmt.Errorf("dualstack: empty Server")
 	}
 	if !m.s.IPv4.IsValid() || !m.s.IPv4.Unmap().Is4() {
@@ -180,7 +192,7 @@ func (m *dualStack) resolveRouteIPv4() (string, error) {
 		}
 		return "", fmt.Errorf("route endpoint %s is IPv6, expected IPv4", ip)
 	}
-	return m.s.Server.RouteIPv4()
+	return host_resolver.ResolveIPv4(context.Background(), m.s.Server)
 }
 
 func (m *dualStack) resolveRouteIPv6() (string, error) {
@@ -191,7 +203,7 @@ func (m *dualStack) resolveRouteIPv6() (string, error) {
 		}
 		return "", fmt.Errorf("route endpoint %s is IPv4, expected IPv6", ip)
 	}
-	return m.s.Server.RouteIPv6()
+	return host_resolver.ResolveIPv6(context.Background(), m.s.Server)
 }
 
 func shouldSkipDarwinIPv4Route(err error) bool {

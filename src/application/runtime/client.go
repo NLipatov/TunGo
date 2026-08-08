@@ -24,14 +24,14 @@ type clientRuntime struct {
 }
 
 func newClient() (*clientRuntime, error) {
-	control := configuration.NewDefaultClientControl()
+	control := configuration.NewClientControl()
 	slog.Info("starting client")
 
 	conf, err := control.ClientRuntimeConfiguration()
 	if err != nil {
 		return nil, fmt.Errorf("init error: failed to read client configuration: %w", err)
 	}
-	tunManager, err := tunnelClient.NewPlatformTunManager(conf)
+	tunManager, err := tunnelClient.NewPlatformTunManager(conf.Settings, conf.CleanupSettings)
 	if err != nil {
 		return nil, fmt.Errorf("init error: failed to configure tun: %w", err)
 	}

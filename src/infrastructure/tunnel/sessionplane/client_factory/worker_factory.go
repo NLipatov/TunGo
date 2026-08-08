@@ -8,11 +8,11 @@ import (
 	"net/netip"
 	"time"
 	appConfiguration "tungo/application/configuration"
+	"tungo/application/configuration/settings"
 	"tungo/application/network/connection"
 	"tungo/application/network/routing"
 	"tungo/infrastructure/cryptography/primitives"
 	"tungo/infrastructure/network/udp/adapters"
-	"tungo/infrastructure/settings"
 	"tungo/infrastructure/tunnel/controlplane"
 	"tungo/infrastructure/tunnel/dataplane/client/tcp_chacha20"
 	"tungo/infrastructure/tunnel/dataplane/client/udp_chacha20"
@@ -39,7 +39,7 @@ func (w *WorkerFactory) CreateWorker(
 		time.Now().UTC(),
 	)
 
-	switch w.conf.Protocol {
+	switch w.conf.Settings.Protocol {
 	case settings.UDP:
 		udpConn, err := unwrapUDPConn(conn)
 		if err != nil {
@@ -47,7 +47,7 @@ func (w *WorkerFactory) CreateWorker(
 		}
 		deadline := time.Second
 		transport := adapters.NewClientUDPAdapter(udpConn, deadline, deadline)
-		egress := connection.NewDefaultEgress(transport, crypto)
+		egress := connection.NewEgress(transport, crypto)
 		// tunHandler reads from tun and writes to transport
 		tunHandler := udp_chacha20.NewTunHandler(
 			ctx,
@@ -68,7 +68,7 @@ func (w *WorkerFactory) CreateWorker(
 		)
 		return routing.Endpoints{RunTun: tunHandler.HandleTun, RunTransport: transportHandler.HandleTransport}, nil
 	case settings.TCP, settings.WS, settings.WSS:
-		egress := connection.NewDefaultEgress(conn, crypto)
+		egress := connection.NewEgress(conn, crypto)
 		tunHandler := tcp_chacha20.NewTunHandler(ctx, tun, egress, rekeyCoordinator, allowed)
 		transportHandler := tcp_chacha20.NewTransportHandler(ctx, conn, tun, crypto, controller, rekeyCoordinator, egress)
 		return routing.Endpoints{RunTun: tunHandler.HandleTun, RunTransport: transportHandler.HandleTransport}, nil
@@ -97,10 +97,7 @@ func unwrapUDPConn(transport connection.Transport) (*net.UDPConn, error) {
 }
 
 func (w *WorkerFactory) allowedSources() map[netip.Addr]struct{} {
-	s, err := w.conf.ActiveSettings()
-	if err != nil {
-		return nil
-	}
+	s := w.conf.Settings
 	m := make(map[netip.Addr]struct{}, 2)
 	if s.IPv4.IsValid() {
 		m[s.IPv4.Unmap()] = struct{}{}

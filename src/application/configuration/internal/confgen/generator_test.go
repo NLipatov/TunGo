@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	serverConfiguration "tungo/infrastructure/PAL/configuration/server"
+	serverConfiguration "tungo/application/configuration/server"
+	"tungo/application/configuration/settings"
+	nip "tungo/application/network/ip"
 	"tungo/infrastructure/cryptography/primitives"
-	nip "tungo/infrastructure/network/ip"
-	"tungo/infrastructure/settings"
 )
 
 // --------- fakes & stubs ---------
@@ -30,11 +30,14 @@ type mockMgr struct {
 }
 
 func mustHost(raw string) settings.Host {
-	h, err := settings.NewHost(raw)
+	ip, err := netip.ParseAddr(raw)
 	if err != nil {
-		panic(err)
+		return settings.Host{Domain: raw}
 	}
-	return h
+	if ip.Unmap().Is4() {
+		return settings.Host{IPv4: ip.Unmap().String()}
+	}
+	return settings.Host{IPv6: ip.String()}
 }
 
 func mustPrefix(raw string) netip.Prefix {
@@ -144,6 +147,15 @@ func generatorWithMocks(mgr *mockMgr, r mockResolver) *Generator {
 	return NewGenerator(mgr, &primitives.DefaultKeyDeriver{}, r)
 }
 
+func deriveClientIPs(t *testing.T, clientID int, profiles ...*settings.Settings) {
+	t.Helper()
+	for _, profile := range profiles {
+		if err := profile.DeriveIP(clientID); err != nil {
+			t.Fatalf("derive client IP: %v", err)
+		}
+	}
+}
+
 // --------- tests: Generate ---------
 
 func TestGenerate_success(t *testing.T) {
@@ -158,10 +170,7 @@ func TestGenerate_success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected: %v", err)
 	}
-	// IPs are derived at Resolve() time, not Generate() time.
-	if err := conf.Resolve(); err != nil {
-		t.Fatalf("Resolve: %v", err)
-	}
+	deriveClientIPs(t, conf.ClientID, &conf.TCPSettings, &conf.UDPSettings, &conf.WSSettings)
 	if !conf.TCPSettings.IPv4.IsValid() {
 		t.Fatal("TCP IPv4 must be valid after Resolve")
 	}
@@ -174,12 +183,11 @@ func TestGenerate_success(t *testing.T) {
 	if !conf.WSSettings.IPv6.IsValid() {
 		t.Fatal("WS IPv6 must be valid after Resolve")
 	}
-	if !conf.TCPSettings.Server.HasIPv6() {
+	if conf.TCPSettings.Server.IPv6 == "" {
 		t.Fatal("TCP Server must have IPv6 when server has IPv6")
 	}
-	expectedIPv6 := netip.MustParseAddr("2001:db8::1")
-	if ipv6, ok := conf.TCPSettings.Server.IPv6(); !ok || ipv6 != expectedIPv6 {
-		t.Fatalf("TCP Server IPv6: want %s, got %v", expectedIPv6, ipv6)
+	if got, want := conf.TCPSettings.Server.IPv6, "2001:db8::1"; got != want {
+		t.Fatalf("TCP Server IPv6: want %s, got %s", want, got)
 	}
 	if conf.TCPSettings.TunName != clientTCPTunName {
 		t.Fatalf("TCP TunName: want %q, got %q", clientTCPTunName, conf.TCPSettings.TunName)
@@ -231,10 +239,10 @@ func TestGenerate_detects_ipv6_only_server_host(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	server := conf.WSSettings.Server
-	if server.HasIPv4() {
+	if server.IPv4 != "" {
 		t.Fatal("IPv6-only server host must not contain IPv4")
 	}
-	if ipv6, ok := server.IPv6(); !ok || ipv6 != netip.MustParseAddr("2001:db8::1") {
+	if server.IPv6 != "2001:db8::1" {
 		t.Fatalf("unexpected IPv6 server host: %v", server)
 	}
 }
@@ -256,7 +264,7 @@ func TestGenerate_configured_server_host_has_priority(t *testing.T) {
 	if mgr.incCalls != 1 {
 		t.Fatalf("IncrementClientCounter not called")
 	}
-	if conf.WSSettings.Server.HasIPv6() {
+	if conf.WSSettings.Server.IPv6 != "" {
 		t.Fatal("Server must not have IPv6 when no IPv6 detected")
 	}
 }
@@ -272,10 +280,7 @@ func TestGenerate_clientID_matches_allocated_IPs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected: %v", err)
 	}
-	// Derive IPs via Resolve
-	if err := conf.Resolve(); err != nil {
-		t.Fatalf("Resolve: %v", err)
-	}
+	deriveClientIPs(t, conf.ClientID, &conf.TCPSettings, &conf.UDPSettings, &conf.WSSettings)
 	if len(mgr.addedPeers) != 1 {
 		t.Fatalf("expected 1 added peer, got %d", len(mgr.addedPeers))
 	}
@@ -340,7 +345,7 @@ func TestDeriveClientSettings_copies_fields_correctly(t *testing.T) {
 		Encryption:    1,
 		DialTimeoutMs: 2000,
 	}
-	host := mustHost("192.0.2.1").WithIPv6(netip.MustParseAddr("2001:db8::1"))
+	host := settings.Host{IPv4: "192.0.2.1", IPv6: "2001:db8::1"}
 
 	got, err := deriveClientSettings(serverS, host, settings.TCP)
 	if err != nil {
@@ -359,8 +364,8 @@ func TestDeriveClientSettings_copies_fields_correctly(t *testing.T) {
 	if got.Server != host {
 		t.Fatalf("Server mismatch")
 	}
-	if ipv6, ok := got.Server.IPv6(); !ok || ipv6 != netip.MustParseAddr("2001:db8::1") {
-		t.Fatalf("Server IPv6: want 2001:db8::1, got %v", ipv6)
+	if got.Server.IPv6 != "2001:db8::1" {
+		t.Fatalf("Server IPv6: want 2001:db8::1, got %s", got.Server.IPv6)
 	}
 	if got.Port != serverS.Port {
 		t.Fatalf("Port mismatch")
@@ -431,7 +436,7 @@ func TestGenerate_no_ipv6_on_server(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected: %v", err)
 	}
-	if conf.TCPSettings.Server.HasIPv6() {
+	if conf.TCPSettings.Server.IPv6 != "" {
 		t.Fatal("Server must not have IPv6 when server has no IPv6")
 	}
 	if mgr.ensureIPv6Calls != 0 {
@@ -516,16 +521,5 @@ func TestGenerate_add_peer_error(t *testing.T) {
 	_, err := g.Generate()
 	if err == nil || !strings.Contains(err.Error(), "failed to add client to AllowedPeers") {
 		t.Fatalf("want add-peer error, got %v", err)
-	}
-}
-
-func TestGenerate_invalid_host_error(t *testing.T) {
-	mgr := &mockMgr{cfg: validCfg()}
-	mgr.cfg.Host = "http://bad"
-	g := generatorWithMocks(mgr, mockResolver{})
-
-	_, err := g.Generate()
-	if err == nil || !strings.Contains(err.Error(), "invalid server host") {
-		t.Fatalf("want invalid host error, got %v", err)
 	}
 }

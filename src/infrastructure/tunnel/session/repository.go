@@ -8,7 +8,7 @@ import (
 	"tungo/application/network/connection"
 )
 
-// DefaultRepository is a thread-safe session repository.
+// Repository is a thread-safe session repository.
 //
 // CONCURRENCY INVARIANT: All map operations are protected by RWMutex.
 // - Read operations (Get*, Find*) acquire RLock for concurrent reads
@@ -16,7 +16,7 @@ import (
 //
 // LIFECYCLE INVARIANT: Delete zeroes key material AFTER removing from maps.
 // This ensures no new lookups can return the peer while zeroing is in progress.
-type DefaultRepository struct {
+type Repository struct {
 	mu                sync.RWMutex
 	internalIpToPeer  map[netip.Addr]*Peer
 	routeIDToPeer     map[uint64]*Peer
@@ -26,8 +26,8 @@ type DefaultRepository struct {
 	pubKeyToPeers map[string][]*Peer
 }
 
-func NewDefaultRepository() *DefaultRepository {
-	return &DefaultRepository{
+func NewRepository() *Repository {
+	return &Repository{
 		internalIpToPeer:  make(map[netip.Addr]*Peer),
 		routeIDToPeer:     make(map[uint64]*Peer),
 		allowedAddrToPeer: make(map[netip.Addr]*Peer),
@@ -35,7 +35,7 @@ func NewDefaultRepository() *DefaultRepository {
 	}
 }
 
-func (s *DefaultRepository) Add(peer *Peer) {
+func (s *Repository) Add(peer *Peer) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -60,13 +60,13 @@ func (s *DefaultRepository) Add(peer *Peer) {
 //
 // LIFECYCLE INVARIANT: mark closed, close egress, remove routes, then wait for
 // in-flight Peer.Send/Decrypt calls before zeroing key material.
-func (s *DefaultRepository) Delete(peer *Peer) {
+func (s *Repository) Delete(peer *Peer) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.deleteLocked(peer)
 }
 
-func (s *DefaultRepository) GetByInternalAddrPort(addr netip.Addr) (*Peer, error) {
+func (s *Repository) GetByInternalAddrPort(addr netip.Addr) (*Peer, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -77,7 +77,7 @@ func (s *DefaultRepository) GetByInternalAddrPort(addr netip.Addr) (*Peer, error
 	return value, nil
 }
 
-func (s *DefaultRepository) GetByRouteID(routeID uint64) (*Peer, error) {
+func (s *Repository) GetByRouteID(routeID uint64) (*Peer, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -88,7 +88,7 @@ func (s *DefaultRepository) GetByRouteID(routeID uint64) (*Peer, error) {
 	return value, nil
 }
 
-func (s *DefaultRepository) UpdateExternalAddr(peer *Peer, newAddr netip.AddrPort) {
+func (s *Repository) UpdateExternalAddr(peer *Peer, newAddr netip.AddrPort) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -104,7 +104,7 @@ func (s *DefaultRepository) UpdateExternalAddr(peer *Peer, newAddr netip.AddrPor
 // FindByDestinationIP finds the peer that should receive packets destined for addr.
 // Fast path: O(1) lookup by internal IP, then O(1) by AllowedIPs host-routes.
 // Slow path: O(n) scan through all peers checking non-host AllowedIPs prefixes.
-func (s *DefaultRepository) FindByDestinationIP(addr netip.Addr) (*Peer, error) {
+func (s *Repository) FindByDestinationIP(addr netip.Addr) (*Peer, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -138,7 +138,7 @@ func (s *DefaultRepository) FindByDestinationIP(addr netip.Addr) (*Peer, error) 
 //
 // LIFECYCLE: First closes all egress paths (signals workers to exit),
 // then removes from maps, then zeroes keys. This ordering prevents use-after-free.
-func (s *DefaultRepository) TerminateByPubKey(pubKey []byte) int {
+func (s *Repository) TerminateByPubKey(pubKey []byte) int {
 	if len(pubKey) == 0 {
 		return 0
 	}
@@ -169,7 +169,7 @@ func (s *DefaultRepository) TerminateByPubKey(pubKey []byte) int {
 // 2. Close egress (TCP workers will exit, UDP writes will fail)
 // 3. Remove from maps (no new lookups can find this peer)
 // 4. Zero key material (safe - no active users possible)
-func (s *DefaultRepository) deleteLocked(peer *Peer) {
+func (s *Repository) deleteLocked(peer *Peer) {
 	if peer.IsClosed() {
 		return
 	}
@@ -242,7 +242,7 @@ func peerRouteID(peer *Peer) (uint64, bool) {
 // ReapIdle deletes all sessions whose last activity is older than timeout.
 // Safe to call concurrently; acquires write lock internally.
 // Deleting from a map during range iteration is safe in Go.
-func (s *DefaultRepository) ReapIdle(timeout time.Duration) int {
+func (s *Repository) ReapIdle(timeout time.Duration) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

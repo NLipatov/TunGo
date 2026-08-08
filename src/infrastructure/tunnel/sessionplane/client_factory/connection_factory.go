@@ -7,16 +7,18 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"strconv"
 	"sync"
 	"time"
 	appConfiguration "tungo/application/configuration"
+	"tungo/application/configuration/settings"
 	"tungo/application/network/connection"
 	"tungo/infrastructure/cryptography/chacha20/tcp"
 	"tungo/infrastructure/cryptography/chacha20/udp"
 	"tungo/infrastructure/cryptography/noise"
+	"tungo/infrastructure/network/host_resolver"
 	"tungo/infrastructure/network/tcp/adapters"
 	"tungo/infrastructure/network/ws"
-	"tungo/infrastructure/settings"
 
 	"github.com/coder/websocket"
 )
@@ -34,13 +36,7 @@ func NewConnectionFactory(conf appConfiguration.ClientRuntimeConfiguration) conn
 func (f *ConnectionFactory) EstablishConnection(
 	ctx context.Context,
 ) (connection.Transport, connection.Crypto, connection.RekeyController, error) {
-	connSettings, connSettingsErr := f.conf.ActiveSettings()
-	if connSettingsErr != nil {
-		return nil, nil, nil, connSettingsErr
-	}
-	// Use explicitly selected protocol from configuration to avoid implicit fallback
-	// when the settings bucket protocol is stale/mismatched.
-	connSettings.Protocol = f.conf.Protocol
+	connSettings := f.conf.Settings
 
 	deadline := time.Now().Add(time.Duration(math.Max(float64(connSettings.DialTimeoutMs), 5000)) * time.Millisecond)
 	establishCtx, establishCancel := context.WithDeadline(ctx, deadline)
@@ -229,27 +225,32 @@ func (f *ConnectionFactory) dialWSWithFallback(
 		port = 443
 	}
 
-	endpoint, err := s.Server.Endpoint(port)
-	if err != nil {
-		return nil, err
-	}
+	endpoint := net.JoinHostPort(preferredHost(s.Server), strconv.Itoa(port))
 
-	if s.Server.HasIPv6() {
-		ipv6Endpoint, err := s.Server.IPv6Endpoint(port)
-		if err == nil {
-			// IPv6-only path: no reason to probe then retry the same endpoint.
-			if ipv6Endpoint == endpoint {
-				return f.dialWS(establishCtx, connCtx, scheme, endpoint)
-			}
-			ipv6Ctx, cancel := context.WithTimeout(establishCtx, ipv6ProbeTimeout(s))
-			adapter, dialErr := f.dialWS(ipv6Ctx, connCtx, scheme, ipv6Endpoint)
-			cancel()
-			if dialErr == nil {
-				return adapter, nil
-			}
+	if s.Server.IPv6 != "" {
+		ipv6Endpoint := net.JoinHostPort(s.Server.IPv6, strconv.Itoa(port))
+		// IPv6-only path: no reason to probe then retry the same endpoint.
+		if ipv6Endpoint == endpoint {
+			return f.dialWS(establishCtx, connCtx, scheme, endpoint)
+		}
+		ipv6Ctx, cancel := context.WithTimeout(establishCtx, ipv6ProbeTimeout(s))
+		adapter, dialErr := f.dialWS(ipv6Ctx, connCtx, scheme, ipv6Endpoint)
+		cancel()
+		if dialErr == nil {
+			return adapter, nil
 		}
 	}
 	return f.dialWS(establishCtx, connCtx, scheme, endpoint)
+}
+
+func preferredHost(host settings.Host) string {
+	if host.Domain != "" {
+		return host.Domain
+	}
+	if host.IPv4 != "" {
+		return host.IPv4
+	}
+	return host.IPv6
 }
 
 func (f *ConnectionFactory) dialWS(
@@ -338,19 +339,33 @@ func cloneDefaultTransport() *http.Transport {
 }
 
 func resolveIPv6AddrPort(ctx context.Context, s settings.Settings) (netip.AddrPort, error) {
-	if ap, err := s.Server.IPv6AddrPort(s.Port); err == nil {
-		return ap, nil
-	} else if _, isDomain := s.Server.Domain(); !isDomain {
-		return netip.AddrPort{}, err
+	if s.Server.IPv6 != "" {
+		ip, err := netip.ParseAddr(s.Server.IPv6)
+		if err != nil {
+			return netip.AddrPort{}, err
+		}
+		return addrPort(ip, s.Port)
+	}
+	if s.Server.Domain == "" {
+		return netip.AddrPort{}, fmt.Errorf("host has no IPv6 address")
 	}
 	return resolveDomainAddrPort(ctx, s, true)
 }
 
 func resolvePreferredAddrPort(ctx context.Context, s settings.Settings) (netip.AddrPort, error) {
-	if ap, err := s.Server.AddrPort(s.Port); err == nil {
-		return ap, nil
-	} else if _, isDomain := s.Server.Domain(); !isDomain {
-		return netip.AddrPort{}, err
+	rawIP := s.Server.IPv4
+	if rawIP == "" {
+		rawIP = s.Server.IPv6
+	}
+	if rawIP != "" {
+		ip, err := netip.ParseAddr(rawIP)
+		if err != nil {
+			return netip.AddrPort{}, err
+		}
+		return addrPort(ip, s.Port)
+	}
+	if s.Server.Domain == "" {
+		return netip.AddrPort{}, fmt.Errorf("server host is empty")
 	}
 	if ap4, err4 := resolveDomainAddrPort(ctx, s, false); err4 == nil {
 		return ap4, nil
@@ -359,8 +374,8 @@ func resolvePreferredAddrPort(ctx context.Context, s settings.Settings) (netip.A
 }
 
 func resolveDomainAddrPort(ctx context.Context, s settings.Settings, wantIPv6 bool) (netip.AddrPort, error) {
-	if s.Port < 1 || s.Port > 65535 {
-		return netip.AddrPort{}, fmt.Errorf("invalid port: %d", s.Port)
+	if err := validatePort(s.Port); err != nil {
+		return netip.AddrPort{}, err
 	}
 
 	var (
@@ -368,9 +383,9 @@ func resolveDomainAddrPort(ctx context.Context, s settings.Settings, wantIPv6 bo
 		err error
 	)
 	if wantIPv6 {
-		raw, err = s.Server.RouteIPv6Context(ctx)
+		raw, err = host_resolver.ResolveIPv6(ctx, s.Server)
 	} else {
-		raw, err = s.Server.RouteIPv4Context(ctx)
+		raw, err = host_resolver.ResolveIPv4(ctx, s.Server)
 	}
 	if err != nil {
 		return netip.AddrPort{}, err
@@ -391,6 +406,23 @@ func resolveDomainAddrPort(ctx context.Context, s settings.Settings, wantIPv6 bo
 		ip = ip.Unmap()
 	}
 	return netip.AddrPortFrom(ip, uint16(s.Port)), nil
+}
+
+func addrPort(ip netip.Addr, port int) (netip.AddrPort, error) {
+	if !ip.IsValid() {
+		return netip.AddrPort{}, fmt.Errorf("invalid IP address")
+	}
+	if err := validatePort(port); err != nil {
+		return netip.AddrPort{}, err
+	}
+	return netip.AddrPortFrom(ip.Unmap(), uint16(port)), nil
+}
+
+func validatePort(port int) error {
+	if port < 1 || port > 65535 {
+		return fmt.Errorf("invalid port: %d", port)
+	}
+	return nil
 }
 
 func parseEndpointAddrPort(endpoint string) netip.AddrPort {

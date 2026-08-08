@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 	appConfiguration "tungo/application/configuration"
+	"tungo/application/configuration/settings"
 	"tungo/application/runtime"
-	"tungo/infrastructure/settings"
 	"tungo/infrastructure/telemetry/trafficstats"
 
 	tea "charm.land/bubbletea/v2"
@@ -430,14 +430,14 @@ func formatRuntimeHostLine(label string, host settings.Host) string {
 
 func formatRuntimeHostParts(host settings.Host) string {
 	parts := make([]string, 0, 3)
-	if domain, ok := host.Domain(); ok {
-		parts = append(parts, "Domain "+domain)
+	if host.Domain != "" {
+		parts = append(parts, "Domain "+host.Domain)
 	}
-	if ipv4, ok := host.IPv4(); ok {
-		parts = append(parts, "IPv4 "+ipv4.String())
+	if host.IPv4 != "" {
+		parts = append(parts, "IPv4 "+host.IPv4)
 	}
-	if ipv6, ok := host.IPv6(); ok {
-		parts = append(parts, "IPv6 "+ipv6.String())
+	if host.IPv6 != "" {
+		parts = append(parts, "IPv6 "+host.IPv6)
 	}
 	return strings.Join(parts, " | ")
 }
@@ -488,7 +488,7 @@ func sharedServerAddress(endpoints []appConfiguration.EndpointInfo) (settings.Ho
 		return settings.Host{}, false
 	}
 	sharedAddress := endpoints[0].Server
-	if sharedAddress.IsZero() {
+	if sharedAddress == (settings.Host{}) {
 		return settings.Host{}, false
 	}
 	for _, endpoint := range endpoints[1:] {
