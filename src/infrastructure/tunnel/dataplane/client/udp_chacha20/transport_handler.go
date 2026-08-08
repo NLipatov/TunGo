@@ -75,7 +75,7 @@ func (t *TransportHandler) HandleTransport() error {
 			n, readErr := t.reader.Read(buffer[:])
 			if readErr != nil {
 				if errors.Is(readErr, os.ErrDeadlineExceeded) {
-					if err := t.handleIdle(); err != nil {
+					if err := t.checkLiveness(); err != nil {
 						return err
 					}
 					continue
@@ -166,7 +166,7 @@ func (t *TransportHandler) handleControlplane(
 	}
 }
 
-func (t *TransportHandler) handleIdle() error {
+func (t *TransportHandler) checkLiveness() error {
 	if time.Since(t.lastRecvAt) > settings.PingRestartTimeout {
 		return fmt.Errorf("server unreachable (no data for %s)", settings.PingRestartTimeout)
 	}
