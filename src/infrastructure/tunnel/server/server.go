@@ -11,6 +11,7 @@ import (
 
 	appConfiguration "tungo/application/configuration"
 	"tungo/application/configuration/settings"
+	"tungo/infrastructure/cryptography/noise"
 	"tungo/infrastructure/network/ws"
 	"tungo/infrastructure/telemetry/trafficstats"
 	"tungo/infrastructure/tunnel/server/internal/session"
@@ -102,6 +103,16 @@ func (s *Server) newTunnel(
 
 var _ appConfiguration.ServerSessionRevoker = (*Server)(nil)
 var _ appConfiguration.ServerAllowedPeersUpdater = (*Server)(nil)
+
+func (s *Server) newHandshake() *noise.IKHandshake {
+	return noise.NewIKHandshakeServer(
+		s.configuration.X25519PublicKey,
+		s.configuration.X25519PrivateKey,
+		s.allowedPeers,
+		s.cookieManager,
+		s.loadMonitor,
+	)
+}
 
 func (s *Server) newTCPTunnel(
 	ctx context.Context,
