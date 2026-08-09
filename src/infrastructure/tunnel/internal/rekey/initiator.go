@@ -69,7 +69,7 @@ func (c *ClientRekeyCoordinator) MaybeBuildRekeyInit(
 	if !c.controller.ReadyForRekey() {
 		return nil, false, nil
 	}
-	if len(dst) < service_packet.RekeyPacketLen {
+	if len(dst) < v1PacketLen {
 		return nil, false, nil
 	}
 
@@ -93,16 +93,16 @@ func (c *ClientRekeyCoordinator) MaybeBuildRekeyInit(
 	if err != nil {
 		return nil, false, err
 	}
-	if len(publicKey) != service_packet.RekeyPublicKeyLen {
+	if len(publicKey) != v1PublicKeyLen {
 		return nil, false, nil
 	}
 
-	copy(dst[3:], publicKey)
-	servicePayload, err := service_packet.EncodeV1Header(service_packet.RekeyInit, dst)
-	if err != nil {
+	payload = dst[:v1PacketLen]
+	copy(payload[v1ServiceHeaderLen:], publicKey)
+	if err := service_packet.Encode(service_packet.RekeyInit, payload); err != nil {
 		return nil, false, err
 	}
-	return servicePayload, true, nil
+	return payload, true, nil
 }
 
 // HandleRekeyAck completes the client-side exchange and promotes the new send epoch.
@@ -116,14 +116,14 @@ func (c *ClientRekeyCoordinator) HandleRekeyAck(
 	if c.crypto == nil || c.controller == nil {
 		return false, nil
 	}
-	if len(plaindata) < service_packet.RekeyPacketLen || !c.hasPendingPrivateKey {
+	if len(plaindata) != v1PacketLen || !c.hasPendingPrivateKey {
 		return false, nil
 	}
 	if carrierEpoch != c.pendingCarrierEpoch {
 		return false, nil
 	}
 
-	serverPub := plaindata[3 : 3+service_packet.RekeyPublicKeyLen]
+	serverPub := plaindata[v1ServiceHeaderLen:v1PacketLen]
 	shared, err := curve25519.X25519(c.pendingPrivateKey[:], serverPub)
 	if err != nil {
 		return false, err

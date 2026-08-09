@@ -138,7 +138,7 @@ func (t *transportHandler) handleControlplane(
 	carrierEpoch uint16,
 	plaintext []byte,
 ) (handled bool, err error) {
-	spType, spOk := service_packet.TryParseHeader(plaintext)
+	spType, spOk := service_packet.Parse(plaintext)
 	if !spOk {
 		return false, nil
 	}
@@ -177,7 +177,7 @@ func (t *transportHandler) checkLiveness() error {
 
 func (t *transportHandler) sendPing() {
 	payload := t.pingBuf[udpPayloadOffset:]
-	if _, err := service_packet.EncodeV1Header(service_packet.Ping, payload); err != nil {
+	if err := service_packet.Encode(service_packet.Ping, payload); err != nil {
 		return
 	}
 	if err := t.egress.Send(t.pingBuf[:]); err != nil {

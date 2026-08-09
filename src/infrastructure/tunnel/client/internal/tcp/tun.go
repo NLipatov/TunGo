@@ -10,7 +10,6 @@ import (
 	"tungo/application/configuration/settings"
 	"tungo/infrastructure/cryptography/chacha20/tcp"
 	"tungo/infrastructure/network/ip"
-	"tungo/infrastructure/network/service_packet"
 )
 
 type rekeyInitiator interface {
@@ -23,7 +22,7 @@ type tunHandler struct {
 	egress           sender
 	rekeyInit        rekeyInitiator
 	allowedSources   map[netip.Addr]struct{}
-	controlPacketBuf [tcp.EpochPrefixSize + service_packet.RekeyPacketLen + settings.TCPChacha20Overhead]byte
+	controlPacketBuf [settings.DefaultEthernetMTU + settings.TCPChacha20Overhead]byte
 }
 
 func newTunHandler(ctx context.Context,
@@ -72,7 +71,7 @@ func (t *tunHandler) HandleTun() error {
 
 			if t.rekeyInit != nil {
 				now := time.Now().UTC()
-				dst := t.controlPacketBuf[tcp.EpochPrefixSize : tcp.EpochPrefixSize+service_packet.RekeyPacketLen]
+				dst := t.controlPacketBuf[tcp.EpochPrefixSize : tcp.EpochPrefixSize+settings.DefaultEthernetMTU]
 				servicePayload, ok, err := t.rekeyInit.MaybeBuildRekeyInit(now, dst)
 				if err != nil {
 					slog.Warn("failed to prepare rekey init", "err", err)

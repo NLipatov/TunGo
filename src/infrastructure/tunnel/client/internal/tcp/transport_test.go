@@ -15,6 +15,8 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
+const testRekeyPacketLen = 3 + 32
+
 /* --- Mocks (prefixed with the struct under test: TransportHandler*) --- */
 
 type TransportHandlerMockWriter struct {
@@ -195,8 +197,8 @@ func TestTransportHandler_Happy_ThenEOF(t *testing.T) {
 }
 
 func TestTransportHandler_RekeyAck_Handled(t *testing.T) {
-	ackPayload := make([]byte, service_packet.RekeyPacketLen)
-	_, _ = service_packet.EncodeV1Header(service_packet.RekeyAck, ackPayload)
+	ackPayload := make([]byte, testRekeyPacketLen)
+	_ = service_packet.Encode(service_packet.RekeyAck, ackPayload)
 
 	cipher := make([]byte, chacha20poly1305.Overhead+len(ackPayload))
 
@@ -226,8 +228,8 @@ func TestTransportHandler_RekeyAck_Handled(t *testing.T) {
 }
 
 func TestTransportHandler_RekeyAck_NilHandler(t *testing.T) {
-	ackPayload := make([]byte, service_packet.RekeyPacketLen)
-	_, _ = service_packet.EncodeV1Header(service_packet.RekeyAck, ackPayload)
+	ackPayload := make([]byte, testRekeyPacketLen)
+	_ = service_packet.Encode(service_packet.RekeyAck, ackPayload)
 
 	cipher := make([]byte, chacha20poly1305.Overhead+len(ackPayload))
 
@@ -275,7 +277,7 @@ func TestTransportHandler_TCPDecryptErrorAfterCancel(t *testing.T) {
 
 func TestTransportHandler_EpochExhausted_ReturnsError(t *testing.T) {
 	epochPayload := make([]byte, 3)
-	_, _ = service_packet.EncodeV1Header(service_packet.EpochExhausted, epochPayload)
+	_ = service_packet.Encode(service_packet.EpochExhausted, epochPayload)
 
 	cipher := make([]byte, chacha20poly1305.Overhead+len(epochPayload))
 
@@ -301,8 +303,8 @@ func TestTransportHandler_HandleRekeyAck_EpochExhausted(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ackPayload := make([]byte, service_packet.RekeyPacketLen)
-	_, _ = service_packet.EncodeV1Header(service_packet.RekeyAck, ackPayload)
+	ackPayload := make([]byte, testRekeyPacketLen)
+	_ = service_packet.Encode(service_packet.RekeyAck, ackPayload)
 	copy(ackPayload[3:], serverPub)
 
 	cipher := make([]byte, chacha20poly1305.Overhead+len(ackPayload))
@@ -310,7 +312,7 @@ func TestTransportHandler_HandleRekeyAck_EpochExhausted(t *testing.T) {
 	ctrl := rekey.NewStateMachine(dummyEpochManager{err: chacha20.ErrEpochExhausted}, []byte("c2s"), []byte("s2c"))
 	coordinator := newDueTestRekeyCoordinator(ctrl)
 	if _, ok, buildErr := coordinator.MaybeBuildRekeyInit(
-		time.Now(), make([]byte, service_packet.RekeyPacketLen),
+		time.Now(), make([]byte, testRekeyPacketLen),
 	); buildErr != nil || !ok {
 		t.Fatalf("seed pending rekey: ok=%v err=%v", ok, buildErr)
 	}
@@ -398,7 +400,7 @@ func TestTransportHandler_HandleRekeyAck_ErrorDoesNotBubble(t *testing.T) {
 	impl := h
 
 	shortAck := make([]byte, 3)
-	_, _ = service_packet.EncodeV1Header(service_packet.RekeyAck, shortAck)
+	_ = service_packet.Encode(service_packet.RekeyAck, shortAck)
 	if err := impl.handleRekeyAck(0, shortAck); err != nil {
 		t.Fatalf("expected nil on ack install/apply error, got %v", err)
 	}
@@ -495,7 +497,7 @@ func TestTransportHandler_ReadError_ContextCanceledDuringRead(t *testing.T) {
 
 func TestTransportHandler_Pong_Consumed(t *testing.T) {
 	pongPayload := make([]byte, 3)
-	_, _ = service_packet.EncodeV1Header(service_packet.Pong, pongPayload)
+	_ = service_packet.Encode(service_packet.Pong, pongPayload)
 
 	cipher := make([]byte, chacha20poly1305.Overhead+len(pongPayload))
 

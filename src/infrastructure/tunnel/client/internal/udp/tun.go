@@ -26,7 +26,7 @@ type tunHandler struct {
 	reader              io.Reader // abstraction over TUN device
 	egress              sender
 	allowedSources      map[netip.Addr]struct{}
-	controlPacketBuffer [128]byte
+	controlPacketBuffer [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
 	rekeyInit           rekeyInitiator
 }
 
@@ -101,7 +101,7 @@ func (w *tunHandler) HandleTun() error {
 				return fmt.Errorf("could not read a packet from TUN: %v", err)
 			}
 			if w.rekeyInit != nil {
-				payloadBuf := w.controlPacketBuffer[udpPayloadOffset:]
+				payloadBuf := w.controlPacketBuffer[udpPayloadOffset : udpPayloadOffset+settings.DefaultEthernetMTU]
 				servicePayload, ok, pErr := w.rekeyInit.MaybeBuildRekeyInit(time.Now().UTC(), payloadBuf)
 				if pErr != nil {
 					slog.Warn("failed to prepare rekey init", "err", pErr)

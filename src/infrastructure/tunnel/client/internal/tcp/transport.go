@@ -99,7 +99,7 @@ func (t *transportHandler) HandleTransport() error {
 
 			t.lastRecvNano.Store(time.Now().UnixNano())
 
-			if spType, spOk := service_packet.TryParseHeader(payload); spOk {
+			if spType, spOk := service_packet.Parse(payload); spOk {
 				switch spType {
 				case service_packet.EpochExhausted:
 					slog.Warn("received EpochExhausted from server, initiating reconnect")
@@ -139,7 +139,7 @@ func (t *transportHandler) keepaliveLoop() {
 
 func (t *transportHandler) sendPing() {
 	payload := t.pingBuf[tcp.EpochPrefixSize:]
-	if _, err := service_packet.EncodeV1Header(service_packet.Ping, payload); err != nil {
+	if err := service_packet.Encode(service_packet.Ping, payload); err != nil {
 		slog.Warn("keepalive failed to encode ping", "err", err)
 		return
 	}

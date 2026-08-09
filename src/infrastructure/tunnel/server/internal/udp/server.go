@@ -10,8 +10,6 @@ import (
 	"net/netip"
 	"time"
 
-	"golang.org/x/crypto/chacha20poly1305"
-
 	"tungo/application/configuration/settings"
 	"tungo/application/listeners"
 	"tungo/infrastructure/cryptography/chacha20"
@@ -221,7 +219,7 @@ func (s *Server) runTun() error {
 }
 
 func (s *Server) handleService(peer *session.Peer, carrierEpoch uint16, plaintext []byte) (bool, error) {
-	kind, ok := service_packet.TryParseHeader(plaintext)
+	kind, ok := service_packet.Parse(plaintext)
 	if !ok {
 		return false, nil
 	}
@@ -253,11 +251,14 @@ func (s *Server) handleRekey(peer *session.Peer, carrierEpoch uint16, plaintext 
 }
 
 func (s *Server) sendService(peer *session.Peer, kind service_packet.HeaderType, body []byte) error {
-	var frame [udpPayloadOffset + service_packet.RekeyPacketLen + chacha20poly1305.Overhead]byte
+	var frame [settings.DefaultEthernetMTU + settings.UDPChacha20Overhead]byte
 	payloadLen := 3 + len(body)
+	if payloadLen > settings.DefaultEthernetMTU {
+		return io.ErrShortBuffer
+	}
 	payload := frame[udpPayloadOffset : udpPayloadOffset+payloadLen]
 	copy(payload[3:], body)
-	if _, err := service_packet.EncodeV1Header(kind, payload); err != nil {
+	if err := service_packet.Encode(kind, payload); err != nil {
 		return err
 	}
 	return peer.Send(frame[:udpPayloadOffset+payloadLen])

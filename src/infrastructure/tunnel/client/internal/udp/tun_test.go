@@ -14,7 +14,6 @@ import (
 
 	"tungo/infrastructure/cryptography/chacha20/rekey"
 	"tungo/infrastructure/cryptography/primitives"
-	"tungo/infrastructure/network/service_packet"
 	outbound "tungo/infrastructure/tunnel/internal/egress"
 	tunnelrekey "tungo/infrastructure/tunnel/internal/rekey"
 )
@@ -404,11 +403,11 @@ func TestHandleTun_ReusesPendingRekeyKey(t *testing.T) {
 
 	extractPub := func(pkt []byte) []byte {
 		start := udpPayloadOffset + 3
-		end := start + service_packet.RekeyPublicKeyLen
+		end := start + testRekeyPublicKeyLen
 		if len(pkt) < end {
 			t.Fatalf("rekey packet too short: %d bytes", len(pkt))
 		}
-		buf := make([]byte, service_packet.RekeyPublicKeyLen)
+		buf := make([]byte, testRekeyPublicKeyLen)
 		copy(buf, pkt[start:end])
 		return buf
 	}

@@ -7,14 +7,13 @@ import (
 
 	"tungo/infrastructure/cryptography/mem"
 	"tungo/infrastructure/cryptography/primitives"
-	"tungo/infrastructure/network/service_packet"
 
 	"golang.org/x/crypto/curve25519"
 )
 
 type serverRekeyTransaction struct {
-	clientPub     [service_packet.RekeyPublicKeyLen]byte
-	serverPub     [service_packet.RekeyPublicKeyLen]byte
+	clientPub     [v1PublicKeyLen]byte
+	serverPub     [v1PublicKeyLen]byte
 	carrierEpoch  uint16
 	epoch         uint16
 	sendActivated atomic.Bool
@@ -58,16 +57,16 @@ func (c *ServerRekeyCoordinator) HandleRekeyInit(
 	carrierEpoch uint16,
 	crypto primitives.KeyDeriver,
 	plaindata []byte,
-) (serverPub [service_packet.RekeyPublicKeyLen]byte, epoch uint16, ok bool, err error) {
+) (serverPub [v1PublicKeyLen]byte, epoch uint16, ok bool, err error) {
 	if c == nil || c.controller == nil || crypto == nil {
 		return serverPub, 0, false, nil
 	}
-	if len(plaindata) < service_packet.RekeyPacketLen {
+	if len(plaindata) != v1PacketLen {
 		return serverPub, 0, false, nil
 	}
 
-	var clientPub [service_packet.RekeyPublicKeyLen]byte
-	copy(clientPub[:], plaindata[3:service_packet.RekeyPacketLen])
+	var clientPub [v1PublicKeyLen]byte
+	copy(clientPub[:], plaindata[v1ServiceHeaderLen:v1PacketLen])
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -116,7 +115,7 @@ func (c *ServerRekeyCoordinator) HandleRekeyInit(
 	}
 	defer mem.ZeroBytes(newS2C)
 
-	if len(generatedPub) != service_packet.RekeyPublicKeyLen {
+	if len(generatedPub) != v1PublicKeyLen {
 		return serverPub, 0, false, fmt.Errorf("unexpected server public key length: %d", len(generatedPub))
 	}
 	copy(serverPub[:], generatedPub)

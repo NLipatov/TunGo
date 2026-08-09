@@ -25,6 +25,11 @@ import (
 	"golang.org/x/crypto/curve25519"
 )
 
+const (
+	testRekeyPublicKeyLen = 32
+	testRekeyPacketLen    = 3 + testRekeyPublicKeyLen
+)
+
 type dummyEpochManager struct{}
 
 func (dummyEpochManager) StageEpoch(_, _ []byte) (uint16, error) { return 0, nil }
@@ -76,8 +81,8 @@ func buildTestRekeyAck(t *testing.T, crypto primitives.KeyDeriver) []byte {
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload := make([]byte, service_packet.RekeyPacketLen)
-	if _, err := service_packet.EncodeV1Header(service_packet.RekeyAck, payload); err != nil {
+	payload := make([]byte, testRekeyPacketLen)
+	if err := service_packet.Encode(service_packet.RekeyAck, payload); err != nil {
 		t.Fatal(err)
 	}
 	copy(payload[3:], serverPub)
@@ -315,21 +320,21 @@ func TestHandleTransport_RekeyAckAfterDoubleInit_UsesOriginalPendingKey(t *testi
 	// Extract the retried client public key for expected derivation.
 	firstPub := func(pkt []byte) []byte {
 		start := udpPayloadOffset + 3
-		end := start + service_packet.RekeyPublicKeyLen
+		end := start + testRekeyPublicKeyLen
 		if len(pkt) < end {
 			t.Fatalf("rekey packet too short: %d", len(pkt))
 		}
-		out := make([]byte, service_packet.RekeyPublicKeyLen)
+		out := make([]byte, testRekeyPublicKeyLen)
 		copy(out, pkt[start:end])
 		return out
 	}(writer.data[0])
 	secondPub := func(pkt []byte) []byte {
 		start := udpPayloadOffset + 3
-		end := start + service_packet.RekeyPublicKeyLen
+		end := start + testRekeyPublicKeyLen
 		if len(pkt) < end {
 			t.Fatalf("rekey packet too short: %d", len(pkt))
 		}
-		out := make([]byte, service_packet.RekeyPublicKeyLen)
+		out := make([]byte, testRekeyPublicKeyLen)
 		copy(out, pkt[start:end])
 		return out
 	}(writer.data[1])
@@ -357,8 +362,8 @@ func TestHandleTransport_RekeyAckAfterDoubleInit_UsesOriginalPendingKey(t *testi
 		t.Fatalf("derive s2c failed: %v", err)
 	}
 
-	ackPayload := make([]byte, service_packet.RekeyPacketLen)
-	if _, err := service_packet.EncodeV1Header(service_packet.RekeyAck, ackPayload); err != nil {
+	ackPayload := make([]byte, testRekeyPacketLen)
+	if err := service_packet.Encode(service_packet.RekeyAck, ackPayload); err != nil {
 		t.Fatalf("encode ack failed: %v", err)
 	}
 	copy(ackPayload[3:], serverPub)
@@ -420,7 +425,7 @@ func TestHandleDatagram_RejectsStaleRekeyAckAcrossTransactions(t *testing.T) {
 	)
 
 	if _, ok, err := coordinator.MaybeBuildRekeyInit(
-		now.Add(time.Second), make([]byte, service_packet.RekeyPacketLen),
+		now.Add(time.Second), make([]byte, testRekeyPacketLen),
 	); err != nil || !ok {
 		t.Fatalf("first init: ok=%v err=%v", ok, err)
 	}
@@ -436,7 +441,7 @@ func TestHandleDatagram_RejectsStaleRekeyAckAcrossTransactions(t *testing.T) {
 	}
 
 	if _, ok, err := coordinator.MaybeBuildRekeyInit(
-		now.Add(2*time.Second), make([]byte, service_packet.RekeyPacketLen),
+		now.Add(2*time.Second), make([]byte, testRekeyPacketLen),
 	); err != nil || !ok {
 		t.Fatalf("second init: ok=%v err=%v", ok, err)
 	}
@@ -622,14 +627,14 @@ func TestHandleTransport_EpochExhausted_ReturnsError(t *testing.T) {
 	ctrl := rekey.NewStateMachine(rk, make([]byte, 32), make([]byte, 32))
 	coordinator := newDueTestRekeyCoordinator(ctrl)
 	if _, ok, buildErr := coordinator.MaybeBuildRekeyInit(
-		time.Now(), make([]byte, service_packet.RekeyPacketLen),
+		time.Now(), make([]byte, testRekeyPacketLen),
 	); buildErr != nil || !ok {
 		t.Fatalf("seed pending rekey: ok=%v err=%v", ok, buildErr)
 	}
 
 	// Build a RekeyAck plaintext that will be "decrypted" by thTestCrypto.
-	ackPayload := make([]byte, service_packet.RekeyPacketLen)
-	_, _ = service_packet.EncodeV1Header(service_packet.RekeyAck, ackPayload)
+	ackPayload := make([]byte, testRekeyPacketLen)
+	_ = service_packet.Encode(service_packet.RekeyAck, ackPayload)
 	copy(ackPayload[3:], serverPub)
 
 	cipher := buildTestUDPPacket(0, ackPayload)
@@ -706,7 +711,7 @@ func TestHandleTransport_ShortRekeyAck_IgnoredAndContinues(t *testing.T) {
 
 	// Build an ACK with a valid header but no public key.
 	ackPayload := make([]byte, 3) // only header, no public key
-	_, _ = service_packet.EncodeV1Header(service_packet.RekeyAck, ackPayload)
+	_ = service_packet.Encode(service_packet.RekeyAck, ackPayload)
 
 	cipher := buildTestUDPPacket(0, ackPayload)
 	r := &thTestReader{reads: []func(p []byte) (int, error){

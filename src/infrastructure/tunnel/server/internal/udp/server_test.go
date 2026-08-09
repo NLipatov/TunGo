@@ -16,6 +16,8 @@ import (
 	"tungo/infrastructure/tunnel/server/internal/session"
 )
 
+const testRekeyPacketLen = 3 + 32
+
 type passthroughCrypto struct {
 	plaintext []byte
 	decrypts  int
@@ -156,7 +158,7 @@ func TestServer_PingDoesNotRequireRekey(t *testing.T) {
 	peer := session.NewPeer(&passthroughCrypto{}, nil, netip.Addr{}, netip.AddrPort{}, writer)
 	server := &Server{}
 	ping := make([]byte, 3)
-	if _, err := service_packet.EncodeV1Header(service_packet.Ping, ping); err != nil {
+	if err := service_packet.Encode(service_packet.Ping, ping); err != nil {
 		t.Fatal(err)
 	}
 
@@ -164,7 +166,7 @@ func TestServer_PingDoesNotRequireRekey(t *testing.T) {
 	if err != nil || !handled {
 		t.Fatalf("handled=%v err=%v", handled, err)
 	}
-	kind, ok := service_packet.TryParseHeader(writer.packet[udpPayloadOffset:])
+	kind, ok := service_packet.Parse(writer.packet[udpPayloadOffset:])
 	if !ok || kind != service_packet.Pong {
 		t.Fatalf("response kind=%v ok=%v", kind, ok)
 	}
@@ -176,9 +178,9 @@ func TestServer_RekeySendsAckWithoutPrematureUDPActivation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	init := make([]byte, service_packet.RekeyPacketLen)
+	init := make([]byte, testRekeyPacketLen)
 	copy(init[3:], clientPub[:])
-	if _, err := service_packet.EncodeV1Header(service_packet.RekeyInit, init); err != nil {
+	if err := service_packet.Encode(service_packet.RekeyInit, init); err != nil {
 		t.Fatal(err)
 	}
 	fsm := rekey.NewStateMachine(&epochManager{}, bytes.Repeat([]byte{1}, 32), bytes.Repeat([]byte{2}, 32))
@@ -191,7 +193,7 @@ func TestServer_RekeySendsAckWithoutPrematureUDPActivation(t *testing.T) {
 	if err != nil || !handled {
 		t.Fatalf("handled=%v err=%v", handled, err)
 	}
-	kind, ok := service_packet.TryParseHeader(writer.packet[udpPayloadOffset:])
+	kind, ok := service_packet.Parse(writer.packet[udpPayloadOffset:])
 	if !ok || kind != service_packet.RekeyAck {
 		t.Fatalf("response kind=%v ok=%v", kind, ok)
 	}

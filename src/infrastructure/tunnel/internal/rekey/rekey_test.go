@@ -28,8 +28,8 @@ func buildRekeyInitPacket(t *testing.T, crypto primitives.KeyDeriver) ([]byte, [
 	if err != nil {
 		t.Fatal(err)
 	}
-	pkt := make([]byte, service_packet.RekeyPacketLen)
-	if _, err := service_packet.EncodeV1Header(service_packet.RekeyInit, pkt); err != nil {
+	pkt := make([]byte, v1PacketLen)
+	if err := service_packet.Encode(service_packet.RekeyInit, pkt); err != nil {
 		t.Fatal(err)
 	}
 	copy(pkt[3:], pub)
@@ -39,7 +39,7 @@ func buildRekeyInitPacket(t *testing.T, crypto primitives.KeyDeriver) ([]byte, [
 func seedPendingClientRekey(t *testing.T, coordinator *ClientRekeyCoordinator) {
 	t.Helper()
 	_, ok, err := coordinator.MaybeBuildRekeyInit(
-		coordinator.rotateAt.Add(time.Second), make([]byte, service_packet.RekeyPacketLen),
+		coordinator.rotateAt.Add(time.Second), make([]byte, v1PacketLen),
 	)
 	if err != nil || !ok {
 		t.Fatalf("seed pending client rekey: ok=%v err=%v", ok, err)
@@ -50,7 +50,7 @@ func handleServerRekeyInit(
 	crypto primitives.KeyDeriver,
 	controller epochController,
 	packet []byte,
-) ([service_packet.RekeyPublicKeyLen]byte, uint16, bool, error) {
+) ([v1PublicKeyLen]byte, uint16, bool, error) {
 	return NewServerRekeyCoordinator(controller).HandleRekeyInit(0, crypto, packet)
 }
 
@@ -108,7 +108,7 @@ func TestServerRekeyCoordinator_HandleRekeyInit_Success(t *testing.T) {
 	if !ok {
 		t.Fatal("expected ok=true")
 	}
-	if serverPub == ([service_packet.RekeyPublicKeyLen]byte{}) {
+	if serverPub == ([v1PublicKeyLen]byte{}) {
 		t.Fatal("expected non-zero server public key")
 	}
 	if epoch == 0 {
@@ -147,7 +147,7 @@ func TestServerRekeyCoordinator_ConcurrentRepeatedInitStagesOnce(t *testing.T) {
 	packet, _ := buildRekeyInitPacket(t, crypto)
 
 	type result struct {
-		serverPub [service_packet.RekeyPublicKeyLen]byte
+		serverPub [v1PublicKeyLen]byte
 		epoch     uint16
 		ok        bool
 		err       error
@@ -281,8 +281,8 @@ func TestClientRekeyCoordinator_HandleRekeyAck_NoPendingKey(t *testing.T) {
 	rk := &rekeyTestEpochManager{}
 	fsm := rekey.NewStateMachine(rk, []byte("c2s"), []byte("s2c"))
 
-	pkt := make([]byte, service_packet.RekeyPacketLen)
-	_, _ = service_packet.EncodeV1Header(service_packet.RekeyAck, pkt)
+	pkt := make([]byte, v1PacketLen)
+	_ = service_packet.Encode(service_packet.RekeyAck, pkt)
 
 	coordinator := NewClientRekeyCoordinator(&primitives.DefaultKeyDeriver{}, fsm, time.Hour, time.Now())
 	ok, err := coordinator.HandleRekeyAck(0, pkt)
@@ -301,8 +301,8 @@ func TestClientRekeyCoordinator_HandleRekeyAck_Success(t *testing.T) {
 
 	// Build an ack packet with a server public key.
 	serverPub, _, _ := crypto.GenerateX25519KeyPair()
-	pkt := make([]byte, service_packet.RekeyPacketLen)
-	_, _ = service_packet.EncodeV1Header(service_packet.RekeyAck, pkt)
+	pkt := make([]byte, v1PacketLen)
+	_ = service_packet.Encode(service_packet.RekeyAck, pkt)
 	copy(pkt[3:], serverPub)
 
 	ok, err := coordinator.HandleRekeyAck(0, pkt)
@@ -358,8 +358,8 @@ func buildRekeyAckPacket(t *testing.T, crypto primitives.KeyDeriver) []byte {
 	if err != nil {
 		t.Fatal(err)
 	}
-	packet := make([]byte, service_packet.RekeyPacketLen)
-	if _, err := service_packet.EncodeV1Header(service_packet.RekeyAck, packet); err != nil {
+	packet := make([]byte, v1PacketLen)
+	if err := service_packet.Encode(service_packet.RekeyAck, packet); err != nil {
 		t.Fatal(err)
 	}
 	copy(packet[3:], serverPub)
@@ -505,8 +505,8 @@ func TestClientRekeyCoordinator_HandleRekeyAck_StartRekeyError(t *testing.T) {
 	seedPendingClientRekey(t, coordinator)
 
 	serverPub, _, _ := crypto.GenerateX25519KeyPair()
-	pkt := make([]byte, service_packet.RekeyPacketLen)
-	_, _ = service_packet.EncodeV1Header(service_packet.RekeyAck, pkt)
+	pkt := make([]byte, v1PacketLen)
+	_ = service_packet.Encode(service_packet.RekeyAck, pkt)
 	copy(pkt[3:], serverPub)
 
 	ok, err := coordinator.HandleRekeyAck(0, pkt)
@@ -538,8 +538,8 @@ func TestClientRekeyCoordinator_HandleRekeyAck_DeriveKeyError_FirstCall(t *testi
 	seedPendingClientRekey(t, coordinator)
 
 	serverPub, _, _ := realCrypto.GenerateX25519KeyPair()
-	pkt := make([]byte, service_packet.RekeyPacketLen)
-	_, _ = service_packet.EncodeV1Header(service_packet.RekeyAck, pkt)
+	pkt := make([]byte, v1PacketLen)
+	_ = service_packet.Encode(service_packet.RekeyAck, pkt)
 	copy(pkt[3:], serverPub)
 
 	ok, err := coordinator.HandleRekeyAck(0, pkt)
@@ -562,8 +562,8 @@ func TestClientRekeyCoordinator_HandleRekeyAck_DeriveKeyError_SecondCall(t *test
 	seedPendingClientRekey(t, coordinator)
 
 	serverPub, _, _ := realCrypto.GenerateX25519KeyPair()
-	pkt := make([]byte, service_packet.RekeyPacketLen)
-	_, _ = service_packet.EncodeV1Header(service_packet.RekeyAck, pkt)
+	pkt := make([]byte, v1PacketLen)
+	_ = service_packet.Encode(service_packet.RekeyAck, pkt)
 	copy(pkt[3:], serverPub)
 
 	ok, err := coordinator.HandleRekeyAck(0, pkt)
