@@ -126,6 +126,9 @@ func TestIKHandshake_Success(t *testing.T) {
 	if !bytes.Equal(serverHS.ClientPubKey(), clientKP.Public) {
 		t.Fatal("result client pub key mismatch")
 	}
+	if !clientHS.Supports(CapabilityRekeyV2) || !serverHS.Supports(CapabilityRekeyV2) {
+		t.Fatal("Rekey V2 capability was not negotiated")
+	}
 }
 
 func TestIKHandshake_UnknownClient(t *testing.T) {

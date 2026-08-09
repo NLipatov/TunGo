@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/netip"
+	"slices"
 	"strings"
 	"testing"
 	"tungo/application/configuration"
@@ -304,6 +305,9 @@ func TestIKHandshake_Client_CookieRetryPaths(t *testing.T) {
 		if len(h.clientKey) != 32 || len(h.serverKey) != 32 {
 			t.Fatal("expected session keys after successful retry")
 		}
+		if h.Supports(CapabilityRekeyV2) {
+			t.Fatal("legacy server must not select Rekey V2")
+		}
 	})
 
 	t.Run("unexpected cookie on retry", func(t *testing.T) {
@@ -602,6 +606,8 @@ type msg2OnlyTransport struct {
 	serverPub  []byte
 	serverPriv []byte
 	nextRead   []byte
+	advertised []byte
+	selection  []byte
 }
 
 func (t *msg2OnlyTransport) Read(p []byte) (int, error) {
@@ -631,10 +637,12 @@ func (t *msg2OnlyTransport) Write(p []byte) (int, error) {
 	if err != nil {
 		t.t.Fatalf("failed to create responder state: %v", err)
 	}
-	if _, _, _, err := hs.ReadMessage(nil, ExtractNoiseMsg(msg1WithMAC)); err != nil {
+	advertised, _, _, err := hs.ReadMessage(nil, ExtractNoiseMsg(msg1WithMAC))
+	if err != nil {
 		t.t.Fatalf("failed to read msg1: %v", err)
 	}
-	msg2, _, _, err := hs.WriteMessage(nil, nil)
+	t.advertised = append(t.advertised[:0], advertised...)
+	msg2, _, _, err := hs.WriteMessage(nil, t.selection)
 	if err != nil {
 		t.t.Fatalf("failed to write msg2: %v", err)
 	}
@@ -643,6 +651,66 @@ func (t *msg2OnlyTransport) Write(p []byte) (int, error) {
 }
 
 func (t *msg2OnlyTransport) Close() error { return nil }
+
+func TestIKHandshake_ClientAdvertisesCapabilitiesAndFallsBackForLegacyServer(t *testing.T) {
+	serverKP, _ := cipherSuite.GenerateKeypair(nil)
+	clientKP, _ := cipherSuite.GenerateKeypair(nil)
+	h := NewIKHandshakeClient(clientKP.Public, clientKP.Private, serverKP.Public)
+	tr := &msg2OnlyTransport{t: t, serverPub: serverKP.Public, serverPriv: serverKP.Private}
+
+	if err := h.ClientSideHandshake(tr); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(tr.advertised, byte(CapabilityRekeyV2)) {
+		t.Fatal("client did not advertise Rekey V2")
+	}
+	if h.Supports(CapabilityRekeyV2) {
+		t.Fatal("legacy server must not enable Rekey V2")
+	}
+}
+
+func TestIKHandshake_ClientRejectsUnsupportedServerSelection(t *testing.T) {
+	serverKP, _ := cipherSuite.GenerateKeypair(nil)
+	clientKP, _ := cipherSuite.GenerateKeypair(nil)
+	h := NewIKHandshakeClient(clientKP.Public, clientKP.Private, serverKP.Public)
+	tr := &msg2OnlyTransport{
+		t:          t,
+		serverPub:  serverKP.Public,
+		serverPriv: serverKP.Private,
+		selection:  []byte{0xFF},
+	}
+
+	err := h.ClientSideHandshake(tr)
+	if err == nil || !strings.Contains(err.Error(), "unsupported capability") {
+		t.Fatalf("expected unsupported capability error, got %v", err)
+	}
+}
+
+func TestIKHandshake_ServerFallsBackForLegacyClient(t *testing.T) {
+	serverKP, _ := cipherSuite.GenerateKeypair(nil)
+	clientKP, _ := cipherSuite.GenerateKeypair(nil)
+	h := NewIKHandshakeServer(
+		serverKP.Public,
+		serverKP.Private,
+		NewAllowedPeersLookup([]configuration.ServerPeer{{
+			PublicKey: clientKP.Public,
+			Enabled:   true,
+			ClientID:  1,
+		}}),
+		nil,
+		nil,
+	)
+	tr := &queueTransport{reads: [][]byte{
+		newClientMsg1WithVersion(t, clientKP.Private, clientKP.Public, serverKP.Public),
+	}}
+
+	if _, err := h.ServerSideHandshake(tr); err != nil {
+		t.Fatal(err)
+	}
+	if h.Supports(CapabilityRekeyV2) {
+		t.Fatal("legacy client must not enable Rekey V2")
+	}
+}
 
 func TestIKHandshake_CompleteInitiatorFromMsg2_ServerStaticMismatch(t *testing.T) {
 	serverKP, _ := cipherSuite.GenerateKeypair(nil)

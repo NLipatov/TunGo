@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/netip"
+	"slices"
 	"sync/atomic"
 	"tungo/application/configuration"
 	"tungo/infrastructure/cryptography/mem"
@@ -68,9 +69,10 @@ func (a *allowedPeersMap) Update(peers []configuration.ServerPeer) {
 
 // IKHandshake implements Noise IK handshake with DoS protection.
 type IKHandshake struct {
-	id        [32]byte
-	clientKey []byte
-	serverKey []byte
+	id                     [32]byte
+	clientKey              []byte
+	serverKey              []byte
+	negotiatedCapabilities []Capability
 
 	// Server-side fields
 	serverPubKey  []byte
@@ -99,9 +101,10 @@ type sessionMaterial struct {
 }
 
 type serverHandshakeOutcome struct {
-	clientID     int
-	clientPubKey []byte
-	material     sessionMaterial
+	clientID               int
+	clientPubKey           []byte
+	negotiatedCapabilities []Capability
+	material               sessionMaterial
 }
 
 // NewIKHandshakeServer creates a new IK handshake for server-side use.
@@ -135,6 +138,11 @@ func NewIKHandshakeClient(
 func (h *IKHandshake) ID() [32]byte              { return h.id }
 func (h *IKHandshake) KeyClientToServer() []byte { return h.clientKey }
 func (h *IKHandshake) KeyServerToClient() []byte { return h.serverKey }
+
+// Supports reports whether capability was negotiated during the handshake.
+func (h *IKHandshake) Supports(capability Capability) bool {
+	return slices.Contains(h.negotiatedCapabilities, capability)
+}
 
 // ClientPubKey returns the authenticated client's static public key.
 func (h *IKHandshake) ClientPubKey() []byte {
@@ -178,6 +186,10 @@ func (h *IKHandshake) ServerSideHandshake(transport io.ReadWriter) (int, error) 
 	}
 	h.applySessionMaterial(outcome.material)
 	h.authenticatedClientPubKey = append(h.authenticatedClientPubKey[:0], outcome.clientPubKey...)
+	h.negotiatedCapabilities = append(
+		h.negotiatedCapabilities[:0],
+		outcome.negotiatedCapabilities...,
+	)
 	return outcome.clientID, nil
 }
 
@@ -312,7 +324,7 @@ func (h *IKHandshake) runResponderNoise(
 	defer zeroizeLocalEphemeral(hs)
 
 	noiseMsg := ExtractNoiseMsg(msg1WithMAC)
-	_, _, _, err = hs.ReadMessage(nil, noiseMsg)
+	advertised, _, _, err := hs.ReadMessage(nil, noiseMsg)
 	if err != nil {
 		return serverHandshakeOutcome{}, fmt.Errorf("noise: read msg1: %w", err)
 	}
@@ -326,7 +338,13 @@ func (h *IKHandshake) runResponderNoise(
 		return serverHandshakeOutcome{}, ErrPeerDisabled
 	}
 
-	msg2, cs1, cs2, err := hs.WriteMessage(nil, nil)
+	var selected []byte
+	var negotiated []Capability
+	if slices.Contains(advertised, byte(CapabilityRekeyV2)) {
+		selected = []byte{byte(CapabilityRekeyV2)}
+		negotiated = []Capability{CapabilityRekeyV2}
+	}
+	msg2, cs1, cs2, err := hs.WriteMessage(nil, selected)
 	if err != nil {
 		return serverHandshakeOutcome{}, fmt.Errorf("noise: write msg2: %w", err)
 	}
@@ -338,9 +356,10 @@ func (h *IKHandshake) runResponderNoise(
 	}
 
 	return serverHandshakeOutcome{
-		clientID:     clientID,
-		clientPubKey: clientPubKey,
-		material:     extractSessionMaterial(cs1, cs2, hs.ChannelBinding()),
+		clientID:               clientID,
+		clientPubKey:           clientPubKey,
+		negotiatedCapabilities: negotiated,
+		material:               extractSessionMaterial(cs1, cs2, hs.ChannelBinding()),
 	}, nil
 }
 
@@ -373,7 +392,7 @@ func (h *IKHandshake) initiatorAttempt(
 		return nil, nil, err
 	}
 
-	msg1, _, _, err := hs.WriteMessage(nil, nil)
+	msg1, _, _, err := hs.WriteMessage(nil, []byte{byte(CapabilityRekeyV2)})
 	if err != nil {
 		zeroizeLocalEphemeral(hs)
 		return nil, nil, fmt.Errorf("noise: write msg1: %w", err)
@@ -401,7 +420,7 @@ func (h *IKHandshake) completeInitiatorFromMsg2(
 	response []byte,
 	verifyServerStatic bool,
 ) (sessionMaterial, error) {
-	_, cs1, cs2, err := hs.ReadMessage(nil, response)
+	selected, cs1, cs2, err := hs.ReadMessage(nil, response)
 	if err != nil {
 		return sessionMaterial{}, fmt.Errorf("noise: read msg2: %w", err)
 	}
@@ -410,6 +429,14 @@ func (h *IKHandshake) completeInitiatorFromMsg2(
 	}
 	if verifyServerStatic && !bytes.Equal(hs.PeerStatic(), h.peerPubKey) {
 		return sessionMaterial{}, fmt.Errorf("noise: server static key mismatch")
+	}
+	h.negotiatedCapabilities = h.negotiatedCapabilities[:0]
+	for _, capability := range selected {
+		capability := Capability(capability)
+		if capability != CapabilityRekeyV2 {
+			return sessionMaterial{}, fmt.Errorf("noise: server selected unsupported capability")
+		}
+		h.negotiatedCapabilities = append(h.negotiatedCapabilities, capability)
 	}
 	return extractSessionMaterial(cs1, cs2, hs.ChannelBinding()), nil
 }
