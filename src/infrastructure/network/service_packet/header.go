@@ -24,6 +24,8 @@ const (
 	Ping
 	Pong
 	EpochExhausted // server → client: cannot rekey, please reconnect
+	RekeyInitV2
+	RekeyAckV2
 )
 
 // Parse detects service_packet packets in-place without allocations.
