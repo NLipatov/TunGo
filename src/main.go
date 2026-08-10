@@ -33,15 +33,18 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	shutdown.Handle(ctx, cancel)
-	var err error
+	shutdown.Watch(ctx, cancel)
+
 	if isTUI() {
-		err = runTUI(ctx)
+		if err := runTUI(ctx); err != nil {
+			tui.ShowFatalError(err.Error())
+			exitCode = 1
+		}
 	} else {
-		err = runCLI(ctx)
-	}
-	if err != nil {
-		exitCode = showFatal(err)
+		if err := runCLI(ctx); err != nil {
+			slog.Error("fatal error", "err", err)
+			exitCode = 1
+		}
 	}
 }
 
@@ -124,17 +127,6 @@ func requireElevation() error {
 		"%s must be run with admin privileges.\n%s",
 		appName, elevation.Hint(),
 	)
-}
-
-// showFatal displays a fatal error and returns the exit code.
-// In TUI mode it shows a themed, dismissable screen; in CLI mode it logs.
-func showFatal(err error) int {
-	if isTUI() {
-		tui.ShowFatalError(err.Error())
-	} else {
-		slog.Error("fatal error", "err", err)
-	}
-	return 1
 }
 
 func isTUI() bool {

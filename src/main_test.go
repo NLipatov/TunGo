@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -111,12 +110,5 @@ func TestRequireElevationMatchesPlatformState(t *testing.T) {
 	}
 	if err == nil || !strings.Contains(err.Error(), "admin privileges") {
 		t.Fatalf("requireElevation() error = %v", err)
-	}
-}
-
-func TestShowFatalInCLIMode(t *testing.T) {
-	setCommandLine(t, "version")
-	if got := showFatal(errors.New("boom")); got != 1 {
-		t.Fatalf("showFatal() = %d, want 1", got)
 	}
 }
